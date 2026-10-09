@@ -44,12 +44,53 @@ export interface CalcSheetGroup {
   label: string;
   /** The whole law in one cell (`duty-text.ts`), «—» when an old snapshot has none. */
   dutyText: string;
+  /** The law's columns, as sealed — what the sheet words the shape from
+   * («20 %, kamida $3/juft»); null percentages on an old snapshot. */
+  dutyPct: number | null;
+  dutyMode: DutyMode;
+  dutySpecific: number | null;
+  dutyUnit: string | null;
   vatPct: number | null;
   excisePct: number | null;
+  /** 0131's specific excise — absent (null) on every older snapshot. */
+  exciseSpecific: number | null;
+  exciseUnit: string | null;
+  /** The lgota the seal applied (P2.7): «boj yo‘q (lgota)», «QQS yo‘q (lgota)». */
+  dutyFree: boolean;
+  vatFree: boolean;
+  /** The certificate answer the seal priced with — null on an old snapshot. */
+  hasCertificate: boolean | null;
   /** The customs VALUE the duty was taken on, as sealed — «—» on an old snapshot. */
   valueUsd: number | null;
   customsUsd: number | null;
+  /**
+   * What the group's customs is MADE of, as sealed (P2.7) — duty, the
+   * certificate's additional duty, excise and VAT. They ADD UP to
+   * `customsUsd` by the engine's own construction (`sheetPartsAddUp` says so
+   * in a test). Null on a snapshot with no customs receipt.
+   */
+  parts: {
+    dutyUsd: number;
+    addDutyPct: number;
+    addDutyUsd: number;
+    exciseUsd: number;
+    vatUsd: number;
+  } | null;
   items: CalcSheetItem[];
+}
+
+/**
+ * The declaration fee, as sealed, with the inputs that made it (P2.6) — so
+ * a sealed fee explains itself after the BHM setting and the rate book have
+ * both moved. Every input is null on a snapshot sealed before 0131's round.
+ */
+export interface CalcSheetFee {
+  usd: number;
+  bhm: number | null;
+  overridden: boolean;
+  bhmUzs: number | null;
+  fxUzsPerUsd: number | null;
+  fxDate: string | null;
 }
 
 export interface CalcSheet {
@@ -66,6 +107,8 @@ export interface CalcSheet {
   childState: ChildState | null;
   groups: CalcSheetGroup[];
   feeUsd: number | null;
+  /** The fee's receipt (P2.6), null where the seal carried none. */
+  fee: CalcSheetFee | null;
   freight: {
     zone: string | null;
     bandMin: number | null;
@@ -188,6 +231,9 @@ export function calcSheetOf(
     const hasLaw = dutyPct !== null || num(g.dutySpecific) !== null;
     const customs = (g.customs ?? null) as Record<string, unknown> | null;
     const rawItems = Array.isArray(g.items) ? (g.items as Record<string, unknown>[]) : [];
+    const part = (k: string) => (customs ? num(customs[k]) : null);
+    const dutyUsd = part('dutyUsd');
+    const vatUsd = part('vatUsd');
     return {
       code: text(g.tnvedCode),
       label: text(g.label) ?? '—',
@@ -199,10 +245,31 @@ export function calcSheetOf(
             dutyUnit: text(g.dutyUnit),
           })
         : '—',
+      dutyPct,
+      dutyMode: mode,
+      dutySpecific: num(g.dutySpecific),
+      dutyUnit: text(g.dutyUnit),
       vatPct: num(g.vatPct),
       excisePct: num(g.excisePct),
+      exciseSpecific: num(g.exciseSpecific),
+      exciseUnit: text(g.exciseUnit),
+      dutyFree: g.dutyFree === true,
+      vatFree: g.vatFree === true,
+      hasCertificate: typeof g.hasCertificate === 'boolean' ? g.hasCertificate : null,
       valueUsd: customs ? num(customs.valueUsd) : null,
       customsUsd: customs ? num(customs.customsUsd) : null,
+      // The parts only when the receipt carries the two every breakdown has
+      // had since phase B — an old one prints its total and nothing to add up.
+      parts:
+        dutyUsd !== null && vatUsd !== null
+          ? {
+              dutyUsd,
+              addDutyPct: part('addDutyPct') ?? 0,
+              addDutyUsd: part('addDutyUsd') ?? 0,
+              exciseUsd: part('exciseUsd') ?? 0,
+              vatUsd,
+            }
+          : null,
       items: rawItems.map((i) => ({
         name: text(i.label) ?? '—',
         quantity: num(i.quantity),
@@ -234,6 +301,17 @@ export function calcSheetOf(
     childState: mine?.childState ?? null,
     groups,
     feeUsd: fee ? num(fee.feeUsd) : null,
+    fee:
+      fee && num(fee.feeUsd) !== null
+        ? {
+            usd: num(fee.feeUsd)!,
+            bhm: fee.overridden === true ? null : num(fee.bhmCoefficient),
+            overridden: fee.overridden === true,
+            bhmUzs: num(fee.bhmUzs),
+            fxUzsPerUsd: num(fee.fxUzsPerUsd),
+            fxDate: text(fee.fxDate),
+          }
+        : null,
     freight: hasFreight
       ? {
           zone: version.freightZone,
@@ -254,6 +332,19 @@ export function calcSheetOf(
       .sort((a, b) => b.quoteNo - a.quoteNo)
       .map((v) => ({ quoteNo: v.quoteNo, sealedAt: v.sealedAt, totalUsd: v.totalUsd })),
   };
+}
+
+/**
+ * Do the parts the sheet prints ADD UP to the group total it prints (P2.7)?
+ * The engine builds `customsUsd` as exactly duty + additional duty + excise +
+ * VAT (the group carries no fee, #858), each rounded to the cent first — so a
+ * sheet that prints all four beside the total is a sum a person can check by
+ * hand. Pure, for the test that holds the printed lines to it.
+ */
+export function sheetPartsAddUp(g: Pick<CalcSheetGroup, 'parts' | 'customsUsd'>): boolean {
+  if (!g.parts || g.customsUsd === null) return false;
+  const sum = g.parts.dutyUsd + g.parts.addDutyUsd + g.parts.exciseUsd + g.parts.vatUsd;
+  return Math.abs(sum - g.customsUsd) < 0.005;
 }
 
 type VersionDbRow = {

@@ -35,6 +35,56 @@ export function defaultBasisFor(group: { dutyUnit?: string | null } | null): Baz
 }
 
 /**
+ * What «avto» SHOWS on a row — the law first, then what the ROW states
+ * (2026-10-09, docs/RASTAMOJKA-TUZATISH.md P3.3).
+ *
+ * `defaultBasisFor` answers «what does the LAW pin» and stays law-only: the
+ * A2 suspect check, the basis-not-law chip and `lawPinnedBasis` all mean
+ * exactly that, and must not start answering about one row's figures (judge
+ * MR-2). This one answers «what is this row's baza per, when nobody chose»:
+ *
+ *   1. a law pair unit (m² / juft / litr) — the duty counts in it;
+ *   2. a kg law → kg;
+ *   3. a dona / 1000-dona / sm³ law → per piece;
+ *   4. no law, or an advalor one: a pair the row STATES (a seller's «120 m²»,
+ *      routed at the door) → that unit — never sm³, which is not a baza;
+ *   5. a row that states only a weight → kg;
+ *   6. otherwise per piece.
+ *
+ * The order keeps it inside what `basesFor` offers and never against what
+ * `lawPinnedBasis` pins (judge MR-16), which a unit test walks.
+ */
+export function autoBasisFor(
+  group: { dutyUnit?: string | null } | null,
+  item: {
+    quantity: number | null;
+    weightKg: number | null;
+    measureUnit: MeasureUnit | null;
+    measureQty: number | null;
+  },
+): BazaBasis {
+  const u = group?.dutyUnit ?? null;
+  if (u === 'm2' || u === 'juft' || u === 'litr') return u;
+  if (u === 'kg') return 'kg';
+  if (u === 'dona' || u === '1000_dona' || u === 'sm3') return 'unit';
+  const stated = statedPairOf(item.measureUnit, item.measureQty);
+  if (stated !== null) return stated;
+  const hasWeight = item.weightKg !== null && item.weightKg > 0;
+  const hasCount = item.quantity !== null && item.quantity > 0;
+  if (hasWeight && !hasCount) return 'kg';
+  return 'unit';
+}
+
+/**
+ * A pair a row STATES — its stored unit with a positive amount. Only the
+ * extended BAZA units count (sm³ is a vehicle's duty and never a baza), so
+ * this is exactly what `autoBasisFor` step 4 and `unitsForRow` read.
+ */
+export function statedPairOf(unit: string | null, qty: number | null): 'm2' | 'juft' | 'litr' | null {
+  return (unit === 'm2' || unit === 'juft' || unit === 'litr') && qty !== null && qty > 0 ? unit : null;
+}
+
+/**
  * The bases whose quantity lives on the measure PAIR — the row's one
  * `measure_unit`/`measure_qty`. dona, kg and m³ each have a column of their
  * own (quantity, weight_kg, volume_m3), so they never touch the pair.

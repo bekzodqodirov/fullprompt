@@ -2,6 +2,8 @@ import { getTranslations } from 'next-intl/server';
 import type { CalcRegistrySight } from '@/modules/wms/calc/control-scope';
 import { SECTION_LABELS } from '@/modules/wms/calc/labels';
 import { basisLabel } from '@/modules/wms/calc/basis';
+import { LAW_SHAPE_KEY, feeInputsValues, lawValues, rateText, unitWordsOf } from '@/modules/wms/calc/law-words';
+import { unitLabel } from '@/modules/wms/calc/units';
 import type {
   CalcAnswer,
   CalcGoodsItem,
@@ -42,6 +44,8 @@ export async function CalcSheet({ data, sight: _sight }: { data: CalcSheetData; 
   const t = await getTranslations('calcSheet');
   const tf = await getTranslations('finance');
   const tc = await getTranslations('calc');
+  const words = unitWordsOf((k) => tc(`units.${k}` as 'units.dona'));
+  const feeInputs = data.fee && !data.fee.overridden ? feeInputsValues(data.fee) : null;
   return (
     <div className="space-y-2 text-xs" data-testid="calc-sheet">
       <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -81,15 +85,42 @@ export async function CalcSheet({ data, sight: _sight }: { data: CalcSheetData; 
               </>
             ) : null}
           </p>
+          {/* The WHOLE story of the group (P2.7): the law's shape in words, a
+              lgota said as one, the excise, and below it the parts that make
+              the total — a sealed sheet a person can add up by hand. */}
           <p className="text-ink-600">
-            {t('duty')}: {g.dutyText}
+            {t('duty')}:{' '}
+            {g.dutyFree
+              ? tc('law.dutyFree')
+              : g.dutyPct !== null || g.dutySpecific !== null
+                ? tc(LAW_SHAPE_KEY[g.dutyMode], lawValues(g, words))
+                : '—'}
             {' · '}
-            {t('vat')}: {g.vatPct === null ? '—' : `${g.vatPct}%`}
-            {g.excisePct !== null && g.excisePct > 0 ? ` · ${t('excise')}: ${g.excisePct}%` : ''}
+            {t('vat')}: {g.vatFree ? tc('law.vatFree') : g.vatPct === null ? '—' : `${g.vatPct}%`}
+            {g.excisePct !== null && g.excisePct > 0
+              ? ` · ${tc('law.excisePct', { pct: rateText(g.excisePct) })}`
+              : g.exciseSpecific !== null && g.exciseUnit !== null
+                ? ` · ${tc('law.exciseSpecific', { amount: rateText(g.exciseSpecific), unit: unitLabel(g.exciseUnit, words) })}`
+                : ''}
             {g.valueUsd !== null ? ` · ${tc('regGoodsValue')}: ${usd(g.valueUsd)}` : ''}
             {' · '}
             <span className="font-mono tabular-nums">{usd(g.customsUsd)}</span>
           </p>
+          {g.parts ? (
+            <p className="font-mono tabular-nums text-ink-500" data-testid="calc-sheet-parts">
+              {[
+                `${t('duty')} ${usd(g.parts.dutyUsd)}`,
+                g.parts.addDutyUsd > 0
+                  ? `${tc('law.addDuty', { pct: rateText(g.parts.addDutyPct) })} ${usd(g.parts.addDutyUsd)}`
+                  : null,
+                g.parts.exciseUsd > 0 ? `${tc('law.excise')} ${usd(g.parts.exciseUsd)}` : null,
+                `${t('vat')} ${usd(g.parts.vatUsd)}`,
+              ]
+                .filter(Boolean)
+                .join(' + ')}
+              {` = ${usd(g.customsUsd)}`}
+            </p>
+          ) : null}
           {g.items.length > 0 ? (
             <ul className="space-y-0.5 text-ink-600">
               {g.items.map((item, i) => (
@@ -136,7 +167,11 @@ export async function CalcSheet({ data, sight: _sight }: { data: CalcSheetData; 
         {data.feeUsd !== null ? (
           <>
             <dt className="text-ink-500">{t('fee')}</dt>
-            <dd className="font-mono tabular-nums">{usd(data.feeUsd)}</dd>
+            {/* The fee with what made it (P2.6) — a sealed fee explains itself
+                after the BHM and the rate book have both moved. */}
+            <dd className="font-mono tabular-nums" data-testid="calc-sheet-fee">
+              {feeInputs ? tc('law.feeInputs', feeInputs) : usd(data.feeUsd)}
+            </dd>
           </>
         ) : null}
         {data.freight ? (

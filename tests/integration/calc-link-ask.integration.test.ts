@@ -250,7 +250,7 @@ describe('a ❌ stays a ❌, and a correction asks its own sealer', () => {
       .set({ calcLinkNotifiedAt: askedAt })
       .where(inArray(receipts.id, [unasked, answered]));
 
-    const second = await recalcFromSealed(first, ctx());
+    const second = (await recalcFromSealed(first, ctx())).id;
     madeRequests.push(second);
     await setFreightZone(second, 'cn', ctx());
     await sealCalc(second, SEAL, ctx());

@@ -192,7 +192,7 @@ async function sealed(overrides: Partial<Parameters<typeof openCalcRequest>[0]> 
 /** A correction minted from `parentId` and sealed — the confirmation does
  * not travel (#767), so it is re-given before the seal. */
 async function corrected(parentId: string) {
-  const freshId = await recalcFromSealed(parentId, ctx());
+  const freshId = (await recalcFromSealed(parentId, ctx())).id;
   madeRequests.push(freshId);
   await confirmAllGroups(freshId, ctx());
   await sealCalc(freshId, NO_DISCOUNT, ctx());
@@ -246,7 +246,7 @@ describe('«V2» is the rank in the chain, not the stored counter', () => {
 
   it('an OPEN correction is «qayta hisoblanmoqda» and takes no number', async () => {
     const first = await sealed();
-    const draft = await recalcFromSealed(first, ctx());
+    const draft = (await recalcFromSealed(first, ctx())).id;
     madeRequests.push(draft);
 
     const chain = await chainOf(first);
@@ -265,7 +265,7 @@ describe('«V2» is the rank in the chain, not the stored counter', () => {
 describe('a correction starts from the chain\'s newest link', () => {
   it('refuses a SECOND child while the first is open — «finish that one»', async () => {
     const first = await sealed();
-    const draft = await recalcFromSealed(first, ctx());
+    const draft = (await recalcFromSealed(first, ctx())).id;
     madeRequests.push(draft);
     await expect(recalcFromSealed(first, ctx())).rejects.toMatchObject({ code: 'recalc_open' });
   });
@@ -274,7 +274,7 @@ describe('a correction starts from the chain\'s newest link', () => {
     const first = await sealed();
     const second = await corrected(first);
     await expect(recalcFromSealed(first, ctx())).rejects.toMatchObject({ code: 'recalc_superseded' });
-    const third = await recalcFromSealed(second, ctx());
+    const third = (await recalcFromSealed(second, ctx())).id;
     madeRequests.push(third);
     expect((await chainOf(third)).map((v) => v.quoteNo)).toEqual([1, 2]);
   });

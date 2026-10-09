@@ -75,8 +75,13 @@ const SKIPS_THE_PASS: Record<string, string> = {
   moveItemToGroup: 'no app caller since the table; the pair reconciles on the next Saqlash',
   applyProposal:
     'the ✨ pass: its pricing tail (priceProposedGroups) ends in saveTable, which runs the pass',
+  // Re-worded deliberately (2026-10-09, judge MR-15/TT-8): the correction now
+  // RE-READS today's book for every dictionary group, so the law it copies
+  // may differ from the one the seal stood on. When that moves a group's
+  // unit, the rows are NAMED (`remeasure`, shown once on the new request's
+  // first load) and their pairs wait for the first Saqlash, like the ⚙ door.
   recalcFromSealed:
-    'copies a SEALED request whose pairs the seal already stood on — the law and the pairs travel together',
+    'copies a SEALED request; a re-pulled law that moves a unit names its rows (remeasure) for the first Saqlash',
 };
 
 describe('the measure pair has ONE reconciler', () => {
@@ -84,8 +89,14 @@ describe('the measure pair has ONE reconciler', () => {
 
   it('saveTable runs the pass — per item, the law first, then the basis', () => {
     const save = bodies.get('saveTable')!;
-    expect(save).toContain('const required = pairUnitFor(law, basis);');
-    expect(save).toContain('basis = defaultBasisFor({ dutyUnit: law });');
+    // Re-anchored deliberately (2026-10-09, judge TT-3/MR-3/S2): «avto» is
+    // the law first and then a pair the ROW states, so the stamp and the
+    // required unit both read `autoBasisFor` — the law-only `defaultBasisFor`
+    // stays the A2 suspect check's question, below.
+    expect(save).toContain('const required = pairUnitFor(law, basis ?? auto);');
+    expect(save).toContain('basis = auto;');
+    expect(save).toContain('const auto = autoBasisFor(');
+    expect(save).toContain('const lawBasis = defaultBasisFor({ dutyUnit: law });');
     expect(save).toContain('basisConflict.push(item.seq)');
   });
 

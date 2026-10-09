@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
+import { relawedQuery } from '@/modules/wms/calc/law-words';
 import { recalcAction } from '../actions';
 
 /**
@@ -31,7 +32,7 @@ export function RecalcButton({ id }: { id: string }) {
           startTransition(async () => {
             const result = await recalcAction(id);
             setError(result.error ?? null);
-            if (result.newId) window.location.assign(`/hisoblash/${result.newId}`);
+            if (result.newId) window.location.assign(`/hisoblash/${result.newId}${relawedQuery(result)}`);
           })
         }
       >

@@ -1,6 +1,6 @@
 import 'dotenv/config';
-import { eq, inArray } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { and, eq, inArray } from 'drizzle-orm';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
   calcBazas,
@@ -297,6 +297,92 @@ describe('the measure pair follows the law first, then the BASIS', () => {
     const ws = await loadWorkspace(id);
     const g = ws!.groups.find((x) => x.tnvedCode === '6403')!;
     expect(g.customs).toMatchObject({ ok: false, reason: 'measure_missing', itemLabel: row.name });
+  });
+});
+
+describe('a pair the row STATES survives every unrelated Saqlash (2026-10-09, judge TT-3/MR-3/S2)', () => {
+  // This file opens more requests than one requester may hold open
+  // (MAX_OPEN_PER_REQUESTER); the block closes its own when it is done so the
+  // files after it are not refused `too_many_open` by this one.
+  const opened: string[] = [];
+  afterEach(async () => {
+    const mine = madeRequests.filter((r) => !opened.includes(r));
+    if (mine.length === 0) return;
+    opened.push(...mine);
+    await db.update(calcRequests).set({ completedAt: new Date() }).where(inArray(calcRequests.id, mine));
+  });
+  beforeAll(() => {
+    opened.push(...madeRequests);
+  });
+  /** What the seller's door writes for «Kafel 120 m²» — the pair, no count. */
+  const statePair = (requestId: string, seqNo: number, unit: 'm2' | 'litr' | 'sm3', qty: number) =>
+    db
+      .update(calcRequestItems)
+      .set({ measureUnit: unit, measureQty: qty.toFixed(4), quantity: null })
+      .where(and(eq(calcRequestItems.requestId, requestId), eq(calcRequestItems.seq, seqNo)));
+
+  it('an UNCODED «Kafel 120 m²» waits for its code untouched — then prices per m² by itself', async () => {
+    const id = await open([{ name: `kafel ${tag()}` }]);
+    await statePair(id, 1, 'm2', 120);
+    const first = await save(id, {});
+    await save(id, { adds: [{ name: `boshqa ${tag()}`, quantity: 3 }] });
+    expect(first.measuresCleared).toEqual([]);
+    expect(await rowOf(id, 1)).toMatchObject({ measureUnit: 'm2', measureQty: '120.0000' });
+
+    // Coded onto an ADVALOR law and priced with the select untouched: «avto»
+    // is the unit the row states, and the value is 120 m² × $2.
+    const coded = await save(id, {
+      items: [await editOf(id, 1, { tnvedCode: '8528520000', bazaUsd: 2, bazaBasis: null })],
+    });
+    expect(coded.measuresCleared).toEqual([]);
+    expect(await rowOf(id, 1)).toMatchObject({ bazaBasis: 'm2', measureUnit: 'm2', measureQty: '120.0000' });
+    const ws = await loadWorkspace(id);
+    const g = ws!.groups.find((x) => x.tnvedCode === '8528520000')!;
+    expect(g.customs).toMatchObject({ ok: true, valueUsd: 240 });
+  });
+
+  it('an uncoded car’s «1500 sm³» waits for its code — sm³ is no baza, so only «no law yet» keeps it', async () => {
+    // `autoBasisFor` never answers sm³ (nobody VALUES a car by displacement,
+    // #868), so the stated-pair reading cannot hold this one: the row with no
+    // group must keep its pair because its law is simply not known yet.
+    const id = await open([{ name: `avtomobil ${tag()}`, quantity: 1 }]);
+    await statePair(id, 1, 'sm3', 1500);
+    await db.update(calcRequestItems).set({ quantity: '1.000' }).where(eq(calcRequestItems.requestId, id));
+    const first = await save(id, {});
+    expect(first.measuresCleared).toEqual([]);
+    expect(await rowOf(id, 1)).toMatchObject({ measureUnit: 'sm3', measureQty: '1500.0000' });
+    // Coded onto a law that counts in sm³: the statement IS the law's figure.
+    const coded = await save(id, { items: [await editOf(id, 1, { tnvedCode: '8701299090' })] });
+    expect(coded.measuresCleared).toEqual([]);
+    expect(await rowOf(id, 1)).toMatchObject({ measureUnit: 'sm3', measureQty: '1500.0000' });
+  });
+
+  it('«Lak 50 litr» on an advalor code survives two presses with no price on it', async () => {
+    const id = await open([{ name: `lak ${tag()}`, tnvedCode: '8528520000' }]);
+    await save(id, {});
+    await statePair(id, 1, 'litr', 50);
+    const a = await save(id, {});
+    const b = await save(id, { items: [await editOf(id, 1, { name: `lak qayta ${tag()}` })] });
+    expect([...a.measuresCleared, ...b.measuresCleared]).toEqual([]);
+    expect(await rowOf(id, 1)).toMatchObject({ measureUnit: 'litr', measureQty: '50.0000' });
+  });
+
+  it('a law that counts in ANOTHER pair unit still clears and names it — a statement in m² is not juft', async () => {
+    const id = await open([{ name: `poyabzal ${tag()}`, tnvedCode: '8528520000' }]);
+    await save(id, {});
+    await statePair(id, 1, 'm2', 40);
+    const result = await save(id, { items: [await editOf(id, 1, { tnvedCode: '6403' })] });
+    expect(result.measuresCleared).toEqual([1]);
+    expect(await rowOf(id, 1)).toMatchObject({ measureUnit: null, measureQty: null });
+  });
+
+  it('a VED’s CHOSEN unit outranks the statement — the old named clear still holds', async () => {
+    const id = await open([{ name: `gilamcha ${tag()}`, tnvedCode: '8528520000', weightKg: 30 }]);
+    await save(id, {});
+    await statePair(id, 1, 'm2', 25);
+    const result = await save(id, { items: [await editOf(id, 1, { bazaUsd: 4, bazaBasis: 'kg' })] });
+    expect(result.measuresCleared).toEqual([1]);
+    expect(await rowOf(id, 1)).toMatchObject({ bazaBasis: 'kg', measureUnit: null });
   });
 });
 

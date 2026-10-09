@@ -53,6 +53,8 @@ const group = (over: Partial<PricedGroup> = {}): PricedGroup => ({
   dutySpecific: null,
   dutyUnit: null,
   excisePct: null,
+  exciseSpecific: null,
+  exciseUnit: null,
   hasCertificate: true,
   dutyFree: false,
   vatFree: false,
@@ -135,7 +137,10 @@ describe('customsFor', () => {
     );
     expect(res.ok).toBe(true);
     if (!res.ok) return;
-    expect(res).toMatchObject({ valueUsd: 1000, dutyUsd: 0, vatUsd: 0, customsUsd: 25 });
+    // The group's own legacy fee is NOT charged (2026-10-09 audit): the
+    // declaration pays VMQ-55's fee once, at the request grain (#858) — a
+    // per-group figure beside it was the same fee twice.
+    expect(res).toMatchObject({ valueUsd: 1000, dutyUsd: 0, vatUsd: 0, feeUsd: 0, customsUsd: 0 });
   });
 
   it('an empty group is refused, never priced at zero', () => {
@@ -406,6 +411,7 @@ describe('a customs half with no groups is not priced', () => {
   it('answers null — not zero — and names no fee', () => {
     const empty = requestCustomsFor({
       customs: [],
+      ungroupedCount: 0,
       bhmUzs: 412_000,
       fxUzsPerUsd: 12_500,
       feeOverrideUsd: null,
@@ -417,6 +423,7 @@ describe('a customs half with no groups is not priced', () => {
 
   it('still prices the moment one group answers', () => {
     const one = requestCustomsFor({
+      ungroupedCount: 0,
       customs: [
         {
           ok: true,

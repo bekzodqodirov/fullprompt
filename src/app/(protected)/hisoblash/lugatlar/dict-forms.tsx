@@ -1,16 +1,26 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import {
+  lookupRatesAction,
   saveBazaAction,
   savePriceBookAction,
   saveRatesAction,
   type CalcFormState,
 } from '../actions';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
-import { BAZA_BASES, isBazaBasis, type BazaBasis } from '@/modules/wms/calc/pricing';
+import {
+  BAZA_BASES,
+  DUTY_UNITS,
+  isBazaBasis,
+  type BazaBasis,
+  type DutyMode,
+  type DutyUnit,
+} from '@/modules/wms/calc/pricing';
+import { LAW_SHAPE_KEY, lawValues, unitWordsOf } from '@/modules/wms/calc/law-words';
+import { unitLabel } from '@/modules/wms/calc/units';
 import { basisLabel } from '@/modules/wms/calc/basis';
 import { readNumberCell, type NumberCell } from '@/modules/wms/calc/number-cell';
 
@@ -188,6 +198,7 @@ export function BazaForm() {
 }
 
 export function RatesForm() {
+  type ModeChoice = 'book' | DutyMode;
   const t = useTranslations('calc');
   const tc = useTranslations('common');
   const router = useRouter();
@@ -197,6 +208,51 @@ export function RatesForm() {
   const [duty, setDuty] = useState('');
   const [vat, setVat] = useState('12');
   const [date, setDate] = useState(today());
+  // The law's SHAPE (P2.1, judge MR-14). «lug‘atdagidek» is the default and
+  // posts NO mode — the service then carries the shape of the row that
+  // answers the code today, heading included, so correcting a percentage
+  // never strips a floor. Only an explicit «foiz» posts 'advalor'.
+  const [mode, setMode] = useState<ModeChoice>('book');
+  const [specific, setSpecific] = useState('');
+  const [unit, setUnit] = useState<DutyUnit>('kg');
+  // What the book says for the typed code TODAY — so «lug‘atdagidek» is a
+  // value the person can SEE before saving over it (MR-14's prefill).
+  // Keyed by the code it answers: a row for a code the person has since
+  // changed is simply not shown, with no reset to run.
+  const [standing, setStanding] = useState<{ code: string; row: BookRow | null } | null>(null);
+  const words = useMemo(() => unitWordsOf((k) => t(`units.${k}` as 'units.dona')), [t]);
+
+  useEffect(() => {
+    const clean = code.replace(/\D/g, '');
+    if (!/^\d{4,10}$/.test(clean)) return;
+    // A stale answer for a code the person has since changed must not land.
+    let live = true;
+    const timer = window.setTimeout(() => {
+      lookupRatesAction(clean)
+        .then((res) => {
+          if (!live) return;
+          const row = res.row ?? null;
+          setStanding({ code: clean, row });
+          if (row) {
+            // Fill only what the person has not typed themselves.
+            setDuty((d) => (d.trim() === '' ? String(row.dutyPct) : d));
+            setVat((v) => (v === '12' ? String(row.vatPct) : v));
+            if (row.dutySpecific !== null) setSpecific((s) => (s.trim() === '' ? String(row.dutySpecific) : s));
+            if (row.dutyUnit) setUnit(row.dutyUnit);
+          }
+        })
+        .catch(() => {
+          /* no prefill — the form still saves what is typed */
+        });
+    }, 350);
+    return () => {
+      live = false;
+      window.clearTimeout(timer);
+    };
+  }, [code]);
+
+  const needsSpecific = mode === 'max' || mode === 'plus' || mode === 'specific';
+  const shown = standing && standing.code === code.replace(/\D/g, '') ? standing : null;
 
   return (
     <div className="space-y-2">
@@ -211,6 +267,21 @@ export function RatesForm() {
           />
         </label>
         <label className="text-2xs">
+          <span className="label">{t('law.mode')}</span>
+          <select
+            className="input input-sm !w-auto"
+            data-testid="rate-mode"
+            value={mode}
+            onChange={(e) => setMode(e.target.value as ModeChoice)}
+          >
+            <option value="book">{t('law.modeBook')}</option>
+            <option value="advalor">{t('law.modeAdvalor')}</option>
+            <option value="max">{t('law.modeMax')}</option>
+            <option value="plus">{t('law.modePlus')}</option>
+            <option value="specific">{t('law.modeSpecific')}</option>
+          </select>
+        </label>
+        <label className="text-2xs">
           <span className="label">{t('duty')} %</span>
           <input
             className="input input-sm !w-20 font-mono tabular-nums"
@@ -219,6 +290,35 @@ export function RatesForm() {
             onChange={(e) => setDuty(e.target.value)}
           />
         </label>
+        {needsSpecific ? (
+          <>
+            <label className="text-2xs">
+              <span className="label">{t('law.specificAmount')}</span>
+              <input
+                className="input input-sm !w-20 font-mono tabular-nums"
+                inputMode="decimal"
+                data-testid="rate-specific"
+                value={specific}
+                onChange={(e) => setSpecific(e.target.value)}
+              />
+            </label>
+            <label className="text-2xs">
+              <span className="label">{t('law.unit')}</span>
+              <select
+                className="input input-sm !w-auto"
+                data-testid="rate-unit"
+                value={unit}
+                onChange={(e) => setUnit(e.target.value as DutyUnit)}
+              >
+                {DUTY_UNITS.map((u) => (
+                  <option key={u} value={u}>
+                    {unitLabel(u, words)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </>
+        ) : null}
         <label className="text-2xs">
           <span className="label">{t('vat')} %</span>
           <input
@@ -248,16 +348,30 @@ export function RatesForm() {
           data-testid="rate-save"
           onClick={() =>
             startTransition(async () => {
+              // A shape that names a floor needs the floor: refused in words
+              // here, before a press reaches the server's bare range check.
+              const amount = specific.trim() === '' ? null : Number(specific.replace(',', '.'));
+              if (needsSpecific && amount === null) {
+                setError('shape_incomplete');
+                return;
+              }
               const result: CalcFormState = await saveRatesAction({
                 tnvedCode: code,
                 dutyPct: Number(duty.replace(',', '.')),
                 vatPct: Number(vat.replace(',', '.')),
                 effectiveDate: date,
+                ...(mode === 'book'
+                  ? {}
+                  : mode === 'advalor'
+                    ? { dutyMode: 'advalor' as const }
+                    : { dutyMode: mode, dutySpecific: amount, dutyUnit: unit }),
               });
               setError(result.error ?? null);
               if (!result.error) {
                 setCode('');
                 setDuty('');
+                setSpecific('');
+                setMode('book');
                 router.refresh();
               }
             })
@@ -266,6 +380,15 @@ export function RatesForm() {
           {tc('save')}
         </button>
       </div>
+      {shown ? (
+        <p className="text-2xs text-ink-600" data-testid="rate-book-now">
+          {shown.row
+            ? t('law.bookNow', {
+                law: `${shown.row.tnvedCode}: ${t(LAW_SHAPE_KEY[shown.row.dutyMode], lawValues(shown.row, words))} / ${t('vat')} ${shown.row.vatPct}%`,
+              })
+            : t('law.bookNone')}
+        </p>
+      ) : null}
       {error ? (
         <p className="chip chip-warn" data-testid="rate-error">
           {t.has(`errors.${error}`) ? t(`errors.${error}` as 'errors.not_found') : error}
@@ -274,6 +397,16 @@ export function RatesForm() {
     </div>
   );
 }
+
+/** The row that answers a typed code today, as the prefill reads it. */
+type BookRow = {
+  tnvedCode: string;
+  dutyPct: number;
+  vatPct: number;
+  dutyMode: DutyMode;
+  dutySpecific: number | null;
+  dutyUnit: DutyUnit | null;
+};
 
 /**
  * The price book — the fourth dictionary, and the only one keyed on nothing

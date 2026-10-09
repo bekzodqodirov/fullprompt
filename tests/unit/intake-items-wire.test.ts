@@ -55,19 +55,32 @@ describe('every door lands its items through the one home', () => {
     expect(paths).toContain('src/app/(protected)/hisoblash/actions.ts');
   });
 
+  it('the one home is itemFacts, and the card form derives no weight', () => {
+    // `landingItems` must READ through `itemFacts` — the derivation and its
+    // brutto note live there — and the card form, whose total box is brutto
+    // and whose rows carry their own netto cell, must say its line weights
+    // were STATED, or the total lands in the netto column (MR-7).
+    const intake = readFileSync(join(SRC, 'modules', 'wms', 'calc', 'intake.ts'), 'utf8');
+    const body = intake.slice(intake.indexOf('export function landingItems('));
+    expect(body.slice(0, body.indexOf('\n}\n'))).toContain('itemFacts(facts)');
+    const action = readFileSync(join(SRC, 'app', '(protected)', 'hisoblash', 'actions.ts'), 'utf8');
+    expect(action).toMatch(/landingItems\(\{[^}]*lineWeightsStated: true/);
+  });
+
   it('no caller builds its items straight off the goods array', () => {
     for (const { path, source } of callers) {
       let at = source.indexOf('openCalcRequest(');
       while (at !== -1) {
         const args = callArgs(source, at + 'openCalcRequest('.length);
         if (args.includes('items:')) {
-          // Either home will do — `itemFacts` for a door carrying read facts,
-          // `loneWeightKg` for one carrying typed items. What may not happen
-          // is a door applying neither, which is how the same job lands two
-          // different rows.
-          expect(args, `${path} must apply the shared per-line derivation`).toMatch(
-            /itemFacts\(|loneWeightKg\(/,
-          );
+          // ONE home since 2026-10-09 (P1, TT-16): every door hands its facts
+          // to `landingItems`, which reads them through `itemFacts` and
+          // carries every column — the pair, the volume, the seller's word.
+          // The fence used to accept `loneWeightKg` for the card form; the
+          // form now types its own netto and passes `lineWeightsStated`
+          // instead (judge MR-7), so a door applying the derivation by hand
+          // is exactly the second rule this exists to refuse.
+          expect(args, `${path} must land through the one home`).toMatch(/landingItems\(/);
           // …and must not reach past it into the raw goods, which is the
           // shape that dropped the weight.
           expect(args, `${path} must not read goods directly`).not.toMatch(/\.goods\s*\?\?/);

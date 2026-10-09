@@ -15,8 +15,11 @@ import type { BazaSource } from './pricing';
  * Three laws it exists to keep.
  *
  *  - **Law 6**: never a `$0`, never a silence. A line the engine refused
- *    prints WHY, in the office's words, and the total says how many lines it
- *    covers and how many it could not.
+ *    prints WHY, in the office's words — and while ANY line is refused or
+ *    uncoded there is no total at all (the kernel's «no partial sums»). The
+ *    «N ta qatordan, M tasi hisoblanmadi» total this file used to print was
+ *    a smaller number wearing the job's name (judge MR-23, overturning this
+ *    module's own «a partial estimate beats silence»).
  *  - **The road is the TARIFF's list price, labelled as such.** Decision 8
  *    («no freight, ever») stood until the owner overturned it on
  *    2026-09-26 (item 13: «podklyuch bolsa yolkira bilan birga hsoblab
@@ -50,7 +53,9 @@ export interface AiVedLine {
   dutyText: string;
   /** The band the additional duty fell in — 0 when a certificate stands. */
   addDutyPct: number;
-  excisePct: number | null;
+  /** The excise in words — «aksiz 20%», «aksiz $0.5/litr» — null when the
+   * group has none (0131 gave it a per-unit shape beside the percentage). */
+  exciseText: string | null;
   vatPct: number | null;
   /** What this group's customs came to, or null with a reason beside it. */
   customsUsd: number | null;
@@ -70,6 +75,12 @@ export interface AiVedReplyInput {
   fee: { bhm: number; usd: number } | null;
   /** The customs total, or null when the engine refused to make one. */
   totalUsd: number | null;
+  /**
+   * Why the declaration fee could not be made, in words — null when it was.
+   * REQUIRED-nullable (#790): when every line prices and only the fee
+   * refuses, the total is absent and this is the only sentence that says why.
+   */
+  feeRefusal: string | null;
   hasCertificate: boolean;
   /**
    * The road, on a job that has one (podklyuch) — null on a customs-only one.
@@ -154,7 +165,7 @@ function lineText(line: AiVedLine, index: number): string {
   if (line.addDutyPct > 0) {
     parts.push(`qo‘shimcha boj ${line.addDutyPct}% (sertifikat yo‘q)`);
   }
-  if (line.excisePct) parts.push(`aksiz ${line.excisePct}%`);
+  if (line.exciseText) parts.push(line.exciseText);
   if (line.vatPct !== null) parts.push(`QQS ${line.vatPct}%`);
   return `${head}\n   ${parts.join(' · ')} → ${money(line.customsUsd)}`;
 }
@@ -187,16 +198,21 @@ export function aiVedReplyText(input: AiVedReplyInput): string {
   }
 
   out.push('━━━━━━━━━━━━');
-  const priced = input.lines.filter((l) => l.customsUsd !== null).length;
-  const blocked = input.lines.length - priced + input.ungrouped.length;
-  if (input.totalUsd === null) {
+  // NO PARTIAL SUMS (the kernel's rule, restated as a belt here): a line the
+  // engine refused or a row nobody coded is part of the declaration, so a
+  // total over the rest is a smaller number wearing the job's name. The
+  // workspace already answers null in that state; a caller that handed one in
+  // anyway still prints no figure.
+  const blocked = input.lines.some((l) => l.customsUsd === null) || input.ungrouped.length > 0;
+  const total = blocked ? null : input.totalUsd;
+  if (total === null) {
     // Never a $0 and never a silence: the total is absent BECAUSE something
-    // is, and the lines above already say which.
+    // is, and the lines above already say which — or, when only the fee
+    // refused, this line does.
     out.push('Rastamojka jami: hozircha hisoblab bo‘lmadi.');
+    if (!blocked && input.feeRefusal) out.push(`⚠️ Bojxona yig‘imi: ${input.feeRefusal}`);
   } else {
-    const cover =
-      blocked > 0 ? ` (${priced} ta qatordan, ${blocked} tasi hisoblanmadi)` : '';
-    out.push(`Rastamojka jami${cover}: ≈ ${money(input.totalUsd)}`);
+    out.push(`Rastamojka jami: ≈ ${money(total)}`);
   }
   if (input.freight) {
     const f = input.freight;
@@ -207,8 +223,8 @@ export function aiVedReplyText(input: AiVedReplyInput): string {
     );
     // The sum only when BOTH halves are figures: half a price labelled
     // «jami» is the partial total law 6 forbids, one line lower.
-    if (f.ok && input.totalUsd !== null) {
-      out.push(`JAMI (rastamojka + yo‘lkira): ≈ ${money(input.totalUsd + f.listUsd)}`);
+    if (f.ok && total !== null) {
+      out.push(`JAMI (rastamojka + yo‘lkira): ≈ ${money(total + f.listUsd)}`);
     } else {
       out.push('JAMI: hozircha hisoblab bo‘lmadi — yuqoridagi ⚠️ ni to‘ldiring.');
     }

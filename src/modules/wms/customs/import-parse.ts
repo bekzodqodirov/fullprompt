@@ -7,10 +7,13 @@
  * parser silently reads prices out of the weight column the first time the
  * service changes anything.
  *
- * Zero imports on purpose: the header matrix, the unit map and the name
+ * Pure on purpose: the header matrix, the unit map and the name
  * normalisation are the round's most-tested rules, and they must be callable
- * from a unit test with no database, no storage and no Excel.
+ * from a unit test with no database, no storage and no Excel. Its ONE import
+ * is the kernel's code reader (2026-10-09), pure itself — one reading of a
+ * TNVED cell for every door, the quarterly file included (#513).
  */
+import { normalizeTnved } from '../calc/units';
 
 /**
  * The six units this system can price. The file's own words map onto them.
@@ -286,10 +289,17 @@ export function parseRow(
     return i === undefined ? undefined : cells[i];
   };
 
-  const code = String(at('tnvedCode') ?? '')
-    .replace(/\s/g, '')
-    .trim();
-  if (!CODE_SHAPE.test(code)) return { ok: false, reason: 'bad_code' };
+  // Through the kernel's ONE reading of a code (P2.10a, judge MR-18): a
+  // NUMERIC cell of nine digits is a ten-digit code whose leading zero Excel
+  // dropped (0401… stored as 401…), padded back — unpadded, «401100000»
+  // longest-prefixed onto heading 4011 (tyres, 10 %) instead of 0401 (milk).
+  // A nine-digit TEXT cell was typed that way and is not guessed at.
+  const rawCode = at('tnvedCode');
+  const normal = normalizeTnved(typeof rawCode === 'number' ? rawCode : String(rawCode ?? ''));
+  if (normal === null || !('code' in normal) || !CODE_SHAPE.test(normal.code)) {
+    return { ok: false, reason: 'bad_code' };
+  }
+  const code = normal.code;
 
   const name = String(at('name') ?? '').trim();
   if (!name) return { ok: false, reason: 'no_name' };

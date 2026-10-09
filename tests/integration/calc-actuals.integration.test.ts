@@ -480,7 +480,7 @@ describe('a correction adopts the cargo it was correcting', () => {
     const receiptId = await receiptOn(other);
     await setCalcLink(receiptId, first, 'all', ctx());
 
-    const second = await recalcFromSealed(first, ctx());
+    const second = (await recalcFromSealed(first, ctx())).id;
     madeRequests.push(second);
     // Still on the old one while the correction is unsealed: an abandoned
     // correction must not take the shipment's only measurement with it.

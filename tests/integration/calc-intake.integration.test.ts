@@ -81,6 +81,9 @@ afterAll(async () => {
 });
 
 describe('what a quote cannot be made without', () => {
+  // No code below is in the book; the law's own questions are pinned in
+  // tests/unit/intake-facts.test.ts.
+  const noLaws = new Map();
   const full: CalcFacts = {
     fromCity: 'Yiwu',
     toCity: 'Toshkent',
@@ -92,34 +95,35 @@ describe('what a quote cannot be made without', () => {
   it('freight needs the road, customs does not — and podklyuch needs both', () => {
     // His words: podklyuch is rastamojka and yo'lkira added together, so it
     // asks for everything either of them asks for.
-    expect(missingFields('yolkira', full)).toEqual([]);
-    expect(missingFields('rastamojka', full)).toEqual([]);
-    expect(missingFields('podklyuch', full)).toEqual([]);
+    expect(missingFields('yolkira', full, noLaws)).toEqual([]);
+    expect(missingFields('rastamojka', full, noLaws)).toEqual([]);
+    expect(missingFields('podklyuch', full, noLaws)).toEqual([]);
 
     const noRoute = { ...full, fromCity: null, toCity: '  ' };
     // Customs does not care where the truck starts.
-    expect(missingFields('rastamojka', noRoute)).toEqual([]);
-    expect(missingFields('yolkira', noRoute)).toEqual(['fromCity', 'toCity']);
-    expect(missingFields('podklyuch', noRoute)).toEqual(['fromCity', 'toCity']);
+    expect(missingFields('rastamojka', noRoute, noLaws)).toEqual([]);
+    expect(missingFields('yolkira', noRoute, noLaws)).toEqual(['fromCity', 'toCity']);
+    expect(missingFields('podklyuch', noRoute, noLaws)).toEqual(['fromCity', 'toCity']);
   });
 
   it('a zero is a blank, not a number', () => {
     // The line still states a COUNT, so removing the shipment's weight takes
     // the total away and leaves the line priceable — one measure is what the
     // engine asks of a row (`unitsForRow`), never both.
-    expect(missingFields('rastamojka', { ...full, weightKg: 0 })).toEqual(['weightKg']);
-    expect(missingFields('rastamojka', { ...full, volumeM3: -1 })).toEqual(['volumeM3']);
+    expect(missingFields('rastamojka', { ...full, weightKg: 0 }, noLaws)).toEqual(['weightKg']);
+    expect(missingFields('rastamojka', { ...full, volumeM3: -1 }, noLaws)).toEqual(['volumeM3']);
     // …and with no goods at all the per-line questions stay silent: one hole
     // named three times is a checklist nobody finishes reading.
-    expect(missingFields('rastamojka', { ...full, goods: [] })).toEqual(['goods']);
-    expect(isComplete('rastamojka', full)).toBe(true);
-    expect(isComplete('rastamojka', { ...full, weightKg: null })).toBe(false);
+    expect(missingFields('rastamojka', { ...full, goods: [] }, noLaws)).toEqual(['goods']);
+    expect(isComplete('rastamojka', full, noLaws)).toBe(true);
+    expect(isComplete('rastamojka', { ...full, weightKg: null }, noLaws)).toBe(false);
   });
 
   it('the review message shows what is there AND what is missing', () => {
     const text = intakeSummaryText({
       section: 'yolkira',
       facts: { ...full, toCity: null },
+      laws: noLaws,
       clientLabel: 'GS777',
       fileCount: 2,
     });
@@ -133,6 +137,7 @@ describe('what a quote cannot be made without', () => {
     const complete = intakeSummaryText({
       section: 'yolkira',
       facts: full,
+      laws: noLaws,
       clientLabel: null,
       fileCount: 0,
     });
@@ -147,6 +152,7 @@ describe('what a quote cannot be made without', () => {
         ...full,
         goods: [{ name: 'Chexol', quantity: 100, tnvedCode: '3926909709', note: 'plastik' }],
       },
+      laws: noLaws,
       steps: ['Tovarlar 1 guruhga jamlandi', 'TNVED 3926909709 — plastmassa buyumlar'],
       collectedBy: 'Sotuvchi',
       fileCount: 1,
@@ -166,6 +172,7 @@ describe('what a quote cannot be made without', () => {
     const note = intakeNoteText({
       section: 'podklyuch',
       facts: full,
+      laws: noLaws,
       steps: [],
       collectedBy: 'Sotuvchi',
       fileCount: 0,
@@ -179,6 +186,7 @@ describe('what a quote cannot be made without', () => {
     const long = intakeNoteText({
       section: 'podklyuch',
       facts: full,
+      laws: noLaws,
       steps: [],
       collectedBy: 'Sotuvchi',
       fileCount: 0,
@@ -191,6 +199,7 @@ describe('what a quote cannot be made without', () => {
     const bare = intakeNoteText({
       section: 'podklyuch',
       facts: full,
+      laws: noLaws,
       steps: [],
       collectedBy: 'Sotuvchi',
       fileCount: 0,

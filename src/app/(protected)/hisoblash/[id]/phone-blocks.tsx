@@ -10,7 +10,7 @@ import { readNumberCell } from '@/modules/wms/calc/number-cell';
 import type { ItemDraft, NewRow } from '@/modules/wms/calc/row-draft';
 import { dutyText } from '@/modules/wms/calc/duty-text';
 import { confirmGroupAction, type CalcFormState } from '../actions';
-import { refusalWord } from './words';
+import { customsRefusalText, refusalWord } from './words';
 
 /**
  * The phone's calculation (his B1 a): the same rows and blocks the desktop
@@ -200,7 +200,7 @@ export function PhoneBlocks({
                 result, so a fixed baza clears it before the save. */}
             {!customs.ok ? (
               <p className="mt-0.5 text-2xs text-warn" data-testid="calc-phone-refusal">
-                ⚠ {refusalWord(t, customs.reason)}
+                ⚠ {customsRefusalText(t, customs)}
               </p>
             ) : null}
             <div className="mt-1 space-y-1">

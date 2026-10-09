@@ -2,7 +2,8 @@ import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { logger } from '../../platform/logger';
 import { aiConfigured, ANALYST_MODEL } from '../../platform/ai/model';
-import type { CalcFacts, CalcSection } from './intake';
+import type { CalcFacts, CalcGoodsFact, CalcSection } from './intake';
+import { normalizeRowUnit, normalizeTnved, unitOf } from './units';
 
 /**
  * Reading a pile of forwarded material into the handful of facts a quote
@@ -17,6 +18,16 @@ import type { CalcFacts, CalcSection } from './intake';
  * — the whole feature would then stop the day an API key expires.
  */
 
+/**
+ * The units a line's `measure_qty` may be stated in (2026-10-09, P1.5). The
+ * model used to have a count and a weight and nothing else, so 120 m² of tile
+ * or 40 pairs of shoes came back as a «quantity» — a piece count the engine
+ * then priced per dona. `karobka` is here so a carton count has somewhere to
+ * go that is NOT the piece column; the landing routes every one of these
+ * through the kernel (`normalizeRowUnit`), never by a rule of this file.
+ */
+const AI_UNITS = ['dona', 'kg', 'm2', 'juft', 'litr', 'm3', 'karobka'] as const;
+
 const factsSchema = z.object({
   from_city: z.string().nullable(),
   to_city: z.string().nullable(),
@@ -27,6 +38,12 @@ const factsSchema = z.object({
       name: z.string(),
       quantity: z.number().nullable(),
       weight_kg: z.number().nullable(),
+      volume_m3: z.number().nullable(),
+      // Read leniently: the schema below offers the model a closed list, and a
+      // word outside it is routed (and noted) by the kernel rather than
+      // throwing away the WHOLE reading on one odd line.
+      unit: z.string().nullable(),
+      measure_qty: z.number().nullable(),
       tnved_code: z.string().nullable(),
       note: z.string().nullable(),
     }),
@@ -41,11 +58,25 @@ const SYSTEM = `Ты — помощник карго-компании GSR LOGIST
 Извлеки:
 - город отправления и город назначения (если названы);
 - общий вес в килограммах и объём в кубометрах (если названы; пересчитай единицы при необходимости);
-- список товаров: название, количество, ВЕС ЭТОЙ ПОЗИЦИИ в килограммах,
-  и — если уверенно определяешь — код ТН ВЭД (10 цифр);
+- список товаров: название, количество ШТУК, ВЕС ЭТОЙ ПОЗИЦИИ в килограммах,
+  объём позиции в м³, и — если уверенно определяешь — код ТН ВЭД;
   вес позиции нужен для растаможки: база считается за кг или за штуку по
   КАЖДОЙ строке. Если в упаковочном листе вес указан по каждой позиции —
   бери его оттуда. Если веса по позиции нет — null, не дели общий вес.
+  Вес позиции — НЕТТО (без упаковки), если документ называет нетто; если
+  есть только брутто — бери брутто и напиши об этом в note.
+- ЕДИНИЦЫ — не путай их:
+  · quantity — только ШТУКИ (шт, pcs, dona, ta, комплект). Если штук нет — null;
+  · количество КОРОБОК (коробка, ctn, carton, место, karobka) — это НЕ
+    количество товара: пиши его в measure_qty с unit = "karobka", а quantity
+    оставь null, если штуки не названы отдельно;
+  · квадратные метры (м², кв.м) → measure_qty + unit "m2"; ПАРЫ (пар, juft,
+    обувь, носки, перчатки) → unit "juft"; ЛИТРЫ → unit "litr";
+    кубометры позиции → volume_m3 (или measure_qty + unit "m3");
+  · одна позиция может иметь И штуки, И вес (одежда: 300 шт, 150 кг) —
+    заполни оба;
+  · unit = null и measure_qty = null, если другой единицы нет.
+- код ТН ВЭД: 4-10 цифр (точки и пробелы можно); если не уверен — null.
 - steps: короткие строки на узбекском о том, ЧТО ты сделал: как сгруппировал товары,
   почему поставил такой код ТН ВЭД, что показалось противоречивым. Это читает человек.
 
@@ -145,10 +176,22 @@ export async function analyzeIntake(input: {
                     name: { type: 'string' },
                     quantity: { type: ['number', 'null'] },
                     weight_kg: { type: ['number', 'null'] },
+                    volume_m3: { type: ['number', 'null'] },
+                    unit: { type: ['string', 'null'], enum: [...AI_UNITS, null] },
+                    measure_qty: { type: ['number', 'null'] },
                     tnved_code: { type: ['string', 'null'] },
                     note: { type: ['string', 'null'] },
                   },
-                  required: ['name', 'quantity', 'weight_kg', 'tnved_code', 'note'],
+                  required: [
+                    'name',
+                    'quantity',
+                    'weight_kg',
+                    'volume_m3',
+                    'unit',
+                    'measure_qty',
+                    'tnved_code',
+                    'note',
+                  ],
                   additionalProperties: false,
                 },
               },
@@ -225,15 +268,7 @@ export async function analyzeIntake(input: {
         toCity: parsed.to_city,
         weightKg: parsed.weight_kg,
         volumeM3: parsed.volume_m3,
-        goods: parsed.goods.map((g) => ({
-          name: g.name,
-          quantity: g.quantity,
-          weightKg: g.weight_kg,
-          // A code that is not ten digits is not a code — blanked rather
-          // than passed on, the same rule the goods import uses (#378).
-          tnvedCode: g.tnved_code && /^\d{10}$/.test(g.tnved_code) ? g.tnved_code : null,
-          note: g.note,
-        })),
+        goods: parsed.goods.map(aiGoodsLine),
       },
       steps: parsed.steps.slice(0, 20),
     };
@@ -242,4 +277,59 @@ export async function analyzeIntake(input: {
     logger.warn({ err }, 'calc intake AI failed');
     return null;
   }
+}
+
+/**
+ * One line of the model's reading, as the landing takes it (P1.5).
+ *
+ * The extra measure goes where its unit says through the kernel's ONE rule
+ * (`normalizeRowUnit`, judge S7): m²/juft/litr into the pair, m³ into the
+ * volume, kg into the weight when the line has none, a carton count into the
+ * NOTE and never into the piece column. A code is kept when it is 4-10 digits
+ * once dots and spaces are gone (`normalizeTnved`) — it used to be ten bare
+ * digits or nothing, so «6907.21» and a heading «6403» were thrown away; a
+ * typed nine-digit code is noted, never padded.
+ */
+export function aiGoodsLine(g: z.infer<typeof factsSchema>['goods'][number]): CalcGoodsFact {
+  const notes = [g.note?.trim() || null];
+  let quantity = g.quantity;
+  let weightKg = g.weight_kg;
+  let volumeM3 = g.volume_m3;
+  let measureUnit: CalcGoodsFact['measureUnit'] = null;
+  let measureQty: number | null = null;
+  if (g.measure_qty !== null && g.unit !== null) {
+    if (unitOf(g.unit) === 'dona') {
+      quantity = quantity ?? g.measure_qty;
+    } else {
+      const routed = normalizeRowUnit({
+        quantity: g.measure_qty,
+        unit: g.unit,
+        weightKg,
+        volumeM3,
+        measureUnit: null,
+        measureQty: null,
+      });
+      if (routed.moved) {
+        weightKg = routed.patch.weightKg;
+        volumeM3 = routed.patch.volumeM3;
+        measureUnit = routed.patch.measureUnit;
+        measureQty = routed.patch.measureQty;
+        // A move into an empty column says nothing new; a carton count, or a
+        // figure that met a different one already there, is the VED's to see.
+        if (routed.to === 'cartons' || routed.to === 'unknown' || routed.conflict) notes.push(routed.note);
+      }
+    }
+  }
+  const code = normalizeTnved(g.tnved_code);
+  if (code && 'problem' in code) notes.push(`TNVED «${code.text}» — 9 xonali: boshida 0 tushib qolganmi?`);
+  return {
+    name: g.name,
+    quantity,
+    weightKg,
+    volumeM3,
+    measureUnit,
+    measureQty,
+    tnvedCode: code && 'code' in code ? code.code : null,
+    note: notes.filter(Boolean).join(' · ') || null,
+  };
 }

@@ -25,6 +25,7 @@ export const FIELD_LABELS: Record<CalcField, string> = {
   volumeM3: 'fields.volumeM3',
   goods: 'fields.goods',
   itemMeasure: 'fields.itemMeasure',
+  lineNeed: 'fields.lineNeed',
 };
 
 /** A section string that came off a form or out of the database. */
@@ -49,6 +50,9 @@ export const WARNING_LABELS: Record<string, string> = {
   baza_from_import: 'warnings.bazaFromImport',
   baza_from_memory: 'warnings.bazaFromMemory',
   basis_not_law: 'warnings.basisNotLaw',
+  dictionary_moved: 'warnings.dictionaryMoved',
+  code_heading: 'warnings.codeHeading',
+  excise_unanswered: 'warnings.exciseUnanswered',
 };
 
 export const REFUSAL_LABELS: Record<string, string> = {

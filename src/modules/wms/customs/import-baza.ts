@@ -95,6 +95,13 @@ export function unitsForRow(input: {
   hasWeight: boolean;
   hasQuantity: boolean;
   hasVolume: boolean;
+  /**
+   * A pair the row STATES (2026-10-09): the seller's «120 m²» on a code whose
+   * law pins no unit. The row's figure is m², so a per-piece or per-kg
+   * declaration would price a number nobody stated — the import fill used to
+   * hand «120 m²» of tiles a per-dona price (audit). Required, like the rest.
+   */
+  statedPair: 'm2' | 'juft' | 'litr' | null;
 }): ImportUnit[] {
   const u = input.dutyUnit;
   if (input.chosen !== null) {
@@ -102,6 +109,9 @@ export function unitsForRow(input: {
   }
   if (u === 'm2' || u === 'juft' || u === 'litr') return [u];
   if (u === 'kg') return ['kg'];
+  if (input.statedPair !== null && u !== 'dona' && u !== '1000_dona' && u !== 'sm3') {
+    return [input.statedPair];
+  }
   const kg: ImportUnit[] = input.hasWeight ? ['kg'] : [];
   const dona: ImportUnit[] = input.hasQuantity ? ['dona'] : [];
   const m3: ImportUnit[] = input.hasVolume ? ['m3'] : [];

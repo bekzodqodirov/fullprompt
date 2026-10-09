@@ -1,4 +1,4 @@
-import { and, asc, desc, ilike, inArray, lte, or, sql } from 'drizzle-orm';
+import { and, asc, desc, ilike, inArray, like, lte, or, sql } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import { calcBazas, calcFreightTariffs, calcPriceBook, calcRates } from '@/modules/platform/db/schema';
 import { writeAudit, type AuditContext } from '@/modules/platform/audit/service';
@@ -258,6 +258,39 @@ export async function ratesFor(code: string, date: string): Promise<RatesRow | n
 }
 
 /**
+ * The in-force rows UNDER each short code — what a heading hides (P2.3).
+ *
+ * PP-3818 writes most laws at the 4-digit heading and carves 10-digit
+ * exceptions out of it (8528 at 10 %, 852872… at 15 %), so a VED who types
+ * the heading prices every one of them at the heading's law. Asked only for
+ * codes shorter than ten digits; one query for all of them (#432), newest row
+ * per stored code on or before the day, exactly as `ratesForCodes` reads —
+ * and never a JS array bound into the SQL (the codes go through `like`).
+ */
+export async function deeperRatesFor(
+  codes: string[],
+  date: string,
+): Promise<Map<string, RatesRow[]>> {
+  const short = [...new Set(codes.map((c) => c.trim()))].filter((c) => /^\d{4,9}$/.test(c));
+  const out = new Map<string, RatesRow[]>();
+  if (short.length === 0) return out;
+  const rows = await db
+    .select()
+    .from(calcRates)
+    .where(and(or(...short.map((c) => like(calcRates.tnvedCode, `${c}%`))), lte(calcRates.effectiveDate, date)))
+    .orderBy(asc(calcRates.tnvedCode), desc(calcRates.effectiveDate));
+  const inForce = new Map<string, RatesRow>();
+  for (const r of rows) if (!inForce.has(r.tnvedCode)) inForce.set(r.tnvedCode, toRates(r));
+  for (const code of short) {
+    out.set(
+      code,
+      [...inForce.values()].filter((r) => r.tnvedCode.length > code.length && r.tnvedCode.startsWith(code)),
+    );
+  }
+  return out;
+}
+
+/**
  * The screen's list. Unfiltered it shows only PERSON-entered rows: the 0091
  * seed put all 1,489 PP-3818 rows in this table, and a page that renders
  * them all is /stock's DOM crush (round 68 — ~9,000 cells, seconds of
@@ -289,10 +322,10 @@ export async function saveRates(
     effectiveDate: string;
     source?: 'manual' | 'correction';
     note?: string | null;
-    /** Absent = CARRY the in-force row's law shape forward — a person
-     * correcting the percentage of a MAX code must not silently strip its
-     * per-piece floor. Passing 'advalor' explicitly IS how the shape is
-     * removed. */
+    /** Absent = CARRY the law shape of the in-force row that ANSWERS the
+     * code, whatever its prefix length — a person correcting the percentage
+     * of a MAX code must not silently strip its per-piece floor. Passing
+     * 'advalor' explicitly IS how the shape is removed. */
     dutyMode?: DutyMode;
     dutySpecific?: number | null;
     dutyUnit?: DutyUnit | null;
@@ -310,10 +343,21 @@ export async function saveRates(
   let dutySpecific = input.dutySpecific ?? null;
   let dutyUnit = input.dutyUnit ?? null;
   if (dutyMode === null) {
-    // Only an EXACT-code in-force row carries forward: heading 6403's shape
-    // must not ride onto a 10-digit exception a person is minting on purpose.
+    /**
+     * Carry the shape of whatever row ANSWERS the code today — the heading
+     * included (2026-10-09, P2.1; this reverses #856's «exact code only»).
+     *
+     * #856 refused the heading's shape so a 10-digit exception minted on
+     * purpose would not inherit a floor it does not have. What it actually
+     * did was strip the floor from the commonest correction there is: the
+     * workspace's «lug'atga yozish» posts a TYPED 15 % for 6403990000, which
+     * has no row of its own, so the new 10-digit row was minted PURE advalor —
+     * and from then on it out-prefixed heading 6403's «20 %, kamida $3/juft»
+     * for that code, for every job, for ever. A deliberate advalor exception
+     * is still one press away: the form posts 'advalor' explicitly («foiz»).
+     */
     const standing = await ratesFor(code, input.effectiveDate);
-    if (standing && standing.tnvedCode === code) {
+    if (standing) {
       dutyMode = standing.dutyMode;
       dutySpecific = standing.dutySpecific;
       dutyUnit = standing.dutyUnit;

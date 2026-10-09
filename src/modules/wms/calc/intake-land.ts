@@ -7,7 +7,8 @@ import { mayEditDealTerms } from '../deals/door';
 import { addActivity, createLead } from '../crm/service';
 import { activeClientsByPhone } from '../client-cabinet/service';
 import { logger } from '../../platform/logger';
-import { intakeNoteText, itemFacts, type CalcFacts, type CalcSection } from './intake';
+import { intakeNoteText, landingItems, type CalcFacts, type CalcSection } from './intake';
+import { bookLawsFor } from './book-laws';
 import { recordAiPass } from './ai-cost';
 import { queueCalcPrefill } from './prefill-queue';
 import { CalcError } from './service';
@@ -239,6 +240,9 @@ export async function landIntake(input: {
         return { kind: 'lead', id: lead.id, label: lead.name, leadOwnerId: lead.ownerId };
       })();
 
+  // The book's law for the lines' codes — what the note's «qatorlarda
+  // yetishmayapti» asks by (judge TT-5). Pooled, before anything else writes.
+  const laws = await bookLawsFor((input.facts.goods ?? []).map((g) => g.tnvedCode));
   await addActivity(
     {
       id: input.noteId,
@@ -248,6 +252,7 @@ export async function landIntake(input: {
       note: intakeNoteText({
         section: input.section,
         facts: input.facts,
+        laws,
         steps: input.steps,
         collectedBy: input.collectedByName,
         fileCount: input.fileCount,
@@ -277,16 +282,13 @@ export async function landIntake(input: {
         toCity: input.facts.toCity ?? null,
         weightKg: input.facts.weightKg ?? null,
         volumeM3: input.facts.volumeM3 ?? null,
-        // Through `itemFacts`, so the weight a single-line job already
-        // stated reaches the ITEM — which is what lets the AI VED hodimi
-        // find a per-kg declaration for it (docs/VED-IMPORT-AI §3).
-        items: itemFacts(input.facts).map((good) => ({
-          name: good.name,
-          quantity: good.quantity,
-          weightKg: good.weightKg,
-          tnvedCode: good.tnvedCode,
-          note: good.note,
-        })),
+        // Through `landingItems`, so the weight a single-line job already
+        // stated reaches the ITEM (labelled «umumiy (brutto)dan olindi») —
+        // which is what lets the AI VED hodimi find a per-kg declaration for
+        // it (docs/VED-IMPORT-AI §3) — and the line's unit, volume and pair
+        // reach the door, which routes them (2026-10-09, judge TT-16: they
+        // were dropped here, so an invoice's «500 м2» landed as 500 pieces).
+        items: landingItems(input.facts),
         noteId: input.noteId,
         source: 'bot',
         hasMaterials: input.fileCount > 0,
