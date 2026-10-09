@@ -65,8 +65,12 @@ const FREIGHT_REASON: Record<FreightRefusal, string> = {
   not_a_number: 'raqam noto‘g‘ri',
 };
 
+// Each names whose job it is (P2.6): the rate is the accountant's, the BHM
+// setting the admin's — «raqam noto‘g‘ri» sent the VED looking through their
+// own cells for a number they do not own.
 const FEE_REASON: Record<FeeRefusal, string> = {
-  fee_fx_missing: 'so‘m kursi yo‘q',
+  fee_fx_missing: 'so‘m kursi yo‘q — buxgalter kiritadi yoki yig‘im qo‘lda yoziladi',
+  fee_bhm_bad: 'BHM sozlamasi noto‘g‘ri — admin tuzatadi',
   not_a_number: 'raqam noto‘g‘ri',
 };
 
@@ -78,6 +82,11 @@ const TOTALS_REASON: Record<TotalsRefusal, string> = {
 /** A road the engine refused, in the office's words (the AI reply's line). */
 export function freightRefusalText(reason: FreightRefusal): string {
   return FREIGHT_REASON[reason] ?? reason;
+}
+
+/** A declaration fee the engine refused — the AI reply's fee line (P2.9). */
+export function feeRefusalText(reason: FeeRefusal): string {
+  return FEE_REASON[reason] ?? reason;
 }
 
 /** One blocker, as a sentence a person can act on. */
@@ -193,20 +202,13 @@ export function prefillReplyText(input: PrefillReplyInput): string {
     // «is it zero» — a genuine $0 customs bill is a fact worth stating; the
     // question is whether this job has a customs side at all.
     if (input.hasCustoms && input.customsUsd !== null) {
-      // A customs figure is the sum over the GROUPS, and a row nobody has
-      // coded is in no group — so on a half-classified request the number is
-      // the estimate for PART of the cargo, wearing the job's name.
-      // MEASURED: two lines, one coded, and the seller reads
-      // «Tahminiy: rastamojka ~$376.96» for half the goods; the blocker line
-      // named the hole, the headline did not, and a seller quotes from the
-      // headline. Not suppressed — a partial estimate plus an honest label
-      // beats silence, and the VED finishes it either way.
-      const loose = input.blockers.find((b) => b.kind === 'ungrouped_items');
-      const partial =
-        loose && loose.kind === 'ungrouped_items'
-          ? ` (${loose.count} ta tovarsiz)`
-          : '';
-      parts.push(`rastamojka ~${money(input.customsUsd)}${partial}`);
+      // The figure is the WHOLE declaration's or there is none: the kernel's
+      // `requestCustomsFor` answers null while any row stands uncoded or any
+      // block refuses, so the «(N ta tovarsiz)» label this line once carried
+      // described a state that can no longer reach it (judge MR-23 — a
+      // builder «checking the reply» would only have rebuilt a partial
+      // figure to satisfy it).
+      parts.push(`rastamojka ~${money(input.customsUsd)}`);
     }
     if (input.freightUsd !== null) parts.push(`yo‘lkira ~${money(input.freightUsd)}`);
     lines.push(`🧮 Tahminiy: ${parts.join(' · ')}`);

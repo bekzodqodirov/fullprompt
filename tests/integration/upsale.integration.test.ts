@@ -543,7 +543,7 @@ describe('one sale, one commission', () => {
     expect(await mine(offer.id)).not.toBeNull();
 
     const { recalcFromSealed } = await import('@/modules/wms/calc/workspace');
-    const newId = await recalcFromSealed(job.requestId, ctx());
+    const newId = (await recalcFromSealed(job.requestId, ctx())).id;
     madeRequests.push(newId);
     expect(await mine(offer.id)).toBeNull();
   });
@@ -557,7 +557,7 @@ describe('one sale, one commission', () => {
     // The VED corrects the job and seals it again at the SAME figure; the
     // seller quotes the customer the same price again.
     const { recalcFromSealed } = await import('@/modules/wms/calc/workspace');
-    const fixId = await recalcFromSealed(job.requestId, ctx());
+    const fixId = (await recalcFromSealed(job.requestId, ctx())).id;
     madeRequests.push(fixId);
     await setFreightZone(fixId, 'cn', ctx());
     await sealCalc(fixId, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null }, ctx());
@@ -966,7 +966,7 @@ describe('naming the category the payout is booked under', () => {
 describe('a correction retires the released offer', () => {
   async function corrected(requestId: string) {
     const { recalcFromSealed } = await import('@/modules/wms/calc/workspace');
-    const freshId = await recalcFromSealed(requestId, ctx());
+    const freshId = (await recalcFromSealed(requestId, ctx())).id;
     madeRequests.push(freshId);
     await sealCalc(
       freshId,

@@ -551,7 +551,13 @@ export const FEE_TIERS: ReadonlyArray<readonly [maxValueUsd: number, bhm: number
   [1_000_000, 20],
 ];
 
-export type FeeRefusal = 'fee_fx_missing' | 'not_a_number';
+/**
+ * Why the declaration fee could not be computed — each names whose job it is
+ * to fix (P2.6): `fee_fx_missing` the accountant's (no UZS rate in the book),
+ * `fee_bhm_bad` the admin's (the `bhm_uzs` setting is not a positive number),
+ * `not_a_number` the VED's (an override that does not read).
+ */
+export type FeeRefusal = 'fee_fx_missing' | 'fee_bhm_bad' | 'not_a_number';
 
 export interface FeeBreakdown {
   ok: true;
@@ -588,9 +594,10 @@ export function customsFeeFor(input: {
     }
     return { ok: true, feeUsd: round2(input.overrideUsd), bhmCoefficient: 0, overridden: true };
   }
-  if (!ok(input.valueUsd) || !ok(input.bhmUzs) || !(input.bhmUzs > 0)) {
-    return { ok: false, reason: 'not_a_number' };
-  }
+  if (!ok(input.valueUsd)) return { ok: false, reason: 'not_a_number' };
+  // A SETTING, not a typo on this screen: «raqam noto'g'ri» sent the VED
+  // hunting through their own cells for a number the admin owns (P2.6).
+  if (!ok(input.bhmUzs) || !(input.bhmUzs > 0)) return { ok: false, reason: 'fee_bhm_bad' };
   if (input.fxUzsPerUsd === null || !(input.fxUzsPerUsd > 0)) {
     return { ok: false, reason: 'fee_fx_missing' };
   }

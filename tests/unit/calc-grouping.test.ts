@@ -75,15 +75,21 @@ describe('mergeProposals', () => {
       seqs(4),
     );
     expect(groups.find((g) => g.tnvedCode === '8528520000')!.itemSeqs).toEqual([1, 2]);
-    // The failed batch's two goods are still on the screen, unclassified.
-    const orphans = groups.filter((g) => g.tnvedCode === null);
-    expect(orphans.flatMap((g) => g.itemSeqs)).toEqual([3, 4]);
-    expect(orphans.every((g) => g.confidence === 'low')).toBe(true);
+    // The failed batch's two goods stay UNGROUPED — still on the screen as
+    // code-less rows, and the seal's `ungrouped_items` blocker counts them.
+    // Changed deliberately (2026-10-09, P2.10d): they used to come back as
+    // code-less «orphan» GROUPS, which no Saqlash could ever re-home.
+    expect(groups.every((g) => g.tnvedCode !== null)).toBe(true);
+    expect(groups.flatMap((g) => g.itemSeqs)).not.toContain(3);
+    expect(groups.flatMap((g) => g.itemSeqs)).not.toContain(4);
   });
 
-  it('an item no group claimed is still cargo', () => {
+  it('an item no group claimed stays ungrouped — still cargo, never a block with no law', () => {
+    // Subject changed deliberately (P2.10d): «still cargo» is now the
+    // ungrouped row and its blocker, not a code-less group around it.
     const groups = mergeProposals([{ offset: 0, groups: [proposed({ item_indexes: [0] })] }], seqs(3));
-    expect(groups.flatMap((g) => g.itemSeqs).sort()).toEqual([1, 2, 3]);
+    expect(groups.flatMap((g) => g.itemSeqs).sort()).toEqual([1]);
+    expect(groups.every((g) => g.tnvedCode !== null)).toBe(true);
   });
 
   it('claims an item once, however many groups ask for it', () => {
@@ -102,7 +108,7 @@ describe('mergeProposals', () => {
     expect(groups.flatMap((g) => g.itemSeqs).sort()).toEqual([1, 2]);
   });
 
-  it('two blanked codes do not become one group because both are empty', () => {
+  it('two blanked codes become no group at all — never one code-less block', () => {
     const groups = mergeProposals(
       [
         {
@@ -115,8 +121,9 @@ describe('mergeProposals', () => {
       ],
       seqs(2),
     );
-    expect(groups).toHaveLength(2);
-    expect(groups.every((g) => g.tnvedCode === null)).toBe(true);
+    // P2.10d: a blank code is not a key AND not a group — both rows stay
+    // ungrouped for the VED (it used to be two code-less blocks).
+    expect(groups).toHaveLength(0);
   });
 
   it('records the model’s duty estimate without ever making it a rate', () => {

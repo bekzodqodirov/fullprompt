@@ -523,7 +523,7 @@ describe('a correction is a NEW request', () => {
     const { requestId } = await readyRequest();
     await sealCalc(requestId, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null }, ctx());
 
-    const freshId = await recalcFromSealed(requestId, ctx());
+    const freshId = (await recalcFromSealed(requestId, ctx())).id;
     madeRequests.unshift(freshId); // deleted before the request it supersedes
     const fresh = await loadWorkspace(freshId);
     expect(fresh!.completedAt).toBeNull();

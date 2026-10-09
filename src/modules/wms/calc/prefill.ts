@@ -30,7 +30,6 @@ import {
   loadWorkspace,
   proposeGroups,
   saveTable,
-  type SealBlocker,
   type TableItemEdit,
   type Workspace,
 } from './workspace';
@@ -38,7 +37,7 @@ import { itemNameNorm, sealedMemoryFor } from './memory';
 import { aiVedReplyText, type AiVedFreight, type AiVedLine } from './ai-reply';
 import { calcJobHrefFor } from './card-door';
 import { dutyText } from './duty-text';
-import { blockerText, freightRefusalText, prefillReplyText } from './prefill-reply';
+import { blockerText, feeRefusalText, freightRefusalText, prefillReplyText } from './prefill-reply';
 import { pickImportRows, type PickAnswer, type PickRequest, type PickUsage } from './prefill-ai';
 
 /**
@@ -332,6 +331,7 @@ export async function aiPrefill(
           ungrouped: ws.ungrouped.map((i) => i.label),
           fee: ws.fee && ws.fee.ok ? { bhm: ws.fee.bhmCoefficient, usd: ws.fee.feeUsd } : null,
           totalUsd: customsUsd,
+          feeRefusal: ws.fee && !ws.fee.ok ? feeRefusalText(ws.fee.reason) : null,
           hasCertificate: ws.hasCertificate,
           freight: ws.parts.freight ? aiFreight(freight, ws) : null,
           link,
@@ -490,21 +490,43 @@ function replyLines(ws: Workspace): AiVedLine[] {
       bazaSource,
       dutyText: g.dutyFree ? 'yo‘q (lgota)' : dutyText(g),
       addDutyPct: g.customs.ok ? g.customs.addDutyPct : 0,
-      excisePct: g.excisePct,
+      exciseText: exciseWords(g),
       vatPct: g.vatFree ? 0 : g.vatPct,
       customsUsd: g.customs.ok ? g.customs.customsUsd : null,
       // Already words — `blockerText` owns the engine's whole vocabulary and
-      // a second map here would drift from it (#513).
+      // a second map here would drift from it (#513). The WHOLE detail rides
+      // along (P2.9): without the row, the unit and the half, a missing
+      // figure read «o‘lchov yo‘q» on exactly the kg-and-dona rows the owner
+      // asked about, instead of «Kurtka: soni (dona) kiritilmagan — boj
+      // kamida $3/dona».
       refusal: g.customs.ok
         ? null
         : blockerText({
             kind: 'customs',
+            groupSeq: g.seq,
             groupLabel: g.label,
             reason: g.customs.reason,
             itemLabel: g.customs.itemLabel,
-          } as SealBlocker),
+            itemSeq: g.customs.itemSeq,
+            unit: g.customs.unit,
+            half: g.customs.half,
+            rate: g.customs.rate,
+          }),
     };
   });
+}
+
+/**
+ * A group's excise as the seller reads it — the percentage or, since 0131,
+ * the amount per unit; nothing when the group has none (an answered «yo‘q»
+ * is a 0 % and prints nothing, like a code that carries no excise at all).
+ */
+function exciseWords(g: Workspace['groups'][number]): string | null {
+  if (g.excisePct !== null && g.excisePct > 0) return `aksiz ${g.excisePct}%`;
+  if (g.exciseSpecific !== null && g.exciseUnit !== null) {
+    return `aksiz $${g.exciseSpecific}/${g.exciseUnit === '1000_dona' ? '1000 dona' : g.exciseUnit}`;
+  }
+  return null;
 }
 
 /**
