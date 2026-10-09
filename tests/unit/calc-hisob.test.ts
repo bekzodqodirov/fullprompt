@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   customsFeeFor,
@@ -110,6 +111,15 @@ describe('the fee says WHOSE job its refusal is (P2.6)', () => {
     for (const bhmUzs of [0, -1, Number.NaN]) {
       expect(customsFeeFor({ ...base, bhmUzs })).toEqual({ ok: false, reason: 'fee_bhm_bad' });
     }
+  });
+
+  it('an override needs no so‘m rate — the box that rescues a job with none', () => {
+    expect(customsFeeFor({ ...base, fxUzsPerUsd: null, overrideUsd: 50 })).toEqual({
+      ok: true,
+      feeUsd: 50,
+      bhmCoefficient: 0,
+      overridden: true,
+    });
   });
 
   it('no so‘m rate is the accountant’s, and an unreadable override stays a number problem', () => {
@@ -237,5 +247,35 @@ describe('what the re-read book moved travels as codes and rows only (P2.2)', ()
     expect(relawedQuery({ relawed: ['6403', '8516'], remeasure: [2, 5] })).toBe('?relawed=6403%2C8516&olchov=2%2C5');
     expect(relawedQuery({ relawed: [], remeasure: [] })).toBe('');
     expect(relawedQuery({})).toBe('');
+  });
+});
+
+/*
+ * The two screen halves no behavioural test reaches (the seal panel and the
+ * totals are client components): pinned as source shape, comments stripped
+ * so a sentence about the rule cannot satisfy it (#725).
+ */
+const WS = readFileSync('src/app/(protected)/hisoblash/[id]/calc-workspace.tsx', 'utf8')
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/^\s*\/\/.*$/gm, '')
+  .replace(/\{\/\*[\s\S]*?\*\/\}/g, '');
+
+describe('the seal panel and the totals (P2.6, P2.8)', () => {
+  it('a typed band override lifts ONLY the band refusals off the seal button', () => {
+    const panel = WS.slice(WS.indexOf('function SealPanel('), WS.indexOf('function SealedPanel('));
+    expect(panel).toContain("b.kind === 'freight' && (b.reason === 'band_missing' || b.reason === 'band_ambiguous')");
+    expect(panel).toContain('const overrideTyped = workspace.parts.freight && override.trim() !== \'\';');
+    expect(panel).toContain('disabled={pending || dirty > 0 || standing.length > 0}');
+    // The band box exists only where there is a road.
+    expect(panel.indexOf('{workspace.parts.freight ? (')).toBeLessThan(panel.indexOf('calc-band-override'));
+    // The seal posts the fee the screen showed.
+    expect(panel).toContain('sawFeeUsd: workspace.parts.customs ? (workspace.fee?.ok ? workspace.fee.feeUsd : null) : undefined');
+  });
+
+  it('the fee door renders where the fee is BLOCKED, not only where it priced', () => {
+    const totals = WS.slice(WS.indexOf('function TotalsPanel('), WS.indexOf('function SealPanel('));
+    const blocked = totals.slice(totals.indexOf('calc-total-blocked'));
+    expect(blocked).toContain('calc-fee-blocked');
+    expect(blocked).toContain('<FeeOverride');
   });
 });

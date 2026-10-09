@@ -22,9 +22,11 @@ import { onDate, saveRates } from '@/modules/wms/calc/dictionaries';
 import {
   confirmAllGroups,
   loadWorkspace,
+  canSeal,
   recalcFromSealed,
   saveTable,
   sealCalc,
+  setFeeOverride,
   setGroupRates,
   type TableItemEdit,
 } from '@/modules/wms/calc/workspace';
@@ -508,5 +510,20 @@ describe('a baza says when its source is old, whatever the source (TT-19)', () =
     const aged = (await loadWorkspace(next))!;
     const again = [...aged.groups.flatMap((g) => g.items), ...aged.ungrouped][0]!;
     expect(again.bazaStale).toBe(true);
+  });
+});
+
+describe('the fee door is the declaration fee, and it unblocks the seal (P2.6)', () => {
+  it('an override prices the fee whatever the rate book says, and the job can seal', async () => {
+    // The override is read BEFORE the so'm rate (customsFeeFor), so a job
+    // whose rate is missing is rescued by this one box — which is why the
+    // box must render while the fee is blocked (calc-workspace, unit-pinned).
+    const id = await priced(codeUnder('9618'));
+    await confirmAllGroups(id, ctx());
+    await setFeeOverride(id, 50, ctx());
+    const ws = (await loadWorkspace(id))!;
+    expect(ws.fee).toMatchObject({ ok: true, feeUsd: 50, overridden: true });
+    expect(canSeal(ws)).toBe(true);
+    await sealCalc(id, { ...SEAL, sawFeeUsd: 50 }, ctx());
   });
 });
