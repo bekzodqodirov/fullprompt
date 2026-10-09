@@ -632,6 +632,7 @@ export function ItemsTable({
   const liveTotals = useMemo(() => {
     const assembled = requestCustomsFor({
       customs: workspace.groups.map((g) => liveCustomsByGroup.get(g.id)!),
+      ungroupedCount: workspace.ungrouped.length,
       bhmUzs: workspace.bhmUzs,
       fxUzsPerUsd: workspace.fxUzsPerUsd,
       feeOverrideUsd: workspace.feeOverrideUsd,

@@ -565,6 +565,7 @@ export async function loadWorkspace(
   const assembled = parts.customs
     ? requestCustomsFor({
         customs: groups.map((g) => g.customs),
+        ungroupedCount: items.filter((i) => i.groupId === null).length,
         bhmUzs,
         fxUzsPerUsd,
         feeOverrideUsd,
@@ -2175,7 +2176,10 @@ export async function recalcFromSealed(
             tnvedCode: g.tnvedCode,
             dutyPct: g.dutyPct,
             vatPct: g.vatPct,
-            feeUsd: g.feeUsd,
+            // The group carries no fee (#858): a legacy per-group figure must
+            // not ride onto a correction and be charged beside the
+            // declaration's own (2026-10-09 audit).
+            feeUsd: null,
             // VED 2.0: the law's shape travels with the rates it shapes — a
             // correction that dropped the MAX floor would re-price the job.
             dutyMode: g.dutyMode,

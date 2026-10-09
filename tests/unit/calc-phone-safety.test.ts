@@ -323,6 +323,10 @@ describe('his 3b (2026-10-07): «1,125 — qaysi biri?» is asked by the goods c
         'src/app/(protected)/hisoblash/[id]/row-sheet.tsx',
         'src/app/(protected)/hisoblash/lugatlar/dict-forms.tsx',
         'src/modules/wms/calc/row-draft.ts',
+        // 2026-10-09: free text («1,200 kg» in a line, a bot answer, a pasted
+        // list) asks the same question through ONE wrapper, which adds only
+        // that a dot thousand is ambiguous in a sentence too.
+        'src/modules/wms/calc/units.ts',
       ].map((rel) => join(...rel.split('/'))),
     );
   });
