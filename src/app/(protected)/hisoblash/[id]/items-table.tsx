@@ -24,7 +24,7 @@ import { basisNotLaw, lawOffBook } from '@/modules/wms/calc/warnings';
 import { exciseAnswered, exciseMayApply, exciseUnitsFor } from '@/modules/wms/calc/excise';
 import { LAW_SHAPE_KEY, dayText, lawValues, rateText, unitWordsOf } from '@/modules/wms/calc/law-words';
 import { unitLabel } from '@/modules/wms/calc/units';
-import { ghostScreenOf, screenRowOf, groupsByCodeOf, postedBasis } from '@/modules/wms/calc/screen-row';
+import { ghostAutoBasis, ghostScreenOf, screenRowOf, groupsByCodeOf, postedBasis } from '@/modules/wms/calc/screen-row';
 import { readNumberCell } from '@/modules/wms/calc/number-cell';
 import {
   ALL_BASE_FIELDS,
@@ -85,7 +85,7 @@ import {
 } from '../actions';
 import { dutyText } from '@/modules/wms/calc/duty-text';
 import { ImportBazaDialog, type PickerTarget } from './import-baza-dialog';
-import { BasisSelect } from './basis-select';
+import { BasisSelect, MeasureUnitSelect } from './basis-select';
 import { PhoneBlocks } from './phone-blocks';
 import { RowSheet, type SheetField, type SheetFigure, type SheetModel, type SheetNumField } from './row-sheet';
 import { DraftRestore } from './draft-restore';
@@ -275,7 +275,7 @@ function liveGhostItem(row: NewRow, lawGroup: WorkspaceGroup | null, groupsByCod
     weightKg: num(row.weightKg, q3),
     volumeM3: num(row.volumeM3, q3),
     bazaUsd,
-    bazaBasis: bazaUsd === null ? null : (row.bazaBasis ?? defaultBasisFor(lawGroup)),
+    bazaBasis: bazaUsd === null ? null : (row.bazaBasis ?? ghostAutoBasis(row, lawGroup)),
     measureUnit: measureQty === null ? null : (pair as MeasureUnit),
     measureQty,
   };
@@ -917,6 +917,13 @@ export function ItemsTable({
       // stored (it stands), or null = «avto», which the server stamps from
       // the block the row ENDS in. Clearing the price: `postedBasis`.
       edit.bazaBasis = postedBasis(d.bazaBasis, v === null, item);
+      // A price typed under «avto» carries the unit the select SHOWED, so the
+      // save stores exactly that one (judge MR-17) — never a unit the figures
+      // of this same save would resolve differently.
+      if (v !== null && edit.bazaBasis === null) {
+        const shown = screenRowOf(item, d, m.groupById, m.groupsByCode).basis;
+        if (shown !== null) edit.shownBasis = shown;
+      }
       // The picked row's id — the server re-reads it and takes the PRICE
       // from the file, so a browser that lies about the number is answered
       // by the declaration itself.
@@ -938,6 +945,13 @@ export function ItemsTable({
       if ('refusal' in read) return { refusal: { ...read.refusal, ghostKey: row.key } };
       nums[field] = read.value;
     }
+    const screen = ghostScreenOf(row, maps.groupsByCode);
+    // «avto» as the select shows it — only while the code's law is known
+    // (an unknown law's «avto» names no unit, and the save NAMES its stamp).
+    const shownBasis =
+      (nums.bazaValue ?? null) !== null && row.bazaBasis === null && !screen.lawUnknown
+        ? ghostAutoBasis(row, screen.lawGroup)
+        : undefined;
     return {
       add: {
         clientId: row.clientId,
@@ -951,6 +965,13 @@ export function ItemsTable({
         // box is on every ghost (its law is unknowable before the save), and
         // the server drops and NAMES a measure the law does not take.
         measureQty: nums.measure ?? null,
+        // The unit the amount is IN (UX12) — posted only where the law names
+        // none: a code that counts in juft says the unit itself.
+        measureUnit:
+          (nums.measure ?? null) !== null && (screen.pair === null || screen.pair === 'any')
+            ? row.measureUnit
+            : undefined,
+        shownBasis,
         bazaUsd: nums.bazaValue ?? null,
         // Null while untouched — «avto», stamped by the server from the block
         // the new code lands in; a touched unit stands with or without a price.
@@ -1507,9 +1528,21 @@ export function ItemsTable({
         sellerUnit: null,
         // ALWAYS on a ghost — the desktop ghost's own rule, and buildAdd
         // posts it unconditionally: a box on screen is a number that is
-        // posted, and nothing hidden is posted.
-        measure: { label: t('table.measureGhost'), suffix: null, sm3: false },
-        basis: { value: screen.basis, offered: screen.offered },
+        // posted, and nothing hidden is posted. A law that counts in a pair
+        // names the unit; otherwise the VED does (P3.5).
+        measure:
+          screen.pair !== null && screen.pair !== 'any'
+            ? {
+                label: t('table.measureFor', { unit: basisLabel(screen.pair, t('perUnit')) }),
+                suffix: basisLabel(screen.pair, t('perUnit')),
+                sm3: screen.pair === 'sm3',
+              }
+            : { label: t('table.measureGhost'), suffix: null, sm3: false, unitPick: sheetRow.measureUnit },
+        basis: {
+          value: screen.basis,
+          offered: screen.offered,
+          auto: screen.lawUnknown ? null : ghostAutoBasis(sheetRow, screen.lawGroup),
+        },
         chips: { memory: false, import: false, reason: null },
         dictionaryBaza: null,
         importDoor: null,
@@ -1536,6 +1569,10 @@ export function ItemsTable({
     // unit, so the save posts a coherent pair (baza-draft.ts).
     if (sheet.kind === 'item') setDraft(sheet.id, 'bazaBasis', basis);
     else patchGhost(sheet.key, { bazaBasis: basis });
+  };
+  /** The new row's O'lchov unit (P3.5) — saved rows state theirs already. */
+  const onSheetMeasureUnit = (unit: MeasureUnit | null) => {
+    if (sheet?.kind === 'ghost') patchGhost(sheet.key, { measureUnit: unit });
   };
   const onSheetAsk = (field: SheetNumField) =>
     setAsked((prev) => ({ key: sheetKey, fields: [...(prev.key === sheetKey ? prev.fields : []), field] }));
@@ -2041,6 +2078,7 @@ export function ItemsTable({
         asked={askedNow}
         onField={onSheetField}
         onBasis={onSheetBasis}
+        onMeasureUnit={onSheetMeasureUnit}
         onAsk={onSheetAsk}
         onImport={openPickerFromSheet}
         onSave={() => void saveSheetRow()}
@@ -3065,6 +3103,7 @@ function NewRowCells({
   onCellPaste: (e: React.ClipboardEvent) => void;
 }) {
   const t = useTranslations('calc');
+  const units = useMemo(() => unitWordsOf((k) => t(`units.${k}` as 'units.dona')), [t]);
   // The basis select and its offered units — the SAME answer the phone
   // sheet's ghost reads. The O'lchov box below is drawn on every ghost.
   const screen = ghostScreenOf(row, groupsByCode);
@@ -3116,6 +3155,7 @@ function NewRowCells({
               disabled={false}
               onPick={(b) => onPatch(row.key, { bazaBasis: b })}
               size="cell"
+              autoUnit={screen.lawUnknown ? null : ghostAutoBasis(row, screen.lawGroup)}
             />
           </span>
         </td>
@@ -3145,6 +3185,21 @@ function NewRowCells({
               onChange={(e) => onPatch(row.key, { measure: e.target.value })}
               onKeyDown={(e) => onCellKey(e, 'measure', index, lastIndex)}
             />
+            {/* What the amount is IN (P3.5, UX12): a code whose law counts in
+                a pair says it itself; otherwise the VED says it, and only the
+                measure's unit is posted — the baza stays «avto». */}
+            {screen.pair !== null && screen.pair !== 'any' ? (
+              <span className="text-ink-500">{units[screen.pair]}</span>
+            ) : (
+              <MeasureUnitSelect
+                value={row.measureUnit}
+                label={`new measure unit ${row.key}`}
+                testId="calc-new-measure-unit"
+                units={units}
+                size="cell"
+                onPick={(u) => onPatch(row.key, { measureUnit: u })}
+              />
+            )}
           </span>
         </td>
       </tr>

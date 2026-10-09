@@ -328,6 +328,10 @@ describe('his 3b (2026-10-07): «1,125 — qaysi biri?» is asked by the goods c
         // and its pure row helpers are the two files.
         'src/components/calc-send-form.tsx',
         'src/modules/wms/calc/row-draft.ts',
+        // P3 (2026-10-09, judge MR-17): «avto» reads the row's DRAFTED
+        // figures the way the live engine reads them — the same reader, or
+        // the select and the save part on «1,5».
+        'src/modules/wms/calc/screen-row.ts',
         'src/modules/wms/calc/send-rows.ts',
         // 2026-10-09: free text («1,200 kg» in a line, a bot answer, a pasted
         // list) asks the same question through ONE wrapper, which adds only

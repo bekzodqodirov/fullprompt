@@ -54,15 +54,15 @@ export function defaultBasisFor(group: { dutyUnit?: string | null } | null): Baz
  * The order keeps it inside what `basesFor` offers and never against what
  * `lawPinnedBasis` pins (judge MR-16), which a unit test walks.
  */
-export function autoBasisFor(
-  group: { dutyUnit?: string | null } | null,
-  item: {
-    quantity: number | null;
-    weightKg: number | null;
-    measureUnit: MeasureUnit | null;
-    measureQty: number | null;
-  },
-): BazaBasis {
+/** The figures «avto» reads off a row. */
+export interface AutoBasisItem {
+  quantity: number | null;
+  weightKg: number | null;
+  measureUnit: MeasureUnit | null;
+  measureQty: number | null;
+}
+
+export function autoBasisFor(group: { dutyUnit?: string | null } | null, item: AutoBasisItem): BazaBasis {
   const u = group?.dutyUnit ?? null;
   if (u === 'm2' || u === 'juft' || u === 'litr') return u;
   if (u === 'kg') return 'kg';
@@ -145,16 +145,20 @@ export function basisConflicts(
 
 /**
  * What the row's unit select SHOWS: the VED's draft, else what is stored,
- * else the law's default (18a). The four browser sites that used to restate
- * this chain by hand — the select, the save, the live engine item and the
- * draft self-clean — each ask this one function now.
+ * else «avto» — the law, then what the ROW states (`autoBasisFor`, the very
+ * rule the save stamps with, 2026-10-09). The four browser sites that used
+ * to restate this chain by hand — the select, the save, the live engine item
+ * and the draft self-clean — each ask this one function now. `item` is
+ * REQUIRED: a fallback to the law alone showed «dona» on a weight-only row
+ * the save then stamped per kg (judge MR-17).
  */
 export function basisOnScreen(
   draft: BazaBasis | undefined,
   stored: BazaBasis | null,
   group: { dutyUnit?: string | null } | null,
+  item: AutoBasisItem,
 ): BazaBasis {
-  return draft ?? stored ?? defaultBasisFor(group);
+  return draft ?? stored ?? autoBasisFor(group, item);
 }
 
 /**

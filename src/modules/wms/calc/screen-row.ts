@@ -1,13 +1,20 @@
-import { basesFor, basisOnScreen, defaultBasisFor, pairUnitFor } from './basis';
+import { autoBasisFor, basesFor, basisOnScreen, pairUnitFor, type AutoBasisItem } from './basis';
+import { readNumberCell } from './number-cell';
 import type { BazaBasis, MeasureUnit } from './pricing';
 
 /** The slices of the workspace's row, block and draft that decide a row's
  * unit — narrow on purpose, so the browser's table and the test hand the
- * same function the same shapes. */
+ * same function the same shapes. The FIGURES are required since «avto»
+ * reads them (2026-10-09): an optional figure fails open into the law-only
+ * answer the save no longer stamps. */
 export interface ScreenItem {
   groupId: string | null;
   tnvedCode: string | null;
   bazaBasis: BazaBasis | null;
+  quantity: number | null;
+  weightKg: number | null;
+  measureUnit: MeasureUnit | null;
+  measureQty: number | null;
 }
 export interface ScreenGroup {
   dutyUnit: string | null;
@@ -16,6 +23,29 @@ export interface ScreenGroup {
 export interface ScreenDraft {
   tnvedCode?: string;
   bazaBasis?: BazaBasis;
+  quantity?: string;
+  weightKg?: string;
+  measure?: string;
+}
+
+/** A drafted cell as a figure — an empty, ambiguous or bad cell states
+ * nothing (B4 a), exactly as the live engine reads it. */
+function draftedFigure(raw: string | undefined, stored: number | null): number | null {
+  if (raw === undefined) return stored;
+  const cell = readNumberCell(raw);
+  return cell.state === 'ok' ? cell.value : null;
+}
+
+/** The figures «avto» reads: the drafts over the stored row. A drafted
+ * measure keeps the STORED unit — the unit of a statement is the row's, the
+ * box only types its amount. */
+export function screenFigures(item: ScreenItem, draft: ScreenDraft | undefined): AutoBasisItem {
+  return {
+    quantity: draftedFigure(draft?.quantity, item.quantity),
+    weightKg: draftedFigure(draft?.weightKg, item.weightKg),
+    measureUnit: item.measureUnit,
+    measureQty: draftedFigure(draft?.measure, item.measureQty),
+  };
 }
 
 /**
@@ -65,7 +95,7 @@ export function screenRowOf<G extends ScreenGroup>(
   const basis =
     lawUnknown && draft?.bazaBasis === undefined && item.bazaBasis === null
       ? null
-      : basisOnScreen(draft?.bazaBasis, item.bazaBasis, lawGroup);
+      : basisOnScreen(draft?.bazaBasis, item.bazaBasis, lawGroup, screenFigures(item, draft));
   return {
     lawGroup,
     lawUnknown,
@@ -88,7 +118,14 @@ export function screenRowOf<G extends ScreenGroup>(
  * law does not take (`measuresDropped`).
  */
 export function ghostScreenOf<G extends ScreenGroup>(
-  row: { tnvedCode: string; bazaBasis: BazaBasis | null },
+  row: {
+    tnvedCode: string;
+    bazaBasis: BazaBasis | null;
+    quantity: string;
+    weightKg: string;
+    measure: string;
+    measureUnit: MeasureUnit | null;
+  },
   groupsByCode: Map<string, G>,
 ): ScreenRow<G> {
   const code = row.tnvedCode.trim();
@@ -99,8 +136,22 @@ export function ghostScreenOf<G extends ScreenGroup>(
     lawUnknown,
     basis: row.bazaBasis,
     offered: basesFor(lawUnknown ? null : (lawGroup?.dutyUnit ?? null)),
-    pair: lawUnknown ? 'any' : pairUnitFor(lawGroup?.dutyUnit, row.bazaBasis ?? defaultBasisFor(lawGroup)),
+    pair: lawUnknown ? 'any' : pairUnitFor(lawGroup?.dutyUnit, row.bazaBasis ?? ghostAutoBasis(row, lawGroup)),
   };
+}
+
+/** The «avto» unit of a ghost row — the save's own rule over what is typed.
+ * The unit select beside its O'lchov box says what the amount is IN. */
+export function ghostAutoBasis(
+  row: { quantity: string; weightKg: string; measure: string; measureUnit: MeasureUnit | null },
+  lawGroup: { dutyUnit?: string | null } | null,
+): BazaBasis {
+  return autoBasisFor(lawGroup, {
+    quantity: draftedFigure(row.quantity, null),
+    weightKg: draftedFigure(row.weightKg, null),
+    measureUnit: row.measureUnit,
+    measureQty: draftedFigure(row.measure, null),
+  });
 }
 
 /** The first group per code, by seq — the regroup's own «first by seq wins». */

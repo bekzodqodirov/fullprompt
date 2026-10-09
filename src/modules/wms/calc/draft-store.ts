@@ -158,10 +158,15 @@ function parseGhost(raw: unknown): NewRow | null {
   if (!isBasisOrNull(basis)) return null;
   const posted = parsePosted(raw.posted);
   if (posted === undefined) return null;
+  // The O'lchov unit (P3.5) is newer than some stored drafts: absent reads
+  // «not said», a value off the list rejects the ghost like any forged cell.
+  const measureUnit = raw.measureUnit ?? null;
+  if (measureUnit !== null && !['m2', 'juft', 'litr', 'sm3'].includes(measureUnit as string)) return null;
   const row = {
     key: raw.key,
     clientId: raw.clientId as string | null,
     bazaBasis: basis,
+    measureUnit,
     posted,
   } as NewRow;
   for (const k of GHOST_STRING_KEYS) {

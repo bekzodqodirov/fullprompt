@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { groupsByCodeOf, postedBasis, screenRowOf } from '@/modules/wms/calc/screen-row';
+import { ghostAutoBasis, groupsByCodeOf, postedBasis, screenRowOf, type ScreenItem } from '@/modules/wms/calc/screen-row';
 import { basisNotLaw } from '@/modules/wms/calc/warnings';
 import { pasteIdsFor } from '@/modules/wms/calc/paste-ids';
 
@@ -15,36 +15,65 @@ const wool = { id: 'g-wool', dutyUnit: 'kg', tnvedCode: '5701100000' };
 const groups = [tile, wool];
 const byId = new Map(groups.map((g) => [g.id, g]));
 const byCode = groupsByCodeOf(groups);
+/** A row with no figures — the shapes these tests are about. */
+const row0 = (over: Pick<ScreenItem, 'groupId' | 'tnvedCode' | 'bazaBasis'> & Partial<ScreenItem>): ScreenItem => ({
+  quantity: null,
+  weightKg: null,
+  measureUnit: null,
+  measureQty: null,
+  ...over,
+});
 
 describe('screenRowOf — the law a row is read under', () => {
   it('a coded row no block holds yet reads its code’s block when the request carries one', () => {
-    const row = screenRowOf({ groupId: null, tnvedCode: '6907210000', bazaBasis: null }, undefined, byId, byCode);
+    const row = screenRowOf(row0({ groupId: null, tnvedCode: '6907210000', bazaBasis: null }), undefined, byId, byCode);
     expect(row.lawGroup).toBe(tile);
     expect(row.basis).toBe('m2');
     expect(row.pair).toBe('m2');
   });
 
   it('a coded row whose code no block carries is «avto» with the generic box — never a promised unit', () => {
-    const row = screenRowOf({ groupId: null, tnvedCode: '6403990000', bazaBasis: null }, undefined, byId, byCode);
+    const row = screenRowOf(row0({ groupId: null, tnvedCode: '6403990000', bazaBasis: null }), undefined, byId, byCode);
     expect(row).toMatchObject({ lawGroup: null, lawUnknown: true, basis: null, pair: 'any' });
   });
 
   it('a stored choice still stands on such a row', () => {
-    const row = screenRowOf({ groupId: null, tnvedCode: '6403990000', bazaBasis: 'kg' }, undefined, byId, byCode);
+    const row = screenRowOf(row0({ groupId: null, tnvedCode: '6403990000', bazaBasis: 'kg' }), undefined, byId, byCode);
     expect(row.basis).toBe('kg');
   });
 
   it('a drafted code wins over the stored one, and a grouped row reads its own block', () => {
-    const drafted = screenRowOf({ groupId: null, tnvedCode: '6907210000', bazaBasis: null }, { tnvedCode: '5701100000' }, byId, byCode);
+    const drafted = screenRowOf(row0({ groupId: null, tnvedCode: '6907210000', bazaBasis: null }), { tnvedCode: '5701100000' }, byId, byCode);
     expect(drafted.lawGroup).toBe(wool);
     expect(drafted.basis).toBe('kg');
-    const grouped = screenRowOf({ groupId: 'g-wool', tnvedCode: '5701100000', bazaBasis: null }, undefined, byId, byCode);
+    const grouped = screenRowOf(row0({ groupId: 'g-wool', tnvedCode: '5701100000', bazaBasis: null }), undefined, byId, byCode);
     expect(grouped).toMatchObject({ lawGroup: wool, lawUnknown: false, basis: 'kg', pair: null });
   });
 
   it('an uncoded ungrouped row has no law and reads the plain default', () => {
-    const row = screenRowOf({ groupId: null, tnvedCode: null, bazaBasis: null }, undefined, byId, byCode);
+    const row = screenRowOf(row0({ groupId: null, tnvedCode: null, bazaBasis: null }), undefined, byId, byCode);
     expect(row).toMatchObject({ lawGroup: null, lawUnknown: false, basis: 'unit', pair: null });
+  });
+  /**
+   * «avto» is the SAVE's rule now (2026-10-09, judge MR-17): the law, then
+   * what the row states. The select used to show the law alone — «dona» on a
+   * weight-only row the save then stamped per kg.
+   */
+  it('«avto» reads the row: a weight-only advalor row is kg, a stated m² is m², a drafted count turns it back', () => {
+    const weightOnly = row0({ groupId: null, tnvedCode: null, bazaBasis: null, weightKg: 40 });
+    expect(screenRowOf(weightOnly, undefined, byId, byCode).basis).toBe('kg');
+    expect(screenRowOf(weightOnly, { quantity: '10' }, byId, byCode).basis).toBe('unit');
+    const tiles = row0({ groupId: null, tnvedCode: null, bazaBasis: null, measureUnit: 'm2', measureQty: 120 });
+    const read = screenRowOf(tiles, undefined, byId, byCode);
+    expect(read).toMatchObject({ basis: 'm2', pair: 'm2' });
+    // The law still wins: a kg law keeps kg whatever the row states.
+    expect(screenRowOf({ ...tiles, tnvedCode: '5701100000' }, undefined, byId, byCode).basis).toBe('kg');
+  });
+
+  it('a ghost row’s «avto» reads what is typed, the unit select included', () => {
+    expect(ghostAutoBasis({ quantity: '', weightKg: '12', measure: '', measureUnit: null }, null)).toBe('kg');
+    expect(ghostAutoBasis({ quantity: '', weightKg: '', measure: '120', measureUnit: 'm2' }, null)).toBe('m2');
+    expect(ghostAutoBasis({ quantity: '', weightKg: '', measure: '120', measureUnit: 'm2' }, wool)).toBe('kg');
   });
 });
 

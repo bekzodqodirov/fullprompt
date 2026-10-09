@@ -1,7 +1,8 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { isBazaBasis, type BazaBasis } from '@/modules/wms/calc/pricing';
+import { isBazaBasis, type BazaBasis, type MeasureUnit } from '@/modules/wms/calc/pricing';
+import type { UnitWords } from '@/modules/wms/calc/units';
 import { basisLabel } from '@/modules/wms/calc/basis';
 
 /**
@@ -36,6 +37,7 @@ export function BasisSelect({
   disabled,
   onPick,
   size,
+  autoUnit,
 }: {
   value: BazaBasis | null;
   offered: BazaBasis[];
@@ -45,6 +47,10 @@ export function BasisSelect({
   disabled: boolean;
   onPick: (basis: BazaBasis) => void;
   size: keyof typeof SIZE_CLASS;
+  /** What «avto» resolves to right now, when the law is known — printed
+   * beside the word, so the unit a price is typed against is ON the screen
+   * (2026-10-09, judge MR-17) and is the unit the save posts as shown. */
+  autoUnit?: BazaBasis | null;
 }) {
   const t = useTranslations('calc');
   const options = value === null || offered.includes(value) ? offered : [...offered, value];
@@ -59,11 +65,58 @@ export function BasisSelect({
         if (isBazaBasis(e.target.value)) onPick(e.target.value);
       }}
     >
-      {value === null ? <option value="">{t('table.basisAuto')}</option> : null}
+      {value === null ? (
+        <option value="">
+          {t('table.basisAuto')}
+          {autoUnit ? ` · ${basisLabel(autoUnit, t('perUnit'))}` : ''}
+        </option>
+      ) : null}
       {options.map((b) => (
         <option key={b} value={b}>
           {basisLabel(b, t('perUnit'))}
           {offered.includes(b) ? '' : ' ⚠'}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+const MEASURE_UNITS: readonly MeasureUnit[] = ['m2', 'juft', 'litr', 'sm3'];
+const isMeasureUnit = (v: string): v is MeasureUnit => (MEASURE_UNITS as readonly string[]).includes(v);
+
+/**
+ * What a new row's O'lchov amount is IN, while the code's law names no unit
+ * (P3.5, UX12): «120» in the box means nothing until somebody says m², and a
+ * number whose unit is unknown is dropped by the save. Only the MEASURE's
+ * unit is posted — the baza stays «avto», which then reads the stated pair.
+ */
+export function MeasureUnitSelect({
+  value,
+  label,
+  testId,
+  units,
+  size,
+  onPick,
+}: {
+  value: MeasureUnit | null;
+  label: string;
+  testId: string;
+  units: UnitWords;
+  size: keyof typeof SIZE_CLASS;
+  onPick: (unit: MeasureUnit | null) => void;
+}) {
+  return (
+    <select
+      className={SIZE_CLASS[size]}
+      aria-label={label}
+      data-testid={testId}
+      value={value ?? ''}
+      onChange={(e) => onPick(isMeasureUnit(e.target.value) ? e.target.value : null)}
+    >
+      <option value="">—</option>
+      {MEASURE_UNITS.map((u) => (
+        <option key={u} value={u}>
+          {units[u]}
         </option>
       ))}
     </select>
