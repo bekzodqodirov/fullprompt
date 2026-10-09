@@ -1205,28 +1205,28 @@ export async function calcQueue(now = new Date()): Promise<CalcQueueRow[]> {
       goods: goods.get(row.id) ?? [],
     };
     return {
-    id: row.id,
-    entityType: row.entity_type,
-    entityId: row.entity_id,
-    label: row.label ?? '—',
-    section: row.section,
-    fromCity: row.from_city,
-    toCity: row.to_city,
-    weightKg: toNum(row.weight_kg),
-    volumeM3: toNum(row.volume_m3),
-    itemCount: Number(row.item_count),
-    // A raw `db.execute` hands timestamps over as STRINGS — the typed query
-    // builder is what returns Dates — so every one is coerced here rather
-    // than crashing the first time somebody asks whether it is late.
-    requestedAt: new Date(row.requested_at),
-    dueAt: new Date(row.due_at),
-    requesterName: row.requester_name ?? '—',
-    assigneeId: row.assignee_id,
-    assigneeName: row.assignee_name,
-    leadOwnerId: row.lead_owner_id,
-    missing: missingFor(row.section, facts, laws),
-    lineNeeds: lineNeedsFor(row.section, facts, laws),
-    late: new Date(row.due_at).getTime() < now.getTime(),
+      id: row.id,
+      entityType: row.entity_type,
+      entityId: row.entity_id,
+      label: row.label ?? '—',
+      section: row.section,
+      fromCity: row.from_city,
+      toCity: row.to_city,
+      weightKg: toNum(row.weight_kg),
+      volumeM3: toNum(row.volume_m3),
+      itemCount: Number(row.item_count),
+      // A raw `db.execute` hands timestamps over as STRINGS — the typed query
+      // builder is what returns Dates — so every one is coerced here rather
+      // than crashing the first time somebody asks whether it is late.
+      requestedAt: new Date(row.requested_at),
+      dueAt: new Date(row.due_at),
+      requesterName: row.requester_name ?? '—',
+      assigneeId: row.assignee_id,
+      assigneeName: row.assignee_name,
+      leadOwnerId: row.lead_owner_id,
+      missing: missingFor(row.section, facts, laws),
+      lineNeeds: lineNeedsFor(row.section, facts, laws),
+      late: new Date(row.due_at).getTime() < now.getTime(),
     };
   });
 }

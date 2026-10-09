@@ -281,11 +281,14 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
   });
 
   // Typed facts win over read ones: the person is looking at the material.
+  // A total the text writes TWO ways («1,200 kg») is asked, and the model —
+  // which read the same ambiguous text — does not get to answer it either.
+  const asked = (field: 'weightKg' | 'volumeM3') => manual.ambiguous.some((a) => a.field === field);
   const facts = {
     fromCity: manual.fromCity ?? ai?.facts.fromCity ?? state.route?.fromCity ?? null,
     toCity: manual.toCity ?? ai?.facts.toCity ?? state.route?.toCity ?? null,
-    weightKg: manual.weightKg ?? ai?.facts.weightKg ?? null,
-    volumeM3: manual.volumeM3 ?? ai?.facts.volumeM3 ?? null,
+    weightKg: manual.weightKg ?? (asked('weightKg') ? null : (ai?.facts.weightKg ?? null)),
+    volumeM3: manual.volumeM3 ?? (asked('volumeM3') ? null : (ai?.facts.volumeM3 ?? null)),
     /**
      * Three sources, in the order of how EXACT they are about the lines.
      *
@@ -317,8 +320,6 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
     aiUsed: Boolean(ai),
     budgetSpent: budgetLeft <= 0,
     usage: ai?.usage ?? null,
-    // A total the material writes two ways is asked, never taken — not even
-    // from the model, which read the same ambiguous text.
     ambiguousTotals: manual.ambiguous,
     stage: 'review',
   };

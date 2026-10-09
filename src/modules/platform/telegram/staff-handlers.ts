@@ -1697,21 +1697,10 @@ async function readInvoice(
   const { goodsFromFile } = await import('../../wms/deals/goods-file');
   const goods = await goodsFromFile(body, mime).catch(() => null);
   if (!goods) return null;
-  // Everything the file states reaches the landing (2026-10-09, P1.6): its
-  // unit word (the door routes «м2»/«пар» to the measure pair), its volume
-  // and money, the supplier's own code and what the reader could not use.
-  return {
-    goods: goods.map((g) => ({
-      name: g.description,
-      quantity: g.quantity,
-      unit: g.unit,
-      weightKg: g.weightKg,
-      volumeM3: g.volumeM3,
-      amount: g.amount,
-      tnvedCode: g.tnvedCode,
-      note: g.note,
-    })),
-  };
+  // Everything the file states reaches the landing (2026-10-09, P1.6) —
+  // through the one mapping the landing's own test reads.
+  const { invoiceFacts } = await import('../../wms/calc/intake');
+  return { goods: invoiceFacts(goods) };
 }
 
 type BotFileCtx = {

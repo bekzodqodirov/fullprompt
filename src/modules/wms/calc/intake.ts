@@ -28,6 +28,7 @@ import {
   type NeedUnit,
   type RowNeed,
 } from './needs';
+import type { GoodsRow } from '../deals/goods-import';
 import type { BazaBasis, MeasureUnit } from './pricing';
 import { routeAmount, unitOf } from './units';
 
@@ -275,6 +276,26 @@ export function landingItems(facts: CalcFacts) {
     volumeM3: g.volumeM3,
     measureUnit: g.measureUnit,
     measureQty: g.measureQty,
+    amount: g.amount,
+    tnvedCode: g.tnvedCode,
+    note: g.note,
+  }));
+}
+
+/**
+ * An attached invoice's rows as goods facts (P1.6) — everything the file
+ * states, so the landing can route it: the unit word (the door sends «м2» /
+ * «пар» to the measure pair), the volume and the money, the supplier's own
+ * code and what the reader could not use. ONE mapping for the bot's invoice
+ * reader and its test; nothing is decided here that the door decides.
+ */
+export function invoiceFacts(rows: readonly GoodsRow[]): CalcGoodsFact[] {
+  return rows.map((g) => ({
+    name: g.description,
+    quantity: g.quantity,
+    unit: g.unit,
+    weightKg: g.weightKg,
+    volumeM3: g.volumeM3,
     amount: g.amount,
     tnvedCode: g.tnvedCode,
     note: g.note,
