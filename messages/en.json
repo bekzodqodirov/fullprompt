@@ -3419,6 +3419,35 @@
     "baza": "Baza $",
     "basis": "Per",
     "perUnit": "unit",
+    "units": {
+      "dona": "pcs",
+      "kg": "kg",
+      "kgNet": "Net weight, kg",
+      "m3": "m³",
+      "m2": "m²",
+      "juft": "pairs",
+      "litr": "l",
+      "sm3": "cm³",
+      "thousandDona": "1000 pcs"
+    },
+    "needs": {
+      "sentence": "Row {row} «{label}»: {what} missing — {why}",
+      "what": {
+        "dona": "quantity (pcs)",
+        "kg": "net weight (kg)",
+        "m3": "volume (m³)",
+        "m2": "area (m²)",
+        "juft": "number of pairs",
+        "litr": "volume (l)",
+        "sm3": "engine volume (cm³)",
+        "thousandDona": "quantity (pcs)"
+      },
+      "why": {
+        "baza": "the baza is per {unit}",
+        "duty": "duty at least ${rate}/{unit}",
+        "excise": "excise ${rate}/{unit}"
+      }
+    },
     "pullBazas": "Baza from dictionary",
     "pullRates": "Rates from dictionary",
     "zone": "Tariff route",

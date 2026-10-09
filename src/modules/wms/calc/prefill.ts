@@ -25,7 +25,7 @@ import {
   type CalcSectionName,
   type FreightResult,
 } from './pricing';
-import { basisLabel } from './basis';
+import { basisLabel, statedPairOf } from './basis';
 import {
   loadWorkspace,
   proposeGroups,
@@ -602,6 +602,8 @@ async function pickBazas(
       bazaUsd: calcRequestItems.bazaUsd,
       bazaBasis: calcRequestItems.bazaBasis,
       groupId: calcRequestItems.groupId,
+      measureUnit: calcRequestItems.measureUnit,
+      measureQty: calcRequestItems.measureQty,
     })
     .from(calcRequestItems)
     .where(eq(calcRequestItems.requestId, requestId));
@@ -629,6 +631,7 @@ async function pickBazas(
       hasWeight: kg !== null && kg > 0,
       hasQuantity: qty !== null && qty > 0,
       hasVolume: m3 !== null && m3 > 0,
+      statedPair: statedPairOf(r.measureUnit, r.measureQty === null ? null : Number(r.measureQty)),
     });
     if (units.length === 0) continue;
     const perPiece =

@@ -13,6 +13,7 @@ import {
   REQUIRED_FIELDS,
 } from '@/modules/wms/customs/import-parse';
 import { BASIS_FOR_UNIT, UNIT_FOR_BASIS, unitsForRow } from '@/modules/wms/customs/import-baza';
+import { autoBasisFor } from '@/modules/wms/calc/basis';
 
 /**
  * The quarterly customs dump, decided purely (docs/VED-IMPORT-AI.md §1).
@@ -104,54 +105,69 @@ describe('which of the file’s units may price a row', () => {
   it('a law that PINS a unit admits that one and nothing else', () => {
     // A per-kg price landing on a per-m² row is off by the weight of the
     // goods, which is the whole reason the unit is checked at all.
-    expect(unitsForRow({ dutyUnit: 'm2', ...both })).toEqual(['m2']);
-    expect(unitsForRow({ dutyUnit: 'juft', ...both })).toEqual(['juft']);
-    expect(unitsForRow({ dutyUnit: 'litr', ...both })).toEqual(['litr']);
-    expect(unitsForRow({ dutyUnit: 'kg', ...both })).toEqual(['kg']);
+    expect(unitsForRow({ statedPair: null, dutyUnit: 'm2', ...both })).toEqual(['m2']);
+    expect(unitsForRow({ statedPair: null, dutyUnit: 'juft', ...both })).toEqual(['juft']);
+    expect(unitsForRow({ statedPair: null, dutyUnit: 'litr', ...both })).toEqual(['litr']);
+    expect(unitsForRow({ statedPair: null, dutyUnit: 'kg', ...both })).toEqual(['kg']);
   });
 
   it('an ordinary advalor code takes kilograms first', () => {
     // 74 % of his file is declared per kilogram and an advalor code pins no
     // unit at all — asking per-dona alone would have refused three quarters
     // of every quarter's file.
-    expect(unitsForRow({ dutyUnit: null, ...both })).toEqual(['kg', 'dona']);
-    expect(unitsForRow({ dutyUnit: null, chosen: null, hasWeight: true, hasQuantity: false, hasVolume: false })).toEqual(['kg']);
-    expect(unitsForRow({ dutyUnit: null, chosen: null, hasWeight: false, hasQuantity: true, hasVolume: false })).toEqual(['dona']);
+    expect(unitsForRow({ statedPair: null, dutyUnit: null, ...both })).toEqual(['kg', 'dona']);
+    expect(unitsForRow({ statedPair: null, dutyUnit: null, chosen: null, hasWeight: true, hasQuantity: false, hasVolume: false })).toEqual(['kg']);
+    expect(unitsForRow({ statedPair: null, dutyUnit: null, chosen: null, hasWeight: false, hasQuantity: true, hasVolume: false })).toEqual(['dona']);
   });
 
   it('a law that COUNTS pieces takes pieces first, and still allows kilograms', () => {
     // The specific duty is charged per piece; the customs VALUE is a
     // separate question and a per-kg declaration answers it perfectly well.
-    expect(unitsForRow({ dutyUnit: 'dona', ...both })).toEqual(['dona', 'kg']);
-    expect(unitsForRow({ dutyUnit: '1000_dona', ...both })).toEqual(['dona', 'kg']);
+    expect(unitsForRow({ statedPair: null, dutyUnit: 'dona', ...both })).toEqual(['dona', 'kg']);
+    expect(unitsForRow({ statedPair: null, dutyUnit: '1000_dona', ...both })).toEqual(['dona', 'kg']);
   });
 
   it('a row stating neither a weight nor a count gets no suggestion at all', () => {
-    expect(unitsForRow({ dutyUnit: null, chosen: null, hasWeight: false, hasQuantity: false, hasVolume: false })).toEqual([]);
+    expect(unitsForRow({ statedPair: null, dutyUnit: null, chosen: null, hasWeight: false, hasQuantity: false, hasVolume: false })).toEqual([]);
   });
 
   it('0125: cubic metres come LAST, and only when the row states a kub', () => {
     const all = { chosen: null, hasWeight: true, hasQuantity: true, hasVolume: true };
-    expect(unitsForRow({ dutyUnit: null, ...all })).toEqual(['kg', 'dona', 'm3']);
-    expect(unitsForRow({ dutyUnit: 'dona', ...all })).toEqual(['dona', 'kg', 'm3']);
+    expect(unitsForRow({ statedPair: null, dutyUnit: null, ...all })).toEqual(['kg', 'dona', 'm3']);
+    expect(unitsForRow({ statedPair: null, dutyUnit: 'dona', ...all })).toEqual(['dona', 'kg', 'm3']);
     // A line stating ONLY its volume is priceable per m³ — it used to get
     // no suggestion at all.
     expect(
-      unitsForRow({ dutyUnit: null, chosen: null, hasWeight: false, hasQuantity: false, hasVolume: true }),
+      unitsForRow({ statedPair: null, dutyUnit: null, chosen: null, hasWeight: false, hasQuantity: false, hasVolume: true }),
     ).toEqual(['m3']);
     // A pinning law still admits its own unit and nothing else.
-    expect(unitsForRow({ dutyUnit: 'kg', ...all })).toEqual(['kg']);
+    expect(unitsForRow({ statedPair: null, dutyUnit: 'kg', ...all })).toEqual(['kg']);
   });
 
   it('0125: the VED’s CHOICE is the only answer — and a choice the law cannot hold gets none', () => {
     const all = { hasWeight: true, hasQuantity: true, hasVolume: true };
-    expect(unitsForRow({ dutyUnit: null, chosen: 'kg', ...all })).toEqual(['kg']);
-    expect(unitsForRow({ dutyUnit: null, chosen: 'm3', ...all })).toEqual(['m3']);
+    expect(unitsForRow({ statedPair: null, dutyUnit: null, chosen: 'kg', ...all })).toEqual(['kg']);
+    expect(unitsForRow({ statedPair: null, dutyUnit: null, chosen: 'm3', ...all })).toEqual(['m3']);
     // A chosen dona on a per-KG law: the choice wins over the law's pin.
-    expect(unitsForRow({ dutyUnit: 'kg', chosen: 'unit', ...all })).toEqual(['dona']);
-    expect(unitsForRow({ dutyUnit: null, chosen: 'm2', ...all })).toEqual(['m2']);
+    expect(unitsForRow({ statedPair: null, dutyUnit: 'kg', chosen: 'unit', ...all })).toEqual(['dona']);
+    expect(unitsForRow({ statedPair: null, dutyUnit: null, chosen: 'm2', ...all })).toEqual(['m2']);
     // m² on a juft code is the one combination a row cannot hold.
-    expect(unitsForRow({ dutyUnit: 'juft', chosen: 'm2', ...all })).toEqual([]);
+    expect(unitsForRow({ statedPair: null, dutyUnit: 'juft', chosen: 'm2', ...all })).toEqual([]);
+  });
+
+  it('2026-10-09: a pair the row STATES answers on a law that pins none — and never against one that pins its own', () => {
+    // The seller's «120 m²» of tiles on an advalor code: a per-kg or per-dona
+    // declaration would price a number nobody stated (the audit's tile row).
+    const all = { chosen: null, hasWeight: true, hasQuantity: true, hasVolume: true };
+    expect(unitsForRow({ ...all, dutyUnit: null, statedPair: 'm2' })).toEqual(['m2']);
+    expect(unitsForRow({ ...all, dutyUnit: null, statedPair: 'litr' })).toEqual(['litr']);
+    // A law that counts pieces or kilos keeps its own answer; the pair is
+    // only the baza's question when the law asks nothing.
+    expect(unitsForRow({ ...all, dutyUnit: 'dona', statedPair: 'm2' })).toEqual(['dona', 'kg', 'm3']);
+    expect(unitsForRow({ ...all, dutyUnit: 'kg', statedPair: 'm2' })).toEqual(['kg']);
+    expect(unitsForRow({ ...all, dutyUnit: 'juft', statedPair: 'm2' })).toEqual(['juft']);
+    // A choice still wins over a statement.
+    expect(unitsForRow({ ...all, dutyUnit: null, chosen: 'kg', statedPair: 'm2' })).toEqual(['kg']);
   });
 
   /**
@@ -159,7 +175,9 @@ describe('which of the file’s units may price a row', () => {
    * run AFTER the measure pass, so a fill landing an m² basis the pass did
    * not already ask for would strand an m² baza with no m² count — in the
    * very save that dropped it. Safe only while no extended unit is ever
-   * offered unless the law pins it or the VED chose it.
+   * offered unless the law pins it, the VED chose it, or the row STATES it
+   * (2026-10-09) — and the pass keeps a stated pair, because `autoBasisFor`
+   * reads it (pinned in basis-law-writers.test.ts).
    */
   it('0125: an extended unit is offered only when the law pins it or the VED chose it', () => {
     const laws = [null, 'kg', 'dona', '1000_dona', 'sm3', 'm2', 'juft', 'litr'] as const;
@@ -169,9 +187,19 @@ describe('which of the file’s units may price a row', () => {
       for (const hasWeight of figures) {
         for (const hasQuantity of figures) {
           for (const hasVolume of figures) {
-            const units = unitsForRow({ dutyUnit, chosen: null, hasWeight, hasQuantity, hasVolume });
-            for (const u of units) {
-              if (extended.has(u)) expect(u, `${dutyUnit} offered ${u} unasked`).toBe(dutyUnit);
+            for (const statedPair of [null, 'm2', 'juft', 'litr'] as const) {
+              const units = unitsForRow({ statedPair, dutyUnit, chosen: null, hasWeight, hasQuantity, hasVolume });
+              for (const u of units) {
+                if (!extended.has(u)) continue;
+                expect([dutyUnit, statedPair], `${dutyUnit}/${statedPair} offered ${u} unasked`).toContain(u);
+                // A stated pair that is offered is the very unit autoBasisFor
+                // makes the pass ask for — so the fill never strands it.
+                if (u !== dutyUnit) {
+                  expect(
+                    autoBasisFor({ dutyUnit }, { quantity: null, weightKg: null, measureUnit: statedPair, measureQty: 1 }),
+                  ).toBe(u);
+                }
+              }
             }
           }
         }

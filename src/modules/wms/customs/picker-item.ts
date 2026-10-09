@@ -3,6 +3,7 @@ import { db } from '../../platform/db/client';
 import { calcGroups, calcRequestItems } from '../../platform/db/schema';
 import { isBazaBasis, type BazaBasis } from '../calc/pricing';
 import { unitsForRow } from './import-baza';
+import { statedPairOf } from '../calc/basis';
 import type { ImportUnit } from './import-parse';
 
 /**
@@ -43,6 +44,8 @@ export async function readPickerItem(
       weightKg: calcRequestItems.weightKg,
       volumeM3: calcRequestItems.volumeM3,
       bazaBasis: calcRequestItems.bazaBasis,
+      measureUnit: calcRequestItems.measureUnit,
+      measureQty: calcRequestItems.measureQty,
       dutyUnit: calcGroups.dutyUnit,
     })
     .from(calcRequestItems)
@@ -71,6 +74,7 @@ export async function readPickerItem(
     hasWeight: kg !== null && kg > 0,
     hasQuantity: qty !== null && qty > 0,
     hasVolume: m3 !== null && m3 > 0,
+    statedPair: statedPairOf(item.measureUnit, item.measureQty === null ? null : Number(item.measureQty)),
   });
   const perPieceKg = qty !== null && qty > 0 && kg !== null && kg > 0 ? kg / qty : null;
   const perPiece = units.includes('dona') ? perPieceKg : null;

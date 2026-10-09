@@ -84,8 +84,14 @@ describe('the measure pair has ONE reconciler', () => {
 
   it('saveTable runs the pass — per item, the law first, then the basis', () => {
     const save = bodies.get('saveTable')!;
-    expect(save).toContain('const required = pairUnitFor(law, basis);');
-    expect(save).toContain('basis = defaultBasisFor({ dutyUnit: law });');
+    // Re-anchored deliberately (2026-10-09, judge TT-3/MR-3/S2): «avto» is
+    // the law first and then a pair the ROW states, so the stamp and the
+    // required unit both read `autoBasisFor` — the law-only `defaultBasisFor`
+    // stays the A2 suspect check's question, below.
+    expect(save).toContain('const required = pairUnitFor(law, basis ?? auto);');
+    expect(save).toContain('basis = auto;');
+    expect(save).toContain('const auto = autoBasisFor(');
+    expect(save).toContain('const lawBasis = defaultBasisFor({ dutyUnit: law });');
     expect(save).toContain('basisConflict.push(item.seq)');
   });
 

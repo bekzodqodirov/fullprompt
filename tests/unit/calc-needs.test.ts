@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { missingNeeds, rowNeeds } from '@/modules/wms/calc/needs';
+import { missingNeeds, needLawOf, rowNeeds } from '@/modules/wms/calc/needs';
 import { customsFor, type PricedGroup, type PricedItem } from '@/modules/wms/calc/pricing';
 
 /**
@@ -33,6 +33,8 @@ const law = (over: Partial<PricedGroup> = {}): PricedGroup => ({
   dutySpecific: 3,
   dutyUnit: 'dona',
   excisePct: null,
+  exciseSpecific: null,
+  exciseUnit: null,
   hasCertificate: true,
   dutyFree: false,
   vatFree: false,
@@ -78,5 +80,32 @@ describe('rowNeeds — the engine asked ahead of time', () => {
   it('1000_dona and dona read the same count — a missing count is asked once', () => {
     const cig = law({ dutyPct: 30, dutySpecific: 5, dutyUnit: '1000_dona' });
     expect(missingNeeds(rowNeeds(cig, 'unit', item({ bazaBasis: 'unit' })))).toHaveLength(1);
+  });
+});
+
+describe('a specific excise asks its own figure, exactly as the engine charges it', () => {
+  it('beer valued per dona under a per-litre excise needs its litres', () => {
+    const beer = law({
+      dutyMode: 'advalor',
+      dutySpecific: null,
+      dutyUnit: null,
+      excisePct: null,
+      exciseSpecific: 0.5,
+      exciseUnit: 'litr',
+    });
+    const row = item({ bazaBasis: 'unit', quantity: 100 });
+    expect(missingNeeds(rowNeeds(needLawOf(beer), 'unit', row))).toEqual([
+      { unit: 'litr', why: 'excise', present: false, rate: 0.5 },
+    ]);
+    expect(customsFor(beer, [row])).toMatchObject({ ok: false, reason: 'measure_missing', unit: 'litr', half: 'excise', rate: 0.5 });
+    const full = item({ bazaBasis: 'unit', quantity: 100, measureUnit: 'litr', measureQty: 50 });
+    expect(missingNeeds(rowNeeds(needLawOf(beer), 'unit', full))).toEqual([]);
+    // 50 l × $0.5 = $25 excise, inside the VAT base: (400 + 80 + 25) × 12 %.
+    expect(customsFor(beer, [full])).toMatchObject({ ok: true, dutyUsd: 80, exciseUsd: 25, vatUsd: 60.6 });
+  });
+
+  it('an ad-valorem excise wins and asks no figure', () => {
+    const wine = law({ dutyMode: 'advalor', dutySpecific: null, dutyUnit: null, excisePct: 20, exciseSpecific: 1, exciseUnit: 'litr' });
+    expect(rowNeeds(needLawOf(wine), 'unit', item({ bazaBasis: 'unit', quantity: 10 })).some((n) => n.why === 'excise')).toBe(false);
   });
 });

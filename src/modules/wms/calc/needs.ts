@@ -29,8 +29,9 @@ export type NeedUnit = 'dona' | 'kg' | 'm3' | 'm2' | 'juft' | 'litr' | 'sm3' | '
 
 export interface RowNeed {
   unit: NeedUnit;
-  /** The baza's VALUE asks it, or the law's per-unit FLOOR does. */
-  why: 'baza' | 'duty';
+  /** The baza's VALUE asks it, the law's per-unit FLOOR does, or a specific
+   * EXCISE does (beer per litre). */
+  why: 'baza' | 'duty' | 'excise';
   /** The row states a positive figure in this unit. */
   present: boolean;
   /** The floor's rate per unit, for the sentence «boj kamida $3/dona». */
@@ -42,6 +43,34 @@ export interface NeedLaw {
   dutyUnit: DutyUnit | null;
   dutySpecific: number | null;
   dutyFree: boolean;
+  /** A specific excise asks its own figure — absent/null when there is none
+   * (the engine charges it only when `excisePct` is not positive). */
+  excisePct?: number | null;
+  exciseSpecific?: number | null;
+  exciseUnit?: DutyUnit | null;
+}
+
+/** The ONE way a group becomes a NeedLaw — every screen builds it here, so a
+ * field the engine reads (excise) reaches every need without each caller
+ * learning its name. */
+export function needLawOf(g: {
+  dutyMode: DutyMode;
+  dutyUnit: DutyUnit | null;
+  dutySpecific: number | null;
+  dutyFree: boolean;
+  excisePct?: number | null;
+  exciseSpecific?: number | null;
+  exciseUnit?: DutyUnit | null;
+}): NeedLaw {
+  return {
+    dutyMode: g.dutyMode,
+    dutyUnit: g.dutyUnit,
+    dutySpecific: g.dutySpecific,
+    dutyFree: g.dutyFree,
+    excisePct: g.excisePct ?? null,
+    exciseSpecific: g.exciseSpecific ?? null,
+    exciseUnit: g.exciseUnit ?? null,
+  };
 }
 
 export type NeedItem = Pick<
@@ -49,7 +78,10 @@ export type NeedItem = Pick<
   'quantity' | 'weightKg' | 'volumeM3' | 'measureUnit' | 'measureQty'
 >;
 
-const asNeed = (u: BazaBasis | DutyUnit): NeedUnit => (u === 'unit' ? 'dona' : u);
+/** A baza basis or a law unit in the needs' vocabulary — the baza's storage
+ * spelling `unit` is a count, read as dona. */
+export const needUnitOf = (u: BazaBasis | DutyUnit): NeedUnit => (u === 'unit' ? 'dona' : u);
+const asNeed = needUnitOf;
 
 const has = (item: NeedItem, u: BazaBasis | DutyUnit) => {
   const m = itemMeasure({ ...item, seq: 0, label: '', bazaUsd: null, bazaBasis: null }, u);
@@ -77,6 +109,17 @@ export function rowNeeds(law: NeedLaw | null, basis: BazaBasis | null, item: Nee
       rate: law.dutySpecific,
     });
   }
+  // The engine's own condition (pricing.ts): a specific excise is charged only
+  // when no ad-valorem excise is.
+  const advaloremExcise = law?.excisePct !== null && law?.excisePct !== undefined && law.excisePct > 0;
+  if (law && !advaloremExcise && law.exciseSpecific != null && law.exciseUnit != null) {
+    out.push({
+      unit: asNeed(law.exciseUnit),
+      why: 'excise',
+      present: has(item, law.exciseUnit),
+      rate: law.exciseSpecific,
+    });
+  }
   return out;
 }
 
@@ -93,4 +136,54 @@ export function missingNeeds(needs: RowNeed[]): RowNeed[] {
     out.push(n);
   }
   return out;
+}
+
+/**
+ * A missing figure in the office's Uzbek — ONE sentence for the bot's
+ * question, the bot's blocker and the checklist (judge S3, S5), so the seller
+ * never reads two different names for one number. The screen speaks the
+ * reader's locale through `calc.refusals.need*` (hisoblash/[id]/words.ts),
+ * built from the same three facts.
+ */
+const NEED_WHAT_UZ: Record<NeedUnit, string> = {
+  dona: 'soni (dona)',
+  kg: 'sof og‘irligi (kg)',
+  m3: 'hajmi (m³)',
+  m2: 'maydoni (m²)',
+  juft: 'juft soni',
+  litr: 'hajmi (litr)',
+  sm3: 'dvigatel hajmi (sm³)',
+  '1000_dona': 'soni (dona)',
+};
+
+const NEED_SHORT_UZ: Record<NeedUnit, string> = {
+  dona: 'dona',
+  kg: 'kg',
+  m3: 'm³',
+  m2: 'm²',
+  juft: 'juft',
+  litr: 'litr',
+  sm3: 'sm³',
+  '1000_dona': '1000 dona',
+};
+
+const rateText = (n: number) => String(Number(n.toFixed(4)));
+
+export function needWhatUz(unit: NeedUnit): string {
+  return NEED_WHAT_UZ[unit];
+}
+
+/** Why the figure is asked: the baza is per it, or the law's floor / a
+ * specific excise counts in it — with the rate, so «nega kerak» is answered
+ * in the same line. */
+export function needWhyUz(n: Pick<RowNeed, 'unit' | 'why' | 'rate'>): string {
+  const per = NEED_SHORT_UZ[n.unit];
+  if (n.why === 'baza') return `baza ${per} bo‘yicha`;
+  const rate = n.rate !== null && Number.isFinite(n.rate) ? `$${rateText(n.rate)}/${per}` : per;
+  return n.why === 'duty' ? `boj kamida ${rate}` : `aksiz ${rate}`;
+}
+
+/** «soni (dona) kiritilmagan — boj kamida $3/dona». */
+export function needPhraseUz(n: Pick<RowNeed, 'unit' | 'why' | 'rate'>): string {
+  return `${needWhatUz(n.unit)} kiritilmagan — ${needWhyUz(n)}`;
 }

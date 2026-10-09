@@ -129,7 +129,8 @@ export type DutyMode = 'advalor' | 'specific' | 'max' | 'plus';
  * in the law's unit refuses `measure_missing` naming itself, because reading
  * a litre rate against a piece count is a number, just the wrong one.
  */
-export type DutyUnit = 'kg' | 'dona' | 'litr' | 'juft' | '1000_dona' | 'sm3' | 'm2';
+export const DUTY_UNITS = ['kg', 'dona', 'litr', 'juft', '1000_dona', 'sm3', 'm2'] as const;
+export type DutyUnit = (typeof DUTY_UNITS)[number];
 
 export interface PricedGroup {
   seq: number;
@@ -143,8 +144,17 @@ export interface PricedGroup {
   dutyMode: DutyMode;
   dutySpecific: number | null;
   dutyUnit: DutyUnit | null;
-  /** Advalor excise, the rare case. null means «not an excise good». */
+  /**
+   * Excise. `excisePct > 0` is an ad-valorem excise; otherwise a SPECIFIC one
+   * is `exciseSpecific` $ per `exciseUnit` (beer per litre, cigarettes per
+   * thousand — the shape excise usually has). Required-nullable (#790): every
+   * constructor answers. `excisePct === 0` is «aksiz yo'q», answered; all
+   * three null is unanswered (2026-10-09 audit: no screen could reach excise,
+   * so every excisable good priced at $0 excise and its VAT base short).
+   */
   excisePct: number | null;
+  exciseSpecific: number | null;
+  exciseUnit: DutyUnit | null;
   /** Resolved by the caller: the group's own answer, else the request's.
    * Without a certificate of origin the 28.02.2026 additional duty applies. */
   hasCertificate: boolean;
@@ -208,7 +218,9 @@ export type CustomsRefusalDetail = {
   itemSeq?: number;
   itemLabel?: string;
   unit?: BazaBasis | DutyUnit;
-  half?: 'baza' | 'duty';
+  half?: 'baza' | 'duty' | 'excise';
+  /** The per-unit rate the missing figure is asked for — «boj kamida $3/dona». */
+  rate?: number | null;
 };
 
 export type CustomsResult = CustomsBreakdown | CustomsRefusalDetail;
@@ -236,6 +248,9 @@ export function customsFor(group: PricedGroup, items: PricedItem[]): CustomsResu
   // caller (the live browser figure priced whatever it was handed).
   const pct = (n: number) => ok(n) && n >= 0 && n <= 100;
   if (!pct(dutyPct) || !pct(vatPct) || (group.excisePct !== null && !pct(group.excisePct))) {
+    return { ok: false, reason: 'not_a_number' };
+  }
+  if (group.exciseSpecific !== null && !(ok(group.exciseSpecific) && group.exciseSpecific >= 0)) {
     return { ok: false, reason: 'not_a_number' };
   }
   // A non-advalor mode without its specific half is a row the CHECK forbids;
@@ -295,6 +310,7 @@ export function customsFor(group: PricedGroup, items: PricedItem[]): CustomsResu
           itemLabel: item.label,
           unit,
           half: 'duty',
+          rate: group.dutySpecific,
         };
       }
       if (!ok(m)) {
@@ -320,9 +336,33 @@ export function customsFor(group: PricedGroup, items: PricedItem[]): CustomsResu
   const addDutyPct = !group.hasCertificate && !group.dutyFree ? addDutyBand(dutyPct) : 0;
   const addDutyUsd = round2((valueUsd * addDutyPct) / 100);
 
-  // Excise is the rare case — ordinary consumer goods carry none, and null
-  // means exactly that. Base = customs value (SK 285).
-  const exciseUsd = round2((valueUsd * (group.excisePct ?? 0)) / 100);
+  // Excise is the rare case — ordinary consumer goods carry none. Ad valorem:
+  // base = customs value (SK 285). Specific: the row's measure in the
+  // excise's unit × the rate, read through the ONE `itemMeasure` like the
+  // duty's floor — a missing figure refuses naming the row, never a $0.
+  let exciseUsd = 0;
+  if (group.excisePct !== null && group.excisePct > 0) {
+    exciseUsd = round2((valueUsd * group.excisePct) / 100);
+  } else if (group.exciseSpecific !== null && group.exciseUnit !== null) {
+    let sum = 0;
+    for (const item of items) {
+      const m = itemMeasure(item, group.exciseUnit);
+      if (m === null || !(m > 0)) {
+        return {
+          ok: false,
+          reason: 'measure_missing',
+          itemSeq: item.seq,
+          itemLabel: item.label,
+          unit: group.exciseUnit,
+          half: 'excise',
+          rate: group.exciseSpecific,
+        };
+      }
+      sum += m;
+    }
+    const quantity = group.exciseUnit === '1000_dona' ? sum / 1000 : sum;
+    exciseUsd = round2(quantity * group.exciseSpecific);
+  }
 
   // SK 254: the VAT base is value + duty + additional duty + excise.
   const vatUsd = round2(((valueUsd + dutyUsd + addDutyUsd + exciseUsd) * vatPct) / 100);
@@ -587,6 +627,8 @@ export function pricedGroupOf(g: {
   dutySpecific: number | null;
   dutyUnit: DutyUnit | null;
   excisePct: number | null;
+  exciseSpecific: number | null;
+  exciseUnit: DutyUnit | null;
   effectiveCertificate: boolean;
   dutyFree: boolean;
   vatFree: boolean;
@@ -602,6 +644,8 @@ export function pricedGroupOf(g: {
     dutySpecific: g.dutySpecific,
     dutyUnit: g.dutyUnit,
     excisePct: g.excisePct,
+    exciseSpecific: g.exciseSpecific,
+    exciseUnit: g.exciseUnit,
     hasCertificate: g.effectiveCertificate,
     dutyFree: g.dutyFree,
     vatFree: g.vatFree,

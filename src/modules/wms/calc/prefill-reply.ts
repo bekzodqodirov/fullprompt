@@ -1,9 +1,12 @@
 import type {
+  BazaBasis,
   CustomsRefusal,
+  DutyUnit,
   FeeRefusal,
   FreightRefusal,
   TotalsRefusal,
 } from './pricing';
+import { needPhraseUz, needUnitOf } from './needs';
 import type { SealBlocker } from './workspace';
 
 /**
@@ -92,6 +95,18 @@ export function blockerText(b: SealBlocker): string {
     // but the fallback is now only reachable by a value no union member
     // spells, which is a bug in the caller rather than a hole in this map.
     case 'customs':
+      // The engine names WHICH row and WHICH figure (2026-10-09): «o‘lchov
+      // yo‘q» alone left the seller guessing between a count and a weight on
+      // exactly the kg-and-dona rows the owner asked about.
+      if (b.reason === 'measure_missing' && b.unit && b.half) {
+        const row = b.itemSeq !== undefined ? ` ${b.itemSeq}-qator` : '';
+        const label = b.itemLabel ? ` «${b.itemLabel}»` : '';
+        return `${b.groupLabel}:${row}${label}: ${needPhraseUz({
+          unit: needUnitOf(b.unit as BazaBasis | DutyUnit),
+          why: b.half,
+          rate: b.rate ?? null,
+        })}`;
+      }
       return (
         `${b.groupLabel}: ${CUSTOMS_REASON[b.reason as CustomsRefusal] ?? b.reason}` +
         (b.itemLabel ? ` — ${b.itemLabel}` : '')

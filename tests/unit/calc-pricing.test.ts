@@ -53,6 +53,8 @@ const group = (over: Partial<PricedGroup> = {}): PricedGroup => ({
   dutySpecific: null,
   dutyUnit: null,
   excisePct: null,
+  exciseSpecific: null,
+  exciseUnit: null,
   hasCertificate: true,
   dutyFree: false,
   vatFree: false,

@@ -3419,6 +3419,35 @@
     "baza": "Baza $",
     "basis": "Nimaga",
     "perUnit": "dona",
+    "units": {
+      "dona": "dona",
+      "kg": "kg",
+      "kgNet": "Sof og‘irlik (netto), kg",
+      "m3": "m³",
+      "m2": "m²",
+      "juft": "juft",
+      "litr": "litr",
+      "sm3": "sm³",
+      "thousandDona": "1000 dona"
+    },
+    "needs": {
+      "sentence": "{row}-qator «{label}»: {what} kiritilmagan — {why}",
+      "what": {
+        "dona": "soni (dona)",
+        "kg": "sof og‘irligi (kg)",
+        "m3": "hajmi (m³)",
+        "m2": "maydoni (m²)",
+        "juft": "juft soni",
+        "litr": "hajmi (litr)",
+        "sm3": "dvigatel hajmi (sm³)",
+        "thousandDona": "soni (dona)"
+      },
+      "why": {
+        "baza": "baza {unit} bo‘yicha",
+        "duty": "boj kamida ${rate}/{unit}",
+        "excise": "aksiz ${rate}/{unit}"
+      }
+    },
     "pullBazas": "Lug‘atdan baza",
     "pullRates": "Lug‘atdan stavka",
     "zone": "Tarif yo‘nalishi",

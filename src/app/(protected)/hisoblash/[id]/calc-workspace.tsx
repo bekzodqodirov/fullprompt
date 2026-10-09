@@ -10,7 +10,7 @@ import type { ChainVersion } from '@/modules/wms/calc/chain';
 import { ChainStateChip } from '@/components/calc-chain-chip';
 import { isBuildStale, reloadFresh } from '@/components/build-check';
 import { draftStorageKey, forgetStored } from '@/modules/wms/calc/draft-store';
-import { refusalWord, type CalcT } from './words';
+import { measureNeedText, refusalWord, type CalcT } from './words';
 import {
   deleteExtraAction,
   saveExtraAction,
@@ -789,8 +789,13 @@ const refusal = refusalWord;
 
 function blockerText(t: T, b: Workspace['blockers'][number]): string {
   switch (b.kind) {
-    case 'customs':
-      return `${b.groupLabel}: ${refusal(t, b.reason)}${b.itemLabel ? ` (${b.itemLabel})` : ''}`;
+    case 'customs': {
+      // The detailed sentence already names the row; the bare word does not.
+      const need = measureNeedText(t, b);
+      return need !== null
+        ? `${b.groupLabel}: ${need}`
+        : `${b.groupLabel}: ${refusal(t, b.reason)}${b.itemLabel ? ` (${b.itemLabel})` : ''}`;
+    }
     case 'freight':
       return `${t('freight')}: ${refusal(t, b.reason)}`;
     case 'fee':

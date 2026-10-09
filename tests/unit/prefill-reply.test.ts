@@ -99,6 +99,38 @@ describe('what is missing is said in WORDS', () => {
     );
   });
 
+  it('a missing figure names the row, the figure and why — the kg-and-dona row (2026-10-09)', () => {
+    // «o‘lchov yo‘q» alone left the seller guessing whether the count or the
+    // weight was wanted on exactly the rows the owner asked about.
+    expect(
+      blockerText({
+        kind: 'customs',
+        groupSeq: 1,
+        groupLabel: '6201',
+        reason: 'measure_missing',
+        itemLabel: 'Kurtka',
+        itemSeq: 3,
+        unit: 'dona',
+        half: 'duty',
+        rate: 3,
+      }),
+    ).toBe('6201: 3-qator «Kurtka»: soni (dona) kiritilmagan — boj kamida $3/dona');
+    // The baza's own unit, spelled as stored ('unit'), reads as a count.
+    expect(
+      blockerText({
+        kind: 'customs',
+        groupSeq: 1,
+        groupLabel: '9403',
+        reason: 'measure_missing',
+        itemLabel: 'Stol',
+        itemSeq: 1,
+        unit: 'unit',
+        half: 'baza',
+        rate: null,
+      }),
+    ).toBe('9403: 1-qator «Stol»: soni (dona) kiritilmagan — baza dona bo‘yicha');
+  });
+
   it('a long list is cut with a mark, never silently', () => {
     const many = Array.from({ length: 9 }, (_, i) => ({
       kind: 'customs' as const,

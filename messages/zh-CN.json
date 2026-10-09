@@ -3419,6 +3419,35 @@
     "baza": "基价 $",
     "basis": "计价单位",
     "perUnit": "件",
+    "units": {
+      "dona": "件",
+      "kg": "公斤",
+      "kgNet": "净重，公斤",
+      "m3": "立方米",
+      "m2": "平方米",
+      "juft": "双",
+      "litr": "升",
+      "sm3": "立方厘米",
+      "thousandDona": "千件"
+    },
+    "needs": {
+      "sentence": "第{row}行「{label}」：缺少{what}——{why}",
+      "what": {
+        "dona": "数量（件）",
+        "kg": "净重（公斤）",
+        "m3": "体积（立方米）",
+        "m2": "面积（平方米）",
+        "juft": "双数",
+        "litr": "容量（升）",
+        "sm3": "发动机排量（立方厘米）",
+        "thousandDona": "数量（件）"
+      },
+      "why": {
+        "baza": "基价按{unit}计",
+        "duty": "关税不低于 ${rate}/{unit}",
+        "excise": "消费税 ${rate}/{unit}"
+      }
+    },
     "pullBazas": "从字典取基价",
     "pullRates": "从字典取税率",
     "zone": "运费线路",

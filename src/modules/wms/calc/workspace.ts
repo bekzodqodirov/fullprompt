@@ -37,7 +37,7 @@ import {
   type RatesRow,
 } from './dictionaries';
 import { answerFloorStandsSql, currentVersionSql, notSupersededSql } from './version-set';
-import { basisConflicts, defaultBasisFor, pairUnitFor } from './basis';
+import { autoBasisFor, basisConflicts, defaultBasisFor, pairUnitFor, statedPairOf } from './basis';
 import {
   BASIS_FOR_UNIT,
   importRowForCode,
@@ -170,6 +170,9 @@ export interface WorkspaceGroup {
   dutySpecific: number | null;
   dutyUnit: DutyUnit | null;
   excisePct: number | null;
+  /** Specific excise (0131) — $ per `exciseUnit`; see PricedGroup. */
+  exciseSpecific: number | null;
+  exciseUnit: DutyUnit | null;
   /** The group's own answer — null inherits the request's. */
   hasCertificate: boolean | null;
   /** Resolved: the group's answer, else the request's. What the engine used. */
@@ -291,7 +294,19 @@ export type SealBlocker =
   | { kind: 'no_groups' }
   | { kind: 'ungrouped_items'; count: number }
   | { kind: 'groups_unconfirmed'; count: number }
-  | { kind: 'customs'; groupSeq: number; groupLabel: string; reason: string; itemLabel?: string }
+  | {
+      kind: 'customs';
+      groupSeq: number;
+      groupLabel: string;
+      reason: string;
+      itemLabel?: string;
+      /** The engine's refusal detail (2026-10-09): WHICH row, which figure, why
+       * («Stol: sof og‘irlik (kg) yo‘q — boj kamida $0.4/kg»). */
+      itemSeq?: number;
+      unit?: string;
+      half?: 'baza' | 'duty' | 'excise';
+      rate?: number | null;
+    }
   | { kind: 'freight'; reason: string }
   | { kind: 'fee'; reason: string }
   | { kind: 'totals'; reason: string }
@@ -479,6 +494,10 @@ export async function loadWorkspace(
       dutySpecific: toNum(g.dutySpecific),
       dutyUnit: (g.dutyUnit as DutyUnit | null) ?? null,
       excisePct: toNum(g.excisePct),
+      // The specific excise's columns land with migration 0131 (package P2,
+      // docs/RASTAMOJKA-TUZATISH.md §2 P2.4); until then no group has one.
+      exciseSpecific: null,
+      exciseUnit: null,
       effectiveCertificate,
       dutyFree: g.dutyFree,
       vatFree: g.vatFree,
@@ -708,6 +727,10 @@ function blockersFor(w: {
           groupLabel: g.label,
           reason: g.customs.reason,
           itemLabel: g.customs.itemLabel,
+          itemSeq: g.customs.itemSeq,
+          unit: g.customs.unit,
+          half: g.customs.half,
+          rate: g.customs.rate,
         });
       }
     }
@@ -1025,12 +1048,28 @@ export async function setItemBaza(
     // reconciles on the next Saqlash.
     let basis = input.basis;
     if (input.bazaUsd !== null && basis === null) {
-      const [law] = await tx
-        .select({ dutyUnit: calcGroups.dutyUnit })
+      const [row] = await tx
+        .select({
+          dutyUnit: calcGroups.dutyUnit,
+          quantity: calcRequestItems.quantity,
+          weightKg: calcRequestItems.weightKg,
+          measureUnit: calcRequestItems.measureUnit,
+          measureQty: calcRequestItems.measureQty,
+        })
         .from(calcRequestItems)
         .leftJoin(calcGroups, eq(calcGroups.id, calcRequestItems.groupId))
         .where(and(eq(calcRequestItems.requestId, requestId), eq(calcRequestItems.seq, itemSeq)));
-      basis = defaultBasisFor({ dutyUnit: law?.dutyUnit ?? null });
+      // The same «avto» the save's measure pass stamps — split, this door
+      // stamped «per piece» on a row the pass would have called m².
+      basis = autoBasisFor(
+        { dutyUnit: row?.dutyUnit ?? null },
+        {
+          quantity: row?.quantity == null ? null : Number(row.quantity),
+          weightKg: row?.weightKg == null ? null : Number(row.weightKg),
+          measureUnit: (row?.measureUnit as MeasureUnit | null) ?? null,
+          measureQty: row?.measureQty == null ? null : Number(row.measureQty),
+        },
+      );
     }
     const [changed] = await tx
       .update(calcRequestItems)
@@ -2730,6 +2769,16 @@ export interface TableItemEdit {
    * code); a posted unit could disagree with the code it rides. */
   measureQty?: number | null;
   /**
+   * The unit a measure was STATED in, when nothing else names one (2026-10-09,
+   * docs/RASTAMOJKA-TUZATISH.md P3.0): a seller's or a paste's «120 m²» on an
+   * uncoded or advalor row. Honoured only where neither the law nor the
+   * basis names a different pair — the law still wins.
+   */
+  measureUnit?: MeasureUnit | null;
+  /** The unit «avto» SHOWED when a price was typed with no unit chosen —
+   * posted by the screens only; the machine posts none (judge MR-17). */
+  shownBasis?: BazaBasis;
+  /**
    * The row's baza (0125's four states — `bazaUsd` undefined leaves it alone):
    * - an amount + a basis — priced per that unit, the VED's word;
    * - an amount + NULL basis — «avto»: the stored basis stands, and a row
@@ -3233,6 +3282,8 @@ async function suggestImportFills(input: {
     volumeM3: string | null;
     bazaUsd: string | null;
     bazaBasis: string | null;
+    measureUnit: string | null;
+    measureQty: string | null;
   }[];
   itemEdits: {
     id: string;
@@ -3243,6 +3294,7 @@ async function suggestImportFills(input: {
     volumeM3?: number | null;
     bazaUsd?: number | null;
     bazaBasis?: BazaBasis | null;
+    measureQty?: number | null;
   }[];
   withCodes: {
     name: string;
@@ -3252,6 +3304,8 @@ async function suggestImportFills(input: {
     volumeM3: number | null;
     bazaUsd: number | null;
     bazaBasis: BazaBasis | null;
+    measureUnit?: string | null;
+    measureQty?: number | null;
   }[];
   rates: Map<string, RatesRow>;
 }): Promise<ImportFillPlan> {
@@ -3265,6 +3319,8 @@ async function suggestImportFills(input: {
     /** The unit the VED CHOSE for this still-unpriced row (0125) — a stored
      * basis on a baza-less row is always a choice, never a stamp. */
     chosen: BazaBasis | null;
+    /** A pair the row STATES (2026-10-09) — `unitsForRow` answers in it. */
+    statedPair: 'm2' | 'juft' | 'litr' | null;
   };
   const num = (v: string | null) => (v === null ? null : Number(v));
   const wants: Want[] = [];
@@ -3284,6 +3340,7 @@ async function suggestImportFills(input: {
       weightKg: e && e.weightKg !== undefined ? e.weightKg : num(s.weightKg),
       volumeM3: e && e.volumeM3 !== undefined ? e.volumeM3 : num(s.volumeM3),
       chosen: e && e.bazaUsd !== undefined ? (e.bazaBasis ?? null) : storedBasis,
+      statedPair: statedPairOf(s.measureUnit, e && e.measureQty !== undefined ? e.measureQty : num(s.measureQty)),
     });
   }
   input.withCodes.forEach((r, index) => {
@@ -3296,6 +3353,7 @@ async function suggestImportFills(input: {
       weightKg: r.weightKg,
       volumeM3: r.volumeM3,
       chosen: r.bazaBasis,
+      statedPair: statedPairOf(r.measureUnit ?? null, r.measureQty ?? null),
     });
   });
   if (wants.length === 0) return EMPTY_FILL_PLAN;
@@ -3320,6 +3378,7 @@ async function suggestImportFills(input: {
       hasWeight: w.weightKg !== null && w.weightKg > 0,
       hasQuantity: w.quantity !== null && w.quantity > 0,
       hasVolume: w.volumeM3 !== null && w.volumeM3 > 0,
+      statedPair: w.statedPair,
     });
     // His rule for piece goods: «har bir tovarni ogirligiga qaraymiz». Only
     // meaningful when the row states BOTH a count and a weight.
@@ -3426,6 +3485,8 @@ export async function saveTable(
       volumeM3: calcRequestItems.volumeM3,
       bazaUsd: calcRequestItems.bazaUsd,
       bazaBasis: calcRequestItems.bazaBasis,
+      measureUnit: calcRequestItems.measureUnit,
+      measureQty: calcRequestItems.measureQty,
     })
     .from(calcRequestItems)
     .where(eq(calcRequestItems.requestId, requestId));
@@ -3863,8 +3924,23 @@ export async function saveTable(
       // the group the row ENDED in. Never off the pre-tx dictionary map: a
       // typed code can join a group whose law a person typed over the book.
       let basis = (item.bazaBasis as BazaBasis | null) ?? null;
+      const storedUnit = (item.measureUnit as MeasureUnit | null) ?? null;
+      const storedQty = item.measureQty === null ? null : Number(item.measureQty);
+      // What «avto» means for THIS row (2026-10-09): the law first, then a
+      // pair the row STATES — the seller's «120 m²» on an advalor code is an
+      // m² row, and stamping «per piece» over it priced tiles by the count
+      // nobody gave (judge TT-3/MR-3/S2).
+      const auto = autoBasisFor(
+        { dutyUnit: law },
+        {
+          quantity: item.quantity === null ? null : Number(item.quantity),
+          weightKg: item.weightKg === null ? null : Number(item.weightKg),
+          measureUnit: storedUnit,
+          measureQty: storedQty,
+        },
+      );
       if (item.bazaUsd !== null && basis === null) {
-        basis = defaultBasisFor({ dutyUnit: law });
+        basis = auto;
         set.bazaBasis = basis;
         // Kept in step for the fills and the A2 check below, which read
         // this same snapshot.
@@ -3876,12 +3952,18 @@ export async function saveTable(
       if (basisConflicts(law, basis)) basisConflict.push(item.seq);
       // Per ITEM now, ungrouped rows included: an m² baza on an advalor code
       // needs its m² count as much as an m² law does.
-      const required = pairUnitFor(law, basis);
-      const storedUnit = (item.measureUnit as MeasureUnit | null) ?? null;
-      const storedQty = item.measureQty === null ? null : Number(item.measureQty);
+      // An unpriced row asks in its «avto» unit: a stated pair is the ROW's
+      // own figure and stands while nothing (no law pair, no chosen basis)
+      // names a different one.
+      const required = pairUnitFor(law, basis ?? auto);
       const posted = postedMeasure.get(item.id);
       let write: { unit: MeasureUnit; qty: number } | null | undefined;
-      if (required === null) {
+      if (item.groupId === null && posted === undefined) {
+        // No group = no law known yet (an uncoded row, or a code the sweep
+        // could not place). The pair is a statement about the goods, not a
+        // leftover of a law, so it waits for the code untouched — the
+        // seller's «Kafel 120 m²» survives every unrelated Saqlash (MR-3).
+      } else if (required === null) {
         // Neither the law nor the basis needs an extended unit. A posted qty
         // is DROPPED with a named note (never a whole-save refusal — the box
         // was offered in good faith); a standing pair is cleared and named:
@@ -3942,6 +4024,7 @@ export async function saveTable(
         hasWeight: item.weightKg !== null && Number(item.weightKg) > 0,
         hasQuantity: item.quantity !== null && Number(item.quantity) > 0,
         hasVolume: item.volumeM3 !== null && Number(item.volumeM3) > 0,
+        statedPair: statedPairOf(item.measureUnit, item.measureQty === null ? null : Number(item.measureQty)),
       });
     /**
      * THE SEALED MEMORY GOES FIRST (0096, the owner's own order).
@@ -4114,6 +4197,10 @@ export interface TableNewItem {
   tnvedCode?: string | null;
   note?: string | null;
   measureQty?: number | null;
+  /** See TableItemEdit.measureUnit — the stated pair of a pasted row. */
+  measureUnit?: MeasureUnit | null;
+  /** See TableItemEdit.shownBasis. */
+  shownBasis?: BazaBasis;
   bazaUsd?: number | null;
   bazaBasis?: BazaBasis | null;
 }
