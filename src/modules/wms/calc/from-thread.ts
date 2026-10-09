@@ -160,12 +160,15 @@ export async function threadCalcAnalyze(
     fileCount: material.fileCount,
     timeoutMs: 20_000,
   });
-  // Typed/manual facts win over read ones, the bot's own rule.
+  // Typed/manual facts win over read ones, the bot's own rule — and a total
+  // the text writes two ways («1,200 kg») is left for the person to type in
+  // the preview, never taken from the model that read the same text.
+  const asked = (field: 'weightKg' | 'volumeM3') => manual.ambiguous.some((a) => a.field === field);
   const facts: CalcFacts = {
     fromCity: manual.fromCity ?? ai?.facts.fromCity ?? null,
     toCity: manual.toCity ?? ai?.facts.toCity ?? null,
-    weightKg: manual.weightKg ?? ai?.facts.weightKg ?? null,
-    volumeM3: manual.volumeM3 ?? ai?.facts.volumeM3 ?? null,
+    weightKg: manual.weightKg ?? (asked('weightKg') ? null : (ai?.facts.weightKg ?? null)),
+    volumeM3: manual.volumeM3 ?? (asked('volumeM3') ? null : (ai?.facts.volumeM3 ?? null)),
     goods: (ai?.facts.goods?.length ? ai.facts.goods : manual.goods) ?? [],
   };
   // The book's law for the read codes — the preview asks what the LAW asks
