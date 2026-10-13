@@ -351,4 +351,344 @@ Found by the design judge on the door this round leans on:
 
 ## 8. Binding corrections from the design judge
 
-(filled in after the judge runs)
+The judge ran four lenses: twins, money, access and the write path. It raised
+55 objections; 54 were confirmed or partly confirmed by a refuter, 5 of them
+blockers, and 1 was refuted. Every surviving one is absorbed below. Where two
+objections pulled in different directions, the choice is stated.
+
+### 8.1 The twin rule (§3) — ONE symmetric predicate
+
+`accounting/twins.ts` holds the pure `isTwinPair(cost, expense)` and its SQL
+twin. The pre-save warning AND the map's count both call it, with the same
+constants, and a unit test runs the pure half and the SQL half over the same
+rows. It decides from each row's **payer kind**:
+
+- a cost is one of:
+  - K = has a kassa;
+  - S = staff partner (`staffPartnerSql`);
+  - F = any other partner;
+  - ∅ = none of these.
+- an expense is one of:
+  - K' = has a kassa;
+  - S' = staff partner;
+  - F' = firm partner;
+  - ∅c = cash category with no kassa and no partner (old history);
+  - B = non-cash category.
+
+| cost \ expense | K' | S' | F' | ∅c | B |
+|---|---|---|---|---|---|
+| K | twin iff same kassa | twin (mirror of payment) | twin (mirror of payment) | twin | no |
+| S | twin («qarzning to'lovi») | twin iff same partner | no | no | no |
+| F | twin («qarzning to'lovi») | no | twin iff same partner | no | no |
+| ∅ | twin (M4a) | no | no | twin (M4a) | no |
+
+**Money is matched per shape (B1, the judge's blocker).**
+- **K × K'.** Compare `cost.account_amount` with `expense.amount`. Both are in
+  the kassa's currency, so they must be equal to the cent.
+  - For a candidate cost, the kassa side is derived exactly as `addCostEntry`
+    does: `assertTill` + `tillAmountFor`, both on the pool, before the check.
+  - The words «the same currency» are deleted.
+- **Every other shape.** Use `sameMoney([cost], expense)` exactly as
+  `mergeDuplicate` does: equal to the cent in one currency, otherwise dollars
+  within `fxResidueAllowance`.
+  - `no_rate` means «cannot check». It is NOT a twin, and the warning area
+    says so in words.
+
+**The cost side of shape ∅** is M4a's own pair: no kassa, no partner, not
+merged — `unplacedCostSql`'s terms without `since`. The expense side reuses
+`mergeableExpenseSql` (exported from cost-merge.ts, never restated).
+
+**Rows that are never a twin, applied to BOTH rows (the candidate as well as
+the stored one):**
+- voided;
+- `recurring_id` set;
+- `commissionPayoutSql`;
+- non-cash category.
+
+**A MERGED cost** (`merged_expense_id` set) is a candidate like any other cost.
+It now carries the kassa the merge moved onto it, so it reads as K. The merge's
+own cost fence is NOT reused for this query.
+
+**The window.**
+- Dates within `MERGE_DAYS`.
+- OR, when a cost is checked against an expense, an expense that an un-merge
+  restored (`restoredSql`, exported from cost-merge.ts, within
+  `RESTORED_DAYS`).
+
+**Sums, not only pairs (B2).**
+- (a) On the grid, the whole sheet's Σ is checked against expenses: one
+  currency, one kassa, one date.
+- (b) Completing-sum. A candidate cost plus the same truck's live costs on the
+  same `cost_date`, in the same currency and with the same payer, equal to one
+  expense — and the mirror for a candidate expense. This is one grouped query,
+  never a subset search.
+- STATED as not checked: sums spread over several trucks or several days.
+
+### 8.2 Who sees a twin, and the flow
+
+- **The check runs only for the expense book's readers (B3, a blocker).** On
+  a COST door the twin check runs only when `mayPickTill(actor.permissions)`
+  holds, i.e. `finance.expenses`. For anyone else the action runs NO twin
+  query and the response never carries `twins`. Why nothing is lost:
+  - a non-holder can only write a kassa-less, non-staff cost (`payerRefusal`);
+  - that shape is caught by the xarajat-kassa queue, the M4a merge and the
+    map's count;
+  - the accountant gets the warning from the expense side.
+
+  The pages pass `twinCheck` from the same predicate. `twinsFor(candidate,
+  reader)` takes the reader as a REQUIRED argument.
+- **What a twin line shows.**
+  - The kassa goes through `tillView`.
+  - A staff payer's name prints only under `maySeeStaffMoney`.
+  - On the expense door, a reader who sees only their own costs
+    (`costSightFor(reader).ownOnly`) gets a colleague's cost twin redacted:
+    the book, the date and «boshqa xodim yozgan — buxgalter tekshiradi». No
+    truck code, type, typist or link.
+- **Where the check runs.**
+  - In `addCostEntryAction`: after the target's authorize and after
+    `payerRefusal`, before `addCostEntry`.
+  - In `saveReceiptCostGridAction`: inside `addReceiptCostsBulk`'s pre-loop
+    block, over EVERY posted cell, before a single cell is written.
+  - In `addExpenseAction`: after `needsKassaOrPayer` and BEFORE
+    `claimExpenseRequest`, because the claim is a write.
+  - A fence: `addCostEntry` and `addGridCell` never reference `twinsFor`.
+- **The ack is single-use (B4).**
+  - The warning returns `ackToken` = a sha256 over: the candidate's own
+    fields, the sorted twin ids, and the ids of live same-target, same-money
+    rows on the candidate's OWN book.
+  - Only «Baribir saqlash» sends the token. The server recomputes it; any
+    difference returns `{twins}` again.
+  - Once a bill is saved, the next identical bill's token differs, so it is
+    asked again.
+  - No secret is needed: the person may always save. No raw ids of redacted
+    rows reach the browser.
+  - This is best-effort. The two books are not serialised against each other,
+    and the count is the backstop. The word «compare-and-set» is withdrawn.
+- **The answer is remembered.** The saving door writes the acked twin ids into
+  the new row's create audit as `after.twinAck`. The map's count excludes a
+  pair either row's audit acked.
+- **Ranking.**
+  - Order: same warehouse first, then the smallest day gap, then an expense
+    with no employee.
+  - The display shows the top 5 plus «yana N». The token covers the full set.
+- **Words per shape.**
+  - same partner: «qarz ikki marta yozilmoqda — bittasini bekor qiling»;
+  - partner × kassa: «bu qarzning to'lovi bo'lsa — xarajatni bekor qilib,
+    kontragentga to'lov sifatida yozing»;
+  - mergeable (∅ shapes): «Xarajat kassasi → Birlashtirish» link;
+  - every other shape: «bittasini bekor qiling».
+- **The rasxod xabari path.**
+  - A twin warning leaves the request `open` (no claim). `AccountingFormState`
+    gains `{ twins, ackToken, values }`.
+  - An own-pocket request whose money is already a kassa-less cost on a truck
+    cannot be closed by any door. STATED in §6 and printed in the warning:
+    «o'z pulidan» is set on the cost, then the request is closed by «Rad
+    etish» with a reason.
+- **The expense form holds its inputs (B5).**
+  - Drop `action={formAction}` and post from `onSubmit` with
+    `preventDefault` + `startTransition`, so React's auto-reset never runs.
+  - After a clean save, reset explicitly.
+  - A source-shape fence refuses `action=` on that form.
+  - The e2e asserts that every field survives the warning on both the kassa
+    path and the payer path.
+- **Not covered, on purpose.**
+  - The crate builder's own fee (`createCrate`, a warehouse door, kassa-less;
+    the count and the merge catch it).
+  - `confirmReceipt`'s `extraCosts`, which no screen sends since #1045. That
+    door is closed: the schema refuses a non-empty list with
+    `extra_costs_retired`.
+
+### 8.3 The map's money (§1)
+
+- **«Kitob jami».** Kitob jami = direct + opex, from the same `profitAndLoss`
+  call. The hero = kitob jami − fxTotal = `pnlParts.cost`.
+- **Every breakdown reconciles to kitob jami, never to the hero.** A bridge
+  line follows it: «Kurs farqi ±$F — hech bir sklad/partiyaga tegishli emas»,
+  then = Jami. The bridge is rendered from the same `pnlParts` result.
+- **Kurs farqi prints as its effect on the cost.** That is −fx: a gain prints
+  «−$X». The figure and its parts print in cents.
+- **Percentages are taken within each group.** Kinds as a % of direct,
+  categories as a % of opex.
+- **`spendKind` tests the truck stamp FIRST:** `batch_id IS NOT NULL` →
+  partiya, then receipt / crate / pickup by scope. One SQL fragment serves the
+  bars, the Sklad grouping and the register's «joy» filter. A grid-stamped
+  cell is never under its receipt's warehouse.
+- **The yashik packing warehouse.** A `LEFT JOIN LATERAL` to the crate's
+  `crate_packed` movement, with no box-status filter. With no movement the cost
+  goes to «sklad ko'rsatilmagan».
+- **«Kim to'ladi».**
+  - `payerKindSql({ seesStaff })` takes `seesStaff` as REQUIRED. Without staff
+    sight there is no «o'z puli» branch: the row lands in «qarzga yozilgan
+    (kontragent)», and `?payer=own` is dropped from the URL.
+  - Expense rows get their own seventh bucket, «kassasiz yozilgan xarajat».
+    «navbatda» and «tarix» apply to costs only.
+  - Σ buckets == kitob jami for every reader.
+- **Unconverted money.** Every money row from cost entries carries
+  `count(*) FILTER (WHERE amount_usd IS NULL)` in the same query. A zero sum
+  with N > 0 prints «kurs yo'q», never $0.
+  - A truck row exists when the truck has a live cost dated in the period.
+  - Order: dollars, then the unconverted count, then code.
+  - A truck with N > 0 is always listed.
+- **The kind chip.** One pure `spendTruckChip({ internal, continuation,
+  revenueUsd, tracked })`:
+  1. internal → «ichki reys · faqat tannarx» (even when tracked);
+  2. `tripKind`'s continuation → «davomi»;
+  3. tracked → «💰 foyda hisobi»;
+  4. otherwise no chip, with one legend line.
+
+  The inputs are read for the DRAWN rows only, ideally through one extracted
+  `truckKindInputs(ids)` shared with `profitByBatch`.
+- **Truck row links.**
+  - «tannarx →» goes to the truck's Narx tab (`batchTabHref(id,'narx')`) when
+    `mayOpenBatchCard && mayOpenBatchPricing(internal)`.
+  - Otherwise to the xarajat tab when `mayOpenBatchCosts`.
+  - Otherwise plain text.
+  - The fold heading carries one «Partiya foydasi →» link with its from/to.
+    Its muted note says that page lists marked trucks by departure date.
+- **The period.** A pure `sarflarPeriod(params, now)`: with no valid from/to it
+  is month start → Tashkent today; otherwise `resolvePeriod`. Every outbound
+  link carries from/to explicitly.
+- **Which period owns a twin pair.** The period containing the later row's
+  date. The count reads rows: «N ta yozuv tekshirilmagan» = distinct rows with
+  at least one unacked twin.
+- **The read-only live count before shipping** includes the judge's three:
+  - forged-scope rows (crate/pickup carrying `batch_id`, etc.);
+  - live costs on cancelled trucks;
+  - twin hit rates.
+
+### 8.4 Doors and links
+
+- **One page-wide link rule.** Every link on the map or /kiritish asks its
+  destination's own predicate; where it would refuse, plain text. The helper is
+  `costTargetHref(actor, row)`:
+  - truck → `mayOpenBatchCard`;
+  - receipt → `receiptsReadableBy`, asked once per page;
+  - crate → `crates.manage && inScope`;
+  - pickup → always a link.
+- **Kassa-side links** (Kassalar, «＋ Umumiy xarajat», category →
+  Xarajatlar, navbatda → xarajat-kassa) are drawn only under `mayPickTill`.
+  Otherwise the kassa bucket links to /accounting/balance.
+- **Expense rows on the map.** The row gate is a REQUIRED reader argument,
+  `expenseRows: maySeeStaffMoney(…)`.
+  - The test actors are two invented roles, A = finance.manage +
+    finance.reports and B = clients.manage + finance.reports, neither holding
+    finance.expenses.
+  - The accountant is the control.
+  - Never «analyst», a word this codebase reserves for the admin roles.
+- **XLSX.** Its own route, `api/accounting/sarflar/route.ts`.
+  - Door: `companyMoneySight`, else 403.
+  - The builder takes the sight, `includeStaff`, `costSightFor` — all required
+    — and the page's own validated filters.
+  - It never reuses `buildExpensesXlsx`'s row reader.
+  - The download writes an audit row.
+- **The money-reader fence** learns `companyMoneySight(` as a gate, and every
+  new loader joins MONEY_READERS with the sight as a required argument.
+- **A crate cost has no void door for the accountant** without
+  `crates.manage`. STATED in §6; the register still offers no 🗑.
+
+### 8.5 The write path (§4)
+
+- **The cancelled race (B6, a blocker).**
+  - `cancelBatch` moves its cost and charge guards BELOW the member-box
+    `FOR UPDATE`. Before them it takes a raw `SELECT status … FOR NO KEY
+    UPDATE` on the truck and re-checks the status.
+  - The order is advisory → boxes → truck. It is never truck before boxes,
+    because the phone's scan path locks boxes and then the truck.
+  - `addCostEntry`: every validation, rate, till and target-nulling stays on
+    the pool. Then one short `db.transaction`:
+    1. if the entry names a receipt, `SELECT … FROM receipts … FOR KEY SHARE`
+       (refuse voided);
+    2. then `SELECT status FROM batches … FOR SHARE` on the resolved truck —
+       `batchId` for a batch, the internal `stampTruck` for a grid cell —
+       refusing `cancelled`;
+    3. INSERT;
+    4. `writeAudit(tx, …)`.
+
+    `recomputeEntry` and `chargeForCost` stay after the commit.
+  - The race tests assert OUTCOMES on a held second connection:
+    - cost-first → `batch_has_costs`;
+    - cancel-first → `cancelled`, no row;
+    - a stamped grid cell;
+    - an annul-shaped holder → no 40P01;
+    - a phone-shaped holder → a wait, never a deadlock.
+  - Red proof: the guards moved back above the lock.
+- **Normalisation.**
+  - `addCostEntry` nulls every target id the scope does not name.
+  - `stampTruck` is a separate second parameter that only `addGridCell`
+    passes; the schema is non-strict, so a posted key is stripped.
+  - `clientId` is stored only on a `direct_to_client` basis — a service rule,
+    never a CHECK (`createCrate` legitimately stores a client on its weight
+    fee).
+- **The doors.**
+  - `mayEnterBatchCost(actor, batch)` = status ≠ cancelled && `mayAt(actor,
+    'costs.enter_batch', origin)`. Its SQL twin `mayEnterBatchCostWhere(actor)`
+    sits in the same file, feeds the picker's rows AND its count, and is pinned
+    against the JS form by a role × status × scope matrix.
+  - Four askers: `addCostEntryAction`'s batch branch,
+    `saveReceiptCostGridAction`, the tab's single `mayEnter`, and the picker
+    / `?p=`.
+- **`CostPanel` splits `canEdit` into `canAdd` and `canVoid`, both REQUIRED.**
+  - The truck tab: `canAdd` = `mayEnter`; `canVoid` = `costs.enter_batch` at
+    origin, status-blind.
+  - The annul deliberately leaves kassa-paid costs live on a cancelled truck,
+    so the void path never learns the status.
+  - Receipt, crate and pickup mounts pass one value to both.
+- **`costPanelOptions(actor, batchId, { mayEnter })`.** `mayEnter` is REQUIRED.
+  When it is false: no `listPartners` call, and empty tills and clients.
+  - Cost types come from one ordered reader, `activeCostTypes()`
+    (`createdAt`, `code`), shared with the grid.
+  - A batch-scope panel with no last-used type defaults to the `freight` code
+    when it is active.
+- **`?p=`.**
+  - `isUuidShaped` first; otherwise the picker, with no query.
+  - Not found and out of scope → the same sentence, «Partiya topilmadi».
+  - Cancelled → «Partiya bekor qilingan — xarajat yozilmaydi».
+  - A `batchForCostEntry(actor, raw)` loader serves both.
+- **The picker.**
+  - Filter: `batchTextMatchSql(likeNeedle(q))` AND `mayEnterBatchCostWhere`.
+  - Order:
+    1. exact code;
+    2. `prefixNeedle(q)`, a new sibling of `likeNeedle`;
+    3. a former-name hit;
+    4. the rest by `created_at` DESC.
+  - Unaliased `batches`.
+  - The YW-1009 test gives YW-1009 the NEWER date.
+- **`afterSave: 'again'`.** It opens the panel on mount and keeps it open after
+  a save.
+  - Amount, kassa amount and note are cleared.
+  - Type, currency, date, payer and a proportional basis are KEPT — across a
+    truck switch too (his 5a), held by a small client wrapper above the keyed
+    panel and passed in as initial values.
+  - A `direct_to_client` bill is a one-off: after any save the basis returns
+    to the scope default and the client to empty, on every mount.
+  - `key={id}` stays.
+- **No `<Suspense>`** on either page, fenced.
+  - Keep `router.refresh()` unless the action revalidates the panel's paths;
+    it also revalidates /accounting/sarflar and /kiritish.
+  - Picker rows are inert while a save or a twin confirm is in flight.
+- **«Bugun men kiritganlar».** `entered_by = me AND created_at >=
+  tashkentDayStart(tashkentDay())` as an ISO string `::timestamptz`, AND
+  `voided_at IS NULL`. The out-of-period note:
+  - tomorrow → «ertangi sana bilan» + that month's link;
+  - before the month → that row's own month (named, or «O'tgan oy» when it is
+    the previous month).
+
+  The fixtures run at 00:00-05:00 Tashkent.
+- **The refusal map.** `PAYER_ERRORS` is exported and fenced: every value
+  exists in all four bundles, and every refusal code the actions and services
+  can return is a key or sits on a counted allowlist.
+- **360 px.** CostPanel's note line and chips get `[overflow-wrap:anywhere]`.
+  The e2e types a 60-character unbroken note and asserts `scrollWidth <=
+  clientWidth`.
+
+### 8.6 Deliberately overridden or narrowed
+
+- **J3 said partner × kassa is never a twin, matching M4a; J4 said it is.**
+  Built as a twin with the payment wording. That pair doubles the P&L and
+  leaves the debt standing, and warning about it is cheap. Stated to him as the
+  judgement call.
+- **J9 counted rows; J28 counted edges.** The count is ROWS («N ta yozuv
+  tekshirilmagan»), so it reaches zero once he has answered them. The linked
+  list groups the edges by the shared row.
+- **J8(c), closing an own-pocket request onto an existing cost,** needs a
+  migration and touches his 8a («not now»). Not built; stated.
