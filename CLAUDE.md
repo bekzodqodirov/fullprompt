@@ -2817,12 +2817,12 @@ and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read
 2026-09-30 04:30 UTC, built after #103 merged, so 0120's code runs) — the count
 was asked for and NOT quoted; PR #106 (0121) deployed 2026-09-30 evening («Hozir sistema
 yaxshi ishlayabti», count not quoted either); PR #109 (0122) was asked about and NOT
-answered, so COUNT FIRST on the next deploy: it must read
-**132** (anything less means a migration did not land — read the `migrate`
-container's own output; from 113 the whole 0113-0120 set applies and EVERY
-container must be recreated once: `--profile https --profile telegram up -d
---build`, compose gained `init`, a healthcheck, log caps and a postgres flag);
-a code-only round after it is checked by `/api/version`, not the count.
+answered. **Then he CONFIRMED 132** («deploy qildim 132 chiqdi», 2026-10-13,
+after PR #118 — the customs calculator fix, 0131), so production is at the
+journal's length and EVERYTHING in this file through #1353 is LIVE. The next
+round with a migration must read **133**; a code-only round after it is
+checked by `/api/version`, not the count (anything short of the journal means
+a migration did not land — read the `migrate` container's own output).
 Never carry this number over from a previous session: read it
 (`ls src/modules/platform/db/migrations/*.sql | wc -l`) before writing the
 owner a step list, because the count is the only check that separates «the
