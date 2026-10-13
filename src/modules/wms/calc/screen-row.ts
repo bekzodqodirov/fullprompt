@@ -275,3 +275,45 @@ export function pendingUnitOnScreen(
     { confirmed: ctx.confirmed, lawPair },
   );
 }
+
+/**
+ * Which block each row prices in RIGHT NOW — the drafted state, by the
+ * save's own regroup (P3.8, judge MR-22): a row whose code is drafted joins
+ * that code's block (the first by seq, `groupsByCodeOf`), a row whose code is
+ * drafted EMPTY leaves its block, and a drafted code no block carries makes
+ * the whole figure the browser's guess until the save mints that block.
+ *
+ * The live bar used to price a re-coded row in its OLD block and count the
+ * ungrouped rows off the STORED list — a total that the very next Saqlash
+ * would change or refuse. `ungrouped` is the drafted count the request's
+ * assembly needs; `moved` names the blocks whose membership the save will
+ * change, so their footers say «taxminiy».
+ */
+export function liveMembership<I extends ScreenItem & { id: string }, G extends ScreenGroup & { id: string }>(
+  items: I[],
+  drafts: Record<string, ScreenDraft | undefined>,
+  groupById: Map<string, G>,
+  groupsByCode: Map<string, G>,
+): { members: Map<string, I[]>; ungrouped: I[]; unsavedCode: boolean; moved: Set<string> } {
+  const members = new Map<string, I[]>();
+  const ungrouped: I[] = [];
+  const moved = new Set<string>();
+  let unsavedCode = false;
+  for (const item of items) {
+    const screen = screenRowOf(item, drafts[item.id], groupById, groupsByCode);
+    const home = screen.lawGroup?.id ?? null;
+    if (screen.lawUnknown) unsavedCode = true;
+    if (home !== item.groupId) {
+      if (item.groupId) moved.add(item.groupId);
+      if (home) moved.add(home);
+    }
+    if (home) {
+      const list = members.get(home) ?? [];
+      list.push(item);
+      members.set(home, list);
+    } else if (!screen.lawUnknown) {
+      ungrouped.push(item);
+    }
+  }
+  return { members, ungrouped, unsavedCode, moved };
+}

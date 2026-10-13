@@ -22,6 +22,7 @@ import { openCalcRequest } from '@/modules/wms/calc/service';
 import { saveBaza } from '@/modules/wms/calc/dictionaries';
 import { itemNameNorm } from '@/modules/wms/calc/memory';
 import { isBehindOnBasisCheck } from '@/modules/wms/calc/basis';
+import { groupsByCodeOf, liveMembership } from '@/modules/wms/calc/screen-row';
 import { normalizeName } from '@/modules/wms/customs/import-parse';
 import { productKey } from '@/modules/wms/tnved/service';
 import {
@@ -504,6 +505,42 @@ describe('the screen’s units reach the row (2026-10-09, P3: S2, UX12, MR-17) a
     await storeOldShape(id, 1, 120, 'm2');
     expect((await save(id, {})).unitsMoved).toEqual([]);
     expect(await rowOf(id, 1)).toMatchObject({ quantity: '120.000', unit: 'm2' });
+  });
+
+  /**
+   * P3.8's invariant (#886): the blocks the live bar prices are the blocks
+   * the save produces — asked of the real saveTable + loadWorkspace, not of
+   * a restated rule.
+   */
+  it('the live membership of a drafted re-code is what the save then stores', async () => {
+    const id = await open([
+      { name: `stol ${tag()}`, tnvedCode: '9403600000', quantity: 2 },
+      { name: `kreslo ${tag()}`, tnvedCode: '9401610000', quantity: 3 },
+      { name: `lampa ${tag()}`, quantity: 1 },
+    ]);
+    await save(id, {});
+    const before = (await loadWorkspace(id))!;
+    const all = [...before.groups.flatMap((g) => g.items), ...before.ungrouped];
+    const second = all.find((i) => i.seq === 2)!;
+    const third = all.find((i) => i.seq === 3)!;
+    const drafts = { [second.id]: { tnvedCode: '9403600000' }, [third.id]: { tnvedCode: '9401610000' } };
+    const live = liveMembership(all, drafts, new Map(before.groups.map((g) => [g.id, g])), groupsByCodeOf(before.groups));
+    expect(live.unsavedCode).toBe(false);
+
+    await save(id, {
+      items: [
+        { id: second.id, seq: 2, tnvedCode: '9403600000' },
+        { id: third.id, seq: 3, tnvedCode: '9401610000' },
+      ],
+    });
+    const after = (await loadWorkspace(id))!;
+    const saved = new Map(after.groups.map((g) => [g.tnvedCode, g.items.map((i) => i.id).sort()]));
+    for (const g of before.groups) {
+      const predicted = (live.members.get(g.id) ?? []).map((i) => i.id).sort();
+      if (predicted.length === 0) expect(saved.has(g.tnvedCode)).toBe(false);
+      else expect(saved.get(g.tnvedCode)).toEqual(predicted);
+    }
+    expect(after.ungrouped.length).toBe(live.ungrouped.length);
   });
 
   it('«avto» stores the unit the screen SHOWED; with none shown the stamp is named', async () => {

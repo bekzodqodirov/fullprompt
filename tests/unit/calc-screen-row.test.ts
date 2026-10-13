@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ghostAutoBasis,
   groupsByCodeOf,
+  liveMembership,
   neededCells,
   pendingUnitOnScreen,
   postedBasis,
@@ -290,5 +291,50 @@ describe('pendingUnitOnScreen — the sentence is the save’s own decision', ()
     expect(pendingUnitOnScreen(old({ unit: 'шт' }), ctx, undefined)).toBeNull();
     expect(pendingUnitOnScreen(old({ quantity: null }), ctx, undefined)).toBeNull();
     expect(pendingUnitOnScreen(old({ unit: null }), ctx, undefined)).toBeNull();
+  });
+});
+
+/**
+ * P3.8 (judge MR-22): the live bar prices each row in the block the SAVE
+ * will put it in. It used to price a re-coded row in its old block and count
+ * ungrouped rows off the stored list — a total the next Saqlash changes.
+ */
+describe('liveMembership — the drafted blocks, by the save’s own regroup', () => {
+  const r = (id: string, over: Pick<ScreenItem, 'groupId' | 'tnvedCode'>) => ({
+    id,
+    ...row0({ bazaBasis: null, ...over }),
+  });
+  const items = [
+    r('a', { groupId: 'g-tile', tnvedCode: '6907210000' }),
+    r('b', { groupId: 'g-tile', tnvedCode: '6907210000' }),
+    r('c', { groupId: null, tnvedCode: null }),
+  ];
+  const ids = (list: { id: string }[] | undefined) => (list ?? []).map((i) => i.id);
+
+  it('nothing drafted: the stored blocks, and nothing moved', () => {
+    const live = liveMembership(items, {}, byId, byCode);
+    expect(ids(live.members.get('g-tile'))).toEqual(['a', 'b']);
+    expect(ids(live.ungrouped)).toEqual(['c']);
+    expect(live).toMatchObject({ unsavedCode: false });
+    expect([...live.moved]).toEqual([]);
+  });
+
+  it('a row re-coded to another block’s code prices THERE; both blocks are «moved»', () => {
+    const live = liveMembership(items, { b: { tnvedCode: '5701100000' } }, byId, byCode);
+    expect(ids(live.members.get('g-tile'))).toEqual(['a']);
+    expect(ids(live.members.get('g-wool'))).toEqual(['b']);
+    expect([...live.moved].sort()).toEqual(['g-tile', 'g-wool']);
+  });
+
+  it('a code drafted EMPTY leaves its block and counts as ungrouped; an uncoded row given a code joins', () => {
+    const live = liveMembership(items, { a: { tnvedCode: '' }, c: { tnvedCode: '5701100000' } }, byId, byCode);
+    expect(ids(live.ungrouped)).toEqual(['a']);
+    expect(ids(live.members.get('g-wool'))).toEqual(['c']);
+  });
+
+  it('a drafted code no block carries means no figure until the save mints it', () => {
+    const live = liveMembership(items, { c: { tnvedCode: '6403990000' } }, byId, byCode);
+    expect(live.unsavedCode).toBe(true);
+    expect(ids(live.ungrouped)).toEqual([]);
   });
 });

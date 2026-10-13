@@ -3764,7 +3764,8 @@
       "pendingMove": "Sotuvchi «{said}» yozgan — son dona ustunida turibdi. Saqlashda {to} ustuniga o‘tadi (narx yozilmasa).",
       "pendingAsk": "Sotuvchi «{said}» yozgan — bu dona soni emas bo‘lishi mumkin. Dona sonini yozing.",
       "isPieces": "Bu dona",
-      "isCartons": "Bu karobka — sonini yozaman"
+      "isCartons": "Bu karobka — sonini yozaman",
+      "liveUnsaved": "Kod yangi — Saqlang, keyin summa chiqadi"
     },
     "phone": {
       "hint": "Tovarni bosing — tahrirlash ochiladi. ✅ va muhrlash ham shu yerda.",

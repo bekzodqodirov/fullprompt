@@ -28,6 +28,7 @@ import {
   ghostAutoBasis,
   ghostScreenOf,
   groupsByCodeOf,
+  liveMembership,
   neededCells,
   pendingUnitOnScreen,
   postedBasis,
@@ -660,14 +661,23 @@ export function ItemsTable({
     };
   };
 
+  /** Which block each row prices in NOW — the drafted codes re-home their
+   * rows the way the save's regroup will (P3.8), so the live figure is the
+   * saved one or no figure at all. */
+  const live = useMemo(
+    () => liveMembership(allItems, drafts, groupById, groupsByCode),
+    [allItems, drafts, groupById, groupsByCode],
+  );
+  const liveMembersOf = (g: WorkspaceGroup) => live.members.get(g.id) ?? [];
+
   const liveCustomsByGroup = useMemo(() => {
     const out = new Map<string, CustomsResult>();
     for (const g of workspace.groups) {
-      out.set(g.id, customsFor(pricedGroupOf(g), g.items.map((i) => liveItem(i))));
+      out.set(g.id, customsFor(pricedGroupOf(g), liveMembersOf(g).map((i) => liveItem(i))));
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspace, drafts]);
+  }, [workspace, drafts, live]);
 
   /** Item 1: the block's one baza, read off the LIVE merged rows — the
    * footer must not print yesterday's baza beside a live customs figure
@@ -675,11 +685,11 @@ export function ItemsTable({
   const liveBazaByGroup = useMemo(() => {
     const out = new Map<string, { bazaUsd: number; bazaBasis: BazaBasis } | null>();
     for (const g of workspace.groups) {
-      out.set(g.id, uniformBazaOf(g.items.map((i) => liveItem(i))));
+      out.set(g.id, uniformBazaOf(liveMembersOf(g).map((i) => liveItem(i))));
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspace, drafts]);
+  }, [workspace, drafts, live]);
 
   /** A1's chip over the same LIVE rows the footer's baza reads — the
    * server's verdict is about the stored rows, a moment the footer no
@@ -687,19 +697,25 @@ export function ItemsTable({
   const liveBasisNotLawByGroup = useMemo(() => {
     const out = new Map<string, boolean>();
     for (const g of workspace.groups) {
-      out.set(g.id, basisNotLaw(g.dutyUnit, g.items.map((i) => liveItem(i))));
+      out.set(g.id, basisNotLaw(g.dutyUnit, liveMembersOf(g).map((i) => liveItem(i))));
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspace, drafts]);
+  }, [workspace, drafts, live]);
 
   /** The bar's total — the SAME request-grain assembly the server runs, over
    * the live blocks. No partial sums: while any block or the fee refuses,
    * the bar shows the blocked state, never a smaller number. */
+  // A drafted code no block carries, or a new row, has no figure until the
+  // save mints its block: the bar says so instead of a total the very next
+  // Saqlash would change (MR-22).
+  const liveUnsaved = live.unsavedCode || dirtyGhosts.length > 0;
   const liveTotals = useMemo(() => {
+    if (liveUnsaved) return null;
     const assembled = requestCustomsFor({
-      customs: workspace.groups.map((g) => liveCustomsByGroup.get(g.id)!),
-      ungroupedCount: workspace.ungrouped.length,
+      // A block every row left is pruned by the save — never a refusal here.
+      customs: workspace.groups.filter((g) => liveMembersOf(g).length > 0).map((g) => liveCustomsByGroup.get(g.id)!),
+      ungroupedCount: live.ungrouped.length,
       bhmUzs: workspace.bhmUzs,
       fxUzsPerUsd: workspace.fxUzsPerUsd,
       feeOverrideUsd: workspace.feeOverrideUsd,
@@ -715,7 +731,8 @@ export function ItemsTable({
       weightKg: workspace.weightKg,
       volumeM3: workspace.volumeM3,
     });
-  }, [workspace, liveCustomsByGroup]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspace, liveCustomsByGroup, live, liveUnsaved]);
 
   /**
    * The open sheet's figure — what THIS Saqlash would store (#886): the
@@ -1704,9 +1721,11 @@ export function ItemsTable({
 
   const busy = pending || saving;
   const unconfirmed = workspace.groups.filter((g) => g.confirmedAt === null).length;
-  const unpriced = workspace.groups.filter((g) => !(liveCustomsByGroup.get(g.id)?.ok ?? false)).length;
+  // Blocks every row has left are pruned by the save — not «unpriced».
+  const liveGroups = workspace.groups.filter((g) => (live.members.get(g.id)?.length ?? 0) > 0);
+  const unpriced = liveGroups.filter((g) => !(liveCustomsByGroup.get(g.id)?.ok ?? false)).length;
   const firstRefusal = (() => {
-    for (const group of workspace.groups) {
+    for (const group of liveGroups) {
       const customs = liveCustomsByGroup.get(group.id);
       if (customs && !customs.ok) return { group, customs };
     }
@@ -1753,6 +1772,11 @@ export function ItemsTable({
           >
             ⚠ {t('table.unpriced')}: {unpriced}
           </a>
+        ) : null}
+        {liveUnsaved ? (
+          <span className="chip chip-warn" data-testid="calc-bar-live-unsaved">
+            {t('grid.liveUnsaved')}
+          </span>
         ) : null}
         {liveTotals?.ok ? (
           <span className="font-mono text-sm font-semibold tabular-nums" data-testid="calc-bar-total">
@@ -2035,6 +2059,7 @@ export function ItemsTable({
                     liveCustoms={row.group ? (liveCustomsByGroup.get(row.group.id) ?? null) : null}
                     liveBaza={row.group ? (liveBazaByGroup.get(row.group.id) ?? null) : null}
                     liveBasisNotLaw={row.group ? (liveBasisNotLawByGroup.get(row.group.id) ?? false) : false}
+                    liveMoved={row.group ? live.moved.has(row.group.id) : false}
                     drafts={drafts[row.item.id]}
                     groupById={groupById}
                     groupsByCode={groupsByCode}
@@ -2232,6 +2257,7 @@ const ItemRowBlock = memo(function ItemRowBlock({
   liveCustoms,
   liveBaza,
   liveBasisNotLaw,
+  liveMoved,
   drafts,
   groupById,
   groupsByCode,
@@ -2254,6 +2280,8 @@ const ItemRowBlock = memo(function ItemRowBlock({
   liveCustoms: CustomsResult | null;
   liveBaza: { bazaUsd: number; bazaBasis: BazaBasis } | null;
   liveBasisNotLaw: boolean;
+  /** The save will change this block's members (a drafted code) — P3.8. */
+  liveMoved: boolean;
   drafts: ItemDraft | undefined;
   groupById: Map<string, WorkspaceGroup>;
   groupsByCode: Map<string, WorkspaceGroup>;
@@ -2560,6 +2588,7 @@ const ItemRowBlock = memo(function ItemRowBlock({
           busy={busy}
           dirty={dirty}
           act={act}
+          liveState={liveMoved ? 'unsaved_code' : 'ok'}
         />
       ) : null}
     </>
