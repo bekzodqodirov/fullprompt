@@ -33,7 +33,11 @@ async function login(page: import('@playwright/test').Page, phone: string) {
 }
 
 const STAMP = Date.now();
-const GOODS = `karta tovar e2e ${STAMP}`;
+// The stamp sits BEFORE a word (2026-10-09): at the end of a name, beside
+// «, 300», the kernel cannot tell a name's trailing number from a count
+// (`unlabelled`), and the seller's table asks which is which before it sends
+// (calc-row-fix-name). This spec is about the card, not that question.
+const GOODS = `karta tovar ${STAMP} e2e`;
 let leadName = '';
 let cardUrl = '';
 let requestId = '';

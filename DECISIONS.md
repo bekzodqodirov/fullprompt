@@ -2596,3 +2596,200 @@ Both designed, judged by four lenses with refuters (rename: 16 confirmed objecti
 1338. **«Where did my job land» is one rule (`calcJobHrefFor`), chosen per READER (#1281's «no 🔗 rather than a dead one").** The VED who lands a stranger's calculation owns the lead (his wave-2 ⭐ 5 a) but his role cannot open `/crm/leads/<id>`; the bot's ✅ now links the card when the card admits him, else `/hisoblash/<request>` for `ved.docs`, else no link line. `IntakeTarget.leadOwnerId` comes from the landing itself (a JOINED lead belongs to its own owner, the case a sender-based guess gets wrong); the AI prefill picks the link for its own reader, and the lenta gets the linkless text.
 
 1339. **PROCESS: a container restart mid-build, and a merge whose conflict only `typecheck` could see.** The restart killed both builders at their last gates (one with an un-diagnosed `next build` death that was the restart itself); a resume prompt that continued IN PLACE ("never checkout -B") kept every commit. The third package never started before the restart: on this 4-CPU container a workflow runs two agents at a time, and it queued. `eslint .` lints `.claude/worktrees/*` — three full checkouts — so a lint run beside live worktrees looks hung; remove a merged worktree before the gates. The three branches merged with no textual conflict and one semantic one: the redelivery package made `writtenAt`/`messageDate` required, and round 2's integration file still called the old shapes — green under vitest (which transpiles without checking) and red only in `pnpm typecheck` (#591's shape, the reason footgun 6 exists).
+
+## Rastamojka kalkulyatori — the customs calculator fix (2026-10-09 → 10-13; spec `docs/RASTAMOJKA-TUZATISH.md`; migration 0131 `calc_excise` — ledger must reach 132)
+
+1340. **The owner's two messages were one defect seen from two ends: a number
+lived in the column nobody's unit named.** «tnved code va dona m2 juftda
+otadgan tovarlarni kirgizadgan joyi yoqku» and «kg hamda donani birga
+kirgizadgan tovarlar». Two audits ran before a line of fix (entry: 57 agents
+over every door; engine: 76 agents, seven lenses, an independent reference
+engine fed thousands of random inputs): 66 confirmed or partial, 2 refuted. The
+shape under most of them: the seller's «Kafel 120 m2» was stored as 120 in the
+PIECE column with «m2» beside it as display text, and the engine read 120
+pieces; a jacket «500 kg» the same; and a row whose baza is per kg under a law
+«20 %, kamida $3/dona» needs BOTH figures while the checklist accepted either
+one (#910). The fix is a kernel every door reads — `calc/units.ts` (`unitOf`,
+`routeAmount`, `readAmountText`, `parseGoodsLine`, `normalizeRowUnit`,
+`normalizeTnved`) and `calc/needs.ts` (`rowNeeds` off the engine's own
+`itemMeasure`, so a need and a refusal cannot disagree) — then three packages
+over it (P1 the doors, P2 the law/book/totals/seal, P3 the VED's screen), each
+spec'd, judged by five lenses (79 findings, §7 overrides §1-§3), built and
+merged. RULE restated: **a number lands in the column its unit NAMES**, and a
+carton count or an unknown word lands nowhere a price reads.
+
+1341. **The engine's five fixes (kernel, `f9843cc`).** `measure_missing` names
+the unit AND the half (baza / duty / excise since 0131), so the words can say
+WHICH figure — «3-qator «Kurtka»: soni (dona) kiritilmagan — boj kamida
+$3/dona» instead of «o'lchov yo'q». A legacy per-group fee is never charged
+beside the declaration fee, and a correction no longer copies one. A row with
+no code means NO total (`requestCustomsFor` takes a REQUIRED `ungroupedCount`
+— optional failed open into a partial sum). The fee tier is chosen on the
+ROUNDED Σ value and money rounds half-up on the decimal (`toPrecision(15)`),
+not the binary float. A zero baza and a rate outside 0-100 are refused by the
+engine itself, not only by the forms.
+
+1342. **P1 — one normalisation at the door, for every door.** `openCalcRequest`
+routes each line once (`door-row.ts`: `normalizeRowUnit` + `normalizeTnved`):
+kg → `weight_kg`, m³ → `volume_m3`, m²/juft/litr/sm³ → the measure pair, a
+carton count or an unknown word → quantity cleared with «sotuvchi: 20 karobka»
+in the note; the word itself is nulled once its number moved, so no later save
+can read it again (judge MR-4). A target already holding a different figure
+keeps it and the seller's figure goes to the note — one fact, one home. The
+seller's card form is a goods TABLE (two-line blocks in the 358 px rail),
+read live by `parseGoodsLine`; only an ambiguous number, two pairs or an
+unlabelled number stop the send, each with one-tap answers. The bot reads «1 200
+kg», «120 ta juft», «300 dona 150 kg» (both — the clothing answer that used to
+be refused), asks a bare number with buttons, never makes a TNVED code a 6.4-
+billion-kg weight, and keeps answers across «➕ Yana». Invoices keep their TNVED
+column («Код ТН ВЭД товара» is claimed before the name keys, «Кол-во, кг» is a
+WEIGHT). The checklist and the line questions follow the BOOK's law
+(`bookLawsFor` on the pool, before any transaction — #714): a 9403 table with
+only a count is asked its net weight. The spec's «shipment totals leave the
+rastamojka checklist» was CANCELLED by the judge (MR-9 — the upsale payout scales
+by them), so they are asked as before; the LINE weight is the netto one.
+
+1343. **A nine-digit code is ambiguous only when a person typed it.** A NUMERIC
+spreadsheet cell of nine digits is a ten-digit code whose leading zero Excel
+dropped (0901 coffee stored as 901…, which longest-matched 9011 microscopes),
+so it is padded; typed TEXT of nine digits is a `code_short` problem the person
+resolves. The quarterly customs import goes through the same reader, so a
+nine-digit TEXT cell there is now SKIPPED (counted, `bad_code`) where it used to
+be stored as nine digits and prefixed onto a wrong heading — the safer of the
+two failures, stated rather than guessed.
+
+1344. **P2 — the law's whole shape survives every writer.** `saveRates` carries
+the standing shape from ANY row that answers the code (a heading's «max, $3/juft»
+survives a teach of 15 % under it — partly reversing #856, recorded); the teach
+posts the group's own mode/specific/unit; `dictionary_moved` fires whenever the
+group differs from today's book (whatever wrote it) and the pull is offered
+then; `code_heading` names a short code that priced from a heading or hides
+deeper laws; the recalc re-pulls dictionary groups and names what moved.
+
+1345. **Excise can be entered, in ONE shape (0131).** `calc_groups.excise_specific`
++ `excise_unit` (pair CHECK, unit CHECK = `DUTY_UNITS`, `<> 'NaN'`, and NOT both
+`excise_pct` and a specific — the first draft forbade only `pct > 0`, which let a
+row read «aksiz yo'q» while the engine charged $X/litre, judge MR-12). Engine:
+pct > 0 → value × %; else Σ measure × amount; excise stays in the VAT base; a
+missing measure refuses `half: 'excise'`. A pair-unit excise is allowed only when
+it IS the law's own pair (`exciseUnitsFor`) — a row holds one pair, and an
+excise in a second pair unit would have been cleared by the measure pass on
+every save with the engine refusing for ever (judge S4). The P3 build first
+re-solved S4 a second way in the pair rule and removed it on finding P2's door
+already closed it — two homes for one rule (#513). `excise_unanswered` warns on
+the «may be excisable» prefixes (one list in `calc/excise.ts`, stated as not
+law). No dictionary carries excise: it is per job.
+
+1346. **P2 — the fee is visible and repairable, and the seal locks what the
+screen showed.** `FeeOverride` renders exactly where the fee is blocked;
+`fee_bhm_bad` joins `fee_fx_missing`, each saying whose job it is; the totals
+print the fee's inputs with the rate's DATE; the seal posts the fee it showed
+and refuses `conflict` when the recomputed one moved; the band box exists only
+with a road, and a typed override lifts only the band refusals off the button;
+the discount previews through the seal's own `totalsFor`. The bot never prints a
+partial JAMI. The sealed sheet prints shape, excise, parts and fee inputs, and a
+unit test asserts the printed parts ADD UP to the printed total.
+
+1347. **P3 — «avto» on the screen is the save's rule (`autoBasisFor` over the
+DRAFTED figures).** The select showed the law alone — «dona» on a weight-only
+row the save then stamped per kg (judge MR-17). Now `basisOnScreen`/`screenRowOf`
+/`ghostScreenOf` and the live item read the row's figures (REQUIRED fields on
+`ScreenItem`; optional failed open), every «avto» price posts `shownBasis`, and
+the save stores the SHOWN unit when the final law holds it and refuses
+`basis_shown_changed` naming the row when it cannot. A price never silently
+changes unit. A new row's O'lchov box gets a unit select while no law names one;
+it posts `measureUnit` only, so the baza stays «avto» (UX12). The server keeps a
+posted pair the row asks for, or on a row with no law yet (S2, MR-3).
+
+1348. **P3 — the heal of old rows is decided on the row AS STORED, by the
+screen's own predicate.** Live production holds open requests written before the
+doors learned units. `pendingUnitOf` (units.ts) is ONE predicate for the save's
+heal and the screen's sentence (judge UX7): an unpriced, unconfirmed row with
+«120» under «m2» MOVES on the next Saqlash; a carton count, an unknown word or a
+pair the law contradicts is ASKED («Bu dona» dismisses the word, «Bu karobka»
+empties the count and the word goes to the note). ✅ and the seal wait on that
+press like on a draft, and the press is live with nothing drafted. **The first
+build got MR-4 wrong one save later**: it skipped the heal on a row whose count
+the same save posted, which left «300» under «kg» and moved the VED's 300 pieces
+into the weight on the NEXT press — the very shape MR-4 named. Decided on the
+stored row, a typed count stays the VED's and the seller's figure still leaves
+the piece column. Integration-tested on raw SQL «old shape» rows; five red
+proofs.
+
+1349. **P3 — the cell a refusal will name is marked before any press, and the
+live figure is the saved one or none.** `neededCells` reads `rowNeeds` over the
+drafted row: the warn border, «kerak» and the reason (desktop `title`; the phone
+sheet a visible line, UX11 — a phone shows no title). The baza's own unit asks
+only once the row carries a price (marking a guessed unit on every new row is
+noise). `liveMembership` re-homes drafted rows by the save's own regroup (first
+block by seq per code, a code drafted empty leaves its block, the sweep's
+coded-ungrouped rows join): a re-coded row prices in its new block, a drafted
+code no block carries — or any new row — prints «Kod yangi — Saqlang» instead of
+a total, a block every row left is not counted (the save prunes it), and a block
+whose members will change says «taxminiy» (MR-22). Pinned against the real
+saveTable + loadWorkspace, not a restated rule. Headers are words («Dona»,
+«Netto, kg», TNVED) — never 📦, which means a carton everywhere else.
+
+1350. **Deliberately NOT changed, stated to the owner (§4):** the `max` floor is
+per BLOCK (one TNVED code = one declaration line); the additional duty follows
+the code's NOMINAL advalor % and a duty lgota cancels it (#857); VAT is 12 % by
+default with the lgota tick as the exemption; heading 2515 is absent from the
+seed; a sborniy truck's senders share one block per code. His four questions
+went with ⭐ defaults built: (1) netto on the row, brutto as the shipment total;
+(2) excise as «yo'q / foiz / $ har birlikka» with a may-be-excisable warning; (3)
+the floor per code; (4) the no-certificate duty on the nominal %. PROCESS: the
+P3 package was built solo after the subagents' weekly limit hit mid-round; a red
+proof once failed an unrelated test (the heal's «500 kg») and did not repeat in
+three full reruns — recorded as an unexplained flake, not diagnosed.
+
+1351. **Found by the round's own e2e, not by a test of the rule: a new row's
+O'lchov unit was asked of the wrong pair.** P3 made «avto» read the stated
+measure, so a ghost row's `screen.pair` turns to m² the moment m² is picked —
+and the unit select (shown only while `pair` names nothing) vanished under the
+VED's finger, and `buildAdd` (posting `measureUnit` only while `pair` named
+nothing) posted no unit. The save, told nothing, computed «avto» from the
+empty row (dona), found no pair to keep and DROPPED the 120 m² it had just been
+typed. The integration test posted the unit itself and was green (#531's shape
+a fourth time); m9zr's new step went red on exactly the owner's «Kafel 120 m²».
+`ghostFixedPair` (screen-row.ts) is the pair the LAW or a CHOSEN unit names,
+never the typed one, and the select, the add and the phone sheet ask it.
+
+1352. **The round reviewed as built (four lenses, each finding given a refuter):
+9 confirmed, 1 refuted, all fixed.** (a) The m² drop of #1351, found
+independently. (b) **The heal moved a number into a pair the pass then CLEARED**
+— «120 m2» under a per-kg code (9403) left the piece column and vanished, and
+an sm³ on an advalor block the same: `healPairKept` (basis.ts) asks the pass's
+own question (`pairUnitFor(law, «avto»)`, or no law yet) and `pendingUnitOf`
+takes it as a REQUIRED callback, so such a row is ASKED. (c) **MR-4 one save
+later, a third time**: a count typed on a PRICED or CONFIRMED old row left the
+seller's word standing, so clearing the price (or unconfirming the block) made
+the row pending and the next save moved the VED's count under the seller's
+name — a posted count now retires the word (figure to the note, no number
+moves). (d) A cleared price in the draft read «nothing will move» while the save
+took the stamped unit with the price and healed: the screen asks `postedBasis`.
+(e) **The phone had no press that posts an empty save**, so old rows held its
+✅ for ever — the sweep button now also offers «Saqlash — N ta qator O'lchovga
+o'tadi». (f) A grouped row whose own code is not its block's is re-homed by the
+sweep; `screenRowOf` now reads it there, so the live figure follows. (g) A block
+a coded new row will join says «taxminiy». (h) An add's unsaid `measureUnit`
+stays undefined (null read as «said: none» and cleared a stored pair on a
+retry). Red proofs ×4 by string edit plus the e2e of #1351.
+
+1353. **A re-homed row holds the gate, and the screen offers the press that
+moves it** (the review of the review fixes, four agents, 1 confirmed). #1352
+(f) taught `screenRowOf` to read a grouped row whose own code is not its
+block's in the block the sweep moves it to, so the live figure followed — and
+NOTHING that drives the buttons knew. `sweepable` counted only ungrouped rows,
+`gateCount` drafts, restores and heals, so on an old ✨ request (the memory's
+6403 rows in a 6402 block) with nothing drafted the desktop Saqlash was grey,
+the phone drew no press, and ✅ and «Muhrlash» stood live beside a bar priced
+a different way: the seal locked the stored blocks, i.e. a total the screen
+was not showing — and when no block held the code yet, the bar said «Kod yangi
+— Saqlang» over a save nobody could make. `rehomeCodeOf` (screen-row.ts) is
+now the ONE reading of «the save moves this row», asked by `screenRowOf` and by
+the gate: such rows count into `gateCount` and `sweepable`, and the phone's
+empty-save press is drawn when they (with the heals) are all that holds it.
+The integration test anchors the predicate on the SERVER's own `swept`
+(counted before the press equal to what the sweep moves, zero after). Red
+proofs ×4 by string edit: the gate term, the sweepable term, the phone
+condition, and the predicate itself.

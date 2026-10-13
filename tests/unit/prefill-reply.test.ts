@@ -99,6 +99,38 @@ describe('what is missing is said in WORDS', () => {
     );
   });
 
+  it('a missing figure names the row, the figure and why — the kg-and-dona row (2026-10-09)', () => {
+    // «o‘lchov yo‘q» alone left the seller guessing whether the count or the
+    // weight was wanted on exactly the rows the owner asked about.
+    expect(
+      blockerText({
+        kind: 'customs',
+        groupSeq: 1,
+        groupLabel: '6201',
+        reason: 'measure_missing',
+        itemLabel: 'Kurtka',
+        itemSeq: 3,
+        unit: 'dona',
+        half: 'duty',
+        rate: 3,
+      }),
+    ).toBe('6201: 3-qator «Kurtka»: soni (dona) kiritilmagan — boj kamida $3/dona');
+    // The baza's own unit, spelled as stored ('unit'), reads as a count.
+    expect(
+      blockerText({
+        kind: 'customs',
+        groupSeq: 1,
+        groupLabel: '9403',
+        reason: 'measure_missing',
+        itemLabel: 'Stol',
+        itemSeq: 1,
+        unit: 'unit',
+        half: 'baza',
+        rate: null,
+      }),
+    ).toBe('9403: 1-qator «Stol»: soni (dona) kiritilmagan — baza dona bo‘yicha');
+  });
+
   it('a long list is cut with a mark, never silently', () => {
     const many = Array.from({ length: 9 }, (_, i) => ({
       kind: 'customs' as const,
@@ -266,23 +298,32 @@ describe('a section with no customs half says nothing about customs', () => {
   });
 });
 
-describe('a figure over PART of the cargo says so', () => {
-  it('the headline names the goods it could not count', () => {
-    // The customs total is the sum over GROUPS, and an uncoded row is in no
-    // group — so a half-classified request produced a confident figure for
-    // part of the cargo. MEASURED on a real request: two lines, one coded,
-    // «~$376.96» for half the goods. The blocker line named the hole; the
-    // headline did not, and a seller quotes from the headline.
+describe('a figure over PART of the cargo is not a figure', () => {
+  /*
+   * Re-anchored deliberately (2026-10-09, judge MR-23): this pinned the label
+   * «rastamojka ~$376.96 (3 ta tovarsiz)» — a partial figure the kernel's
+   * `requestCustomsFor` can no longer produce. The input is what the
+   * WORKSPACE answers with an uncoded row standing: a null customs total and
+   * the blocker that names the rows.
+   */
+  it('an uncoded row means no customs figure — the blocker names the rows', () => {
     const partial = prefillReplyText({
       ...base,
-      customsUsd: 376.96,
+      customsUsd: null,
       blockers: [{ kind: 'ungrouped_items', count: 3 }],
     });
-    expect(partial).toContain('rastamojka ~$376.96 (3 ta tovarsiz)');
+    expect(partial).toContain('Hozircha hisoblab bo‘lmadi');
+    expect(partial).toContain('3 ta tovarga TNVED kod qo‘yilmagan');
+    expect(partial).not.toContain('tovarsiz');
 
     // Nothing loose: the figure stands on its own, as it always has.
     const whole = prefillReplyText({ ...base, customsUsd: 376.96, blockers: [] });
     expect(whole).toContain('rastamojka ~$376.96');
-    expect(whole).not.toContain('tovarsiz');
+  });
+
+  it('a fee blocked by the BHM setting names the admin’s job, not a typo', () => {
+    expect(blockerText({ kind: 'fee', reason: 'fee_bhm_bad' })).toBe(
+      'bojxona yig‘imi: BHM sozlamasi noto‘g‘ri — admin tuzatadi',
+    );
   });
 });

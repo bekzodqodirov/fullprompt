@@ -150,7 +150,9 @@ describe('what a PDF actually embeds', () => {
         offeredAt: new Date('2026-08-24T09:30:00Z'),
         managerName: 'Dilnoza Karimova',
         managerPhone: '+998 90 000 00 09',
-        items: [{ seq: 1, label: '女式夹克', quantity: 120, unit: 'dona', weightKg: 240.5, volumeM3: 1.8 }],
+        items: [
+          { seq: 1, label: '女式夹克', quantity: 120, unit: 'dona', weightKg: 240.5, volumeM3: 1.8, measure: null },
+        ],
       },
       'ru',
     );

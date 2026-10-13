@@ -28,7 +28,13 @@ describe('law 10: the last FIVE quotes', () => {
 
 describe('law 5: the stale ⚠ where a stale baza prices a job', () => {
   it('loadWorkspace computes it and the workspace draws it', () => {
-    expect(code(WORKSPACE)).toContain('stale: dict.effectiveDate <= bazaStaleCutoff');
+    // Re-anchored deliberately (2026-10-09, judge TT-19): the dictionary's
+    // age is computed once and read twice — by the dictionary chip and by the
+    // row's own `bazaStale`, which asks the age of the source that actually
+    // supplied the number (a book, a customs quarter or a sealed memory).
+    expect(code(WORKSPACE)).toContain('const dictStale = dict ? dict.effectiveDate <= bazaStaleCutoff : false');
+    expect(code(WORKSPACE)).toContain('stale: dictStale');
+    expect(code(WORKSPACE)).toContain('bazaStale: staleFor(i, dictStale)');
     expect(WORKSPACE_UI).toContain('calc-baza-stale');
   });
 });

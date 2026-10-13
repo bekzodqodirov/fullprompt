@@ -142,6 +142,9 @@ export async function GET(
       unit: calcRequestItems.unit,
       weightKg: calcRequestItems.weightKg,
       volumeM3: calcRequestItems.volumeM3,
+      // The pair the job was priced on (0092) — «120 m²», never «120» (P1.7).
+      measureUnit: calcRequestItems.measureUnit,
+      measureQty: calcRequestItems.measureQty,
     })
     .from(calcRequestItems)
     .where(eq(calcRequestItems.requestId, row.request.id))
@@ -177,6 +180,10 @@ export async function GET(
         unit: i.unit,
         weightKg: toNum(i.weightKg),
         volumeM3: toNum(i.volumeM3),
+        measure:
+          i.measureUnit && toNum(i.measureQty) !== null
+            ? { qty: toNum(i.measureQty)!, unit: i.measureUnit }
+            : null,
       })),
     },
     locale,

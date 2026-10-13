@@ -69,12 +69,15 @@ describe('basesFor × pairUnitFor × basisConflicts — the whole matrix', () =>
   });
 });
 
-describe('basisOnScreen — draft, else stored, else the law', () => {
-  it('a draft wins, a stored unit stands, and the law decides only when neither speaks', () => {
-    expect(basisOnScreen('m3', 'kg', { dutyUnit: 'juft' })).toBe('m3');
-    expect(basisOnScreen(undefined, 'kg', { dutyUnit: 'juft' })).toBe('kg');
-    expect(basisOnScreen(undefined, null, { dutyUnit: 'juft' })).toBe('juft');
-    expect(basisOnScreen(undefined, null, null)).toBe('unit');
+describe('basisOnScreen — draft, else stored, else «avto» (the law, then the row)', () => {
+  const none = { quantity: null, weightKg: null, measureUnit: null, measureQty: null };
+  it('a draft wins, a stored unit stands, and «avto» decides only when neither speaks', () => {
+    expect(basisOnScreen('m3', 'kg', { dutyUnit: 'juft' }, none)).toBe('m3');
+    expect(basisOnScreen(undefined, 'kg', { dutyUnit: 'juft' }, none)).toBe('kg');
+    expect(basisOnScreen(undefined, null, { dutyUnit: 'juft' }, none)).toBe('juft');
+    expect(basisOnScreen(undefined, null, null, none)).toBe('unit');
+    // 2026-10-09: «avto» is the save's own rule — a weight-only row is kg.
+    expect(basisOnScreen(undefined, null, null, { ...none, weightKg: 5 })).toBe('kg');
   });
 });
 

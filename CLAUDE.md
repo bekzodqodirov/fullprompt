@@ -154,6 +154,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | «➕ Topshiriq» in the staff bot — draft, forward door, assignee buttons, «📤 Men bergan» | `docs/TELEGRAM-TOPSHIRIQ.md` — agreed 2026-10-06 (his 1b 2a 3a 4a 5a 6b), SHIPPED |
 | VED tarix, «Готово» answers + internal note, recalc from an answer, the VED on the seller's card | `docs/VED-TARIX.md` — agreed 2026-10-06 (his 7a-12a 13c, 14a 15a 16a), SHIPPED |
 | The five-lens review of both before code — 115 objections and their BINDING fixes | `docs/TOPSHIRIQ-VED-REVIEW.md` |
+| The customs calculator fix — units in their own columns, kg+dona rows, excise, the fee, the screen | `docs/RASTAMOJKA-TUZATISH.md` — agreed 2026-10-09 (his two messages, four ⭐ questions), SHIPPED; §7 overrides §1-§3 |
 
 ## State — 2026-08-23
 
@@ -2635,7 +2636,46 @@ rollback VPS's `app` must stay stopped (a second poller would drain the
 backlog with its own code); warehouse staff need «Skladchi»/«Sklad mudiri» and
 their warehouse on /admin/users to hear anything.
 
-**Latest migration: 0130** (`bot_redelivery`, `when` …109; ledger must reach **131**). Before
+**Round — the customs calculator fix (2026-10-09 → 10-13; DECISIONS
+#1340-#1353; migration 0131 `calc_excise` — ledger must reach 132; spec
+`docs/RASTAMOJKA-TUZATISH.md`).** His «tnved code va dona m2 juftda otadgan
+tovarlarni kirgizadgan joyi yoqku» + «kg hamda donani birga kirgizadgan
+tovarlar … hatolik ketmasin». Two audits first (57 + 76 agents, a reference
+engine on random inputs; 66 confirmed), then a kernel and three packages,
+each judged before code. **The one defect under most of them: a number lived
+in the column nobody's unit named** — «Kafel 120 m2» stored as 120 PIECES with
+«m2» as display text. KERNEL: `calc/units.ts` (`routeAmount`,
+`parseGoodsLine`, `normalizeRowUnit`, `normalizeTnved` — a NUMERIC 9-digit
+cell is padded, typed TEXT of nine digits is asked; `pendingUnitOf`) and
+`calc/needs.ts` (`rowNeeds` off `itemMeasure` — a need and a refusal cannot
+disagree); `measure_missing` names unit + half (baza/duty/excise); no code =
+no total (`ungroupedCount` REQUIRED); legacy per-group fee never charged; fee
+tier on the rounded Σ; half-up decimal rounding. P1 (doors): ONE
+normalisation in `openCalcRequest` (`door-row.ts`) for card/bot/thread/file,
+the seller's form a goods table, the bot reads «1 200 kg»/«120 ta juft»/«300
+dona 150 kg», the checklist follows the BOOK's law (`bookLawsFor` on the
+pool), invoices keep TNVED, the offer PDF prints the pair. P2 (law/book/
+seal): the law's SHAPE survives teach/pull/recalc (`dictionary_moved`,
+`code_heading`), excise in ONE shape (0131; a pair-unit excise only when it
+IS the law's pair, `exciseUnitsFor`), the fee's inputs printed and the seal
+locks the fee it showed (`conflict`), no partial JAMI anywhere, the sealed
+sheet adds up. P3 (screen): «avto» = the save's `autoBasisFor` over the
+DRAFTED figures and every «avto» price posts `shownBasis` (refused in words
+when the law cannot hold it); `neededCells` marks the cell a refusal would
+name, with the reason (phone: a visible line); `liveMembership` prices each
+drafted row in the block the save will put it in, or prints «Kod yangi —
+Saqlang»; old rows («120» under «m2») HEAL on Saqlash, decided on the row AS
+STORED by the same `pendingUnitOf` the screen's sentence uses, ✅/seal gated
+until then, «Bu dona»/«Bu karobka» answer the asks. MY MISTAKE, recorded
+(#1348): the first heal skipped a row whose count the same save posted, which
+moved the VED's count into the weight on the NEXT save — MR-4's shape one
+press later. Stated, not changed (§4): the `max` floor per BLOCK, the
+no-certificate duty on the nominal %, VAT 12 % default, sborniy one block per
+code; his four ⭐ questions built as defaults (netto on the row; excise
+«yo'q/foiz/$ har birlikka»; floor per code; nominal %).
+
+**Latest migration: 0131** (`calc_excise`, `when` …110; ledger must reach **132**). Before
+it: 0130 (`bot_redelivery`, `when` …109). Before
 it: 0129 (`cargo_threads`, `when` …108). Before
 it: 0128 (`price_channel`, `when` …107). Before
 it: 0127 (`staff_threads`, `when` …106). Before
@@ -2770,7 +2810,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **131** since 0130 (130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **132** since 0131 (131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read
@@ -2778,7 +2818,7 @@ and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read
 was asked for and NOT quoted; PR #106 (0121) deployed 2026-09-30 evening («Hozir sistema
 yaxshi ishlayabti», count not quoted either); PR #109 (0122) was asked about and NOT
 answered, so COUNT FIRST on the next deploy: it must read
-**131** (anything less means a migration did not land — read the `migrate`
+**132** (anything less means a migration did not land — read the `migrate`
 container's own output; from 113 the whole 0113-0120 set applies and EVERY
 container must be recreated once: `--profile https --profile telegram up -d
 --build`, compose gained `init`, a healthcheck, log caps and a postgres flag);

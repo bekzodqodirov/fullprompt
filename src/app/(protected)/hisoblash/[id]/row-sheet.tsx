@@ -4,12 +4,13 @@ import { useEffect, useRef } from 'react';
 import { useTranslations } from 'next-intl';
 import { Overlay } from '@/components/ui/overlay';
 import { reloadFresh } from '@/components/build-check';
-import type { BazaBasis, CustomsResult } from '@/modules/wms/calc/pricing';
+import type { BazaBasis, CustomsResult, MeasureUnit } from '@/modules/wms/calc/pricing';
 import { basisLabel } from '@/modules/wms/calc/basis';
 import { readNumberCell } from '@/modules/wms/calc/number-cell';
 import type { ChangeField, FieldChange } from '@/modules/wms/calc/row-draft';
 import type { WorkspaceItem } from '@/modules/wms/calc/workspace';
-import { BasisSelect } from './basis-select';
+import { BasisSelect, MeasureUnitSelect } from './basis-select';
+import { unitWordsOf } from '@/modules/wms/calc/law-words';
 import { useFieldWord } from './field-words';
 import { refusalWord } from './words';
 
@@ -55,11 +56,16 @@ export interface SheetModel {
   drafted: Partial<Record<SheetField | 'bazaBasis', boolean>>;
   /** The seller's own unit word — display only (his 20a). */
   sellerUnit: string | null;
-  /** The O'lchov box, when this row has one. */
-  measure: { label: string; suffix: string | null; sm3: boolean } | null;
-  basis: { value: BazaBasis | null; offered: BazaBasis[] };
+  /** The O'lchov box, when this row has one. `unitPick` is the new row's
+   * own unit select (P3.5) — present only while no law names the unit. */
+  measure: { label: string; suffix: string | null; sm3: boolean; unitPick?: MeasureUnit | null } | null;
+  /** `auto` = what «avto» resolves to now, printed beside the word. */
+  basis: { value: BazaBasis | null; offered: BazaBasis[]; auto?: BazaBasis | null };
   chips: { memory: boolean; import: boolean; reason: string | null };
   dictionaryBaza: WorkspaceItem['dictionaryBaza'];
+  /** The figures this row still owes the engine, with WHY in words (UX11):
+   * a phone shows no `title`, so the reason is a visible line under its box. */
+  needs: { cell: 'quantity' | 'weightKg' | 'volumeM3' | 'measure'; why: string }[];
   /** The 📥 door — a SAVED row with a SAVED code only. */
   importDoor: 'open' | 'row_dirty' | 'needs_code' | null;
   figure: SheetFigure;
@@ -81,6 +87,7 @@ export function RowSheet({
   asked,
   onField,
   onBasis,
+  onMeasureUnit,
   onAsk,
   onImport,
   onSave,
@@ -106,6 +113,7 @@ export function RowSheet({
   asked: SheetNumField[];
   onField: (field: SheetField, raw: string) => void;
   onBasis: (basis: BazaBasis) => void;
+  onMeasureUnit: (unit: MeasureUnit | null) => void;
   onAsk: (field: SheetNumField) => void;
   onImport: () => void;
   onSave: () => void;
@@ -144,6 +152,7 @@ export function RowSheet({
           asked={asked}
           onField={onField}
           onBasis={onBasis}
+          onMeasureUnit={onMeasureUnit}
           onAsk={onAsk}
           onImport={onImport}
           onSave={onSave}
@@ -171,6 +180,7 @@ function SheetBody({
   asked,
   onField,
   onBasis,
+  onMeasureUnit,
   onAsk,
   onImport,
   onSave,
@@ -222,7 +232,9 @@ function SheetBody({
     // `!`: `.input` is declared after the utilities and its own border
     // colour wins over a plain `border-warn` (#419's cascade) — measured, the
     // mark was in the class list and nowhere on the screen.
-    const warn = ambiguous || badHere(name) ? ' !border-warn' : model.drafted[name] ? ' border-brand-500' : '';
+    const needed = model.needs.some((n) => n.cell === name);
+    const warn =
+      ambiguous || badHere(name) || needed ? ' !border-warn' : model.drafted[name] ? ' border-brand-500' : '';
     const input =
       name === 'name' || name === 'note' ? (
         <textarea
@@ -236,6 +248,7 @@ function SheetBody({
         <input
           className={`input font-mono tabular-nums${warn}`}
           data-testid={testId}
+          placeholder={needed ? t('grid.needed') : undefined}
           inputMode={name === 'tnvedCode' ? 'numeric' : 'decimal'}
           list={name === 'tnvedCode' ? codesListId : undefined}
           value={v[name]}
@@ -375,6 +388,13 @@ function SheetBody({
         {question('quantity')}
         {question('weightKg')}
         {question('volumeM3')}
+        {model.needs
+          .filter((n) => n.cell !== 'measure')
+          .map((n) => (
+            <p key={n.cell} className="text-2xs text-warn" data-testid="calc-phone-need" data-need={n.cell}>
+              {t('grid.needLine', { why: n.why })}
+            </p>
+          ))}
         {model.sellerUnit ? (
           <p className="text-2xs text-ink-500">
             {t('phone.sellerUnit', { unit: model.sellerUnit })}
@@ -386,8 +406,31 @@ function SheetBody({
               {model.measure.label}
               {model.measure.sm3 ? ` · ${t('table.sm3Hint')}` : ''}
             </span>
-            {field('measure')}
+            {model.measure.unitPick !== undefined ? (
+              <span className="flex items-center gap-2">
+                <span className="min-w-0 flex-1">{field('measure')}</span>
+                <span className="w-24 shrink-0">
+                  <MeasureUnitSelect
+                    value={model.measure.unitPick}
+                    label={t('table.measureGhost')}
+                    testId="calc-phone-measure-unit"
+                    units={unitWordsOf((k) => t(`units.${k}` as 'units.dona'))}
+                    size="field"
+                    onPick={onMeasureUnit}
+                  />
+                </span>
+              </span>
+            ) : (
+              field('measure')
+            )}
             {question('measure')}
+            {model.needs
+              .filter((n) => n.cell === 'measure')
+              .map((n) => (
+                <p key={n.cell} className="mt-1 text-2xs text-warn" data-testid="calc-phone-need" data-need={n.cell}>
+                  {t('grid.needLine', { why: n.why })}
+                </p>
+              ))}
           </label>
         ) : null}
         <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
@@ -406,6 +449,7 @@ function SheetBody({
               disabled={busy}
               onPick={onBasis}
               size="field"
+              autoUnit={model.basis.auto ?? null}
             />
           </label>
         </div>

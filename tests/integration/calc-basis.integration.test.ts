@@ -1,6 +1,6 @@
 import 'dotenv/config';
-import { eq, inArray } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { and, eq, inArray } from 'drizzle-orm';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
   calcBazas,
@@ -22,6 +22,7 @@ import { openCalcRequest } from '@/modules/wms/calc/service';
 import { saveBaza } from '@/modules/wms/calc/dictionaries';
 import { itemNameNorm } from '@/modules/wms/calc/memory';
 import { isBehindOnBasisCheck } from '@/modules/wms/calc/basis';
+import { groupsByCodeOf, liveMembership } from '@/modules/wms/calc/screen-row';
 import { normalizeName } from '@/modules/wms/customs/import-parse';
 import { productKey } from '@/modules/wms/tnved/service';
 import {
@@ -297,6 +298,312 @@ describe('the measure pair follows the law first, then the BASIS', () => {
     const ws = await loadWorkspace(id);
     const g = ws!.groups.find((x) => x.tnvedCode === '6403')!;
     expect(g.customs).toMatchObject({ ok: false, reason: 'measure_missing', itemLabel: row.name });
+  });
+});
+
+describe('a pair the row STATES survives every unrelated Saqlash (2026-10-09, judge TT-3/MR-3/S2)', () => {
+  // This file opens more requests than one requester may hold open
+  // (MAX_OPEN_PER_REQUESTER); the block closes its own when it is done so the
+  // files after it are not refused `too_many_open` by this one.
+  const opened: string[] = [];
+  afterEach(async () => {
+    const mine = madeRequests.filter((r) => !opened.includes(r));
+    if (mine.length === 0) return;
+    opened.push(...mine);
+    await db.update(calcRequests).set({ completedAt: new Date() }).where(inArray(calcRequests.id, mine));
+  });
+  beforeAll(() => {
+    opened.push(...madeRequests);
+  });
+  /** What the seller's door writes for «Kafel 120 m²» — the pair, no count. */
+  const statePair = (requestId: string, seqNo: number, unit: 'm2' | 'litr' | 'sm3', qty: number) =>
+    db
+      .update(calcRequestItems)
+      .set({ measureUnit: unit, measureQty: qty.toFixed(4), quantity: null })
+      .where(and(eq(calcRequestItems.requestId, requestId), eq(calcRequestItems.seq, seqNo)));
+
+  it('an UNCODED «Kafel 120 m²» waits for its code untouched — then prices per m² by itself', async () => {
+    const id = await open([{ name: `kafel ${tag()}` }]);
+    await statePair(id, 1, 'm2', 120);
+    const first = await save(id, {});
+    await save(id, { adds: [{ name: `boshqa ${tag()}`, quantity: 3 }] });
+    expect(first.measuresCleared).toEqual([]);
+    expect(await rowOf(id, 1)).toMatchObject({ measureUnit: 'm2', measureQty: '120.0000' });
+
+    // Coded onto an ADVALOR law and priced with the select untouched: «avto»
+    // is the unit the row states, and the value is 120 m² × $2.
+    const coded = await save(id, {
+      items: [await editOf(id, 1, { tnvedCode: '8528520000', bazaUsd: 2, bazaBasis: null })],
+    });
+    expect(coded.measuresCleared).toEqual([]);
+    expect(await rowOf(id, 1)).toMatchObject({ bazaBasis: 'm2', measureUnit: 'm2', measureQty: '120.0000' });
+    const ws = await loadWorkspace(id);
+    const g = ws!.groups.find((x) => x.tnvedCode === '8528520000')!;
+    expect(g.customs).toMatchObject({ ok: true, valueUsd: 240 });
+  });
+
+  it('an uncoded car’s «1500 sm³» waits for its code — sm³ is no baza, so only «no law yet» keeps it', async () => {
+    // `autoBasisFor` never answers sm³ (nobody VALUES a car by displacement,
+    // #868), so the stated-pair reading cannot hold this one: the row with no
+    // group must keep its pair because its law is simply not known yet.
+    const id = await open([{ name: `avtomobil ${tag()}`, quantity: 1 }]);
+    await statePair(id, 1, 'sm3', 1500);
+    await db.update(calcRequestItems).set({ quantity: '1.000' }).where(eq(calcRequestItems.requestId, id));
+    const first = await save(id, {});
+    expect(first.measuresCleared).toEqual([]);
+    expect(await rowOf(id, 1)).toMatchObject({ measureUnit: 'sm3', measureQty: '1500.0000' });
+    // Coded onto a law that counts in sm³: the statement IS the law's figure.
+    const coded = await save(id, { items: [await editOf(id, 1, { tnvedCode: '8701299090' })] });
+    expect(coded.measuresCleared).toEqual([]);
+    expect(await rowOf(id, 1)).toMatchObject({ measureUnit: 'sm3', measureQty: '1500.0000' });
+  });
+
+  it('«Lak 50 litr» on an advalor code survives two presses with no price on it', async () => {
+    const id = await open([{ name: `lak ${tag()}`, tnvedCode: '8528520000' }]);
+    await save(id, {});
+    await statePair(id, 1, 'litr', 50);
+    const a = await save(id, {});
+    const b = await save(id, { items: [await editOf(id, 1, { name: `lak qayta ${tag()}` })] });
+    expect([...a.measuresCleared, ...b.measuresCleared]).toEqual([]);
+    expect(await rowOf(id, 1)).toMatchObject({ measureUnit: 'litr', measureQty: '50.0000' });
+  });
+
+  it('a law that counts in ANOTHER pair unit still clears and names it — a statement in m² is not juft', async () => {
+    const id = await open([{ name: `poyabzal ${tag()}`, tnvedCode: '8528520000' }]);
+    await save(id, {});
+    await statePair(id, 1, 'm2', 40);
+    const result = await save(id, { items: [await editOf(id, 1, { tnvedCode: '6403' })] });
+    expect(result.measuresCleared).toEqual([1]);
+    expect(await rowOf(id, 1)).toMatchObject({ measureUnit: null, measureQty: null });
+  });
+
+  it('a VED’s CHOSEN unit outranks the statement — the old named clear still holds', async () => {
+    const id = await open([{ name: `gilamcha ${tag()}`, tnvedCode: '8528520000', weightKg: 30 }]);
+    await save(id, {});
+    await statePair(id, 1, 'm2', 25);
+    const result = await save(id, { items: [await editOf(id, 1, { bazaUsd: 4, bazaBasis: 'kg' })] });
+    expect(result.measuresCleared).toEqual([1]);
+    expect(await rowOf(id, 1)).toMatchObject({ bazaBasis: 'kg', measureUnit: null });
+  });
+});
+
+describe('the screen’s units reach the row (2026-10-09, P3: S2, UX12, MR-17) and old rows heal (P3.4)', () => {
+  // Same reason as the block above: this file outgrows one requester's open
+  // cap, so each test closes the request it opened.
+  const opened: string[] = [];
+  afterEach(async () => {
+    const mine = madeRequests.filter((r) => !opened.includes(r));
+    if (mine.length === 0) return;
+    opened.push(...mine);
+    await db.update(calcRequests).set({ completedAt: new Date() }).where(inArray(calcRequests.id, mine));
+  });
+  beforeAll(() => {
+    opened.push(...madeRequests);
+  });
+  /** A row as the doors stored it BEFORE they learned units: the number in
+   * the piece column, the seller's word beside it. */
+  const storeOldShape = (requestId: string, seqNo: number, quantity: number, unit: string) =>
+    db
+      .update(calcRequestItems)
+      .set({ quantity: quantity.toFixed(3), unit, measureUnit: null, measureQty: null, weightKg: null })
+      .where(and(eq(calcRequestItems.requestId, requestId), eq(calcRequestItems.seq, seqNo)));
+
+  it('a pasted uncoded «Kafel 120 m²» is STORED in m² — the unit rides the add', async () => {
+    const id = await open([{ name: `bor ${tag()}`, quantity: 1 }]);
+    const result = await save(id, { adds: [{ name: `kafel ${tag()}`, measureQty: 120, measureUnit: 'm2' }] });
+    expect(result.measuresDropped).toEqual([]);
+    expect(await rowOf(id, 2)).toMatchObject({ measureUnit: 'm2', measureQty: '120.0000', quantity: null });
+  });
+
+  it('a pair the code contradicts is dropped and NAMED — 40 m² is not 40 juft', async () => {
+    const id = await open([{ name: `bor ${tag()}`, quantity: 1 }]);
+    const result = await save(id, {
+      adds: [{ name: `tufli ${tag()}`, tnvedCode: '6403', measureQty: 40, measureUnit: 'm2' }],
+    });
+    expect(result.measuresDropped).toEqual([2]);
+    expect(await rowOf(id, 2)).toMatchObject({ measureUnit: null, measureQty: null });
+  });
+
+  it('an old row with «120» under «m2» in the piece column moves to the pair on the next Saqlash', async () => {
+    const id = await open([{ name: `plitka ${tag()}`, quantity: 1 }]);
+    await storeOldShape(id, 1, 120, 'm2');
+    const result = await save(id, {});
+    expect(result.unitsMoved).toEqual([{ seq: 1, to: 'm2', note: 'sotuvchi: 120 m2' }]);
+    const row = await rowOf(id, 1);
+    expect(row).toMatchObject({ quantity: null, unit: null, measureUnit: 'm2', measureQty: '120.0000' });
+    expect(row.note).toContain('sotuvchi: 120 m2');
+    // Once moved, the word is gone — a second press moves nothing.
+    expect((await save(id, {})).unitsMoved).toEqual([]);
+  });
+
+  /**
+   * The heal is decided on the row AS STORED — the row the screen's sentence
+   * described (UX7). A count the VED types in that save stays his, and the
+   * seller's figure still leaves the piece column: the first build skipped
+   * the heal on such a row, which left «300» under «kg» and moved the VED's
+   * 300 pieces into the weight on the NEXT press (judge MR-4's own shape,
+   * deferred by one save).
+   */
+  it('«500» under «kg» moves to the weight; a count typed in the same save stays the VED’s — and the next save moves nothing', async () => {
+    const id = await open([{ name: `kurtka ${tag()}`, quantity: 1 }, { name: `shim ${tag()}`, quantity: 1 }]);
+    await storeOldShape(id, 1, 500, 'kg');
+    await storeOldShape(id, 2, 500, 'kg');
+    const result = await save(id, { items: [await editOf(id, 2, { quantity: 300 })] });
+    expect(result.unitsMoved.map((m) => m.seq)).toEqual([1, 2]);
+    expect(await rowOf(id, 1)).toMatchObject({ quantity: null, weightKg: '500.000', unit: null });
+    expect(await rowOf(id, 2)).toMatchObject({ quantity: '300.000', weightKg: '500.000', unit: null });
+    expect((await save(id, {})).unitsMoved).toEqual([]);
+    expect(await rowOf(id, 2)).toMatchObject({ quantity: '300.000', weightKg: '500.000' });
+  });
+
+  it('a weight the VED typed over a pending «500 kg» stands, and the seller’s figure goes to the note', async () => {
+    const id = await open([{ name: `palto ${tag()}`, quantity: 1 }]);
+    await storeOldShape(id, 1, 500, 'kg');
+    await save(id, { items: [await editOf(id, 1, { weightKg: 480 })] });
+    const row = await rowOf(id, 1);
+    expect(row).toMatchObject({ quantity: null, weightKg: '480.000', unit: null });
+    expect(row.note).toContain('sotuvchi: 500 kg (qatorda 480 kg)');
+  });
+
+  it('«Bu karobka» empties the count: the word answers for good and the seller’s figure is kept in the note', async () => {
+    const id = await open([{ name: `ko‘ylak ${tag()}`, quantity: 1 }]);
+    await storeOldShape(id, 1, 12, 'karobka');
+    const answered = await save(id, { items: [await editOf(id, 1, { quantity: null })] });
+    expect(answered.sellerUnitUnresolved).toEqual([]);
+    const row = await rowOf(id, 1);
+    expect(row).toMatchObject({ quantity: null, unit: null });
+    expect(row.note).toContain('sotuvchi: 12 karobka');
+    // The real count typed afterwards is just a count.
+    await save(id, { items: [await editOf(id, 1, { quantity: 240 })] });
+    expect(await rowOf(id, 1)).toMatchObject({ quantity: '240.000', unit: null });
+  });
+
+  it('a carton count is never guessed: named, and «Bu dona» dismisses the word for good', async () => {
+    const id = await open([{ name: `futbolka ${tag()}`, quantity: 1 }]);
+    await storeOldShape(id, 1, 20, 'karobka');
+    const first = await save(id, {});
+    expect(first.unitsMoved).toEqual([]);
+    expect(first.sellerUnitUnresolved).toEqual([{ seq: 1, word: 'karobka' }]);
+    expect(await rowOf(id, 1)).toMatchObject({ quantity: '20.000', unit: 'karobka' });
+    const dismissed = await save(id, { items: [await editOf(id, 1, { unit: null })] });
+    expect(dismissed.sellerUnitUnresolved).toEqual([]);
+    expect(await rowOf(id, 1)).toMatchObject({ quantity: '20.000', unit: null });
+    expect((await save(id, {})).sellerUnitUnresolved).toEqual([]);
+  });
+
+  it('«Bu dona» on a pending «300 kg» keeps 300 as the count — a dismissed word is never moved', async () => {
+    const id = await open([{ name: `stul ${tag()}`, quantity: 1 }]);
+    await storeOldShape(id, 1, 300, 'kg');
+    const result = await save(id, { items: [await editOf(id, 1, { unit: null })] });
+    expect(result.unitsMoved).toEqual([]);
+    expect(await rowOf(id, 1)).toMatchObject({ quantity: '300.000', weightKg: null, unit: null });
+  });
+
+  /**
+   * Review heal-server: the heal moved a number into a pair the measure pass
+   * then CLEARED — «120 m2» under a per-kg code (9403, «15 %, kamida
+   * $0.4/kg») left the piece column and vanished. Such a row is asked now:
+   * the number stays where it is and the row is named.
+   */
+  it('«120 m2» under a per-kg code is ASKED, never moved into a pair the pass clears', async () => {
+    const id = await open([{ name: `stol plitasi ${tag()}`, tnvedCode: '9403200000', quantity: 1 }]);
+    await save(id, {});
+    await storeOldShape(id, 1, 120, 'm2');
+    const result = await save(id, {});
+    expect(result.unitsMoved).toEqual([]);
+    expect(result.measuresCleared).toEqual([]);
+    expect(result.sellerUnitUnresolved).toEqual([{ seq: 1, word: 'm2' }]);
+    expect(await rowOf(id, 1)).toMatchObject({ quantity: '120.000', unit: 'm2', measureQty: null });
+  });
+
+  /**
+   * Review heal-server: a count typed on a PRICED old row left the seller's
+   * word standing, so the row turned «pending» the moment the price was
+   * cleared and the next save moved the VED's count under the seller's name.
+   * The count retires the word; the seller's figure goes to the note.
+   */
+  it('a count typed on a priced old row retires the word — clearing the price later moves nothing', async () => {
+    const id = await open([{ name: `stakan ${tag()}`, quantity: 1 }]);
+    await save(id, { items: [await editOf(id, 1, { bazaUsd: 2, bazaBasis: 'unit' })] });
+    await storeOldShape(id, 1, 120, 'm2');
+    await save(id, { items: [await editOf(id, 1, { quantity: 300 })] });
+    const row = await rowOf(id, 1);
+    expect(row).toMatchObject({ quantity: '300.000', unit: null, measureQty: null });
+    expect(row.note).toContain('sotuvchi: 120 m2');
+    const cleared = await save(id, { items: [await editOf(id, 1, { bazaUsd: null, bazaBasis: null })] });
+    expect(cleared.unitsMoved).toEqual([]);
+    expect(await rowOf(id, 1)).toMatchObject({ quantity: '300.000', measureQty: null });
+  });
+
+  it('a priced or confirmed row is never healed', async () => {
+    const id = await open([{ name: `oyna ${tag()}`, quantity: 1, tnvedCode: '8528520000' }]);
+    await save(id, { items: [await editOf(id, 1, { bazaUsd: 3, bazaBasis: 'unit' })] });
+    await storeOldShape(id, 1, 120, 'm2');
+    expect((await save(id, {})).unitsMoved).toEqual([]);
+    expect(await rowOf(id, 1)).toMatchObject({ quantity: '120.000', unit: 'm2' });
+  });
+
+  /**
+   * P3.8's invariant (#886): the blocks the live bar prices are the blocks
+   * the save produces — asked of the real saveTable + loadWorkspace, not of
+   * a restated rule.
+   */
+  it('the live membership of a drafted re-code is what the save then stores', async () => {
+    const id = await open([
+      { name: `stol ${tag()}`, tnvedCode: '9403600000', quantity: 2 },
+      { name: `kreslo ${tag()}`, tnvedCode: '9401610000', quantity: 3 },
+      { name: `lampa ${tag()}`, quantity: 1 },
+    ]);
+    await save(id, {});
+    const before = (await loadWorkspace(id))!;
+    const all = [...before.groups.flatMap((g) => g.items), ...before.ungrouped];
+    const second = all.find((i) => i.seq === 2)!;
+    const third = all.find((i) => i.seq === 3)!;
+    const drafts = { [second.id]: { tnvedCode: '9403600000' }, [third.id]: { tnvedCode: '9401610000' } };
+    const live = liveMembership(all, drafts, new Map(before.groups.map((g) => [g.id, g])), groupsByCodeOf(before.groups));
+    expect(live.unsavedCode).toBe(false);
+
+    await save(id, {
+      items: [
+        { id: second.id, seq: 2, tnvedCode: '9403600000' },
+        { id: third.id, seq: 3, tnvedCode: '9401610000' },
+      ],
+    });
+    const after = (await loadWorkspace(id))!;
+    const saved = new Map(after.groups.map((g) => [g.tnvedCode, g.items.map((i) => i.id).sort()]));
+    for (const g of before.groups) {
+      const predicted = (live.members.get(g.id) ?? []).map((i) => i.id).sort();
+      if (predicted.length === 0) expect(saved.has(g.tnvedCode)).toBe(false);
+      else expect(saved.get(g.tnvedCode)).toEqual(predicted);
+    }
+    expect(after.ungrouped.length).toBe(live.ungrouped.length);
+  });
+
+  it('«avto» stores the unit the screen SHOWED; with none shown the stamp is named', async () => {
+    const id = await open([
+      { name: `sim ${tag()}`, tnvedCode: '8528520000', weightKg: 40 },
+      { name: `sim ikki ${tag()}`, tnvedCode: '8528520000', weightKg: 40 },
+    ]);
+    await save(id, {});
+    // A weight-only advalor row: «avto» by the figures is kg. The screen
+    // showed «dona» — the price was typed against dona, so it stays dona.
+    const shown = await save(id, {
+      items: [await editOf(id, 1, { bazaUsd: 5, bazaBasis: null, shownBasis: 'unit' })],
+    });
+    expect(shown.basisStamped).toEqual([]);
+    expect(await rowOf(id, 1)).toMatchObject({ bazaBasis: 'unit' });
+    const silent = await save(id, { items: [await editOf(id, 2, { bazaUsd: 5, bazaBasis: null })] });
+    expect(silent.basisStamped).toEqual([{ seq: 2, basis: 'kg' }]);
+    expect(await rowOf(id, 2)).toMatchObject({ bazaBasis: 'kg' });
+  });
+
+  it('a shown unit the final law cannot hold is refused naming the row', async () => {
+    const id = await open([{ name: `etik ${tag()}`, tnvedCode: '6403', quantity: 10 }]);
+    await save(id, {});
+    await expect(
+      save(id, { items: [await editOf(id, 1, { bazaUsd: 5, bazaBasis: null, shownBasis: 'm2' })] }),
+    ).rejects.toMatchObject({ code: 'basis_shown_changed', seq: 1 });
+    expect(await rowOf(id, 1)).toMatchObject({ bazaUsd: null });
   });
 });
 

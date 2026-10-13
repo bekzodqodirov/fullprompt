@@ -1,5 +1,71 @@
 # CHANGELOG
 
+## Rastamojka kalkulyatori tuzatildi: TNVED, dona, kg, m², juft — har biri o'z joyida — 2026-10-13
+
+**Migratsiya 0131.** O'rnatgandan keyin migratsiyalar soni **132** bo'lishi kerak.
+
+Bu sizning ikki xabaringiz: «tnved code va dona m2 juftda o'tadigan tovarlarni kiritadigan joyi yo'q» va «kg hamda donani birga kiritadigan tovarlar bor … hatolik ketmasin». Avval kalkulyator ikki marta to'liq tekshirildi: tovar kiradigan har bir joy va hisobning o'zi. 66 ta xato tasdiqlandi, hammasi tuzatildi.
+
+### 1. Asosiy xato: son noto'g'ri ustunda turardi
+
+- **Sotuvchi «Kafel 120 m2» yozsa**, tizim 120 ni DONA ustuniga qo'yib, yoniga «m2» deb yozib qo'yardi. Hisob esa uni 120 dona deb o'qirdi. «Kurtka 500 kg» ham xuddi shunday 500 dona bo'lib qolardi.
+- **Endi har bir son o'z birligi aytgan ustunga tushadi:** dona → Dona, kg → Netto kg, m³ → kub, m²/juft/litr/sm³ → O'lchov.
+- **«20 karobka» yoki tushunarsiz so'z** hech qaysi hisob ustuniga tushmaydi. Qator izohiga «sotuvchi: 20 karobka» deb yoziladi va dona soni so'raladi.
+
+### 2. kg va dona birga kerak bo'ladigan tovarlar
+
+- **Masalan:** kurtkaning bazasi kg bo'yicha, boji esa «20 %, kamida $3/dona». Bunday tovarga ikkala son kerak — og'irligi ham, soni ham. Yoki stol: baza dona bo'yicha, boj «15 %, kamida $0.4/kg».
+- **Endi jadval yetishmayotgan katakni oldindan sariq ramka bilan belgilaydi:** «kerak», sababi bilan — masalan «boj kamida $3/dona». Telefonda sabab katak ostida yoziladi.
+- **Hisob qila olmasa**, endi aniq qaysi qator va qaysi son yo'qligini aytadi: «3-qator «Kurtka»: soni (dona) kiritilmagan — boj kamida $3/dona». Avval faqat «o'lchov yo'q» derdi.
+
+### 3. Tovar kiradigan har bir joy (sotuvchi, bot, Excel, AI)
+
+- **Sotuvchi kartadagi formada endi jadval ko'radi:** tovar nomi · TNVED (bilsa) · dona · netto kg · O'lchov (m²/juft/litr) · m³. Excel'dan nusxa olib qo'yish mumkin. Tushunarsiz son bo'lsa («1,200» — 1.2 mi yoki 1200 mi?), forma ikkita tugma bilan so'raydi.
+- **Bot** «1 200 kg», «120 ta juft», «300 dona 150 kg» ni to'g'ri o'qiydi. Birliksiz «50» yozilsa, tugmalar bilan qaysi birlik ekanini so'raydi. TNVED kod endi hech qachon og'irlik bo'lib qolmaydi. «➕ Yana ma'lumot» bosilganda oldingi javoblar saqlanadi.
+- **Bot TNVED kodli qatorda** shu kodning qonuniga qarab so'raydi: 9403 stol uchun «netto og'irligi necha kg?».
+- **Excel invoysdagi TNVED ustuni** endi yo'qolmaydi. «Кол-во, кг» ustuni og'irlik deb o'qiladi.
+- **Excel 0 ni yo'qotgan 9 xonali kod** (masalan, 0901 qahva 901… bo'lib qolgan) endi to'ldiriladi. Aks holda u boshqa tovar (9011 mikroskop) bo'yicha hisoblanib ketardi.
+- **Umumiy og'irlik va hajm** (brutto, mashina uchun) rastamojka so'rovida ham so'ralaveradi: sotuvchining upsale haqi shularga qarab hisoblanadi. Qatordagi og'irlik esa endi «netto» deb yoziladi.
+
+### 4. Hisobning o'zidagi tuzatishlar
+
+- **Qonunning «kamida $X» qismi yo'qolmaydi.** Lug'atga kod o'rgatilganda (teach) «20 %, kamida $3/juft» shakli saqlanadi. Lug'at o'zgarsa, guruhda «lug'at o'zgardi» deb chiqadi va yangisini olish tugmasi bor.
+- **Qisqa kod** (masalan 8528) ostida boshqa stavkali kodlar bo'lsa, «to'liq 10 xonali kodni yozing» degan ogohlantirish chiqadi.
+- **Aksiz kiritiladi:** har bir guruhda «Aksiz: yo'q / foiz / $ har birlikka». Pivo, vino, sigaret, yoqilg'i va avtomobil kodlarida «aksiz bo'lishi mumkin» degan eslatma chiqadi.
+- **Sertifikatni har bir guruhda alohida belgilash mumkin:** «so'rovdagidek / bor / yo'q».
+- **Bojxona yig'imi (BHM):** hisob qanday chiqqani ko'rinadi — «2.5 BHM × 412 000 so'm ÷ 12 650 (kurs 09.10.2026)». So'm kursi bo'lmasa, yig'imni qo'lda yozish joyi o'sha yerda chiqadi.
+- **Muhrlash ekranda ko'ringan yig'im bilan bo'ladi.** Shu orada kurs o'zgarsa, muhr «qaytadan ko'ring» deydi.
+- **Kodsiz qator bor ekan, JAMI chiqmaydi.** Avval kodsiz qatorni hisobga olmay kamroq summa ko'rsatardi.
+- **Yaxlitlash va yig'im pog'onasi** endi aniq sentgacha to'g'ri. 0 baza va 100 % dan katta stavka qabul qilinmaydi.
+- **Muhrlangan hisob varag'ida** boj shakli, aksiz va yig'imning qanday chiqqani yoziladi. Qismlar yig'indisi jamiga teng (test tekshiradi).
+
+### 5. VED jadvali
+
+- **«avto» birlik endi ekranda ham Saqlashdagidek** — qatorda faqat kg bo'lsa «avto · kg», m² bo'lsa «avto · m²». Narx qaysi birlikka yozilgan bo'lsa, o'shanga saqlanadi, jimgina boshqa birlikka o'zgarmaydi.
+- **Ustun nomlari:** «Dona», «Netto, kg», «TNVED». 📦 belgisi olib tashlandi, chunki boshqa hamma joyda u karobkani bildiradi.
+- **Yangi qatorda O'lchov uchun birlik tanlanadi** (m²/juft/litr/sm³), hali kod bo'lmasa ham. Kod kiritilgach son saqlanib qoladi.
+- **Kod o'zgartirilganda** jonli summa Saqlashdan keyingi summa bilan bir xil bo'ladi. Yangi kod yoki yangi qator bo'lsa, summa o'rniga «Kod yangi — Saqlang» deydi.
+- **Eski so'rovlardagi qatorlar:** «120» dona ustunida, yonida sotuvchining «m2» so'zi bo'lsa, jadval Saqlashdan oldin ogohlantiradi — «Sotuvchi «120 m2» yozgan… Saqlashda m² ustuniga o'tadi». Shunday qator turganda ✅ va muhrlash Saqlashni kutadi.
+  - **«Bu dona»** tugmasi sonni dona deb qoldiradi.
+  - **«Bu karobka»** tugmasi sonni o'chiradi, keyin haqiqiy donasini yozasiz.
+  - Narx yozilgan yoki ✅ qilingan qatorga tizim tegmaydi.
+- **O'z kodi turgan guruhdan boshqa bo'lgan qator** (eski ✨ AI guruhlashidan qolgan: masalan 6403 kodli tovar 6402 guruhida). Jonli summa uni Saqlashdan keyin tushadigan guruhda hisoblaydi. Shunday qator turganda «Saqlash» tugmasi faol bo'ladi, telefonda ham. ✅ va muhrlash Saqlashni kutadi — muhr ekrandagi summadan boshqa summaga bosilmasin.
+
+### 6. O'zgartirilmaganlar (bilib qo'ying)
+
+- **«Kamida $X» boj** har bir TNVED kod bo'yicha jami hisoblanadi — deklaratsiyadagi bitta qatordek. Hozir ham shunday edi.
+- **Sertifikatsiz qo'shimcha boj** kodning nominal foizi bo'yicha olinadi. Boj imtiyozi (lgota) bo'lsa, u ham olinmaydi.
+- **QQS** hammaga 12 %. Imtiyoz guruhdagi belgi orqali beriladi.
+- **Bojxona import faylidagi 9 xonali MATN kod** endi o'tkazib yuboriladi. U «o'tkazib yuborildi» soniga kiradi va noto'g'ri sarlavhaga ulanmaydi.
+
+### O'rnatish (deploy)
+
+1. Zaxira oling (0 bayt emasligini tekshiring).
+2. `git pull`, keyin `docker compose build migrate`, keyin `docker compose --profile https --profile telegram up -d --build`.
+3. **Migratsiyalar sonini sanang: 132 bo'lishi kerak.** Kamroq bo'lsa, `docker compose run --rm migrate` ning o'z chiqishini o'qing.
+4. `curl -s https://gsrwms.uz/api/version` — bugungi sana.
+5. Ochiq hisob-kitoblarda eski qatorlar sariq ogohlantirish bilan chiqadi — VED Saqlash bossa tuzaladi.
+
 ## Prixod va mashina kartasida savol-javob; o'rnatish paytida bot xabarlarni yo'qotmaydi — 2026-10-08
 
 **Migratsiyalar 0129 va 0130.** O'rnatgandan keyin migratsiyalar soni **131** bo'lishi kerak.

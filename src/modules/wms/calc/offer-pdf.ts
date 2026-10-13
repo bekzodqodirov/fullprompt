@@ -4,8 +4,9 @@ import path from 'node:path';
 import { PDFDocument, rgb, type PDFFont, type PDFImage, type PDFPage } from 'pdf-lib';
 import { getSetting } from '../../platform/settings/service';
 import { cjkSubsetFor, pdfTextCleaner } from '../labels/cjk-font';
-import { clientLabels, type ClientLocale } from '../../platform/telegram/client-labels';
+import { clientLabels, clientUnitWords, type ClientLocale } from '../../platform/telegram/client-labels';
 import { offerDate, offerLines, type OfferInput } from './offer';
+import { countText, unitLabel } from './units';
 
 /**
  * The offer as an A4 sheet the seller can send a customer — the round-112
@@ -21,7 +22,10 @@ import { offerDate, offerLines, type OfferInput } from './offer';
  *  - the GOODS: read from the request's own items (`calc_request_items`) and
  *    NOT from the sealed breakdown — a yolkira seal carries no groups and the
  *    breakdown's items live only under groups, so the commonest quote would
- *    print an empty table. Descriptors ONLY: name, quantity, kg, m³. No price
+ *    print an empty table. Descriptors ONLY: name, quantity, kg, m³ — the
+ *    quantity in the measure the job was PRICED on when a pair exists
+ *    («120 m²», «40 juft», P1.7), else the count as pieces (`countText`:
+ *    never glued to a seller's word naming another column, judge MR-6). No price
  *    per row and no TNVED: a per-row price decomposes the total (#781), and
  *    the grouping is the VED's working, not the customer's;
  *  - the money rows from `offerLines()` — the SAME rows the Telegram text
@@ -46,6 +50,20 @@ export interface OfferSheetItem {
   unit: string | null;
   weightKg: number | null;
   volumeM3: number | null;
+  /** The row's m² / juft / litr / sm³ pair (0092), when it has one. */
+  measure: { qty: number; unit: string } | null;
+}
+
+/**
+ * The quantity cell's text: the pair when the row has one, else the count as
+ * pieces in the reader's words. Exported for the sheet's test.
+ */
+export function offerQtyText(
+  item: Pick<OfferSheetItem, 'quantity' | 'unit' | 'measure'>,
+  words: Parameters<typeof countText>[2],
+): string {
+  if (item.measure) return `${num(item.measure.qty, 3)} ${unitLabel(item.measure.unit, words)}`;
+  return item.quantity === null ? '' : countText(item.quantity, item.unit, words);
 }
 
 export interface OfferSheetInput extends OfferInput {
@@ -118,10 +136,12 @@ export async function buildOfferPdf(
   const date = offerDate(input.offeredAt);
   const managerName = input.managerName ? clean(input.managerName) : null;
   const managerPhone = input.managerPhone ? clean(input.managerPhone) : null;
+  const units = clientUnitWords(L);
   const items = input.items.map((i) => ({
     ...i,
     label: clean(i.label),
     unit: i.unit ? clean(i.unit) : null,
+    qtyText: clean(offerQtyText(i, units)),
   }));
   const SHEET_KEYS = [
     'sheetDocNo', 'sheetDate', 'sheetClient', 'sheetClientCode', 'sheetPhone',
@@ -143,7 +163,7 @@ export async function buildOfferPdf(
     managerName ?? '', managerPhone ?? '',
     ...Object.values(labels),
     ...rows.flatMap((r) => [r.label, r.value]),
-    ...items.flatMap((i) => [i.label, i.unit ?? '', num(i.quantity, 3), num(i.weightKg, 1), num(i.volumeM3, 3)]),
+    ...items.flatMap((i) => [i.label, i.unit ?? '', i.qtyText, num(i.weightKg, 1), num(i.volumeM3, 3)]),
     '0123456789.,…',
   ]);
 
@@ -274,7 +294,7 @@ export async function buildOfferPdf(
     for (const item of items) {
       if (ensure(rowH + 4)) drawHead();
       let x = MARGIN;
-      const qty = item.quantity === null ? '' : `${num(item.quantity, 3)}${item.unit ? ' ' + item.unit : ''}`;
+      const qty = item.qtyText;
       const cells: Record<ColKey, string> = {
         no: String(item.seq),
         goods: item.label,

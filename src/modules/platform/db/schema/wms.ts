@@ -2970,6 +2970,14 @@ export const calcGroups = pgTable(
     dutyUnit: text('duty_unit'),
     /** NULL means none — excise names a short list of goods. */
     excisePct: numeric('excise_pct', { precision: 6, scale: 3 }),
+    /**
+     * A SPECIFIC excise (0131): `excise_specific` $ per `excise_unit` — beer
+     * per litre, cigarettes per thousand. One fact in two columns (the pair
+     * CHECK), and never beside `excise_pct` (one shape per group). All three
+     * NULL is «unanswered»; `excise_pct` 0 is «aksiz yo'q».
+     */
+    exciseSpecific: numeric('excise_specific', { precision: 14, scale: 4 }),
+    exciseUnit: text('excise_unit'),
     /** NULL inherits the request's answer. */
     hasCertificate: boolean('has_certificate'),
     dutyFree: boolean('duty_free').notNull().default(false),
@@ -3037,6 +3045,19 @@ export const calcGroups = pgTable(
     check(
       'calc_groups_excise_check',
       sql`${t.excisePct} IS NULL OR (${t.excisePct} >= 0 AND ${t.excisePct} <= 100)`,
+    ),
+    check(
+      'calc_groups_excise_specific_check',
+      sql`${t.exciseSpecific} IS NULL OR (${t.exciseSpecific} >= 0 AND ${t.exciseSpecific} <> 'NaN'::numeric)`,
+    ),
+    check(
+      'calc_groups_excise_unit_check',
+      sql`${t.exciseUnit} IS NULL OR ${t.exciseUnit} IN ('kg', 'dona', 'litr', 'juft', '1000_dona', 'sm3', 'm2')`,
+    ),
+    check('calc_groups_excise_pair_check', sql`(${t.exciseSpecific} IS NULL) = (${t.exciseUnit} IS NULL)`),
+    check(
+      'calc_groups_excise_one_shape_check',
+      sql`NOT (${t.excisePct} IS NOT NULL AND ${t.exciseSpecific} IS NOT NULL)`,
     ),
     // The dictionary's pair rule, read through the NULL-means-advalor lens.
     check(

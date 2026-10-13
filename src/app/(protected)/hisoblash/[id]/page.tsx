@@ -5,7 +5,15 @@ import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import { attachments, crmActivities } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { calcInternalNoteFor, calcRequestDetail, endingOf, type CalcEnding } from '@/modules/wms/calc/service';
+import {
+  calcInternalNoteFor,
+  calcRequestDetail,
+  checklistFor,
+  endingOf,
+  type CalcEnding,
+} from '@/modules/wms/calc/service';
+import { needLawOf, type NeedLaw } from '@/modules/wms/calc/needs';
+import { measureNeedText, type CalcT } from './words';
 import { linkedReceipts } from '@/modules/wms/calc/link';
 import { chainLinksOf, chainOf, type ChainLink, type ChainVersion } from '@/modules/wms/calc/chain';
 import { calcCardHref } from '@/modules/wms/calc/card-door';
@@ -55,6 +63,9 @@ import { mayWriteThread } from '@/modules/wms/crm/thread-door';
  * table is not on screen (server behind, a yolkira section, a closed
  * request), `calc-items` still answers from the request row itself.
  */
+/** The checklist fields the cargo-facts box can answer. */
+const FACT_FIELDS: readonly CalcField[] = ['fromCity', 'toCity', 'weightKg', 'volumeM3'];
+
 export default async function CalcRequestPage({ params }: { params: Promise<{ id: string }> }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
@@ -144,6 +155,31 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
     if (!isServerBehind(err)) throw err;
     logger.error({ err, id }, '[calc] workspace: server behind');
   }
+  // The checklist, with a GROUPED line asking its group's law (judge S9) — the
+  // chip and the row's cell border then read the same law. On the workspace's
+  // own catch: with no workspace on screen the book's reading stands.
+  const groupLawBySeq = workspace
+    ? new Map<number, NeedLaw>(workspace.groups.flatMap((g) => g.items.map((i) => [i.seq, needLawOf(g)] as const)))
+    : null;
+  const checklist = await checklistFor(row, groupLawBySeq).catch((err: unknown) => {
+    if (!isServerBehind(err)) throw err;
+    return { missing: row.missing, lines: [] };
+  });
+  const lineChips = checklist.lines.flatMap((l) =>
+    l.pinned.map((n) => ({
+      seq: l.seq,
+      text:
+        measureNeedText(t as unknown as CalcT, {
+          reason: 'measure_missing',
+          itemSeq: l.seq,
+          itemLabel: l.name,
+          unit: n.unit,
+          half: n.why,
+          rate: n.rate,
+        }) ?? l.name,
+    })),
+  );
+
   // «❓ Savol-javob» (E3 a, E5 a): this calculation's Q&A with the seller —
   // its count for the jump chip and the pulse's baseline, on its OWN catch
   // (the tag is 0127's; a database a release behind keeps the page).
@@ -243,16 +279,32 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
         </dl>
 
         <div className="mt-2 border-t border-line pt-2" data-testid="calc-checklist">
-          {row.missing.length === 0 ? (
+          {checklist.missing.length === 0 ? (
             <p className="text-sm text-good">✅ {t('complete')}</p>
           ) : (
             <div className="flex flex-wrap items-center gap-1">
               <span className="text-sm text-warn">⚠ {t('missingLabel')}:</span>
-              {row.missing.map((field) => (
-                <span key={field} className="chip chip-warn">
-                  {t(FIELD_LABELS[field as CalcField] as 'fields.goods')}
-                </span>
+              {checklist.missing
+                .filter((field) => field !== 'lineNeed')
+                .map((field) => (
+                  <span key={field} className="chip chip-warn">
+                    {t(FIELD_LABELS[field as CalcField] as 'fields.goods')}
+                  </span>
+                ))}
+              {/* A line the LAW asks a figure of, named by row and unit (TT-5):
+                  «3-qator «Kurtka»: soni (dona) kiritilmagan — boj kamida
+                  $3/dona». Eight at most; the rest is one chip to the first
+                  marked row (UX18) — the full list lives on the rows. */}
+              {lineChips.slice(0, 8).map((chip, i) => (
+                <a key={`${chip.seq}-${i}`} href={`#calc-i-${chip.seq}`} className="chip chip-warn" data-testid="calc-row-need">
+                  {chip.text}
+                </a>
               ))}
+              {lineChips.length > 8 ? (
+                <a href={`#calc-i-${lineChips[8]!.seq}`} className="chip chip-warn">
+                  +{lineChips.length - 8}
+                </a>
+              ) : null}
             </div>
           )}
           {/* …and the door that answers it. Until this round the checklist
@@ -271,7 +323,10 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
                 weightKg: row.weightKg,
                 volumeM3: row.volumeM3,
               }}
-              incomplete={row.missing.length > 0}
+              // Open by itself only for what IT answers — the totals and the
+              // route. A line's figure is the table's to type; opening this
+              // box for it offered a door that could not close the chip.
+              incomplete={checklist.missing.some((f) => (FACT_FIELDS as readonly string[]).includes(f))}
             />
           )}
         </div>

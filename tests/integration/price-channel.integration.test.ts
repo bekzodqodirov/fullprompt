@@ -701,7 +701,7 @@ describe('I5 — refusals keep the queue, and nothing is ever posted twice by th
 
   it('a seal whose correction already started is stale — the correction posts instead', async () => {
     const a = await sealedRequest();
-    const child = await recalcFromSealed(a.requestId, ctx());
+    const child = (await recalcFromSealed(a.requestId, ctx())).id;
     madeRequests.push(child);
     await drain();
     expect(channelSends()).toHaveLength(0);
@@ -717,7 +717,7 @@ describe('I6 — a correction edits the old post, derived from how the correctio
     override = () => undefined;
     expect((await postFor(v1.requestId))!.messageId).toBe(77);
 
-    const child = await recalcFromSealed(v1.requestId, ctx());
+    const child = (await recalcFromSealed(v1.requestId, ctx())).id;
     madeRequests.push(child);
     calls = [];
     await reconcilePriceChannelMarks();
@@ -749,7 +749,7 @@ describe('I6 — a correction edits the old post, derived from how the correctio
   it('a correction handed back → «qaytarildi»', async () => {
     const v1 = await sealedRequest();
     await drain();
-    const child = await recalcFromSealed(v1.requestId, ctx());
+    const child = (await recalcFromSealed(v1.requestId, ctx())).id;
     madeRequests.push(child);
     await reconcilePriceChannelMarks();
     await returnCalcRequest(child, 'ma’lumot yetmaydi', { actorId: adminId });
@@ -763,7 +763,7 @@ describe('I6 — a correction edits the old post, derived from how the correctio
   it('a correction sealed WITH a discount is not posted, and the old post never promises it', async () => {
     const v1 = await sealedRequest();
     await drain();
-    const child = await recalcFromSealed(v1.requestId, ctx());
+    const child = (await recalcFromSealed(v1.requestId, ctx())).id;
     madeRequests.push(child);
     await priceAll(child);
     await seal(child, { discountUsd: 1 });

@@ -48,6 +48,10 @@ export interface NewRow {
   volumeM3: string;
   tnvedCode: string;
   measure: string;
+  /** The unit the O'lchov amount is IN, picked beside the box while the
+   * code's law is not known yet (P3.5, UX12): it says what the number
+   * MEANS and posts as `measureUnit` only — the baza unit stays «avto». */
+  measureUnit: MeasureUnit | null;
   bazaValue: string;
   /** null = «avto» — the VED has not touched the select, so nothing is
    * posted and the server stamps the law's default once the code's block
@@ -111,6 +115,7 @@ export const emptyRow = (key: number): NewRow => ({
   volumeM3: '',
   tnvedCode: '',
   measure: '',
+  measureUnit: null,
   bazaValue: '',
   bazaBasis: null,
   note: '',

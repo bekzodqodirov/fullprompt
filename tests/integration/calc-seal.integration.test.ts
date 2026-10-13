@@ -523,7 +523,7 @@ describe('a correction is a NEW request', () => {
     const { requestId } = await readyRequest();
     await sealCalc(requestId, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null }, ctx());
 
-    const freshId = await recalcFromSealed(requestId, ctx());
+    const freshId = (await recalcFromSealed(requestId, ctx())).id;
     madeRequests.unshift(freshId); // deleted before the request it supersedes
     const fresh = await loadWorkspace(freshId);
     expect(fresh!.completedAt).toBeNull();
@@ -680,7 +680,10 @@ describe('the lgota is offered from the last sealed decision', () => {
     const workspace = await loadWorkspace(request.id);
     const group = workspace!.groups.find((g) => g.id === groupId)!;
     expect(group.dutyFree).toBe(false);
-    expect(group.lgotaLast).toEqual({ dutyFree: true, vatFree: false });
+    // The offer now carries the DAY it was decided (2026-10-09, P2.10b) —
+    // «o'tgan safar» is a claim about when, printed on the chip.
+    expect(group.lgotaLast).toMatchObject({ dutyFree: true, vatFree: false });
+    expect(group.lgotaLast!.sealedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
   it('a code never sealed with an exemption offers nothing', async () => {

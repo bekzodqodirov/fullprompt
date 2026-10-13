@@ -1,6 +1,7 @@
 'use client';
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import type { Workspace, WorkspaceGroup, WorkspaceItem } from '@/modules/wms/calc/workspace';
@@ -12,14 +13,31 @@ import {
   totalsFor,
   type BazaBasis,
   type CustomsResult,
+  type DutyUnit,
   type MeasureUnit,
   type PricedItem,
 } from '@/modules/wms/calc/pricing';
 import { basisLabel, defaultBasisFor, uniformBazaOf } from '@/modules/wms/calc/basis';
 import { editBazaPair } from '@/modules/wms/calc/baza-draft';
 import { pasteIdsFor } from '@/modules/wms/calc/paste-ids';
-import { basisNotLaw } from '@/modules/wms/calc/warnings';
-import { ghostScreenOf, screenRowOf, groupsByCodeOf, postedBasis } from '@/modules/wms/calc/screen-row';
+import { basisNotLaw, lawOffBook } from '@/modules/wms/calc/warnings';
+import { exciseAnswered, exciseMayApply, exciseUnitsFor } from '@/modules/wms/calc/excise';
+import { LAW_SHAPE_KEY, dayText, lawValues, rateText, unitWordsOf } from '@/modules/wms/calc/law-words';
+import { unitLabel, type PendingUnit } from '@/modules/wms/calc/units';
+import {
+  ghostAutoBasis,
+  ghostFixedPair,
+  ghostScreenOf,
+  groupsByCodeOf,
+  liveMembership,
+  neededCells,
+  pendingUnitOnScreen,
+  postedBasis,
+  rehomeCodeOf,
+  screenRowOf,
+  type NeedCell,
+} from '@/modules/wms/calc/screen-row';
+import { needLawOf } from '@/modules/wms/calc/needs';
 import { readNumberCell } from '@/modules/wms/calc/number-cell';
 import {
   ALL_BASE_FIELDS,
@@ -61,7 +79,7 @@ import {
   type RestorePlan,
   type StoredDrafts,
 } from '@/modules/wms/calc/draft-store';
-import { parseGoods, type Cell } from '@/modules/wms/deals/goods-import';
+import { pasteItems } from '@/modules/wms/calc/send-rows';
 import { isBuildStale, reloadFresh } from '@/components/build-check';
 import {
   confirmAllAction,
@@ -76,13 +94,15 @@ import {
   setRatesAction,
   type CalcFormState,
   type TableFormState,
+  type TableSaveFields,
 } from '../actions';
 import { dutyText } from '@/modules/wms/calc/duty-text';
 import { ImportBazaDialog, type PickerTarget } from './import-baza-dialog';
-import { BasisSelect } from './basis-select';
+import { BasisSelect, MeasureUnitSelect } from './basis-select';
 import { PhoneBlocks } from './phone-blocks';
 import { RowSheet, type SheetField, type SheetFigure, type SheetModel, type SheetNumField } from './row-sheet';
 import { DraftRestore } from './draft-restore';
+import { customsRefusalText, measureNeedText, needReasonText } from './words';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
@@ -141,6 +161,9 @@ interface LastSave {
   alreadySaved: number;
   importFilled: number[];
   memoryFilled: number[];
+  unitsMoved: { seq: number; to: string; note: string }[];
+  sellerUnitUnresolved: { seq: number; word: string }[];
+  basisStamped: { seq: number; basis: BazaBasis }[];
 }
 const EMPTY_SAVE: LastSave = {
   minted: [],
@@ -153,7 +176,34 @@ const EMPTY_SAVE: LastSave = {
   alreadySaved: 0,
   importFilled: [],
   memoryFilled: [],
+  unitsMoved: [],
+  sellerUnitUnresolved: [],
+  basisStamped: [],
 };
+
+/**
+ * What a save result says on the bar — ONE reader for every press that saves
+ * (the table, the paste), so a field the server learns to name reaches all of
+ * them at once. The paste listed its fields by hand and silently dropped four
+ * of them (judge S15).
+ */
+function lastSaveOf(result: TableSaveFields): LastSave {
+  return {
+    minted: result.minted ?? [],
+    swept: result.swept ?? 0,
+    merged: result.merged ?? [],
+    measuresCleared: result.measuresCleared ?? [],
+    measuresDropped: result.measuresDropped ?? [],
+    basisSuspect: result.basisSuspect ?? [],
+    basisConflict: result.basisConflict ?? [],
+    alreadySaved: result.alreadySaved ?? 0,
+    importFilled: result.importFilled ?? [],
+    memoryFilled: result.memoryFilled ?? [],
+    unitsMoved: result.unitsMoved ?? [],
+    sellerUnitUnresolved: result.sellerUnitUnresolved ?? [],
+    basisStamped: result.basisStamped ?? [],
+  };
+}
 
 type SheetTarget = { kind: 'item'; id: string } | { kind: 'ghost'; key: number };
 const sheetKeyOf = (s: SheetTarget | null) => (s === null ? null : s.kind === 'item' ? `item:${s.id}` : `ghost:${s.key}`);
@@ -239,7 +289,7 @@ function liveGhostItem(row: NewRow, lawGroup: WorkspaceGroup | null, groupsByCod
     weightKg: num(row.weightKg, q3),
     volumeM3: num(row.volumeM3, q3),
     bazaUsd,
-    bazaBasis: bazaUsd === null ? null : (row.bazaBasis ?? defaultBasisFor(lawGroup)),
+    bazaBasis: bazaUsd === null ? null : (row.bazaBasis ?? ghostAutoBasis(row, lawGroup)),
     measureUnit: measureQty === null ? null : (pair as MeasureUnit),
     measureQty,
   };
@@ -297,6 +347,8 @@ export function ItemsTable({
   viewerId: string;
 }) {
   const t = useTranslations('calc');
+  /** Unit words in the reader's language — one set (`calc.units`). */
+  const units = useMemo(() => unitWordsOf((k) => t(`units.${k}` as 'units.dona')), [t]);
   const tc = useTranslations('common');
   const router = useRouter();
   const id = workspace.requestId;
@@ -406,7 +458,36 @@ export function ItemsTable({
   const dirtyCount = Object.keys(drafts).filter((rowId) => itemById.has(rowId)).length + dirtyGhosts.length;
   /** The gate counts what is WAITING to be restored too: sealing over edits
    * the VED believes he made would lock a client price without them. */
-  const gateCount = dirtyCount + (restore ? restorableCount(restore) : 0);
+  // A row still stored the OLD way («120» under the seller's «m2») changes
+  // on the next Saqlash (judge UX7): ✅ and the seal wait on that press as
+  // they wait on a draft — a confirm or a seal over «120 dona» of tiles that
+  // the save is about to turn into 120 m² vouches for numbers about to move.
+  const pendingUnits = useMemo(() => {
+    const out = new Map<string, PendingUnit>();
+    for (const item of allItems) {
+      const screen = screenRowOf(item, drafts[item.id], groupById, groupsByCode);
+      const pending = pendingUnitOnScreen(
+        item,
+        {
+      confirmed: Boolean(screen.lawGroup?.confirmedAt),
+      lawDutyUnit: screen.lawGroup?.dutyUnit ?? null,
+      grouped: screen.lawGroup !== null,
+    },
+        drafts[item.id],
+      );
+      if (pending) out.set(item.id, pending);
+    }
+    return out;
+  }, [allItems, drafts, groupById, groupsByCode]);
+  const pendingMoves = [...pendingUnits.values()].filter((p) => p.kind === 'move').length;
+  // Grouped rows the save RE-HOMES (their own code is not their block's):
+  // the bar already prices them where they will land, so they hold the gate
+  // and keep Saqlash live like a sweep (review fix-review) — otherwise ✅ and
+  // the seal ran on the stored blocks beside a bar showing another total.
+  const rehomes = allItems.filter(
+    (i) => drafts[i.id]?.tnvedCode === undefined && rehomeCodeOf(i, groupById) !== null,
+  ).length;
+  const gateCount = dirtyCount + (restore ? restorableCount(restore) : 0) + pendingMoves + rehomes;
   // Intake prefills codes from the TNVED memory, so the commonest request
   // arrives coded-and-ungrouped with NOTHING dirty — the save's server-side
   // sweep places them; and legacy duplicate same-code groups normalize on the
@@ -417,8 +498,8 @@ export function ItemsTable({
     if (c) codeCounts.set(c, (codeCounts.get(c) ?? 0) + 1);
   }
   const duplicateGroups = [...codeCounts.values()].filter((n) => n > 1).length;
-  const sweepable = workspace.ungrouped.filter((i) => (i.tnvedCode ?? '').trim()).length;
-  const saveable = dirtyCount > 0 || sweepable > 0 || duplicateGroups > 0;
+  const sweepable = workspace.ungrouped.filter((i) => (i.tnvedCode ?? '').trim()).length + rehomes;
+  const saveable = dirtyCount > 0 || sweepable > 0 || duplicateGroups > 0 || pendingMoves > 0;
   const aiRunning = workspace.aiRunningSince !== null;
 
   useEffect(() => onDirty(gateCount), [gateCount, onDirty]);
@@ -593,14 +674,28 @@ export function ItemsTable({
     };
   };
 
+  /** Which block each row prices in NOW — the drafted codes re-home their
+   * rows the way the save's regroup will (P3.8), so the live figure is the
+   * saved one or no figure at all. */
+  const live = useMemo(
+    () => liveMembership(allItems, drafts, groupById, groupsByCode),
+    [allItems, drafts, groupById, groupsByCode],
+  );
+  const liveMembersOf = (g: WorkspaceGroup) => live.members.get(g.id) ?? [];
+  /** Blocks a coded new row will join — their figure is the browser's guess
+   * until the save adds that row (review live-figure). */
+  const ghostBlocks = new Set(
+    dirtyGhosts.map((r) => groupsByCode.get(r.tnvedCode.trim())?.id).filter((x): x is string => !!x),
+  );
+
   const liveCustomsByGroup = useMemo(() => {
     const out = new Map<string, CustomsResult>();
     for (const g of workspace.groups) {
-      out.set(g.id, customsFor(pricedGroupOf(g), g.items.map((i) => liveItem(i))));
+      out.set(g.id, customsFor(pricedGroupOf(g), liveMembersOf(g).map((i) => liveItem(i))));
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspace, drafts]);
+  }, [workspace, drafts, live]);
 
   /** Item 1: the block's one baza, read off the LIVE merged rows — the
    * footer must not print yesterday's baza beside a live customs figure
@@ -608,11 +703,11 @@ export function ItemsTable({
   const liveBazaByGroup = useMemo(() => {
     const out = new Map<string, { bazaUsd: number; bazaBasis: BazaBasis } | null>();
     for (const g of workspace.groups) {
-      out.set(g.id, uniformBazaOf(g.items.map((i) => liveItem(i))));
+      out.set(g.id, uniformBazaOf(liveMembersOf(g).map((i) => liveItem(i))));
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspace, drafts]);
+  }, [workspace, drafts, live]);
 
   /** A1's chip over the same LIVE rows the footer's baza reads — the
    * server's verdict is about the stored rows, a moment the footer no
@@ -620,18 +715,25 @@ export function ItemsTable({
   const liveBasisNotLawByGroup = useMemo(() => {
     const out = new Map<string, boolean>();
     for (const g of workspace.groups) {
-      out.set(g.id, basisNotLaw(g.dutyUnit, g.items.map((i) => liveItem(i))));
+      out.set(g.id, basisNotLaw(g.dutyUnit, liveMembersOf(g).map((i) => liveItem(i))));
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspace, drafts]);
+  }, [workspace, drafts, live]);
 
   /** The bar's total — the SAME request-grain assembly the server runs, over
    * the live blocks. No partial sums: while any block or the fee refuses,
    * the bar shows the blocked state, never a smaller number. */
+  // A drafted code no block carries, or a new row, has no figure until the
+  // save mints its block: the bar says so instead of a total the very next
+  // Saqlash would change (MR-22).
+  const liveUnsaved = live.unsavedCode || dirtyGhosts.length > 0;
   const liveTotals = useMemo(() => {
+    if (liveUnsaved) return null;
     const assembled = requestCustomsFor({
-      customs: workspace.groups.map((g) => liveCustomsByGroup.get(g.id)!),
+      // A block every row left is pruned by the save — never a refusal here.
+      customs: workspace.groups.filter((g) => liveMembersOf(g).length > 0).map((g) => liveCustomsByGroup.get(g.id)!),
+      ungroupedCount: live.ungrouped.length,
       bhmUzs: workspace.bhmUzs,
       fxUzsPerUsd: workspace.fxUzsPerUsd,
       feeOverrideUsd: workspace.feeOverrideUsd,
@@ -647,7 +749,8 @@ export function ItemsTable({
       weightKg: workspace.weightKg,
       volumeM3: workspace.volumeM3,
     });
-  }, [workspace, liveCustomsByGroup]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspace, liveCustomsByGroup, live, liveUnsaved]);
 
   /**
    * The open sheet's figure — what THIS Saqlash would store (#886): the
@@ -878,6 +981,13 @@ export function ItemsTable({
       // stored (it stands), or null = «avto», which the server stamps from
       // the block the row ENDS in. Clearing the price: `postedBasis`.
       edit.bazaBasis = postedBasis(d.bazaBasis, v === null, item);
+      // A price typed under «avto» carries the unit the select SHOWED, so the
+      // save stores exactly that one (judge MR-17) — never a unit the figures
+      // of this same save would resolve differently.
+      if (v !== null && edit.bazaBasis === null) {
+        const shown = screenRowOf(item, d, m.groupById, m.groupsByCode).basis;
+        if (shown !== null) edit.shownBasis = shown;
+      }
       // The picked row's id — the server re-reads it and takes the PRICE
       // from the file, so a browser that lies about the number is answered
       // by the declaration itself.
@@ -899,6 +1009,13 @@ export function ItemsTable({
       if ('refusal' in read) return { refusal: { ...read.refusal, ghostKey: row.key } };
       nums[field] = read.value;
     }
+    const screen = ghostScreenOf(row, maps.groupsByCode);
+    // «avto» as the select shows it — only while the code's law is known
+    // (an unknown law's «avto» names no unit, and the save NAMES its stamp).
+    const shownBasis =
+      (nums.bazaValue ?? null) !== null && row.bazaBasis === null && !screen.lawUnknown
+        ? ghostAutoBasis(row, screen.lawGroup)
+        : undefined;
     return {
       add: {
         clientId: row.clientId,
@@ -912,6 +1029,14 @@ export function ItemsTable({
         // box is on every ghost (its law is unknowable before the save), and
         // the server drops and NAMES a measure the law does not take.
         measureQty: nums.measure ?? null,
+        // The unit the amount is IN (UX12) — posted only where neither the
+        // law nor a CHOSEN unit names one (`ghostFixedPair`; `screen.pair`
+        // follows the stated measure itself and would post nothing).
+        measureUnit:
+          (nums.measure ?? null) !== null && ghostFixedPair(row, maps.groupsByCode) === null
+            ? row.measureUnit
+            : undefined,
+        shownBasis,
         bazaUsd: nums.bazaValue ?? null,
         // Null while untouched — «avto», stamped by the server from the block
         // the new code lands in; a touched unit stands with or without a price.
@@ -979,18 +1104,7 @@ export function ItemsTable({
       if (!Number.isFinite(result.rev)) return { error: 'save_failed' };
       knownRev.current = Math.max(knownRev.current, result.rev);
       setPrunedCount(0);
-      setLastSave({
-        minted: result.minted ?? [],
-        swept: result.swept ?? 0,
-        merged: result.merged ?? [],
-        measuresCleared: result.measuresCleared ?? [],
-        measuresDropped: result.measuresDropped ?? [],
-        basisSuspect: result.basisSuspect ?? [],
-        basisConflict: result.basisConflict ?? [],
-        alreadySaved: result.alreadySaved ?? 0,
-        importFilled: result.importFilled ?? [],
-        memoryFilled: result.memoryFilled ?? [],
-      });
+      setLastSave(lastSaveOf(result));
       // Drafts are HELD until the refreshed workspace reaches this rev, so
       // the live figures never flash back to pre-save numbers — and only
       // what this press POSTED settles then.
@@ -1009,6 +1123,22 @@ export function ItemsTable({
       setSaving(false);
     }
   };
+
+  /** «Bu dona» (judge UX7): the seller's word stops asking and the count
+   * stays the VED's — posted on its own, like a delete, because a word
+   * answered is not a draft anybody types. */
+  const sendRef = useRef(send);
+  useLayoutEffect(() => {
+    sendRef.current = send;
+  });
+  const dismissUnit = useCallback((itemId: string, seq: number) => {
+    setTableError(null);
+    void sendRef.current([{ id: itemId, seq, unit: null }], [], { drafts: new Map(), ghosts: new Map() }).then(
+      (result) => {
+        if (!result.ok) setTableError({ code: result.error, seq: result.seq });
+      },
+    );
+  }, []);
 
   /** The grid's ONE save — every live draft and every dirty ghost in one
    * transaction (an empty post runs the server's sweep). */
@@ -1455,6 +1585,11 @@ export function ItemsTable({
           reason: d?.bazaValue === undefined ? sheetItem.bazaReason : null,
         },
         dictionaryBaza: sheetItem.dictionaryBaza,
+        // The desktop row's marks, with the reason as a visible line (UX11).
+        needs: neededCells(screen, screen.lawGroup ? needLawOf(screen.lawGroup) : null, sheetItem, d).map((n) => ({
+          cell: n.cell,
+          why: needReasonText(t, n) ?? '',
+        })),
         importDoor: sheetItem.tnvedCode ? (rowDirtyForPicker(d) ? 'row_dirty' : 'open') : 'needs_code',
         figure: sheetFigure ?? { state: 'no_code' },
       };
@@ -1479,11 +1614,26 @@ export function ItemsTable({
         sellerUnit: null,
         // ALWAYS on a ghost — the desktop ghost's own rule, and buildAdd
         // posts it unconditionally: a box on screen is a number that is
-        // posted, and nothing hidden is posted.
-        measure: { label: t('table.measureGhost'), suffix: null, sm3: false },
-        basis: { value: screen.basis, offered: screen.offered },
+        // posted, and nothing hidden is posted. A law that counts in a pair
+        // names the unit; otherwise the VED does (P3.5).
+        measure: (() => {
+          const fixed = ghostFixedPair(sheetRow, groupsByCode);
+          return fixed !== null
+            ? {
+                label: t('table.measureFor', { unit: basisLabel(fixed, t('perUnit')) }),
+                suffix: basisLabel(fixed, t('perUnit')),
+                sm3: fixed === 'sm3',
+              }
+            : { label: t('table.measureGhost'), suffix: null, sm3: false, unitPick: sheetRow.measureUnit };
+        })(),
+        basis: {
+          value: screen.basis,
+          offered: screen.offered,
+          auto: screen.lawUnknown ? null : ghostAutoBasis(sheetRow, screen.lawGroup),
+        },
         chips: { memory: false, import: false, reason: null },
         dictionaryBaza: null,
+        needs: [],
         importDoor: null,
         figure: sheetFigure ?? { state: 'no_code' },
       };
@@ -1508,6 +1658,10 @@ export function ItemsTable({
     // unit, so the save posts a coherent pair (baza-draft.ts).
     if (sheet.kind === 'item') setDraft(sheet.id, 'bazaBasis', basis);
     else patchGhost(sheet.key, { bazaBasis: basis });
+  };
+  /** The new row's O'lchov unit (P3.5) — saved rows state theirs already. */
+  const onSheetMeasureUnit = (unit: MeasureUnit | null) => {
+    if (sheet?.kind === 'ghost') patchGhost(sheet.key, { measureUnit: unit });
   };
   const onSheetAsk = (field: SheetNumField) =>
     setAsked((prev) => ({ key: sheetKey, fields: [...(prev.key === sheetKey ? prev.fields : []), field] }));
@@ -1562,41 +1716,13 @@ export function ItemsTable({
     }
   }, []);
 
-  const parsedPaste = useMemo(() => {
-    const lines = pasteText
-      .split('\n')
-      .map((l) => l.replace(/\r$/, ''))
-      .filter((l) => l.trim());
-    if (lines.length === 0) return [];
-    if (lines.some((l) => l.includes('\t'))) {
-      // Excel TSV — the deals importer's own pure parser (headers in four
-      // languages, totals rows dropped).
-      const cells: Cell[][] = lines.map((l) => l.split('\t').map((c) => c.trim()));
-      return parseGoods(cells).goods.map((g) => ({
-        name: g.description,
-        quantity: g.quantity,
-        unit: g.unit,
-        weightKg: g.weightKg,
-        volumeM3: g.volumeM3,
-        tnvedCode: null as string | null,
-      }));
-    }
-    // One product per line: «name, quantity, unit» — calc-send-form's shape.
-    // The quantity is read by the ONE cell reader; an ambiguous one lands
-    // empty rather than as a guess.
-    return lines.map((line) => {
-      const parts = line.split(/[,;]/).map((p) => p.trim());
-      const cell = parts.length > 1 ? readNumberCell(parts[1]!) : null;
-      return {
-        name: parts[0]!,
-        quantity: cell?.state === 'ok' ? cell.value : null,
-        unit: parts[2] || null,
-        weightKg: null,
-        volumeM3: null,
-        tnvedCode: null as string | null,
-      };
-    });
-  }, [pasteText]);
+  // The paste NEVER asks (his B-round answer, pinned in
+  // calc-phone-safety.test.ts) — and since 2026-10-09 it lands each figure
+  // in the column its unit names, with the code and the note, through the
+  // same reading and the same door rule as every other door (P1.6,
+  // `pasteItems`). It used to drop the TNVED column and file «120 m2» in
+  // the piece column.
+  const parsedPaste = useMemo(() => pasteItems(pasteText), [pasteText]);
 
   const applyPaste = () =>
     act(async () => {
@@ -1615,22 +1741,23 @@ export function ItemsTable({
         setPasteOpen(false);
         pasteIds.current = { keys: [], ids: [] };
         knownRev.current = Math.max(knownRev.current, result.rev);
-        setLastSave({
-          ...EMPTY_SAVE,
-          minted: result.minted ?? [],
-          swept: result.swept ?? 0,
-          merged: result.merged ?? [],
-          alreadySaved: result.alreadySaved ?? 0,
-          importFilled: result.importFilled ?? [],
-          memoryFilled: result.memoryFilled ?? [],
-        });
+        setLastSave(lastSaveOf(result));
       }
       return result;
     });
 
   const busy = pending || saving;
   const unconfirmed = workspace.groups.filter((g) => g.confirmedAt === null).length;
-  const unpriced = workspace.groups.filter((g) => !(liveCustomsByGroup.get(g.id)?.ok ?? false)).length;
+  // Blocks every row has left are pruned by the save — not «unpriced».
+  const liveGroups = workspace.groups.filter((g) => (live.members.get(g.id)?.length ?? 0) > 0);
+  const unpriced = liveGroups.filter((g) => !(liveCustomsByGroup.get(g.id)?.ok ?? false)).length;
+  const firstRefusal = (() => {
+    for (const group of liveGroups) {
+      const customs = liveCustomsByGroup.get(group.id);
+      if (customs && !customs.ok) return { group, customs };
+    }
+    return null;
+  })();
 
   // Rendered row order: ungrouped first (the ⚠ pile a person must act on),
   // then each group's members — the DESKTOP grid walks this flat list so
@@ -1658,9 +1785,25 @@ export function ItemsTable({
           </a>
         ) : null}
         {unpriced > 0 ? (
-          <a className="chip chip-warn" href={`#calc-g-${workspace.groups.find((g) => !(liveCustomsByGroup.get(g.id)?.ok ?? false))?.seq ?? 0}`}>
+          // The chip lands on the ROW the engine named when it named one,
+          // and says why in words — not only on the block (P3.7).
+          <a
+            className="chip chip-warn"
+            href={
+              firstRefusal?.customs.itemSeq !== undefined
+                ? `#calc-i-${firstRefusal.customs.itemSeq}`
+                : `#calc-g-${firstRefusal?.group.seq ?? 0}`
+            }
+            title={firstRefusal ? customsRefusalText(t, firstRefusal.customs) : undefined}
+            data-testid="calc-bar-unpriced"
+          >
             ⚠ {t('table.unpriced')}: {unpriced}
           </a>
+        ) : null}
+        {liveUnsaved ? (
+          <span className="chip chip-warn" data-testid="calc-bar-live-unsaved">
+            {t('grid.liveUnsaved')}
+          </span>
         ) : null}
         {liveTotals?.ok ? (
           <span className="font-mono text-sm font-semibold tabular-nums" data-testid="calc-bar-total">
@@ -1841,7 +1984,10 @@ export function ItemsTable({
         lastSave.basisConflict.length > 0 ||
         lastSave.alreadySaved > 0 ||
         lastSave.importFilled.length > 0 ||
-        lastSave.memoryFilled.length > 0) ? (
+        lastSave.memoryFilled.length > 0 ||
+        lastSave.unitsMoved.length > 0 ||
+        lastSave.sellerUnitUnresolved.length > 0 ||
+        lastSave.basisStamped.length > 0) ? (
         <p className="text-2xs text-ink-600" data-testid="calc-save-note">
           {[
             lastSave.minted.length > 0
@@ -1870,6 +2016,16 @@ export function ItemsTable({
             lastSave.memoryFilled.length > 0
               ? `🧠 ${t('table.memoryFilled', { count: lastSave.memoryFilled.length })}: ${lastSave.memoryFilled.join(', ')}`
               : '',
+            // The heal and the stamp name every row they touched, each with
+            // its own words — a moved number the VED cannot find is a number
+            // nobody stated.
+            ...lastSave.unitsMoved.map((m) =>
+              t('grid.unitMoved', { row: m.seq, to: unitLabel(m.to, units), note: m.note }),
+            ),
+            ...lastSave.sellerUnitUnresolved.map((m) => `⚠ ${t('grid.sellerWord', { row: m.seq, word: m.word })}`),
+            ...lastSave.basisStamped.map((m) =>
+              `⚠ ${t('grid.basisStamped', { row: m.seq, unit: unitLabel(m.basis, units) })}`,
+            ),
           ]
             .filter(Boolean)
             .join(' · ')}
@@ -1898,10 +2054,12 @@ export function ItemsTable({
                 <tr className="border-b border-line-strong bg-surface-sunken text-left text-2xs uppercase tracking-wide text-ink-500">
                   <th className="p-2">#</th>
                   <th className="p-2">{t('goods')}</th>
-                  <th className="p-2 text-center">📦</th>
-                  <th className="p-2 text-center">kg</th>
+                  {/* «📦» means a CARTON everywhere else in this app; the column
+                      is pieces, and the weight is NET (P3.1, UX16). */}
+                  <th className="p-2 text-center">{t('grid.qty')}</th>
+                  <th className="p-2 text-center">{t('grid.kg')}</th>
                   <th className="p-2 text-center">m³</th>
-                  <th className="p-2">TNVED</th>
+                  <th className="p-2">{t('grid.code')}</th>
                   <th className="p-2">{t('baza')}</th>
                   <th className="p-2" />
                 </tr>
@@ -1928,6 +2086,7 @@ export function ItemsTable({
                     liveCustoms={row.group ? (liveCustomsByGroup.get(row.group.id) ?? null) : null}
                     liveBaza={row.group ? (liveBazaByGroup.get(row.group.id) ?? null) : null}
                     liveBasisNotLaw={row.group ? (liveBasisNotLawByGroup.get(row.group.id) ?? false) : false}
+                    liveMoved={row.group ? live.moved.has(row.group.id) || ghostBlocks.has(row.group.id) : false}
                     drafts={drafts[row.item.id]}
                     groupById={groupById}
                     groupsByCode={groupsByCode}
@@ -1940,6 +2099,7 @@ export function ItemsTable({
                     onPickBaza={setPicker}
                     onCellKey={onCellKey}
                     onCellPaste={onCellPaste}
+                    onDismissUnit={dismissUnit}
                   />
                 ))}
                 {newRows.map((row, i) => (
@@ -2036,6 +2196,7 @@ export function ItemsTable({
         asked={askedNow}
         onField={onSheetField}
         onBasis={onSheetBasis}
+        onMeasureUnit={onSheetMeasureUnit}
         onAsk={onSheetAsk}
         onImport={openPickerFromSheet}
         onSave={() => void saveSheetRow()}
@@ -2064,6 +2225,8 @@ export function ItemsTable({
         gateCount={gateCount}
         dirtyCount={dirtyCount}
         sweepable={sweepable}
+        pendingMoves={pendingMoves}
+        rehomes={rehomes}
         nextDraft={nextDraft}
         rowGone={rowGone}
         busy={busy}
@@ -2123,6 +2286,7 @@ const ItemRowBlock = memo(function ItemRowBlock({
   liveCustoms,
   liveBaza,
   liveBasisNotLaw,
+  liveMoved,
   drafts,
   groupById,
   groupsByCode,
@@ -2135,6 +2299,7 @@ const ItemRowBlock = memo(function ItemRowBlock({
   onPickBaza,
   onCellKey,
   onCellPaste,
+  onDismissUnit,
 }: {
   id: string;
   row: { item: WorkspaceItem; group: WorkspaceGroup | null };
@@ -2144,6 +2309,8 @@ const ItemRowBlock = memo(function ItemRowBlock({
   liveCustoms: CustomsResult | null;
   liveBaza: { bazaUsd: number; bazaBasis: BazaBasis } | null;
   liveBasisNotLaw: boolean;
+  /** The save will change this block's members (a drafted code) — P3.8. */
+  liveMoved: boolean;
   drafts: ItemDraft | undefined;
   groupById: Map<string, WorkspaceGroup>;
   groupsByCode: Map<string, WorkspaceGroup>;
@@ -2156,12 +2323,30 @@ const ItemRowBlock = memo(function ItemRowBlock({
   onPickBaza: (target: PickerTarget) => void;
   onCellKey: (e: React.KeyboardEvent<HTMLInputElement>, col: string, rowIndex: number, lastIndex: number) => void;
   onCellPaste: (e: React.ClipboardEvent) => void;
+  /** «Bu dona» — the seller's word stops asking (UX7). */
+  onDismissUnit: (itemId: string, seq: number) => void;
 }) {
   const t = useTranslations('calc');
   const item = row.item;
   // The ONE answer the select, the O'lchov line, the live figure and the
   // save all read (screenRowOf) — the drafted code's law, the unit on screen.
   const screen = screenRowOf(item, drafts, groupById, groupsByCode);
+  // The figures this row still owes the engine — marked on the cell before
+  // any press, with the reason in its title (P3.2).
+  const needs = neededCells(screen, screen.lawGroup ? needLawOf(screen.lawGroup) : null, item, drafts);
+  const needOf = (cell: NeedCell) => needs.find((n) => n.cell === cell) ?? null;
+  // A row still stored the OLD way — the save's own predicate, computed
+  // here (not handed down) so a neighbour's keystroke does not re-render it.
+  const pendingUnit = pendingUnitOnScreen(
+    item,
+    {
+      confirmed: Boolean(screen.lawGroup?.confirmedAt),
+      lawDutyUnit: screen.lawGroup?.dutyUnit ?? null,
+      grouped: screen.lawGroup !== null,
+    },
+    drafts,
+  );
+  const words = useMemo(() => unitWordsOf((k) => t(`units.${k}` as 'units.dona')), [t]);
   // Per-row and LOCAL. Lifting «only one fold open» above a memo'd row is
   // round 70's board freeze in a grid's clothes, and two open folds harm
   // nothing — the ⚙ has allowed exactly that since the workspace shipped.
@@ -2175,10 +2360,14 @@ const ItemRowBlock = memo(function ItemRowBlock({
           ? (item.tnvedCode ?? '')
           : String(item[col] ?? '');
     const value = drafts?.[col] ?? server;
+    const need = col === 'name' || col === 'tnvedCode' ? null : needOf(col);
     return (
       <input
-        className={`input-cell ${extra}${cellBorder(col === 'name' || col === 'tnvedCode' ? undefined : drafts?.[col], drafts?.[col] !== undefined)}`}
+        className={`input-cell ${extra}${cellBorder(col === 'name' || col === 'tnvedCode' ? undefined : drafts?.[col], drafts?.[col] !== undefined)}${need ? ' !border-warn' : ''}`}
         aria-label={`${col} ${item.seq}`}
+        placeholder={need ? t('grid.needed') : undefined}
+        title={need ? (needReasonText(t, need) ?? undefined) : undefined}
+        data-need={need ? need.unit : undefined}
         data-cell={col}
         data-row={index}
         inputMode={col === 'name' ? undefined : col === 'tnvedCode' ? 'numeric' : 'decimal'}
@@ -2300,6 +2489,14 @@ const ItemRowBlock = memo(function ItemRowBlock({
               🤖 {item.bazaReason}
             </span>
           ) : null}
+          {/* The price ON the row is old (P2.10c: a quarter that ended long
+              ago, a seal long ago, a stale book row) — said beside it, until
+              the VED retypes it (judge S10). */}
+          {item.bazaStale && drafts?.bazaValue === undefined ? (
+            <span className="mt-0.5 block truncate text-2xs text-warn" data-testid="calc-baza-stale-row">
+              ⚠ {t('stale')}
+            </span>
+          ) : null}
           {item.dictionaryBaza ? (
             <span className="mt-0.5 block truncate text-2xs text-ink-500" title={item.dictionaryBaza.effectiveDate}>
               ≈ ${item.dictionaryBaza.bazaUsd}/{basisLabel(item.dictionaryBaza.basis, t('perUnit'))}
@@ -2355,8 +2552,10 @@ const ItemRowBlock = memo(function ItemRowBlock({
                   : t('table.measureFor', { unit: basisLabel(pair, t('perUnit')) })}
               </span>
               <input
-                className={`input-cell !w-24 text-right font-mono tabular-nums${cellBorder(drafts?.measure, drafts?.measure !== undefined)}`}
+                className={`input-cell !w-24 text-right font-mono tabular-nums${cellBorder(drafts?.measure, drafts?.measure !== undefined)}${needOf('measure') ? ' !border-warn' : ''}`}
                 aria-label={`measure ${item.seq}`}
+                placeholder={needOf('measure') ? t('grid.needed') : undefined}
+                title={needOf('measure') ? (needReasonText(t, needOf('measure')!) ?? undefined) : undefined}
                 data-cell="measure"
                 data-row={index}
                 data-testid="calc-measure"
@@ -2374,6 +2573,44 @@ const ItemRowBlock = memo(function ItemRowBlock({
           </td>
         </tr>
       ) : null}
+      {pendingUnit ? (
+        <tr className="border-b border-line/60 text-2xs" data-testid="calc-unit-pending" data-kind={pendingUnit.kind}>
+          <td />
+          <td className="px-1.5 pb-1.5" colSpan={7}>
+            <span className="flex flex-wrap items-center gap-2 text-warn">
+              <span>
+                ⚠{' '}
+                {pendingUnit.kind === 'move'
+                  ? t('grid.pendingMove', {
+                      said: `${pendingUnit.quantity} ${pendingUnit.word}`,
+                      to: unitLabel(pendingUnit.to, words),
+                    })
+                  : t('grid.pendingAsk', { said: `${pendingUnit.quantity} ${pendingUnit.word}` })}
+              </span>
+              {pendingUnit.kind === 'ask' ? (
+                <button
+                  type="button"
+                  className="btn-secondary !min-h-8 !px-2"
+                  data-testid="calc-unit-cartons"
+                  disabled={busy}
+                  onClick={() => setDraft(item.id, 'quantity', '')}
+                >
+                  {t('grid.isCartons')}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="btn-secondary !min-h-8 !px-2"
+                data-testid="calc-unit-pieces"
+                disabled={busy}
+                onClick={() => onDismissUnit(item.id, item.seq)}
+              >
+                {t('grid.isPieces')}
+              </button>
+            </span>
+          </td>
+        </tr>
+      ) : null}
       {endsGroup && row.group ? (
         <BlockFooter
           id={id}
@@ -2384,6 +2621,7 @@ const ItemRowBlock = memo(function ItemRowBlock({
           busy={busy}
           dirty={dirty}
           act={act}
+          liveState={liveMoved ? 'unsaved_code' : 'ok'}
         />
       ) : null}
     </>
@@ -2397,6 +2635,13 @@ const ItemRowBlock = memo(function ItemRowBlock({
  * self-announcing ones stay VISIBLE here, because a suggestion inside a
  * closed fold announces to nobody at exactly the moment a wrong confirm
  * happens.
+ *
+ * What the book says beside it (2026-10-09, P2.2/P2.3/P2.5): a book that
+ * MOVED under the block names today's law and offers the pull; a short code
+ * that hides other laws says so in words; a code the book answered from its
+ * HEADING says «lug‘at: 8528 sarlavhasi» as information (never a warning —
+ * judge UX8); a block whose own certificate answer differs from the
+ * request's prints both. Words, never a hover title (#420).
  */
 function BlockFooter({
   id,
@@ -2407,6 +2652,7 @@ function BlockFooter({
   busy,
   dirty,
   act,
+  liveState,
 }: {
   id: string;
   group: WorkspaceGroup;
@@ -2416,10 +2662,39 @@ function BlockFooter({
   busy: boolean;
   dirty: boolean;
   act: (work: () => Promise<CalcFormState>) => void;
+  /**
+   * The live figure's standing (judge S11, written by P3): 'unsaved_code' =
+   * a row's code is typed and not saved, so the block the figure prices is
+   * the browser's own until the next Saqlash. Absent reads as 'ok'.
+   */
+  liveState?: 'ok' | 'unsaved_code';
 }) {
   const t = useTranslations('calc');
   const [open, setOpen] = useState(false);
   const customs = liveCustoms ?? group.customs;
+  const words = useMemo(() => unitWordsOf((k) => t(`units.${k}` as 'units.dona')), [t]);
+  const book = group.dictionaryRates;
+  const code = group.tnvedCode?.trim() ?? '';
+  // P2.2: the pull renders whenever the book's row differs from what prices
+  // the block — a percentage, the VAT or the SHAPE — whatever wrote it. It
+  // used to be offered to typed groups only, so a block the BOOK wrote went
+  // on pricing yesterday's law with no door to today's.
+  const pullable =
+    book !== null && (group.dutyPct === null || group.vatPct === null || lawOffBook(group, book));
+  // P2.3's information half: the book answered from a SHORTER row.
+  const heading = book && code && book.matchedCode !== code ? book.matchedCode : null;
+  // P2.5: the block's own certificate answer, when it is not the request's.
+  const certOwn = group.hasCertificate !== null && group.hasCertificate !== group.requestCertificate;
+  const yesNo = (v: boolean) => (v ? t('law.certYes') : t('law.certNo'));
+  const exciseLine =
+    group.excisePct !== null && group.excisePct > 0
+      ? t('law.excisePct', { pct: rateText(group.excisePct) })
+      : group.exciseSpecific !== null && group.exciseUnit !== null
+        ? t('law.exciseSpecific', {
+            amount: rateText(group.exciseSpecific),
+            unit: unitLabel(group.exciseUnit, words),
+          })
+        : null;
 
   return (
     <>
@@ -2451,6 +2726,16 @@ function BlockFooter({
             {group.dutyFree ? t('dutyFree') : dutyText(group)} ·{' '}
             {group.vatFree ? t('vatFree') : `${t('vat')} ${group.vatPct ?? '—'}%`}
           </span>
+          {heading ? (
+            <span className="ml-1 text-2xs text-ink-500" data-testid="calc-group-heading">
+              ({t('law.heading', { code: heading })})
+            </span>
+          ) : null}
+          {exciseLine ? (
+            <span className="ml-1 text-2xs text-ink-700" data-testid="calc-group-excise">
+              · {exciseLine}
+            </span>
+          ) : null}
           {/* The book answered WITH a condition (the clauseCut vehicle rows) —
               a visible chip, not a hover title: a placeholder announces to
               nobody, and the confirm records `rate_noted`. */}
@@ -2462,6 +2747,14 @@ function BlockFooter({
           {customs.ok && customs.addDutyUsd > 0 ? (
             <span className="ml-1 text-2xs text-warn">
               +{customs.addDutyPct}% (${customs.addDutyUsd.toFixed(2)})
+            </span>
+          ) : null}
+          {certOwn ? (
+            <span className="ml-1 text-2xs text-warn" data-testid="calc-group-certificate">
+              {t('law.certOwn', {
+                answer: yesNo(group.hasCertificate === true),
+                request: yesNo(group.requestCertificate),
+              })}
             </span>
           ) : null}
           {/* Item 1 (the owner's own example): the block's one baza is the
@@ -2486,8 +2779,37 @@ function BlockFooter({
             <span className="ml-2 text-2xs text-ink-500">
               {t('value')} ${customs.valueUsd.toFixed(2)}
             </span>
+          ) : measureNeedText(t, customs) ? (
+            // WHICH row and WHICH figure (P3.7): «o‘lchov yo‘q» in the
+            // narrow cell alone left the kg-and-dona row a guessing game.
+            <span className="ml-2 text-2xs text-warn" data-testid="calc-group-refusal">
+              ⚠ {measureNeedText(t, customs)}
+            </span>
           ) : null}
-          {group.dictionaryRates && group.rateSource !== 'dictionary' && !dirty ? (
+          {/* The three warnings this round added, each in its own words —
+              the ✅ records them, so the person pressing it must have SEEN
+              them (a recorded warning nobody was shown records nothing). */}
+          {group.warnings.includes('dictionary_moved') && book ? (
+            <span className="ml-2 text-2xs text-warn" data-testid="calc-dictionary-moved">
+              ⚠ {t('law.bookMoved', { law: `${dutyText(book)} / ${t('vat')} ${book.vatPct}%` })}
+            </span>
+          ) : null}
+          {group.warnings.includes('code_heading') && group.codeHeading ? (
+            <span className="ml-2 text-2xs text-warn" data-testid="calc-code-heading">
+              ⚠{' '}
+              {t('law.headingHides', {
+                code,
+                deeper: group.codeHeading.code,
+                law: dutyText(group.codeHeading),
+              })}
+            </span>
+          ) : null}
+          {group.warnings.includes('excise_unanswered') ? (
+            <span className="ml-2 text-2xs text-warn" data-testid="calc-excise-unanswered">
+              ⚠ {t('warnings.exciseUnanswered')}
+            </span>
+          ) : null}
+          {pullable && book && !dirty ? (
             <button
               type="button"
               className="ml-2 text-2xs underline"
@@ -2495,7 +2817,7 @@ function BlockFooter({
               data-testid="calc-pull-rates"
               onClick={() => act(() => pullRatesAction(id, group.id))}
             >
-              {t('pullRates')}: {dutyText(group.dictionaryRates)} / {group.dictionaryRates.vatPct}%
+              {t('pullRates')}: {dutyText(book)} / {book.vatPct}%
             </button>
           ) : null}
           {group.rateSource === 'typed' &&
@@ -2503,10 +2825,7 @@ function BlockFooter({
           group.dutyPct !== null &&
           group.vatPct !== null &&
           !dirty &&
-          (!group.dictionaryRates ||
-            group.dictionaryRates.dutyPct !== group.dutyPct ||
-            group.dictionaryRates.vatPct !== group.vatPct ||
-            group.dictionaryRates.feeUsd !== (group.feeUsd ?? 0)) ? (
+          (!book || lawOffBook(group, book) || book.feeUsd !== (group.feeUsd ?? 0)) ? (
             <button
               type="button"
               className="ml-2 text-2xs underline"
@@ -2518,6 +2837,12 @@ function BlockFooter({
                     tnvedCode: group.tnvedCode!,
                     dutyPct: group.dutyPct!,
                     vatPct: group.vatPct!,
+                    // The block's WHOLE law (P2.1): a teach that posted the
+                    // percentage alone wrote an advalor row over a heading's
+                    // floor, and the next job under the code lost it.
+                    dutyMode: group.dutyMode,
+                    dutySpecific: group.dutySpecific,
+                    dutyUnit: group.dutyUnit,
                     effectiveDate: tashkentDay(),
                     source: 'correction',
                   }),
@@ -2552,6 +2877,9 @@ function BlockFooter({
               {t('lgotaLast')}
               {group.lgotaLast.dutyFree ? ` · ${t('dutyFree')}` : ''}
               {group.lgotaLast.vatFree ? ` · ${t('vatFree')}` : ''}
+              {/* «o‘tgan safar» is a claim about WHEN — the reader decides
+                  whether it still applies. */}
+              {` · ${dayText(group.lgotaLast.sealedAt)}`}
             </button>
           ) : null}
           {group.confirmedAt === null && !dirty ? (
@@ -2576,6 +2904,11 @@ function BlockFooter({
                 : customs.reason}
             </span>
           )}
+          {liveState === 'unsaved_code' ? (
+            <span className="block text-2xs font-sans text-warn" data-testid="calc-group-live-unsaved">
+              {t('law.unsavedCode')}
+            </span>
+          ) : null}
         </td>
         <td className="p-1.5 text-center">
           <button
@@ -2599,6 +2932,14 @@ function BlockFooter({
  * would let the block's identity drift from its members'. Rendered as a
  * full-width fold, never a popover: the grid's own scroll container clips
  * anything absolutely positioned inside it.
+ *
+ * Small on purpose (2026-10-09, judge UX10): the law's SHAPE is read-only
+ * here — «20 %, kamida $3/juft — lug‘atdan» — and edited only in
+ * /hisoblash/lugatlar, where it is the BOOK's word for every later job; a
+ * per-job shape edit would be a law nobody else ever sees. A rate typed here
+ * keeps the stored shape (the action posts no mode). The fold gains what is
+ * per JOB: the excise (only where the code may carry one, or it is already
+ * answered) and the block's own certificate answer.
  */
 function GroupFold({
   id,
@@ -2613,18 +2954,60 @@ function GroupFold({
   act: (work: () => Promise<CalcFormState>) => void;
   onDone: () => void;
 }) {
+  type ExciseMode = 'unasked' | 'none' | 'pct' | 'specific';
   const t = useTranslations('calc');
   const tc = useTranslations('common');
+  const words = useMemo(() => unitWordsOf((k) => t(`units.${k}` as 'units.dona')), [t]);
   const [duty, setDuty] = useState(group.dutyPct === null ? '' : String(group.dutyPct));
   const [vat, setVat] = useState(group.vatPct === null ? '' : String(group.vatPct));
   const [dutyFree, setDutyFree] = useState(group.dutyFree);
   const [vatFree, setVatFree] = useState(group.vatFree);
+  // The excise's four states (0131): unanswered, «yo‘q» (0 %), a percentage,
+  // or dollars per unit — one shape at a time, as the CHECKs say.
+  const [exciseMode, setExciseMode] = useState<ExciseMode>(
+    group.exciseSpecific !== null
+      ? 'specific'
+      : group.excisePct === null
+        ? 'unasked'
+        : group.excisePct > 0
+          ? 'pct'
+          : 'none',
+  );
+  const [exciseAmount, setExciseAmount] = useState(
+    group.exciseSpecific !== null
+      ? String(group.exciseSpecific)
+      : group.excisePct !== null && group.excisePct > 0
+        ? String(group.excisePct)
+        : '',
+  );
+  // The units a specific excise may count in beside THIS law (judge S4); a
+  // stored unit the law no longer admits stays listed, so the refusal that
+  // names it is the server's sentence and not a silently swapped select.
+  const exciseUnits = useMemo(() => {
+    const allowed = exciseUnitsFor(group.dutyUnit);
+    return group.exciseUnit && !allowed.includes(group.exciseUnit) ? [...allowed, group.exciseUnit] : allowed;
+  }, [group.dutyUnit, group.exciseUnit]);
+  const [exciseUnit, setExciseUnit] = useState<string>(group.exciseUnit ?? exciseUnits[0]!);
+  const [cert, setCert] = useState<'inherit' | 'yes' | 'no'>(
+    group.hasCertificate === null ? 'inherit' : group.hasCertificate ? 'yes' : 'no',
+  );
+  const showExcise = exciseMayApply(group.tnvedCode) || exciseAnswered(group);
   const num = (v: string) => (v.trim() === '' ? null : Number(v.replace(',', '.')));
+  const yesNo = (v: boolean) => (v ? t('law.certYes') : t('law.certNo'));
 
   return (
     <tr className="border-b border-line bg-surface-sunken">
       <td className="p-2" colSpan={8}>
         <div className="flex flex-wrap items-end gap-2" data-testid="calc-group-form">
+          {group.dutyMode !== 'advalor' ? (
+            <p className="basis-full text-2xs text-ink-600" data-testid="calc-group-shape">
+              {t(LAW_SHAPE_KEY[group.dutyMode], lawValues(group, words))} —{' '}
+              {group.rateSource === 'typed' ? t('law.typed') : t('law.fromBook')} ·{' '}
+              <Link className="underline" href="/hisoblash/lugatlar">
+                {t('law.shapeEditHint')}
+              </Link>
+            </p>
+          ) : null}
           <label className="text-2xs">
             <span className="label">{t('duty')} %</span>
             <input className="input input-sm !w-20" data-testid="calc-duty" value={duty} onChange={(e) => setDuty(e.target.value)} />
@@ -2647,6 +3030,69 @@ function GroupFold({
             <input type="checkbox" checked={vatFree} onChange={(e) => setVatFree(e.target.checked)} />
             {t('vatFree')}
           </label>
+          {/* P2.5: a sborniy truck mixes senders, and one sender without a
+              certificate must not flip the whole declaration — the block's
+              own answer. The first option SHOWS what «inherit» means today. */}
+          <label className="text-2xs">
+            <span className="label">{t('law.certificate')}</span>
+            <select
+              className="input input-sm !w-auto"
+              data-testid="calc-group-cert"
+              value={cert}
+              onChange={(e) => setCert(e.target.value as 'inherit' | 'yes' | 'no')}
+            >
+              <option value="inherit">{t('law.certInherit', { answer: yesNo(group.requestCertificate) })}</option>
+              <option value="yes">{t('law.certYes')}</option>
+              <option value="no">{t('law.certNo')}</option>
+            </select>
+          </label>
+          {showExcise ? (
+            <div className="flex basis-full flex-wrap items-end gap-2" data-testid="calc-excise-row">
+              <label className="text-2xs">
+                <span className="label">{t('law.excise')}</span>
+                <select
+                  className="input input-sm !w-auto"
+                  data-testid="calc-excise-mode"
+                  value={exciseMode}
+                  onChange={(e) => setExciseMode(e.target.value as ExciseMode)}
+                >
+                  <option value="unasked">{t('law.exciseUnasked')}</option>
+                  <option value="none">{t('law.exciseNone')}</option>
+                  <option value="pct">{t('law.excisePctMode')}</option>
+                  <option value="specific">{t('law.exciseSpecificMode')}</option>
+                </select>
+              </label>
+              {exciseMode === 'pct' || exciseMode === 'specific' ? (
+                <label className="text-2xs">
+                  <span className="label">{exciseMode === 'pct' ? '%' : '$'}</span>
+                  <input
+                    className="input input-sm !w-20 font-mono tabular-nums"
+                    inputMode="decimal"
+                    data-testid="calc-excise-amount"
+                    value={exciseAmount}
+                    onChange={(e) => setExciseAmount(e.target.value)}
+                  />
+                </label>
+              ) : null}
+              {exciseMode === 'specific' ? (
+                <label className="text-2xs">
+                  <span className="label">{t('law.unit')}</span>
+                  <select
+                    className="input input-sm !w-auto"
+                    data-testid="calc-excise-unit"
+                    value={exciseUnit}
+                    onChange={(e) => setExciseUnit(e.target.value)}
+                  >
+                    {exciseUnits.map((u) => (
+                      <option key={u} value={u}>
+                        {unitLabel(u, words)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+            </div>
+          ) : null}
           <button
             type="button"
             className="btn-primary"
@@ -2654,6 +3100,22 @@ function GroupFold({
             data-testid="calc-save-rates"
             onClick={() =>
               act(async () => {
+                const amount = num(exciseAmount);
+                // A percentage or a per-unit excise with no number is no
+                // answer at all — refused here in the server's own words,
+                // never posted as «unanswered» behind the person's back.
+                if ((exciseMode === 'pct' || exciseMode === 'specific') && amount === null) {
+                  return { error: 'excise_shape' };
+                }
+                const excise = !showExcise
+                  ? {}
+                  : exciseMode === 'specific'
+                    ? { excisePct: null, exciseSpecific: amount, exciseUnit: exciseUnit as DutyUnit }
+                    : {
+                        excisePct: exciseMode === 'unasked' ? null : exciseMode === 'none' ? 0 : amount,
+                        exciseSpecific: null,
+                        exciseUnit: null,
+                      };
                 const result = await setRatesAction(id, group.id, {
                   label: group.label,
                   tnvedCode: group.tnvedCode ?? '',
@@ -2661,6 +3123,8 @@ function GroupFold({
                   vatPct: num(vat),
                   dutyFree,
                   vatFree,
+                  hasCertificate: cert === 'inherit' ? null : cert === 'yes',
+                  ...excise,
                 });
                 if (!result.error) onDone();
                 return result;
@@ -2840,9 +3304,13 @@ function NewRowCells({
   onCellPaste: (e: React.ClipboardEvent) => void;
 }) {
   const t = useTranslations('calc');
+  const units = useMemo(() => unitWordsOf((k) => t(`units.${k}` as 'units.dona')), [t]);
   // The basis select and its offered units — the SAME answer the phone
   // sheet's ghost reads. The O'lchov box below is drawn on every ghost.
   const screen = ghostScreenOf(row, groupsByCode);
+  // The law's or a chosen unit's pair — never the one the typed measure
+  // states, or the select vanishes the moment a unit is picked.
+  const fixedPair = ghostFixedPair(row, groupsByCode);
   const cell = (col: 'name' | 'quantity' | 'weightKg' | 'volumeM3' | 'tnvedCode', extra = '') => (
     <input
       className={`input-cell ${extra}${cellBorder(col === 'name' || col === 'tnvedCode' ? undefined : row[col], false)}`}
@@ -2891,6 +3359,7 @@ function NewRowCells({
               disabled={false}
               onPick={(b) => onPatch(row.key, { bazaBasis: b })}
               size="cell"
+              autoUnit={screen.lawUnknown ? null : ghostAutoBasis(row, screen.lawGroup)}
             />
           </span>
         </td>
@@ -2920,6 +3389,21 @@ function NewRowCells({
               onChange={(e) => onPatch(row.key, { measure: e.target.value })}
               onKeyDown={(e) => onCellKey(e, 'measure', index, lastIndex)}
             />
+            {/* What the amount is IN (P3.5, UX12): a code whose law counts in
+                a pair says it itself; otherwise the VED says it, and only the
+                measure's unit is posted — the baza stays «avto». */}
+            {fixedPair !== null ? (
+              <span className="text-ink-500">{units[fixedPair]}</span>
+            ) : (
+              <MeasureUnitSelect
+                value={row.measureUnit}
+                label={`new measure unit ${row.key}`}
+                testId="calc-new-measure-unit"
+                units={units}
+                size="cell"
+                onPick={(u) => onPatch(row.key, { measureUnit: u })}
+              />
+            )}
           </span>
         </td>
       </tr>

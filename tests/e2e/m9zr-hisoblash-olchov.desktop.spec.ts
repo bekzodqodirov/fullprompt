@@ -27,7 +27,9 @@ async function login(page: import('@playwright/test').Page) {
 }
 
 let leadName = '';
+let leadHref = '';
 let requestUrl = '';
+let secondUrl = '';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -44,6 +46,7 @@ test('a m² code asks for its measure, prices live, and seals the same number', 
   const made = page.getByTestId('quick-made');
   await expect(made).toBeVisible({ timeout: 15_000 });
   const href = await made.getByRole('link').first().getAttribute('href');
+  leadHref = href!;
   await page.goto(href!);
 
   // Rastamojka only — no freight fixture, the customs side is the subject.
@@ -220,9 +223,85 @@ test('deleting a row with an unsaved draft releases the gate — never a wedge',
   await expect(page.getByTestId('calc-sealed-total')).toContainText('280.96');
 });
 
+/**
+ * The owner's 2026-10-09 rows, on a second job of the same card (the first
+ * is sealed above): a table priced per piece under «15 %, kamida $0.4/kg»
+ * owes its WEIGHT, and the cell says so before any press; a tile typed as
+ * «120 m²» on a row with no code keeps its 120 m² when the code arrives —
+ * the m² was the row's own statement, never a leftover the save may clear.
+ */
+test('a 9403 row with only a count marks its kg; an uncoded «Kafel 120 m²» keeps its m² through the code', async ({
+  page,
+}) => {
+  expect(leadHref).not.toBe('');
+  await login(page);
+  await page.goto(leadHref);
+  // The panel stands OPEN on a card that carries a price (the seal above),
+  // and its testid is the summary — a click would close it.
+  const section = page.getByTestId('calc-section-rastamojka');
+  if (!(await section.isVisible())) await page.getByTestId('calc-panel').click();
+  await section.click();
+  await page.getByTestId('calc-goods').fill('stol, 10');
+  await page.getByTestId('calc-send').click();
+  await expect(page.getByTestId('calc-open')).toBeVisible({ timeout: 15_000 });
+  const second = (await page.getByTestId('calc-open').getByTestId('calc-open-link').first().getAttribute('href'))!;
+  expect(second).not.toBe(requestUrl);
+  secondUrl = second;
+  await page.goto(second);
+  await expect(page.getByTestId('calc-table')).toBeVisible({ timeout: 15_000 });
+
+  // The header says «Dona», never the 📦 that means a carton everywhere else.
+  await expect(page.getByTestId('calc-table').locator('thead')).not.toContainText('📦');
+
+  await page.locator('[data-cell="tnvedCode"][data-row="0"]').fill('9403');
+  await page.getByTestId('calc-save-table').click();
+  await expect(page.getByTestId('calc-group-row').first()).toContainText('9403', { timeout: 15_000 });
+  const kg = page.locator('[data-cell="weightKg"][data-row="0"]');
+  await expect(kg).toHaveAttribute('data-need', 'kg');
+  await expect(kg).toHaveAttribute('placeholder', /.+/);
+  await kg.fill('35');
+  await expect(kg).not.toHaveAttribute('data-need', 'kg');
+
+  // A new row, no code: «Kafel», 120 in the O'lchov box, said to be m².
+  await page.getByTestId('calc-add-row').click();
+  const ghost = page.getByTestId('calc-new-row').last();
+  await ghost.locator('[data-cell="name"]').fill(`Kafel e2e ${Date.now()}`);
+  // The INPUT — the unit select beside it is «new measure unit N».
+  await page.locator('input[aria-label^="new measure "]').last().fill('120');
+  await page.getByTestId('calc-new-measure-unit').last().selectOption('m2');
+  await page.getByTestId('calc-save-table').click();
+  await expect(page.getByTestId('calc-unsaved')).toHaveCount(0, { timeout: 15_000 });
+
+  // Uncoded rows render first: the kafel is row 0 now. Its m² stood the save.
+  await expect(page.locator('[data-cell="measure"][data-row="0"]')).toHaveValue('120');
+  await page.locator('[data-cell="tnvedCode"][data-row="0"]').fill('6907');
+  await page.getByTestId('calc-save-table').click();
+  await expect(page.getByTestId('calc-unsaved')).toHaveCount(0, { timeout: 15_000 });
+  await page.reload();
+  await expect(page.getByTestId('calc-table')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('calc-measure')).toHaveCount(1);
+  await expect(page.getByTestId('calc-measure')).toHaveValue('120');
+});
+
 test('the lead it created is closed (cleanup as a test)', async ({ page }) => {
   expect(leadName).not.toBe('');
   await login(page);
+  // The second job is ANSWERED first, or a later spec meets it in the
+  // company-wide queue (#183).
+  if (secondUrl) {
+    await page.goto(secondUrl);
+    const take = page.getByTestId('calc-take');
+    if (await take.isVisible()) {
+      await take.click();
+      await expect(take).toHaveCount(0, { timeout: 15_000 });
+    }
+    await page.getByTestId('calc-finish-open').click();
+    await page.getByTestId('calc-answer-amount').fill('120');
+    await page.getByTestId('calc-answer-note').fill('e2e');
+    await page.getByTestId('calc-answer-internal').fill('e2e tozalash');
+    await page.getByTestId('calc-finish').click();
+    await expect(page.getByTestId('calc-answer')).toBeVisible({ timeout: 15_000 });
+  }
   await page.goto('/crm?scope=all');
   const card = page
     .getByTestId('funnel-desktop')

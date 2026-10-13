@@ -10,9 +10,12 @@
  * offset back is the whole of `mergeProposals`.
  *
  * The second is REFUSING TO LOSE CARGO. An item no group claimed is not an
- * item that costs nothing; it is an item nobody has classified, and it
- * becomes its own group at the lowest confidence so it is on the screen
- * demanding an answer.
+ * item that costs nothing; it is an item nobody has classified — and it
+ * stays UNGROUPED, a row with no code on the screen and an `ungrouped_items`
+ * blocker on the seal (2026-10-09, P2.10d). It used to become its own
+ * code-less group at the lowest confidence, which looked like an answer: a
+ * block with no law prices nothing, and no Saqlash could ever re-home its
+ * row, because the sweep places only rows that carry a code.
  */
 
 export interface ProposedGroup {
@@ -65,7 +68,6 @@ export function mergeProposals(
   itemSeqs: number[],
 ): DraftGroup[] {
   const byCode = new Map<string, DraftGroup>();
-  const loose: DraftGroup[] = [];
   const claimed = new Set<number>();
 
   for (const batch of batches) {
@@ -92,12 +94,11 @@ export function mergeProposals(
         note: g.reasoning.trim() || null,
       };
 
-      // A blanked code (the invalid-code path) is not a key: two unrelated
-      // unclassified groups must not merge into one because both are empty.
-      if (!code) {
-        loose.push(draft);
-        continue;
-      }
+      // A blanked code (the invalid-code path) is not a key, and not a
+      // group either: its items stay ungrouped, exactly like an item no group
+      // claimed (P2.10d). Two unrelated unclassified rows must never become
+      // one code-less block.
+      if (!code) continue;
       const seen = byCode.get(code);
       if (!seen) {
         byCode.set(code, draft);
@@ -108,23 +109,9 @@ export function mergeProposals(
     }
   }
 
-  const groups = [...byCode.values(), ...loose];
-
-  // Whatever no group claimed is still cargo.
-  const orphans = itemSeqs.filter((seq) => !claimed.has(seq));
-  for (const seq of orphans) {
-    groups.push({
-      label: '—',
-      tnvedCode: null,
-      itemSeqs: [seq],
-      confidence: 'low',
-      aiDutyPct: null,
-      aiProposed: false,
-      note: null,
-    });
-  }
-
-  return groups;
+  // Whatever no group claimed (and whatever came back with a blank code) is
+  // still cargo — left ungrouped, never wrapped in a block that has no law.
+  return [...byCode.values()];
 }
 
 const RANK = { high: 3, medium: 2, low: 1 } as const;

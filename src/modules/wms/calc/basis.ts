@@ -35,6 +35,56 @@ export function defaultBasisFor(group: { dutyUnit?: string | null } | null): Baz
 }
 
 /**
+ * What «avto» SHOWS on a row — the law first, then what the ROW states
+ * (2026-10-09, docs/RASTAMOJKA-TUZATISH.md P3.3).
+ *
+ * `defaultBasisFor` answers «what does the LAW pin» and stays law-only: the
+ * A2 suspect check, the basis-not-law chip and `lawPinnedBasis` all mean
+ * exactly that, and must not start answering about one row's figures (judge
+ * MR-2). This one answers «what is this row's baza per, when nobody chose»:
+ *
+ *   1. a law pair unit (m² / juft / litr) — the duty counts in it;
+ *   2. a kg law → kg;
+ *   3. a dona / 1000-dona / sm³ law → per piece;
+ *   4. no law, or an advalor one: a pair the row STATES (a seller's «120 m²»,
+ *      routed at the door) → that unit — never sm³, which is not a baza;
+ *   5. a row that states only a weight → kg;
+ *   6. otherwise per piece.
+ *
+ * The order keeps it inside what `basesFor` offers and never against what
+ * `lawPinnedBasis` pins (judge MR-16), which a unit test walks.
+ */
+/** The figures «avto» reads off a row. */
+export interface AutoBasisItem {
+  quantity: number | null;
+  weightKg: number | null;
+  measureUnit: MeasureUnit | null;
+  measureQty: number | null;
+}
+
+export function autoBasisFor(group: { dutyUnit?: string | null } | null, item: AutoBasisItem): BazaBasis {
+  const u = group?.dutyUnit ?? null;
+  if (u === 'm2' || u === 'juft' || u === 'litr') return u;
+  if (u === 'kg') return 'kg';
+  if (u === 'dona' || u === '1000_dona' || u === 'sm3') return 'unit';
+  const stated = statedPairOf(item.measureUnit, item.measureQty);
+  if (stated !== null) return stated;
+  const hasWeight = item.weightKg !== null && item.weightKg > 0;
+  const hasCount = item.quantity !== null && item.quantity > 0;
+  if (hasWeight && !hasCount) return 'kg';
+  return 'unit';
+}
+
+/**
+ * A pair a row STATES — its stored unit with a positive amount. Only the
+ * extended BAZA units count (sm³ is a vehicle's duty and never a baza), so
+ * this is exactly what `autoBasisFor` step 4 and `unitsForRow` read.
+ */
+export function statedPairOf(unit: string | null, qty: number | null): 'm2' | 'juft' | 'litr' | null {
+  return (unit === 'm2' || unit === 'juft' || unit === 'litr') && qty !== null && qty > 0 ? unit : null;
+}
+
+/**
  * The bases whose quantity lives on the measure PAIR — the row's one
  * `measure_unit`/`measure_qty`. dona, kg and m³ each have a column of their
  * own (quantity, weight_kg, volume_m3), so they never touch the pair.
@@ -81,6 +131,30 @@ export function pairUnitFor(
 }
 
 /**
+ * Whether a pair the HEAL would move a seller's number into survives the
+ * measure pass that runs right after it — the pass keeps a pair only in the
+ * unit `pairUnitFor(law, «avto»)` asks, or on a row no law holds yet. Moved
+ * into a pair the law does not keep («120 m2» under a per-kg code, an sm³
+ * under an advalor one), the number left the piece column and was then
+ * CLEARED: lost (review heal-server). Such a row is asked instead. ONE rule
+ * for the save and the screen's sentence, so the sentence never promises a
+ * column the save will not keep.
+ */
+export function healPairKept(
+  law: string | null,
+  grouped: boolean,
+  unit: MeasureUnit,
+  figures: { weightKg: number | null; measureQty: number | null },
+): boolean {
+  if (!grouped) return true;
+  const auto = autoBasisFor(
+    { dutyUnit: law },
+    { quantity: null, weightKg: figures.weightKg, measureUnit: unit, measureQty: figures.measureQty },
+  );
+  return pairUnitFor(law, auto) === unit;
+}
+
+/**
  * A stored basis the law no longer offers — the one combination the row
  * cannot hold. Never rewritten silently: the save NAMES it (`basisConflict`),
  * the select shows it with ⚠, and the engine refuses `measure_missing` naming
@@ -95,16 +169,20 @@ export function basisConflicts(
 
 /**
  * What the row's unit select SHOWS: the VED's draft, else what is stored,
- * else the law's default (18a). The four browser sites that used to restate
- * this chain by hand — the select, the save, the live engine item and the
- * draft self-clean — each ask this one function now.
+ * else «avto» — the law, then what the ROW states (`autoBasisFor`, the very
+ * rule the save stamps with, 2026-10-09). The four browser sites that used
+ * to restate this chain by hand — the select, the save, the live engine item
+ * and the draft self-clean — each ask this one function now. `item` is
+ * REQUIRED: a fallback to the law alone showed «dona» on a weight-only row
+ * the save then stamped per kg (judge MR-17).
  */
 export function basisOnScreen(
   draft: BazaBasis | undefined,
   stored: BazaBasis | null,
   group: { dutyUnit?: string | null } | null,
+  item: AutoBasisItem,
 ): BazaBasis {
-  return draft ?? stored ?? defaultBasisFor(group);
+  return draft ?? stored ?? autoBasisFor(group, item);
 }
 
 /**

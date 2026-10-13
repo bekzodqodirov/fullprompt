@@ -478,6 +478,17 @@ const CALC_STEPS = [
   'zone_horgos',
   'cert',
   'skip',
+  // A bare «50» answered with one tap (2026-10-09, judge UX4): [50 dona]
+  // [50 kg] … — the button carries its POSITION among the pending question's
+  // offers, never a figure, so a stale or forged press can only pick among
+  // what that question offered (`IntakeState.offers`). Six at most
+  // (`MAX_OFFERS`): two readings of «1,200» in three units.
+  'pick_0',
+  'pick_1',
+  'pick_2',
+  'pick_3',
+  'pick_4',
+  'pick_5',
   'done',
   'save',
   'more',

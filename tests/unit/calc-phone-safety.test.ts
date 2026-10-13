@@ -66,9 +66,17 @@ describe('the phone ✅ waits on unsaved cells, as the desktop one does', () => 
   });
 
   it('the gate counts the restorable rows too, and feeds the seal', () => {
+    // Re-anchored deliberately (2026-10-09, judge UX7): a row still stored
+    // the OLD way («120» under «m2») moves on the next Saqlash, so it waits
+    // on the press like a draft.
+    // And once more (review fix-review): a grouped row the save RE-HOMES is
+    // already priced by the bar in its new block, so it waits on the press
+    // too, and keeps that press live as a sweep does.
     expect(TABLE).toMatch(
-      /const gateCount = dirtyCount \+ \(restore \? restorableCount\(restore\) : 0\);/,
+      /const gateCount = dirtyCount \+ \(restore \? restorableCount\(restore\) : 0\) \+ pendingMoves \+ rehomes;/,
     );
+    expect(TABLE).toMatch(/const sweepable = workspace\.ungrouped\.filter\([^\n]*\)\.length \+ rehomes;/);
+    expect(TABLE).toMatch(/drafts\[i\.id\]\?\.tnvedCode === undefined && rehomeCodeOf\(i, groupById\) !== null/);
     expect(TABLE).toContain('useEffect(() => onDirty(gateCount), [gateCount, onDirty]);');
   });
 });
@@ -130,7 +138,9 @@ describe('ONE chain for the unit on screen (#886, #171)', () => {
       TABLE.indexOf('const liveBasisNotLawByGroup'),
       TABLE.indexOf('const liveTotals'),
     );
-    expect(memo).toContain('basisNotLaw(g.dutyUnit, g.items.map((i) => liveItem(i)))');
+    // Over the DRAFTED membership since P3.8 (MR-22) — the rows the save
+    // will put in this block, which is what the footer's figure prices.
+    expect(memo).toContain('basisNotLaw(g.dutyUnit, liveMembersOf(g).map((i) => liveItem(i)))');
     const footer = TABLE.slice(TABLE.indexOf('function BlockFooter'));
     expect(footer).toContain('{liveBasisNotLaw && group.dutyUnit ? (');
     expect(footer).not.toContain("group.warnings.includes('basis_not_law')");
@@ -322,7 +332,21 @@ describe('his 3b (2026-10-07): «1,125 — qaysi biri?» is asked by the goods c
         'src/app/(protected)/hisoblash/[id]/phone-blocks.tsx',
         'src/app/(protected)/hisoblash/[id]/row-sheet.tsx',
         'src/app/(protected)/hisoblash/lugatlar/dict-forms.tsx',
+        // 2026-10-09 (P1.1, judge UX3): the seller's goods TABLE asks the
+        // same «1,125 — qaysi biri?» on its cells and its two shipment
+        // totals — a goods cell like the VED's, so the same reader. The form
+        // and its pure row helpers are the two files.
+        'src/components/calc-send-form.tsx',
         'src/modules/wms/calc/row-draft.ts',
+        // P3 (2026-10-09, judge MR-17): «avto» reads the row's DRAFTED
+        // figures the way the live engine reads them — the same reader, or
+        // the select and the save part on «1,5».
+        'src/modules/wms/calc/screen-row.ts',
+        'src/modules/wms/calc/send-rows.ts',
+        // 2026-10-09: free text («1,200 kg» in a line, a bot answer, a pasted
+        // list) asks the same question through ONE wrapper, which adds only
+        // that a dot thousand is ambiguous in a sentence too.
+        'src/modules/wms/calc/units.ts',
       ].map((rel) => join(...rel.split('/'))),
     );
   });
@@ -348,24 +372,25 @@ describe('his 3b (2026-10-07): «1,125 — qaysi biri?» is asked by the goods c
 
   it('the paste never asks: TSV rows are the deals importer’s, and a line’s unclear count lands empty', () => {
     // The paste is the fourth of the places he left as they were (with the
-    // discount, the band override and the rates). items-table imports the
-    // reader for its cells, so the closed set above cannot see a paste that
-    // starts asking — the paste's own body is read here.
+    // discount, the band override and the rates). Since 2026-10-09 (P1.6,
+    // judge TT-16) its parser is ONE pure function beside the seller's form
+    // — `pasteItems` in send-rows.ts — so this pins that the table hands it
+    // the text and nothing else, and that its body never asks. What it
+    // READS is behavioural now (tests/unit/send-rows.test.ts): an unclear
+    // line lands empty with its own words in the note.
     const at = TABLE.indexOf('const parsedPaste = useMemo(');
     expect(at).toBeGreaterThan(-1);
-    const paste = TABLE.slice(at, TABLE.indexOf('}, [pasteText]);', at));
-    expect(paste).not.toMatch(/readCell\(|ambiguous_number|setTableError\(|setAsked\(/);
-    // A TSV row's figures are the importer's, as it read them…
-    const tsvAt = paste.indexOf("lines.some((l) => l.includes('\\t'))");
-    const lineAt = paste.indexOf('return lines.map(', tsvAt);
-    expect(tsvAt).toBeGreaterThan(-1);
-    expect(lineAt).toBeGreaterThan(tsvAt);
-    const tsv = paste.slice(tsvAt, lineAt);
-    expect(tsv).toContain('parseGoods(cells)');
-    expect(tsv).toContain('quantity: g.quantity,');
-    expect(tsv).not.toContain('readNumberCell');
-    // …and «name, 1,125, dona» lands with an EMPTY count, never a guess and never a question.
-    expect(paste.slice(lineAt)).toContain("quantity: cell?.state === 'ok' ? cell.value : null,");
+    expect(TABLE.slice(at, TABLE.indexOf(';', at) + 1)).toBe(
+      'const parsedPaste = useMemo(() => pasteItems(pasteText), [pasteText]);',
+    );
+    const ROWS = read('src/modules/wms/calc/send-rows.ts');
+    const paste = ROWS.slice(ROWS.indexOf('export function pasteItems('), ROWS.indexOf('export function codeLooksRight('));
+    expect(paste.length).toBeGreaterThan(100);
+    expect(paste).not.toMatch(/readNumberCell\(|readCell\(|ambiguous_number|setTableError\(|setAsked\(/);
+    // A TSV with a header is the importer's, as it read it…
+    expect(paste).toContain('parseGoods(cells)');
+    // …and every line, either way, is the door's own row.
+    expect(paste.split('doorRow(').length - 1).toBe(2);
   });
 });
 
@@ -468,7 +493,12 @@ describe('review PHONE-3: a press is bound to the row it was pressed on', () => 
 
 describe('review PHONE-5: the phone sweep is drawn on what it places', () => {
   it('no «(0)» button over duplicates no press can merge', () => {
-    expect(PHONE).toContain('gateCount === 0 && sweepable > 0 ? (');
+    // Re-anchored deliberately (review gate-ux): old rows the save moves hold
+    // the gate, and the phone's only empty-save press must be offered then.
+    // …and rows the save re-homes hold it the same way (review fix-review).
+    expect(PHONE).toMatch(
+      /\(gateCount === 0 && sweepable > 0\) \|\|\s*\(pendingMoves \+ rehomes > 0 && gateCount === pendingMoves \+ rehomes\) \? \(/,
+    );
     expect(PHONE).not.toContain('duplicateGroups');
   });
 });

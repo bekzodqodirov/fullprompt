@@ -129,7 +129,8 @@ export type DutyMode = 'advalor' | 'specific' | 'max' | 'plus';
  * in the law's unit refuses `measure_missing` naming itself, because reading
  * a litre rate against a piece count is a number, just the wrong one.
  */
-export type DutyUnit = 'kg' | 'dona' | 'litr' | 'juft' | '1000_dona' | 'sm3' | 'm2';
+export const DUTY_UNITS = ['kg', 'dona', 'litr', 'juft', '1000_dona', 'sm3', 'm2'] as const;
+export type DutyUnit = (typeof DUTY_UNITS)[number];
 
 export interface PricedGroup {
   seq: number;
@@ -143,8 +144,17 @@ export interface PricedGroup {
   dutyMode: DutyMode;
   dutySpecific: number | null;
   dutyUnit: DutyUnit | null;
-  /** Advalor excise, the rare case. null means «not an excise good». */
+  /**
+   * Excise. `excisePct > 0` is an ad-valorem excise; otherwise a SPECIFIC one
+   * is `exciseSpecific` $ per `exciseUnit` (beer per litre, cigarettes per
+   * thousand — the shape excise usually has). Required-nullable (#790): every
+   * constructor answers. `excisePct === 0` is «aksiz yo'q», answered; all
+   * three null is unanswered (2026-10-09 audit: no screen could reach excise,
+   * so every excisable good priced at $0 excise and its VAT base short).
+   */
   excisePct: number | null;
+  exciseSpecific: number | null;
+  exciseUnit: DutyUnit | null;
   /** Resolved by the caller: the group's own answer, else the request's.
    * Without a certificate of origin the 28.02.2026 additional duty applies. */
   hasCertificate: boolean;
@@ -192,9 +202,28 @@ export interface CustomsBreakdown {
   customsUsd: number;
 }
 
-export type CustomsResult =
-  | CustomsBreakdown
-  | { ok: false; reason: CustomsRefusal; itemSeq?: number; itemLabel?: string };
+/**
+ * A refusal names the ROW, and for `measure_missing` WHICH figure that row
+ * lacks and WHY it is asked (2026-10-09 audit). One code used to stand for
+ * five different missing facts — the baza's count, the law's floor in kg, in
+ * dona, in juft — and its words («o'lchov yo'q») named a box a kg or dona law
+ * never draws. `unit` is the measure in the engine's own spelling (`unit` =
+ * dona for a baza, `dona` for a law); `half` says whether the baza's VALUE
+ * needs it or the law's specific FLOOR does. A screen words it; the engine
+ * only states it.
+ */
+export type CustomsRefusalDetail = {
+  ok: false;
+  reason: CustomsRefusal;
+  itemSeq?: number;
+  itemLabel?: string;
+  unit?: BazaBasis | DutyUnit;
+  half?: 'baza' | 'duty' | 'excise';
+  /** The per-unit rate the missing figure is asked for — «boj kamida $3/dona». */
+  rate?: number | null;
+};
+
+export type CustomsResult = CustomsBreakdown | CustomsRefusalDetail;
 
 /**
  * One group's customs.
@@ -214,12 +243,14 @@ export function customsFor(group: PricedGroup, items: PricedItem[]): CustomsResu
   const dutyPct = group.dutyFree ? 0 : group.dutyPct;
   const vatPct = group.vatFree ? 0 : group.vatPct;
   if (dutyPct === null || vatPct === null) return { ok: false, reason: 'rates_missing' };
-  if (
-    !ok(dutyPct) ||
-    !ok(vatPct) ||
-    (group.feeUsd !== null && !ok(group.feeUsd)) ||
-    (group.excisePct !== null && !ok(group.excisePct))
-  ) {
+  // A rate is a percentage. The forms and the CHECKs keep it inside 0-100;
+  // this layer makes the engine's own contract true instead of trusting every
+  // caller (the live browser figure priced whatever it was handed).
+  const pct = (n: number) => ok(n) && n >= 0 && n <= 100;
+  if (!pct(dutyPct) || !pct(vatPct) || (group.excisePct !== null && !pct(group.excisePct))) {
+    return { ok: false, reason: 'not_a_number' };
+  }
+  if (group.exciseSpecific !== null && !(ok(group.exciseSpecific) && group.exciseSpecific >= 0)) {
     return { ok: false, reason: 'not_a_number' };
   }
   // A non-advalor mode without its specific half is a row the CHECK forbids;
@@ -238,9 +269,18 @@ export function customsFor(group: PricedGroup, items: PricedItem[]): CustomsResu
     }
     const measure = itemMeasure(item, item.bazaBasis);
     if (measure === null || !(measure > 0)) {
-      return { ok: false, reason: 'measure_missing', itemSeq: item.seq, itemLabel: item.label };
+      return {
+        ok: false,
+        reason: 'measure_missing',
+        itemSeq: item.seq,
+        itemLabel: item.label,
+        unit: item.bazaBasis,
+        half: 'baza',
+      };
     }
-    if (!ok(item.bazaUsd) || !ok(measure)) {
+    // A baza of 0 is not a price: the live figure used to print a block at
+    // $0 value until Saqlash refused it (2026-10-09 audit).
+    if (!ok(item.bazaUsd) || !(item.bazaUsd > 0) || !ok(measure)) {
       return { ok: false, reason: 'not_a_number', itemSeq: item.seq, itemLabel: item.label };
     }
     value += item.bazaUsd * measure;
@@ -263,7 +303,15 @@ export function customsFor(group: PricedGroup, items: PricedItem[]): CustomsResu
     for (const item of items) {
       const m = itemMeasure(item, unit);
       if (m === null || !(m > 0)) {
-        return { ok: false, reason: 'measure_missing', itemSeq: item.seq, itemLabel: item.label };
+        return {
+          ok: false,
+          reason: 'measure_missing',
+          itemSeq: item.seq,
+          itemLabel: item.label,
+          unit,
+          half: 'duty',
+          rate: group.dutySpecific,
+        };
       }
       if (!ok(m)) {
         return { ok: false, reason: 'not_a_number', itemSeq: item.seq, itemLabel: item.label };
@@ -288,16 +336,44 @@ export function customsFor(group: PricedGroup, items: PricedItem[]): CustomsResu
   const addDutyPct = !group.hasCertificate && !group.dutyFree ? addDutyBand(dutyPct) : 0;
   const addDutyUsd = round2((valueUsd * addDutyPct) / 100);
 
-  // Excise is the rare case — ordinary consumer goods carry none, and null
-  // means exactly that. Base = customs value (SK 285).
-  const exciseUsd = round2((valueUsd * (group.excisePct ?? 0)) / 100);
+  // Excise is the rare case — ordinary consumer goods carry none. Ad valorem:
+  // base = customs value (SK 285). Specific: the row's measure in the
+  // excise's unit × the rate, read through the ONE `itemMeasure` like the
+  // duty's floor — a missing figure refuses naming the row, never a $0.
+  let exciseUsd = 0;
+  if (group.excisePct !== null && group.excisePct > 0) {
+    exciseUsd = round2((valueUsd * group.excisePct) / 100);
+  } else if (group.exciseSpecific !== null && group.exciseUnit !== null) {
+    let sum = 0;
+    for (const item of items) {
+      const m = itemMeasure(item, group.exciseUnit);
+      if (m === null || !(m > 0)) {
+        return {
+          ok: false,
+          reason: 'measure_missing',
+          itemSeq: item.seq,
+          itemLabel: item.label,
+          unit: group.exciseUnit,
+          half: 'excise',
+          rate: group.exciseSpecific,
+        };
+      }
+      sum += m;
+    }
+    const quantity = group.exciseUnit === '1000_dona' ? sum / 1000 : sum;
+    exciseUsd = round2(quantity * group.exciseSpecific);
+  }
 
   // SK 254: the VAT base is value + duty + additional duty + excise.
   const vatUsd = round2(((valueUsd + dutyUsd + addDutyUsd + exciseUsd) * vatPct) / 100);
-  // A fee is additively zero far more often than it is unknown, and the
-  // per-DECLARATION fee (`customsFeeFor`) lands at the request grain — this
-  // per-group column survives for rows a person typed one into.
-  const feeUsd = round2(group.feeUsd ?? 0);
+  // THE GROUP CARRIES NO FEE. The declaration pays VMQ-55's fee ONCE, at the
+  // request grain (`customsFeeFor`, #858). A legacy `fee_usd` on an old
+  // group (phase B's «Сбор $» box, or a pre-A2 dictionary pull) used to be
+  // added HERE on top of it — invisible, because no screen shows a group fee
+  // any more — and `recalcFromSealed` copied it onto every correction
+  // (2026-10-09 audit). The field stays on the type for old snapshots'
+  // readers; the engine never reads it.
+  const feeUsd = 0;
 
   return {
     ok: true,
@@ -475,7 +551,13 @@ export const FEE_TIERS: ReadonlyArray<readonly [maxValueUsd: number, bhm: number
   [1_000_000, 20],
 ];
 
-export type FeeRefusal = 'fee_fx_missing' | 'not_a_number';
+/**
+ * Why the declaration fee could not be computed — each names whose job it is
+ * to fix (P2.6): `fee_fx_missing` the accountant's (no UZS rate in the book),
+ * `fee_bhm_bad` the admin's (the `bhm_uzs` setting is not a positive number),
+ * `not_a_number` the VED's (an override that does not read).
+ */
+export type FeeRefusal = 'fee_fx_missing' | 'fee_bhm_bad' | 'not_a_number';
 
 export interface FeeBreakdown {
   ok: true;
@@ -512,9 +594,10 @@ export function customsFeeFor(input: {
     }
     return { ok: true, feeUsd: round2(input.overrideUsd), bhmCoefficient: 0, overridden: true };
   }
-  if (!ok(input.valueUsd) || !ok(input.bhmUzs) || !(input.bhmUzs > 0)) {
-    return { ok: false, reason: 'not_a_number' };
-  }
+  if (!ok(input.valueUsd)) return { ok: false, reason: 'not_a_number' };
+  // A SETTING, not a typo on this screen: «raqam noto'g'ri» sent the VED
+  // hunting through their own cells for a number the admin owns (P2.6).
+  if (!ok(input.bhmUzs) || !(input.bhmUzs > 0)) return { ok: false, reason: 'fee_bhm_bad' };
   if (input.fxUzsPerUsd === null || !(input.fxUzsPerUsd > 0)) {
     return { ok: false, reason: 'fee_fx_missing' };
   }
@@ -551,6 +634,8 @@ export function pricedGroupOf(g: {
   dutySpecific: number | null;
   dutyUnit: DutyUnit | null;
   excisePct: number | null;
+  exciseSpecific: number | null;
+  exciseUnit: DutyUnit | null;
   effectiveCertificate: boolean;
   dutyFree: boolean;
   vatFree: boolean;
@@ -566,6 +651,8 @@ export function pricedGroupOf(g: {
     dutySpecific: g.dutySpecific,
     dutyUnit: g.dutyUnit,
     excisePct: g.excisePct,
+    exciseSpecific: g.exciseSpecific,
+    exciseUnit: g.exciseUnit,
     hasCertificate: g.effectiveCertificate,
     dutyFree: g.dutyFree,
     vatFree: g.vatFree,
@@ -591,6 +678,9 @@ export interface RequestCustoms {
  */
 export function requestCustomsFor(input: {
   customs: CustomsResult[];
+  /** Rows standing in no block (no code yet). REQUIRED: a caller that forgot
+   * it would print a partial total as the whole — the defect this closes. */
+  ungroupedCount: number;
   bhmUzs: number | null;
   fxUzsPerUsd: number | null;
   feeOverrideUsd: number | null;
@@ -611,10 +701,23 @@ export function requestCustomsFor(input: {
    * never mean «this shipment owes the state nothing».
    */
   if (input.customs.length === 0) return { valueUsd: null, fee: null, customsUsd: null };
+  /**
+   * A ROW WITH NO CODE IS PART OF THE DECLARATION (2026-10-09 audit). It
+   * stands in no block, so `customs` never lists it — and the total, the fee
+   * TIER and the bot's JAMI were printed over the coded rows alone, as if
+   * complete: $264 at 1 BHM where the whole job was $2,712 at 2.5 BHM. The
+   * seal refused (`ungrouped_items`), and that refusal is exactly what opens
+   * the typed «Готово» door — so the understated figure stood on the screen
+   * at the one moment a person was handed a free price box. No partial sums.
+   */
+  if (input.ungroupedCount > 0) return { valueUsd: null, fee: null, customsUsd: null };
   const allOk = input.customs.every((c) => c.ok);
   if (!allOk) return { valueUsd: null, fee: null, customsUsd: null };
 
-  const valueUsd = input.customs.reduce((sum, c) => sum + (c.ok ? c.valueUsd : 0), 0);
+  // ROUNDED before the tier is chosen: the groups' values are each rounded
+  // to the cent, and their raw float sum can land a declaration of exactly
+  // $10,000.00 at 10000.000000000002 — one BHM tier up (2026-10-09 audit).
+  const valueUsd = round2(input.customs.reduce((sum, c) => sum + (c.ok ? c.valueUsd : 0), 0));
   // The empty case returned above, so the fee is always computed here — one
   // per DECLARATION, never per group (#858).
   const fee = customsFeeFor({
@@ -628,9 +731,10 @@ export function requestCustomsFor(input: {
   return {
     valueUsd,
     fee,
-    customsUsd:
+    customsUsd: round2(
       input.customs.reduce((sum, c) => sum + (c.ok ? c.customsUsd : 0), 0) +
-      (fee.ok ? fee.feeUsd : 0),
+        (fee.ok ? fee.feeUsd : 0),
+    ),
   };
 }
 
@@ -704,5 +808,24 @@ export function densityOf(weightKg: number | null, volumeM3: number | null): num
   return weightKg / volumeM3;
 }
 
-const round2 = (n: number) => Math.round(n * 100) / 100;
-const round4 = (n: number) => Math.round(n * 10000) / 10000;
+/**
+ * Half-up to the cent, on the DECIMAL the number means.
+ *
+ * `Math.round(n * 100) / 100` rounds the binary float, and 1.005 is stored as
+ * 1.00499999999999989… — so a broker's exact half-cent came out a cent short
+ * on about 2 % of realistic groups (2026-10-09 audit, measured by a
+ * differential against an independent reference). `toPrecision(15)` recovers
+ * the decimal the arithmetic meant (no input here carries more than 15
+ * significant digits), and the shift is done on the decimal STRING, never by
+ * multiplying the float. Ties go away from zero, as a person rounds money.
+ */
+function roundTo(n: number, places: number): number {
+  if (!Number.isFinite(n)) return n;
+  const [mantissa, exponent] = n.toPrecision(15).split('e');
+  const shifted = Number(`${mantissa}e${Number(exponent ?? 0) + places}`);
+  const rounded = Math.sign(shifted) * Math.round(Math.abs(shifted));
+  const back = Number(`${rounded}e${-places}`);
+  return Number.isFinite(back) ? back : rounded / 10 ** places;
+}
+const round2 = (n: number) => roundTo(n, 2);
+const round4 = (n: number) => roundTo(n, 4);

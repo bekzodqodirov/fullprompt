@@ -403,7 +403,7 @@ describe('a correction from an answer (10a)', () => {
     expect((await standingAnchorsFor('deal', dealId)).answers.map((a) => a.requestId)).toContain(answered);
 
     // The VED re-opens it (the presser is never told what they just did).
-    const child = await recalcFromSealed(answered, ctx(vedAId));
+    const child = (await recalcFromSealed(answered, ctx(vedAId))).id;
     madeRequests.push(child);
     const row = await db.query.calcRequests.findFirst({ where: eq(calcRequests.id, child) });
     expect(row!.supersedesRequestId).toBe(answered);
@@ -445,7 +445,7 @@ describe('a correction from an answer (10a)', () => {
     await setFreightZone(sealed, 'cn', ctx(vedBId));
     const { totalUsd } = await sealCalc(sealed, NO_DISCOUNT, ctx(vedBId));
     expect(await quoteLockedFor('deal', deal2Id)).toBe(totalUsd);
-    const child = await recalcFromSealed(sealed, ctx(sellerId));
+    const child = (await recalcFromSealed(sealed, ctx(sellerId))).id;
     madeRequests.push(child);
     expect(await quoteLockedFor('deal', deal2Id), 'nothing stands, nothing is locked').toBeNull();
   });
@@ -510,7 +510,7 @@ describe('the quote lock follows the card’s LAST WRITER (ved-money-1)', () => 
     expect(Number(card!.quotedAmount)).toBe(b.totalUsd);
     expect(await quoteLockedFor('lead', lead)).toBe(b.totalUsd);
 
-    madeRequests.push(await recalcFromSealed(b.id, ctx(vedAId)));
+    madeRequests.push((await recalcFromSealed(b.id, ctx(vedAId))).id);
     // B wrote the card and B no longer stands; A stands but is not on the card.
     expect(await quoteLockedFor('lead', lead)).toBeNull();
     const saved = await saveShownQuote(lead, '+998901112233');
@@ -528,7 +528,7 @@ describe('the quote lock follows the card’s LAST WRITER (ved-money-1)', () => 
     expect(Number(card!.quotedAmount)).toBe(650);
     expect(await quoteLockedFor('lead', lead)).toBe(650);
 
-    madeRequests.push(await recalcFromSealed(answered, ctx(vedAId)));
+    madeRequests.push((await recalcFromSealed(answered, ctx(vedAId))).id);
     expect(await quoteLockedFor('lead', lead), `not A's ${a.totalUsd}: A is not on the card`).toBeNull();
     const saved = await saveShownQuote(lead, '+998901114455');
     expect(saved!.phone).toBe('+998901114455');
@@ -587,7 +587,7 @@ describe('the seal retires its task’s Telegram copies (integration-5)', () => 
     await setFreightZone(first, 'cn', ctx(vedAId));
     await sealCalc(first, NO_DISCOUNT, ctx(vedAId));
     // A correction is the cheap way to a request with a real task bound to it.
-    const child = await recalcFromSealed(first, ctx(vedAId));
+    const child = (await recalcFromSealed(first, ctx(vedAId))).id;
     madeRequests.push(child);
     const task = await db.query.tasks.findFirst({ where: eq(tasks.boundId, child) });
     expect(task?.status).toBe('open');
