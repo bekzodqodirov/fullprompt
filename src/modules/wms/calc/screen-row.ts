@@ -1,4 +1,4 @@
-import { autoBasisFor, basesFor, basisOnScreen, pairUnitFor, type AutoBasisItem } from './basis';
+import { autoBasisFor, basesFor, basisOnScreen, healPairKept, pairUnitFor, type AutoBasisItem } from './basis';
 import { readNumberCell } from './number-cell';
 import { missingNeeds, rowNeeds, type NeedLaw, type NeedUnit, type RowNeed } from './needs';
 import { pendingUnitOf, type PendingUnit } from './units';
@@ -88,7 +88,21 @@ export function screenRowOf<G extends ScreenGroup>(
   // prefills codes and the save's sweep places the row, so the commonest
   // request arrives exactly like this. Read as «no law», it showed a fixed
   // «шт» while the sweep stamped the code's own unit (review units-3).
-  const code = draft?.tnvedCode !== undefined ? draft.tnvedCode.trim() : item.groupId ? '' : (item.tnvedCode ?? '').trim();
+  // And a GROUPED row whose own code is not its block's: the save's sweep
+  // re-homes it (workspace.ts step 3), so the screen reads it in the block it
+  // will land in — otherwise the live figure priced it where it no longer
+  // stands (review live-figure). A matching code keeps its own block, a
+  // legacy same-code duplicate included, as the sweep does.
+  const stored = (item.tnvedCode ?? '').trim();
+  const own = item.groupId ? (groupById.get(item.groupId)?.tnvedCode ?? '').trim() : '';
+  const code =
+    draft?.tnvedCode !== undefined
+      ? draft.tnvedCode.trim()
+      : item.groupId
+        ? stored !== '' && stored !== own
+          ? stored
+          : ''
+        : stored;
   if (draft?.tnvedCode !== undefined || code !== '') {
     lawGroup = code ? (groupsByCode.get(code) ?? null) : null;
     lawUnknown = code !== '' && lawGroup === null;
@@ -273,14 +287,19 @@ export function neededCells(
  */
 export function pendingUnitOnScreen(
   item: ScreenItem & { unit: string | null; volumeM3: number | null; bazaUsd: number | null },
-  ctx: { confirmed: boolean; lawDutyUnit: string | null },
+  ctx: { confirmed: boolean; lawDutyUnit: string | null; grouped: boolean },
   draft: { bazaValue?: string; bazaBasis?: BazaBasis } | undefined,
 ): PendingUnit | null {
-  const priced = draft?.bazaValue !== undefined ? draftedFigure(draft.bazaValue, null) !== null : item.bazaUsd !== null;
-  const chosen = draft?.bazaBasis !== undefined ? draft.bazaBasis : item.bazaBasis;
+  // The price and the unit as the SAVE will hold them: a cleared price takes
+  // a stamped unit with it (`postedBasis`), and the save then heals the row —
+  // reading the drafted basis alone said «nothing will move» about a row the
+  // save then moved (review gate-ux).
+  const priceDrafted = draft?.bazaValue !== undefined;
+  const draftedPrice = priceDrafted ? draftedFigure(draft!.bazaValue, null) : null;
+  const priced = priceDrafted ? draftedPrice !== null : item.bazaUsd !== null;
+  const chosen = postedBasis(draft?.bazaBasis, priceDrafted && draftedPrice === null, item);
   if (priced || chosen !== null) return null;
   const law = ctx.lawDutyUnit;
-  const lawPair = law === 'm2' || law === 'juft' || law === 'litr' || law === 'sm3' ? law : null;
   return pendingUnitOf(
     {
       quantity: item.quantity,
@@ -292,7 +311,11 @@ export function pendingUnitOnScreen(
       bazaUsd: null,
       bazaBasis: null,
     },
-    { confirmed: ctx.confirmed, lawPair },
+    {
+      confirmed: ctx.confirmed,
+      pairKept: (unit) =>
+        healPairKept(law, ctx.grouped, unit, { weightKg: item.weightKg, measureQty: item.quantity }),
+    },
   );
 }
 

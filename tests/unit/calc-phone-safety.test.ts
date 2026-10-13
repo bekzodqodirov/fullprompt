@@ -488,7 +488,11 @@ describe('review PHONE-3: a press is bound to the row it was pressed on', () => 
 
 describe('review PHONE-5: the phone sweep is drawn on what it places', () => {
   it('no «(0)» button over duplicates no press can merge', () => {
-    expect(PHONE).toContain('gateCount === 0 && sweepable > 0 ? (');
+    // Re-anchored deliberately (review gate-ux): old rows the save moves hold
+    // the gate, and the phone's only empty-save press must be offered then.
+    expect(PHONE).toContain(
+      '(gateCount === 0 && sweepable > 0) || (pendingMoves > 0 && gateCount === pendingMoves) ? (',
+    );
     expect(PHONE).not.toContain('duplicateGroups');
   });
 });

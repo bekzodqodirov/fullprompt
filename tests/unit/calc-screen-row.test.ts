@@ -264,7 +264,7 @@ describe('pendingUnitOnScreen — the sentence is the save’s own decision', ()
     bazaUsd: null,
     ...over,
   });
-  const ctx = { confirmed: false, lawDutyUnit: null };
+  const ctx = { confirmed: false, lawDutyUnit: null, grouped: false };
 
   it('«120 m2» in the piece column moves; «500 kg» moves to the weight', () => {
     expect(pendingUnitOnScreen(old({}), ctx, undefined)).toMatchObject({ kind: 'move', to: 'm2', quantity: 120, word: 'm2' });
@@ -274,15 +274,15 @@ describe('pendingUnitOnScreen — the sentence is the save’s own decision', ()
   it('a carton count, an unknown word and a pair the law contradicts are ASKED, never moved', () => {
     expect(pendingUnitOnScreen(old({ unit: 'karobka', quantity: 12 }), ctx, undefined)?.kind).toBe('ask');
     expect(pendingUnitOnScreen(old({ unit: 'qop', quantity: 12 }), ctx, undefined)?.kind).toBe('ask');
-    expect(pendingUnitOnScreen(old({}), { confirmed: false, lawDutyUnit: 'juft' }, undefined)?.kind).toBe('ask');
+    expect(pendingUnitOnScreen(old({}), { confirmed: false, lawDutyUnit: 'juft', grouped: true }, undefined)?.kind).toBe('ask');
     // The law's own pair is a plain move.
-    expect(pendingUnitOnScreen(old({}), { confirmed: false, lawDutyUnit: 'm2' }, undefined)?.kind).toBe('move');
+    expect(pendingUnitOnScreen(old({}), { confirmed: false, lawDutyUnit: 'm2', grouped: true }, undefined)?.kind).toBe('move');
   });
 
   it('a priced, unit-chosen or confirmed row is left as it stands — and so is a price typed in the draft', () => {
     expect(pendingUnitOnScreen(old({ bazaUsd: 3, bazaBasis: 'unit' }), ctx, undefined)).toBeNull();
     expect(pendingUnitOnScreen(old({ bazaBasis: 'm2' }), ctx, undefined)).toBeNull();
-    expect(pendingUnitOnScreen(old({}), { confirmed: true, lawDutyUnit: null }, undefined)).toBeNull();
+    expect(pendingUnitOnScreen(old({}), { confirmed: true, lawDutyUnit: null, grouped: true }, undefined)).toBeNull();
     expect(pendingUnitOnScreen(old({}), ctx, { bazaValue: '3' })).toBeNull();
     // An emptied or ambiguous price is no price: the save still moves it.
     expect(pendingUnitOnScreen(old({ bazaUsd: 3 }), ctx, { bazaValue: '' })?.kind).toBe('move');
@@ -364,5 +364,52 @@ describe('ghostFixedPair — what the law or a chosen unit names, never the type
     expect(table).toContain('(nums.measure ?? null) !== null && ghostFixedPair(row, maps.groupsByCode) === null');
     expect(table).toContain('const fixedPair = ghostFixedPair(row, groupsByCode);');
     expect(table).toContain('{fixedPair !== null ? (');
+  });
+});
+
+/** The review of the built round (2026-10-13): the sentence and the save
+ * must agree about WHERE a moved number lands, and when it moves at all. */
+describe('pendingUnitOnScreen — review fixes', () => {
+  const old = (over: Partial<ScreenItem & { unit: string | null; volumeM3: number | null; bazaUsd: number | null }>) => ({
+    ...row0({ groupId: 'g', tnvedCode: '9403200000', bazaBasis: null }),
+    unit: 'm2',
+    quantity: 120,
+    volumeM3: null,
+    bazaUsd: null,
+    ...over,
+  });
+
+  it('a pair the law will not keep is ASKED — «120 m2» under a per-kg code would be moved and then cleared', () => {
+    expect(pendingUnitOnScreen(old({}), { confirmed: false, lawDutyUnit: 'kg', grouped: true }, undefined)?.kind).toBe('ask');
+    // An advalor block keeps a stated m² («avto» adopts it)…
+    expect(pendingUnitOnScreen(old({}), { confirmed: false, lawDutyUnit: null, grouped: true }, undefined)?.kind).toBe('move');
+    // …but never an sm³, which no baza unit carries.
+    expect(
+      pendingUnitOnScreen(old({ unit: 'sm3' }), { confirmed: false, lawDutyUnit: null, grouped: true }, undefined)?.kind,
+    ).toBe('ask');
+    // A row no law holds yet keeps whatever it states.
+    expect(
+      pendingUnitOnScreen(old({ unit: 'sm3' }), { confirmed: false, lawDutyUnit: null, grouped: false }, undefined)?.kind,
+    ).toBe('move');
+  });
+
+  it('clearing a priced row’s price in the draft makes it pending — the save takes the stamped unit with the price', () => {
+    const priced = old({ bazaUsd: 5, bazaBasis: 'unit' });
+    const ctx = { confirmed: false, lawDutyUnit: null, grouped: false };
+    expect(pendingUnitOnScreen(priced, ctx, undefined)).toBeNull();
+    expect(pendingUnitOnScreen(priced, ctx, { bazaValue: '' })?.kind).toBe('move');
+    // A unit the VED picks with the cleared price stands — nothing moves.
+    expect(pendingUnitOnScreen(priced, ctx, { bazaValue: '', bazaBasis: 'kg' })).toBeNull();
+  });
+});
+
+describe('screenRowOf — a grouped row whose own code is not its block’s reads the block the sweep moves it to', () => {
+  it('re-homed by its stored code, as the save’s sweep does', () => {
+    const row = screenRowOf(row0({ groupId: 'g-tile', tnvedCode: '5701100000', bazaBasis: null }), undefined, byId, byCode);
+    expect(row.lawGroup).toBe(wool);
+    const unknown = screenRowOf(row0({ groupId: 'g-tile', tnvedCode: '6403990000', bazaBasis: null }), undefined, byId, byCode);
+    expect(unknown).toMatchObject({ lawGroup: null, lawUnknown: true });
+    // Its own code keeps its own block.
+    expect(screenRowOf(row0({ groupId: 'g-tile', tnvedCode: '6907210000', bazaBasis: null }), undefined, byId, byCode).lawGroup).toBe(tile);
   });
 });

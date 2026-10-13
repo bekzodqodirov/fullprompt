@@ -467,7 +467,11 @@ export function ItemsTable({
       const screen = screenRowOf(item, drafts[item.id], groupById, groupsByCode);
       const pending = pendingUnitOnScreen(
         item,
-        { confirmed: Boolean(screen.lawGroup?.confirmedAt), lawDutyUnit: screen.lawGroup?.dutyUnit ?? null },
+        {
+      confirmed: Boolean(screen.lawGroup?.confirmedAt),
+      lawDutyUnit: screen.lawGroup?.dutyUnit ?? null,
+      grouped: screen.lawGroup !== null,
+    },
         drafts[item.id],
       );
       if (pending) out.set(item.id, pending);
@@ -670,6 +674,11 @@ export function ItemsTable({
     [allItems, drafts, groupById, groupsByCode],
   );
   const liveMembersOf = (g: WorkspaceGroup) => live.members.get(g.id) ?? [];
+  /** Blocks a coded new row will join — their figure is the browser's guess
+   * until the save adds that row (review live-figure). */
+  const ghostBlocks = new Set(
+    dirtyGhosts.map((r) => groupsByCode.get(r.tnvedCode.trim())?.id).filter((x): x is string => !!x),
+  );
 
   const liveCustomsByGroup = useMemo(() => {
     const out = new Map<string, CustomsResult>();
@@ -2069,7 +2078,7 @@ export function ItemsTable({
                     liveCustoms={row.group ? (liveCustomsByGroup.get(row.group.id) ?? null) : null}
                     liveBaza={row.group ? (liveBazaByGroup.get(row.group.id) ?? null) : null}
                     liveBasisNotLaw={row.group ? (liveBasisNotLawByGroup.get(row.group.id) ?? false) : false}
-                    liveMoved={row.group ? live.moved.has(row.group.id) : false}
+                    liveMoved={row.group ? live.moved.has(row.group.id) || ghostBlocks.has(row.group.id) : false}
                     drafts={drafts[row.item.id]}
                     groupById={groupById}
                     groupsByCode={groupsByCode}
@@ -2208,6 +2217,7 @@ export function ItemsTable({
         gateCount={gateCount}
         dirtyCount={dirtyCount}
         sweepable={sweepable}
+        pendingMoves={pendingMoves}
         nextDraft={nextDraft}
         rowGone={rowGone}
         busy={busy}
@@ -2320,7 +2330,11 @@ const ItemRowBlock = memo(function ItemRowBlock({
   // here (not handed down) so a neighbour's keystroke does not re-render it.
   const pendingUnit = pendingUnitOnScreen(
     item,
-    { confirmed: Boolean(screen.lawGroup?.confirmedAt), lawDutyUnit: screen.lawGroup?.dutyUnit ?? null },
+    {
+      confirmed: Boolean(screen.lawGroup?.confirmedAt),
+      lawDutyUnit: screen.lawGroup?.dutyUnit ?? null,
+      grouped: screen.lawGroup !== null,
+    },
     drafts,
   );
   const words = useMemo(() => unitWordsOf((k) => t(`units.${k}` as 'units.dona')), [t]);

@@ -535,9 +535,9 @@ const fmt = (n: number) => String(Number(n.toFixed(4)));
  * Only a row nobody has priced or confirmed (judge MR-4): a price was typed
  * against the row as it stands, and a ✅ vouched for those very numbers.
  * - `move`: the save moves the number into the column its word names;
- * - `ask`: a carton count, a word nobody's list knows, or a pair the code's
- *   law contradicts («40 m²» under a juft code) — the count is the VED's to
- *   answer, never the machine's guess.
+ * - `ask`: a carton count, a word nobody's list knows, or a pair the measure
+ *   pass would not keep («40 m²» under a juft code, «120 m2» under a per-kg
+ *   one) — the count is the VED's to answer, never the machine's guess.
  */
 /** The four pair units — a type-checked copy, so this pure module needs no
  * runtime import from the engine. */
@@ -549,14 +549,20 @@ export type PendingUnit =
 
 export function pendingUnitOf(
   row: RowUnitInput & { bazaUsd: number | null; bazaBasis: string | null },
-  ctx: { confirmed: boolean; lawPair: MeasureUnit | null },
+  ctx: {
+    confirmed: boolean;
+    /** Whether the measure pass keeps a pair in this unit (`healPairKept`,
+     * basis.ts) — passed in so this kernel stays free of the basis rules. */
+    pairKept: (unit: MeasureUnit) => boolean;
+  },
 ): PendingUnit | null {
   if (row.bazaUsd !== null || row.bazaBasis !== null || ctx.confirmed) return null;
   const result = normalizeRowUnit(row);
   if (!result.moved || row.quantity === null || !row.unit) return null;
   const word = row.unit.trim();
-  const contradicts =
-    ctx.lawPair !== null && MEASURE_UNIT_SET.has(result.to) && result.to !== ctx.lawPair;
+  // «40 m²» under a juft code, «120 m2» under a per-kg one: a pair the pass
+  // would clear right after the move — the number would be gone.
+  const contradicts = MEASURE_UNIT_SET.has(result.to) && !ctx.pairKept(result.to as MeasureUnit);
   if (result.to === 'cartons' || result.to === 'unknown' || contradicts) {
     return { kind: 'ask', word, quantity: row.quantity, result };
   }

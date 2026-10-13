@@ -499,6 +499,42 @@ describe('the screen’s units reach the row (2026-10-09, P3: S2, UX12, MR-17) a
     expect(await rowOf(id, 1)).toMatchObject({ quantity: '300.000', weightKg: null, unit: null });
   });
 
+  /**
+   * Review heal-server: the heal moved a number into a pair the measure pass
+   * then CLEARED — «120 m2» under a per-kg code (9403, «15 %, kamida
+   * $0.4/kg») left the piece column and vanished. Such a row is asked now:
+   * the number stays where it is and the row is named.
+   */
+  it('«120 m2» under a per-kg code is ASKED, never moved into a pair the pass clears', async () => {
+    const id = await open([{ name: `stol plitasi ${tag()}`, tnvedCode: '9403200000', quantity: 1 }]);
+    await save(id, {});
+    await storeOldShape(id, 1, 120, 'm2');
+    const result = await save(id, {});
+    expect(result.unitsMoved).toEqual([]);
+    expect(result.measuresCleared).toEqual([]);
+    expect(result.sellerUnitUnresolved).toEqual([{ seq: 1, word: 'm2' }]);
+    expect(await rowOf(id, 1)).toMatchObject({ quantity: '120.000', unit: 'm2', measureQty: null });
+  });
+
+  /**
+   * Review heal-server: a count typed on a PRICED old row left the seller's
+   * word standing, so the row turned «pending» the moment the price was
+   * cleared and the next save moved the VED's count under the seller's name.
+   * The count retires the word; the seller's figure goes to the note.
+   */
+  it('a count typed on a priced old row retires the word — clearing the price later moves nothing', async () => {
+    const id = await open([{ name: `stakan ${tag()}`, quantity: 1 }]);
+    await save(id, { items: [await editOf(id, 1, { bazaUsd: 2, bazaBasis: 'unit' })] });
+    await storeOldShape(id, 1, 120, 'm2');
+    await save(id, { items: [await editOf(id, 1, { quantity: 300 })] });
+    const row = await rowOf(id, 1);
+    expect(row).toMatchObject({ quantity: '300.000', unit: null, measureQty: null });
+    expect(row.note).toContain('sotuvchi: 120 m2');
+    const cleared = await save(id, { items: [await editOf(id, 1, { bazaUsd: null, bazaBasis: null })] });
+    expect(cleared.unitsMoved).toEqual([]);
+    expect(await rowOf(id, 1)).toMatchObject({ quantity: '300.000', measureQty: null });
+  });
+
   it('a priced or confirmed row is never healed', async () => {
     const id = await open([{ name: `oyna ${tag()}`, quantity: 1, tnvedCode: '8528520000' }]);
     await save(id, { items: [await editOf(id, 1, { bazaUsd: 3, bazaBasis: 'unit' })] });

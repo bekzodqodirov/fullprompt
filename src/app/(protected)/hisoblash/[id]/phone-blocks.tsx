@@ -37,6 +37,7 @@ export function PhoneBlocks({
   gateCount,
   dirtyCount,
   sweepable,
+  pendingMoves,
   nextDraft,
   rowGone,
   busy,
@@ -57,6 +58,9 @@ export function PhoneBlocks({
   gateCount: number;
   dirtyCount: number;
   sweepable: number;
+  /** Old rows the next Saqlash moves (UX7) — they hold the gate, so this
+   * screen must offer the press that clears them, or ✅ waits for ever. */
+  pendingMoves: number;
   /** The first unsaved row to reopen — a LIVE item id, or a ghost key. */
   nextDraft: { kind: 'item'; id: string } | { kind: 'ghost'; key: number } | null;
   rowGone: boolean;
@@ -101,7 +105,10 @@ export function PhoneBlocks({
           with differing rates no press can merge (workspace.ts step 5), and
           neither blocks the seal — a button over them read «(0)» and did
           nothing, for good. */}
-      {gateCount === 0 && sweepable > 0 ? (
+      {/* Old rows the save moves hold the gate too (review gate-ux): with
+          nothing else unsaved the phone had no press that posts the empty
+          save, so ✅ waited on a save the phone could not make. */}
+      {(gateCount === 0 && sweepable > 0) || (pendingMoves > 0 && gateCount === pendingMoves) ? (
         <button
           type="button"
           className="btn-primary !min-h-11 w-full"
@@ -109,7 +116,9 @@ export function PhoneBlocks({
           data-testid="calc-phone-sweep"
           onClick={onSweep}
         >
-          {t('phone.sweep', { count: sweepable })}
+          {pendingMoves > 0
+            ? t('phone.healSave', { count: pendingMoves })
+            : t('phone.sweep', { count: sweepable })}
         </button>
       ) : null}
 
@@ -281,7 +290,11 @@ export const PhoneItemCard = memo(function PhoneItemCard({
   // «m2» reads as 120 dona until a Saqlash moves it.
   const pendingUnit = pendingUnitOnScreen(
     item,
-    { confirmed: Boolean(screen.lawGroup?.confirmedAt), lawDutyUnit: screen.lawGroup?.dutyUnit ?? null },
+    {
+      confirmed: Boolean(screen.lawGroup?.confirmedAt),
+      lawDutyUnit: screen.lawGroup?.dutyUnit ?? null,
+      grouped: screen.lawGroup !== null,
+    },
     draft,
   );
   const name = draft?.name ?? item.label;

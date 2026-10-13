@@ -39,8 +39,8 @@ import {
 } from './dictionaries';
 import { exciseAnswered, exciseMayApply, exciseUnitsFor } from './excise';
 import { answerFloorStandsSql, currentVersionSql, notSupersededSql } from './version-set';
-import { autoBasisFor, basisConflicts, defaultBasisFor, pairUnitFor, statedPairOf } from './basis';
-import { pendingUnitOf } from './units';
+import { autoBasisFor, basisConflicts, defaultBasisFor, healPairKept, pairUnitFor, statedPairOf } from './basis';
+import { normalizeRowUnit, pendingUnitOf } from './units';
 import {
   BASIS_FOR_UNIT,
   importRowForCode,
@@ -3862,7 +3862,9 @@ export async function saveTable(
       tnvedCode: tableCode(r.tnvedCode, seq),
       note: r.note?.trim().slice(0, 500) || null,
       measureQty: tableMeasure(r.measureQty ?? null, seq),
-      measureUnit: r.measureUnit ?? null,
+      // undefined = «not said» (the server stamps the row's own unit); null
+      // would read as «said: none» and clear a stored pair on a retry.
+      measureUnit: r.measureUnit,
       shownBasis: r.shownBasis,
       bazaUsd: r.bazaUsd === undefined ? null : r.bazaUsd,
       bazaBasis: r.bazaBasis === undefined ? null : r.bazaBasis,
@@ -4370,7 +4372,6 @@ export async function saveTable(
       // pieces keeps both, where skipping the heal moved the VED's 300 into
       // kg on the NEXT save (the shape MR-4 named).
       const before = byId.get(item.id);
-      const lawPair = law === 'm2' || law === 'juft' || law === 'litr' || law === 'sm3' ? law : null;
       const numOrNull = (v: string | null) => (v === null ? null : Number(v));
       const pending =
         before && !unitPosted.has(item.id)
@@ -4388,7 +4389,14 @@ export async function saveTable(
                 bazaUsd: numOrNull(item.bazaUsd),
                 bazaBasis: item.bazaBasis,
               },
-              { confirmed: item.groupId !== null && confirmedGroups.has(item.groupId), lawPair },
+              {
+                confirmed: item.groupId !== null && confirmedGroups.has(item.groupId),
+                pairKept: (unit) =>
+                  healPairKept(law, item.groupId !== null, unit, {
+                    weightKg: numOrNull(item.weightKg),
+                    measureQty: numOrNull(before.quantity),
+                  }),
+              },
             )
           : null;
       const withNote = (said: string) => [item.note, said].filter(Boolean).join(' · ').slice(0, 500);
@@ -4433,6 +4441,28 @@ export async function saveTable(
         item.measureQty = fixed(p.measureQty, 4);
         item.note = note;
         unitsMoved.push({ seq: item.seq, to: pending.to, note: pending.result.note });
+      } else if (before && before.unit && countPosted.has(item.id) && !unitPosted.has(item.id)) {
+        // A count the VED typed on a row the heal may not touch (priced, or in
+        // a confirmed block): the seller's word no longer describes that
+        // number. Left standing, it made the row «pending» the moment the
+        // price was cleared or the block unconfirmed, and the next save moved
+        // the VED's count out of the piece column under the seller's name —
+        // MR-4 one save later (review heal-server). The word retires; the
+        // seller's figure goes to the note; no number moves.
+        const said = normalizeRowUnit({
+          quantity: numOrNull(before.quantity),
+          unit: before.unit,
+          weightKg: numOrNull(before.weightKg),
+          volumeM3: numOrNull(before.volumeM3),
+          measureUnit: (before.measureUnit as MeasureUnit | null) ?? null,
+          measureQty: numOrNull(before.measureQty),
+        });
+        if (said.moved) {
+          const note = withNote(said.note);
+          Object.assign(set, { unit: null, note });
+          item.unit = null;
+          item.note = note;
+        }
       }
       // 18a: a price with no basis is «avto» — the law's default, read off
       // the group the row ENDED in. Never off the pre-tx dictionary map: a

@@ -131,6 +131,30 @@ export function pairUnitFor(
 }
 
 /**
+ * Whether a pair the HEAL would move a seller's number into survives the
+ * measure pass that runs right after it — the pass keeps a pair only in the
+ * unit `pairUnitFor(law, «avto»)` asks, or on a row no law holds yet. Moved
+ * into a pair the law does not keep («120 m2» under a per-kg code, an sm³
+ * under an advalor one), the number left the piece column and was then
+ * CLEARED: lost (review heal-server). Such a row is asked instead. ONE rule
+ * for the save and the screen's sentence, so the sentence never promises a
+ * column the save will not keep.
+ */
+export function healPairKept(
+  law: string | null,
+  grouped: boolean,
+  unit: MeasureUnit,
+  figures: { weightKg: number | null; measureQty: number | null },
+): boolean {
+  if (!grouped) return true;
+  const auto = autoBasisFor(
+    { dutyUnit: law },
+    { quantity: null, weightKg: figures.weightKg, measureUnit: unit, measureQty: figures.measureQty },
+  );
+  return pairUnitFor(law, auto) === unit;
+}
+
+/**
  * A stored basis the law no longer offers — the one combination the row
  * cannot hold. Never rewritten silently: the save NAMES it (`basisConflict`),
  * the select shows it with ⚠, and the engine refuses `measure_missing` naming

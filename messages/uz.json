@@ -3801,7 +3801,8 @@
       "sweep": "Kodli tovarlarni bloklarga joylash ({count})",
       "nextDraft": "Saqlanmaganini ochish",
       "importNeedsCode": "Fayldan tanlash uchun avval kodni saqlang",
-      "aiRunning": "🤖 AI hozir ishlayapti — bir necha daqiqadan keyin saqlang"
+      "aiRunning": "🤖 AI hozir ishlayapti — bir necha daqiqadan keyin saqlang",
+      "healSave": "Saqlash — {count} ta qator O‘lchovga o‘tadi"
     },
     "ambiguous": {
       "baza": "{a} dollarmi yoki {b} dollarmi?",

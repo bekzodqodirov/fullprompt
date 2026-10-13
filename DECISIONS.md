@@ -2753,3 +2753,24 @@ typed. The integration test posted the unit itself and was green (#531's shape
 a fourth time); m9zr's new step went red on exactly the owner's «Kafel 120 m²».
 `ghostFixedPair` (screen-row.ts) is the pair the LAW or a CHOSEN unit names,
 never the typed one, and the select, the add and the phone sheet ask it.
+
+1352. **The round reviewed as built (four lenses, each finding given a refuter):
+9 confirmed, 1 refuted, all fixed.** (a) The m² drop of #1351, found
+independently. (b) **The heal moved a number into a pair the pass then CLEARED**
+— «120 m2» under a per-kg code (9403) left the piece column and vanished, and
+an sm³ on an advalor block the same: `healPairKept` (basis.ts) asks the pass's
+own question (`pairUnitFor(law, «avto»)`, or no law yet) and `pendingUnitOf`
+takes it as a REQUIRED callback, so such a row is ASKED. (c) **MR-4 one save
+later, a third time**: a count typed on a PRICED or CONFIRMED old row left the
+seller's word standing, so clearing the price (or unconfirming the block) made
+the row pending and the next save moved the VED's count under the seller's
+name — a posted count now retires the word (figure to the note, no number
+moves). (d) A cleared price in the draft read «nothing will move» while the save
+took the stamped unit with the price and healed: the screen asks `postedBasis`.
+(e) **The phone had no press that posts an empty save**, so old rows held its
+✅ for ever — the sweep button now also offers «Saqlash — N ta qator O'lchovga
+o'tadi». (f) A grouped row whose own code is not its block's is re-homed by the
+sweep; `screenRowOf` now reads it there, so the live figure follows. (g) A block
+a coded new row will join says «taxminiy». (h) An add's unsaid `measureUnit`
+stays undefined (null read as «said: none» and cleared a stored pair on a
+retry). Red proofs ×4 by string edit plus the e2e of #1351.

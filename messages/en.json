@@ -3801,7 +3801,8 @@
       "sweep": "Place coded items into blocks ({count})",
       "nextDraft": "Open the unsaved one",
       "importNeedsCode": "Save the code first to pick from the file",
-      "aiRunning": "🤖 AI is working now — save in a few minutes"
+      "aiRunning": "🤖 AI is working now — save in a few minutes",
+      "healSave": "Save — {count} row(s) move to the measure"
     },
     "ambiguous": {
       "baza": "{a} dollars or {b} dollars?",

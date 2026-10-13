@@ -3801,7 +3801,8 @@
       "sweep": "将已填编码的商品归入申报块（{count}）",
       "nextDraft": "打开未保存项",
       "importNeedsCode": "请先保存编码再从文件选择",
-      "aiRunning": "🤖 AI 正在处理——请几分钟后再保存"
+      "aiRunning": "🤖 AI 正在处理——请几分钟后再保存",
+      "healSave": "保存——{count} 行将移至计量"
     },
     "ambiguous": {
       "baza": "是 {a} 美元还是 {b} 美元？",
