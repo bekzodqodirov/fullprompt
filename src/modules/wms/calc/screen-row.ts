@@ -76,6 +76,28 @@ export interface ScreenRow<G> {
   pair: MeasureUnit | 'any' | null;
 }
 
+/**
+ * The code a GROUPED row is re-homed under by the next Saqlash — its own
+ * stored code when that is not its block's (workspace.ts step 3, P2.10d) —
+ * or null. ONE reading for the live figure (`screenRowOf` prices the row in
+ * the block it will land in) and for the gate that waits on that save: a row
+ * the bar prices in its new block is a row the STORED total does not price
+ * yet, so ✅ and the seal must wait for the press that moves it, and the
+ * screen must offer that press (review fix-review: the ✨ pass's 6403 rows in
+ * a 6402 block re-priced the bar while Saqlash stayed grey and the seal
+ * locked the old law). A row with no code stays where a person put it, as
+ * the sweep leaves it; a draft of the code is the draft's business.
+ */
+export function rehomeCodeOf(
+  item: { groupId: string | null; tnvedCode: string | null },
+  groupById: Map<string, { tnvedCode: string | null }>,
+): string | null {
+  if (!item.groupId) return null;
+  const stored = (item.tnvedCode ?? '').trim();
+  const own = (groupById.get(item.groupId)?.tnvedCode ?? '').trim();
+  return stored !== '' && stored !== own ? stored : null;
+}
+
 export function screenRowOf<G extends ScreenGroup>(
   item: ScreenItem,
   draft: ScreenDraft | undefined,
@@ -93,16 +115,12 @@ export function screenRowOf<G extends ScreenGroup>(
   // will land in — otherwise the live figure priced it where it no longer
   // stands (review live-figure). A matching code keeps its own block, a
   // legacy same-code duplicate included, as the sweep does.
-  const stored = (item.tnvedCode ?? '').trim();
-  const own = item.groupId ? (groupById.get(item.groupId)?.tnvedCode ?? '').trim() : '';
   const code =
     draft?.tnvedCode !== undefined
       ? draft.tnvedCode.trim()
       : item.groupId
-        ? stored !== '' && stored !== own
-          ? stored
-          : ''
-        : stored;
+        ? (rehomeCodeOf(item, groupById) ?? '')
+        : (item.tnvedCode ?? '').trim();
   if (draft?.tnvedCode !== undefined || code !== '') {
     lawGroup = code ? (groupsByCode.get(code) ?? null) : null;
     lawUnknown = code !== '' && lawGroup === null;

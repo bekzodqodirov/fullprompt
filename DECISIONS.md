@@ -2774,3 +2774,22 @@ sweep; `screenRowOf` now reads it there, so the live figure follows. (g) A block
 a coded new row will join says «taxminiy». (h) An add's unsaid `measureUnit`
 stays undefined (null read as «said: none» and cleared a stored pair on a
 retry). Red proofs ×4 by string edit plus the e2e of #1351.
+
+1353. **A re-homed row holds the gate, and the screen offers the press that
+moves it** (the review of the review fixes, four agents, 1 confirmed). #1352
+(f) taught `screenRowOf` to read a grouped row whose own code is not its
+block's in the block the sweep moves it to, so the live figure followed — and
+NOTHING that drives the buttons knew. `sweepable` counted only ungrouped rows,
+`gateCount` drafts, restores and heals, so on an old ✨ request (the memory's
+6403 rows in a 6402 block) with nothing drafted the desktop Saqlash was grey,
+the phone drew no press, and ✅ and «Muhrlash» stood live beside a bar priced
+a different way: the seal locked the stored blocks, i.e. a total the screen
+was not showing — and when no block held the code yet, the bar said «Kod yangi
+— Saqlang» over a save nobody could make. `rehomeCodeOf` (screen-row.ts) is
+now the ONE reading of «the save moves this row», asked by `screenRowOf` and by
+the gate: such rows count into `gateCount` and `sweepable`, and the phone's
+empty-save press is drawn when they (with the heals) are all that holds it.
+The integration test anchors the predicate on the SERVER's own `swept`
+(counted before the press equal to what the sweep moves, zero after). Red
+proofs ×4 by string edit: the gate term, the sweepable term, the phone
+condition, and the predicate itself.

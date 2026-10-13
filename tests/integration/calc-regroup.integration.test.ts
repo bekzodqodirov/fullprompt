@@ -25,6 +25,7 @@ import {
   type TableItemEdit,
 } from '@/modules/wms/calc/workspace';
 import { aiPrefill } from '@/modules/wms/calc/prefill';
+import { rehomeCodeOf } from '@/modules/wms/calc/screen-row';
 import type { ProposedGroup } from '@/modules/wms/calc/grouping';
 
 /**
@@ -55,6 +56,12 @@ vi.mock('@/modules/platform/ai/model', async (original) => ({
   ...(await original<typeof import('@/modules/platform/ai/model')>()),
   aiConfigured: () => true,
 }));
+
+/** What the screen's gate counts as «the save re-homes this row». */
+function rehomesOn(ws: NonNullable<Awaited<ReturnType<typeof loadWorkspace>>>): number {
+  const byId = new Map(ws.groups.map((g) => [g.id, g]));
+  return ws.groups.flatMap((g) => g.items).filter((i) => rehomeCodeOf(i, byId) !== null).length;
+}
 
 const SUFFIX = String(Date.now()).slice(-6);
 /**
@@ -200,9 +207,15 @@ describe('the model is asked only about what nobody has coded (P2.10d)', () => {
     // A stale shape the ✨ pass used to leave behind: the row's own code says
     // one thing, the block it stands in says another.
     await db.update(calcRequestItems).set({ tnvedCode: '6204620000' }).where(eq(calcRequestItems.id, item!.id));
+    // The screen's gate reads the same rows the sweep moves (review
+    // fix-review): before the press it holds ✅ and the seal on exactly what
+    // the server then re-homes, and after it nothing is left holding them.
+    const before = await loadWorkspace(id);
+    expect(rehomesOn(before!)).toBe(1);
     const out = await saveTable(id, { items: [], adds: [] }, ctx());
-    expect(out.swept).toBe(1);
+    expect(out.swept).toBe(rehomesOn(before!));
     const ws = await loadWorkspace(id);
     expect(ws!.groups.map((g) => g.tnvedCode)).toEqual(['6204620000']);
+    expect(rehomesOn(ws!)).toBe(0);
   });
 });

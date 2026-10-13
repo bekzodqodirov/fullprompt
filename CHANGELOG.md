@@ -49,6 +49,7 @@ Bu sizning ikki xabaringiz: «tnved code va dona m2 juftda o'tadigan tovarlarni 
   - **«Bu dona»** tugmasi sonni dona deb qoldiradi.
   - **«Bu karobka»** tugmasi sonni o'chiradi, keyin haqiqiy donasini yozasiz.
   - Narx yozilgan yoki ✅ qilingan qatorga tizim tegmaydi.
+- **O'z kodi turgan guruhdan boshqa bo'lgan qator** (eski ✨ AI guruhlashidan qolgan: masalan 6403 kodli tovar 6402 guruhida). Jonli summa uni Saqlashdan keyin tushadigan guruhda hisoblaydi. Shunday qator turganda «Saqlash» tugmasi faol bo'ladi, telefonda ham. ✅ va muhrlash Saqlashni kutadi — muhr ekrandagi summadan boshqa summaga bosilmasin.
 
 ### 6. O'zgartirilmaganlar (bilib qo'ying)
 

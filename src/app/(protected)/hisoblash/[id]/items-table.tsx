@@ -33,6 +33,7 @@ import {
   neededCells,
   pendingUnitOnScreen,
   postedBasis,
+  rehomeCodeOf,
   screenRowOf,
   type NeedCell,
 } from '@/modules/wms/calc/screen-row';
@@ -479,7 +480,14 @@ export function ItemsTable({
     return out;
   }, [allItems, drafts, groupById, groupsByCode]);
   const pendingMoves = [...pendingUnits.values()].filter((p) => p.kind === 'move').length;
-  const gateCount = dirtyCount + (restore ? restorableCount(restore) : 0) + pendingMoves;
+  // Grouped rows the save RE-HOMES (their own code is not their block's):
+  // the bar already prices them where they will land, so they hold the gate
+  // and keep Saqlash live like a sweep (review fix-review) — otherwise ✅ and
+  // the seal ran on the stored blocks beside a bar showing another total.
+  const rehomes = allItems.filter(
+    (i) => drafts[i.id]?.tnvedCode === undefined && rehomeCodeOf(i, groupById) !== null,
+  ).length;
+  const gateCount = dirtyCount + (restore ? restorableCount(restore) : 0) + pendingMoves + rehomes;
   // Intake prefills codes from the TNVED memory, so the commonest request
   // arrives coded-and-ungrouped with NOTHING dirty — the save's server-side
   // sweep places them; and legacy duplicate same-code groups normalize on the
@@ -490,7 +498,7 @@ export function ItemsTable({
     if (c) codeCounts.set(c, (codeCounts.get(c) ?? 0) + 1);
   }
   const duplicateGroups = [...codeCounts.values()].filter((n) => n > 1).length;
-  const sweepable = workspace.ungrouped.filter((i) => (i.tnvedCode ?? '').trim()).length;
+  const sweepable = workspace.ungrouped.filter((i) => (i.tnvedCode ?? '').trim()).length + rehomes;
   const saveable = dirtyCount > 0 || sweepable > 0 || duplicateGroups > 0 || pendingMoves > 0;
   const aiRunning = workspace.aiRunningSince !== null;
 
@@ -2218,6 +2226,7 @@ export function ItemsTable({
         dirtyCount={dirtyCount}
         sweepable={sweepable}
         pendingMoves={pendingMoves}
+        rehomes={rehomes}
         nextDraft={nextDraft}
         rowGone={rowGone}
         busy={busy}

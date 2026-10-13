@@ -7,6 +7,7 @@ import {
   neededCells,
   pendingUnitOnScreen,
   postedBasis,
+  rehomeCodeOf,
   screenRowOf,
   type ScreenItem,
 } from '@/modules/wms/calc/screen-row';
@@ -411,5 +412,26 @@ describe('screenRowOf — a grouped row whose own code is not its block’s read
     expect(unknown).toMatchObject({ lawGroup: null, lawUnknown: true });
     // Its own code keeps its own block.
     expect(screenRowOf(row0({ groupId: 'g-tile', tnvedCode: '6907210000', bazaBasis: null }), undefined, byId, byCode).lawGroup).toBe(tile);
+  });
+});
+
+describe('rehomeCodeOf — the one reading of «the save moves this row»', () => {
+  it('a grouped row whose own code is not its block’s; nothing else', () => {
+    expect(rehomeCodeOf({ groupId: 'g-tile', tnvedCode: '5701100000' }, byId)).toBe('5701100000');
+    expect(rehomeCodeOf({ groupId: 'g-tile', tnvedCode: ' 6907210000 ' }, byId)).toBeNull();
+    // An uncoded row in a coded block is the legacy ⚙ grouping — it stays.
+    expect(rehomeCodeOf({ groupId: 'g-tile', tnvedCode: null }, byId)).toBeNull();
+    expect(rehomeCodeOf({ groupId: 'g-tile', tnvedCode: '  ' }, byId)).toBeNull();
+    // Ungrouped rows are the sweep's other half, counted by `ungrouped`.
+    expect(rehomeCodeOf({ groupId: null, tnvedCode: '5701100000' }, byId)).toBeNull();
+  });
+
+  it('the live figure reads the very block the gate counts the row for', () => {
+    for (const code of ['5701100000', '6403990000', '6907210000', null]) {
+      const item = row0({ groupId: 'g-tile', tnvedCode: code, bazaBasis: null });
+      const re = rehomeCodeOf(item, byId);
+      const row = screenRowOf(item, undefined, byId, byCode);
+      expect(row.lawGroup).toBe(re === null ? tile : (byCode.get(re) ?? null));
+    }
   });
 });

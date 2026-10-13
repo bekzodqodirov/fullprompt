@@ -38,6 +38,7 @@ export function PhoneBlocks({
   dirtyCount,
   sweepable,
   pendingMoves,
+  rehomes,
   nextDraft,
   rowGone,
   busy,
@@ -61,6 +62,9 @@ export function PhoneBlocks({
   /** Old rows the next Saqlash moves (UX7) — they hold the gate, so this
    * screen must offer the press that clears them, or ✅ waits for ever. */
   pendingMoves: number;
+  /** Grouped rows the next Saqlash re-homes under their own code — they
+   * hold the gate too, and only the empty save moves them. */
+  rehomes: number;
   /** The first unsaved row to reopen — a LIVE item id, or a ghost key. */
   nextDraft: { kind: 'item'; id: string } | { kind: 'ghost'; key: number } | null;
   rowGone: boolean;
@@ -108,7 +112,8 @@ export function PhoneBlocks({
       {/* Old rows the save moves hold the gate too (review gate-ux): with
           nothing else unsaved the phone had no press that posts the empty
           save, so ✅ waited on a save the phone could not make. */}
-      {(gateCount === 0 && sweepable > 0) || (pendingMoves > 0 && gateCount === pendingMoves) ? (
+      {(gateCount === 0 && sweepable > 0) ||
+      (pendingMoves + rehomes > 0 && gateCount === pendingMoves + rehomes) ? (
         <button
           type="button"
           className="btn-primary !min-h-11 w-full"

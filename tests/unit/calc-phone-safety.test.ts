@@ -69,9 +69,14 @@ describe('the phone ✅ waits on unsaved cells, as the desktop one does', () => 
     // Re-anchored deliberately (2026-10-09, judge UX7): a row still stored
     // the OLD way («120» under «m2») moves on the next Saqlash, so it waits
     // on the press like a draft.
+    // And once more (review fix-review): a grouped row the save RE-HOMES is
+    // already priced by the bar in its new block, so it waits on the press
+    // too, and keeps that press live as a sweep does.
     expect(TABLE).toMatch(
-      /const gateCount = dirtyCount \+ \(restore \? restorableCount\(restore\) : 0\) \+ pendingMoves;/,
+      /const gateCount = dirtyCount \+ \(restore \? restorableCount\(restore\) : 0\) \+ pendingMoves \+ rehomes;/,
     );
+    expect(TABLE).toMatch(/const sweepable = workspace\.ungrouped\.filter\([^\n]*\)\.length \+ rehomes;/);
+    expect(TABLE).toMatch(/drafts\[i\.id\]\?\.tnvedCode === undefined && rehomeCodeOf\(i, groupById\) !== null/);
     expect(TABLE).toContain('useEffect(() => onDirty(gateCount), [gateCount, onDirty]);');
   });
 });
@@ -490,8 +495,9 @@ describe('review PHONE-5: the phone sweep is drawn on what it places', () => {
   it('no «(0)» button over duplicates no press can merge', () => {
     // Re-anchored deliberately (review gate-ux): old rows the save moves hold
     // the gate, and the phone's only empty-save press must be offered then.
-    expect(PHONE).toContain(
-      '(gateCount === 0 && sweepable > 0) || (pendingMoves > 0 && gateCount === pendingMoves) ? (',
+    // …and rows the save re-homes hold it the same way (review fix-review).
+    expect(PHONE).toMatch(
+      /\(gateCount === 0 && sweepable > 0\) \|\|\s*\(pendingMoves \+ rehomes > 0 && gateCount === pendingMoves \+ rehomes\) \? \(/,
     );
     expect(PHONE).not.toContain('duplicateGroups');
   });
