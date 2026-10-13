@@ -1310,7 +1310,13 @@
     },
     "mergedChip": "birlashtirilgan",
     "errMergedCost": "Bu xarajat buxgalterning «Xarajatlar»dagi yozuvi bilan birlashtirilgan — avval birlashtirishni bekor qiling (↩ shu qatorda).",
-    "errMergedCostAsk": "Bu xarajat buxgalterning yozuvi bilan birlashtirilgan — bekor qilish uchun buxgalterga ayting."
+    "errMergedCostAsk": "Bu xarajat buxgalterning yozuvi bilan birlashtirilgan — bekor qilish uchun buxgalterga ayting.",
+    "errCancelled": "Bu mashina bekor qilingan — unga xarajat yozilmaydi.",
+    "errReceiptVoided": "Bu prixod bekor qilingan — unga xarajat yozilmaydi.",
+    "errNotFound": "Topilmadi — sahifani yangilang.",
+    "errForbidden": "Bu yerga xarajat yozishga ruxsatingiz yo'q.",
+    "errValidation": "Ma'lumot to'liq emas — turi, summasi va sanasini tekshiring.",
+    "errAlreadyVoided": "Bu yozuv allaqachon bekor qilingan — sahifani yangilang."
   },
   "batchCard": {
     "tabLoading": "Yuklash",
@@ -5587,5 +5593,32 @@
     "linkNote": "Faqat shu havolani yuboring — kanalning asosiy havolasi bekor qilindi.",
     "recheck": "Qayta tekshirish",
     "recheckOk": "Tekshiruvdan o‘tdi — narxlar yana joylanadi."
+  },
+  "twins": {
+    "title": "Bu pul allaqachon yozilgan bo'lishi mumkin",
+    "hint": "Saqlashdan oldin qarang: quyidagi yozuv xuddi shu to'lov bo'lishi mumkin.",
+    "shape": {
+      "same_kassa": "Bitta kassadan ikki marta chiqib ketadi",
+      "kassa_cash": "Foyda-zararda ikki marta hisoblanadi",
+      "same_partner": "Bitta kontragentga qarz ikki marta yoziladi",
+      "debt_paid": "Qarz turibdi, uning to'lovi esa xarajat bo'lib yozilgan",
+      "mergeable": "Xarajatlarda takror"
+    },
+    "cure": {
+      "merge": "«Birlashtirish» bilan tuzatiladi",
+      "void": "Bittasini bekor qilish kerak",
+      "repay": "Bu qarzning to'lovi bo'lsa — xarajatni bekor qilib, kontragentga to'lov sifatida yozing"
+    },
+    "book": {
+      "expense": "Xarajatlar",
+      "cost": "Yuk xarajati"
+    },
+    "sum": "jami",
+    "redacted": "Boshqa xodim yozgan — buxgalter tekshiradi.",
+    "more": "Yana {count} ta shunday yozuv bor.",
+    "saveAnyway": "Baribir saqlash",
+    "back": "Ortga",
+    "mergeLink": "Xarajat kassasi",
+    "requestHint": "Bu xabar allaqachon yuk xarajatiga yozilgan bo'lsa: xarajatda «o'z pulidan» deb belgilang, xabarni esa «Rad etish» bilan sababini yozib yoping."
   }
 }

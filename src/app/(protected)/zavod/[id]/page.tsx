@@ -264,7 +264,8 @@ export default async function PickupCardPage({ params }: { params: Promise<{ id:
             ).values(),
           ]}
           defaultCurrency={costMeta?.currencies.includes('CNY') ? 'CNY' : 'USD'}
-          canEdit={Boolean(canCost && live)}
+          canVoid={Boolean(canCost && live)}
+          canAdd={Boolean(canCost && live)}
           today={tashkentDay()}
           canUnmerge={mayPickTill(actor.permissions)}
           tillOptions={await tillOptionsFor(actor.permissions)}

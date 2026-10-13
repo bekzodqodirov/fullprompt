@@ -1310,7 +1310,13 @@
     },
     "mergedChip": "merged",
     "errMergedCost": "This cost is merged with the accountant's expense entry — undo the merge first (↩ on this row).",
-    "errMergedCostAsk": "This cost is merged with the accountant's entry — ask the accountant to cancel it."
+    "errMergedCostAsk": "This cost is merged with the accountant's entry — ask the accountant to cancel it.",
+    "errCancelled": "This truck is cancelled — no cost can be written to it.",
+    "errReceiptVoided": "This receipt is voided — no cost can be written to it.",
+    "errNotFound": "Not found — refresh the page.",
+    "errForbidden": "You may not write a cost here.",
+    "errValidation": "Something is missing — check the type, the amount and the date.",
+    "errAlreadyVoided": "This entry is already voided — refresh the page."
   },
   "batchCard": {
     "tabLoading": "Loading",
@@ -5587,5 +5593,32 @@
     "linkNote": "Share only this link — the channel’s primary link was revoked.",
     "recheck": "Check again",
     "recheckOk": "The check passed — prices are posted again."
+  },
+  "twins": {
+    "title": "This money may already be written down",
+    "hint": "Check before saving: the entry below may be the same payment.",
+    "shape": {
+      "same_kassa": "The same till would be debited twice",
+      "kassa_cash": "The P&L would count it twice",
+      "same_partner": "The same counterparty's debt would be booked twice",
+      "debt_paid": "The debt stands while its payment is written as an expense",
+      "mergeable": "A repeat in the expenses"
+    },
+    "cure": {
+      "merge": "Fixed with «Merge»",
+      "void": "One of the two must be voided",
+      "repay": "If this pays the debt — void the expense and write it as a payment to the counterparty"
+    },
+    "book": {
+      "expense": "Expenses",
+      "cost": "Cargo cost"
+    },
+    "sum": "sum",
+    "redacted": "Written by another employee — the accountant checks it.",
+    "more": "{count} more such entries.",
+    "saveAnyway": "Save anyway",
+    "back": "Back",
+    "mergeLink": "Expense till",
+    "requestHint": "If this request is already written as a cargo cost: mark that cost «own money» and close the request with «Reject» and a reason."
   }
 }

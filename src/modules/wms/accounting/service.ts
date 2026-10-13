@@ -370,7 +370,11 @@ export async function addExpenseTx(
    * by accounting/recurring.ts ONLY — «To'landi» — never read from a form;
    * `recurring-wire.test.ts` derives that no other caller passes it.
    */
-  opts: { recurring?: { id: string; month: string; partial: boolean } } = {},
+  opts: {
+    recurring?: { id: string; month: string; partial: boolean };
+    /** The cost twins the person saw and saved anyway (SARFLAR §8.2), into the create audit. */
+    twinAck?: string[];
+  } = {},
 ) {
   if (!ctx.actorId) throw new AccountingError('unauthenticated');
   // No money row dated after tomorrow (#995's rule, U21): a future expense
@@ -427,12 +431,13 @@ export async function addExpenseTx(
             recurringPartial: opts.recurring.partial,
           }
         : {}),
+      ...(opts.twinAck?.length ? { twinAck: opts.twinAck } : {}),
     },
   });
   return row!;
 }
 
-export async function addExpense(input: ExpenseInput, ctx: AuditContext) {
+export async function addExpense(input: ExpenseInput, ctx: AuditContext, opts: { twinAck?: string[] } = {}) {
   if (!ctx.actorId) throw new AccountingError('unauthenticated');
   // The same rule as the client ledger: a named cash box must speak the
   // row's currency, or the till balances stop meaning anything.
@@ -454,7 +459,7 @@ export async function addExpense(input: ExpenseInput, ctx: AuditContext) {
   const rate = await rateFor(input.currency, input.expenseDate);
   if (rate === null) throw new AccountingError('fx_missing');
 
-  const row = await addExpenseTx(db, input, rate, ctx);
+  const row = await addExpenseTx(db, input, rate, ctx, { twinAck: opts.twinAck });
   if (input.partnerId) {
     const { chargeForExpense } = await import('../partners/link');
     await chargeForExpense(row.id, ctx);

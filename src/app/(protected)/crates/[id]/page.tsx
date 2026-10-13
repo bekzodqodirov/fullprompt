@@ -149,7 +149,8 @@ export default async function CrateDetailPage({ params }: { params: Promise<{ id
           currencies={costMeta?.currencies ?? []}
           clientOptions={[{ id: crate.clientId, clientCode }]}
           defaultCurrency={costMeta?.currencies.includes('CNY') ? 'CNY' : 'USD'}
-          canEdit={canEditCosts}
+          canVoid={canEditCosts}
+          canAdd={canEditCosts}
           today={tashkentDay()}
           canUnmerge={mayPickTill(actor.permissions)}
           tillOptions={await tillOptionsFor(actor.permissions)}

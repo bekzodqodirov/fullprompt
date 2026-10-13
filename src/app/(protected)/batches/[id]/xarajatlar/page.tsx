@@ -18,6 +18,7 @@ import { tillOptionsFor } from '@/modules/wms/costing/till-props';
 import { costSightFor, tillView } from '@/modules/wms/costing/cost-sight';
 import { mayPickTill } from '@/modules/wms/accounting/till-door';
 import { BatchCard, batchTabMetadata } from '../batch-card';
+import { mayEnterBatchCost } from '@/modules/wms/costing/cost-door';
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   return batchTabMetadata((await params).id, 'xarajat');
@@ -50,6 +51,9 @@ export default async function BatchCostGridPage({ params }: { params: Promise<{ 
   if (!head) notFound();
   if (!mayOpenBatchCard(actor, head.batch)) notFound();
   const { batch } = head;
+  // The ADD door (SARFLAR §8.5), the one the action asks: a cancelled truck
+  // keeps its 🗑 (the void stays `canEnter`) and loses every «＋».
+  const mayAdd = mayEnterBatchCost(actor, batch);
 
   // The goods, not only the prixod number (owner, 2026-09-24: «jadval rasxod
   // kiritadigan joyda tovar nomi, karobka soni va rasmi kerak»). The ROW
@@ -134,7 +138,8 @@ export default async function BatchCostGridPage({ params }: { params: Promise<{ 
           currencies={currencyCodes}
           clientOptions={panelClients}
           defaultCurrency={currencyCodes.includes('CNY') ? 'CNY' : 'USD'}
-          canEdit={canEnter}
+          canVoid={canEnter}
+          canAdd={mayAdd}
           today={tashkentDay()}
           canUnmerge={mayPickTill(actor.permissions)}
           tillOptions={tills}
@@ -182,7 +187,7 @@ export default async function BatchCostGridPage({ params }: { params: Promise<{ 
             currencies={currencyCodes}
             defaultCurrency="USD"
             today={tashkentDay()}
-            canEdit={canEnter}
+            canEdit={mayAdd}
             partners={partnerOptions}
             tills={tills}
             ownOnly={sight.ownOnly !== null}

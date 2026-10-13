@@ -1483,9 +1483,33 @@ export async function cancelBatch(batchId: string, reason: string, ctx: AuditCon
     // customs papers and its boxes are somewhere between two countries.
     if (!['forming', 'loading'].includes(batch.status)) throw new ScanError('batch_already_departed');
 
-    // Money first, because money is the guard that cannot be undone by giving
-    // the boxes back. A batch with a live cost or a charge raised against it
-    // is one somebody has already accounted for.
+    const memberBoxes = await tx
+      .select()
+      .from(boxes)
+      .where(eq(boxes.currentBatchId, batchId))
+      .for('update');
+
+    // The truck row, LOCKED, before the money is counted (docs/SARFLAR.md
+    // §8.5). A bill typed onto this truck takes the same row FOR SHARE in its
+    // own short transaction, so the two serialise: either the bill commits
+    // first and is counted below (`batch_has_costs`), or this cancel commits
+    // first and the bill's locking read finds `cancelled`. Counted with no
+    // lock, both used to succeed — a live cost on a cancelled truck. The bill
+    // locks no carton, so it cannot close a cycle with the box locks above;
+    // every door that changes a forming truck's cartons queues on the
+    // advisory lock first, so they never meet this one half-way.
+    const locked = (await tx.execute(
+      sql`SELECT status FROM batches WHERE id = ${batchId}::uuid FOR NO KEY UPDATE`,
+    )) as unknown as { status: string }[];
+    const lockedStatus = [...locked][0]?.status;
+    if (!lockedStatus || !['forming', 'loading'].includes(lockedStatus)) {
+      throw new ScanError('batch_already_departed');
+    }
+
+    // Money first among the refusals, because money is the guard that cannot
+    // be undone by giving the boxes back. A batch with a live cost or a charge
+    // raised against it is one somebody has already accounted for. A grid
+    // cell stamped on this truck carries its batch_id, so it counts here too.
     const [costs] = await tx
       .select({ n: sql<number>`count(*)` })
       .from(costEntries)
@@ -1496,12 +1520,6 @@ export async function cancelBatch(batchId: string, reason: string, ctx: AuditCon
       .from(clientTransactions)
       .where(and(eq(clientTransactions.batchId, batchId), isNull(clientTransactions.voidedAt)));
     if (Number(charges!.n) > 0) throw new ScanError('batch_has_charges');
-
-    const memberBoxes = await tx
-      .select()
-      .from(boxes)
-      .where(eq(boxes.currentBatchId, batchId))
-      .for('update');
     // Before departure a member box is `planned` or `loading` and nothing
     // else. Anything further along means this batch is not what it looks
     // like, and giving those boxes back to stock would be a lie about where

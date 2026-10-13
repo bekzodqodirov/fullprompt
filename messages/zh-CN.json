@@ -1310,7 +1310,13 @@
     },
     "mergedChip": "已合并",
     "errMergedCost": "该费用已与会计的费用记录合并——请先取消合并（本行的 ↩）。",
-    "errMergedCostAsk": "该费用已与会计记录合并——如需作废请告知会计。"
+    "errMergedCostAsk": "该费用已与会计记录合并——如需作废请告知会计。",
+    "errCancelled": "该车已取消——不能再记费用。",
+    "errReceiptVoided": "该入库单已作废——不能再记费用。",
+    "errNotFound": "未找到——请刷新页面。",
+    "errForbidden": "您无权在此记录费用。",
+    "errValidation": "信息不完整——请检查类型、金额和日期。",
+    "errAlreadyVoided": "该记录已作废——请刷新页面。"
   },
   "batchCard": {
     "tabLoading": "装车",
@@ -5587,5 +5593,32 @@
     "linkNote": "只发送此链接——频道原有的主链接已作废。",
     "recheck": "重新检查",
     "recheckOk": "检查通过——价格将重新发布。"
+  },
+  "twins": {
+    "title": "这笔钱可能已经记过了",
+    "hint": "保存前请核对：下面的记录可能就是同一笔付款。",
+    "shape": {
+      "same_kassa": "同一个现金账户会扣两次",
+      "kassa_cash": "利润表中会重复计算",
+      "same_partner": "同一往来单位的欠款会记两次",
+      "debt_paid": "欠款仍在，而它的付款被记成了费用",
+      "mergeable": "费用中的重复"
+    },
+    "cure": {
+      "merge": "可用「合并」修正",
+      "void": "需要作废其中一条",
+      "repay": "如果这是欠款的付款——请作废这笔费用，改记为对往来单位的付款"
+    },
+    "book": {
+      "expense": "费用",
+      "cost": "货物费用"
+    },
+    "sum": "合计",
+    "redacted": "由其他员工记录——会计核对。",
+    "more": "还有 {count} 条类似记录。",
+    "saveAnyway": "仍然保存",
+    "back": "返回",
+    "mergeLink": "费用现金",
+    "requestHint": "如果这笔申请已记为货物费用：在该费用上标记「自己垫付」，再用「拒绝」并写明原因关闭申请。"
   }
 }

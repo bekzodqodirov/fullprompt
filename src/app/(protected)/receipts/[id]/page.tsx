@@ -746,7 +746,8 @@ export default async function ReceiptDetailPage({
               currencies={costMeta.currencies}
               clientOptions={client ? [{ id: client.id, clientCode: client.clientCode }] : []}
               defaultCurrency={warehouse.country === 'CN' ? 'CNY' : 'USD'}
-              canEdit={receipt.status === 'confirmed'}
+              canVoid={receipt.status === 'confirmed'}
+              canAdd={receipt.status === 'confirmed'}
               today={tashkentDay()}
               canUnmerge={mayPickTill(actor.permissions)}
               tillOptions={await tillOptionsFor(actor.permissions)}
