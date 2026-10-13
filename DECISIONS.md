@@ -2740,3 +2740,15 @@ the floor per code; (4) the no-certificate duty on the nominal %. PROCESS: the
 P3 package was built solo after the subagents' weekly limit hit mid-round; a red
 proof once failed an unrelated test (the heal's «500 kg») and did not repeat in
 three full reruns — recorded as an unexplained flake, not diagnosed.
+
+1351. **Found by the round's own e2e, not by a test of the rule: a new row's
+O'lchov unit was asked of the wrong pair.** P3 made «avto» read the stated
+measure, so a ghost row's `screen.pair` turns to m² the moment m² is picked —
+and the unit select (shown only while `pair` names nothing) vanished under the
+VED's finger, and `buildAdd` (posting `measureUnit` only while `pair` named
+nothing) posted no unit. The save, told nothing, computed «avto» from the
+empty row (dona), found no pair to keep and DROPPED the 120 m² it had just been
+typed. The integration test posted the unit itself and was green (#531's shape
+a fourth time); m9zr's new step went red on exactly the owner's «Kafel 120 m²».
+`ghostFixedPair` (screen-row.ts) is the pair the LAW or a CHOSEN unit names,
+never the typed one, and the select, the add and the phone sheet ask it.

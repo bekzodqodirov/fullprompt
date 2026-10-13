@@ -142,6 +142,26 @@ export function ghostScreenOf<G extends ScreenGroup>(
   };
 }
 
+/**
+ * The pair a GHOST row's law or CHOSEN unit names — never the one its own
+ * typed measure states. The O'lchov unit select and the posted `measureUnit`
+ * ask THIS, not `pair`: since «avto» reads the stated measure, `pair` turns
+ * to m² the moment m² is picked, so the select vanished under the VED's
+ * finger and the add posted no unit — and the save, told nothing, dropped the
+ * 120 m² it had just been typed. Found by m9zr in a browser; the integration
+ * test posted the unit itself and could not see it (#531's shape).
+ * An unknown law names nothing: the VED says the unit.
+ */
+export function ghostFixedPair<G extends ScreenGroup>(
+  row: { tnvedCode: string; bazaBasis: BazaBasis | null },
+  groupsByCode: Map<string, G>,
+): MeasureUnit | null {
+  const code = row.tnvedCode.trim();
+  const lawGroup = code ? (groupsByCode.get(code) ?? null) : null;
+  if (code !== '' && lawGroup === null) return null;
+  return pairUnitFor(lawGroup?.dutyUnit, row.bazaBasis);
+}
+
 /** The «avto» unit of a ghost row — the save's own rule over what is typed.
  * The unit select beside its O'lchov box says what the amount is IN. */
 export function ghostAutoBasis(

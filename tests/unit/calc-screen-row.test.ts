@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ghostAutoBasis,
+  ghostFixedPair,
   groupsByCodeOf,
   liveMembership,
   neededCells,
@@ -336,5 +337,32 @@ describe('liveMembership — the drafted blocks, by the save’s own regroup', (
     const live = liveMembership(items, { c: { tnvedCode: '6403990000' } }, byId, byCode);
     expect(live.unsavedCode).toBe(true);
     expect(ids(live.ungrouped)).toEqual([]);
+  });
+});
+
+/**
+ * The new row's O'lchov unit select and the unit its add posts ask the LAW
+ * or a CHOSEN unit — never the pair the typed measure states (found by m9zr
+ * in a browser: asked of `pair`, the select vanished the moment m² was
+ * picked, the add posted no unit, and the save dropped the 120 m²).
+ */
+describe('ghostFixedPair — what the law or a chosen unit names, never the typed measure', () => {
+  it('an uncoded row names nothing, whatever its typed measure says; the VED picks', () => {
+    expect(ghostFixedPair({ tnvedCode: '', bazaBasis: null }, byCode)).toBeNull();
+  });
+  it('a code whose block counts in m² names m²; an unknown code names nothing', () => {
+    expect(ghostFixedPair({ tnvedCode: '6907210000', bazaBasis: null }, byCode)).toBe('m2');
+    expect(ghostFixedPair({ tnvedCode: '6403990000', bazaBasis: null }, byCode)).toBeNull();
+  });
+  it('a CHOSEN pair basis names its unit', () => {
+    expect(ghostFixedPair({ tnvedCode: '', bazaBasis: 'juft' }, byCode)).toBe('juft');
+    expect(ghostFixedPair({ tnvedCode: '5701100000', bazaBasis: 'kg' }, byCode)).toBeNull();
+  });
+  it('the add and the select ask it — `screen.pair` follows the typed measure and would post nothing', async () => {
+    const { readFileSync } = await import('node:fs');
+    const table = readFileSync('src/app/(protected)/hisoblash/[id]/items-table.tsx', 'utf8');
+    expect(table).toContain('(nums.measure ?? null) !== null && ghostFixedPair(row, maps.groupsByCode) === null');
+    expect(table).toContain('const fixedPair = ghostFixedPair(row, groupsByCode);');
+    expect(table).toContain('{fixedPair !== null ? (');
   });
 });

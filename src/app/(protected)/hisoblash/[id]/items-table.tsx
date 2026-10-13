@@ -26,6 +26,7 @@ import { LAW_SHAPE_KEY, dayText, lawValues, rateText, unitWordsOf } from '@/modu
 import { unitLabel, type PendingUnit } from '@/modules/wms/calc/units';
 import {
   ghostAutoBasis,
+  ghostFixedPair,
   ghostScreenOf,
   groupsByCodeOf,
   liveMembership,
@@ -1011,10 +1012,11 @@ export function ItemsTable({
         // box is on every ghost (its law is unknowable before the save), and
         // the server drops and NAMES a measure the law does not take.
         measureQty: nums.measure ?? null,
-        // The unit the amount is IN (UX12) — posted only where the law names
-        // none: a code that counts in juft says the unit itself.
+        // The unit the amount is IN (UX12) — posted only where neither the
+        // law nor a CHOSEN unit names one (`ghostFixedPair`; `screen.pair`
+        // follows the stated measure itself and would post nothing).
         measureUnit:
-          (nums.measure ?? null) !== null && (screen.pair === null || screen.pair === 'any')
+          (nums.measure ?? null) !== null && ghostFixedPair(row, maps.groupsByCode) === null
             ? row.measureUnit
             : undefined,
         shownBasis,
@@ -1597,14 +1599,16 @@ export function ItemsTable({
         // posts it unconditionally: a box on screen is a number that is
         // posted, and nothing hidden is posted. A law that counts in a pair
         // names the unit; otherwise the VED does (P3.5).
-        measure:
-          screen.pair !== null && screen.pair !== 'any'
+        measure: (() => {
+          const fixed = ghostFixedPair(sheetRow, groupsByCode);
+          return fixed !== null
             ? {
-                label: t('table.measureFor', { unit: basisLabel(screen.pair, t('perUnit')) }),
-                suffix: basisLabel(screen.pair, t('perUnit')),
-                sm3: screen.pair === 'sm3',
+                label: t('table.measureFor', { unit: basisLabel(fixed, t('perUnit')) }),
+                suffix: basisLabel(fixed, t('perUnit')),
+                sm3: fixed === 'sm3',
               }
-            : { label: t('table.measureGhost'), suffix: null, sm3: false, unitPick: sheetRow.measureUnit },
+            : { label: t('table.measureGhost'), suffix: null, sm3: false, unitPick: sheetRow.measureUnit };
+        })(),
         basis: {
           value: screen.basis,
           offered: screen.offered,
@@ -3281,6 +3285,9 @@ function NewRowCells({
   // The basis select and its offered units — the SAME answer the phone
   // sheet's ghost reads. The O'lchov box below is drawn on every ghost.
   const screen = ghostScreenOf(row, groupsByCode);
+  // The law's or a chosen unit's pair — never the one the typed measure
+  // states, or the select vanishes the moment a unit is picked.
+  const fixedPair = ghostFixedPair(row, groupsByCode);
   const cell = (col: 'name' | 'quantity' | 'weightKg' | 'volumeM3' | 'tnvedCode', extra = '') => (
     <input
       className={`input-cell ${extra}${cellBorder(col === 'name' || col === 'tnvedCode' ? undefined : row[col], false)}`}
@@ -3362,8 +3369,8 @@ function NewRowCells({
             {/* What the amount is IN (P3.5, UX12): a code whose law counts in
                 a pair says it itself; otherwise the VED says it, and only the
                 measure's unit is posted — the baza stays «avto». */}
-            {screen.pair !== null && screen.pair !== 'any' ? (
-              <span className="text-ink-500">{units[screen.pair]}</span>
+            {fixedPair !== null ? (
+              <span className="text-ink-500">{units[fixedPair]}</span>
             ) : (
               <MeasureUnitSelect
                 value={row.measureUnit}
