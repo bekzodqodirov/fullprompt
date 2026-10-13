@@ -29,6 +29,7 @@ async function login(page: import('@playwright/test').Page) {
 let leadName = '';
 let leadHref = '';
 let requestUrl = '';
+let secondUrl = '';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -245,6 +246,7 @@ test('a 9403 row with only a count marks its kg; an uncoded «Kafel 120 m²» ke
   await expect(page.getByTestId('calc-open')).toBeVisible({ timeout: 15_000 });
   const second = (await page.getByTestId('calc-open').getByTestId('calc-open-link').first().getAttribute('href'))!;
   expect(second).not.toBe(requestUrl);
+  secondUrl = second;
   await page.goto(second);
   await expect(page.getByTestId('calc-table')).toBeVisible({ timeout: 15_000 });
 
@@ -264,7 +266,8 @@ test('a 9403 row with only a count marks its kg; an uncoded «Kafel 120 m²» ke
   await page.getByTestId('calc-add-row').click();
   const ghost = page.getByTestId('calc-new-row').last();
   await ghost.locator('[data-cell="name"]').fill(`Kafel e2e ${Date.now()}`);
-  await page.locator('[aria-label^="new measure "]').last().fill('120');
+  // The INPUT — the unit select beside it is «new measure unit N».
+  await page.locator('input[aria-label^="new measure "]').last().fill('120');
   await page.getByTestId('calc-new-measure-unit').last().selectOption('m2');
   await page.getByTestId('calc-save-table').click();
   await expect(page.getByTestId('calc-unsaved')).toHaveCount(0, { timeout: 15_000 });
@@ -283,6 +286,22 @@ test('a 9403 row with only a count marks its kg; an uncoded «Kafel 120 m²» ke
 test('the lead it created is closed (cleanup as a test)', async ({ page }) => {
   expect(leadName).not.toBe('');
   await login(page);
+  // The second job is ANSWERED first, or a later spec meets it in the
+  // company-wide queue (#183).
+  if (secondUrl) {
+    await page.goto(secondUrl);
+    const take = page.getByTestId('calc-take');
+    if (await take.isVisible()) {
+      await take.click();
+      await expect(take).toHaveCount(0, { timeout: 15_000 });
+    }
+    await page.getByTestId('calc-finish-open').click();
+    await page.getByTestId('calc-answer-amount').fill('120');
+    await page.getByTestId('calc-answer-note').fill('e2e');
+    await page.getByTestId('calc-answer-internal').fill('e2e tozalash');
+    await page.getByTestId('calc-finish').click();
+    await expect(page.getByTestId('calc-answer')).toBeVisible({ timeout: 15_000 });
+  }
   await page.goto('/crm?scope=all');
   const card = page
     .getByTestId('funnel-desktop')

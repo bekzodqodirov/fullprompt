@@ -100,20 +100,42 @@ test('the VED finds 120 m² in the measure box and both 300 dona and 150 kg on r
   await page.goto(requestUrl);
   await expect(page.getByTestId('calc-table')).toBeVisible({ timeout: 15_000 });
 
-  // Row 1: the code and the pair, never «120 dona».
-  await expect(page.locator('[data-cell="name"][data-row="0"]')).toHaveValue(KAFEL);
-  await expect(page.locator('[data-cell="tnvedCode"][data-row="0"]')).toHaveValue('6907');
-  await expect(page.locator('[data-cell="quantity"][data-row="0"]')).toHaveValue('');
-  await expect(page.locator('[data-cell="measure"][data-row="0"]')).toHaveValue('120');
-  // Row 2: the clothing line keeps BOTH figures — a per-kg baza under a
+  // Rows are found by NAME, never by position: the table draws ungrouped
+  // rows first, and the machine's pass (JOB_CALC_PREFILL — queued by every
+  // door, AI key or not) may have placed the coded rows in their blocks
+  // before the page loads. Measured in CI: «Samsung TV 55» (uncoded) drew
+  // as row 0 once the pass had grouped the other two.
+  const rowNamed = async (name: string) => {
+    let found: string | null = null;
+    await expect
+      .poll(async () => {
+        found = await page
+          .locator('[data-cell="name"]')
+          .evaluateAll(
+            (els, n) => els.find((e) => (e as HTMLInputElement).value === n)?.getAttribute('data-row') ?? null,
+            name,
+          );
+        return found;
+      })
+      .not.toBeNull();
+    return found!;
+  };
+  const cell = (row: string, col: string) => page.locator(`[data-cell="${col}"][data-row="${row}"]`);
+
+  // The kafel: the code and the pair, never «120 dona».
+  const kafel = await rowNamed(KAFEL);
+  await expect(cell(kafel, 'tnvedCode')).toHaveValue('6907');
+  await expect(cell(kafel, 'quantity')).toHaveValue('');
+  await expect(cell(kafel, 'measure')).toHaveValue('120');
+  // The kurtka: the clothing line keeps BOTH figures — a per-kg baza under a
   // per-piece floor needs the two.
-  await expect(page.locator('[data-cell="name"][data-row="1"]')).toHaveValue(KURTKA);
-  await expect(page.locator('[data-cell="quantity"][data-row="1"]')).toHaveValue('300');
-  await expect(page.locator('[data-cell="weightKg"][data-row="1"]')).toHaveValue('150');
-  await expect(page.locator('[data-cell="tnvedCode"][data-row="1"]')).toHaveValue('6201');
-  // Row 3: the name kept its number.
-  await expect(page.locator('[data-cell="name"][data-row="2"]')).toHaveValue('Samsung TV 55');
-  await expect(page.locator('[data-cell="quantity"][data-row="2"]')).toHaveValue('10');
+  const kurtka = await rowNamed(KURTKA);
+  await expect(cell(kurtka, 'quantity')).toHaveValue('300');
+  await expect(cell(kurtka, 'weightKg')).toHaveValue('150');
+  await expect(cell(kurtka, 'tnvedCode')).toHaveValue('6201');
+  // The TV: the name kept its number.
+  const tv = await rowNamed('Samsung TV 55');
+  await expect(cell(tv, 'quantity')).toHaveValue('10');
 });
 
 test('the request is answered and the lead closed (cleanup as a test)', async ({ page }) => {
