@@ -63,6 +63,9 @@ export interface SheetModel {
   basis: { value: BazaBasis | null; offered: BazaBasis[]; auto?: BazaBasis | null };
   chips: { memory: boolean; import: boolean; reason: string | null };
   dictionaryBaza: WorkspaceItem['dictionaryBaza'];
+  /** The figures this row still owes the engine, with WHY in words (UX11):
+   * a phone shows no `title`, so the reason is a visible line under its box. */
+  needs: { cell: 'quantity' | 'weightKg' | 'volumeM3' | 'measure'; why: string }[];
   /** The 📥 door — a SAVED row with a SAVED code only. */
   importDoor: 'open' | 'row_dirty' | 'needs_code' | null;
   figure: SheetFigure;
@@ -229,7 +232,9 @@ function SheetBody({
     // `!`: `.input` is declared after the utilities and its own border
     // colour wins over a plain `border-warn` (#419's cascade) — measured, the
     // mark was in the class list and nowhere on the screen.
-    const warn = ambiguous || badHere(name) ? ' !border-warn' : model.drafted[name] ? ' border-brand-500' : '';
+    const needed = model.needs.some((n) => n.cell === name);
+    const warn =
+      ambiguous || badHere(name) || needed ? ' !border-warn' : model.drafted[name] ? ' border-brand-500' : '';
     const input =
       name === 'name' || name === 'note' ? (
         <textarea
@@ -243,6 +248,7 @@ function SheetBody({
         <input
           className={`input font-mono tabular-nums${warn}`}
           data-testid={testId}
+          placeholder={needed ? t('grid.needed') : undefined}
           inputMode={name === 'tnvedCode' ? 'numeric' : 'decimal'}
           list={name === 'tnvedCode' ? codesListId : undefined}
           value={v[name]}
@@ -382,6 +388,13 @@ function SheetBody({
         {question('quantity')}
         {question('weightKg')}
         {question('volumeM3')}
+        {model.needs
+          .filter((n) => n.cell !== 'measure')
+          .map((n) => (
+            <p key={n.cell} className="text-2xs text-warn" data-testid="calc-phone-need" data-need={n.cell}>
+              {t('grid.needLine', { why: n.why })}
+            </p>
+          ))}
         {model.sellerUnit ? (
           <p className="text-2xs text-ink-500">
             {t('phone.sellerUnit', { unit: model.sellerUnit })}
@@ -411,6 +424,13 @@ function SheetBody({
               field('measure')
             )}
             {question('measure')}
+            {model.needs
+              .filter((n) => n.cell === 'measure')
+              .map((n) => (
+                <p key={n.cell} className="mt-1 text-2xs text-warn" data-testid="calc-phone-need" data-need={n.cell}>
+                  {t('grid.needLine', { why: n.why })}
+                </p>
+              ))}
           </label>
         ) : null}
         <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">

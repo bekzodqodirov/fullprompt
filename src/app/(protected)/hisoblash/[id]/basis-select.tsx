@@ -54,9 +54,16 @@ export function BasisSelect({
 }) {
   const t = useTranslations('calc');
   const options = value === null || offered.includes(value) ? offered : [...offered, value];
+  // A stored unit the code's law cannot hold (`basisConflicts`, P3.7): the
+  // box itself says so — the engine refuses the row until a fitting unit is
+  // picked, and «o'lchov yo'q» beside a filled box sent the VED looking for
+  // a missing number. `!`: the cell's own border colour wins otherwise.
+  const conflict = value !== null && !offered.includes(value);
   return (
     <select
-      className={`${SIZE_CLASS[size]}${drafted ? ' border-brand-500' : ''}`}
+      className={`${SIZE_CLASS[size]}${conflict ? ' !border-warn' : drafted ? ' border-brand-500' : ''}`}
+      title={conflict ? t('grid.pickUnit') : undefined}
+      data-conflict={conflict ? '1' : undefined}
       aria-label={label}
       data-testid={testId}
       value={value ?? ''}

@@ -1566,6 +1566,11 @@ export function ItemsTable({
           reason: d?.bazaValue === undefined ? sheetItem.bazaReason : null,
         },
         dictionaryBaza: sheetItem.dictionaryBaza,
+        // The desktop row's marks, with the reason as a visible line (UX11).
+        needs: neededCells(screen, screen.lawGroup ? needLawOf(screen.lawGroup) : null, sheetItem, d).map((n) => ({
+          cell: n.cell,
+          why: needReasonText(t, n) ?? '',
+        })),
         importDoor: sheetItem.tnvedCode ? (rowDirtyForPicker(d) ? 'row_dirty' : 'open') : 'needs_code',
         figure: sheetFigure ?? { state: 'no_code' },
       };
@@ -1607,6 +1612,7 @@ export function ItemsTable({
         },
         chips: { memory: false, import: false, reason: null },
         dictionaryBaza: null,
+        needs: [],
         importDoor: null,
         figure: sheetFigure ?? { state: 'no_code' },
       };

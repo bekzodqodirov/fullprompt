@@ -3765,7 +3765,9 @@
       "pendingAsk": "Sotuvchi «{said}» yozgan — bu dona soni emas bo‘lishi mumkin. Dona sonini yozing.",
       "isPieces": "Bu dona",
       "isCartons": "Bu karobka — sonini yozaman",
-      "liveUnsaved": "Kod yangi — Saqlang, keyin summa chiqadi"
+      "liveUnsaved": "Kod yangi — Saqlang, keyin summa chiqadi",
+      "needLine": "kerak — {why}",
+      "pickUnit": "Birlikni tanlang — bu kodning qonuni bu birlikni qabul qilmaydi"
     },
     "phone": {
       "hint": "Tovarni bosing — tahrirlash ochiladi. ✅ va muhrlash ham shu yerda.",

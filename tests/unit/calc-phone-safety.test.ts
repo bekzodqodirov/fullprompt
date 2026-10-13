@@ -66,8 +66,11 @@ describe('the phone ✅ waits on unsaved cells, as the desktop one does', () => 
   });
 
   it('the gate counts the restorable rows too, and feeds the seal', () => {
+    // Re-anchored deliberately (2026-10-09, judge UX7): a row still stored
+    // the OLD way («120» under «m2») moves on the next Saqlash, so it waits
+    // on the press like a draft.
     expect(TABLE).toMatch(
-      /const gateCount = dirtyCount \+ \(restore \? restorableCount\(restore\) : 0\);/,
+      /const gateCount = dirtyCount \+ \(restore \? restorableCount\(restore\) : 0\) \+ pendingMoves;/,
     );
     expect(TABLE).toContain('useEffect(() => onDirty(gateCount), [gateCount, onDirty]);');
   });
@@ -130,7 +133,9 @@ describe('ONE chain for the unit on screen (#886, #171)', () => {
       TABLE.indexOf('const liveBasisNotLawByGroup'),
       TABLE.indexOf('const liveTotals'),
     );
-    expect(memo).toContain('basisNotLaw(g.dutyUnit, g.items.map((i) => liveItem(i)))');
+    // Over the DRAFTED membership since P3.8 (MR-22) — the rows the save
+    // will put in this block, which is what the footer's figure prices.
+    expect(memo).toContain('basisNotLaw(g.dutyUnit, liveMembersOf(g).map((i) => liveItem(i)))');
     const footer = TABLE.slice(TABLE.indexOf('function BlockFooter'));
     expect(footer).toContain('{liveBasisNotLaw && group.dutyUnit ? (');
     expect(footer).not.toContain("group.warnings.includes('basis_not_law')");
