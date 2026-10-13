@@ -25,7 +25,7 @@ Bu sizning ikki xabaringiz: «tnved code va dona m2 juftda o'tadigan tovarlarni 
 - **Bot TNVED kodli qatorda** shu kodning qonuniga qarab so'raydi: 9403 stol uchun «netto og'irligi necha kg?».
 - **Excel invoysdagi TNVED ustuni** endi yo'qolmaydi. «Кол-во, кг» ustuni og'irlik deb o'qiladi.
 - **Excel 0 ni yo'qotgan 9 xonali kod** (masalan, 0901 qahva 901… bo'lib qolgan) endi to'ldiriladi. Aks holda u boshqa tovar (9011 mikroskop) bo'yicha hisoblanib ketardi.
-- **Rastamojka so'rovida** umumiy og'irlik va hajm endi majburiy emas: rastamojka ularni hisoblamaydi. Yo'lkira va podklyuchda majburiyligicha qoldi.
+- **Umumiy og'irlik va hajm** (brutto, mashina uchun) rastamojka so'rovida ham so'ralaveradi: sotuvchining upsale haqi shularga qarab hisoblanadi. Qatordagi og'irlik esa endi «netto» deb yoziladi.
 
 ### 4. Hisobning o'zidagi tuzatishlar
 

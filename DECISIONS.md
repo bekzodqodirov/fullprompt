@@ -2645,8 +2645,9 @@ billion-kg weight, and keeps answers across «➕ Yana». Invoices keep their TN
 column («Код ТН ВЭД товара» is claimed before the name keys, «Кол-во, кг» is a
 WEIGHT). The checklist and the line questions follow the BOOK's law
 (`bookLawsFor` on the pool, before any transaction — #714): a 9403 table with
-only a count is asked its net weight. For rastamojka the shipment totals left
-the required list (customs never reads them).
+only a count is asked its net weight. The spec's «shipment totals leave the
+rastamojka checklist» was CANCELLED by the judge (MR-9 — the upsale payout scales
+by them), so they are asked as before; the LINE weight is the netto one.
 
 1343. **A nine-digit code is ambiguous only when a person typed it.** A NUMERIC
 spreadsheet cell of nine digits is a ten-digit code whose leading zero Excel
