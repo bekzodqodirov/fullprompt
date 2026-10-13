@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { ghostAutoBasis, groupsByCodeOf, postedBasis, screenRowOf, type ScreenItem } from '@/modules/wms/calc/screen-row';
+import {
+  ghostAutoBasis,
+  groupsByCodeOf,
+  neededCells,
+  postedBasis,
+  screenRowOf,
+  type ScreenItem,
+} from '@/modules/wms/calc/screen-row';
+import type { NeedLaw } from '@/modules/wms/calc/needs';
 import { basisNotLaw } from '@/modules/wms/calc/warnings';
 import { pasteIdsFor } from '@/modules/wms/calc/paste-ids';
 
@@ -134,5 +142,107 @@ describe('basisNotLaw — the footer asks the server’s own sentence over the L
     expect(basisNotLaw('juft', [{ bazaUsd: null, bazaBasis: 'kg' }])).toBe(false);
     expect(basisNotLaw(null, [{ bazaUsd: 4, bazaBasis: 'kg' }])).toBe(false);
     expect(basisNotLaw('dona', [{ bazaUsd: 4, bazaBasis: 'kg' }])).toBe(false);
+  });
+});
+
+/**
+ * P3.2: the cell a refusal will name is marked BEFORE anybody presses
+ * anything — the owner's kg-and-dona goods («kg hamda donani birga
+ * kirgizadgan tovarlar», 2026-10-09). The law and the baza ask two different
+ * figures whenever their units differ, and the row must state both.
+ */
+describe('neededCells — which cells a row still owes the engine', () => {
+  const law = (over: Partial<NeedLaw>): NeedLaw => ({
+    dutyMode: 'advalor',
+    dutyUnit: null,
+    dutySpecific: null,
+    dutyFree: false,
+    ...over,
+  });
+  const item = (over: Partial<ScreenItem & { volumeM3: number | null; bazaUsd: number | null }>) => ({
+    ...row0({ groupId: 'g', tnvedCode: '6201000000', bazaBasis: null }),
+    volumeM3: null,
+    bazaUsd: null,
+    ...over,
+  });
+  const cells = (n: ReturnType<typeof neededCells>) => n.map((x) => `${x.cell}:${x.why}`);
+
+  it('a jacket priced per kg under «kamida $3/dona» marks its COUNT, with the floor’s rate', () => {
+    const needs = neededCells(
+      { basis: 'kg', pair: null },
+      law({ dutyMode: 'max', dutyUnit: 'dona', dutySpecific: 3 }),
+      item({ bazaUsd: 5, bazaBasis: 'kg', weightKg: 100 }),
+      undefined,
+    );
+    expect(cells(needs)).toEqual(['quantity:duty']);
+    expect(needs[0]).toMatchObject({ unit: 'dona', rate: 3 });
+  });
+
+  it('a table priced per piece under «kamida $0.4/kg» marks its WEIGHT', () => {
+    const needs = neededCells(
+      { basis: 'unit', pair: null },
+      law({ dutyMode: 'max', dutyUnit: 'kg', dutySpecific: 0.4 }),
+      item({ bazaUsd: 20, bazaBasis: 'unit', quantity: 10 }),
+      undefined,
+    );
+    expect(cells(needs)).toEqual(['weightKg:duty']);
+  });
+
+  it('an UNPRICED row asks nothing for its baza — a guessed unit marked on every new row is noise', () => {
+    expect(neededCells({ basis: 'unit', pair: null }, law({}), item({}), undefined)).toEqual([]);
+    // …while the law's floor asks whether or not a price is typed.
+    expect(
+      cells(neededCells({ basis: null, pair: null }, law({ dutyMode: 'specific', dutyUnit: 'kg', dutySpecific: 1 }), item({}), undefined)),
+    ).toEqual(['weightKg:duty']);
+  });
+
+  it('a priced m² baza with no m² stated marks the O‘lchov box; the stated pair clears it', () => {
+    const asked = neededCells({ basis: 'm2', pair: 'm2' }, law({}), item({ bazaUsd: 4, bazaBasis: 'm2', quantity: 120 }), undefined);
+    expect(cells(asked)).toEqual(['measure:baza']);
+    expect(
+      neededCells({ basis: 'm2', pair: 'm2' }, law({}), item({ bazaUsd: 4, bazaBasis: 'm2', measureUnit: 'm2', measureQty: 120 }), undefined),
+    ).toEqual([]);
+    // A stored pair in ANOTHER unit is no m² at all — the save clears it.
+    expect(
+      cells(neededCells({ basis: 'm2', pair: 'm2' }, law({}), item({ bazaUsd: 4, bazaBasis: 'm2', measureUnit: 'litr', measureQty: 120 }), undefined)),
+    ).toEqual(['measure:baza']);
+  });
+
+  it('the drafts are read: a typed count clears the mark, an ambiguous «1,125» does not, a cleared price stops asking', () => {
+    const floor = law({ dutyMode: 'max', dutyUnit: 'dona', dutySpecific: 3 });
+    const jacket = item({ bazaUsd: 5, bazaBasis: 'kg', weightKg: 100 });
+    expect(neededCells({ basis: 'kg', pair: null }, floor, jacket, { quantity: '40' })).toEqual([]);
+    expect(cells(neededCells({ basis: 'kg', pair: null }, floor, jacket, { quantity: '1,125' }))).toEqual(['quantity:duty']);
+    // The weight cleared in the draft: the baza asks it again, beside the floor.
+    expect(cells(neededCells({ basis: 'kg', pair: null }, floor, jacket, { weightKg: '' }))).toEqual([
+      'weightKg:baza',
+      'quantity:duty',
+    ]);
+    expect(
+      neededCells({ basis: 'm2', pair: 'm2' }, law({}), item({ bazaUsd: 4, bazaBasis: 'm2' }), { bazaValue: '' }),
+    ).toEqual([]);
+  });
+
+  it('a duty-free (lgota) row asks no floor; a specific excise per litre asks the litres', () => {
+    expect(
+      neededCells({ basis: null, pair: null }, law({ dutyMode: 'max', dutyUnit: 'kg', dutySpecific: 1, dutyFree: true }), item({}), undefined),
+    ).toEqual([]);
+    const beer = neededCells(
+      { basis: null, pair: 'litr' },
+      law({ exciseSpecific: 0.2, exciseUnit: 'litr' }),
+      item({ tnvedCode: '2203000100' }),
+      undefined,
+    );
+    expect(cells(beer)).toEqual(['measure:excise']);
+    // An ad-valorem excise charges no specific one, so it asks nothing.
+    expect(
+      neededCells({ basis: null, pair: 'litr' }, law({ excisePct: 10, exciseSpecific: 0.2, exciseUnit: 'litr' }), item({}), undefined),
+    ).toEqual([]);
+  });
+
+  it('a row with no known law asks only what its own price is per', () => {
+    expect(neededCells({ basis: 'kg', pair: null }, null, item({ bazaUsd: 3, bazaBasis: 'kg' }), undefined).map((n) => n.cell)).toEqual([
+      'weightKg',
+    ]);
   });
 });

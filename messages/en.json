@@ -3754,6 +3754,10 @@
       "basisNotLaw": "the law counts in {unit} — the baza is per another unit"
     },
     "grid": {
+      "qty": "Pcs",
+      "kg": "Net, kg",
+      "code": "HS code",
+      "needed": "needed",
       "unitMoved": "Row {row}: the number moved to the «{to}» column by the seller’s unit ({note}) — check it",
       "sellerWord": "Row {row}: the seller wrote «{word}» — type the piece count or mark «These are pieces»",
       "basisStamped": "Row {row}: the baza unit became {unit} by the code — check it"

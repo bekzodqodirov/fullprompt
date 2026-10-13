@@ -11,6 +11,8 @@ import type { ItemDraft, NewRow } from '@/modules/wms/calc/row-draft';
 import { dutyText } from '@/modules/wms/calc/duty-text';
 import { confirmGroupAction, type CalcFormState } from '../actions';
 import { customsRefusalText, refusalWord } from './words';
+import { WARNING_LABELS } from '@/modules/wms/calc/labels';
+import { unitOf } from '@/modules/wms/calc/units';
 
 /**
  * The phone's calculation (his B1 a): the same rows and blocks the desktop
@@ -196,6 +198,18 @@ export function PhoneBlocks({
                 ? ` · ⚠ ${t('table.basisNotLaw', { unit: basisLabel(defaultBasisFor(group), t('perUnit')) })}`
                 : ''}
             </p>
+            {/* EVERY warning the ✅ records, in words (judge S10): the phone
+                drew basis_not_law alone, so a confirm on a phone recorded
+                warnings its presser was never shown. */}
+            {group.warnings.some((w) => w !== 'basis_not_law') ? (
+              <p className="mt-0.5 text-2xs text-warn" data-testid="calc-phone-warnings">
+                ⚠{' '}
+                {group.warnings
+                  .filter((w) => w !== 'basis_not_law')
+                  .map((w) => (WARNING_LABELS[w] ? t(WARNING_LABELS[w] as 'warnings.rateNoted') : w))
+                  .join(' · ')}
+              </p>
+            ) : null}
             {/* WHY it could not be priced, in words (A31) — from the LIVE
                 result, so a fixed baza clears it before the save. */}
             {!customs.ok ? (
@@ -297,7 +311,9 @@ export const PhoneItemCard = memo(function PhoneItemCard({
         : String(item.bazaUsd);
   const missing = code === '' || baza === '' || (pair !== null && pair !== 'any' && measure === '');
   const counts = [
-    qty ? `${qty}${item.unit ? ` ${item.unit}` : ''}` : '',
+    // A count prints as PIECES: the seller's word only when it is itself a
+    // count word — «300 kg» under a number that is pieces was MR-6.
+    qty ? `${qty} ${item.unit && unitOf(item.unit) === 'dona' ? item.unit : t('units.dona')}` : '',
     kg ? `${kg} kg` : '',
     m3 ? `${m3} m³` : '',
     measure && pair !== null && pair !== 'any'
@@ -324,6 +340,11 @@ export const PhoneItemCard = memo(function PhoneItemCard({
         {baza ? (
           <span className="font-mono tabular-nums text-ink-700">
             ${baza}/{basisLabel(screen.basis ?? defaultBasisFor(screen.lawGroup), t('perUnit'))}
+          </span>
+        ) : null}
+        {item.bazaStale && draft?.bazaValue === undefined ? (
+          <span className="text-warn" data-testid="calc-phone-baza-stale">
+            ⚠ {t('stale')}
           </span>
         ) : null}
         {item.bazaSource === 'memory' && draft?.bazaValue === undefined ? (

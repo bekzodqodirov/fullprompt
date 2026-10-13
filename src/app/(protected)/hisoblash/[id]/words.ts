@@ -42,15 +42,25 @@ const rateText = (n: number | null | undefined) =>
  * engine now names both, and this is the screen's one sentence for it (the
  * bot's twin is `needPhraseUz`, built from the same three facts).
  */
+/** Why a figure is asked — «boj kamida $3/dona», «baza kg bo‘yicha» — the
+ * cell's reason and the refusal's tail, one sentence. */
+export function needReasonText(
+  t: CalcT,
+  n: { unit: string; why: 'baza' | 'duty' | 'excise'; rate?: number | null },
+): string | null {
+  const key = unitWordKey(n.unit);
+  if (key === null) return null;
+  const unit = t(`units.${key}` as 'units.dona');
+  return n.why === 'baza'
+    ? t('needs.why.baza', { unit })
+    : t(`needs.why.${n.why}` as 'needs.why.duty', { rate: rateText(n.rate), unit });
+}
+
 export function measureNeedText(t: CalcT, d: RefusalDetail): string | null {
   if (d.reason !== 'measure_missing' || !d.unit || !d.half) return null;
   const key = unitWordKey(d.unit);
   if (key === null) return null;
-  const unit = t(`units.${key}` as 'units.dona');
-  const why =
-    d.half === 'baza'
-      ? t('needs.why.baza', { unit })
-      : t(`needs.why.${d.half}` as 'needs.why.duty', { rate: rateText(d.rate), unit });
+  const why = needReasonText(t, { unit: d.unit, why: d.half, rate: d.rate });
   return t('needs.sentence', {
     row: d.itemSeq === undefined ? '—' : String(d.itemSeq),
     label: d.itemLabel ?? '',

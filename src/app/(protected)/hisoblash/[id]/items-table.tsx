@@ -24,7 +24,16 @@ import { basisNotLaw, lawOffBook } from '@/modules/wms/calc/warnings';
 import { exciseAnswered, exciseMayApply, exciseUnitsFor } from '@/modules/wms/calc/excise';
 import { LAW_SHAPE_KEY, dayText, lawValues, rateText, unitWordsOf } from '@/modules/wms/calc/law-words';
 import { unitLabel } from '@/modules/wms/calc/units';
-import { ghostAutoBasis, ghostScreenOf, screenRowOf, groupsByCodeOf, postedBasis } from '@/modules/wms/calc/screen-row';
+import {
+  ghostAutoBasis,
+  ghostScreenOf,
+  groupsByCodeOf,
+  neededCells,
+  postedBasis,
+  screenRowOf,
+  type NeedCell,
+} from '@/modules/wms/calc/screen-row';
+import { needLawOf } from '@/modules/wms/calc/needs';
 import { readNumberCell } from '@/modules/wms/calc/number-cell';
 import {
   ALL_BASE_FIELDS,
@@ -89,6 +98,7 @@ import { BasisSelect, MeasureUnitSelect } from './basis-select';
 import { PhoneBlocks } from './phone-blocks';
 import { RowSheet, type SheetField, type SheetFigure, type SheetModel, type SheetNumField } from './row-sheet';
 import { DraftRestore } from './draft-restore';
+import { customsRefusalText, measureNeedText, needReasonText } from './words';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
@@ -1660,6 +1670,13 @@ export function ItemsTable({
   const busy = pending || saving;
   const unconfirmed = workspace.groups.filter((g) => g.confirmedAt === null).length;
   const unpriced = workspace.groups.filter((g) => !(liveCustomsByGroup.get(g.id)?.ok ?? false)).length;
+  const firstRefusal = (() => {
+    for (const group of workspace.groups) {
+      const customs = liveCustomsByGroup.get(group.id);
+      if (customs && !customs.ok) return { group, customs };
+    }
+    return null;
+  })();
 
   // Rendered row order: ungrouped first (the ⚠ pile a person must act on),
   // then each group's members — the DESKTOP grid walks this flat list so
@@ -1687,7 +1704,18 @@ export function ItemsTable({
           </a>
         ) : null}
         {unpriced > 0 ? (
-          <a className="chip chip-warn" href={`#calc-g-${workspace.groups.find((g) => !(liveCustomsByGroup.get(g.id)?.ok ?? false))?.seq ?? 0}`}>
+          // The chip lands on the ROW the engine named when it named one,
+          // and says why in words — not only on the block (P3.7).
+          <a
+            className="chip chip-warn"
+            href={
+              firstRefusal?.customs.itemSeq !== undefined
+                ? `#calc-i-${firstRefusal.customs.itemSeq}`
+                : `#calc-g-${firstRefusal?.group.seq ?? 0}`
+            }
+            title={firstRefusal ? customsRefusalText(t, firstRefusal.customs) : undefined}
+            data-testid="calc-bar-unpriced"
+          >
             ⚠ {t('table.unpriced')}: {unpriced}
           </a>
         ) : null}
@@ -1940,10 +1968,12 @@ export function ItemsTable({
                 <tr className="border-b border-line-strong bg-surface-sunken text-left text-2xs uppercase tracking-wide text-ink-500">
                   <th className="p-2">#</th>
                   <th className="p-2">{t('goods')}</th>
-                  <th className="p-2 text-center">📦</th>
-                  <th className="p-2 text-center">kg</th>
+                  {/* «📦» means a CARTON everywhere else in this app; the column
+                      is pieces, and the weight is NET (P3.1, UX16). */}
+                  <th className="p-2 text-center">{t('grid.qty')}</th>
+                  <th className="p-2 text-center">{t('grid.kg')}</th>
                   <th className="p-2 text-center">m³</th>
-                  <th className="p-2">TNVED</th>
+                  <th className="p-2">{t('grid.code')}</th>
                   <th className="p-2">{t('baza')}</th>
                   <th className="p-2" />
                 </tr>
@@ -2205,6 +2235,10 @@ const ItemRowBlock = memo(function ItemRowBlock({
   // The ONE answer the select, the O'lchov line, the live figure and the
   // save all read (screenRowOf) — the drafted code's law, the unit on screen.
   const screen = screenRowOf(item, drafts, groupById, groupsByCode);
+  // The figures this row still owes the engine — marked on the cell before
+  // any press, with the reason in its title (P3.2).
+  const needs = neededCells(screen, screen.lawGroup ? needLawOf(screen.lawGroup) : null, item, drafts);
+  const needOf = (cell: NeedCell) => needs.find((n) => n.cell === cell) ?? null;
   // Per-row and LOCAL. Lifting «only one fold open» above a memo'd row is
   // round 70's board freeze in a grid's clothes, and two open folds harm
   // nothing — the ⚙ has allowed exactly that since the workspace shipped.
@@ -2218,10 +2252,14 @@ const ItemRowBlock = memo(function ItemRowBlock({
           ? (item.tnvedCode ?? '')
           : String(item[col] ?? '');
     const value = drafts?.[col] ?? server;
+    const need = col === 'name' || col === 'tnvedCode' ? null : needOf(col);
     return (
       <input
-        className={`input-cell ${extra}${cellBorder(col === 'name' || col === 'tnvedCode' ? undefined : drafts?.[col], drafts?.[col] !== undefined)}`}
+        className={`input-cell ${extra}${cellBorder(col === 'name' || col === 'tnvedCode' ? undefined : drafts?.[col], drafts?.[col] !== undefined)}${need ? ' !border-warn' : ''}`}
         aria-label={`${col} ${item.seq}`}
+        placeholder={need ? t('grid.needed') : undefined}
+        title={need ? (needReasonText(t, need) ?? undefined) : undefined}
+        data-need={need ? need.unit : undefined}
         data-cell={col}
         data-row={index}
         inputMode={col === 'name' ? undefined : col === 'tnvedCode' ? 'numeric' : 'decimal'}
@@ -2343,6 +2381,14 @@ const ItemRowBlock = memo(function ItemRowBlock({
               🤖 {item.bazaReason}
             </span>
           ) : null}
+          {/* The price ON the row is old (P2.10c: a quarter that ended long
+              ago, a seal long ago, a stale book row) — said beside it, until
+              the VED retypes it (judge S10). */}
+          {item.bazaStale && drafts?.bazaValue === undefined ? (
+            <span className="mt-0.5 block truncate text-2xs text-warn" data-testid="calc-baza-stale-row">
+              ⚠ {t('stale')}
+            </span>
+          ) : null}
           {item.dictionaryBaza ? (
             <span className="mt-0.5 block truncate text-2xs text-ink-500" title={item.dictionaryBaza.effectiveDate}>
               ≈ ${item.dictionaryBaza.bazaUsd}/{basisLabel(item.dictionaryBaza.basis, t('perUnit'))}
@@ -2398,8 +2444,10 @@ const ItemRowBlock = memo(function ItemRowBlock({
                   : t('table.measureFor', { unit: basisLabel(pair, t('perUnit')) })}
               </span>
               <input
-                className={`input-cell !w-24 text-right font-mono tabular-nums${cellBorder(drafts?.measure, drafts?.measure !== undefined)}`}
+                className={`input-cell !w-24 text-right font-mono tabular-nums${cellBorder(drafts?.measure, drafts?.measure !== undefined)}${needOf('measure') ? ' !border-warn' : ''}`}
                 aria-label={`measure ${item.seq}`}
+                placeholder={needOf('measure') ? t('grid.needed') : undefined}
+                title={needOf('measure') ? (needReasonText(t, needOf('measure')!) ?? undefined) : undefined}
                 data-cell="measure"
                 data-row={index}
                 data-testid="calc-measure"
@@ -2583,6 +2631,12 @@ function BlockFooter({
           {customs.ok ? (
             <span className="ml-2 text-2xs text-ink-500">
               {t('value')} ${customs.valueUsd.toFixed(2)}
+            </span>
+          ) : measureNeedText(t, customs) ? (
+            // WHICH row and WHICH figure (P3.7): «o‘lchov yo‘q» in the
+            // narrow cell alone left the kg-and-dona row a guessing game.
+            <span className="ml-2 text-2xs text-warn" data-testid="calc-group-refusal">
+              ⚠ {measureNeedText(t, customs)}
             </span>
           ) : null}
           {/* The three warnings this round added, each in its own words —

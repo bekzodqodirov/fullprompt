@@ -1,5 +1,6 @@
 import { autoBasisFor, basesFor, basisOnScreen, pairUnitFor, type AutoBasisItem } from './basis';
 import { readNumberCell } from './number-cell';
+import { missingNeeds, rowNeeds, type NeedLaw, type NeedUnit, type RowNeed } from './needs';
 import type { BazaBasis, MeasureUnit } from './pricing';
 
 /** The slices of the workspace's row, block and draft that decide a row's
@@ -185,4 +186,60 @@ export function postedBasis(
   if (draft !== undefined) return draft;
   if (priceCleared) return stored.bazaUsd === null ? stored.bazaBasis : null;
   return stored.bazaBasis;
+}
+
+/** The cell a needed figure is typed into. */
+export type NeedCell = 'quantity' | 'weightKg' | 'volumeM3' | 'measure';
+export interface CellNeed extends RowNeed {
+  cell: NeedCell;
+}
+
+const CELL_OF: Record<NeedUnit, NeedCell> = {
+  dona: 'quantity',
+  '1000_dona': 'quantity',
+  kg: 'weightKg',
+  m3: 'volumeM3',
+  m2: 'measure',
+  juft: 'measure',
+  litr: 'measure',
+  sm3: 'measure',
+};
+
+/**
+ * Which of a row's cells still need a figure, and WHY — the engine asked
+ * ahead of time (`rowNeeds`, the kernel's one reading), so the cell a
+ * refusal will name is marked before the VED presses anything (P3.2). The
+ * owner's kg-and-dona rows: a jacket valued per kg under «20 %, kamida
+ * $3/dona» marks its count, a table valued per piece under «kamida
+ * $0.4/kg» marks its weight.
+ *
+ * The law's floor and a specific excise ask always; the BAZA's unit asks
+ * only once the row carries a price (an unpriced row has not said what it is
+ * priced per, and marking a guess would be noise on every new row).
+ */
+export function neededCells(
+  screen: Pick<ScreenRow<unknown>, 'basis' | 'pair'>,
+  law: NeedLaw | null,
+  item: ScreenItem & { volumeM3: number | null; bazaUsd: number | null },
+  draft: (ScreenDraft & { volumeM3?: string; bazaValue?: string }) | undefined,
+): CellNeed[] {
+  const figures = screenFigures(item, draft);
+  const pair = screen.pair !== null && screen.pair !== 'any' ? screen.pair : null;
+  const measureQty =
+    pair === null
+      ? null
+      : draft?.measure !== undefined
+        ? draftedFigure(draft.measure, null)
+        : item.measureUnit === pair
+          ? item.measureQty
+          : null;
+  const price = draft?.bazaValue !== undefined ? draftedFigure(draft.bazaValue, null) : item.bazaUsd;
+  const needs = rowNeeds(law, price !== null && price > 0 ? screen.basis : null, {
+    quantity: figures.quantity,
+    weightKg: figures.weightKg,
+    volumeM3: draftedFigure(draft?.volumeM3, item.volumeM3),
+    measureUnit: pair,
+    measureQty,
+  });
+  return missingNeeds(needs).map((n) => ({ ...n, cell: CELL_OF[n.unit] }));
 }

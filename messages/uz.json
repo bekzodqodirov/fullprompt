@@ -3754,6 +3754,10 @@
       "basisNotLaw": "qonun {unit} bo‘yicha o‘lchaydi — baza boshqa birlikda"
     },
     "grid": {
+      "qty": "Dona",
+      "kg": "Netto, kg",
+      "code": "TNVED",
+      "needed": "kerak",
       "unitMoved": "{row}-qator: sotuvchi birligi bo‘yicha raqam «{to}» ustuniga o‘tkazildi ({note}) — tekshiring",
       "sellerWord": "{row}-qator: sotuvchi «{word}» yozgan — dona sonini yozing yoki «Bu dona» deb belgilang",
       "basisStamped": "{row}-qator: baza birligi kodga ko‘ra {unit} bo‘ldi — tekshiring"
