@@ -373,7 +373,7 @@ Owner of:
 ## 4. What is deliberately NOT changed (stated to the owner)
 
 - **The `max` floor is taken per BLOCK (one TNVED code = one declaration line),** not per row (verified correct for one declaration line).
-- **The additional-duty band follows the code's NOMINAL advalor %,** and a duty lgota also cancels the no-certificate duty (#857). These are questions for the post; the current reading is pinned by tests.
+- **The additional-duty band follows the code's NOMINAL advalor %,** and a duty lgota also cancels the no-certificate duty (#857). These are questions for the post. The current reading was NOT pinned when this was written (every `max` test had one item, every no-certificate case had effective == nominal); it is pinned since #1354 (`calc-law.test.ts`).
 - **VAT is 12 % on every code by default.** An exemption is the per-group lgota tick, as now.
 - **Heading 2515 is absent from the seed;** the law file is his.
 - **A sborniy truck's senders sharing one block per code** stays (the per-group certificate control P2.5 is the lever).

@@ -2637,7 +2637,8 @@ backlog with its own code); warehouse staff need «Skladchi»/«Sklad mudiri» a
 their warehouse on /admin/users to hear anything.
 
 **Round — the customs calculator fix (2026-10-09 → 10-13; DECISIONS
-#1340-#1353; migration 0131 `calc_excise` — ledger must reach 132; spec
+#1340-#1354 — #1354 = his «to'g'ri degandek qil» on the four ⭐, two of which
+NOTHING pinned until then; migration 0131 `calc_excise` — ledger must reach 132; spec
 `docs/RASTAMOJKA-TUZATISH.md`).** His «tnved code va dona m2 juftda otadgan
 tovarlarni kirgizadgan joyi yoqku» + «kg hamda donani birga kirgizadgan
 tovarlar … hatolik ketmasin». Two audits first (57 + 76 agents, a reference

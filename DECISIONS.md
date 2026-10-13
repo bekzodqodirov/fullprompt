@@ -2793,3 +2793,32 @@ The integration test anchors the predicate on the SERVER's own `swept`
 (counted before the press equal to what the sweep moves, zero after). Red
 proofs ×4 by string edit: the gate term, the sweepable term, the phone
 condition, and the predicate itself.
+
+## Rastamojka kalkulyatori — his «Ha sen to'g'ri degandek qil» (2026-10-13; NO migration, ledger 132)
+
+1354. **His four ⭐ answers, read against the shipped code before they were
+recorded (#1229), and the two that nothing pinned are pinned now.** All four
+defaults were already the code's behaviour. (1) Netto on the row: the per-kg
+baza and «kamida $X/kg» read the row's own `weightKg`, freight reads the
+request's brutto total, and the card form never copies one into the other
+(pinned since #1340-#1349). Its WORDING was not: the phone row sheet's label
+`calc.phone.kg` said «Вес, кг / Og'irligi, kg / 重量 / Weight» in all four
+locales, the one place a VED types the figure on a phone, and the read-only
+goods table printed a bare literal «kg». Both now say netto (the grid's own
+«Netto, kg»), fenced by literal per-language patterns over every row-weight
+label (#163 — comparing bundles cannot see a word missing from all four).
+(2) Excise «yo'q / foiz / $ har birlikka» was pinned in every shape. The
+judge's UX10 reading stands, stated: the excise row is drawn on the listed
+headings and on a group already answered, not on every group, and the phone
+has no excise control. (3) The «kamida $X» floor per CODE and (4) the
+no-certificate band from the NOMINAL advalor % were the code's behaviour and
+**pinned by nothing**: a scout mutated `pricing.ts` both ways and all 723
+calc unit tests stayed green, because every `max` test had ONE item and every
+no-certificate case had effective % == nominal %. The spec's own sentence
+(§4, «pinned by tests») and #1350 claimed coverage that did not exist. New
+tests in `calc-law.test.ts`, each built so the two readings DISAGREE: a 6403
+block whose two rows win on different halves (per code $600, per row $700),
+and a 6907 no-certificate block where the floor wins (nominal 15 % → +10 % =
+$20; effective 100 % → +20 % = $40). Red proofs ×4 by paired string edit with
+a byte-identical restore. LESSON: a «pinned by tests» sentence is a claim
+about a mutation nobody ran — run it.

@@ -3776,7 +3776,7 @@
       "name": "Item name",
       "code": "HS (TN VED) code",
       "qty": "Quantity (pcs)",
-      "kg": "Weight, kg",
+      "kg": "Net, kg",
       "m3": "Volume, m³",
       "measure": "Measure",
       "baza": "Baza, $",

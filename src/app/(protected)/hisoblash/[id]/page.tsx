@@ -450,7 +450,7 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
                     <th className="p-2">#</th>
                     <th className="p-2">{t('goods')}</th>
                     <th className="p-2">TNVED</th>
-                    <th className="p-2">kg</th>
+                    <th className="p-2">{t('grid.kg')}</th>
                     <th className="p-2">m³</th>
                   </tr>
                 </thead>

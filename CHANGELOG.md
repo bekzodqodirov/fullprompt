@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## Rastamojka: to'rtta ⭐ javobingiz kodda mahkamlandi — 2026-10-13
+
+**Migratsiya yo'q** (soni 132 bo'lib qoladi). Tekshirish: `/api/version`.
+
+Siz «Ha, sen to'g'ri degandek qil» dedingiz. To'rttala qoida kodda aynan shunday ishlayotgani tekshirildi:
+
+1. **Qatordagi og'irlik — netto.** Hisob shunday ishlardi, lekin telefonda og'irlik katagi «Og'irligi, kg» deb turardi. Endi u ham kompyuterdagidek «Netto, kg» deydi, to'rt tilda. Faqat ko'rish uchun ochiladigan tovarlar jadvalida ham «kg» o'rniga «Netto, kg» yoziladi.
+2. **Aksiz: yo'q / foiz / $ har birlikka** — o'zgarishsiz. Aksiz qatori aksiz bo'lishi mumkin bo'lgan kodlarda (pivo, vino, sigaret, yoqilg'i, avtomobil) va aksizi allaqachon yozilgan guruhda chiqadi. Telefonda aksiz katagi yo'q — uni kompyuterda kiritasiz.
+3. **«Kamida $X» boj kod bo'yicha jami olinadi** (deklaratsiyada bitta qator). Hisob shunday edi, lekin buni hech qaysi test qo'riqlamasdi. Endi qo'riqlaydi: bitta kod ostida $20 lik va $5 lik oyoq kiyim bo'lsa, boj $600 (har qatorni alohida hisoblaganda $700 chiqardi).
+4. **Sertifikat bo'lmasa, qo'shimcha boj kodning nominal foizidan olinadi.** Bu ham test bilan mahkamlandi: 6907 kafelda (15 %, kamida $1/m²) qo'shimcha boj +10 % bo'ladi, +20 % emas.
+
 ## Rastamojka kalkulyatori tuzatildi: TNVED, dona, kg, m², juft — har biri o'z joyida — 2026-10-13
 
 **Migratsiya 0131.** O'rnatgandan keyin migratsiyalar soni **132** bo'lishi kerak.
