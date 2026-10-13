@@ -23,12 +23,13 @@ import { pasteIdsFor } from '@/modules/wms/calc/paste-ids';
 import { basisNotLaw, lawOffBook } from '@/modules/wms/calc/warnings';
 import { exciseAnswered, exciseMayApply, exciseUnitsFor } from '@/modules/wms/calc/excise';
 import { LAW_SHAPE_KEY, dayText, lawValues, rateText, unitWordsOf } from '@/modules/wms/calc/law-words';
-import { unitLabel } from '@/modules/wms/calc/units';
+import { unitLabel, type PendingUnit } from '@/modules/wms/calc/units';
 import {
   ghostAutoBasis,
   ghostScreenOf,
   groupsByCodeOf,
   neededCells,
+  pendingUnitOnScreen,
   postedBasis,
   screenRowOf,
   type NeedCell,
@@ -454,7 +455,25 @@ export function ItemsTable({
   const dirtyCount = Object.keys(drafts).filter((rowId) => itemById.has(rowId)).length + dirtyGhosts.length;
   /** The gate counts what is WAITING to be restored too: sealing over edits
    * the VED believes he made would lock a client price without them. */
-  const gateCount = dirtyCount + (restore ? restorableCount(restore) : 0);
+  // A row still stored the OLD way («120» under the seller's «m2») changes
+  // on the next Saqlash (judge UX7): ✅ and the seal wait on that press as
+  // they wait on a draft — a confirm or a seal over «120 dona» of tiles that
+  // the save is about to turn into 120 m² vouches for numbers about to move.
+  const pendingUnits = useMemo(() => {
+    const out = new Map<string, PendingUnit>();
+    for (const item of allItems) {
+      const screen = screenRowOf(item, drafts[item.id], groupById, groupsByCode);
+      const pending = pendingUnitOnScreen(
+        item,
+        { confirmed: Boolean(screen.lawGroup?.confirmedAt), lawDutyUnit: screen.lawGroup?.dutyUnit ?? null },
+        drafts[item.id],
+      );
+      if (pending) out.set(item.id, pending);
+    }
+    return out;
+  }, [allItems, drafts, groupById, groupsByCode]);
+  const pendingMoves = [...pendingUnits.values()].filter((p) => p.kind === 'move').length;
+  const gateCount = dirtyCount + (restore ? restorableCount(restore) : 0) + pendingMoves;
   // Intake prefills codes from the TNVED memory, so the commonest request
   // arrives coded-and-ungrouped with NOTHING dirty — the save's server-side
   // sweep places them; and legacy duplicate same-code groups normalize on the
@@ -466,7 +485,7 @@ export function ItemsTable({
   }
   const duplicateGroups = [...codeCounts.values()].filter((n) => n > 1).length;
   const sweepable = workspace.ungrouped.filter((i) => (i.tnvedCode ?? '').trim()).length;
-  const saveable = dirtyCount > 0 || sweepable > 0 || duplicateGroups > 0;
+  const saveable = dirtyCount > 0 || sweepable > 0 || duplicateGroups > 0 || pendingMoves > 0;
   const aiRunning = workspace.aiRunningSince !== null;
 
   useEffect(() => onDirty(gateCount), [gateCount, onDirty]);
@@ -1068,6 +1087,22 @@ export function ItemsTable({
       setSaving(false);
     }
   };
+
+  /** «Bu dona» (judge UX7): the seller's word stops asking and the count
+   * stays the VED's — posted on its own, like a delete, because a word
+   * answered is not a draft anybody types. */
+  const sendRef = useRef(send);
+  useLayoutEffect(() => {
+    sendRef.current = send;
+  });
+  const dismissUnit = useCallback((itemId: string, seq: number) => {
+    setTableError(null);
+    void sendRef.current([{ id: itemId, seq, unit: null }], [], { drafts: new Map(), ghosts: new Map() }).then(
+      (result) => {
+        if (!result.ok) setTableError({ code: result.error, seq: result.seq });
+      },
+    );
+  }, []);
 
   /** The grid's ONE save — every live draft and every dirty ghost in one
    * transaction (an empty post runs the server's sweep). */
@@ -2012,6 +2047,7 @@ export function ItemsTable({
                     onPickBaza={setPicker}
                     onCellKey={onCellKey}
                     onCellPaste={onCellPaste}
+                    onDismissUnit={dismissUnit}
                   />
                 ))}
                 {newRows.map((row, i) => (
@@ -2208,6 +2244,7 @@ const ItemRowBlock = memo(function ItemRowBlock({
   onPickBaza,
   onCellKey,
   onCellPaste,
+  onDismissUnit,
 }: {
   id: string;
   row: { item: WorkspaceItem; group: WorkspaceGroup | null };
@@ -2229,6 +2266,8 @@ const ItemRowBlock = memo(function ItemRowBlock({
   onPickBaza: (target: PickerTarget) => void;
   onCellKey: (e: React.KeyboardEvent<HTMLInputElement>, col: string, rowIndex: number, lastIndex: number) => void;
   onCellPaste: (e: React.ClipboardEvent) => void;
+  /** «Bu dona» — the seller's word stops asking (UX7). */
+  onDismissUnit: (itemId: string, seq: number) => void;
 }) {
   const t = useTranslations('calc');
   const item = row.item;
@@ -2239,6 +2278,14 @@ const ItemRowBlock = memo(function ItemRowBlock({
   // any press, with the reason in its title (P3.2).
   const needs = neededCells(screen, screen.lawGroup ? needLawOf(screen.lawGroup) : null, item, drafts);
   const needOf = (cell: NeedCell) => needs.find((n) => n.cell === cell) ?? null;
+  // A row still stored the OLD way — the save's own predicate, computed
+  // here (not handed down) so a neighbour's keystroke does not re-render it.
+  const pendingUnit = pendingUnitOnScreen(
+    item,
+    { confirmed: Boolean(screen.lawGroup?.confirmedAt), lawDutyUnit: screen.lawGroup?.dutyUnit ?? null },
+    drafts,
+  );
+  const words = useMemo(() => unitWordsOf((k) => t(`units.${k}` as 'units.dona')), [t]);
   // Per-row and LOCAL. Lifting «only one fold open» above a memo'd row is
   // round 70's board freeze in a grid's clothes, and two open folds harm
   // nothing — the ⚙ has allowed exactly that since the workspace shipped.
@@ -2461,6 +2508,44 @@ const ItemRowBlock = memo(function ItemRowBlock({
               {/* The sm³ convention outlives the placeholder — a filled cell
                   must still say what its number means. */}
               {pair === 'sm3' ? <span className="text-ink-500">· {t('table.sm3Hint')}</span> : null}
+            </span>
+          </td>
+        </tr>
+      ) : null}
+      {pendingUnit ? (
+        <tr className="border-b border-line/60 text-2xs" data-testid="calc-unit-pending" data-kind={pendingUnit.kind}>
+          <td />
+          <td className="px-1.5 pb-1.5" colSpan={7}>
+            <span className="flex flex-wrap items-center gap-2 text-warn">
+              <span>
+                ⚠{' '}
+                {pendingUnit.kind === 'move'
+                  ? t('grid.pendingMove', {
+                      said: `${pendingUnit.quantity} ${pendingUnit.word}`,
+                      to: unitLabel(pendingUnit.to, words),
+                    })
+                  : t('grid.pendingAsk', { said: `${pendingUnit.quantity} ${pendingUnit.word}` })}
+              </span>
+              {pendingUnit.kind === 'ask' ? (
+                <button
+                  type="button"
+                  className="btn-secondary !min-h-8 !px-2"
+                  data-testid="calc-unit-cartons"
+                  disabled={busy}
+                  onClick={() => setDraft(item.id, 'quantity', '')}
+                >
+                  {t('grid.isCartons')}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="btn-secondary !min-h-8 !px-2"
+                data-testid="calc-unit-pieces"
+                disabled={busy}
+                onClick={() => onDismissUnit(item.id, item.seq)}
+              >
+                {t('grid.isPieces')}
+              </button>
             </span>
           </td>
         </tr>

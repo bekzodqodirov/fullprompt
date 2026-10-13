@@ -1,6 +1,7 @@
 import { autoBasisFor, basesFor, basisOnScreen, pairUnitFor, type AutoBasisItem } from './basis';
 import { readNumberCell } from './number-cell';
 import { missingNeeds, rowNeeds, type NeedLaw, type NeedUnit, type RowNeed } from './needs';
+import { pendingUnitOf, type PendingUnit } from './units';
 import type { BazaBasis, MeasureUnit } from './pricing';
 
 /** The slices of the workspace's row, block and draft that decide a row's
@@ -242,4 +243,35 @@ export function neededCells(
     measureQty,
   });
   return missingNeeds(needs).map((n) => ({ ...n, cell: CELL_OF[n.unit] }));
+}
+
+/**
+ * A row still stored the old way, as the SCREEN must say it before any press
+ * (judge UX7): the save's own predicate (`pendingUnitOf`) over the stored
+ * row, with one draft read — a price typed (or a unit chosen) in this draft
+ * means the save will NOT move the number, so the screen must not promise it.
+ */
+export function pendingUnitOnScreen(
+  item: ScreenItem & { unit: string | null; volumeM3: number | null; bazaUsd: number | null },
+  ctx: { confirmed: boolean; lawDutyUnit: string | null },
+  draft: { bazaValue?: string; bazaBasis?: BazaBasis } | undefined,
+): PendingUnit | null {
+  const priced = draft?.bazaValue !== undefined ? draftedFigure(draft.bazaValue, null) !== null : item.bazaUsd !== null;
+  const chosen = draft?.bazaBasis !== undefined ? draft.bazaBasis : item.bazaBasis;
+  if (priced || chosen !== null) return null;
+  const law = ctx.lawDutyUnit;
+  const lawPair = law === 'm2' || law === 'juft' || law === 'litr' || law === 'sm3' ? law : null;
+  return pendingUnitOf(
+    {
+      quantity: item.quantity,
+      unit: item.unit,
+      weightKg: item.weightKg,
+      volumeM3: item.volumeM3,
+      measureUnit: item.measureUnit,
+      measureQty: item.measureQty,
+      bazaUsd: null,
+      bazaBasis: null,
+    },
+    { confirmed: ctx.confirmed, lawPair },
+  );
 }

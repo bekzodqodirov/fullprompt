@@ -40,7 +40,7 @@ import {
 import { exciseAnswered, exciseMayApply, exciseUnitsFor } from './excise';
 import { answerFloorStandsSql, currentVersionSql, notSupersededSql } from './version-set';
 import { autoBasisFor, basisConflicts, defaultBasisFor, pairUnitFor, statedPairOf } from './basis';
-import { normalizeRowUnit } from './units';
+import { pendingUnitOf } from './units';
 import {
   BASIS_FOR_UNIT,
   importRowForCode,
@@ -4063,6 +4063,8 @@ export async function saveTable(
     /** Rows whose COUNT this save posted — the seller's old word no longer
      * describes that number, so the heal leaves them alone (judge MR-4). */
     const countPosted = new Set<string>();
+    /** Rows whose seller word this save DISMISSED («Bu dona») — never healed. */
+    const unitPosted = new Set<string>();
     /** Rows whose LAW this save may change — recoded, added, or swept into a
      * group — the only rows A2's «birlikni tekshiring» looks at. */
     const relawed = new Set<string>();
@@ -4080,6 +4082,7 @@ export async function saveTable(
       if (!item || item.requestId !== requestId) throw new CalcError('not_found', e.seq);
       if (e.measureQty !== undefined) postedMeasure.set(item.id, { qty: e.measureQty, unit: e.measureUnit });
       if (e.quantity !== undefined) countPosted.add(item.id);
+      if (e.unit !== undefined) unitPosted.add(item.id);
       if (e.bazaUsd !== undefined && e.bazaUsd !== null && (e.bazaBasis ?? null) === null && e.shownBasis) {
         shownBy.set(item.id, e.shownBasis);
       }
@@ -4358,60 +4361,78 @@ export async function saveTable(
       // THE HEAL (2026-10-09): a row stored before the doors learned units
       // keeps «120» in the piece column under the seller's «m2», and the
       // engine reads it as 120 pieces. The ONE rule every door uses
-      // (`normalizeRowUnit`) moves it here — only on a row nobody has priced
-      // or confirmed, and never on a count this save posted: a VED who typed
-      // 300 into a row still wearing «kg» meant pieces (judge MR-4).
-      const healable =
-        item.bazaUsd === null &&
-        item.bazaBasis === null &&
-        (item.groupId === null || !confirmedGroups.has(item.groupId)) &&
-        !countPosted.has(item.id) &&
-        !postedMeasure.has(item.id);
-      if (healable && item.quantity !== null && item.unit) {
-        const healed = normalizeRowUnit({
-          quantity: Number(item.quantity),
-          unit: item.unit,
-          weightKg: item.weightKg === null ? null : Number(item.weightKg),
-          volumeM3: item.volumeM3 === null ? null : Number(item.volumeM3),
-          measureUnit: (item.measureUnit as MeasureUnit | null) ?? null,
-          measureQty: item.measureQty === null ? null : Number(item.measureQty),
-        });
-        const lawPair = law === 'm2' || law === 'juft' || law === 'litr' || law === 'sm3' ? law : null;
-        if (
-          healed.moved &&
-          (healed.to === 'cartons' ||
-            healed.to === 'unknown' ||
-            // «40 m²» under a code that counts in juft is a contradiction for
-            // a person — moved, the pass would clear it as a statement in the
-            // wrong unit and the number would be gone.
-            (lawPair !== null && MEASURE_UNITS.includes(healed.to as MeasureUnit) && healed.to !== lawPair))
-        ) {
+      // (`normalizeRowUnit`) moves it here, decided by the SCREEN's predicate
+      // (`pendingUnitOf`, judge UX7) over the row AS STORED before this save
+      // — the sentence the VED read is about that row. Only on a row nobody
+      // has priced or confirmed (judge MR-4); never on a word this save
+      // dismissed («Bu dona»). A count this save posted stays the VED's and
+      // the seller's number still leaves it — «500 kg» typed over with 300
+      // pieces keeps both, where skipping the heal moved the VED's 300 into
+      // kg on the NEXT save (the shape MR-4 named).
+      const before = byId.get(item.id);
+      const lawPair = law === 'm2' || law === 'juft' || law === 'litr' || law === 'sm3' ? law : null;
+      const numOrNull = (v: string | null) => (v === null ? null : Number(v));
+      const pending =
+        before && !unitPosted.has(item.id)
+          ? pendingUnitOf(
+              {
+                quantity: numOrNull(before.quantity),
+                unit: before.unit,
+                // The target columns as they stand AFTER this save's edits: a
+                // weight the VED typed is the row's, and the seller's figure
+                // goes into the note beside it.
+                weightKg: numOrNull(item.weightKg),
+                volumeM3: numOrNull(item.volumeM3),
+                measureUnit: (item.measureUnit as MeasureUnit | null) ?? null,
+                measureQty: numOrNull(item.measureQty),
+                bazaUsd: numOrNull(item.bazaUsd),
+                bazaBasis: item.bazaBasis,
+              },
+              { confirmed: item.groupId !== null && confirmedGroups.has(item.groupId), lawPair },
+            )
+          : null;
+      const withNote = (said: string) => [item.note, said].filter(Boolean).join(' · ').slice(0, 500);
+      if (pending?.kind === 'ask') {
+        if (countPosted.has(item.id)) {
+          // The VED answered the count («Bu karobka» empties it, then the
+          // real number) — the word has said its piece and stops asking.
+          const note = withNote(pending.result.note);
+          Object.assign(set, { unit: null, note });
+          item.unit = null;
+          item.note = note;
+        } else {
           // A carton count or a word nobody's list knows: the count is the
           // VED's to answer, never the machine's guess.
-          sellerUnitUnresolved.push({ seq: item.seq, word: item.unit });
-        } else if (healed.moved) {
-          const p = healed.patch;
-          const fixed = (v: number | null, places: number) => (v === null ? null : v.toFixed(places));
-          const note = [item.note, healed.note].filter(Boolean).join(' · ').slice(0, 500);
-          Object.assign(set, {
-            quantity: fixed(p.quantity, 3),
-            unit: p.unit,
-            weightKg: fixed(p.weightKg, 3),
-            volumeM3: fixed(p.volumeM3, 3),
-            measureUnit: p.measureUnit,
-            measureQty: fixed(p.measureQty, 4),
-            note,
-          });
-          // The pass below reads the healed row, not the stored one.
-          item.quantity = fixed(p.quantity, 3);
-          item.unit = p.unit;
-          item.weightKg = fixed(p.weightKg, 3);
-          item.volumeM3 = fixed(p.volumeM3, 3);
-          item.measureUnit = p.measureUnit;
-          item.measureQty = fixed(p.measureQty, 4);
-          item.note = note;
-          unitsMoved.push({ seq: item.seq, to: healed.to, note: healed.note });
+          sellerUnitUnresolved.push({ seq: item.seq, word: pending.word });
         }
+      } else if (pending?.kind === 'move') {
+        const p = { ...pending.result.patch };
+        if (countPosted.has(item.id)) p.quantity = numOrNull(item.quantity);
+        // A measure this save posted is written by the pass below, not here.
+        if (postedMeasure.has(item.id)) {
+          p.measureUnit = (item.measureUnit as MeasureUnit | null) ?? null;
+          p.measureQty = numOrNull(item.measureQty);
+        }
+        const fixed = (v: number | null, places: number) => (v === null ? null : v.toFixed(places));
+        const note = withNote(pending.result.note);
+        Object.assign(set, {
+          quantity: fixed(p.quantity, 3),
+          unit: p.unit,
+          weightKg: fixed(p.weightKg, 3),
+          volumeM3: fixed(p.volumeM3, 3),
+          measureUnit: p.measureUnit,
+          measureQty: fixed(p.measureQty, 4),
+          note,
+        });
+        // The pass below reads the healed row, not the stored one.
+        item.quantity = fixed(p.quantity, 3);
+        item.unit = p.unit;
+        item.weightKg = fixed(p.weightKg, 3);
+        item.volumeM3 = fixed(p.volumeM3, 3);
+        item.measureUnit = p.measureUnit;
+        item.measureQty = fixed(p.measureQty, 4);
+        item.note = note;
+        unitsMoved.push({ seq: item.seq, to: pending.to, note: pending.result.note });
       }
       // 18a: a price with no basis is «avto» — the law's default, read off
       // the group the row ENDED in. Never off the pre-tx dictionary map: a

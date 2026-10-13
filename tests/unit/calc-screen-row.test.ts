@@ -3,6 +3,7 @@ import {
   ghostAutoBasis,
   groupsByCodeOf,
   neededCells,
+  pendingUnitOnScreen,
   postedBasis,
   screenRowOf,
   type ScreenItem,
@@ -244,5 +245,50 @@ describe('neededCells — which cells a row still owes the engine', () => {
     expect(neededCells({ basis: 'kg', pair: null }, null, item({ bazaUsd: 3, bazaBasis: 'kg' }), undefined).map((n) => n.cell)).toEqual([
       'weightKg',
     ]);
+  });
+});
+
+/**
+ * UX7: a row stored before the doors learned units says so BEFORE any press
+ * — with the save's own predicate, so the sentence never promises a move
+ * the save does not make.
+ */
+describe('pendingUnitOnScreen — the sentence is the save’s own decision', () => {
+  const old = (over: Partial<ScreenItem & { unit: string | null; volumeM3: number | null; bazaUsd: number | null }>) => ({
+    ...row0({ groupId: null, tnvedCode: null, bazaBasis: null }),
+    unit: 'm2',
+    quantity: 120,
+    volumeM3: null,
+    bazaUsd: null,
+    ...over,
+  });
+  const ctx = { confirmed: false, lawDutyUnit: null };
+
+  it('«120 m2» in the piece column moves; «500 kg» moves to the weight', () => {
+    expect(pendingUnitOnScreen(old({}), ctx, undefined)).toMatchObject({ kind: 'move', to: 'm2', quantity: 120, word: 'm2' });
+    expect(pendingUnitOnScreen(old({ unit: 'kg', quantity: 500 }), ctx, undefined)).toMatchObject({ kind: 'move', to: 'kg' });
+  });
+
+  it('a carton count, an unknown word and a pair the law contradicts are ASKED, never moved', () => {
+    expect(pendingUnitOnScreen(old({ unit: 'karobka', quantity: 12 }), ctx, undefined)?.kind).toBe('ask');
+    expect(pendingUnitOnScreen(old({ unit: 'qop', quantity: 12 }), ctx, undefined)?.kind).toBe('ask');
+    expect(pendingUnitOnScreen(old({}), { confirmed: false, lawDutyUnit: 'juft' }, undefined)?.kind).toBe('ask');
+    // The law's own pair is a plain move.
+    expect(pendingUnitOnScreen(old({}), { confirmed: false, lawDutyUnit: 'm2' }, undefined)?.kind).toBe('move');
+  });
+
+  it('a priced, unit-chosen or confirmed row is left as it stands — and so is a price typed in the draft', () => {
+    expect(pendingUnitOnScreen(old({ bazaUsd: 3, bazaBasis: 'unit' }), ctx, undefined)).toBeNull();
+    expect(pendingUnitOnScreen(old({ bazaBasis: 'm2' }), ctx, undefined)).toBeNull();
+    expect(pendingUnitOnScreen(old({}), { confirmed: true, lawDutyUnit: null }, undefined)).toBeNull();
+    expect(pendingUnitOnScreen(old({}), ctx, { bazaValue: '3' })).toBeNull();
+    // An emptied or ambiguous price is no price: the save still moves it.
+    expect(pendingUnitOnScreen(old({ bazaUsd: 3 }), ctx, { bazaValue: '' })?.kind).toBe('move');
+  });
+
+  it('a count word, an empty count and a row with no word ask nothing', () => {
+    expect(pendingUnitOnScreen(old({ unit: 'шт' }), ctx, undefined)).toBeNull();
+    expect(pendingUnitOnScreen(old({ quantity: null }), ctx, undefined)).toBeNull();
+    expect(pendingUnitOnScreen(old({ unit: null }), ctx, undefined)).toBeNull();
   });
 });

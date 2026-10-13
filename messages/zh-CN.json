@@ -3760,7 +3760,11 @@
       "needed": "需要",
       "unitMoved": "第{row}行：按卖方单位，数字已移到「{to}」列（{note}）——请核对",
       "sellerWord": "第{row}行：卖方写的是「{word}」——请填写件数，或标记「这是件数」",
-      "basisStamped": "第{row}行：基价单位按编码定为{unit}——请核对"
+      "basisStamped": "第{row}行：基价单位按编码定为{unit}——请核对",
+      "pendingMove": "卖家写的是「{said}」——数字在件数列。保存时会移到{to}（未填价格时）。",
+      "pendingAsk": "卖家写的是「{said}」——这可能不是件数。请填写件数。",
+      "isPieces": "这是件数",
+      "isCartons": "这是箱数——我来填件数"
     },
     "phone": {
       "hint": "点击商品即可编辑。✅ 与封存也在此操作。",

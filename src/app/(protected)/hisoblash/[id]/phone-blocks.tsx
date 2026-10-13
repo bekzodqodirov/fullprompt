@@ -5,14 +5,15 @@ import { useTranslations } from 'next-intl';
 import type { Workspace, WorkspaceGroup, WorkspaceItem } from '@/modules/wms/calc/workspace';
 import type { BazaBasis, CustomsResult } from '@/modules/wms/calc/pricing';
 import { basisLabel, defaultBasisFor } from '@/modules/wms/calc/basis';
-import { screenRowOf } from '@/modules/wms/calc/screen-row';
+import { pendingUnitOnScreen, screenRowOf } from '@/modules/wms/calc/screen-row';
 import { readNumberCell } from '@/modules/wms/calc/number-cell';
 import type { ItemDraft, NewRow } from '@/modules/wms/calc/row-draft';
 import { dutyText } from '@/modules/wms/calc/duty-text';
 import { confirmGroupAction, type CalcFormState } from '../actions';
 import { customsRefusalText, refusalWord } from './words';
 import { WARNING_LABELS } from '@/modules/wms/calc/labels';
-import { unitOf } from '@/modules/wms/calc/units';
+import { unitLabel, unitOf } from '@/modules/wms/calc/units';
+import { unitWordsOf } from '@/modules/wms/calc/law-words';
 
 /**
  * The phone's calculation (his B1 a): the same rows and blocks the desktop
@@ -276,6 +277,13 @@ export const PhoneItemCard = memo(function PhoneItemCard({
 }) {
   const t = useTranslations('calc');
   const screen = screenRowOf(item, draft, groupById, groupsByCode);
+  // The desktop row's sentence (UX7), on the card: «120» under the seller's
+  // «m2» reads as 120 dona until a Saqlash moves it.
+  const pendingUnit = pendingUnitOnScreen(
+    item,
+    { confirmed: Boolean(screen.lawGroup?.confirmedAt), lawDutyUnit: screen.lawGroup?.dutyUnit ?? null },
+    draft,
+  );
   const name = draft?.name ?? item.label;
   const code = (draft?.tnvedCode ?? item.tnvedCode ?? '').trim();
   const qty =
@@ -369,6 +377,20 @@ export const PhoneItemCard = memo(function PhoneItemCard({
           </span>
         ) : null}
       </span>
+      {pendingUnit ? (
+        <span className="mt-0.5 block text-2xs text-warn" data-testid="calc-phone-unit-pending">
+          ⚠{' '}
+          {pendingUnit.kind === 'move'
+            ? t('grid.pendingMove', {
+                said: `${pendingUnit.quantity} ${pendingUnit.word}`,
+                to: unitLabel(
+                  pendingUnit.to,
+                  unitWordsOf((k) => t(`units.${k}` as 'units.dona')),
+                ),
+              })
+            : t('grid.pendingAsk', { said: `${pendingUnit.quantity} ${pendingUnit.word}` })}
+        </span>
+      ) : null}
     </button>
   );
 });

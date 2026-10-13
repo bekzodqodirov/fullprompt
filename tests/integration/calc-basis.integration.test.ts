@@ -435,14 +435,46 @@ describe('the screen’s units reach the row (2026-10-09, P3: S2, UX12, MR-17) a
     expect((await save(id, {})).unitsMoved).toEqual([]);
   });
 
-  it('«500» under «kg» moves to the weight; a count the VED types in the same save is left alone', async () => {
+  /**
+   * The heal is decided on the row AS STORED — the row the screen's sentence
+   * described (UX7). A count the VED types in that save stays his, and the
+   * seller's figure still leaves the piece column: the first build skipped
+   * the heal on such a row, which left «300» under «kg» and moved the VED's
+   * 300 pieces into the weight on the NEXT press (judge MR-4's own shape,
+   * deferred by one save).
+   */
+  it('«500» under «kg» moves to the weight; a count typed in the same save stays the VED’s — and the next save moves nothing', async () => {
     const id = await open([{ name: `kurtka ${tag()}`, quantity: 1 }, { name: `shim ${tag()}`, quantity: 1 }]);
     await storeOldShape(id, 1, 500, 'kg');
     await storeOldShape(id, 2, 500, 'kg');
     const result = await save(id, { items: [await editOf(id, 2, { quantity: 300 })] });
-    expect(result.unitsMoved.map((m) => m.seq)).toEqual([1]);
-    expect(await rowOf(id, 1)).toMatchObject({ quantity: null, weightKg: '500.000' });
-    expect(await rowOf(id, 2)).toMatchObject({ quantity: '300.000', weightKg: null });
+    expect(result.unitsMoved.map((m) => m.seq)).toEqual([1, 2]);
+    expect(await rowOf(id, 1)).toMatchObject({ quantity: null, weightKg: '500.000', unit: null });
+    expect(await rowOf(id, 2)).toMatchObject({ quantity: '300.000', weightKg: '500.000', unit: null });
+    expect((await save(id, {})).unitsMoved).toEqual([]);
+    expect(await rowOf(id, 2)).toMatchObject({ quantity: '300.000', weightKg: '500.000' });
+  });
+
+  it('a weight the VED typed over a pending «500 kg» stands, and the seller’s figure goes to the note', async () => {
+    const id = await open([{ name: `palto ${tag()}`, quantity: 1 }]);
+    await storeOldShape(id, 1, 500, 'kg');
+    await save(id, { items: [await editOf(id, 1, { weightKg: 480 })] });
+    const row = await rowOf(id, 1);
+    expect(row).toMatchObject({ quantity: null, weightKg: '480.000', unit: null });
+    expect(row.note).toContain('sotuvchi: 500 kg (qatorda 480 kg)');
+  });
+
+  it('«Bu karobka» empties the count: the word answers for good and the seller’s figure is kept in the note', async () => {
+    const id = await open([{ name: `ko‘ylak ${tag()}`, quantity: 1 }]);
+    await storeOldShape(id, 1, 12, 'karobka');
+    const answered = await save(id, { items: [await editOf(id, 1, { quantity: null })] });
+    expect(answered.sellerUnitUnresolved).toEqual([]);
+    const row = await rowOf(id, 1);
+    expect(row).toMatchObject({ quantity: null, unit: null });
+    expect(row.note).toContain('sotuvchi: 12 karobka');
+    // The real count typed afterwards is just a count.
+    await save(id, { items: [await editOf(id, 1, { quantity: 240 })] });
+    expect(await rowOf(id, 1)).toMatchObject({ quantity: '240.000', unit: null });
   });
 
   it('a carton count is never guessed: named, and «Bu dona» dismisses the word for good', async () => {
@@ -452,9 +484,18 @@ describe('the screen’s units reach the row (2026-10-09, P3: S2, UX12, MR-17) a
     expect(first.unitsMoved).toEqual([]);
     expect(first.sellerUnitUnresolved).toEqual([{ seq: 1, word: 'karobka' }]);
     expect(await rowOf(id, 1)).toMatchObject({ quantity: '20.000', unit: 'karobka' });
-    await save(id, { items: [await editOf(id, 1, { unit: null })] });
+    const dismissed = await save(id, { items: [await editOf(id, 1, { unit: null })] });
+    expect(dismissed.sellerUnitUnresolved).toEqual([]);
     expect(await rowOf(id, 1)).toMatchObject({ quantity: '20.000', unit: null });
     expect((await save(id, {})).sellerUnitUnresolved).toEqual([]);
+  });
+
+  it('«Bu dona» on a pending «300 kg» keeps 300 as the count — a dismissed word is never moved', async () => {
+    const id = await open([{ name: `stul ${tag()}`, quantity: 1 }]);
+    await storeOldShape(id, 1, 300, 'kg');
+    const result = await save(id, { items: [await editOf(id, 1, { unit: null })] });
+    expect(result.unitsMoved).toEqual([]);
+    expect(await rowOf(id, 1)).toMatchObject({ quantity: '300.000', weightKg: null, unit: null });
   });
 
   it('a priced or confirmed row is never healed', async () => {

@@ -3760,7 +3760,11 @@
       "needed": "needed",
       "unitMoved": "Row {row}: the number moved to the «{to}» column by the seller’s unit ({note}) — check it",
       "sellerWord": "Row {row}: the seller wrote «{word}» — type the piece count or mark «These are pieces»",
-      "basisStamped": "Row {row}: the baza unit became {unit} by the code — check it"
+      "basisStamped": "Row {row}: the baza unit became {unit} by the code — check it",
+      "pendingMove": "The seller wrote «{said}» — the number sits in the pieces column. Saving moves it to {to} (unless a price is typed).",
+      "pendingAsk": "The seller wrote «{said}» — this may not be a piece count. Type the number of pieces.",
+      "isPieces": "These are pieces",
+      "isCartons": "These are cartons — I'll type the count"
     },
     "phone": {
       "hint": "Tap an item to edit it. ✅ and sealing work here too.",

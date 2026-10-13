@@ -526,6 +526,45 @@ export function normalizeRowUnit(row: RowUnitInput): RowUnitResult {
 const fmt = (n: number) => String(Number(n.toFixed(4)));
 
 /**
+ * A row still stored the OLD way, before the doors learned units: the
+ * seller's «120 m2» kept as 120 in the piece column, which the engine reads
+ * as 120 pieces. ONE predicate for the save that heals it and for the screen
+ * that says so BEFORE the press (judge UX7) — split, the sentence promises a
+ * move the save does not make.
+ *
+ * Only a row nobody has priced or confirmed (judge MR-4): a price was typed
+ * against the row as it stands, and a ✅ vouched for those very numbers.
+ * - `move`: the save moves the number into the column its word names;
+ * - `ask`: a carton count, a word nobody's list knows, or a pair the code's
+ *   law contradicts («40 m²» under a juft code) — the count is the VED's to
+ *   answer, never the machine's guess.
+ */
+/** The four pair units — a type-checked copy, so this pure module needs no
+ * runtime import from the engine. */
+const MEASURE_UNIT_SET: ReadonlySet<string> = new Set<MeasureUnit>(['juft', 'litr', 'm2', 'sm3']);
+
+export type PendingUnit =
+  | { kind: 'move'; to: 'kg' | 'm3' | MeasureUnit; word: string; quantity: number; result: Extract<RowUnitResult, { moved: true }> }
+  | { kind: 'ask'; word: string; quantity: number; result: Extract<RowUnitResult, { moved: true }> };
+
+export function pendingUnitOf(
+  row: RowUnitInput & { bazaUsd: number | null; bazaBasis: string | null },
+  ctx: { confirmed: boolean; lawPair: MeasureUnit | null },
+): PendingUnit | null {
+  if (row.bazaUsd !== null || row.bazaBasis !== null || ctx.confirmed) return null;
+  const result = normalizeRowUnit(row);
+  if (!result.moved || row.quantity === null || !row.unit) return null;
+  const word = row.unit.trim();
+  const contradicts =
+    ctx.lawPair !== null && MEASURE_UNIT_SET.has(result.to) && result.to !== ctx.lawPair;
+  if (result.to === 'cartons' || result.to === 'unknown' || contradicts) {
+    return { kind: 'ask', word, quantity: row.quantity, result };
+  }
+  return { kind: 'move', to: result.to, word, quantity: row.quantity, result };
+}
+
+
+/**
  * The words a unit is printed in. One set of keys (`calc.units.*` in the four
  * bundles, and the client labels for the offer PDF) so «juft» is never printed
  * as a storage spelling and «sof og‘irlik (netto)» is spelt ONE way

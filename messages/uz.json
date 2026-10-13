@@ -3760,7 +3760,11 @@
       "needed": "kerak",
       "unitMoved": "{row}-qator: sotuvchi birligi bo‘yicha raqam «{to}» ustuniga o‘tkazildi ({note}) — tekshiring",
       "sellerWord": "{row}-qator: sotuvchi «{word}» yozgan — dona sonini yozing yoki «Bu dona» deb belgilang",
-      "basisStamped": "{row}-qator: baza birligi kodga ko‘ra {unit} bo‘ldi — tekshiring"
+      "basisStamped": "{row}-qator: baza birligi kodga ko‘ra {unit} bo‘ldi — tekshiring",
+      "pendingMove": "Sotuvchi «{said}» yozgan — son dona ustunida turibdi. Saqlashda {to} ustuniga o‘tadi (narx yozilmasa).",
+      "pendingAsk": "Sotuvchi «{said}» yozgan — bu dona soni emas bo‘lishi mumkin. Dona sonini yozing.",
+      "isPieces": "Bu dona",
+      "isCartons": "Bu karobka — sonini yozaman"
     },
     "phone": {
       "hint": "Tovarni bosing — tahrirlash ochiladi. ✅ va muhrlash ham shu yerda.",
