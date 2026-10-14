@@ -2233,7 +2233,10 @@ export interface CarriedUnsplit {
  * its two windows verbatim, so the warning and the tannarx cannot disagree
  * (#513). Found through the cartons' RIDES, not through allocations — a held
  * bill has none to join through. A pair the truck GIVES back (`m.given`)
- * carries nothing here, so its other legs are not this page's to name.
+ * carries nothing here, so its other legs are not this page's to name. A
+ * direct bill counts only on a page that carries its own client's cartons
+ * from that leg — bill by bill, so the dollars, the no-rate count and the
+ * clients all say the same.
  *
  * Only the feeding trucks' batch-scope bills: a stamped grid cell is a
  * receipt's money, already counted by `unconvertedCostCount` over this
@@ -2247,19 +2250,23 @@ export async function carriedUnsplitBills(batchId: string): Promise<CarriedUnspl
     -- ride (a CTE joined to a CTE, both estimated at one row) was a nested
     -- loop that grew with the square of the truck — 794 ms at 2,000 cartons
     -- on the shaped copy (#1246's shape, review of the round).
+    -- One row per PART of a feeding truck's money: a direct bill was only
+    -- ever its OWN client's money — missing from that client's tannarx alone
+    -- — so each client's direct bills are a part of their own (own_client),
+    -- and every other bill is one part for everybody aboard.
     held AS (
       SELECT ce.batch_id,
+             ce.allocation_basis = 'direct_to_client' AS direct,
+             CASE WHEN ce.allocation_basis = 'direct_to_client' THEN ce.client_id END AS own_client,
              sum(ce.amount_usd) AS usd,
-             count(*) FILTER (WHERE ce.amount_usd IS NULL)::int AS unconverted,
-             -- A direct bill was only ever its OWN client's money: it is
-             -- missing from that client's tannarx alone.
-             bool_and(ce.allocation_basis = 'direct_to_client') AS direct_only,
-             coalesce(array_agg(DISTINCT ce.client_id) FILTER (WHERE ce.allocation_basis = 'direct_to_client'), '{}') AS direct_clients
+             count(*) FILTER (WHERE ce.amount_usd IS NULL)::int AS unconverted
         FROM cost_entries ce
        WHERE ce.batch_id IN (SELECT DISTINCT r.batch_id FROM rides r WHERE r.batch_id <> ${batchId}::uuid AND r.departed_at IS NOT NULL)
          AND ce.scope = 'batch'
          AND (${noShareSql(sql`ce`)} OR (ce.voided_at IS NULL AND ce.amount_usd IS NULL))
-       GROUP BY ce.batch_id
+       GROUP BY ce.batch_id,
+                ce.allocation_basis = 'direct_to_client',
+                CASE WHEN ce.allocation_basis = 'direct_to_client' THEN ce.client_id END
     ),
     fr AS MATERIALIZED (
       SELECT r.batch_id, r.box_id, r.departed_at FROM rides r WHERE r.batch_id IN (SELECT batch_id FROM held)
@@ -2275,21 +2282,42 @@ export async function carriedUnsplitBills(batchId: string): Promise<CarriedUnspl
            (fr.departed_at <= m.at AND (m.prev_at IS NULL OR fr.departed_at > m.prev_at))
            OR (m.upto IS NOT NULL AND fr.departed_at > m.at AND fr.departed_at <= m.upto)
          )
+    ),
+    -- Whose cartons of THIS truck rode each feeding truck, and on which leg:
+    -- one row per (feeding truck, client), so the pairing above runs ONCE
+    -- however many parts a feeding truck holds (joined part by part, it ran
+    -- once per part — measured, twice the time with two).
+    rode AS MATERIALIZED (
+      SELECT f.feed_id, rc.client_id, min(f.leg) AS leg
+        FROM fed f
+        JOIN boxes fbx ON fbx.id = f.box_id
+        JOIN receipt_lots rl ON rl.id = fbx.lot_id
+        JOIN receipts rc ON rc.id = rl.receipt_id
+       GROUP BY f.feed_id, rc.client_id
+    ),
+    -- The parts THIS truck's cargo carries: the truck-wide one when any of
+    -- its cartons rode the feeding truck on that leg, a direct one only when
+    -- its OWN client's carton did. Judged per part, never per truck: beside
+    -- a held bill — or another client's direct one — a fee for a client who
+    -- is not aboard is not this page's money (review of the tests: judged
+    -- per truck, it was added to the dollars and the no-rate count).
+    part AS (
+      SELECT h.batch_id, h.usd, h.unconverted, min(r.leg) AS leg,
+             array_agg(r.client_id) FILTER (
+               WHERE r.client_id IS NOT NULL AND (NOT h.direct OR r.client_id = h.own_client)
+             ) AS client_ids
+        FROM held h
+        JOIN rode r ON r.feed_id = h.batch_id
+       GROUP BY h.batch_id, h.direct, h.own_client, h.usd, h.unconverted
+      HAVING NOT h.direct OR bool_or(r.client_id = h.own_client)
     )
-    SELECT h.batch_id, fb.code, fb.origin_warehouse_id, fb.dest_warehouse_id, h.usd, h.unconverted,
-           min(f.leg) AS leg,
-           coalesce(array_agg(DISTINCT rc.client_id) FILTER (
-             WHERE rc.client_id IS NOT NULL AND (NOT h.direct_only OR rc.client_id = ANY (h.direct_clients))
-           ), '{}') AS client_ids
-      FROM held h
-      JOIN batches fb ON fb.id = h.batch_id
-      JOIN fed f ON f.feed_id = h.batch_id
-      JOIN boxes fbx ON fbx.id = f.box_id
-      JOIN receipt_lots rl ON rl.id = fbx.lot_id
-      JOIN receipts rc ON rc.id = rl.receipt_id
-     GROUP BY h.batch_id, fb.code, fb.origin_warehouse_id, fb.dest_warehouse_id, fb.departed_at, h.usd, h.unconverted,
-              h.direct_only, h.direct_clients
-    HAVING NOT h.direct_only OR bool_or(rc.client_id = ANY (h.direct_clients))
+    SELECT p.batch_id, fb.code, fb.origin_warehouse_id, fb.dest_warehouse_id,
+           sum(p.usd) AS usd, sum(p.unconverted)::int AS unconverted, min(p.leg) AS leg,
+           coalesce((SELECT array_agg(DISTINCT c) FROM part q, unnest(q.client_ids) AS c WHERE q.batch_id = p.batch_id), '{}')
+             AS client_ids
+      FROM part p
+      JOIN batches fb ON fb.id = p.batch_id
+     GROUP BY p.batch_id, fb.code, fb.origin_warehouse_id, fb.dest_warehouse_id, fb.departed_at
      ORDER BY fb.departed_at, fb.code
   `)) as unknown as {
     batch_id: string;

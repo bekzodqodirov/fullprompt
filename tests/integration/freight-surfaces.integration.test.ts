@@ -604,6 +604,66 @@ describe('15 — a direct bill on a feeding truck is its OWN client’s money', 
     // tannarx is missing, so the truck is not reported at all.
     expect(await carriedUnsplitBills(t2b.id)).toEqual([]);
   });
+
+  it('judged per BILL: beside another bill, a direct bill for a client who is not aboard adds nothing to the page’s count', async () => {
+    const H = await mintClient('XH');
+    const L = await mintClient('XL');
+    const M = await mintClient('XM');
+    const h = await mintLot(H, 600, 1);
+    const l = await mintLot(L, 600, 1);
+    const m = await mintLot(M, 600, 1);
+    const t1 = await mintTruck([...h.boxIds, ...l.boxIds, ...m.boxIds], {
+      from: whW,
+      to: whK,
+      departedAt: '1648-11-20T08:00:00Z',
+    });
+    const t2 = await mintTruck([...h.boxIds, ...l.boxIds], { from: whK, to: whD, departedAt: '1648-11-22T08:00:00Z' });
+    const t2b = await mintTruck(m.boxIds, { from: whK, to: whE, departedAt: '1648-11-23T08:00:00Z' });
+    await bill(t1.id, 45, { currency: NO_RATE, allocationBasis: 'direct_to_client', clientId: L });
+    await bill(t1.id, 35, { currency: NO_RATE, allocationBasis: 'direct_to_client', clientId: M });
+    const one = (clientIds: string[]) => [
+      {
+        batchId: t1.id,
+        code: t1.code,
+        originWarehouseId: whW,
+        destWarehouseId: whK,
+        leg: 'prev',
+        usd: null,
+        unconverted: 1,
+        clientIds,
+      },
+    ];
+    // Each truck is told of ITS client's bill alone — one, not both.
+    expect(await carriedUnsplitBills(t2.id)).toEqual(one([L]));
+    expect(await carriedUnsplitBills(t2b.id)).toEqual(one([M]));
+  });
+
+  it('judged per BILL: beside a held bill, a direct fee for a client who never rode the truck adds nothing to the page’s dollars', async () => {
+    const H = await mintClient('YH');
+    const L = await mintClient('YL');
+    const N = await mintClient('YN');
+    const h = await mintLot(H, 600, 1);
+    const l = await mintLot(L, 1, 3); // light: HOLDS the freight bill
+    const cargo = [...h.boxIds, ...l.boxIds];
+    const t1 = await mintTruck(cargo, { from: whW, to: whK, departedAt: '1648-11-25T08:00:00Z' });
+    const t2 = await mintTruck(cargo, { from: whK, to: whD, departedAt: '1648-11-27T08:00:00Z' });
+    expect((await bill(t1.id, 100)).verdict?.kind).toBe('held');
+    // Typed on the wrong truck: N has no carton on T1, so the fee lands on no
+    // box — the Balans's «void it» money, and never anybody's tannarx here.
+    expect((await bill(t1.id, 25, { allocationBasis: 'direct_to_client', clientId: N })).verdict?.kind).toBe('nothing');
+    expect(await carriedUnsplitBills(t2.id)).toEqual([
+      {
+        batchId: t1.id,
+        code: t1.code,
+        originWarehouseId: whW,
+        destWarehouseId: whK,
+        leg: 'prev',
+        usd: 100,
+        unconverted: 0,
+        clientIds: [H, L].sort(),
+      },
+    ]);
+  });
 });
 
 describe('16 — trucks that have not left: the «bo’linmagan» list names them beside the departed table', () => {
