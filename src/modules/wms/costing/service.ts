@@ -29,7 +29,7 @@ import { tashkentDayStart } from '../../platform/time/tashkent';
 import { costCashDay, mergedFrom } from '../accounting/cash-rules';
 import { latestTxDate } from '../finance/dates';
 import { exceedsRowUsd, nativeAmount } from '../finance/money-bounds';
-import { allocateEntry, toUsd, type AllocBox, type AllocationBasis } from './engine';
+import { ALLOCATION_BASES, allocateEntry, toUsd, type AllocBox, type AllocationBasis } from './engine';
 import { declaredFilter, riderCtesSql, riderFilter, riderLoad, riderWithoutShareSql } from '../batches/riders';
 import { bearsPriceSql, internalLegSql } from '../batches/internal';
 import { CUSTOMS_CODES_SETTING, parseCustomsCodes } from '../calc/customs-codes';
@@ -121,7 +121,7 @@ export const costEntrySchema = z.object({
   amount: nativeAmount(),
   currency: z.string().length(3).toUpperCase(),
   costDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  allocationBasis: z.enum(['weight', 'volume', 'chargeable', 'boxes', 'direct_to_client']),
+  allocationBasis: z.enum(ALLOCATION_BASES),
   clientId: z.string().uuid().optional(),
   /**
    * Somebody else settled this — the customs firm's own account, the
@@ -1116,6 +1116,7 @@ export async function recomputeEntry(costEntryId: string): Promise<void> {
     const pool: AllocBox[] = dims.map((d) => ({
       ...d,
       chargeableKg: Math.max(d.weightKg, d.volumeM3 * factor),
+      freightWeight: 0,
     }));
     const shares = allocateEntry(
       {

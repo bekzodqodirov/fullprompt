@@ -7,6 +7,7 @@ const box = (boxId: string, kg: number, m3: number, clientId: string | null = 'C
   weightKg: kg,
   volumeM3: m3,
   chargeableKg: Math.max(kg, m3 * 167),
+  freightWeight: 0,
 });
 
 describe('allocation engine (spec 6.9)', () => {
@@ -154,5 +155,23 @@ describe('allocation engine (spec 6.9)', () => {
         box('a', 1, 1),
       ]),
     ).toEqual([]);
+  });
+
+  it("'freight' splits by each box's freight weight, never by kilos or by count", () => {
+    // Two boxes of equal kilos and m³ whose tariff value is 3:1 (his example's
+    // shape): the weight basis would split them 50/50, the freight basis 3:1.
+    const pool = [
+      { ...box('a', 100, 1), freightWeight: 300 },
+      { ...box('b', 100, 1), freightWeight: 100 },
+    ];
+    expect(allocateEntry({ amountUsd: 400, basis: 'freight' }, pool).map((s) => s.amountUsd)).toEqual([300, 100]);
+    expect(allocateEntry({ amountUsd: 400, basis: 'weight' }, pool).map((s) => s.amountUsd)).toEqual([200, 200]);
+  });
+
+  it("a freight weight nobody could price is NO split, never «a smaller share»", () => {
+    for (const bad of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const pool = [{ ...box('a', 100, 1), freightWeight: 300 }, { ...box('b', 100, 1), freightWeight: bad }];
+      expect(allocateEntry({ amountUsd: 400, basis: 'freight' }, pool), String(bad)).toEqual([]);
+    }
   });
 });

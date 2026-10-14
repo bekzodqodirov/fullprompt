@@ -170,6 +170,7 @@ export async function costOrphanedByVoid(
       const pool = dims.map((d) => ({
         ...d,
         chargeableKg: Math.max(d.weightKg, d.volumeM3 * factor),
+        freightWeight: 0,
       }));
       // Any positive amount answers «is there anything to split onto».
       const shares = allocateEntry(

@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 import { addCostEntryAction, voidCostEntryAction } from '@/app/(protected)/costs/actions';
 import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 import { latestTxDate } from '@/modules/wms/finance/dates';
+import { ALLOCATION_BASES, type AllocationBasis } from '@/modules/wms/costing/engine';
 import { UnmergeButton } from '@/app/(protected)/accounting/xarajat-kassa/unmerge-button';
 import { TwinGapNote, TwinWarning } from '@/components/twin-warning';
 import type { TwinGap, TwinView } from '@/modules/wms/accounting/twins';
@@ -48,7 +49,7 @@ export interface CostKept {
   currency: string;
   costDate: string;
   payer: string;
-  basis: (typeof BASES)[number];
+  basis: AllocationBasis;
 }
 
 export interface CostTypeOption {
@@ -61,7 +62,9 @@ export interface ClientOption {
   clientCode: string;
 }
 
-const BASES = ['weight', 'volume', 'chargeable', 'boxes', 'direct_to_client'] as const;
+// The ONE list lives in the pure engine (allocation-basis-vocabulary fence).
+// 'freight' is offered only where `offeredBases` says so — never here.
+const BASES = ALLOCATION_BASES.filter((b) => b !== 'freight');
 
 /**
  * The payer/kassa refusals in words (0101). A literal list, not a key built
@@ -206,9 +209,9 @@ export function CostPanel({
   );
   const [costDate, setCostDate] = useState(initial?.costDate ?? today);
   // The factory truck is split by m³ (owner's B5a) — the default, not a lock.
-  const scopeBasis: (typeof BASES)[number] = scope === 'pickup' ? 'volume' : 'weight';
+  const scopeBasis: AllocationBasis = scope === 'pickup' ? 'volume' : 'weight';
   // A direct bill is a one-off: it never carries over (§8.5).
-  const [basis, setBasis] = useState<(typeof BASES)[number]>(
+  const [basis, setBasis] = useState<AllocationBasis>(
     initial?.basis && initial.basis !== 'direct_to_client' ? initial.basis : scopeBasis,
   );
   const [clientId, setClientId] = useState('');
@@ -435,7 +438,7 @@ export function CostPanel({
             aria-label={t('basis')}
             className="input"
             value={basis}
-            onChange={(e) => setBasis(e.target.value as (typeof BASES)[number])}
+            onChange={(e) => setBasis(e.target.value as AllocationBasis)}
           >
             {BASES.map((b) => (
               <option key={b} value={b}>

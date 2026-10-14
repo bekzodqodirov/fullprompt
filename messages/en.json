@@ -1219,7 +1219,8 @@
       "volume": "by volume",
       "chargeable": "by chargeable weight",
       "boxes": "by number of boxes",
-      "direct_to_client": "directly to the client"
+      "direct_to_client": "directly to the client",
+      "freight": "by the freight tariff"
     },
     "typesTitle": "Expense types",
     "typeName": "Type name",

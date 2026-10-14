@@ -1219,7 +1219,8 @@
       "volume": "按体积",
       "chargeable": "按计费重量",
       "boxes": "按箱数",
-      "direct_to_client": "直接归客户"
+      "direct_to_client": "直接归客户",
+      "freight": "按运费价目表"
     },
     "typesTitle": "费用类型",
     "typeName": "类型名称",
