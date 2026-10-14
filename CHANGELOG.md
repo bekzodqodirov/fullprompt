@@ -62,6 +62,7 @@ Bo'linmagan (⚠) yo'lkira mijozlarning tannarxiga kirmaydi, shuning uchun u quy
 
 - **«Rastamojka turlari» sozlamasi hech qachon o'qilmagan.** Bu ro'yxatni o'zgartirsangiz ham, tizim har doim faqat «customs» turini rastamojka deb hisoblardi. Endi siz yozgan ro'yxat o'qiladi. Siz uni o'zgartirmagan bo'lsangiz, hech narsa o'zgarmaydi.
 - **«Narx» varag'i telefonda kengayib ketardi.** Egasi noma'lum prixodning uzun markirovkasi (bo'shliqsiz 40+ harf) qatorni sindirmasdi va telefon butun sahifani kichraytirib qo'yardi. Endi markirovka qatorga sig'adi.
+- **«Yuk tannarxi» hisoboti ham telefonda kengayib ketardi** — uzun mijoz ismlari qatorga bo'linmasdi. Endi ism keyingi qatorga o'tadi.
 
 ### 8. Tekshiruvda topilib tuzatilganlar
 

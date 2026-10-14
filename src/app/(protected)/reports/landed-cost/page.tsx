@@ -133,7 +133,10 @@ export default async function LandedCostReportPage({
           </div>
         </>
       ) : (
-        <div className="card !p-0">
+        // The names WRAP: `truncate` (nowrap) inside an auto-layout table
+        // makes the column as wide as the longest name, and a phone then
+        // zooms the whole page out (#400) — measured 407 px at 360.
+        <div className="card overflow-x-auto !p-0">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-line-strong bg-surface-sunken text-left text-xs uppercase text-ink-500">
@@ -146,11 +149,14 @@ export default async function LandedCostReportPage({
               {clientRows.map((row) => (
                 <tr key={keyOf(row)} className="border-b border-line last:border-0 hover:bg-surface-sunken">
                   <td className="p-2">
-                    <Link href={`/reports/landed-cost?clientId=${keyOf(row)}`} className="flex items-baseline gap-2">
+                    <Link
+                      href={`/reports/landed-cost?clientId=${keyOf(row)}`}
+                      className="flex min-w-0 flex-wrap items-baseline gap-x-2"
+                    >
                       {row.clientId ? (
                         <>
                           <span className="font-mono font-extrabold text-brand-700">{row.clientCode}</span>
-                          <span className="truncate text-ink-700">{row.clientName}</span>
+                          <span className="min-w-0 text-ink-700 [overflow-wrap:anywhere]">{row.clientName}</span>
                         </>
                       ) : (
                         <span className="font-semibold text-warn" data-testid="landed-unclaimed">

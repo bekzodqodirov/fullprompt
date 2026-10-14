@@ -2986,8 +2986,8 @@ on a same-day pair (#166).
 ## Yo'lkira tarifi bo'yicha taqsimlash — his 1a 2c 3a 4a 5a 6 (2026-10-14; migration 0132 `cost_freight_basis` — ledger must reach 133; spec `docs/YOLKIRA-TAQSIMOT.md`)
 
 1364. **His six answers, as decisions, and the twin threshold he left to me.**
-«1a 2c 3a 4a 5a 6 — 1 kub 10 kgdan kam to'g'ri keladigan bo'lsa ogohlantirsin,
-qolgani 1 kub uchun 100 kgdan kam tarifda ketaversin». (1a) the grain is each
+«1a 2c 3a 4a 5a 6 1kub 10kgdan kam tpgri keladgan bolsa ogohlantirsin,
+qolgani 1kub uchun 100 kgdan kam tarifda ketaversin» (verbatim). (1a) the grain is each
 client's whole cargo on the truck, an unclaimed prixod a group of its own, and
 inside a group the split is by m³; (2c) every warehouse carries a tariff COLUMN
 a person writes, and a truck reads its ORIGIN warehouse's column — never
@@ -3231,4 +3231,9 @@ truck a carton was found back from; `heldFreightRiddenBy(boxIds)` asks the
 bill's own riders (`riderRowsSql`). Refuted and recorded: a link from each
 note to its trucks (the sentence is true; the Balans line already links),
 and a wider spelling fence (no second spelling exists). 4 red proofs.
-
+Found by the round's own SCREENSHOT, not by a test: /reports/landed-cost's
+client table pushed the document to 407 px at 360 (#400 — the phone zooms
+the page out). Pre-existing: `truncate` is nowrap, and inside an
+auto-layout table a nowrap cell is as wide as its longest name. The names
+wrap now (`[overflow-wrap:anywhere]`) inside an `overflow-x-auto` card;
+re-measured 360/360 and 1280/1280 on all ten screens of the round.
