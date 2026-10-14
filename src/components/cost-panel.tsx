@@ -40,6 +40,15 @@ export interface CostEntryView {
   mergedExpenseId?: string | null;
 }
 
+/** What one bill leaves for the next on the general entry page (his 5a). */
+export interface CostKept {
+  typeId: string;
+  currency: string;
+  costDate: string;
+  payer: string;
+  basis: (typeof BASES)[number];
+}
+
 export interface CostTypeOption {
   id: string;
   code: string;
@@ -111,6 +120,11 @@ export function CostPanel({
   tillOptions = [],
   today,
   canUnmerge = false,
+  afterSave = 'close',
+  initial,
+  defaultTypeCode,
+  onKept,
+  onBusy,
 }: {
   scope: 'batch' | 'receipt' | 'crate' | 'pickup';
   targetId: string;
@@ -151,24 +165,62 @@ export function CostPanel({
    * server passes it; the door refuses anybody else anyway.
    */
   canUnmerge?: boolean;
+  /**
+   * `'again'` — the general entry page (SARFLAR §2, his 5a «one bill at a
+   * time; the form stays open»): the form opens on mount and stays open
+   * after a save, clearing only the amount, the kassa amount and the note.
+   * The truck tab keeps `'close'`.
+   */
+  afterSave?: 'close' | 'again';
+  /** What the previous bill kept (type, currency, date, payer, basis) — carried across a truck switch. */
+  initial?: Partial<CostKept>;
+  /** The type a fresh panel proposes, by its fixed code (the entry page: `freight`). */
+  defaultTypeCode?: string;
+  /** Told after every save what is kept for the next bill. */
+  onKept?: (kept: CostKept) => void;
+  /** Told while a save is in flight, so the page can hold the truck picker still. */
+  onBusy?: (busy: boolean) => void;
 }) {
   const t = useTranslations('costing');
   const tc = useTranslations('common');
   const router = useRouter();
-  const [adding, setAdding] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const again = afterSave === 'again';
+  const [adding, setAdding] = useState(again);
+  const [busy, setBusyState] = useState(false);
+  const setBusy = (value: boolean) => {
+    setBusyState(value);
+    onBusy?.(value);
+  };
   const [error, setError] = useState<string | null>(null);
-  const [typeId, setTypeId] = useState(costTypes[0]?.id ?? '');
+  const [saved, setSaved] = useState(false);
+  // A kept type must still be offered on this truck's list; a code default
+  // only when it is active.
+  const keptType = initial?.typeId && costTypes.some((type) => type.id === initial.typeId) ? initial.typeId : undefined;
+  const codeType = defaultTypeCode ? costTypes.find((type) => type.code === defaultTypeCode)?.id : undefined;
+  const [typeId, setTypeId] = useState(keptType ?? codeType ?? costTypes[0]?.id ?? '');
   const [amount, setAmount] = useState('');
-  const [currency, setCurrency] = useState(defaultCurrency);
-  const [costDate, setCostDate] = useState(today);
+  const [currency, setCurrency] = useState(
+    initial?.currency && currencies.includes(initial.currency) ? initial.currency : defaultCurrency,
+  );
+  const [costDate, setCostDate] = useState(initial?.costDate ?? today);
   // The factory truck is split by m³ (owner's B5a) — the default, not a lock.
-  const [basis, setBasis] = useState<(typeof BASES)[number]>(scope === 'pickup' ? 'volume' : 'weight');
+  const scopeBasis: (typeof BASES)[number] = scope === 'pickup' ? 'volume' : 'weight';
+  // A direct bill is a one-off: it never carries over (§8.5).
+  const [basis, setBasis] = useState<(typeof BASES)[number]>(
+    initial?.basis && initial.basis !== 'direct_to_client' ? initial.basis : scopeBasis,
+  );
   const [clientId, setClientId] = useState('');
   // ONE «who paid» choice (0101): our money with no kassa said yet (the
   // accountant's queue), a kassa, or a counterparty — never two, which is
-  // also the database's cost_entries_payer_check.
-  const [payer, setPayer] = useState('');
+  // also the database's cost_entries_payer_check. A kept payer must still
+  // be offered here.
+  const keptPayer =
+    initial?.payer &&
+    (tillOptions.some((option) => `till:${option.id}` === initial.payer) ||
+      partnerOptions.some((option) => `partner:${option.id}` === initial.payer))
+      ? initial.payer
+      : '';
+  const [payer, setPayer] = useState(keptPayer);
   const [tillAmount, setTillAmount] = useState('');
   const [note, setNote] = useState('');
   // «Bu pul allaqachon yozilgan» (SARFLAR §3): the server's answer instead
@@ -183,6 +235,7 @@ export function CostPanel({
   async function submit(twinAck?: string) {
     setBusy(true);
     setError(null);
+    setSaved(false);
     try {
       const res = await addCostEntryAction({
         twinAck,
@@ -206,10 +259,17 @@ export function CostPanel({
         setTwins(res.twins);
       } else if (res.ok) {
         setTwins(null);
-        setAdding(false);
+        setAdding(again);
         setAmount('');
         setTillAmount('');
         setNote('');
+        const nextBasis = basis === 'direct_to_client' ? scopeBasis : basis;
+        if (basis === 'direct_to_client') {
+          setBasis(scopeBasis);
+          setClientId('');
+        }
+        setSaved(again);
+        onKept?.({ typeId, currency, costDate, payer, basis: nextBasis });
         router.refresh();
       } else {
         setTwins(null);
@@ -444,6 +504,11 @@ export function CostPanel({
           {error && (
             <p role="alert" className="text-sm font-semibold text-bad">
               {error}
+            </p>
+          )}
+          {saved && !error && !twins && (
+            <p className="text-sm font-semibold text-good" data-testid="cost-saved">
+              ✅ {tc('saved')}
             </p>
           )}
           {twins && (

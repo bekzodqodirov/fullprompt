@@ -8,6 +8,7 @@ import { maySeeTillNames } from '../costing/cost-sight';
 import { isStaffPartner, staffPartnerSql } from '../partners/staff';
 import { mayPickTill } from './till-door';
 import { MERGE_DAYS, restoredSql, sameMoney } from './cost-merge';
+import type { CompanyMoneySight } from '../finance/scope';
 import { commissionPayoutSql } from './payout-sql';
 
 /**
@@ -905,4 +906,116 @@ export function twinAckOf(input: unknown): string | null {
   if (!input || typeof input !== 'object') return null;
   const raw = (input as { twinAck?: unknown }).twinAck;
   return typeof raw === 'string' && /^[0-9a-f]{64}$/.test(raw) ? raw : null;
+}
+
+/** The staff rule for one partner id, in its own subquery so two payers can each ask it (#513). */
+const staffOf = (partnerId: SQL) => sql`EXISTS (SELECT 1 FROM partners
+    JOIN partner_types ON partner_types.id = partners.type_id
+   WHERE partners.id = ${partnerId} AND ${staffPartnerSql()})`;
+
+/**
+ * «🔁 N ta yozuv tekshirilmagan» — the map's count (§1.5, §8.3, J9): the
+ * distinct ROWS that have at least one twin nobody acknowledged, by the SAME
+ * `twinShape` the warning asks. A pair belongs to the period holding the
+ * later of its two dates, so a pair straddling two months is counted once.
+ * Rows, not pairs, so it reaches zero once he has answered them; a pair is
+ * answered when either row's create audit acknowledged the other.
+ *
+ * STATED, not counted: the sums (several bills against one expense) — the
+ * warning names those at the save, and a sum search over a whole period is a
+ * subset search. Uncapped in SQL; the prefilter is the warning's own arms.
+ */
+export async function uncheckedTwinRows(
+  _sight: CompanyMoneySight,
+  from: string,
+  to: string,
+): Promise<{ rows: number; pairs: { costId: string; expenseId: string; shape: TwinShape }[] }> {
+  const candidates = (await db.execute(sql`
+    SELECT ce.id AS cost_id, ce.amount AS c_amount, ce.currency AS c_currency, ce.amount_usd AS c_usd,
+           ce.cost_date::text AS cost_date, ce.account_id AS c_account, ce.account_amount AS c_account_amount,
+           ce.partner_id AS c_partner,
+           ${staffOf(sql`ce.partner_id`)} AS c_staff,
+           e.id AS expense_id, e.amount AS e_amount, e.currency AS e_currency, e.amount_usd AS e_usd,
+           e.expense_date::text AS expense_date, e.account_id AS e_account, e.partner_id AS e_partner,
+           c.cash AS e_cash,
+           ${staffOf(sql`e.partner_id`)} AS e_staff,
+           ${restored('e')} AS e_restored
+      FROM cost_entries ce
+      JOIN expenses e
+        ON ${expenseFences('e')}
+       AND greatest(ce.cost_date, e.expense_date) >= ${from}::date
+       AND greatest(ce.cost_date, e.expense_date) <= ${to}::date
+       AND (abs(e.expense_date - ce.cost_date) <= ${MERGE_DAYS}::int OR ${restored('e')})
+       AND ((e.currency = ce.currency AND e.amount = ce.amount)
+            OR (ce.account_id IS NOT NULL AND e.account_id = ce.account_id AND e.amount = ce.account_amount)
+            OR (e.currency <> ce.currency AND ce.amount_usd IS NOT NULL
+                AND abs(e.amount_usd - ce.amount_usd) <= greatest(abs(e.amount_usd) * ${PCT}, ${FLOOR}) + 0.005))
+      JOIN expense_categories c ON c.id = e.category_id
+     WHERE ce.voided_at IS NULL
+       AND ce.cost_date >= ${from}::date - ${MERGE_DAYS}::int AND ce.cost_date <= ${to}::date`)) as unknown as {
+    cost_id: string;
+    c_amount: string;
+    c_currency: string;
+    c_usd: string | null;
+    cost_date: string;
+    c_account: string | null;
+    c_account_amount: string | null;
+    c_partner: string | null;
+    c_staff: boolean;
+    expense_id: string;
+    e_amount: string;
+    e_currency: string;
+    e_usd: string;
+    expense_date: string;
+    e_account: string | null;
+    e_partner: string | null;
+    e_cash: boolean;
+    e_staff: boolean;
+    e_restored: boolean;
+  }[];
+  const pairs: { costId: string; expenseId: string; shape: TwinShape }[] = [];
+  for (const r of candidates) {
+    const shape = twinShape(
+      toTwinCost({
+        id: r.cost_id,
+        amount: r.c_amount,
+        currency: r.c_currency,
+        amount_usd: r.c_usd,
+        cost_date: r.cost_date,
+        account_id: r.c_account,
+        account_amount: r.c_account_amount,
+        partner_id: r.c_partner,
+        staff: r.c_staff,
+      } as CostRowRaw),
+      toTwinExpense({
+        id: r.expense_id,
+        amount: r.e_amount,
+        currency: r.e_currency,
+        amount_usd: r.e_usd,
+        expense_date: r.expense_date,
+        account_id: r.e_account,
+        partner_id: r.e_partner,
+        cash: r.e_cash,
+        staff: r.e_staff,
+        restored: r.e_restored,
+      } as ExpenseRowRaw),
+    );
+    if (shape) pairs.push({ costId: r.cost_id, expenseId: r.expense_id, shape });
+  }
+  if (pairs.length === 0) return { rows: 0, pairs: [] };
+  const ids = [...new Set(pairs.flatMap((p) => [p.costId, p.expenseId]))];
+  const acks = (await db.execute(sql`
+    SELECT entity_id, after->'twinAck' AS ack FROM audit_log
+     WHERE action = 'create' AND entity_type IN ('cost_entry', 'expense')
+       AND entity_id IN (${sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `)})
+       AND after ? 'twinAck'`)) as unknown as { entity_id: string; ack: unknown }[];
+  const acked = new Map<string, Set<string>>();
+  for (const a of acks) {
+    const list = Array.isArray(a.ack) ? a.ack.filter((x): x is string => typeof x === 'string') : [];
+    acked.set(a.entity_id, new Set([...(acked.get(a.entity_id) ?? []), ...list]));
+  }
+  const open = pairs.filter(
+    (p) => !acked.get(p.costId)?.has(p.expenseId) && !acked.get(p.expenseId)?.has(p.costId),
+  );
+  return { rows: new Set(open.flatMap((p) => [p.costId, p.expenseId])).size, pairs: open };
 }

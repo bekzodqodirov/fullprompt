@@ -142,6 +142,8 @@ const GATES: Record<string, (a: Actor) => boolean> = {
   '/finance': (a) => has(a, 'finance.view', 'finance.manage'),
   '/kontragentlar': (a) => seesAllMoney(a),
   '/accounting/expenses': (a) => accounting(a) && has(a, 'finance.expenses'),
+  // accounting/sarflar/page.tsx: `companyMoneySight` (docs/SARFLAR.md §1).
+  '/accounting/sarflar': (a) => accounting(a) && seesCompanyMoney(a),
   '/accounting/accounts': (a) => accounting(a) && has(a, 'finance.expenses'),
   '/accounting/xarajat-kassa': (a) => accounting(a) && mayPickTill(a.permissions),
   '/finance/narxsiz': (a) => mayReadUnpricedList(a.permissions),

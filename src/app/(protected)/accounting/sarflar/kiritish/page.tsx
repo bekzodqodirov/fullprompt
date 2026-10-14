@@ -1,0 +1,159 @@
+import Link from 'next/link';
+import { redirect } from 'next/navigation';
+import { getTranslations } from 'next-intl/server';
+import { getActor } from '@/modules/platform/rbac/authorize';
+import { companyMoneySight } from '@/modules/wms/finance/scope';
+import { batchCostSheet } from '@/modules/wms/costing/service';
+import { costSightFor, tillView } from '@/modules/wms/costing/cost-sight';
+import { mayPickTill } from '@/modules/wms/accounting/till-door';
+import { mayEnterBatchCost } from '@/modules/wms/costing/cost-door';
+import {
+  batchForCostEntry,
+  costPanelOptions,
+  myCostsToday,
+  trucksForCostEntry,
+} from '@/modules/wms/costing/cost-entry';
+import { batchTabHref, mayOpenBatchCard } from '@/modules/wms/batches/card-door';
+import { tashkentDay, tashkentMonthStart } from '@/modules/platform/time/tashkent';
+import { PageHeader } from '@/components/ui/page';
+import { CostEntryDesk } from './desk';
+
+/**
+ * «Partiyaga xarajat» from the general money page (docs/SARFLAR.md §2, his
+ * «partiyalarga bolayotgan rasxodni obshiy joydan ham kirgazish»): pick a
+ * truck, write its bill, pick the next. The door is the map's AND the truck
+ * bill's own grant — `companyMoneySight` with `costs.enter_batch`; the save
+ * is the truck card's own `addCostEntryAction`, so nothing about the money
+ * path differs (the twin warning included). No `<Suspense>` (#1242).
+ */
+export default async function SarflarEntryPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; p?: string }>;
+}) {
+  const actor = await getActor();
+  if (!actor) redirect('/login');
+  const sight = companyMoneySight(actor);
+  if (!sight) redirect('/');
+  if (!actor.permissions.has('costs.enter_batch')) redirect('/accounting/sarflar');
+  const t = await getTranslations('sarflar');
+  const params = await searchParams;
+  const q = (params.q ?? '').slice(0, 60);
+  const today = tashkentDay();
+  const monthStart = tashkentMonthStart();
+
+  const [picker, chosen, mine] = await Promise.all([
+    trucksForCostEntry(actor, q),
+    batchForCostEntry(actor, params.p),
+    myCostsToday(actor.id, today),
+  ]);
+
+  let panel = null;
+  let head: { id: string; code: string; card: boolean } | null = null;
+  if (chosen.kind === 'ok') {
+    const mayEnter = mayEnterBatchCost(actor, chosen.batch);
+    const [options, sheet] = await Promise.all([
+      costPanelOptions(actor, chosen.batch.id, { mayEnter }),
+      batchCostSheet(chosen.batch.id, costSightFor(actor)),
+    ]);
+    head = { id: chosen.batch.id, code: chosen.batch.code, card: mayOpenBatchCard(actor, chosen.batch) };
+    panel = {
+      targetId: chosen.batch.id,
+      entries: sheet.entries.map(({ entry, typeName, clientCode, partnerName, accountName }) => ({
+        id: entry.id,
+        typeName,
+        amount: entry.amount,
+        currency: entry.currency,
+        amountUsd: entry.amountUsd,
+        costDate: entry.costDate,
+        allocationBasis: entry.allocationBasis,
+        note: entry.note,
+        clientCode,
+        partnerName,
+        ...tillView(actor.permissions, { accountId: entry.accountId, accountName, mergedExpenseId: entry.mergedExpenseId }),
+      })),
+      costTypes: options.types,
+      currencies: options.currencies,
+      clientOptions: options.clients,
+      defaultCurrency: options.currencies.includes('CNY') ? 'CNY' : 'USD',
+      defaultTypeCode: 'freight',
+      canVoid: actor.permissions.has('costs.enter_batch'),
+      canAdd: mayEnter,
+      today,
+      canUnmerge: mayPickTill(actor.permissions),
+      tillOptions: options.tills,
+      partnerOptions: options.partners,
+    };
+  }
+
+  return (
+    <div className="mx-auto max-w-5xl space-y-4">
+      <PageHeader
+        icon="wallet"
+        title={t('entryTitle')}
+        subtitle={t('entrySubtitle')}
+        back={{ href: '/accounting/sarflar', label: t('title') }}
+      />
+      {chosen.kind === 'not_found' && (
+        <p role="alert" className="card text-sm font-semibold text-bad" data-testid="entry-not-found">
+          {t('truckNotFound')}
+        </p>
+      )}
+      {chosen.kind === 'cancelled' && (
+        <p role="alert" className="card text-sm font-semibold text-bad" data-testid="entry-cancelled">
+          {t('truckCancelled', { code: chosen.code })}
+        </p>
+      )}
+      {head && (
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1" data-testid="entry-head">
+          <h2 className="font-mono text-lg font-bold">{head.code}</h2>
+          {head.card && (
+            <>
+              <Link href={`/batches/${head.id}`} className="text-sm underline">
+                {t('openCard')} →
+              </Link>
+              <Link href={batchTabHref(head.id, 'xarajat')} className="text-sm underline">
+                {t('openGrid')} →
+              </Link>
+            </>
+          )}
+        </div>
+      )}
+      <CostEntryDesk
+        q={q}
+        trucks={picker.rows}
+        total={picker.total}
+        chosenId={chosen.kind === 'ok' ? chosen.batch.id : null}
+        panel={panel}
+      />
+      {mine.length > 0 && (
+        <section className="card space-y-1" data-testid="entry-today">
+          <h2 className="text-sm font-bold uppercase text-ink-500">{t('todayMine')}</h2>
+          <ul className="divide-y divide-line text-sm">
+            {mine.map((row) => (
+              <li key={row.id} className="flex flex-wrap items-baseline gap-x-2 py-1.5 [overflow-wrap:anywhere]">
+                <span className="font-mono">{row.batchCode ?? '—'}</span>
+                <span>{row.typeName}</span>
+                <span className="ml-auto font-mono tabular-nums">
+                  {row.amount} {row.currency}
+                </span>
+                <span className="text-xs text-ink-500">{row.costDate}</span>
+                {/* A bill dated outside «Bu oy» is not on the map's default
+                    view — say where it is, or it reads as lost. */}
+                {row.costDate > today && <span className="text-xs text-warn">{t('tomorrowDated')}</span>}
+                {row.costDate < monthStart && (
+                  <Link
+                    href={`/accounting/sarflar?from=${row.costDate.slice(0, 7)}-01&to=${row.costDate}`}
+                    className="text-xs text-warn underline"
+                  >
+                    {t('outOfPeriod', { month: row.costDate.slice(0, 7) })} →
+                  </Link>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </div>
+  );
+}

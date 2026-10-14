@@ -58,6 +58,13 @@ const MONEY_READERS = [
   'cashReconciliation',
   'pnlMonthParts',
   'pnlParts',
+  // «Pul qayerga ketdi» (docs/SARFLAR.md §8.4): each takes the
+  // CompanyMoneySight brand as a required argument too.
+  'spendMap',
+  'spendTrucks',
+  'spendRegister',
+  'uncheckedTwinRows',
+  'buildSpendXlsx',
   'cashMonthParts',
   'lossesInPeriod',
   'buildPnlXlsx',
@@ -99,6 +106,9 @@ const GATES = [
   /moneyHidden\(/,
   /pricingSight\(/,
   /seesCompanyMoney\(/,
+  // The branded mint of the same predicate (finance/scope.ts) — what a page
+  // holding a CompanyMoneySight-typed reader asks.
+  /companyMoneySight\(/,
   /\.has\('finance\.(reports|expenses)'\)/,
   /authorize\('finance\.(reports|expenses)'/,
   /mayPickTill\(/,
