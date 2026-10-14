@@ -33,9 +33,7 @@ import {
 import { priceControlOnReceipt } from '../deals/service';
 import { stampCalcLink } from '../calc/link';
 import { computeLotTotals } from './math';
-import { recomputeAll } from '../costing/service';
 import { costOrphanedByVoid, lockCostsTouchingLots } from '../costing/void-guard';
-import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { MAX_NATIVE_AMOUNT } from '../finance/money-bounds';
 import { receiptHasCompensation } from '../finance/compensation-follow';
 import { claimReceivedNotice } from '../notices/client-claims';
@@ -145,6 +143,8 @@ export class ReceiptError extends Error {
       | 'on_behalf_forbidden'
       | 'receiver_required'
       | 'receiver_invalid'
+      // A posted cost (docs/SARFLAR.md §8.2): the door is closed.
+      | 'extra_costs_retired'
       | ReceivedDayRefusal,
     message?: string,
   ) {
@@ -188,6 +188,13 @@ export async function confirmReceipt(
     const lots = await confirmedLotSummaries(input.receiptId);
     return { receiptId: existing.id, number: existing.number!, lots, alreadyConfirmed: true };
   }
+
+  // The receipt's own money door is CLOSED (docs/SARFLAR.md §8.2): no screen
+  // has sent a cost since #1045, and a hand-built post was the one way left
+  // to write a cargo cost past the cost door — its grant, its payer rules,
+  // the truck lock and the twin warning. Money the warehouse spent goes
+  // through the «Rasxod xabari»; a prixod's cost through its own card.
+  if (input.extraCosts.length > 0) throw new ReceiptError('extra_costs_retired');
 
   const warehouse = await db.query.warehouses.findFirst({
     where: eq(warehouses.id, input.warehouseId),
@@ -380,20 +387,6 @@ export async function confirmReceipt(
       });
     }
 
-    for (const cost of input.extraCosts) {
-      await tx.insert(costEntries).values({
-        scope: 'receipt',
-        receiptId: receipt!.id,
-        costTypeId: cost.costTypeId,
-        amount: cost.amount.toString(),
-        currency: cost.currency,
-        // The office's day (R5): in UTC a receipt before 05:00 was yesterday's cost.
-        costDate: tashkentDay(),
-        note: cost.note || null,
-        enteredBy: ctx.actorId!,
-      });
-    }
-
     await writeAudit(tx, { ...ctx, warehouseId: warehouse.id }, {
       entityType: 'receipt',
       entityId: receipt!.id,
@@ -524,20 +517,6 @@ export async function confirmReceipt(
     return { receiptId: receipt!.id, number: number, lots: summaries };
   });
 
-  // The wizard's extra costs were inserted inside the transaction with no
-  // dollar figure and no allocation — and nothing afterwards ever converted
-  // them: «kurs yo'q» on the receipt and $0 in every tannarx for ever. The
-  // recompute runs HERE, after the commit (it reads settings and rates on
-  // the pool, #714), and a failure is a late conversion — never a failed
-  // receipt. The nightly sweep finds it either way: a row that never
-  // converted is `unconverted`, and one that converted but lost its split is
-  // `orphaned` (each recompute is one transaction now, so that second shape
-  // is only old data).
-  if (input.extraCosts.length > 0) {
-    await recomputeAll({ receiptId: result.receiptId }).catch((err) =>
-      console.error('[receipt] extra-cost recompute failed', result.receiptId, err),
-    );
-  }
   // The factory truck's cost re-splits over the cargo it has brought so far —
   // after the commit, for the same reason; the nightly sweep is the repair.
   if (pickupId) {

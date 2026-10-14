@@ -14,7 +14,10 @@ import postgres from 'postgres';
  *     and only the amount cleared (5a);
  *  3. the expense form asks the same question the other way round, and the
  *     typed amount survives the warning (the form posts from onSubmit, B5);
- *  4. cleanup, a final TEST (round 57's `afterAll` lie).
+ *  4. a filter link on the map (a soft navigation) leaves the register's
+ *     form showing the filter it applied — an uncontrolled select kept the
+ *     old one and «Qo'llash» posted it back (the second review's screen-1);
+ *  5. cleanup, a final TEST (round 57's `afterAll` lie).
  *
  * The spec mints its OWN truck and its own expense on an existing demo kassa
  * (a kassa of its own would sit in every later picker — configuration, #183)
@@ -145,6 +148,16 @@ test('the expense form asks the same question, and the typed amount survives it'
   await page.getByTestId('twin-back').click();
   await expect(page.getByTestId('twin-warning')).toBeHidden();
   await expect(page.getByTestId('expense-amount')).toHaveValue(AMOUNT);
+});
+
+test('a filter link on the map keeps the register’s form in step — no stale select to post back', async ({ page }) => {
+  await login(page, ACCOUNTANT);
+  await page.goto('/accounting/sarflar');
+  // A soft navigation to the same page: the bar's link only changes the query.
+  await page.getByTestId('spend-bar-batch').getByRole('link').click();
+  await expect(page).toHaveURL(/joy=batch/);
+  await expect(page.getByTestId('sarf-register').locator('select[name="joy"]')).toHaveValue('batch');
+  await fitsThePhone(page);
 });
 
 test('cleanup: this run’s bills, its expense and its truck are gone', async () => {

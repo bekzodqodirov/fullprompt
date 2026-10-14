@@ -7,8 +7,8 @@ import { addCostEntryAction, voidCostEntryAction } from '@/app/(protected)/costs
 import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 import { latestTxDate } from '@/modules/wms/finance/dates';
 import { UnmergeButton } from '@/app/(protected)/accounting/xarajat-kassa/unmerge-button';
-import { TwinWarning } from '@/components/twin-warning';
-import type { TwinView } from '@/modules/wms/accounting/twins';
+import { TwinGapNote, TwinWarning } from '@/components/twin-warning';
+import type { TwinGap, TwinView } from '@/modules/wms/accounting/twins';
 
 export interface CostEntryView {
   id: string;
@@ -229,6 +229,9 @@ export function CostPanel({
   // of a save. Every input above stays as typed, so «Baribir saqlash» posts
   // the same values with the token the server computed.
   const [twins, setTwins] = useState<TwinView | null>(null);
+  // A clean save's «kurs yo'q — solishtirib bo'lmadi» (§8.1): kept outside
+  // the form, which a one-shot panel closes on success.
+  const [gap, setGap] = useState<TwinGap | null>(null);
   const partnerId = payer.startsWith('partner:') ? payer.slice(8) : '';
   const accountId = payer.startsWith('till:') ? payer.slice(5) : '';
   const till = tillOptions.find((option) => option.id === accountId);
@@ -238,6 +241,7 @@ export function CostPanel({
     setBusy(true);
     setError(null);
     setSaved(false);
+    setGap(null);
     try {
       const res = await addCostEntryAction({
         twinAck,
@@ -261,6 +265,7 @@ export function CostPanel({
         setTwins(res.twins);
       } else if (res.ok) {
         setTwins(null);
+        setGap(res.unchecked ?? null);
         setAdding(again);
         setAmount('');
         setTillAmount('');
@@ -377,6 +382,7 @@ export function CostPanel({
           {error}
         </p>
       )}
+      <TwinGapNote gap={gap} />
       {canAdd && !adding && (
         <button
           type="button"

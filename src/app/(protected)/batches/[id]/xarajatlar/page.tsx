@@ -117,6 +117,9 @@ export default async function BatchCostGridPage({ params }: { params: Promise<{ 
           currencies={currencyCodes}
           clientOptions={options.clients}
           defaultCurrency={currencyCodes.includes('CNY') ? 'CNY' : 'USD'}
+          // A truck's bill is the road unless said otherwise (§8.5) — the same
+          // default /kiritish proposes for the same truck.
+          defaultTypeCode="freight"
           canVoid={canEnter}
           canAdd={mayAdd}
           today={tashkentDay()}

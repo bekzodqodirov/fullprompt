@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useRef, useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
 import { latestTxDate } from '@/modules/wms/finance/dates';
-import { TwinWarning } from '@/components/twin-warning';
+import { TwinGapNote, TwinWarning } from '@/components/twin-warning';
 import { addExpenseAction, type AccountingFormState } from '../actions';
 
 interface Option {
@@ -263,6 +263,7 @@ export function ExpenseForm({
         {pending ? tc('loading') : t('save')}
       </button>
       {state.ok && <p className="text-sm font-semibold text-good">✅ {tc('saved')}</p>}
+      {state.ok && <TwinGapNote gap={state.unchecked} />}
       {state.error && (
         <p className="text-sm font-semibold text-bad">
           {state.error === 'fx_missing'

@@ -40,8 +40,10 @@ import {
   mustWarn,
   TwinWarning,
   twinAckOf,
+  twinGap,
   twinsForExpense,
   twinView,
+  type TwinGap,
   type TwinView,
 } from '@/modules/wms/accounting/twins';
 import {
@@ -62,6 +64,8 @@ export interface AccountingFormState {
    * posts `twins.ackToken` back as `twinAck`.
    */
   twins?: TwinView;
+  /** A clean save that could not compare everything (§8.1, `no_rate`) — said, never hidden. */
+  unchecked?: TwinGap;
 }
 
 /**
@@ -141,7 +145,8 @@ export async function addExpenseAction(
   const rawRequest = String(formData.get('requestId') ?? '');
   const requestId = /^[0-9a-f-]{36}$/i.test(rawRequest) ? rawRequest : null;
   const posted = twinAckOf({ twinAck: formData.get('twinAck') });
-  return run('finance.expenses', async (ctx, who) => {
+  let gap: TwinGap | undefined;
+  const state = await run('finance.expenses', async (ctx, who) => {
     // A kassa or a payer is MANDATORY on a cash kind (U13, owner's A) — asked
     // before the rasxod xabari's claim, so a refusal leaves it open.
     if (await needsKassaOrPayer(parsed.data.categoryId, parsed.data)) {
@@ -163,6 +168,7 @@ export async function addExpenseAction(
       },
     );
     if (mustWarn(twins, posted)) throw new TwinWarning(twins!);
+    gap = twinGap(twins);
     const ack = { twinAck: twins?.ids.length ? twins.ids : undefined };
     if (!requestId) {
       await addExpense(parsed.data, ctx, ack);
@@ -179,6 +185,7 @@ export async function addExpenseAction(
     await finishExpenseRequest(requestId, expenseId, ctx);
     await enqueue(JOB_PROCESS_EVENTS, {}).catch(() => {});
   });
+  return state.ok && gap ? { ...state, unchecked: gap } : state;
 }
 
 /**

@@ -14,9 +14,11 @@ import { mayPickTill } from '@/modules/wms/accounting/till-door';
 import { recurringArrears } from '@/modules/wms/accounting/recurring';
 import { openExpenseRequestTotals } from '@/modules/wms/accounting/expense-requests';
 import { uncheckedTwinRows } from '@/modules/wms/accounting/twins';
+import { TwinAck } from './twin-ack';
 import { receiptsReadableBy } from '@/modules/wms/receipts/read-door';
 import { batchTabHref, mayOpenBatchCard, mayOpenBatchCosts, mayOpenBatchPricing } from '@/modules/wms/batches/card-door';
 import {
+  COST_PAYERS,
   costTargetHref,
   payerNameFor,
   readSpendFilters,
@@ -80,6 +82,7 @@ const TWIN_SHAPE = {
   mergeable: 'twinShape.mergeable',
 } as const;
 const TRUCKS_SHOWN = 10;
+const TWIN_PAIRS_SHOWN = 30;
 const TRUCKS_PAGE = 50;
 
 export default async function SarflarPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
@@ -373,7 +376,13 @@ export default async function SarflarPage({ searchParams }: { searchParams: Prom
                   {chip && <span className="chip text-xs" data-testid="sarf-truck-chip">{t(CHIP[chip])}</span>}
                   <span className="ml-auto font-mono tabular-nums">{money(row.periodUsd, row.periodUnconverted)}</span>
                   {unconverted(row.periodUnconverted)}
-                  <span className="text-xs text-ink-500">{t('allTime', { usd: usd(row.allTimeUsd) })}</span>
+                  {/* The all-time Σ obeys the period's rule: a sum over rate-less
+                      bills is «kurs yo'q», and a partial one says what it left out. */}
+                  <span className="text-xs text-ink-500">
+                    {row.allTimeUnconverted > 0 && Math.abs(row.allTimeUsd) >= 0.005
+                      ? t('allTimePartial', { usd: money(row.allTimeUsd, 0), count: row.allTimeUnconverted })
+                      : t('allTime', { usd: money(row.allTimeUsd, row.allTimeUnconverted) })}
+                  </span>
                   <Link href={filterHref({ partiya: row.id })} className="text-xs underline">
                     {t('rows')}
                   </Link>
@@ -412,7 +421,17 @@ export default async function SarflarPage({ searchParams }: { searchParams: Prom
         <ul className="mt-2 divide-y divide-line text-sm">
           {map.warehouses.map((row) => (
             <li key={row.key || 'none'} className="flex flex-wrap justify-between gap-x-2 py-1.5 [overflow-wrap:anywhere]">
-              <span>{row.key ? <Link href={filterHref({ sklad: row.key })} className="underline">{row.label}</Link> : t('noWarehouse')}</span>
+              <span>
+                {!row.key ? (
+                  t('noWarehouse')
+                ) : expenseRows || row.costRows > 0 ? (
+                  <Link href={filterHref({ sklad: row.key })} className="underline">
+                    {row.label}
+                  </Link>
+                ) : (
+                  row.label
+                )}
+              </span>
               <span className="font-mono tabular-nums">
                 {money(row.usd, row.unconverted)} {unconverted(row.unconverted)}
               </span>
@@ -461,9 +480,15 @@ export default async function SarflarPage({ searchParams }: { searchParams: Prom
             return (
               <li key={row.key} className="flex flex-wrap justify-between gap-x-2 py-1.5" data-testid={`sarf-payer-${row.key}`}>
                 <span>
-                  <Link href={filterHref({ payer: row.key })} className="underline">
-                    {label}
-                  </Link>
+                  {/* Where the register would show nothing — an expense-only
+                      bucket for a reader without expense rows — plain text (§8.4). */}
+                  {expenseRows || row.costRows > 0 ? (
+                    <Link href={filterHref({ payer: row.key })} className="underline">
+                      {label}
+                    </Link>
+                  ) : (
+                    label
+                  )}
                   {payer === 'kassa' && (
                     <>
                       {' '}
@@ -502,13 +527,49 @@ export default async function SarflarPage({ searchParams }: { searchParams: Prom
         {twins.rows > 0 && (
           <details data-testid="sarf-twins">
             <summary className="cursor-pointer font-semibold text-warn">🔁 {t('twinsCount', { count: twins.rows })}</summary>
-            <ul className="mt-1 space-y-1 text-xs">
-              {twins.pairs.slice(0, 30).map((pair) => (
-                <li key={`${pair.costId}:${pair.expenseId}`} className="[overflow-wrap:anywhere]">
-                  {t(TWIN_SHAPE[pair.shape])}
+            <p className="mt-1 text-xs text-ink-500">{t('twinsHint')}</p>
+            <ul className="mt-1 divide-y divide-line text-xs">
+              {twins.pairs.slice(0, TWIN_PAIRS_SHOWN).map((pair) => (
+                <li
+                  key={`${pair.cost.id}:${pair.expense.id}`}
+                  className="space-y-0.5 py-1.5 [overflow-wrap:anywhere]"
+                  data-testid="sarf-twin-pair"
+                >
+                  <p>
+                    <span className="font-semibold">{t('bookCost')}</span> · {pair.cost.date} ·{' '}
+                    <span className="font-mono tabular-nums">
+                      {pair.cost.amount} {pair.cost.currency}
+                    </span>{' '}
+                    · {pair.cost.label}
+                    {pair.cost.where && <> · {pair.cost.where}</>}
+                  </p>
+                  {/* The expense side is the expense book's: a salary or a
+                      rent line is not printed to a reader its register hides
+                      expense rows from (§8.4). */}
+                  <p>
+                    <span className="font-semibold">{t('bookExpense')}</span> · {pair.expense.date}
+                    {expenseRows && (
+                      <>
+                        {' '}
+                        ·{' '}
+                        <span className="font-mono tabular-nums">
+                          {pair.expense.amount} {pair.expense.currency}
+                        </span>{' '}
+                        · {pair.expense.label}
+                      </>
+                    )}
+                  </p>
+                  <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-ink-700">
+                    {pair.approx && <span className="rounded bg-warn/15 px-1 font-semibold text-warn">≈ {t('twinApprox')}</span>}
+                    <span>{t(TWIN_SHAPE[pair.shape])}</span>
+                    {kassaSide && <TwinAck costId={pair.cost.id} expenseId={pair.expense.id} />}
+                  </p>
                 </li>
               ))}
             </ul>
+            {twins.pairs.length > TWIN_PAIRS_SHOWN && (
+              <p className="text-xs text-ink-500">{t('twinsMore', { count: twins.pairs.length - TWIN_PAIRS_SHOWN })}</p>
+            )}
             {kassaSide && (
               <Link href="/accounting/xarajat-kassa" className="text-xs underline">
                 {t('queueLink')} →
@@ -544,7 +605,11 @@ export default async function SarflarPage({ searchParams }: { searchParams: Prom
         </div>
         <details className="card" open={Object.values(filters).some((v) => v)}>
           <summary className="cursor-pointer text-sm font-semibold">{t('filters')}</summary>
-          <form method="get" className="mt-2 grid gap-2 sm:grid-cols-2">
+          {/* Keyed by the filters it shows: a filter LINK on this page is a soft
+              navigation that keeps the page mounted, and an uncontrolled select
+              keeps its old value — «Qo'llash» then posted a filter the page no
+              longer showed, or dropped the one it did (the review's screen-1). */}
+          <form key={JSON.stringify(filters)} method="get" className="mt-2 grid gap-2 sm:grid-cols-2">
             <input type="hidden" name="from" value={period.from} />
             <input type="hidden" name="to" value={period.to} />
             {filters.batchId && <input type="hidden" name="partiya" value={filters.batchId} />}
@@ -591,7 +656,9 @@ export default async function SarflarPage({ searchParams }: { searchParams: Prom
             </select>
             <select name="payer" defaultValue={filters.payer ?? ''} aria-label={t('fPayer')} className="input">
               <option value="">{t('fPayer')}: {t('any')}</option>
-              {(Object.keys(PAYER_LABEL) as SpendPayer[])
+              {/* A reader without expense rows is offered the cost book's payers
+                  alone — an expense-only bucket would filter to nothing. */}
+              {(expenseRows ? (Object.keys(PAYER_LABEL) as SpendPayer[]) : [...COST_PAYERS])
                 .filter((payer) => payer !== 'own' || seesStaff)
                 .map((payer) => (
                   <option key={payer} value={payer}>

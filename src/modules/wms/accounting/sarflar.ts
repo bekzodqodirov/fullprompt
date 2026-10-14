@@ -181,6 +181,12 @@ export interface SpendSlice {
   usd: number;
   /** Rows with no dollar figure yet — printed as «kurs yo'q», never $0. */
   unconverted: number;
+  /**
+   * Cargo-cost rows in the slice. A reader without expense rows gets a
+   * register of cost rows only, so a slice with none is plain text for him —
+   * a link would open an empty list under a bucket that says $1,250 (§8.4).
+   */
+  costRows: number;
 }
 
 export interface SpendMap {
@@ -211,20 +217,25 @@ export async function spendMap(
   const [byKind, byPlace, byPayer, byType] = await Promise.all([
     db.execute(sql`
       WITH s AS (${rows})
-      SELECT book, kind, coalesce(sum(usd), 0) AS usd, count(*) FILTER (WHERE usd IS NULL)::int AS unconverted
-        FROM s GROUP BY book, kind`) as unknown as Promise<{ book: string; kind: string; usd: string; unconverted: number }[]>,
-    db.execute(sql`
-      WITH s AS (${rows})
-      SELECT s.wh_id, w.name, coalesce(sum(s.usd), 0) AS usd, count(*) FILTER (WHERE s.usd IS NULL)::int AS unconverted
-        FROM s LEFT JOIN warehouses w ON w.id = s.wh_id
-       WHERE s.kind <> 'batch'
-       GROUP BY s.wh_id, w.name`) as unknown as Promise<
-      { wh_id: string | null; name: string | null; usd: string; unconverted: number }[]
+      SELECT book, kind, coalesce(sum(usd), 0) AS usd, count(*) FILTER (WHERE usd IS NULL)::int AS unconverted,
+             count(*) FILTER (WHERE book = 'cost')::int AS cost_rows
+        FROM s GROUP BY book, kind`) as unknown as Promise<
+      { book: string; kind: string; usd: string; unconverted: number; cost_rows: number }[]
     >,
     db.execute(sql`
       WITH s AS (${rows})
-      SELECT payer, coalesce(sum(usd), 0) AS usd, count(*) FILTER (WHERE usd IS NULL)::int AS unconverted
-        FROM s GROUP BY payer`) as unknown as Promise<{ payer: string; usd: string; unconverted: number }[]>,
+      SELECT s.wh_id, w.name, coalesce(sum(s.usd), 0) AS usd, count(*) FILTER (WHERE s.usd IS NULL)::int AS unconverted,
+             count(*) FILTER (WHERE s.book = 'cost')::int AS cost_rows
+        FROM s LEFT JOIN warehouses w ON w.id = s.wh_id
+       WHERE s.kind <> 'batch'
+       GROUP BY s.wh_id, w.name`) as unknown as Promise<
+      { wh_id: string | null; name: string | null; usd: string; unconverted: number; cost_rows: number }[]
+    >,
+    db.execute(sql`
+      WITH s AS (${rows})
+      SELECT payer, coalesce(sum(usd), 0) AS usd, count(*) FILTER (WHERE usd IS NULL)::int AS unconverted,
+             count(*) FILTER (WHERE book = 'cost')::int AS cost_rows
+        FROM s GROUP BY payer`) as unknown as Promise<{ payer: string; usd: string; unconverted: number; cost_rows: number }[]>,
     db.execute(sql`
       WITH s AS (${rows})
       SELECT type_id, type_name, coalesce(sum(usd), 0) AS usd, count(*) FILTER (WHERE usd IS NULL)::int AS unconverted
@@ -235,18 +246,18 @@ export async function spendMap(
   const kindRows = [...byKind];
   const kinds = SPEND_KINDS.map((kind) => {
     const row = kindRows.find((r) => r.book === 'cost' && r.kind === kind);
-    return { key: kind, label: null, usd: num(row?.usd), unconverted: row?.unconverted ?? 0 };
+    return { key: kind, label: null, usd: num(row?.usd), unconverted: row?.unconverted ?? 0, costRows: row?.cost_rows ?? 0 };
   });
   const expenseRow = kindRows.find((r) => r.book === 'expense');
   const direct = num(kinds.reduce((sum, k) => sum + k.usd, 0));
   const truck = kinds.find((k) => k.key === 'batch')!;
   const warehouses = [...byPlace]
-    .map((r) => ({ key: r.wh_id ?? '', label: r.name, usd: num(r.usd), unconverted: r.unconverted }))
+    .map((r) => ({ key: r.wh_id ?? '', label: r.name, usd: num(r.usd), unconverted: r.unconverted, costRows: r.cost_rows }))
     .sort((a, b) => Number(a.key === '') - Number(b.key === '') || b.usd - a.usd || b.unconverted - a.unconverted);
   const payerRows = [...byPayer];
   const payers = PAYERS.map((payer) => {
     const row = payerRows.find((r) => r.payer === payer);
-    return { key: payer, label: null, usd: num(row?.usd), unconverted: row?.unconverted ?? 0 };
+    return { key: payer, label: null, usd: num(row?.usd), unconverted: row?.unconverted ?? 0, costRows: row?.cost_rows ?? 0 };
   }).filter((slice) => slice.usd !== 0 || slice.unconverted > 0);
   return {
     direct,
@@ -257,7 +268,7 @@ export async function spendMap(
     trucksUnconverted: truck.unconverted,
     payers,
     types: [...byType]
-      .map((r) => ({ key: r.type_id, label: r.type_name, usd: num(r.usd), unconverted: r.unconverted }))
+      .map((r) => ({ key: r.type_id, label: r.type_name, usd: num(r.usd), unconverted: r.unconverted, costRows: 1 }))
       .sort((a, b) => b.usd - a.usd || b.unconverted - a.unconverted),
   };
 }
@@ -274,6 +285,8 @@ export interface SpendTruck {
   periodUsd: number;
   periodUnconverted: number;
   allTimeUsd: number;
+  /** The truck's live bills with no dollar figure, ever — «kurs yo'q», never $0 (§8.3). */
+  allTimeUnconverted: number;
 }
 
 /**
@@ -294,6 +307,7 @@ export async function spendTrucks(
            coalesce(sum(ce.amount_usd) FILTER (WHERE ${inPeriod}), 0) AS period_usd,
            (count(*) FILTER (WHERE ${inPeriod} AND ce.amount_usd IS NULL))::int AS period_unconverted,
            coalesce(sum(ce.amount_usd), 0) AS all_usd,
+           (count(*) FILTER (WHERE ce.amount_usd IS NULL))::int AS all_unconverted,
            count(*) OVER ()::int AS total
       FROM cost_entries ce
       JOIN batches b ON b.id = ce.batch_id
@@ -314,6 +328,7 @@ export async function spendTrucks(
     period_usd: string;
     period_unconverted: number;
     all_usd: string;
+    all_unconverted: number;
     total: number;
   }[];
   const list = [...rows];
@@ -330,6 +345,7 @@ export async function spendTrucks(
       periodUsd: num(r.period_usd),
       periodUnconverted: r.period_unconverted,
       allTimeUsd: num(r.all_usd),
+      allTimeUnconverted: r.all_unconverted,
     })),
   };
 }
@@ -413,8 +429,14 @@ export function readSpendFilters(
     params.joy && KIND_VALUES.has(params.joy) && (params.joy !== 'expense' || opts.expenseRows)
       ? (params.joy as SpendKind | 'expense')
       : null;
+  // A reader without expense rows reads the cost book's payers alone: an
+  // expense-only bucket («Hisob yozuvi», «kassasiz xarajat») is a filter onto
+  // rows his register never shows.
   const payer =
-    params.payer && PAYER_VALUES.has(params.payer) && (params.payer !== 'own' || opts.seesStaff)
+    params.payer &&
+    PAYER_VALUES.has(params.payer) &&
+    (params.payer !== 'own' || opts.seesStaff) &&
+    (opts.expenseRows || (COST_PAYERS as readonly string[]).includes(params.payer))
       ? (params.payer as SpendPayer)
       : null;
   return {

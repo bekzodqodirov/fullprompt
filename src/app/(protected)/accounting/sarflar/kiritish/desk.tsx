@@ -94,7 +94,13 @@ export function CostEntryDesk({
                   <span className="font-mono font-semibold">{truck.code}</span>
                   {truck.status === 'closed' && <span className="text-xs font-semibold text-warn">⚠ {t('closed')}</span>}
                   {truck.entries === 0 && <span className="chip text-xs">{t('noCosts')}</span>}
-                  <span className="ml-auto font-mono tabular-nums text-ink-700">${usd(truck.usd)}</span>
+                  {/* «xarajatsiz» says it already; money that all waits for a
+                      rate is «kurs yo'q», never $0.00 (§8.3). */}
+                  {truck.entries > 0 && (
+                    <span className="ml-auto font-mono tabular-nums text-ink-700">
+                      {Math.abs(truck.usd) < 0.005 && truck.unconverted > 0 ? t('noRateShort') : `$${usd(truck.usd)}`}
+                    </span>
+                  )}
                   {truck.unconverted > 0 && (
                     <span className="rounded bg-warn/15 px-1 text-xs font-semibold text-warn">{t('noRate', { count: truck.unconverted })}</span>
                   )}
@@ -109,7 +115,9 @@ export function CostEntryDesk({
           {trucks.length === 0 && <li className="p-3 text-sm text-ink-500">{t('pickerEmpty')}</li>}
         </ul>
       </section>
-      <section className="min-w-0">
+      {/* On a phone the chosen truck's form comes FIRST — under a list of
+          twenty trucks it was a scroll away from the tap that chose it. */}
+      <section className={`min-w-0 ${chosenId ? 'order-first lg:order-none' : ''}`} data-testid="entry-panel">
         {panel && chosenId ? (
           <CostPanel
             key={chosenId}

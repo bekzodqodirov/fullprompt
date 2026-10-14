@@ -768,7 +768,8 @@
       "seed": "初始数据",
       "delete": "删除了",
       "share": "分享了",
-      "comment": "留言了"
+      "comment": "留言了",
+      "twin_check": "标记为两笔不同的付款"
     },
     "field": "字段",
     "before": "原值",
@@ -1791,6 +1792,7 @@
     "paymentNoTill": "款项进入哪个现金账户由会计登记。",
     "voidNeedsAccountant": "只有会计或管理员可以作废此项。",
     "clientNotAboard": "该客户在此车上没有货物——请在货物实际所乘车次上定价",
+    "batchCancelledRefused": "该批次已取消，无法记录价格。",
     "txTruck": "哪个车次",
     "txTruckUnpriced": "未定价",
     "txCardOnlyHint": "若未选择车次或交易，此价格不覆盖任何货物——交付时需要许可",
@@ -5621,7 +5623,10 @@
     "saveAnyway": "仍然保存",
     "back": "返回",
     "mergeLink": "费用现金",
-    "requestHint": "如果这笔申请已记为货物费用：在该费用上标记「自己垫付」，再用「拒绝」并写明原因关闭申请。"
+    "requestHint": "如果这笔申请已记为货物费用：在该费用上标记「自己垫付」，再用「拒绝」并写明原因关闭申请。",
+    "approx": "按美元相近——币种不同",
+    "uncheckedSelf": "⚠ 该金额没有汇率——无法与其他币种的支出比较。",
+    "uncheckedOthers": "⚠ {count} 条货物费用没有汇率——无法与之比较。"
   },
   "sarflar": {
     "title": "钱花到哪里了",
@@ -5662,7 +5667,8 @@
       "continuation": "续程",
       "tracked": "💰 利润核算"
     },
-    "allTime": "累计 ${usd}",
+    "allTime": "累计 {usd}",
+    "allTimePartial": "累计 {usd} + {count} 条无汇率",
     "rows": "明细",
     "notTannarx": "成本",
     "allTrucks": "全部（{count}）",
@@ -5726,7 +5732,7 @@
     "closed": "已关闭",
     "noCosts": "无费用",
     "formerName": "原名 {name}",
-    "pickFirst": "请先在左侧选择车次，再录入费用。",
+    "pickFirst": "请先选择车次，再录入费用。",
     "entryTitle": "录入车次费用",
     "entrySubtitle": "一张单据保存一次；表单保持打开",
     "truckNotFound": "未找到车次。",
@@ -5735,6 +5741,15 @@
     "openGrid": "入库单表格",
     "todayMine": "我今天录入的",
     "tomorrowDated": "日期为明天",
-    "outOfPeriod": "不在本期——{month}"
+    "outOfPeriod": "不在本期——{month}",
+    "twinsHint": "请逐对查看：同一笔付款记了两次——请更正；是两笔不同的付款——请标记「不同的付款」。",
+    "twinApprox": "按美元相近（币种不同）",
+    "twinsMore": "还有 {count} 对。",
+    "twinAck": {
+      "button": "不同的付款",
+      "forbidden": "由会计标记。",
+      "notFound": "未找到记录——请刷新页面。",
+      "notATwin": "这两条记录已不再配对——请刷新页面。"
+    }
   }
 }

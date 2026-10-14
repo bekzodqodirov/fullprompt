@@ -21,6 +21,10 @@ export type AuditAction =
   // (docs/TELEGRAM-TOPSHIRIQ.md §4): its own verb, because the history reads
   // it as words between two people and not as a change to the task.
   | 'comment'
+  // «✓ Ikki xil pul» on the spending map (docs/SARFLAR.md): a person read a
+  // twin pair and said it is two payments. Its own verb, because it changes
+  // no field — it records an answer to a question the system asked.
+  | 'twin_check'
   | 'seed';
 
 export interface AuditContext {

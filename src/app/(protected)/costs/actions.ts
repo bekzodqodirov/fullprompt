@@ -27,6 +27,8 @@ import {
   mustWarn,
   TwinWarning,
   twinAckOf,
+  twinGap,
+  type TwinGap,
   twinsForCost,
   twinsForGrid,
   twinView,
@@ -44,6 +46,8 @@ export interface CostActionResult {
    * shows the twins and «Baribir saqlash» posts `twins.ackToken` back.
    */
   twins?: TwinView;
+  /** A clean save that could not compare everything (§8.1, `no_rate`) — said, never hidden. */
+  unchecked?: TwinGap;
 }
 
 const readerOf = (actor: { id: string; permissions: ReadonlySet<string> }): ReaderSight => ({
@@ -129,6 +133,7 @@ export async function addCostEntryAction(input: unknown): Promise<CostActionResu
   const refused = await payerRefusal(parsed.data, actor.permissions);
   if (refused) return { ok: false, error: refused };
   const meta = await requestMeta();
+  let gap: TwinGap | undefined;
   try {
     // «Bu pul allaqachon yozilganmi?» — after the target's door and the
     // payer's, before anything is written (§8.2). Null for a reader who is
@@ -136,12 +141,13 @@ export async function addCostEntryAction(input: unknown): Promise<CostActionResu
     const twins = await twinsForCost(readerOf(actor), await costCandidateFrom(parsed.data), { warehouseId });
     if (mustWarn(twins, twinAckOf(input))) return { ok: false, twins: twinView(twins!) };
     await addCostEntry(parsed.data, { actorId: actor.id, ...meta }, { twinAck: twins?.ids.length ? twins.ids : undefined });
+    gap = twinGap(twins);
   } catch (err) {
     if (err instanceof CostError) return { ok: false, error: err.code };
     throw err;
   }
   revalidatePath(path);
-  return { ok: true };
+  return { ok: true, ...(gap ? { unchecked: gap } : {}) };
 }
 
 /**
@@ -172,6 +178,7 @@ export async function saveReceiptCostGridAction(input: unknown): Promise<CostAct
   const grid = parsed.data;
   const reader = readerOf(actor);
   const posted = twinAckOf(input);
+  let gridGap: TwinGap | undefined;
   let result;
   try {
     result = await addReceiptCostsBulk(
@@ -201,6 +208,7 @@ export async function saveReceiptCostGridAction(input: unknown): Promise<CostAct
           }
           const twins = await twinsForGrid(reader, cells, { warehouseId: batch.originWarehouseId });
           if (mustWarn(twins, posted)) throw new TwinWarning(twins!);
+          gridGap = twinGap(twins);
           return twins?.ids.length ? twins.ids : undefined;
         },
       },
@@ -216,7 +224,7 @@ export async function saveReceiptCostGridAction(input: unknown): Promise<CostAct
   revalidatePath(`/batches/${batch.id}/xarajatlar`);
   return result.error
     ? { ok: false, error: result.error, saved: result.saved }
-    : { ok: true, saved: result.saved };
+    : { ok: true, saved: result.saved, ...(gridGap ? { unchecked: gridGap } : {}) };
 }
 
 const voidSchema = z.object({

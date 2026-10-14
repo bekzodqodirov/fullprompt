@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import type { TwinLine, TwinView } from '@/modules/wms/accounting/twins';
+import type { TwinGap, TwinLine, TwinView } from '@/modules/wms/accounting/twins';
 
 /**
  * «⚠ Bu pul allaqachon yozilgan bo'lishi mumkin» (docs/SARFLAR.md §3, his
@@ -60,6 +60,13 @@ export function TwinWarning({
                 </span>
               )}
               {line.sum && <span className="text-ink-500">({t('sum')})</span>}
+              {/* Matched in dollars across two currencies — a likelier
+                  coincidence than an exact figure, so it says so. */}
+              {line.approx && (
+                <span className="rounded bg-warn/15 px-1 text-xs font-semibold text-warn" data-testid="twin-approx">
+                  ≈ {t('approx')}
+                </span>
+              )}
               {line.label && <span>{line.label}</span>}
               {line.where && <span className="text-ink-700">{line.where}</span>}
               {line.kassa && <span>🏦 {line.kassa}</span>}
@@ -89,6 +96,7 @@ export function TwinWarning({
         ))}
       </ul>
       {twins.more > 0 && <p className="text-xs text-ink-500">{t('more', { count: twins.more })}</p>}
+      <TwinGapNote gap={twins} />
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
@@ -103,6 +111,22 @@ export function TwinWarning({
           {t('back')}
         </button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * What the check could NOT compare (§8.1: `no_rate` = «cannot check», said in
+ * words, never hidden) — inside a warning, and on its own after a clean save,
+ * where it is the only sign the comparison did not run.
+ */
+export function TwinGapNote({ gap }: { gap: TwinGap | null | undefined }) {
+  const t = useTranslations('twins');
+  if (!gap || (!gap.unchecked && gap.uncheckedOthers === 0)) return null;
+  return (
+    <div className="space-y-0.5 text-xs font-semibold text-warn" data-testid="twin-gap">
+      {gap.unchecked && <p>{t('uncheckedSelf')}</p>}
+      {gap.uncheckedOthers > 0 && <p>{t('uncheckedOthers', { count: gap.uncheckedOthers })}</p>}
     </div>
   );
 }

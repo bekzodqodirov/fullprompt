@@ -768,7 +768,8 @@
       "seed": "boshlang'ich ma'lumotlar",
       "delete": "o‘chirdi",
       "share": "ulashdi",
-      "comment": "yozdi"
+      "comment": "yozdi",
+      "twin_check": "ikki xil pul deb belgiladi"
     },
     "field": "Maydon",
     "before": "Oldin",
@@ -1791,6 +1792,7 @@
     "paymentNoTill": "Pul qaysi kassaga tushganini buxgalter belgilaydi.",
     "voidNeedsAccountant": "Buni buxgalter yoki admin bekor qiladi.",
     "clientNotAboard": "Bu mijozning yuki bu mashinada yo‘q — narx yuk ketgan mashinaga qo‘yiladi",
+    "batchCancelledRefused": "Bu partiya bekor qilingan — unga narx yozilmaydi.",
     "txTruck": "Qaysi reys uchun",
     "txTruckUnpriced": "narx yo‘q",
     "txCardOnlyHint": "Reys ham, bitim ham tanlanmasa, bu narx hech qaysi yukni yopmaydi — yuk topshirishda ruxsat so‘raladi",
@@ -5621,7 +5623,10 @@
     "saveAnyway": "Baribir saqlash",
     "back": "Ortga",
     "mergeLink": "Xarajat kassasi",
-    "requestHint": "Bu xabar allaqachon yuk xarajatiga yozilgan bo'lsa: xarajatda «o'z pulidan» deb belgilang, xabarni esa «Rad etish» bilan sababini yozib yoping."
+    "requestHint": "Bu xabar allaqachon yuk xarajatiga yozilgan bo'lsa: xarajatda «o'z pulidan» deb belgilang, xabarni esa «Rad etish» bilan sababini yozib yoping.",
+    "approx": "dollarda yaqin — valyutasi boshqa",
+    "uncheckedSelf": "⚠ Bu summaning kursi yo'q — boshqa valyutadagi xarajatlar bilan solishtirib bo'lmadi.",
+    "uncheckedOthers": "⚠ {count} ta yuk xarajatining kursi yo'q — ular bilan solishtirib bo'lmadi."
   },
   "sarflar": {
     "title": "Pul qayerga ketdi",
@@ -5662,7 +5667,8 @@
       "continuation": "davomi",
       "tracked": "💰 foyda hisobi"
     },
-    "allTime": "hammasi ${usd}",
+    "allTime": "hammasi {usd}",
+    "allTimePartial": "hammasi {usd} + {count} ta kurs yo'q",
     "rows": "qatorlar",
     "notTannarx": "tannarx",
     "allTrucks": "Hammasi ({count})",
@@ -5726,7 +5732,7 @@
     "closed": "yopilgan",
     "noCosts": "xarajatsiz",
     "formerName": "oldingi nomi {name}",
-    "pickFirst": "Chapdan partiyani tanlang — keyin hisobini yozing.",
+    "pickFirst": "Avval partiyani tanlang — keyin hisobini yozing.",
     "entryTitle": "Partiyaga xarajat",
     "entrySubtitle": "Bitta hisob — bitta saqlash; forma ochiq qoladi",
     "truckNotFound": "Partiya topilmadi.",
@@ -5735,6 +5741,15 @@
     "openGrid": "Prixodlar jadvali",
     "todayMine": "Bugun men kiritganlar",
     "tomorrowDated": "ertangi sana bilan",
-    "outOfPeriod": "davrdan tashqari — {month}"
+    "outOfPeriod": "davrdan tashqari — {month}",
+    "twinsHint": "Har bir juftni ko'ring: bitta to'lov ikki marta yozilgan bo'lsa — tuzating; ikki xil to'lov bo'lsa — «Ikki xil pul» deb belgilang.",
+    "twinApprox": "dollarda yaqin (valyutasi boshqa)",
+    "twinsMore": "Yana {count} ta juft.",
+    "twinAck": {
+      "button": "Ikki xil pul",
+      "forbidden": "Buni buxgalter belgilaydi.",
+      "notFound": "Yozuv topilmadi — sahifani yangilang.",
+      "notATwin": "Bu yozuvlar endi juft emas — sahifani yangilang."
+    }
   }
 }

@@ -8,8 +8,8 @@ import { LightboxImg } from '@/components/lightbox-img';
 import { codeIdentity } from '@/modules/wms/labels/code-identity';
 import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 import { latestTxDate } from '@/modules/wms/finance/dates';
-import { TwinWarning } from '@/components/twin-warning';
-import type { TwinView } from '@/modules/wms/accounting/twins';
+import { TwinGapNote, TwinWarning } from '@/components/twin-warning';
+import type { TwinGap, TwinView } from '@/modules/wms/accounting/twins';
 
 export interface GridLotLine {
   letter: string | null;
@@ -123,6 +123,7 @@ export function ReceiptCostGrid({
   // written and every typed cell stays; «Baribir saqlash» re-posts the sheet
   // with the server's token.
   const [twins, setTwins] = useState<TwinView | null>(null);
+  const [gap, setGap] = useState<TwinGap | null>(null);
 
   // One reader for what a person typed (`parseTypedMoney`, the calc screen's):
   // «1,200» is a thousand two hundred and «1 200» is not NaN. What it cannot
@@ -221,9 +222,11 @@ export function ReceiptCostGrid({
       if (result.twins) {
         setTwins(result.twins);
         setMessage(null);
+        setGap(null);
         return;
       }
       setTwins(null);
+      setGap(result.unchecked ?? null);
       // Clear exactly what became an entry. A save that stopped part-way
       // keeps the rest typed, so the next press cannot write a landed cell
       // twice.
@@ -635,6 +638,7 @@ export function ReceiptCostGrid({
       {message?.kind === 'ok' && (
         <p className="text-sm font-semibold text-good">✅ {tc('saved')}</p>
       )}
+      {message?.kind === 'ok' && <TwinGapNote gap={gap} />}
       {message?.kind === 'error' && (
         <p role="alert" className="text-sm font-semibold text-bad">
           {message.saved > 0

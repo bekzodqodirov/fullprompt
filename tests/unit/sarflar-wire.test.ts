@@ -108,3 +108,55 @@ describe('the engine never asks about the reader', () => {
     expect(add).toMatch(/await writeAudit\(tx, ctx, \{\s*entityType: 'cost_entry'/);
   });
 });
+
+/**
+ * The second review's wiring (#1355-…): what a CLEAN save could not compare
+ * reaches the person on every door (§8.1 `no_rate`, the review's twins-3 —
+ * the flag was computed and then dropped on the success path), and the map's
+ * links ask the register they lead to.
+ */
+describe('«kurs yo’q — solishtirib bo’lmadi» reaches the screen on every door', () => {
+  const PANEL = read('src/components/cost-panel.tsx');
+  const GRID = read('src/app/(protected)/batches/[id]/receipt-cost-grid.tsx');
+  const EXPENSE_FORM = read('src/app/(protected)/accounting/expenses/expense-form.tsx');
+  const WARNING = read('src/components/twin-warning.tsx');
+
+  it('the cost form: the action returns the gap with ok, the panel keeps it outside the form a one-shot save closes', () => {
+    const add = body(COSTS, 'addCostEntryAction');
+    expect(add).toContain('gap = twinGap(twins);');
+    expect(add).toContain('return { ok: true, ...(gap ? { unchecked: gap } : {}) };');
+    expect(PANEL).toContain('setGap(res.unchecked ?? null);');
+    expect(PANEL).toContain('<TwinGapNote gap={gap} />');
+  });
+
+  it('the grid and the expense form say it after a clean save; a warning says it inside', () => {
+    const grid = body(COSTS, 'saveReceiptCostGridAction');
+    expect(grid).toContain('gridGap = twinGap(twins);');
+    expect(grid).toContain('unchecked: gridGap');
+    expect(GRID).toContain('setGap(result.unchecked ?? null);');
+    expect(GRID).toContain('<TwinGapNote gap={gap} />');
+    const expense = body(ACCOUNTING, 'addExpenseAction');
+    expect(expense).toContain('gap = twinGap(twins);');
+    expect(expense).toContain('return state.ok && gap ? { ...state, unchecked: gap } : state;');
+    expect(EXPENSE_FORM).toContain('<TwinGapNote gap={state.unchecked} />');
+    expect(WARNING).toContain('<TwinGapNote gap={twins} />');
+  });
+});
+
+describe('the map’s links ask the register they open', () => {
+  const MAP = read('src/app/(protected)/accounting/sarflar/page.tsx');
+
+  it('the register’s filter form is keyed by its filters, or a soft navigation leaves stale selects behind', () => {
+    expect(MAP).toContain('<form key={JSON.stringify(filters)} method="get"');
+  });
+
+  it('a payer or warehouse row is a link only where the register shows rows for this reader', () => {
+    expect(MAP).toContain('expenseRows || row.costRows > 0 ? (\n                    <Link href={filterHref({ payer: row.key })}');
+    expect(MAP).toContain('expenseRows || row.costRows > 0 ? (\n                  <Link href={filterHref({ sklad: row.key })}');
+  });
+
+  it('the truck tab proposes the road, the same default /kiritish proposes for the same truck', () => {
+    expect(read('src/app/(protected)/batches/[id]/xarajatlar/page.tsx')).toContain('defaultTypeCode="freight"');
+    expect(read('src/app/(protected)/accounting/sarflar/kiritish/page.tsx')).toContain("defaultTypeCode: 'freight'");
+  });
+});

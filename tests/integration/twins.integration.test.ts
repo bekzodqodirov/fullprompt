@@ -7,6 +7,8 @@ import { db, pgClient } from '@/modules/platform/db/client';
 import {
   auditLog,
   batches,
+  boxes,
+  clientTransactions,
   clients,
   costEntries,
   costTypes,
@@ -17,6 +19,7 @@ import {
   partnerTransactions,
   partnerTypes,
   partners,
+  receiptLots,
   receipts,
   users,
   warehouses,
@@ -24,14 +27,22 @@ import {
 import { addCostEntry, upsertFxRate } from '@/modules/wms/costing/service';
 import { addExpense, voidExpense } from '@/modules/wms/accounting/service';
 import {
+  ackTwinPair,
   costCandidateFrom,
   mustWarn,
+  twinGap,
+  twinShape,
   twinsForCost,
   twinsForExpense,
   twinsForGrid,
+  uncheckedTwinRows,
   type ReaderSight,
+  type TwinCost,
+  type TwinExpense,
 } from '@/modules/wms/accounting/twins';
 import { cancelBatch } from '@/modules/wms/scanning/unload';
+import { addTransaction } from '@/modules/wms/finance/service';
+import { companyMoneySight } from '@/modules/wms/finance/scope';
 
 /**
  * «Bu pul allaqachon yozilganmi?» (docs/SARFLAR.md §3 + §8) against a real
@@ -47,6 +58,9 @@ import { cancelBatch } from '@/modules/wms/scanning/unload';
 
 const STAMP = String(Date.now()).slice(-6);
 const CCY = 'QTW';
+/** A currency with NO rate at all — the «kurs yo'q» side. */
+const NO_RATE = 'QTN';
+const sight = companyMoneySight({ id: 'x', permissions: new Set(['finance.manage', 'finance.reports']) } as never)!;
 const DAY = '1640-03-10';
 let actorId = '';
 let costTypeId = '';
@@ -122,6 +136,7 @@ beforeAll(async () => {
     await db.insert(expenseCategories).values({ name: `Twin book ${STAMP}`, cash: false }).returning()
   )[0]!.id;
   await db.insert(currencies).values({ code: CCY, name: 'Twin test' }).onConflictDoNothing();
+  await db.insert(currencies).values({ code: NO_RATE, name: 'Twin no rate' }).onConflictDoNothing();
   await upsertFxRate({ currency: CCY, rateToUsd: 0.001, effectiveDate: '1601-01-01' }, ctx());
   for (const [code, country] of [
     [`TQ${STAMP}`, 'CN'],
@@ -163,6 +178,8 @@ afterAll(async () => {
   await db.delete(partnerTransactions).where(eq(partnerTransactions.partnerId, firmId));
   if (madeCosts.length) await db.delete(costEntries).where(inArray(costEntries.id, madeCosts));
   if (madeExpenses.length) await db.delete(expenses).where(inArray(expenses.id, madeExpenses));
+  // A currency with no rate is configuration every currency picker would offer.
+  await db.delete(currencies).where(eq(currencies.code, NO_RATE));
   await db.delete(partners).where(eq(partners.id, firmId));
   await db.delete(moneyAccounts).where(inArray(moneyAccounts.id, [usdTill, qtwTill]));
   await db.delete(receipts).where(eq(receipts.id, receiptId));
@@ -447,6 +464,51 @@ describe('a bill and a cancellation of one truck can no longer both succeed', ()
     }
   });
 
+  it('a truck with a bill is refused BEFORE a carton is locked — a split still key-sharing the cartons cannot deadlock it', async () => {
+    const truck = await freshTruck();
+    const [lot] = await db
+      .insert(receiptLots)
+      .values({ receiptId, seq: 2, productNameZh: `锁${STAMP}`, boxCount: 1, totalWeightKg: '10', totalVolumeM3: '0.1' })
+      .returning({ id: receiptLots.id });
+    const [box] = await db
+      .insert(boxes)
+      .values({
+        lotId: lot!.id,
+        shortCode: `TQ${STAMP}L1`,
+        seqInLot: 1,
+        status: 'planned',
+        currentWarehouseId: madeWarehouses[0]!,
+        currentBatchId: truck,
+      })
+      .returning({ id: boxes.id });
+    const costId = uuidv4();
+    await db.execute(sql`
+      INSERT INTO cost_entries (id, scope, batch_id, cost_type_id, amount, currency, cost_date, allocation_basis, entered_by)
+      VALUES (${costId}::uuid, 'batch', ${truck}::uuid, ${costTypeId}::uuid, 9, 'USD', ${DAY}::date, 'weight', ${actorId}::uuid)`);
+    const holder = postgres(holderUrl, { max: 1 });
+    try {
+      await holder.begin(async (tx) => {
+        // The bill's own split, mid-flight: its allocation INSERT key-shares
+        // the carton until it commits.
+        await tx`SELECT id FROM boxes WHERE id = ${box!.id}::uuid FOR KEY SHARE`;
+        const outcome = await Promise.race([
+          cancelBatch(truck, 'test bekor', ctx()).then(
+            () => 'cancelled',
+            (err: { code?: string }) => err.code ?? 'error',
+          ),
+          new Promise<string>((resolve) => setTimeout(() => resolve('waited on the carton'), 3000)),
+        ]);
+        expect(outcome).toBe('batch_has_costs');
+      });
+    } finally {
+      await holder.end();
+      await db.delete(costEntries).where(eq(costEntries.id, costId));
+      await db.delete(boxes).where(eq(boxes.id, box!.id));
+      await db.delete(receiptLots).where(eq(receiptLots.id, lot!.id));
+      await db.delete(batches).where(eq(batches.id, truck));
+    }
+  });
+
   it('the bill commits first: the cancel, waiting on the truck, counts it and refuses', async () => {
     const truck = await freshTruck();
     const holder = postgres(holderUrl, { max: 1 });
@@ -470,6 +532,226 @@ describe('a bill and a cancellation of one truck can no longer both succeed', ()
     } finally {
       await holder.end();
       if (costId) await db.delete(costEntries).where(eq(costEntries.id, costId));
+      await db.delete(batches).where(eq(batches.id, truck));
+    }
+  });
+});
+
+describe('the second review: what the alarm compares, and how it is answered', () => {
+  it('a typed 1.005 is compared as the 1.01 the column will store', async () => {
+    await clearBooks();
+    const expenseId = await spend(1.01, 'USD', { accountId: usdTill });
+    const answer = await twinsForCost(ACCOUNTANT(), await candidate(1.005, 'USD'));
+    expect(answer!.ids).toEqual([expenseId]);
+  });
+
+  it('a kassa-less cost the merge already joined is offered a void, not the merge that refuses it', async () => {
+    await clearBooks();
+    const joinedTo = await spend(461, 'USD');
+    const costId = await bill(461, 'USD');
+    await db.update(costEntries).set({ mergedExpenseId: joinedTo }).where(eq(costEntries.id, costId));
+    await voidExpense(joinedTo, 'merged', ctx());
+    const answer = await twinsForExpense(ACCOUNTANT(), {
+      categoryId,
+      amount: 461,
+      currency: 'USD',
+      expenseDate: DAY,
+      accountId: usdTill,
+      partnerId: null,
+      warehouseId: null,
+    });
+    expect(answer!.ids).toEqual([costId]);
+    expect(answer!.lines[0]).toMatchObject({ shape: 'kassa_cash', cure: 'void' });
+  });
+
+  it('a bill with no rate says it could not be weighed against another currency', async () => {
+    await clearBooks();
+    const answer = await twinsForCost(ACCOUNTANT(), await candidate(3600, NO_RATE));
+    expect(answer!.ids).toEqual([]);
+    expect(twinGap(answer)).toEqual({ unchecked: true, uncheckedOthers: 0 });
+  });
+
+  it('an expense counts the rate-less truck bills in its window it could not weigh', async () => {
+    await clearBooks();
+    await bill(7000, NO_RATE);
+    const answer = await twinsForExpense(ACCOUNTANT(), {
+      categoryId,
+      amount: 9,
+      currency: 'USD',
+      expenseDate: DAY,
+      accountId: usdTill,
+      partnerId: null,
+      warehouseId: null,
+    });
+    expect(answer!.ids).toEqual([]);
+    expect(twinGap(answer)).toEqual({ unchecked: false, uncheckedOthers: 1 });
+  });
+
+  it('on the expense door, the bill at the expense’s warehouse is listed first — before a nearer day elsewhere', async () => {
+    await clearBooks();
+    // The prixod's bill (the CN warehouse) is the same day; the truck's (it
+    // ends at the UZ one) three days off. The expense is the UZ warehouse's.
+    const atReceipt = await bill(462, 'USD', { scope: 'receipt', receiptId });
+    const onTruck = await bill(462, 'USD', { costDate: '1640-03-13' });
+    const answer = await twinsForExpense(ACCOUNTANT(), {
+      categoryId,
+      amount: 462,
+      currency: 'USD',
+      expenseDate: DAY,
+      accountId: usdTill,
+      partnerId: null,
+      warehouseId: madeWarehouses[1]!,
+    });
+    expect(answer!.ids).toEqual([onTruck, atReceipt]);
+  });
+
+  it('«✓ Ikki xil pul» takes a pair off the map’s count, and refuses a pair that is not one', async () => {
+    await clearBooks();
+    const costId = await bill(463, 'USD');
+    const expenseId = await spend(463, 'USD', { accountId: usdTill });
+    const before = await uncheckedTwinRows(sight, '1640-03-01', '1640-03-31');
+    expect(before.pairs.some((p) => p.cost.id === costId && p.expense.id === expenseId)).toBe(true);
+    await ackTwinPair(costId, expenseId, ctx());
+    const after = await uncheckedTwinRows(sight, '1640-03-01', '1640-03-31');
+    expect(after.pairs.some((p) => p.cost.id === costId)).toBe(false);
+    expect(after.rows).toBe(before.rows - 2);
+    const other = await spend(470, 'USD', { accountId: usdTill });
+    await expect(ackTwinPair(costId, other, ctx())).rejects.toMatchObject({ code: 'not_a_twin' });
+  });
+
+  it('the map’s count is EXACTLY a brute-force twinShape over every pair of the same rows — the prefilter drops none', async () => {
+    await clearBooks();
+    const mine = new Set<string>();
+    const c = async (amount: number, currency: string, day: string, over: Record<string, unknown> = {}) => {
+      const id = await bill(amount, currency, { costDate: day, ...over });
+      mine.add(id);
+    };
+    const e = async (amount: number, currency: string, day: string, over: Record<string, unknown> = {}) => {
+      const id = await spend(amount, currency, { expenseDate: day, ...over });
+      mine.add(id);
+    };
+    await c(250, 'USD', '1640-04-05');
+    await c(250_000, CCY, '1640-04-06');
+    await c(99, 'USD', '1640-04-07', { accountId: usdTill });
+    await c(50, 'USD', '1640-04-08', { partnerId: firmId });
+    await c(245, 'USD', '1640-04-09');
+    // Paid out of the QTW kassa at the desk's own rate: only the KASSA arm sees
+    // it (the dollars, $1.01 against $1.10, are 9 % apart).
+    await c(1.01, 'USD', '1640-04-10', { accountId: qtwTill, accountAmount: 1100 });
+    await e(250, 'USD', '1640-04-10', { accountId: usdTill });
+    await e(252_000, CCY, '1640-04-12', { accountId: qtwTill });
+    await e(99, 'USD', '1640-04-07', { accountId: usdTill });
+    await e(50, 'USD', '1640-04-08', { partnerId: firmId });
+    await e(249, 'USD', '1640-04-20');
+    await e(240_000, CCY, '1640-04-28');
+    await e(1100, CCY, '1640-04-11', { accountId: qtwTill });
+
+    const sqlPairs = (await uncheckedTwinRows(sight, '1640-04-01', '1640-04-30')).pairs
+      .map((p) => `${p.cost.id}:${p.expense.id}`)
+      .sort();
+
+    const costRows = await db.select().from(costEntries).where(inArray(costEntries.id, [...mine]));
+    const expenseRows = await db.select().from(expenses).where(inArray(expenses.id, [...mine]));
+    const bookIds = new Set(
+      (await db.select({ id: expenseCategories.id }).from(expenseCategories).where(eq(expenseCategories.cash, false))).map((r) => r.id),
+    );
+    const brute: string[] = [];
+    for (const row of costRows) {
+      if (row.voidedAt) continue;
+      // Built from the stored columns by hand — the arbiter is `twinShape`, the
+      // thing under test is the SQL that is meant never to hide a pair from it.
+      const cost: TwinCost = {
+        amount: Number(row.amount),
+        currency: row.currency,
+        amountUsd: row.amountUsd === null ? null : Number(row.amountUsd),
+        costDate: row.costDate,
+        accountId: row.accountId,
+        accountAmount: row.accountAmount === null ? null : Number(row.accountAmount),
+        partnerId: row.partnerId,
+        payer: row.accountId ? 'kassa' : row.partnerId ? 'firm' : 'none',
+        merged: row.mergedExpenseId !== null,
+      };
+      for (const ex of expenseRows) {
+        if (ex.voidedAt) continue;
+        const expense: TwinExpense = {
+          amount: Number(ex.amount),
+          currency: ex.currency,
+          amountUsd: Number(ex.amountUsd),
+          expenseDate: ex.expenseDate,
+          accountId: ex.accountId,
+          partnerId: ex.partnerId,
+          payer: bookIds.has(ex.categoryId) ? 'book' : ex.accountId ? 'kassa' : ex.partnerId ? 'firm' : 'cash',
+          restored: false,
+        };
+        const later = cost.costDate > expense.expenseDate ? cost.costDate : expense.expenseDate;
+        if (later < '1640-04-01' || later > '1640-04-30') continue;
+        if (twinShape(cost, expense)) brute.push(`${row.id}:${ex.id}`);
+      }
+    }
+    brute.sort();
+    expect(brute.length, 're-anchor: the fixture must hold twins of several shapes').toBeGreaterThanOrEqual(4);
+    expect(sqlPairs).toEqual(brute);
+  });
+});
+
+describe('a price and a cancellation of one truck can no longer both succeed', () => {
+  it('the cancel commits first: the price, waiting on the truck, finds it cancelled', async () => {
+    const truck = uuidv4();
+    await db.insert(batches).values({
+      id: truck,
+      code: `TQ${STAMP}-P${String(Math.floor(Math.random() * 90) + 10)}`,
+      originWarehouseId: madeWarehouses[0]!,
+      destWarehouseId: madeWarehouses[1]!,
+      status: 'forming',
+      createdBy: actorId,
+    });
+    const [lot] = await db
+      .insert(receiptLots)
+      .values({ receiptId, seq: 1, productNameZh: `价${STAMP}`, boxCount: 1, totalWeightKg: '10', totalVolumeM3: '0.1' })
+      .returning({ id: receiptLots.id });
+    const [box] = await db
+      .insert(boxes)
+      .values({
+        lotId: lot!.id,
+        shortCode: `TQ${STAMP}P1`,
+        seqInLot: 1,
+        status: 'planned',
+        currentWarehouseId: madeWarehouses[0]!,
+        currentBatchId: truck,
+      })
+      .returning({ id: boxes.id });
+    const holder = postgres(process.env.DATABASE_URL!, { max: 1 });
+    try {
+      let pending: Promise<unknown> = Promise.resolve();
+      await holder.begin(async (tx) => {
+        await tx`SELECT status FROM batches WHERE id = ${truck}::uuid FOR NO KEY UPDATE`;
+        await tx`UPDATE batches SET status = 'cancelled' WHERE id = ${truck}::uuid`;
+        pending = addTransaction(
+          { clientId, type: 'charge', amount: 25, currency: 'USD', txDate: DAY, batchId: truck } as Parameters<typeof addTransaction>[0],
+          ctx(),
+        );
+        pending.catch(() => undefined);
+        for (let i = 0; i < 200; i += 1) {
+          const rows = (await db.execute(sql`
+            SELECT count(*)::int AS n FROM pg_stat_activity
+             WHERE wait_event_type = 'Lock' AND datname = current_database()`)) as unknown as { n: number }[];
+          if ([...rows][0]!.n > 0) return;
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+        throw new Error('nobody waited on the lock');
+      });
+      await expect(pending).rejects.toMatchObject({ code: 'batch_cancelled' });
+      const [n] = await db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(clientTransactions)
+        .where(eq(clientTransactions.batchId, truck));
+      expect(n!.n).toBe(0);
+    } finally {
+      await holder.end();
+      // A red proof writes the price this test refuses: removed first (the FK).
+      await db.delete(clientTransactions).where(eq(clientTransactions.batchId, truck));
+      await db.delete(boxes).where(eq(boxes.id, box!.id));
+      await db.delete(receiptLots).where(eq(receiptLots.id, lot!.id));
       await db.delete(batches).where(eq(batches.id, truck));
     }
   });

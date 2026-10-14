@@ -234,9 +234,9 @@ describe('«N ta yozuv tekshirilmagan»', () => {
     const costId = await cost({ amount: 80, accountId: till });
     const after = await uncheckedTwinRows(sight, FROM, TO);
     expect(after.rows).toBe(before.rows + 2);
-    expect(after.pairs.find((p) => p.costId === costId)).toMatchObject({ shape: 'same_kassa' });
+    expect(after.pairs.find((p) => p.cost.id === costId)).toMatchObject({ shape: 'same_kassa', approx: false });
     // Acknowledged at the save: the next bill carries the expense in its audit.
-    const expenseId = after.pairs.find((p) => p.costId === costId)!.expenseId;
+    const expenseId = after.pairs.find((p) => p.cost.id === costId)!.expense.id;
     const acked = await addCostEntry(
       { scope: 'batch', batchId, costTypeId, amount: 80, currency: 'USD', costDate: DAY, allocationBasis: 'weight', accountId: till },
       ctx(),
@@ -244,6 +244,6 @@ describe('«N ta yozuv tekshirilmagan»', () => {
     );
     madeCosts.push(acked.id);
     const third = await uncheckedTwinRows(sight, FROM, TO);
-    expect(third.pairs.some((p) => p.costId === acked.id)).toBe(false);
+    expect(third.pairs.some((p) => p.cost.id === acked.id)).toBe(false);
   });
 });

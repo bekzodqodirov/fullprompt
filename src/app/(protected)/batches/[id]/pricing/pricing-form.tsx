@@ -176,7 +176,9 @@ export function PricingForm({
                 ? t('internalBatchRefused')
                 : state.error === 'client_not_aboard'
                   ? t('clientNotAboard')
-                  : tc('error')}
+                  : state.error === 'batch_cancelled'
+                    ? t('batchCancelledRefused')
+                    : tc('error')}
         </p>
       )}
     </form>

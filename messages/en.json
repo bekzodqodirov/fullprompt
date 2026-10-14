@@ -768,7 +768,8 @@
       "seed": "seed data",
       "delete": "deleted",
       "share": "shared",
-      "comment": "wrote on"
+      "comment": "wrote on",
+      "twin_check": "marked as two different payments"
     },
     "field": "Field",
     "before": "Before",
@@ -1791,6 +1792,7 @@
     "paymentNoTill": "The accountant records which cash box the money went into.",
     "voidNeedsAccountant": "Only the accountant or an admin can void this.",
     "clientNotAboard": "This client has no cargo on this truck — price the truck the cargo rode",
+    "batchCancelledRefused": "This truck was cancelled — no price can be written on it.",
     "txTruck": "For which truck",
     "txTruckUnpriced": "no price",
     "txCardOnlyHint": "With neither a truck nor a deal chosen, this price covers no cargo — the handover will need permission",
@@ -5621,7 +5623,10 @@
     "saveAnyway": "Save anyway",
     "back": "Back",
     "mergeLink": "Expense till",
-    "requestHint": "If this request is already written as a cargo cost: mark that cost «own money» and close the request with «Reject» and a reason."
+    "requestHint": "If this request is already written as a cargo cost: mark that cost «own money» and close the request with «Reject» and a reason.",
+    "approx": "close in dollars — another currency",
+    "uncheckedSelf": "⚠ This amount has no rate — it could not be compared with expenses in another currency.",
+    "uncheckedOthers": "⚠ Cargo costs with no rate: {count} — they could not be compared."
   },
   "sarflar": {
     "title": "Where the money went",
@@ -5662,7 +5667,8 @@
       "continuation": "continuation",
       "tracked": "💰 profit tracked"
     },
-    "allTime": "all time ${usd}",
+    "allTime": "all time {usd}",
+    "allTimePartial": "all time {usd} + {count} with no rate",
     "rows": "rows",
     "notTannarx": "landed cost",
     "allTrucks": "All ({count})",
@@ -5726,7 +5732,7 @@
     "closed": "closed",
     "noCosts": "no costs",
     "formerName": "formerly {name}",
-    "pickFirst": "Pick a truck on the left, then write its bill.",
+    "pickFirst": "Pick a truck first, then write its bill.",
     "entryTitle": "Truck cost",
     "entrySubtitle": "One bill per save; the form stays open",
     "truckNotFound": "Truck not found.",
@@ -5735,6 +5741,15 @@
     "openGrid": "Receipts grid",
     "todayMine": "Typed by me today",
     "tomorrowDated": "dated tomorrow",
-    "outOfPeriod": "outside the period — {month}"
+    "outOfPeriod": "outside the period — {month}",
+    "twinsHint": "Check each pair: one payment written twice — correct it; two different payments — mark «Different payments».",
+    "twinApprox": "close in dollars (another currency)",
+    "twinsMore": "{count} more pairs.",
+    "twinAck": {
+      "button": "Different payments",
+      "forbidden": "The accountant marks this.",
+      "notFound": "Record not found — reload the page.",
+      "notATwin": "These records are no longer a pair — reload the page."
+    }
   }
 }
