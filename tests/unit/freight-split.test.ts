@@ -333,11 +333,15 @@ describe('the words and the cents', () => {
   });
   it('bandText words a band one way — a per-kg band by the kilo, never «$605/kub»', () => {
     const b = { min: 501, max: 700, price: 300, perKg: false };
-    expect(bandText(b, { money: false })).toEqual({ key: 'freightBand', range: '501–700', price: '$300' });
+    // Without money sight no price is worded (review: the band carried it to
+    // every browser), and a band that arrives without one can only be worded so.
+    expect(bandText(b, { money: false })).toEqual({ key: 'freightBand', range: '501–700', price: '' });
     expect(bandText(b, { money: true })).toEqual({ key: 'freightBandMoney', range: '501–700', price: '$300' });
     const kg = { min: 1000, max: null, price: 0.55, perKg: true };
-    expect(bandText(kg, { money: false })).toEqual({ key: 'freightBandPerKg', range: '1000+', price: '$0.55' });
+    expect(bandText(kg, { money: false })).toEqual({ key: 'freightBandPerKg', range: '1000+', price: '' });
     expect(bandText(kg, { money: true })).toEqual({ key: 'freightBandMoneyPerKg', range: '1000+', price: '$0.55' });
+    const stripped = { min: 501, max: 700, perKg: false };
+    expect(bandText(stripped, { money: true })).toEqual({ key: 'freightBand', range: '501–700', price: '' });
   });
 });
 
