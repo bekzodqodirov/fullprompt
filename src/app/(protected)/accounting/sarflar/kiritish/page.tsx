@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
+import { payerView } from '@/modules/wms/partners/staff';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { companyMoneySight } from '@/modules/wms/finance/scope';
 import { batchCostSheet } from '@/modules/wms/costing/service';
@@ -14,7 +15,7 @@ import {
   trucksForCostEntry,
 } from '@/modules/wms/costing/cost-entry';
 import { batchTabHref, mayOpenBatchCard } from '@/modules/wms/batches/card-door';
-import { tashkentDay, tashkentMonthStart } from '@/modules/platform/time/tashkent';
+import { addDays, tashkentDay, tashkentMonthStart } from '@/modules/platform/time/tashkent';
 import { PageHeader } from '@/components/ui/page';
 import { CostEntryDesk } from './desk';
 
@@ -41,6 +42,13 @@ export default async function SarflarEntryPage({
   const q = (params.q ?? '').slice(0, 60);
   const today = tashkentDay();
   const monthStart = tashkentMonthStart();
+  const previousMonth = addDays(monthStart, -1).slice(0, 7);
+  // A bill dated outside «Bu oy» opens its OWN whole month on the map (§8.5).
+  const monthHref = (day: string) => {
+    const first = `${day.slice(0, 7)}-01`;
+    const last = addDays(`${addDays(first, 32).slice(0, 7)}-01`, -1);
+    return `/accounting/sarflar?from=${first}&to=${last}`;
+  };
 
   const [picker, chosen, mine] = await Promise.all([
     trucksForCostEntry(actor, q),
@@ -59,7 +67,7 @@ export default async function SarflarEntryPage({
     head = { id: chosen.batch.id, code: chosen.batch.code, card: mayOpenBatchCard(actor, chosen.batch) };
     panel = {
       targetId: chosen.batch.id,
-      entries: sheet.entries.map(({ entry, typeName, clientCode, partnerName, accountName }) => ({
+      entries: sheet.entries.map(({ entry, typeName, clientCode, partnerName, partnerIsStaff, accountName }) => ({
         id: entry.id,
         typeName,
         amount: entry.amount,
@@ -69,7 +77,7 @@ export default async function SarflarEntryPage({
         allocationBasis: entry.allocationBasis,
         note: entry.note,
         clientCode,
-        partnerName,
+        ...payerView(actor.permissions, { partnerName, partnerIsStaff }),
         ...tillView(actor.permissions, { accountId: entry.accountId, accountName, mergedExpenseId: entry.mergedExpenseId }),
       })),
       costTypes: options.types,
@@ -140,13 +148,14 @@ export default async function SarflarEntryPage({
                 <span className="text-xs text-ink-500">{row.costDate}</span>
                 {/* A bill dated outside «Bu oy» is not on the map's default
                     view — say where it is, or it reads as lost. */}
-                {row.costDate > today && <span className="text-xs text-warn">{t('tomorrowDated')}</span>}
-                {row.costDate < monthStart && (
-                  <Link
-                    href={`/accounting/sarflar?from=${row.costDate.slice(0, 7)}-01&to=${row.costDate}`}
-                    className="text-xs text-warn underline"
-                  >
-                    {t('outOfPeriod', { month: row.costDate.slice(0, 7) })} →
+                {(row.costDate > today || row.costDate < monthStart) && (
+                  <Link href={monthHref(row.costDate)} className="text-xs text-warn underline">
+                    {row.costDate > today
+                      ? t('tomorrowDated')
+                      : row.costDate.slice(0, 7) === previousMonth
+                        ? t('preset.otgan')
+                        : t('outOfPeriod', { month: row.costDate.slice(0, 7) })}{' '}
+                    →
                   </Link>
                 )}
               </li>

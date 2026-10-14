@@ -98,9 +98,15 @@ export default async function SarflarPage({ searchParams }: { searchParams: Prom
   const expenseRows = seesStaff;
   const kassaSide = mayPickTill(actor.permissions);
   const filters = readSpendFilters(params, { seesStaff, expenseRows });
-  const page = Math.max(1, Number.parseInt(params.bet ?? '1', 10) || 1);
+  // A page number is a small whole number or the first page — never an
+  // OFFSET postgres refuses in exponent form (#514).
+  const pageOf = (raw: string | undefined) => {
+    const n = Number.parseInt(raw ?? '1', 10);
+    return Number.isSafeInteger(n) && n >= 1 && n <= 10_000 ? n : 1;
+  };
+  const page = pageOf(params.bet);
   const allTrucks = params.partiyalar === 'hammasi';
-  const truckPage = Math.max(1, Number.parseInt(params.pbet ?? '1', 10) || 1);
+  const truckPage = pageOf(params.pbet);
   const today = tashkentDay();
 
   const [pnl, priorPnl, gaps, map, priorMap, trucks, register, twins, arrears, requests, typeOptions, categoryOptions, places] =
@@ -146,6 +152,10 @@ export default async function SarflarPage({ searchParams }: { searchParams: Prom
     );
   };
   const pct = (value: number, of: number) => (of > 0 ? `${Math.round((value / of) * 100)}%` : '—');
+  // Money whose every row waits for a rate is «kurs yo'q», never «$0.00»
+  // (§8.3) — the chip beside it then says how many.
+  const money = (value: number, unconverted: number) =>
+    Math.abs(value) < 0.005 && unconverted > 0 ? t('noRateShort') : `$${usd(value)}`;
   const current: Record<string, string> = Object.fromEntries(
     Object.entries(params).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
   );
@@ -157,12 +167,16 @@ export default async function SarflarPage({ searchParams }: { searchParams: Prom
     from: period.from,
     to: period.to,
   };
-  const presetHref = (davr: string) => hrefWith({}, { davr });
+  // A period change keeps every filter (§1.1): the preset replaces the dates.
+  const filtersOnly = Object.fromEntries(
+    Object.entries(base).filter(([key]) => key !== 'from' && key !== 'to' && key !== 'pbet'),
+  );
+  const presetHref = (davr: string) => hrefWith(filtersOnly, { davr });
   const filterHref = (patch: Record<string, string | undefined>) => hrefWith(base, patch);
 
   // The truck rows' kinds — read for the DRAWN rows only.
   const truckIds = trucks.rows.map((row) => row.id);
-  const [carriage, revenue] = await Promise.all([batchCarriage(truckIds), truckRevenue(truckIds)]);
+  const [carriage, revenue] = await Promise.all([batchCarriage(truckIds), truckRevenue(sight, truckIds)]);
 
   // Register links: ONE readable-receipt question for the page.
   const readable = await receiptsReadableBy(
@@ -182,15 +196,15 @@ export default async function SarflarPage({ searchParams }: { searchParams: Prom
   const maxKind = Math.max(1, ...map.kinds.map((k) => k.usd));
   const maxCategory = Math.max(1, ...topCategories.map((row) => row.total), restUsd);
 
-  const bar = (key: string, label: string, value: number, of: number, max: number, was: number | undefined, tone: string, extra?: React.ReactNode, href?: string | null) => (
+  const bar = (key: string, label: string, value: number, of: number, max: number, was: number | undefined, tone: string, pending = 0, href?: string | null) => (
     <li key={key} className="space-y-1" data-testid={`spend-bar-${key}`}>
       <div className="flex flex-wrap items-baseline justify-between gap-x-2 text-sm [overflow-wrap:anywhere]">
         <span className="font-semibold">{href ? <Link href={href} className="underline">{label}</Link> : label}</span>
         <span className="flex flex-wrap items-baseline gap-x-2 font-mono tabular-nums">
-          <span>${usd(value)}</span>
+          <span>{money(value, pending)}</span>
           <span className="text-ink-500">{pct(value, of)}</span>
           {was !== undefined && delta(value, was)}
-          {extra}
+          {unconverted(pending)}
         </span>
       </div>
       <div className="h-2 rounded bg-surface-sunken">
@@ -250,6 +264,9 @@ export default async function SarflarPage({ searchParams }: { searchParams: Prom
           ))}
         </div>
         <form method="get" className="flex flex-wrap items-end gap-2">
+          {Object.entries(filtersOnly).map(([key, value]) => (
+            <input key={key} type="hidden" name={key} value={value} />
+          ))}
           <label className="text-sm">
             <span className="block text-xs text-ink-500">{t('from')}</span>
             <input type="date" name="from" defaultValue={period.from} className="input !w-40" />
@@ -301,7 +318,7 @@ export default async function SarflarPage({ searchParams }: { searchParams: Prom
           </h2>
           <ul className="space-y-2">
             {map.kinds.map((kind) =>
-              bar(kind.key, t(KINDS[kind.key as SpendKind]), kind.usd, map.direct, maxKind, priorKind[kind.key], 'bg-brand-600', unconverted(kind.unconverted), filterHref({ joy: kind.key })),
+              bar(kind.key, t(KINDS[kind.key as SpendKind]), kind.usd, map.direct, maxKind, priorKind[kind.key], 'bg-brand-600', kind.unconverted, filterHref({ joy: kind.key })),
             )}
           </ul>
         </div>
@@ -314,7 +331,7 @@ export default async function SarflarPage({ searchParams }: { searchParams: Prom
           ) : (
             <ul className="space-y-2">
               {topCategories.map((row) =>
-                bar(row.key, row.label, row.total, map.opex, maxCategory, priorCategory[row.key] ?? 0, 'bg-warn/70', undefined, expenseRows ? filterHref({ turi: `c:${row.key}` }) : null),
+                bar(row.key, row.label, row.total, map.opex, maxCategory, priorCategory[row.key] ?? 0, 'bg-warn/70', 0, expenseRows ? filterHref({ turi: `c:${row.key}` }) : null),
               )}
               {restCategories.length > 0 &&
                 bar('rest', t('moreCategories', { count: restCategories.length }), restUsd, map.opex, maxCategory, undefined, 'bg-warn/70')}
@@ -326,7 +343,7 @@ export default async function SarflarPage({ searchParams }: { searchParams: Prom
       {/* 4. The folds. */}
       <details className="card" data-testid="sarf-trucks" open={allTrucks}>
         <summary className="cursor-pointer text-sm font-bold">
-          🚛 {t('trucksTitle')} · ${usd(map.trucksUsd)} {unconverted(map.trucksUnconverted)}
+          🚛 {t('trucksTitle')} · {money(map.trucksUsd, map.trucksUnconverted)} {unconverted(map.trucksUnconverted)}
         </summary>
         <div className="mt-2 space-y-2">
           <p className="text-xs text-ink-500">
@@ -354,7 +371,7 @@ export default async function SarflarPage({ searchParams }: { searchParams: Prom
                 <li key={row.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2 text-sm [overflow-wrap:anywhere]" data-testid="sarf-truck">
                   <span className="font-mono font-semibold">{row.code}</span>
                   {chip && <span className="chip text-xs" data-testid="sarf-truck-chip">{t(CHIP[chip])}</span>}
-                  <span className="ml-auto font-mono tabular-nums">${usd(row.periodUsd)}</span>
+                  <span className="ml-auto font-mono tabular-nums">{money(row.periodUsd, row.periodUnconverted)}</span>
                   {unconverted(row.periodUnconverted)}
                   <span className="text-xs text-ink-500">{t('allTime', { usd: usd(row.allTimeUsd) })}</span>
                   <Link href={filterHref({ partiya: row.id })} className="text-xs underline">
@@ -397,13 +414,13 @@ export default async function SarflarPage({ searchParams }: { searchParams: Prom
             <li key={row.key || 'none'} className="flex flex-wrap justify-between gap-x-2 py-1.5 [overflow-wrap:anywhere]">
               <span>{row.key ? <Link href={filterHref({ sklad: row.key })} className="underline">{row.label}</Link> : t('noWarehouse')}</span>
               <span className="font-mono tabular-nums">
-                ${usd(row.usd)} {unconverted(row.unconverted)}
+                {money(row.usd, row.unconverted)} {unconverted(row.unconverted)}
               </span>
             </li>
           ))}
           <li className="flex flex-wrap justify-between gap-x-2 py-1.5 text-ink-700" data-testid="sarf-warehouse-trucks">
             <span>{t('inTrucks')}</span>
-            <span className="font-mono tabular-nums">${usd(map.trucksUsd)}</span>
+            <span className="font-mono tabular-nums">{money(map.trucksUsd, map.trucksUnconverted)}</span>
           </li>
           <li className="flex flex-wrap justify-between gap-x-2 py-1.5 font-semibold">
             <span>{t('bookTotal')}</span>
@@ -416,10 +433,12 @@ export default async function SarflarPage({ searchParams }: { searchParams: Prom
       <details className="card" data-testid="sarf-types">
         <summary className="cursor-pointer text-sm font-bold">🏷️ {t('byType')}</summary>
         <ul className="mt-2 divide-y divide-line text-sm">
-          {[...pnl.directCosts].sort((a, b) => b.total - a.total).map((row) => (
+          {map.types.map((row) => (
             <li key={row.key} className="flex justify-between gap-2 py-1.5 [overflow-wrap:anywhere]">
               <span>{row.label}</span>
-              <span className="font-mono tabular-nums">${usd(row.total)}</span>
+              <span className="font-mono tabular-nums">
+                {money(row.usd, row.unconverted)} {unconverted(row.unconverted)}
+              </span>
             </li>
           ))}
           {categories.map((row) => (
@@ -463,7 +482,7 @@ export default async function SarflarPage({ searchParams }: { searchParams: Prom
                   )}
                 </span>
                 <span className="font-mono tabular-nums">
-                  ${usd(row.usd)} {unconverted(row.unconverted)}
+                  {money(row.usd, row.unconverted)} {unconverted(row.unconverted)}
                 </span>
               </li>
             );

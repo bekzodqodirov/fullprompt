@@ -5,6 +5,7 @@ import { isUuidShaped } from '../../platform/audit/fields';
 import type { CompanyMoneySight } from '../finance/scope';
 import type { CostSight } from '../costing/cost-sight';
 import { unplacedCostSql, unplacedCostSince } from '../costing/service';
+import { resolvePeriod } from './period';
 import { internalLegSql } from '../batches/internal';
 import { staffPartnerSql } from '../partners/staff';
 import { inScope, type ScopedActor } from '../../platform/rbac/scope';
@@ -34,6 +35,9 @@ import { mayPickTill } from './till-door';
 
 export type SarflarPreset = 'oy' | 'otgan' | 'yil' | 'custom';
 
+/** The first day a period may start on (the books start long after it). */
+const EARLIEST_DAY = '1900-01-01';
+
 export interface SarflarPeriod {
   from: string;
   to: string;
@@ -52,13 +56,15 @@ export function sarflarPeriod(
     return { from: `${lastOfPrevious.slice(0, 7)}-01`, to: lastOfPrevious, preset: 'otgan' };
   }
   if (params.davr === 'yil') return { from: `${today.slice(0, 4)}-01-01`, to: today, preset: 'yil' };
-  const from = calendarDay(params.from);
-  const to = calendarDay(params.to);
-  if (from || to) {
-    const end = to ?? today;
-    const start = from ?? `${end.slice(0, 7)}-01`;
-    return start <= end ? { from: start, to: end, preset: 'custom' } : { from: end, to: start, preset: 'custom' };
-  }
+  // A real day inside the books' era or nothing (§8.3): a day in year 3 made
+  // the comparison window run before year 0, which postgres refuses.
+  const sane = (value: string | undefined) => {
+    const day = calendarDay(value);
+    return day && day >= EARLIEST_DAY ? day : undefined;
+  };
+  const from = sane(params.from);
+  const to = sane(params.to);
+  if (from || to) return { ...resolvePeriod({ from, to }, now), preset: 'custom' };
   return { from: monthStart, to: today, preset: 'oy' };
 }
 
@@ -189,6 +195,8 @@ export interface SpendMap {
   trucksUsd: number;
   trucksUnconverted: number;
   payers: SpendSlice[];
+  /** The cost book by cost type, with each type's unconverted rows (the P&L's rows cannot say «kurs yo'q»). */
+  types: SpendSlice[];
 }
 
 /** The blocks of one period. `seesStaff` REQUIRED: it decides the «o'z puli» bucket. */
@@ -200,7 +208,7 @@ export async function spendMap(
 ): Promise<SpendMap> {
   const since = await unplacedCostSince();
   const rows = spendRowsSql(from, to, { seesStaff: opts.seesStaff, since });
-  const [byKind, byPlace, byPayer] = await Promise.all([
+  const [byKind, byPlace, byPayer, byType] = await Promise.all([
     db.execute(sql`
       WITH s AS (${rows})
       SELECT book, kind, coalesce(sum(usd), 0) AS usd, count(*) FILTER (WHERE usd IS NULL)::int AS unconverted
@@ -217,6 +225,12 @@ export async function spendMap(
       WITH s AS (${rows})
       SELECT payer, coalesce(sum(usd), 0) AS usd, count(*) FILTER (WHERE usd IS NULL)::int AS unconverted
         FROM s GROUP BY payer`) as unknown as Promise<{ payer: string; usd: string; unconverted: number }[]>,
+    db.execute(sql`
+      WITH s AS (${rows})
+      SELECT type_id, type_name, coalesce(sum(usd), 0) AS usd, count(*) FILTER (WHERE usd IS NULL)::int AS unconverted
+        FROM s WHERE book = 'cost' GROUP BY type_id, type_name`) as unknown as Promise<
+      { type_id: string; type_name: string; usd: string; unconverted: number }[]
+    >,
   ]);
   const kindRows = [...byKind];
   const kinds = SPEND_KINDS.map((kind) => {
@@ -242,6 +256,9 @@ export async function spendMap(
     trucksUsd: truck.usd,
     trucksUnconverted: truck.unconverted,
     payers,
+    types: [...byType]
+      .map((r) => ({ key: r.type_id, label: r.type_name, usd: num(r.usd), unconverted: r.unconverted }))
+      .sort((a, b) => b.usd - a.usd || b.unconverted - a.unconverted),
   };
 }
 
@@ -327,7 +344,7 @@ async function spendTruckCount(from: string, to: string): Promise<number> {
 }
 
 /** What the trucks drawn earned — `tripKind`'s «priced» question, for the chip alone. */
-export async function truckRevenue(batchIds: string[]): Promise<Map<string, number>> {
+export async function truckRevenue(_sight: CompanyMoneySight, batchIds: string[]): Promise<Map<string, number>> {
   if (batchIds.length === 0) return new Map();
   const rows = (await db.execute(sql`
     SELECT batch_id, coalesce(sum(amount_usd), 0) AS usd FROM client_transactions
@@ -543,13 +560,16 @@ export async function spendRegister(
 }
 
 /**
- * The payer as a reader may see it: a colleague's own pocket names nobody to
- * a reader without staff sight — and that reader's rows already carry no
+ * The payer as a reader may see it: a reader without staff sight reads the
+ * bucket word for every counterparty — that reader's rows already carry no
  * «o'z puli» bucket, so the name is the only place it could leak.
  */
 export function payerNameFor(row: Pick<SpendRow, 'partnerName' | 'partnerIsStaff'>, seesStaff: boolean): string | null {
-  if (!row.partnerName) return null;
-  return row.partnerIsStaff && !seesStaff ? null : row.partnerName;
+  // Without staff sight NO counterparty is named: if only a colleague's own
+  // pocket fell back to the bucket word while firms kept their names, the
+  // bare word would itself say «a colleague paid this» (the review's leak).
+  if (!row.partnerName || !seesStaff) return null;
+  return row.partnerName;
 }
 
 /**

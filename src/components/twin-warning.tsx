@@ -54,9 +54,11 @@ export function TwinWarning({
             <div className="flex flex-wrap gap-x-2 gap-y-0.5">
               <span className="font-semibold">{t(BOOK[line.book])}</span>
               <span>{line.date}</span>
-              <span className="font-mono tabular-nums">
-                {line.amount} {line.currency}
-              </span>
+              {line.amount !== null && (
+                <span className="font-mono tabular-nums">
+                  {line.amount} {line.currency}
+                </span>
+              )}
               {line.sum && <span className="text-ink-500">({t('sum')})</span>}
               {line.label && <span>{line.label}</span>}
               {line.where && <span className="text-ink-700">{line.where}</span>}

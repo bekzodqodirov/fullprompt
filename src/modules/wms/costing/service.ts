@@ -10,6 +10,7 @@ import {
   boxMovements,
   clients,
   partners,
+  partnerTypes,
   costAllocations,
   costEntries,
   costTypes,
@@ -33,6 +34,7 @@ import { declaredFilter, riderCtesSql, riderFilter, riderLoad, riderWithoutShare
 import { bearsPriceSql, internalLegSql } from '../batches/internal';
 import { CUSTOMS_CODES_SETTING, parseCustomsCodes } from '../calc/customs-codes';
 import type { CostSight } from './cost-sight';
+import { staffPartnerSql } from '../partners/staff';
 
 export class CostError extends Error {
   constructor(public readonly code: string) {
@@ -1984,6 +1986,7 @@ export interface CostRow {
   typeName: string;
   clientCode: string | null;
   partnerName: string | null;
+  partnerIsStaff: boolean;
   accountName: string | null;
 }
 
@@ -2024,12 +2027,16 @@ export async function costEntriesFor(
       typeName: costTypes.name,
       clientCode: clients.clientCode,
       partnerName: partners.name,
+      // Whether the payer is a colleague's own pocket (M3a): the cards name
+      // it only to the staff-money readers (`payerView`, partners/staff.ts).
+      partnerIsStaff: sql<boolean>`coalesce(${staffPartnerSql()}, false)`,
       accountName: moneyAccounts.name,
     })
     .from(costEntries)
     .innerJoin(costTypes, eq(costEntries.costTypeId, costTypes.id))
     .leftJoin(clients, eq(costEntries.clientId, clients.id))
     .leftJoin(partners, eq(costEntries.partnerId, partners.id))
+    .leftJoin(partnerTypes, eq(partners.typeId, partnerTypes.id))
     .leftJoin(moneyAccounts, eq(costEntries.accountId, moneyAccounts.id))
     .where(sight.ownOnly ? and(where, eq(costEntries.enteredBy, sight.ownOnly)) : where)
     .orderBy(asc(costEntries.createdAt));

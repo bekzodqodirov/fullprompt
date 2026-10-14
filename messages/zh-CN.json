@@ -1316,7 +1316,8 @@
     "errNotFound": "未找到——请刷新页面。",
     "errForbidden": "您无权在此记录费用。",
     "errValidation": "信息不完整——请检查类型、金额和日期。",
-    "errAlreadyVoided": "该记录已作废——请刷新页面。"
+    "errAlreadyVoided": "该记录已作废——请刷新页面。",
+    "payerHidden": "员工自付"
   },
   "batchCard": {
     "tabLoading": "装车",

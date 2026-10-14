@@ -193,8 +193,9 @@ export interface TwinLine {
   cure: TwinCure;
   book: 'expense' | 'cost';
   date: string;
-  amount: number;
-  currency: string;
+  /** Null when redacted: a sum's members would otherwise print a colleague's figures one by one. */
+  amount: number | null;
+  currency: string | null;
   /** Category (an expense) or cost type (a cost); null when redacted. */
   label: string | null;
   /** Truck / prixod / crate / pickup code, or the category; null when redacted. */
@@ -848,8 +849,8 @@ export async function twinsForExpense(reader: ReaderSight, candidate: ExpenseCan
       cure: twinCure(r.shape),
       book: 'cost',
       date: r.date,
-      amount: Number(r.row.amount),
-      currency: r.row.currency,
+      amount: redacted ? null : Number(r.row.amount),
+      currency: redacted ? null : r.row.currency,
       label: redacted ? null : r.row.type_name,
       where: redacted ? null : r.row.target_code,
       kassa: redacted || !seesKassa ? null : r.row.kassa,

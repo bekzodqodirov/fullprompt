@@ -1316,7 +1316,8 @@
     "errNotFound": "Not found — refresh the page.",
     "errForbidden": "You may not write a cost here.",
     "errValidation": "Something is missing — check the type, the amount and the date.",
-    "errAlreadyVoided": "This entry is already voided — refresh the page."
+    "errAlreadyVoided": "This entry is already voided — refresh the page.",
+    "payerHidden": "paid by a member of staff"
   },
   "batchCard": {
     "tabLoading": "Loading",

@@ -1,5 +1,6 @@
 import { notFound, redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
+import { payerView } from '@/modules/wms/partners/staff';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { batchCostEntryCount, batchCostSheet, batchScopeCostByType, receiptCostMatrix } from '@/modules/wms/costing/service';
 import { batchLots } from '@/modules/wms/batches/lots';
@@ -99,7 +100,7 @@ export default async function BatchCostGridPage({ params }: { params: Promise<{ 
         <CostPanel
           scope="batch"
           targetId={batch.id}
-          entries={costSheet.entries.map(({ entry, typeName, clientCode, partnerName, accountName }) => ({
+          entries={costSheet.entries.map(({ entry, typeName, clientCode, partnerName, partnerIsStaff, accountName }) => ({
             id: entry.id,
             typeName,
             amount: entry.amount,
@@ -109,7 +110,7 @@ export default async function BatchCostGridPage({ params }: { params: Promise<{ 
             allocationBasis: entry.allocationBasis,
             note: entry.note,
             clientCode,
-            partnerName,
+            ...payerView(actor.permissions, { partnerName, partnerIsStaff }),
             ...tillView(actor.permissions, { accountId: entry.accountId, accountName, mergedExpenseId: entry.mergedExpenseId }),
           }))}
           costTypes={types}

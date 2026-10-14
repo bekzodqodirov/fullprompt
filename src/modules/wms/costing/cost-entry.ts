@@ -4,7 +4,7 @@ import { batches, costTypes, currencies } from '../../platform/db/schema';
 import { isUuidShaped } from '../../platform/audit/fields';
 import { mayAt, type ScopedActor } from '../../platform/rbac/scope';
 import { tashkentDayStart } from '../../platform/time/tashkent';
-import { batchTextMatchSql, formerCodeHitSql } from '../batches/former-codes';
+import { batchTextMatchSql, codePrefixSql, formerCodeHitSql } from '../batches/former-codes';
 import { batchLots } from '../batches/lots';
 import { likeNeedle, prefixNeedle } from '../search/query';
 import { listPartners } from '../partners/service';
@@ -53,7 +53,7 @@ export async function trucksForCostEntry(actor: Actor, q: string): Promise<{ row
   const match = text ? batchTextMatchSql(like) : sql`"batches"."status" IN (${sql.join(OPEN.map((s) => sql`${s}`), sql`, `)})`;
   const order = text
     ? sql`(lower("batches"."code") = lower(${text})) DESC,
-          ("batches"."code" ILIKE ${prefixNeedle(text)}) DESC,
+          ${codePrefixSql(prefixNeedle(text))} DESC,
           (${formerCodeHitSql(like)} IS NOT NULL) DESC,
           "batches"."created_at" DESC`
     : sql`"batches"."created_at" DESC`;

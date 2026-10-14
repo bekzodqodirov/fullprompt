@@ -1316,7 +1316,8 @@
     "errNotFound": "Topilmadi — sahifani yangilang.",
     "errForbidden": "Bu yerga xarajat yozishga ruxsatingiz yo'q.",
     "errValidation": "Ma'lumot to'liq emas — turi, summasi va sanasini tekshiring.",
-    "errAlreadyVoided": "Bu yozuv allaqachon bekor qilingan — sahifani yangilang."
+    "errAlreadyVoided": "Bu yozuv allaqachon bekor qilingan — sahifani yangilang.",
+    "payerHidden": "hodim o'z pulidan to'lagan"
   },
   "batchCard": {
     "tabLoading": "Yuklash",

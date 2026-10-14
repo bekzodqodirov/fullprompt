@@ -22,7 +22,7 @@ import { PrintLabels } from '@/components/print-labels';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { TasksPanel } from '@/components/tasks-panel';
 import { inScope } from '@/modules/platform/rbac/scope';
-import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
+import { maySeeStaffMoney, payerView } from '@/modules/wms/partners/staff';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { tillOptionsFor } from '@/modules/wms/costing/till-props';
 import { costSightFor, tillView } from '@/modules/wms/costing/cost-sight';
@@ -133,7 +133,7 @@ export default async function CrateDetailPage({ params }: { params: Promise<{ id
         <CostPanel
           scope="crate"
           targetId={crate.id}
-          entries={costs.map(({ entry, typeName, partnerName, accountName }) => ({
+          entries={costs.map(({ entry, typeName, partnerName, partnerIsStaff, accountName }) => ({
             id: entry.id,
             typeName,
             amount: entry.amount,
@@ -142,7 +142,7 @@ export default async function CrateDetailPage({ params }: { params: Promise<{ id
             costDate: entry.costDate,
             allocationBasis: entry.allocationBasis,
             note: entry.note,
-            partnerName,
+            ...payerView(actor.permissions, { partnerName, partnerIsStaff }),
             ...tillView(actor.permissions, { accountId: entry.accountId, accountName, mergedExpenseId: entry.mergedExpenseId }),
           }))}
           costTypes={costMeta?.types ?? []}

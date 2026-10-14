@@ -22,6 +22,8 @@ export interface CostEntryView {
   clientCode?: string | null;
   /** Who settled it, when it was not us (round 39). */
   partnerName?: string | null;
+  /** A member of staff paid it and this reader may not see who (`payerView`, M3a). */
+  payerHidden?: boolean;
   /** The kassa it left from — the NAME only for money readers (0101). */
   accountName?: string | null;
   /** A kassa answered for it, whether or not this reader may see which. */
@@ -328,6 +330,11 @@ export function CostPanel({
           {entry.partnerName && (
             <span className="rounded bg-warn/15 px-1.5 text-xs font-semibold text-warn">
               {entry.partnerName}
+            </span>
+          )}
+          {entry.payerHidden && (
+            <span className="rounded bg-warn/15 px-1.5 text-xs font-semibold text-warn" data-testid="cost-payer-hidden">
+              🔒 {t('payerHidden')}
             </span>
           )}
           {/* Which kassa it left from (0101) — the name for money readers,
