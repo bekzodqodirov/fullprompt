@@ -6,7 +6,10 @@ import { useTranslations } from 'next-intl';
 import { addCostEntryAction, voidCostEntryAction } from '@/app/(protected)/costs/actions';
 import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 import { latestTxDate } from '@/modules/wms/finance/dates';
-import { ALLOCATION_BASES, type AllocationBasis } from '@/modules/wms/costing/engine';
+import type { AllocationBasis } from '@/modules/wms/costing/engine';
+import { FREIGHT_LIGHT_BELOW, freightUsable, offeredBases } from '@/modules/wms/costing/freight-split';
+import type { FreightHeld, FreightOffer, FreightRowView } from '@/modules/wms/costing/freight-types';
+import { FreightGroupRows, FreightHeldNote } from '@/components/freight-views';
 import { UnmergeButton } from '@/app/(protected)/accounting/xarajat-kassa/unmerge-button';
 import { TwinGapNote, TwinWarning } from '@/components/twin-warning';
 import type { TwinGap, TwinView } from '@/modules/wms/accounting/twins';
@@ -41,6 +44,17 @@ export interface CostEntryView {
    * is undone, and the row says so in words that fit the reader.
    */
   mergedExpenseId?: string | null;
+  /**
+   * A freight bill's explanation — its frozen column, whether it sits on any
+   * box, and its split (docs/YOLKIRA-TAQSIMOT.md §7.4). REQUIRED: a card
+   * that never draws freight says `null`, so a new card cannot forget it.
+   */
+  freight: FreightRowView | null;
+  /**
+   * May this row's basis be changed in place — a TRUCK's own bill (§8). The
+   * per-prixod grid's cells and the receipt/crate/pickup cards say false.
+   */
+  rebasable: boolean;
 }
 
 /** What one bill leaves for the next on the general entry page (his 5a). */
@@ -61,10 +75,6 @@ export interface ClientOption {
   id: string;
   clientCode: string;
 }
-
-// The ONE list lives in the pure engine (allocation-basis-vocabulary fence).
-// 'freight' is offered only where `offeredBases` says so — never here.
-const BASES = ALLOCATION_BASES.filter((b) => b !== 'freight');
 
 /**
  * The payer/kassa refusals in words (0101). A literal list, not a key built
@@ -131,6 +141,31 @@ function payerErrorText(
   return t(key, params);
 }
 
+/** His rule 6's «10», as the sentences say it (the copy freezes the real one per bill). */
+const FREIGHT_LIMIT = FREIGHT_LIGHT_BELOW;
+
+/** The disabled freight option's own short fact (SP-5) — a literal map, never a built key (#163). */
+const FREIGHT_OPT = {
+  server_behind: 'freightOptServerBehind',
+  no_column: 'freightOptNoColumn',
+  unpriced: 'freightOptUnpriced',
+  problem: 'freightOptProblem',
+} as const;
+
+function freightOffText(
+  offer: FreightOffer,
+  why: keyof typeof FREIGHT_OPT,
+  costDate: string,
+  t: (key: string, values?: Record<string, string | number>) => string,
+  zoneWords: (zone: string) => string,
+): string {
+  if (offer.status === 'server_behind' || why === 'server_behind') return t('freightOffServerBehind');
+  const warehouse = `${offer.warehouse.code} — ${offer.warehouse.name}`;
+  if (offer.status === 'no_column') return t('freightOffNoColumn', { warehouse });
+  if (why === 'unpriced') return t('freightOffUnpriced', { warehouse, column: zoneWords(offer.zone), date: costDate });
+  return t('freightOffProblem', { column: zoneWords(offer.zone) });
+}
+
 /**
  * W9 cost capture (spec 6.9) — shared by the batch card (freight, agent fee,
  * customs…), the receipt page (local handling) and the crate card (the yashik
@@ -156,6 +191,7 @@ export function CostPanel({
   defaultTypeCode,
   onKept,
   onBusy,
+  freight,
 }: {
   scope: 'batch' | 'receipt' | 'crate' | 'pickup';
   targetId: string;
@@ -211,6 +247,12 @@ export function CostPanel({
   onKept?: (kept: CostKept) => void;
   /** Told while a save is in flight, so the page can hold the truck picker still. */
   onBusy?: (busy: boolean) => void;
+  /**
+   * The freight basis's offer for THIS truck (docs/YOLKIRA-TAQSIMOT.md §7.2)
+   * — REQUIRED, so a caller that forgets it does not compile: receipt, crate
+   * and pickup cards pass null, and then 'freight' is never listed.
+   */
+  freight: FreightOffer | null;
 }) {
   const t = useTranslations('costing');
   const tc = useTranslations('common');
@@ -239,10 +281,29 @@ export function CostPanel({
   const [costDate, setCostDate] = useState(initial?.costDate ?? today);
   // The factory truck is split by m³ (owner's B5a) — the default, not a lock.
   const scopeBasis: AllocationBasis = scope === 'pickup' ? 'volume' : 'weight';
-  // A direct bill is a one-off: it never carries over (§8.5).
-  const [basis, setBasis] = useState<AllocationBasis>(
-    initial?.basis && initial.basis !== 'direct_to_client' ? initial.basis : scopeBasis,
-  );
+  // The basis a person CHOSE, and whether they did (docs/YOLKIRA-TAQSIMOT.md
+  // §4). Untouched, it follows the type and the date: a yo'lkira type on a
+  // truck whose column is priced on that date reads «yo'lkira tarifi
+  // bo'yicha» by itself (his 4a). A direct bill is a one-off and a kept
+  // freight starts untouched, so it is re-derived for the next truck — it
+  // never follows onto one whose warehouse has no column (§8.5).
+  const keptTouched = Boolean(initial?.basis && initial.basis !== 'direct_to_client' && initial.basis !== 'freight');
+  const [touched, setTouched] = useState(keptTouched);
+  const [chosen, setChosen] = useState<AllocationBasis>(keptTouched ? (initial?.basis ?? scopeBasis) : scopeBasis);
+  const flags = freight?.typeFlags ?? { freightTypeIds: [], customsTypeIds: [] };
+  const offered = offeredBases(scope, flags, typeId || null);
+  const usable = freightUsable(freight, costDate);
+  const isFreightType = flags.freightTypeIds.includes(typeId);
+  const defaultBasis: AllocationBasis =
+    isFreightType && offered.includes('freight') && usable.ok && usable.version ? 'freight' : scopeBasis;
+  const chosenValid = offered.includes(chosen) && (chosen !== 'freight' || usable.ok);
+  const basis: AllocationBasis = touched && chosenValid ? chosen : defaultBasis;
+  const dropped = touched && !chosenValid;
+  const setBasis = (next: AllocationBasis) => {
+    setChosen(next);
+    setTouched(true);
+  };
+  const [unsplit, setUnsplit] = useState<FreightHeld | null>(null);
   const [clientId, setClientId] = useState('');
   // ONE «who paid» choice (0101): our money with no kassa said yet (the
   // accountant's queue), a kassa, or a counterparty — never two, which is
@@ -287,6 +348,9 @@ export function CostPanel({
         currency,
         costDate,
         allocationBasis: basis,
+        // What the preview drew (M6): the server refuses a column that moved
+        // between this render and the press instead of freezing it silently.
+        ...(basis === 'freight' && usable.ok && usable.version ? { freightSeen: usable.version.digest } : {}),
         clientId: basis === 'direct_to_client' ? clientId || undefined : undefined,
         partnerId: partnerId || undefined,
         accountId: accountId || undefined,
@@ -304,9 +368,11 @@ export function CostPanel({
         setNote('');
         const nextBasis = basis === 'direct_to_client' ? scopeBasis : basis;
         if (basis === 'direct_to_client') {
-          setBasis(scopeBasis);
+          setChosen(scopeBasis);
+          setTouched(false);
           setClientId('');
         }
+        setUnsplit(res.unsplit?.held ?? null);
         setSaved(again);
         onKept?.({ typeId, currency, costDate, payer, basis: nextBasis });
         router.refresh();
@@ -358,9 +424,21 @@ export function CostPanel({
             </span>
           )}
           <span className="text-xs text-ink-500">
-            {entry.costDate} · {t(`bases.${entry.allocationBasis}`)}
+            {entry.costDate} ·{' '}
+            {entry.freight && entry.freight.zone
+              ? t('freightLabel', {
+                  warehouse: entry.freight.warehouseCode,
+                  column: zoneWords(entry.freight.zone),
+                  from: entry.freight.tariffFrom,
+                })
+              : t(`bases.${entry.allocationBasis}`)}
             {entry.clientCode && ` → ${entry.clientCode}`}
           </span>
+          {entry.freight?.unsplit && (
+            <span className="rounded bg-warn/15 px-1.5 text-xs font-semibold text-warn" data-testid="cost-unsplit">
+              ⚠ {t('costUnsplitChip')}
+            </span>
+          )}
           {/* Who settled it. Its absence was the complaint: the warehouse
               could not tell our own money from a debt to the transport firm
               once the row was saved. */}
@@ -388,6 +466,24 @@ export function CostPanel({
           )}
           {entry.mergedExpenseId && canUnmerge && <UnmergeButton expenseId={entry.mergedExpenseId} />}
           {entry.note && <span className="w-full text-xs text-ink-500">{entry.note}</span>}
+          {/* «Qanday bo'lindi?» — the bill's own split over its own frozen
+              column, below the row's chips so nothing is squeezed (SP-9). */}
+          {entry.freight?.view && (
+            <details className="w-full text-xs" data-testid="cost-freight-how">
+              <summary className="cursor-pointer text-ink-700">{t('freightHow')}</summary>
+              <div className="mt-1">
+                <FreightGroupRows
+                  view={entry.freight.view}
+                  money={entry.freight.allocatedUsd !== undefined}
+                  amount={null}
+                  currency="USD"
+                  limit={FREIGHT_LIMIT}
+                  cents={entry.freight.allocatedUsd}
+                  testid="cost-freight-row"
+                />
+              </div>
+            </details>
+          )}
           {canVoid && entry.voidable !== false && (
             <button
               type="button"
@@ -415,6 +511,7 @@ export function CostPanel({
         </p>
       )}
       <TwinGapNote gap={gap} />
+      <FreightHeldNote held={unsplit} limit={FREIGHT_LIMIT} />
       {canAdd && !adding && (
         <button
           type="button"
@@ -465,16 +562,70 @@ export function CostPanel({
               decides how the money is spread. */}
           <select
             aria-label={t('basis')}
+            data-testid="cost-basis"
             className="input"
             value={basis}
             onChange={(e) => setBasis(e.target.value as AllocationBasis)}
           >
-            {BASES.map((b) => (
-              <option key={b} value={b}>
+            {offered.map((b) => (
+              <option key={b} value={b} disabled={b === 'freight' && !usable.ok}>
                 {t(`bases.${b}`)}
+                {b === 'freight' && !usable.ok ? ` ${t(FREIGHT_OPT[usable.why])}` : ''}
               </option>
             ))}
           </select>
+          {dropped && (
+            <p className="text-xs text-warn" data-testid="freight-dropped">
+              {t('freightDropped', { basis: t(`bases.${defaultBasis}`) })}
+            </p>
+          )}
+          {/* Why a yo'lkira bill is not split by the tariff here — a FACT,
+              drawn only where the untouched default would have been freight
+              (SP-5): a warehouse deliberately left without a column costs a
+              bill of another type nothing. */}
+          {isFreightType && offered.includes('freight') && !usable.ok && freight && (
+            <p className="text-xs text-ink-500" data-testid="freight-off">
+              {freightOffText(freight, usable.why, costDate, t, zoneWords)}
+              {freight.status === 'no_column' && freight.mayFixColumn && (
+                <>
+                  {' '}
+                  <a className="underline" href={`/admin/warehouses/${freight.warehouse.id}`} target="_blank" rel="noopener">
+                    {t('freightFixColumn')}
+                  </a>
+                </>
+              )}
+              {freight.status === 'ready' && freight.mayFixTariff && (
+                <>
+                  {' '}
+                  <a className="underline" href="/admin/tarif" target="_blank" rel="noopener">
+                    {t('freightFixTariff')}
+                  </a>
+                </>
+              )}
+            </p>
+          )}
+          {basis === 'freight' && usable.ok && freight?.status === 'ready' && (
+            <div className="space-y-1 rounded-md bg-surface p-2" data-testid="freight-preview">
+              <p className="text-xs font-semibold text-ink-700">
+                {t('freightColumnLine', {
+                  warehouse: freight.warehouse.code,
+                  column: zoneWords(freight.zone),
+                  from: usable.version?.from ?? '—',
+                })}
+              </p>
+              {usable.version?.split ? (
+                <FreightGroupRows
+                  view={usable.version.split}
+                  money={freight.money}
+                  amount={parseTypedMoney(amount)}
+                  currency={currency}
+                  limit={FREIGHT_LIMIT}
+                />
+              ) : (
+                <p className="text-xs text-ink-500">{t('freightVersionUnknown')}</p>
+              )}
+            </div>
+          )}
           {basis === 'direct_to_client' && (
             <select aria-label={t('client')} className="input" value={clientId} onChange={(e) => setClientId(e.target.value)}>
               <option value="">{t('client')}…</option>

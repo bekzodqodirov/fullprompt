@@ -43,7 +43,15 @@ import {
   warehouseTariffColumns,
 } from '@/modules/platform/db/schema';
 import type { Actor } from '@/modules/platform/rbac/authorize';
-import { addCostEntry, boxMeasures, CostError, recomputeEntry } from '@/modules/wms/costing/service';
+import {
+  addCostEntry,
+  batchClientCostBreakdown,
+  boxMeasures,
+  CostError,
+  recomputeEntry,
+} from '@/modules/wms/costing/service';
+import { explainBreakdown } from '@/modules/wms/costing/freight-offer';
+import { splitGroup } from '@/modules/wms/costing/freight-split';
 import { prepareFreightCopy } from '@/modules/wms/costing/freight-copy';
 import { mappableZones, setTariffColumnInTx, tariffColumnOf } from '@/modules/wms/costing/tariff-column';
 import { setBoxStatus } from '@/modules/wms/boxes/status';
@@ -654,6 +662,69 @@ describe('the measures the split reads', () => {
     const entry = await bill(truck, 10);
     expect(entry.verdict).toEqual({ kind: 'split' });
     expect(await byClient(entry.id)).toEqual({ [K]: 10 });
+  });
+});
+
+describe('the Narx tab names the band of the bill that billed it (§7.4, E6)', () => {
+  /** One leg `from` → `to`, departed at `at` (the ledger is the membership). */
+  async function mintLeg(boxIds: string[], from: string, to: string, at: Date) {
+    const [batch] = await db
+      .insert(batches)
+      .values({
+        code: `FBL${RUN}-${made.batches.length}`,
+        originWarehouseId: from,
+        destWarehouseId: to,
+        status: 'unloaded',
+        departedAt: at,
+        createdBy: actorId,
+      })
+      .returning();
+    made.batches.push(batch!.id);
+    await db.insert(boxMovements).values(
+      boxIds.map((boxId) => ({
+        boxId,
+        fromWarehouseId: from,
+        toWarehouseId: to,
+        fromStatus: 'loading',
+        toStatus: 'in_transit',
+        cause: 'batch_departed',
+        refType: 'batch',
+        refId: batch!.id,
+        actorId,
+        createdAt: at,
+      })),
+    );
+    return batch!.id;
+  }
+
+  it('10n — an earlier internal leg’s freight bill reaches the export truck’s breakdown with ITS band, explained on ITS truck', async () => {
+    // A: 300 kg / 1 m³ → 101–500 at $200. B rides only the first leg and is
+    // heavy (1100 → per kg), so the bill's split is a two-group one that the
+    // export truck's riders alone could never reproduce.
+    const A = await mintClient('NA');
+    const B = await mintClient('NB');
+    const a = await mintLot({ client: A, kg: 300, m3: 1 });
+    const b = await mintLot({ client: B, kg: 1100, m3: 1 });
+    const t1 = await mintLeg([...a.boxIds, ...b.boxIds], whW, whU, new Date(Date.now() - 120_000));
+    const t2 = await mintLeg(a.boxIds, whU, whD, new Date(Date.now() - 60_000));
+    const entry = await bill(t1, 805);
+    // A $200 · 1, B $0.55 × 1100 = $605 · 1 → A 200 / B 605 of 805.
+    expect(await byClient(entry.id)).toEqual({ [A]: 200, [B]: 605 });
+
+    const breakdown = await batchClientCostBreakdown(t2);
+    const part = (breakdown.get(A) ?? []).find((p) => p.freightEntryId === entry.id);
+    expect(part, 'T1’s bill reaches T2 as «shu reysgacha»').toBeTruthy();
+    expect(part!.batchId).toBe(t1);
+    expect(part!.usd).toBe(200);
+    expect(breakdown.get(B)).toBeUndefined();
+
+    const views = await explainBreakdown(breakdown, { permissions: new Set(['finance.manage']) });
+    const group = splitGroup(views.get(entry.id)?.view, `c:${A}`);
+    expect(group?.band).toEqual({ min: 101, max: 500, price: 200, perKg: false });
+    // The BILL's split (A and B over T1's riders), not a re-run over T2's
+    // riders, where A alone would read 100 % (E6).
+    expect(group?.share).toBeCloseTo(200 / 805, 6);
+    expect(views.get(entry.id)?.warehouseCode).toBe(`FW${RUN}`.slice(0, 8));
   });
 });
 

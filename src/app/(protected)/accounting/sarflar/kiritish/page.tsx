@@ -5,6 +5,7 @@ import { payerView } from '@/modules/wms/partners/staff';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { companyMoneySight } from '@/modules/wms/finance/scope';
 import { batchCostSheet } from '@/modules/wms/costing/service';
+import { explainFreightBills } from '@/modules/wms/costing/freight-offer';
 import { costSightFor, tillView } from '@/modules/wms/costing/cost-sight';
 import { mayPickTill } from '@/modules/wms/accounting/till-door';
 import { mayEnterBatchCost } from '@/modules/wms/costing/cost-door';
@@ -65,6 +66,10 @@ export default async function SarflarEntryPage({
       batchCostSheet(chosen.batch.id, costSightFor(actor)),
     ]);
     head = { id: chosen.batch.id, code: chosen.batch.code, card: mayOpenBatchCard(actor, chosen.batch) };
+    const freightRows = await explainFreightBills(
+      sheet.entries.map(({ entry, hasShare }) => ({ ...entry, hasShare })),
+      actor,
+    );
     panel = {
       targetId: chosen.batch.id,
       entries: sheet.entries.map(({ entry, typeName, clientCode, partnerName, partnerIsStaff, accountName }) => ({
@@ -77,6 +82,8 @@ export default async function SarflarEntryPage({
         allocationBasis: entry.allocationBasis,
         note: entry.note,
         clientCode,
+        freight: freightRows.get(entry.id) ?? null,
+        rebasable: entry.scope === 'batch',
         ...payerView(actor.permissions, { partnerName, partnerIsStaff }),
         ...tillView(actor.permissions, { accountId: entry.accountId, accountName, mergedExpenseId: entry.mergedExpenseId }),
       })),
@@ -91,6 +98,7 @@ export default async function SarflarEntryPage({
       canUnmerge: mayPickTill(actor.permissions),
       tillOptions: options.tills,
       partnerOptions: options.partners,
+      freight: options.freight,
     };
   }
 

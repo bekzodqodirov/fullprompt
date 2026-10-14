@@ -17,7 +17,10 @@ import {
   type LotLandedCost,
 } from '@/modules/wms/costing/service';
 import { batchLots, type BatchLot } from '@/modules/wms/batches/lots';
-import { mayOpenBatchCard, mayOpenBatchPricing } from '@/modules/wms/batches/card-door';
+import { mayOpenBatchCard, mayOpenBatchCosts, mayOpenBatchPricing } from '@/modules/wms/batches/card-door';
+import { explainBreakdown } from '@/modules/wms/costing/freight-offer';
+import { bandText, splitGroup } from '@/modules/wms/costing/freight-split';
+import type { FreightRowView } from '@/modules/wms/costing/freight-types';
 import { loadBatchHead } from '@/modules/wms/batches/card-head';
 import { isContinuationTrip, tripKind } from '@/modules/wms/reports/dashboard-math';
 import { canWriteDeal } from '@/modules/wms/deals/service';
@@ -92,6 +95,7 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
   const tbc = await getTranslations('batchCard');
   const tcargo = await getTranslations('cargo');
   const tc = await getTranslations('calc');
+  const tcost = await getTranslations('costing');
 
   const head = await loadBatchHead(id);
   if (!head) notFound();
@@ -120,6 +124,18 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
     full ? unconvertedCostCount(id, receiptIds) : Promise.resolve(0),
     full ? batchCostEntryCount(id) : Promise.resolve(0),
   ]);
+
+  // A yo'lkira-tarifi part names its band (§7.4). The map is built from the
+  // breakdown's OWN freight ids (E6): «shu reysgacha»/«keyingi yo'l» parts
+  // are other trucks' bills, each explained on its own truck and copy.
+  const freightViews = full ? await explainBreakdown(breakdown, actor) : new Map<string, FreightRowView>();
+  const costsDoor = mayOpenBatchCosts(actor.permissions);
+  const freightBand = (part: ClientCostPart, clientId: string): string | null => {
+    const group = part.freightEntryId ? splitGroup(freightViews.get(part.freightEntryId)?.view, `c:${clientId}`) : undefined;
+    if (!group) return null;
+    const b = bandText(group.band, { money: full });
+    return tcost(b.key, { range: b.range, price: b.price });
+  };
 
   const view = pricingView(lots, lotCost, pricingChargesOf(charges));
   // Prices whose cargo left a truck (0104, Q21a / Q2): THIS truck's own
@@ -679,15 +695,34 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                       {t('costDetail')}
                     </summary>
                     <ul className="mt-1 space-y-0.5 text-xs">
-                      {parts.map((part, index) => (
-                        <li key={index} className="flex justify-between gap-2">
-                          <span className="min-w-0 truncate text-ink-700">
-                            {part.later ? '↪ ' : ''}
-                            {part.source} · {part.typeName}
-                          </span>
-                          <span className="num shrink-0">${part.usd.toFixed(2)}</span>
-                        </li>
-                      ))}
+                      {parts.map((part, index) => {
+                        const band = freightBand(part, group.clientId);
+                        const words = band
+                          ? tcost('freightBandLine', { source: part.source, type: part.typeName, band })
+                          : `${part.source} · ${part.typeName}`;
+                        return (
+                          <li
+                            key={index}
+                            className="flex justify-between gap-2"
+                            data-testid={band ? 'cost-breakdown-freight' : undefined}
+                          >
+                            {/* A band line wraps (a long marking or band has
+                                no break in it, #400); the plain line keeps its
+                                one truncated row. */}
+                            <span className={`min-w-0 text-ink-700 ${band ? 'break-words' : 'truncate'}`}>
+                              {part.later ? '↪ ' : ''}
+                              {band && costsDoor && part.batchId ? (
+                                <Link href={`/batches/${part.batchId}/xarajatlar`} className="underline">
+                                  {words}
+                                </Link>
+                              ) : (
+                                words
+                              )}
+                            </span>
+                            <span className="num shrink-0">${part.usd.toFixed(2)}</span>
+                          </li>
+                        );
+                      })}
                     </ul>
                   </details>
                 )}

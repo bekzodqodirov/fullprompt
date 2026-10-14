@@ -240,6 +240,7 @@ export default async function PickupCardPage({ params }: { params: Promise<{ id:
         <p className="text-xs text-ink-500">{t('costHint', { n: linkedCount })}</p>
         <CostPanel
           scope="pickup"
+          freight={null}
           targetId={pickup.id}
           entries={costs.map(({ entry, typeName, partnerName, partnerIsStaff, accountName }) => ({
             id: entry.id,
@@ -249,6 +250,9 @@ export default async function PickupCardPage({ params }: { params: Promise<{ id:
             amountUsd: entry.amountUsd,
             costDate: entry.costDate,
             allocationBasis: entry.allocationBasis,
+            // Freight is a truck's own basis (docs/YOLKIRA-TAQSIMOT.md §4).
+            freight: null,
+            rebasable: false,
             note: entry.note,
             ...payerView(actor.permissions, { partnerName, partnerIsStaff }),
             ...tillView(actor.permissions, { accountId: entry.accountId, accountName, mergedExpenseId: entry.mergedExpenseId }),

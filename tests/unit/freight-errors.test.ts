@@ -91,6 +91,16 @@ describe('freight refusals name what to fix', () => {
     }
   });
 
+  it('the band words and the disabled option’s facts exist in all four bundles (built keys, #163)', () => {
+    const opt = /const FREIGHT_OPT = \{([\s\S]*?)\} as const;/.exec(PANEL)?.[1] ?? '';
+    const optKeys = [...opt.matchAll(/: '([A-Za-z]+)'/g)].map((m) => m[1]!);
+    expect(optKeys.length).toBe(4);
+    const bandKeys = ['freightBand', 'freightBandPerKg', 'freightBandMoney', 'freightBandMoneyPerKg'];
+    for (const key of [...optKeys, ...bandKeys]) {
+      for (const l of LOCALES) expect(typeof bundles[l].costing![key], `${l}: costing.${key}`).toBe('string');
+    }
+  });
+
   it('every held reason has its words in all four bundles', () => {
     for (const key of new Set(Object.values(HELD_KEY))) {
       for (const l of LOCALES) expect(typeof bundles[l].costing![key], `${l}: costing.${key}`).toBe('string');

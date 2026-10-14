@@ -143,3 +143,26 @@ describe('the warehouse form keeps its column', () => {
   });
 });
 
+describe('the browser bundle stays free of the database', () => {
+  it('the cost panel and the freight views import only pure costing values (#276)', () => {
+    const SERVER = /costing\/(service|freight-offer|freight-copy|tariff-column|freight-ready|rebase|customs-ids|cost-entry)['"]/;
+    for (const rel of ['src/components/cost-panel.tsx', 'src/components/freight-views.tsx']) {
+      const lines = strip(read(rel))
+        .split('\n')
+        .filter((l) => /^import /.test(l) && SERVER.test(l));
+      for (const line of lines) expect(line, `${rel}: a value import from a server module`).toMatch(/^import type /);
+    }
+  });
+
+  it('the reason line is drawn only under a freight type (SP-5)', () => {
+    const panel = strip(read('src/components/cost-panel.tsx'));
+    expect(panel).toMatch(/const isFreightType = flags\.freightTypeIds\.includes\(typeId\);/);
+    expect(panel).toMatch(/\{isFreightType && offered\.includes\('freight'\) && !usable\.ok && freight && \(/);
+  });
+
+  it('the panel posts the digest of the version its preview drew (M6)', () => {
+    const panel = strip(read('src/components/cost-panel.tsx'));
+    expect(panel).toMatch(/basis === 'freight' && usable\.ok && usable\.version \? \{ freightSeen: usable\.version\.digest \}/);
+  });
+});
+

@@ -8,9 +8,11 @@ import type {
   FreightCopyDraft,
   FreightHeld,
   FreightOffer,
+  GroupView,
   HeldGroup,
   HeldLot,
   PricedGroup,
+  SplitView,
   TypeFlags,
 } from './freight-types';
 
@@ -411,6 +413,11 @@ export function bandText(band: FreightBandCopy, opts: { money: boolean }): BandT
       ? 'freightBandPerKg'
       : 'freightBand';
   return { key, range, price };
+}
+
+/** One group of a split view by its key (`c:<client>` / `r:<receipt>`); none when held or absent. */
+export function splitGroup(view: SplitView | null | undefined, key: string): GroupView | undefined {
+  return view?.kind === 'split' ? view.groups.find((g) => g.key === key) : undefined;
 }
 
 export type CostScope = 'receipt' | 'batch' | 'crate' | 'pickup';

@@ -64,8 +64,13 @@ describe('allocation bases — one vocabulary', () => {
   it('the zod enum and the cost panel import the list instead of restating it', () => {
     const service = stripComments(read('src/modules/wms/costing/service.ts'));
     expect(service).toMatch(/allocationBasis:\s*z\.enum\(ALLOCATION_BASES\)/);
+    // The panel lists `offeredBases(…)`, which is built from the const (the
+    // freight round, 0132) — so it imports the vocabulary second-hand.
     const panel = stripComments(read('src/components/cost-panel.tsx'));
-    expect(panel).toMatch(/ALLOCATION_BASES/);
+    expect(panel).toMatch(/offeredBases\(scope, flags, typeId \|\| null\)/);
+    expect(stripComments(read('src/modules/wms/costing/freight-split.ts'))).toMatch(
+      /const old = ALLOCATION_BASES\.filter\(\(b\) => b !== 'freight'\);/,
+    );
     // No hand-written list of its own: an array literal naming two bases.
     expect(panel).not.toMatch(/\[\s*'weight'\s*,\s*'volume'/);
   });

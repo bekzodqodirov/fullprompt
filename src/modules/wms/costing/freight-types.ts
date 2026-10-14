@@ -141,7 +141,7 @@ export interface FreightVersion {
   from: string;
   /** copyDigest of this version's draft — what the save compares (M6). */
   digest: string;
-  problem: ColumnProblem | null;
+  problem: ColumnProblem | { kind: 'not_finite' } | null;
   split: SplitView | null;
 }
 

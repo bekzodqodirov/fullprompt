@@ -2029,6 +2029,8 @@ export interface CostRow {
   partnerName: string | null;
   partnerIsStaff: boolean;
   accountName: string | null;
+  /** The bill sits on at least one box (a held freight bill does not). */
+  hasShare: boolean;
 }
 
 /** What colleagues wrote on the same target: how many, and of which types — never a sum. */
@@ -2072,6 +2074,10 @@ export async function costEntriesFor(
       // it only to the staff-money readers (`payerView`, partners/staff.ts).
       partnerIsStaff: sql<boolean>`coalesce(${staffPartnerSql()}, false)`,
       accountName: moneyAccounts.name,
+      // Does the bill sit on ANY box? An expression, no join to a new table
+      // (docs/YOLKIRA-TAQSIMOT.md §6.3.2): a held freight bill, or one whose
+      // base is empty, reads false and the row says so.
+      hasShare: sql<boolean>`EXISTS (SELECT 1 FROM cost_allocations ca WHERE ca.cost_entry_id = ${costEntries}.id)`,
     })
     .from(costEntries)
     .innerJoin(costTypes, eq(costEntries.costTypeId, costTypes.id))
@@ -2437,6 +2443,14 @@ export interface ClientCostPart {
   /** An Uzbek leg AFTER this truck («keyingi yo'l»), carried here. */
   later: boolean;
   usd: number;
+  /**
+   * The bill's own id when it was split by the yo'lkira tariff (0132), so
+   * the Narx tab can name its band from THAT bill's copy and truck; null for
+   * every other basis, which keeps grouping by source and type as before.
+   */
+  freightEntryId: string | null;
+  /** The truck that billed it — the band line links to ITS xarajat tab. */
+  batchId: string | null;
 }
 
 /**
@@ -2455,9 +2469,10 @@ export async function batchClientCostBreakdown(
   const landed = landedAllocationsSql(sql`${batchId}::uuid`);
   const rows = (await db.execute(sql`
     WITH ${landed.with}
-    SELECT ca.client_id, ct.name AS type_name, eb.code AS batch_code,
+    SELECT ca.client_id, ct.name AS type_name, eb.code AS batch_code, eb.id AS batch_id,
            er.number AS receipt_number, crt.code AS crate_code, pk.code AS pickup_code,
            (m.upto IS NOT NULL AND eb.departed_at > m.at) AS later,
+           CASE WHEN ce.allocation_basis = 'freight' THEN ce.id END AS freight_entry_id,
            sum(ca.amount_usd) AS usd
       ${landed.joins}
       JOIN cost_types ct ON ct.id = ce.cost_type_id
@@ -2465,11 +2480,13 @@ export async function batchClientCostBreakdown(
       LEFT JOIN crates crt ON crt.id = ce.crate_id
       LEFT JOIN pickups pk ON pk.id = ce.pickup_id
      WHERE ${landed.where} AND ca.client_id IS NOT NULL
-     GROUP BY ca.client_id, ct.name, eb.code, er.number, crt.code, pk.code, later
+     GROUP BY ca.client_id, ct.name, eb.code, eb.id, er.number, crt.code, pk.code, later, freight_entry_id
   `)) as unknown as {
     client_id: string;
     type_name: string;
     batch_code: string | null;
+    batch_id: string | null;
+    freight_entry_id: string | null;
     receipt_number: string | null;
     crate_code: string | null;
     pickup_code: string | null;
@@ -2484,6 +2501,8 @@ export async function batchClientCostBreakdown(
       typeName: row.type_name,
       later: Boolean(row.later),
       usd: Math.round(Number(row.usd) * 100) / 100,
+      freightEntryId: row.freight_entry_id,
+      batchId: row.batch_id,
     });
     out.set(row.client_id, list);
   }
