@@ -15,6 +15,7 @@ import { mayPickTill } from '@/modules/wms/accounting/till-door';
 import { BatchCard, batchTabMetadata } from '../batch-card';
 import { mayEnterBatchCost } from '@/modules/wms/costing/cost-door';
 import { costPanelOptions } from '@/modules/wms/costing/cost-entry';
+import { explainFreightBills } from '@/modules/wms/costing/freight-offer';
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   return batchTabMetadata((await params).id, 'xarajat');
@@ -83,6 +84,11 @@ export default async function BatchCostGridPage({ params }: { params: Promise<{ 
   // the truck's total and per-unit cost come back null for him — everybody's
   // entries beside this truck's kg/m³ are the tannarx one division away.
   const costSheet = await batchCostSheet(id, costSightFor(actor));
+  // Each freight bill explained over its own copy (docs/YOLKIRA-TAQSIMOT.md §7.4).
+  const freightRows = await explainFreightBills(
+    costSheet.entries.map(({ entry, hasShare }) => ({ ...entry, hasShare })),
+    actor,
+  );
   // «Rasxodini yozmading» (owner, 2026-09-24): a truck that has LEFT with
   // nothing attributed to it — no bill of its own, no stamped grid cell.
   const ownCostCount = batch.departedAt ? await batchCostEntryCount(id) : null;
@@ -100,7 +106,7 @@ export default async function BatchCostGridPage({ params }: { params: Promise<{ 
         <CostPanel
           scope="batch"
           targetId={batch.id}
-          entries={costSheet.entries.map(({ entry, typeName, clientCode, partnerName, partnerIsStaff, accountName }) => ({
+          entries={costSheet.entries.map(({ entry, hasShare, typeName, clientCode, partnerName, partnerIsStaff, accountName }) => ({
             id: entry.id,
             typeName,
             amount: entry.amount,
@@ -110,6 +116,12 @@ export default async function BatchCostGridPage({ params }: { params: Promise<{ 
             allocationBasis: entry.allocationBasis,
             note: entry.note,
             clientCode,
+            freight: freightRows.get(entry.id) ?? null,
+            // A truck's own bill; the per-prixod grid's stamped cells are not (E2).
+            rebasable: entry.scope === 'batch',
+            costTypeId: entry.costTypeId,
+            // Converted and on no box — any basis (`noShareSql`), the row the todo counts.
+            unsplit: entry.amountUsd !== null && !hasShare,
             ...payerView(actor.permissions, { partnerName, partnerIsStaff }),
             ...tillView(actor.permissions, { accountId: entry.accountId, accountName, mergedExpenseId: entry.mergedExpenseId }),
           }))}
@@ -126,6 +138,7 @@ export default async function BatchCostGridPage({ params }: { params: Promise<{ 
           canUnmerge={mayPickTill(actor.permissions)}
           tillOptions={tills}
           partnerOptions={partnerOptions}
+          freight={options.freight}
         />
         {/* What colleagues wrote here, for a reader who sees only their
             own entries: the TYPES and never a sum, so «Rastamojka» is not
@@ -138,6 +151,17 @@ export default async function BatchCostGridPage({ params }: { params: Promise<{ 
         {costSheet.totalUsd !== null && costSheet.entries.length > 0 && (
           <p className="border-t border-line pt-2 text-sm">
             <b>Σ ${costSheet.totalUsd}</b>
+            {/* What of the Σ sits on no box (a held yo'lkira bill, an empty
+                base): the Σ sums ENTRIES and the cargo's tannarx sums
+                allocations, so the two disagree in words, never silently
+                (docs/YOLKIRA-TAQSIMOT.md §6.3.3). Whole sight only, as the
+                Σ itself is. */}
+            {costSheet.unsplitUsd !== null && costSheet.unsplitUsd > 0.009 && (
+              <span className="font-semibold text-warn" data-testid="cost-sigma-unsplit">
+                {' '}
+                {tcost('costSigmaUnsplit', { usd: `$${costSheet.unsplitUsd.toFixed(2)}` })}
+              </span>
+            )}
             {costSheet.usdPerKg !== null && (
               <span className="text-ink-700">
                 {' '}· ${costSheet.usdPerKg}/kg · ${costSheet.usdPerM3}/m³ ({costSheet.boxCount} 📦,{' '}
@@ -173,6 +197,7 @@ export default async function BatchCostGridPage({ params }: { params: Promise<{ 
             partners={partnerOptions}
             tills={tills}
             ownOnly={sight.ownOnly !== null}
+            freightTypeIds={options.freight?.typeFlags.freightTypeIds ?? []}
           />
         )}
       </section>

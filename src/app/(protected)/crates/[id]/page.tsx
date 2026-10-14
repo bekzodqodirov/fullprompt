@@ -132,8 +132,9 @@ export default async function CrateDetailPage({ params }: { params: Promise<{ id
         {crate.note && <p className="text-sm text-ink-700">📝 {crate.note}</p>}
         <CostPanel
           scope="crate"
+          freight={null}
           targetId={crate.id}
-          entries={costs.map(({ entry, typeName, partnerName, partnerIsStaff, accountName }) => ({
+          entries={costs.map(({ entry, hasShare, typeName, partnerName, partnerIsStaff, accountName }) => ({
             id: entry.id,
             typeName,
             amount: entry.amount,
@@ -141,6 +142,12 @@ export default async function CrateDetailPage({ params }: { params: Promise<{ id
             amountUsd: entry.amountUsd,
             costDate: entry.costDate,
             allocationBasis: entry.allocationBasis,
+            // Freight is a truck's own basis (docs/YOLKIRA-TAQSIMOT.md §4).
+            freight: null,
+            rebasable: false,
+            costTypeId: entry.costTypeId,
+            // Converted and on no box — any basis (`noShareSql`), the fact a truck's todo counts.
+            unsplit: entry.amountUsd !== null && !hasShare,
             note: entry.note,
             ...payerView(actor.permissions, { partnerName, partnerIsStaff }),
             ...tillView(actor.permissions, { accountId: entry.accountId, accountName, mergedExpenseId: entry.mergedExpenseId }),

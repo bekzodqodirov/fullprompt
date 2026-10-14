@@ -529,7 +529,8 @@
     "journalCapped": "Ro‘yxatda eng yangi {n} tasi ko‘rsatilgan — yuqoridagi jami butun davr uchun.",
     "journalWarehouse": "Sklad",
     "journalAllWarehouses": "Barcha skladlar",
-    "journalShow": "Ko‘rsatish"
+    "journalShow": "Ko‘rsatish",
+    "landedFreightHeld": "Tarif bo‘yicha mashina yukiga bo‘linmagan {count, plural, other {# ta yo‘lkira xarajati}} ({usd}) hech bir qatorda yo‘q — o‘sha mashinalardagi mijozlarning tannarxi shuncha kam. Lot to‘g‘rilansa yoki «Bo‘lish usuli» bilan bo‘linadi va o‘zi qo‘shiladi."
   },
   "warehouses": {
     "title": "Skladlar",
@@ -557,7 +558,13 @@
     "issuesToClients": "Bu omborda mijozga yuk beriladi",
     "issuesToClientsHint": "Faqat mijoz o‘z yukini olib ketadigan omborlar uchun (TAS, AND). Belgilanmasa, «Berish» ekrani bu omborda ochilmaydi.",
     "allowsQuickBatch": "Tezkor yuklashga ruxsat",
-    "allowsQuickBatchHint": "Plansiz va tasdiqsiz mashina. Yuk chegara kesib o‘tadigan skladda belgini olib tashlang."
+    "allowsQuickBatchHint": "Plansiz va tasdiqsiz mashina. Yuk chegara kesib o‘tadigan skladda belgini olib tashlang.",
+    "tariffZoneLabel": "Yo‘lkira tarifi ustuni",
+    "tariffZoneNone": "— tanlanmagan",
+    "tariffZoneHint": "Shu skladdan chiqqan mashina xarajati tarifning qaysi ustuni nisbatida bo‘linadi. Bo‘sh qolsa, bu sklad mashinalarida «yo‘lkira tarifi bo‘yicha» usuli ishlamaydi.",
+    "tariffZoneUnpriced": "(narx yo‘q)",
+    "errZoneUnknown": "Bunday tarif ustuni yo‘q — ro‘yxatdan tanlang.",
+    "errServerBehind": "Server hali yangilanmagan — tarif ustunini hozircha saqlab bo‘lmaydi. Keyinroq urinib ko‘ring."
   },
   "clientCard": {
     "tabs": "Mijoz kartasi bo‘limlari",
@@ -735,7 +742,8 @@
       "kpi_expense_category_id": "Sotuvchilarga KPI to‘lovi yoziladigan xarajat turi (faqat kassa). «Hodimlar» sahifasida tanlanadi.",
       "salary_expense_category_id": "Oyliklar xarajat turi: «Hodimlar» sahifasi oylik va uning to‘lanishini shu turdagi shablonlardan ko‘rsatadi.",
       "price_history_min_sim": "«Oldingi narx» o‘tgan prixod mashinasini ko‘rsatishi uchun tovar nomi o‘xshashligi darajasi (0..1)",
-      "price_history_ai_daily_limit": "«Oldingi narx» 🤖 tugmasi kuniga necha marta AI so'rashi mumkin (hisoblash limitidan alohida)"
+      "price_history_ai_daily_limit": "«Oldingi narx» 🤖 tugmasi kuniga necha marta AI so'rashi mumkin (hisoblash limitidan alohida)",
+      "freight_tariff_cost_type_codes": "Mashina xarajatida «yo‘lkira tarifi bo‘yicha» o‘zi tanlanadigan xarajat turlari (kodlar ro‘yxati)"
     },
     "driverApp": "Haydovchi ilovasi",
     "callsApp": "Qo'ng'iroq ilovasi",
@@ -853,7 +861,11 @@
       "calcDone": "Narx berildi",
       "calcRecalc": "Qayta hisoblashga yuborildi",
       "calcSection": "Bo‘lim",
-      "itemCount": "Tovar qatorlari"
+      "itemCount": "Tovar qatorlari",
+      "allocationBasis": "Bo‘lish usuli",
+      "tariffZone": "Tarif ustuni",
+      "tariffFrom": "Tarif sanasi",
+      "tariffBands": "Tarif qatorlari"
     }
   },
   "profile": {
@@ -1219,7 +1231,8 @@
       "volume": "hajm bo‘yicha",
       "chargeable": "hisobiy og‘irlik bo‘yicha",
       "boxes": "karobka soni bo‘yicha",
-      "direct_to_client": "to‘g‘ridan-to‘g‘ri klientga"
+      "direct_to_client": "to‘g‘ridan-to‘g‘ri klientga",
+      "freight": "yo‘lkira tarifi bo‘yicha"
     },
     "typesTitle": "Xarajat turlari",
     "typeName": "Tur nomi",
@@ -1318,7 +1331,68 @@
     "errForbidden": "Bu yerga xarajat yozishga ruxsatingiz yo'q.",
     "errValidation": "Ma'lumot to'liq emas — turi, summasi va sanasini tekshiring.",
     "errAlreadyVoided": "Bu yozuv allaqachon bekor qilingan — sahifani yangilang.",
-    "payerHidden": "hodim o'z pulidan to'lagan"
+    "payerHidden": "hodim o'z pulidan to'lagan",
+    "errFreightBatchOnly": "Yo‘lkira tarifi bo‘yicha bo‘lish faqat mashina (partiya) xarajatida bor.",
+    "errFreightOnCustoms": "Rastamojka tarif bo‘yicha bo‘linmaydi — u deklaratsiya bo‘yicha hisoblanadi. Boshqa usulni tanlang.",
+    "errFreightNoColumn": "{warehouse} skladiga yo‘lkira tarifi ustuni yozilmagan. Rahbariyat sklad sozlamasida ustunni tanlasin.",
+    "errFreightUnpriced": "{warehouse} skladining ustuni — {column}. {date} sanasida bu ustunda narx yo‘q. Rahbariyat tarifga shu sanagacha narx yozsin.",
+    "errFreightGap": "{column} ustunida {from}–{to} kg/kub uchun narx yo‘q. Rahbariyat tarifni to‘ldirsin.",
+    "errFreightTop": "{column} ustunida {from} kg/kub va undan og‘ir yuk uchun narx yo‘q (eng yuqori qator yopiq). Rahbariyat tarifni to‘ldirsin.",
+    "errFreightOverlap": "{column} ustunida {at} kg/kub ikki qatorga tushadi. Rahbariyat tarifni tuzatsin.",
+    "errFreightInvalid": "{column} ustunida noto‘g‘ri narx bor. Rahbariyat tarifni tuzatsin.",
+    "errFreightChanged": "Ko‘rganingizdan keyin tarif yoki sklad ustuni o‘zgardi — endi {column}, {from} tarifi. Yangi bo‘linishni ko‘rib, qayta saqlang.",
+    "errServerBehind": "Server hali yangilanmagan — yo‘lkira tarifi bo‘yicha bo‘lish hozircha ishlamaydi. Boshqa usul bilan saqlang yoki keyinroq urinib ko‘ring.",
+    "freightHeldCopy": "⚠ Bu hisobning tarif nusxasi yo‘q yoki buzilgan — «Bo‘lish usuli» tugmasi bilan qayta bo‘ling.",
+    "freightHeldCustoms": "⚠ Bu xarajat turi endi rastamojka — tarif bo‘yicha bo‘linmaydi. «Bo‘lish usuli» tugmasi bilan boshqa usulni tanlang.",
+    "freightOptServerBehind": "(server yangilanmagan)",
+    "freightOptNoColumn": "(ustun yozilmagan)",
+    "freightOptUnpriced": "(narx yo‘q)",
+    "freightOptProblem": "(tarif to‘liq emas)",
+    "freightDropped": "Tanlangan usul bu tur yoki sanaga to‘g‘ri kelmaydi — {basis} bo‘linadi.",
+    "freightOffServerBehind": "Server hali yangilanmagan — yo‘lkira tarifi bo‘yicha bo‘lish hozircha yo‘q, og‘irlik bo‘yicha bo‘linadi.",
+    "freightOffNoColumn": "{warehouse} skladiga yo‘lkira tarifi ustuni yozilmagan — og‘irlik bo‘yicha bo‘linadi.",
+    "freightOffUnpriced": "{warehouse} skladining {column} ustunida {date} sanasiga narx yo‘q — og‘irlik bo‘yicha bo‘linadi.",
+    "freightOffProblem": "{column} ustunida tarif to‘liq emas — og‘irlik bo‘yicha bo‘linadi.",
+    "freightFixColumn": "Skladni ochish →",
+    "freightFixTariff": "Tarifni ochish →",
+    "freightColumnLine": "{warehouse} ustuni: {column} · {from} tarifi",
+    "freightVersionUnknown": "Bu sana uchun tarifni server saqlashda tekshiradi.",
+    "freightLabel": "yo‘lkira tarifi bo‘yicha · {warehouse} ustuni: {column} · {from} tarifi",
+    "costUnsplitChip": "bo‘linmagan",
+    "freightHow": "Qanday bo‘lindi?",
+    "freightBand": "{range} qatori",
+    "freightBandPerKg": "{range} qatori (kg bo‘yicha)",
+    "freightBandMoney": "{range} · {price}/kub",
+    "freightBandMoneyPerKg": "{range} · {price}/kg",
+    "freightHeldLot": "{lot} · {density} kg/kub",
+    "freightHeldMore": "+{n}",
+    "freightHeldMeasure": "{lot} lotining hajmi yoki og‘irligi yozilmagan — lotni to‘g‘irlang.",
+    "freightHeldLight": "{group} yuki {m3} kub · {kg} kg → {density} kg/kub — 1 kub uchun {limit} kg dan kam.",
+    "freightHeldFix": "Lot to‘g‘rilangach hisob o‘zi bo‘linadi.",
+    "freightHeldTitle": "⚠ Hisob saqlandi, lekin mashina yukiga bo‘linmadi:",
+    "freightHeldNothing": "Mashinada yuk yo‘q — hisob hech kimga bo‘linmadi.",
+    "freightPreviewHeld": "Saqlanadi, lekin bo‘linmaydi:",
+    "freightRowLine1": "{label} · {m3} kub · {density} kg/kub",
+    "freightLightLot": "ⓘ {lot} lotining o‘zi {density} kg/kub — 1 kub uchun {limit} kg dan kam. Guruh og‘irroq, shuning uchun hisob bo‘lindi; o‘lchamni tekshiring.",
+    "gridFreightHint": "Tarif bo‘yicha bo‘lish — yuqoridagi «＋» formasidan",
+    "freightBandLine": "{source} · {type} · tarif {band}",
+    "rebaseButton": "Bo‘lish usuli ✎",
+    "rebasePreviewTitle": "Kimga qancha tushadi: hozir → yangi",
+    "rebaseShow": "Ko‘rish",
+    "rebaseSave": "Shu usulda saqlash",
+    "rebaseCancel": "Bekor qilish",
+    "rebaseUnconverted": "kurs yo‘q — hali bo‘linmagan",
+    "rebaseColumn": "Ustun: {column} ({warehouse}) · {from} tarifi",
+    "rebaseColumnMoved": "hozir: {old} → yangi: {new}",
+    "rebaseRow": "{label} · {before} % → {after} %",
+    "rebaseRowMoney": "${before} → ${after}",
+    "rebasePending": "Usul saqlandi; bo‘linish navbatga qo‘yildi — bir daqiqada yangilanadi.",
+    "errRebaseChanged": "Ko‘rganingizdan keyin nimadir o‘zgardi (yuk, tarif yoki sklad ustuni). Yangi hisobni ko‘rib, qayta saqlang.",
+    "errRebaseSame": "Bu hisob allaqachon shu usul va shu tarif bilan bo‘lingan.",
+    "errRebaseDirect": "«To‘g‘ridan-to‘g‘ri klientga» usuliga bu tugma bilan o‘tib bo‘lmaydi — hisobni bekor qilib qayta kiriting.",
+    "errRebaseBatchOnly": "Bu xarajat prixod jadvalidan — uning bo‘linish usuli o‘zgarmaydi. Usulni faqat mashinaning o‘z xarajatida tanlash mumkin.",
+    "costSigmaUnsplit": "· shundan {usd} bo‘linmagan",
+    "rebaseNowhere": "Bu usulda hisob hech qaysi karobkaga tushmaydi (yukning shu o‘lchami yozilmagan) — hech kimning tannarxiga kirmaydi."
   },
   "batchCard": {
     "tabLoading": "Yuklash",
@@ -1343,7 +1417,8 @@
     "todoNoCosts": "Xarajat yozilmagan",
     "todoTnved": "TNVED kodsiz",
     "tileContinuation": "davomi",
-    "tileContinuationLine": "narx {codes} da"
+    "tileContinuationLine": "narx {codes} da",
+    "todoUnsplit": "Bo‘linmagan xarajat"
   },
   "batches": {
     "title": "Partiyalar",
@@ -1912,7 +1987,11 @@
     "continuationTrip": "Davomi: bu mashinadagi yukning narxi va butun yo‘l xarajati {codes} mashinasida. Bu yerda narx qo‘yish shart emas.",
     "continuationClient": "Bu mijozning {n} / {total} karobkasi narxi va yo‘l xarajati {codes} mashinasida (butun yo‘l uchun bitta narx). Qolganiga narx shu yerda qo‘yiladi.",
     "secondBillWarn": "Bu mijozning {n} ta karobkasi narxi {codes} mashinasida — butun yo‘l uchun bitta narx. Bu yerga yozilgan narx ular uchun mijozga ikkinchi hisob bo‘ladi. Baribir yozasizmi?",
-    "openCargo": "⏳ Hali topshirilmagan karobkalar: {n} — keyingi yo‘l xarajati qo‘shilsa, tannarx o‘sishi mumkin."
+    "openCargo": "⏳ Hali topshirilmagan karobkalar: {n} — keyingi yo‘l xarajati qo‘shilsa, tannarx o‘sishi mumkin.",
+    "unsplit": "⚠ {n, plural, other {# ta xarajat}} ({usd}) bu mashina yukiga bo‘linmagan — tannarxga kirmagan.",
+    "unsplitCarried": "⚠ {code} mashinasining {usd} xarajati yukka bo‘linmagan — {leg} tannarxda yo‘q",
+    "unsplitCarriedNoRate": "⚠ {code} mashinasining {n, plural, other {# ta xarajatida}} kurs yo‘q — {leg} tannarxda yo‘q",
+    "carriedIncomplete": "⚠ to‘liq emas"
   },
   "map": {
     "title": "Xarita",
@@ -2170,7 +2249,8 @@
       "batch": "yuki yo‘q mashina",
       "pickup": "prixodi ulanmagan zavod reysi",
       "receipt": "prixod qutilariga tushmagan",
-      "crate": "yashik qutilariga tushmagan"
+      "crate": "yashik qutilariga tushmagan",
+      "freightHeld": "tarif bo‘yicha bo‘linmagan yo‘lkira"
     },
     "nonCashCategory": "Bu xarajat turi pul emas (masalan, amortizatsiya): unda kassa ham, to‘lovchi ham bo‘lmaydi.",
     "nonCashHint": "Pulsiz xarajat turi: kassa va to‘lovchi yozilmaydi.",
@@ -2301,7 +2381,14 @@
     "pnlVsPrior": "▲▼ — {from} — {to} davriga nisbatan (bir xil kunlar).",
     "pnlByMonth": "Oyma-oy: tushum va xarajat",
     "pnlDetail": "Batafsil jadval — har bir toifa, har bir oy",
-    "balSellerCommissionsUnknown": "Sotuvchilar ulushi: {n} ta ishda yukning to‘langani vaqtida tekshirilmadi — ko‘pi bilan ${usd}; bu summa shu qatorga ham, Sof holatga ham kirmadi"
+    "balSellerCommissionsUnknown": "Sotuvchilar ulushi: {n} ta ishda yukning to‘langani vaqtida tekshirilmadi — ko‘pi bilan ${usd}; bu summa shu qatorga ham, Sof holatga ham kirmadi",
+    "unsplitHeading": "Xarajati yukka bo‘linmagan reyslar — «Partiya» deb belgilanmaganlari ham",
+    "unsplitShowAll": "← Butun «Partiya foydasi» jadvali",
+    "balUnpricedFreightHeld": "{count, plural, other {# ta yo‘lkira xarajati}} (${usd}) tarif bo‘yicha mashina yukiga bo‘linmagan — lot to‘g‘rilangach yoki «Bo‘lish usuli» bilan qo‘shiladi, shungacha Sof holatni kamaytirib turadi; bekor qilmang.",
+    "unsplitForming": "Hali jo‘namagan mashinalar (jadvalda yo‘q — jadval faqat jo‘nagan mashinalarni ko‘rsatadi):",
+    "gapFreightHeld": "Tarif bo‘yicha mashina yukiga bo‘linmagan {count, plural, other {# ta yo‘lkira xarajati}} ({usd}) bu hisobotda bor, lekin hech bir mijozning tannarxiga tushmagan.",
+    "gapFreightHeldHint": "Xarajat saqlangan, lekin tarif bo‘yicha bo‘linmagan: lot to‘g‘rilansa yoki «Bo‘lish usuli» bilan bo‘linadi va mijozlarning tannarxiga o‘zi tushadi — bekor qilmang. Sababi mashinaning xarajatlar sahifasida yozilgan.",
+    "clientFreightHeldNote": "Shundan {usd} ({count, plural, other {# ta xarajat}}) — tarif bo‘yicha bo‘linmagan yo‘lkira: lot to‘g‘rilansa yoki «Bo‘lish usuli» bilan bo‘linadi va mijozlarga o‘zi tushadi; bekor qilmang."
   },
   "lidChat": {
     "mark": "Lid",
@@ -3123,7 +3210,8 @@
     "volumeM3": "Hajm (m³)",
     "weightKg": "Og'irlik (kg)",
     "profitCompensation": "− kompensatsiya (yo‘qolgan yuk)",
-    "profitNetRevenue": "Tushum (kompensatsiyadan keyin)"
+    "profitNetRevenue": "Tushum (kompensatsiyadan keyin)",
+    "profitFreightHeld": "Bitim yuki ortilgan {count, plural, other {# ta mashinada}} {usd} $ yo‘lkira xarajati tarif bo‘yicha yukka bo‘linmagan — uning bu bitimga tegishli ulushi yuqoridagi tannarxda yo‘q, shuning uchun foyda haqiqiydan yuqori ko‘rinishi mumkin. Lot to‘g‘rilansa yoki «Bo‘lish usuli» bilan bo‘linadi."
   },
   "automation": {
     "title": "Avtomatlashtirish qoidalari",

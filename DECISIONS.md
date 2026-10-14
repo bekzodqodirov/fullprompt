@@ -2982,3 +2982,258 @@ rows; the truck's all-time Σ says «kurs yo'q» too. 14 red proofs by string
 edit for the second pass plus the form key in a browser; one first stayed GREEN: the «$5 floor» proof was anchored
 on a pair ten days apart, which the 3-day rule excluded by itself — re-anchored
 on a same-day pair (#166).
+
+## Yo'lkira tarifi bo'yicha taqsimlash — his 1a 2c 3a 4a 5a 6 (2026-10-14; migration 0132 `cost_freight_basis` — ledger must reach 133; spec `docs/YOLKIRA-TAQSIMOT.md`)
+
+1364. **His six answers, as decisions, and the twin threshold he left to me.**
+«1a 2c 3a 4a 5a 6 1kub 10kgdan kam tpgri keladgan bolsa ogohlantirsin,
+qolgani 1kub uchun 100 kgdan kam tarifda ketaversin» (verbatim). (1a) the grain is each
+client's whole cargo on the truck, an unclaimed prixod a group of its own, and
+inside a group the split is by m³; (2c) every warehouse carries a tariff COLUMN
+a person writes, and a truck reads its ORIGIN warehouse's column — never
+inferred from a route or a name; (3a) the column as of the bill's `cost_date`
+is FROZEN into a copy beside the bill; (4a) truck-scope bills only, preselected
+for the freight types (setting `freight_tariff_cost_type_codes`, default
+`["freight"]`), never offered on a customs type; (5a) a re-basis door with a
+per-client before → after preview, old bills untouched; (6) a group whose WHOLE
+density is under 10 kg/m³ HOLDS the bill (saved, on no box, ⚠ naming the group
+and its lots lightest first, healed by fixing the lot), from 10 up to the
+column's lowest floor the group takes the lowest band. The twin alarm's
+cross-currency threshold («o'zing to'g'ri deb bilgandek»): the ⭐ stays —
+`TWIN_FX_PCT` 1 % / `TWIN_FX_DAYS` 3 (#1360), now recorded as his answer.
+
+1365. **A share is the group's TARIFF VALUE, never its weight** (`freight-split.ts`,
+pure). value = band rate × Σm³ (a per-kg band: price × density × m³); share =
+value ÷ Σvalue. Densities are EXACT: a uniform lot with all four dims reads its
+carton (grams and cm³ as BigInt), anything else its totals ÷ box_count, and the
+whole kg/m³ the screens print is half-up of the exact fraction — so a group can
+never band one way on the screen and another in the split. The rule-6 order
+inside a group is fixed: a missing measure, then under `light_below`, then
+under the lowest floor (clamped, said), then `bandFor`; all groups are judged
+and both lists collected, so the ⚠ names every lot to fix at once. A light LOT
+inside a heavy group does not hold (his grain is the group) — it gets a
+non-blocking ⓘ line. The calc's own `bandFor`/`bandDensityOf` are untouched.
+
+1366. **The column is a warehouse ROW, the copy a bill ROW, and each has one
+writer.** `warehouse_tariff_columns` (warehouse → zone; `tariff-column.ts`,
+written in the warehouse form's own transaction, an absent field LEFT ALONE —
+#171 — and an unknown zone refused in words) and `cost_entry_tariffs` (one row
+per freight bill — zone, `tariff_from`, `light_below`, the bands as jsonb —
+written only by `replaceFreightCopyInTx`, read only by `freight-copy.ts`;
+fenced: no other file names the table). The save refuses tariff CONFIGURATION
+before anything is written, each kind its own literal code with the params its
+sentence names (no column at «YW — Yiwu», «cn» unpriced on that date, a gap
+501–700, an open top, an overlap); lot DATA never refuses the money (it holds
+the bill). What is frozen is what the person SAW: the panel posts the digest of
+the version its preview drew and a remap or a tariff edit in between is
+`freight_changed`. Both tables ship EMPTY: until he writes a column the freight
+basis is disabled with a fact line and weight stays the default.
+
+1367. **Fail closed, and say so everywhere it costs money.** A held bill has no
+share; ONE fragment (`noShareSql`) says «converted and on no box», read by the
+nightly orphaned net, «Partiya foydasi»'s unallocated column, the truck's Σ
+suffix, its todo (under the reader's own cost sight), the pricing page — this
+truck's bills AND the bills of the trucks whose road feeds its tannarx as «shu
+reysgacha»/«keyingi yo'l» (`carriedUnsplitBills`, on the fence's own
+`rides`/`mx` windows), the attention row (linked to the truck or to the
+`bolinmagan=1` profit list) and the Balans (`freightUnsplit`, split out of
+«no box» by basis, with no void advice). STATED: while a bill is held, Sof
+holat is lower by the unpriced cargo's share of it.
+
+1368. **The void guard asks «is the money somewhere», and an empty base is
+judged first.** `costPool` (pure, the ONLY caller of `allocateEntry`, fenced) is
+asked by the recompute, the void guard and every preview; its order is a rule —
+an empty base is `nothing` before the copy, the customs flag or any group is
+read, so a held freight bill never answers «homed» about an empty truck. A
+void that makes a client light is ALLOWED (the bill becomes held); a void of
+the truck's only cargo is refused as before.
+
+1369. **The re-basis door (5a) and the rollback are one save half**
+(`costing/rebase.ts`). «Bo'lish usuli ✎» on a TRUCK's own bill (the per-prixod
+grid's stamped cells get none, `rebase_batch_only`): the first press answers
+the preview — each client's % now → new and, under money sight, dollars to the
+cent — and a token over (entry, from-basis, from-copy digest, to-basis,
+to-copy digest, the after %s to 0.01); the second press saves only while the
+token still matches, else `rebase_changed` WITH a fresh preview. The save is
+one transaction: the entry locked first (the recompute's order), a void that
+landed while it waited wins (no UPDATE, no copy, no audit), a concurrent
+re-basis is `changed`, the shares are DELETED before the basis moves — so a
+failed split reads «no share», which every ⚠ above names, and is queued — and
+the copy table is touched only when freight is on either side (a weight →
+volume re-basis works one migration behind). It never writes the amount, the
+dollars, the rate, the payer, the kassa, the merge or the firm's charge: that
+is why it exists beside the void. `pnpm freight-to-weight [--apply]` (through
+`migrate`) runs the same save half over every live freight bill, audited
+`reason: 'rollback'` with no actor — the precondition for going below 0132,
+written into docs/UPDATE.md, because older code splits a 'freight' row evenly
+by box count with no word and throws at render on its missing basis key.
+
+1370. **Found on the way: the customs-codes setting was never read.** drizzle
+hands a jsonb setting back already PARSED (an array) while the default arrives
+as JSON text; `parseCustomsCodes` did `JSON.parse(String(raw))`, and
+`String(['customs','x'])` is `customs,x` — not JSON — so the parse threw and
+the fallback `["customs"]` answered every time. Any edit of
+`calc_customs_cost_type_codes` was ignored by every reader (the E1 control, the
+truck's declared base, now the freight refusal). Both shapes are read now
+(`Array.isArray(raw) ? raw : JSON.parse(…)`); `parseFreightCodes` copies it;
+unit-pinned with both shapes, red-proven. Found because test 4c set the
+setting and the bill stayed `split`.
+
+1371. **The Narx band line names the bill that billed it, explained on ITS
+truck** (E6). `batchClientCostBreakdown` keys a freight part by its entry and
+its truck (+ that truck's two ends); the explain map is built from the
+breakdown's OWN freight ids, because «shu reysgacha»/«keyingi yo'l» parts are
+other trucks' bills the page's entry list does not hold, and each is explained
+over its own riders and copy — over the page's riders a two-client bill would
+read 100 % for the one client aboard (red-proven by narrowing the base). The
+link asks the costs door AND that truck's card door. DEVIATION from §7.4,
+recorded: the line's dollars are the breakdown's own per-client sum and are
+NOT re-rounded with the bill's largest remainder — the line sits in one
+client's card with no bill total beside it to disagree with, and the
+breakdown's figure is what adds up to the tannarx printed above it.
+
+1372. **Where the build moved the spec** (the ⚠ package's report, verified):
+the pricing page reads the `finance` namespace and the profit page
+`accounting` (no `pricing.*`/`profit.*` exist); `freightUnsplit` carries the
+held trucks' ids and first departure (`HeldFreight`) so the Balans can link one
+truck's Xarajatlar or the filtered profit list; two keys more than the spec
+named (`finance.unsplitCarriedNoRate` for a feeding truck whose bill has no
+dollars yet, `accounting.unsplitShowAll`); the attention row links one truck
+only for an unscoped viewer (it knows the viewer's scope, not the truck's
+ends). `profitByBatch` lists departed trucks only, so the filtered list gained
+its own «hali jo'namagan» block (`unsplitOnFormingTrucks`, review fix — the
+Balans sentence could otherwise open an empty page); STATED: the attention row
+still counts departed trucks only, so a held bill on a truck that has not left
+is on its card, its Σ, its pricing page and that block, never on the row. The e2e's numbers include the
+unclaimed prixod the spec's fixture added and its 78.95/21.05 forgot:
+A 600 / B 160 / prixod 55 of 815 → 73.62 / 19.63 / 6.75 %, 257.67 / 68.71 /
+23.62 of $350.
+
+1373. **The build reviewed by three lenses before any merge** (9c9736b,
+c539e8a). The headline was SPEED, measured on the shaped copy:
+`carriedUnsplitBills` joined the fence's `rides` CTE to the cartons for every
+truck the page's cargo ever rode — the CTE-on-CTE nested loop #1246 forbids —
+745 ms at 2,000 cartons; it now asks for the held trucks FIRST and pairs only
+their rides, 83 ms. The rest were silences and one leak. The ⚠ chip on a row
+read «freight held» only, while the todo and the Σ count ANY bill on no box
+(`noShareSql`), so a weight bill on an emptied truck was counted and never
+marked — the chip asks the same fact now (`unsplit`). A non-money reader's
+fold carried the band's PRICE in the props even where the text left it out —
+`BandView` makes the price optional and `bandForSight` is the one rule (the
+fix review found the re-basis preview restating it). A saved bill's fold drew
+a tariff split under «held on customs» because it never read the customs flag
+the recompute reads. The «keyingi yo'l» open-cargo sentence had been
+suppressed beside a held later-leg bill — REVERSED: the sentence is the only
+word about cartons that never rode that leg, and the figure still grows when
+the bill splits. The re-basis door: leaving `direct_to_client` recorded no
+client; a same-date re-freeze wrote new bands with no audit field
+(`tariffBands`, on the create too, `bandsSummary`); a target basis that lands
+on no carton was saved without a word (`nowhere`); the token did not cover the
+bill's own dollars; the rollback script started pg-boss inside the one-off
+`migrate` container (it now never queues, and names each bill whose weight
+split did not land). A `freight_changed` refusal left the stale offer on
+screen, so every press re-posted the same digest — the panel refreshes.
+13 red proofs by string edit.
+
+1374. **Two that only a run could find.** (a) The e2e's own 46-character
+unclaimed marking took the Narx tab to 501 px at 360 (#400): the lot line
+printed the marking with no break opportunity — a PRE-EXISTING defect of the
+pricing page that no earlier fixture was long enough to reach;
+`[overflow-wrap:anywhere]` (ac5375b). (b) `carriedUnsplitBills` judged a
+direct bill by its TRUCK: `held` was one row per feeding truck, so «names its
+own client only» held only while every no-share bill on that truck was
+direct; beside any other bill a $25 direct fee for a client who never rode
+the page truck was summed into the page's dollars ($125 read for a $100 held
+bill), and two no-rate direct bills on two export trucks read «2 ta» on each.
+`held` is one row per PART (the truck-wide bills, and each client's direct
+bills), `rode` reduces the pairing to (feeding truck, client, leg) once,
+MATERIALIZED, and a part counts only when its client — or anybody, for the
+truck-wide part — is aboard (3e4dd1c; 470-580 → 290-385 ms on a 2,000-carton
+fixture here). The review also found that removing either window's EXCLUSION
+side stayed green; five new blocks pin both windows' far ends, a no-rate
+feeding bill, a direct bill and the forming trucks (2ef80a8), each red-proven.
+
+1375. **The FIXES reviewed before the merge — and what they got wrong.** A
+fix-verify workflow over 9c9736b…3e4dd1c. (a) The exact arithmetic summed
+fractions UNREDUCED: a totals lot reads each carton as totals ÷ box_count,
+and summing N such cartons multiplied the denominators — 500^500 for a
+500-carton lot — so `Number(n)/Number(d)` came back NaN and a held lot
+printed «NaN m³» on exactly the big lot. `add` reduces by gcd and
+short-cuts equal denominators; red-proven, the 500-carton case pinned. (b) The customs flag
+on the fold (#1373) said «held» over a bill that still carried its shares
+until the next recompute — the fold now says customs only for a bill on no
+box (`!bill.hasShare`), red-proven by an assertion BEFORE the recompute. (c)
+The re-basis token covered the after %s and not the «hozir» column, so a
+re-split under the CURRENT basis between the two presses saved over a
+preview the person never saw; it carries both columns and a held
+after-state's own lots. (d) The panel refreshed on `freight_changed` alone;
+every tariff-configuration refusal (`freight_*`) leaves the same stale offer.
+STATED, not changed: the bill's audit rows are reachable on /admin/audit
+(filter by entity) and carry the frozen band PRICES — readable by
+`admin.audit.browse` holders, who are the owner and admins today; the
+attention row filters a truck's unallocated money above 0.009 while the
+Balans sums every cent.
+
+1376. **Two of the fix review's findings were whole packages** (2655743,
+c1c0308). (a) `carriedUnsplitBills` was still QUADRATIC whenever feeding
+trucks held bills: `fed` joined `mx` (one row per carton of the page truck)
+to the held trucks' rides on box_id, two CTEs both estimated at one row. The
+page truck's own mx columns are now spread onto the carton's other rides by
+a window (`… FILTER (WHERE batch_id = page) OVER (PARTITION BY box_id)`), so
+the fence's windows are asked of one row and nothing on the carton grain
+joins CTE to CTE; mx's columns have one home (`MX`). Measured on the shaped
+copy with a synthetic hub of 2,000 cartons that each rode 20 earlier legs
+holding a bill: shipped 7.8-9.9 s → 1.5-1.9 s, identical rows, of which the
+fence's own CTEs are ~1.3 s (the tannarx read pays them anyway); on the
+copy's real topology both are 11-23 ms. The shipped statement is kept
+VERBATIM in freight-surfaces as the oracle and every call there asks both.
+(b) Four readers of «money on no box» still called a held bill a truck with
+no cargo — whose cure is «void it»: `pnlGaps.onNoBox`, `clientProfitGaps`'s
+batch scope, the landed-cost report (silent) and `dealProfit` (silently
+high). One fragment, `heldFreightSql` (= freight basis AND `noShareSql`,
+keyed on the basis like the Balans), splits each: `freightHeld` on the P&L
+note and file, `heldFreight` as its own bucket on «Mijoz foydasi» (the total
+still reconciles), `heldFreightCosts()` beside the no-rate caveat, and per
+truck on the deal card — the WHOLE bill, an upper bound on the deal's share,
+never folded into the arithmetic. Both packages were written by worktree
+agents the session's interrupt stopped mid-work; their uncommitted trees
+were taken over, finished, red-proven (9 proofs) and committed here.
+
+1377. **A private test year is a claim to check, not to make.** Six
+integration files parked money in 1637, each calling it «a year no other
+file uses»; truck-riders reads whole months of it and its afterAll deletes
+the WHOLE year — so beside void-resplit it read 600 for its own 500, and
+beside a file still running it would delete that file's costs. This round's
+freight-basis had taken 1637-03-14 too. truck-riders moved to 1662 and
+freight-basis to 1655-1656. The first move went to 1663, which a search for
+QUOTED dates called free and which is balance-unpriced-cargo's
+`const Y = '1663'`: the delete-by-year then failed on that file's partner
+FK (so nothing of it was lost) and its leftovers broke balance-unpriced-cargo
+on this long-lived database until removed. Search years as bare numbers.
+
+1378. **«Held» is a verdict about a truck that CARRIES cargo** (the third
+review: three lenses over the last three commits, two refuters per finding,
+5 of 8 stood). `heldFreightSql` had keyed on the basis alone — its own
+comment said «a freight bill whose base is truly empty lands here too» and
+called that harmless — so a yo'lkira bill typed before the loading (the
+commonest case: the panel preselects the freight basis whether or not
+anything is aboard) or one whose every carton was found back was pulled out
+of «on no box» on four surfaces and told «do not void, fix the lot or use
+Bo'lish usuli», a cure that cannot happen. Held is now freight basis AND
+on no box AND `truckCarriesSql` (riders.ts — some non-void box rides that
+truck for money, the base the bill splits over); the Balans's `w_nobox`
+asks the same clause. STATED: a customs-typed freight bill splits over the
+declaration, so one whose every carton was found back reads as no-box here
+while the pool calls it held «on customs» — an edge of an edge. The deal
+card's truck list was departures ∪ live pointer, which misses a carton that
+rode with no load scan (the unloader's `undocumented_transfer`) and keeps a
+truck a carton was found back from; `heldFreightRiddenBy(boxIds)` asks the
+bill's own riders (`riderRowsSql`). Refuted and recorded: a link from each
+note to its trucks (the sentence is true; the Balans line already links),
+and a wider spelling fence (no second spelling exists). 4 red proofs.
+Found by the round's own SCREENSHOT, not by a test: /reports/landed-cost's
+client table pushed the document to 407 px at 360 (#400 — the phone zooms
+the page out). Pre-existing: `truncate` is nowrap, and inside an
+auto-layout table a nowrap cell is as wide as its longest name. The names
+wrap now (`[overflow-wrap:anywhere]`) inside an `overflow-x-auto` card;
+re-measured 360/360 and 1280/1280 on all ten screens of the round.

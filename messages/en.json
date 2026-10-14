@@ -529,7 +529,8 @@
     "journalCapped": "The list shows the newest {n} — the total above covers the whole period.",
     "journalWarehouse": "Warehouse",
     "journalAllWarehouses": "All warehouses",
-    "journalShow": "Show"
+    "journalShow": "Show",
+    "landedFreightHeld": "Not split over the truck cargo by the tariff, so in no row: {count, plural, one {# freight cost} other {# freight costs}} ({usd}) — the landed cost of those trucks' clients is short by this. Once the lot is fixed, or through «Split method», the split happens and the money is added by itself."
   },
   "warehouses": {
     "title": "Warehouses",
@@ -557,7 +558,13 @@
     "issuesToClients": "Clients collect cargo here",
     "issuesToClientsHint": "Only for warehouses a client actually collects from (TAS, AND). Unticked, the handover screen does not open here.",
     "allowsQuickBatch": "Allow quick loading",
-    "allowsQuickBatchHint": "A truck with no plan and no approval. Untick it where cargo crosses a border."
+    "allowsQuickBatchHint": "A truck with no plan and no approval. Untick it where cargo crosses a border.",
+    "tariffZoneLabel": "Freight tariff column",
+    "tariffZoneNone": "— not chosen",
+    "tariffZoneHint": "Which tariff column splits the cost of a truck leaving this warehouse. Left empty, «by the freight tariff» is not available for this warehouse’s trucks.",
+    "tariffZoneUnpriced": "(no prices)",
+    "errZoneUnknown": "No such tariff column — pick one from the list.",
+    "errServerBehind": "The server is not updated yet — the tariff column cannot be saved for now. Try again later."
   },
   "clientCard": {
     "tabs": "Client card sections",
@@ -735,7 +742,8 @@
       "kpi_expense_category_id": "Expense category that sellers’ KPI payouts are written into (cash only). Chosen on the «Staff» page.",
       "salary_expense_category_id": "Salary category: the «Staff» page shows each salary and whether it was paid from its monthly templates.",
       "price_history_min_sim": "How close a goods name must be to a past receipt before «Previous price» shows its truck (0..1)",
-      "price_history_ai_daily_limit": "How many times a day the 🤖 button in «Previous price» may ask the AI (separate from the calculation limit)"
+      "price_history_ai_daily_limit": "How many times a day the 🤖 button in «Previous price» may ask the AI (separate from the calculation limit)",
+      "freight_tariff_cost_type_codes": "Truck cost types that preselect «by the freight tariff» (a list of codes)"
     },
     "driverApp": "Driver app",
     "callsApp": "Calls app",
@@ -853,7 +861,11 @@
       "calcDone": "Price given",
       "calcRecalc": "Sent for recalculation",
       "calcSection": "Section",
-      "itemCount": "Goods lines"
+      "itemCount": "Goods lines",
+      "allocationBasis": "Split basis",
+      "tariffZone": "Tariff column",
+      "tariffFrom": "Tariff date",
+      "tariffBands": "Tariff rows"
     }
   },
   "profile": {
@@ -1219,7 +1231,8 @@
       "volume": "by volume",
       "chargeable": "by chargeable weight",
       "boxes": "by number of boxes",
-      "direct_to_client": "directly to the client"
+      "direct_to_client": "directly to the client",
+      "freight": "by the freight tariff"
     },
     "typesTitle": "Expense types",
     "typeName": "Type name",
@@ -1318,7 +1331,68 @@
     "errForbidden": "You may not write a cost here.",
     "errValidation": "Something is missing — check the type, the amount and the date.",
     "errAlreadyVoided": "This entry is already voided — refresh the page.",
-    "payerHidden": "paid by a member of staff"
+    "payerHidden": "paid by a member of staff",
+    "errFreightBatchOnly": "Splitting by the freight tariff exists only for a truck’s (batch’s) cost.",
+    "errFreightOnCustoms": "Customs is not split by the tariff — it is counted by the declaration. Choose another basis.",
+    "errFreightNoColumn": "No freight tariff column is set for warehouse {warehouse}. Management should choose it in the warehouse settings.",
+    "errFreightUnpriced": "Warehouse {warehouse}’s column is {column}. On {date} this column has no prices. Management should enter prices dated on or before it.",
+    "errFreightGap": "Column {column} has no price for {from}–{to} kg/m³. Management should complete the tariff.",
+    "errFreightTop": "Column {column} has no price for cargo of {from} kg/m³ and heavier (its top row is closed). Management should complete the tariff.",
+    "errFreightOverlap": "In column {column}, {at} kg/m³ falls into two rows. Management should correct the tariff.",
+    "errFreightInvalid": "Column {column} holds an invalid price. Management should correct the tariff.",
+    "errFreightChanged": "The tariff or the warehouse column changed after you looked — now {column}, the {from} tariff. Check the new split and save again.",
+    "errServerBehind": "The server is not updated yet — splitting by the freight tariff does not work for now. Save with another basis or try later.",
+    "freightHeldCopy": "⚠ This bill’s tariff copy is missing or damaged — re-split it with the «Split basis» button.",
+    "freightHeldCustoms": "⚠ This cost type is now customs — it is not split by the tariff. Choose another basis with the «Split basis» button.",
+    "freightOptServerBehind": "(server not updated)",
+    "freightOptNoColumn": "(no column set)",
+    "freightOptUnpriced": "(no prices)",
+    "freightOptProblem": "(tariff incomplete)",
+    "freightDropped": "The chosen basis does not fit this type or date — it splits {basis}.",
+    "freightOffServerBehind": "The server is not updated yet — no freight-tariff split for now; it splits by weight.",
+    "freightOffNoColumn": "Warehouse {warehouse} has no freight tariff column — it splits by weight.",
+    "freightOffUnpriced": "Warehouse {warehouse}’s column {column} has no prices on {date} — it splits by weight.",
+    "freightOffProblem": "Column {column}’s tariff is incomplete — it splits by weight.",
+    "freightFixColumn": "Open the warehouse →",
+    "freightFixTariff": "Open the tariff →",
+    "freightColumnLine": "{warehouse} column: {column} · the {from} tariff",
+    "freightVersionUnknown": "The server checks the tariff for this date when you save.",
+    "freightLabel": "by the freight tariff · {warehouse} column: {column} · the {from} tariff",
+    "costUnsplitChip": "not split",
+    "freightHow": "How was it split?",
+    "freightBand": "row {range}",
+    "freightBandPerKg": "row {range} (per kg)",
+    "freightBandMoney": "{range} · {price}/m³",
+    "freightBandMoneyPerKg": "{range} · {price}/kg",
+    "freightHeldLot": "{lot} · {density} kg/m³",
+    "freightHeldMore": "+{n}",
+    "freightHeldMeasure": "Lot {lot} has no volume or weight — correct the lot.",
+    "freightHeldLight": "{group}’s cargo: {m3} m³ · {kg} kg → {density} kg/m³ — under {limit} kg per m³.",
+    "freightHeldFix": "Once the lot is corrected, the bill splits by itself.",
+    "freightHeldTitle": "⚠ The bill is saved but not split over the truck’s cargo:",
+    "freightHeldNothing": "The truck carries no cargo — the bill is split onto nobody.",
+    "freightPreviewHeld": "It will be saved but not split:",
+    "freightRowLine1": "{label} · {m3} m³ · {density} kg/m³",
+    "freightLightLot": "ⓘ Lot {lot} on its own is {density} kg/m³ — under {limit} kg per m³. The group is heavier, so the bill split; check the measures.",
+    "gridFreightHint": "Split by the tariff — from the «＋» form above",
+    "freightBandLine": "{source} · {type} · tariff {band}",
+    "rebaseButton": "Split method ✎",
+    "rebasePreviewTitle": "Who gets how much: now → new",
+    "rebaseShow": "Show",
+    "rebaseSave": "Save this way",
+    "rebaseCancel": "Cancel",
+    "rebaseUnconverted": "no rate — not split yet",
+    "rebaseColumn": "Column: {column} ({warehouse}) · the {from} tariff",
+    "rebaseColumnMoved": "now: {old} → new: {new}",
+    "rebaseRow": "{label} · {before} % → {after} %",
+    "rebaseRowMoney": "${before} → ${after}",
+    "rebasePending": "The method is saved; the split is queued and will update within a minute.",
+    "errRebaseChanged": "Something changed after you looked (the cargo, the tariff or the warehouse column). Check the new split and save again.",
+    "errRebaseSame": "This bill is already split this way, on this tariff.",
+    "errRebaseDirect": "This button cannot move a bill to «directly to a client» — void it and enter it again.",
+    "errRebaseBatchOnly": "This cost is from the per-prixod grid — its split method does not change. A method is chosen only on the truck's own bills.",
+    "costSigmaUnsplit": "· of which {usd} is not split",
+    "rebaseNowhere": "With this basis the bill lands on no carton (the cargo has no such measure written) — it enters nobody's cost."
   },
   "batchCard": {
     "tabLoading": "Loading",
@@ -1343,7 +1417,8 @@
     "todoNoCosts": "No costs entered",
     "todoTnved": "No HS code",
     "tileContinuation": "continuation",
-    "tileContinuationLine": "priced on {codes}"
+    "tileContinuationLine": "priced on {codes}",
+    "todoUnsplit": "Unsplit costs"
   },
   "batches": {
     "title": "Batches",
@@ -1912,7 +1987,11 @@
     "continuationTrip": "Continuation: the price and the whole road’s cost of this truck’s cargo are on {codes}. No price is needed here.",
     "continuationClient": "{n} of this client’s {total} cartons are priced, road included, on {codes} (one price for the whole road). The rest are priced here.",
     "secondBillWarn": "Part of this client’s cargo (cartons: {n}) is priced on {codes} — one price for the whole road. A price here bills that cargo a second time. Set it anyway?",
-    "openCargo": "⏳ Cartons not handed over yet: {n} — the cost may still grow when onward legs are billed."
+    "openCargo": "⏳ Cartons not handed over yet: {n} — the cost may still grow when onward legs are billed.",
+    "unsplit": "⚠ {n, plural, one {# cost} other {# costs}} ({usd}) not split over the cargo of this truck — missing from the cost.",
+    "unsplitCarried": "⚠ {usd} of costs on truck {code} is not split over the cargo — missing from «{leg}» in the cost",
+    "unsplitCarriedNoRate": "⚠ Truck {code} has {n, plural, one {# cost} other {# costs}} with no FX rate — missing from «{leg}» in the cost",
+    "carriedIncomplete": "⚠ incomplete"
   },
   "map": {
     "title": "Map",
@@ -2170,7 +2249,8 @@
       "batch": "a truck with no cargo",
       "pickup": "a factory pickup with no receipt linked",
       "receipt": "not on the receipt's boxes",
-      "crate": "not on the crate's boxes"
+      "crate": "not on the crate's boxes",
+      "freightHeld": "freight not split by the tariff"
     },
     "nonCashCategory": "This expense kind moves no money (depreciation, say): it takes no cash box and no payer.",
     "nonCashHint": "A non-cash expense kind: no cash box and no payer.",
@@ -2301,7 +2381,14 @@
     "pnlVsPrior": "▲▼ — against {from} — {to} (the same days).",
     "pnlByMonth": "By month: revenue and costs",
     "pnlDetail": "Full table — every line, every month",
-    "balSellerCommissionsUnknown": "Seller commissions: for {n} jobs the cargo payment could not be checked in time — at most ${usd}, left out of this line and of the net position"
+    "balSellerCommissionsUnknown": "Seller commissions: for {n} jobs the cargo payment could not be checked in time — at most ${usd}, left out of this line and of the net position",
+    "unsplitHeading": "Trucks with costs not split over the cargo — including those not marked as a consignment",
+    "unsplitShowAll": "← The whole «Profit by batch» table",
+    "balUnpricedFreightHeld": "{count, plural, one {# freight cost} other {# freight costs}} (${usd}) not split over the truck cargo by the tariff — the money joins once the lot is fixed or through «Split method», and until then it lowers the net position; do not void these costs.",
+    "unsplitForming": "Trucks that have not left yet (not in the table, which lists departed trucks only):",
+    "gapFreightHeld": "{count, plural, one {# freight cost} other {# freight costs}} ({usd}) not split over the truck cargo by the tariff — in this report, but in no client's landed cost.",
+    "gapFreightHeldHint": "Saved but not split by the tariff: once the lot is fixed or through «Split method» it splits and joins the clients' landed cost by itself — do not void it. The reason is on the truck's cost sheet.",
+    "clientFreightHeldNote": "Of which {usd} ({count, plural, one {# cost} other {# costs}}) is freight not split by the tariff: once the lot is fixed or through «Split method» it splits onto the clients by itself; do not void it."
   },
   "lidChat": {
     "mark": "Lead",
@@ -3123,7 +3210,8 @@
     "volumeM3": "Volume (m³)",
     "weightKg": "Weight (kg)",
     "profitCompensation": "− compensation (lost cargo)",
-    "profitNetRevenue": "Revenue (after compensation)"
+    "profitNetRevenue": "Revenue (after compensation)",
+    "profitFreightHeld": "On {count, plural, one {# truck} other {# trucks}} that carried this deal's cargo, {usd} $ of freight was not split over the cargo by the tariff — this deal's share of it is not in the cost above, so the profit may read higher than it is. It splits once the lot is fixed or through «Split method»."
   },
   "automation": {
     "title": "Automation rules",

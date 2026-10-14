@@ -78,6 +78,12 @@ function gapRows(sheet: ExcelJS.Worksheet, L: ReturnType<typeof reportLabels>, g
       `⚠ ${L.gapNoBox}: ${gaps.onNoBox.count} · $${usdText(gaps.onNoBox.usd)}`,
     ]).font = { bold: true };
   }
+  // A held yo'lkira bill: its own line, whose words carry no void advice.
+  if (gaps.freightHeld.count > 0) {
+    sheet.addRow([
+      `⚠ ${L.gapFreightHeld}: ${gaps.freightHeld.count} · $${usdText(gaps.freightHeld.usd)}`,
+    ]).font = { bold: true };
+  }
   // The kurs farqi the report could not count (0103) — named, never added.
   if (gaps.unclassifiedAdjusts.count > 0) {
     sheet.addRow([
@@ -446,9 +452,12 @@ export async function buildProfitXlsx(
         receipt: L.gapScopeReceipt,
         crate: L.gapScopeCrate,
       };
-      const scopes = clientGaps.unallocated.byScope
-        .map((row) => `${scopeWord[row.scope] ?? row.scope} ×${row.count}`)
-        .join(', ');
+      const held = clientGaps.unallocated.heldFreight;
+      const scopes = [
+        ...clientGaps.unallocated.byScope.map((row) => `${scopeWord[row.scope] ?? row.scope} ×${row.count}`),
+        // The screen's own bucket — a held yo'lkira bill is no «truck with no cargo».
+        ...(held.count > 0 ? [`${L.gapScopeFreightHeld} ×${held.count} ($${usdText(held.usd)})`] : []),
+      ].join(', ');
       notes.push(`⚠ ${L.clientUnallocatedNote}: $${usdText(clientGaps.unallocated.usd)} · ${scopes}`);
     }
   } else {

@@ -78,7 +78,14 @@ export function ReceiptCostGrid({
   partners,
   tills = [],
   ownOnly = false,
+  freightTypeIds,
 }: {
+  /**
+   * The yo'lkira types (0132): their column header says the tariff split
+   * lives in the «＋» form above — the grid's cells stay split by weight
+   * (docs/YOLKIRA-TAQSIMOT.md §4). REQUIRED, so a caller cannot forget it.
+   */
+  freightTypeIds: string[];
   batchId: string;
   rows: GridReceiptRow[];
   types: GridCostType[];
@@ -317,6 +324,11 @@ export function ReceiptCostGrid({
               {types.map((type) => (
                 <th key={type.id} className="border-l border-line p-2 text-right">
                   {type.name}
+                  {freightTypeIds.includes(type.id) && (
+                    <span className="block font-normal normal-case text-ink-500" data-testid="grid-freight-hint">
+                      {t('gridFreightHint')}
+                    </span>
+                  )}
                   {(batchScope[type.id]?.usd ?? 0) > 0 && (
                     // The truck's own batch-wide bill of this type: in no
                     // cell, so the column read empty and invited a second

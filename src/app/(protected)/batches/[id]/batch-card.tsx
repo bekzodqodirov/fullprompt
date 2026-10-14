@@ -27,6 +27,7 @@ import {
   batchCostEntryCount,
   batchCostSheet,
   batchLandedCostByLot,
+  unsplitCountFor,
   type LotLandedCost,
 } from '@/modules/wms/costing/service';
 import { costSightFor } from '@/modules/wms/costing/cost-sight';
@@ -244,6 +245,10 @@ export async function BatchCard({
   const costDoor = mayOpenBatchCosts(actor.permissions);
   const costSheet = costDoor ? await soft('cost sheet', () => batchCostSheet(id, costSightFor(actor))) : null;
   const ownCostCount = costDoor && departed ? await soft('cost count', () => batchCostEntryCount(id)) : null;
+  // Bills saved and NOT split (a held yo'lkira bill, an empty base) under the
+  // reader's OWN sight — the same sight the tab lists with, so the VED is told
+  // only about the bills he can see there and re-base (§6.3.4).
+  const unsplitCount = costDoor ? await soft('unsplit count', () => unsplitCountFor(id, costSightFor(actor))) : null;
   const sight = pricingSight(actor.permissions, head.internal);
   const full = sight === 'full';
   const pricing: { view: PricingView; priced: number; continuation: boolean; carriers: string } | null =
@@ -302,6 +307,10 @@ export async function BatchCard({
   }
   if (costDoor && ownCostCount === 0) {
     todos.push({ tab: 'xarajat', label: tc('todoNoCosts'), testid: 'batch-todo-no-costs' });
+  }
+  // A noun phrase: the shape prints the count itself, bold, after the label.
+  if (costDoor && unsplitCount !== null && unsplitCount > 0) {
+    todos.push({ tab: 'xarajat', label: tc('todoUnsplit'), count: unsplitCount, testid: 'batch-todo-unsplit' });
   }
   if (mayOpenBatchVed(actor.permissions) && head.crossesBorder && !batch.customsClearedAt && !cancelled) {
     const missingCodes = missingTnvedCount(await batchTnvedProducts(id, departed));

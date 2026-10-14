@@ -9,7 +9,8 @@ export async function PeriodForm({
 }: {
   from: string;
   to: string;
-  exportHref: string;
+  /** Omitted where no file says what the screen shows (the «bo'linmagan» list). */
+  exportHref?: string;
   extra?: React.ReactNode;
 }) {
   const t = await getTranslations('accounting');
@@ -28,12 +29,14 @@ export async function PeriodForm({
         🔍
       </button>
       {/* A file download, not a page — deliberately a plain anchor. */}
-      <a
-        href={`${exportHref}${exportHref.includes('?') ? '&' : '?'}from=${from}&to=${to}`}
-        className="btn-secondary whitespace-nowrap px-3"
-      >
-        ⬇️ XLSX
-      </a>
+      {exportHref && (
+        <a
+          href={`${exportHref}${exportHref.includes('?') ? '&' : '?'}from=${from}&to=${to}`}
+          className="btn-secondary whitespace-nowrap px-3"
+        >
+          ⬇️ XLSX
+        </a>
+      )}
     </form>
   );
 }

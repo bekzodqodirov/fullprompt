@@ -159,6 +159,22 @@ git checkout <commit>
 docker compose --profile https up -d --build
 ```
 
+**0132 dan (yo‘lkira tarifi bo‘yicha taqsimlash) PASTGA qaytishdan oldin —
+majburiy.** Eski kod «yo‘lkira tarifi bo‘yicha» bo‘lingan xarajatni tanimaydi:
+uni ko‘rsatgan har bir xarajat kartasi xato sahifasini beradi va kechki
+tekshiruv bunday xarajatni karobka soniga teng bo‘lib yuboradi. Shuning uchun
+avval o‘sha xarajatlarni og‘irlik bo‘yicha bo‘lishga o‘tkazing:
+
+```bash
+docker compose stop app                                         # yangi xarajat yozilmasin
+# zaxira nusxa oling (1-bo‘lim) va hajmi 0 emasligini tekshiring
+docker compose run --rm migrate pnpm freight-to-weight          # ro‘yxat, hech narsa o‘zgarmaydi
+docker compose run --rm migrate pnpm freight-to-weight --apply  # hammasi og‘irlik bo‘yicha
+docker compose exec -T postgres psql -U gsr -d gsr -tAc \
+  "SELECT count(*) FROM cost_entries WHERE allocation_basis = 'freight' AND voided_at IS NULL"
+# ==> 0 chiqishi SHART. Faqat shundan keyin git checkout <eski commit>.
+```
+
 Ma'lumotni tiklash (faqat kerak bo'lsa — bu amal joriy bazani almashtiradi;
 avval yangi dump oling):
 

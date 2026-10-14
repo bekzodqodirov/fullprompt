@@ -457,7 +457,13 @@ export async function editLot(
     const totalsChanged =
       totals.totalWeightKg !== Number(lot.totalWeightKg) ||
       totals.totalVolumeM3 !== Number(lot.totalVolumeM3);
-    if (result.labelsToPrint > 0 || result.labelsToDestroy.length > 0 || totalsChanged) {
+    // …and on ANY measure change, not only a change of the rounded totals
+    // (docs/YOLKIRA-TAQSIMOT.md §6.5, T3): the freight basis reads a uniform
+    // lot's box dims directly, and a dims correction worth less than the
+    // totals' rounding moves its cm³ — even its rule-6 verdict — while
+    // `total_volume_m3` stays put. A stale complete split matches none of the
+    // nightly net's clauses, so this door is the only one that would heal it.
+    if (result.labelsToPrint > 0 || result.labelsToDestroy.length > 0 || totalsChanged || measureChange) {
       // Every cost shared over this lot — the truck's freight and a crate's
       // fee too, not only the receipt's own (audit A22).
       //

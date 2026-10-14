@@ -26,6 +26,7 @@ export async function PnlGapsNote({
     gaps.manualCharges.count === 0 &&
     gaps.unconverted.count === 0 &&
     gaps.onNoBox.count === 0 &&
+    gaps.freightHeld.count === 0 &&
     gaps.unclassifiedAdjusts.count === 0 &&
     gaps.kassaUsdMissing.count === 0 &&
     gaps.transferUsdMissing.count === 0 &&
@@ -75,6 +76,17 @@ export async function PnlGapsNote({
             ⚠ {t('gapNoBox', { count: gaps.onNoBox.count, usd: `$${usd(gaps.onNoBox.usd)}` })}
           </p>
           <p className="text-xs text-ink-700">{t('gapNoBoxHint')}</p>
+        </div>
+      )}
+      {/* A held yo'lkira bill (his rule 6): on no box like the money above,
+          but its cure is the lot or «Bo'lish usuli» — so it never stands under
+          a hint that says «void it» (docs/YOLKIRA-TAQSIMOT.md §6.7). */}
+      {gaps.freightHeld.count > 0 && (
+        <div data-testid="pnl-gap-freight-held">
+          <p className="min-w-0 break-words font-semibold text-warn">
+            ⚠ {t('gapFreightHeld', { count: gaps.freightHeld.count, usd: `$${usd(gaps.freightHeld.usd)}` })}
+          </p>
+          <p className="min-w-0 break-words text-xs text-ink-700">{t('gapFreightHeldHint')}</p>
         </div>
       )}
       {/* The kurs farqi the report could not count (0103) — named, never

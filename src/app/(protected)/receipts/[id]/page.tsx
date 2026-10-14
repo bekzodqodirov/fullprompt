@@ -729,8 +729,9 @@ export default async function ReceiptDetailPage({
             <h2 className="mb-2 text-lg font-bold">{t('costs')}</h2>
             <CostPanel
               scope="receipt"
+              freight={null}
               targetId={id}
-              entries={costs.map(({ entry, typeName, partnerName, partnerIsStaff, accountName }) => ({
+              entries={costs.map(({ entry, hasShare, typeName, partnerName, partnerIsStaff, accountName }) => ({
                 id: entry.id,
                 typeName,
                 amount: entry.amount,
@@ -738,6 +739,12 @@ export default async function ReceiptDetailPage({
                 amountUsd: entry.amountUsd,
                 costDate: entry.costDate,
                 allocationBasis: entry.allocationBasis,
+                // Freight is a truck's own basis (docs/YOLKIRA-TAQSIMOT.md §4).
+                freight: null,
+                rebasable: false,
+                costTypeId: entry.costTypeId,
+                // Converted and on no box — any basis (`noShareSql`), the fact a truck's todo counts.
+                unsplit: entry.amountUsd !== null && !hasShare,
                 note: entry.note,
                 ...payerView(actor.permissions, { partnerName, partnerIsStaff }),
                 ...tillView(actor.permissions, { accountId: entry.accountId, accountName, mergedExpenseId: entry.mergedExpenseId }),

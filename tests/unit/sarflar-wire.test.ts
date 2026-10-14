@@ -124,7 +124,8 @@ describe('«kurs yo’q — solishtirib bo’lmadi» reaches the screen on every
   it('the cost form: the action returns the gap with ok, the panel keeps it outside the form a one-shot save closes', () => {
     const add = body(COSTS, 'addCostEntryAction');
     expect(add).toContain('gap = twinGap(twins);');
-    expect(add).toContain('return { ok: true, ...(gap ? { unchecked: gap } : {}) };');
+    // The freight round (0132) returns the held note beside it; the gap rides on.
+    expect(add).toContain('return { ok: true, ...(gap ? { unchecked: gap } : {}), ...(unsplit ? { unsplit } : {}) };');
     expect(PANEL).toContain('setGap(res.unchecked ?? null);');
     expect(PANEL).toContain('<TwinGapNote gap={gap} />');
   });

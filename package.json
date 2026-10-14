@@ -17,6 +17,7 @@
     "create-admin": "tsx scripts/create-admin.ts",
     "close-stale-calc-tasks": "tsx scripts/close-stale-calc-tasks.ts",
     "repair-riders": "tsx scripts/repair-riders.ts",
+    "freight-to-weight": "tsx scripts/freight-to-weight.ts",
     "fx-close-history": "tsx scripts/fx-close-history.ts",
     "money-suspects": "tsx scripts/money-suspects.ts",
     "balans-hisobot": "tsx scripts/balance-report.ts",

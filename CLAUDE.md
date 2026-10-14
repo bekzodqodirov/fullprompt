@@ -2707,11 +2707,59 @@ was a deadlock with the post-commit split — my own first order), and
 twice as built (five lenses; 23 findings, 12 refuted as already fixed by the
 first pass — a moving tree again), 14 red proofs by string edit in the second
 pass + the form key reproduced red in a browser. **7057 unit/integration + the
-e2e suite** green on a fresh gsr_ci in CI's order. WAITING on his 6 answers:
-tariff-proportional truck-cost split (`docs/YOLKIRA-TAQSIMOT.md`, would be
-0132 → ledger 133).
+e2e suite** green on a fresh gsr_ci in CI's order. His 6 answers on the
+tariff split came the same day — the next round.
 
-**Latest migration: 0131** (`calc_excise`, `when` …110; ledger must reach **132**). Before
+**Round — yo'lkira tarifi bo'yicha taqsimlash (2026-10-14; DECISIONS
+#1364-#1378; migration 0132 `cost_freight_basis` — ledger must reach 133;
+spec `docs/YOLKIRA-TAQSIMOT.md`).** His
+«1a 2c 3a 4a 5a 6 1kub 10kgdan kam tpgri keladgan bolsa ogohlantirsin, qolgani 1kub uchun 100 kgdan kam tarifda ketaversin»; the twin
+threshold left to me stays 1 % / 3 days. A new allocation basis `'freight'`
+for TRUCK-scope bills (preselected for `freight_tariff_cost_type_codes`, never
+on a customs type): a share is the group's TARIFF VALUE ÷ Σ — group = each
+client's whole cargo on the truck, an unclaimed prixod alone (1a); band by
+the group's EXACT whole density (BigInt grams/cm³, half-up — the screen and
+the split cannot disagree); a group under `light_below` 10 kg/m³ HOLDS the
+bill (saved, on NO box, ⚠ names the lots lightest first, heals when the lot
+is fixed); from 10 to the lowest floor = the lowest band (6). The column is a
+warehouse ROW (`warehouse_tariff_columns`, the truck's ORIGIN, written in the
+warehouse form — 2c, ships EMPTY so nothing moves until he writes one); the
+copy as of `cost_date` is a bill ROW (`cost_entry_tariffs`, ONE writer
+`replaceFreightCopyInTx`) and the save refuses a stale preview
+(`freight_changed`, digest of what was drawn — 3a). `costPool` (pure) is the
+ONLY caller of `allocateEntry` — recompute, void guard and every preview — and
+an empty base is judged before anything else. «Bo'lish usuli ✎» (5a,
+`costing/rebase.ts`): preview → token → one tx that moves ONLY the split
+(never amount/rate/payer/kassa/merge/charge); `pnpm freight-to-weight --apply`
+(through `migrate`) is the precondition for going below 0132 (docs/UPDATE.md).
+A held bill is said everywhere it costs money through ONE `noShareSql`: the
+row chip, the Σ, the todo, the Narx page (this truck AND the trucks feeding
+its tannarx, `carriedUnsplitBills` — per PART, so a direct fee names its own
+client only), the attention row, «Partiya foydasi»'s `bolinmagan=1` list (with
+a «hali jo'namagan» block), the Balans, the P&L's gaps, client profit and the
+deal profit. Found on the way: **`calc_customs_cost_type_codes` was never
+read** — drizzle hands jsonb back PARSED and `JSON.parse(String(array))`
+threw, so the fallback `["customs"]` answered every reader (#1370). Reviewed
+as built (three lenses), then the FIXES reviewed: the exact sums had to reduce
+by gcd (a 500-carton totals lot read NaN), the fold's customs flag only for a
+bill on no box, the token covers both columns; `carriedUnsplitBills` became
+linear (a window, not a CTE join — 8-10 s → 1.6 s on a 20-leg synthetic hub,
+the shipped statement kept verbatim as the test's oracle) and the four
+held-blind readers learned `heldFreightSql` — which means freight basis AND
+on no box AND the truck CARRIES cargo (`truckCarriesSql`, #1378; keyed on the
+basis alone, a bill typed before the loading was told «do not void»). TEST TRAP (#1377): SIX files
+shared «private» year 1637 and truck-riders deletes its whole year — search
+years as BARE numbers (`const Y = '1663'` hides from a quoted-date grep).
+**7209 unit/integration + 445 e2e** green on a fresh
+gsr_ci in CI's order (ledger 133); screenshots of ten screens at 360×800 and
+1280×900, document width equal to the viewport at all twenty — after the
+screenshot found /reports/landed-cost at 407 px (pre-existing nowrap names).
+m8-crm's two desktop drags failed once in a run that shared the CPU with
+another vitest: the reload raced the move action (the database held the
+move, the page did not) — green alone twice and in the final run.
+
+**Latest migration: 0132** (`cost_freight_basis`, `when` …111; ledger must reach **133**). Before
+it: 0131 (`calc_excise`, `when` …110). Before
 it: 0130 (`bot_redelivery`, `when` …109). Before
 it: 0129 (`cargo_threads`, `when` …108). Before
 it: 0128 (`price_channel`, `when` …107). Before
@@ -2847,7 +2895,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **132** since 0131 (131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **133** since 0132 (132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read
@@ -2856,8 +2904,8 @@ was asked for and NOT quoted; PR #106 (0121) deployed 2026-09-30 evening («Hozi
 yaxshi ishlayabti», count not quoted either); PR #109 (0122) was asked about and NOT
 answered. **Then he CONFIRMED 132** («deploy qildim 132 chiqdi», 2026-10-13,
 after PR #118 — the customs calculator fix, 0131), so production is at the
-journal's length and EVERYTHING in this file through #1353 is LIVE. The next
-round with a migration must read **133**; a code-only round after it is
+journal's length and EVERYTHING in this file through #1353 is LIVE. The
+yo'lkira-tarifi round (0132) must read **133**; a code-only round after it is
 checked by `/api/version`, not the count (anything short of the journal means
 a migration did not land — read the `migrate` container's own output).
 Never carry this number over from a previous session: read it

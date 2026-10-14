@@ -11,6 +11,7 @@ import { listPartners } from '../partners/service';
 import { maySeeStaffMoney } from '../partners/staff';
 import { mayEnterBatchCostWhere } from './cost-door';
 import { tillOptionsFor } from './till-props';
+import { freightOffer } from './freight-offer';
 
 /**
  * «Partiyaga xarajat» from the general money page (docs/SARFLAR.md §2) — a
@@ -164,11 +165,14 @@ export async function costPanelOptions(
     db.select({ code: currencies.code }).from(currencies).where(eq(currencies.active, true)),
   ]);
   const currencyCodes = currencyRows.map((row) => row.code);
-  if (!opts.mayEnter) return { types, currencies: currencyCodes, partners: [], tills: [], clients: [] };
-  const [partnerRows, tills, lots] = await Promise.all([
+  if (!opts.mayEnter) return { types, currencies: currencyCodes, partners: [], tills: [], clients: [], freight: null };
+  const [partnerRows, tills, lots, freight] = await Promise.all([
     listPartners({ includeStaff: maySeeStaffMoney(actor.permissions) }),
     tillOptionsFor(actor.permissions),
     batchLots(batchId),
+    // The yo'lkira-tarifi offer (docs/YOLKIRA-TAQSIMOT.md §7.2): the truck's
+    // column, its priced versions and the preview split over its riders.
+    freightOffer(actor, batchId),
   ]);
   const clients = new Map<string, string>();
   for (const lot of lots) if (lot.clientId && lot.clientCode) clients.set(lot.clientId, lot.clientCode);
@@ -178,6 +182,7 @@ export async function costPanelOptions(
     partners: partnerRows.map((row) => ({ id: row.id, name: row.name })),
     tills,
     clients: [...clients].map(([id, clientCode]) => ({ id, clientCode })).sort((a, b) => a.clientCode.localeCompare(b.clientCode)),
+    freight,
   };
 }
 

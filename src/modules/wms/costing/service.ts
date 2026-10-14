@@ -21,7 +21,6 @@ import {
   pickups,
   receiptLots,
   receipts,
-  settings,
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { getSetting } from '../../platform/settings/service';
@@ -29,18 +28,29 @@ import { tashkentDayStart } from '../../platform/time/tashkent';
 import { costCashDay, mergedFrom } from '../accounting/cash-rules';
 import { latestTxDate } from '../finance/dates';
 import { exceedsRowUsd, nativeAmount } from '../finance/money-bounds';
-import { allocateEntry, toUsd, type AllocBox, type AllocationBasis } from './engine';
-import { declaredFilter, riderCtesSql, riderFilter, riderLoad, riderWithoutShareSql } from '../batches/riders';
+import { ALLOCATION_BASES, toUsd, type AllocationBasis } from './engine';
+import { costPool, type PoolFreight } from './pool';
+import { freightCopyFor, prepareFreightCopy, replaceFreightCopyInTx } from './freight-copy';
+import { bandsSummary } from './freight-split';
+import type { BoxMeasure, RecomputeVerdict } from './freight-types';
+import {
+  declaredFilter,
+  riderCtesSql,
+  riderFilter,
+  riderLoad,
+  riderRowsSql,
+  riderWithoutShareSql,
+  truckCarriesSql,
+} from '../batches/riders';
 import { bearsPriceSql, internalLegSql } from '../batches/internal';
-import { CUSTOMS_CODES_SETTING, parseCustomsCodes } from '../calc/customs-codes';
 import type { CostSight } from './cost-sight';
+import { CostError } from './errors';
+import { customsCostTypeIds } from './customs-ids';
 import { staffPartnerSql } from '../partners/staff';
 
-export class CostError extends Error {
-  constructor(public readonly code: string) {
-    super(code);
-  }
-}
+// Leaves, re-exported so no caller changes (docs/YOLKIRA-TAQSIMOT.md §9.7).
+export { CostError } from './errors';
+export { customsCostTypeIds } from './customs-ids';
 
 // ---------------------------------------------------------------------------
 // FX
@@ -121,7 +131,7 @@ export const costEntrySchema = z.object({
   amount: nativeAmount(),
   currency: z.string().length(3).toUpperCase(),
   costDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  allocationBasis: z.enum(['weight', 'volume', 'chargeable', 'boxes', 'direct_to_client']),
+  allocationBasis: z.enum(ALLOCATION_BASES),
   clientId: z.string().uuid().optional(),
   /**
    * Somebody else settled this — the customs firm's own account, the
@@ -290,6 +300,12 @@ export async function addCostEntry(
     clientId: input.allocationBasis === 'direct_to_client' ? (input.clientId ?? null) : null,
   };
 
+  // The freight basis (0132): the truck's column as of the bill's date, read
+  // on the POOL like everything above and frozen in the same transaction as
+  // the bill — the two commit together or not at all. Tariff CONFIGURATION
+  // refuses here; lot data never does.
+  const freightDraft = await prepareFreightCopy(input);
+
   // Everything above reads on the POOL (#714); the transaction below is the
   // short one the cancelled-truck race needs. Order: the prixod, then the
   // truck — every other prixod-locking door (the annul) takes them that way,
@@ -341,8 +357,10 @@ export async function addCostEntry(
         enteredBy: actorId,
       })
       .returning();
+    if (freightDraft) await replaceFreightCopyInTx(tx, row!.id, freightDraft);
     // On the transaction's own handle, so the audit row commits with the
-    // cost or not at all.
+    // cost or not at all. The basis is recorded (it never was) and, for a
+    // freight bill, the column and the tariff day it was frozen at.
     await writeAudit(tx, ctx, {
       entityType: 'cost_entry',
       entityId: row!.id,
@@ -351,6 +369,13 @@ export async function addCostEntry(
         scope: input.scope,
         amount: input.amount,
         currency: input.currency,
+        allocationBasis: input.allocationBasis,
+        ...(freightDraft
+          ? { tariffZone: freightDraft.zone, tariffFrom: freightDraft.tariffFrom, tariffBands: bandsSummary(freightDraft.bands) }
+          : {}),
+        // A direct bill's client is a money fact (receipts/edit.ts's rule):
+        // the re-basis door clears it, so its first record is here.
+        ...(input.allocationBasis === 'direct_to_client' && input.clientId ? { clientId: input.clientId } : {}),
         ...(input.accountId ? { accountId: input.accountId, accountAmount } : {}),
         ...(opts.twinAck && opts.twinAck.length > 0 ? { twinAck: opts.twinAck } : {}),
       },
@@ -358,7 +383,7 @@ export async function addCostEntry(
     return row!;
   });
   // After the commit, each in its own transaction, exactly as before.
-  await recomputeEntry(entry.id);
+  const verdict = await recomputeEntry(entry.id);
   // The debt side. Written AFTER the allocation so a partner never carries a
   // charge for a cost that failed to land; dynamic import because costing is
   // the older module and partners reaches back into it for the FX rate.
@@ -366,7 +391,11 @@ export async function addCostEntry(
     const { chargeForCost } = await import('../partners/link');
     await chargeForCost(entry.id, ctx);
   }
-  return entry;
+  // The row as before, with the recompute's verdict ATTACHED (DS4): every
+  // caller reads only row fields, and a `{ entry, verdict }` wrapper would
+  // have turned ~25 test files' `entry.id` into undefined. A HELD freight
+  // bill comes back here so the form can say «saqlandi, bo'linmadi».
+  return Object.assign(entry, { verdict });
 }
 
 /**
@@ -816,25 +845,33 @@ export async function voidCostEntryInTx(
 // Recompute (idempotent — spec 6.9)
 // ---------------------------------------------------------------------------
 
-interface BoxDims {
-  boxId: string;
-  clientId: string | null;
-  weightKg: number;
-  volumeM3: number;
-}
-
 /**
- * Per-box kg/m³ pro-rated from the lot; client from the receipt. Ordered by
- * box id so the same base always splits the same way — with the largest
- * remainder the order decides only who carries a single $0.0001, but an
- * unordered list made even that arbitrary between two recomputes.
+ * Every carton of a bill's base with what the split reads off its lot — ONE
+ * read, ordered by box id (docs/YOLKIRA-TAQSIMOT.md §9.4). `weightKg` and
+ * `volumeM3` are today's figures for the OLD bases (totals ÷ box_count,
+ * unchanged); the raw lot fields are what the freight basis reads its exact
+ * carton from. The label columns come through LEFT JOINs only: an inner join
+ * on `clients` would drop every unclaimed carton from every basis's base
+ * (`truck-riders.integration.test.ts` turns red on it).
  */
-export async function boxDims(boxIds: string[], handle: Db | Tx = db): Promise<BoxDims[]> {
+export async function boxMeasures(boxIds: string[], handle: Db | Tx = db): Promise<BoxMeasure[]> {
   if (boxIds.length === 0) return [];
   const rows = await handle
     .select({
       boxId: boxes.id,
       clientId: receipts.clientId,
+      clientCode: clients.clientCode,
+      receiptId: receipts.id,
+      receiptNumber: receipts.number,
+      unclaimedMarking: receipts.unclaimedMarking,
+      lotId: receiptLots.id,
+      lotLetter: receiptLots.letter,
+      lotSeq: receiptLots.seq,
+      dimsMode: receiptLots.dimsMode,
+      boxLengthCm: receiptLots.boxLengthCm,
+      boxWidthCm: receiptLots.boxWidthCm,
+      boxHeightCm: receiptLots.boxHeightCm,
+      boxWeightKg: receiptLots.boxWeightKg,
       boxCount: receiptLots.boxCount,
       totalWeightKg: receiptLots.totalWeightKg,
       totalVolumeM3: receiptLots.totalVolumeM3,
@@ -842,33 +879,38 @@ export async function boxDims(boxIds: string[], handle: Db | Tx = db): Promise<B
     .from(boxes)
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
     .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+    .leftJoin(clients, eq(receipts.clientId, clients.id))
     .where(inArray(boxes.id, boxIds))
     .orderBy(asc(boxes.id));
   return rows.map((r) => ({
-    boxId: r.boxId,
-    clientId: r.clientId,
+    ...r,
     weightKg: Number(r.totalWeightKg) / r.boxCount,
     volumeM3: Number(r.totalVolumeM3) / r.boxCount,
   }));
 }
 
 /**
- * The cost types that are «rastamojka» — the ONE list the calc control
- * already reads (`calc_customs_cost_type_codes`, parsed by
- * `calc/customs-codes.ts` for both readers; DATA because the owner mints his
- * own types), resolved to ids. On the caller's handle: the recompute asks it
- * from inside its own transaction, where a pool read is #714's freeze — so
- * the setting row is read directly and not through `getSetting`.
+ * The measures and, for a freight bill only, its frozen copy and whether its
+ * type is customs — what `costPool` needs, on the caller's handle. The copy is
+ * read ONLY behind basis 'freight' (fenced): a weight or volume recompute
+ * never touches the side table, so it works one migration behind.
  */
-export async function customsCostTypeIds(handle: Db | Tx = db): Promise<string[]> {
-  const [row] = await handle
-    .select({ value: settings.value })
-    .from(settings)
-    .where(eq(settings.key, CUSTOMS_CODES_SETTING));
-  const codes = parseCustomsCodes(row?.value);
-  const types = await handle.select({ id: costTypes.id }).from(costTypes).where(inArray(costTypes.code, codes));
-  return types.map((type) => type.id);
+export async function loadPoolInputs(
+  entry: typeof costEntries.$inferSelect,
+  ids: string[],
+  handle: Db | Tx = db,
+): Promise<{ measures: BoxMeasure[]; freight: PoolFreight | null }> {
+  const measures = await boxMeasures(ids, handle);
+  if (entry.allocationBasis !== 'freight') return { measures, freight: null };
+  return {
+    measures,
+    freight: {
+      copy: await freightCopyFor(entry.id, handle),
+      customs: (await customsCostTypeIds(handle)).includes(entry.costTypeId),
+    },
+  };
 }
+
 
 /**
  * The boxes a truck's bill is split over. A ROAD cost — freight and every
@@ -1007,6 +1049,7 @@ export async function scopeBoxIds(
     // bases re-splits the next time the truck's costs are recomputed. A
     // customs bill keeps the found-back carton (`truckBaseSql`).
     const customs = (await customsCostTypeIds(handle)).includes(entry.costTypeId);
+    if (!customs) return truckRiderBoxIds(entry.batchId, handle);
     const base = await handle
       .select({ id: boxes.id })
       .from(boxes)
@@ -1014,6 +1057,19 @@ export async function scopeBoxIds(
     return base.map((r) => r.id);
   }
   return [];
+}
+
+/**
+ * A truck's own (non-customs) base: what really rode it, minus the void
+ * cartons. Named so the freight preview draws over the recompute's OWN set
+ * (docs/YOLKIRA-TAQSIMOT.md §1.1), never a look-alike.
+ */
+export async function truckRiderBoxIds(batchId: string, handle: Db | Tx = db): Promise<string[]> {
+  const base = await handle
+    .select({ id: boxes.id })
+    .from(boxes)
+    .where(and(riderFilter(batchId), ne(boxes.status, 'void')));
+  return base.map((r) => r.id);
 }
 
 /**
@@ -1036,9 +1092,9 @@ export async function scopeBoxIds(
  * Reading the rate early is safe because an entry's currency, date and
  * amount have no edit door — a correction is void and re-enter.
  */
-export async function recomputeEntry(costEntryId: string): Promise<void> {
+export async function recomputeEntry(costEntryId: string): Promise<RecomputeVerdict | null> {
   const peek = await db.query.costEntries.findFirst({ where: eq(costEntries.id, costEntryId) });
-  if (!peek) return;
+  if (!peek) return null;
   const factor = Number(await getSetting('chargeable_weight_factor'));
   // The dollar figure is FROZEN at the first conversion (owner, R1: «to'langan
   // paytdagi kurs bo'yicha hisoblansin»): a RECOMPUTE never re-converts. Only
@@ -1074,6 +1130,7 @@ export async function recomputeEntry(costEntryId: string): Promise<void> {
       await tx.delete(costAllocations).where(eq(costAllocations.costEntryId, costEntryId));
       return null;
     }
+    const done = (verdict: RecomputeVerdict | null) => ({ entry, verdict });
     let amountUsd: number | null;
     const frozen = entry.amountUsd !== null && entry.fxRateUsed !== null;
     if (frozen) {
@@ -1084,7 +1141,7 @@ export async function recomputeEntry(costEntryId: string): Promise<void> {
       // Frozen when peeked, unfrozen under the lock: nothing un-freezes a
       // cost, so this is a state no door writes. Leave the row as it stands
       // rather than read a rate on the pool from inside the transaction.
-      return entry;
+      return done(null);
     } else {
       amountUsd = rate !== null ? toUsd(Number(entry.amount), rate) : null;
       // Past the per-row dollar ceiling (U44) the figure is not written: an
@@ -1109,25 +1166,22 @@ export async function recomputeEntry(costEntryId: string): Promise<void> {
     // The base is read INSIDE the lock, before the old shares go: whatever a
     // concurrent correction committed while we waited is what we split over.
     const ids = amountUsd === null ? [] : await scopeBoxIds(entry, tx);
-    const dims = await boxDims(ids, tx);
+    const inputs = await loadPoolInputs(entry, ids, tx);
     await tx.delete(costAllocations).where(eq(costAllocations.costEntryId, costEntryId));
-    if (amountUsd === null) return entry; // unconverted — reports flag it
+    if (amountUsd === null) return done({ kind: 'unconverted' }); // reports flag it
 
-    const pool: AllocBox[] = dims.map((d) => ({
-      ...d,
-      chargeableKg: Math.max(d.weightKg, d.volumeM3 * factor),
-    }));
-    const shares = allocateEntry(
-      {
-        amountUsd,
-        basis: entry.allocationBasis as AllocationBasis,
-        clientId: entry.clientId,
-      },
-      pool,
+    // ONE pool (`./pool`) — the void guard asks the same function. A HELD
+    // freight bill writes no shares at all: never weight 0, never a silent
+    // fallback (docs/YOLKIRA-TAQSIMOT.md §6).
+    const verdict = costPool(
+      { allocationBasis: entry.allocationBasis as AllocationBasis, clientId: entry.clientId, amountUsd },
+      inputs.measures,
+      factor,
+      inputs.freight,
     );
-    if (shares.length) {
+    if (verdict.kind === 'split') {
       await tx.insert(costAllocations).values(
-        shares.map((s) => ({
+        verdict.shares.map((s) => ({
           costEntryId,
           boxId: s.boxId,
           clientId: s.clientId,
@@ -1135,7 +1189,7 @@ export async function recomputeEntry(costEntryId: string): Promise<void> {
         })),
       );
     }
-    return entry;
+    return done(verdict.kind === 'held' ? { kind: 'held', held: verdict.held } : { kind: verdict.kind });
   });
 
   // The debt this cost owes its payer, posted the moment a dollar figure
@@ -1144,16 +1198,66 @@ export async function recomputeEntry(costEntryId: string): Promise<void> {
   // recompute and the nightly unconverted sweep, which convert them once.
   // `chargeForCost` is idempotent per cost, so a re-run costs nothing. After
   // the commit, never inside it: the partner side reads on the pool.
-  if (settled?.partnerId) {
+  if (settled?.entry.partnerId) {
     try {
       const { chargeForCost } = await import('../partners/link');
-      await chargeForCost(costEntryId, { actorId: settled.enteredBy });
+      await chargeForCost(costEntryId, { actorId: settled.entry.enteredBy });
     } catch (error) {
       // Never let the partner side roll back an allocation rebuild — the same
       // fence every other costing→partners crossing uses.
       console.error('[costing] charge after recompute failed', error);
     }
   }
+  return settled?.verdict ?? null;
+}
+
+/**
+ * A live cost with dollars and NO share on any box — the ONE sentence for
+ * «this money sits on no cargo» (docs/YOLKIRA-TAQSIMOT.md §6.4): a HELD
+ * freight bill (his rule 6 — saved, not split), a base that came out empty,
+ * a recompute that died between its DELETE and its INSERT. Read by the
+ * nightly net, «Partiya foydasi»'s ⚠, the Xarajatlar Σ, the truck todo and
+ * the pricing page's two warnings, so none of them can count it differently
+ * (#513).
+ *
+ * Written against the alias it is given — `sql\`ce\`` in a raw read,
+ * `sql\`${costEntries}\`` in a drizzle select, where a bare column would bind
+ * to the subquery's own table (#128).
+ *
+ * Not `clientProfitGaps`' «amount − Σ allocated > 0.005»: that one also
+ * counts a bill that reached its boxes SHORT (money not reaching a client);
+ * this one asks only whether it reached any box at all.
+ */
+export function noShareSql(ce: SQL): SQL {
+  return sql`(${ce}.voided_at IS NULL AND ${ce}.amount_usd IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM cost_allocations ca WHERE ca.cost_entry_id = ${ce}.id))`;
+}
+
+/**
+ * `noShareSql` narrowed to the one basis that can be HELD — the yo'lkira
+ * tariff's (his rule 6, docs/YOLKIRA-TAQSIMOT.md §6.1): saved, converted, and
+ * on no carton until the lot is fixed or the bill re-based. A report that
+ * names money on no box splits these out by THIS, because its generic
+ * sentence's cause («a truck with no cargo») and cure («void it») are both
+ * false of a held bill (§6.7) — the P&L's gap note, «Mijoz foydasi», the
+ * landed-cost caveat and the deal card ask it, so none of them can call a
+ * held bill something else (#513).
+ *
+ * The verdict is not stored, so «held» is re-derived as the pool decides it:
+ * a freight bill on no box whose truck CARRIES cargo (`truckCarriesSql`, the
+ * base it splits over). A freight bill on a truck with nothing aboard — typed
+ * before the loading, or every carton found back — is the pool's «nothing»
+ * and stays the generic money on no box, whose words («splits once the cargo
+ * is there», «check it, void it if needed») are the true ones (review of the
+ * build: keyed on the basis alone, it was told «do not void» with a cure that
+ * cannot happen). The Balans's `w_nobox` asks the same, so the two agree bill
+ * for bill. STATED: a customs-typed freight bill splits over the declaration
+ * (riders AND the found-back cartons); one whose every carton was found back
+ * reads as no-box here — the pool would call it held «on customs».
+ * Evaluated left to right: the subplan runs only for a freight bill on no box.
+ */
+export function heldFreightSql(ce: SQL): SQL {
+  return sql`(${ce}.allocation_basis = 'freight' AND ${noShareSql(ce)} AND ${truckCarriesSql(sql`${ce}.batch_id`)})`;
 }
 
 /**
@@ -1212,8 +1316,9 @@ export async function recomputeAll(filter?: {
     filter?.unconverted ? isNull(costEntries.amountUsd) : undefined,
     filter?.pickups ? eq(costEntries.scope, 'pickup') : undefined,
     filter?.orphaned
-      ? sql`((${costEntries.amountUsd} IS NOT NULL AND NOT EXISTS (
-            SELECT 1 FROM cost_allocations ca WHERE ca.cost_entry_id = ${costEntries}.id))
+      ? // The first clause is `noShareSql` — the held freight bill the lot
+        // door could not re-split is retried here too (§6.5).
+        sql`(${noShareSql(sql`${costEntries}`)}
           OR EXISTS (
             SELECT 1 FROM cost_allocations ca JOIN boxes b ON b.id = ca.box_id
              WHERE ca.cost_entry_id = ${costEntries}.id AND b.status = 'void')
@@ -1644,6 +1749,24 @@ function landedAllocationsSql(list: SQL): { with: SQL; joins: SQL; where: SQL } 
 }
 
 /**
+ * `mx`'s columns as expressions over ONE `segs` row — the truck's clock, its
+ * previous non-internal departure, whether it follows / gives back, its
+ * carrier, how far forward it carries. One home, because two readers ask
+ * them of the same row (#513): `mx` selects them for the listed trucks, and
+ * `carriedUnsplitBills` spreads the page truck's onto the carton's other
+ * rides with a window (`... FILTER (WHERE batch_id = page) OVER (PARTITION BY
+ * box_id)`) instead of joining `mx` to those rides.
+ */
+const MX = {
+  at: sql`coalesce(departed_at, now())`,
+  prevAt: sql`CASE WHEN internal THEN NULL ELSE prev_nonint_at END`,
+  follows: sql`(NOT internal AND NOT bears AND seg IS NOT NULL)`,
+  given: sql`(NOT internal AND NOT bears AND seg IS NOT NULL AND departed_at IS NOT NULL)`,
+  carrierId: sql`CASE WHEN NOT internal AND NOT bears THEN seg END`,
+  upto: sql`CASE WHEN bears AND departed_at IS NOT NULL THEN seg_upto END`,
+};
+
+/**
  * The CTEs that decide, per (truck, carton), which truck carries the
  * carton's road — shared by the fence and by `batchCarriage`, which names it
  * on the screens, so the two can never disagree (#513).
@@ -1666,7 +1789,7 @@ function landedAllocationsSql(list: SQL): { with: SQL; joins: SQL; where: SQL } 
  * Windows and no joins between CTEs, on purpose: every CTE-on-CTE join was
  * estimated at one row and nested over the allocations (#1246's review).
  */
-function carriageCtesSql(list: SQL): SQL {
+export function carriageCtesSql(list: SQL): SQL {
   return sql`
     ${riderCtesSql(list)},
     -- Where each carton's prixod was received — the one per-carton fact the
@@ -1728,13 +1851,13 @@ function carriageCtesSql(list: SQL): SQL {
     -- money has moved (it departed); how far forward a bearing truck carries.
     mx AS (
       SELECT batch_id, box_id,
-             coalesce(departed_at, now()) AS at,
+             ${MX.at} AS at,
              internal,
-             CASE WHEN internal THEN NULL ELSE prev_nonint_at END AS prev_at,
-             (NOT internal AND NOT bears AND seg IS NOT NULL) AS follows,
-             (NOT internal AND NOT bears AND seg IS NOT NULL AND departed_at IS NOT NULL) AS given,
-             CASE WHEN NOT internal AND NOT bears THEN seg END AS carrier_id,
-             CASE WHEN bears AND departed_at IS NOT NULL THEN seg_upto END AS upto
+             ${MX.prevAt} AS prev_at,
+             ${MX.follows} AS follows,
+             ${MX.given} AS given,
+             ${MX.carrierId} AS carrier_id,
+             ${MX.upto} AS upto
         FROM segs
        WHERE batch_id IN (${list})
     )`;
@@ -1988,6 +2111,8 @@ export interface CostRow {
   partnerName: string | null;
   partnerIsStaff: boolean;
   accountName: string | null;
+  /** The bill sits on at least one box (a held freight bill does not). */
+  hasShare: boolean;
 }
 
 /** What colleagues wrote on the same target: how many, and of which types — never a sum. */
@@ -2031,6 +2156,10 @@ export async function costEntriesFor(
       // it only to the staff-money readers (`payerView`, partners/staff.ts).
       partnerIsStaff: sql<boolean>`coalesce(${staffPartnerSql()}, false)`,
       accountName: moneyAccounts.name,
+      // Does the bill sit on ANY box? An expression, no join to a new table
+      // (docs/YOLKIRA-TAQSIMOT.md §6.3.2): a held freight bill, or one whose
+      // base is empty, reads false and the row says so.
+      hasShare: sql<boolean>`EXISTS (SELECT 1 FROM cost_allocations ca WHERE ca.cost_entry_id = ${costEntries}.id)`,
     })
     .from(costEntries)
     .innerJoin(costTypes, eq(costEntries.costTypeId, costTypes.id))
@@ -2053,6 +2182,299 @@ export async function costEntriesFor(
 }
 
 /**
+ * A truck's own bills (its batch-scope bills and the grid cells stamped with
+ * it — the Xarajatlar list's target) that sit on no box, under the reader's
+ * sight: how many, and their dollars. One read for the Σ suffix, the card's
+ * todo and the pricing page's ⚠, memoised per request (the card renders
+ * around every tab).
+ */
+export const unsplitOnTruck = cache(async function unsplitOnTruck(
+  batchId: string,
+  sight: CostSight,
+): Promise<{ count: number; usd: number }> {
+  const [row] = await db
+    .select({
+      n: sql<number>`count(*)::int`,
+      usd: sql<string>`coalesce(sum(${costEntries.amountUsd}), 0)`,
+    })
+    .from(costEntries)
+    .where(
+      and(
+        eq(costEntries.batchId, batchId),
+        noShareSql(sql`${costEntries}`),
+        sight.ownOnly ? eq(costEntries.enteredBy, sight.ownOnly) : undefined,
+      ),
+    );
+  return { count: Number(row?.n ?? 0), usd: Math.round(Number(row?.usd ?? 0) * 100) / 100 };
+});
+
+/**
+ * Trucks that have NOT left and hold money on no box (review of the round):
+ * «Partiya foydasi» lists departed trucks only, so the «bo'linmagan» list the
+ * Balans and the attention row lead to names these beside its table — a held
+ * bill typed while the truck was still forming (514 of 2,624 truck bills on
+ * the shaped copy were) was otherwise a sentence pointing at an empty page.
+ * The same target as the truck's own list (`batch_id`, so a stamped grid cell
+ * counts) and the same fragment as every other «no share» surface.
+ */
+export async function unsplitOnFormingTrucks(): Promise<
+  { batchId: string; code: string; originWarehouseId: string; destWarehouseId: string; count: number; usd: number }[]
+> {
+  const rows = (await db.execute(sql`
+    SELECT b.id, b.code, b.origin_warehouse_id, b.dest_warehouse_id,
+           count(*)::int AS n, coalesce(sum(ce.amount_usd), 0) AS usd
+      FROM cost_entries ce
+      JOIN batches b ON b.id = ce.batch_id
+     WHERE b.departed_at IS NULL AND b.status <> 'cancelled' AND ${noShareSql(sql`ce`)}
+     GROUP BY b.id, b.code, b.origin_warehouse_id, b.dest_warehouse_id, b.created_at
+     ORDER BY b.created_at, b.code`)) as unknown as {
+    id: string;
+    code: string;
+    origin_warehouse_id: string;
+    dest_warehouse_id: string;
+    n: number;
+    usd: string;
+  }[];
+  return [...rows].map((r) => ({
+    batchId: r.id,
+    code: r.code,
+    originWarehouseId: r.origin_warehouse_id,
+    destWarehouseId: r.dest_warehouse_id,
+    count: Number(r.n),
+    usd: Math.round(Number(r.usd) * 100) / 100,
+  }));
+}
+
+/**
+ * The HELD yo'lkira bills (`heldFreightSql`) on the trucks a set of boxes
+ * RODE — for a reader that must say a held bill there is missing from its
+ * cost: the deal card's profit (a held bill has no allocation, so a profit
+ * summed from allocations is silently higher by this truck's share,
+ * docs/YOLKIRA-TAQSIMOT.md §6.3). The rides are the bill's own base rule
+ * (`riderRowsSql`, non-void boxes): a carton that rode without a load scan
+ * counts, one found back at the origin does not, and a truck it is only
+ * PLANNED on counts only while it is the live pointer — the pool's base. One
+ * row per truck, the WHOLE bill — an upper bound on the share: which part
+ * would land on these cartons cannot be known until it splits.
+ */
+export async function heldFreightRiddenBy(boxIds: SQL): Promise<
+  { batchId: string; code: string; originWarehouseId: string; destWarehouseId: string; count: number; usd: number }[]
+> {
+  const rows = (await db.execute(sql`
+    SELECT b.id, b.code, b.origin_warehouse_id, b.dest_warehouse_id,
+           count(*)::int AS n, coalesce(sum(ce.amount_usd), 0) AS usd
+      FROM cost_entries ce
+      JOIN batches b ON b.id = ce.batch_id
+     WHERE ce.batch_id IN (
+             SELECT rr.batch_id FROM (${riderRowsSql({ boxes: boxIds })}) rr
+               JOIN boxes rb ON rb.id = rr.box_id AND rb.status <> 'void'
+           )
+       AND ${heldFreightSql(sql`ce`)}
+     GROUP BY b.id, b.code, b.origin_warehouse_id, b.dest_warehouse_id
+     ORDER BY b.code`)) as unknown as {
+    id: string;
+    code: string;
+    origin_warehouse_id: string;
+    dest_warehouse_id: string;
+    n: number;
+    usd: string;
+  }[];
+  return [...rows].map((r) => ({
+    batchId: r.id,
+    code: r.code,
+    originWarehouseId: r.origin_warehouse_id,
+    destWarehouseId: r.dest_warehouse_id,
+    count: Number(r.n),
+    usd: Math.round(Number(r.usd) * 100) / 100,
+  }));
+}
+
+/**
+ * «Bo'linmagan xarajat» — the truck card's todo (docs/YOLKIRA-TAQSIMOT.md
+ * §6.3.4). `sight` is REQUIRED (#790 — an optional sight fails open): the VED
+ * (`ownOnly`) is told about his OWN held bills, which the tab shows him and
+ * he can re-base, and never about a colleague's, which the tab would show him
+ * only as «🔒 N ta boshqa xarajat» (#420's dead end).
+ */
+export async function unsplitCountFor(batchId: string, sight: CostSight): Promise<number> {
+  return (await unsplitOnTruck(batchId, sight)).count;
+}
+
+/** One truck whose bills feed THIS truck's tannarx and sit on no box (`carriedUnsplitBills`). */
+export interface CarriedUnsplit {
+  /** The feeding truck. */
+  batchId: string;
+  code: string;
+  /** Its two ends — the card door (`mayOpenBatchCard`) a link to its Xarajatlar tab asks. */
+  originWarehouseId: string;
+  destWarehouseId: string;
+  /** «shu reysgacha» (an earlier leg) or «keyingi yo'l» (a later one) — the fence's own two clauses. */
+  leg: 'prev' | 'later';
+  /** Σ of its no-share bills' dollars; null when none of them has dollars yet (no rate). */
+  usd: number | null;
+  /** Of its bills, how many have no dollar figure at all. */
+  unconverted: number;
+  /** The clients of THIS truck whose cartons rode it on that leg. */
+  clientIds: string[];
+}
+
+/**
+ * The bills on the cargo's OTHER legs whose money silently leaves this
+ * truck's tannarx (docs/YOLKIRA-TAQSIMOT.md §6.3.5, SP-1). The page's cost is
+ * landed cost over the whole road (`landedAllocationsSql`): «shu reysgacha»
+ * is an earlier internal leg's ALLOCATIONS, «keyingi yo'l» a later
+ * non-bearing leg's. A held freight bill — or one with no rate yet — has no
+ * allocation, so the prev/later lines just shrink and nothing says why.
+ *
+ * Built on the fence's OWN CTEs (`carriageCtesSql`'s `rides` and `segs`)
+ * and `mx`'s own columns (`MX`), with its two windows verbatim, so the
+ * warning and the tannarx cannot disagree (#513). Found through the cartons'
+ * RIDES, not through allocations — a held bill has none to join through. A
+ * pair the truck GIVES back (`given`) carries nothing here, so its other legs
+ * are not this page's to name. A direct bill counts only on a page that
+ * carries its own client's cartons from that leg — bill by bill, so the
+ * dollars, the no-rate count and the clients all say the same.
+ *
+ * Only the feeding trucks' batch-scope bills: a stamped grid cell is a
+ * receipt's money, already counted by `unconvertedCostCount` over this
+ * truck's prixods.
+ */
+export async function carriedUnsplitBills(batchId: string): Promise<CarriedUnsplit[]> {
+  const rows = (await db.execute(carriedUnsplitSql(batchId))) as unknown as CarriedUnsplitRow[];
+  return rows.map((row) => ({
+    batchId: row.batch_id,
+    code: row.code,
+    originWarehouseId: row.origin_warehouse_id,
+    destWarehouseId: row.dest_warehouse_id,
+    leg: row.leg,
+    usd: row.usd === null ? null : Math.round(Number(row.usd) * 100) / 100,
+    unconverted: Number(row.unconverted),
+    clientIds: [...row.client_ids].sort(),
+  }));
+}
+
+/** One row of `carriedUnsplitSql`, as postgres answers it. */
+export interface CarriedUnsplitRow {
+  batch_id: string;
+  code: string;
+  origin_warehouse_id: string;
+  dest_warehouse_id: string;
+  usd: string | null;
+  unconverted: number;
+  leg: 'prev' | 'later';
+  client_ids: string[];
+}
+
+/**
+ * `carriedUnsplitBills`' one statement — exported so its differential test
+ * and EXPLAIN read the statement the page runs.
+ *
+ * LINEAR in the truck's cartons whatever the feeding trucks hold: every step
+ * on the carton grain is a scan or a window, and nothing on that grain joins
+ * one CTE to another. Pairing `mx` (one row per carton of this truck) with the
+ * held trucks' rides on box_id — both CTEs, both estimated at one row — was a
+ * nested loop of |cartons| × |rides|: measured on the 120k-carton copy, a
+ * 2,000-carton hub fed by 20 legs that each hold a bill (a Yiwu → Kashgar
+ * leg whose CNY bill has no rate yet holds one) took seconds (#1246's shape,
+ * a third time in this fence).
+ */
+export function carriedUnsplitSql(batchId: string): SQL {
+  const page = sql`${batchId}::uuid`;
+  return sql`
+    WITH ${carriageCtesSql(page)},
+    -- The OTHER trucks the cargo rode that hold such a bill — almost always
+    -- none, which is why it is asked FIRST: the cartons' rides are read below
+    -- only for these trucks.
+    -- One row per PART of a feeding truck's money: a direct bill was only
+    -- ever its OWN client's money — missing from that client's tannarx alone
+    -- — so each client's direct bills are a part of their own (own_client),
+    -- and every other bill is one part for everybody aboard.
+    held AS (
+      SELECT ce.batch_id,
+             ce.allocation_basis = 'direct_to_client' AS direct,
+             CASE WHEN ce.allocation_basis = 'direct_to_client' THEN ce.client_id END AS own_client,
+             sum(ce.amount_usd) AS usd,
+             count(*) FILTER (WHERE ce.amount_usd IS NULL)::int AS unconverted
+        FROM cost_entries ce
+       WHERE ce.batch_id IN (SELECT DISTINCT r.batch_id FROM rides r WHERE r.batch_id <> ${page} AND r.departed_at IS NOT NULL)
+         AND ce.scope = 'batch'
+         AND (${noShareSql(sql`ce`)} OR (ce.voided_at IS NULL AND ce.amount_usd IS NULL))
+       GROUP BY ce.batch_id,
+                ce.allocation_basis = 'direct_to_client',
+                CASE WHEN ce.allocation_basis = 'direct_to_client' THEN ce.client_id END
+    ),
+    -- Every ride of a carton of THIS truck on a truck that holds such a bill,
+    -- with THIS truck's own mx columns for that carton beside it: spread
+    -- from the carton's ride on this truck (a carton rides a truck once —
+    -- box_rides is a UNION) by a window over the carton's rides, so the
+    -- fence's windows are asked of ONE row. A candidate carton that does not
+    -- ride this truck (found back, annulled) spreads NULL and names nothing. The
+    -- rides of the other trucks are dropped before the window, so a page
+    -- whose feeding trucks hold nothing sorts its own cartons and no more.
+    beside AS (
+      SELECT batch_id, box_id, departed_at,
+             max(${MX.at}) FILTER (WHERE batch_id = ${page}) OVER pw AS m_at,
+             max(${MX.prevAt}) FILTER (WHERE batch_id = ${page}) OVER pw AS m_prev_at,
+             bool_or(${MX.given}) FILTER (WHERE batch_id = ${page}) OVER pw AS m_given,
+             max(${MX.upto}) FILTER (WHERE batch_id = ${page}) OVER pw AS m_upto
+        FROM segs
+       WHERE batch_id = ${page} OR batch_id IN (SELECT batch_id FROM held)
+      WINDOW pw AS (PARTITION BY box_id)
+    ),
+    -- The held rides inside the fence's two windows (landedAllocationsSql,
+    -- verbatim): «shu reysgacha» and «keyingi yo'l».
+    fed AS (
+      SELECT b.batch_id AS feed_id, b.box_id,
+             CASE WHEN b.departed_at <= b.m_at THEN 'prev' ELSE 'later' END AS leg
+        FROM beside b
+       WHERE b.batch_id <> ${page}
+         AND NOT b.m_given
+         AND b.departed_at IS NOT NULL
+         AND (
+           (b.departed_at <= b.m_at AND (b.m_prev_at IS NULL OR b.departed_at > b.m_prev_at))
+           OR (b.m_upto IS NOT NULL AND b.departed_at > b.m_at AND b.departed_at <= b.m_upto)
+         )
+    ),
+    -- Whose cartons of THIS truck rode each feeding truck, and on which leg:
+    -- one row per (feeding truck, client), so the cartons are read ONCE
+    -- however many parts a feeding truck holds (joined part by part, they
+    -- were read once per part — measured, twice the time with two).
+    rode AS MATERIALIZED (
+      SELECT f.feed_id, rc.client_id, min(f.leg) AS leg
+        FROM fed f
+        JOIN boxes fbx ON fbx.id = f.box_id
+        JOIN receipt_lots rl ON rl.id = fbx.lot_id
+        JOIN receipts rc ON rc.id = rl.receipt_id
+       GROUP BY f.feed_id, rc.client_id
+    ),
+    -- The parts THIS truck's cargo carries: the truck-wide one when any of
+    -- its cartons rode the feeding truck on that leg, a direct one only when
+    -- its OWN client's carton did. Judged per part, never per truck: beside
+    -- a held bill — or another client's direct one — a fee for a client who
+    -- is not aboard is not this page's money (review of the tests: judged
+    -- per truck, it was added to the dollars and the no-rate count).
+    part AS (
+      SELECT h.batch_id, h.usd, h.unconverted, min(r.leg) AS leg,
+             array_agg(r.client_id) FILTER (
+               WHERE r.client_id IS NOT NULL AND (NOT h.direct OR r.client_id = h.own_client)
+             ) AS client_ids
+        FROM held h
+        JOIN rode r ON r.feed_id = h.batch_id
+       GROUP BY h.batch_id, h.direct, h.own_client, h.usd, h.unconverted
+      HAVING NOT h.direct OR bool_or(r.client_id = h.own_client)
+    )
+    SELECT p.batch_id, fb.code, fb.origin_warehouse_id, fb.dest_warehouse_id,
+           sum(p.usd) AS usd, sum(p.unconverted)::int AS unconverted, min(p.leg) AS leg,
+           coalesce((SELECT array_agg(DISTINCT c) FROM part q, unnest(q.client_ids) AS c WHERE q.batch_id = p.batch_id), '{}')
+             AS client_ids
+      FROM part p
+      JOIN batches fb ON fb.id = p.batch_id
+     GROUP BY p.batch_id, fb.code, fb.origin_warehouse_id, fb.dest_warehouse_id, fb.departed_at
+     ORDER BY fb.departed_at, fb.code
+  `;
+}
+
+/**
  * Batch cost sheet: entries + totals + unit costs per kg / m³.
  *
  * For an own-only sight (the VED, Q19) the truck's total and both per-unit
@@ -2062,21 +2484,31 @@ export async function costEntriesFor(
  * tannarx per kilo he may not read (#791).
  */
 export const batchCostSheet = cache(async function batchCostSheet(batchId: string, sight: CostSight) {
-  const { entries, others } = await costEntriesFor({ batchId }, sight);
-
+  const whole = sight.ownOnly === null;
   // The per-unit costs divide by what the freight was split over — the
   // truck's riders (a carton found back at the origin never rode, one
   // scanned off without a load scan did; a void box is not cargo).
-  const load = (await riderLoad([batchId])).get(batchId);
+  const [{ entries, others }, loads, unsplit] = await Promise.all([
+    costEntriesFor({ batchId }, sight),
+    riderLoad([batchId]),
+    whole ? unsplitOnTruck(batchId, sight) : Promise.resolve(null),
+  ]);
+  const load = loads.get(batchId);
 
   const totalUsd = entries.reduce((a, e) => a + Number(e.entry.amountUsd ?? 0), 0);
   const kg = load?.kg ?? 0;
   const m3 = load?.m3 ?? 0;
-  const whole = sight.ownOnly === null;
   return {
     entries,
     others,
     totalUsd: whole ? Math.round(totalUsd * 100) / 100 : null,
+    /**
+     * The part of `totalUsd` that sits on no box (`noShareSql` — a held
+     * freight bill, an empty base), so the Σ line and the cargo's tannarx
+     * disagree in WORDS instead of silently (docs/YOLKIRA-TAQSIMOT.md §6.3.3).
+     * Whole sight only, like the total it is a part of.
+     */
+    unsplitUsd: unsplit ? unsplit.usd : null,
     unconverted: entries.filter((e) => e.entry.amountUsd === null).length,
     boxCount: Number(load?.boxCount ?? 0),
     kg: Math.round(kg * 10) / 10,
@@ -2396,6 +2828,16 @@ export interface ClientCostPart {
   /** An Uzbek leg AFTER this truck («keyingi yo'l»), carried here. */
   later: boolean;
   usd: number;
+  /**
+   * The bill's own id when it was split by the yo'lkira tariff (0132), so
+   * the Narx tab can name its band from THAT bill's copy and truck; null for
+   * every other basis, which keeps grouping by source and type as before.
+   */
+  freightEntryId: string | null;
+  /** The truck that billed it — the band line links to ITS xarajat tab. */
+  batchId: string | null;
+  /** That truck's two ends, so the link asks THAT truck's card door. */
+  batchEnds: { originWarehouseId: string; destWarehouseId: string } | null;
 }
 
 /**
@@ -2414,9 +2856,11 @@ export async function batchClientCostBreakdown(
   const landed = landedAllocationsSql(sql`${batchId}::uuid`);
   const rows = (await db.execute(sql`
     WITH ${landed.with}
-    SELECT ca.client_id, ct.name AS type_name, eb.code AS batch_code,
+    SELECT ca.client_id, ct.name AS type_name, eb.code AS batch_code, eb.id AS batch_id,
+           eb.origin_warehouse_id AS batch_origin, eb.dest_warehouse_id AS batch_dest,
            er.number AS receipt_number, crt.code AS crate_code, pk.code AS pickup_code,
            (m.upto IS NOT NULL AND eb.departed_at > m.at) AS later,
+           CASE WHEN ce.allocation_basis = 'freight' THEN ce.id END AS freight_entry_id,
            sum(ca.amount_usd) AS usd
       ${landed.joins}
       JOIN cost_types ct ON ct.id = ce.cost_type_id
@@ -2424,11 +2868,15 @@ export async function batchClientCostBreakdown(
       LEFT JOIN crates crt ON crt.id = ce.crate_id
       LEFT JOIN pickups pk ON pk.id = ce.pickup_id
      WHERE ${landed.where} AND ca.client_id IS NOT NULL
-     GROUP BY ca.client_id, ct.name, eb.code, er.number, crt.code, pk.code, later
+     GROUP BY ca.client_id, ct.name, eb.code, eb.id, er.number, crt.code, pk.code, later, freight_entry_id
   `)) as unknown as {
     client_id: string;
     type_name: string;
     batch_code: string | null;
+    batch_id: string | null;
+    batch_origin: string | null;
+    batch_dest: string | null;
+    freight_entry_id: string | null;
     receipt_number: string | null;
     crate_code: string | null;
     pickup_code: string | null;
@@ -2443,6 +2891,10 @@ export async function batchClientCostBreakdown(
       typeName: row.type_name,
       later: Boolean(row.later),
       usd: Math.round(Number(row.usd) * 100) / 100,
+      freightEntryId: row.freight_entry_id,
+      batchId: row.batch_id,
+      batchEnds:
+        row.batch_origin && row.batch_dest ? { originWarehouseId: row.batch_origin, destWarehouseId: row.batch_dest } : null,
     });
     out.set(row.client_id, list);
   }
