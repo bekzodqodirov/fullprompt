@@ -11,6 +11,7 @@ import {
   clientTransactions,
   costEntries,
   costTypes,
+  currencies,
   events,
   moneyAccounts,
   receiptLots,
@@ -27,6 +28,7 @@ import {
   batchLandedCostTotals,
   carriedUnsplitBills,
   unsplitCountFor,
+  unsplitOnFormingTrucks,
 } from '@/modules/wms/costing/service';
 import { ALL_COSTS, costSightFor } from '@/modules/wms/costing/cost-sight';
 import { setTariffColumnInTx } from '@/modules/wms/costing/tariff-column';
@@ -43,14 +45,21 @@ import { companyBalance, profitByBatch } from '@/modules/wms/accounting/reports'
  *   through the fence's own CTEs, and gone the moment the lot is fixed;
  * - 11: on the Balans, as its own sentence and never inside «hech bir
  *   karobkaga tushmagan» (whose cure is a void);
- * - 12: as the truck card's todo, under the reader's own sight.
+ * - 12: as the truck card's todo, under the reader's own sight;
+ * - and the edges of `carriedUnsplitBills` / `unsplitOnFormingTrucks` the
+ *   tests above cannot reach (review of the round): what the fence's two
+ *   windows LEAVE OUT, a feeding bill with no rate yet, a direct bill as its
+ *   own client's money, and the trucks that have not left.
  *
  * Money parked in 1648 (no other file's year), so the trucks fall in no
  * other file's profit window. Tariff columns under ONE private run prefix
  * `t_<n><run>_wten`, swept before and deleted as a FINAL TEST (#824). A
  * warehouse column is CONFIGURATION (#183); the private warehouses and the
  * kassa are deactivated, never deleted (audit FK). Every Balans figure is a
- * DELTA: CI runs every file on one database.
+ * DELTA: CI runs every file on one database. The no-rate currency is the
+ * file's own (no rate is ever written for it — `rateFor` falls back to a
+ * currency's EARLIEST rate, so any real one converts even in 1648) and is
+ * removed once nothing names it.
  */
 const RUN = String(Date.now()).slice(-6);
 let counter = 0;
@@ -58,6 +67,7 @@ const ZONE = `t_${(counter += 1)}${RUN}_wten`;
 const SWEEP = /^t_[0-9a-z]+_wten$/;
 const TARIFF_DAY = '1648-01-01';
 const DAY = '1648-06-14';
+const NO_RATE = 'QFS';
 
 let actorId = '';
 let accountantId = '';
@@ -68,6 +78,9 @@ let whW = '';
 let whK = '';
 let whD = '';
 let whE = '';
+/** Two Kazakh warehouses: a crossing INTO Kazakhstan bears the price again, the leg after it does not. */
+let whF = '';
+let whG = '';
 const made = {
   receipts: [] as string[],
   batches: [] as string[],
@@ -105,11 +118,15 @@ async function mintClient(label: string) {
   return c!.id;
 }
 
-/** A confirmed prixod at W with one MIXED lot of one carton (totals). */
-async function mintLot(client: string, kg: number, m3: number) {
+/**
+ * A confirmed prixod at W (or `at` — where it was received decides which
+ * truck bears its price, `bearsPriceSql`) with one MIXED lot of one carton
+ * (totals).
+ */
+async function mintLot(client: string, kg: number, m3: number, at = whW) {
   const [receipt] = await db
     .insert(receipts)
-    .values({ warehouseId: whW, clientId: client, status: 'confirmed', confirmedAt: new Date(), createdBy: actorId })
+    .values({ warehouseId: at, clientId: client, status: 'confirmed', confirmedAt: new Date(), createdBy: actorId })
     .returning();
   made.receipts.push(receipt!.id);
   const [lot] = await db
@@ -127,7 +144,7 @@ async function mintLot(client: string, kg: number, m3: number) {
     .returning();
   const [box] = await db
     .insert(boxes)
-    .values({ lotId: lot!.id, shortCode: `FS${RUN}-${(seq += 1)}`, seqInLot: 1, status: 'in_stock', currentWarehouseId: whW })
+    .values({ lotId: lot!.id, shortCode: `FS${RUN}-${(seq += 1)}`, seqInLot: 1, status: 'in_stock', currentWarehouseId: at })
     .returning();
   return { receiptId: receipt!.id, lotId: lot!.id, boxIds: [box!.id] };
 }
@@ -160,6 +177,34 @@ async function mintTruck(boxIds: string[], leg: { from: string; to: string; depa
     })),
   );
   return { id: batch!.id, code: batch!.code };
+}
+
+/** A truck still FORMING — no departure, so the live pointer is its membership (`riders.ts`). */
+async function mintFormingTruck(boxIds: string[], leg: { from: string; to: string }) {
+  const [batch] = await db
+    .insert(batches)
+    .values({
+      code: `FST${RUN}-${made.batches.length}`,
+      originWarehouseId: leg.from,
+      destWarehouseId: leg.to,
+      status: 'loading',
+      createdBy: actorId,
+    })
+    .returning();
+  made.batches.push(batch!.id);
+  await db.update(boxes).set({ currentBatchId: batch!.id, status: 'loading' }).where(inArray(boxes.id, boxIds));
+  return { id: batch!.id, code: batch!.code };
+}
+
+/** One truck's landed cost by the fence's three parts: its own bills, «shu reysgacha», «keyingi yo'l». */
+async function legsOf(batchId: string) {
+  const lots = [...((await batchLandedCostTotals([batchId])).get(batchId)?.values() ?? [])];
+  const round = (n: number) => Math.round(n * 100) / 100;
+  return {
+    own: round(lots.reduce((sum, lot) => sum + lot.batchUsd, 0)),
+    prev: round(lots.reduce((sum, lot) => sum + (lot.totalUsd - lot.batchUsd - lot.laterUsd), 0)),
+    later: round(lots.reduce((sum, lot) => sum + lot.laterUsd, 0)),
+  };
 }
 
 async function bill(batchId: string, amount: number, over: Partial<Parameters<typeof addCostEntry>[0]> = {}, as = actorId) {
@@ -228,6 +273,9 @@ beforeAll(async () => {
   whK = await mintWarehouse(`SK${RUN}`.slice(0, 8), 'CN');
   whD = await mintWarehouse(`SD${RUN}`.slice(0, 8), 'UZ');
   whE = await mintWarehouse(`SE${RUN}`.slice(0, 8), 'UZ');
+  whF = await mintWarehouse(`SF${RUN}`.slice(0, 8), 'KZ');
+  whG = await mintWarehouse(`SG${RUN}`.slice(0, 8), 'KZ');
+  await db.insert(currencies).values({ code: NO_RATE, name: `FS no rate ${RUN}`, active: false }).onConflictDoNothing();
   freightType = (await db.query.costTypes.findFirst({ where: eq(costTypes.code, 'freight') }))!.id;
   const [k] = await db
     .insert(moneyAccounts)
@@ -252,11 +300,13 @@ beforeAll(async () => {
       effectiveDate: TARIFF_DAY,
     })),
   );
-  // W for the internal and the export legs, D for the Uzbek leg after.
+  // W for the internal and the export legs, D for the Uzbek leg after, F for
+  // the Kazakh leg after the second crossing.
   await db.transaction(async (tx) => {
     await setTariffColumnInTx(tx, whW, ZONE);
     await setTariffColumnInTx(tx, whK, ZONE);
     await setTariffColumnInTx(tx, whD, ZONE);
+    await setTariffColumnInTx(tx, whF, ZONE);
   });
 });
 
@@ -414,11 +464,183 @@ describe('12 — the truck card’s todo counts under the reader’s own sight',
   });
 });
 
+describe('13 — the fence’s two windows also LEAVE OUT: a held bill outside them is not this page’s', () => {
+  it('«shu reysgacha» stops at the carton’s previous non-internal truck: an earlier Uzbek leg that bore its own price is not named', async () => {
+    const H = await mintClient('WH');
+    const L = await mintClient('WL');
+    // Walk-ins received in Andijan (D, UZ): EVERY Uzbek leg bears their price
+    // (`bearsPriceSql`), so T3 and T5 each carry their own road.
+    const h = await mintLot(H, 600, 1, whD);
+    const l = await mintLot(L, 1, 3, whD);
+    const cargo = [...h.boxIds, ...l.boxIds];
+    const t3 = await mintTruck(cargo, { from: whD, to: whE, departedAt: '1648-08-10T08:00:00Z' });
+    const t5 = await mintTruck(cargo, { from: whE, to: whD, departedAt: '1648-08-12T08:00:00Z' });
+
+    const entry = await bill(t3.id, 70);
+    expect(entry.verdict?.kind).toBe('held');
+    expect(await unsplitCountFor(t3.id, ALL_COSTS)).toBe(1);
+    // T3 departed before T5 — inside «departed ≤ this one» — but it IS the
+    // cartons' previous non-internal truck (`m.prev_at`), so its money was
+    // never T5's tannarx and its held bill is not T5's to name.
+    expect(await carriedUnsplitBills(t5.id)).toEqual([]);
+    // Nor is T5 a later leg of T3: it bears its own price.
+    expect(await carriedUnsplitBills(t3.id)).toEqual([]);
+
+    // The fence agrees: split, T3's money stays on T3 and none of it reaches T5.
+    await reweigh(l.lotId, 300, 3);
+    expect(await unsplitCountFor(t3.id, ALL_COSTS)).toBe(0);
+    expect(await legsOf(t3.id)).toEqual({ own: 70, prev: 0, later: 0 });
+    expect(await legsOf(t5.id)).toEqual({ own: 0, prev: 0, later: 0 });
+  });
+
+  it('«keyingi yo’l» stops at the NEXT price-bearing truck: a held bill on the leg after it is that truck’s, never the first one’s', async () => {
+    const H = await mintClient('UH');
+    const L = await mintClient('UL');
+    const h = await mintLot(H, 600, 1);
+    const l = await mintLot(L, 1, 3);
+    const cargo = [...h.boxIds, ...l.boxIds];
+    // China cargo. T2 crosses (W, CN → D, UZ) and bears its price; T3 is the
+    // Uzbek leg after it (T2's road). T4 crosses again (E, UZ → F, KZ) and
+    // bears it from there; T5 is the Kazakh leg after T4 (T4's road).
+    const t2 = await mintTruck(cargo, { from: whW, to: whD, departedAt: '1648-09-10T08:00:00Z' });
+    const t3 = await mintTruck(cargo, { from: whD, to: whE, departedAt: '1648-09-12T08:00:00Z' });
+    const t4 = await mintTruck(cargo, { from: whE, to: whF, departedAt: '1648-09-14T08:00:00Z' });
+    const t5 = await mintTruck(cargo, { from: whF, to: whG, departedAt: '1648-09-16T08:00:00Z' });
+
+    expect((await bill(t3.id, 60)).verdict?.kind).toBe('held');
+    expect((await bill(t5.id, 50)).verdict?.kind).toBe('held');
+    const later = (t: { id: string; code: string }, from: string, to: string, usd: number) => ({
+      batchId: t.id,
+      code: t.code,
+      originWarehouseId: from,
+      destWarehouseId: to,
+      leg: 'later',
+      usd,
+      unconverted: 0,
+      clientIds: [H, L].sort(),
+    });
+    // T2's road runs to T3 (`m.upto`) and no further: T5 departed after T2
+    // but beyond T4, which took the price over.
+    expect(await carriedUnsplitBills(t2.id)).toEqual([later(t3, whD, whE, 60)]);
+    // And T4 names T5 — never T3, which lies before its previous
+    // non-internal departure (the other window, from the other side).
+    expect(await carriedUnsplitBills(t4.id)).toEqual([later(t5, whF, whG, 50)]);
+
+    // The fence agrees once both split: T2 carries T3's road, T4 carries T5's.
+    await reweigh(l.lotId, 300, 3);
+    expect(await carriedUnsplitBills(t2.id)).toEqual([]);
+    expect(await carriedUnsplitBills(t4.id)).toEqual([]);
+    expect(await legsOf(t2.id)).toEqual({ own: 0, prev: 0, later: 60 });
+    expect(await legsOf(t4.id)).toEqual({ own: 0, prev: 0, later: 50 });
+  });
+});
+
+describe('14 — a feeding truck’s bill with no rate yet is named too: no dollars, counted', () => {
+  it('an unconverted bill on the internal leg is reported on the export truck with usd null and unconverted 1', async () => {
+    const H = await mintClient('RH');
+    const L = await mintClient('RL');
+    // Both heavy: it is the RATE that keeps the bill off the boxes, not the cargo.
+    const h = await mintLot(H, 600, 1);
+    const l = await mintLot(L, 600, 1);
+    const cargo = [...h.boxIds, ...l.boxIds];
+    const t1 = await mintTruck(cargo, { from: whW, to: whK, departedAt: '1648-10-10T08:00:00Z' });
+    const t2 = await mintTruck(cargo, { from: whK, to: whD, departedAt: '1648-10-12T08:00:00Z' });
+
+    const entry = await bill(t1.id, 900, { currency: NO_RATE });
+    expect(entry.amountUsd).toBeNull();
+    expect(entry.verdict?.kind).toBe('unconverted');
+    // Not «on no box» in `noShareSql`'s words — it has no dollars to put on one.
+    expect(await unsplitCountFor(t1.id, ALL_COSTS)).toBe(0);
+    expect(await carriedUnsplitBills(t2.id)).toEqual([
+      {
+        batchId: t1.id,
+        code: t1.code,
+        originWarehouseId: whW,
+        destWarehouseId: whK,
+        leg: 'prev',
+        usd: null,
+        unconverted: 1,
+        clientIds: [H, L].sort(),
+      },
+    ]);
+  });
+});
+
+describe('15 — a direct bill on a feeding truck is its OWN client’s money', () => {
+  it('names only that client, and a truck that carries none of that client’s cargo is not told at all', async () => {
+    const H = await mintClient('DH');
+    const L = await mintClient('DL');
+    const M = await mintClient('DM');
+    const h = await mintLot(H, 600, 1);
+    const l = await mintLot(L, 600, 1);
+    const m = await mintLot(M, 600, 1);
+    // T1 (internal) carries all three; T2 takes H and L across, T2b takes M.
+    const t1 = await mintTruck([...h.boxIds, ...l.boxIds, ...m.boxIds], {
+      from: whW,
+      to: whK,
+      departedAt: '1648-11-10T08:00:00Z',
+    });
+    const t2 = await mintTruck([...h.boxIds, ...l.boxIds], { from: whK, to: whD, departedAt: '1648-11-12T08:00:00Z' });
+    const t2b = await mintTruck(m.boxIds, { from: whK, to: whE, departedAt: '1648-11-13T08:00:00Z' });
+
+    // A direct bill whose client rode sits on no box only while it has no
+    // rate: with dollars it splits over that client's cartons.
+    const entry = await bill(t1.id, 45, { currency: NO_RATE, allocationBasis: 'direct_to_client', clientId: L });
+    expect(entry.verdict?.kind).toBe('unconverted');
+    // Missing from L's tannarx alone — H rode T1 and T2 too and loses nothing.
+    expect(await carriedUnsplitBills(t2.id)).toEqual([
+      {
+        batchId: t1.id,
+        code: t1.code,
+        originWarehouseId: whW,
+        destWarehouseId: whK,
+        leg: 'prev',
+        usd: null,
+        unconverted: 1,
+        clientIds: [L],
+      },
+    ]);
+    // M's cartons rode T1 as well, but L is not aboard T2b: nothing of T2b's
+    // tannarx is missing, so the truck is not reported at all.
+    expect(await carriedUnsplitBills(t2b.id)).toEqual([]);
+  });
+});
+
+describe('16 — trucks that have not left: the «bo’linmagan» list names them beside the departed table', () => {
+  it('a held bill on a FORMING truck is listed with its dollars; a departed truck’s and a cancelled one’s are not', async () => {
+    const A = await mintClient('NA');
+    const B = await mintClient('NB');
+    const C = await mintClient('NC');
+    const a = await mintLot(A, 1, 3);
+    const b = await mintLot(B, 1, 3);
+    const c = await mintLot(C, 1, 3);
+    const forming = await mintFormingTruck(a.boxIds, { from: whW, to: whD });
+    const departed = await mintTruck(b.boxIds, { from: whW, to: whD, departedAt: '1648-12-10T08:00:00Z' });
+    const dropped = await mintFormingTruck(c.boxIds, { from: whW, to: whE });
+
+    expect((await bill(forming.id, 40)).verdict?.kind).toBe('held');
+    expect((await bill(departed.id, 30)).verdict?.kind).toBe('held');
+    expect((await bill(dropped.id, 20)).verdict?.kind).toBe('held');
+    // `cancelBatch` refuses a truck with a live cost (batch_has_costs), so the
+    // status clause is a belt — the state is written directly.
+    await db.update(batches).set({ status: 'cancelled' }).where(eq(batches.id, dropped.id));
+
+    const mine = [forming.id, departed.id, dropped.id];
+    expect((await unsplitOnFormingTrucks()).filter((row) => mine.includes(row.batchId))).toEqual([
+      { batchId: forming.id, code: forming.code, originWarehouseId: whW, destWarehouseId: whD, count: 1, usd: 40 },
+    ]);
+    // The same bill the forming truck's own todo counts.
+    expect(await unsplitCountFor(forming.id, ALL_COSTS)).toBe(1);
+  });
+});
+
 describe('cleanup', () => {
-  it('FINAL — deletes the run’s column, tariff rows, costs and charges; deactivates the rest; no prefixed zone left', async () => {
+  it('FINAL — deletes the run’s column, tariff rows, costs, charges and no-rate currency; deactivates the rest; no prefixed zone left', async () => {
     await db.transaction(async (tx) => {
       await tx.delete(warehouseTariffColumns).where(like(warehouseTariffColumns.tariffZone, `t\\_%${RUN}\\_wten`));
-      await tx.delete(warehouseTariffColumns).where(inArray(warehouseTariffColumns.warehouseId, [whW, whK, whD, whE]));
+      await tx
+        .delete(warehouseTariffColumns)
+        .where(inArray(warehouseTariffColumns.warehouseId, [whW, whK, whD, whE, whF, whG]));
       if (made.costs.length) await tx.delete(costEntries).where(inArray(costEntries.id, made.costs));
       await tx.delete(calcFreightTariffs).where(like(calcFreightTariffs.zone, `t\\_%${RUN}\\_wten`));
     });
@@ -452,7 +674,13 @@ describe('cleanup', () => {
     }
     await db.update(clients).set({ active: false }).where(inArray(clients.id, made.clients));
     await db.update(moneyAccounts).set({ active: false, openingDate: null }).where(eq(moneyAccounts.id, till));
-    await db.update(warehouses).set({ active: false }).where(inArray(warehouses.id, [whW, whK, whD, whE]));
+    await db.update(warehouses).set({ active: false }).where(inArray(warehouses.id, [whW, whK, whD, whE, whF, whG]));
+    // The no-rate currency goes once nothing names it — a killed run's bills
+    // would keep it (inactive) until a run that can delete them.
+    await db.execute(sql`
+      DELETE FROM currencies c
+       WHERE c.code = ${NO_RATE}
+         AND NOT EXISTS (SELECT 1 FROM cost_entries ce WHERE ce.currency = c.code)`);
     await db.update(users).set({ active: false }).where(inArray(users.id, [actorId, accountantId, vedId]));
     const left = await db.execute<{ n: number }>(sql`
       SELECT (SELECT count(*) FROM calc_freight_tariffs WHERE zone LIKE ${`t\\_%${RUN}\\_wten`})
