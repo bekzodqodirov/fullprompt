@@ -175,6 +175,19 @@ export function clientAboardSql(batchExpr: SQL, clientExpr: SQL): SQL {
   )`;
 }
 
+/**
+ * EXISTS: some non-void box rides that truck for money — `truckRiderBoxIds`'s
+ * base, the one a truck bill splits over, asked as a yes/no. What tells a
+ * HELD yo'lkira bill (its truck carries cargo the tariff could not price)
+ * from money on a truck with nothing aboard (`heldFreightSql`, §6.7).
+ */
+export function truckCarriesSql(batchExpr: SQL): SQL {
+  return sql`EXISTS (
+    SELECT 1 FROM (${riderRowsSql({ batches: batchExpr })}) tcr
+      JOIN boxes tcb ON tcb.id = tcr.box_id AND tcb.status <> 'void'
+  )`;
+}
+
 /** A WHERE over `boxes`: this box rode that truck (for money). */
 export function riderFilter(batchId: string): SQL {
   return sql`${boxes.id} IN (

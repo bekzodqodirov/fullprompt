@@ -530,7 +530,7 @@
     "journalWarehouse": "Warehouse",
     "journalAllWarehouses": "All warehouses",
     "journalShow": "Show",
-    "landedFreightHeld": "{count, plural, one {# freight cost} other {# freight costs}} ({usd}) not split over the truck cargo by the tariff are in no row — the landed cost of those trucks' clients is short by it. Once the lot is fixed or through «Split method» it splits and is added by itself."
+    "landedFreightHeld": "Not split over the truck cargo by the tariff, so in no row: {count, plural, one {# freight cost} other {# freight costs}} ({usd}) — the landed cost of those trucks' clients is short by this. Once the lot is fixed, or through «Split method», the split happens and the money is added by itself."
   },
   "warehouses": {
     "title": "Warehouses",

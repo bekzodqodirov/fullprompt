@@ -33,7 +33,15 @@ import { costPool, type PoolFreight } from './pool';
 import { freightCopyFor, prepareFreightCopy, replaceFreightCopyInTx } from './freight-copy';
 import { bandsSummary } from './freight-split';
 import type { BoxMeasure, RecomputeVerdict } from './freight-types';
-import { declaredFilter, riderCtesSql, riderFilter, riderLoad, riderWithoutShareSql } from '../batches/riders';
+import {
+  declaredFilter,
+  riderCtesSql,
+  riderFilter,
+  riderLoad,
+  riderRowsSql,
+  riderWithoutShareSql,
+  truckCarriesSql,
+} from '../batches/riders';
 import { bearsPriceSql, internalLegSql } from '../batches/internal';
 import type { CostSight } from './cost-sight';
 import { CostError } from './errors';
@@ -1235,13 +1243,21 @@ export function noShareSql(ce: SQL): SQL {
  * landed-cost caveat and the deal card ask it, so none of them can call a
  * held bill something else (#513).
  *
- * Keyed on the BASIS like the Balans's `w_nobox` split (§6.3.7), so the two
- * agree bill for bill: a freight bill whose base is truly empty lands here
- * too — the verdict is not stored, and «not split by the tariff» is true of
- * it as well. The cheap clause first; the planner orders the subplan last.
+ * The verdict is not stored, so «held» is re-derived as the pool decides it:
+ * a freight bill on no box whose truck CARRIES cargo (`truckCarriesSql`, the
+ * base it splits over). A freight bill on a truck with nothing aboard — typed
+ * before the loading, or every carton found back — is the pool's «nothing»
+ * and stays the generic money on no box, whose words («splits once the cargo
+ * is there», «check it, void it if needed») are the true ones (review of the
+ * build: keyed on the basis alone, it was told «do not void» with a cure that
+ * cannot happen). The Balans's `w_nobox` asks the same, so the two agree bill
+ * for bill. STATED: a customs-typed freight bill splits over the declaration
+ * (riders AND the found-back cartons); one whose every carton was found back
+ * reads as no-box here — the pool would call it held «on customs».
+ * Evaluated left to right: the subplan runs only for a freight bill on no box.
  */
 export function heldFreightSql(ce: SQL): SQL {
-  return sql`(${ce}.allocation_basis = 'freight' AND ${noShareSql(ce)})`;
+  return sql`(${ce}.allocation_basis = 'freight' AND ${noShareSql(ce)} AND ${truckCarriesSql(sql`${ce}.batch_id`)})`;
 }
 
 /**
@@ -2230,24 +2246,30 @@ export async function unsplitOnFormingTrucks(): Promise<
 }
 
 /**
- * The HELD yo'lkira bills (`heldFreightSql`) on the given trucks, one row per
- * truck — for a reader that knows which trucks its cartons rode and must say
- * that a held bill there is missing from its cost: the deal card's profit
- * (a held bill has no allocation, so a profit summed from allocations is
- * silently higher by this truck's share, docs/YOLKIRA-TAQSIMOT.md §6.3).
- * The WHOLE bill per truck, an upper bound on that share: which part would
- * have landed on the reader's cartons cannot be known until it splits.
+ * The HELD yo'lkira bills (`heldFreightSql`) on the trucks a set of boxes
+ * RODE — for a reader that must say a held bill there is missing from its
+ * cost: the deal card's profit (a held bill has no allocation, so a profit
+ * summed from allocations is silently higher by this truck's share,
+ * docs/YOLKIRA-TAQSIMOT.md §6.3). The rides are the bill's own base rule
+ * (`riderRowsSql`, non-void boxes): a carton that rode without a load scan
+ * counts, one found back at the origin does not, and a truck it is only
+ * PLANNED on counts only while it is the live pointer — the pool's base. One
+ * row per truck, the WHOLE bill — an upper bound on the share: which part
+ * would land on these cartons cannot be known until it splits.
  */
-export async function heldFreightOnTrucks(batchIds: readonly string[]): Promise<
+export async function heldFreightRiddenBy(boxIds: SQL): Promise<
   { batchId: string; code: string; originWarehouseId: string; destWarehouseId: string; count: number; usd: number }[]
 > {
-  if (batchIds.length === 0) return [];
   const rows = (await db.execute(sql`
     SELECT b.id, b.code, b.origin_warehouse_id, b.dest_warehouse_id,
            count(*)::int AS n, coalesce(sum(ce.amount_usd), 0) AS usd
       FROM cost_entries ce
       JOIN batches b ON b.id = ce.batch_id
-     WHERE ${inArray(sql`ce.batch_id`, [...batchIds])} AND ${heldFreightSql(sql`ce`)}
+     WHERE ce.batch_id IN (
+             SELECT rr.batch_id FROM (${riderRowsSql({ boxes: boxIds })}) rr
+               JOIN boxes rb ON rb.id = rr.box_id AND rb.status <> 'void'
+           )
+       AND ${heldFreightSql(sql`ce`)}
      GROUP BY b.id, b.code, b.origin_warehouse_id, b.dest_warehouse_id
      ORDER BY b.code`)) as unknown as {
     id: string;

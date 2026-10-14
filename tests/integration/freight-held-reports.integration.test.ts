@@ -169,9 +169,24 @@ async function mintEmptyTruck() {
   return { id: batch!.id, code: batch!.code };
 }
 
-async function bill(batchId: string, amount: number, costDate: string, basis: 'freight' | 'weight' = 'freight') {
+async function bill(
+  batchId: string,
+  amount: number,
+  costDate: string,
+  basis: 'freight' | 'weight' | 'direct_to_client' = 'freight',
+  clientId: string | null = null,
+) {
   const entry = await addCostEntry(
-    { scope: 'batch', batchId, costTypeId: freightType, amount, currency: 'USD', costDate, allocationBasis: basis },
+    {
+      scope: 'batch',
+      batchId,
+      costTypeId: freightType,
+      amount,
+      currency: 'USD',
+      costDate,
+      allocationBasis: basis,
+      ...(clientId ? { clientId } : {}),
+    },
     ctx(),
   );
   made.costs.push(entry.id);
@@ -280,13 +295,18 @@ describe('1 — the P&L’s gap note: a held yo’lkira bill is its own figure, 
     expect((await bill(truck.id, 100, '1649-06-14')).verdict?.kind).toBe('held');
     const empty = await mintEmptyTruck();
     expect((await bill(empty.id, 40, '1649-06-15', 'weight')).verdict?.kind).toBe('nothing');
+    // A yo'lkira bill typed before the loading: freight basis, but its truck
+    // carries nothing — the pool's «nothing», never «held» (review of the
+    // build: keyed on the basis alone it was told «do not void, fix the lot»).
+    expect((await bill(empty.id, 15, '1649-06-15', 'freight')).verdict?.kind).toBe('nothing');
 
     const after = await pnlGaps(FROM, TO);
     expect(after.freightHeld.count - before.freightHeld.count).toBe(1);
     expect(cents(after.freightHeld.usd - before.freightHeld.usd)).toBe(100);
-    // «On no box» keeps its old meaning for every other basis — and only that.
-    expect(after.onNoBox.count - before.onNoBox.count).toBe(1);
-    expect(cents(after.onNoBox.usd - before.onNoBox.usd)).toBe(40);
+    // «On no box» keeps its old meaning for every bill that is not held —
+    // the empty truck's weight AND freight bills — and only those.
+    expect(after.onNoBox.count - before.onNoBox.count).toBe(2);
+    expect(cents(after.onNoBox.usd - before.onNoBox.usd)).toBe(55);
 
     // The file carries the held bill under its own words, and «on no box»
     // counts exactly the screen's figure.
@@ -300,7 +320,7 @@ describe('1 — the P&L’s gap note: a held yo’lkira bill is its own figure, 
     const fixed = await pnlGaps(FROM, TO);
     expect(fixed.freightHeld.count - before.freightHeld.count).toBe(0);
     expect(cents(fixed.freightHeld.usd - before.freightHeld.usd)).toBe(0);
-    expect(fixed.onNoBox.count - before.onNoBox.count).toBe(1);
+    expect(fixed.onNoBox.count - before.onNoBox.count).toBe(2);
   });
 });
 
@@ -316,16 +336,18 @@ describe('2 — «Mijoz foydasi»: a held bill is its own bucket, never «yuki y
     expect((await bill(truck.id, 100, '1649-07-14')).verdict?.kind).toBe('held');
     const empty = await mintEmptyTruck();
     expect((await bill(empty.id, 40, '1649-07-15', 'weight')).verdict?.kind).toBe('nothing');
+    // A yo'lkira bill on the empty truck IS «yuki yo'q mashina», whatever its basis.
+    expect((await bill(empty.id, 15, '1649-07-15', 'freight')).verdict?.kind).toBe('nothing');
 
     const after = await clientProfitGaps(FROM, TO);
     expect(after.unallocated.heldFreight.count - before.unallocated.heldFreight.count).toBe(1);
     expect(cents(after.unallocated.heldFreight.usd - before.unallocated.heldFreight.usd)).toBe(100);
-    // The truck with no cargo is the batch scope's alone.
-    expect(scopeOf(after, 'batch').count - scopeOf(before, 'batch').count).toBe(1);
-    expect(cents(scopeOf(after, 'batch').usd - scopeOf(before, 'batch').usd)).toBe(40);
+    // The truck with no cargo is the batch scope's alone — both of its bills.
+    expect(scopeOf(after, 'batch').count - scopeOf(before, 'batch').count).toBe(2);
+    expect(cents(scopeOf(after, 'batch').usd - scopeOf(before, 'batch').usd)).toBe(55);
     // The total is still every dollar that reached no client …
-    expect(after.unallocated.count - before.unallocated.count).toBe(2);
-    expect(cents(after.unallocated.usd - before.unallocated.usd)).toBe(140);
+    expect(after.unallocated.count - before.unallocated.count).toBe(3);
+    expect(cents(after.unallocated.usd - before.unallocated.usd)).toBe(155);
     const parts = after.unallocated.byScope.reduce((sum, row) => sum + row.usd, 0) + after.unallocated.heldFreight.usd;
     expect(cents(parts)).toBe(after.unallocated.usd);
     // … so the tab still reconciles to the P&L (U19).
@@ -347,7 +369,7 @@ describe('2 — «Mijoz foydasi»: a held bill is its own bucket, never «yuki y
     await reweigh(l.lotId, 300, 3);
     const fixed = await clientProfitGaps(FROM, TO);
     expect(fixed.unallocated.heldFreight.count - before.unallocated.heldFreight.count).toBe(0);
-    expect(cents(fixed.unallocated.usd - before.unallocated.usd)).toBe(40);
+    expect(cents(fixed.unallocated.usd - before.unallocated.usd)).toBe(55);
   });
 });
 
@@ -370,7 +392,10 @@ describe('3 — the landed-cost report names held bills with count and dollars, 
     expect(await landedOf()).toBe(0);
 
     const labels = reportLabels('uz');
-    const line = `⚠ ${labels.landedFreightHeld}: ${after.count} · $${after.usd.toFixed(2)}`;
+    // The builder's own formatting: the figure is all-time and company-wide,
+    // so on a long-lived database it can pass $1,000 (review of the tests).
+    const usdText = after.usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const line = `⚠ ${labels.landedFreightHeld}: ${after.count} · $${usdText}`;
     expect(texts(await sheetRows(await buildLandedCostXlsx(undefined, 'uz')))).toContain(line);
     // The drill-down is the same report: the same caveat.
     expect(texts(await sheetRows(await buildLandedCostXlsx(H, 'uz')))).toContain(line);
@@ -412,18 +437,60 @@ describe('4 — the deal card: a held bill on a truck the deal’s cartons rode 
     const s = await mintLot(stranger, 1, 3);
     const other = await mintTruck(s.boxIds, '1649-09-11T08:00:00Z');
     expect((await bill(other.id, 70, '1649-09-14')).verdict?.kind).toBe('held');
+    // Money on no box beside the held bill, on the deal's own truck, that is
+    // NOT a held yo'lkira bill: a direct fee for a client with no carton
+    // aboard (the pool's «nothing») — never named here.
+    expect((await bill(truck.id, 25, '1649-09-14', 'direct_to_client', stranger)).verdict?.kind).toBe('nothing');
+
+    // The trucks are the bill's own RIDERS (review of the build): a carton
+    // that rode with no load scan — the unloader took it off — counts …
+    const light2 = await mintLot(await mintClient('D2'), 1, 3);
+    const unscanned = await mintTruck(light2.boxIds, '1649-09-12T08:00:00Z');
+    const mine2 = await mintLot(owner, 600, 1, deal!.id);
+    await db.insert(boxMovements).values({
+      boxId: mine2.boxIds[0]!,
+      fromWarehouseId: whW,
+      toWarehouseId: whD,
+      fromStatus: 'in_stock',
+      toStatus: 'ready_for_pickup',
+      cause: 'undocumented_transfer',
+      refType: 'batch',
+      refId: unscanned.id,
+      actorId,
+    });
+    expect((await bill(unscanned.id, 40, '1649-09-14')).verdict?.kind).toBe('held');
+    // … and a carton found back at the origin after it departed does not.
+    const light3 = await mintLot(await mintClient('D3'), 1, 3);
+    const mine3 = await mintLot(owner, 600, 1, deal!.id);
+    const foundBack = await mintTruck([...light3.boxIds, ...mine3.boxIds], '1649-09-13T08:00:00Z');
+    await db.insert(boxMovements).values({
+      boxId: mine3.boxIds[0]!,
+      fromWarehouseId: whD,
+      toWarehouseId: whW,
+      fromStatus: 'in_transit',
+      toStatus: 'in_stock',
+      cause: 'found_at_origin',
+      refType: 'batch',
+      refId: foundBack.id,
+      actorId,
+    });
+    expect((await bill(foundBack.id, 30, '1649-09-14')).verdict?.kind).toBe('held');
 
     const held = await dealProfit(deal!.id);
-    expect(held.heldFreight).toEqual([
-      { batchId: truck.id, code: truck.code, originWarehouseId: whW, destWarehouseId: whD, count: 1, usd: 100 },
-    ]);
+    const byTruck = (rows: typeof held.heldFreight) => [...rows].sort((a, b) => a.batchId.localeCompare(b.batchId));
+    expect(byTruck(held.heldFreight)).toEqual(
+      byTruck([
+        { batchId: truck.id, code: truck.code, originWarehouseId: whW, destWarehouseId: whD, count: 1, usd: 100 },
+        { batchId: unscanned.id, code: unscanned.code, originWarehouseId: whW, destWarehouseId: whD, count: 1, usd: 40 },
+      ]),
+    );
     // Said, never folded in: the cost is the allocations, and there are none.
     expect(held).toMatchObject({ revenueUsd: 0, costUsd: 0, profitUsd: 0 });
 
     // H 300 + the deal's carton 300 + L 330 (fixed): the deal's share is 300/930 of $100.
     await reweigh(l.lotId, 300, 3);
     const fixed = await dealProfit(deal!.id);
-    expect(fixed.heldFreight).toEqual([]);
+    expect(fixed.heldFreight.map((row) => row.batchId)).toEqual([unscanned.id]);
     expect(fixed.costUsd).toBe(32.26);
     expect(fixed.profitUsd).toBe(-32.26);
   });

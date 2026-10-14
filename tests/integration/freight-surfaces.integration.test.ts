@@ -548,12 +548,24 @@ describe('11 — the Balans: a held yo’lkira bill is its own sentence, never �
     // The profit link's `from`: no later than this truck's own departure day.
     expect(held.unpricedCargo.freightUnsplit.firstDeparted! <= '1648-05-10').toBe(true);
 
+    // A kassa-paid yo'lkira bill on a truck with nothing aboard is the pool's
+    // «nothing»: the generic no-box money with its «void it if needed», never
+    // the held sentence (review of the build — keyed on the basis alone, it
+    // was told «do not void» with a cure that cannot happen).
+    const bare = await mintFormingTruck([], { from: whW, to: whD });
+    expect((await bill(bare.id, 45, { accountId: till })).verdict?.kind).toBe('nothing');
+    const withBare = await companyBalance();
+    expect(withBare.unpricedCargo.freightUnsplit.count - before.freightUnsplit.count).toBe(1);
+    expect(withBare.unpricedCargo.freightUnsplit.batchIds).not.toContain(bare.id);
+    expect(withBare.unpricedCargo.noBox.count - before.noBox.count).toBe(1);
+    expect(Math.round((withBare.unpricedCargo.noBox.usd - before.noBox.usd) * 100) / 100).toBe(45);
+
     await reweigh(u.lotId, 300, 3);
     const fixed = await companyBalance();
     expect(Math.round((fixed.unpricedCargoUsd - lineBefore) * 100) / 100).toBe(330);
     expect(fixed.unpricedCargo.freightUnsplit.count).toBe(before.freightUnsplit.count);
     expect(fixed.unpricedCargo.freightUnsplit.usd).toBe(before.freightUnsplit.usd);
-    expect(fixed.unpricedCargo.noBox).toEqual(before.noBox);
+    expect(fixed.unpricedCargo.noBox.count - before.noBox.count).toBe(1);
   });
 });
 

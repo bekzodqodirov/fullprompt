@@ -29,7 +29,7 @@ import { followCompensationDealTx } from '../finance/compensation-follow';
 import { revenueUsdSql } from '../finance/ledger-sql';
 import { REVENUE_TYPES } from '../finance/ledger-kinds';
 import { marginPct } from '../accounting/margin';
-import { heldFreightOnTrucks } from '../costing/service';
+import { heldFreightRiddenBy } from '../costing/service';
 import { mayGrantDebt, type MoneyActor } from '../finance/scope';
 import { STAGE_COLORS, activeLostReasonLabels } from '../crm/service';
 import { closedAtFor, reasonAllowed, stageWrite } from '../crm/stage-law';
@@ -2081,9 +2081,15 @@ export async function dealProfit(dealId: string): Promise<DealProfit> {
     ),
   ];
 
-  // The same trucks: every one of them could have put a share of a held bill
-  // on these cartons, so each is named where the cost line cannot see it.
-  const heldFreight = await heldFreightOnTrucks(batchIds);
+  // Every truck these cartons RODE for money (the bill's own base rule, not
+  // the list above — that one misses a ride with no load scan and keeps a
+  // truck a carton was found back from): each could have put a share of a
+  // held bill here, so each is named where the cost line cannot see it.
+  const heldFreight = await heldFreightRiddenBy(sql`
+    SELECT hb.id FROM boxes hb
+      JOIN receipt_lots hl ON hl.id = hb.lot_id
+      JOIN receipts hr ON hr.id = hl.receipt_id
+     WHERE hr.deal_id = ${dealId} AND hr.voided_at IS NULL AND hb.status <> 'void'`);
 
   let unlinkedBatchUsd = 0;
   if (batchIds.length > 0) {

@@ -55,7 +55,7 @@ import { FX_PNL_SIGN } from '../finance/fx-sign';
 import { isDebit, REVENUE_TYPES, signedUsd } from '../finance/ledger-kinds';
 import { kindList, ledgerAlias, revenueUsdSql } from '../finance/ledger-sql';
 import { marginPct } from './margin';
-import { rideMovementSql, riderLoad } from '../batches/riders';
+import { rideMovementSql, riderLoad, truckCarriesSql } from '../batches/riders';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { isContinuationTrip, weeksBetween } from '../reports/dashboard-math';
 
@@ -2175,19 +2175,24 @@ export async function unpricedCargoMoney(opts: {
     ),
     -- Money out of the net that sits on no carton at all. A yo'lkira-tariff
     -- bill is the one basis that can be HELD (his rule 6): its own figure,
-    -- whose sentence says «fix the lot», never «void it» (§6.3.7).
+    -- whose sentence says «fix the lot», never «void it» (§6.3.7) — held
+    -- only while its truck carries cargo, heldFreightSql's own clause;
+    -- on an empty truck it is the generic no-box money.
     w_nobox AS (
       SELECT count(*) FILTER (WHERE wc.scope = 'pickup')::int AS pickup_n,
              coalesce(sum(wc.usd) FILTER (WHERE wc.scope = 'pickup'), 0)::float8 AS pickup_usd,
-             count(*) FILTER (WHERE wc.scope <> 'pickup' AND wc.basis = 'freight')::int AS freight_n,
-             coalesce(sum(wc.usd) FILTER (WHERE wc.scope <> 'pickup' AND wc.basis = 'freight'), 0)::float8 AS freight_usd,
+             count(*) FILTER (WHERE wc.scope <> 'pickup' AND (wc.basis = 'freight' AND wc.held))::int AS freight_n,
+             coalesce(sum(wc.usd) FILTER (WHERE wc.scope <> 'pickup' AND (wc.basis = 'freight' AND wc.held)), 0)::float8 AS freight_usd,
              coalesce(array_agg(DISTINCT wc.batch_id)
-                        FILTER (WHERE wc.scope <> 'pickup' AND wc.basis = 'freight' AND wc.batch_id IS NOT NULL),
+                        FILTER (WHERE wc.scope <> 'pickup' AND (wc.basis = 'freight' AND wc.held) AND wc.batch_id IS NOT NULL),
                       '{}') AS freight_batches,
-             count(*) FILTER (WHERE wc.scope <> 'pickup' AND wc.basis IS DISTINCT FROM 'freight')::int AS other_n,
-             coalesce(sum(wc.usd) FILTER (WHERE wc.scope <> 'pickup' AND wc.basis IS DISTINCT FROM 'freight'), 0)::float8 AS other_usd
-        FROM w_cost wc
-       WHERE wc.why = 'in' AND NOT EXISTS (SELECT 1 FROM cost_allocations ca WHERE ca.cost_entry_id = wc.id)
+             count(*) FILTER (WHERE wc.scope <> 'pickup' AND NOT (wc.basis = 'freight' AND wc.held))::int AS other_n,
+             coalesce(sum(wc.usd) FILTER (WHERE wc.scope <> 'pickup' AND NOT (wc.basis = 'freight' AND wc.held)), 0)::float8 AS other_usd
+        FROM (
+          SELECT nb.*, (nb.basis = 'freight' AND ${truckCarriesSql(sql`nb.batch_id`)}) AS held
+            FROM w_cost nb
+           WHERE nb.why = 'in' AND NOT EXISTS (SELECT 1 FROM cost_allocations ca WHERE ca.cost_entry_id = nb.id)
+        ) wc
     )
     SELECT (SELECT coalesce(sum(line), 0) FROM w_client)::float8 AS line,
            (SELECT coalesce(sum(retired), 0) FROM w_client)::float8 AS elsewhere,
