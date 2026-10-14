@@ -21,7 +21,6 @@ import {
   pickups,
   receiptLots,
   receipts,
-  settings,
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { getSetting } from '../../platform/settings/service';
@@ -29,18 +28,20 @@ import { tashkentDayStart } from '../../platform/time/tashkent';
 import { costCashDay, mergedFrom } from '../accounting/cash-rules';
 import { latestTxDate } from '../finance/dates';
 import { exceedsRowUsd, nativeAmount } from '../finance/money-bounds';
-import { ALLOCATION_BASES, allocateEntry, toUsd, type AllocBox, type AllocationBasis } from './engine';
+import { ALLOCATION_BASES, toUsd, type AllocationBasis } from './engine';
+import { costPool, type PoolFreight } from './pool';
+import { freightCopyFor } from './freight-copy';
+import type { BoxMeasure, RecomputeVerdict } from './freight-types';
 import { declaredFilter, riderCtesSql, riderFilter, riderLoad, riderWithoutShareSql } from '../batches/riders';
 import { bearsPriceSql, internalLegSql } from '../batches/internal';
-import { CUSTOMS_CODES_SETTING, parseCustomsCodes } from '../calc/customs-codes';
 import type { CostSight } from './cost-sight';
+import { CostError } from './errors';
+import { customsCostTypeIds } from './customs-ids';
 import { staffPartnerSql } from '../partners/staff';
 
-export class CostError extends Error {
-  constructor(public readonly code: string) {
-    super(code);
-  }
-}
+// Leaves, re-exported so no caller changes (docs/YOLKIRA-TAQSIMOT.md §9.7).
+export { CostError } from './errors';
+export { customsCostTypeIds } from './customs-ids';
 
 // ---------------------------------------------------------------------------
 // FX
@@ -816,25 +817,33 @@ export async function voidCostEntryInTx(
 // Recompute (idempotent — spec 6.9)
 // ---------------------------------------------------------------------------
 
-interface BoxDims {
-  boxId: string;
-  clientId: string | null;
-  weightKg: number;
-  volumeM3: number;
-}
-
 /**
- * Per-box kg/m³ pro-rated from the lot; client from the receipt. Ordered by
- * box id so the same base always splits the same way — with the largest
- * remainder the order decides only who carries a single $0.0001, but an
- * unordered list made even that arbitrary between two recomputes.
+ * Every carton of a bill's base with what the split reads off its lot — ONE
+ * read, ordered by box id (docs/YOLKIRA-TAQSIMOT.md §9.4). `weightKg` and
+ * `volumeM3` are today's figures for the OLD bases (totals ÷ box_count,
+ * unchanged); the raw lot fields are what the freight basis reads its exact
+ * carton from. The label columns come through LEFT JOINs only: an inner join
+ * on `clients` would drop every unclaimed carton from every basis's base
+ * (`truck-riders.integration.test.ts` turns red on it).
  */
-export async function boxDims(boxIds: string[], handle: Db | Tx = db): Promise<BoxDims[]> {
+export async function boxMeasures(boxIds: string[], handle: Db | Tx = db): Promise<BoxMeasure[]> {
   if (boxIds.length === 0) return [];
   const rows = await handle
     .select({
       boxId: boxes.id,
       clientId: receipts.clientId,
+      clientCode: clients.clientCode,
+      receiptId: receipts.id,
+      receiptNumber: receipts.number,
+      unclaimedMarking: receipts.unclaimedMarking,
+      lotId: receiptLots.id,
+      lotLetter: receiptLots.letter,
+      lotSeq: receiptLots.seq,
+      dimsMode: receiptLots.dimsMode,
+      boxLengthCm: receiptLots.boxLengthCm,
+      boxWidthCm: receiptLots.boxWidthCm,
+      boxHeightCm: receiptLots.boxHeightCm,
+      boxWeightKg: receiptLots.boxWeightKg,
       boxCount: receiptLots.boxCount,
       totalWeightKg: receiptLots.totalWeightKg,
       totalVolumeM3: receiptLots.totalVolumeM3,
@@ -842,33 +851,38 @@ export async function boxDims(boxIds: string[], handle: Db | Tx = db): Promise<B
     .from(boxes)
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
     .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+    .leftJoin(clients, eq(receipts.clientId, clients.id))
     .where(inArray(boxes.id, boxIds))
     .orderBy(asc(boxes.id));
   return rows.map((r) => ({
-    boxId: r.boxId,
-    clientId: r.clientId,
+    ...r,
     weightKg: Number(r.totalWeightKg) / r.boxCount,
     volumeM3: Number(r.totalVolumeM3) / r.boxCount,
   }));
 }
 
 /**
- * The cost types that are «rastamojka» — the ONE list the calc control
- * already reads (`calc_customs_cost_type_codes`, parsed by
- * `calc/customs-codes.ts` for both readers; DATA because the owner mints his
- * own types), resolved to ids. On the caller's handle: the recompute asks it
- * from inside its own transaction, where a pool read is #714's freeze — so
- * the setting row is read directly and not through `getSetting`.
+ * The measures and, for a freight bill only, its frozen copy and whether its
+ * type is customs — what `costPool` needs, on the caller's handle. The copy is
+ * read ONLY behind basis 'freight' (fenced): a weight or volume recompute
+ * never touches the side table, so it works one migration behind.
  */
-export async function customsCostTypeIds(handle: Db | Tx = db): Promise<string[]> {
-  const [row] = await handle
-    .select({ value: settings.value })
-    .from(settings)
-    .where(eq(settings.key, CUSTOMS_CODES_SETTING));
-  const codes = parseCustomsCodes(row?.value);
-  const types = await handle.select({ id: costTypes.id }).from(costTypes).where(inArray(costTypes.code, codes));
-  return types.map((type) => type.id);
+export async function loadPoolInputs(
+  entry: typeof costEntries.$inferSelect,
+  ids: string[],
+  handle: Db | Tx = db,
+): Promise<{ measures: BoxMeasure[]; freight: PoolFreight | null }> {
+  const measures = await boxMeasures(ids, handle);
+  if (entry.allocationBasis !== 'freight') return { measures, freight: null };
+  return {
+    measures,
+    freight: {
+      copy: await freightCopyFor(entry.id, handle),
+      customs: (await customsCostTypeIds(handle)).includes(entry.costTypeId),
+    },
+  };
 }
+
 
 /**
  * The boxes a truck's bill is split over. A ROAD cost — freight and every
@@ -1007,6 +1021,7 @@ export async function scopeBoxIds(
     // bases re-splits the next time the truck's costs are recomputed. A
     // customs bill keeps the found-back carton (`truckBaseSql`).
     const customs = (await customsCostTypeIds(handle)).includes(entry.costTypeId);
+    if (!customs) return truckRiderBoxIds(entry.batchId, handle);
     const base = await handle
       .select({ id: boxes.id })
       .from(boxes)
@@ -1014,6 +1029,19 @@ export async function scopeBoxIds(
     return base.map((r) => r.id);
   }
   return [];
+}
+
+/**
+ * A truck's own (non-customs) base: what really rode it, minus the void
+ * cartons. Named so the freight preview draws over the recompute's OWN set
+ * (docs/YOLKIRA-TAQSIMOT.md §1.1), never a look-alike.
+ */
+export async function truckRiderBoxIds(batchId: string, handle: Db | Tx = db): Promise<string[]> {
+  const base = await handle
+    .select({ id: boxes.id })
+    .from(boxes)
+    .where(and(riderFilter(batchId), ne(boxes.status, 'void')));
+  return base.map((r) => r.id);
 }
 
 /**
@@ -1036,9 +1064,9 @@ export async function scopeBoxIds(
  * Reading the rate early is safe because an entry's currency, date and
  * amount have no edit door — a correction is void and re-enter.
  */
-export async function recomputeEntry(costEntryId: string): Promise<void> {
+export async function recomputeEntry(costEntryId: string): Promise<RecomputeVerdict | null> {
   const peek = await db.query.costEntries.findFirst({ where: eq(costEntries.id, costEntryId) });
-  if (!peek) return;
+  if (!peek) return null;
   const factor = Number(await getSetting('chargeable_weight_factor'));
   // The dollar figure is FROZEN at the first conversion (owner, R1: «to'langan
   // paytdagi kurs bo'yicha hisoblansin»): a RECOMPUTE never re-converts. Only
@@ -1074,6 +1102,7 @@ export async function recomputeEntry(costEntryId: string): Promise<void> {
       await tx.delete(costAllocations).where(eq(costAllocations.costEntryId, costEntryId));
       return null;
     }
+    const done = (verdict: RecomputeVerdict | null) => ({ entry, verdict });
     let amountUsd: number | null;
     const frozen = entry.amountUsd !== null && entry.fxRateUsed !== null;
     if (frozen) {
@@ -1084,7 +1113,7 @@ export async function recomputeEntry(costEntryId: string): Promise<void> {
       // Frozen when peeked, unfrozen under the lock: nothing un-freezes a
       // cost, so this is a state no door writes. Leave the row as it stands
       // rather than read a rate on the pool from inside the transaction.
-      return entry;
+      return done(null);
     } else {
       amountUsd = rate !== null ? toUsd(Number(entry.amount), rate) : null;
       // Past the per-row dollar ceiling (U44) the figure is not written: an
@@ -1109,26 +1138,22 @@ export async function recomputeEntry(costEntryId: string): Promise<void> {
     // The base is read INSIDE the lock, before the old shares go: whatever a
     // concurrent correction committed while we waited is what we split over.
     const ids = amountUsd === null ? [] : await scopeBoxIds(entry, tx);
-    const dims = await boxDims(ids, tx);
+    const inputs = await loadPoolInputs(entry, ids, tx);
     await tx.delete(costAllocations).where(eq(costAllocations.costEntryId, costEntryId));
-    if (amountUsd === null) return entry; // unconverted — reports flag it
+    if (amountUsd === null) return done({ kind: 'unconverted' }); // reports flag it
 
-    const pool: AllocBox[] = dims.map((d) => ({
-      ...d,
-      chargeableKg: Math.max(d.weightKg, d.volumeM3 * factor),
-      freightWeight: 0,
-    }));
-    const shares = allocateEntry(
-      {
-        amountUsd,
-        basis: entry.allocationBasis as AllocationBasis,
-        clientId: entry.clientId,
-      },
-      pool,
+    // ONE pool (`./pool`) — the void guard asks the same function. A HELD
+    // freight bill writes no shares at all: never weight 0, never a silent
+    // fallback (docs/YOLKIRA-TAQSIMOT.md §6).
+    const verdict = costPool(
+      { allocationBasis: entry.allocationBasis as AllocationBasis, clientId: entry.clientId, amountUsd },
+      inputs.measures,
+      factor,
+      inputs.freight,
     );
-    if (shares.length) {
+    if (verdict.kind === 'split') {
       await tx.insert(costAllocations).values(
-        shares.map((s) => ({
+        verdict.shares.map((s) => ({
           costEntryId,
           boxId: s.boxId,
           clientId: s.clientId,
@@ -1136,7 +1161,7 @@ export async function recomputeEntry(costEntryId: string): Promise<void> {
         })),
       );
     }
-    return entry;
+    return done(verdict.kind === 'held' ? { kind: 'held', held: verdict.held } : { kind: verdict.kind });
   });
 
   // The debt this cost owes its payer, posted the moment a dollar figure
@@ -1145,16 +1170,17 @@ export async function recomputeEntry(costEntryId: string): Promise<void> {
   // recompute and the nightly unconverted sweep, which convert them once.
   // `chargeForCost` is idempotent per cost, so a re-run costs nothing. After
   // the commit, never inside it: the partner side reads on the pool.
-  if (settled?.partnerId) {
+  if (settled?.entry.partnerId) {
     try {
       const { chargeForCost } = await import('../partners/link');
-      await chargeForCost(costEntryId, { actorId: settled.enteredBy });
+      await chargeForCost(costEntryId, { actorId: settled.entry.enteredBy });
     } catch (error) {
       // Never let the partner side roll back an allocation rebuild — the same
       // fence every other costing→partners crossing uses.
       console.error('[costing] charge after recompute failed', error);
     }
   }
+  return settled?.verdict ?? null;
 }
 
 /**
