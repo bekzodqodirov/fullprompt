@@ -571,11 +571,12 @@ export function CostPanel({
         router.refresh();
       } else {
         setTwins(null);
-        // The column moved under the preview (M6): the page's offer is the
-        // old one, so without a refresh every press would post the same stale
+        // The column or the tariff moved under the preview (M6, and every
+        // other tariff-configuration refusal): the page's offer is the old
+        // one, so without a refresh every press would post the same stale
         // digest and be refused for ever. The inputs are controlled and
         // survive it.
-        if (res.error === 'freight_changed') router.refresh();
+        if (res.error?.startsWith('freight_')) router.refresh();
         setError(
           res.error === 'client_required'
             ? t('clientRequired')

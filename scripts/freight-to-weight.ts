@@ -28,14 +28,16 @@ async function main() {
     return;
   }
   const result = await rollbackFreightBills(bills.map((b) => b.id));
-  console.log(`re-based to weight: ${result.done}; already moved or voided: ${result.skipped}`);
+  console.log(`re-based to weight: ${result.done}; skipped (voided or changed meanwhile — run again to be sure): ${result.skipped}`);
   const codes = new Map(bills.map((b) => [b.id, b.truckCode ?? '—']));
   for (const row of result.splits) {
-    if (row.split !== 'split') {
-      // Saved by weight but on no carton yet: the nightly sweep re-splits it,
-      // and the count check below still reads 0 (the basis moved).
-      console.log(`  ${codes.get(row.id)}  ${row.id}: ${row.split ?? 'not split'} — nightly sweep will retry`);
-    }
+    if (row.split === 'split') continue;
+    // The basis moved (the count check reads 0) but the money is on no
+    // carton yet: only a FAILED split heals by itself; «nothing» (no cargo
+    // with a weight) and «unconverted» (no rate) wait for a person.
+    const why =
+      row.split === 'pending' ? 'the split failed — the nightly sweep retries it' : `${row.split ?? 'not split'} — needs a person`;
+    console.log(`  ${codes.get(row.id)}  ${row.id}: ${why}`);
   }
   if (result.failed.length) {
     console.error(`FAILED: ${result.failed.length} (the rest were moved)`);

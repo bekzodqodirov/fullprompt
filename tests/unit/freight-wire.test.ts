@@ -213,7 +213,7 @@ describe('the review’s screen fixes stay put', () => {
   const PRICING = strip(read('src/app/(protected)/batches/[id]/pricing/page.tsx'));
 
   it('a stale-preview refusal refreshes the offer, or every press re-posts the old digest (M6)', () => {
-    expect(PANEL).toContain("if (res.error === 'freight_changed') router.refresh();");
+    expect(PANEL).toContain("if (res.error?.startsWith('freight_')) router.refresh();");
   });
 
   it('the entry page carries only a basis the person CHOSE (his 4a on the next truck)', () => {

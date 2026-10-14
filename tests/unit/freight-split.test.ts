@@ -188,6 +188,36 @@ describe('stable measures — the carton, not the re-rounded totals', () => {
   });
 });
 
+describe('the exact sums stay small (fix review)', () => {
+  it('a 500-carton totals lot sums to a reduced fraction, and its float twin is a number', () => {
+    // Each carton is totals ÷ 500; unreduced, the sum's denominator was 500^500.
+    const measures = totals('A', 600, 3.5, { n: 500 });
+    const [group] = freightGroups(measures);
+    const [lot] = group!.lots;
+    expect(lot!.cm3.d <= 500n).toBe(true);
+    expect(lot!.grams.d <= 500n).toBe(true);
+    expect(wholeDensity(lot!.grams, lot!.cm3)).toBe(171);
+    expect(group!.m3F).toBeCloseTo(3.5, 9);
+    expect(group!.kgF).toBeCloseTo(600, 9);
+  });
+
+  it('a held light lot of that size prints its m³ and kg, not NaN', () => {
+    const measures = totals('L', 1, 3.5, { n: 500 });
+    const split = splitFreight(freightGroups(measures), {
+      warehouseId: 'W',
+      zone: 'cn',
+      tariffFrom: '2026-01-01',
+      lightBelow: FREIGHT_LIGHT_BELOW,
+      bands: [{ min: 1, max: null, price: 100, perKg: false }],
+    });
+    expect(split.ok).toBe(false);
+    if (split.ok || split.held.reason !== 'cargo') throw new Error('expected a cargo hold');
+    const lot = split.held.tooLight[0]!.lots[0]!;
+    expect(lot.m3).toBeCloseTo(3.5, 9);
+    expect(lot.kg).toBeCloseTo(1, 9);
+  });
+});
+
 describe('his rule 6 — «1 kub 10 kg dan kam bo‘lsa ogohlantirsin»', () => {
   it('the whole density decides, the number the screen prints: 9.49 → held, 9.5 → priced', () => {
     const at = (kg: string) =>

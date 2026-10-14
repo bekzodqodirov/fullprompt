@@ -493,6 +493,14 @@ describe('the void guard asks «is the money somewhere», not «did it split»',
       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
     `);
     try {
+      // BEFORE the recompute the bill still carries its shares: the fold says
+      // what the money is on NOW, never «held» over a split the Σ still counts
+      // (fix review — the flag alone would contradict the row's own figures).
+      const stillSplit = await explainFreightBills(
+        [{ id: entry.id, batchId: truck, costTypeId: privateCustomsType, allocationBasis: 'freight', amountUsd: '100', hasShare: true }],
+        { permissions: new Set(['finance.manage']) },
+      );
+      expect(stillSplit.get(entry.id)?.view?.kind).toBe('split');
       expect((await recomputeEntry(entry.id))?.kind).toBe('held');
       // The row's fold reads the SAME customs flag (review: it drew a tariff
       // split under the ⚠ chip, and the cure was never named).

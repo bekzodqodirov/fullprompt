@@ -254,7 +254,7 @@ export default async function PickupCardPage({ params }: { params: Promise<{ id:
             freight: null,
             rebasable: false,
             costTypeId: entry.costTypeId,
-            // Converted and on no box — any basis (`noShareSql`), the row the todo counts.
+            // Converted and on no box — any basis (`noShareSql`), the fact a truck's todo counts.
             unsplit: entry.amountUsd !== null && !hasShare,
             note: entry.note,
             ...payerView(actor.permissions, { partnerName, partnerIsStaff }),

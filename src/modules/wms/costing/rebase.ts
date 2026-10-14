@@ -8,7 +8,7 @@ import type { AllocationBasis } from './engine';
 import { CostError } from './errors';
 import { copyDigest, freightCopyFor, prepareFreightCopy, replaceFreightCopyInTx } from './freight-copy';
 import { freightMoneySight } from './freight-offer';
-import { bandsSummary, splitCents } from './freight-split';
+import { bandForSight, bandsSummary, splitCents } from './freight-split';
 import type { BandView, FreightCopy, FreightCopyDraft, RebasePreview, RecomputeVerdict } from './freight-types';
 import { costPool } from './pool';
 import { boxMeasures, recomputeEntry, scopeBoxIds } from './service';
@@ -53,7 +53,8 @@ function tokenOf(
   fromCopy: FromCopy,
   toBasis: string,
   to: FreightCopyDraft | null,
-  after: [string, number][],
+  rows: [string, number, number][],
+  held: unknown,
 ) {
   const canonical = JSON.stringify([
     entryId,
@@ -64,7 +65,11 @@ function tokenOf(
     digestOf(fromCopy),
     toBasis,
     digestOf(to),
-    [...after].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)).map(([k, p]) => [k, p.toFixed(2)]),
+    // The «hozir» column too (a re-split under the current basis between the
+    // two presses made it stale), and a held after-state's own lots (WHICH
+    // lots are light is what the person read) — fix review.
+    [...rows].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)).map(([k, before, after]) => [k, before.toFixed(2), after.toFixed(2)]),
+    held ?? null,
   ]);
   return createHash('sha256').update(canonical).digest('hex');
 }
@@ -130,7 +135,7 @@ async function plan(entry: Entry, toBasis: RebaseTarget, money: boolean): Promis
   const bands = new Map<string, BandView>();
   if (verdict.kind === 'split') {
     for (const g of verdict.groups ?? []) {
-      bands.set(g.key, money ? g.band : { min: g.band.min, max: g.band.max, perKg: g.band.perKg });
+      bands.set(g.key, bandForSight(g.band, money));
     }
     for (const s of verdict.shares) {
       const m = receiptOf.get(s.boxId)!;
@@ -179,7 +184,8 @@ async function plan(entry: Entry, toBasis: RebaseTarget, money: boolean): Promis
     fromCopy,
     toBasis,
     to,
-    rows.map((r) => [r.key, r.afterPct]),
+    rows.map((r) => [r.key, r.beforePct, r.afterPct] as [string, number, number]),
+    verdict.kind === 'held' ? verdict.held : null,
   );
   return {
     to,
@@ -291,8 +297,9 @@ async function saveRebaseInTx(
 
 /**
  * After the commit: the split, the edit.ts idiom. The basis change HAS
- * committed, so a failed split is never an error to the person — it is
- * queued, and the nightly `orphaned` net is the last one under that.
+ * committed, so a failed split is never an error to the person. The button's
+ * path queues it (`queue`); the rollback script's does not — it runs in the
+ * one-off container — and both leave the nightly `orphaned` net under it.
  */
 async function afterCommit(entryId: string, tag: string, queue: boolean): Promise<RebaseAnswer> {
   try {

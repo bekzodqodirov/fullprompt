@@ -8,7 +8,7 @@ import { customsCostTypeIds } from './customs-ids';
 import { copyDigest, freightCopiesFor } from './freight-copy';
 import { FREIGHT_CODES_SETTING, parseFreightCodes } from './freight-codes';
 import { freightTablesReady } from './freight-ready';
-import { FREIGHT_LIGHT_BELOW, copyDraft, splitCents } from './freight-split';
+import { FREIGHT_LIGHT_BELOW, bandForSight, copyDraft, splitCents } from './freight-split';
 import { costPool, type PoolVerdict } from './pool';
 import { boxMeasures, truckRiderBoxIds, type ClientCostPart } from './service';
 import { tariffColumnOf } from './tariff-column';
@@ -61,7 +61,7 @@ function splitView(verdict: PoolVerdict, money: boolean): SplitView {
     label: g.label,
     m3: g.m3,
     density: g.density,
-    band: money ? g.band : { min: g.band.min, max: g.band.max, perKg: g.band.perKg },
+    band: bandForSight(g.band, money),
     share: g.share,
     lightLots: g.lightLots,
     ...(money ? { ratePerM3: g.ratePerM3 } : {}),
@@ -186,7 +186,11 @@ export async function explainFreightBills(
   }
   for (const bill of freight) {
     const copy = copies.get(bill.id) ?? 'missing';
-    const view = viewOf(measuresByTruck.get(bill.batchId!) ?? [], copy, money, customsIds.includes(bill.costTypeId));
+    // The customs flag only for a bill that really is on no box: a bill split
+    // BEFORE its type joined the customs list keeps its shares until the next
+    // recompute, and its fold must say what the money is on now (fix review).
+    const customs = !bill.hasShare && customsIds.includes(bill.costTypeId);
+    const view = viewOf(measuresByTruck.get(bill.batchId!) ?? [], copy, money, customs);
     let allocatedUsd: Record<string, number> | undefined;
     const sums = allocated.get(bill.id);
     if (money && sums && bill.amountUsd !== null) {

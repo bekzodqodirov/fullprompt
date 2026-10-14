@@ -660,7 +660,7 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
               {/* Both, when a feeding truck has held dollars AND bills with
                   no rate: neither is in the tannarx (review of the round). */}
               {row.usd !== null && t('unsplitCarried', { code: row.code, usd: money(row.usd), leg: legWords[row.leg] })}
-              {row.usd !== null && row.unconverted > 0 && ' '}
+              {row.usd !== null && row.unconverted > 0 && ' · '}
               {row.unconverted > 0 &&
                 t('unsplitCarriedNoRate', { code: row.code, n: row.unconverted, leg: legWords[row.leg] })}
               {costDoor &&

@@ -49,7 +49,28 @@ export interface Frac {
 
 const ZERO: Frac = { n: 0n, d: 1n };
 
-const add = (a: Frac, b: Frac): Frac => ({ n: a.n * b.d + b.n * a.d, d: a.d * b.d });
+function gcd(a: bigint, b: bigint): bigint {
+  let x = a < 0n ? -a : a;
+  let y = b < 0n ? -b : b;
+  while (y !== 0n) [x, y] = [y, x % y];
+  return x;
+}
+
+/**
+ * Exact, and REDUCED (fix review): unreduced, a totals-measured lot of N
+ * cartons — each carton totals ÷ N — summed to a denominator of N^N, so a
+ * 500-carton lot carried a 1,350-digit BigInt through every split, and its
+ * float twin read Infinity / Infinity = NaN. The cartons of one lot share a
+ * denominator, which is the fast path.
+ */
+const add = (a: Frac, b: Frac): Frac => {
+  if (a.n === 0n) return b;
+  if (b.n === 0n) return a;
+  const n = a.d === b.d ? a.n + b.n : a.n * b.d + b.n * a.d;
+  const d = a.d === b.d ? a.d : a.d * b.d;
+  const g = gcd(n, d);
+  return g > 1n ? { n: n / g, d: d / g } : { n, d };
+};
 
 /** A fixed-scale decimal as the database prints it, × 10^scale, as a BigInt. Null on anything else. */
 function decimal(raw: string | null, scale: number): bigint | null {
@@ -416,6 +437,15 @@ export function bandText(band: BandView, opts: { money: boolean }): BandText {
       ? 'freightBandPerKg'
       : 'freightBand';
   return { key, range, price };
+}
+
+/**
+ * A band as a page may send it — the price only to a money reader. ONE rule
+ * for the panel's preview, the saved fold and the re-basis preview (the fix
+ * review found the preview restating it).
+ */
+export function bandForSight(band: FreightBandCopy, money: boolean): BandView {
+  return money ? band : { min: band.min, max: band.max, perKg: band.perKg };
 }
 
 /**
