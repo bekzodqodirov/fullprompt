@@ -529,7 +529,8 @@
     "journalCapped": "Ro‘yxatda eng yangi {n} tasi ko‘rsatilgan — yuqoridagi jami butun davr uchun.",
     "journalWarehouse": "Sklad",
     "journalAllWarehouses": "Barcha skladlar",
-    "journalShow": "Ko‘rsatish"
+    "journalShow": "Ko‘rsatish",
+    "landedFreightHeld": "Tarif bo‘yicha mashina yukiga bo‘linmagan {count, plural, other {# ta yo‘lkira xarajati}} ({usd}) hech bir qatorda yo‘q — o‘sha mashinalardagi mijozlarning tannarxi shuncha kam. Lot to‘g‘rilansa yoki «Bo‘lish usuli» bilan bo‘linadi va o‘zi qo‘shiladi."
   },
   "warehouses": {
     "title": "Skladlar",
@@ -2248,7 +2249,8 @@
       "batch": "yuki yo‘q mashina",
       "pickup": "prixodi ulanmagan zavod reysi",
       "receipt": "prixod qutilariga tushmagan",
-      "crate": "yashik qutilariga tushmagan"
+      "crate": "yashik qutilariga tushmagan",
+      "freightHeld": "tarif bo‘yicha bo‘linmagan yo‘lkira"
     },
     "nonCashCategory": "Bu xarajat turi pul emas (masalan, amortizatsiya): unda kassa ham, to‘lovchi ham bo‘lmaydi.",
     "nonCashHint": "Pulsiz xarajat turi: kassa va to‘lovchi yozilmaydi.",
@@ -2383,7 +2385,10 @@
     "unsplitHeading": "Xarajati yukka bo‘linmagan reyslar — «Partiya» deb belgilanmaganlari ham",
     "unsplitShowAll": "← Butun «Partiya foydasi» jadvali",
     "balUnpricedFreightHeld": "{count, plural, other {# ta yo‘lkira xarajati}} (${usd}) tarif bo‘yicha mashina yukiga bo‘linmagan — lot to‘g‘rilangach yoki «Bo‘lish usuli» bilan qo‘shiladi, shungacha Sof holatni kamaytirib turadi; bekor qilmang.",
-    "unsplitForming": "Hali jo‘namagan mashinalar (jadvalda yo‘q — jadval faqat jo‘nagan mashinalarni ko‘rsatadi):"
+    "unsplitForming": "Hali jo‘namagan mashinalar (jadvalda yo‘q — jadval faqat jo‘nagan mashinalarni ko‘rsatadi):",
+    "gapFreightHeld": "Tarif bo‘yicha mashina yukiga bo‘linmagan {count, plural, other {# ta yo‘lkira xarajati}} ({usd}) bu hisobotda bor, lekin hech bir mijozning tannarxiga tushmagan.",
+    "gapFreightHeldHint": "Xarajat saqlangan, lekin tarif bo‘yicha bo‘linmagan: lot to‘g‘rilansa yoki «Bo‘lish usuli» bilan bo‘linadi va mijozlarning tannarxiga o‘zi tushadi — bekor qilmang. Sababi mashinaning xarajatlar sahifasida yozilgan.",
+    "clientFreightHeldNote": "Shundan {usd} ({count, plural, other {# ta xarajat}}) — tarif bo‘yicha bo‘linmagan yo‘lkira: lot to‘g‘rilansa yoki «Bo‘lish usuli» bilan bo‘linadi va mijozlarga o‘zi tushadi; bekor qilmang."
   },
   "lidChat": {
     "mark": "Lid",
@@ -3205,7 +3210,8 @@
     "volumeM3": "Hajm (m³)",
     "weightKg": "Og'irlik (kg)",
     "profitCompensation": "− kompensatsiya (yo‘qolgan yuk)",
-    "profitNetRevenue": "Tushum (kompensatsiyadan keyin)"
+    "profitNetRevenue": "Tushum (kompensatsiyadan keyin)",
+    "profitFreightHeld": "Bitim yuki ortilgan {count, plural, other {# ta mashinada}} {usd} $ yo‘lkira xarajati tarif bo‘yicha yukka bo‘linmagan — uning bu bitimga tegishli ulushi yuqoridagi tannarxda yo‘q, shuning uchun foyda haqiqiydan yuqori ko‘rinishi mumkin. Lot to‘g‘rilansa yoki «Bo‘lish usuli» bilan bo‘linadi."
   },
   "automation": {
     "title": "Avtomatlashtirish qoidalari",

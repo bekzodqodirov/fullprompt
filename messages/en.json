@@ -529,7 +529,8 @@
     "journalCapped": "The list shows the newest {n} — the total above covers the whole period.",
     "journalWarehouse": "Warehouse",
     "journalAllWarehouses": "All warehouses",
-    "journalShow": "Show"
+    "journalShow": "Show",
+    "landedFreightHeld": "{count, plural, one {# freight cost} other {# freight costs}} ({usd}) not split over the truck cargo by the tariff are in no row — the landed cost of those trucks' clients is short by it. Once the lot is fixed or through «Split method» it splits and is added by itself."
   },
   "warehouses": {
     "title": "Warehouses",
@@ -2248,7 +2249,8 @@
       "batch": "a truck with no cargo",
       "pickup": "a factory pickup with no receipt linked",
       "receipt": "not on the receipt's boxes",
-      "crate": "not on the crate's boxes"
+      "crate": "not on the crate's boxes",
+      "freightHeld": "freight not split by the tariff"
     },
     "nonCashCategory": "This expense kind moves no money (depreciation, say): it takes no cash box and no payer.",
     "nonCashHint": "A non-cash expense kind: no cash box and no payer.",
@@ -2383,7 +2385,10 @@
     "unsplitHeading": "Trucks with costs not split over the cargo — including those not marked as a consignment",
     "unsplitShowAll": "← The whole «Profit by batch» table",
     "balUnpricedFreightHeld": "{count, plural, one {# freight cost} other {# freight costs}} (${usd}) not split over the truck cargo by the tariff — the money joins once the lot is fixed or through «Split method», and until then it lowers the net position; do not void these costs.",
-    "unsplitForming": "Trucks that have not left yet (not in the table, which lists departed trucks only):"
+    "unsplitForming": "Trucks that have not left yet (not in the table, which lists departed trucks only):",
+    "gapFreightHeld": "{count, plural, one {# freight cost} other {# freight costs}} ({usd}) not split over the truck cargo by the tariff — in this report, but in no client's landed cost.",
+    "gapFreightHeldHint": "Saved but not split by the tariff: once the lot is fixed or through «Split method» it splits and joins the clients' landed cost by itself — do not void it. The reason is on the truck's cost sheet.",
+    "clientFreightHeldNote": "Of which {usd} ({count, plural, one {# cost} other {# costs}}) is freight not split by the tariff: once the lot is fixed or through «Split method» it splits onto the clients by itself; do not void it."
   },
   "lidChat": {
     "mark": "Lead",
@@ -3205,7 +3210,8 @@
     "volumeM3": "Volume (m³)",
     "weightKg": "Weight (kg)",
     "profitCompensation": "− compensation (lost cargo)",
-    "profitNetRevenue": "Revenue (after compensation)"
+    "profitNetRevenue": "Revenue (after compensation)",
+    "profitFreightHeld": "On {count, plural, one {# truck} other {# trucks}} that carried this deal's cargo, {usd} $ of freight was not split over the cargo by the tariff — this deal's share of it is not in the cost above, so the profit may read higher than it is. It splits once the lot is fixed or through «Split method»."
   },
   "automation": {
     "title": "Automation rules",

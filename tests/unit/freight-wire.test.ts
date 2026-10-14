@@ -257,3 +257,35 @@ describe('the review’s screen fixes stay put', () => {
     expect(profit).toContain("unsplitOnly ? unsplitOnFormingTrucks() : Promise.resolve([]),");
   });
 });
+
+describe('every money screen that reads «on no box» names a held bill apart (§6.7)', () => {
+  // The four readers the fix review found still calling a held bill «a truck
+  // with no cargo — void it»: each splits it by the ONE fragment and each
+  // screen draws what its service returns. The integration file
+  // (freight-held-reports) proves the figures; this pins the drawing.
+  it('the services ask heldFreightSql — never a basis test of their own', () => {
+    const reports = strip(read('src/modules/wms/accounting/reports.ts'));
+    expect(body(reports, 'export async function pnlGaps(')).toContain('heldFreightSql(');
+    expect(body(reports, 'export async function clientProfitGaps(')).toContain('heldFreightSql(');
+    expect(body(strip(read('src/modules/wms/reports/queries.ts')), 'export async function heldFreightCosts(')).toContain(
+      'heldFreightSql(',
+    );
+    for (const f of SRC.filter((f) => !f.startsWith('src/modules/wms/costing/'))) {
+      expect(strip(read(f)), f).not.toMatch(/allocation_basis\s*=\s*'freight'\s+AND/);
+    }
+  });
+
+  it('each screen draws its held figure', () => {
+    const screens: [string, string, string][] = [
+      ['src/app/(protected)/accounting/pnl-gaps.tsx', 'pnl-gap-freight-held', 'gaps.freightHeld'],
+      ['src/app/(protected)/accounting/profit/page.tsx', 'profit-client-freight-held', 'unallocated.heldFreight'],
+      ['src/app/(protected)/bitimlar/[id]/page.tsx', 'deal-profit-freight-held', 'profit.heldFreight'],
+      ['src/app/(protected)/reports/landed-cost/page.tsx', 'landed-freight-held', 'heldFreightCosts()'],
+    ];
+    for (const [file, testid, reads] of screens) {
+      const src = strip(read(file));
+      expect(src, file).toContain(`data-testid="${testid}"`);
+      expect(src, file).toContain(reads);
+    }
+  });
+});

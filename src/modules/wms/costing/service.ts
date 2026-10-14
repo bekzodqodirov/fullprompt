@@ -1226,6 +1226,25 @@ export function noShareSql(ce: SQL): SQL {
 }
 
 /**
+ * `noShareSql` narrowed to the one basis that can be HELD — the yo'lkira
+ * tariff's (his rule 6, docs/YOLKIRA-TAQSIMOT.md §6.1): saved, converted, and
+ * on no carton until the lot is fixed or the bill re-based. A report that
+ * names money on no box splits these out by THIS, because its generic
+ * sentence's cause («a truck with no cargo») and cure («void it») are both
+ * false of a held bill (§6.7) — the P&L's gap note, «Mijoz foydasi», the
+ * landed-cost caveat and the deal card ask it, so none of them can call a
+ * held bill something else (#513).
+ *
+ * Keyed on the BASIS like the Balans's `w_nobox` split (§6.3.7), so the two
+ * agree bill for bill: a freight bill whose base is truly empty lands here
+ * too — the verdict is not stored, and «not split by the tariff» is true of
+ * it as well. The cheap clause first; the planner orders the subplan last.
+ */
+export function heldFreightSql(ce: SQL): SQL {
+  return sql`(${ce}.allocation_basis = 'freight' AND ${noShareSql(ce)})`;
+}
+
+/**
  * Sweep recompute: everything (FX table edited), one currency, or one
  * batch/receipt. Idempotent — safe to run repeatedly.
  */
@@ -2193,6 +2212,44 @@ export async function unsplitOnFormingTrucks(): Promise<
      WHERE b.departed_at IS NULL AND b.status <> 'cancelled' AND ${noShareSql(sql`ce`)}
      GROUP BY b.id, b.code, b.origin_warehouse_id, b.dest_warehouse_id, b.created_at
      ORDER BY b.created_at, b.code`)) as unknown as {
+    id: string;
+    code: string;
+    origin_warehouse_id: string;
+    dest_warehouse_id: string;
+    n: number;
+    usd: string;
+  }[];
+  return [...rows].map((r) => ({
+    batchId: r.id,
+    code: r.code,
+    originWarehouseId: r.origin_warehouse_id,
+    destWarehouseId: r.dest_warehouse_id,
+    count: Number(r.n),
+    usd: Math.round(Number(r.usd) * 100) / 100,
+  }));
+}
+
+/**
+ * The HELD yo'lkira bills (`heldFreightSql`) on the given trucks, one row per
+ * truck — for a reader that knows which trucks its cartons rode and must say
+ * that a held bill there is missing from its cost: the deal card's profit
+ * (a held bill has no allocation, so a profit summed from allocations is
+ * silently higher by this truck's share, docs/YOLKIRA-TAQSIMOT.md §6.3).
+ * The WHOLE bill per truck, an upper bound on that share: which part would
+ * have landed on the reader's cartons cannot be known until it splits.
+ */
+export async function heldFreightOnTrucks(batchIds: readonly string[]): Promise<
+  { batchId: string; code: string; originWarehouseId: string; destWarehouseId: string; count: number; usd: number }[]
+> {
+  if (batchIds.length === 0) return [];
+  const rows = (await db.execute(sql`
+    SELECT b.id, b.code, b.origin_warehouse_id, b.dest_warehouse_id,
+           count(*)::int AS n, coalesce(sum(ce.amount_usd), 0) AS usd
+      FROM cost_entries ce
+      JOIN batches b ON b.id = ce.batch_id
+     WHERE ${inArray(sql`ce.batch_id`, [...batchIds])} AND ${heldFreightSql(sql`ce`)}
+     GROUP BY b.id, b.code, b.origin_warehouse_id, b.dest_warehouse_id
+     ORDER BY b.code`)) as unknown as {
     id: string;
     code: string;
     origin_warehouse_id: string;

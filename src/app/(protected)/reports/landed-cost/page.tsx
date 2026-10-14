@@ -4,6 +4,7 @@ import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { moneyHidden } from '@/modules/platform/rbac/money-sight';
 import {
+  heldFreightCosts,
   landedCostByClient,
   landedCostByLot,
   UNCLAIMED_KEY,
@@ -32,7 +33,11 @@ export default async function LandedCostReportPage({
   const ta = await getTranslations('accounting');
   const { clientId } = await searchParams;
 
-  const [clientRows, unconverted] = await Promise.all([landedCostByClient(), unconvertedCosts()]);
+  const [clientRows, unconverted, held] = await Promise.all([
+    landedCostByClient(),
+    unconvertedCosts(),
+    heldFreightCosts(),
+  ]);
   const unconvertedCount = unconverted.reduce((sum, row) => sum + row.count, 0);
   // Unclaimed cargo's row carries no client id: it is addressed by its own
   // key, never by an empty one (audit U19).
@@ -60,6 +65,19 @@ export default async function LandedCostReportPage({
           {t('landedUnconverted', {
             count: unconvertedCount,
             sums: unconverted.map((row) => `${row.amount} ${row.currency}`).join(', '),
+          })}
+        </p>
+      )}
+
+      {/* A held yo'lkira bill is in no allocation, so the clients on its truck
+          read short by their share of it — the same hole as a cost with no
+          rate, said the same way and never with «void it» (§6.7). */}
+      {held.count > 0 && (
+        <p className="card min-w-0 break-words !p-3 text-sm font-semibold text-warn" data-testid="landed-freight-held">
+          ⚠{' '}
+          {t('landedFreightHeld', {
+            count: held.count,
+            usd: `$${held.usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
           })}
         </p>
       )}

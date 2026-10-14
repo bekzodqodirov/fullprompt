@@ -529,7 +529,8 @@
     "journalCapped": "列表仅显示最新{n}条——上方合计为整个期间。",
     "journalWarehouse": "仓库",
     "journalAllWarehouses": "全部仓库",
-    "journalShow": "显示"
+    "journalShow": "显示",
+    "landedFreightHeld": "{count, plural, other {# 笔运费}}（{usd}）尚未按运价分摊到车辆货物，不在任何一行中——这些车辆上客户的成本少了这部分。修正批次或通过「分摊方式」后会自动分摊并计入。"
   },
   "warehouses": {
     "title": "仓库",
@@ -2248,7 +2249,8 @@
       "batch": "无货车辆",
       "pickup": "未关联入库单的工厂提货",
       "receipt": "未落到入库单箱子上",
-      "crate": "未落到木箱箱子上"
+      "crate": "未落到木箱箱子上",
+      "freightHeld": "未按运价分摊的运费"
     },
     "nonCashCategory": "该费用类型不涉及现金（例如折旧）：不能指定账户或付款方。",
     "nonCashHint": "非现金费用类型：不填写账户和付款方。",
@@ -2383,7 +2385,10 @@
     "unsplitHeading": "费用未分摊到货物的车次——包括未标记为批次的车辆",
     "unsplitShowAll": "← 完整的「批次利润」表",
     "balUnpricedFreightHeld": "{count, plural, other {# 笔运费}}（${usd}）尚未按运价分摊到车辆货物——修正批次或通过「分摊方式」后计入，在此之前会降低净头寸；请勿作废。",
-    "unsplitForming": "尚未出发的车辆（表格只列出已出发的车辆，因此不在表中）："
+    "unsplitForming": "尚未出发的车辆（表格只列出已出发的车辆，因此不在表中）：",
+    "gapFreightHeld": "{count, plural, other {# 笔运费}}（{usd}）尚未按运价分摊到车辆货物——计入了本报表，但没有进入任何客户的成本。",
+    "gapFreightHeldHint": "已保存但尚未按运价分摊：修正批次或通过「分摊方式」后会自动分摊并计入客户成本——请勿作废。原因见该车的费用页。",
+    "clientFreightHeldNote": "其中 {usd}（{count, plural, other {# 笔}}）是未按运价分摊的运费：修正批次或通过「分摊方式」后会自动分摊到客户；请勿作废。"
   },
   "lidChat": {
     "mark": "线索",
@@ -3205,7 +3210,8 @@
     "volumeM3": "方数（m³）",
     "weightKg": "重量（kg）",
     "profitCompensation": "− 赔偿（丢失货物）",
-    "profitNetRevenue": "收入（扣除赔偿后）"
+    "profitNetRevenue": "收入（扣除赔偿后）",
+    "profitFreightHeld": "装有本交易货物的 {count, plural, other {# 辆车}}上有 {usd} $ 运费尚未按运价分摊到货物——本交易应承担的部分不在上方成本中，因此利润可能显得偏高。修正批次或通过「分摊方式」后会分摊。"
   },
   "automation": {
     "title": "自动化规则",

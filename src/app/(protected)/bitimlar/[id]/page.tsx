@@ -27,6 +27,7 @@ import {
   unlinkedReceipts,
 } from '@/modules/wms/deals/service';
 import { mayEditDealTerms } from '@/modules/wms/deals/door';
+import { batchTabHref, mayOpenBatchCard, mayOpenBatchCosts } from '@/modules/wms/batches/card-door';
 import { salesManagerOptions } from '@/modules/platform/rbac/queries';
 import { formStages } from '@/modules/wms/crm/stage-law';
 import { DealForm } from '../deal-form';
@@ -453,6 +454,40 @@ export default async function DealPage({
             <p className="rounded-xl border border-warn/30 bg-warn/10 p-2 text-xs">
               {t('profitUnlinked', { amount: profit.unlinkedBatchUsd.toFixed(2) })}
             </p>
+          )}
+          {/* A held yo'lkira bill on a truck these cartons rode is in no
+              allocation, so the cost above lacks this deal's share of it and
+              the profit reads high. Said, never folded in: the money sits on
+              no carton until the lot is fixed or the bill re-based (§6.3). A
+              truck links to its Xarajatlar tab only for a reader that tab and
+              the card admit. */}
+          {profit.heldFreight.length > 0 && (
+            <div
+              className="min-w-0 space-y-1 break-words rounded-xl border border-warn/30 bg-warn/10 p-2 text-xs"
+              data-testid="deal-profit-freight-held"
+            >
+              <p className="font-semibold text-warn">
+                ⚠{' '}
+                {t('profitFreightHeld', {
+                  count: profit.heldFreight.length,
+                  usd: profit.heldFreight.reduce((sum, row) => sum + row.usd, 0).toFixed(2),
+                })}
+              </p>
+              <ul className="ml-4 list-disc">
+                {profit.heldFreight.map((row) => (
+                  <li key={row.batchId} className="min-w-0 break-words">
+                    {mayOpenBatchCosts(actor.permissions) && mayOpenBatchCard(actor, row) ? (
+                      <Link href={batchTabHref(row.batchId, 'xarajat')} className="font-mono text-brand-700 underline">
+                        {row.code}
+                      </Link>
+                    ) : (
+                      <span className="font-mono">{row.code}</span>
+                    )}{' '}
+                    · <span className="font-mono tabular-nums">{row.usd.toFixed(2)} $</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </section>
       )}

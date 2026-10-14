@@ -29,6 +29,7 @@ import { followCompensationDealTx } from '../finance/compensation-follow';
 import { revenueUsdSql } from '../finance/ledger-sql';
 import { REVENUE_TYPES } from '../finance/ledger-kinds';
 import { marginPct } from '../accounting/margin';
+import { heldFreightOnTrucks } from '../costing/service';
 import { mayGrantDebt, type MoneyActor } from '../finance/scope';
 import { STAGE_COLORS, activeLostReasonLabels } from '../crm/service';
 import { closedAtFor, reasonAllowed, stageWrite } from '../crm/stage-law';
@@ -1982,6 +1983,22 @@ export interface DealProfit {
    * put invented numbers in front of an accountant.
    */
   unlinkedBatchUsd: number;
+  /**
+   * HELD yo'lkira bills (his rule 6) on the trucks this deal's cartons rode:
+   * converted and on no box, so `costUsd` — summed from allocations — holds
+   * none of them and the profit reads higher by this deal's share. Named per
+   * truck, the WHOLE bill (an upper bound on the share), and never folded
+   * into the arithmetic: the money genuinely sits on no carton until the lot
+   * is fixed or the bill re-based (docs/YOLKIRA-TAQSIMOT.md §6.3).
+   */
+  heldFreight: {
+    batchId: string;
+    code: string;
+    originWarehouseId: string;
+    destWarehouseId: string;
+    count: number;
+    usd: number;
+  }[];
 }
 
 /**
@@ -2064,6 +2081,10 @@ export async function dealProfit(dealId: string): Promise<DealProfit> {
     ),
   ];
 
+  // The same trucks: every one of them could have put a share of a held bill
+  // on these cartons, so each is named where the cost line cannot see it.
+  const heldFreight = await heldFreightOnTrucks(batchIds);
+
   let unlinkedBatchUsd = 0;
   if (batchIds.length > 0) {
     const [row] = await db
@@ -2089,5 +2110,6 @@ export async function dealProfit(dealId: string): Promise<DealProfit> {
     profitUsd,
     marginPct: marginPct(profitUsd, revenueUsd),
     unlinkedBatchUsd,
+    heldFreight,
   };
 }

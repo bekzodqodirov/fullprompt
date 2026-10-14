@@ -374,16 +374,31 @@ export default async function ProfitPage({
         </p>
       )}
       {clientGaps && clientGaps.unallocated.usd > 0.009 && (
-        <p className="card !p-3 text-sm font-semibold text-warn" data-testid="profit-client-unallocated">
-          ⚠{' '}
-          {t('clientUnallocatedNote', {
-            usd: `$${usd(clientGaps.unallocated.usd)}`,
-            count: clientGaps.unallocated.count,
-            scopes: clientGaps.unallocated.byScope
-              .map((row) => gapScope[row.scope] ?? row.scope)
-              .join(', '),
-          })}
-        </p>
+        <div className="card space-y-1 !p-3 text-sm" data-testid="profit-client-unallocated">
+          <p className="min-w-0 break-words font-semibold text-warn">
+            ⚠{' '}
+            {t('clientUnallocatedNote', {
+              usd: `$${usd(clientGaps.unallocated.usd)}`,
+              count: clientGaps.unallocated.count,
+              // A held yo'lkira bill is its own bucket and never «yuki yo'q
+              // mashina» — its truck carries the cargo it is held over.
+              scopes: [
+                ...clientGaps.unallocated.byScope.map((row) => gapScope[row.scope] ?? row.scope),
+                ...(clientGaps.unallocated.heldFreight.count > 0 ? [t('gapScope.freightHeld')] : []),
+              ].join(', '),
+            })}
+          </p>
+          {/* «Of which»: the held bills' part of the figure above, whose cure
+              is the lot or «Bo'lish usuli», never a void (§6.7). */}
+          {clientGaps.unallocated.heldFreight.count > 0 && (
+            <p className="min-w-0 break-words text-xs text-ink-700" data-testid="profit-client-freight-held">
+              {t('clientFreightHeldNote', {
+                count: clientGaps.unallocated.heldFreight.count,
+                usd: `$${usd(clientGaps.unallocated.heldFreight.usd)}`,
+              })}
+            </p>
+          )}
+        </div>
       )}
       {/* Said when EITHER half has money (U37): the cost half — cargo that
           rode no priced truck — used to be silent whenever the revenue half

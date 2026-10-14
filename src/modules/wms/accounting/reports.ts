@@ -21,6 +21,7 @@ import { uzsRate } from './period';
 import {
   batchCarriage,
   batchLandedCostTotals,
+  heldFreightSql,
   noShareSql,
   oldInsideEveryCountSql,
   rateFor,
@@ -151,11 +152,19 @@ export type FxPnlKey = (typeof FX_PNL_KEYS)[number];
  *   with no prixod linked yet, or a truck cost typed before anything was
  *   loaded, has no cargo for a while by design — and splits by itself when it
  *   does. Nothing here voids it: the empty-scope void is the annul's alone.
+ * - A yo'lkira-tariff bill HELD on no box (`heldFreightSql`, his rule 6) is
+ *   the same money in the same place, said apart: the hint under «on no box»
+ *   tells the reader to check and void a found-back truck's cell, and a held
+ *   bill's cure is the LOT or «Bo'lish usuli», never a void
+ *   (docs/YOLKIRA-TAQSIMOT.md §6.7) — the Balans splits it the same way.
  */
 export interface PnlGaps {
   manualCharges: { count: number; usd: number };
   unconverted: { count: number; byCurrency: { currency: string; count: number; amount: number }[] };
+  /** On no box, every basis but the yo'lkira tariff's — the «check it, void it if needed» money. */
   onNoBox: { count: number; usd: number };
+  /** Yo'lkira-tariff bills on no box — held until the lot is fixed or the bill re-based. */
+  freightHeld: { count: number; usd: number };
   /**
    * Counterparty corrections nobody with the right to say has classified as
    * «kurs farqi» or «xato tuzatish» (0103, Q12's split): named, never guessed
@@ -203,20 +212,21 @@ export async function pnlGaps(from: string, to: string): Promise<PnlGaps> {
       )
       .groupBy(costEntries.currency)
       .orderBy(costEntries.currency),
+    // ONE read over the money on no box (`noShareSql`), split by the one
+    // sentence for a held bill — so the two figures add up to it exactly.
     db
       .select({
-        count: sql<number>`count(*)::int`,
-        usd: sql<string>`coalesce(sum(${costEntries.amountUsd}), 0)`,
+        count: sql<number>`count(*) FILTER (WHERE ${heldFreightSql(sql`${costEntries}`)} IS NOT TRUE)::int`,
+        usd: sql<string>`coalesce(sum(${costEntries.amountUsd}) FILTER (WHERE ${heldFreightSql(sql`${costEntries}`)} IS NOT TRUE), 0)`,
+        heldCount: sql<number>`count(*) FILTER (WHERE ${heldFreightSql(sql`${costEntries}`)})::int`,
+        heldUsd: sql<string>`coalesce(sum(${costEntries.amountUsd}) FILTER (WHERE ${heldFreightSql(sql`${costEntries}`)}), 0)`,
       })
       .from(costEntries)
       .where(
         and(
-          isNull(costEntries.voidedAt),
-          sql`${costEntries.amountUsd} IS NOT NULL`,
+          noShareSql(sql`${costEntries}`),
           gte(costEntries.costDate, from),
           lte(costEntries.costDate, to),
-          sql`NOT EXISTS (
-            SELECT 1 FROM cost_allocations ca WHERE ca.cost_entry_id = ${costEntries}.id)`,
         ),
       ),
     db
@@ -267,6 +277,7 @@ export async function pnlGaps(from: string, to: string): Promise<PnlGaps> {
     manualCharges: { count: Number(manual[0]?.count ?? 0), usd: money(manual[0]?.usd) },
     unconverted: { count: byCurrency.reduce((sum, row) => sum + row.count, 0), byCurrency },
     onNoBox: { count: Number(onNoBox[0]?.count ?? 0), usd: money(onNoBox[0]?.usd) },
+    freightHeld: { count: Number(onNoBox[0]?.heldCount ?? 0), usd: money(onNoBox[0]?.heldUsd) },
     unclassifiedAdjusts: { count: Number(adjusts[0]?.count ?? 0), usd: money(adjusts[0]?.usd) },
     kassaUsdMissing: { count: Number(kassaMissing[0]?.count ?? 0) },
     transferUsdMissing: { count: Number(transferMissing[0]?.count ?? 0) },
@@ -1577,10 +1588,22 @@ export async function unbatchedMoney(from: string, to: string): Promise<Unbatche
  *   yo'lkira bill, an empty base); this one asks «did all of its money reach a
  *   client», so a bill that reached its boxes short is counted here too — a
  *   different question, on the client tab (docs/YOLKIRA-TAQSIMOT.md §6.4).
+ *
+ *   A HELD yo'lkira bill (`heldFreightSql`) is in the total and in no scope:
+ *   its own bucket, `heldFreight`. By scope it is a truck bill, and the tab
+ *   words a truck bucket «yuki yo'q mashina» — false of a bill whose truck
+ *   carries the cargo it is held over (§6.3). So `usd`/`count` stay the
+ *   reconciliation figure (rows + unclaimed + this = the P&L's direct cost)
+ *   and `byScope` + `heldFreight` add up to it.
  */
 export interface ClientProfitGaps {
   unclaimed: { usd: number; receipts: number };
-  unallocated: { usd: number; count: number; byScope: { scope: string; usd: number; count: number }[] };
+  unallocated: {
+    usd: number;
+    count: number;
+    byScope: { scope: string; usd: number; count: number }[];
+    heldFreight: { usd: number; count: number };
+  };
 }
 
 export async function clientProfitGaps(from: string, to: string): Promise<ClientProfitGaps> {
@@ -1598,7 +1621,7 @@ export async function clientProfitGaps(from: string, to: string): Promise<Client
     // over their allocations — never a per-entry subquery in a join (#152).
     db.execute(sql`
       WITH spent AS (
-        SELECT ce.id, ce.scope, ce.amount_usd
+        SELECT ce.id, ce.scope, ce.amount_usd, ${heldFreightSql(sql`ce`)} AS held
           FROM cost_entries ce
          WHERE ce.voided_at IS NULL AND ce.amount_usd IS NOT NULL
            AND ce.cost_date >= ${from}::date AND ce.cost_date <= ${to}::date
@@ -1609,22 +1632,30 @@ export async function clientProfitGaps(from: string, to: string): Promise<Client
           JOIN spent ON spent.id = ca.cost_entry_id
          GROUP BY ca.cost_entry_id
       )
-      SELECT spent.scope, count(*)::int AS n,
+      SELECT spent.scope, spent.held, count(*)::int AS n,
              sum(spent.amount_usd - coalesce(allocated.usd, 0)) AS usd
         FROM spent
         LEFT JOIN allocated ON allocated.cost_entry_id = spent.id
        WHERE spent.amount_usd - coalesce(allocated.usd, 0) > 0.005
-       GROUP BY spent.scope
-       ORDER BY spent.scope
-    `) as unknown as Promise<{ scope: string; n: number; usd: string }[]>,
+       GROUP BY spent.scope, spent.held
+       ORDER BY spent.scope, spent.held
+    `) as unknown as Promise<{ scope: string; held: boolean; n: number; usd: string }[]>,
   ]);
-  const byScope = unallocated.map((row) => ({ scope: row.scope, usd: money(row.usd), count: Number(row.n) }));
+  const byScope = unallocated
+    .filter((row) => !row.held)
+    .map((row) => ({ scope: row.scope, usd: money(row.usd), count: Number(row.n) }));
+  const held = unallocated.filter((row) => row.held);
+  const heldFreight = {
+    usd: money(held.reduce((sum, row) => sum + money(row.usd), 0)),
+    count: held.reduce((sum, row) => sum + Number(row.n), 0),
+  };
   return {
     unclaimed: { usd: money(unclaimed[0]?.usd), receipts: Number(unclaimed[0]?.receipts ?? 0) },
     unallocated: {
-      usd: money(byScope.reduce((sum, row) => sum + row.usd, 0)),
-      count: byScope.reduce((sum, row) => sum + row.count, 0),
+      usd: money(byScope.reduce((sum, row) => sum + row.usd, 0) + heldFreight.usd),
+      count: byScope.reduce((sum, row) => sum + row.count, 0) + heldFreight.count,
       byScope,
+      heldFreight,
     },
   };
 }

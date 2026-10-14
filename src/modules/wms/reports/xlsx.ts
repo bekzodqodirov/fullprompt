@@ -1,6 +1,7 @@
 import ExcelJS from 'exceljs';
 import {
   batchRegister,
+  heldFreightCosts,
   landedCostByClient,
   landedCostByLot,
   stockAging,
@@ -33,11 +34,16 @@ export async function buildLandedCostXlsx(clientId: string | null | undefined, l
   const L = reportLabels(locale);
   const workbook = new ExcelJS.Workbook();
   const stamp = tashkentDay();
-  // The screen's ⚠, in the file too: costs with no rate are in no row here.
-  const unconverted = await unconvertedCosts();
+  // The screen's ⚠s, in the file too: costs with no rate and held yo'lkira
+  // bills are in no row here.
+  const [unconverted, held] = await Promise.all([unconvertedCosts(), heldFreightCosts()]);
   const gap = unconverted.length
     ? `⚠ ${L.unconvertedCosts}: ${unconverted.map((row) => `${row.amount} ${row.currency}`).join(', ')}`
     : null;
+  const heldGap =
+    held.count > 0
+      ? `⚠ ${L.landedFreightHeld}: ${held.count} · $${held.usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      : null;
 
   if (clientId !== undefined) {
     const lots = await landedCostByLot(clientId);
@@ -71,6 +77,7 @@ export async function buildLandedCostXlsx(clientId: string | null | undefined, l
     ]);
     total.font = { bold: true };
     if (gap) sheet.addRow([gap]).font = { bold: true };
+    if (heldGap) sheet.addRow([heldGap]).font = { bold: true };
   } else {
     const rows = await landedCostByClient();
     const sheet = sheetSetup(workbook, 'Landed cost', `${L.tLandedCostByClient} · ${stamp}`);
@@ -88,6 +95,7 @@ export async function buildLandedCostXlsx(clientId: string | null | undefined, l
     ]);
     total.font = { bold: true };
     if (gap) sheet.addRow([gap]).font = { bold: true };
+    if (heldGap) sheet.addRow([heldGap]).font = { bold: true };
   }
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
