@@ -1373,7 +1373,22 @@
     "freightRowLine1": "{label} · {m3} 立方 · {density} 公斤/立方",
     "freightLightLot": "ⓘ 批次 {lot} 本身为 {density} 公斤/立方——每立方不足 {limit} 公斤。整组较重，因此已分摊；请检查尺寸。",
     "gridFreightHint": "按价目表分摊——请用上方「＋」表单",
-    "freightBandLine": "{source} · {type} · 价目 {band}"
+    "freightBandLine": "{source} · {type} · 价目 {band}",
+    "rebaseButton": "分摊方式 ✎",
+    "rebasePreviewTitle": "各方分摊：现在 → 新",
+    "rebaseShow": "查看",
+    "rebaseSave": "按此方式保存",
+    "rebaseCancel": "取消",
+    "rebaseUnconverted": "无汇率 — 尚未分摊",
+    "rebaseColumn": "栏：{column}（{warehouse}）· {from} 价目表",
+    "rebaseColumnMoved": "现在：{old} → 新：{new}",
+    "rebaseRow": "{label} · {before} % → {after} %",
+    "rebaseRowMoney": "${before} → ${after}",
+    "rebasePending": "方式已保存；分摊已排队，一分钟内更新。",
+    "errRebaseChanged": "查看后有变化（货物、价目或仓库栏）。请查看新的分摊后再保存。",
+    "errRebaseSame": "此费用已按此方式和此价目分摊。",
+    "errRebaseDirect": "此按钮不能改为「直接给客户」— 请作废后重新录入。",
+    "errRebaseBatchOnly": "此费用来自入库表格 — 其分摊方式不变。只能在车辆自己的费用上选择方式。"
   },
   "batchCard": {
     "tabLoading": "装车",

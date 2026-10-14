@@ -3,13 +3,13 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { addCostEntryAction, voidCostEntryAction } from '@/app/(protected)/costs/actions';
+import { addCostEntryAction, rebaseCostAction, voidCostEntryAction } from '@/app/(protected)/costs/actions';
 import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 import { latestTxDate } from '@/modules/wms/finance/dates';
 import type { AllocationBasis } from '@/modules/wms/costing/engine';
 import { FREIGHT_LIGHT_BELOW, freightUsable, offeredBases } from '@/modules/wms/costing/freight-split';
-import type { FreightHeld, FreightOffer, FreightRowView } from '@/modules/wms/costing/freight-types';
-import { FreightGroupRows, FreightHeldNote } from '@/components/freight-views';
+import type { FreightHeld, FreightOffer, FreightRowView, RebasePreview } from '@/modules/wms/costing/freight-types';
+import { FreightGroupRows, FreightHeldLines, FreightHeldNote } from '@/components/freight-views';
 import { UnmergeButton } from '@/app/(protected)/accounting/xarajat-kassa/unmerge-button';
 import { TwinGapNote, TwinWarning } from '@/components/twin-warning';
 import type { TwinGap, TwinView } from '@/modules/wms/accounting/twins';
@@ -55,6 +55,8 @@ export interface CostEntryView {
    * per-prixod grid's cells and the receipt/crate/pickup cards say false.
    */
   rebasable: boolean;
+  /** The bill's type — which bases the re-basis select offers for it (§4). */
+  costTypeId: string;
 }
 
 /** What one bill leaves for the next on the general entry page (his 5a). */
@@ -120,6 +122,11 @@ const PAYER_ERRORS = {
   freight_tariff_invalid: 'errFreightInvalid',
   freight_changed: 'errFreightChanged',
   server_behind: 'errServerBehind',
+  // The re-basis door (§8).
+  rebase_changed: 'errRebaseChanged',
+  rebase_same: 'errRebaseSame',
+  rebase_direct: 'errRebaseDirect',
+  rebase_batch_only: 'errRebaseBatchOnly',
 } as const;
 
 /**
@@ -164,6 +171,165 @@ function freightOffText(
   if (offer.status === 'no_column') return t('freightOffNoColumn', { warehouse });
   if (why === 'unpriced') return t('freightOffUnpriced', { warehouse, column: zoneWords(offer.zone), date: costDate });
   return t('freightOffProblem', { column: zoneWords(offer.zone) });
+}
+
+/**
+ * «Bo'lish usuli ✎» on a truck's own bill (docs/YOLKIRA-TAQSIMOT.md §8, his
+ * 5a): pick a basis → «Ko'rish» answers who moves how much, before anything
+ * is written → «Shu usulda saqlash» posts the preview's token. A refusal
+ * that came with a FRESH preview (`rebase_changed`) shows both. Below the
+ * row's chips, full width, so nothing is squeezed beside the 🗑 (SP-9).
+ */
+function RebaseBlock({
+  entry,
+  freight,
+  t,
+  zoneWords,
+  onSaved,
+}: {
+  entry: CostEntryView;
+  freight: FreightOffer | null;
+  t: (key: string, values?: Record<string, string | number>) => string;
+  zoneWords: (zone: string) => string;
+  onSaved: (held: FreightHeld | null, pending: boolean) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [target, setTarget] = useState('');
+  const [preview, setPreview] = useState<RebasePreview | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const flags = freight?.typeFlags ?? { freightTypeIds: [], customsTypeIds: [] };
+  const usable = freightUsable(freight, entry.costDate);
+  const choices = offeredBases('batch', flags, entry.costTypeId).filter((b) => b !== 'direct_to_client');
+
+  async function press(seen?: string) {
+    if (!target) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await rebaseCostAction({ entryId: entry.id, basis: target, ...(seen ? { seen } : {}) });
+      if (res.ok) {
+        setOpen(false);
+        setPreview(null);
+        onSaved(res.unsplit?.held ?? null, res.pending === true);
+        return;
+      }
+      setPreview(res.rebase ?? null);
+      if (res.error) setError(payerErrorText(res, t, zoneWords));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <button type="button" className="text-xs font-semibold text-brand-700" data-testid="cost-rebase" onClick={() => setOpen(true)}>
+        {t('rebaseButton')}
+      </button>
+    );
+  }
+  return (
+    <div className="w-full space-y-2 rounded-lg bg-surface-sunken p-2 text-xs" data-testid="cost-rebase-block">
+      <select
+        aria-label={t('basis')}
+        data-testid="cost-rebase-basis"
+        className="input"
+        value={target}
+        onChange={(e) => {
+          setTarget(e.target.value);
+          setPreview(null);
+          setError(null);
+        }}
+      >
+        <option value="">{t('basis')}…</option>
+        {choices.map((b) => (
+          <option key={b} value={b} disabled={b === 'freight' && !usable.ok}>
+            {t(`bases.${b}`)}
+            {b === 'freight' && !usable.ok ? ` ${t(FREIGHT_OPT[usable.why])}` : ''}
+          </option>
+        ))}
+      </select>
+      {preview && (
+        <div className="space-y-1 rounded-md bg-surface p-2" data-testid="cost-rebase-preview">
+          <p className="font-semibold text-ink-700">{t('rebasePreviewTitle')}</p>
+          {preview.column && (
+            <p className="min-w-0 break-words text-ink-700">
+              {t('rebaseColumn', {
+                column: zoneWords(preview.column.zone),
+                warehouse: preview.column.warehouseCode,
+                from: preview.column.tariffFrom,
+              })}
+              {preview.column.previousZone && preview.column.previousZone !== preview.column.zone
+                ? ` · ${t('rebaseColumnMoved', {
+                    old: zoneWords(preview.column.previousZone),
+                    new: zoneWords(preview.column.zone),
+                  })}`
+                : ''}
+            </p>
+          )}
+          {preview.unconverted && <p className="text-warn">{t('rebaseUnconverted')}</p>}
+          <ul className="space-y-0.5">
+            {preview.rows.map((row) => (
+              <li key={row.key} className="min-w-0 break-words" data-testid={`cost-rebase-row-${row.key}`}>
+                {t('rebaseRow', { label: row.label, before: row.beforePct, after: row.afterPct })}
+                {row.beforeUsd !== undefined || row.afterUsd !== undefined
+                  ? ` · ${t('rebaseRowMoney', {
+                      before: (row.beforeUsd ?? 0).toFixed(2),
+                      after: (row.afterUsd ?? 0).toFixed(2),
+                    })}`
+                  : ''}
+              </li>
+            ))}
+          </ul>
+          {preview.held && (
+            <div className="text-warn">
+              <p className="font-semibold">{t('freightPreviewHeld')}</p>
+              <FreightHeldLines held={preview.held} limit={FREIGHT_LIMIT} />
+            </div>
+          )}
+        </div>
+      )}
+      {error && (
+        <p role="alert" className="font-semibold text-bad">
+          {error}
+        </p>
+      )}
+      <div className="flex flex-wrap gap-2">
+        {preview ? (
+          <button
+            type="button"
+            className="btn-primary flex-1 disabled:opacity-50"
+            data-testid="cost-rebase-save"
+            disabled={busy}
+            onClick={() => press(preview.seen)}
+          >
+            {t('rebaseSave')}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="btn-secondary flex-1 disabled:opacity-50"
+            data-testid="cost-rebase-show"
+            disabled={busy || !target}
+            onClick={() => press()}
+          >
+            {t('rebaseShow')}
+          </button>
+        )}
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={() => {
+            setOpen(false);
+            setPreview(null);
+            setError(null);
+          }}
+        >
+          {t('rebaseCancel')}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -394,6 +560,8 @@ export function CostPanel({
     }
   }
 
+  const [rebasePending, setRebasePending] = useState(false);
+
   async function voidEntry(id: string) {
     const reason = window.prompt(t('voidReason'));
     if (!reason?.trim()) return;
@@ -484,6 +652,19 @@ export function CostPanel({
               </div>
             </details>
           )}
+          {entry.rebasable && canAdd && (
+            <RebaseBlock
+              entry={entry}
+              freight={freight}
+              t={t}
+              zoneWords={zoneWords}
+              onSaved={(held, pending) => {
+                setUnsplit(held);
+                setRebasePending(pending);
+                router.refresh();
+              }}
+            />
+          )}
           {canVoid && entry.voidable !== false && (
             <button
               type="button"
@@ -512,6 +693,11 @@ export function CostPanel({
       )}
       <TwinGapNote gap={gap} />
       <FreightHeldNote held={unsplit} limit={FREIGHT_LIMIT} />
+      {rebasePending && (
+        <p role="status" className="text-sm text-ink-700" data-testid="cost-rebase-pending">
+          {t('rebasePending')}
+        </p>
+      )}
       {canAdd && !adding && (
         <button
           type="button"

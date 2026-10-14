@@ -742,6 +742,7 @@ export default async function ReceiptDetailPage({
                 // Freight is a truck's own basis (docs/YOLKIRA-TAQSIMOT.md §4).
                 freight: null,
                 rebasable: false,
+                costTypeId: entry.costTypeId,
                 note: entry.note,
                 ...payerView(actor.permissions, { partnerName, partnerIsStaff }),
                 ...tillView(actor.permissions, { accountId: entry.accountId, accountName, mergedExpenseId: entry.mergedExpenseId }),

@@ -119,6 +119,7 @@ export default async function BatchCostGridPage({ params }: { params: Promise<{ 
             freight: freightRows.get(entry.id) ?? null,
             // A truck's own bill; the per-prixod grid's stamped cells are not (E2).
             rebasable: entry.scope === 'batch',
+            costTypeId: entry.costTypeId,
             ...payerView(actor.permissions, { partnerName, partnerIsStaff }),
             ...tillView(actor.permissions, { accountId: entry.accountId, accountName, mergedExpenseId: entry.mergedExpenseId }),
           }))}

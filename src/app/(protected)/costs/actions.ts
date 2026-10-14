@@ -23,6 +23,7 @@ import { firmDebtVoidRefusal } from '@/modules/wms/partners/service';
 import { amountRefusal, nativeAmount } from '@/modules/wms/finance/money-bounds';
 import { mayEnterBatchCost } from '@/modules/wms/costing/cost-door';
 import { copyDigest, prepareFreightCopy } from '@/modules/wms/costing/freight-copy';
+import { rebaseCost } from '@/modules/wms/costing/rebase';
 import type { RebasePreview, UnsplitView } from '@/modules/wms/costing/freight-types';
 import { isServerBehind, violatedCheck } from '@/modules/platform/db/errors';
 import {
@@ -378,6 +379,68 @@ export async function voidCostEntryAction(input: unknown): Promise<CostActionRes
   if (entry.crateId) revalidatePath(`/crates/${entry.crateId}`);
   if (entry.pickupId) revalidatePath(`/zavod/${entry.pickupId}`);
   return { ok: true };
+}
+
+const rebaseSchema = z.object({
+  entryId: z.string().uuid(),
+  basis: z.string().min(1).max(40),
+});
+
+/** The person's re-basis token, read from the RAW post (the twin idiom). */
+function rebaseSeenOf(input: unknown): string | null {
+  const v = (input as { seen?: unknown } | null)?.seen;
+  return typeof v === 'string' && /^[0-9a-f]{64}$/.test(v) ? v : null;
+}
+
+/**
+ * «Bo'lish usuli ✎» (docs/YOLKIRA-TAQSIMOT.md §8, his 5a): a truck bill's
+ * split method changed after it was saved. The first press answers the
+ * preview (who moves how much); the second, carrying the preview's token,
+ * saves it — or, when something moved in between, answers `rebase_changed`
+ * with a FRESH preview. Truck-scope bills only: the per-prixod grid's cells
+ * stay weight and get no button.
+ */
+export async function rebaseCostAction(input: unknown): Promise<CostActionResult> {
+  const parsed = rebaseSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: 'validation' };
+  const entry = await db.query.costEntries.findFirst({ where: eq(costEntries.id, parsed.data.entryId) });
+  if (!entry) return { ok: false, error: 'not_found' };
+  if (entry.voidedAt) return { ok: false, error: 'already_voided' };
+  // Scope has no edit door, so the pool check is enough (E2).
+  if (entry.scope !== 'batch' || !entry.batchId) return { ok: false, error: 'rebase_batch_only' };
+  const batch = await db.query.batches.findFirst({ where: eq(batches.id, entry.batchId) });
+  if (!batch) return { ok: false, error: 'not_found' };
+  let actor;
+  try {
+    actor = await authorize('costs.enter_batch', { warehouseId: batch.originWarehouseId });
+  } catch (err) {
+    if (err instanceof AuthError) return { ok: false, error: 'forbidden' };
+    throw err;
+  }
+  if (!mayEnterBatchCost(actor, batch)) return { ok: false, error: 'cancelled' };
+  // The void's rule: a reader who sees only their OWN bills cannot move a
+  // colleague's (#531 — the row is never drawn for them).
+  if (costSightFor(actor).ownOnly && entry.enteredBy !== actor.id) {
+    return { ok: false, error: 'cost_not_yours' };
+  }
+  // A merged, kassa-paid or firm-paid bill is ALLOWED: none of its money moves.
+  const meta = await requestMeta();
+  let answer;
+  try {
+    answer = await rebaseCost(entry, parsed.data.basis, rebaseSeenOf(input), { actorId: actor.id, ...meta }, actor);
+  } catch (err) {
+    if (err instanceof CostError) return costRefusal(err);
+    if (freightServerBehind(err)) return { ok: false, error: 'server_behind' };
+    throw err;
+  }
+  if (answer.kind === 'preview') return { ok: false, rebase: answer.preview };
+  if (answer.kind === 'changed') return { ok: false, error: 'rebase_changed', rebase: answer.preview };
+  revalidatePath(`/batches/${batch.id}`);
+  revalidatePath(`/batches/${batch.id}/xarajatlar`);
+  revalidatePath(`/batches/${batch.id}/pricing`);
+  revalidatePath('/accounting/sarflar/kiritish');
+  if (answer.pending) return { ok: true, pending: true };
+  return { ok: true, ...(answer.verdict?.kind === 'held' ? { unsplit: { held: answer.verdict.held } } : {}) };
 }
 
 /**

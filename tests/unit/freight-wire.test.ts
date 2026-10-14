@@ -166,3 +166,43 @@ describe('the browser bundle stays free of the database', () => {
   });
 });
 
+
+describe('the re-basis door (§8)', () => {
+  const REBASE = strip(read('src/modules/wms/costing/rebase.ts'));
+  const ACTIONS = strip(read('src/app/(protected)/costs/actions.ts'));
+
+  it('touches the copy only when freight is on EITHER side (DS1 — a weight → volume move works one migration behind)', () => {
+    expect(REBASE).toContain("const fromCopy: FromCopy = entry.allocationBasis === 'freight' ? await freightCopyFor(entry.id) : 'none';");
+    expect(REBASE).toContain("const fromCopy: FromCopy = fromBasis === 'freight' ? await freightCopyFor(entryId, tx) : 'none';");
+    expect(REBASE).toContain(
+      "if (fromBasis === 'freight' || toBasis === 'freight') await replaceFreightCopyInTx(tx, entryId, planned.to);",
+    );
+  });
+
+  it('the save locks the entry first, judges the void under the lock, and deletes the shares before the basis moves', () => {
+    const save = body(REBASE, 'async function saveRebaseInTx(');
+    const lock = save.indexOf(".for('update')");
+    const voided = save.indexOf("if (!locked || locked.voidedAt) return 'voided';");
+    const del = save.indexOf('await tx.delete(costAllocations).where(eq(costAllocations.costEntryId, entryId));');
+    const update = save.indexOf('.update(costEntries)');
+    expect(lock).toBeGreaterThan(-1);
+    expect(voided).toBeGreaterThan(lock);
+    expect(del).toBeGreaterThan(voided);
+    expect(update).toBeGreaterThan(del);
+  });
+
+  it('never writes the money (only the basis and, leaving direct_to_client, the client)', () => {
+    const save = body(REBASE, 'async function saveRebaseInTx(');
+    expect(save).toContain(".set({ allocationBasis: toBasis, ...(fromBasis === 'direct_to_client' ? { clientId: null } : {}) })");
+    expect(save).not.toMatch(/amount|currency|fxRate|partnerId|accountId|mergedExpenseId/);
+  });
+
+  it('the action asks the door and answers every refusal through costRefusal and the lagging-server mapping', () => {
+    const action = body(ACTIONS, 'export async function rebaseCostAction(');
+    expect(action).toContain("authorize('costs.enter_batch', { warehouseId: batch.originWarehouseId })");
+    expect(action).toContain("if (!mayEnterBatchCost(actor, batch)) return { ok: false, error: 'cancelled' };");
+    expect(action).toContain('if (costSightFor(actor).ownOnly && entry.enteredBy !== actor.id) {');
+    expect(action).toContain('if (err instanceof CostError) return costRefusal(err);');
+    expect(action).toContain("if (freightServerBehind(err)) return { ok: false, error: 'server_behind' };");
+  });
+});

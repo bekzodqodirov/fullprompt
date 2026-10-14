@@ -16,11 +16,15 @@ vi.mock('next/cache', async (original) => ({
   ...(await original<typeof import('next/cache')>()),
   revalidatePath: () => {},
 }));
+const queued = vi.hoisted(() => [] as unknown[][]);
 vi.mock('@/modules/platform/jobs/boss', async (original) => ({
   ...(await original<typeof import('@/modules/platform/jobs/boss')>()),
-  enqueue: async () => {},
+  enqueue: async (...args: unknown[]) => {
+    queued.push(args);
+  },
 }));
 
+import postgres from 'postgres';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
   auditLog,
@@ -49,7 +53,10 @@ import {
   boxMeasures,
   CostError,
   recomputeEntry,
+  voidCostEntry,
 } from '@/modules/wms/costing/service';
+import * as costingService from '@/modules/wms/costing/service';
+import { liveFreightBills, rollbackFreightBills } from '@/modules/wms/costing/freight-rollback';
 import { explainBreakdown } from '@/modules/wms/costing/freight-offer';
 import { splitGroup } from '@/modules/wms/costing/freight-split';
 import { prepareFreightCopy } from '@/modules/wms/costing/freight-copy';
@@ -58,7 +65,7 @@ import { setBoxStatus } from '@/modules/wms/boxes/status';
 import { editLot } from '@/modules/wms/receipts/edit';
 import { CUSTOMS_CODES_SETTING, parseCustomsCodes } from '@/modules/wms/calc/customs-codes';
 import { updateWarehouseAction } from '@/app/(protected)/admin/warehouses/actions';
-import { addCostEntryAction } from '@/app/(protected)/costs/actions';
+import { addCostEntryAction, rebaseCostAction } from '@/app/(protected)/costs/actions';
 
 /**
  * docs/YOLKIRA-TAQSIMOT.md §11 — the yo'lkira-tarifi split against a real
@@ -90,7 +97,13 @@ let privateCustomsType = '';
 let whW = '';
 let whU = '';
 let whD = '';
-const made = { receipts: [] as string[], batches: [] as string[], costs: [] as string[], clients: [] as string[] };
+const made = {
+  receipts: [] as string[],
+  batches: [] as string[],
+  costs: [] as string[],
+  clients: [] as string[],
+  users: [] as string[],
+};
 let seq = 0;
 let customsBefore: string | null = null;
 
@@ -728,6 +741,244 @@ describe('the Narx tab names the band of the bill that billed it (§7.4, E6)', (
   });
 });
 
+describe('the re-basis door (§8, his 5a) as the button presses it', () => {
+  async function signIn(id: string) {
+    const row = (await db.query.users.findFirst({ where: eq(users.id, id) }))!;
+    session.user = {
+      id: row.id,
+      phone: row.phone,
+      username: row.username,
+      fullName: row.fullName,
+      locale: row.locale,
+      active: true,
+      sessionId: '00000000-0000-4000-8000-0000000f8b01',
+    };
+  }
+  const copies = async (entryId: string) =>
+    (await db.select().from(costEntryTariffs).where(eq(costEntryTariffs.costEntryId, entryId))).map((r) => r.tariffZone);
+  const basisOf = async (entryId: string) =>
+    (await db.select({ b: costEntries.allocationBasis }).from(costEntries).where(eq(costEntries.id, entryId)))[0]!.b;
+  const updates = async (entryId: string) =>
+    db
+      .select()
+      .from(auditLog)
+      .where(and(eq(auditLog.entityId, entryId), eq(auditLog.action, 'update')));
+  /** A second connection holding the bill's row lock while `run` waits on it (#873's observer). */
+  async function whileHeld(entryId: string, during: string, run: () => Promise<unknown>) {
+    const helper = postgres(process.env.DATABASE_URL ?? 'postgres://postgres@127.0.0.1:5432/gsr_dev', { max: 1, onnotice: () => {} });
+    const held = await helper.reserve();
+    try {
+      await held`BEGIN`;
+      await held`SELECT 1 FROM cost_entries WHERE id = ${entryId} FOR UPDATE`;
+      await held.unsafe(during, [entryId]);
+      const pending = run();
+      let waiting = false;
+      for (let i = 0; i < 250 && !waiting; i += 1) {
+        const rows = await db.execute<{ n: number }>(sql`
+          SELECT count(*)::int AS n FROM pg_stat_activity
+           WHERE datname = current_database() AND wait_event_type = 'Lock'
+             AND query ILIKE '%cost_entries%' AND pid <> pg_backend_pid()`);
+        waiting = Number(rows[0]?.n ?? 0) > 0;
+        if (!waiting) await new Promise((r) => setTimeout(r, 20));
+      }
+      expect(waiting, 'the save never reached the row lock').toBe(true);
+      await held`COMMIT`;
+      return await pending;
+    } finally {
+      held.release();
+      await helper.end();
+    }
+  }
+
+  let A = '';
+  let B = '';
+  let truck = '';
+  let vedId = '';
+  beforeAll(async () => {
+    A = await mintClient('RA');
+    B = await mintClient('RB');
+    const a = await mintLot({ client: A, kg: 300, m3: 1 });
+    const b = await mintLot({ client: B, kg: 1100, m3: 1 });
+    truck = await mintTruck([...a.boxIds, ...b.boxIds]);
+    const [v] = await db
+      .insert(users)
+      .values({ phone: `+99891${RUN}9`, fullName: `FB ved ${RUN}`, passwordHash: 'x', active: true })
+      .returning();
+    vedId = v!.id;
+    made.users.push(vedId);
+    const [vedRole] = await db.select({ id: roles.id }).from(roles).where(eq(roles.code, 'ved_manager'));
+    await db.insert(userRoles).values({ userId: vedId, roleId: vedRole!.id });
+  });
+
+  it('7 — preview, a remap refused with a fresh preview, a concurrent change, the save, and the pairing', async () => {
+    await signIn(adminId);
+    const entry = await bill(truck, 100, { allocationBasis: 'weight' });
+    const weight = await byClient(entry.id);
+    expect(weight).toEqual({ [A]: 21.43, [B]: 78.57 });
+
+    // (a) The preview names who moves how much; nothing is written.
+    const p1 = await rebaseCostAction({ entryId: entry.id, basis: 'freight' });
+    expect(p1.ok).toBe(false);
+    expect(p1.rebase?.rows.map((r) => [r.label, r.beforePct, r.afterPct, r.beforeUsd, r.afterUsd])).toEqual([
+      [`FRA${RUN}`.slice(0, 10), 21.43, 24.84, 21.43, 24.84],
+      [`FRB${RUN}`.slice(0, 10), 78.57, 75.16, 78.57, 75.16],
+    ]);
+    expect(p1.rebase?.column).toMatchObject({ zone: ZONE.main, tariffFrom: TARIFF_DAY, previousZone: null });
+    expect(await basisOf(entry.id)).toBe('weight');
+
+    // A remap between the preview and the press: refused WITH the fresh preview (T4).
+    await mapColumn(whW, ZONE.alt);
+    const stale = await rebaseCostAction({ entryId: entry.id, basis: 'freight', seen: p1.rebase!.seen });
+    expect(stale).toMatchObject({ ok: false, error: 'rebase_changed' });
+    expect(stale.rebase?.column?.zone).toBe(ZONE.alt);
+    expect(await basisOf(entry.id)).toBe('weight');
+    expect(await copies(entry.id)).toEqual([]);
+    expect(await byClient(entry.id)).toEqual(weight);
+    await mapColumn(whW, ZONE.main);
+
+    // (b) A concurrent re-basis lands while the save waits on the row: changed.
+    const p2 = await rebaseCostAction({ entryId: entry.id, basis: 'freight' });
+    const raced = (await whileHeld(entry.id, `UPDATE cost_entries SET allocation_basis = 'volume' WHERE id = $1`, () =>
+      rebaseCostAction({ entryId: entry.id, basis: 'freight', seen: p2.rebase!.seen }),
+    )) as Awaited<ReturnType<typeof rebaseCostAction>>;
+    expect(raced).toMatchObject({ ok: false, error: 'rebase_changed' });
+    expect(raced.rebase?.fromBasis).toBe('volume');
+    expect(await basisOf(entry.id)).toBe('volume');
+
+    // The save: basis, copy, shares and the audit move; the money does not.
+    const [moneyBefore] = await db.select().from(costEntries).where(eq(costEntries.id, entry.id));
+    const p3 = await rebaseCostAction({ entryId: entry.id, basis: 'freight' });
+    const saved = await rebaseCostAction({ entryId: entry.id, basis: 'freight', seen: p3.rebase!.seen });
+    expect(saved).toEqual({ ok: true });
+    expect(await basisOf(entry.id)).toBe('freight');
+    expect(await copies(entry.id)).toEqual([ZONE.main]);
+    expect(await byClient(entry.id)).toEqual({ [A]: 24.84, [B]: 75.16 });
+    const [moneyAfter] = await db.select().from(costEntries).where(eq(costEntries.id, entry.id));
+    for (const k of ['amount', 'currency', 'amountUsd', 'fxRateUsed', 'partnerId', 'accountId', 'accountAmount'] as const) {
+      expect([k, moneyAfter![k]]).toEqual([k, moneyBefore![k]]);
+    }
+    const audit = (await updates(entry.id)).at(-1)!;
+    expect(audit.before).toEqual({ allocationBasis: 'volume' });
+    expect(audit.after).toEqual({ allocationBasis: 'freight', tariffZone: ZONE.main, tariffFrom: TARIFF_DAY });
+
+    // Nothing to do, and the two doors this button never opens.
+    expect(await rebaseCostAction({ entryId: entry.id, basis: 'freight' })).toMatchObject({ error: 'rebase_same' });
+    expect(await rebaseCostAction({ entryId: entry.id, basis: 'direct_to_client' })).toMatchObject({
+      error: 'rebase_direct',
+    });
+
+    // The pairing (T5): one copy exactly while the basis is freight.
+    const toWeight = await rebaseCostAction({ entryId: entry.id, basis: 'weight' });
+    expect((await rebaseCostAction({ entryId: entry.id, basis: 'weight', seen: toWeight.rebase!.seen })).ok).toBe(true);
+    expect([await basisOf(entry.id), await copies(entry.id)]).toEqual(['weight', []]);
+    const back = await rebaseCostAction({ entryId: entry.id, basis: 'freight' });
+    expect((await rebaseCostAction({ entryId: entry.id, basis: 'freight', seen: back.rebase!.seen })).ok).toBe(true);
+    expect(await copies(entry.id)).toEqual([ZONE.main]);
+    await mapColumn(whW, ZONE.alt);
+    const moved = await rebaseCostAction({ entryId: entry.id, basis: 'freight' });
+    expect(moved.rebase?.column).toMatchObject({ zone: ZONE.alt, previousZone: ZONE.main });
+    expect((await rebaseCostAction({ entryId: entry.id, basis: 'freight', seen: moved.rebase!.seen })).ok).toBe(true);
+    expect(await copies(entry.id)).toEqual([ZONE.alt]);
+    await mapColumn(whW, ZONE.main);
+    await voidCostEntry(entry.id, 'test', ctx(), { mayMoveTill: true });
+    expect(await copies(entry.id)).toEqual([ZONE.alt]);
+    session.user = null;
+  });
+
+  it('7b — a void landing while the save waits wins: no UPDATE, no copy, no audit (E2)', async () => {
+    await signIn(adminId);
+    const entry = await bill(truck, 40, { allocationBasis: 'weight' });
+    const p = await rebaseCostAction({ entryId: entry.id, basis: 'freight' });
+    const res = await whileHeld(
+      entry.id,
+      `UPDATE cost_entries SET voided_at = now(), void_reason = 'race' WHERE id = $1`,
+      () => rebaseCostAction({ entryId: entry.id, basis: 'freight', seen: p.rebase!.seen }),
+    );
+    expect(res).toMatchObject({ ok: false, error: 'already_voided' });
+    expect(await basisOf(entry.id)).toBe('weight');
+    expect(await copies(entry.id)).toEqual([]);
+    expect(await updates(entry.id)).toEqual([]);
+    session.user = null;
+  });
+
+  it('7c — a failed split after the commit: the old shares are GONE (no-share, the orphaned net finds it) and the split is queued (E3)', async () => {
+    await signIn(adminId);
+    const entry = await bill(truck, 60, { allocationBasis: 'weight' });
+    const p = await rebaseCostAction({ entryId: entry.id, basis: 'freight' });
+    const spy = vi.spyOn(costingService, 'recomputeEntry').mockRejectedValueOnce(new Error('split died'));
+    queued.length = 0;
+    try {
+      expect(await rebaseCostAction({ entryId: entry.id, basis: 'freight', seen: p.rebase!.seen })).toEqual({
+        ok: true,
+        pending: true,
+      });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await basisOf(entry.id)).toBe('freight');
+    expect(await byClient(entry.id)).toEqual({});
+    expect(queued).toContainEqual(['costs.recompute', { costEntryId: entry.id }]);
+    await recomputeEntry(entry.id);
+    expect(await byClient(entry.id)).toEqual({ [A]: 14.91, [B]: 45.09 });
+    session.user = null;
+  });
+
+  it('7d — a stamped grid cell gets no re-basis, and a VED cannot move a colleague’s bill', async () => {
+    await signIn(adminId);
+    const r = await mintLot({ client: A, kg: 10, m3: 0.1 });
+    const cellTruck = await mintTruck(r.boxIds);
+    const cell = await addCostEntry(
+      {
+        scope: 'receipt',
+        receiptId: r.receiptId,
+        costTypeId: freightType,
+        amount: 5,
+        currency: 'USD',
+        costDate: DAY,
+        allocationBasis: 'weight',
+      },
+      ctx(),
+      { stampTruck: cellTruck },
+    );
+    made.costs.push(cell.id);
+    expect(await rebaseCostAction({ entryId: cell.id, basis: 'volume' })).toMatchObject({ error: 'rebase_batch_only' });
+    expect(await updates(cell.id)).toEqual([]);
+
+    const colleague = await bill(truck, 30, { allocationBasis: 'weight' });
+    await signIn(vedId);
+    expect(await rebaseCostAction({ entryId: colleague.id, basis: 'volume' })).toMatchObject({ error: 'cost_not_yours' });
+    expect(await basisOf(colleague.id)).toBe('weight');
+    session.user = null;
+  });
+
+  it('14 — the rollback script: every live freight bill back to weight, split or held, with a rollback audit and no copy', async () => {
+    const light = await mintClient('RL');
+    const l = await mintLot({ client: light, kg: 1, m3: 3 });
+    const heavy = await mintLot({ client: A, kg: 300, m3: 1 });
+    const t1 = await mintTruck(heavy.boxIds);
+    const t2 = await mintTruck(l.boxIds);
+    const split = await bill(t1, 70);
+    const held = await bill(t2, 20);
+    expect([split.verdict?.kind, held.verdict?.kind]).toEqual(['split', 'held']);
+    const listed = await liveFreightBills();
+    expect(listed.find((b) => b.id === held.id)?.shares).toEqual([]);
+    expect(listed.find((b) => b.id === split.id)?.shares).toEqual([{ label: `FRA${RUN}`.slice(0, 10), usd: 70 }]);
+
+    expect(await rollbackFreightBills([split.id, held.id])).toEqual({ done: 2, skipped: 0, failed: [] });
+    for (const [id, usd] of [
+      [split.id, 70],
+      [held.id, 20],
+    ] as const) {
+      expect([await basisOf(id), await copies(id)]).toEqual(['weight', []]);
+      const sums = Object.values(await byClient(id)).reduce((a, n) => a + n, 0);
+      expect(Math.round(sums * 100) / 100).toBe(usd);
+      const audit = (await updates(id)).at(-1)!;
+      expect(audit.actorId).toBeNull();
+      expect(audit.after).toEqual({ allocationBasis: 'weight', reason: 'rollback' });
+    }
+  });
+});
+
 describe('cleanup', () => {
   it('FINAL — deletes the run’s private columns and costs, deactivates its warehouses, and leaves no prefixed zone', async () => {
     await db.transaction(async (tx) => {
@@ -753,7 +1004,7 @@ describe('cleanup', () => {
     await db.update(clients).set({ active: false }).where(inArray(clients.id, made.clients));
     await db.update(warehouses).set({ active: false }).where(inArray(warehouses.id, [whW, whU, whD]));
     await db.update(costTypes).set({ active: false }).where(eq(costTypes.id, privateCustomsType));
-    await db.update(users).set({ active: false }).where(inArray(users.id, [actorId, adminId]));
+    await db.update(users).set({ active: false }).where(inArray(users.id, [actorId, adminId, ...made.users]));
     const left = await db.execute<{ n: number }>(sql`
       SELECT (SELECT count(*) FROM calc_freight_tariffs WHERE zone LIKE ${`t\\_%${RUN}\\_%`})
            + (SELECT count(*) FROM warehouse_tariff_columns WHERE tariff_zone LIKE ${`t\\_%${RUN}\\_%`}) AS n

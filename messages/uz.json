@@ -1373,7 +1373,22 @@
     "freightRowLine1": "{label} · {m3} kub · {density} kg/kub",
     "freightLightLot": "ⓘ {lot} lotining o‘zi {density} kg/kub — 1 kub uchun {limit} kg dan kam. Guruh og‘irroq, shuning uchun hisob bo‘lindi; o‘lchamni tekshiring.",
     "gridFreightHint": "Tarif bo‘yicha bo‘lish — yuqoridagi «＋» formasidan",
-    "freightBandLine": "{source} · {type} · tarif {band}"
+    "freightBandLine": "{source} · {type} · tarif {band}",
+    "rebaseButton": "Bo‘lish usuli ✎",
+    "rebasePreviewTitle": "Kimga qancha tushadi: hozir → yangi",
+    "rebaseShow": "Ko‘rish",
+    "rebaseSave": "Shu usulda saqlash",
+    "rebaseCancel": "Bekor qilish",
+    "rebaseUnconverted": "kurs yo‘q — hali bo‘linmagan",
+    "rebaseColumn": "Ustun: {column} ({warehouse}) · {from} tarifi",
+    "rebaseColumnMoved": "hozir: {old} → yangi: {new}",
+    "rebaseRow": "{label} · {before} % → {after} %",
+    "rebaseRowMoney": "${before} → ${after}",
+    "rebasePending": "Usul saqlandi; bo‘linish navbatga qo‘yildi — bir daqiqada yangilanadi.",
+    "errRebaseChanged": "Ko‘rganingizdan keyin nimadir o‘zgardi (yuk, tarif yoki sklad ustuni). Yangi hisobni ko‘rib, qayta saqlang.",
+    "errRebaseSame": "Bu hisob allaqachon shu usul va shu tarif bilan bo‘lingan.",
+    "errRebaseDirect": "«To‘g‘ridan-to‘g‘ri klientga» usuliga bu tugma bilan o‘tib bo‘lmaydi — hisobni bekor qilib qayta kiriting.",
+    "errRebaseBatchOnly": "Bu xarajat prixod jadvalidan — uning bo‘linish usuli o‘zgarmaydi. Usulni faqat mashinaning o‘z xarajatida tanlash mumkin."
   },
   "batchCard": {
     "tabLoading": "Yuklash",

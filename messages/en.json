@@ -1373,7 +1373,22 @@
     "freightRowLine1": "{label} · {m3} m³ · {density} kg/m³",
     "freightLightLot": "ⓘ Lot {lot} on its own is {density} kg/m³ — under {limit} kg per m³. The group is heavier, so the bill split; check the measures.",
     "gridFreightHint": "Split by the tariff — from the «＋» form above",
-    "freightBandLine": "{source} · {type} · tariff {band}"
+    "freightBandLine": "{source} · {type} · tariff {band}",
+    "rebaseButton": "Split method ✎",
+    "rebasePreviewTitle": "Who gets how much: now → new",
+    "rebaseShow": "Show",
+    "rebaseSave": "Save this way",
+    "rebaseCancel": "Cancel",
+    "rebaseUnconverted": "no rate — not split yet",
+    "rebaseColumn": "Column: {column} ({warehouse}) · the {from} tariff",
+    "rebaseColumnMoved": "now: {old} → new: {new}",
+    "rebaseRow": "{label} · {before} % → {after} %",
+    "rebaseRowMoney": "${before} → ${after}",
+    "rebasePending": "The method is saved; the split is queued and will update within a minute.",
+    "errRebaseChanged": "Something changed after you looked (the cargo, the tariff or the warehouse column). Check the new split and save again.",
+    "errRebaseSame": "This bill is already split this way, on this tariff.",
+    "errRebaseDirect": "This button cannot move a bill to «directly to a client» — void it and enter it again.",
+    "errRebaseBatchOnly": "This cost is from the per-prixod grid — its split method does not change. A method is chosen only on the truck's own bills."
   },
   "batchCard": {
     "tabLoading": "Loading",

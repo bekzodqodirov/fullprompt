@@ -1373,7 +1373,22 @@
     "freightRowLine1": "{label} · {m3} куб · {density} кг/куб",
     "freightLightLot": "ⓘ Лот {lot} сам по себе {density} кг/куб — меньше {limit} кг на 1 куб. Группа тяжелее, поэтому расход разделён; проверьте размеры.",
     "gridFreightHint": "Деление по тарифу — через форму «＋» выше",
-    "freightBandLine": "{source} · {type} · тариф {band}"
+    "freightBandLine": "{source} · {type} · тариф {band}",
+    "rebaseButton": "Способ распределения ✎",
+    "rebasePreviewTitle": "Кому сколько: сейчас → новое",
+    "rebaseShow": "Показать",
+    "rebaseSave": "Сохранить этим способом",
+    "rebaseCancel": "Отмена",
+    "rebaseUnconverted": "нет курса — ещё не распределено",
+    "rebaseColumn": "Колонка: {column} ({warehouse}) · тариф от {from}",
+    "rebaseColumnMoved": "сейчас: {old} → новое: {new}",
+    "rebaseRow": "{label} · {before} % → {after} %",
+    "rebaseRowMoney": "${before} → ${after}",
+    "rebasePending": "Способ сохранён; распределение поставлено в очередь — обновится через минуту.",
+    "errRebaseChanged": "После просмотра что-то изменилось (груз, тариф или колонка склада). Посмотрите новый расчёт и сохраните снова.",
+    "errRebaseSame": "Этот счёт уже распределён этим способом и этим тарифом.",
+    "errRebaseDirect": "На способ «напрямую клиенту» этой кнопкой не перейти — отмените счёт и введите заново.",
+    "errRebaseBatchOnly": "Это расход из таблицы приходов — способ его распределения не меняется. Способ выбирается только у собственного расхода машины."
   },
   "batchCard": {
     "tabLoading": "Погрузка",

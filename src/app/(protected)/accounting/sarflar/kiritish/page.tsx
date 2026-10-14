@@ -84,6 +84,7 @@ export default async function SarflarEntryPage({
         clientCode,
         freight: freightRows.get(entry.id) ?? null,
         rebasable: entry.scope === 'batch',
+        costTypeId: entry.costTypeId,
         ...payerView(actor.permissions, { partnerName, partnerIsStaff }),
         ...tillView(actor.permissions, { accountId: entry.accountId, accountName, mergedExpenseId: entry.mergedExpenseId }),
       })),
