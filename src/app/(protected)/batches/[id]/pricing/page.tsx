@@ -350,7 +350,11 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
               <span className="h-14 w-14 shrink-0 rounded bg-surface-sunken" />
             )}
             <div className="min-w-0 flex-1">
-              <p className="text-sm">
+              {/* An unclaimed marking is the factory's text, often 40+
+                  characters with no break in it: unbroken it widened the page
+                  to 501 px at 360 and the phone zoomed out (#400; found by
+                  the yo'lkira round's 46-character fixture). */}
+              <p className="text-sm [overflow-wrap:anywhere]">
                 <b className="num">
                   {id.main}
                   {lot.letter && `-${lot.letter}`}

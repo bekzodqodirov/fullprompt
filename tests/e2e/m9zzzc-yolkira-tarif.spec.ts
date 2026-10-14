@@ -121,8 +121,8 @@ test('mint: a departed YW truck carrying A, B and an unclaimed prixod with a 46-
           VALUES (gen_random_uuid(), ${l!.id}, ${`YL${RUN}-${n}`}, 1, 'in_transit', ${truck!.id})
           RETURNING id`;
         await tx`
-          INSERT INTO box_movements (id, box_id, from_warehouse_id, to_warehouse_id, from_status, to_status, cause, ref_type, ref_id, actor_id)
-          VALUES (gen_random_uuid(), ${box!.id}, ${yw.id}, ${tas.id}, 'loading', 'in_transit', 'batch_departed', 'batch', ${truck!.id}, ${owner.id})`;
+          INSERT INTO box_movements (box_id, from_warehouse_id, to_warehouse_id, from_status, to_status, cause, ref_type, ref_id, actor_id)
+          VALUES (${box!.id}, ${yw.id}, ${tas.id}, 'loading', 'in_transit', 'batch_departed', 'batch', ${truck!.id}, ${owner.id})`;
       };
       const [a] = await tx<{ id: string }[]>`
         INSERT INTO clients (id, client_code, name) VALUES (gen_random_uuid(), ${CODE_A}, ${`Yo'lkira A ${RUN}`}) RETURNING id`;
@@ -153,6 +153,10 @@ test('«＋» proposes the yo’lkira type AND the freight basis, and the previe
   await login(page, OWNER);
   await page.goto(`/batches/${truckId}/xarajatlar`);
   await page.getByTestId('add-cost').click();
+  // A YW truck's panel proposes yuan; the run's money is typed in dollars so
+  // the preview and the saved fold (which prints the allocations' USD) read
+  // the same figures.
+  await page.locator('select[aria-label="currency"]').selectOption('USD');
   await expect(page.getByTestId('cost-basis')).toHaveValue('freight');
   const preview = page.getByTestId('freight-preview');
   await expect(preview).toContainText('YW');
