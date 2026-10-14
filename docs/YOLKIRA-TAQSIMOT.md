@@ -940,6 +940,17 @@ Run without `CI=1`, `fuser -k 3000/tcp` first. Seed once, vitest, then Playwrigh
 
 ---
 
+## 14. As built — what the reviews moved (DECISIONS #1372-#1377)
+
+- **§6.3.6 forming trucks**: `profitByBatch` lists departed trucks only, so the `bolinmagan=1` list carries its own «hali jo'namagan» block (`unsplitOnFormingTrucks`); the attention row still counts departed trucks only.
+- **§6.3.5 open-cargo words**: NOT suppressed beside a held later-leg bill (see the struck line in §6.3).
+- **`carriedUnsplitBills`**: judged per PART (a direct bill names its own client only), then made linear — a window spreads the page truck's mx columns onto the carton's other rides (`MX`, `beside`); the shipped statement is kept verbatim in freight-surfaces as the differential oracle.
+- **§6.7 the held-blind readers**: `heldFreightSql` (freight basis AND `noShareSql`) splits `pnlGaps.freightHeld`, `clientProfitGaps.unallocated.heldFreight`, `heldFreightCosts()` (landed-cost report + file) and `dealProfit.heldFreight` (per truck, the whole bill, never folded in).
+- **§7.4 the fold**: the customs flag only for a bill on no box (`!hasShare`); a band reaches a non-money reader without its price (`bandForSight`, one rule for all three previews).
+- **§8 the token** covers both columns (before and after %) and a held after-state's own lots; any `freight_*` refusal refreshes the panel's stale offer.
+- **§9.5 exact sums** reduce by gcd — unreduced, a 500-carton totals lot's denominator was 500^500 and its float twin NaN.
+- **Tests**: freight-basis moved off the shared 1637 to 1655-1656 (#1377).
+
 ## Changes from the draft (for the record)
 
 - **Q2: c replaces a.** The per-bill picker, «ustun: Xitoy ✎» and localStorage are gone. Instead there is the warehouse side table, the origin warehouse, a refusal naming the warehouse, the admin form select, and the origin + zone frozen into the copy.

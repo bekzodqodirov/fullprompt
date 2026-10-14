@@ -1,5 +1,94 @@
 # CHANGELOG
 
+## Yo'lkira xarajatini tarif bo'yicha taqsimlash — 2026-10-14
+
+**Migratsiya 0132** — deploydan keyin soni **133** bo'lishi shart.
+
+Sizning javoblaringiz: 1a 2c 3a 4a 5a, 6-savolga — 1 kubga 10 kg dan kam to'g'ri kelsa ogohlantirish, qolgani 1 kub uchun 100 kg dan kam tarif bilan. Ikki valyutadagi takroriy yozuv ogohlantirishini menga qoldirdingiz — u avvalgidek qoladi: dollarda 1 % va 3 kun.
+
+### 1. Mashina yo'lkirasi endi tarif bo'yicha bo'linadi
+
+Avval mashinaning yo'lkira xarajati mijozlarga **og'irlik** bo'yicha bo'linardi. Endi tanlash mumkin: **«yo'lkira tarifi bo'yicha»**.
+
+- Har bir mijozning shu mashinadagi butun yuki bitta guruh. Egasi noma'lum prixod — o'zi alohida guruh.
+- Har bir guruhning zichligi (kg/kub) hisoblanadi va **sizning tarifingizdagi qatori** topiladi. Masalan cn ustunida 600 kg/kub — 501–700 qatori, $300/kub.
+- Mijozning ulushi = tarif bo'yicha uning yukining qiymati ÷ hammaning qiymati. Masalan A 2 kub × $300 = 600, B 1 kub × $160 = 160, egasiz prixod 0.5 kub × $110 = 55. Jami 815. $350 lik yo'lkira: A $257.67, B $68.71, prixod $23.62.
+- Guruh 10 kg/kub dan yengil bo'lsa — **hisob saqlanadi, lekin bo'linmaydi** (⚠). Qaysi mijoz va qaysi lotni to'g'rilash kerakligi yoziladi, eng yengili birinchi. Lot to'g'rilanganda hisob o'zi bo'linadi — boshqa hech narsa bosish shart emas.
+- 10 kg/kub dan og'ir, lekin tarifning eng pastki qatoridan yengil bo'lsa — eng pastki qator bilan hisoblanadi (sizning «100 kg dan kam tarifda ketaversin» javobingiz).
+
+### 2. Har bir skladga «yo'lkira tarifi ustuni» (2c) — siz yozasiz
+
+- Boshqaruv → Skladlar → sklad → **«Yo'lkira tarifi ustuni»**: cn, kashgar yoki «—».
+- Mashina qaysi skladdan **jo'nagan** bo'lsa, o'sha skladning ustuni olinadi. Tizim o'zi taxmin qilmaydi.
+- **Bo'sh holda yetkaziladi.** Siz ustun yozmaguningizcha «yo'lkira tarifi bo'yicha» tanlab bo'lmaydi va hammasi avvalgidek og'irlik bo'yicha bo'linadi. Taklif: Yiwu va Guangzhou → cn, Qashqar → kashgar. O'zbekistondagi skladlar (Andijon → Toshkent ichki reyslari) — sizning qaroringiz: ustun yozilmasa, ularning mashinalari og'irlik bo'yicha qoladi.
+
+### 3. Hisob saqlangan kundagi tarif muzlatiladi (3a)
+
+- Hisob saqlanganda, o'sha sanadagi ustun va narxlar hisob yonida saqlanadi. Keyin tarifni o'zgartirsangiz yoki skladga boshqa ustun yozsangiz — eski hisob o'zgarmaydi.
+- Ekranda ko'rgan narsangiz saqlanadi: oldindan ko'rish bilan saqlash orasida kimdir tarifni yoki ustunni o'zgartirsa, saqlash so'z bilan rad etiladi va yangisini ko'rasiz.
+
+### 4. Faqat mashina hisobida, yo'lkira turida o'zi tanlanadi (4a)
+
+- «＋ Xarajat» bosilganda turi «Yo'lkira» bo'lsa, usul o'zi «yo'lkira tarifi bo'yicha» bo'lib turadi. Ostida kim qancha olishi darhol ko'rinadi: har bir mijoz, zichligi, tarif qatori, foizi va (pulni ko'radiganlarga) dollari.
+- Rastamojka turida bu usul yo'q. Prixod, yashik va zavod reysi xarajatlari o'zgarmaydi. Prixodlar jadvalidagi yo'lkira kataklari og'irlik bo'yicha qoladi.
+- Saqlangan qatorda: «yo'lkira tarifi bo'yicha · YW ustuni: cn · 2026-01-01 tarifi» va **«Qanday bo'lindi?»** — ochilganda har bir mijozning ulushi.
+- «Narx» varag'ida mijozning tannarxi ochilganda yo'lkira qatori qaysi tarif qatori bo'yicha bo'linganini ham aytadi.
+- VED, logist va sotuvchi qator va foizni ko'radi, dollarni ko'rmaydi.
+
+### 5. Eski hisoblar o'zgarmaydi — «Bo'lish usuli ✎» (5a)
+
+- Mashina hisobida yangi tugma: **«Bo'lish usuli ✎»**. Usulni tanlaysiz → «Ko'rish» → har bir mijoz uchun «hozir → yangi» (foiz va dollar) → **«Shu usulda saqlash»**.
+- Faqat bo'linish o'zgaradi. Summa, kurs, kim to'lagani, kassa va kontragent qarzi o'zgarmaydi.
+- Ko'rish bilan saqlash orasida yuk, tarif yoki ustun o'zgarsa — rad etiladi va yangi hisobni ko'rsatadi.
+- VED faqat o'zi yozgan hisobni o'zgartira oladi.
+
+### 6. Bo'linmagan hisob hamma joyda ko'rinadi
+
+Bo'linmagan (⚠) yo'lkira mijozlarning tannarxiga kirmaydi, shuning uchun u quyidagi joylarda aytiladi:
+- hisob qatorida «⚠ bo'linmagan»;
+- mashina Xarajatlari jamisida «shundan $… bo'linmagan»;
+- mashina kartasidagi vazifalarda;
+- «Narx» varag'ida — shu mashinaniki ham, yuki shu mashinaga o'tgan oldingi yoki keyingi mashinaniki ham («shu reysgacha: ⚠ to'liq emas»);
+- bosh sahifadagi «Diqqat» qatorida;
+- Balansda alohida qatorda;
+- Foyda-zarar (P&L) ostidagi ogohlantirishlarda — «qutisiz pul» qatoridan alohida, «bekor qiling» degan maslahatsiz;
+- «Mijoz foydasi»da — «yuki yo'q mashina» emas, alohida «tarif bo'yicha bo'linmagan yo'lkira» deb;
+- «Yuk tannarxi» hisobotida (ekranda ham, Excelda ham) — nechta hisob va qancha dollar;
+- bitim kartasidagi foydada — bitim yuki ortilgan qaysi mashinada bo'linmagan hisob borligi; bitim foydasi shuning uchun haqiqiydan yuqori ko'rinishi mumkinligi aytiladi.
+
+**Diqqat:** hisob bo'linmay turgan paytda Balansdagi «Sof holat» narxi yozilmagan yukning shu hisobdagi ulushiga kamroq ko'rinadi. Lot to'g'rilanganda qaytadi. Bunday hisobni bekor qilmang — lotni to'g'rilang yoki «Bo'lish usuli» bilan boshqa usulga o'tkazing.
+
+### 7. Yo'l-yo'lakay topilgan xatolar
+
+- **«Rastamojka turlari» sozlamasi hech qachon o'qilmagan.** Bu ro'yxatni o'zgartirsangiz ham, tizim har doim faqat «customs» turini rastamojka deb hisoblardi. Endi siz yozgan ro'yxat o'qiladi. Siz uni o'zgartirmagan bo'lsangiz, hech narsa o'zgarmaydi.
+- **«Narx» varag'i telefonda kengayib ketardi.** Egasi noma'lum prixodning uzun markirovkasi (bo'shliqsiz 40+ harf) qatorni sindirmasdi va telefon butun sahifani kichraytirib qo'yardi. Endi markirovka qatorga sig'adi.
+
+### 8. Tekshiruvda topilib tuzatilganlar
+
+Qurilgandan keyin ikki marta tekshirildi (avval qurilgani, keyin tuzatishlarning o'zi):
+- Juda katta lotda (masalan 500 karobka) bo'linmagan hisob ogohlantirishida kub va kg «NaN» bo'lib chiqishi mumkin edi — tuzatildi.
+- Rastamojka turiga o'tkazilgan, lekin hali bo'lingan yo'lkira hisobi «bo'linmagan» deb ko'rsatilardi — endi pul qayerda turgan bo'lsa, shuni aytadi.
+- «Bo'lish usuli ✎»: ko'rish bilan saqlash orasida hozirgi bo'linish o'zgarsa ham saqlash rad etiladi va yangisi ko'rsatiladi.
+- Narx sahifasi tezlashdi: 2 000 karobkali mashinada 745 ms → 83 ms. Karobkalari oldin 20 ta mashinada yurgan va har birida bo'linmagan hisob bor holatda esa 8–10 soniya → 1,6 soniya.
+- Mijozga to'g'ridan-to'g'ri yozilgan xarajat boshqa mashinaning «Narx» sahifasida noto'g'ri qo'shilib ketishi tuzatildi.
+
+### O'rnatish (deploy)
+
+1. Zaxira oling (0 bayt emasligini tekshiring).
+2. PR'ni merge qiling, keyin serverda `git pull`, `docker compose build migrate`, keyin `docker compose --profile https --profile telegram up -d --build`.
+3. **Migratsiyalar sonini sanang: 133 bo'lishi kerak.** Kamroq bo'lsa, `docker compose run --rm migrate` ning o'z chiqishini o'qing.
+4. Har bir skladga ustun yozing (2-bo'lim). Yozmaguningizcha hech narsa o'zgarmaydi — hamma yo'lkira avvalgidek og'irlik bo'yicha bo'linadi.
+
+**Orqaga qaytish kerak bo'lsa:** 0132 dan pastga qaytishdan oldin `docker compose run --rm migrate pnpm freight-to-weight --apply`. Bu barcha «tarif bo'yicha» hisoblarni og'irlikka o'tkazadi. Batafsil — `docs/UPDATE.md`, «Agar biror narsa buzilsa» bo'limi.
+
+### Hali qilinmagan (aytib qo'yaman)
+
+- Pulga ta'siri o'lchanmagan: bu yerdagi nusxalarda hamma lot bir xil zichlikda. Kim ko'proq, kim kamroq to'lashini sizning serveringizdagi faqat o'qiydigan so'rov ko'rsatadi. Yo'nalishi: og'irlikdan tarifga o'tganda zich yukdan yengil yukka xarajat ko'chadi.
+- Qashqardan jo'nagan mashinadagi Yiwu yuki kashgar ustuni bo'yicha bo'linadi (2c). VED esa uni cn bo'yicha hisoblagan bo'lishi mumkin.
+- Hali jo'namagan mashinadagi bo'linmagan hisob mashina kartasida, Xarajatlarda, «Narx»da va «Partiya foydasi»dagi bo'linmaganlar ro'yxatining «hali jo'namagan» qismida ko'rinadi, lekin bosh sahifadagi «Diqqat» qatorida ko'rinmaydi.
+- Hisobning tarixida (Boshqaruv → Audit) muzlatilgan tarif narxlari yoziladi. Audit sahifasi faqat sizga va adminlarga ochiq.
+- Ekranlar tekshirildi: telefonda (360) va kompyuterda (1280), sahifa ekrandan kengaymaydi.
+
 ## «Pul qayerga ketdi» sahifasi va umumiy joydan partiyaga xarajat kiritish — 2026-10-14
 
 **Migratsiya yo'q** (soni 132 bo'lib qoladi). Tekshirish: `curl -s https://gsrwms.uz/api/version` — build vaqti yangilanishi kerak.
