@@ -206,3 +206,54 @@ describe('the re-basis door (§8)', () => {
     expect(action).toContain("if (freightServerBehind(err)) return { ok: false, error: 'server_behind' };");
   });
 });
+
+describe('the review’s screen fixes stay put', () => {
+  const PANEL = strip(read('src/components/cost-panel.tsx'));
+  const VIEWS = strip(read('src/components/freight-views.tsx'));
+  const PRICING = strip(read('src/app/(protected)/batches/[id]/pricing/page.tsx'));
+
+  it('a stale-preview refusal refreshes the offer, or every press re-posts the old digest (M6)', () => {
+    expect(PANEL).toContain("if (res.error === 'freight_changed') router.refresh();");
+  });
+
+  it('the entry page carries only a basis the person CHOSE (his 4a on the next truck)', () => {
+    expect(PANEL).toContain("const nextBasis = touched && chosenValid && chosen !== 'direct_to_client' ? chosen : undefined;");
+    expect(PANEL).toMatch(/onKept\?\.\(\{ typeId, currency, costDate, payer, basis: nextBasis \}\)/);
+  });
+
+  it('a row on no box is marked whatever its basis — every cost card computes it from the same fact', () => {
+    expect(PANEL).toContain('{(entry.unsplit || entry.freight?.unsplit) && (');
+    for (const page of [
+      'src/app/(protected)/batches/[id]/xarajatlar/page.tsx',
+      'src/app/(protected)/accounting/sarflar/kiritish/page.tsx',
+      'src/app/(protected)/receipts/[id]/page.tsx',
+      'src/app/(protected)/crates/[id]/page.tsx',
+      'src/app/(protected)/zavod/[id]/page.tsx',
+    ]) {
+      expect(strip(read(page)), page).toContain('unsplit: entry.amountUsd !== null && !hasShare,');
+    }
+  });
+
+  it('the preview’s lot links open a new tab (a same-tab click threw the typed amount away)', () => {
+    const links = [...VIEWS.matchAll(/<a className="underline" href=\{`\/receipts\/\$\{lot\.receiptId\}`\}([^>]*)>/g)];
+    expect(links.length).toBe(2);
+    for (const link of links) expect(link[1]).toContain('target="_blank"');
+  });
+
+  it('a saved bill’s fold says «saved», the preview «will be saved»', () => {
+    expect(VIEWS).toContain("t(saved ? 'freightHeldTitle' : 'freightPreviewHeld')");
+    expect(PANEL).toMatch(/testid="cost-freight-row"\s+saved\s+\/>/);
+  });
+
+  it('the open-cargo sentence is never suppressed by a held later leg, and a feeding truck says both its sums', () => {
+    expect(PRICING).not.toMatch(/laterHeld/);
+    expect(PRICING).toContain('{row.unconverted > 0 &&');
+    expect(PRICING).toMatch(/\{row\.usd !== null && t\('unsplitCarried'/);
+  });
+
+  it('the «bo’linmagan» view offers no XLSX of the tracked table, and names trucks that have not left', () => {
+    const profit = strip(read('src/app/(protected)/accounting/profit/page.tsx'));
+    expect(profit).toContain('exportHref={unsplitOnly ? undefined : `/api/accounting/profit?view=${view}`}');
+    expect(profit).toContain("unsplitOnly ? unsplitOnFormingTrucks() : Promise.resolve([]),");
+  });
+});

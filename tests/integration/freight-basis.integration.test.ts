@@ -57,7 +57,7 @@ import {
 } from '@/modules/wms/costing/service';
 import * as costingService from '@/modules/wms/costing/service';
 import { liveFreightBills, rollbackFreightBills } from '@/modules/wms/costing/freight-rollback';
-import { explainBreakdown } from '@/modules/wms/costing/freight-offer';
+import { explainBreakdown, explainFreightBills } from '@/modules/wms/costing/freight-offer';
 import { splitGroup } from '@/modules/wms/costing/freight-split';
 import { prepareFreightCopy } from '@/modules/wms/costing/freight-copy';
 import { mappableZones, setTariffColumnInTx, tariffColumnOf } from '@/modules/wms/costing/tariff-column';
@@ -363,7 +363,12 @@ describe('his example on a real truck', () => {
       .select()
       .from(auditLog)
       .where(and(eq(auditLog.entityId, entry.id), eq(auditLog.action, 'create')));
-    expect(audit!.after).toMatchObject({ allocationBasis: 'freight', tariffZone: ZONE.main, tariffFrom: TARIFF_DAY });
+    expect(audit!.after).toMatchObject({
+      allocationBasis: 'freight',
+      tariffZone: ZONE.main,
+      tariffFrom: TARIFF_DAY,
+      tariffBands: '1–100 $110; 101–500 $200; 501–999 $300; 1000+ $0.55/kg',
+    });
   });
 
   it('2 — the freeze (3a): a same-date overwrite, a back-dated row and a remap move NOTHING', async () => {
@@ -489,6 +494,13 @@ describe('the void guard asks «is the money somewhere», not «did it split»',
     `);
     try {
       expect((await recomputeEntry(entry.id))?.kind).toBe('held');
+      // The row's fold reads the SAME customs flag (review: it drew a tariff
+      // split under the ⚠ chip, and the cure was never named).
+      const views = await explainFreightBills(
+        [{ id: entry.id, batchId: truck, costTypeId: privateCustomsType, allocationBasis: 'freight', amountUsd: '100', hasShare: false }],
+        { permissions: new Set(['finance.manage']) },
+      );
+      expect(views.get(entry.id)?.view).toEqual({ kind: 'held', held: { reason: 'on_customs' } });
       await expect(
         setBoxStatus({ boxId: only.boxIds[0]!, to: 'void', reason: 'counted twice by mistake' }, ctx()),
       ).rejects.toMatchObject({ code: 'shared_cost_orphaned' });
@@ -738,6 +750,11 @@ describe('the Narx tab names the band of the bill that billed it (§7.4, E6)', (
     // riders, where A alone would read 100 % (E6).
     expect(group?.share).toBeCloseTo(200 / 805, 6);
     expect(views.get(entry.id)?.warehouseCode).toBe(`FW${RUN}`.slice(0, 8));
+    // A reader without money sight gets the row, never its price — not even
+    // in the page payload (review: the band carried the list rate the
+    // stripped `ratePerM3` was hiding).
+    const plain = await explainBreakdown(breakdown, { permissions: new Set(['ved.docs', 'costs.enter_batch']) });
+    expect(splitGroup(plain.get(entry.id)?.view, `c:${A}`)?.band).toEqual({ min: 101, max: 500, perKg: false });
   });
 });
 
@@ -859,7 +876,12 @@ describe('the re-basis door (§8, his 5a) as the button presses it', () => {
     }
     const audit = (await updates(entry.id)).at(-1)!;
     expect(audit.before).toEqual({ allocationBasis: 'volume' });
-    expect(audit.after).toEqual({ allocationBasis: 'freight', tariffZone: ZONE.main, tariffFrom: TARIFF_DAY });
+    expect(audit.after).toEqual({
+      allocationBasis: 'freight',
+      tariffZone: ZONE.main,
+      tariffFrom: TARIFF_DAY,
+      tariffBands: '1–100 $110; 101–500 $200; 501–999 $300; 1000+ $0.55/kg',
+    });
 
     // Nothing to do, and the two doors this button never opens.
     expect(await rebaseCostAction({ entryId: entry.id, basis: 'freight' })).toMatchObject({ error: 'rebase_same' });
@@ -951,6 +973,83 @@ describe('the re-basis door (§8, his 5a) as the button presses it', () => {
     session.user = null;
   });
 
+  it('7e — leaving a direct bill records whose it was; a same-date re-freeze records the new prices (review)', async () => {
+    await signIn(adminId);
+    const direct = await bill(truck, 50, { allocationBasis: 'direct_to_client', clientId: A });
+    const created = (await db.select().from(auditLog).where(and(eq(auditLog.entityId, direct.id), eq(auditLog.action, 'create'))))[0]!;
+    expect((created.after as { clientId?: string }).clientId).toBe(A);
+    const p = await rebaseCostAction({ entryId: direct.id, basis: 'weight' });
+    expect((await rebaseCostAction({ entryId: direct.id, basis: 'weight', seen: p.rebase!.seen })).ok).toBe(true);
+    const moved = (await updates(direct.id)).at(-1)!;
+    expect(moved.before).toEqual({ allocationBasis: 'direct_to_client', clientId: A });
+    expect(moved.after).toEqual({ allocationBasis: 'weight', clientId: null });
+
+    // A same-date overwrite of one band, then freight → freight: zone and
+    // date are unchanged, the frozen rows are not — History says so.
+    const frozen = await bill(truck, 80);
+    await db.execute(sql`
+      UPDATE calc_freight_tariffs SET price_usd = '210'
+       WHERE zone = ${ZONE.main} AND effective_date = ${TARIFF_DAY} AND min_density = '101.00'`);
+    try {
+      const again = await rebaseCostAction({ entryId: frozen.id, basis: 'freight' });
+      expect(again.rebase?.rows.find((r) => r.label === `FRA${RUN}`.slice(0, 10))?.band).toEqual({
+        min: 101,
+        max: 500,
+        price: 210,
+        perKg: false,
+      });
+      expect((await rebaseCostAction({ entryId: frozen.id, basis: 'freight', seen: again.rebase!.seen })).ok).toBe(true);
+      const refrozen = (await updates(frozen.id)).at(-1)!;
+      expect((refrozen.before as { tariffBands: string }).tariffBands).toContain('101–500 $200');
+      expect((refrozen.after as { tariffBands: string }).tariffBands).toContain('101–500 $210');
+    } finally {
+      await db.execute(sql`
+        UPDATE calc_freight_tariffs SET price_usd = '200'
+         WHERE zone = ${ZONE.main} AND effective_date = ${TARIFF_DAY} AND min_density = '101.00'`);
+    }
+    session.user = null;
+  });
+
+  it('7f — a target that lands on no carton is said; the dollars the preview drew are in its token (review)', async () => {
+    await signIn(adminId);
+    // A lot with weight and no volume: «by volume» puts the bill on nobody.
+    const flat = await mintLot({ client: B, kg: 40, m3: 0 });
+    const flatTruck = await mintTruck(flat.boxIds);
+    const entry = await bill(flatTruck, 25, { allocationBasis: 'weight' });
+    const nowhere = await rebaseCostAction({ entryId: entry.id, basis: 'volume' });
+    expect(nowhere.rebase?.nowhere).toBe(true);
+    expect((await rebaseCostAction({ entryId: entry.id, basis: 'boxes' })).rebase?.nowhere).toBeUndefined();
+
+    // An /admin/fx re-price between the preview and the press: the «$ → $»
+    // the person saw is stale, so the save is refused with a fresh preview.
+    const p = await rebaseCostAction({ entryId: entry.id, basis: 'boxes' });
+    await db.update(costEntries).set({ amountUsd: '26' }).where(eq(costEntries.id, entry.id));
+    expect(await rebaseCostAction({ entryId: entry.id, basis: 'boxes', seen: p.rebase!.seen })).toMatchObject({
+      ok: false,
+      error: 'rebase_changed',
+    });
+    expect(await basisOf(entry.id)).toBe('weight');
+    session.user = null;
+  });
+
+  it('14b — a rollback whose weight split fails is named and NOT queued (the one-off container must exit)', async () => {
+    const H = await mintClient('RQ');
+    const h = await mintLot({ client: H, kg: 300, m3: 1 });
+    const t = await mintTruck(h.boxIds);
+    const bill1 = await bill(t, 33);
+    const spy = vi.spyOn(costingService, 'recomputeEntry').mockRejectedValueOnce(new Error('split died'));
+    queued.length = 0;
+    try {
+      const result = await rollbackFreightBills([bill1.id]);
+      expect(result).toMatchObject({ done: 1, splits: [{ id: bill1.id, split: 'pending' }] });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(queued).toEqual([]);
+    expect(await basisOf(bill1.id)).toBe('weight');
+    await recomputeEntry(bill1.id);
+  });
+
   it('14 — the rollback script: every live freight bill back to weight, split or held, with a rollback audit and no copy', async () => {
     const light = await mintClient('RL');
     const l = await mintLot({ client: light, kg: 1, m3: 3 });
@@ -964,7 +1063,15 @@ describe('the re-basis door (§8, his 5a) as the button presses it', () => {
     expect(listed.find((b) => b.id === held.id)?.shares).toEqual([]);
     expect(listed.find((b) => b.id === split.id)?.shares).toEqual([{ label: `FRA${RUN}`.slice(0, 10), usd: 70 }]);
 
-    expect(await rollbackFreightBills([split.id, held.id])).toEqual({ done: 2, skipped: 0, failed: [] });
+    expect(await rollbackFreightBills([split.id, held.id])).toEqual({
+      done: 2,
+      skipped: 0,
+      failed: [],
+      splits: [
+        { id: split.id, split: 'split' },
+        { id: held.id, split: 'split' },
+      ],
+    });
     for (const [id, usd] of [
       [split.id, 70],
       [held.id, 20],
