@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { eq, inArray, like, sql } from 'drizzle-orm';
+import { eq, inArray, like, sql, type SQL } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
@@ -26,9 +26,13 @@ import {
   addCostEntry,
   batchCostSheet,
   batchLandedCostTotals,
+  carriageCtesSql,
   carriedUnsplitBills,
+  carriedUnsplitSql,
+  noShareSql,
   unsplitCountFor,
   unsplitOnFormingTrucks,
+  type CarriedUnsplitRow,
 } from '@/modules/wms/costing/service';
 import { ALL_COSTS, costSightFor } from '@/modules/wms/costing/cost-sight';
 import { setTariffColumnInTx } from '@/modules/wms/costing/tariff-column';
@@ -49,7 +53,12 @@ import { companyBalance, profitByBatch } from '@/modules/wms/accounting/reports'
  * - and the edges of `carriedUnsplitBills` / `unsplitOnFormingTrucks` the
  *   tests above cannot reach (review of the round): what the fence's two
  *   windows LEAVE OUT, a feeding bill with no rate yet, a direct bill as its
- *   own client's money, and the trucks that have not left.
+ *   own client's money, and the trucks that have not left;
+ * - 17: the warning's linear statement (`carriedUnsplitSql`) against the
+ *   quadratic one it replaced, kept here VERBATIM as the oracle
+ *   (`shippedCarriedUnsplitSql`): every call to the warning in this file asks
+ *   both (`carried`), a long road holds a part on almost every leg, and a last
+ *   sweep asks every truck the file made.
  *
  * Money parked in 1648 (no other file's year), so the trucks fall in no
  * other file's profit window. Tariff columns under ONE private run prefix
@@ -242,6 +251,115 @@ async function reweigh(lotId: string, kg: number, m3: number) {
   );
 }
 
+/**
+ * THE ORACLE — `carriedUnsplitBills`' statement as shipped at d77d661,
+ * copied VERBATIM, comments and all: its `fed` joins `mx` to the held trucks'
+ * rides on box_id — two CTEs, both estimated at one row, so a nested loop
+ * that grew with the square of the truck. The linear statement that replaced
+ * it (`carriedUnsplitSql`) must answer exactly what this one did, and every
+ * call in this file asks both (`carried`). Built on the same exported CTEs —
+ * `carriageCtesSql`, whose `mx` the rewrite left byte-for-byte as it was —
+ * and `noShareSql`. Never edited: it is the record of what shipped.
+ */
+function shippedCarriedUnsplitSql(batchId: string): SQL {
+  return sql`
+    WITH ${carriageCtesSql(sql`${batchId}::uuid`)},
+    -- The OTHER trucks the cargo rode that hold such a bill — almost always
+    -- none, which is why it is asked FIRST: pairing every carton with every
+    -- ride (a CTE joined to a CTE, both estimated at one row) was a nested
+    -- loop that grew with the square of the truck — 794 ms at 2,000 cartons
+    -- on the shaped copy (#1246's shape, review of the round).
+    -- One row per PART of a feeding truck's money: a direct bill was only
+    -- ever its OWN client's money — missing from that client's tannarx alone
+    -- — so each client's direct bills are a part of their own (own_client),
+    -- and every other bill is one part for everybody aboard.
+    held AS (
+      SELECT ce.batch_id,
+             ce.allocation_basis = 'direct_to_client' AS direct,
+             CASE WHEN ce.allocation_basis = 'direct_to_client' THEN ce.client_id END AS own_client,
+             sum(ce.amount_usd) AS usd,
+             count(*) FILTER (WHERE ce.amount_usd IS NULL)::int AS unconverted
+        FROM cost_entries ce
+       WHERE ce.batch_id IN (SELECT DISTINCT r.batch_id FROM rides r WHERE r.batch_id <> ${batchId}::uuid AND r.departed_at IS NOT NULL)
+         AND ce.scope = 'batch'
+         AND (${noShareSql(sql`ce`)} OR (ce.voided_at IS NULL AND ce.amount_usd IS NULL))
+       GROUP BY ce.batch_id,
+                ce.allocation_basis = 'direct_to_client',
+                CASE WHEN ce.allocation_basis = 'direct_to_client' THEN ce.client_id END
+    ),
+    fr AS MATERIALIZED (
+      SELECT r.batch_id, r.box_id, r.departed_at FROM rides r WHERE r.batch_id IN (SELECT batch_id FROM held)
+    ),
+    fed AS (
+      SELECT fr.batch_id AS feed_id, m.box_id,
+             CASE WHEN fr.departed_at <= m.at THEN 'prev' ELSE 'later' END AS leg
+        FROM mx m
+        JOIN fr ON fr.box_id = m.box_id AND fr.batch_id <> m.batch_id
+       WHERE NOT m.given
+         AND fr.departed_at IS NOT NULL
+         AND (
+           (fr.departed_at <= m.at AND (m.prev_at IS NULL OR fr.departed_at > m.prev_at))
+           OR (m.upto IS NOT NULL AND fr.departed_at > m.at AND fr.departed_at <= m.upto)
+         )
+    ),
+    -- Whose cartons of THIS truck rode each feeding truck, and on which leg:
+    -- one row per (feeding truck, client), so the pairing above runs ONCE
+    -- however many parts a feeding truck holds (joined part by part, it ran
+    -- once per part — measured, twice the time with two).
+    rode AS MATERIALIZED (
+      SELECT f.feed_id, rc.client_id, min(f.leg) AS leg
+        FROM fed f
+        JOIN boxes fbx ON fbx.id = f.box_id
+        JOIN receipt_lots rl ON rl.id = fbx.lot_id
+        JOIN receipts rc ON rc.id = rl.receipt_id
+       GROUP BY f.feed_id, rc.client_id
+    ),
+    -- The parts THIS truck's cargo carries: the truck-wide one when any of
+    -- its cartons rode the feeding truck on that leg, a direct one only when
+    -- its OWN client's carton did. Judged per part, never per truck: beside
+    -- a held bill — or another client's direct one — a fee for a client who
+    -- is not aboard is not this page's money (review of the tests: judged
+    -- per truck, it was added to the dollars and the no-rate count).
+    part AS (
+      SELECT h.batch_id, h.usd, h.unconverted, min(r.leg) AS leg,
+             array_agg(r.client_id) FILTER (
+               WHERE r.client_id IS NOT NULL AND (NOT h.direct OR r.client_id = h.own_client)
+             ) AS client_ids
+        FROM held h
+        JOIN rode r ON r.feed_id = h.batch_id
+       GROUP BY h.batch_id, h.direct, h.own_client, h.usd, h.unconverted
+      HAVING NOT h.direct OR bool_or(r.client_id = h.own_client)
+    )
+    SELECT p.batch_id, fb.code, fb.origin_warehouse_id, fb.dest_warehouse_id,
+           sum(p.usd) AS usd, sum(p.unconverted)::int AS unconverted, min(p.leg) AS leg,
+           coalesce((SELECT array_agg(DISTINCT c) FROM part q, unnest(q.client_ids) AS c WHERE q.batch_id = p.batch_id), '{}')
+             AS client_ids
+      FROM part p
+      JOIN batches fb ON fb.id = p.batch_id
+     GROUP BY p.batch_id, fb.code, fb.origin_warehouse_id, fb.dest_warehouse_id, fb.departed_at
+     ORDER BY fb.departed_at, fb.code
+  `;
+}
+
+/** Both statements' raw rows for one truck — the page's and the oracle's. */
+async function bothAnswers(batchId: string) {
+  const fresh = (await db.execute(carriedUnsplitSql(batchId))) as unknown as CarriedUnsplitRow[];
+  const shipped = (await db.execute(shippedCarriedUnsplitSql(batchId))) as unknown as CarriedUnsplitRow[];
+  return { fresh: [...fresh], shipped: [...shipped] };
+}
+
+/**
+ * `carriedUnsplitBills`, with the oracle asked the same question first: every
+ * call in this file is a differential checkpoint, in the state the test has
+ * just made — a held bill is usually split a line later, so a sweep at the
+ * end alone would never see most of them held.
+ */
+async function carried(batchId: string) {
+  const { fresh, shipped } = await bothAnswers(batchId);
+  expect(fresh, `the linear statement against the shipped one, truck ${batchId}`).toEqual(shipped);
+  return carriedUnsplitBills(batchId);
+}
+
 async function sweepPrivateZones() {
   const zones = (await db.selectDistinct({ zone: calcFreightTariffs.zone }).from(calcFreightTariffs))
     .map((r) => r.zone)
@@ -328,7 +446,7 @@ describe('10 — a held bill on the cargo’s OTHER leg is named on the truck wh
     const entry = await bill(t1.id, 100);
     expect(entry.verdict?.kind).toBe('held');
 
-    expect(await carriedUnsplitBills(t2.id)).toEqual([
+    expect(await carried(t2.id)).toEqual([
       {
         batchId: t1.id,
         code: t1.code,
@@ -342,7 +460,7 @@ describe('10 — a held bill on the cargo’s OTHER leg is named on the truck wh
     ]);
     // The internal truck names its OWN bill on its own surfaces, never as
     // somebody else's leg.
-    expect(await carriedUnsplitBills(t1.id)).toEqual([]);
+    expect(await carried(t1.id)).toEqual([]);
     expect(await unsplitCountFor(t1.id, ALL_COSTS)).toBe(1);
     expect(await unsplitCountFor(t2.id, ALL_COSTS)).toBe(0);
     // «Partiya foydasi»'s ⚠ is the same sentence (`noShareSql`).
@@ -359,7 +477,7 @@ describe('10 — a held bill on the cargo’s OTHER leg is named on the truck wh
     // The lot door re-splits T1's bill by itself; the warning is gone and
     // «shu reysgacha» carries the money.
     await reweigh(l.lotId, 300, 3); // 100 kg/m³ → $110 × 3 = 330
-    expect(await carriedUnsplitBills(t2.id)).toEqual([]);
+    expect(await carried(t2.id)).toEqual([]);
     expect(Math.round((await prevOf()) * 100) / 100).toBe(100);
   });
 
@@ -376,7 +494,7 @@ describe('10 — a held bill on the cargo’s OTHER leg is named on the truck wh
 
     const entry = await bill(t3.id, 80);
     expect(entry.verdict?.kind).toBe('held');
-    expect(await carriedUnsplitBills(t2.id)).toEqual([
+    expect(await carried(t2.id)).toEqual([
       {
         batchId: t3.id,
         code: t3.code,
@@ -389,10 +507,10 @@ describe('10 — a held bill on the cargo’s OTHER leg is named on the truck wh
       },
     ]);
     // T3 GIVES its cartons' road back to T2: nothing is this page's to name.
-    expect(await carriedUnsplitBills(t3.id)).toEqual([]);
+    expect(await carried(t3.id)).toEqual([]);
 
     await reweigh(l.lotId, 300, 3);
-    expect(await carriedUnsplitBills(t2.id)).toEqual([]);
+    expect(await carried(t2.id)).toEqual([]);
     const later = [...((await batchLandedCostTotals([t2.id])).get(t2.id)?.values() ?? [])].reduce(
       (sum, lot) => sum + lot.laterUsd,
       0,
@@ -482,9 +600,9 @@ describe('13 — the fence’s two windows also LEAVE OUT: a held bill outside t
     // T3 departed before T5 — inside «departed ≤ this one» — but it IS the
     // cartons' previous non-internal truck (`m.prev_at`), so its money was
     // never T5's tannarx and its held bill is not T5's to name.
-    expect(await carriedUnsplitBills(t5.id)).toEqual([]);
+    expect(await carried(t5.id)).toEqual([]);
     // Nor is T5 a later leg of T3: it bears its own price.
-    expect(await carriedUnsplitBills(t3.id)).toEqual([]);
+    expect(await carried(t3.id)).toEqual([]);
 
     // The fence agrees: split, T3's money stays on T3 and none of it reaches T5.
     await reweigh(l.lotId, 300, 3);
@@ -521,15 +639,15 @@ describe('13 — the fence’s two windows also LEAVE OUT: a held bill outside t
     });
     // T2's road runs to T3 (`m.upto`) and no further: T5 departed after T2
     // but beyond T4, which took the price over.
-    expect(await carriedUnsplitBills(t2.id)).toEqual([later(t3, whD, whE, 60)]);
+    expect(await carried(t2.id)).toEqual([later(t3, whD, whE, 60)]);
     // And T4 names T5 — never T3, which lies before its previous
     // non-internal departure (the other window, from the other side).
-    expect(await carriedUnsplitBills(t4.id)).toEqual([later(t5, whF, whG, 50)]);
+    expect(await carried(t4.id)).toEqual([later(t5, whF, whG, 50)]);
 
     // The fence agrees once both split: T2 carries T3's road, T4 carries T5's.
     await reweigh(l.lotId, 300, 3);
-    expect(await carriedUnsplitBills(t2.id)).toEqual([]);
-    expect(await carriedUnsplitBills(t4.id)).toEqual([]);
+    expect(await carried(t2.id)).toEqual([]);
+    expect(await carried(t4.id)).toEqual([]);
     expect(await legsOf(t2.id)).toEqual({ own: 0, prev: 0, later: 60 });
     expect(await legsOf(t4.id)).toEqual({ own: 0, prev: 0, later: 50 });
   });
@@ -551,7 +669,7 @@ describe('14 — a feeding truck’s bill with no rate yet is named too: no doll
     expect(entry.verdict?.kind).toBe('unconverted');
     // Not «on no box» in `noShareSql`'s words — it has no dollars to put on one.
     expect(await unsplitCountFor(t1.id, ALL_COSTS)).toBe(0);
-    expect(await carriedUnsplitBills(t2.id)).toEqual([
+    expect(await carried(t2.id)).toEqual([
       {
         batchId: t1.id,
         code: t1.code,
@@ -588,7 +706,7 @@ describe('15 — a direct bill on a feeding truck is its OWN client’s money', 
     const entry = await bill(t1.id, 45, { currency: NO_RATE, allocationBasis: 'direct_to_client', clientId: L });
     expect(entry.verdict?.kind).toBe('unconverted');
     // Missing from L's tannarx alone — H rode T1 and T2 too and loses nothing.
-    expect(await carriedUnsplitBills(t2.id)).toEqual([
+    expect(await carried(t2.id)).toEqual([
       {
         batchId: t1.id,
         code: t1.code,
@@ -602,7 +720,7 @@ describe('15 — a direct bill on a feeding truck is its OWN client’s money', 
     ]);
     // M's cartons rode T1 as well, but L is not aboard T2b: nothing of T2b's
     // tannarx is missing, so the truck is not reported at all.
-    expect(await carriedUnsplitBills(t2b.id)).toEqual([]);
+    expect(await carried(t2b.id)).toEqual([]);
   });
 
   it('judged per BILL: beside another bill, a direct bill for a client who is not aboard adds nothing to the page’s count', async () => {
@@ -634,8 +752,8 @@ describe('15 — a direct bill on a feeding truck is its OWN client’s money', 
       },
     ];
     // Each truck is told of ITS client's bill alone — one, not both.
-    expect(await carriedUnsplitBills(t2.id)).toEqual(one([L]));
-    expect(await carriedUnsplitBills(t2b.id)).toEqual(one([M]));
+    expect(await carried(t2.id)).toEqual(one([L]));
+    expect(await carried(t2b.id)).toEqual(one([M]));
   });
 
   it('judged per BILL: beside a held bill, a direct fee for a client who never rode the truck adds nothing to the page’s dollars', async () => {
@@ -651,7 +769,7 @@ describe('15 — a direct bill on a feeding truck is its OWN client’s money', 
     // Typed on the wrong truck: N has no carton on T1, so the fee lands on no
     // box — the Balans's «void it» money, and never anybody's tannarx here.
     expect((await bill(t1.id, 25, { allocationBasis: 'direct_to_client', clientId: N })).verdict?.kind).toBe('nothing');
-    expect(await carriedUnsplitBills(t2.id)).toEqual([
+    expect(await carried(t2.id)).toEqual([
       {
         batchId: t1.id,
         code: t1.code,
@@ -691,6 +809,104 @@ describe('16 — trucks that have not left: the «bo’linmagan» list names the
     ]);
     // The same bill the forming truck's own todo counts.
     expect(await unsplitCountFor(forming.id, ALL_COSTS)).toBe(1);
+  });
+});
+
+describe('17 — the linear statement answers what the shipped one did (old-vs-new differential)', () => {
+  it('a long road with a held part on almost every leg: each of its trucks, both statements, row for row', async () => {
+    const H = await mintClient('ZH');
+    const L = await mintClient('ZL');
+    const W = await mintClient('ZW');
+    const N = await mintClient('ZN');
+    const h = await mintLot(H, 600, 1);
+    const l = await mintLot(L, 1, 3); // light: every freight bill its truck carries is HELD
+    const w = await mintLot(W, 600, 1, whD); // a walk-in at D: every leg from D bears its price
+    const china = [...h.boxIds, ...l.boxIds];
+    const all = [...china, ...w.boxIds];
+    // China cargo: T1 internal, T2 crosses (bears), T3 the Uzbek leg after it
+    // (T2's road), T4 crosses again (bears), T5 the Kazakh leg after it (T4's
+    // road), T6 still forming. T2x is a ride no real road has — an internal
+    // leg after the crossing — and it is here for the windows' sake: it sits
+    // between T3's carrier and T3, so whether T3 GIVES its cartons back is
+    // the only thing that keeps it off T3's page.
+    const t1 = await mintTruck(china, { from: whW, to: whK, departedAt: '1648-02-01T08:00:00Z' });
+    const t2 = await mintTruck(china, { from: whK, to: whD, departedAt: '1648-02-03T08:00:00Z' });
+    const t2x = await mintTruck(h.boxIds, { from: whW, to: whK, departedAt: '1648-02-04T08:00:00Z' });
+    const t3 = await mintTruck(all, { from: whD, to: whE, departedAt: '1648-02-05T08:00:00Z' });
+    const t4 = await mintTruck(all, { from: whE, to: whF, departedAt: '1648-02-07T08:00:00Z' });
+    const t5 = await mintTruck(all, { from: whF, to: whG, departedAt: '1648-02-09T08:00:00Z' });
+    const t6 = await mintFormingTruck(all, { from: whG, to: whD });
+
+    expect((await bill(t1.id, 10)).verdict?.kind).toBe('held');
+    // N never rode anything: the fee sits on no box, and is no page's money.
+    expect((await bill(t1.id, 5, { allocationBasis: 'direct_to_client', clientId: N })).verdict?.kind).toBe('nothing');
+    expect((await bill(t2.id, 20)).verdict?.kind).toBe('held');
+    expect((await bill(t2x.id, 7, { currency: NO_RATE, allocationBasis: 'weight' })).verdict?.kind).toBe('unconverted');
+    expect((await bill(t3.id, 30)).verdict?.kind).toBe('held');
+    expect(
+      (await bill(t3.id, 3, { currency: NO_RATE, allocationBasis: 'direct_to_client', clientId: H })).verdict?.kind,
+    ).toBe('unconverted');
+    // A bill that SPLIT is on its boxes and is nobody's warning.
+    expect((await bill(t4.id, 40, { allocationBasis: 'weight' })).verdict?.kind).toBe('split');
+    expect((await bill(t4.id, 9, { currency: NO_RATE, allocationBasis: 'weight' })).verdict?.kind).toBe('unconverted');
+    expect((await bill(t5.id, 50)).verdict?.kind).toBe('held');
+    expect(
+      (await bill(t5.id, 4, { currency: NO_RATE, allocationBasis: 'direct_to_client', clientId: W })).verdict?.kind,
+    ).toBe('unconverted');
+    // Not departed: never a feeding truck.
+    expect((await bill(t6.id, 6, { currency: NO_RATE, allocationBasis: 'weight' })).verdict?.kind).toBe('unconverted');
+
+    const row = (
+      t: { id: string; code: string },
+      ends: [string, string],
+      leg: 'prev' | 'later',
+      usd: number | null,
+      unconverted: number,
+      clientIds: string[],
+    ) => ({
+      batchId: t.id,
+      code: t.code,
+      originWarehouseId: ends[0],
+      destWarehouseId: ends[1],
+      leg,
+      usd,
+      unconverted,
+      clientIds: [...clientIds].sort(),
+    });
+    // Every page is a differential checkpoint (`carried`); the answers are
+    // pinned as well, so the fixture is known to reach every window.
+    expect(await carried(t1.id)).toEqual([]);
+    // T2: T1 «shu reysgacha»; T2x and T3 its road (`upto` = T3), T3 with H's
+    // own no-rate fee; T4 and T5 lie beyond the next price-bearing truck.
+    expect(await carried(t2.id)).toEqual([
+      row(t1, [whW, whK], 'prev', 10, 0, [H, L]),
+      row(t2x, [whW, whK], 'later', null, 1, [H]),
+      row(t3, [whD, whE], 'later', 30, 1, [H, L]),
+    ]);
+    // An internal truck keeps the plain fence: everything before it.
+    expect(await carried(t2x.id)).toEqual([
+      row(t1, [whW, whK], 'prev', 10, 0, [H]),
+      row(t2, [whK, whD], 'prev', 20, 0, [H]),
+    ]);
+    // T3 gives the China cargo back to T2; the walk-in starts its road here.
+    expect(await carried(t3.id)).toEqual([]);
+    // T4: T3 IS its previous non-internal truck (the strict lower bound); T5
+    // is its road for the China cargo only, so W's own fee there is not its.
+    expect(await carried(t4.id)).toEqual([row(t5, [whF, whG], 'later', 50, 0, [H, L])]);
+    expect(await carried(t5.id)).toEqual([]);
+    expect(await carried(t6.id)).toEqual([]);
+  });
+
+  it('every truck this file made, in the state the file left it: both statements, row for row — and not vacuously', async () => {
+    let named = 0;
+    for (const id of made.batches) {
+      const { fresh, shipped } = await bothAnswers(id);
+      expect(fresh, `truck ${id}`).toEqual(shipped);
+      if (shipped.length > 0) named += 1;
+    }
+    // Still named at the end: 14's export truck, 15's four pages and this
+    // road's T2, T2x and T4 — the rest answer «nothing», on both.
+    expect(named).toBeGreaterThanOrEqual(8);
   });
 });
 

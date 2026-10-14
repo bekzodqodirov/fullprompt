@@ -1714,6 +1714,24 @@ function landedAllocationsSql(list: SQL): { with: SQL; joins: SQL; where: SQL } 
 }
 
 /**
+ * `mx`'s columns as expressions over ONE `segs` row — the truck's clock, its
+ * previous non-internal departure, whether it follows / gives back, its
+ * carrier, how far forward it carries. One home, because two readers ask
+ * them of the same row (#513): `mx` selects them for the listed trucks, and
+ * `carriedUnsplitBills` spreads the page truck's onto the carton's other
+ * rides with a window (`... FILTER (WHERE batch_id = page) OVER (PARTITION BY
+ * box_id)`) instead of joining `mx` to those rides.
+ */
+const MX = {
+  at: sql`coalesce(departed_at, now())`,
+  prevAt: sql`CASE WHEN internal THEN NULL ELSE prev_nonint_at END`,
+  follows: sql`(NOT internal AND NOT bears AND seg IS NOT NULL)`,
+  given: sql`(NOT internal AND NOT bears AND seg IS NOT NULL AND departed_at IS NOT NULL)`,
+  carrierId: sql`CASE WHEN NOT internal AND NOT bears THEN seg END`,
+  upto: sql`CASE WHEN bears AND departed_at IS NOT NULL THEN seg_upto END`,
+};
+
+/**
  * The CTEs that decide, per (truck, carton), which truck carries the
  * carton's road — shared by the fence and by `batchCarriage`, which names it
  * on the screens, so the two can never disagree (#513).
@@ -1736,7 +1754,7 @@ function landedAllocationsSql(list: SQL): { with: SQL; joins: SQL; where: SQL } 
  * Windows and no joins between CTEs, on purpose: every CTE-on-CTE join was
  * estimated at one row and nested over the allocations (#1246's review).
  */
-function carriageCtesSql(list: SQL): SQL {
+export function carriageCtesSql(list: SQL): SQL {
   return sql`
     ${riderCtesSql(list)},
     -- Where each carton's prixod was received — the one per-carton fact the
@@ -1798,13 +1816,13 @@ function carriageCtesSql(list: SQL): SQL {
     -- money has moved (it departed); how far forward a bearing truck carries.
     mx AS (
       SELECT batch_id, box_id,
-             coalesce(departed_at, now()) AS at,
+             ${MX.at} AS at,
              internal,
-             CASE WHEN internal THEN NULL ELSE prev_nonint_at END AS prev_at,
-             (NOT internal AND NOT bears AND seg IS NOT NULL) AS follows,
-             (NOT internal AND NOT bears AND seg IS NOT NULL AND departed_at IS NOT NULL) AS given,
-             CASE WHEN NOT internal AND NOT bears THEN seg END AS carrier_id,
-             CASE WHEN bears AND departed_at IS NOT NULL THEN seg_upto END AS upto
+             ${MX.prevAt} AS prev_at,
+             ${MX.follows} AS follows,
+             ${MX.given} AS given,
+             ${MX.carrierId} AS carrier_id,
+             ${MX.upto} AS upto
         FROM segs
        WHERE batch_id IN (${list})
     )`;
@@ -2229,27 +2247,65 @@ export interface CarriedUnsplit {
  * non-bearing leg's. A held freight bill — or one with no rate yet — has no
  * allocation, so the prev/later lines just shrink and nothing says why.
  *
- * Built on the fence's OWN CTEs (`carriageCtesSql`'s `rides` and `mx`) with
- * its two windows verbatim, so the warning and the tannarx cannot disagree
- * (#513). Found through the cartons' RIDES, not through allocations — a held
- * bill has none to join through. A pair the truck GIVES back (`m.given`)
- * carries nothing here, so its other legs are not this page's to name. A
- * direct bill counts only on a page that carries its own client's cartons
- * from that leg — bill by bill, so the dollars, the no-rate count and the
- * clients all say the same.
+ * Built on the fence's OWN CTEs (`carriageCtesSql`'s `rides` and `segs`)
+ * and `mx`'s own columns (`MX`), with its two windows verbatim, so the
+ * warning and the tannarx cannot disagree (#513). Found through the cartons'
+ * RIDES, not through allocations — a held bill has none to join through. A
+ * pair the truck GIVES back (`given`) carries nothing here, so its other legs
+ * are not this page's to name. A direct bill counts only on a page that
+ * carries its own client's cartons from that leg — bill by bill, so the
+ * dollars, the no-rate count and the clients all say the same.
  *
  * Only the feeding trucks' batch-scope bills: a stamped grid cell is a
  * receipt's money, already counted by `unconvertedCostCount` over this
  * truck's prixods.
  */
 export async function carriedUnsplitBills(batchId: string): Promise<CarriedUnsplit[]> {
-  const rows = (await db.execute(sql`
-    WITH ${carriageCtesSql(sql`${batchId}::uuid`)},
+  const rows = (await db.execute(carriedUnsplitSql(batchId))) as unknown as CarriedUnsplitRow[];
+  return rows.map((row) => ({
+    batchId: row.batch_id,
+    code: row.code,
+    originWarehouseId: row.origin_warehouse_id,
+    destWarehouseId: row.dest_warehouse_id,
+    leg: row.leg,
+    usd: row.usd === null ? null : Math.round(Number(row.usd) * 100) / 100,
+    unconverted: Number(row.unconverted),
+    clientIds: [...row.client_ids].sort(),
+  }));
+}
+
+/** One row of `carriedUnsplitSql`, as postgres answers it. */
+export interface CarriedUnsplitRow {
+  batch_id: string;
+  code: string;
+  origin_warehouse_id: string;
+  dest_warehouse_id: string;
+  usd: string | null;
+  unconverted: number;
+  leg: 'prev' | 'later';
+  client_ids: string[];
+}
+
+/**
+ * `carriedUnsplitBills`' one statement — exported so its differential test
+ * and EXPLAIN read the statement the page runs.
+ *
+ * LINEAR in the truck's cartons whatever the feeding trucks hold: every step
+ * on the carton grain is a scan or a window, and nothing on that grain joins
+ * one CTE to another. Pairing `mx` (one row per carton of this truck) with the
+ * held trucks' rides on box_id — both CTEs, both estimated at one row — was a
+ * nested loop of |cartons| × |rides|: measured on the 120k-carton copy, a
+ * 2,000-carton hub fed by 20 legs that each hold a bill (a Yiwu → Kashgar
+ * leg whose CNY bill has no rate yet holds one) took seconds (#1246's shape,
+ * a third time in this fence).
+ */
+export function carriedUnsplitSql(batchId: string): SQL {
+  const page = sql`${batchId}::uuid`;
+  return sql`
+    WITH ${carriageCtesSql(page)},
     -- The OTHER trucks the cargo rode that hold such a bill — almost always
-    -- none, which is why it is asked FIRST: pairing every carton with every
-    -- ride (a CTE joined to a CTE, both estimated at one row) was a nested
-    -- loop that grew with the square of the truck — 794 ms at 2,000 cartons
-    -- on the shaped copy (#1246's shape, review of the round).
+    -- none, which is why it is asked FIRST: the cartons' rides are read below
+    -- only for these trucks.
     -- One row per PART of a feeding truck's money: a direct bill was only
     -- ever its OWN client's money — missing from that client's tannarx alone
     -- — so each client's direct bills are a part of their own (own_client),
@@ -2261,32 +2317,49 @@ export async function carriedUnsplitBills(batchId: string): Promise<CarriedUnspl
              sum(ce.amount_usd) AS usd,
              count(*) FILTER (WHERE ce.amount_usd IS NULL)::int AS unconverted
         FROM cost_entries ce
-       WHERE ce.batch_id IN (SELECT DISTINCT r.batch_id FROM rides r WHERE r.batch_id <> ${batchId}::uuid AND r.departed_at IS NOT NULL)
+       WHERE ce.batch_id IN (SELECT DISTINCT r.batch_id FROM rides r WHERE r.batch_id <> ${page} AND r.departed_at IS NOT NULL)
          AND ce.scope = 'batch'
          AND (${noShareSql(sql`ce`)} OR (ce.voided_at IS NULL AND ce.amount_usd IS NULL))
        GROUP BY ce.batch_id,
                 ce.allocation_basis = 'direct_to_client',
                 CASE WHEN ce.allocation_basis = 'direct_to_client' THEN ce.client_id END
     ),
-    fr AS MATERIALIZED (
-      SELECT r.batch_id, r.box_id, r.departed_at FROM rides r WHERE r.batch_id IN (SELECT batch_id FROM held)
+    -- Every ride of a carton of THIS truck on a truck that holds such a bill,
+    -- with THIS truck's own mx columns for that carton beside it: spread
+    -- from the carton's ride on this truck (a carton rides a truck once —
+    -- box_rides is a UNION) by a window over the carton's rides, so the
+    -- fence's windows are asked of ONE row. A candidate carton that does not
+    -- ride this truck (found back, annulled) spreads NULL and names nothing. The
+    -- rides of the other trucks are dropped before the window, so a page
+    -- whose feeding trucks hold nothing sorts its own cartons and no more.
+    beside AS (
+      SELECT batch_id, box_id, departed_at,
+             max(${MX.at}) FILTER (WHERE batch_id = ${page}) OVER pw AS m_at,
+             max(${MX.prevAt}) FILTER (WHERE batch_id = ${page}) OVER pw AS m_prev_at,
+             bool_or(${MX.given}) FILTER (WHERE batch_id = ${page}) OVER pw AS m_given,
+             max(${MX.upto}) FILTER (WHERE batch_id = ${page}) OVER pw AS m_upto
+        FROM segs
+       WHERE batch_id = ${page} OR batch_id IN (SELECT batch_id FROM held)
+      WINDOW pw AS (PARTITION BY box_id)
     ),
+    -- The held rides inside the fence's two windows (landedAllocationsSql,
+    -- verbatim): «shu reysgacha» and «keyingi yo'l».
     fed AS (
-      SELECT fr.batch_id AS feed_id, m.box_id,
-             CASE WHEN fr.departed_at <= m.at THEN 'prev' ELSE 'later' END AS leg
-        FROM mx m
-        JOIN fr ON fr.box_id = m.box_id AND fr.batch_id <> m.batch_id
-       WHERE NOT m.given
-         AND fr.departed_at IS NOT NULL
+      SELECT b.batch_id AS feed_id, b.box_id,
+             CASE WHEN b.departed_at <= b.m_at THEN 'prev' ELSE 'later' END AS leg
+        FROM beside b
+       WHERE b.batch_id <> ${page}
+         AND NOT b.m_given
+         AND b.departed_at IS NOT NULL
          AND (
-           (fr.departed_at <= m.at AND (m.prev_at IS NULL OR fr.departed_at > m.prev_at))
-           OR (m.upto IS NOT NULL AND fr.departed_at > m.at AND fr.departed_at <= m.upto)
+           (b.departed_at <= b.m_at AND (b.m_prev_at IS NULL OR b.departed_at > b.m_prev_at))
+           OR (b.m_upto IS NOT NULL AND b.departed_at > b.m_at AND b.departed_at <= b.m_upto)
          )
     ),
     -- Whose cartons of THIS truck rode each feeding truck, and on which leg:
-    -- one row per (feeding truck, client), so the pairing above runs ONCE
-    -- however many parts a feeding truck holds (joined part by part, it ran
-    -- once per part — measured, twice the time with two).
+    -- one row per (feeding truck, client), so the cartons are read ONCE
+    -- however many parts a feeding truck holds (joined part by part, they
+    -- were read once per part — measured, twice the time with two).
     rode AS MATERIALIZED (
       SELECT f.feed_id, rc.client_id, min(f.leg) AS leg
         FROM fed f
@@ -2319,26 +2392,7 @@ export async function carriedUnsplitBills(batchId: string): Promise<CarriedUnspl
       JOIN batches fb ON fb.id = p.batch_id
      GROUP BY p.batch_id, fb.code, fb.origin_warehouse_id, fb.dest_warehouse_id, fb.departed_at
      ORDER BY fb.departed_at, fb.code
-  `)) as unknown as {
-    batch_id: string;
-    code: string;
-    origin_warehouse_id: string;
-    dest_warehouse_id: string;
-    usd: string | null;
-    unconverted: number;
-    leg: 'prev' | 'later';
-    client_ids: string[];
-  }[];
-  return rows.map((row) => ({
-    batchId: row.batch_id,
-    code: row.code,
-    originWarehouseId: row.origin_warehouse_id,
-    destWarehouseId: row.dest_warehouse_id,
-    leg: row.leg,
-    usd: row.usd === null ? null : Math.round(Number(row.usd) * 100) / 100,
-    unconverted: Number(row.unconverted),
-    clientIds: [...row.client_ids].sort(),
-  }));
+  `;
 }
 
 /**
