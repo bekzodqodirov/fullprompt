@@ -73,8 +73,8 @@ import { addCostEntryAction, rebaseCostAction } from '@/app/(protected)/costs/ac
  * client HOLDS the bill, fixing the lot heals it), the void guard, the
  * refusals in words, and the warehouse form keeping its column (#171).
  *
- * Money parked in 1637 (a private year: void-resplit's too, different
- * zones), tariff columns under ONE private run prefix `t_<n><run>_…`, swept
+ * Money parked in 1656, a year no other file uses (it was 1637, where
+ * truck-riders reads whole months and deletes its year when it ends), tariff columns under ONE private run prefix `t_<n><run>_…`, swept
  * before and deleted as a FINAL TEST (#824 — never afterAll, whose failure
  * nobody sees). A warehouse column is CONFIGURATION (#183); the private
  * warehouses are deactivated, never deleted (audit FK).
@@ -85,8 +85,8 @@ const zone = (name: string) => `t_${(counter += 1)}${RUN}_${name}`;
 const ZONE = { main: zone('main'), alt: zone('alt'), gap: zone('gap'), frz: zone('frz'), long: '' };
 ZONE.long = `t_${(counter += 1)}${RUN}_long_${'x'.repeat(80)}`;
 const SWEEP = /^t_[0-9a-z]+_(main|alt|gap|frz|long_x+)$/;
-const TARIFF_DAY = '1637-01-01';
-const DAY = '1637-03-14';
+const TARIFF_DAY = '1656-01-01';
+const DAY = '1656-03-14';
 const PRIVATE_CUSTOMS = `t_frc_${RUN}`;
 
 let actorId = '';
@@ -386,7 +386,7 @@ describe('his example on a real truck', () => {
       .update(calcFreightTariffs)
       .set({ priceUsd: '100' })
       .where(and(eq(calcFreightTariffs.zone, ZONE.frz), eq(calcFreightTariffs.minDensity, '501.00')));
-    await tariffRows(ZONE.frz, [[1, 500, 1, false]], '1636-06-01');
+    await tariffRows(ZONE.frz, [[1, 500, 1, false]], '1655-06-01');
     await mapColumn(W2, ZONE.alt);
     await recomputeEntry(entry.id);
     expect(await byClient(entry.id)).toEqual({ [A]: 300, [B]: 100 });
@@ -550,9 +550,9 @@ describe('refusals name what to fix (tariff CONFIGURATION only)', () => {
     });
 
     const truck = await mintTruck([]);
-    expect(await refusal(prepareFreightCopy(freightInput(truck, { costDate: '1636-12-31' })))).toMatchObject({
+    expect(await refusal(prepareFreightCopy(freightInput(truck, { costDate: '1655-12-31' })))).toMatchObject({
       code: 'freight_zone_unpriced',
-      params: { column: ZONE.main, date: '1636-12-31' },
+      params: { column: ZONE.main, date: '1655-12-31' },
     });
 
     const Wg = await mintWarehouse(`FG${RUN}`.slice(0, 8), 'CN');

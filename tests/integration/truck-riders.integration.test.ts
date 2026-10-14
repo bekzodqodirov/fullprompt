@@ -66,8 +66,10 @@ import { wholeLedger } from '../fixtures/money-actor';
  * the real report functions, because each defect here was two correct halves
  * that disagreed about membership.
  *
- * Money lives in 1637 (no other file's period; each block its own month, so
- * a block's P&L is that block's entries), cargo in five private warehouses.
+ * Money lives in 1662, a year no other file names (it was 1637, which five
+ * other files share — and this file reads whole months and its afterAll
+ * deletes its whole year). Each block its own month, so a block's P&L is
+ * that block's entries; cargo in five private warehouses.
  * Trucks depart TODAY (the doors stamp now()), so the truck report is read
  * for today and filtered to this file's trucks.
  */
@@ -268,13 +270,13 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  // Money first (all of it in 1637, all of it this file's), then the
+  // Money first (all of it in 1662, all of it this file's), then the
   // configuration: a warehouse an audited action touched is DEACTIVATED,
   // never deleted (audit_log FK). The cargo stays, as in m4-unload.
   if (madeClients.length) {
     await db.delete(clientTransactions).where(inArray(clientTransactions.clientId, madeClients));
   }
-  await db.execute(sql`DELETE FROM cost_entries WHERE cost_date BETWEEN '1637-01-01' AND '1637-12-31'`);
+  await db.execute(sql`DELETE FROM cost_entries WHERE cost_date BETWEEN '1662-01-01' AND '1662-12-31'`);
   // An empty forming truck would sit on the board for ever.
   if (formingId) await db.delete(batches).where(and(eq(batches.id, formingId), eq(batches.status, 'forming')));
   await db.update(warehouses).set({ active: false }).where(inArray(warehouses.id, Object.values(W).filter(Boolean)));
@@ -292,18 +294,18 @@ describe('U16 — an allocation counts on exactly one priced truck', () => {
   it('Yiwu → Andijan then Andijan → Tashkent: the first truck carries the whole road, the second none', async () => {
     const x = await mkClient('X');
     const p = await mkLot(x, 2, 50, W.yw);
-    await cost({ scope: 'receipt', receiptId: p.receiptId, amount: 40, day: '1637-03-01' });
+    await cost({ scope: 'receipt', receiptId: p.receiptId, amount: 40, day: '1662-03-01' });
     const t1 = await truck([{ lotId: p.lotId, take: 2 }], p.codes, W.yw, W.and);
-    await cost({ scope: 'batch', batchId: t1.id, amount: 400, day: '1637-03-02' });
-    await charge(x, t1.id, 700, '1637-03-05');
+    await cost({ scope: 'batch', batchId: t1.id, amount: 400, day: '1662-03-02' });
+    await charge(x, t1.id, 700, '1662-03-05');
     await unload(t1.id, p.codes);
     await finishUnload(t1.id, ctx());
 
     const t2 = await truck([{ lotId: p.lotId, take: 2 }], p.codes, W.and, W.tas);
-    await cost({ scope: 'batch', batchId: t2.id, amount: 60, day: '1637-03-06' });
+    await cost({ scope: 'batch', batchId: t2.id, amount: 60, day: '1662-03-06' });
     // A price somebody typed on the Uzbek leg anyway (the gate says it covers
     // nothing, and the page asks first): it never moves cost between trucks.
-    await charge(x, t2.id, 100, '1637-03-07');
+    await charge(x, t2.id, 100, '1662-03-07');
 
     const rows = await truckRows();
     expect(rows.get(t1.id)).toMatchObject({
@@ -330,24 +332,24 @@ describe('U16 — an allocation counts on exactly one priced truck', () => {
 
     // Disjoint rows: the priced trucks add up to the money spent, once.
     expect(cents(rows.get(t1.id)!.costUsd + rows.get(t2.id)!.costUsd)).toBe(
-      await directTotal('1637-03-01', '1637-03-31'),
+      await directTotal('1662-03-01', '1662-03-31'),
     );
   });
 
   it('internal → export → Uzbek leg: the export carries the Chinese money AND the Uzbek leg', async () => {
     const w = await mkClient('W');
     const lot = await mkLot(w, 1, 10, W.yw);
-    await cost({ scope: 'receipt', receiptId: lot.receiptId, amount: 5, day: '1637-02-01' });
+    await cost({ scope: 'receipt', receiptId: lot.receiptId, amount: 5, day: '1662-02-01' });
     const inner = await truck([{ lotId: lot.lotId, take: 1 }], lot.codes, W.yw, W.ka);
-    await cost({ scope: 'batch', batchId: inner.id, amount: 30, day: '1637-02-02' });
+    await cost({ scope: 'batch', batchId: inner.id, amount: 30, day: '1662-02-02' });
     await unload(inner.id, lot.codes);
     await finishUnload(inner.id, ctx());
     const across = await truck([{ lotId: lot.lotId, take: 1 }], lot.codes, W.ka, W.and);
-    await cost({ scope: 'batch', batchId: across.id, amount: 100, day: '1637-02-03' });
+    await cost({ scope: 'batch', batchId: across.id, amount: 100, day: '1662-02-03' });
     await unload(across.id, lot.codes);
     await finishUnload(across.id, ctx());
     const uzLeg = await truck([{ lotId: lot.lotId, take: 1 }], lot.codes, W.and, W.tas);
-    await cost({ scope: 'batch', batchId: uzLeg.id, amount: 7, day: '1637-02-04' });
+    await cost({ scope: 'batch', batchId: uzLeg.id, amount: 7, day: '1662-02-04' });
 
     const rows = await truckRows();
     expect(rows.get(inner.id)).toMatchObject({ internal: true, costUsd: 35, profitUsd: null });
@@ -358,7 +360,7 @@ describe('U16 — an allocation counts on exactly one priced truck', () => {
     expect(tripKind(rows.get(uzLeg.id)!)).toBe('continuation');
     // The internal row stays out of the totals (R2a); the priced ones are the P&L.
     expect(cents(rows.get(across.id)!.costUsd + rows.get(uzLeg.id)!.costUsd)).toBe(
-      await directTotal('1637-02-01', '1637-02-28'),
+      await directTotal('1662-02-01', '1662-02-28'),
     );
   });
 });
@@ -369,8 +371,8 @@ describe('«keyingi yo‘l» — a carton’s whole road on the truck that bears
     const walkIn = await mkClient('I');
     const c = await mkLot(china, 1, 10, W.yw);
     const t1 = await truck([{ lotId: c.lotId, take: 1 }], c.codes, W.yw, W.and);
-    await cost({ scope: 'batch', batchId: t1.id, amount: 100, day: '1637-01-10' });
-    await charge(china, t1.id, 300, '1637-01-11');
+    await cost({ scope: 'batch', batchId: t1.id, amount: 100, day: '1662-01-10' });
+    await charge(china, t1.id, 300, '1662-01-11');
     await unload(t1.id, c.codes);
     await finishUnload(t1.id, ctx());
 
@@ -386,7 +388,7 @@ describe('«keyingi yo‘l» — a carton’s whole road on the truck that bears
       W.and,
       W.tas,
     );
-    await cost({ scope: 'batch', batchId: t2.id, amount: 60, day: '1637-01-12' });
+    await cost({ scope: 'batch', batchId: t2.id, amount: 60, day: '1662-01-12' });
 
     // Still loading: nothing moves yet — a planned carton can still be left
     // behind (Q21). The price door already warns (`follows`).
@@ -410,14 +412,14 @@ describe('«keyingi yo‘l» — a carton’s whole road on the truck that bears
     await unload(t2.id, [...c.codes, ...i.codes]);
     await finishUnload(t2.id, ctx());
     const t3 = await truck([{ lotId: c.lotId, take: 1 }], c.codes, W.tas, W.tas2);
-    await cost({ scope: 'batch', batchId: t3.id, amount: 20, day: '1637-01-13' });
+    await cost({ scope: 'batch', batchId: t3.id, amount: 20, day: '1662-01-13' });
     rows = await truckRows();
     expect(rows.get(t1.id)).toMatchObject({ costUsd: 150, laterUsd: 50, profitUsd: 150 });
     expect(rows.get(t3.id)).toMatchObject({ continuation: true, costUsd: 0 });
 
     // One truck per dollar: the three rows are these days' direct cost.
     expect(cents(rows.get(t1.id)!.costUsd + rows.get(t2.id)!.costUsd + rows.get(t3.id)!.costUsd)).toBe(
-      await directTotal('1637-01-10', '1637-01-13'),
+      await directTotal('1662-01-10', '1662-01-13'),
     );
     // The screens' names for it, per lot: the China lot follows the first
     // truck on both Uzbek legs, the walk-in follows nobody, and the first
@@ -439,19 +441,19 @@ describe('«keyingi yo‘l» — a carton’s whole road on the truck that bears
     const k = await mkClient('K');
     const lot = await mkLot(k, 1, 10, W.yw);
     const t1 = await truck([{ lotId: lot.lotId, take: 1 }], lot.codes, W.yw, W.and);
-    await cost({ scope: 'batch', batchId: t1.id, amount: 100, day: '1637-01-20' });
+    await cost({ scope: 'batch', batchId: t1.id, amount: 100, day: '1662-01-20' });
     await unload(t1.id, lot.codes);
     await finishUnload(t1.id, ctx());
     const t2 = await truck([{ lotId: lot.lotId, take: 1 }], lot.codes, W.and, W.tas);
-    await cost({ scope: 'batch', batchId: t2.id, amount: 20, day: '1637-01-21' });
+    await cost({ scope: 'batch', batchId: t2.id, amount: 20, day: '1662-01-21' });
     await unload(t2.id, lot.codes);
     await finishUnload(t2.id, ctx());
     const t3 = await truck([{ lotId: lot.lotId, take: 1 }], lot.codes, W.tas, W.kg);
-    await cost({ scope: 'batch', batchId: t3.id, amount: 300, day: '1637-01-22' });
+    await cost({ scope: 'batch', batchId: t3.id, amount: 300, day: '1662-01-22' });
     await unload(t3.id, lot.codes);
     await finishUnload(t3.id, ctx());
     const t4 = await truck([{ lotId: lot.lotId, take: 1 }], lot.codes, W.kg, W.kg2);
-    await cost({ scope: 'batch', batchId: t4.id, amount: 7, day: '1637-01-23' });
+    await cost({ scope: 'batch', batchId: t4.id, amount: 7, day: '1662-01-23' });
 
     const rows = await truckRows();
     expect(rows.get(t1.id)).toMatchObject({ costUsd: 120, laterUsd: 20, continuation: false });
@@ -461,7 +463,7 @@ describe('«keyingi yo‘l» — a carton’s whole road on the truck that bears
     expect(rows.get(t4.id)!.carriers.map((row) => row.code)).toEqual([t3.code]);
     expect(rows.get(t2.id)!.carriers.map((row) => row.code)).toEqual([t1.code]);
     const sum = cents([t1, t2, t3, t4].reduce((acc, t) => acc + rows.get(t.id)!.costUsd, 0));
-    expect(sum).toBe(await directTotal('1637-01-20', '1637-01-23'));
+    expect(sum).toBe(await directTotal('1662-01-20', '1662-01-23'));
   });
 });
 
@@ -481,7 +483,7 @@ describe('U17 — a carton scanned onto a truck but found back at its origin nev
     const z = await mkClient('PZ');
     const p = await mkLot(x, 2, 50, W.yw);
     const q = await mkLot(y, 3, 100, W.yw);
-    await cost({ scope: 'receipt', receiptId: p.receiptId, amount: 40, day: '1637-04-01' });
+    await cost({ scope: 'receipt', receiptId: p.receiptId, amount: 40, day: '1662-04-01' });
     const a = await truck(
       [
         { lotId: p.lotId, take: 2 },
@@ -491,8 +493,8 @@ describe('U17 — a carton scanned onto a truck but found back at its origin nev
       W.yw,
       W.tas,
     );
-    const freight = await cost({ scope: 'batch', batchId: a.id, amount: 3500, day: '1637-04-02' });
-    const customs = await cost({ scope: 'batch', batchId: a.id, amount: 700, day: '1637-04-02', typeId: customsTypeId });
+    const freight = await cost({ scope: 'batch', batchId: a.id, amount: 3500, day: '1662-04-02' });
+    const customs = await cost({ scope: 'batch', batchId: a.id, amount: 700, day: '1662-04-02', typeId: customsTypeId });
     // P2 physically stayed in Yiwu: the truck arrives without it.
     await unload(a.id, [p.codes[0]!, ...q.codes]);
     const fin = await finishUnload(a.id, ctx(), { mayCloseWithMissing: true });
@@ -526,7 +528,7 @@ describe('U17 — a carton scanned onto a truck but found back at its origin nev
       W.yw,
       W.tas,
     );
-    await cost({ scope: 'batch', batchId: b.id, amount: 1000, day: '1637-04-03' });
+    await cost({ scope: 'batch', batchId: b.id, amount: 1000, day: '1662-04-03' });
     // P2: its receipt 20 + A's customs 87.5 + B's freight 500 (no A freight).
     expect((await boxLandedCost(p.boxIds[1]!)).totalUsd).toBe(607.5);
     expect((await boxLandedCost(p.boxIds[0]!)).totalUsd).toBe(607.5);
@@ -541,7 +543,7 @@ describe('U17 — a carton scanned onto a truck but found back at its origin nev
     const aCode = (await db.select({ code: batches.code }).from(batches).where(eq(batches.id, a.id)))[0]!.code;
     expect((await batchClientCostBreakdown(b.id)).get(x)!.find((part) => part.source === aCode)!.usd).toBe(87.5);
     // Nothing counted twice: the priced trucks are the P&L.
-    expect(cents(rows.get(a.id)!.costUsd + rows.get(b.id)!.costUsd)).toBe(await directTotal('1637-04-01', '1637-04-30'));
+    expect(cents(rows.get(a.id)!.costUsd + rows.get(b.id)!.costUsd)).toBe(await directTotal('1662-04-01', '1662-04-30'));
 
     // Data written before the rule: the old base left A's freight on P2.
     await db.insert(costAllocations).values({ costEntryId: freight.id, boxId: p.boxIds[1]!, clientId: x, amountUsd: '437.5' });
@@ -571,7 +573,7 @@ describe('U17 — a carton scanned onto a truck but found back at its origin nev
       W.yw,
       W.tas,
     );
-    const freight = await cost({ scope: 'batch', batchId: a.id, amount: 3500, day: '1637-05-02' });
+    const freight = await cost({ scope: 'batch', batchId: a.id, amount: 3500, day: '1662-05-02' });
     expect(await allocated(freight.id, p.boxIds[1]!)).toBeCloseTo(437.5, 2);
     await acceptFoundBox({ warehouseId: W.yw, code: p.codes[1]! }, ctx());
     await unload(a.id, [p.codes[0]!, ...q.codes]);
@@ -588,7 +590,7 @@ describe('U17 — a carton scanned onto a truck but found back at its origin nev
       {
         batchId: a.id,
         currency: 'USD',
-        costDate: '1637-05-04',
+        costDate: '1662-05-04',
         cells: [
           { receiptId: p.receiptId, costTypeId: customsTypeId, amount: 100 },
           { receiptId: p.receiptId, costTypeId, amount: 60 },
@@ -610,7 +612,7 @@ describe('U17 — a carton scanned onto a truck but found back at its origin nev
     const m = await mkClient('MX');
     const lot = await mkLot(m, 3, 50, W.yw);
     const a = await truck([{ lotId: lot.lotId, take: 3 }], lot.codes, W.yw, W.tas);
-    const freight = await cost({ scope: 'batch', batchId: a.id, amount: 150, day: '1637-05-03' });
+    const freight = await cost({ scope: 'batch', batchId: a.id, amount: 150, day: '1662-05-03' });
     // In transit to Tashkent, found standing in the other Tashkent warehouse:
     // that proves nothing about the road.
     await acceptFoundBox({ warehouseId: W.tas2, code: lot.codes[2]! }, ctx());
@@ -638,7 +640,7 @@ describe('U25 — a carton that rode without a load scan is that truck\'s cargo'
       W.yw,
       W.tas,
     );
-    const freight = await cost({ scope: 'batch', batchId: e.id, amount: 3000, day: '1637-06-02' });
+    const freight = await cost({ scope: 'batch', batchId: e.id, amount: 3000, day: '1662-06-02' });
     const acks = await unload(e.id, [...lv.codes, lu.codes[0]!]);
     expect(acks.map((ack) => ack.result)).toEqual(['ok', 'ok', 'ok', 'auto_transfer']);
     await finishUnload(e.id, ctx());
@@ -668,7 +670,7 @@ describe('U18 — a grid cell is its truck\'s part of the prixod', () => {
       [second.id, 100],
     ] as const) {
       const result = await addReceiptCostsBulk(
-        { batchId, currency: 'USD', costDate: '1637-07-02', cells: [{ receiptId: lot.receiptId, costTypeId, amount }] },
+        { batchId, currency: 'USD', costDate: '1662-07-02', cells: [{ receiptId: lot.receiptId, costTypeId, amount }] },
         ctx(),
       );
       expect(result.error).toBeNull();
@@ -680,7 +682,7 @@ describe('U18 — a grid cell is its truck\'s part of the prixod', () => {
     expect(secondLot).toMatchObject({ totalUsd: 100, batchUsd: 100 });
     const rows = await truckRows();
     expect(cents(rows.get(first.id)!.costUsd + rows.get(second.id)!.costUsd)).toBe(
-      await directTotal('1637-07-01', '1637-07-31'),
+      await directTotal('1662-07-01', '1662-07-31'),
     );
   });
 
@@ -689,7 +691,7 @@ describe('U18 — a grid cell is its truck\'s part of the prixod', () => {
     const lot = await mkLot(c, 3, 10, W.yw);
     const z = await loadTruck([{ lotId: lot.lotId, take: 3 }], lot.codes.slice(0, 2), W.yw, W.tas);
     await addReceiptCostsBulk(
-      { batchId: z.id, currency: 'USD', costDate: '1637-08-02', cells: [{ receiptId: lot.receiptId, costTypeId, amount: 90 }] },
+      { batchId: z.id, currency: 'USD', costDate: '1662-08-02', cells: [{ receiptId: lot.receiptId, costTypeId, amount: 90 }] },
       ctx(),
     );
     await finishLoading(z.id, ctx()); // the third box is short-loaded
@@ -708,13 +710,13 @@ describe('U18 — a grid cell is its truck\'s part of the prixod', () => {
     const lot = await mkLot(c, 1, 10, W.yw);
     const inner = await truck([{ lotId: lot.lotId, take: 1 }], lot.codes, W.yw, W.ka);
     await addReceiptCostsBulk(
-      { batchId: inner.id, currency: 'USD', costDate: '1637-08-03', cells: [{ receiptId: lot.receiptId, costTypeId, amount: 40 }] },
+      { batchId: inner.id, currency: 'USD', costDate: '1662-08-03', cells: [{ receiptId: lot.receiptId, costTypeId, amount: 40 }] },
       ctx(),
     );
     await unload(inner.id, lot.codes);
     await finishUnload(inner.id, ctx());
     const across = await truck([{ lotId: lot.lotId, take: 1 }], lot.codes, W.ka, W.and);
-    await cost({ scope: 'batch', batchId: across.id, amount: 100, day: '1637-08-04' });
+    await cost({ scope: 'batch', batchId: across.id, amount: 100, day: '1662-08-04' });
     expect((await truckRows()).get(across.id)).toMatchObject({ costUsd: 140, prevUsd: 40 });
   });
 });
@@ -735,7 +737,7 @@ describe('U35 — the pricing screen says which cartons did not arrive', () => {
       W.yw,
       W.tas,
     );
-    await cost({ scope: 'batch', batchId: t.id, amount: 1400, day: '1637-09-02' });
+    await cost({ scope: 'batch', batchId: t.id, amount: 1400, day: '1662-09-02' });
     // In transit, nobody is missing yet.
     expect((await batchLots(t.id)).every((lot) => lot.missingCount === 0)).toBe(true);
     await unload(t.id, [...a.codes, b.codes[0]!, b.codes[1]!, c.codes[0]!]);
@@ -765,7 +767,7 @@ describe('U35 — the pricing screen says which cartons did not arrive', () => {
 
 describe('U37 — cost on cargo that rode no priced truck is named', () => {
   it('lost at the origin, returned, handed over locally, still waiting: the trucks plus the four parts are the P&L', async () => {
-    const day = '1637-10-02';
+    const day = '1662-10-02';
     const ca = await mkClient('NA');
     const la = await mkLot(ca, 10, 10, W.yw);
     await cost({ scope: 'receipt', receiptId: la.receiptId, amount: 100, day });
@@ -789,18 +791,18 @@ describe('U37 — cost on cargo that rode no priced truck is named', () => {
       wholeLedger(actorId),
     );
 
-    const unbatched = await unbatchedMoney('1637-10-01', '1637-10-31');
+    const unbatched = await unbatchedMoney('1662-10-01', '1662-10-31');
     expect(unbatched.noTruckCost).toEqual({ lostUsd: 10, issuedUsd: 80, waitingUsd: 10 });
     const truckCost = (await truckRows()).get(t.id)!.costUsd;
     expect(truckCost).toBe(880);
     const parts = unbatched.noTruckCost;
     expect(cents(truckCost + parts.lostUsd + parts.issuedUsd + parts.waitingUsd)).toBe(
-      await directTotal('1637-10-01', '1637-10-31'),
+      await directTotal('1662-10-01', '1662-10-31'),
     );
     // The download says it too, as a TEXT note under the table (the screen
     // and its file must not disagree, #532d).
     const L = reportLabels('uz');
-    const file = await sheetRows(await buildProfitXlsx('batch', '1637-10-01', '1637-10-31', 'uz'));
+    const file = await sheetRows(await buildProfitXlsx('batch', '1662-10-01', '1662-10-31', 'uz'));
     expect(
       file.some(
         (row) =>
@@ -814,9 +816,9 @@ describe('U37 — cost on cargo that rode no priced truck is named', () => {
 
 describe('U19 — «Mijoz foydasi» reconciles to the P&L', () => {
   it('names unclaimed cargo and money that reached no box, and the unclaimed half follows a claim', async () => {
-    const day = '1637-11-02';
-    const from = '1637-11-01';
-    const to = '1637-11-30';
+    const day = '1662-11-02';
+    const from = '1662-11-01';
+    const to = '1662-11-30';
     const x = await mkClient('CX');
     const y = await mkClient('CY');
     const lx = await mkLot(x, 1, 50, W.yw);
