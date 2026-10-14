@@ -61,7 +61,7 @@ function splitView(verdict: PoolVerdict, money: boolean): SplitView {
     label: g.label,
     m3: g.m3,
     density: g.density,
-    band: g.band,
+    band: money ? g.band : { min: g.band.min, max: g.band.max, perKg: g.band.perKg },
     share: g.share,
     lightLots: g.lightLots,
     ...(money ? { ratePerM3: g.ratePerM3 } : {}),
@@ -69,10 +69,21 @@ function splitView(verdict: PoolVerdict, money: boolean): SplitView {
   return { kind: 'split', groups };
 }
 
-/** One bill's view of its own copy over its own truck's cargo (amount 1: shares only). */
-function viewOf(measures: BoxMeasure[], copy: FreightCopy | 'missing' | 'invalid', money: boolean): SplitView {
+/**
+ * One bill's view of its own copy over its own truck's cargo (amount 1:
+ * shares only). `customs` is the recompute's own flag for a SAVED bill (a type
+ * that became customs holds it — review of the round: the fold drew a tariff
+ * split under an ⚠ chip); a preview's version is drawn for whichever type the
+ * person picks, and the panel never offers freight on a customs one.
+ */
+function viewOf(
+  measures: BoxMeasure[],
+  copy: FreightCopy | 'missing' | 'invalid',
+  money: boolean,
+  customs = false,
+): SplitView {
   return splitView(
-    costPool({ allocationBasis: 'freight', clientId: null, amountUsd: 1 }, measures, 1, { copy, customs: false }),
+    costPool({ allocationBasis: 'freight', clientId: null, amountUsd: 1 }, measures, 1, { copy, customs }),
     money,
   );
 }
@@ -130,14 +141,21 @@ export async function freightOffer(
  * by the largest remainder so the fold adds up to the bill (M7).
  */
 export async function explainFreightBills(
-  bills: { id: string; batchId: string | null; allocationBasis: string; amountUsd: string | null; hasShare: boolean }[],
+  bills: {
+    id: string;
+    batchId: string | null;
+    costTypeId: string;
+    allocationBasis: string;
+    amountUsd: string | null;
+    hasShare: boolean;
+  }[],
   actor: { permissions: ReadonlySet<string> },
 ): Promise<Map<string, FreightRowView>> {
   const out = new Map<string, FreightRowView>();
   const freight = bills.filter((b) => b.allocationBasis === 'freight' && b.batchId);
   if (freight.length === 0) return out;
   const money = freightMoneySight(actor.permissions);
-  const copies = await freightCopiesFor(freight.map((b) => b.id));
+  const [copies, customsIds] = await Promise.all([freightCopiesFor(freight.map((b) => b.id)), customsCostTypeIds()]);
   const whIds = [...new Set([...copies.values()].flatMap((c) => (typeof c === 'object' ? [c.warehouseId] : [])))];
   const whCodes = new Map(
     whIds.length
@@ -168,7 +186,7 @@ export async function explainFreightBills(
   }
   for (const bill of freight) {
     const copy = copies.get(bill.id) ?? 'missing';
-    const view = viewOf(measuresByTruck.get(bill.batchId!) ?? [], copy, money);
+    const view = viewOf(measuresByTruck.get(bill.batchId!) ?? [], copy, money, customsIds.includes(bill.costTypeId));
     let allocatedUsd: Record<string, number> | undefined;
     const sums = allocated.get(bill.id);
     if (money && sums && bill.amountUsd !== null) {
@@ -214,6 +232,7 @@ async function explainFreightEntries(
     .select({
       id: costEntries.id,
       batchId: costEntries.batchId,
+      costTypeId: costEntries.costTypeId,
       allocationBasis: costEntries.allocationBasis,
       amountUsd: costEntries.amountUsd,
       hasShare: sql<boolean>`EXISTS (SELECT 1 FROM cost_allocations ca WHERE ca.cost_entry_id = ${costEntries}.id)`,

@@ -309,9 +309,6 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
   // line says «to'liq emas» instead of a figure that silently shrank.
   const carriedFor = (clientId: string, leg: CarriedUnsplit['leg']) =>
     carried.some((row) => row.leg === leg && row.clientIds.includes(clientId));
-  // «Not arrived yet» would be false about a later leg whose bill EXISTS
-  // and is held: the open-cargo sentence stands down, the ⚠ says what it is.
-  const laterHeld = carried.some((row) => row.leg === 'later');
   const { totals } = view;
   // A truck nobody has priced has no margin: −tannarx in red read as a trip
   // that LOST money; a «davomi» has nothing to price at all.
@@ -617,8 +614,12 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
             </p>
           )}
           {/* His 2a: the figure grows when the next leg's bill arrives, and
-              the page says so while the cargo is not all handed over. */}
-          {full && !internal && !continuation && !laterHeld && batch.departedAt && carriage && carriage.open > 0 && (
+              the page says so while the cargo is not all handed over. It
+              stays beside a held later-leg bill (review of the round): the
+              figure still grows — when that bill splits — and the sentence is
+              the only word about cartons that never rode that leg; the ⚠
+              line below names the held bill itself. */}
+          {full && !internal && !continuation && batch.departedAt && carriage && carriage.open > 0 && (
             <p className={`${full ? 'col-span-3' : ''} text-xs text-ink-500`} data-testid="pricing-open-cargo">
               {t('openCargo', { n: carriage.open })}
             </p>
@@ -652,9 +653,12 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
               className="col-span-3 text-xs font-semibold text-warn"
               data-testid="pricing-unsplit-carried"
             >
-              {row.usd !== null
-                ? t('unsplitCarried', { code: row.code, usd: money(row.usd), leg: legWords[row.leg] })
-                : t('unsplitCarriedNoRate', { code: row.code, n: row.unconverted, leg: legWords[row.leg] })}
+              {/* Both, when a feeding truck has held dollars AND bills with
+                  no rate: neither is in the tannarx (review of the round). */}
+              {row.usd !== null && t('unsplitCarried', { code: row.code, usd: money(row.usd), leg: legWords[row.leg] })}
+              {row.usd !== null && row.unconverted > 0 && ' '}
+              {row.unconverted > 0 &&
+                t('unsplitCarriedNoRate', { code: row.code, n: row.unconverted, leg: legWords[row.leg] })}
               {costDoor &&
                 mayOpenBatchCard(actor, {
                   originWarehouseId: row.originWarehouseId,

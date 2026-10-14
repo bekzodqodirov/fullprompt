@@ -138,6 +138,9 @@ export const AUDIT_FIELD_LABELS: Record<string, string> = {
   allocationBasis: 'allocationBasis',
   tariffZone: 'tariffZone',
   tariffFrom: 'tariffFrom',
+  // The frozen rows themselves, as one line — so a same-date re-freeze of new
+  // prices (zone and date unchanged) is a visible change, not an empty one.
+  tariffBands: 'tariffBands',
 
   // Housekeeping
   note: 'note',

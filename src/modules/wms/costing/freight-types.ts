@@ -119,13 +119,25 @@ export interface TypeFlags {
   customsTypeIds: string[];
 }
 
+/**
+ * A band as a page may send it: the price only under money sight (review of
+ * the round — `ratePerM3` was stripped while the band carried the same number
+ * to every VED's and logist's browser in the page payload).
+ */
+export interface BandView {
+  min: number;
+  max: number | null;
+  perKg: boolean;
+  price?: number;
+}
+
 /** One client group as the browser draws it (money only under full sight). */
 export interface GroupView {
   key: string;
   label: string;
   m3: number;
   density: number;
-  band: FreightBandCopy;
+  band: BandView;
   share: number;
   ratePerM3?: number;
   lightLots: HeldLot[];
@@ -195,8 +207,19 @@ export interface RebasePreview {
   seen: string;
   money: boolean;
   unconverted: boolean;
-  rows: { key: string; label: string; beforePct: number; afterPct: number; beforeUsd?: number; afterUsd?: number }[];
+  rows: {
+    key: string;
+    label: string;
+    beforePct: number;
+    afterPct: number;
+    beforeUsd?: number;
+    afterUsd?: number;
+    /** The tariff row a freight target puts the group in (price only under money sight). */
+    band?: BandView;
+  }[];
   /** The after state when it would be HELD (shown, and allowed). */
   held?: FreightHeld;
+  /** The target lands the bill on NO carton over a base that has cartons (no such measure). */
+  nowhere?: boolean;
   column?: { warehouseCode: string; zone: string; tariffFrom: string; previousZone: string | null };
 }

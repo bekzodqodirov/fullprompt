@@ -863,7 +863,8 @@
       "itemCount": "商品行数",
       "allocationBasis": "分摊方式",
       "tariffZone": "价目表栏",
-      "tariffFrom": "价目表日期"
+      "tariffFrom": "价目表日期",
+      "tariffBands": "价目表各行"
     }
   },
   "profile": {
@@ -1346,7 +1347,7 @@
     "freightOptNoColumn": "（未设置价目表栏）",
     "freightOptUnpriced": "（无价格）",
     "freightOptProblem": "（价目表不完整）",
-    "freightDropped": "所选方式不适用于该类型或日期——将按「{basis}」分摊。",
+    "freightDropped": "所选方式不适用于该类型或日期——将{basis}分摊。",
     "freightOffServerBehind": "服务器尚未更新——暂不能按运费价目表分摊，将按重量分摊。",
     "freightOffNoColumn": "仓库 {warehouse} 未设置运费价目表栏——将按重量分摊。",
     "freightOffUnpriced": "仓库 {warehouse} 的 {column} 栏在 {date} 没有价格——将按重量分摊。",
@@ -1389,7 +1390,8 @@
     "errRebaseSame": "此费用已按此方式和此价目分摊。",
     "errRebaseDirect": "此按钮不能改为「直接给客户」— 请作废后重新录入。",
     "errRebaseBatchOnly": "此费用来自入库表格 — 其分摊方式不变。只能在车辆自己的费用上选择方式。",
-    "costSigmaUnsplit": "· 其中 {usd} 未分摊"
+    "costSigmaUnsplit": "· 其中 {usd} 未分摊",
+    "rebaseNowhere": "按此方式，费用不会分摊到任何箱子（货物未记录该度量）——不计入任何人的成本。"
   },
   "batchCard": {
     "tabLoading": "装车",
@@ -2380,7 +2382,8 @@
     "balSellerCommissionsUnknown": "销售提成：{n} 项业务的货款未能及时核对——最多 ${usd}，未计入此行，也未计入净头寸",
     "unsplitHeading": "费用未分摊到货物的车次——包括未标记为批次的车辆",
     "unsplitShowAll": "← 完整的「批次利润」表",
-    "balUnpricedFreightHeld": "{count, plural, other {# 笔运费}}（${usd}）尚未按运价分摊到车辆货物——修正批次或通过「分摊方式」后计入，在此之前会降低净头寸；请勿作废。"
+    "balUnpricedFreightHeld": "{count, plural, other {# 笔运费}}（${usd}）尚未按运价分摊到车辆货物——修正批次或通过「分摊方式」后计入，在此之前会降低净头寸；请勿作废。",
+    "unsplitForming": "尚未出发的车辆（表格只列出已出发的车辆，因此不在表中）："
   },
   "lidChat": {
     "mark": "线索",

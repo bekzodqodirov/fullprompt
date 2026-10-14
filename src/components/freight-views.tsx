@@ -35,7 +35,9 @@ function LotLines({ lots }: { lots: HeldLot[] }) {
     <ul className="ml-4 list-disc">
       {lots.slice(0, MORE_AFTER).map((lot) => (
         <li key={lot.lotId} className="min-w-0 break-words">
-          <a className="underline" href={`/receipts/${lot.receiptId}`}>
+          {/* A new tab: in the preview a same-tab click threw the typed
+              amount and note away (the fix links' own rule, SP-5). */}
+          <a className="underline" href={`/receipts/${lot.receiptId}`} target="_blank" rel="noopener">
             {t('freightHeldLot', { lot: lot.label, density: lot.density ?? '—' })}
           </a>
         </li>
@@ -55,7 +57,7 @@ export function FreightHeldLines({ held, limit }: { held: FreightHeld; limit: nu
     <div className="space-y-1">
       {held.measureMissing.slice(0, MORE_AFTER).map((lot) => (
         <p key={lot.lotId} className="min-w-0 break-words">
-          <a className="underline" href={`/receipts/${lot.receiptId}`}>
+          <a className="underline" href={`/receipts/${lot.receiptId}`} target="_blank" rel="noopener">
             {t('freightHeldMeasure', { lot: lot.label })}
           </a>
         </p>
@@ -106,6 +108,7 @@ export function FreightGroupRows({
   limit,
   cents,
   testid = 'freight-row',
+  saved = false,
 }: {
   view: SplitView;
   money: boolean;
@@ -116,6 +119,8 @@ export function FreightGroupRows({
   /** The allocations' own cents per group key (a saved bill). */
   cents?: Record<string, number>;
   testid?: string;
+  /** A SAVED bill's fold: a held one «was saved and not split», not «will be». */
+  saved?: boolean;
 }) {
   const t = useTranslations('costing');
   const band = useBand();
@@ -123,7 +128,7 @@ export function FreightGroupRows({
   if (view.kind === 'held') {
     return (
       <div className="text-sm text-warn" data-testid="freight-preview-held">
-        <p className="font-semibold">{t('freightPreviewHeld')}</p>
+        <p className="font-semibold">{t(saved ? 'freightHeldTitle' : 'freightPreviewHeld')}</p>
         <FreightHeldLines held={view.held} limit={limit} />
       </div>
     );

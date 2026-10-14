@@ -69,18 +69,27 @@ export async function liveFreightBills(): Promise<FreightBillRow[]> {
  * `reason: 'rollback'` and no actor, then the split). One bill's failure is
  * named and the rest still run, so a rerun is known to be owed.
  */
-export async function rollbackFreightBills(ids: string[]): Promise<{ done: number; skipped: number; failed: { id: string; message: string }[] }> {
+export async function rollbackFreightBills(ids: string[]): Promise<{
+  done: number;
+  skipped: number;
+  failed: { id: string; message: string }[];
+  /** Each moved bill and how its weight split came out — a «pending» or «nothing» one is named, never counted silently. */
+  splits: { id: string; split: string | null }[];
+}> {
   let done = 0;
   let skipped = 0;
   const failed: { id: string; message: string }[] = [];
+  const splits: { id: string; split: string | null }[] = [];
   for (const id of ids) {
     try {
-      const moved = await rollbackFreightBill(id, { actorId: null, ip: null, userAgent: 'freight-to-weight' });
-      if (moved === 'saved') done += 1;
-      else skipped += 1;
+      const result = await rollbackFreightBill(id, { actorId: null, ip: null, userAgent: 'freight-to-weight' });
+      if (result.moved === 'saved') {
+        done += 1;
+        splits.push({ id, split: result.split });
+      } else skipped += 1;
     } catch (err) {
       failed.push({ id, message: err instanceof Error ? err.message : String(err) });
     }
   }
-  return { done, skipped, failed };
+  return { done, skipped, failed, splits };
 }

@@ -106,7 +106,7 @@ export default async function BatchCostGridPage({ params }: { params: Promise<{ 
         <CostPanel
           scope="batch"
           targetId={batch.id}
-          entries={costSheet.entries.map(({ entry, typeName, clientCode, partnerName, partnerIsStaff, accountName }) => ({
+          entries={costSheet.entries.map(({ entry, hasShare, typeName, clientCode, partnerName, partnerIsStaff, accountName }) => ({
             id: entry.id,
             typeName,
             amount: entry.amount,
@@ -120,6 +120,8 @@ export default async function BatchCostGridPage({ params }: { params: Promise<{ 
             // A truck's own bill; the per-prixod grid's stamped cells are not (E2).
             rebasable: entry.scope === 'batch',
             costTypeId: entry.costTypeId,
+            // Converted and on no box — any basis (`noShareSql`), the row the todo counts.
+            unsplit: entry.amountUsd !== null && !hasShare,
             ...payerView(actor.permissions, { partnerName, partnerIsStaff }),
             ...tillView(actor.permissions, { accountId: entry.accountId, accountName, mergedExpenseId: entry.mergedExpenseId }),
           }))}

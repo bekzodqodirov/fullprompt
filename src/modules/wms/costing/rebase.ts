@@ -8,8 +8,8 @@ import type { AllocationBasis } from './engine';
 import { CostError } from './errors';
 import { copyDigest, freightCopyFor, prepareFreightCopy, replaceFreightCopyInTx } from './freight-copy';
 import { freightMoneySight } from './freight-offer';
-import { splitCents } from './freight-split';
-import type { FreightCopy, FreightCopyDraft, RebasePreview, RecomputeVerdict } from './freight-types';
+import { bandsSummary, splitCents } from './freight-split';
+import type { BandView, FreightCopy, FreightCopyDraft, RebasePreview, RecomputeVerdict } from './freight-types';
 import { costPool } from './pool';
 import { boxMeasures, recomputeEntry, scopeBoxIds } from './service';
 
@@ -46,9 +46,20 @@ const digestOf = (copy: FromCopy | FreightCopyDraft | null): string =>
  * and the after state, to the hundredth of a percent. A remap, a band edit or
  * a carton boarding between the preview and the press changes it.
  */
-function tokenOf(entryId: string, fromBasis: string, fromCopy: FromCopy, toBasis: string, to: FreightCopyDraft | null, after: [string, number][]) {
+function tokenOf(
+  entryId: string,
+  amountUsd: string | null,
+  fromBasis: string,
+  fromCopy: FromCopy,
+  toBasis: string,
+  to: FreightCopyDraft | null,
+  after: [string, number][],
+) {
   const canonical = JSON.stringify([
     entryId,
+    // The dollars the «$ → $» columns were drawn from: a first conversion or
+    // an /admin/fx re-price in between makes the preview stale (review).
+    amountUsd ?? 'none',
     fromBasis,
     digestOf(fromCopy),
     toBasis,
@@ -114,7 +125,13 @@ async function plan(entry: Entry, toBasis: RebaseTarget, money: boolean): Promis
   const receiptOf = new Map(measures.map((m) => [m.boxId, m] as const));
   const after = new Map<string, number>();
   const labels = new Map<string, string>();
+  // The band a freight target puts each group in — the price only to a money
+  // reader, the same rule as the panel's preview (`splitView`).
+  const bands = new Map<string, BandView>();
   if (verdict.kind === 'split') {
+    for (const g of verdict.groups ?? []) {
+      bands.set(g.key, money ? g.band : { min: g.band.min, max: g.band.max, perKg: g.band.perKg });
+    }
     for (const s of verdict.shares) {
       const m = receiptOf.get(s.boxId)!;
       const key = s.clientId ? `c:${s.clientId}` : `r:${m.receiptId}`;
@@ -142,6 +159,7 @@ async function plan(entry: Entry, toBasis: RebaseTarget, money: boolean): Promis
     afterPct: pct(afterUsd[i]!, afterTotal),
     ...(beforeCents ? { beforeUsd: beforeCents[i]! } : {}),
     ...(afterCents ? { afterUsd: afterCents[i]! } : {}),
+    ...(bands.has(key) ? { band: bands.get(key)! } : {}),
   }));
 
   let column: RebasePreview['column'];
@@ -156,6 +174,7 @@ async function plan(entry: Entry, toBasis: RebaseTarget, money: boolean): Promis
   }
   const seen = tokenOf(
     entry.id,
+    entry.amountUsd,
     entry.allocationBasis,
     fromCopy,
     toBasis,
@@ -174,6 +193,9 @@ async function plan(entry: Entry, toBasis: RebaseTarget, money: boolean): Promis
       unconverted: amountUsd === null,
       rows,
       ...(verdict.kind === 'held' ? { held: verdict.held } : {}),
+      // Cartons are there and the target finds no measure on them: the save
+      // is allowed (as the create is) and the person is told before it.
+      ...(verdict.kind === 'nothing' && measures.length > 0 ? { nowhere: true } : {}),
       ...(column ? { column } : {}),
     },
   };
@@ -212,7 +234,7 @@ export async function rebaseCost(
     if (!fresh || fresh.voidedAt) throw new CostError('already_voided');
     return { kind: 'changed', preview: (await plan(fresh, toBasis, money)).preview };
   }
-  return afterCommit(entry.id, '[cost-rebase]');
+  return afterCommit(entry.id, '[cost-rebase]', true);
 }
 
 /**
@@ -246,14 +268,22 @@ async function saveRebaseInTx(
       .set({ allocationBasis: toBasis, ...(fromBasis === 'direct_to_client' ? { clientId: null } : {}) })
       .where(eq(costEntries.id, entryId));
     if (fromBasis === 'freight' || toBasis === 'freight') await replaceFreightCopyInTx(tx, entryId, planned.to);
+    // The bands ride too, so a same-date re-freeze of new prices (same zone,
+    // same date) is a visible line in History, not an empty one (review).
     const copyFields = (c: FromCopy | FreightCopyDraft | null) =>
-      c !== null && typeof c === 'object' ? { tariffZone: c.zone, tariffFrom: c.tariffFrom } : {};
+      c !== null && typeof c === 'object'
+        ? { tariffZone: c.zone, tariffFrom: c.tariffFrom, tariffBands: bandsSummary(c.bands) }
+        : {};
+    // Leaving a direct bill clears its client — a money fact, so whose it
+    // was is recorded on both sides (review: «this fee was GS100's» existed
+    // nowhere once it was re-based).
+    const clientFields = fromBasis === 'direct_to_client' ? { before: { clientId: locked.clientId }, after: { clientId: null } } : null;
     await writeAudit(tx, ctx, {
       entityType: 'cost_entry',
       entityId: entryId,
       action: 'update',
-      before: { allocationBasis: fromBasis, ...copyFields(fromCopy) },
-      after: { allocationBasis: toBasis, ...copyFields(planned.to), ...extra },
+      before: { allocationBasis: fromBasis, ...copyFields(fromCopy), ...(clientFields?.before ?? {}) },
+      after: { allocationBasis: toBasis, ...copyFields(planned.to), ...(clientFields?.after ?? {}), ...extra },
     });
     return 'saved';
   });
@@ -264,11 +294,15 @@ async function saveRebaseInTx(
  * committed, so a failed split is never an error to the person — it is
  * queued, and the nightly `orphaned` net is the last one under that.
  */
-async function afterCommit(entryId: string, tag: string): Promise<RebaseAnswer> {
+async function afterCommit(entryId: string, tag: string, queue: boolean): Promise<RebaseAnswer> {
   try {
     return { kind: 'saved', verdict: await recomputeEntry(entryId), pending: false };
   } catch (error) {
-    console.error(`${tag} split after the re-basis failed, queued for retry`, entryId, error);
+    console.error(`${tag} split after the re-basis failed${queue ? ', queued for retry' : ''}`, entryId, error);
+    // The rollback script runs in the one-off `migrate` container: starting
+    // pg-boss there leaves its timers alive and the process never exits. Its
+    // net is the nightly orphaned sweep and the §10 count check (review).
+    if (!queue) return { kind: 'saved', verdict: null, pending: true };
     try {
       const { enqueue, JOB_RECOMPUTE_COSTS } = await import('../../platform/jobs/boss');
       await enqueue(JOB_RECOMPUTE_COSTS, { costEntryId: entryId });
@@ -288,7 +322,10 @@ async function afterCommit(entryId: string, tag: string): Promise<RebaseAnswer> 
  * split. For `pnpm freight-to-weight --apply`, run through `migrate` when
  * this release's own cost screen is the reason for going back.
  */
-export async function rollbackFreightBill(entryId: string, ctx: AuditContext): Promise<'saved' | 'voided' | 'changed'> {
+export async function rollbackFreightBill(
+  entryId: string,
+  ctx: AuditContext,
+): Promise<{ moved: 'saved' | 'voided' | 'changed'; split: RecomputeVerdict['kind'] | 'pending' | null }> {
   const fromCopy = await freightCopyFor(entryId);
   const moved = await saveRebaseInTx(
     entryId,
@@ -297,6 +334,8 @@ export async function rollbackFreightBill(entryId: string, ctx: AuditContext): P
     ctx,
     { reason: 'rollback' },
   );
-  if (moved === 'saved') await afterCommit(entryId, '[freight-to-weight]');
-  return moved;
+  if (moved !== 'saved') return { moved, split: null };
+  const after = await afterCommit(entryId, '[freight-to-weight]', false);
+  if (after.kind !== 'saved') return { moved, split: null };
+  return { moved, split: after.pending ? 'pending' : (after.verdict?.kind ?? null) };
 }

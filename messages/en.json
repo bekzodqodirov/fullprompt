@@ -863,7 +863,8 @@
       "itemCount": "Goods lines",
       "allocationBasis": "Split basis",
       "tariffZone": "Tariff column",
-      "tariffFrom": "Tariff date"
+      "tariffFrom": "Tariff date",
+      "tariffBands": "Tariff rows"
     }
   },
   "profile": {
@@ -1346,7 +1347,7 @@
     "freightOptNoColumn": "(no column set)",
     "freightOptUnpriced": "(no prices)",
     "freightOptProblem": "(tariff incomplete)",
-    "freightDropped": "The chosen basis does not fit this type or date — it splits «{basis}».",
+    "freightDropped": "The chosen basis does not fit this type or date — it splits {basis}.",
     "freightOffServerBehind": "The server is not updated yet — no freight-tariff split for now; it splits by weight.",
     "freightOffNoColumn": "Warehouse {warehouse} has no freight tariff column — it splits by weight.",
     "freightOffUnpriced": "Warehouse {warehouse}’s column {column} has no prices on {date} — it splits by weight.",
@@ -1389,7 +1390,8 @@
     "errRebaseSame": "This bill is already split this way, on this tariff.",
     "errRebaseDirect": "This button cannot move a bill to «directly to a client» — void it and enter it again.",
     "errRebaseBatchOnly": "This cost is from the per-prixod grid — its split method does not change. A method is chosen only on the truck's own bills.",
-    "costSigmaUnsplit": "· of which {usd} is not split"
+    "costSigmaUnsplit": "· of which {usd} is not split",
+    "rebaseNowhere": "With this basis the bill lands on no carton (the cargo has no such measure written) — it enters nobody's cost."
   },
   "batchCard": {
     "tabLoading": "Loading",
@@ -2380,7 +2382,8 @@
     "balSellerCommissionsUnknown": "Seller commissions: for {n} jobs the cargo payment could not be checked in time — at most ${usd}, left out of this line and of the net position",
     "unsplitHeading": "Trucks with costs not split over the cargo — including those not marked as a consignment",
     "unsplitShowAll": "← The whole «Profit by batch» table",
-    "balUnpricedFreightHeld": "{count, plural, one {# freight cost} other {# freight costs}} (${usd}) not split over the truck cargo by the tariff — the money joins once the lot is fixed or through «Split method», and until then it lowers the net position; do not void these costs."
+    "balUnpricedFreightHeld": "{count, plural, one {# freight cost} other {# freight costs}} (${usd}) not split over the truck cargo by the tariff — the money joins once the lot is fixed or through «Split method», and until then it lowers the net position; do not void these costs.",
+    "unsplitForming": "Trucks that have not left yet (not in the table, which lists departed trucks only):"
   },
   "lidChat": {
     "mark": "Lead",

@@ -7,7 +7,7 @@ import { addCostEntryAction, rebaseCostAction, voidCostEntryAction } from '@/app
 import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 import { latestTxDate } from '@/modules/wms/finance/dates';
 import type { AllocationBasis } from '@/modules/wms/costing/engine';
-import { FREIGHT_LIGHT_BELOW, freightUsable, offeredBases } from '@/modules/wms/costing/freight-split';
+import { FREIGHT_LIGHT_BELOW, bandText, freightUsable, offeredBases } from '@/modules/wms/costing/freight-split';
 import type { FreightHeld, FreightOffer, FreightRowView, RebasePreview } from '@/modules/wms/costing/freight-types';
 import { FreightGroupRows, FreightHeldLines, FreightHeldNote } from '@/components/freight-views';
 import { UnmergeButton } from '@/app/(protected)/accounting/xarajat-kassa/unmerge-button';
@@ -57,6 +57,13 @@ export interface CostEntryView {
   rebasable: boolean;
   /** The bill's type — which bases the re-basis select offers for it (§4). */
   costTypeId: string;
+  /**
+   * Converted and on no box, whatever its basis — the same fact the truck's
+   * todo, its Σ and the pricing page count (`noShareSql`), so a counted bill
+   * is always a marked row (review of the round: a weight bill typed before
+   * any carton boarded was counted and marked nowhere).
+   */
+  unsplit: boolean;
 }
 
 /** What one bill leaves for the next on the general entry page (his 5a). */
@@ -65,7 +72,13 @@ export interface CostKept {
   currency: string;
   costDate: string;
   payer: string;
-  basis: AllocationBasis;
+  /**
+   * Only a basis the person CHOSE (review of the round): the effective one
+   * carried a weight that was merely this truck's default onto the next
+   * truck as a «touched» choice, and a priced column there never got its
+   * freight preselect (his 4a).
+   */
+  basis?: AllocationBasis;
 }
 
 export interface CostTypeOption {
@@ -272,6 +285,12 @@ function RebaseBlock({
             {preview.rows.map((row) => (
               <li key={row.key} className="min-w-0 break-words" data-testid={`cost-rebase-row-${row.key}`}>
                 {t('rebaseRow', { label: row.label, before: row.beforePct, after: row.afterPct })}
+                {row.band
+                  ? (() => {
+                      const b = bandText(row.band, { money: preview.money });
+                      return ` · ${t(b.key, { range: b.range, price: b.price })}`;
+                    })()
+                  : ''}
                 {row.beforeUsd !== undefined || row.afterUsd !== undefined
                   ? ` · ${t('rebaseRowMoney', {
                       before: (row.beforeUsd ?? 0).toFixed(2),
@@ -281,6 +300,11 @@ function RebaseBlock({
               </li>
             ))}
           </ul>
+          {preview.nowhere && (
+            <p className="font-semibold text-warn" data-testid="cost-rebase-nowhere">
+              ⚠ {t('rebaseNowhere')}
+            </p>
+          )}
           {preview.held && (
             <div className="text-warn">
               <p className="font-semibold">{t('freightPreviewHeld')}</p>
@@ -470,6 +494,8 @@ export function CostPanel({
     setTouched(true);
   };
   const [unsplit, setUnsplit] = useState<FreightHeld | null>(null);
+  // A re-basis whose split was queued (§8.4): said until the next press.
+  const [rebasePending, setRebasePending] = useState(false);
   const [clientId, setClientId] = useState('');
   // ONE «who paid» choice (0101): our money with no kassa said yet (the
   // accountant's queue), a kassa, or a counterparty — never two, which is
@@ -498,6 +524,7 @@ export function CostPanel({
 
   async function submit(twinAck?: string) {
     setBusy(true);
+    setRebasePending(false);
     setError(null);
     setSaved(false);
     setGap(null);
@@ -532,7 +559,7 @@ export function CostPanel({
         setAmount('');
         setTillAmount('');
         setNote('');
-        const nextBasis = basis === 'direct_to_client' ? scopeBasis : basis;
+        const nextBasis = touched && chosenValid && chosen !== 'direct_to_client' ? chosen : undefined;
         if (basis === 'direct_to_client') {
           setChosen(scopeBasis);
           setTouched(false);
@@ -544,6 +571,11 @@ export function CostPanel({
         router.refresh();
       } else {
         setTwins(null);
+        // The column moved under the preview (M6): the page's offer is the
+        // old one, so without a refresh every press would post the same stale
+        // digest and be refused for ever. The inputs are controlled and
+        // survive it.
+        if (res.error === 'freight_changed') router.refresh();
         setError(
           res.error === 'client_required'
             ? t('clientRequired')
@@ -560,11 +592,10 @@ export function CostPanel({
     }
   }
 
-  const [rebasePending, setRebasePending] = useState(false);
-
   async function voidEntry(id: string) {
     const reason = window.prompt(t('voidReason'));
     if (!reason?.trim()) return;
+    setRebasePending(false);
     const res = await voidCostEntryAction({ id, reason });
     if (res.ok) router.refresh();
     else setError(payerErrorText(res, t, zoneWords)); // a silent failed void looked like success
@@ -602,7 +633,7 @@ export function CostPanel({
               : t(`bases.${entry.allocationBasis}`)}
             {entry.clientCode && ` → ${entry.clientCode}`}
           </span>
-          {entry.freight?.unsplit && (
+          {(entry.unsplit || entry.freight?.unsplit) && (
             <span className="rounded bg-warn/15 px-1.5 text-xs font-semibold text-warn" data-testid="cost-unsplit">
               ⚠ {t('costUnsplitChip')}
             </span>
@@ -648,6 +679,7 @@ export function CostPanel({
                   limit={FREIGHT_LIMIT}
                   cents={entry.freight.allocatedUsd}
                   testid="cost-freight-row"
+                  saved
                 />
               </div>
             </details>

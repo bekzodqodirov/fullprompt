@@ -863,7 +863,8 @@
       "itemCount": "Tovar qatorlari",
       "allocationBasis": "Bo‘lish usuli",
       "tariffZone": "Tarif ustuni",
-      "tariffFrom": "Tarif sanasi"
+      "tariffFrom": "Tarif sanasi",
+      "tariffBands": "Tarif qatorlari"
     }
   },
   "profile": {
@@ -1346,7 +1347,7 @@
     "freightOptNoColumn": "(ustun yozilmagan)",
     "freightOptUnpriced": "(narx yo‘q)",
     "freightOptProblem": "(tarif to‘liq emas)",
-    "freightDropped": "Tanlangan usul bu tur yoki sanaga to‘g‘ri kelmaydi — «{basis}» bo‘yicha bo‘linadi.",
+    "freightDropped": "Tanlangan usul bu tur yoki sanaga to‘g‘ri kelmaydi — {basis} bo‘linadi.",
     "freightOffServerBehind": "Server hali yangilanmagan — yo‘lkira tarifi bo‘yicha bo‘lish hozircha yo‘q, og‘irlik bo‘yicha bo‘linadi.",
     "freightOffNoColumn": "{warehouse} skladiga yo‘lkira tarifi ustuni yozilmagan — og‘irlik bo‘yicha bo‘linadi.",
     "freightOffUnpriced": "{warehouse} skladining {column} ustunida {date} sanasiga narx yo‘q — og‘irlik bo‘yicha bo‘linadi.",
@@ -1389,7 +1390,8 @@
     "errRebaseSame": "Bu hisob allaqachon shu usul va shu tarif bilan bo‘lingan.",
     "errRebaseDirect": "«To‘g‘ridan-to‘g‘ri klientga» usuliga bu tugma bilan o‘tib bo‘lmaydi — hisobni bekor qilib qayta kiriting.",
     "errRebaseBatchOnly": "Bu xarajat prixod jadvalidan — uning bo‘linish usuli o‘zgarmaydi. Usulni faqat mashinaning o‘z xarajatida tanlash mumkin.",
-    "costSigmaUnsplit": "· shundan {usd} bo‘linmagan"
+    "costSigmaUnsplit": "· shundan {usd} bo‘linmagan",
+    "rebaseNowhere": "Bu usulda hisob hech qaysi karobkaga tushmaydi (yukning shu o‘lchami yozilmagan) — hech kimning tannarxiga kirmaydi."
   },
   "batchCard": {
     "tabLoading": "Yuklash",
@@ -2380,7 +2382,8 @@
     "balSellerCommissionsUnknown": "Sotuvchilar ulushi: {n} ta ishda yukning to‘langani vaqtida tekshirilmadi — ko‘pi bilan ${usd}; bu summa shu qatorga ham, Sof holatga ham kirmadi",
     "unsplitHeading": "Xarajati yukka bo‘linmagan reyslar — «Partiya» deb belgilanmaganlari ham",
     "unsplitShowAll": "← Butun «Partiya foydasi» jadvali",
-    "balUnpricedFreightHeld": "{count, plural, other {# ta yo‘lkira xarajati}} (${usd}) tarif bo‘yicha mashina yukiga bo‘linmagan — lot to‘g‘rilangach yoki «Bo‘lish usuli» bilan qo‘shiladi, shungacha Sof holatni kamaytirib turadi; bekor qilmang."
+    "balUnpricedFreightHeld": "{count, plural, other {# ta yo‘lkira xarajati}} (${usd}) tarif bo‘yicha mashina yukiga bo‘linmagan — lot to‘g‘rilangach yoki «Bo‘lish usuli» bilan qo‘shiladi, shungacha Sof holatni kamaytirib turadi; bekor qilmang.",
+    "unsplitForming": "Hali jo‘namagan mashinalar (jadvalda yo‘q — jadval faqat jo‘nagan mashinalarni ko‘rsatadi):"
   },
   "lidChat": {
     "mark": "Lid",

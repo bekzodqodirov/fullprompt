@@ -3,6 +3,7 @@ import { ALLOCATION_BASES, type AllocationBasis } from './engine';
 import type {
   BoxMeasure,
   ColumnProblem,
+  BandView,
   FreightBandCopy,
   FreightCopy,
   FreightCopyDraft,
@@ -402,10 +403,12 @@ export interface BandText {
  * the re-basis preview. A per-kg band says «kg bo‘yicha» and its price per kg —
  * never a «$605/kub» that /admin/tarif nowhere prints.
  */
-export function bandText(band: FreightBandCopy, opts: { money: boolean }): BandText {
+export function bandText(band: BandView, opts: { money: boolean }): BandText {
   const range = band.max === null ? `${num(band.min)}+` : `${num(band.min)}–${num(band.max)}`;
-  const price = `$${num(band.price)}`;
-  const key = opts.money
+  // A band sent without its price (no money sight) can only be worded without one.
+  const money = opts.money && band.price !== undefined;
+  const price = money ? `$${num(band.price!)}` : '';
+  const key = money
     ? band.perKg
       ? 'freightBandMoneyPerKg'
       : 'freightBandMoney'
@@ -413,6 +416,18 @@ export function bandText(band: FreightBandCopy, opts: { money: boolean }): BandT
       ? 'freightBandPerKg'
       : 'freightBand';
   return { key, range, price };
+}
+
+/**
+ * A frozen column as ONE line for the history (the audit's `tariffBands`):
+ * every band, lowest first, as /admin/tarif prints it. Pure, so the create
+ * and the re-basis write the same words.
+ */
+export function bandsSummary(bands: readonly FreightBandCopy[]): string {
+  return [...bands]
+    .sort((a, b) => a.min - b.min)
+    .map((b) => `${num(b.min)}${b.max === null ? '+' : `–${num(b.max)}`} $${num(b.price)}${b.perKg ? '/kg' : ''}`)
+    .join('; ');
 }
 
 /** One group of a split view by its key (`c:<client>` / `r:<receipt>`); none when held or absent. */

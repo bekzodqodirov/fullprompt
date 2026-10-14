@@ -14,6 +14,8 @@ import {
 } from '@/modules/wms/accounting/reports';
 import { resolvePeriod } from '@/modules/wms/accounting/period';
 import { UNSPLIT_PARAM } from '@/modules/wms/accounting/unsplit-href';
+import { batchTabHref, mayOpenBatchCard, mayOpenBatchCosts } from '@/modules/wms/batches/card-door';
+import { unsplitOnFormingTrucks } from '@/modules/wms/costing/service';
 import { tripKind, tripTotals } from '@/modules/wms/reports/dashboard-math';
 import { PeriodForm } from '../period-form';
 import { PnlGapsNote } from '../pnl-gaps';
@@ -70,10 +72,11 @@ export default async function ProfitPage({
         ? await profitByClient(from, to)
         : await profitByRoute(from, to, trips!);
 
-  const [gaps, unbatched, clientGaps] = await Promise.all([
+  const [gaps, unbatched, clientGaps, forming] = await Promise.all([
     pnlGaps(from, to),
     view === 'client' ? Promise.resolve(null) : unbatchedMoney(from, to),
     view === 'client' ? clientProfitGaps(from, to) : Promise.resolve(null),
+    unsplitOnly ? unsplitOnFormingTrucks() : Promise.resolve([]),
   ]);
 
   // An internal leg is a cost row with no profit (R2a), and its cost is
@@ -145,7 +148,9 @@ export default async function ProfitPage({
       <PeriodForm
         from={from}
         to={to}
-        exportHref={`/api/accounting/profit?view=${view}`}
+        // The file is the tracked table; under «bo'linmagan» it would not be
+        // what the screen shows, so there is none (review of the round).
+        exportHref={unsplitOnly ? undefined : `/api/accounting/profit?view=${view}`}
         extra={
           unsplitOnly ? (
             <>
@@ -158,6 +163,25 @@ export default async function ProfitPage({
       {unsplitOnly && (
         <div className="card space-y-1 !p-3 text-sm" data-testid="profit-unsplit">
           <p className="font-semibold text-warn">⚠ {t('unsplitHeading')}</p>
+          {forming.length > 0 && (
+            <div data-testid="profit-unsplit-forming">
+              <p className="text-ink-700">{t('unsplitForming')}</p>
+              <ul className="ml-4 list-disc">
+                {forming.map((row) => (
+                  <li key={row.batchId} className="min-w-0 break-words">
+                    {mayOpenBatchCosts(actor.permissions) && mayOpenBatchCard(actor, row) ? (
+                      <Link href={batchTabHref(row.batchId, 'xarajat')} className="font-mono text-brand-700 underline">
+                        {row.code}
+                      </Link>
+                    ) : (
+                      <span className="font-mono">{row.code}</span>
+                    )}{' '}
+                    · ${usd(row.usd)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <Link
             href={`/accounting/profit?view=batch&from=${from}&to=${to}`}
             className="inline-flex min-h-11 items-center text-brand-700 underline"

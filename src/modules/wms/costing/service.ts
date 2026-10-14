@@ -31,6 +31,7 @@ import { exceedsRowUsd, nativeAmount } from '../finance/money-bounds';
 import { ALLOCATION_BASES, toUsd, type AllocationBasis } from './engine';
 import { costPool, type PoolFreight } from './pool';
 import { freightCopyFor, prepareFreightCopy, replaceFreightCopyInTx } from './freight-copy';
+import { bandsSummary } from './freight-split';
 import type { BoxMeasure, RecomputeVerdict } from './freight-types';
 import { declaredFilter, riderCtesSql, riderFilter, riderLoad, riderWithoutShareSql } from '../batches/riders';
 import { bearsPriceSql, internalLegSql } from '../batches/internal';
@@ -361,7 +362,12 @@ export async function addCostEntry(
         amount: input.amount,
         currency: input.currency,
         allocationBasis: input.allocationBasis,
-        ...(freightDraft ? { tariffZone: freightDraft.zone, tariffFrom: freightDraft.tariffFrom } : {}),
+        ...(freightDraft
+          ? { tariffZone: freightDraft.zone, tariffFrom: freightDraft.tariffFrom, tariffBands: bandsSummary(freightDraft.bands) }
+          : {}),
+        // A direct bill's client is a money fact (receipts/edit.ts's rule):
+        // the re-basis door clears it, so its first record is here.
+        ...(input.allocationBasis === 'direct_to_client' && input.clientId ? { clientId: input.clientId } : {}),
         ...(input.accountId ? { accountId: input.accountId, accountAmount } : {}),
         ...(opts.twinAck && opts.twinAck.length > 0 ? { twinAck: opts.twinAck } : {}),
       },
@@ -2150,6 +2156,43 @@ export const unsplitOnTruck = cache(async function unsplitOnTruck(
 });
 
 /**
+ * Trucks that have NOT left and hold money on no box (review of the round):
+ * «Partiya foydasi» lists departed trucks only, so the «bo'linmagan» list the
+ * Balans and the attention row lead to names these beside its table — a held
+ * bill typed while the truck was still forming (514 of 2,624 truck bills on
+ * the shaped copy were) was otherwise a sentence pointing at an empty page.
+ * The same target as the truck's own list (`batch_id`, so a stamped grid cell
+ * counts) and the same fragment as every other «no share» surface.
+ */
+export async function unsplitOnFormingTrucks(): Promise<
+  { batchId: string; code: string; originWarehouseId: string; destWarehouseId: string; count: number; usd: number }[]
+> {
+  const rows = (await db.execute(sql`
+    SELECT b.id, b.code, b.origin_warehouse_id, b.dest_warehouse_id,
+           count(*)::int AS n, coalesce(sum(ce.amount_usd), 0) AS usd
+      FROM cost_entries ce
+      JOIN batches b ON b.id = ce.batch_id
+     WHERE b.departed_at IS NULL AND b.status <> 'cancelled' AND ${noShareSql(sql`ce`)}
+     GROUP BY b.id, b.code, b.origin_warehouse_id, b.dest_warehouse_id, b.created_at
+     ORDER BY b.created_at, b.code`)) as unknown as {
+    id: string;
+    code: string;
+    origin_warehouse_id: string;
+    dest_warehouse_id: string;
+    n: number;
+    usd: string;
+  }[];
+  return [...rows].map((r) => ({
+    batchId: r.id,
+    code: r.code,
+    originWarehouseId: r.origin_warehouse_id,
+    destWarehouseId: r.dest_warehouse_id,
+    count: Number(r.n),
+    usd: Math.round(Number(r.usd) * 100) / 100,
+  }));
+}
+
+/**
  * «Bo'linmagan xarajat» — the truck card's todo (docs/YOLKIRA-TAQSIMOT.md
  * §6.3.4). `sight` is REQUIRED (#790 — an optional sight fails open): the VED
  * (`ownOnly`) is told about his OWN held bills, which the tab shows him and
@@ -2199,37 +2242,54 @@ export interface CarriedUnsplit {
 export async function carriedUnsplitBills(batchId: string): Promise<CarriedUnsplit[]> {
   const rows = (await db.execute(sql`
     WITH ${carriageCtesSql(sql`${batchId}::uuid`)},
-    fed AS (
-      SELECT r.batch_id AS feed_id, m.box_id,
-             CASE WHEN r.departed_at <= m.at THEN 'prev' ELSE 'later' END AS leg
-        FROM mx m
-        JOIN rides r ON r.box_id = m.box_id AND r.batch_id <> m.batch_id
-       WHERE NOT m.given
-         AND r.departed_at IS NOT NULL
-         AND (
-           (r.departed_at <= m.at AND (m.prev_at IS NULL OR r.departed_at > m.prev_at))
-           OR (m.upto IS NOT NULL AND r.departed_at > m.at AND r.departed_at <= m.upto)
-         )
-    ),
+    -- The OTHER trucks the cargo rode that hold such a bill — almost always
+    -- none, which is why it is asked FIRST: pairing every carton with every
+    -- ride (a CTE joined to a CTE, both estimated at one row) was a nested
+    -- loop that grew with the square of the truck — 794 ms at 2,000 cartons
+    -- on the shaped copy (#1246's shape, review of the round).
     held AS (
       SELECT ce.batch_id,
              sum(ce.amount_usd) AS usd,
-             count(*) FILTER (WHERE ce.amount_usd IS NULL)::int AS unconverted
+             count(*) FILTER (WHERE ce.amount_usd IS NULL)::int AS unconverted,
+             -- A direct bill was only ever its OWN client's money: it is
+             -- missing from that client's tannarx alone.
+             bool_and(ce.allocation_basis = 'direct_to_client') AS direct_only,
+             coalesce(array_agg(DISTINCT ce.client_id) FILTER (WHERE ce.allocation_basis = 'direct_to_client'), '{}') AS direct_clients
         FROM cost_entries ce
-       WHERE ce.batch_id IN (SELECT feed_id FROM fed) AND ce.scope = 'batch'
+       WHERE ce.batch_id IN (SELECT DISTINCT r.batch_id FROM rides r WHERE r.batch_id <> ${batchId}::uuid AND r.departed_at IS NOT NULL)
+         AND ce.scope = 'batch'
          AND (${noShareSql(sql`ce`)} OR (ce.voided_at IS NULL AND ce.amount_usd IS NULL))
        GROUP BY ce.batch_id
+    ),
+    fr AS MATERIALIZED (
+      SELECT r.batch_id, r.box_id, r.departed_at FROM rides r WHERE r.batch_id IN (SELECT batch_id FROM held)
+    ),
+    fed AS (
+      SELECT fr.batch_id AS feed_id, m.box_id,
+             CASE WHEN fr.departed_at <= m.at THEN 'prev' ELSE 'later' END AS leg
+        FROM mx m
+        JOIN fr ON fr.box_id = m.box_id AND fr.batch_id <> m.batch_id
+       WHERE NOT m.given
+         AND fr.departed_at IS NOT NULL
+         AND (
+           (fr.departed_at <= m.at AND (m.prev_at IS NULL OR fr.departed_at > m.prev_at))
+           OR (m.upto IS NOT NULL AND fr.departed_at > m.at AND fr.departed_at <= m.upto)
+         )
     )
     SELECT h.batch_id, fb.code, fb.origin_warehouse_id, fb.dest_warehouse_id, h.usd, h.unconverted,
            min(f.leg) AS leg,
-           coalesce(array_agg(DISTINCT rc.client_id) FILTER (WHERE rc.client_id IS NOT NULL), '{}') AS client_ids
+           coalesce(array_agg(DISTINCT rc.client_id) FILTER (
+             WHERE rc.client_id IS NOT NULL AND (NOT h.direct_only OR rc.client_id = ANY (h.direct_clients))
+           ), '{}') AS client_ids
       FROM held h
       JOIN batches fb ON fb.id = h.batch_id
       JOIN fed f ON f.feed_id = h.batch_id
       JOIN boxes fbx ON fbx.id = f.box_id
       JOIN receipt_lots rl ON rl.id = fbx.lot_id
       JOIN receipts rc ON rc.id = rl.receipt_id
-     GROUP BY h.batch_id, fb.code, fb.origin_warehouse_id, fb.dest_warehouse_id, fb.departed_at, h.usd, h.unconverted
+     GROUP BY h.batch_id, fb.code, fb.origin_warehouse_id, fb.dest_warehouse_id, fb.departed_at, h.usd, h.unconverted,
+              h.direct_only, h.direct_clients
+    HAVING NOT h.direct_only OR bool_or(rc.client_id = ANY (h.direct_clients))
      ORDER BY fb.departed_at, fb.code
   `)) as unknown as {
     batch_id: string;

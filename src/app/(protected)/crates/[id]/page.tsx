@@ -134,7 +134,7 @@ export default async function CrateDetailPage({ params }: { params: Promise<{ id
           scope="crate"
           freight={null}
           targetId={crate.id}
-          entries={costs.map(({ entry, typeName, partnerName, partnerIsStaff, accountName }) => ({
+          entries={costs.map(({ entry, hasShare, typeName, partnerName, partnerIsStaff, accountName }) => ({
             id: entry.id,
             typeName,
             amount: entry.amount,
@@ -146,6 +146,8 @@ export default async function CrateDetailPage({ params }: { params: Promise<{ id
             freight: null,
             rebasable: false,
             costTypeId: entry.costTypeId,
+            // Converted and on no box — any basis (`noShareSql`), the row the todo counts.
+            unsplit: entry.amountUsd !== null && !hasShare,
             note: entry.note,
             ...payerView(actor.permissions, { partnerName, partnerIsStaff }),
             ...tillView(actor.permissions, { accountId: entry.accountId, accountName, mergedExpenseId: entry.mergedExpenseId }),

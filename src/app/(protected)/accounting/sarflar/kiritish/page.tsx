@@ -72,7 +72,7 @@ export default async function SarflarEntryPage({
     );
     panel = {
       targetId: chosen.batch.id,
-      entries: sheet.entries.map(({ entry, typeName, clientCode, partnerName, partnerIsStaff, accountName }) => ({
+      entries: sheet.entries.map(({ entry, hasShare, typeName, clientCode, partnerName, partnerIsStaff, accountName }) => ({
         id: entry.id,
         typeName,
         amount: entry.amount,
@@ -85,6 +85,8 @@ export default async function SarflarEntryPage({
         freight: freightRows.get(entry.id) ?? null,
         rebasable: entry.scope === 'batch',
         costTypeId: entry.costTypeId,
+        // Converted and on no box — any basis (`noShareSql`), the row the todo counts.
+        unsplit: entry.amountUsd !== null && !hasShare,
         ...payerView(actor.permissions, { partnerName, partnerIsStaff }),
         ...tillView(actor.permissions, { accountId: entry.accountId, accountName, mergedExpenseId: entry.mergedExpenseId }),
       })),
