@@ -2822,3 +2822,163 @@ and a 6907 no-certificate block where the floor wins (nominal 15 % → +10 % =
 $20; effective 100 % → +20 % = $40). Red proofs ×4 by paired string edit with
 a byte-identical restore. LESSON: a «pinned by tests» sentence is a claim
 about a mutation nobody ran — run it.
+
+## Sarflar — «Pul qayerga ketdi» and the truck bill from the money section (2026-10-14; NO migration, ledger 132; spec `docs/SARFLAR.md`)
+
+1355. **«Bu pul allaqachon yozilganmi?» is ONE pure decider over each row's
+PAYER KIND** (his answer 6, «saqlashdan oldin ogohlantirsin qayerda shu qayta
+yozilayotganini»; `accounting/twins.ts`). The same payment lands twice as a
+cargo COST and an EXPENSE, and how the money is compared depends on who paid:
+a kassa-paid cost keeps its own currency in `amount` while what left the
+drawer sits in `account_amount` in the KASSA's currency, so one kassa on both
+books is matched in that currency to the cent («the same currency» would never
+see a $500 customs bill paid as 6 300 000 so'm). Five shapes, each with its
+words and its cure — `same_kassa` (void), `kassa_cash` (void), `same_partner`
+(void), `debt_paid` (a debt's payment is a partner payment, never an expense:
+void the expense and write the payment, the judge's J4), `mergeable` (M4a's
+own pair, «Birlashtirish»). Sums: one truck's bills of one day and one payer
+(the completing-sum) and the grid's sheet against one expense. The SQL is a
+prefilter, JS the arbiter (#740's shape). It runs only for the expense book's
+readers (`mayPickTill`) — a line would hand its categories and kassas to people
+its door refuses — and a colleague's cost twin is REDACTED, never dropped, for
+an own-only reader (the VED with the kassa grant). «Baribir saqlash» posts a
+single-use sha256 token over the candidate, the twins and the candidate's OWN
+book, so it answers one save and never the next identical bill; the twins a
+person saw ride into the create audit (`after.twinAck`). The engine
+(`addCostEntry`/`addGridCell`) never asks about the reader: the grid's check is
+a pre-write hook its action passes. The expense form posts from `onSubmit`
+(React resets a form whose `action=` returns — B5) and checks BEFORE the
+rasxod xabari's claim, which is a write.
+
+1356. **A cancelled truck takes no bill, and a bill and a cancel can no longer
+both succeed.** `mayEnterBatchCost` (cost-door.ts) is the truck's ADD door
+(not cancelled, the grant at the origin) and its SQL twin feeds the picker; a
+cancelled truck keeps its 🗑 and loses its «＋», so CostPanel's `canAdd` and
+`canVoid` are both REQUIRED. `addCostEntry` writes the scope's own target only
+(a posted truck id on a receipt cost is stripped — the grid's stamp is an
+internal option), keeps a client on a direct bill alone, refuses a voided
+prixod, and inserts in one short transaction that takes the prixod FOR KEY
+SHARE and the truck FOR SHARE. `cancelBatch` takes the truck FOR NO KEY UPDATE
+and counts the money under it. Proven with a held second connection in both
+orders, plus an annul-shaped and a phone-shaped holder that make a bill wait
+and never deadlock. **My first order was wrong** (the second review's
+writes-2): cartons FOR UPDATE before the truck and the money, while a bill's
+split runs AFTER its commit and key-shares the same cartons in id order — a
+deadlock pair. The order is truck → money → cartons now, the count-load's own,
+and a truck with a bill is refused on the count before a carton is touched
+(red-proven with a held KEY SHARE: the old order waits on it). A truck PRICE
+was the same race one table over (writes-4): an FK's KEY SHARE does not wait
+for NO KEY UPDATE, so `addTransaction` takes the truck FOR SHARE for a charge
+and refuses `batch_cancelled`. STATED: a receipt-scope cost's split can still
+key-share cartons on a truck being cancelled (it is not this truck's money and
+is not counted) — postgres resolves that rare pair with a 40P01.
+
+1357. **The map regroups the P&L's own money and reconciles to it to the
+cent** (`/accounting/sarflar`, `accounting/sarflar.ts`, behind
+`companyMoneySight` — the owner, the admins, the accountant). ONE row set
+(`spendRowsSql`) carries the kind (stamp-first: a grid cell stamped on a truck
+is truck money), the place and the payer, so the bars, the warehouse fold, the
+payer fold and the register filter can never select different sets; each block
+adds up to «kitob jami» (direct + opex, measured against `profitAndLoss`), and
+the kurs farqi is the one bridge line to the hero, which IS `pnlParts.cost` —
+the dashboard's «Xarajat». Truck money sits under no warehouse (his Q3: a road
+belongs to no warehouse, and an internal leg carries only tannarx); each truck
+is a «Partiyalar» row with its chip — internal «faqat tannarx», continuation
+«davomi», tracked «💰 foyda hisobi». Expense ROWS are the staff-money readers'
+alone (a salary line is a person's pay) while every reader sees their sums;
+without staff sight no counterparty is named, so a bare bucket word cannot
+single out a colleague's own pocket. Filters are validated out of the URL; the
+XLSX is its own route with an audit row.
+
+1358. **«＋ Partiyaga xarajat» is the truck card's own bill in a keep-open
+desk** (`/accounting/sarflar/kiritish`, his 5a). A light picker on
+`mayEnterBatchCostWhere` (rows and count one predicate; a closed truck only by
+search, marked; never a cancelled one), `?p=` re-asked (not found = out of
+scope, one answer), the truck's own `CostPanel` with `afterSave='again'`: type,
+currency, date, payer and a proportional basis survive the save AND a switch
+to another truck (client navigations, or the kept values die with a page load);
+the amount and the note never do. Freight is the default type — on the truck
+tab too since the second review. On a phone the chosen truck's form comes
+before the list (it was a scroll away from the tap that chose it — found in the
+screenshot); a truck with no bills says «xarajatsiz» and never «$0.00». «Bugun
+men kiritganlar» lists what this person typed today and links a bill dated
+outside «Bu oy» to its own whole month. `costPanelOptions` is shared with the
+truck tab, whose client list now comes from the RIDERS — unloading had emptied
+it.
+
+1359. **The round reviewed as built, five lenses, 23 findings** — and the
+verifiers of the money and doors lenses refuted all twelve of theirs, because
+4ec36a0 had already fixed them while the review read a moving tree (round
+#977's hazard, met again). That first pass: a group whose money all waits for a
+rate prints «kurs yo'q», never «$0.00»; preset links and the date form carry
+every filter; the period is clamped to the books' era (a year typed as «26»
+reached postgres as year −1974) and page numbers are capped; a redacted twin
+line carries no figures; `payerView` names a colleague's own pocket only to
+`finance.expenses` holders on all five cost cards. CI order found two more:
+every ILIKE over a truck code lives in former-codes.ts (`codePrefixSql`), and
+the cost-card fence follows a client desk to the server page that mounts it.
+
+1360. **The alarm is NARROWER than the merge between two currencies** (the
+second review's twins-1, measured: on a dense synthetic book — 1 500 September
+bills, 6 000 so'm expenses a year — the merge's band gave **11 false twins per
+bill**, none a double). §8.1 said «`sameMoney` exactly»; that band (2 % or $5,
+two weeks) is for a person choosing from a list, and its $5 floor made every
+bill under $250 the twin of any other-currency expense within $5 — a $40
+unloading bill «the same money» as a 470 000 so'm water bill ten days later.
+2 % alone still left eight. Now: one currency and one kassa stay exact; across
+two currencies `TWIN_FX_PCT` = 1 % of the expense's dollars, no floor, within
+`TWIN_FX_DAYS` = 3 days (an un-merge's restored expense keeps no day check, as
+in the merge). The doubles that arm exists for are customs — a declaration in
+dollars paid in so'm at the same day's official rate. 12 507 → 1 646 pairs on
+the same book. Stricter than the merge on purpose: whatever the alarm calls
+«mergeable», the merge accepts (a unit sweep pins it). A dollar-matched line is
+marked «≈» and listed after the exact ones. STATED to him: a desk conversion
+more than 1 % off or more than 3 days apart is not warned about — the M4a
+queue still lists it; and two unrelated payments of the same round amount in
+one currency still warn (the line says where and who).
+
+1361. **The map's count can be answered, and costs what the period costs.**
+The «🔁 N ta yozuv tekshirilmagan» fold listed each pair by its shape word
+alone (screen-2): no date, money, book or place, nothing to find. Each pair now
+prints both rows (date · money · type or category · truck/prixod code — the
+expense side only to an expense-book reader) and «✓ Ikki xil pul», which
+re-decides the pair from the rows as they stand and writes the cost's
+`twin_check` audit row with the same `twinAck` list a warned save writes — a
+new AuditAction verb, labelled in all four bundles (the fence requires it). Without that
+door a pair written before the warning existed could never leave the count. The
+expense side was joined unbounded and its fences, «restored» and staff probes
+ran per PAIR: 3.6 s on the review's book; it is one MATERIALIZED pass bounded
+to the period's window now — 0.4 s, identical rows. Pinned by a brute-force
+test: the count equals `twinShape` over every pair of the same rows, with a
+fixture only the kassa arm can see (red-proven by dropping that arm).
+
+1362. **What the alarm could not compare is said** (twins-3, found by three
+lenses): `unchecked` was computed and then dropped — true only with zero twins,
+where `mustWarn` saves silently and nothing carried it to the browser (#531's
+shape, the flag proven at the service and absent at the door). A clean save
+now returns the gap on all three doors and `TwinGapNote` says «bu summaning
+kursi yo'q — solishtirib bo'lmadi», or for an expense «N ta yuk xarajatining
+kursi yo'q». Also: a typed 1.005 is compared as the 1.01 numeric(…,2) stores
+(`storedCents` rounds the decimal TEXT half away from zero, as postgres does —
+`Math.round(1.005*100)` is 100); a kassa-less cost the merge already joined is
+offered a void (`kassa_cash`), never the merge that answers `cost_taken`; a
+completing-sum reads the group WHOLE and ordered or not at all
+(`SUM_GROUP_CAP` 500 — `LIMIT 50` with no ORDER BY summed an arbitrary part);
+the expense door ranks a bill at the expense's own warehouse first, a truck by
+either end.
+
+1363. **Three doors closed and the map's links ask where they lead.**
+`confirmReceipt` refuses a posted extra cost (`extra_costs_retired`, §8.2) —
+no screen has sent one since #1045 and a hand-built post was the last way to
+write a cargo cost past the cost door; the refusal sits in the service, the
+G10 conversion test became the refusal's red proof plus the sweep over the
+legacy rows production holds. The register's filter form is keyed by its
+filters: a filter link is a soft navigation that keeps the page mounted and an
+uncontrolled select kept its old value, so «Qo'llash» posted back a filter the
+page no longer showed — reproduced RED in a browser before the fix. A payer or
+warehouse row links only where the register shows rows for this reader, and
+the payer filter refuses expense-only buckets to a reader without expense
+rows; the truck's all-time Σ says «kurs yo'q» too. 14 red proofs by string
+edit for the second pass plus the form key in a browser; one first stayed GREEN: the «$5 floor» proof was anchored
+on a pair ten days apart, which the 3-day rule excluded by itself — re-anchored
+on a same-day pair (#166).

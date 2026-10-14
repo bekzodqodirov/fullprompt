@@ -2675,6 +2675,42 @@ no-certificate duty on the nominal %, VAT 12 % default, sborniy one block per
 code; his four ⭐ questions built as defaults (netto on the row; excise
 «yo'q/foiz/$ har birlikka»; floor per code; nominal %).
 
+**Round — Sarflar: «Pul qayerga ketdi» + the truck bill from the money section
+(2026-10-14; DECISIONS #1355-#1363; NO migration, ledger 132; spec
+`docs/SARFLAR.md`, §8 binding, §9 = what the build changed).** His «moliya
+bo'limida … qayerda qanday rasxod bo'layotganini 1 pageda … partiyalarga
+rasxodni obshiy joydan ham kirgazish», answers «Hammasi ⭐» + Q3 (no route
+grouping; truck money only in «Partiyalar», each with its kind chip) + Q6 (warn
+BEFORE the save, naming where). `/accounting/sarflar` (`companyMoneySight`):
+ONE row set `spendRowsSql` (kind stamp-first, place, payer) feeds every block,
+each reconciling to «kitob jami» = the P&L's direct + opex to the cent; hero =
+`pnlParts.cost`, kurs farqi the one bridge line; expense ROWS only to staff-money
+readers; register + audited XLSX. `/accounting/sarflar/kiritish`: picker on
+`mayEnterBatchCostWhere`, the truck's own CostPanel kept open across trucks
+(`afterSave='again'`, `CostKept`), freight default. THE TWIN ALARM
+(`accounting/twins.ts`): one pure `twinShape` over payer kinds (kassa
+compared in the KASSA's currency to the cent; five shapes with words and cures),
+SQL prefilter + JS arbiter, sums, reader-gated (`mayPickTill`), colleague
+redacted, single-use ack token into the create audit; wired into the cost form,
+the grid (pre-write hook — the engine never asks about the reader) and the
+expense form (onSubmit). Between two currencies the alarm is NARROWER than the
+M4a merge: 1 % of the expense's dollars, no $5 floor, ≤ 3 days (`TWIN_FX_PCT`,
+`TWIN_FX_DAYS`) — the merge's band gave 11 false twins per bill on a dense book;
+«≈» marks such a line. The map's «tekshirilmagan» count lists both rows of each
+pair and «✓ Ikki xil pul» (`ackTwinPair`, audit verb `twin_check`); its expense
+side is one MATERIALIZED pass (3.6 s → 0.4 s). Write path: `mayEnterBatchCost`
+(no «＋» on a cancelled truck), `addCostEntry` writes the scope's own target in
+a short tx (prixod FOR KEY SHARE, truck FOR SHARE), a truck PRICE takes the
+truck FOR SHARE too, `cancelBatch` locks truck → money → cartons (cartons first
+was a deadlock with the post-commit split — my own first order), and
+`confirmReceipt` refuses a posted extra cost (`extra_costs_retired`). Reviewed
+twice as built (five lenses; 23 findings, 12 refuted as already fixed by the
+first pass — a moving tree again), 14 red proofs by string edit in the second
+pass + the form key reproduced red in a browser. **7057 unit/integration + the
+e2e suite** green on a fresh gsr_ci in CI's order. WAITING on his 6 answers:
+tariff-proportional truck-cost split (`docs/YOLKIRA-TAQSIMOT.md`, would be
+0132 → ledger 133).
+
 **Latest migration: 0131** (`calc_excise`, `when` …110; ledger must reach **132**). Before
 it: 0130 (`bot_redelivery`, `when` …109). Before
 it: 0129 (`cargo_threads`, `when` …108). Before

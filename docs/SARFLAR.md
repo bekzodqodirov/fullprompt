@@ -692,3 +692,48 @@ own cost fence is NOT reused for this query.
   list groups the edges by the shared row.
 - **J8(c), closing an own-pocket request onto an existing cost,** needs a
   migration and touches his 8a («not now»). Not built; stated.
+
+## 9. As built — what the build and its two reviews changed (2026-10-14)
+
+Read this before §8: where they disagree, this section is what the code does.
+Decisions #1355-#1363.
+
+- **The cross-currency arm of the twin rule is NARROWER than `sameMoney`**
+  (overrides §8.1's «`sameMoney([cost], expense)` exactly» for two
+  currencies). Measured on a dense synthetic book, the merge's band (2 % or
+  $5, 14 days) produced 11 false twins per bill. The alarm keeps M4a's rule
+  AND, between two currencies, `TWIN_FX_PCT` = 1 % of the expense's dollars
+  (no floor) and `TWIN_FX_DAYS` = 3 days. One currency and one kassa stay
+  exact; a restored expense keeps no day check. Everything the alarm calls
+  «mergeable» the merge still accepts. A dollar-matched line is marked «≈»
+  and ranked after the exact ones.
+- **The count is answerable** (extends §1.5/J9). Each pair prints both rows;
+  «✓ Ikki xil pul» (`ackTwinPair`, gate `companyMoneySight` + `mayPickTill`)
+  re-decides the pair and writes a `twin_check` audit row with `twinAck` —
+  read beside the create audit's. The expense side of the count is one
+  MATERIALIZED pass bounded to the period's window.
+- **`no_rate` is said after a CLEAN save too** (§8.1): `twinGap` rides on the
+  success result of all three doors; the expense door also counts the
+  rate-less truck bills in its window (`uncheckedOthers`).
+- **Candidate figures are compared as stored** (`storedCents`: postgres
+  rounds the decimal text half away from zero). A kassa-less cost already
+  merged is `kassa_cash` (void), never `mergeable`. A completing-sum reads
+  its group whole and ordered or not at all (`SUM_GROUP_CAP` 500). The expense
+  door ranks by the cost's places (a truck by either end) — §8.2's order.
+- **The extra-cost door is closed in the SERVICE**, not the schema (§8.2 said
+  schema): `confirmReceipt` throws `extra_costs_retired` after its
+  already-confirmed replay check, so an old phone resending a confirmed
+  receipt still gets its answer.
+- **Lock order** (§8.5): `cancelBatch` = advisory → truck FOR NO KEY UPDATE →
+  costs and charges counted → cartons FOR UPDATE. A truck price
+  (`addTransaction`, charge with `batch_id`) takes the truck FOR SHARE and
+  refuses `batch_cancelled`.
+- **The map's links ask the register** (§8.4): the register form is keyed by
+  its filters; a payer or warehouse row links only where the reader's
+  register has rows; the payer filter refuses expense-only buckets to a
+  reader without expense rows; the truck's all-time Σ follows the «kurs
+  yo'q» rule.
+- **Still stated, not built:** sums across trucks or days; a sum in the map's
+  count; closing a rasxod xabari onto an existing cost (J8(c)); a desk
+  conversion beyond 1 % / 3 days is left to the M4a queue; two unrelated
+  payments of the same round amount in one currency still warn.

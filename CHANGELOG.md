@@ -1,5 +1,58 @@
 # CHANGELOG
 
+## «Pul qayerga ketdi» sahifasi va umumiy joydan partiyaga xarajat kiritish — 2026-10-14
+
+**Migratsiya yo'q** (soni 132 bo'lib qoladi). Tekshirish: `curl -s https://gsrwms.uz/api/version` — build vaqti yangilanishi kerak.
+
+Sizning so'rovingiz: «moliya bo'limida shunday sahifa kerak — qayerda qanday rasxod bo'layotganini bitta sahifada ko'radigan, va partiyalarga bo'layotgan rasxodni umumiy joydan ham kiritish imkoniyati». Javoblaringiz: «Hammasi ⭐»; 3-savolda yo'nalish bo'yicha guruh kerak emas; 6-savolda — saqlashdan oldin ogohlantirsin.
+
+### 1. Yangi sahifa: Moliya → «Sarflar» (`/accounting/sarflar`)
+
+Faqat siz, adminlar va buxgalter ko'radi. VED, sotuvchi va logist ko'rmaydi.
+
+- **Davr:** «Bu oy» (odatiy), «O'tgan oy», «Yil boshidan» yoki o'zingiz tanlagan sanalar. Hisob xarajatning o'z sanasi bo'yicha — Foyda-zarar va bosh sahifadagi «Xarajat» bilan aynan bir xil raqam.
+- **Jami xarajat** tepada katta yozilgan, o'tgan davrga nisbatan ▲▼ bilan. Ostida uch qism: yuk xarajatlari, umumiy xarajatlar va kurs farqi. Uchalasi qo'shilganda jamiga teng chiqadi.
+- **«Qayerga»:** yuk xarajati — partiyalar, prixodlar, yashiklar, zavod reysi; umumiy xarajat — turlari bo'yicha.
+- **«Partiyalar»:** har bir mashina alohida qator — shu davrda yozilgan summa va butun umri bo'yicha jami. Belgisi bilan: «ichki reys · faqat tannarx», «davomi», «💰 foyda hisobi». Yo'nalish bo'yicha guruh yo'q — sizning 3-javobingiz.
+- **«Sklad bo'yicha»:** prixod xarajati qabul qilingan skladda, zavod reysi borgan skladda, yashik o'ralgan skladda, umumiy xarajat o'z skladida. Mashina puli hech qaysi skladga qo'yilmaydi — u «Partiyalarda» qatorida turadi.
+- **«Kim to'ladi»:** kassadan, hodim o'z pulidan, qarzga (kontragent), hisob yozuvi, kassasi hali aytilmagan, kassasiz yozilgan xarajat.
+- **Har bir bo'lim jamlanganda kitobdagi jamiga sentigacha teng chiqadi.** Bu Foyda-zararning o'zi bilan solishtirib testlangan.
+- **Kursi yo'q pul hech qachon «$0.00» deb yozilmaydi** — «kurs yo'q» deb yoziladi.
+- **«Tekshiring»:** ikki marta yozilgan bo'lishi mumkin bo'lgan yozuvlar, to'lanmagan oylik/ijara va kiritilmagan rasxod xabarlari. Har bir juftda ikkala yozuv ko'rinadi: sana, summa, turi, partiya yoki prixod. Agar bu ikki xil to'lov bo'lsa — **«✓ Ikki xil pul»** tugmasini bosasiz va u ro'yxatdan chiqadi (buxgalter va adminlar bosa oladi).
+- **Ro'yxat:** hamma yozuvlar, eng yangisi tepada, 100 tadan sahifa. Kitob, turi, sklad, joy, kim to'ladi va «faqat men yozganlar» bo'yicha filtr. Excel (XLSX) yuklab olish mumkin. Umumiy xarajat qatorlari (masalan oyliklar) faqat buxgalterga ko'rinadi, boshqalar ularning jamisini ko'radi.
+
+### 2. Umumiy joydan partiyaga xarajat: «＋ Partiyaga xarajat»
+
+- Sarflar sahifasidagi tugma `/accounting/sarflar/kiritish` ga olib boradi.
+- Mashinalar ro'yxati: ochiq mashinalar, eng yangisi tepada. Qidiruv bilan yopilganini ham topish mumkin — u «⚠ yopilgan» deb belgilanadi. Bekor qilingan mashina hech qachon chiqmaydi.
+- Mashinani tanlaysiz, hisobni yozasiz, saqlaysiz. **Forma ochiq qoladi:** turi, valyuta, sana va kim to'lagani keyingi hisob uchun saqlanadi. Boshqa mashinaga o'tsangiz ham saqlanadi. Faqat summa va izoh tozalanadi. Turi odatda «Yo'lkira» bo'lib turadi (mashina sahifasida ham).
+- Telefonda tanlangan mashinaning formasi ro'yxatdan oldin chiqadi.
+- Pastda «Bugun men kiritganlar» ro'yxati turadi. Boshqa oyga yozilgan hisob o'sha oyga havola bilan ko'rsatiladi.
+
+### 3. Saqlashdan oldin ogohlantirish: «⚠ Bu pul allaqachon yozilgan bo'lishi mumkin» (6-javobingiz)
+
+- Mashina yoki prixod hisobini yozayotganda, xuddi shu pul «Xarajatlar»da allaqachon yozilgan bo'lsa — yoki aksincha — saqlashdan OLDIN ogohlantiradi. Qaysi kitobda, qaysi sana, qaysi kassa va kim yozganini aytadi, va qanday tuzatishni: birlashtirish, bittasini bekor qilish yoki qarz to'lovi sifatida yozish.
+- **Bitta valyutada** summa sentigacha teng bo'lsa. **Bitta kassada** — kassadan chiqqan summa sentigacha teng bo'lsa (dollar hisob va so'm xarajat ham topiladi).
+- **Boshqa valyutada** — faqat dollarda 1 % ichida va 3 kun ichida bo'lsa (masalan bojxona: dollarda yozilgan, o'sha kunlari so'mda to'langan). Bunday qator «≈ dollarda yaqin» belgisi bilan chiqadi. Avvalgi kengroq qoida (2 % yoki $5, ikki hafta) tasodifiy pullarni ham «bir xil» deb chiqarardi — masalan $40 lik tushirish va 470 000 so'mlik suv puli.
+- Kursi yo'q pul bo'lsa: «kursi yo'q — solishtirib bo'lmadi» deb aytadi.
+- Siz baribir saqlay olasiz: «Baribir saqlash» tugmasi bor. Yozganlaringiz o'chib ketmaydi.
+- Bu xarajat formasida, mashina sahifasidagi xarajatda va prixodlar jadvalida ishlaydi.
+
+### 4. Xatolar tuzatildi
+
+- **Bekor qilingan mashinaga xarajat yoki narx yozib bo'lardi.** Mashinani bekor qilish va unga hisob (yoki mijoz narxi) yozish bir vaqtda bosilsa, ikkalasi ham o'tib ketardi. Endi bunday bo'lmaydi: yo hisob avval yoziladi va bekor qilish rad etiladi, yo bekor qilish avval o'tadi va hisob rad etiladi. Bekor qilingan mashinada «＋» tugmasi ko'rinmaydi, 🗑 esa qoladi.
+- **Prixod xarajatini qo'lda yasalgan so'rov bilan mashinaga yoki qabul formasi orqali yozib bo'lardi.** Endi har bir xarajat faqat o'z joyiga, faqat xarajat eshigidan yoziladi.
+- **Mashina sahifasidagi «mijozga to'g'ridan-to'g'ri» ro'yxati mashina tushirilgandan keyin bo'sh qolardi.** Endi ro'yxat mashinaga ortilgan yuklardan olinadi.
+- **Hodim o'z pulidan to'lagan xarajatda hodimning ismi** endi faqat buxgalter va adminlarga ko'rinadi (hamma xarajat kartalarida).
+
+### Hali qilinmagan (aytib qo'yaman)
+
+- Bir nechta mashina yoki bir nechta kun bo'yicha yig'indi solishtirilmaydi — faqat bitta mashinaning bitta kuni va prixodlar jadvalining bitta varag'i.
+- «Tekshiring» bo'limidagi son faqat juftlarni sanaydi. Bir nechta hisob birgalikda bitta xarajatga teng bo'lsa, buni faqat saqlash paytidagi ogohlantirish aytadi.
+- Kassada kurs bilan almashtirilgan pul 1 % dan ko'p farq qilsa yoki 3 kundan uzoq bo'lsa ogohlantirilmaydi — u «Xarajat kassasi» navbatida ko'rinadi.
+- Rasxod xabarini mavjud mashina hisobiga yopish (8-savol) qilinmadi. Ogohlantirish oynasida qanday yopilishi yozilgan.
+- Yo'lkira tarifi bo'yicha taqsimlash sizning 6 ta javobingizni kutyapti.
+
 ## Rastamojka: to'rtta ⭐ javobingiz kodda mahkamlandi — 2026-10-13
 
 **Migratsiya yo'q** (soni 132 bo'lib qoladi). Tekshirish: `/api/version`.
