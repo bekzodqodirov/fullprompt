@@ -21,11 +21,12 @@ import { confirmReceipt } from '@/modules/wms/receipts/service';
 import { recomputeAll } from '@/modules/wms/costing/service';
 
 /**
- * The receive wizard's «extra cost» (the audit's G10, 2026-09-24): it was
- * inserted inside the receipt's transaction with no dollar figure and no
- * allocation, and nothing afterwards ever converted it — a USD rate is never
- * saved, so the FX trigger never fired for USD. The receipt card said «kurs
- * yo'q» and every tannarx read $0 of it, for ever.
+ * The receive wizard's «extra cost». The audit's G10 (2026-09-24) found it
+ * inserted with no dollar figure and never converted; #1045 took the money
+ * input off the wizard; and SARFLAR §8.2 CLOSED the door, because a
+ * hand-built post was the last way to write a cargo cost past the cost door
+ * (its grant, its payer rules, the truck lock and the twin warning). What
+ * stays is the nightly sweep that repairs the old rows production still holds.
  */
 
 const S = String(Date.now()).slice(-7);
@@ -36,8 +37,8 @@ let costTypeId: string;
 const madeReceipts: string[] = [];
 const ctx = () => ({ actorId });
 
-async function receive(extraUsd: number) {
-  const receiptId = uuidv4();
+/** A receipt; `extraUsd > 0` posts the retired extra cost with it. */
+async function receive(extraUsd: number, receiptId = uuidv4()) {
   const lotId = uuidv4();
   await db.insert(attachments).values({
     entityType: 'receipt_lot',
@@ -65,7 +66,7 @@ async function receive(extraUsd: number) {
           totalVolumeM3: 0.2,
         },
       ],
-      extraCosts: [{ costTypeId, amount: extraUsd, currency: 'USD', note: '' }],
+      extraCosts: extraUsd > 0 ? [{ costTypeId, amount: extraUsd, currency: 'USD', note: '' }] : [],
     } as Parameters<typeof confirmReceipt>[0],
     ctx(),
   );
@@ -108,27 +109,35 @@ afterAll(async () => {
 });
 
 describe("the receive wizard's extra cost", () => {
-  it('is converted and allocated the moment the receipt commits', async () => {
-    const receiptId = await receive(12);
-    const [entry] = await db.select().from(costEntries).where(eq(costEntries.receiptId, receiptId));
-    expect(entry!.amountUsd).toBe('12.00');
-    const shares = await db
-      .select()
-      .from(costAllocations)
-      .where(eq(costAllocations.costEntryId, entry!.id));
-    expect(shares.reduce((sum, row) => sum + Number(row.amountUsd), 0)).toBeCloseTo(12, 2);
+  it('is REFUSED, and nothing — not the receipt, not a cost — is written', async () => {
+    const receiptId = uuidv4();
+    await expect(receive(12, receiptId)).rejects.toMatchObject({ code: 'extra_costs_retired' });
+    expect(await db.select().from(receipts).where(eq(receipts.id, receiptId))).toEqual([]);
+    expect(await db.select().from(costEntries).where(eq(costEntries.receiptId, receiptId))).toEqual([]);
   });
 
   it('an old unconverted one is repaired by the nightly sweep', async () => {
-    const receiptId = await receive(7);
-    // The state production holds for every wizard cost before this round.
-    const [entry] = await db.select().from(costEntries).where(eq(costEntries.receiptId, receiptId));
-    await db.update(costEntries).set({ amountUsd: null, fxRateUsed: null }).where(eq(costEntries.id, entry!.id));
-    await db.delete(costAllocations).where(eq(costAllocations.costEntryId, entry!.id));
+    const receiptId = await receive(0);
+    // The row production holds from before #1045: written inside the receipt,
+    // no dollars, no shares.
+    const [entry] = await db
+      .insert(costEntries)
+      .values({
+        scope: 'receipt',
+        receiptId,
+        costTypeId,
+        amount: '7',
+        currency: 'USD',
+        costDate: '2026-09-20',
+        enteredBy: actorId,
+      })
+      .returning();
 
     await recomputeAll({ unconverted: true });
 
     const [after] = await db.select().from(costEntries).where(eq(costEntries.id, entry!.id));
     expect(after!.amountUsd).toBe('7.00');
+    const shares = await db.select().from(costAllocations).where(eq(costAllocations.costEntryId, entry!.id));
+    expect(shares.reduce((sum, row) => sum + Number(row.amountUsd), 0)).toBeCloseTo(7, 2);
   });
 });

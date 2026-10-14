@@ -1,23 +1,20 @@
-import { asc, eq } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
-import { db } from '@/modules/platform/db/client';
-import { boxes, clients, costTypes, currencies, receiptLots, receipts } from '@/modules/platform/db/schema';
+import { payerView } from '@/modules/wms/partners/staff';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { batchCostEntryCount, batchCostSheet, batchScopeCostByType, receiptCostMatrix } from '@/modules/wms/costing/service';
 import { batchLots } from '@/modules/wms/batches/lots';
 import { mayOpenBatchCard, mayOpenBatchCosts } from '@/modules/wms/batches/card-door';
 import { loadBatchHead } from '@/modules/wms/batches/card-head';
 import { canWriteDeal } from '@/modules/wms/deals/service';
-import { listPartners } from '@/modules/wms/partners/service';
 import { CostPanel } from '@/components/cost-panel';
 import { ReceiptCostGrid, type GridReceiptRow } from '../receipt-cost-grid';
-import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
-import { tillOptionsFor } from '@/modules/wms/costing/till-props';
 import { costSightFor, tillView } from '@/modules/wms/costing/cost-sight';
 import { mayPickTill } from '@/modules/wms/accounting/till-door';
 import { BatchCard, batchTabMetadata } from '../batch-card';
+import { mayEnterBatchCost } from '@/modules/wms/costing/cost-door';
+import { costPanelOptions } from '@/modules/wms/costing/cost-entry';
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   return batchTabMetadata((await params).id, 'xarajat');
@@ -50,6 +47,9 @@ export default async function BatchCostGridPage({ params }: { params: Promise<{ 
   if (!head) notFound();
   if (!mayOpenBatchCard(actor, head.batch)) notFound();
   const { batch } = head;
+  // The ADD door (SARFLAR §8.5), the one the action asks: a cancelled truck
+  // keeps its 🗑 (the void stays `canEnter`) and loses every «＋».
+  const mayAdd = mayEnterBatchCost(actor, batch);
 
   // The goods, not only the prixod number (owner, 2026-09-24: «jadval rasxod
   // kiritadigan joyda tovar nomi, karobka soni va rasmi kerak»). The ROW
@@ -69,20 +69,15 @@ export default async function BatchCostGridPage({ params }: { params: Promise<{ 
     batchScopeCostByType(id, sight),
   ]);
   const existing = Object.fromEntries(matrix);
-  const types = await db
-    .select({ id: costTypes.id, name: costTypes.name })
-    .from(costTypes)
-    .where(eq(costTypes.active, true))
-    // A column order the database happens to return is a column order that
-    // can move between two sessions typing the same sheet (#524).
-    .orderBy(asc(costTypes.createdAt), asc(costTypes.code));
-  const currencyCodes = (
-    await db.select({ code: currencies.code }).from(currencies).where(eq(currencies.active, true))
-  ).map((row) => row.code);
-  // Same list the CostPanel offers: who settled this, when it was not us.
-  const partnerOptions = canEnter
-    ? (await listPartners({ includeStaff: maySeeStaffMoney(actor.permissions) })).map((row) => ({ id: row.id, name: row.name }))
-    : [];
+  // ONE reader for what the panel and the grid offer (SARFLAR §2), shared
+  // with the general entry page: the types in one order (a column order the
+  // database happens to return can move between two sessions typing the same
+  // sheet, #524), and — only for a reader who may add — the counterparties,
+  // the kassas and the truck's RIDERS, which unloading does not empty.
+  const options = await costPanelOptions(actor, id, { mayEnter: mayAdd });
+  const types = options.types;
+  const currencyCodes = options.currencies;
+  const partnerOptions = options.partners;
 
   // Q19 (owner, 2026-09-25): the VED lists only the entries he typed, and
   // the truck's total and per-unit cost come back null for him — everybody's
@@ -91,19 +86,7 @@ export default async function BatchCostGridPage({ params }: { params: Promise<{ 
   // «Rasxodini yozmading» (owner, 2026-09-24): a truck that has LEFT with
   // nothing attributed to it — no bill of its own, no stamped grid cell.
   const ownCostCount = batch.departedAt ? await batchCostEntryCount(id) : null;
-  const panelTypes = await db
-    .select({ id: costTypes.id, code: costTypes.code, name: costTypes.name })
-    .from(costTypes)
-    .where(eq(costTypes.active, true));
-  // The clients whose cargo is on the truck NOW — who a truck bill may name.
-  const panelClients = await db
-    .selectDistinct({ id: clients.id, clientCode: clients.clientCode })
-    .from(boxes)
-    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
-    .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
-    .innerJoin(clients, eq(receipts.clientId, clients.id))
-    .where(eq(boxes.currentBatchId, id));
-  const tills = await tillOptionsFor(actor.permissions);
+  const tills = options.tills;
 
   return (
     <BatchCard head={head} actor={actor} active="xarajat">
@@ -117,7 +100,7 @@ export default async function BatchCostGridPage({ params }: { params: Promise<{ 
         <CostPanel
           scope="batch"
           targetId={batch.id}
-          entries={costSheet.entries.map(({ entry, typeName, clientCode, partnerName, accountName }) => ({
+          entries={costSheet.entries.map(({ entry, typeName, clientCode, partnerName, partnerIsStaff, accountName }) => ({
             id: entry.id,
             typeName,
             amount: entry.amount,
@@ -127,14 +110,18 @@ export default async function BatchCostGridPage({ params }: { params: Promise<{ 
             allocationBasis: entry.allocationBasis,
             note: entry.note,
             clientCode,
-            partnerName,
+            ...payerView(actor.permissions, { partnerName, partnerIsStaff }),
             ...tillView(actor.permissions, { accountId: entry.accountId, accountName, mergedExpenseId: entry.mergedExpenseId }),
           }))}
-          costTypes={panelTypes}
+          costTypes={types}
           currencies={currencyCodes}
-          clientOptions={panelClients}
+          clientOptions={options.clients}
           defaultCurrency={currencyCodes.includes('CNY') ? 'CNY' : 'USD'}
-          canEdit={canEnter}
+          // A truck's bill is the road unless said otherwise (§8.5) — the same
+          // default /kiritish proposes for the same truck.
+          defaultTypeCode="freight"
+          canVoid={canEnter}
+          canAdd={mayAdd}
           today={tashkentDay()}
           canUnmerge={mayPickTill(actor.permissions)}
           tillOptions={tills}
@@ -182,7 +169,7 @@ export default async function BatchCostGridPage({ params }: { params: Promise<{ 
             currencies={currencyCodes}
             defaultCurrency="USD"
             today={tashkentDay()}
-            canEdit={canEnter}
+            canEdit={mayAdd}
             partners={partnerOptions}
             tills={tills}
             ownOnly={sight.ownOnly !== null}

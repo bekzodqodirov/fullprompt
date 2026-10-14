@@ -2637,7 +2637,8 @@ backlog with its own code); warehouse staff need «Skladchi»/«Sklad mudiri» a
 their warehouse on /admin/users to hear anything.
 
 **Round — the customs calculator fix (2026-10-09 → 10-13; DECISIONS
-#1340-#1353; migration 0131 `calc_excise` — ledger must reach 132; spec
+#1340-#1354 — #1354 = his «to'g'ri degandek qil» on the four ⭐, two of which
+NOTHING pinned until then; migration 0131 `calc_excise` — ledger must reach 132; spec
 `docs/RASTAMOJKA-TUZATISH.md`).** His «tnved code va dona m2 juftda otadgan
 tovarlarni kirgizadgan joyi yoqku» + «kg hamda donani birga kirgizadgan
 tovarlar … hatolik ketmasin». Two audits first (57 + 76 agents, a reference
@@ -2673,6 +2674,42 @@ press later. Stated, not changed (§4): the `max` floor per BLOCK, the
 no-certificate duty on the nominal %, VAT 12 % default, sborniy one block per
 code; his four ⭐ questions built as defaults (netto on the row; excise
 «yo'q/foiz/$ har birlikka»; floor per code; nominal %).
+
+**Round — Sarflar: «Pul qayerga ketdi» + the truck bill from the money section
+(2026-10-14; DECISIONS #1355-#1363; NO migration, ledger 132; spec
+`docs/SARFLAR.md`, §8 binding, §9 = what the build changed).** His «moliya
+bo'limida … qayerda qanday rasxod bo'layotganini 1 pageda … partiyalarga
+rasxodni obshiy joydan ham kirgazish», answers «Hammasi ⭐» + Q3 (no route
+grouping; truck money only in «Partiyalar», each with its kind chip) + Q6 (warn
+BEFORE the save, naming where). `/accounting/sarflar` (`companyMoneySight`):
+ONE row set `spendRowsSql` (kind stamp-first, place, payer) feeds every block,
+each reconciling to «kitob jami» = the P&L's direct + opex to the cent; hero =
+`pnlParts.cost`, kurs farqi the one bridge line; expense ROWS only to staff-money
+readers; register + audited XLSX. `/accounting/sarflar/kiritish`: picker on
+`mayEnterBatchCostWhere`, the truck's own CostPanel kept open across trucks
+(`afterSave='again'`, `CostKept`), freight default. THE TWIN ALARM
+(`accounting/twins.ts`): one pure `twinShape` over payer kinds (kassa
+compared in the KASSA's currency to the cent; five shapes with words and cures),
+SQL prefilter + JS arbiter, sums, reader-gated (`mayPickTill`), colleague
+redacted, single-use ack token into the create audit; wired into the cost form,
+the grid (pre-write hook — the engine never asks about the reader) and the
+expense form (onSubmit). Between two currencies the alarm is NARROWER than the
+M4a merge: 1 % of the expense's dollars, no $5 floor, ≤ 3 days (`TWIN_FX_PCT`,
+`TWIN_FX_DAYS`) — the merge's band gave 11 false twins per bill on a dense book;
+«≈» marks such a line. The map's «tekshirilmagan» count lists both rows of each
+pair and «✓ Ikki xil pul» (`ackTwinPair`, audit verb `twin_check`); its expense
+side is one MATERIALIZED pass (3.6 s → 0.4 s). Write path: `mayEnterBatchCost`
+(no «＋» on a cancelled truck), `addCostEntry` writes the scope's own target in
+a short tx (prixod FOR KEY SHARE, truck FOR SHARE), a truck PRICE takes the
+truck FOR SHARE too, `cancelBatch` locks truck → money → cartons (cartons first
+was a deadlock with the post-commit split — my own first order), and
+`confirmReceipt` refuses a posted extra cost (`extra_costs_retired`). Reviewed
+twice as built (five lenses; 23 findings, 12 refuted as already fixed by the
+first pass — a moving tree again), 14 red proofs by string edit in the second
+pass + the form key reproduced red in a browser. **7057 unit/integration + the
+e2e suite** green on a fresh gsr_ci in CI's order. WAITING on his 6 answers:
+tariff-proportional truck-cost split (`docs/YOLKIRA-TAQSIMOT.md`, would be
+0132 → ledger 133).
 
 **Latest migration: 0131** (`calc_excise`, `when` …110; ledger must reach **132**). Before
 it: 0130 (`bot_redelivery`, `when` …109). Before
@@ -2817,12 +2854,12 @@ and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read
 2026-09-30 04:30 UTC, built after #103 merged, so 0120's code runs) — the count
 was asked for and NOT quoted; PR #106 (0121) deployed 2026-09-30 evening («Hozir sistema
 yaxshi ishlayabti», count not quoted either); PR #109 (0122) was asked about and NOT
-answered, so COUNT FIRST on the next deploy: it must read
-**132** (anything less means a migration did not land — read the `migrate`
-container's own output; from 113 the whole 0113-0120 set applies and EVERY
-container must be recreated once: `--profile https --profile telegram up -d
---build`, compose gained `init`, a healthcheck, log caps and a postgres flag);
-a code-only round after it is checked by `/api/version`, not the count.
+answered. **Then he CONFIRMED 132** («deploy qildim 132 chiqdi», 2026-10-13,
+after PR #118 — the customs calculator fix, 0131), so production is at the
+journal's length and EVERYTHING in this file through #1353 is LIVE. The next
+round with a migration must read **133**; a code-only round after it is
+checked by `/api/version`, not the count (anything short of the journal means
+a migration did not land — read the `migrate` container's own output).
 Never carry this number over from a previous session: read it
 (`ls src/modules/platform/db/migrations/*.sql | wc -l`) before writing the
 owner a step list, because the count is the only check that separates «the

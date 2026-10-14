@@ -1483,9 +1483,32 @@ export async function cancelBatch(batchId: string, reason: string, ctx: AuditCon
     // customs papers and its boxes are somewhere between two countries.
     if (!['forming', 'loading'].includes(batch.status)) throw new ScanError('batch_already_departed');
 
-    // Money first, because money is the guard that cannot be undone by giving
-    // the boxes back. A batch with a live cost or a charge raised against it
-    // is one somebody has already accounted for.
+    // The truck row, LOCKED, before the money is counted (docs/SARFLAR.md
+    // §8.5). A bill typed onto this truck takes the same row FOR SHARE in its
+    // own short transaction, and so does a price (`addTransaction`), so they
+    // serialise: either the money commits first and is counted below
+    // (`batch_has_costs` / `batch_has_charges`), or this cancel commits first
+    // and the money's locking read finds `cancelled`. Counted with no lock,
+    // both used to succeed — live money on a cancelled truck. A foreign-key
+    // check alone takes KEY SHARE, which NO KEY UPDATE does not wait for.
+    //
+    // The order is truck → money → cartons, the count-load's own (truck → lot
+    // → cartons), and money BEFORE any carton lock: a bill's split runs after
+    // its commit and key-shares this truck's cartons one by one, so a cancel
+    // holding a carton it then waits behind is a deadlock — refused on the
+    // count instead, before a single carton is touched.
+    const locked = (await tx.execute(
+      sql`SELECT status FROM batches WHERE id = ${batchId}::uuid FOR NO KEY UPDATE`,
+    )) as unknown as { status: string }[];
+    const lockedStatus = [...locked][0]?.status;
+    if (!lockedStatus || !['forming', 'loading'].includes(lockedStatus)) {
+      throw new ScanError('batch_already_departed');
+    }
+
+    // Money first among the refusals, because money is the guard that cannot
+    // be undone by giving the boxes back. A batch with a live cost or a charge
+    // raised against it is one somebody has already accounted for. A grid
+    // cell stamped on this truck carries its batch_id, so it counts here too.
     const [costs] = await tx
       .select({ n: sql<number>`count(*)` })
       .from(costEntries)

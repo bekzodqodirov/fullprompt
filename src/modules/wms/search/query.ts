@@ -54,3 +54,8 @@ export function parseQuery(raw: string): ParsedQuery {
 export function likeNeedle(text: string): string {
   return `%${text.replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
 }
+
+/** The `needle%` for an ILIKE — «starts with» — escaped the same way (SARFLAR §8.5's picker order). */
+export function prefixNeedle(text: string): string {
+  return `${text.replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
+}

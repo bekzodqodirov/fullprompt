@@ -218,7 +218,20 @@ describe('4 — the partner card, the cost void, the assistant', () => {
 });
 
 describe('5 — DERIVED: every cost card lists through the one reader and speaks the kassa through tillView', () => {
-  const cards = globSync('src/app/**/*.tsx').filter((path) => readFileSync(path, 'utf8').includes('<CostPanel'));
+  // A CLIENT file that renders the panel (the general entry page's desk,
+  // SARFLAR §2) only relays rows: the server page beside it that mounts it
+  // is the card the rule is about, so it stands in the client file's place.
+  const tsx = globSync('src/app/**/*.tsx');
+  const cards = tsx
+    .filter((path) => readFileSync(path, 'utf8').includes('<CostPanel'))
+    .flatMap((path) => {
+      if (!readFileSync(path, 'utf8').startsWith("'use client'")) return [path];
+      const dir = path.slice(0, path.lastIndexOf('/'));
+      const name = path.slice(path.lastIndexOf('/') + 1).replace(/\.tsx$/, '');
+      const mounts = tsx.filter((other) => other.startsWith(`${dir}/`) && readFileSync(other, 'utf8').includes(`from './${name}'`));
+      expect(mounts.length, `${path} is mounted by a server page beside it`).toBeGreaterThan(0);
+      return mounts;
+    });
 
   it('finds the four cost cards', () => {
     expect(cards.length).toBeGreaterThanOrEqual(4);
@@ -228,6 +241,8 @@ describe('5 — DERIVED: every cost card lists through the one reader and speaks
     for (const path of cards) {
       const source = read(path);
       expect(source, path).toContain('tillView(actor.permissions');
+      // A colleague's own-pocket payer is named only to staff-money readers (M3a).
+      expect(source, path).toContain('payerView(actor.permissions');
       expect(/costEntriesFor\(|batchCostSheet\(/.test(source), path).toBe(true);
       expect(source, path).toMatch(/costSightFor\(actor\)/);
       expect(source, path).not.toContain('.from(costEntries)');

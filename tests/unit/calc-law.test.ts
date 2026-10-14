@@ -160,6 +160,20 @@ describe('the additional-duty bands are inclusive-HIGH', () => {
     );
     expect(r).toMatchObject({ ok: true, dutyUsd: 0, addDutyUsd: 0, addDutyPct: 0 });
   });
+
+  it('the band follows the NOMINAL advalor %, not the effective one — his answer 4 (#1354)', () => {
+    // 6907 kafel, 15 %, kamida $1/m²: the floor WINS (200 > 30), so the duty
+    // actually charged is 100 % of the value. The band is read off the code's
+    // own 15 % → +10 %. An effective reading would put 100 % in the top band
+    // (+20 % = $40). Every older no-certificate case had effective == nominal,
+    // so nothing could tell the two readings apart until this one.
+    const r = customsFor(
+      group({ tnvedCode: '6907', dutyPct: 15, dutyMode: 'max', dutySpecific: 1, dutyUnit: 'm2', hasCertificate: false }),
+      [item({ bazaUsd: 1, bazaBasis: 'm2', measureUnit: 'm2', measureQty: 200 })],
+    );
+    // value 200; duty MAX(30; 200) = 200; +10 % of 200 = 20; VAT 12 % of 420.
+    expect(r).toMatchObject({ ok: true, dutyUsd: 200, addDutyPct: 10, addDutyUsd: 20, vatUsd: 50.4, customsUsd: 270.4 });
+  });
 });
 
 describe('the four duty modes', () => {
@@ -218,6 +232,23 @@ describe('the four duty modes', () => {
     );
     // value 800; advalor 160; specific 300 → MAX 300.
     expect(r).toMatchObject({ ok: true, valueUsd: 800, dutyUsd: 300 });
+  });
+
+  it('the «kamida $X» floor is taken over the whole CODE, not row by row — his answer 3 (#1354)', () => {
+    // One declaration line holds both goods. The rows must disagree about
+    // which half wins, or the two readings give the same number: the $20
+    // pair is advalor-wins alone (400 > 300), the $5 pair floor-wins alone
+    // (100 < 300). Per code: MAX(20 % × 2 500; 200 juft × $3) = 600.
+    // Row by row it would be 400 + 300 = 700.
+    const r = customsFor(
+      group({ tnvedCode: '6403', dutyPct: 20, dutyMode: 'max', dutySpecific: 3, dutyUnit: 'juft' }),
+      [
+        item({ seq: 1, bazaUsd: 20, bazaBasis: 'juft', measureUnit: 'juft', measureQty: 100 }),
+        item({ seq: 2, bazaUsd: 5, bazaBasis: 'juft', measureUnit: 'juft', measureQty: 100 }),
+      ],
+    );
+    // value 2 500; duty 600; VAT 12 % of 3 100 = 372.
+    expect(r).toMatchObject({ ok: true, valueUsd: 2500, dutyUsd: 600, vatUsd: 372, customsUsd: 972 });
   });
 
   it('0125: itemMeasure answers m³ from the volume, and nothing else does', () => {

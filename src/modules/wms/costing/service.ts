@@ -10,6 +10,7 @@ import {
   boxMovements,
   clients,
   partners,
+  partnerTypes,
   costAllocations,
   costEntries,
   costTypes,
@@ -33,6 +34,7 @@ import { declaredFilter, riderCtesSql, riderFilter, riderLoad, riderWithoutShare
 import { bearsPriceSql, internalLegSql } from '../batches/internal';
 import { CUSTOMS_CODES_SETTING, parseCustomsCodes } from '../calc/customs-codes';
 import type { CostSight } from './cost-sight';
+import { staffPartnerSql } from '../partners/staff';
 
 export class CostError extends Error {
   constructor(public readonly code: string) {
@@ -197,8 +199,31 @@ export function tillUsd(
   return { usd: toUsd(accountAmount, tillRate), rate: tillRate };
 }
 
-export async function addCostEntry(input: z.infer<typeof costEntrySchema>, ctx: AuditContext) {
-  if (!ctx.actorId) throw new CostError('unauthenticated');
+/**
+ * What only an internal caller may say about a new entry (docs/SARFLAR.md
+ * §8.5). `stampTruck` is the per-prixod grid's truck: the stamp is that
+ * cell's scope AND its attribution (audit U18), and it is a capability, not
+ * a field — `costEntrySchema` is non-strict, so a key posted to the action is
+ * stripped before it gets here, and a receipt cost typed anywhere else can
+ * never land on a truck.
+ */
+export interface AddCostOptions {
+  stampTruck?: string;
+  /**
+   * The twins the person saw and saved anyway («Baribir saqlash», §8.2) —
+   * written into the create audit so the map's count stops asking about a
+   * pair somebody already answered.
+   */
+  twinAck?: string[];
+}
+
+export async function addCostEntry(
+  input: z.infer<typeof costEntrySchema>,
+  ctx: AuditContext,
+  opts: AddCostOptions = {},
+) {
+  const actorId = ctx.actorId;
+  if (!actorId) throw new CostError('unauthenticated');
   if (input.scope === 'receipt' && !input.receiptId) throw new CostError('validation');
   if (input.scope === 'batch' && !input.batchId) throw new CostError('validation');
   if (input.scope === 'crate' && !input.crateId) throw new CostError('validation');
@@ -248,51 +273,100 @@ export async function addCostEntry(input: z.infer<typeof costEntrySchema>, ctx: 
         : tillUsd(till.currency, accountAmount, await rateFor(till.currency, input.costDate));
   }
 
-  const [entry] = await db
-    .insert(costEntries)
-    .values({
-      scope: input.scope,
-      receiptId: input.receiptId ?? null,
-      batchId: input.batchId ?? null,
-      crateId: input.crateId ?? null,
-      pickupId: input.scope === 'pickup' ? (input.pickupId ?? null) : null,
-      costTypeId: input.costTypeId,
-      amount: String(input.amount),
-      currency: input.currency,
-      costDate: input.costDate,
-      allocationBasis: input.allocationBasis,
-      clientId: input.clientId ?? null,
-      partnerId: input.partnerId || null,
-      accountId: input.accountId || null,
-      accountAmount: accountAmount === null ? null : String(accountAmount),
-      accountAmountUsd: kassaUsd === null ? null : String(kassaUsd.usd),
-      accountRateUsed: kassaUsd === null ? null : String(kassaUsd.rate),
-      amountUsd: amountUsd === null ? null : String(amountUsd),
-      fxRateUsed: amountUsd === null ? null : String(entryRate),
-      note: input.note || null,
-      enteredBy: ctx.actorId,
-    })
-    .returning();
-  await writeAudit(db, ctx, {
-    entityType: 'cost_entry',
-    entityId: entry!.id,
-    action: 'create',
-    after: {
-      scope: input.scope,
-      amount: input.amount,
-      currency: input.currency,
-      ...(input.accountId ? { accountId: input.accountId, accountAmount } : {}),
-    },
+  // One target per entry, the one its SCOPE names (SARFLAR §8.5): the form
+  // posts the ids it has and the DB CHECK only demands the scope's own, so a
+  // hand-built `scope:'receipt'` post carrying any truck's id was a warehouse
+  // operator writing a «grid-stamped» cell onto a truck. Only the grid passes
+  // `stampTruck`. And the client is a DIRECT bill's alone: on any other basis
+  // a posted client was stored and drawn as a «→ code» chip naming somebody
+  // the split never singled out (a service rule, not a CHECK — `createCrate`
+  // legitimately stores the crate's client on its weight-basis fee).
+  const target = {
+    receiptId: input.scope === 'receipt' ? (input.receiptId ?? null) : null,
+    batchId:
+      input.scope === 'batch' ? (input.batchId ?? null) : input.scope === 'receipt' ? (opts.stampTruck ?? null) : null,
+    crateId: input.scope === 'crate' ? (input.crateId ?? null) : null,
+    pickupId: input.scope === 'pickup' ? (input.pickupId ?? null) : null,
+    clientId: input.allocationBasis === 'direct_to_client' ? (input.clientId ?? null) : null,
+  };
+
+  // Everything above reads on the POOL (#714); the transaction below is the
+  // short one the cancelled-truck race needs. Order: the prixod, then the
+  // truck — every other prixod-locking door (the annul) takes them that way,
+  // and the opposite order is a deadlock pair.
+  const entry = await db.transaction(async (tx) => {
+    if (target.receiptId) {
+      const rows = (await tx.execute(
+        sql`SELECT status FROM receipts WHERE id = ${target.receiptId}::uuid FOR KEY SHARE`,
+      )) as unknown as { status: string }[];
+      const receipt = [...rows][0];
+      if (!receipt) throw new CostError('not_found');
+      if (receipt.status === 'voided') throw new CostError('receipt_voided');
+    }
+    if (target.batchId) {
+      // FOR SHARE, read AFTER any wait: `cancelBatch` takes this row FOR NO
+      // KEY UPDATE before it counts the truck's costs, so either this bill
+      // commits first and the cancel finds it (`batch_has_costs`), or the
+      // cancel commits first and this locking read sees `cancelled`. The two
+      // can no longer both succeed (the judge's race, measured).
+      const rows = (await tx.execute(
+        sql`SELECT status FROM batches WHERE id = ${target.batchId}::uuid FOR SHARE`,
+      )) as unknown as { status: string }[];
+      const batch = [...rows][0];
+      if (!batch) throw new CostError('not_found');
+      if (batch.status === 'cancelled') throw new CostError('cancelled');
+    }
+    const [row] = await tx
+      .insert(costEntries)
+      .values({
+        scope: input.scope,
+        receiptId: target.receiptId,
+        batchId: target.batchId,
+        crateId: target.crateId,
+        pickupId: target.pickupId,
+        costTypeId: input.costTypeId,
+        amount: String(input.amount),
+        currency: input.currency,
+        costDate: input.costDate,
+        allocationBasis: input.allocationBasis,
+        clientId: target.clientId,
+        partnerId: input.partnerId || null,
+        accountId: input.accountId || null,
+        accountAmount: accountAmount === null ? null : String(accountAmount),
+        accountAmountUsd: kassaUsd === null ? null : String(kassaUsd.usd),
+        accountRateUsed: kassaUsd === null ? null : String(kassaUsd.rate),
+        amountUsd: amountUsd === null ? null : String(amountUsd),
+        fxRateUsed: amountUsd === null ? null : String(entryRate),
+        note: input.note || null,
+        enteredBy: actorId,
+      })
+      .returning();
+    // On the transaction's own handle, so the audit row commits with the
+    // cost or not at all.
+    await writeAudit(tx, ctx, {
+      entityType: 'cost_entry',
+      entityId: row!.id,
+      action: 'create',
+      after: {
+        scope: input.scope,
+        amount: input.amount,
+        currency: input.currency,
+        ...(input.accountId ? { accountId: input.accountId, accountAmount } : {}),
+        ...(opts.twinAck && opts.twinAck.length > 0 ? { twinAck: opts.twinAck } : {}),
+      },
+    });
+    return row!;
   });
-  await recomputeEntry(entry!.id);
+  // After the commit, each in its own transaction, exactly as before.
+  await recomputeEntry(entry.id);
   // The debt side. Written AFTER the allocation so a partner never carries a
   // charge for a cost that failed to land; dynamic import because costing is
   // the older module and partners reaches back into it for the FX rate.
   if (input.partnerId) {
     const { chargeForCost } = await import('../partners/link');
-    await chargeForCost(entry!.id, ctx);
+    await chargeForCost(entry.id, ctx);
   }
-  return entry!;
+  return entry;
 }
 
 /**
@@ -1912,6 +1986,7 @@ export interface CostRow {
   typeName: string;
   clientCode: string | null;
   partnerName: string | null;
+  partnerIsStaff: boolean;
   accountName: string | null;
 }
 
@@ -1952,12 +2027,16 @@ export async function costEntriesFor(
       typeName: costTypes.name,
       clientCode: clients.clientCode,
       partnerName: partners.name,
+      // Whether the payer is a colleague's own pocket (M3a): the cards name
+      // it only to the staff-money readers (`payerView`, partners/staff.ts).
+      partnerIsStaff: sql<boolean>`coalesce(${staffPartnerSql()}, false)`,
       accountName: moneyAccounts.name,
     })
     .from(costEntries)
     .innerJoin(costTypes, eq(costEntries.costTypeId, costTypes.id))
     .leftJoin(clients, eq(costEntries.clientId, clients.id))
     .leftJoin(partners, eq(costEntries.partnerId, partners.id))
+    .leftJoin(partnerTypes, eq(partners.typeId, partnerTypes.id))
     .leftJoin(moneyAccounts, eq(costEntries.accountId, moneyAccounts.id))
     .where(sight.ownOnly ? and(where, eq(costEntries.enteredBy, sight.ownOnly)) : where)
     .orderBy(asc(costEntries.createdAt));
@@ -2223,6 +2302,17 @@ export interface GridSaveResult {
 export async function addReceiptCostsBulk(
   input: ReceiptCostGridInput,
   ctx: AuditContext,
+  opts: {
+    /**
+     * Asked after every refusal below and before the first cell is written
+     * (SARFLAR §8.2): the action's twin check, which throws to stop the save
+     * whole. It answers the twins the person acknowledged, which ride into
+     * every cell's create audit. A hook and not an import — the twin rule
+     * reads this module, and a door rule about the READER does not belong to
+     * the engine.
+     */
+    beforeWrite?: () => Promise<string[] | undefined>;
+  } = {},
 ): Promise<GridSaveResult> {
   // The sheet shares ONE date, so #995's rule (U21) is asked once, first —
   // per cell it would stop the save on cell 1 with a bare code.
@@ -2243,6 +2333,7 @@ export async function addReceiptCostsBulk(
   if (sheetRate !== null && input.cells.some((cell) => exceedsRowUsd(cell.amount * sheetRate))) {
     throw new CostError('amount_too_large');
   }
+  const twinAck = opts.beforeWrite ? await opts.beforeWrite() : undefined;
   // Each cell is its own `addCostEntry` — the engine cannot tell grid from
   // form (#398) and that is worth keeping — so a failure part-way leaves the
   // earlier cells saved. The answer NAMES them: the screen clears exactly
@@ -2251,7 +2342,7 @@ export async function addReceiptCostsBulk(
   const saved: string[] = [];
   for (const cell of input.cells) {
     try {
-      await addGridCell(input, cell, ctx);
+      await addGridCell(input, cell, ctx, twinAck);
     } catch (err) {
       console.error('[cost-grid] cell failed after', saved.length, 'saved', err);
       return { saved, error: err instanceof CostError ? err.code : 'error' };
@@ -2265,6 +2356,7 @@ async function addGridCell(
   input: ReceiptCostGridInput,
   cell: ReceiptCostGridInput['cells'][number],
   ctx: AuditContext,
+  twinAck: string[] | undefined,
 ) {
   await addCostEntry(
     {
@@ -2288,10 +2380,12 @@ async function addGridCell(
       // rows. #532 stamped it for the attribution alone and let it spread
       // over the whole prixod, which put half of each truck's customs on the
       // other truck's boxes once the report read allocations (R2a). Without
-      // the stamp it landed in NO batch's profit row at all.
-      batchId: input.batchId,
+      // the stamp it landed in NO batch's profit row at all. Passed as the
+      // internal `stampTruck`, never as a field: a posted batchId on a
+      // receipt cost is stripped (SARFLAR §8.5).
     },
     ctx,
+    { stampTruck: input.batchId, twinAck },
   );
 }
 

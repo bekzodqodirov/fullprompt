@@ -256,6 +256,15 @@ export const WORKSPACES: WorkspaceSpec[] = [
       // The accountant's most frequent job, second and not ninth — on a phone
       // the ninth tab of a strip is off the screen.
       { href: '/accounting/expenses', key: 'expenses' },
+      // «Pul qayerga ketdi» (docs/SARFLAR.md §1): `companyMoneySight`, the
+      // same shape as «Qarzga berilgan» — the owner, admins and the
+      // accountant, never the VED, a seller or the logist.
+      {
+        href: '/accounting/sarflar',
+        key: 'spendMap',
+        need: [['finance.manage', 'clients.manage'], ['finance.reports']],
+        via: ['/accounting', '/accounting/expenses'],
+      },
       { href: '/finance', key: 'clientMoney' },
       { href: '/kontragentlar', key: 'partners' },
       {

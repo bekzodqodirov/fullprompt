@@ -8,6 +8,8 @@ import { LightboxImg } from '@/components/lightbox-img';
 import { codeIdentity } from '@/modules/wms/labels/code-identity';
 import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 import { latestTxDate } from '@/modules/wms/finance/dates';
+import { TwinGapNote, TwinWarning } from '@/components/twin-warning';
+import type { TwinGap, TwinView } from '@/modules/wms/accounting/twins';
 
 export interface GridLotLine {
   letter: string | null;
@@ -117,6 +119,11 @@ export function ReceiptCostGrid({
     { kind: 'ok' } | { kind: 'error'; code: string; saved: number } | null
   >(null);
   const [pending, start] = useTransition();
+  // «Bu pul allaqachon yozilgan» for the whole sheet (SARFLAR §3): nothing was
+  // written and every typed cell stays; «Baribir saqlash» re-posts the sheet
+  // with the server's token.
+  const [twins, setTwins] = useState<TwinView | null>(null);
+  const [gap, setGap] = useState<TwinGap | null>(null);
 
   // One reader for what a person typed (`parseTypedMoney`, the calc screen's):
   // «1,200» is a thousand two hundred and «1 200» is not NaN. What it cannot
@@ -190,7 +197,7 @@ export function ReceiptCostGrid({
     }
   }
 
-  const save = () => {
+  const save = (twinAck?: string) => {
     if (badCount > 0) return;
     const payload: { receiptId: string; costTypeId: string; amount: number }[] = [];
     for (const row of rows) {
@@ -210,7 +217,16 @@ export function ReceiptCostGrid({
         partnerId,
         accountId,
         cells: payload,
+        twinAck,
       });
+      if (result.twins) {
+        setTwins(result.twins);
+        setMessage(null);
+        setGap(null);
+        return;
+      }
+      setTwins(null);
+      setGap(result.unchecked ?? null);
       // Clear exactly what became an entry. A save that stopped part-way
       // keeps the rest typed, so the next press cannot write a landed cell
       // twice.
@@ -243,7 +259,11 @@ export function ReceiptCostGrid({
               ? tc('futureDate')
               : code === 'amount_too_large'
                 ? tc('amountTooLarge')
-                : tc('error');
+                : code === 'cancelled'
+                  ? t('errCancelled')
+                  : code === 'receipt_voided'
+                    ? t('errReceiptVoided')
+                    : tc('error');
 
   return (
     <div className="space-y-2" data-testid="receipt-cost-grid">
@@ -593,17 +613,32 @@ export function ReceiptCostGrid({
           <button
             type="button"
             data-testid="save-cost-grid"
-            onClick={save}
-            disabled={pending || grand <= 0 || badCount > 0}
+            onClick={() => save()}
+            disabled={pending || grand <= 0 || badCount > 0 || twins !== null}
             className="btn-primary ml-auto"
           >
             {pending ? tc('loading') : tc('save')}
           </button>
         </div>
       )}
+      {twins && (
+        <TwinWarning
+          twins={twins}
+          busy={pending}
+          onSaveAnyway={() => save(twins.ackToken)}
+          onBack={() => setTwins(null)}
+          cellLabel={(cell) => {
+            const [receiptId, typeId] = cell.split(':');
+            const row = rows.find((r) => r.receiptId === receiptId);
+            const type = types.find((ty) => ty.id === typeId);
+            return row && type ? `${row.number ?? row.clientCode ?? ''} · ${type.name}` : null;
+          }}
+        />
+      )}
       {message?.kind === 'ok' && (
         <p className="text-sm font-semibold text-good">✅ {tc('saved')}</p>
       )}
+      {message?.kind === 'ok' && <TwinGapNote gap={gap} />}
       {message?.kind === 'error' && (
         <p role="alert" className="text-sm font-semibold text-bad">
           {message.saved > 0

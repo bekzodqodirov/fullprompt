@@ -184,6 +184,15 @@ export function batchTextMatchSql(like: string): SQL {
 }
 
 /**
+ * «The code starts with …» — the truck-bill picker's second rank (SARFLAR
+ * §8.5), here beside the match so every ILIKE over a truck's code has one
+ * home (#1252's fence). `prefix` is `prefixNeedle(q)`, escaped.
+ */
+export function codePrefixSql(prefix: string): SQL {
+  return sql`("batches"."code" ILIKE ${prefix})`;
+}
+
+/**
  * Which former name matched — NULL when the current code already did, so a
  * hit found by its own name carries no «oldingi nomi» at all.
  */

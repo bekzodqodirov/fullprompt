@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { createTranslator } from 'next-intl';
 import uz from '../../messages/uz.json';
 import ru from '../../messages/ru.json';
@@ -50,6 +51,36 @@ describe('every storage spelling has a word, in every language', () => {
     expect(unitLabel('unit', words)).toBe('dona');
     expect(unitLabel('1000_dona', words)).toBe('1000 dona');
     expect(unitLabel('karobka', words)).toBe('karobka');
+  });
+});
+
+describe('the row’s weight is NETTO wherever a person types or reads it — his answer 1 (#1354)', () => {
+  // The per-kg baza and «kamida $X/kg» price on the row's own weight, and
+  // that weight is netto; the shipment total stays brutto for the road. A
+  // label that just says «weight» invites the carton's gross figure. The
+  // patterns are literal per language (#163) — comparing bundles to each
+  // other cannot see a word missing from all four.
+  const NETTO: Record<(typeof LOCALES)[number][0], RegExp> = {
+    ru: /нетто/i,
+    uz: /netto|sof og/i,
+    en: /\bnet\b/i,
+    'zh-CN': /净重/,
+  };
+  it('every weight label of a calculation row names netto, desktop and phone', () => {
+    for (const [locale, messages] of LOCALES) {
+      const calc = (messages as { calc: unknown }).calc;
+      const at = (path: string) =>
+        path.split('.').reduce<unknown>((node, key) => (node as Record<string, unknown> | undefined)?.[key], calc);
+      for (const key of ['grid.kg', 'phone.kg', 'sendTable.kg', 'units.kgNet', 'needs.what.kg']) {
+        expect(at(key), `${locale} calc.${key}`).toMatch(NETTO[locale]);
+      }
+    }
+  });
+
+  it('the read-only goods table prints the same word, never a bare «kg»', () => {
+    const page = readFileSync('src/app/(protected)/hisoblash/[id]/page.tsx', 'utf8');
+    expect(page).not.toMatch(/>\s*kg\s*<\/th>/);
+    expect(page).toContain("{t('grid.kg')}</th>");
   });
 });
 

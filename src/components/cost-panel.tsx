@@ -7,6 +7,8 @@ import { addCostEntryAction, voidCostEntryAction } from '@/app/(protected)/costs
 import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 import { latestTxDate } from '@/modules/wms/finance/dates';
 import { UnmergeButton } from '@/app/(protected)/accounting/xarajat-kassa/unmerge-button';
+import { TwinGapNote, TwinWarning } from '@/components/twin-warning';
+import type { TwinGap, TwinView } from '@/modules/wms/accounting/twins';
 
 export interface CostEntryView {
   id: string;
@@ -20,6 +22,8 @@ export interface CostEntryView {
   clientCode?: string | null;
   /** Who settled it, when it was not us (round 39). */
   partnerName?: string | null;
+  /** A member of staff paid it and this reader may not see who (`payerView`, M3a). */
+  payerHidden?: boolean;
   /** The kassa it left from — the NAME only for money readers (0101). */
   accountName?: string | null;
   /** A kassa answered for it, whether or not this reader may see which. */
@@ -38,6 +42,15 @@ export interface CostEntryView {
   mergedExpenseId?: string | null;
 }
 
+/** What one bill leaves for the next on the general entry page (his 5a). */
+export interface CostKept {
+  typeId: string;
+  currency: string;
+  costDate: string;
+  payer: string;
+  basis: (typeof BASES)[number];
+}
+
 export interface CostTypeOption {
   id: string;
   code: string;
@@ -53,7 +66,9 @@ const BASES = ['weight', 'volume', 'chargeable', 'boxes', 'direct_to_client'] as
 /**
  * The payer/kassa refusals in words (0101). A literal list, not a key built
  * from the code: a key assembled at runtime is invisible to the i18n fence
- * and throws at render (#163).
+ * and throws at render (#163). Fenced (SARFLAR §8.5): every code the add and
+ * void doors can return is a key here or on the test's counted allowlist,
+ * and every word exists in all four bundles — `tests/unit/cost-refusals.test.ts`.
  */
 const PAYER_ERRORS = {
   till_forbidden: 'errTillForbidden',
@@ -73,6 +88,13 @@ const PAYER_ERRORS = {
   merged_cost: 'errMergedCost',
   merged_cost_ask: 'errMergedCostAsk',
   cost_payer_changed: 'errPayerChanged',
+  // The add door (SARFLAR §8.5): a cancelled truck, a voided prixod.
+  cancelled: 'errCancelled',
+  receipt_voided: 'errReceiptVoided',
+  not_found: 'errNotFound',
+  forbidden: 'errForbidden',
+  validation: 'errValidation',
+  already_voided: 'errAlreadyVoided',
 } as const;
 
 function payerErrorText(code: string | undefined, t: (key: string) => string): string {
@@ -94,11 +116,17 @@ export function CostPanel({
   currencies,
   clientOptions,
   defaultCurrency,
-  canEdit,
+  canVoid,
+  canAdd,
   partnerOptions = [],
   tillOptions = [],
   today,
   canUnmerge = false,
+  afterSave = 'close',
+  initial,
+  defaultTypeCode,
+  onKept,
+  onBusy,
 }: {
   scope: 'batch' | 'receipt' | 'crate' | 'pickup';
   targetId: string;
@@ -108,7 +136,15 @@ export function CostPanel({
   /** Clients aboard — needed only for direct_to_client. */
   clientOptions: ClientOption[];
   defaultCurrency: string;
-  canEdit: boolean;
+  /**
+   * May this reader void a row (the 🗑) — the void door's own grant — and,
+   * separately, ADD one (SARFLAR §8.5). Both REQUIRED: the truck tab passes
+   * `mayEnterBatchCost` as `canAdd`, so a cancelled truck keeps its 🗑 (the
+   * annul leaves kassa-paid bills on it for a person to void) and loses its
+   * «＋»; the receipt, crate and pickup cards pass one value to both.
+   */
+  canVoid: boolean;
+  canAdd: boolean;
   /**
    * Counterparties who might have settled this cost out of their own account
    * (round 39). Empty for a caller that does not offer the choice, and then
@@ -131,36 +167,84 @@ export function CostPanel({
    * server passes it; the door refuses anybody else anyway.
    */
   canUnmerge?: boolean;
+  /**
+   * `'again'` — the general entry page (SARFLAR §2, his 5a «one bill at a
+   * time; the form stays open»): the form opens on mount and stays open
+   * after a save, clearing only the amount, the kassa amount and the note.
+   * The truck tab keeps `'close'`.
+   */
+  afterSave?: 'close' | 'again';
+  /** What the previous bill kept (type, currency, date, payer, basis) — carried across a truck switch. */
+  initial?: Partial<CostKept>;
+  /** The type a fresh panel proposes, by its fixed code (the entry page: `freight`). */
+  defaultTypeCode?: string;
+  /** Told after every save what is kept for the next bill. */
+  onKept?: (kept: CostKept) => void;
+  /** Told while a save is in flight, so the page can hold the truck picker still. */
+  onBusy?: (busy: boolean) => void;
 }) {
   const t = useTranslations('costing');
   const tc = useTranslations('common');
   const router = useRouter();
-  const [adding, setAdding] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const again = afterSave === 'again';
+  const [adding, setAdding] = useState(again);
+  const [busy, setBusyState] = useState(false);
+  const setBusy = (value: boolean) => {
+    setBusyState(value);
+    onBusy?.(value);
+  };
   const [error, setError] = useState<string | null>(null);
-  const [typeId, setTypeId] = useState(costTypes[0]?.id ?? '');
+  const [saved, setSaved] = useState(false);
+  // A kept type must still be offered on this truck's list; a code default
+  // only when it is active.
+  const keptType = initial?.typeId && costTypes.some((type) => type.id === initial.typeId) ? initial.typeId : undefined;
+  const codeType = defaultTypeCode ? costTypes.find((type) => type.code === defaultTypeCode)?.id : undefined;
+  const [typeId, setTypeId] = useState(keptType ?? codeType ?? costTypes[0]?.id ?? '');
   const [amount, setAmount] = useState('');
-  const [currency, setCurrency] = useState(defaultCurrency);
-  const [costDate, setCostDate] = useState(today);
+  const [currency, setCurrency] = useState(
+    initial?.currency && currencies.includes(initial.currency) ? initial.currency : defaultCurrency,
+  );
+  const [costDate, setCostDate] = useState(initial?.costDate ?? today);
   // The factory truck is split by m³ (owner's B5a) — the default, not a lock.
-  const [basis, setBasis] = useState<(typeof BASES)[number]>(scope === 'pickup' ? 'volume' : 'weight');
+  const scopeBasis: (typeof BASES)[number] = scope === 'pickup' ? 'volume' : 'weight';
+  // A direct bill is a one-off: it never carries over (§8.5).
+  const [basis, setBasis] = useState<(typeof BASES)[number]>(
+    initial?.basis && initial.basis !== 'direct_to_client' ? initial.basis : scopeBasis,
+  );
   const [clientId, setClientId] = useState('');
   // ONE «who paid» choice (0101): our money with no kassa said yet (the
   // accountant's queue), a kassa, or a counterparty — never two, which is
-  // also the database's cost_entries_payer_check.
-  const [payer, setPayer] = useState('');
+  // also the database's cost_entries_payer_check. A kept payer must still
+  // be offered here.
+  const keptPayer =
+    initial?.payer &&
+    (tillOptions.some((option) => `till:${option.id}` === initial.payer) ||
+      partnerOptions.some((option) => `partner:${option.id}` === initial.payer))
+      ? initial.payer
+      : '';
+  const [payer, setPayer] = useState(keptPayer);
   const [tillAmount, setTillAmount] = useState('');
   const [note, setNote] = useState('');
+  // «Bu pul allaqachon yozilgan» (SARFLAR §3): the server's answer instead
+  // of a save. Every input above stays as typed, so «Baribir saqlash» posts
+  // the same values with the token the server computed.
+  const [twins, setTwins] = useState<TwinView | null>(null);
+  // A clean save's «kurs yo'q — solishtirib bo'lmadi» (§8.1): kept outside
+  // the form, which a one-shot panel closes on success.
+  const [gap, setGap] = useState<TwinGap | null>(null);
   const partnerId = payer.startsWith('partner:') ? payer.slice(8) : '';
   const accountId = payer.startsWith('till:') ? payer.slice(5) : '';
   const till = tillOptions.find((option) => option.id === accountId);
   const tillInOtherCurrency = till !== undefined && till.currency !== currency;
 
-  async function submit() {
+  async function submit(twinAck?: string) {
     setBusy(true);
     setError(null);
+    setSaved(false);
+    setGap(null);
     try {
       const res = await addCostEntryAction({
+        twinAck,
         scope,
         batchId: scope === 'batch' ? targetId : undefined,
         receiptId: scope === 'receipt' ? targetId : undefined,
@@ -177,13 +261,25 @@ export function CostPanel({
         accountAmount: tillInOtherCurrency ? (parseTypedMoney(tillAmount) ?? Number.NaN) : undefined,
         note,
       });
-      if (res.ok) {
-        setAdding(false);
+      if (res.twins) {
+        setTwins(res.twins);
+      } else if (res.ok) {
+        setTwins(null);
+        setGap(res.unchecked ?? null);
+        setAdding(again);
         setAmount('');
         setTillAmount('');
         setNote('');
+        const nextBasis = basis === 'direct_to_client' ? scopeBasis : basis;
+        if (basis === 'direct_to_client') {
+          setBasis(scopeBasis);
+          setClientId('');
+        }
+        setSaved(again);
+        onKept?.({ typeId, currency, costDate, payer, basis: nextBasis });
         router.refresh();
       } else {
+        setTwins(null);
         setError(
           res.error === 'client_required'
             ? t('clientRequired')
@@ -211,7 +307,13 @@ export function CostPanel({
   return (
     <div className="space-y-2">
       {entries.map((entry) => (
-        <div key={entry.id} className="flex flex-wrap items-baseline gap-2 border-b border-line py-1.5 text-sm last:border-0">
+        // `[overflow-wrap:anywhere]`: a note or a firm's name with no break
+        // in it (a pasted waybill number) otherwise widens the page past 360
+        // and the phone zooms everything out (#400, SARFLAR §8.5).
+        <div
+          key={entry.id}
+          className="flex flex-wrap items-baseline gap-2 border-b border-line py-1.5 text-sm [overflow-wrap:anywhere] last:border-0"
+        >
           <span>{entry.typeName}</span>
           <span className="font-semibold">
             {entry.amount} {entry.currency}
@@ -235,6 +337,11 @@ export function CostPanel({
               {entry.partnerName}
             </span>
           )}
+          {entry.payerHidden && (
+            <span className="rounded bg-warn/15 px-1.5 text-xs font-semibold text-warn" data-testid="cost-payer-hidden">
+              🔒 {t('payerHidden')}
+            </span>
+          )}
           {/* Which kassa it left from (0101) — the name for money readers,
               the fact alone for everybody else. */}
           {entry.paidFromTill && (
@@ -249,7 +356,7 @@ export function CostPanel({
           )}
           {entry.mergedExpenseId && canUnmerge && <UnmergeButton expenseId={entry.mergedExpenseId} />}
           {entry.note && <span className="w-full text-xs text-ink-500">{entry.note}</span>}
-          {canEdit && entry.voidable !== false && (
+          {canVoid && entry.voidable !== false && (
             <button
               type="button"
               aria-label={t('void')}
@@ -261,7 +368,7 @@ export function CostPanel({
           )}
           {/* No silent dead end (#420): the row says who takes it back — the
               person, never the drawer the reader may not see. */}
-          {canEdit && entry.voidable === false && (
+          {canVoid && entry.voidable === false && (
             <span className="ml-auto text-xs text-ink-500" data-testid="cost-void-locked">
               🔒 {t('voidByAccountant')}
             </span>
@@ -275,7 +382,8 @@ export function CostPanel({
           {error}
         </p>
       )}
-      {canEdit && !adding && (
+      <TwinGapNote gap={gap} />
+      {canAdd && !adding && (
         <button
           type="button"
           data-testid="add-cost"
@@ -285,7 +393,7 @@ export function CostPanel({
           ＋ {t('addCost')}
         </button>
       )}
-      {canEdit && adding && (
+      {canAdd && adding && (
         <div className="space-y-2 rounded-lg bg-surface-sunken p-3">
           <select aria-label={t('type')} className="input" value={typeId} onChange={(e) => setTypeId(e.target.value)}>
             {costTypes.map((type) => (
@@ -411,13 +519,26 @@ export function CostPanel({
               {error}
             </p>
           )}
-          <div className="flex gap-2">
+          {saved && !error && !twins && (
+            <p className="text-sm font-semibold text-good" data-testid="cost-saved">
+              ✅ {tc('saved')}
+            </p>
+          )}
+          {twins && (
+            <TwinWarning
+              twins={twins}
+              busy={busy}
+              onSaveAnyway={() => submit(twins.ackToken)}
+              onBack={() => setTwins(null)}
+            />
+          )}
+          <div className={twins ? 'hidden' : 'flex gap-2'}>
             <button
               type="button"
               data-testid="save-cost"
               className="btn-primary flex-1 disabled:opacity-50"
               disabled={busy || !typeId || !((parseTypedMoney(amount) ?? 0) > 0)}
-              onClick={submit}
+              onClick={() => submit()}
             >
               {busy ? tc('loading') : tc('save')}
             </button>

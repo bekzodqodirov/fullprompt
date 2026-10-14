@@ -1,8 +1,9 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { useActionState, useEffect, useRef, useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
 import { latestTxDate } from '@/modules/wms/finance/dates';
+import { TwinGapNote, TwinWarning } from '@/components/twin-warning';
 import { addExpenseAction, type AccountingFormState } from '../actions';
 
 interface Option {
@@ -70,6 +71,7 @@ export function ExpenseForm({
 }) {
   const t = useTranslations('accounting');
   const tc = useTranslations('common');
+  const tw = useTranslations('twins');
   // `addExpense` drops the cash box whenever a payer is named — correctly, no
   // till of ours moved — but the form offered both at once and said nothing,
   // so the saved row meant something different from what was typed and only a
@@ -86,9 +88,34 @@ export function ExpenseForm({
     addExpenseAction,
     {},
   );
+  // Sent from `onSubmit`, never as the form's `action` (SARFLAR §3): React
+  // resets a form whose action prop returns, and «Bu pul allaqachon yozilgan»
+  // must leave every typed value standing for «Baribir saqlash» (#463/#377).
+  // A save that LANDED still empties the form, as it always did.
+  const formRef = useRef<HTMLFormElement>(null);
+  const [, startTransition] = useTransition();
+  const [dismissed, setDismissed] = useState<AccountingFormState | null>(null);
+  useEffect(() => {
+    if (state.ok) formRef.current?.reset();
+  }, [state]);
+  const send = (twinAck?: string) => {
+    const form = formRef.current;
+    if (!form || !form.reportValidity()) return;
+    const data = new FormData(form);
+    if (twinAck) data.set('twinAck', twinAck);
+    startTransition(() => formAction(data));
+  };
+  const twins = state.twins && dismissed !== state ? state.twins : null;
 
   return (
-    <form action={formAction} className="card space-y-2">
+    <form
+      ref={formRef}
+      onSubmit={(event) => {
+        event.preventDefault();
+        send();
+      }}
+      className="card space-y-2"
+    >
       <h2 className="text-sm font-bold uppercase text-ink-500">🧾 {t('addExpense')}</h2>
       {prefill && (
         <>
@@ -211,15 +238,32 @@ export function ExpenseForm({
         defaultValue={prefill ? prefill.note : undefined}
         className="input"
       />
+      {/* A rasxod xabari whose money is already a truck bill cannot be closed
+          onto that bill by any door (SARFLAR §6, J8(c) not built): say how it
+          is closed instead. */}
+      {twins && prefill && (
+        <p className="text-xs text-ink-700" data-testid="twin-request-hint">
+          {tw('requestHint')}
+        </p>
+      )}
+      {twins && (
+        <TwinWarning
+          twins={twins}
+          busy={pending}
+          onSaveAnyway={() => send(twins.ackToken)}
+          onBack={() => setDismissed(state)}
+        />
+      )}
       <button
         type="submit"
         data-testid="save-expense"
-        className="btn-primary w-full"
+        className={twins ? 'hidden' : 'btn-primary w-full'}
         disabled={pending}
       >
         {pending ? tc('loading') : t('save')}
       </button>
       {state.ok && <p className="text-sm font-semibold text-good">✅ {tc('saved')}</p>}
+      {state.ok && <TwinGapNote gap={state.unchecked} />}
       {state.error && (
         <p className="text-sm font-semibold text-bad">
           {state.error === 'fx_missing'

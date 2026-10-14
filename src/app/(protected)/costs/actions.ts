@@ -21,13 +21,40 @@ import { costSightFor } from '@/modules/wms/costing/cost-sight';
 import { isStaffPartner, maySeeStaffMoney } from '@/modules/wms/partners/staff';
 import { firmDebtVoidRefusal } from '@/modules/wms/partners/service';
 import { amountRefusal, nativeAmount } from '@/modules/wms/finance/money-bounds';
+import { mayEnterBatchCost } from '@/modules/wms/costing/cost-door';
+import {
+  costCandidateFrom,
+  mustWarn,
+  TwinWarning,
+  twinAckOf,
+  twinGap,
+  type TwinGap,
+  twinsForCost,
+  twinsForGrid,
+  twinView,
+  type ReaderSight,
+  type TwinView,
+} from '@/modules/wms/accounting/twins';
 
 export interface CostActionResult {
   ok: boolean;
   error?: string;
   /** The grid only: cells that DID become entries before a failure. */
   saved?: string[];
+  /**
+   * «Bu pul allaqachon yozilgan» (SARFLAR §3): nothing was written; the form
+   * shows the twins and «Baribir saqlash» posts `twins.ackToken` back.
+   */
+  twins?: TwinView;
+  /** A clean save that could not compare everything (§8.1, `no_rate`) — said, never hidden. */
+  unchecked?: TwinGap;
 }
+
+const readerOf = (actor: { id: string; permissions: ReadonlySet<string> }): ReaderSight => ({
+  id: actor.id,
+  permissions: actor.permissions,
+  ownOnly: costSightFor(actor).ownOnly,
+});
 
 /**
  * The two payer rules every cost door asks AFTER its own grant (0101):
@@ -54,6 +81,7 @@ export async function addCostEntryAction(input: unknown): Promise<CostActionResu
 
   let path: string;
   let actor;
+  let warehouseId: string;
   try {
     if (parsed.data.scope === 'batch') {
       const batch = await db.query.batches.findFirst({
@@ -61,6 +89,10 @@ export async function addCostEntryAction(input: unknown): Promise<CostActionResu
       });
       if (!batch) return { ok: false, error: 'not_found' };
       actor = await authorize('costs.enter_batch', { warehouseId: batch.originWarehouseId });
+      // The ADD door (SARFLAR §8.5): the grant held, so a refusal here is the
+      // cancelled truck — the service re-asks it under the truck's lock.
+      if (!mayEnterBatchCost(actor, batch)) return { ok: false, error: 'cancelled' };
+      warehouseId = batch.originWarehouseId;
       path = `/batches/${batch.id}`;
     } else if (parsed.data.scope === 'pickup') {
       // The factory truck (0100): hired by the logist, paid by whoever pays
@@ -72,6 +104,7 @@ export async function addCostEntryAction(input: unknown): Promise<CostActionResu
       if (!pickup) return { ok: false, error: 'not_found' };
       if (pickup.status === 'cancelled') return { ok: false, error: 'cancelled' };
       actor = await authorize('costs.enter_batch', { warehouseId: pickup.destWarehouseId });
+      warehouseId = pickup.destWarehouseId;
       path = `/zavod/${pickup.id}`;
     } else if (parsed.data.scope === 'crate') {
       // Same gate as the receipt-side local handling — packing money is
@@ -81,6 +114,7 @@ export async function addCostEntryAction(input: unknown): Promise<CostActionResu
       });
       if (!crate) return { ok: false, error: 'not_found' };
       actor = await authorize('costs.enter_receipt', { warehouseId: crate.warehouseId });
+      warehouseId = crate.warehouseId;
       path = `/crates/${crate.id}`;
     } else {
       const receipt = await db.query.receipts.findFirst({
@@ -88,6 +122,7 @@ export async function addCostEntryAction(input: unknown): Promise<CostActionResu
       });
       if (!receipt) return { ok: false, error: 'not_found' };
       actor = await authorize('costs.enter_receipt', { warehouseId: receipt.warehouseId });
+      warehouseId = receipt.warehouseId;
       path = `/receipts/${receipt.id}`;
     }
   } catch (err) {
@@ -98,14 +133,21 @@ export async function addCostEntryAction(input: unknown): Promise<CostActionResu
   const refused = await payerRefusal(parsed.data, actor.permissions);
   if (refused) return { ok: false, error: refused };
   const meta = await requestMeta();
+  let gap: TwinGap | undefined;
   try {
-    await addCostEntry(parsed.data, { actorId: actor.id, ...meta });
+    // «Bu pul allaqachon yozilganmi?» — after the target's door and the
+    // payer's, before anything is written (§8.2). Null for a reader who is
+    // not the expense book's: no twin query runs for them at all.
+    const twins = await twinsForCost(readerOf(actor), await costCandidateFrom(parsed.data), { warehouseId });
+    if (mustWarn(twins, twinAckOf(input))) return { ok: false, twins: twinView(twins!) };
+    await addCostEntry(parsed.data, { actorId: actor.id, ...meta }, { twinAck: twins?.ids.length ? twins.ids : undefined });
+    gap = twinGap(twins);
   } catch (err) {
     if (err instanceof CostError) return { ok: false, error: err.code };
     throw err;
   }
   revalidatePath(path);
-  return { ok: true };
+  return { ok: true, ...(gap ? { unchecked: gap } : {}) };
 }
 
 /**
@@ -126,14 +168,53 @@ export async function saveReceiptCostGridAction(input: unknown): Promise<CostAct
     if (err instanceof AuthError) return { ok: false, error: 'forbidden' };
     throw err;
   }
+  // The same ADD door as the truck's own bills (§8.5): the grid stamps every
+  // cell onto this truck.
+  if (!mayEnterBatchCost(actor, batch)) return { ok: false, error: 'cancelled' };
 
   const refused = await payerRefusal(parsed.data, actor.permissions);
   if (refused) return { ok: false, error: refused };
   const meta = await requestMeta();
+  const grid = parsed.data;
+  const reader = readerOf(actor);
+  const posted = twinAckOf(input);
+  let gridGap: TwinGap | undefined;
   let result;
   try {
-    result = await addReceiptCostsBulk(parsed.data, { actorId: actor.id, ...meta });
+    result = await addReceiptCostsBulk(
+      grid,
+      { actorId: actor.id, ...meta },
+      {
+        // ONE warning for the sheet, over every posted cell, after the bulk
+        // save's own refusals and before the first cell is written (§3).
+        beforeWrite: async () => {
+          const cells = [];
+          for (const cell of grid.cells) {
+            cells.push(
+              await costCandidateFrom(
+                {
+                  scope: 'receipt',
+                  receiptId: cell.receiptId,
+                  costTypeId: cell.costTypeId,
+                  amount: cell.amount,
+                  currency: grid.currency,
+                  costDate: grid.costDate,
+                  accountId: grid.accountId || undefined,
+                  partnerId: grid.partnerId || undefined,
+                },
+                grid.batchId,
+              ),
+            );
+          }
+          const twins = await twinsForGrid(reader, cells, { warehouseId: batch.originWarehouseId });
+          if (mustWarn(twins, posted)) throw new TwinWarning(twins!);
+          gridGap = twinGap(twins);
+          return twins?.ids.length ? twins.ids : undefined;
+        },
+      },
+    );
   } catch (err) {
+    if (err instanceof TwinWarning) return { ok: false, twins: twinView(err.answer) };
     if (err instanceof CostError) return { ok: false, error: err.code };
     throw err;
   }
@@ -143,7 +224,7 @@ export async function saveReceiptCostGridAction(input: unknown): Promise<CostAct
   revalidatePath(`/batches/${batch.id}/xarajatlar`);
   return result.error
     ? { ok: false, error: result.error, saved: result.saved }
-    : { ok: true, saved: result.saved };
+    : { ok: true, saved: result.saved, ...(gridGap ? { unchecked: gridGap } : {}) };
 }
 
 const voidSchema = z.object({
