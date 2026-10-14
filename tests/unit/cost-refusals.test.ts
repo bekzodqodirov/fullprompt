@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 /**
@@ -30,13 +30,26 @@ const NOT_FROM_THE_FORM: Record<string, string> = {
   receipt_not_on_batch: 'the per-prixod grid, which carries its own words',
 };
 
+/** Every literal `new CostError('code'` — with or without params (0132). */
+const thrown = (source: string) => [...source.matchAll(/new CostError\('([a-z_]+)'[,)]/g)].map((m) => m[1]!);
+
+/**
+ * The ACTION files' own refusals. Kept to the action files (T9): a pure
+ * helper's own string return (freight-copy's `'missing'`/`'invalid'`) is not
+ * a form code and must not be harvested as one.
+ */
 function codesIn(source: string): string[] {
   return [
-    ...[...source.matchAll(/new CostError\('([a-z_]+)'\)/g)].map((m) => m[1]!),
+    ...thrown(source),
     ...[...source.matchAll(/error: '([a-z_]+)'/g)].map((m) => m[1]!),
     ...[...source.matchAll(/return '([a-z_]+)';/g)].map((m) => m[1]!),
   ];
 }
+
+/** Every module under costing/** — the doors' services throw from more than service.ts since 0132. */
+const COSTING = readdirSync('src/modules/wms/costing')
+  .filter((f) => f.endsWith('.ts'))
+  .map((f) => `src/modules/wms/costing/${f}`);
 
 describe('the cost form names every refusal', () => {
   it('the map was read', () => {
@@ -46,7 +59,7 @@ describe('the cost form names every refusal', () => {
   it('every code the add/void doors can return is worded, answered inline, or allowlisted with a reason', () => {
     const codes = new Set([
       ...codesIn(read('src/app/(protected)/costs/actions.ts')),
-      ...codesIn(read('src/modules/wms/costing/service.ts')),
+      ...COSTING.flatMap((f) => thrown(read(f))),
     ]);
     const bare = [...codes].filter((code) => !keys.has(code) && !INLINE.includes(code) && !(code in NOT_FROM_THE_FORM));
     expect(bare).toEqual([]);

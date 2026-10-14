@@ -22,6 +22,9 @@ import { isStaffPartner, maySeeStaffMoney } from '@/modules/wms/partners/staff';
 import { firmDebtVoidRefusal } from '@/modules/wms/partners/service';
 import { amountRefusal, nativeAmount } from '@/modules/wms/finance/money-bounds';
 import { mayEnterBatchCost } from '@/modules/wms/costing/cost-door';
+import { copyDigest, prepareFreightCopy } from '@/modules/wms/costing/freight-copy';
+import type { RebasePreview, UnsplitView } from '@/modules/wms/costing/freight-types';
+import { isServerBehind, violatedCheck } from '@/modules/platform/db/errors';
 import {
   costCandidateFrom,
   mustWarn,
@@ -48,6 +51,36 @@ export interface CostActionResult {
   twins?: TwinView;
   /** A clean save that could not compare everything (§8.1, `no_rate`) — said, never hidden. */
   unchecked?: TwinGap;
+  /** What a refusal's sentence NAMES (the warehouse, the column, the date). */
+  params?: Record<string, string | number>;
+  /** Saved, but held: the freight bill is written and on no box yet (§6). */
+  unsplit?: UnsplitView;
+  /** The re-basis door's first press: who moves how much (§8). */
+  rebase?: RebasePreview;
+  /** A re-basis whose post-commit split was queued (§8.4). */
+  pending?: true;
+}
+
+/**
+ * The ONE way a CostError becomes a result (docs/YOLKIRA-TAQSIMOT.md §5, T9):
+ * the code AND the params the sentence needs. No catch writes the code by
+ * hand — a sentence that names the warehouse cannot be one that forgot it.
+ */
+function costRefusal(err: CostError): CostActionResult {
+  return { ok: false, error: err.code, ...(err.params ? { params: err.params } : {}) };
+}
+
+/**
+ * A database one migration behind 0132 (#472): the widened basis CHECK by
+ * NAME (the 0125 idiom — never a blanket 23514), or the missing side tables.
+ */
+const freightServerBehind = (err: unknown) =>
+  isServerBehind(err) || violatedCheck(err) === 'cost_entries_basis_check';
+
+/** The digest of the version the person's preview drew (M6), read from the RAW post. */
+function freightSeenOf(input: unknown): string | null {
+  const v = (input as { freightSeen?: unknown } | null)?.freightSeen;
+  return typeof v === 'string' && /^[0-9a-f]{64}$/.test(v) ? v : null;
 }
 
 const readerOf = (actor: { id: string; permissions: ReadonlySet<string> }): ReaderSight => ({
@@ -134,20 +167,34 @@ export async function addCostEntryAction(input: unknown): Promise<CostActionResu
   if (refused) return { ok: false, error: refused };
   const meta = await requestMeta();
   let gap: TwinGap | undefined;
+  let unsplit: UnsplitView | undefined;
   try {
+    // The freight basis's tariff CONFIGURATION (0132) is refused BEFORE the
+    // twin warning: nobody is asked «Baribir saqlash?» about a save that
+    // would then be refused. And what is frozen must be what the person saw
+    // (M6): a remap or a tariff edit between the render and the press is
+    // refused in words, never frozen silently. `addCostEntry` asks the same
+    // door again for a hand-built call.
+    const draft = await prepareFreightCopy(parsed.data);
+    const seen = freightSeenOf(input);
+    if (draft && seen && copyDigest(draft) !== seen) {
+      return { ok: false, error: 'freight_changed', params: { column: draft.zone, from: draft.tariffFrom } };
+    }
     // «Bu pul allaqachon yozilganmi?» — after the target's door and the
     // payer's, before anything is written (§8.2). Null for a reader who is
     // not the expense book's: no twin query runs for them at all.
     const twins = await twinsForCost(readerOf(actor), await costCandidateFrom(parsed.data), { warehouseId });
     if (mustWarn(twins, twinAckOf(input))) return { ok: false, twins: twinView(twins!) };
-    await addCostEntry(parsed.data, { actorId: actor.id, ...meta }, { twinAck: twins?.ids.length ? twins.ids : undefined });
+    const entry = await addCostEntry(parsed.data, { actorId: actor.id, ...meta }, { twinAck: twins?.ids.length ? twins.ids : undefined });
     gap = twinGap(twins);
+    if (entry.verdict?.kind === 'held') unsplit = { held: entry.verdict.held };
   } catch (err) {
-    if (err instanceof CostError) return { ok: false, error: err.code };
+    if (err instanceof CostError) return costRefusal(err);
+    if (freightServerBehind(err)) return { ok: false, error: 'server_behind' };
     throw err;
   }
   revalidatePath(path);
-  return { ok: true, ...(gap ? { unchecked: gap } : {}) };
+  return { ok: true, ...(gap ? { unchecked: gap } : {}), ...(unsplit ? { unsplit } : {}) };
 }
 
 /**
@@ -215,7 +262,7 @@ export async function saveReceiptCostGridAction(input: unknown): Promise<CostAct
     );
   } catch (err) {
     if (err instanceof TwinWarning) return { ok: false, twins: twinView(err.answer) };
-    if (err instanceof CostError) return { ok: false, error: err.code };
+    if (err instanceof CostError) return costRefusal(err);
     throw err;
   }
   // The grid has its own page now (round 47); revalidating the card alone
@@ -323,7 +370,7 @@ export async function voidCostEntryAction(input: unknown): Promise<CostActionRes
       { mayMoveTill: mayPickTill(actor.permissions), payerSeen: entry.partnerId },
     );
   } catch (err) {
-    if (err instanceof CostError) return { ok: false, error: err.code };
+    if (err instanceof CostError) return costRefusal(err);
     throw err;
   }
   if (entry.batchId) revalidatePath(`/batches/${entry.batchId}`);
@@ -388,7 +435,7 @@ export async function setCostAccountAction(input: unknown): Promise<CostActionRe
       ...meta,
     });
   } catch (err) {
-    if (err instanceof CostError) return { ok: false, error: err.code };
+    if (err instanceof CostError) return costRefusal(err);
     throw err;
   }
   revalidatePath('/accounting/xarajat-kassa');

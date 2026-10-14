@@ -1328,7 +1328,19 @@
     "errForbidden": "Bu yerga xarajat yozishga ruxsatingiz yo'q.",
     "errValidation": "Ma'lumot to'liq emas — turi, summasi va sanasini tekshiring.",
     "errAlreadyVoided": "Bu yozuv allaqachon bekor qilingan — sahifani yangilang.",
-    "payerHidden": "hodim o'z pulidan to'lagan"
+    "payerHidden": "hodim o'z pulidan to'lagan",
+    "errFreightBatchOnly": "Yo‘lkira tarifi bo‘yicha bo‘lish faqat mashina (partiya) xarajatida bor.",
+    "errFreightOnCustoms": "Rastamojka tarif bo‘yicha bo‘linmaydi — u deklaratsiya bo‘yicha hisoblanadi. Boshqa usulni tanlang.",
+    "errFreightNoColumn": "{warehouse} skladiga yo‘lkira tarifi ustuni yozilmagan. Rahbariyat sklad sozlamasida ustunni tanlasin.",
+    "errFreightUnpriced": "{warehouse} skladining ustuni — {column}. {date} sanasida bu ustunda narx yo‘q. Rahbariyat tarifga shu sanagacha narx yozsin.",
+    "errFreightGap": "{column} ustunida {from}–{to} kg/kub uchun narx yo‘q. Rahbariyat tarifni to‘ldirsin.",
+    "errFreightTop": "{column} ustunida {from} kg/kub va undan og‘ir yuk uchun narx yo‘q (eng yuqori qator yopiq). Rahbariyat tarifni to‘ldirsin.",
+    "errFreightOverlap": "{column} ustunida {at} kg/kub ikki qatorga tushadi. Rahbariyat tarifni tuzatsin.",
+    "errFreightInvalid": "{column} ustunida noto‘g‘ri narx bor. Rahbariyat tarifni tuzatsin.",
+    "errFreightChanged": "Ko‘rganingizdan keyin tarif yoki sklad ustuni o‘zgardi — endi {column}, {from} tarifi. Yangi bo‘linishni ko‘rib, qayta saqlang.",
+    "errServerBehind": "Server hali yangilanmagan — yo‘lkira tarifi bo‘yicha bo‘lish hozircha ishlamaydi. Boshqa usul bilan saqlang yoki keyinroq urinib ko‘ring.",
+    "freightHeldCopy": "⚠ Bu hisobning tarif nusxasi yo‘q yoki buzilgan — «Bo‘lish usuli» tugmasi bilan qayta bo‘ling.",
+    "freightHeldCustoms": "⚠ Bu xarajat turi endi rastamojka — tarif bo‘yicha bo‘linmaydi. «Bo‘lish usuli» tugmasi bilan boshqa usulni tanlang."
   },
   "batchCard": {
     "tabLoading": "Yuklash",

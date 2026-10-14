@@ -98,11 +98,37 @@ const PAYER_ERRORS = {
   forbidden: 'errForbidden',
   validation: 'errValidation',
   already_voided: 'errAlreadyVoided',
+  // The freight basis's tariff configuration (0132, docs/YOLKIRA-TAQSIMOT.md
+  // §5): each NAMES what to fix — the warehouse, the column, the date.
+  freight_batch_only: 'errFreightBatchOnly',
+  freight_on_customs: 'errFreightOnCustoms',
+  freight_no_column: 'errFreightNoColumn',
+  freight_zone_unpriced: 'errFreightUnpriced',
+  freight_tariff_gap: 'errFreightGap',
+  freight_tariff_top: 'errFreightTop',
+  freight_tariff_overlap: 'errFreightOverlap',
+  freight_tariff_invalid: 'errFreightInvalid',
+  freight_changed: 'errFreightChanged',
+  server_behind: 'errServerBehind',
 } as const;
 
-function payerErrorText(code: string | undefined, t: (key: string) => string): string {
+/**
+ * A refusal in words, from the WHOLE action result (T9): the type carries the
+ * params, so a call site cannot forget them. A column's code is resolved into
+ * /admin/tarif's own zone words before it reaches the sentence.
+ */
+function payerErrorText(
+  res: { error?: string; params?: Record<string, string | number> },
+  t: (key: string, values?: Record<string, string | number>) => string,
+  zoneWords: (zone: string) => string,
+): string {
+  const code = res.error;
   const key = code ? PAYER_ERRORS[code as keyof typeof PAYER_ERRORS] : undefined;
-  return key ? t(key) : (code ?? 'error');
+  if (!key) return code ?? 'error';
+  const params = res.params
+    ? { ...res.params, ...(typeof res.params.column === 'string' ? { column: zoneWords(res.params.column) } : {}) }
+    : undefined;
+  return t(key, params);
 }
 
 /**
@@ -188,6 +214,9 @@ export function CostPanel({
 }) {
   const t = useTranslations('costing');
   const tc = useTranslations('common');
+  const tzone = useTranslations('calc');
+  const zoneWords = (zone: string) =>
+    tzone.has(`zones.${zone}`) ? tzone(`zones.${zone}` as 'zones.cn') : zone;
   const router = useRouter();
   const again = afterSave === 'again';
   const [adding, setAdding] = useState(again);
@@ -291,7 +320,7 @@ export function CostPanel({
               // the firm's name with nothing on that firm's account.
               res.error === 'fx_missing'
               ? t('fxMissing')
-              : payerErrorText(res.error, t),
+              : payerErrorText(res, t, zoneWords),
         );
       }
     } finally {
@@ -304,7 +333,7 @@ export function CostPanel({
     if (!reason?.trim()) return;
     const res = await voidCostEntryAction({ id, reason });
     if (res.ok) router.refresh();
-    else setError(payerErrorText(res.error, t)); // a silent failed void looked like success
+    else setError(payerErrorText(res, t, zoneWords)); // a silent failed void looked like success
   }
 
   return (

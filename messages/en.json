@@ -1328,7 +1328,19 @@
     "errForbidden": "You may not write a cost here.",
     "errValidation": "Something is missing — check the type, the amount and the date.",
     "errAlreadyVoided": "This entry is already voided — refresh the page.",
-    "payerHidden": "paid by a member of staff"
+    "payerHidden": "paid by a member of staff",
+    "errFreightBatchOnly": "Splitting by the freight tariff exists only for a truck’s (batch’s) cost.",
+    "errFreightOnCustoms": "Customs is not split by the tariff — it is counted by the declaration. Choose another basis.",
+    "errFreightNoColumn": "No freight tariff column is set for warehouse {warehouse}. Management should choose it in the warehouse settings.",
+    "errFreightUnpriced": "Warehouse {warehouse}’s column is {column}. On {date} this column has no prices. Management should enter prices dated on or before it.",
+    "errFreightGap": "Column {column} has no price for {from}–{to} kg/m³. Management should complete the tariff.",
+    "errFreightTop": "Column {column} has no price for cargo of {from} kg/m³ and heavier (its top row is closed). Management should complete the tariff.",
+    "errFreightOverlap": "In column {column}, {at} kg/m³ falls into two rows. Management should correct the tariff.",
+    "errFreightInvalid": "Column {column} holds an invalid price. Management should correct the tariff.",
+    "errFreightChanged": "The tariff or the warehouse column changed after you looked — now {column}, the {from} tariff. Check the new split and save again.",
+    "errServerBehind": "The server is not updated yet — splitting by the freight tariff does not work for now. Save with another basis or try later.",
+    "freightHeldCopy": "⚠ This bill’s tariff copy is missing or damaged — re-split it with the «Split basis» button.",
+    "freightHeldCustoms": "⚠ This cost type is now customs — it is not split by the tariff. Choose another basis with the «Split basis» button."
   },
   "batchCard": {
     "tabLoading": "Loading",

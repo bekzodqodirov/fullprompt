@@ -30,7 +30,7 @@ import { latestTxDate } from '../finance/dates';
 import { exceedsRowUsd, nativeAmount } from '../finance/money-bounds';
 import { ALLOCATION_BASES, toUsd, type AllocationBasis } from './engine';
 import { costPool, type PoolFreight } from './pool';
-import { freightCopyFor } from './freight-copy';
+import { freightCopyFor, prepareFreightCopy, replaceFreightCopyInTx } from './freight-copy';
 import type { BoxMeasure, RecomputeVerdict } from './freight-types';
 import { declaredFilter, riderCtesSql, riderFilter, riderLoad, riderWithoutShareSql } from '../batches/riders';
 import { bearsPriceSql, internalLegSql } from '../batches/internal';
@@ -291,6 +291,12 @@ export async function addCostEntry(
     clientId: input.allocationBasis === 'direct_to_client' ? (input.clientId ?? null) : null,
   };
 
+  // The freight basis (0132): the truck's column as of the bill's date, read
+  // on the POOL like everything above and frozen in the same transaction as
+  // the bill — the two commit together or not at all. Tariff CONFIGURATION
+  // refuses here; lot data never does.
+  const freightDraft = await prepareFreightCopy(input);
+
   // Everything above reads on the POOL (#714); the transaction below is the
   // short one the cancelled-truck race needs. Order: the prixod, then the
   // truck — every other prixod-locking door (the annul) takes them that way,
@@ -342,8 +348,10 @@ export async function addCostEntry(
         enteredBy: actorId,
       })
       .returning();
+    if (freightDraft) await replaceFreightCopyInTx(tx, row!.id, freightDraft);
     // On the transaction's own handle, so the audit row commits with the
-    // cost or not at all.
+    // cost or not at all. The basis is recorded (it never was) and, for a
+    // freight bill, the column and the tariff day it was frozen at.
     await writeAudit(tx, ctx, {
       entityType: 'cost_entry',
       entityId: row!.id,
@@ -352,6 +360,8 @@ export async function addCostEntry(
         scope: input.scope,
         amount: input.amount,
         currency: input.currency,
+        allocationBasis: input.allocationBasis,
+        ...(freightDraft ? { tariffZone: freightDraft.zone, tariffFrom: freightDraft.tariffFrom } : {}),
         ...(input.accountId ? { accountId: input.accountId, accountAmount } : {}),
         ...(opts.twinAck && opts.twinAck.length > 0 ? { twinAck: opts.twinAck } : {}),
       },
@@ -359,7 +369,7 @@ export async function addCostEntry(
     return row!;
   });
   // After the commit, each in its own transaction, exactly as before.
-  await recomputeEntry(entry.id);
+  const verdict = await recomputeEntry(entry.id);
   // The debt side. Written AFTER the allocation so a partner never carries a
   // charge for a cost that failed to land; dynamic import because costing is
   // the older module and partners reaches back into it for the FX rate.
@@ -367,7 +377,11 @@ export async function addCostEntry(
     const { chargeForCost } = await import('../partners/link');
     await chargeForCost(entry.id, ctx);
   }
-  return entry;
+  // The row as before, with the recompute's verdict ATTACHED (DS4): every
+  // caller reads only row fields, and a `{ entry, verdict }` wrapper would
+  // have turned ~25 test files' `entry.id` into undefined. A HELD freight
+  // bill comes back here so the form can say «saqlandi, bo'linmadi».
+  return Object.assign(entry, { verdict });
 }
 
 /**

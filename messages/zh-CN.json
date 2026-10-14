@@ -1328,7 +1328,19 @@
     "errForbidden": "您无权在此记录费用。",
     "errValidation": "信息不完整——请检查类型、金额和日期。",
     "errAlreadyVoided": "该记录已作废——请刷新页面。",
-    "payerHidden": "员工自付"
+    "payerHidden": "员工自付",
+    "errFreightBatchOnly": "按运费价目表分摊仅适用于车辆（批次）费用。",
+    "errFreightOnCustoms": "清关费不按价目表分摊，它按报关单计算。请选择其他方式。",
+    "errFreightNoColumn": "仓库 {warehouse} 未设置运费价目表栏。请管理层在仓库设置中选择。",
+    "errFreightUnpriced": "仓库 {warehouse} 的栏为 {column}。{date} 这一天该栏没有价格。请管理层录入该日期及之前的价格。",
+    "errFreightGap": "{column} 栏缺少 {from}–{to} 公斤/立方的价格。请管理层补全价目表。",
+    "errFreightTop": "{column} 栏缺少 {from} 公斤/立方及以上货物的价格（最高一行未开放）。请管理层补全价目表。",
+    "errFreightOverlap": "{column} 栏中 {at} 公斤/立方落在两行里。请管理层修正价目表。",
+    "errFreightInvalid": "{column} 栏有无效价格。请管理层修正价目表。",
+    "errFreightChanged": "您查看后价目表或仓库栏已变更——现在为 {column}，{from} 的价目表。请查看新的分摊后重新保存。",
+    "errServerBehind": "服务器尚未更新，暂时无法按运费价目表分摊。请用其他方式保存或稍后再试。",
+    "freightHeldCopy": "⚠ 这笔费用的价目表副本缺失或损坏——请用「分摊方式」按钮重新分摊。",
+    "freightHeldCustoms": "⚠ 该费用类型现为清关费，不按价目表分摊。请用「分摊方式」按钮选择其他方式。"
   },
   "batchCard": {
     "tabLoading": "装车",
