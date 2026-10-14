@@ -557,7 +557,13 @@
     "issuesToClients": "Bu omborda mijozga yuk beriladi",
     "issuesToClientsHint": "Faqat mijoz o‘z yukini olib ketadigan omborlar uchun (TAS, AND). Belgilanmasa, «Berish» ekrani bu omborda ochilmaydi.",
     "allowsQuickBatch": "Tezkor yuklashga ruxsat",
-    "allowsQuickBatchHint": "Plansiz va tasdiqsiz mashina. Yuk chegara kesib o‘tadigan skladda belgini olib tashlang."
+    "allowsQuickBatchHint": "Plansiz va tasdiqsiz mashina. Yuk chegara kesib o‘tadigan skladda belgini olib tashlang.",
+    "tariffZoneLabel": "Yo‘lkira tarifi ustuni",
+    "tariffZoneNone": "— tanlanmagan",
+    "tariffZoneHint": "Shu skladdan chiqqan mashina xarajati tarifning qaysi ustuni nisbatida bo‘linadi. Bo‘sh qolsa, bu sklad mashinalarida «yo‘lkira tarifi bo‘yicha» usuli ishlamaydi.",
+    "tariffZoneUnpriced": "(narx yo‘q)",
+    "errZoneUnknown": "Bunday tarif ustuni yo‘q — ro‘yxatdan tanlang.",
+    "errServerBehind": "Server hali yangilanmagan — tarif ustunini hozircha saqlab bo‘lmaydi. Keyinroq urinib ko‘ring."
   },
   "clientCard": {
     "tabs": "Mijoz kartasi bo‘limlari",
@@ -853,7 +859,10 @@
       "calcDone": "Narx berildi",
       "calcRecalc": "Qayta hisoblashga yuborildi",
       "calcSection": "Bo‘lim",
-      "itemCount": "Tovar qatorlari"
+      "itemCount": "Tovar qatorlari",
+      "allocationBasis": "Bo‘lish usuli",
+      "tariffZone": "Tarif ustuni",
+      "tariffFrom": "Tarif sanasi"
     }
   },
   "profile": {

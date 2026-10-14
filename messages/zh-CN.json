@@ -557,7 +557,13 @@
     "issuesToClients": "客户在此仓提货",
     "issuesToClientsHint": "仅适用于客户实际提货的仓库（TAS、AND）。未勾选时该仓不显示「交付」界面。",
     "allowsQuickBatch": "允许快速装车",
-    "allowsQuickBatchHint": "无计划、无审批的车。货物需过境的仓库请取消勾选。"
+    "allowsQuickBatchHint": "无计划、无审批的车。货物需过境的仓库请取消勾选。",
+    "tariffZoneLabel": "运费价目表栏",
+    "tariffZoneNone": "— 未选择",
+    "tariffZoneHint": "从本仓库出发的车辆费用按价目表哪一栏分摊。留空则本仓库的车辆不能使用「按运费价目表」。",
+    "tariffZoneUnpriced": "（无价格）",
+    "errZoneUnknown": "没有这个价目表栏，请从列表中选择。",
+    "errServerBehind": "服务器尚未更新，暂时无法保存价目表栏，请稍后再试。"
   },
   "clientCard": {
     "tabs": "客户卡片分区",
@@ -853,7 +859,10 @@
       "calcDone": "已给出价格",
       "calcRecalc": "已提交重新计算",
       "calcSection": "类别",
-      "itemCount": "商品行数"
+      "itemCount": "商品行数",
+      "allocationBasis": "分摊方式",
+      "tariffZone": "价目表栏",
+      "tariffFrom": "价目表日期"
     }
   },
   "profile": {

@@ -557,7 +557,13 @@
     "issuesToClients": "Clients collect cargo here",
     "issuesToClientsHint": "Only for warehouses a client actually collects from (TAS, AND). Unticked, the handover screen does not open here.",
     "allowsQuickBatch": "Allow quick loading",
-    "allowsQuickBatchHint": "A truck with no plan and no approval. Untick it where cargo crosses a border."
+    "allowsQuickBatchHint": "A truck with no plan and no approval. Untick it where cargo crosses a border.",
+    "tariffZoneLabel": "Freight tariff column",
+    "tariffZoneNone": "— not chosen",
+    "tariffZoneHint": "Which tariff column splits the cost of a truck leaving this warehouse. Left empty, «by the freight tariff» is not available for this warehouse’s trucks.",
+    "tariffZoneUnpriced": "(no prices)",
+    "errZoneUnknown": "No such tariff column — pick one from the list.",
+    "errServerBehind": "The server is not updated yet — the tariff column cannot be saved for now. Try again later."
   },
   "clientCard": {
     "tabs": "Client card sections",
@@ -853,7 +859,10 @@
       "calcDone": "Price given",
       "calcRecalc": "Sent for recalculation",
       "calcSection": "Section",
-      "itemCount": "Goods lines"
+      "itemCount": "Goods lines",
+      "allocationBasis": "Split basis",
+      "tariffZone": "Tariff column",
+      "tariffFrom": "Tariff date"
     }
   },
   "profile": {

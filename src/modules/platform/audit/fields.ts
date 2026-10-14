@@ -132,6 +132,12 @@ export const AUDIT_FIELD_LABELS: Record<string, string> = {
   calcRecalc: 'calcRecalc',
   section: 'calcSection',
   items: 'itemCount',
+  // Yo'lkira tarifi bo'yicha taqsimlash (0132): how a bill is split, and the
+  // tariff column a warehouse's trucks are split by. The column prints its
+  // CODE («cn → kashgar») — short lowercase words, honest as they stand.
+  allocationBasis: 'allocationBasis',
+  tariffZone: 'tariffZone',
+  tariffFrom: 'tariffFrom',
 
   // Housekeeping
   note: 'note',

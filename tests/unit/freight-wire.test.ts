@@ -83,8 +83,14 @@ describe('one pool', () => {
 describe('one home for the frozen copy', () => {
   it('cost_entry_tariffs is named only by freight-copy.ts, the schema and the migration', () => {
     const naming = SRC.filter((f) => /cost_entry_tariffs|costEntryTariffs/.test(strip(read(f))));
+    // freight-ready.ts names it in its catalog probe (to_regclass) — a
+    // question about the schema, never a read of a row.
     expect(naming.sort()).toEqual(
-      ['src/modules/platform/db/schema/wms.ts', 'src/modules/wms/costing/freight-copy.ts'].sort(),
+      [
+        'src/modules/platform/db/schema/wms.ts',
+        'src/modules/wms/costing/freight-copy.ts',
+        'src/modules/wms/costing/freight-ready.ts',
+      ].sort(),
     );
   });
 });
@@ -120,3 +126,20 @@ describe('the lot door heals a freight split', () => {
     );
   });
 });
+
+describe('the warehouse form keeps its column', () => {
+  const actions = strip(read('src/app/(protected)/admin/warehouses/actions.ts'));
+  it('reads the field only through readTariffZoneField (absent ≠ empty, #171)', () => {
+    expect(actions).not.toMatch(/formData\.get\('tariffZone'\)/);
+    expect(actions).toMatch(/readTariffZoneField\(formData\)/);
+  });
+  it('the zone never reaches the warehouses row (no such column)', () => {
+    const toValues = body(actions, 'function toValues(');
+    expect(toValues).not.toMatch(/tariffZone/);
+  });
+  it('the row, the column and the history land in ONE transaction', () => {
+    const update = body(actions, 'export async function updateWarehouseAction(');
+    expect(update).toMatch(/db\.transaction\(async \(tx\) => \{[\s\S]*setTariffColumnInTx\(tx, id, posted\)[\s\S]*writeAudit\(\s*tx,/);
+  });
+});
+
