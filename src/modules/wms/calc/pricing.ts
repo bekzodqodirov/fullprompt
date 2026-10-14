@@ -459,6 +459,35 @@ export function bandFor(rows: FreightBand[], zone: string, density: number): Ban
   return { ok: true, band: hits[0]! };
 }
 
+/**
+ * The tariff in force on ONE day, out of the whole history. Pure — the same
+ * «newest row on or before the date» rule `tariffFor` runs in SQL, restated
+ * once here rather than in every caller (#513). It lives in the pure engine
+ * (it moved from `./dictionaries`, which re-exports it) so the cost split can
+ * build a frozen copy of a column without importing the dictionaries.
+ */
+export function bandsAsOf(
+  history: (FreightBand & { effectiveDate: string })[],
+  date: string,
+): FreightBand[] {
+  const seen = new Set<string>();
+  const out: FreightBand[] = [];
+  for (const r of history) {
+    if (r.effectiveDate > date) continue;
+    const key = `${r.zone}|${r.minDensity}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      zone: r.zone,
+      minDensity: r.minDensity,
+      maxDensity: r.maxDensity,
+      priceUsd: r.priceUsd,
+      perKg: r.perKg,
+    });
+  }
+  return out.sort((a, b) => a.zone.localeCompare(b.zone) || a.minDensity - b.minDensity);
+}
+
 export type FreightRefusal = 'zone_required' | 'measure_missing' | 'not_a_number' | BandRefusal;
 
 /**
