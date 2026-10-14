@@ -3210,3 +3210,25 @@ QUOTED dates called free and which is balance-unpriced-cargo's
 `const Y = '1663'`: the delete-by-year then failed on that file's partner
 FK (so nothing of it was lost) and its leftovers broke balance-unpriced-cargo
 on this long-lived database until removed. Search years as bare numbers.
+
+1378. **«Held» is a verdict about a truck that CARRIES cargo** (the third
+review: three lenses over the last three commits, two refuters per finding,
+5 of 8 stood). `heldFreightSql` had keyed on the basis alone — its own
+comment said «a freight bill whose base is truly empty lands here too» and
+called that harmless — so a yo'lkira bill typed before the loading (the
+commonest case: the panel preselects the freight basis whether or not
+anything is aboard) or one whose every carton was found back was pulled out
+of «on no box» on four surfaces and told «do not void, fix the lot or use
+Bo'lish usuli», a cure that cannot happen. Held is now freight basis AND
+on no box AND `truckCarriesSql` (riders.ts — some non-void box rides that
+truck for money, the base the bill splits over); the Balans's `w_nobox`
+asks the same clause. STATED: a customs-typed freight bill splits over the
+declaration, so one whose every carton was found back reads as no-box here
+while the pool calls it held «on customs» — an edge of an edge. The deal
+card's truck list was departures ∪ live pointer, which misses a carton that
+rode with no load scan (the unloader's `undocumented_transfer`) and keeps a
+truck a carton was found back from; `heldFreightRiddenBy(boxIds)` asks the
+bill's own riders (`riderRowsSql`). Refuted and recorded: a link from each
+note to its trucks (the sentence is true; the Balans line already links),
+and a wider spelling fence (no second spelling exists). 4 red proofs.
+

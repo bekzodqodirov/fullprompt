@@ -71,6 +71,8 @@ Qurilgandan keyin ikki marta tekshirildi (avval qurilgani, keyin tuzatishlarning
 - «Bo'lish usuli ✎»: ko'rish bilan saqlash orasida hozirgi bo'linish o'zgarsa ham saqlash rad etiladi va yangisi ko'rsatiladi.
 - Narx sahifasi tezlashdi: 2 000 karobkali mashinada 745 ms → 83 ms. Karobkalari oldin 20 ta mashinada yurgan va har birida bo'linmagan hisob bor holatda esa 8–10 soniya → 1,6 soniya.
 - Mijozga to'g'ridan-to'g'ri yozilgan xarajat boshqa mashinaning «Narx» sahifasida noto'g'ri qo'shilib ketishi tuzatildi.
+- Hali yuk ortilmagan (yoki yuki to'liq omborga qaytgan) mashinaga yozilgan yo'lkira hisobi «bo'linmagan — bekor qilmang» deb ko'rsatilmaydi: u oddiy «yuki yo'q mashina» xarajati bo'lib qoladi. Yuk ortilganda o'zi bo'linadi, yuk umuman bo'lmasa — tekshirib, kerak bo'lsa bekor qilasiz.
+- Bitim kartasi bo'linmagan hisobli mashinalarni hisob qaysi karobkalarga bo'linsa, o'sha karobkalar bo'yicha topadi: skanersiz yurgan karobkaning mashinasi ham chiqadi, omborga qaytgan karobkaniki chiqmaydi.
 
 ### O'rnatish (deploy)
 
