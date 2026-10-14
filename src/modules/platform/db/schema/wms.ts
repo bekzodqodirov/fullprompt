@@ -735,7 +735,7 @@ export const costEntries = pgTable(
     check('cost_entries_amount_check', sql`${t.amount} > 0`),
     check(
       'cost_entries_basis_check',
-      sql`${t.allocationBasis} IN ('weight', 'volume', 'chargeable', 'boxes', 'direct_to_client')`,
+      sql`${t.allocationBasis} IN ('weight', 'volume', 'chargeable', 'boxes', 'direct_to_client', 'freight')`,
     ),
     index('cost_entries_receipt_idx').on(t.receiptId),
     index('cost_entries_batch_idx').on(t.batchId),
@@ -757,6 +757,73 @@ export const costEntries = pgTable(
     index('cost_entries_unplaced_idx')
       .on(t.createdAt)
       .where(sql`${t.voidedAt} IS NULL AND ${t.partnerId} IS NULL AND ${t.accountId} IS NULL`),
+  ],
+);
+
+/**
+ * Which column of his freight tariff a warehouse's trucks are split by (0132,
+ * his 2c: «har bir skladga ustun yozib chiqiladi, mashina ustunni o'z
+ * skladidan oladi»). A SIDE table, never a column on `warehouses`: fifty
+ * reads take every warehouses column and would 42703 one migration behind.
+ * No row = «—», nothing written; the freight basis is then refused for that
+ * warehouse's trucks in words. Read and written only by
+ * `wms/costing/tariff-column.ts`.
+ */
+export const warehouseTariffColumns = pgTable(
+  'warehouse_tariff_columns',
+  {
+    warehouseId: uuid('warehouse_id')
+      .primaryKey()
+      .references(() => warehouses.id, { onDelete: 'cascade' }),
+    /** `tariff_zone`, never bare `zone`: in warehouse code that is the TIME zone. */
+    tariffZone: text('tariff_zone').notNull(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check(
+      'warehouse_tariff_columns_zone_check',
+      sql`${t.tariffZone} <> '' AND ${t.tariffZone} = lower(btrim(${t.tariffZone}))`,
+    ),
+  ],
+);
+
+/**
+ * A freight bill's FROZEN copy of the tariff column it is split by, as of its
+ * cost_date (0132, his 3a). Recompute, the void guard and every explanation
+ * read ONLY this — never `calc_freight_tariffs` and never the warehouse's
+ * current column — so a later tariff edit or remap never moves a saved bill.
+ * One row per live freight bill and none for any other basis; its only
+ * reader and writer is `wms/costing/freight-copy.ts`.
+ */
+export const costEntryTariffs = pgTable(
+  'cost_entry_tariffs',
+  {
+    costEntryId: uuid('cost_entry_id')
+      .primaryKey()
+      .references(() => costEntries.id, { onDelete: 'cascade' }),
+    /** The origin warehouse the column was read from, at save. */
+    warehouseId: uuid('warehouse_id')
+      .notNull()
+      .references(() => warehouses.id),
+    tariffZone: text('tariff_zone').notNull(),
+    /** The newest effective date among the copied rows («2026-01-01 tarifi»). */
+    tariffFrom: date('tariff_from').notNull(),
+    /** His rule 6's «1 kub uchun 10 kg», frozen per bill. */
+    lightBelow: integer('light_below').notNull(),
+    /** `[{min, max|null, price, perKg}]` — validated as finite on write AND read. */
+    bands: jsonb('bands').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check(
+      'cost_entry_tariffs_zone_check',
+      sql`${t.tariffZone} <> '' AND ${t.tariffZone} = lower(btrim(${t.tariffZone}))`,
+    ),
+    check('cost_entry_tariffs_light_check', sql`${t.lightBelow} BETWEEN 1 AND 1000`),
+    check(
+      'cost_entry_tariffs_bands_check',
+      sql`jsonb_typeof(${t.bands}) = 'array' AND jsonb_array_length(${t.bands}) >= 1`,
+    ),
   ],
 );
 
