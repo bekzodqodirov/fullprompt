@@ -1388,7 +1388,8 @@
     "errRebaseChanged": "查看后有变化（货物、价目或仓库栏）。请查看新的分摊后再保存。",
     "errRebaseSame": "此费用已按此方式和此价目分摊。",
     "errRebaseDirect": "此按钮不能改为「直接给客户」— 请作废后重新录入。",
-    "errRebaseBatchOnly": "此费用来自入库表格 — 其分摊方式不变。只能在车辆自己的费用上选择方式。"
+    "errRebaseBatchOnly": "此费用来自入库表格 — 其分摊方式不变。只能在车辆自己的费用上选择方式。",
+    "costSigmaUnsplit": "· 其中 {usd} 未分摊"
   },
   "batchCard": {
     "tabLoading": "装车",
@@ -1413,7 +1414,8 @@
     "todoNoCosts": "未录入费用",
     "todoTnved": "无海关编码",
     "tileContinuation": "续运",
-    "tileContinuationLine": "价格在 {codes}"
+    "tileContinuationLine": "价格在 {codes}",
+    "todoUnsplit": "未分摊费用"
   },
   "batches": {
     "title": "车次",
@@ -1982,7 +1984,11 @@
     "continuationTrip": "续运：本车货物的价格和全程费用在 {codes} 车上。这里无需定价。",
     "continuationClient": "该客户 {total} 箱中有 {n} 箱的价格和运费在 {codes} 车上（全程一个价格）。其余的在这里定价。",
     "secondBillWarn": "该客户有 {n} 箱的价格在 {codes} 车上——全程一个价格。在这里定价会对这些货重复收费。仍要定价吗？",
-    "openCargo": "⏳ 未交付箱数：{n}——如再加入后续路段费用，成本可能增加。"
+    "openCargo": "⏳ 未交付箱数：{n}——如再加入后续路段费用，成本可能增加。",
+    "unsplit": "⚠ {n, plural, other {# 笔费用}}（{usd}）未分摊到本车货物——未计入成本。",
+    "unsplitCarried": "⚠ 车辆 {code} 的 {usd} 费用未分摊到货物——「{leg}」成本中没有",
+    "unsplitCarriedNoRate": "⚠ 车辆 {code} 有 {n, plural, other {# 笔费用}}没有汇率——「{leg}」成本中没有",
+    "carriedIncomplete": "⚠ 不完整"
   },
   "map": {
     "title": "地图",
@@ -2371,7 +2377,10 @@
     "pnlVsPrior": "▲▼ — 与 {from} — {to} 相比（相同日期）。",
     "pnlByMonth": "按月：收入与支出",
     "pnlDetail": "明细表——每个科目、每个月",
-    "balSellerCommissionsUnknown": "销售提成：{n} 项业务的货款未能及时核对——最多 ${usd}，未计入此行，也未计入净头寸"
+    "balSellerCommissionsUnknown": "销售提成：{n} 项业务的货款未能及时核对——最多 ${usd}，未计入此行，也未计入净头寸",
+    "unsplitHeading": "费用未分摊到货物的车次——包括未标记为批次的车辆",
+    "unsplitShowAll": "← 完整的「批次利润」表",
+    "balUnpricedFreightHeld": "{count, plural, other {# 笔运费}}（${usd}）尚未按运价分摊到车辆货物——修正批次或通过「分摊方式」后计入，在此之前会降低净头寸；请勿作废。"
   },
   "lidChat": {
     "mark": "线索",

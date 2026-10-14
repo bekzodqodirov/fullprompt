@@ -12,12 +12,21 @@ import {
   batchClientCostBreakdown,
   batchCostEntryCount,
   batchLandedCostByLot,
+  carriedUnsplitBills,
   unconvertedCostCount,
+  unsplitOnTruck,
+  type CarriedUnsplit,
   type ClientCostPart,
   type LotLandedCost,
 } from '@/modules/wms/costing/service';
+import { costSightFor } from '@/modules/wms/costing/cost-sight';
 import { batchLots, type BatchLot } from '@/modules/wms/batches/lots';
-import { mayOpenBatchCard, mayOpenBatchCosts, mayOpenBatchPricing } from '@/modules/wms/batches/card-door';
+import {
+  batchTabHref,
+  mayOpenBatchCard,
+  mayOpenBatchCosts,
+  mayOpenBatchPricing,
+} from '@/modules/wms/batches/card-door';
 import { explainBreakdown } from '@/modules/wms/costing/freight-offer';
 import { bandText, splitGroup } from '@/modules/wms/costing/freight-split';
 import type { FreightRowView } from '@/modules/wms/costing/freight-types';
@@ -116,20 +125,25 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
 
   const lots = await batchLots(id);
   const receiptIds = [...new Set(lots.map((lot) => lot.receiptId))];
-  const [charges, currencyRows, lotCost, breakdown, unconverted, ownCosts] = await Promise.all([
+  const [charges, currencyRows, lotCost, breakdown, unconverted, ownCosts, unsplitHere, carried] = await Promise.all([
     batchCharges(id),
     db.select({ code: currencies.code }).from(currencies).where(eq(currencies.active, true)),
     full ? batchLandedCostByLot(id) : Promise.resolve(new Map<string, LotLandedCost>()),
     full ? batchClientCostBreakdown(id) : Promise.resolve(new Map<string, ClientCostPart[]>()),
     full ? unconvertedCostCount(id, receiptIds) : Promise.resolve(0),
     full ? batchCostEntryCount(id) : Promise.resolve(0),
+    // Money saved and NOT split (a held yo'lkira bill, an empty base) is in
+    // no tannarx on this page — this truck's own, and the bills of the
+    // cargo's OTHER legs the fence would have read (docs/YOLKIRA-TAQSIMOT.md
+    // §6.3.5). Cost reads, so the full sight only.
+    full ? unsplitOnTruck(id, costSightFor(actor)) : Promise.resolve(null),
+    full ? carriedUnsplitBills(id) : Promise.resolve([] as CarriedUnsplit[]),
   ]);
 
   // A yo'lkira-tarifi part names its band (§7.4). The map is built from the
   // breakdown's OWN freight ids (E6): «shu reysgacha»/«keyingi yo'l» parts
   // are other trucks' bills, each explained on its own truck and copy.
   const freightViews = full ? await explainBreakdown(breakdown, actor) : new Map<string, FreightRowView>();
-  const costsDoor = mayOpenBatchCosts(actor.permissions);
   const freightBand = (part: ClientCostPart, clientId: string): string | null => {
     const group = part.freightEntryId ? splitGroup(freightViews.get(part.freightEntryId)?.view, `c:${clientId}`) : undefined;
     if (!group) return null;
@@ -287,6 +301,17 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
     ));
   const costOf = (lot: BatchLot) => lotCost.get(lot.lotId);
   const money = (value: number) => `$${value.toFixed(2)}`;
+  // Each link to a truck's Xarajatlar asks that tab's doors — the tab's own
+  // and the card's, judged by THAT truck's two ends.
+  const costDoor = mayOpenBatchCosts(actor.permissions);
+  const legWords = { prev: t('prevLegs'), later: t('laterLegs') } as const;
+  // A client whose cartons rode a truck with such a bill on that leg: the
+  // line says «to'liq emas» instead of a figure that silently shrank.
+  const carriedFor = (clientId: string, leg: CarriedUnsplit['leg']) =>
+    carried.some((row) => row.leg === leg && row.clientIds.includes(clientId));
+  // «Not arrived yet» would be false about a later leg whose bill EXISTS
+  // and is held: the open-cargo sentence stands down, the ⚠ says what it is.
+  const laterHeld = carried.some((row) => row.leg === 'later');
   const { totals } = view;
   // A truck nobody has priced has no margin: −tannarx in red read as a trip
   // that LOST money; a «davomi» has nothing to price at all.
@@ -593,7 +618,7 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
           )}
           {/* His 2a: the figure grows when the next leg's bill arrives, and
               the page says so while the cargo is not all handed over. */}
-          {full && !internal && !continuation && batch.departedAt && carriage && carriage.open > 0 && (
+          {full && !internal && !continuation && !laterHeld && batch.departedAt && carriage && carriage.open > 0 && (
             <p className={`${full ? 'col-span-3' : ''} text-xs text-ink-500`} data-testid="pricing-open-cargo">
               {t('openCargo', { n: carriage.open })}
             </p>
@@ -608,6 +633,42 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
               ⚠️ {t('unconvertedCosts', { count: unconverted })}
             </p>
           )}
+          {unsplitHere && unsplitHere.count > 0 && (
+            <p className="col-span-3 text-xs font-semibold text-warn" data-testid="pricing-unsplit">
+              {t('unsplit', { n: unsplitHere.count, usd: money(unsplitHere.usd) })}
+              {costDoor && (
+                <>
+                  {' '}
+                  <Link href={batchTabHref(id, 'xarajat')} className="text-brand-700 underline">
+                    {tb('costs')} →
+                  </Link>
+                </>
+              )}
+            </p>
+          )}
+          {carried.map((row) => (
+            <p
+              key={row.batchId}
+              className="col-span-3 text-xs font-semibold text-warn"
+              data-testid="pricing-unsplit-carried"
+            >
+              {row.usd !== null
+                ? t('unsplitCarried', { code: row.code, usd: money(row.usd), leg: legWords[row.leg] })
+                : t('unsplitCarriedNoRate', { code: row.code, n: row.unconverted, leg: legWords[row.leg] })}
+              {costDoor &&
+                mayOpenBatchCard(actor, {
+                  originWarehouseId: row.originWarehouseId,
+                  destWarehouseId: row.destWarehouseId,
+                }) && (
+                  <>
+                    {' '}
+                    <Link href={batchTabHref(row.batchId, 'xarajat')} className="text-brand-700 underline">
+                      {row.code} →
+                    </Link>
+                  </>
+                )}
+            </p>
+          ))}
         </div>
       )}
 
@@ -676,15 +737,33 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                     {m3 > 0 && ` · ${(costUsd / m3).toFixed(0)}/m³`}
                   </p>
                 )}
-                {prevUsd > 0.009 && (
-                  <p className="num text-xs text-ink-500">
-                    {t('prevLegs')}: {money(prevUsd)}
+                {carriedFor(group.clientId, 'prev') ? (
+                  <p className="num text-xs font-semibold text-warn" data-testid="client-prev-incomplete">
+                    {t('prevLegs')}: {prevUsd > 0.009 && `${money(prevUsd)} · `}
+                    {t('carriedIncomplete')}
                   </p>
+                ) : (
+                  prevUsd > 0.009 && (
+                    <p className="num text-xs text-ink-500">
+                      {t('prevLegs')}: {money(prevUsd)}
+                    </p>
+                  )
                 )}
-                {group.laterUsd > 0.009 && (
-                  <p className="num text-xs text-ink-500" title={t('laterLegsHint')} data-testid="client-later">
-                    {t('laterLegs')}: {money(group.laterUsd)}
+                {carriedFor(group.clientId, 'later') ? (
+                  <p
+                    className="num text-xs font-semibold text-warn"
+                    title={t('laterLegsHint')}
+                    data-testid="client-later-incomplete"
+                  >
+                    {t('laterLegs')}: {group.laterUsd > 0.009 && `${money(group.laterUsd)} · `}
+                    {t('carriedIncomplete')}
                   </p>
+                ) : (
+                  group.laterUsd > 0.009 && (
+                    <p className="num text-xs text-ink-500" title={t('laterLegsHint')} data-testid="client-later">
+                      {t('laterLegs')}: {money(group.laterUsd)}
+                    </p>
+                  )
                 )}
                 {/* «Nimalar o'tirganini ko'rsam» — the tannarx opened up:
                     every source and type that landed on this client's boxes.
@@ -711,8 +790,8 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                                 one truncated row. */}
                             <span className={`min-w-0 text-ink-700 ${band ? 'break-words' : 'truncate'}`}>
                               {part.later ? '↪ ' : ''}
-                              {band && costsDoor && part.batchId ? (
-                                <Link href={`/batches/${part.batchId}/xarajatlar`} className="underline">
+                              {band && costDoor && part.batchId && part.batchEnds && mayOpenBatchCard(actor, part.batchEnds) ? (
+                                <Link href={batchTabHref(part.batchId, 'xarajat')} className="underline">
                                   {words}
                                 </Link>
                               ) : (

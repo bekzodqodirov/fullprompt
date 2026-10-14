@@ -149,6 +149,17 @@ export default async function BatchCostGridPage({ params }: { params: Promise<{ 
         {costSheet.totalUsd !== null && costSheet.entries.length > 0 && (
           <p className="border-t border-line pt-2 text-sm">
             <b>Σ ${costSheet.totalUsd}</b>
+            {/* What of the Σ sits on no box (a held yo'lkira bill, an empty
+                base): the Σ sums ENTRIES and the cargo's tannarx sums
+                allocations, so the two disagree in words, never silently
+                (docs/YOLKIRA-TAQSIMOT.md §6.3.3). Whole sight only, as the
+                Σ itself is. */}
+            {costSheet.unsplitUsd !== null && costSheet.unsplitUsd > 0.009 && (
+              <span className="font-semibold text-warn" data-testid="cost-sigma-unsplit">
+                {' '}
+                {tcost('costSigmaUnsplit', { usd: `$${costSheet.unsplitUsd.toFixed(2)}` })}
+              </span>
+            )}
             {costSheet.usdPerKg !== null && (
               <span className="text-ink-700">
                 {' '}· ${costSheet.usdPerKg}/kg · ${costSheet.usdPerM3}/m³ ({costSheet.boxCount} 📦,{' '}

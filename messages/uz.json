@@ -1388,7 +1388,8 @@
     "errRebaseChanged": "Ko‘rganingizdan keyin nimadir o‘zgardi (yuk, tarif yoki sklad ustuni). Yangi hisobni ko‘rib, qayta saqlang.",
     "errRebaseSame": "Bu hisob allaqachon shu usul va shu tarif bilan bo‘lingan.",
     "errRebaseDirect": "«To‘g‘ridan-to‘g‘ri klientga» usuliga bu tugma bilan o‘tib bo‘lmaydi — hisobni bekor qilib qayta kiriting.",
-    "errRebaseBatchOnly": "Bu xarajat prixod jadvalidan — uning bo‘linish usuli o‘zgarmaydi. Usulni faqat mashinaning o‘z xarajatida tanlash mumkin."
+    "errRebaseBatchOnly": "Bu xarajat prixod jadvalidan — uning bo‘linish usuli o‘zgarmaydi. Usulni faqat mashinaning o‘z xarajatida tanlash mumkin.",
+    "costSigmaUnsplit": "· shundan {usd} bo‘linmagan"
   },
   "batchCard": {
     "tabLoading": "Yuklash",
@@ -1413,7 +1414,8 @@
     "todoNoCosts": "Xarajat yozilmagan",
     "todoTnved": "TNVED kodsiz",
     "tileContinuation": "davomi",
-    "tileContinuationLine": "narx {codes} da"
+    "tileContinuationLine": "narx {codes} da",
+    "todoUnsplit": "Bo‘linmagan xarajat"
   },
   "batches": {
     "title": "Partiyalar",
@@ -1982,7 +1984,11 @@
     "continuationTrip": "Davomi: bu mashinadagi yukning narxi va butun yo‘l xarajati {codes} mashinasida. Bu yerda narx qo‘yish shart emas.",
     "continuationClient": "Bu mijozning {n} / {total} karobkasi narxi va yo‘l xarajati {codes} mashinasida (butun yo‘l uchun bitta narx). Qolganiga narx shu yerda qo‘yiladi.",
     "secondBillWarn": "Bu mijozning {n} ta karobkasi narxi {codes} mashinasida — butun yo‘l uchun bitta narx. Bu yerga yozilgan narx ular uchun mijozga ikkinchi hisob bo‘ladi. Baribir yozasizmi?",
-    "openCargo": "⏳ Hali topshirilmagan karobkalar: {n} — keyingi yo‘l xarajati qo‘shilsa, tannarx o‘sishi mumkin."
+    "openCargo": "⏳ Hali topshirilmagan karobkalar: {n} — keyingi yo‘l xarajati qo‘shilsa, tannarx o‘sishi mumkin.",
+    "unsplit": "⚠ {n, plural, other {# ta xarajat}} ({usd}) bu mashina yukiga bo‘linmagan — tannarxga kirmagan.",
+    "unsplitCarried": "⚠ {code} mashinasining {usd} xarajati yukka bo‘linmagan — {leg} tannarxda yo‘q",
+    "unsplitCarriedNoRate": "⚠ {code} mashinasining {n, plural, other {# ta xarajatida}} kurs yo‘q — {leg} tannarxda yo‘q",
+    "carriedIncomplete": "⚠ to‘liq emas"
   },
   "map": {
     "title": "Xarita",
@@ -2371,7 +2377,10 @@
     "pnlVsPrior": "▲▼ — {from} — {to} davriga nisbatan (bir xil kunlar).",
     "pnlByMonth": "Oyma-oy: tushum va xarajat",
     "pnlDetail": "Batafsil jadval — har bir toifa, har bir oy",
-    "balSellerCommissionsUnknown": "Sotuvchilar ulushi: {n} ta ishda yukning to‘langani vaqtida tekshirilmadi — ko‘pi bilan ${usd}; bu summa shu qatorga ham, Sof holatga ham kirmadi"
+    "balSellerCommissionsUnknown": "Sotuvchilar ulushi: {n} ta ishda yukning to‘langani vaqtida tekshirilmadi — ko‘pi bilan ${usd}; bu summa shu qatorga ham, Sof holatga ham kirmadi",
+    "unsplitHeading": "Xarajati yukka bo‘linmagan reyslar — «Partiya» deb belgilanmaganlari ham",
+    "unsplitShowAll": "← Butun «Partiya foydasi» jadvali",
+    "balUnpricedFreightHeld": "{count, plural, other {# ta yo‘lkira xarajati}} (${usd}) tarif bo‘yicha mashina yukiga bo‘linmagan — lot to‘g‘rilangach yoki «Bo‘lish usuli» bilan qo‘shiladi, shungacha Sof holatni kamaytirib turadi; bekor qilmang."
   },
   "lidChat": {
     "mark": "Lid",

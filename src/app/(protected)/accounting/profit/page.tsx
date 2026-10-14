@@ -13,6 +13,7 @@ import {
   unbatchedMoney,
 } from '@/modules/wms/accounting/reports';
 import { resolvePeriod } from '@/modules/wms/accounting/period';
+import { UNSPLIT_PARAM } from '@/modules/wms/accounting/unsplit-href';
 import { tripKind, tripTotals } from '@/modules/wms/reports/dashboard-math';
 import { PeriodForm } from '../period-form';
 import { PnlGapsNote } from '../pnl-gaps';
@@ -30,7 +31,7 @@ type View = 'batch' | 'client' | 'route';
 export default async function ProfitPage({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string; to?: string; view?: string }>;
+  searchParams: Promise<{ from?: string; to?: string; view?: string; [UNSPLIT_PARAM]?: string }>;
 }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
@@ -41,6 +42,10 @@ export default async function ProfitPage({
   const params = await searchParams;
   const { from, to } = resolvePeriod(params);
   const view: View = params.view === 'client' || params.view === 'route' ? params.view : 'batch';
+  // «Bo'linmagan» (docs/YOLKIRA-TAQSIMOT.md §6.3.6): the batch view listing
+  // EVERY trip with money on no box, tracked or not — where the attention row
+  // and the Balans send several such trucks. Only the batch view has it.
+  const unsplitOnly = view === 'batch' && params[UNSPLIT_PARAM] === '1';
 
   const usd = (value: number) =>
     value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -55,10 +60,12 @@ export default async function ProfitPage({
   // One truck read for both truck tabs; the table shows only the trucks a
   // person marked «Partiya» (0107), and what it left out is said below it.
   const trips = view === 'client' ? null : await profitByBatch(from, to);
-  const untracked = trips ? untrackedTrips(trips) : null;
+  // Under «bo'linmagan» the table lists unmarked trucks too, so the note
+  // saying they were left out would be false.
+  const untracked = trips && !unsplitOnly ? untrackedTrips(trips) : null;
   const rows =
     view === 'batch'
-      ? trips!.filter((row) => row.tracked)
+      ? trips!.filter((row) => (unsplitOnly ? row.unallocatedUsd > 0.009 : row.tracked))
       : view === 'client'
         ? await profitByClient(from, to)
         : await profitByRoute(from, to, trips!);
@@ -135,7 +142,30 @@ export default async function ProfitPage({
         ))}
       </div>
 
-      <PeriodForm from={from} to={to} exportHref={`/api/accounting/profit?view=${view}`} />
+      <PeriodForm
+        from={from}
+        to={to}
+        exportHref={`/api/accounting/profit?view=${view}`}
+        extra={
+          unsplitOnly ? (
+            <>
+              <input type="hidden" name="view" value="batch" />
+              <input type="hidden" name={UNSPLIT_PARAM} value="1" />
+            </>
+          ) : undefined
+        }
+      />
+      {unsplitOnly && (
+        <div className="card space-y-1 !p-3 text-sm" data-testid="profit-unsplit">
+          <p className="font-semibold text-warn">⚠ {t('unsplitHeading')}</p>
+          <Link
+            href={`/accounting/profit?view=batch&from=${from}&to=${to}`}
+            className="inline-flex min-h-11 items-center text-brand-700 underline"
+          >
+            {t('unsplitShowAll')}
+          </Link>
+        </div>
+      )}
       <PnlGapsNote gaps={gaps} />
 
       <div className="card !p-0">

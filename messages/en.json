@@ -1388,7 +1388,8 @@
     "errRebaseChanged": "Something changed after you looked (the cargo, the tariff or the warehouse column). Check the new split and save again.",
     "errRebaseSame": "This bill is already split this way, on this tariff.",
     "errRebaseDirect": "This button cannot move a bill to «directly to a client» — void it and enter it again.",
-    "errRebaseBatchOnly": "This cost is from the per-prixod grid — its split method does not change. A method is chosen only on the truck's own bills."
+    "errRebaseBatchOnly": "This cost is from the per-prixod grid — its split method does not change. A method is chosen only on the truck's own bills.",
+    "costSigmaUnsplit": "· of which {usd} is not split"
   },
   "batchCard": {
     "tabLoading": "Loading",
@@ -1413,7 +1414,8 @@
     "todoNoCosts": "No costs entered",
     "todoTnved": "No HS code",
     "tileContinuation": "continuation",
-    "tileContinuationLine": "priced on {codes}"
+    "tileContinuationLine": "priced on {codes}",
+    "todoUnsplit": "Unsplit costs"
   },
   "batches": {
     "title": "Batches",
@@ -1982,7 +1984,11 @@
     "continuationTrip": "Continuation: the price and the whole road’s cost of this truck’s cargo are on {codes}. No price is needed here.",
     "continuationClient": "{n} of this client’s {total} cartons are priced, road included, on {codes} (one price for the whole road). The rest are priced here.",
     "secondBillWarn": "Part of this client’s cargo (cartons: {n}) is priced on {codes} — one price for the whole road. A price here bills that cargo a second time. Set it anyway?",
-    "openCargo": "⏳ Cartons not handed over yet: {n} — the cost may still grow when onward legs are billed."
+    "openCargo": "⏳ Cartons not handed over yet: {n} — the cost may still grow when onward legs are billed.",
+    "unsplit": "⚠ {n, plural, one {# cost} other {# costs}} ({usd}) not split over the cargo of this truck — missing from the cost.",
+    "unsplitCarried": "⚠ {usd} of costs on truck {code} is not split over the cargo — missing from «{leg}» in the cost",
+    "unsplitCarriedNoRate": "⚠ Truck {code} has {n, plural, one {# cost} other {# costs}} with no FX rate — missing from «{leg}» in the cost",
+    "carriedIncomplete": "⚠ incomplete"
   },
   "map": {
     "title": "Map",
@@ -2371,7 +2377,10 @@
     "pnlVsPrior": "▲▼ — against {from} — {to} (the same days).",
     "pnlByMonth": "By month: revenue and costs",
     "pnlDetail": "Full table — every line, every month",
-    "balSellerCommissionsUnknown": "Seller commissions: for {n} jobs the cargo payment could not be checked in time — at most ${usd}, left out of this line and of the net position"
+    "balSellerCommissionsUnknown": "Seller commissions: for {n} jobs the cargo payment could not be checked in time — at most ${usd}, left out of this line and of the net position",
+    "unsplitHeading": "Trucks with costs not split over the cargo — including those not marked as a consignment",
+    "unsplitShowAll": "← The whole «Profit by batch» table",
+    "balUnpricedFreightHeld": "{count, plural, one {# freight cost} other {# freight costs}} (${usd}) not split over the truck cargo by the tariff — the money joins once the lot is fixed or through «Split method», and until then it lowers the net position; do not void these costs."
   },
   "lidChat": {
     "mark": "Lead",

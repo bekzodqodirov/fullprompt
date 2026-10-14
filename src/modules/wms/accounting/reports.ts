@@ -21,6 +21,7 @@ import { uzsRate } from './period';
 import {
   batchCarriage,
   batchLandedCostTotals,
+  noShareSql,
   oldInsideEveryCountSql,
   rateFor,
   unplacedCostSince,
@@ -1324,10 +1325,12 @@ export async function profitByBatch(from: string, to: string) {
       // nothing to split it over — so no landed cost carries it. Named beside
       // the row rather than silently read as $0 («say what you cannot count»,
       // like `pnlGaps`).
+      //
+      // `noShareSql`, the one sentence: a HELD yo'lkira bill (his rule 6) is
+      // this money too, and every ⚠ surface counts it the same way.
       unallocatedUsd: sql<string>`coalesce((
         SELECT sum(ce.amount_usd) FROM cost_entries ce
-        WHERE ce.batch_id = ${batches}.id AND ce.voided_at IS NULL AND ce.amount_usd IS NOT NULL
-          AND NOT EXISTS (SELECT 1 FROM cost_allocations ca WHERE ca.cost_entry_id = ce.id)
+        WHERE ce.batch_id = ${batches}.id AND ${noShareSql(sql`ce`)}
       ), 0)`,
     })
     .from(batches)
@@ -1568,6 +1571,12 @@ export async function unbatchedMoney(from: string, to: string): Promise<Unbatche
  *   no prixod linked, a direct-to-client share with no box of that client in
  *   scope, a base with no measure. Named by scope, never guessed onto
  *   somebody; it stays here until the base appears.
+ *
+ *   Deliberately NOT `noShareSql` (costing/service.ts), which the truck
+ *   surfaces read: that one asks «did the bill reach ANY box» (a held
+ *   yo'lkira bill, an empty base); this one asks «did all of its money reach a
+ *   client», so a bill that reached its boxes short is counted here too — a
+ *   different question, on the client tab (docs/YOLKIRA-TAQSIMOT.md §6.4).
  */
 export interface ClientProfitGaps {
   unclaimed: { usd: number; receipts: number };
@@ -1866,6 +1875,14 @@ export interface LeftOut {
   usd: number;
 }
 
+/** `LeftOut` for the held yo'lkira bills, with where they are. */
+export interface HeldFreight extends LeftOut {
+  /** The trucks the bills are on, distinct. */
+  batchIds: string[];
+  /** The earliest Tashkent departure day among them (the profit link's `from`); null when none has left. */
+  firstDeparted: string | null;
+}
+
 export interface UnpricedCargoMoney {
   /** The line: in Sof holat, cents. = grossUsd − cardUsd − elsewhereUsd. */
   lineUsd: number;
@@ -1897,8 +1914,20 @@ export interface UnpricedCargoMoney {
   noDebt: LeftOut;
   /** Factory-trip costs no prixod is linked to yet — they lower the net until linked (row 21). */
   pickupNoBox: LeftOut;
-  /** Costs that sit on no carton at all (a found-back truck cell, row 22). */
+  /**
+   * Costs that sit on no carton at all (a found-back truck cell, row 22) —
+   * every basis but the yo'lkira tariff's, whose no-carton money is
+   * `freightUnsplit` and never «void it».
+   */
   noBox: LeftOut;
+  /**
+   * Yo'lkira-tariff bills HELD (his rule 6) or on an empty base — saved and on
+   * no carton until the lot is fixed or the bill re-based
+   * (docs/YOLKIRA-TAQSIMOT.md §6.3.7). The WHOLE bill, an upper bound: which
+   * share would have sat on unpriced cartons cannot be known. Its trucks, so
+   * the sentence can lead to the one where the bill is.
+   */
+  freightUnsplit: HeldFreight;
   /** Live costs with no dollar figure yet — no rate for their currency (row 13). */
   unconverted: number;
   /** Only with history 'all' (the deploy report): handed over before the ban, out of the line. */
@@ -1978,6 +2007,7 @@ export async function unpricedCargoMoney(opts: {
     -- \`cost_kassa_since\`, or merged into an expense typed before it).
     w_cost AS (
       SELECT cost_entries.id, cost_entries.scope, cost_entries.amount_usd AS usd,
+             cost_entries.allocation_basis AS basis, cost_entries.batch_id,
              CASE
                WHEN cost_entries.account_id IS NOT NULL
                  THEN CASE WHEN ${rated} THEN 'in' ELSE 'till_unrated' END
@@ -2112,12 +2142,19 @@ export async function unpricedCargoMoney(opts: {
         FROM w_unc_alloc ua
         JOIN w_cost wc ON wc.id = ua.cost_entry_id AND wc.why = 'in'
     ),
-    -- Money out of the net that sits on no carton at all.
+    -- Money out of the net that sits on no carton at all. A yo'lkira-tariff
+    -- bill is the one basis that can be HELD (his rule 6): its own figure,
+    -- whose sentence says «fix the lot», never «void it» (§6.3.7).
     w_nobox AS (
       SELECT count(*) FILTER (WHERE wc.scope = 'pickup')::int AS pickup_n,
              coalesce(sum(wc.usd) FILTER (WHERE wc.scope = 'pickup'), 0)::float8 AS pickup_usd,
-             count(*) FILTER (WHERE wc.scope <> 'pickup')::int AS other_n,
-             coalesce(sum(wc.usd) FILTER (WHERE wc.scope <> 'pickup'), 0)::float8 AS other_usd
+             count(*) FILTER (WHERE wc.scope <> 'pickup' AND wc.basis = 'freight')::int AS freight_n,
+             coalesce(sum(wc.usd) FILTER (WHERE wc.scope <> 'pickup' AND wc.basis = 'freight'), 0)::float8 AS freight_usd,
+             coalesce(array_agg(DISTINCT wc.batch_id)
+                        FILTER (WHERE wc.scope <> 'pickup' AND wc.basis = 'freight' AND wc.batch_id IS NOT NULL),
+                      '{}') AS freight_batches,
+             count(*) FILTER (WHERE wc.scope <> 'pickup' AND wc.basis IS DISTINCT FROM 'freight')::int AS other_n,
+             coalesce(sum(wc.usd) FILTER (WHERE wc.scope <> 'pickup' AND wc.basis IS DISTINCT FROM 'freight'), 0)::float8 AS other_usd
         FROM w_cost wc
        WHERE wc.why = 'in' AND NOT EXISTS (SELECT 1 FROM cost_allocations ca WHERE ca.cost_entry_id = wc.id)
     )
@@ -2138,6 +2175,11 @@ export async function unpricedCargoMoney(opts: {
            (SELECT pickup_usd FROM w_nobox) AS pickup_usd,
            (SELECT other_n FROM w_nobox) AS nobox_n,
            (SELECT other_usd FROM w_nobox) AS nobox_usd,
+           (SELECT freight_n FROM w_nobox) AS freight_n,
+           (SELECT freight_usd FROM w_nobox) AS freight_usd,
+           (SELECT freight_batches FROM w_nobox) AS freight_batches,
+           (SELECT min((fb.departed_at AT TIME ZONE 'Asia/Tashkent')::date)::text FROM batches fb
+             WHERE fb.id IN (SELECT unnest(freight_batches) FROM w_nobox)) AS freight_first_departed,
            (SELECT count(*) FROM cost_entries WHERE voided_at IS NULL AND amount_usd IS NULL)::int AS unconverted
   `),
   )) as unknown as {
@@ -2158,6 +2200,10 @@ export async function unpricedCargoMoney(opts: {
     pickup_usd: number;
     nobox_n: number;
     nobox_usd: number;
+    freight_n: number;
+    freight_usd: number;
+    freight_batches: string[];
+    freight_first_departed: string | null;
     unconverted: number;
   }[];
 
@@ -2191,6 +2237,12 @@ export async function unpricedCargoMoney(opts: {
     noDebt: off('no_debt'),
     pickupNoBox: { count: Number(row!.pickup_n), usd: money(row!.pickup_usd) },
     noBox: { count: Number(row!.nobox_n), usd: money(row!.nobox_usd) },
+    freightUnsplit: {
+      count: Number(row!.freight_n),
+      usd: money(row!.freight_usd),
+      batchIds: [...row!.freight_batches].sort(),
+      firstDeparted: row!.freight_first_departed,
+    },
     unconverted: Number(row!.unconverted),
     issuedBeforeGate: cut
       ? null
@@ -2465,6 +2517,7 @@ export async function companyBalance() {
       noDebt: cargo.noDebt,
       pickupNoBox: cargo.pickupNoBox,
       noBox: cargo.noBox,
+      freightUnsplit: cargo.freightUnsplit,
       unconverted: cargo.unconverted,
       gate: gate.state,
       gateSince: gate.state === 'on' ? gate.since.toISOString() : null,

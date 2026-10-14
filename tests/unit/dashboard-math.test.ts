@@ -257,6 +257,7 @@ describe('the Balans lines, one home for two screens', () => {
       noDebt: { count: 0 },
       pickupNoBox: { count: 0 },
       noBox: { count: 0 },
+      freightUnsplit: { count: 0 },
       unconverted: 0,
       gate: 'on' as const,
     };
@@ -265,6 +266,8 @@ describe('the Balans lines, one home for two screens', () => {
     expect(unpricedNotesDrawn(quiet)).toBe(true);
     expect(unpricedNotesDrawn({ ...quiet, grossUsd: 0 })).toBe(false);
     expect(unpricedNotesCount({ ...quiet, cardUsd: 50, oldNoKassa: { count: 2 }, gate: 'off' })).toBe(3);
+    // A held yo'lkira bill is a note of its own (docs/YOLKIRA-TAQSIMOT.md §6.3.7).
+    expect(unpricedNotesCount({ ...quiet, freightUnsplit: { count: 1 } })).toBe(1);
     // A left-out figure alone draws the card even with nothing on the line.
     expect(unpricedNotesDrawn({ ...quiet, grossUsd: 0, unclaimed: { usd: 340 } })).toBe(true);
   });

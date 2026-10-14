@@ -1,4 +1,6 @@
 import { mayReadBatches } from '../batches/read-door';
+import { mayOpenBatchCosts } from '../batches/card-door';
+import { unsplitHref } from '../accounting/unsplit-href';
 import type { CompanyMoneySight } from '../finance/scope';
 import type { TrucksOnRoad } from '../tracking/on-road';
 import type { taskPulse } from '../../platform/tasks/analytics';
@@ -33,9 +35,10 @@ import { approvalCounts, tripKind, type AttentionItem } from './dashboard-math';
  * when the caller holds a `CompanyMoneySight`, which only `companyMoneySight`
  * can mint — so a surface cannot build the money rows by passing `true`.
  *
- * PURE at runtime (every import below the first is a type): the reads live in
- * `attention-sources.ts`, so the Telegram words (owner-summary-text.ts) can
- * import the sentences without importing a database.
+ * PURE at runtime (the value imports are pure doors and an href, every other
+ * import is a type): the reads live in `attention-sources.ts`, so the
+ * Telegram words (owner-summary-text.ts) can import the sentences without
+ * importing a database.
  */
 
 export const ATTENTION_KINDS = [
@@ -179,6 +182,12 @@ export interface AttentionGates {
   canFx: boolean;
   /** The cargo section's own condition for drawing the list the cost-missing row jumps to. */
   seesCostMissing: boolean;
+  /**
+   * Whether a link to ONE truck's Xarajatlar tab opens for this viewer: the
+   * tab's own door, and — the card being judged by the truck's two ends — a
+   * viewer no warehouse scope narrows (the page knows the scope, not the ends).
+   */
+  canCosts: boolean;
 }
 
 /**
@@ -201,6 +210,7 @@ export function attentionGates(
     canCalc: permissions.has('ved.docs'),
     canFx: permissions.has('costs.fx.manage'),
     seesCostMissing: allWh && !input.scoped && cargo && !input.company,
+    canCosts: mayOpenBatchCosts(permissions) && !input.scoped,
   };
 }
 
@@ -384,6 +394,10 @@ export function attentionFacts(
           : null,
       href: `/accounting/profit?view=batch&from=${w.m12Start}&to=${w.today}`,
     });
+    // Money on no box (`noShareSql` — a held yo'lkira bill, an empty base):
+    // one truck opens where the bill is; several open «Partiya foydasi»'s
+    // list of EVERY such trip, tracked or not — the plain table holds only
+    // the marked trucks, and this row counts them all (§6.3.6).
     const unallocated = s.trips.filter((row) => row.unallocatedUsd > 0.009);
     const unallocatedUsd = unallocated.reduce((sum, row) => sum + row.unallocatedUsd, 0);
     push({
@@ -393,7 +407,11 @@ export function attentionFacts(
       usd: unallocatedUsd,
       key: 'unallocated',
       params: { n: n(unallocated.length), usd: usdOf(unallocatedUsd) },
-      href: `/accounting/profit?view=batch&from=${w.m12Start}&to=${w.today}`,
+      href: unsplitHref(
+        unallocated.map((row) => row.batchId),
+        { from: w.m12Start, to: w.today },
+        g.canCosts,
+      ),
     });
   }
   if (money && s.gaps) {
