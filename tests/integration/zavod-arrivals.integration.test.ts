@@ -40,6 +40,9 @@ import { DOC } from '@/modules/wms/documents/labels';
 import { recordVerdict, submitPlan } from '@/modules/wms/planning/service';
 import { ingestLoadScans } from '@/modules/wms/scanning/service';
 import { clientFeed } from '@/modules/wms/crm/feed';
+import { loadYuklarView } from '@/modules/wms/client-card/yuklar-view';
+import { ROLE_MATRIX } from '@/modules/platform/rbac/catalog';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * «Shu zavoddan, shu mashinada» (docs/ZAVOD-YOPISH.md §5, the owner's item
@@ -254,6 +257,34 @@ describe('the arrival rule names the factory trip', () => {
     const fn = src.slice(src.indexOf('export async function arrivalRowsForLots('));
     expect(fn.match(/await db/g)).toHaveLength(1);
     expect(fn).not.toMatch(/closed_at|close_kind|no_cost|pickup_line_receipts/);
+  });
+});
+
+describe('the client card «Yuklar» names the trip, and opens it only through its own door', () => {
+  const MATRIX: Record<string, readonly string[]> = ROLE_MATRIX;
+  const reader = (role: string, warehouseIds: string[] | null) => ({
+    id: role,
+    permissions: new Set(MATRIX[role]),
+    warehouseScoped: warehouseIds !== null,
+    warehouseIds: warehouseIds ?? [],
+  });
+  const arrivedOnA = async (actor: ReturnType<typeof reader>) => {
+    const view = await loadYuklarView(actor, clientA, { days: 90, today: tashkentDay() });
+    const row = view.now.sections.china.rows.find((r) => r.lotId === lot.A)!;
+    return { arrivedOn: row.arrivedOn, open: view.pickupsOpen.has(tripId) };
+  };
+
+  it('prints «ZR-… · factory · plate» as a trip, never as a batch', async () => {
+    const { arrivedOn } = await arrivedOnA(reader('logist', null));
+    expect(arrivedOn).toEqual([{ kind: 'pickup', id: tripId, code: tripCode, label: label(F1) }]);
+  });
+
+  it('links /zavod/<trip> for the list door and for a receiver at its destination — and for nobody else', async () => {
+    expect((await arrivedOnA(reader('logist', null))).open).toBe(true);
+    expect((await arrivedOnA(reader('warehouse_operator', [whId]))).open).toBe(true);
+    // The same role at another warehouse, and a seller: words, no link.
+    expect((await arrivedOnA(reader('warehouse_operator', [otherWhId]))).open).toBe(false);
+    expect((await arrivedOnA(reader('sales_manager', null))).open).toBe(false);
   });
 });
 

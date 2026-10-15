@@ -343,7 +343,7 @@ export interface PairArrival extends LotArrival {
 /**
  * `foldArrivals`, plus the two facts `PairArrival` adds — pure, for the tests.
  *
- * The rows are grouped by lot ONCE: it sits under `arrivalCodesForPairs`, so
+ * The rows are grouped by lot ONCE: it sits under `arrivalLabelsForPairs`, so
  * /stock, its XLSX and the bot pay for it on every read, and a filter over
  * every row per lot is quadratic in the fullest warehouse. Each lot's own
  * rows then go through `foldArrivals` itself, so `codes`, `sources` and
