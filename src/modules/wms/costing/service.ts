@@ -867,6 +867,8 @@ export async function boxMeasures(boxIds: string[], handle: Db | Tx = db): Promi
       lotId: receiptLots.id,
       lotLetter: receiptLots.letter,
       lotSeq: receiptLots.seq,
+      productNameRu: receiptLots.productNameRu,
+      productNameZh: receiptLots.productNameZh,
       dimsMode: receiptLots.dimsMode,
       boxLengthCm: receiptLots.boxLengthCm,
       boxWidthCm: receiptLots.boxWidthCm,
@@ -1070,6 +1072,28 @@ export async function truckRiderBoxIds(batchId: string, handle: Db | Tx = db): P
     .from(boxes)
     .where(and(riderFilter(batchId), ne(boxes.status, 'void')));
   return base.map((r) => r.id);
+}
+
+/**
+ * `truckRiderBoxIds` for several trucks in ONE statement (judge J30 — the
+ * Narx tab explains every feeding truck's bill): the same riders
+ * (`riderRowsSql`, what `riderFilter` reads) minus the void cartons, per
+ * truck. A truck with no rider is absent from the map.
+ */
+export async function truckRiderBoxIdsFor(batchIds: string[]): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>();
+  if (batchIds.length === 0) return out;
+  const rows = (await db.execute(sql`
+    SELECT rr.batch_id::text AS batch_id, rr.box_id::text AS box_id
+      FROM (${riderRowsSql({ batches: sql.join(batchIds.map((id) => sql`${id}::uuid`), sql`, `) })}) rr
+      JOIN boxes b ON b.id = rr.box_id
+     WHERE b.status <> 'void'`)) as unknown as { batch_id: string; box_id: string }[];
+  for (const r of rows) {
+    const list = out.get(r.batch_id) ?? [];
+    list.push(r.box_id);
+    out.set(r.batch_id, list);
+  }
+  return out;
 }
 
 /**
@@ -2834,6 +2858,20 @@ export interface ClientCostPart {
    * every other basis, which keeps grouping by source and type as before.
    */
   freightEntryId: string | null;
+  /**
+   * The lots this part's dollars actually sit on (a freight part only) — from
+   * the same rows that make the dollars, so the band line names only THEIR
+   * bands (judge J1): a «shu reysgacha» part that carries the kafel cartons
+   * alone must not print the yostiq's row beside the kafel's money.
+   */
+  freightLotIds: string[];
+  /**
+   * Those lots' dollars of this bill ON THIS TRUCK's cartons, unrounded — what
+   * a lot row's «hisobning N %» is made of. The bill-wide lot share is the
+   * WHOLE lot on the bill's truck; when only part of a lot continued, it
+   * printed twice the money the page counts (the review as built).
+   */
+  freightLotUsd: Record<string, number>;
   /** The truck that billed it — the band line links to ITS xarajat tab. */
   batchId: string | null;
   /** That truck's two ends, so the link asks THAT truck's card door. */
@@ -2861,6 +2899,7 @@ export async function batchClientCostBreakdown(
            er.number AS receipt_number, crt.code AS crate_code, pk.code AS pickup_code,
            (m.upto IS NOT NULL AND eb.departed_at > m.at) AS later,
            CASE WHEN ce.allocation_basis = 'freight' THEN ce.id END AS freight_entry_id,
+           CASE WHEN ce.allocation_basis = 'freight' THEN bx.lot_id::text END AS freight_lot_id,
            sum(ca.amount_usd) AS usd
       ${landed.joins}
       JOIN cost_types ct ON ct.id = ce.cost_type_id
@@ -2868,7 +2907,7 @@ export async function batchClientCostBreakdown(
       LEFT JOIN crates crt ON crt.id = ce.crate_id
       LEFT JOIN pickups pk ON pk.id = ce.pickup_id
      WHERE ${landed.where} AND ca.client_id IS NOT NULL
-     GROUP BY ca.client_id, ct.name, eb.code, eb.id, er.number, crt.code, pk.code, later, freight_entry_id
+     GROUP BY ca.client_id, ct.name, eb.code, eb.id, er.number, crt.code, pk.code, later, freight_entry_id, freight_lot_id
   `)) as unknown as {
     client_id: string;
     type_name: string;
@@ -2877,27 +2916,47 @@ export async function batchClientCostBreakdown(
     batch_origin: string | null;
     batch_dest: string | null;
     freight_entry_id: string | null;
+    freight_lot_id: string | null;
     receipt_number: string | null;
     crate_code: string | null;
     pickup_code: string | null;
     later: boolean;
     usd: string;
   }[];
+  // A freight part comes back ONE ROW PER LOT (the same pass that makes its
+  // dollars, so the lots it names and their money cannot disagree); folded
+  // here into one part per bill. Every other part is one row, as before.
   const out = new Map<string, ClientCostPart[]>();
+  const raw = new Map<ClientCostPart, number>();
+  const freightParts = new Map<string, ClientCostPart>();
   for (const row of rows) {
     const list = out.get(row.client_id) ?? [];
-    list.push({
-      source: row.batch_code ?? row.receipt_number ?? row.crate_code ?? row.pickup_code ?? '—',
-      typeName: row.type_name,
-      later: Boolean(row.later),
-      usd: Math.round(Number(row.usd) * 100) / 100,
-      freightEntryId: row.freight_entry_id,
-      batchId: row.batch_id,
-      batchEnds:
-        row.batch_origin && row.batch_dest ? { originWarehouseId: row.batch_origin, destWarehouseId: row.batch_dest } : null,
-    });
-    out.set(row.client_id, list);
+    const key = row.freight_entry_id ? `${row.client_id}|${row.freight_entry_id}|${row.later ? 1 : 0}` : null;
+    let part = key ? freightParts.get(key) : undefined;
+    if (!part) {
+      part = {
+        source: row.batch_code ?? row.receipt_number ?? row.crate_code ?? row.pickup_code ?? '—',
+        typeName: row.type_name,
+        later: Boolean(row.later),
+        usd: 0,
+        freightEntryId: row.freight_entry_id,
+        freightLotIds: [],
+        freightLotUsd: {},
+        batchId: row.batch_id,
+        batchEnds:
+          row.batch_origin && row.batch_dest ? { originWarehouseId: row.batch_origin, destWarehouseId: row.batch_dest } : null,
+      };
+      list.push(part);
+      out.set(row.client_id, list);
+      if (key) freightParts.set(key, part);
+    }
+    raw.set(part, (raw.get(part) ?? 0) + Number(row.usd));
+    if (row.freight_lot_id) {
+      if (!(row.freight_lot_id in part.freightLotUsd)) part.freightLotIds.push(row.freight_lot_id);
+      part.freightLotUsd[row.freight_lot_id] = (part.freightLotUsd[row.freight_lot_id] ?? 0) + Number(row.usd);
+    }
   }
+  for (const [part, usd] of raw) part.usd = Math.round(usd * 100) / 100;
   for (const list of out.values()) list.sort((a, b) => b.usd - a.usd);
   return out;
 }

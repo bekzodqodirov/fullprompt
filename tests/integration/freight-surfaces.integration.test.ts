@@ -1,6 +1,12 @@
 import 'dotenv/config';
 import { eq, inArray, like, sql, type SQL } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+// His 1a: ONE column for every truck. The file points that one column at its
+// own private one through the column's single seam, and never writes a row
+// into the real `cn` column (a tariff row is configuration, #824/#183).
+const seam = vi.hoisted(() => ({ zone: '' }));
+vi.mock('@/modules/wms/costing/freight-zone', () => ({ freightSplitZone: () => seam.zone }));
+
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
   batches,
@@ -18,7 +24,6 @@ import {
   receipts,
   users,
   warehouses,
-  warehouseTariffColumns,
 } from '@/modules/platform/db/schema';
 import type { Actor } from '@/modules/platform/rbac/authorize';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
@@ -35,7 +40,6 @@ import {
   type CarriedUnsplitRow,
 } from '@/modules/wms/costing/service';
 import { ALL_COSTS, costSightFor } from '@/modules/wms/costing/cost-sight';
-import { setTariffColumnInTx } from '@/modules/wms/costing/tariff-column';
 import { editLot } from '@/modules/wms/receipts/edit';
 import { addTransaction } from '@/modules/wms/finance/service';
 import { companyBalance, profitByBatch } from '@/modules/wms/accounting/reports';
@@ -364,14 +368,7 @@ async function sweepPrivateZones() {
   const zones = (await db.selectDistinct({ zone: calcFreightTariffs.zone }).from(calcFreightTariffs))
     .map((r) => r.zone)
     .filter((z) => SWEEP.test(z));
-  const mapped = (await db.select({ zone: warehouseTariffColumns.tariffZone }).from(warehouseTariffColumns))
-    .map((r) => r.zone)
-    .filter((z) => SWEEP.test(z));
-  const all = [...new Set([...zones, ...mapped])];
-  if (all.length) {
-    await db.delete(warehouseTariffColumns).where(inArray(warehouseTariffColumns.tariffZone, all));
-    await db.delete(calcFreightTariffs).where(inArray(calcFreightTariffs.zone, all));
-  }
+  if (zones.length) await db.delete(calcFreightTariffs).where(inArray(calcFreightTariffs.zone, zones));
 }
 
 const mkUser = async (tail: string, name: string) =>
@@ -420,12 +417,7 @@ beforeAll(async () => {
   );
   // W for the internal and the export legs, D for the Uzbek leg after, F for
   // the Kazakh leg after the second crossing.
-  await db.transaction(async (tx) => {
-    await setTariffColumnInTx(tx, whW, ZONE);
-    await setTariffColumnInTx(tx, whK, ZONE);
-    await setTariffColumnInTx(tx, whD, ZONE);
-    await setTariffColumnInTx(tx, whF, ZONE);
-  });
+  seam.zone = ZONE;
 });
 
 afterAll(async () => {
@@ -925,10 +917,6 @@ describe('17 — the linear statement answers what the shipped one did (old-vs-n
 describe('cleanup', () => {
   it('FINAL — deletes the run’s column, tariff rows, costs, charges and no-rate currency; deactivates the rest; no prefixed zone left', async () => {
     await db.transaction(async (tx) => {
-      await tx.delete(warehouseTariffColumns).where(like(warehouseTariffColumns.tariffZone, `t\\_%${RUN}\\_wten`));
-      await tx
-        .delete(warehouseTariffColumns)
-        .where(inArray(warehouseTariffColumns.warehouseId, [whW, whK, whD, whE, whF, whG]));
       if (made.costs.length) await tx.delete(costEntries).where(inArray(costEntries.id, made.costs));
       await tx.delete(calcFreightTariffs).where(like(calcFreightTariffs.zone, `t\\_%${RUN}\\_wten`));
     });
@@ -971,8 +959,7 @@ describe('cleanup', () => {
          AND NOT EXISTS (SELECT 1 FROM cost_entries ce WHERE ce.currency = c.code)`);
     await db.update(users).set({ active: false }).where(inArray(users.id, [actorId, accountantId, vedId]));
     const left = await db.execute<{ n: number }>(sql`
-      SELECT (SELECT count(*) FROM calc_freight_tariffs WHERE zone LIKE ${`t\\_%${RUN}\\_wten`})
-           + (SELECT count(*) FROM warehouse_tariff_columns WHERE tariff_zone LIKE ${`t\\_%${RUN}\\_wten`}) AS n
+      SELECT count(*) AS n FROM calc_freight_tariffs WHERE zone LIKE ${`t\\_%${RUN}\\_wten`}
     `);
     expect(Number(left[0]!.n)).toBe(0);
   });

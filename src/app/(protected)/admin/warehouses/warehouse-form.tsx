@@ -17,14 +17,6 @@ export interface WarehouseFormValues {
   lon: string;
   issuesToClients: boolean;
   allowsQuickBatch: boolean;
-  /** The tariff column his trucks are split by (0132, his 2c). null = «—». */
-  tariffZone: string | null;
-}
-
-/** A column the warehouse may be mapped onto; `priced` = the tariff has rows for it. */
-export interface ZoneOption {
-  zone: string;
-  priced: boolean;
 }
 
 const TYPES = ['origin', 'hub', 'customs', 'distribution'] as const;
@@ -33,20 +25,12 @@ const TIMEZONES = ['Asia/Shanghai', 'Asia/Kashgar', 'Asia/Tashkent', 'Asia/Urumq
 export function WarehouseForm({
   action,
   initial: stored,
-  zones,
 }: {
   action: (prev: WarehouseFormState, formData: FormData) => Promise<WarehouseFormState>;
   initial?: WarehouseFormValues;
-  /**
-   * The columns on offer — null when 0132 has not landed, and then the select
-   * is not drawn and the field is ABSENT from the post, which the action reads
-   * as «leave the mapping alone» (never as «clear it»).
-   */
-  zones: ZoneOption[] | null;
 }) {
   const t = useTranslations('warehouses');
   const tc = useTranslations('common');
-  const tz = useTranslations('calc');
   const [state, formAction, pending] = useActionState<WarehouseFormState, FormData>(action, {});
   // A refused save gives back what was typed; the key remounts the inputs so
   // those become their defaults (React's reset after an action would
@@ -55,10 +39,7 @@ export function WarehouseForm({
   const errors: Record<NonNullable<WarehouseFormState['error']>, string> = {
     validation: tc('error'),
     code_exists: t('codeExists'),
-    zone_unknown: t('errZoneUnknown'),
-    server_behind: t('errServerBehind'),
   };
-  const zoneWords = (zone: string) => (tz.has(`zones.${zone}`) ? tz(`zones.${zone}` as 'zones.cn') : zone);
 
   return (
     <form key={state.n ?? 0} action={formAction} className="card max-w-lg space-y-4">
@@ -231,32 +212,6 @@ export function WarehouseForm({
           </span>
         </label>
       </div>
-      {/* His 2c: which column of the yo'lkira tariff this warehouse's trucks
-          are split by. The stored column is always among the options, or the
-          select would fall to «—» and an unrelated edit would clear it (#171). */}
-      {zones && (
-        <div>
-          <label className="label" htmlFor="tariffZone">
-            {t('tariffZoneLabel')}
-          </label>
-          <select
-            id="tariffZone"
-            name="tariffZone"
-            className="input"
-            data-testid="wh-tariff-zone"
-            defaultValue={initial?.tariffZone ?? ''}
-          >
-            <option value="">{t('tariffZoneNone')}</option>
-            {zones.map((z) => (
-              <option key={z.zone} value={z.zone}>
-                {zoneWords(z.zone)}
-                {z.priced ? '' : ` ${t('tariffZoneUnpriced')}`}
-              </option>
-            ))}
-          </select>
-          <p className="mt-1 text-xs text-ink-500">{t('tariffZoneHint')}</p>
-        </div>
-      )}
       {state.error && (
         <p role="alert" className="rounded-lg bg-bad/10 p-3 text-sm font-semibold text-bad">
           {errors[state.error]}

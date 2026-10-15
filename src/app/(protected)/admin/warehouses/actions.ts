@@ -11,10 +11,6 @@ import { diffFields, writeAudit } from '@/modules/platform/audit/service';
 import { requestMeta } from '@/modules/platform/auth/session';
 import { checkbox } from '@/modules/platform/forms/checkbox';
 import { coordField } from '@/modules/platform/forms/coord';
-import { isServerBehind } from '@/modules/platform/db/errors';
-import { readTariffZoneField } from '@/modules/wms/costing/tariff-zone-field';
-import { mappableZones, setTariffColumnInTx, tariffColumnOf } from '@/modules/wms/costing/tariff-column';
-import { freightTablesReady } from '@/modules/wms/costing/freight-ready';
 import type { WarehouseFormValues } from './warehouse-form';
 
 const warehouseSchema = z.object({
@@ -58,7 +54,7 @@ const warehouseSchema = z.object({
 });
 
 export interface WarehouseFormState {
-  error?: 'validation' | 'code_exists' | 'zone_unknown' | 'server_behind';
+  error?: 'validation' | 'code_exists';
   /**
    * The post echoed back on every refusal, so the form HOLDS what was typed
    * (#463: a form that can be refused must hold its inputs) — React's reset
@@ -88,7 +84,6 @@ function echo(formData: FormData): WarehouseFormValues {
     lon: str(formData, 'lon'),
     issuesToClients: checkbox(formData, 'issuesToClients', false),
     allowsQuickBatch: checkbox(formData, 'allowsQuickBatch', true),
-    tariffZone: readTariffZoneField(formData) ?? null,
   };
 }
 
@@ -134,13 +129,6 @@ export async function createWarehouseAction(
   const actor = await authorize('admin.warehouses.manage');
   const parsed = parseForm(formData);
   if (!parsed.success) return refuse('validation', formData);
-  // The tariff column (0132, his 2c) is NOT part of the warehouse row: it is
-  // its own side table, read and written through costing/tariff-column.ts.
-  const zone = readTariffZoneField(formData);
-  if (zone) {
-    if (!(await freightTablesReady())) return refuse('server_behind', formData);
-    if (!(await mappableZones(null)).some((z) => z.zone === zone)) return refuse('zone_unknown', formData);
-  }
 
   const existing = await db.query.warehouses.findFirst({
     where: eq(warehouses.code, parsed.data.code),
@@ -148,28 +136,17 @@ export async function createWarehouseAction(
   if (existing) return refuse('code_exists', formData);
 
   const meta = await requestMeta();
-  try {
-    const row = await db.transaction(async (tx) => {
-      const [row] = await tx.insert(warehouses).values(toValues(parsed.data)).returning();
-      if (!row) return null;
-      if (zone) await setTariffColumnInTx(tx, row.id, zone);
-      await writeAudit(
-        tx,
-        { actorId: actor.id, ...meta, warehouseId: row.id },
-        {
-          entityType: 'warehouse',
-          entityId: row.id,
-          action: 'create',
-          after: { ...parsed.data, ...(zone ? { tariffZone: zone } : {}) },
-        },
-      );
-      return row;
-    });
-    if (!row) return refuse('validation', formData);
-  } catch (error) {
-    if (isServerBehind(error)) return refuse('server_behind', formData);
-    throw error;
-  }
+  const row = await db.transaction(async (tx) => {
+    const [row] = await tx.insert(warehouses).values(toValues(parsed.data)).returning();
+    if (!row) return null;
+    await writeAudit(
+      tx,
+      { actorId: actor.id, ...meta, warehouseId: row.id },
+      { entityType: 'warehouse', entityId: row.id, action: 'create', after: parsed.data },
+    );
+    return row;
+  });
+  if (!row) return refuse('validation', formData);
 
   revalidatePath('/admin/warehouses');
   redirect('/admin/warehouses');
@@ -192,46 +169,23 @@ export async function updateWarehouseAction(
   });
   if (duplicate && duplicate.id !== id) return refuse('code_exists', formData);
 
-  // undefined = the post did not carry the field (a page drawn before 0132,
-  // or one migration behind, where the select is not drawn): LEAVE the
-  // mapping alone. null = «— tanlanmagan»: delete it. Read on the pool before
-  // the transaction (#714).
-  const posted = readTariffZoneField(formData);
-  let beforeZone: string | null = null;
-  if (posted !== undefined) {
-    if (!(await freightTablesReady())) return refuse('server_behind', formData);
-    beforeZone = await tariffColumnOf(id);
-    if (posted !== null && !(await mappableZones(beforeZone)).some((z) => z.zone === posted)) {
-      return refuse('zone_unknown', formData);
-    }
-  }
-
+  // His 1a (2026-10-15): the warehouse carries no tariff column any more —
+  // one table for every truck. A page drawn before the deploy that still
+  // posts `tariffZone` is simply not read.
   const values = toValues(parsed.data);
-  // The zone joins the HISTORY's diff and never the row's own set: the
-  // warehouses row has no such column (#502's split-out idiom).
-  const zoneChanged = posted !== undefined && posted !== beforeZone;
-  const diff = diffFields(
-    { ...(before as unknown as Record<string, unknown>), ...(posted !== undefined ? { tariffZone: beforeZone } : {}) },
-    { ...values, ...(posted !== undefined ? { tariffZone: posted } : {}) },
-  );
+  const diff = diffFields(before as unknown as Record<string, unknown>, values);
   const meta = await requestMeta();
-  try {
-    // ONE transaction: the row, the column and the history land together.
-    await db.transaction(async (tx) => {
-      await tx.update(warehouses).set(values).where(eq(warehouses.id, id));
-      if (zoneChanged) await setTariffColumnInTx(tx, id, posted);
-      if (diff) {
-        await writeAudit(
-          tx,
-          { actorId: actor.id, ...meta, warehouseId: id },
-          { entityType: 'warehouse', entityId: id, action: 'update', ...diff },
-        );
-      }
-    });
-  } catch (error) {
-    if (isServerBehind(error)) return refuse('server_behind', formData);
-    throw error;
-  }
+  // ONE transaction: the row and the history land together.
+  await db.transaction(async (tx) => {
+    await tx.update(warehouses).set(values).where(eq(warehouses.id, id));
+    if (diff) {
+      await writeAudit(
+        tx,
+        { actorId: actor.id, ...meta, warehouseId: id },
+        { entityType: 'warehouse', entityId: id, action: 'update', ...diff },
+      );
+    }
+  });
 
   revalidatePath('/admin/warehouses');
   revalidatePath(`/admin/warehouses/${id}`);

@@ -2,6 +2,10 @@ import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { listTariff } from '@/modules/wms/calc/dictionaries';
+import { tariffHistory } from '@/modules/wms/calc/tariff-read';
+import { FREIGHT_LIGHT_BELOW, columnWatch } from '@/modules/wms/costing/freight-split';
+import { freightSplitZone } from '@/modules/wms/costing/freight-zone';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { KNOWN_TARIFF_ZONES } from '@/modules/wms/calc/tariff-seed';
 import { isServerBehind } from '@/modules/platform/db/errors';
 import { logger } from '@/modules/platform/logger';
@@ -23,18 +27,49 @@ export default async function TariffPage() {
   if (!actor) redirect('/login');
   if (!actor.permissions.has('admin.dictionaries.manage')) redirect('/');
   const t = await getTranslations('calc');
+  const tcost = await getTranslations('costing');
 
   let rows: Awaited<ReturnType<typeof listTariff>> = [];
+  let watch: ReturnType<typeof columnWatch> = [];
+  // His 1a: ONE column splits every truck's yo'lkira bill — this page is
+  // where it is typed, so this page says when it would not (judge J31).
+  const zone = freightSplitZone();
   try {
-    rows = await listTariff();
+    [rows, watch] = await Promise.all([
+      listTariff(),
+      tariffHistory().then((history) => columnWatch(zone, history, tashkentDay(), FREIGHT_LIGHT_BELOW)),
+    ]);
   } catch (err) {
     if (!isServerBehind(err)) throw err;
     logger.error({ err }, '[calc] tariff: server behind');
   }
+  const column = t.has(`zones.${zone}`) ? t(`zones.${zone}` as 'zones.cn') : zone;
+  const problemWords = (p: (typeof watch)[number]['problem'], from: string) =>
+    p.kind === 'unpriced'
+      ? tcost('errFreightUnpriced', { column, date: from })
+      : p.kind === 'gap' && p.to === null
+        ? tcost('errFreightTop', { column, from: p.from })
+        : p.kind === 'gap'
+          ? tcost('errFreightGap', { column, from: p.from, to: p.to ?? '' })
+          : p.kind === 'overlap'
+            ? tcost('errFreightOverlap', { column, at: p.at })
+            : tcost('errFreightInvalid', { column });
 
   return (
     <div className="mx-auto max-w-3xl space-y-3">
       <h1 className="text-xl font-bold">🚚 {t('dictTariff')}</h1>
+      {watch.length > 0 && (
+        <div role="status" className="rounded-lg bg-warn/10 p-3 text-sm text-warn" data-testid="tariff-watch">
+          <p className="font-semibold">⚠ {t('freightWatchTitle', { column })}</p>
+          <ul className="mt-1 space-y-0.5">
+            {watch.map((w) => (
+              <li key={w.from} className="min-w-0 break-words">
+                {t('freightWatchFrom', { date: w.from })} {problemWords(w.problem, w.from)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div className="card !p-3" data-testid="tariff-admin">
         {/* The zones already priced, plus every zone the app can name — so
             he picks «horgos» from the list instead of typing «Xorgos» into

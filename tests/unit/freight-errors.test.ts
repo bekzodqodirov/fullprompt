@@ -66,7 +66,6 @@ describe('freight refusals name what to fix', () => {
 
   it('every sentence formats with its params in all four bundles — no FORMATTING_ERROR, no hole', () => {
     const sample: Record<string, string | number> = {
-      warehouse: 'YW — Yiwu',
       column: 'Yiwu / Guangzhou → Toshkent',
       date: '2026-10-14',
       from: 900,
@@ -94,7 +93,8 @@ describe('freight refusals name what to fix', () => {
   it('the band words and the disabled option’s facts exist in all four bundles (built keys, #163)', () => {
     const opt = /const FREIGHT_OPT = \{([\s\S]*?)\} as const;/.exec(PANEL)?.[1] ?? '';
     const optKeys = [...opt.matchAll(/: '([A-Za-z]+)'/g)].map((m) => m[1]!);
-    expect(optKeys.length).toBe(4);
+    // server_behind, unpriced, problem — his 1a took «no column» away (no door, no state).
+    expect(optKeys).toEqual(['freightOptServerBehind', 'freightOptUnpriced', 'freightOptProblem']);
     const bandKeys = ['freightBand', 'freightBandPerKg', 'freightBandMoney', 'freightBandMoneyPerKg'];
     for (const key of [...optKeys, ...bandKeys]) {
       for (const l of LOCALES) expect(typeof bundles[l].costing![key], `${l}: costing.${key}`).toBe('string');

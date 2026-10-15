@@ -1,15 +1,15 @@
 import { createHash } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
-import { costAllocations, costEntries, warehouses } from '../../platform/db/schema';
+import { costAllocations, costEntries } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { getSetting } from '../../platform/settings/service';
 import type { AllocationBasis } from './engine';
 import { CostError } from './errors';
 import { copyDigest, freightCopyFor, prepareFreightCopy, replaceFreightCopyInTx } from './freight-copy';
-import { freightMoneySight } from './freight-offer';
-import { bandForSight, bandsSummary, splitCents } from './freight-split';
-import type { BandView, FreightCopy, FreightCopyDraft, RebasePreview, RecomputeVerdict } from './freight-types';
+import { freightMoneySight, splitView } from './freight-offer';
+import { bandsSummary, byShareThenLabel, clientCentsOf, lotCents } from './freight-split';
+import type { FreightCopy, FreightCopyDraft, RebasePreview, RecomputeVerdict } from './freight-types';
 import { costPool } from './pool';
 import { boxMeasures, recomputeEntry, scopeBoxIds } from './service';
 
@@ -43,8 +43,10 @@ const digestOf = (copy: FromCopy | FreightCopyDraft | null): string =>
 
 /**
  * The person's token (the twin idiom): what they SAW — the bill's from-part
- * and the after state, to the hundredth of a percent. A remap, a band edit or
- * a carton boarding between the preview and the press changes it.
+ * and the after state, to the hundredth of a percent. A band edit or a carton
+ * boarding between the preview and the press changes it. A freight target's
+ * LOT shares ride too (his 2b): a lot moving bands behind equal client
+ * percentages is a different split the person did not read.
  */
 function tokenOf(
   entryId: string,
@@ -54,6 +56,7 @@ function tokenOf(
   toBasis: string,
   to: FreightCopyDraft | null,
   rows: [string, number, number][],
+  lots: [string, number][],
   held: unknown,
 ) {
   const canonical = JSON.stringify([
@@ -69,6 +72,7 @@ function tokenOf(
     // two presses made it stale), and a held after-state's own lots (WHICH
     // lots are light is what the person read) — fix review.
     [...rows].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)).map(([k, before, after]) => [k, before.toFixed(2), after.toFixed(2)]),
+    [...lots].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)).map(([k, share]) => [k, (share * 100).toFixed(2)]),
     held ?? null,
   ]);
   return createHash('sha256').update(canonical).digest('hex');
@@ -85,7 +89,7 @@ interface Planned {
 /**
  * The preview, on the POOL (#714): the target's copy through the save's own
  * door (`prepareFreightCopy`, built from the bill ROW — its scope, truck and
- * date — and the origin's CURRENT column, so every §5 refusal applies), the
+ * date — and the ONE column of his 1a, so every §5 refusal applies), the
  * bill's current shares, and the after state from the recompute's own pool
  * over the recompute's own base.
  */
@@ -104,8 +108,11 @@ async function plan(entry: Entry, toBasis: RebaseTarget, money: boolean): Promis
   }
 
   const amountUsd = entry.amountUsd === null ? null : Number(entry.amountUsd);
+  // The bill's shares now, per LOT under its client — the rows' dollars are
+  // the sum of their lots' cents, the rule the saved fold prints (judge J2).
   const before = (await db.execute(sql`
     SELECT CASE WHEN ca.client_id IS NOT NULL THEN 'c:' || ca.client_id::text ELSE 'r:' || rl.receipt_id::text END AS k,
+           'l:' || b.lot_id::text AS lk,
            coalesce(min(cl.client_code), min(r.unclaimed_marking), min(r.number), '❓') AS label,
            sum(ca.amount_usd) AS usd
       FROM cost_allocations ca
@@ -114,7 +121,7 @@ async function plan(entry: Entry, toBasis: RebaseTarget, money: boolean): Promis
       JOIN receipts r ON r.id = rl.receipt_id
       LEFT JOIN clients cl ON cl.id = ca.client_id
      WHERE ca.cost_entry_id = ${entry.id}::uuid
-     GROUP BY 1`)) as unknown as { k: string; label: string; usd: string }[];
+     GROUP BY 1, 2`)) as unknown as { k: string; lk: string; label: string; usd: string }[];
 
   // The after state: the recompute's pool over the recompute's base. An
   // unconverted bill is drawn on a nominal 100 (% only — it has no dollars
@@ -128,50 +135,65 @@ async function plan(entry: Entry, toBasis: RebaseTarget, money: boolean): Promis
     toBasis === 'freight' ? { copy: to ?? 'missing', customs: false } : null,
   );
   const receiptOf = new Map(measures.map((m) => [m.boxId, m] as const));
-  const after = new Map<string, number>();
   const labels = new Map<string, string>();
-  // The band a freight target puts each group in — the price only to a money
-  // reader, the same rule as the panel's preview (`splitView`).
-  const bands = new Map<string, BandView>();
+  // Per LOT, keyed `l:<lotId>` under its client — the after twin of `before`.
+  const afterLots = new Map<string, { clientKey: string; usd: number }>();
+  // A freight target's after state per LOT, drawn by the panel's own rows
+  // (`splitView` — the price only to a money reader, J5). The rows below stay
+  // per CLIENT (his 5a «har bir mijoz uchun hozir → yangi»: the before side of
+  // a weight bill exists per client only), and a client spans bands under
+  // 2b, so no single band rides on a client row.
+  const view = toBasis === 'freight' && verdict.kind === 'split' ? splitView(verdict, money) : null;
+  const split = view?.kind === 'split' ? { lots: view.lots, clients: view.clients } : undefined;
   if (verdict.kind === 'split') {
-    for (const g of verdict.groups ?? []) {
-      bands.set(g.key, bandForSight(g.band, money));
-    }
     for (const s of verdict.shares) {
       const m = receiptOf.get(s.boxId)!;
       const key = s.clientId ? `c:${s.clientId}` : `r:${m.receiptId}`;
-      after.set(key, (after.get(key) ?? 0) + s.amountUsd);
+      const lot = `l:${m.lotId}`;
+      afterLots.set(lot, { clientKey: key, usd: (afterLots.get(lot)?.usd ?? 0) + s.amountUsd });
       labels.set(key, s.clientId ? (m.clientCode ?? '❓') : (m.unclaimedMarking ?? m.receiptNumber ?? '❓'));
     }
   }
   for (const b of before) labels.set(b.k, labels.get(b.k) ?? b.label);
-
-  const keys = [...new Set([...before.map((b) => b.k), ...after.keys()])].sort((a, b) =>
-    (labels.get(a) ?? '').localeCompare(labels.get(b) ?? ''),
+  const beforeLots = before.map((b) => ({ key: b.lk, clientKey: b.k, weight: Number(b.usd) }));
+  const afterList = [...afterLots].map(([key, v]) => ({ key, clientKey: v.clientKey, weight: v.usd }));
+  const sumBy = (list: { clientKey: string; weight: number }[]) => {
+    const out = new Map<string, number>();
+    for (const l of list) out.set(l.clientKey, (out.get(l.clientKey) ?? 0) + l.weight);
+    return out;
+  };
+  const beforeBy = sumBy(beforeLots);
+  const afterBy = sumBy(afterList);
+  const beforeTotal = [...beforeBy.values()].reduce((a, n) => a + n, 0);
+  const afterTotal = [...afterBy.values()].reduce((a, n) => a + n, 0);
+  // The rows in the split's own order (judge J17): after share descending,
+  // then the label — the order the after-fold below them is drawn in; a
+  // client the target drops (after 0) sorts by what it had.
+  const keys = [...new Set([...beforeBy.keys(), ...afterBy.keys()])].sort(
+    (a, b) =>
+      (afterBy.get(b) ?? 0) - (afterBy.get(a) ?? 0) ||
+      (beforeBy.get(b) ?? 0) - (beforeBy.get(a) ?? 0) ||
+      byShareThenLabel({ share: 0, label: labels.get(a) ?? '' }, { share: 0, label: labels.get(b) ?? '' }),
   );
-  const beforeUsd = keys.map((k) => Number(before.find((b) => b.k === k)?.usd ?? 0));
-  const afterUsd = keys.map((k) => after.get(k) ?? 0);
-  const beforeTotal = beforeUsd.reduce((a, n) => a + n, 0);
-  const afterTotal = afterUsd.reduce((a, n) => a + n, 0);
-  // Both columns to the bill's cents (M7): the largest remainder adds up.
+  // Both columns to the bill's cents (M7) by the ONE cents rule: the lots
+  // split the bill, a client is the sum of its lots (lotCents/clientCentsOf).
   const showMoney = money && amountUsd !== null;
-  const beforeCents = showMoney && beforeTotal > 0 ? splitCents(amountUsd!, beforeUsd) : null;
-  const afterCents = showMoney && afterTotal > 0 ? splitCents(amountUsd!, afterUsd) : null;
-  const rows = keys.map((key, i) => ({
+  const beforeLotCents = showMoney && beforeTotal > 0 ? lotCents(amountUsd!, beforeLots) : null;
+  const afterLotCents = showMoney && afterTotal > 0 ? lotCents(amountUsd!, afterList) : null;
+  const beforeCents = beforeLotCents ? clientCentsOf(beforeLots, beforeLotCents) : null;
+  const afterCents = afterLotCents ? clientCentsOf(afterList, afterLotCents) : null;
+  const rows = keys.map((key) => ({
     key,
     label: labels.get(key) ?? '❓',
-    beforePct: pct(beforeUsd[i]!, beforeTotal),
-    afterPct: pct(afterUsd[i]!, afterTotal),
-    ...(beforeCents ? { beforeUsd: beforeCents[i]! } : {}),
-    ...(afterCents ? { afterUsd: afterCents[i]! } : {}),
-    ...(bands.has(key) ? { band: bands.get(key)! } : {}),
+    beforePct: pct(beforeBy.get(key) ?? 0, beforeTotal),
+    afterPct: pct(afterBy.get(key) ?? 0, afterTotal),
+    ...(beforeCents ? { beforeUsd: beforeCents[key] ?? 0 } : {}),
+    ...(afterCents ? { afterUsd: afterCents[key] ?? 0 } : {}),
   }));
 
   let column: RebasePreview['column'];
   if (to) {
-    const [wh] = await db.select({ code: warehouses.code }).from(warehouses).where(eq(warehouses.id, to.warehouseId));
     column = {
-      warehouseCode: wh?.code ?? '',
       zone: to.zone,
       tariffFrom: to.tariffFrom,
       previousZone: typeof fromCopy === 'object' ? fromCopy.zone : null,
@@ -185,6 +207,7 @@ async function plan(entry: Entry, toBasis: RebaseTarget, money: boolean): Promis
     toBasis,
     to,
     rows.map((r) => [r.key, r.beforePct, r.afterPct] as [string, number, number]),
+    split ? split.lots.map((l) => [l.key, l.share] as [string, number]) : [],
     verdict.kind === 'held' ? verdict.held : null,
   );
   return {
@@ -198,6 +221,8 @@ async function plan(entry: Entry, toBasis: RebaseTarget, money: boolean): Promis
       money: showMoney,
       unconverted: amountUsd === null,
       rows,
+      ...(split ? { split } : {}),
+      ...(split && afterLotCents ? { afterLotCents } : {}),
       ...(verdict.kind === 'held' ? { held: verdict.held } : {}),
       // Cartons are there and the target finds no measure on them: the save
       // is allowed (as the create is) and the person is told before it.

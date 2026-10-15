@@ -2758,6 +2758,38 @@ m8-crm's two desktop drags failed once in a run that shared the CPU with
 another vitest: the reload raced the move action (the database held the
 move, the page did not) — green alone twice and in the final run.
 
+**Round — his «1a 2b» (2026-10-15; DECISIONS #1379-#1385; NO migration of its
+own, ledger 133 — but his server is confirmed only at 132, so this deploy may
+carry 0132: the count must read 133 AND `/api/version` today).** His «skladlarning
+o'zini narxi bo'lsin degan narsa kerak emas … aynan shu tovar qancha foizdaligi».
+**1a**: ONE column splits every truck — `freightSplitZone()` (`costing/freight-zone.ts`,
+a zero-import FUNCTION so integration files `vi.mock` it onto a private zone and never
+touch `cn`); the warehouse column door is DELETED (form, actions, `tariff-column.ts`,
+`tariff-zone-field.ts`, `no_column`), `warehouse_tariff_columns` kept UNREAD (named by
+the schema alone, fenced). From deploy day every yo'lkira bill preselects the tariff
+basis. **2b**: the grain is the LOT (`freightLots`, key `l:<lotId>`), each priced by its
+own density on its own row; rule 6 per lot (one light or unmeasured lot holds the WHOLE
+bill). ONE cents rule: `costPool` splits a bill per lot by `lotCents` FIRST and only then
+over the lot's cartons, so stored allocations carry the preview's cents exactly; a client
+is `clientCentsOf` = Σ of its lots (preview, fold, ✎ rows; `splitCents` has no other
+caller). Readers: the fold keys cents `'l:'||lot_id`; the Narx tab's band line is the pure
+`clientBandLine` over `ClientCostPart.freightLotIds` (the lots whose money IS in that part,
+from the breakdown's own rows — folded per lot in JS), and each lot row prints its own
+«hisobning N %» = this truck's cartons' dollars ÷ the bill; ✎ rows in the split's order with
+server `afterLotCents`; the add form's preview capped at five clients («+N mijoz · $X»);
+`freightLabel`/`rebaseColumn` say «narxlari nisbatida»; the freight-off sentence names the
+basis the select holds; /admin/tarif warns (`columnWatch`) when the column has a hole today
+or on a typed future date; only versions ≤ `latestTxDate()` take the three whole-split
+slots. Old 0132 bills: `pnpm exec tsx scripts/freight-resplit.ts` through `migrate` (NOT a
+package.json command, #1228) — dry run lists only bills whose per-BOX units would change
+(«0 ta hisob o'zgaradi» expected), `--apply` prints what is stored. Judged as a design
+(81 agents) and reviewed AS BUILT (five lenses): 15 + 7 red proofs; one stayed green by
+construction (#1385). Fences: `freight-placeholders.test.ts` formats every literal call
+with the names it passes (TypeScript's parser), `freight-rows-render.test.ts` renders the
+capped rows. e2e `m9zzzc` (D's two lots, the per-lot line) + `m9zzzd` (seven clients at
+360 px: Saqlash within one screen). The non-freight e2e specs deliberately ride the new
+default.
+
 **Latest migration: 0132** (`cost_freight_basis`, `when` …111; ledger must reach **133**). Before
 it: 0131 (`calc_excise`, `when` …110). Before
 it: 0130 (`bot_redelivery`, `when` …109). Before
@@ -2905,8 +2937,9 @@ yaxshi ishlayabti», count not quoted either); PR #109 (0122) was asked about an
 answered. **Then he CONFIRMED 132** («deploy qildim 132 chiqdi», 2026-10-13,
 after PR #118 — the customs calculator fix, 0131), so production is at the
 journal's length and EVERYTHING in this file through #1353 is LIVE. The
-yo'lkira-tarifi round (0132) must read **133**; a code-only round after it is
-checked by `/api/version`, not the count (anything short of the journal means
+yo'lkira-tarifi round (0132) must read **133**; PR #120 was merged and its
+deploy NOT confirmed, so the «1a 2b» round (no migration of its own) is checked
+by BOTH the count (133) and `/api/version` (anything short of the journal means
 a migration did not land — read the `migrate` container's own output).
 Never carry this number over from a previous session: read it
 (`ls src/modules/platform/db/migrations/*.sql | wc -l`) before writing the

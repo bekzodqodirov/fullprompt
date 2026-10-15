@@ -133,8 +133,10 @@ export const AUDIT_FIELD_LABELS: Record<string, string> = {
   section: 'calcSection',
   items: 'itemCount',
   // Yo'lkira tarifi bo'yicha taqsimlash (0132): how a bill is split, and the
-  // tariff column a warehouse's trucks are split by. The column prints its
-  // CODE («cn → kashgar») — short lowercase words, honest as they stand.
+  // tariff column it froze. The column prints its CODE («cn → kashgar») —
+  // short lowercase words, honest as they stand. Warehouse history rows of
+  // 2026-10-14/15 carry `tariffZone` too (his 2c, retired by his 1a): they
+  // still print by this label.
   allocationBasis: 'allocationBasis',
   tariffZone: 'tariffZone',
   tariffFrom: 'tariffFrom',

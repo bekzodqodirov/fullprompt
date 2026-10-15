@@ -422,13 +422,13 @@ export async function saveRates(
 // 3. Freight tariff
 // ---------------------------------------------------------------------------
 
-// `tariffFor`, `tariffHistory` and `tariffZoneNames` live in the leaf
+// `tariffFor` and `tariffHistory` live in the leaf
 // `./tariff-read` and `bandsAsOf` in the pure `./pricing`, so the cost split
 // (costing/freight-copy.ts) can read the tariff without importing this file —
 // whose `CalcError` and `../tnved/service` edges reach costing/service through
 // calc/service → crm → clients → client-cabinet → finance → costing (a cycle).
 // Re-exported here so every existing importer is untouched.
-export { tariffFor, tariffHistory, tariffZoneNames } from './tariff-read';
+export { tariffFor, tariffHistory } from './tariff-read';
 export { bandsAsOf } from './pricing';
 
 /** The zones the tariff itself knows about — a third one needs no code. */
