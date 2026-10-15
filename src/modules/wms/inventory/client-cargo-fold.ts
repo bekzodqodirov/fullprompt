@@ -1,5 +1,6 @@
 import { roundKg, roundM3, shareOf, sumRounded } from '../../platform/telegram/format';
 import { cargoStage, milestoneOf, MILESTONES, type StageBatch } from '../client-cabinet/stages';
+import { CLIENT_ACTIVE_STATUSES } from '../boxes/active';
 import { arrivalLabel, type ArrivalSource } from '../documents/arrival-label';
 import { pushLotName } from '../notices/client-text';
 import { daysSince } from '../reports/dashboard-math';
@@ -246,7 +247,15 @@ export function foldCargoNow(
   const placeLabel = (r: NowRow) =>
     r.whCode ?? (r.truckId ? (trucks.get(r.truckId)?.code ?? '') : '');
 
+  // A row's parts in the ladder's own order (shelf → plan → loading), never
+  // the order postgres happened to group them in — a hash aggregate answers
+  // differently between two runs, and so did the chips.
+  const rung = (status: string) => {
+    const at = (CLIENT_ACTIVE_STATUSES as readonly string[]).indexOf(status);
+    return at < 0 ? CLIENT_ACTIVE_STATUSES.length : at;
+  };
   for (const { lotKg, lotM3, lotBoxes, ...row } of byKey.values()) {
+    row.parts.sort((a, b) => rung(a.status) - rung(b.status) || (a.truckId ?? '').localeCompare(b.truckId ?? ''));
     // The share of the row's whole count, once — never a sum of per-status
     // shares, which can round the other way from the push (#1115).
     row.kg = lotKg === null ? null : roundKg(shareOf(lotKg, row.n, lotBoxes));

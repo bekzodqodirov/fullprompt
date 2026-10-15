@@ -120,6 +120,21 @@ describe('one row per lot and place, with the status split named', () => {
     ]);
   });
 
+  it('the split reads shelf → plan whichever order postgres grouped the rows in', () => {
+    // A hash aggregate hands the two groups back in either order; the chips
+    // must not swap between two opens of the same card.
+    const now = foldCargoNow(
+      [row({ status: 'planned', batchId: 't-forming', n: 2 }), row({ status: 'in_stock', n: 3 })],
+      TRUCKS,
+      null,
+      TODAY,
+    );
+    expect(now.sections.china.rows[0]!.parts).toEqual([
+      { status: 'in_stock', truckId: null, n: 3 },
+      { status: 'planned', truckId: 't-forming', n: 2 },
+    ]);
+  });
+
   it('the same lot in two warehouses is two rows', () => {
     const now = foldCargoNow(
       [row({ n: 1 }), row({ n: 1, ...UZ, warehouseId: 'wh-tas', whCode: 'TAS1' })],

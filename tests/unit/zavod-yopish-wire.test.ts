@@ -59,6 +59,14 @@ describe('zavod reysi yopiladi — wiring', () => {
     }
   });
 
+  it('the trip-opened wizard says the owner’s off-trip cargo above itself, in the door’s spelling (intent-5)', () => {
+    const page = strip(read('src/app/(protected)/receive/page.tsx'));
+    expect(page).toContain("import { lookalikeList } from './lookalike-text';");
+    expect(page).toMatch(/if \(found\.lookalikes\.length > 0\) \{\s+prefillLookalike = t\('pickupLookalike', \{/);
+    expect(page).toContain('list: lookalikeList(found.lookalikes),');
+    expect(page).toMatch(/\{prefillLookalike && \(\s+<p[\s\S]{0,140}data-testid="receive-pickup-lookalike"/);
+  });
+
   it('the door question is never served from the service worker’s cache', () => {
     const sw = read('src/app/sw.ts');
     expect(sw).toContain("pathname === '/api/receive/pickups'");
