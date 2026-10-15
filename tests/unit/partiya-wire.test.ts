@@ -14,7 +14,7 @@ const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\
 const read = (path: string) => strip(readFileSync(path, 'utf8'));
 
 describe('the partiya surfaces read the ONE arrivals home', () => {
-  it('the stock screen and its XLSX use arrivalCodesForPairs, keyed on (lot, warehouse)', () => {
+  it('the stock screen and its XLSX use arrivalLabelsForPairs, keyed on (lot, warehouse)', () => {
     /**
      * The export's HALVES moved apart in the round that gave the sheet
      * photographs and XYZ: the route still asks the arrivals module, and the
@@ -28,7 +28,7 @@ describe('the partiya surfaces read the ONE arrivals home', () => {
       'src/app/api/reports/stock/route.ts',
     ]) {
       const src = read(path);
-      expect(src, path).toContain('arrivalCodesForPairs(');
+      expect(src, path).toContain('arrivalLabelsForPairs(');
       // The pair: a lot standing in two warehouses arrived on two different
       // answers, and keying on the lot alone prints one of them on both
       // shelves.
@@ -37,12 +37,26 @@ describe('the partiya surfaces read the ONE arrivals home', () => {
     }
     // The sheet READS that map, and by the same pair key.
     const builder = read('src/modules/wms/reports/stock-xlsx.ts');
-    expect(builder).toMatch(/arrivalCodes\.get\(`\$\{line\.lot\.id\}\|\$\{line\.whId\}`\)/);
+    expect(builder).toMatch(/arrivalLabels\.get\(`\$\{line\.lot\.id\}\|\$\{line\.whId\}`\)/);
     expect(builder).not.toMatch(/landedHereSql|ARRIVED_ON_A_TRUCK/);
     // …and the route's own answer reaches it rather than being recomputed.
     expect(read('src/app/api/reports/stock/route.ts')).toMatch(
-      /buildStockXlsx\(\{[\s\S]{0,200}arrivalCodes,/,
+      /buildStockXlsx\(\{[\s\S]{0,200}arrivalLabels,/,
     );
+  });
+
+  it('the pair read returns LABELS under a name that says so — a factory trip is no code (ZAVOD-YOPISH §5)', () => {
+    // It returned batch codes while only a batch could be named. A function
+    // still called «codes» handing back «ZR-00012 · factory · plate» would be
+    // taken for a lookup key by the next reader.
+    const arrivals = read('src/modules/wms/documents/arrivals.ts');
+    expect(arrivals).not.toMatch(/arrivalCodesForPairs/);
+    const fn = arrivals.slice(arrivals.indexOf('export async function arrivalLabelsForPairs('));
+    expect(fn.slice(0, fn.indexOf('\n}\n'))).toMatch(/\[key, arrival\.labels\]/);
+    // …and the bot reads the same answer.
+    const bot = read('src/modules/wms/bot/lookup.ts');
+    expect(bot).toContain('arrivalLabelsForPairs(');
+    expect(bot).toMatch(/warehouseId: s\.warehouseId/);
   });
 
   it('the plan editor API and the plan view read arrivalsForLots at the plan ORIGIN', () => {
@@ -58,6 +72,9 @@ describe('the partiya surfaces read the ONE arrivals home', () => {
     const view = read('src/app/(protected)/plans/[id]/page.tsx');
     expect(view).toContain('arrivalsForLots(');
     expect(view).toContain('plan.originWarehouseId');
+    // Both print the LABELS, so a factory trip reads as one there too.
+    expect(stock).not.toMatch(/\.codes\b/);
+    expect(view).toMatch(/\.labels\.join\(/);
   });
 
   it('the editor renders the arrival for loose lots AND crates', () => {

@@ -981,7 +981,22 @@
     "noteAndCost": "备注（如需要）",
     "pickupReceiving": "从工厂提货收货",
     "pickupDetach": "解除与提货的关联",
-    "pickupInvalid": "该工厂提货前往其他仓库或已取消。"
+    "pickupInvalid": "该工厂提货前往其他仓库或已取消。",
+    "pickupDoorTitle": "这批货是工厂车次送来的吗？",
+    "pickupDoorYes": "是，来自此车次",
+    "pickupDoorNo": "不是",
+    "pickupDoorCount": "工厂：{factory} · 司机：{driver}",
+    "pickupClosed": "此工厂车次已关闭——请不带车次收货，物流员会在入库单卡片上关联。",
+    "pickupLineAnswered": "此车次的这一行已由另一张入库单收货。如果是另一批货，请移除车次（✕）后重新收货。",
+    "pickupLineGone": "收货期间车次的行已更改。请移除车次（✕）后重新选择。",
+    "pickupDoorPerFactory": "同一客户的货来自本车次的两个工厂——请每个工厂单独做一张入库单。",
+    "pickupExtra": "这是同一批货的剩余部分——追加到车次",
+    "pickupDrop": "不带车次收货",
+    "pickupExtraChip": "剩余部分——不对应行",
+    "pickupStaleGone": "此车次已不存在（已取消）——请移除车次，不带车次收货。",
+    "pickupStaleTaken": "此车次有 {n} 行已由另一张入库单收货——请确认不是同一批货。",
+    "pickupLineOwner": "此提货行属于另一位客户——入库单的客户与之不符。请选择正确的客户，或不关联提货直接入库——物流员会在卡片上关联。",
+    "pickupLookalike": "⚠ {who}：{list} —— 已在本仓库入库但未关联提货。是否就是这批货？若是，请勿重复入库——告诉物流员，由其关联到提货。"
   },
   "receipts": {
     "title": "收货单",
@@ -1029,6 +1044,7 @@
       "box_not_in_stock": "部分货物已不在库——无法转移",
       "box_in_crate": "请先拆掉该入库单的木箱",
       "same_warehouse": "是同一个仓库",
+      "pickup_linked": "该入库单已关联工厂提货车次——请先将其从车次中解除（车次显示在入库单卡片上）",
       "validation": "请检查数据"
     },
     "openInBrowser": "在浏览器中打开（如果无法打印）",
@@ -2388,7 +2404,8 @@
     "unsplitForming": "尚未出发的车辆（表格只列出已出发的车辆，因此不在表中）：",
     "gapFreightHeld": "{count, plural, other {# 笔运费}}（{usd}）尚未按运价分摊到车辆货物——计入了本报表，但没有进入任何客户的成本。",
     "gapFreightHeldHint": "已保存但尚未按运价分摊：修正批次或通过「分摊方式」后会自动分摊并计入客户成本——请勿作废。原因见该车的费用页。",
-    "clientFreightHeldNote": "其中 {usd}（{count, plural, other {# 笔}}）是未按运价分摊的运费：修正批次或通过「分摊方式」后会自动分摊到客户；请勿作废。"
+    "clientFreightHeldNote": "其中 {usd}（{count, plural, other {# 笔}}）是未按运价分摊的运费：修正批次或通过「分摊方式」后会自动分摊到客户；请勿作废。",
+    "balUnpricedPickupClosed": "已关闭的工厂提货有 {count} 笔费用（${usd}）未落在任何箱子上——其入库单已作废，或提货关闭时没有货物。请在入库单卡片上把真正的入库单关联到该提货，若没有货物则作废该费用；在此之前它们会降低净头寸。"
   },
   "lidChat": {
     "mark": "线索",
@@ -4707,13 +4724,16 @@
       "planned": "计划中",
       "on_road": "在途",
       "arrived": "已到达",
-      "cancelled": "已取消"
+      "cancelled": "已取消",
+      "closed": "已关闭"
     },
     "tabs": {
       "live": "进行中",
       "arrived": "已到达",
       "cancelled": "已取消",
-      "all": "全部"
+      "all": "全部",
+      "closed": "已关闭",
+      "xarajatsiz": "无费用"
     },
     "errors": {
       "generic": "保存失败，请重试。",
@@ -4736,8 +4756,53 @@
       "client_not_found": "未找到客户。",
       "warehouse_not_found": "仓库不存在或已停用。",
       "bad_point": "无法识别坐标。例如：29.31, 120.07",
-      "no_point": "尚无地图位置。"
-    }
+      "no_point": "尚无地图位置。",
+      "closed": "车次已关闭，不能修改。",
+      "already_closed": "车次已经关闭。",
+      "close_reason_required": "请填写原因（至少3个字）。",
+      "no_cost_reason_required": "请填写没有费用的原因（至少3个字）。",
+      "has_costs": "车次已有费用，不能标记“无费用”。",
+      "line_answered": "此行已由另一张入库单收货。",
+      "line_not_on_stop": "此行不属于这个工厂。",
+      "not_found": "找不到车次。",
+      "stop_not_found": "找不到工厂站点。",
+      "receipt_not_found": "找不到入库单。",
+      "server_behind": "服务器正在更新，请一分钟后再试。",
+      "shared_cost_orphaned": "提货 {code} 的费用将不落在任何货物上——此入库单是其全部货物。请先把真正的入库单关联到该提货，或作废该费用（财务）。",
+      "line_owner_mismatch": "此行属于另一位客户——入库单的客户不是该行的客户。请选择正确的客户，或回答「否」后入库。",
+      "no_cost_closed_only": "「无费用」只能标在已关闭的提货上——请在关闭提货时标记。"
+    },
+    "closeTrip": "关闭车次",
+    "closeHint": "所有行都收货后车次自动关闭。如果剩余货物不会到，请手动关闭——关闭后不能再打开。",
+    "closeReason": "关闭原因（例如：剩余货物不会到）",
+    "closeConfirm": "关闭车次？关闭后不能再打开。",
+    "noCostTick": "此车次没有费用",
+    "noCostReason": "为什么没有费用？",
+    "noCostMarked": "无费用：{reason}",
+    "noCostClear": "取消标记",
+    "noCostSet": "标记为“无费用”",
+    "closedAuto": "所有行已收货——车次已于 {at} 关闭",
+    "closedManual": "已于 {at} 关闭 · {who}：{reason}",
+    "lineWaiting": "尚未收货",
+    "lineNotReceived": "未收货",
+    "unmatched": "此工厂的入库单，但不对应任何行",
+    "homeCostNoCargo": "{n} 个有费用无货",
+    "costNoCargo": "有费用无货",
+    "costNoCargoLong": "车次有费用，但没有有效入库单——费用没有分摊到任何箱子。请在新入库单的卡片上把它关联到此车次。",
+    "serverBehind": "服务器正在更新，请一分钟后再试。",
+    "linkToLine": "{seq}：{goods}",
+    "declinedAtDoor": "仓库说：“不是这个车次的”",
+    "prefillReceived": "{code}：这批货已收货——{numbers}。请勿重复收货；如果是另一批货，请按普通方式收货。",
+    "prefillClosed": "{code} 已关闭或已取消——请不带车次收货。",
+    "homeStaleOpen": "{n} 个已到达但未关闭",
+    "editHeader": "车辆、司机、备注",
+    "closeCandidates": "有未关联的入库单（{n}）——请先在上方“未关联的入库单”中关联，否则其货物会显示为“仓库直收”。",
+    "closedByHand": "手动关闭",
+    "closedByItself": "全部已收货",
+    "linesNotCame": "{n} 行未到",
+    "detachClosedConfirm": "车次已关闭。确定解除关联？只能在30天内从入库单卡片重新关联。",
+    "receivedShort": "已收",
+    "closeConfirmCandidates": "关闭此提货？关闭后不能重新打开。以下入库单将保持未关联：{numbers} ——其货物将显示为「本仓库收货」。"
   },
   "unpriced": {
     "title": "已到达未定价货物",

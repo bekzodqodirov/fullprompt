@@ -35,6 +35,7 @@ export async function ClientCargoNow({
   photos,
   photoRows,
   receiptsOpen,
+  pickupsOpen,
   siblings,
   full,
   fullHref,
@@ -47,6 +48,8 @@ export async function ClientCargoNow({
   photos: ReadonlyMap<string, string>;
   photoRows: ReadonlySet<string>;
   receiptsOpen: ReadonlySet<string>;
+  /** Factory trips whose card this reader may open (`mayReadPickup`); absent = none. */
+  pickupsOpen?: ReadonlySet<string>;
   siblings: readonly NowSibling[];
   full: boolean;
   fullHref: string;
@@ -129,9 +132,19 @@ export async function ClientCargoNow({
           <span className="flex flex-wrap gap-x-1" data-testid="yuklar-arrived-on">
             <span>🚚 {t('arrivedOn')}</span>
             {row.arrivedOn.map((a, i) => (
-              <span key={`${a.id}-${i}`}>
+              <span key={`${a.kind}-${a.id}-${i}`}>
                 {i > 0 && ', '}
-                {truckLink(a.id || null)}
+                {a.kind === 'batch' ? (
+                  truckLink(a.id || null)
+                ) : pickupsOpen?.has(a.id) ? (
+                  // A factory trip: «ZR-… · factory · plate», linked to its
+                  // card only where that card's own door admits the reader.
+                  <Link href={`/zavod/${a.id}`} className="text-brand-700 underline" data-testid="yuklar-pickup-link">
+                    {a.label}
+                  </Link>
+                ) : (
+                  <span data-testid="yuklar-pickup">{a.label}</span>
+                )}
               </span>
             ))}
           </span>

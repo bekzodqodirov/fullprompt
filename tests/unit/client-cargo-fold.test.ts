@@ -120,6 +120,21 @@ describe('one row per lot and place, with the status split named', () => {
     ]);
   });
 
+  it('the split reads shelf → plan whichever order postgres grouped the rows in', () => {
+    // A hash aggregate hands the two groups back in either order; the chips
+    // must not swap between two opens of the same card.
+    const now = foldCargoNow(
+      [row({ status: 'planned', batchId: 't-forming', n: 2 }), row({ status: 'in_stock', n: 3 })],
+      TRUCKS,
+      null,
+      TODAY,
+    );
+    expect(now.sections.china.rows[0]!.parts).toEqual([
+      { status: 'in_stock', truckId: null, n: 3 },
+      { status: 'planned', truckId: 't-forming', n: 2 },
+    ]);
+  });
+
   it('the same lot in two warehouses is two rows', () => {
     const now = foldCargoNow(
       [row({ n: 1 }), row({ n: 1, ...UZ, warehouseId: 'wh-tas', whCode: 'TAS1' })],
@@ -180,14 +195,42 @@ describe('cartons an unload declared missing are said apart, never «O‘zbekist
 });
 
 describe('days here are counted from the day the cargo reached THIS warehouse', () => {
-  const arrival: FoldArrival = { codes: ['KA-003'], batchIds: ['t-arrived'], since: new Date('2026-09-23T05:00:00Z') };
+  const arrival: FoldArrival = {
+    sources: [{ kind: 'batch', id: 't-arrived', code: 'KA-003' }],
+    since: new Date('2026-09-23T05:00:00Z'),
+  };
   const tas = { ...UZ, warehouseId: 'wh-tas', whCode: 'TAS1' };
 
   it('a lot forty days out of Yiwu and five in Tashkent has waited five', () => {
     const arrivals = new Map([['lot-1|wh-tas', arrival]]);
     const now = foldCargoNow([row(tas)], TRUCKS, arrivals, TODAY);
     expect(now.sections.uz.rows[0]!.days).toBe(5);
-    expect(now.sections.uz.rows[0]!.arrivedOn).toEqual([{ id: 't-arrived', code: 'KA-003' }]);
+    expect(now.sections.uz.rows[0]!.arrivedOn).toEqual([
+      { kind: 'batch', id: 't-arrived', code: 'KA-003', label: 'KA-003' },
+    ]);
+  });
+
+  it('a factory trip that brought it is named by its trip, factory and plate — never as a batch', () => {
+    // «Shu zavoddan, shu mashinada» (docs/ZAVOD-YOPISH.md §5): the trip is a
+    // truck the tab names, and its id is a TRIP's — linking it to
+    // /batches/<id> would open nothing.
+    const arrivals = new Map([
+      [
+        'lot-1|wh-tas',
+        {
+          sources: [
+            { kind: 'pickup' as const, id: 'trip-1', code: 'ZR-00012', stopId: 's1', seq: 1, factory: 'Yiwu toys', plate: '01A123BC' },
+            { kind: 'batch' as const, id: 't-arrived', code: 'KA-003' },
+          ],
+          since: new Date('2026-09-23T05:00:00Z'),
+        },
+      ],
+    ]);
+    const now = foldCargoNow([row(tas)], TRUCKS, arrivals, TODAY);
+    expect(now.sections.uz.rows[0]!.arrivedOn).toEqual([
+      { kind: 'pickup', id: 'trip-1', code: 'ZR-00012', label: 'ZR-00012 · Yiwu toys · 01A123BC' },
+      { kind: 'batch', id: 't-arrived', code: 'KA-003', label: 'KA-003' },
+    ]);
   });
 
   it('cargo that never moved is dated by its prixod; an unknown arrival is unknown', () => {
@@ -247,6 +290,27 @@ describe('the arrival of what stands, folded', () => {
     expect(folded.get('b')).toMatchObject({ codes: ['KA-030'], batchIds: ['b30'] });
     expect(folded.get('b')!.since.toISOString()).toBe('2026-09-01T00:00:00.000Z');
     expect(folded.get('b')!.arrivedAt.toISOString()).toBe('2026-09-25T00:00:00.000Z');
+  });
+
+  it('a factory trip stands among the trucks: named in order, kept OUT of the batch ids', () => {
+    // `batchIds` feeds `cargoTrucks` — a trip id there would ask for a batch
+    // card that does not exist — and once a trip stands among them it is no
+    // longer index-aligned with `codes`; `sources` is.
+    const folded = foldPairArrivals([
+      { lotId: 'l', batchCode: 'KA-020', batchId: 'b20', arrivedAt: new Date('2026-09-20T00:00:00Z'), boxes: 2 },
+      {
+        lotId: 'l',
+        batchCode: null,
+        batchId: null,
+        pickup: { id: 'trip-1', code: 'ZR-00012', stopId: 's1', seq: 1, factory: 'Yiwu toys', plate: null },
+        arrivedAt: new Date('2026-09-10T00:00:00Z'),
+        boxes: 3,
+      },
+    ]).get('l')!;
+    expect(folded.codes).toEqual(['ZR-00012', 'KA-020']);
+    expect(folded.labels).toEqual(['ZR-00012 · Yiwu toys', 'KA-020']);
+    expect(folded.sources.map((s) => `${s.kind}:${s.id}`)).toEqual(['pickup:trip-1', 'batch:b20']);
+    expect(folded.batchIds).toEqual(['b20']);
   });
 });
 

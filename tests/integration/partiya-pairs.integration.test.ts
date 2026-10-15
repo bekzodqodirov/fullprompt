@@ -12,7 +12,7 @@ import {
   users,
   warehouses,
 } from '@/modules/platform/db/schema';
-import { arrivalCodesForPairs } from '@/modules/wms/documents/arrivals';
+import { arrivalLabelsForPairs } from '@/modules/wms/documents/arrivals';
 
 /**
  * «Sklad ostatkani ko'rganda … yuk qaysi partiyada kelganini ko'rish» (owner,
@@ -125,9 +125,9 @@ afterAll(async () => {
   await pgClient.end();
 });
 
-describe('arrivalCodesForPairs', () => {
+describe('arrivalLabelsForPairs', () => {
   it('one lot, two warehouses, two different answers — keyed on the pair', async () => {
-    const map = await arrivalCodesForPairs([
+    const map = await arrivalLabelsForPairs([
       { lotId, warehouseId: whA },
       { lotId, warehouseId: whB },
       { lotId: walkedLotId, warehouseId: whA },

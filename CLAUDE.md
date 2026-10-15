@@ -155,6 +155,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | VED tarix, «Готово» answers + internal note, recalc from an answer, the VED on the seller's card | `docs/VED-TARIX.md` — agreed 2026-10-06 (his 7a-12a 13c, 14a 15a 16a), SHIPPED |
 | The five-lens review of both before code — 115 objections and their BINDING fixes | `docs/TOPSHIRIQ-VED-REVIEW.md` |
 | The customs calculator fix — units in their own columns, kg+dona rows, excise, the fee, the screen | `docs/RASTAMOJKA-TUZATISH.md` — agreed 2026-10-09 (his two messages, four ⭐ questions), SHIPPED; §7 overrides §1-§3 |
+| A factory trip closes and remembers its lines — the door question, «shu zavoddan, shu mashinada», the checker | `docs/ZAVOD-YOPISH.md` — agreed 2026-10-15 (his 1a-5a, 6, 7 ha), SHIPPED; §10-§11 override §2-§5 |
 
 ## State — 2026-08-23
 
@@ -2758,7 +2759,45 @@ m8-crm's two desktop drags failed once in a run that shared the CPU with
 another vitest: the reload raced the move action (the database held the
 move, the page did not) — green alone twice and in the final run.
 
-**Latest migration: 0132** (`cost_freight_basis`, `when` …111; ledger must reach **133**). Before
+**Round — zavod reysi yopiladi (2026-10-15; DECISIONS #1379-#1399;
+migration 0133 `pickup_close` — ledger must reach 134; spec
+`docs/ZAVOD-YOPISH.md`, §10-§11 binding).** His «zavot partiyalarni …
+qabul qilib olsa ham keyinchalik yana reyslar chiqib qolyabti», answers
+1a 2a 3a 4a 5a, 6 («packinglist … shu zavotdan shu mashinada kelgan»), 7 ha.
+**The cause: «is this line received» was RECOMPUTED from the owner's text on
+every read** — a claimed marking, a voided prixod or a marking line received
+under the client code put «Qabul qilish» back on received lines, and the same
+cargo could be received through the trip twice (probes S1-S7 on a throwaway
+db). Now `pickups.status` gains terminal `closed` (auto when every line is
+answered, `closeIfAnsweredInTx` in every writer's tx; manual «Reysni yopish»
+with a reason; never reopens) and `pickup_line_receipts` is the MEMORY of
+what a prixod carried (`answerLinesInTx`: explicit ids from the wizard's
+lots or the card's per-line buttons; a derive answers only a single open
+line; door refuses an answered line, card may add a second part; a CLIENT
+line takes only that client's cargo, `assertLinesOwned`). The owner rule is
+ORDERED for derivations (`ownerLinesOf` = `ownerMatchSql` = the backfill)
+and lenient where a person reads (`ownerLooselyMatches(Sql)`, the
+code-prefix convention `markingOfCode` — «GS500MANIKEN» is GS500's, GS5 is
+not GS500X's). The receive door asks «Bu yuk ZR-… reysidan keldimi?»
+(`/api/receive/pickups`, NetworkOnly, collected stops only, «Yo'q» on the
+create audit) and says when the owner's cargo is ALREADY here off the trip
+(`lookalikesFor`). Money: a closed trip's last prixod may not be voided or
+detached out from under its bill (`costOrphanedByVoid` pickup branch FOR
+SHARE + `refuseOrphaningDetach`, no cost lock in the link door);
+«xarajat yo'q» is set on a closed trip and stands only until a bill is
+typed after it (`noCostStandsSql`); close/cancel scoped to the destination;
+the card's money for money readers. P3: the arrival names the trip
+(`documents/arrival-label.ts`, one block per trip, agent sheet, «Packing
+(rasmlar)», /stock, bot, lenta, Yuklar; `moveReceipt` refuses a linked
+prixod). P4: `scripts/zavod-tekshir.ts` — five read-only lists, run through
+`migrate` after the deploy and read to him. Built as two packages in
+worktrees + the lead's core, judged by four lenses before code and by the
+money/intent lenses after; ~50 red proofs by string edit. STATED/ASKED: the
+next warehouse keeps the Yiwu batch, not the factory; whether a door «Yo'q»
+should hide the prixod from the candidates.
+
+**Latest migration: 0133** (`pickup_close`, `when` …112; ledger must reach **134**). Before
+it: 0132 (`cost_freight_basis`, `when` …111). Before
 it: 0131 (`calc_excise`, `when` …110). Before
 it: 0130 (`bot_redelivery`, `when` …109). Before
 it: 0129 (`cargo_threads`, `when` …108). Before
@@ -2895,7 +2934,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **133** since 0132 (132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **134** since 0133 (133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read
@@ -2905,7 +2944,8 @@ yaxshi ishlayabti», count not quoted either); PR #109 (0122) was asked about an
 answered. **Then he CONFIRMED 132** («deploy qildim 132 chiqdi», 2026-10-13,
 after PR #118 — the customs calculator fix, 0131), so production is at the
 journal's length and EVERYTHING in this file through #1353 is LIVE. The
-yo'lkira-tarifi round (0132) must read **133**; a code-only round after it is
+yo'lkira-tarifi round (0132) must read **133** and the zavod-reysi round (0133)
+**134**; a code-only round after it is
 checked by `/api/version`, not the count (anything short of the journal means
 a migration did not land — read the `migrate` container's own output).
 Never carry this number over from a previous session: read it

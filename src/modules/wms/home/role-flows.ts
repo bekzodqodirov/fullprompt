@@ -154,7 +154,7 @@ export interface LogistFlowCounts {
    * Factory trucks (0100): arrived with no cost written — his C2, «rasxodini
    * yozmading» — and trips with received prixods nobody has linked yet.
    */
-  pickups: { noCost: number; unlinked: number };
+  pickups: { noCost: number; unlinked: number; costNoCargo: number; staleOpen: number };
   /**
    * Clients whose cargo has waited past the warn line, company-wide (0116).
    * Null when the read missed its budget — the row is then a plain link.
@@ -194,7 +194,7 @@ export async function logistFlowCounts(
     // must not go down with them on a half-applied deploy (#472).
     import('../pickups/service')
       .then((m) => m.pickupAttentionCounts())
-      .catch(() => ({ noCost: 0, unlinked: 0 })),
+      .catch(() => ({ noCost: 0, unlinked: 0, costNoCargo: 0, staleOpen: 0 })),
     // Every client in the company, so JIT off and the accountant row's BUDGET
     // (design §5.1): the design review measured 155-190 ms warm on the
     // 18k-carton shaped copy, and a cold cache can miss it — the row then

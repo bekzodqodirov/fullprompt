@@ -16,8 +16,9 @@ import { getSetting } from '@/modules/platform/settings/service';
 import { ReceiveWizard, type ArrivalPrefill } from './receive-wizard';
 import { ExpenseRequestFold } from './expense-request-fold';
 import { myExpenseRequests } from '@/modules/wms/accounting/expense-requests';
-import { incomingForWarehouses, receivePrefillFor } from '@/modules/wms/pickups/service';
+import { incomingForWarehouses, receivePrefillFor, receivePrefillRefusal } from '@/modules/wms/pickups/service';
 import { IncomingPickups } from './incoming-pickups';
+import { lookalikeList } from './lookalike-text';
 import { mayCountMove } from '@/modules/wms/scanning/count-door';
 import { canLogInSql } from '@/modules/platform/users/login';
 
@@ -115,9 +116,21 @@ export default async function ReceivePage({
   // Tapped «Qabul qilish» on a factory truck's line (0100): one lot per line
   // the factory loaded for this owner, with the counts as a HINT and the box
   // count left empty — the recount at our door is the point (B2).
+  let pickupRefused: Awaited<ReturnType<typeof receivePrefillRefusal>> = null;
+  // The owner's cargo already received here OFF the trip (intent-5): said
+  // above the wizard the trip opened, the third place it is said — the door
+  // and the incoming row are the other two, all in one spelling.
+  let prefillLookalike: string | null = null;
   if (!prefill && params.pickup && /^[0-9a-f-]{36}$/i.test(params.pickup) && params.c) {
     const found = await receivePrefillFor(params.pickup, params.c).catch(() => null);
+    if (!found) pickupRefused = await receivePrefillRefusal(params.pickup, params.c).catch(() => null);
     if (found && whs.some((wh) => wh.id === found.warehouseId)) {
+      if (found.lookalikes.length > 0) {
+        prefillLookalike = t('pickupLookalike', {
+          who: found.clientCode ?? found.marking ?? '—',
+          list: lookalikeList(found.lookalikes),
+        });
+      }
       prefill = {
         key: `pickup:${found.stopId}:${params.c}`,
         arrivalId: null,
@@ -131,7 +144,9 @@ export default async function ReceivePage({
         pickup: {
           stopId: found.stopId,
           label: `🏭 ${found.pickupCode} · ${found.factoryName}`,
+          ownerClientId: found.clientId,
           lines: found.lines.map((line) => ({
+            id: line.id,
             goods: line.goods,
             hint: tp('countHint', {
               factory: line.factoryBoxes,
@@ -175,6 +190,22 @@ export default async function ReceivePage({
         />
       )}
       {incoming.length > 0 && <IncomingPickups trucks={incoming} />}
+      {pickupRefused && (
+        <p className="card mb-3 text-sm font-semibold text-warn" data-testid="receive-pickup-refused">
+          ⚠{' '}
+          {pickupRefused.why === 'received'
+            ? tp('prefillReceived', { code: pickupRefused.code, numbers: pickupRefused.numbers.join(', ') || '—' })
+            : tp('prefillClosed', { code: pickupRefused.code })}
+        </p>
+      )}
+      {prefillLookalike && (
+        <p
+          className="card mb-3 text-sm font-semibold text-warn [overflow-wrap:anywhere]"
+          data-testid="receive-pickup-lookalike"
+        >
+          {prefillLookalike}
+        </p>
+      )}
       <ReceiveWizard
         warehouses={whs}
         densityThresholds={await getSetting('density_thresholds')}

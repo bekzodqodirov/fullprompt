@@ -77,7 +77,7 @@ export interface StockSheetLine {
 
 export async function buildStockXlsx(input: {
   lines: StockSheetLine[];
-  arrivalCodes: Map<string, string[]>;
+  arrivalLabels: Map<string, string[]>;
   cols: string | undefined;
   locale: string | null | undefined;
   can: (permission: string) => boolean;
@@ -85,14 +85,14 @@ export async function buildStockXlsx(input: {
    * The three photo bounds, injectable ONLY so a test can reach them: the
    * owner's own data holds at most one photograph per lot today, so nothing
    * a fixture can seed would ever push a real sheet past the shipped
-   * defaults. Appended after `arrivalCodes` in the route's call on purpose —
+   * defaults. Appended after `arrivalLabels` in the route's call on purpose —
    * `partiya-wire` reads a 200-character window from the call to it.
    */
   photoCap?: number;
   placementCap?: number;
   photoColsCap?: number;
 }): Promise<{ buffer: Buffer; visible: Set<string>; photos: number; photosSkipped: number }> {
-  const { lines, arrivalCodes } = input;
+  const { lines, arrivalLabels } = input;
   const L = reportLabels(input.locale);
   const chosen = parseCols(input.cols);
 
@@ -131,7 +131,8 @@ export async function buildStockXlsx(input: {
     { key: 'lotCheck', column: { header: L.lotCheck, key: 'lotCheck', width: 16 }, always: true },
     { key: 'density', column: { header: L.density, key: 'density', width: 10 } },
     { key: 'note', column: { header: L.note, key: 'note', width: 30 } },
-    { key: 'partiya', column: { header: L.batch, key: 'batch', width: 12 } },
+    // Wide enough for a factory trip's «ZR-… · factory · plate» (`arrivalLabel`).
+    { key: 'partiya', column: { header: L.batch, key: 'batch', width: 24 } },
     { key: 'receivedAt', column: { header: L.date, key: 'date', width: 12 } },
   ];
 
@@ -469,7 +470,7 @@ export async function buildStockXlsx(input: {
       density: density === null ? '' : Math.round(density),
       aging: Math.floor((now - line.receivedAt.getTime()) / 86_400_000),
       note: line.lot.note ?? '',
-      batch: (arrivalCodes.get(`${line.lot.id}|${line.whId}`) ?? []).join(', '),
+      batch: (arrivalLabels.get(`${line.lot.id}|${line.whId}`) ?? []).join(', '),
       lotCheck: (() => {
         const face = chipFace(line.check, Boolean(line.askable));
         return face === 'checked'
