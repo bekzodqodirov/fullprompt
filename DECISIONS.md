@@ -3342,10 +3342,18 @@ RED, restored by hash):
   (#513). The rule is pure (`clientBandLine`, J21), distinct by value under
   both sights, joined «; » (J15); each lot row prints its own % of each bill
   (J36, his «aynan shu tovar qancha foizdaligi»).
-- **The add form's preview is capped at five clients** (J9): from deploy day
+- **The add form's preview is capped at three clients** (J9): from deploy day
   every yo'lkira bill on every truck draws it, between the amount and «kim
   to'ladi»/Saqlash, on every bill of the accountant's loop. «+N mijoz · $X»
-  carries the hidden clients' dollars, split before the cut.
+  carries the hidden clients' dollars, split before the cut. The design said
+  five, and the round's own geometry spec (`m9zzzd`, seven clients at
+  360×800) refused it: Saqlash stood **831 px** below the amount. Measured
+  part by part, five two-to-three-line client rows were 471 px and the
+  1a hint a second, three-line sentence of 64 px under the column line. The
+  hint is now that line («{column} narxlari nisbatida bo‘linadi · {from}
+  tarifi» — `freightTableHint` deleted ×4) and the cap is three: **607 px**.
+  The 800 threshold stayed as written; it is the oracle, and the number
+  that moved was the design's.
 - **The durable lines say «nisbatida»** (J12) — the saved row and ✎ read as a
   mistake on an Andijon truck otherwise; and a derived placeholder fence
   formats every literal call with the names it passes, in four bundles (J13:
@@ -3421,3 +3429,21 @@ Refuted and recorded: a lot with no measure cannot be written by any door
 named in the deploy words but is not a deploy-day risk; applying a HELD line
 in the resplit is the correct state (the first ordinary recompute would hold
 it anyway) and is now said in UPDATE.md.
+Then CI and the local CI-order run went red on ONE spec, the cap's own
+(`m9zzzd`, 831 px against 800) — no lens had measured a phone. The cap moved
+from five to three and the 1a hint folded into the column line (#1384); the
+unit render test and both e2e specs moved with it, with new literals worked
+by hand («+4 mijoz · 260.79», «+4 mijoz · 10.66 USD»).
+Two more, found while LOOKING at the fix's own screenshots and the rerun:
+- **The Narx tab's «nimadan iborat» list is its own row.** It had lived in
+  the first of the three cost/price/margin columns since round 29 — a third
+  of a 360 px card, ~40 px left for words once the dollars took theirs — and
+  the lot band line («YSH-001 · Yo'lkira · tarif 1000+ · $0.55/kg; 1–100 ·
+  $110/kub») broke every three letters. `col-span-full` under the three
+  numbers; nothing else moved (the same `full && parts.length > 0` gate).
+- **`cents()` of a company-wide difference can be −0.** The full vitest
+  rerun on the e2e-used database failed `balance-unpriced-cargo` 32 with
+  «expected -0 to be +0»: `Math.round(−1e-10 × 100) / 100` is −0 and
+  `toBe(0)` is `Object.is`. Green on a fresh database because the noise needs
+  a big balance to fall below zero (#653's oracle). The four files whose
+  `cents` helper feeds a difference-to-zero assertion add `+ 0`.

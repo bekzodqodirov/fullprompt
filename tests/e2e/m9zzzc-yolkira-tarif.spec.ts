@@ -145,8 +145,8 @@ test('«＋» proposes the yo’lkira type AND the freight basis on a truck nobo
   await page.locator('select[aria-label="currency"]').selectOption('USD');
   await expect(page.getByTestId('cost-basis')).toHaveValue('freight');
   const preview = page.getByTestId('freight-preview');
-  await expect(preview).toContainText('2026-01-01');
-  await expect(page.getByTestId('freight-table-hint')).toBeVisible();
+  // One line names the column, that it is a proportion, and its date (1a).
+  await expect(preview.getByTestId('freight-column-line')).toContainText('2026-01-01');
   await page.getByTestId('cost-amount').fill('350');
   const rowA = page.getByTestId(`freight-row-c:${a}`);
   await expect(rowA).toContainText('76.88 %');

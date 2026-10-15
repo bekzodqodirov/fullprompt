@@ -2776,7 +2776,8 @@ caller). Readers: the fold keys cents `'l:'||lot_id`; the Narx tab's band line i
 `clientBandLine` over `ClientCostPart.freightLotIds` (the lots whose money IS in that part,
 from the breakdown's own rows — folded per lot in JS), and each lot row prints its own
 «hisobning N %» = this truck's cartons' dollars ÷ the bill; ✎ rows in the split's order with
-server `afterLotCents`; the add form's preview capped at five clients («+N mijoz · $X»);
+server `afterLotCents`; the add form's preview capped at THREE clients («+N mijoz · $X» — five
+measured 831 px to Saqlash at 360, three 607, and the 1a hint is the column line itself);
 `freightLabel`/`rebaseColumn` say «narxlari nisbatida»; the freight-off sentence names the
 basis the select holds; /admin/tarif warns (`columnWatch`) when the column has a hole today
 or on a typed future date; only versions ≤ `latestTxDate()` take the three whole-split

@@ -830,16 +830,16 @@ export function CostPanel({
           )}
           {basis === 'freight' && usable.ok && freight?.status === 'ready' && (
             <div className="space-y-1 rounded-md bg-surface p-2" data-testid="freight-preview">
-              <p className="text-xs font-semibold text-ink-700">
+              {/* His 1a in one line: the China prices are a PROPORTION, so an
+                  Andijon → Toshkent bill split on them does not read as a
+                  mistake. It was a second, three-line sentence under this
+                  one, and on a 360 px phone it was part of what pushed
+                  Saqlash 831 px below the amount (m9zzzd). */}
+              <p className="text-xs font-semibold text-ink-700" data-testid="freight-column-line">
                 {t('freightColumnLine', {
                   column: zoneWords(freight.zone),
                   from: usable.version?.from ?? '—',
                 })}
-              </p>
-              {/* His 1a in one sentence, so an Andijon → Toshkent bill split
-                  on the China prices does not read as a mistake. */}
-              <p className="text-xs text-ink-500" data-testid="freight-table-hint">
-                {t('freightTableHint', { column: zoneWords(freight.zone) })}
               </p>
               {usable.version?.split ? (
                 <FreightLotRows

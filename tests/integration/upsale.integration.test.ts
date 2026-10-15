@@ -1028,7 +1028,10 @@ describe('a correction retires the released offer', () => {
 });
 
 describe('the Balans owes the sellers what the clients have paid for (U10)', () => {
-  const cents = (value: number) => Math.round(value * 100) / 100;
+  // `+ 0` turns −0 into 0: a company-wide difference that is float noise just
+  // below zero rounds to −0, and `toBe(0)` (Object.is) tells the two apart —
+  // red only on a database big enough to carry the noise (#653).
+  const cents = (value: number) => Math.round(value * 100) / 100 + 0;
   // A client of the test's own for every job: a client's balance decides the
   // state of EVERY offer on its deals, so the file's shared client would move
   // other tests' commissions under these deltas.

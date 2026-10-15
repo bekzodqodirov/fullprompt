@@ -10,9 +10,9 @@ import postgres from 'postgres';
  *
  *  1. a departed YW truck carries seven clients, one 1 m³ lot each, at seven
  *     densities;
- *  2. the preview draws a summary line, the five largest shares and «+2
+ *  2. the preview draws a summary line, the three largest shares and «+4
  *     mijoz · $…»; Saqlash stays within one screen below the amount; the
- *     button opens the other two;
+ *     button opens the other four;
  *  3. cleanup, a final TEST: the fixture gone. The run configures nothing.
  */
 
@@ -89,7 +89,7 @@ test('mint: a departed YW truck carrying seven clients, one lot each', async () 
   }
 });
 
-test('the preview draws five clients and «+2 mijoz»; Saqlash stays within one screen of the amount', async ({ page }) => {
+test('the preview draws three clients and «+4 mijoz»; Saqlash stays within one screen of the amount', async ({ page }) => {
   const id = await truckId();
   await login(page, OWNER);
   await page.goto(`/batches/${id}/xarajatlar`);
@@ -100,11 +100,13 @@ test('the preview draws five clients and «+2 mijoz»; Saqlash stays within one 
   const preview = page.getByTestId('freight-preview');
   await expect(preview.getByTestId('freight-row-summary')).toContainText('7');
   const clientRows = preview.locator('[data-testid^="freight-row-c:"]');
-  await expect(clientRows).toHaveCount(5);
-  // Values 110 160 200 290 300 320 660 = 2040; the two smallest (110, 160) are
-  // behind the button: 700 × 270 / 2040 = 92.65 by the largest remainder.
-  await expect(preview.getByTestId('freight-row-more')).toContainText('+2');
-  await expect(preview.getByTestId('freight-row-more')).toContainText('92.65');
+  await expect(clientRows).toHaveCount(3);
+  // Values 110 160 200 290 300 320 660 = 2040 over $700, cents by the largest
+  // remainder: 226.47 109.80 102.94 99.51 68.63 54.90 37.75 (the spare three
+  // cents go to 290, 200 and 110 — no tie, so key order cannot move them).
+  // The four smallest are behind the button: 99.51 + 68.63 + 54.90 + 37.75.
+  await expect(preview.getByTestId('freight-row-more')).toContainText('+4');
+  await expect(preview.getByTestId('freight-row-more')).toContainText('260.79');
 
   const amount = await page.getByTestId('cost-amount').boundingBox();
   const save = await page.getByTestId('save-cost').boundingBox();

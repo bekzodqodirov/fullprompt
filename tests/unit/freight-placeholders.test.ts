@@ -85,7 +85,7 @@ describe('the yo’lkira sentences format with exactly the names their calls pas
       'costing.freightClientsMore',
       'costing.freightLabel',
       'costing.rebaseColumn',
-      'costing.freightTableHint',
+      'costing.freightColumnLine',
       'costing.freightBandsMore',
       'costing.freightLotShare',
       'costing.errFreightGap',

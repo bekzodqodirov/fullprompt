@@ -816,46 +816,6 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                     </p>
                   )
                 )}
-                {/* «Nimalar o'tirganini ko'rsam» — the tannarx opened up:
-                    every source and type that landed on this client's boxes.
-                    A press, not a hover — phones have no hover. */}
-                {parts.length > 0 && (
-                  <details className="mt-1 text-left" data-testid="cost-breakdown">
-                    <summary className="cursor-pointer text-xs text-brand-700">
-                      {t('costDetail')}
-                    </summary>
-                    <ul className="mt-1 space-y-0.5 text-xs">
-                      {parts.map((part, index) => {
-                        const band = freightBand(part, group.clientId);
-                        const words = band
-                          ? tcost('freightBandLine', { source: part.source, type: part.typeName, band })
-                          : `${part.source} · ${part.typeName}`;
-                        return (
-                          <li
-                            key={index}
-                            className="flex justify-between gap-2"
-                            data-testid={band ? 'cost-breakdown-freight' : undefined}
-                          >
-                            {/* A band line wraps (a long marking or band has
-                                no break in it, #400); the plain line keeps its
-                                one truncated row. */}
-                            <span className={`min-w-0 text-ink-700 ${band ? 'break-words' : 'truncate'}`}>
-                              {part.later ? '↪ ' : ''}
-                              {band && costDoor && part.batchId && part.batchEnds && mayOpenBatchCard(actor, part.batchEnds) ? (
-                                <Link href={batchTabHref(part.batchId, 'xarajat')} className="underline">
-                                  {words}
-                                </Link>
-                              ) : (
-                                words
-                              )}
-                            </span>
-                            <span className="num shrink-0">${part.usd.toFixed(2)}</span>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </details>
-                )}
               </div>
               )}
               {!internal && (
@@ -892,6 +852,50 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
               </div>
               )}
                 </>
+              )}
+              {/* «Nimalar o'tirganini ko'rsam» — the tannarx opened up:
+                  every source and type that landed on this client's boxes.
+                  A press, not a hover — phones have no hover. Its own row
+                  under the three numbers, the grid's full width: inside the
+                  cost column it had a third of a 360 px card, and a lot's
+                  band words («…; 1–100 · $110/kub», his 2b) broke every
+                  three letters. */}
+              {full && parts.length > 0 && (
+                <details className="col-span-full text-left" data-testid="cost-breakdown">
+                  <summary className="cursor-pointer text-xs text-brand-700">
+                    {t('costDetail')}
+                  </summary>
+                  <ul className="mt-1 space-y-0.5 text-xs">
+                    {parts.map((part, index) => {
+                      const band = freightBand(part, group.clientId);
+                      const words = band
+                        ? tcost('freightBandLine', { source: part.source, type: part.typeName, band })
+                        : `${part.source} · ${part.typeName}`;
+                      return (
+                        <li
+                          key={index}
+                          className="flex justify-between gap-2"
+                          data-testid={band ? 'cost-breakdown-freight' : undefined}
+                        >
+                          {/* A band line wraps (a long marking or band has
+                              no break in it, #400); the plain line keeps its
+                              one truncated row. */}
+                          <span className={`min-w-0 text-ink-700 ${band ? 'break-words' : 'truncate'}`}>
+                            {part.later ? '↪ ' : ''}
+                            {band && costDoor && part.batchId && part.batchEnds && mayOpenBatchCard(actor, part.batchEnds) ? (
+                              <Link href={batchTabHref(part.batchId, 'xarajat')} className="underline">
+                                {words}
+                              </Link>
+                            ) : (
+                              words
+                            )}
+                          </span>
+                          <span className="num shrink-0">${part.usd.toFixed(2)}</span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </details>
               )}
             </div>
             {/* Not when the $0 IS the rule: cargo whose money went to the

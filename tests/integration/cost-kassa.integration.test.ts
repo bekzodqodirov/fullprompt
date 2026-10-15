@@ -99,7 +99,10 @@ const tillBalance = async (id: string) => (await accountBalances()).find((row) =
  */
 const typedBeforeKassas = (expenseId: string) =>
   db.update(expenses).set({ createdAt: new Date('2000-01-01T00:00:00Z') }).where(eq(expenses.id, expenseId));
-const cents = (value: number) => Math.round(value * 100) / 100;
+// `+ 0` turns −0 into 0: a company-wide difference that is float noise just
+// below zero rounds to −0, and `toBe(0)` (Object.is) tells the two apart —
+// red only on a database big enough to carry the noise (#653).
+const cents = (value: number) => Math.round(value * 100) / 100 + 0;
 
 beforeAll(async () => {
   actorId = (await db.select({ id: users.id }).from(users).where(eq(users.active, true)).limit(1))[0]!.id;

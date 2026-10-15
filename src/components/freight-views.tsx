@@ -25,8 +25,13 @@ import type { FreightHeld, LotIdentity, LotView, SplitView } from '@/modules/wms
  */
 
 const MORE_AFTER = 5;
-/** The add form's preview shows this many clients until «+N mijoz» (judge J9). */
-export const FREIGHT_PREVIEW_CAP = 5;
+/**
+ * The add form's preview shows this many clients until «+N mijoz» (judge J9).
+ * Three, not the five the design said: measured at 360×800 on seven clients,
+ * five rows (each two or three lines on a phone) left Saqlash 831 px below
+ * the amount, i.e. off the screen the accountant typed into (m9zzzd).
+ */
+export const FREIGHT_PREVIEW_CAP = 3;
 const fmt = (n: number, digits: number) => String(Math.round(n * 10 ** digits) / 10 ** digits);
 
 function useBand() {
