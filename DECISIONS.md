@@ -3372,3 +3372,161 @@ auto close in the receive and in removeStop/saveStopLines, closed door vs
 closed card, stale-id fallback, late Olindi, collected-only door, backfill
 pairing and ordering, the declined mark, «extra», the draft's three rules,
 a missing zh-CN sentence).
+
+1389. **A closed trip's last prixod may not take its bill to nothing — voided
+or detached.** The pickup cost base is the live linked prixods' cartons, and
+#1004 let it empty because «a half-received truck» may still get cargo. A
+CLOSED trip gets none by itself (his 2a), so the judge's money-1 is real:
+void the only prixod of a costed closed trip and $300 sat on no carton,
+named by no surface that offered a cure. `costOrphanedByVoid` now judges
+the pickup scope when the trip is closed — read `FOR SHARE` after the cost
+and carton locks (no pickup door holds the trip and then waits on a cost,
+and SHARE, unlike KEY SHARE, blocks the close's own UPDATE) — over a base
+that does NOT ask the prixod's own void flag (`pickupGuardBase`), because
+`voidReceipt` stamps the prixod void in its transaction before it asks; the
+recompute's `scopeBoxIds` would have hidden the very cartons the void takes.
+The detach half is `refuseOrphaningDetach` in `linkReceiptToStop`: trips
+locked in id order after the receipt, and NO cost lock (receipt → costs →
+cartons → trip is the void doors' order; trip → cost would be their
+deadlock pair). Both refuse `shared_cost_orphaned` naming the ZR code; the
+cure is the card's per-line button for the real prixod first, then the
+void. One splitter for both (`costHomedOn`). An open trip keeps #1004,
+pinned. The Balans splits the pickup bucket by trip state: an open trip's
+bill «joins once linked», a closed one's says what to do
+(`balUnpricedPickupClosed`). Stated, unchanged: `gapScopePickup` describes,
+it promises nothing; an UNCONVERTED bill is not judged (it has no dollars to
+lose yet); the annul's empty-scope sweep stays out of pickups.
+
+1390. **A client line takes only that client's cargo; a marking line takes
+any.** Explicit line ids were never compared with the owner (probe S4: a
+marking received under the client it belongs to). The judge's money-3: a
+ticked GS101 line kept across a switch to GS205 answered GS101's line,
+closed the trip for ever and moved GS101's truck share onto GS205.
+`assertLinesOwned` (in `answerLinesInTx`, after the trip lock) refuses
+`line_owner_mismatch` unless the prixod is that client's or was received
+under a marking that is that client's by the code-prefix rule; the wizard
+says it in words (`pickupLineOwner`) with the same «drop the trip» remedy.
+The door's answer for a MARKING whose lines are all one client's records
+that client as the link's owner, so a later switch drops the link instead
+of being refused at the confirm. A sibling code (#407) is refused too —
+received under the right code, the card attaches it as extra and the
+logist answers the line.
+
+1391. **«GS500MANIKEN» is GS500's — written once, read where a person
+looks.** Round 98's convention (#683) as `markingOfCode` +
+`markingOfCodeSql` (pure, pinned equal over eight cases incl. GS5 vs
+GS500X and GS5001 vs GS500 — a code ends where a digit would continue it).
+`ownerLooselyMatches(Sql)` = the exact owner or the prefix either way, used
+by the door question (`openStopsForOwner` — a client is asked about the
+marking lines its code begins and vice versa; the judge's intent-7, the
+reason the plain-form double stayed unlinked), the card's candidates and
+home count (`candidateReceiptSql`), the lookalike warnings and every list
+of the checker. NEVER in a derivation nobody reads: `ownerLinesOf` /
+`ownerMatchSql` (the no-ids derive, the backfill) stay exact — a prefix
+there would answer a line on a guess. Hence `onlyLineId`: a candidate's
+single line is POSTED by the card's button, or the server's exact derive
+would link a prefix match and answer nothing (red-proven).
+
+1392. **The cargo may already be here — said before «Qabul qilish».** The
+judge's intent-5: the old code's commonest double was the plain form first
+(S6 — nothing linked, the line still «waiting» on /receive) and the stale
+list's «Qabul qilish» second (S2). `lookalikesFor` is the card's own
+candidate set (unlinked, live, at the destination, inside the window,
+owner-matching an open line), minus a prixod whose receiver said «Yo'q»
+about this trip, attached to the door's answer, the /receive owner rows and
+the prefill as «⚠ GS777: P-201 (12.10, 30 📦) — … shu yuk emasmi?». Dates
+numeric in Tashkent (#678). The window now opens at the trip's creation
+when nobody pressed «Olindi» (`min(collected_at)` alone was NULL and listed
+nothing — the checker's agent named that hole).
+
+1393. **The checker's list (4) looks both ways from the answer, inside the
+STOP's window.** Its first shape — «received AFTER the line was answered,
+answered in the last 14 days» — missed exactly S6 → S2 (the plain prixod is
+EARLIER than the answer) and hid every double older than two weeks, while
+the owner's question 7 is about history. Now: unlinked live prixods of an
+answered line's owner, received from the stop's «Olindi» (or the trip's
+creation) for 21 days, before or after the answer, minus a declined one,
+labelled «ehtimol» with the line's factory/driver counts beside both
+prixods' cartons — a person tells a twin from later cargo; the script
+decides nothing. Lists (2) and (3) read the same person-facing owner rule.
+List (5)'s fixture moved to the path that still reaches it (a costed trip
+closed by hand with nothing): the detach that used to reach it is now
+#1389's refusal.
+
+1394. **«Xarajat yo'q» is set on a CLOSED trip, and stands only until a bill
+is typed after it.** His 5a reads «yopishda»; the separate door exists for
+the trip that closed by itself and never showed the close form — so it now
+refuses an open trip (`no_cost_closed_only`, the judge's intent-q3; the
+close form carries the tick there). And `noCostStandsSql`: the mark counts
+only while no cost entry, live OR voided, was created after it (money-5) —
+a mark is a statement about its day, and voiding a later bill to re-enter it
+must not bring «somebody else paid» back and silence the alarm. No lock in
+`addCostEntry`: whichever commits second, the later bill wins. One fragment
+for the list tab, the home count and the card (`loadPickup.noCostStands`);
+the close form rewrites a superseded mark; set and clear audit who and why.
+Who may set it stays `costs.enter_batch` at the destination — stated, not
+asked: every plans.manage holder holds it too.
+
+1395. **The terminal doors are scoped; the card's money is for money
+readers.** Every pickup writer is unscoped (stated, unchanged), but close
+and cancel END a trip for ever, so they ask plans.manage AT the destination
+and the card draws them only there (money-8). The card's cost section, the
+«xarajati bor, yuki yo'q» and «xarajat yozilmagan» banners and the mark's
+reason are drawn for `mayReadPickups || reports.all_warehouses` — a receiver
+admitted by the destination clause alone sees the trip, its stops and lines
+and its closed state, never the truck's freight, which every batch's
+Xarajatlar tab already refuses him (money-9). Fenced by source shape (#531)
+and red-proven.
+
+1396. **A line's received cartons are on the card; a short count closes the
+line anyway.** His 1a, read against the judge's intent-q4: holding the
+auto-close on any shortfall would push most trips to a manual close and
+empty the answer; the recount at our door is the truth (B2). So the line is
+answered by any live prixod, and the card prints «qabul: 45 ⚠» beside the
+factory and driver counts when it is fewer than both. The close confirm
+NAMES the candidate prixods it leaves unlinked (intent-6) — «are you sure»
+is pressed through, «P-201» is read. 18 red proofs by string edit for
+#1389-#1396 (closed-trip void and detach, open trip kept, owner refusal,
+door prefix, the TS and SQL digit rules, the declined lookalike, the
+creation-day window, the closed-only mark, the superseding bill, list (4)'s
+both sides and window, the line count, the posted single line, and the
+three fences).
+
+1397. **The arrival names the factory trip — «ZR-00012 · zavod · mashina».**
+His 6: a prixod off a factory trip read «Принято на складе» on the agent
+sheet, because the arrival rule named a truck only for a BATCH movement.
+Now a receipt landing (`receipt` / `lot_edit_add`) whose prixod sits on a
+stop of a trip heading to THIS warehouse names that trip — one statement
+still (stop, trip and factory as one guarded LEFT JOIN with the destination
+check inside it, only pre-0133 columns, so a half-applied deploy reads the
+old answer). `documents/arrival-label.ts` is the one printed form
+(`arrivalLabel`) and the block key (`arrivalKey`: a batch by id or code, a
+trip by trip id); pure, so the client card's fold and the lenta read it with
+no database. ONE block per trip whose heading names its factories in stop
+order — the judge's intent-8 alternative to per-stop blocks, each row
+keeping its own label. Readers: the agent sheet, «Packing (rasmlar)» (a new
+arrival column before the date — his word was «packinglist»), the plan view
+and editor, /stock and its XLSX, the staff bot, the lenta's META, «Yuklar»
+(a /zavod link only under `mayReadPickup`). `moveReceipt` refuses a prixod
+linked to a stop (`pickup_linked`) under the receipt's row lock — moving it
+would have left the trip's line answered by cargo at another warehouse.
+STATED, asked of him: the NEXT warehouse (Kashgar) still names the Yiwu
+batch, not the factory; the per-lot provenance from `pickup_stop_id` is a
+separate rule if he wants it. 14 red proofs (the package's own).
+
+1398. **The double-receive checker reads, through the screens' sentences,
+and decides nothing.** His 7 («ha»): `pickups/double-received.ts` +
+`scripts/zavod-tekshir.ts` — five lists (answered twice; owed lines with
+the cargo already here; linked and answering nothing; «ehtimol» twins,
+#1393; a closed trip's bill on no carton) plus «open trips whose every line
+is answered». Read-only the way `balance-report.ts` is (the URL parameter
+set before a dynamic import of the client, the ledger count and
+`default_transaction_read_only` printed first); no package.json entry
+(#1228) — run through `migrate`. «Answered», the owner rule, the candidates
+and the open statuses are the service's exports, never restated (#513).
+`docs/UPDATE.md` carries the one-time heal SQL for the migrate window (a
+prixod linked by the OLD code while 0133 ran has no memory row): the
+migration's own memory and close statements, re-run once, idempotent.
+STATED: that heal answers every line the owner's ordered rule matches, so
+it is run once right after the deploy, before logists link from the card.
+11 red proofs (the package's own).

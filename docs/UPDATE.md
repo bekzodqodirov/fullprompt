@@ -133,10 +133,17 @@ ketganini faqat sizning bazangiz biladi — shuning uchun:
       turgan, reysga bog'lanmagan prixodlar: «biriktiring, qayta qabul
       qilmang»;
    3. reysga bog'langan, lekin hech bir qatorga javob bermaydigan prixodlar;
-   4. qator qabul qilingandan keyin (oxirgi 14 kun) o'sha egadan reysga
-      bog'lanmagan holda kelgan prixod — reysni chetlab ikkinchi qabulmi;
+   4. **ehtimol**: qabul qilingan qator egasining shu skladdagi, reysga
+      bog'lanmagan prixodi — zavoddan olingandan keyingi 21 kun ichida, reys
+      orqali qabul qilinishidan OLDIN ham, KEYIN ham. Eski ekranda eng ko'p
+      uchragan ikki marta qabul aynan shu: yuk avval oddiy prixod bilan
+      qabul qilingan, reys esa ro'yxatda qolgan va yana «Qabul qilish»
+      bosilgan. Har satrda zavod/haydovchi sanog'i va ikkala prixodning
+      karobka soni — egizakmi yoki alohida yukmi, odam hal qiladi;
    5. yopilgan reys: xarajat bor, tirik prixod yo'q — pul hech bir karobkaga
-      tushmagan.
+      tushmagan (yuksiz qo'lda yopilgan reys yoki deploydan oldingi holat;
+      endi yopilgan reysning yagona prixodini bekor qilish yoki reysdan
+      ajratish rad etiladi).
 
    **Bu besh ro'yxat egasiga o'qib berilmaguncha hech kim «tuzatildi»
    demaydi.** Skript hech narsani o'zi hal qilmaydi: ikki prixoddan qaysi biri

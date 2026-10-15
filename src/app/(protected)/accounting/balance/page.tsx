@@ -245,6 +245,11 @@ export default async function BalancePage() {
             {cargo.pickupNoBox.count > 0 && (
               <li>{t('balUnpricedPickup', { count: cargo.pickupNoBox.count, usd: usd(cargo.pickupNoBox.usd) })}</li>
             )}
+            {cargo.pickupClosedNoBox.count > 0 && (
+              <li data-testid="bal-pickup-closed">
+                {t('balUnpricedPickupClosed', { count: cargo.pickupClosedNoBox.count, usd: usd(cargo.pickupClosedNoBox.usd) })}
+              </li>
+            )}
             {cargo.noBox.count > 0 && (
               <li>{t('balUnpricedNoBox', { count: cargo.noBox.count, usd: usd(cargo.noBox.usd) })}</li>
             )}

@@ -3,9 +3,10 @@ import { db } from '../../platform/db/client';
 import {
   candidateReceiptSql,
   costWithoutCargoSql,
+  declinedAtDoorSql,
   lineAnsweredSql,
   OPEN_STATUSES,
-  ownerMatchSql,
+  ownerLooselyMatchesSql,
 } from './service';
 
 /**
@@ -22,7 +23,7 @@ import {
  * and every row is a QUESTION for a person — nothing here decides which of two
  * prixods is the real one, and nothing writes.
  *
- * «Answered» is `lineAnsweredSql` and owner matching is `ownerMatchSql`
+ * «Answered» is `lineAnsweredSql` and owner matching is `ownerLooselyMatchesSql`
  * (pickups/service) — never restated here, or the checker and the screens
  * would disagree about the very trip the owner is looking at (#513). Two
  * lists need more than the predicate's yes/no — HOW MANY prixods answer a
@@ -107,7 +108,7 @@ export interface UnansweringLinkRow {
   stopSeq: number;
   factoryName: string;
   /**
-   * What the stop says about the prixod's owner (`ownerMatchSql`):
+   * What the stop says about the prixod's owner (`ownerLooselyMatchesSql`):
    *  - `open` — the owner HAS a line nobody answered: a link whose memory was
    *    never written (the old code during the migrate window), healed by
    *    docs/UPDATE.md's statement;
@@ -327,7 +328,7 @@ export async function owedLines(limit = CHECK_LIMIT): Promise<Capped<OwedLineRow
            AND p.status IN (${openStatuses})
            AND NOT ${lineAnsweredSql(sql`upl.id`)}
            AND ${candidateReceiptSql()}
-           AND ${ownerMatchSql('upl', 'r')}
+           AND ${ownerLooselyMatchesSql('upl', 'r')}
          ORDER BY r.confirmed_at, r.id`)
     : [];
   const facts = await receiptFacts(pairs.map((p) => p.receipt_id));
@@ -408,9 +409,9 @@ export async function unansweringLinks(limit = CHECK_LIMIT): Promise<Capped<Unan
     SELECT r.id AS receipt_id, p.id AS pickup_id, p.code AS pickup_code, p.status AS pickup_status,
            dw.code AS dest_code, ps.seq AS stop_seq, f.name AS factory_name,
            EXISTS (SELECT 1 FROM pickup_lines ol
-                    WHERE ol.stop_id = ps.id AND ${ownerMatchSql('ol', 'r')}) AS owner_has_line,
+                    WHERE ol.stop_id = ps.id AND ${ownerLooselyMatchesSql('ol', 'r')}) AS owner_has_line,
            EXISTS (SELECT 1 FROM pickup_lines ol
-                    WHERE ol.stop_id = ps.id AND ${ownerMatchSql('ol', 'r')}
+                    WHERE ol.stop_id = ps.id AND ${ownerLooselyMatchesSql('ol', 'r')}
                       AND NOT ${lineAnsweredSql(sql`ol.id`)}) AS owner_line_open
       FROM receipts r
       JOIN pickup_stops ps ON ps.id = r.pickup_stop_id
@@ -449,21 +450,28 @@ export async function unansweringLinks(limit = CHECK_LIMIT): Promise<Capped<Unan
 // (4) Received again, around the trip
 // ---------------------------------------------------------------------------
 
-/** How far back (4) looks: older doubles are list (1)'s, through the backfill. */
-export const RECEIVED_AGAIN_DAYS = 14;
+/** How long after a stop's «Olindi» (4) still counts a prixod as possibly its cargo. */
+export const RECEIVED_AGAIN_DAYS = 21;
 
 /**
- * Live UNLINKED prixods at a trip's destination of an owner whose line on
- * that trip was answered in the last `days` days, confirmed AFTER the cargo
- * that answered it — the second receive that went round the trip through
- * the plain form, which no door can refuse because it names no trip.
+ * «Ehtimol» — maybe: live UNLINKED prixods at a trip's destination, of the
+ * owner of a line on that trip that IS answered, received inside the stop's
+ * window (from its «Olindi», or the trip's creation when nobody pressed it,
+ * for `days` days). Before the answer OR after it: the commonest double of
+ * the old code was the plain form FIRST (probe S6 — the cargo received with
+ * no link, the line still «waiting» on /receive) and «Qabul qilish» on the
+ * stale list SECOND (S2), which links and answers — so «only after the
+ * answer» (this list's first shape) missed exactly the pair the owner's
+ * question 7 is about (the judge's money-7).
  *
- * «When it was answered» is when the answering cargo was RECEIVED (its first
- * live prixod's confirm), not when the memory row was written: a card link
- * pressed on Wednesday for cargo received on Monday answered the line on
- * Monday, and Tuesday's second prixod of it is exactly what this list is
- * for. The window keeps an ordinary later delivery of a regular client from
- * lighting up every trip they ever had (probe S5's shape).
+ * The window is the STOP's, never «ever»: a regular client's ordinary
+ * delivery a month later must not light up every trip they had (S5). Each
+ * row prints the line's factory and driver counts beside both prixods' box
+ * counts, so a person can tell a twin from separate cargo — which is why
+ * this list says «ehtimol» and decides nothing. A prixod whose receiver
+ * answered «Yo'q» about this trip at the door is left out: a person said it
+ * is not. The owner is matched the way a person reads it
+ * (`ownerLooselyMatchesSql` — «GS500MANIKEN» cargo for a GS500 line).
  */
 export async function receivedAgain(
   limit = CHECK_LIMIT,
@@ -483,10 +491,11 @@ export async function receivedAgain(
       JOIN receipts r ON r.warehouse_id = p.dest_warehouse_id
      WHERE p.status <> 'cancelled'
        AND ${lineAnsweredSql(sql`pl.id`)}
-       AND ans.answered_at > now() - make_interval(days => ${days}::int)
        AND r.status = 'confirmed' AND r.voided_at IS NULL AND r.pickup_stop_id IS NULL
-       AND r.confirmed_at > ans.answered_at
-       AND ${ownerMatchSql('pl', 'r')}
+       AND r.confirmed_at >= coalesce(ps.collected_at, p.created_at)
+       AND r.confirmed_at < coalesce(ps.collected_at, p.created_at) + make_interval(days => ${days}::int)
+       AND ${ownerLooselyMatchesSql('pl', 'r')}
+       AND NOT ${declinedAtDoorSql()}
      ORDER BY r.confirmed_at DESC, r.id, pl.id
      LIMIT ${limit + 1}`);
   const facts = await receiptFacts(rows.flatMap((r) => [r.receipt_id, r.answered_by]));

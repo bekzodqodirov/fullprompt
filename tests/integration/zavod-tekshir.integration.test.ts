@@ -21,6 +21,7 @@ import { confirmReceipt, voidReceipt } from '@/modules/wms/receipts/service';
 import { addCostEntry, voidCostEntry } from '@/modules/wms/costing/service';
 import {
   cancelPickup,
+  closePickup,
   collectStop,
   createPickup,
   isOpenStatus,
@@ -186,7 +187,7 @@ describe('the checker reads, and reads through the screens’ own sentences', ()
       .replace(/\/\/.*$/gm, '');
     expect(source).not.toMatch(/\b(INSERT|UPDATE|DELETE|TRUNCATE)\b/i);
     expect(source).not.toMatch(/\.(insert|update|delete)\(/);
-    for (const shared of ['lineAnsweredSql', 'ownerMatchSql', 'candidateReceiptSql', 'costWithoutCargoSql', 'OPEN_STATUSES']) {
+    for (const shared of ['lineAnsweredSql', 'ownerLooselyMatchesSql', 'candidateReceiptSql', 'costWithoutCargoSql', 'OPEN_STATUSES']) {
       expect(source).toContain(shared);
     }
     // The owner rule's own text lives in pickups/service, never here.
@@ -223,27 +224,34 @@ describe('zavod tekshiruvi', () => {
   let r1 = '';
   let r2 = '';
 
-  it('(4) a prixod of the same owner received AFTER the line was answered, round the trip — never an earlier one, never an old answer', async () => {
-    // An answer from three weeks ago: the regular client's later cargo must
-    // not light up every trip they ever had (probe S5).
+  it('(4) the same owner\'s unlinked prixods inside the stop\'s window, BEFORE the answer as well as after — never an old trip\'s', async () => {
+    // A trip from a month ago: the regular client's later cargo must not
+    // light up every trip they ever had (probe S5) — the window is the
+    // STOP's (from its «Olindi», here the trip's creation), never «ever».
     t6 = await trip([{ owner: code.A, goods: `Eski ${S}`, factoryBoxes: 10 }]);
     const r6 = await receive({ client: 'A' }, { stopId: t6.stopId, lineIds: [t6.line(`Eski ${S}`)] });
-    await db.execute(sql`UPDATE receipts SET confirmed_at = now() - interval '20 days' WHERE id = ${r6}`);
+    await db.execute(sql`UPDATE receipts SET confirmed_at = now() - interval '30 days' WHERE id = ${r6}`);
+    await db.execute(sql`UPDATE pickups SET created_at = now() - interval '31 days' WHERE id = ${t6.id}`);
 
     t1 = await trip([{ owner: code.A, goods: `Oyinchoq ${S}`, factoryBoxes: 50 }]);
+    // The old code's commonest double (the judge's money-7): the plain form
+    // FIRST (S6 — nothing linked, the line still «waiting»), then «Qabul
+    // qilish» on the stale list (S2), which links and answers.
     r0 = await receive({ client: 'A' });
     r1 = await receive({ client: 'A' }, { stopId: t1.stopId, lineIds: [t1.line(`Oyinchoq ${S}`)], boxes: 50 });
     expect(await statusOf(t1.id)).toBe('closed');
     r2 = await receive({ client: 'A' }, { boxes: 48 });
 
     const rows = (await receivedAgain()).rows.filter((r) => r.line.pickupId === t1.id || r.line.pickupId === t6.id);
-    expect(rows.map((r) => [r.line.pickupCode, r.receipt.id, r.answeredBy.id])).toEqual([[t1.code, r2, r1]]);
+    expect(rows.map((r) => [r.line.pickupCode, r.receipt.id, r.answeredBy.id])).toEqual([
+      [t1.code, r2, r1],
+      [t1.code, r0, r1],
+    ]);
     const row = rows[0]!;
     expect(row.line).toMatchObject({ clientCode: code.A, goods: `Oyinchoq ${S}`, factoryBoxes: 50, destCode: whCode });
     expect(row.receipt).toMatchObject({ boxes: 48, warehouseCode: whCode, clientCode: code.A, voided: false });
     expect(row.receipt.number).toBeTruthy();
     expect(row.answeredBy.boxes).toBe(50);
-    expect(rows.some((r) => r.receipt.id === r0)).toBe(false);
   });
 
   it('(1) attached to the same line, it is the line answered twice — and a voided one answers nothing', async () => {
@@ -381,7 +389,7 @@ describe('zavod tekshiruvi', () => {
     expect((await owedLines()).rows.some((r) => r.line.pickupId === t3.id)).toBe(false);
   });
 
-  it('(5) a closed truck whose prixod was detached keeps its bill on no carton', async () => {
+  it('(5) a closed truck whose bill sits on no carton — closed by hand with nothing; a detach that would leave it so is refused', async () => {
     const mark = `M5${S}`;
     const t5 = await trip([{ owner: mark, goods: `Beshinchi ${S}`, factoryBoxes: 4 }]);
     const r5 = await receive({ marking: mark }, { stopId: t5.stopId });
@@ -401,13 +409,31 @@ describe('zavod tekshiruvi', () => {
     made.costs.push(entry.id);
     expect((await costWithoutCargo()).rows.some((r) => r.pickupId === t5.id)).toBe(false);
 
-    // Detaching is allowed on a closed trip (a wrong link stays correctable);
-    // the trip stays closed and the bill now sits on nothing.
-    await linkReceiptToStop(r5, null, ctx());
-    expect(await statusOf(t5.id)).toBe('closed');
-    const rows = (await costWithoutCargo()).rows.filter((r) => r.pickupId === t5.id);
+    // Taking the closed truck's only cargo off it would leave the bill on
+    // nothing — refused since the judge's money-1, naming the trip.
+    await expect(linkReceiptToStop(r5, null, ctx())).rejects.toMatchObject({ code: 'shared_cost_orphaned' });
+    expect((await costWithoutCargo()).rows.some((r) => r.pickupId === t5.id)).toBe(false);
+
+    // What still reaches the list: a costed truck that brought nothing,
+    // closed by hand — the money on no carton is the truth there.
+    const t5b = await trip([{ owner: `${mark}B`, goods: `Bo‘sh ${S}`, factoryBoxes: 2 }]);
+    const empty = await addCostEntry(
+      {
+        scope: 'pickup',
+        pickupId: t5b.id,
+        costTypeId,
+        amount: 120,
+        currency: 'USD',
+        costDate: new Date().toISOString().slice(0, 10),
+        allocationBasis: 'volume',
+      },
+      ctx(),
+    );
+    made.costs.push(empty.id);
+    await closePickup(t5b.id, { reason: 'zavod yuk bermadi' }, ctx(), { mayMarkNoCost: false });
+    const rows = (await costWithoutCargo()).rows.filter((r) => r.pickupId === t5b.id);
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ pickupCode: expect.stringMatching(/^ZR-/), destCode: whCode, closeKind: 'auto', voidedLinked: 0 });
+    expect(rows[0]).toMatchObject({ pickupCode: expect.stringMatching(/^ZR-/), destCode: whCode, closeKind: 'manual', voidedLinked: 0 });
     expect(rows[0]!.costs).toEqual(['120.00 USD']);
     expect(rows[0]!.factories).toBe(`Tekshir zavod ${S}`);
   });

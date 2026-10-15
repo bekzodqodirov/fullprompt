@@ -2404,7 +2404,8 @@
     "unsplitForming": "尚未出发的车辆（表格只列出已出发的车辆，因此不在表中）：",
     "gapFreightHeld": "{count, plural, other {# 笔运费}}（{usd}）尚未按运价分摊到车辆货物——计入了本报表，但没有进入任何客户的成本。",
     "gapFreightHeldHint": "已保存但尚未按运价分摊：修正批次或通过「分摊方式」后会自动分摊并计入客户成本——请勿作废。原因见该车的费用页。",
-    "clientFreightHeldNote": "其中 {usd}（{count, plural, other {# 笔}}）是未按运价分摊的运费：修正批次或通过「分摊方式」后会自动分摊到客户；请勿作废。"
+    "clientFreightHeldNote": "其中 {usd}（{count, plural, other {# 笔}}）是未按运价分摊的运费：修正批次或通过「分摊方式」后会自动分摊到客户；请勿作废。",
+    "balUnpricedPickupClosed": "已关闭的工厂提货有 {count} 笔费用（${usd}）未落在任何箱子上——其入库单已作废，或提货关闭时没有货物。请在入库单卡片上把真正的入库单关联到该提货，若没有货物则作废该费用；在此之前它们会降低净头寸。"
   },
   "lidChat": {
     "mark": "线索",
@@ -4799,7 +4800,9 @@
     "closedByHand": "手动关闭",
     "closedByItself": "全部已收货",
     "linesNotCame": "{n} 行未到",
-    "detachClosedConfirm": "车次已关闭。确定解除关联？只能在30天内从入库单卡片重新关联。"
+    "detachClosedConfirm": "车次已关闭。确定解除关联？只能在30天内从入库单卡片重新关联。",
+    "receivedShort": "已收",
+    "closeConfirmCandidates": "关闭此提货？关闭后不能重新打开。以下入库单将保持未关联：{numbers} ——其货物将显示为「本仓库收货」。"
   },
   "unpriced": {
     "title": "已到达未定价货物",

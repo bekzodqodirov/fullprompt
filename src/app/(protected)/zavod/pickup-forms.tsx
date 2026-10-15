@@ -486,8 +486,8 @@ export function ClosePickupForm({
 }: {
   pickupId: string;
   offerNoCost: boolean;
-  /** Prixods the card offers to link: closing over them buries their trip. */
-  pendingCandidates: number;
+  /** The numbers of the prixods the card offers to link: closing over them buries their trip. */
+  pendingCandidates: string[];
 }) {
   const t = useTranslations('pickups');
   const errorText = useErrorText();
@@ -502,9 +502,9 @@ export function ClosePickupForm({
       <summary className="cursor-pointer font-semibold">🔒 {t('closeTrip')}</summary>
       <div className="mt-2 space-y-2">
         <p className="text-xs text-ink-500">{t('closeHint')}</p>
-        {pendingCandidates > 0 && (
+        {pendingCandidates.length > 0 && (
           <p className="text-xs font-semibold text-warn" data-testid="pickup-close-candidates">
-            ⚠ {t('closeCandidates', { n: pendingCandidates })}
+            ⚠ {t('closeCandidates', { n: pendingCandidates.length })}
           </p>
         )}
         <label className="block">
@@ -547,7 +547,12 @@ export function ClosePickupForm({
           className="btn-secondary"
           disabled={busy}
           onClick={async () => {
-            if (!window.confirm(t('closeConfirm'))) return;
+            // The confirm NAMES what the close leaves unlinked (the judge's
+            // intent-6): «are you sure» is pressed through; P-201 is read.
+            const ask = pendingCandidates.length
+              ? t('closeConfirmCandidates', { numbers: pendingCandidates.join(', ') })
+              : t('closeConfirm');
+            if (!window.confirm(ask)) return;
             setBusy(true);
             setError(null);
             try {

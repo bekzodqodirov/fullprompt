@@ -23,7 +23,8 @@ import {
   warehouses,
 } from '@/modules/platform/db/schema';
 import { confirmReceipt, voidReceipt } from '@/modules/wms/receipts/service';
-import { addCostEntry } from '@/modules/wms/costing/service';
+import { addCostEntry, voidCostEntry } from '@/modules/wms/costing/service';
+import { markingOfCode, markingOfCodeSql } from '@/modules/wms/pickups/owner-match';
 import {
   candidateReceiptSql,
   closePickup,
@@ -300,7 +301,7 @@ describe('zavod reysi yopiladi', () => {
     await linkReceiptToStop(rid, stop.id, ctx());
   });
 
-  it('a closed trip stays closed when its prixod is voided (2a), refuses the door, and takes a correction from the card', async () => {
+  it('a closed trip stays closed (2a), refuses the door, takes a correction from the card — and its bill never lands on nothing', async () => {
     const t = await trip([{ owner: codeB, goods: `Closed ${S}`, factoryBoxes: 4 }]);
     const stop = t.stops[0]!;
     const first = await receive({ clientId: clientB, stopId: stop.id, lineIds: [stop.lines[0]!.id] });
@@ -317,23 +318,78 @@ describe('zavod reysi yopiladi', () => {
       },
       ctx(),
     );
-    await voidReceipt(first, 'wrong count', ctx());
-    const closed = await statusOf(t.pickup.id);
-    expect(closed.status).toBe('closed');
-    // The truck has a bill and no live cargo: the logist's home says so.
-    const counts = await pickupAttentionCounts();
-    expect(counts.costNoCargo).toBeGreaterThanOrEqual(1);
+    // The judge's money-1: the first prixod is the closed truck's ONLY cargo.
+    // Voiding it, or taking it off the trip, would leave $300 on no carton,
+    // and nothing brings cargo to a closed trip by itself — both refuse,
+    // naming the trip.
+    await expect(voidReceipt(first, 'duplicate', ctx())).rejects.toMatchObject({
+      code: 'shared_cost_orphaned',
+      detail: t.pickup.code,
+    });
+    await expect(linkReceiptToStop(first, null, ctx())).rejects.toMatchObject({
+      code: 'shared_cost_orphaned',
+      detail: t.pickup.code,
+    });
+    expect((await statusOf(t.pickup.id)).status).toBe('closed');
     expect(await receivePrefillFor(stop.id, clientB)).toBeNull();
-    expect(await receivePrefillRefusal(stop.id, clientB)).toMatchObject({ why: 'closed' });
     // The door refuses the closed trip in its own words…
     await expect(receive({ clientId: clientB, stopId: stop.id })).rejects.toMatchObject({ code: 'pickup_closed' });
-    // … the redo is received plain and joined from the CARD, which does not reopen it.
+    // … the redo is received plain and joined from the CARD, which does not
+    // reopen it — and THEN the wrong one may go: the bill has cargo again.
+    // The line is still the wrong prixod's, so the redo names it — the card's
+    // per-line button (`AnswerLineButtons`), a second prixod on one line.
     const redo = await receive({ clientId: clientB });
-    await linkReceiptToStop(redo, stop.id, ctx());
+    await linkReceiptToStop(redo, stop.id, ctx(), [stop.lines[0]!.id]);
+    expect((await statusOf(t.pickup.id)).status).toBe('closed');
+    await voidReceipt(first, 'wrong count', ctx());
     expect((await statusOf(t.pickup.id)).status).toBe('closed');
     const view = (await loadPickup(t.pickup.id))!.stops[0]!;
     expect(view.lines[0]!.receipts.map((r) => r.id)).toEqual([redo]);
+    expect(view.lines[0]!.receipts[0]!.boxes).toBe(2);
     expect(await stopReceivability(stop.id)).toMatchObject({ status: 'closed', answered: [stop.lines[0]!.id] });
+  });
+
+  it('an OPEN trip keeps #1004: its prixod may be voided off a bill — more cargo may still come', async () => {
+    const t = await trip([
+      { owner: codeA, goods: `Open1 ${S}`, factoryBoxes: 2 },
+      { owner: codeA, goods: `Open2 ${S}`, factoryBoxes: 2 },
+    ]);
+    const stop = t.stops[0]!;
+    const only = await receive({ clientId: clientA, stopId: stop.id, lineIds: [stop.lines[0]!.id] });
+    expect((await statusOf(t.pickup.id)).status).toBe('arrived');
+    await addCostEntry(
+      {
+        scope: 'pickup',
+        pickupId: t.pickup.id,
+        costTypeId,
+        amount: 120,
+        currency: 'USD',
+        costDate: new Date().toISOString().slice(0, 10),
+        allocationBasis: 'volume',
+      },
+      ctx(),
+    );
+    await voidReceipt(only, 'open trip', ctx());
+    expect((await statusOf(t.pickup.id)).status).toBe('arrived');
+  });
+
+  it('a costed trip that brought nothing, closed by hand, is said on the logist home', async () => {
+    const t = await trip([{ owner: codeB, goods: `Empty ${S}`, factoryBoxes: 3 }]);
+    await addCostEntry(
+      {
+        scope: 'pickup',
+        pickupId: t.pickup.id,
+        costTypeId,
+        amount: 80,
+        currency: 'USD',
+        costDate: new Date().toISOString().slice(0, 10),
+        allocationBasis: 'volume',
+      },
+      ctx(),
+    );
+    await closePickup(t.pickup.id, { reason: 'zavod yukni bermadi' }, ctx(), { mayMarkNoCost: false });
+    expect((await pickupAttentionCounts()).costNoCargo).toBeGreaterThanOrEqual(1);
+    expect(await receivePrefillRefusal(t.stops[0]!.id, clientB)).toMatchObject({ why: 'closed' });
   });
 
   it('a manual close needs a sentence (1a); «xarajat yo’q» needs a reason and the cost door (5a)', async () => {
@@ -357,6 +413,31 @@ describe('zavod reysi yopiladi', () => {
     await setPickupNoCost(t.pickup.id, null, ctx());
     expect((await listPickups({ status: 'xarajatsiz' })).some((r) => r.pickup.id === t.pickup.id)).toBe(true);
     await expect(setPickupNoCost(t.pickup.id, 'ab', ctx())).rejects.toMatchObject({ code: 'no_cost_reason_required' });
+    // SET only on a closed trip (his 5a «yopishda», the judge's intent-q3):
+    // on an open one the bill may still come; the close form carries the tick.
+    const open = await trip([{ owner: codeB, goods: `Still ${S}`, factoryBoxes: 1 }]);
+    await expect(setPickupNoCost(open.pickup.id, 'boshqa joyda to‘landi', ctx())).rejects.toMatchObject({
+      code: 'no_cost_closed_only',
+    });
+    // The mark STANDS until a bill is typed after it (money-5): voiding that
+    // bill must not bring «somebody else paid» back and silence the alarm.
+    await setPickupNoCost(t.pickup.id, 'zavod to‘ladi', ctx());
+    expect((await loadPickup(t.pickup.id))!.noCostStands).toBe(true);
+    const bill = await addCostEntry(
+      {
+        scope: 'pickup',
+        pickupId: t.pickup.id,
+        costTypeId,
+        amount: 50,
+        currency: 'USD',
+        costDate: new Date().toISOString().slice(0, 10),
+        allocationBasis: 'volume',
+      },
+      ctx(),
+    );
+    await voidCostEntry(bill.id, 'qayta kiritiladi', ctx(), { mayMoveTill: true });
+    expect((await loadPickup(t.pickup.id))!.noCostStands).toBe(false);
+    expect((await listPickups({ status: 'xarajatsiz' })).some((r) => r.pickup.id === t.pickup.id)).toBe(true);
     // A late «Olindi» on a closed trip is a RECORD: the stop is stamped, the
     // status does not move, and nobody is told anything.
     const t2 = await trip([{ owner: `YC${S}`, goods: `Late ${S}`, factoryBoxes: 2 }], { collect: false });
@@ -455,5 +536,82 @@ describe('0133 backfill (the migration’s own statements, in a rolled-back tran
       .catch((err: unknown) => {
         if (err !== rollback) throw err;
       });
+  });
+});
+
+describe('the owner a person reads, and the cargo already here (the judges\' intent-5/7, money-3)', () => {
+  it('the code-prefix convention: GS500MANIKEN is GS500\'s, GS5 is not GS500X\'s — the TS and the SQL agree', async () => {
+    const cases: [string | null, string | null, boolean][] = [
+      ['GS500MANIKEN-AL', 'GS500', true],
+      [' gs500maniken ', 'gs500', true],
+      ['GS500', 'GS500', true],
+      ['GS500X', 'GS5', false],
+      ['GS5001', 'GS500', false],
+      ['GS50', 'GS500', false],
+      ['', 'GS500', false],
+      ['GS500', null, false],
+    ];
+    for (const [marking, code, want] of cases) {
+      expect(markingOfCode(marking, code), `${marking} / ${code}`).toBe(want);
+      const [row] = await db.execute<{ ok: boolean }>(
+        sql`SELECT ${markingOfCodeSql(sql`${marking}::text`, sql`${code}::text`)} AS ok`,
+      );
+      expect(row!.ok, `SQL ${marking} / ${code}`).toBe(want);
+    }
+  });
+
+  it('a client line takes only that client\'s cargo; a marking that is the client\'s by its code is asked and answers', async () => {
+    const t = await trip([
+      { owner: codeA, goods: `ForA ${S}`, factoryBoxes: 5 },
+      { owner: `${codeB}MAN`, goods: `ForBmark ${S}`, factoryBoxes: 6 },
+    ]);
+    const stop = t.stops[0]!;
+    const aLine = stop.lines.find((l) => l.clientId === clientA)!;
+    const bMark = stop.lines.find((l) => !l.clientId)!;
+    // B's prixod posting A's line (a ticked line kept across a client switch).
+    await expect(receive({ clientId: clientB, stopId: stop.id, lineIds: [aLine.id] })).rejects.toMatchObject({
+      code: 'pickup_line_owner_mismatch',
+    });
+    // The door asks B about the marking line its code begins…
+    const askedB = (await openStopsForOwner(whId, { clientId: clientB })).find((s) => s.stopId === stop.id);
+    expect(askedB?.lines.map((l) => l.id)).toEqual([bMark.id]);
+    // … and asks a marking about the client line whose code begins it.
+    const askedMark = (await openStopsForOwner(whId, { marking: `${codeA}KUK` })).find((s) => s.stopId === stop.id);
+    expect(askedMark?.lines.map((l) => l.id)).toEqual([aLine.id]);
+    await receive({ clientId: clientB, stopId: stop.id, lineIds: [bMark.id] });
+    await receive({ clientId: null, marking: `${codeA}KUK`, stopId: stop.id, lineIds: [aLine.id] });
+    expect((await statusOf(t.pickup.id)).status).toBe('closed');
+  });
+
+  it('cargo already received OFF the trip is named at the door, on /receive and in the prefill — never one a person declined', async () => {
+    const t = await trip([{ owner: `YC${S}`, goods: `Twin ${S}`, factoryBoxes: 2 }]);
+    const stop = t.stops[0]!;
+    const plain = await receive({ clientId: clientC });
+    const declined = await receive({ clientId: clientC, declined: [stop.id] });
+    const door = (await openStopsForOwner(whId, { clientId: clientC })).find((s) => s.stopId === stop.id)!;
+    expect(door.lookalikes.map((l) => l.id)).toEqual([plain]);
+    expect(door.lookalikes[0]!.boxes).toBe(2);
+    const row = (await incomingForWarehouses([whId]))
+      .find((x) => x.pickupId === t.pickup.id)!
+      .stops[0]!.owners.find((o) => o.clientId === clientC)!;
+    expect(row.lookalikes.map((l) => l.id)).toEqual([plain]);
+    expect((await receivePrefillFor(stop.id, clientC))!.lookalikes.map((l) => l.id)).toEqual([plain]);
+    expect(door.lookalikes.some((l) => l.id === declined)).toBe(false);
+  });
+
+  it('a candidate matched by the code prefix is linked BY ITS LINE — the server\'s own derivation is exact', async () => {
+    const t = await trip([{ owner: codeB, goods: `Prefix ${S}`, factoryBoxes: 2 }]);
+    const line = t.stops[0]!.lines[0]!;
+    const rid = await receive({ clientId: null, marking: `${codeB}ZZ` });
+    const cand = (await pickupCandidates(t.pickup.id)).find((c) => c.id === rid)!;
+    expect(cand.stops.map((st) => st.onlyLineId)).toEqual([line.id]);
+    await linkReceiptToStop(rid, t.stops[0]!.id, ctx(), [cand.stops[0]!.onlyLineId!]);
+    expect((await statusOf(t.pickup.id)).status).toBe('closed');
+  });
+
+  it('a trip nobody pressed «Olindi» on still lists the prixods received since it was made', async () => {
+    const t = await trip([{ owner: codeA, goods: `NoOlindi ${S}`, factoryBoxes: 3 }], { collect: false });
+    const rid = await receive({ clientId: clientA });
+    expect((await pickupCandidates(t.pickup.id)).some((c) => c.id === rid)).toBe(true);
   });
 });

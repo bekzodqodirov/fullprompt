@@ -283,11 +283,16 @@ re-downloads every package on the next deploy (#1228):
 docker compose run --rm migrate pnpm exec tsx scripts/zavod-tekshir.ts
 ```
 
-Three lists: (1) lines answered by MORE than one live prixod — cargo
-probably received twice (trip, factory, owner, goods, factory count, each
-prixod's number · date · boxes); (2) open trips with unanswered lines (what
-the logist should close or receive); (3) live prixods linked to a stop that
-answer no line. Exit 0 whether or not it finds anything.
+Five lists (as built — §10 and DECISIONS #1393/#1398): (1) lines answered
+by MORE than one live prixod — cargo probably received twice (trip, factory,
+owner, goods, factory count, each prixod's number · date · boxes); (2) open
+trips with unanswered lines, beside the unlinked prixods already standing
+here («biriktiring, qayta qabul qilmang»), plus open trips whose every line
+is answered; (3) live prixods linked to a stop that answer no line; (4)
+«ehtimol»: an answered line's owner's unlinked prixods inside the stop's
+21-day window, before or after the answer; (5) closed trips with a bill and
+no live cargo. Exit 0 whether or not it finds anything; a query error exits
+non-zero.
 
 ## 8. Packages
 
@@ -347,3 +352,34 @@ finding below was built, each with a test shown red without it.
   prixods, «biriktiring, qayta qabul qilmang»), linked prixods answering
   nothing (incl. the migrate window), unlinked prixods received after their
   line was answered, closed trips with a bill and no cargo.
+
+## 11. What the money and intent judges changed AFTER the build (binding)
+
+The judge's money and intent lenses were read against the built code;
+every confirmed item below was built and red-proven (DECISIONS
+#1389-#1398).
+
+- **A closed trip's bill never lands on nothing** (money-1): the void
+  guard judges the pickup scope once the trip is closed, the detach from a
+  closed trip asks the same question, both refuse `shared_cost_orphaned`
+  naming the trip; the Balans says a closed trip's no-carton bill in its own
+  words. An open trip keeps #1004.
+- **A client line takes only that client's cargo** (money-3,
+  `line_owner_mismatch`), a marking line any; the wizard says it in words.
+- **The code-prefix convention** («GS500MANIKEN» is GS500's) for every list
+  a person reads — door, candidates, home count, lookalikes, checker — never
+  for a derivation; a candidate's single line is posted (intent-7).
+- **The cargo may already be here** — said at the door, on /receive and in
+  the prefill (intent-5); the candidate window opens at the trip's creation
+  when nobody pressed «Olindi».
+- **Checker list (4)** looks both ways from the answer inside the stop's
+  21-day window (money-7).
+- **«Xarajat yo'q»** is set on a closed trip only (intent-q3) and stands
+  only until a bill is typed after it (money-5).
+- **Close and cancel are scoped to the destination** (money-8); the card's
+  money is for money readers (money-9).
+- **A short count closes the line and is printed** (intent-q4); the close
+  confirm names the candidates it leaves (intent-6).
+- Asked of him, built as the default: the Kashgar sheet keeps the Yiwu
+  batch (intent-q1); a corrected prixod may join a closed trip from the card
+  (intent-q2, built (a)).

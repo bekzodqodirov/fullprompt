@@ -195,9 +195,30 @@ export async function markArrivedAction(pickupId: string): Promise<PickupActionR
   return run(writer, (ctx) => markArrived(pickupId, ctx), [`/zavod/${pickupId}`, '/zavod', '/map']);
 }
 
+/**
+ * The trip as the two TERMINAL doors (cancel, close) must judge it: their
+ * gate is `plans.manage` AT the trip's destination (the judge's money-8) —
+ * every other pickup writer is unscoped (stated), but a scoped role granted
+ * plans.manage to plan trucks must not end another warehouse's trip for
+ * ever. Read on the pool before the action's own write, a refusal in words.
+ */
+async function tripForTerminalDoor(pickupId: string) {
+  return db.query.pickups.findFirst({ where: eq(pickups.id, pickupId) }).catch((err: unknown) => {
+    if (isServerBehind(err)) return 'behind' as const;
+    throw err;
+  });
+}
+
 export async function cancelPickupAction(pickupId: string, reason: string): Promise<PickupActionResult> {
   if (!z.string().uuid().safeParse(pickupId).success) return { ok: false, error: 'validation' };
-  return run(writer, (ctx) => cancelPickup(pickupId, reason, ctx), [`/zavod/${pickupId}`, '/zavod', '/receive']);
+  const pickup = await tripForTerminalDoor(pickupId);
+  if (pickup === 'behind') return { ok: false, error: 'server_behind' };
+  if (!pickup) return { ok: false, error: 'not_found' };
+  return run(
+    () => authorize(PICKUP_WRITE, { warehouseId: pickup.destWarehouseId }),
+    (ctx) => cancelPickup(pickupId, reason, ctx),
+    [`/zavod/${pickupId}`, '/zavod', '/receive'],
+  );
 }
 
 const closeSchema = z.object({
@@ -217,16 +238,13 @@ export async function closePickupAction(pickupId: string, input: unknown): Promi
   if (!z.string().uuid().safeParse(pickupId).success) return { ok: false, error: 'validation' };
   const parsed = closeSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: 'validation' };
-  const pickup = await db.query.pickups.findFirst({ where: eq(pickups.id, pickupId) }).catch((err: unknown) => {
-    if (isServerBehind(err)) return 'behind' as const;
-    throw err;
-  });
+  const pickup = await tripForTerminalDoor(pickupId);
   if (pickup === 'behind') return { ok: false, error: 'server_behind' };
   if (!pickup) return { ok: false, error: 'not_found' };
   return run(
-    writer,
+    () => authorize(PICKUP_WRITE, { warehouseId: pickup.destWarehouseId }),
     async (ctx) => {
-      const actor = await authorize(PICKUP_WRITE);
+      const actor = await authorize(PICKUP_WRITE, { warehouseId: pickup.destWarehouseId });
       const mayMarkNoCost =
         actor.permissions.has('costs.enter_batch') && inScope(actor, pickup.destWarehouseId);
       await closePickup(pickupId, parsed.data, ctx, { mayMarkNoCost });

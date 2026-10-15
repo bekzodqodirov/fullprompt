@@ -693,7 +693,9 @@ export async function closePickup(
         closeReason: reason,
         closedAt: now,
         closedBy: ctx.actorId,
-        ...(noCost && !pickup.noCostAt ? { noCostAt: now, noCostBy: ctx.actorId, noCostReason: noCost } : {}),
+        // Written whenever posted: an older mark a later bill superseded
+        // (`noCostStandsSql`) must not keep the new statement from standing.
+        ...(noCost ? { noCostAt: now, noCostBy: ctx.actorId, noCostReason: noCost } : {}),
         updatedAt: now,
       })
       .where(eq(pickups.id, pickupId));
@@ -711,6 +713,12 @@ export async function closePickup(
  * «Xarajat yo'q» on its own (5a): set with a reason, or cleared (null) by
  * whoever may enter the truck's cost — the ACTION asks that. Refused while a
  * live cost exists: a truck with a bill was not paid «somewhere else».
+ *
+ * SET only on a CLOSED trip (his 5a reads «yopishda»; the judge's
+ * intent-q3): this door exists for the trip that closed BY ITSELF and never
+ * showed anybody the close form — on an open trip the bill may still come,
+ * and the mark is the close form's tick. Cleared anywhere: the undo of a
+ * wrong mark. Both write an audit row naming who said it and why.
  */
 export async function setPickupNoCost(pickupId: string, reason: string | null, ctx: AuditContext): Promise<void> {
   if (!ctx.actorId) throw new PickupError('unauthenticated');
@@ -720,6 +728,7 @@ export async function setPickupNoCost(pickupId: string, reason: string | null, c
   await db.transaction(async (tx) => {
     const pickup = await lockPickup(tx, pickupId);
     if (pickup.status === 'cancelled') throw new PickupError('cancelled');
+    if (text && pickup.status !== 'closed') throw new PickupError('no_cost_closed_only');
     if (text && (await liveCostExists(tx, pickupId))) throw new PickupError('has_costs');
     await tx
       .update(pickups)
@@ -733,8 +742,8 @@ export async function setPickupNoCost(pickupId: string, reason: string | null, c
       entityType: 'pickup',
       entityId: pickupId,
       action: 'update',
-      before: { noCostReason: pickup.noCostReason },
-      after: { noCostReason: text },
+      before: { noCostReason: pickup.noCostReason, noCostBy: pickup.noCostBy, noCostAt: pickup.noCostAt },
+      after: { noCostReason: text, noCostBy: text ? ctx.actorId : null },
     });
   });
 }
@@ -1290,8 +1299,12 @@ export interface PickupLineView {
   volumeM3: number | null;
   weightKg: number | null;
   note: string | null;
-  /** The LIVE prixods that answer this line (0133's memory, never re-matched). */
-  receipts: { id: string; number: string | null }[];
+  /**
+   * The LIVE prixods that answer this line (0133's memory, never re-matched),
+   * each with its live carton count — a line answered with 45 of the
+   * driver's 50 is answered (his 1a) and the card says the 5 aloud.
+   */
+  receipts: { id: string; number: string | null; boxes: number }[];
 }
 
 export interface PickupStopView {
@@ -1367,6 +1380,9 @@ async function stopsFor(pickupIds: string[]): Promise<Map<string, PickupStopView
           id: receipts.id,
           number: receipts.number,
           voidedAt: receipts.voidedAt,
+          // Qualified (#128): the subquery has its own tables.
+          boxes: sql<number>`(SELECT count(*)::int FROM boxes b JOIN receipt_lots rl ON rl.id = b.lot_id
+                               WHERE rl.receipt_id = ${receipts}.id AND b.status <> 'void')`,
         })
         .from(pickupLineReceipts)
         .innerJoin(receipts, eq(receipts.id, pickupLineReceipts.receiptId))
@@ -1407,7 +1423,7 @@ async function stopsFor(pickupIds: string[]): Promise<Map<string, PickupStopView
           note: line.note,
           receipts: answerRows
             .filter((a) => a.lineId === line.id && !a.voidedAt)
-            .map((a) => ({ id: a.id, number: a.number })),
+            .map((a) => ({ id: a.id, number: a.number, boxes: Number(a.boxes) })),
         })),
       receipts: linked.map((r) => ({ id: r.id, number: r.number, clientCode: r.clientCode, voided: Boolean(r.voidedAt) })),
       unmatched: linked
@@ -1447,8 +1463,23 @@ export type PickupListTab = 'live' | 'arrived' | 'closed' | 'xarajatsiz' | 'canc
  * tab, the card's banner and the home row's count.
  */
 export function noCostOwedSql(pickup: SQL): SQL {
-  return sql`${pickup}.status IN ('arrived', 'closed') AND ${pickup}.no_cost_at IS NULL
+  return sql`${pickup}.status IN ('arrived', 'closed') AND NOT ${noCostStandsSql(pickup)}
              AND NOT EXISTS (SELECT 1 FROM cost_entries ce WHERE ce.pickup_id = ${pickup}.id AND ce.voided_at IS NULL)`;
+}
+
+/**
+ * The «xarajat yo'q» mark as it STANDS (the judge's money-5): set, and no
+ * cost entry — live OR voided — was typed after it. A mark is a statement
+ * about the day it was made; a bill typed later says the truck was paid
+ * after all, and VOIDING that bill (to re-enter it in dollars, say) must not
+ * bring the old «somebody else paid» back and silence the alarm. Needs no
+ * lock in `addCostEntry`: whichever commits second, the later bill wins.
+ * Over a qualified alias.
+ */
+export function noCostStandsSql(pickup: SQL): SQL {
+  return sql`(${pickup}.no_cost_at IS NOT NULL
+              AND NOT EXISTS (SELECT 1 FROM cost_entries mce
+                               WHERE mce.pickup_id = ${pickup}.id AND mce.created_at > ${pickup}.no_cost_at))`;
 }
 
 export async function listPickups(opts: { status?: PickupListTab } = {}) {
@@ -1493,6 +1524,8 @@ export async function loadPickup(pickupId: string) {
       createdByName: users.fullName,
       closedByName: closer.fullName,
       noCostByName: marker.fullName,
+      // The mark as it STANDS (`noCostStandsSql`) — what the card shows.
+      noCostStands: sql<boolean>`${noCostStandsSql(sql`${pickups}`)}`,
     })
     .from(pickups)
     .innerJoin(warehouses, eq(pickups.destWarehouseId, warehouses.id))
@@ -1505,15 +1538,6 @@ export async function loadPickup(pickupId: string) {
   return { ...row, stops };
 }
 
-/**
- * A prixod that looks like it came off trip `p` and is linked to nothing —
- * over aliases `p` (pickups) and `r` (receipts). Confirmed at the trip's
- * destination on or after its first «olindi», live, unlinked, and its owner
- * matching a line of the trip that NO prixod has answered yet: once a line is
- * answered, every later cargo of that client is somebody else's question (an
- * old trip lit up by a new prixod months later was probe S5). One sentence
- * for the card's list and the logist's home count.
- */
 /**
  * The skladchi answered «Yo'q» about this trip at the receive door — over
  * aliases `p` and `r`. Read off the receipt's create audit row (0133 stores
@@ -1549,6 +1573,15 @@ export function ownerLooselyMatchesSql(line: string, receipt: string): SQL {
 }
 
 /**
+ * A prixod that looks like it came off trip `p` and is linked to nothing —
+ * over aliases `p` (pickups) and `r` (receipts). Confirmed at the trip's
+ * destination inside its window, live, unlinked, and its owner matching (as
+ * a person reads it, `ownerLooselyMatchesSql`) a line of the trip that NO
+ * prixod has answered yet: once a line is answered, every later cargo of that
+ * client is somebody else's question (an old trip lit up by a new prixod
+ * months later was probe S5). One sentence for the card's list, the logist's
+ * home count and the door's lookalike warning (`lookalikesFor`).
+ *
  * The window opens at the trip's FIRST «Olindi», or — when nobody pressed it
  * (the driver forgot; the round's own probe) — at the trip's creation: a
  * prixod received off a trip nobody marked collected is still that trip's

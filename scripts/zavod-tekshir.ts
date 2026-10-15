@@ -156,14 +156,14 @@ async function main() {
 
     const again = result.receivedAgain;
     heading(
-      `4. Qator qabul qilingandan keyin o‘sha egadan reysga bog‘lanmagan prixod (oxirgi ${check.RECEIVED_AGAIN_DAYS} kun) — ikkinchi marta qabul qilinganmi?`,
+      `4. Ehtimol: qabul qilingan qator egasining shu skladdagi reysga bog‘lanmagan prixodi (zavoddan olingandan keyingi ${check.RECEIVED_AGAIN_DAYS} kun ichida, oldin ham, keyin ham) — o‘sha yuk ikki marta qabul qilinganmi? Karobka sonlarini solishtiring.`,
       again.rows.length,
       again.more,
     );
     for (const row of again.rows) {
       console.log(`  • ${lineText(row.line)}`);
       console.log(`      qatorni qabul qilgan: ${receiptText(row.answeredBy)}`);
-      console.log(`      keyin kelgan:         ${receiptText(row.receipt)}`);
+      console.log(`      reyssiz prixod:       ${receiptText(row.receipt)}`);
     }
 
     const money = result.costWithoutCargo;

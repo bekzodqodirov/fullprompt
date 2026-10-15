@@ -1946,6 +1946,13 @@ export interface UnpricedCargoMoney {
   /** Factory-trip costs no prixod is linked to yet — they lower the net until linked (row 21). */
   pickupNoBox: LeftOut;
   /**
+   * A CLOSED (or cancelled) factory trip's bill on no carton — its prixod
+   * voided or detached, or the trip closed with nothing: no link comes by
+   * itself, so its sentence names the cure (link the real prixod from the
+   * receipt card, or void the bill), never «joins once linked».
+   */
+  pickupClosedNoBox: LeftOut;
+  /**
    * Costs that sit on no carton at all (a found-back truck cell, row 22) —
    * every basis but the yo'lkira tariff's, whose no-carton money is
    * `freightUnsplit` and never «void it».
@@ -2038,7 +2045,7 @@ export async function unpricedCargoMoney(opts: {
     -- \`cost_kassa_since\`, or merged into an expense typed before it).
     w_cost AS (
       SELECT cost_entries.id, cost_entries.scope, cost_entries.amount_usd AS usd,
-             cost_entries.allocation_basis AS basis, cost_entries.batch_id,
+             cost_entries.allocation_basis AS basis, cost_entries.batch_id, cost_entries.pickup_id,
              CASE
                WHEN cost_entries.account_id IS NOT NULL
                  THEN CASE WHEN ${rated} THEN 'in' ELSE 'till_unrated' END
@@ -2178,9 +2185,15 @@ export async function unpricedCargoMoney(opts: {
     -- whose sentence says «fix the lot», never «void it» (§6.3.7) — held
     -- only while its truck carries cargo, heldFreightSql's own clause;
     -- on an empty truck it is the generic no-box money.
+    -- A factory trip's bill on no carton splits by the TRIP's state (the
+    -- judge's money-1): an OPEN trip's joins once a prixod is linked (its
+    -- sentence promises that); a CLOSED or cancelled trip's has no prixod
+    -- coming by itself, and its sentence names the cure instead.
     w_nobox AS (
-      SELECT count(*) FILTER (WHERE wc.scope = 'pickup')::int AS pickup_n,
-             coalesce(sum(wc.usd) FILTER (WHERE wc.scope = 'pickup'), 0)::float8 AS pickup_usd,
+      SELECT count(*) FILTER (WHERE wc.scope = 'pickup' AND wc.open_trip)::int AS pickup_n,
+             coalesce(sum(wc.usd) FILTER (WHERE wc.scope = 'pickup' AND wc.open_trip), 0)::float8 AS pickup_usd,
+             count(*) FILTER (WHERE wc.scope = 'pickup' AND NOT wc.open_trip)::int AS pickup_closed_n,
+             coalesce(sum(wc.usd) FILTER (WHERE wc.scope = 'pickup' AND NOT wc.open_trip), 0)::float8 AS pickup_closed_usd,
              count(*) FILTER (WHERE wc.scope <> 'pickup' AND (wc.basis = 'freight' AND wc.held))::int AS freight_n,
              coalesce(sum(wc.usd) FILTER (WHERE wc.scope <> 'pickup' AND (wc.basis = 'freight' AND wc.held)), 0)::float8 AS freight_usd,
              coalesce(array_agg(DISTINCT wc.batch_id)
@@ -2189,7 +2202,9 @@ export async function unpricedCargoMoney(opts: {
              count(*) FILTER (WHERE wc.scope <> 'pickup' AND NOT (wc.basis = 'freight' AND wc.held))::int AS other_n,
              coalesce(sum(wc.usd) FILTER (WHERE wc.scope <> 'pickup' AND NOT (wc.basis = 'freight' AND wc.held)), 0)::float8 AS other_usd
         FROM (
-          SELECT nb.*, (nb.basis = 'freight' AND ${truckCarriesSql(sql`nb.batch_id`)}) AS held
+          SELECT nb.*, (nb.basis = 'freight' AND ${truckCarriesSql(sql`nb.batch_id`)}) AS held,
+                 EXISTS (SELECT 1 FROM pickups pk
+                          WHERE pk.id = nb.pickup_id AND pk.status IN ('planned', 'on_road', 'arrived')) AS open_trip
             FROM w_cost nb
            WHERE nb.why = 'in' AND NOT EXISTS (SELECT 1 FROM cost_allocations ca WHERE ca.cost_entry_id = nb.id)
         ) wc
@@ -2209,6 +2224,8 @@ export async function unpricedCargoMoney(opts: {
            (SELECT prixods FROM w_unclaimed) AS unclaimed_prixods,
            (SELECT pickup_n FROM w_nobox) AS pickup_n,
            (SELECT pickup_usd FROM w_nobox) AS pickup_usd,
+           (SELECT pickup_closed_n FROM w_nobox) AS pickup_closed_n,
+           (SELECT pickup_closed_usd FROM w_nobox) AS pickup_closed_usd,
            (SELECT other_n FROM w_nobox) AS nobox_n,
            (SELECT other_usd FROM w_nobox) AS nobox_usd,
            (SELECT freight_n FROM w_nobox) AS freight_n,
@@ -2234,6 +2251,8 @@ export async function unpricedCargoMoney(opts: {
     unclaimed_prixods: number;
     pickup_n: number;
     pickup_usd: number;
+    pickup_closed_n: number;
+    pickup_closed_usd: number;
     nobox_n: number;
     nobox_usd: number;
     freight_n: number;
@@ -2272,6 +2291,7 @@ export async function unpricedCargoMoney(opts: {
     tillUnrated: off('till_unrated'),
     noDebt: off('no_debt'),
     pickupNoBox: { count: Number(row!.pickup_n), usd: money(row!.pickup_usd) },
+    pickupClosedNoBox: { count: Number(row!.pickup_closed_n), usd: money(row!.pickup_closed_usd) },
     noBox: { count: Number(row!.nobox_n), usd: money(row!.nobox_usd) },
     freightUnsplit: {
       count: Number(row!.freight_n),
@@ -2552,6 +2572,7 @@ export async function companyBalance() {
       tillUnrated: cargo.tillUnrated,
       noDebt: cargo.noDebt,
       pickupNoBox: cargo.pickupNoBox,
+      pickupClosedNoBox: cargo.pickupClosedNoBox,
       noBox: cargo.noBox,
       freightUnsplit: cargo.freightUnsplit,
       unconverted: cargo.unconverted,

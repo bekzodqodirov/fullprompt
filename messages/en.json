@@ -2404,7 +2404,8 @@
     "unsplitForming": "Trucks that have not left yet (not in the table, which lists departed trucks only):",
     "gapFreightHeld": "{count, plural, one {# freight cost} other {# freight costs}} ({usd}) not split over the truck cargo by the tariff — in this report, but in no client's landed cost.",
     "gapFreightHeldHint": "Saved but not split by the tariff: once the lot is fixed or through «Split method» it splits and joins the clients' landed cost by itself — do not void it. The reason is on the truck's cost sheet.",
-    "clientFreightHeldNote": "Of which {usd} ({count, plural, one {# cost} other {# costs}}) is freight not split by the tariff: once the lot is fixed or through «Split method» it splits onto the clients by itself; do not void it."
+    "clientFreightHeldNote": "Of which {usd} ({count, plural, one {# cost} other {# costs}}) is freight not split by the tariff: once the lot is fixed or through «Split method» it splits onto the clients by itself; do not void it.",
+    "balUnpricedPickupClosed": "A closed factory trip's costs on no box ({count} of them, ${usd}) — its receipt was voided, or the trip closed with no cargo. Link the real receipt to the trip from the receipt card or, if no cargo came, void the cost; until then they lower the net position."
   },
   "lidChat": {
     "mark": "Lead",
@@ -4799,7 +4800,9 @@
     "closedByHand": "closed by hand",
     "closedByItself": "all received",
     "linesNotCame": "{n} line(s) did not come",
-    "detachClosedConfirm": "The trip is closed. Detach the receipt? It can be re-attached only from the receipt card within 30 days."
+    "detachClosedConfirm": "The trip is closed. Detach the receipt? It can be re-attached only from the receipt card within 30 days.",
+    "receivedShort": "received",
+    "closeConfirmCandidates": "Close the trip? It will not reopen. These receipts stay unlinked: {numbers} — their cargo will read «received here»."
   },
   "unpriced": {
     "title": "Arrived cargo with no price",

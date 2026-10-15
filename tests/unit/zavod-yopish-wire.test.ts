@@ -77,3 +77,45 @@ describe('zavod reysi yopiladi — wiring', () => {
     }
   });
 });
+
+/**
+ * The judges' door findings (docs/ZAVOD-YOPISH.md §10) where only the source
+ * can say it: an action's `authorize` and a server page's gate cannot be
+ * pressed by an integration test (#531).
+ */
+describe('zavod reysi yopiladi — who may end a trip and who reads its money', () => {
+  it('cancel and close ask plans.manage AT the trip’s destination, and the card draws them only there (money-8)', () => {
+    const actions = strip(read('src/app/(protected)/zavod/actions.ts'));
+    for (const fn of ['export async function cancelPickupAction(', 'export async function closePickupAction(']) {
+      const body = actions.slice(actions.indexOf(fn), actions.indexOf('\n}\n', actions.indexOf(fn)));
+      expect(body, fn).toContain('authorize(PICKUP_WRITE, { warehouseId: pickup.destWarehouseId })');
+      expect(body, fn).not.toContain('run(\n    writer,');
+    }
+    const page = strip(read('src/app/(protected)/zavod/[id]/page.tsx'));
+    expect(page).toContain('const canEndHere = canWrite && inScope(actor, pickup.destWarehouseId);');
+    expect(page).toContain('{canEndHere && open && (\n        <PickupButtons');
+    expect(page).toMatch(/\{canEndHere &&\s+open &&[\s\S]{0,120}<ClosePickupForm/);
+  });
+
+  it('the truck’s money on the card is for money readers only, never a receiver let in by the destination clause (money-9)', () => {
+    const page = strip(read('src/app/(protected)/zavod/[id]/page.tsx'));
+    expect(page).toContain(
+      "const seesTripMoney = mayReadPickups(actor.permissions) || actor.permissions.has('reports.all_warehouses');",
+    );
+    expect(page).toMatch(/\{seesTripMoney && \(\s+<section className="card space-y-2" data-testid="pickup-costs">/);
+    expect(page).toContain("{seesTripMoney && pickup.status === 'closed' && costCount > 0 && linkedCount === 0 && (");
+    expect(page).toContain('{seesTripMoney && came && costCount === 0 && !noCostStands && (');
+  });
+
+  it('the Balans never promises «joins once linked» for a CLOSED trip’s bill (money-1)', () => {
+    const reports = strip(read('src/modules/wms/accounting/reports.ts'));
+    expect(reports).toContain("count(*) FILTER (WHERE wc.scope = 'pickup' AND wc.open_trip)::int AS pickup_n");
+    expect(reports).toContain("count(*) FILTER (WHERE wc.scope = 'pickup' AND NOT wc.open_trip)::int AS pickup_closed_n");
+    expect(reports).toContain("WHERE pk.id = nb.pickup_id AND pk.status IN ('planned', 'on_road', 'arrived')) AS open_trip");
+    const page = read('src/app/(protected)/accounting/balance/page.tsx');
+    expect(page).toContain("t('balUnpricedPickupClosed'");
+    for (const locale of LOCALES) {
+      expect((bundle(locale).accounting as Record<string, string>).balUnpricedPickupClosed, locale).toBeTruthy();
+    }
+  });
+});
