@@ -1,4 +1,5 @@
 import { DOC, docDate } from './labels';
+import { arrivalsForLots } from './arrivals';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import ExcelJS from 'exceljs';
 import { db } from '../../platform/db/client';
@@ -25,6 +26,11 @@ import { ESTIMATE_FILL, estimateNote, packingBoxesCell, packingProductCell } fro
  * what is merely reserved) so it stays correct after unload/close — and, since
  * an office count can dial a lot DOWN (0112, decision 25), never from the scan
  * history, which keeps every carton that was ever put on and taken off.
+ *
+ * Each row also says what brought the lot to the warehouse this truck loads
+ * FROM — the agent sheet's arrival rule from its one home — because the
+ * owner downloaded this list and read factory cargo as nothing at all: «shu
+ * zavoddan, shu mashinada kelgan deb» (docs/ZAVOD-YOPISH.md §5).
  */
 export async function buildPackingPhotosXlsx(batchId: string): Promise<Buffer | null> {
   const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
@@ -69,6 +75,10 @@ export async function buildPackingPhotosXlsx(batchId: string): Promise<Buffer | 
   }
   const maxPhotos = Math.max(1, ...[...photosByLot.values()].map((ids) => ids.length));
 
+  // Which truck — a batch, or a factory trip «ZR-… · factory · plate» — brought
+  // each lot to the warehouse this truck loads from. One query for the sheet.
+  const arrivals = await arrivalsForLots(lotIds, batch.originWarehouseId);
+
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet('PACKING LIST');
   sheet.columns = [
@@ -77,6 +87,9 @@ export async function buildPackingPhotosXlsx(batchId: string): Promise<Buffer | 
     { header: DOC.boxes, key: 'boxCount', width: 10 },
     { header: DOC.kg, key: 'kg', width: 10 },
     { header: DOC.m3, key: 'm3', width: 10 },
+    // BEFORE the date: the owner's 2026-08-07 rule keeps the receipt date
+    // immediately before the photos.
+    { header: DOC.arrivalBatch, key: 'arrival', width: 34 },
     // Owner (2026-08-07): the receipt date, right before the photos.
     { header: DOC.date, key: 'date', width: 12 },
     ...Array.from({ length: maxPhotos }, (_, i) => ({
@@ -121,7 +134,7 @@ export async function buildPackingPhotosXlsx(batchId: string): Promise<Buffer | 
     lotTrucksFor(db, lotIds),
   ]);
 
-  const PHOTO_START_COL = 6; // zero-based: right after the date column
+  const PHOTO_START_COL = 7; // zero-based: right after the date column
   let rowNo = 3;
   for (const { lot, clientCode, marking, receivedAt, loaded } of rows) {
     const kg = (Number(lot.totalWeightKg) / lot.boxCount) * Number(loaded);
@@ -129,6 +142,9 @@ export async function buildPackingPhotosXlsx(batchId: string): Promise<Buffer | 
     const d = receivedAt;
     const code = `${clientCode ?? marking ?? '?'}-${lot.letter ?? ''}`;
     const comp = compositions.get(lot.id);
+    // Every row of the lot, a composed lot's every line too: a row copied out
+    // of the sheet still says which truck brought it.
+    const arrival = arrivals.get(lot.id)?.labels.join(', ') || '—';
     const photoRow = rowNo;
     if (comp) {
       // The values the uncomposed row prints today, passed on — never
@@ -152,6 +168,7 @@ export async function buildPackingPhotosXlsx(batchId: string): Promise<Buffer | 
           boxCount: packingBoxesCell(line, mode, i === 0, Number(loaded)),
           kg: line.kg,
           m3: line.m3 ?? '',
+          arrival,
           date: docDate(d),
         };
         row.height = 60;
@@ -168,6 +185,7 @@ export async function buildPackingPhotosXlsx(batchId: string): Promise<Buffer | 
         boxCount: Number(loaded),
         kg: Number(kg.toFixed(1)),
         m3: Number(m3.toFixed(3)),
+        arrival,
         // The document leaves the company (DOC's rule) — dd.mm.yyyy reads the
         // same at the border and in the office, no locale to guess.
         date: docDate(d),

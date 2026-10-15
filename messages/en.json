@@ -1044,6 +1044,7 @@
       "box_not_in_stock": "Part of the cargo has left the warehouse — the move is not possible",
       "box_in_crate": "Dissolve the crates of this receipt first",
       "same_warehouse": "That is the same warehouse",
+      "pickup_linked": "This receipt is linked to a factory pickup — detach it from the trip first (the receipt card names the trip)",
       "validation": "Check the data"
     },
     "openInBrowser": "Open in the browser (if printing did not start)",

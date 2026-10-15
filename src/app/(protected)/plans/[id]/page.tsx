@@ -141,7 +141,7 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
                   className="block font-sans text-2xs font-normal text-ink-500"
                   data-testid="plan-lot-arrival"
                 >
-                  🚚 {arrivals.get(line.lotId)!.codes.join(', ')}
+                  🚚 {arrivals.get(line.lotId)!.labels.join(', ')}
                 </span>
               )}
             </span>

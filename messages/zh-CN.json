@@ -1044,6 +1044,7 @@
       "box_not_in_stock": "部分货物已不在库——无法转移",
       "box_in_crate": "请先拆掉该入库单的木箱",
       "same_warehouse": "是同一个仓库",
+      "pickup_linked": "该入库单已关联工厂提货车次——请先将其从车次中解除（车次显示在入库单卡片上）",
       "validation": "请检查数据"
     },
     "openInBrowser": "在浏览器中打开（如果无法打印）",

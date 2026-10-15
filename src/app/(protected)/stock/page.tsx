@@ -23,7 +23,7 @@ import { defaultViewFor, listViewsFor } from '@/modules/platform/lists/service';
 import { ViewBar } from '@/components/list/view-bar';
 import { ColumnPicker } from '@/components/list/column-picker';
 import { STOCK_COLUMNS } from '@/modules/wms/inventory/columns';
-import { arrivalCodesForPairs } from '@/modules/wms/documents/arrivals';
+import { arrivalLabelsForPairs } from '@/modules/wms/documents/arrivals';
 import {
   SHELF_STATUSES,
   crateStock,
@@ -316,8 +316,8 @@ export default async function StockPage({
 
   // «Qaysi partiyada kelgan» — the agent sheet's own rule (round 92), read
   // from its one home; one query per distinct warehouse on the page, never
-  // one per row (#432).
-  const arrivalCodes = await arrivalCodesForPairs(
+  // one per row (#432). Printed as labels: a factory trip names its factory.
+  const arrivalLabels = await arrivalLabelsForPairs(
     lines.map((line) => ({ lotId: line.lot.id, warehouseId: line.whId })),
   );
 
@@ -402,7 +402,7 @@ export default async function StockPage({
           : null,
       note: line.lot.note ?? '',
       whCode: line.whCode,
-      partiya: (arrivalCodes.get(`${line.lot.id}|${line.whId}`) ?? []).join(', '),
+      partiya: (arrivalLabels.get(`${line.lot.id}|${line.whId}`) ?? []).join(', '),
       receivedAt: line.receivedAt,
     };
   });

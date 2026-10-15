@@ -1044,6 +1044,7 @@
       "box_not_in_stock": "Yukning bir qismi skladda emas — ko‘chirib bo‘lmaydi",
       "box_in_crate": "Avval bu prixodning yashiklarini buzing",
       "same_warehouse": "Bu o‘sha sklad",
+      "pickup_linked": "Prixod zavod reysiga biriktirilgan — avval uni reysdan ajrating (reys prixod kartasida ko‘rsatilgan)",
       "validation": "Ma’lumotlarni tekshiring"
     },
     "openInBrowser": "Brauzerda ochish (chop etish ketmasa)",

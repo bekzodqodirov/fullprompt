@@ -47,4 +47,23 @@ describe('zavod reysi wiring', () => {
     expect(wizard).toContain('...postedPickupFields(draft!)');
     expect(read('src/app/(protected)/receive/pickup-draft.ts')).toContain('pickupStopId: d.pickupStopId ?? null');
   });
+
+  it('moveReceipt asks the stop, under the receipt lock, before it moves a box (ZAVOD-YOPISH §5)', () => {
+    // The arrival rule names a trip only at the warehouse it was heading to;
+    // a prixod moved away under its link would be that trip's cargo nowhere.
+    const move = read('src/modules/wms/receipts/move.ts');
+    const body = move.slice(move.indexOf('export async function moveReceipt('));
+    const lock = body.indexOf(".for('update')");
+    const ask = body.indexOf("if (receipt.pickupStopId) throw new MoveError('pickup_linked')");
+    expect(lock).toBeGreaterThan(-1);
+    expect(ask).toBeGreaterThan(lock);
+    expect(ask).toBeLessThan(body.indexOf('.update(receipts)'));
+    // …and the refusal has words in every bundle (a missing key throws at render).
+    for (const locale of ['ru', 'uz', 'zh-CN', 'en']) {
+      const bundle = JSON.parse(read(`messages/${locale}.json`)) as {
+        receipts: { moveErrors: Record<string, string> };
+      };
+      expect(bundle.receipts.moveErrors.pickup_linked, locale).toBeTruthy();
+    }
+  });
 });

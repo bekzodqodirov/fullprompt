@@ -77,6 +77,7 @@ export default async function ClientCargoTabPage({
           photos={view.photos}
           photoRows={view.photoRows}
           receiptsOpen={view.receiptsOpen}
+          pickupsOpen={view.pickupsOpen}
           siblings={view.siblings}
           full={full}
           fullHref={href({ toliq: true })}

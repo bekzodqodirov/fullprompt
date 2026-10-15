@@ -1,5 +1,5 @@
 import { DOC, docDate } from './labels';
-import { arrivalsForLots, groupByArrival } from './arrivals';
+import { arrivalBlockLabel, arrivalsForLots, groupByArrival } from './arrivals';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import ExcelJS from 'exceljs';
 import { db } from '../../platform/db/client';
@@ -97,7 +97,10 @@ export async function buildAgentXlsx(planId: string, versionNo: number): Promise
     { header: DOC.kg, key: 'kg', width: 10 },
     { header: DOC.m3, key: 'm3', width: 10 },
     { header: DOC.density, key: 'density', width: 10 },
-    { header: DOC.arrivalBatch, key: 'arrivalBatch', width: 18 },
+    // Wide enough for a factory trip's «ZR-00012 · factory · plate»: the
+    // photographs anchor on their own columns (PHOTO_START_COL), so widening
+    // this one moves no picture off its goods.
+    { header: DOC.arrivalBatch, key: 'arrivalBatch', width: 34 },
     { header: DOC.arrivalDate, key: 'arrivedAt', width: 13 },
     ...Array.from({ length: maxPhotos }, (_, i) => ({
       header: i === 0 ? DOC.photo : '',
@@ -158,9 +161,13 @@ export async function buildAgentXlsx(planId: string, versionNo: number): Promise
     // already has at the price of two things the agent might want.
     const heading = sheet.getCell(rowNo, 1);
     const totalsText = `${totals.boxes} ${DOC.boxes} · ${totals.kg.toFixed(1)} кг · ${totals.m3.toFixed(3)} м³`;
-    heading.value = block.code
-      ? `${DOC.arrivalBatch}: ${block.code}${block.arrivedAt ? ` · ${docDate(block.arrivedAt, zone)}` : ''} · ${totalsText}`
-      : `${DOC.receivedHere} · ${totalsText}`;
+    // A factory trip is a truck we hired, not a walk-in: it gets its own
+    // words and names its factories (every stop the block's cargo came
+    // from) and plate. «Received here» stays for what came on no truck.
+    const dated = block.arrivedAt ? ` · ${docDate(block.arrivedAt, zone)}` : '';
+    heading.value = !block.source
+      ? `${DOC.receivedHere} · ${totalsText}`
+      : `${block.source.kind === 'pickup' ? DOC.factoryPickup : DOC.arrivalBatch}: ${arrivalBlockLabel(block)}${dated} · ${totalsText}`;
     heading.font = { bold: true };
     heading.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEFEFEF' } };
     rowNo += 1;
@@ -183,8 +190,9 @@ export async function buildAgentXlsx(planId: string, versionNo: number): Promise
         // split is visible at all. It also survives a row being copied out of
         // the sheet or read after the heading has scrolled away, which is
         // what the owner asked to be ADDED; the blocks are the order he asked
-        // for, not a substitute for it.
-        arrivalBatch: arrival?.codes.join(', ') || '—',
+        // for, not a substitute for it. A factory trip's cell names THIS
+        // row's own stop — the heading lists every factory of the block.
+        arrivalBatch: arrival?.labels.join(', ') || '—',
         arrivedAt: arrival ? docDate(arrival.arrivedAt, zone) : '',
       };
       sheet.getRow(rowNo).height = 60;

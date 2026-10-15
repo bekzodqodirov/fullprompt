@@ -123,13 +123,14 @@ export async function plannableStock(warehouseId: string) {
   // «Qaysi partiyada kelgan» (owner, 2026-08-29) — the agent sheet's rule
   // from its one home, computed once for the loose lots AND the crates'
   // member lots together; the planner keeping one arrival's cargo together
-  // is exactly what the sheet groups by.
+  // is exactly what the sheet groups by. Printed as the sheet's LABELS, so a
+  // factory trip reads «ZR-… · factory · plate» here as it does there.
   const arrivals = await arrivalsForLots(
     [...new Set([...rows.map((r) => r.lotId), ...crateRows.flatMap((c) => c.lotIds)])],
     warehouseId,
   );
   const crateArrival = (lotIds: string[]) =>
-    [...new Set(lotIds.flatMap((lotId) => arrivals.get(lotId)?.codes ?? []))].join(', ');
+    [...new Set(lotIds.flatMap((lotId) => arrivals.get(lotId)?.labels ?? []))].join(', ');
 
   return {
     /** The check is on this server (0123 landed) — the editor draws its filter only then. */
@@ -143,7 +144,7 @@ export async function plannableStock(warehouseId: string) {
       perBoxKg: Number(r.totalWeightKg) / r.boxCount,
       perBoxM3: Number(r.totalVolumeM3) / r.boxCount,
       daysInStock: Math.floor((Date.now() - new Date(r.receivedAt).getTime()) / 86_400_000),
-      arrival: (arrivals.get(r.lotId)?.codes ?? []).join(', '),
+      arrival: (arrivals.get(r.lotId)?.labels ?? []).join(', '),
     })),
     crates: crateRows.map((c) => ({
       crateId: c.crateId,

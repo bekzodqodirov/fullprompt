@@ -13,7 +13,7 @@ import { inScope, type ScopedActor } from '../../platform/rbac/scope';
 import { seesAllMoney } from '../finance/scope';
 import { seesAllClients } from '../../platform/clients/card-door';
 import { clientBalanceUsd } from '../finance/service';
-import { arrivalCodesForPairs } from '../documents/arrivals';
+import { arrivalLabelsForPairs } from '../documents/arrivals';
 import { clientCargoRows } from '../inventory/client-cargo-now';
 import { roadLossInScope, roadLossTruck } from '../boxes/road-loss';
 import { dayIn, OFFICE_TZ } from '@/modules/platform/time/tashkent';
@@ -416,8 +416,9 @@ async function lookupClient(
     standing.set(key, entry);
   }
 
-  // The partiya each shelf-standing lot arrived on (#853's rule, verbatim).
-  const arrivalCodes = await arrivalCodesForPairs(
+  // The partiya each shelf-standing lot arrived on (#853's rule, verbatim) —
+  // a batch's code, or a factory trip's «ZR-… · factory · plate».
+  const arrivalLabels = await arrivalLabelsForPairs(
     [...standing.values()].map((s) => ({ lotId: s.lotId, warehouseId: s.warehouseId })),
   );
 
@@ -430,12 +431,12 @@ async function lookupClient(
       const statuses = [...s.byStatus]
         .map(([st, c]) => `${STATUS_UZ[st] ?? st} ${c}`)
         .join(' · ');
-      const codes = arrivalCodes.get(`${s.lotId}|${s.warehouseId}`) ?? [];
+      const labels = arrivalLabels.get(`${s.lotId}|${s.warehouseId}`) ?? [];
       return (
         `· 🏭 ${s.whCode}: ${s.product} — ${s.n} karobka (${statuses})` +
         (kg !== null ? ` · ${kg} kg` : '') +
         (m3 !== null ? ` · ${m3} m³` : '') +
-        (codes.length ? ` · 🚚 ${codes.join(', ')}` : '')
+        (labels.length ? ` · 🚚 ${labels.join(', ')}` : '')
       );
     });
   // Where each truck is and how long it still has — the map's own clock

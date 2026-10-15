@@ -5,7 +5,7 @@ import { AuthError, requireActor } from '@/modules/platform/rbac/authorize';
 import { writeAudit } from '@/modules/platform/audit/service';
 import { requestMeta } from '@/modules/platform/auth/session';
 import { warehouseScope } from '@/modules/platform/rbac/scope';
-import { arrivalCodesForPairs } from '@/modules/wms/documents/arrivals';
+import { arrivalLabelsForPairs } from '@/modules/wms/documents/arrivals';
 import { buildStockXlsx } from '@/modules/wms/reports/stock-xlsx';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { stockTextWhere } from '@/modules/wms/inventory/stock-filter';
@@ -114,7 +114,7 @@ export async function GET(request: Request) {
     .limit(10_000);
 
   // The screen's partiya column, from the same one home (round 92's rule).
-  const arrivalCodes = await arrivalCodesForPairs(
+  const arrivalLabels = await arrivalLabelsForPairs(
     lines.map((line) => ({ lotId: line.lot.id, warehouseId: line.whId })),
   );
 
@@ -123,7 +123,7 @@ export async function GET(request: Request) {
   // warehouse by warehouse and always has been.
   const { buffer, visible, photos, photosSkipped } = await buildStockXlsx({
     lines,
-    arrivalCodes,
+    arrivalLabels,
     cols: url.searchParams.get('cols') ?? undefined,
     locale: actor.locale,
     can: (permission) => actor.permissions.has(permission),

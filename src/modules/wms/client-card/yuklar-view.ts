@@ -11,6 +11,7 @@ import { mayReadHandoverAct } from '../issue/act-door';
 import { cargoTrucks, clientCargoNow, clientCargoNowOnce } from '../inventory/client-cargo-now';
 import { foldCargoNow, NOW_SECTIONS, type CargoNow } from '../inventory/client-cargo-fold';
 import { firstLotPhotos } from '../receipts/first-photo';
+import { mayReadPickup } from '../pickups/service';
 import { receiptsReadableBy } from '../receipts/read-door';
 import { lotCheckViewsFor } from '../receipts/lot-check';
 import type { LotCheckState } from '../receipts/lot-check-sql';
@@ -48,6 +49,13 @@ export interface YuklarView {
   actOpen: Set<string>;
   /** A history leg's truck id by its code, only where the truck card admits the reader. */
   legTruck: Map<string, string>;
+  /**
+   * The factory trips that brought standing cargo whose card (`/zavod/<id>`)
+   * this reader may open — `mayReadPickup` at the trip's destination, which
+   * is the warehouse the cargo was found arriving at (the arrival rule names
+   * a trip only where it was heading). Anything else prints as words.
+   */
+  pickupsOpen: Set<string>;
   /**
    * «Yuk ma'lumoti tekshirildi» of every lot the tab draws, so one call
    * covers all of this client's cargo (docs/YUK-TEKSHIRUV.md §6). Empty on a
@@ -135,6 +143,13 @@ export async function loadYuklarView(
   const arrivalTruckIds = [...arrivals.values()]
     .flatMap((a) => a.batchIds)
     .filter((id) => id && !data.trucks.has(id));
+  const pickupsOpen = new Set<string>();
+  for (const [key, arrival] of arrivals) {
+    const warehouseId = key.slice(key.indexOf('|') + 1);
+    for (const source of arrival.sources) {
+      if (source.kind === 'pickup' && mayReadPickup(actor, warehouseId)) pickupsOpen.add(source.id);
+    }
+  }
   const arrivalTrucks = await cargoTrucks(arrivalTruckIds);
   const trucks = new Map<string, NowTruck>();
   for (const truck of [...data.trucks.values(), ...arrivalTrucks.values()]) {
@@ -196,6 +211,7 @@ export async function loadYuklarView(
     history: { ...history, cap: HISTORY_CAP },
     actOpen,
     legTruck,
+    pickupsOpen,
     checks,
     askableWarehouses,
   };
