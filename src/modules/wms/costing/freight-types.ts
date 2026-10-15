@@ -18,6 +18,9 @@ export interface BoxMeasure {
   lotId: string;
   lotLetter: string | null;
   lotSeq: number;
+  /** The lot's goods (his 2b: a lot row must say WHICH goods — yostiq or kafel). */
+  productNameRu: string | null;
+  productNameZh: string;
   dimsMode: string;
   boxLengthCm: number | null;
   boxWidthCm: number | null;
@@ -44,7 +47,10 @@ export interface FreightBandCopy {
 
 /** A bill's frozen tariff column (`cost_entry_tariffs`, his 3a). */
 export interface FreightCopy {
-  /** The origin warehouse the column was read from. */
+  /**
+   * The truck's origin at save — provenance only since his 1a (2026-10-15:
+   * one column for every truck). It no longer chooses the column.
+   */
   warehouseId: string;
   zone: string;
   /** The newest effective date among the copied rows. */
@@ -61,49 +67,53 @@ export type ColumnProblem =
   | { kind: 'gap'; from: number; to: number | null }
   | { kind: 'overlap'; at: number };
 
-export interface HeldLot {
+/**
+ * One LOT of a bill's base (his 2b, 2026-10-15: «har bir tovar o'z zichligi
+ * bilan») — what a held line names and what a split row is built from. The
+ * client fields are only for drawing the lot under its client.
+ */
+export interface LotIdentity {
   lotId: string;
   receiptId: string;
+  receiptNumber: string | null;
+  /** `c:<client>`, or `r:<receipt>` for an unclaimed prixod — the roll-up key. */
+  clientKey: string;
+  /** The client code, or the unclaimed prixod's marking / number. */
+  clientLabel: string;
+  /** `GS777-A` — the marking or code with the lot letter. */
   label: string;
+  /** The lot's goods name (ru, else zh). */
+  goods: string;
+}
+
+export interface HeldLot extends LotIdentity {
   m3: number;
   kg: number;
   /** The whole kg/m³ every screen prints; null when the measure is missing. */
   density: number | null;
 }
 
-export interface HeldGroup {
-  key: string;
-  label: string;
-  m3: number;
-  kg: number;
-  density: number;
-  /** Lightest first. */
-  lots: HeldLot[];
-}
-
 /** Why a freight bill was saved and NOT split (his rule 6 and its kin). */
 export type FreightHeld =
-  | { reason: 'cargo'; measureMissing: HeldLot[]; tooLight: HeldGroup[] }
+  | { reason: 'cargo'; measureMissing: HeldLot[]; tooLight: HeldLot[] }
   | { reason: 'copy_missing' | 'copy_invalid' | 'on_customs' };
 
-/** One client group, priced on the copy. */
-export interface PricedGroup {
+/** One LOT, priced on the copy by its OWN density (his 2b). */
+export interface PricedLot extends LotIdentity {
+  /** `l:<lotId>`. */
   key: string;
-  label: string;
   m3: number;
   kg: number;
   density: number;
   band: FreightBandCopy;
-  /** True when the group sat below the lowest floor and took the lowest band. */
+  /** True when the lot sat below the lowest floor and took the lowest band. */
   clamped: boolean;
-  /** List rate per m³ (per-kg bands: price × density). Unrounded. */
+  /** List rate per m³ (per-kg bands: price × the lot's kg/m³). Unrounded. */
   ratePerM3: number;
-  /** Tariff value of the group = rate × Σm³. Unrounded. */
+  /** Tariff value of the lot aboard = rate × its m³ on this truck. Unrounded. */
   value: number;
   /** value ÷ Σvalue over the bill, 0..1. */
   share: number;
-  /** Lots of a group that split whose OWN density is under the limit (ⓘ). */
-  lightLots: HeldLot[];
 }
 
 /** What `recomputeEntry` (and the pool behind it) decided about one bill. */
@@ -131,20 +141,34 @@ export interface BandView {
   price?: number;
 }
 
-/** One client group as the browser draws it (money only under full sight). */
-export interface GroupView {
+/** One lot as the browser draws it (money only under full sight). */
+export interface LotView extends LotIdentity {
+  /** `l:<lotId>`. */
   key: string;
-  label: string;
   m3: number;
   density: number;
   band: BandView;
   share: number;
   ratePerM3?: number;
-  lightLots: HeldLot[];
+}
+
+/**
+ * One client's lots summed — computed ONCE (`rollupClients`) so the preview,
+ * the fold, the Narx line and the re-basis preview cannot add it up four ways
+ * (#513). `share` = Σ of its lots' shares.
+ */
+export interface ClientRollup {
+  /** `c:<client>` / `r:<receipt>`. */
+  key: string;
+  label: string;
+  m3: number;
+  share: number;
+  /** Its lots' keys, in display order. */
+  lotKeys: string[];
 }
 
 export type SplitView =
-  | { kind: 'split'; groups: GroupView[] }
+  | { kind: 'split'; lots: LotView[]; clients: ClientRollup[] }
   | { kind: 'held'; held: FreightHeld }
   | { kind: 'nothing' };
 
@@ -157,27 +181,19 @@ export interface FreightVersion {
   split: SplitView | null;
 }
 
-export interface WhLabel {
-  id: string;
-  code: string;
-  name: string;
-}
-
 /** Everything the cost panel needs to offer, preview and explain freight. */
 export type FreightOffer =
   | { status: 'server_behind'; typeFlags: TypeFlags }
-  | { status: 'no_column'; warehouse: WhLabel; mayFixColumn: boolean; typeFlags: TypeFlags }
   | {
       status: 'ready';
-      warehouse: WhLabel;
+      /** His 1a: the ONE column every truck is split by (`freightSplitZone()`). */
       zone: string;
       money: boolean;
-      mayFixColumn: boolean;
       mayFixTariff: boolean;
       typeFlags: TypeFlags;
       /** The zone's FIRST effective date — before it the column is unpriced. */
       firstFrom: string | null;
-      /** Newest first, at most 20. */
+      /** Newest first, at most 20; only the newest few carry a `split` (payload). */
       versions: FreightVersion[];
     };
 
@@ -188,15 +204,17 @@ export interface UnsplitView {
 
 /** A saved freight bill's explanation on its row. */
 export interface FreightRowView {
-  warehouseCode: string;
+  /** The COPY's own column (a bill frozen on another column before 1a keeps it, 3a). */
   zone: string;
   tariffFrom: string;
   /** The bill has NO share on any box (held, empty, or a lagging split). */
   unsplit: boolean;
   /** What its own copy says now: split rows, held, or no cargo. */
   view: SplitView | null;
-  /** Per group key, the cents the allocations actually hold (money sight). */
+  /** Per LOT key (`l:<lotId>`), the cents the allocations actually hold (money sight). */
   allocatedUsd?: Record<string, number>;
+  /** The bill's dollars (money sight) — what a lot's «hisobning N %» on the Narx tab divides by. */
+  amountUsd?: number;
 }
 
 /** The re-basis door's first press: who moves how much, before anything is written. */
@@ -214,12 +232,19 @@ export interface RebasePreview {
     afterPct: number;
     beforeUsd?: number;
     afterUsd?: number;
-    /** The tariff row a freight target puts the group in (price only under money sight). */
-    band?: BandView;
   }[];
+  /**
+   * A freight target's after state PER LOT (his 2b) — a client spans bands
+   * now. The split arm only: a held after-state lives in `held` alone, said
+   * once (judge J17). Built by `splitView` and nothing else, so the price
+   * rides only to a money reader (J5).
+   */
+  split?: { lots: LotView[]; clients: ClientRollup[] };
+  /** Its dollars per lot key, to the cent, by the same rule as the rows (money sight). */
+  afterLotCents?: Record<string, number>;
   /** The after state when it would be HELD (shown, and allowed). */
   held?: FreightHeld;
   /** The target lands the bill on NO carton over a base that has cartons (no such measure). */
   nowhere?: boolean;
-  column?: { warehouseCode: string; zone: string; tariffFrom: string; previousZone: string | null };
+  column?: { zone: string; tariffFrom: string; previousZone: string | null };
 }

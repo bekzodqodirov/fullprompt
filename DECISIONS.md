@@ -3551,3 +3551,221 @@ afternoon: the trip-opened /receive says the lookalike above the wizard
 (the third surface the CHANGELOG already promised), and the «Yuklar» row's
 status chips sort by the ladder instead of by postgres's grouping order —
 the `client-cargo-now` flake.
+
+## Yo'lkira tarifi — his «1a 2b» (2026-10-15; NO migration of its own, it deploys
+with the zavod round's 0133 — ledger 134; spec `docs/YOLKIRA-TAQSIMOT.md` §15)
+
+Numbered #1379-#1385 on the branch and renumbered #1400-#1406 on the merge — the
+TWENTY-FIRST collision: the zavod-reysi round above took #1379-#1399 and merged
+first. References inside these seven entries were moved with them; the
+yo'lkira entries before the zavod section (#1364-#1378) are unchanged.
+
+1400. **His 1a of 2026-10-15: ONE tariff column for every truck — the 2c
+door is DELETED, not hidden** (docs/YOLKIRA-TAQSIMOT.md §15.1). His words
+after PR #120 merged: «skladlarning o'zini narxi bo'lsin degan narsa kerak
+emas — bizning YW Guangzhou dan Toshkentga sotish narximiz bor, kg kubiga
+qarab narx beriladi … mashina yo'lkirasiga xarajat yozilganda shu
+proportsiyada taqsimlansin … aynan shu tovar qancha foizdaligi hisoblanib …
+tannarxiga yoziladi», then «1a 2b». The column is `freightSplitZone()` in a
+zero-import leaf (`costing/freight-zone.ts`) — a FUNCTION, so an integration
+file can `vi.mock` it onto a private column and never write a test row into
+the real `cn` one (#824/#183) — asked by the save, the preview and the
+re-split only. Not a setting (a setting is a door, and 1a removes the door).
+Deleted: `tariff-column.ts`, `tariff-zone-field.ts` (+ its unit test),
+`tariffZoneNames`, the warehouse form's select and its two error codes, both
+pages' reads, `no_column` / `mayFixColumn` / `WhLabel` / «Skladni ochish →»,
+`freight_no_column`, `FreightRowView.warehouseCode`,
+`RebasePreview.column.warehouseCode`, ten i18n keys ×4. Kept: the
+`warehouse_tariff_columns` table, UNREAD (rows he may have typed since 0132;
+never drop data in the release that stops reading it) and named by the
+schema alone (fenced); `cost_entry_tariffs.warehouse_id` as provenance (NOT
+NULL FK, no migration; still in the digest — both sides pass the same
+origin); the audit labels (old warehouse history rows print them); the
+form's hold-what-was-typed fix and the update's one transaction (general
+fixes from the same commit). `freightTablesReady` names the copy table only,
+so the later DROP cannot switch freight off on every truck. CONSEQUENCE, told
+to him: `cn` is seeded since 0086, so from deploy day every yo'lkira-type
+truck bill preselects the tariff basis — the round that shipped «empty,
+nothing moves» now moves on deploy. The prices are only the RATIO between
+lots, so a Kashgar or Andijon → Toshkent truck split on the China prices is
+right by his own reading; a hint under the preview says so.
+
+1401. **His 2b: the grain is the LOT, each priced by its own density**
+(§15.2). `freightLots` keys `l:<lotId>`; a lot's density is a property of
+the lot — `stableMeasure` gives every carton of a lot the same exact
+measure, so 1 or 500 cartons aboard read one band, and the count enters only
+the lot's m³, i.e. its value. His D anchor: yostiq $110 + kafel $605 = $715
+(15.38 / 84.62 %), where the client grain read 600 → $600; D + E on $1,015
+is 715 / 300 (the client grain gave 676.67 / 338.33) — the red proof keys by
+client. His rule 6 is judged PER LOT, and its blast radius grows and is told
+to him: ONE lot under 10 kg/m³ anywhere on the truck holds the whole bill,
+where a heavy client used to absorb it with an ⓘ — `lightLots`,
+`freightLightLot` and `HeldGroup` are deleted, because the non-blocking case
+cannot exist any more. A void can no longer MAKE a bill held (a lot's
+density does not depend on which of its cartons remain); it can only heal
+one or empty the base (`homed` unchanged, red-proven). A claim moves no
+freight money now (the lot does not change; only the client stamp, which
+`recomputeForLots` still writes). A lot's paper «tarkibi» stays one density
+(costing is fenced off compositions) — stated. Rows name the goods
+(`productNameRu ?? productNameZh` through `boxMeasures`), or «GS777-A /
+GS777-B» could not tell his yostiq from his kafel.
+
+1402. **Every reader keyed by a group was a SILENT failure under a new key**
+(§15.3) — none throws, each just drops words or dollars. The fold's cents
+are keyed `'l:' || b.lot_id`; the Narx line names a client's DISTINCT bands
+(two at most, then «+N») of the lots its part's money sits on (#1405); the re-basis rows stay per
+CLIENT (his 5a) with no single band, the freight target carrying its after
+state per lot (`preview.split`) and the token covering the lots' shares, so a
+lot moving bands behind equal client percentages is a different preview. The
+client roll-up is computed ONCE (`rollupClients`, clients and lots by share)
+— the order is part of the cents a preview prints. Each pinned by a test and
+a fence (`freight-wire`: no `splitGroup`/`GroupView`/`lightLots` anywhere).
+
+1403. **Bills saved under 0132's client grain are re-split ONCE, never
+grain-frozen** (§15.5). The grain is code, not part of the copy (3a freezes
+the tariff, never the arithmetic); freezing it would need 0133, both engines
+and both reader shapes for ever, and would keep the ⓘ-not-held behaviour his
+rule 6 per lot contradicts. `scripts/freight-resplit.ts` (dry run, then
+`--apply` through `recomputeEntry`, each bill on its OWN copy) — run with
+`pnpm exec tsx`, NOT a `package.json` command, because a changed
+`package.json` re-runs the image's install and needs npm on deploy morning
+(#1228). Expected count on his server: 0. Without it an old bill's % (the new
+grain, re-derived) and $ (the old allocations) would disagree on one row,
+and ✎ refuses forcing it (same basis, same copy → `rebase_same`).
+
+1404. **Only the newest three tariff versions carry a per-lot split in the
+page** (`FULL_SPLIT_VERSIONS`). The lot grain multiplies the rows: a
+150-lot truck × 20 versions was 3,000 views in the cost panel's payload on
+the China networks (#752). An older version keeps its digest and its problem
+and says the split is drawn after the save; a version dated after
+`latestTxDate()` takes no slot at all (#1405). And every truck's Xarajatlar
+tab now runs the offer (the `no_column` short-circuit went with the door).
+
+1405. **The design judge's surviving objections, re-checked against the
+SHIPPED code** (81 agents, 38 objections; 18 not refuted by both refuters).
+Six were already true of the build (J6 renamed tests, J19 the `toContain`
+pin, J20/J28 the resplit's logic in `costing/freight-resplit.ts` where a test
+reaches it, J26/J34 no `package.json` command, J27 `--apply` re-splits every
+zone). The rest are fixed, each red-proven by a paired string edit (15/15
+RED, restored by hash):
+- **One cents rule** (J2/J14/J22): `lotCents` splits a bill over its LOTS in
+  KEY order; a client is `clientCentsOf` = Σ of its lots' cents, never a
+  second split over the clients — which differs by a cent (his D on $10.10:
+  0.92 + 5.03 = 5.95, the client split says 5.94). The preview, the fold and
+  the ✎ rows (both columns, read per lot) all ask it; `splitCents` has no
+  other caller (fenced). The ✎ after-fold prints the SERVER's per-lot cents
+  (`afterLotCents`, money sight only) — before, it either printed none or
+  would have re-split a nominal 100 in the bill's own currency.
+- **The Narx line names only the lots its part carries** (J1/J11): a «shu
+  reysgacha» part holding the kafel alone printed the yostiq's row beside the
+  kafel's dollars. `ClientCostPart.freightLotIds` is `array_agg(DISTINCT
+  bx.lot_id)` from the SAME breakdown rows that make the dollars — not a
+  second membership rule, which would have missed the given-back cartons
+  (#513). The rule is pure (`clientBandLine`, J21), distinct by value under
+  both sights, joined «; » (J15); each lot row prints its own % of each bill
+  (J36, his «aynan shu tovar qancha foizdaligi»).
+- **The add form's preview is capped at three clients** (J9): from deploy day
+  every yo'lkira bill on every truck draws it, between the amount and «kim
+  to'ladi»/Saqlash, on every bill of the accountant's loop. «+N mijoz · $X»
+  carries the hidden clients' dollars, split before the cut. The design said
+  five, and the round's own geometry spec (`m9zzzd`, seven clients at
+  360×800) refused it: Saqlash stood **831 px** below the amount. Measured
+  part by part, five two-to-three-line client rows were 471 px and the
+  1a hint a second, three-line sentence of 64 px under the column line. The
+  hint is now that line («{column} narxlari nisbatida bo‘linadi · {from}
+  tarifi» — `freightTableHint` deleted ×4) and the cap is three: **607 px**.
+  The 800 threshold stayed as written; it is the oracle, and the number
+  that moved was the design's.
+- **The durable lines say «nisbatida»** (J12) — the saved row and ✎ read as a
+  mistake on an Andijon truck otherwise; and a derived placeholder fence
+  formats every literal call with the names it passes, in four bundles (J13:
+  `locales.test` compares four copies of one mistake and finds them equal).
+- **Today's version always carries the split** (J16/J29): a version dated
+  after `latestTxDate()` can never be chosen by a save, so it no longer takes
+  one of the three slots; a capped older version says it was checked.
+- **✎ rows in the split's order** (J17), the after split typed as the split
+  arm only (a held after-state is said once), built by `splitView` (J5,
+  pinned by a non-money twin of the same preview).
+- **The resplit tells the truth** (J8/J25): the dry run lists only bills the
+  lot grain would change («0 ta hisob o'zgaradi»), so a run after the deploy
+  cannot read the new code's bills as work; `--apply` prints what is STORED,
+  and names a bill that changed since the list. A kashgar-frozen bill is
+  re-split on its own copy, the copy byte-identical (pinned).
+- **The deploy check is the ledger AND the build** (J25/J33): his server is
+  confirmed at 132, so this deploy may carry 0132; the count must read 133
+  either way. The previous entry's «ustun yozing» step is cancelled in words.
+- **/admin/tarif warns** (J31, `columnWatch` through the save's own
+  `copyDraft`): a hole, an overlap or an open top today or on a typed future
+  date switches freight off on every truck; there is no delete and no
+  save-time check, so the page that makes the mistake now says so.
+- **One rider read for the Narx tab's explain** (J30, `truckRiderBoxIdsFor`):
+  ten feeding trucks were twenty statements one after another.
+Refuted by both and recorded: J4 (count the held trucks first — the dry
+run's job, and 0132 had no column), J7, J10 (lot rows carry the goods), J18,
+J24, J32 (rule 6's blast radius — told to him as a fact, not a defect), J35,
+J37, J38.
+
+1406. **The round reviewed AS BUILT** (five lenses, each finding given a
+skeptic; 16 findings — the six money/reader ones were fixed while the
+skeptics read, which is the moving-tree hazard of #977, so each was
+re-checked against the commit that fixed it). Fixed, each pinned:
+- **A lot's cents are STORED exactly as the preview printed them.** The pool
+  allocated the whole bill over all cartons at $0.0001; the per-carton
+  remainder moved a lot's sum by a few units and handed the spare cent to a
+  different client after «Saqlash» (~7 % of random multi-carton bills).
+  `costPool` now splits the bill per LOT by `lotCents` and only then over the
+  lot's cartons, so every lot holds whole cents; 500 random bills pinned. One
+  consequence stated: a freight share is now whole cents per lot (21.05, not
+  21.0526) — the `cost-pool` literal moved with it.
+- **The resplit decides per BOX.** Comparing printed client totals missed his
+  own D (money moving only between ONE client's yostiq and kafel leaves the
+  total at $1,000), and two roundings (postgres `round` vs `Math.round(1.005
+  × 100)`) plus a label key read untouched bills as work. Before, after and
+  the stored truth now share one row builder (client id / receipt key,
+  integer half-up); `moves` compares stored $0.0001 units per carton. The
+  rounding's own red proof STAYED GREEN, and that is the finding resolved by
+  construction: a lot now holds whole cents, so no new bill has a half-cent
+  client total, and `moves` no longer reads a rounded figure at all — the
+  rounding is printing only (#166: a proof that will not go red is evidence
+  about where the defect went).
+- **A lot row's «hisobning N %» is this truck's cartons' dollars ÷ the bill**,
+  from the breakdown's own rows (one row per lot per freight part, folded in
+  JS — no second pass of the landed fence). The bill-wide lot share printed
+  twice the money the page counts when half a lot continued.
+- **A claimed lot that keeps its marking names its client** («GS500 · 470-A ·
+  Kafel») — a one-lot client's row named nobody while the ✎ rows above it
+  said GS500.
+- **The freight-off sentence names the basis the select holds** («— hajm
+  bo'yicha bo'linadi»), not «og'irlik» whatever was chosen; /admin/tarif's
+  warning no longer claims a basis at all.
+- The batched explain keeps box order (a held list names the same first
+  five lots as the save's note); the per-lot grouping is linear (a 6,000-
+  carton lot was 47 ms of array copies on every recompute and void); the
+  Xarajatlar tab reads its truck's riders once per request (`cache()`).
+- The ✎ and fold sight tests use the SEEDED VED and logist (the VED holds
+  `finance.manage`, so a made-up set could not catch a #790 regression), and
+  a fence requires all three producers to derive `money` from
+  `freightMoneySight`.
+Refuted and recorded: a lot with no measure cannot be written by any door
+(every lot writer validates m³ ≥ 0.0001), so the missing-measure hold is
+named in the deploy words but is not a deploy-day risk; applying a HELD line
+in the resplit is the correct state (the first ordinary recompute would hold
+it anyway) and is now said in UPDATE.md.
+Then CI and the local CI-order run went red on ONE spec, the cap's own
+(`m9zzzd`, 831 px against 800) — no lens had measured a phone. The cap moved
+from five to three and the 1a hint folded into the column line (#1405); the
+unit render test and both e2e specs moved with it, with new literals worked
+by hand («+4 mijoz · 260.79», «+4 mijoz · 10.66 USD»).
+Two more, found while LOOKING at the fix's own screenshots and the rerun:
+- **The Narx tab's «nimadan iborat» list is its own row.** It had lived in
+  the first of the three cost/price/margin columns since round 29 — a third
+  of a 360 px card, ~40 px left for words once the dollars took theirs — and
+  the lot band line («YSH-001 · Yo'lkira · tarif 1000+ · $0.55/kg; 1–100 ·
+  $110/kub») broke every three letters. `col-span-full` under the three
+  numbers; nothing else moved (the same `full && parts.length > 0` gate).
+- **`cents()` of a company-wide difference can be −0.** The full vitest
+  rerun on the e2e-used database failed `balance-unpriced-cargo` 32 with
+  «expected -0 to be +0»: `Math.round(−1e-10 × 100) / 100` is −0 and
+  `toBe(0)` is `Object.is`. Green on a fresh database because the noise needs
+  a big balance to fall below zero (#653's oracle). The four files whose
+  `cents` helper feeds a difference-to-zero assertion add `+ 0`.

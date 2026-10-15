@@ -23,6 +23,12 @@ vi.mock('@/modules/platform/jobs/boss', async (original) => ({
     queued.push(args);
   },
 }));
+// His 1a: ONE column for every truck. The file points that one column at its
+// own private one through the column's single seam (a function, asked at call
+// time), and never writes a row into the real `cn` column — a tariff row is
+// configuration that reprices seals in other files (#824, #183).
+const seam = vi.hoisted(() => ({ zone: '' }));
+vi.mock('@/modules/wms/costing/freight-zone', () => ({ freightSplitZone: () => seam.zone }));
 
 import postgres from 'postgres';
 import { db, pgClient } from '@/modules/platform/db/client';
@@ -44,9 +50,9 @@ import {
   userRoles,
   users,
   warehouses,
-  warehouseTariffColumns,
 } from '@/modules/platform/db/schema';
 import type { Actor } from '@/modules/platform/rbac/authorize';
+import { ROLE_MATRIX } from '@/modules/platform/rbac/catalog';
 import {
   addCostEntry,
   batchClientCostBreakdown,
@@ -57,34 +63,37 @@ import {
 } from '@/modules/wms/costing/service';
 import * as costingService from '@/modules/wms/costing/service';
 import { liveFreightBills, rollbackFreightBills } from '@/modules/wms/costing/freight-rollback';
-import { explainBreakdown, explainFreightBills } from '@/modules/wms/costing/freight-offer';
-import { splitGroup } from '@/modules/wms/costing/freight-split';
+import { explainBreakdown, explainFreightBills, freightOffer } from '@/modules/wms/costing/freight-offer';
+import { clientBandLine, lotsOfClient, splitLot } from '@/modules/wms/costing/freight-split';
 import { prepareFreightCopy } from '@/modules/wms/costing/freight-copy';
-import { mappableZones, setTariffColumnInTx, tariffColumnOf } from '@/modules/wms/costing/tariff-column';
+import { offTheOneColumn, resplitApply, resplitPlan, resplitStored } from '@/modules/wms/costing/freight-resplit';
 import { setBoxStatus } from '@/modules/wms/boxes/status';
 import { editLot } from '@/modules/wms/receipts/edit';
 import { CUSTOMS_CODES_SETTING, parseCustomsCodes } from '@/modules/wms/calc/customs-codes';
 import { updateWarehouseAction } from '@/app/(protected)/admin/warehouses/actions';
 import { addCostEntryAction, rebaseCostAction } from '@/app/(protected)/costs/actions';
+import { rebaseCost } from '@/modules/wms/costing/rebase';
 
 /**
  * docs/YOLKIRA-TAQSIMOT.md §11 — the yo'lkira-tarifi split against a real
- * database: his example's shares, the freeze (3a), his rule 6 (a light
- * client HOLDS the bill, fixing the lot heals it), the void guard, the
- * refusals in words, and the warehouse form keeping its column (#171).
+ * database: his example's shares (each LOT on its own row, his 2b), the
+ * freeze (3a), his rule 6 per lot (a light lot HOLDS the bill, fixing it
+ * heals it), the void guard, the refusals in words, one column for every
+ * truck (his 1a — a stale warehouse page that still posts one is not read),
+ * and the one-shot re-split of a bill saved under the old client grain.
  *
  * Money parked in 1656, a year no other file uses (it was 1637, where
  * truck-riders reads whole months and deletes its year when it ends), tariff columns under ONE private run prefix `t_<n><run>_…`, swept
  * before and deleted as a FINAL TEST (#824 — never afterAll, whose failure
- * nobody sees). A warehouse column is CONFIGURATION (#183); the private
- * warehouses are deactivated, never deleted (audit FK).
+ * nobody sees). The private warehouses are deactivated, never deleted
+ * (audit FK).
  */
 const RUN = String(Date.now()).slice(-6);
 let counter = 0;
 const zone = (name: string) => `t_${(counter += 1)}${RUN}_${name}`;
-const ZONE = { main: zone('main'), alt: zone('alt'), gap: zone('gap'), frz: zone('frz'), long: '' };
+const ZONE = { main: zone('main'), alt: zone('alt'), gap: zone('gap'), frz: zone('frz'), old: zone('old'), fut: zone('fut'), long: '' };
 ZONE.long = `t_${(counter += 1)}${RUN}_long_${'x'.repeat(80)}`;
-const SWEEP = /^t_[0-9a-z]+_(main|alt|gap|frz|long_x+)$/;
+const SWEEP = /^t_[0-9a-z]+_(main|alt|gap|frz|old|fut|long_x+)$/;
 const TARIFF_DAY = '1656-01-01';
 const DAY = '1656-03-14';
 const PRIVATE_CUSTOMS = `t_frc_${RUN}`;
@@ -145,20 +154,28 @@ async function mintLot(opts: {
   dims?: [number, number, number];
   boxKg?: string;
   marking?: string;
+  /** Put the lot in an EXISTING prixod (his 2b: two lots of one prixod are two rows). */
+  receiptId?: string;
+  letter?: string;
+  goods?: string;
 }) {
   const count = opts.count ?? 1;
-  const [receipt] = await db
-    .insert(receipts)
-    .values({
-      warehouseId: whW,
-      clientId: opts.client,
-      unclaimedMarking: opts.client ? null : (opts.marking ?? `FBMARK${RUN}`),
-      status: 'confirmed',
-      confirmedAt: new Date(),
-      createdBy: actorId,
-    })
-    .returning();
-  made.receipts.push(receipt!.id);
+  let receipt: { id: string } | undefined;
+  if (opts.receiptId) receipt = { id: opts.receiptId };
+  else {
+    [receipt] = await db
+      .insert(receipts)
+      .values({
+        warehouseId: whW,
+        clientId: opts.client,
+        unclaimedMarking: opts.client ? null : (opts.marking ?? `FBMARK${RUN}`),
+        status: 'confirmed',
+        confirmedAt: new Date(),
+        createdBy: actorId,
+      })
+      .returning();
+    made.receipts.push(receipt!.id);
+  }
   const uniform = Boolean(opts.dims);
   const totalKg = uniform ? Number(opts.boxKg) * count : opts.kg!;
   const totalM3 = uniform ? Math.round((opts.dims![0] * opts.dims![1] * opts.dims![2] * count) / 100) / 10000 : opts.m3!;
@@ -166,10 +183,11 @@ async function mintLot(opts: {
     .insert(receiptLots)
     .values({
       receiptId: receipt!.id,
-      seq: 1,
-      letter: 'A',
+      seq: opts.letter ? opts.letter.charCodeAt(0) - 64 : 1,
+      letter: opts.letter ?? 'A',
       dimsMode: uniform ? 'uniform' : 'mixed',
       productNameZh: '测试货',
+      productNameRu: opts.goods ?? null,
       boxCount: count,
       boxLengthCm: opts.dims?.[0] ?? null,
       boxWidthCm: opts.dims?.[1] ?? null,
@@ -226,8 +244,15 @@ async function mintTruck(boxIds: string[], from = whW) {
   return batch!.id;
 }
 
-async function mapColumn(warehouseId: string, z: string | null) {
-  await db.transaction((tx) => setTariffColumnInTx(tx, warehouseId, z));
+/** The one column pointed at another private column for one block, and back (his 1a has no door). */
+async function withZone<T>(z: string, run: () => Promise<T>): Promise<T> {
+  const was = seam.zone;
+  seam.zone = z;
+  try {
+    return await run();
+  } finally {
+    seam.zone = was;
+  }
 }
 
 async function bill(batchId: string, amount: number, over: Partial<Parameters<typeof addCostEntry>[0]> = {}) {
@@ -274,14 +299,7 @@ async function sweepPrivateZones() {
   const zones = (await db.selectDistinct({ zone: calcFreightTariffs.zone }).from(calcFreightTariffs))
     .map((r) => r.zone)
     .filter((z) => SWEEP.test(z));
-  const mapped = (await db.select({ zone: warehouseTariffColumns.tariffZone }).from(warehouseTariffColumns))
-    .map((r) => r.zone)
-    .filter((z) => SWEEP.test(z));
-  const all = [...new Set([...zones, ...mapped])];
-  if (all.length) {
-    await db.delete(warehouseTariffColumns).where(inArray(warehouseTariffColumns.tariffZone, all));
-    await db.delete(calcFreightTariffs).where(inArray(calcFreightTariffs.zone, all));
-  }
+  if (zones.length) await db.delete(calcFreightTariffs).where(inArray(calcFreightTariffs.zone, zones));
 }
 
 beforeAll(async () => {
@@ -331,7 +349,15 @@ beforeAll(async () => {
     [1000, null, 0.5, true],
   ]);
   await tariffRows(ZONE.long, [[1, null, 100, false]]);
-  await mapColumn(whW, ZONE.main);
+  // Test 15's «a column other than the one table» (test 2 edits frz).
+  // A column whose newest three versions no save can choose (after tomorrow).
+  await tariffRows(ZONE.fut, [[1, null, 100, false]]);
+  for (const d of ['2099-01-01', '2099-02-01', '2099-03-01']) await tariffRows(ZONE.fut, [[1, null, 150, false]], d);
+  await tariffRows(ZONE.old, [
+    [1, 500, 100, false],
+    [501, null, 300, false],
+  ]);
+  seam.zone = ZONE.main;
 });
 
 afterAll(async () => {
@@ -339,23 +365,25 @@ afterAll(async () => {
 });
 
 describe('his example on a real truck', () => {
-  it('1 — a freight bill splits A 600 / B 200 / unclaimed 55 of $855, freezes its column and records it', async () => {
-    // A: two lots, 100 and 1100 kg/m³ → combined 1200 kg / 2 m³ = 600 → $300 × 2 = 600.
-    // B: 1 m³ at 160 → $200. Unclaimed: 0.5 m³ at 100 → $110 × 0.5 = 55. Σ 855.
+  it('1 — his 2b: each LOT on its own row — A 715 / B 200 / unclaimed 55 of $970, the copy frozen and recorded', async () => {
+    // A: ONE prixod with two lots — yostiq 100 kg/m³ → $110, kafel 1100 kg/m³
+    // → $0.55 × 1100 = $605 (the client grain read 600 → $300 × 2 = 600).
+    // B: 1 m³ at 160 → $200. Unclaimed: 0.5 m³ at 100 → $110 × 0.5 = 55. Σ 970.
     const A = await mintClient('A');
     const B = await mintClient('B');
-    const a1 = await mintLot({ client: A, kg: 100, m3: 1 });
-    const a2 = await mintLot({ client: A, kg: 1100, m3: 1 });
+    const a1 = await mintLot({ client: A, kg: 100, m3: 1, goods: 'Yostiq' });
+    const a2 = await mintLot({ client: A, kg: 1100, m3: 1, receiptId: a1.receiptId, letter: 'B', goods: 'Kafel' });
     const b = await mintLot({ client: B, kg: 160, m3: 1 });
     const u = await mintLot({ client: null, kg: 50, m3: 0.5 });
     const truck = await mintTruck([...a1.boxIds, ...a2.boxIds, ...b.boxIds, ...u.boxIds]);
 
-    const entry = await bill(truck, 855);
+    const entry = await bill(truck, 970);
     expect(entry.id).toBeTruthy();
     expect(entry.verdict).toEqual({ kind: 'split' });
-    expect(await byClient(entry.id)).toEqual({ [A]: 600, [B]: 200, unclaimed: 55 });
+    expect(await byClient(entry.id)).toEqual({ [A]: 715, [B]: 200, unclaimed: 55 });
 
     const [copy] = await db.select().from(costEntryTariffs).where(eq(costEntryTariffs.costEntryId, entry.id));
+    // The origin rides as provenance only (his 1a: it no longer chooses the column).
     expect(copy).toMatchObject({ warehouseId: whW, tariffZone: ZONE.main, tariffFrom: TARIFF_DAY, lightBelow: 10 });
     expect((copy!.bands as unknown[]).length).toBe(4);
 
@@ -369,17 +397,35 @@ describe('his example on a real truck', () => {
       tariffFrom: TARIFF_DAY,
       tariffBands: '1–100 $110; 101–500 $200; 501–999 $300; 1000+ $0.55/kg',
     });
+
+    // The fold reads the SAME lots, its cents keyed per lot (adding up per
+    // client), and a client's lots name their own bands — the largest first.
+    const views = await explainFreightBills(
+      [{ id: entry.id, batchId: truck, costTypeId: freightType, allocationBasis: 'freight', amountUsd: '970', hasShare: true }],
+      { permissions: new Set(['finance.manage']) },
+    );
+    const view = views.get(entry.id)!;
+    expect(view.allocatedUsd).toEqual({
+      [`l:${a1.lotId}`]: 110,
+      [`l:${a2.lotId}`]: 605,
+      [`l:${b.lotId}`]: 200,
+      [`l:${u.lotId}`]: 55,
+    });
+    const aLots = lotsOfClient(view.view, `c:${A}`);
+    expect(aLots.map((l) => [l.label, l.goods, l.density, l.band.min])).toEqual([
+      [`FA${RUN}`.slice(0, 10) + '-B', 'Kafel', 1100, 1000],
+      [`FA${RUN}`.slice(0, 10) + '-A', 'Yostiq', 100, 1],
+    ]);
+    expect(view.view?.kind === 'split' && view.view.clients.find((c) => c.key === `c:${A}`)?.share).toBeCloseTo(715 / 970, 9);
   });
 
-  it('2 — the freeze (3a): a same-date overwrite, a back-dated row and a remap move NOTHING', async () => {
+  it('2 — the freeze (3a): a same-date overwrite, a back-dated row and a changed column move NOTHING', async () => {
     const A = await mintClient('FA');
     const B = await mintClient('FB');
     const a = await mintLot({ client: A, kg: 600, m3: 1 }); // 600 → $300
     const b = await mintLot({ client: B, kg: 200, m3: 1 }); // 200 → $100
-    const W2 = await mintWarehouse(`FZ${RUN}`.slice(0, 8), 'CN');
-    await mapColumn(W2, ZONE.frz);
-    const truck = await mintTruck([...a.boxIds, ...b.boxIds], W2);
-    const entry = await bill(truck, 400);
+    const truck = await mintTruck([...a.boxIds, ...b.boxIds]);
+    const entry = await withZone(ZONE.frz, () => bill(truck, 400));
     expect(await byClient(entry.id)).toEqual({ [A]: 300, [B]: 100 });
 
     await db
@@ -387,15 +433,15 @@ describe('his example on a real truck', () => {
       .set({ priceUsd: '100' })
       .where(and(eq(calcFreightTariffs.zone, ZONE.frz), eq(calcFreightTariffs.minDensity, '501.00')));
     await tariffRows(ZONE.frz, [[1, 500, 1, false]], '1655-06-01');
-    await mapColumn(W2, ZONE.alt);
-    await recomputeEntry(entry.id);
+    // The one column itself pointed elsewhere (a code change, never a door):
+    // the saved bill keeps the copy it froze.
+    await withZone(ZONE.alt, () => recomputeEntry(entry.id));
     expect(await byClient(entry.id)).toEqual({ [A]: 300, [B]: 100 });
-    await db.update(warehouses).set({ active: false }).where(eq(warehouses.id, W2));
   });
 });
 
-describe('his rule 6 — a light client holds the bill, and the lot door heals it', () => {
-  it('3 — a client under 10 kg/m³ HOLDS the bill; correcting the lot splits it with no other call', async () => {
+describe('his rule 6 per lot — a light lot holds the bill, and the lot door heals it', () => {
+  it('3 — a lot under 10 kg/m³ HOLDS the bill; correcting the lot splits it with no other call', async () => {
     const A = await mintClient('LA');
     const C = await mintClient('LC');
     const a = await mintLot({ client: A, kg: 600, m3: 1 });
@@ -404,7 +450,7 @@ describe('his rule 6 — a light client holds the bill, and the lot door heals i
     const entry = await bill(truck, 500);
     expect(entry.verdict?.kind).toBe('held');
     if (entry.verdict?.kind !== 'held' || entry.verdict.held.reason !== 'cargo') throw new Error('expected a cargo hold');
-    expect(entry.verdict.held.tooLight.map((g) => [g.key, g.density])).toEqual([[`c:${C}`, 5]]);
+    expect(entry.verdict.held.tooLight.map((l) => [l.lotId, l.density])).toEqual([[c.lotId, 5]]);
     expect(await byClient(entry.id)).toEqual({});
 
     await editLot(
@@ -456,18 +502,36 @@ describe('his rule 6 — a light client holds the bill, and the lot door heals i
 });
 
 describe('the void guard asks «is the money somewhere», not «did it split»', () => {
-  it('4 — voiding the carton that made a client heavy is ALLOWED; the bill becomes held', async () => {
+  it('4 — his 2b: one light lot holds the bill at SAVE; voiding the heavy carton keeps it held, voiding the light one heals it', async () => {
     const D = await mintClient('VD');
     const heavy = await mintLot({ client: D, kg: 300, m3: 1 });
     const light = await mintLot({ client: D, kg: 5, m3: 1 });
-    const truck = await mintTruck([...heavy.boxIds, ...light.boxIds]);
+    const second = await mintLot({ client: D, kg: 300, m3: 1 });
+    const truck = await mintTruck([...heavy.boxIds, ...light.boxIds, ...second.boxIds]);
     const entry = await bill(truck, 100);
-    expect(entry.verdict).toEqual({ kind: 'split' });
+    // The client grain read 605 / 3 = 202 and split; per lot the 5 kg/m³ lot is a typo.
+    expect(entry.verdict?.kind).toBe('held');
+    if (entry.verdict?.kind !== 'held' || entry.verdict.held.reason !== 'cargo') throw new Error('expected a cargo hold');
+    expect(entry.verdict.held.tooLight.map((l) => [l.lotId, l.density])).toEqual([[light.lotId, 5]]);
 
+    // Held → held: the money stays named, so the void is ALLOWED (homed).
     await setBoxStatus({ boxId: heavy.boxIds[0]!, to: 'void', reason: 'counted twice by mistake' }, ctx());
-    const verdict = await recomputeEntry(entry.id);
-    expect(verdict?.kind).toBe('held');
-    expect(await byClient(entry.id)).toEqual({});
+    expect((await recomputeEntry(entry.id))?.kind).toBe('held');
+    // Voiding the light lot's carton HEALS it: the second heavy lot takes it all.
+    await setBoxStatus({ boxId: light.boxIds[0]!, to: 'void', reason: 'counted twice by mistake' }, ctx());
+    expect((await recomputeEntry(entry.id))?.kind).toBe('split');
+    expect(await byClient(entry.id)).toEqual({ [D]: 100 });
+  });
+
+  it('4a — a HELD bill’s last carton cannot be voided (held is homed, «nothing» is not)', async () => {
+    const H = await mintClient('VH');
+    const only = await mintLot({ client: H, kg: 5, m3: 1 });
+    const truck = await mintTruck(only.boxIds);
+    const entry = await bill(truck, 100);
+    expect(entry.verdict?.kind).toBe('held');
+    await expect(
+      setBoxStatus({ boxId: only.boxIds[0]!, to: 'void', reason: 'counted twice by mistake' }, ctx()),
+    ).rejects.toMatchObject({ code: 'shared_cost_orphaned' });
   });
 
   it('4b — voiding the truck’s ONLY cargo is refused as before (no box to hold the money)', async () => {
@@ -541,28 +605,22 @@ describe('refusals name what to fix (tariff CONFIGURATION only)', () => {
     return null;
   };
 
-  it('6 — no column, a date before the column, a hole, a customs type, a receipt scope', async () => {
+  it('6 — his 1a: a truck from a warehouse nobody configured prices; a date before the column, a hole, a customs type, a receipt scope refuse', async () => {
+    // No warehouse carries a column any more: whU's truck reads the one table.
     const truckU = await mintTruck([], whU);
-    const wh = (await db.query.warehouses.findFirst({ where: eq(warehouses.id, whU) }))!;
-    expect(await refusal(prepareFreightCopy(freightInput(truckU)))).toEqual({
-      code: 'freight_no_column',
-      params: { warehouse: `${wh.code} — ${wh.name}` },
-    });
+    const draft = await prepareFreightCopy(freightInput(truckU));
+    expect(draft).toMatchObject({ zone: ZONE.main, warehouseId: whU, tariffFrom: TARIFF_DAY });
 
     const truck = await mintTruck([]);
-    expect(await refusal(prepareFreightCopy(freightInput(truck, { costDate: '1655-12-31' })))).toMatchObject({
+    expect(await refusal(prepareFreightCopy(freightInput(truck, { costDate: '1655-12-31' })))).toEqual({
       code: 'freight_zone_unpriced',
       params: { column: ZONE.main, date: '1655-12-31' },
     });
 
-    const Wg = await mintWarehouse(`FG${RUN}`.slice(0, 8), 'CN');
-    await mapColumn(Wg, ZONE.gap);
-    const truckG = await mintTruck([], Wg);
-    expect(await refusal(prepareFreightCopy(freightInput(truckG)))).toEqual({
+    expect(await withZone(ZONE.gap, () => refusal(prepareFreightCopy(freightInput(truck))))).toEqual({
       code: 'freight_tariff_gap',
       params: { column: ZONE.gap, from: 501, to: 999 },
     });
-    await db.update(warehouses).set({ active: false }).where(eq(warehouses.id, Wg));
 
     expect(await refusal(prepareFreightCopy(freightInput(truck, { costTypeId: customsType })))).toEqual({
       code: 'freight_on_customs',
@@ -575,14 +633,11 @@ describe('refusals name what to fix (tariff CONFIGURATION only)', () => {
   });
 
   it('6b — a long zone name the tariff writer allows is a legal column (no cap in 0132)', async () => {
-    const Wl = await mintWarehouse(`FL${RUN}`.slice(0, 8), 'CN');
-    await mapColumn(Wl, ZONE.long);
     const G = await mintClient('LG');
     const g = await mintLot({ client: G, kg: 300, m3: 1 });
-    const truck = await mintTruck(g.boxIds, Wl);
-    const entry = await bill(truck, 70);
+    const truck = await mintTruck(g.boxIds);
+    const entry = await withZone(ZONE.long, () => bill(truck, 70));
     expect(await byClient(entry.id)).toEqual({ [G]: 70 });
-    await db.update(warehouses).set({ active: false }).where(eq(warehouses.id, Wl));
   });
 });
 
@@ -628,30 +683,20 @@ describe('the doors as the buttons press them', () => {
     }
   };
 
-  it('W — the form sets the column, an address-only post KEEPS it, «—» deletes it, an unknown one is refused', async () => {
+  it('W — his 1a: a page drawn before the deploy that still POSTS a tariff column is not read (no row, no history)', async () => {
     await signIn(adminId);
     const wh = (await db.query.warehouses.findFirst({ where: eq(warehouses.id, whU) }))!;
-    expect((await mappableZones(null)).some((z) => z.zone === ZONE.main && z.priced)).toBe(true);
-
-    expect(await press(post(wh, { tariffZone: ` ${ZONE.main.toUpperCase()} ` }))).toBe('redirected');
-    expect(await tariffColumnOf(whU)).toBe(ZONE.main);
-
-    // A page drawn one migration behind posts no field at all: leave it alone.
-    expect(await press(post(wh, { address: 'new address' }))).toBe('redirected');
-    expect(await tariffColumnOf(whU)).toBe(ZONE.main);
-
-    const refused = await press(post(wh, { tariffZone: 'no_such_column', address: 'kept' }));
-    expect(refused).toMatchObject({ error: 'zone_unknown', values: { address: 'kept', tariffZone: 'no_such_column' } });
-    expect(await tariffColumnOf(whU)).toBe(ZONE.main);
-
-    expect(await press(post(wh, { tariffZone: '' }))).toBe('redirected');
-    expect(await tariffColumnOf(whU)).toBeNull();
-
+    expect(await press(post(wh, { tariffZone: 'cn', address: 'new address' }))).toBe('redirected');
+    const mapped = await db.execute<{ n: number }>(
+      sql`SELECT count(*)::int AS n FROM warehouse_tariff_columns WHERE warehouse_id = ${whU}::uuid`,
+    );
+    expect(Number(mapped[0]!.n)).toBe(0);
     const history = await db
       .select()
       .from(auditLog)
       .where(and(eq(auditLog.entityId, whU), eq(auditLog.action, 'update')));
-    expect(history.some((h) => (h.after as { tariffZone?: string })?.tariffZone === ZONE.main)).toBe(true);
+    expect(history.at(-1)?.after).toMatchObject({ address: 'new address' });
+    expect(history.some((h) => 'tariffZone' in ((h.after as object) ?? {}))).toBe(false);
     session.user = null;
   });
 
@@ -752,17 +797,100 @@ describe('the Narx tab names the band of the bill that billed it (§7.4, E6)', (
     expect(breakdown.get(B)).toBeUndefined();
 
     const views = await explainBreakdown(breakdown, { permissions: new Set(['finance.manage']) });
-    const group = splitGroup(views.get(entry.id)?.view, `c:${A}`);
+    const [group] = lotsOfClient(views.get(entry.id)?.view, `c:${A}`);
     expect(group?.band).toEqual({ min: 101, max: 500, price: 200, perKg: false });
     // The BILL's split (A and B over T1's riders), not a re-run over T2's
     // riders, where A alone would read 100 % (E6).
     expect(group?.share).toBeCloseTo(200 / 805, 6);
-    expect(views.get(entry.id)?.warehouseCode).toBe(`FW${RUN}`.slice(0, 8));
+    expect(views.get(entry.id)?.zone).toBe(ZONE.main);
     // A reader without money sight gets the row, never its price — not even
     // in the page payload (review: the band carried the list rate the
     // stripped `ratePerM3` was hiding).
-    const plain = await explainBreakdown(breakdown, { permissions: new Set(['ved.docs', 'costs.enter_batch']) });
-    expect(splitGroup(plain.get(entry.id)?.view, `c:${A}`)?.band).toEqual({ min: 101, max: 500, perKg: false });
+    // The SEEDED VED and logist (the VED holds finance.manage — a gate keyed
+    // on that grant would hand them the price, #790): never a made-up set.
+    for (const role of ['ved_manager', 'logist'] as const) {
+      const plain = await explainBreakdown(breakdown, { permissions: new Set<string>(ROLE_MATRIX[role]) });
+      expect(lotsOfClient(plain.get(entry.id)?.view, `c:${A}`)[0]?.band, role).toEqual({ min: 101, max: 500, perKg: false });
+      expect(plain.get(entry.id)?.amountUsd, role).toBeUndefined();
+      expect(plain.get(entry.id)?.allocatedUsd, role).toBeUndefined();
+    }
+  });
+
+  it('10p — his D on an earlier leg, only the kafel continues: the carried part names the kafel row alone, and the lot its own % (judge J1, J36)', async () => {
+    const D = await mintClient('PD');
+    const yostiq = await mintLot({ client: D, kg: 100, m3: 1, goods: 'Yostiq' });
+    const kafel = await mintLot({ client: D, kg: 1100, m3: 1, receiptId: yostiq.receiptId, letter: 'B', goods: 'Kafel' });
+    const t1 = await mintLeg([...yostiq.boxIds, ...kafel.boxIds], whW, whU, new Date(Date.now() - 120_000));
+    const t2 = await mintLeg(kafel.boxIds, whU, whD, new Date(Date.now() - 60_000));
+    // yostiq 1 m³ × $110, kafel 1100 kg × $0.55 = $605 → 110 / 605 of 715.
+    const entry = await bill(t1, 715);
+
+    const breakdown = await batchClientCostBreakdown(t2);
+    const part = (breakdown.get(D) ?? []).find((p) => p.freightEntryId === entry.id);
+    expect(part, 'the first leg’s bill reaches the second as «shu reysgacha»').toBeTruthy();
+    expect(part!.usd).toBe(605);
+    expect(part!.freightLotIds).toEqual([kafel.lotId]);
+
+    const views = await explainBreakdown(breakdown, { permissions: new Set(['finance.manage']) });
+    const view = views.get(entry.id)?.view;
+    // Unfiltered, the client spans two rows; the part names the one its money is on.
+    expect(clientBandLine(view, `c:${D}`, null, { money: true })?.bands.map((b) => b.range)).toEqual(['1000+', '1–100']);
+    expect(clientBandLine(view, `c:${D}`, part!.freightLotIds, { money: true })).toEqual({
+      bands: [{ key: 'freightBandMoneyPerKg', range: '1000+', price: '$0.55' }],
+      more: 0,
+    });
+    // The lot's own % of the bill — his «aynan shu tovar qancha foizdaligi».
+    expect(splitLot(view, kafel.lotId)?.share).toBeCloseTo(605 / 715, 9);
+    expect(splitLot(view, yostiq.lotId)?.share).toBeCloseTo(110 / 715, 9);
+    expect(part!.freightLotUsd).toEqual({ [kafel.lotId]: 605 });
+    expect(views.get(entry.id)?.amountUsd).toBe(715);
+  });
+
+  it('10r — only HALF of a lot continues: the lot row’s % is this truck’s cartons’ dollars, not the whole lot’s (the review as built)', async () => {
+    const D = await mintClient('RD');
+    const E = await mintClient('RE');
+    const a = await mintLot({ client: D, kg: 3000, m3: 10, count: 10 });
+    const b = await mintLot({ client: E, kg: 3000, m3: 10, count: 10 });
+    const t1 = await mintLeg([...a.boxIds, ...b.boxIds], whW, whU, new Date(Date.now() - 120_000));
+    const t2 = await mintLeg(a.boxIds.slice(0, 5), whU, whD, new Date(Date.now() - 60_000));
+    // Same band, same m³: A is 50 % of T1's $1,000 — but only five of its ten cartons ride T2.
+    const entry = await bill(t1, 1000);
+    const part = ((await batchClientCostBreakdown(t2)).get(D) ?? []).find((p) => p.freightEntryId === entry.id)!;
+    expect(part.usd).toBe(250);
+    expect(part.freightLotUsd).toEqual({ [a.lotId]: 250 });
+    const views = await explainBreakdown(new Map([[D, [part]]]), { permissions: new Set(['finance.manage']) });
+    // The bill-wide share says 50 %; the page's money says 25 % — the line prints the page's.
+    expect(splitLot(views.get(entry.id)?.view, a.lotId)?.share).toBeCloseTo(0.5, 9);
+    expect(part.freightLotUsd[a.lotId]! / views.get(entry.id)!.amountUsd!).toBeCloseTo(0.25, 9);
+  });
+});
+
+describe('the offer’s whole-split versions (judge J16)', () => {
+  it('6c — three versions dated after any day a cost may carry take no slot: today’s version is drawn whole', async () => {
+    const X = await mintClient('VX');
+    const a = await mintLot({ client: X, kg: 300, m3: 1 });
+    const truck = await mintTruck(a.boxIds);
+    const offer = await withZone(ZONE.fut, () => freightOffer({ permissions: new Set(['finance.manage']) }, truck));
+    expect(offer.status).toBe('ready');
+    if (offer.status !== 'ready') return;
+    expect(offer.versions.map((v) => v.from)).toEqual([TARIFF_DAY]);
+    expect(offer.versions[0]!.split?.kind).toBe('split');
+    expect(offer.firstFrom).toBe(TARIFF_DAY);
+  });
+});
+
+describe('one rider read for many trucks (judge J30)', () => {
+  it('10q — one rider read for every listed truck gives each truck exactly its own riders (judge J30)', async () => {
+    const X = await mintClient('QX');
+    const a = await mintLot({ client: X, kg: 300, m3: 1 });
+    const b = await mintLot({ client: X, kg: 300, m3: 1 });
+    const t1 = await mintTruck([...a.boxIds]);
+    const t2 = await mintTruck([...a.boxIds, ...b.boxIds]);
+    const got = await costingService.truckRiderBoxIdsFor([t1, t2]);
+    for (const t of [t1, t2]) {
+      expect([...(got.get(t) ?? [])].sort()).toEqual([...(await costingService.truckRiderBoxIds(t))].sort());
+    }
+    expect(await costingService.truckRiderBoxIdsFor([])).toEqual(new Map());
   });
 });
 
@@ -835,7 +963,7 @@ describe('the re-basis door (§8, his 5a) as the button presses it', () => {
     await db.insert(userRoles).values({ userId: vedId, roleId: vedRole!.id });
   });
 
-  it('7 — preview, a remap refused with a fresh preview, a concurrent change, the save, and the pairing', async () => {
+  it('7 — preview, a tariff edit refused with a fresh preview, a concurrent change, the save, and the pairing', async () => {
     await signIn(adminId);
     const entry = await bill(truck, 100, { allocationBasis: 'weight' });
     const weight = await byClient(entry.id);
@@ -844,22 +972,38 @@ describe('the re-basis door (§8, his 5a) as the button presses it', () => {
     // (a) The preview names who moves how much; nothing is written.
     const p1 = await rebaseCostAction({ entryId: entry.id, basis: 'freight' });
     expect(p1.ok).toBe(false);
+    // In the split's own order (judge J17): the larger after-share first.
     expect(p1.rebase?.rows.map((r) => [r.label, r.beforePct, r.afterPct, r.beforeUsd, r.afterUsd])).toEqual([
-      [`FRA${RUN}`.slice(0, 10), 21.43, 24.84, 21.43, 24.84],
       [`FRB${RUN}`.slice(0, 10), 78.57, 75.16, 78.57, 75.16],
+      [`FRA${RUN}`.slice(0, 10), 21.43, 24.84, 21.43, 24.84],
     ]);
+    // The after-fold's dollars are the server's, per lot, and add up to the
+    // rows above them (one cents rule, judge J14).
+    const afterLots = p1.rebase?.afterLotCents ?? {};
+    for (const row of p1.rebase!.rows) {
+      const lots = p1.rebase!.split!.lots.filter((l) => l.clientKey === row.key);
+      expect(Math.round(lots.reduce((a, l) => a + afterLots[l.key]! * 100, 0)) / 100).toBe(row.afterUsd);
+    }
     expect(p1.rebase?.column).toMatchObject({ zone: ZONE.main, tariffFrom: TARIFF_DAY, previousZone: null });
     expect(await basisOf(entry.id)).toBe('weight');
 
-    // A remap between the preview and the press: refused WITH the fresh preview (T4).
-    await mapColumn(whW, ZONE.alt);
-    const stale = await rebaseCostAction({ entryId: entry.id, basis: 'freight', seen: p1.rebase!.seen });
-    expect(stale).toMatchObject({ ok: false, error: 'rebase_changed' });
-    expect(stale.rebase?.column?.zone).toBe(ZONE.alt);
-    expect(await basisOf(entry.id)).toBe('weight');
-    expect(await copies(entry.id)).toEqual([]);
-    expect(await byClient(entry.id)).toEqual(weight);
-    await mapColumn(whW, ZONE.main);
+    // A tariff edit between the preview and the press (a same-date overwrite
+    // of A's band): refused WITH the fresh preview (T4) — 210 / (210 + 605).
+    await db.execute(sql`
+      UPDATE calc_freight_tariffs SET price_usd = '210'
+       WHERE zone = ${ZONE.main} AND effective_date = ${TARIFF_DAY} AND min_density = '101.00'`);
+    try {
+      const stale = await rebaseCostAction({ entryId: entry.id, basis: 'freight', seen: p1.rebase!.seen });
+      expect(stale).toMatchObject({ ok: false, error: 'rebase_changed' });
+      expect(stale.rebase?.rows.map((r) => r.afterPct)).toEqual([74.23, 25.77]);
+      expect(await basisOf(entry.id)).toBe('weight');
+      expect(await copies(entry.id)).toEqual([]);
+      expect(await byClient(entry.id)).toEqual(weight);
+    } finally {
+      await db.execute(sql`
+        UPDATE calc_freight_tariffs SET price_usd = '200'
+         WHERE zone = ${ZONE.main} AND effective_date = ${TARIFF_DAY} AND min_density = '101.00'`);
+    }
 
     // (b) A concurrent re-basis lands while the save waits on the row: changed.
     const p2 = await rebaseCostAction({ entryId: entry.id, basis: 'freight' });
@@ -904,12 +1048,14 @@ describe('the re-basis door (§8, his 5a) as the button presses it', () => {
     const back = await rebaseCostAction({ entryId: entry.id, basis: 'freight' });
     expect((await rebaseCostAction({ entryId: entry.id, basis: 'freight', seen: back.rebase!.seen })).ok).toBe(true);
     expect(await copies(entry.id)).toEqual([ZONE.main]);
-    await mapColumn(whW, ZONE.alt);
-    const moved = await rebaseCostAction({ entryId: entry.id, basis: 'freight' });
-    expect(moved.rebase?.column).toMatchObject({ zone: ZONE.alt, previousZone: ZONE.main });
-    expect((await rebaseCostAction({ entryId: entry.id, basis: 'freight', seen: moved.rebase!.seen })).ok).toBe(true);
+    // A bill frozen on ANOTHER column than the one table (a pre-1a «kashgar»
+    // copy is exactly this): ✎ names both columns and moves it (3a + 5a).
+    await withZone(ZONE.alt, async () => {
+      const moved = await rebaseCostAction({ entryId: entry.id, basis: 'freight' });
+      expect(moved.rebase?.column).toMatchObject({ zone: ZONE.alt, previousZone: ZONE.main });
+      expect((await rebaseCostAction({ entryId: entry.id, basis: 'freight', seen: moved.rebase!.seen })).ok).toBe(true);
+    });
     expect(await copies(entry.id)).toEqual([ZONE.alt]);
-    await mapColumn(whW, ZONE.main);
     await voidCostEntry(entry.id, 'test', ctx(), { mayMoveTill: true });
     expect(await copies(entry.id)).toEqual([ZONE.alt]);
     session.user = null;
@@ -1000,12 +1146,28 @@ describe('the re-basis door (§8, his 5a) as the button presses it', () => {
        WHERE zone = ${ZONE.main} AND effective_date = ${TARIFF_DAY} AND min_density = '101.00'`);
     try {
       const again = await rebaseCostAction({ entryId: frozen.id, basis: 'freight' });
-      expect(again.rebase?.rows.find((r) => r.label === `FRA${RUN}`.slice(0, 10))?.band).toEqual({
+      // His 2b: the band lives on the LOT rows of the after split, never on a client row.
+      expect(again.rebase?.split?.lots.find((l) => l.clientKey === `c:${A}`)?.band).toEqual({
         min: 101,
         max: 500,
         price: 210,
         perKg: false,
       });
+      // The same preview for a reader without money sight (judge J5): the
+      // lot rows carry the band WITHOUT its price, no list rate, no dollars.
+      const frozenRow = (await db.query.costEntries.findFirst({ where: eq(costEntries.id, frozen.id) }))!;
+      for (const role of ['ved_manager', 'logist'] as const) {
+        const plain = await rebaseCost(frozenRow, 'freight', null, ctx(), {
+          permissions: new Set<string>(ROLE_MATRIX[role]),
+        });
+        expect(plain.kind, role).toBe('preview');
+        const plainView = plain.kind === 'preview' ? plain.preview : null;
+        const plainLot = plainView?.split?.lots.find((l) => l.clientKey === `c:${A}`);
+        expect(plainLot?.band, role).toEqual({ min: 101, max: 500, perKg: false });
+        expect(plainView?.split?.lots.some((l) => 'ratePerM3' in l), role).toBe(false);
+        expect(plainView?.afterLotCents, role).toBeUndefined();
+        expect(plainView?.rows.some((r) => r.afterUsd !== undefined || r.beforeUsd !== undefined), role).toBe(false);
+      }
       expect((await rebaseCostAction({ entryId: frozen.id, basis: 'freight', seen: again.rebase!.seen })).ok).toBe(true);
       const refrozen = (await updates(frozen.id)).at(-1)!;
       expect((refrozen.before as { tariffBands: string }).tariffBands).toContain('101–500 $200');
@@ -1037,6 +1199,33 @@ describe('the re-basis door (§8, his 5a) as the button presses it', () => {
       error: 'rebase_changed',
     });
     expect(await basisOf(entry.id)).toBe('weight');
+    session.user = null;
+  });
+
+  it('7g — a client’s dollars are the SUM of its lots’ cents on the ✎ rows too: D 0.92 + 5.03 = 5.95 of $10.10, never 5.94 (judge J2)', async () => {
+    await signIn(adminId);
+    const D = await mintClient('GD');
+    const B = await mintClient('GB');
+    const C = await mintClient('GC');
+    const yostiq = await mintLot({ client: D, kg: 100, m3: 1 });
+    const kafel = await mintLot({ client: D, kg: 1100, m3: 1, receiptId: yostiq.receiptId, letter: 'B' });
+    const b = await mintLot({ client: B, kg: 600, m3: 1 });
+    const c = await mintLot({ client: C, kg: 300, m3: 1 });
+    const truck = await mintTruck([...yostiq.boxIds, ...kafel.boxIds, ...b.boxIds, ...c.boxIds]);
+    const entry = await bill(truck, 10.1, { allocationBasis: 'weight' });
+    // Lot values 110 + 605 (D), 300 (B), 200 (C) = 1215; 1010 cents → 91.44 /
+    // 502.92 / 249.38 / 166.26 → floors 91/502/249/166 = 1008, the two spare
+    // cents to .92 (kafel) and .44 (yostiq): D 92 + 503 = 595, B 249, C 166.
+    // A second split over the CLIENTS (715/300/200) reads D 594, B 250.
+    const p = await rebaseCostAction({ entryId: entry.id, basis: 'freight' });
+    const after = Object.fromEntries((p.rebase?.rows ?? []).map((r) => [r.key, r.afterUsd]));
+    expect(after).toEqual({ [`c:${D}`]: 5.95, [`c:${B}`]: 2.49, [`c:${C}`]: 1.66 });
+    expect(p.rebase?.afterLotCents).toEqual({
+      [`l:${yostiq.lotId}`]: 0.92,
+      [`l:${kafel.lotId}`]: 5.03,
+      [`l:${b.lotId}`]: 2.49,
+      [`l:${c.lotId}`]: 1.66,
+    });
     session.user = null;
   });
 
@@ -1094,11 +1283,139 @@ describe('the re-basis door (§8, his 5a) as the button presses it', () => {
   });
 });
 
+describe('bills saved before his 1a 2b', () => {
+  it('15 — a copy frozen on another column keeps splitting by its OWN bands (3a), and ✎ names both columns', async () => {
+    const K = await mintClient('OK');
+    const L = await mintClient('OL');
+    const k = await mintLot({ client: K, kg: 600, m3: 1 });
+    const l = await mintLot({ client: L, kg: 200, m3: 1 });
+    const truck = await mintTruck([...k.boxIds, ...l.boxIds]);
+    // Saved on ZONE.old (1–500 $100, 501+ $300) — the shape of a pre-1a Kashgar copy.
+    const entry = await withZone(ZONE.old, () => bill(truck, 400));
+    expect(await byClient(entry.id)).toEqual({ [K]: 300, [L]: 100 });
+    // Today's one column is ZONE.main: a recompute still reads the bill's own copy.
+    await recomputeEntry(entry.id);
+    expect(await byClient(entry.id)).toEqual({ [K]: 300, [L]: 100 });
+    const row = (await db.query.costEntries.findFirst({ where: eq(costEntries.id, entry.id) }))!;
+    const answer = await rebaseCost(row, 'freight', null, ctx(), { permissions: new Set(['finance.manage']) });
+    expect(answer.kind).toBe('preview');
+    expect(answer.kind === 'preview' && answer.preview.column).toMatchObject({ zone: ZONE.main, previousZone: ZONE.old });
+  });
+
+  it('16 — the one-shot re-split: a bill holding CLIENT-grain shares is listed with before → after, and --apply moves it to the lot grain', async () => {
+    const A = await mintClient('SA');
+    const B = await mintClient('SB');
+    const a1 = await mintLot({ client: A, kg: 100, m3: 1 });
+    const a2 = await mintLot({ client: A, kg: 1100, m3: 1, receiptId: a1.receiptId, letter: 'B' });
+    const b = await mintLot({ client: B, kg: 160, m3: 1 });
+    const truck = await mintTruck([...a1.boxIds, ...a2.boxIds, ...b.boxIds]);
+    const entry = await bill(truck, 800);
+    // Put back what 0132's client grain wrote: A 600 → $300 per lot (equal
+    // by m³), B $200 — of the old Σ 800 on this table.
+    await db.execute(sql`
+      UPDATE cost_allocations SET amount_usd = CASE box_id
+        WHEN ${a1.boxIds[0]!}::uuid THEN 300 WHEN ${a2.boxIds[0]!}::uuid THEN 300 ELSE 200 END
+       WHERE cost_entry_id = ${entry.id}::uuid`);
+    expect(await byClient(entry.id)).toEqual({ [A]: 600, [B]: 200 });
+
+    const row = (await resplitPlan()).find((r) => r.id === entry.id)!;
+    expect(row).toMatchObject({ verdict: 'split', moves: true, zone: ZONE.main });
+    // Lot grain: A 110 + 605 = 715, B 200, Σ 915 → of $800: A 625.14, B 174.86.
+    const codeA = `FSA${RUN}`.slice(0, 10);
+    const codeB = `FSB${RUN}`.slice(0, 10);
+    expect(row.before.map((r) => [r.key, r.label, r.usd])).toEqual([
+      [`c:${A}`, codeA, 600],
+      [`c:${B}`, codeB, 200],
+    ]);
+    expect(row.after.map((r) => [r.key, r.label, r.usd])).toEqual([
+      [`c:${A}`, codeA, 625.14],
+      [`c:${B}`, codeB, 174.86],
+    ]);
+
+    const applied = await resplitApply([entry.id]);
+    expect([applied.done, applied.failed, applied.verdicts.get(entry.id)]).toEqual([1, [], 'split']);
+    expect(await byClient(entry.id)).toEqual({ [A]: 625.14, [B]: 174.86 });
+    // What the script prints after --apply is the STORED truth (judge J8).
+    expect((await resplitStored([entry.id])).get(entry.id)).toEqual(row.after);
+    expect((await resplitPlan()).find((r) => r.id === entry.id)?.moves).toBe(false);
+  });
+
+  it('16c — money moving only between ONE client’s own lots is a move: D’s client total stays $1,000 (the review as built)', async () => {
+    const D = await mintClient('SD');
+    const yostiq = await mintLot({ client: D, kg: 100, m3: 1 });
+    const kafel = await mintLot({ client: D, kg: 1100, m3: 1, receiptId: yostiq.receiptId, letter: 'B' });
+    const truck = await mintTruck([...yostiq.boxIds, ...kafel.boxIds]);
+    const entry = await bill(truck, 1000);
+    // 0132's client grain: D as ONE density, split by m³ — $500 / $500.
+    await db.execute(sql`
+      UPDATE cost_allocations SET amount_usd = 500 WHERE cost_entry_id = ${entry.id}::uuid`);
+    const row = (await resplitPlan()).find((r) => r.id === entry.id)!;
+    // The printed client line does not move — the boxes do.
+    expect(row.before.map((r) => r.usd)).toEqual([1000]);
+    expect(row.after.map((r) => r.usd)).toEqual([1000]);
+    expect(row.moves).toBe(true);
+    await resplitApply([entry.id]);
+    // Lot grain: yostiq 110, kafel 605 of 715 → $153.85 / $846.15.
+    const perLot = (await db.execute(sql`
+      SELECT b.lot_id::text AS lot, sum(ca.amount_usd)::float8 AS usd FROM cost_allocations ca JOIN boxes b ON b.id = ca.box_id
+       WHERE ca.cost_entry_id = ${entry.id}::uuid GROUP BY 1`)) as unknown as { lot: string; usd: number }[];
+    expect(Object.fromEntries(perLot.map((r) => [r.lot, r.usd]))).toEqual({ [yostiq.lotId]: 153.85, [kafel.lotId]: 846.15 });
+    expect((await resplitPlan()).find((r) => r.id === entry.id)?.moves).toBe(false);
+  });
+
+  it('16d — a bill the NEW code saved is never listed, at any amount (one rounding for before, after and stored)', async () => {
+    const X = await mintClient('SX');
+    const Y = await mintClient('SY');
+    const Z = await mintClient('SZ');
+    const x = await mintLot({ client: X, kg: 100, m3: 1, count: 3 });
+    const y = await mintLot({ client: Y, kg: 300, m3: 1, count: 7 });
+    const z = await mintLot({ client: Z, kg: 1100, m3: 1, count: 2 });
+    const truck = await mintTruck([...x.boxIds, ...y.boxIds, ...z.boxIds]);
+    for (const amount of [100.01, 333.33, 10.05, 0.07]) {
+      const entry = await bill(truck, amount);
+      const row = (await resplitPlan()).find((r) => r.id === entry.id)!;
+      expect([amount, row.moves]).toEqual([amount, false]);
+      expect(row.before).toEqual(row.after);
+      expect((await resplitStored([entry.id])).get(entry.id)).toEqual(row.after);
+    }
+  });
+
+  it('16b — a bill frozen on another column is re-split by LOT on its OWN copy, and the copy is not touched (judge J3/J27)', async () => {
+    const K = await mintClient('KK');
+    const L = await mintClient('KL');
+    const k1 = await mintLot({ client: K, kg: 600, m3: 1 });
+    const k2 = await mintLot({ client: K, kg: 200, m3: 1, receiptId: k1.receiptId, letter: 'B' });
+    const l = await mintLot({ client: L, kg: 400, m3: 1 });
+    const truck = await mintTruck([...k1.boxIds, ...k2.boxIds, ...l.boxIds]);
+    // ZONE.old: 1–500 $100, 501+ $300. Lot grain: K 300 + 100, L 100 → of $500: K 400 / L 100.
+    const entry = await withZone(ZONE.old, () => bill(truck, 500));
+    const copyBefore = await db.select().from(costEntryTariffs).where(eq(costEntryTariffs.costEntryId, entry.id));
+    // 0132's client grain on the same copy: K 800 kg / 2 m³ = 400 → $100 × 2 = 200, L 100 → K 2/3.
+    await db.execute(sql`
+      UPDATE cost_allocations SET amount_usd = CASE box_id
+        WHEN ${k1.boxIds[0]!}::uuid THEN 166.67 WHEN ${k2.boxIds[0]!}::uuid THEN 166.66 ELSE 166.67 END
+       WHERE cost_entry_id = ${entry.id}::uuid`);
+
+    const row = (await resplitPlan()).find((r) => r.id === entry.id)!;
+    expect(row).toMatchObject({ zone: ZONE.old, moves: true, verdict: 'split' });
+    expect(offTheOneColumn(row)).toBe(true);
+    expect((await resplitApply([entry.id])).verdicts.get(entry.id)).toBe('split');
+    expect(await byClient(entry.id)).toEqual({ [K]: 400, [L]: 100 });
+    // The fold's lot rows and the stored allocations agree now, on the bill's own column.
+    const [entryRow] = await db.select().from(costEntries).where(eq(costEntries.id, entry.id));
+    const views = await explainFreightBills(
+      [{ ...entryRow!, hasShare: true }],
+      { permissions: new Set(['finance.manage']) },
+    );
+    expect(views.get(entry.id)?.allocatedUsd).toEqual({ [`l:${k1.lotId}`]: 300, [`l:${k2.lotId}`]: 100, [`l:${l.lotId}`]: 100 });
+    expect(views.get(entry.id)?.zone).toBe(ZONE.old);
+    expect(await db.select().from(costEntryTariffs).where(eq(costEntryTariffs.costEntryId, entry.id))).toEqual(copyBefore);
+  });
+});
+
 describe('cleanup', () => {
   it('FINAL — deletes the run’s private columns and costs, deactivates its warehouses, and leaves no prefixed zone', async () => {
     await db.transaction(async (tx) => {
-      await tx.delete(warehouseTariffColumns).where(like(warehouseTariffColumns.tariffZone, `t\\_%${RUN}\\_%`));
-      await tx.delete(warehouseTariffColumns).where(inArray(warehouseTariffColumns.warehouseId, [whW, whU]));
       if (made.costs.length) await tx.delete(costEntries).where(inArray(costEntries.id, made.costs));
       await tx.delete(calcFreightTariffs).where(like(calcFreightTariffs.zone, `t\\_%${RUN}\\_%`));
     });
@@ -1121,8 +1438,7 @@ describe('cleanup', () => {
     await db.update(costTypes).set({ active: false }).where(eq(costTypes.id, privateCustomsType));
     await db.update(users).set({ active: false }).where(inArray(users.id, [actorId, adminId, ...made.users]));
     const left = await db.execute<{ n: number }>(sql`
-      SELECT (SELECT count(*) FROM calc_freight_tariffs WHERE zone LIKE ${`t\\_%${RUN}\\_%`})
-           + (SELECT count(*) FROM warehouse_tariff_columns WHERE tariff_zone LIKE ${`t\\_%${RUN}\\_%`}) AS n
+      SELECT count(*) AS n FROM calc_freight_tariffs WHERE zone LIKE ${`t\\_%${RUN}\\_%`}
     `);
     expect(Number(left[0]!.n)).toBe(0);
     const cs = await db.execute<{ v: string }>(

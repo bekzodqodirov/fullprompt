@@ -69,7 +69,10 @@ const madeExpenses: string[] = [];
 const madeClients: string[] = [];
 const madePartners: string[] = [];
 const ctx = () => ({ actorId });
-const cents = (value: number) => Math.round(value * 100) / 100;
+// `+ 0` turns −0 into 0: a company-wide difference that is float noise just
+// below zero rounds to −0, and `toBe(0)` (Object.is) tells the two apart —
+// red only on a database big enough to carry the noise (#653).
+const cents = (value: number) => Math.round(value * 100) / 100 + 0;
 
 async function till(name: string, currency: string, over: Partial<typeof moneyAccounts.$inferInsert> = {}) {
   const [row] = await db

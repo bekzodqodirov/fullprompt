@@ -69,15 +69,3 @@ export async function tariffHistory(): Promise<
     effectiveDate: r.effectiveDate,
   }));
 }
-
-/**
- * Every zone the tariff has EVER had a row for, any date — the warehouse
- * form's «is this column priced at all» (§2.4). A future-dated zone counts:
- * it is priced, just not yet, and the save refuses by DATE in words.
- */
-export async function tariffZoneNames(): Promise<string[]> {
-  const rows = await db
-    .selectDistinct({ zone: calcFreightTariffs.zone })
-    .from(calcFreightTariffs);
-  return rows.map((r) => r.zone).sort();
-}

@@ -228,9 +228,11 @@ export async function costOrphanedByVoid(
       continue;
     }
     if (!base.some((id) => gone.has(id))) continue;
-    // ONE pool with the recompute (`costHomedOn`): a void that drops one
-    // client under his 10 kg/m³ is ALLOWED and shows the ⚠ rather than
-    // refused with words telling finance to void the truck's money.
+    // ONE pool with the recompute (`costHomedOn`): a void on a HELD bill is
+    // ALLOWED and keeps the ⚠ rather than refused with words telling finance
+    // to void the truck's money. Per lot (his 2b) a void can never MAKE a
+    // bill held — a lot's density does not depend on which of its cartons
+    // remain — it can only heal one or empty the base.
     if (!(await costHomedOn(entry, base, factor, tx))) continue;
     if (await costHomedOn(entry, base.filter((id) => !gone.has(id)), factor, tx)) continue;
     if (entry.scope === 'pickup') return { entryId: entry.id, scope: 'pickup', code: tripCode };

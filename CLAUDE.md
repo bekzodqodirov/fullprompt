@@ -2796,6 +2796,41 @@ money/intent lenses after; ~50 red proofs by string edit. STATED/ASKED: the
 next warehouse keeps the Yiwu batch, not the factory; whether a door «Yo'q»
 should hide the prixod from the candidates.
 
+**Round — his «1a 2b» (2026-10-15; DECISIONS #1400-#1406 — renumbered from
+#1379-#1385 on the merge, the TWENTY-FIRST collision: the zavod-reysi round took
+#1379-#1399 first; NO migration of its own, it deploys with that round's 0133, so
+ledger 134 — his server is confirmed only at 132, so this deploy may carry 0132 AND
+0133: the count must read 134 AND `/api/version` today).** His «skladlarning
+o'zini narxi bo'lsin degan narsa kerak emas … aynan shu tovar qancha foizdaligi».
+**1a**: ONE column splits every truck — `freightSplitZone()` (`costing/freight-zone.ts`,
+a zero-import FUNCTION so integration files `vi.mock` it onto a private zone and never
+touch `cn`); the warehouse column door is DELETED (form, actions, `tariff-column.ts`,
+`tariff-zone-field.ts`, `no_column`), `warehouse_tariff_columns` kept UNREAD (named by
+the schema alone, fenced). From deploy day every yo'lkira bill preselects the tariff
+basis. **2b**: the grain is the LOT (`freightLots`, key `l:<lotId>`), each priced by its
+own density on its own row; rule 6 per lot (one light or unmeasured lot holds the WHOLE
+bill). ONE cents rule: `costPool` splits a bill per lot by `lotCents` FIRST and only then
+over the lot's cartons, so stored allocations carry the preview's cents exactly; a client
+is `clientCentsOf` = Σ of its lots (preview, fold, ✎ rows; `splitCents` has no other
+caller). Readers: the fold keys cents `'l:'||lot_id`; the Narx tab's band line is the pure
+`clientBandLine` over `ClientCostPart.freightLotIds` (the lots whose money IS in that part,
+from the breakdown's own rows — folded per lot in JS), and each lot row prints its own
+«hisobning N %» = this truck's cartons' dollars ÷ the bill; ✎ rows in the split's order with
+server `afterLotCents`; the add form's preview capped at THREE clients («+N mijoz · $X» — five
+measured 831 px to Saqlash at 360, three 607, and the 1a hint is the column line itself);
+`freightLabel`/`rebaseColumn` say «narxlari nisbatida»; the freight-off sentence names the
+basis the select holds; /admin/tarif warns (`columnWatch`) when the column has a hole today
+or on a typed future date; only versions ≤ `latestTxDate()` take the three whole-split
+slots. Old 0132 bills: `pnpm exec tsx scripts/freight-resplit.ts` through `migrate` (NOT a
+package.json command, #1228) — dry run lists only bills whose per-BOX units would change
+(«0 ta hisob o'zgaradi» expected), `--apply` prints what is stored. Judged as a design
+(81 agents) and reviewed AS BUILT (five lenses): 15 + 7 red proofs; one stayed green by
+construction (#1406). Fences: `freight-placeholders.test.ts` formats every literal call
+with the names it passes (TypeScript's parser), `freight-rows-render.test.ts` renders the
+capped rows. e2e `m9zzzc` (D's two lots, the per-lot line) + `m9zzzd` (seven clients at
+360 px: Saqlash within one screen). The non-freight e2e specs deliberately ride the new
+default.
+
 **Latest migration: 0133** (`pickup_close`, `when` …112; ledger must reach **134**). Before
 it: 0132 (`cost_freight_basis`, `when` …111). Before
 it: 0131 (`calc_excise`, `when` …110). Before
@@ -2945,8 +2980,10 @@ answered. **Then he CONFIRMED 132** («deploy qildim 132 chiqdi», 2026-10-13,
 after PR #118 — the customs calculator fix, 0131), so production is at the
 journal's length and EVERYTHING in this file through #1353 is LIVE. The
 yo'lkira-tarifi round (0132) must read **133** and the zavod-reysi round (0133)
-**134**; a code-only round after it is
-checked by `/api/version`, not the count (anything short of the journal means
+**134**; PR #120 was merged and its deploy NOT confirmed, so the «1a 2b» round (no
+migration of its own, it rides with 0133) is checked by BOTH the count (134) and
+`/api/version`; a code-only round after it is checked by `/api/version` alone
+(anything short of the journal means
 a migration did not land — read the `migrate` container's own output).
 Never carry this number over from a previous session: read it
 (`ls src/modules/platform/db/migrations/*.sql | wc -l`) before writing the

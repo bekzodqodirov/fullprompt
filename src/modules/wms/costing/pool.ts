@@ -1,6 +1,6 @@
 import { allocateEntry, type AllocBox, type AllocShare, type AllocationBasis } from './engine';
-import { freightGroups, splitFreight } from './freight-split';
-import type { BoxMeasure, FreightCopy, FreightHeld, PricedGroup } from './freight-types';
+import { freightLots, lotCents, lotIdentityOf, splitFreight } from './freight-split';
+import type { BoxMeasure, FreightCopy, FreightHeld, PricedLot } from './freight-types';
 
 /**
  * ONE pool for every question «where does this bill's money go» (docs/
@@ -10,7 +10,7 @@ import type { BoxMeasure, FreightCopy, FreightHeld, PricedGroup } from './freigh
  * It is the ONLY caller of `allocateEntry` (fenced).
  */
 export type PoolVerdict =
-  | { kind: 'split'; shares: AllocShare[]; groups?: PricedGroup[] }
+  | { kind: 'split'; shares: AllocShare[]; lots?: PricedLot[] }
   | { kind: 'nothing' }
   | { kind: 'held'; held: FreightHeld };
 
@@ -50,38 +50,57 @@ export function costPool(
     if (freight === null || freight.copy === 'missing') return { kind: 'held', held: { reason: 'copy_missing' } };
     if (freight.copy === 'invalid') return { kind: 'held', held: { reason: 'copy_invalid' } };
     if (freight.customs) return { kind: 'held', held: { reason: 'on_customs' } };
-    const split = splitFreight(freightGroups(base), freight.copy);
+    const split = splitFreight(freightLots(base), freight.copy);
     if (!split.ok) return { kind: 'held', held: split.held };
-    const pool: AllocBox[] = base.map((m) => ({
-      boxId: m.boxId,
-      clientId: m.clientId,
-      weightKg: m.weightKg,
-      volumeM3: m.volumeM3,
-      chargeableKg: Math.max(m.weightKg, m.volumeM3 * factor),
-      freightWeight: split.weights.get(m.boxId) ?? 0,
-    }));
-    const shares = allocateEntry({ amountUsd: entry.amountUsd, basis: 'freight', clientId: entry.clientId }, pool);
+    // The bill's cents are decided per LOT first — by the very `lotCents`
+    // the preview, the fold and the ✎ rows print — and only then spread over
+    // the lot's own cartons (which share one measure). Spread over all the
+    // cartons at once at $0.0001, the per-carton remainder moved a lot's sum
+    // by a few units and handed the spare cent to a different client after
+    // «Saqlash»: ~7 % of random multi-carton bills (the review as built).
+    const cents = lotCents(entry.amountUsd, split.lots.map((l) => ({ key: l.key, weight: l.share })));
+    const byLot = new Map<string, BoxMeasure[]>();
+    for (const m of base) {
+      let list = byLot.get(m.lotId);
+      if (!list) byLot.set(m.lotId, (list = []));
+      list.push(m);
+    }
+    const byBox = new Map<string, AllocShare>();
+    let priced = true;
+    for (const [lotId, boxes] of byLot) {
+      const pool: AllocBox[] = boxes.map((m) => ({
+        boxId: m.boxId,
+        clientId: m.clientId,
+        weightKg: m.weightKg,
+        volumeM3: m.volumeM3,
+        chargeableKg: Math.max(m.weightKg, m.volumeM3 * factor),
+        freightWeight: split.weights.get(m.boxId) ?? 0,
+      }));
+      const part = allocateEntry({ amountUsd: cents[`l:${lotId}`] ?? 0, basis: 'freight', clientId: entry.clientId }, pool);
+      if (part.length === 0) priced = false;
+      for (const share of part) byBox.set(share.boxId, share);
+    }
+    const shares = priced ? base.map((m) => byBox.get(m.boxId)!) : [];
     if (shares.length === 0) {
       // Over a NON-empty base the belt in allocateEntry said «a box nobody
       // could price»: say so in the words a person can act on.
-      const lots = new Map(base.map((m) => [m.lotId, m]));
+      const lots = new Map<string, { m: BoxMeasure; m3: number; kg: number }>();
+      for (const m of base) {
+        const lot = lots.get(m.lotId) ?? { m, m3: 0, kg: 0 };
+        lot.m3 += m.volumeM3;
+        lot.kg += m.weightKg;
+        lots.set(m.lotId, lot);
+      }
       return {
         kind: 'held',
         held: {
           reason: 'cargo',
-          measureMissing: [...lots.values()].map((m) => ({
-            lotId: m.lotId,
-            receiptId: m.receiptId,
-            label: `${m.unclaimedMarking ?? m.clientCode ?? m.receiptNumber ?? '❓'}-${m.lotLetter ?? m.lotSeq}`,
-            m3: m.volumeM3 * m.boxCount,
-            kg: m.weightKg * m.boxCount,
-            density: null,
-          })),
+          measureMissing: [...lots.values()].map(({ m, m3, kg }) => ({ ...lotIdentityOf(m), m3, kg, density: null })),
           tooLight: [],
         },
       };
     }
-    return { kind: 'split', shares, groups: split.groups };
+    return { kind: 'split', shares, lots: split.lots };
   }
 
   const pool: AllocBox[] = base.map((m) => ({

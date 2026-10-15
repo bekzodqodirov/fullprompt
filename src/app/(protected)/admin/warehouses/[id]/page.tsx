@@ -8,8 +8,6 @@ import { HistoryTab } from '@/components/history-tab';
 import { toggleWarehouseActiveAction, updateWarehouseAction } from '../actions';
 import { WarehouseForm } from '../warehouse-form';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
-import { freightTablesReady } from '@/modules/wms/costing/freight-ready';
-import { mappableZones, tariffColumnOf } from '@/modules/wms/costing/tariff-column';
 
 export default async function WarehouseDetailPage({
   params,
@@ -27,11 +25,6 @@ export default async function WarehouseDetailPage({
   const t = await getTranslations('warehouses');
   const tc = await getTranslations('common');
   const update = updateWarehouseAction.bind(null, id);
-  // The tariff column (0132) is read only when its table exists: one
-  // migration behind, the form draws no select and posts no field (§2.3).
-  const ready = await freightTablesReady();
-  const tariffZone = ready ? await tariffColumnOf(wh.id) : null;
-  const zones = ready ? await mappableZones(tariffZone) : null;
   const toggle = toggleWarehouseActiveAction.bind(null, id);
 
   return (
@@ -66,9 +59,7 @@ export default async function WarehouseDetailPage({
           lon: wh.lon ? String(Number(wh.lon)) : '',
           issuesToClients: wh.issuesToClients,
           allowsQuickBatch: wh.allowsQuickBatch,
-          tariffZone,
         }}
-        zones={zones}
       />
 
       <CustomFieldsPanel

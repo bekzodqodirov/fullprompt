@@ -1,9 +1,10 @@
 'use client';
 
+import { useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { bandText, splitCents } from '@/modules/wms/costing/freight-split';
+import { bandText, clientCentsOf, lotCents } from '@/modules/wms/costing/freight-split';
 import { HELD_KEY } from '@/modules/wms/costing/freight-errors';
-import type { FreightHeld, GroupView, HeldLot, SplitView } from '@/modules/wms/costing/freight-types';
+import type { FreightHeld, LotIdentity, LotView, SplitView } from '@/modules/wms/costing/freight-types';
 
 /**
  * How a yo'lkira-tarifi split is DRAWN (docs/YOLKIRA-TAQSIMOT.md §6.2, §7) —
@@ -13,41 +14,53 @@ import type { FreightHeld, GroupView, HeldLot, SplitView } from '@/modules/wms/c
  * 360 px; every line `min-w-0 break-words` (a 40-character unclaimed marking
  * has no break in it, #400).
  *
+ * His 2b (2026-10-15): the split is per LOT, drawn per CLIENT — one row per
+ * client, as before, and a client with several lots opens them under its
+ * row. The lots of a closed client are not in the DOM at all (a 150-lot
+ * truck must not be 150 rows inside the cost form — round 68's /stock).
+ *
  * VALUE imports only from the pure costing modules (freight-split,
  * freight-errors) and types from freight-types — never from a module that
  * reaches the database (#276, fenced).
  */
 
 const MORE_AFTER = 5;
+/**
+ * The add form's preview shows this many clients until «+N mijoz» (judge J9).
+ * Three, not the five the design said: measured at 360×800 on seven clients,
+ * five rows (each two or three lines on a phone) left Saqlash 831 px below
+ * the amount, i.e. off the screen the accountant typed into (m9zzzd).
+ */
+export const FREIGHT_PREVIEW_CAP = 3;
 const fmt = (n: number, digits: number) => String(Math.round(n * 10 ** digits) / 10 ** digits);
 
 function useBand() {
   const t = useTranslations('costing');
-  return (band: GroupView['band'], money: boolean) => {
+  return (band: LotView['band'], money: boolean) => {
     const b = bandText(band, { money });
     return t(b.key, { range: b.range, price: b.price });
   };
 }
 
-function LotLines({ lots }: { lots: HeldLot[] }) {
-  const t = useTranslations('costing');
-  return (
-    <ul className="ml-4 list-disc">
-      {lots.slice(0, MORE_AFTER).map((lot) => (
-        <li key={lot.lotId} className="min-w-0 break-words">
-          {/* A new tab: in the preview a same-tab click threw the typed
-              amount and note away (the fix links' own rule, SP-5). */}
-          <a className="underline" href={`/receipts/${lot.receiptId}`} target="_blank" rel="noopener">
-            {t('freightHeldLot', { lot: lot.label, density: lot.density ?? '—' })}
-          </a>
-        </li>
-      ))}
-      {lots.length > MORE_AFTER && <li>{t('freightHeldMore', { n: lots.length - MORE_AFTER })}</li>}
-    </ul>
-  );
-}
+/**
+ * A lot as a person names it: «GS777-A · Yostiq» — the goods are why a lot
+ * row exists (2b). A CLAIMED lot keeps its unclaimed marking as its label
+ * («470-A»: the carton says so), so its client's code goes in front, or a
+ * one-lot client's row named nobody (the review as built — the ✎ rows above
+ * it say «GS500»).
+ */
+export const lotName = (
+  lot: Pick<LotIdentity, 'label' | 'goods' | 'clientKey' | 'clientLabel'>,
+  opts: { underClient?: boolean } = {},
+) => {
+  const head =
+    !opts.underClient && lot.clientKey.startsWith('c:') && !lot.label.startsWith(lot.clientLabel)
+      ? `${lot.clientLabel} · ${lot.label}`
+      : lot.label;
+  return lot.goods ? `${head} · ${lot.goods}` : head;
+};
 
-/** A held bill's reasons, measure first, each group's lots lightest first. */
+/** A held bill's reasons, measure first, then the light lots, each lightest first. */
 export function FreightHeldLines({ held, limit }: { held: FreightHeld; limit: number }) {
   const t = useTranslations('costing');
   if (held.reason !== 'cargo') {
@@ -57,25 +70,26 @@ export function FreightHeldLines({ held, limit }: { held: FreightHeld; limit: nu
     <div className="space-y-1">
       {held.measureMissing.slice(0, MORE_AFTER).map((lot) => (
         <p key={lot.lotId} className="min-w-0 break-words">
+          {/* A new tab: in the preview a same-tab click threw the typed
+              amount and note away (the fix links' own rule, SP-5). */}
           <a className="underline" href={`/receipts/${lot.receiptId}`} target="_blank" rel="noopener">
-            {t('freightHeldMeasure', { lot: lot.label })}
+            {t('freightHeldMeasure', { lot: lotName(lot) })}
           </a>
         </p>
       ))}
       {held.measureMissing.length > MORE_AFTER && <p>{t('freightHeldMore', { n: held.measureMissing.length - MORE_AFTER })}</p>}
-      {held.tooLight.slice(0, MORE_AFTER).map((group) => (
-        <div key={group.key} className="min-w-0 break-words">
-          <p>
+      {held.tooLight.slice(0, MORE_AFTER).map((lot) => (
+        <p key={lot.lotId} className="min-w-0 break-words">
+          <a className="underline" href={`/receipts/${lot.receiptId}`} target="_blank" rel="noopener">
             {t('freightHeldLight', {
-              group: group.label,
-              m3: fmt(group.m3, 3),
-              kg: fmt(group.kg, 3),
-              density: group.density,
+              lot: lotName(lot),
+              m3: fmt(lot.m3, 3),
+              kg: fmt(lot.kg, 3),
+              density: lot.density ?? '—',
               limit,
             })}
-          </p>
-          <LotLines lots={group.lots} />
-        </div>
+          </a>
+        </p>
       ))}
       {held.tooLight.length > MORE_AFTER && <p>{t('freightHeldMore', { n: held.tooLight.length - MORE_AFTER })}</p>}
       <p>{t('freightHeldFix')}</p>
@@ -96,11 +110,24 @@ export function FreightHeldNote({ held, limit }: { held: FreightHeld | null; lim
 }
 
 /**
- * The groups of a split: «label · m³ · kg/m³», then the band and the share
- * (and, under money sight, the share of the typed amount by the largest
- * remainder in cents — the column adds up to the bill).
+ * The lots of a split, drawn per client (§15.4): «client · N lot · m³», then
+ * the client's % (and, under money sight, its dollars — the SUM of its lots'
+ * cents, `clientCentsOf`, so a client header and the lots under it can never
+ * differ by a cent); a one-lot client prints its lot's band on its own row, a
+ * client with several lots opens them. The cents are split over the LOTS by
+ * `lotCents` (a typed preview) or read from the allocations per lot (a saved
+ * bill, or the re-basis after-state computed on the server).
+ *
+ * `cap` (the add form's always-open preview only, judge J9): on a 40-client
+ * truck the preview stood between the amount and «kim to'ladi» / Saqlash, on
+ * every bill of the accountant's loop. Capped, it draws a summary line, the
+ * first `cap` clients (the largest shares — the rollup's order) and one
+ * «+N mijoz» button; the cents are split over ALL lots before the cut, so the
+ * hidden clients' dollars on the button and the visible ones add up to the
+ * bill. The saved fold and the re-basis fold are opened by a press already,
+ * and stay whole.
  */
-export function FreightGroupRows({
+export function FreightLotRows({
   view,
   money,
   amount,
@@ -109,6 +136,7 @@ export function FreightGroupRows({
   cents,
   testid = 'freight-row',
   saved = false,
+  cap,
 }: {
   view: SplitView;
   money: boolean;
@@ -116,14 +144,18 @@ export function FreightGroupRows({
   amount: number | null;
   currency: string;
   limit: number;
-  /** The allocations' own cents per group key (a saved bill). */
+  /** The cents per LOT key the server computed (a saved bill, the re-basis after-state). */
   cents?: Record<string, number>;
   testid?: string;
   /** A SAVED bill's fold: a held one «was saved and not split», not «will be». */
   saved?: boolean;
+  /** Show only this many clients until «+N mijoz» is pressed. */
+  cap?: number;
 }) {
   const t = useTranslations('costing');
   const band = useBand();
+  const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
+  const [all, setAll] = useState(false);
   if (view.kind === 'nothing') return <p className="text-sm text-ink-500">{t('freightHeldNothing')}</p>;
   if (view.kind === 'held') {
     return (
@@ -133,29 +165,106 @@ export function FreightGroupRows({
       </div>
     );
   }
-  const shares = view.groups.map((g) => g.share);
-  const typed = money && amount !== null && amount > 0 ? splitCents(amount, shares) : null;
+  const byLot: Record<string, number> | null = cents
+    ? cents
+    : money && amount !== null && amount > 0
+      ? lotCents(amount, view.lots.map((l) => ({ key: l.key, weight: l.share })))
+      : null;
+  const byClient = byLot ? clientCentsOf(view.lots, byLot) : {};
+  const unit = cents ? 'USD' : currency;
+  const money$ = (usd: number | undefined) => (money && usd !== undefined ? ` · ${usd.toFixed(2)} ${unit}` : '');
+  const byKey = new Map(view.lots.map((l) => [l.key, l]));
+  const toggle = (key: string) =>
+    setOpen((was) => {
+      const next = new Set(was);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  const capped = cap !== undefined && view.clients.length > cap && !all;
+  const shown = capped ? view.clients.slice(0, cap) : view.clients;
+  const hidden = capped ? view.clients.slice(cap) : [];
+  const hiddenUsd = hidden.every((c) => byClient[c.key] !== undefined)
+    ? hidden.reduce((a, c) => a + Math.round(byClient[c.key]! * 100), 0) / 100
+    : undefined;
+  const totalM3 = view.clients.reduce((a, c) => a + c.m3, 0);
+
   return (
-    <ul className="w-full space-y-1.5 text-sm">
-      {view.groups.map((g, i) => {
-        const dollars = cents ? cents[g.key] : typed ? typed[i] : undefined;
-        return (
-          <li key={g.key} className="w-full min-w-0 break-words" data-testid={`${testid}-${g.key}`}>
-            <span className="block font-semibold">
-              {t('freightRowLine1', { label: g.label, m3: fmt(g.m3, 3), density: g.density })}
-            </span>
-            <span className="block text-ink-700">
-              {band(g.band, money)} · {fmt(g.share * 100, 2)} %
-              {money && dollars !== undefined ? ` · ${dollars.toFixed(2)} ${cents ? 'USD' : currency}` : ''}
-            </span>
-            {g.lightLots.map((lot) => (
-              <span key={lot.lotId} className="block text-xs text-warn">
-                {t('freightLightLot', { lot: lot.label, density: lot.density ?? '—', limit })}
+    <div className="w-full space-y-1.5">
+      {cap !== undefined && view.clients.length > cap && (
+        <p className="text-xs text-ink-700" data-testid={`${testid}-summary`}>
+          {t('freightSplitSummary', { clients: view.clients.length, lots: view.lots.length, m3: fmt(totalM3, 3) })}
+        </p>
+      )}
+      <ul className="w-full space-y-1.5 text-sm">
+        {shown.map((c) => {
+          const lots = c.lotKeys.map((k) => byKey.get(k)!).filter(Boolean);
+          const total = byClient[c.key];
+          if (lots.length === 1) {
+            const l = lots[0]!;
+            return (
+              <li key={c.key} className="w-full min-w-0 break-words" data-testid={`${testid}-${c.key}`}>
+                <div data-testid={`${testid}-${l.key}`}>
+                  <span className="block font-semibold">
+                    {t('freightRowLine1', { label: lotName(l), m3: fmt(l.m3, 3), density: l.density })}
+                  </span>
+                  <span className="block text-ink-700">
+                    {band(l.band, money)} · {fmt(l.share * 100, 2)} %{money$(byLot?.[l.key])}
+                  </span>
+                </div>
+              </li>
+            );
+          }
+          const isOpen = open.has(c.key);
+          const bands = new Set(lots.map((l) => `${l.band.min}|${l.band.max}|${l.band.perKg}`)).size;
+          return (
+            <li key={c.key} className="w-full min-w-0 break-words" data-testid={`${testid}-${c.key}`}>
+              <span className="block font-semibold">
+                {t('freightClientLine', { label: c.label, n: lots.length, m3: fmt(c.m3, 3) })}
               </span>
-            ))}
-          </li>
-        );
-      })}
-    </ul>
+              <span className="block text-ink-700">
+                {t('freightClientBands', { n: bands })} · {fmt(c.share * 100, 2)} %{money$(total)}
+              </span>
+              <button
+                type="button"
+                className="text-xs font-semibold text-brand-700 underline"
+                aria-expanded={isOpen}
+                data-testid={`${testid}-open-${c.key}`}
+                onClick={() => toggle(c.key)}
+              >
+                {t(isOpen ? 'freightLotsHide' : 'freightLotsShow', { n: lots.length })}
+              </button>
+              {isOpen && (
+                <ul className="ml-3 mt-1 space-y-1 border-l border-line pl-2">
+                  {lots.map((l) => (
+                    <li key={l.key} className="min-w-0 break-words" data-testid={`${testid}-${l.key}`}>
+                      <span className="block">
+                        {t('freightRowLine1', { label: lotName(l, { underClient: true }), m3: fmt(l.m3, 3), density: l.density })}
+                      </span>
+                      <span className="block text-ink-700">
+                        {band(l.band, money)} · {fmt(l.share * 100, 2)} %{money$(byLot?.[l.key])}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      {cap !== undefined && view.clients.length > cap && (
+        <button
+          type="button"
+          className="text-xs font-semibold text-brand-700 underline"
+          aria-expanded={all}
+          data-testid={`${testid}-more`}
+          onClick={() => setAll((was) => !was)}
+        >
+          {all
+            ? t('freightClientsHide')
+            : `${t('freightClientsMore', { n: hidden.length })}${money$(hiddenUsd)}`}
+        </button>
+      )}
+    </div>
   );
 }

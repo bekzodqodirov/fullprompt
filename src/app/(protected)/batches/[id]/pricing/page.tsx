@@ -28,7 +28,7 @@ import {
   mayOpenBatchPricing,
 } from '@/modules/wms/batches/card-door';
 import { explainBreakdown } from '@/modules/wms/costing/freight-offer';
-import { bandText, splitGroup } from '@/modules/wms/costing/freight-split';
+import { bandText, clientBandLine, splitLot } from '@/modules/wms/costing/freight-split';
 import type { FreightRowView } from '@/modules/wms/costing/freight-types';
 import { loadBatchHead } from '@/modules/wms/batches/card-head';
 import { isContinuationTrip, tripKind } from '@/modules/wms/reports/dashboard-math';
@@ -144,11 +144,49 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
   // breakdown's OWN freight ids (E6): «shu reysgacha»/«keyingi yo'l» parts
   // are other trucks' bills, each explained on its own truck and copy.
   const freightViews = full ? await explainBreakdown(breakdown, actor) : new Map<string, FreightRowView>();
+  // His 2b: each LOT has its own row, so a client's part names the distinct
+  // bands of the lots whose money IS in that part (`freightLotIds`, judge J1)
+  // — one pure rule, `clientBandLine` (the largest lot first, two at most).
+  // «; » between bands: « · » is already inside one («1–100 · $110/kub»).
   const freightBand = (part: ClientCostPart, clientId: string): string | null => {
-    const group = part.freightEntryId ? splitGroup(freightViews.get(part.freightEntryId)?.view, `c:${clientId}`) : undefined;
-    if (!group) return null;
-    const b = bandText(group.band, { money: full });
-    return tcost(b.key, { range: b.range, price: b.price });
+    if (!part.freightEntryId) return null;
+    const line = clientBandLine(freightViews.get(part.freightEntryId)?.view, `c:${clientId}`, part.freightLotIds, {
+      money: full,
+    });
+    if (!line) return null;
+    const words = line.bands.map((b) => tcost(b.key, { range: b.range, price: b.price }));
+    return line.more > 0 ? `${words.join('; ')}; ${tcost('freightBandsMore', { n: line.more })}` : words.join('; ');
+  };
+
+  // The per-LOT answer to his own question («aynan shu tovar qancha
+  // foizdaligi», judge J36): on the lot's row, each yo'lkira-tarifi bill
+  // whose money sits on this lot — its source, the lot's own tariff row and
+  // the lot's % of that bill. A claimed lot only (the breakdown is per
+  // client), each bill once.
+  const freightLotLines = (lot: BatchLot): { key: string; words: string }[] => {
+    if (!full || !lot.clientId) return [];
+    const seen = new Set<string>();
+    return (breakdown.get(lot.clientId) ?? []).flatMap((part) => {
+      if (!part.freightEntryId || seen.has(part.freightEntryId) || !part.freightLotIds.includes(lot.lotId)) return [];
+      seen.add(part.freightEntryId);
+      const explained = freightViews.get(part.freightEntryId);
+      const row = splitLot(explained?.view, lot.lotId);
+      const usd = part.freightLotUsd[lot.lotId];
+      if (!row || usd === undefined || !explained?.amountUsd) return [];
+      const b = bandText(row.band, { money: true });
+      // The % of THIS truck's cartons of the lot — the dollars the page counts,
+      // not the whole lot on the bill's truck (part of a lot may continue).
+      return [
+        {
+          key: part.freightEntryId,
+          words: tcost('freightLotShare', {
+            source: part.source,
+            band: tcost(b.key, { range: b.range, price: b.price }),
+            share: String(Math.round((usd / explained.amountUsd) * 10000) / 100),
+          }),
+        },
+      ];
+    });
   };
 
   const view = pricingView(lots, lotCost, pricingChargesOf(charges));
@@ -393,6 +431,11 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                 📦 {lot.onBatch}
                 {lot.onBatch < lot.lotBoxCount && `/${lot.lotBoxCount}`} · {lot.kg} kg · {lot.m3} m³
               </p>
+              {freightLotLines(lot).map((line) => (
+                <p key={line.key} className="min-w-0 break-words text-xs text-ink-500" data-testid="lot-freight-share">
+                  {line.words}
+                </p>
+              ))}
               {(carriage?.byLot.get(lot.lotId)?.follows ?? 0) > 0 && (
                 <p className="text-xs font-semibold text-ink-700" data-testid="lot-follows">
                   ↪ {tbc('tileContinuationLine', { codes: carriage!.byLot.get(lot.lotId)!.carriers.join(', ') })}
@@ -773,46 +816,6 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                     </p>
                   )
                 )}
-                {/* «Nimalar o'tirganini ko'rsam» — the tannarx opened up:
-                    every source and type that landed on this client's boxes.
-                    A press, not a hover — phones have no hover. */}
-                {parts.length > 0 && (
-                  <details className="mt-1 text-left" data-testid="cost-breakdown">
-                    <summary className="cursor-pointer text-xs text-brand-700">
-                      {t('costDetail')}
-                    </summary>
-                    <ul className="mt-1 space-y-0.5 text-xs">
-                      {parts.map((part, index) => {
-                        const band = freightBand(part, group.clientId);
-                        const words = band
-                          ? tcost('freightBandLine', { source: part.source, type: part.typeName, band })
-                          : `${part.source} · ${part.typeName}`;
-                        return (
-                          <li
-                            key={index}
-                            className="flex justify-between gap-2"
-                            data-testid={band ? 'cost-breakdown-freight' : undefined}
-                          >
-                            {/* A band line wraps (a long marking or band has
-                                no break in it, #400); the plain line keeps its
-                                one truncated row. */}
-                            <span className={`min-w-0 text-ink-700 ${band ? 'break-words' : 'truncate'}`}>
-                              {part.later ? '↪ ' : ''}
-                              {band && costDoor && part.batchId && part.batchEnds && mayOpenBatchCard(actor, part.batchEnds) ? (
-                                <Link href={batchTabHref(part.batchId, 'xarajat')} className="underline">
-                                  {words}
-                                </Link>
-                              ) : (
-                                words
-                              )}
-                            </span>
-                            <span className="num shrink-0">${part.usd.toFixed(2)}</span>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </details>
-                )}
               </div>
               )}
               {!internal && (
@@ -849,6 +852,50 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
               </div>
               )}
                 </>
+              )}
+              {/* «Nimalar o'tirganini ko'rsam» — the tannarx opened up:
+                  every source and type that landed on this client's boxes.
+                  A press, not a hover — phones have no hover. Its own row
+                  under the three numbers, the grid's full width: inside the
+                  cost column it had a third of a 360 px card, and a lot's
+                  band words («…; 1–100 · $110/kub», his 2b) broke every
+                  three letters. */}
+              {full && parts.length > 0 && (
+                <details className="col-span-full text-left" data-testid="cost-breakdown">
+                  <summary className="cursor-pointer text-xs text-brand-700">
+                    {t('costDetail')}
+                  </summary>
+                  <ul className="mt-1 space-y-0.5 text-xs">
+                    {parts.map((part, index) => {
+                      const band = freightBand(part, group.clientId);
+                      const words = band
+                        ? tcost('freightBandLine', { source: part.source, type: part.typeName, band })
+                        : `${part.source} · ${part.typeName}`;
+                      return (
+                        <li
+                          key={index}
+                          className="flex justify-between gap-2"
+                          data-testid={band ? 'cost-breakdown-freight' : undefined}
+                        >
+                          {/* A band line wraps (a long marking or band has
+                              no break in it, #400); the plain line keeps its
+                              one truncated row. */}
+                          <span className={`min-w-0 text-ink-700 ${band ? 'break-words' : 'truncate'}`}>
+                            {part.later ? '↪ ' : ''}
+                            {band && costDoor && part.batchId && part.batchEnds && mayOpenBatchCard(actor, part.batchEnds) ? (
+                              <Link href={batchTabHref(part.batchId, 'xarajat')} className="underline">
+                                {words}
+                              </Link>
+                            ) : (
+                              words
+                            )}
+                          </span>
+                          <span className="num shrink-0">${part.usd.toFixed(2)}</span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </details>
               )}
             </div>
             {/* Not when the $0 IS the rule: cargo whose money went to the

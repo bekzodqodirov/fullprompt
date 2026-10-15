@@ -1,13 +1,13 @@
 import { createHash } from 'node:crypto';
 import { eq, inArray } from 'drizzle-orm';
 import { db, type Db, type Tx } from '../../platform/db/client';
-import { batches, costEntryTariffs, warehouses } from '../../platform/db/schema';
+import { batches, costEntryTariffs } from '../../platform/db/schema';
 import { tariffHistory } from '../calc/tariff-read';
 import { CostError } from './errors';
 import { customsCostTypeIds } from './customs-ids';
 import { freightTablesReady } from './freight-ready';
 import { FREIGHT_LIGHT_BELOW, copyDraft, validCopyBands } from './freight-split';
-import { tariffColumnOf } from './tariff-column';
+import { freightSplitZone } from './freight-zone';
 import type { FreightCopy, FreightCopyDraft } from './freight-types';
 
 /**
@@ -15,8 +15,7 @@ import type { FreightCopy, FreightCopyDraft } from './freight-types';
  * one reader and one writer, and no other file names the table (fenced). A
  * freight bill has exactly one row — its frozen column, as of its cost_date —
  * and any other bill none, after every writer; the recompute, the void guard
- * and every explanation read ONLY this copy, never the live tariff and never
- * the warehouse's current column (his 3a).
+ * and every explanation read ONLY this copy, never the live tariff (his 3a).
  *
  * Imports the pure split and the database, never `./service`: a static cycle
  * inside costing crashes a later top-level `extends` at module load.
@@ -82,8 +81,9 @@ export async function replaceFreightCopyInTx(
 /**
  * What a person SAW, as one string (M6): the panel posts the digest of the
  * version its preview drew, the save digests what it is about to freeze, and
- * a difference (a remap, a same-date overwrite, a back-dated row between the
- * render and the press) is refused in words instead of frozen silently.
+ * a difference (a same-date overwrite, a back-dated row between the render
+ * and the press) is refused in words instead of frozen silently. The origin
+ * stays in it: both sides pass the same truck's origin (provenance, 1a).
  */
 export function copyDigest(copy: FreightCopyDraft): string {
   const canonical = JSON.stringify([
@@ -101,10 +101,11 @@ export function copyDigest(copy: FreightCopyDraft): string {
 /**
  * What a freight bill will freeze — or the refusal, in words (§5). On the
  * POOL, before any transaction (#714): the probe, the scope, the customs
- * list, the truck's ORIGIN warehouse and its column (his 2c — never inferred),
- * and the column as of the bill's own date with no earliest-row fallback.
- * Only tariff CONFIGURATION is refused here; lot DATA never refuses the money
- * (a light group saves the bill and holds it, §6). Null for any other basis.
+ * list, the ONE column every truck is split by (his 1a, `freightSplitZone`)
+ * as of the bill's own date with no earliest-row fallback, and the truck's
+ * origin as the copy's provenance. Only tariff CONFIGURATION is refused here;
+ * lot DATA never refuses the money (a light lot saves the bill and holds it,
+ * §6). Null for any other basis.
  *
  * Each problem kind throws its OWN literal code (T9): a computed code is
  * invisible to the refusal fence.
@@ -121,19 +122,16 @@ export async function prepareFreightCopy(input: {
   if (input.scope !== 'batch' || !input.batchId) throw new CostError('freight_batch_only');
   if ((await customsCostTypeIds()).includes(input.costTypeId)) throw new CostError('freight_on_customs');
   const [truck] = await db
-    .select({ originId: batches.originWarehouseId, code: warehouses.code, name: warehouses.name })
+    .select({ originId: batches.originWarehouseId })
     .from(batches)
-    .innerJoin(warehouses, eq(warehouses.id, batches.originWarehouseId))
     .where(eq(batches.id, input.batchId));
   if (!truck) throw new CostError('not_found');
-  const warehouse = `${truck.code} — ${truck.name}`;
-  const zone = await tariffColumnOf(truck.originId);
-  if (!zone) throw new CostError('freight_no_column', { warehouse });
+  const zone = freightSplitZone();
   const made = copyDraft(zone, await tariffHistory(), input.costDate, FREIGHT_LIGHT_BELOW, truck.originId);
   if (made.ok) return made.draft;
   const p = made.problem;
   if (p.kind === 'unpriced') {
-    throw new CostError('freight_zone_unpriced', { warehouse, column: zone, date: input.costDate });
+    throw new CostError('freight_zone_unpriced', { column: zone, date: input.costDate });
   }
   if (p.kind === 'gap' && p.to === null) throw new CostError('freight_tariff_top', { column: zone, from: p.from });
   if (p.kind === 'gap') throw new CostError('freight_tariff_gap', { column: zone, from: p.from, to: p.to ?? '' });

@@ -1,7 +1,13 @@
 import 'dotenv/config';
 import ExcelJS from 'exceljs';
 import { eq, inArray, like, sql } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+// His 1a: ONE column for every truck. The file points that one column at its
+// own private one through the column's single seam, and never writes a row
+// into the real `cn` column (a tariff row is configuration, #824/#183).
+const seam = vi.hoisted(() => ({ zone: '' }));
+vi.mock('@/modules/wms/costing/freight-zone', () => ({ freightSplitZone: () => seam.zone }));
+
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
   batches,
@@ -18,11 +24,9 @@ import {
   receipts,
   users,
   warehouses,
-  warehouseTariffColumns,
 } from '@/modules/platform/db/schema';
 import type { Actor } from '@/modules/platform/rbac/authorize';
 import { addCostEntry } from '@/modules/wms/costing/service';
-import { setTariffColumnInTx } from '@/modules/wms/costing/tariff-column';
 import { editLot } from '@/modules/wms/receipts/edit';
 import { clientProfitGaps, pnlGaps, profitAndLoss, profitByClient } from '@/modules/wms/accounting/reports';
 import { buildPnlXlsx, buildProfitXlsx } from '@/modules/wms/accounting/xlsx';
@@ -237,14 +241,7 @@ async function sweepPrivateZones() {
   const zones = (await db.selectDistinct({ zone: calcFreightTariffs.zone }).from(calcFreightTariffs))
     .map((r) => r.zone)
     .filter((z) => SWEEP.test(z));
-  const mapped = (await db.select({ zone: warehouseTariffColumns.tariffZone }).from(warehouseTariffColumns))
-    .map((r) => r.zone)
-    .filter((z) => SWEEP.test(z));
-  const all = [...new Set([...zones, ...mapped])];
-  if (all.length) {
-    await db.delete(warehouseTariffColumns).where(inArray(warehouseTariffColumns.tariffZone, all));
-    await db.delete(calcFreightTariffs).where(inArray(calcFreightTariffs.zone, all));
-  }
+  if (zones.length) await db.delete(calcFreightTariffs).where(inArray(calcFreightTariffs.zone, zones));
 }
 
 beforeAll(async () => {
@@ -276,9 +273,7 @@ beforeAll(async () => {
       effectiveDate: TARIFF_DAY,
     })),
   );
-  await db.transaction(async (tx) => {
-    await setTariffColumnInTx(tx, whW, ZONE);
-  });
+  seam.zone = ZONE;
 });
 
 afterAll(async () => {
@@ -499,8 +494,6 @@ describe('4 — the deal card: a held bill on a truck the deal’s cartons rode 
 describe('cleanup', () => {
   it('FINAL — deletes the run’s column, tariff rows, costs and cargo; deactivates the rest; no prefixed zone left', async () => {
     await db.transaction(async (tx) => {
-      await tx.delete(warehouseTariffColumns).where(like(warehouseTariffColumns.tariffZone, `t\\_%${RUN}\\_wfhr`));
-      await tx.delete(warehouseTariffColumns).where(inArray(warehouseTariffColumns.warehouseId, [whW, whD]));
       if (made.costs.length) await tx.delete(costEntries).where(inArray(costEntries.id, made.costs));
       await tx.delete(calcFreightTariffs).where(like(calcFreightTariffs.zone, `t\\_%${RUN}\\_wfhr`));
     });
@@ -527,8 +520,7 @@ describe('cleanup', () => {
     await db.update(warehouses).set({ active: false }).where(inArray(warehouses.id, [whW, whD]));
     await db.update(users).set({ active: false }).where(eq(users.id, actorId));
     const left = await db.execute<{ n: number }>(sql`
-      SELECT (SELECT count(*) FROM calc_freight_tariffs WHERE zone LIKE ${`t\\_%${RUN}\\_wfhr`})
-           + (SELECT count(*) FROM warehouse_tariff_columns WHERE tariff_zone LIKE ${`t\\_%${RUN}\\_wfhr`}) AS n
+      SELECT count(*) AS n FROM calc_freight_tariffs WHERE zone LIKE ${`t\\_%${RUN}\\_wfhr`}
     `);
     expect(Number(left[0]!.n)).toBe(0);
     expect(

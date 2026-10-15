@@ -7,9 +7,9 @@ import { addCostEntryAction, rebaseCostAction, voidCostEntryAction } from '@/app
 import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 import { latestTxDate } from '@/modules/wms/finance/dates';
 import type { AllocationBasis } from '@/modules/wms/costing/engine';
-import { FREIGHT_LIGHT_BELOW, bandText, freightUsable, offeredBases } from '@/modules/wms/costing/freight-split';
+import { FREIGHT_LIGHT_BELOW, freightUsable, offeredBases } from '@/modules/wms/costing/freight-split';
 import type { FreightHeld, FreightOffer, FreightRowView, RebasePreview } from '@/modules/wms/costing/freight-types';
-import { FreightGroupRows, FreightHeldLines, FreightHeldNote } from '@/components/freight-views';
+import { FREIGHT_PREVIEW_CAP, FreightHeldLines, FreightHeldNote, FreightLotRows } from '@/components/freight-views';
 import { UnmergeButton } from '@/app/(protected)/accounting/xarajat-kassa/unmerge-button';
 import { TwinGapNote, TwinWarning } from '@/components/twin-warning';
 import type { TwinGap, TwinView } from '@/modules/wms/accounting/twins';
@@ -124,10 +124,9 @@ const PAYER_ERRORS = {
   validation: 'errValidation',
   already_voided: 'errAlreadyVoided',
   // The freight basis's tariff configuration (0132, docs/YOLKIRA-TAQSIMOT.md
-  // §5): each NAMES what to fix — the warehouse, the column, the date.
+  // §5): each NAMES what to fix — the column, the date.
   freight_batch_only: 'errFreightBatchOnly',
   freight_on_customs: 'errFreightOnCustoms',
-  freight_no_column: 'errFreightNoColumn',
   freight_zone_unpriced: 'errFreightUnpriced',
   freight_tariff_gap: 'errFreightGap',
   freight_tariff_top: 'errFreightTop',
@@ -167,7 +166,6 @@ const FREIGHT_LIMIT = FREIGHT_LIGHT_BELOW;
 /** The disabled freight option's own short fact (SP-5) — a literal map, never a built key (#163). */
 const FREIGHT_OPT = {
   server_behind: 'freightOptServerBehind',
-  no_column: 'freightOptNoColumn',
   unpriced: 'freightOptUnpriced',
   problem: 'freightOptProblem',
 } as const;
@@ -176,14 +174,15 @@ function freightOffText(
   offer: FreightOffer,
   why: keyof typeof FREIGHT_OPT,
   costDate: string,
+  basis: string,
   t: (key: string, values?: Record<string, string | number>) => string,
   zoneWords: (zone: string) => string,
 ): string {
-  if (offer.status === 'server_behind' || why === 'server_behind') return t('freightOffServerBehind');
-  const warehouse = `${offer.warehouse.code} — ${offer.warehouse.name}`;
-  if (offer.status === 'no_column') return t('freightOffNoColumn', { warehouse });
-  if (why === 'unpriced') return t('freightOffUnpriced', { warehouse, column: zoneWords(offer.zone), date: costDate });
-  return t('freightOffProblem', { column: zoneWords(offer.zone) });
+  // The basis the bill WILL be split by is the one the select holds — the
+  // sentence used to say «by weight» whatever was chosen (the review as built).
+  if (offer.status === 'server_behind' || why === 'server_behind') return t('freightOffServerBehind', { basis });
+  if (why === 'unpriced') return t('freightOffUnpriced', { column: zoneWords(offer.zone), date: costDate, basis });
+  return t('freightOffProblem', { column: zoneWords(offer.zone), basis });
 }
 
 /**
@@ -269,7 +268,6 @@ function RebaseBlock({
             <p className="min-w-0 break-words text-ink-700">
               {t('rebaseColumn', {
                 column: zoneWords(preview.column.zone),
-                warehouse: preview.column.warehouseCode,
                 from: preview.column.tariffFrom,
               })}
               {preview.column.previousZone && preview.column.previousZone !== preview.column.zone
@@ -285,12 +283,6 @@ function RebaseBlock({
             {preview.rows.map((row) => (
               <li key={row.key} className="min-w-0 break-words" data-testid={`cost-rebase-row-${row.key}`}>
                 {t('rebaseRow', { label: row.label, before: row.beforePct, after: row.afterPct })}
-                {row.band
-                  ? (() => {
-                      const b = bandText(row.band, { money: preview.money });
-                      return ` · ${t(b.key, { range: b.range, price: b.price })}`;
-                    })()
-                  : ''}
                 {row.beforeUsd !== undefined || row.afterUsd !== undefined
                   ? ` · ${t('rebaseRowMoney', {
                       before: (row.beforeUsd ?? 0).toFixed(2),
@@ -300,6 +292,27 @@ function RebaseBlock({
               </li>
             ))}
           </ul>
+          {/* The after state per LOT (his 2b): a client spans bands now, so
+              the bands live on the lot rows, drawn the panel's one way. */}
+          {preview.split && (
+            <details data-testid="cost-rebase-lots">
+              <summary className="cursor-pointer text-ink-700">{t('rebaseLots')}</summary>
+              <div className="mt-1">
+                {/* The dollars are the server's, per lot, from the same pool
+                    the rows above add up — never this browser re-splitting a
+                    nominal 100 or the bill's own currency (judge J14). */}
+                <FreightLotRows
+                  view={{ kind: 'split', ...preview.split }}
+                  money={preview.money}
+                  amount={null}
+                  currency="USD"
+                  limit={FREIGHT_LIMIT}
+                  cents={preview.money ? preview.afterLotCents : undefined}
+                  testid="cost-rebase-lot"
+                />
+              </div>
+            </details>
+          )}
           {preview.nowhere && (
             <p className="font-semibold text-warn" data-testid="cost-rebase-nowhere">
               ⚠ {t('rebaseNowhere')}
@@ -475,8 +488,9 @@ export function CostPanel({
   // §4). Untouched, it follows the type and the date: a yo'lkira type on a
   // truck whose column is priced on that date reads «yo'lkira tarifi
   // bo'yicha» by itself (his 4a). A direct bill is a one-off and a kept
-  // freight starts untouched, so it is re-derived for the next truck — it
-  // never follows onto one whose warehouse has no column (§8.5).
+  // freight starts untouched, so it is re-derived for the next truck (§8.5).
+  // His 1a: every truck has the one column, so a yo'lkira type preselects it
+  // on every truck whose bill date the column prices.
   const keptTouched = Boolean(initial?.basis && initial.basis !== 'direct_to_client' && initial.basis !== 'freight');
   const [touched, setTouched] = useState(keptTouched);
   const [chosen, setChosen] = useState<AllocationBasis>(keptTouched ? (initial?.basis ?? scopeBasis) : scopeBasis);
@@ -627,7 +641,6 @@ export function CostPanel({
             {entry.costDate} ·{' '}
             {entry.freight && entry.freight.zone
               ? t('freightLabel', {
-                  warehouse: entry.freight.warehouseCode,
                   column: zoneWords(entry.freight.zone),
                   from: entry.freight.tariffFrom,
                 })
@@ -672,7 +685,7 @@ export function CostPanel({
             <details className="w-full text-xs" data-testid="cost-freight-how">
               <summary className="cursor-pointer text-ink-700">{t('freightHow')}</summary>
               <div className="mt-1">
-                <FreightGroupRows
+                <FreightLotRows
                   view={entry.freight.view}
                   money={entry.freight.allocatedUsd !== undefined}
                   amount={null}
@@ -800,19 +813,11 @@ export function CostPanel({
           )}
           {/* Why a yo'lkira bill is not split by the tariff here — a FACT,
               drawn only where the untouched default would have been freight
-              (SP-5): a warehouse deliberately left without a column costs a
-              bill of another type nothing. */}
+              (SP-5): the date before the column's first price, a hole in the
+              column, or a server one migration behind. */}
           {isFreightType && offered.includes('freight') && !usable.ok && freight && (
             <p className="text-xs text-ink-500" data-testid="freight-off">
-              {freightOffText(freight, usable.why, costDate, t, zoneWords)}
-              {freight.status === 'no_column' && freight.mayFixColumn && (
-                <>
-                  {' '}
-                  <a className="underline" href={`/admin/warehouses/${freight.warehouse.id}`} target="_blank" rel="noopener">
-                    {t('freightFixColumn')}
-                  </a>
-                </>
-              )}
+              {freightOffText(freight, usable.why, costDate, t(`bases.${basis}`), t, zoneWords)}
               {freight.status === 'ready' && freight.mayFixTariff && (
                 <>
                   {' '}
@@ -825,23 +830,31 @@ export function CostPanel({
           )}
           {basis === 'freight' && usable.ok && freight?.status === 'ready' && (
             <div className="space-y-1 rounded-md bg-surface p-2" data-testid="freight-preview">
-              <p className="text-xs font-semibold text-ink-700">
+              {/* His 1a in one line: the China prices are a PROPORTION, so an
+                  Andijon → Toshkent bill split on them does not read as a
+                  mistake. It was a second, three-line sentence under this
+                  one, and on a 360 px phone it was part of what pushed
+                  Saqlash 831 px below the amount (m9zzzd). */}
+              <p className="text-xs font-semibold text-ink-700" data-testid="freight-column-line">
                 {t('freightColumnLine', {
-                  warehouse: freight.warehouse.code,
                   column: zoneWords(freight.zone),
                   from: usable.version?.from ?? '—',
                 })}
               </p>
               {usable.version?.split ? (
-                <FreightGroupRows
+                <FreightLotRows
                   view={usable.version.split}
                   money={freight.money}
                   amount={parseTypedMoney(amount)}
                   currency={currency}
                   limit={FREIGHT_LIMIT}
+                  cap={FREIGHT_PREVIEW_CAP}
                 />
               ) : (
-                <p className="text-xs text-ink-500">{t('freightVersionUnknown')}</p>
+                // A version the page holds but did not ship whole (an older
+                // date — the payload) was CHECKED, so it is not «the server
+                // decides» (judge J16): the split is drawn after the save.
+                <p className="text-xs text-ink-500">{t(usable.version ? 'freightVersionAfterSave' : 'freightVersionUnknown')}</p>
               )}
             </div>
           )}

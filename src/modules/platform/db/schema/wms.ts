@@ -761,13 +761,13 @@ export const costEntries = pgTable(
 );
 
 /**
- * Which column of his freight tariff a warehouse's trucks are split by (0132,
- * his 2c: «har bir skladga ustun yozib chiqiladi, mashina ustunni o'z
- * skladidan oladi»). A SIDE table, never a column on `warehouses`: fifty
- * reads take every warehouses column and would 42703 one migration behind.
- * No row = «—», nothing written; the freight basis is then refused for that
- * warehouse's trucks in words. Read and written only by
- * `wms/costing/tariff-column.ts`.
+ * UNREAD since his 1a of 2026-10-15 («skladlarning o'zini narxi bo'lsin degan
+ * narsa kerak emas»): ONE column for every truck (`wms/costing/freight-zone`).
+ * 0132 made this side table for his earlier 2c — a column per warehouse — and
+ * production may hold rows typed in between, so the table and this
+ * declaration stay one release and go together in a later one (never drop
+ * data in the release that stops reading it). Nothing in `src/` but this
+ * file names it (fenced).
  */
 export const warehouseTariffColumns = pgTable(
   'warehouse_tariff_columns',
@@ -790,8 +790,8 @@ export const warehouseTariffColumns = pgTable(
 /**
  * A freight bill's FROZEN copy of the tariff column it is split by, as of its
  * cost_date (0132, his 3a). Recompute, the void guard and every explanation
- * read ONLY this — never `calc_freight_tariffs` and never the warehouse's
- * current column — so a later tariff edit or remap never moves a saved bill.
+ * read ONLY this — never `calc_freight_tariffs` — so a later tariff edit
+ * never moves a saved bill.
  * One row per live freight bill and none for any other basis; its only
  * reader and writer is `wms/costing/freight-copy.ts`.
  */
@@ -801,7 +801,7 @@ export const costEntryTariffs = pgTable(
     costEntryId: uuid('cost_entry_id')
       .primaryKey()
       .references(() => costEntries.id, { onDelete: 'cascade' }),
-    /** The origin warehouse the column was read from, at save. */
+    /** The truck's origin at save — provenance only since his 1a (it no longer chooses the column). */
     warehouseId: uuid('warehouse_id')
       .notNull()
       .references(() => warehouses.id),

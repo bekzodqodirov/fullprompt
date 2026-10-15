@@ -9,8 +9,7 @@
 export const FREIGHT_ERROR_PARAMS = {
   freight_batch_only: [],
   freight_on_customs: [],
-  freight_no_column: ['warehouse'],
-  freight_zone_unpriced: ['warehouse', 'column', 'date'],
+  freight_zone_unpriced: ['column', 'date'],
   freight_tariff_gap: ['column', 'from', 'to'],
   freight_tariff_top: ['column', 'from'],
   freight_tariff_overlap: ['column', 'at'],

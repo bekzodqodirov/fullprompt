@@ -1,5 +1,51 @@
 # CHANGELOG
 
+## Yo'lkira: bitta jadval hamma mashina uchun, har bir tovar o'z zichligi bilan — 2026-10-15
+
+**Bu raundning o'zida migratsiya yo'q.** U pastdagi «Zavod reysi yopiladi» raundi (migratsiya 0133) bilan bitta deployda chiqadi, va 14-oktabrdagi yangilanish (PR #120, migratsiya 0132) serverga hali qo'yilmagan bo'lsa, uni ham olib keladi. Shuning uchun deploydan keyin ikkalasini tekshiring: **migratsiyalar soni 134** va `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatsin.
+
+**14-oktabr yozuvidagi 2-bo'lim («Har bir skladga ustun») va o'rnatishning 4-qadami («Har bir skladga ustun yozing») bekor qilindi** — skladga ustun yozish endi yo'q.
+
+Sizning so'zingiz: «skladlarning o'zini narxi bo'lsin degan narsa kerak emas … mashina yo'lkirasiga xarajat yozilganda shu proportsiyada taqsimlansin … aynan shu tovar qancha foizdaligi hisoblanib … tannarxiga yoziladi». Javobingiz: **1a 2b**.
+
+### 1. Skladga ustun yozish olib tashlandi (1a)
+
+- Boshqaruv → Skladlar formasidan «Yo'lkira tarifi ustuni» maydoni **olib tashlandi**. Hech narsa yozish shart emas.
+- Har bir mashina — Yiwu, Guangzhou, Qashqardan jo'naganlari va ichki reyslar (Andijon → Toshkent) ham — **bitta jadval** bilan bo'linadi: Yiwu / Guangzhou → Toshkent narxlaringiz. Narxlar faqat **nisbat** uchun olinadi; bo'linadigan pul — siz yozgan haqiqiy xarajat. Saqlangan qatorda ham shunday yoziladi: «yo'lkira tarifi bo'yicha · Yiwu / Guangzhou → Toshkent narxlari nisbatida · 2026-01-01 tarifi».
+- **Deploydan keyin darhol ishlaydi:** «Yo'lkira» turidagi har bir yangi mashina xarajati o'zi «yo'lkira tarifi bo'yicha» bo'lib turadi (boshqa usulni tanlash ham mumkin) — **agar /admin/tarif tepasida ⚠ bo'lmasa**.
+- **/admin/tarif endi o'zi aytadi:** shu ustunda teshik yoki ikki qatorga tushgan zichlik bo'lsa (bugun yoki oldindan yozilgan keyingi sanada), tepada ⚠ chiqadi — qaysi sanadan va qaysi kg/kub. Shu holatda hech bir hisob tarif bo'yicha bo'linmaydi.
+
+### 2. Har bir tovar (lot) o'z zichligi bilan (2b)
+
+- Avval mijozning mashinadagi butun yuki bitta zichlik bilan olinardi. Endi **har bir lot alohida**: o'z kg/kubi, tarifdagi o'z qatori, o'z narxi.
+- Misol (siz aytgan): D mijozda 1 kub yostiq (100 kg) va 1 kub kafel (1100 kg). Yostiq $110, kafel 1100 × $0.55 = $605, D jami **$715** — yostiqqa 15.38 %, kafelga 84.62 %. Avval D $600 hisoblanardi.
+- Ekranda: har bir mijoz bitta qator (jami foiz va dollar); bir nechta loti bo'lsa «Lotlarni ko'rsatish» bosilganda har bir lot — nomi (masalan «Yostiq»), kubi, zichligi, tarif qatori, foizi va dollari. Pul avval har bir lotga butun sent bilan bo'linadi, keyin lot ichida karobkalarga — shuning uchun mijozning dollari doim uning lotlari yig'indisi va oldindan ko'rishda, saqlangandan keyin va «Bo'lish usuli ✎» da sentigacha bir xil.
+- Egasi aniqlangan yuk o'z markirovkasini saqlab qolsa («470-A»), qatorda mijoz kodi ham yoziladi («GS500 · 470-A · Kafel»).
+- Xarajat yozish formasida mashinada 3 tadan ko'p mijoz bo'lsa — eng katta 3 tasi ko'rinadi, qolgani «+N mijoz» tugmasida (dollari bilan), shunda telefonda ham «kim to'ladi» va «Saqlash» bir ekranda qoladi. Tepasidagi bitta qator: «Yiwu / Guangzhou → Toshkent narxlari nisbatida bo'linadi · 2026-01-01 tarifi».
+- **«Narx» varag'ida har bir lot qatorida:** «🚚 YW-001: tarif 1000+ · $0.55/kg · hisobning 84.62 %» (mashinada faqat D bo'lsa) — aynan shu tovarning shu mashinadagi karobkalari o'sha hisobning necha foizini olgani. Lotning bir qismi keyingi mashinaga o'tgan bo'lsa, faqat o'tgan karobkalar ulushi yoziladi. Mijozning yo'lkira qatori esa faqat shu qismdagi pul turgan lotlarning tarif qatorlarini yozadi (avvalgi reysdan faqat kafel kelgan bo'lsa — faqat kafelning qatori).
+
+### 3. 10 kg/kub qoidasi endi har bir lotga
+
+- Mashinadagi **bitta** lot 1 kubga 10 kg dan yengil bo'lsa (yoki kub/kg yozilmagan bo'lsa) — hisob saqlanadi, lekin **butun hisob bo'linmaydi** (⚠, pul hech kimning tannarxiga tushmaydi), o'sha lot nomi bilan yoziladi. Avval og'ir mijozning ichidagi yengil lot faqat ⓘ bilan o'tib ketardi; endi xato yozilgan lot yashirinmaydi. Lot to'g'rilanishi bilan hisob o'zi bo'linadi.
+
+### 4. Oldin saqlangan «tarif bo'yicha» hisoblar
+
+- Serveringizda bunday hisob bo'lishi deyarli mumkin emas (skladlarga ustun yozilmagan edi). Deploy qadamlarida bitta **faqat o'qiydigan** buyruq lot bo'yicha bo'linganda o'zgaradigan hisoblarni ko'rsatadi; «0 ta hisob o'zgaradi» chiqsa — hech narsa qilinmaydi. Ro'yxat chiqsa — `--apply` bilan bir marta qayta bo'linadi; summa, kurs, kassa, kontragent qarzi va saqlangan tarif nusxasi o'zgarmaydi. Skript yozilgandan keyin bazada aslida nima turganini o'qib chiqaradi.
+
+### O'rnatish (deploy)
+
+1. Zaxira oling (0 bayt emasligini tekshiring).
+2. PR'ni merge qiling, keyin serverda `git pull`, `docker compose build migrate`, keyin `docker compose --profile https --profile telegram up -d --build`.
+3. **Migratsiyalar sonini sanang: 134 bo'lishi kerak** (zavod reysi raundining 0133 si ham shu deployda; 14-oktabrdagi yangilanish qo'yilgan bo'lsa ham, qo'yilmagan bo'lsa ham). Kamroq bo'lsa, `docker compose run --rm migrate` ning o'z chiqishini o'qing.
+4. `curl -s https://gsrwms.uz/api/version` — bugungi vaqt.
+5. `docker compose run --rm migrate pnpm exec tsx scripts/freight-resplit.ts` — «0 ta hisob o'zgaradi» kutiladi. Ro'yxat chiqsa, menga yuboring yoki shu buyruqni `--apply` bilan qayta yuriting.
+6. /admin/tarif ni oching — tepada ⚠ bo'lmasligi kerak.
+7. Zavod reysi raundining tekshiruv skripti (pastdagi yozuvda): `docker compose run --rm migrate pnpm exec tsx scripts/zavod-tekshir.ts` — chiqqanini menga yuboring.
+
+### Tekshirildi
+
+- Yangi testlar: D misoli, bitta prixoddagi ikki lot, lot zichligi karobka soniga bog'liq emasligi, yengil lot butun hisobni ushlab turishi, sentlar bitta qoida bilan (mijoz = lotlari yig'indisi), «Narx» qatori faqat shu qismdagi lotlar bilan, avvalgi reysdan faqat bitta lot kelgan holat, VED tarif narxini ko'rmasligi (✎ oynasida ham), qayta bo'lish skripti (eski «Qashqar» ustunidagi hisob ham o'z ustunida qayta bo'linadi), /admin/tarif ⚠. Telefon (360) va kompyuter (1280) ekranlari ko'rildi.
+
 ## Zavod reysi yopiladi va qayta chiqmaydi — 2026-10-15
 
 **Migratsiya 0133** — deploydan keyin soni **134** bo'lishi shart. Deploydan keyin tekshiruv skriptini ishga tushiring (pastda) va chiqqanini menga tashlang.

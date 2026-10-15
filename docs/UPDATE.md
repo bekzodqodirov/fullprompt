@@ -275,6 +275,65 @@ docker compose --profile basemap run --rm basemap
 docker compose up -d app
 ```
 
+## Yo‘lkira: bitta jadval va har bir lot (2026-10-15) — tekshiruv tartibi
+
+Bu raundning o‘zida migratsiya yo‘q — u yuqoridagi «zavod reysi yopiladi»
+raundining 0133 si bilan bitta deployda chiqadi. **Va 2026-10-14 dagi deploy (PR #120,
+migratsiya 0132) qilinmagan bo‘lsa, shu deploy uni ham olib keladi** — shuning
+uchun tekshiruv ikkalasi: migratsiyalar soni VA build vaqti (yuqoridagi §4
+tartibida).
+
+1. Zaxira (§1) — hajmi 0 emasligini tekshiring.
+2. `git pull`, keyin avval `docker compose build migrate`, so‘ng
+   `docker compose --profile https up -d --build`.
+3. **Sonni o‘qing** — repo’dagi fayllar soniga teng bo‘lishi kerak
+   (`ls src/modules/platform/db/migrations/*.sql | wc -l`, bu raundda
+   **134**), #120 avval deploy qilingan bo‘lsa ham, qilinmagan bo‘lsa ham:
+
+   ```bash
+   docker compose exec -T postgres psql -U gsr -d gsr -tAc \
+     "SELECT count(*) FROM drizzle.__drizzle_migrations"
+   ```
+
+   134 dan kam chiqsa — `docker compose run --rm migrate` ning o‘z chiqishini
+   o‘qing va `docker compose ps -a` da `migrate` = `Exited (0)` ekanini
+   tekshiring. Kam son bilan qoldirilsa, yangi kod eski bazada ishlaydi va
+   har bir mashinada «server yangilanmagan» chiqadi.
+4. **Build vaqtini o‘qing**: `curl -s https://gsrwms.uz/api/version` —
+   bugungi vaqt chiqishi kerak.
+5. **Faqat shundan keyin** — bir martalik qayta bo‘lish ro‘yxati. U
+   **faqat o‘qiydi** va faqat lot bo‘yicha bo‘linganda o‘zgaradigan
+   hisoblarni ko‘rsatadi (yangi kod saqlagan hisoblar o‘zgarmaydi, ular
+   ro‘yxatga tushmaydi):
+
+   ```bash
+   docker compose run --rm migrate pnpm exec tsx scripts/freight-resplit.ts
+   ```
+
+   **«0 ta hisob o‘zgaradi» chiqsa — hech narsa qilinmaydi** (kutilgani shu:
+   0132 da skladlarga ustun yozilmagan edi). Ro‘yxat chiqsa — bir marta lot
+   bo‘yicha qayta bo‘ling (summa, kurs, kassa, kontragent qarzi, saqlangan
+   tarif nusxasi o‘zgarmaydi; eski «Qashqar» ustunida saqlangan hisob o‘z
+   ustunida qoladi va faqat lot bo‘yicha bo‘linadi):
+
+   ```bash
+   docker compose run --rm migrate pnpm exec tsx scripts/freight-resplit.ts --apply
+   ```
+
+   `--apply` dan keyin skript bazada AYNAN yozilganini o‘qib chiqaradi;
+   «⚠ changed since the list was read» chiqsa — ro‘yxatni qayta oling.
+   Ro‘yxatda `HELD (GS…-B)` degan qator bo‘lsa — o‘sha lot 1 kubga 10 kg dan
+   yengil yoki kub/kg yozilmagan: lot prixod kartasida to‘g‘rilanmaguncha bu
+   mashinaning yo‘lkirasi hech kimning tannarxiga tushmaydi (⚠ bilan ko‘rinib
+   turadi). Lotni to‘g‘rilang — hisob o‘zi bo‘linadi.
+6. **/admin/tarif ni oching** — tepada ⚠ bo‘lmasligi kerak. ⚠ chiqsa,
+   «Yiwu / Guangzhou → Toshkent» ustunida teshik yoki ikki qatorga tushgan
+   zichlik bor: shu holatda yo‘lkira hech bir mashinada tarif bo‘yicha
+   bo‘linmaydi, ⚠ qaysi sanadan va qaysi zichlik ekanini aytadi.
+
+`package.json` buyrug‘i qilinmagani ataylab: `package.json` o‘zgarsa image
+qurilishi npm saytiga ulanadi (DECISIONS #1228).
+
 ## Agar biror narsa buzilsa
 
 Avvalgi ishlaydigan holatga qaytish (kod):

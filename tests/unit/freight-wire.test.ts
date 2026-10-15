@@ -70,8 +70,8 @@ describe('one pool', () => {
     expect(copyRead).toBeGreaterThan(guard);
   });
 
-  it('the recompute, the pool and the void guard never read the LIVE tariff or the warehouse column', () => {
-    const forbidden = /calc_freight_tariffs|calcFreightTariffs|tariff-read|\btariffFor\b|\btariffHistory\b|\btariffColumnOf\b|warehouse_tariff_columns|warehouseTariffColumns/;
+  it('the recompute, the pool and the void guard never read the LIVE tariff', () => {
+    const forbidden = /calc_freight_tariffs|calcFreightTariffs|tariff-read|\btariffFor\b|\btariffHistory\b|\bfreightSplitZone\b/;
     const service = strip(read('src/modules/wms/costing/service.ts'));
     expect(body(service, 'export async function recomputeEntry(')).not.toMatch(forbidden);
     expect(body(service, 'export async function loadPoolInputs(')).not.toMatch(forbidden);
@@ -103,7 +103,7 @@ describe('the module graph', () => {
   });
 
   it('the leaves never import ./service (a static cycle crashes a top-level extends at load)', () => {
-    for (const leaf of ['freight-copy', 'tariff-column', 'freight-ready', 'customs-ids', 'errors', 'pool', 'freight-split', 'freight-types']) {
+    for (const leaf of ['freight-copy', 'freight-zone', 'freight-ready', 'customs-ids', 'errors', 'pool', 'freight-split', 'freight-types']) {
       const rel = `src/modules/wms/costing/${leaf}.ts`;
       if (!existsSync(path.join(ROOT, rel))) continue;
       expect(strip(read(rel)), rel).not.toMatch(/from ['"]\.\/service['"]/);
@@ -127,25 +127,147 @@ describe('the lot door heals a freight split', () => {
   });
 });
 
-describe('the warehouse form keeps its column', () => {
-  const actions = strip(read('src/app/(protected)/admin/warehouses/actions.ts'));
-  it('reads the field only through readTariffZoneField (absent ≠ empty, #171)', () => {
-    expect(actions).not.toMatch(/formData\.get\('tariffZone'\)/);
-    expect(actions).toMatch(/readTariffZoneField\(formData\)/);
+describe('his 1a (2026-10-15): ONE column for every truck, nothing per warehouse', () => {
+  it('the column has one source, a zero-import leaf, and it is his seeded Yiwu/Guangzhou → Toshkent column', async () => {
+    const leaf = strip(read('src/modules/wms/costing/freight-zone.ts'));
+    expect(leaf).not.toMatch(/^import /m);
+    const { freightSplitZone } = await import('@/modules/wms/costing/freight-zone');
+    const { OWNER_TARIFF_ZONES } = await import('@/modules/wms/calc/tariff-seed');
+    expect(freightSplitZone()).toBe('cn');
+    expect(OWNER_TARIFF_ZONES as readonly string[]).toContain(freightSplitZone());
   });
-  it('the zone never reaches the warehouses row (no such column)', () => {
-    const toValues = body(actions, 'function toValues(');
-    expect(toValues).not.toMatch(/tariffZone/);
+
+  it('the save and the preview take the zone from it, and only they build a copy', () => {
+    for (const rel of ['src/modules/wms/costing/freight-copy.ts', 'src/modules/wms/costing/freight-offer.ts']) {
+      const src = strip(read(rel));
+      expect(src, rel).toContain('const zone = freightSplitZone();');
+      expect(src, rel).toMatch(/copyDraft\(zone, /);
+    }
+    const builders = SRC.filter((f) => /\bcopyDraft\(/.test(strip(read(f))) && !f.endsWith('costing/freight-split.ts'));
+    expect(builders.sort()).toEqual(['src/modules/wms/costing/freight-copy.ts', 'src/modules/wms/costing/freight-offer.ts']);
   });
-  it('the row, the column and the history land in ONE transaction', () => {
+
+  it('the retired mapping table is named by the schema alone (kept for its rows, read by nobody)', () => {
+    const naming = SRC.filter((f) => /warehouse_tariff_columns|warehouseTariffColumns/.test(strip(read(f))));
+    expect(naming).toEqual(['src/modules/platform/db/schema/wms.ts']);
+  });
+
+  it('no file reaches for the removed door', () => {
+    const door = /\btariffColumnOf\b|\bmappableZones\b|\bsetTariffColumnInTx\b|\breadTariffZoneField\b|tariff-column['"]|tariff-zone-field['"]|wh-tariff-zone|\bno_column\b|\bmayFixColumn\b/;
+    for (const f of SRC) expect(strip(read(f)), f).not.toMatch(door);
+  });
+
+  it('the warehouse form, its pages and its actions carry no tariff column; the update keeps its one transaction', () => {
+    for (const rel of [
+      'src/app/(protected)/admin/warehouses/actions.ts',
+      'src/app/(protected)/admin/warehouses/warehouse-form.tsx',
+      'src/app/(protected)/admin/warehouses/new/page.tsx',
+      'src/app/(protected)/admin/warehouses/[id]/page.tsx',
+    ]) {
+      const src = strip(read(rel));
+      expect(src, rel).not.toMatch(/tariffZone|freight-ready|costing\//);
+    }
+    const actions = strip(read('src/app/(protected)/admin/warehouses/actions.ts'));
     const update = body(actions, 'export async function updateWarehouseAction(');
-    expect(update).toMatch(/db\.transaction\(async \(tx\) => \{[\s\S]*setTariffColumnInTx\(tx, id, posted\)[\s\S]*writeAudit\(\s*tx,/);
+    expect(update).toMatch(/db\.transaction\(async \(tx\) => \{[\s\S]*writeAudit\(\s*tx,/);
+  });
+
+  it('the readiness probe names only the copy table (the mapping table will be dropped)', () => {
+    const probe = strip(read('src/modules/wms/costing/freight-ready.ts'));
+    expect(probe).toContain("to_regclass('public.cost_entry_tariffs')");
+    expect(probe).not.toMatch(/warehouse_tariff_columns/);
+  });
+});
+
+describe('his 2b (2026-10-15): every reader of a split is keyed by LOT', () => {
+  it('the saved fold’s cents are keyed by the lot, the same key the view’s rows carry', () => {
+    const offer = strip(read('src/modules/wms/costing/freight-offer.ts'));
+    expect(offer).toContain("'l:' || b.lot_id::text AS k");
+    expect(offer).not.toMatch(/'c:' \|\| ca\.client_id/);
+  });
+
+  it('the Narx tab names a part’s bands through the ONE pure rule, over the lots its money sits on (judge J1/J21)', () => {
+    const pricing = strip(read('src/app/(protected)/batches/[id]/pricing/page.tsx'));
+    expect(pricing).toMatch(/clientBandLine\(freightViews\.get\(part\.freightEntryId\)\?\.view, `c:\$\{clientId\}`, part\.freightLotIds/);
+    // The part's lot ids come from the rows that make its dollars, never a second membership rule.
+    const service = strip(read('src/modules/wms/costing/service.ts'));
+    const breakdown = body(service, 'export async function batchClientCostBreakdown(');
+    expect(breakdown).toContain("CASE WHEN ce.allocation_basis = 'freight' THEN bx.lot_id::text END AS freight_lot_id");
+    expect(breakdown).toMatch(/GROUP BY [^\n]*freight_entry_id, freight_lot_id/);
+    // The lot row's % divides THIS truck's dollars of the lot by the bill (the review as built).
+    expect(pricing).toMatch(/usd \/ explained\.amountUsd/);
+    // The lot row's own % of each bill (judge J36) reads the same views and the same lot ids.
+    expect(pricing).toMatch(/part\.freightLotIds\.includes\(lot\.lotId\)/);
+    expect(pricing).toMatch(/const explained = freightViews\.get\(part\.freightEntryId\);\s*const row = splitLot\(explained\?\.view, lot\.lotId\)/);
+    for (const f of SRC) expect(strip(read(f)), f).not.toMatch(/\bsplitGroup\b|\bfreightGroups\b|\blightLots\b|\bHeldGroup\b|\bGroupView\b/);
+  });
+
+  it('the re-basis token covers the after split’s lots, and its rows carry no single band', () => {
+    const rebase = strip(read('src/modules/wms/costing/rebase.ts'));
+    expect(rebase).toMatch(/split \? split\.lots\.map\(\(l\) => \[l\.key, l\.share\]/);
+    expect(rebase).not.toMatch(/bands\.set\(/);
+    // The after split is built by `splitView` alone — the one producer that honours the money sight (judge J5).
+    expect(rebase).toMatch(/verdict\.kind === 'split' \? splitView\(verdict, money\) : null/);
+  });
+
+  it('a bill’s cents have ONE rule: only freight-split.ts calls splitCents; the fold, the preview and the re-basis rows ask lotCents (judge J2/J14/J22)', () => {
+    const callers = SRC.filter((f) => /\bsplitCents\(/.test(strip(read(f))) && !f.endsWith('costing/freight-split.ts'));
+    expect(callers).toEqual([]);
+    for (const rel of ['src/modules/wms/costing/freight-offer.ts', 'src/modules/wms/costing/rebase.ts', 'src/components/freight-views.tsx']) {
+      expect(strip(read(rel)), rel).toMatch(/\blotCents\(/);
+    }
+    for (const rel of ['src/modules/wms/costing/rebase.ts', 'src/components/freight-views.tsx']) {
+      expect(strip(read(rel)), rel).toMatch(/\bclientCentsOf\(/);
+    }
+  });
+
+  it('the ✎ after-fold draws the server’s per-lot cents, never this browser re-splitting a nominal 100 (judge J14)', () => {
+    const panel = strip(read('src/components/cost-panel.tsx'));
+    const fold = panel.slice(panel.indexOf('data-testid="cost-rebase-lots"'), panel.indexOf('testid="cost-rebase-lot"'));
+    expect(fold).toContain('cents={preview.money ? preview.afterLotCents : undefined}');
+    expect(fold).toContain('amount={null}');
+  });
+
+  it('/admin/tarif says when the one column would not split a bill, through the save’s own constructor (judge J31)', () => {
+    const page = strip(read('src/app/(protected)/admin/tarif/page.tsx'));
+    expect(page).toContain('const zone = freightSplitZone();');
+    expect(page).toMatch(/columnWatch\(zone, history, tashkentDay\(\), FREIGHT_LIGHT_BELOW\)/);
+    const split = strip(read('src/modules/wms/costing/freight-split.ts'));
+    expect(body(split, 'export function columnWatch(')).toMatch(/copyDraft\(zone, history, from, lightBelow, ''\)/);
+  });
+
+  it('every producer of a split view asks the ONE money sight (#790/#791 — never a finance.manage gate)', () => {
+    const offer = strip(read('src/modules/wms/costing/freight-offer.ts'));
+    const rebase = strip(read('src/modules/wms/costing/rebase.ts'));
+    // From the signature to the next export — `body()` stops at a parameter's `{` that ends a line.
+    const upToNext = (src: string, fn: string) => {
+      const at = src.indexOf(fn);
+      expect(at, fn).toBeGreaterThan(-1);
+      const next = src.indexOf('\nexport ', at + fn.length);
+      return src.slice(at, next < 0 ? undefined : next);
+    };
+    for (const fn of ['export async function freightOffer(', 'export async function explainFreightBills(']) {
+      expect(upToNext(offer, fn), fn).toContain('const money = freightMoneySight(actor.permissions);');
+    }
+    expect(body(rebase, 'export async function rebaseCost(')).toContain('const money = freightMoneySight(actor.permissions);');
+    for (const src of [offer, rebase]) expect(src).not.toMatch(/permissions\.has\('finance\.manage'\)/);
+  });
+
+  it('the batched explain hands each truck its cartons in box order, as boxMeasures does (the review as built)', () => {
+    const offer = strip(read('src/modules/wms/costing/freight-offer.ts'));
+    expect(offer).toContain('[...ids].sort().flatMap(');
+  });
+
+  it('the offer gives no whole-split slot to a version no save can choose (judge J16)', () => {
+    const offer = strip(read('src/modules/wms/costing/freight-offer.ts'));
+    expect(offer).toMatch(/const dates = allDates\.filter\(\(d\) => d <= last\);/);
+    expect(offer).toContain('firstFrom: allDates.at(-1) ?? null,');
   });
 });
 
 describe('the browser bundle stays free of the database', () => {
   it('the cost panel and the freight views import only pure costing values (#276)', () => {
-    const SERVER = /costing\/(service|freight-offer|freight-copy|tariff-column|freight-ready|rebase|customs-ids|cost-entry)['"]/;
+    const SERVER = /costing\/(service|freight-offer|freight-copy|freight-ready|rebase|customs-ids|cost-entry)['"]/;
     for (const rel of ['src/components/cost-panel.tsx', 'src/components/freight-views.tsx']) {
       const lines = strip(read(rel))
         .split('\n')

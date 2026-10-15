@@ -20,8 +20,8 @@
  * fence read it; the schema CHECK and 0132's CHECK are the only other copies
  * and `tests/unit/allocation-basis-vocabulary.test.ts` pins all three equal.
  * 'freight' (0132, docs/YOLKIRA-TAQSIMOT.md) weights each box by its share of
- * its client's yo'lkira VALUE on his tariff — `freightWeight`, computed by
- * `./pool` from the bill's frozen tariff copy, never here.
+ * its LOT's yo'lkira VALUE on his tariff (his 2b) — `freightWeight`, computed
+ * by `./pool` from the bill's frozen tariff copy, never here.
  */
 export const ALLOCATION_BASES = [
   'weight',
@@ -44,8 +44,8 @@ export interface AllocBox {
   /** max(weightKg, volumeM3 × factor) — factor comes from settings (167). */
   chargeableKg: number;
   /**
-   * The box's weight under the 'freight' basis: its client group's tariff
-   * rate × the box's stable m³ (`./freight-split`). REQUIRED, so a pool
+   * The box's weight under the 'freight' basis: its lot's tariff rate × the
+   * box's stable m³ (`./freight-split`, his 2b). REQUIRED, so a pool
    * builder that forgets it does not compile; 0 for every other basis.
    */
   freightWeight: number;
