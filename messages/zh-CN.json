@@ -4796,7 +4796,7 @@
     "prefillClosed": "{code} 已关闭或已取消——请不带车次收货。",
     "homeStaleOpen": "{n} 个已到达但未关闭",
     "editHeader": "车辆、司机、备注",
-    "closeCandidates": "有未关联的入库单（{n}）——请先在下方关联，否则其货物会显示为“仓库直收”。",
+    "closeCandidates": "有未关联的入库单（{n}）——请先在上方“未关联的入库单”中关联，否则其货物会显示为“仓库直收”。",
     "closedByHand": "手动关闭",
     "closedByItself": "全部已收货",
     "linesNotCame": "{n} 行未到",

@@ -2759,7 +2759,7 @@ m8-crm's two desktop drags failed once in a run that shared the CPU with
 another vitest: the reload raced the move action (the database held the
 move, the page did not) — green alone twice and in the final run.
 
-**Round — zavod reysi yopiladi (2026-10-15; DECISIONS #1379-#1398;
+**Round — zavod reysi yopiladi (2026-10-15; DECISIONS #1379-#1399;
 migration 0133 `pickup_close` — ledger must reach 134; spec
 `docs/ZAVOD-YOPISH.md`, §10-§11 binding).** His «zavot partiyalarni …
 qabul qilib olsa ham keyinchalik yana reyslar chiqib qolyabti», answers

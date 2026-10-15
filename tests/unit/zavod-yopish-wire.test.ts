@@ -67,6 +67,25 @@ describe('zavod reysi yopiladi — wiring', () => {
     expect(page).toMatch(/\{prefillLookalike && \(\s+<p[\s\S]{0,140}data-testid="receive-pickup-lookalike"/);
   });
 
+  it('the trip strip on /receive wraps its label and never truncates it — the factory is the point of the strip', () => {
+    const wizard = read('src/app/(protected)/receive/receive-wizard.tsx');
+    const strip = wizard.slice(wizard.indexOf('data-testid="receive-pickup"'), wizard.indexOf('data-testid="receive-pickup-detach"'));
+    expect(strip).toContain("{draft.pickupLabel ?? '🏭'}");
+    expect(strip).not.toMatch(/\btruncate\b/);
+    expect(strip).toContain('[overflow-wrap:anywhere]');
+  });
+
+  it('the close fold sends the logist to the unlinked block BY ITS TITLE, in every bundle', () => {
+    for (const locale of LOCALES) {
+      const p = bundle(locale).pickups as Record<string, string>;
+      // QUOTED: the uz and zh sentences open with the title's own words
+      // («Biriktirilmagan prixodlar bor…»), so a bare «contains» is satisfied
+      // by a sentence that sends the reader nowhere.
+      const title = p.candidatesTitle!.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      expect(p.closeCandidates, locale).toMatch(new RegExp(`[«“"]${title}[»”"]`));
+    }
+  });
+
   it('the door question is never served from the service worker’s cache', () => {
     const sw = read('src/app/sw.ts');
     expect(sw).toContain("pathname === '/api/receive/pickups'");

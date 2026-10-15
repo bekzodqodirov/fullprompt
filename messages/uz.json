@@ -4725,7 +4725,7 @@
       "on_road": "yo‘lda",
       "arrived": "yetib keldi",
       "cancelled": "bekor qilingan",
-      "closed": "Yopildi"
+      "closed": "yopildi"
     },
     "tabs": {
       "live": "Faol",
@@ -4796,7 +4796,7 @@
     "prefillClosed": "{code} yopilgan yoki bekor qilingan — reyssiz qabul qiling.",
     "homeStaleOpen": "{n} tasi kelgan, lekin yopilmagan",
     "editHeader": "Mashina, haydovchi, izoh",
-    "closeCandidates": "Biriktirilmagan prixodlar bor ({n}) — avval quyida biriktiring, aks holda ularning yuki «skladda qabul qilingan» bo‘lib qoladi.",
+    "closeCandidates": "Biriktirilmagan prixodlar bor ({n}) — avval yuqoridagi «Biriktirilmagan prixodlar» blokida biriktiring, aks holda ularning yuki «skladda qabul qilingan» bo‘lib qoladi.",
     "closedByHand": "qo‘lda yopildi",
     "closedByItself": "hammasi qabul qilindi",
     "linesNotCame": "{n} ta qator kelmadi",

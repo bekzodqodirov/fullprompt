@@ -1055,7 +1055,10 @@ export function ReceiveWizard({
       {draft.pickupStopId && (
         <div data-testid="receive-pickup" className="space-y-1 rounded-lg bg-brand-50 px-2 py-1.5 text-sm">
           <div className="flex items-center gap-2">
-            <span className="min-w-0 flex-1 truncate">
+            {/* Wraps, never truncates: at 360 px the 40 px «detach» target
+                below leaves the label too little room, and a cut name hides
+                WHICH factory the cargo is being booked to. */}
+            <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">
               {draft.pickupLabel ?? '🏭'} — {t('pickupReceiving')}
               {draft.pickupExtra && <span className="ml-1 text-xs text-ink-500">({t('pickupExtraChip')})</span>}
             </span>

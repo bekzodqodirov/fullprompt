@@ -35,6 +35,7 @@ Tizim zavod reysini hech qachon «tugadi» deb yozmas edi va har safar ekran och
 - **Markirovka va mijoz kodi bir-biriga mos**: «GS500MANIKEN» markirovkali yuk GS500 qatoriga, GS500 mijoz esa «GS500…» markirovkali qatorga mos deb so'raladi (GS5 esa GS500 ga mos emas — koddan keyin raqam kelsa, bu boshqa kod).
 - **Yuk allaqachon qabul qilingan bo'lishi mumkin bo'lsa — oldindan aytadi**: «⚠ GS777: P-201 (12.10, 30 📦) — shu skladda reysga biriktirilmasdan qabul qilingan. Shu yuk emasmi? Bo'lsa, qayta qabul qilmang — logistga ayting». Bu savolda, «Zavoddan kelayotgan yuk» ro'yxatida va «Qabul qilish» bosilganda chiqadi. Eski ekranda eng ko'p uchragan ikki marta qabul aynan shunday bo'lgan.
 - Kecha boshlangan qoralama ochilsa va reys tunda yopilgan bo'lsa — rasmga olishdan **oldin** ogohlantiradi.
+- Qabul sahifasidagi reys yozuvi telefonda endi **to'liq** chiqadi («🏭 ZR-00037 · zavod nomi — zavod reysidan qabul»), kesilib qolmaydi — qaysi zavodga yozilayotgani ko'rinib turadi.
 
 ### 4. Biriktirilmagan prixodni qidirish faqat ochiq reyslarda (4a)
 

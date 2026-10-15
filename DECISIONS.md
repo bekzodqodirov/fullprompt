@@ -3530,3 +3530,24 @@ migration's own memory and close statements, re-run once, idempotent.
 STATED: that heal answers every line the owner's ordered rule matches, so
 it is run once right after the deploy, before logists link from the card.
 11 red proofs (the package's own).
+
+1399. **Found by LOOKING at the round's screenshots, not by a test.** A
+fresh-eyes review of twelve shots (360×800 and 1280×900) found three
+things no locator could: the /receive trip strip TRUNCATED to «ZR-00037 ·
+…» at 360 px — this round's own 40 px «Reysdan ajratish» target took the
+label's room, and `toContainText(FACTORY)` reads truncated text happily,
+so m9zy stayed green on a strip nobody could read (the label wraps now,
+fenced: no `truncate` in the strip); the close fold sent the logist to
+the unlinked prixods «below» when the block sits ABOVE it, in all four
+bundles (the sentence now names the block by its title in quotes, fenced
+against `candidatesTitle` — and the fence's first version stayed GREEN,
+because the uz and zh sentences OPEN with the title's own words, so it
+asks for the QUOTED title); and the closed status was the one capitalised
+word among its lowercase siblings in ru, en and uz. REFUTED by two
+verifiers and kept: the GS777MANIKEN line repeats the GS777 lookalike —
+by the prefix convention the off-trip GS777 prixod may be either line's
+cargo, and the receiver is the one who can tell. Also built the same
+afternoon: the trip-opened /receive says the lookalike above the wizard
+(the third surface the CHANGELOG already promised), and the «Yuklar» row's
+status chips sort by the ladder instead of by postgres's grouping order —
+the `client-cargo-now` flake.

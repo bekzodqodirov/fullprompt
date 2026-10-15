@@ -4725,7 +4725,7 @@
       "on_road": "on the road",
       "arrived": "arrived",
       "cancelled": "cancelled",
-      "closed": "Closed"
+      "closed": "closed"
     },
     "tabs": {
       "live": "Active",
@@ -4796,7 +4796,7 @@
     "prefillClosed": "{code} is closed or cancelled — receive without the trip.",
     "homeStaleOpen": "{n} arrived but not closed",
     "editHeader": "Truck, driver, note",
-    "closeCandidates": "There are unlinked receipts ({n}) — link them below first, or their cargo stays «received here».",
+    "closeCandidates": "There are unlinked receipts ({n}) — link them in «Unlinked prixods» above first, or their cargo stays «received here».",
     "closedByHand": "closed by hand",
     "closedByItself": "all received",
     "linesNotCame": "{n} line(s) did not come",
