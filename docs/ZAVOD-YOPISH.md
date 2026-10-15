@@ -301,9 +301,49 @@ answer no line. Exit 0 whether or not it finds anything.
 ## 9. Stated, not built
 
 - No reopen of a closed trip, by design (2a). A wrong manual close is
-  answered by receiving the late cargo as an ordinary prixod.
-- No line chooser on the card controls: a link answers all of that owner's
-  unanswered lines on the stop, as before.
-- The cabinet's per-handover legs do not show a «Zavod → Yiwu» leg.
+  answered from the receipt card: a late prixod may JOIN a closed trip
+  there without reopening it (§10).
+- The cabinet's per-handover legs and the staff client card's «Topshirilgan»
+  history do not show a «Zavod → Yiwu» leg.
 - At later warehouses the arrival names the truck that brought it there,
-  not the factory.
+  not the factory; the factory stays on the prixod's card.
+- One owner's cargo from two factories of one trip is one prixod PER
+  factory (the receipt's stop is single); the door question says so.
+- Whether a «Yo'q» at the door should hide the prixod from the logist's
+  candidates entirely is asked of him; today it is listed, marked, and left
+  out of the home count.
+
+## 10. What the design judges changed (binding — overrides §2-§5 where they differ)
+
+Four lenses (integrity, regression, UX, arrivals) before any code; every
+finding below was built, each with a test shown red without it.
+
+- **Owner rule ordered, not a union** (blocker): a kept marking names its
+  marking lines; otherwise the client names its client lines. TS
+  `ownerLinesOf` = SQL `ownerMatchSql` = the backfill (DECISIONS #1382).
+- **A prixod answers what it carried**: lots carry their line id, a deleted
+  lot unticks it; derived answers only a single open line; door vs card
+  modes; «qolgan qismi» (`pickupExtra`); stale ids fall back (#1383).
+- **Closed trips stay correctable**: the receipt card may join a closed trip
+  without reopening; closed + cost + no cargo is counted and said (#1384).
+- **The door asks about collected stops only**, arms its buttons after
+  400 ms, records «Yo'q» on the receipt's audit, checks a restored draft,
+  names its refusals and puts the remedy beside them (#1385).
+- **Auto close also runs when lines or a stop are removed**; a late
+  «Olindi» on a closed trip is a record; the plate stays editable; «Reysni
+  yopish» only on a trip that moved; /receive ages out trips arrived over
+  14 days ago, counted on the logist's home (#1386).
+- **The backfill pairs probe S4's shape** when unambiguous, and audits
+  every close (#1387).
+- **Deploy morning**: pickup screens/actions/route say `server_behind`
+  (#1388).
+- **Arrivals (P3)**: the join is guarded with stop and factory INSIDE it,
+  `cause IN ('receipt','lot_edit_add')`; one block per TRIP whose heading
+  lists the distinct factories, each row its own; batch blocks keyed by
+  `batchId ?? code`; the date is the row behind `sources[0]`; the photo
+  packing list and the lenta print the trip too; `moveReceipt` refuses a
+  prixod linked to a trip (`pickup_linked`).
+- **Checker (P4)**: five lists — doubles, open trips (with their candidate
+  prixods, «biriktiring, qayta qabul qilmang»), linked prixods answering
+  nothing (incl. the migrate window), unlinked prixods received after their
+  line was answered, closed trips with a bill and no cargo.

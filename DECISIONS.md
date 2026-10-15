@@ -3237,3 +3237,138 @@ the page out). Pre-existing: `truncate` is nowrap, and inside an
 auto-layout table a nowrap cell is as wide as its longest name. The names
 wrap now (`[overflow-wrap:anywhere]`) inside an `overflow-x-auto` card;
 re-measured 360/360 and 1280/1280 on all ten screens of the round.
+
+## Zavod reysi yopiladi — his 1a 2a 3a 4a 5a 6 7 (2026-10-15; migration 0133 `pickup_close` — ledger must reach 134; spec `docs/ZAVOD-YOPISH.md`)
+
+1379. **A factory trip had no finished state, and «received» was a guess
+made on every read.** His report: «zavot partiyalarni yuklagandan keyin
+qabul qilib olsa ham keyinchalik yana reyslar chiqib qolyabti». Probed, not
+read (S1-S7 against the shipped code): a line was «received» when SOME live
+prixod linked to its stop matched the line's client id — or, for a marking
+line, an UNCLAIMED prixod with that marking. So claiming the marking (the
+claim keeps the marking, #683) made the line unreceived again (S2); voiding
+one prixod of two brought a trip back (S3); a marking line received under
+the client code it belongs to was never received at all (S4); the /receive
+list read the OLDEST 50 trips before dropping the finished ones, so a new
+truck could miss the list (S7); and the same cargo was received twice
+through the trip with nothing refusing it. The answer is two facts the
+system never stored: whether a trip is FINISHED, and WHICH lines a prixod
+answered.
+
+1380. **`closed` is a fifth status, terminal (his 2a), and «closed» and
+«has a close» are one fact.** The close columns live on `pickups` beside a
+pair CHECK (`closed_at` ⟺ status, kind auto|manual, a manual one carries a
+3-500 character sentence, an auto one none) — a side table could not
+express that. Auto close runs in the transaction of the write that answered
+the last line (confirmReceipt, the card link, a stop or line removal —
+`closeIfAnsweredInTx`, one UPDATE … RETURNING under the trip lock already
+held) and writes an audit row. A manual close (his 1a, «sababi yoziladi»)
+is `closePickup`. Nothing reopens: a voided prixod leaves its trip closed
+(2a) and its line reads unanswered on a closed trip — «kelmadi».
+
+1381. **The line memory is `pickup_line_receipts` (line, receipt), written
+once when a prixod is linked, and «answered» means a LIVE prixod remembers
+the line** (`lineAnsweredSql`, the one home for every reader: the card, the
+/receive list, the prefill, the door, the candidates, the auto close, the
+counts). A side table and not a receipts column: 45 whole-row reads of
+`receipts` would 42703 one migration behind (0132's reason). Voided
+prixods keep their rows as history; a line edit (only possible while no
+LIVE prixod is on the stop) cascades a voided prixod's rows with the lines
+they named — they answered nothing live — and a draft still holding an old
+line id falls back to deriving (below).
+
+1382. **The owner rule is ORDERED, never a union** (the design judge's
+blocker). A prixod received as «MARK» and later claimed by client A carries
+both facts; the union answered A's own 50-box line with 3 MARK cartons and
+the backfill would have closed the trip for ever on cargo still on the
+road. `ownerLinesOf`: the prixod's marking equal to a MARKING line of the
+stop names those lines; otherwise its client names the client lines.
+`ownerMatchSql` is the same sentence in SQL, pinned line by line against
+the TS over a stop holding both kinds; the migration's backfill and the
+candidate list use it.
+
+1383. **A prixod answers the lines it CARRIED, not every line of its
+owner.** Each lot the prefill or the door's «Ha» builds names its line
+(`LotDraft.pickupLineId`); deleting the lot unticks the line, the banner
+shows the ticks, and the post sends only what is left (`pickup-draft.ts`,
+pure and unit-tested) — a partial delivery used to answer the bags that
+never came and close the trip. With no ids (an old bundle, the receipt
+card's select) the owner's lines are derived and answered only when
+exactly ONE is open; several → none, and the card names the line (per-line
+candidate buttons, «✓ <goods>» beside a linked prixod that answers
+nothing). Two modes: at the DOOR a second receive of an answered line is
+refused (`pickup_line_answered`, the double-receive fence), with the
+operator's own way out — «Bu o'sha yukning qolgan qismi» (`pickupExtra`:
+linked, answering nothing); on the CARD a person at the money gate may add
+a second prixod to a line (one line delivered in two parts). An id that
+exists nowhere is a draft older than a line edit and falls back to
+deriving; an id of another stop is refused.
+
+1384. **A closed trip keeps its money correctable without reopening.** The
+judges found the trap two ways: #1004 exempts the pickup scope from the
+void guard because «a later prixod will be linked», and a closed trip took
+no link — so a void-and-redo left the truck's freight on no carton for good
+and printed the cargo «Принято на складе». The receipt card (gate
+`costs.enter_batch`, the money door) may JOIN a closed trip: status
+untouched, no arrive, no auto close; its picker offers trips closed in the
+last 30 days marked 🔒, and leaving a closed trip asks first. The door, the
+prefill, the /receive list and the candidates stay open-only (his 3a, 4a).
+A closed trip with a live cost and no live cargo is counted on the logist's
+home («xarajat bor, yuk yo'q») and said on its card and row.
+
+1385. **The door question (his 3a) asks only about COLLECTED stops.** A
+client's courier parcel on Monday must not be offered Wednesday's truck
+still at the factory: a reflexive «Ha» arrived it and could close it before
+«Olindi». The answer lands a second after the pick, so its buttons wake
+400 ms later. «Yo'q» is remembered on the draft and written on the
+receipt's create audit (`pickupDeclined`, no column): the card's candidate
+says «sklad: bu reysdan emas» and the home count skips it. A restored draft
+asks `/api/receive/pickups?stop=` before anyone photographs against a trip
+the logist closed overnight; the refusals have their own codes
+(`pickup_closed`, `pickup_line_answered`, `pickup_line_not_on_stop` — the
+first segment of `pickup_invalid: …` could never say them) and their
+remedy buttons sit with the refusal. A «Qabul qilish» tap on cargo a
+colleague just received says so above the wizard instead of opening it
+blank (`receivePrefillRefusal`). The route is NetworkOnly in the service
+worker. One owner on two factories of one trip: one prixod per factory,
+said on the question (the receipt's stop is single).
+
+1386. **What the floor no longer sees, the logist does.** /receive lists
+newest first and drops trips that ARRIVED over `INCOMING_STALE_DAYS` (14)
+ago — their unanswered lines are the logist's to close, counted on his home
+as «kelgan, lekin yopilmagan» (`staleOpenSql`); the fold opens by itself
+only for a truck arrived in the last 48 hours. «Reysni yopish» is drawn
+only on a trip that moved (a stop collected, a prixod linked, a cost): an
+untouched trip is CANCELLED, and two terminal buttons side by side made the
+wrong one easy. The close form warns when candidates are pending. A late
+«Olindi» on a closed trip is a record — the driver's recount and the stamp
+land, the status does not move, nobody is told. The truck's plate, driver
+and note stay editable on a closed trip (the plate is learned late and is
+what names «this truck» on the agent's sheet); its destination and date do
+not. «Xarajat yo'q» (his 5a) is a reason and a person, set in the close
+form or on its own, by `costs.enter_batch` at the destination; refused
+while a live cost exists.
+
+1387. **The backfill reads history as the old screen read it, minus the
+union, and pairs only the unambiguous leftover.** Memory rows for every
+linked prixod by the ordered rule; then probe S4's shape — the stop's open
+lines belong to ONE owner, exactly ONE live linked prixod answers nothing,
+and they are of opposite kinds (a client's prixod for marking lines, or an
+unclaimed one for a client's lines) — is paired; then every open trip whose
+lines are all answered closes with an audit row (actor NULL, `backfill:
+true`). Measured on a copy built by the OLD code's probe plus the judge's
+union case: 56 arrived trips → 54 closed; left open exactly the voided one
+and the union case (A's 50 boxes still coming). The backfill test runs the
+migration's own three blocks in a rolled-back transaction.
+
+1388. **One migration behind, the pickup screens say so.** The new close
+columns are on `pickups`, which a dozen whole-row reads name; with a stale
+`migrate` image (trap 2) those 42703. The /zavod pages catch
+`isServerBehind` into «Server hali yangilanmoqda», every pickup action and
+the door route answer `server_behind` in words, and `stopsFor`'s memory read
+falls back to «nothing answered» on a missing table. 19 red proofs by
+string edit for the core (ordered rule, door fence, exactly-one derive,
+auto close in the receive and in removeStop/saveStopLines, closed door vs
+closed card, stale-id fallback, late Olindi, collected-only door, backfill
+pairing and ordering, the declined mark, «extra», the draft's three rules,
+a missing zh-CN sentence).

@@ -433,6 +433,13 @@ export function ReceiveWizard({
     setDraft((d) => (d ? { ...d, ...patch } : d));
   }, []);
 
+  /** The one client every line of an answer belongs to, else null (a marking line, or two clients). */
+  const soleLineClient = (lines: { clientId?: string | null }[]): string | null => {
+    const owners = new Set(lines.map((line) => line.clientId ?? null));
+    const [only] = [...owners];
+    return owners.size === 1 && only ? only : null;
+  };
+
   /** «Ha» at the door: link the stop with its lines; pristine lots become one lot per line. */
   const acceptPickup = useCallback((stop: OpenStopForOwner, ownerClientId: string | null) => {
     setDraft((d) => {
@@ -461,7 +468,11 @@ export function ReceiveWizard({
         pickupLabel: `🏭 ${stop.code} · ${stop.seq}. ${stop.factoryName}`,
         pickupLines: stop.lines.map((line) => ({ id: line.id, goods: line.goods })),
         pickupLineIds: stop.lines.map((line) => line.id),
-        pickupOwnerClientId: ownerClientId,
+        // Asked about a MARKING, the answer may be one client's lines (the
+        // code-prefix convention — «GS500MANIKEN» on GS500's line): those
+        // lines are that client's, so a later switch to another client drops
+        // the link here instead of being refused at the confirm.
+        pickupOwnerClientId: ownerClientId ?? soleLineClient(stop.lines),
       };
     });
   }, []);
@@ -1232,6 +1243,7 @@ export function ReceiveWizard({
         <PickupDoorQuestion
           warehouseId={draft.warehouseId}
           clientId={draft.unclaimed ? null : draft.clientId}
+          clientLabel={draft.unclaimed ? null : draft.clientLabel}
           marking={draft.unclaimed ? draft.unclaimedMarking.trim() : null}
           declined={draft.pickupDeclined ?? []}
           onAccept={(stop) => acceptPickup(stop, draft.unclaimed ? null : draft.clientId)}
@@ -1710,14 +1722,16 @@ export function ReceiveWizard({
                 ? t('pickupLineAnswered')
                 : error === 'pickup_line_not_on_stop'
                   ? t('pickupLineGone')
-                  : `${error === 'photo_required' ? t('photoRequired') : error.startsWith('pickup_invalid') ? t('pickupInvalid') : tc('error')} (${error})`}
+                  : error === 'pickup_line_owner_mismatch'
+                    ? t('pickupLineOwner')
+                    : `${error === 'photo_required' ? t('photoRequired') : error.startsWith('pickup_invalid') ? t('pickupInvalid') : tc('error')} (${error})`}
         </p>
       )}
       {/* The remedy sits WITH the refusal, not in a 20 px ✕ at the top of a
           long page (the judge's floor finding): the rest of cargo another
           prixod already answered rides the trip as extra; anything else is
           received without the trip and the logist links it from the card. */}
-      {error && draft.pickupStopId && /^pickup_(closed|line_answered|line_not_on_stop|invalid)/.test(error) && (
+      {error && draft.pickupStopId && /^pickup_(closed|line_answered|line_not_on_stop|line_owner_mismatch|invalid)/.test(error) && (
         <div className="flex flex-wrap gap-2" data-testid="receive-pickup-remedy">
           {error === 'pickup_line_answered' && (
             <button

@@ -36,6 +36,8 @@ export interface PickupActionResult {
   id?: string;
   /** saveFactory only: what the geocoder said, so the form can say it too. */
   geocoded?: 'found' | 'not_found' | 'kept';
+  /** What a refusal's sentence names (the trip's code for `shared_cost_orphaned`). */
+  detail?: string;
 }
 
 /**
@@ -61,7 +63,7 @@ async function run(
     for (const path of paths) revalidatePath(path);
     return { ok: true, ...(extra ?? {}) };
   } catch (err) {
-    if (err instanceof PickupError) return { ok: false, error: err.code };
+    if (err instanceof PickupError) return { ok: false, error: err.code, ...(err.detail ? { detail: err.detail } : {}) };
     if (err instanceof z.ZodError) return { ok: false, error: 'validation' };
     // The app one migration ahead of the database (a stale `migrate` image,
     // trap 2): a sentence, never a white page (#472).

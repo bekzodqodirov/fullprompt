@@ -994,7 +994,9 @@
     "pickupDrop": "Reyssiz qabul qilish",
     "pickupExtraChip": "qolgan qismi — qatorsiz",
     "pickupStaleGone": "Bu reys endi yo‘q (bekor qilingan) — reysni olib tashlab, reyssiz qabul qiling.",
-    "pickupStaleTaken": "Reysning {n} ta qatori boshqa prixod bilan allaqachon qabul qilingan — o‘sha yuk emasligini tekshiring."
+    "pickupStaleTaken": "Reysning {n} ta qatori boshqa prixod bilan allaqachon qabul qilingan — o‘sha yuk emasligini tekshiring.",
+    "pickupLineOwner": "Bu reys qatori boshqa mijozniki — prixod mijozi unga to‘g‘ri kelmaydi. To‘g‘ri mijozni tanlang yoki reyssiz qabul qiling — logist kartadan biriktiradi.",
+    "pickupLookalike": "⚠ {who}: {list} — shu skladda reysga biriktirilmasdan qabul qilingan. Shu yuk emasmi? Bo‘lsa, qayta qabul qilmang — logistga ayting, u reysga biriktiradi."
   },
   "receipts": {
     "title": "Qabullar",
@@ -4763,7 +4765,10 @@
       "not_found": "Reys topilmadi.",
       "stop_not_found": "Zavod (to‘xtash joyi) topilmadi.",
       "receipt_not_found": "Prixod topilmadi.",
-      "server_behind": "Server hali yangilanmoqda — bir daqiqadan keyin urinib ko‘ring."
+      "server_behind": "Server hali yangilanmoqda — bir daqiqadan keyin urinib ko‘ring.",
+      "shared_cost_orphaned": "{code} reysining xarajati yuksiz qoladi — bu prixod uning yagona yuki. Avval haqiqiy prixodni shu reysga biriktiring yoki xarajatni bekor qiling (moliya).",
+      "line_owner_mismatch": "Bu qator boshqa mijozniki — prixodning mijozi qatordagi mijoz emas. To‘g‘ri mijozni tanlang yoki «Yo‘q» deb qabul qiling.",
+      "no_cost_closed_only": "«Xarajat yo‘q» belgisi faqat yopilgan reysga qo‘yiladi — reysni yopayotganda belgilang."
     },
     "closeTrip": "Reysni yopish",
     "closeHint": "Hamma qator qabul qilinganda reys o‘zi yopiladi. Qolgan yuk kelmasa, qo‘lda yoping — reys qayta ochilmaydi.",

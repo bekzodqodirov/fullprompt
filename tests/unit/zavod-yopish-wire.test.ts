@@ -64,12 +64,13 @@ describe('zavod reysi yopiladi — wiring', () => {
     expect(sw).toContain("pathname === '/api/receive/pickups'");
   });
 
-  it('the wizard says the three new door refusals in words, not the old «boshqa skladga» sentence', () => {
+  it('the wizard says the four new door refusals in words, not the old «boshqa skladga» sentence', () => {
     const wizard = read('src/app/(protected)/receive/receive-wizard.tsx');
     for (const [code, key] of [
       ['pickup_closed', 'pickupClosed'],
       ['pickup_line_answered', 'pickupLineAnswered'],
       ['pickup_line_not_on_stop', 'pickupLineGone'],
+      ['pickup_line_owner_mismatch', 'pickupLineOwner'],
     ] as const) {
       expect(wizard).toContain(`error === '${code}'`);
       expect(wizard).toContain(`t('${key}')`);

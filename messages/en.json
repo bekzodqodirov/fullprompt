@@ -994,7 +994,9 @@
     "pickupDrop": "Receive without the trip",
     "pickupExtraChip": "rest of the cargo — no line",
     "pickupStaleGone": "This trip no longer exists (cancelled) — remove it and receive without it.",
-    "pickupStaleTaken": "{n} line(s) of this trip were already received by another receipt — check it is not the same cargo."
+    "pickupStaleTaken": "{n} line(s) of this trip were already received by another receipt — check it is not the same cargo.",
+    "pickupLineOwner": "This trip line belongs to another client — the receipt's client does not match it. Pick the right client, or receive without the trip — the logist links it from the card.",
+    "pickupLookalike": "⚠ {who}: {list} — already received at this warehouse without the trip. Is this the same cargo? If so, do not receive it again — tell the logist, who links it to the trip."
   },
   "receipts": {
     "title": "Receipts",
@@ -4763,7 +4765,10 @@
       "not_found": "Trip not found.",
       "stop_not_found": "Stop not found.",
       "receipt_not_found": "Receipt not found.",
-      "server_behind": "The server is still updating — try again in a minute."
+      "server_behind": "The server is still updating — try again in a minute.",
+      "shared_cost_orphaned": "Trip {code}'s cost would be left on no cargo — this receipt is all it carries. Link the real receipt to the trip first, or void the cost (finance).",
+      "line_owner_mismatch": "This line belongs to another client — the receipt's client is not the line's. Pick the right client, or receive with «No».",
+      "no_cost_closed_only": "«No cost» can only be marked on a closed trip — mark it when you close the trip."
     },
     "closeTrip": "Close the trip",
     "closeHint": "A trip closes by itself once every line is received. Close it by hand when the rest will not come — it never reopens.",

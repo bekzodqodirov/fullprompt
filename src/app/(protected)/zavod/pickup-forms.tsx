@@ -57,12 +57,20 @@ const KNOWN_ERRORS = [
   'stop_not_found',
   'receipt_not_found',
   'server_behind',
+  // The judges' money findings (docs/ZAVOD-YOPISH.md §10).
+  'shared_cost_orphaned',
+  'line_owner_mismatch',
+  'no_cost_closed_only',
 ] as const;
 
 export function useErrorText() {
   const t = useTranslations('pickups.errors');
-  return (code: string | undefined) =>
-    (KNOWN_ERRORS as readonly string[]).includes(code ?? '') ? t(code as (typeof KNOWN_ERRORS)[number]) : t('generic');
+  // `detail` is what the sentence names — the trip's code for a refused
+  // detach; a sentence with no placeholder ignores it.
+  return (code: string | undefined, detail?: string) =>
+    (KNOWN_ERRORS as readonly string[]).includes(code ?? '')
+      ? t(code as (typeof KNOWN_ERRORS)[number], { code: detail ?? '—' })
+      : t('generic');
 }
 
 export interface LineDraft {
@@ -783,7 +791,14 @@ export function LinkReceiptButtons({
   stops,
 }: {
   receiptId: string;
-  stops: { id: string; seq: number; factoryName: string; lines: { id: string; goods: string }[] }[];
+  stops: {
+    id: string;
+    seq: number;
+    factoryName: string;
+    lines: { id: string; goods: string }[];
+    /** The one line this prixod could be — posted, so a prefix match is answered (pickupCandidates). */
+    onlyLineId?: string | null;
+  }[];
 }) {
   const t = useTranslations('pickups');
   const errorText = useErrorText();
@@ -794,7 +809,7 @@ export function LinkReceiptButtons({
       () => ({ ok: false, error: 'generic' }) as PickupActionResult,
     );
     if (res.ok) router.refresh();
-    else setError(errorText(res.error));
+    else setError(errorText(res.error, res.detail));
   };
   return (
     <span className="inline-flex flex-wrap items-center gap-1">
@@ -817,7 +832,7 @@ export function LinkReceiptButtons({
                 type="button"
                 data-testid="candidate-link"
                 className="btn-secondary !min-h-8 !px-2 !py-0.5 text-xs"
-                onClick={() => press(stop.id)}
+                onClick={() => press(stop.id, stop.onlyLineId ? [stop.onlyLineId] : undefined)}
               >
                 {t('linkTo', { seq: stop.seq })}
               </button>,
@@ -857,7 +872,7 @@ export function AnswerLineButtons({
               () => ({ ok: false, error: 'generic' }) as PickupActionResult,
             );
             if (res.ok) router.refresh();
-            else setError(errorText(res.error));
+            else setError(errorText(res.error, res.detail));
           }}
         >
           ✓ {line.goods}
@@ -910,7 +925,7 @@ export function ReceiptPickupControl({
           onClick={async () => {
             if (currentClosed && currentStopId && !window.confirm(t('detachClosedConfirm'))) return;
             const res = await linkReceiptAction(receiptId, value || null);
-            setMsg(res.ok ? null : errorText(res.error));
+            setMsg(res.ok ? null : errorText(res.error, res.detail));
             if (res.ok) router.refresh();
           }}
         >

@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import type { IncomingTruck } from '@/modules/wms/pickups/service';
+import { lookalikeList } from './lookalike-text';
 
 /**
  * «Zavoddan kelayotgan yuk» (0100): the factory trucks heading here, truck →
@@ -13,6 +14,7 @@ import type { IncomingTruck } from '@/modules/wms/pickups/service';
  */
 export async function IncomingPickups({ trucks }: { trucks: IncomingTruck[] }) {
   const t = await getTranslations('pickups');
+  const tr = await getTranslations('receive');
   // Opens by itself only for a truck that arrived in the last two days: an
   // older open trip is the logist's to close, and an always-open fold over a
   // three-week-old truck is the owner's «yana chiqib qolyabti» on screen.
@@ -54,6 +56,19 @@ export async function IncomingPickups({ trucks }: { trucks: IncomingTruck[] }) {
                               .map((line) => `${line.goods} · ${line.factoryBoxes} 📦`)
                               .join(' / ')}
                           </span>
+                          {/* The cargo may already be here, received off the
+                              trip — said BEFORE «Qabul qilish» (intent-5). */}
+                          {owner.lookalikes.length > 0 && (
+                            <span
+                              className="block text-xs font-semibold text-warn [overflow-wrap:anywhere]"
+                              data-testid="incoming-lookalike"
+                            >
+                              {tr('pickupLookalike', {
+                                who: owner.clientCode ?? owner.marking ?? '—',
+                                list: lookalikeList(owner.lookalikes),
+                              })}
+                            </span>
+                          )}
                         </span>
                         <Link
                           data-testid="incoming-receive"

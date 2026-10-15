@@ -1,5 +1,59 @@
 # CHANGELOG
 
+## Zavod reysi yopiladi va qayta chiqmaydi — 2026-10-15
+
+**Migratsiya 0133** — deploydan keyin soni **134** bo'lishi shart. Deploydan keyin tekshiruv skriptini ishga tushiring (pastda).
+
+Sizning javoblaringiz: 1a 2a 3a 4a 5a, 6 (paking-listda «shu zavoddan, shu mashinada»), 7 ha.
+
+### Nega reyslar qayta chiqayotgan edi
+
+Tizim zavod reysini hech qachon «tugadi» deb yozmas edi va har safar ekran ochilganda «qabul qilinganmi?» degan savolga **taxmin** bilan javob berardi: qatordagi mijoz kodi yoki markirovka bo'yicha. Shuning uchun markirovkali yukni mijozga biriktirsangiz, bitta prixodni bekor qilsangiz yoki zavod qatori markirovka bilan yozilib yuk mijoz kodi bilan qabul qilingan bo'lsa — reys yana «kelmagan» bo'lib chiqardi. Bundan tashqari bir yukni reys orqali ikki marta qabul qilish mumkin edi.
+
+### 1. Reys endi yopiladi (1a) va qayta ochilmaydi (2a)
+
+- Har bir qator qabul qilinganda reys **o'zi yopiladi** — «✅ Hamma qator qabul qilindi — reys yopildi».
+- Zavod biror qatorni bermagan bo'lsa — logist reys kartasida **«🔒 Reysni yopish»** bosadi va **sababini yozadi**. Bu tugma faqat reys qimirlagan bo'lsa chiqadi (zavoddan olingan, prixod yoki xarajat bor); hech narsa bo'lmagan reys — avvalgidek «bekor qilish».
+- Yopilgan reys **qayta ochilmaydi**: prixod bekor qilinsa ham yopiq qoladi, kelmagan qatori «kelmadi» deb yoziladi.
+- Ro'yxatda yangi varaqlar: **«Yopilgan»** va **«Xarajatsiz»**.
+
+### 2. Prixod qaysi qatorni qabul qilganini eslab qoladi
+
+- Endi har bir prixod **qaysi zavod qatorini** olib kelganini eslab qoladi. Mijozga biriktirish, keyingi yuklar yoki bekor qilish bu xotirani o'zgartirmaydi.
+- **Bir yukni ikki marta qabul qilib bo'lmaydi**: ikkinchi telefon o'sha qatorni qabul qilmoqchi bo'lsa, tizim «bu qator allaqachon qabul qilingan» deydi. Agar bu haqiqatan **o'sha yukning qolgan qismi** bo'lsa — «Bu o'sha yukning qolgan qismi — reysga qo'shimcha» tugmasi bor.
+- Bir qismi kelgan bo'lsa (masalan o'yinchoq keldi, sumka kelmadi) — sumka lotini o'chirsangiz, sumka qatori **ochiq qoladi**, reys yopilmaydi.
+
+### 3. Qabulda savol: «Bu yuk zavod reysidan keldimi?» (3a)
+
+- Mijoz kodini tanlaganingizda (yoki markirovkani qabul qilganingizda), agar shu mijozga zavoddan **olingan** («Olindi» bosilgan) yuk kelayotgan bo'lsa — savol chiqadi: **«Ha, shu reysdan» / «Yo'q»**.
+- «Ha» — reys ulanadi, lotlar zavod qatorlaridan tayyor bo'lib chiqadi (tovar nomi yozilgan, karobka sonini o'zingiz sanaysiz).
+- «Yo'q» — savol qaytib chiqmaydi va logist reys kartasida «sklad bu reysdan emas degan» deb ko'radi.
+- Kecha boshlangan qoralama ochilsa va reys tunda yopilgan bo'lsa — rasmga olishdan **oldin** ogohlantiradi.
+
+### 4. Biriktirilmagan prixodni qidirish faqat ochiq reyslarda (4a)
+
+- Reys kartasidagi «Biriktirilmagan prixodlar» va bosh sahifadagi son faqat **ochiq** reyslar uchun.
+- Mijozning bir zavodda ikki qatori bo'lsa, tugmalar **qator nomi** bilan chiqadi — qaysi biri kelganini o'zingiz tanlaysiz.
+- **Tuzatish yo'li**: prixod bekor qilinib qayta kiritilsa, yangi prixodni **prixod kartasidan** yopilgan reysga ham biriktirsa bo'ladi (30 kun ichida, 🔒 belgisi bilan) — reys qayta ochilmaydi, mashina xarajati yana karobkalarga tushadi.
+
+### 5. «Xarajat yo'q» (5a)
+
+- Reys yopilayotganda yoki kartaning xarajat bo'limida **«Xarajat yo'q» + sabab** belgilash mumkin. Bunday reys «xarajati yozilmagan» ro'yxatidan chiqadi. Belgini olib tashlasa bo'ladi.
+
+### 6. Logistning bosh sahifasi
+
+Zavod reysi qatorida endi to'rt narsa sanaladi: xarajatsiz; **xarajati bor, lekin yuki yo'q** (prixodi bekor qilingan yopiq reys); biriktirilmagan prixod; **kelgan, lekin 14 kundan beri yopilmagan**. 14 kundan eski reyslar sklad ekranidan (qabul) olib tashlandi — ularni logist yopadi.
+
+### 7. Boshqa
+
+- Reys kartasida mashina raqami, haydovchi va izohni **keyin ham** o'zgartirish mumkin (yopilgan reysda ham) — paking-listda mashina raqami chiqishi uchun.
+- Reys yopilgandan keyin «Olindi» bosilsa — haydovchi sanog'i yoziladi, holat o'zgarmaydi, mijozga xabar ketmaydi.
+- Server yangilanayotgan paytda zavod sahifalari xato o'rniga «Server hali yangilanmoqda» deydi.
+
+### Eski reyslar (deploy kuni)
+
+Migratsiya eski prixodlarni qatorlarga biriktiradi va hamma qatori qabul qilingan reyslarni yopadi. Markirovka bilan kutilib, mijoz kodi bilan qabul qilingan yuk ham (bir ma'noli bo'lsa) yopiladi. Qolganlari — logist ko'rib yopadi.
+
 ## Yo'lkira xarajatini tarif bo'yicha taqsimlash — 2026-10-14
 
 **Migratsiya 0132** — deploydan keyin soni **133** bo'lishi shart.

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import type { OpenStopForOwner } from '@/modules/wms/pickups/service';
+import { lookalikeList } from './lookalike-text';
 
 /**
  * The receive door's question (his 3a, docs/ZAVOD-YOPISH.md §3): «Bu yuk
@@ -19,6 +20,7 @@ import type { OpenStopForOwner } from '@/modules/wms/pickups/service';
 export function PickupDoorQuestion({
   warehouseId,
   clientId,
+  clientLabel,
   marking,
   declined,
   onAccept,
@@ -26,6 +28,8 @@ export function PickupDoorQuestion({
 }: {
   warehouseId: string;
   clientId: string | null;
+  /** How the warning names the owner («GS777»); the marking when there is no client. */
+  clientLabel?: string | null;
   marking: string | null;
   declined: string[];
   onAccept: (stop: OpenStopForOwner) => void;
@@ -83,6 +87,13 @@ export function PickupDoorQuestion({
             </span>
             {stop.vehiclePlate && <span className="text-xs text-ink-500">{stop.vehiclePlate}</span>}
           </p>
+          {/* This owner's prixod already received here off the trip: maybe
+              the same cartons — said before «Ha» makes a second one (intent-5). */}
+          {(stop.lookalikes ?? []).length > 0 && (
+            <p className="text-xs font-semibold text-warn [overflow-wrap:anywhere]" data-testid="pickup-door-lookalike">
+              {t('pickupLookalike', { who: clientLabel || marking || '—', list: lookalikeList(stop.lookalikes ?? []) })}
+            </p>
+          )}
           <ul className="text-xs text-ink-700">
             {stop.lines.map((line) => (
               <li key={line.id} className="[overflow-wrap:anywhere]">

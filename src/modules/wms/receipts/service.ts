@@ -159,6 +159,7 @@ function pickupRefusal(code: string): ReceiptError {
   if (code === 'closed') return new ReceiptError('pickup_closed');
   if (code === 'line_answered') return new ReceiptError('pickup_line_answered');
   if (code === 'line_not_on_stop') return new ReceiptError('pickup_line_not_on_stop');
+  if (code === 'line_owner_mismatch') return new ReceiptError('pickup_line_owner_mismatch');
   return new ReceiptError('pickup_invalid', code);
 }
 
@@ -175,6 +176,7 @@ export class ReceiptError extends Error {
       | 'pickup_closed'
       | 'pickup_line_answered'
       | 'pickup_line_not_on_stop'
+      | 'pickup_line_owner_mismatch'
       // The office receipt (0112, Q9 b).
       | 'on_behalf_forbidden'
       | 'receiver_required'
