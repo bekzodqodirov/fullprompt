@@ -1,8 +1,9 @@
 import { asc, eq, inArray, sql } from 'drizzle-orm';
 import { db, type Db, type Tx } from '../../platform/db/client';
 import { batches, costEntries, crates } from '../../platform/db/schema';
-import { allocateEntry, type AllocationBasis } from './engine';
-import { boxDims, scopeBoxIds } from './service';
+import type { AllocationBasis } from './engine';
+import { costPool, homed } from './pool';
+import { loadPoolInputs, scopeBoxIds } from './service';
 
 /**
  * Every live cost that shares money over these lots' boxes: an entry with a
@@ -165,18 +166,23 @@ export async function costOrphanedByVoid(
     if (entry.scope !== 'receipt' && entry.scope !== 'crate' && entry.scope !== 'batch') continue;
     const base = await scopeBoxIds(entry, tx);
     if (!base.some((id) => gone.has(id))) continue;
+    // ONE pool with the recompute (`./pool`). The question is «is the money
+    // somewhere» — `homed`: a HELD freight bill is homed (it is written and
+    // named on every ⚠ surface, and fixing a lot re-splits it), so a void
+    // that drops one client under his 10 kg/m³ is ALLOWED and shows the ⚠
+    // rather than refused with words telling finance to void the truck's
+    // money. Only «nothing» — no cargo left at all — refuses, as before.
+    // Any positive amount answers it.
     const splits = async (boxIds: string[]) => {
-      const dims = await boxDims(boxIds, tx);
-      const pool = dims.map((d) => ({
-        ...d,
-        chargeableKg: Math.max(d.weightKg, d.volumeM3 * factor),
-      }));
-      // Any positive amount answers «is there anything to split onto».
-      const shares = allocateEntry(
-        { amountUsd: 1, basis: entry.allocationBasis as AllocationBasis, clientId: entry.clientId },
-        pool,
+      const inputs = await loadPoolInputs(entry, boxIds, tx);
+      return homed(
+        costPool(
+          { allocationBasis: entry.allocationBasis as AllocationBasis, clientId: entry.clientId, amountUsd: 1 },
+          inputs.measures,
+          factor,
+          inputs.freight,
+        ),
       );
-      return shares.length > 0;
     };
     if (!(await splits(base))) continue;
     if (await splits(base.filter((id) => !gone.has(id)))) continue;

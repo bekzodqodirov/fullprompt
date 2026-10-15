@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import {
   batches,
@@ -22,6 +22,7 @@ import { mayReadBatches } from '../batches/read-door';
 import { latestPositions } from '../tracking/devices';
 import { truckFor } from '../tracking/truck';
 import { loadBorderHours } from '../tracking/border-queue';
+import { batchByFormerCode, formerCodesFor, formerNames } from '../batches/former-codes';
 
 /**
  * "Where is it?" — answered in the bot (owner's item 2).
@@ -109,7 +110,12 @@ export async function botLookupAnswer(actor: BotActor, raw: string): Promise<Bot
   if (batch) return { text: batch };
 
   const client = await lookupClient(actor, upper);
-  if (!client) return null;
+  if (!client) {
+    // LAST, after the client book: a name a truck USED to wear (renamed on
+    // the road, the owner's 1a) must never shadow a live client code.
+    const former = await lookupFormerBatch(actor, upper);
+    return former ? { text: former } : null;
+  }
   return {
     text: client.text,
     ...(mayReadBatches(actor.permissions) ? { mapClientCode: client.code } : {}),
@@ -220,21 +226,49 @@ async function lookupCrate(actor: BotActor, code: string): Promise<string | null
   );
 }
 
-async function lookupBatch(actor: BotActor, code: string): Promise<string | null> {
-  const dest = warehouses;
+type BatchRow = { batch: typeof batches.$inferSelect; originCode: string };
+
+async function batchRowWhere(where: SQL): Promise<BatchRow | null> {
   const [row] = await db
     .select({ batch: batches, originCode: warehouses.code })
     .from(batches)
     .innerJoin(warehouses, eq(batches.originWarehouseId, warehouses.id))
-    .where(sql`upper(${batches.code}) = ${code}`)
+    .where(where)
     .limit(1);
+  return row ?? null;
+}
+
+function batchInScope(actor: BotActor, row: BatchRow): boolean {
+  return inScope(actor, row.batch.originWarehouseId) || inScope(actor, row.batch.destWarehouseId);
+}
+
+async function lookupBatch(actor: BotActor, code: string): Promise<string | null> {
+  const row = await batchRowWhere(sql`upper(${batches.code}) = ${code}`);
   if (!row) return null;
-  if (
-    !inScope(actor, row.batch.originWarehouseId) &&
-    !inScope(actor, row.batch.destWarehouseId)
-  ) {
-    return `🚚 ${row.batch.code}\n${outOfScope()}`;
-  }
+  if (!batchInScope(actor, row)) return `🚚 ${row.batch.code}\n${outOfScope()}`;
+  return batchAnswer(row);
+}
+
+/**
+ * A name the truck used to wear. Out of scope it answers exactly what the
+ * current name would — the typed name and «not yours» — and NEVER the new
+ * name, which would hand a stranger to a truck the old papers named.
+ */
+async function lookupFormerBatch(actor: BotActor, code: string): Promise<string | null> {
+  const hit = await batchByFormerCode(code);
+  if (!hit) return null;
+  const row = await batchRowWhere(eq(batches.id, hit.batchId));
+  if (!row) return null;
+  if (!batchInScope(actor, row)) return `🚚 ${code}\n${outOfScope()}`;
+  return (
+    `↩️ ${hit.formerCode} — bu partiyaning oldingi nomi. Hozirgi nomi: ${row.batch.code}\n` +
+    (await batchAnswer(row))
+  );
+}
+
+/** The in-scope answer about one truck, by whichever name it was asked. */
+async function batchAnswer(row: BatchRow): Promise<string> {
+  const dest = warehouses;
   const destWh = await db.query.warehouses.findFirst({
     where: eq(dest.id, row.batch.destWarehouseId),
   });
@@ -255,8 +289,10 @@ async function lookupBatch(actor: BotActor, code: string): Promise<string | null
     .from(boxes)
     .where(and(eq(boxes.currentBatchId, row.batch.id), eq(boxes.status, 'in_transit')));
 
+  const former = formerNames(await formerCodesFor(row.batch.id), row.batch.code);
   return (
     `🚚 ${row.batch.code}\n` +
+    (former.length ? `Oldingi nomi: ${former.join(' → ')}\n` : '') +
     `${row.originCode} → ${destWh?.code ?? '—'} · ${BATCH_STATUS_UZ[row.batch.status] ?? row.batch.status}\n` +
     `Yuklangan: ${Number(counts?.departed ?? 0)} karobka` +
     (Number(waiting?.n ?? 0) > 0 ? `\nHali qabul qilinmagan: ${Number(waiting!.n)}` : '') +

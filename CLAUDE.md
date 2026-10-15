@@ -149,6 +149,12 @@ pnpm build && pnpm e2e  # 44 e2e
 | The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batches 1-4 COMPLETE; 5 in progress |
 | Website visitor → least-busy manager (the site's contract) | `docs/SAYT-TAQSIMOT.md` — round 113, give the contract to the site's session verbatim |
 | The truck card's six tabs and the client's «Pul» tab | `docs/CARD-TABS.md` — agreed 2026-09-28 (his 3a/4a), SHIPPED |
+| A lot that holds several goods — the paper «tarkibi» | `docs/LOT-TARKIBI.md` — agreed 2026-10-01 (his 1c 2c 3b 4c 5a 6 7a 8a), SHIPPED |
+| «Yuk ma'lumoti tekshirildi» — the ✅/❓ on a lot, the worklist | `docs/YUK-TEKSHIRUV.md` — agreed 2026-10-03 (his 1a 2b 3a 4a 5b), SHIPPED |
+| «➕ Topshiriq» in the staff bot — draft, forward door, assignee buttons, «📤 Men bergan» | `docs/TELEGRAM-TOPSHIRIQ.md` — agreed 2026-10-06 (his 1b 2a 3a 4a 5a 6b), SHIPPED |
+| VED tarix, «Готово» answers + internal note, recalc from an answer, the VED on the seller's card | `docs/VED-TARIX.md` — agreed 2026-10-06 (his 7a-12a 13c, 14a 15a 16a), SHIPPED |
+| The five-lens review of both before code — 115 objections and their BINDING fixes | `docs/TOPSHIRIQ-VED-REVIEW.md` |
+| The customs calculator fix — units in their own columns, kg+dona rows, excise, the fee, the screen | `docs/RASTAMOJKA-TUZATISH.md` — agreed 2026-10-09 (his two messages, four ⭐ questions), SHIPPED; §7 overrides §1-§3 |
 
 ## State — 2026-08-23
 
@@ -2304,6 +2310,36 @@ streams into a `<Suspense>` can stay pending for ever (upstream #87529/#98303
 → no boundary around action buttons; no `router.refresh()` after an action
 that already revalidates).
 
+**Round — keyingi yo'l (2026-09-30; DECISIONS #1243-#1246; NO migration,
+ledger 121).** His «tovar 3 mashinada keladi … narx qo'yilgan partiyada hamma
+mashinalardagi rasxodlar tannarxga qo'shilsinmi, moliya buzilmaydimi», answers
+1a/2a/3b/4a/5a/6b after a 58-agent research run (company money was right all
+along; only per-truck attribution was wrong). The truck that may carry a
+carton's PRICE carries its whole road: `bearsPriceSql` (batches/internal.ts —
+not internal AND (crosses OR received in UZ), the gate's clause 3, which now
+calls the same `crossesBorderSql`/`receivedInUzSql`). Inside the ONE fence
+(`landedAllocationsSql` + `carriageCtesSql`, costing/service.ts) a DEPARTED
+truck that does not bear a carton's price gives that carton's money back to
+its previous price-bearing truck, which carries it as `laterUsd` («keyingi
+yo'l»): tannarx = bu reys + shu reysgacha + keyingi yo'l everywhere, rows stay
+disjoint (U16). Charge-blind; walk-ins keep theirs; forming trucks keep theirs.
+`batchCarriage` names it on screens; `tripKind` has 'continuation' («davomi»,
+REQUIRED input) — out of the attention list, the 20:00 summary and the trucks
+card, counted apart in `tripTotals`. Pricing page: «⏳ N karobka hali
+topshirilmagan» while the carried cargo is out (2a), `PricingForm secondBill`
+asks before a second bill (4a). Window functions (`RANGE … EXCLUDE GROUP`):
+profitByBatch 626 trucks 63 → 110 ms (a correlated first draft was 350 ms).
+Pinned by truck-riders (U16 re-anchored + «keyingi yo'l» block), internal-leg
+R2a, `later-legs-wire.test.ts`. PROCESS: a red-proof helper restoring an EMPTY
+strip wrote the line between every character of a file, and `open(p,'w')`
+before `read()` emptied another — both recovered, the WIP was committed first
+(#1246). Reviewed as shipped (#1251 — renumbered from #1247 on the merge): the
+fence had been measured only on the small copies, and on `gsr_card_perf` three
+weeks of «Partiya foydasi» took 10.8 s — rewritten with NO join between CTEs
+(windows over the carton's own rides), 0.3-0.6 s; the year read is 3.6-3.8 s
+vs 2.7-3.1 s, stated. The same evening he asked two more (rename a departed truck; change a
+truck's destination on the road) — researched, answered with questions, not built.
+
 **Round — the strip that multiplied (2026-09-30; DECISIONS #1247-#1250 —
 numbered PAST the other session's open PR #106, which holds #1243-#1246; NO
 migration, ledger 121).** His «1 2 joyni bosgandan keyin u kopayib bir birini
@@ -2334,7 +2370,407 @@ round (#1250): `calc-memory`'s random base-36 token scores exactly the 0.6
 threshold for «erk»/«ayo» (2 of 46,656) — reproduced by pinning it, fixed with
 three digits (all 1,000 score 0.536), and still red under `word_similarity`.
 
-**Latest migration: 0120** (`no_login_staff`, `when` …099; ledger must reach **121**). Before
+**Round — partiya nomi yo'lda + yo'nalishni o'zgartirish (2026-09-30; DECISIONS
+#1252-#1255 — renumbered from #1248-#1251 on the merge, the TWENTIETH collision: the other session's strip round took #1247-#1250 first; migration 0121 `batch_rename` — ledger must reach 122).** His 1a/2a/3a/4a
+(5 unanswered → same country only). Designed + judged, then BUILT in two worktrees and
+reviewed again, merged. RENAME (reverses #122): `rename-door.ts` `renameStageOf`
+(loading / road = in_transit|arrived with cartons aboard / closed), door = plans.manage +
+the card's two ends, branded `RenameDoor` bound to the actor, lock order name → loading
+lock → row, compare-and-set `seenCode/seenStage`; road names = the bot's
+`isCodeCandidate`; shape fences at both stages; only a ROAD name is «ever worn»
+(`former-codes.ts`, audit rows + 0121's partial index); old names found by ⌘K, the
+archive (one bracketed `batchTextMatchSql`) and the bot (last). REROUTE: one writer
+`reroute.ts` `rerouteBatch` (in_transit only, same country, FOR NO KEY UPDATE,
+`dest_changed` CAS, reason, `BatchRerouted` → Telegram to the new warehouse + logists +
+a warehouse an earlier reroute told «keladi»); phone sync is per truck
+(`scanning/sync.ts` — a rerouted truck no longer jams the outbox), every unload row carries
+`expectDestId` and is judged at scan time, office doors post `seenDestWarehouseId`.
+Money untouched by construction (countries). His answer to the round's eleven
+questions: «Hammasi standard» (#1256) — every ⭐ checked against the shipped code
+first (11/11), the four that only reading proved now pinned by tests.
+
+**Round — lot tarkibi (2026-10-01; DECISIONS #1257-#1262; migration 0122
+`lot_composition` — ledger must reach 123; spec `docs/LOT-TARKIBI.md`).** His case:
+100 cartons received «klaviatura» after one was opened, really 50 mice + 50
+keyboards, found while the VED made the invoice; answers 1c 2c 3b 4c 5a 6 7a 8a.
+The lot keeps its BODY (cartons, letter, stickers, scans, plans, stock, cabinet,
+pushes, bot, act, manifest, costs, price — fenced by `lot-composition-fence.test.ts`)
+and gains a paper composition: `lot_compositions` + `lot_composition_lines` (2-20
+lines; Σ kg/m³ EXACTLY the lot's, cartons all-or-none = «alohida»/«aralash»;
+a document on that prixod mandatory), written by `ved.docs` ∨ `plans.manage`
+through ONE module `receipts/lot-composition.ts`. The pure arithmetic is
+`receipts/composition-math.ts` (`paperLines`; cumulative Sainte-Laguë over the
+lot's crossing trucks, largest remainder in BigInt, «taxminiy» when a truck
+carries part of the lot); invoice, both packing lists and the agent file print
+a row per line. A line's TNVED never writes `tnved_assignments`;
+`saveTnvedAction` now takes the truck and refuses a name not on it. The lead's
+LOCK became a FREEZE (the judge: deadlock with count-load, split lots trapped,
+nothing tied the sent papers to a revision): the «hujjat yuborildi» tick copies
+contents AND carton positions into `batch_sent_compositions`, the stamp refuses
+`paper_moved`, pre-0122 ticks are backfilled by 0122 itself. CI caught the
+tick importing `count-rules` (`count-kernel-wire`) — the lock lives in the
+service. 📈 kinds count lines by name in their own CTE (#432). ASKED of him:
+a whole-lot-other-good fix for the VED, Chinese names on lines for
+the agent file, «шт» beside «кг» on one invoice. His answer «1a 2a 3a» (#1263):
+keep all three as shipped — checked against the code first, the reading-only
+parts now pinned by tests (24 red proofs).
+
+**Round — yuk ma'lumoti tekshiruvi (2026-10-03; DECISIONS #1264-#1267;
+migration 0123 `lot_check` — ledger must reach 124; spec `docs/YUK-TEKSHIRUV.md`).**
+His «yuk malumoti toldirildi degan znacok … sklad ostatkani korganda va plan
+berganda korinib turishi kerak … filterlash imkoni», answers 1a 2b 3a 4a 5b.
+`lot_checks` = one row per lot SNAPSHOTTING what a person vouched for (name
+zh+ru, box_count, client — 2b); every reader COMPARES, so no writer of those
+facts clears anything (a QR-siz take-back heals by itself). A standing lot
+tarkibi is ✅ «hujjat bo'yicha» by DERIVATION (3a, `isStale`'s terms in SQL,
+pinned against it). The ❓ worklist is cargo in a CN warehouse (4a); the card's
+own askable = a live carton on a CN shelf or on a truck out of China. ONE
+sentence `receipts/lot-check-sql.ts` (+ pure `lot-check-face.ts` for the plan
+editor), ONE writer `receipts/lot-check.ts` (door = `mayOpenBatchVed` +
+`mayReadReceipt`; lot NO KEY UPDATE → prixod SHARE NOWAIT → check row FOR
+UPDATE; two CAS: `lot_changed`, `check_changed`). Readers: /stock (chip as a
+SIBLING of the code link, filter row, Σ + prixod chip counts in one statement,
+filter in HAVING), Ostatka XLSX (export-always «Tekshiruv»), plan editor
+(render-only filter, re-read on tab return), prixod card, «Yuklar», logist +
+VED home rows. `lotChecksReady()` probe → every list runs its pre-0123 shape on
+a half-applied deploy (measured on a ledger-123 copy). Audit keys are PER LOT
+(`lotCheck:A`, `auditFieldLabel`) — a shared key let `groupHistory` net three
+lots into one line. Reviewed as built by 5 lenses + skeptics: 18 of 20
+confirmed and fixed (#1265); then the FIXES were reviewed (#1267): 13 more
+confirmed and fixed — the card's road arm needs the truck ON the road (an
+unload's missing carton keeps its truck), no /stock link is ever bare, the plan
+editor prunes picks a re-read finds gone and never says «empty» while loading,
+undo lives where confirm does. 16 red proofs. Also his «yashiklar …
+colapsable»: `CrateRows` is a `<details>`, open ≤5 (#1266). 5b (the client's
+own ✅/❌ in Telegram) is owed as a later round.
+
+**Round — Telegramdan topshiriq + VED tarix (2026-10-06; DECISIONS
+#1268-#1281; migration 0124 `task_origin_calc_note` — ledger must reach 125; specs
+`docs/TELEGRAM-TOPSHIRIQ.md`, `docs/VED-TARIX.md`, review
+`docs/TOPSHIRIQ-VED-REVIEW.md`).** Two rounds designed as two specs, judged
+as ONE by five lenses before code (115 objections, 88 confirmed + 25 partial,
+every survivor a BINDING fix), the shared half written by the lead first, then
+two worktree packages merged with no conflict. **0124**: `tasks.origin`
+(hand/calc/calc_return/promise/automation) said by the CREATING door —
+`createTask(input, ctx, making)` takes it as a REQUIRED argument, never from a
+form — plus `bound_id` (calc/promise only, CHECK spells `origin IS NOT NULL`),
+`accepted_at`, `reminded_at`, `source_messages`, and
+`calc_requests.answer_internal_note`; backfill = pointers first, then the
+whole machine title shape, proven by running 0124's own UPDATEs in a
+rolled-back tx. **An open bound task has no ✅ anywhere** — every task door
+asks `wms/calc/task-gate.ts` (dynamic import) first and fails CLOSED
+(`calc_use_screen` / `bound_check_failed`); the READER decides how a calc job
+draws (`toTaskViews(rows, viewer)`: «🧮 Hisobni ochish» for `ved.docs`, a chip
+for everyone else). `retireTaskCopies` (platform/notifications) takes a
+task's buttons off its Telegram copies after commit — the 08:00 digest keeps
+its text and only its keyboard is redrawn. BOT: «➕ Topshiriq» / forward door
+into ONE pure draft (`telegram/task-draft.ts`), customer messages kept as
+POINTERS and forwarded by the drain, 👀/⏰/💬 by origin, «📤 Men bergan» with a
+CAS 🔔; every staff member sends /start once for the new rows. VED:
+`calc/credit.ts` is the one «who priced it» (13c); «Готово» parses typed text
+and requires an internal note that reaches its column and the request's audit
+row and nothing else (fenced); answers sit in /hisoblash/tarix beside seals
+(one UNION, goods fold, TNVED-prefix search); recalc from an answer
+(`vedRotaPool`, root seller as requester, `recalc_returned`);
+`standingAnchorsFor` is the one list the panel, the quote lock and «Javob
+berildi» read; nazorat reads all and confirms own; the VED reaches a seller's
+card through `/hisoblash/[id]/karta` (`mayOpenCalcCard`, his 15a) with a text
+note and the client price, never the upsale (16a). Found on the way:
+«Bo'shatish» had never cancelled the holder's task (PG16 RETURNING is the NEW
+row, #1271) — the ghosts are `pnpm close-stale-calc-tasks --ghosts`, dry run
+first; and his «edinitsa izmereniyani o'zgartirib bo'lmayabti» was the baza
+PAIR drafting as two updates that each cleaned the other away
+(`calc/baza-draft.ts` `editBazaPair`, #1272). Then the MERGED code was reviewed (#1281: 41 candidates, 36 confirmed + 5
+partial, all fixed): cancel had no bound gate; task links are chosen per
+RECIPIENT (`taskLinkFor(task, recipient)` — no 🔗 rather than a dead one);
+the quote lock holds the number the card shows while its writer stands;
+`TaskSources` carries late parts and re-sent sources. STILL OWED to him: Q17
+(VED writes on the deal card) and Q18-21 (which units a row may offer) — he
+answered them 17a 18a 19a 20a 21b, see the next round.
+
+**Round — the baza unit: «avto», chosen, m³ (2026-10-07; DECISIONS
+#1283-#1290; migration 0125 `calc_basis_m3` — ledger must reach 126).** His
+18a 19a 20a (21b, the phone's unit picker, ships with the phone-calc round;
+17a waits on the G questions sent the same evening, together with the phone
+calc, baza statistics, debt release with a comment, staff chat and the price
+channel — the A-G list, ⭐ defaults). m³ is a BAZA unit only (`BAZA_BASES`,
+reads `volume_m3`; PP-3818 has no per-m³ duty, so DutyUnit/the pair/the
+duty_unit CHECKs are untouched); 0125 widens three CHECKs (2.4 s at 2M import
+rows) and a 23514 on the two calc ones is `server_behind` BY NAME. The pair
+follows the law, then the basis (`pairUnitFor`); the one refusal is a second
+pair unit on a juft/litr/m²/sm³ law (`basisConflicts`, named, never
+rewritten). «avto» = a null basis stamped from the FINAL group in the measure
+pass; a priced row keeps its unit (A2, `basisSuspect` names re-lawed priced
+rows); a unit chosen without a price stands; `unitsForRow` takes `chosen` and
+`hasVolume` as REQUIRED and never offers an extended unit unless the law pins
+it or the VED chose it; `basis_not_law` (A1) is recorded by ✅ and silent on
+1,250 of 1,489 laws. One `screenRowOf` (calc/screen-row.ts) for the select,
+the O'lchov line, the live figure, the save and the self-clean; one
+`postedBasis` for what a baza edit posts; one `basisNotLaw` for the server and
+the live footer. Phone phase 0: a screen-minted row id makes a retry an EDIT
+of the stored row (never a second row, never a dropped correction), a paste
+keeps its ids per line (`calc/paste-ids.ts`), `act()` catches, the phone ✅
+waits on unsaved drafts. Reviewed twice before the merge (#1290): five lenses,
+then a DIFFERENTIAL run of the old engine against the new on the old CHECK's
+data shapes, a spec critic and a real browser walk — five defects, all
+red-proven; the differential found the one the readers could not
+(«differs from today's default» read as «chosen» on a cleared price).
+
+**Round — wave 1 of his 2026-10-07 answers: debt release with a reason + the
+baza statistics (DECISIONS #1291-#1301; migration 0126 `debt_release_note` —
+ledger must reach 127).** His «Hammasi yulduzcha, faqat D1 a / D2 sklad mudiri
+so'ramasdan beraversin / E6 c / F9 b» (binding A-G list in the session
+scratchpad; B+G = wave 2, E+F = wave 3, both specs written and judged). Two
+packages, each spec judged by five lenses before code, built in worktrees,
+reviewed as MERGED by five lenses with refuters (12 survived), fixed and
+re-verified by an independent checker. DEBT: `counterDebtRelease`
+(finance/scope.ts) = 'ledger' | 'warehouse' | null, asked ONLY by the issue
+service and `/api/issue/list`; 'warehouse' = the warehouse_manager ROLE's own
+grant of `finance.debt_override` (`actor.roleGrants`, the per-role map built in
+the same single join as the union — `userRoleGrants`, platform/rbac/authorize.ts)
++ warehouseScoped + inScope; `mayGrantDebt` untouched (D3a). A used tick over a
+real debt needs `handovers.debt_note` (`debt_note_required`, never `note` — the
+act prints `note`); a stale tick stores none; `debtOpenedBy` is the pure «who
+opened the gate». `requestIssueApproval` requires `note`. D6 «🔓 Qarzga yuk
+berildi» → `receivesDebtReleased` (super_admin/accountant ROLE + companyMoneySight),
+own mute group `debt`. Readers: `debtReleaseReasonSql` (debt/releases.ts) via
+`to_jsonb(alias)->>'debt_note'`. The tick lives in the debt banner; the fixed bar
+carries `issue-debt-hint` asking the DEBT question alone. i18n namespace
+`qarzIzoh`. STATS: the 📥 dialog's «Narxlar statistikasi» — `percentile_disc`
+only, one vote per declaration, China by `chinaOriginSql`, the ±25 %
+weight-per-piece series (`bandBounds` cut to 12 significant figures), exemplar
+per quartile chip, «Tanlash» the only writer; «newest» = `batchRecencySql` for
+the picker, the auto-fill AND the AI prefill, and a future-dated row no longer
+moves a batch's period at settle; the phone opens it view-only
+(`PickerTarget.mode` REQUIRED — wave 2 flips it). Deploy: ledger 127, and on
+/admin/roles «Sklad mudiri» must still hold `finance.debt_override` and be
+warehouse-scoped, each manager with his warehouse on /admin/users; D6 reaches
+the owner only with super_admin + `finance.reports`. OWED to him as questions: a
+release excused only by a deal «muddat» sends no D6; the future-dated count is
+logged, not shown on /admin/bojxona-import.
+
+**Round — wave 2 of his 2026-10-07 answers: the calculation on the phone +
+the VED on the deal card (DECISIONS #1302-#1312; NO migration, ledger 127).**
+Same method as wave 1 (spec judged → worktree build → review as built → fix →
+independent check). PHONE (his B1 a-B6 a, 21b): per-item cards and ONE bottom
+sheet (`row-sheet.tsx`) holding the whole row; one row per press
+(`buildEdit`/`buildAdd`/`send`, drafts settled by identity at the committed rev,
+`settleDrafts`); `readNumberCell` asks «1.125 dollarmi yoki 1125 dollarmi?» at
+EVERY width (desktop too — stated); drafts in localStorage per viewer+request,
+per-field bases, `mountDecision` = prompt | kept | live (a skip judged against
+a stale cached page is KEPT); B6 = a warning (`/api/calc/rev/[id]`, NetworkOnly)
+plus a commit-time compare-and-set (`TableItemEdit.expect` under
+`lockRequestInTx`); `reloadFresh()` after a deploy; 16 px inputs. DEAL (17a,
+G1-G4): `deals/door.ts` (pure) + `run(gate: 'terms' | 'work')` REQUIRED on every
+deal action (fenced); read-only board = no `onMove`; the VED's work set is ONE
+sentence (`deals/ved-work.ts`) for rows, totals, chip, home row (counts DEALS),
+⌘K and the calc door; the bot mints a coded client's deal in the client's
+seller's name or ownerless (`calcDealOwnerFor`, `createDeal({ownerAsGiven})`);
+custom fields split read/write. On the way: id filters ask `isUuidShaped`
+(derived fence), and /crm asks «all» once. OWED to him as questions: desktop B6,
+the comma question on discount/rates/paste, one-shape mounting (keystroke
+59-70 ms at 4× throttle), deal17 Q1-Q5.
+
+**Round — wave 3 of his 2026-10-07 answers: staff threads round 1 + the
+price channel (DECISIONS #1313-#1323; migrations 0127 `staff_threads` + 0128
+`price_channel` — ledger must reach 129).** Built in parallel worktrees on a
+`wave3-base` commit that RESERVED both journal slots as `SELECT 1;`
+placeholders (each package replaced only its own file, so neither journal had
+a hole) — a placeholder must never reach main. CHAT (E): a thread = a card's
+notes, a calc thread = the `calc_request_id` TAG; the three new
+`crm_activities` columns are SQL-only this release (raw writer `thread.ts`,
+readers via `to_jsonb`) or every note writer throws 42703 one migration
+behind; ONE door `mayReadThread` (thread-door.ts, the lenta's gate moved in);
+audience decided at SEND time (E9 door, involvement relation shared with the
+dock, client's seller E6 c, G4 reply-only, mentions exempt and kept in the
+dock); `reply-door.ts` resolves a swipe-reply from the person's OWN
+notification row by `payload.tg`, armed «Bajarildi» first, E3 into the calc
+thread, E4 to the giver, text only; own mute group «Ichki yozishmalar»; not
+lead contact (E11); dock «👥 Ichki» through a literal-typed partial index;
+read mark = the page's `asOf` as postgres's microsecond string. CHANNEL (F):
+the channel is a ROW (`connected_at`), never a setting; `vetChannel` refuses
+public / subscribers / no-post / linked discussion; `drainPause` is the one
+pause rule (drain AND «Qayta tekshirish»), the vet writes the bot status back;
+claim = INSERT … ON CONFLICT on `dedupe_key`, first statement after the seal's
+tx, a derived 24 h net, ambiguous sends NEVER auto-retried, a fenced claim;
+`ChannelPostView` 16 fields, `scrubIdentity`, seller named (F9 b), protect
+content, marks derived from the chain; narxlar shows a seller his OWN offers
+(F1 a). Deploy: ledger 129, rebuild the bot (it now takes `chat_member`), then
+his private channel + bot admin + /admin/narx-kanali (CHANGELOG steps). OWED
+as questions: free-text money in a calc thread, replying to CalcDone pings,
+the muted «Ish jarayoni» people, round 2's warehouse = where the cargo STANDS,
+`drop_pending_updates`; pre-connect prices, the logist matching posts to
+deals, «own» = offered_by, sealed total on narxlar for sellers.
+
+**Round — «Hammasiga ha», prixod/truck threads and the kept backlog (2026-10-08;
+DECISIONS #1324-#1339; migrations 0129 `cargo_threads` + 0130 `bot_redelivery` —
+ledger must reach 131).** His «Hammasiga ha» = the ⭐ of every open question,
+each checked against the shipped code first (#1229): ten held and are now
+PINNED (three of those pins first stayed green and were re-anchored), one held
+on one surface only (the VED's money warning on the card fold), and Q5's star
+was a CHANGE — «bot qayta yoqilganda qayta ishlansin». Three packages on a base
+that reserved both slots as `SELECT 1;` placeholders (a U11 fence in
+`migration-journal.test.ts` now refuses a placeholder body), built in worktrees,
+each reviewed as built and fixed. CARGO THREADS (E round 2, E6 c, E7 b, Q4 a):
+the receipt/batch card's untagged notes; `inventory/stands.ts` is the ONE
+«where the cargo stands» (live shelves + both ends of an in-transit carton's
+truck, else issued/written-off, else receiving; a truck by its stage); the door
+= unscoped `plans.manage` OR scoped staff at a standing warehouse, AND the card
+door (`ThreadReader` carries the scope on every path); office writes reach the
+standing warehouses' staff, staff writes reach the logists by role; frames in
+the recipient's locale; files refused; every thread-kind branch an exhaustive
+switch (K1). BACKLOG (Q5 a, reverses #1316): `drop_pending_updates:false`, a
+stop that confirms only what FINISHED (lifecycle.ts), `answerPress` the one
+caller of `answerCallbackQuery`, `telegram_once` claims per MESSAGE identity
+minted only through `readyKey`, durable one-message waits
+(`telegram_chat_waits`), the backlog told apart from the live chat (one
+sentence, never the AI). SMALL: the price-channel scrub finds codes by DATA
+(deal codes were posted verbatim) — its first two rewrites each opened a new
+leak class, found by a 485k-name DIFFERENTIAL against the shipped scrub, not by
+a test: widen glued runs LAST, a phone takes whole every unit it overlaps;
+`calcJobHrefFor` links what the reader can open. PROCESS (#1339): a container
+restart mid-build (resumed IN PLACE, never `checkout -B`); 4 CPUs = two
+workflow agents at a time; `eslint .` lints `.claude/worktrees/*`; the merge's
+one conflict was visible only to `pnpm typecheck`. Deploy: ledger 131; the
+rollback VPS's `app` must stay stopped (a second poller would drain the
+backlog with its own code); warehouse staff need «Skladchi»/«Sklad mudiri» and
+their warehouse on /admin/users to hear anything.
+
+**Round — the customs calculator fix (2026-10-09 → 10-13; DECISIONS
+#1340-#1354 — #1354 = his «to'g'ri degandek qil» on the four ⭐, two of which
+NOTHING pinned until then; migration 0131 `calc_excise` — ledger must reach 132; spec
+`docs/RASTAMOJKA-TUZATISH.md`).** His «tnved code va dona m2 juftda otadgan
+tovarlarni kirgizadgan joyi yoqku» + «kg hamda donani birga kirgizadgan
+tovarlar … hatolik ketmasin». Two audits first (57 + 76 agents, a reference
+engine on random inputs; 66 confirmed), then a kernel and three packages,
+each judged before code. **The one defect under most of them: a number lived
+in the column nobody's unit named** — «Kafel 120 m2» stored as 120 PIECES with
+«m2» as display text. KERNEL: `calc/units.ts` (`routeAmount`,
+`parseGoodsLine`, `normalizeRowUnit`, `normalizeTnved` — a NUMERIC 9-digit
+cell is padded, typed TEXT of nine digits is asked; `pendingUnitOf`) and
+`calc/needs.ts` (`rowNeeds` off `itemMeasure` — a need and a refusal cannot
+disagree); `measure_missing` names unit + half (baza/duty/excise); no code =
+no total (`ungroupedCount` REQUIRED); legacy per-group fee never charged; fee
+tier on the rounded Σ; half-up decimal rounding. P1 (doors): ONE
+normalisation in `openCalcRequest` (`door-row.ts`) for card/bot/thread/file,
+the seller's form a goods table, the bot reads «1 200 kg»/«120 ta juft»/«300
+dona 150 kg», the checklist follows the BOOK's law (`bookLawsFor` on the
+pool), invoices keep TNVED, the offer PDF prints the pair. P2 (law/book/
+seal): the law's SHAPE survives teach/pull/recalc (`dictionary_moved`,
+`code_heading`), excise in ONE shape (0131; a pair-unit excise only when it
+IS the law's pair, `exciseUnitsFor`), the fee's inputs printed and the seal
+locks the fee it showed (`conflict`), no partial JAMI anywhere, the sealed
+sheet adds up. P3 (screen): «avto» = the save's `autoBasisFor` over the
+DRAFTED figures and every «avto» price posts `shownBasis` (refused in words
+when the law cannot hold it); `neededCells` marks the cell a refusal would
+name, with the reason (phone: a visible line); `liveMembership` prices each
+drafted row in the block the save will put it in, or prints «Kod yangi —
+Saqlang»; old rows («120» under «m2») HEAL on Saqlash, decided on the row AS
+STORED by the same `pendingUnitOf` the screen's sentence uses, ✅/seal gated
+until then, «Bu dona»/«Bu karobka» answer the asks. MY MISTAKE, recorded
+(#1348): the first heal skipped a row whose count the same save posted, which
+moved the VED's count into the weight on the NEXT save — MR-4's shape one
+press later. Stated, not changed (§4): the `max` floor per BLOCK, the
+no-certificate duty on the nominal %, VAT 12 % default, sborniy one block per
+code; his four ⭐ questions built as defaults (netto on the row; excise
+«yo'q/foiz/$ har birlikka»; floor per code; nominal %).
+
+**Round — Sarflar: «Pul qayerga ketdi» + the truck bill from the money section
+(2026-10-14; DECISIONS #1355-#1363; NO migration, ledger 132; spec
+`docs/SARFLAR.md`, §8 binding, §9 = what the build changed).** His «moliya
+bo'limida … qayerda qanday rasxod bo'layotganini 1 pageda … partiyalarga
+rasxodni obshiy joydan ham kirgazish», answers «Hammasi ⭐» + Q3 (no route
+grouping; truck money only in «Partiyalar», each with its kind chip) + Q6 (warn
+BEFORE the save, naming where). `/accounting/sarflar` (`companyMoneySight`):
+ONE row set `spendRowsSql` (kind stamp-first, place, payer) feeds every block,
+each reconciling to «kitob jami» = the P&L's direct + opex to the cent; hero =
+`pnlParts.cost`, kurs farqi the one bridge line; expense ROWS only to staff-money
+readers; register + audited XLSX. `/accounting/sarflar/kiritish`: picker on
+`mayEnterBatchCostWhere`, the truck's own CostPanel kept open across trucks
+(`afterSave='again'`, `CostKept`), freight default. THE TWIN ALARM
+(`accounting/twins.ts`): one pure `twinShape` over payer kinds (kassa
+compared in the KASSA's currency to the cent; five shapes with words and cures),
+SQL prefilter + JS arbiter, sums, reader-gated (`mayPickTill`), colleague
+redacted, single-use ack token into the create audit; wired into the cost form,
+the grid (pre-write hook — the engine never asks about the reader) and the
+expense form (onSubmit). Between two currencies the alarm is NARROWER than the
+M4a merge: 1 % of the expense's dollars, no $5 floor, ≤ 3 days (`TWIN_FX_PCT`,
+`TWIN_FX_DAYS`) — the merge's band gave 11 false twins per bill on a dense book;
+«≈» marks such a line. The map's «tekshirilmagan» count lists both rows of each
+pair and «✓ Ikki xil pul» (`ackTwinPair`, audit verb `twin_check`); its expense
+side is one MATERIALIZED pass (3.6 s → 0.4 s). Write path: `mayEnterBatchCost`
+(no «＋» on a cancelled truck), `addCostEntry` writes the scope's own target in
+a short tx (prixod FOR KEY SHARE, truck FOR SHARE), a truck PRICE takes the
+truck FOR SHARE too, `cancelBatch` locks truck → money → cartons (cartons first
+was a deadlock with the post-commit split — my own first order), and
+`confirmReceipt` refuses a posted extra cost (`extra_costs_retired`). Reviewed
+twice as built (five lenses; 23 findings, 12 refuted as already fixed by the
+first pass — a moving tree again), 14 red proofs by string edit in the second
+pass + the form key reproduced red in a browser. **7057 unit/integration + the
+e2e suite** green on a fresh gsr_ci in CI's order. His 6 answers on the
+tariff split came the same day — the next round.
+
+**Round — yo'lkira tarifi bo'yicha taqsimlash (2026-10-14; DECISIONS
+#1364-#1378; migration 0132 `cost_freight_basis` — ledger must reach 133;
+spec `docs/YOLKIRA-TAQSIMOT.md`).** His
+«1a 2c 3a 4a 5a 6 1kub 10kgdan kam tpgri keladgan bolsa ogohlantirsin, qolgani 1kub uchun 100 kgdan kam tarifda ketaversin»; the twin
+threshold left to me stays 1 % / 3 days. A new allocation basis `'freight'`
+for TRUCK-scope bills (preselected for `freight_tariff_cost_type_codes`, never
+on a customs type): a share is the group's TARIFF VALUE ÷ Σ — group = each
+client's whole cargo on the truck, an unclaimed prixod alone (1a); band by
+the group's EXACT whole density (BigInt grams/cm³, half-up — the screen and
+the split cannot disagree); a group under `light_below` 10 kg/m³ HOLDS the
+bill (saved, on NO box, ⚠ names the lots lightest first, heals when the lot
+is fixed); from 10 to the lowest floor = the lowest band (6). The column is a
+warehouse ROW (`warehouse_tariff_columns`, the truck's ORIGIN, written in the
+warehouse form — 2c, ships EMPTY so nothing moves until he writes one); the
+copy as of `cost_date` is a bill ROW (`cost_entry_tariffs`, ONE writer
+`replaceFreightCopyInTx`) and the save refuses a stale preview
+(`freight_changed`, digest of what was drawn — 3a). `costPool` (pure) is the
+ONLY caller of `allocateEntry` — recompute, void guard and every preview — and
+an empty base is judged before anything else. «Bo'lish usuli ✎» (5a,
+`costing/rebase.ts`): preview → token → one tx that moves ONLY the split
+(never amount/rate/payer/kassa/merge/charge); `pnpm freight-to-weight --apply`
+(through `migrate`) is the precondition for going below 0132 (docs/UPDATE.md).
+A held bill is said everywhere it costs money through ONE `noShareSql`: the
+row chip, the Σ, the todo, the Narx page (this truck AND the trucks feeding
+its tannarx, `carriedUnsplitBills` — per PART, so a direct fee names its own
+client only), the attention row, «Partiya foydasi»'s `bolinmagan=1` list (with
+a «hali jo'namagan» block), the Balans, the P&L's gaps, client profit and the
+deal profit. Found on the way: **`calc_customs_cost_type_codes` was never
+read** — drizzle hands jsonb back PARSED and `JSON.parse(String(array))`
+threw, so the fallback `["customs"]` answered every reader (#1370). Reviewed
+as built (three lenses), then the FIXES reviewed: the exact sums had to reduce
+by gcd (a 500-carton totals lot read NaN), the fold's customs flag only for a
+bill on no box, the token covers both columns; `carriedUnsplitBills` became
+linear (a window, not a CTE join — 8-10 s → 1.6 s on a 20-leg synthetic hub,
+the shipped statement kept verbatim as the test's oracle) and the four
+held-blind readers learned `heldFreightSql` — which means freight basis AND
+on no box AND the truck CARRIES cargo (`truckCarriesSql`, #1378; keyed on the
+basis alone, a bill typed before the loading was told «do not void»). TEST TRAP (#1377): SIX files
+shared «private» year 1637 and truck-riders deletes its whole year — search
+years as BARE numbers (`const Y = '1663'` hides from a quoted-date grep).
+**7209 unit/integration + 445 e2e** green on a fresh
+gsr_ci in CI's order (ledger 133); screenshots of ten screens at 360×800 and
+1280×900, document width equal to the viewport at all twenty — after the
+screenshot found /reports/landed-cost at 407 px (pre-existing nowrap names).
+m8-crm's two desktop drags failed once in a run that shared the CPU with
+another vitest: the reload raced the move action (the database held the
+move, the page did not) — green alone twice and in the final run.
+
+**Latest migration: 0132** (`cost_freight_basis`, `when` …111; ledger must reach **133**). Before
+it: 0131 (`calc_excise`, `when` …110). Before
+it: 0130 (`bot_redelivery`, `when` …109). Before
+it: 0129 (`cargo_threads`, `when` …108). Before
+it: 0128 (`price_channel`, `when` …107). Before
+it: 0127 (`staff_threads`, `when` …106). Before
+it: 0126 (`debt_release_note`, `when` …105). Before
+it: 0125 (`calc_basis_m3`, `when` …104). Before
+it: 0124 (`task_origin_calc_note`, `when` …103). Before
+it: 0123 (`lot_check`, `when` …102). Before
+it: 0122 (`lot_composition`, `when` …101). Before
+it: 0121 (`batch_rename`, `when` …100). Before
+it: 0120 (`no_login_staff`, `when` …099). Before
 it: 0119 (`price_icons`), 0118 (`border_queue`), 0117 (`staff_pay`) — `when` …096-…098. Before them:
 **0116** (`cargo_wait_alerts`; ledger 117). Before it: 0115 (`system_watch`), 0114 (`debt_control`), 0113
 (`inbound_contact`) — `when` …092-…095, assigned in that order before the
@@ -2459,17 +2895,19 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **121** since 0120 (120 since 0119, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **133** since 0132 (132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read
 2026-09-30 04:30 UTC, built after #103 merged, so 0120's code runs) — the count
-was asked for and NOT quoted, so COUNT FIRST on the next deploy: it must read
-**121** (anything less means a migration did not land — read the `migrate`
-container's own output; from 113 the whole 0113-0120 set applies and EVERY
-container must be recreated once: `--profile https --profile telegram up -d
---build`, compose gained `init`, a healthcheck, log caps and a postgres flag);
-a code-only round after it is checked by `/api/version`, not the count.
+was asked for and NOT quoted; PR #106 (0121) deployed 2026-09-30 evening («Hozir sistema
+yaxshi ishlayabti», count not quoted either); PR #109 (0122) was asked about and NOT
+answered. **Then he CONFIRMED 132** («deploy qildim 132 chiqdi», 2026-10-13,
+after PR #118 — the customs calculator fix, 0131), so production is at the
+journal's length and EVERYTHING in this file through #1353 is LIVE. The
+yo'lkira-tarifi round (0132) must read **133**; a code-only round after it is
+checked by `/api/version`, not the count (anything short of the journal means
+a migration did not land — read the `migrate` container's own output).
 Never carry this number over from a previous session: read it
 (`ls src/modules/platform/db/migrations/*.sql | wc -l`) before writing the
 owner a step list, because the count is the only check that separates «the

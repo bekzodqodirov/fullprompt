@@ -38,29 +38,112 @@ export type CalcWarningKind =
    * of the machine's three sources — a VED person confirmed that number and
    * sealed it — but it is still a NAME match against an older job, so the ✅
    * records that the person looked at a price they did not state today. */
-  | 'baza_from_memory';
+  | 'baza_from_memory'
+  /** The code's law COUNTS in a unit (kg / m² / juft / litr) and at least one
+   * row's baza is priced per another (0125, the owner's A1). Allowed — the
+   * baza is the row's own question since his 18a — but «$8» meant per juft
+   * and saved per kg is +59 % customs on a measured case, a number that is
+   * right and a unit that is wrong. The ✅ records that a person looked.
+   * SILENT on an advalor code and on a per-dona law: those pin no baza unit,
+   * so an override there is free and this list does not watch it. */
+  | 'basis_not_law'
+  /**
+   * The BOOK moved under a group that took its law from the book (2026-10-09,
+   * P2.2): today's row for the code says another duty, VAT or shape than the
+   * group carries. A dictionary group is the book's word AS OF its mint, and
+   * the dictionary is versioned by date — so a correction the VED made to the
+   * book this morning reached nobody's open job, silently. Only for a group
+   * the book wrote (`rateSource` not 'typed'): a TYPED group that differs is
+   * `rate_off_dictionary`'s sentence already — one fact, one warning (UX9).
+   */
+  | 'dictionary_moved'
+  /**
+   * A SHORT code whose heading hides other laws (P2.3, judge MR-10/UX8): the
+   * typed code is under 10 digits AND the book holds deeper rows under it
+   * with a DIFFERENT law (8528 → 852872…: 15 %). PP-3818 is written by
+   * heading, so «answered from a shorter row» alone is true of nearly every
+   * group and is footer INFORMATION, never this warning.
+   */
+  | 'code_heading'
+  /**
+   * The code falls under a heading that MAY carry an excise (`calc/excise.ts`
+   * — beer, spirits, tobacco, fuel, cars) and nobody has answered it: no
+   * percentage, no «yo'q», no per-unit amount. Never a blocker — the VED
+   * answers «yo'q» and it is gone.
+   */
+  | 'excise_unanswered';
+
+/** A law as the book or a group states it — the five columns that price a duty. */
+export interface LawFacts {
+  dutyPct: number;
+  vatPct: number;
+  dutyMode: 'advalor' | 'specific' | 'max' | 'plus';
+  dutySpecific: number | null;
+  dutyUnit: string | null;
+}
 
 export interface WarningGroupFacts {
-  /** What the rates dictionary answers for this group's code today, if anything. */
-  dictionaryRates: { dutyPct: number; vatPct: number; feeUsd: number } | null;
+  /** What the rates dictionary answers for this group's code today, if
+   * anything — the whole law (2026-10-09), not only its two percentages. */
+  dictionaryRates: (LawFacts & { feeUsd: number }) | null;
   /** The note on the dictionary row — the law's own condition, when it has one. */
   dictionaryNote: string | null;
   rateSource: 'dictionary' | 'typed' | null;
   dutyPct: number | null;
   vatPct: number | null;
+  /** The group's own law shape — compared with the book's beside the two
+   * percentages, or a MAX floor the book dropped stays on the job unseen. */
+  dutyMode: 'advalor' | 'specific' | 'max' | 'plus';
+  dutySpecific: number | null;
   aiProposed: boolean;
   aiConfidence: 'high' | 'medium' | 'low' | null;
   aiDutyPct: number | null;
+  /** The group's law unit (its `duty_unit`) — null on an advalor code.
+   * REQUIRED: `basis_not_law` cannot be judged without it (0125). */
+  dutyUnit: string | null;
+  /** The book holds deeper rows under this SHORT code with another law
+   * (`code_heading`) — decided by the caller from the book, REQUIRED. */
+  headingHidesLaws: boolean;
+  /** The code may carry an excise (`calc/excise.ts`, read by the caller —
+   * this file imports nothing) and the group has not answered it. */
+  exciseUnanswered: boolean;
   /** One entry per ITEM: what the baza dictionary answers, and what stands.
    * The basis union is RESTATED here (this file is zero-import on purpose) —
-   * it must match pricing.ts's BazaBasis by hand. */
+   * `tests/unit/basis-vocabulary.test.ts` holds it to pricing.ts's
+   * `BAZA_BASES`. */
   items: {
     hasDictionaryBaza: boolean;
     bazaSource: 'dictionary' | 'typed' | 'import' | 'memory' | null;
     bazaUsd: number | null;
-    bazaBasis: 'unit' | 'kg' | 'juft' | 'litr' | 'm2' | null;
-    dictionaryBaza: { bazaUsd: number; basis: 'unit' | 'kg' | 'juft' | 'litr' | 'm2' } | null;
+    bazaBasis: 'unit' | 'kg' | 'm3' | 'm2' | 'juft' | 'litr' | null;
+    dictionaryBaza: { bazaUsd: number; basis: 'unit' | 'kg' | 'm3' | 'm2' | 'juft' | 'litr' } | null;
   }[];
+}
+
+/**
+ * The baza unit a law PINS — restated from `defaultBasisFor` (basis.ts) for
+ * the zero-import rule, and held to it by `tests/unit/calc-warnings.test.ts`
+ * over every DutyUnit: kg and the three pair units pin their own; dona,
+ * 1000_dona, sm³ and advalor pin none.
+ */
+export function lawPinnedBasis(dutyUnit: string | null): 'kg' | 'm2' | 'juft' | 'litr' | null {
+  return dutyUnit === 'kg' || dutyUnit === 'm2' || dutyUnit === 'juft' || dutyUnit === 'litr'
+    ? dutyUnit
+    : null;
+}
+
+/**
+ * A1's one sentence, asked by the server's warning list AND by the browser's
+ * block footer over the LIVE rows — the footer drew the server's verdict on
+ * the stored rows beside a baza built from the drafts, and warned about the
+ * very unit it was showing until Saqlash (review units-r2-2).
+ */
+export function basisNotLaw(
+  dutyUnit: string | null,
+  items: readonly { bazaUsd: number | null; bazaBasis: string | null }[],
+): boolean {
+  const pinned = lawPinnedBasis(dutyUnit);
+  return pinned !== null && items.some((i) => i.bazaUsd !== null && i.bazaBasis !== null && i.bazaBasis !== pinned);
 }
 
 /**
@@ -83,14 +166,21 @@ export function warningsForGroup(facts: WarningGroupFacts): CalcWarningKind[] {
   const out: CalcWarningKind[] = [];
 
   const dict = facts.dictionaryRates;
-  const differs = (typed: number | null, book: number) => typed !== null && typed !== book;
-  if (
-    dict !== null &&
-    facts.rateSource === 'typed' &&
-    (differs(facts.dutyPct, dict.dutyPct) || differs(facts.vatPct, dict.vatPct))
-  ) {
+  // The law is FIVE columns, not two percentages (2026-10-09): a typed 20 %
+  // under a book that says «20 %, kamida $3/juft» is off the book by the whole
+  // floor, and comparing the percentages alone called it equal.
+  const lawDiffers = dict !== null && lawOffBook(facts, dict);
+  if (dict !== null && facts.rateSource === 'typed' && lawDiffers) {
     out.push('rate_off_dictionary');
   }
+  // The same comparison for a group the BOOK wrote: its law was right on the
+  // day it was minted, and the book has since moved. A group with no law at
+  // all is `rates_missing` (a blocker), never «moved».
+  if (dict !== null && facts.rateSource !== 'typed' && facts.dutyPct !== null && lawDiffers) {
+    out.push('dictionary_moved');
+  }
+  if (facts.headingHidesLaws) out.push('code_heading');
+  if (facts.exciseUnanswered) out.push('excise_unanswered');
   // The baza half carries the SAME «something else» clause (phase 2's judge:
   // the group-baza cell stamps 'typed' on every member, so source-alone would
   // warn on essentially every group the day the baza dictionary has answers —
@@ -138,8 +228,32 @@ export function warningsForGroup(facts: WarningGroupFacts): CalcWarningKind[] {
   if (facts.rateSource === 'dictionary' && facts.dictionaryNote !== null) {
     out.push('rate_noted');
   }
+  // A1 (0125): a PRICED row whose baza is per another unit than the one the
+  // law counts in. An unpriced row's chosen unit prices nothing yet, so it is
+  // not «a number confirmed in the wrong unit» — the row will say so the day
+  // it carries a price.
+  if (basisNotLaw(facts.dutyUnit, facts.items)) out.push('basis_not_law');
 
   return out;
+}
+
+/**
+ * Does the group's law differ from the book's? Each column compared on its
+ * own, a percentage only where the group HAS one (a null is «not stated»,
+ * the same `differs` rule the percentages always had).
+ */
+export function lawOffBook(
+  group: { dutyPct: number | null; vatPct: number | null; dutyMode: string; dutySpecific: number | null; dutyUnit: string | null },
+  book: LawFacts,
+): boolean {
+  const differs = (typed: number | null, against: number) => typed !== null && typed !== against;
+  return (
+    differs(group.dutyPct, book.dutyPct) ||
+    differs(group.vatPct, book.vatPct) ||
+    group.dutyMode !== book.dutyMode ||
+    (group.dutySpecific ?? null) !== (book.dutySpecific ?? null) ||
+    (group.dutyUnit ?? null) !== (book.dutyUnit ?? null)
+  );
 }
 
 /**

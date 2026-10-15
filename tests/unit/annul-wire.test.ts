@@ -166,6 +166,15 @@ describe('«a void box is not cargo» — the closed set', () => {
       // Which costs touch a lot (U20/U39): ids, deliberately including the
       // boxes about to be voided — the question is what their void orphans.
       'src/modules/wms/costing/void-guard.ts',
+      // «Rejada» (the reroute round): the WAREHOUSE the departure movements
+      // name, one row, never a figure — its cargo line reads the live
+      // pointer (`awaitingUnloadWhere`), where a void carton cannot stand.
+      'src/modules/wms/batches/reroute.ts',
+      // Lot tarkibi's population (`lotTrucksFor`): which trucks a lot rode and
+      // how many of its cartons each carried — `batchMemberFilter`'s two halves
+      // per lot, the customs papers' own population, so a carton voided after
+      // the truck left stays in the count its sent invoice already printed.
+      'src/modules/wms/receipts/lot-composition.ts',
     ];
     const found: string[] = [];
     const walk = (dir: string) => {

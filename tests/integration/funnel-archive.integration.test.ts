@@ -142,12 +142,14 @@ describe('the day, across everybody', () => {
     const late = await createTask(
       taskSchema.parse({ title: `Kechikkan ${runId}`, assigneeId: ownerId, dueAt: '2026-08-03' }),
       ctx,
+      { origin: 'hand' },
     );
     madeTasks.push(late.id);
     // Later today, local time.
     const today = await createTask(
       taskSchema.parse({ title: `Bugungi ${runId}`, assigneeId: ownerId, dueAt: '2026-08-04' }),
       ctx,
+      { origin: 'hand' },
     );
     madeTasks.push(today.id);
 
@@ -176,6 +178,7 @@ describe('the day, across everybody', () => {
     const task = await createTask(
       taskSchema.parse({ title: `Muddatsiz ${runId}`, assigneeId: ownerId }),
       ctx,
+      { origin: 'hand' },
     );
     madeTasks.push(task.id);
     expect(await undatedOpen()).toBe(before + 1);

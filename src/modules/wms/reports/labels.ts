@@ -80,6 +80,11 @@ const DICT = {
    * because the wizard derives the volume FROM them.
    */
   xyzCm: { ru: 'XYZ (см)', uz: 'XYZ (sm)', 'zh-CN': 'XYZ (厘米)', en: 'XYZ (cm)' },
+  // «Yuk ma'lumoti tekshirildi» (0123) — the Ostatka sheet's export-always column.
+  lotCheck: { ru: 'Проверка', uz: 'Tekshiruv', 'zh-CN': '核对', en: 'Checked' },
+  lotCheckChecked: { ru: '✅ проверено', uz: '✅ tekshirilgan', 'zh-CN': '✅ 已核对', en: '✅ checked' },
+  lotCheckStale: { ru: '⚠️ изменено', uz: '⚠️ o‘zgargan', 'zh-CN': '⚠️ 已变更', en: '⚠️ changed' },
+  lotCheckNone: { ru: '❓ не проверено', uz: '❓ tekshirilmagan', 'zh-CN': '❓ 未核对', en: '❓ not checked' },
   /**
    * The note on a capped 📷 header. Said only when the cap bites, so it
    * carries the count and not a standing warning. It counts PHOTOGRAPHS now
@@ -131,6 +136,14 @@ const DICT = {
     'zh-CN': '未分摊到任何箱子的费用——不在任何成本中',
     en: 'Costs split onto no box — in no landed cost',
   },
+  // A held yo'lkira bill (his rule 6): on no box like gapNoBox, but cured by
+  // the lot or «Bo'lish usuli» — never by a void (docs/YOLKIRA-TAQSIMOT.md §6.7).
+  gapFreightHeld: {
+    ru: 'Расходы на дорогу, не распределённые по тарифу на груз машины, — нет в себестоимости (не отменять: исправить лот или «Способ распределения»)',
+    uz: 'Tarif bo‘yicha mashina yukiga bo‘linmagan yo‘lkira xarajatlari — tannarxda yo‘q (bekor qilinmaydi: lot to‘g‘rilansa yoki «Bo‘lish usuli» bilan bo‘linadi)',
+    'zh-CN': '未按运价分摊到车辆货物的运费——不在任何成本中（请勿作废：修正批次或使用「分摊方式」）',
+    en: 'Freight costs not split over the truck cargo by the tariff — in no landed cost (do not void: fix the lot or use «Split method»)',
+  },
   gapManualCharges: {
     ru: 'Долги контрагентам, записанные вручную, — не вошли',
     uz: 'Kontragentlarga qo‘lda yozilgan qarzlar — kirmagan',
@@ -172,6 +185,18 @@ const DICT = {
     uz: 'shundan shu reysgacha $',
     'zh-CN': '其中本车次之前 $',
     en: 'of which before this trip $',
+  },
+  continuation: {
+    ru: 'продолжение → ',
+    uz: 'davomi → ',
+    'zh-CN': '续运 → ',
+    en: 'continuation → ',
+  },
+  laterLegs: {
+    ru: 'из них дальнейший путь $',
+    uz: 'shundan keyingi yo‘l $',
+    'zh-CN': '其中后续路段 $',
+    en: 'of which onward legs $',
   },
   unallocated: {
     ru: '⚠ не распределено $',
@@ -273,6 +298,12 @@ const DICT = {
     uz: 'yashik qutilariga tushmagan',
     'zh-CN': '未落到木箱箱子上',
     en: 'not on the crate’s boxes',
+  },
+  gapScopeFreightHeld: {
+    ru: 'дорога, не распределённая по тарифу',
+    uz: 'tarif bo‘yicha bo‘linmagan yo‘lkira',
+    'zh-CN': '未按运价分摊的运费',
+    en: 'freight not split by the tariff',
   },
   reconTitle: {
     ru: 'Кассы: начало и конец периода',
@@ -448,6 +479,12 @@ const DICT = {
     uz: 'Kursi yo‘q xarajatlar — kirmagan',
     'zh-CN': '无汇率的费用——未计入',
     en: 'Costs with no rate — not included',
+  },
+  landedFreightHeld: {
+    ru: 'Расходы на дорогу, не распределённые по тарифу на груз машины, — не вошли (исправьте лот или «Способ распределения»)',
+    uz: 'Tarif bo‘yicha mashina yukiga bo‘linmagan yo‘lkira xarajatlari — kirmagan (lot to‘g‘rilansa yoki «Bo‘lish usuli» bilan bo‘linadi)',
+    'zh-CN': '未按运价分摊到车辆货物的运费——未计入（修正批次或使用「分摊方式」）',
+    en: 'Freight costs not split over the truck cargo by the tariff — not included (fix the lot or use «Split method»)',
   },
   tStockAging: {
     ru: 'Остатки со сроком хранения',

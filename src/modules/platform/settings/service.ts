@@ -163,6 +163,15 @@ export const SETTING_DEFAULTS = {
    */
   calc_customs_cost_type_codes: '["customs"]',
   /**
+   * Which cost types the truck's cost form PRESELECTS «yo'lkira tarifi
+   * bo'yicha» for (0132, his 4a), as a JSON list of codes — the seeded
+   * «Дорога / Yo'lkira» by default. It decides the preselection only: the
+   * freight basis may be chosen by hand on any non-customs truck bill, and
+   * «boshqa turlar og'irlik bo'yicha qoladi» is the default, not a lock.
+   * Data for the same reason as the customs list: he mints his own types.
+   */
+  freight_tariff_cost_type_codes: '["freight"]',
+  /**
    * The expense category an upsale payout is written into (VED phase D).
    *
    * MANDATORY and deliberately not overridable at the moment of paying: a

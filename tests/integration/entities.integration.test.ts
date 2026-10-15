@@ -108,6 +108,7 @@ describe('an owner-invented object', () => {
         repeatEvery: 1,
       },
       ctx(),
+      { origin: 'hand' },
     );
     expect(task.entityType).toBe(entityCode);
     const labels = await aboutLabels([task]);

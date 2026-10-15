@@ -60,6 +60,9 @@ export const HUB_DOORS: HubDoor[] = [
   { href: '/admin/driver-app', label: 'settings.driverApp', icon: 'truck', allow: ['admin.settings.manage'] },
   { href: '/admin/calls-app', label: 'settings.callsApp', icon: 'phone', allow: ['admin.settings.manage'] },
   { href: '/admin/rules', label: 'automation.title', icon: 'target', allow: ['admin.settings.manage'] },
+  // The price channel (his F, 2026-10-07): which Telegram channel the bot posts
+  // every given price into, who it let in, and what it did and did not post.
+  { href: '/admin/narx-kanali', label: 'priceChannel.title', icon: 'chat', allow: ['admin.settings.manage'] },
   { href: '/admin/audit', label: 'nav.audit', icon: 'clipboard', allow: ['admin.audit.browse'] },
   // The voided-cargo registry + the owner's cleanup tool. An audit surface,
   // so the audit door: only admin/super_admin hold it, and the tile never

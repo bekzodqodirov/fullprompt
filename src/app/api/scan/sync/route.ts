@@ -1,50 +1,26 @@
-import { eq } from 'drizzle-orm';
-import { z } from 'zod';
-import { db } from '@/modules/platform/db/client';
-import { batches } from '@/modules/platform/db/schema';
-import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
+import { getActor } from '@/modules/platform/rbac/authorize';
 import { requestMeta } from '@/modules/platform/auth/session';
-import { ingestLoadScans, loadScanSchema } from '@/modules/wms/scanning/service';
-import { ingestUnloadScans } from '@/modules/wms/scanning/unload';
-
-const itemSchema = loadScanSchema.extend({
-  scanType: z.enum(['load', 'unload']).default('load'),
-});
-const bodySchema = z.object({ scans: z.array(itemSchema).min(1).max(200) });
+import { syncBodySchema, syncScans } from '@/modules/wms/scanning/sync';
 
 /**
  * Offline outbox sync endpoint (spec §15, edge cases 13/14): accepts a batch
  * of load/unload scan events, returns per-item acks. Replays are idempotent.
+ *
+ * Thin on purpose: the per-truck decision is `syncScans`' (the reroute
+ * round), where a test can press it. Two whole-body answers remain, and both
+ * are about the PERSON, never about one truck: 401 when nobody is signed in
+ * (logging in again makes every row sendable), and 403 only when nothing in
+ * the body is theirs at all — a truck they lost no longer blocks the others.
  */
 export async function POST(request: Request) {
-  const parsed = bodySchema.safeParse(await request.json().catch(() => null));
+  const actor = await getActor();
+  if (!actor) return Response.json({ error: 'unauthenticated' }, { status: 401 });
+  const parsed = syncBodySchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: 'validation' }, { status: 400 });
 
-  const loads = parsed.data.scans.filter((s) => s.scanType === 'load');
-  const unloads = parsed.data.scans.filter((s) => s.scanType === 'unload');
-
-  let actor;
-  try {
-    for (const batchId of new Set(loads.map((s) => s.batchId))) {
-      const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
-      if (!batch) return Response.json({ error: 'batch_not_found' }, { status: 404 });
-      actor = await authorize('scan.load', { warehouseId: batch.originWarehouseId });
-    }
-    for (const batchId of new Set(unloads.map((s) => s.batchId))) {
-      const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
-      if (!batch) return Response.json({ error: 'batch_not_found' }, { status: 404 });
-      actor = await authorize('scan.unload', { warehouseId: batch.destWarehouseId });
-    }
-  } catch (err) {
-    if (err instanceof AuthError) return Response.json({ error: 'forbidden' }, { status: 403 });
-    throw err;
+  const result = await syncScans(actor, parsed.data.scans, await requestMeta());
+  if (result.acks.length === 0 && result.withheld.length > 0) {
+    return Response.json({ error: 'forbidden', withheld: result.withheld }, { status: 403 });
   }
-
-  const meta = await requestMeta();
-  const ctx = { actorId: actor!.id, ...meta };
-  const acks = [
-    ...(loads.length ? await ingestLoadScans(loads, ctx) : []),
-    ...(unloads.length ? await ingestUnloadScans(unloads, ctx) : []),
-  ];
-  return Response.json({ acks });
+  return Response.json(result);
 }

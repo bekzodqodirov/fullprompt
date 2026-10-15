@@ -1,5 +1,6 @@
 import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { posix } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 /**
@@ -168,15 +169,27 @@ interface Pooled {
 }
 
 interface Declared {
+  name: string;
   file: string;
   body: string;
   signature: string;
   holdsDb: boolean;
 }
 
-/** Every named function in `src/`, with the text of its body and signature. */
-function declaredFunctions(): Map<string, Declared> {
-  const out = new Map<string, Declared>();
+/**
+ * Every named function in `src/`, BY NAME — and a name is a LIST.
+ *
+ * 114 names are declared in more than one file (`pickAssignee` is the site
+ * rota's, taking a handle, and the bot draft's, which never sees a
+ * transaction). A map with one slot per name kept whichever file `grep -rl`
+ * listed last, and that order is the filesystem's: this container walked
+ * site-assign last and passed, the CI runner walked the bot last and read the
+ * rota's `pickAssignee(team, tx)` as the bot's pooled one. A fence whose
+ * verdict depends on readdir order is two fences, so every declaration is
+ * kept and a call is resolved to the one its caller means (`resolve`).
+ */
+function declaredFunctions(): Map<string, Declared[]> {
+  const out = new Map<string, Declared[]>();
   for (const file of files) {
     const source = stripComments(readFileSync(file, 'utf8'));
     const holdsDb = /import\s*\{[^}]*\bdb\b[^}]*\}\s*from\s*['"][^'"]*db\/client['"]/.test(source);
@@ -189,46 +202,91 @@ function declaredFunctions(): Map<string, Declared> {
     while ((match = declaration.exec(source))) {
       const bodyStart = afterParens(source, match.index);
       if (bodyStart === -1) continue;
-      out.set(match[1]!, {
-        file,
-        holdsDb,
-        signature: parensAt(source, match.index),
-        body: blockAt(source, bodyStart),
-      });
+      const name = match[1]!;
+      out.set(name, [
+        ...(out.get(name) ?? []),
+        {
+          name,
+          file,
+          holdsDb,
+          signature: parensAt(source, match.index),
+          body: blockAt(source, bodyStart),
+        },
+      ]);
     }
   }
   return out;
 }
 
-/** name → how it reaches the database, closed transitively. */
-function pooledFunctions(declared: Map<string, Declared>): {
+const sources = new Map<string, string>();
+function sourceOf(file: string): string {
+  let text = sources.get(file);
+  if (text === undefined) {
+    text = stripComments(readFileSync(file, 'utf8'));
+    sources.set(file, text);
+  }
+  return text;
+}
+
+/**
+ * The declarations a call of `name` from `callerFile` can mean: the caller's
+ * own file first (a module calls its own function), then the module the
+ * caller imports the name from, and only when neither says — a dynamic
+ * import, a re-export — EVERY declaration of that name, because a fence that
+ * cannot tell must assume the worst.
+ */
+function resolve(declared: Map<string, Declared[]>, name: string, callerFile: string): Declared[] {
+  const all = declared.get(name) ?? [];
+  if (all.length <= 1) return all;
+  const own = all.filter((d) => d.file === callerFile);
+  if (own.length > 0) return own;
+  const imports = new RegExp(`import\\s*(?:type\\s*)?\\{[^}]*\\b${name}\\b[^}]*\\}\\s*from\\s*['"]([^'"]+)['"]`);
+  const spec = imports.exec(sourceOf(callerFile))?.[1];
+  if (spec) {
+    const base = spec.startsWith('@/')
+      ? `src/${spec.slice(2)}`
+      : posix.normalize(posix.join(posix.dirname(callerFile), spec));
+    const hit = all.filter((d) => [`${base}.ts`, `${base}/index.ts`].includes(d.file));
+    if (hit.length > 0) return hit;
+  }
+  return all;
+}
+
+const keyOf = (d: Declared) => `${d.file}#${d.name}`;
+
+/** declaration → how it reaches the database, closed transitively. */
+function pooledFunctions(declared: Map<string, Declared[]>): {
   pooled: Map<string, Pooled>;
+  names: Set<string>;
   seeds: number;
 } {
   const found = new Map<string, Pooled>();
-  for (const [name, fn] of declared) {
+  const all = [...declared.values()].flat();
+  for (const fn of all) {
     if (!fn.holdsDb) continue;
-    if (/=\s*db\b/.test(fn.signature)) found.set(name, { file: fn.file, kind: 'unlessGivenTx' });
-    else if (usesPool(fn.body)) found.set(name, { file: fn.file, kind: 'always' });
+    if (/=\s*db\b/.test(fn.signature)) found.set(keyOf(fn), { file: fn.file, kind: 'unlessGivenTx' });
+    else if (usesPool(fn.body)) found.set(keyOf(fn), { file: fn.file, kind: 'always' });
   }
   const seeds = found.size;
   // …then everything that calls one of them, until nothing new is added.
   for (let pass = 0; pass < 20; pass += 1) {
     let added = 0;
-    for (const [name, fn] of declared) {
-      if (found.has(name)) continue;
-      for (const reached of found.keys()) {
-        if (reached === name) continue;
-        if (new RegExp(`(?<![.\\w])${reached}\\s*\\(`).test(fn.body)) {
-          found.set(name, { file: fn.file, kind: 'always' });
-          added += 1;
-          break;
-        }
+    const pooledNames = new Set([...found.keys()].map((key) => key.slice(key.indexOf('#') + 1)));
+    for (const fn of all) {
+      if (found.has(keyOf(fn))) continue;
+      for (const reached of pooledNames) {
+        if (reached === fn.name) continue;
+        if (!new RegExp(`(?<![.\\w])${reached}\\s*\\(`).test(fn.body)) continue;
+        if (!resolve(declared, reached, fn.file).some((d) => found.has(keyOf(d)))) continue;
+        found.set(keyOf(fn), { file: fn.file, kind: 'always' });
+        added += 1;
+        break;
       }
     }
     if (added === 0) break;
   }
-  return { pooled: found, seeds };
+  const names = new Set([...found.keys()].map((key) => key.slice(key.indexOf('#') + 1)));
+  return { pooled: found, names, seeds };
 }
 
 /** Every call of `name` in this body, as its argument text. */
@@ -262,7 +320,9 @@ function transactionBodies(source: string): { line: number; body: string }[] {
 
 describe('a transaction never reaches back into the pool', () => {
   const declared = declaredFunctions();
-  const { pooled, seeds } = pooledFunctions(declared);
+  const { pooled, names, seeds } = pooledFunctions(declared);
+  const kindOf = (name: string) =>
+    [...pooled.entries()].find(([key]) => key.endsWith(`#${name}`))?.[1].kind;
 
   it('finds the transactions and the pooled functions at all', () => {
     // A rule nobody is subject to is not a rule — if either scan stops
@@ -275,9 +335,9 @@ describe('a transaction never reaches back into the pool', () => {
     // watching the test stay green (#166): one because a `typeof db.` type
     // annotation counted as a query, the other because a generic signature
     // hid the function entirely.
-    expect([...pooled.keys()], 'the plain kind').toContain('getSetting');
-    expect([...pooled.keys()], 'the handle-taking kind').toContain('availableByLot');
-    expect(pooled.get('availableByLot')?.kind).toBe('unlessGivenTx');
+    expect([...names], 'the plain kind').toContain('getSetting');
+    expect([...names], 'the handle-taking kind').toContain('availableByLot');
+    expect(kindOf('availableByLot')).toBe('unlessGivenTx');
     // …and that the closure ACTUALLY RAN. Naming one transitive example here
     // was the obvious anchor and it is the wrong one: the first candidate was
     // `priceControlOnReceipt`, and fixing that very function took the anchor
@@ -290,7 +350,7 @@ describe('a transaction never reaches back into the pool', () => {
     // And nothing that is not a function: `for`, `if` and friends can only
     // get in through prose, and once in they taint everything that loops.
     for (const reserved of ['for', 'if', 'while', 'switch', 'catch', 'return']) {
-      expect([...pooled.keys()], `${reserved} is not a function`).not.toContain(reserved);
+      expect([...names], `${reserved} is not a function`).not.toContain(reserved);
     }
   });
 
@@ -303,14 +363,19 @@ describe('a transaction never reaches back into the pool', () => {
         // Direct use of the module handle.
         if (usesPool(body)) offenders.push(`${file}:${line} uses the pooled db handle directly`);
         // …and the indirect route, which is the one that hides.
-        for (const [name, pooledFn] of pooled) {
+        for (const name of names) {
+          const meant = resolve(declared, name, file)
+            .map((d) => pooled.get(keyOf(d)))
+            .filter((p): p is Pooled => p !== undefined);
+          if (meant.length === 0) continue;
           for (const args of callsIn(body, name)) {
             // A function that TAKES a handle is fine here — as long as this
-            // call actually hands it the transaction's own.
-            if (pooledFn.kind === 'unlessGivenTx' && /\btx\b/.test(args)) continue;
+            // call actually hands it the transaction's own, and as long as
+            // every declaration the call can mean takes one.
+            if (meant.every((p) => p.kind === 'unlessGivenTx') && /\btx\b/.test(args)) continue;
             offenders.push(
               `${file}:${line} calls ${name}() without the transaction's handle — ` +
-                `defined in ${pooledFn.file}`,
+                `defined in ${meant.map((p) => p.file).join(', ')}`,
             );
           }
         }

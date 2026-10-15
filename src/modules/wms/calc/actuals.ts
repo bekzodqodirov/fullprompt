@@ -768,6 +768,10 @@ export interface LinkSuggestion {
   quotedWeightKg: number | null;
   actualVolumeM3: number;
   actualWeightKg: number;
+  /** Who sealed the quote — the person this link SCORES (12a: «Hamkasblarniki»
+   * prints the name; only the sealer's own row draws the ✅/❌). */
+  sealedBy: string;
+  sealedByName: string | null;
 }
 
 /**
@@ -778,23 +782,31 @@ export interface LinkSuggestion {
  * — «is this the cargo that quote was about?» — and a person can answer it in
  * a second from two pairs of numbers.
  */
-export async function linkSuggestions(who: ActualsScope, limit = 50): Promise<LinkSuggestion[]> {
+export async function linkSuggestions(
+  who: ActualsScope,
+  limit = 50,
+  /** «Hamkasblarniki» (12a): everybody's but this person's own. */
+  opts: { notSealedBy?: string } = {},
+): Promise<LinkSuggestion[]> {
   // The predicate and its FROM are `link.ts`'s (0119): the VED home's count
   // and the Telegram sweep ask the same sentence, so the number on the home
   // is this list's own length.
+  const notMine = opts.notSealedBy ? sql`AND v.sealed_by <> ${opts.notSealedBy}::uuid` : sql``;
   const rows = await db.execute<Record<string, unknown>>(sql`
     SELECT rc.id AS receipt_id, rc.number, rc.confirmed_at,
            v.request_id, v.section, v.volume_m3, v.weight_kg,
+           v.sealed_by, su.full_name AS sealed_by_name,
            c.client_code,
            coalesce(m.volume_m3, 0) AS actual_volume_m3,
            coalesce(m.weight_kg, 0) AS actual_weight_kg
       FROM ${PENDING_LINK_FROM}
+      LEFT JOIN users su ON su.id = v.sealed_by
       LEFT JOIN clients c ON c.id = rc.client_id
       LEFT JOIN LATERAL (
         SELECT sum(rl.total_volume_m3) AS volume_m3, sum(rl.total_weight_kg) AS weight_kg
           FROM receipt_lots rl WHERE rl.receipt_id = rc.id
       ) m ON true
-     WHERE ${pendingLinkSql(who)}
+     WHERE ${pendingLinkSql(who)} ${notMine}
      ORDER BY rc.confirmed_at DESC
      LIMIT ${limit}
   `);
@@ -809,6 +821,8 @@ export async function linkSuggestions(who: ActualsScope, limit = 50): Promise<Li
     quotedWeightKg: num(row.weight_kg),
     actualVolumeM3: Number(row.actual_volume_m3 ?? 0),
     actualWeightKg: Number(row.actual_weight_kg ?? 0),
+    sealedBy: String(row.sealed_by),
+    sealedByName: row.sealed_by_name ? String(row.sealed_by_name) : null,
   }));
 }
 

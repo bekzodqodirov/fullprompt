@@ -32,26 +32,38 @@ describe('the deadline follows the size of the job', () => {
 describe('the checklist over a stored request', () => {
   const facts = { fromCity: 'Yiwu', toCity: 'Toshkent', weightKg: 300, volumeM3: 2, goods: [] };
 
+  // No line carries a code here, so the book has nothing to say; the cases
+  // where it does live in intake-facts.test.ts (6110 asks dona, 9403 kg).
+  const noLaws = new Map();
+
   it('asks the section’s own question', () => {
     // Freight wants the road, customs does not — the bot's rule, reached
     // through the stored row rather than restated.
-    expect(missingFor('rastamojka', { ...facts, fromCity: null, toCity: null })).toEqual(['goods']);
-    expect(missingFor('yolkira', { ...facts, fromCity: null })).toEqual(['fromCity', 'goods']);
-    // Sub-round B: customs is calculated per LINE, so a customs section also
-    // asks what each line is — a count, and a weight where one cannot be
-    // derived. One line and a stated total weight IS that line's weight, so
-    // only the count is outstanding here.
-    // Sub-round B: a customs section also asks that each LINE state a
-    // figure for something. One line takes the shipment's weight, so this is
-    // already complete…
-    expect(missingFor('podklyuch', { ...facts, goods: [{ name: 'monitor' }] })).toEqual([]);
-    // …and a second line that states nothing is the case the engine cannot
-    // value at all.
+    expect(missingFor('rastamojka', { ...facts, fromCity: null, toCity: null }, noLaws)).toEqual([
+      'goods',
+    ]);
+    expect(missingFor('yolkira', { ...facts, fromCity: null }, noLaws)).toEqual(['fromCity', 'goods']);
+    // A STORED row derives nothing from the shipment total (2026-10-09,
+    // judge MR-7): the total is brutto and the line's column is netto, and a
+    // chip calling a weightless row complete would contradict the engine's
+    // own refusal on the very same row. So the one-line job that sub-round B
+    // called complete through the derived weight now asks for its figure —
+    // the subject of this case moved deliberately…
+    expect(missingFor('podklyuch', { ...facts, goods: [{ name: 'monitor' }] }, noLaws)).toEqual([
+      'itemMeasure',
+    ]);
+    // …and a line stating any one figure still answers it (#910's rule).
     expect(
-      missingFor('podklyuch', {
-        ...facts,
-        goods: [{ name: 'monitor', quantity: 4 }, { name: 'kabel' }],
-      }),
+      missingFor('podklyuch', { ...facts, goods: [{ name: 'monitor', quantity: 4 }] }, noLaws),
+    ).toEqual([]);
+    // A second line that states nothing is the case the engine cannot value
+    // at all.
+    expect(
+      missingFor(
+        'podklyuch',
+        { ...facts, goods: [{ name: 'monitor', quantity: 4 }, { name: 'kabel' }] },
+        noLaws,
+      ),
     ).toEqual(['itemMeasure']);
   });
 
@@ -59,19 +71,15 @@ describe('the checklist over a stored request', () => {
     // The column is nullable on purpose: rows from round 28 never said what
     // kind of job they were, and inventing «podklyuch» for them would put a
     // demand on the screen that nobody ever made.
-    expect(missingFor(null, facts)).toEqual([]);
+    expect(missingFor(null, facts, noLaws)).toEqual([]);
   });
 
   it('a zero is a blank, through the adapter too', () => {
-    // With no total weight there is nothing to derive the line's weight
-    // FROM, so the per-line question appears beside the total's — which is
-    // the derivation being visible rather than assumed.
-    // With no total weight there is nothing to derive the line's weight FROM
-    // and the line states no count either, so both questions stand.
-    expect(missingFor('podklyuch', { ...facts, weightKg: 0, goods: [{ name: 'x' }] })).toEqual([
-      'weightKg',
-      'itemMeasure',
-    ]);
+    // With no total weight and a line stating no figure, both questions
+    // stand.
+    expect(
+      missingFor('podklyuch', { ...facts, weightKg: 0, goods: [{ name: 'x' }] }, noLaws),
+    ).toEqual(['weightKg', 'itemMeasure']);
   });
 });
 

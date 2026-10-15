@@ -10,7 +10,9 @@ import {
   unpricedNotesDrawn,
 } from '@/modules/wms/accounting/balance-lines';
 import { mayReadUnpricedList } from '@/modules/wms/finance/unpriced-door';
-import { tashkentMinute } from '@/modules/platform/time/tashkent';
+import { mayOpenBatchCosts } from '@/modules/wms/batches/card-door';
+import { unsplitHref } from '@/modules/wms/accounting/unsplit-href';
+import { tashkentDay, tashkentMinute } from '@/modules/platform/time/tashkent';
 import { PageHeader } from '@/components/ui/page';
 
 /**
@@ -61,6 +63,17 @@ export default async function BalancePage() {
   // The kassa screen is `finance.expenses`'s; a report reader without it
   // reads the old-costs sentence as text instead of a door that bounces.
   const canAccounts = actor.permissions.has('finance.expenses');
+  // Held yo'lkira bills lead where the attention row leads (one home,
+  // `unsplitHref`): one truck → its Xarajatlar tab for a reader the tab and
+  // the card admit (an unscoped reader opens every card), several → the
+  // profit page's «bo'linmagan» list from the first such truck's departure.
+  const held = cargo.freightUnsplit;
+  const today = tashkentDay();
+  const heldHref = unsplitHref(
+    held.batchIds,
+    { from: held.firstDeparted && held.firstDeparted < today ? held.firstDeparted : today, to: today },
+    mayOpenBatchCosts(actor.permissions) && !actor.warehouseScoped,
+  );
 
   return (
     <div className="mx-auto max-w-lg space-y-3 md:max-w-3xl">
@@ -234,6 +247,16 @@ export default async function BalancePage() {
             )}
             {cargo.noBox.count > 0 && (
               <li>{t('balUnpricedNoBox', { count: cargo.noBox.count, usd: usd(cargo.noBox.usd) })}</li>
+            )}
+            {/* A held yo'lkira bill: saved, on no carton until the lot is
+                fixed — the cure is the lot, never a void (§6.7), so this
+                sentence carries no void advice. */}
+            {held.count > 0 && (
+              <li data-testid="balance-unpriced-freight-held">
+                <Link href={heldHref} className="inline-flex min-h-11 items-center underline">
+                  {t('balUnpricedFreightHeld', { count: held.count, usd: usd(held.usd) })}
+                </Link>
+              </li>
             )}
             {cargo.unconverted > 0 && <li>{t('balUnpricedUnconverted', { count: cargo.unconverted })}</li>}
             {/* Handed over before the ban: out of the read altogether (a

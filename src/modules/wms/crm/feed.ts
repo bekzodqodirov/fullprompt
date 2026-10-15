@@ -2,7 +2,7 @@ import { sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { FEED_KINDS } from '../finance/ledger-kinds';
 import { kindList } from '../finance/ledger-sql';
-import { wentOutOnDebtSql } from '../debt/releases';
+import { debtReleaseReasonSql, wentOutOnDebtSql } from '../debt/releases';
 
 /**
  * One client, everything that happened, in order — the «lenta».
@@ -178,6 +178,13 @@ export async function clientFeed(clientId: string | null, opts: FeedOptions): Pr
           -- answer «is this mine». NULL for a machine's note, which is
           -- nobody's and stays on the left.
           'authorId', a.created_by,
+          -- A staff thread's two marks (0127): the calculation this note is a
+          -- question or an answer about, and «it landed from Telegram». Read
+          -- through the row's json, never bare — the columns are not drizzle's
+          -- this release, and on a database one migration behind this reads
+          -- NULL where a bare name would take down the lenta of every card.
+          'calcRequestId', to_jsonb(a) ->> 'calc_request_id',
+          'viaTelegram', (to_jsonb(a) ->> 'tg_message_id') IS NOT NULL,
           'files', (
             SELECT coalesce(jsonb_agg(jsonb_build_object(
               'id', att.id, 'name', att.file_name, 'image', att.content_type LIKE 'image/%'
@@ -247,12 +254,15 @@ export async function clientFeed(clientId: string | null, opts: FeedOptions): Pr
       -- missed every approval release, every «muddat» release and marked a
       -- tick over nothing. It says the client OWED, so it is money and rides
       -- the ledger's door like the amounts do (4a) — for anyone else the
-      -- handover is drawn without it.
+      -- handover is drawn without it. WHY it went out on debt (0126) rides
+      -- the same door, by the register's own rule (debtReleaseReasonSql):
+      -- it names the client's debt as surely as the mark does.
       SELECT
         'hv-' || h.id::text, 'handover', h.created_at, u.full_name, h.note,
         jsonb_build_object(
           'person', h.person_name, 'phone', h.person_phone,
-          'warehouse', w.code, 'debtOverride', ${opts.money ? wentOutOnDebtSql('h') : sql`false`}
+          'warehouse', w.code, 'debtOverride', ${opts.money ? wentOutOnDebtSql('h') : sql`false`},
+          'debtNote', ${opts.money ? debtReleaseReasonSql('h') : sql`NULL`}
         )
       FROM handovers h
       JOIN warehouses w ON w.id = h.warehouse_id

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { isBuildStale, reloadFresh } from './build-check';
 
 /**
  * "The server has a newer version than this screen."
@@ -27,22 +28,14 @@ const POLL_MS = 120_000;
 
 export function UpdateBanner() {
   const t = useTranslations('common');
-  const mine = process.env.NEXT_PUBLIC_BUILD_AT ?? '';
-  const [serverBuild, setServerBuild] = useState<string | null>(null);
+  const [stale, setStale] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  // The question and the cleanup live in build-check.ts — the calculation's
+  // refused save asks the same one and offers the same reload.
   const check = useCallback(async () => {
-    try {
-      const res = await fetch('/api/version', { cache: 'no-store' });
-      if (!res.ok) return;
-      const { build } = (await res.json()) as { build: string };
-      // Only ever compare — never trust an empty stamp on either side, or a
-      // dev build with no stamp would nag on every page.
-      if (build && mine && build !== mine) setServerBuild(build);
-    } catch {
-      /* offline: the phone is on the right build until proven otherwise */
-    }
-  }, [mine]);
+    if (await isBuildStale()) setStale(true);
+  }, []);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -58,22 +51,11 @@ export function UpdateBanner() {
     };
   }, [check]);
 
-  if (!serverBuild) return null;
+  if (!stale) return null;
 
   async function update() {
     setBusy(true);
-    try {
-      // Everything a person would otherwise be walked through by phone.
-      const workers = await navigator.serviceWorker?.getRegistrations?.();
-      await Promise.all((workers ?? []).map((worker) => worker.unregister()));
-      const keys = await caches?.keys?.();
-      await Promise.all((keys ?? []).map((key) => caches.delete(key)));
-    } catch {
-      /* a reload without the cleanup is still better than staying stale */
-    }
-    // A query string, because a plain reload can be served from the very
-    // cache we are trying to escape.
-    window.location.href = `${window.location.pathname}?v=${Date.now()}`;
+    await reloadFresh();
   }
 
   return (

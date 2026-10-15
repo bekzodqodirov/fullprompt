@@ -29,6 +29,14 @@ export interface EntitySpec {
    */
   writePermissions: string[];
   /**
+   * Who may READ this object's custom-field FILES (the attachment gate);
+   * absent = `writePermissions`. A separate list because the two can part:
+   * on a deal the VED reads the card and its files but may not fill in its
+   * fields (17a), and narrowing the write list alone would have 404'd every
+   * deal file field for him.
+   */
+  readPermissions?: string[];
+  /**
    * How this entity is displayed when another field POINTS AT it (type
    * 'lookup'). Absent = it cannot be a lookup target: a lookup to a box or an
    * expense is a row nobody can pick out of a list by eye.
@@ -56,12 +64,16 @@ export const ENTITY_SPECS: EntitySpec[] = [
     sortOrder: 20,
   },
   {
-    // A deal is worked by BOTH sides — the sales manager who quoted it and the
-    // VED manager who recalculated it (DEALS.md answer 2) — so the write list
-    // carries both codes rather than picking a winner.
+    // A deal's custom fields are part of its TERMS, the seller's (17a,
+    // 2026-10-07: the VED reads the card and works its positions and
+    // prixods). He still READS the card's field files, so the read list keeps
+    // the whole deal-write list. Spelled here because platform must not import
+    // wms; `tests/unit/deal-door.test.ts` pins the two lists to
+    // `DEAL_TERMS_PERMISSIONS` / `DEAL_WRITE_PERMISSIONS` (wms/deals/door.ts).
     code: 'deal',
     labelKey: 'deal',
-    writePermissions: ['crm.leads', 'ved.docs', 'clients.manage'],
+    writePermissions: ['crm.leads', 'clients.manage'],
+    readPermissions: ['crm.leads', 'ved.docs', 'clients.manage'],
     lookup: { table: 'deals', label: 'code', secondary: 'title' },
     sortOrder: 15,
   },

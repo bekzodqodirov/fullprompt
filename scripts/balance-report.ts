@@ -121,6 +121,7 @@ async function main() {
       ['Kontragent ko‘rsatilgan, qarzi yozilmagan', `${a.noDebt.count} ta, ${usd(a.noDebt.usd)}`],
       ['Zavod reysi, prixodga bog‘lanmagan', `${a.pickupNoBox.count} ta, ${usd(a.pickupNoBox.usd)}`],
       ['Hech bir karobkaga tushmagan', `${a.noBox.count} ta, ${usd(a.noBox.usd)}`],
+      ['Yo‘lkira tarifi, yukka bo‘linmagan', `${a.freightUnsplit.count} ta, ${usd(a.freightUnsplit.usd)}`],
       ['Kursi yo‘q xarajat', `${a.unconverted} ta`],
       [
         'Taqiqdan oldin narxsiz topshirilgan yuk',

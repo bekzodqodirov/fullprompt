@@ -127,7 +127,7 @@ async function open(dealId: string, section: 'rastamojka' | 'podklyuch' | 'yolki
 async function answered(dealId: string, amount: number, currency = 'USD') {
   const id = await open(dealId, 'rastamojka');
   await takeCalcRequest(id, ctx());
-  await finishCalcRequest(id, { amount, currency, note: 'gotovo' }, ctx());
+  await finishCalcRequest(id, { amountText: String(amount), currency, note: 'gotovo', internalNote: 'ichki: gotovo' }, ctx());
   return id;
 }
 
@@ -159,7 +159,7 @@ async function sealedYolkira(dealId: string) {
 }
 
 async function corrected(parentId: string) {
-  const freshId = await recalcFromSealed(parentId, ctx());
+  const freshId = (await recalcFromSealed(parentId, ctx())).id;
   madeRequests.push(freshId);
   await confirmAllGroups(freshId, ctx());
   await sealCalc(freshId, NO_DISCOUNT, ctx());
@@ -219,7 +219,7 @@ describe('the chain prints under the newest seal', () => {
   it('a correction being written keeps V1 standing, marked «recalc_open»', async () => {
     const dealId = await mintDeal();
     const first = await sealed(dealId);
-    const draft = await recalcFromSealed(first, ctx());
+    const draft = (await recalcFromSealed(first, ctx())).id;
     madeRequests.push(draft);
     const got = await sheetsOf(dealId);
     expect(got.sheets.map((s) => [s.requestId, s.quoteNo, s.status])).toEqual([[first, 1, 'recalc_open']]);
@@ -230,7 +230,7 @@ describe('the chain prints under the newest seal', () => {
     const dealId = await mintDeal();
     const first = await sealed(dealId);
     const second = await corrected(first);
-    const draft = await recalcFromSealed(second, ctx());
+    const draft = (await recalcFromSealed(second, ctx())).id;
     madeRequests.push(draft);
     const lone = await sealed(await mintDeal());
     const ids = [first, second, draft, lone];

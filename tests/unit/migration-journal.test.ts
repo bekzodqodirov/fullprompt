@@ -15,7 +15,14 @@ import { describe, expect, it } from 'vitest';
  * must not be the one that deploys.
  */
 
-const MIGRATIONS = 'src/modules/platform/db/migrations';
+/**
+ * The ledger under test. An override exists for ONE purpose: proving the
+ * placeholder fence below against a scratch copy of this directory (a
+ * package built beside another reserves the other's slot as a placeholder,
+ * and that tree must read red here while a copy with the real body reads
+ * green). Never set in CI.
+ */
+const MIGRATIONS = process.env.MIGRATIONS_DIR_UNDER_TEST ?? 'src/modules/platform/db/migrations';
 const journal = JSON.parse(readFileSync(join(MIGRATIONS, 'meta/_journal.json'), 'utf8')) as {
   entries: { idx: number; when: number; tag: string }[];
 };
@@ -39,5 +46,29 @@ describe('the migration journal', () => {
 
   it('has no hole: a lower-numbered migration still to land must land first', () => {
     expect(entries.map((e) => e.idx)).toEqual(entries.map((_, i) => i));
+  });
+
+  /*
+   * A RESERVED slot never deploys (Q5 a, judge T10). Two packages built side
+   * by side each get a number up front, and a base that carries both reserves
+   * the other's as `SELECT 1;` so the journal has no hole — which is exactly
+   * the tree this fence makes red until the real migration replaces it: a
+   * placeholder that reaches main is a migration that ran and did nothing,
+   * and drizzle will never run the real one under that number. No shipped
+   * migration is under 40 characters of SQL (measured), so the rule is not
+   * close to anything real.
+   */
+  it('carries no placeholder: no migration whose SQL is empty or `SELECT 1;`', () => {
+    const files = readdirSync(MIGRATIONS).filter((f) => f.endsWith('.sql'));
+    expect(files.length).toBeGreaterThan(0);
+    const placeholders = files.filter((f) => {
+      const body = readFileSync(join(MIGRATIONS, f), 'utf8')
+        .replace(/--> statement-breakpoint/g, ' ')
+        .replace(/--[^\n]*/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      return body === '' || /^select 1;?$/i.test(body);
+    });
+    expect(placeholders, `placeholder migrations: ${placeholders.join(', ')}`).toEqual([]);
   });
 });

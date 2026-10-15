@@ -46,6 +46,35 @@ test('the VED opens it from the queue, and reads V1 on a sealed row', async ({ p
   await expect(page.getByTestId('registry-request-link').first()).toBeVisible();
 });
 
+/**
+ * The owner's 8a: a Готово ANSWER is a row of the history too. m9zt left one
+ * behind (its «gotovo e2e» answer of 1000), so the «Turi» filter has
+ * something to find without this spec writing anything. The VED reads the
+ * internal note under it (9a); the accountant reads the row and never the
+ * note.
+ */
+test('«Turi: Готово» lists the answers — with the internal note for the VED', async ({ page }) => {
+  await login(page, VED);
+  await page.goto('/hisoblash/tarix');
+  await page.getByTestId('registry-kind').selectOption('javob');
+  await page.getByTestId('registry-apply').click();
+  await expect(page).toHaveURL(/turi=javob/);
+  const answers = page.getByTestId('calc-registry-answer');
+  await expect(answers.first()).toBeVisible({ timeout: 15_000 });
+  // Answers only — no sealed version row on this filter, and no V number.
+  await expect(page.getByTestId('calc-registry-row')).toHaveCount(0);
+  await expect(answers.first().getByTestId('registry-version')).toHaveCount(0);
+  await expect(answers.first().getByTestId('registry-answer-amount')).toBeVisible();
+  await expect(page.getByTestId('registry-internal-note').first()).toBeVisible();
+});
+
+test('the ACCOUNTANT reads the answers and never the internal note', async ({ page }) => {
+  await login(page, ACCOUNTANT);
+  await page.goto('/hisoblash/tarix?turi=javob');
+  await expect(page.getByTestId('calc-registry-answer').first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('registry-internal-note')).toHaveCount(0);
+});
+
 test('a text filter narrows in SQL and the empty answer is a sentence', async ({ page }) => {
   await login(page, VED);
   await page.goto('/hisoblash/tarix');

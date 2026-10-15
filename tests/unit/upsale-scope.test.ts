@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ROLE_MATRIX, type RoleCode } from '@/modules/platform/rbac/catalog';
-import { mayOffer, upsaleScopeFor, type UpsaleScope } from '@/modules/wms/calc/upsale-scope';
+import { mayOffer, seesOfferPriceOf, upsaleScopeFor, type UpsaleScope } from '@/modules/wms/calc/upsale-scope';
 import { DEAL_WRITE_PERMISSIONS } from '@/modules/wms/deals/service';
+import { mayEditDealTerms } from '@/modules/wms/deals/door';
 
 /**
  * Law 4's four audiences, enumerated over the SEEDED ROLES.
@@ -50,14 +51,15 @@ describe('who sees what a customer was charged', () => {
     expect(Object.keys(EXPECTED).sort()).toEqual(Object.keys(ROLE_MATRIX).sort());
   });
 
-  it('the VED can work a deal and still not quote a customer', () => {
+  it('the VED works a deal’s positions and still cannot quote a customer', () => {
     const ved = actorFor('ved_manager');
     // Both halves matter: `ved.docs` IS in the deal-write list on purpose
-    // (DEALS.md #2 — the VED recalculates jobs), so the offer door cannot be
-    // the card door.
+    // (17a — the VED works a deal's positions and prixods), so the offer door
+    // cannot be the card door. Quoting is a deal's TERMS, the seller's.
     expect(DEAL_WRITE_PERMISSIONS).toContain('ved.docs');
     expect(DEAL_WRITE_PERMISSIONS.some((c) => ved.permissions.has(c))).toBe(true);
     expect(mayOffer(ved)).toBe(false);
+    expect(mayEditDealTerms(ved.permissions)).toBe(false);
   });
 
   it('everyone who may quote may also read back what they quoted', () => {
@@ -101,5 +103,33 @@ describe('«tannarx korinmasin sotuvchiga» (owner, 2026-08-25)', () => {
     }
     expect(found).toBe(2);
     expect(rest).not.toContain('money(r.floorUsd)');
+  });
+});
+
+describe('his F1 a (2026-10-07): a seller sees only the client prices HE gave', () => {
+  // Over every seeded role, because who is a «seller» is a property of the
+  // matrix he edits. The price channel names the seller and carries the floor,
+  // so a colleague's client price beside it is one subtraction from that
+  // colleague's upsale (law 4).
+  const SEES: Record<RoleCode, 'both' | 'own' | 'neither'> = {
+    super_admin: 'both',
+    admin: 'both',
+    accountant: 'both',
+    sales_manager: 'own',
+    logist: 'own',
+    ved_manager: 'neither',
+    warehouse_manager: 'neither',
+    warehouse_operator: 'neither',
+    viewer: 'neither',
+  };
+  it('answers for every seeded role', () => {
+    for (const role of Object.keys(SEES) as RoleCode[]) {
+      const actor = actorFor(role);
+      const scope = upsaleScopeFor(actor);
+      const own = seesOfferPriceOf(scope, actor.id, actor.id);
+      const theirs = seesOfferPriceOf(scope, 'y', actor.id);
+      const got = own && theirs ? 'both' : own ? 'own' : theirs ? 'theirs' : 'neither';
+      expect(got, role).toBe(SEES[role]);
+    }
   });
 });

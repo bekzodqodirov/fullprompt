@@ -35,6 +35,13 @@ export function offerStaffCommands(ctx: { api: CommandsApi }, chatId: number): v
       [
         { command: 'hodim', description: 'Hodim rejimi' },
         { command: 'bugun', description: 'Bugungi vazifalar' },
+        // The topshiriq round's two doors (spec §6): offered here AND answered
+        // in the ladder — the command-menu fence checks offered → answered,
+        // and a door that is only answered is a door nobody finds
+        // (telegram-mechanics-23). Every staff member sends /start once after
+        // the deploy to get them, and the new keyboard rows with them.
+        { command: 'topshiriq', description: 'Topshiriq berish' },
+        { command: 'berganlarim', description: 'Men bergan vazifalar' },
         { command: 'zametka', description: 'Zametkalar' },
         // Both have always WORKED as typed commands (staff-handlers answers
         // «/hisoblatish» and «/ai» beside their buttons); round C puts them

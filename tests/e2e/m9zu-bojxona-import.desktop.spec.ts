@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { cleanupEarlier, database } from './baza-stats-fixture';
 
 /**
  * The quarterly customs dump, in a browser (docs/VED-IMPORT-AI.md §2).
@@ -36,6 +37,17 @@ let leadName = '';
 let requestUrl = '';
 
 test.describe.configure({ mode: 'serial' });
+
+// A crashed m9zzz leaves batches dated TODAY, which under C6 outrank this
+// spec's fixture (dated in its own past) for ever — swept first.
+test.beforeAll(async () => {
+  const sql = database();
+  try {
+    await cleanupEarlier(sql);
+  } finally {
+    await sql.end();
+  }
+});
 
 test('the admin uploads the quarter and the parse settles it READY', async ({ page }) => {
   await login(page);
@@ -120,6 +132,19 @@ test('cleanup: the price becomes the VED’s and the import is removed', async (
   await page.getByTestId('calc-baza').last().fill('9');
   await page.getByTestId('calc-save-table').click();
   await expect(page.getByTestId('calc-baza-import')).toHaveCount(0, { timeout: 15_000 });
+
+  // The job itself is answered (review tests-completeness-20): an open
+  // request — and its timed task — would otherwise outlive this spec on
+  // whichever seeded VED the rota picked, for every later spec to inherit.
+  {
+    const take = page.getByTestId('calc-take');
+    if (await take.count()) await take.click();
+    await page.getByTestId('calc-finish-open').click();
+    await page.getByTestId('calc-answer-amount').fill('100');
+    await page.getByTestId('calc-answer-internal').fill('e2e tozalash');
+    await page.getByTestId('calc-finish').click();
+    await expect(page.getByTestId('calc-answer')).toBeVisible({ timeout: 15_000 });
+  }
 
   await page.goto('/admin/bojxona-import');
   const rows = page.getByTestId('import-batch');

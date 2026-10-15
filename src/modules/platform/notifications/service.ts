@@ -8,6 +8,7 @@ import {
   permissions,
   rolePermissions,
   roles,
+  tasks,
   telegramLinks,
   userRoles,
   users,
@@ -16,11 +17,11 @@ import { logger } from '../logger';
 import { canLogInSql } from '../users/login';
 import { runAutomationRules } from '../automation/service';
 import { botRefused } from '../diagnostics/signals';
-import { buttonsFor } from '../telegram/staff-bot';
-import { approvalVerdictLine, fillCount, notificationLabels } from './labels';
+import { buttonsFor, type BotButton } from '../telegram/staff-bot';
+import { approvalVerdictLine, fillCount, notificationLabels, textLocaleOf } from './labels';
 import { isTelegramMuted } from './mutes';
 import { sendsSilently } from './night';
-import { h } from '../telegram/format';
+import { groupDigits, h } from '../telegram/format';
 import {
   botCall,
   editText,
@@ -30,6 +31,7 @@ import {
   type SendResult,
 } from '../telegram/send';
 import { appendLine, composeStaffHtml, keyboardOf, type StaffMessage } from './staff-html';
+import { retireTaskCopiesSoon, TASK_COPY_TYPES, TASK_LIST_TYPE, type TaskCopyOutcome } from './retire-tasks';
 
 /**
  * Event → recipient rules (spec §11). Each event fans out to notification
@@ -82,6 +84,96 @@ export async function usersWithPermission(code: string): Promise<string[]> {
     // notification belongs to a person who still works here.
     .innerJoin(users, eq(userRoles.userId, users.id))
     .where(and(eq(permissions.code, code), canLogInSql()));
+  return [...new Set(rows.map((r) => r.userId))];
+}
+
+/**
+ * The warehouse-SCOPED holders of a permission AT one warehouse — the people
+ * whose gate a truck is coming to (the reroute round, the owner's 4a: «yangi
+ * sklad xodimlari»). Scoped means any warehouse-scoped role, `actorGrants`'
+ * own rule («any scoped role scopes the user»), plus a `user_warehouses` row
+ * for this warehouse. The unscoped — the owner, the admins, the logists — are
+ * NOT here: they hear by role, and «everyone who could unload anywhere» is
+ * not «the staff of this warehouse».
+ */
+export async function warehouseStaffWithPermission(code: string, warehouseId: string): Promise<string[]> {
+  const rows = await db
+    .select({ userId: userRoles.userId })
+    .from(userRoles)
+    .innerJoin(rolePermissions, eq(userRoles.roleId, rolePermissions.roleId))
+    .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
+    .innerJoin(users, eq(userRoles.userId, users.id))
+    .where(
+      and(
+        eq(permissions.code, code),
+        canLogInSql(),
+        scopedRoleSql(sql`${users.id}`),
+        sql`EXISTS (SELECT 1 FROM user_warehouses wsw
+                     WHERE wsw.user_id = ${users.id} AND wsw.warehouse_id = ${warehouseId}::uuid)`,
+      ),
+    );
+  return [...new Set(rows.map((r) => r.userId))];
+}
+
+/**
+ * «This person holds a warehouse-SCOPED role» — `actorGrants`' own rule (any
+ * scoped role scopes the user), as one clause with two askers: the reroute's
+ * permission list above and the cargo threads' staff list below.
+ */
+function scopedRoleSql(userId: SQL): SQL {
+  return sql`EXISTS (SELECT 1 FROM user_roles wsr JOIN roles wsro ON wsro.id = wsr.role_id
+                      WHERE wsr.user_id = ${userId} AND wsro.warehouse_scoped)`;
+}
+
+/**
+ * The STAFF of these warehouses (round 2, E6 c / E7 b): every person who can
+ * sign in (`canLogInSql`), holds a warehouse-SCOPED role, and is assigned to
+ * one of them — whatever the role's grants. One row per (person, warehouse).
+ * The reroute's helper above asks a PERMISSION («who unloads here»); a
+ * question about cargo is for whoever WORKS there, which is what the owner
+ * says when he ticks a role scoped (0049). The unscoped — the owner, the
+ * admins, the logists — are not here: they hear by role. `user_warehouses`
+ * has no index led by `warehouse_id`; the table is a row per assignment and
+ * tiny — stated.
+ */
+export async function warehouseStaff(
+  warehouseIds: readonly string[],
+): Promise<{ userId: string; warehouseId: string }[]> {
+  const ids = [...new Set(warehouseIds)];
+  if (ids.length === 0) return [];
+  const rows = await db.execute<{ user_id: string; warehouse_id: string }>(sql`
+    SELECT DISTINCT uw.user_id::text AS user_id, uw.warehouse_id::text AS warehouse_id
+      FROM user_warehouses uw
+      JOIN users u ON u.id = uw.user_id
+     WHERE uw.warehouse_id IN (${sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `)})
+       AND ${canLogInSql('u')}
+       AND ${scopedRoleSql(sql`u.id`)}
+  `);
+  return rows.map((row) => ({ userId: row.user_id, warehouseId: row.warehouse_id }));
+}
+
+/**
+ * The logists — by ROLE, the owner's word — who can OPEN the truck the
+ * message links to: unscoped, or scoped at one of its two ends. A logist
+ * scoped to an unrelated warehouse would be handed a link that 404s.
+ */
+export async function logistsForTruck(originWarehouseId: string, toWarehouseId: string): Promise<string[]> {
+  const rows = await db
+    .select({ userId: userRoles.userId })
+    .from(userRoles)
+    .innerJoin(roles, eq(userRoles.roleId, roles.id))
+    .innerJoin(users, eq(userRoles.userId, users.id))
+    .where(
+      and(
+        eq(roles.code, 'logist'),
+        canLogInSql(),
+        sql`(NOT EXISTS (SELECT 1 FROM user_roles lsr JOIN roles lsro ON lsro.id = lsr.role_id
+                          WHERE lsr.user_id = ${users.id} AND lsro.warehouse_scoped)
+             OR EXISTS (SELECT 1 FROM user_warehouses lsw
+                         WHERE lsw.user_id = ${users.id}
+                           AND lsw.warehouse_id IN (${originWarehouseId}::uuid, ${toWarehouseId}::uuid)))`,
+      ),
+    );
   return [...new Set(rows.map((r) => r.userId))];
 }
 
@@ -367,6 +459,37 @@ async function buildRecipients(event: {
       if (!requestedBy) return [];
       return [{ userId: requestedBy, type: event.type, payload: event.payload }];
     }
+    // The reroute round (the owner's 4a): the NEW warehouse's own staff
+    // («endi sizga keladi», with what is coming), the logists by role (who can
+    // open the card), and — when an earlier reroute had told a warehouse «it
+    // is coming to you» — that warehouse's staff, «endi sizga kelmaydi». One
+    // row per person, worded for their part (`audience`, precedence to > from
+    // > logist); never the person who pressed. The originally planned
+    // warehouse is NOT told (a question to the owner), and neither is anyone
+    // outside these three.
+    case 'BatchRerouted': {
+      const p = event.payload;
+      const toId = typeof p.toWarehouseId === 'string' ? p.toWarehouseId : null;
+      const fromId = typeof p.fromWarehouseId === 'string' ? p.fromWarehouseId : null;
+      const originId = typeof p.originWarehouseId === 'string' ? p.originWarehouseId : null;
+      if (!toId || !originId) return [];
+      const [to, from, logist] = await Promise.all([
+        warehouseStaffWithPermission('scan.unload', toId),
+        p.fromWasTold === true && fromId
+          ? warehouseStaffWithPermission('scan.unload', fromId)
+          : Promise.resolve([] as string[]),
+        logistsForTruck(originId, toId),
+      ]);
+      const audience = new Map<string, 'to' | 'from' | 'logist'>();
+      for (const id of logist) audience.set(id, 'logist');
+      for (const id of from) audience.set(id, 'from');
+      for (const id of to) audience.set(id, 'to');
+      return withoutPresser([...audience.keys()], p).map((userId) => ({
+        userId,
+        type: event.type,
+        payload: { ...p, audience: audience.get(userId) },
+      }));
+    }
     default:
       return [];
   }
@@ -630,6 +753,36 @@ export function renderTelegramText(
         ? `⛔ ${L.expenseRejected}\n${payload.amount} ${payload.currency} — ${payload.note}\n` +
             `${L.comment}: ${payload.rejectReason}`
         : `✅ ${L.expenseEntered}\n${payload.amount} ${payload.currency} — ${payload.note}`;
+    // The reroute round. Per reader, and never with an arrow BETWEEN the two
+    // warehouses: «A → B» is origin → destination everywhere in this app, so
+    // «TAS1 → AND» read at AND said «a truck from Tashkent». The receiving
+    // gate is told what it needs to act without opening anything: how much,
+    // from where, which plate. The withdrawn warehouse gets no link — the
+    // card is no longer theirs to open.
+    case 'BatchRerouted': {
+      const num = (v: unknown) => groupDigits(Number(v ?? 0));
+      const head = `${payload.batchCode}`;
+      const route = `${L.route}: ${payload.originCode} → ${payload.toCode}`;
+      const cargo = `📦 ${num(payload.cartons)} ${L.boxesShort} · ${num(payload.m3)} ${L.m3} · ${num(payload.kg)} ${L.kg}`;
+      const plate = payload.plate ? `\n🚛 ${payload.plate}` : '';
+      const why = payload.reason ? `\n${L.reason}: ${payload.reason}` : '';
+      const who = payload.presserName ? `\n${L.changedBy}: ${payload.presserName}` : '';
+      const cardLink = `\n${appUrl}/batches/${payload.batchId}`;
+      if (payload.audience === 'from') {
+        return `↩️ ${head}: ${L.rerouteNotComing} — ${L.rerouteNow}: ${payload.toCode}${why}${who}`;
+      }
+      if (payload.audience === 'to') {
+        return (
+          `↪️ ${head}: ${L.rerouteComingToYou} (${payload.toCode})\n` +
+          `${L.rerouteBefore}: ${payload.fromCode}\n${route}\n${cargo}${plate}${why}${who}${cardLink}`
+        );
+      }
+      return (
+        `↪️ ${head}: ${L.rerouteChanged}\n` +
+        `${L.rerouteNow}: ${payload.toCode} · ${L.rerouteBefore}: ${payload.fromCode}\n` +
+        `${route}\n${cargo}${plate}${why}${who}${cardLink}`
+      );
+    }
     case 'RestoreTestFailed':
       return `🆘 ${L.restoreFailed}\n${payload.error}\n${L.restoreCheck}`;
     // Without this case the most important alert in the system fell to the
@@ -901,8 +1054,10 @@ export function __resetTelegramPause(): void {
  * «↗️ Ochish» button (staff-html.ts). Exported because an EDIT of a sent
  * message (the approval copies below) must rebuild exactly what was sent.
  *
- * A pre-rendered text was written in Uzbek by its caller, so its button is
- * Uzbek too; an event-rendered one is in the reader's own language.
+ * A pre-rendered text's button is in the language the text was WRITTEN in
+ * (`textLocaleOf` — Uzbek unless the writer said otherwise: a cargo ping's
+ * frame follows its recipient, 0129); an event-rendered one is in the
+ * reader's own language.
  */
 export function composeStaffMessage(
   type: string,
@@ -912,7 +1067,7 @@ export function composeStaffMessage(
   const preRendered = typeof payload.text === 'string' && payload.text.trim() !== '';
   return composeStaffHtml(type, renderTelegramText(type, payload, locale), {
     appUrl: process.env.APP_URL,
-    openLabel: notificationLabels(preRendered ? 'uz' : locale).openInApp,
+    openLabel: notificationLabels(preRendered ? textLocaleOf(payload) : locale).openInApp,
   });
 }
 
@@ -963,7 +1118,7 @@ const BUTTON_REFUSAL = /button|keyboard|reply.?markup/i;
 async function deliverStaffMessage(
   chatId: bigint,
   message: StaffMessage,
-  buttons: { text: string; callback_data: string }[][] | null,
+  buttons: BotButton[][] | null,
   // Carried into ALL THREE sends, the hand-made one included: a night-silent
   // push whose card link became a button used to ring, because that attempt
   // never went through `sendText` (0113, the design judge's finding 1).
@@ -1052,6 +1207,174 @@ async function forwardOriginal(
 }
 
 /**
+ * The author's own messages a task was given with (docs/TELEGRAM-TOPSHIRIQ.md
+ * §4), forwarded BEFORE the task's text — ONE `forwardMessages` call per chat
+ * they sit in (in practice one: the draft lives in the author's chat), so an
+ * album stays an album and a source Telegram will not forward is skipped by
+ * Telegram itself.
+ *
+ * `forwarded` is written only AFTER the call returns, never before and never
+ * per message (the review): `forwardOriginal` extended to a list would have
+ * re-sent everything on a retry after a partial failure. A moment's failure
+ * hands the row back like `forwardOriginal` does — the author's voice note
+ * exists nowhere a colleague can open — and a refusal for good lets the text
+ * go on alone.
+ */
+async function forwardSources(
+  notificationId: string,
+  staffChatId: bigint,
+  payload: Record<string, unknown>,
+): Promise<SendResult | null> {
+  if (payload.forwarded === true || !Array.isArray(payload.forwards)) return null;
+  const byChat = new Map<number, number[]>();
+  for (const source of payload.forwards as { chatId?: unknown; messageId?: unknown }[]) {
+    const chat = Number(source?.chatId);
+    const message = Number(source?.messageId);
+    if (!Number.isFinite(chat) || !Number.isInteger(message)) continue;
+    byChat.set(chat, [...(byChat.get(chat) ?? []), message]);
+  }
+  if (byChat.size === 0) return null;
+  for (const [fromChat, ids] of byChat) {
+    const answer = await botCall('forwardMessages', {
+      chat_id: Number(staffChatId),
+      from_chat_id: fromChat,
+      // Telegram wants them strictly increasing, which is also their order.
+      message_ids: [...new Set(ids)].sort((a, b) => a - b),
+    });
+    if (!answer.ok && !isPermanentFailure(answer.status)) {
+      logger.warn({ notificationId, status: answer.status, description: answer.description }, 'task sources not forwarded yet — retrying');
+      return {
+        ok: false,
+        status: answer.status,
+        description: answer.description,
+        messageId: null,
+        retryAfter: answer.retryAfter,
+        permanent: false,
+        botDown: isBotFailure(answer.status),
+        usedFallback: false,
+      };
+    }
+    if (!answer.ok) {
+      logger.warn({ notificationId, description: answer.description }, 'task sources cannot be forwarded — the text still goes');
+    }
+  }
+  await db.execute(sql`
+    UPDATE notifications SET payload = payload || '{"forwarded": true}'::jsonb
+    WHERE id = ${notificationId}`);
+  return null;
+}
+
+/**
+ * A task's copies the ASSIGNEE holds — the ones a handover makes stale too.
+ * `TaskSources` carries no buttons, but it forwards the author's messages,
+ * which must never reach a person who no longer has the task.
+ */
+const ASSIGNEE_TASK_COPIES = new Set(['TaskAssigned', 'TaskReminder', 'TaskAnswer', 'TaskSources']);
+/** …and the author's: their question copy, «boshqaga o‘tdi». */
+const AUTHOR_TASK_COPIES = new Set(['TaskQuestion', 'TaskReassigned']);
+
+/**
+ * Is this task copy still worth sending, and with what buttons?
+ *
+ * Mutes a single-task copy whose task is no longer open, or — for the
+ * assignee's copies — no longer this person's. Re-reads `accepted` so a 👀
+ * pressed on an earlier copy is not drawn again. Filters a `TasksDue`'s
+ * buttons to the tasks still open and still the reader's (its TEXT is the
+ * morning's and stays).
+ * A task id that names no row sends as it always did (the approval rule):
+ * a malformed payload is the renderer's problem, not this check's.
+ */
+async function taskCopyLive(
+  type: string,
+  payload: Record<string, unknown>,
+  userId: string,
+): Promise<{ mute?: string; payload?: Record<string, unknown> }> {
+  if (type === 'TasksDue' && Array.isArray(payload.tasks)) {
+    const ids = (payload.tasks as { id?: unknown }[])
+      .map((entry) => entry?.id)
+      .filter((id): id is string => typeof id === 'string' && UUID_RE.test(id));
+    if (ids.length === 0) return {};
+    // Open AND still this reader's: a task handed on keeps its status, and
+    // the old holder's ✅ would close the new holder's task (review tasks-4).
+    const open = await db
+      .select({ id: tasks.id })
+      .from(tasks)
+      .where(and(inArray(tasks.id, ids), eq(tasks.status, 'open'), eq(tasks.assigneeId, userId)));
+    const still = new Set(open.map((row) => row.id));
+    return {
+      payload: {
+        ...payload,
+        tasks: (payload.tasks as { id?: unknown }[]).filter((entry) => typeof entry?.id === 'string' && still.has(entry.id)),
+      },
+    };
+  }
+  if (!ASSIGNEE_TASK_COPIES.has(type) && !AUTHOR_TASK_COPIES.has(type)) return {};
+  const taskId = payload.taskId;
+  if (typeof taskId !== 'string' || !UUID_RE.test(taskId)) return {};
+  const [task] = await db
+    .select({ status: tasks.status, assigneeId: tasks.assigneeId, acceptedAt: tasks.acceptedAt })
+    .from(tasks)
+    .where(eq(tasks.id, taskId));
+  if (!task) return {};
+  if (task.status !== 'open') return { mute: 'closed before it was sent' };
+  if (ASSIGNEE_TASK_COPIES.has(type) && task.assigneeId !== userId) {
+    return { mute: 'handed on before it was sent' };
+  }
+  return { payload: { ...payload, accepted: task.acceptedAt !== null } };
+}
+
+/**
+ * The second half of the send-time check, asked AFTER the row reads 'sent'
+ * with its message id (review tasks-1). A door that closed or moved the task
+ * while this copy was in flight — the author's «🗑 Bekor qilish» seconds after
+ * a draft, landing during the forwards — ran its retire against a row in
+ * «sending», which the retire cannot see; this copy would keep live buttons
+ * for ever. So the drain retires that one row itself. The order is the whole
+ * argument: 'sent' is written first, so a close that commits after this read
+ * finds the row through its own retire.
+ */
+async function retireIfClosedInFlight(
+  notificationId: string,
+  type: string,
+  payload: Record<string, unknown>,
+  userId: string,
+): Promise<void> {
+  if (type === TASK_LIST_TYPE) {
+    // The rows that went out (the payload already filtered at send time).
+    const ids = (Array.isArray(payload.tasks) ? (payload.tasks as { id?: unknown }[]) : [])
+      .map((entry) => entry?.id)
+      .filter((id): id is string => typeof id === 'string' && UUID_RE.test(id));
+    if (ids.length === 0) return;
+    const live = await db
+      .select({ id: tasks.id })
+      .from(tasks)
+      .where(and(inArray(tasks.id, ids), eq(tasks.status, 'open'), eq(tasks.assigneeId, userId)));
+    const still = new Set(live.map((row) => row.id));
+    const gone = ids.filter((id) => !still.has(id));
+    // A list is redrawn from what stands, so its outcome word is never read.
+    if (gone.length > 0) retireTaskCopiesSoon({ taskIds: gone, outcome: 'done', onlyNotificationIds: [notificationId] });
+    return;
+  }
+  if (!(TASK_COPY_TYPES as readonly string[]).includes(type)) return;
+  const taskId = payload.taskId;
+  if (typeof taskId !== 'string' || !UUID_RE.test(taskId)) return;
+  const [task] = await db
+    .select({ status: tasks.status, assigneeId: tasks.assigneeId })
+    .from(tasks)
+    .where(eq(tasks.id, taskId));
+  if (!task) return;
+  const outcome: TaskCopyOutcome | null =
+    task.status === 'done'
+      ? 'done'
+      : task.status !== 'open'
+        ? 'cancelled'
+        : ASSIGNEE_TASK_COPIES.has(type) && task.assigneeId !== userId
+          ? 'reassigned'
+          : null;
+  if (outcome) retireTaskCopiesSoon({ taskIds: [taskId], outcome, onlyNotificationIds: [notificationId] });
+}
+
+/**
  * Hand the rest of a run back to the queue exactly as it was: pending, no
  * claim, no attempt counted. ONE statement, so a pause can never leave half a
  * run parked in 'sending' for the ten-minute reclaim to charge an attempt for.
@@ -1131,18 +1454,38 @@ export async function sendPendingTelegram(now: Date = new Date()): Promise<void>
       settled.add(notification.id);
       continue;
     }
+    // The same rule for a task's copies (review telegram-mechanics-5): a copy
+    // queued before the task closed — or before it was handed to somebody
+    // else — never goes out with live buttons, and never forwards the
+    // author's messages to a person who no longer has the task.
+    // A read that fails sends the copy as it always went — every press is
+    // re-checked on the server, and one blip must not throw the whole run.
+    const live = await taskCopyLive(notification.type, payload, notification.userId).catch((err: unknown) => {
+      logger.warn({ err, notificationId: notification.id }, 'task copy check failed — sent as queued');
+      return {} as Awaited<ReturnType<typeof taskCopyLive>>;
+    });
+    if (live.mute) {
+      await db
+        .update(notifications)
+        .set({ status: 'muted', error: live.mute })
+        .where(eq(notifications.id, notification.id));
+      settled.add(notification.id);
+      continue;
+    }
+    const sendPayload = live.payload ?? payload;
 
     let res: SendResult;
     try {
       // Inline buttons ride on the send, by type (staff bot, round 35): a
-      // task lands with «Bajarildi», a debtor request with «Ruxsat / Yo‘q».
+      // task lands with its buttons, a debtor request with «Ruxsat / Yo‘q».
       // INSIDE the try (round C review): a payload a renderer chokes on fails
       // its own row, where outside it threw the whole run and parked every
       // claimed row behind it in «sending» until the reclaim charged them.
-      const buttons = buttonsFor(notification.type, payload);
+      const buttons = buttonsFor(notification.type, sendPayload);
       const message = composeStaffMessage(notification.type, payload, recipient.locale);
       res =
         (await forwardOriginal(notification.id, link.telegramChatId, payload)) ??
+        (await forwardSources(notification.id, link.telegramChatId, payload)) ??
         (await deliverStaffMessage(
           link.telegramChatId,
           message,
@@ -1184,6 +1527,13 @@ export async function sendPendingTelegram(now: Date = new Date()): Promise<void>
         })
         .where(eq(notifications.id, notification.id));
       settled.add(notification.id);
+      // The task may have closed while this copy was in flight (review
+      // tasks-1) — asked only now, after 'sent' and the message id are written.
+      if (tg) {
+        await retireIfClosedInFlight(notification.id, notification.type, sendPayload, notification.userId).catch(
+          (err: unknown) => logger.warn({ err, notificationId: notification.id }, 'task copy after-send check failed'),
+        );
+      }
       continue;
     }
 

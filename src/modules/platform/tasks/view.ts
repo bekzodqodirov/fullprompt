@@ -1,8 +1,10 @@
-import { asc } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import { db } from '../db/client';
-import { users } from '../db/schema';
-import type { Person, TaskType, TaskView } from '@/components/task-list';
-import { aboutLabels, listTaskTypes, openCounts, type TaskRow } from './service';
+import { attachments, users } from '../db/schema';
+import type { Person, TaskFileView, TaskType, TaskView } from '@/components/task-list';
+import { aboutLabels, bindingsOf, listTaskTypes, openCounts, type TaskBinding, type TaskRow } from './service';
+import { TASK_ENTITY_TYPE } from './files-job';
+import { logger } from '../logger';
 import { canLogInSql } from '../users/login';
 
 /**
@@ -40,18 +42,94 @@ export function aboutHref(entityType: string | null, entityId: string | null): s
   return route ? route(entityId) : null;
 }
 
+/** Who is READING the list — a calc job draws differently for the VED and for everyone else. */
+export interface TaskViewer {
+  id: string;
+  permissions: Set<string>;
+}
+
+/**
+ * The files the staff bot stored on these tasks (his 3a), in ONE query for
+ * the whole list (#432), never one per task.
+ */
+export async function taskFiles(taskIds: string[]): Promise<Map<string, TaskFileView[]>> {
+  const out = new Map<string, TaskFileView[]>();
+  if (taskIds.length === 0) return out;
+  const rows = await db
+    .select({
+      id: attachments.id,
+      entityId: attachments.entityId,
+      fileName: attachments.fileName,
+      contentType: attachments.contentType,
+    })
+    .from(attachments)
+    .where(and(eq(attachments.entityType, TASK_ENTITY_TYPE), inArray(attachments.entityId, taskIds)))
+    .orderBy(asc(attachments.createdAt));
+  for (const row of rows) {
+    const kind: TaskFileView['kind'] = row.contentType.startsWith('image/')
+      ? 'image'
+      : row.contentType.startsWith('audio/')
+        ? 'audio'
+        : row.contentType.startsWith('video/')
+          ? 'video'
+          : 'file';
+    out.set(row.entityId, [...(out.get(row.entityId) ?? []), { id: row.id, name: row.fileName, kind }]);
+  }
+  return out;
+}
+
+/**
+ * Where a task's title takes its READER, and the calc job's own door — ONE
+ * rule for every surface that lists tasks: the task list here and the dock's
+ * route (review access-3: the dock linked an open calc job's title to the
+ * LEAD card, and the CRM layout sends a VED without `crm.leads` home from it
+ * — the dead door this rule exists to remove, surviving on the third
+ * surface). A `ved.docs` reader of an open calc job gets the job's screen as
+ * both the action and the about-link; anybody else keeps the card link and
+ * reads the job as a chip.
+ */
+export function readerTaskLinks(
+  row: { entityType: string | null; entityId: string | null; status: string },
+  binding: TaskBinding | undefined,
+  viewer: { permissions: { has(code: string): boolean } },
+): { aboutHref: string | null; calc: { href: string; mayOpen: boolean } | null } {
+  const calcOpen = binding?.kind === 'calc' && binding.open && row.status === 'open';
+  const about = aboutHref(row.entityType, row.entityId);
+  if (!calcOpen) return { aboutHref: about, calc: null };
+  const calcHref = `/hisoblash/${binding.recordId}`;
+  const mayOpen = viewer.permissions.has('ved.docs');
+  return { aboutHref: mayOpen ? calcHref : about, calc: { href: calcHref, mayOpen } };
+}
+
 /**
  * Turn service rows into something a client component can hold.
  *
  * Dates become ISO strings — a `Date` cannot cross the server/client boundary —
  * and each task learns the name and the address of whatever it is about, in one
  * query per entity type rather than one per task.
+ *
+ * The READER decides how a calc job draws (docs/VED-TARIX.md §8, §13): a task
+ * bound to an OPEN calc request has no ✅ for anybody — the job ends on its
+ * own screen — and a `ved.docs` reader gets «🧮 Hisobni ochish» there as both
+ * the action and the about-link (the lead card the old link named sends a VED
+ * without `crm.leads` home); anybody else keeps the card link and reads a
+ * «VED hisoblamoqda» chip. An unbound or closed-request calc task keeps its
+ * ordinary ✅, or nobody could ever close it.
  */
-export async function toTaskViews(rows: TaskRow[]): Promise<TaskView[]> {
-  const labels = await aboutLabels(rows);
+export async function toTaskViews(rows: TaskRow[], viewer: TaskViewer): Promise<TaskView[]> {
+  const [labels, bindings, files] = await Promise.all([
+    aboutLabels(rows),
+    // A list that cannot tell draws the ordinary ✅; the door behind it fails
+    // CLOSED and says so in words.
+    bindingsOf(rows).catch((err: unknown) => {
+      logger.warn({ err }, '[tasks] list bindings unreadable — drawing plain rows');
+      return new Map<string, TaskBinding>();
+    }),
+    taskFiles(rows.map((row) => row.id)),
+  ]);
   return rows.map((row) => {
     const key = row.entityType && row.entityId ? `${row.entityType}:${row.entityId}` : null;
-    // Owner-invented objects (phase 8) all live at the generic card.
+    const links = readerTaskLinks(row, bindings.get(row.id), viewer);
 
     return {
       id: row.id,
@@ -68,8 +146,13 @@ export async function toTaskViews(rows: TaskRow[]): Promise<TaskView[]> {
       result: row.result,
       priority: row.priority,
       repeatUnit: row.repeatUnit,
-      aboutHref: aboutHref(row.entityType, row.entityId),
+      aboutHref: links.aboutHref,
       aboutLabel: key ? (labels.get(key) ?? null) : null,
+      calc: links.calc,
+      // The holder of an open calc job moves through the queue's «Olaman /
+      // Bo'shatish», never a task's select (telegram-mechanics-12).
+      canReassign: links.calc === null,
+      files: files.get(row.id) ?? [],
     };
   });
 }

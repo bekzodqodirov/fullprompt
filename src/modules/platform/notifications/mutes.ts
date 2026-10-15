@@ -56,6 +56,27 @@ export const MUTE_GROUPS = {
     // with buttons. A newcomer, so never in FOUNDERS: a list that muted the
     // group before it existed must not start muting it by growing.
     'CalcLinkAsk',
+    // The topshiriq round (docs/TELEGRAM-TOPSHIRIQ.md §7): what the people on
+    // the two ends of a task tell each other through the bot — 👀 seen, ⏰
+    // moved, 💬 a question and its answer, 🔔 a nudge, and «it was cancelled /
+    // handed on». All newcomers, so NONE is a founder: somebody who muted
+    // «vazifalar» before this round stays muted, and nobody's tick is read as
+    // unticked because the group grew (round C).
+    'TaskAccepted',
+    'TaskRescheduled',
+    'TaskQuestion',
+    'TaskAnswer',
+    'TaskReminder',
+    'TaskCancelled',
+    'TaskReassigned',
+    // The author's own messages, sent on to whoever holds the task now — the
+    // «📤» press and a late album part (review bot-11/13). The same story as
+    // «work was assigned»; a newcomer, never in FOUNDERS.
+    'TaskSources',
+    // «GS777: narx qayta hisoblanmoqda — eski narx endi amal qilmaydi»
+    // (docs/VED-TARIX.md §6) — the seller's own job, re-opened. A newcomer:
+    // never in FOUNDERS.
+    'CalcRecalc',
   ],
   // "Something is wrong, act now." The three price-control messages belong
   // here rather than in `operations`: cargo that arrived is routine, cargo
@@ -166,14 +187,16 @@ export const MUTE_GROUPS = {
     // alarms: a deviation worth shouting about already has its own alert.
     'LoadFinished',
     'UnloadFinished',
-    // A colleague wrote on a card you are involved in.
-    'InternalNote',
-    // The personal half of the same message: a colleague named YOU with @.
-    'MentionedInNote',
-    // A colleague showed you one message a client sent (2026-08-11). It sits
-    // beside the note and the mention because it is the same act — somebody
-    // deciding you need to see something — and not an alarm: nothing is on
-    // fire, a person is asking.
+    // A truck on the road now goes to another receiving warehouse (the
+    // reroute round) — work news for the gate that will receive it and the
+    // planners, beside the load and unload summaries; not an alarm. A
+    // newcomer, so never in FOUNDERS: whoever muted «ish jarayoni» before
+    // stays muted.
+    'BatchRerouted',
+    // A colleague showed you one message a client sent (2026-08-11) — a
+    // person deciding you need to see something, not an alarm. It STAYS here
+    // when the note and the mention left for `chat` (E8 a): a shown customer
+    // message is not a thread and cannot be replied to (wms/crm/share.ts).
     'ChatMessageShared',
     // Phase 7: a rule somebody wrote pinged you — mutable like any other
     // routine workflow message; the rule's author is not above your mutes.
@@ -199,6 +222,23 @@ export const MUTE_GROUPS = {
   // warehouse svodka is not silencing the company's day, and neither is a
   // reason to lose the other.
   owner: ['OwnerSummary'],
+  // «🔓 Qarzga yuk berildi» (the owner's D6a, 2026-10-07) — to the owner and
+  // the accountant, for every release on debt: the control that replaced the
+  // request he took away from the warehouse manager (D2). A group of its OWN:
+  // NOT `alerts`, which is muted for anybody holding its founders — the file
+  // above says admins silenced that group's noise long ago, so this would be
+  // born MUTED for exactly the owner; NOT `owner`, because muting the evening
+  // summary must not silence debt releases (that is the accident). Its own box
+  // means muting it is a deliberate tick; «all» still mutes.
+  debt: ['DebtReleased'],
+  // «Ichki yozishmalar» (the owner's E8 a, 2026-10-07): colleagues' thread
+  // messages — a note on a card you are in, a colleague naming YOU with @, a
+  // question under a calculation — are a group of their OWN, so muting «ish
+  // jarayoni» (the warehouse's routine news) no longer silences a colleague
+  // who is waiting for an answer. Born whole; 0127 strips the two moved names
+  // from lists that held them by name, or those would stay muted under a box
+  // that reads unticked.
+  chat: ['InternalNote', 'MentionedInNote', 'CalcThread'],
 } as const;
 
 export type MuteGroup = keyof typeof MUTE_GROUPS;
@@ -246,6 +286,11 @@ export const FOUNDERS: Readonly<Record<MuteGroup, readonly string[]>> = {
   system: ['TelegramListenerQuiet', 'TelegramListenerBack', 'DiskFilling'],
   // Born 2026-09-28 with its one member — its birth list, not an addition.
   owner: ['OwnerSummary'],
+  // Born whole on 2026-10-07 with its one member (0126).
+  debt: ['DebtReleased'],
+  // Born whole on 2026-10-07 (0127, E8 a): every list that ticks it from now
+  // on holds all three.
+  chat: ['InternalNote', 'MentionedInNote', 'CalcThread'],
 };
 
 /**

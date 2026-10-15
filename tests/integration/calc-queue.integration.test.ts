@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
@@ -11,6 +11,7 @@ import {
   deals,
   events,
   leads,
+  notifications,
   tasks,
   users,
 } from '@/modules/platform/db/schema';
@@ -132,6 +133,32 @@ afterAll(async () => {
       await db.delete(events).where(inArray(events.entityId, taskIds));
       await db.delete(tasks).where(inArray(tasks.id, taskIds));
     }
+  }
+  // Every task this file's jobs made, not only the one a request still names
+  // (review integration-7): a release or a re-take leaves the earlier calc
+  // task behind, and the hand-back's «↩️ Ma'lumot to'ldiring» is the seller's
+  // own to-do with no bound_id at all — each run left them OPEN on a real
+  // person's day. By the card, the request, or this file's own requester.
+  const loose = await db
+    .select({ id: tasks.id })
+    .from(tasks)
+    .where(
+      or(
+        inArray(tasks.entityId, [dealId, leadId]),
+        madeRequests.length > 0 ? inArray(tasks.boundId, madeRequests) : undefined,
+        eq(tasks.createdBy, actorId),
+        eq(tasks.assigneeId, actorId),
+      ),
+    );
+  if (loose.length > 0) {
+    const looseIds = loose.map((t) => t.id);
+    // A copy can sit on a SEEDED colleague's queue (the rota assigns real
+    // VEDs), so by the task it names, never by person.
+    await db
+      .delete(notifications)
+      .where(sql`${notifications.payload}->>'taskId' IN (${sql.join(looseIds.map((id) => sql`${id}`), sql`, `)})`);
+    await db.delete(events).where(inArray(events.entityId, looseIds));
+    await db.delete(tasks).where(inArray(tasks.id, looseIds));
   }
   if (madeNotes.length > 0) {
     await db.delete(crmActivities).where(inArray(crmActivities.id, madeNotes));
@@ -265,6 +292,18 @@ describe('the queue hands the work out and takes it back', () => {
     expect((await openCalcFor('deal', dealId)).some((row) => row.id === id)).toBe(true);
   });
 
+  it('a release cancels the holder\'s task — no ghost left on their /bugun', async () => {
+    const { id } = await open();
+    const held = await db.query.calcRequests.findFirst({ where: eq(calcRequests.id, id) });
+    expect(held!.taskId, 'the open request carries its holder\'s task').toBeTruthy();
+    await releaseCalcRequest(id, ctx());
+    const task = await db.query.tasks.findFirst({ where: eq(tasks.id, held!.taskId!) });
+    // PostgreSQL 16's RETURNING is the NEW row: reading the task id back from
+    // the UPDATE that NULLs it found nothing, and the task stayed open for ever.
+    expect(task!.status).toBe('cancelled');
+    expect(task!.result).toBe('Navbatga qaytarildi');
+  });
+
   it('exactly one taker wins a race, and the loser is told which', async () => {
     const { id } = await open();
     await releaseCalcRequest(id, ctx());
@@ -360,7 +399,7 @@ describe('the endings', () => {
 
   it('finishing records the ANSWER, not just the fact that it ended', async () => {
     const { id } = await open();
-    await finishCalcRequest(id, { amount: 480, currency: 'USD', note: '3 guruh' }, ctx());
+    await finishCalcRequest(id, { amountText: '480', currency: 'USD', note: '3 guruh', internalNote: 'ichki: 3 guruh' }, ctx());
     const row = await calcRequestDetail(id);
     expect(row!.completedVia).toBe('task');
     expect(row!.answerAmount).toBe(480);
@@ -370,9 +409,9 @@ describe('the endings', () => {
 
   it('a closed request cannot be closed twice', async () => {
     const { id } = await open();
-    await finishCalcRequest(id, { amount: 100, currency: 'USD', note: '' }, ctx());
+    await finishCalcRequest(id, { amountText: '100', currency: 'USD', note: '', internalNote: 'ichki' }, ctx());
     await expect(
-      finishCalcRequest(id, { amount: 200, currency: 'USD', note: '' }, ctx()),
+      finishCalcRequest(id, { amountText: '200', currency: 'USD', note: '', internalNote: 'ichki' }, ctx()),
     ).rejects.toThrow('already_closed');
   });
 });

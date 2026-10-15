@@ -102,11 +102,16 @@ describe('W3 — one writer of a payment’s recurring columns (derived)', () =>
     expect(offenders).toEqual([]);
   });
 
-  it('addExpense takes no options any more — only the write half can carry a month', () => {
+  it('addExpense can carry no month — only the write half can', () => {
+    // It grew ONE option in the sarflar round, the twin acknowledgement for
+    // the create audit (SARFLAR §8.2); the rule this pins is the month's, so
+    // the signature may name no recurring field and the write half must be
+    // handed the acknowledgement alone.
     const service = read(SERVICE);
     const at = service.indexOf('export async function addExpense(');
     expect(at).toBeGreaterThanOrEqual(0);
-    expect(balanced(service, at, '(').text).not.toMatch(/\bopts\b/);
+    expect(balanced(service, at, '(').text).not.toMatch(/recurring/i);
+    expect(service.slice(at)).toContain('await addExpenseTx(db, input, rate, ctx, { twinAck: opts.twinAck });');
   });
 });
 

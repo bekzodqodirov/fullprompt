@@ -8,7 +8,7 @@ import {
   deals,
   leads,
 } from '../../platform/db/schema';
-import { cardLink } from '../../platform/notifications/links';
+import { userPermissions } from '../../platform/rbac/authorize';
 import { aiConfigured } from '../../platform/ai/model';
 import { aiCalcBudgetLeft, recordAiPass } from './ai-cost';
 import { logger } from '../../platform/logger';
@@ -16,20 +16,28 @@ import type { AuditContext } from '../../platform/audit/service';
 import {
   newestReadyBatchId,
 } from '../customs/import-service';
-import { suggestImportBaza, unitsForRow, BASIS_FOR_UNIT } from '../customs/import-baza';
-import { sectionParts, type CalcSectionName, type FreightResult } from './pricing';
+import { suggestImportBaza, unitsForRow } from '../customs/import-baza';
+import {
+  isBazaBasis,
+  itemMeasure,
+  sectionParts,
+  type BazaBasis,
+  type CalcSectionName,
+  type FreightResult,
+} from './pricing';
+import { basisLabel, statedPairOf } from './basis';
 import {
   loadWorkspace,
   proposeGroups,
   saveTable,
-  type SealBlocker,
   type TableItemEdit,
   type Workspace,
 } from './workspace';
 import { itemNameNorm, sealedMemoryFor } from './memory';
 import { aiVedReplyText, type AiVedFreight, type AiVedLine } from './ai-reply';
+import { calcJobHrefFor } from './card-door';
 import { dutyText } from './duty-text';
-import { blockerText, freightRefusalText, prefillReplyText } from './prefill-reply';
+import { blockerText, feeRefusalText, freightRefusalText, prefillReplyText } from './prefill-reply';
 import { pickImportRows, type PickAnswer, type PickRequest, type PickUsage } from './prefill-ai';
 
 /**
@@ -117,11 +125,22 @@ export interface PrefillDeps {
   ) => Promise<PickAnswer[] | null>;
   /** Overridable so a test can run without a customs import in the database. */
   configured?: boolean;
+  /**
+   * Who READS `text` — the person the job's worker sends it to. The link is
+   * chosen for them (`calcJobHrefFor`); absent, the reply carries none.
+   */
+  replyTo?: string;
 }
 
 export interface PrefillOutcome {
-  /** The message for the chat that asked. */
+  /** The message for the chat that asked — its link chosen for `replyTo`. */
   text: string;
+  /**
+   * The same reply with NO link, for the card's lenta: a `/hisoblash` link
+   * there bounces the seller reading it, and a card link points at the page
+   * the reader is already on.
+   */
+  lentaText: string;
   customsUsd: number | null;
   freightUsd: number | null;
   codesStamped: number;
@@ -302,8 +321,8 @@ export async function aiPrefill(
   // Who the answer is ABOUT — the card's own code, and the customer's, so a
   // seller with three open jobs can tell which one this is. One query, and
   // only on the shape that prints them.
-  const about = ws && ws.parts.customs ? await requestAbout(requestId) : null;
-  const text =
+  const about = ws && ws.parts.customs ? await requestAbout(requestId, deps.replyTo ?? null) : null;
+  const customsReply = (link: string | null) =>
     ws && ws.parts.customs
       ? aiVedReplyText({
           clientLabel: about?.clientCode ?? null,
@@ -312,30 +331,37 @@ export async function aiPrefill(
           ungrouped: ws.ungrouped.map((i) => i.label),
           fee: ws.fee && ws.fee.ok ? { bhm: ws.fee.bhmCoefficient, usd: ws.fee.feeUsd } : null,
           totalUsd: customsUsd,
+          feeRefusal: ws.fee && !ws.fee.ok ? feeRefusalText(ws.fee.reason) : null,
           hasCertificate: ws.hasCertificate,
           freight: ws.parts.freight ? aiFreight(freight, ws) : null,
-          link: about?.link ?? null,
+          link,
           aiConfigured: hasKey,
           budgetSpent: hasKey && budgetLeft <= 0,
         })
-      : prefillReplyText({
-          customsUsd,
-          freightUsd,
-          hasFreight: ws?.parts.freight ?? false,
-          hasCustoms: ws?.parts.customs ?? parts.customs,
-          blockers: ws?.blockers ?? [],
-          codesStamped,
-          ratesPulled,
-          importFilled: importFilled + picked,
-          link: null,
-          aiConfigured: hasKey,
-          pickCapped,
-          pickRefused,
-          pickOvertaken,
-        });
+      : null;
+  // The freight-only summary has always carried no link.
+  const summary = () =>
+    prefillReplyText({
+      customsUsd,
+      freightUsd,
+      hasFreight: ws?.parts.freight ?? false,
+      hasCustoms: ws?.parts.customs ?? parts.customs,
+      blockers: ws?.blockers ?? [],
+      codesStamped,
+      ratesPulled,
+      importFilled: importFilled + picked,
+      link: null,
+      aiConfigured: hasKey,
+      pickCapped,
+      pickRefused,
+      pickOvertaken,
+    });
+  const text = customsReply(about?.link ?? null) ?? summary();
+  const lentaText = customsReply(null) ?? summary();
 
   return {
     text,
+    lentaText,
     customsUsd,
     freightUsd,
     codesStamped,
@@ -354,29 +380,49 @@ export async function aiPrefill(
  * A deal is named by its CODE and a lead by its name — the same rule
  * `requestLabel` follows one file over — and the client code beside it is
  * what the office actually addresses cargo by (#581).
+ *
+ * The LINK is chosen for the person who reads the reply (`replyTo`) — the
+ * collector, the same person the bot's ✅ answered — by `calcJobHrefFor`, the
+ * ✅'s own rule: a card they can open, the calculation's screen for the VED,
+ * else none. No reader, no link.
  */
 async function requestAbout(
   requestId: string,
+  replyTo: string | null,
 ): Promise<{ clientCode: string | null; cardLabel: string | null; link: string | null } | null> {
   const [row] = await db
     .select({ entityType: calcRequests.entityType, entityId: calcRequests.entityId })
     .from(calcRequests)
     .where(eq(calcRequests.id, requestId));
   if (!row) return null;
-  const link = cardLink(row.entityType === 'lead' ? 'lead' : 'deal', row.entityId) || null;
+  const entityType = row.entityType === 'lead' ? 'lead' : 'deal';
+  const linkFor = async (leadOwnerId: string | null): Promise<string | null> => {
+    if (!replyTo) return null;
+    try {
+      const href = calcJobHrefFor(
+        { id: replyTo, permissions: await userPermissions(replyTo) },
+        { entityType, entityId: row.entityId, leadOwnerId, requestId },
+      );
+      return href ? `${(process.env.APP_URL ?? '').replace(/\/$/, '')}${href}` : null;
+    } catch (err) {
+      // A link nobody could check is not sent — and it must not cost the answer.
+      logger.warn({ err, requestId }, '[calc-prefill] reply link not resolved — sent without one');
+      return null;
+    }
+  };
   if (row.entityType === 'deal') {
     const [deal] = await db
       .select({ code: deals.code, clientCode: clients.clientCode })
       .from(deals)
       .leftJoin(clients, eq(clients.id, deals.clientId))
       .where(eq(deals.id, row.entityId));
-    return { clientCode: deal?.clientCode ?? null, cardLabel: deal?.code ?? null, link };
+    return { clientCode: deal?.clientCode ?? null, cardLabel: deal?.code ?? null, link: await linkFor(null) };
   }
   const [lead] = await db
-    .select({ name: leads.name })
+    .select({ name: leads.name, ownerId: leads.ownerId })
     .from(leads)
     .where(eq(leads.id, row.entityId));
-  return { clientCode: null, cardLabel: lead?.name ?? null, link };
+  return { clientCode: null, cardLabel: lead?.name ?? null, link: await linkFor(lead?.ownerId ?? null) };
 }
 
 /**
@@ -430,10 +476,12 @@ function replyLines(ws: Workspace): AiVedLine[] {
     const bazas = [...new Set(g.items.map((i) => `${i.bazaUsd}|${i.bazaBasis}`))];
     const first = g.items[0];
     // The shorthand «100 dona × $20/dona» is printed only where it is TRUE
-    // of the whole group; the figure beside it is exact either way.
+    // of the whole group; the figure beside it is exact either way. The
+    // measure is the one the BASIS reads (0125) — «12 m³ × $40/m³», never
+    // the dona count beside a per-kg price.
     const measureText =
       bazas.length === 1 && first && first.bazaUsd !== null && first.bazaBasis !== null
-        ? `${measureOf(g)} × $${first.bazaUsd}/${first.bazaBasis === 'unit' ? 'dona' : first.bazaBasis}`
+        ? `${measureOf(g, first.bazaBasis)} × $${first.bazaUsd}/${basisLabel(first.bazaBasis, 'dona')}`
         : null;
     return {
       label: g.items.map((i) => i.label).join(', ') || g.label,
@@ -442,32 +490,60 @@ function replyLines(ws: Workspace): AiVedLine[] {
       bazaSource,
       dutyText: g.dutyFree ? 'yo‘q (lgota)' : dutyText(g),
       addDutyPct: g.customs.ok ? g.customs.addDutyPct : 0,
-      excisePct: g.excisePct,
+      exciseText: exciseWords(g),
       vatPct: g.vatFree ? 0 : g.vatPct,
       customsUsd: g.customs.ok ? g.customs.customsUsd : null,
       // Already words — `blockerText` owns the engine's whole vocabulary and
-      // a second map here would drift from it (#513).
+      // a second map here would drift from it (#513). The WHOLE detail rides
+      // along (P2.9): without the row, the unit and the half, a missing
+      // figure read «o‘lchov yo‘q» on exactly the kg-and-dona rows the owner
+      // asked about, instead of «Kurtka: soni (dona) kiritilmagan — boj
+      // kamida $3/dona».
       refusal: g.customs.ok
         ? null
         : blockerText({
             kind: 'customs',
+            groupSeq: g.seq,
             groupLabel: g.label,
             reason: g.customs.reason,
             itemLabel: g.customs.itemLabel,
-          } as SealBlocker),
+            itemSeq: g.customs.itemSeq,
+            unit: g.customs.unit,
+            half: g.customs.half,
+            rate: g.customs.rate,
+          }),
     };
   });
 }
 
-/** What the group is measured in, as the seller stated it. */
-function measureOf(g: Workspace['groups'][number]): string {
-  const qty = g.items.reduce((sum, i) => sum + (i.quantity ?? 0), 0);
-  if (qty > 0) return `${round3(qty)} dona`;
-  const kg = g.items.reduce((sum, i) => sum + (i.weightKg ?? 0), 0);
-  if (kg > 0) return `${round3(kg)} kg`;
-  const measure = g.items.reduce((sum, i) => sum + (i.measureQty ?? 0), 0);
-  const unit = g.items.find((i) => i.measureUnit)?.measureUnit;
-  return measure > 0 && unit ? `${round3(measure)} ${unit}` : '—';
+/**
+ * A group's excise as the seller reads it — the percentage or, since 0131,
+ * the amount per unit; nothing when the group has none (an answered «yo‘q»
+ * is a 0 % and prints nothing, like a code that carries no excise at all).
+ */
+function exciseWords(g: Workspace['groups'][number]): string | null {
+  if (g.excisePct !== null && g.excisePct > 0) return `aksiz ${g.excisePct}%`;
+  if (g.exciseSpecific !== null && g.exciseUnit !== null) {
+    return `aksiz $${g.exciseSpecific}/${g.exciseUnit === '1000_dona' ? '1000 dona' : g.exciseUnit}`;
+  }
+  return null;
+}
+
+/**
+ * How much of the group the baza is per — through the engine's own resolver
+ * (`itemMeasure`), so the reply states the very quantity the value was
+ * multiplied by. It used to print the dona count first whatever the basis:
+ * «100 dona × $2/kg». A member that cannot answer in that unit is the
+ * engine's own refusal, so the shorthand gives up rather than summing a part.
+ */
+function measureOf(g: Workspace['groups'][number], basis: BazaBasis): string {
+  let sum = 0;
+  for (const item of g.items) {
+    const m = itemMeasure(item, basis);
+    if (m === null || !(m > 0)) return '—';
+    sum += m;
+  }
+  return `${round3(sum)} ${basisLabel(basis, 'dona')}`;
 }
 
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
@@ -544,8 +620,12 @@ async function pickBazas(
       tnvedCode: calcRequestItems.tnvedCode,
       quantity: calcRequestItems.quantity,
       weightKg: calcRequestItems.weightKg,
+      volumeM3: calcRequestItems.volumeM3,
       bazaUsd: calcRequestItems.bazaUsd,
+      bazaBasis: calcRequestItems.bazaBasis,
       groupId: calcRequestItems.groupId,
+      measureUnit: calcRequestItems.measureUnit,
+      measureQty: calcRequestItems.measureQty,
     })
     .from(calcRequestItems)
     .where(eq(calcRequestItems.requestId, requestId));
@@ -559,24 +639,31 @@ async function pickBazas(
   const dutyUnitOf = new Map(groups.map((g) => [g.id, g.dutyUnit]));
 
   const asking: PickRequest[] = [];
-  const unitOfSeq = new Map<number, ReturnType<typeof unitsForRow>[number]>();
+  const unitsOfSeq = new Map<number, ReturnType<typeof unitsForRow>>();
   for (const r of empty.slice(0, MAX_PICK_ROWS)) {
     const qty = r.quantity === null ? null : Number(r.quantity);
     const kg = r.weightKg === null ? null : Number(r.weightKg);
+    const m3 = r.volumeM3 === null ? null : Number(r.volumeM3);
+    // The row's whole accepted set — and a unit the VED already CHOSE on this
+    // still-unpriced row narrows it to that one (0125): the model chooses a
+    // declaration, never a unit.
     const units = unitsForRow({
       dutyUnit: r.groupId ? (dutyUnitOf.get(r.groupId) ?? null) : null,
+      chosen: isBazaBasis(r.bazaBasis) ? r.bazaBasis : null,
       hasWeight: kg !== null && kg > 0,
       hasQuantity: qty !== null && qty > 0,
+      hasVolume: m3 !== null && m3 > 0,
+      statedPair: statedPairOf(r.measureUnit, r.measureQty === null ? null : Number(r.measureQty)),
     });
-    const unit = units[0];
-    if (!unit) continue;
-    const perPiece = qty !== null && qty > 0 && kg !== null && kg > 0 ? kg / qty : null;
+    if (units.length === 0) continue;
+    const perPiece =
+      units.includes('dona') && qty !== null && qty > 0 && kg !== null && kg > 0 ? kg / qty : null;
     const sug = await suggestImportBaza(
-      { tnvedCode: r.tnvedCode!.trim(), name: r.name, unit, weightPerUnitKg: perPiece },
+      { tnvedCode: r.tnvedCode!.trim(), name: r.name, units, weightPerUnitKg: perPiece },
       { batchId },
     );
     if (sug.candidates.length === 0) continue;
-    unitOfSeq.set(r.seq, unit);
+    unitsOfSeq.set(r.seq, units);
     asking.push({
       seq: r.seq,
       name: r.name,
@@ -618,11 +705,12 @@ async function pickBazas(
     if (!row || !asked) continue;
     const chosen = asked.candidates[a.candidate];
     if (!chosen) continue;
-    const unit = unitOfSeq.get(a.seq);
-    // The unit the row was ASKED about is the only one it may be answered
+    const units = unitsOfSeq.get(a.seq);
+    // The units the row was ASKED about are the only ones it may be answered
     // in: a per-kg declaration on a per-dona row is off by the weight of the
-    // goods, and the model is choosing a row, not a basis.
-    if (!unit || BASIS_FOR_UNIT[chosen.unit] !== BASIS_FOR_UNIT[unit]) {
+    // goods, and the model is choosing a row, not a basis. A chosen unit
+    // narrowed this to one (0125).
+    if (!units || !units.includes(chosen.unit)) {
       refused += 1;
       continue;
     }

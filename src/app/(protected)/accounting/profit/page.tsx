@@ -13,7 +13,10 @@ import {
   unbatchedMoney,
 } from '@/modules/wms/accounting/reports';
 import { resolvePeriod } from '@/modules/wms/accounting/period';
-import { tripTotals } from '@/modules/wms/reports/dashboard-math';
+import { UNSPLIT_PARAM } from '@/modules/wms/accounting/unsplit-href';
+import { batchTabHref, mayOpenBatchCard, mayOpenBatchCosts } from '@/modules/wms/batches/card-door';
+import { unsplitOnFormingTrucks } from '@/modules/wms/costing/service';
+import { tripKind, tripTotals } from '@/modules/wms/reports/dashboard-math';
 import { PeriodForm } from '../period-form';
 import { PnlGapsNote } from '../pnl-gaps';
 
@@ -30,16 +33,21 @@ type View = 'batch' | 'client' | 'route';
 export default async function ProfitPage({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string; to?: string; view?: string }>;
+  searchParams: Promise<{ from?: string; to?: string; view?: string; [UNSPLIT_PARAM]?: string }>;
 }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
   if (!actor.permissions.has('finance.reports')) redirect('/accounting');
   const t = await getTranslations('accounting');
   const tf = await getTranslations('finance');
+  const tbc = await getTranslations('batchCard');
   const params = await searchParams;
   const { from, to } = resolvePeriod(params);
   const view: View = params.view === 'client' || params.view === 'route' ? params.view : 'batch';
+  // «Bo'linmagan» (docs/YOLKIRA-TAQSIMOT.md §6.3.6): the batch view listing
+  // EVERY trip with money on no box, tracked or not — where the attention row
+  // and the Balans send several such trucks. Only the batch view has it.
+  const unsplitOnly = view === 'batch' && params[UNSPLIT_PARAM] === '1';
 
   const usd = (value: number) =>
     value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -54,18 +62,21 @@ export default async function ProfitPage({
   // One truck read for both truck tabs; the table shows only the trucks a
   // person marked «Partiya» (0107), and what it left out is said below it.
   const trips = view === 'client' ? null : await profitByBatch(from, to);
-  const untracked = trips ? untrackedTrips(trips) : null;
+  // Under «bo'linmagan» the table lists unmarked trucks too, so the note
+  // saying they were left out would be false.
+  const untracked = trips && !unsplitOnly ? untrackedTrips(trips) : null;
   const rows =
     view === 'batch'
-      ? trips!.filter((row) => row.tracked)
+      ? trips!.filter((row) => (unsplitOnly ? row.unallocatedUsd > 0.009 : row.tracked))
       : view === 'client'
         ? await profitByClient(from, to)
         : await profitByRoute(from, to, trips!);
 
-  const [gaps, unbatched, clientGaps] = await Promise.all([
+  const [gaps, unbatched, clientGaps, forming] = await Promise.all([
     pnlGaps(from, to),
     view === 'client' ? Promise.resolve(null) : unbatchedMoney(from, to),
     view === 'client' ? clientProfitGaps(from, to) : Promise.resolve(null),
+    unsplitOnly ? unsplitOnFormingTrucks() : Promise.resolve([]),
   ]);
 
   // An internal leg is a cost row with no profit (R2a), and its cost is
@@ -134,7 +145,51 @@ export default async function ProfitPage({
         ))}
       </div>
 
-      <PeriodForm from={from} to={to} exportHref={`/api/accounting/profit?view=${view}`} />
+      <PeriodForm
+        from={from}
+        to={to}
+        // The file is the tracked table; under «bo'linmagan» it would not be
+        // what the screen shows, so there is none (review of the round).
+        exportHref={unsplitOnly ? undefined : `/api/accounting/profit?view=${view}`}
+        extra={
+          unsplitOnly ? (
+            <>
+              <input type="hidden" name="view" value="batch" />
+              <input type="hidden" name={UNSPLIT_PARAM} value="1" />
+            </>
+          ) : undefined
+        }
+      />
+      {unsplitOnly && (
+        <div className="card space-y-1 !p-3 text-sm" data-testid="profit-unsplit">
+          <p className="font-semibold text-warn">⚠ {t('unsplitHeading')}</p>
+          {forming.length > 0 && (
+            <div data-testid="profit-unsplit-forming">
+              <p className="text-ink-700">{t('unsplitForming')}</p>
+              <ul className="ml-4 list-disc">
+                {forming.map((row) => (
+                  <li key={row.batchId} className="min-w-0 break-words">
+                    {mayOpenBatchCosts(actor.permissions) && mayOpenBatchCard(actor, row) ? (
+                      <Link href={batchTabHref(row.batchId, 'xarajat')} className="font-mono text-brand-700 underline">
+                        {row.code}
+                      </Link>
+                    ) : (
+                      <span className="font-mono">{row.code}</span>
+                    )}{' '}
+                    · ${usd(row.usd)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <Link
+            href={`/accounting/profit?view=batch&from=${from}&to=${to}`}
+            className="inline-flex min-h-11 items-center text-brand-700 underline"
+          >
+            {t('unsplitShowAll')}
+          </Link>
+        </div>
+      )}
       <PnlGapsNote gaps={gaps} />
 
       <div className="card !p-0">
@@ -203,6 +258,11 @@ export default async function ProfitPage({
                         ↩ {usd(row.prevUsd)}
                       </span>
                     )}
+                    {'laterUsd' in row && row.laterUsd > 0.009 && (
+                      <span className="block text-xs text-ink-500" title={tf('laterLegs')} data-testid="profit-later">
+                        ↪ {usd(row.laterUsd)}
+                      </span>
+                    )}
                     {'unallocatedUsd' in row && row.unallocatedUsd > 0.009 && (
                       <span className="block text-xs font-semibold text-warn">
                         ⚠ {usd(row.unallocatedUsd)}
@@ -212,6 +272,17 @@ export default async function ProfitPage({
                   {row.profitUsd === null ? (
                     <td className="p-2 text-right text-ink-500" data-testid="profit-internal">
                       —
+                    </td>
+                  ) : 'continuation' in row &&
+                    tripKind({ internal: row.internal, continuation: row.continuation, revenueUsd: row.revenueUsd, profitUsd: row.profitUsd }) ===
+                      'continuation' ? (
+                    // «Davomi» (2026-09-30): its cost is the priced truck's
+                    // «keyingi yo'l» — a $0 here, not a result.
+                    <td className="p-2 text-right text-xs text-ink-500" data-testid="profit-continuation">
+                      ↪{' '}
+                      {'carriers' in row
+                        ? tbc('tileContinuationLine', { codes: row.carriers.map((carrier) => carrier.code).join(', ') })
+                        : tbc('tileContinuation')}
                     </td>
                   ) : (
                     <td className={`p-2 text-right font-mono font-bold ${profitClass(row.profitUsd)}`}>
@@ -303,16 +374,31 @@ export default async function ProfitPage({
         </p>
       )}
       {clientGaps && clientGaps.unallocated.usd > 0.009 && (
-        <p className="card !p-3 text-sm font-semibold text-warn" data-testid="profit-client-unallocated">
-          ⚠{' '}
-          {t('clientUnallocatedNote', {
-            usd: `$${usd(clientGaps.unallocated.usd)}`,
-            count: clientGaps.unallocated.count,
-            scopes: clientGaps.unallocated.byScope
-              .map((row) => gapScope[row.scope] ?? row.scope)
-              .join(', '),
-          })}
-        </p>
+        <div className="card space-y-1 !p-3 text-sm" data-testid="profit-client-unallocated">
+          <p className="min-w-0 break-words font-semibold text-warn">
+            ⚠{' '}
+            {t('clientUnallocatedNote', {
+              usd: `$${usd(clientGaps.unallocated.usd)}`,
+              count: clientGaps.unallocated.count,
+              // A held yo'lkira bill is its own bucket and never «yuki yo'q
+              // mashina» — its truck carries the cargo it is held over.
+              scopes: [
+                ...clientGaps.unallocated.byScope.map((row) => gapScope[row.scope] ?? row.scope),
+                ...(clientGaps.unallocated.heldFreight.count > 0 ? [t('gapScope.freightHeld')] : []),
+              ].join(', '),
+            })}
+          </p>
+          {/* «Of which»: the held bills' part of the figure above, whose cure
+              is the lot or «Bo'lish usuli», never a void (§6.7). */}
+          {clientGaps.unallocated.heldFreight.count > 0 && (
+            <p className="min-w-0 break-words text-xs text-ink-700" data-testid="profit-client-freight-held">
+              {t('clientFreightHeldNote', {
+                count: clientGaps.unallocated.heldFreight.count,
+                usd: `$${usd(clientGaps.unallocated.heldFreight.usd)}`,
+              })}
+            </p>
+          )}
+        </div>
       )}
       {/* Said when EITHER half has money (U37): the cost half — cargo that
           rode no priced truck — used to be silent whenever the revenue half

@@ -104,10 +104,15 @@ describe('attention ranking', () => {
 
 describe('trip kinds', () => {
   it('never draws an unpriced truck as a loss', () => {
-    expect(tripKind({ internal: false, revenueUsd: 0, profitUsd: -1200 })).toBe('unpriced');
-    expect(tripKind({ internal: false, revenueUsd: 900, profitUsd: -300 })).toBe('loss');
-    expect(tripKind({ internal: true, revenueUsd: 0, profitUsd: null })).toBe('internal');
-    expect(tripKind({ internal: false, revenueUsd: 900, profitUsd: 300 })).toBe('profit');
+    expect(tripKind({ internal: false, continuation: false, revenueUsd: 0, profitUsd: -1200 })).toBe('unpriced');
+    expect(tripKind({ internal: false, continuation: false, revenueUsd: 900, profitUsd: -300 })).toBe('loss');
+    expect(tripKind({ internal: true, continuation: false, revenueUsd: 0, profitUsd: null })).toBe('internal');
+    expect(tripKind({ internal: false, continuation: false, revenueUsd: 900, profitUsd: 300 })).toBe('profit');
+    // «Davomi» (2026-09-30): its cargo's price and road sit on an earlier
+    // truck — not «narx yo'q»; a price someone typed on it anyway still reads
+    // as a price.
+    expect(tripKind({ internal: false, continuation: true, revenueUsd: 0, profitUsd: 0 })).toBe('continuation');
+    expect(tripKind({ internal: false, continuation: true, revenueUsd: 50, profitUsd: 50 })).toBe('profit');
   });
 });
 
@@ -141,6 +146,10 @@ describe('trip totals — the profit page\'s JAMI and the dashboard strip', () =
     expect(t.marginPct).toBe(-13.3);
     // Per kg over PRICED trucks only: (300 − 100) / 150.
     expect(t.perKg).toBe(1.33);
+  });
+  it('counts a «davomi» truck apart: not a trip, not «narx yo‘q», its $0 changes nothing', () => {
+    const t = tripTotals([...rows, { internal: false, continuation: true, revenueUsd: 0, costUsd: 0, profitUsd: 0, kg: 40 }]);
+    expect(t).toMatchObject({ trips: 3, revenue: 1500, cost: 1700, profit: -200, unpriced: 1, continuation: 1 });
   });
   it('has no margin and no per-kg with nothing priced', () => {
     const t = tripTotals([{ internal: false, revenueUsd: 0, costUsd: 10, profitUsd: -10 }]);
@@ -248,6 +257,7 @@ describe('the Balans lines, one home for two screens', () => {
       noDebt: { count: 0 },
       pickupNoBox: { count: 0 },
       noBox: { count: 0 },
+      freightUnsplit: { count: 0 },
       unconverted: 0,
       gate: 'on' as const,
     };
@@ -256,6 +266,8 @@ describe('the Balans lines, one home for two screens', () => {
     expect(unpricedNotesDrawn(quiet)).toBe(true);
     expect(unpricedNotesDrawn({ ...quiet, grossUsd: 0 })).toBe(false);
     expect(unpricedNotesCount({ ...quiet, cardUsd: 50, oldNoKassa: { count: 2 }, gate: 'off' })).toBe(3);
+    // A held yo'lkira bill is a note of its own (docs/YOLKIRA-TAQSIMOT.md §6.3.7).
+    expect(unpricedNotesCount({ ...quiet, freightUnsplit: { count: 1 } })).toBe(1);
     // A left-out figure alone draws the card even with nothing on the line.
     expect(unpricedNotesDrawn({ ...quiet, grossUsd: 0, unclaimed: { usd: 340 } })).toBe(true);
   });

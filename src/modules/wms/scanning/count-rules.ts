@@ -38,9 +38,10 @@ export function isServerScanReason(r: string | null | undefined): r is IngestDoo
 }
 
 /**
- * What a server door tells the shared ingest body. The sync route passes
- * NOTHING — every field is a door's, and an absent field is the phone's
- * answer.
+ * What a server door tells the shared ingest body. The phone's path passes
+ * NO_DOOR — every field is a door's, and an absent field is the phone's
+ * answer. What the phone's truck was authorized AT is not a door's power and
+ * does not live here (`UnloadGuard`, unload.ts).
  */
 export interface DoorOpts {
   /** Server doors ONLY; the input's `manualReason` must equal it. */
@@ -55,6 +56,14 @@ export interface DoorOpts {
   /** Unload: the client arrival notice's claim window, in minutes. */
   noticeWindowMinutes?: number;
 }
+
+/**
+ * The phone's answer to «which door is this»: none. Frozen and named, so the
+ * phone's call reads as a decision and a fence can demand exactly it — a
+ * third argument that is anything else IS a door
+ * (`tests/unit/count-kernel-wire.test.ts`).
+ */
+export const NO_DOOR: Readonly<DoorOpts> = Object.freeze({});
 
 /**
  * An office count walks a truck lot by lot, often an hour apart; the phone's

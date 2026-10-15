@@ -2,11 +2,12 @@ import { Bot, InlineKeyboard, Keyboard } from 'grammy';
 import { and, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
 import { db } from '../db/client';
 import { clients, clientTelegramLinks, telegramLinks, users } from '../db/schema';
+import { PHOTO_READ_MS, ReadTimeout, readWithin } from '../files/read-within';
 import { getStorage } from '../files/storage';
 import { logger } from '../logger';
 import { cardLink } from '../notifications/links';
 import { isTelegramMuted } from '../notifications/mutes';
-import { notifyStaffTelegram } from '../notifications/staff';
+import { LATE_FORWARD_MS, notifyStaffTelegramOnce } from '../notifications/staff';
 import {
   activeClientsByPhone,
   linkPhoneSiblings,
@@ -31,9 +32,13 @@ import { chatLocaleFor, setChatLocale } from './cabinet-locale';
 import { h } from './format';
 import { cabinetInlineKeyboard, setCabinetMenuButton } from './menu-button';
 import { adVisitFor, clearAdVisit } from './ad-intake';
-import { editText, quietHour, sendAlbum, sendPhoto, sendText, type ChatId } from './send';
+import { editText, quietHour, sendAlbum, sendPhoto, sendText, sendTextBriefRetry, type ChatId } from './send';
 import { isCabinetText, staffForChat } from './staff-bot';
 import { canLogInSql } from '../users/login';
+import { settleWithin } from './lifecycle';
+import { answerPress } from './press';
+import { claimedAlready, onceKey, readyKey, type OnceKey } from './once';
+import { armWait, dropWait, flushWaitWrites, nowSec, readWait, waitVerdict } from './waits';
 
 /**
  * The client cabinet inside the bot (Phase 2.2, owner's spec 3.1/3.2) — the
@@ -142,7 +147,9 @@ export interface Outgoing {
  */
 export async function sendInOrder(chatId: ChatId, messages: Outgoing[], what: string): Promise<boolean> {
   for (const m of messages) {
-    const sent = await sendText({ chatId, html: m.html, replyMarkup: m.replyMarkup });
+    // A brief 429 is waited out (Q5 a): the burst after a deploy answers a
+    // customer's backlog one after the other, at Telegram's per-chat rate.
+    const sent = await sendTextBriefRetry({ chatId, html: m.html, replyMarkup: m.replyMarkup });
     if (!sent.ok) {
       logger.warn(
         { chatId: String(chatId), what, status: sent.status, description: sent.description },
@@ -158,11 +165,47 @@ export async function sendInOrder(chatId: ChatId, messages: Outgoing[], what: st
  * Off the sequential poller (#706): grammy handles ONE update at a time, so an
  * answer that waits on Telegram for seconds would hold every other customer's
  * tap — the zametka send and the AI answer already learned this.
+ *
+ * …and ONE CHAT AT A TIME (Q5 a, judge W5): a customer's backlog of
+ * «📦 Yuklarim», «💰 Balans», «🧾 Tarix» arrives after a deploy in one burst,
+ * and three parallel answers interleave — the cargo list split by the balance.
+ * Each chat's answers now run in the order they were asked; different chats
+ * still run side by side.
+ *
+ * …and no answer holds the chat for ever (Q5-1). A queue per chat means one
+ * link that never settles silences every LATER tap of that customer until the
+ * process restarts — the 📷's storage read did exactly that before it got its
+ * own deadline. Each link may hold the next one for `CABINET_ANSWER_MS` at
+ * most; past it the queue moves on and the stalled answer, which cannot be
+ * cancelled, finishes (or not) on its own.
  */
+const chains = new Map<string, Promise<void>>();
+
+/** The longest one answer holds its chat's next one — far past an honest album upload. */
+export const CABINET_ANSWER_MS = 120_000;
+
 export function dispatch(what: string, chatId: ChatId, work: () => Promise<unknown>): void {
-  void work().catch((err: unknown) =>
-    logger.error({ err, chatId: String(chatId), what }, 'cabinet answer failed'),
-  );
+  const key = String(chatId);
+  const next = (chains.get(key) ?? Promise.resolve()).then(async () => {
+    const run = Promise.resolve()
+      .then(work)
+      .then(
+        () => {},
+        (err: unknown) => logger.error({ err, chatId: key, what }, 'cabinet answer failed'),
+      );
+    if ((await settleWithin(run, CABINET_ANSWER_MS)) === 'timeout') {
+      logger.warn({ chatId: key, what, ms: CABINET_ANSWER_MS }, 'cabinet answer still running — the next one goes ahead');
+    }
+  });
+  chains.set(key, next);
+  void next.finally(() => {
+    if (chains.get(key) === next) chains.delete(key);
+  });
+}
+
+/** Tests: resolves when every chat's chain has drained. */
+export async function __dispatchSettled(): Promise<void> {
+  while (chains.size > 0) await Promise.all([...chains.values()]);
 }
 
 /** The keyboard this chat is owed — re-derived, never named (round 100, 13A). */
@@ -184,11 +227,36 @@ function withLast(messages: string[], replyMarkup: unknown): Outgoing[] {
  * link only when it matches one of the client's registered phones.
  */
 
-interface PendingLink {
+export interface PendingLink {
   linkId: string;
   clientId: string;
 }
-const pendingByChat = new Map<number, PendingLink>();
+
+/**
+ * How long a link code's «send your phone» stands (0130, Q5 a). It had NO
+ * bound at all while it lived in memory; durable, it needs one — a day, the
+ * same reach as the backlog Telegram keeps.
+ */
+export const CABINET_LINK_TTL_MS = 24 * 3_600_000;
+
+/**
+ * The link step in flight for this chat, for a contact dated `atSec` —
+ * expiry only (judge Q5H-8): the contact's number must match the client's
+ * phones anyway, and it is the person's own.
+ */
+export function pendingLinkFor(chatId: number, atSec: number = nowSec()): PendingLink | null {
+  const entry = readWait<PendingLink>(chatId, 'cabinet_link');
+  if (!entry) return null;
+  if (waitVerdict(entry, atSec, false) !== 'answers') {
+    dropWait(chatId, 'cabinet_link');
+    return null;
+  }
+  return entry.payload;
+}
+
+export function dropPendingLink(chatId: number): void {
+  dropWait(chatId, 'cabinet_link');
+}
 
 export function phoneKeyboard(locale?: string | null): Keyboard {
   return new Keyboard().requestContact(clientLabels(locale).sharePhone).resized().oneTime();
@@ -204,10 +272,17 @@ export function phoneKeyboard(locale?: string | null): Keyboard {
  * NULL author = a self-service link (item 13): there is nobody to warn.
  * Best-effort: a warning that fails must never fail the link itself.
  */
-async function alertLinkMinter(userId: string | null, clientId: string, text: string): Promise<void> {
+async function alertLinkMinter(
+  userId: string | null,
+  clientId: string,
+  text: string,
+  once: OnceKey | null = null,
+): Promise<void> {
   if (!userId) return;
   const link = cardLink('client', clientId);
-  await notifyStaffTelegram({
+  // Keyed by the /start message that caused it (Q5 a): a redelivered or
+  // repeated /start warns the minter once.
+  await notifyStaffTelegramOnce(once, {
     userIds: [userId],
     type: 'CabinetLinkAlert',
     text: link && /^https?:\/\//.test(link) ? `${text}\n${link}` : text,
@@ -222,6 +297,7 @@ async function alertLinkMinter(userId: string | null, clientId: string, text: st
 export async function beginClientLink(
   code: string,
   chatId: number,
+  opts: { once?: OnceKey | null } = {},
 ): Promise<'ask_phone' | 'no_phone' | null> {
   const link = await db.query.clientTelegramLinks.findFirst({
     where: eq(clientTelegramLinks.linkCode, code),
@@ -236,10 +312,21 @@ export async function beginClientLink(
       client.id,
       `⚠️ Kabinet: ${client.clientCode} mijozining kartasida telefon raqami yo‘q — havolani tasdiqlab bo‘lmaydi. ` +
         'Kartaga raqamni qo‘shing, so‘ng mijoz shu havolani qayta ochadi.',
+      opts.once ?? null,
     );
     return 'no_phone';
   }
-  pendingByChat.set(chatId, { linkId: link.id, clientId: link.clientId });
+  // Armed here, at processing time — harmless, the contact's verdict never
+  // asks it — and durable now (Q5 a): a deploy between «send your phone» and
+  // the contact used to drop the link step and answer «raqam topilmadi».
+  armWait<PendingLink>(
+    chatId,
+    'cabinet_link',
+    { linkId: link.id, clientId: link.clientId },
+    CABINET_LINK_TTL_MS,
+    nowSec(),
+    (prev) => prev.linkId === link.id,
+  );
   return 'ask_phone';
 }
 
@@ -404,7 +491,9 @@ export async function failClientLink(linkId: string): Promise<void> {
 export type ForwardOutcome =
   | { to: 'manager'; managerName: string; locale: string | null }
   | { to: 'office'; locale: string | null }
-  | { to: 'throttled'; managerName: string | null; locale: string | null };
+  | { to: 'throttled'; managerName: string | null; locale: string | null }
+  /** Q5 a: this very message reached a person already (a redelivery) — nothing new written, no second ack. */
+  | { to: 'duplicate'; locale: string | null };
 
 const FORWARD_WINDOW_MS = 10 * 60_000;
 /**
@@ -473,12 +562,22 @@ export async function forwardClientMessage(input: {
   kind?: 'file' | 'contact' | 'location' | 'sticker';
   /** Telegram's `media_group_id` when the file is one photo of an album. */
   albumId?: string | null;
+  /**
+   * When the customer WROTE it — the message's own date at every caller
+   * (Q5 a): fifteen messages written over three hours of outage are fifteen
+   * windows of the cap, not one, and a late one says so to the manager.
+   */
   now?: Date;
 }): Promise<ForwardOutcome | null> {
   const linked = await clientsForChat(input.chatId);
   if (!linked.length) return null;
   if (await staffForChat(input.chatId)) return null;
   const locale = chatLocale(linked);
+  // A redelivered message never spends a slot (Q5 a): a fresh process's
+  // throttle log is empty, so ten repeats would otherwise throttle the
+  // eleventh, NEW message. The claim below is the fence; this is a read.
+  const key = await readyKey(() => onceKey.message(input.chatId, input.messageId, 'client_forward'));
+  if (key && (await claimedAlready(key))) return { to: 'duplicate', locale };
   const { managersFor } = await cabinetReads();
   const managers = await managersFor(linked.map((c) => c.id));
   // The first code whose manager the message would actually REACH:
@@ -519,7 +618,9 @@ export async function forwardClientMessage(input: {
   // staff copy would otherwise end at «…» with the rest of the question
   // nowhere a person can read it.
   const forwardWhole = input.media || Array.from(input.text?.trim() ?? '').length > FORWARD_QUOTE_CHARS;
-  await notifyStaffTelegram({
+  const writtenAt = input.now ?? null;
+  const late = writtenAt !== null && Date.now() - writtenAt.getTime() > LATE_FORWARD_MS;
+  const sent = await notifyStaffTelegramOnce(key, {
     userIds: recipients,
     type: 'ClientBotMessage',
     text: forwardStaffText({
@@ -529,11 +630,13 @@ export async function forwardClientMessage(input: {
       media: input.media,
       kind: input.kind,
       cardUrl: card && /^https?:\/\//.test(card) ? card : null,
+      writtenAt: late ? writtenAt : null,
     }),
     extra: forwardWhole
       ? { forwardFrom: { chatId: Number(input.chatId), messageId: input.messageId } }
       : undefined,
   });
+  if (sent.duplicate) return { to: 'duplicate', locale };
   return owner ? { to: 'manager', managerName: managerName!, locale } : { to: 'office', locale };
 }
 
@@ -568,7 +671,7 @@ export function ackDue(chatId: number | bigint, outcome: ForwardOutcome, album: 
  * that message reached nobody (CONV-1) and a «delivered» there is a customer
  * waiting on an answer to a question no person has.
  */
-async function acknowledge(chatId: number, outcome: ForwardOutcome): Promise<void> {
+async function acknowledge(chatId: number, outcome: Exclude<ForwardOutcome, { to: 'duplicate' }>): Promise<void> {
   const { deliveredHtml, throttledHtml } = await botText();
   const html =
     outcome.to === 'throttled'
@@ -693,13 +796,22 @@ async function sendManagers(chatId: number, linked: LinkedClient[], locale: stri
   );
 }
 
+/** The 📷's read deadline — the pushes' own; a test shortens it. */
+let photoReadMs = PHOTO_READ_MS;
+
+/** Tests: the 📷's read deadline (null = the real one). */
+export function __setCabinetPhotoReadMs(ms: number | null): void {
+  photoReadMs = ms ?? PHOTO_READ_MS;
+}
+
 /**
  * 📷: one lot's photographs, as one album with a caption saying what they are.
  *
  * Ownership is re-proved by `lotPhotoKeys` (a button's data is a stranger's
  * string). Each file is read in its own try — one missing object costs one
- * photo, not the answer. The caption reads the SAME cargo list the button came
- * from, so it says what the list said.
+ * photo, not the answer — and within the pushes' deadline, the first late
+ * read ending the reading (Q5-1). The caption reads the SAME cargo list the
+ * button came from, so it says what the list said.
  */
 async function sendLotPhotos(chatId: number, lotId: string, linked: LinkedClient[], locale: string | null): Promise<void> {
   const t = clientLabels(locale);
@@ -716,11 +828,19 @@ async function sendLotPhotos(chatId: number, lotId: string, linked: LinkedClient
     if (!source) continue;
     try {
       files.push({
-        bytes: await storage.get(source.key),
+        // Bounded (Q5-1): this answer runs on the chat's queue, and an
+        // unbounded read that never answers held every later tap behind it.
+        bytes: await readWithin(storage.get(source.key), photoReadMs),
         filename: source.key.split('/').pop() || 'photo.jpg',
         contentType: source.contentType,
       });
     } catch (err) {
+      // The breaker: a store that did not ANSWER will not answer for the next
+      // key either — send what was read, without waiting the deadline again.
+      if (err instanceof ReadTimeout) {
+        logger.warn({ err, lotId }, 'cabinet photo read timed out — the rest skipped');
+        break;
+      }
       logger.warn({ err, lotId }, 'cabinet photo unreadable — skipped');
     }
   }
@@ -788,7 +908,7 @@ export function registerClientCabinet(bot: Bot): void {
     // and Uzbek, not the Russian fallback.
     const tgLocale = localeFromTelegram(ctx.from?.language_code);
     const contact = ctx.message.contact;
-    const pending = pendingByChat.get(chatId);
+    const pending = pendingLinkFor(chatId, ctx.message.date);
     if (!pending) {
       // No staff-minted code in flight: the SELF-SERVICE door (owner, item
       // 13 — "nomerni o'zini kiritib ko'rsa bo'ladigan qilsak"). Telegram
@@ -806,9 +926,12 @@ export function registerClientCabinet(bot: Bot): void {
           text: [contact.first_name, contact.last_name, contact.phone_number].filter(Boolean).join(' '),
           media: true,
           kind: 'contact',
+          now: new Date(ctx.message.date * 1000),
         });
         if (outcome) {
-          if (ackDue(chatId, outcome, null, Date.now())) dispatch('forward-ack', chatId, () => acknowledge(chatId, outcome));
+          if (outcome.to !== 'duplicate' && ackDue(chatId, outcome, null, Date.now())) {
+            dispatch('forward-ack', chatId, () => acknowledge(chatId, outcome));
+          }
           return;
         }
         // Somebody else's contact card from a chat that is nobody's yet.
@@ -826,12 +949,21 @@ export function registerClientCabinet(bot: Bot): void {
         // and the Meta webhook, so the caps, the client-book check and the
         // rotation are the ones already proven. The answer is the advert
         // door's constant thank-you: what became of it is our business.
-        const adSource = adVisitFor(chatId);
+        // Keyed by the contact message itself (Q5 a): a redelivered contact
+        // is thanked again and lands nothing twice.
+        const landing = `tg:${chatId}:${ctx.message.message_id}`;
+        const { inboundLanded, landInboundLead } = await import('../../wms/crm/inbound');
+        if (await inboundLanded('telegram', landing)) {
+          await ctx.reply(clientLabels(tgLocale).adThanks, { reply_markup: { remove_keyboard: true } });
+          return;
+        }
+        // Expiry only — a contact always answers its visit, even when the
+        // «📱» was pressed before a late prompt arrived (§3.4.3).
+        const adSource = adVisitFor(chatId, ctx.message.date);
         if (adSource) {
-          clearAdVisit(chatId);
-          const { landInboundLead } = await import('../../wms/crm/inbound');
           await landInboundLead({
             channel: 'telegram',
+            externalId: landing,
             sourceKey: adSource,
             name: [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || null,
             phone: contact.phone_number,
@@ -843,6 +975,10 @@ export function registerClientCabinet(bot: Bot): void {
             logger.error({ err }, '[ad-intake] landing failed');
             return null;
           });
+          // AFTER the landing (Q5 a): a crash after it meets `inboundLanded`
+          // and thanks again; a crash before it finds the durable visit and
+          // lands. Clearing first lost the enquiry between the two.
+          clearAdVisit(chatId);
           await ctx.reply(clientLabels(tgLocale).adThanks, {
             reply_markup: { remove_keyboard: true },
           });
@@ -857,7 +993,11 @@ export function registerClientCabinet(bot: Bot): void {
       await welcomeLinked(chatId, all.map((c) => c.clientCode), tgLocale);
       return;
     }
-    pendingByChat.delete(chatId);
+    dropPendingLink(chatId);
+    // The DELETE reaches the table before the effect (Q5 a): a kill after it
+    // leaves no wait to answer twice, a kill before it is a kill before the
+    // link, and the redelivered contact answers it for the first time.
+    await flushWaitWrites();
     // The button always sends the sender's OWN number; a manually forwarded
     // contact card (someone else's number) has a different user_id — treat
     // it as an impersonation attempt.
@@ -937,11 +1077,11 @@ export function registerClientCabinet(bot: Bot): void {
     const picked = ctx.match[1]!;
     const chatId = ctx.chat?.id ?? ctx.callbackQuery.from.id;
     if (!isClientLocale(picked) || !(await clientsForChat(BigInt(chatId))).length) {
-      await ctx.answerCallbackQuery();
+      await answerPress(ctx);
       return;
     }
     const t = clientLabels(picked);
-    await ctx.answerCallbackQuery(t.languageSet);
+    await answerPress(ctx, t.languageSet);
     await setChatLocale(BigInt(chatId), picked);
     // The chooser is EDITED into the answer: its three buttons stayed under
     // the message for ever and offered a choice already made.
@@ -960,11 +1100,17 @@ export function registerClientCabinet(bot: Bot): void {
     const chatId = ctx.chat?.id ?? ctx.callbackQuery.from.id;
     const linked = await clientsForChat(BigInt(chatId));
     const locale = chatLocale(linked);
+    // A chat no longer linked is never told photos are coming (Q5 a).
+    if (!linked.length) {
+      await answerPress(ctx);
+      return;
+    }
     // Answered at once: the upload takes seconds and a button that spins that
     // long reads as broken. A second tap while the first is on its way hears
-    // the same toast and starts nothing (judge REL-12/PRIV-9).
-    await ctx.answerCallbackQuery({ text: clientLabels(locale).photoSending });
-    if (!linked.length || photoInFlight.has(chatId)) return;
+    // the same toast and starts nothing (judge REL-12/PRIV-9). A progress
+    // notice — too late to be a toast, it is not said as a message.
+    await answerPress(ctx, clientLabels(locale).photoSending, { say: false });
+    if (photoInFlight.has(chatId)) return;
     photoInFlight.add(chatId);
     dispatch('photos', chatId, () =>
       sendLotPhotos(chatId, lotId, linked, locale).finally(() => photoInFlight.delete(chatId)),
@@ -978,7 +1124,7 @@ export function registerClientCabinet(bot: Bot): void {
    * a callback nobody answers spins for fifteen seconds with no error.
    */
   bot.callbackQuery('mg', async (ctx) => {
-    await ctx.answerCallbackQuery();
+    await answerPress(ctx);
     const chatId = ctx.chat?.id ?? ctx.callbackQuery.from.id;
     const linked = await clientsForChat(BigInt(chatId));
     if (!linked.length) return;
@@ -1002,9 +1148,14 @@ export function registerClientCabinet(bot: Bot): void {
       messageId: ctx.message.message_id,
       text,
       media: false,
+      now: new Date(ctx.message.date * 1000),
     });
     if (!outcome) return next();
-    if (ackDue(chatId, outcome, null, Date.now())) dispatch('forward-ack', chatId, () => acknowledge(chatId, outcome));
+    // The ACK stays on the processing clock: one «✅ yetkazildi» for a
+    // replayed burst is right, fifteen in one second would not be.
+    if (outcome.to !== 'duplicate' && ackDue(chatId, outcome, null, Date.now())) {
+      dispatch('forward-ack', chatId, () => acknowledge(chatId, outcome));
+    }
   });
 
   bot.on(
@@ -1033,11 +1184,14 @@ export function registerClientCabinet(bot: Bot): void {
         media: true,
         kind: msg.location ? 'location' : msg.sticker ? 'sticker' : 'file',
         albumId: album,
+        now: new Date(msg.date * 1000),
       });
       if (!outcome) return next();
       // An album is one update per photo: each is forwarded, the customer is
       // told once.
-      if (ackDue(chatId, outcome, album, Date.now())) dispatch('forward-ack', chatId, () => acknowledge(chatId, outcome));
+      if (outcome.to !== 'duplicate' && ackDue(chatId, outcome, album, Date.now())) {
+        dispatch('forward-ack', chatId, () => acknowledge(chatId, outcome));
+      }
     },
   );
 }

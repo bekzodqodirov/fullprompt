@@ -3,6 +3,7 @@ import { db } from '../../platform/db/client';
 import { leads, tgAccounts, tgOutbox } from '../../platform/db/schema';
 import { canReadTg, threadClientFor, tgViewerFor, type TgViewer } from './conversations';
 import { mayOpenLead } from './lead-door';
+import { mayOpenCalcCard } from '../calc/card-door';
 import { bridgeState } from './telegram-live';
 import { STUCK_SENDING_MS } from './telegram-send';
 
@@ -168,6 +169,12 @@ async function outboxTerm(
  * a bare `ved.docs` grant whose holder can open no lead card, and a pulse
  * must never answer recency about a conversation no page will show (#514).
  * Lead threads are read-only by design, so there is no outbox term.
+ *
+ * And as the KARTA is (docs/VED-TARIX.md §10, review access-money-3): the VED
+ * reads the lead's chat there, and a pulse that refused him froze that
+ * thread at its first render. The card door is the page's own — a lead that
+ * carries a calculation — so the pulse still answers only about a
+ * conversation a page shows.
  */
 export async function chatPulseForLead(
   actor: { id: string; roles: readonly string[]; permissions: ReadonlySet<string> },
@@ -180,7 +187,9 @@ export async function chatPulseForLead(
     .where(eq(leads.id, leadId));
   if (!lead) return null;
   // The lead card's own door, the one predicate every lead link asks.
-  if (!mayOpenLead(actor, lead)) return null;
+  if (!mayOpenLead(actor, lead) && !(await mayOpenCalcCard(actor, { entityType: 'lead', entityId: leadId }))) {
+    return null;
+  }
 
   const viewer = tgViewerFor(actor);
   const fence = viewer.all

@@ -8,9 +8,11 @@ import {
   loadPlans,
   receiptLots,
   receipts,
+  warehouses,
 } from '@/modules/platform/db/schema';
-import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
+import { AuthError, authorize, getActor } from '@/modules/platform/rbac/authorize';
 import { json } from '@/modules/platform/http/json';
+import { reroutedAwayFor } from '@/modules/wms/batches/reroute';
 import { batchMemberFilter } from '@/modules/wms/scanning/unload';
 import { countOnlyLotsOnTruck } from '@/modules/wms/scanning/count-rules';
 import { codeIdentity } from '@/modules/wms/labels/code-identity';
@@ -33,7 +35,17 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       authorize('scan.unload', { warehouseId: batch.destWarehouseId }),
     );
   } catch (err) {
-    if (err instanceof AuthError) return Response.json({ error: 'forbidden' }, { status: 403 });
+    if (err instanceof AuthError) {
+      // An unloader the truck was taken from (the reroute round): 409 and
+      // where it goes now, so the screen drops its cached snapshot and says
+      // «endi {to} ga boradi» — a 403 read «not your warehouse OR session
+      // expired, sign in again», a re-login loop for a person whose session
+      // is fine.
+      const actor = await getActor();
+      const away = actor ? await reroutedAwayFor(actor, 'scan.unload', batch) : null;
+      if (away) return Response.json({ error: 'batch_rerouted', to: away.toCode }, { status: 409 });
+      return Response.json({ error: 'forbidden' }, { status: 403 });
+    }
     throw err;
   }
 
@@ -219,8 +231,23 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   // Compressed, and with an ETag: the phone re-reads this every 15 seconds
   // and Next does not compress a Route Handler's own response (round 110 —
   // measured 28,506 bytes on the wire against 975 gzipped).
+  // The destination this snapshot was drawn for (the reroute review): the
+  // unload screen stamps it on every scan it queues, and the sync judges a
+  // row by it — so a scan made at the old gate is never landed at the new one
+  // by a person who may act at both, and the screen can see the change on its
+  // tick for every viewer, not only for one whose snapshot answers 409.
+  const [dest] = await db
+    .select({ code: warehouses.code })
+    .from(warehouses)
+    .where(eq(warehouses.id, batch.destWarehouseId));
   return json(request, {
-    batch: { id: batch.id, code: batch.code, status: batch.status },
+    batch: {
+      id: batch.id,
+      code: batch.code,
+      status: batch.status,
+      destWarehouseId: batch.destWarehouseId,
+      destCode: dest?.code ?? null,
+    },
     quick: !hasPlan,
     boxes: memberBoxes,
     available,

@@ -12,6 +12,7 @@ import {
   numeric,
   pgTable,
   primaryKey,
+  smallint,
   text,
   timestamp,
   unique,
@@ -253,6 +254,153 @@ export const receiptLots = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// Lot tarkibi (0122) — the paper composition of a lot. The lot, its cartons
+// and stickers never change (nobody knows which carton is which); only the
+// customs papers and the agent file read these rows — `wms/receipts/
+// lot-composition.ts` is their one writer and reader.
+// ---------------------------------------------------------------------------
+
+export const lotCompositions = pgTable(
+  'lot_compositions',
+  {
+    lotId: uuid('lot_id')
+      .primaryKey()
+      .references(() => receiptLots.id, { onDelete: 'cascade' }),
+    /** The client's document on THIS prixod (NO ACTION: a cited file is `in_use`). */
+    attachmentId: uuid('attachment_id')
+      .notNull()
+      .references(() => attachments.id),
+    /** The lot's box_count the composition was stated against (stale check). */
+    seenBoxCount: integer('seen_box_count').notNull(),
+    /** A TOKEN drawn from `lot_composition_rev_seq` on every write, never a counter (ABA). */
+    rev: bigint('rev', { mode: 'number' })
+      .notNull()
+      .default(sql`nextval('lot_composition_rev_seq')`),
+    savedBy: uuid('saved_by')
+      .notNull()
+      .references(() => users.id),
+    savedAt: timestamp('saved_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check('lot_compositions_seen_box_count_check', sql`${t.seenBoxCount} > 0`),
+    index('lot_compositions_attachment_idx').on(t.attachmentId),
+  ],
+);
+
+export const lotCompositionLines = pgTable(
+  'lot_composition_lines',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    lotId: uuid('lot_id')
+      .notNull()
+      .references(() => lotCompositions.lotId, { onDelete: 'cascade' }),
+    seq: integer('seq').notNull(),
+    name: text('name').notNull(),
+    pieces: integer('pieces'),
+    cartons: integer('cartons'),
+    weightKg: numeric('weight_kg', { precision: 12, scale: 3 }).notNull(),
+    volumeM3: numeric('volume_m3', { precision: 12, scale: 4 }).notNull(),
+    tnvedCode: text('tnved_code'),
+  },
+  (t) => [
+    check('lot_composition_lines_seq_check', sql`${t.seq} BETWEEN 1 AND 20`),
+    check('lot_composition_lines_name_check', sql`char_length(btrim(${t.name})) BETWEEN 2 AND 200`),
+    check('lot_composition_lines_pieces_check', sql`${t.pieces} IS NULL OR ${t.pieces} > 0`),
+    check('lot_composition_lines_cartons_check', sql`${t.cartons} IS NULL OR ${t.cartons} > 0`),
+    check('lot_composition_lines_kg_check', sql`${t.weightKg} > 0 AND ${t.weightKg} <> 'NaN'::numeric`),
+    check('lot_composition_lines_m3_check', sql`${t.volumeM3} > 0 AND ${t.volumeM3} <> 'NaN'::numeric`),
+    check(
+      'lot_composition_lines_tnved_check',
+      sql`${t.tnvedCode} IS NULL OR ${t.tnvedCode} ~ '^[0-9]{4,10}$'`,
+    ),
+    uniqueIndex('lot_composition_lines_lot_seq_unique').on(t.lotId, t.seq),
+  ],
+);
+
+/**
+ * The papers a truck SENT (7a): one row per lot on the truck at the «hujjat
+ * yuborildi» tick, `lines` NULL when the lot had no composition then. The
+ * element shape is `StoredLine` of `wms/receipts/composition-math.ts`
+ * (restated here: platform never imports wms). `segments` = the positions
+ * the truck's cartons of the lot held in the lot's order at the tick
+ * (`Segment[]` there) — NULL on a truck that does not cross the border and
+ * on the rows 0122 backfilled for trucks ticked before it.
+ */
+export const batchSentCompositions = pgTable(
+  'batch_sent_compositions',
+  {
+    batchId: uuid('batch_id')
+      .notNull()
+      .references(() => batches.id, { onDelete: 'cascade' }),
+    lotId: uuid('lot_id')
+      .notNull()
+      .references(() => receiptLots.id, { onDelete: 'cascade' }),
+    rev: bigint('rev', { mode: 'number' }),
+    seenBoxCount: integer('seen_box_count'),
+    lines: jsonb('lines').$type<
+      | {
+          seq: number;
+          name: string;
+          pieces: number | null;
+          cartons: number | null;
+          kg: string;
+          m3: string;
+          tnvedCode: string | null;
+        }[]
+      | null
+    >(),
+    segments: jsonb('segments').$type<[number, number][] | null>(),
+    frozenAt: timestamp('frozen_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ name: 'batch_sent_compositions_pk', columns: [t.batchId, t.lotId] }),
+    check(
+      'batch_sent_compositions_shape_check',
+      sql`(${t.rev} IS NULL) = (${t.lines} IS NULL) AND (${t.rev} IS NULL) = (${t.seenBoxCount} IS NULL) AND (${t.lines} IS NULL OR jsonb_typeof(${t.lines}) = 'array')`,
+    ),
+    check(
+      'batch_sent_compositions_segments_check',
+      sql`${t.segments} IS NULL OR jsonb_typeof(${t.segments}) = 'array'`,
+    ),
+    index('batch_sent_compositions_lot_idx').on(t.lotId),
+  ],
+);
+
+/**
+ * Yuk ma'lumoti tekshiruvi (0123, docs/YUK-TEKSHIRUV.md): a person confirmed
+ * with the client that the lot is what the warehouse wrote. The row holds
+ * WHAT was vouched for (the owner's 2b: name, count, client); every reader
+ * compares it with the lot through `wms/receipts/lot-check-sql.ts`, so no
+ * writer of those facts ever has to clear it. `wms/receipts/lot-check.ts` is
+ * its one writer.
+ */
+export const lotChecks = pgTable(
+  'lot_checks',
+  {
+    lotId: uuid('lot_id')
+      .primaryKey()
+      .references(() => receiptLots.id, { onDelete: 'cascade' }),
+    seenNameZh: text('seen_name_zh').notNull(),
+    /** NULL, never '' — the lot column's own idiom. */
+    seenNameRu: text('seen_name_ru'),
+    seenBoxCount: integer('seen_box_count').notNull(),
+    /** A remembered value compared with `receipts.client_id` — deliberately no FK. */
+    seenClientId: uuid('seen_client_id').notNull(),
+    note: text('note'),
+    checkedBy: uuid('checked_by')
+      .notNull()
+      .references(() => users.id),
+    checkedAt: timestamp('checked_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check('lot_checks_seen_box_count_check', sql`${t.seenBoxCount} > 0`),
+    check('lot_checks_seen_name_ru_check', sql`${t.seenNameRu} IS NULL OR ${t.seenNameRu} <> ''`),
+    check('lot_checks_note_check', sql`${t.note} IS NULL OR char_length(${t.note}) BETWEEN 1 AND 500`),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // Boxes — the atomic tracked unit — and their movement history
 // ---------------------------------------------------------------------------
 
@@ -379,6 +527,14 @@ export const handovers = pgTable(
     deferredUsd: numeric('deferred_usd', { precision: 14, scale: 2 }),
     deferrals: jsonb('deferrals').$type<{ dealId: string; code: string; by: string | null; usd: number }[]>(),
     note: text('note'),
+    /**
+     * 0126 (the owner's D4a): WHY the debt tick let this cargo go — typed by
+     * whoever ticked, mandatory when the tick was USED over a real debt, NULL
+     * otherwise. NEVER on the act (`note` above prints there and a driver
+     * often signs it): read only by the register, the lenta's money door and
+     * the owner's Telegram, through `debtReleaseReasonSql`.
+     */
+    debtNote: text('debt_note'),
     createdBy: uuid('created_by')
       .notNull()
       .references(() => users.id),
@@ -386,6 +542,10 @@ export const handovers = pgTable(
   },
   (t) => [
     check('handovers_kind_check', sql`${t.kind} IN ('returned_to_sender', 'issued_to_client')`),
+    check(
+      'handovers_debt_note_check',
+      sql`${t.debtNote} IS NULL OR (${t.debtOk} AND btrim(${t.debtNote}) <> '' AND char_length(${t.debtNote}) <= 500)`,
+    ),
     check(
       'handovers_target_check',
       sql`(${t.kind} = 'returned_to_sender' AND ${t.receiptId} IS NOT NULL) OR (${t.kind} = 'issued_to_client' AND ${t.clientId} IS NOT NULL)`,
@@ -575,7 +735,7 @@ export const costEntries = pgTable(
     check('cost_entries_amount_check', sql`${t.amount} > 0`),
     check(
       'cost_entries_basis_check',
-      sql`${t.allocationBasis} IN ('weight', 'volume', 'chargeable', 'boxes', 'direct_to_client')`,
+      sql`${t.allocationBasis} IN ('weight', 'volume', 'chargeable', 'boxes', 'direct_to_client', 'freight')`,
     ),
     index('cost_entries_receipt_idx').on(t.receiptId),
     index('cost_entries_batch_idx').on(t.batchId),
@@ -597,6 +757,73 @@ export const costEntries = pgTable(
     index('cost_entries_unplaced_idx')
       .on(t.createdAt)
       .where(sql`${t.voidedAt} IS NULL AND ${t.partnerId} IS NULL AND ${t.accountId} IS NULL`),
+  ],
+);
+
+/**
+ * Which column of his freight tariff a warehouse's trucks are split by (0132,
+ * his 2c: «har bir skladga ustun yozib chiqiladi, mashina ustunni o'z
+ * skladidan oladi»). A SIDE table, never a column on `warehouses`: fifty
+ * reads take every warehouses column and would 42703 one migration behind.
+ * No row = «—», nothing written; the freight basis is then refused for that
+ * warehouse's trucks in words. Read and written only by
+ * `wms/costing/tariff-column.ts`.
+ */
+export const warehouseTariffColumns = pgTable(
+  'warehouse_tariff_columns',
+  {
+    warehouseId: uuid('warehouse_id')
+      .primaryKey()
+      .references(() => warehouses.id, { onDelete: 'cascade' }),
+    /** `tariff_zone`, never bare `zone`: in warehouse code that is the TIME zone. */
+    tariffZone: text('tariff_zone').notNull(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check(
+      'warehouse_tariff_columns_zone_check',
+      sql`${t.tariffZone} <> '' AND ${t.tariffZone} = lower(btrim(${t.tariffZone}))`,
+    ),
+  ],
+);
+
+/**
+ * A freight bill's FROZEN copy of the tariff column it is split by, as of its
+ * cost_date (0132, his 3a). Recompute, the void guard and every explanation
+ * read ONLY this — never `calc_freight_tariffs` and never the warehouse's
+ * current column — so a later tariff edit or remap never moves a saved bill.
+ * One row per live freight bill and none for any other basis; its only
+ * reader and writer is `wms/costing/freight-copy.ts`.
+ */
+export const costEntryTariffs = pgTable(
+  'cost_entry_tariffs',
+  {
+    costEntryId: uuid('cost_entry_id')
+      .primaryKey()
+      .references(() => costEntries.id, { onDelete: 'cascade' }),
+    /** The origin warehouse the column was read from, at save. */
+    warehouseId: uuid('warehouse_id')
+      .notNull()
+      .references(() => warehouses.id),
+    tariffZone: text('tariff_zone').notNull(),
+    /** The newest effective date among the copied rows («2026-01-01 tarifi»). */
+    tariffFrom: date('tariff_from').notNull(),
+    /** His rule 6's «1 kub uchun 10 kg», frozen per bill. */
+    lightBelow: integer('light_below').notNull(),
+    /** `[{min, max|null, price, perKg}]` — validated as finite on write AND read. */
+    bands: jsonb('bands').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check(
+      'cost_entry_tariffs_zone_check',
+      sql`${t.tariffZone} <> '' AND ${t.tariffZone} = lower(btrim(${t.tariffZone}))`,
+    ),
+    check('cost_entry_tariffs_light_check', sql`${t.lightBelow} BETWEEN 1 AND 1000`),
+    check(
+      'cost_entry_tariffs_bands_check',
+      sql`jsonb_typeof(${t.bands}) = 'array' AND jsonb_array_length(${t.bands}) >= 1`,
+    ),
   ],
 );
 
@@ -735,6 +962,8 @@ export const batches = pgTable(
     ),
     check('batches_route_check', sql`${t.originWarehouseId} <> ${t.destWarehouseId}`),
     index('batches_origin_status_idx').on(t.originWarehouseId, t.status),
+    // «Ever worn» inside every counter walk and the bot's lookup (0121).
+    index('batches_code_upper_idx').on(sql`upper(${t.code})`),
   ],
 );
 
@@ -1608,6 +1837,22 @@ export const leads = pgTable(
  * One log for both sides of the funnel. The call that won a lead and the call
  * about a late payment a year later belong on the same timeline; two tables
  * would have split a single person's history in half.
+ *
+ * 0127 (the staff threads) added three columns that are deliberately NOT
+ * declared here this release: `calc_request_id` (the calculation a note is a
+ * question or answer about), and `tg_chat_id` + `tg_message_id` (the
+ * Telegram message a reply landed from — provenance and idempotency key).
+ * Drizzle names EVERY declared column in every INSERT (an absent value is
+ * rendered `default`), in a bare `.returning()` and in every whole-row
+ * select — and those statements are every note writer in the app
+ * (`addActivity`) and two reads, one of them the VED's calc page outside any
+ * catch. Declared, they would turn every note save into a 42703 on a
+ * database one migration behind (#472). So they live in raw SQL only: written
+ * by `wms/crm/thread.ts` `addThreadMessage`, read bare only in `thread.ts` and
+ * `thread-reply.ts`, and through `to_jsonb(row)` everywhere else (NULL, not
+ * 42703, on an old schema). A LATER release, once 0127 is everywhere, may
+ * declare them — after checking that no whole-row statement remains. Fenced
+ * by tests/unit/thread-wire.test.ts.
  */
 export const crmActivities = pgTable(
   'crm_activities',
@@ -1623,9 +1868,36 @@ export const crmActivities = pgTable(
     createdAt: createdAt(),
   },
   (t) => [
-    check('crm_activities_entity_check', sql`${t.entityType} IN ('lead', 'client', 'deal')`),
+    // Widened by 0129 with 'receipt','batch' — a prixod's and a truck's staff threads.
+    check('crm_activities_entity_check', sql`${t.entityType} IN ('lead', 'client', 'deal', 'receipt', 'batch')`),
     check('crm_activities_kind_check', sql`${t.kind} IN ('call', 'meeting', 'message', 'note')`),
     index('crm_activities_entity_idx').on(t.entityType, t.entityId, t.happenedAt),
+  ],
+);
+
+/**
+ * How far a person has read one staff thread (0127) — a card's notes or a
+ * calculation's Q&A. «Unread» is DERIVED from this and the notes (the newest
+ * note is somebody else's and later than `read_at`), never stored as a
+ * counter: a counter would be a second writer of a fact the notes already
+ * hold. Written with GREATEST (tg_chat_reads' shape), so an out-of-order mark
+ * never moves it back. A new TABLE is safe to declare: only its own
+ * statements name it, and each sits behind a catch.
+ */
+export const threadReads = pgTable(
+  'thread_reads',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    threadKind: text('thread_kind').notNull(),
+    threadId: uuid('thread_id').notNull(),
+    readAt: timestamp('read_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ name: 'thread_reads_pk', columns: [t.userId, t.threadKind, t.threadId] }),
+    // Widened by 0129 with 'receipt','batch' (a CHECK widening, like 0125).
+    check('thread_reads_kind_check', sql`${t.threadKind} IN ('lead', 'deal', 'client', 'calc', 'receipt', 'batch')`),
   ],
 );
 
@@ -2399,6 +2671,10 @@ export const calcRequests = pgTable(
     answerAmount: numeric('answer_amount', { precision: 14, scale: 2 }),
     answerCurrency: text('answer_currency'),
     answerNote: text('answer_note'),
+    /** The VED's own note on a «Готово» answer (0124, his 9a): how the figure
+     * was reached, for the VED and leadership — NEVER the seller, who reads
+     * `answer_note` in Telegram and on the card. */
+    answerInternalNote: text('answer_internal_note'),
     /** Stamped by the sweep so a late calculation is announced exactly once. */
     overdueNotifiedAt: timestamp('overdue_notified_at', { withTimezone: true }),
     /** How many prices this request has sealed (phase B). 0 = none yet. */
@@ -2442,6 +2718,10 @@ export const calcRequests = pgTable(
       sql`${t.feeOverrideUsd} IS NULL OR (${t.feeOverrideUsd} >= 0 AND ${t.feeOverrideUsd} <> 'NaN'::numeric)`,
     ),
     check('calc_requests_entity_check', sql`${t.entityType} IN ('deal', 'lead')`),
+    check(
+      'calc_requests_internal_note_check',
+      sql`${t.answerInternalNote} IS NULL OR ${t.answerInternalNote} ~ '\\S'`,
+    ),
     check('calc_requests_items_check', sql`${t.itemCount} BETWEEN 0 AND 1000`),
     check(
       'calc_requests_via_check',
@@ -2460,6 +2740,10 @@ export const calcRequests = pgTable(
     index('calc_requests_assignee_idx').on(t.assigneeId, t.requestedAt),
     // Read by `stampCalcLink` inside createReceipt's transaction (phase E1).
     index('calc_requests_entity_idx').on(t.entityType, t.entityId),
+    // The history's answer rows (0124, his 8a).
+    index('calc_requests_answer_idx')
+      .on(t.completedAt.desc())
+      .where(sql`${t.completedVia} = 'task' AND ${t.answerAmount} IS NOT NULL`),
   ],
 );
 
@@ -2561,7 +2845,8 @@ export const calcRequestItems = pgTable(
     index('calc_request_items_group_idx').on(t.groupId),
     check(
       'calc_items_baza_basis_check',
-      sql`${t.bazaBasis} IS NULL OR ${t.bazaBasis} IN ('unit', 'kg', 'juft', 'litr', 'm2')`,
+      // 'm3' since 0125 (his 19a): an m³ baza reads the row's own volume_m3.
+      sql`${t.bazaBasis} IS NULL OR ${t.bazaBasis} IN ('unit', 'kg', 'm3', 'm2', 'juft', 'litr')`,
     ),
     check(
       'calc_items_baza_source_check',
@@ -2614,7 +2899,7 @@ export const calcBazas = pgTable(
   (t) => [
     // No sm3 on purpose: nothing is VALUED per cm³ of displacement — a
     // vehicle's baza is its invoice price per dona (0092).
-    check('calc_bazas_basis_check', sql`${t.basis} IN ('unit', 'kg', 'juft', 'litr', 'm2')`),
+    check('calc_bazas_basis_check', sql`${t.basis} IN ('unit', 'kg', 'm3', 'm2', 'juft', 'litr')`),
     check('calc_bazas_value_check', sql`${t.bazaUsd} > 0`),
     uniqueIndex('calc_bazas_key_date_unique').on(t.productKey, t.effectiveDate),
   ],
@@ -2752,6 +3037,14 @@ export const calcGroups = pgTable(
     dutyUnit: text('duty_unit'),
     /** NULL means none — excise names a short list of goods. */
     excisePct: numeric('excise_pct', { precision: 6, scale: 3 }),
+    /**
+     * A SPECIFIC excise (0131): `excise_specific` $ per `excise_unit` — beer
+     * per litre, cigarettes per thousand. One fact in two columns (the pair
+     * CHECK), and never beside `excise_pct` (one shape per group). All three
+     * NULL is «unanswered»; `excise_pct` 0 is «aksiz yo'q».
+     */
+    exciseSpecific: numeric('excise_specific', { precision: 14, scale: 4 }),
+    exciseUnit: text('excise_unit'),
     /** NULL inherits the request's answer. */
     hasCertificate: boolean('has_certificate'),
     dutyFree: boolean('duty_free').notNull().default(false),
@@ -2819,6 +3112,19 @@ export const calcGroups = pgTable(
     check(
       'calc_groups_excise_check',
       sql`${t.excisePct} IS NULL OR (${t.excisePct} >= 0 AND ${t.excisePct} <= 100)`,
+    ),
+    check(
+      'calc_groups_excise_specific_check',
+      sql`${t.exciseSpecific} IS NULL OR (${t.exciseSpecific} >= 0 AND ${t.exciseSpecific} <> 'NaN'::numeric)`,
+    ),
+    check(
+      'calc_groups_excise_unit_check',
+      sql`${t.exciseUnit} IS NULL OR ${t.exciseUnit} IN ('kg', 'dona', 'litr', 'juft', '1000_dona', 'sm3', 'm2')`,
+    ),
+    check('calc_groups_excise_pair_check', sql`(${t.exciseSpecific} IS NULL) = (${t.exciseUnit} IS NULL)`),
+    check(
+      'calc_groups_excise_one_shape_check',
+      sql`NOT (${t.excisePct} IS NOT NULL AND ${t.exciseSpecific} IS NOT NULL)`,
     ),
     // The dictionary's pair rule, read through the NULL-means-advalor lens.
     check(
@@ -3064,6 +3370,75 @@ export const calcVersions = pgTable(
     check('calc_versions_discount_check', sql`${t.discountUsd} >= 0`),
     uniqueIndex('calc_versions_request_no_unique').on(t.requestId, t.versionNo),
     index('calc_versions_sealed_idx').on(t.sealedAt),
+  ],
+);
+
+/**
+ * ONE row per given price for the staff's price channel (0128, the owner's F).
+ * The claim is the write: `dedupe_key` is CHECKed to be `seal:<version>` or
+ * `answer:<request>`, so a retried hook, the drain's net, a double Готово and
+ * two drains post once. `view` is the post's projection (calc/channel-post.ts
+ * `ChannelPostView`) — it cannot hold a client, a floor breakdown or a note.
+ */
+export const priceChannelPosts = pgTable(
+  'price_channel_posts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    kind: text('kind').notNull(),
+    requestId: uuid('request_id')
+      .notNull()
+      .references(() => calcRequests.id, { onDelete: 'cascade' }),
+    versionId: uuid('version_id').references(() => calcVersions.id, { onDelete: 'cascade' }),
+    dedupeKey: text('dedupe_key').notNull(),
+    chatId: bigint('chat_id', { mode: 'bigint' }),
+    status: text('status').notNull(),
+    skipReason: text('skip_reason'),
+    view: jsonb('view'),
+    carrier: text('carrier'),
+    messageId: integer('message_id'),
+    replyToMessageId: integer('reply_to_message_id'),
+    photoCount: smallint('photo_count').notNull().default(0),
+    markedState: text('marked_state'),
+    markedAt: timestamp('marked_at', { withTimezone: true }),
+    markClaimedAt: timestamp('mark_claimed_at', { withTimezone: true }),
+    markError: text('mark_error'),
+    attempts: integer('attempts').notNull().default(0),
+    notBefore: timestamp('not_before', { withTimezone: true }),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
+    lastError: text('last_error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    sentAt: timestamp('sent_at', { withTimezone: true }),
+  },
+  (t) => [
+    unique('price_channel_posts_dedupe_unique').on(t.dedupeKey),
+    check(
+      'price_channel_posts_kind_check',
+      sql`(${t.kind} = 'seal' AND ${t.versionId} IS NOT NULL AND ${t.dedupeKey} = 'seal:' || ${t.versionId}::text) OR (${t.kind} = 'answer' AND ${t.versionId} IS NULL AND ${t.dedupeKey} = 'answer:' || ${t.requestId}::text)`,
+    ),
+    check(
+      'price_channel_posts_status_check',
+      sql`${t.status} IN ('pending','sending','sent','failed','skipped')`,
+    ),
+    check(
+      'price_channel_posts_skip_check',
+      sql`(${t.status} = 'skipped') = (${t.skipReason} IS NOT NULL) AND (${t.skipReason} IS NULL OR ${t.skipReason} IN ('no_channel','discount','band_override','channel_changed','stale'))`,
+    ),
+    check(
+      'price_channel_posts_sent_check',
+      sql`${t.status} <> 'sent' OR (${t.messageId} IS NOT NULL AND ${t.carrier} IS NOT NULL AND ${t.view} IS NOT NULL AND ${t.chatId} IS NOT NULL)`,
+    ),
+    check('price_channel_posts_carrier_check', sql`${t.carrier} IS NULL OR ${t.carrier} IN ('text','caption')`),
+    check(
+      'price_channel_posts_mark_check',
+      sql`${t.markedState} IS NULL OR ${t.markedState} IN ('open','sealed','answered','returned','unpriced')`,
+    ),
+    index('price_channel_posts_pending_idx')
+      .on(t.createdAt)
+      .where(sql`${t.status} IN ('pending','sending')`),
+    index('price_channel_posts_unsettled_idx')
+      .on(t.requestId)
+      .where(sql`${t.status} = 'sent' AND (${t.markedState} IS NULL OR ${t.markedState} = 'open')`),
+    index('price_channel_posts_request_idx').on(t.requestId, t.createdAt),
   ],
 );
 
@@ -3363,7 +3738,7 @@ export const customsImportRows = pgTable(
   (t) => [
     index('customs_import_rows_batch_idx').on(t.batchId),
     index('customs_import_rows_code_idx').on(t.batchId, t.tnvedCode),
-    check('customs_import_rows_unit_check', sql`${t.unit} IN ('kg', 'dona', 'm2', 'juft', 'litr')`),
+    check('customs_import_rows_unit_check', sql`${t.unit} IN ('kg', 'dona', 'm3', 'm2', 'juft', 'litr')`),
     check(
       'customs_import_rows_price_check',
       sql`${t.pricePerUnitUsd} > 0 AND ${t.pricePerUnitUsd} <> 'NaN'::numeric`,

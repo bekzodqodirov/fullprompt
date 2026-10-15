@@ -1,10 +1,16 @@
 import type { Bot } from 'grammy';
-import { composeMyDay } from '../tasks/digest';
+import { bugunReply } from '../tasks/digest';
 import { logger } from '../logger';
 import { keyboardOf, staffTextHtml } from '../notifications/staff-html';
 import { sendStaffMessage } from '../notifications/service';
 import { offerStaffCommands } from './commands';
-import { editText, sendText, sendTyping } from './send';
+import { editMarkup, editText, sendText, sendTextBriefRetry, sendTyping } from './send';
+import { answerPress } from './press';
+import { isBacklog } from './lifecycle';
+import { HANDLED_SENTENCE, tellBacklogOnce } from './backlog';
+import { claimOnce, handledAlready, markOnce, messageKey, pressKey, type OnceKey } from './once';
+import { flushWaitWrites } from './waits';
+import { db } from '../db/client';
 import { clientAnswerKeyboard } from './map-link';
 import {
   AI_RASTAMOJKA,
@@ -13,6 +19,9 @@ import {
   botActorFor,
   HISOBLATISH,
   HOLAT,
+  MEN_BERGAN,
+  TOPSHIRIQ,
+  TASK_ANSWERS,
   holatFor,
   ownerSummaryFromBot,
   ZAMETKALAR,
@@ -25,6 +34,7 @@ import {
   type BotApprovalResult,
   isCabinetText,
   landCollectedIntake,
+  landingLinkFor,
   linkStaffChat,
   lookupFromBot,
   noteStaffEntry,
@@ -37,6 +47,10 @@ import {
   staffForChat,
   takeStaffEntry,
   takeTaskPending,
+  noteReplyPending,
+  pressRefusalText,
+  refusalFor,
+  taskPressCheck,
   type CalcStep,
   type NoteStep,
   AI_ZONE_ROUTES,
@@ -56,6 +70,7 @@ import {
   mayCollect,
   startIntake,
   updateIntake,
+  MAX_OFFERS,
   MAX_QUESTION_ROUNDS,
 } from './calc-intake';
 import { phoneKeyboard } from './client-cabinet';
@@ -70,6 +85,29 @@ import {
 } from './note-capture';
 import { sendNote } from './note-send';
 import { buttonLabel, splitMessage } from './limits';
+import { activeDraft } from './task-draft';
+import {
+  BUSY_INTAKE,
+  REPLY_SENTENCES,
+  refuseMediaReply,
+  replyVerdictFor,
+  threadReplyFromBot,
+  verdictSentence,
+} from './reply-door';
+import {
+  answerGiven,
+  answerPendingText,
+  BUSY_DRAFT,
+  draftLive,
+  draftMedia,
+  draftText,
+  handleDraftCallback,
+  handleForwardCallback,
+  handleTaskPress,
+  offerForwardTask,
+  pickAssignee,
+  startTaskDraft,
+} from './task-handlers';
 
 /**
  * The grammy shell of the staff bot — thin on purpose: every decision lives
@@ -104,10 +142,15 @@ export interface StaffKeyboardOptions {
   holat: boolean;
 }
 
-/** The staff rows — one list for both keyboards, so they cannot drift. */
+/**
+ * The staff rows — one list for both keyboards, so they cannot drift. The
+ * topshiriq round's two labels join the top (spec §6); positions move,
+ * labels never — a label is a router.
+ */
 function staffRows(opts: StaffKeyboardOptions) {
   return [
-    [{ text: BUGUN }, { text: HISOBLATISH }],
+    [{ text: BUGUN }, { text: TOPSHIRIQ }],
+    [{ text: MEN_BERGAN }, { text: HISOBLATISH }],
     [{ text: AI_RASTAMOJKA }, { text: ZAMETKALAR }],
     ...(opts.holat ? [[{ text: HOLAT }]] : []),
   ];
@@ -274,7 +317,7 @@ export function registerStaffBot(bot: Bot): void {
     const chatId = BigInt(ctx.chat?.id ?? ctx.callbackQuery.from.id);
 
     if (parsed.kind === 'entry') {
-      await ctx.answerCallbackQuery();
+      await answerPress(ctx);
       if (parsed.who === 'client') {
         // The client door is the existing cabinet — nothing more (owner's
         // answer 4). Same phone-verified entry as always, in the phone's
@@ -295,7 +338,7 @@ export function registerStaffBot(bot: Bot): void {
     }
 
     if (parsed.kind === 'calc') {
-      await ctx.answerCallbackQuery();
+      await answerPress(ctx);
       await handleCalcCallback(ctx as unknown as CalcReplyCtx, chatId, parsed.step);
       return;
     }
@@ -303,7 +346,23 @@ export function registerStaffBot(bot: Bot): void {
     if (parsed.kind === 'task_done') {
       const staff = await staffForChat(chatId);
       if (!staff) {
-        await ctx.answerCallbackQuery({ text: 'Ulanmagan' });
+        await answerPress(ctx, 'Ulanmagan');
+        return;
+      }
+      // A draft is live: its text must never become this task's result.
+      if (activeDraft(chatId)) {
+        await answerPress(ctx, BUSY_DRAFT);
+        await ctx.reply(BUSY_DRAFT);
+        return;
+      }
+      // The task is LOADED before anything waits for typing, and refused at
+      // once in words (the review's blocker, telegram-mechanics-1): an old
+      // ✅ on a calc job used to ask for a result, and the person typed one
+      // into silence. Closed, not theirs, or an open calc job (with its link).
+      const check = await taskPressCheck(chatId, parsed.taskId, 'act');
+      if (!check.ok) {
+        await answerPress(ctx, TASK_ANSWERS[check.result]);
+        await ctx.reply(pressRefusalText(check));
         return;
       }
       // The pressed message is REMEMBERED and left exactly as it is (round
@@ -312,6 +371,18 @@ export function registerStaffBot(bot: Bot): void {
       // close rewrites it — a task's own message whole, a list by one row.
       const pressed = ctx.callbackQuery.message;
       const pressedText = pressed && 'text' in pressed ? pressed.text : undefined;
+      await answerPress(ctx);
+      // On a LIST the prompt names the task — «which one did I just press?»
+      // is not a question the person should have to scroll back to answer.
+      const label = parsed.list ? pressedButtonText(pressed, ctx.callbackQuery.data) : null;
+      // «✅ Natijasiz» so nobody has to type a dash (spec §4); the dash still works.
+      const prompt = await ctx.reply(
+        (label ? `${label}\n` : '') + 'Natijani yozib yuboring (natijasiz yopish uchun «-» yuboring):',
+        { reply_markup: { inline_keyboard: [[{ text: '✅ Natijasiz', callback_data: `tn:${parsed.taskId}` }]] } },
+      );
+      // Armed AFTER the prompt, at the prompt's own date (Q5 a): a wait exists
+      // only once its question is on the screen, and a backlog text written
+      // before it cannot be its answer.
       noteTaskPending(
         chatId,
         parsed.taskId,
@@ -323,19 +394,59 @@ export function registerStaffBot(bot: Bot): void {
               kind: parsed.list ? 'list' : 'single',
             }
           : null,
-      );
-      await ctx.answerCallbackQuery();
-      // On a LIST the prompt names the task — «which one did I just press?»
-      // is not a question the person should have to scroll back to answer.
-      const label = parsed.list ? pressedButtonText(pressed, ctx.callbackQuery.data) : null;
-      await ctx.reply(
-        (label ? `${label}\n` : '') + 'Natijani yozib yuboring (natijasiz yopish uchun «-» yuboring):',
+        'result',
+        { promptMessageId: prompt.message_id, armedAt: prompt.date },
       );
       return;
     }
 
     if (parsed.kind === 'note') {
       await handleNoteCallback(ctx, chatId, parsed.step, parsed.noteId, parsed.page);
+      return;
+    }
+
+    // The topshiriq round's buttons (docs/TELEGRAM-TOPSHIRIQ.md §3-6). ABOVE
+    // the approval guard below, which returns on every kind it does not name —
+    // a button nobody answers spins for fifteen seconds (#939).
+    if (
+      parsed.kind === 'task_accept' ||
+      parsed.kind === 'task_wait' ||
+      parsed.kind === 'task_postpone' ||
+      parsed.kind === 'task_question' ||
+      parsed.kind === 'task_reply' ||
+      parsed.kind === 'task_noresult' ||
+      parsed.kind === 'task_remind' ||
+      parsed.kind === 'task_cancel' ||
+      parsed.kind === 'task_sources'
+    ) {
+      await handleTaskPress(ctx, chatId, parsed);
+      return;
+    }
+    if (parsed.kind === 'draft') {
+      await handleDraftCallback(ctx, chatId, parsed.step);
+      return;
+    }
+    if (parsed.kind === 'draft_pick') {
+      await answerPress(ctx);
+      await pickAssignee(ctx, chatId, parsed.userId);
+      return;
+    }
+    if (parsed.kind === 'forward') {
+      const staff = await staffForChat(chatId);
+      if (!staff) {
+        await answerPress(ctx, 'Ulanmagan');
+        return;
+      }
+      // A press is an explicit intent and keeps its search; keyed by the
+      // «📌 Topshiriq qilamizmi?» offer (Q5 a): two taps, one model call.
+      const searchKey = parsed.step === 'search' ? await pressKey(ctx, 'search') : null;
+      await handleForwardCallback(ctx, chatId, parsed.step, (text) =>
+        answerStaffText(ctx as unknown as StaffTailCtx, chatId, staff.id, text, {
+          backlog: false,
+          messageId: null,
+          once: searchKey,
+        }),
+      );
       return;
     }
 
@@ -353,7 +464,7 @@ export function registerStaffBot(bot: Bot): void {
         not_yours: 'Bu lid sizniki emas',
         not_found: 'Lid topilmadi',
       };
-      await ctx.answerCallbackQuery({ text: answers[outcome] });
+      await answerPress(ctx, answers[outcome]);
       const pressed = ctx.callbackQuery.message;
       if (
         (outcome === 'recorded' || outcome === 'already') &&
@@ -397,7 +508,7 @@ export function registerStaffBot(bot: Bot): void {
         not_linked: 'Ulanmagan',
         forbidden: 'Huquqingiz yo‘q',
       };
-      await ctx.answerCallbackQuery({ text: answers[outcome] });
+      await answerPress(ctx, answers[outcome]);
       const pressed = ctx.callbackQuery.message;
       if (
         (outcome === 'confirmed' || outcome === 'dropped' || outcome === 'already' || outcome === 'changed') &&
@@ -419,6 +530,14 @@ export function registerStaffBot(bot: Bot): void {
       return;
     }
 
+    // «💬 Javob yozish» / «❓ Sotuvchidan so‘rash» (0127). BEFORE the approval
+    // guard below, which returns on every kind it does not name (#939) — and
+    // every path answers the press.
+    if (parsed.kind === 'thread_reply') {
+      await handleThreadReplyPress(ctx, chatId);
+      return;
+    }
+
     // approval. Guarded now rather than reached by falling through: the union
     // grew a fifth member and an unguarded tail would have read `approvalId`
     // off a notes callback.
@@ -434,7 +553,7 @@ export function registerStaffBot(bot: Bot): void {
       not_found: 'So‘rov topilmadi',
       not_your_client: 'Bu mijoz bo‘yicha qaror uning sotuvchisi yoki buxgalterda',
     };
-    await ctx.answerCallbackQuery({ text: answers[outcome] });
+    await answerPress(ctx, answers[outcome]);
     // The pressed copy is settled in place (round C) — ALSO when somebody
     // else decided first: that press is the proof a stale copy was still
     // asking. Off the poller, on the sender's short deadline.
@@ -470,7 +589,31 @@ export function registerStaffBot(bot: Bot): void {
   // customer's shared contact falls through to the cabinet flow untouched.
   bot.on('message:contact', async (ctx, next) => {
     const chatId = BigInt(ctx.chat.id);
-    if (!takeStaffEntry(chatId)) return next();
+    if (!takeStaffEntry(chatId, ctx.message.date)) {
+      // A crash redelivery of the contact that already linked a colleague
+      // (Q5 a, judge Q5H-5): the first run consumed the intent, so this one
+      // would reach the cabinet's contact door — which links CLIENT codes on
+      // that phone into the staff chat, or answers «raqam topilmadi» with the
+      // keyboard taken away. Keyed on THIS message, never guessed.
+      if ((await handledAlready(chatId, ctx.message.message_id)) === 'staff_link') {
+        const here = await staffForChat(chatId);
+        if (here) {
+          await ctx.reply(`✅ Ulandi: ${here.fullName}. Xabarnomalar shu yerga keladi.`, {
+            reply_markup: await replyKeyboardFor(chatId),
+          });
+          return;
+        }
+      }
+      // A contact card in a STAFF chat is «call this person» — the obvious
+      // task. The draft or Door B takes it BEFORE the cabinet, whose contact
+      // handler answers «send your OWN number» with a one-time keyboard that
+      // takes the staff keyboard off the phone (telegram-mechanics-19). The
+      // sender's own number still falls through to the cabinet's linking.
+      if (!activeIntake(chatId) && !activeCapture(chatId) && (await draftMedia(ctx, chatId))) return;
+      return next();
+    }
+    // The intent's DELETE reaches the table before anything is linked (Q5 a).
+    await flushWaitWrites();
     const contact = ctx.message.contact;
     // The cabinet's spoof-proof rule: only the sender's OWN number counts.
     // Every refusal below RESTORES the keyboard. The contact request is a
@@ -493,10 +636,20 @@ export function registerStaffBot(bot: Bot): void {
       return;
     }
     const result = await linkStaffChat(staff.id, chatId);
-    if (result.outcome === 'chat_taken') {
-      await restore('Bu Telegram boshqa xodimga ulangan. Adminga ayting.');
-      return;
+    // A switch, never an `if`: a third outcome must not fall into success.
+    switch (result.outcome) {
+      case 'chat_taken':
+        await restore('Bu Telegram boshqa xodimga ulangan. Adminga ayting.');
+        return;
+      case 'not_colleague':
+        // Only reachable in a race — `staffByPhone` already asks canLogIn (B8).
+        await restore('Bu hodim akkaunti faol emas — Telegram ulanmadi. Adminga ayting.');
+        return;
+      case 'linked':
+        break;
     }
+    // What this contact did, so a crash redelivery of it can say so (Q5 a).
+    await markOnce(await messageKey(ctx, 'staff_link'));
     if (result.previousChatId !== null) {
       await ctx.api
         .sendMessage(
@@ -519,13 +672,31 @@ export function registerStaffBot(bot: Bot): void {
   // collection they are somebody else's business — next().
   bot.on(['message:photo', 'message:document'], async (ctx, next) => {
     const chatId = BigInt(ctx.chat.id);
+    // No collector opened by THIS process takes a backlog file (Q5 a): every
+    // one of them was opened after boot, and the file was sent before it.
+    const late = isBacklog(ctx.message.date);
     const state = activeIntake(chatId);
-    if (!state) {
+    if (!state || late) {
       // A zametka being written from the phone takes its parts here. The calc
       // intake is asked FIRST and wins — one collector at a time, and that one
       // is minutes of a seller's forwarding.
       const capture = activeCapture(chatId);
-      if (!capture) return next();
+      if (!capture || late) {
+        // Third: a task draft takes it, or Door B offers to make one of a
+        // forward (docs/TELEGRAM-TOPSHIRIQ.md §3); anything else is the
+        // cabinet's.
+        if (await draftMedia(ctx, chatId)) return;
+        // A photo or file sent as a REPLY to a thread or task ping — only
+        // after every collector declined it (E10 a, text first).
+        if (await refuseMediaReply(ctx, chatId)) return;
+        // A staff file into nothing, from the backlog: the cabinet answers a
+        // staff chat with nothing at all, so it is told once instead.
+        if (late && (await staffForChat(chatId))) {
+          await tellBacklogOnce(ctx, chatId);
+          return;
+        }
+        return next();
+      }
       const owner = await staffForChat(chatId);
       if (!owner) return next();
       await capturePart(ctx, chatId, capture, owner.id);
@@ -592,8 +763,38 @@ export function registerStaffBot(bot: Bot): void {
     await showIntakePrompt(ctx, chatId, updated ?? state);
   });
 
+  // Voice, audio, video, a round video, a place, a sticker — the kinds the
+  // staff bot never took before this round (telegram-mechanics-19). Inside
+  // `registerStaffBot`, which bot.ts registers BEFORE the cabinet: the draft
+  // first, then Door B, otherwise next() — so a customer's voice note still
+  // reaches the cabinet's forward to their manager untouched. A live calc
+  // intake or zametka capture keeps today's behaviour for these.
+  bot.on(
+    ['message:voice', 'message:audio', 'message:video', 'message:video_note', 'message:location', 'message:sticker'],
+    async (ctx, next) => {
+      const chatId = BigInt(ctx.chat.id);
+      const late = isBacklog(ctx.message.date);
+      if (!late && (activeIntake(chatId) || activeCapture(chatId))) return next();
+      if (await draftMedia(ctx, chatId)) return;
+      // A voice note as a REPLY to a thread or task ping (E10 a, text first) —
+      // after the draft declined it, so a live draft's part still joins it.
+      if (await refuseMediaReply(ctx, chatId)) return;
+      if (late && (await staffForChat(chatId))) {
+        await tellBacklogOnce(ctx, chatId);
+        return;
+      }
+      return next();
+    },
+  );
+
   bot.on('message:text', async (ctx, next) => {
     const chatId = BigInt(ctx.chat.id);
+    // A backlog text (Q5 a): written while the bot was down, so no collector
+    // THIS process opened can have been what it was written for — every one
+    // of them opened after boot. It still reaches the reply door (a swipe-
+    // reply names its own target), the wait (which judges it by its date) and
+    // the free lookups; everything else gets one sentence.
+    const late = isBacklog(ctx.message.date);
 
     // A live collection swallows text: this is the customer's name, or the
     // material itself.
@@ -606,7 +807,7 @@ export function registerStaffBot(bot: Bot): void {
     // broken bot. A new button joins the predicate, in one edit, or it is
     // eaten by this branch.
     const intake = activeIntake(chatId);
-    if (intake && !escapesIntake(ctx.message.text)) {
+    if (intake && !escapesIntake(ctx.message.text) && !late) {
       if (intake.stage === 'section') {
         // The podklyuch door is waiting for «qayerdan?» — a typed word here
         // is not the customer's name yet, and filing it as one would skip
@@ -622,11 +823,11 @@ export function registerStaffBot(bot: Bot): void {
       }
       if (intake.stage === 'client') {
         updateIntake(chatId, { clientHintRaw: ctx.message.text.trim(), stage: 'material' });
-        await ctx.reply(
-          'Endi hamma narsani yuboring: tovar ro‘yxati, fayllar, rasmlar, kub/kg, yo‘nalish.\n' +
-            'Tugagach «Bo‘ldi» ni bosing.',
-          { reply_markup: doneKeyboard },
-        );
+        // Per section (judge UX14): a customs job is asked for the LINES —
+        // «300 dona, 150 kg, 120 m², 40 juft» and the code if known — which
+        // the old «kub/kg» prompt never said could be sent.
+        const { collectPromptText } = await import('../../wms/calc/intake');
+        await ctx.reply(collectPromptText(intake.section), { reply_markup: doneKeyboard });
         return;
       }
       const updated = updateIntake(chatId, {
@@ -640,6 +841,7 @@ export function registerStaffBot(bot: Bot): void {
     if (ctx.message.text === HISOBLATISH || ctx.message.text === '/hisoblatish') {
       if (!(await mayCollect(chatId))) return next();
       if (await refuseWhileCapturing(ctx, chatId)) return;
+      if (await refuseWhileDrafting(ctx, chatId)) return;
       await ctx.reply('Nimani hisoblatamiz?', { reply_markup: sectionKeyboard() });
       return;
     }
@@ -648,6 +850,7 @@ export function registerStaffBot(bot: Bot): void {
     if (ctx.message.text === AI_RASTAMOJKA || ctx.message.text === '/ai') {
       if (!(await mayCollect(chatId))) return next();
       if (await refuseWhileCapturing(ctx, chatId)) return;
+      if (await refuseWhileDrafting(ctx, chatId)) return;
       await ctx.reply('🤖 Nimani hisoblaymiz?', { reply_markup: aiSectionKeyboard() });
       return;
     }
@@ -693,17 +896,18 @@ export function registerStaffBot(bot: Bot): void {
     if (ctx.message.text === BUGUN || ctx.message.text === '/bugun') {
       const staff = await staffForChat(chatId);
       if (!staff) return next();
-      const day = await composeMyDay(staff.id).catch((err) => {
+      const day = await bugunReply(staff.id).catch((err) => {
         logger.warn({ err }, 'bugun compose failed');
         return null;
       });
       if (!day) {
-        await ctx.reply('✅ Bugunga ochiq vazifa yo‘q.');
+        await ctx.reply('Vazifalarni o‘qib bo‘lmadi — birozdan keyin urinib ko‘ring.');
         return;
       }
       // The same words and the same «✅» rows as the 08:00 digest, so a task
-      // is closed from the list it is read on.
-      const sent = await sendText({
+      // is closed from the list it is read on — and «+ N ta muddatsiz» when
+      // the rest of the person's work has no date (spec §7).
+      const sent = await sendTextBriefRetry({
         chatId,
         html: staffTextHtml(day.text, 'TasksDue'),
         replyMarkup: keyboardOf(dayButtons(day.tasks)),
@@ -712,41 +916,133 @@ export function registerStaffBot(bot: Bot): void {
       return;
     }
 
+    // «➕ Topshiriq» and «📤 Men bergan» (docs/TELEGRAM-TOPSHIRIQ.md §3, §6)
+    // in the labels' slot, for the labels' reasons: ABOVE the note capture —
+    // a «Men bergan» filed into a zametka being written is a lost press — and
+    // above the one-text wait, which deletes on read (telegram-mechanics-24).
+    if (ctx.message.text === TOPSHIRIQ || ctx.message.text === '/topshiriq') {
+      const staff = await staffForChat(chatId);
+      if (!staff) return next();
+      await startTaskDraft(ctx, chatId);
+      return;
+    }
+    if (ctx.message.text === MEN_BERGAN || ctx.message.text === '/berganlarim') {
+      const staff = await staffForChat(chatId);
+      if (!staff) return next();
+      await answerGiven(ctx, chatId);
+      return;
+    }
+
     // A note being written from the phone swallows what follows — its name
     // first, then everything else — and it sits in the same slot for the same
     // reasons.
     const capture = activeCapture(chatId);
-    if (capture) {
+    if (capture && !late) {
       const staff = await staffForChat(chatId);
       if (!staff) return next();
       await captureText(ctx, chatId, capture, ctx.message.text);
       return;
     }
 
+    // A task draft swallows what follows, the same way: a name while it asks
+    // «Kimga?», a date after «📅 Sana yozish», otherwise a line of the task.
+    // BELOW the capture (one collector at a time — they refuse each other at
+    // the door) and ABOVE the one-text wait, so a draft's line is never
+    // anybody's result.
+    const draft = activeDraft(chatId);
+    if (draft && !late) {
+      const staff = await staffForChat(chatId);
+      if (!staff) return next();
+      await draftText(ctx, chatId, draft);
+      return;
+    }
+
+    // A REPLY to one of the bot's own messages (the owner's E answers): a
+    // swipe-reply to a thread ping lands on the card, to the VED's «Hisoblash:
+    // …» task copy under that calculation, to a task copy as a question to its
+    // giver. BELOW the labels and every live collector (one collector at a
+    // time — a reply typed while a zametka, a draft or a calc intake is live
+    // is filed by THAT collector); ABOVE Door B (a reply is not a forward) and
+    // ABOVE `takeTaskPending`, which deletes on read — a reply names its own
+    // target and must never be eaten as the result of ANOTHER task, while the
+    // door hands a reply to the very message a wait was armed from back to
+    // that wait (`threadReplyFromBot` step 2). Null = not handled: falls through.
+    const replied = ctx.message.reply_to_message;
+    if (replied && replied.from?.id === ctx.me.id && !escapesIntake(ctx.message.text)) {
+      const out = await threadReplyFromBot(chatId, {
+        replyToMessageId: replied.message_id,
+        replyToForwarded: 'forward_origin' in replied && Boolean(replied.forward_origin),
+        text: ctx.message.text,
+        incomingMessageId: ctx.message.message_id,
+        messageDate: ctx.message.date,
+      });
+      if (out) {
+        await ctx.reply(out.text);
+        return;
+      }
+    }
+
+    // Door B: a forwarded TEXT with no collector live is offered as a task
+    // («📌 Topshiriq qilamizmi?») — with «🔍 Qidirish» beside it for what a
+    // forward did until today. ABOVE the one-text wait: a forward is never
+    // the answer somebody was asked to type (spec §3). Its own staff check,
+    // because it sits above the staff fence.
+    if (ctx.message.forward_origin) {
+      const staff = await staffForChat(chatId);
+      if (staff) {
+        // A backlog forward is the sentence, once — never one «📌» offer per
+        // message: fifteen forwarded customer messages that were a lost
+        // intake's material are one sentence and no offers (judge W4).
+        if (late) {
+          await tellBacklogOnce(ctx, chatId);
+          return;
+        }
+        await offerForwardTask(ctx, chatId, null);
+        return;
+      }
+    }
+
     // Step 2 of «Bajarildi»: this text IS the result — unless it is one of the
     // keyboard's own buttons, which is never anybody's result (every branch
     // above answers them; this is the fence for the next button to join).
     if (!escapesIntake(ctx.message.text)) {
-      const pendingTask = takeTaskPending(chatId);
-      if (pendingTask) {
+      const pendingTask = takeTaskPending(chatId, ctx.message.date);
+      // Judged by the MESSAGE's date (Q5 a): a backlog text written before the
+      // wait's prompt is not its answer, and the wait stays for the real one.
+      // The take's DELETE reaches the table BEFORE the effect: a kill after it
+      // leaves no wait to answer twice, a kill before it is a kill before the
+      // effect.
+      if (pendingTask) await flushWaitWrites();
+      if (pendingTask && pendingTask.kind !== 'result') {
+        // A question, an answer, or a typed date after ⏰ — the same one wait.
+        // A «date» that is not one is not consumed: it falls to the tail.
+        if (await answerPendingText(ctx, chatId, pendingTask, ctx.message.text)) {
+          await markOnce(await messageKey(ctx, 'wait'));
+          return;
+        }
+      } else if (pendingTask) {
         const result = ctx.message.text.trim() === '-' ? '' : ctx.message.text.trim();
-        const outcome = await completeTaskFromBot(chatId, pendingTask.taskId, result);
-        const answers: Record<string, string> = {
-          done: '✅ Vazifa yopildi.',
-          not_linked: 'Ulanmagan.',
-          not_yours: 'Bu vazifa sizniki emas.',
-          already_closed: 'Bu vazifa allaqachon yopilgan.',
-          not_found: 'Vazifa topilmadi.',
-        };
-        await ctx.reply(answers[outcome] ?? outcome);
+        const outcome = await completeTaskFromBot(chatId, pendingTask.taskId, result, pendingTask.pressed);
+        // Every code the service can refuse with has its words (a Record over
+        // the closed union) — a refusal is a sentence, never a throw into
+        // bot.catch after the person typed their result.
+        // …and an open calc job's refusal carries the job's page (review bot-12).
+        await ctx.reply(outcome === 'done' ? '✅ Vazifa yopildi.' : await refusalFor(pendingTask.taskId, outcome));
+        // The «✅ Natijasiz» on the prompt is spent either way.
+        if (pendingTask.promptMessageId) {
+          void editMarkup({ chatId, messageId: pendingTask.promptMessageId }).catch(() => {});
+        }
         // The message the «✅» sat on becomes the record of the close (or, on
         // a list, loses that one row). Off the poller: an edit is a network
         // call and the answer above is what the person is waiting for.
         if (outcome === 'done' || outcome === 'already_closed') {
-          void closeTaskMessage(chatId, pendingTask, outcome === 'done' ? result : '').catch(
+          void closeTaskMessage(chatId, pendingTask, outcome === 'done' ? result : '', outcome).catch(
             (err: unknown) => logger.warn({ err }, 'task message not closed'),
           );
         }
+        // What this text did, so a crash redelivery of it hears «answered»
+        // and never «send it again» (judge Q5H-2 a).
+        await markOnce(await messageKey(ctx, 'wait'));
         return;
       }
     }
@@ -758,50 +1054,110 @@ export function registerStaffBot(bot: Bot): void {
     // question ledger.
     const staff = await staffForChat(chatId);
     if (!staff) return next();
-    const text = ctx.message.text;
-    const freeLookup = async (query: string) =>
-      lookupFromBot(chatId, query).catch((err) => {
-        logger.warn({ err }, 'bot lookup failed');
-        return null;
-      });
-    // Free first, and free again: the whole text as a code (today's exact
-    // behaviour), then any code-shaped word inside a sentence — «GS777
-    // qayerda» is answered for nothing before the paid model is considered.
-    let answer = await freeLookup(text);
-    if (!answer) {
-      for (const candidate of codeCandidates(text)) {
-        answer = await freeLookup(candidate);
-        if (answer) break;
-      }
-    }
-    if (answer) {
-      const buttons = clientAnswerKeyboard(process.env.APP_URL, answer);
-      await ctx.reply(answer.text, buttons ? { reply_markup: buttons } : undefined);
-      return;
-    }
-    // «ushani soraganda berishi kerak» — his own word. Somebody typing the
-    // note's name gets the note, for one indexed query, instead of falling
-    // into the paid model, which cannot see this table and would answer
-    // «topilmadi» having spent one of the day's forty questions.
-    if (await answerFromNotes(ctx, chatId, staff.id, text)) return;
-    if (!aiConfigured()) {
-      // No key = exactly the day before the AI shipped.
-      await ctx.reply(
-        'Topilmadi. Mijoz kodi (GS777), karobka kodi (YW26-000123), yashik (CR-…) yoki partiya kodini yozing.',
-      );
-      return;
-    }
-    const thinking = await ctx.reply('🤖 O‘ylayapman…');
-    // NOT awaited, and that is the whole point: grammy's built-in poller is
-    // SEQUENTIAL — it handles one update at a time — so awaiting a model
-    // loop here would hold the CUSTOMER bot for as long as the answer takes.
-    // One admin asking «bu oy qancha pul kirdi» would freeze every cabinet
-    // tap, every /start and every arrival flow for tens of seconds, and the
-    // owner's own words are that 95 % of customer contact is this channel.
-    // The answer is delivered by chat id when it lands, exactly as the
-    // notification path already sends unsolicited messages.
-    void answerWithAssistant(chatId, text, thinking.message_id);
+    await answerStaffText(ctx as unknown as StaffTailCtx, chatId, staff.id, ctx.message.text, {
+      backlog: late,
+      messageId: ctx.message.message_id,
+      once: null,
+    });
   });
+}
+
+/** What the staff tail needs from grammy's context. */
+type StaffTailCtx = {
+  reply: (text: string, extra?: Record<string, unknown>) => Promise<{ message_id: number }>;
+  api: import('grammy').Api;
+};
+
+/**
+ * The staff tail — what a member of staff's words become when nothing above
+ * claimed them: the free lookup, then any code-shaped word inside them, then
+ * a typed zametka name, then (paid, last) the AI. ONE function, asked by the
+ * ladder and by Door B's «🔍 Qidirish», so a forwarded text replays exactly
+ * what it did before the topshiriq round.
+ */
+async function answerStaffText(
+  ctx: StaffTailCtx,
+  chatId: bigint,
+  staffId: string,
+  text: string,
+  // REQUIRED (Q5 a): whether this is a backlog text, the incoming message
+  // (null for Door B's «🔍», which replays a forward), and Door B's key.
+  opts: { backlog: boolean; messageId: number | null; once: OnceKey | null },
+): Promise<void> {
+  // A crash redelivery of a text whose wait was already consumed: no wait is
+  // left, so it lands here — and is told it was answered, never «send it
+  // again», which would mint the duplicate (judge Q5H-2 a).
+  if (opts.backlog && opts.messageId !== null && (await handledAlready(chatId, opts.messageId))) {
+    await ctx.reply(HANDLED_SENTENCE);
+    return;
+  }
+  const freeLookup = async (query: string) =>
+    lookupFromBot(chatId, query).catch((err) => {
+      logger.warn({ err }, 'bot lookup failed');
+      return null;
+    });
+  // Free first, and free again: the whole text as a code (today's exact
+  // behaviour), then any code-shaped word inside a sentence — «GS777
+  // qayerda» is answered for nothing before the paid model is considered.
+  let answer = await freeLookup(text);
+  if (!answer) {
+    for (const candidate of codeCandidates(text)) {
+      answer = await freeLookup(candidate);
+      if (answer) break;
+    }
+  }
+  if (answer) {
+    const buttons = clientAnswerKeyboard(process.env.APP_URL, answer);
+    await ctx.reply(answer.text, buttons ? { reply_markup: buttons } : undefined);
+    return;
+  }
+  // «ushani soraganda berishi kerak» — his own word. Somebody typing the
+  // note's name gets the note, for one indexed query, instead of falling
+  // into the paid model, which cannot see this table and would answer
+  // «topilmadi» having spent one of the day's forty questions.
+  if (await answerFromNotes(ctx, chatId, staffId, text)) return;
+  // A backlog text the free lookups could not answer (Q5 a): its words may be
+  // a lost collector's material — never the AI's question, and never
+  // «Topilmadi», which is the same lie in a cheaper voice. Once per chat.
+  if (opts.backlog) {
+    await tellBacklogOnce(ctx, chatId);
+    return;
+  }
+  // Door B's «🔍 Qidirish» runs once per offer message: two taps, one model call.
+  if (opts.once) {
+    if (!(await claimOnce(db, opts.once))) {
+      await ctx.reply('Bu qidiruv allaqachon bajarilgan.');
+      return;
+    }
+  }
+  if (!aiConfigured()) {
+    // No key = exactly the day before the AI shipped.
+    await ctx.reply(
+      'Topilmadi. Mijoz kodi (GS777), karobka kodi (YW26-000123), yashik (CR-…) yoki partiya kodini yozing.',
+    );
+    return;
+  }
+  const thinking = await ctx.reply('🤖 O‘ylayapman…');
+  // NOT awaited, and that is the whole point: grammy's built-in poller is
+  // SEQUENTIAL — it handles one update at a time — so awaiting a model
+  // loop here would hold the CUSTOMER bot for as long as the answer takes.
+  // One admin asking «bu oy qancha pul kirdi» would freeze every cabinet
+  // tap, every /start and every arrival flow for tens of seconds, and the
+  // owner's own words are that 95 % of customer contact is this channel.
+  // The answer is delivered by chat id when it lands, exactly as the
+  // notification path already sends unsolicited messages.
+  void answerWithAssistant(chatId, text, thinking.message_id);
+}
+
+/**
+ * One collector at a time, the third one (spec §3): a calc collection or a
+ * zametka is refused IN WORDS while a task draft is live, as the draft is
+ * refused while they are.
+ */
+async function refuseWhileDrafting(ctx: NoteReplyCtx, chatId: bigint): Promise<boolean> {
+  if (!draftLive(chatId)) return false;
+  await ctx.reply(`Hozir topshiriq yozilyapti. ${BUSY_DRAFT}`);
+  return true;
 }
 
 /** Chats whose «📊 Holat» is being computed right now. */
@@ -884,8 +1240,11 @@ function pressedButtonText(message: unknown, data: string): string | null {
  *
  * The loop exists because a rastamojka figure needs a measure PER ROW —
  * `unitsForRow` prices per dona on a count and per kg on a weight and can
- * price a row stating neither only by guessing. Asking the seller now costs
- * one message; not asking costs the VED a request they must hand back.
+ * price a row stating neither only by guessing — and, since 2026-10-09, the
+ * figure the row's LAW pins: a 6110 sweater stated in kg still owes its count
+ * under «kamida $X/dona» (`lineNeeds`, read with the book's law). Asking the
+ * seller now costs one message; not asking costs the VED a request they must
+ * hand back.
  *
  * Three questions at most (`MAX_QUESTION_ROUNDS`). A bot that keeps asking is
  * a bot the office stops answering, and the confirm always names what is
@@ -899,24 +1258,25 @@ async function askNextOrConfirm(
   const { nextLineToAsk, lineQuestionText, intakeSummaryText } = await import(
     '../../wms/calc/intake'
   );
+  const laws = await intakeLaws(state);
+  // BOTH doors ask now (P1.3): the plain «🧮 Hisoblatish» used to land a
+  // ten-line rastamojka job with seven lines nobody had a figure for, and a
+  // summary that named none of them. The same cap holds.
   const line =
-    state.ai && state.round < MAX_QUESTION_ROUNDS
-      ? nextLineToAsk(state.section, state.facts, { after: state.askingIndex })
+    state.round < MAX_QUESTION_ROUNDS
+      ? nextLineToAsk(state.section, state.facts, laws, { skip: state.lineDone })
       : null;
 
   if (line) {
-    const next = updateIntake(chatId, {
+    updateIntake(chatId, {
       stage: 'question',
       askingIndex: line.index,
+      askingTotals: false,
       round: state.round + 1,
       reasked: false,
+      offers: [],
     });
-    await ctx.reply(lineQuestionText(line), {
-      reply_markup: {
-        inline_keyboard: [[{ text: '⏭ Bilmayman, o‘tkazib yubor', callback_data: 'c:skip' }]],
-      },
-    });
-    void next;
+    await ctx.reply(lineQuestionText(line), { reply_markup: skipKeyboard() });
     return;
   }
 
@@ -935,28 +1295,27 @@ async function askNextOrConfirm(
       askingTotals: true,
       totalsAsked: true,
       reasked: false,
+      offers: [],
     });
     await ctx.reply(
       'Yo‘lkira uchun umumiy hajm va og‘irlik kerak. Masalan: «12 kub 3500 kg»' +
         (state.facts.volumeM3 != null ? `\n(hajm bor: ${state.facts.volumeM3} m³)` : '') +
         (state.facts.weightKg != null ? `\n(og‘irlik bor: ${state.facts.weightKg} kg)` : ''),
-      {
-        reply_markup: {
-          inline_keyboard: [[{ text: '⏭ Bilmayman, o‘tkazib yubor', callback_data: 'c:skip' }]],
-        },
-      },
+      { reply_markup: skipKeyboard() },
     );
     return;
   }
 
   const settled =
-    updateIntake(chatId, { stage: 'review', askingIndex: null, askingTotals: false }) ?? state;
+    updateIntake(chatId, { stage: 'review', askingIndex: null, askingTotals: false, offers: [] }) ?? state;
   await ctx.reply(
     intakeSummaryText({
       section: settled.section,
       facts: settled.facts,
+      laws,
       clientLabel: settled.clientHintRaw || null,
       fileCount: settled.fileCount,
+      ambiguous: settled.ambiguousTotals,
     }) +
       (settled.aiUsed
         ? ''
@@ -970,15 +1329,67 @@ async function askNextOrConfirm(
   );
 }
 
+/** «⏭ Bilmayman, o‘tkazib yubor» — under every question, the way out. */
+function skipKeyboard() {
+  return { inline_keyboard: [[{ text: '⏭ Bilmayman, o‘tkazib yubor', callback_data: 'c:skip' }]] };
+}
+
 /**
- * The seller's answer to «how many, or how heavy?», written onto the row that
- * was asked about.
+ * The buttons a bare or ambiguous number is answered with (judge UX4): one
+ * tap writes the line. Each button carries its POSITION (`c:pick_N`, a
+ * closed CALC_STEPS word) and the figure lives in `IntakeState.offers`, so
+ * the callback stays inside the parser's vocabulary (#937) and a stale press
+ * picks nothing it was not offered. Pure, so the derived fence can parse
+ * every button it draws.
+ */
+export function lineOfferKeyboard(labels: readonly string[]) {
+  const buttons = labels.slice(0, MAX_OFFERS).map((text, i) => ({ text, callback_data: `c:pick_${i}` }));
+  const rows: { text: string; callback_data: string }[][] = [];
+  for (let i = 0; i < buttons.length; i += 3) rows.push(buttons.slice(i, i + 3));
+  return { inline_keyboard: [...rows, ...skipKeyboard().inline_keyboard] };
+}
+
+/**
+ * The book's law for the collection's codes, read on the pool (#714) —
+ * through a dynamic import, because platform never imports wms statically.
+ * A failed read answers «no law known»: the line is then asked for a count
+ * or a weight, which is the one-measure rule it always had, never a
+ * refusal of the whole collection.
+ */
+async function intakeLaws(state: IntakeState) {
+  try {
+    const { bookLawsFor } = await import('../../wms/calc/book-laws');
+    return await bookLawsFor((state.facts.goods ?? []).map((g) => g.tnvedCode));
+  } catch (err) {
+    logger.warn({ err }, '[calc-intake] rates book unreadable — asking by the one-measure rule');
+    return new Map();
+  }
+}
+
+/** Why an answer could not be read — in words, for the one re-ask. */
+type LineAnswerRefusal = import('../../wms/calc/intake-manual').LineAnswerRefusal;
+
+const LINE_REFUSAL: Record<LineAnswerRefusal, (detail?: string) => string> = {
+  nothing: () => 'Tushunmadim. Masalan: «50 dona», «300 kg», «120 m²» yoki «40 juft».',
+  too_large: () => 'Bu son juda katta — miqdorni qayta yozing. TNVED kodi bo‘lsa: «kod 6403990000».',
+  code_short: (d) => `«${d ?? ''}» — 9 xonali: boshida 0 tushib qolganmi? Kodni 10 xonada yozing.`,
+  cartons: (d) => `${d ?? ''} karobka — karobka soni tovar soni emas. Nechta dona? Masalan: «300 dona».`,
+  unknown_unit: (d) => `«${d ?? ''}» — bu birlikni bilmayman. dona, kg, m², juft yoki litrda yozing.`,
+  two_pairs: () => 'Bitta qatorda ikki xil o‘lchov — bittasini yozing.',
+  unlabelled: () => 'Raqamlarni birlik bilan yozing: «300 dona 150 kg».',
+  repeated: () => 'Bitta birlikda ikki xil son — bittasini yozing.',
+};
+
+/**
+ * The seller's answer to a line question, written onto the row that was
+ * asked about.
  *
  * Addressed by INDEX and never by name: two lines of a packing list are
  * routinely called the same thing. An unreadable answer is re-asked ONCE and
  * then kept as material — the VED reads everything the seller sent, so
- * nothing is lost by moving on, and a wrong reading would be a weight nobody
- * stated with a duty computed on it.
+ * nothing is lost by moving on, and a wrong reading would be a figure nobody
+ * stated with a duty computed on it. A BARE number is never a default unit:
+ * it is the law's one pinned unit, or buttons (P1.3, judge UX4).
  */
 async function applyLineAnswer(
   ctx: CalcReplyCtx,
@@ -987,7 +1398,16 @@ async function applyLineAnswer(
   text: string,
 ): Promise<void> {
   const { parseLineAnswer, parseManualFacts } = await import('../../wms/calc/intake-manual');
-  const { nextLineToAsk } = await import('../../wms/calc/intake');
+  const {
+    ambiguousTotalText,
+    anyMeasureLine,
+    bareChoices,
+    bareUnitFor,
+    figureLabel,
+    lineNeeds,
+    needFigure,
+    numberText,
+  } = await import('../../wms/calc/intake');
 
   if (state.askingTotals) {
     // Whatever of the two the answer states; the other keeps what it had.
@@ -999,6 +1419,11 @@ async function applyLineAnswer(
         facts: { ...state.facts, weightKg, volumeM3 },
         material: [...state.material, text],
       }) ?? state;
+    if (read.ambiguous.length > 0 && !kept.reasked) {
+      updateIntake(chatId, { reasked: true });
+      await ctx.reply(read.ambiguous.map((a) => ambiguousTotalText(a)).join('\n'));
+      return;
+    }
     if (read.weightKg == null && read.volumeM3 == null && !kept.reasked) {
       updateIntake(chatId, { reasked: true });
       await ctx.reply('Tushunmadim. «12 kub 3500 kg» ko‘rinishida yozing.');
@@ -1007,42 +1432,142 @@ async function applyLineAnswer(
     await askNextOrConfirm(ctx, chatId, { ...kept, askingTotals: false, reasked: false });
     return;
   }
+
   const index = state.askingIndex ?? 0;
   const goods = state.facts.goods ?? [];
   const row = goods[index];
-  const bareMeans =
-    nextLineToAsk(state.section, state.facts, { after: index - 1 })?.bareMeans ?? 'quantity';
-  const answer = row ? parseLineAnswer(text, { bareMeans }) : null;
+  const answer = row ? parseLineAnswer(text) : parseLineAnswer('');
+  const withText = updateIntake(chatId, { material: [...state.material, text] }) ?? state;
 
-  if (!answer) {
-    // Keep the words either way — the note shows the seller's own material
-    // verbatim (law 11), so an unread answer is still in front of the VED.
-    const kept = updateIntake(chatId, { material: [...state.material, text] }) ?? state;
-    if (!kept.reasked) {
-      updateIntake(chatId, { reasked: true });
-      await ctx.reply('Tushunmadim. «50 dona» yoki «300 kg» ko‘rinishida yozing.');
-      return;
+  if (answer.kind === 'figures') {
+    const patch: Partial<NonNullable<IntakeState['facts']['goods']>[number]> = {};
+    for (const [key, value] of Object.entries(answer.figures)) {
+      if (value !== null) Object.assign(patch, { [key]: value });
     }
-    await askNextOrConfirm(ctx, chatId, { ...kept, reasked: false });
+    if (answer.code) patch.tnvedCode = answer.code;
+    await applyLinePatch(ctx, chatId, withText, index, patch);
     return;
   }
 
-  const patched = goods.map((g, i) =>
-    i === index
-      ? {
-          ...g,
-          quantity: 'quantity' in answer ? answer.quantity : g.quantity,
-          weightKg: 'weightKg' in answer ? answer.weightKg : g.weightKg,
-        }
-      : g,
-  );
+  if (answer.kind === 'bare' || answer.kind === 'ambiguous') {
+    // The code that came with it lands first: it may be what pins the unit.
+    const coded =
+      answer.kind === 'bare' && answer.code
+        ? (updateIntake(chatId, {
+            facts: {
+              ...withText.facts,
+              goods: goods.map((g, i) => (i === index ? { ...g, tnvedCode: answer.code } : g)),
+            },
+          }) ?? withText)
+        : withText;
+    const laws = await intakeLaws(coded);
+    const line =
+      lineNeeds(coded.section, coded.facts, laws).find((l) => l.index === index) ??
+      // The line owes nothing the law pins and states something already: a
+      // bare figure is still offered as a count or a weight.
+      anyMeasureLine(index, row!.name);
+    if (answer.kind === 'bare') {
+      const unit = bareUnitFor(line);
+      if (unit) {
+        await applyLinePatch(ctx, chatId, coded, index, needFigure(unit, answer.value));
+        return;
+      }
+      const offers = bareChoices(line, row!.unit).map((u) => ({ unit: u, value: answer.value }));
+      updateIntake(chatId, { offers });
+      await ctx.reply(`${numberText(answer.value)} — qaysi birlikda?`, {
+        reply_markup: lineOfferKeyboard(offers.map((o) => figureLabel(o.value, o.unit))),
+      });
+      return;
+    }
+    // «1,200 kg» — both readings in the unit it was written in, or in every
+    // unit the line could take when it was written bare.
+    const written = answer.unit ? needUnitOfSeller(answer.unit) : null;
+    const units = answer.unit ? (written ? [written] : []) : bareChoices(line, row!.unit);
+    const offers = units.flatMap((u) => [
+      { unit: u, value: answer.decimal },
+      { unit: u, value: answer.thousands },
+    ]);
+    if (offers.length === 0) {
+      await refuseLine(ctx, chatId, coded, 'cartons');
+      return;
+    }
+    updateIntake(chatId, { offers: offers.slice(0, MAX_OFFERS) });
+    await ctx.reply(`${numberText(answer.decimal)} mi yoki ${numberText(answer.thousands)} mi?`, {
+      reply_markup: lineOfferKeyboard(offers.slice(0, MAX_OFFERS).map((o) => figureLabel(o.value, o.unit))),
+    });
+    return;
+  }
+
+  await refuseLine(ctx, chatId, withText, answer.reason, answer.detail);
+}
+
+/** A unit the seller WROTE, as a figure's unit — a carton is no figure. */
+function needUnitOfSeller(
+  unit: import('../../wms/calc/units').SellerUnit,
+): import('../../wms/calc/needs').NeedUnit | null {
+  return unit === 'karobka' ? null : unit;
+}
+
+/** One re-ask in words, then the line is passed and the next one asked. */
+async function refuseLine(
+  ctx: CalcReplyCtx,
+  chatId: bigint,
+  state: IntakeState,
+  reason: LineAnswerRefusal,
+  detail?: string,
+): Promise<void> {
+  if (!state.reasked) {
+    updateIntake(chatId, { reasked: true });
+    await ctx.reply(LINE_REFUSAL[reason](detail), { reply_markup: skipKeyboard() });
+    return;
+  }
+  const done = state.askingIndex === null ? state.lineDone : [...state.lineDone, state.askingIndex];
+  await askNextOrConfirm(ctx, chatId, { ...state, lineDone: done, reasked: false, offers: [] });
+}
+
+/**
+ * Write a figure onto the asked line, remember it for a re-analysis, and
+ * either ask the SAME line for what it still owes (a clothing line answered
+ * «150 kg» still owes its count — same round, judge UX4) or move on.
+ */
+async function applyLinePatch(
+  ctx: CalcReplyCtx,
+  chatId: bigint,
+  state: IntakeState,
+  index: number,
+  patch: Partial<NonNullable<IntakeState['facts']['goods']>[number]>,
+): Promise<void> {
+  const { lineNeeds, lineQuestionText } = await import('../../wms/calc/intake');
+  const goods = state.facts.goods ?? [];
+  const row = goods[index];
+  if (!row) {
+    await askNextOrConfirm(ctx, chatId, { ...state, reasked: false, offers: [] });
+    return;
+  }
+  const patched = goods.map((g, i) => (i === index ? { ...g, ...patch } : g));
+  const earlier = state.lineAnswers.find((a) => a.index === index);
+  const lineAnswers = [
+    ...state.lineAnswers.filter((a) => a.index !== index),
+    { index, name: row.name, patch: { ...(earlier?.patch ?? {}), ...patch } },
+  ];
   const next =
     updateIntake(chatId, {
       facts: { ...state.facts, goods: patched },
-      material: [...state.material, text],
+      lineAnswers,
       reasked: false,
+      offers: [],
     }) ?? state;
-  await askNextOrConfirm(ctx, chatId, next);
+  const laws = await intakeLaws(next);
+  // Asked again in the SAME round, never as a new one: the seller is still
+  // answering the question they were asked. Each re-ask follows an answer
+  // they typed or tapped, and «⏭» always leaves.
+  const still = lineNeeds(next.section, next.facts, laws).find((l) => l.index === index);
+  if (still) {
+    updateIntake(chatId, { stage: 'question', askingIndex: index });
+    await ctx.reply(`Yozildi. ${lineQuestionText(still)}`, { reply_markup: skipKeyboard() });
+    return;
+  }
+  await askNextOrConfirm(ctx, chatId, { ...next, lineDone: [...next.lineDone, index] });
 }
 
 /**
@@ -1113,7 +1638,7 @@ async function answerWithAssistant(
   // `*` freely), and split rather than refused — the model may write more
   // than one message holds.
   for (const part of splitMessage(answer)) {
-    const sent = await sendText({ chatId, text: part });
+    const sent = await sendTextBriefRetry({ chatId, text: part });
     if (!sent.ok) {
       logger.warn({ description: sent.description }, 'bot assistant reply failed');
       break;
@@ -1172,15 +1697,10 @@ async function readInvoice(
   const { goodsFromFile } = await import('../../wms/deals/goods-file');
   const goods = await goodsFromFile(body, mime).catch(() => null);
   if (!goods) return null;
-  return {
-    goods: goods.map((g) => ({
-      name: g.description,
-      quantity: g.quantity,
-      weightKg: g.weightKg,
-      tnvedCode: g.tnvedCode,
-      note: null,
-    })),
-  };
+  // Everything the file states reaches the landing (2026-10-09, P1.6) —
+  // through the one mapping the landing's own test reads.
+  const { invoiceFacts } = await import('../../wms/calc/intake');
+  return { goods: invoiceFacts(goods) };
 }
 
 type BotFileCtx = {
@@ -1349,6 +1869,11 @@ async function handleCalcCallback(
       await ctx.reply('Ulanmagan.');
       return;
     }
+    // One collector at a time: a task draft is somebody's half-written task.
+    if (draftLive(chatId)) {
+      await ctx.reply(`Hozir topshiriq yozilyapti. ${BUSY_DRAFT}`);
+      return;
+    }
     // A live collection is minutes of somebody's attention. Replacing it in
     // silence is what this used to do; now it asks — unless the answer has
     // already arrived (`go_`).
@@ -1417,7 +1942,27 @@ async function handleCalcCallback(
   }
 
   if (step === 'skip') {
-    await askNextOrConfirm(ctx, chatId, { ...state, reasked: false });
+    // The skipped line is DONE for this collection — never asked again, not
+    // even after «➕ Yana ma'lumot» re-reads the material (P1.3).
+    const lineDone =
+      state.stage === 'question' && state.askingIndex !== null && !state.askingTotals
+        ? [...state.lineDone, state.askingIndex]
+        : state.lineDone;
+    await askNextOrConfirm(ctx, chatId, { ...state, lineDone, reasked: false, offers: [] });
+    return;
+  }
+
+  if (step.startsWith('pick_')) {
+    // A button under a bare or ambiguous figure (judge UX4). Only the
+    // pending question's own offers can be picked: a press from an older
+    // message, or after the line moved on, finds nothing and says so.
+    const offer = state.offers[Number(step.slice('pick_'.length))];
+    if (state.stage !== 'question' || state.askingIndex === null || state.askingTotals || !offer) {
+      await ctx.reply('Bu tugma eskirgan.');
+      return;
+    }
+    const { needFigure } = await import('../../wms/calc/intake');
+    await applyLinePatch(ctx, chatId, state, state.askingIndex, needFigure(offer.unit, offer.value));
     return;
   }
 
@@ -1470,11 +2015,14 @@ async function handleCalcCallback(
   // promised an answer and got silence. pg-boss owns it now, exactly as the
   // customs parse in this same sub-round is owned; the answer comes back
   // through the notification drain rather than a `ctx` that is gone by then.
-  const appUrl = process.env.APP_URL ?? '';
-  const path = target.kind === 'deal' ? 'bitimlar' : 'crm/leads';
+  // The link is the SENDER's — a card they can open, the calculation's own
+  // screen for the VED, or no line at all (`landingLinkFor`): one literal for
+  // everyone handed the VED a CRM card that bounces him.
+  const link = await landingLinkFor(staff.id, target);
   await ctx.reply(
     `✅ Saqlandi — ${target.kind === 'deal' ? 'bitim' : 'lead'}: ${target.label}\n` +
-      `${appUrl}/${path}/${target.id}\n\n` +
+      (link ? `${link}\n` : '') +
+      '\n' +
       // Honest about which half landed: the material is on the card either
       // way, but only a queued request will be calculated by anybody.
       (target.queued
@@ -1520,13 +2068,15 @@ function queueRefusal(code: string | null | undefined): string {
  * the contact handler restores it.
  */
 export async function askStaffPhone(
-  ctx: { reply: (text: string, extra?: Record<string, unknown>) => Promise<unknown> },
+  ctx: { reply: (text: string, extra?: Record<string, unknown>) => Promise<{ date: number }> },
   chatId: bigint,
 ): Promise<void> {
-  noteStaffEntry(chatId);
-  await ctx.reply('Hodim sifatida ulanish uchun telefon raqamingizni yuboring 👇', {
+  const asked = await ctx.reply('Hodim sifatida ulanish uchun telefon raqamingizni yuboring 👇', {
     reply_markup: phoneKeyboard('uz'),
   });
+  // Armed AFTER the prompt, at its own date (Q5 a) — and durable, so a deploy
+  // between «send your phone» and the contact no longer drops the intent.
+  noteStaffEntry(chatId, asked.date);
 }
 
 /**
@@ -1564,6 +2114,67 @@ const NOTES_PER_PAGE = 12;
 type NoteReplyCtx = {
   reply: (text: string, extra?: Record<string, unknown>) => Promise<unknown>;
 };
+
+/**
+ * «💬 Javob yozish» / «❓ Sotuvchidan so‘rash» pressed (0127). The button
+ * carries no id: the press resolves its OWN pressed message through the reply
+ * door — the same resolver a swipe-reply uses — and only then arms the one
+ * text wait. Every path answers the callback (an unanswered press spins for
+ * fifteen seconds with no error anywhere, #939).
+ *
+ * Refused while ANY collector is live: a collector sits above the one-text
+ * wait in the ladder and would eat the next text, leaving the armed wait to
+ * catch a LATER unrelated text (a «GS777») as a reply. No ForceReply — whether
+ * it hides the persistent staff keyboard on a phone is unverified, and
+ * «💬 Savol» already works with a plain wait.
+ */
+async function handleThreadReplyPress(
+  ctx: {
+    answerCallbackQuery: (opts?: { text?: string }) => Promise<unknown>;
+    reply: (text: string, extra?: Record<string, unknown>) => Promise<{ message_id: number; date: number }>;
+    callbackQuery: { message?: { message_id: number } };
+  },
+  chatId: bigint,
+): Promise<void> {
+  const staff = await staffForChat(chatId);
+  if (!staff) {
+    await answerPress(ctx, 'Ulanmagan');
+    return;
+  }
+  if (activeIntake(chatId)) {
+    await answerPress(ctx, BUSY_INTAKE);
+    await ctx.reply(BUSY_INTAKE);
+    return;
+  }
+  if (activeCapture(chatId)) {
+    await answerPress(ctx, 'Avval zametkani saqlang');
+    await refuseWhileCapturing(ctx, chatId);
+    return;
+  }
+  if (activeDraft(chatId)) {
+    await answerPress(ctx, BUSY_DRAFT);
+    await ctx.reply(BUSY_DRAFT);
+    return;
+  }
+  const messageId = ctx.callbackQuery.message?.message_id;
+  const verdict = messageId
+    ? await replyVerdictFor(chatId, messageId, staff.id).catch((err: unknown) => {
+        logger.warn({ err }, '[thread] press verdict failed');
+        return null;
+      })
+    : null;
+  const refused = verdict ? verdictSentence(verdict) : REPLY_SENTENCES.not_replyable;
+  if (refused || !messageId) {
+    const text = refused ?? REPLY_SENTENCES.not_replyable;
+    await answerPress(ctx, text);
+    await ctx.reply(text);
+    return;
+  }
+  await answerPress(ctx);
+  // Armed AFTER the prompt, at its own date (Q5 a).
+  const asked = await ctx.reply(REPLY_SENTENCES.pressPrompt);
+  noteReplyPending(chatId, messageId, { armedAt: asked.date });
+}
 
 /**
  * One collector at a time. The calc intake wins because it is minutes of a
@@ -1657,18 +2268,18 @@ async function handleNoteCallback(
 ): Promise<void> {
   const staff = await staffForChat(chatId);
   if (!staff) {
-    await ctx.answerCallbackQuery({ text: 'Ulanmagan' });
+    await answerPress(ctx, 'Ulanmagan');
     return;
   }
 
   if (step === 'page') {
-    await ctx.answerCallbackQuery();
+    await answerPress(ctx);
     await showNotesList(ctx, chatId, staff.id, page ?? 1);
     return;
   }
 
   if (step === 'new') {
-    await ctx.answerCallbackQuery();
+    await answerPress(ctx);
     if (activeIntake(chatId)) {
       await ctx.reply(
         'Hozir hisoblatish davom etyapti. Avval uni tugating yoki bekor qiling.',
@@ -1679,6 +2290,10 @@ async function handleNoteCallback(
       await ctx.reply('Yangi zametka allaqachon yozilyapti — nomini yuboring.');
       return;
     }
+    if (draftLive(chatId)) {
+      await ctx.reply(`Hozir topshiriq yozilyapti. ${BUSY_DRAFT}`);
+      return;
+    }
     const { v4: uuidv4 } = await import('uuid');
     startCapture(chatId, uuidv4());
     await ctx.reply('Zametkaga nom bering (masalan: «Xitoy sklad manzili»):');
@@ -1686,14 +2301,14 @@ async function handleNoteCallback(
   }
 
   if (step === 'cancel') {
-    await ctx.answerCallbackQuery();
+    await answerPress(ctx);
     endCapture(chatId);
     await ctx.reply('Bekor qilindi.');
     return;
   }
 
   if (step === 'share') {
-    await ctx.answerCallbackQuery();
+    await answerPress(ctx);
     const capture = activeCapture(chatId);
     if (!capture) {
       await ctx.reply('Yozilayotgan zametka yo‘q.');
@@ -1713,20 +2328,20 @@ async function handleNoteCallback(
   }
 
   if (step === 'save') {
-    await ctx.answerCallbackQuery();
+    await answerPress(ctx);
     await saveCapturedNote(ctx, chatId, staff.id);
     return;
   }
 
   // send
   if (!noteId) {
-    await ctx.answerCallbackQuery();
+    await answerPress(ctx);
     return;
   }
   // Answered BEFORE anything slow: the callback's own progress bar is what the
   // person is looking at, and it costs no message in the chat — so it leaves
   // no second artefact beside the note they are about to forward.
-  await ctx.answerCallbackQuery({ text: '📤 Yuborilmoqda…' });
+  await answerPress(ctx, '📤 Yuborilmoqda…', { say: false });
   void deliverNote(ctx, chatId, noteId, staff.id);
 }
 

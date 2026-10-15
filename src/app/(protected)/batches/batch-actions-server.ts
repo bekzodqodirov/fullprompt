@@ -1,14 +1,17 @@
 'use server';
 
-import { eq } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { db } from '@/modules/platform/db/client';
 import { batches, boxes, driverDevices } from '@/modules/platform/db/schema';
-import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
+import { AuthError, authorize, getActor } from '@/modules/platform/rbac/authorize';
 import { requestMeta } from '@/modules/platform/auth/session';
+import { isUuidShaped } from '@/modules/platform/audit/fields';
 import { enqueue, JOB_PROCESS_EVENTS } from '@/modules/platform/jobs/boss';
 import { authorizeOnBatch } from '@/modules/wms/batches/batch-authorize';
+import { rerouteBatch, RerouteError } from '@/modules/wms/batches/reroute';
+import type { RerouteErrorCode } from '@/modules/wms/batches/reroute-rules';
 import { removeLoadedCode, ScanError } from '@/modules/wms/scanning/service';
 import {
   closeBatch,
@@ -29,9 +32,24 @@ import {
   type CountAcceptResult,
 } from '@/modules/wms/scanning/count-accept';
 import { countDoorFor } from '@/modules/wms/scanning/count-door';
-import { isBusyError } from '@/modules/platform/db/errors';
+import { isBusyError, isServerBehind } from '@/modules/platform/db/errors';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import type { CheckpointActionState } from '@/modules/wms/tracking/checkpoint';
+import {
+  freezeCompositionsInTx,
+  lockTruckForTickInTx,
+  paperStamp,
+  thawCompositionsInTx,
+} from '@/modules/wms/receipts/lot-composition';
+
+/**
+ * Where a rerouted truck goes now, from the service's refusal — the office
+ * buttons print the phone's own sentence («endi {to} ga boradi») instead of
+ * «refresh the page» (the reroute review).
+ */
+function reroutedTo(err: ScanError): { to?: string } {
+  return err.code === 'batch_rerouted' && err.detail?.to ? { to: err.detail.to } : {};
+}
 
 /**
  * Accept the whole remaining manifest at the destination without scanning.
@@ -44,27 +62,36 @@ import type { CheckpointActionState } from '@/modules/wms/tracking/checkpoint';
  * (`finishUnloadAction`). Moving only this one would leave the operator the
  * lossy button and take away the safe one, which is the inversion the button
  * was built to fix.
+ *
+ * `seenDestWarehouseId` is the destination the page was rendered for (the
+ * reroute round): the gate is asked THERE and the service refuses
+ * `batch_rerouted` when the truck no longer goes there — so a manager on a
+ * stale page reads «the destination was changed», never «no permission», and
+ * never lands the new warehouse's cargo. A forged value names a warehouse the
+ * truck does not go to and is refused the same way, with nothing written.
  */
 export async function unloadRemainingAction(
   batchId: string,
-): Promise<{ ok: boolean; accepted?: number; skippedCounted?: number; error?: string }> {
+  seenDestWarehouseId?: string,
+): Promise<{ ok: boolean; accepted?: number; skippedCounted?: number; error?: string; to?: string }> {
   const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
   if (!batch) return { ok: false, error: 'batch_not_found' };
+  const at = isUuidShaped(seenDestWarehouseId) ? seenDestWarehouseId : batch.destWarehouseId;
   let actor;
   try {
-    actor = await authorize('receipts.void', { warehouseId: batch.destWarehouseId });
+    actor = await authorize('receipts.void', { warehouseId: at });
   } catch (err) {
     if (err instanceof AuthError) return { ok: false, error: 'forbidden' };
     throw err;
   }
   const meta = await requestMeta();
   try {
-    const result = await unloadRemaining(batchId, { actorId: actor.id, ...meta });
+    const result = await unloadRemaining(batchId, { actorId: actor.id, ...meta }, { expectDestId: at });
     await enqueue(JOB_PROCESS_EVENTS, {});
     revalidatePath(`/batches/${batchId}`);
     return { ok: true, accepted: result.accepted, skippedCounted: result.skippedCounted };
   } catch (err) {
-    if (err instanceof ScanError) return { ok: false, error: err.code };
+    if (err instanceof ScanError) return { ok: false, error: err.code, ...reroutedTo(err) };
     throw err;
   }
 }
@@ -85,14 +112,19 @@ export async function countAcceptLotAction(input: unknown): Promise<CountAcceptA
   if (!parsed.success) return { ok: false, error: 'validation' };
   const batch = await db.query.batches.findFirst({ where: eq(batches.id, parsed.data.batchId) });
   if (!batch) return { ok: false, error: 'batch_not_found' };
+  // The destination the panel was drawn for (the reroute round): the door is
+  // minted THERE, so a press from a page drawn before a reroute is refused
+  // `batch_rerouted` by the service — minted from a fresh read it would have
+  // opened at the NEW warehouse for an unscoped logist and landed the count.
+  const at = parsed.data.seenDestWarehouseId ?? batch.destWarehouseId;
   let actor;
   try {
-    actor = await authorize('plans.manage', { warehouseId: batch.destWarehouseId });
+    actor = await authorize('plans.manage', { warehouseId: at });
   } catch (err) {
     if (err instanceof AuthError) return { ok: false, error: 'forbidden' };
     throw err;
   }
-  const dest = countDoorFor(actor, batch.destWarehouseId);
+  const dest = countDoorFor(actor, at);
   if (!dest) return { ok: false, error: 'forbidden' };
   const origin = countDoorFor(actor, batch.originWarehouseId);
   const meta = await requestMeta();
@@ -116,20 +148,22 @@ export async function countAcceptCrateAction(
   input: unknown,
 ): Promise<
   | { ok: true; landed: number; notArrived: string[]; replay: boolean }
-  | { ok: false; error: CountAcceptRefusal | 'validation' }
+  | { ok: false; error: CountAcceptRefusal | 'validation'; detail?: Record<string, number | string> }
 > {
   const parsed = countAcceptCrateSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: 'validation' };
   const batch = await db.query.batches.findFirst({ where: eq(batches.id, parsed.data.batchId) });
   if (!batch) return { ok: false, error: 'batch_not_found' };
+  // As on the lot press: the door at the destination the panel was drawn for.
+  const at = parsed.data.seenDestWarehouseId ?? batch.destWarehouseId;
   let actor;
   try {
-    actor = await authorize('plans.manage', { warehouseId: batch.destWarehouseId });
+    actor = await authorize('plans.manage', { warehouseId: at });
   } catch (err) {
     if (err instanceof AuthError) return { ok: false, error: 'forbidden' };
     throw err;
   }
-  const dest = countDoorFor(actor, batch.destWarehouseId);
+  const dest = countDoorFor(actor, at);
   if (!dest) return { ok: false, error: 'forbidden' };
   const meta = await requestMeta();
   try {
@@ -138,7 +172,8 @@ export async function countAcceptCrateAction(
     revalidatePath(`/batches/${batch.id}`);
     return { ok: true, landed: res.landed, notArrived: res.notArrived, replay: res.replay };
   } catch (err) {
-    if (err instanceof CountError) return { ok: false, error: err.code };
+    // The detail carries WHERE on a reroute (`to`), as on the lot press.
+    if (err instanceof CountError) return { ok: false, error: err.code, detail: err.detail };
     if (isBusyError(err)) return { ok: false, error: 'busy_retry' };
     throw err;
   }
@@ -191,15 +226,22 @@ export async function resolveMissingLotAction(
  * finishing over remaining boxes needs the manager grant, exactly like the
  * accept-all it sits beside. The SERVICE refuses too (#531): a screen that
  * hides a button is not a door.
+ *
+ * `seenDestWarehouseId`, as on «Hammasini qabul qilish»: judged at the
+ * destination the page was drawn for, refused `batch_rerouted` on the locked
+ * row when the truck no longer goes there — the old warehouse's «Tushirish
+ * tugadi» never declares the new warehouse's cargo lost.
  */
 export async function finishUnloadAction(
   batchId: string,
-): Promise<{ ok: boolean; missing?: string[]; error?: string }> {
+  seenDestWarehouseId?: string,
+): Promise<{ ok: boolean; missing?: string[]; error?: string; to?: string }> {
   const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
   if (!batch) return { ok: false, error: 'batch_not_found' };
+  const at = isUuidShaped(seenDestWarehouseId) ? seenDestWarehouseId : batch.destWarehouseId;
   let actor;
   try {
-    actor = await authorize('scan.unload', { warehouseId: batch.destWarehouseId });
+    actor = await authorize('scan.unload', { warehouseId: at });
   } catch (err) {
     if (err instanceof AuthError) return { ok: false, error: 'forbidden' };
     throw err;
@@ -208,12 +250,13 @@ export async function finishUnloadAction(
   try {
     const result = await finishUnload(batchId, { actorId: actor.id, ...meta }, {
       mayCloseWithMissing: actor.permissions.has('receipts.void'),
+      expectDestId: at,
     });
     await enqueue(JOB_PROCESS_EVENTS, {});
     revalidatePath(`/batches/${batchId}`);
     return { ok: true, missing: result.missing };
   } catch (err) {
-    if (err instanceof ScanError) return { ok: false, error: err.code };
+    if (err instanceof ScanError) return { ok: false, error: err.code, ...reroutedTo(err) };
     throw err;
   }
 }
@@ -341,6 +384,28 @@ export async function createQuickBatchAction(
  * which checks no warehouse at all, so a scoped holder of the permission could
  * press it on any truck in the company (docs/CARD-TABS.md, «Holes found on the
  * way»).
+ *
+ * Lot tarkibi (7a, the judge's FREEZE): ticking copies, in ONE statement, the
+ * composition of every lot on the truck into `batch_sent_compositions` —
+ * with the POSITIONS its cartons hold in each lot's order, so another truck
+ * of a split lot departing first cannot move a sent paper — and while the
+ * truck is ticked its papers print that copy; a composition saved later
+ * reaches only trucks whose papers have not gone. Lock order, the truck
+ * doors' own (`lockTruckForTickInTx`): count-load's advisory lock, then the
+ * truck row FOR NO KEY UPDATE, then the copy (whose FK checks key-share the
+ * lot rows). count-load takes advisory → lot → truck and the unload doors
+ * truck → lot, so the tick waits for both instead of closing a cycle with
+ * either (the review's deadlock: the copy key-shared the lot BEFORE the
+ * truck, and a count-accept holding the truck and wanting the lot made a
+ * 40P01 the VED met as an error page). A wait that runs out is a sentence
+ * (`?tarkib=band`).
+ * The page posts `paperStamp`, the stamp of the compositions and positions it
+ * was drawn with: a colleague's save — or another truck's departure — between
+ * the download and the tick refuses the tick (`paper_moved`) and nothing is
+ * frozen. Un-ticking drops the copy. `want` is what the page showed («sent» /
+ * «unsent»); a bare post toggles, as it always has. On a half-applied deploy
+ * (no `batch_sent_compositions` yet) the tick is the plain toggle it was —
+ * no composition can exist without the table — and says so in the log.
  */
 export async function setSentToAgentAction(formData: FormData): Promise<void> {
   const batchId = String(formData.get('batchId') ?? '');
@@ -348,18 +413,71 @@ export async function setSentToAgentAction(formData: FormData): Promise<void> {
   if (!door) return;
   const { actor, batch } = door;
   const meta = await requestMeta();
-  await db
-    .update(batches)
-    .set({ sentToAgentAt: batch.sentToAgentAt ? null : tashkentDay() })
-    .where(eq(batches.id, batchId));
+  const want = formData.get('want');
+  const sending = want === 'sent' ? true : want === 'unsent' ? false : !batch.sentToAgentAt;
+  const postedStamp = String(formData.get('paperStamp') ?? '');
   const { writeAudit } = await import('@/modules/platform/audit/service');
-  await writeAudit(db, { actorId: actor.id, ...meta, warehouseId: batch.originWarehouseId }, {
-    entityType: 'batch',
-    entityId: batchId,
-    action: 'update',
-    after: { sentToAgent: !batch.sentToAgentAt },
-  });
+  const ctx = { actorId: actor.id, ...meta, warehouseId: batch.originWarehouseId };
+  let answer: 'paper_moved' | 'busy' | null = null;
+  try {
+    await db.transaction(async (tx) => {
+      const row = await lockTruckForTickInTx(tx, batchId);
+      if (!row || (row.sentToAgentAt !== null) === sending) throw new TickRefused('no_op');
+      if (sending) {
+        const frozen = await freezeCompositionsInTx(tx, batchId);
+        if (paperStamp(frozen) !== postedStamp) throw new TickRefused('paper_moved');
+        await tx.update(batches).set({ sentToAgentAt: tashkentDay() }).where(eq(batches.id, batchId));
+        await writeAudit(tx, ctx, {
+          entityType: 'batch',
+          entityId: batchId,
+          action: 'update',
+          after: { sentToAgent: true, frozenLots: frozen.filter((f) => f.rev !== null).length },
+        });
+      } else {
+        await tx.update(batches).set({ sentToAgentAt: null }).where(eq(batches.id, batchId));
+        const thawed = await thawCompositionsInTx(tx, batchId);
+        await writeAudit(tx, ctx, {
+          entityType: 'batch',
+          entityId: batchId,
+          action: 'update',
+          after: { sentToAgent: false, frozenLots: thawed },
+        });
+      }
+    });
+  } catch (err) {
+    if (err instanceof TickRefused) {
+      // Somebody ticked (or un-ticked) first: the page re-renders with their answer.
+      if (err.code === 'paper_moved') answer = 'paper_moved';
+    } else if (isBusyError(err)) {
+      answer = 'busy';
+    } else if (isServerBehind(err)) {
+      console.warn('[tick] server behind — the plain toggle, nothing frozen', err);
+      await db.transaction(async (tx) => {
+        const done = await tx
+          .update(batches)
+          .set({ sentToAgentAt: sending ? tashkentDay() : null })
+          .where(and(eq(batches.id, batchId), sending ? isNull(batches.sentToAgentAt) : isNotNull(batches.sentToAgentAt)))
+          .returning({ id: batches.id });
+        if (done.length === 0) return;
+        await writeAudit(tx, ctx, { entityType: 'batch', entityId: batchId, action: 'update', after: { sentToAgent: sending } });
+      });
+    } else {
+      throw err;
+    }
+  }
   revalidatePath(`/batches/${batchId}`);
+  revalidatePath(`/batches/${batchId}/tnved`);
+  if (answer) {
+    const { redirect } = await import('next/navigation');
+    redirect(`/batches/${batchId}/tnved?tarkib=${answer === 'paper_moved' ? 'yangilandi' : 'band'}#hujjatlar`);
+  }
+}
+
+/** The tick rolled back on purpose: the papers moved, or the row already says it. */
+class TickRefused extends Error {
+  constructor(public readonly code: 'paper_moved' | 'no_op') {
+    super(code);
+  }
 }
 
 /**
@@ -478,6 +596,82 @@ export async function setProfitTrackedAction(formData: FormData): Promise<void> 
   });
   revalidatePath(`/batches/${batchId}`);
   revalidatePath('/accounting/profit');
+}
+
+const rerouteSchema = z.object({
+  batchId: z.string().uuid(),
+  destWarehouseId: z.string().max(64),
+  seenDestWarehouseId: z.string().max(64),
+  reason: z.string().max(2000),
+});
+
+export type RerouteActionResult =
+  | { ok: true; toCode: string; pinOffRoute: boolean; noSchedule: boolean }
+  | { ok: false; error: RerouteErrorCode | 'busy_retry' | 'validation' | 'unauthenticated' };
+
+/**
+ * «Yo'nalishni o'zgartirish» — a truck on the road gets another receiving
+ * warehouse (the owner's 1a-4a, 5 → a). The truck card's door with the
+ * reroute's own power (`plans.manage`, his 2a: «admin va logist»); the
+ * service judges everything again on the locked row (#531). Every answer is
+ * words: a scope refusal is not «only an admin or a logist» (nit), a lock
+ * wait is «busy, press again», and an async onClick's thrown AuthError would
+ * reach the person as nothing at all.
+ */
+export async function rerouteBatchAction(input: unknown): Promise<RerouteActionResult> {
+  const parsed = rerouteSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: 'validation' };
+  const batchId = parsed.data.batchId;
+  let door: Awaited<ReturnType<typeof authorizeOnBatch>>;
+  try {
+    door = await authorizeOnBatch('plans.manage', batchId);
+  } catch (err) {
+    if (err instanceof AuthError) {
+      // An expired session is not «only an admin or a logist» (the reroute
+      // review): it has its own sentence, «sign in again».
+      if (err.code === 'unauthenticated') return { ok: false, error: 'unauthenticated' };
+      const actor = await getActor();
+      if (!actor?.permissions.has('plans.manage')) return { ok: false, error: 'forbidden' };
+      // A planner scoped to the old destination on a stale tab: the card's
+      // door closed because somebody just moved the truck away from their
+      // warehouse — «somebody changed it», not «not assigned to you».
+      const [live] = await db
+        .select({ dest: batches.destWarehouseId })
+        .from(batches)
+        .where(eq(batches.id, batchId));
+      if (live && live.dest !== parsed.data.seenDestWarehouseId) return { ok: false, error: 'dest_changed' };
+      return { ok: false, error: 'out_of_scope' };
+    }
+    throw err;
+  }
+  if (!door) return { ok: false, error: 'batch_not_found' };
+  try {
+    const result = await rerouteBatch(
+      door.actor,
+      batchId,
+      {
+        destWarehouseId: parsed.data.destWarehouseId,
+        seenDestWarehouseId: parsed.data.seenDestWarehouseId,
+        reason: parsed.data.reason,
+      },
+      await requestMeta(),
+    );
+    // The reroute has committed; a failed kick is the minute tick's job,
+    // never a refusal.
+    await enqueue(JOB_PROCESS_EVENTS, {}).catch((err) => console.error('[reroute] kick', err));
+    // The header on every tab, and every list the truck just moved between.
+    revalidatePath(`/batches/${batchId}`, 'layout');
+    revalidatePath('/batches');
+    revalidatePath('/transit');
+    revalidatePath('/map');
+    revalidatePath('/stock');
+    revalidatePath('/');
+    return { ok: true, toCode: result.to.code, pinOffRoute: result.pinOffRoute, noSchedule: result.noSchedule };
+  } catch (err) {
+    if (err instanceof RerouteError) return { ok: false, error: err.code };
+    if (isBusyError(err)) return { ok: false, error: 'busy_retry' };
+    throw err;
+  }
 }
 
 /**

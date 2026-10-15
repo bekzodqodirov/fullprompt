@@ -32,6 +32,8 @@ import {
   warehouses,
 } from '@/modules/platform/db/schema';
 import { confirmReceipt } from '@/modules/wms/receipts/service';
+import { addCostEntry } from '@/modules/wms/costing/service';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { landedCostByClient, landedCostByLot, unconvertedCosts } from '@/modules/wms/reports/queries';
 import { decidedLeadCounts, salesAnalytics } from '@/modules/wms/crm/analytics';
 import { openDealsSummary } from '@/modules/wms/deals/service';
@@ -218,11 +220,16 @@ async function receiptWithCost(usd: number) {
       lots: [
         { id: lotId, productNameZh: `货${STAMP}`, boxCount: 2, dimsMode: 'mixed', totalWeightKg: 20, totalVolumeM3: 0.2 },
       ],
-      extraCosts: [{ costTypeId: type!.id, amount: usd, currency: 'USD', note: '' }],
+      extraCosts: [],
     } as Parameters<typeof confirmReceipt>[0],
     ctx(),
   );
   madeReceipts.push(receiptId);
+  // Through the cost door (the receipt's own money door is closed, SARFLAR §8.2).
+  await addCostEntry(
+    { scope: 'receipt', receiptId, costTypeId: type!.id, amount: usd, currency: 'USD', costDate: tashkentDay(), allocationBasis: 'weight' },
+    ctx(),
+  );
   const [entry] = await db.select().from(costEntries).where(eq(costEntries.receiptId, receiptId));
   return entry!;
 }

@@ -1,9 +1,9 @@
 'use client';
 
-import { compressPhoto } from '@/components/compress-photo';
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { LightboxImg } from '@/components/lightbox-img';
+import { uploadAttachmentFile } from '@/components/upload-attachment';
 
 export interface AttachmentItem {
   id: string;
@@ -45,23 +45,24 @@ export function AttachmentsPanel({
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function uploadErrorText(res: Response): Promise<string> {
-    try {
-      const body = (await res.json()) as { error?: string };
-      if (body.error === 'unsupported_type') return tr('fileTypeUnsupported');
-      if (body.error === 'too_large') return tr('fileTooLarge');
-    } catch {
-      /* non-JSON reply — fall through to the generic message */
-    }
-    return t('attachFailed');
-  }
-
   async function remove(id: string) {
+    setError(null);
     const res = await fetch(`/api/attachments/${id}`, { method: 'DELETE' });
     if (res.ok || res.status === 404) {
       setItems((prev) => prev.filter((item) => item.id !== id));
       onRemove?.(id);
+      return;
     }
+    // A refusal said in words — it was silently ignored, so a file a lot's
+    // composition cites (or a queued Telegram photo) just stayed put with
+    // nothing on screen to say why.
+    let code: string | undefined;
+    try {
+      code = ((await res.json()) as { error?: string }).error;
+    } catch {
+      /* non-JSON reply — the generic sentence */
+    }
+    setError(code === 'in_use' ? t('attachInUse') : t('attachFailed'));
   }
 
   async function addFiles(files: FileList | null) {
@@ -70,27 +71,18 @@ export function AttachmentsPanel({
     setError(null);
     try {
       for (const file of Array.from(files)) {
-        const isImage = file.type.startsWith('image/');
-        // A photo is shrunk before it leaves the phone; anything else — an
-        // invoice, a declaration — goes up as it is.
-        const body = isImage ? await compressPhoto(file) : file;
-        const formData = new FormData();
-        formData.set('file', body);
-        formData.set('entityType', entityType);
-        formData.set('entityId', entityId);
-        const res = await fetch('/api/files/upload', { method: 'POST', body: formData });
+        const res = await uploadAttachmentFile(file, entityType, entityId);
         if (res.ok) {
-          const { id } = (await res.json()) as { id: string };
-          const item: AttachmentItem = {
-            id,
-            fileName: file.name,
-            contentType: file.type,
-            kind: isImage ? 'photo' : 'file',
-          };
-          setItems((prev) => [...prev, item]);
-          onAdd?.(item);
+          setItems((prev) => [...prev, res.item]);
+          onAdd?.(res.item);
         } else {
-          setError(await uploadErrorText(res));
+          setError(
+            res.error === 'unsupported_type'
+              ? tr('fileTypeUnsupported')
+              : res.error === 'too_large'
+                ? tr('fileTooLarge')
+                : t('attachFailed'),
+          );
         }
       }
     } finally {

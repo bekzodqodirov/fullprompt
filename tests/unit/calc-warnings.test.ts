@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   aiRateTaken,
+  lawPinnedBasis,
   sealCounters,
   unchangedFromProposal,
   warningsForGroup,
   type WarningGroupFacts,
 } from '@/modules/wms/calc/warnings';
+import { defaultBasisFor } from '@/modules/wms/calc/basis';
 
 const base: WarningGroupFacts = {
   dictionaryRates: null,
@@ -16,8 +18,24 @@ const base: WarningGroupFacts = {
   aiProposed: false,
   aiConfidence: null,
   aiDutyPct: null,
+  dutyMode: 'advalor',
+  dutySpecific: null,
+  dutyUnit: null,
+  headingHidesLaws: false,
+  exciseUnanswered: false,
   items: [],
 };
+
+/** A book row as `dictionaryRates` carries it — the whole law (2026-10-09). */
+const book = (dutyPct: number, over: Partial<NonNullable<WarningGroupFacts['dictionaryRates']>> = {}) => ({
+  dutyPct,
+  vatPct: 12,
+  feeUsd: 0,
+  dutyMode: 'advalor' as const,
+  dutySpecific: null,
+  dutyUnit: null,
+  ...over,
+});
 
 describe('a warning means the dictionary had an answer and a person typed another', () => {
   /**
@@ -89,7 +107,7 @@ describe('a warning means the dictionary had an answer and a person typed anothe
   });
 
   it('warns once the dictionary HAS an answer and a DIFFERENT rate was typed', () => {
-    const facts = { ...base, dictionaryRates: { dutyPct: 5, vatPct: 12, feeUsd: 0 } };
+    const facts = { ...base, dictionaryRates: book(5) };
     expect(warningsForGroup(facts)).toContain('rate_off_dictionary');
   });
 
@@ -101,7 +119,7 @@ describe('a warning means the dictionary had an answer and a person typed anothe
    * have gone from naming nothing to naming everything in one deploy.
    */
   it('says nothing when the typed numbers EQUAL the dictionary’s', () => {
-    const facts = { ...base, dictionaryRates: { dutyPct: 10, vatPct: 12, feeUsd: 0 } };
+    const facts = { ...base, dictionaryRates: book(10) };
     expect(warningsForGroup(facts)).toEqual([]);
   });
 
@@ -109,18 +127,48 @@ describe('a warning means the dictionary had an answer and a person typed anothe
     const facts = {
       ...base,
       vatPct: 0,
-      dictionaryRates: { dutyPct: 10, vatPct: 12, feeUsd: 0 },
+      dictionaryRates: book(10),
     };
     expect(warningsForGroup(facts)).toContain('rate_off_dictionary');
   });
 
-  it('says nothing when the rate CAME from the dictionary', () => {
-    const facts: WarningGroupFacts = {
-      ...base,
-      rateSource: 'dictionary',
-      dictionaryRates: { dutyPct: 5, vatPct: 12, feeUsd: 0 },
-    };
+  /*
+   * Subject changed deliberately (2026-10-09, P2.2): a group the BOOK wrote
+   * whose law differs from today's book row is not silent any more — the
+   * book MOVED under an open job, and that is `dictionary_moved`'s sentence.
+   * It is never `rate_off_dictionary` (nobody typed anything), and a group
+   * that still equals the book says nothing at all.
+   */
+  it('a dictionary group that still equals the book says nothing', () => {
+    const facts: WarningGroupFacts = { ...base, rateSource: 'dictionary', dictionaryRates: book(10) };
     expect(warningsForGroup(facts)).toEqual([]);
+  });
+
+  it('a dictionary group whose book MOVED says so — once, never as «typed off the book»', () => {
+    const facts: WarningGroupFacts = { ...base, rateSource: 'dictionary', dictionaryRates: book(5) };
+    expect(warningsForGroup(facts)).toEqual(['dictionary_moved']);
+    // The shape alone moving is the book moving too: a MAX floor the book
+    // added (or dropped) under the same percentage.
+    const floor = book(10, { dutyMode: 'max', dutySpecific: 3, dutyUnit: 'juft' });
+    expect(warningsForGroup({ ...base, rateSource: 'dictionary', dictionaryRates: floor })).toEqual([
+      'dictionary_moved',
+    ]);
+    // A group with no law at all is `rates_missing` (a blocker), never «moved».
+    expect(
+      warningsForGroup({ ...base, rateSource: null, dutyPct: null, vatPct: null, dictionaryRates: book(5) }),
+    ).toEqual([]);
+  });
+
+  it('a TYPED group off the book by its SHAPE alone is off the book (UX9: one fact, one warning)', () => {
+    const floor = book(10, { dutyMode: 'max', dutySpecific: 3, dutyUnit: 'juft' });
+    const out = warningsForGroup({ ...base, rateSource: 'typed', dictionaryRates: floor });
+    expect(out).toContain('rate_off_dictionary');
+    expect(out).not.toContain('dictionary_moved');
+  });
+
+  it('a short code hiding other laws, and an unanswered excise, are recorded by the ✅', () => {
+    expect(warningsForGroup({ ...base, headingHidesLaws: true })).toEqual(['code_heading']);
+    expect(warningsForGroup({ ...base, exciseUnanswered: true })).toEqual(['excise_unanswered']);
   });
 
   it('warns on a typed baza only when the dictionary answered AND the value differs', () => {
@@ -188,7 +236,7 @@ describe('a warning means the dictionary had an answer and a person typed anothe
       ...base,
       aiProposed: true,
       aiConfidence: 'low',
-      dictionaryRates: { dutyPct: 5, vatPct: 12, feeUsd: 0 },
+      dictionaryRates: book(5),
     });
     expect(covered).not.toContain('ai_low_confidence');
   });
@@ -273,5 +321,51 @@ describe('the three counters a seal carries away', () => {
       aiBlindGroups: 0,
       aiRateTakenGroups: 0,
     });
+  });
+});
+
+describe('0125 A1: basis_not_law — a priced row per another unit than the law counts in', () => {
+  const priced = (
+    bazaBasis: WarningGroupFacts['items'][number]['bazaBasis'],
+    bazaUsd: number | null = 8,
+  ) => ({
+    hasDictionaryBaza: false,
+    bazaSource: 'typed' as const,
+    bazaUsd,
+    bazaBasis,
+    dictionaryBaza: null,
+  });
+
+  it('fires when the law PINS a unit and a priced row is per another', () => {
+    expect(warningsForGroup({ ...base, dutyUnit: 'juft', items: [priced('kg')] })).toContain('basis_not_law');
+    expect(warningsForGroup({ ...base, dutyUnit: 'kg', items: [priced('m3')] })).toContain('basis_not_law');
+    expect(warningsForGroup({ ...base, dutyUnit: 'm2', items: [priced('unit')] })).toContain('basis_not_law');
+  });
+
+  it('is silent when the row is per the law’s own unit, or carries no price yet', () => {
+    expect(warningsForGroup({ ...base, dutyUnit: 'juft', items: [priced('juft')] })).not.toContain(
+      'basis_not_law',
+    );
+    // An unpriced row's chosen unit prices nothing — not a confirmed number.
+    expect(warningsForGroup({ ...base, dutyUnit: 'juft', items: [priced('kg', null)] })).not.toContain(
+      'basis_not_law',
+    );
+  });
+
+  it('is SILENT on an advalor code and on a per-dona law — they pin no baza unit', () => {
+    // Stated to him: on these (1,250 of 1,489 rows) an override is free and
+    // this list does not watch it.
+    for (const dutyUnit of [null, 'dona', '1000_dona', 'sm3']) {
+      expect(
+        warningsForGroup({ ...base, dutyUnit, items: [priced('kg'), priced('m3')] }),
+      ).not.toContain('basis_not_law');
+    }
+  });
+
+  it('the restated pin agrees with defaultBasisFor over every law unit (the zero-import rule)', () => {
+    for (const dutyUnit of [null, 'kg', 'dona', '1000_dona', 'sm3', 'm2', 'juft', 'litr']) {
+      const law = defaultBasisFor({ dutyUnit });
+      expect(lawPinnedBasis(dutyUnit), String(dutyUnit)).toBe(law === 'unit' ? null : law);
+    }
   });
 });

@@ -1,0 +1,22 @@
+-- A truck may be renamed on the road until unloading finishes (the owner's
+-- 1a / 2a / 3a, 2026-09-30 — reverses DECISIONS #122). No column: the names a
+-- truck has worn are the immutable audit rows `batches/rename.ts` writes, and
+-- `batches/former-codes.ts` is their only reader. Two indexes, both optional
+-- for CORRECTNESS — without them every read is right and slow — so a
+-- half-applied deploy is only slower, never broken.
+--
+-- (1) The former names — the names a truck wore ON THE ROAD, i.e. renames
+-- that carry a reason (a pre-departure rename frees its name, as it always
+-- did). Partial, over exactly the self-describing predicate the readers write
+-- (`FORMER_CODE_PREDICATE('')` and `FORMER_CODE_KEY('')`, character for
+-- character — a fence in tests/unit/batch-rename-wire.test.ts), so a few
+-- dozen entries answer «ever worn», the bot's fallback and ⌘K's former-name
+-- match instead of a scan of ~240k audit rows. Inside drizzle's
+-- one migration transaction, so not CONCURRENTLY: a SHARE lock on audit_log
+-- for one scan, while `migrate` runs and the app is being recreated anyway.
+CREATE INDEX IF NOT EXISTS "audit_batch_former_code_idx" ON "audit_log" ((upper(before->>'code'))) WHERE entity_type = 'batch' AND action = 'update' AND (before->>'code') IS NOT NULL AND (after->>'code') IS NOT NULL AND (before->>'code') <> (after->>'code') AND (after->>'reason') IS NOT NULL;
+--> statement-breakpoint
+-- (2) Current codes by `upper(code)` — `codeEverWorn`'s first half inside
+-- every counter walk, and the bot's existing `upper(code)` lookup, which the
+-- case-sensitive unique index never served.
+CREATE INDEX IF NOT EXISTS "batches_code_upper_idx" ON "batches" (upper("code"));

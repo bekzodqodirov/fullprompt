@@ -1,8 +1,8 @@
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
-import { calcGroups, calcOffers, calcRequests, calcVersions } from '@/modules/platform/db/schema';
+import { calcGroups, calcOffers, calcRequests, calcVersions, leads } from '@/modules/platform/db/schema';
 import type { CalcSectionName } from './pricing';
-import type { UpsaleScope } from './upsale-scope';
+import { seesOfferPriceOf, type UpsaleScope } from './upsale-scope';
 
 /**
  * Price history (docs/VED.md phase C, law 10) — «sotuvchi va vedga narxlar
@@ -49,6 +49,12 @@ export interface QuoteHistoryRow {
   belowFloor: boolean;
   /** False for a seller: the card behind it prints the sealed floor. */
   cardReadable: boolean;
+  /**
+   * The lead's owner, for `calcCardHref` (review access-7): the CRM card
+   * admits its owner and the funnel's readers, the karta everyone else with
+   * `ved.docs`. Null on a deal row.
+   */
+  leadOwnerId: string | null;
 }
 
 interface BreakdownGroup {
@@ -105,7 +111,8 @@ export function groupPerUnit(
  */
 export async function quoteHistoryFor(
   tnvedCode: string,
-  opts: { scope: UpsaleScope; limit?: number; section?: CalcSectionName },
+  // `viewerId` REQUIRED like `scope` (his F1 a): an optional one fails OPEN.
+  opts: { scope: UpsaleScope; viewerId: string; limit?: number; section?: CalcSectionName },
 ): Promise<QuoteHistoryRow[]> {
   const code = tnvedCode.trim();
   if (!code) return [];
@@ -121,20 +128,32 @@ export async function quoteHistoryFor(
       version: calcVersions,
       entityType: calcRequests.entityType,
       entityId: calcRequests.entityId,
+      leadOwnerId: leads.ownerId,
     })
     .from(calcVersions)
     .innerJoin(calcRequests, eq(calcRequests.id, calcVersions.requestId))
+    // At most one row: a request names one card, and only a lead has an owner.
+    .leftJoin(leads, and(eq(calcRequests.entityType, 'lead'), eq(leads.id, calcRequests.entityId)))
     .where(and(...where))
     .orderBy(desc(calcVersions.sealedAt))
     .limit(limit);
 
   if (sorted.length === 0) return [];
 
-  const offers = await offersByVersion(sorted.map((r) => r.version.id));
+  // A seller's OWN offers only, filtered IN SQL (his F1 a), so the newest OWN
+  // offer is picked rather than the newest offer hidden.
+  const offers = await offersByVersion(
+    sorted.map((r) => r.version.id),
+    opts.scope === 'own' ? opts.viewerId : null,
+  );
 
   // The two views of one row (laws 4 and 10). `scope` is REQUIRED and not
   // defaulted: an optional argument with a permissive default fails OPEN, and
   // every caller that forgets it leaks silently rather than failing to compile.
+  // Since F1 a the sealed total is no secret (the price channel posts it);
+  // the cost family below stays hidden for `'own'` because this screen's
+  // breakdown is NOT widened (decided, recorded) — not because «the floor is a
+  // secret».
   const hideCost = opts.scope === 'own';
   const hidePrice = opts.scope === 'none';
 
@@ -150,9 +169,9 @@ export async function quoteHistoryFor(
       entityId: r.entityId,
       sealedAt: v.sealedAt,
       section: v.section as CalcSectionName,
-      // Nulling the total alone would leave the floor one multiplication
-      // away: the row prints per-m³ and per-kg beside the volume and the
-      // weight. The whole derived family goes, or none of it does.
+      // This screen's cost breakdown is not widened for a seller (F1 a left
+      // it so): the row prints per-m³ and per-kg beside the volume and the
+      // weight, so the whole derived family goes, or none of it does.
       totalUsd: hideCost ? null : Number(v.totalUsd),
       perM3Usd: hideCost || v.perM3Usd === null ? null : Number(v.perM3Usd),
       perKgUsd: hideCost || v.perKgUsd === null ? null : Number(v.perKgUsd),
@@ -167,21 +186,32 @@ export async function quoteHistoryFor(
           : null,
       groupCustomsPerM3: !hideCost && group ? groupPerUnit(group, 'volumeM3') : null,
       groupCustomsPerUnit: !hideCost && group ? groupPerUnit(group, 'quantity') : null,
-      clientPriceUsd: hidePrice || !offer ? null : Number(offer.clientPriceUsd),
-      belowFloor: hidePrice ? false : (offer?.belowFloor ?? false),
+      clientPriceUsd:
+        hidePrice || !offer || !seesOfferPriceOf(opts.scope, offer.offeredBy, opts.viewerId)
+          ? null
+          : Number(offer.clientPriceUsd),
+      belowFloor:
+        hidePrice || !offer || !seesOfferPriceOf(opts.scope, offer.offeredBy, opts.viewerId)
+          ? false
+          : offer.belowFloor,
       /** A card link is a door to the floor: `/bitimlar/<id>` prints it. */
       cardReadable: !hideCost,
+      leadOwnerId: r.leadOwnerId ?? null,
     };
   });
 }
 
 /** The newest offer per version — one grouped query, never one per row (#432). */
-async function offersByVersion(versionIds: string[]) {
+async function offersByVersion(versionIds: string[], ownerFilter: string | null) {
   if (versionIds.length === 0) return new Map<string, typeof calcOffers.$inferSelect>();
   const rows = await db
     .select()
     .from(calcOffers)
-    .where(inArray(calcOffers.versionId, versionIds))
+    .where(
+      ownerFilter === null
+        ? inArray(calcOffers.versionId, versionIds)
+        : and(inArray(calcOffers.versionId, versionIds), eq(calcOffers.offeredBy, ownerFilter)),
+    )
     .orderBy(desc(calcOffers.offeredAt));
   const out = new Map<string, typeof calcOffers.$inferSelect>();
   // The inArray above admits only version-anchored rows, so versionId is

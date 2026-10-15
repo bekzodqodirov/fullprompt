@@ -33,12 +33,12 @@ import { aboardFilter } from './unload';
 export class ScanError extends Error {
   /**
    * `detail` carries what a refusal must NAME (0112: «yuklash tugadi» refused
-   * over uncounted QR-siz lots says which ones). Every older refusal is a
-   * bare code, as it always was.
+   * over uncounted QR-siz lots says which ones; `batch_rerouted` says WHERE
+   * the truck goes now). Every older refusal is a bare code, as it always was.
    */
   constructor(
     public readonly code: string,
-    public readonly detail?: { lots?: string[] },
+    public readonly detail?: { lots?: string[]; to?: string },
   ) {
     super(code);
   }

@@ -36,6 +36,16 @@ export function taskLink(entityType: string | null, entityId: string | null): st
   return `${appUrl}${entityHref(entityType, entityId) ?? '/bugun'}`;
 }
 
+/**
+ * A calculation job's own screen — where a calc task's message points
+ * (VED-TARIX §8): the lead card the task is ABOUT sends a VED without
+ * `crm.leads` home, and the job is ended on this screen and nowhere else.
+ */
+export function calcLink(requestId: string): string {
+  const appUrl = (process.env.APP_URL ?? '').replace(/\/$/, '');
+  return `${appUrl}/hisoblash/${requestId}`;
+}
+
 export function cardLink(entityType: string, entityId: string): string | null {
   const appUrl = (process.env.APP_URL ?? '').replace(/\/$/, '');
   const href = entityHref(entityType, entityId);

@@ -4,6 +4,7 @@ import { withoutJit } from '../../platform/db/no-jit';
 import { getSetting } from '../../platform/settings/service';
 import { tashkentDay } from '../../platform/time/tashkent';
 import { rateFor } from '../costing/service';
+import { creditCountsFor } from '../calc/credit';
 import { upsaleScopeFor } from '../calc/upsale-scope';
 import { earnedOf, upsaleRows } from '../calc/upsale-service';
 import { stampedCargoByMonth } from './cargo';
@@ -160,16 +161,12 @@ async function myWork(userId: string, range: { from: Date; to: Date }): Promise<
       (SELECT count(*)::int FROM receipts r
         WHERE r.status = 'confirmed'
           AND coalesce(r.received_by_user_id, CASE WHEN r.received_by_name IS NULL THEN r.confirmed_by END) = ${userId}::uuid
-          AND r.received_at >= ${from}::timestamptz AND r.received_at < ${to}::timestamptz) AS receipts,
-      (SELECT count(*)::int FROM calc_versions v
-        WHERE v.sealed_by = ${userId}::uuid
-          AND v.sealed_at >= ${from}::timestamptz AND v.sealed_at < ${to}::timestamptz) AS sealed,
-      (SELECT count(*)::int FROM calc_requests q
-        WHERE q.completed_by = ${userId}::uuid AND q.completed_via = 'task' AND q.answer_amount IS NOT NULL
-          AND q.completed_at >= ${from}::timestamptz AND q.completed_at < ${to}::timestamptz) AS answered`)) as unknown as {
+          AND r.received_at >= ${from}::timestamptz AND r.received_at < ${to}::timestamptz) AS receipts`)) as unknown as {
     receipts: number;
-    sealed: number;
-    answered: number;
   }[];
-  return { receipts: Number(row?.receipts ?? 0), sealed: Number(row?.sealed ?? 0), answered: Number(row?.answered ?? 0) };
+  // The calculations come from the ONE credit rule (calc/credit.ts) — the
+  // history's per-VED totals and the queue's speed block ask the same, so
+  // «Bu oy» on a profile and «Kim qancha hisobladi» cannot disagree (#513).
+  const calc = await creditCountsFor(userId, range);
+  return { receipts: Number(row?.receipts ?? 0), sealed: calc.sealed, answered: calc.answered };
 }

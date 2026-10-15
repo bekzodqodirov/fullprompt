@@ -353,22 +353,45 @@ export function rankAttention<T extends AttentionItem>(items: T[], visible = 7) 
   };
 }
 
-export type TripKind = 'internal' | 'unpriced' | 'loss' | 'profit';
+export type TripKind = 'internal' | 'continuation' | 'unpriced' | 'loss' | 'profit';
 
 /**
  * What a truck row IS, before it is drawn. An unpriced truck has profit =
  * −cost in the report's arithmetic, and drawing that as a red loss bar would
  * tell the owner a trip lost money when nobody has typed its price yet — so
  * it is a chip, never a bar.
+ *
+ * A «davomi» (continuation) truck carries only cargo whose price AND road sit
+ * on an earlier truck (owner, 2026-09-30: Andijan → Tashkent for cargo that
+ * came from China — `batchCarriage`). It has nothing to price and its cost
+ * is inside that truck's «keyingi yo'l», so it is neither «narx yo'q» nor a
+ * loss. `continuation` is REQUIRED: optional, a caller that forgot it would
+ * quietly go back to calling every such truck unpriced.
  */
-export function tripKind(row: { internal: boolean; revenueUsd: number; profitUsd: number | null }): TripKind {
+export function tripKind(row: {
+  internal: boolean;
+  continuation: boolean;
+  revenueUsd: number;
+  profitUsd: number | null;
+}): TripKind {
   if (row.internal) return 'internal';
-  if (!(Math.abs(row.revenueUsd) > 0.009)) return 'unpriced';
+  const priced = Math.abs(row.revenueUsd) > 0.009;
+  if (!priced && row.continuation) return 'continuation';
+  if (!priced) return 'unpriced';
   return (row.profitUsd ?? 0) < 0 ? 'loss' : 'profit';
 }
 
+/**
+ * Every rider of the truck follows an earlier price-bearing truck and the
+ * money has moved (`BatchCarriage`): the truck is a «davomi». One home for
+ * «Partiya foydasi», the pricing page and the truck card.
+ */
+export function isContinuationTrip(carriage: { riders: number; givenBack: number } | undefined): boolean {
+  return Boolean(carriage && carriage.riders > 0 && carriage.givenBack === carriage.riders);
+}
+
 export interface TripTotals {
-  /** Non-internal trucks in the window. */
+  /** Non-internal trucks in the window, «davomi» ones apart. */
   trips: number;
   revenue: number;
   cost: number;
@@ -380,6 +403,8 @@ export interface TripTotals {
   losses: number;
   unpriced: number;
   internal: number;
+  /** «Davomi» trucks — their cost is another truck's «keyingi yo'l». */
+  continuation: number;
   /**
    * The PART of `revenue` charged to clients whose cargo did not ride (0104,
    * his (a)): Σ `noCargoChargeUsd` over the non-internal rows. Printed beside
@@ -400,6 +425,8 @@ export interface TripTotals {
 export function tripTotals(
   rows: {
     internal?: boolean;
+    /** A «davomi» truck (`isContinuationTrip`): $0 and not a trip of its own. */
+    continuation?: boolean;
     revenueUsd: number;
     costUsd: number;
     profitUsd: number | null;
@@ -417,10 +444,23 @@ export function tripTotals(
   let losses = 0;
   let unpriced = 0;
   let internal = 0;
+  let continuation = 0;
   for (const row of rows) {
-    const kind = tripKind({ internal: !!row.internal, revenueUsd: row.revenueUsd, profitUsd: row.profitUsd });
+    const kind = tripKind({
+      internal: !!row.internal,
+      continuation: !!row.continuation,
+      revenueUsd: row.revenueUsd,
+      profitUsd: row.profitUsd,
+    });
     if (kind === 'internal') {
       internal += 1;
+      continue;
+    }
+    // Its cost is inside the truck that bears the price; its row is $0.
+    if (kind === 'continuation') {
+      continuation += 1;
+      cost += row.costUsd;
+      profit += row.profitUsd ?? 0;
       continue;
     }
     trips += 1;
@@ -446,6 +486,7 @@ export function tripTotals(
     losses,
     unpriced,
     internal,
+    continuation,
     noCargo: cents(noCargo),
   };
 }

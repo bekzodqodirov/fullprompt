@@ -34,8 +34,11 @@ describe('the «Partiya» mark', () => {
 
   it('every truck-profit table reads only marked trucks and names the rest', () => {
     const screen = read('src/app/(protected)/accounting/profit/page.tsx');
-    expect(screen).toContain('trips!.filter((row) => row.tracked)');
-    expect(screen).toContain('untrackedTrips(trips)');
+    // The one exception is «bo'linmagan» (docs/YOLKIRA-TAQSIMOT.md §6.3.6):
+    // the list of every trip with money on no box, marked or not — and it
+    // drops the «left out» note, which would be false there.
+    expect(screen).toContain('trips!.filter((row) => (unsplitOnly ? row.unallocatedUsd > 0.009 : row.tracked))');
+    expect(screen).toContain('trips && !unsplitOnly ? untrackedTrips(trips) : null');
     const file = read('src/modules/wms/accounting/xlsx.ts');
     expect(file).toContain('all.filter((row) => row.tracked)');
     expect(file).toContain('untrackedTrips(all)');

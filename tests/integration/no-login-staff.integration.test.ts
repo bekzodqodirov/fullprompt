@@ -647,8 +647,8 @@ describe('C — nobody treats them as a colleague, even with the flags forced on
       repeatUnit: null,
       repeatEvery: 1,
     };
-    await expect(createTask({ ...task, assigneeId: p3 }, ctx())).rejects.toMatchObject({ code: 'assignee_no_login' });
-    const mine = await createTask({ ...task, assigneeId: actorId }, ctx());
+    await expect(createTask({ ...task, assigneeId: p3 }, ctx(), { origin: 'hand' })).rejects.toMatchObject({ code: 'assignee_no_login' });
+    const mine = await createTask({ ...task, assigneeId: actorId }, ctx(), { origin: 'hand' });
     await expect(
       reassignTask(mine.id, p3, { ...ctx(), actor: { id: actorId, permissions: new Set<string>() } }),
     ).rejects.toMatchObject({ code: 'assignee_no_login' });

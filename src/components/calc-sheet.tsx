@@ -1,7 +1,15 @@
 import { getTranslations } from 'next-intl/server';
 import type { CalcRegistrySight } from '@/modules/wms/calc/control-scope';
 import { SECTION_LABELS } from '@/modules/wms/calc/labels';
-import type { CalcAnswer, CalcSheet as CalcSheetData } from '@/modules/wms/calc/sheet';
+import { basisLabel } from '@/modules/wms/calc/basis';
+import { LAW_SHAPE_KEY, feeInputsValues, lawValues, rateText, unitWordsOf } from '@/modules/wms/calc/law-words';
+import { unitLabel } from '@/modules/wms/calc/units';
+import type {
+  CalcAnswer,
+  CalcGoodsItem,
+  CalcGoodsSheet,
+  CalcSheet as CalcSheetData,
+} from '@/modules/wms/calc/sheet';
 
 /**
  * «🧮 Bitim hisobi» drawn — the sealed calculation, block by block (owner's
@@ -18,6 +26,17 @@ import type { CalcAnswer, CalcSheet as CalcSheetData } from '@/modules/wms/calc/
  */
 const usd = (n: number | null) => (n === null ? '—' : `$${n.toFixed(2)}`);
 const qty = (n: number | null, unit: string) => (n === null ? null : `${Math.round(n * 1000) / 1000} ${unit}`);
+
+/**
+ * A baza as the sheet prints it. An UNPRICED row prints «—» and no unit —
+ * since 0125 a unit can stand without a price (the VED's choice), and
+ * «—/kg» reads as a price that happens to be blank. The unit word is the
+ * screen's own (`basisLabel`), never the stored spelling «/unit».
+ */
+function bazaText(bazaUsd: number | null, basis: string | null, perUnit: string): string {
+  if (bazaUsd === null) return '—';
+  return basis ? `$${bazaUsd}/${basisLabel(basis, perUnit)}` : `$${bazaUsd}`;
+}
 const ddmmyyyy = (d: Date) =>
   d.toLocaleDateString('ru-RU', { timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit', year: 'numeric' });
 
@@ -25,6 +44,8 @@ export async function CalcSheet({ data, sight: _sight }: { data: CalcSheetData; 
   const t = await getTranslations('calcSheet');
   const tf = await getTranslations('finance');
   const tc = await getTranslations('calc');
+  const words = unitWordsOf((k) => tc(`units.${k}` as 'units.dona'));
+  const feeInputs = data.fee && !data.fee.overridden ? feeInputsValues(data.fee) : null;
   return (
     <div className="space-y-2 text-xs" data-testid="calc-sheet">
       <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -38,7 +59,17 @@ export async function CalcSheet({ data, sight: _sight }: { data: CalcSheetData; 
             {tf('calcRecalcOpen')}
           </span>
         ) : data.status === 'superseded' ? (
-          <span className="chip chip-neutral">{tc('supersededPlain')}</span>
+          // The child's ending in the chain chip's own words (#513): a dead
+          // seal says WHAT replaced it, not merely that something did.
+          <span className="chip chip-neutral" data-testid="calc-sheet-superseded">
+            {data.childState === 'answered'
+              ? tc('chainAnswered')
+              : data.childState === 'returned'
+                ? tc('chainReturned')
+                : data.childState === 'unpriced'
+                  ? tc('chainUnpriced')
+                  : tc('supersededPlain')}
+          </span>
         ) : null}
         {data.expired ? <span className="chip chip-warn">{t('expired')}</span> : null}
       </p>
@@ -54,23 +85,51 @@ export async function CalcSheet({ data, sight: _sight }: { data: CalcSheetData; 
               </>
             ) : null}
           </p>
+          {/* The WHOLE story of the group (P2.7): the law's shape in words, a
+              lgota said as one, the excise, and below it the parts that make
+              the total — a sealed sheet a person can add up by hand. */}
           <p className="text-ink-600">
-            {t('duty')}: {g.dutyText}
+            {t('duty')}:{' '}
+            {g.dutyFree
+              ? tc('law.dutyFree')
+              : g.dutyPct !== null || g.dutySpecific !== null
+                ? tc(LAW_SHAPE_KEY[g.dutyMode], lawValues(g, words))
+                : '—'}
             {' · '}
-            {t('vat')}: {g.vatPct === null ? '—' : `${g.vatPct}%`}
-            {g.excisePct !== null && g.excisePct > 0 ? ` · ${t('excise')}: ${g.excisePct}%` : ''}
+            {t('vat')}: {g.vatFree ? tc('law.vatFree') : g.vatPct === null ? '—' : `${g.vatPct}%`}
+            {g.excisePct !== null && g.excisePct > 0
+              ? ` · ${tc('law.excisePct', { pct: rateText(g.excisePct) })}`
+              : g.exciseSpecific !== null && g.exciseUnit !== null
+                ? ` · ${tc('law.exciseSpecific', { amount: rateText(g.exciseSpecific), unit: unitLabel(g.exciseUnit, words) })}`
+                : ''}
+            {g.valueUsd !== null ? ` · ${tc('regGoodsValue')}: ${usd(g.valueUsd)}` : ''}
             {' · '}
             <span className="font-mono tabular-nums">{usd(g.customsUsd)}</span>
           </p>
+          {g.parts ? (
+            <p className="font-mono tabular-nums text-ink-500" data-testid="calc-sheet-parts">
+              {[
+                `${t('duty')} ${usd(g.parts.dutyUsd)}`,
+                g.parts.addDutyUsd > 0
+                  ? `${tc('law.addDuty', { pct: rateText(g.parts.addDutyPct) })} ${usd(g.parts.addDutyUsd)}`
+                  : null,
+                g.parts.exciseUsd > 0 ? `${tc('law.excise')} ${usd(g.parts.exciseUsd)}` : null,
+                `${t('vat')} ${usd(g.parts.vatUsd)}`,
+              ]
+                .filter(Boolean)
+                .join(' + ')}
+              {` = ${usd(g.customsUsd)}`}
+            </p>
+          ) : null}
           {g.items.length > 0 ? (
             <ul className="space-y-0.5 text-ink-600">
               {g.items.map((item, i) => (
                 <li key={i} className="break-words">
                   {item.name}
                   {' · '}
-                  {t('baza')}: {item.bazaUsd === null ? '—' : `$${item.bazaUsd}`}
-                  {item.basis ? `/${item.basis}` : ''}
+                  {t('baza')}: {bazaText(item.bazaUsd, item.basis, tc('perUnit'))}
                   {[
+                    qty(item.quantity, item.unit ?? ''),
                     qty(item.kg, 'kg'),
                     qty(item.m3, 'm³'),
                     item.measureUnit && item.measureQty !== null ? `${item.measureQty} ${item.measureUnit}` : null,
@@ -108,7 +167,11 @@ export async function CalcSheet({ data, sight: _sight }: { data: CalcSheetData; 
         {data.feeUsd !== null ? (
           <>
             <dt className="text-ink-500">{t('fee')}</dt>
-            <dd className="font-mono tabular-nums">{usd(data.feeUsd)}</dd>
+            {/* The fee with what made it (P2.6) — a sealed fee explains itself
+                after the BHM and the rate book have both moved. */}
+            <dd className="font-mono tabular-nums" data-testid="calc-sheet-fee">
+              {feeInputs ? tc('law.feeInputs', feeInputs) : usd(data.feeUsd)}
+            </dd>
           </>
         ) : null}
         {data.freight ? (
@@ -187,6 +250,18 @@ export async function CalcAnswers({ answers, sight: _sight }: { answers: CalcAns
         <li key={a.requestId} className="break-words rounded border border-dashed border-line p-2" data-testid="calc-answer">
           <span className="chip chip-warn">{tf('calcUnsealed')}</span>{' '}
           {a.section ? <span className="chip chip-brand">{tc(SECTION_LABELS[a.section] as 'sections.podklyuch')}</span> : null}{' '}
+          {/* A correction off this answer, in the chain chip's words: the
+              seller's push said «eski narx endi amal qilmaydi» at the press,
+              and the sheet must not print the answer as if it stood. */}
+          {a.childState === 'open' ? (
+            <span className="chip chip-warn" data-testid="calc-answer-recalc">{tf('calcRecalcOpen')}</span>
+          ) : a.childState === 'answered' ? (
+            <span className="chip chip-neutral">{tc('chainAnswered')}</span>
+          ) : a.childState === 'returned' ? (
+            <span className="chip chip-warn">{tc('chainReturned')}</span>
+          ) : a.childState === 'unpriced' ? (
+            <span className="chip chip-warn">{tc('chainUnpriced')}</span>
+          ) : null}{' '}
           <b className="font-mono tabular-nums">
             {a.amount.toFixed(2)} {a.currency ?? ''}
           </b>
@@ -198,5 +273,77 @@ export async function CalcAnswers({ answers, sight: _sight }: { answers: CalcAns
         </li>
       ))}
     </ul>
+  );
+}
+
+/**
+ * The goods of a closed job that has no sealed snapshot — a Готово answer or
+ * a hand-back (10a's closed page) — frozen as the VED left them: each group's
+ * code and law, each item's own baza. NO per-group rastamojka (review
+ * ved-correctness-14): that would be a draft figure nobody sealed or gave,
+ * and the sheet says so in words.
+ */
+export async function CalcGoodsSheetView({
+  data,
+  sight: _sight,
+}: {
+  data: CalcGoodsSheet;
+  sight: CalcRegistrySight;
+}) {
+  const t = await getTranslations('calcSheet');
+  const tc = await getTranslations('calc');
+  const line = (item: CalcGoodsItem) =>
+    [
+      item.tnvedCode ?? '—',
+      qty(item.quantity, item.unit ?? ''),
+      qty(item.kg, 'kg'),
+      qty(item.m3, 'm³'),
+      item.measureUnit && item.measureQty !== null ? `${item.measureQty} ${item.measureUnit}` : null,
+      `${t('baza')}: ${bazaText(item.bazaUsd, item.basis, tc('perUnit'))}`,
+    ]
+      .filter(Boolean)
+      .map((part) => ` · ${part}`)
+      .join('');
+  return (
+    <div className="space-y-2 text-xs" data-testid="calc-goods-sheet">
+      <p className="text-ink-500">{tc('registryAnswerNoGroupSum')}</p>
+      {data.groups.map((g, index) => (
+        <div key={index} className="space-y-1 rounded border border-dashed border-line p-2" data-testid="calc-goods-group">
+          <p className="break-words">
+            <span className="text-ink-500">{t('group')}:</span> <b>{g.label}</b>
+            {g.code ? (
+              <>
+                {' · '}
+                <span className="text-ink-500">{t('code')}</span> <span className="font-mono">{g.code}</span>
+              </>
+            ) : null}
+          </p>
+          <p className="text-ink-600">
+            {t('duty')}: {g.dutyText} · {t('vat')}: {g.vatPct === null ? '—' : `${g.vatPct}%`}
+          </p>
+          <ul className="space-y-0.5 text-ink-600">
+            {g.items.map((item, i) => (
+              <li key={i} className="break-words">
+                {item.name}
+                {line(item)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+      {data.ungrouped.length > 0 ? (
+        <div className="space-y-1 rounded border border-dashed border-line p-2" data-testid="calc-goods-ungrouped">
+          <p className="text-ink-500">{tc('regGoodsUngrouped')}</p>
+          <ul className="space-y-0.5 text-ink-600">
+            {data.ungrouped.map((item, i) => (
+              <li key={i} className="break-words">
+                {item.name}
+                {line(item)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
   );
 }

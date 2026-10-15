@@ -27,7 +27,7 @@ import {
   type PnlGaps,
   type ReconLineKey,
 } from './reports';
-import { tripTotals } from '../reports/dashboard-math';
+import { tripKind, tripTotals } from '../reports/dashboard-math';
 import { lossesInPeriod } from '../reports/business';
 
 /**
@@ -76,6 +76,12 @@ function gapRows(sheet: ExcelJS.Worksheet, L: ReturnType<typeof reportLabels>, g
   if (gaps.onNoBox.count > 0) {
     sheet.addRow([
       `⚠ ${L.gapNoBox}: ${gaps.onNoBox.count} · $${usdText(gaps.onNoBox.usd)}`,
+    ]).font = { bold: true };
+  }
+  // A held yo'lkira bill: its own line, whose words carry no void advice.
+  if (gaps.freightHeld.count > 0) {
+    sheet.addRow([
+      `⚠ ${L.gapFreightHeld}: ${gaps.freightHeld.count} · $${usdText(gaps.freightHeld.usd)}`,
     ]).font = { bold: true };
   }
   // The kurs farqi the report could not count (0103) — named, never added.
@@ -350,13 +356,13 @@ export async function buildProfitXlsx(
     }
     const head = sheet.addRow([
       L.batch, L.route, L.departed, L.boxes, L.kg, L.m3,
-      `${L.revenue} $`, L.noCargoCol, `${L.cost} $`, L.prevLegs, L.unallocated, L.internalCost,
+      `${L.revenue} $`, L.noCargoCol, `${L.cost} $`, L.prevLegs, L.laterLegs, L.unallocated, L.internalCost,
       `${L.profit} $`, L.margin, L.usdPerKg,
     ]);
     head.font = { bold: true };
     sheet.columns = [
       { width: 14 }, { width: 14 }, { width: 12 }, { width: 10 }, { width: 10 }, { width: 10 },
-      { width: 14 }, { width: 16 }, { width: 14 }, { width: 16 }, { width: 16 }, { width: 16 },
+      { width: 14 }, { width: 16 }, { width: 14 }, { width: 16 }, { width: 16 }, { width: 16 }, { width: 16 },
       { width: 14 }, { width: 10 }, { width: 10 },
     ];
     // An internal leg is a cost row (R2a): «—» where a profit would stand,
@@ -372,9 +378,16 @@ export async function buildProfitXlsx(
         row.noCargoChargeUsd > 0.009 ? row.noCargoChargeUsd : '',
         row.internal ? '—' : row.costUsd,
         row.internal ? '' : row.prevUsd,
+        // «Keyingi yo'l» (2026-09-30): a PART of «Xarajat $», like the one before.
+        row.laterUsd > 0.009 ? row.laterUsd : '',
         row.unallocatedUsd > 0.009 ? row.unallocatedUsd : '',
         row.internal ? row.costUsd : '',
-        row.profitUsd ?? '—', row.marginPct ?? '—', row.profitPerKg ?? '—',
+        // A «davomi» nobody priced: words, never a «0» a SUM would read as a
+        // trip that broke even (its cost is the named truck's «keyingi yo'l»).
+        tripKind(row) === 'continuation'
+          ? `${L.continuation}${row.carriers.map((carrier) => carrier.code).join(', ')}`
+          : (row.profitUsd ?? '—'),
+        row.marginPct ?? '—', row.profitPerKg ?? '—',
       ]);
     }
     if (rows.length > 0) {
@@ -382,7 +395,7 @@ export async function buildProfitXlsx(
       bold(
         sheet.addRow([
           L.total, '', '', '', '', '', totals.revenue, totals.noCargo > 0.009 ? totals.noCargo : '',
-          totals.cost, '', '', '', totals.profit, margin(totals), '',
+          totals.cost, '', '', '', '', totals.profit, margin(totals), '',
         ]),
       );
     }
@@ -439,9 +452,12 @@ export async function buildProfitXlsx(
         receipt: L.gapScopeReceipt,
         crate: L.gapScopeCrate,
       };
-      const scopes = clientGaps.unallocated.byScope
-        .map((row) => `${scopeWord[row.scope] ?? row.scope} ×${row.count}`)
-        .join(', ');
+      const held = clientGaps.unallocated.heldFreight;
+      const scopes = [
+        ...clientGaps.unallocated.byScope.map((row) => `${scopeWord[row.scope] ?? row.scope} ×${row.count}`),
+        // The screen's own bucket — a held yo'lkira bill is no «truck with no cargo».
+        ...(held.count > 0 ? [`${L.gapScopeFreightHeld} ×${held.count} ($${usdText(held.usd)})`] : []),
+      ].join(', ');
       notes.push(`⚠ ${L.clientUnallocatedNote}: $${usdText(clientGaps.unallocated.usd)} · ${scopes}`);
     }
   } else {

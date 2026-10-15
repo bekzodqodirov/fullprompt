@@ -23,6 +23,8 @@
  * point.
  */
 
+import { inScope, type ScopedActor } from '../../platform/rbac/scope';
+
 export interface MoneyActor {
   id: string;
   permissions: Set<string>;
@@ -114,15 +116,23 @@ export function mayOpenClientLedger(actor: MoneyActor, client: { salesManagerId:
  * the ledger page and the card's «Pul» tab ask. A person who may not READ a
  * client's debt may not wave it through either, and a seller reads only his
  * own book, so he releases only his own clients. The warehouse manager holds
- * the grant and reads no ledger at all, so he asks («Ruxsat so'rash») like
- * every operator does; the VED reads the ledger and holds no grant.
+ * the grant and reads no ledger at all, so this predicate answers «none» for
+ * him, and every door it guards stays shut to him — he DECIDES nothing; the
+ * VED reads the ledger and holds no grant.
  *
- * ONE predicate for every door that lets a debt slide — the counter's tick,
- * the approval's decision (web and bot), who is pinged about a request, the
+ * The predicate for every door that DECIDES about somebody's debt — the
+ * approval's decision (web and bot), who is pinged about a request, the
  * deal's «muddat» and the payment promise — asked in the SERVICES, so a
  * screen that forgets to hide a control still cannot open the gate (#531).
  * Three answers and no fourth (#199's shape): nothing, everybody's, or one
  * owner's clients.
+ *
+ * The COUNTER's tick is the one door that asks more (the owner, 2026-10-07,
+ * D2: «sklad mudiri so'ramasdan beraversin»): `counterDebtRelease` below is a
+ * superset COMPOSED of this predicate, which adds the warehouse manager at
+ * his own warehouse. A recorded reversal of «one predicate for every door»
+ * (#1191) for that door alone — every other door keeps asking only this one,
+ * so the manager's new power cannot leak into a decision (his D3a).
  */
 export type DebtGrantScope = 'none' | 'all' | { ownerId: string };
 
@@ -138,6 +148,92 @@ export function mayGrantDebt(actor: MoneyActor, client: { salesManagerId: string
   if (scope === 'none') return false;
   if (scope === 'all') return true;
   return client.salesManagerId === scope.ownerId;
+}
+
+/**
+ * The counter's releaser: whose money he reads, where he stands, which ROLE
+ * he holds, and what THAT role was given (`roleGrants` — each role's own
+ * editable grants, read in the same query as the union). Every field
+ * REQUIRED (#790) — an optional one fails open, and a missing `roleGrants`
+ * would quietly fall back to nothing. The session `Actor`
+ * (rbac/authorize.ts) carries all of it, so the issue action and the list
+ * route pass the actor they already hold.
+ */
+export type DebtReleaser = MoneyActor &
+  ScopedActor & {
+    roles: readonly string[];
+    roleGrants: ReadonlyMap<string, ReadonlySet<string>>;
+  };
+
+/**
+ * Why the counter's debt tick is this person's: `'ledger'` — he may grant
+ * this client's debt anywhere (`mayGrantDebt`, the seller's own book, the
+ * admin's and the accountant's everybody's); `'warehouse'` — the warehouse
+ * manager at his own warehouse (D2); null — he asks «Ruxsat so'rash».
+ * Recorded in the handover's audit row as `debtRight`.
+ */
+export type CounterDebtRelease = 'ledger' | 'warehouse' | null;
+
+/**
+ * «Sklad mudiri» — his D2 names a PERSON by job, and breadth is a role
+ * (#170; the evening summary's `readsOwnerSummary` keys on a role the same
+ * way). A permission shape would not be him: `mayOverridePrice` is the grant
+ * ALONE, so an operator holding `finance.debt_override` exists by design (it
+ * is how the price tick reaches him) and would have gained every debtor's
+ * cargo with it.
+ */
+export const COUNTER_RELEASE_ROLE = 'warehouse_manager';
+
+/**
+ * Who may tick «qarzga ruxsat» at THIS counter for THIS client (the owner,
+ * 2026-10-07: D2 «sklad mudiri so'ramasdan beraversin», D3a «faqat o'z
+ * skladidan, izoh bilan»).
+ *
+ * `mayGrantDebt` first, so everybody who could tick before still can, by the
+ * same rule. Then the warehouse manager, every clause required:
+ *
+ *  - the ROLE (above) — never «holds the grant and reads no ledger», which
+ *    would also have taken D2 away from a manager who is also a seller (he
+ *    reads `finance.view`) for every client but his own book;
+ *  - the WAREHOUSE MANAGER ROLE'S OWN grant of `finance.debt_override` — the
+ *    owner's OFF switch: unticking it on that role on /admin/roles withdraws
+ *    D2 from every warehouse manager, a manager who is also a seller
+ *    included. Asked of `roleGrants`, NEVER of the union in `permissions`:
+ *    the seller's role carries the same grant, so the union would keep D2
+ *    for a both-hats manager after the untick (the review's DEBT-1). His own
+ *    clients he still releases — that is `mayGrantDebt` above, the seller's
+ *    rule, which rightly reads the union. The price tick
+ *    (`mayOverridePrice`) is the union's too, so the same untick takes it
+ *    only from a manager who holds the grant through no other role (stated).
+ *    No new permission code (#170/#179/#208 — the seed skips a customised
+ *    role);
+ *  - `warehouseScoped` — `inScope` answers TRUE for an unscoped actor
+ *    (rbac/scope.ts), so a manager whose role scope was unticked would
+ *    otherwise release at every counter in the company. Fail closed;
+ *  - `inScope(actor, warehouseId)` — his own warehouse(s) only. The action
+ *    authorizes `scan.issue` at that warehouse already; the service asks
+ *    again (#531).
+ *
+ * Asked by exactly two places — the service and the list route that draws
+ * the tick (a derived fence pins it): no approval, muddat or promise door may
+ * learn the counter's power (D3a). The comment the tick requires is the
+ * service's (`debt_note_required`), for EVERYBODY who ticks (D4a).
+ */
+export function counterDebtRelease(
+  actor: DebtReleaser,
+  client: { salesManagerId: string | null },
+  warehouseId: string,
+): CounterDebtRelease {
+  if (mayGrantDebt(actor, client)) return 'ledger';
+  if (
+    actor.roles.includes(COUNTER_RELEASE_ROLE) &&
+    actor.roleGrants.get(COUNTER_RELEASE_ROLE)?.has('finance.debt_override') === true &&
+    actor.warehouseScoped &&
+    inScope(actor, warehouseId)
+  ) {
+    return 'warehouse';
+  }
+  return null;
 }
 
 /**

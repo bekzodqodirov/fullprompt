@@ -48,7 +48,11 @@ export type DomainEventType =
   // 0112: an office count found fewer cartons on a truck than it carried —
   // the owner and the logists are told at once (Q6c). One per (truck, lot)
   // change, never one per press.
-  | 'CountShortfall';
+  | 'CountShortfall'
+  // The reroute round: a truck on the road now goes to another receiving
+  // warehouse. Told to that warehouse's staff and the logists (the owner's
+  // 4a) — and deliberately NOT offered as an automation trigger.
+  | 'BatchRerouted';
 
 /**
  * Persist a domain event in the same transaction as the mutation that caused

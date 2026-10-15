@@ -1,10 +1,14 @@
 import { and, desc, eq } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
-import { clients, dealStages, deals, leadStages, leads } from '../../platform/db/schema';
+import { clients, dealStages, deals, leadStages, leads, users } from '../../platform/db/schema';
+import { userPermissions } from '../../platform/rbac/authorize';
+import { canLogInSql } from '../../platform/users/login';
+import { mayEditDealTerms } from '../deals/door';
 import { addActivity, createLead } from '../crm/service';
 import { activeClientsByPhone } from '../client-cabinet/service';
 import { logger } from '../../platform/logger';
-import { intakeNoteText, itemFacts, type CalcFacts, type CalcSection } from './intake';
+import { intakeNoteText, landingItems, type CalcFacts, type CalcSection } from './intake';
+import { bookLawsFor } from './book-laws';
 import { recordAiPass } from './ai-cost';
 import { queueCalcPrefill } from './prefill-queue';
 import { CalcError } from './service';
@@ -29,6 +33,12 @@ export interface IntakeTarget {
   id: string;
   /** For the confirmation message and the link. */
   label: string;
+  /**
+   * A lead's OWNER — what decides whether the sender may open the card the ✅
+   * links (`calcJobHrefFor`): the sender on a lead they created, the row's
+   * owner on one a second request joined, null on a deal.
+   */
+  leadOwnerId: string | null;
   /**
    * Did it reach the VED queue? The material and the card are saved either
    * way; a false here means the collector must send it from the card, and
@@ -73,15 +83,49 @@ export async function resolveIntakeClient(hint: {
   return null;
 }
 
+/** The client's seller, if that person can log in (`canLogInSql`); else null. */
+export async function clientSellerFor(clientId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ id: clients.salesManagerId })
+    .from(clients)
+    .innerJoin(users, eq(users.id, clients.salesManagerId))
+    .where(and(eq(clients.id, clientId), canLogInSql()))
+    .limit(1);
+  return row?.id ?? null;
+}
+
+/**
+ * Whose deal a calc request mints (G2 a, 2026-10-07). His question was about
+ * the VED sending: a sender who cannot work a deal's terms (the VED, warehouse
+ * staff in the bot) hands the deal to the client's seller — or to nobody, and
+ * the admin distributes it from the «Hammasi» board. A sender who can (seller,
+ * logist, admin) keeps it, as today.
+ *
+ * ONE rule for both minting doors — the bot (`landIntake`) and the chat door
+ * (`threadCalcSend`) — so they cannot disagree (#513). Both reads run on the
+ * POOL and BEFORE `createDeal`'s transaction (#714); neither caller holds one.
+ * The request itself stays the SENDER's (`requestedBy`), so the answer, the
+ * hand-back task and «Javob berildi» still reach whoever asked.
+ */
+export async function calcDealOwnerFor(senderId: string, clientId: string): Promise<string | null> {
+  const perms = await userPermissions(senderId);
+  return mayEditDealTerms(perms) ? senderId : clientSellerFor(clientId);
+}
+
 /**
  * The deal a coded client's request joins: their newest OPEN one, or a new
  * one on the funnel's first open stage. Never a won or lost deal — those are
  * finished stories, and a new quote request is not part of them.
+ *
+ * `ownerId` is REQUIRED (no default — the compiler names every caller, #790)
+ * and written AS GIVEN, null included: it is `calcDealOwnerFor`'s answer. A
+ * client's existing open deal is reused with its owner untouched.
  */
 export async function dealFor(
   client: { id: string; clientCode: string; name: string },
   section: CalcSection,
   actorId: string,
+  ownerId: string | null,
 ): Promise<IntakeTarget> {
   const [open] = await db
     .select({ id: deals.id, code: deals.code })
@@ -90,23 +134,24 @@ export async function dealFor(
     .where(and(eq(deals.clientId, client.id), eq(dealStages.kind, 'open')))
     .orderBy(desc(deals.createdAt))
     .limit(1);
-  if (open) return { kind: 'deal', id: open.id, label: open.code };
+  if (open) return { kind: 'deal', id: open.id, label: open.code, leadOwnerId: null };
 
   const { createDeal } = await import('../deals/service');
   const dealId = await createDeal(
     {
       clientId: client.id,
       title: `Hisoblatish — ${section}`,
-      ownerId: actorId,
+      ownerId,
     },
     { actorId },
+    { ownerAsGiven: true },
   );
   const [fresh] = await db
     .select({ code: deals.code })
     .from(deals)
     .where(eq(deals.id, dealId))
     .limit(1);
-  return { kind: 'deal', id: dealId, label: fresh?.code ?? '—' };
+  return { kind: 'deal', id: dealId, label: fresh?.code ?? '—', leadOwnerId: null };
 }
 
 /**
@@ -171,12 +216,19 @@ export async function landIntake(input: {
   usage?: { model: string; inputTokens: number; outputTokens: number } | null;
 }): Promise<IntakeTarget> {
   const target = input.client
-    ? await dealFor(input.client, input.section, input.collectedBy)
+    ? await dealFor(
+        input.client,
+        input.section,
+        input.collectedBy,
+        // Computed before `dealFor` knows whether it will reuse an open deal;
+        // two small pool reads are the price of ONE owner rule (G2 a).
+        await calcDealOwnerFor(input.collectedBy, input.client.id),
+      )
     : await (async (): Promise<IntakeTarget> => {
         // A prospect who asked before already has a card; a second request
         // belongs on it rather than beside it.
         const existing = input.leadPhone ? await openLeadForPhone(input.leadPhone) : null;
-        if (existing) return { kind: 'lead', id: existing.id, label: existing.name };
+        if (existing) return { kind: 'lead', id: existing.id, label: existing.name, leadOwnerId: existing.ownerId };
         const lead = await createLead(
           {
             name: input.leadName,
@@ -185,9 +237,12 @@ export async function landIntake(input: {
           },
           { actorId: input.collectedBy },
         );
-        return { kind: 'lead', id: lead.id, label: lead.name };
+        return { kind: 'lead', id: lead.id, label: lead.name, leadOwnerId: lead.ownerId };
       })();
 
+  // The book's law for the lines' codes — what the note's «qatorlarda
+  // yetishmayapti» asks by (judge TT-5). Pooled, before anything else writes.
+  const laws = await bookLawsFor((input.facts.goods ?? []).map((g) => g.tnvedCode));
   await addActivity(
     {
       id: input.noteId,
@@ -197,6 +252,7 @@ export async function landIntake(input: {
       note: intakeNoteText({
         section: input.section,
         facts: input.facts,
+        laws,
         steps: input.steps,
         collectedBy: input.collectedByName,
         fileCount: input.fileCount,
@@ -226,16 +282,13 @@ export async function landIntake(input: {
         toCity: input.facts.toCity ?? null,
         weightKg: input.facts.weightKg ?? null,
         volumeM3: input.facts.volumeM3 ?? null,
-        // Through `itemFacts`, so the weight a single-line job already
-        // stated reaches the ITEM — which is what lets the AI VED hodimi
-        // find a per-kg declaration for it (docs/VED-IMPORT-AI §3).
-        items: itemFacts(input.facts).map((good) => ({
-          name: good.name,
-          quantity: good.quantity,
-          weightKg: good.weightKg,
-          tnvedCode: good.tnvedCode,
-          note: good.note,
-        })),
+        // Through `landingItems`, so the weight a single-line job already
+        // stated reaches the ITEM (labelled «umumiy (brutto)dan olindi») —
+        // which is what lets the AI VED hodimi find a per-kg declaration for
+        // it (docs/VED-IMPORT-AI §3) — and the line's unit, volume and pair
+        // reach the door, which routes them (2026-10-09, judge TT-16: they
+        // were dropped here, so an invoice's «500 м2» landed as 500 pieces).
+        items: landingItems(input.facts),
         noteId: input.noteId,
         source: 'bot',
         hasMaterials: input.fileCount > 0,
@@ -317,16 +370,16 @@ async function moveToCalcStage(target: IntakeTarget, actorId: string): Promise<v
  */
 export async function openLeadForPhone(
   phone: string,
-): Promise<{ id: string; name: string } | null> {
+): Promise<{ id: string; name: string; ownerId: string | null } | null> {
   const digits = phone.replace(/\D/g, '').slice(-9);
   if (digits.length < 7) return null;
   const rows = await db
-    .select({ id: leads.id, name: leads.name, phone: leads.phone, clientId: leads.clientId })
+    .select({ id: leads.id, name: leads.name, phone: leads.phone, clientId: leads.clientId, ownerId: leads.ownerId })
     .from(leads)
     .orderBy(desc(leads.createdAt))
     .limit(500);
   const hit = rows.find(
     (r) => !r.clientId && (r.phone ?? '').replace(/\D/g, '').slice(-9) === digits,
   );
-  return hit ? { id: hit.id, name: hit.name } : null;
+  return hit ? { id: hit.id, name: hit.name, ownerId: hit.ownerId } : null;
 }

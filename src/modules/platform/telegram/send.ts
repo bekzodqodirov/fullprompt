@@ -1,5 +1,6 @@
 import { logger } from '../logger';
 import { htmlToPlain } from './format';
+import { BRIEF_RETRY_MAX_S } from './retry';
 
 /**
  * The ONE way the app talks to the Bot API outside a grammy handler.
@@ -201,15 +202,38 @@ export async function botCall(
         typeof json?.parameters?.retry_after === 'number' ? json.parameters.retry_after : null,
     };
   } catch (err) {
-    // The deadline or the network — this moment, not this message.
+    // The deadline or the network — this moment, not this message. undici
+    // throws «TypeError: fetch failed» for EVERY network fault and keeps the
+    // real one in `cause.code`, so the code rides along in brackets: the price
+    // channel must tell «nothing left the machine» (ECONNREFUSED) from «the
+    // body may already be in Telegram» (a timeout, a reset), and the bare
+    // message cannot (the channel round, his F). Logged and stored only.
+    const code = (err as { cause?: { code?: unknown } } | null)?.cause?.code;
     return {
       ok: false,
       status: 0,
-      description: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
+      description:
+        err instanceof Error
+          ? `${err.name}: ${err.message}${typeof code === 'string' ? ` [${code}]` : ''}`
+          : String(err),
       result: null,
       retryAfter: null,
     };
   }
+}
+
+/**
+ * The two per-message fields the price channel needs (the owner's F7 a: no
+ * forwarding; a correction answers the post it replaces). Absent unless asked
+ * for, so every existing caller's body is byte-identical.
+ */
+function deliveryFields(msg: { protectContent?: boolean; replyToMessageId?: number }): Record<string, unknown> {
+  return {
+    ...(msg.protectContent ? { protect_content: true } : {}),
+    ...(typeof msg.replyToMessageId === 'number'
+      ? { reply_parameters: { message_id: msg.replyToMessageId, allow_sending_without_reply: true } }
+      : {}),
+  };
 }
 
 /** Telegram could not read our markup: an escape was missed somewhere. */
@@ -275,6 +299,10 @@ export interface TextMessage {
   replyMarkup?: unknown;
   /** Arrives without a sound — the customer's night (quietHour). */
   silent?: boolean;
+  /** Telegram refuses to forward or save it (the price channel, F7 a). */
+  protectContent?: boolean;
+  /** Sent as a reply to this message in the same chat. */
+  replyToMessageId?: number;
   timeoutMs?: number;
 }
 
@@ -286,10 +314,29 @@ export async function sendText(msg: TextMessage): Promise<SendResult> {
     link_preview_options: { is_disabled: true },
     ...(html ? { parse_mode: 'HTML' } : {}),
     ...(msg.silent ? { disable_notification: true } : {}),
+    ...deliveryFields(msg),
     ...(msg.replyMarkup ? { reply_markup: msg.replyMarkup } : {}),
   };
   const { answer, usedFallback } = await sendWithFallbacks('sendMessage', base, 'text', msg.timeoutMs ?? 20_000);
   return verdict(answer, usedFallback);
+}
+
+/**
+ * `sendText`, and once more after a 429 that asks for a moment (Q5 a).
+ *
+ * A NEW name so `sendText`'s «never a sleep» above stays true for every
+ * sweep: this is for the handler-side answers nobody comes back for — the
+ * cabinet's dispatched answers, «📋 Bugun», the AI's parts — which meet the
+ * per-chat rate in the burst after a deploy, when the backlog is answered one
+ * after another.
+ */
+export async function sendTextBriefRetry(msg: TextMessage): Promise<SendResult> {
+  const first = await sendText(msg);
+  if (first.ok || first.status !== 429 || first.retryAfter === null || first.retryAfter > BRIEF_RETRY_MAX_S) {
+    return first;
+  }
+  await new Promise<void>((resolve) => setTimeout(resolve, first.retryAfter! * 1000));
+  return sendText(msg);
 }
 
 export interface PhotoMessage {
@@ -300,6 +347,8 @@ export interface PhotoMessage {
   captionHtml?: string;
   replyMarkup?: unknown;
   silent?: boolean;
+  protectContent?: boolean;
+  replyToMessageId?: number;
   timeoutMs?: number;
 }
 
@@ -317,6 +366,7 @@ export async function sendPhoto(msg: PhotoMessage): Promise<SendResult & { fileI
     chat_id: chatValue(msg.chatId),
     ...(msg.captionHtml ? { caption: msg.captionHtml, parse_mode: 'HTML' } : {}),
     ...(msg.silent ? { disable_notification: true } : {}),
+    ...deliveryFields(msg),
     ...(msg.replyMarkup ? { reply_markup: msg.replyMarkup } : {}),
   };
   const photo = msg.photo;
@@ -387,6 +437,23 @@ export async function editText(o: {
   return editVerdict(answer);
 }
 
+/**
+ * Rewrite the CAPTION of a photo (or of an album's first photo) we sent —
+ * `editText`'s twin. The price channel's post rides an album's caption when
+ * it has photos, and a correction re-renders it with its «amal qilmaydi»
+ * mark (the channel round).
+ */
+export async function editCaption(o: { chatId: ChatId; messageId: number; captionHtml: string }): Promise<SendResult> {
+  const base: Record<string, unknown> = {
+    chat_id: chatValue(o.chatId),
+    message_id: o.messageId,
+    caption: o.captionHtml,
+    parse_mode: 'HTML',
+  };
+  const { answer } = await sendWithFallbacks('editMessageCaption', base, 'caption', 10_000);
+  return editVerdict(answer);
+}
+
 /** «Typing…» at the top of the chat while a slow answer is being made. */
 export async function sendTyping(chatId: ChatId): Promise<void> {
   await botCall('sendChatAction', { chat_id: chatValue(chatId), action: 'typing' }, 5_000);
@@ -399,6 +466,8 @@ export interface AlbumMessage {
   /** Safe HTML under the FIRST photo — an album carries one caption. */
   captionHtml?: string;
   silent?: boolean;
+  protectContent?: boolean;
+  replyToMessageId?: number;
   timeoutMs?: number;
 }
 
@@ -431,11 +500,16 @@ export async function sendAlbum(msg: AlbumMessage): Promise<SendResult> {
     };
   }
   if (photos.length === 1) {
+    // Every per-message field rides through — a dropped one is silent (the
+    // price channel's one-photo post would have been forwardable and would
+    // have answered nothing).
     const { fileId: _unused, ...one } = await sendPhoto({
       chatId: msg.chatId,
       photo: photos[0]!,
       captionHtml: msg.captionHtml,
       silent: msg.silent,
+      protectContent: msg.protectContent,
+      replyToMessageId: msg.replyToMessageId,
       timeoutMs: msg.timeoutMs,
     });
     void _unused;
@@ -445,6 +519,13 @@ export async function sendAlbum(msg: AlbumMessage): Promise<SendResult> {
     const form = new FormData();
     form.append('chat_id', String(chatValue(msg.chatId)));
     if (msg.silent) form.append('disable_notification', 'true');
+    if (msg.protectContent) form.append('protect_content', 'true');
+    if (typeof msg.replyToMessageId === 'number') {
+      form.append(
+        'reply_parameters',
+        JSON.stringify({ message_id: msg.replyToMessageId, allow_sending_without_reply: true }),
+      );
+    }
     const caption = msg.captionHtml
       ? plain
         ? { caption: htmlToPlain(msg.captionHtml) }

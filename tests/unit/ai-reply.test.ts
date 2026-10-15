@@ -16,7 +16,7 @@ const line = (over: Partial<AiVedLine> = {}): AiVedLine => ({
   bazaSource: 'memory',
   dutyText: '10%',
   addDutyPct: 0,
-  excisePct: null,
+  exciseText: null,
   vatPct: 12,
   customsUsd: 496.96,
   refusal: null,
@@ -30,6 +30,7 @@ const base = {
   ungrouped: [],
   fee: { bhm: 5, usd: 164.8 },
   totalUsd: 661.76,
+  feeRefusal: null,
   hasCertificate: true,
   freight: null,
   link: 'https://gsrwms.uz/bitimlar/x',
@@ -100,21 +101,70 @@ describe('the AI-VED reply', () => {
     expect(text).toContain('JAMI: hozircha hisoblab bo‘lmadi');
   });
 
-  it('a blocked line prints WHY and is counted out of the total', () => {
+  /*
+   * Re-anchored deliberately (2026-10-09, judge MR-23): these two pinned a
+   * PARTIAL total — «Rastamojka jami (1 ta qatordan, 1 tasi hisoblanmadi):
+   * ≈ $661.76» — which the kernel's `requestCustomsFor` can no longer produce
+   * (no partial sums: a refused or uncoded line means no total). The input is
+   * now what the WORKSPACE hands the reply in that state — a null total and
+   * the named lines — and the belt test below proves a caller that passes a
+   * figure anyway still prints none.
+   */
+  it('a blocked line prints WHY, and there is no total while it stands', () => {
     const text = aiVedReplyText({
       ...base,
+      totalUsd: null,
       lines: [line(), line({ label: 'Sumka', code: null, customsUsd: null, refusal: 'baza yo‘q' })],
     });
     expect(text).toContain('⚠️ baza yo‘q — VED xodimi qo‘yadi');
-    expect(text).toContain('Rastamojka jami (1 ta qatordan, 1 tasi hisoblanmadi): ≈ $661.76');
+    expect(text).toContain('Rastamojka jami: hozircha hisoblab bo‘lmadi.');
+    expect(text).not.toMatch(/ta qatordan/);
     // Law 6: a refusal is never spelled as money.
     expect(text).not.toContain('$0.00');
   });
 
-  it('uncoded items are NAMED, and counted as not calculated', () => {
-    const text = aiVedReplyText({ ...base, ungrouped: ['Sumka', 'Choynak'] });
+  it('uncoded items are NAMED, and no total stands over the rest', () => {
+    const text = aiVedReplyText({ ...base, totalUsd: null, ungrouped: ['Sumka', 'Choynak'] });
     expect(text).toContain('⚠️ Kod topilmadi: Sumka, Choynak');
-    expect(text).toContain('(1 ta qatordan, 2 tasi hisoblanmadi)');
+    expect(text).toContain('Rastamojka jami: hozircha hisoblab bo‘lmadi.');
+  });
+
+  it('a partial figure handed in anyway is never printed — the belt (MR-23)', () => {
+    // A caller that summed the priced lines itself: the reply refuses to
+    // carry it, on a podklyuch job too (no JAMI over half a declaration).
+    const text = aiVedReplyText({
+      ...base,
+      ungrouped: ['Sumka'],
+      freight: { ok: true, listUsd: 500, routeLabel: 'Xitoy → O‘zbekiston', bandText: '90 kg/m³' },
+    });
+    expect(text).not.toContain('$661.76');
+    expect(text).toContain('Rastamojka jami: hozircha hisoblab bo‘lmadi.');
+    expect(text).toContain('JAMI: hozircha hisoblab bo‘lmadi');
+  });
+
+  it('when ONLY the fee refuses, its reason is the line that says why (P2.9)', () => {
+    const text = aiVedReplyText({
+      ...base,
+      totalUsd: null,
+      fee: null,
+      feeRefusal: 'so‘m kursi yo‘q — buxgalter kiritadi yoki yig‘im qo‘lda yoziladi',
+    });
+    expect(text).toContain('Rastamojka jami: hozircha hisoblab bo‘lmadi.');
+    expect(text).toContain('⚠️ Bojxona yig‘imi: so‘m kursi yo‘q');
+    // A blocked LINE is the reason when there is one — the fee line is not.
+    const both = aiVedReplyText({
+      ...base,
+      totalUsd: null,
+      feeRefusal: 'so‘m kursi yo‘q',
+      lines: [line({ customsUsd: null, refusal: 'baza yo‘q' })],
+    });
+    expect(both).not.toContain('Bojxona yig‘imi:');
+  });
+
+  it('an excise prints in its own words — a percentage or per unit (0131)', () => {
+    expect(aiVedReplyText({ ...base, lines: [line({ exciseText: 'aksiz $0.5/litr' })] })).toContain(
+      'boj 10% · aksiz $0.5/litr · QQS 12% → $496.96',
+    );
   });
 
   it('no total at all is a sentence, never a zero', () => {

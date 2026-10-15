@@ -1,4 +1,5 @@
 import { aliasedTable, and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { uncheckedPrixodCount } from '../inventory/lot-check-count';
 import { linkSuggestionCount } from '../calc/actuals';
 import { calcControlScopeFor } from '../calc/control-scope';
 import { withoutJit } from '../../platform/db/no-jit';
@@ -21,6 +22,7 @@ import { unplacedPaymentSql } from '../finance/service';
 import { moneySnapshot, type MoneySnapshot } from '../reports/overview';
 import { costMissingCount } from '../reports/queries';
 import { docsPendingWhere } from '../batches/docs-pending';
+import { dealMissingTnvedSql } from '../deals/ved-work';
 import { warehouseFlowCounts, type WarehouseFlowCounts } from './flow';
 import { unplacedCostTotals } from '../costing/service';
 import { recurringDueCount } from '../accounting/recurring';
@@ -158,6 +160,13 @@ export interface LogistFlowCounts {
    * Null when the read missed its budget — the row is then a plain link.
    */
   uncollected: number | null;
+  /**
+   * «❓ Tekshirilmagan yuk» (0123, docs/YUK-TEKSHIRUV.md): prixods standing in
+   * a Chinese warehouse whose information nobody has confirmed — the number
+   * `/stock?tek=yoq` prints. Null when the read failed (a half-applied
+   * deploy, #472): the row is then a plain link.
+   */
+  unchecked: number | null;
 }
 
 export async function logistFlowCounts(
@@ -173,7 +182,7 @@ export async function logistFlowCounts(
 ): Promise<LogistFlowCounts> {
   const { warn } = await waitThresholds();
   const book = opts.uncollected ?? { seesAll: true, ownerId: undefined, warehouseIds: undefined };
-  const [plans, warehouse, costMissing, pickups, uncollected] = await Promise.all([
+  const [plans, warehouse, costMissing, pickups, uncollected, unchecked] = await Promise.all([
     db
       .select({ n: sql<number>`count(*)` })
       .from(loadPlans)
@@ -198,6 +207,10 @@ export async function logistFlowCounts(
       console.warn('[home] uncollected count missed its budget', err instanceof Error ? err.message : err);
       return null;
     }),
+    uncheckedPrixodCount(actor).catch((err) => {
+      console.warn('[home] unchecked count failed', err instanceof Error ? err.message : err);
+      return null;
+    }),
   ]);
   return {
     plansPending: Number(plans[0]?.n ?? 0),
@@ -205,6 +218,7 @@ export async function logistFlowCounts(
     costMissing,
     pickups,
     uncollected,
+    unchecked,
   };
 }
 
@@ -283,7 +297,13 @@ export interface VedFlowCounts {
   calcLate: number;
   /** Departed export paperwork not yet sent to the agent. */
   docsPending: number;
-  /** Goods lines on OPEN deals with no TNVED code — the classification queue. */
+  /**
+   * OPEN deals with a position lacking TNVED — the classification queue,
+   * counted in DEALS by the very sentence the VED's board draws (G3 a,
+   * `deals/ved-work.ts`): the row links that board, and its cards carry the
+   * `deal-tnved-missing` chip. It used to count LINES, so «3» opened a board
+   * holding one deal (#513).
+   */
   tnvedMissing: number;
   /**
    * Calc↔prixod guesses waiting for this person's ✅ (0119) — asked beside
@@ -291,9 +311,11 @@ export interface VedFlowCounts {
    * is the READER's own (their seals), and the signature stays argument-free.
    */
   calcLinksPending: number;
+  /** «❓ Tekshirilmagan yuk» — the logist's count, for the VED too (his 1a). Null on a failed read. */
+  unchecked: number | null;
 }
 
-export async function vedFlowCounts(): Promise<Omit<VedFlowCounts, 'calcLinksPending'>> {
+export async function vedFlowCounts(): Promise<Omit<VedFlowCounts, 'calcLinksPending' | 'unchecked'>> {
   const originWh = aliasedTable(warehouses, 'origin_wh');
   const destWh = aliasedTable(warehouses, 'dest_wh');
   const [calc, docs, tnved] = await Promise.all([
@@ -313,11 +335,7 @@ export async function vedFlowCounts(): Promise<Omit<VedFlowCounts, 'calcLinksPen
       // one truck (`batchDocsPending`), so the two cannot disagree (#513).
       .where(docsPendingWhere(sql`${originWh}`, sql`${destWh}`)),
     db.execute<{ n: number }>(sql`
-      SELECT count(*)::int AS n
-      FROM deal_lines dl
-      JOIN deals d ON d.id = dl.deal_id
-      JOIN deal_stages s ON s.id = d.stage_id
-      WHERE s.kind = 'open' AND (dl.tnved_code IS NULL OR btrim(dl.tnved_code) = '')
+      SELECT count(*)::int AS n FROM deals d WHERE ${dealMissingTnvedSql(sql`d`)}
     `),
   ]);
   return {
@@ -392,7 +410,12 @@ export async function buildHomeFlow(
       counts: await Promise.all([
         vedFlowCounts(),
         linkSuggestionCount({ scope: calcControlScopeFor(actor), actorId: actor.id }),
-      ]).then(([base, calcLinksPending]) => ({ ...base, calcLinksPending })),
+        // The reader's own warehouse scope, like the screen the row opens.
+        uncheckedPrixodCount(actor).catch((err) => {
+          console.warn('[home] unchecked count failed', err instanceof Error ? err.message : err);
+          return null;
+        }),
+      ]).then(([base, calcLinksPending, unchecked]) => ({ ...base, calcLinksPending, unchecked })),
     };
   }
   if (actor.roles.includes('accountant')) {

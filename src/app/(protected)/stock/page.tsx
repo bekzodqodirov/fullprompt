@@ -6,6 +6,7 @@ import { db } from '@/modules/platform/db/client';
 import {
   boxes,
   clients,
+  lotChecks,
   receiptLots,
   receipts,
   warehouses,
@@ -37,6 +38,17 @@ import { qrlessCountsAt } from '@/modules/wms/labels/qrless';
 import { QrlessChip } from '@/components/qrless-chip';
 import { stockTextWhere } from '@/modules/wms/inventory/stock-filter';
 import { palletDoorsFor } from '@/modules/wms/crates/service';
+import {
+  askableSql,
+  checkFilterSql,
+  chipFace,
+  lotCheckStateOrNullSql,
+  readCheckFilter,
+  withLotCheckJoins,
+  type LotCheckState,
+} from '@/modules/wms/receipts/lot-check-sql';
+import { lotChecksReady } from '@/modules/wms/receipts/lot-check-ready';
+import { LotCheckChip } from '@/components/lot-check-chip';
 
 /** Owner's request: order the stock table by any column, filters kept. */
 const SORTABLE = STOCK_COLUMNS.map((column) => column.key);
@@ -66,6 +78,7 @@ export default async function StockPage({
     dir?: string;
     cols?: string;
     page?: string;
+    tek?: string;
   }>;
 }) {
   const actor = await getActor();
@@ -92,6 +105,10 @@ export default async function StockPage({
   // A `?wh=` that is not an id is dropped, not bound: postgres refuses to
   // compare a uuid column with «YW», and that refusal is a white page (#514).
   if (params.wh && !isUuidShaped(params.wh)) params.wh = undefined;
+  // «Yuk ma'lumoti tekshirildi» (docs/YUK-TEKSHIRUV.md): `?tek=ha|yoq`, and
+  // anything else is dropped rather than bound (#514).
+  const tek = readCheckFilter(params.tek);
+  if (!tek) params.tek = undefined;
   const scopeFilter: SQL[] = [inArray(boxes.status, [...SHELF_STATUSES])];
   const boxScope = warehouseScope(actor, boxes.currentWarehouseId);
   if (boxScope) scopeFilter.push(boxScope);
@@ -220,6 +237,21 @@ export default async function StockPage({
   // density, pieces, WH, date.
   // One predicate with the XLSX (#513).
   if (params.q) scopeFilter.push(stockTextWhere(params.q));
+  // The check's ONE sentence (lot-check-sql.ts), over the two joins every
+  // reader makes. The table's rows take the filter AFTER grouping (HAVING —
+  // the planner misjudged it as a WHERE and walked every lot ever received);
+  // the Σ below takes it as a FILTER over the same groups, so it can also
+  // count both chips' prixods in the same statement (#513). On a server whose
+  // migration has not landed (#472) the screen is the pre-0123 one: no
+  // joins, no chips, no filter row, `tek` ignored.
+  const checksOn = await lotChecksReady();
+  const checkTek = checksOn ? tek : null;
+  const checkState = lotCheckStateOrNullSql(checksOn, {
+    lot: sql`${receiptLots}`,
+    receipt: sql`${receipts}`,
+    check: sql`${lotChecks}`,
+  });
+  const askable = askableSql(sql`${warehouses}`);
   // The trucks on the road (round 100, owner's 5A). Its own query with its
   // own scope: `scopeFilter` is built on `currentWarehouseId`, which is NULL
   // for every in-transit box — reusing it would answer zero for ever.
@@ -232,7 +264,7 @@ export default async function StockPage({
   const crateStrip = actor.permissions.has('crates.manage')
     ? await crateStock(actor, params.wh)
     : null;
-  const lines = await db
+  const linesQuery = db
     .select({
       lot: receiptLots,
       receiptId: receipts.id,
@@ -243,6 +275,10 @@ export default async function StockPage({
       clientCode: clients.clientCode,
       whId: warehouses.id,
       inStock: sql<number>`count(*)`,
+      // One lot, one prixod, one warehouse per group: every joined row
+      // answers the same, and an aggregate keeps the GROUP BY as it was.
+      check: sql<LotCheckState>`min(${checkState})`,
+      askable: sql<boolean>`bool_and(${askable})`,
       // «🏷 QR-siz» on the row (0112): its cartons at this warehouse no scan finds.
       qrless: sql<number>`count(*) FILTER (WHERE ${qrlessJoinedSql()})`,
       photoId: sql<string | null>`(
@@ -261,6 +297,8 @@ export default async function StockPage({
     .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
     .innerJoin(warehouses, eq(boxes.currentWarehouseId, warehouses.id))
     .leftJoin(clients, eq(receipts.clientId, clients.id))
+    .$dynamic();
+  const lines = await withLotCheckJoins(linesQuery, checksOn)
     .where(and(...scopeFilter))
     .groupBy(
       receiptLots.id,
@@ -272,6 +310,7 @@ export default async function StockPage({
       clients.id,
       clients.clientCode,
     )
+    .having(checkTek ? checkFilterSql(checkTek, sql`min(${checkState})`, sql`bool_and(${askable})`) : undefined)
     .orderBy(asc(warehouses.code), asc(receipts.receivedAt))
     .limit(STOCK_FETCH_CAP);
 
@@ -289,29 +328,41 @@ export default async function StockPage({
   // loaded, and the XLSX (a 10,000 cap) printed a different number for the
   // same filter. One grouped aggregate, the SAME predicate, so the two can
   // never disagree again.
+  const groupFilter = checkTek ? checkFilterSql(checkTek, sql`g.state`, sql`g.askable`) : sql`true`;
   const [totals] = await db
     .select({
-      lines: sql<number>`count(*)`,
-      boxes: sql<number>`coalesce(sum(g.in_stock), 0)`,
-      kg: sql<number>`coalesce(sum(g.in_stock * g.weight_per_box), 0)`,
-      m3: sql<number>`coalesce(sum(g.in_stock * g.volume_per_box), 0)`,
+      lines: sql<number>`count(*) FILTER (WHERE ${groupFilter})`,
+      boxes: sql<number>`coalesce(sum(g.in_stock) FILTER (WHERE ${groupFilter}), 0)`,
+      kg: sql<number>`coalesce(sum(g.in_stock * g.weight_per_box) FILTER (WHERE ${groupFilter}), 0)`,
+      m3: sql<number>`coalesce(sum(g.in_stock * g.volume_per_box) FILTER (WHERE ${groupFilter}), 0)`,
+      // The two chips' numbers, in PRIXODS (his noun), over everything the
+      // other filters match — the chip says how many each press would show.
+      checkedPrixod: sql<number>`count(DISTINCT g.receipt_id) FILTER (WHERE ${checkFilterSql('ha', sql`g.state`, sql`g.askable`)})`,
+      askedPrixod: sql<number>`count(DISTINCT g.receipt_id) FILTER (WHERE ${checkFilterSql('yoq', sql`g.state`, sql`g.askable`)})`,
     })
     .from(
-      db
-        .select({
-          inStock: sql<number>`count(*)`.as('in_stock'),
-          weightPerBox: sql<number>`${receiptLots.totalWeightKg} / ${receiptLots.boxCount}`.as(
-            'weight_per_box',
-          ),
-          volumePerBox: sql<number>`${receiptLots.totalVolumeM3} / ${receiptLots.boxCount}`.as(
-            'volume_per_box',
-          ),
-        })
-        .from(boxes)
-        .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
-        .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
-        .innerJoin(warehouses, eq(boxes.currentWarehouseId, warehouses.id))
-        .leftJoin(clients, eq(receipts.clientId, clients.id))
+      withLotCheckJoins(
+        db
+          .select({
+            inStock: sql<number>`count(*)`.as('in_stock'),
+          receiptId: sql<string>`${receipts.id}`.as('receipt_id'),
+            state: sql<LotCheckState>`min(${checkState})`.as('state'),
+            askable: sql<boolean>`bool_and(${askable})`.as('askable'),
+            weightPerBox: sql<number>`${receiptLots.totalWeightKg} / ${receiptLots.boxCount}`.as(
+              'weight_per_box',
+            ),
+            volumePerBox: sql<number>`${receiptLots.totalVolumeM3} / ${receiptLots.boxCount}`.as(
+              'volume_per_box',
+            ),
+          })
+          .from(boxes)
+          .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+          .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+          .innerJoin(warehouses, eq(boxes.currentWarehouseId, warehouses.id))
+          .leftJoin(clients, eq(receipts.clientId, clients.id))
+          .$dynamic(),
+        checksOn,
+      )
         .where(and(...scopeFilter))
         .groupBy(receiptLots.id, receipts.id, warehouses.code)
         .as('g'),
@@ -372,13 +423,15 @@ export default async function StockPage({
     }
     if (target > 1) search.set('page', String(target));
     const qs = search.toString();
-    return qs ? `/stock?${qs}` : '/stock';
+    // Never a bare /stock (a bare visit redirects to the saved default view):
+    // the pager's page one and the card's «← Ostatka» are built from here.
+    return qs ? `/stock?${qs}` : '/stock?tek=';
   };
   const chosen = parseCols(params.cols);
   const columns = visibleColumns(STOCK_COLUMNS, chosen, (permission) =>
     actor.permissions.has(permission),
   );
-  const sortParams = { wh: params.wh, q: params.q, cols: params.cols };
+  const sortParams = { wh: params.wh, q: params.q, cols: params.cols, tek: params.tek };
   const currentQuery = normalizeQuery(params as Record<string, string | undefined>);
   const views = await listViewsFor('stock', actor.id);
   const label = (column: (typeof STOCK_COLUMNS)[number]) => column.label ?? tAny(column.labelKey!);
@@ -388,6 +441,25 @@ export default async function StockPage({
   if (params.cols) exportQuery.set('cols', params.cols);
   if (params.sort) exportQuery.set('sort', params.sort);
   if (params.dir) exportQuery.set('dir', params.dir);
+  if (params.tek) exportQuery.set('tek', params.tek);
+  // The check filter's three doors, built like the pager's: every other
+  // filter kept, the page dropped (a new filter starts on page one).
+  const tekHref = (value: 'ha' | 'yoq' | null) => {
+    const search = new URLSearchParams();
+    for (const [key, v] of Object.entries(params)) {
+      if (v !== undefined && v !== '' && key !== 'page' && key !== 'tek') search.set(key, v);
+    }
+    if (value) search.set('tek', value);
+    const qs = search.toString();
+    // Never a bare /stock: a bare visit redirects to the person's saved
+    // default view, and a ❓ worklist saved as the default would make
+    // «Hammasi» unreachable. `tek=` reads as «all» (readCheckFilter('')).
+    return qs ? `/stock?${qs}` : '/stock?tek=';
+  };
+  const tlc = await getTranslations('lotCheck');
+  const chipLabels = { checked: tlc('chipChecked'), stale: tlc('chipStale'), none: tlc('chipNone') };
+  // The way back from the lot's card to exactly this list (his worklist).
+  const backHere = encodeURIComponent(pageHref(page));
 
   const sumBoxes = Number(totals?.boxes ?? 0);
   const sumKg = Number(totals?.kg ?? 0);
@@ -411,6 +483,8 @@ export default async function StockPage({
 
       <form method="get" className="relative flex flex-wrap gap-2">
         {params.cols && <input type="hidden" name="cols" value={params.cols} />}
+        {/* The 🔍 press must not drop the check filter (#171). */}
+        {params.tek && <input type="hidden" name="tek" value={params.tek} />}
         {/* The warehouse and the search share a line of their OWN. Wrapping
             them into the same row as the buttons left the search box about
             50 px wide on a phone — the `.input` cascade again (#419): a
@@ -454,6 +528,44 @@ export default async function StockPage({
           ⬇️ XLSX
         </a>
       </form>
+
+      {/* «Yuk ma'lumoti tekshirildi»: three doors, each naming how many
+          prixods it would show. A row of its own that WRAPS — the search
+          row above is full at 360 px (#419), and a row that cannot wrap
+          rescales the whole page (#400). */}
+      {checksOn && (
+        <div className="flex flex-wrap gap-2 text-sm" data-testid="stock-check-filter">
+          {(
+            [
+              { value: null, testid: 'stock-check-all', text: tlc('filterAll') },
+              {
+                value: 'ha' as const,
+                testid: 'stock-check-yes',
+                text: `✅ ${tlc('filterChecked')} · ${tlc('prixodCount', { n: Number(totals?.checkedPrixod ?? 0) })}`,
+              },
+              {
+                value: 'yoq' as const,
+                testid: 'stock-check-no',
+                text: `❓ ${tlc('filterUnchecked')} · ${tlc('prixodCount', { n: Number(totals?.askedPrixod ?? 0) })}`,
+              },
+            ] as const
+          ).map((door) => (
+            <Link
+              key={door.testid}
+              href={tekHref(door.value)}
+              data-testid={door.testid}
+              aria-current={checkTek === door.value ? 'true' : undefined}
+              className={`rounded-lg border px-3 py-1.5 ${
+                checkTek === door.value
+                  ? 'border-brand-500 bg-brand-50 font-semibold text-brand-700'
+                  : 'border-line text-ink-700 hover:bg-surface-sunken'
+              }`}
+            >
+              {door.text}
+            </Link>
+          ))}
+        </div>
+      )}
 
       <p className="text-sm font-semibold text-ink-700">
         Σ {sumBoxes} {t('boxes')} · {Math.round(sumKg)} kg · {Math.round(sumM3 * 100) / 100} m³
@@ -589,26 +701,41 @@ export default async function StockPage({
                         )}
                       </div>
                     ) : column.key === 'code' ? (
-                      <Link
-                        href={`/stock?lot=${row.line.lot.id}`}
-                        className="font-mono font-extrabold text-brand-700"
-                      >
-                        {/* The MARKING is the box's printed code (round 98):
-                            it wins, and the claimed client's code sits small
-                            beneath it — `GS500MANIKEN-AL` over `gs500`. */}
-                        {codeIdentity(row.line.marking, row.line.clientCode).main}-
-                        {row.line.lot.letter}
-                        {codeIdentity(row.line.marking, row.line.clientCode).sub && (
-                          <span className="block font-sans text-2xs font-normal text-ink-500">
-                            {codeIdentity(row.line.marking, row.line.clientCode).sub}
-                          </span>
-                        )}
-                        {Number(row.line.qrless) > 0 && (
+                      <>
+                        <Link
+                          href={`/stock?lot=${row.line.lot.id}`}
+                          className="font-mono font-extrabold text-brand-700"
+                        >
+                          {/* The MARKING is the box's printed code (round 98):
+                              it wins, and the claimed client's code sits small
+                              beneath it — `GS500MANIKEN-AL` over `gs500`. */}
+                          {codeIdentity(row.line.marking, row.line.clientCode).main}-
+                          {row.line.lot.letter}
+                          {codeIdentity(row.line.marking, row.line.clientCode).sub && (
+                            <span className="block font-sans text-2xs font-normal text-ink-500">
+                              {codeIdentity(row.line.marking, row.line.clientCode).sub}
+                            </span>
+                          )}
+                          {Number(row.line.qrless) > 0 && (
+                            <span className="block">
+                              <QrlessChip n={Number(row.line.qrless)} total={row.boxes} label={tq('chip')} />
+                            </span>
+                          )}
+                        </Link>
+                        {/* A SIBLING of the code's link, never inside it: an
+                            <a> in an <a> is invalid HTML and a hydration
+                            mismatch on every row. The worklist's door to the
+                            lot on its prixod card, with the way back here. */}
+                        {chipFace(row.line.check, Boolean(row.line.askable)) && (
                           <span className="block">
-                            <QrlessChip n={Number(row.line.qrless)} total={row.boxes} label={tq('chip')} />
+                            <LotCheckChip
+                              face={chipFace(row.line.check, Boolean(row.line.askable))}
+                              labels={chipLabels}
+                              href={`/receipts/${row.line.receiptId}?qaytish=${backHere}#lot-${row.line.lot.id}`}
+                            />
                           </span>
                         )}
-                      </Link>
+                      </>
                     ) : column.key === 'product' ? (
                       <Link href={`/receipts/${row.line.receiptId}`} className="block truncate">
                         {row.line.lot.productNameZh}

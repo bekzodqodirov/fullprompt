@@ -152,7 +152,7 @@ describe('the rules a shell cannot exercise', () => {
     // to be rewritten every time a button is added tells you nothing about
     // whether the escapes survived. The escapes themselves are asserted
     // behaviourally in tests/unit/zametka-bot.test.ts.
-    expect(handlers).toContain('if (intake && !escapesIntake(ctx.message.text))');
+    expect(handlers).toContain('if (intake && !escapesIntake(ctx.message.text) && !late)');
     expect(escapesIntake('🧮 Hisoblatish')).toBe(true);
     expect(escapesIntake('🤖 AI rastamojka')).toBe(true);
     expect(escapesIntake('📋 Bugun')).toBe(true);

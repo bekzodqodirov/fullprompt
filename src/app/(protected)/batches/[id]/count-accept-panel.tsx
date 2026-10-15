@@ -24,6 +24,7 @@ import type { CountAcceptRefusal, CountPanelLot } from '@/modules/wms/scanning/c
  */
 export function CountAcceptPanel({
   batchId,
+  destWarehouseId,
   status,
   notifiesClients,
   mayOver,
@@ -31,6 +32,12 @@ export function CountAcceptPanel({
   crates,
 }: {
   batchId: string;
+  /**
+   * The destination this panel was drawn for, posted with every press (the
+   * reroute round): a truck rerouted since is refused in words, never counted
+   * at a warehouse this page never showed.
+   */
+  destWarehouseId: string;
   status: string;
   /** The destination tells clients on landing (customs/distribution), a hub does not. */
   notifiesClients: boolean;
@@ -62,6 +69,7 @@ export function CountAcceptPanel({
         <LotRow
           key={lot.lotId}
           batchId={batchId}
+          destWarehouseId={destWarehouseId}
           lot={lot}
           inTransit={inTransit}
           notifiesClients={notifiesClients}
@@ -78,6 +86,7 @@ export function CountAcceptPanel({
               <LotRow
                 key={lot.lotId}
                 batchId={batchId}
+                destWarehouseId={destWarehouseId}
                 lot={lot}
                 inTransit={inTransit}
                 notifiesClients={notifiesClients}
@@ -94,6 +103,7 @@ export function CountAcceptPanel({
             <CrateRow
               key={crate.crateId}
               batchId={batchId}
+              destWarehouseId={destWarehouseId}
               crate={crate}
               inTransit={inTransit}
               notifiesClients={notifiesClients}
@@ -147,6 +157,10 @@ function useRefusalText() {
         return t('errors.busy_retry');
       case 'crate_not_on_batch':
         return t('errors.crate_not_on_batch');
+      // Where the truck goes now — the phone's own sentence, never «refresh»:
+      // for the old warehouse's staff a refresh is a 404 (the reroute review).
+      case 'batch_rerouted':
+        return t('errors.batch_rerouted', { to: String(detail.to ?? '—') });
       case 'validation':
         return t('errors.validation');
     }
@@ -155,12 +169,14 @@ function useRefusalText() {
 
 function LotRow({
   batchId,
+  destWarehouseId,
   lot,
   inTransit,
   notifiesClients,
   mayOver,
 }: {
   batchId: string;
+  destWarehouseId: string;
   lot: CountPanelLot;
   inTransit: boolean;
   notifiesClients: boolean;
@@ -231,6 +247,7 @@ function LotRow({
         pressId,
         overReason: reason,
         confirmArrival: inTransit,
+        seenDestWarehouseId: destWarehouseId,
       });
       if (!res.ok) {
         setError(refusal(res.error, res.detail));
@@ -364,11 +381,13 @@ function LotRow({
 
 function CrateRow({
   batchId,
+  destWarehouseId,
   crate,
   inTransit,
   notifiesClients,
 }: {
   batchId: string;
+  destWarehouseId: string;
   crate: { crateId: string; code: string; n: number };
   inTransit: boolean;
   notifiesClients: boolean;
@@ -386,9 +405,15 @@ function CrateRow({
     if (!window.confirm(lines.join('\n\n'))) return;
     setPending(true);
     try {
-      const res = await countAcceptCrateAction({ batchId, crateId: crate.crateId, pressId, confirmArrival: inTransit });
+      const res = await countAcceptCrateAction({
+        batchId,
+        crateId: crate.crateId,
+        pressId,
+        confirmArrival: inTransit,
+        seenDestWarehouseId: destWarehouseId,
+      });
       if (!res.ok) {
-        setNote({ ok: false, text: refusal(res.error) });
+        setNote({ ok: false, text: refusal(res.error, res.detail) });
         return;
       }
       setNote({

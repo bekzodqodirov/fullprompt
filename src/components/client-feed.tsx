@@ -2,7 +2,12 @@ import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { clientFeed, type FeedItem, type FeedKind } from '@/modules/wms/crm/feed';
 import { mentionablePeople } from '@/modules/wms/crm/internal-chat';
+import { lentaAdmission } from '@/modules/wms/crm/thread-door';
+import { threadHrefsFor } from '@/modules/wms/crm/thread';
+import { OFFICE_TZ } from '@/modules/platform/time/tashkent';
+import Link from 'next/link';
 import { FeedNoteBox } from './client-feed-note';
+import { feedNoteTarget } from './feed-note-target';
 import { LightboxImg } from './lightbox-img';
 
 /**
@@ -93,6 +98,7 @@ export async function ClientFeed({
   money: showMoney,
   leadId = null,
   dealId = null,
+  noteOn = null,
   limit = 60,
   /** On a card the box is short; on a dedicated screen it fills the height. */
   tall = false,
@@ -112,6 +118,14 @@ export async function ClientFeed({
   /** Set on a deal card: notes written here belong to THIS job, and the deal's
       own chat shows alongside the client's history. */
   dealId?: string | null;
+  /**
+   * Where a note written in this box lands, whatever the reader's grants —
+   * the karta passes its lead (review access-4). The karta is the CALC card:
+   * a both-hats reader reaches it because the CRM card bounces him, and the
+   * CRM default («the client, then the lead») would post his note on the
+   * client's whole thread from a screen that is about this one job.
+   */
+  noteOn?: { entityType: 'lead' | 'deal'; entityId: string } | null;
   limit?: number;
   tall?: boolean;
 }) {
@@ -122,15 +136,47 @@ export async function ClientFeed({
   // renders nothing did not ship in any sense that matters.
   if (!clientId && !leadId && !dealId) return null;
   const actor = await getActor();
-  if (!actor?.permissions.has('crm.leads') && !actor?.permissions.has('clients.manage')) {
-    return null;
-  }
+  if (!actor) return null;
+  // The VED on a calc card (docs/VED-TARIX.md §10, 15a): «ved hodimi
+  // hsoblashdan kartaga otib aniqlashtirib oladi» — he reads the lenta of a
+  // lead or deal that carries a calculation. The gate is the THREAD door's
+  // own (thread-door.ts `lentaAdmission`): the lenta and the thread written on
+  // it ask one sentence, so the two cannot drift apart (#513).
+  const calcCard = dealId
+    ? { entityType: 'deal' as const, entityId: dealId }
+    : leadId
+      ? { entityType: 'lead' as const, entityId: leadId }
+      : null;
+  const admitted = await lentaAdmission(actor, calcCard);
+  if (!admitted) return null;
+  const { viaCalc } = admitted;
 
   const t = await getTranslations('crm');
+  const tth = await getTranslations('threads');
+  const threadMarks = { calc: tth('feedCalcThread'), telegram: tth('feedViaTelegram') };
   const items = await clientFeed(clientId, { money: showMoney, limit, leadId, dealId });
+  // A note that is a calculation's question or answer carries «🧮 Hisob savoli
+  // · ↩️ javob» — a link to WHERE that calculation's Q&A lives now (the ONE
+  // href rule, `threadHrefsFor`): a won lead keeps its tagged notes while the
+  // request and its fold moved to the deal, so a local anchor would be dead.
+  // One batch for the distinct calculations on screen. A read that fails
+  // draws the chip as text — the lenta never falls over a chip.
+  const calcIds = [
+    ...new Set(
+      items
+        .map((item) => (item.kind === 'note' && typeof item.meta.calcRequestId === 'string' ? item.meta.calcRequestId : null))
+        .filter((id): id is string => id !== null),
+    ),
+  ];
+  const calcHrefs = calcIds.length
+    ? await threadHrefsFor(
+        actor,
+        calcIds.map((id) => ({ kind: 'calc' as const, id })),
+      ).catch(() => new Map<string, string | null>())
+    : new Map<string, string | null>();
 
   return (
-    <section className="card space-y-2" data-testid="client-feed">
+    <section id="ichki" className="card scroll-mt-20 space-y-2" data-testid="client-feed">
       <h2 className="text-lg font-bold">🕘 {t('feedTitle')}</h2>
 
       {items.length === 0 ? (
@@ -143,7 +189,18 @@ export async function ClientFeed({
           data-testid="feed-list"
         >
           {items.map((item) => (
-            <FeedRow key={item.id} item={item} t={t} viewerId={actor.id} />
+            <FeedRow
+              key={item.id}
+              item={item}
+              t={t}
+              viewerId={actor.id}
+              marks={threadMarks}
+              calcHref={
+                typeof item.meta.calcRequestId === 'string'
+                  ? (calcHrefs.get(`calc:${item.meta.calcRequestId.toLowerCase()}`) ?? null)
+                  : null
+              }
+            />
           ))}
         </div>
       )}
@@ -154,11 +211,15 @@ export async function ClientFeed({
           (owner, round 21: «lenta va chatlar alohida tursin»). */}
       <div className="space-y-2 border-t border-line pt-2">
         <FeedNoteBox
-          // On a deal card the note belongs to THIS job: two deals with one
-          // client are two conversations, and a price argument about one must
-          // not surface on the other. Elsewhere: the client, then the lead.
-          entityType={dealId ? 'deal' : clientId ? 'client' : 'lead'}
-          entityId={dealId ?? clientId ?? leadId!}
+          // `feedNoteTarget` says where, and why.
+          {...feedNoteTarget({ viaCalc, calcCard, noteOn, dealId, clientId, leadId })}
+          // Text only for the VED in v1 (§10): the upload route is not
+          // widened, and the action refuses a pre-bound file id from him.
+          files={!viaCalc}
+          // The lead or deal this box sits on — the action's hint asks
+          // whether an open calculation here has a question waiting.
+          hintOn={calcCard ? `${calcCard.entityType}:${calcCard.entityId}` : null}
+          hintText={tth('feedCalcHint')}
           people={await mentionablePeople()}
           labels={{
             placeholder: t('feedNotePlaceholder'),
@@ -176,10 +237,16 @@ function FeedRow({
   item,
   t,
   viewerId,
+  calcHref,
+  marks,
 }: {
   item: FeedItem;
   t: Awaited<ReturnType<typeof getTranslations<'crm'>>>;
   viewerId: string;
+  /** The two thread marks' words (the `threads` namespace). */
+  marks: { calc: string; telegram: string };
+  /** Where this note's calculation Q&A lives for this reader — null draws the chip as text. */
+  calcHref: string | null;
 }) {
   const label = t(FEED_LABELS[item.kind] as 'feedNote');
   const voided = item.meta.voided === true;
@@ -212,9 +279,30 @@ function FeedRow({
           {/* A voided entry stays on the timeline: it happened, and then
               somebody undid it, and both are part of the story. */}
           {voided && ` · ${t('feedVoided')}`}
+          {/* A staff thread's marks (0127): the calculation this note is
+              about, and «it came from Telegram». */}
+          {item.kind === 'note' && typeof item.meta.calcRequestId === 'string' ? (
+            calcHref ? (
+              <Link href={calcHref} className="ml-1.5 font-semibold text-brand-700" data-testid="feed-calc-thread">
+                {marks.calc}
+              </Link>
+            ) : (
+              <span className="ml-1.5" data-testid="feed-calc-thread">
+                {marks.calc}
+              </span>
+            )
+          ) : null}
+          {item.kind === 'note' && item.meta.viaTelegram === true ? (
+            <span className="ml-1.5" data-testid="feed-via-telegram">
+              {marks.telegram}
+            </span>
+          ) : null}
         </span>
         <span className="whitespace-nowrap">
-          {item.at.toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })}
+          {/* The office's clock, never the server's (a container runs in UTC):
+              the same message sits in the calc fold beside this lenta, printed
+              by next-intl in Asia/Tashkent, and the two read 5 hours apart. */}
+          {item.at.toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short', timeZone: OFFICE_TZ })}
           {item.actor ? ` · ${item.actor}` : ''}
         </span>
       </div>
@@ -267,6 +355,14 @@ function FeedRow({
               a deal «muddat» (the register's rule, debt/releases.ts). Only a
               reader of this client's money is sent the flag at all. */}
           {item.meta.debtOverride === true && ` · ⚠ ${t('feedDebtOverride')}`}
+        </p>
+      )}
+      {/* WHY it went out on debt (0126) — sent only to a reader of this
+          client's money, like the mark above. Wraps and breaks like the body
+          line below: a pasted unbroken token must not widen the card (#400). */}
+      {item.kind === 'handover' && typeof item.meta.debtNote === 'string' && item.meta.debtNote.trim() !== '' && (
+        <p className="whitespace-pre-wrap break-words text-xs" data-testid="feed-debt-note">
+          💬 {item.meta.debtNote}
         </p>
       )}
       {(item.kind === 'charge' || item.kind === 'payment' || item.kind === 'refund' || item.kind === 'compensation') && (

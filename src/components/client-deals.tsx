@@ -9,6 +9,7 @@ import {
   compareQuote,
   listDeals,
 } from '@/modules/wms/deals/service';
+import { mayEditDealTerms } from '@/modules/wms/deals/door';
 import { worthAlerting } from '@/modules/wms/deals/deviation';
 
 /**
@@ -53,14 +54,19 @@ export async function ClientDeals({ clientId }: { clientId: string }) {
     <section className="card space-y-2">
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-lg font-bold">🤝 {t('title')}</h2>
-        <Link
-          href={`/bitimlar/new?client=${clientId}`}
-          data-testid="client-new-deal"
-          className="btn-secondary"
-        >
-          <Icon name="plus" className="h-4 w-4" />
-          {t('newDeal')}
-        </Link>
+        {/* Opening a deal is the seller's (G4 a). The VED cannot open the
+            client card today, but a `clients.view_own + ved.docs` role could,
+            and a drawn door the new-deal page bounces is worse than none. */}
+        {mayEditDealTerms(actor.permissions) && (
+          <Link
+            href={`/bitimlar/new?client=${clientId}`}
+            data-testid="client-new-deal"
+            className="btn-secondary"
+          >
+            <Icon name="plus" className="h-4 w-4" />
+            {t('newDeal')}
+          </Link>
+        )}
       </div>
 
       {withGap.length === 0 && <p className="text-sm text-ink-500">{t('empty')}</p>}

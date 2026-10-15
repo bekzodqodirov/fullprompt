@@ -401,6 +401,10 @@ export const auditLog = pgTable(
     index('audit_entity_idx').on(t.entityType, t.entityId, t.createdAt),
     index('audit_actor_idx').on(t.actorId, t.createdAt),
     index('audit_warehouse_idx').on(t.warehouseId, t.createdAt),
+    // `audit_batch_former_code_idx` (0121, a truck's former names) is created
+    // in SQL: a partial expression index whose predicate must equal
+    // `FORMER_CODE_PREDICATE('')` in wms/batches/former-codes.ts character for
+    // character, like 0119's `receipt_lots_product_key_idx`.
   ],
 );
 
@@ -477,6 +481,119 @@ export const telegramLinks = pgTable(
   },
   (t) => [
     check('telegram_links_status_check', sql`${t.status} IN ('pending', 'linked', 'revoked')`),
+  ],
+);
+
+/**
+ * The bot's durable one-message waits (0130, Q5 a): «Natijani yozib
+ * yuboring», «Hodim» → phone, an advert visit, a cabinet link code — what a
+ * person was ASKED for, kept across a restart now that the bot no longer drops
+ * what Telegram held while it was down. Memory stays the reader; this table
+ * only has to survive the process (telegram/waits.ts is the one writer, raw).
+ */
+export const telegramChatWaits = pgTable(
+  'telegram_chat_waits',
+  {
+    chatId: bigint('chat_id', { mode: 'bigint' }).notNull(),
+    kind: text('kind').notNull(),
+    payload: jsonb('payload').notNull().default({}),
+    armedAt: timestamp('armed_at', { withTimezone: true }).notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.chatId, t.kind] }),
+    check('telegram_chat_waits_kind_check', sql`${t.kind} IN ('task', 'staff_entry', 'ad_visit', 'cabinet_link')`),
+    check('telegram_chat_waits_window_check', sql`${t.expiresAt} > ${t.armedAt}`),
+    check('telegram_chat_waits_payload_check', sql`jsonb_typeof(${t.payload}) = 'object'`),
+    index('telegram_chat_waits_expires_idx').on(t.expiresAt),
+  ],
+);
+
+/**
+ * «This Telegram message (or this press, by the message pressed) already did
+ * its effect» (0130, Q5 a) — one claim per Telegram identity, written in the
+ * SAME transaction as the effect (telegram/once.ts, the one writer, raw).
+ */
+export const telegramOnce = pgTable(
+  'telegram_once',
+  {
+    key: text('key').primaryKey(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check(
+      'telegram_once_key_check',
+      sql`${t.key} ~ '^(m|q):[^:]+:[^:]+:[a-z_]+$' AND length(${t.key}) <= 200`,
+    ),
+    index('telegram_once_created_idx').on(t.createdAt),
+  ],
+);
+
+/**
+ * The price channel (0128, the owner's F, 2026-10-07): every channel a
+ * SETTINGS ADMIN made the bot an administrator of. The ONE row with
+ * `connected_at` set is THE channel — there is deliberately no setting, because
+ * /admin/settings renders every key as an editable input and would be a door
+ * around the vetting. Written only by `telegram/price-channel.ts`.
+ */
+export const priceChannelChats = pgTable(
+  'price_channel_chats',
+  {
+    chatId: bigint('chat_id', { mode: 'bigint' }).primaryKey(),
+    title: text('title').notNull().default(''),
+    username: text('username'),
+    status: text('status').notNull(),
+    rights: jsonb('rights').notNull().default({}),
+    admins: jsonb('admins').notNull().default([]),
+    memberCount: integer('member_count'),
+    addedByUserId: uuid('added_by_user_id')
+      .notNull()
+      .references(() => users.id),
+    connectedAt: timestamp('connected_at', { withTimezone: true }),
+    connectedByUserId: uuid('connected_by_user_id').references(() => users.id),
+    vettedAt: timestamp('vetted_at', { withTimezone: true }),
+    inviteLink: text('invite_link'),
+    lastError: text('last_error'),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check(
+      'price_channel_chats_status_check',
+      sql`${t.status} IN ('creator','administrator','member','restricted','left','kicked')`,
+    ),
+    check(
+      'price_channel_chats_connected_check',
+      sql`(${t.connectedAt} IS NULL) = (${t.connectedByUserId} IS NULL)`,
+    ),
+    uniqueIndex('price_channel_chats_one_connected')
+      .on(sql`(true)`)
+      .where(sql`${t.connectedAt} IS NOT NULL`),
+  ],
+);
+
+/** Who the BOT admitted to a price channel, per channel (0128). */
+export const priceChannelMembers = pgTable(
+  'price_channel_members',
+  {
+    chatId: bigint('chat_id', { mode: 'bigint' }).notNull(),
+    tgUserId: bigint('tg_user_id', { mode: 'bigint' }).notNull(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id),
+    approvedAt: timestamp('approved_at', { withTimezone: true }).notNull().defaultNow(),
+    removedAt: timestamp('removed_at', { withTimezone: true }),
+    removeReason: text('remove_reason'),
+    lastError: text('last_error'),
+  },
+  (t) => [
+    primaryKey({ name: 'price_channel_members_pk', columns: [t.chatId, t.tgUserId] }),
+    check(
+      'price_channel_members_reason_check',
+      sql`(${t.removedAt} IS NULL) = (${t.removeReason} IS NULL) AND (${t.removeReason} IS NULL OR ${t.removeReason} IN ('inactive','unlinked','relinked','left'))`,
+    ),
+    index('price_channel_members_live_idx')
+      .on(t.userId)
+      .where(sql`${t.removedAt} IS NULL`),
   ],
 );
 
@@ -802,10 +919,40 @@ export const tasks = pgTable(
     repeatEvery: integer('repeat_every').notNull().default(1),
     /** Shared by every occurrence of one rule. */
     seriesId: uuid('series_id'),
+    /**
+     * Where the task came from (0124): 'hand' (the web form, the staff bot),
+     * 'calc' (a calculation job), 'calc_return' (the VED's hand-back),
+     * 'promise' (a payment promise's call), 'automation' (a rule). NULL = made
+     * before 0124 and read as given by hand. Never taken from a form post — a
+     * forged 'calc' would strip a hand task of its buttons.
+     */
+    origin: text('origin'),
+    /** The record whose clock the task carries: the calc request ('calc') or
+     * the payment promise ('promise'). No FK — the task is history. */
+    boundId: uuid('bound_id'),
+    /** «👀 Qabul qildim» (docs/TELEGRAM-TOPSHIRIQ.md), once. */
+    acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+    /** The author's last «🔔 Eslatish»; at most one per half hour. */
+    remindedAt: timestamp('reminded_at', { withTimezone: true }),
+    /** The author's own Telegram messages the task was given with:
+     * `{chatId, messageId}[]`, forwarded to the assignee before the text. */
+    sourceMessages: jsonb('source_messages'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
+    check(
+      'tasks_origin_check',
+      sql`${t.origin} IS NULL OR ${t.origin} IN ('hand', 'calc', 'calc_return', 'promise', 'automation')`,
+    ),
+    check(
+      'tasks_bound_check',
+      sql`${t.boundId} IS NULL OR (${t.origin} IS NOT NULL AND ${t.origin} IN ('calc', 'promise'))`,
+    ),
+    check(
+      'tasks_source_messages_check',
+      sql`${t.sourceMessages} IS NULL OR jsonb_typeof(${t.sourceMessages}) = 'array'`,
+    ),
     check('tasks_status_check', sql`${t.status} IN ('open', 'done', 'cancelled')`),
     check('tasks_priority_check', sql`${t.priority} BETWEEN 1 AND 3`),
     check('tasks_entity_check', sql`(${t.entityType} IS NULL) = (${t.entityId} IS NULL)`),
@@ -820,6 +967,8 @@ export const tasks = pgTable(
     check('tasks_repeat_needs_due', sql`${t.repeatUnit} IS NULL OR ${t.dueAt} IS NOT NULL`),
     index('tasks_assignee_idx').on(t.assigneeId, t.status, t.dueAt),
     index('tasks_entity_idx').on(t.entityType, t.entityId),
+    // «📤 Men bergan»: a person's open given tasks (0124).
+    index('tasks_author_idx').on(t.createdBy, t.status),
   ],
 );
 

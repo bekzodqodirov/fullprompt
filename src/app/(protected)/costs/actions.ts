@@ -21,13 +21,74 @@ import { costSightFor } from '@/modules/wms/costing/cost-sight';
 import { isStaffPartner, maySeeStaffMoney } from '@/modules/wms/partners/staff';
 import { firmDebtVoidRefusal } from '@/modules/wms/partners/service';
 import { amountRefusal, nativeAmount } from '@/modules/wms/finance/money-bounds';
+import { mayEnterBatchCost } from '@/modules/wms/costing/cost-door';
+import { copyDigest, prepareFreightCopy } from '@/modules/wms/costing/freight-copy';
+import { rebaseCost } from '@/modules/wms/costing/rebase';
+import type { RebasePreview, UnsplitView } from '@/modules/wms/costing/freight-types';
+import { isServerBehind, violatedCheck } from '@/modules/platform/db/errors';
+import {
+  costCandidateFrom,
+  mustWarn,
+  TwinWarning,
+  twinAckOf,
+  twinGap,
+  type TwinGap,
+  twinsForCost,
+  twinsForGrid,
+  twinView,
+  type ReaderSight,
+  type TwinView,
+} from '@/modules/wms/accounting/twins';
 
 export interface CostActionResult {
   ok: boolean;
   error?: string;
   /** The grid only: cells that DID become entries before a failure. */
   saved?: string[];
+  /**
+   * «Bu pul allaqachon yozilgan» (SARFLAR §3): nothing was written; the form
+   * shows the twins and «Baribir saqlash» posts `twins.ackToken` back.
+   */
+  twins?: TwinView;
+  /** A clean save that could not compare everything (§8.1, `no_rate`) — said, never hidden. */
+  unchecked?: TwinGap;
+  /** What a refusal's sentence NAMES (the warehouse, the column, the date). */
+  params?: Record<string, string | number>;
+  /** Saved, but held: the freight bill is written and on no box yet (§6). */
+  unsplit?: UnsplitView;
+  /** The re-basis door's first press: who moves how much (§8). */
+  rebase?: RebasePreview;
+  /** A re-basis whose post-commit split was queued (§8.4). */
+  pending?: true;
 }
+
+/**
+ * The ONE way a CostError becomes a result (docs/YOLKIRA-TAQSIMOT.md §5, T9):
+ * the code AND the params the sentence needs. No catch writes the code by
+ * hand — a sentence that names the warehouse cannot be one that forgot it.
+ */
+function costRefusal(err: CostError): CostActionResult {
+  return { ok: false, error: err.code, ...(err.params ? { params: err.params } : {}) };
+}
+
+/**
+ * A database one migration behind 0132 (#472): the widened basis CHECK by
+ * NAME (the 0125 idiom — never a blanket 23514), or the missing side tables.
+ */
+const freightServerBehind = (err: unknown) =>
+  isServerBehind(err) || violatedCheck(err) === 'cost_entries_basis_check';
+
+/** The digest of the version the person's preview drew (M6), read from the RAW post. */
+function freightSeenOf(input: unknown): string | null {
+  const v = (input as { freightSeen?: unknown } | null)?.freightSeen;
+  return typeof v === 'string' && /^[0-9a-f]{64}$/.test(v) ? v : null;
+}
+
+const readerOf = (actor: { id: string; permissions: ReadonlySet<string> }): ReaderSight => ({
+  id: actor.id,
+  permissions: actor.permissions,
+  ownOnly: costSightFor(actor).ownOnly,
+});
 
 /**
  * The two payer rules every cost door asks AFTER its own grant (0101):
@@ -54,6 +115,7 @@ export async function addCostEntryAction(input: unknown): Promise<CostActionResu
 
   let path: string;
   let actor;
+  let warehouseId: string;
   try {
     if (parsed.data.scope === 'batch') {
       const batch = await db.query.batches.findFirst({
@@ -61,6 +123,10 @@ export async function addCostEntryAction(input: unknown): Promise<CostActionResu
       });
       if (!batch) return { ok: false, error: 'not_found' };
       actor = await authorize('costs.enter_batch', { warehouseId: batch.originWarehouseId });
+      // The ADD door (SARFLAR §8.5): the grant held, so a refusal here is the
+      // cancelled truck — the service re-asks it under the truck's lock.
+      if (!mayEnterBatchCost(actor, batch)) return { ok: false, error: 'cancelled' };
+      warehouseId = batch.originWarehouseId;
       path = `/batches/${batch.id}`;
     } else if (parsed.data.scope === 'pickup') {
       // The factory truck (0100): hired by the logist, paid by whoever pays
@@ -72,6 +138,7 @@ export async function addCostEntryAction(input: unknown): Promise<CostActionResu
       if (!pickup) return { ok: false, error: 'not_found' };
       if (pickup.status === 'cancelled') return { ok: false, error: 'cancelled' };
       actor = await authorize('costs.enter_batch', { warehouseId: pickup.destWarehouseId });
+      warehouseId = pickup.destWarehouseId;
       path = `/zavod/${pickup.id}`;
     } else if (parsed.data.scope === 'crate') {
       // Same gate as the receipt-side local handling — packing money is
@@ -81,6 +148,7 @@ export async function addCostEntryAction(input: unknown): Promise<CostActionResu
       });
       if (!crate) return { ok: false, error: 'not_found' };
       actor = await authorize('costs.enter_receipt', { warehouseId: crate.warehouseId });
+      warehouseId = crate.warehouseId;
       path = `/crates/${crate.id}`;
     } else {
       const receipt = await db.query.receipts.findFirst({
@@ -88,6 +156,7 @@ export async function addCostEntryAction(input: unknown): Promise<CostActionResu
       });
       if (!receipt) return { ok: false, error: 'not_found' };
       actor = await authorize('costs.enter_receipt', { warehouseId: receipt.warehouseId });
+      warehouseId = receipt.warehouseId;
       path = `/receipts/${receipt.id}`;
     }
   } catch (err) {
@@ -98,14 +167,35 @@ export async function addCostEntryAction(input: unknown): Promise<CostActionResu
   const refused = await payerRefusal(parsed.data, actor.permissions);
   if (refused) return { ok: false, error: refused };
   const meta = await requestMeta();
+  let gap: TwinGap | undefined;
+  let unsplit: UnsplitView | undefined;
   try {
-    await addCostEntry(parsed.data, { actorId: actor.id, ...meta });
+    // The freight basis's tariff CONFIGURATION (0132) is refused BEFORE the
+    // twin warning: nobody is asked «Baribir saqlash?» about a save that
+    // would then be refused. And what is frozen must be what the person saw
+    // (M6): a remap or a tariff edit between the render and the press is
+    // refused in words, never frozen silently. `addCostEntry` asks the same
+    // door again for a hand-built call.
+    const draft = await prepareFreightCopy(parsed.data);
+    const seen = freightSeenOf(input);
+    if (draft && seen && copyDigest(draft) !== seen) {
+      return { ok: false, error: 'freight_changed', params: { column: draft.zone, from: draft.tariffFrom } };
+    }
+    // «Bu pul allaqachon yozilganmi?» — after the target's door and the
+    // payer's, before anything is written (§8.2). Null for a reader who is
+    // not the expense book's: no twin query runs for them at all.
+    const twins = await twinsForCost(readerOf(actor), await costCandidateFrom(parsed.data), { warehouseId });
+    if (mustWarn(twins, twinAckOf(input))) return { ok: false, twins: twinView(twins!) };
+    const entry = await addCostEntry(parsed.data, { actorId: actor.id, ...meta }, { twinAck: twins?.ids.length ? twins.ids : undefined });
+    gap = twinGap(twins);
+    if (entry.verdict?.kind === 'held') unsplit = { held: entry.verdict.held };
   } catch (err) {
-    if (err instanceof CostError) return { ok: false, error: err.code };
+    if (err instanceof CostError) return costRefusal(err);
+    if (freightServerBehind(err)) return { ok: false, error: 'server_behind' };
     throw err;
   }
   revalidatePath(path);
-  return { ok: true };
+  return { ok: true, ...(gap ? { unchecked: gap } : {}), ...(unsplit ? { unsplit } : {}) };
 }
 
 /**
@@ -126,15 +216,54 @@ export async function saveReceiptCostGridAction(input: unknown): Promise<CostAct
     if (err instanceof AuthError) return { ok: false, error: 'forbidden' };
     throw err;
   }
+  // The same ADD door as the truck's own bills (§8.5): the grid stamps every
+  // cell onto this truck.
+  if (!mayEnterBatchCost(actor, batch)) return { ok: false, error: 'cancelled' };
 
   const refused = await payerRefusal(parsed.data, actor.permissions);
   if (refused) return { ok: false, error: refused };
   const meta = await requestMeta();
+  const grid = parsed.data;
+  const reader = readerOf(actor);
+  const posted = twinAckOf(input);
+  let gridGap: TwinGap | undefined;
   let result;
   try {
-    result = await addReceiptCostsBulk(parsed.data, { actorId: actor.id, ...meta });
+    result = await addReceiptCostsBulk(
+      grid,
+      { actorId: actor.id, ...meta },
+      {
+        // ONE warning for the sheet, over every posted cell, after the bulk
+        // save's own refusals and before the first cell is written (§3).
+        beforeWrite: async () => {
+          const cells = [];
+          for (const cell of grid.cells) {
+            cells.push(
+              await costCandidateFrom(
+                {
+                  scope: 'receipt',
+                  receiptId: cell.receiptId,
+                  costTypeId: cell.costTypeId,
+                  amount: cell.amount,
+                  currency: grid.currency,
+                  costDate: grid.costDate,
+                  accountId: grid.accountId || undefined,
+                  partnerId: grid.partnerId || undefined,
+                },
+                grid.batchId,
+              ),
+            );
+          }
+          const twins = await twinsForGrid(reader, cells, { warehouseId: batch.originWarehouseId });
+          if (mustWarn(twins, posted)) throw new TwinWarning(twins!);
+          gridGap = twinGap(twins);
+          return twins?.ids.length ? twins.ids : undefined;
+        },
+      },
+    );
   } catch (err) {
-    if (err instanceof CostError) return { ok: false, error: err.code };
+    if (err instanceof TwinWarning) return { ok: false, twins: twinView(err.answer) };
+    if (err instanceof CostError) return costRefusal(err);
     throw err;
   }
   // The grid has its own page now (round 47); revalidating the card alone
@@ -143,7 +272,7 @@ export async function saveReceiptCostGridAction(input: unknown): Promise<CostAct
   revalidatePath(`/batches/${batch.id}/xarajatlar`);
   return result.error
     ? { ok: false, error: result.error, saved: result.saved }
-    : { ok: true, saved: result.saved };
+    : { ok: true, saved: result.saved, ...(gridGap ? { unchecked: gridGap } : {}) };
 }
 
 const voidSchema = z.object({
@@ -242,7 +371,7 @@ export async function voidCostEntryAction(input: unknown): Promise<CostActionRes
       { mayMoveTill: mayPickTill(actor.permissions), payerSeen: entry.partnerId },
     );
   } catch (err) {
-    if (err instanceof CostError) return { ok: false, error: err.code };
+    if (err instanceof CostError) return costRefusal(err);
     throw err;
   }
   if (entry.batchId) revalidatePath(`/batches/${entry.batchId}`);
@@ -250,6 +379,68 @@ export async function voidCostEntryAction(input: unknown): Promise<CostActionRes
   if (entry.crateId) revalidatePath(`/crates/${entry.crateId}`);
   if (entry.pickupId) revalidatePath(`/zavod/${entry.pickupId}`);
   return { ok: true };
+}
+
+const rebaseSchema = z.object({
+  entryId: z.string().uuid(),
+  basis: z.string().min(1).max(40),
+});
+
+/** The person's re-basis token, read from the RAW post (the twin idiom). */
+function rebaseSeenOf(input: unknown): string | null {
+  const v = (input as { seen?: unknown } | null)?.seen;
+  return typeof v === 'string' && /^[0-9a-f]{64}$/.test(v) ? v : null;
+}
+
+/**
+ * «Bo'lish usuli ✎» (docs/YOLKIRA-TAQSIMOT.md §8, his 5a): a truck bill's
+ * split method changed after it was saved. The first press answers the
+ * preview (who moves how much); the second, carrying the preview's token,
+ * saves it — or, when something moved in between, answers `rebase_changed`
+ * with a FRESH preview. Truck-scope bills only: the per-prixod grid's cells
+ * stay weight and get no button.
+ */
+export async function rebaseCostAction(input: unknown): Promise<CostActionResult> {
+  const parsed = rebaseSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: 'validation' };
+  const entry = await db.query.costEntries.findFirst({ where: eq(costEntries.id, parsed.data.entryId) });
+  if (!entry) return { ok: false, error: 'not_found' };
+  if (entry.voidedAt) return { ok: false, error: 'already_voided' };
+  // Scope has no edit door, so the pool check is enough (E2).
+  if (entry.scope !== 'batch' || !entry.batchId) return { ok: false, error: 'rebase_batch_only' };
+  const batch = await db.query.batches.findFirst({ where: eq(batches.id, entry.batchId) });
+  if (!batch) return { ok: false, error: 'not_found' };
+  let actor;
+  try {
+    actor = await authorize('costs.enter_batch', { warehouseId: batch.originWarehouseId });
+  } catch (err) {
+    if (err instanceof AuthError) return { ok: false, error: 'forbidden' };
+    throw err;
+  }
+  if (!mayEnterBatchCost(actor, batch)) return { ok: false, error: 'cancelled' };
+  // The void's rule: a reader who sees only their OWN bills cannot move a
+  // colleague's (#531 — the row is never drawn for them).
+  if (costSightFor(actor).ownOnly && entry.enteredBy !== actor.id) {
+    return { ok: false, error: 'cost_not_yours' };
+  }
+  // A merged, kassa-paid or firm-paid bill is ALLOWED: none of its money moves.
+  const meta = await requestMeta();
+  let answer;
+  try {
+    answer = await rebaseCost(entry, parsed.data.basis, rebaseSeenOf(input), { actorId: actor.id, ...meta }, actor);
+  } catch (err) {
+    if (err instanceof CostError) return costRefusal(err);
+    if (freightServerBehind(err)) return { ok: false, error: 'server_behind' };
+    throw err;
+  }
+  if (answer.kind === 'preview') return { ok: false, rebase: answer.preview };
+  if (answer.kind === 'changed') return { ok: false, error: 'rebase_changed', rebase: answer.preview };
+  revalidatePath(`/batches/${batch.id}`);
+  revalidatePath(`/batches/${batch.id}/xarajatlar`);
+  revalidatePath(`/batches/${batch.id}/pricing`);
+  revalidatePath('/accounting/sarflar/kiritish');
+  if (answer.pending) return { ok: true, pending: true };
+  return { ok: true, ...(answer.verdict?.kind === 'held' ? { unsplit: { held: answer.verdict.held } } : {}) };
 }
 
 /**
@@ -307,7 +498,7 @@ export async function setCostAccountAction(input: unknown): Promise<CostActionRe
       ...meta,
     });
   } catch (err) {
-    if (err instanceof CostError) return { ok: false, error: err.code };
+    if (err instanceof CostError) return costRefusal(err);
     throw err;
   }
   revalidatePath('/accounting/xarajat-kassa');

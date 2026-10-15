@@ -250,6 +250,19 @@ export async function addTransaction(input: TransactionInput, ctx: AuditContext)
   // connection (#714), with the kinds' own signs (#1014).
   const row = await db.transaction(async (tx) => {
     await lockOwnersTx(tx, { clientIds: [input.clientId] });
+    // A price on a truck takes the truck row FOR SHARE (docs/SARFLAR.md
+    // §8.5, the cost bill's own lock): `cancelBatch` counts the truck's
+    // charges under FOR NO KEY UPDATE, so the two serialise — the price
+    // commits first and the cancel refuses, or the cancel commits first and
+    // the price is refused here. The foreign key's own KEY SHARE does not wait
+    // for NO KEY UPDATE, so without this both used to succeed: a live price on
+    // a truck whose cargo had gone back to the shelf.
+    if (input.type === 'charge' && values.batchId) {
+      const truck = (await tx.execute(
+        sql`SELECT status FROM batches WHERE id = ${values.batchId}::uuid FOR SHARE`,
+      )) as unknown as { status: string }[];
+      if ([...truck][0]?.status === 'cancelled') throw new FinanceError('batch_cancelled');
+    }
     if (input.type === 'refund') {
       const held = await clientMoneyByCurrency(tx, input.clientId);
       if (!refundFits({ amount: input.amount, currency: input.currency, amountUsd }, held)) {

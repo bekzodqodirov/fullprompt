@@ -8,6 +8,7 @@ import { parseCols, visibleColumns } from '../../platform/lists/columns';
 import { STOCK_COLUMNS } from '../inventory/columns';
 import { reportLabels } from './labels';
 import { dayIn, OFFICE_TZ } from '@/modules/platform/time/tashkent';
+import { chipFace, type LotCheckState } from '../receipts/lot-check-sql';
 
 /**
  * The stock (Ostatka) sheet.
@@ -64,6 +65,14 @@ export interface StockSheetLine {
   whId: string;
   clientCode: string | null;
   inStock: number;
+  /**
+   * «Yuk ma'lumoti tekshirildi» (0123) — the screen's own state for the row,
+   * from `lotCheckStateSql`. Optional so a sheet built without it (and the
+   * fixtures that predate it) still types; absent prints an empty cell.
+   */
+  check?: LotCheckState;
+  /** The row stands in a Chinese warehouse (his 4a). */
+  askable?: boolean;
 }
 
 export async function buildStockXlsx(input: {
@@ -112,6 +121,14 @@ export async function buildStockXlsx(input: {
      * answer and not missing data.
      */
     { key: 'xyz', column: { header: L.xyzCm, key: 'xyz', width: 14 }, always: true },
+    /**
+     * EXPORT-ALWAYS too (docs/YUK-TEKSHIRUV.md §6): the screen carries the
+     * check as a chip in its always-on code cell, so a saved view can never
+     * hide it there — and the sheet must not lose what the screen cannot.
+     * The cell is the screen's chip in words, `chipFace` deciding: empty
+     * where the screen draws nothing.
+     */
+    { key: 'lotCheck', column: { header: L.lotCheck, key: 'lotCheck', width: 16 }, always: true },
     { key: 'density', column: { header: L.density, key: 'density', width: 10 } },
     { key: 'note', column: { header: L.note, key: 'note', width: 30 } },
     { key: 'partiya', column: { header: L.batch, key: 'batch', width: 12 } },
@@ -453,6 +470,16 @@ export async function buildStockXlsx(input: {
       aging: Math.floor((now - line.receivedAt.getTime()) / 86_400_000),
       note: line.lot.note ?? '',
       batch: (arrivalCodes.get(`${line.lot.id}|${line.whId}`) ?? []).join(', '),
+      lotCheck: (() => {
+        const face = chipFace(line.check, Boolean(line.askable));
+        return face === 'checked'
+          ? L.lotCheckChecked
+          : face === 'stale'
+            ? L.lotCheckStale
+            : face === 'none'
+              ? L.lotCheckNone
+              : '';
+      })(),
       date: dayIn(line.receivedAt, OFFICE_TZ),
     });
 

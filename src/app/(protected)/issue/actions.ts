@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { authorize } from '@/modules/platform/rbac/authorize';
+import { isServerBehind } from '@/modules/platform/db/errors';
 import { requestMeta } from '@/modules/platform/auth/session';
 import { enqueue, JOB_PROCESS_EVENTS } from '@/modules/platform/jobs/boss';
 import { IssueError, issueBoxes, issueSchema } from '@/modules/wms/issue/service';
@@ -31,6 +32,9 @@ export async function issueBoxesAction(
     return { ok: true, handoverId: handover.id };
   } catch (err) {
     if (err instanceof IssueError) return { ok: false, error: err.code };
+    // Deploy morning (#472): the code reads `handovers.debt_note` (0126)
+    // before the migration has landed — a sentence, never a white page.
+    if (isServerBehind(err)) return { ok: false, error: 'server_behind' };
     throw err;
   }
 }
@@ -50,8 +54,11 @@ export async function requestIssueApprovalAction(
   const actor = await authorize('scan.issue', { warehouseId: parsed.data.warehouseId });
   const meta = await requestMeta();
   try {
+    // The reason is REQUIRED (the owner's D5a) — the schema above stays
+    // permissive so the SERVICE's own word (`note_required`) reaches the
+    // screen, not a bare «validation».
     await requestIssueApproval(
-      { clientId: parsed.data.clientId, warehouseId: parsed.data.warehouseId, note: parsed.data.note || undefined },
+      { clientId: parsed.data.clientId, warehouseId: parsed.data.warehouseId, note: parsed.data.note ?? '' },
       { actorId: actor.id, ...meta },
     );
     await enqueue(JOB_PROCESS_EVENTS, {});

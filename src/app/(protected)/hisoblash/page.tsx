@@ -2,7 +2,14 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { calcQueue, calcSpeed, type CalcQueueRow } from '@/modules/wms/calc/service';
+import {
+  calcQueue,
+  calcSpeed,
+  recentlyClosed,
+  type CalcEnding,
+  type CalcQueueRow,
+} from '@/modules/wms/calc/service';
+import { calcCardHref, leadNameReadable } from '@/modules/wms/calc/card-door';
 import { FIELD_LABELS, SECTION_LABELS } from '@/modules/wms/calc/labels';
 import type { CalcField, CalcSection } from '@/modules/wms/calc/intake';
 import { EmptyState, PageHeader } from '@/components/ui/page';
@@ -17,11 +24,12 @@ import { Icon } from '@/components/ui/icon';
  * long enough to need filtering.
  *
  * What a row may show is fenced by what the VIEWER could see anyway: the
- * facts of the consignment, who asked, and the card's code when it is a deal.
- * A lead's NAME is not printed and its card is not linked, because a
- * `ved.docs` holder cannot open a lead card at all (`crm.leads` + ownership)
- * and a queue must not become the back door into the funnel (#514's rule).
- * No money: not a balance, not a quote, not a margin (round 91's fence).
+ * facts of the consignment, who asked, and the card's name — a lead's too,
+ * since the owner's 14a: every row here IS a calc card, and the VED opens it
+ * through the calc card door (`leadNameReadable`, `calcCardHref` — the real
+ * card for whoever it admits, the read-only karta otherwise, never a link the
+ * destination bounces). No money: not a balance, not a quote, not a margin
+ * (round 91's fence).
  */
 export default async function CalcQueuePage() {
   const actor = await getActor();
@@ -31,16 +39,24 @@ export default async function CalcQueuePage() {
   const t = await getTranslations('calc');
   const format = await getFormatter();
   const now = new Date();
-  const [rows, speed] = await Promise.all([
+  const [rows, speed, closed] = await Promise.all([
     calcQueue(now),
     calcSpeed(new Date(now.getTime() - 30 * 86_400_000)),
+    recentlyClosed(20),
   ]);
   const mine = rows.filter((row) => row.assigneeId === actor.id).length;
-
-  const canOpenCard = (row: CalcQueueRow) =>
-    row.entityType === 'deal' || actor.permissions.has('crm.leads');
-  const cardHref = (row: CalcQueueRow) =>
-    row.entityType === 'deal' ? `/bitimlar/${row.entityId}` : `/crm/leads/${row.entityId}`;
+  const names = leadNameReadable(actor);
+  const cardHref = (row: CalcQueueRow) => calcCardHref(actor, { ...row, requestId: row.id });
+  const endingLabel = (e: CalcEnding) =>
+    e === 'sealed'
+      ? t('endSealed')
+      : e === 'answered'
+        ? t('endAnswered')
+        : e === 'returned'
+          ? t('endReturned')
+          : e === 'unpriced_lines'
+            ? t('endUnpricedLines')
+            : t('endUnpricedTask');
 
   return (
     <div className="space-y-4">
@@ -89,7 +105,7 @@ export default async function CalcQueuePage() {
                   data-testid="calc-queue-row"
                   className="font-semibold text-ink-900"
                 >
-                  {row.entityType === 'deal' ? row.label : t('title')}
+                  {row.entityType === 'deal' || names ? row.label : t('title')}
                 </Link>
                 {row.section ? (
                   <span className="chip chip-brand">
@@ -128,8 +144,8 @@ export default async function CalcQueuePage() {
                 <span>
                   {t('dueBy')}: {format.dateTime(row.dueAt, { hour: '2-digit', minute: '2-digit' })}
                 </span>
-                {canOpenCard(row) ? (
-                  <Link href={cardHref(row)} className="text-brand-700">
+                {cardHref(row) ? (
+                  <Link href={cardHref(row)!} className="text-brand-700" data-testid="calc-queue-card">
                     {t('openCard')}
                   </Link>
                 ) : null}
@@ -149,6 +165,36 @@ export default async function CalcQueuePage() {
           ))}
         </ul>
       )}
+
+      {/* «Oxirgi yakunlanganlar» (10a's door back in): every ending, who and
+          when — a job answered with Готово used to have no way back at all. */}
+      {closed.length > 0 ? (
+        <details className="card !p-3" data-testid="calc-recent-closed">
+          <summary className="cursor-pointer text-sm font-semibold">
+            {t('recentClosedTitle')} · {closed.length}
+          </summary>
+          <ul className="mt-2 space-y-1 text-xs">
+            {closed.map((row) => (
+              <li key={row.id} className="flex flex-wrap items-center gap-2" data-testid="calc-recent-row">
+                <Link href={`/hisoblash/${row.id}`} className="font-semibold text-ink-900" data-testid="calc-recent-link">
+                  {row.entityType === 'deal' || names ? row.label : t('title')}
+                </Link>
+                <span className="chip chip-neutral" data-ending={row.ending}>
+                  {endingLabel(row.ending)}
+                </span>
+                <span className="text-2xs text-ink-500">
+                  {row.completedByName ?? '—'} · {format.dateTime(row.completedAt, { dateStyle: 'short', timeStyle: 'short' })}
+                </span>
+                {calcCardHref(actor, { ...row, requestId: row.id }) ? (
+                  <Link href={calcCardHref(actor, { ...row, requestId: row.id })!} className="text-2xs text-brand-700">
+                    {t('openCard')}
+                  </Link>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
 
       {/* The owner's «qanchada hisoblab berayotganini bilishim kerak», as three
           numbers per person: answered, average minutes, on time. Returns are

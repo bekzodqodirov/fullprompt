@@ -45,6 +45,7 @@ export default async function DebtReleasesPage({
   const sight = companyMoneySight(actor);
   if (!sight) redirect('/');
   const t = await getTranslations('qarz');
+  const tqi = await getTranslations('qarzIzoh');
   const tf = await getTranslations('finance');
   const format = await getFormatter();
   const params = await searchParams;
@@ -189,6 +190,20 @@ export default async function DebtReleasesPage({
                 )}
                 <span className="text-ink-600">{t('releases.currentDebt', { usd: usd(row.currentDebtUsd) })}</span>
               </p>
+              {/* WHY it went out on debt (0126): the ticker's comment, or the
+                  request's reason — the one rule the lenta reads too. Wraps
+                  and breaks: a pasted unbroken token must not widen the list
+                  past the phone (#400). Never on the act. */}
+              {row.reason && (
+                <p className="whitespace-pre-wrap break-words text-xs" data-testid="release-note">
+                  💬 {row.reason}
+                </p>
+              )}
+              {row.decisionNote && (
+                <p className="whitespace-pre-wrap break-words text-xs text-ink-500">
+                  {tqi('decisionNote', { note: row.decisionNote })}
+                </p>
+              )}
               {row.promise && row.promise.status === 'open' && (
                 <p className="text-xs font-semibold text-warn" data-testid="release-promise">
                   {t('releases.promiseOpen', { usd: usd(row.promise.amountUsd), date: day(row.promise.dueOn) })}

@@ -1,12 +1,13 @@
-import { and, asc, desc, ilike, inArray, lte, or, sql } from 'drizzle-orm';
+import { and, asc, desc, ilike, inArray, like, lte, or, sql } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import { calcBazas, calcFreightTariffs, calcPriceBook, calcRates } from '@/modules/platform/db/schema';
 import { writeAudit, type AuditContext } from '@/modules/platform/audit/service';
 import { productKey } from '../tnved/service';
 import { CalcError } from './service';
-import { isNumber } from './pricing';
+import { isBazaBasis, isNumber } from './pricing';
 import type { BazaBasis, DutyMode, DutyUnit, FreightBand } from './pricing';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
+import { tariffFor } from './tariff-read';
 
 /**
  * A typo is refused before it is stored, not after it is priced.
@@ -163,9 +164,10 @@ export async function saveBaza(
   if (!key) throw new CalcError('product_required');
   mustBeNumber(input.bazaUsd);
   if (!(input.bazaUsd > 0)) throw new CalcError('baza_positive');
-  // The widened vocabulary minus sm3 (nothing is VALUED per cm³) — checked
-  // here so a forged post is a coded refusal, not the CHECK's white page.
-  if (!(['unit', 'kg', 'juft', 'litr', 'm2'] as BazaBasis[]).includes(input.basis)) {
+  // The ONE vocabulary (pricing.ts's BAZA_BASES — m³ since 0125, never sm³:
+  // nothing is VALUED per cm³) — checked here so a forged post is a coded
+  // refusal, not the CHECK's white page.
+  if (!isBazaBasis(input.basis)) {
     throw new CalcError('bad_basis');
   }
 
@@ -257,6 +259,39 @@ export async function ratesFor(code: string, date: string): Promise<RatesRow | n
 }
 
 /**
+ * The in-force rows UNDER each short code — what a heading hides (P2.3).
+ *
+ * PP-3818 writes most laws at the 4-digit heading and carves 10-digit
+ * exceptions out of it (8528 at 10 %, 852872… at 15 %), so a VED who types
+ * the heading prices every one of them at the heading's law. Asked only for
+ * codes shorter than ten digits; one query for all of them (#432), newest row
+ * per stored code on or before the day, exactly as `ratesForCodes` reads —
+ * and never a JS array bound into the SQL (the codes go through `like`).
+ */
+export async function deeperRatesFor(
+  codes: string[],
+  date: string,
+): Promise<Map<string, RatesRow[]>> {
+  const short = [...new Set(codes.map((c) => c.trim()))].filter((c) => /^\d{4,9}$/.test(c));
+  const out = new Map<string, RatesRow[]>();
+  if (short.length === 0) return out;
+  const rows = await db
+    .select()
+    .from(calcRates)
+    .where(and(or(...short.map((c) => like(calcRates.tnvedCode, `${c}%`))), lte(calcRates.effectiveDate, date)))
+    .orderBy(asc(calcRates.tnvedCode), desc(calcRates.effectiveDate));
+  const inForce = new Map<string, RatesRow>();
+  for (const r of rows) if (!inForce.has(r.tnvedCode)) inForce.set(r.tnvedCode, toRates(r));
+  for (const code of short) {
+    out.set(
+      code,
+      [...inForce.values()].filter((r) => r.tnvedCode.length > code.length && r.tnvedCode.startsWith(code)),
+    );
+  }
+  return out;
+}
+
+/**
  * The screen's list. Unfiltered it shows only PERSON-entered rows: the 0091
  * seed put all 1,489 PP-3818 rows in this table, and a page that renders
  * them all is /stock's DOM crush (round 68 — ~9,000 cells, seconds of
@@ -288,10 +323,10 @@ export async function saveRates(
     effectiveDate: string;
     source?: 'manual' | 'correction';
     note?: string | null;
-    /** Absent = CARRY the in-force row's law shape forward — a person
-     * correcting the percentage of a MAX code must not silently strip its
-     * per-piece floor. Passing 'advalor' explicitly IS how the shape is
-     * removed. */
+    /** Absent = CARRY the law shape of the in-force row that ANSWERS the
+     * code, whatever its prefix length — a person correcting the percentage
+     * of a MAX code must not silently strip its per-piece floor. Passing
+     * 'advalor' explicitly IS how the shape is removed. */
     dutyMode?: DutyMode;
     dutySpecific?: number | null;
     dutyUnit?: DutyUnit | null;
@@ -309,10 +344,21 @@ export async function saveRates(
   let dutySpecific = input.dutySpecific ?? null;
   let dutyUnit = input.dutyUnit ?? null;
   if (dutyMode === null) {
-    // Only an EXACT-code in-force row carries forward: heading 6403's shape
-    // must not ride onto a 10-digit exception a person is minting on purpose.
+    /**
+     * Carry the shape of whatever row ANSWERS the code today — the heading
+     * included (2026-10-09, P2.1; this reverses #856's «exact code only»).
+     *
+     * #856 refused the heading's shape so a 10-digit exception minted on
+     * purpose would not inherit a floor it does not have. What it actually
+     * did was strip the floor from the commonest correction there is: the
+     * workspace's «lug'atga yozish» posts a TYPED 15 % for 6403990000, which
+     * has no row of its own, so the new 10-digit row was minted PURE advalor —
+     * and from then on it out-prefixed heading 6403's «20 %, kamida $3/juft»
+     * for that code, for every job, for ever. A deliberate advalor exception
+     * is still one press away: the form posts 'advalor' explicitly («foiz»).
+     */
     const standing = await ratesFor(code, input.effectiveDate);
-    if (standing && standing.tnvedCode === code) {
+    if (standing) {
       dutyMode = standing.dutyMode;
       dutySpecific = standing.dutySpecific;
       dutyUnit = standing.dutyUnit;
@@ -376,88 +422,14 @@ export async function saveRates(
 // 3. Freight tariff
 // ---------------------------------------------------------------------------
 
-/**
- * The bands in force on a date, for the pure engine to filter by zone.
- *
- * The whole tariff is small (a dozen rows a zone), so it is fetched once and
- * `bandFor` picks inside pure code — which is also what lets a test drive the
- * band edges without a database.
- */
-export async function tariffFor(date: string): Promise<FreightBand[]> {
-  const rows = await db
-    .select()
-    .from(calcFreightTariffs)
-    .where(lte(calcFreightTariffs.effectiveDate, date))
-    .orderBy(desc(calcFreightTariffs.effectiveDate));
-  const seen = new Set<string>();
-  const out: FreightBand[] = [];
-  for (const r of rows) {
-    const key = `${r.zone}|${r.minDensity}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push({
-      zone: r.zone,
-      minDensity: Number(r.minDensity),
-      maxDensity: r.maxDensity === null ? null : Number(r.maxDensity),
-      priceUsd: Number(r.priceUsd),
-      perKg: r.perKg,
-    });
-  }
-  return out.sort((a, b) => a.zone.localeCompare(b.zone) || a.minDensity - b.minDensity);
-}
-
-/**
- * EVERY tariff row ever written, newest date first, for a reader that needs
- * to price several different DAYS in one pass.
- *
- * `tariffFor(date)` is one query per date, which is right for a screen
- * pricing one calculation and wrong for a list of a hundred sealed quotes
- * (#432: a per-row query on a list is the business growing). His whole table
- * is 24 rows, so the honest shape is to load it once and pick per row.
- */
-export async function tariffHistory(): Promise<
-  (FreightBand & { effectiveDate: string })[]
-> {
-  const rows = await db
-    .select()
-    .from(calcFreightTariffs)
-    .orderBy(desc(calcFreightTariffs.effectiveDate));
-  return rows.map((r) => ({
-    zone: r.zone,
-    minDensity: Number(r.minDensity),
-    maxDensity: r.maxDensity === null ? null : Number(r.maxDensity),
-    priceUsd: Number(r.priceUsd),
-    perKg: r.perKg,
-    effectiveDate: r.effectiveDate,
-  }));
-}
-
-/**
- * The tariff in force on ONE day, out of the whole history. Pure — the same
- * «newest row on or before the date» rule `tariffFor` runs in SQL, restated
- * once here rather than in every caller (#513).
- */
-export function bandsAsOf(
-  history: (FreightBand & { effectiveDate: string })[],
-  date: string,
-): FreightBand[] {
-  const seen = new Set<string>();
-  const out: FreightBand[] = [];
-  for (const r of history) {
-    if (r.effectiveDate > date) continue;
-    const key = `${r.zone}|${r.minDensity}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push({
-      zone: r.zone,
-      minDensity: r.minDensity,
-      maxDensity: r.maxDensity,
-      priceUsd: r.priceUsd,
-      perKg: r.perKg,
-    });
-  }
-  return out.sort((a, b) => a.zone.localeCompare(b.zone) || a.minDensity - b.minDensity);
-}
+// `tariffFor`, `tariffHistory` and `tariffZoneNames` live in the leaf
+// `./tariff-read` and `bandsAsOf` in the pure `./pricing`, so the cost split
+// (costing/freight-copy.ts) can read the tariff without importing this file —
+// whose `CalcError` and `../tnved/service` edges reach costing/service through
+// calc/service → crm → clients → client-cabinet → finance → costing (a cycle).
+// Re-exported here so every existing importer is untouched.
+export { tariffFor, tariffHistory, tariffZoneNames } from './tariff-read';
+export { bandsAsOf } from './pricing';
 
 /** The zones the tariff itself knows about — a third one needs no code. */
 export async function tariffZones(date: string): Promise<string[]> {

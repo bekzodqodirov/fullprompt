@@ -172,7 +172,11 @@ describe('what a result row may say', () => {
     expect(hits.length).toBeGreaterThan(0);
     for (const hit of hits) {
       const keys = Object.keys(hit).sort();
-      expect(keys).toEqual(['code', 'href', 'id', 'kind', 'label'].filter((key) => key in hit));
+      // `formerCode` is a truck's old NAME (renamed on the road) — a name,
+      // not money, and present only on a hit that an old name found.
+      expect(keys).toEqual(
+        ['code', 'formerCode', 'href', 'id', 'kind', 'label'].filter((key) => key in hit),
+      );
     }
   });
 

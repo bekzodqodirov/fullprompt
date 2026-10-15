@@ -74,3 +74,17 @@ export async function isStaffType(typeId: string): Promise<boolean> {
     .limit(1);
   return row?.code === 'staff';
 }
+
+/**
+ * A cost row's payer as THIS reader may see it (M3a, SARFLAR §8.2): a
+ * colleague's own pocket is NAMED only to the staff-money readers; anybody
+ * else is told that a member of staff paid — never who — so the row does
+ * not read as unpaid. ONE answer for every cost card.
+ */
+export function payerView(
+  permissions: ReadonlySet<string>,
+  row: { partnerName: string | null; partnerIsStaff: boolean },
+): { partnerName: string | null; payerHidden: boolean } {
+  if (row.partnerIsStaff && !maySeeStaffMoney(permissions)) return { partnerName: null, payerHidden: true };
+  return { partnerName: row.partnerName, payerHidden: false };
+}

@@ -26,12 +26,15 @@ export function MentionTextarea({
   people,
   testid,
   bare = false,
+  maxLength,
 }: {
   name: string;
   placeholder: string;
   required?: boolean;
   people: MentionPerson[];
   testid: string;
+  /** The box refuses what the writer would refuse (a thread message's 4000). */
+  maxLength?: number;
   /**
    * Round 73: inside a composer SHELL the box loses its own border — the
    * shell carries the focus ring for the whole group, and a bordered input
@@ -102,6 +105,7 @@ export function MentionTextarea({
         name={name}
         rows={1}
         required={required}
+        maxLength={maxLength}
         placeholder={placeholder}
         onChange={(event) => {
           autogrow(event.target);

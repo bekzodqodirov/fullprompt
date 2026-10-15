@@ -4,6 +4,7 @@ import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { quoteLockedFor } from '@/modules/wms/crm/service';
 import { mayGrantDebt, mayOpenClientLedger } from '@/modules/wms/finance/scope';
+import { mayOpenClientCard } from '@/modules/platform/clients/card-door';
 import { PageHeader, Section } from '@/components/ui/page';
 import { Panel } from '@/components/panel';
 import { CardCols } from '@/components/card-cols';
@@ -25,6 +26,8 @@ import {
   listStages,
   unlinkedReceipts,
 } from '@/modules/wms/deals/service';
+import { mayEditDealTerms } from '@/modules/wms/deals/door';
+import { batchTabHref, mayOpenBatchCard, mayOpenBatchCosts } from '@/modules/wms/batches/card-door';
 import { salesManagerOptions } from '@/modules/platform/rbac/queries';
 import { formStages } from '@/modules/wms/crm/stage-law';
 import { DealForm } from '../deal-form';
@@ -34,6 +37,8 @@ import { ImportLines } from '../import-lines';
 import { LinkReceipt } from '../link-receipt';
 import { DeferForm } from '../defer-form';
 import { DiscountForm } from '../discount-form';
+import { ThreadSeen } from '@/components/thread-seen';
+import { threadReadMarks } from '@/modules/wms/crm/thread';
 
 /**
  * The deal card: the quote and the reality, side by side.
@@ -43,6 +48,14 @@ import { DiscountForm } from '../discount-form';
  * business problem is not "we have no record of the job", it is that nobody
  * sees the gap between what the client was told and what turned up until the
  * client is standing in Tashkent arguing about it.
+ *
+ * Two halves since the owner's 17a (2026-10-07): the VED (`ved.docs` without
+ * a seller's grant) reads the card, writes a text note on a calc deal's lenta,
+ * and works its POSITIONS and its PRIXODS; the TERMS — stage, owner, quote,
+ * discount, asking for a calculation — are drawn only for `mayEditDealTerms`.
+ * The actions refuse him on their own (`run('terms')`); this page only decides
+ * what is drawn, and `tests/unit/deal-terms-wire.test.ts` parses it so the
+ * positions and the prixod link can never fall under the `terms` gate.
  */
 export default async function DealPage({
   params,
@@ -77,10 +90,13 @@ export default async function DealPage({
 
   const t = await getTranslations('deals');
   const tc = await getTranslations('common');
+  // The seller's half of the card (17a): its terms. Asked ONCE, here.
+  const terms = mayEditDealTerms(actor.permissions);
   const [{ reality, deviation }, stages, managers, threshold, unlinked] = await Promise.all([
     dealDeviation(id),
     listStages(),
-    salesManagerOptions(row.deal.ownerId),
+    // Feeds only the ✏️ form, which the VED is not drawn.
+    terms ? salesManagerOptions(row.deal.ownerId) : Promise.resolve([]),
     deviationThreshold(),
     unlinkedReceipts(row.deal.clientId),
   ]);
@@ -103,6 +119,9 @@ export default async function DealPage({
           : deviation.worstPct! > 0
             ? { text: t('overQuote'), tone: 'text-bad' }
             : { text: t('underQuote'), tone: 'text-bad' };
+  // The lenta's read marks, «as of» the newest message BEFORE the lenta is
+  // drawn (a note landing after it stays ● — never read for the person).
+  const readMarks = await threadReadMarks([{ kind: 'deal' as const, id: row.deal.id }]);
 
   return (
     <div className="space-y-4">
@@ -121,12 +140,18 @@ export default async function DealPage({
         }
         subtitle={
           <span className="flex flex-wrap items-center gap-2">
-            <Link
-              href={`/admin/clients/${row.deal.clientId}`}
-              className="num font-bold text-good hover:underline"
-            >
-              {row.clientCode}
-            </Link>
+            {/* A link only where the client card admits the reader — the VED is
+                bounced by it, and a door that bounces is worse than none. */}
+            {mayOpenClientCard(actor) ? (
+              <Link
+                href={`/admin/clients/${row.deal.clientId}`}
+                className="num font-bold text-good hover:underline"
+              >
+                {row.clientCode}
+              </Link>
+            ) : (
+              <span className="num font-bold text-good">{row.clientCode}</span>
+            )}
             <span className={`rounded-lg border px-2 py-0.5 text-xs font-bold ${stageClass(row.stageColor)}`}>
               {row.stageName}
             </span>
@@ -152,6 +177,7 @@ export default async function DealPage({
               limit={60}
               tall
             />
+            <ThreadSeen refs={readMarks} />
             {/* The chat stands BESIDE the lenta, never inside it (round 21). */}
             <TelegramThread
               clientId={row.deal.clientId}
@@ -159,8 +185,10 @@ export default async function DealPage({
               hrefFor={(who) => cardHref({ hodim: who })}
               // «Hisoblatishga yuborish» lands on THIS deal, not on the
               // client's newest one — the job on screen is the job asked
-              // about (the design review's find).
+              // about (the design review's find). Asking is the seller's
+              // move (17a), so the VED reads the thread without it.
               calcTarget={{ kind: 'deal', id: row.deal.id }}
+              readOnly={!terms}
             />
             <CallsPanel
               clientId={row.deal.clientId}
@@ -258,27 +286,43 @@ export default async function DealPage({
                 : ''}
           </p>
         )}
+
+        {/* In place of the ✏️ and 🏷 panels the VED is not drawn: without it
+            he is left asking where the form went. */}
+        {!terms && (
+          <p
+            className="border-t border-line pt-2 text-xs text-ink-500"
+            data-testid="deal-terms-readonly"
+          >
+            {t('termsReadOnly')}
+          </p>
+        )}
       </section>
 
-      <Panel title={`✏️ ${tc('edit')}`} testId="deal-edit-panel">
-        <DealForm
-          quoteLocked={quoteLocked}
-          dealId={row.deal.id}
-          stages={formStages(stages, row.deal.stageId)}
-          managers={managers}
-          initial={{
-            clientId: row.deal.clientId,
-            stageId: row.deal.stageId,
-            ownerId: row.deal.ownerId,
-            title: row.deal.title,
-            quotedVolumeM3: row.deal.quotedVolumeM3,
-            quotedWeightKg: row.deal.quotedWeightKg,
-            quotedAmount: row.deal.quotedAmount,
-            quotedCurrency: row.deal.quotedCurrency,
-            note: row.deal.note,
-          }}
-        />
-      </Panel>
+      {/* The deal's terms — stage, owner, title, quote, note — are the
+          seller's (17a). For the VED stage and owner stay in the header, the
+          quote in `deal-compare`, title and note in DealFacts. */}
+      {terms && (
+        <Panel title={`✏️ ${tc('edit')}`} testId="deal-edit-panel">
+          <DealForm
+            quoteLocked={quoteLocked}
+            dealId={row.deal.id}
+            stages={formStages(stages, row.deal.stageId)}
+            managers={managers}
+            initial={{
+              clientId: row.deal.clientId,
+              stageId: row.deal.stageId,
+              ownerId: row.deal.ownerId,
+              title: row.deal.title,
+              quotedVolumeM3: row.deal.quotedVolumeM3,
+              quotedWeightKg: row.deal.quotedWeightKg,
+              quotedAmount: row.deal.quotedAmount,
+              quotedCurrency: row.deal.quotedCurrency,
+              note: row.deal.note,
+            }}
+          />
+        </Panel>
+      )}
 
       <Panel
         title={`📋 ${t('lines')}`}
@@ -295,29 +339,30 @@ export default async function DealPage({
         />
       </Panel>
 
-      {/* The «Hisoblash» panel stood here from round 28 and is gone at the
-          owner's word — «ikkala voronkada ham kerak emas». A calculation is
-          asked for in the bot now (round 37), not by a button on a card. */}
-
-      <Panel
-        title={`🏷 ${t('discountTitle')}`}
-        badge={discount > 0 ? `−${discount}` : undefined}
-        testId="deal-discount-panel"
-      >
-        {quotedAmount !== null && discount > 0 && (
-          <p className="mb-2 text-sm">
-            {t('discountNet')}:{' '}
-            <span className="num font-bold">
-              {Math.round((quotedAmount - discount) * 100) / 100} {row.deal.quotedCurrency ?? ''}
-            </span>
-          </p>
-        )}
-        <DiscountForm
-          dealId={row.deal.id}
-          amount={row.deal.discountAmount}
-          reason={row.deal.discountReason}
-        />
-      </Panel>
+      {/* The deal's discount is its TERMS (17a) — the seller's. The read-only
+          line inside `deal-compare` stays for everyone. The seal's own discount
+          inside the calc workspace is untouched. */}
+      {terms && (
+        <Panel
+          title={`🏷 ${t('discountTitle')}`}
+          badge={discount > 0 ? `−${discount}` : undefined}
+          testId="deal-discount-panel"
+        >
+          {quotedAmount !== null && discount > 0 && (
+            <p className="mb-2 text-sm">
+              {t('discountNet')}:{' '}
+              <span className="num font-bold">
+                {Math.round((quotedAmount - discount) * 100) / 100} {row.deal.quotedCurrency ?? ''}
+              </span>
+            </p>
+          )}
+          <DiscountForm
+            dealId={row.deal.id}
+            amount={row.deal.discountAmount}
+            reason={row.deal.discountReason}
+          />
+        </Panel>
+      )}
 
       <Section title={t('receipts')}>
         {row.receipts.length === 0 && (
@@ -410,6 +455,40 @@ export default async function DealPage({
               {t('profitUnlinked', { amount: profit.unlinkedBatchUsd.toFixed(2) })}
             </p>
           )}
+          {/* A held yo'lkira bill on a truck these cartons rode is in no
+              allocation, so the cost above lacks this deal's share of it and
+              the profit reads high. Said, never folded in: the money sits on
+              no carton until the lot is fixed or the bill re-based (§6.3). A
+              truck links to its Xarajatlar tab only for a reader that tab and
+              the card admit. */}
+          {profit.heldFreight.length > 0 && (
+            <div
+              className="min-w-0 space-y-1 break-words rounded-xl border border-warn/30 bg-warn/10 p-2 text-xs"
+              data-testid="deal-profit-freight-held"
+            >
+              <p className="font-semibold text-warn">
+                ⚠{' '}
+                {t('profitFreightHeld', {
+                  count: profit.heldFreight.length,
+                  usd: profit.heldFreight.reduce((sum, row) => sum + row.usd, 0).toFixed(2),
+                })}
+              </p>
+              <ul className="ml-4 list-disc">
+                {profit.heldFreight.map((row) => (
+                  <li key={row.batchId} className="min-w-0 break-words">
+                    {mayOpenBatchCosts(actor.permissions) && mayOpenBatchCard(actor, row) ? (
+                      <Link href={batchTabHref(row.batchId, 'xarajat')} className="font-mono text-brand-700 underline">
+                        {row.code}
+                      </Link>
+                    ) : (
+                      <span className="font-mono">{row.code}</span>
+                    )}{' '}
+                    · <span className="font-mono tabular-nums">{row.usd.toFixed(2)} $</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </section>
       )}
 
@@ -421,6 +500,10 @@ export default async function DealPage({
         </Panel>
       )}
 
+      {/* The 🧮 panel — the card's door into the calc queue (VED phase A;
+          the round-28 panel that once stood above the discount is long gone).
+          Asking for a calculation is the seller's move (17a): the VED reads
+          the panel here and answers the request from /hisoblash. */}
       <CalcPanel
         forceOpen={yangi === 'hisob'}
         entityType="deal"
@@ -428,8 +511,14 @@ export default async function DealPage({
         revalidate={`/bitimlar/${row.deal.id}`}
         clientName={row.clientName}
         clientLocale={row.clientLocale}
+        readOnly={!terms}
       />
-      <TasksPanel entityType="deal" entityId={row.deal.id} revalidate={`/bitimlar/${row.deal.id}`} />
+      <TasksPanel
+        entityType="deal"
+        entityId={row.deal.id}
+        revalidate={`/bitimlar/${row.deal.id}`}
+        readOnly={!terms}
+      />
 
       <CustomFieldsPanel
         entityType="deal"

@@ -55,7 +55,7 @@ describe('the manager door under every push (contract 1)', () => {
   it('is ALWAYS answered, before anything that can fail or wait', () => {
     const at = cabinet.indexOf("bot.callbackQuery('mg'");
     const body = cabinet.slice(at, at + 400);
-    const answer = body.indexOf('await ctx.answerCallbackQuery();');
+    const answer = body.indexOf('await answerPress(ctx);');
     expect(answer, 'the mg handler never answers — the button would spin').toBeGreaterThan(-1);
     // The FIRST await in the handler is the answer: a read that throws first
     // would leave the button spinning with no error anywhere.
@@ -87,8 +87,13 @@ describe('the one sender', () => {
     const at = cabinet.indexOf('bot.callbackQuery(/^ph:(.+)$/');
     expect(at, 're-anchor: the photo handler moved').toBeGreaterThan(-1);
     const body = cabinet.slice(at, at + 1000);
-    const answer = body.indexOf('await ctx.answerCallbackQuery({ text: clientLabels(locale).photoSending });');
+    // A chat no longer linked is answered and never told photos are coming
+    // (Q5 a); the toast is a progress notice, never said as a message.
+    const unlinked = body.indexOf('if (!linked.length) {\n      await answerPress(ctx);\n      return;\n    }');
+    const answer = body.indexOf('await answerPress(ctx, clientLabels(locale).photoSending, { say: false });');
     const guard = body.indexOf('photoInFlight.has(chatId)');
+    expect(unlinked).toBeGreaterThan(-1);
+    expect(answer).toBeGreaterThan(unlinked);
     const claim = body.indexOf('photoInFlight.add(chatId)');
     const send = body.indexOf("dispatch('photos'");
     expect(answer).toBeGreaterThan(-1);
@@ -144,7 +149,8 @@ describe('the post-merge review’s conversation fixes (round C review)', () => 
 
   it('every forward answer goes through the one debounce (CONV-8)', () => {
     const acks = cabinet.split("dispatch('forward-ack'").length - 1;
-    const due = cabinet.split('if (ackDue(chatId, outcome,').length - 1;
+    // …and skips a redelivered message, which the first run acknowledged (Q5 a).
+    const due = cabinet.split("if (outcome.to !== 'duplicate' && ackDue(chatId, outcome,").length - 1;
     expect(acks).toBeGreaterThanOrEqual(3);
     expect(due).toBe(acks);
   });

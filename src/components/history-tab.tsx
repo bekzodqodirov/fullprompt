@@ -3,7 +3,7 @@ import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import { auditLog, users } from '@/modules/platform/db/schema';
 import {
-  AUDIT_FIELD_LABELS,
+  auditFieldLabel,
   formatAuditValue,
   collectAuditRefs,
   isUuidShaped,
@@ -61,8 +61,12 @@ export async function HistoryTab({
   const when = (at: Date) => format.dateTime(at, { dateStyle: 'short', timeStyle: 'short' });
   // A column with no entry in the map prints its own name — a technical label
   // beats a wrong one, and this list covers what the cards actually record.
-  const fieldLabel = (key: string) =>
-    AUDIT_FIELD_LABELS[key] ? t(`fields.${AUDIT_FIELD_LABELS[key]}`) : key;
+  // A per-item key (`lotCheck:A`, 0123) reads as its label and its item.
+  const fieldLabel = (key: string) => {
+    const { label, item } = auditFieldLabel(key);
+    if (!label) return key;
+    return item ? `${t(`fields.${label}`)} · ${item}` : t(`fields.${label}`);
+  };
 
   // The NAMES behind the recorded ids (round 100, owner's item 4: «qandaydur
   // codelar emas odam tushunadgan nomlar bilan»). Collected over the folded

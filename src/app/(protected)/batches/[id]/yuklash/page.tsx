@@ -110,6 +110,7 @@ export default async function BatchLoadingTabPage({ params }: { params: Promise<
         <section id="missing" className="card scroll-mt-20 space-y-2">
           <UnloadActions
             batchId={batch.id}
+            destWarehouseId={batch.destWarehouseId}
             status={batch.status}
             missing={missingRows.map(({ box, letter, clientCode, marking, product }) => ({
               boxId: box.id,
@@ -146,6 +147,7 @@ export default async function BatchLoadingTabPage({ params }: { params: Promise<
         >
           <CountAcceptPanel
             batchId={batch.id}
+            destWarehouseId={batch.destWarehouseId}
             status={batch.status}
             notifiesClients={landedStatusFor(destTypeRow[0]?.type ?? '') === 'ready_for_pickup'}
             mayOver={mayCountMove(actor, batch.originWarehouseId)}

@@ -30,6 +30,67 @@ export interface TaskView {
   /** Where the record it is about lives, and what to call it. */
   aboutHref: string | null;
   aboutLabel: string | null;
+  /**
+   * Set when the task carries an OPEN calc job's clock (VED-TARIX §8): no ✅
+   * for anybody; `mayOpen` is the reader's `ved.docs`, which draws «🧮 Hisobni
+   * ochish», everyone else reads a «VED hisoblamoqda» chip.
+   */
+  calc: { href: string; mayOpen: boolean } | null;
+  /** False on an open calc job — its holder moves through the queue. */
+  canReassign: boolean;
+  /** What the staff bot stored with it (his 3a), one query for the list. */
+  files: TaskFileView[];
+}
+
+export interface TaskFileView {
+  id: string;
+  name: string;
+  kind: 'image' | 'audio' | 'video' | 'file';
+}
+
+/** A refusal in its own words when the bundle has them — never a code on the screen. */
+function useTaskError() {
+  const t = useTranslations('tasks');
+  const tc = useTranslations('common');
+  return (code: string | undefined) => {
+    if (!code) return null;
+    const key = `errors.${code}`;
+    return t.has(key as 'errors.validation') ? t(key as 'errors.validation') : tc('error');
+  };
+}
+
+/** The task's files: a thumbnail per photo, a player per voice note, a link for the rest. */
+function TaskFiles({ files, taskId }: { files: TaskFileView[]; taskId: string }) {
+  if (files.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2" data-testid={`task-files-${taskId}`}>
+      {files.map((file) =>
+        file.kind === 'image' ? (
+          <a key={file.id} href={`/api/attachments/${file.id}`} target="_blank" rel="noreferrer">
+            {/* eslint-disable-next-line @next/next/no-img-element -- a private, streamed thumbnail */}
+            <img
+              src={`/api/attachments/${file.id}?variant=thumb200`}
+              alt={file.name}
+              className="h-16 w-16 shrink-0 rounded-lg object-cover"
+              loading="lazy"
+            />
+          </a>
+        ) : file.kind === 'audio' ? (
+          <audio key={file.id} controls preload="none" src={`/api/attachments/${file.id}`} className="h-9 max-w-full" />
+        ) : (
+          <a
+            key={file.id}
+            href={`/api/attachments/${file.id}`}
+            target="_blank"
+            rel="noreferrer"
+            className="chip max-w-full truncate [overflow-wrap:anywhere]"
+          >
+            {file.kind === 'video' ? '🎬' : '📎'} {file.name}
+          </a>
+        ),
+      )}
+    </div>
+  );
 }
 
 export interface Person {
@@ -92,8 +153,10 @@ function TaskCard({
 }) {
   const t = useTranslations('tasks');
   const tc = useTranslations('common');
+  const errorText = useTaskError();
   const [closing, setClosing] = useState(false);
   const [pending, start] = useTransition();
+  const [refusal, setRefusal] = useState<string | undefined>(undefined);
   const complete = completeTaskAction.bind(null, task.id, revalidate);
   const [state, formAction, saving] = useActionState<TaskFormState, FormData>(complete, {});
 
@@ -119,6 +182,8 @@ function TaskCard({
 
       {task.note && <p className="text-sm text-ink-700 [overflow-wrap:anywhere]">{task.note}</p>}
 
+      <TaskFiles files={task.files} taskId={task.id} />
+
       <div className="flex flex-wrap items-center gap-2 text-xs text-ink-500">
         {task.aboutHref && task.aboutLabel && (
           <Link href={task.aboutHref} className="text-brand-700 underline">
@@ -138,15 +203,36 @@ function TaskCard({
         <div className="flex flex-wrap gap-2">
           {!closing ? (
             <>
-              <button
-                type="button"
-                data-testid={`close-${task.id}`}
-                onClick={() => setClosing(true)}
-                className="btn-primary !min-h-9 flex-1 px-3"
-              >
-                ✅ {t('finish')}
-              </button>
-              {canManage && people.length > 1 && (
+              {task.calc ? (
+                // An open calc job ends on its own screen (VED-TARIX §8) — the
+                // VED is taken there; anybody else reads who is on it. Its
+                // testid is `calc-job-…`, never `calc-open-…`: the card's
+                // CalcPanel owns `calc-open-link`, and a prefix must not catch
+                // both.
+                task.calc.mayOpen ? (
+                  <Link
+                    href={task.calc.href}
+                    data-testid={`calc-job-${task.id}`}
+                    className="btn-primary !min-h-9 flex-1 px-3"
+                  >
+                    🧮 {t('calcOpen')}
+                  </Link>
+                ) : (
+                  <span data-testid={`calc-job-locked-${task.id}`} className="chip flex-1 justify-center">
+                    🧮 {t('calcLocked')}
+                  </span>
+                )
+              ) : (
+                <button
+                  type="button"
+                  data-testid={`close-${task.id}`}
+                  onClick={() => setClosing(true)}
+                  className="btn-primary !min-h-9 flex-1 px-3"
+                >
+                  ✅ {t('finish')}
+                </button>
+              )}
+              {canManage && task.canReassign && people.length > 1 && (
                 <select
                   aria-label={t('reassign')}
                   data-testid={`reassign-${task.id}`}
@@ -157,7 +243,7 @@ function TaskCard({
                     const next = event.target.value;
                     if (!next) return;
                     start(async () => {
-                      await reassignTaskAction(task.id, next, revalidate);
+                      setRefusal((await reassignTaskAction(task.id, next, revalidate)).error);
                     });
                   }}
                 >
@@ -171,14 +257,17 @@ function TaskCard({
                     ))}
                 </select>
               )}
-              {canManage && (
+              {/* No ✖ on an open calc job either: the server refuses it
+                  (calc_use_screen), and a button that can only refuse is a
+                  door drawn for nobody. */}
+              {canManage && !task.calc && (
                 <button
                   type="button"
                   disabled={pending}
                   onClick={() => {
                     if (!window.confirm(t('confirmCancel'))) return;
                     start(async () => {
-                      await cancelTaskAction(task.id, revalidate);
+                      setRefusal((await cancelTaskAction(task.id, revalidate)).error);
                     });
                   }}
                   className="btn-secondary !min-h-9 px-3 text-bad"
@@ -213,8 +302,19 @@ function TaskCard({
               >
                 {tc('cancel')}
               </button>
-              {state.error && <p className="w-full text-xs font-semibold text-bad">{tc('error')}</p>}
+              {state.error && (
+                // `refused-close-…`, never `close-error-…`: m9f finds the ✅ by the
+                // PREFIX `close-`, and two matches is a strict-mode refusal.
+                <p role="alert" data-testid={`refused-close-${task.id}`} className="w-full text-xs font-semibold text-bad">
+                  {errorText(state.error)}
+                </p>
+              )}
             </form>
+          )}
+          {refusal && (
+            <p role="alert" className="w-full text-xs font-semibold text-bad">
+              {errorText(refusal)}
+            </p>
           )}
         </div>
       )}

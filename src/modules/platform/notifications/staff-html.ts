@@ -154,6 +154,19 @@ export function withoutCallback(markup: unknown, data: string): InlineButton[][]
   return rows.filter((row) => !row.some((button) => button.callback_data === data));
 }
 
+/**
+ * The keyboard with ONE button taken out — its row neighbours stay, and only
+ * a row left empty goes. `withoutCallback` removes the whole row and is for
+ * lists; a task's «👀 Qabul qildim» shares its row with «✅ Bajarildi», which
+ * must survive the press (review telegram-mechanics-4).
+ */
+export function withoutButton(markup: unknown, data: string): InlineButton[][] {
+  const rows = (markup as InlineMarkup)?.inline_keyboard ?? [];
+  return rows
+    .map((row) => row.filter((button) => button.callback_data !== data))
+    .filter((row) => row.length > 0);
+}
+
 /** `{inline_keyboard}` or nothing — Telegram refuses an empty keyboard. */
 export function keyboardOf(rows: InlineButton[][] | null | undefined): { inline_keyboard: InlineButton[][] } | undefined {
   return rows && rows.length > 0 ? { inline_keyboard: rows } : undefined;

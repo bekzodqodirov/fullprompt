@@ -15,7 +15,26 @@
  * returned, so which client absorbed the cents was arbitrary.
  */
 
-export type AllocationBasis = 'weight' | 'volume' | 'chargeable' | 'boxes' | 'direct_to_client';
+/**
+ * The ONE list of allocation bases. The zod enum, the cost panel and the
+ * fence read it; the schema CHECK and 0132's CHECK are the only other copies
+ * and `tests/unit/allocation-basis-vocabulary.test.ts` pins all three equal.
+ * 'freight' (0132, docs/YOLKIRA-TAQSIMOT.md) weights each box by its share of
+ * its client's yo'lkira VALUE on his tariff — `freightWeight`, computed by
+ * `./pool` from the bill's frozen tariff copy, never here.
+ */
+export const ALLOCATION_BASES = [
+  'weight',
+  'volume',
+  'chargeable',
+  'boxes',
+  'direct_to_client',
+  'freight',
+] as const;
+export type AllocationBasis = (typeof ALLOCATION_BASES)[number];
+
+export const isAllocationBasis = (v: unknown): v is AllocationBasis =>
+  typeof v === 'string' && (ALLOCATION_BASES as readonly string[]).includes(v);
 
 export interface AllocBox {
   boxId: string;
@@ -24,6 +43,12 @@ export interface AllocBox {
   volumeM3: number;
   /** max(weightKg, volumeM3 × factor) — factor comes from settings (167). */
   chargeableKg: number;
+  /**
+   * The box's weight under the 'freight' basis: its client group's tariff
+   * rate × the box's stable m³ (`./freight-split`). REQUIRED, so a pool
+   * builder that forgets it does not compile; 0 for every other basis.
+   */
+  freightWeight: number;
 }
 
 export interface AllocInput {
@@ -50,8 +75,17 @@ function weightOf(box: AllocBox, basis: AllocationBasis): number {
       return box.volumeM3;
     case 'chargeable':
       return box.chargeableKg;
-    default:
-      return 1; // boxes / direct_to_client → equal split
+    case 'boxes':
+    case 'direct_to_client':
+      return 1; // equal split
+    case 'freight':
+      return box.freightWeight;
+    default: {
+      // Exhaustive on purpose: the old `default: return 1` would have split a
+      // NEW basis evenly by box count with no word anywhere.
+      const never: never = basis;
+      throw new Error(`unknown allocation basis ${String(never)}`);
+    }
   }
 }
 
@@ -67,6 +101,11 @@ export function allocateEntry(entry: AllocInput, boxes: AllocBox[]): AllocShare[
   if (pool.length === 0) return [];
 
   const weights = pool.map((b) => weightOf(b, entry.basis));
+  // A belt, not the rule: `./pool` HOLDS a freight bill before it ever gets
+  // here. A non-finite or non-positive freight weight is never «a smaller
+  // share» — it is a box nobody could price, and a split that quietly gave it
+  // nothing would move its client's cost onto everybody else.
+  if (entry.basis === 'freight' && weights.some((w) => !Number.isFinite(w) || w <= 0)) return [];
   const total = weights.reduce((a, w) => a + w, 0);
   if (total <= 0) return [];
 

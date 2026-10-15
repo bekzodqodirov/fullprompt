@@ -5,24 +5,46 @@ import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import { attachments, crmActivities } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { calcRequestDetail } from '@/modules/wms/calc/service';
+import {
+  calcInternalNoteFor,
+  calcRequestDetail,
+  checklistFor,
+  endingOf,
+  type CalcEnding,
+} from '@/modules/wms/calc/service';
+import { needLawOf, type NeedLaw } from '@/modules/wms/calc/needs';
+import { measureNeedText, type CalcT } from './words';
 import { linkedReceipts } from '@/modules/wms/calc/link';
-import { chainOf, type ChainVersion } from '@/modules/wms/calc/chain';
+import { chainLinksOf, chainOf, type ChainLink, type ChainVersion } from '@/modules/wms/calc/chain';
+import { calcCardHref } from '@/modules/wms/calc/card-door';
 import { FIELD_LABELS, SECTION_LABELS } from '@/modules/wms/calc/labels';
 import type { CalcField, CalcSection } from '@/modules/wms/calc/intake';
 import { PageHeader, Section } from '@/components/ui/page';
 import { LightboxImg } from '@/components/lightbox-img';
-import { canSeal, loadWorkspace } from '@/modules/wms/calc/workspace';
+import { canSeal, loadWorkspace, offerPricesFor, type OfferPrice } from '@/modules/wms/calc/workspace';
 import { sectionParts } from '@/modules/wms/calc/pricing';
 import { isServerBehind } from '@/modules/platform/db/errors';
 import { logger } from '@/modules/platform/logger';
 import { CalcActions } from './calc-actions';
 import { CalcWorkspace } from './calc-workspace';
-import { calcRegistrySight } from '@/modules/wms/calc/control-scope';
-import { calcSheetsForRequest, type CalcSheet as CalcSheetData } from '@/modules/wms/calc/sheet';
-import { CalcSheet } from '@/components/calc-sheet';
+import { calcRegistrySight, internalNoteSight } from '@/modules/wms/calc/control-scope';
+import {
+  calcSheetsForRequest,
+  requestGoodsSheet,
+  type CalcGoodsSheet,
+  type CalcSheet as CalcSheetData,
+} from '@/modules/wms/calc/sheet';
+import { CalcGoodsSheetView, CalcSheet } from '@/components/calc-sheet';
+import { OfferPriceList } from '@/components/calc-panel';
+import { RecalcButton } from './recalc-button';
+import { offerSightFor } from '@/modules/wms/calc/upsale-scope';
 import { CargoFactsForm } from './cargo-facts';
 import { LastQuotes } from './last-quotes';
+import { CalcThread } from '@/components/calc-thread';
+import { ThreadSeen } from '@/components/thread-seen';
+import { ThreadPulse } from '@/components/thread-pulse';
+import { asOfOfToken, calcThreadSummary, threadToken } from '@/modules/wms/crm/thread';
+import { mayWriteThread } from '@/modules/wms/crm/thread-door';
 
 /**
  * One calculation request — the VED person's whole screen.
@@ -41,6 +63,9 @@ import { LastQuotes } from './last-quotes';
  * table is not on screen (server behind, a yolkira section, a closed
  * request), `calc-items` still answers from the request row itself.
  */
+/** The checklist fields the cargo-facts box can answer. */
+const FACT_FIELDS: readonly CalcField[] = ['fromCity', 'toCity', 'weightKg', 'volumeM3'];
+
 export default async function CalcRequestPage({ params }: { params: Promise<{ id: string }> }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
@@ -70,11 +95,21 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
         .where(eq(attachments.entityId, row.noteId))
     : [];
 
-  const canOpenCard = row.entityType === 'deal' || actor.permissions.has('crm.leads');
-  const cardHref =
-    row.entityType === 'deal' ? `/bitimlar/${row.entityId}` : `/crm/leads/${row.entityId}`;
+  // «Kartaga o'tish» — the ONE link rule (card-door.ts): the real card when
+  // it admits this reader, the VED's read-only karta when only the calc door
+  // does (14a, 15a), never a link the destination bounces.
+  const cardHref = calcCardHref(actor, {
+    entityType: row.entityType,
+    entityId: row.entityId,
+    requestId: row.id,
+    leadOwnerId: row.leadOwnerId,
+  });
   const closed = Boolean(row.completedAt);
+  const ending: CalcEnding | null = endingOf(row);
   const canRecalc = actor.permissions.has('admin.settings.manage');
+  // The VED's own note (9a) — this page is `ved.docs`'s, so the sight is
+  // always granted here; minted anyway, so the reader keeps its fence.
+  const noteSight = internalNoteSight(actor);
 
   let workspace: Awaited<ReturnType<typeof loadWorkspace>> = null;
   // Phase E1: the cargo this quote turned out to be about. On the same catch
@@ -88,6 +123,15 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
   // any colleague's calculation, as the registry already lets them.
   const sheetSight = calcRegistrySight(actor);
   let sheet: CalcSheetData | null = null;
+  // A closed job with no seal — answered, handed back, closed price-less —
+  // shows the goods as the VED left them (10a, review ved-correctness-20):
+  // its groups, their law and each item's baza had vanished from view.
+  let goodsSheet: CalcGoodsSheet | null = null;
+  // Both kinds of price in the chain, for a closed page (ved-correctness-7).
+  let links: ChainLink[] = [];
+  let internalNote: string | null = null;
+  // 16a — «Sotuvchi mijozga aytgan narx», from the projection only.
+  let prices: OfferPrice[] = [];
   try {
     [workspace, linked, chain, sheet] = await Promise.all([
       loadWorkspace(id),
@@ -95,20 +139,89 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
       chainOf(id),
       sheetSight ? calcSheetsForRequest(id, sheetSight) : Promise.resolve(null),
     ]);
+    // The seller's price is read on an open job too — the VED is pricing the
+    // card the seller already quoted on (16a).
+    if (offerSightFor(actor).seesOfferPrices) {
+      prices = await offerPricesFor(row.entityType as 'deal' | 'lead', row.entityId);
+    }
+    if (closed) {
+      [links, internalNote, goodsSheet] = await Promise.all([
+        chainLinksOf(id),
+        noteSight && ending === 'answered' ? calcInternalNoteFor(id, noteSight) : Promise.resolve(null),
+        sheetSight && !sheet ? requestGoodsSheet(id, sheetSight) : Promise.resolve(null),
+      ]);
+    }
   } catch (err) {
     if (!isServerBehind(err)) throw err;
     logger.error({ err, id }, '[calc] workspace: server behind');
   }
+  // The checklist, with a GROUPED line asking its group's law (judge S9) — the
+  // chip and the row's cell border then read the same law. On the workspace's
+  // own catch: with no workspace on screen the book's reading stands.
+  const groupLawBySeq = workspace
+    ? new Map<number, NeedLaw>(workspace.groups.flatMap((g) => g.items.map((i) => [i.seq, needLawOf(g)] as const)))
+    : null;
+  const checklist = await checklistFor(row, groupLawBySeq).catch((err: unknown) => {
+    if (!isServerBehind(err)) throw err;
+    return { missing: row.missing, lines: [] };
+  });
+  const lineChips = checklist.lines.flatMap((l) =>
+    l.pinned.map((n) => ({
+      seq: l.seq,
+      text:
+        measureNeedText(t as unknown as CalcT, {
+          reason: 'measure_missing',
+          itemSeq: l.seq,
+          itemLabel: l.name,
+          unit: n.unit,
+          half: n.why,
+          rate: n.rate,
+        }) ?? l.name,
+    })),
+  );
+
+  // «❓ Savol-javob» (E3 a, E5 a): this calculation's Q&A with the seller —
+  // its count for the jump chip and the pulse's baseline, on its OWN catch
+  // (the tag is 0127's; a database a release behind keeps the page).
+  const tth = await getTranslations('threads');
+  const threadRef = { kind: 'calc' as const, id: row.id };
+  let threadSummary: { count: number; unread: boolean } | null = null;
+  let threadBaseline: string | null = null;
+  // The page's own door is `ved.docs`, which implies the calc thread's —
+  // asked anyway: the box is drawn by the door, never by the page.
+  const threadWriter = await mayWriteThread(actor, threadRef);
+  try {
+    [threadSummary, threadBaseline] = await Promise.all([
+      calcThreadSummary(row.id, actor.id),
+      threadToken(threadRef),
+    ]);
+  } catch (err) {
+    if (!isServerBehind(err)) throw err;
+    logger.error({ err, id }, '[thread] calc page thread: server behind');
+  }
+
+  const endingLabel = (e: CalcEnding) =>
+    e === 'sealed'
+      ? t('endSealed')
+      : e === 'answered'
+        ? t('endAnswered')
+        : e === 'returned'
+          ? t('endReturned')
+          : e === 'unpriced_lines'
+            ? t('endUnpricedLines')
+            : t('endUnpricedTask');
 
   return (
     <div className="mx-auto max-w-6xl space-y-4">
       <PageHeader
         icon="report"
-        title={row.entityType === 'deal' ? row.label : t('title')}
+        // Every calc page is a calc card by construction, and this one is
+        // `ved.docs`'s: the lead's name is the job's name (§10).
+        title={row.label}
         subtitle={`${row.itemCount} ${t('items')} · ${t('requester')}: ${row.requesterName}`}
         back={{ href: '/hisoblash', label: t('queueTitle') }}
         actions={
-          canOpenCard ? (
+          cardHref ? (
             <Link href={cardHref} className="btn-secondary" data-testid="calc-card-link">
               {t('openCard')}
             </Link>
@@ -125,9 +238,11 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
             </span>
           ) : null}
           {row.late && !closed ? <span className="chip chip-warn">{t('late')}</span> : null}
-          {closed ? (
-            <span className="chip chip-neutral" data-testid="calc-closed">
-              {row.completedVia === 'returned' ? t('returned') : t('finish')}
+          {closed && ending ? (
+            // The ending NAMED (10a): five ways, with who and when.
+            <span className="chip chip-neutral" data-testid="calc-closed" data-ending={ending}>
+              {endingLabel(ending)} · {row.completedByName ?? '—'} ·{' '}
+              {row.completedAt ? format.dateTime(row.completedAt, { dateStyle: 'short', timeStyle: 'short' }) : ''}
             </span>
           ) : row.assigneeId ? (
             <span className="text-xs text-ink-600">
@@ -136,6 +251,17 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
           ) : (
             <span className="chip chip-warn">{t('unassigned')}</span>
           )}
+          {threadSummary ? (
+            <a
+              href="#savol"
+              className="chip chip-brand ml-auto"
+              data-testid="calc-thread-jump"
+              data-unread={threadSummary.unread ? '1' : '0'}
+            >
+              {tth('calcJump', { n: threadSummary.count })}
+              {threadSummary.unread ? <span className="ml-1 text-warn">●</span> : null}
+            </a>
+          ) : null}
         </div>
         <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-sm md:grid-cols-4">
           <dt className="text-ink-500">{t('route')}</dt>
@@ -153,16 +279,32 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
         </dl>
 
         <div className="mt-2 border-t border-line pt-2" data-testid="calc-checklist">
-          {row.missing.length === 0 ? (
+          {checklist.missing.length === 0 ? (
             <p className="text-sm text-good">✅ {t('complete')}</p>
           ) : (
             <div className="flex flex-wrap items-center gap-1">
               <span className="text-sm text-warn">⚠ {t('missingLabel')}:</span>
-              {row.missing.map((field) => (
-                <span key={field} className="chip chip-warn">
-                  {t(FIELD_LABELS[field as CalcField] as 'fields.goods')}
-                </span>
+              {checklist.missing
+                .filter((field) => field !== 'lineNeed')
+                .map((field) => (
+                  <span key={field} className="chip chip-warn">
+                    {t(FIELD_LABELS[field as CalcField] as 'fields.goods')}
+                  </span>
+                ))}
+              {/* A line the LAW asks a figure of, named by row and unit (TT-5):
+                  «3-qator «Kurtka»: soni (dona) kiritilmagan — boj kamida
+                  $3/dona». Eight at most; the rest is one chip to the first
+                  marked row (UX18) — the full list lives on the rows. */}
+              {lineChips.slice(0, 8).map((chip, i) => (
+                <a key={`${chip.seq}-${i}`} href={`#calc-i-${chip.seq}`} className="chip chip-warn" data-testid="calc-row-need">
+                  {chip.text}
+                </a>
               ))}
+              {lineChips.length > 8 ? (
+                <a href={`#calc-i-${lineChips[8]!.seq}`} className="chip chip-warn">
+                  +{lineChips.length - 8}
+                </a>
+              ) : null}
             </div>
           )}
           {/* …and the door that answers it. Until this round the checklist
@@ -181,7 +323,10 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
                 weightKg: row.weightKg,
                 volumeM3: row.volumeM3,
               }}
-              incomplete={row.missing.length > 0}
+              // Open by itself only for what IT answers — the totals and the
+              // route. A line's figure is the table's to type; opening this
+              // box for it offered a door that could not close the chip.
+              incomplete={checklist.missing.some((f) => (FACT_FIELDS as readonly string[]).includes(f))}
             />
           )}
         </div>
@@ -238,6 +383,7 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
         <CalcWorkspace
           workspace={workspace}
           canRecalc={canRecalc}
+          viewerId={actor.id}
           chain={chain}
           sealedSheet={sheet && sheetSight ? <CalcSheet data={sheet} sight={sheetSight} /> : null}
         />
@@ -247,7 +393,52 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
           everywhere else (server behind, yolkira, closed) this read-only
           fallback answers under the SAME testid — one element in the DOM
           either way, because getByTestId is strict-mode. */}
-      {!(workspace && workspace.parts.customs && !workspace.completedAt) ? (
+      {goodsSheet && sheetSight && (goodsSheet.groups.length > 0 || goodsSheet.ungrouped.length > 0) ? (
+        <Section title={`${t('goods')} · ${row.itemCount}`}>
+          <div className="card !p-3">
+            <CalcGoodsSheetView data={goodsSheet} sight={sheetSight} />
+          </div>
+        </Section>
+      ) : null}
+
+      {/* The chain, BOTH kinds (review ved-correctness-7): seals with their V
+          number, answers as «✍️ umumiy narx». The sealed panel above keeps its
+          own V-only list; this is the closed page's whole story. */}
+      {closed && links.length > 1 ? (
+        <section className="card !p-3" data-testid="calc-chain-links">
+          <p className="text-2xs font-semibold text-ink-600">{t('chainTitle')}</p>
+          <ul className="mt-1 space-y-1">
+            {links.map((link) => (
+              <li
+                key={`${link.kind}:${link.requestId}:${link.at.getTime()}`}
+                className="flex flex-wrap items-center gap-2 text-2xs"
+                data-testid="calc-chain-link"
+                data-current={link.requestId === id ? '1' : undefined}
+              >
+                {link.kind === 'sealed' ? (
+                  <span className="chip chip-neutral">V{link.quoteNo}</span>
+                ) : (
+                  <span className="chip chip-warn">{t('answerChip')}</span>
+                )}
+                {link.requestId === id ? (
+                  <span className="font-mono font-semibold tabular-nums">
+                    {link.amount.toFixed(2)} {link.currency}
+                  </span>
+                ) : (
+                  <Link href={`/hisoblash/${link.requestId}`} className="font-mono font-semibold tabular-nums text-brand-700">
+                    {link.amount.toFixed(2)} {link.currency}
+                  </Link>
+                )}
+                <span className="text-ink-500">
+                  {format.dateTime(link.at, { dateStyle: 'short' })} · {link.byName ?? '—'}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {!(workspace && workspace.parts.customs && !workspace.completedAt) && !goodsSheet ? (
         <Section title={`${t('goods')} · ${row.itemCount}`}>
           <div className="card !p-0 overflow-x-auto">
             {row.items.length === 0 ? (
@@ -259,7 +450,7 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
                     <th className="p-2">#</th>
                     <th className="p-2">{t('goods')}</th>
                     <th className="p-2">TNVED</th>
-                    <th className="p-2">kg</th>
+                    <th className="p-2">{t('grid.kg')}</th>
                     <th className="p-2">m³</th>
                   </tr>
                 </thead>
@@ -326,22 +517,42 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
 
         <div>
           {closed ? (
-            <section className="card !p-3" data-testid="calc-answer">
-              {row.completedVia === 'returned' ? (
+            <section className="card !p-3 space-y-1" data-testid="calc-answer">
+              <p className="text-sm font-semibold" data-testid="calc-ending">
+                {ending ? endingLabel(ending) : null}
+                <span className="font-normal text-ink-500">
+                  {' · '}
+                  {row.completedByName ?? '—'}
+                  {row.completedAt
+                    ? ` · ${format.dateTime(row.completedAt, { dateStyle: 'short', timeStyle: 'short' })}`
+                    : ''}
+                </span>
+              </p>
+              {ending === 'returned' ? (
                 <p className="text-sm">
                   <span className="text-ink-500">{t('returned')}:</span> {row.returnReason ?? '—'}
                 </p>
-              ) : row.answerAmount ? (
+              ) : ending === 'answered' ? (
                 <>
                   <p className="text-sm">
                     <span className="text-ink-500">{t('answered')}:</span>{' '}
-                    <span className="num font-semibold">
+                    <span className="num font-semibold" data-testid="calc-answer-amount-shown">
                       {row.answerAmount} {row.answerCurrency ?? ''}
                     </span>
                   </p>
                   {row.answerNote ? (
-                    <p className="mt-1 whitespace-pre-wrap text-sm">{row.answerNote}</p>
+                    <p className="whitespace-pre-wrap text-sm" data-testid="calc-answer-seller-note">
+                      <span className="text-ink-500">{t('sellerNoteShort')}:</span> {row.answerNote}
+                    </p>
                   ) : null}
+                  {noteSight ? (
+                    <p className="whitespace-pre-wrap text-sm" data-testid="calc-answer-internal-note">
+                      <span className="text-ink-500">{t('internalNoteShort')}:</span>{' '}
+                      {internalNote ?? t('internalNoteOld')}
+                    </p>
+                  ) : null}
+                  {/* 10a: an answered job is corrected the way a sealed one is. */}
+                  {canRecalc ? <RecalcButton id={row.id} /> : null}
                 </>
               ) : null}
             </section>
@@ -355,8 +566,29 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
               />
             </section>
           )}
+          {/* 16a — what the seller told the customer, on the calc page too. */}
+          {prices.length > 0 ? (
+            <section className="card !p-3 mt-3">
+              <OfferPriceList prices={prices} />
+            </section>
+          ) : null}
+          {/* «❓ Savol-javob» — ONLY this calculation's Q&A (E5 a). The VED's
+              question goes to the seller's Telegram; the answer lands here,
+              from the card's fold or as a reply in Telegram. The hint warns
+              him off the floor: every seller on this thread reads what he
+              types (law 4/10, #790), and no screen rule can police text. */}
+          <section id="savol" className="card !p-3 mt-3 scroll-mt-20 space-y-2" data-testid="calc-thread">
+            <h2 className="text-sm font-bold">{tth('calcTitle')}</h2>
+            <CalcThread requestId={row.id} viewerId={actor.id} composer={threadWriter} hint={tth('calcHint')} />
+          </section>
         </div>
       </div>
+      {/* The mark is «as of» the token the page read BEFORE drawing the
+          list — the same token the pulse compares, so a pulse refresh brings
+          a new one and the mark follows what is now on screen (a refresh
+          re-renders ThreadSeen, it does not remount it). */}
+      <ThreadSeen refs={[{ ...threadRef, asOf: threadBaseline !== null ? asOfOfToken(threadBaseline) : null }]} />
+      {threadBaseline !== null ? <ThreadPulse kind="calc" id={row.id} initial={threadBaseline} /> : null}
     </div>
   );
 }

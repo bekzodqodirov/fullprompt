@@ -575,6 +575,19 @@ const DICT = {
   sheetColQty: { uz: 'Soni', ru: 'Кол-во', en: 'Qty' },
   sheetColKg: { uz: 'kg', ru: 'кг', en: 'kg' },
   sheetColM3: { uz: 'm³', ru: 'м³', en: 'm³' },
+  // The goods table's units (2026-10-09, judge MR-6) — the SAME keys as the
+  // screen's `calc.units`, so the customer's sheet prints «120 m²» / «40
+  // juft» in their words and never a storage spelling, and a count is
+  // printed as pieces, never glued to the seller's «kg».
+  unitDona: { uz: 'dona', ru: 'шт', en: 'pcs' },
+  unitKg: { uz: 'kg', ru: 'кг', en: 'kg' },
+  unitKgNet: { uz: 'Sof og‘irlik (netto), kg', ru: 'Вес нетто, кг', en: 'Net weight, kg' },
+  unitM3: { uz: 'm³', ru: 'м³', en: 'm³' },
+  unitM2: { uz: 'm²', ru: 'м²', en: 'm²' },
+  unitJuft: { uz: 'juft', ru: 'пар', en: 'pairs' },
+  unitLitr: { uz: 'litr', ru: 'л', en: 'l' },
+  unitSm3: { uz: 'sm³', ru: 'см³', en: 'cm³' },
+  unitThousandDona: { uz: '1000 dona', ru: 'тыс. шт', en: '1000 pcs' },
   sheetGoodsTotal: { uz: 'Jami', ru: 'Итого по товарам', en: 'Goods total' },
   sheetManager: { uz: 'Sizning menejeringiz', ru: 'Ваш менеджер', en: 'Your manager' },
   sheetSignature: { uz: 'Imzo', ru: 'Подпись', en: 'Signature' },
@@ -647,6 +660,35 @@ export function clientLabels(locale?: string | null): ClientLabels {
   return Object.fromEntries(
     Object.entries(DICT).map(([name, values]) => [name, values[key]]),
   ) as ClientLabels;
+}
+
+/**
+ * The unit words in the client's language, shaped like the kernel's
+ * `UnitWords` (calc/units.ts) — platform cannot import wms, so the shape is
+ * spelt here and the offer sheet hands it to `countText`/`unitLabel`.
+ */
+export function clientUnitWords(labels: ClientLabels): {
+  dona: string;
+  kg: string;
+  kgNet: string;
+  m3: string;
+  m2: string;
+  juft: string;
+  litr: string;
+  sm3: string;
+  thousandDona: string;
+} {
+  return {
+    dona: labels.unitDona,
+    kg: labels.unitKg,
+    kgNet: labels.unitKgNet,
+    m3: labels.unitM3,
+    m2: labels.unitM2,
+    juft: labels.unitJuft,
+    litr: labels.unitLitr,
+    sm3: labels.unitSm3,
+    thousandDona: labels.unitThousandDona,
+  };
 }
 
 function fallback(locale?: string | null): ClientLocale {

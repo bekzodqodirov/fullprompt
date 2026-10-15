@@ -152,6 +152,18 @@ afterAll(async () => {
 
 const TASK_ID = '11111111-2222-4333-8444-555555555555';
 
+/** A hand task's four buttons (docs/TELEGRAM-TOPSHIRIQ.md §4) — what a payload with no origin draws. */
+const HAND_BUTTONS = [
+  [
+    { text: '👀 Qabul qildim', callback_data: `tk:${TASK_ID}` },
+    { text: '✅ Bajarildi', callback_data: `t:${TASK_ID}` },
+  ],
+  [
+    { text: '⏰ Muddatni surish', callback_data: `tw:${TASK_ID}` },
+    { text: '💬 Savol', callback_data: `tq:${TASK_ID}` },
+  ],
+];
+
 describe('a staff message is HTML built from its stored plain text', () => {
   it('bolds the title, escapes what was typed, and turns our link into a button', async () => {
     const id = await queue(staffId, 'TaskAssigned', {
@@ -166,12 +178,12 @@ describe('a staff message is HTML built from its stored plain text', () => {
       link_preview_options: { is_disabled: true },
     });
     expect(send!.body.text).toBe('<b>🆕 Yangi vazifa: &lt;b&gt;Tekshir&lt;/b&gt; &amp; yubor</b>\n📅 30.09');
-    // The task's own button first, the link LAST — buttonsFor's rows untouched.
+    // The task's own buttons first, the link LAST — buttonsFor's rows
+    // untouched. DELIBERATE EDIT (the topshiriq round, review
+    // telegram-mechanics-22): a payload with no origin reads as a hand task,
+    // whose message carries his 4a's four buttons where it carried one ✅.
     expect(send!.body.reply_markup).toEqual({
-      inline_keyboard: [
-        [{ text: '✅ Bajarildi', callback_data: `t:${TASK_ID}` }],
-        [{ text: '↗️ Ochish', url: `${APP}/bitimlar/abc` }],
-      ],
+      inline_keyboard: [...HAND_BUTTONS, [{ text: '↗️ Ochish', url: `${APP}/bitimlar/abc` }]],
     });
     const row = await rowOf(id);
     expect(row.status).toBe('sent');
@@ -238,9 +250,9 @@ describe('a staff message is HTML built from its stored plain text', () => {
     const [first, second] = sends();
     expect(first!.body.reply_markup).toBeDefined();
     expect(String(second!.body.text)).toContain(`${APP}/bugun`);
-    expect(second!.body.reply_markup).toEqual({
-      inline_keyboard: [[{ text: '✅ Bajarildi', callback_data: `t:${TASK_ID}` }]],
-    });
+    // DELIBERATE EDIT (telegram-mechanics-22): the hand task's four buttons
+    // survive the refused link, as its one ✅ did.
+    expect(second!.body.reply_markup).toEqual({ inline_keyboard: HAND_BUTTONS });
     expect((await rowOf(id)).status).toBe('sent');
   });
 });

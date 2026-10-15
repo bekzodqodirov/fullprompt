@@ -2,7 +2,8 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { requireActor, AuthError } from '@/modules/platform/rbac/authorize';
 import { db } from '@/modules/platform/db/client';
-import { broadcasts, pickupStops, staffNotes } from '@/modules/platform/db/schema';
+import { broadcasts, pickupStops, receipts, staffNotes } from '@/modules/platform/db/schema';
+import { mayReadReceipt } from '@/modules/wms/receipts/read-door';
 import { BROADCAST_ENTITY_TYPE, mayBroadcast } from '@/modules/platform/broadcast/service';
 import { PICKUP_WRITE } from '@/modules/wms/pickups/service';
 import { FileValidationError, saveAttachment } from '@/modules/platform/files/service';
@@ -108,6 +109,21 @@ export async function POST(request: Request) {
       const mine =
         note.userId === null ? canShareNotes(actor.permissions) : note.userId === actor.id;
       if (!mine) return Response.json({ error: 'forbidden' }, { status: 403 });
+    }
+  }
+
+  // A prixod's files now back the customs papers (lot tarkibi: the client's
+  // packing list a composition cites), and any login could add one to any
+  // prixod. A receipt that EXISTS asks the receipt card's own read door; one
+  // that does not exist yet is the wizard pre-binding to the id it minted
+  // (#180) and passes, as the note's does above.
+  if (meta.data.entityType === 'receipt') {
+    const receipt = await db.query.receipts.findFirst({
+      where: eq(receipts.id, meta.data.entityId),
+      columns: { id: true, warehouseId: true },
+    });
+    if (receipt && !(await mayReadReceipt(actor, receipt))) {
+      return Response.json({ error: 'forbidden' }, { status: 403 });
     }
   }
 

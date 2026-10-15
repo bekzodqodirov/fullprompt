@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import ru from '../../messages/ru.json';
 
@@ -67,9 +68,40 @@ describe('every board can move a card', () => {
   it('does not gate that button on a pointer query', () => {
     // This file's own comment says a trackpad can report as touch. A machine
     // answering «fine» to the media query and «not a mouse» to the event would
-    // get neither door, so the button is unconditional.
+    // get neither door, so the button is unconditional with respect to
+    // POINTER — and absent only on a read-only board (no `onMove`, the VED's
+    // deal slice, 17a / G3 a), where there is no move to make.
     expect(SOURCE).not.toContain('useCoarsePointer');
     expect(SOURCE).not.toContain('pointer: coarse');
+  });
+
+  it('gates each ⋯ on `onMove` and on nothing pointer-shaped (parsed)', () => {
+    const file = ts.createSourceFile('kanban.tsx', SOURCE, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    const buttons: ts.Node[] = [];
+    const walk = (node: ts.Node) => {
+      if (ts.isJsxAttribute(node) && node.name.getText() === 'data-testid') {
+        if (node.initializer && ts.isStringLiteral(node.initializer) && node.initializer.text === 'move-other') {
+          buttons.push(node);
+        }
+      }
+      ts.forEachChild(node, walk);
+    };
+    walk(file);
+    expect(buttons.length).toBe(2);
+    for (const button of buttons) {
+      let gated = false;
+      for (let at = button.parent; at && !ts.isSourceFile(at); at = at.parent) {
+        if (
+          ts.isBinaryExpression(at) &&
+          at.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken &&
+          ts.isIdentifier(at.left) &&
+          at.left.text === 'onMove'
+        ) {
+          gated = true;
+        }
+      }
+      expect(gated, 'a move-other with no `onMove &&` above it').toBe(true);
+    }
   });
 });
 

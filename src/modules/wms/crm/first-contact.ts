@@ -28,7 +28,10 @@ import { addOfficeMinutes, officeClock } from '../../platform/time/office-hours'
  *     office answering for a lead whose seller has left (the office is who
  *     that push went to). No screen writes a `call` note on a LEAD (the
  *     contact log with its kinds lives on the client card), so matching the
- *     text and the kind is the button and nothing typed by hand;
+ *     text and the kind is the button and nothing typed by hand. A staff
+ *     THREAD message never counts (the owner's E11 a, 2026-10-07): a seller
+ *     answering the VED's question under a calculation, or a reply that
+ *     landed from Telegram, is colleagues talking to each other;
  *  4. a STAGE move on the lead, by that same responsible person;
  *  5. the follow-up CLEARED — «✓ Bajarildi» on /bugun, which round 102 made
  *     mean «I called» — by that same person too. Its door is not one door:
@@ -126,7 +129,17 @@ export function contactEvidenceSql(o: {
        AND ca.entity_id = ${o.leadId}
        AND ca.created_by IS NOT NULL
        AND ca.created_at >= ${o.since}
-       AND (${responsible(sql`ca.created_by`)} OR (ca.kind = 'call' AND ca.note = ${CONTACT_NOTE}))
+       -- E11 a: a staff THREAD message — a calculation's Q&A, or a reply that
+       -- landed from Telegram — is colleagues talking, never the customer.
+       -- Read through the row's json (0127's columns are not drizzle's): NULL,
+       -- not 42703, on a database one migration behind, so every reader of
+       -- this rule — the sweep, the landing, the button — keeps working.
+       AND (
+         (${responsible(sql`ca.created_by`)}
+           AND (to_jsonb(ca) ->> 'calc_request_id') IS NULL
+           AND (to_jsonb(ca) ->> 'tg_message_id') IS NULL)
+         OR (ca.kind = 'call' AND ca.note = ${CONTACT_NOTE})
+       )
     UNION ALL
     SELECT al.created_at, 'stage'::text, al.actor_id
       FROM audit_log al

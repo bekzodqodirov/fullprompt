@@ -24,6 +24,7 @@ interface MissingBox {
 /** Destination-side controls: finish unload, resolve missing boxes, close. */
 export function UnloadActions({
   batchId,
+  destWarehouseId,
   status,
   missing,
   remaining,
@@ -34,6 +35,12 @@ export function UnloadActions({
   canClose,
 }: {
   batchId: string;
+  /**
+   * The destination this page was drawn for, posted with «Hammasini qabul
+   * qilish» and «Tushirish tugadi» (the reroute round): a truck rerouted since
+   * is refused in words, never finished or accepted at the old warehouse.
+   */
+  destWarehouseId: string;
   status: string;
   missing: MissingBox[];
   /** Manifest boxes still waiting to be accepted at the destination. */
@@ -64,6 +71,8 @@ export function UnloadActions({
   const [pending, setPending] = useState(false);
   const [summary, setSummary] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** `batch_rerouted` only: where the truck goes now, from the service. */
+  const [rerouteTo, setRerouteTo] = useState<string | null>(null);
   // The road-loss form is open for ONE box at a time, and holds what was
   // typed until the server has answered (a refusal must not eat it).
   const [lostFor, setLostFor] = useState<string | null>(null);
@@ -83,6 +92,12 @@ export function UnloadActions({
         return t('errors.finish_unload_first');
       case 'batch_not_unloading':
         return t('errors.batch_not_unloading');
+      // The truck was rerouted after this page was drawn: the phone's own
+      // sentence, naming where it goes now — never the generic «failed —
+      // press again», and never «refresh», which for this warehouse's own
+      // staff is a 404 (the card's door closed with the reroute).
+      case 'batch_rerouted':
+        return t('errors.batch_rerouted', { to: rerouteTo ?? '—' });
       case 'batch_not_found':
       case 'box_not_found':
         return t('errors.not_found');
@@ -93,13 +108,22 @@ export function UnloadActions({
     }
   }
 
-  async function run(fn: () => Promise<{ ok: boolean; error?: string }>) {
+  async function run(fn: () => Promise<{ ok: boolean; error?: string; to?: string }>) {
     setPending(true);
     setError(null);
     try {
       const res = await fn();
-      if (!res.ok) setError(res.error ?? 'error');
-      router.refresh();
+      if (!res.ok) {
+        setError(res.error ?? 'error');
+        setRerouteTo(res.to ?? null);
+      }
+      // NOT after a reroute refusal (the reroute review): the refresh re-asks
+      // the card's door, which the reroute closed for the old warehouse's own
+      // staff — the page became «Sahifa topilmadi» and this component, with
+      // the one sentence written for them, unmounted with it. Nothing was
+      // written, so there is nothing to show fresh; for an unscoped person the
+      // refresh would only re-arm the button at the NEW warehouse.
+      if (res.error !== 'batch_rerouted') router.refresh();
       return res;
     } finally {
       setPending(false);
@@ -125,7 +149,7 @@ export function UnloadActions({
           disabled={pending}
           onClick={async () => {
             if (!window.confirm(t('acceptAllConfirm', { n: acceptable }))) return;
-            const res = (await run(() => unloadRemainingAction(batchId))) as {
+            const res = (await run(() => unloadRemainingAction(batchId, destWarehouseId))) as {
               ok: boolean;
               accepted?: number;
               skippedCounted?: number;
@@ -166,7 +190,7 @@ export function UnloadActions({
             // Finishing with boxes left over marks them lost — never let that
             // happen on a tap the operator read as "accept everything".
             if (remaining > 0 && !window.confirm(t('finishConfirm', { n: remaining }))) return;
-            const res = (await run(() => finishUnloadAction(batchId))) as {
+            const res = (await run(() => finishUnloadAction(batchId, destWarehouseId))) as {
               ok: boolean;
               missing?: string[];
             };

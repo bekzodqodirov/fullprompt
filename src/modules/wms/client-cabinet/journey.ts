@@ -81,6 +81,12 @@ export function journeyFromEvents(
      * leaves (round 92's trap, used here on purpose): the destination's
      * country is what tells an internal Chinese leg from the export leg, and
      * it is written exactly once per journey.
+     *
+     * A truck rerouted on the road keeps this row (the reroute round writes
+     * no movement), which stays TRUE only because a reroute never changes
+     * the destination's COUNTRY — `rerouteRefusal`'s `other_country`
+     * (batches/reroute-rules.ts). Widening that rule changes this reader;
+     * `tests/unit/batch-reroute-wire.test.ts` goes red on both together.
      */
     if (e.cause === 'batch_departed') {
       if (e.toCountry === 'CN') claim('toHub', e.at);

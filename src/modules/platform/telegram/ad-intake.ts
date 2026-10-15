@@ -1,3 +1,5 @@
+import { armWait, dropWait, nowSec, readWait, waitVerdict } from './waits';
+
 /**
  * The third door: an advert that points at the bot.
  *
@@ -6,18 +8,18 @@
  * is often the whole advert. The person arrives in a chat, so the only thing
  * we need from them is the one thing Telegram can prove: their number.
  *
- * Deliberately tiny. The chat is remembered in memory for half an hour and
- * nothing else about this flow exists: no table, no state machine, no second
- * way to link a client. The contact handler that already serves the cabinet
- * asks whether an advert brought this chat here, and if it did, and the number
- * belongs to nobody we know, the enquiry lands through the same
- * `landInboundLead` the form and the webhook use.
+ * Deliberately tiny: no state machine, no second way to link a client. The
+ * visit is remembered for half an hour as one of the bot's durable waits
+ * (0130, Q5 a) — memory first, written through to `telegram_chat_waits` so a
+ * deploy between «send your number» and the contact no longer loses a paid
+ * enquiry and tells the person «raqam topilmadi». The contact handler that
+ * already serves the cabinet asks whether an advert brought this chat here,
+ * and if it did, and the number belongs to nobody we know, the enquiry lands
+ * through the same `landInboundLead` the form and the webhook use.
  */
 
 /** How long an advert visit is still the reason this chat is here. */
 const TTL_MS = 30 * 60 * 1000;
-
-const visits = new Map<number, { sourceKey: string; at: number }>();
 
 /**
  * `ad_instagram` → `instagram`. Anything else → null.
@@ -32,20 +34,27 @@ export function adSourceFromPayload(payload: string | undefined | null): string 
   return match ? match[1]!.toLowerCase() : null;
 }
 
-export function rememberAdVisit(chatId: number, sourceKey: string): void {
-  visits.set(chatId, { sourceKey, at: Date.now() });
+/** Armed AFTER «send your number» is out, at that prompt's own date; the same advert again keeps the earlier time. */
+export function rememberAdVisit(chatId: number, sourceKey: string, armedAt: number = nowSec()): void {
+  armWait(chatId, 'ad_visit', { sourceKey }, TTL_MS, armedAt, (prev) => prev.sourceKey === sourceKey);
 }
 
-export function adVisitFor(chatId: number): string | null {
-  const visit = visits.get(chatId);
+/**
+ * The advert that brought this chat, for a contact dated `atSec`. Expiry
+ * only: a contact is the person's own number, and the «📱» keyboard can be
+ * pressed before a late prompt arrives (judge TG-3).
+ */
+export function adVisitFor(chatId: number, atSec: number = nowSec()): string | null {
+  const visit = readWait<{ sourceKey: string }>(chatId, 'ad_visit');
   if (!visit) return null;
-  if (Date.now() - visit.at > TTL_MS) {
-    visits.delete(chatId);
+  const verdict = waitVerdict(visit, atSec, false);
+  if (verdict === 'expired') {
+    dropWait(chatId, 'ad_visit');
     return null;
   }
-  return visit.sourceKey;
+  return verdict === 'answers' ? visit.payload.sourceKey : null;
 }
 
 export function clearAdVisit(chatId: number): void {
-  visits.delete(chatId);
+  dropWait(chatId, 'ad_visit');
 }

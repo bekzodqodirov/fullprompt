@@ -1,9 +1,10 @@
 import type { Readable } from 'node:stream';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { customsImportBatches, customsImportRows } from '../../platform/db/schema';
 import { getStorage } from '../../platform/files/storage';
 import { logger } from '../../platform/logger';
+import { OFFICE_TZ } from '../../platform/time/tashkent';
 import {
   FIELD_LABELS,
   parseRow,
@@ -72,6 +73,9 @@ export interface ImportOutcome {
   skipReasons: Partial<Record<SkipReason, number>>;
   periodFrom: string | null;
   periodTo: string | null;
+  /** Rows dated after the upload day — stored, and kept out of the period
+   * (see `runCustomsImport`). Logged with the outcome; not a skip. */
+  futureDated: number;
 }
 
 /**
@@ -364,6 +368,14 @@ export async function runCustomsImport(input: {
   if (!(await beat(batchId, 0, 0))) {
     throw new BatchGoneError(batchId);
   }
+  // The ceiling of what this file's dates may claim: the Tashkent day it was
+  // UPLOADED — the same `uploadDaySql` the «newest» clamp reads, so the two
+  // can never disagree about which day that is (a retry hours later, past
+  // midnight, still measures against the upload).
+  const [uploaded] = await db.execute<{ day: string }>(sql`
+    SELECT ${uploadDaySql(sql`b`)}::text AS day FROM customs_import_batches b WHERE b.id = ${batchId}::uuid`);
+  if (!uploaded) throw new BatchGoneError(batchId);
+  const uploadDay = uploaded.day;
 
   let header: ReturnType<typeof readHeader>['index'] | null = null;
   let rowCount = 0;
@@ -371,6 +383,7 @@ export async function runCustomsImport(input: {
   const skipReasons: Partial<Record<SkipReason, number>> = {};
   let periodFrom: string | null = null;
   let periodTo: string | null = null;
+  let futureDated = 0;
   let driftChecked = 0;
   let driftSum = 0;
   let pending: ParsedImportRow[] = [];
@@ -458,7 +471,18 @@ export async function runCustomsImport(input: {
       continue;
     }
     const row = parsed.row;
-    if (row.declaredAt) {
+    // A declaration dated after the day the file was uploaded is a typo — a
+    // file cannot describe what had not happened yet — so it does not move
+    // the period. `batchEndSql` clamps an end to the upload day, and that
+    // guard is still right for rows already stored, but on its own ONE
+    // «01.01.2062» in an older quarter back-filled after a newer one lifted
+    // that quarter's end to its upload day: it outranked every correctly
+    // dated quarter ending before that day, and the picker, the auto-fill
+    // and the AI prefill read — and stamped `import_row_id` from — the wrong
+    // quarter. The row itself is kept: its price is still a declaration.
+    if (row.declaredAt && row.declaredAt > uploadDay) {
+      futureDated++;
+    } else if (row.declaredAt) {
       if (!periodFrom || row.declaredAt < periodFrom) periodFrom = row.declaredAt;
       if (!periodTo || row.declaredAt > periodTo) periodTo = row.declaredAt;
     }
@@ -514,7 +538,11 @@ export async function runCustomsImport(input: {
     .returning({ id: customsImportBatches.id });
   if (settled.length === 0) throw new BatchGoneError(batchId);
 
-  return { rowCount, skipped, skipReasons, periodFrom, periodTo };
+  if (futureDated > 0) {
+    logger.warn({ batchId, futureDated, uploadDay }, '[customs-import] rows dated after the upload day — kept out of the period');
+  }
+
+  return { rowCount, skipped, skipReasons, periodFrom, periodTo, futureDated };
 }
 
 /** Mark a batch failed with a sentence the admin can act on. */
@@ -576,20 +604,92 @@ export async function listImportBatches(limit = 20) {
     .limit(limit);
 }
 
+/** The Tashkent day a batch was uploaded — the ceiling of what its own
+ * dates may claim (see `batchEndSql`). One spelling, read by both ends. */
+function uploadDaySql(t: SQL): SQL {
+  return sql`((${t}.uploaded_at AT TIME ZONE ${OFFICE_TZ})::date)`;
+}
+
 /**
- * The batch every suggestion reads: the newest one that finished.
+ * The last day a batch's declarations describe, CLAMPED to its upload day
+ * (his C6, #1300).
+ *
+ * «Newest» is the newest by the dates INSIDE the file, not by upload order —
+ * and the clamp is what keeps that safe. `parseDate` accepts any year, and
+ * `period_to` is the max `declared_at`, so ONE row typed «01.01.2062» would
+ * make its batch newest for ever: the auto-fill stamps `import_row_id` from
+ * it within minutes, after which `deleteImportBatch` refuses `in_use` and
+ * the recovery is closed by the fault itself. A file cannot honestly
+ * describe declarations made after the day it was uploaded. A batch with no
+ * dates counts as dated on its upload day, so it is never buried for ever
+ * under an older dated quarter.
+ *
+ * Raw SQL over an explicit alias (`t`) — never `${table.col}`, which a
+ * single-table select renders unqualified (#128).
+ */
+export function batchEndSql(t: SQL): SQL {
+  return sql`LEAST(COALESCE(${t}.period_to, ${uploadDaySql(t)}), ${uploadDaySql(t)})`;
+}
+
+/** The first day a batch describes, under the same clamp. */
+export function batchStartSql(t: SQL): SQL {
+  return sql`LEAST(COALESCE(${t}.period_from, ${t}.period_to, ${uploadDaySql(t)}), ${uploadDaySql(t)})`;
+}
+
+/**
+ * THE order of «newest» (#513 — one home): the end of what the file
+ * describes, then the later upload, then the id.
+ *
+ * Deliberately no `period_from`: he first sent a 4,001-row June sample and
+ * still owes the full April-June quarter. Both end on the same day, and the
+ * narrower file must not win on its later start; on any tie of the END the
+ * later upload answers — which also keeps «the same quarter uploaded twice»
+ * (his June, #915/#918) answering from the second copy, exactly as before.
+ */
+export function batchRecencySql(t: SQL): SQL {
+  return sql`${batchEndSql(t)} DESC, ${t}.uploaded_at DESC, ${t}.id DESC`;
+}
+
+/**
+ * The batch every suggestion reads: the newest one that finished — newest
+ * by the dates inside, clamped to the upload day, his C6.
  *
  * His answer 2b — imports accumulate and the newest READY one is the truth;
- * a batch still processing must never half-price a calculation.
+ * a batch still processing must never half-price a calculation. ONE home for
+ * its three readers: the 📥 picker (and its statistics), `saveTable`'s
+ * auto-fill and the AI prefill — two answers to «which quarter» would be
+ * #513.
  */
 export async function newestReadyBatchId(): Promise<string | null> {
-  const [row] = await db
-    .select({ id: customsImportBatches.id })
-    .from(customsImportBatches)
-    .where(eq(customsImportBatches.status, 'ready'))
-    .orderBy(desc(customsImportBatches.uploadedAt))
-    .limit(1);
-  return row?.id ?? null;
+  const rows = await db.execute<{ id: string }>(sql`
+    SELECT b.id::text AS id
+      FROM customs_import_batches b
+     WHERE b.status = 'ready'
+     ORDER BY ${batchRecencySql(sql`b`)}
+     LIMIT 1
+  `);
+  return rows[0]?.id ?? null;
+}
+
+/**
+ * «Oldingi chorak» (D7): the newest READY batch that ENDS strictly before
+ * the given batch STARTS — the same two builders, never a re-spelling. So a
+ * second upload of the same quarter is never its own «previous quarter»,
+ * and neither is an overlapping file.
+ */
+export async function previousReadyBatchId(batchId: string): Promise<string | null> {
+  const rows = await db.execute<{ id: string }>(sql`
+    SELECT b.id::text AS id
+      FROM customs_import_batches b
+     WHERE b.status = 'ready'
+       AND b.id <> ${batchId}::uuid
+       AND ${batchEndSql(sql`b`)} < (
+             SELECT ${batchStartSql(sql`c`)} FROM customs_import_batches c WHERE c.id = ${batchId}::uuid
+           )
+     ORDER BY ${batchRecencySql(sql`b`)}
+     LIMIT 1
+  `);
+  return rows[0]?.id ?? null;
 }
 
 /** How many calculation rows are priced off this import's declarations. */

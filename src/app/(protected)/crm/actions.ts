@@ -36,6 +36,8 @@ import { customValues } from '@/modules/platform/fields/actions';
 import { FieldError } from '@/modules/platform/fields/types';
 import { attachClient, groupClients, personFromClient } from '@/modules/wms/crm/people';
 import { announceMentions } from '@/modules/wms/crm/internal-chat';
+import { mayWriteThread } from '@/modules/wms/crm/thread-door';
+import { logger } from '@/modules/platform/logger';
 import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 
 export interface CrmFormState {
@@ -428,20 +430,35 @@ export async function addActivityAction(
     nextActionNote: str(formData, 'nextActionNote'),
   });
   if (!parsed.success) return { error: 'validation' };
-  const state = await run('crm.leads', (ctx) => addActivity(parsed.data, ctx));
+  // The contact log lives on the CLIENT card alone (the lead card dropped it
+  // in round 78), so any other entity posted here is a forged form — and it
+  // was a second, ungated writer onto the same threads the lenta writes
+  // (the judge's 4). The thread door is asked too: `run('crm.leads')` implies
+  // it for a client today, and the door, not the box, is the guard (#531).
+  if (parsed.data.entityType !== 'client') return { error: 'forbidden' };
+  const who = await getActor();
+  if (!who || !(await mayWriteThread(who, { kind: 'client', id: parsed.data.entityId }))) {
+    return { error: 'forbidden' };
+  }
+  // The row's id leaves `run` by closure: `run` answers `{ ok }` and drops the
+  // work's value, and the mention ping must name the note it is about.
+  let created: { id: string } | null = null;
+  const state = await run('crm.leads', async (ctx) => {
+    created = await addActivity(parsed.data, ctx);
+  });
   // The contact log broadcasts to nobody (a record, not a conversation) —
   // but a colleague NAMED in it must still hear their name. After the save
-  // and never blocking it, like every announce here.
-  if (state.ok) {
-    const who = await getActor();
-    if (who) {
-      await announceMentions({
-        entityType: parsed.data.entityType as 'client' | 'lead' | 'deal',
-        entityId: parsed.data.entityId,
-        note: parsed.data.note,
-        authorId: who.id,
-      }).catch(() => {});
-    }
+  // and never blocking it, like every announce here; a failure is logged.
+  const row = created as { id: string } | null;
+  if (state.ok && row) {
+    await announceMentions({
+      entityType: 'client',
+      entityId: parsed.data.entityId,
+      note: parsed.data.note,
+      authorId: who.id,
+      activityId: row.id,
+      calcRequestId: null,
+    }).catch((err: unknown) => logger.warn({ err, activityId: row.id }, '[thread] contact-log mention failed'));
   }
   // The client card lives outside /crm, so it needs its own refresh.
   if (parsed.data.entityType === 'client') revalidatePath(`/admin/clients/${parsed.data.entityId}`);

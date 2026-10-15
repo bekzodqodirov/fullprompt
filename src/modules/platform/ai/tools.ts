@@ -88,7 +88,10 @@ export function buildTools(actor: AssistantActor): AssistantTool[] {
         const hits = await globalSearch(actor, text);
         if (hits.length === 0) return 'ничего не найдено';
         return hits
-          .map((hit) => `${hit.kind}: ${hit.code}${hit.label ? ` — ${hit.label}` : ''}`)
+          .map(
+            (hit) =>
+              `${hit.kind}: ${hit.code}${hit.formerCode ? ` (прежнее название: ${hit.formerCode})` : ''}${hit.label ? ` — ${hit.label}` : ''}`,
+          )
           .join('\n');
       },
     },

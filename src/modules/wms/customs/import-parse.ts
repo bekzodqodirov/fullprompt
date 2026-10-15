@@ -7,21 +7,34 @@
  * parser silently reads prices out of the weight column the first time the
  * service changes anything.
  *
- * Zero imports on purpose: the header matrix, the unit map and the name
+ * Pure on purpose: the header matrix, the unit map and the name
  * normalisation are the round's most-tested rules, and they must be callable
- * from a unit test with no database, no storage and no Excel.
+ * from a unit test with no database, no storage and no Excel. Its ONE import
+ * is the kernel's code reader (2026-10-09), pure itself — one reading of a
+ * TNVED cell for every door, the quarterly file included (#513).
  */
+import { normalizeTnved } from '../calc/units';
 
-/** The five units this system can price. The file's own words map onto them. */
-export type ImportUnit = 'kg' | 'dona' | 'm2' | 'juft' | 'litr';
+/**
+ * The six units this system can price. The file's own words map onto them.
+ * One per baza basis (dona is the file's word for the basis 'unit'), held to
+ * `BAZA_BASES` by `tests/unit/basis-vocabulary.test.ts` — this file stays
+ * zero-import, so the union is restated rather than imported.
+ */
+export type ImportUnit = 'kg' | 'dona' | 'm3' | 'm2' | 'juft' | 'litr';
 
 /**
  * The file's unit words → ours. Measured on his sample: кг 74 %, шт 25 %,
- * м2 / пар / л under half a percent between them.
+ * м2 / пар / л under half a percent between them — and every other unit, м3
+ * included, at most about 1 % (docs/VED-IMPORT-AI.md). m³ joined in 0125
+ * (his 19a); quarters uploaded before it skipped those lines as
+ * `unknown_unit` and only a NEW upload brings them in.
  *
  * Anything else is SKIPPED and counted, never guessed: «компл» could be a
  * set of four or of four hundred, and a wrong unit prices the whole line
- * wrong while looking perfectly filled in.
+ * wrong while looking perfectly filled in. CUBIC CENTIMETRES stay out on
+ * purpose — «куб см», «см3» — because nothing is valued per cm³ (#868), and
+ * a vehicle's displacement read as cubic metres is off by a million.
  */
 const UNIT_WORDS: Record<string, ImportUnit> = {
   кг: 'kg',
@@ -35,6 +48,13 @@ const UNIT_WORDS: Record<string, ImportUnit> = {
   'м²': 'm2',
   m2: 'm2',
   'кв м': 'm2',
+  // «куб.м» normalises to «куб м» (dots and spaces fold to one space).
+  м3: 'm3',
+  'м³': 'm3',
+  m3: 'm3',
+  'm³': 'm3',
+  'куб м': 'm3',
+  кубометр: 'm3',
   пар: 'juft',
   пара: 'juft',
   juft: 'juft',
@@ -269,10 +289,17 @@ export function parseRow(
     return i === undefined ? undefined : cells[i];
   };
 
-  const code = String(at('tnvedCode') ?? '')
-    .replace(/\s/g, '')
-    .trim();
-  if (!CODE_SHAPE.test(code)) return { ok: false, reason: 'bad_code' };
+  // Through the kernel's ONE reading of a code (P2.10a, judge MR-18): a
+  // NUMERIC cell of nine digits is a ten-digit code whose leading zero Excel
+  // dropped (0401… stored as 401…), padded back — unpadded, «401100000»
+  // longest-prefixed onto heading 4011 (tyres, 10 %) instead of 0401 (milk).
+  // A nine-digit TEXT cell was typed that way and is not guessed at.
+  const rawCode = at('tnvedCode');
+  const normal = normalizeTnved(typeof rawCode === 'number' ? rawCode : String(rawCode ?? ''));
+  if (normal === null || !('code' in normal) || !CODE_SHAPE.test(normal.code)) {
+    return { ok: false, reason: 'bad_code' };
+  }
+  const code = normal.code;
 
   const name = String(at('name') ?? '').trim();
   if (!name) return { ok: false, reason: 'no_name' };

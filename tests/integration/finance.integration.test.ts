@@ -27,6 +27,7 @@ import {
   voidTransaction,
 } from '@/modules/wms/finance/service';
 import { IssueError, issueBoxes } from '@/modules/wms/issue/service';
+import { deleteDebtReleasedFor } from '../fixtures/debt-released';
 import { wholeLedger } from '../fixtures/money-actor';
 
 /**
@@ -83,6 +84,8 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // The debt-gate release told the DEMO owner and accountant (0126, D6a).
+  if (clientId) await deleteDebtReleasedFor([clientId]);
   await pgClient.end();
 });
 
@@ -299,8 +302,17 @@ describe('debt gate on issue (owner: debtor cargo only with manager permission)'
       issueBoxes({ ...base, handoverId: uuidv4(), debtOk: false }, ctx(), wholeLedger(actorId)),
     ).rejects.toMatchObject({ code: 'debt_block' } satisfies Partial<IssueError>);
 
-    const handover = await issueBoxes({ ...base, handoverId: uuidv4(), debtOk: true }, ctx(), wholeLedger(actorId));
+    // Since 0126 (the owner's D4a) the tick says WHY, for everybody who ticks.
+    await expect(
+      issueBoxes({ ...base, handoverId: uuidv4(), debtOk: true }, ctx(), wholeLedger(actorId)),
+    ).rejects.toMatchObject({ code: 'debt_note_required' } satisfies Partial<IssueError>);
+    const handover = await issueBoxes(
+      { ...base, handoverId: uuidv4(), debtOk: true, debtNote: 'finance izoh' },
+      ctx(),
+      wholeLedger(actorId),
+    );
     expect(handover.debtOk).toBe(true);
+    expect(handover.debtNote).toBe('finance izoh');
     const after = (await db.select().from(boxes).where(eq(boxes.id, box.id)))[0]!;
     expect(after.status).toBe('issued');
   });

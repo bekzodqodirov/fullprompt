@@ -91,7 +91,7 @@ async function answeredRequest(
 ): Promise<string> {
   const id = await openRequest(dealId);
   await takeCalcRequest(id, ctx());
-  await finishCalcRequest(id, { amount, currency, note: 'gotovo' }, ctx());
+  await finishCalcRequest(id, { amountText: String(amount), currency, note: 'gotovo', internalNote: 'ichki: gotovo' }, ctx());
   return id;
 }
 

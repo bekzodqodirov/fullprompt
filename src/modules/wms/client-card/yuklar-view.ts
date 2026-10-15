@@ -12,6 +12,8 @@ import { cargoTrucks, clientCargoNow, clientCargoNowOnce } from '../inventory/cl
 import { foldCargoNow, NOW_SECTIONS, type CargoNow } from '../inventory/client-cargo-fold';
 import { firstLotPhotos } from '../receipts/first-photo';
 import { receiptsReadableBy } from '../receipts/read-door';
+import { lotCheckViewsFor } from '../receipts/lot-check';
+import type { LotCheckState } from '../receipts/lot-check-sql';
 import { trucksOnRoadRows } from '../tracking/on-road';
 import type { TruckRow } from '../tracking/on-road-state';
 import { historyRefs } from './history-refs';
@@ -46,6 +48,14 @@ export interface YuklarView {
   actOpen: Set<string>;
   /** A history leg's truck id by its code, only where the truck card admits the reader. */
   legTruck: Map<string, string>;
+  /**
+   * «Yuk ma'lumoti tekshirildi» of every lot the tab draws, so one call
+   * covers all of this client's cargo (docs/YUK-TEKSHIRUV.md §6). Empty on a
+   * half-applied deploy.
+   */
+  checks: Map<string, LotCheckState>;
+  /** The Chinese warehouses the cargo stands in — where the ❓ is asked (his 4a). */
+  askableWarehouses: Set<string>;
 }
 
 type Reader = ScopedActor & { permissions: { has(code: string): boolean } };
@@ -108,6 +118,17 @@ export async function loadYuklarView(
     ),
   ]);
   const now = foldCargoNow(data.rows, data.trucks, arrivals, opts.today);
+  const checks = new Map<string, LotCheckState>();
+  const lotIds = [...new Set(data.rows.map((row) => row.lotId))];
+  if (lotIds.length > 0) {
+    // Caught: the table is minted this release (#472) — a tab without its
+    // chips beats an error page.
+    const views = await lotCheckViewsFor(lotIds).catch(() => new Map());
+    for (const [lotId, view] of views) checks.set(lotId, view.state);
+  }
+  const askableWarehouses = new Set(
+    data.rows.flatMap((row) => (row.warehouseId && row.whCountry === 'CN' ? [row.warehouseId] : [])),
+  );
 
   // Every truck the tab names: those the cargo is on or going onto (the live
   // pointer) and those that brought what stands (the arrival rule).
@@ -175,5 +196,7 @@ export async function loadYuklarView(
     history: { ...history, cap: HISTORY_CAP },
     actOpen,
     legTruck,
+    checks,
+    askableWarehouses,
   };
 }

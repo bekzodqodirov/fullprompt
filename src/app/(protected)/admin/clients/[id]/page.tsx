@@ -25,6 +25,8 @@ import { TelegramLookback } from '@/components/telegram-lookback';
 import { CallsPanel } from '@/components/calls-panel';
 import { ClientDeals } from '@/components/client-deals';
 import { ClientCard } from '@/components/client-card';
+import { ThreadSeen } from '@/components/thread-seen';
+import { threadReadMarks } from '@/modules/wms/crm/thread';
 
 export default async function ClientDetailPage({
   params,
@@ -96,6 +98,9 @@ export default async function ClientDetailPage({
     const qs = q.toString();
     return `/admin/clients/${client.id}${qs ? `?${qs}` : ''}`;
   };
+  // The lenta's read marks, «as of» the newest message BEFORE the lenta is
+  // drawn (a note landing after it stays ● — never read for the person).
+  const readMarks = await threadReadMarks([{ kind: 'client' as const, id: client.id }]);
 
   return (
     // The h1, the copy chip and the «Umumiy | Pul» strip are the shell's —
@@ -133,6 +138,7 @@ export default async function ClientDetailPage({
                 the working surface of the card (owner: the amoCRM shape).
                 Its money rows are the ledger's, for the ledger's audience. */}
             <ClientFeed clientId={client.id} money={canSeeMoney} tall />
+            <ThreadSeen refs={readMarks} />
             <TelegramThread
               clientId={client.id}
               hodim={hodim}

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import {
   calcGroups,
@@ -6,6 +6,7 @@ import {
   calcRequestItems,
   calcRequests,
   crmActivities,
+  dealLines,
   deals,
   leads,
   tasks,
@@ -18,10 +19,29 @@ import { usersWithPermission, usersWithRoles } from '@/modules/platform/notifica
 import { canLogInSql } from '@/modules/platform/users/login';
 import { cardLink } from '@/modules/platform/notifications/links';
 import { logger } from '@/modules/platform/logger';
+import { retireTaskCopiesSoon } from '@/modules/platform/notifications/retire-tasks';
+import { clipText } from '@/modules/platform/telegram/format';
+import { kickPriceChannel, queuePriceChannelPost } from './channel-queue';
 import { addActivity } from '../crm/service';
 import { productKey, tnvedFor } from '../tnved/service';
 import { NO_REQUEST, itemNameNorm, sealedMemoryFor } from './memory';
-import { isComplete, missingFields, type CalcFacts, type CalcSection } from './intake';
+import {
+  isComplete,
+  lineNeeds,
+  missingFields,
+  type CalcFacts,
+  type CalcGoodsFact,
+  type CalcSection,
+  type LineNeed,
+} from './intake';
+import { bookLawsFor } from './book-laws';
+import { doorRow } from './door-row';
+import type { NeedLaw } from './needs';
+import type { BazaBasis, MeasureUnit } from './pricing';
+import { parseTypedMoney } from './money-input';
+import { childStateSql, type ChildState } from './chain';
+import { creditsSql, isAnswer, isAnswerSql } from './credit';
+import type { InternalNoteSight } from './control-scope';
 
 /**
  * The VED queue (docs/VED.md, phase A).
@@ -94,31 +114,45 @@ export function calcDueMinutes(itemCount: number, hasMaterials = false): number 
 export const openRequests = isNull(calcRequests.completedAt);
 
 /**
+ * Who may be HANDED a calculation by the machine — the queue's rota and the
+ * correction's «back to whoever priced it» (review ved-correctness-1) ask
+ * this ONE predicate: holds `ved.docs`, can still sign in, and is not an
+ * admin or the owner.
+ *
+ * THE OWNER AND THE ADMINS ARE NOT IN THE ROTA (his «1.1», audit A13).
+ * `ved.docs` is held by every admin role as well as by the VED, and the rota
+ * puts «never had one» FIRST — so every fresh bot or card request was
+ * auto-assigned to the OWNER, minting a timed priority-1 task on him and
+ * making the queue read «Взял: Bekzod» on work he was never going to do.
+ * Measured on his own data. A correction routed «to whoever priced the
+ * parent» would bring that back for every job he sealed himself, so it asks
+ * the same subtraction. They keep the manual «Olaman» door.
+ */
+export async function vedRotaPool(): Promise<string[]> {
+  const adminIds = new Set(await usersWithRoles(['super_admin', 'admin']));
+  const pool = (await usersWithPermission('ved.docs')).filter((id) => !adminIds.has(id));
+  if (pool.length === 0) return [];
+  const rows = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(and(canLogInSql(), inArray(users.id, pool)));
+  return rows.map((row) => row.id);
+}
+
+/**
  * Whose turn it is to calculate: fewest OPEN requests, longest-since breaks a
- * tie, never-had-one sorts FIRST.
+ * tie, never-had-one sorts FIRST — over `vedRotaPool`.
  *
  * The counting rule is the taqsimot rota's (`crm/routing.ts` — round 96) and
  * the comment there explains why it is worth restating rather than sharing:
  * that one answers «whose lead is this», this one «whose calculation is
  * this», and a shared query would have to take a table name as an argument.
+ * When the pool is empty — a company whose only `ved.docs` holders are
+ * admins — the request is stored UNASSIGNED, which is an honest state the
+ * queue already draws and the overdue sweep already announces to the pool.
  */
 export async function nextVedAssignee(): Promise<string | null> {
-  /**
-   * THE OWNER AND THE ADMINS ARE NOT IN THE ROTA (his «1.1», audit A13).
-   *
-   * `ved.docs` is held by every admin role as well as by the VED, and the
-   * ordering below puts «never had one» FIRST — so every fresh bot or card
-   * request was auto-assigned to the OWNER, minting a timed priority-1 task
-   * on him and making the queue screen read «Взял: Bekzod» on work he was
-   * never going to do. Measured on his own data.
-   *
-   * They keep the manual «Olaman» door. When the subtraction empties the
-   * pool — a company whose only `ved.docs` holders are admins — the request
-   * is stored UNASSIGNED, which is an honest state the queue already draws
-   * and the overdue sweep already announces to the whole pool.
-   */
-  const adminIds = new Set(await usersWithRoles(['super_admin', 'admin']));
-  const pool = (await usersWithPermission('ved.docs')).filter((id) => !adminIds.has(id));
+  const pool = await vedRotaPool();
   if (pool.length === 0) return null;
   const rows = await db
     .select({
@@ -128,7 +162,7 @@ export async function nextVedAssignee(): Promise<string | null> {
     })
     .from(users)
     .leftJoin(calcRequests, and(eq(calcRequests.assigneeId, users.id), openRequests))
-    .where(and(canLogInSql(), inArray(users.id, pool)))
+    .where(inArray(users.id, pool))
     .groupBy(users.id)
     .orderBy(
       sql`count(${calcRequests.id}) asc, max(${calcRequests.requestedAt}) asc nulls first`,
@@ -139,10 +173,18 @@ export async function nextVedAssignee(): Promise<string | null> {
 
 export interface CalcItemInput {
   name: string;
+  /** PIECES. A door holding a number in another unit passes its word in
+   * `unit`, and the door routes it (`door-row.ts`); a carton count is never
+   * pieces — it lives in the note (judge MR-25: no column this round). */
   quantity?: number | null;
   unit?: string | null;
+  /** NET kg of this line (2026-10-09: the line's weight is netto). */
   weightKg?: number | null;
   volumeM3?: number | null;
+  /** The line's m² / juft / litr / sm³ — the pair 0092 stores, stated by a
+   * door that already knows its unit (the card form's table, the AI's unit). */
+  measureUnit?: MeasureUnit | null;
+  measureQty?: number | null;
   amount?: number | null;
   currency?: string | null;
   tnvedCode?: string | null;
@@ -283,30 +325,37 @@ export async function openCalcRequest(
    * (`saveTable`), where the group's law says which unit may price the row —
    * a price without that check is a number in the wrong unit.
    */
+  // ONE normalisation for every door (P1.2): the number into the column its
+  // unit names, the code shape-checked — the kernel's two rules, applied by
+  // `doorRow` and by nothing else, so a card row, a bot row, a thread row
+  // and an invoice row of the same goods land the same columns.
+  const rows = input.items.map((item) => doorRow(item));
   const [known, sealedMemory] = await Promise.all([
-    tnvedFor(input.items.map((item) => item.name)),
-    sealedMemoryFor(input.items.map((item) => item.name), { excludeRequestId: NO_REQUEST }),
+    tnvedFor(rows.map((row) => row.name)),
+    sealedMemoryFor(rows.map((row) => row.name), { excludeRequestId: NO_REQUEST }),
   ]);
-  const items = input.items.map((item, i) => ({
+  const items = rows.map((row, i) => ({
     seq: i + 1,
-    name: item.name.slice(0, 300),
-    nameNorm: itemNameNorm(item.name.slice(0, 300)),
-    quantity: num(item.quantity),
-    unit: item.unit?.slice(0, 20) || null,
-    weightKg: num(item.weightKg),
-    volumeM3: num(item.volumeM3),
-    amount: num(item.amount),
-    currency: item.currency?.slice(0, 8) || null,
+    name: row.name,
+    nameNorm: itemNameNorm(row.name),
+    quantity: num(row.quantity),
+    unit: row.unit,
+    weightKg: num(row.weightKg),
+    volumeM3: num(row.volumeM3),
+    measureUnit: row.measureUnit,
+    measureQty: num(row.measureQty),
+    amount: num(input.items[i]!.amount),
+    currency: input.items[i]!.currency?.slice(0, 8) || null,
     tnvedCode:
-      item.tnvedCode ||
-      sealedMemory.get(itemNameNorm(item.name))?.tnvedCode ||
-      known.get(productKey(item.name))?.tnvedCode ||
+      row.tnvedCode ||
+      sealedMemory.get(itemNameNorm(row.name))?.tnvedCode ||
+      known.get(productKey(row.name))?.tnvedCode ||
       null,
     // `memory_item_id` is deliberately NOT written here. It names the seal a
     // BAZA was copied from, and no baza is filled at intake — the workspace's
     // first save does that, under the group's own law, and writes the
     // provenance in the same statement. One column, one fact.
-    note: item.note?.slice(0, 500) || null,
+    note: row.note,
   }));
 
   const assigneeId = await nextVedAssignee();
@@ -371,6 +420,9 @@ export async function openCalcRequest(
           repeatEvery: 1,
         },
         ctx,
+        // Bound to the request: the task carries the queue's deadline, and
+        // no task door may move it or close the job (docs/VED-TARIX.md §8).
+        { origin: 'calc', boundId: requestId },
       );
       await db
         .update(calcRequests)
@@ -443,6 +495,8 @@ export async function takeCalcRequest(id: string, ctx: AuditContext): Promise<vo
       .update(tasks)
       .set({ assigneeId: ctx.actorId, updatedAt: new Date() })
       .where(and(eq(tasks.id, won.taskId), eq(tasks.status, 'open')));
+    // The previous holder's copies say it moved on; the taker's own survive.
+    retireTaskCopiesSoon({ taskIds: [won.taskId], outcome: 'reassigned', exceptUserIds: [ctx.actorId] });
   } else {
     const label = await requestLabel(won.entityType, won.entityId);
     try {
@@ -460,6 +514,7 @@ export async function takeCalcRequest(id: string, ctx: AuditContext): Promise<vo
           repeatEvery: 1,
         },
         ctx,
+        { origin: 'calc', boundId: id },
       );
       await db
         .update(calcRequests)
@@ -492,29 +547,40 @@ export async function takeCalcRequest(id: string, ctx: AuditContext): Promise<vo
  */
 export async function releaseCalcRequest(id: string, ctx: AuditContext): Promise<void> {
   if (!ctx.actorId) throw new CalcError('unauthenticated');
-  const rows = await db
-    .update(calcRequests)
-    .set({ assigneeId: null, taskId: null, takenAt: null, updatedAt: new Date() })
-    .where(and(eq(calcRequests.id, id), openRequests))
-    .returning({
-      entityType: calcRequests.entityType,
-      entityId: calcRequests.entityId,
-      // The PREVIOUS holder's task — `returning` on an UPDATE hands back the
-      // new row, so this is read before the set in the same statement.
-      taskId: calcRequests.taskId,
-    });
-  const row = rows[0];
+  // The PREVIOUS holder's task is read under the row lock, in the same
+  // transaction as the release. It used to come back from the UPDATE's own
+  // `RETURNING`, under a comment saying that read the row «before the set» —
+  // but PostgreSQL 16's RETURNING is the NEW row (OLD in RETURNING arrived in
+  // 18), so the task id read back as the NULL just written and every
+  // «Bo'shatish» ever pressed left an open priority-1 «Hisoblash: …» on the
+  // old holder's /bugun and in the 08:00 digest, pointing at a request that no
+  // longer names it.
+  const row = await db.transaction(async (tx) => {
+    const [held] = await tx
+      .select({ entityType: calcRequests.entityType, entityId: calcRequests.entityId, taskId: calcRequests.taskId })
+      .from(calcRequests)
+      .where(and(eq(calcRequests.id, id), openRequests))
+      .for('update');
+    if (!held) return null;
+    await tx
+      .update(calcRequests)
+      .set({ assigneeId: null, taskId: null, takenAt: null, updatedAt: new Date() })
+      .where(eq(calcRequests.id, id));
+    // The task goes with the work. Leaving it open would put a timed job on
+    // somebody's /bugun for a calculation they no longer hold — the ghost the
+    // take path is careful not to create, arriving through the other door.
+    if (held.taskId) {
+      await tx
+        .update(tasks)
+        .set({ status: 'cancelled', result: 'Navbatga qaytarildi', updatedAt: new Date() })
+        .where(and(eq(tasks.id, held.taskId), eq(tasks.status, 'open')));
+    }
+    return held;
+  });
   if (!row) throw new CalcError('already_closed');
-  // The task goes with the work. Leaving it open would put a timed job on
-  // somebody's /bugun for a calculation they no longer hold, pointing at a
-  // request that no longer names it — the ghost the take path is careful not
-  // to create, arriving through the other door.
-  if (row.taskId) {
-    await db
-      .update(tasks)
-      .set({ status: 'cancelled', result: 'Navbatga qaytarildi', updatedAt: new Date() })
-      .where(and(eq(tasks.id, row.taskId), eq(tasks.status, 'open')));
-  }
+  // The cancelled task's Telegram copies stop offering its button (after the
+  // commit, #714).
+  if (row.taskId) retireTaskCopiesSoon({ taskIds: [row.taskId], outcome: 'cancelled' });
   await writeAudit(db, ctx, {
     entityType: row.entityType,
     entityId: row.entityId,
@@ -537,6 +603,7 @@ async function endRequest(
     answerAmount?: number | null;
     answerCurrency?: string | null;
     answerNote?: string | null;
+    answerInternalNote?: string | null;
   },
 ): Promise<{
   entityType: string;
@@ -555,6 +622,7 @@ async function endRequest(
       answerAmount: num(patch.answerAmount ?? null),
       answerCurrency: patch.answerCurrency ?? null,
       answerNote: patch.answerNote ?? null,
+      answerInternalNote: patch.answerInternalNote ?? null,
       updatedAt: now,
     })
     .where(and(eq(calcRequests.id, id), openRequests))
@@ -579,7 +647,17 @@ async function endRequest(
         updatedAt: now,
       })
       .where(and(eq(tasks.id, row.taskId), eq(tasks.status, 'open')));
+    // The job's Telegram copies stop offering a button for a task that is no
+    // longer open — after the write, never inside a transaction (#714). A
+    // hand-back is not «✅ Bajarildi»: the task's own result reads
+    // «Qaytarildi», and nothing was calculated (review integration-5).
+    retireTaskCopiesSoon({ taskIds: [row.taskId], outcome: patch.via === 'returned' ? 'cancelled' : 'done' });
   }
+  // ONE line for the four doors that end a request (Готово, hand-back,
+  // «lines», a task close): when the request is a CORRECTION, its parent's
+  // channel post changes what it says, and the drain's reconcile derives how
+  // (his F; #531 — a guard on one door leaves the others open).
+  kickPriceChannel();
   return row;
 }
 
@@ -654,19 +732,59 @@ export async function returnCalcRequest(
         repeatEvery: 1,
       },
       ctx,
+      // The seller's own to-do from the VED's reason — not a hand-given task
+      // the VED tracks in «📤 Men bergan», and not bound to the calc clock.
+      { origin: 'calc_return' },
     );
   } catch (err) {
     logger.error({ err, id }, '[calc] return task creation failed');
   }
 }
 
-/** Done — with the figure the seller is waiting for. */
+/** The currencies the fold offers — the answer is typed as the VED read it. */
+const ANSWER_CURRENCIES = new Set(['USD', 'UZS', 'CNY']);
+
+/** The column is numeric(14,2): a figure with more integer digits is a 22003. */
+const ANSWER_AMOUNT_MAX = 1e12;
+
+/**
+ * Done — with the figure the seller is waiting for, and the VED's own note on
+ * how it was reached (the owner's 9a).
+ *
+ * The amount arrives as TEXT and is read HERE (review ved-correctness-13,
+ * tests-completeness-2). The fold used to parse it in the browser and post
+ * `number | null`, so an empty box and «1200$» both arrived as null — and the
+ * job CLOSED with no price and no error, a live defect. Only a server that
+ * sees the typing can tell «nothing written» from «written, unreadable».
+ *
+ * The refusal ORDER is part of the rule (review §13, tests-completeness-1):
+ * a closed job says so first; a job that could be SEALED says «Muhrlang»
+ * before anything is asked of the amount — the fold on a sealable job must
+ * not read «summa majburiy»; then the amount; then the note.
+ *
+ * The internal note never leaves the calc side: it is written to its own
+ * column, audited under the REQUEST (`entity_type = 'calc_request'`, a row no
+ * seller's History tab reads), and is absent from the card's audit row, the
+ * seller's Telegram and every offer surface — a fence test reads those
+ * expressions for it.
+ */
 export async function finishCalcRequest(
   id: string,
-  answer: { amount?: number | null; currency?: string | null; note?: string | null },
+  answer: {
+    amountText: string;
+    currency?: string | null;
+    note?: string | null;
+    internalNote: string;
+  },
   ctx: AuditContext,
 ): Promise<void> {
   if (!ctx.actorId) throw new CalcError('unauthenticated');
+  const current = await db.query.calcRequests.findFirst({
+    where: eq(calcRequests.id, id),
+    columns: { id: true, completedAt: true },
+  });
+  if (!current) throw new CalcError('not_found');
+  if (current.completedAt) throw new CalcError('already_closed');
   // Round 112: a job the VED could SEAL is not closed with a typed number. The
   // typed answer is phase A's fallback for a workspace that cannot price
   // (#775); on one that can, it was a way past the seal — no version on the
@@ -677,45 +795,82 @@ export async function finishCalcRequest(
   const { loadWorkspace, canSeal } = await import('./workspace');
   const workspace = await loadWorkspace(id);
   if (workspace && canSeal(workspace)) throw new CalcError('seal_instead');
+
   /**
-   * «1 000» IS NOT A NUMBER (audit A3).
+   * «1 000» IS NOT A NUMBER (audit A3), and «1200$» is not one either.
    *
-   * `Number('1 000')` is NaN, and NaN passes every guard made of
-   * comparisons: `answer.amount != null` was TRUE, so the request closed
-   * with `answer_currency = 'USD'` and `answer_amount` NULL — a currency with
-   * no amount — and the seller's Telegram read «💵 NaN USD». The form parses
-   * spaces now, and this is the fence behind it (#531: a screen guard alone
-   * leaves the action accepting it).
+   * `parseTypedMoney` reads the office's typing (spaces, NBSP, «1,5»,
+   * «1,000») and answers null for anything else — never NaN travelling on as
+   * a figure. Three refusals, three sentences: nothing written, written but
+   * unreadable, and not a price at all (0 or below — 0093's CHECK would
+   * refuse it as a 23514 white page).
    */
-  if (answer.amount !== undefined && answer.amount !== null && !Number.isFinite(answer.amount)) {
-    throw new CalcError('bad_number');
-  }
+  const typed = (answer.amountText ?? '').trim();
+  if (!typed) throw new CalcError('answer_amount_required');
+  const parsed = parseTypedMoney(typed);
+  if (parsed === null) throw new CalcError('answer_amount_unreadable');
+  // Guard the STORED value, not the typed one (#918, review ved-money-3): the
+  // column is numeric(14,2), so «0,004» passes `> 0` in JS and lands as 0.00
+  // — 0093's CHECK then refuses it as a raw 23514 white page — and the
+  // seller's push and the audit would carry 1200.456 while 1200.46 is stored.
+  // Rounded once here, this one figure is what every write below carries.
+  const amount = Math.round(parsed * 100) / 100;
+  if (!(amount > 0)) throw new CalcError('answer_positive');
+  if (amount >= ANSWER_AMOUNT_MAX) throw new CalcError('amount_range');
+  // By CODE POINTS (review ved-money-4, Round C's clipText): `slice` can cut
+  // an emoji's surrogate pair in half, and the request's audit row carries
+  // this text in jsonb, which refuses the lone half (22P02) — after the job
+  // is already closed.
+  const internalNote = clipText((answer.internalNote ?? '').trim(), 2000);
+  if (!internalNote) throw new CalcError('internal_note_required');
+  const currency = (answer.currency ?? '').trim().toUpperCase() || 'USD';
+  if (!ANSWER_CURRENCIES.has(currency)) throw new CalcError('validation');
+  const sellerNote = clipText(answer.note?.trim() ?? '', 2000) || null;
+
   const row = await endRequest(id, {
     via: 'task',
     actorId: ctx.actorId,
-    answerAmount: answer.amount ?? null,
-    answerCurrency: answer.amount != null ? answer.currency || 'USD' : null,
-    answerNote: answer.note?.trim().slice(0, 2000) || null,
+    answerAmount: amount,
+    answerCurrency: currency,
+    answerNote: sellerNote,
+    answerInternalNote: internalNote,
   });
   if (!row) throw new CalcError('already_closed');
+  // The price channel's claim (his F6 a: «Готово» answers too) — right after
+  // the job closed, before anything that can throw; its own catch, and the
+  // drain's net picks up a row this misses.
+  await queuePriceChannelPost({ kind: 'answer', requestId: id }).catch((err) =>
+    logger.error({ err, id }, '[price-channel] not queued'),
+  );
   const label = await requestLabel(row.entityType, row.entityId);
-  const money =
-    answer.amount != null ? `\n💵 ${answer.amount} ${answer.currency || 'USD'}` : '';
-  await writeAudit(db, ctx, {
-    entityType: row.entityType,
-    entityId: row.entityId,
-    action: 'update',
-    after: { calcDone: id, amount: answer.amount ?? null },
-  });
+  // The seller's push goes BEFORE the bookkeeping (review ved-money-4): the
+  // job is already closed with its price, so an audit write that throws
+  // below must not also swallow the one message that tells the seller — a
+  // second press reads «already closed» and nobody would ever send it.
   await notifyStaffTelegram({
     userIds: [row.requestedBy],
     type: 'CalcDone',
     text:
-      `✅ Hisoblash tayyor: ${label}${money}` +
-      `${answer.note ? `\n📝 ${answer.note.slice(0, 300)}` : ''}` +
+      `✅ Hisoblash tayyor: ${label}\n💵 ${amount} ${currency}` +
+      `${sellerNote ? `\n📝 ${clipText(sellerNote, 300)}` : ''}` +
       linkLine(row.entityType, row.entityId),
     exceptUserId: ctx.actorId,
   }).catch((err) => logger.error({ err, id }, '[calc] done notify failed'));
+  // The CARD's row: the seller reads the card's History tab, so this one
+  // carries the figure and nothing of the VED's reasoning.
+  await writeAudit(db, ctx, {
+    entityType: row.entityType,
+    entityId: row.entityId,
+    action: 'update',
+    after: { calcDone: id, amount },
+  });
+  // The REQUEST's own row: where the internal note is on the record.
+  await writeAudit(db, ctx, {
+    entityType: 'calc_request',
+    entityId: id,
+    action: 'update',
+    after: { calcDone: id, amount, currency, calcInternalNote: internalNote },
+  });
 }
 
 /**
@@ -727,11 +882,30 @@ export async function finishCalcRequest(
  * is not a calculation.
  */
 export async function completeCalcForDeal(dealId: string, actorId: string): Promise<void> {
+  /**
+   * A QUEUE JOB IS NOT ENDED BY THE SELLER'S «POZITSIYALAR» (docs/VED-TARIX.md
+   * §8, review ved-correctness-9 — the fourth door).
+   *
+   * Every request that carries a SECTION came in through the VED queue
+   * (0085's job), and the owner's 9a makes its ending a PRICE with an
+   * internal note — or a seal, or a hand-back. A seller saving the deal's
+   * lines closed such a job with no price and no note, exactly as the three
+   * task ✅ doors did, and #531 says a guard on one door leaves the others
+   * open. So the 'lines' ending is kept only for a request with no section —
+   * the phase-A/round-28 shape it was written for, where the lines WERE the
+   * calculation. Stated: such an old row, closed this way, reads «Narxsiz
+   * yopildi (pozitsiyalar)» on the closed page.
+   *
+   * In the QUERY, not after it: a deal carrying an old sectionless request
+   * beside a newer queue job still has the old one ended by its lines, and
+   * the queue job is not even looked at.
+   */
   const open = await db.query.calcRequests.findFirst({
     where: and(
       eq(calcRequests.entityType, 'deal'),
       eq(calcRequests.entityId, dealId),
       openRequests,
+      isNull(calcRequests.section),
     ),
     orderBy: asc(calcRequests.requestedAt),
   });
@@ -847,12 +1021,12 @@ export async function rekeyLeadCalcRequests(leadId: string, dealId: string): Pro
  * lives is already answered in one place, and a third copy is the thing #381
  * records (remembered in one place, forgotten in the other).
  */
-function linkLine(entityType: string, entityId: string): string {
+export function linkLine(entityType: string, entityId: string): string {
   const href = cardLink(entityType, entityId);
   return href ? `\n${href}` : '';
 }
 
-async function requestLabel(entityType: string, entityId: string): Promise<string> {
+export async function requestLabel(entityType: string, entityId: string): Promise<string> {
   if (entityType === 'deal') {
     const deal = await db.query.deals.findFirst({ where: eq(deals.id, entityId) });
     return deal?.code ?? '—';
@@ -967,7 +1141,11 @@ export interface CalcQueueRow {
   requesterName: string;
   assigneeId: string | null;
   assigneeName: string | null;
+  /** The lead's owner — what `calcCardHref` asks `mayOpenLead` with. */
+  leadOwnerId: string | null;
   missing: string[];
+  /** Which lines still owe which figure, by the BOOK's law (judge TT-5). */
+  lineNeeds: LineNeed[];
   late: boolean;
 }
 
@@ -994,12 +1172,14 @@ export async function calcQueue(now = new Date()): Promise<CalcQueueRow[]> {
     assignee_id: string | null;
     assignee_name: string | null;
     label: string | null;
+    lead_owner_id: string | null;
   }>(sql`
     SELECT r.id, r.entity_type, r.entity_id, r.section, r.from_city, r.to_city,
            r.weight_kg, r.volume_m3, r.item_count, r.requested_at, r.due_at,
            requester.full_name AS requester_name,
            r.assignee_id, assignee.full_name AS assignee_name,
-           coalesce(d.code, l.name) AS label
+           coalesce(d.code, l.name) AS label,
+           l.owner_id::text AS lead_owner_id
     FROM calc_requests r
     -- Every join onto a person is LEFT: a request nobody has taken is
     -- exactly the row this screen exists for, and an inner join drops it.
@@ -1014,34 +1194,41 @@ export async function calcQueue(now = new Date()): Promise<CalcQueueRow[]> {
   `);
   const ids = rows.map((row) => row.id);
   const goods = await goodsByRequest(ids);
-  return rows.map((row) => ({
-    id: row.id,
-    entityType: row.entity_type,
-    entityId: row.entity_id,
-    label: row.label ?? '—',
-    section: row.section,
-    fromCity: row.from_city,
-    toCity: row.to_city,
-    weightKg: toNum(row.weight_kg),
-    volumeM3: toNum(row.volume_m3),
-    itemCount: Number(row.item_count),
-    // A raw `db.execute` hands timestamps over as STRINGS — the typed query
-    // builder is what returns Dates — so every one is coerced here rather
-    // than crashing the first time somebody asks whether it is late.
-    requestedAt: new Date(row.requested_at),
-    dueAt: new Date(row.due_at),
-    requesterName: row.requester_name ?? '—',
-    assigneeId: row.assignee_id,
-    assigneeName: row.assignee_name,
-    missing: missingFor(row.section, {
+  // ONE book read for the whole queue (#432), on the pool (#714).
+  const laws = await bookLawsFor([...goods.values()].flat().map((g) => g.tnvedCode));
+  return rows.map((row) => {
+    const facts: CalcFacts = {
       fromCity: row.from_city,
       toCity: row.to_city,
       weightKg: toNum(row.weight_kg),
       volumeM3: toNum(row.volume_m3),
       goods: goods.get(row.id) ?? [],
-    }),
-    late: new Date(row.due_at).getTime() < now.getTime(),
-  }));
+    };
+    return {
+      id: row.id,
+      entityType: row.entity_type,
+      entityId: row.entity_id,
+      label: row.label ?? '—',
+      section: row.section,
+      fromCity: row.from_city,
+      toCity: row.to_city,
+      weightKg: toNum(row.weight_kg),
+      volumeM3: toNum(row.volume_m3),
+      itemCount: Number(row.item_count),
+      // A raw `db.execute` hands timestamps over as STRINGS — the typed query
+      // builder is what returns Dates — so every one is coerced here rather
+      // than crashing the first time somebody asks whether it is late.
+      requestedAt: new Date(row.requested_at),
+      dueAt: new Date(row.due_at),
+      requesterName: row.requester_name ?? '—',
+      assigneeId: row.assignee_id,
+      assigneeName: row.assignee_name,
+      leadOwnerId: row.lead_owner_id,
+      missing: missingFor(row.section, facts, laws),
+      lineNeeds: lineNeedsFor(row.section, facts, laws),
+      late: new Date(row.due_at).getTime() < now.getTime(),
+    };
+  });
 }
 
 /**
@@ -1063,6 +1250,88 @@ export async function calcQueueCounts(
 }
 
 /**
+ * How a calculation job ENDED — five ways, not three (review
+ * ved-correctness-20): a seal, a Готово answer, a hand-back, and a close with
+ * NO price at all, which the table holds in two shapes — the seller's
+ * «Позиции» save (`lines`, before this round's fourth-door fix) and a task ✅
+ * pressed with no figure (`task` without an amount, before 9a). The old
+ * closed page printed «Готово» for both price-less ones.
+ */
+export type CalcEnding = 'sealed' | 'answered' | 'returned' | 'unpriced_lines' | 'unpriced_task';
+
+export function endingOf(row: {
+  completedAt: Date | string | null;
+  completedVia: string | null;
+  answerAmount: number | string | null;
+}): CalcEnding | null {
+  if (!row.completedAt) return null;
+  if (row.completedVia === 'sealed') return 'sealed';
+  if (row.completedVia === 'returned') return 'returned';
+  if (isAnswer(row)) return 'answered';
+  return row.completedVia === 'lines' ? 'unpriced_lines' : 'unpriced_task';
+}
+
+export interface RecentClosedRow {
+  id: string;
+  entityType: string;
+  entityId: string;
+  label: string;
+  leadOwnerId: string | null;
+  section: string | null;
+  ending: CalcEnding;
+  completedAt: Date;
+  completedByName: string | null;
+}
+
+/**
+ * «Oxirgi yakunlanganlar» on the queue (10a's door back in): the last N
+ * closed jobs, every ending, newest first — who, when, how, each a link. A
+ * VED who answered a job with Готово had no way back to it before the history
+ * learned answers; this is the short way.
+ */
+export async function recentlyClosed(limit = 20): Promise<RecentClosedRow[]> {
+  const rows = await db.execute<{
+    id: string;
+    entity_type: string;
+    entity_id: string;
+    label: string | null;
+    lead_owner_id: string | null;
+    section: string | null;
+    completed_at: string;
+    completed_via: string | null;
+    answer_amount: string | null;
+    by_name: string | null;
+  }>(sql`
+    SELECT r.id::text AS id, r.entity_type, r.entity_id::text AS entity_id,
+           coalesce(d.code, l.name) AS label, l.owner_id::text AS lead_owner_id,
+           r.section, r.completed_at, r.completed_via, r.answer_amount,
+           u.full_name AS by_name
+      FROM calc_requests r
+      LEFT JOIN users u ON u.id = r.completed_by
+      LEFT JOIN deals d ON r.entity_type = 'deal' AND d.id = r.entity_id
+      LEFT JOIN leads l ON r.entity_type = 'lead' AND l.id = r.entity_id
+     WHERE r.completed_at IS NOT NULL
+     ORDER BY r.completed_at DESC
+     LIMIT ${limit}
+  `);
+  return rows.map((row) => {
+    // Raw-execute timestamps are TEXT (#923).
+    const completedAt = new Date(row.completed_at);
+    return {
+      id: row.id,
+      entityType: row.entity_type,
+      entityId: row.entity_id,
+      label: row.label ?? '—',
+      leadOwnerId: row.lead_owner_id,
+      section: row.section,
+      ending: endingOf({ completedAt, completedVia: row.completed_via, answerAmount: row.answer_amount })!,
+      completedAt,
+      completedByName: row.by_name,
+    };
+  });
+}
+
+/**
  * The goods, carrying every fact the CHECKLIST asks about.
  *
  * It projected `{name}` alone, which was harmless while the checklist only
@@ -1073,35 +1342,37 @@ export async function calcQueueCounts(
  * one the machine had just priced in full. A warning that fires on
  * everything names nothing (#649), introduced into the one surface this
  * round exists to strengthen.
+ *
+ * 2026-10-09 (judge TT-5): the code, the volume and the whole measure pair
+ * too — the checklist now asks the LAW what each line owes, and a volume or
+ * a pair is a figure in its own right. In `seq` order, because a line need is
+ * named by its row number.
  */
-type GoodsFact = {
-  name: string;
-  quantity: number | null;
-  weightKg: number | null;
-  measureQty: number | null;
-};
+type GoodsFact = CalcGoodsFact & { seq: number };
+
+const storedGoodsFact = (row: typeof calcRequestItems.$inferSelect): GoodsFact => ({
+  seq: row.seq,
+  name: row.name,
+  quantity: toNum(row.quantity),
+  weightKg: toNum(row.weightKg),
+  volumeM3: toNum(row.volumeM3),
+  measureUnit: (row.measureUnit as MeasureUnit | null) ?? null,
+  measureQty: toNum(row.measureQty),
+  tnvedCode: row.tnvedCode,
+  bazaBasis: (row.bazaBasis as BazaBasis | null) ?? null,
+});
 
 async function goodsByRequest(ids: string[]): Promise<Map<string, GoodsFact[]>> {
   if (ids.length === 0) return new Map();
   const rows = await db
-    .select({
-      requestId: calcRequestItems.requestId,
-      name: calcRequestItems.name,
-      quantity: calcRequestItems.quantity,
-      weightKg: calcRequestItems.weightKg,
-      measureQty: calcRequestItems.measureQty,
-    })
+    .select()
     .from(calcRequestItems)
-    .where(inArray(calcRequestItems.requestId, ids));
+    .where(inArray(calcRequestItems.requestId, ids))
+    .orderBy(asc(calcRequestItems.requestId), asc(calcRequestItems.seq));
   const out = new Map<string, GoodsFact[]>();
   for (const row of rows) {
     const list = out.get(row.requestId) ?? [];
-    list.push({
-      name: row.name,
-      quantity: toNum(row.quantity),
-      weightKg: toNum(row.weightKg),
-      measureQty: toNum(row.measureQty),
-    });
+    list.push(storedGoodsFact(row));
     out.set(row.requestId, list);
   }
   return out;
@@ -1114,10 +1385,64 @@ async function goodsByRequest(ids: string[]): Promise<Map<string, GoodsFact[]>> 
  * has used since round 37 — so the screen and the bot ask the card the same
  * question. A row written before 0085 has no section and therefore no
  * checklist: nobody ever said what kind of job it was.
+ *
+ * The facts are STORED rows: nothing is derived from the shipment total
+ * (`lineWeightsStated`) — a row the card form landed without a netto weight
+ * has none, and a chip calling it complete would contradict the engine.
  */
-export function missingFor(section: string | null, facts: CalcFacts): string[] {
+export function missingFor(
+  section: string | null,
+  facts: CalcFacts,
+  laws: ReadonlyMap<string, NeedLaw>,
+): string[] {
   if (!section) return [];
-  return missingFields(section as CalcSection, facts);
+  return missingFields(section as CalcSection, { ...facts, lineWeightsStated: true }, laws);
+}
+
+/** The lines behind `missingFor`'s `lineNeed` / `itemMeasure` — same facts. */
+export function lineNeedsFor(
+  section: string | null,
+  facts: CalcFacts,
+  laws: ReadonlyMap<string, NeedLaw>,
+): LineNeed[] {
+  if (!section) return [];
+  return lineNeeds(section as CalcSection, { ...facts, lineWeightsStated: true }, laws);
+}
+
+/**
+ * What a landed request still owes, read back from its STORED rows with the
+ * book's law — the seller's form prints it under ✅ (judge UX13: «Yuborildi.
+ * VED so‘raydi: 2-qator «Kurtka» — soni (dona)»), so the gap is heard at
+ * send time and not when the VED hands the job back. Pool reads only.
+ */
+export async function requestAsks(
+  requestId: string,
+): Promise<{ missing: string[]; lines: (LineNeed & { seq: number })[] }> {
+  const [row] = await db
+    .select({
+      section: calcRequests.section,
+      fromCity: calcRequests.fromCity,
+      toCity: calcRequests.toCity,
+      weightKg: calcRequests.weightKg,
+      volumeM3: calcRequests.volumeM3,
+    })
+    .from(calcRequests)
+    .where(eq(calcRequests.id, requestId))
+    .limit(1);
+  if (!row) return { missing: [], lines: [] };
+  const goods = (await goodsByRequest([requestId])).get(requestId) ?? [];
+  const laws = await bookLawsFor(goods.map((g) => g.tnvedCode));
+  const facts: CalcFacts = {
+    fromCity: row.fromCity,
+    toCity: row.toCity,
+    weightKg: toNum(row.weightKg),
+    volumeM3: toNum(row.volumeM3),
+    goods,
+  };
+  return {
+    missing: missingFor(row.section, facts, laws),
+    lines: lineNeedsFor(row.section, facts, laws).map((l) => ({ ...l, seq: goods[l.index]!.seq })),
+  };
 }
 
 export { isComplete };
@@ -1127,10 +1452,15 @@ export interface CalcRequestDetail extends CalcQueueRow {
   source: string | null;
   completedAt: Date | null;
   completedVia: string | null;
+  /** Who ENDED it — the sealer, the answerer, the person who handed it back. */
+  completedByName: string | null;
   returnReason: string | null;
   answerAmount: number | null;
   answerCurrency: string | null;
   answerNote: string | null;
+  /** The stored rows as the checklist reads them — the page re-asks the
+   * GROUP's law for a grouped line (judge S9) over these same facts. */
+  goodsFacts: (CalcGoodsFact & { seq: number })[];
   items: {
     seq: number;
     name: string;
@@ -1143,6 +1473,35 @@ export interface CalcRequestDetail extends CalcQueueRow {
     tnvedCode: string | null;
     note: string | null;
   }[];
+}
+
+/**
+ * The VED page's checklist (judge S9): a GROUPED line answers to its group's
+ * law — the one ⚙ may have typed and the one the row's cell border reads —
+ * and an ungrouped line to the book. `groupLawBySeq` null (no workspace on
+ * screen) keeps the book's reading `calcRequestDetail` already made.
+ */
+export async function checklistFor(
+  detail: Pick<CalcRequestDetail, 'section' | 'fromCity' | 'toCity' | 'weightKg' | 'volumeM3' | 'goodsFacts' | 'missing' | 'lineNeeds'>,
+  groupLawBySeq: ReadonlyMap<number, NeedLaw> | null,
+): Promise<{ missing: string[]; lines: (LineNeed & { seq: number })[] }> {
+  const seqOf = (l: LineNeed) => detail.goodsFacts[l.index]?.seq ?? l.index + 1;
+  if (!groupLawBySeq) {
+    return { missing: detail.missing, lines: detail.lineNeeds.map((l) => ({ ...l, seq: seqOf(l) })) };
+  }
+  const goods = detail.goodsFacts.map((g) => (groupLawBySeq.has(g.seq) ? { ...g, law: groupLawBySeq.get(g.seq)! } : g));
+  const laws = await bookLawsFor(goods.filter((g) => g.law === undefined).map((g) => g.tnvedCode));
+  const facts: CalcFacts = {
+    fromCity: detail.fromCity,
+    toCity: detail.toCity,
+    weightKg: detail.weightKg,
+    volumeM3: detail.volumeM3,
+    goods,
+  };
+  return {
+    missing: missingFor(detail.section, facts, laws),
+    lines: lineNeedsFor(detail.section, facts, laws).map((l) => ({ ...l, seq: seqOf(l) })),
+  };
 }
 
 /** One request, with its goods — the VED person's whole screen. */
@@ -1169,7 +1528,16 @@ export async function calcRequestDetail(
     tnvedCode: item.tnvedCode,
     note: item.note,
   }));
-  const [requester, assignee] = await Promise.all([
+  // Every fact the checklist asks about, from the ROWS — see `goodsByRequest`.
+  const goodsFacts = itemRows.map(storedGoodsFact);
+  const facts: CalcFacts = {
+    fromCity: row.fromCity,
+    toCity: row.toCity,
+    weightKg: toNum(row.weightKg),
+    volumeM3: toNum(row.volumeM3),
+    goods: goodsFacts,
+  };
+  const [requester, assignee, completer, lead, laws] = await Promise.all([
     db.query.users.findFirst({ where: eq(users.id, row.requestedBy), columns: { fullName: true } }),
     row.assigneeId
       ? db.query.users.findFirst({
@@ -1177,6 +1545,13 @@ export async function calcRequestDetail(
           columns: { fullName: true },
         })
       : Promise.resolve(null),
+    row.completedBy
+      ? db.query.users.findFirst({ where: eq(users.id, row.completedBy), columns: { fullName: true } })
+      : Promise.resolve(null),
+    row.entityType === 'lead'
+      ? db.query.leads.findFirst({ where: eq(leads.id, row.entityId), columns: { ownerId: true } })
+      : Promise.resolve(null),
+    bookLawsFor(itemRows.map((item) => item.tnvedCode)),
   ]);
   return {
     id: row.id,
@@ -1194,33 +1569,40 @@ export async function calcRequestDetail(
     requesterName: requester?.fullName ?? '—',
     assigneeId: row.assigneeId,
     assigneeName: assignee?.fullName ?? null,
-    missing: missingFor(row.section, {
-      fromCity: row.fromCity,
-      toCity: row.toCity,
-      weightKg: toNum(row.weightKg),
-      volumeM3: toNum(row.volumeM3),
-      // Every fact the checklist asks about — see `goodsByRequest`.
-      // From the ROWS, not from `items` — the screen's item projection has no
-      // measure pair, and the checklist asks about all three ways a line can
-      // state a figure.
-      goods: itemRows.map((item) => ({
-        name: item.name,
-        quantity: toNum(item.quantity),
-        weightKg: toNum(item.weightKg),
-        measureQty: toNum(item.measureQty),
-      })),
-    }),
+    leadOwnerId: lead?.ownerId ?? null,
+    missing: missingFor(row.section, facts, laws),
+    lineNeeds: lineNeedsFor(row.section, facts, laws),
+    goodsFacts,
     late: !row.completedAt && row.dueAt.getTime() < now.getTime(),
     noteId: row.noteId,
     source: row.source,
     completedAt: row.completedAt,
     completedVia: row.completedVia,
+    completedByName: completer?.fullName ?? null,
     returnReason: row.returnReason,
     answerAmount: toNum(row.answerAmount),
     answerCurrency: row.answerCurrency,
     answerNote: row.answerNote,
     items,
   };
+}
+
+/**
+ * The VED's INTERNAL note on a Готово answer (9a) — its own reader with a
+ * REQUIRED sight, so no surface can fetch it without having asked
+ * `mayReadCalcInternalNote` (review access-money-10, tests-completeness-12).
+ * Null when the request has none (an old answer, a seal, a hand-back).
+ */
+export async function calcInternalNoteFor(
+  requestId: string,
+  _sight: InternalNoteSight,
+): Promise<string | null> {
+  const [row] = await db
+    .select({ note: calcRequests.answerInternalNote })
+    .from(calcRequests)
+    .where(eq(calcRequests.id, requestId))
+    .limit(1);
+  return row?.note ?? null;
 }
 
 /** The open request(s) on one card — what the seller's panel shows. */
@@ -1271,30 +1653,110 @@ export async function openCalcFor(
     requesterName: '',
     assigneeId: row.assigneeId,
     assigneeName: row.assigneeName,
+    leadOwnerId: null,
     missing: [],
+    lineNeeds: [],
     late: row.dueAt.getTime() < now.getTime(),
   }));
 }
 
-/** The last answer this card was given — the seller's «what did we quote?». */
+/**
+ * The deal's own goods lines — «📋 Qatorlar» — as the seller's form prefills
+ * from them (UX17, closing the audit's «deal lines never feed a
+ * calculation»). A prefill, never a link: nothing later syncs. Ordered as
+ * the deal shows them.
+ */
+export async function dealLinesForCalc(dealId: string): Promise<
+  {
+    name: string;
+    tnvedCode: string | null;
+    quantity: number | null;
+    unit: string | null;
+    weightKg: number | null;
+    volumeM3: number | null;
+  }[]
+> {
+  const rows = await db
+    .select({
+      name: dealLines.description,
+      tnvedCode: dealLines.tnvedCode,
+      quantity: dealLines.quantity,
+      unit: dealLines.unit,
+      weightKg: dealLines.quotedWeightKg,
+      volumeM3: dealLines.quotedVolumeM3,
+    })
+    .from(dealLines)
+    .where(eq(dealLines.dealId, dealId))
+    .orderBy(asc(dealLines.seq));
+  return rows.map((r) => ({
+    name: r.name,
+    tnvedCode: r.tnvedCode,
+    quantity: toNum(r.quantity),
+    unit: r.unit,
+    weightKg: toNum(r.weightKg),
+    volumeM3: toNum(r.volumeM3),
+  }));
+}
+
+/**
+ * The card's newest Готово ANSWER — the seller's «what did we quote?» line.
+ *
+ * Through THE answer predicate (credit.ts): it took `completed_via = 'task'`
+ * alone, so a price-less task close read as «Javob: —» on the card (review
+ * tests-completeness-3). An explicit projection, never the row: the internal
+ * note lives on the same row and this line is drawn on a SELLER's card, so a
+ * `select()` of the whole row would carry it into the render (review
+ * access-money-22). The keys are pinned by `calc-internal-note-fence.test.ts`.
+ *
+ * `childState` is the correction off this answer, if any — the line speaks
+ * the chain's own words, because the seller's push said «eski narx endi amal
+ * qilmaydi» the moment a recalc was pressed.
+ */
+export interface LastCalcAnswer {
+  requestId: string;
+  amount: number;
+  currency: string | null;
+  note: string | null;
+  at: Date;
+  byName: string | null;
+  childState: ChildState | null;
+}
+
 export async function lastCalcAnswerFor(
   entityType: 'deal' | 'lead',
   entityId: string,
-): Promise<{ amount: number | null; currency: string | null; note: string | null; at: Date } | null> {
-  const row = await db.query.calcRequests.findFirst({
-    where: and(
-      eq(calcRequests.entityType, entityType),
-      eq(calcRequests.entityId, entityId),
-      eq(calcRequests.completedVia, 'task'),
-    ),
-    orderBy: desc(calcRequests.completedAt),
-  });
-  if (!row?.completedAt) return null;
+): Promise<LastCalcAnswer | null> {
+  const rows = await db.execute<{
+    id: string;
+    answer_amount: string;
+    answer_currency: string | null;
+    answer_note: string | null;
+    completed_at: string;
+    by_name: string | null;
+    child_state: ChildState | null;
+  }>(sql`
+    SELECT r.id::text AS id, r.answer_amount, r.answer_currency, r.answer_note, r.completed_at,
+           u.full_name AS by_name,
+           ${childStateSql(sql.raw('r.id'))} AS child_state
+      FROM calc_requests r
+      LEFT JOIN users u ON u.id = r.completed_by
+     WHERE r.entity_type = ${entityType}
+       AND r.entity_id = ${entityId}::uuid
+       AND ${isAnswerSql('r')}
+     ORDER BY r.completed_at DESC
+     LIMIT 1
+  `);
+  const row = rows[0];
+  if (!row) return null;
   return {
-    amount: toNum(row.answerAmount),
-    currency: row.answerCurrency,
-    note: row.answerNote,
-    at: row.completedAt,
+    requestId: row.id,
+    amount: Number(row.answer_amount),
+    currency: row.answer_currency,
+    note: row.answer_note,
+    // Raw-execute timestamps are TEXT (#923).
+    at: new Date(row.completed_at),
+    byName: row.by_name,
+    childState: row.child_state ?? null,
   };
 }
 
@@ -1308,38 +1770,58 @@ export interface CalcSpeedRow {
 }
 
 /**
- * How fast the answers come, per person.
+ * How fast the answers come, per person — on the CREDIT rule (credit.ts).
  *
- * `completed_via <> 'returned'` is not an optimisation: a bounce-back takes
- * ninety seconds, and counting it as an answer would make the person who
- * bounces everything the fastest calculator in the company.
+ * It credited the HOLDER and counted any ending but a hand-back as «done», so
+ * a price-less close was an answer and a job the owner sealed himself was
+ * the holder's (measured: «VED Demo» four jobs the owner sealed, #513). Now
+ * «done» is a PRICE — a seal for its sealer, a Готово answer for its
+ * answerer — at the price moment, and a hand-back, a «lines» ending or a
+ * price-less close credits nobody. Only «ochiq» stays per HOLDER: that is
+ * what open means.
  */
 export async function calcSpeed(since: Date): Promise<CalcSpeedRow[]> {
   const rows = await db.execute<{
-    assignee_id: string | null;
-    assignee_name: string | null;
+    person_id: string | null;
+    person_name: string | null;
     done: number;
     avg_minutes: number | null;
     on_time: number;
     open: number;
   }>(sql`
-    SELECT r.assignee_id,
-           u.full_name AS assignee_name,
-           count(*) FILTER (WHERE r.completed_at IS NOT NULL AND r.completed_via <> 'returned')::int AS done,
-           avg(extract(epoch FROM (r.completed_at - r.requested_at)) / 60)
-             FILTER (WHERE r.completed_at IS NOT NULL AND r.completed_via <> 'returned') AS avg_minutes,
-           count(*) FILTER (WHERE r.completed_at IS NOT NULL AND r.completed_via <> 'returned'
-                              AND r.completed_at <= r.due_at)::int AS on_time,
-           count(*) FILTER (WHERE r.completed_at IS NULL)::int AS open
-    FROM calc_requests r
-    LEFT JOIN users u ON u.id = r.assignee_id
-    WHERE r.requested_at >= ${since.toISOString()}::timestamptz OR r.completed_at IS NULL
-    GROUP BY r.assignee_id, u.full_name
-    ORDER BY count(*) FILTER (WHERE r.completed_at IS NOT NULL) DESC
+    WITH credits AS (${creditsSql()}),
+    done AS (
+      SELECT person_id,
+             count(*)::int AS n,
+             avg(extract(epoch FROM (at - requested_at)) / 60) AS avg_minutes,
+             count(*) FILTER (WHERE at <= due_at)::int AS on_time
+        FROM credits
+       WHERE at >= ${since.toISOString()}::timestamptz
+       GROUP BY person_id
+    ),
+    held AS (
+      SELECT assignee_id AS person_id, count(*)::int AS n
+        FROM calc_requests
+       WHERE completed_at IS NULL
+       GROUP BY assignee_id
+    )
+    -- A FULL join: a person with only open work and a person with only
+    -- prices this month are both rows. The unassigned pile (NULL) matches no
+    -- credit — a credit always names somebody — and stands alone.
+    SELECT coalesce(d.person_id, h.person_id)::text AS person_id,
+           u.full_name AS person_name,
+           coalesce(d.n, 0)::int AS done,
+           d.avg_minutes,
+           coalesce(d.on_time, 0)::int AS on_time,
+           coalesce(h.n, 0)::int AS open
+      FROM done d
+      FULL JOIN held h ON h.person_id = d.person_id
+      LEFT JOIN users u ON u.id = coalesce(d.person_id, h.person_id)
+     ORDER BY coalesce(d.n, 0) DESC, u.full_name
   `);
   return rows.map((row) => ({
-    assigneeId: row.assignee_id,
-    assigneeName: row.assignee_name ?? '—',
+    assigneeId: row.person_id,
+    assigneeName: row.person_name ?? '—',
     done: Number(row.done),
     avgMinutes: row.avg_minutes === null ? null : Math.round(Number(row.avg_minutes)),
     onTime: Number(row.on_time),

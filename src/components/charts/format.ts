@@ -39,6 +39,30 @@ export function compactUsd(value: number): string {
   return `${sign}$${trim((abs / 1_000_000_000).toFixed(2))}B`;
 }
 
+/**
+ * A baza — a customs price PER UNIT — that is never «$0».
+ *
+ * `usd` and `compactUsd` round to whole dollars, which is right for a
+ * truck's money and wrong here: his file declares buttons at $0.0004 a
+ * piece and a kilogram of plastic at $0.17, and a chip reading «$0» is a
+ * price nobody declared (D1's whole point). So: whole dollars with commas
+ * from $1,000 («$235,000»), two decimals from $1 («$1.75»), and below a
+ * dollar two to four decimals («$0.50», «$0.1664», «$0.0004» — the
+ * column's own scale).
+ */
+export function unitPrice(value: number): string {
+  const sign = value < 0 ? MINUS : '';
+  const abs = Math.abs(value);
+  if (abs >= 1_000) return `${sign}$${Math.round(abs).toLocaleString('en-US')}`;
+  if (abs >= 1) return `${sign}$${abs.toFixed(2)}`;
+  if (abs === 0) return '$0';
+  // At least two decimals, as money is written («$0.50», never «$0.5»), and
+  // up to the column's four.
+  const four = abs.toFixed(4).replace(/(\.\d\d\d?)0+$/, '$1').replace(/(\.\d\d)0$/, '$1');
+  // Under $0.00005 four decimals would round to zero — say the value itself.
+  return `${sign}$${Number(four) === 0 ? abs.toPrecision(1) : four}`;
+}
+
 /** «12.40» → «12.4», «3.00» → «3»: a trailing zero is noise at display size. */
 function trim(fixed: string): string {
   return fixed.includes('.') ? fixed.replace(/\.?0+$/, '') : fixed;
@@ -50,6 +74,21 @@ export function num(value: number, digits = 0): string {
     minimumFractionDigits: 0,
     maximumFractionDigits: digits,
   });
+}
+
+/**
+ * A weight in kilograms that is never «0» for something that weighs
+ * anything — the per-piece weight beside his ±25 % line. `num(v, 3)` labelled
+ * a 0.4 g button «0 kg» and a 0.6 g one «0.001»: two places from a kilo,
+ * four below one, and under a gram the value itself at two significant
+ * figures (the `unitPrice` rule without the dollar).
+ */
+export function kg(value: number): string {
+  const abs = Math.abs(value);
+  if (abs >= 1) return num(value, 2);
+  if (abs >= 0.001) return num(value, 4);
+  if (abs === 0) return '0';
+  return String(Number(value.toPrecision(2)));
 }
 
 /** m³ as a person writes it: one decimal under 100, whole above. */

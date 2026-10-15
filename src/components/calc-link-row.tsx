@@ -44,7 +44,13 @@ export function CalcLinkRow({
             {t('linkDrop')}
           </button>
         </form>
-        {error ? <span className="text-2xs text-bad">{error}</span> : null}
+        {/* A refusal in WORDS (review access-money-6): «not_mine» on a
+            colleague's link reached the VED as a raw code. */}
+        {error ? (
+          <span className="text-2xs text-bad" role="alert" data-testid="link-error">
+            {t.has(`linkErrors.${error}`) ? t(`linkErrors.${error}` as 'linkErrors.not_mine') : error}
+          </span>
+        ) : null}
       </div>
     </li>
   );

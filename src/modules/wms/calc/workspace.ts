@@ -30,13 +30,17 @@ import { cardLink } from '@/modules/platform/notifications/links';
 import {
   BAZA_STALE_DAYS,
   bazasFor,
+  deeperRatesFor,
   onDate,
   ratesForCodes,
   tariffFor,
   tariffZones,
   type RatesRow,
 } from './dictionaries';
+import { exciseAnswered, exciseMayApply, exciseUnitsFor } from './excise';
 import { answerFloorStandsSql, currentVersionSql, notSupersededSql } from './version-set';
+import { autoBasisFor, basisConflicts, defaultBasisFor, healPairKept, pairUnitFor, statedPairOf } from './basis';
+import { normalizeRowUnit, pendingUnitOf } from './units';
 import {
   BASIS_FOR_UNIT,
   importRowForCode,
@@ -44,7 +48,7 @@ import {
   unitsForRow,
   type ImportBazaRow,
 } from '../customs/import-baza';
-import { newestReadyBatchId } from '../customs/import-service';
+import { batchEndSql, newestReadyBatchId } from '../customs/import-service';
 import {
   groupMeasure,
   groupQuantity,
@@ -56,6 +60,7 @@ import {
 import {
   customsFor,
   freightFor,
+  isBazaBasis,
   isNumber,
   pricedGroupOf,
   requestCustomsFor,
@@ -73,9 +78,23 @@ import {
   type MeasureUnit,
   type PricedItem,
 } from './pricing';
-import { CalcError, MAX_CALC_ITEMS } from './service';
+import {
+  CalcError,
+  MAX_CALC_ITEMS,
+  calcDueMinutes,
+  linkLine,
+  nextVedAssignee,
+  requestLabel,
+  vedRotaPool,
+} from './service';
+import { childStateSql } from './chain';
+import { isAnswer, isAnswerSql } from './credit';
+import { createTask } from '@/modules/platform/tasks/service';
+import { retireTaskCopiesSoon } from '@/modules/platform/notifications/retire-tasks';
+import { kickPriceChannel } from './channel-queue';
 import { forgetUpsaleLiability } from './liability-memo';
 import {
+  lawOffBook,
   sealCounters,
   unchangedFromProposal,
   warningsForGroup,
@@ -122,8 +141,9 @@ export interface WorkspaceItem extends PricedItem {
   /** The immutable address (phase 3): seqs are re-minted after a delete, so
    * drafts and edits key on the id or a stranded draft lands on new cargo. */
   id: string;
+  /** The SELLER's own unit word («шт», «кг», «компл») — display only (his
+   * 20a). The engine never reads it: what a baza is per is `bazaBasis`. */
   unit: string | null;
-  volumeM3: number | null;
   tnvedCode: string | null;
   note: string | null;
   groupId: string | null;
@@ -139,6 +159,16 @@ export interface WorkspaceItem extends PricedItem {
   bazaReason: string | null;
   /** The dictionary's current answer, offered even when a value is typed. */
   dictionaryBaza: { bazaUsd: number; basis: BazaBasis; effectiveDate: string; stale: boolean } | null;
+  /**
+   * Is the baza ON THIS ROW old (2026-10-09, P2.10c)? Law 5's 90-day rule,
+   * asked of whichever source supplied the number: a dictionary baza by its
+   * in-force row's date, an import fill by the END of the quarter its file
+   * describes, a memory fill by the day it was sealed. Only the dictionary
+   * carried a stale flag until now, so a nine-month-old declaration priced a
+   * job wearing the same chip as last week's. A CHIP (P3 draws it), not a
+   * warning kind; a typed baza is the VED's own word and never stale.
+   */
+  bazaStale: boolean;
 }
 
 export interface WorkspaceGroup {
@@ -154,10 +184,16 @@ export interface WorkspaceGroup {
   dutySpecific: number | null;
   dutyUnit: DutyUnit | null;
   excisePct: number | null;
+  /** Specific excise (0131) — $ per `exciseUnit`; see PricedGroup. */
+  exciseSpecific: number | null;
+  exciseUnit: DutyUnit | null;
   /** The group's own answer — null inherits the request's. */
   hasCertificate: boolean | null;
   /** Resolved: the group's answer, else the request's. What the engine used. */
   effectiveCertificate: boolean;
+  /** The REQUEST's answer — what «so‘rovdagidek» means on the ⚙ fold, and
+   * what the footer compares a group's own answer against (P2.5). */
+  requestCertificate: boolean;
   rateSource: 'dictionary' | 'typed' | null;
   dutyFree: boolean;
   vatFree: boolean;
@@ -199,8 +235,24 @@ export interface WorkspaceGroup {
    * person sealed it — the offered default, never an applied one. Non-null
    * only when the last decision carried an exemption; declining one is
    * ordinary typing, forgetting one is the error this exists to catch.
+   * `sealedAt` is that seal's day, printed on the chip: «o'tgan safar» is a
+   * claim about WHEN, and the reader decides whether it still applies.
    */
-  lgotaLast: { dutyFree: boolean; vatFree: boolean } | null;
+  lgotaLast: { dutyFree: boolean; vatFree: boolean; sealedAt: string } | null;
+  /**
+   * What a SHORT code's heading hides (P2.3): the first deeper in-force row
+   * under the typed code whose law differs from the one pricing the group
+   * («8528 → 852872…: 10 %, kamida $15/dona»). Null when the code is full,
+   * or every row under it carries the same law. Drives `code_heading`.
+   */
+  codeHeading: {
+    code: string;
+    dutyPct: number;
+    vatPct: number;
+    dutyMode: DutyMode;
+    dutySpecific: number | null;
+    dutyUnit: DutyUnit | null;
+  } | null;
 }
 
 export interface WorkspaceExtra {
@@ -224,10 +276,22 @@ export interface Workspace {
    * drawn without one: «ИИ не ответил» on a keyless server is an invitation
    * to press again, and the honest word belongs before the press (audit A25). */
   aiConfigured: boolean;
+  /**
+   * When a LIVE AI pass holds the request (`ai_proposal_started_at` inside
+   * the ten-minute window) — every table write is refused `ai_running` until
+   * it lets go, and the screen must say so BEFORE a press rather than answer
+   * one with a refusal nobody can explain (the minutes after a Telegram
+   * «landed» notice are exactly when a phone opens the job). Null otherwise.
+   */
+  aiRunningSince: Date | null;
   /** The fee's raw inputs, shipped so the browser can run the SAME pure
    * assembly the server does (live sums). null = unset / no rate in the book. */
   bhmUzs: number | null;
   fxUzsPerUsd: number | null;
+  /** The day of the UZS rate the fee was converted at — printed beside the
+   * fee's inputs. ADDED beside `fxUzsPerUsd`, never folded into it: the live
+   * bar passes that number straight into `requestCustomsFor` (judge TT-9). */
+  fxDate: string | null;
   section: CalcSectionName | null;
   parts: { customs: boolean; freight: boolean; extras: boolean };
   weightKg: number | null;
@@ -267,7 +331,19 @@ export type SealBlocker =
   | { kind: 'no_groups' }
   | { kind: 'ungrouped_items'; count: number }
   | { kind: 'groups_unconfirmed'; count: number }
-  | { kind: 'customs'; groupSeq: number; groupLabel: string; reason: string; itemLabel?: string }
+  | {
+      kind: 'customs';
+      groupSeq: number;
+      groupLabel: string;
+      reason: string;
+      itemLabel?: string;
+      /** The engine's refusal detail (2026-10-09): WHICH row, which figure, why
+       * («Stol: sof og‘irlik (kg) yo‘q — boj kamida $0.4/kg»). */
+      itemSeq?: number;
+      unit?: string;
+      half?: 'baza' | 'duty' | 'excise';
+      rate?: number | null;
+    }
   | { kind: 'freight'; reason: string }
   | { kind: 'fee'; reason: string }
   | { kind: 'totals'; reason: string }
@@ -320,27 +396,64 @@ export function guessedZoneFor(fromCity: string | null, priced: readonly string[
  * No lgota column lives in any dictionary ON PURPOSE — the exemption is
  * per-CALC, so the memory is the sealed record itself: the newest sealed
  * request carrying the code, excluding the one being worked on. One grouped
- * query for all codes (#432), and only decisions that carried an exemption
- * come back — offering «no lgota» as a default would nag every ordinary
- * group.
+ * query for all codes (#432), and only a LAST decision that carried an
+ * exemption comes back — offering «no lgota» as a default would nag every
+ * ordinary group.
+ *
+ * The newest decision is chosen FIRST and only then kept if it exempts
+ * (2026-10-09, P2.10b — reproduced before it was fixed). The filter used to
+ * run before the `DISTINCT ON`, so a May seal «Bojdan ozod» (one client's
+ * investment-project exemption) stayed «o'tgan safar» after a September seal
+ * of the same code with no lgota at all — and one press then took the whole
+ * duty, and the add-duty with it, off a different client's job.
  */
 async function lgotaLastByCode(
   codes: string[],
   excludeRequestId: string,
-): Promise<Map<string, { dutyFree: boolean; vatFree: boolean }>> {
-  const out = new Map<string, { dutyFree: boolean; vatFree: boolean }>();
+): Promise<Map<string, { dutyFree: boolean; vatFree: boolean; sealedAt: string }>> {
+  const out = new Map<string, { dutyFree: boolean; vatFree: boolean; sealedAt: string }>();
   const list = [...new Set(codes)].filter(Boolean);
   if (list.length === 0) return out;
-  const rows = await db.execute<{ tnved_code: string; duty_free: boolean; vat_free: boolean }>(sql`
-    SELECT DISTINCT ON (g.tnved_code) g.tnved_code, g.duty_free, g.vat_free
-      FROM calc_groups g
-      JOIN calc_versions v ON v.request_id = g.request_id
-     WHERE g.tnved_code IN (${sql.join(list.map((c) => sql`${c}`), sql`, `)})
-       AND g.request_id <> ${excludeRequestId}::uuid
-       AND (g.duty_free OR g.vat_free)
-     ORDER BY g.tnved_code, v.sealed_at DESC
+  const rows = await db.execute<{ tnved_code: string; duty_free: boolean; vat_free: boolean; sealed_at: string }>(sql`
+    SELECT last.tnved_code, last.duty_free, last.vat_free, last.sealed_at
+      FROM (
+        SELECT DISTINCT ON (g.tnved_code) g.tnved_code, g.duty_free, g.vat_free, v.sealed_at
+          FROM calc_groups g
+          JOIN calc_versions v ON v.request_id = g.request_id
+         WHERE g.tnved_code IN (${sql.join(list.map((c) => sql`${c}`), sql`, `)})
+           AND g.request_id <> ${excludeRequestId}::uuid
+         ORDER BY g.tnved_code, v.sealed_at DESC
+      ) last
+     WHERE last.duty_free OR last.vat_free
   `);
-  for (const r of rows) out.set(r.tnved_code, { dutyFree: r.duty_free, vatFree: r.vat_free });
+  // A raw execute hands a timestamptz back as TEXT (#923): kept as text, cut
+  // to the day the chip prints.
+  for (const r of rows) {
+    out.set(r.tnved_code, {
+      dutyFree: r.duty_free,
+      vatFree: r.vat_free,
+      sealedAt: new Date(r.sealed_at).toISOString().slice(0, 10),
+    });
+  }
+  return out;
+}
+
+/**
+ * When each import row's QUARTER ended — the age `bazaStale` reads for an
+ * import-filled baza. One query over the rows the workspace carries (#432),
+ * through the batch-end rule the 📥 picker's «newest» is decided by (#513).
+ */
+async function importRowEnds(rowIds: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const ids = [...new Set(rowIds)].filter((v) => /^\d+$/.test(v));
+  if (ids.length === 0) return out;
+  const rows = await db.execute<{ id: string; ended: string }>(sql`
+    SELECT r.id::text AS id, ${batchEndSql(sql`b`)}::text AS ended
+      FROM customs_import_rows r
+      JOIN customs_import_batches b ON b.id = r.batch_id
+     WHERE r.id IN (${sql.join(ids.map((id) => sql`${id}::bigint`), sql`, `)})
+  `);
+  for (const r of rows) out.set(r.id, String(r.ended).slice(0, 10));
   return out;
 }
 
@@ -368,20 +481,25 @@ export async function loadWorkspace(
   ]);
 
   const date = onDate();
-  const [bazas, rates, tariff, zones, confirmers, lgotaLast, bhmSetting, fxUzsPerUsd] =
+  const groupCodes = groupRows.map((g) => (g.tnvedCode ?? '').trim()).filter(Boolean);
+  const [bazas, rates, deeper, tariff, zones, confirmers, lgotaLast, bhmSetting, fx, importEnds] =
     await Promise.all([
       bazasFor(itemRows.map((i) => i.name), date),
-      ratesForCodes(groupRows.map((g) => g.tnvedCode ?? '').filter(Boolean), date),
+      ratesForCodes(groupCodes, date),
+      deeperRatesFor(groupCodes, date),
       tariffFor(date),
       tariffZones(date),
       namesOf(groupRows.map((g) => g.confirmedBy).filter((v): v is string => v !== null)),
-      lgotaLastByCode(
-        groupRows.map((g) => g.tnvedCode ?? '').filter(Boolean),
-        requestId,
-      ),
+      lgotaLastByCode(groupCodes, requestId),
       getSetting('bhm_uzs'),
       uzsPerUsd(date),
+      importRowEnds(
+        itemRows
+          .filter((i) => i.bazaSource === 'import' && i.importRowId !== null)
+          .map((i) => String(i.importRowId)),
+      ),
     ]);
+  const fxUzsPerUsd = fx?.rate ?? null;
   // The 🧠 chip's title, for the memory-filled rows only — one query, and
   // none at all on a request the memory never answered.
   const memoryProv = await memoryProvenanceFor(
@@ -390,8 +508,23 @@ export async function loadWorkspace(
   const bhmUzs = bhmSetting == null ? null : Number(bhmSetting);
 
   const bazaStaleCutoff = onDate(new Date(Date.now() - BAZA_STALE_DAYS * 86_400_000));
+  /** Law 5's age rule, asked of the source that supplied THIS row's number. */
+  const staleFor = (i: (typeof itemRows)[number], dictStale: boolean): boolean => {
+    if (i.bazaUsd === null) return false;
+    if (i.bazaSource === 'dictionary') return dictStale;
+    if (i.bazaSource === 'import') {
+      const ended = i.importRowId === null ? undefined : importEnds.get(String(i.importRowId));
+      return ended !== undefined && ended <= bazaStaleCutoff;
+    }
+    if (i.bazaSource === 'memory') {
+      const p = i.memoryItemId === null ? undefined : memoryProv.get(i.memoryItemId);
+      return p !== undefined && onDate(p.sealedAt) <= bazaStaleCutoff;
+    }
+    return false;
+  };
   const items: WorkspaceItem[] = itemRows.map((i) => {
     const dict = bazas.get(normalise(i.name));
+    const dictStale = dict ? dict.effectiveDate <= bazaStaleCutoff : false;
     return {
       id: i.id,
       seq: i.seq,
@@ -422,9 +555,10 @@ export async function loadWorkspace(
             // Law 5 puts the stale ⚠ where a stale baza actually PRICES a job
             // — the workspace — not only on the dictionary screen. Same
             // 90-day rule as /hisoblash/lugatlar.
-            stale: dict.effectiveDate <= bazaStaleCutoff,
+            stale: dictStale,
           }
         : null,
+      bazaStale: staleFor(i, dictStale),
     };
   });
 
@@ -455,16 +589,38 @@ export async function loadWorkspace(
       dutySpecific: toNum(g.dutySpecific),
       dutyUnit: (g.dutyUnit as DutyUnit | null) ?? null,
       excisePct: toNum(g.excisePct),
+      // 0131: the specific excise, «$ har birlikka» — the engine prices it by
+      // the row's measure in this unit (pricing.ts).
+      exciseSpecific: toNum(g.exciseSpecific),
+      exciseUnit: (g.exciseUnit as DutyUnit | null) ?? null,
       effectiveCertificate,
       dutyFree: g.dutyFree,
       vatFree: g.vatFree,
     });
     const dictRates = g.tnvedCode ? rates.get(g.tnvedCode.trim()) : undefined;
+    // P2.3: the first deeper row whose law differs from the one pricing this
+    // group — the book's answer for the code, else the group's own law.
+    const reference =
+      dictRates ??
+      (priced.dutyPct !== null && priced.vatPct !== null
+        ? {
+            dutyPct: priced.dutyPct,
+            vatPct: priced.vatPct,
+            dutyMode: priced.dutyMode,
+            dutySpecific: priced.dutySpecific,
+            dutyUnit: priced.dutyUnit,
+          }
+        : null);
+    const hidden =
+      g.tnvedCode && reference
+        ? (deeper.get(g.tnvedCode.trim()) ?? []).find((row) => lawOffBook(reference, row))
+        : undefined;
     return {
       id: g.id,
       ...priced,
       hasCertificate: g.hasCertificate,
       effectiveCertificate,
+      requestCertificate: request.hasCertificate,
       rateSource: (g.rateSource as 'dictionary' | 'typed' | null) ?? null,
       aiProposed: g.aiProposed,
       aiConfidence: (g.aiConfidence as 'high' | 'medium' | 'low' | null) ?? null,
@@ -475,15 +631,27 @@ export async function loadWorkspace(
       confirmedWarnings: (g.confirmedWarnings as CalcWarningKind[] | null) ?? null,
       warnings: warningsForGroup({
         dictionaryRates: dictRates
-          ? { dutyPct: dictRates.dutyPct, vatPct: dictRates.vatPct, feeUsd: dictRates.feeUsd }
+          ? {
+              dutyPct: dictRates.dutyPct,
+              vatPct: dictRates.vatPct,
+              feeUsd: dictRates.feeUsd,
+              dutyMode: dictRates.dutyMode,
+              dutySpecific: dictRates.dutySpecific,
+              dutyUnit: dictRates.dutyUnit,
+            }
           : null,
         dictionaryNote: dictRates?.note ?? null,
         rateSource: (g.rateSource as 'dictionary' | 'typed' | null) ?? null,
         dutyPct: toNum(g.dutyPct),
         vatPct: toNum(g.vatPct),
+        dutyMode: priced.dutyMode,
+        dutySpecific: priced.dutySpecific,
         aiProposed: g.aiProposed,
         aiConfidence: (g.aiConfidence as 'high' | 'medium' | 'low' | null) ?? null,
         aiDutyPct: toNum(g.aiDutyPct),
+        dutyUnit: priced.dutyUnit,
+        headingHidesLaws: hidden !== undefined,
+        exciseUnanswered: exciseMayApply(g.tnvedCode) && !exciseAnswered(priced),
         items: mine.map((i) => ({
           hasDictionaryBaza: i.dictionaryBaza !== null,
           bazaSource: i.bazaSource,
@@ -514,7 +682,17 @@ export async function loadWorkspace(
             note: dictRates.note,
           }
         : null,
-      lgotaLast: (g.tnvedCode && lgotaLast.get(g.tnvedCode)) || null,
+      lgotaLast: (g.tnvedCode && lgotaLast.get(g.tnvedCode.trim())) || null,
+      codeHeading: hidden
+        ? {
+            code: hidden.tnvedCode,
+            dutyPct: hidden.dutyPct,
+            vatPct: hidden.vatPct,
+            dutyMode: hidden.dutyMode,
+            dutySpecific: hidden.dutySpecific,
+            dutyUnit: hidden.dutyUnit,
+          }
+        : null,
     };
   });
 
@@ -540,6 +718,7 @@ export async function loadWorkspace(
   const assembled = parts.customs
     ? requestCustomsFor({
         customs: groups.map((g) => g.customs),
+        ungroupedCount: items.filter((i) => i.groupId === null).length,
         bhmUzs,
         fxUzsPerUsd,
         feeOverrideUsd,
@@ -588,6 +767,7 @@ export async function loadWorkspace(
     rev: request.rev,
     bhmUzs,
     fxUzsPerUsd,
+    fxDate: fx?.effectiveDate ?? null,
     section,
     parts,
     weightKg,
@@ -622,12 +802,18 @@ export async function loadWorkspace(
       // Freight reads the REQUEST's totals and customs reads the GROUPS', so
       // nothing else would tell the VED the two disagree — but only once
       // both sides are measuring the same cargo.
-      mismatch:
-        (covered((i) => i.weightKg) && disagrees(groupKg, weightKg)) ||
-        (covered((i) => i.volumeM3) && disagrees(groupM3, volumeM3)),
+      //
+      // The VOLUME alone (2026-10-09, judge MR-8). A line's weight is NETTO
+      // (the baza and the per-kg floor are declared on it) and the shipment's
+      // is BRUTTO (the truck carries the cartons too), so Σ lines sits 5-15 %
+      // under the request's kg BY CONSTRUCTION — compared at 1 %, the warning
+      // stood on every complete job, and a warning that is always on is read
+      // by nobody. Cubic metres are one measure on both sides.
+      mismatch: covered((i) => i.volumeM3) && disagrees(groupM3, volumeM3),
     },
     sealedVersion: sealed,
     aiConfigured: aiConfigured(),
+    aiRunningSince: aiClaimLive(request.aiProposalStartedAt) ? request.aiProposalStartedAt : null,
     completedAt: request.completedAt,
   };
 }
@@ -642,16 +828,18 @@ const disagrees = (a: number | null, b: number | null) =>
  * still has to convert into something), and this module's rule is that a
  * missing rate is a refusal, never an invented number.
  */
-async function uzsPerUsd(date: string): Promise<number | null> {
+async function uzsPerUsd(date: string): Promise<{ rate: number; effectiveDate: string } | null> {
   const [hit] = await db
-    .select({ rateToUsd: fxRates.rateToUsd })
+    .select({ rateToUsd: fxRates.rateToUsd, effectiveDate: fxRates.effectiveDate })
     .from(fxRates)
     .where(and(eq(fxRates.currency, 'UZS'), lte(fxRates.effectiveDate, date)))
     .orderBy(desc(fxRates.effectiveDate))
     .limit(1);
   if (!hit) return null;
   const usdPerUzs = Number(hit.rateToUsd);
-  return usdPerUzs > 0 ? 1 / usdPerUzs : null;
+  // The rate's own DAY rides beside it (P2.6): «÷ 12 650 (kurs 09.10.2026)»
+  // is the line that lets the VED see a stale rate before the client does.
+  return usdPerUzs > 0 ? { rate: 1 / usdPerUzs, effectiveDate: String(hit.effectiveDate) } : null;
 }
 
 function blockersFor(w: {
@@ -681,6 +869,10 @@ function blockersFor(w: {
           groupLabel: g.label,
           reason: g.customs.reason,
           itemLabel: g.customs.itemLabel,
+          itemSeq: g.customs.itemSeq,
+          unit: g.customs.unit,
+          half: g.customs.half,
+          rate: g.customs.rate,
         });
       }
     }
@@ -873,6 +1065,14 @@ export async function moveItemToGroup(
  * 'dictionary' and 'typed' and NOTHING else, so a model's estimate has
  * nowhere to land however the call arrives. Changing a rate also clears the
  * confirmation — the person who confirmed did not confirm these numbers.
+ *
+ * `source` is DERIVED when the caller does not state it (2026-10-09, judge
+ * TT-6 — the ⚙ action used to hardcode 'typed'). A group the BOOK wrote stays
+ * the book's while the law posted is the law it holds: ticking «QQSdan ozod»,
+ * pressing «lgota (o'tgan safar)», answering the excise or the certificate
+ * changes no rate, and re-stamping 'typed' over it silenced `rate_noted` (the
+ * law's own condition) and offered «lug'atga yozish» for a number the book
+ * already had. Only a changed code, percentage or shape is a person's typing.
  */
 export async function setGroupRates(
   groupId: string,
@@ -882,13 +1082,23 @@ export async function setGroupRates(
     vatPct: number | null;
     dutyFree: boolean;
     vatFree: boolean;
-    source: 'dictionary' | 'typed';
+    /** Absent = derived (above). `pullRatesFromDictionary` states
+     * 'dictionary' — it read the book itself. */
+    source?: 'dictionary' | 'typed';
     /** Absent = keep the group's stored shape (a rate edit is not a shape
      * edit). 'advalor' explicitly is how the specific half is removed. */
     dutyMode?: DutyMode;
     dutySpecific?: number | null;
     dutyUnit?: DutyUnit | null;
+    /**
+     * The excise, as ONE shape (0131): all three absent = keep the stored
+     * answer; `excisePct` alone (0 = «aksiz yo'q») = ad valorem; a
+     * `exciseSpecific` + `exciseUnit` pair = per unit, with `excisePct`
+     * null; all three null = unanswered. Both shapes at once is refused.
+     */
     excisePct?: number | null;
+    exciseSpecific?: number | null;
+    exciseUnit?: DutyUnit | null;
     /** Absent = keep; null = «inherit the request»; a boolean = this group's
      * own answer (a sborniy truck mixes senders). */
     hasCertificate?: boolean | null;
@@ -902,11 +1112,20 @@ export async function setGroupRates(
     columns: { requestId: true },
   });
   if (!found) throw new CalcError('not_found');
-  mustBeNumber(input.dutyPct, input.vatPct, input.dutySpecific, input.excisePct);
+  mustBeNumber(input.dutyPct, input.vatPct, input.dutySpecific, input.excisePct, input.exciseSpecific);
   for (const pct of [input.dutyPct, input.vatPct, input.excisePct]) {
     if (pct !== null && pct !== undefined && (pct < 0 || pct > 100)) {
       throw new CalcError('rate_range');
     }
+  }
+  // numeric(14,4) holds ten whole digits; past it the UPDATE dies 22003 as a
+  // white page rather than a sentence (#867's rule).
+  if (
+    input.exciseSpecific !== undefined &&
+    input.exciseSpecific !== null &&
+    (input.exciseSpecific < 0 || input.exciseSpecific >= 1e10)
+  ) {
+    throw new CalcError('rate_range');
   }
 
   await mutateRequest(found.requestId, async (tx) => {
@@ -927,11 +1146,47 @@ export async function setGroupRates(
     throw new CalcError('rate_range');
   }
 
+  // The excise's one shape (0131's CHECKs, said as refusals in words).
+  const exciseTouched =
+    input.excisePct !== undefined || input.exciseSpecific !== undefined || input.exciseUnit !== undefined;
+  let excisePct = toNum(group.excisePct);
+  let exciseSpecific = toNum(group.exciseSpecific);
+  let exciseUnit = (group.exciseUnit as DutyUnit | null) ?? null;
+  if (exciseTouched) {
+    excisePct = input.excisePct ?? null;
+    exciseSpecific = input.exciseSpecific ?? null;
+    exciseUnit = input.exciseUnit ?? null;
+    if (excisePct !== null && (exciseSpecific !== null || exciseUnit !== null)) {
+      throw new CalcError('excise_shape');
+    }
+    if ((exciseSpecific === null) !== (exciseUnit === null)) throw new CalcError('excise_shape');
+  }
+  // A specific excise counts in a unit the row can hold beside its law: kg,
+  // the piece counts, or the law's OWN pair — never a second pair (judge S4).
+  // Asked of the FINAL law, so a recode under a standing excise is caught too.
+  if (exciseUnit !== null && !exciseUnitsFor(dutyUnit).includes(exciseUnit)) {
+    throw new CalcError('excise_unit');
+  }
+
+  const code = input.tnvedCode?.trim() || null;
+  const dutyPctNew = input.dutyPct === null ? null : Number(input.dutyPct.toFixed(3));
+  const vatPctNew = input.vatPct === null ? null : Number(input.vatPct.toFixed(3));
+  const specificNew = dutySpecific === null ? null : Number(dutySpecific.toFixed(4));
+  const lawUnchanged =
+    code === ((group.tnvedCode ?? '').trim() || null) &&
+    dutyPctNew === toNum(group.dutyPct) &&
+    vatPctNew === toNum(group.vatPct) &&
+    dutyMode === ((group.dutyMode as DutyMode | null) ?? 'advalor') &&
+    specificNew === toNum(group.dutySpecific) &&
+    dutyUnit === ((group.dutyUnit as DutyUnit | null) ?? null);
+  const source =
+    input.source ?? (group.rateSource === 'dictionary' && lawUnchanged ? 'dictionary' : 'typed');
+
   await tx
     .update(calcGroups)
     .set({
       label: input.label?.trim() || group.label,
-      tnvedCode: input.tnvedCode?.trim() || null,
+      tnvedCode: code,
       dutyPct: input.dutyPct === null ? null : input.dutyPct.toFixed(3),
       vatPct: input.vatPct === null ? null : input.vatPct.toFixed(3),
       // THE GROUP CARRIES NO FEE (audit A2). The declaration's BHM scale
@@ -943,14 +1198,11 @@ export async function setGroupRates(
       dutyMode: dutyMode === 'advalor' ? null : dutyMode,
       dutySpecific: dutySpecific === null ? null : dutySpecific.toFixed(4),
       dutyUnit,
-      excisePct:
-        input.excisePct !== undefined
-          ? input.excisePct === null
-            ? null
-            : input.excisePct.toFixed(3)
-          : group.excisePct,
+      excisePct: excisePct === null ? null : excisePct.toFixed(3),
+      exciseSpecific: exciseSpecific === null ? null : exciseSpecific.toFixed(4),
+      exciseUnit,
       hasCertificate: input.hasCertificate !== undefined ? input.hasCertificate : group.hasCertificate,
-      rateSource: input.source,
+      rateSource: source,
       dutyFree: input.dutyFree,
       vatFree: input.vatFree,
       note: input.note ?? group.note,
@@ -974,8 +1226,13 @@ export async function setGroupRates(
       feeUsd: group.feeUsd,
       dutyFree: group.dutyFree,
       vatFree: group.vatFree,
+      excisePct: group.excisePct,
+      exciseSpecific: group.exciseSpecific,
+      exciseUnit: group.exciseUnit,
+      hasCertificate: group.hasCertificate,
+      rateSource: group.rateSource,
     },
-    after: input,
+    after: { ...input, rateSource: source },
   });
   });
 }
@@ -988,12 +1245,44 @@ export async function setItemBaza(
 ) {
   mustBeNumber(input.bazaUsd);
   if (input.bazaUsd !== null && !(input.bazaUsd > 0)) throw new CalcError('baza_positive');
+  if (input.basis !== null && !isBazaBasis(input.basis)) throw new CalcError('bad_basis');
   await mutateRequest(requestId, async (tx) => {
+    // saveTable's own basis rule (0125), restated for the one door that is
+    // not the table: a basis without a price is a CHOICE and stands; a price
+    // without a basis is «auto» and takes the law's default from the row's
+    // group as it is NOW; null with null clears the whole pair. This door
+    // runs no measure pass — like `setGroupRates`, the stored pair
+    // reconciles on the next Saqlash.
+    let basis = input.basis;
+    if (input.bazaUsd !== null && basis === null) {
+      const [row] = await tx
+        .select({
+          dutyUnit: calcGroups.dutyUnit,
+          quantity: calcRequestItems.quantity,
+          weightKg: calcRequestItems.weightKg,
+          measureUnit: calcRequestItems.measureUnit,
+          measureQty: calcRequestItems.measureQty,
+        })
+        .from(calcRequestItems)
+        .leftJoin(calcGroups, eq(calcGroups.id, calcRequestItems.groupId))
+        .where(and(eq(calcRequestItems.requestId, requestId), eq(calcRequestItems.seq, itemSeq)));
+      // The same «avto» the save's measure pass stamps — split, this door
+      // stamped «per piece» on a row the pass would have called m².
+      basis = autoBasisFor(
+        { dutyUnit: row?.dutyUnit ?? null },
+        {
+          quantity: row?.quantity == null ? null : Number(row.quantity),
+          weightKg: row?.weightKg == null ? null : Number(row.weightKg),
+          measureUnit: (row?.measureUnit as MeasureUnit | null) ?? null,
+          measureQty: row?.measureQty == null ? null : Number(row.measureQty),
+        },
+      );
+    }
     const [changed] = await tx
       .update(calcRequestItems)
       .set({
         bazaUsd: input.bazaUsd === null ? null : input.bazaUsd.toFixed(4),
-        bazaBasis: input.bazaUsd === null ? null : input.basis,
+        bazaBasis: basis,
         bazaSource: input.bazaUsd === null ? null : input.source,
         // The whole provenance moves together (0094, widened by 0096):
         // whatever this writes, the number is no longer the import's and no
@@ -1113,11 +1402,12 @@ export async function setFeeOverride(
 /**
  * Fill every item that has no baza from the dictionary, in one pass.
  *
- * A hit is applied only when its basis is RESOLVABLE on that row: unit/kg
- * always, an extended basis (juft/litr/m²) only when the item's group prices
- * per exactly that unit. A «plitka» row stored per m² stamped onto a per-dona
- * item would strand a basis the row cannot measure and the select cannot
- * render — the skip is counted and reported instead.
+ * A hit is applied only when its basis is RESOLVABLE on that row — see the
+ * rule in the loop (0125). Since the m² box follows the BASIS (`pairUnitFor`)
+ * a «plitka» row stored per m² is no longer stranded on an advalor item: the
+ * row grows its O'lchov line and refuses «o'lchov yo'q» until the VED types
+ * the count. Like `setGroupRates`, this door runs no measure pass — the
+ * stored pair reconciles on the next Saqlash.
  */
 export async function pullBazasFromDictionary(
   requestId: string,
@@ -1143,10 +1433,14 @@ export async function pullBazasFromDictionary(
   for (const item of items) {
     const hit = bazas.get(normalise(item.name));
     if (!hit) continue;
-    const resolvable =
-      hit.basis === 'unit' ||
-      hit.basis === 'kg' ||
-      (item.groupId !== null && unitByGroup.get(item.groupId) === hit.basis);
+    // 0125: a row's own basis is free (his 18a), so the book's unit lands on
+    // any row — EXCEPT a row whose unit the VED already chose (an unpriced
+    // row's stored basis is always a choice, never a stamp) when the book
+    // prices it per something else, and a unit the row's law cannot hold
+    // (a pair unit on a juft/litr/m² code). Both are counted and reported.
+    const chosen = (item.bazaBasis as BazaBasis | null) ?? null;
+    const law = item.groupId !== null ? (unitByGroup.get(item.groupId) ?? null) : null;
+    const resolvable = (chosen === null || hit.basis === chosen) && !basisConflicts(law, hit.basis);
     if (!resolvable) {
       skipped += 1;
       continue;
@@ -1336,13 +1630,24 @@ export async function deleteExtra(extraId: string, ctx: AuditContext) {
   });
 }
 
-/** Land a model proposal as draft groups. Refuses once anything is confirmed. */
+/**
+ * Land a model proposal as draft groups. Refuses once anything is confirmed.
+ *
+ * Only the blocks the proposal is ABOUT are replaced (2026-10-09, P2.10d): a
+ * block holding a CODED row — a code from the sealed memory, the intake's
+ * book or a person — stays with its law, its lgota and its certificate, and a
+ * proposed code that matches it joins it rather than minting a twin. It used
+ * to delete every group and re-create the model's, so the memory's 6403
+ * became the model's 6402 and a VED's typed lgota on an unconfirmed block
+ * died with the block. A draft with no code places nothing: the row stays
+ * ungrouped, where the sweep and the blocker can see it.
+ */
 export async function applyProposal(requestId: string, drafts: DraftGroup[], ctx: AuditContext) {
   await db.transaction(async (tx) => {
     // Its OWN flow holds the AI claim it would otherwise refuse on; the lock
-    // still serializes it against saves (it deletes and recreates every
-    // group — unlocked, a concurrent save's items UPDATE hits a deleted
-    // group's FK and the whole save dies with a raw 23503).
+    // still serializes it against saves (it deletes and recreates groups —
+    // unlocked, a concurrent save's items UPDATE hits a deleted group's FK
+    // and the whole save dies with a raw 23503).
     await lockRequestInTx(tx, requestId, { ignoreAiClaim: true });
     const confirmed = await tx
       .select({ id: calcGroups.id })
@@ -1351,9 +1656,41 @@ export async function applyProposal(requestId: string, drafts: DraftGroup[], ctx
       .limit(1);
     if (confirmed.length > 0) throw new CalcError('groups_confirmed');
 
-    await tx.delete(calcGroups).where(eq(calcGroups.requestId, requestId));
-    let seq = 1;
+    const standing = await tx
+      .select({ id: calcGroups.id, seq: calcGroups.seq, tnvedCode: calcGroups.tnvedCode })
+      .from(calcGroups)
+      .where(eq(calcGroups.requestId, requestId));
+    const holders = await tx
+      .select({ groupId: calcRequestItems.groupId })
+      .from(calcRequestItems)
+      .where(
+        and(
+          eq(calcRequestItems.requestId, requestId),
+          sql`${calcRequestItems.groupId} IS NOT NULL`,
+          sql`btrim(coalesce(${calcRequestItems.tnvedCode}, '')) <> ''`,
+        ),
+      );
+    const kept = new Set(holders.map((h) => h.groupId!));
+    const drop = standing.filter((g) => !kept.has(g.id)).map((g) => g.id);
+    if (drop.length > 0) await tx.delete(calcGroups).where(inArray(calcGroups.id, drop));
+    const keptByCode = new Map<string, string>();
+    for (const g of standing) {
+      const code = (g.tnvedCode ?? '').trim();
+      if (kept.has(g.id) && code && !keptByCode.has(code)) keptByCode.set(code, g.id);
+    }
+
+    let seq = standing.filter((g) => kept.has(g.id)).reduce((m, g) => Math.max(m, g.seq), 0) + 1;
     for (const draft of drafts) {
+      const code = (draft.tnvedCode ?? '').trim();
+      if (!code || draft.itemSeqs.length === 0) continue;
+      const home = keptByCode.get(code);
+      if (home) {
+        await tx
+          .update(calcRequestItems)
+          .set({ groupId: home })
+          .where(and(eq(calcRequestItems.requestId, requestId), inArray(calcRequestItems.seq, draft.itemSeqs)));
+        continue;
+      }
       const [row] = await tx
         .insert(calcGroups)
         .values({
@@ -1443,6 +1780,14 @@ export interface SealInput {
   discountReason: string | null;
   bandOverrideMin: number | null;
   bandOverrideReason: string | null;
+  /**
+   * The declaration fee the SCREEN showed at the press (P2.6) — a number, or
+   * null when the fee was blocked there. `undefined` means the caller did not
+   * say (a machine, or a tab opened on the build before this one, judge
+   * MR-24) and is never compared: read as null it would refuse every seal
+   * from an open tab during the deploy window.
+   */
+  sawFeeUsd?: number | null;
 }
 
 /**
@@ -1467,6 +1812,7 @@ export async function sealCalc(
   if (input.bandOverrideMin !== null && !input.bandOverrideReason?.trim()) {
     throw new CalcError('band_reason_required');
   }
+  if (input.sawFeeUsd !== undefined) mustBeNumber(input.sawFeeUsd);
 
   // Priced with exactly what is being sealed. The override belongs in the
   // draft, not only here: a load at a density his tariff does not cover
@@ -1484,7 +1830,23 @@ export async function sealCalc(
   const section = workspace.section;
   if (!section) throw new CalcError('section_required');
   const parts = sectionParts(section);
+  // A band override is a statement about the ROAD (P2.8). A rastamojka seal
+  // has none: the override moved no money, yet it was stored on the version
+  // and announced to the owner and the accountant as «Tarif bandi
+  // o'zgartirildi» — a concession that did not exist. Reproduced first.
+  if (!parts.freight && input.bandOverrideMin !== null) throw new CalcError('band_no_freight');
   if (parts.freight && !workspace.freightZone) throw new CalcError('freight_zone_required');
+  // The fee the screen showed, against the fee this seal is about to lock
+  // (P2.6): the UZS rate or the BHM setting can move between the render and
+  // the press, and the seal must not lock a customs figure nobody saw. To
+  // the CENT (the kernel's rounding moved some fees by one), null === null,
+  // and not at all where the section has no customs half.
+  if (parts.customs && input.sawFeeUsd !== undefined) {
+    const now = workspace.fee?.ok ? workspace.fee.feeUsd : null;
+    const saw = input.sawFeeUsd;
+    const same = now === null || saw === null ? now === saw : Math.abs(now - saw) < 0.005;
+    if (!same) throw new CalcError('conflict');
+  }
 
   const freight = workspace.freight;
   if (parts.freight && !freight?.ok) throw new CalcError('freight_missing');
@@ -1517,6 +1879,10 @@ export async function sealCalc(
       dutySpecific: g.dutySpecific,
       dutyUnit: g.dutyUnit,
       excisePct: g.excisePct,
+      // 0131's specific excise, beside the percentage — absent on every
+      // older breakdown, and every reader tolerates that.
+      exciseSpecific: g.exciseSpecific,
+      exciseUnit: g.exciseUnit,
       hasCertificate: g.effectiveCertificate,
       dutyFree: g.dutyFree,
       vatFree: g.vatFree,
@@ -1533,11 +1899,11 @@ export async function sealCalc(
         label: i.label,
         quantity: i.quantity,
         weightKg: i.weightKg,
-        // Added in phase C. The map was written from `PricedItem`, which has
-        // no volume because the customs arithmetic does not need one — so the
-        // snapshot the migration calls «the whole snapshot … so phase E can
-        // compare» could not answer «how many m³ of this item». Every reader
-        // must tolerate an OLD breakdown that lacks it.
+        // Added in phase C, when `PricedItem` had no volume — so the snapshot
+        // the migration calls «the whole snapshot … so phase E can compare»
+        // could not answer «how many m³ of this item». Since 0125 an m³ baza
+        // PRICES from it. Every reader must still tolerate an OLD breakdown
+        // that lacks it.
         volumeM3: i.volumeM3,
         bazaUsd: i.bazaUsd,
         bazaBasis: i.bazaBasis,
@@ -1554,7 +1920,18 @@ export async function sealCalc(
     // VED 2.0: what the declaration paid VMQ-55, and under which certificate
     // answer. `fee` is inside `customsUsd` already — this is its receipt.
     hasCertificate: workspace.hasCertificate,
-    fee: workspace.fee?.ok ? workspace.fee : null,
+    // The fee's RECEIPT, with its inputs (P2.6): the BHM, the rate and the
+    // rate's day it was converted at, so a sealed fee explains itself after
+    // the setting and the rate book have both moved. Readers of older
+    // breakdowns tolerate the absence of all three.
+    fee: workspace.fee?.ok
+      ? {
+          ...workspace.fee,
+          bhmUzs: workspace.bhmUzs,
+          fxUzsPerUsd: workspace.fxUzsPerUsd,
+          fxDate: workspace.fxDate,
+        }
+      : null,
   };
 
   const aiGroupsSealed = workspace.groups.filter((g) => g.aiProposed).length;
@@ -1642,7 +2019,7 @@ export async function sealCalc(
         .where(and(eq(tasks.id, row.taskId), eq(tasks.status, 'open')));
     }
 
-    await tx.insert(calcVersions).values({
+    const [inserted] = await tx.insert(calcVersions).values({
       requestId,
       versionNo: row.versionNo,
       sealedBy: ctx.actorId!,
@@ -1672,7 +2049,7 @@ export async function sealCalc(
       aiBlindGroups: counters.aiBlindGroups,
       aiRateTakenGroups: counters.aiRateTakenGroups,
       breakdown,
-    });
+    }).returning({ id: calcVersions.id });
 
     // A correction ADOPTS the cargo the request it supersedes was measuring
     // (phase E1). Re-pointing at `recalcFromSealed` time was refused: that
@@ -1738,8 +2115,32 @@ export async function sealCalc(
         .where(eq(deals.id, row.entityId));
     }
 
-    return { versionNo: row.versionNo, requestedBy: row.requestedBy, entityType: row.entityType, entityId: row.entityId };
+    return {
+      versionNo: row.versionNo,
+      versionId: inserted!.id,
+      requestedBy: row.requestedBy,
+      entityType: row.entityType,
+      entityId: row.entityId,
+      taskId: row.taskId,
+    };
   });
+
+  // The price channel's claim (his F, 2026-10-07) — FIRST after the commit:
+  // `writeAudit` below is not in a catch and `announceSeal` awaits Telegram,
+  // so a throw or a restart in that window must not cost the row. Its own
+  // catch: a channel that cannot be told must never undo a seal (#472), and
+  // the drain's net picks up a row this misses.
+  await import('./channel-queue')
+    .then((m) => m.queuePriceChannelPost({ kind: 'seal', requestId, versionId: result.versionId }))
+    .catch((err) => logger.error({ err, requestId }, '[price-channel] not queued'));
+
+  // The task the seal just closed stops offering its «✅ Bajarildi» in
+  // Telegram (review integration-5) — `endRequest`, the release and the take
+  // all retire their task's copies, and the seal closed its task with its own
+  // UPDATE and retired nothing, so the VED's chat kept a live button for a job
+  // that was already sealed. After the commit, never inside it (#714), and
+  // off the request (the void form, #706).
+  if (result.taskId) retireTaskCopiesSoon({ taskIds: [result.taskId], outcome: 'done' });
 
   await writeAudit(db, ctx, {
     entityType: 'calc_request',
@@ -1941,38 +2342,127 @@ export async function currentSealFor(
   return toVersion(row.v, name.get(row.v.sealedBy) ?? null);
 }
 
+/** What a correction answers: the new request, and what the re-read book moved. */
+export interface RecalcResult {
+  id: string;
+  /** Codes the re-read book changed the law of, «6403, 8516». */
+  relawed: string[];
+  /** Item seqs whose law now counts in another unit — their O'lchov is
+   * re-asked on the first Saqlash. */
+  remeasure: number[];
+}
+
 /**
- * «Qayta hisoblash»: a correction is a NEW request seeded from the sealed one.
+ * «Qayta hisoblash»: a correction is a NEW request seeded from a PRICED one —
+ * a sealed version, or since 2026-10-06 a Готово answer (his 10a, «muhrlanganlar
+ * bilan bir xil qoida»).
  *
  * Re-opening the old one by clearing `completed_at` would re-arm the overdue
  * sweep, the clock and the manual «Bajarildi» against a request that already
- * has a locked price behind it. This is also exactly what an EXPIRED quote
- * needs, so there is one path and not two.
+ * has a price behind it. This is also exactly what an EXPIRED quote needs, so
+ * there is one path and not two.
+ *
+ * The parent must have a price, and the words say which it lacks (review
+ * tests-completeness-5): an open parent `not_closed`, a handed-back one
+ * `parent_returned`, a price-less one `not_priced`. A parent with a child is
+ * refused by how the child ended: open → `recalc_open` («finish that one»),
+ * returned or closed price-less → `recalc_returned` (the chain has no way on
+ * from here; the door is a NEW request from the card — review
+ * ved-correctness-5, which decides tests-completeness-22's exit this way and
+ * states it), priced → `recalc_superseded` («recalc from the newest»).
+ *
+ * The correction lands in the queue like any request (review
+ * ved-correctness-1, -19, data-migration-15):
+ *   - `requested_by` is the ROOT request's seller, never the admin who
+ *     pressed — the correction's CalcSealed / CalcDone must reach the person
+ *     who will quote it (one walk up `supersedes_request_id`, which also
+ *     repairs chains corrected before this fix);
+ *   - it is assigned to whoever PRICED the parent when the rota would hand
+ *     them work at all (`vedRotaPool` — never the owner or an admin), else
+ *     to the rota, else unassigned (the admin keeps «Olaman»);
+ *   - its task opens through `createTask` bound to the request, so the clock
+ *     and the holder are the queue's;
+ *   - the seller is told the old price no longer stands, which is true by
+ *     the money rules as they are: the edge supersedes at the press
+ *     (`answerFloorStandsSql`, `payableOffersSql`, unchanged).
+ * Corrections made before this round keep their requester and have no task
+ * (stated; no backfill here).
+ *
+ * THE BOOK IS RE-READ (2026-10-09, P2.2). A group whose law came from the
+ * dictionary (`rate_source = 'dictionary'`) takes TODAY's row for its code —
+ * a correction exists because something moved, and copying the old law would
+ * seal yesterday's book under today's date. A TYPED law is a person's word
+ * and travels as typed. The book is read on the pool BEFORE the transaction
+ * (#714); the codes whose law changed come back in `relawed`, and the rows
+ * whose law now counts in another UNIT come back in `remeasure` — this door
+ * runs no measure pass (judge MR-15/TT-8), so their pairs wait for the first
+ * Saqlash and the new request names them once on its first load.
  */
 export async function recalcFromSealed(
   requestId: string,
   ctx: AuditContext,
-): Promise<string> {
+): Promise<RecalcResult> {
+  if (!ctx.actorId) throw new CalcError('unauthenticated');
   const old = await db.query.calcRequests.findFirst({ where: eq(calcRequests.id, requestId) });
   if (!old) throw new CalcError('not_found');
   if (!old.completedAt) throw new CalcError('not_closed');
-  // Its own name promises a SEALED parent, and `completed_at` alone does not
-  // say so: `endRequest({via:'returned'})` stamps it too, so a handed-back
-  // request was a legal parent by URL and the «correction» started from a
-  // job that never had a price.
-  const sealed = await db
-    .select({ id: calcVersions.id })
+  if (old.completedVia === 'returned') throw new CalcError('parent_returned');
+  // Its name promises a PRICED parent, and `completed_at` alone does not say
+  // so: a «lines» ending or a price-less task close stamps it too.
+  const [sealed] = await db
+    .select({ id: calcVersions.id, sealedBy: calcVersions.sealedBy })
     .from(calcVersions)
     .where(eq(calcVersions.requestId, requestId))
+    .orderBy(desc(calcVersions.versionNo))
     .limit(1);
-  if (sealed.length === 0) throw new CalcError('not_sealed');
+  const answered = isAnswer(old);
+  if (!sealed && !answered) throw new CalcError('not_priced');
+  // Whoever PRICED it: the sealer of a seal, the answerer of an answer.
+  const pricer = sealed ? sealed.sealedBy : old.completedBy;
+
+  // The ROOT's seller — the person every correction in the chain is for.
+  const root = await db.execute<{ requested_by: string }>(sql`
+    WITH RECURSIVE up AS (
+      SELECT id, supersedes_request_id, requested_by, 0 AS depth
+        FROM calc_requests WHERE id = ${requestId}::uuid
+      UNION ALL
+      SELECT r.id, r.supersedes_request_id, r.requested_by, u.depth + 1
+        FROM calc_requests r JOIN up u ON r.id = u.supersedes_request_id
+       WHERE u.depth < 64
+    )
+    SELECT requested_by::text AS requested_by FROM up
+     WHERE supersedes_request_id IS NULL
+     LIMIT 1
+  `);
+  const seller = root[0]?.requested_by ?? old.requestedBy;
+
+  // Pooled, so BEFORE the transaction (#714).
+  const pool = await vedRotaPool();
+  const assigneeId = pricer && pool.includes(pricer) ? pricer : await nextVedAssignee();
+  const dueAt = new Date(Date.now() + calcDueMinutes(old.itemCount, Boolean(old.noteId)) * 60_000);
+  // Today's book for the parent's dictionary groups — on the pool, before
+  // the tx (#714). The parent is closed, so its groups cannot move meanwhile
+  // (every writer refuses `already_closed`).
+  const parentGroups = await db
+    .select({ tnvedCode: calcGroups.tnvedCode, rateSource: calcGroups.rateSource })
+    .from(calcGroups)
+    .where(eq(calcGroups.requestId, requestId));
+  const book = await ratesForCodes(
+    parentGroups
+      .filter((g) => g.rateSource === 'dictionary')
+      .map((g) => (g.tnvedCode ?? '').trim())
+      .filter(Boolean),
+    onDate(),
+  );
+  const relawed: string[] = [];
+  const remeasure: number[] = [];
+
   // A correction starts from the chain's NEWEST link, never from one that
   // already has a child. This is a MONEY fence before it is a numbering one:
   // two children off one parent both stand (`notSupersededSql` sees no child
   // on either), so `payableOffersSql` pays the seller's commission on BOTH,
   // and the cargo link (`stampCalcLink`, «exactly one sealed request») can
-  // no longer choose. An open child says «finish that one»; a sealed child
-  // says «recalc from it».
+  // no longer choose.
   let newId: string;
   try {
     newId = await db.transaction(async (tx) => {
@@ -1994,20 +2484,22 @@ export async function recalcFromSealed(
        * white page.
        */
       await tx.execute(sql`SELECT id FROM calc_requests WHERE id = ${requestId}::uuid FOR UPDATE`);
-      const child = await tx
-        .select({ id: calcRequests.id, completedAt: calcRequests.completedAt })
-        .from(calcRequests)
-        .where(eq(calcRequests.supersedesRequestId, requestId))
-        .limit(1);
-      if (child[0]) throw new CalcError(child[0].completedAt ? 'recalc_superseded' : 'recalc_open');
+      const [child] = await tx.execute<{ state: string | null }>(sql`
+        SELECT ${childStateSql(sql`${requestId}::uuid`)} AS state
+      `);
+      if (child?.state === 'open') throw new CalcError('recalc_open');
+      if (child?.state === 'returned' || child?.state === 'unpriced') {
+        throw new CalcError('recalc_returned');
+      }
+      if (child?.state) throw new CalcError('recalc_superseded');
 
       const [fresh] = await tx
         .insert(calcRequests)
         .values({
           entityType: old.entityType,
           entityId: old.entityId,
-          requestedBy: ctx.actorId ?? old.requestedBy,
-          assigneeId: old.assigneeId,
+          requestedBy: seller,
+          assigneeId,
           itemCount: old.itemCount,
           section: old.section,
           fromCity: old.fromCity,
@@ -2022,7 +2514,8 @@ export async function recalcFromSealed(
           hasCertificate: old.hasCertificate,
           feeOverrideUsd: old.feeOverrideUsd,
           supersedesRequestId: old.id,
-          dueAt: new Date(Date.now() + 2 * 3_600_000),
+          takenAt: assigneeId ? new Date() : null,
+          dueAt,
         })
         .returning({ id: calcRequests.id });
 
@@ -2038,7 +2531,37 @@ export async function recalcFromSealed(
         .orderBy(asc(calcGroups.seq));
 
       const groupMap = new Map<string, string>();
+      /** Groups whose law now counts in another unit — their rows are named. */
+      const unitMoved = new Set<string>();
       for (const g of groups) {
+        // A dictionary group takes today's book (P2.2); a typed one, its own.
+        const today = g.rateSource === 'dictionary' ? book.get((g.tnvedCode ?? '').trim()) : undefined;
+        const law = today
+          ? {
+              dutyPct: today.dutyPct.toFixed(3),
+              vatPct: today.vatPct.toFixed(3),
+              dutyMode: today.dutyMode === 'advalor' ? null : today.dutyMode,
+              dutySpecific: today.dutySpecific === null ? null : today.dutySpecific.toFixed(4),
+              dutyUnit: today.dutyUnit,
+            }
+          : { dutyPct: g.dutyPct, vatPct: g.vatPct, dutyMode: g.dutyMode, dutySpecific: g.dutySpecific, dutyUnit: g.dutyUnit };
+        if (
+          today &&
+          lawOffBook(
+            {
+              dutyPct: toNum(g.dutyPct),
+              vatPct: toNum(g.vatPct),
+              dutyMode: (g.dutyMode as DutyMode | null) ?? 'advalor',
+              dutySpecific: toNum(g.dutySpecific),
+              dutyUnit: g.dutyUnit,
+            },
+            today,
+          )
+        ) {
+          const code = (g.tnvedCode ?? '').trim();
+          if (!relawed.includes(code)) relawed.push(code);
+          if ((g.dutyUnit ?? null) !== (today.dutyUnit ?? null)) unitMoved.add(g.id);
+        }
         const [copy] = await tx
           .insert(calcGroups)
           .values({
@@ -2046,15 +2569,22 @@ export async function recalcFromSealed(
             seq: g.seq,
             label: g.label,
             tnvedCode: g.tnvedCode,
-            dutyPct: g.dutyPct,
-            vatPct: g.vatPct,
-            feeUsd: g.feeUsd,
+            dutyPct: law.dutyPct,
+            vatPct: law.vatPct,
+            // The group carries no fee (#858): a legacy per-group figure must
+            // not ride onto a correction and be charged beside the
+            // declaration's own (2026-10-09 audit).
+            feeUsd: null,
             // VED 2.0: the law's shape travels with the rates it shapes — a
             // correction that dropped the MAX floor would re-price the job.
-            dutyMode: g.dutyMode,
-            dutySpecific: g.dutySpecific,
-            dutyUnit: g.dutyUnit,
+            dutyMode: law.dutyMode,
+            dutySpecific: law.dutySpecific,
+            dutyUnit: law.dutyUnit,
             excisePct: g.excisePct,
+            // 0131: the specific excise travels like the percentage — a
+            // correction without it re-prices the job without its excise.
+            exciseSpecific: g.exciseSpecific,
+            exciseUnit: g.exciseUnit,
             hasCertificate: g.hasCertificate,
             rateSource: g.rateSource,
             dutyFree: g.dutyFree,
@@ -2076,6 +2606,7 @@ export async function recalcFromSealed(
       }
 
       for (const item of items) {
+        if (item.groupId && unitMoved.has(item.groupId)) remeasure.push(item.seq);
         await tx.insert(calcRequestItems).values({
           requestId: fresh!.id,
           seq: item.seq,
@@ -2134,9 +2665,62 @@ export async function recalcFromSealed(
     entityType: 'calc_request',
     entityId: newId,
     action: 'create',
-    after: { supersedes: requestId },
+    after: { supersedes: requestId, relawed, remeasure },
   });
-  return newId;
+  // The CARD's own row too, in the same vocabulary as every other calc
+  // ending, so the seller's History tab says the price was reopened.
+  await writeAudit(db, ctx, {
+    entityType: old.entityType,
+    entityId: old.entityId,
+    action: 'update',
+    after: { calcRecalc: newId, calcRequest: requestId },
+  });
+
+  const label = await requestLabel(old.entityType, old.entityId);
+  // The task: what puts the correction on the holder's /bugun and phone,
+  // bound to the request so no task door can move its clock or close it
+  // (docs/VED-TARIX.md §8). After the commit, never inside it (#714); a
+  // failure leaves a request «Olaman» can still give a task — a task with no
+  // request would be the ghost.
+  if (assigneeId) {
+    try {
+      const task = await createTask(
+        {
+          title: `Hisoblash: ${label} (${old.itemCount})`,
+          note: '',
+          typeId: null,
+          assigneeId,
+          dueAt: dueAt.toISOString(),
+          priority: 1,
+          entityType: old.entityType,
+          entityId: old.entityId,
+          repeatUnit: null,
+          repeatEvery: 1,
+        },
+        ctx,
+        { origin: 'calc', boundId: newId },
+      );
+      await db
+        .update(calcRequests)
+        .set({ taskId: task.id, updatedAt: new Date() })
+        .where(eq(calcRequests.id, newId));
+    } catch (err) {
+      logger.error({ err, newId }, '[calc] correction task creation failed');
+    }
+  }
+  await notifyStaffTelegram({
+    userIds: [seller],
+    type: 'CalcRecalc',
+    text:
+      `🔄 ${label}: narx qayta hisoblanmoqda — eski narx endi amal qilmaydi` +
+      linkLine(old.entityType, old.entityId),
+    exceptUserId: ctx.actorId,
+  }).catch((err) => logger.error({ err, newId }, '[calc] recalc notify failed'));
+  // The old price's channel post gets its «qayta hisoblanmoqda» mark — derived
+  // by the drain's reconcile from the graph this insert just changed; the
+  // kick only makes it soon (his F).
+  kickPriceChannel();
+  return { id: newId, relawed, remeasure };
 }
 
 // ---------------------------------------------------------------------------
@@ -2231,6 +2815,44 @@ export { isUniqueViolation, type FreightBand };
 export const AI_CLAIM_STALE_MS = 10 * 60_000;
 
 /**
+ * Is an AI claim still holding the request? ONE home for the window, asked by
+ * the workspace lock, the screen's chip and the clock probe.
+ *
+ * Takes TEXT as well as a Date on purpose: a raw `tx.execute` hands a
+ * timestamptz back as a string whatever its generic type says (#923), and a
+ * `.getTime()` on that string is a TypeError inside the lock. A value that
+ * does not read as a time is NOT a claim — a garbage stamp must never brick
+ * the table.
+ */
+export function aiClaimLive(startedAt: Date | string | null, now = Date.now()): boolean {
+  if (startedAt === null) return false;
+  const at = new Date(startedAt).getTime();
+  return Number.isFinite(at) && now - at < AI_CLAIM_STALE_MS;
+}
+
+/**
+ * The request's clock as the phone's probe reads it (his B6 a — «boshqa kishi
+ * hozirgina o'zgartirdi»): one indexed pool read, never inside a transaction
+ * (#714), typed by drizzle so the claim arrives as a Date. Null when the
+ * request does not exist.
+ */
+export async function requestClock(
+  requestId: string,
+): Promise<{ rev: number; aiRunning: boolean; closed: boolean } | null> {
+  const [row] = await db
+    .select({
+      rev: calcRequests.rev,
+      completedAt: calcRequests.completedAt,
+      aiProposalStartedAt: calcRequests.aiProposalStartedAt,
+    })
+    .from(calcRequests)
+    .where(eq(calcRequests.id, requestId))
+    .limit(1);
+  if (!row) return null;
+  return { rev: row.rev, aiRunning: aiClaimLive(row.aiProposalStartedAt), closed: row.completedAt !== null };
+}
+
+/**
  * «AI taklif qilsin» — the model groups the goods, and nothing more.
  *
  * What comes back is labels, TNVED codes and a grouping. What does NOT come
@@ -2282,58 +2904,72 @@ export async function proposeGroups(
   if (claimed.length === 0) throw new CalcError('ai_running');
 
   try {
-    const items = await db
+    const all = await db
       .select()
       .from(calcRequestItems)
       .where(eq(calcRequestItems.requestId, requestId))
       .orderBy(asc(calcRequestItems.seq));
-    if (items.length === 0) throw new CalcError('no_items');
-
-    const { proposeGoodsGrouping, TnvedError } = await import('../tnved/service');
-    const batches = planBatches(items.length);
-    const results: { offset: number; groups: ProposedGroup[] | null }[] = [];
+    if (all.length === 0) throw new CalcError('no_items');
+    /**
+     * The model is asked ONLY about rows nobody has coded (P2.10d, reproduced
+     * before it was fixed). The owner's own order is «memory first»: a code
+     * the sealed memory, the intake's book or a person put on a row is this
+     * company's answer, and the model re-deciding it turned the memory's 6403
+     * into its own 6402 — and the bot then priced the model's guess. Nothing
+     * uncoded is nothing to ask: the model step is skipped, no call is
+     * billed, and the pricing tail below still runs.
+     */
+    const items = all.filter((i) => !(i.tnvedCode ?? '').trim());
+    let drafts: ReturnType<typeof mergeProposals> = [];
+    let batchCount = 0;
     let failed = 0;
-    for (const batch of batches) {
-      const slice = items.slice(batch.offset, batch.offset + batch.count);
-      try {
-        const answer = await proposeGoodsGrouping(
-          slice.map((i) => ({ name: i.name, quantity: toNum(i.quantity), unit: i.unit })),
-        );
-        results.push({ offset: batch.offset, groups: answer.groups });
-        // One ledger row per model call (0096), so a real week of this can
-        // be read as a bill. Never throws — see `recordAiPass`.
-        if (answer.usage) {
-          await recordAiPass({
-            requestId,
-            staffId: ctx.actorId ?? null,
-            kind: 'grouping',
-            model: answer.usage.model,
-            inputTokens: answer.usage.inputTokens,
-            outputTokens: answer.usage.outputTokens,
-          });
+    if (items.length > 0) {
+      const { proposeGoodsGrouping, TnvedError } = await import('../tnved/service');
+      const batches = planBatches(items.length);
+      batchCount = batches.length;
+      const results: { offset: number; groups: ProposedGroup[] | null }[] = [];
+      for (const batch of batches) {
+        const slice = items.slice(batch.offset, batch.offset + batch.count);
+        try {
+          const answer = await proposeGoodsGrouping(
+            slice.map((i) => ({ name: i.name, quantity: toNum(i.quantity), unit: i.unit })),
+          );
+          results.push({ offset: batch.offset, groups: answer.groups });
+          // One ledger row per model call (0096), so a real week of this can
+          // be read as a bill. Never throws — see `recordAiPass`.
+          if (answer.usage) {
+            await recordAiPass({
+              requestId,
+              staffId: ctx.actorId ?? null,
+              kind: 'grouping',
+              model: answer.usage.model,
+              inputTokens: answer.usage.inputTokens,
+              outputTokens: answer.usage.outputTokens,
+            });
+          }
+        } catch (err) {
+          // NO KEY IS NOT «THE MODEL DID NOT ANSWER» (audit A25). Every other
+          // failure here is per-batch and survivable; a missing key is a fact
+          // about the SERVER that no later batch can improve, and swallowing it
+          // sent the VED «ИИ не ответил» — a sentence that invites pressing
+          // again — while the honest word existed two lines away in every
+          // bundle. Rethrown unchanged, and the button is not even drawn when
+          // `workspace.aiConfigured` is false.
+          if (err instanceof TnvedError && err.code === 'ai_not_configured') {
+            throw new CalcError('ai_not_configured');
+          }
+          // A batch that failed costs its own goods, not the whole file: eight
+          // hundred classified beats a thousand left for the manager.
+          failed += 1;
+          logger.error({ err, requestId, offset: batch.offset }, '[calc] ai batch failed');
+          results.push({ offset: batch.offset, groups: null });
         }
-      } catch (err) {
-        // NO KEY IS NOT «THE MODEL DID NOT ANSWER» (audit A25). Every other
-        // failure here is per-batch and survivable; a missing key is a fact
-        // about the SERVER that no later batch can improve, and swallowing it
-        // sent the VED «ИИ не ответил» — a sentence that invites pressing
-        // again — while the honest word existed two lines away in every
-        // bundle. Rethrown unchanged, and the button is not even drawn when
-        // `workspace.aiConfigured` is false.
-        if (err instanceof TnvedError && err.code === 'ai_not_configured') {
-          throw new CalcError('ai_not_configured');
-        }
-        // A batch that failed costs its own goods, not the whole file: eight
-        // hundred classified beats a thousand left for the manager.
-        failed += 1;
-        logger.error({ err, requestId, offset: batch.offset }, '[calc] ai batch failed');
-        results.push({ offset: batch.offset, groups: null });
       }
-    }
-    if (failed === batches.length) throw new CalcError('ai_failed');
+      if (failed === batches.length) throw new CalcError('ai_failed');
 
-    const drafts = mergeProposals(results, items.map((i) => i.seq));
-    await applyProposal(requestId, drafts, ctx);
+      drafts = mergeProposals(results, items.map((i) => i.seq));
+      await applyProposal(requestId, drafts, ctx);
+    }
     // …and then the proposal is turned into a CALCULATION.
     //
     // MEASURED before it was written (a probe on a real request): the
@@ -2372,7 +3008,7 @@ export async function proposeGroups(
     // the claim.
     await releaseAiClaim(requestId);
     const priced = await priceProposedGroups(requestId, ctx);
-    return { groups: drafts.length, batches: batches.length, failed, ...priced };
+    return { groups: drafts.length, batches: batchCount, failed, ...priced };
   } finally {
     await releaseAiClaim(requestId);
   }
@@ -2502,12 +3138,36 @@ export interface TableItemEdit {
   volumeM3?: number | null;
   tnvedCode?: string | null;
   note?: string | null;
-  /** The amount in the code's own extended unit (juft/litr/m²/sm³). The UNIT
-   * is never posted — the server stamps it from the law (the group's
-   * dutyUnit); a posted unit could disagree with the code it rides. */
+  /** The amount in the row's pair unit (juft/litr/m²/sm³). The UNIT is never
+   * posted — the server stamps it by `pairUnitFor`: the law's pair unit when
+   * the code has one, else the row's own pair BASIS (an m² baza on an advalor
+   * code); a posted unit could disagree with the code it rides. */
   measureQty?: number | null;
-  /** The row's baza — null clears amount, basis and source TOGETHER (a basis
-   * without a price describes nothing). */
+  /**
+   * The unit a measure was STATED in, when nothing else names one (2026-10-09,
+   * docs/RASTAMOJKA-TUZATISH.md P3.0): a seller's or a paste's «120 m²» on an
+   * uncoded or advalor row. Honoured only where neither the law nor the
+   * basis names a different pair — the law still wins.
+   */
+  measureUnit?: MeasureUnit | null;
+  /** The unit «avto» SHOWED when a price was typed with no unit chosen —
+   * posted by the screens only; the machine posts none (judge MR-17). */
+  shownBasis?: BazaBasis;
+  /** The seller's unit WORD — posted only to dismiss it («Bu dona»: null), so
+   * a carton or an unknown word stops asking (2026-10-09). */
+  unit?: string | null;
+  /**
+   * The row's baza (0125's four states — `bazaUsd` undefined leaves it alone):
+   * - an amount + a basis — priced per that unit, the VED's word;
+   * - an amount + NULL basis — «avto»: the stored basis stands, and a row
+   *   with none takes the law's default from its FINAL group (18a), stamped
+   *   inside the measure pass — never from the pre-tx dictionary read, since
+   *   a typed code can join a group whose law a person typed;
+   * - NULL amount + a basis — no price yet, but the unit is CHOSEN and stands
+   *   (the snap-back the owner reported had a second costume here: a unit
+   *   picked on an unpriced row posted nothing and vanished on Saqlash);
+   * - NULL + NULL — clears amount, basis and source together.
+   */
   bazaUsd?: number | null;
   bazaBasis?: BazaBasis | null;
   /** A row PICKED out of the customs import. The id is a claim: the server
@@ -2524,6 +3184,90 @@ export interface TableItemEdit {
    * edits. A typed baza clears it, like every other half of the provenance.
    */
   bazaReason?: string | null;
+  /**
+   * What the screen SHOWED under this edit's cells at the press — the stored
+   * values of exactly the fields the draft stands on (review PHONE-2). The
+   * phone sheet's B6 look is a probe before the post, and a colleague's save
+   * landing between that look and this commit would otherwise be overwritten
+   * unseen; compared under the request lock, a row that moved since is
+   * refused `changed_under` naming it, and the screen brings the change in.
+   * Not a lock: the next press, with the change on the screen, carries what
+   * it then showed. The grid posts none (its silence is by design), and
+   * neither does the machine.
+   */
+  expect?: TableExpect;
+}
+
+/** The stored values an edit was made over — `RowBase` on the screen. */
+export type TableExpect = Partial<{
+  label: string;
+  tnvedCode: string | null;
+  quantity: number | null;
+  weightKg: number | null;
+  volumeM3: number | null;
+  note: string | null;
+  measureUnit: MeasureUnit | null;
+  measureQty: number | null;
+  bazaUsd: number | null;
+  bazaBasis: BazaBasis | null;
+}>;
+
+/**
+ * Did the stored row move under what the screen showed? Only the fields the
+ * expectation names; numbers at the column's own scale, text trimmed (an
+ * empty note is no note). A field that is not a known one, or a value of the
+ * wrong shape, counts as moved — a crafted expectation refuses, it never
+ * waves a write through.
+ */
+export function movedUnder(
+  expect: TableExpect,
+  stored: {
+    name: string;
+    tnvedCode: string | null;
+    quantity: string | null;
+    weightKg: string | null;
+    volumeM3: string | null;
+    note: string | null;
+    measureUnit: string | null;
+    measureQty: string | null;
+    bazaUsd: string | null;
+    bazaBasis: string | null;
+  },
+): boolean {
+  const scaled = (v: number | string | null, places: number) =>
+    v === null ? null : Number(Number(v).toFixed(places));
+  const text = (v: unknown) => (typeof v === 'string' ? v.trim() : v === null ? '' : undefined);
+  for (const [key, value] of Object.entries(expect)) {
+    if (value === undefined) continue;
+    switch (key) {
+      case 'label':
+        if (text(value) !== stored.name.trim()) return true;
+        break;
+      case 'tnvedCode':
+      case 'note':
+        if (text(value) !== (stored[key] ?? '').trim()) return true;
+        break;
+      case 'quantity':
+      case 'weightKg':
+      case 'volumeM3':
+      case 'measureQty':
+      case 'bazaUsd': {
+        // A number off the wire, never a numeric string read as one (a NaN or
+        // an Infinity can equal no stored figure, so it reads as moved anyway).
+        if (value !== null && typeof value !== 'number') return true;
+        const places = key === 'measureQty' || key === 'bazaUsd' ? 4 : 3;
+        if (scaled(value, places) !== scaled(stored[key], places)) return true;
+        break;
+      }
+      case 'measureUnit':
+      case 'bazaBasis':
+        if ((value ?? null) !== (stored[key] ?? null)) return true;
+        break;
+      default:
+        return true;
+    }
+  }
+  return false;
 }
 
 export interface TableSaveResult {
@@ -2547,10 +3291,21 @@ export interface TableSaveResult {
    * unit. Never a whole-save refusal: the box was on the screen in good
    * faith (a new row's law shape is unknowable before the save). */
   measuresDropped: number[];
-  /** Rows priced per-dona inside a block whose law prices per m²/juft/litr —
-   * the one-save-new-code case, where the default could not know the law
-   * yet. Advisory and NAMED, never a silent rewrite (#171 inverted). */
+  /** PRICED rows recoded or added in THIS save whose basis is not the one
+   * the new law counts in (0125's A2: a priced row keeps the unit its price
+   * was typed in — a number typed «per dona» does not silently become «per
+   * juft»). Advisory and NAMED, never a silent rewrite (#171 inverted); an
+   * unpriced row simply follows the new code. */
   basisSuspect: number[];
+  /** Rows whose basis the law cannot hold (a pair unit on a juft/litr/m²
+   * code, after a recode or a file pick): the law's own pair stands, the
+   * engine refuses `measure_missing` naming the row, and the select shows
+   * ⚠ until a person picks a unit that fits. Never rewritten silently. */
+  basisConflict: number[];
+  /** New rows whose client id this request ALREADY holds — a retried save
+   * whose first answer was lost. Skipped, so a goods line is never written
+   * twice (phase 0 of the phone round). */
+  alreadySaved: number;
   /** Rows whose EMPTY baza this save filled from the customs import (0094).
    * Named, never silent — his own rule is that a suggestion the VED cannot
    * see is a price nobody stated: «agar to'g'ri bo'lmasa baza yo'q deb VED
@@ -2560,11 +3315,31 @@ export interface TableSaveResult {
    * confirmed price for this product, which outranks the file. Named the
    * same way, for the same reason. */
   memoryFilled: number[];
+  /**
+   * Old rows whose seller's unit word put a number in the wrong column
+   * («120» under «m2» in the piece column, stored before the doors learned
+   * units, 2026-10-09): this save MOVED it to the column the word names
+   * (`normalizeRowUnit`, the one rule every door uses). Named — the VED
+   * checks the row, and the seller's own words stay in its note.
+   */
+  unitsMoved: { seq: number; to: string; note: string }[];
+  /** Rows whose seller's word is a carton count or a word no unit list
+   * knows: nothing is moved — the count is the VED's to answer («Bu karobka»
+   * / «Bu dona»), never the machine's guess. */
+  sellerUnitUnresolved: { seq: number; word: string }[];
+  /** «avto» prices this save stamped with no unit the screen had shown — the
+   * machine's posts, and a new row whose code's law was unknown when it was
+   * typed. Named, so a price is never silently re-unit-ed (judge MR-17). */
+  basisStamped: { seq: number; basis: BazaBasis }[];
+  /** The request's rev AFTER this save, as the save itself wrote it — the
+   * screen settles exactly what it posted once a refresh reaches this rev
+   * (the phone round, D3). Required: every constructor must answer. */
+  rev: number;
 }
 
 const CODE_SHAPE = /^\d{4,10}$/;
-const BAZA_BASES: readonly BazaBasis[] = ['unit', 'kg', 'juft', 'litr', 'm2'];
-const EXT_UNITS: readonly MeasureUnit[] = ['juft', 'litr', 'm2', 'sm3'];
+/** A client-minted row id (phase 0): the same shape the database mints. */
+const CLIENT_ID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Parse a table code cell: '' → null, digits 4-10 → trimmed, else refused. */
 function tableCode(raw: string | null | undefined, seq: number): string | null {
@@ -2616,7 +3391,7 @@ async function lockRequestInTx(
   const rows = await tx.execute<{
     id: string;
     completed_at: Date | null;
-    ai_proposal_started_at: Date | null;
+    ai_proposal_started_at: Date | string | null;
     rev: number;
   }>(
     sql`SELECT id, completed_at, ai_proposal_started_at, rev FROM calc_requests WHERE id = ${requestId}::uuid FOR UPDATE`,
@@ -2624,10 +3399,10 @@ async function lockRequestInTx(
   const row = rows[0];
   if (!row) throw new CalcError('not_found');
   if (row.completed_at) throw new CalcError('already_closed');
-  const claimed = row.ai_proposal_started_at ? new Date(row.ai_proposal_started_at).getTime() : null;
   // `ignoreAiClaim` exists for exactly one caller: applyProposal, whose OWN
-  // flow holds the claim it would otherwise refuse on.
-  if (!opts.ignoreAiClaim && claimed !== null && Date.now() - claimed < AI_CLAIM_STALE_MS) {
+  // flow holds the claim it would otherwise refuse on. The raw value is TEXT
+  // here (a raw execute), which aiClaimLive reads as such.
+  if (!opts.ignoreAiClaim && aiClaimLive(row.ai_proposal_started_at)) {
     throw new CalcError('ai_running');
   }
   return { rev: row.rev };
@@ -2761,17 +3536,23 @@ async function pruneEmptyGroupsInTx(
 }
 
 /** count(*) is the arbiter — a cached itemCount under concurrency is how
- * two saves each pass the cap and the label lies (judge #5/#38). */
-async function recountItemsInTx(tx: TxHandle, requestId: string): Promise<number> {
+ * two saves each pass the cap and the label lies (judge #5/#38).
+ *
+ * It also moves the clock — exactly once per table save and per delete, an
+ * empty save included — and answers the rev it wrote, so the screen can
+ * settle the drafts it posted at the server's OWN revision (the phone
+ * round's D3: a refresh can land a colleague's rev first). */
+async function recountItemsInTx(tx: TxHandle, requestId: string): Promise<{ n: number; rev: number }> {
   const rows = await tx.execute<{ n: string }>(
     sql`SELECT count(*) AS n FROM calc_request_items WHERE request_id = ${requestId}::uuid`,
   );
   const n = Number(rows[0]?.n ?? 0);
-  await tx
+  const [bumped] = await tx
     .update(calcRequests)
     .set({ itemCount: n, rev: sql`${calcRequests.rev} + 1`, updatedAt: new Date() })
-    .where(eq(calcRequests.id, requestId));
-  return n;
+    .where(eq(calcRequests.id, requestId))
+    .returning({ rev: calcRequests.rev });
+  return { n, rev: bumped!.rev };
 }
 
 /**
@@ -2892,7 +3673,11 @@ async function suggestImportFills(input: {
     tnvedCode: string | null;
     quantity: string | null;
     weightKg: string | null;
+    volumeM3: string | null;
     bazaUsd: string | null;
+    bazaBasis: string | null;
+    measureUnit: string | null;
+    measureQty: string | null;
   }[];
   itemEdits: {
     id: string;
@@ -2900,14 +3685,21 @@ async function suggestImportFills(input: {
     tnvedCode?: string | null;
     quantity?: number | null;
     weightKg?: number | null;
+    volumeM3?: number | null;
     bazaUsd?: number | null;
+    bazaBasis?: BazaBasis | null;
+    measureQty?: number | null;
   }[];
   withCodes: {
     name: string;
     tnvedCode: string | null;
     quantity: number | null;
     weightKg: number | null;
+    volumeM3: number | null;
     bazaUsd: number | null;
+    bazaBasis: BazaBasis | null;
+    measureUnit?: string | null;
+    measureQty?: number | null;
   }[];
   rates: Map<string, RatesRow>;
 }): Promise<ImportFillPlan> {
@@ -2917,6 +3709,12 @@ async function suggestImportFills(input: {
     name: string;
     quantity: number | null;
     weightKg: number | null;
+    volumeM3: number | null;
+    /** The unit the VED CHOSE for this still-unpriced row (0125) — a stored
+     * basis on a baza-less row is always a choice, never a stamp. */
+    chosen: BazaBasis | null;
+    /** A pair the row STATES (2026-10-09) — `unitsForRow` answers in it. */
+    statedPair: 'm2' | 'juft' | 'litr' | null;
   };
   const num = (v: string | null) => (v === null ? null : Number(v));
   const wants: Want[] = [];
@@ -2927,12 +3725,16 @@ async function suggestImportFills(input: {
     const code = e && e.tnvedCode !== undefined ? e.tnvedCode : s.tnvedCode;
     const baza = e && e.bazaUsd !== undefined ? e.bazaUsd : num(s.bazaUsd);
     if (!code || baza !== null) continue;
+    const storedBasis = isBazaBasis(s.bazaBasis) ? s.bazaBasis : null;
     wants.push({
       key: { kind: 'item', id: s.id },
       code,
       name: e && e.name !== undefined ? e.name : s.name,
       quantity: e && e.quantity !== undefined ? e.quantity : num(s.quantity),
       weightKg: e && e.weightKg !== undefined ? e.weightKg : num(s.weightKg),
+      volumeM3: e && e.volumeM3 !== undefined ? e.volumeM3 : num(s.volumeM3),
+      chosen: e && e.bazaUsd !== undefined ? (e.bazaBasis ?? null) : storedBasis,
+      statedPair: statedPairOf(s.measureUnit, e && e.measureQty !== undefined ? e.measureQty : num(s.measureQty)),
     });
   }
   input.withCodes.forEach((r, index) => {
@@ -2943,6 +3745,9 @@ async function suggestImportFills(input: {
       name: r.name,
       quantity: r.quantity,
       weightKg: r.weightKg,
+      volumeM3: r.volumeM3,
+      chosen: r.bazaBasis,
+      statedPair: statedPairOf(r.measureUnit ?? null, r.measureQty ?? null),
     });
   });
   if (wants.length === 0) return EMPTY_FILL_PLAN;
@@ -2963,8 +3768,11 @@ async function suggestImportFills(input: {
   for (const w of wants) {
     const units = unitsForRow({
       dutyUnit: input.rates.get(w.code)?.dutyUnit ?? null,
+      chosen: w.chosen,
       hasWeight: w.weightKg !== null && w.weightKg > 0,
       hasQuantity: w.quantity !== null && w.quantity > 0,
+      hasVolume: w.volumeM3 !== null && w.volumeM3 > 0,
+      statedPair: w.statedPair,
     });
     // His rule for piece goods: «har bir tovarni ogirligiga qaraymiz». Only
     // meaningful when the row states BOTH a count and a weight.
@@ -2979,7 +3787,7 @@ async function suggestImportFills(input: {
       // First unit that answers wins; the order IS the preference.
       for (const unit of units) {
         const sug = await suggestImportBaza(
-          { tnvedCode: w.code, name: w.name, unit, weightPerUnitKg: perPiece },
+          { tnvedCode: w.code, name: w.name, units: [unit], weightPerUnitKg: perPiece },
           { batchId, minSim: Number.isFinite(minSim) ? minSim : undefined },
         );
         if (!sug.auto) continue;
@@ -3017,6 +3825,9 @@ export async function saveTable(
     tnvedCode: e.tnvedCode === undefined ? undefined : tableCode(e.tnvedCode, e.seq),
     note: e.note === undefined ? undefined : (e.note ?? '').trim().slice(0, 500) || null,
     measureQty: e.measureQty === undefined ? undefined : tableMeasure(e.measureQty, e.seq),
+    measureUnit: e.measureUnit,
+    shownBasis: e.shownBasis,
+    unit: e.unit === undefined ? undefined : e.unit?.trim().slice(0, 20) || null,
     bazaUsd: e.bazaUsd,
     bazaBasis: e.bazaBasis,
     importRowId: e.importRowId ?? null,
@@ -3029,13 +3840,20 @@ export async function saveTable(
   for (const e of itemEdits) {
     if (e.name !== undefined && !e.name) throw new CalcError('name_required', e.seq);
     checkBazaPair(e, e.seq);
+    checkUnitClaims(e, e.seq);
   }
   const adds = input.adds.map((r, i) => {
     const seq = -(i + 1);
     const name = r.name.trim().slice(0, 300);
     if (!name) throw new CalcError('name_required', seq);
     checkBazaPair(r, seq);
+    checkUnitClaims(r, seq);
+    // A client id is a CLAIM like any other id off a form: it must at least
+    // look like one, or a crafted string reaches the uuid column as a 22P02.
+    const clientId = r.clientId ?? null;
+    if (clientId !== null && !CLIENT_ID_SHAPE.test(clientId)) throw new CalcError('not_found', seq);
     return {
+      clientId: clientId === null ? null : clientId.toLowerCase(),
       name,
       quantity: tableMeasure(r.quantity ?? null, seq),
       unit: r.unit?.trim().slice(0, 20) || null,
@@ -3044,6 +3862,10 @@ export async function saveTable(
       tnvedCode: tableCode(r.tnvedCode, seq),
       note: r.note?.trim().slice(0, 500) || null,
       measureQty: tableMeasure(r.measureQty ?? null, seq),
+      // undefined = «not said» (the server stamps the row's own unit); null
+      // would read as «said: none» and clear a stored pair on a retry.
+      measureUnit: r.measureUnit,
+      shownBasis: r.shownBasis,
       bazaUsd: r.bazaUsd === undefined ? null : r.bazaUsd,
       bazaBasis: r.bazaBasis === undefined ? null : r.bazaBasis,
     };
@@ -3063,7 +3885,11 @@ export async function saveTable(
       groupId: calcRequestItems.groupId,
       quantity: calcRequestItems.quantity,
       weightKg: calcRequestItems.weightKg,
+      volumeM3: calcRequestItems.volumeM3,
       bazaUsd: calcRequestItems.bazaUsd,
+      bazaBasis: calcRequestItems.bazaBasis,
+      measureUnit: calcRequestItems.measureUnit,
+      measureQty: calcRequestItems.measureQty,
     })
     .from(calcRequestItems)
     .where(eq(calcRequestItems.requestId, requestId));
@@ -3079,8 +3905,11 @@ export async function saveTable(
     }));
   }
   const editedCodes = itemEdits.map((e) => e.tnvedCode).filter((c): c is string => !!c);
+  // Every standing coded row, not only the ungrouped: the sweep also
+  // re-homes a coded row standing in another code's block (P2.10d), and a
+  // block it mints must carry the book's law like any other.
   const sweepCodes = standing
-    .filter((i) => i.groupId === null && (i.tnvedCode ?? '').trim())
+    .filter((i) => (i.tnvedCode ?? '').trim())
     .map((i) => i.tnvedCode!.trim());
   const addCodes = withCodes.map((r) => r.tnvedCode).filter((c): c is string => !!c);
   const rates = await ratesForCodes([...editedCodes, ...sweepCodes, ...addCodes], onDate());
@@ -3125,18 +3954,7 @@ export async function saveTable(
    */
   const memoryAuto = await suggestMemoryFills({ requestId, standing, itemEdits, withCodes });
 
-  let result: TableSaveResult = {
-    minted: [],
-    swept: 0,
-    added: 0,
-    merged: [],
-    measuresCleared: [],
-    measuresDropped: [],
-    basisSuspect: [],
-    importFilled: [],
-    memoryFilled: [],
-  };
-  await db.transaction(async (tx) => {
+  return db.transaction(async (tx): Promise<TableSaveResult> => {
     await lockRequestInTx(tx, requestId);
 
     const items = await tx
@@ -3152,18 +3970,124 @@ export async function saveTable(
     const byId = new Map(items.map((i) => [i.id, i]));
     const itemGroupBySeq = new Map(items.map((i) => [i.seq, i.groupId]));
 
-    if (items.length + withCodes.length > MAX_CALC_ITEMS) throw new CalcError('too_many_items');
+    /**
+     * Phase 0 of the phone round: a NEW row carries the id its screen minted,
+     * so a save whose answer was lost — a phone connection, a second press
+     * while the refresh is still on its way — can be pressed again without
+     * writing the goods twice. Decided UNDER the request lock, so two presses
+     * cannot both find the id absent. An id this request already holds is
+     * that same row, saved: skipped, and the retry reads as a save. An id
+     * another request holds is not this screen's row at all — refused, like
+     * every other foreign id (#864's teleport family).
+     */
+    const claimed = withCodes.map((r) => r.clientId).filter((v): v is string => v !== null);
+    let alreadySaved = 0;
+    const skipAdd = new Set<number>();
+    /** Rows this request already holds under the posted client id → the add. */
+    const retried = new Map<string, (typeof withCodes)[number]>();
+    if (claimed.length > 0) {
+      const foreign = await tx
+        .select({ id: calcRequestItems.id, requestId: calcRequestItems.requestId })
+        .from(calcRequestItems)
+        .where(inArray(calcRequestItems.id, claimed));
+      const ownerOf = new Map(foreign.map((f) => [f.id, f.requestId]));
+      const seen = new Set<string>();
+      withCodes.forEach((r, index) => {
+        if (r.clientId === null) return;
+        // The same id twice in ONE post is one row — the primary key would
+        // otherwise refuse the second as a 23505 «save_failed».
+        if (seen.has(r.clientId)) {
+          skipAdd.add(index);
+          alreadySaved += 1;
+          return;
+        }
+        seen.add(r.clientId);
+        const owner = ownerOf.get(r.clientId);
+        if (owner === undefined) return;
+        if (owner !== requestId) throw new CalcError('not_found', -(index + 1));
+        skipAdd.add(index);
+        retried.set(r.clientId, r);
+      });
+    }
+    // A retried row is not inserted again — but it is not simply SKIPPED
+    // either: between the lost answer and the second press the VED may have
+    // corrected a cell, and skipping the row whole dropped that correction
+    // under a bar that read «avval saqlangan» (review units-1). It becomes an
+    // ordinary edit of the stored row, posting only the cells that DIFFER,
+    // so an unchanged retry is still a no-op that writes nothing and clears
+    // no ✅, and a changed cell goes through every rule an edit obeys.
+    for (const [rowId, r] of retried) {
+      const stored = byId.get(rowId)!;
+      const num = (v: string | null) => (v === null ? null : Number(v));
+      const storedBasis = (stored.bazaBasis as BazaBasis | null) ?? null;
+      const basisMoved = r.bazaBasis !== null && r.bazaBasis !== storedBasis;
+      // An add's empty price means «nothing typed», not «clear»: the first
+      // save may have filled the row from the memory or the file, and an
+      // unchanged retry must not wipe that. Only a price a PERSON typed is
+      // taken back by an emptied cell.
+      const priceMoved =
+        r.bazaUsd === null
+          ? (stored.bazaUsd !== null && stored.bazaSource === 'typed') || basisMoved
+          : r.bazaUsd !== num(stored.bazaUsd) || basisMoved;
+      itemEdits.push({
+        id: rowId,
+        seq: stored.seq,
+        name: r.name !== stored.name ? r.name : undefined,
+        quantity: r.quantity !== num(stored.quantity) ? r.quantity : undefined,
+        weightKg: r.weightKg !== num(stored.weightKg) ? r.weightKg : undefined,
+        volumeM3: r.volumeM3 !== num(stored.volumeM3) ? r.volumeM3 : undefined,
+        tnvedCode: r.tnvedCode !== (stored.tnvedCode ?? null) ? r.tnvedCode : undefined,
+        note: r.note !== (stored.note ?? null) ? r.note : undefined,
+        measureQty: r.measureQty !== num(stored.measureQty) ? r.measureQty : undefined,
+        measureUnit: r.measureQty !== num(stored.measureQty) ? r.measureUnit : undefined,
+        shownBasis: priceMoved ? r.shownBasis : undefined,
+        unit: undefined,
+        bazaUsd: priceMoved ? r.bazaUsd : undefined,
+        bazaBasis: priceMoved ? r.bazaBasis : undefined,
+        importRowId: null,
+        bazaReason: null,
+      });
+    }
+
+    if (items.length + withCodes.length - skipAdd.size > MAX_CALC_ITEMS) {
+      throw new CalcError('too_many_items');
+    }
 
     // 1. Field edits, addressed by the immutable id (measures and bazas
     //    unconfirm — the ✅ was about those numbers; a name or note is words).
     const changedCells: { seq: number; field: string; before: unknown; after: unknown }[] = [];
     const touched = new Set<string>();
-    /** item id → posted extended-unit qty (undefined = the cell was not sent). */
-    const postedMeasure = new Map<string, number | null>();
+    /** item id → posted extended-unit qty and, when the screen said it, the
+     * unit it was STATED in (absent = the cell was not sent). */
+    const postedMeasure = new Map<string, { qty: number | null; unit: MeasureUnit | null | undefined }>();
+    /** item id → the unit «avto» SHOWED beside a price typed with none. */
+    const shownBy = new Map<string, BazaBasis>();
+    /** Rows whose COUNT this save posted — the seller's old word no longer
+     * describes that number, so the heal leaves them alone (judge MR-4). */
+    const countPosted = new Set<string>();
+    /** Rows whose seller word this save DISMISSED («Bu dona») — never healed. */
+    const unitPosted = new Set<string>();
+    /** Rows whose LAW this save may change — recoded, added, or swept into a
+     * group — the only rows A2's «birlikni tekshiring» looks at. */
+    const relawed = new Set<string>();
+    // The phone's look-then-write, closed (review PHONE-2): an edit made
+    // over values the row no longer holds is refused whole, BEFORE anything
+    // is written — under the lock, so no save can slip in after the check.
+    for (const e of input.items) {
+      if (!e.expect) continue;
+      const item = byId.get(e.id);
+      if (!item || item.requestId !== requestId) throw new CalcError('not_found', e.seq);
+      if (movedUnder(e.expect, item)) throw new CalcError('changed_under', e.seq);
+    }
     for (const e of itemEdits) {
       const item = byId.get(e.id);
       if (!item || item.requestId !== requestId) throw new CalcError('not_found', e.seq);
-      if (e.measureQty !== undefined) postedMeasure.set(item.id, e.measureQty);
+      if (e.measureQty !== undefined) postedMeasure.set(item.id, { qty: e.measureQty, unit: e.measureUnit });
+      if (e.quantity !== undefined) countPosted.add(item.id);
+      if (e.unit !== undefined) unitPosted.add(item.id);
+      if (e.bazaUsd !== undefined && e.bazaUsd !== null && (e.bazaBasis ?? null) === null && e.shownBasis) {
+        shownBy.set(item.id, e.shownBasis);
+      }
       const patch: Record<string, unknown> = {};
       const put = (field: string, before: unknown, after: unknown) => {
         patch[field] = after;
@@ -3177,6 +4101,9 @@ export async function saveTable(
         patch.nameNorm = itemNameNorm(e.name);
       }
       if (e.note !== undefined && e.note !== item.note) put('note', item.note, e.note);
+      // Only ever a DISMISSAL («Bu dona»): the word stops asking, the count
+      // stays the VED's — words, not a measure, so no ✅ clears.
+      if (e.unit !== undefined && e.unit !== (item.unit ?? null)) put('unit', item.unit, e.unit);
       let measuresMoved = false;
       const num = (v: string | null) => (v === null ? null : Number(v));
       if (e.quantity !== undefined && e.quantity !== num(item.quantity)) {
@@ -3199,19 +4126,23 @@ export async function saveTable(
       if (e.tnvedCode !== undefined && e.tnvedCode !== (item.tnvedCode ?? null)) {
         put('tnvedCode', item.tnvedCode, e.tnvedCode);
         patch.tnvedCode = e.tnvedCode;
+        relawed.add(item.id);
       }
-      // The row's baza — an atomic triple. Null clears amount, basis and
-      // source together (the old setItemBaza rule, restated here because the
-      // schema has no pair CHECK to enforce it); an unchanged pair diffs to
-      // nothing, so a re-save re-stamps neither 'typed' nor the ✅-clear.
+      // The row's baza — the four states `TableItemEdit` documents (0125).
+      // The schema has no pair CHECK, so this writer is the rule; an unchanged
+      // pair diffs to nothing, so a re-save re-stamps neither 'typed' nor the
+      // ✅-clear.
       if (e.bazaUsd !== undefined) {
         const before = num(item.bazaUsd);
         const beforeBasis = (item.bazaBasis as BazaBasis | null) ?? null;
         if (e.bazaUsd === null) {
-          if (before !== null || beforeBasis !== null) {
-            put('baza', { bazaUsd: before, basis: beforeBasis }, null);
+          // No price. A posted basis is the VED's CHOICE and stands without
+          // one; none clears the whole pair.
+          const chosen = e.bazaBasis ?? null;
+          if (before !== null || beforeBasis !== chosen) {
+            put('baza', { bazaUsd: before, basis: beforeBasis }, chosen === null ? null : { bazaUsd: null, basis: chosen });
             patch.bazaUsd = null;
-            patch.bazaBasis = null;
+            patch.bazaBasis = chosen;
             patch.bazaSource = null;
             // The provenance goes with the price it explained — both of them,
             // or a cleared row keeps a 🧠 chip pointing at a price that is no
@@ -3223,14 +4154,18 @@ export async function saveTable(
           }
         } else if (
           before !== e.bazaUsd ||
-          beforeBasis !== (e.bazaBasis ?? null) ||
+          // A null basis is «avto»: the stored one stands (a priced row keeps
+          // the unit its price was typed in — his A2), and a row with none is
+          // stamped from its FINAL group in the measure pass below.
+          beforeBasis !== (e.bazaBasis ?? beforeBasis) ||
           // A re-pick of the SAME price off a different declaration still
           // moves the provenance — the chip names a row, not a number.
           (e.importRowId !== null && String(item.importRowId ?? '') !== e.importRowId)
         ) {
-          put('baza', { bazaUsd: before, basis: beforeBasis }, { bazaUsd: e.bazaUsd, basis: e.bazaBasis });
+          const basis = e.bazaBasis ?? beforeBasis;
+          put('baza', { bazaUsd: before, basis: beforeBasis }, { bazaUsd: e.bazaUsd, basis });
           patch.bazaUsd = e.bazaUsd.toFixed(4);
-          patch.bazaBasis = e.bazaBasis;
+          patch.bazaBasis = basis;
           patch.bazaSource = e.importRowId ? 'import' : 'typed';
           patch.importRowId = e.importRowId ? BigInt(e.importRowId) : null;
           patch.memoryItemId = null;
@@ -3246,6 +4181,13 @@ export async function saveTable(
       if (measuresMoved && item.groupId) touched.add(item.groupId);
     }
 
+    // A retry counts as «already saved» only when it changed nothing; one
+    // that carried a correction is an edit like any other (review units-1).
+    const changedSeqs = new Set(changedCells.map((c) => c.seq));
+    for (const rowId of retried.keys()) {
+      if (!changedSeqs.has(byId.get(rowId)!.seq)) alreadySaved += 1;
+    }
+
     // 2. Insert the ghost rows — in the SAME tx, so a new row born with
     //    code + baza + measure prices on its first save (the two-tx seam
     //    the audit measured dies here).
@@ -3254,12 +4196,20 @@ export async function saveTable(
     /** The fill plans re-keyed onto item ids — a ghost row gets its id here. */
     const fillByItem = new Map(importAuto.byItemId);
     const memoryByItem = new Map(memoryAuto.byItemId);
-    if (withCodes.length > 0) {
-      const minted = withCodes.map((r) => ({ ...r, seq: nextSeqNo++ }));
+    // A row already saved under its client id is not inserted again; the fill
+    // plans stay keyed by the ORIGINAL add index, so each kept row carries it.
+    const toInsert = withCodes
+      .map((r, index) => ({ ...r, index }))
+      .filter((r) => !skipAdd.has(r.index));
+    if (toInsert.length > 0) {
+      const minted = toInsert.map((r) => ({ ...r, seq: nextSeqNo++ }));
       const inserted = await tx
         .insert(calcRequestItems)
         .values(
           minted.map((r) => ({
+            // The screen's own id when it sent one (phase 0) — the database
+            // mints one otherwise.
+            ...(r.clientId !== null ? { id: r.clientId } : {}),
             requestId,
             seq: r.seq,
             name: r.name,
@@ -3270,21 +4220,26 @@ export async function saveTable(
             tnvedCode: r.tnvedCode,
             note: r.note,
             bazaUsd: r.bazaUsd === null ? null : r.bazaUsd.toFixed(4),
-            bazaBasis: r.bazaUsd === null ? null : r.bazaBasis,
+            // A chosen basis stands without a price (0125); a priced row with
+            // none is «avto» and is stamped from its final group below.
+            bazaBasis: r.bazaBasis,
             bazaSource: r.bazaUsd === null ? null : ('typed' as const),
             nameNorm: itemNameNorm(r.name),
           })),
         )
         .returning({ id: calcRequestItems.id, seq: calcRequestItems.seq, tnvedCode: calcRequestItems.tnvedCode });
-      for (let i = 0; i < inserted.length; i++) {
-        const row = inserted[i]!;
+      // Matched back by the seq this save minted, never by position.
+      const mintedBySeq = new Map(minted.map((m) => [m.seq, m]));
+      for (const row of inserted) {
+        const add = mintedBySeq.get(row.seq)!;
         insertedRows.push(row);
+        relawed.add(row.id);
         itemGroupBySeq.set(row.seq, null);
-        const qty = minted[i]!.measureQty;
-        if (qty !== null) postedMeasure.set(row.id, qty);
-        const fill = importAuto.byAddIndex.get(i);
+        if (add.measureQty !== null) postedMeasure.set(row.id, { qty: add.measureQty, unit: add.measureUnit });
+        if (add.bazaUsd !== null && add.bazaBasis === null && add.shownBasis) shownBy.set(row.id, add.shownBasis);
+        const fill = importAuto.byAddIndex.get(add.index);
         if (fill) fillByItem.set(row.id, fill);
-        const remembered = memoryAuto.byAddIndex.get(i);
+        const remembered = memoryAuto.byAddIndex.get(add.index);
         if (remembered) memoryByItem.set(row.id, remembered);
       }
     }
@@ -3302,12 +4257,22 @@ export async function saveTable(
       if (row.tnvedCode) moves.set(row.seq, row.tnvedCode);
     }
     let swept = 0;
+    // A row's own code is what places it (phase 2), so a CODED row standing
+    // in a block of another code — or in a code-less one — is re-homed by the
+    // same sweep (2026-10-09, P2.10d). The ✨ pass used to leave exactly that
+    // shape: a row showing its code inside a block priced under another, or
+    // under none, which no save could ever repair — retyping the same code is
+    // no change and posts nothing. Counted into `swept` (judge S8). A row
+    // with NO code stays where a person put it: an uncoded row in a coded
+    // block is the legacy ⚙ grouping, not a contradiction.
+    const codeOfGroup = new Map(groups.map((g) => [g.id, (g.tnvedCode ?? '').trim()]));
     for (const i of items) {
       if (moves.has(i.seq)) continue;
       const code = (i.tnvedCode ?? '').trim();
-      if (code && i.groupId === null) {
+      if (code && (i.groupId === null || codeOfGroup.get(i.groupId) !== code)) {
         moves.set(i.seq, code);
         swept += 1;
+        relawed.add(i.id);
       }
     }
     const grouped = await autoGroupInTx(tx, requestId, { groups, moves, itemGroupBySeq, rates });
@@ -3355,22 +4320,19 @@ export async function saveTable(
       }
     }
 
-    // 6. The measure pass — the ONE writer of the pair, after the regroup
-    //    and the merge so every item's group (and thus its REQUIRED unit) is
-    //    final. Written and cleared only TOGETHER, in one UPDATE per item —
-    //    the pair CHECK is immediate and a lone half 23514s the whole save.
+    // 6. The measure pass — the ONE writer of the pair and of the «avto»
+    //    basis, after the regroup and the merge so every item's group (and
+    //    thus its law) is FINAL. Written and cleared only TOGETHER, in one
+    //    UPDATE per item — the pair CHECK is immediate and a lone half
+    //    23514s the whole save.
     const groupsFinal = await tx
-      .select({ id: calcGroups.id, dutyUnit: calcGroups.dutyUnit })
+      .select({ id: calcGroups.id, dutyUnit: calcGroups.dutyUnit, confirmedAt: calcGroups.confirmedAt })
       .from(calcGroups)
       .where(eq(calcGroups.requestId, requestId));
-    const requiredByGroup = new Map(
-      groupsFinal.map((g) => [
-        g.id,
-        g.dutyUnit && (EXT_UNITS as readonly string[]).includes(g.dutyUnit)
-          ? (g.dutyUnit as MeasureUnit)
-          : null,
-      ]),
-    );
+    const dutyUnitByGroup = new Map(groupsFinal.map((g) => [g.id, g.dutyUnit]));
+    const confirmedGroups = new Set(groupsFinal.filter((g) => g.confirmedAt !== null).map((g) => g.id));
+    const lawOf = (groupId: string | null) =>
+      groupId ? (dutyUnitByGroup.get(groupId) ?? null) : null;
     const itemsNow = await tx
       .select({
         id: calcRequestItems.id,
@@ -3379,54 +4341,233 @@ export async function saveTable(
         tnvedCode: calcRequestItems.tnvedCode,
         quantity: calcRequestItems.quantity,
         weightKg: calcRequestItems.weightKg,
+        volumeM3: calcRequestItems.volumeM3,
         measureUnit: calcRequestItems.measureUnit,
         measureQty: calcRequestItems.measureQty,
         bazaUsd: calcRequestItems.bazaUsd,
         bazaBasis: calcRequestItems.bazaBasis,
+        unit: calcRequestItems.unit,
+        note: calcRequestItems.note,
       })
       .from(calcRequestItems)
       .where(eq(calcRequestItems.requestId, requestId));
     const measuresCleared: number[] = [];
     const measuresDropped: number[] = [];
+    const basisConflict: number[] = [];
+    const basisStamped: { seq: number; basis: BazaBasis }[] = [];
+    const unitsMoved: TableSaveResult['unitsMoved'] = [];
+    const sellerUnitUnresolved: TableSaveResult['sellerUnitUnresolved'] = [];
     for (const item of itemsNow) {
-      const required = item.groupId ? (requiredByGroup.get(item.groupId) ?? null) : null;
+      const law = lawOf(item.groupId);
+      const set: Record<string, unknown> = {};
+      // THE HEAL (2026-10-09): a row stored before the doors learned units
+      // keeps «120» in the piece column under the seller's «m2», and the
+      // engine reads it as 120 pieces. The ONE rule every door uses
+      // (`normalizeRowUnit`) moves it here, decided by the SCREEN's predicate
+      // (`pendingUnitOf`, judge UX7) over the row AS STORED before this save
+      // — the sentence the VED read is about that row. Only on a row nobody
+      // has priced or confirmed (judge MR-4); never on a word this save
+      // dismissed («Bu dona»). A count this save posted stays the VED's and
+      // the seller's number still leaves it — «500 kg» typed over with 300
+      // pieces keeps both, where skipping the heal moved the VED's 300 into
+      // kg on the NEXT save (the shape MR-4 named).
+      const before = byId.get(item.id);
+      const numOrNull = (v: string | null) => (v === null ? null : Number(v));
+      const pending =
+        before && !unitPosted.has(item.id)
+          ? pendingUnitOf(
+              {
+                quantity: numOrNull(before.quantity),
+                unit: before.unit,
+                // The target columns as they stand AFTER this save's edits: a
+                // weight the VED typed is the row's, and the seller's figure
+                // goes into the note beside it.
+                weightKg: numOrNull(item.weightKg),
+                volumeM3: numOrNull(item.volumeM3),
+                measureUnit: (item.measureUnit as MeasureUnit | null) ?? null,
+                measureQty: numOrNull(item.measureQty),
+                bazaUsd: numOrNull(item.bazaUsd),
+                bazaBasis: item.bazaBasis,
+              },
+              {
+                confirmed: item.groupId !== null && confirmedGroups.has(item.groupId),
+                pairKept: (unit) =>
+                  healPairKept(law, item.groupId !== null, unit, {
+                    weightKg: numOrNull(item.weightKg),
+                    measureQty: numOrNull(before.quantity),
+                  }),
+              },
+            )
+          : null;
+      const withNote = (said: string) => [item.note, said].filter(Boolean).join(' · ').slice(0, 500);
+      if (pending?.kind === 'ask') {
+        if (countPosted.has(item.id)) {
+          // The VED answered the count («Bu karobka» empties it, then the
+          // real number) — the word has said its piece and stops asking.
+          const note = withNote(pending.result.note);
+          Object.assign(set, { unit: null, note });
+          item.unit = null;
+          item.note = note;
+        } else {
+          // A carton count or a word nobody's list knows: the count is the
+          // VED's to answer, never the machine's guess.
+          sellerUnitUnresolved.push({ seq: item.seq, word: pending.word });
+        }
+      } else if (pending?.kind === 'move') {
+        const p = { ...pending.result.patch };
+        if (countPosted.has(item.id)) p.quantity = numOrNull(item.quantity);
+        // A measure this save posted is written by the pass below, not here.
+        if (postedMeasure.has(item.id)) {
+          p.measureUnit = (item.measureUnit as MeasureUnit | null) ?? null;
+          p.measureQty = numOrNull(item.measureQty);
+        }
+        const fixed = (v: number | null, places: number) => (v === null ? null : v.toFixed(places));
+        const note = withNote(pending.result.note);
+        Object.assign(set, {
+          quantity: fixed(p.quantity, 3),
+          unit: p.unit,
+          weightKg: fixed(p.weightKg, 3),
+          volumeM3: fixed(p.volumeM3, 3),
+          measureUnit: p.measureUnit,
+          measureQty: fixed(p.measureQty, 4),
+          note,
+        });
+        // The pass below reads the healed row, not the stored one.
+        item.quantity = fixed(p.quantity, 3);
+        item.unit = p.unit;
+        item.weightKg = fixed(p.weightKg, 3);
+        item.volumeM3 = fixed(p.volumeM3, 3);
+        item.measureUnit = p.measureUnit;
+        item.measureQty = fixed(p.measureQty, 4);
+        item.note = note;
+        unitsMoved.push({ seq: item.seq, to: pending.to, note: pending.result.note });
+      } else if (before && before.unit && countPosted.has(item.id) && !unitPosted.has(item.id)) {
+        // A count the VED typed on a row the heal may not touch (priced, or in
+        // a confirmed block): the seller's word no longer describes that
+        // number. Left standing, it made the row «pending» the moment the
+        // price was cleared or the block unconfirmed, and the next save moved
+        // the VED's count out of the piece column under the seller's name —
+        // MR-4 one save later (review heal-server). The word retires; the
+        // seller's figure goes to the note; no number moves.
+        const said = normalizeRowUnit({
+          quantity: numOrNull(before.quantity),
+          unit: before.unit,
+          weightKg: numOrNull(before.weightKg),
+          volumeM3: numOrNull(before.volumeM3),
+          measureUnit: (before.measureUnit as MeasureUnit | null) ?? null,
+          measureQty: numOrNull(before.measureQty),
+        });
+        if (said.moved) {
+          const note = withNote(said.note);
+          Object.assign(set, { unit: null, note });
+          item.unit = null;
+          item.note = note;
+        }
+      }
+      // 18a: a price with no basis is «avto» — the law's default, read off
+      // the group the row ENDED in. Never off the pre-tx dictionary map: a
+      // typed code can join a group whose law a person typed over the book.
+      let basis = (item.bazaBasis as BazaBasis | null) ?? null;
       const storedUnit = (item.measureUnit as MeasureUnit | null) ?? null;
       const storedQty = item.measureQty === null ? null : Number(item.measureQty);
       const posted = postedMeasure.get(item.id);
+      // A unit the screen STATED beside a posted amount (a paste's «120 m²»,
+      // the new row's unit select) counts as the row's statement for «avto».
+      const statedUnit = posted && posted.unit !== undefined ? posted.unit : storedUnit;
+      const statedQty = posted ? posted.qty : storedQty;
+      // What «avto» means for THIS row (2026-10-09): the law first, then a
+      // pair the row STATES — the seller's «120 m²» on an advalor code is an
+      // m² row, and stamping «per piece» over it priced tiles by the count
+      // nobody gave (judge TT-3/MR-3/S2).
+      const auto = autoBasisFor(
+        { dutyUnit: law },
+        {
+          quantity: item.quantity === null ? null : Number(item.quantity),
+          weightKg: item.weightKg === null ? null : Number(item.weightKg),
+          measureUnit: statedUnit,
+          measureQty: statedQty,
+        },
+      );
+      if (item.bazaUsd !== null && basis === null) {
+        // The unit the screen SHOWED wins when the final law can hold it — a
+        // price typed against «kg» is stored per kg, whatever the figures
+        // this same save moved (judge MR-17). One the law cannot hold is
+        // refused naming the row: a price never silently changes unit.
+        const shown = shownBy.get(item.id);
+        if (shown !== undefined && basisConflicts(law, shown)) throw new CalcError('basis_shown_changed', item.seq);
+        basis = shown ?? auto;
+        set.bazaBasis = basis;
+        // Kept in step for the fills and the A2 check below, which read
+        // this same snapshot.
+        item.bazaBasis = basis;
+        if (shown === undefined) basisStamped.push({ seq: item.seq, basis });
+      }
+      // A unit the law cannot hold — named, never rewritten. The law's own
+      // pair stands (pairUnitFor answers the law first).
+      if (basisConflicts(law, basis)) basisConflict.push(item.seq);
+      // Per ITEM now, ungrouped rows included: an m² baza on an advalor code
+      // needs its m² count as much as an m² law does.
+      // An unpriced row asks in its «avto» unit: a stated pair is the ROW's
+      // own figure and stands while nothing (no law pair, no chosen basis)
+      // names a different one.
+      const required = pairUnitFor(law, basis ?? auto);
       let write: { unit: MeasureUnit; qty: number } | null | undefined;
-      if (required === null) {
-        // The code needs no extended unit. A posted qty is DROPPED with a
-        // named note (never a whole-save refusal — the box was offered in
-        // good faith); a standing pair is cleared and named: keeping «200»
-        // under a law that stopped asking for m² is a number nobody stated.
-        if (posted !== undefined && posted !== null) measuresDropped.push(item.seq);
+      if (posted !== undefined && posted.qty !== null && posted.unit) {
+        // An amount posted WITH its unit: kept in that unit when it is the
+        // one the row asks for, or — while the row has no law yet — as the
+        // row's statement (the paste's uncoded «Kafel 120 m²», an uncoded
+        // car's sm³). A unit the law or a chosen basis contradicts is a
+        // statement about something else: dropped and NAMED (S2, UX12).
+        if (posted.unit === required || (required === null && item.groupId === null)) {
+          if (storedUnit !== posted.unit || storedQty !== posted.qty) write = { unit: posted.unit, qty: posted.qty };
+        } else {
+          measuresDropped.push(item.seq);
+          if (storedUnit !== null && storedUnit !== required) {
+            write = null;
+            measuresCleared.push(item.seq);
+          }
+        }
+      } else if (item.groupId === null && posted === undefined) {
+        // No group = no law known yet (an uncoded row, or a code the sweep
+        // could not place). The pair is a statement about the goods, not a
+        // leftover of a law, so it waits for the code untouched — the
+        // seller's «Kafel 120 m²» survives every unrelated Saqlash (MR-3).
+      } else if (required === null) {
+        // Neither the law nor the basis needs an extended unit. A posted qty
+        // is DROPPED with a named note (never a whole-save refusal — the box
+        // was offered in good faith); a standing pair is cleared and named:
+        // keeping «200» under a law (or a basis) that stopped asking for m²
+        // is a number nobody stated.
+        if (posted !== undefined && posted.qty !== null) measuresDropped.push(item.seq);
         if (storedUnit !== null) {
           write = null;
           measuresCleared.push(item.seq);
         }
       } else if (posted !== undefined) {
-        if (posted === null) {
+        if (posted.qty === null) {
           if (storedUnit !== null) write = null;
-        } else if (storedUnit !== required || storedQty !== posted) {
-          write = { unit: required, qty: posted };
+        } else if (storedUnit !== required || storedQty !== posted.qty) {
+          write = { unit: required, qty: posted.qty };
         }
       } else if (storedUnit !== null && storedUnit !== required) {
-        // A recode changed the required unit under a standing pair — the
-        // quantity was a statement in the OLD unit. Clear and name it;
-        // re-stamping «200 m²» as «200 litr» would price a number nobody
-        // measured.
+        // A recode (or a new basis) changed the required unit under a
+        // standing pair — the quantity was a statement in the OLD unit. Clear
+        // and name it; re-stamping «200 m²» as «200 litr» would price a
+        // number nobody measured.
         write = null;
         measuresCleared.push(item.seq);
       }
       if (write !== undefined) {
-        await tx
-          .update(calcRequestItems)
-          .set(
-            write === null
-              ? { measureUnit: null, measureQty: null }
-              : { measureUnit: write.unit, measureQty: write.qty.toFixed(4) },
-          )
-          .where(eq(calcRequestItems.id, item.id));
+        if (write === null) {
+          set.measureUnit = null;
+          set.measureQty = null;
+        } else {
+          set.measureUnit = write.unit;
+          set.measureQty = write.qty.toFixed(4);
+        }
+      }
+      if (Object.keys(set).length > 0) {
+        await tx.update(calcRequestItems).set(set).where(eq(calcRequestItems.id, item.id));
         if (item.groupId) touched.add(item.groupId);
       }
     }
@@ -3438,7 +4579,22 @@ export async function saveTable(
     //    group's own law still wants this basis (a typed dutyUnit override on
     //    a legacy group can disagree with today's dictionary). Anything else
     //    is left EMPTY for the VED, which is his own rule.
-    const dutyUnitByGroup = new Map(groupsFinal.map((g) => [g.id, g.dutyUnit]));
+    //
+    //    The fills run AFTER the measure pass, which is safe only because
+    //    `unitsForRow` never offers an extended unit the pass did not already
+    //    ask the row for (one the law pins, or one the VED chose) — pinned by
+    //    tests/unit/customs-import-parse.test.ts.
+    /** What may price this still-unpriced row: its law, its CHOSEN unit (a
+     * baza-less row's stored basis is always a choice), its own figures. */
+    const allowedFor = (item: (typeof itemsNow)[number]) =>
+      unitsForRow({
+        dutyUnit: lawOf(item.groupId),
+        chosen: isBazaBasis(item.bazaBasis) ? item.bazaBasis : null,
+        hasWeight: item.weightKg !== null && Number(item.weightKg) > 0,
+        hasQuantity: item.quantity !== null && Number(item.quantity) > 0,
+        hasVolume: item.volumeM3 !== null && Number(item.volumeM3) > 0,
+        statedPair: statedPairOf(item.measureUnit, item.measureQty === null ? null : Number(item.measureQty)),
+      });
     /**
      * THE SEALED MEMORY GOES FIRST (0096, the owner's own order).
      *
@@ -3453,12 +4609,7 @@ export async function saveTable(
       const fill = memoryByItem.get(item.id);
       if (!fill) continue;
       if (item.bazaUsd !== null) continue;
-      const allowed = unitsForRow({
-        dutyUnit: item.groupId ? (dutyUnitByGroup.get(item.groupId) ?? null) : null,
-        hasWeight: item.weightKg !== null && Number(item.weightKg) > 0,
-        hasQuantity: item.quantity !== null && Number(item.quantity) > 0,
-      });
-      if (!allowed.some((u) => BASIS_FOR_UNIT[u] === fill.basis)) continue;
+      if (!allowedFor(item).some((u) => BASIS_FOR_UNIT[u] === fill.basis)) continue;
       await tx
         .update(calcRequestItems)
         .set({
@@ -3487,12 +4638,7 @@ export async function saveTable(
       // The suggestion was made against the dictionary's law; the GROUP is
       // what actually prices, and a legacy group can carry a typed dutyUnit
       // the dictionary no longer agrees with.
-      const allowed = unitsForRow({
-        dutyUnit: item.groupId ? (dutyUnitByGroup.get(item.groupId) ?? null) : null,
-        hasWeight: item.weightKg !== null && Number(item.weightKg) > 0,
-        hasQuantity: item.quantity !== null && Number(item.quantity) > 0,
-      });
-      if (!allowed.some((u) => BASIS_FOR_UNIT[u] === fill.basis)) continue;
+      if (!allowedFor(item).some((u) => BASIS_FOR_UNIT[u] === fill.basis)) continue;
       await tx
         .update(calcRequestItems)
         .set({
@@ -3508,25 +4654,27 @@ export async function saveTable(
       if (item.groupId) touched.add(item.groupId);
     }
 
-    // Item 3's loud half (judge F13): a NEW code typed with a baza in ONE
-    // save posts basis 'unit' before its group exists to say otherwise —
-    // never silently rewritten (#171 inverted), NAMED instead, so the VED
-    // checks the unit the law actually prices in.
+    // A2 (0125): a PRICED row whose law this save changed keeps the unit its
+    // price was typed in — never silently rewritten (#171 inverted), NAMED,
+    // so the VED checks it against the unit the new law counts in. Only rows
+    // this save re-lawed: a deliberate override on a row nobody touched is
+    // not news on every later press. An unpriced row has nothing to check —
+    // it follows the new code by itself (its auto basis is stamped at its
+    // first price) — and a conflict is already named more loudly above.
     const basisSuspect: number[] = [];
     for (const item of itemsNow) {
-      const lawUnit = item.groupId ? (requiredByGroup.get(item.groupId) ?? null) : null;
-      if (
-        lawUnit !== null &&
-        lawUnit !== 'sm3' &&
-        item.bazaUsd !== null &&
-        item.bazaBasis === 'unit'
-      ) {
-        basisSuspect.push(item.seq);
-      }
+      if (!relawed.has(item.id) || item.bazaUsd === null) continue;
+      if (basisConflict.includes(item.seq)) continue;
+      const law = lawOf(item.groupId);
+      const lawBasis = defaultBasisFor({ dutyUnit: law });
+      // «The law pins a unit»: kg or a pair unit. dona / 1000_dona / sm³ /
+      // advalor default to 'unit' and pin none of the baza.
+      if (lawBasis === 'unit') continue;
+      if (item.bazaBasis !== lawBasis) basisSuspect.push(item.seq);
     }
 
     await unconfirmInTx(tx, touched);
-    await recountItemsInTx(tx, requestId);
+    const clock = await recountItemsInTx(tx, requestId);
 
     // ONE audit row per save, changed cells only — a row per cell is noise
     // and writeAudit(db, …) inside this tx is #714's deadlock.
@@ -3543,11 +4691,18 @@ export async function saveTable(
         measuresCleared,
         measuresDropped,
         basisSuspect,
+        basisConflict,
+        // The «avto» units this save decided — the audit's cell list shows
+        // the posted null, so the stamped answer is recorded here.
+        basisStamped,
+        alreadySaved,
         importFilled,
         memoryFilled,
+        unitsMoved,
+        sellerUnitUnresolved,
       },
     });
-    result = {
+    return {
       minted: grouped.minted.map((m) => m.code),
       swept,
       added: insertedRows.length,
@@ -3555,15 +4710,22 @@ export async function saveTable(
       measuresCleared,
       measuresDropped,
       basisSuspect,
+      basisConflict,
+      alreadySaved,
       importFilled,
       memoryFilled,
+      unitsMoved,
+      sellerUnitUnresolved,
+      basisStamped,
+      rev: clock.rev,
     };
   });
-  return result;
 }
 
-/** The whole rate column set, compared null-safe — the merge's gate. */
-function sameGroupRates(
+/** The whole rate column set, compared null-safe — the merge's gate.
+ * Exported for its unit test alone (0131: the specific excise is part of the
+ * set — two blocks at $1/litr and none must never fold into one, MR-11). */
+export function sameGroupRates(
   a: typeof calcGroups.$inferSelect,
   b: typeof calcGroups.$inferSelect,
 ): boolean {
@@ -3575,26 +4737,51 @@ function sameGroupRates(
     a.dutySpecific === b.dutySpecific &&
     a.dutyUnit === b.dutyUnit &&
     a.excisePct === b.excisePct &&
+    a.exciseSpecific === b.exciseSpecific &&
+    a.exciseUnit === b.exciseUnit &&
     a.dutyFree === b.dutyFree &&
     a.vatFree === b.vatFree &&
     a.hasCertificate === b.hasCertificate
   );
 }
 
-/** A baza posts as an atomic pair: an amount needs its basis, and a basis
- * from off the widened list is a forged post. */
+/** A baza posts as a pair of halves, each checked on its own (0125): an
+ * amount is a positive finite number; a basis, whenever one is posted, is on
+ * the list — off it is a forged post. A null basis beside an amount is
+ * «avto», and a basis beside no amount is a choice; neither is refused. */
 function checkBazaPair(
   e: { bazaUsd?: number | null; bazaBasis?: BazaBasis | null },
   seq: number,
 ): void {
+  if (e.bazaBasis !== undefined && e.bazaBasis !== null && !isBazaBasis(e.bazaBasis)) {
+    throw new CalcError('bad_basis', seq);
+  }
   if (e.bazaUsd === undefined || e.bazaUsd === null) return;
   if (!isNumber(e.bazaUsd)) throw new CalcError('bad_number', seq);
   if (!(e.bazaUsd > 0)) throw new CalcError('baza_positive', seq);
   if (e.bazaUsd >= 1e9) throw new CalcError('bad_number', seq);
-  if (!e.bazaBasis || !BAZA_BASES.includes(e.bazaBasis)) throw new CalcError('bad_basis', seq);
+}
+
+const MEASURE_UNITS: readonly MeasureUnit[] = ['juft', 'litr', 'm2', 'sm3'];
+
+/** The two unit claims a screen may post beside a row (2026-10-09): the unit
+ * a measure was STATED in, and the unit «avto» SHOWED. Off their lists they
+ * are forged posts, refused naming the row like a forged basis. */
+function checkUnitClaims(
+  e: { measureUnit?: MeasureUnit | null; shownBasis?: BazaBasis },
+  seq: number,
+): void {
+  if (e.measureUnit !== undefined && e.measureUnit !== null && !MEASURE_UNITS.includes(e.measureUnit)) {
+    throw new CalcError('bad_basis', seq);
+  }
+  if (e.shownBasis !== undefined && !isBazaBasis(e.shownBasis)) throw new CalcError('bad_basis', seq);
 }
 
 export interface TableNewItem {
+  /** The id the SCREEN minted for this row (phase 0) — a retried save
+   * carrying it again is the same row, already written, and is skipped.
+   * Optional: a tab opened on an older build still posts without one. */
+  clientId?: string | null;
   name: string;
   quantity?: number | null;
   unit?: string | null;
@@ -3603,12 +4790,16 @@ export interface TableNewItem {
   tnvedCode?: string | null;
   note?: string | null;
   measureQty?: number | null;
+  /** See TableItemEdit.measureUnit — the stated pair of a pasted row. */
+  measureUnit?: MeasureUnit | null;
+  /** See TableItemEdit.shownBasis. */
+  shownBasis?: BazaBasis;
   bazaUsd?: number | null;
   bazaBasis?: BazaBasis | null;
 }
 
-export async function deleteItem(requestId: string, itemId: string, ctx: AuditContext) {
-  await db.transaction(async (tx) => {
+export async function deleteItem(requestId: string, itemId: string, ctx: AuditContext): Promise<{ rev: number }> {
+  return db.transaction(async (tx) => {
     await lockRequestInTx(tx, requestId);
     const [item] = await tx
       .select()
@@ -3622,7 +4813,7 @@ export async function deleteItem(requestId: string, itemId: string, ctx: AuditCo
       await unconfirmInTx(tx, [item.groupId]);
       await pruneEmptyGroupsInTx(tx, requestId, [item.groupId]);
     }
-    await recountItemsInTx(tx, requestId);
+    const clock = await recountItemsInTx(tx, requestId);
     await writeAudit(tx, ctx, {
       entityType: 'calc_request',
       entityId: requestId,
@@ -3630,6 +4821,7 @@ export async function deleteItem(requestId: string, itemId: string, ctx: AuditCo
       before: { itemSeq: item.seq, name: item.name },
       after: { itemDeleted: item.seq },
     });
+    return { rev: clock.rev };
   });
 }
 
@@ -4117,7 +5309,7 @@ export function releasedOfferWhere() {
  * The offer's quote still STANDS — its version is the request's newest seal
  * and no correction has superseded the request.
  *
- * The whole-module audit's second confirmed defect: `releasedPriceFor` was
+ * The whole-module audit's second confirmed defect: the card-price reader was
  * entity-keyed with no supersession clause, so after a correction sealed on a
  * card that carried a released offer the LOCK answered the old client price
  * while the card carried the new floor — and `updateLead`, which compares the
@@ -4153,28 +5345,33 @@ export function offerStandsSql() {
 }
 
 /**
- * The client price this card is currently quoted at, if one has been released.
+ * The newest RELEASED offer on this card, in the order the card column was
+ * written, and whether its quote still STANDS.
  *
- * The newest RELEASED offer whose quote still STANDS — a pending below-floor
- * promise is not a price the customer has been told, and a promise a
- * correction replaced is not this card's price any more either.
+ * A pending below-floor promise is not a price the customer has been told,
+ * so it never reached the card and is not considered at all. A promise a
+ * correction replaced DID reach the card — the number is still printed there
+ * — so it is returned with `stands: false` rather than skipped: the quote
+ * lock asks «who wrote the number the card shows, and does it still stand»,
+ * and skipping the dead writer hands it an older one that is not on the card
+ * (review ved-money-1).
  *
  * `at` is the moment the price reached the CARD — `approved_at` for a
  * below-floor promise (applyOfferToCard runs at release), `offered_at`
- * otherwise. The lock needs it because a deal carries many jobs and the card
- * column is last-writer-wins between offers and seals: the lock must
- * reconstruct the same order or it refuses saves against a number the card
- * does not carry.
+ * otherwise — and the order is by that moment, not by `offered_at`: a
+ * promise approved after a newer one was offered wrote the card LAST.
  */
-export async function releasedPriceFor(
+export async function lastReleasedOfferFor(
   entityType: 'deal' | 'lead',
   entityId: string,
-): Promise<{ price: number; at: Date } | null> {
+): Promise<{ id: string; price: number; at: Date; stands: boolean } | null> {
   const [row] = await db
     .select({
+      id: calcOffers.id,
       price: calcOffers.clientPriceUsd,
       offeredAt: calcOffers.offeredAt,
       approvedAt: calcOffers.approvedAt,
+      stands: sql<boolean>`${offerStandsSql()}`,
     })
     .from(calcOffers)
     .where(
@@ -4182,64 +5379,164 @@ export async function releasedPriceFor(
         eq(calcOffers.entityType, entityType),
         eq(calcOffers.entityId, entityId),
         releasedOfferWhere(),
-        offerStandsSql(),
       ),
     )
-    .orderBy(desc(calcOffers.offeredAt))
+    .orderBy(desc(sql`coalesce(${calcOffers.approvedAt}, ${calcOffers.offeredAt})`))
     .limit(1);
-  return row ? { price: Number(row.price), at: row.approvedAt ?? row.offeredAt } : null;
+  return row
+    ? { id: row.id, price: Number(row.price), at: row.approvedAt ?? row.offeredAt, stands: Boolean(row.stands) }
+    : null;
+}
+
+// ---------------------------------------------------------------------------
+// What stands on a card — one list for the panel, the lock and the answer line
+// ---------------------------------------------------------------------------
+
+/** A Готово answer that stands as a floor on its card. */
+export interface StandingAnswer {
+  requestId: string;
+  section: CalcSectionName | null;
+  amountUsd: number;
+  completedAt: Date;
+  byName: string | null;
+  /** The door's own clock (`quote_valid_days`) — the answer still stands. */
+  expired: boolean;
+}
+
+export interface StandingAnchors {
+  /** Every current, NOT superseded seal on the card, newest first. */
+  seals: SealedVersion[];
+  /** Every answer passing `answerFloorStandsSql`, newest first (USD only). */
+  answers: StandingAnswer[];
+  /** The card's newest seal when it does NOT stand — history, never a door. */
+  deadSeal: SealedVersion | null;
 }
 
 /**
- * The card's newest Готово answer, as an OFFER ANCHOR (phase 4).
+ * Every price that STANDS on a card (review ved-correctness-4/-6), by the
+ * money rules' own clauses: a seal stands when it is its request's current
+ * version and nobody superseded the request (`currentVersionSql`,
+ * `notSupersededSql`); an answer stands by `answerFloorStandsSql`.
  *
- * The panel decides three things from this one read: whether the offer door
- * opens (a standing, unexpired USD answer — and only when the card has no
- * seal at all: ANY seal, expired included, outranks the answer, because an
- * expired seal's own sentence is «recalc», not «quote the older figure»),
- * which sentence to print instead when it cannot (non-USD, expired), and
- * which requestId the form posts. Everything here is advisory — `recordOffer`
- * re-derives every admission server-side, so a stale panel can only be
- * refused, never believed.
+ * A deal carries several jobs (0085), so a standing seal and a standing
+ * answer can live on one card — a yo'lkira sealed, a rastamojka answered. The
+ * panel draws one door per anchor, each labelled with its section; there is
+ * no precedence to state because the money rules already exclude the overlap
+ * that matters: an answer older than any seal on the card does not stand
+ * (`answerFloorStandsSql`'s last clause), so «any seal outranks the answer»
+ * (phase 4) is the same rule, said once. An EXPIRED seal still stands by the
+ * edge — its door is the «qayta hisoblating» sentence, not a hidden answer.
+ *
+ * The panel, `quoteLockedFor` and the card's «Javob berildi» line read this
+ * one list, so the card cannot show one price while the lock holds another.
  */
-export async function lastAnswerAnchorFor(
+export async function standingAnchorsFor(
   entityType: 'deal' | 'lead',
   entityId: string,
-): Promise<{
-  requestId: string;
-  amountUsd: number | null;
-  currency: string | null;
-  completedAt: Date;
-  stands: boolean;
-  expired: boolean;
-} | null> {
-  const rows = await db.execute<{
-    id: string;
-    answer_amount: string | null;
-    answer_currency: string | null;
-    completed_at: Date;
-    stands: boolean;
-  }>(sql`
-    SELECT r.id, r.answer_amount, r.answer_currency, r.completed_at,
-           (${answerFloorStandsSql()}) AS stands
-      FROM calc_requests r
+): Promise<StandingAnchors> {
+  const standingIds = await db.execute<{ id: string }>(sql`
+    SELECT v.id::text AS id
+      FROM calc_versions v
+      JOIN calc_requests r ON r.id = v.request_id
      WHERE r.entity_type = ${entityType}
        AND r.entity_id = ${entityId}::uuid
-       AND r.completed_at IS NOT NULL
-       AND r.answer_amount IS NOT NULL
-     ORDER BY r.completed_at DESC
-     LIMIT 1
+       AND ${currentVersionSql()}
+       AND ${notSupersededSql()}
   `);
-  const row = rows[0];
-  if (!row) return null;
-  const validDays = Number((await getSetting('quote_valid_days')) ?? QUOTE_VALID_DAYS_DEFAULT);
-  const completedAt = new Date(row.completed_at);
+  const ids = standingIds.map((row) => row.id);
+  const sealRows = ids.length
+    ? await db
+        .select()
+        .from(calcVersions)
+        .where(inArray(calcVersions.id, ids))
+        .orderBy(desc(calcVersions.sealedAt))
+    : [];
+  const answerRows = await db.execute<{
+    id: string;
+    section: string | null;
+    answer_amount: string;
+    completed_at: string;
+    by_name: string | null;
+  }>(sql`
+    SELECT r.id::text AS id, r.section, r.answer_amount, r.completed_at, u.full_name AS by_name
+      FROM calc_requests r
+      LEFT JOIN users u ON u.id = r.completed_by
+     WHERE r.entity_type = ${entityType}
+       AND r.entity_id = ${entityId}::uuid
+       AND ${isAnswerSql('r')}
+       AND ${answerFloorStandsSql()}
+     ORDER BY r.completed_at DESC
+  `);
+  const newest = await currentSealFor(entityType, entityId);
+  const names = await namesOf(sealRows.map((row) => row.sealedBy));
+  const validDays = answerRows.length
+    ? Number((await getSetting('quote_valid_days')) ?? QUOTE_VALID_DAYS_DEFAULT)
+    : QUOTE_VALID_DAYS_DEFAULT;
   return {
-    requestId: row.id,
-    amountUsd: row.answer_amount === null ? null : Number(row.answer_amount),
-    currency: row.answer_currency,
-    completedAt,
-    stands: Boolean(row.stands),
-    expired: completedAt.getTime() + validDays * 86_400_000 < Date.now(),
+    seals: sealRows.map((row) => toVersion(row, names.get(row.sealedBy) ?? null)),
+    answers: answerRows.map((row) => {
+      // Raw-execute timestamps are TEXT (#923).
+      const completedAt = new Date(row.completed_at);
+      return {
+        requestId: row.id,
+        section: (row.section as CalcSectionName | null) ?? null,
+        amountUsd: Number(row.answer_amount),
+        completedAt,
+        byName: row.by_name,
+        expired: completedAt.getTime() + validDays * 86_400_000 < Date.now(),
+      };
+    }),
+    deadSeal: newest && !ids.includes(newest.id) ? newest : null,
   };
+}
+
+/**
+ * The seller's price as the VED may read it (the owner's 16a — «sotuvchi
+ * bergan narxni ham koraversin») — a PROJECTION, never the offer row
+ * (review access-money-8).
+ *
+ * `calc_offers` carries `payout_usd` (the commission actually paid), the
+ * below-floor reason and the forwarded text; the house rule for law-4 data is
+ * «not fetched at all, not merely not drawn», so this reader selects exactly
+ * the six facts 16a names and nothing a client component could serialise to
+ * the VED's browser beyond them. The keys are pinned by
+ * `calc-offer-wire.test.ts`. No upsale figure is PRINTED from it — but client
+ * price minus his own floor is one subtraction away, stated to the owner.
+ */
+export interface OfferPrice {
+  id: string;
+  clientPriceUsd: number;
+  currency: 'USD';
+  offeredAt: Date;
+  offeredByName: string | null;
+  /** A below-floor promise nobody has allowed yet — «tasdiq kutilmoqda». */
+  pendingApproval: boolean;
+}
+
+export async function offerPricesFor(
+  entityType: 'deal' | 'lead',
+  entityId: string,
+): Promise<OfferPrice[]> {
+  const rows = await db
+    .select({
+      id: calcOffers.id,
+      clientPriceUsd: calcOffers.clientPriceUsd,
+      offeredAt: calcOffers.offeredAt,
+      offeredByName: users.fullName,
+      belowFloor: calcOffers.belowFloor,
+      approvedAt: calcOffers.approvedAt,
+    })
+    .from(calcOffers)
+    .leftJoin(users, eq(users.id, calcOffers.offeredBy))
+    .where(and(eq(calcOffers.entityType, entityType), eq(calcOffers.entityId, entityId)))
+    .orderBy(desc(calcOffers.offeredAt))
+    .limit(10);
+  return rows.map((row) => ({
+    id: row.id,
+    clientPriceUsd: Number(row.clientPriceUsd),
+    currency: 'USD',
+    offeredAt: row.offeredAt,
+    offeredByName: row.offeredByName ?? null,
+    pendingApproval: row.belowFloor && row.approvedAt === null,
+  }));
 }

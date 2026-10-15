@@ -16,6 +16,7 @@ import {
 } from '../../platform/db/schema';
 import { COUNT_REASONS } from '../scanning/count-rules';
 import { landedHereDaySql } from '../documents/arrivals';
+import { heldFreightSql } from '../costing/service';
 import { withoutJit } from '../../platform/db/no-jit';
 import { addDays, calendarDaysBetween, tashkentDay } from '../../platform/time/tashkent';
 
@@ -397,6 +398,26 @@ export async function unconvertedCosts(): Promise<{ currency: string; count: num
     count: Number(row.count),
     amount: Math.round(Number(row.amount) * 100) / 100,
   }));
+}
+
+/**
+ * Live yo'lkira-tariff bills HELD on no box (`heldFreightSql`, his rule 6):
+ * converted, and in no allocation until the lot is fixed or the bill
+ * re-based, so every client on those trucks reads a landed cost short by
+ * its share of them — the same hole as `unconvertedCosts`, with dollars
+ * (docs/YOLKIRA-TAQSIMOT.md §6.3). The report's own scope: every client, all
+ * time, so the caveat is the company's figure on the list and the drill-down
+ * alike, as the unconverted one is.
+ */
+export async function heldFreightCosts(): Promise<{ count: number; usd: number }> {
+  const [row] = await db
+    .select({
+      count: sql<number>`count(*)::int`,
+      usd: sql<string>`coalesce(sum(${costEntries.amountUsd}), 0)`,
+    })
+    .from(costEntries)
+    .where(heldFreightSql(sql`${costEntries}`));
+  return { count: Number(row?.count ?? 0), usd: Math.round(Number(row?.usd ?? 0) * 100) / 100 };
 }
 
 /**

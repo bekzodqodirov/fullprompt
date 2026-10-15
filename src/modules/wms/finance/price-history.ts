@@ -245,8 +245,33 @@ type PairRow = {
  * used by the free list and by the AI's picks alike: the client's whole load
  * aboard as rider shares, how many kinds of goods it was, the pair's charges
  * in dollars, and whether the cargo left the truck after the price.
+ *
+ * Lot tarkibi (docs/LOT-TARKIBI.md §6): a composed lot counts as its LINES —
+ * a line is a kind by its NAME (`productKeySql`, under a `line:` prefix so a
+ * line never merges with a Chinese product key), so a lot of two lines makes
+ * the pair mixed and its blended price is never served as a clean precedent,
+ * and two lots of one client stated as the same «Клавиатура» + «Мышь» are
+ * two kinds, not four (the review's nit: counted by line ID they read
+ * «aralash · 4 xil»). The
+ * kinds have their own CTE and the lines stay OUT of `load`: `load` only
+ * collects each pair's DISTINCT lot ids, and `kinds` joins the lines to
+ * those — so the join multiplies lots, never cartons. A join in `load` would
+ * multiply every carton row by the line count and double the kg the
+ * per-cube figure divides by (#432's fan-out). The live lines, not a sent
+ * truck's frozen copy: a precedent is about what the cargo WAS, and the
+ * latest statement is the best knowledge.
+ *
+ * MEASURED on a migrated copy of gsr_card_perf (3,629 priced pairs; median
+ * of five): the spec's first shape — a second CTE re-reading `members` —
+ * made postgres materialise `members` and cost +30-60 % (300 pairs: 520 →
+ * 820 ms). Reading the lot ids out of `load` instead is the old statement's
+ * cost or less (300 pairs: 520 → 500 ms), and answers the same kg, m³ and
+ * kinds on every one of the 3,629 pairs.
+ *
+ * Exported as a TEST SEAM (its public callers pass through `pricedTruckSql`,
+ * which needs a second «needle» truck, a 12-month window and a live charge).
  */
-async function pricePairs(
+export async function pricePairs(
   exec: ReadTx,
   pairs: { clientId: string; batchId: string }[],
 ): Promise<Map<string, { kg: number; m3: number; kinds: number; usd: number; moved: 'no_cargo' | 'partial' | null }>> {
@@ -265,13 +290,22 @@ async function pricePairs(
       SELECT m.batch_id, rr.client_id,
              coalesce(sum(rl.total_weight_kg / rl.box_count), 0) AS kg,
              coalesce(sum(rl.total_volume_m3 / rl.box_count), 0) AS m3,
-             count(DISTINCT ${productKeySql(sql`rl.product_name_zh`)})::int AS kinds
+             array_agg(DISTINCT rl.id) AS lot_ids
         FROM members m
         JOIN boxes bx ON bx.id = m.box_id
         JOIN receipt_lots rl ON rl.id = bx.lot_id
         JOIN receipts rr ON rr.id = rl.receipt_id
         JOIN pairs p ON p.client_id = rr.client_id AND p.batch_id = m.batch_id
        GROUP BY m.batch_id, rr.client_id
+    ),
+    kinds AS (
+      SELECT l.batch_id, l.client_id,
+             count(DISTINCT coalesce('line:' || ${productKeySql(sql`g.name`)}, ${productKeySql(sql`lk.product_name_zh`)}))::int AS kinds
+        FROM load l
+        CROSS JOIN LATERAL unnest(l.lot_ids) AS u(lot_id)
+        JOIN receipt_lots lk ON lk.id = u.lot_id
+        LEFT JOIN lot_composition_lines g ON g.lot_id = u.lot_id
+       GROUP BY l.batch_id, l.client_id
     ),
     money AS (
       SELECT c.batch_id, c.client_id, sum(c.amount_usd) AS usd
@@ -280,8 +314,9 @@ async function pricePairs(
        WHERE c.type IN ${CHARGE_TYPES} AND c.voided_at IS NULL
        GROUP BY c.batch_id, c.client_id
     )
-    SELECT l.batch_id::text AS batch_id, l.client_id::text AS client_id, l.kg, l.m3, l.kinds, mo.usd
+    SELECT l.batch_id::text AS batch_id, l.client_id::text AS client_id, l.kg, l.m3, kd.kinds, mo.usd
       FROM load l JOIN money mo ON mo.batch_id = l.batch_id AND mo.client_id = l.client_id
+      JOIN kinds kd ON kd.batch_id = l.batch_id AND kd.client_id = l.client_id
   `);
   const moved = await offTruckPrices(exec, { batchIds }, { changes: false });
   const movedOf = new Map(

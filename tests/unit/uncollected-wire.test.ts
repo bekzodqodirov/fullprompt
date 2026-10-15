@@ -186,12 +186,11 @@ describe('every staff message can be muted', () => {
     const found = new Set<string>();
     for (const file of globSync('src/**/*.{ts,tsx}')) {
       const src = read(file);
-      let at = 0;
-      while ((at = src.indexOf('notifyStaffTelegram({', at)) !== -1) {
-        const call = src.slice(at, at + 1200);
+      // The three senders (Q5 a): plain, keyed, and the transaction half.
+      for (const m of src.matchAll(/(?:notifyStaffTelegram(?:Once)?|queueStaffTelegram)\(/g)) {
+        const call = src.slice(m.index!, m.index! + 1200);
         const literal = /\btype:\s*'([A-Za-z]+)'/.exec(call);
         if (literal) found.add(literal[1]!);
-        at += 1;
       }
     }
     // Constants passed by name, read from their declarations.

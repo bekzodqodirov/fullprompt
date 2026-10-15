@@ -89,6 +89,19 @@ describe('RBAC catalog (spec §16 matrix)', () => {
     }
   });
 
+  it('the VED cannot rename a lot — owner 1a, 2026-10-01', () => {
+    // A lot that is ENTIRELY another good needs no composition (a
+    // composition is ≥ 2 lines); its NAME is corrected on the lot form, whose
+    // door is `receipts.edit` at the prixod's warehouse (editLotAction). The
+    // owner kept it with the people who already hold the prixod — the
+    // logist, the warehouse side, the admins — and not with the VED, whose
+    // refusal sentence (`tarkib.errors.lines_count`) names the logist.
+    expect(ROLE_MATRIX.ved_manager).not.toContain('receipts.edit');
+    expect(ROLE_MATRIX.ved_manager).not.toContain('receipts.void');
+    expect(ROLE_MATRIX.logist).toContain('receipts.edit');
+    expect(ROLE_MATRIX.logist).toContain('receipts.void');
+  });
+
   it('warehouse-scoped roles are exactly manager and operator', () => {
     expect(new Set(WAREHOUSE_SCOPED_ROLES)).toEqual(
       new Set(['warehouse_manager', 'warehouse_operator']),

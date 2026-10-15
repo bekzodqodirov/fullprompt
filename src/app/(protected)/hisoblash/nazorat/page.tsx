@@ -5,7 +5,7 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { getSetting } from '@/modules/platform/settings/service';
 import { isServerBehind } from '@/modules/platform/db/errors';
 import { logger } from '@/modules/platform/logger';
-import { calcControlScopeFor } from '@/modules/wms/calc/control-scope';
+import { calcControlReadScopeFor, calcControlScopeFor } from '@/modules/wms/calc/control-scope';
 import {
   calcActuals,
   calcCoverage,
@@ -13,6 +13,7 @@ import {
   linkSuggestions,
   warnedGroups,
   type CalcActualRow,
+  type LinkSuggestion,
 } from '@/modules/wms/calc/actuals';
 import {
   BAND_REFUSAL_LABELS,
@@ -45,19 +46,30 @@ import { tashkentDayStart, tashkentMonthStart } from '@/modules/platform/time/ta
  * `/hisoblash`'s header (which the VED can), with no nav entry: the accountant
  * is redirected out of `/hisoblash` itself, so a link from there alone would
  * hide the screen from half its audience.
+ *
+ * TWO SCOPES (the owner's 12a, review access-money-6, ved-correctness-3): the
+ * VED READS everybody's measurements (`calcControlReadScopeFor`), and WRITES
+ * only his own (`calcControlScopeFor`, unchanged for all six of its callers),
+ * because confirming a link scores the colleague it measures. So the link
+ * queue is two lists from one predicate: «Meniki (N)» — the write scope, with
+ * the buttons, N the VED home's own count — and «Hamkasblarniki», read-only
+ * rows naming the sealer, with no ✅/❌ at all.
  */
 export default async function CalcControlPage() {
   const actor = await getActor();
   if (!actor) redirect('/login');
+  const readScope = calcControlReadScopeFor(actor);
   const scope = calcControlScopeFor(actor);
-  if (scope === 'none') redirect('/');
+  if (readScope === 'none' || scope === 'none') redirect('/');
 
   const t = await getTranslations('calc');
   const format = await getFormatter();
 
   // This month's first instant in Tashkent (R5), not UTC's 05:00.
   const monthStart = tashkentDayStart(tashkentMonthStart());
-  const who = { scope, actorId: actor.id } as const;
+  // The lists read company-wide; the link queue's BUTTONS stay the writer's.
+  const who = { scope: readScope, actorId: actor.id } as const;
+  const writer = { scope, actorId: actor.id } as const;
 
   let coverage = { sealed: 0, linked: 0, suggested: 0 };
   let queue: Awaited<ReturnType<typeof linkSuggestions>> = [];
@@ -67,17 +79,25 @@ export default async function CalcControlPage() {
   // The queue's true length (0119): the list is capped at 50, and the VED
   // home's «Tasdiqlash kerak: N» counts all of them — the same predicate.
   let queueTotal = 0;
+  // «Hamkasblarniki»: only a writer scoped to their own has colleagues here.
+  let colleagues: LinkSuggestion[] = [];
+  let colleaguesTotal = 0;
   try {
     [coverage, queue, queueTotal, warned, rows, settleDays] = await Promise.all([
       calcCoverage(who, monthStart),
-      linkSuggestions(who),
-      linkSuggestionCount(who),
+      linkSuggestions(writer),
+      linkSuggestionCount(writer),
       warnedGroups(who, monthStart),
       // Settled only, filtered in SQL: see `settledFilter` — a JS filter after
       // the LIMIT empties this table exactly when the month is busiest.
       calcActuals(who, { settledOnly: true }),
       getSetting('calc_actual_settle_days').then((v) => Number(v ?? 7)),
     ]);
+    if (scope === 'own') {
+      const allCount = await linkSuggestionCount(who);
+      colleagues = await linkSuggestions(who, 50, { notSealedBy: actor.id });
+      colleaguesTotal = Math.max(0, allCount - queueTotal);
+    }
   } catch (err) {
     // 0089 is this release's migration; the machine whose schema is behind is
     // production on deploy morning (#472).
@@ -116,6 +136,21 @@ export default async function CalcControlPage() {
       <section className="space-y-2" data-testid="control-queue">
         <h2 className="section-title">{t('linkQueue')}</h2>
         <p className="text-2xs text-ink-500">{t('linkQueueHint')}</p>
+        {/* «Meniki (N)» — N is the VED home's «Tasdiqlash kerak: N», the same
+            predicate (#513), so the home number is one this screen prints.
+            Only for a writer scoped to their OWN (review ved-money-6): for the
+            accountant, the admins and the owner the write scope is 'all', the
+            list is the whole company's and N the company's count — «Mine»
+            above it would be a false word. */}
+        {scope === 'own' ? (
+          <h3 className="text-xs font-semibold" data-testid="link-mine-title">
+            {t('linkMine', { n: queueTotal })}
+          </h3>
+        ) : (
+          <h3 className="text-xs font-semibold" data-testid="link-all-title">
+            {t('linkAll', { n: queueTotal })}
+          </h3>
+        )}
         {queue.length === 0 ? (
           <p className="text-sm text-ink-500" data-testid="link-none">{t('linkNone')}</p>
         ) : (
@@ -149,6 +184,41 @@ export default async function CalcControlPage() {
           <p className="text-2xs text-ink-500" data-testid="link-shown-of">
             {t('linksShownOf', { shown: queue.length, total: queueTotal })}
           </p>
+        ) : null}
+
+        {/* «Hamkasblarniki» (12a) — read, never confirmed by anyone but the
+            sealer: no CalcLinkRow, so no button the write scope would refuse
+            with a raw «not_mine». */}
+        {scope === 'own' ? (
+          <div className="space-y-2" data-testid="link-colleagues">
+            <h3 className="text-xs font-semibold" data-testid="link-colleagues-title">
+              {t('linkColleagues', { n: colleaguesTotal })}
+            </h3>
+            {colleagues.length === 0 ? (
+              <p className="text-sm text-ink-500">{t('linkNone')}</p>
+            ) : (
+              <ul className="space-y-2">
+                {colleagues.map((row) => (
+                  <li key={row.receiptId} className="card !p-3" data-testid="link-row-colleague">
+                    <div className="flex flex-wrap items-baseline gap-2">
+                      <span className="font-mono text-sm font-semibold">{row.receiptNumber ?? '—'}</span>
+                      {row.clientCode ? <span className="chip">{row.clientCode}</span> : null}
+                      <span className="chip chip-brand">
+                        {t(SECTION_LABELS[row.section] as 'sections.podklyuch')}
+                      </span>
+                      <span className="text-2xs text-ink-500" data-testid="link-row-sealer">
+                        {row.sealedByName ?? '—'}
+                      </span>
+                    </div>
+                    <p className="text-2xs text-ink-600">
+                      {t('quoted')}: {measure(row.quotedVolumeM3, row.quotedWeightKg)} ·{' '}
+                      {t('measured')}: {measure(row.actualVolumeM3, row.actualWeightKg)}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         ) : null}
       </section>
 

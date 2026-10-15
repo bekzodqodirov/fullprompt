@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
 import { db, type Tx } from '../../platform/db/client';
 import { costEntries, expenses } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
@@ -172,12 +172,12 @@ export const RESTORED_DAYS = 60;
 /**
  * «An un-merge restored this expense» (within `RESTORED_DAYS`) — read off
  * the audit row the un-merge writes, so no column says it twice.
- * `${expenses}` the table (#128), on the audit's (entity_type, entity_id)
- * index.
+ * `${expenses}` the table (#128) by default; the twin warning passes its own
+ * alias (accounting/twins.ts). On the audit's (entity_type, entity_id) index.
  */
-function restoredSql() {
+export function restoredSql(expenseId: SQL = sql`${expenses}.id`) {
   return sql`EXISTS (SELECT 1 FROM audit_log a
-                      WHERE a.entity_type = 'expense' AND a.entity_id = ${expenses}.id
+                      WHERE a.entity_type = 'expense' AND a.entity_id = ${expenseId}
                         AND a.after->>'unmerged' = 'true'
                         AND a.created_at > now() - make_interval(days => ${RESTORED_DAYS}::int))`;
 }

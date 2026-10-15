@@ -72,7 +72,8 @@ export async function createTaskAction(
   if (!parsed.success) return { error: 'validation' };
 
   try {
-    await createTask(parsed.data, me.ctx);
+    // A person typed it: the web form is the hand door (0124).
+    await createTask(parsed.data, me.ctx, { origin: 'hand' });
   } catch (err) {
     if (err instanceof TaskError) return { error: err.code };
     throw err;

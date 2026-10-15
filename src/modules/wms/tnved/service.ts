@@ -57,6 +57,42 @@ export async function tnvedFor(namesZh: string[]) {
   return new Map(rows.map((r) => [r.productKey, r]));
 }
 
+/**
+ * Lot tarkibi: a 💡 for a composition LINE on the Bojxona tab — read-only,
+ * never auto-filled, never written to the memory (a line's name is a
+ * person's Russian and has no memory key of its own). By name: (a) the
+ * memory, matched on its key OR on its Russian name, else (b) the newest code
+ * a person stated for a line of that name on any lot — so «Мышь» typed on
+ * last week's truck is offered on this one (the owner's 4c: almost every
+ * truck). Keyed by `productKey(name)`.
+ */
+export async function tnvedHintsFor(
+  names: string[],
+): Promise<Map<string, { code: string; from: 'memory' | 'composition' }>> {
+  const out = new Map<string, { code: string; from: 'memory' | 'composition' }>();
+  const keys = [...new Set(names.map(productKey))].filter(Boolean);
+  if (keys.length === 0) return out;
+  const rows = (await db.execute(sql`
+    SELECT k.key,
+           (SELECT t.tnved_code FROM tnved_assignments t
+             WHERE t.product_key = k.key OR ${productKeySql(sql`t.product_name_ru`)} = k.key
+             ORDER BY (t.product_key = k.key) DESC, t.updated_at DESC LIMIT 1) AS memory,
+           (SELECT g.tnved_code FROM lot_composition_lines g
+              JOIN lot_compositions h ON h.lot_id = g.lot_id
+             WHERE g.tnved_code IS NOT NULL AND ${productKeySql(sql`g.name`)} = k.key
+             ORDER BY h.updated_at DESC LIMIT 1) AS stated
+      FROM (VALUES ${sql.join(
+        keys.map((key) => sql`(${key})`),
+        sql`, `,
+      )}) AS k(key)
+  `)) as unknown as { key: string; memory: string | null; stated: string | null }[];
+  for (const row of rows) {
+    if (row.memory) out.set(row.key, { code: row.memory, from: 'memory' });
+    else if (row.stated) out.set(row.key, { code: row.stated, from: 'composition' });
+  }
+  return out;
+}
+
 export class TnvedError extends Error {
   constructor(public code: 'invalid_code' | 'ai_not_configured' | 'ai_failed') {
     super(code);

@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { isUuidShaped } from '@/modules/platform/audit/fields';
 import { salesManagerOptions } from '@/modules/platform/rbac/queries';
 import { chatBadges, tgViewerFor } from '@/modules/wms/crm/conversations';
 import {
@@ -80,8 +81,12 @@ export default async function LeadsPage({
 
   const seesAll = actor.permissions.has('crm.leads.view_all');
   // Someone who may see everything still starts on their own leads; "all" is
-  // one tap away and is what the owner uses.
-  const mine = !seesAll || params.scope !== 'all';
+  // one tap away and is what the owner uses. «All» is asked ONCE: a seller
+  // without view_all who opens `?scope=all` gets his own leads, so no chip,
+  // panel state or carried link may say «Hammasi» over them (the deal board's
+  // DEAL17-2, on its twin).
+  const scopeAll = seesAll && params.scope === 'all';
+  const mine = !scopeAll;
   // One colleague, when asked for. A `hodim` in the address bar from somebody
   // who may NOT see everybody's leads is ignored rather than obeyed: the
   // funnel's ownership rule is also the search's and the bot's, and a fourth
@@ -90,13 +95,13 @@ export default async function LeadsPage({
   // `eq(leads.ownerId, …)`, and a hand-typed non-uuid was a 22P02 500
   // for a view_all holder rather than a dropped filter (#514).
   const hodim =
-    seesAll && /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(params.hodim ?? '') ? params.hodim! : '';
+    seesAll && isUuidShaped(params.hodim) ? params.hodim! : '';
   const scope = hodim || (mine ? actor.id : undefined);
   const q = (params.q ?? '').trim();
   // What every link on this screen has to carry, or the first tap on «all» or
   // on «+N · show all» drops the filter and reloads the unfiltered board.
   const carried = {
-    ...(params.scope === 'all' ? { scope: 'all' } : {}),
+    ...(scopeAll ? { scope: 'all' } : {}),
     ...(q ? { q } : {}),
     ...(hodim ? { hodim } : {}),
     ...filters.raw,
@@ -190,7 +195,7 @@ export default async function LeadsPage({
   // Every chip counts — the scope chip too, or the row renders unpaid and
   // eats 28px off the board's bottom (the geometry fence caught exactly this).
   const chipsOn =
-    params.scope === 'all' || Boolean(q) || Boolean(hodim) || Object.keys(filters.raw).length > 0;
+    scopeAll || Boolean(q) || Boolean(hodim) || Object.keys(filters.raw).length > 0;
 
   return (
     // The board's height is a viewport calculation, so anything added ABOVE it
@@ -224,7 +229,7 @@ export default async function LeadsPage({
           q={q}
           label={tc('search')}
           carried={{
-            ...(params.scope === 'all' ? { scope: 'all' } : {}),
+            ...(scopeAll ? { scope: 'all' } : {}),
             ...(hodim ? { hodim } : {}),
             ...(archive ? { arxiv: '1' } : {}),
             ...filters.raw,
@@ -243,7 +248,7 @@ export default async function LeadsPage({
         </Link>
         <BoardFilter
           q={q}
-          scope={params.scope === 'all' ? 'all' : ''}
+          scope={scopeAll ? 'all' : ''}
           hodim={hodim}
           people={managers.map((row) => ({ id: row.id, fullName: row.fullName }))}
           // The form REPLACES the URL, so anything it does not re-post is
@@ -326,7 +331,7 @@ export default async function LeadsPage({
 
       <BoardChips
         q={q}
-        scope={params.scope === 'all' ? 'all' : ''}
+        scope={scopeAll ? 'all' : ''}
         hodim={hodim}
         hodimName={managers.find((row) => row.id === hodim)?.fullName ?? null}
         values={filters.raw}

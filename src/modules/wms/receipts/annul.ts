@@ -16,6 +16,7 @@ import {
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { cancelTasksFor } from '../../platform/tasks/service';
+import { retireTaskCopiesSoon } from '../../platform/notifications/retire-tasks';
 import { CostError, recomputeAll, recomputeEntry, scopeBoxIds, voidCostEntryInTx } from '../costing/service';
 import { voidBoxRows } from './void-box';
 import { receiptHasCompensation } from '../finance/compensation-follow';
@@ -163,6 +164,9 @@ export async function annulReceipt(
     };
   }
 
+  // The tasks a retired truck takes with it — retired in Telegram after the
+  // commit, never inside it (#714).
+  const cancelledTasks: string[] = [];
   const outcome = await db.transaction(async (tx) => {
     // LOCKED (0105): the lost-cargo door locks the prixod first too.
     const [receipt] = await tx.select().from(receipts).where(eq(receipts.id, receiptId)).for('update');
@@ -318,7 +322,7 @@ export async function annulReceipt(
         .update(driverDevices)
         .set({ revokedAt: new Date(), pairCode: null })
         .where(and(eq(driverDevices.batchId, batchId), isNull(driverDevices.revokedAt)));
-      await cancelTasksFor(tx, 'batch', [batchId]);
+      cancelledTasks.push(...(await cancelTasksFor(tx, 'batch', [batchId])));
       await tx.update(batches).set({ status: 'cancelled' }).where(eq(batches.id, batchId));
       await writeAudit(tx, { ...ctx, warehouseId: batch.originWarehouseId }, {
         entityType: 'batch',
@@ -352,6 +356,7 @@ export async function annulReceipt(
     return { boxesVoided: toFlip.length, costEntriesVoided: liveEntries.length, batchesRetired, cratesDissolved };
   });
 
+  retireTaskCopiesSoon({ taskIds: cancelledTasks, outcome: 'cancelled' });
   const aftermath = await annulAftermath(receiptId, ctx);
   await dealsAfterAnnul(receiptId, ctx);
   return {

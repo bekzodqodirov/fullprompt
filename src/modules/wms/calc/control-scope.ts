@@ -76,3 +76,59 @@ export function calcRegistrySight(actor: {
 }): CalcRegistrySight | null {
   return mayReadCalcRegistry(actor) ? REGISTRY_SIGHT : null;
 }
+
+/**
+ * Who reads the VED's INTERNAL note on a Готово answer (the owner's 9a, «ichki
+ * ved uchun ozining izoxi … VED va rahbar»).
+ *
+ * `ved.docs` and nothing wider — held by the VED, the admins and the owner.
+ * NARROWER than the registry's own door on purpose (review access-money-10):
+ * the accountant reads the history and the deal's calculation sheet through
+ * `mayReadCalcRegistry`, and the note is «how I got the figure», which 9a
+ * keeps between the calculators and leadership. The accountant is the
+ * behavioural test's case that must NOT see it.
+ */
+export function mayReadCalcInternalNote(actor: {
+  permissions: { has(code: string): boolean };
+}): boolean {
+  return actor.permissions.has('ved.docs');
+}
+
+declare const INTERNAL_NOTE: unique symbol;
+
+/**
+ * The proof that a read asked `mayReadCalcInternalNote` — `CalcRegistrySight`'s
+ * shape. The registry and the request detail SELECT the column only with one
+ * of these in hand (the SQL names `NULL` otherwise), so the accountant's
+ * screen is not merely spared the note — its query never fetched it.
+ */
+export type InternalNoteSight = { readonly [INTERNAL_NOTE]: true };
+
+const NOTE_SIGHT = Object.freeze({}) as InternalNoteSight;
+
+/** The ONE mint. Null for everybody `mayReadCalcInternalNote` refuses. */
+export function internalNoteSight(actor: {
+  permissions: { has(code: string): boolean };
+}): InternalNoteSight | null {
+  return mayReadCalcInternalNote(actor) ? NOTE_SIGHT : null;
+}
+
+/**
+ * The nazorat page's READS (the owner's 12a, «ved hodimlari bir birini … ishini
+ * korish imkoniyati»), split from the WRITE scope above (review
+ * access-money-6, ved-correctness-3).
+ *
+ * `calcControlScopeFor` keeps its name and its value for its six callers —
+ * the link ✅/❌, `assertMine`, the home count, the bot's link ask, the prixod
+ * card's picker and the pricing page — because confirming a link SCORES the
+ * colleague it measures, and that stays the sealer's own. This one widens the
+ * lists only: a VED reads everybody's measurements, and the screen draws
+ * buttons on his own rows alone.
+ */
+export function calcControlReadScopeFor(actor: {
+  permissions: { has(code: string): boolean };
+}): 'all' | 'none' {
+  if (actor.permissions.has('finance.reports')) return 'all';
+  if (actor.permissions.has('ved.docs')) return 'all';
+  return 'none';
+}

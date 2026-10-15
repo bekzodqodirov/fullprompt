@@ -848,6 +848,90 @@
       "when": 1785190000099,
       "tag": "0120_no_login_staff",
       "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "7",
+      "when": 1785190000100,
+      "tag": "0121_batch_rename",
+      "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1785190000101,
+      "tag": "0122_lot_composition",
+      "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1785190000102,
+      "tag": "0123_lot_check",
+      "breakpoints": true
+    },
+    {
+      "idx": 124,
+      "version": "7",
+      "when": 1785190000103,
+      "tag": "0124_task_origin_calc_note",
+      "breakpoints": true
+    },
+    {
+      "idx": 125,
+      "version": "7",
+      "when": 1785190000104,
+      "tag": "0125_calc_basis_m3",
+      "breakpoints": true
+    },
+    {
+      "idx": 126,
+      "version": "7",
+      "when": 1785190000105,
+      "tag": "0126_debt_release_note",
+      "breakpoints": true
+    },
+    {
+      "idx": 127,
+      "version": "7",
+      "when": 1785190000106,
+      "tag": "0127_staff_threads",
+      "breakpoints": true
+    },
+    {
+      "idx": 128,
+      "version": "7",
+      "when": 1785190000107,
+      "tag": "0128_price_channel",
+      "breakpoints": true
+    },
+    {
+      "idx": 129,
+      "version": "7",
+      "when": 1785190000108,
+      "tag": "0129_cargo_threads",
+      "breakpoints": true
+    },
+    {
+      "idx": 130,
+      "version": "7",
+      "when": 1785190000109,
+      "tag": "0130_bot_redelivery",
+      "breakpoints": true
+    },
+    {
+      "idx": 131,
+      "version": "7",
+      "when": 1785190000110,
+      "tag": "0131_calc_excise",
+      "breakpoints": true
+    },
+    {
+      "idx": 132,
+      "version": "7",
+      "when": 1785190000111,
+      "tag": "0132_cost_freight_basis",
+      "breakpoints": true
     }
   ]
 }

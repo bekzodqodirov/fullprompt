@@ -223,7 +223,7 @@ A cross-check of the draft plan against every spec section surfaced these additi
 119. **The driver app avoids Google Play services, third-party libraries and the Play Store alike** (owner: drivers in China use Android/iPhone/HarmonyOS, and our warehouse worker installs the app by hand): location comes from the framework `LocationManager` because Huawei and most mainland phones have no GMS, so the fused provider would simply never fire; networking is `HttpURLConnection` and storage a plain `SQLiteOpenHelper` queue, keeping the dependency list to core-ktx + appcompat so the CI build cannot break on resolution. Distribution is a direct APK from GitHub Actions artifacts — Play would demand a background-location review and does not exist in China anyway; the release build is debug-signed on purpose since nothing is published. iPhone and HarmonyOS NEXT are deliberately out of scope (App Store and Huawei signing both require business accounts the owner lacks): those trips stay on the logist's manual pins, which the map already merges with device fixes.
 120. **The driver app trades live tracking for battery, and the battery exemption becomes a setup step** (owner's field round: "har 2-3 soatda bersa ham boladi", "batarey optimization"): continuous `requestLocationUpdates` was replaced by an `AlarmManager` (`setAndAllowWhileIdle`) → one fix → upload → sleep cycle, default 2 h (1/3 h selectable on the phone), with a 90 s acquisition window, early exit at ≤100 m accuracy and a 10-minute retry when a cycle comes back empty; a partial wake lock covers the cycle because an alarm only guarantees a few seconds of CPU. Inexact alarms are deliberate — `setExactAndAllowWhileIdle` needs a restricted permission and ±10 minutes is meaningless for a truck — which makes the Doze allowlist the load-bearing part, so `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` is now a mandatory step in the first-run chain (location → notifications → background → battery dialog → vendor auto-start), each step offered exactly once per run so a refusal cannot loop, then kept on screen as a red checklist row. The vendor auto-start list has no API to read or request, so it is opened by intent and confirmed by hand; `<queries>` declares the OEM security-centre packages, without which Android 11+ package visibility would hide those screens. The foreground notification became a new minimum-importance channel (importance can only be raised on an existing channel) and says nothing unless a permission is missing or a real backlog exists — a foreground service cannot drop its notification, but it can stop narrating. Consequence on the server: `FRESH_MINUTES` 90 → 480, since at a 2-3 h cadence a 90-minute window would mark almost every real fix stale and silently return the map to the estimate.
 121. **Batch membership is what DEPARTED, not what `current_batch_id` still points at** (owner: manual acceptance never moved the counter and finishing declared the truck missing): unload clears `current_batch_id` on acceptance, so every screen that asked "which boxes are on this batch" lost them one by one as work progressed. `batchMemberFilter()` unions the live pointer with the `batch_departed` box_movements rows — written once at departure, never rewritten — and the unload snapshot uses it. The client-side companion: "accepted" means `status !== 'in_transit'`, never `status === 'in_stock'`, because a customs/distribution destination lands cargo in `ready_for_pickup` (spec 6.6) and matching on `in_stock` pinned the counter at zero for every real Uzbekistan arrival. Same rule applied to `resolveMissing('found_here')`, which hardcoded `in_stock` and left recovered boxes invisible to the pickup/issue flows. Consequence for the UI: `finishUnload` is destructive (it flags the remainder `missing_in_transit`), so it must never be the only one-tap action on the screen — `unloadRemaining()` accepts the outstanding manifest through the normal ingest path (idempotent via uuid5 over the batch id, so a double press replays) and the finish button now confirms with the count it is about to declare lost.
-122. **A batch code is editable until the truck leaves, and never after** (owner: "YW-001/002 comes from the warehouse — let me type it myself sometimes"): `renameBatch` accepts a manual code while the batch is `forming`/`loading`, trims it, collapses inner whitespace and uppercases it (the unique index is case-sensitive, so a near-duplicate could otherwise hide behind case), rejects collisions with a case-insensitive lookup, and audits before/after. The cutoff is the point of no return: after departure the code is already on the invoice, the manifest, the packing list and whatever the customs agent received, so a rename would desynchronise the papers from the system — the owner accepted this when asked. Guarded by `plans.manage` rather than `batches.vehicle_info`: the code is the batch's identity on every document, not a logistics detail.
+122. **A batch code is editable until the truck leaves, and never after** (owner: "YW-001/002 comes from the warehouse — let me type it myself sometimes"): `renameBatch` accepts a manual code while the batch is `forming`/`loading`, trims it, collapses inner whitespace and uppercases it (the unique index is case-sensitive, so a near-duplicate could otherwise hide behind case), rejects collisions with a case-insensitive lookup, and audits before/after. The cutoff is the point of no return: after departure the code is already on the invoice, the manifest, the packing list and whatever the customs agent received, so a rename would desynchronise the papers from the system — the owner accepted this when asked. Guarded by `plans.manage` rather than `batches.vehicle_info`: the code is the batch's identity on every document, not a logistics detail. **Reversed 2026-09-30 by #1252** (his 1a/2a/3a: renamed on the road too, until unloading ends).
 123. **Rarely-used fields fold, always-used fields stay open** (owner's round: notes and expenses are written on a minority of receipts, photos and files on every one): a shared `Panel` (native `<details>`, zero client JS, works in a server component) now wraps the VED documents, the driver pairing code and the receiving note+cost pair, while the attachment row stays visible. A collapsed panel that holds live data still says so — the driver panel badges the pending pair code, the receiving one dots when a draft already carries a note or a cost — so folding never hides state. Same mechanism for the batch board's archive drawer, which is the fix for finished batches becoming unreachable: membership/board queries filter statuses in SQL now, and the archive counts boxes from `batch_departed` movements because a closed batch owns none.
 124. **Exports follow the reader; customs paperwork does not** (owner asked for English "for everyone"): the ten report XLSX builders take a locale and render headers through `reports/labels.ts` in all four languages, because those files are downloaded to be read by the person who asked for them. The invoice, packing list, manifest, packing-photo list, agent file and handover act instead use `documents/labels.ts`, which is bilingual RU/EN and deliberately locale-BLIND — their readers are an Uzbek customs officer and a Chinese forwarding agent, so following the interface language would let a manager working in English hand the border a paper it cannot process. Consequence found the hard way: Excel rejects `\ / ? * [ ] :` in a worksheet name, so a bilingual "Сводка / Summary" used as a tab made every manifest download 500 — sheet names now come from separate slash-free constants and two tests hold that line (no illegal character in a sheet name; all five documents generate). Box/crate stickers stay single-language: their words live in a fixed 100×100 mm layout that cannot be proof-printed from here, and a longer string risks clipping on the physical label.
 125. **Staff Telegram messages follow the recipient; the client drafts inside them do not** (part 3 of the English rollout): `renderTelegramText` takes a locale and `sendPendingTelegram` reads it from the recipient's `users.locale`, so the same event is rendered once per reader — the wording lives in `notifications/labels.ts` rather than next-intl because the sender is a background worker with no request context. The exception is deliberate: the ReadyForPickup message carries two ready-to-forward drafts addressed to the CLIENT (uz + ru), and those follow the client's language, not the manager's — translating them into the manager's language would hand a Russian-reading manager an English text to send to an Uzbek client. The client cabinet bot stays Uzbek-only for now (DECISIONS #110): giving it a language would mean storing one per client and a switch button in the chat, which no current client needs.
@@ -2346,6 +2346,16 @@ His message: «1 a / 2 b / 3 a / 4 a / 5 a / 6 a / 7 ha / 8 a / 9 a / 10 hozirch
 
 1242. **Two buttons on /hodimlar could press, save, and never land — both are Next 15.5 router behaviour, measured, not guessed (the first two guesses were wrong).** The full CI-order run went red on m9zzu-hodim-kirmaydi T1 and later T5 after passing runs before. Isolated runs pass because Playwright starts a FRESH server each time; against ONE server kept up the hangs reproduce: «Qo'shish» 3-4 of 8, «Ishdan ketdi» 1-3 of 20. My first reading («a heavy page is slow» → a longer timeout) was wrong, and so was the second («push after the transition settles»), which measured no better; a probe that logged every request, `requestfinished`, history calls, `AbortController.abort` and the service worker (blocked: still 3 of 16) found two separate mechanisms. (1) **«Qo'shish»**: `await action()` returns with the action's VALUE while the router is still applying the page the action revalidated; a `router.push` arriving then DISCARDS that pending server action (`app-router-instance.js` 131-143), and a discarded action never resolves the promise its transition set on the router state, so the navigation entangled with it never commits — the URL stays /hodimlar with «✅ Qo'shildi» on screen. The card now opens with `window.location.assign`, which is not in the router's queue: 16 of 16, twice. The success link stops prefetching (the push first reused its prefetch). (2) **«Ishdan ketdi» / edit / KPI pay**: the action's answer arrives IN FULL (`requestfinished` at ~150 ms, no JS chunk pending, no DB session active) and the transition stays pending for ever, button greyed, because the revalidated cards stream into the page's `<Suspense>` around `StaffList` — an upstream family (vercel/next.js #87529, #98303, discussion #82289). The same build without the boundary: 40 of 40. The boundary is gone; its cost is stated in the page — the company view's wait (bounded by KPI_BUDGET_MS, 8 s) is the navigation bar on the previous page instead of a skeleton; the per-person view is ~0.7 s either way. The three `router.refresh()` calls after actions that already `revalidatePath('/hodimlar')` went too: redundant, and a refresh fired while the action's page still streamed made the hang 1 in 5. `staff-person-door.test.ts` fences all three (no `<Suspense` in the page, no `router.refresh(` in the forms, the full load), comments stripped, red-proven by putting the boundary back. The only other `<Suspense>` users are the dashboard's read-only cards (no actions). The same push-after-action shape is in `/hisoblash/[id]`'s «Qayta hisoblash» and is QUEUED for measurement, not changed blind. LESSON: a flaky e2e that passes alone and fails in the suite is telling you the SERVER's state matters — reproduce against a server that stays up, and read the network before choosing a fix. Removing the boundary moved the page's hydration into one pass, and the two /hodimlar specs then failed 2 in 6 on a different step: a fold pressed right after load stayed shut. Measured: a press ~50 ms after hydration leaves a `<details>` shut 18 times in 20 — React holds a discrete event aimed at not-yet-hydrated content and replays it to its own handlers only, so the native toggle never happens. No hydration mismatch on the page (checked). A person does not press that early; the suite's rule for it is a retried press (m2, m9zb), and `tests/e2e/fold.ts` `openFold` is the toggle-safe form — it presses only while the fold is still shut, because a blind retry would close what the first press opened. Both specs use it for every fold: 88 of 88 against a warm server.
 
+## Keyingi yo'l — the truck that bears a carton's price carries its whole road (2026-09-30; NO migration, ledger 121)
+
+1243. **One price for the whole road, so the truck that bears the price carries the road — a MOVE inside the one fence, never an add.** His question: cargo rides three trucks (Yiwu → Kashgar, Kashgar → Andijan, Andijan → Tashkent), the price is typed on the truck that reached Andijan, and «Partiya moliyasi» never showed the Tashkent leg in that truck's tannarx. A 58-agent research run measured it: the Tashkent leg's cost stayed on its own truck for ever (#532e refused a later leg), so the priced truck's «Foyda» was overstated by it and the Uzbek leg read «narx yo'q» at −cost — beside «Narx qo'yilgan 1/1» on the same header, in the attention list and the 20:00 summary for a year, and dropped out of «Partiya foydasi» altogether when unmarked. Company money was right all along: the P&L, cash flow, Balans (U03 included), «Mijoz foydasi», KPI, upsale and stamp profit never ask which truck carries a cost. His answers 1a (one price for the whole road), 2a (the priced truck's figure may grow after the price, labelled), 3b (no estimate at price time), 4a (a price on the Uzbek leg for such cargo asks first), 5a (every Uzbek leg after, not only Andijan → Tashkent), 6b (no before/after list). Built in `landedAllocationsSql` + `carriageCtesSql` (costing/service.ts): a carton's price sits on the truck that MAY carry it — `bearsPriceSql` (batches/internal.ts) = not internal AND (crosses a border OR the prixod was received in Uzbekistan), which is the handover gate's clause 3 restated as one function that the gate now also calls (`crossesBorderSql` + `receivedInUzSql`). A DEPARTED truck that does not bear a carton's price hands everything it would have carried for that carton to the carton's previous price-bearing truck (`given_back`), and that truck carries it as a third figure `laterUsd` («keyingi yo'l», `carried.upto` = the last departed ride whose carrier it is). The giving truck drops exactly what the bearing one gains, so the non-internal rows stay disjoint (U16) and `tripTotals`, the corridors and the «belgilanmagan» note needed no change to their arithmetic. tannarx = bu reys + shu reysgacha + keyingi yo'l on every surface; `prevUsd` is `total − own − later` in pricingView and profitByBatch. CHARGE-BLIND on purpose: a price typed on the Uzbek leg never moves cost (it would make one truck's margin flip on another truck's price — the variant the design judge rejected). A walk-in received in Andijan: that leg bears its price and keeps its cost. A truck still forming keeps its own entries (Q21: a planned carton can be short-loaded). A carton with no earlier price-bearing truck keeps the old answer — no money is ever lost. Pinned: truck-riders' U16 pair re-anchored (t1 500/40/60, the Uzbek leg 0 and «davomi»), a new block (forming → nothing moves; departed → $30 moves, the walk-in's $30 stays; a second Uzbek leg follows too; three rows = the month's direct cost, JAMI = 180 with one davomi), internal-leg's R2a (export 145/38/7, the Uzbek leg's own $7 price still a price with cost 0). Red proofs ×4 by string edit (the drop, the carry, the departure gate, and the gate/fence one-rule fence).
+
+1244. **«Davomi» is a truck kind, not «narx yo'q».** `batchCarriage` (costing/service.ts) reads the fence's own CTEs: riders, `follows` (counted before departure — the price door warns then too), `givenBack`, `open` (the carried cartons not yet issued/lost/void) and the carriers by code. `isContinuationTrip` = every rider given back; `tripKind` gained 'continuation' with `continuation` a REQUIRED input (optional, a forgotten caller would go back to «unpriced»). Consequences: the attention row and the 20:00 summary stop alarming (they ask `tripKind`), the dashboard's trucks card leaves it out like an internal leg, `tripTotals` counts it apart (`continuation`, not in `trips`, its $0 still summed), the profit page prints «↪ narx B-xxx da», the truck card's margin tile says «davomi». A truck that is davomi AND carries a price someone typed reads as that price (profit), because the price is real money on the ledger.
+
+1245. **What the pricing page says (his 2a and 4a).** The header adds «keyingi yo'l: $X» beside «shu reysgacha», a lot row «↪ $X», the client block and the breakdown tag later parts «↪ TAS-…». While the carried cartons are not all handed over the page says «⏳ N karobka hali topshirilmagan — … tannarx o'sishi mumkin», because the figure moves when the next leg's bill is typed — also in a month already looked at (trucks are listed by departure, their cost is read whole). On a davomi truck the page says whose truck carries the cargo, and `PricingForm` takes `secondBill`: a price for a client with following cartons stops once with «ikkinchi hisob bo'ladi» (any currency; one confirmation covers it and the >5 % deal question).
+
+1246. **Measured, and one rewrite.** The first version of the CTEs probed `rides` per row (a correlated ORDER BY/LIMIT and a NOT EXISTS): `profitByBatch` over 626 trucks / 8.4k boxes went 63 → 350 ms. Window functions over each box's own rides (`RANGE … EXCLUDE GROUP`, strictly earlier rides; a forming ride sorts last) and one `chain` CTE (every non-bearing ride and its carrier, DISTINCT ON the pair so a join can never multiply an allocation) brought it to ~110 ms (landed 80-110 ms, carriage ~95 ms, run in parallel). No shaped 60k-box copy exists in this container, so the dashboard's cost on his server is unmeasured — stated. Two PROCESS mistakes, both mine, both caught before a commit: a red-proof helper restored an EMPTY strip with `replace('', old)`, which interleaved the line between every character of `costing/service.ts` (3.1 MB) — recovered by removing every copy and re-inserting at its anchor; and `open(p,'w').write(open(p).read()…)` truncates before it reads, which emptied `unpriced.ts` — restored from the WIP commit made minutes earlier for exactly that reason (#430, #815, #873). The helper now refuses an empty replacement and checks the marker is unique before restoring.
+
 ## The strip that multiplied, and the fold that never came (2026-09-30; NO migration)
 
 Numbered from #1247 on purpose: the other session's open PR #106 already holds #1243-#1246, and taking the next free number past an OPEN PR's range avoids what would have been the twentieth collision.
@@ -2394,3 +2404,836 @@ His message: «sen ohirgi qilgan ui ozgartirishingda pagelarni tepasida bolimlar
    - **Not the database.** With no cache, CI orders the files by size, so the files that ran before this one were main's, and main's runs were green.
    - **Fix.** The token is three DIGITS of the run's suffix. Digits share no trigram with the words, and all 1,000 score 0.536.
    - **Red proof.** The test still goes red when the memory query is switched to `word_similarity`, the rule it pins.
+
+## Keyingi yo'l — the round's review (2026-09-30; renumbered from #1247 on the merge — the TWENTIETH collision: the strip round above took #1247-#1250 while PR #106 was open and already held #1247)
+
+1251. **The round's own review, and the performance number I had not measured.** A 38-agent review of the shipped change (five lenses, three refuters per finding) confirmed one blocker and five defects, all fixed here. **The blocker was mine and the lesson is #1246's second half**: I measured the fence on the only copies I looked for (626 trucks / 8.4k boxes) and never listed the databases — `gsr_card_perf`, the shaped 120k-carton / 380k-allocation / 1,422-truck copy, was in the container all along, and on it three LEFT JOINs of CTE scans (`prev_priced`, `given_back`, `carried`, each estimated at one row) nested over every allocation of every listed truck: «Partiya foydasi» for three weeks went 0.35 s → 10.8 s, 120 trucks 0.29 s → 8.5 s. The fence now has NO join between CTEs: the carton's road is computed by windows over its own rides (`rides` → `legs` → `segs`: each ride's segment = the latest price-bearing ride before it, read as the last element of an `array_agg … FILTER` in the window's own order, and `seg_upto` = the segment's last departed non-bearing ride), and `mx` gives one row per listed (truck, carton) with everything the fence asks. Measured on a migrated copy of it (`gsr_perf2`, production's `work_mem=16MB`, `jit=off`): three weeks 0.3-0.6 s (was 0.3-0.5), 40 Uzbek legs 0.16 s (was 0.16), 120 trucks 0.25 s (was 0.29); the 12-month read the dashboard makes 3.6-3.8 s against 2.7-3.1 s — STATED: that is the cost of a rule that must look at every ride of every carton, and one statement for landed + carriage was tried and measured SLOWER (4.2-4.9 s, the shared CTEs then materialise). Both versions give the identical year total ($1,754,038 over 1,294 trucks), so the change conserves money on real-shaped data. Defects: the dashboard filtered «davomi» by the charge-blind flag while `tripTotals` counts by `tripKind`, so a davomi someone priced was counted and not drawn (both surfaces now ask `tripKind`, and the profit page's cell too); a client whose cargo gave its money back read «hali xarajat kiritilmagan» beside $0 — an invitation to type the bill twice (`allGiven` silences it); the second-bill confirm button stayed live while the save ran (`disabled={pending}` — a double tap was two charges); a mixed client (China cargo + an Andijan walk-in) read «this cargo is priced on T1» for all of it (the sentence carries «N / M karobka», the lot row «↪ narx T1 da»); and no test had two price-bearing trucks on one road — a carry with no upper bound, or the FIRST bearing truck as the carrier, passed every test (a new KG-transit case: T1 120 / T2 0 / T3 307 / T4 0, red-proven both ways). Nits taken: a davomi nobody priced has no margin and no $/kg (never a «0»), the XLSX says «davomi → T1» instead of a 0 profit, ru/en no longer put a bare number before a plural noun. Red proofs ×5 more, all by the marker helper.
+
+## Partiya nomi yo'lda va yo'nalishni o'zgartirish — rename a departed truck, change its destination on the road (2026-09-30; migration 0121 `batch_rename` — ledger must reach 122)
+
+Both designed, judged by four lenses with refuters (rename: 16 confirmed objections; reroute: 19), revised, then BUILT in two worktrees, each reviewed again by four lenses with two refuters per finding (rename 4 confirmed, reroute 8), fixed, and merged here. His answers: 1a (renamed in transit and after arrival, until unloading ends), 2a (only admin and logist), 3a (a typed reason), 4a (Telegram to the new warehouse's staff and the logist); question 5 (a reroute into another country) unanswered → the starred default, same country only.
+
+1252. **A truck is renamed on the road — this REVERSES #122.** `renameStageOf(status, stillAboard)` (batches/rename-door.ts): 'loading' (forming/loading — today's door, plans.manage at the ORIGIN, no reason, the free 2-40 rule), 'road' (in_transit/arrived with cartons still aboard — plans.manage at EITHER end, a reason of 3-300 characters, the staff bot's OWN `isCodeCandidate` rule exported from route-text.ts: [A-Z0-9-], 3-20, a letter and a digit, refusals diagnosed Cyrillic-first), 'closed' (unloaded/closed/cancelled, AND in_transit/arrived with nothing aboard — «unloading finished» is also a FACT, `awaitingUnloadWhere`'s count, because some warehouses never press the button; an unknown status fails closed). The door is `plans.manage` + the card's two-ends door — on the seed exactly super_admin/admin/logist; NOT `batches.depart_close` (the warehouse manager holds it and his answer excluded him); asked by the action (`authorizeOnBatch`), the service on the locked row (a BRANDED `RenameDoor` only `renameDoorFor(actor)` mints, bound to `ctx.actorId`) and the card's pencil. Lock order: the target NAME (`lockBatchCode`, an advisory lock), then the truck's loading lock, then the row FOR UPDATE — so a rename never waits for a name while holding a truck, and a pre-departure rename serialises with departBatch/finishLoading/the office count. Compare-and-set on what the presser saw (`seenCode`/`seenStage` → `batch_changed`, checked before any stage rule; the same name posted twice is `changed:false`). 23505 → `code_taken` (a same-name race was a white page).
+
+1253. **Only a name worn ON THE ROAD is «ever worn», and it stays findable.** Former names are the immutable audit rows rename writes — no table; `wms/batches/former-codes.ts` is the only home of `before->>'code'`, and its self-describing predicate (`… AND (after->>'reason') IS NOT NULL` — only the road asks a reason) is repeated verbatim by 0121's partial index `audit_batch_former_code_idx` (+ `batches_code_upper_idx`). The fixer's reversal of the design: a name typed and changed again BEFORE departure reached no paper, bot answer or message, and burning it for ever left a typo'd partner plate unable to reach the right truck — so it frees at once, as before this round (asked as question 3). A road name is never given to another truck: `codeEverWorn` in the rename and in `nextBatchCode` (per-candidate advisory lock). Shape fences at BOTH stages: lot (GS777-A), client (letters+digits or the live `client_code_prefix`+digits), box (`{WH}{YY}-000000`), crate (`CR-`), plus a one-shot check against existing client/box/crate codes — a truck named like a client hid that client in the bot. The old name is found by ⌘K and the /batches archive through ONE bracketed `batchTextMatchSql` (round 99's lesson: the warehouse fence binds every alternative — red-proven by moving the clause outside the bracket), by the staff bot LAST, after the client book («↩️ YW-105 — oldingi nomi. Hozirgi: KA-77»), and on the card («Oldingi nomi»; the who/why log only for truck readers). NOT built, asked: a Telegram on rename (his 4a answered the reroute question); the strict rule before departure; refusing a Cyrillic look-alike before departure (a live WARNING is built).
+
+1254. **One writer of a truck's destination, on the road only, same country only.** `rerouteBatch` (batches/reroute.ts; a wire fence scans drizzle AND raw SQL and demands exactly that file): one transaction, the truck row FOR NO KEY UPDATE (the lock the first unload scan, the count and «Tushirish tugadi» take), compare-and-set on the destination the presser saw (`dest_changed`), refuses unless in_transit, the target active (read FOR SHARE), not either end, and in the SAME country (5a — every money rule reads countries, so a reroute cannot move money: internal/crosses/bears/«keyingi yo'l» unchanged by construction); a typed reason; one `update` audit row and one `BatchRerouted` event. Not written: the departure movements (#121 — «Rejada: X → yo'nalish o'zgartirildi: Y» on the card reads them), the plan, `batches.type`, the pin (an off-route pin is not drawn; a reroute back restores it), `sent_to_agent_at`. Door: `plans.manage` in scope at the live destination and the target. The Telegram (4a): the NEW warehouse's scoped staff («endi sizga keladi», cartons/m³/kg/plate — no arrow, which this app reads as origin → destination), the logist role filtered to those who can open the card, and — the fixer's correction — any warehouse an EARLIER reroute told «keladi», read off the reroute RECORD (`after.destWarehouseId`), because «not the planned warehouse» was false exactly after a round trip A→B→A→C. The originally planned warehouse is not messaged (asked).
+
+1255. **The engineering was on the unload side: a reroute must not jam a phone, nor land cartons where they are not.** The design's first version would have (a) permanently jammed every old-destination phone's outbox — one global queue, and a whole-body 403 blocks all of it, loading included — and (b) let a door authorized at the old warehouse land cartons, the arrival flip and customers' notices at the new one. Now: the phone sync is PER TRUCK (`wms/scanning/sync.ts` `syncScans`): a rerouted truck's rows answer `batch_rerouted` with `rerouteTo` and leave the queue, a missing truck `batch_not_found`, any other foreign truck is `withheld` and no longer blocks the rest; the flush stops only on 401. Every queued unload row carries the destination its screen was opened for (`expectDestId`, from `/planned`'s snapshot) and is judged at SCAN time — an unscoped logist's scans at the old gate used to land at the new warehouse. The screen latches a reroute only for ITS truck (`rerouteVerdict(acks, batchId)`, acks tagged from the queued row, never from the server — a neighbour truck's reroute turned the current screen into «not coming here» for good); a neighbour's is a toast. The office doors (finish, accept-all, count lot/crate) post `seenDestWarehouseId` and refuse `batch_rerouted` with WHERE on the locked row; `landUnloadInput` compares on every input and re-reads under lock before the arrival flip; `UnloadActions` does not `router.refresh()` after it (the refresh re-asked a door the reroute closed and the page became «Sahifa topilmadi», eating the sentence). Stated: a row queued on an OLDER phone build carries no destination and is judged at the live one — the window closes as phones update. No migration.
+
+## Partiya nomi va yo'nalish — his «hammasi standart» (2026-09-30; NO migration, ledger 122)
+
+1256. **His «Hammasi standard» to the eleven questions of #1252-#1255 fixes every starred default as a decision, and each was checked against the SHIPPED code before it was written down (#1229's lesson).** Five adversarial readers, one per group, 11 of 11 hold: (1) a rename tells nobody — `renameBatch` writes one `batches` update and one audit row, no event, so the drain has nothing to send; (2) before departure the free 2-40 rule stands, the road charset (`isCodeCandidate`) does not apply, the shape fences do at both stages; (3) a name worn only before departure frees at once, only a ROAD name is «ever worn»; (4) a Cyrillic look-alike before departure is SAVED with the form's warning line, refused on the road; (5) documents downloaded after a rename carry the new name (the invoice number too) and the road panel warns about papers already sent; (6) the originally planned warehouse is not messaged on a reroute away from it; (7) a warehouse an EARLIER reroute told «keladi» is told «kelmaydi» (the round trip A→B→A→C included); (8) a logist scoped only to the old destination is not messaged; (9) admins are not messaged for being admins — the three audiences are by role and scope; (10) the VED is not messaged and `sent_to_agent_at` is never touched; (11) another country is refused by the service AND never offered by the list. **Four of the eleven had no test**, so the answer is pinned where it was only true by reading: `batch-rename` (s1) counts every event naming the two trucks before and after a loading AND a road rename, (s4) saves «КА-…» on a forming truck and refuses it on the road; `batch-reroute` §7 adds the planner scoped to the old destination, the VED and the admin to both reroutes' «nobody» lists, §10 asserts the other-country warehouse is absent from the target list. Red proofs ×5 by string edit, each on its own target (an event insert in `renameBatch`, a Cyrillic refusal in `loadingCodeProblem`, the old destination widened into `logistsForTruck`, `ved_manager` added to the BatchRerouted fan-out, the country clause dropped from `rerouteTargets`). The verifiers' caveats, stated and not changed: an admin who ALSO holds the logist role or a scoped scan.unload role is told in that capacity; events queued before a rename keep the old code; a truck marked «agentga yuborildi» and renamed BEFORE departure gets no papers warning (the warning belongs to the road panel, as before this round); the loading rule is narrower than «anything goes» — the shape fences and `code_shadows` refuse e.g. «YW105» or a name a client already answers to at both stages.
+
+## Lot tarkibi — one lot, several goods on the papers (2026-10-01; migration 0122 `lot_composition` — ledger must reach 123; spec `docs/LOT-TARKIBI.md`)
+
+1257. **A lot that turns out to hold several goods keeps its body and gains a paper composition — his answers 1c 2c 3b 4c 5a 6 7a 8a and his own sentence «lot o'zgarmaydi, sticker o'zgarmaydi, faqat tarkibi degan joy qo'shiladi».** The case: 100 cartons received as «klaviatura» after ONE carton was opened, found to be 50 mice + 50 keyboards while the VED made the invoice. The research (14 agents, read-only) measured what that does today: the invoice prints one «Клавиатура» row and the mice do not exist on it; `tnved_assignments` is company-wide and keyed by the zh NAME, so typing the mouse code on the Bojxona tab would reclassify every client's «键盘» on every truck, departed ones included; the client's price is one total per (client, truck) (#980) and stays so (5a). Nobody can tell the cartons apart without opening (2c) and the warehouse will not re-sticker (6), so carton identity is never invented: cartons, letter, stickers, scans, plans, stock, crates, cabinet, pushes, bot, handover act, manifest and costs keep reading the lot, pinned by `tests/unit/lot-composition-fence.test.ts` (an ALLOWED list of files that may name the tables, a MUST list of readers that do). `lot_compositions` (one per lot: the cited document, the carton count it was stated against, a `rev` drawn from a SEQUENCE — a counter has an ABA hole) + `lot_composition_lines` (2-20 lines: name, optional total pieces, optional cartons, kg, m³, optional TNVED). Cartons are all-or-none (all → «alohida», Σ = `box_count`; none → «aralash»); Σ kg and Σ m³ equal the lot's stored totals EXACTLY — the screen offers «Karobka soniga qarab taqsimlash», «Sklad o'lchoviga moslashtirish» and a per-field «=» and shows the live remainder, but nothing divides on save (#768). The writers are `ved.docs` OR `plans.manage` (his «VED va logist»), never `receipts.edit` widened; the document is mandatory and must be a file on THAT prixod that is not a receive-time carton photo (`kind='file'` or uploaded after confirmation); `/api/files/upload` now asks `mayReadReceipt` for a `'receipt'` target. One writer and reader, `receipts/lot-composition.ts`; audit on entity `'receipt'` (the History tab reads that). The owner's AI assistant is DENIED the three tables, stated. Built as spec → five-lens judge (74 findings, all confirmed and absorbed) → build → four-lens review (8 defects + 18 nits) → fixes.
+
+1258. **The lock the lead decided became a FREEZE (7a), because the judge broke the lock three ways.** «Refuse a save once a crossing truck is ticked» (a) deadlocked against `countLoadLot` (advisory → lot → truck vs the save's truck → lot), (b) trapped every split lot — 801 of 4,022 crossing lots on the shaped copy rode two or more trucks, and the only way to correct the second truck was to un-tick the first, rewriting papers customs already held — and (c) never tied what the agent RECEIVED to a revision. Now no save is refused for papers: ticking «hujjat yuborildi» copies every member lot's composition AND its carton positions on that truck (`segments`) into `batch_sent_compositions` in one statement; while ticked, that truck's papers and Bojxona tab print the frozen copy; un-ticking (audited) drops it. The tick posts a render-time stamp hashing contents and positions and refuses `paper_moved` when either moved after the page was drawn. Its locks take the truck doors' own order (count-load's advisory lock, then the truck row FOR NO KEY UPDATE, then the copy) in `lockTruckForTickInTx`; a wait that runs out is a sentence. Trucks ticked before 0122 are frozen by the migration's own backfill, and a half-applied deploy falls back to the plain toggle. **The review found the first freeze held the lines and not the OFFSET** — a sibling truck departing first moved a sent truck's invoice — fixed by freezing the positions. CI found the last one: the tick action imported `count-rules` beside two `let door:` declarations and `count-kernel-wire.test.ts` named it; the lock moved into the service.
+
+1259. **The papers' arithmetic has ONE pure home, `receipts/composition-math.ts`.** A truck carrying the whole lot (`n === box_count`, not «every live carton» — today's single figure divides by `box_count`) prints the typed lines exactly; otherwise cartons and pieces are allocated cumulatively over the lot's crossing trucks in departure order (a Sainte-Laguë prefix, house-monotone, exact at the full count), kg and m³ split each truck's OWN single figure, all rounded by largest remainder in BigInt (a float floor is wrong at the column limits — measured on a tie), and the rows carry the «taxminiy» fill and note. Places: «alohida» by cartons, a pallet split by cartons and flagged; «aralash» → the first line, the others «(часть места)». Quantity is pieces in «шт» when stated, else kg as before. `paperLines` feeds the invoice, the draft packing list (a composed lot's crate groups collapsed), the packing list with photos and the agent file (7a — the composition appended per lot, with its codes). The lines of each truck sum to the single figure the code printed before this round, which the integration file asserts.
+
+1260. **A line's TNVED code never writes the company-wide memory, and the memory door learned the truck.** Line codes save onto the line (`saveLineCodesAction`); the Bojxona tab shows one row per line on that truck («shu mashinada: 50 kor · 450 kg · 500 dona»), keyed by `rowKey` so the mouse code cannot land on the keyboard row, read-only while the truck is ticked, with a sentence saying the code stays with the lot. `saveTnvedAction` now takes the `batchId`, the truck card's door, and refuses a name that is not a product row of that truck — a pre-existing hole, since any `ved.docs` holder could write any name into the memory every invoice reads. The tab also lists the PRIXODS' own documents, so the client's packing list attached to a prixod is visible where the VED works.
+
+1261. **«📈 Oldingi narx» counts a composed lot's lines as kinds, by line NAME, in its own CTE** — a blended truck price is flagged «aralash» and never served as a clean precedent; a join inside `load` would multiply the kg sums (#432), and the red proof is that join.
+
+1262. **Stated, not built — the owner's to decide or to be told:** a lot that is ENTIRELY another good cannot be fixed by the VED (a composition needs two lines; the logist renames the lot); line names are free text with no Chinese name, so the agent file the Chinese side builds from (7a) carries the VED's Russian/Uzbek words; «шт» rows sit beside «кг» rows on one invoice; a sent truck stays as it was sent (re-ticking stamps today as the send date — the original is in the audit); the agent's plan approval is not asked again; kg/m³ are fitted to the warehouse's weighing, not the client's; the client still reads «klaviatura» everywhere (rule 1). Red proofs: about forty across unit, integration, fence and e2e, every one by string edit and reverse string edit (`lot-redproofs.log`); two first stayed GREEN and were re-anchored — the positions test on a 50/50 lot (the lines depended only on the run's start and length, so the fixture had to give the sibling 11 cartons) and the BigInt rule (re-anchored on a measured float tie).
+
+## Lot tarkibi — his «1a 2a 3a» (2026-10-01; NO migration, ledger 123)
+
+1263. **His «1a 2a 3a» to the three questions #1262 owed him keeps all three exactly as shipped, and each was checked against the code before it was written down (#1229).** Three read-only verifiers, each trying to refute its option; all three hold, with qualifications the options' wording did not carry, recorded here so the decision says what the code does: **(1a)** a lot that is ENTIRELY another good gets no composition (`parseDraft` refuses fewer than two lines with `lines_count`, whose sentence in all four bundles sends the VED to the logist); its NAME is corrected through `editLot`, whose door is `receipts.edit` at the receipt's warehouse plus `canEditReceipt` — so the logist, the admins, the warehouse manager and the creating operator on the same day may rename, and the VED (`ved.docs`, no `receipts.*`) may not. Stated, not changed: two differently named lines of ONE good pass (only an exact name duplicate is refused), and the «hujjat yuborildi» freeze copies composition lines and never the lot's own name, so a rename after the tick reaches a sent truck's re-downloaded papers as it always has. **(2a)** a line has no Chinese-name column (`lot_composition_lines` = id, lot, seq, name, pieces, cartons, kg, m³, TNVED); the screen asks for the name in Russian; the agent file keeps the lot's own zh (+ru) name and appends the contents under it on the lot's first plan row, while the invoice and both packing lists print the line names alone. **(3a)** a composed line prints «шт» only when its stated pieces land ≥ 1 on THAT truck, else «кг» with quantity = its kg — so one good can be «кг» on one truck and «шт» on the next, and an «aralash» light line on a one-carton truck prints «кг 0»; an uncomposed lot is unchanged «кг»; the amount column is I×E on every row, so the VED types a per-piece price on a «шт» row and a per-kg price on a «кг» row. **Every part that was true only by reading is now pinned** (commit 8c57b69, tests only): the VED holds neither rename grant while the logist holds both (`rbac-catalog`); `lines_count` names the logist in four bundles and the panel maps it; `editLotAction` asks `authorize('receipts.edit', …)` before `editLot`; the line table's exact column set; the agent cell's zh prefix and the crated row's bare name; the «шт» boundary at exactly 1 piece and the «кг 0» row; lot D's «кг» quantity = kg, lot F's «2 шт», and `I{row}*E{row}` on every row; the VED drawn no ✏️ in the browser. 24 red proofs by string edit of the SOURCE each pins, each restored by the reverse edit.
+
+1264. **«Yuk ma'lumoti tekshirildi» is a SNAPSHOT a person wrote, compared by every reader — never a flag a writer must remember to clear** (0123, docs/YUK-TEKSHIRUV.md; his answers 1a 2b 3a 4a 5b). His request: the logist asks the client «100 karobkangiz keldi, klaviatura ekan, to'g'rimi?» and ticks; the mark is visible on Ostatka and in plan creation, and both filter on it so the prixods «malumoti yo'q» can be found and filled. **Grain: the LOT, spoken as the PRIXOD** — both screens are lot-grained, the call vouches for one lot's name and count, the lot tarkibi is per lot, and his data carries 1.0 lots a receipt (#563); the screens COUNT in prixods (`count(DISTINCT receipt_id)`). **One row per lot** (`lot_checks`) holding what was vouched for — his 2b: `product_name_zh`, `product_name_ru` (NULL, never ''), `box_count`, the client — so a rename, a count correction (including the QR-siz growth, whose take-back heals by itself), or a new client reads «stale» BY COMPARISON, and `editLot`, the count doors and `assignReceiptClient` stay untouched. kg/m³ are deliberately not compared (a re-weigh is the warehouse's correction, not «what is it»). **His 3a is DERIVED, not written**: a lot tarkibi that still stands (`isStale`'s three terms restated in SQL and pinned against it variation by variation) is ✅ «hujjat bo'yicha»; clearing the composition takes it away with no pair writer, and a half-applied deploy cannot break the shipped composition writer. **His 4a**: the ❓ list is cargo in a CHINESE warehouse (`warehouses.country = 'CN'`) — the invoice is made before the border; cargo in Uzbekistan shows ✅ when checked and nothing otherwise. Unclaimed cargo is `unclaimed` (nobody to ring; its own list). **His 1a**: the tick's door is the lot tarkibi's (`ved.docs ∨ plans.manage`, `mayCheckLot` = `mayOpenBatchVed`) plus `mayReadReceipt`; no new permission code (#170). ONE sentence (`receipts/lot-check-sql.ts`: `lotCheckStateSql`, `checkTermsSql`, `tarkibStandsSql`, `askableSql`, `checkFilterSql`, `withLotCheckJoins`; the pure half `lot-check-face.ts` for the plan editor, so drizzle never reaches the browser) read by /stock's rows, Σ and chip counts, the Ostatka XLSX (an export-always «Tekshiruv» column), `plannableStock` (lots and crates — a crate is ✅ only when EVERY member lot is), the prixod card, the client card's «Yuklar» and the logist's and VED's home rows (`uncheckedPrixodCount`, the same number the /stock chip prints); a derived fence (`lot-check-wire.test.ts`) pins ONE writer, no restated term, every reader through the helper. Every reader LEFT JOINs (a correlated subquery in a WHERE measured 3.3 s). The writer (`receipts/lot-check.ts`): door on the pool, then lot `FOR NO KEY UPDATE` → prixod `FOR SHARE NOWAIT` (raw, #1174) → the check row `FOR UPDATE`, and the snapshot is written from the LOCKED values, never the post. His 5b (a ✅/❌ button on the client's «yukingiz keldi») is not built and owed as a later round. 22 integration + 21 unit + 1 e2e spec.
+
+1265. **The build was reviewed as shipped by five lenses with a skeptic each — 20 findings, 18 confirmed, every one fixed** (two refuted: the card's ❓ on UZ cargo as a spec contradiction — it was then fixed anyway as finding 12's product-fit twin — and unclaimed cargo «falling out» of the filters, which is the rule). **(1) The round broke planning on a half-applied deploy**: the lists JOIN tables this release creates, and on a database whose ledger is 123 (`gsr_lot_perf`, measured) `plannableStock` threw 42P01 where 90be74a returned 3,977 lots — and /stock and its XLSX had no catch at all, while the same round caught the identical failure on the card, Yuklar and the homes. `lotChecksReady()` (one `to_regclass` probe, remembered once true, asked again while false so the screens return the moment the migration lands) makes every list run its pre-0123 shape: no joins, a NULL state (no chip, never ❓), `tek` ignored, no filter row — re-measured on the 123 copy: the plan list 4 lots, the count null, the card empty, no error. Compose's `migrate: service_completed_successfully` keeps the ordinary failure away; trap (2) (`build app` without `migrate`) does not. **(2) The History netted different lots into one line**: `groupHistory` nets a sitting per KEY, so a shared `lotCheck` made «ticked A, B, C» read as one change about C and «undo A, tick B» as A renamed to B; the keys carry the lot now (`lotCheck:A`) and `auditFieldLabel` splits a known base's suffix — a per-item key is the rule for any writer recording one change per item under one entity (the shipped `lotComposition` key has the same shape and is stated, not changed). **(3) «Bekor qilish» erased a colleague's fresh confirmation**: the undo posted only the lot, so a stale card's press deleted the VED's re-confirmation unseen; both doors now post the check the panel drew (`checked_at::text`) and refuse `check_changed` — the same person's same press stays a no-op, never a refusal. **(4) The card ignored 4a**: ~99 % of cards would ask ❓ with a full-width button about cargo already in Tashkent; the card's own «askable» (`lotAskableSql` — a live carton on a Chinese shelf OR on a truck out of China not yet unloaded, because the mismatch is usually found after loading, his lot tarkibi 3b) now decides ❓/⚠/the button, ✅ shows wherever. **(5) The card contradicted the lists**: a lot ✅ by its document with a stale person row said «qayta so'rang» under a ✅; a basis that went stale while the other holds is a muted history line now. **(6) The VED was told to rename via a ✏️ his card never draws** (#1263) — the line names the logist for whoever lacks `receipts.edit`. **(7) Phone width, twice** (#400): the plan editor's crate «❓ n/m» pushed a realistic crate row to 399 px (the button gained `flex-wrap`), and an unbroken note (a copied 1688 link) widened the card to 416 px (`[overflow-wrap:anywhere]`). **(8) «Hammasi» was a bare /stock**, which redirects to a saved default view — with a ❓ worklist as the default «Hammasi» was unreachable; it is `/stock?tek=` now. **(9) The plan editor**: «mos yuk yo'q» ignored the crates; an offline or unparseable answer still drew «no free cargo»; and a tick made in the chip's new tab never reached the editor — coming back to the tab re-reads the list in place (the selection is keyed by lot and stays). **(10) Smaller**: the folded crate summary prints «+» when the list is capped; the home rows say «N prixod»; `uncheckLot` refuses a non-confirmed prixod (its comment promised a door no screen drew). **Performance**, measured on a production-shaped copy with TAS1 flipped to CN (a 3,977-lot Chinese shelf, the worst case): the filter as a WHERE was misjudged at ≈1 % and walked every lot ever received, so the rows and the home count filter AFTER grouping (HAVING) — the home count 36-38 ms; `plannableStock` 689 ms before this round → 689-765 ms with it (its cost was already `arrivalsForLots`'s; a real Chinese shelf today is ~100 cartons).
+
+1266. **The /stock crate list folds** (his «ostatkada yashiklar kop bolsa uzun yashiklar korinib qolyabti colapsable bolsin», the same message). `CrateRows` is a native `<details>`, open at five crates or fewer and closed above that; the summary carries the count and the over-capacity count, so round 109's «ogohlantirish spiskani tepasida tursa» still holds while folded. One component, both screens — the truck card reads the same list (round 109's own rule: «one list, both screens … must never answer differently»), stated.
+
+1267. **The FIXES were reviewed too (static, three lenses, a skeptic each) — 13 confirmed, all fixed; the pattern was a fix that was right about its own case and wrong one step away.** (1) The card's «still in China» counted a carton an UNLOAD declared missing (it keeps its truck and no warehouse — `finishUnload` only flags it), so a lot whose 99 cartons stood in Tashkent asked ❓ with a button for days; the road arm now requires the truck itself on the road (`loading|in_transit|arrived`), pinned by an unloaded-truck case. (2) «Hammasi» was fixed and the same bare `/stock` came back through `pageHref` — the pager's page one and the card's «← Ostatka» built from it — so a ❓ default view swallowed them again; both builders end in `/stock?tek=` and a fence counts them. (3) The tab-return re-read replaced the rows and kept the PICKS: a lot another plan reserved meanwhile stayed in the selection, out of the Σ, with no row to untick it and a submit the server refuses; a re-read now prunes the picks to what the warehouse still has (clamped to `available`, read through a ref because the listener's closure holds the render that attached it) and says how many it took out. (4) The editor said «no free cargo» while the list was still loading and for ever on a hung request: a loading line until the first answer, a 20-second deadline that is a «did not load» sentence — with a timer and a per-call controller, not `AbortSignal.any`, which older iPhones lack and which would have left the list unloadable there. (5) «Skladda bo'sh yuk yo'q» printed under a crates-only origin's crates. (6) On a server without 0123 the editor still drew its filter row (0/0); `plannableStock` returns `checks` and the row waits on it, like /stock's. (7) «Bekor qilish» was offered on cargo already in Uzbekistan where the tick can never be given back; the undo now lives where the confirm does, and says what it removes («Mijoz tasdig'ini bekor qilish») — the document's ✅ is undone by clearing the composition. (8) A `check_changed` / `lot_changed` refusal left the stale card on screen, so every later press was refused the same way; the action revalidates the card on those two refusals and the sentence says the current state is now shown. (9) `uncheckLot` checked «confirmed» on the pool only — it now takes the prixod `FOR SHARE NOWAIT` and re-reads it under the lock, checkLot's order. (10) The History printed the letter twice (key `lotCheck:A` and value «A: …»); the value no longer carries it. Stated, not changed: the folded crate summary's «+» decorates only an existing ⚠ count, because the strip's cap is taken in SQL by code and the over-capacity test is made in JS on values as printed (#663) — ranking over-capacity first before the cap is the crate strip's own round.
+
+## Telegramdan topshiriq + VED tarix (2026-10-06) — his 1b 2a 3a 4a 5a 6b, 7a-13c, 14a 15a 16a
+
+1268. **The two rounds were designed as two specs, judged as one, and forked only after the parts both touch were written once** (`docs/TELEGRAM-TOPSHIRIQ.md`, `docs/VED-TARIX.md`, `docs/TOPSHIRIQ-VED-REVIEW.md`). Five lenses against the code BEFORE any code, a skeptic per objection: **115 objections, 88 confirmed, 25 partial, 2 refuted**, every survivor written down with a binding fix that wins over the spec text where they disagree. Two questions the review raised went back to him (14-16, answered a/a/a the same day). The shared foundation was committed by the lead before either package started — migration 0124, `createTask`'s required `making` argument, the bound-task gate's interface and `retireTaskCopies`' signature — because two worktrees inventing the same column twice is how fourteen of this file's collisions happened. The packages were then built in parallel worktrees (`pkg/tg`, `pkg/ved`) against an ownership table and merged with no conflict.
+
+1269. **A task says where it came from (0124 `tasks.origin`), and the CREATING door says it, never a form.** Three kinds of machine task — the rota's calc job, the VED's hand-back to the seller, the payment-promise call — had been told apart by their TITLES, and his 9a («Готово yozmasdan yopilmasin») is unbuildable on a title: a person's own «Hisoblash: …» task must keep its ✅. `createTask(input, ctx, making)` takes `{origin, boundId?}` as a REQUIRED third argument, so every caller became a compile error that named itself (the #790 move); a repeat spawn copies both. `bound_id` exists only for `calc`/`promise` and the CHECK spells `origin IS NOT NULL` out, because a CHECK passes on NULL. The backfill runs pointers FIRST (`calc_requests.task_id`, then `payment_promises.task_id` guarded by `origin IS NULL`) and title rules after, and the calc title rule is the whole machine shape — `^Hisoblash: .* \(\d+\)$` AND priority 1 AND timed AND on a lead/deal — not a LIKE. `task-origin-backfill.integration.test.ts` runs 0124's OWN statements in a rolled-back transaction over seven task shapes, red-proven by restoring the loose LIKE. Pre-0124 automation tasks read NULL, deliberately (no heuristic).
+
+1270. **An open bound task has no ✅ for anybody, at every door, and the gate fails CLOSED.** Complete, accept, reschedule, a due-date edit, a question, cancel and reassign each ask `refuseOpenCalc` / `refuseBoundClock` BEFORE their UPDATE, through `wms/calc/task-gate.ts` reached by dynamic import (platform must not import wms). Refusal `calc_use_screen` — the job ends on its own screen, by a seal, «Готово» or a hand-back. A read error is `bound_check_failed` with its own words in four bundles and the bot, never a silent pass; the LISTS degrade to plain rows instead, because they only draw and the door behind them refuses in words. A bound record that has CLOSED (or no longer exists) makes the task ordinary again, or the stale pile 0124 backfilled could never be closed by anyone. The reader decides how a calc job draws (`toTaskViews(rows, viewer)`): a `ved.docs` reader gets «🧮 Hisobni ochish» as both the action and the about-link, anybody else the card link and a «VED hisoblamoqda» chip; nobody gets a reassign select on an open calc job (the holder moves through «Olaman / Bo'shatish»). Testids `calc-job-…` / `calc-job-locked-…`, because `calc-open-…` would share a prefix with the panel's `calc-open-link` and `close-error-…` with m9f's `[data-testid^="close-"]` — a strict-mode refusal the first day a close is refused.
+
+1271. **«Bo'shatish» had never cancelled the holder's task.** `releaseCalcRequest` read the previous task id back from the UPDATE that NULLs it — PG16's RETURNING is the NEW row — so the cancel branch never ran and every release left a priority-1 «Hisoblash: …» on the old holder's /bugun for ever. The id is read under the row lock in the same transaction now and the task is cancelled «Navbatga qaytarildi». Found while writing the bound gate, red-proven by string edit. The pile it left is exactly what `pnpm close-stale-calc-tasks --ghosts` lists (dry run first, cancelled «Navbatga qaytarildi», never «done»).
+
+1272. **His report «edinitsa izmereniyani o'zgartirib bo'lmayabti» was a draft defect, not a permission.** The unit select wrote the baza PAIR as two draft updates; the first matched the server value and cleaned itself away, the second then found no amount and was cleaned too, so the select snapped back on every row — for everybody, the VED included. `calc/baza-draft.ts` `editBazaPair` is the one rule (the missing half is filled from the server, `{}` only when BOTH halves equal it); the four rows the investigation simulated are unit tests red-proven against the old shape, and m9zr picks a unit on its own, saves and reloads. Which units a row may OFFER (auto from the TNVED code, m³, the seller's own word, the phone) is a widening, not a fix, and went back to him as 18-21 — unbuilt until he answers.
+
+1273. **A task's Telegram copies stop offering buttons once the task is no longer the assignee's** (`platform/notifications/retire-tasks.ts`). Pending copies are muted («closed before it was sent» — the author's own «🗑» seconds after creating a task makes this the common case); a sent single-task copy gets its outcome line and keeps only its link; the 08:00 `TasksDue` keeps its TEXT and only its keyboard is redrawn from the tasks still open — stamping it «✅ Bajarildi» would have wiped seven other tasks' buttons (the review's blocker). Holders are found through the task's own audit rows so the scan uses `notifications_user_idx`; nothing older than 48 h is tried (Telegram refuses the edit); `until` keeps the change's own fresh messages (A→B→A must not stamp A's new copy «given to someone else»). Callers run it after commit and off the request or poller (`retireTaskCopiesSoon`, #706/#714); the drain re-checks at send time too.
+
+1274. **The draft is ONE collector with two doors, and the bot answers every press in words** (`telegram/task-draft.ts` pure, `task-handlers.ts` the grammy shell). «➕ Topshiriq» / /topshiriq and the forward door (a forwarded message, a colleague's or customer's contact card — the sender's OWN number still goes to cabinet linking) feed the same draft. A forwarded customer message is stored as a `{chatId, messageId}` POINTER and forwarded to the assignee by the drain before the text — never copied into the note, which every /kalendar reader sees and which would outlive the chat. Contact cards and locations become note lines, because the web has no other way to show them. The assignee's buttons depend on the origin: 👀 is a compare-and-set on `accepted_at`, ⏰ is never drawn on a repeating task (one occurrence would move the series — hence `repeats` in the button contract, since `buttonsFor` is pure) or on a promise call, 💬 questions and answers are audit `comment` rows. A rule's author does not hear 👀/⏰/💬 (`authorHearsPresses`) but does hear ✅, which predates the round. Reassign clears `accepted_at`/`reminded_at` and forwards the author's messages only when the AUTHOR reassigns. «📤 Men bergan» + /berganlarim with a 🔔 that is a compare-and-set on `reminded_at` (30-minute throttle). Every staff member must send /start once for the new keyboard rows to reach their phone.
+
+1275. **Task files are readable by whoever `canActOnTask` admits, and deletable by the author alone.** A pg-boss job downloads the bot's media with a retry fence on the file name; `access.ts` has a `task` read case (the derived fence that every allowlisted type has a branch, #937, caught the first draft without one); `staff_note` parts are refused through the shared delete route (`own_screen`) because the notes service asks its own question. STATED to him, not narrowed: that audience is /kalendar's — viewer, accountant, VED, logist — so a forwarded customer photo on a task is readable by all of them.
+
+1276. **One credit rule: who calculated a job** (`calc/credit.ts`, his 13c). A seal credits `sealed_by`, an answer `completed_by`, and «is this an answer» is 0093's own CHECK body (`isAnswerSql`). The registry, `creditTotals`, `calcSpeed` and the profile's «Bu oy» all read it; the first red proof found the registry's answer branch still spelling its own `completed_by`, which turned only the totals red — two people credited for one price. «Kim» filters by who PRICED, never by who held. Per-VED totals are by month with «faqat oy bo'yicha» said. The «o'z vaqtida %» column was drafted and CUT — he never asked for it, and its clock (deadline vs. the moment that counts) is a decision of his.
+
+1277. **«Готово» takes the amount as TEXT and an internal note the seller never sees** (his 9a, 11a). An empty box and «1200$» used to arrive as the same null and close the job with no price; the server parses with `parseTypedMoney` and refuses in the review's order (already_closed, seal_instead, amount required, unreadable, positive, internal note required). `calc_requests.answer_internal_note` is non-blank by `~ '\S'` (btrim strips spaces only), written to its own column and the REQUEST's audit row only — never the card's row, never the `CalcDone` push; `calc-internal-note-fence` pins all three sites, red-proven twice. Read behind `InternalNoteSight` (`ved.docs`).
+
+1278. **Answers sit in the history beside seals, and a correction can start from an answer** (his 8a, 10a). The registry is one UNION (`calc-registry-row` / `calc-registry-answer`) with «Turi», goods search over the name and a 4-10-digit TNVED prefix, and a lazy goods fold whose route 404s anything that is not a history row. One chain vocabulary (`child_state`: open / sealed / answered / returned / unpriced) feeds the chip, the sheet, the registry and the panel, and `calcRecalcOpen` stopped saying «eski narx turibdi» about a price the seller's push calls dead. Recalc from an answer keeps the ROOT seller as requester and goes to the parent's pricer only inside `vedRotaPool` (ved.docs minus super_admin/admin — the review's ved-correctness-1: the naive rule routed corrections to the owner, the defect audit A13 fixed); a handed-back correction leaves its parent refusing `recalc_returned`, the only way on is a new request from the card. `standingAnchorsFor` is the one list the panel's doors, `quoteLockedFor` and «Javob berildi» read — a deal carries several jobs, so «the newest seal» and «the newest answer» were the wrong question. The seller's lines no longer end a sectioned queue job (`completeCalcForDeal` ends phase-A requests only).
+
+1279. **Nazorat reads everybody's and confirms only your own** (his 12a). The read scope (`calcControlReadScopeFor`) is split from the write scope: «Meniki» is the write scope and its count equals the home tile, «Hamkasblarniki» is read-only, names the sealer and draws no buttons — the review's ved-correctness-3, because a widened list beside a write scope that refuses `not_mine` is buttons that lie.
+
+1280. **The VED on the seller's card is a door per REQUEST, not a widening of the CRM** (his 14a 15a 16a). `/hisoblash/[id]/karta` admits `mayOpenCalcCard` — a card that carries a calc request, reached from the calc page and the history — and shows the lenta, Telegram, calls and the seller's price, with a TEXT note on the lead or deal itself (never the client, or he joins every later note on that client) and no 📎. A deal request redirects to the deal card; `?lid=` reaches a lead the request was won away from only when the request's materials note sits on it. Note and mention pings are grouped per link — the card for whoever the card admits, the karta for a calculator, no link for anyone else. The lead's `quoted_amount` prints only while no calculation has EVER priced the card (`leadEverPriced`), because a seal writes the VED's floor into that column. 16a: the client price (offer price + date) is shown, the upsale and the payouts are not — `offerReadsFor` reads «may offer» and «sees prices» as two facts, because a both-hats reader (crm.leads + ved.docs) got the first answer and lost the second when they were an `if/else` (review access-1). STATED: a won lead whose request had no materials note loses its karta (no deal→lead pointer — schema); the upsale is one subtraction away from what he sees, which is his 16a.
+
+1281. **The merged code was reviewed as shipped — five lenses (tasks, bot, VED money, access, the seam between the packages), a skeptic per lens: 41 candidates, 36 confirmed + 5 partial, none refuted.** Fixed in two worktrees by lens ownership, every fix red-proven by string edit; one cut: an «o'z vaqtida %» column he never asked for (#1276). The headlines, each a rule the round had written and one door that did not obey it: **cancel** was the one task door without the bound gate, so a seller's ✖ took an open job from the VED and sent it back to the queue holder-less (found by two lenses independently, reproduced as seller, viewer and accountant); **links were per-task, not per-RECIPIENT** — the seller who authored a calc task got `/hisoblash/<id>`, the VED who authored a hand-back got `/crm/leads/<id>`, both redirected home — so `taskLinkFor(task, recipient)` asks the recipient's own doors (calc page for `ved.docs`, otherwise `noteLinksFor`'s card or karta, otherwise NO 🔗 line, never a dead one); **the quote lock followed «any seal»** while the card showed a different writer's number — it now holds the number the card carries (the newer of the newest seal and the newest released offer, by the moment it reached the card, `lastReleasedOfferFor` returning a dead writer as `stands:false`) and only while that writer stands, so recalculating the job that last wrote the card frees the ✏️ form even if an older job's seal stands, because that floor is not the number shown; **a copy closed while in flight kept its buttons** (`retireIfClosedInFlight` after 'sent' is written, so a close that commits later finds it through its own retire); **a live draft could be silently replaced** by an old forward offer's press, and an album sent at «Kimga?» armed no settle timer so a held due press never became a task; **the ⏰ wait trapped every text** that was not a date (a lookup was answered «Tushunmadim» for ever). Also: `TaskSources` is a new buttonless, mutable type for late album parts and «📤 Manbani yangi odamga yuborish» — a second `TaskAssigned` would draw a second set of buttons, and a direct forward ignored queue order and the current holder; `nothing_to_send` is a refusal in words; the task files job keys its retry fence on the Telegram FILE (`taskFileKey`, `saveAttachment`'s new restricted `keyName`), because two «Invoice.pdf» are two files; a cancel tells the assignee only when a copy reached them (`sent` or `sending`, or a digest that named the task); a typed date in the past is refused «o'tib ketgan», never rolled forward; the «Готово» figure is rounded to the column's two decimals BEFORE the `> 0` check («0,004» used to reach postgres as a 23514) and notes are clipped by code point (`clipText` — `.slice` halved an emoji into a jsonb-refused surrogate); the seal retires its task's copies after commit and a hand-back retires as «cancelled»; nazorat's «Meniki» heading appears only for a writer scoped to their own; six `::uuid` casts got the strict 8-4-4-4-12 shape (a 36-dash URL was a 22P02 page); the dock's title link asks the same `readerTaskLinks` as the list; two integration files stopped leaving open hand-back tasks on the shared database (#183). **The mute fence was blind** to types sent through a wrapper with shorthand `type` — it now collects every PascalCase `type: '…'` literal in any file that calls `notifyStaffTelegram`, and the subset fence it subsumed is deleted. PROCESS: the round's own e2e m9zo failed once because `tasks-panel` is the Panel's SUMMARY testid and the rows live in its `<details>`; and the first lint of the merged tree counted the two package worktrees still standing under `.claude/worktrees` (30 errors, none of them the branch's) — remove a worktree before reading a gate that walks the repo.
+
+1282. **CI found what this container could not: the pool fence's verdict depended on the order the filesystem lists files.** `tests/unit/tx-pool.test.ts` kept ONE declaration per function name, and 114 names are declared in more than one file — so the last file `grep -rl` walked won. Here the site rota's `pickAssignee(team, tx)` was walked last and the fence passed; on the CI runner the staff bot's new `pickAssignee` (the draft's «Kimga?», pooled, never in a transaction) was walked last, and the rota's correct call inside its transaction was reported as a deadlock. Reproduced here by reversing the walk on the OLD fence: the same line, plus three more false alarms the order had been hiding. The fence now keeps every declaration and resolves a call to the one its caller means — the caller's own file, then the module it imports the name from, and every same-named declaration only when neither says (a fence that cannot tell must assume the worst). Green in both walk orders; red-proven by dropping the rota's `tx`, which it names in the right file. LESSON, #653's in a new hat: a source-shape fence keyed on a NAME is a fence about the namespace, and a new same-named function anywhere in `src` can flip it — the green here was an oracle that had never been asked the question.
+
+1283. **m³ is a BAZA unit and nothing else (his 19a, 2026-10-06 — reverses #886's m³ «yo'q»).** `BAZA_BASES` (calc/pricing.ts) gains `'m3'`, read off the row's EXISTING `volume_m3`; `DutyUnit`, the specific half, the measure pair and both `duty_unit` CHECKs are untouched, because PP-3818 writes no duty per cubic metre — what the baza is PER and what the duty COUNTS are two questions with two homes. Migration **0125** only WIDENS three CHECKs (`calc_items_baza_basis_check`, `calc_bazas_basis_check`, `customs_import_rows_unit_check`), so no stored row is rewritten; measured at 2,000,000 import-shaped rows, the revalidation holds the lock 2.4 s. The customs file reads «м3 / м³ / m3 / куб м / кубометр»; «куб см / см3 / см³» stay `unknown_unit` and are pinned (a cubic centimetre read as a cubic metre is off by a million). Quarters uploaded before 0125 skipped their м³ lines and only a NEW upload brings them (his sample: every unit beyond kg and dona is ≈1 % of rows). A 23514 on either widened calc CHECK is `server_behind` — matched by CONSTRAINT NAME (`violatedCheck` in platform, `isBehindOnBasisCheck` in basis.ts) in both `run` and `runTable`, because the pair CHECK on the same table is a real fault and must stay one.
+
+1284. **The measure pair follows the law first and the BASIS second — and one combination is refused (reverses #868's «measure follows the law only»).** `pairUnitFor(law, basis)` is the ONE rule the O'lchov line, the live figure, the save and the measure pass ask: a law that counts in juft/litr/m²/sm³ owns the pair; otherwise an m²/juft/litr BASIS needs its count — the old rule dropped an m² count on an advalor code and left the row refusing «o'lchov yo'q» with no box to fix it. A row has a single pair, so on a juft/litr/m²/sm³ law a DIFFERENT pair unit is the one thing refused (`basesFor` / `basisConflicts`): the save names the row in `basisConflict`, the law's own pair stands, the select shows ⚠, and the row is never rewritten. Stated to him and accepted: on such a code the baza is per dona, kg, m³ or the law's own unit.
+
+1285. **«avto» is a real state end to end (his 18a), and a unit someone CHOSE stands.** A basis nobody touched is never posted (null); the server stamps `defaultBasisFor` from the row's FINAL group inside the measure pass, never from the pre-tx dictionary map — a typed code can join a block whose law a person typed over the book (a test pins it with such a block). A PRICED row saved with a null basis keeps its stored unit (A2: a number typed «per dona» does not silently become «per juft»); a unit chosen WITHOUT a price is stored and stands, which was the owner's snap-back in its second costume (an unpriced row's pick posted null/null and vanished on Saqlash). Clearing a price keeps the unit only on a row that had no price (where a stored unit was always picked by a person) — the build's first rule, «it differs from its block's default», was refuted by the review (#1290). `basisSuspect` names only priced rows THIS save re-lawed (recoded, added, swept into a group), so a deliberate override is not re-named on every later save. `setItemBaza`, the fifth basis writer, follows the same table rules. The doors that change a row's law WITHOUT the measure pass — `setGroupRates` (and the dictionary rates pull through it), `moveItemToGroup`, `applyProposal`, `recalcFromSealed` — are named in a derived fence (`basis-law-writers.test.ts`); their stored pairs reconcile on the next Saqlash.
+
+1286. **Every fill answers a chosen unit in that unit or not at all.** `unitsForRow({ dutyUnit, chosen, hasWeight, hasQuantity, hasVolume })` takes every parameter as REQUIRED so the compiler named each caller; a chosen unit narrows the set to itself (and to `[]` when the law cannot hold it), a law-pinned unit is the law's, otherwise kg, dona, then m³ by the figures the row states. INVARIANT, pinned: no extended unit (m²/juft/litr) is offered unless the law pins it or the VED chose it — the fills run AFTER the measure pass and are safe only because of that. The 📥 picker ranks by MEMBERSHIP in the whole set, not its first member (ranking by `[0]` dropped his «donada og'irligiga qaraymiz» re-rank on every advalor row that states a weight); a declaration whose unit the row cannot hold is listed but not pickable, with the reason; the route's new `basis` parameter is a validated enum that only reorders and labels — the price still comes from the FILE at save. Two behaviour changes, both stated: the AI prefill's pick accepts any unit in the row's accepted set (it took `units[0]` only), and the dictionary pull resolves `(chosen null or equal) && !basisConflicts`, so a book entry per m² now lands on an advalor row and asks for its m² count.
+
+1287. **A1, A2, A3 and 20a, built as the ⭐ defaults he was asked about the same evening.** `basis_not_law` (A1) fires when the law pins a baza unit (kg/m²/juft/litr) and the row is priced per another; it is recorded by ✅ like every warning and never blocks a seal. It is deliberately SILENT on advalor, dona, 1000_dona and sm³ laws — 1,250 of PP-3818's 1,489 rows — because those laws pin no baza unit; the rule is restated in zero-import `warnings.ts` and pinned against `defaultBasisFor`. A3: no automatic m³ from the request's total volume (a total is usually measured with the packing and overstates customs). 20a: the seller's own unit word (`calc_request_items.unit`) shows muted under 📦 (`calc-item-unit`) and is never posted. One `screenRowOf` (calc/screen-row.ts) answers the select, the O'lchov line, the live figure, the save and the draft self-clean; one `basisLabel` prints a unit for every reader. Measured in a browser in all four locales: the select is 64 px (ru «авто» clipped at 56) and the baza column `w-36`; no cell overflows at 1280 or 768.
+
+1288. **Phase 0 of the phone round: a retried save never writes a goods line twice, never loses a correction, and never shows the error page.** A new row carries an id its SCREEN minted (`TableNewItem.clientId`); under the request lock an id this request already holds is that same row — and it is EDITED, not skipped: the review found that skipping it whole dropped any cell the VED corrected between the lost answer and the second press, under a bar that read «avval saqlangan» (units-1). The retried add posts only the cells that DIFFER, so an unchanged retry still writes nothing and clears no ✅; an empty price on it means «nothing typed», not «clear», unless a PERSON typed the stored one (the first save's memory or file fill must survive an untouched retry). An id another request holds, or a string that is no id, is `not_found`; the same id twice in one post is one row. A paste keeps its ids PER LINE (`calc/paste-ids.ts`): kept per whole text, one typo fixed in between re-minted every id and a 30-line invoice landed twice (units-2) — now an unchanged line keeps its id, a changed line takes an id the last press used and this one no longer matches, and only a line beyond both mints. `act()` catches a thrown action into `errors.save_failed`; the phone's ✅ hides while anything is unsaved («Avval saqlang»), like the desktop's. No `seenRev` on seal or confirm — it self-conflicts with one's own rev bumps.
+
+1289. **Found by the review: the row shape intake hands the VED most often read as «no law» (units-3).** A stored code on a row no block holds yet — intake prefills codes, the save's sweep places the row — drew a fixed «шт» and no O'lchov box, and Saqlash stamped the code's own unit (kg, m²) under a price typed per piece, with no `basisSuspect` to name it, because the stamp equalled the law. Before 0125 the browser posted the «шт» it showed, so the defect was born of «avto» itself. `screenRowOf` now resolves the STORED code as well as a drafted one: the request's block for that code when it exists, otherwise «avto» with the generic box. Moved out of the table into `calc/screen-row.ts` so a unit test calls the function the screen runs.
+
+1290. **The package was reviewed twice before it merged — five lenses, then three different METHODS (a differential run of the old engine against the new on every unit the old CHECK allowed, a completeness critic over the spec, a real browser walk at 1280 and 360) — and five defects survived verification, all fixed and red-proven by string edit.** Units-1, units-2 and units-3 are #1288 and #1289. The other two are one idea each. **«Differs from today's default» is not «chosen»** (units-r2-1): clearing a price posted the stored unit whenever it differed from the block's default, and three kinds of row do that with nobody having chosen anything — a pre-0125 «шт» on a juft code, a kg fill on an advalor code, a stamp under a law a later rates edit changed — so every fill and the 📥 picker narrowed to that unit for ever. `postedBasis` (calc/screen-row.ts) keeps a stored unit through a clear only on a row that had NO price, where a stored unit was always picked by a person; a priced row's unit goes back to «avto» with the price. **A chip beside a live number must be live too** (units-r2-2): the desktop footer drew the server's `basis_not_law` verdict on the stored rows beside a baza built from the drafts, and warned about the very unit it showed until Saqlash. `basisNotLaw` (warnings.ts) is now the one sentence, asked by the server's warning list and by the footer over the live rows; the phone card keeps the server's verdict because its baza is the stored one. PROCESS: the differential method found the r2-1 defect that five read-the-code lenses had not — a change to how a stored value is INTERPRETED is invisible to a reviewer reading the new code against the new data; it needs the OLD code's data shapes as the fixture.
+
+1291. **The warehouse manager releases a debtor's cargo at his own counter without asking (his D2, 2026-10-07 — reverses his own 2026-09-28 «sklad mudiri ruxsat so'raydi» and, for the counter ONLY, #1191's «one predicate for every door»).** `counterDebtRelease(actor, client, warehouseId)` (finance/scope.ts) answers `'ledger'` when `mayGrantDebt` already does, `'warehouse'` for the `warehouse_manager` role at a warehouse in his own scope, else null; only the issue service and `/api/issue/list` ask it, and `debtGrantScope`/`mayGrantDebt` are untouched, so /approvals, the bot's Ruxsat buttons, the deal «muddat» and every other money door still refuse him (his D3a — a fence names the callers). Keyed on the ROLE and not a permission shape because `mayOverridePrice` is the grant alone: an operator holding `finance.debt_override` exists by design and a permission-shaped rule would have handed him every debtor's cargo. No new permission code (a new code is ungrantable on customised roles, #170/#179/#208); the OFF switch is the warehouse_manager ROLE's own grant of `finance.debt_override`, read off the role-grant join where the actor's grants are loaded — not the person's union of permissions, which kept D2 for a manager who is also a seller after the role's box was unticked (review debt-1). `warehouseScoped` is required, because `inScope` answers yes to everywhere for an unscoped actor and the rule must fail closed.
+
+1292. **Every release over a real debt carries a reason, from everybody (his D4a), and the reason never reaches the act.** A new `handovers.debt_note` (0126), never `note` — `note` prints on the handover act a driver signs. Refused as `debt_note_required` only when the tick actually OPENS the gate over a blocking debt, so a stale checkbox over a cleared debt never blocks a handover and stores no reason (review debt-4 pinned it by sending one); the refusal order is replay → `debt_override_forbidden` → `debt_note_required` → the price checks. The CHECK is one-directional (a reason requires the tick, never the reverse). Readers that render read `to_jsonb(alias)->>'debt_note'`, never the bare column, so the lenta and the register survive a half-applied deploy, and `issueBoxesAction` answers `server_behind` instead of a white page. «Who opened the gate» is the pure `debtOpenedBy` (issue/debt-release.ts) with literal unit cells, because the integration test's «tells nobody» passed with the gate reverted — the text builder threw on a zero debt and the logged catch wrote no row (review debt-3).
+
+1293. **«Ruxsat so'rash» needs a reason too (his D1a, D5a).** `requestIssueApproval` takes `note` as a REQUIRED field and throws `note_required` before reading anything; the screen grows a reason box, /approvals prints it on its own wrapping line, and the Telegram request carries it. The DECIDER's note stays optional — the bot's «Telegram bot orqali» is a decision note, not a reason.
+
+1294. **«🔓 Qarzga yuk berildi» (his D6a) goes to the owner and the accountant, by ROLE plus money sight, in its own mute group.** `receivesDebtReleased` = super_admin or accountant role AND `companyMoneySight` — the message carries a client's debt and links the register whose door is that sight — and the recipient list, the profile checkbox and the unit test all ask the one function. The approval's decider is filtered out (he decided it) and the presser is `exceptUserId`. Sent after the commit with a logged `.catch` (`[debt-released]`). Its own group `debt`: in `alerts` it would be born muted for an owner who silenced that group, and in `owner` muting the evening summary would silence it too. A release excused only by a deal «muddat» sends nothing — stated, his to answer.
+
+1295. **One sentence for «why was this cargo given on debt» (#513).** `debtReleaseReasonSql` and `debtReleaseDecisionNoteSql` (debt/releases.ts) follow the gate rule and the register row's `debt_ok` split, and both the register and the lenta call them. It exists because of a real split: an approval asked over a debt and then spent only for its PRICE must show no debt reason, so the fence forbids `request_note` in `feed.ts`.
+
+1296. **The tick lives in the page flow, and the bar says why it is grey.** The debt tick and its reason moved out of the fixed bar into the debt banner (the twin price tick's rule): a tick the screen no longer draws is never posted and never freezes the confirm button. The review then found the fixed bar silent about why «Topshirish» was grey for a tick holder who had scrolled past the banner (review debt-2), so the bar carries one line, a button that scrolls to and focuses the control still missing, and the bar's height pays for it.
+
+1297. **Statistics are percentiles a declaration actually carries, one vote per declaration (his C3a, C4a).** `percentile_disc`, never `_cont` and never a mean: every figure on screen is a price some declaration carries, so pressing 25/50/75 % can name that row and «Tanlash» fills from the FILE (#778). A 1 kg sample and a 20 t lot weigh one vote each. The dona tab's own series is his ±25 % weight-per-piece rule. The out-of-range warning (C5a) is not built.
+
+1298. **«China» is one SQL fragment (`chinaOriginSql`, his C2a).** A value that starts with digits is decided by the numeric code alone (156); otherwise a word match that excludes Taiwan, Hong Kong and Macao, with 台湾/香港/澳门 and `CHN` spelled out (`~*` folds Cyrillic only under the right `lc_ctype`, so the spellings are listed). It applies only when the file names a country at all and only to the statistics — the list and the auto-fill keep every origin, and the list now prints each row's country.
+
+1299. **The phone opens the same dialog, view-only (his «telefonda ham kompyuterda ham»; reverses docs/VED-IMPORT-AI.md's «phone stays read-only — no picker there» for VIEWING).** `PickerTarget.mode` is REQUIRED, so no opener falls into «pick» by omission; wave 2's B1 a only flips it from the phone's own sheet. The 📥 button is disabled while the row's code, count, weight or volume is drafted («Avval saqlang»): the statistics are computed from the stored row, so a drafted figure would answer a question nobody asked. The «siz» marker's unit comes from `screenRowOf` on both shapes.
+
+1300. **«The newest quarter» is the newest by its OWN dates (his C6a), one ordering for every reader.** `batchRecencySql` = the file's end date clamped to the upload day, then upload time, then id — asked by the picker, `saveTable`'s auto-fill and the AI prefill, so an old quarter uploaded late never replaces the new one. «Oldingi chorak» is a batch ending strictly before the current one starts. A declaration dated after the upload day does not move the batch's period end (review analytics-2: one typo in a back-filled quarter made it «the newest»); the period column still shows the typo so the admin can see it. The admin page marks the answering batch with ★.
+
+1301. **The package pair was reviewed as merged — five lenses each, every candidate given refuters — and 12 findings survived (7 analytics, 5 debt); each was fixed and red-proven by string edit, and an independent checker re-ran every red proof before the PR.** DEBT: the actor now carries each role's OWN grants (`roleGrants`, a per-role map read in the SAME single join that builds the union — `userRoleGrants` in platform/rbac/authorize.ts), because a rule keyed on what ONE role was given cannot be answered from a union the seller's role also feeds; it is a generic RBAC fact in platform, and the counter rule (`COUNTER_RELEASE_ROLE`) stays in wms. A both-hats manager keeps releasing his OWN book through the seller's `mayGrantDebt`, and the price tick stays the union. The bar hint (#1296) asks the DEBT question alone (`debtCovered`), never the whole press — the checker found that a price-only grey would have asked for a needless release; its padding has three literal levels (pb-28/40/52), measured: the refusal plus the hint outgrow pb-40 by 17 px at 1280×900. m9zzz steps 2-3 read this run's own handover (exact reason, a still-active run manager, a 30-minute window). ANALYTICS: «oldingi chorak» asks emptiness before the country split (`prevLine`), and `named_any` is NULL rather than false when a batch holds none of the code — «names no country» and «has nothing of this code» are different facts and only the first justifies a scope line; a per-piece weight has its own `kg()` that never prints 0 for a positive value; the axis ends print the bare price and the clipped tails are said once in words (`statsClippedSide`, one-sided when `domainOf` clips one end), and the median label is drawn only where its measured width clears both ends on the narrowest plot (302 px) — a browser measured a 0.6 px overlap even after the prefixes went; and the ±25 % band's bounds are cut to 12 significant figures (`bandBounds`), because 0.4 × 0.75 = 0.30000000000000004 bound as text excluded a declaration of exactly 0.3 kg from a band the spec calls inclusive. Three tests that could not go red were re-anchored: one now reaches a kg-pinned row whose units exclude dona, one fixture disagrees between upload order and the file's dates, and the exemplar's China and weight-band clauses each became the only thing keeping a wrong declaration out.
+
+1302. **The rastamojka calculation is edited on the phone, one row per press (his B1 a, B2 a, B3 a, 21b).** The request draws as memo'd cards per item grouped by block (`phone-blocks.tsx`), each block with its live baza, live customs, ✅ and the sweep; a tap opens ONE bottom sheet (`row-sheet.tsx`, one always-mounted Overlay, #684) holding the whole row — name, TNVED, count/kg/m³, the O'lchov measure when the code asks, baza + its unit (`basis-select.tsx`, shared with the grid), note, 📥, delete — whose sticky footer prints exactly the figure Saqlash stores (`sheetFigure` merges only the sheet row into its law group; the grid's cached figure includes other rows' drafts). No ✨, no rates, no paste, no bulk pull on the phone. The old `save()` split into `buildEdit`/`buildAdd` + one `send`, shared by the grid and the sheet; drafts settle by OBJECT IDENTITY at the rev the server committed (`settleDrafts`, row-draft.ts — `saveTable`/`deleteItem` answer `rev`, bumped exactly once), so a one-row save never wipes the other rows' unsaved drafts, and a ghost whose client id is now a stored row becomes a draft of that row (the server's retry-as-edit writes every differing cell, so re-posting a stale ghost would overwrite a later correction).
+
+1303. **One number reader at every width (his B4 a, widened on purpose).** `readNumberCell` (calc/number-cell.ts) reads all five numeric cells of the grid AND the sheet AND the dictionary's baza form: «1,125» and «15,000» (a comma followed by exactly three digits) are AMBIGUOUS — nothing is posted and the screen asks «1.125 dollarmi yoki 1125 dollarmi?» under the field (phone), above the table (desktop), under the form (lugatlar). Widened beyond the phone because four readers disagreeing on «15,000» was the defect class — a VED typing «1,500» kg on the desktop now gets a question instead of 1.5 kg (stated in the CHANGELOG). A number past what a double holds is refused, never Infinity. Not yet asked on the discount, band override, rates and the TSV paste — owed to him as a question.
+
+1304. **Unsaved edits survive a closed tab, offered back and never applied by themselves (his B5 a).** localStorage (sessionStorage dies with the tab), key `gsr.calc-draft.v1:<viewer>:<request>` with NO rev (a draft must outlive the rev it was typed at), 72 h TTL, and per-FIELD bases — what each cell was typed over — so a restore names only the cells a colleague moved. The read effect is declared FIRST and gates the write through a ref (one commit's passive effects run together, so a prompt held in state is invisible to the write in the same flush). `mountDecision` (draft-store.ts) is the one verdict: `prompt` asks «Saqlanmagan o'zgarishlar bor — tiklaymi?» and merges new typing while the question stands; `kept` keeps an entry whose rows were skipped as «changed meanwhile» and shows that news once — the check of PHONE-6 found that deleting it made a wrong skip irrevocable, because a phone reopened offline is served yesterday's page by the service worker's NetworkFirst cache and a draft typed over our own landed save reads «moved» against it; `live` replaces an entry that holds only «already saved». Restorable rows count in the seal/✅ gate; `beforeunload` fires only when storage refused the write.
+
+1305. **«Boshqa kishi hozirgina o'zgartirdi» is a warning, never a lock (his B6 a), and the probe-to-commit window is closed by a compare-and-set.** A clock probe `/api/calc/rev/[id]` (ved.docs, no-store, NetworkOnly in the service worker so it can never answer from a cache) is polled every 15 s and asked first by every press; a moved rev refreshes the screen (at most 8 s), a colleague's change under a drafted cell is named on the row («Soni 40 → 42») and the button becomes «Baribir saqlash»; a change that appears only at press time stops the press once. The review then found the window between our look and our commit (PHONE-2): `TableItemEdit.expect` carries the stored values the screen showed, and `saveTable` checks them under `lockRequestInTx` before writing — a baza is money, so a written-down race was not enough. `lookFirst` waits for our OWN last answered rev too, or the CAS would blame «boshqa kishi» for our own save. Residuals, stated: a ghost's retried ADD and an acknowledged («Baribir») edit post no expectation; delete has the same probe-to-commit window; the desktop grid stays last-writer-wins (whether it should warn too is owed to him as a question).
+
+1306. **After a deploy a thrown save says «Ilova yangilandi — sahifani yangilang», not «check the connection».** The action ids die with the build, so `build-check.ts` `reloadFresh()` asks `/api/version` and offers one reload door — shared with the update banner. Every input the phone reaches is 16 px (`max-md:!text-base` on the eight workspace `input-sm` fields, fenced by count), because iOS zooms a smaller focused field. The AI claim is read safely from TEXT (`aiClaimLive`) and the bar shows «🤖 AI ishlayapti». The phone's view-only statistics door (#1299) and the dialog's `mode` prop are GONE: the sheet's 📥 replaces them, and a dead branch would be a second reader of the same state. MEASURED (not a gate): 100-row request, 4× CPU throttle, a keystroke in the sheet — median 42.6-49 ms synchronous, single keystrokes up to 59-70 ms because both shapes stay mounted; mounting one shape by `matchMedia` is owed as a question.
+
+1307. **The phone package was reviewed as built (four lenses, a skeptic per finding): six survived, all fixed and re-checked.** PHONE-1: a restored ghost no longer reverts a colleague's later correction — `send()` stamps every posted ghost with the cells it carried (`posted`), only cells typed since become drafts, and a stamped ghost whose id matches no row is restored rather than dropped, because a thrown save does not say whether it committed (residual: lost answer + commit + a colleague's delete re-adds the row, visibly). PHONE-3: closing the sheet mid-save no longer cancels or swallows it — the press is bound to its row and every await re-resolves it; a refusal for a sheet no longer shown goes to `calc-table-error`. PHONE-4: a mistyped number is named under its own box with a `!border-warn` that shows (`.input` outranks a plain border utility, #419). PHONE-5: the phone sweep is drawn only on what it places. PHONE-6: news with nothing to restore is shown once — and its check changed the rule to #1304's `kept`.
+
+1308. **The VED on the deal card: the TERMS are the seller's, the WORK is shared (his 17a, G1 a, G4 a).** `deals/door.ts` is a pure, import-free module — `canWriteDeal` (moved there, re-exported from deals/service so no second definition is left), `mayEditDealTerms`, `dealBoardShape`, `dealBoardWhose` — asked by the upsale scope, the layout's «+ Yangi» doors, /bitimlar/new, the client card's «+», the /suhbatlar ThreadCalc and the deal page. The actions are the fence: `run(gate, …)` takes a REQUIRED `'terms' | 'work'` with no default (terms = create, update, move, bulk move, discount; work = lines, link, defer), and `deal-terms-wire.test.ts` classifies every exported action. The VED keeps positions/TNVED and every prixod link, move and detach, audited under his name on the receipt (G1); he cannot create deals and «🧮 Hisoblatish» in the bot stays open to everybody (G4). STATED: his «Hisoblatishga yuborish» on a client chat in /suhbatlar is gone (`threadCalcGate` refuses `deal_terms_only`) — his door is the bot. The invariant `mayOffer ≡ mayEditDealTerms` holds only below `finance.reports`: the accountant reads every price under law 4 without being a seller.
+
+1309. **A read-only board is the ABSENCE of `onMove`, and the VED's board shows only his work (his G3 a).** No second flag that could disagree with the handler: no drag, no move buttons, no sheet, no ticks, no empty footer; the hint line keeps its height (the board's 6rem arithmetic was measured with it). His board is «VED bitimlari», with no «+» and no attention fold. The work set is ONE sentence in `deals/ved-work.ts` (`dealCarriesCalcSql`, `dealMissingTnvedSql`, `vedWorkSql`, written against a row reference so Drizzle's unqualified column cannot bind to the subquery's own id, #128) read by five consumers: the rows AND the column totals, the «TNVED yo'q» chip, the home row — which now counts DEALS, not lines, because it links a board whose cards it must equal — ⌘K, and the calc card door. Review DEAL17-1: his board's lenta search reads only lentas he may open (the crm_activities arm asks `dealCarriesCalcSql`, the calc card door's own arm); DEAL17-2: «whose work» is asked once (`dealBoardWhose`) and needs view_all, so no chip names a filter the query dropped.
+
+1310. **A deal the bot mints for a coded client opens in the client's SELLER's name (his G2 a).** `calcDealOwnerFor` hands it to the client's seller when the sender cannot work terms (the VED, warehouse staff); a client with no seller who can log in gets an OWNERLESS deal the admin distributes. A seller who sends keeps the deal — G2 was about the VED sending. `dealFor`'s owner argument is REQUIRED and `createDeal({ ownerAsGiven })` writes it exactly as given (the `?? ctx.actorId` fallback would have made an ownerless deal the VED's again). Both minting doors use it. Owed as questions: a seller sending for a colleague's client, deals the VED already owns in production, a stranger's lead the VED lands, the VED opening any deal card by link, and no push for an ownerless deal (production had 1,402 of 1,692 active clients with no seller in round 91).
+
+1311. **Custom fields split READ from WRITE in the platform registry.** Narrowing the deal write list alone would have 404'd every deal file field for the VED, because `attachments/access.ts` asked the same list; the unit test pins both lists as sets to the wms door constants (platform may not import wms). The deal header's client code is a plain span for a reader the client card bounces — a door that bounces is worse than none.
+
+1312. **Found by the deal package's check, fixed on the twin boards: an id filter is a uuid or nothing, and «all» needs view_all.** The loose shape `/^[0-9a-f]{8}-[0-9a-f-]{27}$/` admitted `aaaaaaaa-aaaa…`, which postgres refuses as 22P02 — a 500 on /crm and /crm/tahlil for a hand-typed link (#514's cousin, round 99's own guard). All three sites ask `isUuidShaped` (platform/audit/fields.ts, import-free) and a derived fence keeps the loose shape out of `src`. The lead board asks «all» once (`scopeAll = seesAll && params.scope === 'all'`): a seller without view_all who opened `?scope=all` got his own leads under a «👥 Hammasi» chip — DEAL17-2's lie on the twin board.
+
+1313. **Staff threads, round 1: a question lives on the card it is about (his E1 a — reverses #341 / PLAN.md's «no chat» line).** A thread is a card's notes and a calc thread is a TAG (`crm_activities.calc_request_id`, 0127) on those notes, so a won lead carries its calc Q&A onto the deal with no second store; unread is derived from `thread_reads` (a viewer's mark, written with GREATEST). No DMs, no rooms. The three new `crm_activities` columns (`calc_request_id`, `tg_chat_id`, `tg_message_id`) are SQL-only this release — drizzle names every declared column in every insert, returning and whole-row select, so every note writer in the app would throw 42703 on a database one migration behind (#472; proven by a half-applied walk at 0126): the raw writer `thread.ts` supplies its own id (`crm_activities.id` has no database default), readers outside thread.ts/thread-reply.ts read through `to_jsonb`, and a later release declares them. The lenta and the dock print Asia/Tashkent explicitly (the container runs UTC; one message read 19:08 and 14:08 on one card).
+
+1314. **One door for a thread, composed from the card doors (#513).** `mayReadThread` / `mayWriteThread` / `threadDoorsFor` (thread-door.ts), and the lenta's inline gate moved INTO it (`lentaReaderOf` / `lentaAdmission`), so the lenta and the thread cannot drift apart; the deal arm is the lenta's gate and not `canWriteDeal`, which admits the VED to every deal. Both note actions ask it; the contact log is client-card only.
+
+1315. **Who hears a message is decided at SEND time (his E2 a, E6 c, E9 a; G4 a).** Candidates ∩ the door (E9 on leads — a lead handed on stops pinging the old seller), an involvement filter on deal/client past authors (one SQL relation, `thread-involvement.ts`, asked by the audience AND the dock so a ping and the dock never disagree), the client's seller on client-card notes (E6 c's seller half), reply-only standing for the record's owner and a requester without CRM access (G4), the calc requester never judged by involvement (the questions are for him), and @-mentions exempt from every filter — the dock keeps a thread whose viewer holds a MentionedInNote ping for it, or the one thread he was called into would be the one he cannot find. Every ping carries `payload.thread` and a «↩️» line.
+
+1316. **A Telegram swipe-reply lands back on the card (his E3 a, E4 a, E10 a).** `platform/telegram/reply-door.ts` resolves the ping from the person's OWN notification row by `payload.tg` with no age window (a chat id + message id is a forgeable pointer unless it matches a row this person was sent); an armed «Bajarildi» result wait is answered FIRST; the slot sits after the collectors and the task draft, before Door B and `takeTaskPending`. E3: the VED's reply to his own «Hisoblash: …» task copy lands in the calc thread and the bound task stays open — never through `askAboutTask`; E4: a reply to an ordinary task message is a question to the giver. The pair is unique (partial index) and the insert is ON CONFLICT, so a redelivered update lands once. Text only — a media reply is refused in words. The bound calc task's copy gains «❓ Sotuvchidan so'rash» (reverses topshiriq-buttons' «no callback» rule). STATED: a reply typed during the 1-2 minutes of a deploy is lost (`drop_pending_updates`).
+
+1317. **«Ichki yozishmalar» is its own mute group (E8 a), a thread is not customer contact (E11 a), and the dock got its tab.** 0127 strips the two moved type names from saved mute lists (the group born whole), because muting «Ish jarayoni» was silently muting colleagues' questions — STATED: whoever had muted it hears colleagues again until they tick the new box. The advert-lead contact rule reads the tag through `to_jsonb` and excludes thread messages. «👥 Ichki» reads a bounded window (newest 1 000 rows per source) through a partial index whose type list is written as LITERALS fenced against `THREAD_PING_TYPES` — a prepared statement's generic plan can only use a partial index it can prove (measured 110-230 ms → 6.6-9.4 ms); the reply resolver got a partial expression index (23 ms → 0.1 ms). In the 26rem desktop drawer only the active tab keeps its word when there are three (Russian overflowed by 22 px). Free-text money is STATED, not filtered: the VED is warned at the box (`threads.calcHint`).
+
+1318. **The chat package was reviewed as built (four lenses, a skeptic per finding): seven survived, all fixed and re-checked, plus the checker's own.** The read mark is the moment of the newest message the page DREW (`LEAST(now(), asOf)`), not the POST's arrival — a note committed in between was never seen — and travels as postgres's own microsecond string, never through a JS Date (a millisecond-truncated mark falls before its own note and leaves it unread for ever); the calc requester was dropped from his own Q&A when the request sat on a deal he was not otherwise tied to; the dock kept showing a dropped seller every new message as unread; the VED's lead-thread rows never became read (the karta mounts `ThreadSeen`); same-page `#calc-thread-<id>` links did not open a closed fold (Next's Link fires no hashchange — a capture-phase listener); a one-tab phone dock lost its only label. The checker then found the mention/dock disagreement fixed in #1315.
+
+1319. **The price channel: every given price goes to the staff's private Telegram channel (his F1 a-F10 a, F9 b).** The configured channel is a ROW (`price_channel_chats.connected_at`, at most one, 0128) and not a setting, because /admin/settings renders every key editable behind its validator alone — a setting would have been a door around the vetting. `vetChannel` refuses a public channel, one with subscribers, one where the bot cannot post, and one with a linked discussion group (Telegram copies every post to members the bot never sees, review channel-1); a channel added by a stranger or a non-settings-admin is never recorded. The drain re-checks the channel's authority on every run (token, bot admin, no username, vetted, the connector still a settings admin) plus a 10-minute re-vet; the pause rule is ONE function (`drainPause`) asked by the drain and by «Qayta tekshirish», which therefore answers the drain's own pause sentence instead of «prices post again», and the vet writes the bot's status back so a missed `my_chat_member` update cannot leave a pause only another update could lift. Membership is a join request checked by the bot (active staff with a linked Telegram) through ONE eligibility fragment (`channelEligibleSql`) for admission and the 15-minute eviction sweep; eviction is ban-then-unban so a reactivated colleague can ask again; the key is (chat_id, tg_user_id).
+
+1320. **A price is posted once and never twice.** The claim is INSERT … ON CONFLICT on a CHECK-defined `dedupe_key` (`seal:<version>` / `answer:<request>`), placed as the FIRST statement after the seal's transaction and right after `already_closed` on «Готово» (writeAudit below is uncaught and announceSeal awaits Telegram); a derived net (`queueMissedPrices`, since the later of `connected_at` and 24 h ago) runs under the hooks so the ledger does not depend on a process surviving the seconds after a commit, while there is never a backlog. A timeout, a reset, an unknown throw, a 502 or a 504 is `failed/ambiguous_send` and never auto-retried — the body may already be published, and a double post in a company-wide channel is worse than a manual resend; a row stuck in `sending` becomes `failed/stuck_sending`. The claim is FENCED (`claimed_at` is the token, re-asserted before the network call, every later write requires it) so a run that lost the row cannot post it twice or overwrite its state; a throw before any network call releases the row and after 5 attempts is a plain `prepare_failed`; photo reads have a 15 s deadline and a per-run breaker (the arrival sweep's own `readWithin`); a retry restarts the row's clock so a day-old failure can be re-sent. A row waiting over 24 h or whose price no longer stands is skipped stale.
+
+1321. **The post says the price and nothing that identifies the client (F2 a-F7 a, F9 b).** `ChannelPostView` has exactly 16 fields and none can hold a client, phone, code, link, discount, note, baza or floor breakdown; one per-unit figure; `scrubIdentity` strips the card's code, name, phones and lead company as whole Unicode words plus every `GS<digit>` token, handle, link and 7+-digit run; the seller whose request it was is NAMED (his F9 b) beside the VED who priced it; a «Готово» answer is marked «qo'lda berilgan»; a discounted or band-overridden seal is not posted (F3 a); the seller's goods photos only, up to 10; every send `protect_content`. A correction is a reply to the nearest posted ancestor and the old post's mark is DERIVED from the chain's child states — «qayta hisoblandi» when the correction itself was not posted, so nobody looks for a reply that is not there. A channel is not a person: no mute group, no home alarm; the panel at /admin/narx-kanali shows pauses in words. STATED: photos can carry identity the scrub cannot see.
+
+1322. **«Narxlar tarixi» shows a seller only his OWN offers (F1 a), and an earlier calculation opens in a new tab (F10 a).** `quoteHistoryFor` takes `viewerId` as REQUIRED and filters in SQL (`seesOfferPriceOf`, upsale-scope.ts) — a colleague's client price is his upsale; the cost family stays hidden from sellers (F1 a asked only to narrow). LastQuotes dates are plain new-tab anchors, because the items table's unsaved drafts are guarded only by `beforeunload`, which a client-side navigation does not fire.
+
+1323. **The channel package was reviewed as built: twelve survived, all fixed and re-checked, plus the checker's three.** Beyond #1319-#1320: a pause read off the row's last vet could never be lifted (the 10-minute re-vet is the only judge now, and a refusal heard anywhere stops the drain at once); a non-settings-admin re-adding the bot no longer reuses an old «ok»; the eviction sweep orders the connected channel and never-failed rows first (LIMIT 50 with no ORDER BY could block a deactivated colleague's removal for ever); a promoted member no longer hides one stranger from the subscriber count; chats the bot left drop out of «Boshqa kanallar»; `channel_changed` and the net's «Готово» half got their tests; the transaction-order fence anchors on the callback's end. The checker pinned the claim fence on the release path (it had no test — stripping it left 33 tests green).
+
+1324. **«Hammasiga ha» was read as the ⭐ of every open question (wave 3's nine, wave 2's seven, wave 1's one) — and checked against the shipped code before anything was told to him (#1229).** Ten stars were already the code; one held only on one surface: the VED's «tannarx yoki muhrlangan narxni yozmang» warning (`threads.calcHint`) was drawn on `/hisoblash/[id]` but not on the card fold (`calc-panel.tsx`) where the VED writes the same calc thread — now passed for the VED door only, a seller keeps `cardHint`. The other ten are PINNED, each red-proven by string edit (CalcDone/CalcSealed/CalcReturned/CalcTaken replies are `not_replyable` and write nothing; the stripped post-07-28 mute list leaves «Ichki yozishmalar» unticked; a muddat-only release tells nobody; the narxlar «own» is `offered_by`, with a fixture whose client belongs to ANOTHER seller so a hybrid predicate turns red; `groupCustomsPerUnit` is hidden; the desktop save carries no expectation; the closed set of `number-cell` importers; a VED's stranger lead is his; an ownerless bot deal notifies no admin; the VED opens a deal outside his work set read-only). The independent checker found three of those pins GREEN with their subject broken (the desktop save hands its edits to the shared `send`; a desktop opener under another prop name; the paste was not pinned at all) and re-anchored them. **Q5's star was not today's behaviour**: «bot qayta yoqilganda qayta ishlansin» meant turning `drop_pending_updates` OFF, so it became its own package (#1331-#1336).
+
+1325. **Prixod and truck threads are the card's untagged notes (E round 2 — his E6 c warehouse half, E7 b, Q4 a).** `entity_type` receipt/batch on `crm_activities`; 0129 only widens `crm_activities_entity_check` and `thread_reads_kind_check`, and a 23514 on exactly those two NAMES is «server behind» (`WIDENED_THREAD_CHECKS` / `isThreadWriteBehind`) — so round 1's machinery applies unchanged and a send on deploy morning reads «Tizim yangilanmoqda», never a white page (walked on a 0128-shaped database). `THREAD_KINDS` widened, and every branch over a thread kind is an exhaustive `switch` with a `never` default or a `Record` over the union, fenced by a derived source-shape test (K1, measured floors): round 1's `if/else` chains compiled and silently filed a prixod under the calc door, the clients table or «lid».
+
+1326. **«Where the cargo stands» has ONE home (`inventory/stands.ts`), read by the door, the audience and the place line.** A prixod = its live placeable cartons' shelves (`CLIENT_ACTIVE_STATUSES`) plus BOTH ends of the truck carrying an in-transit carton (his Q4 a, the ⭐ «ikkala skladga»); else the warehouses that issued it or wrote it off on a shelf; else the receiving one. A truck = by its own stage (forming/loading → origin; in transit or arrived with cartons aboard → both ends; unloaded/closed → destination, plus origin while missing-in-transit cartons are unresolved; cancelled → origin) and one count (`awaitingUnloadCounts`). It reads the box's own two columns, never `box_movements` (#152) and never the live pointer of a landed carton (#440); a crate is not a place (its members are). It is a proven subset of both card doors AT SEND TIME, so no link bounces when it is sent; a later move can make an old link 404 — stated, and the reply button says so in words.
+
+1327. **The cargo door = (an UNSCOPED `plans.manage` holder OR a warehouse-SCOPED person at a standing warehouse) AND the card's own door (E7 b).** `mayReadReceipt`/`mayOpenBatchCard` admit every unscoped seller, the VED and the accountant, so the thread door is narrower and implies the card door. A logist given a warehouse role is judged as staff (his ⭐ 12). The reader carries the scope on EVERY path (`ThreadReader` via `actorGrants` — the web panel, the audience, the mention path, the bot landing, the dock). «Staff of a warehouse» = a warehouse-scoped role + the `user_warehouses` row + `canLogIn` (`warehouseStaff`, one `scopedRoleSql` clause shared with the reroute helper), not a permission — a scoped role the owner invents without a chosen grant is still staff; and a `user_warehouses` row on an unscoped person is not.
+
+1328. **Who hears a cargo thread, decided at SEND time.** Past authors who still pass the door; an office writer reaches the staff of every standing warehouse (his ⭐ 3: every message); a warehouse writer reaches the LOGISTS by role on every message (⭐ 2); admins by involvement or mention (⭐ 10); mentions exempt and reply-only (E2 a) — a door-less mention is told the card by its bare label (a truck's code alone: the head line «🚚 code · origin → dest» would hand back exactly the route the dropped «📍» line withholds), and so is his «✅ Javob kartaga yozildi». A warehouse with nobody assigned receives nothing and the box says so (⭐ 8). Pings reuse `InternalNote`/`MentionedInNote` and link `#ichki` — no mute group, no `notifications_thread_idx` rebuild, calc-card-door's fence untouched. The FRAME (place line, reply hint, buttons) follows the recipient's `users.locale` via `payload.textLocale` (⭐ 9); the colleague's text, the bot's sentences and round 1's CRM pings stay as they were.
+
+1329. **The rest of the cargo-thread surface.** The attachment gate refuses files on cargo-thread notes (coded, enforced) before the deal arm — otherwise a prixod note's file would open for every seller and stay shut for the operator who wrote it (E10 a keeps text only). The dock's «👥 Ichki» is offered by `mayHaveThreads(actor)` — the door's own people — because a restated grant list was what kept warehouse staff out. A writer whose cargo moved on is answered `cargo_moved` in words on the web and in the bot; a photo reply to a cargo ping gets a TEXT-only sentence. One place-line formatter (`cargoNowLine`) over ONE dictionary (labels.ts DICT) for the web panel and the ping; its audience stage and its words are two functions (`truckStageOf` / `truckWordOf`); nothing-live is never printed under «Yuk hozir:»; a zh-CN label ending in a full-width colon takes no space after it (seen in the YW operator's screenshot). The box's three warnings each claim one fact (`noStaffAt`, `noOffice`, `nobody`). After the note is SAVED nothing may answer «not sent» — a web write has no idempotency key, so a second press would duplicate: reads that fail after the save degrade to «could not check who hears it» (one honest line), and `revalidatePath` sits in its own try.
+
+1330. **Round 2 was reviewed as built (four lenses, a skeptic per finding): seven survived, all fixed and re-checked, plus the checker's one.** The door-less mention's label and confirmation (#1328); the post-save «not sent» (#1329); the media refusal pinned at its call site, not only its helper; K1 now sees `switch` over `entityType`/`kind` members; the `nobody` warning's @-named half has a test; the «elsewhere» line is rendered by a test (a YW-received prixod whose cartons moved to TAS1, opened by the YW operator); the prixod label's unclaimed-marking case. The checker added the cell where a @-named DOOR-HOLDER keeps the route — without it, a bare label for every mention left twelve mention files green. Measured on the shaped copy: `receiptStands` 2-3 ms per 100-carton prixod; a scoped viewer's 30-row dock ≤ 9 statements; the announce for a 15-person audience 108 ms median (over the spec's 60 ms bar — `actorGrants` is three statements per person; accepted and stated, off the bot's poller).
+
+1331. **The bot keeps what was sent while it was down (his Q5 a — reverses #1316's «a reply typed during a deploy is lost»).** `drop_pending_updates: false`, `limit: 20` on every `bot.start` (the 409 retry too); a crash mid-backlog can redeliver at most one batch. The stop (`telegram/lifecycle.ts`) HOLDS updates that arrive after the signal and confirms exactly what FINISHED with its own `getUpdates(lastDone+1)` (`bot.stop()` only when idle — grammy's own stop confirms the update still in flight and its loop keeps handling the batch after the stop), the in-flight promise stored settled and never rejected, chained before Next's cleanup and raced against 5 s (his ⭐ 5). Telegram keeps a backlog for 24 h; a second poller with this token (the rollback VPS's `app`, a dev machine without `TELEGRAM_POLLING=0`) would now drain it with ITS code — stated to him.
+
+1332. **A press is answered by one helper and runs once per MESSAGE.** `answerPress` is the only caller of `answerCallbackQuery` (fenced) and never throws: a stale-query GrammyError used to abort the handler, so whether a late press did its work depended on whether it answered before or after the work. A late toast is said in the chat unless the handler already spoke there or it is a progress notice. `telegram_once` (0130) holds one claim per Telegram identity of the MESSAGE — `m:<chat>:<msg>:<effect>` for a typed one, `q:<chat>:<pressed msg>:<effect>` for a press — in the SAME transaction as the effect, minted only through `readyKey` (a server one migration behind falls back to today's unkeyed behaviour, never a 42P01 on the poller): a redelivery and N repeat taps made during an outage (each with its own `callback_query.id`) share one key. Keyed: ClientBotMessage, CabinetLinkAlert, the E4 question and its answer, «⏰ Ertaga», «📤», «🔍 Qidirish»; the task services answer `already_done`; `PRESS_REPEAT` classifies every press kind (a `Record` over `BotCallback['kind']`, fenced).
+
+1333. **The one-message waits survive a restart (`telegram_chat_waits`, 0130).** Four kinds (the task waits, the «Hodim» contact intent, the advert visit, the cabinet link-code wait); memory stays the reader and writes through; hydrated before polling. A wait is armed only after its prompt is out; a re-arm of the same target keeps the EARLIEST prompt time (bounded by the wait's reach, not the processing clock — after an outage the re-tap is processed after the first wait expired while its answer sits in the backlog); a BACKLOG text written before its prompt does not answer a task wait (his ⭐ 1 — «⏸ … qaytadan yuboring»), a contact always answers a contact wait, a press always answers its own task; a consumer awaits the wait's DELETE before the effect, so a hydrated wait is never one already used. Multi-message COLLECTORS (calc intake, zametka capture, task draft) are still lost across a restart — stated — and their buttons now answer «eskirgan» visibly.
+
+1334. **The backlog is told apart from the live chat (`telegram/backlog.ts`).** `isBacklog` = written before this process booted. No collector opened by this process takes a backlog message; a backlog text the free lookups cannot answer, a backlog forward and a backlog staff file get ONE sentence per chat per boot and never the paid AI (⭐ 4); repeated backlog labels and commands are answered once (⭐ 3). A customer's message counts against the 10-per-10-minutes cap by when it was WRITTEN, and carries «🕒 Yozilgan» when it arrives over five minutes late (⭐ 2); the cabinet answers one chat in order (a per-chat chain whose link is bounded at 120 s, and a stalled 📷 read breaks on the first timeout — `platform/files/read-within.ts` is the one home of the deadline). A typed date is read on the day it was written; a Telegram thread note is filed at the time it was written (`happened_at`), while unread marks and the dock order stay on `created_at` — a backdated reply chosen by `happened_at` sat under a later note and never raised the ●. A press executes when the bot is back — a «✅ Ruxsat» pressed during a long outage starts its window then (his ⭐ 6, stated). 429s inside handlers get a brief bounded retry (`retry.ts`).
+
+1335. **Three smaller repairs ride the redelivery package.** B8: `linkStaffChat` asks `canLogIn` — a deactivated person was told «✅ Ulandi». The advert landing's `externalId` is the contact message, so `lead_intakes`' unique (channel, external_id) finally applies to a bot landing; the visit is cleared after the landing. The join decline is said before the decline and only inside Telegram's five minutes (DECLINED had been sent even when the decline call failed).
+
+1336. **The redelivery package was reviewed as built: eight survived, all fixed and re-checked.** One stalled photo read silenced that customer's whole cabinet until restart (the per-chat chain) — the defect that made #1334's bounds; the re-arm merge after a long outage (#1333); the backdated note's ● (#1334); five tests that could not go red were re-anchored (the code-link path of I13b was dead; the hydration's 24-hour reach had no test; «durable writes are opt-in» read its counter before the write chain ran; the membership handlers' serialisation; the one-text-door fences narrowed to one spelling — now every `takeTaskPending` call in `src` is counted).
+
+1337. **The price channel's scrub finds a client's codes by DATA, not by shape (his F4 a; found while pinning his stars).** A deal code «B-000124» typed into a goods name was posted verbatim, and `/bitimlar/[id]` has no ownership gate — any seller could open it and read whose client it was (the upsale F1 a keeps private). `makeScrubber` (one per post) matches on a folded NFKC shadow (Cyrillic look-alikes as Latin, except across №) and cuts the ORIGINAL at the same indices: link/uuid/app-path/host tokens first; then the PHONE (moved first on the merge — the card's phone split into words was cut piecewise and posted «+ 90 45 67»; digit-only words no longer come from phones and eat quantities); the markings whole, before any piece of them can be cut (a marking that carries a phone also matches in its phone-cut form); the card's people word by word; whole CODES — the card's own at any length and the book's (`codeCandidates`, looked up in slices of 2,000 on `clients_code_unique`) — each with a seam and the lot suffix; the system shapes (crate, box, receipt, pickup, deal) and the client prefix in either script. A code, shape or phone takes with it the whole NON-CJK run glued to it by ANY separator — the shipped token rule dropped «GS555/Bobur»; the package's rewrite followed only `- _ .` and posted «Bobur»; the merge fix widened at the moment of the cut and ate the start of the NEXT unit, which then matched nothing (26,452 new leaks in a 485,000-name differential: «GS777/GS 555» → «555», «+998…/Ali Bobur» → «Bobur»). Final rule: every unit is read first, glued cuts leave a mark, the runs are widened LAST, and a phone takes whole every unit it shares digits with — the same differential finds 0 inputs posting a code, a person or ≥ 4 phone digits that the shipped scrub did not. The batch code stays (a truck names no client; `{PREFIX}-{NNN}` cannot be told from «LED-100»). An all-digit code is never read as a quantity a unit or a Chinese counter follows. Over-scrub is the accepted cost (a goods word glued to a code, «444/500»); STATED, not caught: a two-character or digitless code of another client, a code glued to a Latin/Cyrillic word with no separator («kurtkaGS777» — the edge that keeps «GSM modul» a word), «444 L», «444套装», a person separated from a code by a space («GS555 - Bobur») unless the card knows him.
+
+1338. **«Where did my job land» is one rule (`calcJobHrefFor`), chosen per READER (#1281's «no 🔗 rather than a dead one").** The VED who lands a stranger's calculation owns the lead (his wave-2 ⭐ 5 a) but his role cannot open `/crm/leads/<id>`; the bot's ✅ now links the card when the card admits him, else `/hisoblash/<request>` for `ved.docs`, else no link line. `IntakeTarget.leadOwnerId` comes from the landing itself (a JOINED lead belongs to its own owner, the case a sender-based guess gets wrong); the AI prefill picks the link for its own reader, and the lenta gets the linkless text.
+
+1339. **PROCESS: a container restart mid-build, and a merge whose conflict only `typecheck` could see.** The restart killed both builders at their last gates (one with an un-diagnosed `next build` death that was the restart itself); a resume prompt that continued IN PLACE ("never checkout -B") kept every commit. The third package never started before the restart: on this 4-CPU container a workflow runs two agents at a time, and it queued. `eslint .` lints `.claude/worktrees/*` — three full checkouts — so a lint run beside live worktrees looks hung; remove a merged worktree before the gates. The three branches merged with no textual conflict and one semantic one: the redelivery package made `writtenAt`/`messageDate` required, and round 2's integration file still called the old shapes — green under vitest (which transpiles without checking) and red only in `pnpm typecheck` (#591's shape, the reason footgun 6 exists).
+
+## Rastamojka kalkulyatori — the customs calculator fix (2026-10-09 → 10-13; spec `docs/RASTAMOJKA-TUZATISH.md`; migration 0131 `calc_excise` — ledger must reach 132)
+
+1340. **The owner's two messages were one defect seen from two ends: a number
+lived in the column nobody's unit named.** «tnved code va dona m2 juftda
+otadgan tovarlarni kirgizadgan joyi yoqku» and «kg hamda donani birga
+kirgizadgan tovarlar». Two audits ran before a line of fix (entry: 57 agents
+over every door; engine: 76 agents, seven lenses, an independent reference
+engine fed thousands of random inputs): 66 confirmed or partial, 2 refuted. The
+shape under most of them: the seller's «Kafel 120 m2» was stored as 120 in the
+PIECE column with «m2» beside it as display text, and the engine read 120
+pieces; a jacket «500 kg» the same; and a row whose baza is per kg under a law
+«20 %, kamida $3/dona» needs BOTH figures while the checklist accepted either
+one (#910). The fix is a kernel every door reads — `calc/units.ts` (`unitOf`,
+`routeAmount`, `readAmountText`, `parseGoodsLine`, `normalizeRowUnit`,
+`normalizeTnved`) and `calc/needs.ts` (`rowNeeds` off the engine's own
+`itemMeasure`, so a need and a refusal cannot disagree) — then three packages
+over it (P1 the doors, P2 the law/book/totals/seal, P3 the VED's screen), each
+spec'd, judged by five lenses (79 findings, §7 overrides §1-§3), built and
+merged. RULE restated: **a number lands in the column its unit NAMES**, and a
+carton count or an unknown word lands nowhere a price reads.
+
+1341. **The engine's five fixes (kernel, `f9843cc`).** `measure_missing` names
+the unit AND the half (baza / duty / excise since 0131), so the words can say
+WHICH figure — «3-qator «Kurtka»: soni (dona) kiritilmagan — boj kamida
+$3/dona» instead of «o'lchov yo'q». A legacy per-group fee is never charged
+beside the declaration fee, and a correction no longer copies one. A row with
+no code means NO total (`requestCustomsFor` takes a REQUIRED `ungroupedCount`
+— optional failed open into a partial sum). The fee tier is chosen on the
+ROUNDED Σ value and money rounds half-up on the decimal (`toPrecision(15)`),
+not the binary float. A zero baza and a rate outside 0-100 are refused by the
+engine itself, not only by the forms.
+
+1342. **P1 — one normalisation at the door, for every door.** `openCalcRequest`
+routes each line once (`door-row.ts`: `normalizeRowUnit` + `normalizeTnved`):
+kg → `weight_kg`, m³ → `volume_m3`, m²/juft/litr/sm³ → the measure pair, a
+carton count or an unknown word → quantity cleared with «sotuvchi: 20 karobka»
+in the note; the word itself is nulled once its number moved, so no later save
+can read it again (judge MR-4). A target already holding a different figure
+keeps it and the seller's figure goes to the note — one fact, one home. The
+seller's card form is a goods TABLE (two-line blocks in the 358 px rail),
+read live by `parseGoodsLine`; only an ambiguous number, two pairs or an
+unlabelled number stop the send, each with one-tap answers. The bot reads «1 200
+kg», «120 ta juft», «300 dona 150 kg» (both — the clothing answer that used to
+be refused), asks a bare number with buttons, never makes a TNVED code a 6.4-
+billion-kg weight, and keeps answers across «➕ Yana». Invoices keep their TNVED
+column («Код ТН ВЭД товара» is claimed before the name keys, «Кол-во, кг» is a
+WEIGHT). The checklist and the line questions follow the BOOK's law
+(`bookLawsFor` on the pool, before any transaction — #714): a 9403 table with
+only a count is asked its net weight. The spec's «shipment totals leave the
+rastamojka checklist» was CANCELLED by the judge (MR-9 — the upsale payout scales
+by them), so they are asked as before; the LINE weight is the netto one.
+
+1343. **A nine-digit code is ambiguous only when a person typed it.** A NUMERIC
+spreadsheet cell of nine digits is a ten-digit code whose leading zero Excel
+dropped (0901 coffee stored as 901…, which longest-matched 9011 microscopes),
+so it is padded; typed TEXT of nine digits is a `code_short` problem the person
+resolves. The quarterly customs import goes through the same reader, so a
+nine-digit TEXT cell there is now SKIPPED (counted, `bad_code`) where it used to
+be stored as nine digits and prefixed onto a wrong heading — the safer of the
+two failures, stated rather than guessed.
+
+1344. **P2 — the law's whole shape survives every writer.** `saveRates` carries
+the standing shape from ANY row that answers the code (a heading's «max, $3/juft»
+survives a teach of 15 % under it — partly reversing #856, recorded); the teach
+posts the group's own mode/specific/unit; `dictionary_moved` fires whenever the
+group differs from today's book (whatever wrote it) and the pull is offered
+then; `code_heading` names a short code that priced from a heading or hides
+deeper laws; the recalc re-pulls dictionary groups and names what moved.
+
+1345. **Excise can be entered, in ONE shape (0131).** `calc_groups.excise_specific`
++ `excise_unit` (pair CHECK, unit CHECK = `DUTY_UNITS`, `<> 'NaN'`, and NOT both
+`excise_pct` and a specific — the first draft forbade only `pct > 0`, which let a
+row read «aksiz yo'q» while the engine charged $X/litre, judge MR-12). Engine:
+pct > 0 → value × %; else Σ measure × amount; excise stays in the VAT base; a
+missing measure refuses `half: 'excise'`. A pair-unit excise is allowed only when
+it IS the law's own pair (`exciseUnitsFor`) — a row holds one pair, and an
+excise in a second pair unit would have been cleared by the measure pass on
+every save with the engine refusing for ever (judge S4). The P3 build first
+re-solved S4 a second way in the pair rule and removed it on finding P2's door
+already closed it — two homes for one rule (#513). `excise_unanswered` warns on
+the «may be excisable» prefixes (one list in `calc/excise.ts`, stated as not
+law). No dictionary carries excise: it is per job.
+
+1346. **P2 — the fee is visible and repairable, and the seal locks what the
+screen showed.** `FeeOverride` renders exactly where the fee is blocked;
+`fee_bhm_bad` joins `fee_fx_missing`, each saying whose job it is; the totals
+print the fee's inputs with the rate's DATE; the seal posts the fee it showed
+and refuses `conflict` when the recomputed one moved; the band box exists only
+with a road, and a typed override lifts only the band refusals off the button;
+the discount previews through the seal's own `totalsFor`. The bot never prints a
+partial JAMI. The sealed sheet prints shape, excise, parts and fee inputs, and a
+unit test asserts the printed parts ADD UP to the printed total.
+
+1347. **P3 — «avto» on the screen is the save's rule (`autoBasisFor` over the
+DRAFTED figures).** The select showed the law alone — «dona» on a weight-only
+row the save then stamped per kg (judge MR-17). Now `basisOnScreen`/`screenRowOf`
+/`ghostScreenOf` and the live item read the row's figures (REQUIRED fields on
+`ScreenItem`; optional failed open), every «avto» price posts `shownBasis`, and
+the save stores the SHOWN unit when the final law holds it and refuses
+`basis_shown_changed` naming the row when it cannot. A price never silently
+changes unit. A new row's O'lchov box gets a unit select while no law names one;
+it posts `measureUnit` only, so the baza stays «avto» (UX12). The server keeps a
+posted pair the row asks for, or on a row with no law yet (S2, MR-3).
+
+1348. **P3 — the heal of old rows is decided on the row AS STORED, by the
+screen's own predicate.** Live production holds open requests written before the
+doors learned units. `pendingUnitOf` (units.ts) is ONE predicate for the save's
+heal and the screen's sentence (judge UX7): an unpriced, unconfirmed row with
+«120» under «m2» MOVES on the next Saqlash; a carton count, an unknown word or a
+pair the law contradicts is ASKED («Bu dona» dismisses the word, «Bu karobka»
+empties the count and the word goes to the note). ✅ and the seal wait on that
+press like on a draft, and the press is live with nothing drafted. **The first
+build got MR-4 wrong one save later**: it skipped the heal on a row whose count
+the same save posted, which left «300» under «kg» and moved the VED's 300 pieces
+into the weight on the NEXT press — the very shape MR-4 named. Decided on the
+stored row, a typed count stays the VED's and the seller's figure still leaves
+the piece column. Integration-tested on raw SQL «old shape» rows; five red
+proofs.
+
+1349. **P3 — the cell a refusal will name is marked before any press, and the
+live figure is the saved one or none.** `neededCells` reads `rowNeeds` over the
+drafted row: the warn border, «kerak» and the reason (desktop `title`; the phone
+sheet a visible line, UX11 — a phone shows no title). The baza's own unit asks
+only once the row carries a price (marking a guessed unit on every new row is
+noise). `liveMembership` re-homes drafted rows by the save's own regroup (first
+block by seq per code, a code drafted empty leaves its block, the sweep's
+coded-ungrouped rows join): a re-coded row prices in its new block, a drafted
+code no block carries — or any new row — prints «Kod yangi — Saqlang» instead of
+a total, a block every row left is not counted (the save prunes it), and a block
+whose members will change says «taxminiy» (MR-22). Pinned against the real
+saveTable + loadWorkspace, not a restated rule. Headers are words («Dona»,
+«Netto, kg», TNVED) — never 📦, which means a carton everywhere else.
+
+1350. **Deliberately NOT changed, stated to the owner (§4):** the `max` floor is
+per BLOCK (one TNVED code = one declaration line); the additional duty follows
+the code's NOMINAL advalor % and a duty lgota cancels it (#857); VAT is 12 % by
+default with the lgota tick as the exemption; heading 2515 is absent from the
+seed; a sborniy truck's senders share one block per code. His four questions
+went with ⭐ defaults built: (1) netto on the row, brutto as the shipment total;
+(2) excise as «yo'q / foiz / $ har birlikka» with a may-be-excisable warning; (3)
+the floor per code; (4) the no-certificate duty on the nominal %. PROCESS: the
+P3 package was built solo after the subagents' weekly limit hit mid-round; a red
+proof once failed an unrelated test (the heal's «500 kg») and did not repeat in
+three full reruns — recorded as an unexplained flake, not diagnosed.
+
+1351. **Found by the round's own e2e, not by a test of the rule: a new row's
+O'lchov unit was asked of the wrong pair.** P3 made «avto» read the stated
+measure, so a ghost row's `screen.pair` turns to m² the moment m² is picked —
+and the unit select (shown only while `pair` names nothing) vanished under the
+VED's finger, and `buildAdd` (posting `measureUnit` only while `pair` named
+nothing) posted no unit. The save, told nothing, computed «avto» from the
+empty row (dona), found no pair to keep and DROPPED the 120 m² it had just been
+typed. The integration test posted the unit itself and was green (#531's shape
+a fourth time); m9zr's new step went red on exactly the owner's «Kafel 120 m²».
+`ghostFixedPair` (screen-row.ts) is the pair the LAW or a CHOSEN unit names,
+never the typed one, and the select, the add and the phone sheet ask it.
+
+1352. **The round reviewed as built (four lenses, each finding given a refuter):
+9 confirmed, 1 refuted, all fixed.** (a) The m² drop of #1351, found
+independently. (b) **The heal moved a number into a pair the pass then CLEARED**
+— «120 m2» under a per-kg code (9403) left the piece column and vanished, and
+an sm³ on an advalor block the same: `healPairKept` (basis.ts) asks the pass's
+own question (`pairUnitFor(law, «avto»)`, or no law yet) and `pendingUnitOf`
+takes it as a REQUIRED callback, so such a row is ASKED. (c) **MR-4 one save
+later, a third time**: a count typed on a PRICED or CONFIRMED old row left the
+seller's word standing, so clearing the price (or unconfirming the block) made
+the row pending and the next save moved the VED's count under the seller's
+name — a posted count now retires the word (figure to the note, no number
+moves). (d) A cleared price in the draft read «nothing will move» while the save
+took the stamped unit with the price and healed: the screen asks `postedBasis`.
+(e) **The phone had no press that posts an empty save**, so old rows held its
+✅ for ever — the sweep button now also offers «Saqlash — N ta qator O'lchovga
+o'tadi». (f) A grouped row whose own code is not its block's is re-homed by the
+sweep; `screenRowOf` now reads it there, so the live figure follows. (g) A block
+a coded new row will join says «taxminiy». (h) An add's unsaid `measureUnit`
+stays undefined (null read as «said: none» and cleared a stored pair on a
+retry). Red proofs ×4 by string edit plus the e2e of #1351.
+
+1353. **A re-homed row holds the gate, and the screen offers the press that
+moves it** (the review of the review fixes, four agents, 1 confirmed). #1352
+(f) taught `screenRowOf` to read a grouped row whose own code is not its
+block's in the block the sweep moves it to, so the live figure followed — and
+NOTHING that drives the buttons knew. `sweepable` counted only ungrouped rows,
+`gateCount` drafts, restores and heals, so on an old ✨ request (the memory's
+6403 rows in a 6402 block) with nothing drafted the desktop Saqlash was grey,
+the phone drew no press, and ✅ and «Muhrlash» stood live beside a bar priced
+a different way: the seal locked the stored blocks, i.e. a total the screen
+was not showing — and when no block held the code yet, the bar said «Kod yangi
+— Saqlang» over a save nobody could make. `rehomeCodeOf` (screen-row.ts) is
+now the ONE reading of «the save moves this row», asked by `screenRowOf` and by
+the gate: such rows count into `gateCount` and `sweepable`, and the phone's
+empty-save press is drawn when they (with the heals) are all that holds it.
+The integration test anchors the predicate on the SERVER's own `swept`
+(counted before the press equal to what the sweep moves, zero after). Red
+proofs ×4 by string edit: the gate term, the sweepable term, the phone
+condition, and the predicate itself.
+
+## Rastamojka kalkulyatori — his «Ha sen to'g'ri degandek qil» (2026-10-13; NO migration, ledger 132)
+
+1354. **His four ⭐ answers, read against the shipped code before they were
+recorded (#1229), and the two that nothing pinned are pinned now.** All four
+defaults were already the code's behaviour. (1) Netto on the row: the per-kg
+baza and «kamida $X/kg» read the row's own `weightKg`, freight reads the
+request's brutto total, and the card form never copies one into the other
+(pinned since #1340-#1349). Its WORDING was not: the phone row sheet's label
+`calc.phone.kg` said «Вес, кг / Og'irligi, kg / 重量 / Weight» in all four
+locales, the one place a VED types the figure on a phone, and the read-only
+goods table printed a bare literal «kg». Both now say netto (the grid's own
+«Netto, kg»), fenced by literal per-language patterns over every row-weight
+label (#163 — comparing bundles cannot see a word missing from all four).
+(2) Excise «yo'q / foiz / $ har birlikka» was pinned in every shape. The
+judge's UX10 reading stands, stated: the excise row is drawn on the listed
+headings and on a group already answered, not on every group, and the phone
+has no excise control. (3) The «kamida $X» floor per CODE and (4) the
+no-certificate band from the NOMINAL advalor % were the code's behaviour and
+**pinned by nothing**: a scout mutated `pricing.ts` both ways and all 723
+calc unit tests stayed green, because every `max` test had ONE item and every
+no-certificate case had effective % == nominal %. The spec's own sentence
+(§4, «pinned by tests») and #1350 claimed coverage that did not exist. New
+tests in `calc-law.test.ts`, each built so the two readings DISAGREE: a 6403
+block whose two rows win on different halves (per code $600, per row $700),
+and a 6907 no-certificate block where the floor wins (nominal 15 % → +10 % =
+$20; effective 100 % → +20 % = $40). Red proofs ×4 by paired string edit with
+a byte-identical restore. LESSON: a «pinned by tests» sentence is a claim
+about a mutation nobody ran — run it.
+
+## Sarflar — «Pul qayerga ketdi» and the truck bill from the money section (2026-10-14; NO migration, ledger 132; spec `docs/SARFLAR.md`)
+
+1355. **«Bu pul allaqachon yozilganmi?» is ONE pure decider over each row's
+PAYER KIND** (his answer 6, «saqlashdan oldin ogohlantirsin qayerda shu qayta
+yozilayotganini»; `accounting/twins.ts`). The same payment lands twice as a
+cargo COST and an EXPENSE, and how the money is compared depends on who paid:
+a kassa-paid cost keeps its own currency in `amount` while what left the
+drawer sits in `account_amount` in the KASSA's currency, so one kassa on both
+books is matched in that currency to the cent («the same currency» would never
+see a $500 customs bill paid as 6 300 000 so'm). Five shapes, each with its
+words and its cure — `same_kassa` (void), `kassa_cash` (void), `same_partner`
+(void), `debt_paid` (a debt's payment is a partner payment, never an expense:
+void the expense and write the payment, the judge's J4), `mergeable` (M4a's
+own pair, «Birlashtirish»). Sums: one truck's bills of one day and one payer
+(the completing-sum) and the grid's sheet against one expense. The SQL is a
+prefilter, JS the arbiter (#740's shape). It runs only for the expense book's
+readers (`mayPickTill`) — a line would hand its categories and kassas to people
+its door refuses — and a colleague's cost twin is REDACTED, never dropped, for
+an own-only reader (the VED with the kassa grant). «Baribir saqlash» posts a
+single-use sha256 token over the candidate, the twins and the candidate's OWN
+book, so it answers one save and never the next identical bill; the twins a
+person saw ride into the create audit (`after.twinAck`). The engine
+(`addCostEntry`/`addGridCell`) never asks about the reader: the grid's check is
+a pre-write hook its action passes. The expense form posts from `onSubmit`
+(React resets a form whose `action=` returns — B5) and checks BEFORE the
+rasxod xabari's claim, which is a write.
+
+1356. **A cancelled truck takes no bill, and a bill and a cancel can no longer
+both succeed.** `mayEnterBatchCost` (cost-door.ts) is the truck's ADD door
+(not cancelled, the grant at the origin) and its SQL twin feeds the picker; a
+cancelled truck keeps its 🗑 and loses its «＋», so CostPanel's `canAdd` and
+`canVoid` are both REQUIRED. `addCostEntry` writes the scope's own target only
+(a posted truck id on a receipt cost is stripped — the grid's stamp is an
+internal option), keeps a client on a direct bill alone, refuses a voided
+prixod, and inserts in one short transaction that takes the prixod FOR KEY
+SHARE and the truck FOR SHARE. `cancelBatch` takes the truck FOR NO KEY UPDATE
+and counts the money under it. Proven with a held second connection in both
+orders, plus an annul-shaped and a phone-shaped holder that make a bill wait
+and never deadlock. **My first order was wrong** (the second review's
+writes-2): cartons FOR UPDATE before the truck and the money, while a bill's
+split runs AFTER its commit and key-shares the same cartons in id order — a
+deadlock pair. The order is truck → money → cartons now, the count-load's own,
+and a truck with a bill is refused on the count before a carton is touched
+(red-proven with a held KEY SHARE: the old order waits on it). A truck PRICE
+was the same race one table over (writes-4): an FK's KEY SHARE does not wait
+for NO KEY UPDATE, so `addTransaction` takes the truck FOR SHARE for a charge
+and refuses `batch_cancelled`. STATED: a receipt-scope cost's split can still
+key-share cartons on a truck being cancelled (it is not this truck's money and
+is not counted) — postgres resolves that rare pair with a 40P01.
+
+1357. **The map regroups the P&L's own money and reconciles to it to the
+cent** (`/accounting/sarflar`, `accounting/sarflar.ts`, behind
+`companyMoneySight` — the owner, the admins, the accountant). ONE row set
+(`spendRowsSql`) carries the kind (stamp-first: a grid cell stamped on a truck
+is truck money), the place and the payer, so the bars, the warehouse fold, the
+payer fold and the register filter can never select different sets; each block
+adds up to «kitob jami» (direct + opex, measured against `profitAndLoss`), and
+the kurs farqi is the one bridge line to the hero, which IS `pnlParts.cost` —
+the dashboard's «Xarajat». Truck money sits under no warehouse (his Q3: a road
+belongs to no warehouse, and an internal leg carries only tannarx); each truck
+is a «Partiyalar» row with its chip — internal «faqat tannarx», continuation
+«davomi», tracked «💰 foyda hisobi». Expense ROWS are the staff-money readers'
+alone (a salary line is a person's pay) while every reader sees their sums;
+without staff sight no counterparty is named, so a bare bucket word cannot
+single out a colleague's own pocket. Filters are validated out of the URL; the
+XLSX is its own route with an audit row.
+
+1358. **«＋ Partiyaga xarajat» is the truck card's own bill in a keep-open
+desk** (`/accounting/sarflar/kiritish`, his 5a). A light picker on
+`mayEnterBatchCostWhere` (rows and count one predicate; a closed truck only by
+search, marked; never a cancelled one), `?p=` re-asked (not found = out of
+scope, one answer), the truck's own `CostPanel` with `afterSave='again'`: type,
+currency, date, payer and a proportional basis survive the save AND a switch
+to another truck (client navigations, or the kept values die with a page load);
+the amount and the note never do. Freight is the default type — on the truck
+tab too since the second review. On a phone the chosen truck's form comes
+before the list (it was a scroll away from the tap that chose it — found in the
+screenshot); a truck with no bills says «xarajatsiz» and never «$0.00». «Bugun
+men kiritganlar» lists what this person typed today and links a bill dated
+outside «Bu oy» to its own whole month. `costPanelOptions` is shared with the
+truck tab, whose client list now comes from the RIDERS — unloading had emptied
+it.
+
+1359. **The round reviewed as built, five lenses, 23 findings** — and the
+verifiers of the money and doors lenses refuted all twelve of theirs, because
+4ec36a0 had already fixed them while the review read a moving tree (round
+#977's hazard, met again). That first pass: a group whose money all waits for a
+rate prints «kurs yo'q», never «$0.00»; preset links and the date form carry
+every filter; the period is clamped to the books' era (a year typed as «26»
+reached postgres as year −1974) and page numbers are capped; a redacted twin
+line carries no figures; `payerView` names a colleague's own pocket only to
+`finance.expenses` holders on all five cost cards. CI order found two more:
+every ILIKE over a truck code lives in former-codes.ts (`codePrefixSql`), and
+the cost-card fence follows a client desk to the server page that mounts it.
+
+1360. **The alarm is NARROWER than the merge between two currencies** (the
+second review's twins-1, measured: on a dense synthetic book — 1 500 September
+bills, 6 000 so'm expenses a year — the merge's band gave **11 false twins per
+bill**, none a double). §8.1 said «`sameMoney` exactly»; that band (2 % or $5,
+two weeks) is for a person choosing from a list, and its $5 floor made every
+bill under $250 the twin of any other-currency expense within $5 — a $40
+unloading bill «the same money» as a 470 000 so'm water bill ten days later.
+2 % alone still left eight. Now: one currency and one kassa stay exact; across
+two currencies `TWIN_FX_PCT` = 1 % of the expense's dollars, no floor, within
+`TWIN_FX_DAYS` = 3 days (an un-merge's restored expense keeps no day check, as
+in the merge). The doubles that arm exists for are customs — a declaration in
+dollars paid in so'm at the same day's official rate. 12 507 → 1 646 pairs on
+the same book. Stricter than the merge on purpose: whatever the alarm calls
+«mergeable», the merge accepts (a unit sweep pins it). A dollar-matched line is
+marked «≈» and listed after the exact ones. STATED to him: a desk conversion
+more than 1 % off or more than 3 days apart is not warned about — the M4a
+queue still lists it; and two unrelated payments of the same round amount in
+one currency still warn (the line says where and who).
+
+1361. **The map's count can be answered, and costs what the period costs.**
+The «🔁 N ta yozuv tekshirilmagan» fold listed each pair by its shape word
+alone (screen-2): no date, money, book or place, nothing to find. Each pair now
+prints both rows (date · money · type or category · truck/prixod code — the
+expense side only to an expense-book reader) and «✓ Ikki xil pul», which
+re-decides the pair from the rows as they stand and writes the cost's
+`twin_check` audit row with the same `twinAck` list a warned save writes — a
+new AuditAction verb, labelled in all four bundles (the fence requires it). Without that
+door a pair written before the warning existed could never leave the count. The
+expense side was joined unbounded and its fences, «restored» and staff probes
+ran per PAIR: 3.6 s on the review's book; it is one MATERIALIZED pass bounded
+to the period's window now — 0.4 s, identical rows. Pinned by a brute-force
+test: the count equals `twinShape` over every pair of the same rows, with a
+fixture only the kassa arm can see (red-proven by dropping that arm).
+
+1362. **What the alarm could not compare is said** (twins-3, found by three
+lenses): `unchecked` was computed and then dropped — true only with zero twins,
+where `mustWarn` saves silently and nothing carried it to the browser (#531's
+shape, the flag proven at the service and absent at the door). A clean save
+now returns the gap on all three doors and `TwinGapNote` says «bu summaning
+kursi yo'q — solishtirib bo'lmadi», or for an expense «N ta yuk xarajatining
+kursi yo'q». Also: a typed 1.005 is compared as the 1.01 numeric(…,2) stores
+(`storedCents` rounds the decimal TEXT half away from zero, as postgres does —
+`Math.round(1.005*100)` is 100); a kassa-less cost the merge already joined is
+offered a void (`kassa_cash`), never the merge that answers `cost_taken`; a
+completing-sum reads the group WHOLE and ordered or not at all
+(`SUM_GROUP_CAP` 500 — `LIMIT 50` with no ORDER BY summed an arbitrary part);
+the expense door ranks a bill at the expense's own warehouse first, a truck by
+either end.
+
+1363. **Three doors closed and the map's links ask where they lead.**
+`confirmReceipt` refuses a posted extra cost (`extra_costs_retired`, §8.2) —
+no screen has sent one since #1045 and a hand-built post was the last way to
+write a cargo cost past the cost door; the refusal sits in the service, the
+G10 conversion test became the refusal's red proof plus the sweep over the
+legacy rows production holds. The register's filter form is keyed by its
+filters: a filter link is a soft navigation that keeps the page mounted and an
+uncontrolled select kept its old value, so «Qo'llash» posted back a filter the
+page no longer showed — reproduced RED in a browser before the fix. A payer or
+warehouse row links only where the register shows rows for this reader, and
+the payer filter refuses expense-only buckets to a reader without expense
+rows; the truck's all-time Σ says «kurs yo'q» too. 14 red proofs by string
+edit for the second pass plus the form key in a browser; one first stayed GREEN: the «$5 floor» proof was anchored
+on a pair ten days apart, which the 3-day rule excluded by itself — re-anchored
+on a same-day pair (#166).
+
+## Yo'lkira tarifi bo'yicha taqsimlash — his 1a 2c 3a 4a 5a 6 (2026-10-14; migration 0132 `cost_freight_basis` — ledger must reach 133; spec `docs/YOLKIRA-TAQSIMOT.md`)
+
+1364. **His six answers, as decisions, and the twin threshold he left to me.**
+«1a 2c 3a 4a 5a 6 1kub 10kgdan kam tpgri keladgan bolsa ogohlantirsin,
+qolgani 1kub uchun 100 kgdan kam tarifda ketaversin» (verbatim). (1a) the grain is each
+client's whole cargo on the truck, an unclaimed prixod a group of its own, and
+inside a group the split is by m³; (2c) every warehouse carries a tariff COLUMN
+a person writes, and a truck reads its ORIGIN warehouse's column — never
+inferred from a route or a name; (3a) the column as of the bill's `cost_date`
+is FROZEN into a copy beside the bill; (4a) truck-scope bills only, preselected
+for the freight types (setting `freight_tariff_cost_type_codes`, default
+`["freight"]`), never offered on a customs type; (5a) a re-basis door with a
+per-client before → after preview, old bills untouched; (6) a group whose WHOLE
+density is under 10 kg/m³ HOLDS the bill (saved, on no box, ⚠ naming the group
+and its lots lightest first, healed by fixing the lot), from 10 up to the
+column's lowest floor the group takes the lowest band. The twin alarm's
+cross-currency threshold («o'zing to'g'ri deb bilgandek»): the ⭐ stays —
+`TWIN_FX_PCT` 1 % / `TWIN_FX_DAYS` 3 (#1360), now recorded as his answer.
+
+1365. **A share is the group's TARIFF VALUE, never its weight** (`freight-split.ts`,
+pure). value = band rate × Σm³ (a per-kg band: price × density × m³); share =
+value ÷ Σvalue. Densities are EXACT: a uniform lot with all four dims reads its
+carton (grams and cm³ as BigInt), anything else its totals ÷ box_count, and the
+whole kg/m³ the screens print is half-up of the exact fraction — so a group can
+never band one way on the screen and another in the split. The rule-6 order
+inside a group is fixed: a missing measure, then under `light_below`, then
+under the lowest floor (clamped, said), then `bandFor`; all groups are judged
+and both lists collected, so the ⚠ names every lot to fix at once. A light LOT
+inside a heavy group does not hold (his grain is the group) — it gets a
+non-blocking ⓘ line. The calc's own `bandFor`/`bandDensityOf` are untouched.
+
+1366. **The column is a warehouse ROW, the copy a bill ROW, and each has one
+writer.** `warehouse_tariff_columns` (warehouse → zone; `tariff-column.ts`,
+written in the warehouse form's own transaction, an absent field LEFT ALONE —
+#171 — and an unknown zone refused in words) and `cost_entry_tariffs` (one row
+per freight bill — zone, `tariff_from`, `light_below`, the bands as jsonb —
+written only by `replaceFreightCopyInTx`, read only by `freight-copy.ts`;
+fenced: no other file names the table). The save refuses tariff CONFIGURATION
+before anything is written, each kind its own literal code with the params its
+sentence names (no column at «YW — Yiwu», «cn» unpriced on that date, a gap
+501–700, an open top, an overlap); lot DATA never refuses the money (it holds
+the bill). What is frozen is what the person SAW: the panel posts the digest of
+the version its preview drew and a remap or a tariff edit in between is
+`freight_changed`. Both tables ship EMPTY: until he writes a column the freight
+basis is disabled with a fact line and weight stays the default.
+
+1367. **Fail closed, and say so everywhere it costs money.** A held bill has no
+share; ONE fragment (`noShareSql`) says «converted and on no box», read by the
+nightly orphaned net, «Partiya foydasi»'s unallocated column, the truck's Σ
+suffix, its todo (under the reader's own cost sight), the pricing page — this
+truck's bills AND the bills of the trucks whose road feeds its tannarx as «shu
+reysgacha»/«keyingi yo'l» (`carriedUnsplitBills`, on the fence's own
+`rides`/`mx` windows), the attention row (linked to the truck or to the
+`bolinmagan=1` profit list) and the Balans (`freightUnsplit`, split out of
+«no box» by basis, with no void advice). STATED: while a bill is held, Sof
+holat is lower by the unpriced cargo's share of it.
+
+1368. **The void guard asks «is the money somewhere», and an empty base is
+judged first.** `costPool` (pure, the ONLY caller of `allocateEntry`, fenced) is
+asked by the recompute, the void guard and every preview; its order is a rule —
+an empty base is `nothing` before the copy, the customs flag or any group is
+read, so a held freight bill never answers «homed» about an empty truck. A
+void that makes a client light is ALLOWED (the bill becomes held); a void of
+the truck's only cargo is refused as before.
+
+1369. **The re-basis door (5a) and the rollback are one save half**
+(`costing/rebase.ts`). «Bo'lish usuli ✎» on a TRUCK's own bill (the per-prixod
+grid's stamped cells get none, `rebase_batch_only`): the first press answers
+the preview — each client's % now → new and, under money sight, dollars to the
+cent — and a token over (entry, from-basis, from-copy digest, to-basis,
+to-copy digest, the after %s to 0.01); the second press saves only while the
+token still matches, else `rebase_changed` WITH a fresh preview. The save is
+one transaction: the entry locked first (the recompute's order), a void that
+landed while it waited wins (no UPDATE, no copy, no audit), a concurrent
+re-basis is `changed`, the shares are DELETED before the basis moves — so a
+failed split reads «no share», which every ⚠ above names, and is queued — and
+the copy table is touched only when freight is on either side (a weight →
+volume re-basis works one migration behind). It never writes the amount, the
+dollars, the rate, the payer, the kassa, the merge or the firm's charge: that
+is why it exists beside the void. `pnpm freight-to-weight [--apply]` (through
+`migrate`) runs the same save half over every live freight bill, audited
+`reason: 'rollback'` with no actor — the precondition for going below 0132,
+written into docs/UPDATE.md, because older code splits a 'freight' row evenly
+by box count with no word and throws at render on its missing basis key.
+
+1370. **Found on the way: the customs-codes setting was never read.** drizzle
+hands a jsonb setting back already PARSED (an array) while the default arrives
+as JSON text; `parseCustomsCodes` did `JSON.parse(String(raw))`, and
+`String(['customs','x'])` is `customs,x` — not JSON — so the parse threw and
+the fallback `["customs"]` answered every time. Any edit of
+`calc_customs_cost_type_codes` was ignored by every reader (the E1 control, the
+truck's declared base, now the freight refusal). Both shapes are read now
+(`Array.isArray(raw) ? raw : JSON.parse(…)`); `parseFreightCodes` copies it;
+unit-pinned with both shapes, red-proven. Found because test 4c set the
+setting and the bill stayed `split`.
+
+1371. **The Narx band line names the bill that billed it, explained on ITS
+truck** (E6). `batchClientCostBreakdown` keys a freight part by its entry and
+its truck (+ that truck's two ends); the explain map is built from the
+breakdown's OWN freight ids, because «shu reysgacha»/«keyingi yo'l» parts are
+other trucks' bills the page's entry list does not hold, and each is explained
+over its own riders and copy — over the page's riders a two-client bill would
+read 100 % for the one client aboard (red-proven by narrowing the base). The
+link asks the costs door AND that truck's card door. DEVIATION from §7.4,
+recorded: the line's dollars are the breakdown's own per-client sum and are
+NOT re-rounded with the bill's largest remainder — the line sits in one
+client's card with no bill total beside it to disagree with, and the
+breakdown's figure is what adds up to the tannarx printed above it.
+
+1372. **Where the build moved the spec** (the ⚠ package's report, verified):
+the pricing page reads the `finance` namespace and the profit page
+`accounting` (no `pricing.*`/`profit.*` exist); `freightUnsplit` carries the
+held trucks' ids and first departure (`HeldFreight`) so the Balans can link one
+truck's Xarajatlar or the filtered profit list; two keys more than the spec
+named (`finance.unsplitCarriedNoRate` for a feeding truck whose bill has no
+dollars yet, `accounting.unsplitShowAll`); the attention row links one truck
+only for an unscoped viewer (it knows the viewer's scope, not the truck's
+ends). `profitByBatch` lists departed trucks only, so the filtered list gained
+its own «hali jo'namagan» block (`unsplitOnFormingTrucks`, review fix — the
+Balans sentence could otherwise open an empty page); STATED: the attention row
+still counts departed trucks only, so a held bill on a truck that has not left
+is on its card, its Σ, its pricing page and that block, never on the row. The e2e's numbers include the
+unclaimed prixod the spec's fixture added and its 78.95/21.05 forgot:
+A 600 / B 160 / prixod 55 of 815 → 73.62 / 19.63 / 6.75 %, 257.67 / 68.71 /
+23.62 of $350.
+
+1373. **The build reviewed by three lenses before any merge** (9c9736b,
+c539e8a). The headline was SPEED, measured on the shaped copy:
+`carriedUnsplitBills` joined the fence's `rides` CTE to the cartons for every
+truck the page's cargo ever rode — the CTE-on-CTE nested loop #1246 forbids —
+745 ms at 2,000 cartons; it now asks for the held trucks FIRST and pairs only
+their rides, 83 ms. The rest were silences and one leak. The ⚠ chip on a row
+read «freight held» only, while the todo and the Σ count ANY bill on no box
+(`noShareSql`), so a weight bill on an emptied truck was counted and never
+marked — the chip asks the same fact now (`unsplit`). A non-money reader's
+fold carried the band's PRICE in the props even where the text left it out —
+`BandView` makes the price optional and `bandForSight` is the one rule (the
+fix review found the re-basis preview restating it). A saved bill's fold drew
+a tariff split under «held on customs» because it never read the customs flag
+the recompute reads. The «keyingi yo'l» open-cargo sentence had been
+suppressed beside a held later-leg bill — REVERSED: the sentence is the only
+word about cartons that never rode that leg, and the figure still grows when
+the bill splits. The re-basis door: leaving `direct_to_client` recorded no
+client; a same-date re-freeze wrote new bands with no audit field
+(`tariffBands`, on the create too, `bandsSummary`); a target basis that lands
+on no carton was saved without a word (`nowhere`); the token did not cover the
+bill's own dollars; the rollback script started pg-boss inside the one-off
+`migrate` container (it now never queues, and names each bill whose weight
+split did not land). A `freight_changed` refusal left the stale offer on
+screen, so every press re-posted the same digest — the panel refreshes.
+13 red proofs by string edit.
+
+1374. **Two that only a run could find.** (a) The e2e's own 46-character
+unclaimed marking took the Narx tab to 501 px at 360 (#400): the lot line
+printed the marking with no break opportunity — a PRE-EXISTING defect of the
+pricing page that no earlier fixture was long enough to reach;
+`[overflow-wrap:anywhere]` (ac5375b). (b) `carriedUnsplitBills` judged a
+direct bill by its TRUCK: `held` was one row per feeding truck, so «names its
+own client only» held only while every no-share bill on that truck was
+direct; beside any other bill a $25 direct fee for a client who never rode
+the page truck was summed into the page's dollars ($125 read for a $100 held
+bill), and two no-rate direct bills on two export trucks read «2 ta» on each.
+`held` is one row per PART (the truck-wide bills, and each client's direct
+bills), `rode` reduces the pairing to (feeding truck, client, leg) once,
+MATERIALIZED, and a part counts only when its client — or anybody, for the
+truck-wide part — is aboard (3e4dd1c; 470-580 → 290-385 ms on a 2,000-carton
+fixture here). The review also found that removing either window's EXCLUSION
+side stayed green; five new blocks pin both windows' far ends, a no-rate
+feeding bill, a direct bill and the forming trucks (2ef80a8), each red-proven.
+
+1375. **The FIXES reviewed before the merge — and what they got wrong.** A
+fix-verify workflow over 9c9736b…3e4dd1c. (a) The exact arithmetic summed
+fractions UNREDUCED: a totals lot reads each carton as totals ÷ box_count,
+and summing N such cartons multiplied the denominators — 500^500 for a
+500-carton lot — so `Number(n)/Number(d)` came back NaN and a held lot
+printed «NaN m³» on exactly the big lot. `add` reduces by gcd and
+short-cuts equal denominators; red-proven, the 500-carton case pinned. (b) The customs flag
+on the fold (#1373) said «held» over a bill that still carried its shares
+until the next recompute — the fold now says customs only for a bill on no
+box (`!bill.hasShare`), red-proven by an assertion BEFORE the recompute. (c)
+The re-basis token covered the after %s and not the «hozir» column, so a
+re-split under the CURRENT basis between the two presses saved over a
+preview the person never saw; it carries both columns and a held
+after-state's own lots. (d) The panel refreshed on `freight_changed` alone;
+every tariff-configuration refusal (`freight_*`) leaves the same stale offer.
+STATED, not changed: the bill's audit rows are reachable on /admin/audit
+(filter by entity) and carry the frozen band PRICES — readable by
+`admin.audit.browse` holders, who are the owner and admins today; the
+attention row filters a truck's unallocated money above 0.009 while the
+Balans sums every cent.
+
+1376. **Two of the fix review's findings were whole packages** (2655743,
+c1c0308). (a) `carriedUnsplitBills` was still QUADRATIC whenever feeding
+trucks held bills: `fed` joined `mx` (one row per carton of the page truck)
+to the held trucks' rides on box_id, two CTEs both estimated at one row. The
+page truck's own mx columns are now spread onto the carton's other rides by
+a window (`… FILTER (WHERE batch_id = page) OVER (PARTITION BY box_id)`), so
+the fence's windows are asked of one row and nothing on the carton grain
+joins CTE to CTE; mx's columns have one home (`MX`). Measured on the shaped
+copy with a synthetic hub of 2,000 cartons that each rode 20 earlier legs
+holding a bill: shipped 7.8-9.9 s → 1.5-1.9 s, identical rows, of which the
+fence's own CTEs are ~1.3 s (the tannarx read pays them anyway); on the
+copy's real topology both are 11-23 ms. The shipped statement is kept
+VERBATIM in freight-surfaces as the oracle and every call there asks both.
+(b) Four readers of «money on no box» still called a held bill a truck with
+no cargo — whose cure is «void it»: `pnlGaps.onNoBox`, `clientProfitGaps`'s
+batch scope, the landed-cost report (silent) and `dealProfit` (silently
+high). One fragment, `heldFreightSql` (= freight basis AND `noShareSql`,
+keyed on the basis like the Balans), splits each: `freightHeld` on the P&L
+note and file, `heldFreight` as its own bucket on «Mijoz foydasi» (the total
+still reconciles), `heldFreightCosts()` beside the no-rate caveat, and per
+truck on the deal card — the WHOLE bill, an upper bound on the deal's share,
+never folded into the arithmetic. Both packages were written by worktree
+agents the session's interrupt stopped mid-work; their uncommitted trees
+were taken over, finished, red-proven (9 proofs) and committed here.
+
+1377. **A private test year is a claim to check, not to make.** Six
+integration files parked money in 1637, each calling it «a year no other
+file uses»; truck-riders reads whole months of it and its afterAll deletes
+the WHOLE year — so beside void-resplit it read 600 for its own 500, and
+beside a file still running it would delete that file's costs. This round's
+freight-basis had taken 1637-03-14 too. truck-riders moved to 1662 and
+freight-basis to 1655-1656. The first move went to 1663, which a search for
+QUOTED dates called free and which is balance-unpriced-cargo's
+`const Y = '1663'`: the delete-by-year then failed on that file's partner
+FK (so nothing of it was lost) and its leftovers broke balance-unpriced-cargo
+on this long-lived database until removed. Search years as bare numbers.
+
+1378. **«Held» is a verdict about a truck that CARRIES cargo** (the third
+review: three lenses over the last three commits, two refuters per finding,
+5 of 8 stood). `heldFreightSql` had keyed on the basis alone — its own
+comment said «a freight bill whose base is truly empty lands here too» and
+called that harmless — so a yo'lkira bill typed before the loading (the
+commonest case: the panel preselects the freight basis whether or not
+anything is aboard) or one whose every carton was found back was pulled out
+of «on no box» on four surfaces and told «do not void, fix the lot or use
+Bo'lish usuli», a cure that cannot happen. Held is now freight basis AND
+on no box AND `truckCarriesSql` (riders.ts — some non-void box rides that
+truck for money, the base the bill splits over); the Balans's `w_nobox`
+asks the same clause. STATED: a customs-typed freight bill splits over the
+declaration, so one whose every carton was found back reads as no-box here
+while the pool calls it held «on customs» — an edge of an edge. The deal
+card's truck list was departures ∪ live pointer, which misses a carton that
+rode with no load scan (the unloader's `undocumented_transfer`) and keeps a
+truck a carton was found back from; `heldFreightRiddenBy(boxIds)` asks the
+bill's own riders (`riderRowsSql`). Refuted and recorded: a link from each
+note to its trucks (the sentence is true; the Balans line already links),
+and a wider spelling fence (no second spelling exists). 4 red proofs.
+Found by the round's own SCREENSHOT, not by a test: /reports/landed-cost's
+client table pushed the document to 407 px at 360 (#400 — the phone zooms
+the page out). Pre-existing: `truncate` is nowrap, and inside an
+auto-layout table a nowrap cell is as wide as its longest name. The names
+wrap now (`[overflow-wrap:anywhere]`) inside an `overflow-x-auto` card;
+re-measured 360/360 and 1280/1280 on all ten screens of the round.

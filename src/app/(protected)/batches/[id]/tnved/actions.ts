@@ -9,11 +9,21 @@ import { requireActor } from '@/modules/platform/rbac/authorize';
 import { mayOpenBatchCard } from '@/modules/wms/batches/card-door';
 import { batchMemberFilter } from '@/modules/wms/scanning/unload';
 import {
+  productKey,
   saveTnved,
   suggestTnved,
   TnvedError,
   type TnvedSuggestion,
 } from '@/modules/wms/tnved/service';
+import { batchTnvedProducts } from '@/modules/wms/tnved/batch-lots';
+import { isBusyError, isServerBehind } from '@/modules/platform/db/errors';
+import { isUuidShaped } from '@/modules/platform/audit/fields';
+import {
+  CompositionError,
+  mayWriteComposition,
+  paperCompositionsFor,
+  setLineCodes,
+} from '@/modules/wms/receipts/lot-composition';
 
 async function vedActor() {
   const actor = await requireActor();
@@ -38,6 +48,8 @@ export async function suggestTnvedForLotAction(
 ): Promise<{ ok: boolean; suggestion?: TnvedSuggestion; error?: string }> {
   const actor = await vedActor();
   if (!actor) return { ok: false, error: 'forbidden' };
+  // A malformed id is a forged post: «forbidden», never a 22P02 error page.
+  if (!isUuidShaped(batchId) || !isUuidShaped(lotId)) return { ok: false, error: 'forbidden' };
   const batch = await db.query.batches.findFirst({
     where: eq(batches.id, batchId),
     columns: { originWarehouseId: true, destWarehouseId: true },
@@ -95,7 +107,19 @@ export async function suggestTnvedForLotAction(
   }
 }
 
+/**
+ * Save codes into the shared memory — PRODUCT rows of THIS truck only.
+ *
+ * It took a list of names alone and asked no truck door at all, so any
+ * holder of the permission could write any name into the company-wide
+ * memory (the lot tarkibi judge's Access-5). Now the truck's card door is
+ * asked, `departed` is derived from the truck row, and a name that is not a
+ * product row of `batchTnvedProducts` on this truck is refused
+ * `not_on_truck` — which is also what makes «a composition line's code never
+ * writes the memory» a server rule and not a promise of the editor (#531).
+ */
 export async function saveTnvedAction(
+  batchId: string,
   entries: {
     nameZh: string;
     nameRu: string | null;
@@ -106,6 +130,17 @@ export async function saveTnvedAction(
 ): Promise<{ ok: boolean; saved?: number; error?: string }> {
   const actor = await vedActor();
   if (!actor) return { ok: false, error: 'forbidden' };
+  if (!isUuidShaped(batchId)) return { ok: false, error: 'forbidden' };
+  const batch = await db.query.batches.findFirst({
+    where: eq(batches.id, batchId),
+    columns: { originWarehouseId: true, destWarehouseId: true, departedAt: true },
+  });
+  if (!batch || !mayOpenBatchCard(actor, batch)) return { ok: false, error: 'forbidden' };
+  const products = await batchTnvedProducts(batchId, batch.departedAt !== null);
+  const productKeys = new Set(products.filter((row) => !row.line).map((row) => productKey(row.nameZh)));
+  if (entries.some((entry) => entry.code.trim() && !productKeys.has(productKey(entry.nameZh)))) {
+    return { ok: false, error: 'not_on_truck' };
+  }
   const meta = await requestMeta();
   let saved = 0;
   try {
@@ -119,4 +154,68 @@ export async function saveTnvedAction(
     if (err instanceof TnvedError) return { ok: false, error: err.code };
     throw err;
   }
+}
+
+/**
+ * The Bojxona tab's codes for composition LINES (lot tarkibi §5): stored on
+ * the line, never in the memory. The truck's card door, the composition's
+ * writer, and every lot must have a carton that is a member of THIS truck. A
+ * ticked truck prints its frozen copy, so its line codes are read-only here
+ * (`frozen`). Entries are GROUPED per lot into ONE `setLineCodes` call each —
+ * two calls for one lot would refuse the second by the first's revision bump
+ * — and the revisions of the lots that DID commit travel with the first
+ * refusal, so the editor never keeps posting dead ones. No revalidatePath:
+ * the editor refreshes after both saves (#1242).
+ */
+export async function saveLineCodesAction(
+  batchId: string,
+  entries: { lotId: string; lineId: string; rev: number; code: string }[],
+): Promise<{ ok: boolean; revs: Record<string, number>; saved?: number; error?: string }> {
+  const revs: Record<string, number> = {};
+  const actor = await vedActor();
+  if (!actor || !mayWriteComposition(actor.permissions)) return { ok: false, revs, error: 'forbidden' };
+  // Every id is bound into a uuid comparison below: a malformed one is a
+  // forged post and answers «forbidden», never a 22P02 error page.
+  if (!isUuidShaped(batchId) || entries.some((e) => !isUuidShaped(e.lotId) || !isUuidShaped(e.lineId))) {
+    return { ok: false, revs, error: 'forbidden' };
+  }
+  const batch = await db.query.batches.findFirst({
+    where: eq(batches.id, batchId),
+    columns: { originWarehouseId: true, destWarehouseId: true },
+  });
+  if (!batch || !mayOpenBatchCard(actor, batch)) return { ok: false, revs, error: 'forbidden' };
+  const byLot = new Map<string, { rev: number; codes: { lineId: string; code: string }[] }>();
+  for (const entry of entries) {
+    const group = byLot.get(entry.lotId) ?? { rev: entry.rev, codes: [] };
+    group.codes.push({ lineId: entry.lineId, code: entry.code });
+    byLot.set(entry.lotId, group);
+  }
+  for (const lotId of byLot.keys()) {
+    const [aboard] = await db
+      .select({ id: boxes.id })
+      .from(boxes)
+      .where(and(eq(boxes.lotId, lotId), batchMemberFilter(batchId)))
+      .limit(1);
+    if (!aboard) return { ok: false, revs, error: 'forbidden' };
+  }
+  const papers = await paperCompositionsFor(batchId, [...byLot.keys()]);
+  if ([...papers.values()].some((comp) => comp.frozen)) return { ok: false, revs, error: 'frozen' };
+  const meta = await requestMeta();
+  let saved = 0;
+  for (const [lotId, group] of byLot) {
+    try {
+      const res = await setLineCodes({ lotId, seenRev: group.rev, codes: group.codes }, actor, {
+        actorId: actor.id,
+        ...meta,
+      });
+      revs[lotId] = res.rev;
+      saved += group.codes.length;
+    } catch (err) {
+      if (err instanceof CompositionError) return { ok: false, revs, saved, error: err.code };
+      if (isBusyError(err)) return { ok: false, revs, saved, error: 'busy' };
+      if (isServerBehind(err)) return { ok: false, revs, saved, error: 'server_behind' };
+      throw err;
+    }
+  }
+  return { ok: true, revs, saved };
 }

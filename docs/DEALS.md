@@ -52,6 +52,23 @@ REALITY side by side, which is the only thing that can close the gap above.
 | 6 | The 50-goods file | **Parse the spreadsheet AND let the TNVED assistant propose the grouping**; the VED manager confirms |
 | 7 | Profit granularity | **Per deal.** Not per line |
 
+> **2026-10-07 — his 17a supersedes the VED half of answers 2 and 3.** The deal
+> card splits in two (`src/modules/wms/deals/door.ts`). The deal's TERMS —
+> opening a deal, its stage, its owner, its quote and its DISCOUNT — are the
+> seller's (`mayEditDealTerms` = `crm.leads` or `clients.manage`). The VED
+> (`ved.docs` without a seller's grant) reads the card, writes a text note on
+> a calc deal's lenta, and keeps the deal's POSITIONS (lines, TNVED codes, the
+> per-line summa) and ALL prixod linking (link, move, detach — each audited
+> under his name, G1 a). The re-pricing in answer 2 is now the seller's on the
+> deal card; the VED's price door is the SEAL in the calc workspace, untouched
+> (as is the seal's own discount). His deal board is a read-only slice (G3 a:
+> deals with a calc request, open deals with a position lacking TNVED) and he
+> cannot create deals (G4 a); the bot's «🧮 Hisoblatish» stays open to all
+> staff. A deal the bot mints for a request sent by someone who cannot work a
+> deal's terms opens in the CLIENT's seller's name, or ownerless for the admin
+> to distribute (G2 a, `calc/intake-land.ts` `calcDealOwnerFor`); a seller who
+> sends keeps his deal, as before.
+
 ### 4 — deferred payment, in detail
 
 The deferral belongs to the DEAL, not to the client, and it is a decision with

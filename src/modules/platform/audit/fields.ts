@@ -78,6 +78,8 @@ export const AUDIT_FIELD_LABELS: Record<string, string> = {
   warehouseId: 'warehouse',
   warehouse: 'warehouse',
   warehouses: 'warehouses',
+  // A truck's receiving warehouse, changed on the road (the reroute round).
+  destWarehouseId: 'destination',
   typeId: 'type',
   deal: 'deal',
   dealId: 'deal',
@@ -108,6 +110,37 @@ export const AUDIT_FIELD_LABELS: Record<string, string> = {
   // cargo moved to them — `stampUnattributedCargo`'s one audit line.
   cargoStampedTo: 'cargoStampedTo',
   receipts: 'receipts',
+  // Lot tarkibi (0122): the paper composition a VED or logist stated against
+  // a document, and the per-line TNVED codes typed on the Bojxona tab.
+  lotComposition: 'lotComposition',
+  lotCompositionCodes: 'lotCompositionCodes',
+  // «Yuk ma'lumoti tekshirildi» (0123): what a person confirmed with the
+  // client, and the note they left.
+  lotCheck: 'lotCheck',
+  lotCheckNote: 'lotCheckNote',
+  // The VED queue's lines on the CARD (lead or deal): a request opened, taken,
+  // released, handed back, answered with a price, re-opened for a correction
+  // (docs/VED-TARIX.md). Each value is the request's id — printed raw, which
+  // is honest; the taker is a person and is named. The internal note is
+  // never among them: it is the request's own audit row, not the card's.
+  calcRequested: 'calcRequested',
+  calcRequest: 'calcRequest',
+  calcTakenBy: 'calcTakenBy',
+  calcReleased: 'calcReleased',
+  calcReturned: 'calcReturned',
+  calcDone: 'calcDone',
+  calcRecalc: 'calcRecalc',
+  section: 'calcSection',
+  items: 'itemCount',
+  // Yo'lkira tarifi bo'yicha taqsimlash (0132): how a bill is split, and the
+  // tariff column a warehouse's trucks are split by. The column prints its
+  // CODE («cn → kashgar») — short lowercase words, honest as they stand.
+  allocationBasis: 'allocationBasis',
+  tariffZone: 'tariffZone',
+  tariffFrom: 'tariffFrom',
+  // The frozen rows themselves, as one line — so a same-date re-freeze of new
+  // prices (zone and date unchanged) is a visible change, not an empty one.
+  tariffBands: 'tariffBands',
 
   // Housekeeping
   note: 'note',
@@ -135,6 +168,23 @@ export type AuditRefKind =
   | 'partner';
 
 /**
+ * A recorded key's label and, for a per-item key, its item: `lotCheck:A` is
+ * the `lotCheck` label for lot A (0123). A writer that records one change per
+ * ITEM under one entity must carry the item in the key — the History tab nets
+ * a run of edits per key, so a shared key collapsed «ticked A, B, C» into one
+ * line about C. Only a base the map knows is split, so an unknown key with a
+ * colon still prints as itself.
+ */
+export function auditFieldLabel(key: string): { label: string | null; item: string | null } {
+  if (AUDIT_FIELD_LABELS[key]) return { label: AUDIT_FIELD_LABELS[key]!, item: null };
+  const at = key.indexOf(':');
+  if (at > 0 && AUDIT_FIELD_LABELS[key.slice(0, at)]) {
+    return { label: AUDIT_FIELD_LABELS[key.slice(0, at)]!, item: key.slice(at + 1) };
+  }
+  return { label: null, item: null };
+}
+
+/**
  * Which recorded columns hold a REFERENCE rather than a value.
  *
  * An audit row records what the form posted, and for a picker that is an id —
@@ -157,6 +207,7 @@ export const AUDIT_FIELD_REFS: Record<string, AuditRefKind> = {
   client: 'client',
   warehouseId: 'warehouse',
   warehouse: 'warehouse',
+  destWarehouseId: 'warehouse',
   sourceId: 'source',
   source: 'source',
   deal: 'deal',
@@ -164,6 +215,8 @@ export const AUDIT_FIELD_REFS: Record<string, AuditRefKind> = {
   partnerId: 'partner',
   receivedByUserId: 'user',
   cargoStampedTo: 'user',
+  // Who took a calculation off the queue — a person, so named.
+  calcTakenBy: 'user',
 };
 
 /** Only a uuid is looked up; codes and names in the same columns pass through. */

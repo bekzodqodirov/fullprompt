@@ -138,7 +138,10 @@ export async function registerCalcPrefillWorker(boss: PgBoss): Promise<void> {
         // machine acting (the stale-lead sweep writes the same way: nobody
         // causes a silence). Who ASKED is not lost — `calc_requests.
         // requested_by` records it, and the answer goes to them.
-        const out = await aiPrefill(requestId, { actorId: null });
+        // `replyTo`: the answer's link is chosen for the person it is sent to
+        // (`calcJobHrefFor`) — a stranger's lead is the VED's own when the VED
+        // sent it, and the CRM card bounces him.
+        const out = await aiPrefill(requestId, { actorId: null }, { replyTo: staffId });
         await notifyStaffTelegram({
           userIds: [staffId],
           type: 'CalcPrefilled',
@@ -150,7 +153,9 @@ export async function registerCalcPrefillWorker(boss: PgBoss): Promise<void> {
         // the customer's seller. Behind a setting because it is a matter of
         // taste how noisy a lenta should be, and best-effort because a note
         // that failed to write must not cost the message that was delivered.
-        await writeReplyToLenta(requestId, out.text).catch((err) =>
+        // The LINKLESS rendering: on the card a link is a door to where the
+        // reader already stands, or one the seller reading it is bounced from.
+        await writeReplyToLenta(requestId, out.lentaText).catch((err) =>
           logger.warn({ err, requestId }, '[calc-prefill] lenta note not written'),
         );
         logger.info(

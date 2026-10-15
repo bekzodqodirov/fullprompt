@@ -36,6 +36,9 @@ const FILES = {
   'receive-wizard': 'src/app/(protected)/receive/receive-wizard.tsx',
   'expense-request-fold': 'src/app/(protected)/receive/expense-request-fold.tsx',
   'return-to-sender': 'src/app/(protected)/receipts/[id]/return-to-sender.tsx',
+  // Lot tarkibi: the client's document, uploaded from the composition editor
+  // (re-picking the same PDF after a failed upload must fire again, #759).
+  'composition-panel': 'src/app/(protected)/receipts/[id]/composition-panel.tsx',
 };
 
 /** Comments stripped first — a rule must not be satisfied by prose (#725). */

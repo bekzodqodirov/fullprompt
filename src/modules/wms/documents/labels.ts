@@ -27,6 +27,8 @@ export const DOC = {
   barcode: 'Штрих-код / Barcode',
   boxes: 'Коробок / Boxes',
   code: 'Код / Code',
+  /** Lot tarkibi: the agent file's suffix — the lot's whole PLANNED contents, not this row's. */
+  contents: 'Состав лота (весь план) / Lot contents (whole plan)',
   crate: 'Ящик / Crate',
   date: 'Дата прихода / Received',
   density: 'кг/м³ · kg/m³',
@@ -39,6 +41,12 @@ export const DOC = {
   netWeight: 'Вес нетто (кг) / Net weight (kg)',
   offPlan: 'Вне плана / Off-plan',
   packaging: 'Упаковка / Packaging',
+  /**
+   * Lot tarkibi: a line of a composed lot whose share of the places rounds
+   * to none — its goods ride inside another line's places. A text cell, so
+   * the invoice's `SUM(F…)` ignores it.
+   */
+  partOfPlace: '(часть места) / (part of a place)',
   photo: 'Фото / Photo',
   places: 'кол-во мест / Places',
   price: 'Цена за ед $ / Unit price $',
@@ -51,6 +59,8 @@ export const DOC = {
    * worksheet name, so these use a middle dot. (Slipping "Сводка / Summary"
    * in here made every manifest download fail with a 500.)
    */
+  /** Lot tarkibi, «aralash»: every carton holds the mix — the cartons are on the first line. */
+  sameCartons: '(в тех же коробках) / (same cartons)',
   sheetSummary: 'Сводка · Summary',
   sheetBoxes: 'Коробки · Boxes',
   total: 'ИТОГО / TOTAL',

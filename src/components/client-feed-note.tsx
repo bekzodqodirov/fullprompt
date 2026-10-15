@@ -30,6 +30,9 @@ export function FeedNoteBox({
   entityId,
   labels,
   people = [],
+  files: allowFiles = true,
+  hintOn = null,
+  hintText = '',
 }: {
   /** Where the note lands: the deal on a deal card, else the client, else the lead. */
   entityType: 'client' | 'lead' | 'deal';
@@ -37,6 +40,16 @@ export function FeedNoteBox({
   labels: { placeholder: string; save: string; saving: string; attach: string };
   /** Colleagues an @ can name (phase 4). */
   people?: MentionPerson[];
+  /** False on a calculator's box (docs/VED-TARIX.md §10): no 📎, text only. */
+  files?: boolean;
+  /**
+   * `lead:<id>` / `deal:<id>` — the card this box sits on, posted so the
+   * action can say «this does not reach the VED» when an open calculation
+   * here has a question waiting (0127). Null on a client-only lenta.
+   */
+  hintOn?: string | null;
+  /** The words of that hint (`threads.feedCalcHint`). */
+  hintText?: string;
 }) {
   const [state, submit, pending] = useActionState<ReplyState, FormData>(addFeedNoteAction, {});
   const formRef = useRef<HTMLFormElement>(null);
@@ -87,6 +100,7 @@ export function FeedNoteBox({
     >
       <input type="hidden" name="entityType" value={entityType} />
       <input type="hidden" name="entityId" value={entityId} />
+      {hintOn ? <input type="hidden" name="hintOn" value={hintOn} /> : null}
       {files.length > 0 && <input type="hidden" name="activityId" value={activityId} />}
 
       {files.length > 0 && (
@@ -113,24 +127,28 @@ export function FeedNoteBox({
         testid="feed-note-body"
       />
       <div className="flex items-center gap-1">
-        <input
-          ref={fileRef}
-          type="file"
-          multiple
-          hidden
-          onChange={(event) => void attach(event.target.files)}
-        />
-        <button
-          type="button"
-          aria-label={labels.attach}
-          title={labels.attach}
-          disabled={uploading}
-          onClick={() => fileRef.current?.click()}
-          className="btn-ghost btn-icon !min-h-9 shrink-0 disabled:opacity-50"
-          data-testid="feed-note-attach"
-        >
-          {uploading ? '…' : '📎'}
-        </button>
+        {allowFiles && (
+          <>
+            <input
+              ref={fileRef}
+              type="file"
+              multiple
+              hidden
+              onChange={(event) => void attach(event.target.files)}
+            />
+            <button
+              type="button"
+              aria-label={labels.attach}
+              title={labels.attach}
+              disabled={uploading}
+              onClick={() => fileRef.current?.click()}
+              className="btn-ghost btn-icon !min-h-9 shrink-0 disabled:opacity-50"
+              data-testid="feed-note-attach"
+            >
+              {uploading ? '…' : '📎'}
+            </button>
+          </>
+        )}
         {state.error && <p className="min-w-0 flex-1 truncate text-sm font-semibold text-bad">{state.error}</p>}
         <button
           type="submit"
@@ -142,6 +160,13 @@ export function FeedNoteBox({
           {pending ? labels.saving : labels.save}
         </button>
       </div>
+      {/* The note saved — and an open calculation on this card has a VED
+          question waiting, which a lenta note never reaches (§3.5 c). */}
+      {state.ok && state.hint === 'calc_thread' && hintText ? (
+        <p className="px-1 pt-1 text-xs text-ink-500" data-testid="feed-calc-hint">
+          {hintText}
+        </p>
+      ) : null}
     </form>
   );
 }

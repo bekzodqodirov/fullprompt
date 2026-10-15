@@ -88,6 +88,9 @@ async function forwarded() {
 }
 
 afterAll(async () => {
+  // The forward is keyed by its Telegram message now (Q5 a): this file's
+  // chats are `8<stamp>…`, so are its keys.
+  await db.execute(sql`DELETE FROM telegram_once WHERE key LIKE ${`m:8${stamp}%`}`);
   await db
     .delete(notifications)
     .where(and(eq(notifications.type, 'ClientBotMessage'), sql`${notifications.payload}->>'text' LIKE ${`%${stamp}%`}`));

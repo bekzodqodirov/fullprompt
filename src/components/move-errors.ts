@@ -39,5 +39,8 @@ export function useMoveErrors(): Record<string, string> {
     // deal. A person on the board cannot hit this (the dialog intercepts);
     // it answers a forged or stale post, and the bulk bar's counts.
     convert_required: t('moveErrors.convertRequired'),
+    // 17a (2026-10-07): a deal's stage is its TERMS — the seller's. The VED's
+    // board draws no move door; this answers a forged or stale post in words.
+    deal_terms_only: t('moveErrors.dealTermsOnly'),
   };
 }

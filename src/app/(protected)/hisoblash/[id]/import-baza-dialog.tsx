@@ -4,6 +4,11 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Overlay } from '@/components/ui/overlay';
 import type { BazaBasis } from '@/modules/wms/calc/pricing';
+import { basisLabel } from '@/modules/wms/calc/basis';
+import type { ImportUnit } from '@/modules/wms/customs/import-parse';
+import type { ImportStatsAnswer } from '@/modules/wms/customs/import-stats';
+import type { SeriesStats } from '@/modules/wms/customs/import-stats-math';
+import { BazaStats, type NamedSeries, type StatsLoad } from './baza-stats';
 
 /**
  * «Qaysi deklaratsiya bu tovarni narxlaydi?» — the customs file's own rows,
@@ -35,7 +40,13 @@ export interface ImportCandidate {
   unit: string;
   declaredAt: string | null;
   sender: string | null;
+  /** «156-КИТАЙ» as the file writes it — display only. */
+  originCountry?: string | null;
   unitMatches: boolean;
+  /** False for a declaration in a unit this code's law cannot hold (a pair
+   * unit on a juft/litr/m² code) — listed, never pickable (0125). Absent on
+   * an answer from an older server: pickable, as before. */
+  pickable?: boolean;
 }
 
 interface PickerAnswer {
@@ -43,13 +54,26 @@ interface PickerAnswer {
   candidates: ImportCandidate[];
   total: number;
   source: string | null;
-  basis: BazaBasis | null;
+  /** The bases the row is looking for — named as an expectation. */
+  wants: BazaBasis[];
+  /** The code's law unit, for the «why not» sentence on a refused row. */
+  lawUnit: string | null;
+  /** Which batch answered — compared with the statistics' own (D4). */
+  batchId: string | null;
+  /** C1's name-matched series, riding the list's own scan. */
+  named: Partial<Record<ImportUnit, SeriesStats>> | null;
+  namedState: 'ok' | 'short_name' | null;
 }
 
 export interface PickerTarget {
   itemId: string;
   name: string;
   tnvedCode: string;
+  /** A unit the VED picked and has not saved yet — the server ranks by it
+   * (and only ranks: the price still comes from the file at save). */
+  basis?: BazaBasis | null;
+  /** The row's baza on screen, for the statistics' «siz» marker only. */
+  current: { usd: number; basis: BazaBasis } | null;
 }
 
 /** Fold a declaration paragraph into what a person scans, without hiding it. */
@@ -114,23 +138,56 @@ function PickerBody({
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [stats, setStats] = useState<StatsLoad>({ state: 'loading' });
+  /** «Show the statistics anyway» while the search holds text — reset by
+   * every keystroke, because the search is what the list is for. */
+  const [statsForcedOpen, setStatsForcedOpen] = useState(false);
   /** Which request the answer on screen belongs to — re-opening the SAME row
    * does not remount, so two answers can be in flight. */
   const asked = useRef(0);
 
   const itemId = target.itemId;
+  const drafted = target.basis ?? null;
   useEffect(() => {
     const ticket = ++asked.current;
+    const failed: PickerAnswer = {
+      state: 'behind',
+      candidates: [],
+      total: 0,
+      source: null,
+      wants: [],
+      lawUnit: null,
+      batchId: null,
+      named: null,
+      namedState: null,
+    };
+    // The statistics fire BESIDE the list, never after it: the strip is one
+    // indexed aggregate and paints first, while the list's similarity scan
+    // can take seconds on a big code (D4). Same ticket guard.
     void (async () => {
       try {
-        const res = await fetch(`/api/calc/import-baza?item=${itemId}`);
+        const res = await fetch(
+          `/api/calc/import-baza/stats?item=${itemId}${drafted ? `&basis=${drafted}` : ''}`,
+        );
+        if (!res.ok) {
+          if (ticket === asked.current) setStats({ state: 'failed' });
+          return;
+        }
+        const data = (await res.json()) as ImportStatsAnswer;
+        if (ticket === asked.current) setStats({ state: 'ready', answer: data });
+      } catch {
+        if (ticket === asked.current) setStats({ state: 'failed' });
+      }
+    })();
+    void (async () => {
+      try {
+        const url = `/api/calc/import-baza?item=${itemId}${drafted ? `&basis=${drafted}` : ''}`;
+        const res = await fetch(url);
         // `fetch` does not throw on 4xx: a 403 body has no candidates, and
         // reading that as «nothing imported» would send him to upload a file
         // he is not allowed to upload.
         if (!res.ok) {
-          if (ticket === asked.current) {
-            setAnswer({ state: 'behind', candidates: [], total: 0, source: null, basis: null });
-          }
+          if (ticket === asked.current) setAnswer(failed);
           return;
         }
         const data = (await res.json()) as Partial<PickerAnswer>;
@@ -140,22 +197,43 @@ function PickerBody({
           candidates: data.candidates ?? [],
           total: data.total ?? 0,
           source: data.source ?? null,
-          basis: data.basis ?? null,
+          wants: data.wants ?? [],
+          lawUnit: data.lawUnit ?? null,
+          batchId: data.batchId ?? null,
+          named: data.named ?? null,
+          namedState: data.namedState ?? null,
         });
       } catch {
-        if (ticket === asked.current) {
-          setAnswer({ state: 'behind', candidates: [], total: 0, source: null, basis: null });
-        }
+        if (ticket === asked.current) setAnswer(failed);
       } finally {
         if (ticket === asked.current) setLoading(false);
       }
     })();
-  }, [itemId]);
+  }, [itemId, drafted]);
 
   const needle = q.trim().toLowerCase();
   const shown = (answer?.candidates ?? []).filter(
     (c) => needle === '' || c.name.toLowerCase().includes(needle),
   );
+
+  // The name-matched series comes with the LIST; the strip with the stats.
+  // Both carry the batch that answered, and if a batch turned READY between
+  // the two fetches the two would describe different quarters — the named
+  // series is then dropped with a sentence rather than drawn on a stranger's
+  // axis (D4).
+  const statsBatch = stats.state === 'ready' ? stats.answer.batchId : null;
+  const named: NamedSeries =
+    loading || answer === null
+      ? { state: 'loading' }
+      : answer.state !== 'ok'
+        ? { state: 'hidden' }
+        : answer.namedState === 'short_name'
+          ? { state: 'short' }
+          : answer.namedState !== 'ok' || answer.named === null
+            ? { state: 'hidden' }
+            : statsBatch !== null && answer.batchId !== null && statsBatch !== answer.batchId
+              ? { state: 'stale' }
+              : { state: 'ok', series: answer.named };
 
   return (
     <>
@@ -170,21 +248,29 @@ function PickerBody({
               candidate's «unit does not match: the file says kg» — a bare
               «$/шт» beside a row currently priced per kg reads as a claim
               about the row and is not one. */}
-          {answer?.basis ? (
+          {answer && answer.wants.length > 0 ? (
             <span className="shrink-0">
-              · {t('importWants', { basis: answer.basis === 'unit' ? t('perUnit') : answer.basis })}
+              ·{' '}
+              {t('importWants', {
+                basis: answer.wants.map((b) => basisLabel(b, t('perUnit'))).join(', $/'),
+              })}
             </span>
           ) : null}
           {answer?.source ? <span className="shrink-0">· {answer.source}</span> : null}
         </p>
+        {/* The 16 px `.input`: the phone sheet opens this dialog too, and
+            iPhone Safari zooms the whole page on focus of anything smaller. */}
         <input
-          className="input input-sm mt-2"
+          className="input mt-2"
           data-testid="calc-import-search"
           placeholder={t('importSearch')}
           aria-label={t('importSearch')}
           value={q}
           disabled={loading}
-          onChange={(e) => setQ(e.target.value)}
+          onChange={(e) => {
+            setQ(e.target.value);
+            setStatsForcedOpen(false);
+          }}
         />
         {answer && answer.total > answer.candidates.length ? (
           <p className="mt-1 text-2xs text-ink-500" data-testid="calc-import-count">
@@ -197,6 +283,20 @@ function PickerBody({
           panel grows past its own max-height, taking the footer off-screen —
           a flex item's min-height defaults to `auto`. */}
       <div className="mt-2 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
+        {/* The statistics live in the SCROLLING region, above the list: on a
+            phone a fixed block would leave the list ~200 px and the keyboard
+            the rest. They fold to one line while the search holds text. */}
+        <BazaStats
+          stats={stats}
+          named={named}
+          current={target.current}
+          onPick={(row) => {
+            onPick(target.itemId, row);
+            onClose();
+          }}
+          collapsed={q.trim() !== '' && !statsForcedOpen}
+          onExpand={() => setStatsForcedOpen(true)}
+        />
         {loading ? (
           <p className="p-2 text-2xs text-ink-500">{tc('loading')}</p>
         ) : answer === null ? null : answer.state === 'behind' ? (
@@ -216,28 +316,23 @@ function PickerBody({
             {t('importNoMatch', { q: q.trim() })}
           </p>
         ) : (
-          shown.map((c) => (
-            <div key={c.id} className="rounded-xl border border-line">
-              <button
-                type="button"
-                className="block min-h-12 w-full p-2 text-left hover:bg-surface-sunken"
-                data-testid="calc-import-candidate"
-                onClick={() => {
-                  onPick(target.itemId, {
-                    id: c.id,
-                    pricePerUnitUsd: c.pricePerUnitUsd,
-                    basis: c.basis,
-                  });
-                  onClose();
-                }}
-              >
+          shown.map((c) => {
+            const body = (
+              <>
                 <span className="flex flex-wrap items-center gap-1">
                   <span className="font-mono text-sm tabular-nums">
-                    ${c.pricePerUnitUsd} / {c.basis === 'unit' ? t('perUnit') : c.basis}
+                    ${c.pricePerUnitUsd} / {basisLabel(c.basis, t('perUnit'))}
                   </span>
                   {/* A bare ⚠ said nothing. The mismatch is the one thing on
                       this row that can be off by the weight of the goods. */}
-                  {!c.unitMatches ? (
+                  {c.pickable === false ? (
+                    <span className="chip chip-warn" data-testid="calc-import-conflict">
+                      {t('importConflict', {
+                        unit: basisLabel(c.basis, t('perUnit')),
+                        law: basisLabel(answer.lawUnit ?? '', t('perUnit')),
+                      })}
+                    </span>
+                  ) : !c.unitMatches ? (
                     <span className="chip chip-warn" data-testid="calc-import-unitwarn">
                       {t('importUnitMismatch', { unit: c.unit })}
                     </span>
@@ -257,27 +352,50 @@ function PickerBody({
                     c.weightPerUnitKg !== null ? `${c.weightPerUnitKg} kg/${t('perUnit')}` : null,
                     c.declaredAt,
                     c.sender,
+                    c.originCountry,
                   ]
                     .filter(Boolean)
                     .join(' · ')}
                 </span>
-              </button>
-              {/* His last and most specific ask was «nomlari yaxshiroq
-                  korinsin». Three clamped lines is ~250 characters of a name
-                  his file writes 500 of, and a hover title is the affordance
-                  that failed him — so the name opens IN PLACE. */}
-              {c.name.length > 160 ? (
+              </>
+            );
+            return (
+              <div key={c.id} className="rounded-xl border border-line">
                 <button
                   type="button"
-                  className="px-2 pb-1 text-2xs text-brand-600"
-                  data-testid="calc-import-name-more"
-                  onClick={() => setExpanded((v) => (v === c.id ? null : c.id))}
+                  className="block min-h-12 w-full p-2 text-left hover:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-60"
+                  data-testid="calc-import-candidate"
+                  // Listed so the VED sees what the file holds, but a unit the
+                  // law cannot hold would land the row in a conflict (0125).
+                  disabled={c.pickable === false}
+                  onClick={() => {
+                    onPick(target.itemId, {
+                      id: c.id,
+                      pricePerUnitUsd: c.pricePerUnitUsd,
+                      basis: c.basis,
+                    });
+                    onClose();
+                  }}
                 >
-                  {expanded === c.id ? t('importNameLess') : t('importNameMore')}
+                  {body}
                 </button>
-              ) : null}
-            </div>
-          ))
+                {/* His last and most specific ask was «nomlari yaxshiroq
+                    korinsin». Three clamped lines is ~250 characters of a name
+                    his file writes 500 of, and a hover title is the affordance
+                    that failed him — so the name opens IN PLACE. */}
+                {c.name.length > 160 ? (
+                  <button
+                    type="button"
+                    className="px-2 pb-1 text-2xs text-brand-600"
+                    data-testid="calc-import-name-more"
+                    onClick={() => setExpanded((v) => (v === c.id ? null : c.id))}
+                  >
+                    {expanded === c.id ? t('importNameLess') : t('importNameMore')}
+                  </button>
+                ) : null}
+              </div>
+            );
+          })
         )}
       </div>
 

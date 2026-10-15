@@ -26,6 +26,14 @@ import { AnnulReceiptForm } from './annul-form';
 import { annulPreview, mayAnnul } from '@/modules/wms/receipts/annul';
 import { AssignClient } from './assign-client';
 import { LotEditForm } from './lot-edit-form';
+import { CompositionPanel } from './composition-panel';
+import {
+  compositionsFor,
+  isPaperDocument,
+  lotTrucksFor,
+  mayWriteComposition,
+} from '@/modules/wms/receipts/lot-composition';
+import { isStale } from '@/modules/wms/receipts/composition-math';
 import { MarkLostForm, type LostBoxOption } from './mark-lost-form';
 import { DealLink } from './deal-link';
 import { receiptHasCompensation } from '@/modules/wms/finance/compensation-follow';
@@ -43,7 +51,7 @@ import { PrintLabels } from '@/components/print-labels';
 import { TasksPanel } from '@/components/tasks-panel';
 import { mayReadReceipt } from '@/modules/wms/receipts/read-door';
 import { listPartners } from '@/modules/wms/partners/service';
-import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
+import { maySeeStaffMoney, payerView } from '@/modules/wms/partners/staff';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { tillOptionsFor } from '@/modules/wms/costing/till-props';
 import { costSightFor, tillView } from '@/modules/wms/costing/cost-sight';
@@ -57,11 +65,26 @@ import { isBackdated, receivedDayBounds } from '@/modules/wms/receipts/received-
 import { palletDoorsFor } from '@/modules/wms/crates/service';
 import { ReceivedEditForm } from './received-edit-form';
 import { canLogInSql } from '@/modules/platform/users/login';
+import { lotCheckViewsFor, mayCheckLot, type LotCheckView } from '@/modules/wms/receipts/lot-check';
+import { telegramPhoneUrl } from '@/modules/platform/telegram/map-link';
+import { LotCheckPanel } from './lot-check-panel';
+import { isServerBehind } from '@/modules/platform/db/errors';
+import { mayReadThread } from '@/modules/wms/crm/thread-door';
+import { threadReadMarks } from '@/modules/wms/crm/thread';
+import { CargoThread } from '@/components/cargo-thread';
+import { ThreadSeen } from '@/components/thread-seen';
 
-export default async function ReceiptDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ReceiptDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ tarkib?: string; from?: string; qaytish?: string }>;
+}) {
   const actor = await getActor();
   if (!actor) redirect('/login');
   const { id } = await params;
+  const { tarkib: tarkibLot, from: fromBatch, qaytish } = await searchParams;
 
   const receipt = await db.query.receipts.findFirst({ where: eq(receipts.id, id) });
   if (!receipt) notFound();
@@ -82,6 +105,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
   if (!(await mayReadReceipt(actor, { id, warehouseId: receipt.warehouseId }))) notFound();
 
   const t = await getTranslations('receipts');
+  const tAny = await getTranslations();
   const tc = await getTranslations('common');
   const ta = await getTranslations('annul');
   const ts = await getTranslations('stock.statuses');
@@ -138,15 +162,60 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
       }
     : null;
 
-  const receiptFiles = await db
+  const receiptFileRows = await db
     .select({
       id: attachments.id,
       fileName: attachments.fileName,
       contentType: attachments.contentType,
       kind: attachments.kind,
+      createdAt: attachments.createdAt,
+      uploadedBy: attachments.uploadedBy,
     })
     .from(attachments)
     .where(and(eq(attachments.entityType, 'receipt'), eq(attachments.entityId, id)));
+  const receiptFiles = receiptFileRows.map(({ id: fileId, fileName, contentType, kind }) => ({
+    id: fileId,
+    fileName,
+    contentType,
+    kind,
+  }));
+
+  // Lot tarkibi (docs/LOT-TARKIBI.md §8): the paper compositions, the trucks
+  // whose papers already went, and who may state one. The page has already
+  // passed `mayReadReceipt`; the writer is the Bojxona tab's audience.
+  const compositions = await compositionsFor(lotIds);
+  const lotTrucks = await lotTrucksFor(db, lotIds);
+  const mayCompose = mayWriteComposition(actor.permissions);
+  const citedDocs = new Set([...compositions.values()].map((c) => c.attachment.id));
+  const paperDocs = receiptFileRows
+    .filter((f) => isPaperDocument(f, receipt))
+    .map((f) => ({ id: f.id, fileName: f.fileName, removable: f.uploadedBy === actor.id && !citedDocs.has(f.id) }));
+  // «Yuk ma'lumoti tekshirildi» (docs/YUK-TEKSHIRUV.md §6): every lot's
+  // face from the lists' own sentence, and who may tick. Caught: the table
+  // is minted this release (#472) — a card without its faces beats an error
+  // page on a half-applied deploy.
+  const lotChecks = await lotCheckViewsFor(lotIds).catch((err) => {
+    console.warn('[lot-check] views unavailable', err instanceof Error ? err.message : err);
+    return new Map<string, LotCheckView>();
+  });
+  const mayCheck = mayCheckLot(actor.permissions) && receipt.status === 'confirmed';
+  // The client's phones, for the person who rings: this reader has passed
+  // `mayReadReceipt`, which is the staff bot's own «cargo in reach» rule for
+  // showing a phone (bot/lookup.ts `maySeePhones`).
+  const checkPhones =
+    mayCheck && client
+      ? (Array.isArray(client.phones) ? (client.phones as unknown[]) : [])
+          .filter((phone): phone is string => typeof phone === 'string' && phone.trim() !== '')
+          .map((phone) => ({ tel: phone.trim(), telegram: telegramPhoneUrl(phone) }))
+      : [];
+  // «← Ostatka»: a worklist row on /stock opens this card carrying the way
+  // back, so the next unchecked prixod is one tap away — an installed app on
+  // an iPhone has no browser back button. Only a /stock address is honoured.
+  const backHref = qaytish && /^\/stock(\?|$)/.test(qaytish) ? qaytish : null;
+  const fromTruck =
+    fromBatch && tarkibLot
+      ? ((lotTrucks.get(tarkibLot) ?? []).find((truck) => truck.batchId === fromBatch) ?? null)
+      : null;
 
   // Who settled a cost is asked HERE too (owner: «skladchilar rasxodni
   // kiritganda kim tomondan berilgani yozilmayabti»). The warehouse enters
@@ -288,9 +357,28 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
   // «🧱 Palet qilish» per lot and warehouse (0112, Q10 d) — ONE grouped query.
   const palletDoors = receipt.status === 'confirmed' ? await palletDoorsFor(actor, lotIds) : [];
 
+  // «❓ Savol-javob» (round 2, 0129 — E6 c, E7 b): the prixod's staff thread,
+  // for the office and the staff of the warehouse where the cargo stands NOW.
+  // The thread's door, not the card's: the card admits every seller and the
+  // receiving warehouse for ever, the thread neither. A database a release
+  // behind keeps the rest of the card.
+  const cargoRef = { kind: 'receipt' as const, id };
+  let cargoThread = false;
+  try {
+    cargoThread = await mayReadThread(actor, cargoRef);
+  } catch (err) {
+    if (!isServerBehind(err)) throw err;
+  }
+  const readMarks = await threadReadMarks([...(cargoThread ? [cargoRef] : [])]);
+  const tth = await getTranslations('threads');
+
   return (
     <div className="space-y-6">
-      <BackLink href="/receipts" label={t('title')} />
+      {backHref ? (
+        <BackLink href={backHref} label={tAny('stock.title')} />
+      ) : (
+        <BackLink href="/receipts" label={t('title')} />
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-xl font-bold">
           <span className="font-mono">{receipt.number}</span>
@@ -442,7 +530,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
 
       <section className="space-y-3">
         {lots.map((lot) => (
-          <div key={lot.id} className="card !p-3">
+          <div key={lot.id} id={`lot-${lot.id}`} className="card scroll-mt-20 !p-3">
             <div className="flex items-baseline gap-2">
               <span className="font-mono text-2xl font-extrabold text-brand-700">{lot.letter}</span>
               <span className="font-semibold">
@@ -466,6 +554,39 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
               {lot.dimsMode === 'uniform' &&
                 ` · ${lot.boxLengthCm}×${lot.boxWidthCm}×${lot.boxHeightCm} cm`}
             </p>
+            {lotChecks.has(lot.id) && (
+              <LotCheckPanel
+                lotId={lot.id}
+                face={(() => {
+                  const view = lotChecks.get(lot.id)!;
+                  return {
+                    state: view.state,
+                    askable: view.askable,
+                    byDocument: view.byDocument,
+                    documentStale: view.documentStale,
+                    person: view.person
+                      ? {
+                          by: view.person.by,
+                          day: dayIn(view.person.at, warehouse.timezone),
+                          token: view.person.token,
+                          note: view.person.note,
+                          holds: view.person.holds,
+                          moved: view.person.moved,
+                        }
+                      : null,
+                  };
+                })()}
+                seen={{
+                  nameZh: lot.productNameZh,
+                  nameRu: lot.productNameRu ?? '',
+                  boxCount: lot.boxCount,
+                  clientId: receipt.clientId,
+                }}
+                canWrite={mayCheck}
+                canRename={canEdit}
+                phones={checkPhones}
+              />
+            )}
             {lot.note && <p className="mt-1 text-sm italic text-ink-500">📝 {lot.note}</p>}
             {lot.qrSkippedAt && (
               <p className="mt-1 text-sm font-semibold text-warn" data-testid="lot-qrless">
@@ -517,9 +638,45 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
             <div className="mt-2">
               <PhotoGallery photos={photosByLot.get(lot.id) ?? []} deletable={canEdit} />
             </div>
+            <CompositionPanel
+              lot={{
+                id: lot.id,
+                label: `${client?.clientCode ?? receipt.unclaimedMarking ?? '?'}-${lot.letter ?? ''}`,
+                boxCount: lot.boxCount,
+                kg: lot.totalWeightKg,
+                m3: lot.totalVolumeM3,
+              }}
+              receiptId={id}
+              composition={(() => {
+                const c = compositions.get(lot.id);
+                return c
+                  ? {
+                      rev: c.rev,
+                      seenBoxCount: c.seenBoxCount,
+                      lines: c.lines,
+                      attachment: c.attachment,
+                      savedBy: c.savedBy,
+                      savedDay: tashkentDay(c.savedAt),
+                    }
+                  : null;
+              })()}
+              stale={(() => {
+                const c = compositions.get(lot.id);
+                return c
+                  ? isStale(c, { boxCount: lot.boxCount, kg: lot.totalWeightKg, m3: lot.totalVolumeM3 })
+                  : false;
+              })()}
+              canWrite={mayCompose && receipt.status === 'confirmed'}
+              canClearOnly={mayCompose && receipt.status !== 'confirmed'}
+              documents={paperDocs}
+              frozenTrucks={(lotTrucks.get(lot.id) ?? []).filter((truck) => truck.frozen).map((truck) => truck.code)}
+              openOnLoad={tarkibLot === lot.id}
+              from={fromTruck && tarkibLot === lot.id ? { batchId: fromTruck.batchId, code: fromTruck.code } : null}
+            />
             {canEdit && (
               <div className="mt-2">
                 <LotEditForm
+                  hasComposition={compositions.has(lot.id)}
                   lot={{
                     lotId: lot.id,
                     dimsMode: lot.dimsMode,
@@ -557,7 +714,10 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
       <section className="card space-y-3">
         <div>
           <h2 className="mb-2 text-lg font-bold">{t('attachments')}</h2>
+          {/* Keyed on its files: a document uploaded from the lot tarkibi
+              editor refreshes the page, and the panel re-seeds with it. */}
           <AttachmentsPanel
+            key={receiptFiles.map((f) => f.id).join(',')}
             entityType="receipt"
             entityId={id}
             initial={receiptFiles}
@@ -569,8 +729,9 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
             <h2 className="mb-2 text-lg font-bold">{t('costs')}</h2>
             <CostPanel
               scope="receipt"
+              freight={null}
               targetId={id}
-              entries={costs.map(({ entry, typeName, partnerName, accountName }) => ({
+              entries={costs.map(({ entry, hasShare, typeName, partnerName, partnerIsStaff, accountName }) => ({
                 id: entry.id,
                 typeName,
                 amount: entry.amount,
@@ -578,15 +739,22 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
                 amountUsd: entry.amountUsd,
                 costDate: entry.costDate,
                 allocationBasis: entry.allocationBasis,
+                // Freight is a truck's own basis (docs/YOLKIRA-TAQSIMOT.md §4).
+                freight: null,
+                rebasable: false,
+                costTypeId: entry.costTypeId,
+                // Converted and on no box — any basis (`noShareSql`), the fact a truck's todo counts.
+                unsplit: entry.amountUsd !== null && !hasShare,
                 note: entry.note,
-                partnerName,
+                ...payerView(actor.permissions, { partnerName, partnerIsStaff }),
                 ...tillView(actor.permissions, { accountId: entry.accountId, accountName, mergedExpenseId: entry.mergedExpenseId }),
               }))}
               costTypes={costMeta.types}
               currencies={costMeta.currencies}
               clientOptions={client ? [{ id: client.id, clientCode: client.clientCode }] : []}
               defaultCurrency={warehouse.country === 'CN' ? 'CNY' : 'USD'}
-              canEdit={receipt.status === 'confirmed'}
+              canVoid={receipt.status === 'confirmed'}
+              canAdd={receipt.status === 'confirmed'}
               today={tashkentDay()}
               canUnmerge={mayPickTill(actor.permissions)}
               tillOptions={await tillOptionsFor(actor.permissions)}
@@ -677,6 +845,19 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
           }}
         />
       )}
+
+      {cargoThread ? (
+        <CargoThread threadRef={cargoRef} viewer={actor} />
+      ) : actor.warehouseScoped ? (
+        // A SCOPED person the card admits and the thread does not: the
+        // receiving warehouse after the cargo left, a scoped logist on such a
+        // card — one sentence instead of a silently missing panel. An
+        // unscoped non-reader (seller, VED, accountant) sees nothing (E7 b).
+        <p className="text-xs text-ink-500" data-testid="cargo-thread-elsewhere">
+          {tth('cargo.elsewhere')}
+        </p>
+      ) : null}
+      <ThreadSeen refs={readMarks} />
 
       <TasksPanel
         entityType="receipt"

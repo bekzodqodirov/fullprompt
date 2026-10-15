@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { lastQuotesByCode, type LastQuote } from '@/modules/wms/calc/history';
 import { priceBookForCodes } from '@/modules/wms/calc/dictionaries';
@@ -71,19 +70,36 @@ export async function LastQuotes({
                     ${price.priceUsd} / {price.unit === 'kg' ? t('unitKg') : t('unitM3')}
                   </span>
                 ) : null}
-                <Link
+                {/* A NEW TAB, and a plain anchor: the items table's drafts are client
+                    state guarded only by `beforeunload`, which a client-side
+                    navigation does not fire — a same-tab link would silently
+                    throw away every unsaved cell (the channel round, F10 a). */}
+                <a
                   className="text-2xs text-brand-700"
                   href={`/hisoblash/narxlar?kod=${encodeURIComponent(code)}`}
+                  target="_blank"
+                  rel="noopener"
                   data-testid="last-quote-more"
                 >
                   {t('historyTitle')} →
-                </Link>
+                </a>
               </p>
               {rows.length > 0 ? (
                 <ul className="text-2xs text-ink-600">
                   {rows.map((q) => (
                     <li key={q.versionId} className="flex flex-wrap gap-2">
-                      <span>{format.dateTime(q.sealedAt, { dateStyle: 'short' })}</span>
+                      {/* F10 a: the earlier calculation, one tap away for the VED who
+                          seals a repeat fast — in a NEW tab for the same reason as
+                          «narxlar» above. */}
+                      <a
+                        href={`/hisoblash/${q.requestId}`}
+                        target="_blank"
+                        rel="noopener"
+                        className="text-brand-700 underline"
+                        data-testid="last-quote-open"
+                      >
+                        {format.dateTime(q.sealedAt, { dateStyle: 'short' })}
+                      </a>
                       <span className="chip chip-neutral">
                         {t(SECTION_LABELS[q.section] as 'sections.podklyuch')}
                       </span>

@@ -59,6 +59,8 @@ test('a Готово figure becomes the floor: the card offers, the text hides i
   await page.getByTestId('calc-finish-open').click();
   await page.getByTestId('calc-answer-amount').fill('1000');
   await page.getByTestId('calc-answer-note').fill('gotovo e2e');
+  // 9a: the VED's internal note is required — never shown to the seller.
+  await page.getByTestId('calc-answer-internal').fill('ichki izoh e2e');
   await page.getByTestId('calc-finish').click();
   await expect(page.getByTestId('calc-answer')).toBeVisible({ timeout: 15_000 });
 

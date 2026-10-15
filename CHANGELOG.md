@@ -1,5 +1,793 @@
 # CHANGELOG
 
+## Yo'lkira xarajatini tarif bo'yicha taqsimlash — 2026-10-14
+
+**Migratsiya 0132** — deploydan keyin soni **133** bo'lishi shart.
+
+Sizning javoblaringiz: 1a 2c 3a 4a 5a, 6-savolga — 1 kubga 10 kg dan kam to'g'ri kelsa ogohlantirish, qolgani 1 kub uchun 100 kg dan kam tarif bilan. Ikki valyutadagi takroriy yozuv ogohlantirishini menga qoldirdingiz — u avvalgidek qoladi: dollarda 1 % va 3 kun.
+
+### 1. Mashina yo'lkirasi endi tarif bo'yicha bo'linadi
+
+Avval mashinaning yo'lkira xarajati mijozlarga **og'irlik** bo'yicha bo'linardi. Endi tanlash mumkin: **«yo'lkira tarifi bo'yicha»**.
+
+- Har bir mijozning shu mashinadagi butun yuki bitta guruh. Egasi noma'lum prixod — o'zi alohida guruh.
+- Har bir guruhning zichligi (kg/kub) hisoblanadi va **sizning tarifingizdagi qatori** topiladi. Masalan cn ustunida 600 kg/kub — 501–700 qatori, $300/kub.
+- Mijozning ulushi = tarif bo'yicha uning yukining qiymati ÷ hammaning qiymati. Masalan A 2 kub × $300 = 600, B 1 kub × $160 = 160, egasiz prixod 0.5 kub × $110 = 55. Jami 815. $350 lik yo'lkira: A $257.67, B $68.71, prixod $23.62.
+- Guruh 10 kg/kub dan yengil bo'lsa — **hisob saqlanadi, lekin bo'linmaydi** (⚠). Qaysi mijoz va qaysi lotni to'g'rilash kerakligi yoziladi, eng yengili birinchi. Lot to'g'rilanganda hisob o'zi bo'linadi — boshqa hech narsa bosish shart emas.
+- 10 kg/kub dan og'ir, lekin tarifning eng pastki qatoridan yengil bo'lsa — eng pastki qator bilan hisoblanadi (sizning «100 kg dan kam tarifda ketaversin» javobingiz).
+
+### 2. Har bir skladga «yo'lkira tarifi ustuni» (2c) — siz yozasiz
+
+- Boshqaruv → Skladlar → sklad → **«Yo'lkira tarifi ustuni»**: cn, kashgar yoki «—».
+- Mashina qaysi skladdan **jo'nagan** bo'lsa, o'sha skladning ustuni olinadi. Tizim o'zi taxmin qilmaydi.
+- **Bo'sh holda yetkaziladi.** Siz ustun yozmaguningizcha «yo'lkira tarifi bo'yicha» tanlab bo'lmaydi va hammasi avvalgidek og'irlik bo'yicha bo'linadi. Taklif: Yiwu va Guangzhou → cn, Qashqar → kashgar. O'zbekistondagi skladlar (Andijon → Toshkent ichki reyslari) — sizning qaroringiz: ustun yozilmasa, ularning mashinalari og'irlik bo'yicha qoladi.
+
+### 3. Hisob saqlangan kundagi tarif muzlatiladi (3a)
+
+- Hisob saqlanganda, o'sha sanadagi ustun va narxlar hisob yonida saqlanadi. Keyin tarifni o'zgartirsangiz yoki skladga boshqa ustun yozsangiz — eski hisob o'zgarmaydi.
+- Ekranda ko'rgan narsangiz saqlanadi: oldindan ko'rish bilan saqlash orasida kimdir tarifni yoki ustunni o'zgartirsa, saqlash so'z bilan rad etiladi va yangisini ko'rasiz.
+
+### 4. Faqat mashina hisobida, yo'lkira turida o'zi tanlanadi (4a)
+
+- «＋ Xarajat» bosilganda turi «Yo'lkira» bo'lsa, usul o'zi «yo'lkira tarifi bo'yicha» bo'lib turadi. Ostida kim qancha olishi darhol ko'rinadi: har bir mijoz, zichligi, tarif qatori, foizi va (pulni ko'radiganlarga) dollari.
+- Rastamojka turida bu usul yo'q. Prixod, yashik va zavod reysi xarajatlari o'zgarmaydi. Prixodlar jadvalidagi yo'lkira kataklari og'irlik bo'yicha qoladi.
+- Saqlangan qatorda: «yo'lkira tarifi bo'yicha · YW ustuni: cn · 2026-01-01 tarifi» va **«Qanday bo'lindi?»** — ochilganda har bir mijozning ulushi.
+- «Narx» varag'ida mijozning tannarxi ochilganda yo'lkira qatori qaysi tarif qatori bo'yicha bo'linganini ham aytadi.
+- VED, logist va sotuvchi qator va foizni ko'radi, dollarni ko'rmaydi.
+
+### 5. Eski hisoblar o'zgarmaydi — «Bo'lish usuli ✎» (5a)
+
+- Mashina hisobida yangi tugma: **«Bo'lish usuli ✎»**. Usulni tanlaysiz → «Ko'rish» → har bir mijoz uchun «hozir → yangi» (foiz va dollar) → **«Shu usulda saqlash»**.
+- Faqat bo'linish o'zgaradi. Summa, kurs, kim to'lagani, kassa va kontragent qarzi o'zgarmaydi.
+- Ko'rish bilan saqlash orasida yuk, tarif yoki ustun o'zgarsa — rad etiladi va yangi hisobni ko'rsatadi.
+- VED faqat o'zi yozgan hisobni o'zgartira oladi.
+
+### 6. Bo'linmagan hisob hamma joyda ko'rinadi
+
+Bo'linmagan (⚠) yo'lkira mijozlarning tannarxiga kirmaydi, shuning uchun u quyidagi joylarda aytiladi:
+- hisob qatorida «⚠ bo'linmagan»;
+- mashina Xarajatlari jamisida «shundan $… bo'linmagan»;
+- mashina kartasidagi vazifalarda;
+- «Narx» varag'ida — shu mashinaniki ham, yuki shu mashinaga o'tgan oldingi yoki keyingi mashinaniki ham («shu reysgacha: ⚠ to'liq emas»);
+- bosh sahifadagi «Diqqat» qatorida;
+- Balansda alohida qatorda;
+- Foyda-zarar (P&L) ostidagi ogohlantirishlarda — «qutisiz pul» qatoridan alohida, «bekor qiling» degan maslahatsiz;
+- «Mijoz foydasi»da — «yuki yo'q mashina» emas, alohida «tarif bo'yicha bo'linmagan yo'lkira» deb;
+- «Yuk tannarxi» hisobotida (ekranda ham, Excelda ham) — nechta hisob va qancha dollar;
+- bitim kartasidagi foydada — bitim yuki ortilgan qaysi mashinada bo'linmagan hisob borligi; bitim foydasi shuning uchun haqiqiydan yuqori ko'rinishi mumkinligi aytiladi.
+
+**Diqqat:** hisob bo'linmay turgan paytda Balansdagi «Sof holat» narxi yozilmagan yukning shu hisobdagi ulushiga kamroq ko'rinadi. Lot to'g'rilanganda qaytadi. Bunday hisobni bekor qilmang — lotni to'g'rilang yoki «Bo'lish usuli» bilan boshqa usulga o'tkazing.
+
+### 7. Yo'l-yo'lakay topilgan xatolar
+
+- **«Rastamojka turlari» sozlamasi hech qachon o'qilmagan.** Bu ro'yxatni o'zgartirsangiz ham, tizim har doim faqat «customs» turini rastamojka deb hisoblardi. Endi siz yozgan ro'yxat o'qiladi. Siz uni o'zgartirmagan bo'lsangiz, hech narsa o'zgarmaydi.
+- **«Narx» varag'i telefonda kengayib ketardi.** Egasi noma'lum prixodning uzun markirovkasi (bo'shliqsiz 40+ harf) qatorni sindirmasdi va telefon butun sahifani kichraytirib qo'yardi. Endi markirovka qatorga sig'adi.
+- **«Yuk tannarxi» hisoboti ham telefonda kengayib ketardi** — uzun mijoz ismlari qatorga bo'linmasdi. Endi ism keyingi qatorga o'tadi.
+
+### 8. Tekshiruvda topilib tuzatilganlar
+
+Qurilgandan keyin ikki marta tekshirildi (avval qurilgani, keyin tuzatishlarning o'zi):
+- Juda katta lotda (masalan 500 karobka) bo'linmagan hisob ogohlantirishida kub va kg «NaN» bo'lib chiqishi mumkin edi — tuzatildi.
+- Rastamojka turiga o'tkazilgan, lekin hali bo'lingan yo'lkira hisobi «bo'linmagan» deb ko'rsatilardi — endi pul qayerda turgan bo'lsa, shuni aytadi.
+- «Bo'lish usuli ✎»: ko'rish bilan saqlash orasida hozirgi bo'linish o'zgarsa ham saqlash rad etiladi va yangisi ko'rsatiladi.
+- Narx sahifasi tezlashdi: 2 000 karobkali mashinada 745 ms → 83 ms. Karobkalari oldin 20 ta mashinada yurgan va har birida bo'linmagan hisob bor holatda esa 8–10 soniya → 1,6 soniya.
+- Mijozga to'g'ridan-to'g'ri yozilgan xarajat boshqa mashinaning «Narx» sahifasida noto'g'ri qo'shilib ketishi tuzatildi.
+- Hali yuk ortilmagan (yoki yuki to'liq omborga qaytgan) mashinaga yozilgan yo'lkira hisobi «bo'linmagan — bekor qilmang» deb ko'rsatilmaydi: u oddiy «yuki yo'q mashina» xarajati bo'lib qoladi. Yuk ortilganda o'zi bo'linadi, yuk umuman bo'lmasa — tekshirib, kerak bo'lsa bekor qilasiz.
+- Bitim kartasi bo'linmagan hisobli mashinalarni hisob qaysi karobkalarga bo'linsa, o'sha karobkalar bo'yicha topadi: skanersiz yurgan karobkaning mashinasi ham chiqadi, omborga qaytgan karobkaniki chiqmaydi.
+
+### O'rnatish (deploy)
+
+1. Zaxira oling (0 bayt emasligini tekshiring).
+2. PR'ni merge qiling, keyin serverda `git pull`, `docker compose build migrate`, keyin `docker compose --profile https --profile telegram up -d --build`.
+3. **Migratsiyalar sonini sanang: 133 bo'lishi kerak.** Kamroq bo'lsa, `docker compose run --rm migrate` ning o'z chiqishini o'qing.
+4. Har bir skladga ustun yozing (2-bo'lim). Yozmaguningizcha hech narsa o'zgarmaydi — hamma yo'lkira avvalgidek og'irlik bo'yicha bo'linadi.
+
+**Orqaga qaytish kerak bo'lsa:** 0132 dan pastga qaytishdan oldin `docker compose run --rm migrate pnpm freight-to-weight --apply`. Bu barcha «tarif bo'yicha» hisoblarni og'irlikka o'tkazadi. Batafsil — `docs/UPDATE.md`, «Agar biror narsa buzilsa» bo'limi.
+
+### Hali qilinmagan (aytib qo'yaman)
+
+- Pulga ta'siri o'lchanmagan: bu yerdagi nusxalarda hamma lot bir xil zichlikda. Kim ko'proq, kim kamroq to'lashini sizning serveringizdagi faqat o'qiydigan so'rov ko'rsatadi. Yo'nalishi: og'irlikdan tarifga o'tganda zich yukdan yengil yukka xarajat ko'chadi.
+- Qashqardan jo'nagan mashinadagi Yiwu yuki kashgar ustuni bo'yicha bo'linadi (2c). VED esa uni cn bo'yicha hisoblagan bo'lishi mumkin.
+- Hali jo'namagan mashinadagi bo'linmagan hisob mashina kartasida, Xarajatlarda, «Narx»da va «Partiya foydasi»dagi bo'linmaganlar ro'yxatining «hali jo'namagan» qismida ko'rinadi, lekin bosh sahifadagi «Diqqat» qatorida ko'rinmaydi.
+- Hisobning tarixida (Boshqaruv → Audit) muzlatilgan tarif narxlari yoziladi. Audit sahifasi faqat sizga va adminlarga ochiq.
+- Ekranlar tekshirildi: telefonda (360) va kompyuterda (1280), sahifa ekrandan kengaymaydi.
+
+## «Pul qayerga ketdi» sahifasi va umumiy joydan partiyaga xarajat kiritish — 2026-10-14
+
+**Migratsiya yo'q** (soni 132 bo'lib qoladi). Tekshirish: `curl -s https://gsrwms.uz/api/version` — build vaqti yangilanishi kerak.
+
+Sizning so'rovingiz: «moliya bo'limida shunday sahifa kerak — qayerda qanday rasxod bo'layotganini bitta sahifada ko'radigan, va partiyalarga bo'layotgan rasxodni umumiy joydan ham kiritish imkoniyati». Javoblaringiz: «Hammasi ⭐»; 3-savolda yo'nalish bo'yicha guruh kerak emas; 6-savolda — saqlashdan oldin ogohlantirsin.
+
+### 1. Yangi sahifa: Moliya → «Sarflar» (`/accounting/sarflar`)
+
+Faqat siz, adminlar va buxgalter ko'radi. VED, sotuvchi va logist ko'rmaydi.
+
+- **Davr:** «Bu oy» (odatiy), «O'tgan oy», «Yil boshidan» yoki o'zingiz tanlagan sanalar. Hisob xarajatning o'z sanasi bo'yicha — Foyda-zarar va bosh sahifadagi «Xarajat» bilan aynan bir xil raqam.
+- **Jami xarajat** tepada katta yozilgan, o'tgan davrga nisbatan ▲▼ bilan. Ostida uch qism: yuk xarajatlari, umumiy xarajatlar va kurs farqi. Uchalasi qo'shilganda jamiga teng chiqadi.
+- **«Qayerga»:** yuk xarajati — partiyalar, prixodlar, yashiklar, zavod reysi; umumiy xarajat — turlari bo'yicha.
+- **«Partiyalar»:** har bir mashina alohida qator — shu davrda yozilgan summa va butun umri bo'yicha jami. Belgisi bilan: «ichki reys · faqat tannarx», «davomi», «💰 foyda hisobi». Yo'nalish bo'yicha guruh yo'q — sizning 3-javobingiz.
+- **«Sklad bo'yicha»:** prixod xarajati qabul qilingan skladda, zavod reysi borgan skladda, yashik o'ralgan skladda, umumiy xarajat o'z skladida. Mashina puli hech qaysi skladga qo'yilmaydi — u «Partiyalarda» qatorida turadi.
+- **«Kim to'ladi»:** kassadan, hodim o'z pulidan, qarzga (kontragent), hisob yozuvi, kassasi hali aytilmagan, kassasiz yozilgan xarajat.
+- **Har bir bo'lim jamlanganda kitobdagi jamiga sentigacha teng chiqadi.** Bu Foyda-zararning o'zi bilan solishtirib testlangan.
+- **Kursi yo'q pul hech qachon «$0.00» deb yozilmaydi** — «kurs yo'q» deb yoziladi.
+- **«Tekshiring»:** ikki marta yozilgan bo'lishi mumkin bo'lgan yozuvlar, to'lanmagan oylik/ijara va kiritilmagan rasxod xabarlari. Har bir juftda ikkala yozuv ko'rinadi: sana, summa, turi, partiya yoki prixod. Agar bu ikki xil to'lov bo'lsa — **«✓ Ikki xil pul»** tugmasini bosasiz va u ro'yxatdan chiqadi (buxgalter va adminlar bosa oladi).
+- **Ro'yxat:** hamma yozuvlar, eng yangisi tepada, 100 tadan sahifa. Kitob, turi, sklad, joy, kim to'ladi va «faqat men yozganlar» bo'yicha filtr. Excel (XLSX) yuklab olish mumkin. Umumiy xarajat qatorlari (masalan oyliklar) faqat buxgalterga ko'rinadi, boshqalar ularning jamisini ko'radi.
+
+### 2. Umumiy joydan partiyaga xarajat: «＋ Partiyaga xarajat»
+
+- Sarflar sahifasidagi tugma `/accounting/sarflar/kiritish` ga olib boradi.
+- Mashinalar ro'yxati: ochiq mashinalar, eng yangisi tepada. Qidiruv bilan yopilganini ham topish mumkin — u «⚠ yopilgan» deb belgilanadi. Bekor qilingan mashina hech qachon chiqmaydi.
+- Mashinani tanlaysiz, hisobni yozasiz, saqlaysiz. **Forma ochiq qoladi:** turi, valyuta, sana va kim to'lagani keyingi hisob uchun saqlanadi. Boshqa mashinaga o'tsangiz ham saqlanadi. Faqat summa va izoh tozalanadi. Turi odatda «Yo'lkira» bo'lib turadi (mashina sahifasida ham).
+- Telefonda tanlangan mashinaning formasi ro'yxatdan oldin chiqadi.
+- Pastda «Bugun men kiritganlar» ro'yxati turadi. Boshqa oyga yozilgan hisob o'sha oyga havola bilan ko'rsatiladi.
+
+### 3. Saqlashdan oldin ogohlantirish: «⚠ Bu pul allaqachon yozilgan bo'lishi mumkin» (6-javobingiz)
+
+- Mashina yoki prixod hisobini yozayotganda, xuddi shu pul «Xarajatlar»da allaqachon yozilgan bo'lsa — yoki aksincha — saqlashdan OLDIN ogohlantiradi. Qaysi kitobda, qaysi sana, qaysi kassa va kim yozganini aytadi, va qanday tuzatishni: birlashtirish, bittasini bekor qilish yoki qarz to'lovi sifatida yozish.
+- **Bitta valyutada** summa sentigacha teng bo'lsa. **Bitta kassada** — kassadan chiqqan summa sentigacha teng bo'lsa (dollar hisob va so'm xarajat ham topiladi).
+- **Boshqa valyutada** — faqat dollarda 1 % ichida va 3 kun ichida bo'lsa (masalan bojxona: dollarda yozilgan, o'sha kunlari so'mda to'langan). Bunday qator «≈ dollarda yaqin» belgisi bilan chiqadi. Avvalgi kengroq qoida (2 % yoki $5, ikki hafta) tasodifiy pullarni ham «bir xil» deb chiqarardi — masalan $40 lik tushirish va 470 000 so'mlik suv puli.
+- Kursi yo'q pul bo'lsa: «kursi yo'q — solishtirib bo'lmadi» deb aytadi.
+- Siz baribir saqlay olasiz: «Baribir saqlash» tugmasi bor. Yozganlaringiz o'chib ketmaydi.
+- Bu xarajat formasida, mashina sahifasidagi xarajatda va prixodlar jadvalida ishlaydi.
+
+### 4. Xatolar tuzatildi
+
+- **Bekor qilingan mashinaga xarajat yoki narx yozib bo'lardi.** Mashinani bekor qilish va unga hisob (yoki mijoz narxi) yozish bir vaqtda bosilsa, ikkalasi ham o'tib ketardi. Endi bunday bo'lmaydi: yo hisob avval yoziladi va bekor qilish rad etiladi, yo bekor qilish avval o'tadi va hisob rad etiladi. Bekor qilingan mashinada «＋» tugmasi ko'rinmaydi, 🗑 esa qoladi.
+- **Prixod xarajatini qo'lda yasalgan so'rov bilan mashinaga yoki qabul formasi orqali yozib bo'lardi.** Endi har bir xarajat faqat o'z joyiga, faqat xarajat eshigidan yoziladi.
+- **Mashina sahifasidagi «mijozga to'g'ridan-to'g'ri» ro'yxati mashina tushirilgandan keyin bo'sh qolardi.** Endi ro'yxat mashinaga ortilgan yuklardan olinadi.
+- **Hodim o'z pulidan to'lagan xarajatda hodimning ismi** endi faqat buxgalter va adminlarga ko'rinadi (hamma xarajat kartalarida).
+
+### Hali qilinmagan (aytib qo'yaman)
+
+- Bir nechta mashina yoki bir nechta kun bo'yicha yig'indi solishtirilmaydi — faqat bitta mashinaning bitta kuni va prixodlar jadvalining bitta varag'i.
+- «Tekshiring» bo'limidagi son faqat juftlarni sanaydi. Bir nechta hisob birgalikda bitta xarajatga teng bo'lsa, buni faqat saqlash paytidagi ogohlantirish aytadi.
+- Kassada kurs bilan almashtirilgan pul 1 % dan ko'p farq qilsa yoki 3 kundan uzoq bo'lsa ogohlantirilmaydi — u «Xarajat kassasi» navbatida ko'rinadi.
+- Rasxod xabarini mavjud mashina hisobiga yopish (8-savol) qilinmadi. Ogohlantirish oynasida qanday yopilishi yozilgan.
+- Yo'lkira tarifi bo'yicha taqsimlash sizning 6 ta javobingizni kutyapti.
+
+## Rastamojka: to'rtta ⭐ javobingiz kodda mahkamlandi — 2026-10-13
+
+**Migratsiya yo'q** (soni 132 bo'lib qoladi). Tekshirish: `/api/version`.
+
+Siz «Ha, sen to'g'ri degandek qil» dedingiz. To'rttala qoida kodda aynan shunday ishlayotgani tekshirildi:
+
+1. **Qatordagi og'irlik — netto.** Hisob shunday ishlardi, lekin telefonda og'irlik katagi «Og'irligi, kg» deb turardi. Endi u ham kompyuterdagidek «Netto, kg» deydi, to'rt tilda. Faqat ko'rish uchun ochiladigan tovarlar jadvalida ham «kg» o'rniga «Netto, kg» yoziladi.
+2. **Aksiz: yo'q / foiz / $ har birlikka** — o'zgarishsiz. Aksiz qatori aksiz bo'lishi mumkin bo'lgan kodlarda (pivo, vino, sigaret, yoqilg'i, avtomobil) va aksizi allaqachon yozilgan guruhda chiqadi. Telefonda aksiz katagi yo'q — uni kompyuterda kiritasiz.
+3. **«Kamida $X» boj kod bo'yicha jami olinadi** (deklaratsiyada bitta qator). Hisob shunday edi, lekin buni hech qaysi test qo'riqlamasdi. Endi qo'riqlaydi: bitta kod ostida $20 lik va $5 lik oyoq kiyim bo'lsa, boj $600 (har qatorni alohida hisoblaganda $700 chiqardi).
+4. **Sertifikat bo'lmasa, qo'shimcha boj kodning nominal foizidan olinadi.** Bu ham test bilan mahkamlandi: 6907 kafelda (15 %, kamida $1/m²) qo'shimcha boj +10 % bo'ladi, +20 % emas.
+
+## Rastamojka kalkulyatori tuzatildi: TNVED, dona, kg, m², juft — har biri o'z joyida — 2026-10-13
+
+**Migratsiya 0131.** O'rnatgandan keyin migratsiyalar soni **132** bo'lishi kerak.
+
+Bu sizning ikki xabaringiz: «tnved code va dona m2 juftda o'tadigan tovarlarni kiritadigan joyi yo'q» va «kg hamda donani birga kiritadigan tovarlar bor … hatolik ketmasin». Avval kalkulyator ikki marta to'liq tekshirildi: tovar kiradigan har bir joy va hisobning o'zi. 66 ta xato tasdiqlandi, hammasi tuzatildi.
+
+### 1. Asosiy xato: son noto'g'ri ustunda turardi
+
+- **Sotuvchi «Kafel 120 m2» yozsa**, tizim 120 ni DONA ustuniga qo'yib, yoniga «m2» deb yozib qo'yardi. Hisob esa uni 120 dona deb o'qirdi. «Kurtka 500 kg» ham xuddi shunday 500 dona bo'lib qolardi.
+- **Endi har bir son o'z birligi aytgan ustunga tushadi:** dona → Dona, kg → Netto kg, m³ → kub, m²/juft/litr/sm³ → O'lchov.
+- **«20 karobka» yoki tushunarsiz so'z** hech qaysi hisob ustuniga tushmaydi. Qator izohiga «sotuvchi: 20 karobka» deb yoziladi va dona soni so'raladi.
+
+### 2. kg va dona birga kerak bo'ladigan tovarlar
+
+- **Masalan:** kurtkaning bazasi kg bo'yicha, boji esa «20 %, kamida $3/dona». Bunday tovarga ikkala son kerak — og'irligi ham, soni ham. Yoki stol: baza dona bo'yicha, boj «15 %, kamida $0.4/kg».
+- **Endi jadval yetishmayotgan katakni oldindan sariq ramka bilan belgilaydi:** «kerak», sababi bilan — masalan «boj kamida $3/dona». Telefonda sabab katak ostida yoziladi.
+- **Hisob qila olmasa**, endi aniq qaysi qator va qaysi son yo'qligini aytadi: «3-qator «Kurtka»: soni (dona) kiritilmagan — boj kamida $3/dona». Avval faqat «o'lchov yo'q» derdi.
+
+### 3. Tovar kiradigan har bir joy (sotuvchi, bot, Excel, AI)
+
+- **Sotuvchi kartadagi formada endi jadval ko'radi:** tovar nomi · TNVED (bilsa) · dona · netto kg · O'lchov (m²/juft/litr) · m³. Excel'dan nusxa olib qo'yish mumkin. Tushunarsiz son bo'lsa («1,200» — 1.2 mi yoki 1200 mi?), forma ikkita tugma bilan so'raydi.
+- **Bot** «1 200 kg», «120 ta juft», «300 dona 150 kg» ni to'g'ri o'qiydi. Birliksiz «50» yozilsa, tugmalar bilan qaysi birlik ekanini so'raydi. TNVED kod endi hech qachon og'irlik bo'lib qolmaydi. «➕ Yana ma'lumot» bosilganda oldingi javoblar saqlanadi.
+- **Bot TNVED kodli qatorda** shu kodning qonuniga qarab so'raydi: 9403 stol uchun «netto og'irligi necha kg?».
+- **Excel invoysdagi TNVED ustuni** endi yo'qolmaydi. «Кол-во, кг» ustuni og'irlik deb o'qiladi.
+- **Excel 0 ni yo'qotgan 9 xonali kod** (masalan, 0901 qahva 901… bo'lib qolgan) endi to'ldiriladi. Aks holda u boshqa tovar (9011 mikroskop) bo'yicha hisoblanib ketardi.
+- **Umumiy og'irlik va hajm** (brutto, mashina uchun) rastamojka so'rovida ham so'ralaveradi: sotuvchining upsale haqi shularga qarab hisoblanadi. Qatordagi og'irlik esa endi «netto» deb yoziladi.
+
+### 4. Hisobning o'zidagi tuzatishlar
+
+- **Qonunning «kamida $X» qismi yo'qolmaydi.** Lug'atga kod o'rgatilganda (teach) «20 %, kamida $3/juft» shakli saqlanadi. Lug'at o'zgarsa, guruhda «lug'at o'zgardi» deb chiqadi va yangisini olish tugmasi bor.
+- **Qisqa kod** (masalan 8528) ostida boshqa stavkali kodlar bo'lsa, «to'liq 10 xonali kodni yozing» degan ogohlantirish chiqadi.
+- **Aksiz kiritiladi:** har bir guruhda «Aksiz: yo'q / foiz / $ har birlikka». Pivo, vino, sigaret, yoqilg'i va avtomobil kodlarida «aksiz bo'lishi mumkin» degan eslatma chiqadi.
+- **Sertifikatni har bir guruhda alohida belgilash mumkin:** «so'rovdagidek / bor / yo'q».
+- **Bojxona yig'imi (BHM):** hisob qanday chiqqani ko'rinadi — «2.5 BHM × 412 000 so'm ÷ 12 650 (kurs 09.10.2026)». So'm kursi bo'lmasa, yig'imni qo'lda yozish joyi o'sha yerda chiqadi.
+- **Muhrlash ekranda ko'ringan yig'im bilan bo'ladi.** Shu orada kurs o'zgarsa, muhr «qaytadan ko'ring» deydi.
+- **Kodsiz qator bor ekan, JAMI chiqmaydi.** Avval kodsiz qatorni hisobga olmay kamroq summa ko'rsatardi.
+- **Yaxlitlash va yig'im pog'onasi** endi aniq sentgacha to'g'ri. 0 baza va 100 % dan katta stavka qabul qilinmaydi.
+- **Muhrlangan hisob varag'ida** boj shakli, aksiz va yig'imning qanday chiqqani yoziladi. Qismlar yig'indisi jamiga teng (test tekshiradi).
+
+### 5. VED jadvali
+
+- **«avto» birlik endi ekranda ham Saqlashdagidek** — qatorda faqat kg bo'lsa «avto · kg», m² bo'lsa «avto · m²». Narx qaysi birlikka yozilgan bo'lsa, o'shanga saqlanadi, jimgina boshqa birlikka o'zgarmaydi.
+- **Ustun nomlari:** «Dona», «Netto, kg», «TNVED». 📦 belgisi olib tashlandi, chunki boshqa hamma joyda u karobkani bildiradi.
+- **Yangi qatorda O'lchov uchun birlik tanlanadi** (m²/juft/litr/sm³), hali kod bo'lmasa ham. Kod kiritilgach son saqlanib qoladi.
+- **Kod o'zgartirilganda** jonli summa Saqlashdan keyingi summa bilan bir xil bo'ladi. Yangi kod yoki yangi qator bo'lsa, summa o'rniga «Kod yangi — Saqlang» deydi.
+- **Eski so'rovlardagi qatorlar:** «120» dona ustunida, yonida sotuvchining «m2» so'zi bo'lsa, jadval Saqlashdan oldin ogohlantiradi — «Sotuvchi «120 m2» yozgan… Saqlashda m² ustuniga o'tadi». Shunday qator turganda ✅ va muhrlash Saqlashni kutadi.
+  - **«Bu dona»** tugmasi sonni dona deb qoldiradi.
+  - **«Bu karobka»** tugmasi sonni o'chiradi, keyin haqiqiy donasini yozasiz.
+  - Narx yozilgan yoki ✅ qilingan qatorga tizim tegmaydi.
+- **O'z kodi turgan guruhdan boshqa bo'lgan qator** (eski ✨ AI guruhlashidan qolgan: masalan 6403 kodli tovar 6402 guruhida). Jonli summa uni Saqlashdan keyin tushadigan guruhda hisoblaydi. Shunday qator turganda «Saqlash» tugmasi faol bo'ladi, telefonda ham. ✅ va muhrlash Saqlashni kutadi — muhr ekrandagi summadan boshqa summaga bosilmasin.
+
+### 6. O'zgartirilmaganlar (bilib qo'ying)
+
+- **«Kamida $X» boj** har bir TNVED kod bo'yicha jami hisoblanadi — deklaratsiyadagi bitta qatordek. Hozir ham shunday edi.
+- **Sertifikatsiz qo'shimcha boj** kodning nominal foizi bo'yicha olinadi. Boj imtiyozi (lgota) bo'lsa, u ham olinmaydi.
+- **QQS** hammaga 12 %. Imtiyoz guruhdagi belgi orqali beriladi.
+- **Bojxona import faylidagi 9 xonali MATN kod** endi o'tkazib yuboriladi. U «o'tkazib yuborildi» soniga kiradi va noto'g'ri sarlavhaga ulanmaydi.
+
+### O'rnatish (deploy)
+
+1. Zaxira oling (0 bayt emasligini tekshiring).
+2. `git pull`, keyin `docker compose build migrate`, keyin `docker compose --profile https --profile telegram up -d --build`.
+3. **Migratsiyalar sonini sanang: 132 bo'lishi kerak.** Kamroq bo'lsa, `docker compose run --rm migrate` ning o'z chiqishini o'qing.
+4. `curl -s https://gsrwms.uz/api/version` — bugungi sana.
+5. Ochiq hisob-kitoblarda eski qatorlar sariq ogohlantirish bilan chiqadi — VED Saqlash bossa tuzaladi.
+
+## Prixod va mashina kartasida savol-javob; o'rnatish paytida bot xabarlarni yo'qotmaydi — 2026-10-08
+
+**Migratsiyalar 0129 va 0130.** O'rnatgandan keyin migratsiyalar soni **131** bo'lishi kerak.
+
+Bu sizning «Hammasiga ha» javobingiz: oldingi uch to'lqindagi barcha savollar ⭐ varianti bo'yicha. E (xodimlar chati) ning 2-raundi va 5a (o'rnatish paytidagi xabarlar) qurildi.
+
+### 1. Prixod va mashina kartasida «❓ Savol-javob» (E6 c, E7 b, 4a)
+
+- **Prixod kartasida va mashina kartasining «Ichidagilar» bo'limida** savol-javob qutisi bor. Hozircha faqat matn (E10 a).
+- **Logist yoki admin yozsa**, savol yuk HOZIR turgan skladning hodimlariga Telegramda boradi. Har bir xabar boradi.
+  - Yo'ldagi yuk bo'lsa — jo'natgan va qabul qiladigan ikkala skladga.
+  - Hammasi topshirilgan yoki skladda «yo'qolgan» deb yozilgan prixod — o'sha skladga. Hech narsasi qolmagan prixod — qabul qilgan skladga.
+  - Mashina: yuklanayotganda — jo'natgan sklad; yo'lda — ikkalasi; tushirilgach — qabul qilgan sklad (yo'qolgan karobka hal bo'lguncha jo'natgan sklad ham).
+- **Sklad hodimi yozsa**, xabari har safar barcha logistlarga boradi.
+- **Kim o'qiydi:** logistlar, rahbarlar (admin, super_admin) va yuk turgan skladning hodimlari. Sotuvchi, VED va buxgalter ko'rmaydi. @ bilan chaqirilgan odam faqat Telegramdan javob yoza oladi.
+- **Rahbarlar** hammasini o'qiydi, lekin Telegram xabarini faqat yozishmada qatnashsa yoki @ bilan chaqirilsa oladi.
+- **Yuk boshqa skladga o'tgach**, oldingi sklad hodimi bu yozishmani endi ko'rmaydi. Unga ilgari kelgan havola «topilmadi» ochishi mumkin — bot buni so'z bilan aytadi.
+- **Xitoy sklad hodimlari** xabar ramkasini (📍 yuk qayerda, tugmalar) o'z tilida o'qiydi. Hamkasbning yozgan matni tarjima qilinmaydi.
+- **«👥 Ichki»** pastki panelda endi sklad hodimlarida ham bor.
+- **Skladga hodim biriktirilmagan bo'lsa**, u yerga hech narsa bormaydi va yozgan odamga «⚠ TAS1: biriktirilgan hodim yo'q — u yerga xabar bormadi» deyiladi.
+
+### 2. O'rnatish paytida bot xabarlarni yo'qotmaydi (5a)
+
+- **Bot o'chiq paytida** (yangilash 1-2 daqiqa) yozilgan javob, bosilgan tugma va mijozning xabari endi yo'qolmaydi — bot qaytganda bajariladi.
+- **Bir narsa ikki marta bajarilmaydi.** Tugma 5 marta bosilsa ham bir marta javob beriladi; «⏰ Ertaga», «📤», «🔍 Qidirish» bitta xabarda bir marta bajariladi.
+- **Bot «Natijani yozing» deb so'ramasdan oldin** yozilgan matn javob hisoblanmaydi: bot qaytganda savolini beradi va «⏸ … qaytadan yuboring» deydi. Boshqa narsa uchun yozilgan matn vazifani yopib qo'ymaydi.
+- **Bot tushunmagan, bot o'chiq paytida yozilgan xabar** (forward, fayl) uchun bitta «⏸ Bu xabar bot yangilanayotgan paytda yozilgan…» gapi chiqadi. AI ga savol ketmaydi.
+- **Kech yetgan xabar** (5 daqiqadan ko'p) «🕒 Yozilgan: …» qatori bilan keladi, kartada esa yozilgan vaqtida turadi.
+- **Bosilgan tugma bot qaytgan vaqtda bajariladi.** Masalan, qarzga «✅ Ruxsat» bot qaytganda beriladi va muddati o'shandan hisoblanadi.
+- **Yangilashda bot o'zini to'xtatishi 5 soniyagacha kutadi** (odatda 0,3 soniya) — deploy sekinlashmaydi.
+- **Ishdan bo'shagan hodim** botdagi eski kod bilan endi ulana olmaydi.
+
+### 3. Yo'l-yo'lakay tuzatilganlar
+
+- **Narx kanali posti:** sotuvchi tovar nomiga bitim kodi (B-000124), mijoz kodi, markirovka yoki telefon yozsa, endi hammasi olib tashlanadi. Avval bitim kodi postda qolardi va istalgan sotuvchi bitimni ochib, mijoz kimligini bilib olardi. Partiya kodi (YW-045) qoladi — u mijozni aytmaydi.
+- **VED botdan notanish odam uchun hisoblatsa**, bot javobida endi u ocha oladigan hisob sahifasiga havola beriladi (avval ochilmaydigan lid sahifasiga edi).
+- **VED kartadagi hisob panelida ham** «tannarx yoki muhrlangan narxni yozmang» ogohlantirishini ko'radi (1-savol ⭐).
+- Qolgan ⭐ javoblaringiz kodda allaqachon shunday edi — endi har biri testga mahkamlandi, o'zgarsa test qizil bo'ladi.
+
+### O'rnatish (deploy)
+
+1. Zaxira oling (0 bayt emasligini tekshiring).
+2. `git pull`, keyin `docker compose build migrate`, keyin `docker compose --profile https --profile telegram up -d --build`.
+3. **Migratsiyalar sonini sanang: 131 bo'lishi kerak.** Kamroq bo'lsa, `docker compose run --rm migrate` ning o'z chiqishini o'qing.
+4. `curl -s https://gsrwms.uz/api/version` — bugungi sana.
+5. `docker compose logs app` da eski konteynerdan `telegram bot stopped`, keyin `telegram bot polling started` chiqishi kerak. Birinchi daqiqalarda `[bot] press answered late` qatorlari — o'rnatish paytida bosilgan tugmalar bajarilyapti, bu kutilgan.
+6. **Eski (rollback) serverda `app` o'chiq tursin.** Endi ikkita bot bir tokenda ishlasa, ikkinchisi to'plangan xabarlarni o'z eski kodi bilan bajarib yuboradi.
+7. **Toshkent, Andijon va boshqa skladlar savolni eshitishi uchun:** /admin/users da har bir sklad xodimiga «Skladchi» yoki «Sklad mudiri» roli berilgan va o'z skladi belgilangan bo'lsin. Logistga sklad roli bersangiz, u faqat o'sha skladdagi yukni ko'radigan bo'ladi.
+
+## Xodimlar ichki savol-javobi va narx kanali — 2026-10-07
+
+**Migratsiyalar 0127 va 0128.** O'rnatgandan keyin migratsiyalar soni **129** bo'lishi kerak.
+
+Bu sizning **E** (xodimlar chati, 1-raund) va **F** (narx kanali) javoblaringiz. Prixod va mashina kartasidagi savol-javob (E6 c ning ombor qismi, E7 b) — 2-raundda.
+
+### 1. Ishning o'z kartasida savol-javob (E)
+
+- **Savol ishning o'zida turadi:** lead, bitim, mijoz kartasida yoki bitta hisob-kitobning sahifasida. Alohida «shaxsiy chat» va umumiy xona yo'q (E1 a) — umumiy savollar Telegramda va «➕ Topshiriq»da qoladi.
+- **Telegramda xabarga javob yozsangiz (swipe-reply), javob o'sha kartaga qaytib tushadi.** Xabar ostida «💬 Javob yozish» tugmasi ham bor.
+  - VED o'zining «Hisoblash: …» topshirig'iga javob yozsa — bu sotuvchiga savol bo'lib, o'sha hisob-kitob ostida chiqadi, topshiriq ochiq qoladi (E3 a). VED topshirig'ida «❓ Sotuvchidan so'rash» tugmasi ham bor.
+  - Oddiy topshiriq xabariga javob — topshiriq bergan kishiga savol, topshiriq ochiq qoladi (E4 a).
+  - Hozircha faqat matn — rasm va fayl keyingi raundda (E10 a).
+- **Hisob-kitob sahifasida faqat shu hisob-kitobning savol-javobi** (E5 a). Lead va bitim kartasida «❓ Savol-javob» yig'ma bo'limi — o'qilmagan bo'lsa o'zi ochiladi.
+- **Kim eshitadi — xabar yuborilgan paytda hal bo'ladi:**
+  - Lead boshqa sotuvchiga o'tsa, eski sotuvchi endi eshitmaydi (E9 a).
+  - Mijoz kartasidagi savolni mijozning sotuvchisi eshitadi (E6 c — sotuvchi qismi).
+  - @ bilan chaqirilgan kishi kartani ocholmasa ham Telegramdan javob bera oladi (E2 a), va bu suhbat uning «👥 Ichki» ro'yxatida turadi.
+  - Hisob-kitobni so'ragan sotuvchi doim eshitadi.
+- **Pastki panelda yangi «👥 Ichki» bo'limi** — siz qatnashgan barcha suhbatlar, o'qilmaganlari belgilangan.
+- **«Ichki yozishmalar» — profilda alohida o'chiriladigan guruh** (E8 a). Diqqat: avval «Ish jarayoni»ni o'chirib qo'ygan xodimlar endi hamkasblarining savollarini yana eshitadi — xohlasa, /profile da yangi «Ichki yozishmalar» belgisini olib tashlaydi.
+- **Ichki javob reklama lidi uchun «mijoz bilan bog'lanish» hisoblanmaydi** (E11 a).
+- Bilib qo'ying: matnni tizim tekshira olmaydi. VED savol-javobga tannarx yoki muhrlangan narxni yozsa, sotuvchilar uni o'qiydi — buning uchun maydon ostida ogohlantirish bor.
+
+### 2. Narx kanali (F)
+
+- **Har bir berilgan narx xodimlarning yopiq Telegram kanaliga tushadi** — muhrlangan hisob ham, «Готово» javobi ham (F6 a, «qo'lda berilgan» deb belgilanadi).
+- **Postda:** umumiy narx, tovar nomlari, kg/kub, bitta $/kg yoki $/kub (F2 a), so'rovni bergan sotuvchining ismi (F9 b) va hisoblagan VED. Sotuvchining tovar rasmlari (10 tagacha, F5 a).
+- **Postda mijoz hech qachon ko'rinmaydi** (F4 a): kodi, ismi, telefoni, GS-kodlar, havolalar va uzun raqamlar matndan olib tashlanadi. Rasmdagi yozuvni tizim ko'ra olmaydi — bu xavfni F5 a da tanlagansiz.
+- **Chegirma yoki tarif o'zgartirilgan hisob kanalga tushmaydi** (F3 a).
+- **Postni boshqa joyga uzatib (forward) bo'lmaydi** (F7 a).
+- **Kanalga faqat bot qabul qiladi** (F8 a): faol, botga ulangan xodim. Ishdan bo'shagan xodimni bot o'zi chiqaradi.
+- **Qayta hisoblansa,** eski post «🔄 qayta hisoblanmoqda — bu narx amal qilmaydi» bo'ladi, yangi narx unga javob bo'lib tushadi.
+- **Bitta narx ikki marta joylanmaydi.** Internet uzilib, post ketdimi-ketmadimi noma'lum bo'lsa, tizim o'zi qayta yubormaydi — panelda «yuborilgan bo'lishi mumkin» deydi va «Qayta yuborish» tugmasini beradi.
+- **Kanal ulanishidan oldingi narxlar joylanmaydi.**
+- **«Narxlar tarixi» sahifasida sotuvchi endi faqat O'Z mijozlariga bergan narxlarni ko'radi** (F1 a) — hamkasbning mijozga aytgan narxi uning upsale'i.
+- **Hisob-kitobdagi oldingi narx sanasi** endi o'sha hisob-kitobni yangi oynada ochadi (F10 a) — jadvaldagi saqlanmagan o'zgarishlar yo'qolmaydi.
+
+### O'rnatish (deploy)
+
+1. Zaxira oling (0 bayt emasligini tekshiring).
+2. `git pull`, keyin `docker compose build migrate`, keyin `docker compose --profile https --profile telegram up -d --build` (bot qayta ishga tushishi kerak — u endi kanal xabarlarini ham tinglaydi).
+3. **Migratsiyalar sonini sanang: 129 bo'lishi kerak.**
+4. `curl -s https://gsrwms.uz/api/version` — bugungi sana.
+5. **Telegramda YANGI YOPIQ kanal oching** (hech kim a'zo bo'lmasin, ochiq havola va muhokama guruhi bo'lmasin). Botni kanalga administrator qiling (xabar joylash, tahrirlash, havola orqali taklif, a'zolarni chiqarish huquqlari bilan). Buni o'zingiz qiling — siz botga ulangansiz va tizimda adminsiz.
+6. **Boshqaruv → «Narx kanali»** sahifasini oching: kanal ulangan va taklif havolasi chiqqan bo'lishi kerak. Bo'lmasa — «Qayta tekshirish»ni bosing yoki botni adminlikdan olib qayta qo'shing.
+7. **Faqat shu sahifadagi havolani** xodimlarga yuboring (kanalning eski havolasi bekor qilinadi). Har bir xodim avval botga ulangan bo'lishi kerak (/hodim).
+8. Keyingi muhrlangan hisob yoki «Готово» narxi kanalga tushadi — birinchisini o'zingiz ko'rib tekshiring.
+
+## Telefonda rastamojka hisoblash va bitim kartasida VED — 2026-10-07
+
+**Migratsiya yo'q.** Migratsiyalar soni **127** bo'lib qoladi — bu safar o'rnatishni sanash emas, `/api/version` dagi sana tasdiqlaydi.
+
+Sizning javoblaringiz: **B1 a … B6 a, 21b** (telefonda hisoblash) va **17a, G1 a … G4 a** (bitim kartasida VED).
+
+### 1. Telefonda rastamojka hisoblash (B)
+
+- **Telefonda har bir tovar — alohida kartochka.** Bossangiz pastdan oyna chiqadi. Unda qatorning hammasi bor: nomi, TNVED kodi, dona / kg / kub, kod so'rasa o'lchov (m², juft, litr, sm³), baza va uning birligi («avto» ham), izoh, 📥 fayldan tanlash va o'chirish (B1 a, 21b).
+  - Oynaning pastida shu blokning rastamojkasi jonli ko'rinib turadi — «Saqlash» aynan shu raqamni yozadi.
+  - Boj va QQS stavkalarini telefonda o'zgartirish keyingi bosqichda. ✨ AI tugmasi telefonda yo'q (B3 a), so'rov kelganda AI o'zi hisoblashi esa avvalgidek ishlaydi.
+- **«Saqlash» faqat shu oynadagi bitta qatorni yozadi (B2 a).** Internet uzilsa, ko'pi bilan bitta tovar qaytadan yoziladi. Qayta bossangiz, o'sha qatorga tushadi — ikkinchi qator paydo bo'lmaydi.
+- **«1,125» yoki «15,000» kabi raqam saqlanmaydi (B4 a).** Ekran «1.125 dollarmi yoki 1125 dollarmi?» deb so'raydi.
+  - **E'tibor bering:** bu qoida endi **kompyuterda ham** ishlaydi — jadvalning beshta raqamli katagida va lug'atdagi baza formasida. Kompyuterda «1,500» kg yozilsa, avval 1,5 kg bo'lib qolardi, endi tizim so'raydi.
+- **Saqlanmagan o'zgarishlar yo'qolmaydi (B5 a).** Telefonni yopsangiz ham yoki sahifa yangilansa ham, qayta ochganingizda «Saqlanmagan o'zgarishlar bor — tiklaymi?» deb so'raydi (3 kungacha saqlanadi).
+  - Bu orada boshqa kishi o'zgartirgan katak tiklashga taklif qilinmaydi — qaysi katak ekani aytiladi.
+- **Boshqa VED ham bir vaqtda o'zgartira oladi (B6 a).** Agar siz yozayotgan katakni boshqa kishi hozirgina o'zgartirsa, qatorda «Boshqa kishi hozirgina o'zgartirdi: Soni 40 → 42» chiqadi va tugma «Baribir saqlash» bo'ladi.
+  - Tizim sezmasdan boshqa kishining bazasi ustidan yozib yuborilmaydi — saqlash paytida yana tekshiriladi.
+- **Yangi versiya o'rnatilgandan keyin** eski sahifada saqlash «Ilova yangilandi — sahifani yangilang» deydi va bitta yangilash tugmasini beradi.
+- **Telefondagi barcha maydonlar 16 px** — iPhone bosganda ekranni kattalashtirib yubormaydi.
+
+### 2. Bitim kartasida VED (17a, G)
+
+- **VED bitim kartasini o'qiydi va lentaga yozadi** (lead kartasidagidek). **Pozitsiyalar, TNVED va prixod biriktirish VEDda qoladi (G1 a):** biriktiradi, ko'chiradi, ajratadi — har biri uning nomi bilan tarixga yoziladi.
+- **Bitimning shartlari sotuvchiniki:** bosqich, egasi, narx, chegirma, bitim ochish, hisoblatishga yuborish. VED ularni o'zgartira olmaydi — kartada buning o'rnida qisqa izoh turadi. Bu ekranda emas, serverda tekshiriladi.
+- **Bot ochgan bitim — mijozning sotuvchisi nomida (G2 a).** Kodli mijoz uchun VED yoki omborchi botdan hisoblatsa, bitim mijozning sotuvchisiga ochiladi. Sotuvchisi yo'q mijozda bitim egasiz ochiladi va admin taqsimlaydi. Sotuvchi o'zi yuborsa, bitim o'zida qoladi.
+- **«Bitimlar» doskasida VED faqat o'z ishini ko'radi, faqat o'qish uchun (G3 a):** hisoblash so'rovi bor bitimlar va TNVED kodi yo'q pozitsiyasi bor ochiq bitimlar. Doska nomi «VED bitimlari», sudrash va ko'chirish tugmalari yo'q. TNVED yo'q bitimda «TNVED yo'q» belgisi turadi.
+  - Bosh sahifadagi «TNVED kodsiz» qatori endi pozitsiyalarni emas, **bitimlarni** sanaydi — bosganingizda ochilgan doskadagi kartochkalar soniga teng.
+- **VED bitim ochmaydi (G4 a).** Botdagi «🧮 Hisoblatish» hammaga ochiq qoladi.
+  - Bilib qo'ying: VED endi /suhbatlar dagi mijoz chatidan «Hisoblatishga yuborish» qila olmaydi — uning yo'li bot.
+
+### Yo'l-yo'lakay tuzatilganlar
+
+- **CRM doskasi va «Tahlil»da** qo'lda yozilgan noto'g'ri havola xato sahifasini chiqarardi — endi filtr shunchaki tashlab yuboriladi.
+- **«Hammasini ko'rish» huquqi bo'lmagan sotuvchi** `?scope=all` havolasini ochsa, o'z leadlari ustida «👥 Hammasi» belgisi chiqardi — olib tashlandi.
+
+### O'rnatish (deploy)
+
+1. Zaxira oling (0 bayt emasligini tekshiring).
+2. `git pull`, keyin `docker compose build migrate`, keyin `docker compose --profile https --profile telegram up -d --build`.
+3. Migratsiyalar soni **127** bo'lishi kerak (bu raundda yangi migratsiya yo'q).
+4. **`curl -s https://gsrwms.uz/api/version`** — bugungi sana chiqishi kerak. Bu raundda o'rnatishni aynan shu tasdiqlaydi.
+5. Avval VED o'zi ochgan bitimlarni VED endi ko'chira olmaydi. Ularni admin ✏️ orqali sotuvchiga beradi.
+
+## Qarzdor mijozga izoh bilan yuk berish va bazaning narx statistikasi — 2026-10-07
+
+**Migratsiya 0126.** O'rnatgandan keyin migratsiyalar soni **127** bo'lishi kerak.
+
+Sizning javoblaringiz: «Hammasi yulduzcha, faqat D1 a / D2 sklad mudiri so'ramasdan beraversin / E6 c / F9 b». Bu raundda **D** (qarzga yuk berish) va **C** (baza statistikasi) qurildi. B va G (telefonda hisoblash, bitim kartasida VED) — keyingi raund; E va F (xodimlar chati, narx kanali) — undan keyingi.
+
+### 1. Qarzdor mijozga yuk berish — endi har doim sababi bilan (D)
+
+- **Sklad mudiri o'z skladida qarzdor mijozga yukni hech kimdan so'ramasdan beradi (D2).** «Qarzga ruxsat» belgisini qo'yadi va sababini yozadi — shu yetarli.
+  - Bu kuch faqat **o'z skladidan** yuk berishda (D3). Boshqalarning «Ruxsat so'rash» so'rovlarini u hal qilmaydi, bitim muddatini bermaydi, boshqa hech narsa o'zgarmaydi.
+  - Bu kuch «Sklad mudiri» rolining «qarzga ruxsat» huquqiga bog'langan. /admin/roles da shu rol uchun belgini olib tashlasangiz, kuch yo'qoladi — mudir bir vaqtda sotuvchi ham bo'lsa ham.
+- **Belgini qo'ygan har bir kishi sabab yozadi (D4)** — sotuvchi, buxgalter, admin ham. Sabab yozilmaguncha «Topshirish» bosilmaydi.
+  - Qarz bo'lmasa (yoki to'langan bo'lsa) belgi ham, sabab ham kerak emas — eskirgan belgi topshirishni to'xtatmaydi.
+  - Ekranda belgi va sabab qarz haqidagi qizil yozuv ichida turadi. Pastdagi kulrang «Topshirish» tugmasi ustida endi «⬆ Qarz: belgini qo'ying va sababini yozing» degan qator chiqadi, bossangiz o'sha joyga olib boradi.
+- **Omborchi «🔐 Ruxsat so'rash» bosganda ham sabab yozadi (D1, D5).** Qaror qiluvchi uni Telegramda va /approvals da ko'radi.
+- **Har bir qarzga berilgan yuk haqida sizga va buxgalterga Telegram keladi (D6):** «🔓 Qarzga yuk berildi» — kim berdi, qaysi mijoz, qancha qarz, sabab.
+  - Bu xabar o'z guruhida: profilda alohida o'chirib qo'yish mumkin, boshqa ogohlantirishlarga bog'liq emas.
+  - Xabar faqat «egasi» (super_admin) yoki «buxgalter» roli bor va kompaniya pulini ko'radigan odamga boradi.
+- **Sabab yuk berish aktida HECH QACHON chiqmaydi** (aktni ko'pincha haydovchi imzolaydi). U «Qarzga berilgan yuklar» ro'yxatida, mijoz kartasining lentasida va tarixda turadi.
+- Sabab oddiy matn (D7) — to'lov va'dasi shakli yo'q.
+
+### 2. 📥 Bazani fayldan tanlashda narx statistikasi (C)
+
+- **📥 oynasida «Narxlar statistikasi» bloki:** kodning shu birlikdagi barcha deklaratsiyalari bo'yicha **25 %, mediana (50 %) va 75 %**. O'rtacha (arifmetik) narx yo'q — har bir raqam haqiqiy deklaratsiyadagi narx.
+- **Ikki qator (C1):** kodning barcha deklaratsiyalari va nomi o'xshashlari (soni bilan).
+- **Faqat Xitoydan kelganlar (C2).** Boshqa davlatlardan nechta deklaratsiya borligi bitta qatorda aytiladi. Faylda davlat umuman yozilmagan bo'lsa, filtr qo'yilmaydi va shu aytiladi.
+- **Dona tovar uchun alohida qator:** bitta donasining og'irligi sizning qatoringizdagidan ±25 % ichida bo'lgan deklaratsiyalar (sizning qoidangiz).
+- **25/50/75 % ni bossangiz, shu narxdagi haqiqiy deklaratsiya chiqadi (C3)** — nomi, sanasi, kimdan, qayerdan. Bazani faqat «Tanlash» to'ldiradi.
+- **Har bir deklaratsiya bitta ovoz (C4):** 1 kg namuna va 20 tonna bir xil hisoblanadi.
+- **«Oldingi chorakda mediana $X»** qatori. Oldingi chorakda bu kod bo'lmasa, «oldingi chorakda deklaratsiya yo'q» deyiladi.
+- **«Eng yangi chorak» = fayl ichidagi sanalar bo'yicha eng yangisi (C6),** yuklangan tartib bo'yicha emas. Eski chorakni keyinroq yuklasangiz, u yangi chorakni almashtirmaydi. Admin sahifasida hozir javob berayotgan fayl ★ bilan belgilangan.
+  - Faylda bitta qator kelajak sanasi bilan yozilgan bo'lsa (xato), u chorak oxirini surib yubormaydi.
+- **Diapazondan tashqari ogohlantirish hozircha yo'q (C5).**
+- **Telefonda ham ko'rinadi** — hozircha faqat ko'rish uchun. Telefonda tanlash keyingi raundda (B1 a) keladi.
+- Qatorda kod, soni, og'irligi yoki kubi saqlanmagan bo'lsa, 📥 tugmasi «Avval saqlang» deydi — statistika saqlangan qatorga qarab hisoblanadi.
+
+### O'rnatish (deploy)
+
+1. Zaxira oling (0 bayt emasligini tekshiring).
+2. `git pull`, keyin `docker compose build migrate`, keyin `docker compose --profile https --profile telegram up -d --build`.
+3. **Migratsiyalar sonini sanang: 127 bo'lishi kerak.** Kamroq bo'lsa, `docker compose run --rm migrate` ning o'z chiqishini o'qing.
+4. `curl -s https://gsrwms.uz/api/version` — yangi sana chiqishi kerak.
+5. **/admin/roles da tekshiring:** «Sklad mudiri» roli hali ham «qarzga ruxsat» (`finance.debt_override`) huquqiga ega va «faqat o'z skladi» belgisi qo'yilgan bo'lsin. /admin/users da har bir sklad mudirining o'z skladi biriktirilgan bo'lsin. Aks holda mudir belgini umuman ko'rmaydi.
+6. «🔓 Qarzga yuk berildi» xabari sizga kelishi uchun hisobingizda super_admin roli va hisobotlarni ko'rish huquqi (`finance.reports`) bo'lishi kerak.
+
+## VED: bazaning o'lchov birligi — avtomatik, o'zgartiriladi, m³ ham bor — 2026-10-07
+
+**Migratsiya 0125.** O'rnatgandan keyin migratsiyalar soni **126** bo'lishi kerak.
+
+Sizning javoblaringiz: **17a 18a 19a 20a 21b**. Bu raundda 18a, 19a va 20a qurildi. 21b (telefonda birlikni o'zgartirish) telefonda hisoblash bilan birga keladi. 17a esa G-savollarga javobingizdan keyin quriladi.
+
+### 1. Birlik koddan o'zi qo'yiladi (18a)
+
+- **Bazaning birligi TNVED kodga qarab o'zi tanlanadi** — kg, dona, m², juft yoki litr. Jadvalda u «avto» deb ko'rinadi.
+- **VED birlikni o'zi o'zgartira oladi.** Tanlangan birlik endi saqlanadi, qatorda narx hali yozilmagan bo'lsa ham.
+  - Avval narxsiz qatorda tanlangan birlik «Saqlash»dan keyin yo'qolib, yana «avto»ga qaytardi. Siz aytgan «o'zgartirib bo'lmayabti»ning ikkinchi sababi shu edi.
+- **Narx yozilgan qatorning kodi o'zgarsa,** narx qaysi birlikda yozilgan bo'lsa, o'sha birlik qoladi (A2). Tizim «birlikni tekshiring» deb shu qatorni ko'rsatadi. Narxi yo'q qatorning birligi yangi kodga o'zi o'tadi.
+- **Qonun juft, litr yoki m² bo'yicha bo'lgan kodda** baza faqat dona, kg, m³ yoki qonunning o'z birligida bo'lishi mumkin. Boshqasi tanlansa, jadval ⚠ ko'rsatadi va qator nomi bilan aytiladi. Qator o'zi o'zgartirilmaydi.
+- **Qonun kg, juft, litr yoki m² bo'yicha bo'lib, baza boshqa birlikda yozilsa,** blok ostida ogohlantirish chiqadi (A1). ✅ bosilganda u yozib qo'yiladi, muhrlashni to'xtatmaydi.
+  - Bilib qo'ying: qonunda faqat foiz (advalor), dona yoki sm³ bo'lgan kodlarda bunday ogohlantirish chiqmaydi. Ular bazaning birligini belgilamaydi — PP-3818 dagi 1 489 kodning 1 250 tasi shunday.
+
+### 2. Baza m³ (kub) bo'yicha (19a)
+
+- **Bazani «$ / m³» qilib yozish mumkin.** Rastamojka qatorning kubiga qarab hisoblanadi. Kubni VED qatorga o'zi yozadi: so'rovdagi umumiy kub avtomatik olinmaydi (A3).
+- **Boj o'zgarmaydi:** PP-3818 da kub bo'yicha boj yo'q. Kub faqat bazani (tovar qiymatini) hisoblaydi.
+- **Bojxona faylidagi «м3» deklaratsiyalar endi o'qiladi** va 📥 tanlashda chiqadi. «куб см» va «см3» esa avvalgidek o'qilmaydi — ular kubometr emas.
+  - Allaqachon yuklangan choraklarda «м3» qatorlari tushmagan. Ular faqat **yangi chorak fayli** yuklanganda keladi. Faylingizda kg va donadan boshqa birliklar taxminan 1 %, shuning uchun bunday takliflar kam bo'ladi.
+
+### 3. Sotuvchi yozgan birlik (20a)
+
+- **Sotuvchi so'rovda yozgan «шт / кг» so'zi** VED jadvalida karobka soni ostida kulrang bo'lib turadi. U faqat ko'rinadi, hech qaysi hisobga kirmaydi.
+
+### 4. 📥 Fayldan baza tanlash
+
+- **Ro'yxat qatorning birligiga qarab tartiblanadi.** Dona tovarda og'irligi yaqin deklaratsiyalar yuqorida (sizning qoidangiz).
+- **Bu qatorga to'g'ri kelmaydigan birlikdagi deklaratsiya** ro'yxatda ko'rinadi, lekin tanlab bo'lmaydi va nima uchunligi yoziladi.
+
+### 5. Telefonda xavfsizlik
+
+- **Internet uzilib «Saqlash» ikki marta ketsa,** yangi tovar ikki marta yozilmaydi — tizim uni taniydi.
+- **Server javob bermasa,** xato sahifasi o'rniga «saqlanmadi» degan yozuv chiqadi.
+- **Telefonda saqlanmagan o'zgarish bor paytda** ✅ bosilmaydi («Avval saqlang»), kompyuterdagidek.
+
+### 6. Tayyor kod ikki marta tekshirildi
+
+Besh tomondan tekshiruv, keyin eski ma'lumotlar bilan solishtirish va haqiqiy brauzerda yurib chiqish. Beshta kamchilik topildi va tuzatildi:
+
+- **Kodi yozilgan, lekin hali guruhga tushmagan qator** (bot orqali kelgan so'rovlarning ko'pi shunday) «шт» ko'rsatardi. «Saqlash»dan keyin esa birlik jimgina kodning birligiga (kg yoki m²) almashardi. Endi jadval o'sha kodning birligini ko'rsatadi; kod hali yangi bo'lsa — «avto».
+- **Internet uzilib qayta saqlanganda** oradagi o'zgartirish (masalan, bazani 10 dan 12 ga tuzatish) yo'qolardi. Endi qo'llanadi.
+- **Ro'yxat qo'yilib, matni tuzatilib qayta bosilsa,** tovarlar ikki marta tushardi. Endi tushmaydi.
+- **Narx o'chirilsa, birlik «avto»ga qaytadi.** Avval eski qatorning birligi «VED tanlagan» bo'lib qolib, fayldan to'ldirish o'sha birlikdan boshqasini taklif qilmay qo'yardi. Narx yozilmagan qatorda VED tanlagan birlik esa saqlanib qoladi.
+- **Blok ostidagi «birlik qonundagidan boshqa» ogohlantirishi** endi saqlashdan oldin ham yozilayotgan qiymatga qarab chiqadi.
+
+### O'rnatish (deploy)
+
+Odatdagi tartib — `docs/UPDATE.md` (avval zaxira nusxa, keyin `git pull`, keyin qurish). Shu raunddan keyin qo'shimcha:
+
+1. **Migratsiyalar soni 126 bo'lishi shart.** Kam chiqsa, `migrate` konteynerining chiqishini o'qing (UPDATE.md §4).
+   - Migratsiya bojxona qatorlarini bir marta tekshirib chiqadi: 2 million qatorda 2,4 soniya ketdi.
+2. **`/api/version`** — yangi kod ishlayotganini tasdiqlaydi.
+
+## Telegramdan topshiriq, VED tarixi va «Готово», VED sotuvchi kartasida — 2026-10-06
+
+**Migratsiya 0124.** O'rnatgandan keyin migratsiyalar soni **125** bo'lishi kerak.
+
+Sizning javoblaringiz: **1b 2a 3a 4a 5a 6b** (topshiriq) va **7a 8a 9a 10a 11a 12a 13c · 14a 15a 16a** (VED).
+
+### 1. Telegramdan topshiriq berish
+
+- **Botda «➕ Topshiriq» tugmasi** (yoki /topshiriq). Ketma-ketlik:
+  - kimga (oxirgi topshiriq berganlaringiz tepada, «🙋 O'zimga» ham bor);
+  - nima qilish kerak (matn, ovoz, rasm, video, fayl yoki forward qilingan xabar);
+  - muddat: Bugun / Ertaga / Indinga / Muddatsiz / «📅 Sana yozish».
+  - Muddat bosilishi bilan topshiriq yaratiladi. Kamida 4 marta bosish kifoya.
+- **Istalgan xabarni (mijoznikini ham) botga forward qilsangiz,** bot «📌 Topshiriq qilamizmi?» deb so'raydi va ikki tugma beradi: «📌 Topshiriq qilish» yoki «🔍 Qidirish» (avvalgidek qidiruv).
+- **Ovoz, rasm va fayllar** bajaruvchiga topshiriq bilan birga Telegramda boradi va saytda vazifa ostida ham ko'rinadi. 20 MB dan katta fayl saytga tushmaydi, bot buni beruvchiga aytadi.
+- **Bajaruvchida 4 tugma:** «👀 Qabul qildim», «✅ Bajarildi» (natijani yozib yoki «Natijasiz»), «⏰ Muddatni surish», «💬 Savol».
+  - Har bir bosish haqida beruvchiga xabar boradi.
+  - Savolga beruvchi «💬 Javob berish» bilan javob qaytaradi.
+- **«📤 Men bergan»** (yoki /berganlarim): siz bergan va hali bajarilmagan topshiriqlar.
+  - Muddati o'tgani 🔴, qabul qilingani 👀, hali ko'rilmagani ⏳ bilan belgilanadi.
+  - «🔔» tugmasi bilan bajaruvchiga eslatma yuboriladi, bitta topshiriqqa yarim soatda bir marta.
+- **Bajaruvchi Telegramga ulanmagan bo'lsa yoki topshiriq xabarlarini o'chirgan bo'lsa,** bot beruvchiga shu zahoti aytadi.
+- **Topshiriq yopilsa yoki bekor qilinsa,** Telegramdagi eski xabarning tugmalari o'zi o'chadi. Ertalabki ro'yxatda faqat yopilgan vazifaning qatori ketadi, qolganlari turadi.
+- **Matndagi GS777 yoki partiya kodi kartaga avtomatik bog'lanmaydi** (6b).
+
+### 2. Hisoblash vazifasi Telegramda va saytda
+
+- **Hisoblash vazifasida endi bitta tugma bor: «🧮 Ochish».** U hisob sahifasini ochadi.
+  - Avval hisoblash ishini ✅ bilan narxsiz yopib qo'yish mumkin edi.
+  - Sotuvchi yoki boshqa xodim ✖ bilan VEDning ishini tortib olishi ham mumkin edi.
+  - Endi ochiq hisoblash ishi faqat hisob sahifasida, narx va ichki izoh bilan yopiladi.
+- **Saytda VED hisoblash vazifasida «🧮 Hisobni ochish» tugmasini ko'radi.** Boshqalar «VED hisoblamoqda» yozuvini ko'radi.
+- **Tuzatilgan eski xato:** VED «Bo'shatish» bosganda uning /bugun ro'yxatida va ertalabki xabarida yopilmagan «Hisoblash: …» vazifasi qolib ketardi. Endi qolmaydi.
+  - Avval qolib ketgan bunday vazifalarni tozalash uchun alohida buyruq bor. U avval faqat ro'yxatni ko'rsatadi; ro'yxatni ko'rib chiqib, siz aytsangiz tozalanadi.
+
+### 3. VED tarixi (7a, 8a)
+
+- **«Hisoblar tarixi»da har qatorda tovarlar:** «3 tovar: klaviatura, sichqoncha, …».
+  - «Tovarlar ▾» bosilsa, muhrlangan paytdagi to'liq ro'yxat ochiladi: nomi, TNVED, soni/kg, baza, boj %, guruh bo'yicha rastamojka.
+  - Qidiruv tovar nomi va TNVED kodi bo'yicha ham ishlaydi.
+- **«Готово» bilan berilgan umumiy narxlar ham shu tarixga tushadi** («✍️ umumiy narx» belgisi bilan): kim, qachon, qancha, ichki izoh.
+  - Filtr: Hammasi / Muhrlangan / Umumiy narx, «Kim» bo'yicha ham.
+  - Bu sizning 4-sentabrdagi «faqat muhrlangan» (1A) javobingizni o'zgartiradi — siz shuni so'radingiz.
+- **Tepada «Kim qancha hisobladi»:** shu oyda har VED nechta hisobni muhrlagani, nechtasiga umumiy narx bergani va o'rtacha qancha vaqtda bergani.
+
+### 4. «Готово» (9a, 10a, 11a)
+
+- **«Готово»da ikki maydon:**
+  - «Sotuvchiga izoh» — ixtiyoriy, hozirgidek;
+  - «Ichki izoh» — **majburiy**. Uni faqat VED va rahbar ko'radi: sotuvchi ham, buxgalter ham ko'rmaydi.
+- **Summa majburiy.**
+  - «1200$» kabi o'qib bo'lmaydigan summa rad etiladi. Avval bunday summa bilan ish narxsiz yopilib ketardi.
+  - 0 yoki manfiy summa ham so'z bilan rad etiladi.
+- **Umumiy narx berilgan ishni endi ochib ko'rsa bo'ladi.** Kim, qachon, qancha bergani, ikkala izoh va tovarlar ko'rinadi.
+- **Hisoblash navbati sahifasida «Oxirgi yakunlanganlar» ro'yxati paydo bo'ldi.** U yakunlangan ishga qaytish yo'li.
+- **«Qayta hisoblash» umumiy narx berilgan ishda ham bor** — muhrlanganlar bilan bir xil qoida:
+  - yangi hisob ochiladi, eskisi tarixda qoladi;
+  - yangi hisob navbatga tushadi: eski hisobni kim bergan bo'lsa, o'sha VEDga beriladi (siz va adminlarga hech qachon avtomatik tushmaydi);
+  - sotuvchiga «narx qayta hisoblanmoqda — eski narx endi amal qilmaydi» deb boradi;
+  - bu tugmani avvalgidek admin bosadi.
+- **Hisobni muhrlash mumkin bo'lsa, «Готово» taqiqlangan** — hozirgidek (11a).
+
+### 5. VEDlar bir-birini ko'radi (12a, 13c)
+
+- **Navbat va tarix hamma VEDga ochiq.**
+- **«Nazorat» sahifasini hamma VED ko'radi.** Ro'yxat ikkiga bo'lingan:
+  - «Meniki (N)» — har kim faqat o'z hisobini «bu prixod shu hisobga tegishli» deb tasdiqlaydi;
+  - «Hamkasblarniki» — faqat o'qish uchun.
+
+### 6. VED sotuvchi kartasida (14a, 15a, 16a)
+
+- **Hisoblash so'ralgan lid kartasini VED ochadi.** Ochish joylari: hisob sahifasi, navbat va tarixdagi «Kartaga o'tish».
+  - VED ko'radi: lid ma'lumotlari, lenta, Telegram suhbati, qo'ng'iroqlar.
+  - Lentaga savol yoki izoh yoza oladi (faqat matn). @ bilan sotuvchini belgilasa, sotuvchiga xabar boradi.
+  - Kartani tahrirlay olmaydi: etap, telefon, narx o'zgarmaydi.
+- **Sotuvchi mijozga aytgan narxni (taklif narxi va sanasi) VED kartada va hisob sahifasida ko'radi.**
+  - Upsale summasi va to'lovlarni ko'rmaydi.
+  - Lekin bilib qo'ying: mijoz narxi minus o'zi hisoblagan narx — oddiy ayirish.
+- **Bitim kartasida VED bugun hamma narsani o'zgartira oladi.** Bu qism 17-savolga javobingizgacha o'zgartirilmadi.
+
+### 7. O'lchov birligi
+
+- **Tuzatildi:** VED jadvalda birlikni (dona, kg, m², juft) yolg'iz o'zgartirsa, tizim uni darhol eskisiga qaytarib qo'yardi. Birlik faqat baza narxi ham o'zgartirilgandagina saqlanardi. Endi birlik o'zi saqlanadi.
+- **Birlik tanlovini kengaytirish** (har qanday kodda dona/kg/m³/m²/juft) 18–21-savollarga javobingizdan keyin quriladi.
+
+### Bilib qo'ying
+
+- **Botdagi yangi tugmalar** («➕ Topshiriq», «📤 Men bergan») har bir xodimda bir marta /start yuborgandan keyin chiqadi.
+- **Deploydan oldin qilingan avtomatik qoida vazifalari** (lead_stale va boshqalar) qoidani yozgan odamning «Men bergan» ro'yxatida, yopilguncha ko'rinadi.
+- **Topshiriq fayllari** (forward qilingan mijoz rasmlari ham) hamkasblarning vazifalarini ko'ra oladigan har bir kishiga ochiq: buxgalter, logist, VED, kuzatuvchi. Bu /kalendar bilan bir xil.
+- **Lid yutilganda** VEDning lid lentasidagi savoli o'sha lidda qoladi. Bitim kartasida u ko'rinmaydi.
+
+### Tayyor kod yana bir bor tekshirildi
+
+Ikkala qism birlashtirilgandan keyin besh tomondan mustaqil tekshirildi: 41 ta topilma, hammasi tuzatildi. Sizga ko'rinadiganlari:
+
+- **Sotuvchi VEDning ochiq hisoblash ishini ✖ bilan bekor qila olardi** — ish navbatga egasiz qaytardi. Endi bo'lmaydi.
+- **Havolalar.** Topshiriq xabaridagi havola endi uni o'qiydigan odamga qarab tanlanadi. Avval sotuvchiga VED sahifasi, VEDga esa sotuvchi kartasi borardi — ikkalasi ham ochilmasdi. Kim ocha olmasa, unga havola umuman yuborilmaydi.
+- **Kartadagi narx qulfi** endi kartada turgan raqamni ushlaydi. Bitta lidda bir nechta hisob bo'lganda ✏️ forma bekordan-bekorga rad etilmaydi.
+- **Botda:**
+  - noto'g'ri sana yozilsa, kutish to'xtaydi — qidiruv yana ishlaydi;
+  - albom (bir nechta rasm) yuborilganda topshiriq endi yo'qolmaydi va hamma rasm saytga tushadi;
+  - o'tib ketgan vaqt yozilsa, bot «o'tib ketgan» deydi;
+  - topshiriq bekor qilinsa, bajaruvchiga xabar faqat topshiriq unga yetib borgan bo'lsa boradi.
+- **«Готово»da** «0,004» kabi summa endi so'z bilan rad etiladi, emoji ichki izohni buzmaydi.
+
+### O'rnatish (deploy)
+
+Odatdagi tartib — `docs/UPDATE.md` (avval zaxira nusxa, keyin `git pull`, keyin qurish). Shu raunddan keyin qo'shimcha:
+
+1. **Migratsiyalar soni 125 bo'lishi shart.** Kam chiqsa, `migrate` konteynerining chiqishini o'qing (UPDATE.md §4). Ilova yangisi qurilmaguncha eski versiyada ishlab turadi.
+2. **`/api/version`** — yangi kod ishlayotganini tasdiqlaydi.
+3. **Har bir xodim botga bir marta /start yuborsin** — «➕ Topshiriq» va «📤 Men bergan» tugmalari shundan keyin chiqadi.
+4. **Eski «Hisoblash: …» qoldiqlari** (VED «Bo'shatish» bosganda qolib ketgan vazifalar). Avval faqat ro'yxat — hech narsa o'zgarmaydi:
+   ```bash
+   docker compose run --rm migrate pnpm close-stale-calc-tasks --ghosts
+   ```
+   Chiqqan ro'yxatni menga yuboring. Tozalash (`--ghosts --apply`) faqat siz ko'rib «ha» deganingizdan keyin.
+5. **Faqat o'qiydigan to'rt tekshiruv** (hech narsani o'zgartirmaydi; natijasini menga yuboring):
+   ```bash
+   docker compose exec -T postgres psql -U gsr -d gsr -c "
+   select 'eslatma_kerak' as k, count(*) from tasks t where t.origin is null
+     and (exists (select 1 from calc_requests r where r.task_id = t.id)
+       or exists (select 1 from payment_promises p where p.task_id = t.id))
+   union all
+   select 'nol_javob', count(*) from calc_requests
+     where answer_amount is not null and not (answer_amount > 0 and answer_amount <> 'NaN')
+   union all
+   select 'ikki_hisob_bitta_vazifa', count(*) from (select task_id from calc_requests
+     where task_id is not null group by 1 having count(*) > 1) x
+   union all
+   select 'eski_tuzatish_vazifasiz', count(*) from calc_requests
+     where supersedes_request_id is not null and completed_at is null
+       and assignee_id is not null and task_id is null;"
+   ```
+   Birinchi uchtasi **0** bo'lishi kerak. To'rtinchisi — 0124 dan oldin ochilgan, hali yopilmagan tuzatishlar: ular eski holicha qoladi (vazifasiz, so'ragan admin nomida). 0 bo'lmasa, nima qilishni alohida kelishamiz.
+
+## Yuk ma'lumoti tekshiruvi (✅ / ❓) va yig'iladigan yashiklar ro'yxati — 2026-10-03
+
+**Migratsiya 0123.** O'rnatgandan keyin migratsiyalar soni **124** bo'lishi kerak.
+
+Sizning javoblaringiz: **1a · 2b · 3a · 4a · 5b**.
+
+### Nima o'zgardi
+
+- **Prixod kartasida har lotda «yuk ma'lumoti» belgisi.** Logist yoki VED mijozdan so'raydi («100 karobkangiz keldi, klaviatura ekan, to'g'rimi?»). Javob «ha» bo'lsa, **«✅ To'g'ri — mijoz tasdiqladi»** tugmasini bosadi, xohlasa izoh yozadi.
+  - Kartada mijozning telefoni (📞) va Telegram havolasi (💬) turadi.
+  - Belgi kim va qachon qo'yganini ko'rsatadi.
+  - Mijoz «boshqa tovar» desa, lot nomi o'zgartiriladi. VED buni logistga aytadi.
+  - Mijoz «aralash» desa, hujjati bilan lot tarkibi yoziladi.
+- **Tekshirilgandan keyin tovar nomi, karobka soni yoki mijoz o'zgarsa,** belgi o'zi **«⚠️ o'zgardi — qayta so'rang»** bo'ladi. Kg/kub qayta o'lchansa, belgi turaveradi.
+- **Lot tarkibi mijoz hujjati bilan yozilgan bo'lsa,** lot o'zi **«✅ hujjat bo'yicha tekshirilgan»** hisoblanadi. Tarkib o'chirilsa, bu belgi ham ketadi.
+- **Ostatkada** har qatorda belgi turadi.
+  - Tepada filtr bor: **Hammasi · ✅ Tekshirilgan (N prixod) · ❓ Tekshirilmagan (M prixod)**.
+  - ❓ belgisini bossangiz, o'sha lotning kartasi ochiladi. Belgini qo'ygach «← Ostatka» tugmasi xuddi shu ro'yxatga qaytaradi.
+  - Filtrni saqlangan ko'rinishga qo'shsa bo'ladi.
+  - Excelda «Tekshiruv» ustuni chiqadi va fayl ham shu filtr bo'yicha yuklanadi.
+- **Plan berishda** har qatorda va yashikda belgi turadi, filtr ham bor.
+  - Yashik faqat ichidagi **hamma** lot tekshirilgan bo'lsa ✅ bo'ladi.
+  - Filtr bilan yashirilgan tanlangan yuk rejadan tushib qolmaydi.
+  - ❓ belgisi kartani yangi oynada ochadi; rejaga qaytganingizda yangi belgi ko'rinadi va tanlaganlaringiz saqlanib qoladi.
+- **Mijoz kartasining «Yuklar» bo'limida** ham belgilar ko'rinadi: bitta qo'ng'iroqda mijozning hamma yuki bir joyda.
+- **Logist va VED bosh sahifasida** «❓ Tekshirilmagan yuk (Xitoy) — N prixod» qatori bor. Bosilsa, Ostatka shu filtr bilan ochiladi.
+- **❓ ro'yxatiga faqat Xitoy skladlaridagi yuk tushadi** (4a). O'zbekistonga kelgan yukda belgi faqat ✅ bo'lsa ko'rinadi, ❓ chiqmaydi.
+- **Egasi aniqlanmagan yuk** bu ro'yxatga tushmaydi — u «Egasiz yuklar» ro'yxatida bor.
+- **Belgi hech narsani to'xtatmaydi:** tekshirilmagan yukni ham rejaga qo'yib, yuklab yuborsa bo'ladi.
+- **Ostatkada yashiklar ro'yxati yig'iladi:** 5 tagacha yashik ochiq turadi, ko'p bo'lsa yig'ilgan holda turadi. Ustida yashiklar soni va nechtasi sig'maganligi ko'rinadi. Mashina kartasidagi yashiklar ro'yxati ham shunday.
+
+### Bilib qo'ying
+
+- Birinchi kuni Xitoy skladlaridagi hamma yuk «❓ Tekshirilmagan» bo'ladi — ro'yxat shundan boshlanadi.
+- Ikki kishi bitta lotni bir vaqtda belgilasa, ikkinchisiga «boshqa hodim hozirgina belgiladi» deb chiqadi — birovning belgisi bilmasdan o'chib ketmaydi.
+- «Mijoz tasdig'ini bekor qilish» faqat yuk hali Xitoyda turganda chiqadi — O'zbekistonga kelgan yukda belgini qayta qo'yib bo'lmaydi, shuning uchun bekor ham qilinmaydi.
+- Plan berishda: siz boshqa oynada turganingizda yukni boshqa reja olib qo'ysa, rejaga qaytganingizda u tanlovdan o'zi chiqadi va «N ta tanlangan yuk endi bu skladda yo'q — rejadan olib tashlandi» deb yoziladi. Ro'yxat yuklanmasa, «bo'sh sklad» emas, «Yuk ro'yxati yuklanmadi» deb chiqadi.
+- Telegramda mijozning o'zidan «✅ Ha / ❌ Yo'q» deb so'rash (5b) keyingi bosqichga qoldi.
+
+## Lot tarkibi: 3 savolga «shunday qolsin» — 2026-10-01
+
+Migratsiya yo'q, dastur ishlashi o'zgarmadi.
+
+- **1a** — butun lot boshqa tovar bo'lsa, tarkib emas, lot nomi o'zgartiriladi. Buni logist, adminlar, sklad mudiri va prixodni qilgan skladchi (o'sha kuni) qila oladi; VED qila olmaydi.
+- **2a** — tarkib qatorlarida xitoycha nom yo'q. Agent faylida lotning xitoycha nomi turadi, tarkib uning ostida yoziladi; invoys va packing listda faqat tarkib nomlari chiqadi.
+- **3a** — dona yozilgan tovar shu mashinada kamida 1 dona to'g'ri kelsa «шт» da, aks holda «кг» da chiqadi. Narx ustuniga «шт» qatorda bir dona, «кг» qatorda bir kg narxi yoziladi.
+- Bularning hammasi dasturda aynan shunday ishlayotgani tekshirildi va endi testlar bilan mustahkamlandi — kelajakda tasodifan o'zgarib qolmaydi.
+
+## Lot tarkibi: bitta lotda bir necha tovar — 2026-10-01
+
+**Migratsiya 0122.** O'rnatgandan keyin migratsiyalar soni **123** bo'lishi kerak.
+
+Sizning javoblaringiz: **1c · 2c · 3b · 4c · 5a · 6 · 7a · 8a** va «lot o'zgarmaydi, stiker o'zgarmaydi, faqat tarkibi degan joy qo'shiladi».
+
+### Nima o'zgardi
+
+- **Prixod kartasida har lotda «Tarkibi» bo'limi.** VED yoki logist mijoz hujjatini (packing list, invoys) prixodga biriktiradi va har tovar uchun qator yozadi: nomi, jami dona, karobka soni, kg, kub, TNVED.
+  - Karobka sonini yozish ixtiyoriy: hamma qatorda yozilsa, «alohida karobkalar» bo'ladi va yig'indisi lot karobkalariga teng bo'lishi kerak. Hech qaysisida yozilmasa — «aralash karobkalar» (har karobkada ikkalasi ham bor).
+  - Qatorlarning kg va kubi lotning umumiy kg va kubiga **teng** bo'lishi shart. Ekranda «qoldi» ko'rinib turadi; «Karobka soniga qarab taqsimlash» va «Sklad o'lchoviga moslashtirish» tugmalari yordam beradi. Tizim o'zi hech qachon bo'lib qo'ymaydi.
+  - Hujjat biriktirilmasa saqlanmaydi. Qabul paytidagi karobka rasmi hujjat hisoblanmaydi.
+- **Lot, stiker, karobka o'zgarmaydi.** Skaner, reja, ostatka, mijoz kabineti, Telegram xabarlari, bot va topshirish akti lot nomida qoladi — qaysi karobka mishka ekanini hech kim bilmaydi.
+- **Invoys va ikkala packing list** tarkibli lotni har tovarga alohida qator qilib chiqaradi. Dona yozilgan bo'lsa miqdor «шт» da, bo'lmasa kg da. Agent fayliga ham tarkib yoziladi.
+- **Lot bir necha mashinaga bo'lingan bo'lsa,** har mashinadagi qatorlar ulush bo'yicha hisoblanadi va invoysda «taxminiy» deb belgilanadi (sariq rang + izoh). Karobka va dona soni hamma mashinalar bo'yicha jamlanganda siz yozgan tarkibga teng chiqadi; kg va kub esa har mashinaning o'z tarozi og'irligidan bo'linadi.
+- **TNVED oynasida** «100 klaviatura» o'rniga «50 klaviatura» va «50 mishka» chiqadi, har birining o'z kodi bilan. Bu kod faqat shu lotda saqlanadi — boshqa mijozlarning klaviaturasiga tegmaydi.
+- **TNVED oynasida prixodlarning hujjatlari** ham ko'rinadi — VED mijoz faylini o'sha yerda ko'radi.
+- **«Hujjat yuborildi» belgisi** qo'yilganda shu mashinaning tarkibi muzlatib saqlanadi: yuborilgan invoys o'zgarmaydi. Keyin tarkib o'zgartirilsa, faqat hujjati hali yuborilmagan mashinalarga o'tadi. Belgini olib tashlasangiz, yangi tarkib o'sha mashinaga ham o'tadi (tarixda yoziladi).
+- **«📈 Oldingi narx»** tarkibli lotni «aralash» deb biladi — ikki tovarning birga qo'yilgan narxi keyinchalik toza klaviatura narxi deb ko'rsatilmaydi.
+- **Narx o'zgarmadi:** mashinada mijozga bitta umumiy narx (5a). Bojxona to'lovini VED hisoblash oynasida TNVED bo'yicha alohida hisoblaydi — avvalgidek.
+
+### Bilib qo'ying
+
+- Butun lot boshqa tovar bo'lsa (100 ta mishka «klaviatura» deb yozilgan), tarkib kerak emas — logist lot nomini o'zgartiradi. VED buni qila olmaydi.
+- Tarkib qatorlari nomi VED yozgan so'z bilan chiqadi (xitoycha nomi yo'q) — agent fayli ham shunday.
+- Mijoz kabinetda va Telegramda hali ham lot nomini ko'radi.
+- Yangilashdan oldin «hujjat yuborildi» belgisi qo'yilgan mashinalar ham muzlatildi — ularning hujjati o'zgarmaydi.
+
+## Partiya nomi va yo'nalish: 11 savolga «hammasi standart» — 2026-09-30
+
+Migratsiya yo'q, dastur ishlashi o'zgarmadi.
+
+- 11 savolning hammasiga «standart» deb javob berdingiz. Har bir standart kodda aynan shunday ishlashi alohida tekshirildi: 11 tadan 11 tasi to'g'ri.
+- Endi bular qat'iy qoida:
+  - Partiya nomi o'zgarganda Telegramga xabar ketmaydi.
+  - Jo'nashdan oldin nom erkin: kirillcha harf bo'lsa, faqat ogohlantiradi va saqlaydi.
+  - Faqat yo'lda ishlatilgan nom band qoladi.
+  - Nomi o'zgargandan keyin yuklangan hujjatlar yangi nom bilan chiqadi.
+  - Yo'nalish o'zgarganda xabar faqat uch guruhga boradi: yangi sklad xodimlari, logistlar va oldin «sizga keladi» deyilgan sklad. Rejadagi birinchi skladga, adminlarga va VEDga xabar bormaydi.
+  - «Agentga yuborildi» belgisi o'zgarmaydi.
+  - Boshqa davlat skladi ro'yxatda chiqmaydi va rad etiladi.
+- Shulardan to'rttasini oldin hech qaysi test tekshirmas edi. Endi test tekshiradi: nom o'zgarganda xabar ketmasligi, jo'nashdan oldin kirillcha nom saqlanishi, VED va eski skladga bog'langan logistga xabar bormasligi, boshqa davlat skladi ro'yxatda yo'qligi.
+
+## Partiya nomi yo'lda ham o'zgaradi, yo'ldagi mashinaning qabul skladi o'zgaradi — 2026-09-30
+
+**Migratsiya 0121** (faqat ikkita indeks, yangi ustun yo'q). Yangilangandan keyin ledger
+**122** bo'lishi kerak.
+
+Sizning javoblaringiz: **1a · 2a · 3a · 4a**; 5-savolga javob bo'lmadi — tavsiya qilingan
+variant qurildi: sklad faqat **bitta davlat ichida** almashtiriladi.
+
+### Partiya nomi
+
+- **Yo'lda ham o'zgaradi** — mashina jo'nagandan keyin, tushirish tugaguncha. Faqat admin va
+  logist (rollar sahifasida `plans.manage` belgisi). Yo'lda o'zgartirganda **sabab yozish
+  majburiy** (kamida 3 belgi).
+- **Qachon o'zgartirib bo'lmaydi:** «Tushirish tugadi» bosilgandan keyin; hamma karobka
+  tushirib olingan bo'lsa (tugma bosilmagan bo'lsa ham); partiya yopilgan yoki bekor
+  qilingan bo'lsa.
+- **Yo'ldagi nom:** lotin harflari, raqam va «-», 3–20 belgi, kamida bitta harf va bitta
+  raqam (masalan KA-77, 01A777BA). Kirillcha harf yozilsa (К, А lotinchaga o'xshaydi) —
+  tizim darhol aytadi.
+- **Chalkashtiradigan nom rad etiladi** (jo'nashdan oldin ham): mijoz kodiga (GS500), lotga
+  (GS777-A), karobka yoki yashik kodiga o'xshagan nom.
+- **Eski nom yo'qolmaydi:** ⌘K qidiruvida, «Partiyalar» arxivida, hodimlar botida
+  («↩️ YW-105 — bu partiyaning oldingi nomi. Hozirgi nomi: KA-77») va kartada «Oldingi
+  nomi». Kim va nega o'zgartirgani faqat mashinalar bilan ishlaydiganlarga ko'rinadi.
+- **Yo'lda ishlatilgan nom boshqa mashinaga berilmaydi.** Jo'nashdan oldin yozilib,
+  keyin o'zgartirilgan nom esa darhol bo'shaydi.
+- **Hujjatlar:** o'zgartirilgandan keyin yuklangan invoys, manifest, packing list yangi nom
+  bilan (invoys raqami ham o'zgaradi). Agentga oldin yuborilgan hujjatlarda va Telegram
+  xabarlarida eski nom qoladi — panel buni ogohlantiradi.
+- Ikki hodim bir vaqtda o'zgartirsa, keyingisi «shu orada o'zgardi» degan xabarni ko'radi.
+
+### Yo'ldagi mashinaning qabul skladini o'zgartirish
+
+- **Mashina kartasi → «Mashina» bo'limi → «Yo'nalishni o'zgartirish».** Faqat mashina
+  yo'lda bo'lsa (birinchi karobka tushirilgunicha), faqat admin va logist, **sabab
+  majburiy**, faqat **bitta davlat ichida** (Qashqar → Horgos, Andijon → Toshkent).
+- **Telegram (4a):** yangi skladning xodimlariga «endi sizga keladi» (karobka, kub, kg,
+  mashina raqami bilan) va logistlarga. Oldin «sizga keladi» deyilgan skladga «endi
+  sizga kelmaydi» xabari boradi.
+- **Kartada** «Rejada: KA → yo'nalish o'zgartirildi: HOR» yoziladi, «Mashina» bo'limida kim,
+  qachon va nega o'zgartirgani.
+- **Eski sklad telefonlari:** shu mashina uchun olingan skanlar «↪ endi HOR ga boradi — yuk
+  bu yerga tushmaydi» deb rad etiladi va navbatdan chiqadi; **boshqa mashinalarning
+  skanlarini to'xtatib qo'ymaydi**. Logist yoki admin eski darvozada skanerlagan karobka
+  yangi skladga «keldi» deb yozilib qolmaydi.
+- **Pul o'zgarmaydi:** tannarx, narx, «keyingi yo'l» faqat davlatga bog'liq, davlat esa
+  o'zgarmaydi.
+- Agentga oldin yuborilgan hujjatlarda eski sklad qoladi; keyin yuklanganlari yangi sklad
+  bilan. Reja va karobka tarixida jo'nagan kundagi sklad saqlanadi.
+
+## Keyingi yo'l: narx qo'yilgan mashinada butun yo'l tannarxi — 2026-09-30
+
+Migratsiya yo'q (ledger **121** qoladi). Yangilanganini `/api/version` dagi sana
+bilan tekshiring.
+
+Sizning javoblaringiz: **1a · 2a · 3b · 4a · 5a · 6b**
+
+1. **Xitoy yukining narxi chegaradan o'tgan mashinada turadi, shu mashina butun
+   yo'lni ko'taradi.** Andijon → Toshkent (va undan keyingi O'zbekiston ichidagi
+   har bir mashina — 5a) shu yuk uchun qilgan xarajat narx qo'yilgan mashinaning
+   tannarxiga **«keyingi yo'l»** bo'lib qo'shiladi:
+   **tannarx = bu reys + shu reysgacha + keyingi yo'l.**
+   Misol: prixod $5, Yiwu → Qashqar $30, Qashqar → Andijon $100, Andijon → Toshkent
+   $40, narx $300 → Qashqar → Andijon: tannarx **$175**, foyda **$125**.
+2. **Andijon → Toshkent mashinasi bu yuk uchun «davomi»** — $0, «narx yo'q» emas.
+   Endi dashboard «Diqqat» ro'yxatida, kechki 20:00 xulosada va «Partiya
+   foydasi»da noto'g'ri «narx qo'yilmagan reys» bo'lib chiqmaydi. Sahifasida
+   yukning narxi qaysi mashinada ekani yoziladi.
+3. **Andijonda qabul qilingan yuk** — Andijon → Toshkent o'z narxi va o'z xarajati
+   bilan qoladi (avvalgidek).
+4. **Mashina hali jo'namagan bo'lsa** hech narsa ko'chmaydi (karobka yuklanmay
+   qolishi mumkin). Jo'nagandan keyin ko'chadi.
+5. **Tannarx keyin o'sishi mumkin (2a):** Toshkent xarajati narx qo'yilgandan keyin
+   yozilganda, narx qo'yilgan mashinaning foydasi kamayadi — oy o'tgan bo'lsa ham.
+   Yuk to'liq topshirilmaguncha «Partiya moliyasi»da **«⏳ N karobka hali
+   topshirilmagan — tannarx o'sishi mumkin»** yozuvi turadi.
+6. **Ogohlantirish (4a):** Andijon → Toshkent sahifasida Xitoy yukiga narx
+   yozmoqchi bo'lsangiz, tizim avval so'raydi: «narx B-xxx mashinasida — bu yerga
+   yozilgan narx mijozga ikkinchi hisob bo'ladi». Baribir yozish mumkin.
+7. **Hisobotlar buzilmaydi:** foyda-zarar, pul oqimi, balans, «Mijoz foydasi», KPI,
+   upsale — o'zgarmaydi. Faqat mashina bo'yicha qatorlarda pul bir mashinadan
+   ikkinchisiga o'tadi, hech narsa ikki marta sanalmaydi. Andijon → Toshkent
+   «Partiya» deb belgilanmagan bo'lsa ham, uning xarajati endi belgilangan
+   chegara mashinasi orqali «Partiya foydasi» jamiga kiradi. Excel faylida yangi
+   ustun: «shundan keyingi yo'l $».
+8. Deploydan keyin eski mashinalar ham shu qoida bo'yicha ko'rinadi (6b — oldindan
+   ro'yxat so'ralmadi).
+9. **Qayta tekshiruvdan keyin tuzatildi:** katta bazada «Partiya foydasi» 10 soniyaga
+   sekinlashib qolgan edi — endi avvalgidek (3 haftalik: 0,3–0,6 s). 12 oylik dashboard
+   o'qishi 2,9 s → 3,7 s (qoida har bir karobkaning barcha reyslarini ko'radi). Yana:
+   «davomi» mashinada Xitoy yuki uchun «xarajat kiritilmagan» noto'g'ri ogohlantirishi
+   olib tashlandi; ikkinchi hisob tasdiqlash tugmasini ikki marta bosib bo'lmaydi;
+   aralash mijozda (Xitoy yuki + Andijon yuki) nechta karobka boshqa mashinada
+   narxlangani yoziladi.
+
 ## Sahifa tepasidagi bo'limlar qatori ko'payib ketmaydi — 2026-09-30
 
 Migratsiya yo'q, ledger **121** bo'lib qoladi. Yangilanganini `/api/version` dagi vaqt

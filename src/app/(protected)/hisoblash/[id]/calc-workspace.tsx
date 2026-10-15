@@ -1,14 +1,17 @@
 'use client';
 
-import { useState, useTransition, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, useTransition, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { sectionParts } from '@/modules/wms/calc/pricing';
+import { sectionParts, totalsFor } from '@/modules/wms/calc/pricing';
+import { feeInputsValues, relawedQuery } from '@/modules/wms/calc/law-words';
 import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 import type { Workspace } from '@/modules/wms/calc/workspace';
 import type { ChainVersion } from '@/modules/wms/calc/chain';
 import { ChainStateChip } from '@/components/calc-chain-chip';
-import { refusalWord, type CalcT } from './words';
+import { isBuildStale, reloadFresh } from '@/components/build-check';
+import { draftStorageKey, forgetStored } from '@/modules/wms/calc/draft-store';
+import { measureNeedText, refusalWord, type CalcT } from './words';
 import {
   deleteExtraAction,
   saveExtraAction,
@@ -40,9 +43,12 @@ export function CalcWorkspace({
   canRecalc,
   chain = [],
   sealedSheet = null,
+  viewerId,
 }: {
   workspace: Workspace;
   canRecalc: boolean;
+  /** Whose unsaved drafts the table keeps in this browser (B5 a). */
+  viewerId: string;
   /** The sealed version's correction chain (chain.ts), oldest first. */
   chain?: ChainVersion[];
   /**
@@ -65,18 +71,88 @@ export function CalcWorkspace({
   const sealed = workspace.sealedVersion;
   const locked = Boolean(workspace.completedAt);
 
-  const settle = (result: CalcFormState) => {
-    setError(result.error ?? null);
-    if (!result.error) router.refresh();
-  };
-  const act = (work: () => Promise<CalcFormState>) => startTransition(async () => settle(await work()));
+  // A THROWN action — the network gone mid-press on a phone, a server that
+  // died between two answers — is a sentence, never the error page: inside
+  // an async transition React 19 hands an uncaught rejection to the nearest
+  // error boundary, and every ✅, the certificate, the zone, the extras and
+  // the seal ride this one function (phase 0 of the phone round). After a
+  // deploy the tab's action ids are gone, and the RIGHT sentence is «reload»
+  // (D9). Stable, so the table's memo'd rows and cards hold.
+  const act = useCallback(
+    (work: () => Promise<CalcFormState>) =>
+      startTransition(async () => {
+        try {
+          const result = await work();
+          setError(result.error ?? null);
+          if (!result.error) router.refresh();
+        } catch {
+          setError('save_failed');
+          if (await isBuildStale()) setError('stale_build');
+        }
+      }),
+    [router],
+  );
+
+  // What the re-read book moved on the correction this page was opened from
+  // (P2.2) — named ONCE: the params come off the address after the first
+  // render, so a reload does not repeat a notice about the past. A URL param
+  // is a forged post (#514): only codes and row numbers are ever printed.
+  // Read in an effect and not through `useSearchParams` (round 45: that hook
+  // forces a Suspense boundary, which hydrates late on this screen's phones).
+  const [relawed, setRelawed] = useState<string[]>([]);
+  const [remeasure, setRemeasure] = useState<string[]>([]);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const codes = listParam(params.get('relawed'), /^\d{4,10}$/);
+    const rows = listParam(params.get('olchov'), /^\d{1,4}$/);
+    if (codes.length === 0 && rows.length === 0) return;
+    // The address is an external system the server render cannot see — read
+    // once on mount, the codebase's own idiom for it (nav.tsx, dock.tsx).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setRelawed(codes);
+    setRemeasure(rows);
+    try {
+      window.history.replaceState(window.history.state, '', window.location.pathname);
+    } catch {
+      /* the notice still stands for this render */
+    }
+  }, []);
+
+  // The sealed or answered page leaves nothing of the drafts behind.
+  useEffect(() => {
+    if (!locked) return;
+    let storage: Storage | null = null;
+    try {
+      storage = window.localStorage;
+    } catch {
+      /* a private window — nothing was stored */
+    }
+    forgetStored(storage, draftStorageKey(viewerId, id));
+  }, [locked, viewerId, id]);
 
   return (
     <div className="space-y-3" data-testid="calc-workspace">
       {error ? (
         <p className="chip chip-warn" data-testid="calc-ws-error">
           {t.has(`errors.${error}`) ? t(`errors.${error}` as 'errors.not_ready') : error}
+          {error === 'stale_build' ? (
+            <button
+              type="button"
+              className="btn-primary ml-2 !min-h-8"
+              data-testid="calc-reload"
+              onClick={() => void reloadFresh()}
+            >
+              {t('reloadPage')}
+            </button>
+          ) : null}
         </p>
+      ) : null}
+
+      {relawed.length > 0 || remeasure.length > 0 ? (
+        <div className="space-y-1 rounded-xl border border-warn/40 bg-warn/10 p-2 text-2xs" data-testid="calc-relawed">
+          {relawed.length > 0 ? <p>{t('law.relawed', { codes: relawed.join(', ') })}</p> : null}
+          {remeasure.length > 0 ? <p>{t('law.remeasure', { rows: remeasure.join(', ') })}</p> : null}
+        </div>
       ) : null}
 
       {sealed ? (
@@ -86,7 +162,7 @@ export function CalcWorkspace({
       {!locked ? (
         <>
           {workspace.parts.customs ? (
-            <ItemsTable workspace={workspace} pending={pending} act={act} onDirty={setDirty} />
+            <ItemsTable workspace={workspace} pending={pending} act={act} onDirty={setDirty} viewerId={viewerId} />
           ) : null}
 
           <FreightPanel workspace={workspace} pending={pending} act={act} />
@@ -235,7 +311,7 @@ function ExtrasPanel({
         {/* Pointed at the EXISTING cost-type dictionary, so phase E's
             calc-vs-actual compares like with like. */}
         <select
-          className="input input-sm !w-40"
+          className="input input-sm !w-40 max-md:!text-base"
           aria-label={t('costType')}
           data-testid="calc-extra-type"
           value={costTypeId}
@@ -253,7 +329,7 @@ function ExtrasPanel({
           ))}
         </select>
         <input
-          className="input input-sm !w-40"
+          className="input input-sm !w-40 max-md:!text-base"
           placeholder={t('extraLabel')}
           aria-label={t('extraLabel')}
           data-testid="calc-extra-label"
@@ -261,7 +337,7 @@ function ExtrasPanel({
           onChange={(e) => setLabel(e.target.value)}
         />
         <input
-          className="input input-sm !w-24 font-mono tabular-nums"
+          className="input input-sm !w-24 font-mono tabular-nums max-md:!text-base"
           placeholder="$"
           aria-label={t('amount')}
           data-testid="calc-extra-amount"
@@ -313,6 +389,18 @@ function TotalsPanel({
 }) {
   const t = useTranslations('calc');
   const totals = workspace.totals;
+  // The fee with what made it (P2.6): «2.5 BHM × 412 000 so‘m ÷ 12 650 (kurs
+  // 09.10.2026) ≈ $81.42» — the rate's DAY is what shows a stale book.
+  const feeInputs =
+    workspace.fee?.ok && !workspace.fee.overridden
+      ? feeInputsValues({
+          usd: workspace.fee.feeUsd,
+          bhm: workspace.fee.bhmCoefficient,
+          bhmUzs: workspace.bhmUzs,
+          fxUzsPerUsd: workspace.fxUzsPerUsd,
+          fxDate: workspace.fxDate,
+        })
+      : null;
 
   return (
     // One freshness per screen: while cells are dirty the bar carries the
@@ -345,7 +433,9 @@ function TotalsPanel({
                   <dd className="font-mono tabular-nums text-ink-600" data-testid="calc-total-fee">
                     {workspace.fee.overridden
                       ? `$${workspace.fee.feeUsd.toFixed(2)} ✎`
-                      : `${workspace.fee.bhmCoefficient} BHM ≈ $${workspace.fee.feeUsd.toFixed(2)}`}
+                      : feeInputs
+                        ? t('law.feeInputs', feeInputs)
+                        : `${workspace.fee.bhmCoefficient} BHM ≈ $${workspace.fee.feeUsd.toFixed(2)}`}
                   </dd>
                 </>
               ) : null}
@@ -390,6 +480,19 @@ function TotalsPanel({
           ⚠ {t('notReady')}
         </p>
       )}
+      {/* The fee door stays where the fee is BLOCKED too (P2.6). It used to
+          live inside the priced branch only, so it vanished exactly when it
+          was needed: no UZS rate in the book refuses the fee, the fee blocks
+          the total, and the box that rescues a declaration with no rate was
+          not on the screen. Beside it, WHOSE job the refusal is. */}
+      {!totals?.ok && workspace.parts.customs ? (
+        <div className="mt-1 flex flex-wrap items-center gap-2 text-2xs" data-testid="calc-fee-blocked">
+          {workspace.fee && !workspace.fee.ok ? (
+            <span className="text-warn">⚠ {t('law.feeBlocked', { reason: refusal(t, workspace.fee.reason) })}</span>
+          ) : null}
+          <FeeOverride workspace={workspace} pending={pending} act={act} />
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -416,6 +519,34 @@ function SealPanel({
   const [overrideReason, setOverrideReason] = useState('');
   const id = workspace.requestId;
 
+  // The band override RESCUES a load the tariff cannot price (P2.8, #774):
+  // `sealCalc` prices the typed density before it checks a blocker, so the
+  // freight band blocker must not grey the button while an override is
+  // typed — otherwise the one box whose whole purpose is that load could
+  // never be pressed. Every OTHER blocker still holds.
+  const overrideTyped = workspace.parts.freight && override.trim() !== '';
+  const standing = workspace.blockers.filter(
+    (b) =>
+      !(overrideTyped && b.kind === 'freight' && (b.reason === 'band_missing' || b.reason === 'band_ambiguous')),
+  );
+  // The discount, previewed (P2.8): the same `totalsFor` the seal runs, over
+  // the gross on the screen — a concession is irreversible once sealed, and
+  // «1000» meant as so'm should be seen as dollars BEFORE the press. Read
+  // with the press's own reader (U28), so the preview and the seal agree.
+  const discountTyped = discount.trim() === '' ? 0 : (parseTypedMoney(discount) ?? Number.NaN);
+  const preview =
+    discountTyped !== 0 && workspace.totals?.ok && workspace.section
+      ? totalsFor({
+          section: workspace.section,
+          customsUsd: workspace.totals.customsUsd,
+          freightUsd: workspace.totals.freightUsd,
+          extrasUsd: workspace.totals.extrasUsd,
+          discountUsd: discountTyped,
+          weightKg: workspace.weightKg,
+          volumeM3: workspace.volumeM3,
+        })
+      : null;
+
   return (
     <section className="card !p-3" data-testid="calc-seal">
       <h3 className="section-title">{t('seal')}</h3>
@@ -435,31 +566,36 @@ function SealPanel({
               override is a statement about the CARGO, a discount is a
               concession to this CLIENT — and only the second one costs the
               seller the right to upsell (phase D). */}
-          <div className="flex flex-wrap items-end gap-2">
-            <label className="text-2xs">
-              <span className="label">{t('bandOverride')} kg/m³</span>
-              <input
-                className="input input-sm !w-24 font-mono tabular-nums"
-                data-testid="calc-band-override"
-                value={override}
-                onChange={(e) => setOverride(e.target.value)}
-              />
-            </label>
-            <label className="grow text-2xs">
-              <span className="label">{t('reason')}</span>
-              <input
-                className="input input-sm"
-                data-testid="calc-band-reason"
-                value={overrideReason}
-                onChange={(e) => setOverrideReason(e.target.value)}
-              />
-            </label>
-          </div>
+          {/* The band is the ROAD's (P2.8): a rastamojka quote has none, and
+              an override there moved no money yet was stored and announced
+              as a concession. The seal refuses it server-side too. */}
+          {workspace.parts.freight ? (
+            <div className="flex flex-wrap items-end gap-2">
+              <label className="text-2xs">
+                <span className="label">{t('bandOverride')} kg/m³</span>
+                <input
+                  className="input input-sm !w-24 font-mono tabular-nums max-md:!text-base"
+                  data-testid="calc-band-override"
+                  value={override}
+                  onChange={(e) => setOverride(e.target.value)}
+                />
+              </label>
+              <label className="grow text-2xs">
+                <span className="label">{t('reason')}</span>
+                <input
+                  className="input input-sm max-md:!text-base"
+                  data-testid="calc-band-reason"
+                  value={overrideReason}
+                  onChange={(e) => setOverrideReason(e.target.value)}
+                />
+              </label>
+            </div>
+          ) : null}
           <div className="flex flex-wrap items-end gap-2">
             <label className="text-2xs">
               <span className="label">{t('discount')} $</span>
               <input
-                className="input input-sm !w-24 font-mono tabular-nums"
+                className="input input-sm !w-24 font-mono tabular-nums max-md:!text-base"
                 data-testid="calc-discount"
                 value={discount}
                 onChange={(e) => setDiscount(e.target.value)}
@@ -468,13 +604,25 @@ function SealPanel({
             <label className="grow text-2xs">
               <span className="label">{t('reason')}</span>
               <input
-                className="input input-sm"
+                className="input input-sm max-md:!text-base"
                 data-testid="calc-discount-reason"
                 value={discountReason}
                 onChange={(e) => setDiscountReason(e.target.value)}
               />
             </label>
           </div>
+          {preview ? (
+            <p
+              className={`text-2xs font-mono tabular-nums ${preview.ok ? 'text-ink-700' : 'text-warn'}`}
+              data-testid="calc-discount-preview"
+            >
+              {preview.ok
+                ? t('law.discountPreview', { total: preview.totalUsd.toFixed(2) })
+                : preview.reason === 'discount_exceeds_total'
+                  ? t('law.discountTooBig')
+                  : refusal(t, preview.reason)}
+            </p>
+          ) : null}
           <p className="text-2xs text-ink-500">{t('concessionNotice')}</p>
         </div>
       </details>
@@ -482,7 +630,7 @@ function SealPanel({
       <button
         type="button"
         className="btn-primary mt-2"
-        disabled={pending || dirty > 0 || workspace.blockers.length > 0}
+        disabled={pending || dirty > 0 || standing.length > 0}
         data-testid="calc-do-seal"
         onClick={() =>
           act(() =>
@@ -491,8 +639,12 @@ function SealPanel({
               // density, not money, and keeps its own reader.
               discountUsd: discount.trim() === '' ? 0 : (parseTypedMoney(discount) ?? Number.NaN),
               discountReason,
-              bandOverrideMin: override.trim() === '' ? null : Number(override.replace(',', '.')),
+              bandOverrideMin:
+                workspace.parts.freight && override.trim() !== '' ? Number(override.replace(',', '.')) : null,
               bandOverrideReason: overrideReason,
+              // The fee THIS screen showed (P2.6): the seal refuses `conflict`
+              // when the rate or the setting moved between render and press.
+              sawFeeUsd: workspace.parts.customs ? (workspace.fee?.ok ? workspace.fee.feeUsd : null) : undefined,
             }),
           )
         }
@@ -662,7 +814,7 @@ function SealedPanel({
                 // from the newest version» are the two things a person
                 // pressing this on an old link needs to be told.
                 setError(result.error ?? null);
-                if (result.newId) router.push(`/hisoblash/${result.newId}`);
+                if (result.newId) router.push(`/hisoblash/${result.newId}${relawedQuery(result)}`);
               })
             }
           >
@@ -707,7 +859,7 @@ function FeeOverride({
   return (
     <span className="flex flex-wrap items-center gap-1">
       <input
-        className="input input-sm !w-24"
+        className="input input-sm !w-24 max-md:!text-base"
         inputMode="decimal"
         placeholder={t('feeAuto')}
         aria-label={t('feeOverride')}
@@ -737,6 +889,17 @@ async function recalcActionClient(id: string) {
   return recalcAction(id);
 }
 
+/** A comma list off the address, each entry held to its shape — never more
+ * than twenty, never anything a regex did not admit. */
+function listParam(raw: string | null, shape: RegExp): string[] {
+  if (!raw) return [];
+  return raw
+    .split(',')
+    .map((v) => v.trim())
+    .filter((v) => shape.test(v))
+    .slice(0, 20);
+}
+
 /* ---------------------------------------------------------------- words */
 
 type T = CalcT;
@@ -746,13 +909,20 @@ const refusal = refusalWord;
 
 function blockerText(t: T, b: Workspace['blockers'][number]): string {
   switch (b.kind) {
-    case 'customs':
-      return `${b.groupLabel}: ${refusal(t, b.reason)}${b.itemLabel ? ` (${b.itemLabel})` : ''}`;
+    case 'customs': {
+      // The detailed sentence already names the row; the bare word does not.
+      const need = measureNeedText(t, b);
+      return need !== null
+        ? `${b.groupLabel}: ${need}`
+        : `${b.groupLabel}: ${refusal(t, b.reason)}${b.itemLabel ? ` (${b.itemLabel})` : ''}`;
+    }
     case 'freight':
       return `${t('freight')}: ${refusal(t, b.reason)}`;
     case 'fee':
-      // The reason's own text names the fee — no prefix needed.
-      return refusal(t, b.reason);
+      // Prefixed with the fee's own label (P2.6): the reason now names whose
+      // job it is («buxgalter /admin/fx …», «admin /admin/settings»), and a
+      // line in the blocker list must still say WHAT is blocked.
+      return t('law.feeBlocked', { reason: refusal(t, b.reason) });
     case 'totals':
       return refusal(t, b.reason);
     case 'ungrouped_items':

@@ -35,6 +35,17 @@ import { enqueue, JOB_PROCESS_EVENTS } from '@/modules/platform/jobs/boss';
 import { openStaffPartner, StaffAccountError } from '@/modules/wms/partners/staff-account';
 import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 import { amountRefusal } from '@/modules/wms/finance/money-bounds';
+import { costSightFor } from '@/modules/wms/costing/cost-sight';
+import {
+  mustWarn,
+  TwinWarning,
+  twinAckOf,
+  twinGap,
+  twinsForExpense,
+  twinView,
+  type TwinGap,
+  type TwinView,
+} from '@/modules/wms/accounting/twins';
 import {
   linkRecurringPayment,
   payRecurring,
@@ -47,6 +58,14 @@ export interface AccountingFormState {
   ok?: boolean;
   error?: string;
   message?: string;
+  /**
+   * «Bu pul allaqachon yozilgan» (SARFLAR §3): the expense was NOT written;
+   * the form keeps what was typed, lists the twins, and «Baribir saqlash»
+   * posts `twins.ackToken` back as `twinAck`.
+   */
+  twins?: TwinView;
+  /** A clean save that could not compare everything (§8.1, `no_rate`) — said, never hidden. */
+  unchecked?: TwinGap;
 }
 
 /**
@@ -77,7 +96,10 @@ async function actor(permission: 'finance.expenses' | 'finance.reports') {
 
 async function run<T>(
   permission: 'finance.expenses' | 'finance.reports',
-  work: (ctx: { actorId: string } & Record<string, unknown>) => Promise<T>,
+  work: (
+    ctx: { actorId: string } & Record<string, unknown>,
+    who: { id: string; permissions: ReadonlySet<string> },
+  ) => Promise<T>,
 ): Promise<AccountingFormState> {
   let who;
   try {
@@ -88,10 +110,11 @@ async function run<T>(
   }
   const meta = await requestMeta();
   try {
-    await work({ actorId: who.id, ...meta });
+    await work({ actorId: who.id, ...meta }, who);
     revalidatePath('/accounting', 'layout');
     return { ok: true };
   } catch (err) {
+    if (err instanceof TwinWarning) return { twins: twinView(err.answer) };
     if (err instanceof AccountingError || err instanceof ExpenseRequestError)
       return { error: err.code };
     throw err;
@@ -121,20 +144,40 @@ export async function addExpenseAction(
   // re-enterable one: the double-entry race is the common case.
   const rawRequest = String(formData.get('requestId') ?? '');
   const requestId = /^[0-9a-f-]{36}$/i.test(rawRequest) ? rawRequest : null;
-  return run('finance.expenses', async (ctx) => {
+  const posted = twinAckOf({ twinAck: formData.get('twinAck') });
+  let gap: TwinGap | undefined;
+  const state = await run('finance.expenses', async (ctx, who) => {
     // A kassa or a payer is MANDATORY on a cash kind (U13, owner's A) — asked
     // before the rasxod xabari's claim, so a refusal leaves it open.
     if (await needsKassaOrPayer(parsed.data.categoryId, parsed.data)) {
       throw new AccountingError('account_or_payer_required');
     }
+    // «Bu pul allaqachon yozilganmi?» (SARFLAR §8.2) — BEFORE the claim,
+    // because the claim is a write and a warning must leave the rasxod xabari
+    // open for the second press.
+    const twins = await twinsForExpense(
+      { id: who.id, permissions: who.permissions, ownOnly: costSightFor(who).ownOnly },
+      {
+        categoryId: parsed.data.categoryId,
+        amount: parsed.data.amount,
+        currency: parsed.data.currency,
+        expenseDate: parsed.data.expenseDate,
+        accountId: parsed.data.accountId || null,
+        partnerId: parsed.data.partnerId || null,
+        warehouseId: parsed.data.warehouseId || null,
+      },
+    );
+    if (mustWarn(twins, posted)) throw new TwinWarning(twins!);
+    gap = twinGap(twins);
+    const ack = { twinAck: twins?.ids.length ? twins.ids : undefined };
     if (!requestId) {
-      await addExpense(parsed.data, ctx);
+      await addExpense(parsed.data, ctx, ack);
       return;
     }
     await claimExpenseRequest(requestId, ctx);
     let expenseId: string;
     try {
-      expenseId = (await addExpense(parsed.data, ctx)).id;
+      expenseId = (await addExpense(parsed.data, ctx, ack)).id;
     } catch (err) {
       await releaseExpenseRequest(requestId).catch(() => {});
       throw err;
@@ -142,6 +185,7 @@ export async function addExpenseAction(
     await finishExpenseRequest(requestId, expenseId, ctx);
     await enqueue(JOB_PROCESS_EVENTS, {}).catch(() => {});
   });
+  return state.ok && gap ? { ...state, unchecked: gap } : state;
 }
 
 /**

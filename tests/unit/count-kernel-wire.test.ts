@@ -3,6 +3,7 @@ import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   COUNT_REASONS,
+  NO_DOOR,
   SERVER_SCAN_REASONS,
   countReasonsFor,
   isServerScanReason,
@@ -46,14 +47,35 @@ const SERVICE = 'src/modules/wms/scanning/service.ts';
 const UNLOAD = 'src/modules/wms/scanning/unload.ts';
 
 describe('count kernel wiring', () => {
+  /*
+   * AMENDED deliberately in the reroute round (recorded in DECISIONS): the
+   * phone's body moved out of the route into `wms/scanning/sync.ts`, which
+   * partitions the body per truck, and the unload call now carries WHERE each
+   * truck was admitted (`UnloadGuard.expectDest`, a fourth argument that is
+   * not a door). What this fence exists for is unchanged and still asserted:
+   * the phone's third argument is `NO_DOOR` and nothing else, and no door's
+   * power (`door:`, `boxId`, `quietSpot`, `noticeWindowMinutes`) rides along.
+   */
   it('the phone sync route reaches both ingests with no door', () => {
     const route = read('src/app/api/scan/sync/route.ts');
-    expect(route).toMatch(/ingestLoadScans\(loads, ctx\)/);
-    expect(route).toMatch(/ingestUnloadScans\(unloads, ctx\)/);
-    // Nothing else may ride along: a third argument IS a door.
-    expect(route).not.toMatch(/ingestLoadScans\([^)]*,[^)]*,/);
-    expect(route).not.toMatch(/ingestUnloadScans\([^)]*,[^)]*,/);
-    expect(route).not.toMatch(/\bdoor\s*:/);
+    expect(route).toContain('syncScans(');
+    expect(route).not.toMatch(/ingest(Load|Unload)Scans\(/);
+    const sync = read('src/modules/wms/scanning/sync.ts');
+    const loads = [...sync.matchAll(/ingestLoadScans\(([^)]*)\)/g)].map((m) => m[1]);
+    const unloads = [...sync.matchAll(/ingestUnloadScans\(([^)]*\}?)\)/g)].map((m) => m[1]);
+    expect(loads).toEqual(['loads, ctx']);
+    expect(unloads).toEqual(['unloads, ctx, NO_DOOR, { expectDest }']);
+    for (const power of [/\bdoor\s*:/, /\bboxId\b/, /\bquietSpot\b/, /\bnoticeWindowMinutes\b/]) {
+      expect(sync).not.toMatch(power);
+      expect(route).not.toMatch(power);
+    }
+  });
+
+  it('NO_DOOR is an empty frozen object — the phone’s answer, named', () => {
+    const rules = read('src/modules/wms/scanning/count-rules.ts');
+    expect(rules).toContain('export const NO_DOOR: Readonly<DoorOpts> = Object.freeze({});');
+    expect(Object.keys(NO_DOOR)).toEqual([]);
+    expect(Object.isFrozen(NO_DOOR)).toBe(true);
   });
 
   it('a door is opened only by the count doors and «Hammasini qabul qilish»', () => {

@@ -3,7 +3,6 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 import {
   finishCalcAction,
   releaseCalcAction,
@@ -50,6 +49,9 @@ export function CalcActions({
   const [amount, setAmount] = useState('');
   const [currency, setCurrency] = useState('USD');
   const [note, setNote] = useState('');
+  // The VED's own note on how the figure was reached (his 9a) — required, and
+  // never shown to the seller. Controlled like the rest: a refusal keeps it.
+  const [internalNote, setInternalNote] = useState('');
 
   const revalidate = `/hisoblash/${id}`;
 
@@ -63,6 +65,7 @@ export function CalcActions({
     setReason('');
     setAmount('');
     setNote('');
+    setInternalNote('');
     router.refresh();
   };
 
@@ -179,16 +182,29 @@ export function CalcActions({
               </select>
             </div>
           </div>
-          <label className="label" htmlFor="calc-answer-note">
-            {t('answerNote')}
-          </label>
-          <textarea
-            id="calc-answer-note"
-            data-testid="calc-answer-note"
-            className="input h-20"
-            value={note}
-            onChange={(event) => setNote(event.target.value)}
-          />
+          <div className={canSeal ? 'hidden' : 'space-y-2'}>
+            <label className="label" htmlFor="calc-answer-note">
+              {t('answerSellerNoteLabel')}
+            </label>
+            <textarea
+              id="calc-answer-note"
+              data-testid="calc-answer-note"
+              className="input h-20"
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+            />
+            <label className="label" htmlFor="calc-answer-internal">
+              {t('answerInternalNoteLabel')}
+            </label>
+            <textarea
+              id="calc-answer-internal"
+              data-testid="calc-answer-internal"
+              className="input h-20"
+              maxLength={2000}
+              value={internalNote}
+              onChange={(event) => setInternalNote(event.target.value)}
+            />
+          </div>
           <button
             type="button"
             disabled={pending}
@@ -200,11 +216,14 @@ export function CalcActions({
                   await finishCalcAction(
                     id,
                     {
-                      // «1 000» and «1,000» are both a thousand here — and
-                      // anything unreadable is null, never NaN (audit A3).
-                      amount: !canSeal ? parseTypedMoney(amount) : null,
+                      // The TEXT as typed: the server reads «1 000» and
+                      // «1,000» as a thousand and refuses «1200$» in words —
+                      // parsing here made both of those arrive as null and the
+                      // job close with no price (review ved-correctness-13).
+                      amountText: amount,
                       currency,
                       note,
+                      internalNote,
                     },
                     revalidate,
                   ),

@@ -85,12 +85,24 @@ const EXEMPT: Record<string, string> = {
   releaseOffer: 'offers, not the workspace',
   releasedOfferWhere: 'pure sql fragment',
   offerStandsSql: 'pure sql fragment',
-  releasedPriceFor: 'reader',
-  // Phase 4: the answer anchor is read off a COMPLETED request — the rev
-  // clock guards the open workspace, and lockRequestInTx would refuse
-  // `already_closed` here by design (recordOffer re-derives every admission
-  // instead).
-  lastAnswerAnchorFor: 'reader',
+  lastReleasedOfferFor: 'reader',
+  // docs/VED-TARIX.md §6/§10: what STANDS on a card (the panel, the quote
+  // lock and the answer line read it) and the 16a price projection — both
+  // read closed records and offers, never the open workspace.
+  standingAnchorsFor: 'reader',
+  offerPricesFor: 'reader',
+  // The phone round (his B6 a): the probe the sheet polls, and the AI
+  // claim's one window — the first reads the clock, the second reads only
+  // its arguments.
+  requestClock: 'reader — the probe of the clock',
+  // 0131: «do these two blocks carry one law?» — exported so a unit test
+  // asks the rule itself (the excise columns joined it). Reads its two
+  // arguments, writes nothing.
+  sameGroupRates: 'pure',
+  aiClaimLive: 'pure',
+  // Review PHONE-2: saveTable's compare-and-set, exported so a unit test
+  // calls the rule itself. Reads its two arguments, writes nothing.
+  movedUnder: 'pure',
 };
 
 describe('every workspace mutator moves the revision clock', () => {
