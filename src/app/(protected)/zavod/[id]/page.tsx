@@ -34,6 +34,7 @@ import {
   LinkReceiptButtons,
   NoCostControl,
   PickupButtons,
+  PickupHeaderForm,
   RemoveStopButton,
   StopLinesForm,
 } from '../pickup-forms';
@@ -145,6 +146,20 @@ export default async function PickupCardPage({ params }: { params: Promise<{ id:
           </p>
         )}
         {pickup.note && <p className="whitespace-pre-line text-ink-700">📝 {pickup.note}</p>}
+        {canWrite && live && (
+          <PickupHeaderForm
+            pickupId={pickup.id}
+            closed={pickup.status === 'closed'}
+            initial={{
+              destWarehouseId: pickup.destWarehouseId,
+              vehiclePlate: pickup.vehiclePlate ?? '',
+              driverName: pickup.driverName ?? '',
+              driverPhone: pickup.driverPhone ?? '',
+              plannedOn: pickup.plannedOn ?? '',
+              note: pickup.note ?? '',
+            }}
+          />
+        )}
         <p className="text-xs text-ink-500">
           {createdByName} · {when(pickup.createdAt)}
         </p>
@@ -366,6 +381,11 @@ export default async function PickupCardPage({ params }: { params: Promise<{ id:
                   {c.number}
                 </Link>
                 <span className="font-mono">{c.clientCode ?? c.unclaimedMarking}</span>
+                {c.declined && (
+                  <span className="text-xs font-semibold text-warn" data-testid="candidate-declined">
+                    ⚠ {t('declinedAtDoor')}
+                  </span>
+                )}
                 <LinkReceiptButtons receiptId={c.id} stops={c.stops} />
               </li>
             ))}
@@ -380,7 +400,19 @@ export default async function PickupCardPage({ params }: { params: Promise<{ id:
           canCancel={costCount === 0 && linkedCount === 0}
         />
       )}
-      {canWrite && open && <ClosePickupForm pickupId={pickup.id} offerNoCost={canCost && costCount === 0} />}
+      {/* Two terminal buttons with overlapping meaning on a trip where
+          nothing happened would make the wrong one easy: an untouched trip is
+          CANCELLED; «yopish» is for a trip that moved (a stop collected, a
+          prixod linked, a cost) — the judge's floor finding. */}
+      {canWrite &&
+        open &&
+        (costCount > 0 || linkedCount > 0 || stops.some((st) => st.collectedAt)) && (
+          <ClosePickupForm
+            pickupId={pickup.id}
+            offerNoCost={canCost && costCount === 0}
+            pendingCandidates={candidates.length}
+          />
+        )}
     </div>
   );
 }

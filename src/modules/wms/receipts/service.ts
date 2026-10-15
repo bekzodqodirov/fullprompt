@@ -130,6 +130,20 @@ export const confirmReceiptSchema = z.object({
    */
   pickupLineIds: z.array(z.string().uuid()).max(40).optional(),
   /**
+   * The door's «Bu qolgan qismi — reysga qo'shimcha» (0133): the operator's
+   * answer to `pickup_line_answered` — the rest of cargo whose line another
+   * prixod already answered. Linked to the trip (its cartons carry the
+   * truck's cost), answering no line.
+   */
+  pickupExtra: z.boolean().optional(),
+  /**
+   * The trips the operator answered «Yo'q» about at the door (0133) — the
+   * person holding the boxes said «not from this truck». Recorded on the
+   * create audit row (no column), so the logist's candidate list can say so
+   * before a one-tap link overrides a floor fact.
+   */
+  pickupDeclined: z.array(z.string().uuid()).max(20).optional(),
+  /**
    * The office receipt (0112, the owner's Q9 b): the REAL day the cargo came,
    * and who physically took it in. Refused unless the caller says the actor
    * may enter on the floor's behalf (`opts.onBehalf`) — see `officeFacts`.
@@ -319,6 +333,7 @@ export async function confirmReceipt(
             lineIds: input.pickupLineIds?.length ? input.pickupLineIds : null,
             owner: { clientId: input.clientId, marking: input.clientId ? null : input.unclaimedMarking || null },
             mode: 'door',
+            extra: input.pickupExtra === true,
           },
           ctx.actorId ?? null,
         );
@@ -450,6 +465,10 @@ export async function confirmReceipt(
         ...(office.receivedAt ? { receivedAt: office.receivedAt.toISOString() } : {}),
         ...(office.receivedByUserId ? { receivedByUserId: office.receivedByUserId } : {}),
         ...(office.receivedByName ? { receivedByName: office.receivedByName } : {}),
+        // The door's answers about factory trips (0133).
+        ...(input.pickupStopId ? { pickupStopId: input.pickupStopId } : {}),
+        ...(input.pickupExtra ? { pickupExtra: true } : {}),
+        ...(input.pickupDeclined?.length ? { pickupDeclined: [...new Set(input.pickupDeclined)] } : {}),
       },
     });
 

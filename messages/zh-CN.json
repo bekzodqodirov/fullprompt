@@ -989,7 +989,12 @@
     "pickupClosed": "此工厂车次已关闭——请不带车次收货，物流员会在入库单卡片上关联。",
     "pickupLineAnswered": "此车次的这一行已由另一张入库单收货。如果是另一批货，请移除车次（✕）后重新收货。",
     "pickupLineGone": "收货期间车次的行已更改。请移除车次（✕）后重新选择。",
-    "pickupDoorPerFactory": "同一客户的货来自本车次的两个工厂——请每个工厂单独做一张入库单。"
+    "pickupDoorPerFactory": "同一客户的货来自本车次的两个工厂——请每个工厂单独做一张入库单。",
+    "pickupExtra": "这是同一批货的剩余部分——追加到车次",
+    "pickupDrop": "不带车次收货",
+    "pickupExtraChip": "剩余部分——不对应行",
+    "pickupStaleGone": "此车次已不存在（已取消）——请移除车次，不带车次收货。",
+    "pickupStaleTaken": "此车次有 {n} 行已由另一张入库单收货——请确认不是同一批货。"
   },
   "receipts": {
     "title": "收货单",
@@ -4778,7 +4783,17 @@
     "costNoCargo": "有费用无货",
     "costNoCargoLong": "车次有费用，但没有有效入库单——费用没有分摊到任何箱子。请在新入库单的卡片上把它关联到此车次。",
     "serverBehind": "服务器正在更新，请一分钟后再试。",
-    "linkToLine": "{seq}：{goods}"
+    "linkToLine": "{seq}：{goods}",
+    "declinedAtDoor": "仓库说：“不是这个车次的”",
+    "prefillReceived": "{code}：这批货已收货——{numbers}。请勿重复收货；如果是另一批货，请按普通方式收货。",
+    "prefillClosed": "{code} 已关闭或已取消——请不带车次收货。",
+    "homeStaleOpen": "{n} 个已到达但未关闭",
+    "editHeader": "车辆、司机、备注",
+    "closeCandidates": "有未关联的入库单（{n}）——请先在下方关联，否则其货物会显示为“仓库直收”。",
+    "closedByHand": "手动关闭",
+    "closedByItself": "全部已收货",
+    "linesNotCame": "{n} 行未到",
+    "detachClosedConfirm": "车次已关闭。确定解除关联？只能在30天内从入库单卡片重新关联。"
   },
   "unpriced": {
     "title": "已到达未定价货物",

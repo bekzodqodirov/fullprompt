@@ -989,7 +989,12 @@
     "pickupClosed": "Bu zavod reysi allaqachon yopilgan — yukni reyssiz qabul qiling, logist uni prixod kartasidan biriktiradi.",
     "pickupLineAnswered": "Reysning bu qatori boshqa prixod bilan allaqachon qabul qilingan. Bu boshqa yuk bo‘lsa — reysni (✕) olib tashlab, qayta qabul qiling.",
     "pickupLineGone": "Siz qabul qilayotganda reys qatorlari o‘zgardi. Reysni (✕) olib tashlab, qaytadan tanlang.",
-    "pickupDoorPerFactory": "Bir mijozning yuki shu reysning ikki zavodidan — har bir zavod uchun alohida prixod qiling."
+    "pickupDoorPerFactory": "Bir mijozning yuki shu reysning ikki zavodidan — har bir zavod uchun alohida prixod qiling.",
+    "pickupExtra": "Bu o‘sha yukning qolgan qismi — reysga qo‘shimcha",
+    "pickupDrop": "Reyssiz qabul qilish",
+    "pickupExtraChip": "qolgan qismi — qatorsiz",
+    "pickupStaleGone": "Bu reys endi yo‘q (bekor qilingan) — reysni olib tashlab, reyssiz qabul qiling.",
+    "pickupStaleTaken": "Reysning {n} ta qatori boshqa prixod bilan allaqachon qabul qilingan — o‘sha yuk emasligini tekshiring."
   },
   "receipts": {
     "title": "Qabullar",
@@ -4778,7 +4783,17 @@
     "costNoCargo": "xarajat bor, yuk yo‘q",
     "costNoCargoLong": "Reysda xarajat bor, lekin tirik prixod yo‘q — xarajat hech qaysi karobkaga tushmayapti. Yangi prixodni o‘z kartasidan shu reysga biriktiring.",
     "serverBehind": "Server hali yangilanmoqda — bir daqiqadan keyin urinib ko‘ring.",
-    "linkToLine": "{seq}: {goods}"
+    "linkToLine": "{seq}: {goods}",
+    "declinedAtDoor": "sklad «bu reysdan emas» degan",
+    "prefillReceived": "{code}: bu yuk allaqachon qabul qilingan — {numbers}. Ikkinchi marta qabul qilmang; boshqa yuk bo‘lsa, oddiy yo‘l bilan qabul qiling.",
+    "prefillClosed": "{code} yopilgan yoki bekor qilingan — reyssiz qabul qiling.",
+    "homeStaleOpen": "{n} tasi kelgan, lekin yopilmagan",
+    "editHeader": "Mashina, haydovchi, izoh",
+    "closeCandidates": "Biriktirilmagan prixodlar bor ({n}) — avval quyida biriktiring, aks holda ularning yuki «skladda qabul qilingan» bo‘lib qoladi.",
+    "closedByHand": "qo‘lda yopildi",
+    "closedByItself": "hammasi qabul qilindi",
+    "linesNotCame": "{n} ta qator kelmadi",
+    "detachClosedConfirm": "Reys yopilgan. Prixodni ajratasizmi? Qayta biriktirish faqat prixod kartasidan, 30 kun ichida mumkin."
   },
   "unpriced": {
     "title": "Yetib kelgan, narx yozilmagan yuk",

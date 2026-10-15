@@ -1,7 +1,7 @@
 import { AuthError, requireActor } from '@/modules/platform/rbac/authorize';
 import { inScope } from '@/modules/platform/rbac/scope';
 import { isServerBehind } from '@/modules/platform/db/errors';
-import { openStopsForOwner } from '@/modules/wms/pickups/service';
+import { openStopsForOwner, stopReceivability } from '@/modules/wms/pickups/service';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -24,6 +24,23 @@ export async function GET(request: Request) {
   }
   const params = new URL(request.url).searchParams;
   const wh = params.get('wh') ?? '';
+  const stop = params.get('stop') ?? '';
+  // The draft-restore check: is the stop this draft carries still receivable?
+  if (stop) {
+    if (!UUID.test(wh) || !UUID.test(stop)) return Response.json({ error: 'validation' }, { status: 400 });
+    if (!actor.permissions.has('receipts.create') || !inScope(actor, wh)) {
+      return Response.json({ error: 'forbidden' }, { status: 403 });
+    }
+    try {
+      const found = await stopReceivability(stop);
+      // A stop of another warehouse's trip answers like a missing one.
+      const body = found && found.destWarehouseId === wh ? { status: found.status, answered: found.answered } : { status: null, answered: [] };
+      return Response.json(body, { headers: { 'Cache-Control': 'private, no-store' } });
+    } catch (err) {
+      if (isServerBehind(err)) return Response.json({ status: 'unknown', answered: [] });
+      throw err;
+    }
+  }
   const clientId = params.get('c') ?? '';
   const marking = (params.get('m') ?? '').trim();
   if (!UUID.test(wh) || (clientId && !UUID.test(clientId)) || (!clientId && !marking) || marking.length > 100) {

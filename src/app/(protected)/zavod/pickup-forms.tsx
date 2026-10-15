@@ -15,6 +15,7 @@ import {
   removeStopAction,
   saveStopLinesAction,
   setPickupNoCostAction,
+  updatePickupHeaderAction,
   type PickupActionResult,
 } from './actions';
 
@@ -470,7 +471,16 @@ export function PickupButtons({
  * offered only while the trip has no cost at all. Controlled inputs: a
  * refusal keeps what was typed (#463).
  */
-export function ClosePickupForm({ pickupId, offerNoCost }: { pickupId: string; offerNoCost: boolean }) {
+export function ClosePickupForm({
+  pickupId,
+  offerNoCost,
+  pendingCandidates,
+}: {
+  pickupId: string;
+  offerNoCost: boolean;
+  /** Prixods the card offers to link: closing over them buries their trip. */
+  pendingCandidates: number;
+}) {
   const t = useTranslations('pickups');
   const errorText = useErrorText();
   const router = useRouter();
@@ -484,6 +494,11 @@ export function ClosePickupForm({ pickupId, offerNoCost }: { pickupId: string; o
       <summary className="cursor-pointer font-semibold">🔒 {t('closeTrip')}</summary>
       <div className="mt-2 space-y-2">
         <p className="text-xs text-ink-500">{t('closeHint')}</p>
+        {pendingCandidates > 0 && (
+          <p className="text-xs font-semibold text-warn" data-testid="pickup-close-candidates">
+            ⚠ {t('closeCandidates', { n: pendingCandidates })}
+          </p>
+        )}
         <label className="block">
           <span className="label">{t('closeReason')}</span>
           <textarea
@@ -612,6 +627,98 @@ export function NoCostControl({
       )}
       {error && <p className="text-bad">⚠ {error}</p>}
     </div>
+  );
+}
+
+/**
+ * The truck's own facts on the card (the judge's plate finding): the plate is
+ * usually learned after the trip was planned, and it is what names «this
+ * truck» on the agent's sheet. Editable on a CLOSED trip too — the service
+ * keeps its destination and date as history.
+ */
+export function PickupHeaderForm({
+  pickupId,
+  initial,
+  closed,
+}: {
+  pickupId: string;
+  initial: {
+    destWarehouseId: string;
+    vehiclePlate: string;
+    driverName: string;
+    driverPhone: string;
+    plannedOn: string;
+    note: string;
+  };
+  closed: boolean;
+}) {
+  const t = useTranslations('pickups');
+  const errorText = useErrorText();
+  const router = useRouter();
+  const [v, setV] = useState(initial);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const field = (key: keyof typeof initial, label: string, testid: string) => (
+    <label className="block">
+      <span className="label">{label}</span>
+      <input
+        data-testid={testid}
+        className="input"
+        value={v[key]}
+        onChange={(e) => setV({ ...v, [key]: e.target.value })}
+      />
+    </label>
+  );
+  return (
+    <details className="text-sm" data-testid="pickup-header-edit">
+      <summary className="cursor-pointer text-brand-700 underline">✏️ {t('editHeader')}</summary>
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        {field('vehiclePlate', t('plate'), 'pickup-edit-plate')}
+        {field('driverName', t('driver'), 'pickup-edit-driver')}
+        {field('driverPhone', t('driverPhone'), 'pickup-edit-phone')}
+        {!closed && (
+          <label className="block">
+            <span className="label">{t('plannedOn')}</span>
+            <input
+              type="date"
+              className="input"
+              value={v.plannedOn}
+              onChange={(e) => setV({ ...v, plannedOn: e.target.value })}
+            />
+          </label>
+        )}
+        <label className="block sm:col-span-2">
+          <span className="label">{t('note')}</span>
+          <textarea className="input h-20" value={v.note} onChange={(e) => setV({ ...v, note: e.target.value })} />
+        </label>
+      </div>
+      <div className="mt-2 flex items-center gap-2">
+        <button
+          type="button"
+          data-testid="pickup-edit-save"
+          className="btn-secondary"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            setMsg(null);
+            try {
+              const res = await updatePickupHeaderAction(pickupId, v).catch(
+                () => ({ ok: false, error: 'generic' }) as PickupActionResult,
+              );
+              if (res.ok) {
+                setMsg(t('saved'));
+                router.refresh();
+              } else setMsg(`⚠ ${errorText(res.error)}`);
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          {t('save')}
+        </button>
+        {msg && <span className="text-xs">{msg}</span>}
+      </div>
+    </details>
   );
 }
 
@@ -765,10 +872,13 @@ export function AnswerLineButtons({
 export function ReceiptPickupControl({
   receiptId,
   currentStopId,
+  currentClosed,
   options,
 }: {
   receiptId: string;
   currentStopId: string | null;
+  /** The trip it is on is closed: leaving it is asked first (the judge's finding). */
+  currentClosed: boolean;
   options: { stopId: string; label: string }[];
 }) {
   const t = useTranslations('pickups');
@@ -798,6 +908,7 @@ export function ReceiptPickupControl({
           data-testid="receipt-pickup-save"
           className="btn-secondary shrink-0"
           onClick={async () => {
+            if (currentClosed && currentStopId && !window.confirm(t('detachClosedConfirm'))) return;
             const res = await linkReceiptAction(receiptId, value || null);
             setMsg(res.ok ? null : errorText(res.error));
             if (res.ok) router.refresh();

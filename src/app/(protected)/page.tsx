@@ -327,14 +327,15 @@ async function LogistFlow({ flow }: { flow: LogistFlowCounts }) {
           icon="truck"
           testid="logist-flow-pickups"
           label={tz('title')}
-          count={flow.pickups.noCost + flow.pickups.unlinked + flow.pickups.costNoCargo}
+          count={flow.pickups.noCost + flow.pickups.unlinked + flow.pickups.costNoCargo + flow.pickups.staleOpen}
           warn={flow.pickups.noCost > 0 || flow.pickups.costNoCargo > 0}
           sub={
-            flow.pickups.noCost || flow.pickups.unlinked || flow.pickups.costNoCargo
+            flow.pickups.noCost || flow.pickups.unlinked || flow.pickups.costNoCargo || flow.pickups.staleOpen
               ? [
                   flow.pickups.noCost ? `⚠ ${tz('homeNoCost', { n: flow.pickups.noCost })}` : '',
                   flow.pickups.costNoCargo ? `⚠ ${tz('homeCostNoCargo', { n: flow.pickups.costNoCargo })}` : '',
                   flow.pickups.unlinked ? tz('homeUnlinked', { n: flow.pickups.unlinked }) : '',
+                  flow.pickups.staleOpen ? tz('homeStaleOpen', { n: flow.pickups.staleOpen }) : '',
                 ]
                   .filter(Boolean)
                   .join(' · ')

@@ -13,7 +13,10 @@ import type { IncomingTruck } from '@/modules/wms/pickups/service';
  */
 export async function IncomingPickups({ trucks }: { trucks: IncomingTruck[] }) {
   const t = await getTranslations('pickups');
-  const arrived = trucks.some((truck) => truck.status === 'arrived');
+  // Opens by itself only for a truck that arrived in the last two days: an
+  // older open trip is the logist's to close, and an always-open fold over a
+  // three-week-old truck is the owner's «yana chiqib qolyabti» on screen.
+  const arrived = trucks.some((truck) => truck.freshArrival);
   return (
     <details className="card mb-3" data-testid="incoming-pickups" open={arrived}>
       <summary className="cursor-pointer text-sm font-semibold">

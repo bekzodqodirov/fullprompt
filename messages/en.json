@@ -989,7 +989,12 @@
     "pickupClosed": "This factory trip is already closed — receive the cargo without it; the logist links it from the receipt card.",
     "pickupLineAnswered": "This line of the trip was already received by another receipt. If this is other cargo, remove the trip (✕) and receive again.",
     "pickupLineGone": "The trip’s lines changed while you were receiving. Remove the trip (✕) and choose again.",
-    "pickupDoorPerFactory": "One client has cargo from two factories of this trip — make a separate receipt for each factory."
+    "pickupDoorPerFactory": "One client has cargo from two factories of this trip — make a separate receipt for each factory.",
+    "pickupExtra": "This is the rest of the same cargo — add to the trip",
+    "pickupDrop": "Receive without the trip",
+    "pickupExtraChip": "rest of the cargo — no line",
+    "pickupStaleGone": "This trip no longer exists (cancelled) — remove it and receive without it.",
+    "pickupStaleTaken": "{n} line(s) of this trip were already received by another receipt — check it is not the same cargo."
   },
   "receipts": {
     "title": "Receipts",
@@ -4778,7 +4783,17 @@
     "costNoCargo": "cost, no cargo",
     "costNoCargoLong": "The trip has a cost but no live receipt — the cost sits on no carton. Link the new receipt to this trip from its card.",
     "serverBehind": "The server is still updating — try again in a minute.",
-    "linkToLine": "{seq}: {goods}"
+    "linkToLine": "{seq}: {goods}",
+    "declinedAtDoor": "the warehouse said «not from this trip»",
+    "prefillReceived": "{code}: this cargo is already received — {numbers}. Do not receive it twice; if it is other cargo, receive it the ordinary way.",
+    "prefillClosed": "{code} is closed or cancelled — receive without the trip.",
+    "homeStaleOpen": "{n} arrived but not closed",
+    "editHeader": "Truck, driver, note",
+    "closeCandidates": "There are unlinked receipts ({n}) — link them below first, or their cargo stays «received here».",
+    "closedByHand": "closed by hand",
+    "closedByItself": "all received",
+    "linesNotCame": "{n} line(s) did not come",
+    "detachClosedConfirm": "The trip is closed. Detach the receipt? It can be re-attached only from the receipt card within 30 days."
   },
   "unpriced": {
     "title": "Arrived cargo with no price",

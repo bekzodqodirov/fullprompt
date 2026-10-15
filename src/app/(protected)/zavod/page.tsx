@@ -85,6 +85,15 @@ export default async function PickupsPage({ searchParams }: { searchParams: Prom
                   <p className="truncate text-xs text-ink-500">
                     {stops.map((s) => `${s.seq}. ${s.factory.name}${s.collectedAt ? ' ✓' : ''}`).join(' · ')}
                   </p>
+                  {pickup.status === 'closed' && (
+                    <p className="text-xs text-ink-700" data-testid="pickup-row-closed">
+                      {pickup.closeKind === 'manual' ? `🔒 ${t('closedByHand')}` : `✅ ${t('closedByItself')}`}
+                      {(() => {
+                        const left = stops.flatMap((s) => s.lines).filter((l) => !l.receipts.length).length;
+                        return left ? ` · ${t('linesNotCame', { n: left })}` : '';
+                      })()}
+                    </p>
+                  )}
                   <p className="text-xs text-ink-700">
                     {t('rowSummary', { collected, stops: stops.length, boxes })}
                     {(pickup.status === 'arrived' || pickup.status === 'closed') && liveCostCount === 0 && !pickup.noCostAt && (

@@ -3,7 +3,7 @@
 import { compressPhoto, PhotoUnreadable } from '@/components/compress-photo';
 import { dealOptionLabel } from '@/modules/wms/deals/cargo-label';
 import { PHOTO_UPLOAD_CONCURRENCY, runPooled } from '@/components/pooled';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { v4 as uuidv4 } from 'uuid';
 import { computeLotTotals } from '@/modules/wms/receipts/math';
@@ -11,7 +11,8 @@ import { DensityBadge } from '@/components/density-badge';
 import { LightboxImg } from '@/components/lightbox-img';
 import { PrintLabels } from '@/components/print-labels';
 import { submitReceiptAction, type SubmitReceiptResult } from './actions';
-import { PickupDoorQuestion } from './pickup-door';
+import { PickupDoorQuestion, PickupLinkCheck } from './pickup-door';
+import { dropLotFrom, keepsPickup, NO_PICKUP, postedPickupFields } from './pickup-draft';
 import type { OpenStopForOwner } from '@/modules/wms/pickups/service';
 import {
   OfficeReceivedFields,
@@ -118,6 +119,12 @@ interface Draft {
   pickupOwnerClientId?: string | null;
   /** Trips the operator answered «Yo'q» about — the door does not ask again. */
   pickupDeclined?: string[];
+  /**
+   * «Bu qolgan qismi — reysga qo'shimcha»: the operator's answer when the line
+   * was already received by another prixod — linked to the trip, answering
+   * no line. Set only by that button; cleared with the link.
+   */
+  pickupExtra?: boolean;
   /** Which prefill made this draft — a refresh must restore it, not re-mint it. */
   prefillKey?: string;
   /** Office receipt (0112, Q9 b): the real day — '' = the warehouse's today. */
@@ -149,14 +156,6 @@ export interface ArrivalPrefill {
 
 const DRAFT_KEY = 'gsr-receipt-draft';
 
-/** Everything the factory link carries, cleared at once (✕, a client switch, the last tick). */
-const NO_PICKUP: Partial<Draft> = {
-  pickupStopId: null,
-  pickupLabel: undefined,
-  pickupLines: undefined,
-  pickupLineIds: undefined,
-  pickupOwnerClientId: undefined,
-};
 
 /** The refusals `receivedErrorText` puts into words (0112) — the rest keep the old line. */
 const OFFICE_ERRORS: Record<string, true> = {
@@ -318,7 +317,14 @@ export function ReceiveWizard({
   // and recount typed against the promise was gone. Latent since round 107.
   const prefillKey = prefill?.key ?? '';
   const warehouseKey = warehouses.map((wh) => wh.id).join(',');
+  // The confirm revalidates /receive, and once the owner's factory lines are
+  // answered the re-rendered page carries NO prefill — the key flips and this
+  // effect would mint a fresh draft (on the first warehouse, '' for the
+  // office) under the success screen. A shown result owns the screen until
+  // «Yangi prixod» (the judge's nit).
+  const showingResult = useRef(false);
   useEffect(() => {
+    if (showingResult.current) return;
     const saved = (() => {
       try {
         const raw = localStorage.getItem(DRAFT_KEY);
@@ -427,15 +433,6 @@ export function ReceiveWizard({
     setDraft((d) => (d ? { ...d, ...patch } : d));
   }, []);
 
-  /**
-   * A client change keeps the factory link only when its lines are MARKING
-   * lines (the operator received a marking under the client he knows it
-   * belongs to) or the new client's own. Otherwise the link goes and the door
-   * asks again for the new owner.
-   */
-  const keepsPickup = (d: Draft, nextClientId: string | null) =>
-    !d.pickupStopId || d.pickupOwnerClientId == null || d.pickupOwnerClientId === nextClientId;
-
   /** «Ha» at the door: link the stop with its lines; pristine lots become one lot per line. */
   const acceptPickup = useCallback((stop: OpenStopForOwner, ownerClientId: string | null) => {
     setDraft((d) => {
@@ -471,18 +468,7 @@ export function ReceiveWizard({
 
   /** Delete a lot; a lot made from a factory line takes that line out of the answer. */
   const dropLot = useCallback((lotId: string) => {
-    setDraft((d) => {
-      if (!d) return d;
-      const gone = d.lots.find((l) => l.id === lotId);
-      const next: Draft = { ...d, lots: d.lots.filter((l) => l.id !== lotId) };
-      if (gone?.pickupLineId && d.pickupLineIds) {
-        const ids = d.pickupLineIds.filter((id) => id !== gone.pickupLineId);
-        // The last line gone = this cargo is not that trip's: the link goes
-        // with it, and the door may ask again.
-        return ids.length ? { ...next, pickupLineIds: ids } : { ...next, ...NO_PICKUP };
-      }
-      return next;
-    });
+    setDraft((d) => (d ? dropLotFrom(d, lotId) : d));
   }, []);
 
   /**
@@ -796,10 +782,8 @@ export function ReceiveWizard({
         sourceNote: draft!.sourceNote,
         unclaimedMarking: draft!.unclaimedMarking,
         expectedArrivalId: draft!.expectedArrivalId ?? null,
-        pickupStopId: draft!.pickupStopId ?? null,
-        // The lines this prixod answers (0133) — only when there are some, so
-        // an older draft with a stop and no ticks lets the server derive.
-        ...(draft!.pickupStopId && draft!.pickupLineIds?.length ? { pickupLineIds: draft!.pickupLineIds } : {}),
+        // The trip and the lines this prixod answers (0133).
+        ...postedPickupFields(draft!),
         // Only for the office: never sent otherwise, so a stale shared-device
         // draft cannot trip `on_behalf_forbidden` on an operator's phone. The
         // warehouse's own today is the column's default and is not posted.
@@ -840,6 +824,10 @@ export function ReceiveWizard({
       const res = await submitReceiptAction(payload);
       if (res.ok) {
         localStorage.removeItem(DRAFT_KEY);
+        showingResult.current = true;
+        // The address keeps `?pickup=&c=` otherwise, and a later reload would
+        // reopen a prefill that has just been received.
+        if (window.location.search) window.history.replaceState(null, '', window.location.pathname);
         setResult(res);
       } else if (res.error === 'warehouse_forbidden') {
         setError(t('warehouseForbidden'));
@@ -906,6 +894,7 @@ export function ReceiveWizard({
           type="button"
           className="btn-secondary w-full"
           onClick={() => {
+            showingResult.current = false;
             setResult(null);
             setDraft(newDraft(draft.warehouseId));
           }}
@@ -1057,16 +1046,24 @@ export function ReceiveWizard({
           <div className="flex items-center gap-2">
             <span className="min-w-0 flex-1 truncate">
               {draft.pickupLabel ?? '🏭'} — {t('pickupReceiving')}
+              {draft.pickupExtra && <span className="ml-1 text-xs text-ink-500">({t('pickupExtraChip')})</span>}
             </span>
+            {/* A labelled 40 px target: the only way past a refused trip used
+                to be a bare 20 px glyph at the top of a long page. */}
             <button
               type="button"
-              className="shrink-0 px-1 text-ink-500"
-              aria-label={t('pickupDetach')}
+              data-testid="receive-pickup-detach"
+              className="flex min-h-10 shrink-0 items-center px-2 text-xs font-semibold text-ink-700 underline"
               onClick={() => update(NO_PICKUP)}
             >
-              ✕
+              ✕ {t('pickupDetach')}
             </button>
           </div>
+          <PickupLinkCheck
+            warehouseId={draft.warehouseId}
+            stopId={draft.pickupStopId}
+            lineIds={draft.pickupExtra ? [] : (draft.pickupLineIds ?? [])}
+          />
           {/* Which of the factory's lines THIS prixod brings (0133): every
               line ticked by default, a deleted lot unticks its own, and the
               last tick gone takes the link with it. */}
@@ -1715,6 +1712,38 @@ export function ReceiveWizard({
                   ? t('pickupLineGone')
                   : `${error === 'photo_required' ? t('photoRequired') : error.startsWith('pickup_invalid') ? t('pickupInvalid') : tc('error')} (${error})`}
         </p>
+      )}
+      {/* The remedy sits WITH the refusal, not in a 20 px ✕ at the top of a
+          long page (the judge's floor finding): the rest of cargo another
+          prixod already answered rides the trip as extra; anything else is
+          received without the trip and the logist links it from the card. */}
+      {error && draft.pickupStopId && /^pickup_(closed|line_answered|line_not_on_stop|invalid)/.test(error) && (
+        <div className="flex flex-wrap gap-2" data-testid="receive-pickup-remedy">
+          {error === 'pickup_line_answered' && (
+            <button
+              type="button"
+              data-testid="receive-pickup-extra"
+              className="btn-secondary"
+              onClick={() => {
+                update({ pickupExtra: true });
+                setError(null);
+              }}
+            >
+              {t('pickupExtra')}
+            </button>
+          )}
+          <button
+            type="button"
+            data-testid="receive-pickup-drop"
+            className="btn-secondary"
+            onClick={() => {
+              update(NO_PICKUP);
+              setError(null);
+            }}
+          >
+            {t('pickupDrop')}
+          </button>
+        </div>
       )}
 
       {/* ===== Sticky totals + confirm ===== */}

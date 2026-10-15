@@ -44,6 +44,7 @@ describe('zavod reysi wiring', () => {
 
   it('the wizard posts the stop it was opened from', () => {
     const wizard = read('src/app/(protected)/receive/receive-wizard.tsx');
-    expect(wizard).toContain('pickupStopId: draft!.pickupStopId ?? null');
+    expect(wizard).toContain('...postedPickupFields(draft!)');
+    expect(read('src/app/(protected)/receive/pickup-draft.ts')).toContain('pickupStopId: d.pickupStopId ?? null');
   });
 });

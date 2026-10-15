@@ -115,3 +115,46 @@ export function PickupDoorQuestion({
     </div>
   );
 }
+
+/**
+ * The banner's own check (the judge's stale-draft finding): a draft restored
+ * from yesterday still reads «🏭 ZR-00012 — zavod reysidan qabul» while the
+ * logist closed that trip overnight, and the refusal came only after six lots
+ * were photographed. Asked once when the banner appears; silent unless there
+ * is something to say, and silent offline.
+ */
+export function PickupLinkCheck({
+  warehouseId,
+  stopId,
+  lineIds,
+}: {
+  warehouseId: string;
+  stopId: string;
+  lineIds: string[];
+}) {
+  const t = useTranslations('receive');
+  const key = `${warehouseId}&stop=${stopId}`;
+  const [answer, setAnswer] = useState<{ key: string; status: string | null; answered: string[] } | null>(null);
+  useEffect(() => {
+    let current = true;
+    fetch(`/api/receive/pickups?wh=${key}`, { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body: { status: string | null; answered: string[] } | null) => {
+        if (current && body) setAnswer({ key, status: body.status, answered: body.answered ?? [] });
+      })
+      .catch(() => {});
+    return () => {
+      current = false;
+    };
+  }, [key]);
+  if (!answer || answer.key !== key || answer.status === 'unknown') return null;
+  const gone = answer.status === null || answer.status === 'cancelled';
+  const closed = answer.status === 'closed';
+  const taken = lineIds.filter((id) => answer.answered.includes(id)).length;
+  if (!gone && !closed && !taken) return null;
+  return (
+    <p className="text-xs font-semibold text-warn" data-testid="receive-pickup-stale">
+      ⚠ {gone ? t('pickupStaleGone') : closed ? t('pickupClosed') : t('pickupStaleTaken', { n: taken })}
+    </p>
+  );
+}

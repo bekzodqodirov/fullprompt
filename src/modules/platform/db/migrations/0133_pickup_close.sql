@@ -87,6 +87,45 @@ SELECT pl."id", r."id", coalesce(r."confirmed_at", r."created_at")
 ON CONFLICT DO NOTHING;
 -- BACKFILL-MEMORY-END
 --> statement-breakpoint
+-- BACKFILL-PAIR-BEGIN
+-- The one unambiguous mismatch history holds (probe S4): a factory line
+-- written as a MARKING and its cargo received under the CLIENT code (or the
+-- reverse). The owners never match, so the trip read «not received» for
+-- ever — the owner's «oldin qabul qilgan reyslarim yana chiqib qolyabti».
+-- Paired only when nothing else is possible: the stop's unanswered lines
+-- belong to ONE owner, exactly ONE live prixod linked to that stop answers
+-- nothing, and the two are of opposite kinds (a client's prixod for marking
+-- lines, an unclaimed one for a client's lines). Any other leftover stays
+-- open for the logist and is listed by scripts/zavod-tekshir.ts.
+WITH "open_lines" AS (
+  SELECT pl."id", pl."stop_id", pl."client_id",
+         coalesce(pl."client_id"::text, 'm:' || lower(btrim(coalesce(pl."marking", '')))) AS "owner"
+    FROM "pickup_lines" pl
+   WHERE NOT EXISTS (SELECT 1 FROM "pickup_line_receipts" plr
+                       JOIN "receipts" r ON r."id" = plr."receipt_id" AND r."voided_at" IS NULL
+                      WHERE plr."line_id" = pl."id")
+), "loose" AS (
+  SELECT r."pickup_stop_id" AS "stop_id", min(r."id"::text)::uuid AS "receipt_id", count(*) AS "n"
+    FROM "receipts" r
+   WHERE r."pickup_stop_id" IS NOT NULL AND r."voided_at" IS NULL AND r."status" = 'confirmed'
+     AND NOT EXISTS (SELECT 1 FROM "pickup_line_receipts" plr WHERE plr."receipt_id" = r."id")
+   GROUP BY r."pickup_stop_id"
+), "pairable" AS (
+  SELECT l."stop_id", l."receipt_id"
+    FROM "loose" l
+   WHERE l."n" = 1
+     AND (SELECT count(DISTINCT o."owner") FROM "open_lines" o WHERE o."stop_id" = l."stop_id") = 1
+)
+INSERT INTO "pickup_line_receipts" ("line_id", "receipt_id", "created_at")
+SELECT o."id", p."receipt_id", coalesce(r."confirmed_at", r."created_at")
+  FROM "pairable" p
+  JOIN "open_lines" o ON o."stop_id" = p."stop_id"
+  JOIN "receipts" r ON r."id" = p."receipt_id"
+ WHERE (o."client_id" IS NULL AND r."client_id" IS NOT NULL)
+    OR (o."client_id" IS NOT NULL AND r."client_id" IS NULL)
+ON CONFLICT DO NOTHING;
+-- BACKFILL-PAIR-END
+--> statement-breakpoint
 -- BACKFILL-CLOSE-BEGIN
 -- A trip whose every line a live prixod answers is closed, dated by the last
 -- of those prixods (his 1a, applied to what already happened), with one audit
