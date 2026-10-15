@@ -10,24 +10,32 @@ import {
 } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { inScope } from '@/modules/platform/rbac/scope';
+import { isServerBehind } from '@/modules/platform/db/errors';
 import { PageHeader } from '@/components/ui/page';
 import { CostPanel } from '@/components/cost-panel';
 import { AttachmentsPanel } from '@/components/attachments-panel';
 import { listPartners } from '@/modules/wms/partners/service';
 import { mayReadBatches } from '@/modules/wms/batches/read-door';
 import {
+  isOpenStatus,
   listFactories,
   loadPickup,
+  ownerLinesOf,
   mayReadPickup,
+  mayReadPickups,
   PICKUP_WRITE,
   pickupCandidates,
 } from '@/modules/wms/pickups/service';
 import { pickupEstimate } from '@/modules/wms/pickups/eta';
 import {
   AddStopForm,
+  AnswerLineButtons,
+  ClosePickupForm,
   CollectForm,
   LinkReceiptButtons,
+  NoCostControl,
   PickupButtons,
+  PickupHeaderForm,
   RemoveStopButton,
   StopLinesForm,
 } from '../pickup-forms';
@@ -45,16 +53,39 @@ export default async function PickupCardPage({ params }: { params: Promise<{ id:
   if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
   const actor = await getActor();
   if (!actor) redirect('/login');
-  const loaded = await loadPickup(id);
+  const loaded = await loadPickup(id).catch((err: unknown) => {
+    if (isServerBehind(err)) return 'behind' as const;
+    throw err;
+  });
+  if (loaded === 'behind') {
+    const tb = await getTranslations('pickups');
+    return (
+      <p className="card mx-auto max-w-3xl text-sm text-warn" data-testid="pickups-server-behind">
+        ⚠ {tb('serverBehind')}
+      </p>
+    );
+  }
   if (!loaded) notFound();
-  const { pickup, dest, stops, createdByName } = loaded;
+  const { pickup, dest, stops, createdByName, closedByName, noCostByName, noCostStands } = loaded;
   if (!mayReadPickup(actor, pickup.destWarehouseId)) notFound();
 
   const t = await getTranslations('pickups');
   const format = await getFormatter();
   const canWrite = actor.permissions.has(PICKUP_WRITE);
+  // Two different questions (his 2a): a CLOSED trip takes no more logistics —
+  // no stop, no line, no «olindi», no prixod attached — while its MONEY stays
+  // open, because the truck's bill arrives when it arrives.
+  const open = isOpenStatus(pickup.status);
   const live = pickup.status !== 'cancelled';
   const canCost = actor.permissions.has('costs.enter_batch') && inScope(actor, pickup.destWarehouseId);
+  // The terminal doors (close, cancel) at THIS trip's warehouse — the
+  // action's own gate (the judge's money-8), so a button is never drawn for
+  // a press that would be refused.
+  const canEndHere = canWrite && inScope(actor, pickup.destWarehouseId);
+  // The truck's money is read by whoever reads the trip list or the company's
+  // reports — never by a receiver admitted through the destination clause
+  // alone, who is refused every batch's Xarajatlar tab too (money-9).
+  const seesTripMoney = mayReadPickups(actor.permissions) || actor.permissions.has('reports.all_warehouses');
 
   // The one reader every cost card lists from (Q19 D1): a VED who holds
   // `costs.enter_batch` reads the entries he typed and the TYPES of the rest.
@@ -72,8 +103,12 @@ export default async function PickupCardPage({ params }: { params: Promise<{ id:
         partners: (await listPartners({ includeStaff: maySeeStaffMoney(actor.permissions) })).map((row) => ({ id: row.id, name: row.name })),
       }
     : null;
-  const candidates = live && canCost ? await pickupCandidates(id) : [];
-  const factories = canWrite && live ? await listFactories() : [];
+  const candidates = open && canCost ? await pickupCandidates(id) : [];
+  const factories = canWrite && open ? await listFactories() : [];
+  // Every live cost, the reader's own AND the ones he may only count: a VED
+  // who typed none must not be told the truck has no bill.
+  const costCount = costs.length + costOthers.count;
+  const came = pickup.status === 'arrived' || pickup.status === 'closed';
   const stamps = stops.length
     ? await db
         .select()
@@ -120,26 +155,52 @@ export default async function PickupCardPage({ params }: { params: Promise<{ id:
           </p>
         )}
         {pickup.note && <p className="whitespace-pre-line text-ink-700">📝 {pickup.note}</p>}
+        {canWrite && live && (
+          <PickupHeaderForm
+            pickupId={pickup.id}
+            closed={pickup.status === 'closed'}
+            initial={{
+              destWarehouseId: pickup.destWarehouseId,
+              vehiclePlate: pickup.vehiclePlate ?? '',
+              driverName: pickup.driverName ?? '',
+              driverPhone: pickup.driverPhone ?? '',
+              plannedOn: pickup.plannedOn ?? '',
+              note: pickup.note ?? '',
+            }}
+          />
+        )}
         <p className="text-xs text-ink-500">
           {createdByName} · {when(pickup.createdAt)}
         </p>
-        {live && eta && position && (
+        {pickup.status === 'closed' && pickup.closedAt && (
+          <p data-testid="pickup-closed" className="rounded bg-surface-sunken px-2 py-1">
+            {pickup.closeKind === 'auto'
+              ? `✅ ${t('closedAuto', { at: when(pickup.closedAt) })}`
+              : `🔒 ${t('closedManual', { at: when(pickup.closedAt), who: closedByName ?? '—', reason: pickup.closeReason ?? '' })}`}
+          </p>
+        )}
+        {open && eta && position && (
           <p data-testid="pickup-eta" className="rounded bg-surface-sunken px-2 py-1">
             🧭 {t('etaLine', { from: when(eta.from), to: when(eta.to) })}{' '}
             <span className="text-xs text-ink-500">({t('estimate')})</span>
           </p>
         )}
-        {live && unplaced.length > 0 && (
+        {open && unplaced.length > 0 && (
           <p className="text-xs text-warn">
             ⚠ {t('unplaced', { names: unplaced.map((s) => s.factory.name).join(', ') })}
           </p>
         )}
-        {pickup.status === 'arrived' && costs.length === 0 && (
+        {seesTripMoney && pickup.status === 'closed' && costCount > 0 && linkedCount === 0 && (
+          <p data-testid="pickup-cost-no-cargo" className="font-semibold text-warn">
+            ⚠ {t('costNoCargoLong')}
+          </p>
+        )}
+        {seesTripMoney && came && costCount === 0 && !noCostStands && (
           <p data-testid="pickup-no-cost" className="font-semibold text-warn">
             ⚠ {t('noCostLong')}
           </p>
         )}
-        {live && mayReadBatches(actor.permissions) && (
+        {open && mayReadBatches(actor.permissions) && (
           <Link href={`/map?zr=${pickup.id}`} className="inline-block text-brand-700 underline" data-testid="pickup-map-link">
             🗺 {t('onMap')}
           </Link>
@@ -186,13 +247,51 @@ export default async function PickupCardPage({ params }: { params: Promise<{ id:
                   {line.weightKg !== null && ` · ${line.weightKg} kg`}
                 </span>
                 {line.receipts.map((r) => (
-                  <Link key={r.id} href={`/receipts/${r.id}`} className="text-xs text-brand-700 underline">
+                  <Link key={r.id} href={`/receipts/${r.id}`} className="text-xs text-brand-700 underline" data-testid="line-receipt">
                     ✓ {r.number}
                   </Link>
                 ))}
+                {/* Answered whatever the count (his 1a — the recount at our
+                    door is the truth); fewer than both the factory and the
+                    driver said is said aloud, never a reason the trip stays
+                    open (the judge's intent-q4). */}
+                {line.receipts.length > 0 && (
+                  <LineReceivedCount
+                    received={line.receipts.reduce((a, r) => a + r.boxes, 0)}
+                    expected={Math.min(line.factoryBoxes, line.driverBoxes ?? line.factoryBoxes)}
+                    label={t('receivedShort')}
+                  />
+                )}
+                {line.receipts.length === 0 && stop.collectedAt && (
+                  <span className="text-xs text-ink-500" data-testid="line-waiting">
+                    {pickup.status === 'closed' ? t('lineNotReceived') : t('lineWaiting')}
+                  </span>
+                )}
               </li>
             ))}
           </ul>
+          {stop.unmatched.length > 0 && (
+            <div className="space-y-1 text-xs" data-testid="stop-unmatched">
+              <p className="text-ink-500">{t('unmatched')}:</p>
+              {stop.unmatched.map((r) => {
+                // The lines this prixod could be: its owner's first, else any
+                // line of the stop (a marking received under a client code).
+                const own = ownerLinesOf(stop.lines, r);
+                const choices = (own.length ? own : stop.lines).map((l) => ({ id: l.id, goods: l.goods }));
+                return (
+                  <p key={r.id} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <Link href={`/receipts/${r.id}`} className="text-brand-700 underline">
+                      {r.number}
+                    </Link>
+                    <span className="font-mono">{r.clientCode ?? r.unclaimedMarking}</span>
+                    {canCost && live && choices.length > 0 && (
+                      <AnswerLineButtons receiptId={r.id} stopId={stop.id} lines={choices} />
+                    )}
+                  </p>
+                );
+              })}
+            </div>
+          )}
           {canWrite && live && !stop.collectedAt && stop.lines.length > 0 && (
             <CollectForm
               stopId={stop.id}
@@ -203,7 +302,7 @@ export default async function PickupCardPage({ params }: { params: Promise<{ id:
               }))}
             />
           )}
-          {canWrite && live && stop.receipts.every((r) => r.voided) && (
+          {canWrite && open && stop.receipts.every((r) => r.voided) && (
             <StopLinesForm
               stopId={stop.id}
               initial={stop.lines.map((l) => ({
@@ -221,20 +320,21 @@ export default async function PickupCardPage({ params }: { params: Promise<{ id:
             initial={stamps
               .filter((f) => f.entityId === stop.id)
               .map((f) => ({ id: f.id, fileName: f.fileName, contentType: f.contentType, kind: f.kind }))}
-            editable={canWrite && live}
+            editable={canWrite && open}
           />
-          {canWrite && live && !stop.collectedAt && stop.receipts.length === 0 && stops.length > 1 && (
+          {canWrite && open && !stop.collectedAt && stop.receipts.length === 0 && stops.length > 1 && (
             <RemoveStopButton stopId={stop.id} />
           )}
         </section>
       ))}
 
-      {canWrite && live && stops.length < 6 && factories.length > 0 && (
+      {canWrite && open && stops.length < 6 && factories.length > 0 && (
         <div className="card">
           <AddStopForm pickupId={pickup.id} factories={factories.map((f) => ({ id: f.id, label: f.name }))} />
         </div>
       )}
 
+      {seesTripMoney && (
       <section className="card space-y-2" data-testid="pickup-costs">
         <h2 className="font-semibold">💰 {t('costs')}</h2>
         <p className="text-xs text-ink-500">{t('costHint', { n: linkedCount })}</p>
@@ -283,7 +383,23 @@ export default async function PickupCardPage({ params }: { params: Promise<{ id:
             🔒 {tcost('othersEntered', { count: costOthers.count, types: costOthers.types.join(' · ') })}
           </p>
         )}
+        {/* The mark as it STANDS is shown to every money reader; it is SET
+            only on a closed trip (his 5a «yopishda» — the close form's tick
+            on an open one) and cleared by whoever enters the truck's cost. */}
+        {noCostStands && pickup.noCostReason && !(canCost && costCount === 0) && (
+          <p className="text-sm" data-testid="pickup-nocost-mark">
+            ✓ {t('noCostMarked', { reason: pickup.noCostReason })}
+            {noCostByName && <span className="text-xs text-ink-500"> · {noCostByName}</span>}
+          </p>
+        )}
+        {canCost && costCount === 0 && (pickup.status === 'closed' || noCostStands) && (
+          <NoCostControl
+            pickupId={pickup.id}
+            marked={noCostStands && pickup.noCostReason ? { reason: pickup.noCostReason, byName: noCostByName } : null}
+          />
+        )}
       </section>
+      )}
 
       {candidates.length > 0 && (
         <section className="card space-y-2" data-testid="pickup-candidates">
@@ -296,6 +412,11 @@ export default async function PickupCardPage({ params }: { params: Promise<{ id:
                   {c.number}
                 </Link>
                 <span className="font-mono">{c.clientCode ?? c.unclaimedMarking}</span>
+                {c.declined && (
+                  <span className="text-xs font-semibold text-warn" data-testid="candidate-declined">
+                    ⚠ {t('declinedAtDoor')}
+                  </span>
+                )}
                 <LinkReceiptButtons receiptId={c.id} stops={c.stops} />
               </li>
             ))}
@@ -303,13 +424,41 @@ export default async function PickupCardPage({ params }: { params: Promise<{ id:
         </section>
       )}
 
-      {canWrite && live && (
+      {canEndHere && open && (
         <PickupButtons
           pickupId={pickup.id}
           canArrive={pickup.status !== 'arrived'}
-          canCancel={costs.length === 0 && linkedCount === 0}
+          canCancel={costCount === 0 && linkedCount === 0}
         />
       )}
+      {/* Two terminal buttons with overlapping meaning on a trip where
+          nothing happened would make the wrong one easy: an untouched trip is
+          CANCELLED; «yopish» is for a trip that moved (a stop collected, a
+          prixod linked, a cost) — the judge's floor finding. */}
+      {canEndHere &&
+        open &&
+        (costCount > 0 || linkedCount > 0 || stops.some((st) => st.collectedAt)) && (
+          <ClosePickupForm
+            pickupId={pickup.id}
+            offerNoCost={canCost && costCount === 0}
+            pendingCandidates={candidates.map((c) => c.number ?? '—')}
+          />
+        )}
     </div>
+  );
+}
+
+/**
+ * «qabul: 45 ⚠» — Σ live cartons of the prixods answering a line, warned
+ * when fewer than BOTH the factory's and the driver's counts (his 1a: the
+ * line is answered whatever the count; the gap is a fact for a person).
+ */
+function LineReceivedCount({ received, expected, label }: { received: number; expected: number; label: string }) {
+  const short = received < expected;
+  return (
+    <span className={`text-xs ${short ? 'font-semibold text-warn' : 'text-ink-500'}`} data-testid="line-received">
+      {label}: {received}
+      {short && ' ⚠'}
+    </span>
   );
 }

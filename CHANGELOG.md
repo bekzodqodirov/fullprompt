@@ -2,7 +2,7 @@
 
 ## Yo'lkira: bitta jadval hamma mashina uchun, har bir tovar o'z zichligi bilan — 2026-10-15
 
-**Bu raundning o'zida migratsiya yo'q.** Lekin 14-oktabrdagi yangilanish (PR #120, migratsiya 0132) serverga hali qo'yilmagan bo'lsa, shu deploy uni ham olib keladi. Shuning uchun deploydan keyin ikkalasini tekshiring: **migratsiyalar soni 133** va `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatsin.
+**Bu raundning o'zida migratsiya yo'q.** U pastdagi «Zavod reysi yopiladi» raundi (migratsiya 0133) bilan bitta deployda chiqadi, va 14-oktabrdagi yangilanish (PR #120, migratsiya 0132) serverga hali qo'yilmagan bo'lsa, uni ham olib keladi. Shuning uchun deploydan keyin ikkalasini tekshiring: **migratsiyalar soni 134** va `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatsin.
 
 **14-oktabr yozuvidagi 2-bo'lim («Har bir skladga ustun») va o'rnatishning 4-qadami («Har bir skladga ustun yozing») bekor qilindi** — skladga ustun yozish endi yo'q.
 
@@ -36,14 +36,103 @@ Sizning so'zingiz: «skladlarning o'zini narxi bo'lsin degan narsa kerak emas �
 
 1. Zaxira oling (0 bayt emasligini tekshiring).
 2. PR'ni merge qiling, keyin serverda `git pull`, `docker compose build migrate`, keyin `docker compose --profile https --profile telegram up -d --build`.
-3. **Migratsiyalar sonini sanang: 133 bo'lishi kerak** (14-oktabrdagi yangilanish qo'yilgan bo'lsa ham, qo'yilmagan bo'lsa ham). Kamroq bo'lsa, `docker compose run --rm migrate` ning o'z chiqishini o'qing.
+3. **Migratsiyalar sonini sanang: 134 bo'lishi kerak** (zavod reysi raundining 0133 si ham shu deployda; 14-oktabrdagi yangilanish qo'yilgan bo'lsa ham, qo'yilmagan bo'lsa ham). Kamroq bo'lsa, `docker compose run --rm migrate` ning o'z chiqishini o'qing.
 4. `curl -s https://gsrwms.uz/api/version` — bugungi vaqt.
 5. `docker compose run --rm migrate pnpm exec tsx scripts/freight-resplit.ts` — «0 ta hisob o'zgaradi» kutiladi. Ro'yxat chiqsa, menga yuboring yoki shu buyruqni `--apply` bilan qayta yuriting.
 6. /admin/tarif ni oching — tepada ⚠ bo'lmasligi kerak.
+7. Zavod reysi raundining tekshiruv skripti (pastdagi yozuvda): `docker compose run --rm migrate pnpm exec tsx scripts/zavod-tekshir.ts` — chiqqanini menga yuboring.
 
 ### Tekshirildi
 
 - Yangi testlar: D misoli, bitta prixoddagi ikki lot, lot zichligi karobka soniga bog'liq emasligi, yengil lot butun hisobni ushlab turishi, sentlar bitta qoida bilan (mijoz = lotlari yig'indisi), «Narx» qatori faqat shu qismdagi lotlar bilan, avvalgi reysdan faqat bitta lot kelgan holat, VED tarif narxini ko'rmasligi (✎ oynasida ham), qayta bo'lish skripti (eski «Qashqar» ustunidagi hisob ham o'z ustunida qayta bo'linadi), /admin/tarif ⚠. Telefon (360) va kompyuter (1280) ekranlari ko'rildi.
+
+## Zavod reysi yopiladi va qayta chiqmaydi — 2026-10-15
+
+**Migratsiya 0133** — deploydan keyin soni **134** bo'lishi shart. Deploydan keyin tekshiruv skriptini ishga tushiring (pastda) va chiqqanini menga tashlang.
+
+Sizning javoblaringiz: 1a 2a 3a 4a 5a, 6 (paking-listda va boshqa joylarda «shu zavoddan, shu mashinada»), 7 ha.
+
+### Nega reyslar qayta chiqayotgan edi
+
+Tizim zavod reysini hech qachon «tugadi» deb yozmas edi va har safar ekran ochilganda «qabul qilinganmi?» degan savolga **taxmin** bilan javob berardi: qatordagi mijoz kodi yoki markirovka bo'yicha. Shuning uchun markirovkali yukni mijozga biriktirsangiz, bitta prixodni bekor qilsangiz yoki zavod qatori markirovka bilan yozilib yuk mijoz kodi bilan qabul qilingan bo'lsa — reys yana «kelmagan» bo'lib chiqardi. Bundan tashqari bir yukni reys orqali ikki marta qabul qilish mumkin edi.
+
+### 1. Reys endi yopiladi (1a) va qayta ochilmaydi (2a)
+
+- Har bir qator qabul qilinganda reys **o'zi yopiladi** — «✅ Hamma qator qabul qilindi — reys yopildi».
+- Zavod biror qatorni bermagan bo'lsa — logist reys kartasida **«🔒 Reysni yopish»** bosadi va **sababini yozadi**. Bu tugma faqat reys qimirlagan bo'lsa chiqadi (zavoddan olingan, prixod yoki xarajat bor); hech narsa bo'lmagan reys — avvalgidek «bekor qilish».
+- Yopishda biriktirilmagan prixod qolgan bo'lsa, tasdiqlash oynasi ularning **raqamlarini aytadi** (masalan «P-201, P-207») — ularning yuki «skladda qabul qilingan» bo'lib qolmasin.
+- Yopish va bekor qilish tugmalari faqat **shu reys boradigan skladga** ruxsati bor logistda chiqadi.
+- Yopilgan reys **qayta ochilmaydi**: prixod bekor qilinsa ham yopiq qoladi, kelmagan qatori «kelmadi» deb yoziladi.
+- Ro'yxatda yangi varaqlar: **«Yopilgan»** va **«Xarajatsiz»**.
+
+### 2. Prixod qaysi qatorni qabul qilganini eslab qoladi
+
+- Endi har bir prixod **qaysi zavod qatorini** olib kelganini eslab qoladi. Mijozga biriktirish, keyingi yuklar yoki bekor qilish bu xotirani o'zgartirmaydi.
+- **Bir yukni ikki marta qabul qilib bo'lmaydi**: ikkinchi telefon o'sha qatorni qabul qilmoqchi bo'lsa, tizim «bu qator allaqachon qabul qilingan» deydi. Agar bu haqiqatan **o'sha yukning qolgan qismi** bo'lsa — «Bu o'sha yukning qolgan qismi — reysga qo'shimcha» tugmasi bor.
+- **Boshqa mijozning qatorini qabul qilib bo'lmaydi**: GS101 qatori belgilangan holda mijoz GS205 ga almashtirilsa, tizim rad etadi va sababini aytadi. Aks holda reys noto'g'ri mijoz yuki bilan yopilib, mashina xarajati boshqa mijozga tushardi.
+- Bir qismi kelgan bo'lsa (masalan o'yinchoq keldi, sumka kelmadi) — sumka lotini o'chirsangiz, sumka qatori **ochiq qoladi**, reys yopilmaydi.
+- Reys kartasida har bir qator yonida **qancha karobka qabul qilingani** chiqadi: zavod 50 · haydovchi 50 · qabul 45 ⚠. Qator baribir «qabul qilingan» hisoblanadi (sizning 1a javobingiz — skladdagi sanoq haqiqat), farq esa ko'rinib turadi.
+
+### 3. Qabulda savol: «Bu yuk zavod reysidan keldimi?» (3a)
+
+- Mijoz kodini tanlaganingizda (yoki markirovkani qabul qilganingizda), agar shu mijozga zavoddan **olingan** («Olindi» bosilgan) yuk kelayotgan bo'lsa — savol chiqadi: **«Ha, shu reysdan» / «Yo'q»**.
+- «Ha» — reys ulanadi, lotlar zavod qatorlaridan tayyor bo'lib chiqadi (tovar nomi yozilgan, karobka sonini o'zingiz sanaysiz).
+- «Yo'q» — savol qaytib chiqmaydi va logist reys kartasida «sklad bu reysdan emas degan» deb ko'radi.
+- **Markirovka va mijoz kodi bir-biriga mos**: «GS500MANIKEN» markirovkali yuk GS500 qatoriga, GS500 mijoz esa «GS500…» markirovkali qatorga mos deb so'raladi (GS5 esa GS500 ga mos emas — koddan keyin raqam kelsa, bu boshqa kod).
+- **Yuk allaqachon qabul qilingan bo'lishi mumkin bo'lsa — oldindan aytadi**: «⚠ GS777: P-201 (12.10, 30 📦) — shu skladda reysga biriktirilmasdan qabul qilingan. Shu yuk emasmi? Bo'lsa, qayta qabul qilmang — logistga ayting». Bu savolda, «Zavoddan kelayotgan yuk» ro'yxatida va «Qabul qilish» bosilganda chiqadi. Eski ekranda eng ko'p uchragan ikki marta qabul aynan shunday bo'lgan.
+- Kecha boshlangan qoralama ochilsa va reys tunda yopilgan bo'lsa — rasmga olishdan **oldin** ogohlantiradi.
+- Qabul sahifasidagi reys yozuvi telefonda endi **to'liq** chiqadi («🏭 ZR-00037 · zavod nomi — zavod reysidan qabul»), kesilib qolmaydi — qaysi zavodga yozilayotgani ko'rinib turadi.
+
+### 4. Biriktirilmagan prixodni qidirish faqat ochiq reyslarda (4a)
+
+- Reys kartasidagi «Biriktirilmagan prixodlar» va bosh sahifadagi son faqat **ochiq** reyslar uchun. «Olindi» bosilmagan reysda ham reys yaratilgan kundan keyingi prixodlar ko'rinadi.
+- Mijozning bir zavodda ikki qatori bo'lsa, tugmalar **qator nomi** bilan chiqadi — qaysi biri kelganini o'zingiz tanlaysiz.
+- **Tuzatish yo'li**: prixod bekor qilinib qayta kiritilsa, yangi prixodni **prixod kartasidan** yopilgan reysga ham biriktirsa bo'ladi (30 kun ichida, 🔒 belgisi bilan) — reys qayta ochilmaydi, mashina xarajati yana karobkalarga tushadi.
+
+### 5. Mashina puli hech qachon «hech kimga» tushib qolmaydi
+
+- **Yopilgan** reysning xarajati bor va prixod uning **yagona yuki** bo'lsa — o'sha prixodni bekor qilish yoki reysdan ajratish **rad etiladi**: «ZR-00012 reysining xarajati yuksiz qoladi». To'g'ri yo'l: avval haqiqiy prixodni shu reysga biriktiring (kartadagi qator tugmasi bilan), keyin noto'g'risini bekor qiling.
+- **Ochiq** reysda avvalgidek bekor qilish mumkin — yukning qolgani hali keladi.
+- Balans sahifasida yopilgan reysning yuksiz xarajati alohida yoziladi va nima qilish kerakligini aytadi (prixodni biriktiring yoki, yuk kelmagan bo'lsa, xarajatni bekor qiling).
+
+### 6. «Xarajat yo'q» (5a)
+
+- **Reysni yopayotganda** belgilanadi (sabab bilan). O'zi yopilgan reysga — kartaning xarajat bo'limida. **Ochiq reysga qo'yib bo'lmaydi** — xarajat hali kelishi mumkin.
+- Belgi qo'yilgandan **keyin** xarajat kiritilsa, belgi kuchini yo'qotadi. O'sha xarajat keyin bekor qilinsa ham eski «xarajat yo'q» qaytib kelmaydi — reys yana «xarajatsiz» ro'yxatiga tushadi.
+- Belgini kim qo'ygani va nega — tarixda yoziladi; olib tashlash ham yoziladi.
+
+### 7. Paking-list va hamma joyda «shu zavoddan, shu mashinada» (6)
+
+Endi zavod reysi bilan kelgan yuk «Принято на складе» emas, **«🏭 ZR-00012 · zavod nomi · mashina raqami»** bo'lib chiqadi:
+
+- **Agent Excel** (reja hujjati): zavod reysi alohida blok bo'ladi — «Заводской рейс / Factory pickup: ZR-00012 · zavodlar · mashina raqami · sana». Bir mashina bir necha zavoddan olgan bo'lsa, sarlavhada hamma zavodlar tartib bilan yoziladi, har bir qatorda esa o'z zavodi.
+- **«Packing (rasmlar)»** paking-listida yangi ustun — qaysi mashina/reysda kelgani (sana oldidan).
+- **/stock**, uning Excel'i, reja ekranlari, **Telegram bot** (hodim), mijoz kartasining lentasi va «Yuklar» varag'i — hammasida shu yozuv. «Yuklar»da reys raqami reys kartasiga havola bo'ladi (faqat ko'rishga ruxsati borga).
+- Zavod reysiga biriktirilgan prixodni **boshqa skladga ko'chirib bo'lmaydi** — sababi aytiladi.
+- O'zgarmadi: keyingi skladda (masalan Qashqarda) yuk Yiwu → Qashqar mashinasi bilan kelgan deb yoziladi (pastdagi savolga qarang).
+
+### 8. Reys kartasi
+
+- Mashina raqami, haydovchi va izohni **keyin ham** o'zgartirish mumkin (yopilgan reysda ham) — paking-listda mashina raqami chiqishi uchun.
+- Mashina xarajatlari kartada faqat **pulni ko'rishi mumkin bo'lganlarga** ko'rinadi (logist, buxgalter, xarajat kirituvchi, hisobotchi). Faqat qabul qiluvchi sklad xodimi reysni, zavodlarni va qatorlarni ko'radi, pulni emas — partiyalarning «Xarajatlar» varag'i ham unga yopiq.
+- Reys yopilgandan keyin «Olindi» bosilsa — haydovchi sanog'i yoziladi, holat o'zgarmaydi, mijozga xabar ketmaydi.
+- Server yangilanayotgan paytda zavod sahifalari xato o'rniga «Server hali yangilanmoqda» deydi.
+
+### 9. Logistning bosh sahifasi
+
+Zavod reysi qatorida endi to'rt narsa sanaladi: xarajatsiz; **xarajati bor, lekin yuki yo'q**; biriktirilmagan prixod; **kelgan, lekin 14 kundan beri yopilmagan**. 14 kundan eski reyslar sklad ekranidan (qabul) olib tashlandi — ularni logist yopadi.
+
+### Eski reyslar (deploy kuni)
+
+Migratsiya eski prixodlarni qatorlarga biriktiradi va hamma qatori qabul qilingan reyslarni yopadi. Markirovka bilan kutilib, mijoz kodi bilan qabul qilingan yuk ham (bir ma'noli bo'lsa) yopiladi. Qolganlari — logist ko'rib yopadi.
+
+### Deploydan keyin — tekshiruv (7 ha)
+
+```bash
+docker compose run --rm migrate pnpm exec tsx scripts/zavod-tekshir.ts
+```
+
+Skript faqat o'qiydi, bazaga hech narsa yozmaydi. Besh ro'yxat chiqaradi: (1) bitta qatorni ikki prixod qabul qilgan; (2) ochiq reyslardagi qabul qilinmagan qatorlar va yonida skladda allaqachon turgan biriktirilmagan prixodlar; (3) reysga biriktirilgan, lekin hech bir qatorga javob bermaydigan prixodlar; (4) **ehtimol**: qator egasining reysga biriktirilmagan prixodi, zavoddan olingandan keyingi 21 kun ichida (eski ekrandagi ikki marta qabulning eng ko'p uchragan ko'rinishi); (5) yopilgan reys, xarajati yuksiz. Chiqqanini menga tashlang — qaysi prixod haqiqiysini faqat siz bilasiz, skript hech narsani o'zi hal qilmaydi. To'liq qadamlar: `docs/UPDATE.md`, «Zavod reysi tekshiruvi».
 
 ## Yo'lkira xarajatini tarif bo'yicha taqsimlash — 2026-10-14
 

@@ -1,7 +1,10 @@
 import { and, desc, eq, inArray, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
-import { batches, boxes, boxMovements } from '../../platform/db/schema';
+import { batches, boxes, boxMovements, receipts } from '../../platform/db/schema';
 import { CLIENT_ACTIVE_STATUSES } from '../boxes/active';
+import { arrivalKey, arrivalLabel, type ArrivalSource } from './arrival-label';
+
+export { arrivalKey, arrivalLabel, type ArrivalSource, type LabelSource } from './arrival-label';
 
 /**
  * «Qaysi partiyada Qashqarga kelgan» — which truck brought this cargo to the
@@ -14,8 +17,10 @@ import { CLIENT_ACTIVE_STATUSES } from '../boxes/active';
  *
  * THE RULE, one sentence: a lot's arrival at a warehouse is the NEWEST
  * movement, over the lot's boxes, that LANDED a box in that warehouse; if that
- * movement is an unload, the truck is named, and otherwise the cargo was
- * received or carried here without one.
+ * movement is an unload, the truck is named; if it is the prixod itself and
+ * the prixod was received off a factory trip heading HERE, the trip is named
+ * (docs/ZAVOD-YOPISH.md §5 — «shu zavoddan, shu mashinada»); and otherwise the
+ * cargo was received or carried here without one.
  *
  * Every clause of it is load-bearing, and the causes in the live database say
  * why:
@@ -122,27 +127,55 @@ export function landedHereDaySql(box: string): SQL {
   return sql`((${landedHereAtSql(box)}) AT TIME ZONE 'Asia/Tashkent')::date`;
 }
 
+/**
+ * The prixod's movements that are the PRIXOD landing its own cartons — the
+ * receipt itself, and the cartons `editLot`/`growLotInTx` add to a lot later
+ * (`lot_edit_add`, ref the same receipt): a carton grown at the trip's
+ * destination came off the same factory as the rest of the lot. Only these
+ * may name a factory trip; `receipt_moved` is an office correction, not a
+ * journey, and a receipt on a trip is refused it (`moveReceipt`).
+ */
+export const LANDED_BY_ITS_PRIXOD = ['receipt', 'lot_edit_add'];
+
+/** The factory trip a prixod's landing names (`ArrivalSource`'s pickup half, minus the kind). */
+export type ArrivalPickup = Omit<Extract<ArrivalSource, { kind: 'pickup' }>, 'kind'>;
+
 /** One (lot, truck) pair: how many boxes it brought and when the first landed. */
 export interface ArrivalRow {
   lotId: string;
-  /** null = received or moved here, on no truck of ours. */
+  /** null = not brought by a batch of ours (a walk-in, a factory trip, a move). */
   batchCode: string | null;
   /** The same truck's id — absent where a caller only ever needed the code. */
   batchId?: string | null;
+  /** The factory trip the prixod came off (0100), when it heads HERE — absent/null otherwise. */
+  pickup?: ArrivalPickup | null;
   arrivedAt: Date;
   boxes: number;
 }
 
+/** What a row says it came on — a batch, a factory trip, or nothing nameable. */
+function sourceOf(row: ArrivalRow): ArrivalSource | null {
+  if (row.batchCode) return { kind: 'batch', id: row.batchId ?? null, code: row.batchCode };
+  if (row.pickup) return { kind: 'pickup', ...row.pickup };
+  return null;
+}
+
 /** What a document prints about one lot's arrival. */
 export interface LotArrival {
-  /** Every truck that brought part of this lot here, earliest first. */
+  /** Every truck — batch or factory trip — that brought part of this lot here, earliest first. */
   codes: string[];
+  /** The same trucks as values, index for index with `codes`. */
+  sources: ArrivalSource[];
+  /** The same trucks as printed (`arrivalLabel`), index for index with `codes`. */
+  labels: string[];
   /**
-   * The day this lot landed. The earliest TRUCKED landing when there is one,
-   * and the earliest arrival of any kind when there is not — a lot whose other
-   * half was walked into the warehouse in June must not date July's truck to
-   * June, neither on its own row nor in the heading over everybody else's
-   * cargo in that block.
+   * The day this lot landed — THE DATE RULE: the date of the row behind
+   * `sources[0]`, the earliest NAMED landing (a batch or a factory trip),
+   * and the earliest row of any kind only when nothing is named. A lot whose
+   * other half was walked into the warehouse in June must not date July's
+   * truck to June, neither on its own row nor in the heading over everybody
+   * else's cargo in that block — and a factory trip is a truck like any
+   * other here: the half that came on it is dated by it.
    */
   arrivedAt: Date;
 }
@@ -166,10 +199,16 @@ export function foldArrivals(rows: ArrivalRow[]): Map<string, LotArrival> {
     const sorted = [...lotRows].sort((a, b) => a.arrivedAt.getTime() - b.arrivedAt.getTime());
     // A lot that came partly on a truck and partly on none names the trucks it
     // does have; the untrucked part is not a code and cannot be printed.
-    const trucked = sorted.filter((r) => r.batchCode);
+    const named = sorted.flatMap((row) => {
+      const source = sourceOf(row);
+      return source ? [{ row, source }] : [];
+    });
     out.set(lotId, {
-      codes: trucked.map((r) => r.batchCode!),
-      arrivedAt: (trucked[0] ?? sorted[0])!.arrivedAt,
+      codes: named.map((n) => n.source.code),
+      sources: named.map((n) => n.source),
+      labels: named.map((n) => arrivalLabel(n.source)),
+      // The date rule (`LotArrival.arrivedAt`): the earliest NAMED landing.
+      arrivedAt: (named[0]?.row ?? sorted[0])!.arrivedAt,
     });
   }
   return out;
@@ -177,11 +216,34 @@ export function foldArrivals(rows: ArrivalRow[]): Map<string, LotArrival> {
 
 /** One block of a document: everything that came in on the same truck. */
 export interface ArrivalGroup<T> {
-  /** The truck that brought it. Empty = came on none. */
+  /** `arrivalKey` of the truck — one block per truck. Empty = came on none. */
+  key: string;
+  /** The truck's code. Empty = came on none. */
   code: string;
+  /** The truck itself (as its earliest row in the block names it); null = came on none. */
+  source: ArrivalSource | null;
+  /**
+   * A factory trip's DISTINCT factories among the block's rows, in stop
+   * order — the truck called at two factories and the heading says so,
+   * while each row still prints its own stop's factory. Empty for a batch.
+   */
+  factories: string[];
   /** The earliest landing in the block, or null when there is no truck. */
   arrivedAt: Date | null;
   rows: T[];
+}
+
+/**
+ * The words over a block: a batch's code, or a trip's code · its factories
+ * («A, B») · its plate — `arrivalLabel` with the block's factories in the
+ * factory's place, so the heading and the row cells cannot spell a trip two
+ * ways.
+ */
+export function arrivalBlockLabel(group: Pick<ArrivalGroup<unknown>, 'source' | 'factories'>): string {
+  const source = group.source;
+  if (!source) return '';
+  if (source.kind === 'batch') return arrivalLabel(source);
+  return arrivalLabel({ ...source, factory: group.factories.join(', ') });
 }
 
 /**
@@ -197,37 +259,60 @@ export function groupByArrival<T>(
   rows: T[],
   of: (row: T) => { arrival: LotArrival | undefined; within: string },
 ): ArrivalGroup<T>[] {
-  const groups = new Map<string, ArrivalGroup<T> & { within: Map<T, string> }>();
+  const groups = new Map<
+    string,
+    ArrivalGroup<T> & { within: Map<T, string>; stops: Map<string, number> }
+  >();
   for (const row of rows) {
     const { arrival, within } = of(row);
     // The EARLIEST truck, not the joined list. Keyed on the list, a lot that
     // came half on KAS-012 and half on KAS-020 forms a THIRD block of its own,
     // so KAS-012's cargo appears in two places with two subtotals to add up by
-    // hand — on a sheet whose whole promise is one block per truck.
-    const code = arrival?.codes[0] ?? '';
-    let group = groups.get(code);
+    // hand — on a sheet whose whole promise is one block per truck. And keyed
+    // on the truck's IDENTITY (`arrivalKey`), never its code string: a factory
+    // trip's two stops are one truck, so one block.
+    const source = arrival?.sources[0] ?? null;
+    const key = arrivalKey(source);
+    let group = groups.get(key);
     if (!group) {
-      group = { code, arrivedAt: null, rows: [], within: new Map() };
-      groups.set(code, group);
+      group = {
+        key,
+        code: source?.code ?? '',
+        source,
+        factories: [],
+        arrivedAt: null,
+        rows: [],
+        within: new Map(),
+        stops: new Map(),
+      };
+      groups.set(key, group);
     }
     group.rows.push(row);
     group.within.set(row, within);
+    // Each factory at its earliest stop on the trip, for the heading's order.
+    if (source?.kind === 'pickup') {
+      const seq = group.stops.get(source.factory);
+      if (seq === undefined || source.seq < seq) group.stops.set(source.factory, source.seq);
+    }
     // A truckless group spans whatever dates its rows happen to carry, so it
     // is deliberately left undated rather than labelled with one of them.
-    if (code && arrival && (!group.arrivedAt || arrival.arrivedAt < group.arrivedAt)) {
+    if (key && arrival && (!group.arrivedAt || arrival.arrivedAt < group.arrivedAt)) {
       group.arrivedAt = arrival.arrivedAt;
     }
   }
   return [...groups.values()]
     .sort((a, b) => {
-      if (!a.code) return 1;
-      if (!b.code) return -1;
+      if (!a.key) return 1;
+      if (!b.key) return -1;
       const at = a.arrivedAt?.getTime() ?? 0;
       const bt = b.arrivedAt?.getTime() ?? 0;
-      return at === bt ? a.code.localeCompare(b.code) : at - bt;
+      return at === bt ? a.code.localeCompare(b.code) || a.key.localeCompare(b.key) : at - bt;
     })
     .map((g) => ({
+      key: g.key,
       code: g.code,
+      source: g.source,
+      factories: [...g.stops].sort((x, y) => x[1] - y[1] || x[0].localeCompare(y[0])).map(([name]) => name),
       arrivedAt: g.arrivedAt,
       rows: [...g.rows].sort((x, y) => (g.within.get(x) ?? '').localeCompare(g.within.get(y) ?? '')),
     }));
@@ -245,7 +330,12 @@ export function groupByArrival<T>(
  * walk-in carton that has stood here a month has waited a month.
  */
 export interface PairArrival extends LotArrival {
-  /** The trucks that brought it, in the order of `codes`. */
+  /**
+   * The BATCHES that brought it, earliest first — batches only, because this
+   * feeds `cargoTrucks` (a factory trip is not a batch and has no batch
+   * card). NOT index-aligned with `codes` once a trip stands among them:
+   * pair a code with its truck through `sources`.
+   */
   batchIds: string[];
   since: Date;
 }
@@ -253,12 +343,11 @@ export interface PairArrival extends LotArrival {
 /**
  * `foldArrivals`, plus the two facts `PairArrival` adds — pure, for the tests.
  *
- * The rows are grouped by lot ONCE: it sits under `arrivalCodesForPairs`, so
+ * The rows are grouped by lot ONCE: it sits under `arrivalLabelsForPairs`, so
  * /stock, its XLSX and the bot pay for it on every read, and a filter over
  * every row per lot is quadratic in the fullest warehouse. Each lot's own
- * rows then go through `foldArrivals` itself, so `codes` and `arrivedAt` keep
- * their one home, and `batchIds` is sorted by the same stable comparator over
- * the same rows — it lines up with `codes` index for index.
+ * rows then go through `foldArrivals` itself, so `codes`, `sources` and
+ * `arrivedAt` keep their one home; `batchIds` is the batch half of `sources`.
  */
 export function foldPairArrivals(rows: ArrivalRow[]): Map<string, PairArrival> {
   const byLot = new Map<string, ArrivalRow[]>();
@@ -273,7 +362,7 @@ export function foldPairArrivals(rows: ArrivalRow[]): Map<string, PairArrival> {
     const sorted = [...own].sort((a, b) => a.arrivedAt.getTime() - b.arrivedAt.getTime());
     out.set(lotId, {
       ...arrival,
-      batchIds: sorted.filter((r) => r.batchCode).map((r) => r.batchId ?? ''),
+      batchIds: arrival.sources.flatMap((s) => (s.kind === 'batch' ? [s.id ?? ''] : [])),
       since: sorted[0]!.arrivedAt,
     });
   }
@@ -314,12 +403,18 @@ export async function arrivalsForPairs(
   return out;
 }
 
-/** The codes of `arrivalsForPairs` — what the stock table, its XLSX and the bot print. */
-export async function arrivalCodesForPairs(
+/**
+ * The LABELS of `arrivalsForPairs` — what the stock table, its XLSX and the
+ * bot print: a batch's code, a factory trip's «ZR-… · factory · plate». It
+ * was `arrivalCodesForPairs` while only a batch could be named, and was
+ * renamed when what it returns changed, so no reader takes a label for a
+ * code (a code is a lookup key; a label is not).
+ */
+export async function arrivalLabelsForPairs(
   pairs: { lotId: string; warehouseId: string }[],
 ): Promise<Map<string, string[]>> {
   const arrivals = await arrivalsForPairs(pairs);
-  return new Map([...arrivals].map(([key, arrival]) => [key, arrival.codes]));
+  return new Map([...arrivals].map(([key, arrival]) => [key, arrival.labels]));
 }
 
 /**
@@ -397,6 +492,16 @@ export async function arrivalRowsForLots(
       // the cause test, so one query answers both halves of the rule.
       batchCode: batches.code,
       batchId: batches.id,
+      // The factory trip: NULL unless the landing is the prixod's own and the
+      // prixod came off a trip heading HERE (the nested join below). Only
+      // columns that predate 0133 — this read has callers that do not catch,
+      // and on a deploy morning one migration behind they must not 42703.
+      pickupId: sql<string | null>`p.id`,
+      pickupCode: sql<string | null>`p.code`,
+      pickupPlate: sql<string | null>`p.vehicle_plate`,
+      stopId: sql<string | null>`ps.id`,
+      stopSeq: sql<number | null>`ps.seq`,
+      factory: sql<string | null>`f.name`,
       arrivedAt: sql<Date>`min(${newestPerBox.createdAt})`,
       boxes: sql<number>`count(*)::int`,
     })
@@ -409,12 +514,54 @@ export async function arrivalRowsForLots(
         inArray(newestPerBox.cause, ARRIVED_ON_A_TRUCK),
       ),
     )
-    .groupBy(newestPerBox.lotId, batches.code, batches.id);
+    .leftJoin(
+      receipts,
+      and(
+        eq(receipts.id, newestPerBox.refId),
+        eq(newestPerBox.refType, 'receipt'),
+        inArray(newestPerBox.cause, LANDED_BY_ITS_PRIXOD),
+      ),
+    )
+    // Stop, trip and factory joined INSIDE one parenthesised join, so a row
+    // carries all three or none — never a factory beside a NULL trip. The
+    // destination guard is the trip's own claim about where it was going: a
+    // prixod moved or linked to a trip bound for another warehouse (or a lot
+    // grown at a truck's origin, `growLotInTx`) is not that trip's cargo
+    // HERE. The trip's status is deliberately not read — a closed trip keeps
+    // naming the cargo it brought.
+    .leftJoin(
+      sql`(pickup_stops ps
+        JOIN pickups p ON p.id = ps.pickup_id AND p.dest_warehouse_id = ${warehouseId}::uuid
+        JOIN factories f ON f.id = ps.factory_id)`,
+      sql`ps.id = ${receipts.pickupStopId}`,
+    )
+    .groupBy(
+      newestPerBox.lotId,
+      batches.code,
+      batches.id,
+      sql`p.id`,
+      sql`p.code`,
+      sql`p.vehicle_plate`,
+      sql`ps.id`,
+      sql`ps.seq`,
+      sql`f.name`,
+    );
 
   return rows.map((r) => ({
     lotId: r.lotId,
     batchCode: r.batchCode,
     batchId: r.batchId,
+    pickup:
+      r.pickupId && r.pickupCode && r.stopId
+        ? {
+            id: r.pickupId,
+            code: r.pickupCode,
+            stopId: r.stopId,
+            seq: Number(r.stopSeq),
+            factory: r.factory ?? '',
+            plate: r.pickupPlate,
+          }
+        : null,
     arrivedAt: new Date(r.arrivedAt),
     boxes: Number(r.boxes),
   }));

@@ -109,6 +109,132 @@ narxsiz topshirilgan yukni va qatorga kirmagan hamma narsani chiqaradi.
 Bir necha qator bir kunda o'zgaradi — shu hisobot bilan har bir qatorning
 raqamini oldindan bilasiz.
 
+### Zavod reysi tekshiruvi (0133 — «zavod reysi yopiladi»)
+
+Shu raunddan keyin zavod reysi yopiladi va prixod qaysi qatorni qabul
+qilganini eslab qoladi (`docs/ZAVOD-YOPISH.md`). Eski ekranlar nima qoldirib
+ketganini faqat sizning bazangiz biladi — shuning uchun:
+
+1. **Migratsiyalar 134 bo'lishi shart** (yuqoridagi sanash). Kam chiqsa —
+   davom etmang, avval `docker compose run --rm migrate` va uning chiqishini
+   o'qing.
+2. **Tekshiruvni yurgizing** — faqat o'qiydi, bazaga hech narsa yozmaydi
+   (ulanish «read only» rejimida ochiladi):
+
+   ```bash
+   docker compose run --rm migrate pnpm exec tsx scripts/zavod-tekshir.ts
+   ```
+
+   Chiqqan matnni to'liq chatga tashlang. Besh ro'yxat:
+   1. bitta qatorni bir nechta tirik prixod qabul qilgan — yuk ikki marta
+      qabul qilingan bo'lishi mumkin;
+   2. ochiq reyslardagi qabul qilinmagan qatorlar (logist qabul qiladi yoki
+      «Reysni yopish» bilan sababini yozib yopadi), yonida — skladda ALLAQACHON
+      turgan, reysga bog'lanmagan prixodlar: «biriktiring, qayta qabul
+      qilmang»;
+   3. reysga bog'langan, lekin hech bir qatorga javob bermaydigan prixodlar;
+   4. **ehtimol**: qabul qilingan qator egasining shu skladdagi, reysga
+      bog'lanmagan prixodi — zavoddan olingandan keyingi 21 kun ichida, reys
+      orqali qabul qilinishidan OLDIN ham, KEYIN ham. Eski ekranda eng ko'p
+      uchragan ikki marta qabul aynan shu: yuk avval oddiy prixod bilan
+      qabul qilingan, reys esa ro'yxatda qolgan va yana «Qabul qilish»
+      bosilgan. Har satrda zavod/haydovchi sanog'i va ikkala prixodning
+      karobka soni — egizakmi yoki alohida yukmi, odam hal qiladi;
+   5. yopilgan reys: xarajat bor, tirik prixod yo'q — pul hech bir karobkaga
+      tushmagan (yuksiz qo'lda yopilgan reys yoki deploydan oldingi holat;
+      endi yopilgan reysning yagona prixodini bekor qilish yoki reysdan
+      ajratish rad etiladi).
+
+   **Bu besh ro'yxat egasiga o'qib berilmaguncha hech kim «tuzatildi»
+   demaydi.** Skript hech narsani o'zi hal qilmaydi: ikki prixoddan qaysi biri
+   haqiqiysini faqat odam biladi.
+3. **Deploy oynasi — bir marta, deploydan darhol keyin.** Migratsiya yurgan
+   daqiqalarda sayt hali ESKI kodda ishlaydi; o'sha paytda reysga bog'langan
+   prixod qaysi qatorni qabul qilganini eslab qolmagan bo'ladi. U 3-ro'yxatda
+   «egasining qatori hali ochiq — bog‘lanish eslab qolinmagan» deb chiqadi.
+   Shunday prixod chiqsa, quyidagini **bir marta** yurgizing — u migratsiyaning
+   o'z eslab qolish qadamini faqat eslab qolinmagan TIRIK bog'langan
+   prixodlar uchun qaytaradi, keyin hamma qatori qabul qilingan reyslarni
+   yopadi (ikkalasi ham qayta yurgizilsa hech narsa o'zgarmaydi):
+
+   ```bash
+   docker compose exec -T postgres psql -U gsr -d gsr -v ON_ERROR_STOP=1 <<'SQL'
+   BEGIN;
+   -- ZAVOD-HEAL-MEMORY-BEGIN
+   INSERT INTO "pickup_line_receipts" ("line_id", "receipt_id", "created_at")
+   SELECT pl."id", r."id", coalesce(r."confirmed_at", r."created_at")
+     FROM "receipts" r
+     JOIN "pickup_lines" pl ON pl."stop_id" = r."pickup_stop_id"
+    WHERE r."pickup_stop_id" IS NOT NULL
+      AND r."voided_at" IS NULL
+      AND NOT EXISTS (SELECT 1 FROM "pickup_line_receipts" had WHERE had."receipt_id" = r."id")
+      AND CASE WHEN EXISTS (SELECT 1 FROM "pickup_lines" ml
+                             WHERE ml."stop_id" = pl."stop_id" AND ml."client_id" IS NULL
+                               AND btrim(coalesce(ml."marking", '')) <> ''
+                               AND lower(btrim(ml."marking")) = lower(btrim(r."unclaimed_marking")))
+               THEN pl."client_id" IS NULL
+                    AND lower(btrim(coalesce(pl."marking", ''))) = lower(btrim(r."unclaimed_marking"))
+               ELSE pl."client_id" IS NOT NULL AND pl."client_id" = r."client_id"
+          END
+   ON CONFLICT DO NOTHING;
+   -- ZAVOD-HEAL-MEMORY-END
+   -- ZAVOD-HEAL-CLOSE-BEGIN
+   WITH "closing" AS (
+     SELECT p."id", p."status" AS "was", p."dest_warehouse_id",
+            (SELECT max(coalesce(r."confirmed_at", r."created_at"))
+               FROM "pickup_stops" ps
+               JOIN "pickup_lines" pl ON pl."stop_id" = ps."id"
+               JOIN "pickup_line_receipts" plr ON plr."line_id" = pl."id"
+               JOIN "receipts" r ON r."id" = plr."receipt_id" AND r."voided_at" IS NULL
+              WHERE ps."pickup_id" = p."id") AS "at"
+       FROM "pickups" p
+      WHERE p."status" IN ('planned', 'on_road', 'arrived')
+        AND EXISTS (
+          SELECT 1 FROM "pickup_stops" ps
+            JOIN "pickup_lines" pl ON pl."stop_id" = ps."id"
+           WHERE ps."pickup_id" = p."id"
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM "pickup_stops" ps
+            JOIN "pickup_lines" pl ON pl."stop_id" = ps."id"
+           WHERE ps."pickup_id" = p."id"
+             AND NOT EXISTS (
+               SELECT 1 FROM "pickup_line_receipts" plr
+                 JOIN "receipts" r ON r."id" = plr."receipt_id" AND r."voided_at" IS NULL
+                WHERE plr."line_id" = pl."id"
+             )
+        )
+   ), "closed" AS (
+     UPDATE "pickups" p
+        SET "status" = 'closed',
+            "close_kind" = 'auto',
+            "closed_at" = c."at",
+            "updated_at" = now()
+       FROM "closing" c
+      WHERE p."id" = c."id"
+     RETURNING p."id", c."was", p."dest_warehouse_id"
+   )
+   INSERT INTO "audit_log" ("entity_type", "entity_id", "action", "before", "after", "warehouse_id")
+   SELECT 'pickup', c."id", 'status_change',
+          jsonb_build_object('status', c."was"),
+          jsonb_build_object('status', 'closed', 'closeKind', 'auto', 'backfill', true),
+          c."dest_warehouse_id"
+     FROM "closed" c;
+   -- ZAVOD-HEAL-CLOSE-END
+   COMMIT;
+   SQL
+   ```
+
+   `INSERT 0 N` qatorlarini o'qing: birinchisi — nechta qator eslab qolindi,
+   ikkinchisi — nechta reys yopildi. Keyin 2-qadamdagi tekshiruvni **qayta**
+   yurgizing: o'sha prixodlar 3-ro'yxatdan chiqishi kerak; agar u ikkinchi
+   qabul bo'lsa, endi 1-ro'yxatda ko'rinadi.
+
+   **Faqat deploydan darhol keyin, logistlar kartadan prixod bog'lashni
+   boshlamasidan oldin.** Yangi kod ham ba'zan qatorsiz bog'laydi (bir egada
+   ikkita ochiq qator bo'lsa, qaysi biri kelganini odam tanlaydi) — keyinroq
+   yurgizilsa, bu buyruq o'sha joyda odam o'rniga taxmin qiladi.
+
 ## 5. Demo hisoblarni yopish (bir marta)
 
 Server birinchi marta bo'sh bazadan ko'tarilgani uchun unda demo hisoblar
@@ -151,7 +277,8 @@ docker compose up -d app
 
 ## Yo‘lkira: bitta jadval va har bir lot (2026-10-15) — tekshiruv tartibi
 
-Bu raundning o‘zida migratsiya yo‘q. **Lekin 2026-10-14 dagi deploy (PR #120,
+Bu raundning o‘zida migratsiya yo‘q — u yuqoridagi «zavod reysi yopiladi»
+raundining 0133 si bilan bitta deployda chiqadi. **Va 2026-10-14 dagi deploy (PR #120,
 migratsiya 0132) qilinmagan bo‘lsa, shu deploy uni ham olib keladi** — shuning
 uchun tekshiruv ikkalasi: migratsiyalar soni VA build vaqti (yuqoridagi §4
 tartibida).
@@ -161,14 +288,14 @@ tartibida).
    `docker compose --profile https up -d --build`.
 3. **Sonni o‘qing** — repo’dagi fayllar soniga teng bo‘lishi kerak
    (`ls src/modules/platform/db/migrations/*.sql | wc -l`, bu raundda
-   **133**), #120 avval deploy qilingan bo‘lsa ham, qilinmagan bo‘lsa ham:
+   **134**), #120 avval deploy qilingan bo‘lsa ham, qilinmagan bo‘lsa ham:
 
    ```bash
    docker compose exec -T postgres psql -U gsr -d gsr -tAc \
      "SELECT count(*) FROM drizzle.__drizzle_migrations"
    ```
 
-   133 dan kam chiqsa — `docker compose run --rm migrate` ning o‘z chiqishini
+   134 dan kam chiqsa — `docker compose run --rm migrate` ning o‘z chiqishini
    o‘qing va `docker compose ps -a` da `migrate` = `Exited (0)` ekanini
    tekshiring. Kam son bilan qoldirilsa, yangi kod eski bazada ishlaydi va
    har bir mashinada «server yangilanmagan» chiqadi.

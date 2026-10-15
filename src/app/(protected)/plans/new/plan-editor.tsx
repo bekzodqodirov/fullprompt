@@ -33,7 +33,7 @@ interface StockLot {
   perBoxM3: number;
   daysInStock: number;
   photoId: string | null;
-  /** Which truck(s) brought it here — '' for cargo received at this warehouse. */
+  /** Which truck(s) brought it here, as printed (`arrivalLabel`: a batch's code, a factory trip's «ZR-… · factory · plate») — '' for a walk-in. */
   arrival: string;
   /** Of `available`, the QR-siz cartons (0112); absent in a snapshot cached before it. */
   qrless?: number;
@@ -548,9 +548,12 @@ export function PlanEditor({
                           {id.sub}
                         </span>
                       )}
+                      {/* The cell is nowrap for the code; a factory trip's
+                          «ZR-… · factory · plate» wraps instead of widening
+                          the table past a phone. */}
                       {lot.arrival && (
                         <span
-                          className="block font-sans text-2xs font-normal text-ink-500"
+                          className="block whitespace-normal font-sans text-2xs font-normal text-ink-500"
                           data-testid="lot-arrival"
                         >
                           🚚 {lot.arrival}

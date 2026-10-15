@@ -226,11 +226,24 @@ export async function clientFeed(clientId: string | null, opts: FeedOptions): Pr
           'goods', lots.goods,
           'kg', lots.kg,
           'm3', lots.m3,
-          'voided', r.voided_at IS NOT NULL
+          'voided', r.voided_at IS NOT NULL,
+          -- The factory trip it came off (0100), so the line says «🏭 ZR-… ·
+          -- factory · plate» and not a bare walk-in (docs/ZAVOD-YOPISH.md §5).
+          -- NULL for everything else.
+          'pickupCode', p.code,
+          'factory', f.name,
+          'plate', p.vehicle_plate
         )
       FROM receipts r
       JOIN warehouses w ON w.id = r.warehouse_id
       LEFT JOIN users u ON u.id = r.confirmed_by
+      -- The arrival rule's own join (documents/arrivals.ts): stop, trip and
+      -- factory nested so a row carries all three or none, and the trip only
+      -- where it was heading to the prixod's warehouse.
+      LEFT JOIN (pickup_stops ps
+        JOIN pickups p ON p.id = ps.pickup_id
+        JOIN factories f ON f.id = ps.factory_id)
+        ON ps.id = r.pickup_stop_id AND p.dest_warehouse_id = r.warehouse_id
       LEFT JOIN LATERAL (
         SELECT
           coalesce(sum(l.box_count), 0)                        AS boxes,

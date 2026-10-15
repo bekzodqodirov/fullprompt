@@ -119,9 +119,53 @@ export async function lockCostsTouchingLots(
 
 export interface OrphanedCost {
   entryId: string;
-  scope: 'receipt' | 'crate' | 'batch';
-  /** The crate's or the truck's code, for the sentence that names it. */
+  scope: 'receipt' | 'crate' | 'batch' | 'pickup';
+  /** The crate's, the truck's or the factory trip's code, for the sentence that names it. */
   code: string | null;
+}
+
+/**
+ * «Does this cost split onto anything over these boxes?» — the ONE question
+ * both the void doors and the factory-trip detach ask (`./pool`'s `homed`,
+ * the recompute's own splitter). A HELD freight bill is homed (it is written
+ * and named on every ⚠ surface, and fixing a lot re-splits it), so only
+ * «nothing» — no cargo left at all — answers no. Any positive amount answers
+ * it. On the caller's handle, passed last (tests/unit/tx-pool.test.ts).
+ */
+export async function costHomedOn(
+  entry: typeof costEntries.$inferSelect,
+  boxIds: string[],
+  factor: number,
+  tx: Db | Tx = db,
+): Promise<boolean> {
+  const inputs = await loadPoolInputs(entry, boxIds, tx);
+  return homed(
+    costPool(
+      { allocationBasis: entry.allocationBasis as AllocationBasis, clientId: entry.clientId, amountUsd: 1 },
+      inputs.measures,
+      factor,
+      inputs.freight,
+    ),
+  );
+}
+
+/**
+ * A factory trip's cargo as the GUARD must see it: the boxes of every prixod
+ * linked to its stops that are not void — the prixod's own void flag NOT
+ * asked, because `voidReceipt` stamps the prixod void in its transaction
+ * before it asks, and `scopeBoxIds` (the recompute's base, which does ask)
+ * would then never see the cartons this void takes away. A prixod voided
+ * earlier has void cartons, so it stays out either way.
+ */
+async function pickupGuardBase(pickupId: string, tx: Db | Tx): Promise<string[]> {
+  const rows = await tx.execute<{ id: string }>(sql`
+    SELECT b.id
+      FROM boxes b
+      JOIN receipt_lots rl ON rl.id = b.lot_id
+      JOIN receipts r ON r.id = rl.receipt_id
+      JOIN pickup_stops ps ON ps.id = r.pickup_stop_id
+     WHERE ps.pickup_id = ${pickupId} AND b.status <> 'void'`);
+  return rows.map((r) => r.id);
 }
 
 /**
@@ -146,10 +190,16 @@ export interface OrphanedCost {
  * cost that already split onto nothing (a zero-weight base, a client with no
  * cargo aboard) does not block a void that changes nothing about it.
  *
- * The factory-trip scope is left out on purpose (#1004): a half-received
- * truck is not «money with no cargo», and the annul's empty-scope sweep is
- * kept out of it for the same reason. `factor` is read by the caller on the
- * pool before the transaction opens (#714).
+ * The factory-trip scope is judged only once the trip is CLOSED (0133): an
+ * OPEN trip is a half-received truck, and «more cargo may still come» is
+ * #1004's reason to let its base empty; a closed trip takes no more from the
+ * door, so voiding its last prixod would leave the truck's freight on no
+ * carton. The trip is read FOR SHARE after the cost and box locks — no
+ * pickup door holds the trip and then waits on a cost or a carton, so the
+ * order adds no deadlock pair, and SHARE (not KEY SHARE) does block the
+ * close's own UPDATE. The annul's empty-scope sweep stays out of pickups.
+ * `factor` is read by the caller on the pool before the transaction opens
+ * (#714).
  */
 export async function costOrphanedByVoid(
   costs: LockedCosts,
@@ -163,31 +213,29 @@ export async function costOrphanedByVoid(
   const gone = new Set(voidIds);
   for (const entry of entries) {
     if (entry.voidedAt) continue;
-    if (entry.scope !== 'receipt' && entry.scope !== 'crate' && entry.scope !== 'batch') continue;
-    const base = await scopeBoxIds(entry, tx);
-    if (!base.some((id) => gone.has(id))) continue;
-    // ONE pool with the recompute (`./pool`). The question is «is the money
-    // somewhere» — `homed`: a HELD freight bill is homed (it is written and
-    // named on every ⚠ surface, and fixing a lot re-splits it), so a void on
-    // a held bill is ALLOWED and keeps the ⚠ rather than refused with words
-    // telling finance to void the truck's money. Per lot (his 2b) a void can
-    // never MAKE a bill held — a lot's density does not depend on which of
-    // its cartons remain — it can only heal one or empty the base. Only
-    // «nothing» — no cargo left at all — refuses, as before.
-    // Any positive amount answers it.
-    const splits = async (boxIds: string[]) => {
-      const inputs = await loadPoolInputs(entry, boxIds, tx);
-      return homed(
-        costPool(
-          { allocationBasis: entry.allocationBasis as AllocationBasis, clientId: entry.clientId, amountUsd: 1 },
-          inputs.measures,
-          factor,
-          inputs.freight,
-        ),
+    let base: string[];
+    let tripCode: string | null = null;
+    if (entry.scope === 'pickup' && entry.pickupId) {
+      const [trip] = await tx.execute<{ status: string; code: string }>(
+        sql`SELECT status, code FROM pickups WHERE id = ${entry.pickupId} FOR SHARE`,
       );
-    };
-    if (!(await splits(base))) continue;
-    if (await splits(base.filter((id) => !gone.has(id)))) continue;
+      if (trip?.status !== 'closed') continue;
+      tripCode = trip.code;
+      base = await pickupGuardBase(entry.pickupId, tx);
+    } else if (entry.scope === 'receipt' || entry.scope === 'crate' || entry.scope === 'batch') {
+      base = await scopeBoxIds(entry, tx);
+    } else {
+      continue;
+    }
+    if (!base.some((id) => gone.has(id))) continue;
+    // ONE pool with the recompute (`costHomedOn`): a void on a HELD bill is
+    // ALLOWED and keeps the ⚠ rather than refused with words telling finance
+    // to void the truck's money. Per lot (his 2b) a void can never MAKE a
+    // bill held — a lot's density does not depend on which of its cartons
+    // remain — it can only heal one or empty the base.
+    if (!(await costHomedOn(entry, base, factor, tx))) continue;
+    if (await costHomedOn(entry, base.filter((id) => !gone.has(id)), factor, tx)) continue;
+    if (entry.scope === 'pickup') return { entryId: entry.id, scope: 'pickup', code: tripCode };
     let code: string | null = null;
     if (entry.scope === 'crate' && entry.crateId) {
       const [crate] = await tx

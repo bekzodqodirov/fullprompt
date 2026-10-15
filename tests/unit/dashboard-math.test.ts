@@ -256,6 +256,7 @@ describe('the Balans lines, one home for two screens', () => {
       tillUnrated: { count: 0 },
       noDebt: { count: 0 },
       pickupNoBox: { count: 0 },
+      pickupClosedNoBox: { count: 0 },
       noBox: { count: 0 },
       freightUnsplit: { count: 0 },
       unconverted: 0,

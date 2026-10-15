@@ -3238,7 +3238,329 @@ auto-layout table a nowrap cell is as wide as its longest name. The names
 wrap now (`[overflow-wrap:anywhere]`) inside an `overflow-x-auto` card;
 re-measured 360/360 and 1280/1280 on all ten screens of the round.
 
-1379. **His 1a of 2026-10-15: ONE tariff column for every truck — the 2c
+## Zavod reysi yopiladi — his 1a 2a 3a 4a 5a 6 7 (2026-10-15; migration 0133 `pickup_close` — ledger must reach 134; spec `docs/ZAVOD-YOPISH.md`)
+
+1379. **A factory trip had no finished state, and «received» was a guess
+made on every read.** His report: «zavot partiyalarni yuklagandan keyin
+qabul qilib olsa ham keyinchalik yana reyslar chiqib qolyabti». Probed, not
+read (S1-S7 against the shipped code): a line was «received» when SOME live
+prixod linked to its stop matched the line's client id — or, for a marking
+line, an UNCLAIMED prixod with that marking. So claiming the marking (the
+claim keeps the marking, #683) made the line unreceived again (S2); voiding
+one prixod of two brought a trip back (S3); a marking line received under
+the client code it belongs to was never received at all (S4); the /receive
+list read the OLDEST 50 trips before dropping the finished ones, so a new
+truck could miss the list (S7); and the same cargo was received twice
+through the trip with nothing refusing it. The answer is two facts the
+system never stored: whether a trip is FINISHED, and WHICH lines a prixod
+answered.
+
+1380. **`closed` is a fifth status, terminal (his 2a), and «closed» and
+«has a close» are one fact.** The close columns live on `pickups` beside a
+pair CHECK (`closed_at` ⟺ status, kind auto|manual, a manual one carries a
+3-500 character sentence, an auto one none) — a side table could not
+express that. Auto close runs in the transaction of the write that answered
+the last line (confirmReceipt, the card link, a stop or line removal —
+`closeIfAnsweredInTx`, one UPDATE … RETURNING under the trip lock already
+held) and writes an audit row. A manual close (his 1a, «sababi yoziladi»)
+is `closePickup`. Nothing reopens: a voided prixod leaves its trip closed
+(2a) and its line reads unanswered on a closed trip — «kelmadi».
+
+1381. **The line memory is `pickup_line_receipts` (line, receipt), written
+once when a prixod is linked, and «answered» means a LIVE prixod remembers
+the line** (`lineAnsweredSql`, the one home for every reader: the card, the
+/receive list, the prefill, the door, the candidates, the auto close, the
+counts). A side table and not a receipts column: 45 whole-row reads of
+`receipts` would 42703 one migration behind (0132's reason). Voided
+prixods keep their rows as history; a line edit (only possible while no
+LIVE prixod is on the stop) cascades a voided prixod's rows with the lines
+they named — they answered nothing live — and a draft still holding an old
+line id falls back to deriving (below).
+
+1382. **The owner rule is ORDERED, never a union** (the design judge's
+blocker). A prixod received as «MARK» and later claimed by client A carries
+both facts; the union answered A's own 50-box line with 3 MARK cartons and
+the backfill would have closed the trip for ever on cargo still on the
+road. `ownerLinesOf`: the prixod's marking equal to a MARKING line of the
+stop names those lines; otherwise its client names the client lines.
+`ownerMatchSql` is the same sentence in SQL, pinned line by line against
+the TS over a stop holding both kinds; the migration's backfill and the
+candidate list use it.
+
+1383. **A prixod answers the lines it CARRIED, not every line of its
+owner.** Each lot the prefill or the door's «Ha» builds names its line
+(`LotDraft.pickupLineId`); deleting the lot unticks the line, the banner
+shows the ticks, and the post sends only what is left (`pickup-draft.ts`,
+pure and unit-tested) — a partial delivery used to answer the bags that
+never came and close the trip. With no ids (an old bundle, the receipt
+card's select) the owner's lines are derived and answered only when
+exactly ONE is open; several → none, and the card names the line (per-line
+candidate buttons, «✓ <goods>» beside a linked prixod that answers
+nothing). Two modes: at the DOOR a second receive of an answered line is
+refused (`pickup_line_answered`, the double-receive fence), with the
+operator's own way out — «Bu o'sha yukning qolgan qismi» (`pickupExtra`:
+linked, answering nothing); on the CARD a person at the money gate may add
+a second prixod to a line (one line delivered in two parts). An id that
+exists nowhere is a draft older than a line edit and falls back to
+deriving; an id of another stop is refused.
+
+1384. **A closed trip keeps its money correctable without reopening.** The
+judges found the trap two ways: #1004 exempts the pickup scope from the
+void guard because «a later prixod will be linked», and a closed trip took
+no link — so a void-and-redo left the truck's freight on no carton for good
+and printed the cargo «Принято на складе». The receipt card (gate
+`costs.enter_batch`, the money door) may JOIN a closed trip: status
+untouched, no arrive, no auto close; its picker offers trips closed in the
+last 30 days marked 🔒, and leaving a closed trip asks first. The door, the
+prefill, the /receive list and the candidates stay open-only (his 3a, 4a).
+A closed trip with a live cost and no live cargo is counted on the logist's
+home («xarajat bor, yuk yo'q») and said on its card and row.
+
+1385. **The door question (his 3a) asks only about COLLECTED stops.** A
+client's courier parcel on Monday must not be offered Wednesday's truck
+still at the factory: a reflexive «Ha» arrived it and could close it before
+«Olindi». The answer lands a second after the pick, so its buttons wake
+400 ms later. «Yo'q» is remembered on the draft and written on the
+receipt's create audit (`pickupDeclined`, no column): the card's candidate
+says «sklad: bu reysdan emas» and the home count skips it. A restored draft
+asks `/api/receive/pickups?stop=` before anyone photographs against a trip
+the logist closed overnight; the refusals have their own codes
+(`pickup_closed`, `pickup_line_answered`, `pickup_line_not_on_stop` — the
+first segment of `pickup_invalid: …` could never say them) and their
+remedy buttons sit with the refusal. A «Qabul qilish» tap on cargo a
+colleague just received says so above the wizard instead of opening it
+blank (`receivePrefillRefusal`). The route is NetworkOnly in the service
+worker. One owner on two factories of one trip: one prixod per factory,
+said on the question (the receipt's stop is single).
+
+1386. **What the floor no longer sees, the logist does.** /receive lists
+newest first and drops trips that ARRIVED over `INCOMING_STALE_DAYS` (14)
+ago — their unanswered lines are the logist's to close, counted on his home
+as «kelgan, lekin yopilmagan» (`staleOpenSql`); the fold opens by itself
+only for a truck arrived in the last 48 hours. «Reysni yopish» is drawn
+only on a trip that moved (a stop collected, a prixod linked, a cost): an
+untouched trip is CANCELLED, and two terminal buttons side by side made the
+wrong one easy. The close form warns when candidates are pending. A late
+«Olindi» on a closed trip is a record — the driver's recount and the stamp
+land, the status does not move, nobody is told. The truck's plate, driver
+and note stay editable on a closed trip (the plate is learned late and is
+what names «this truck» on the agent's sheet); its destination and date do
+not. «Xarajat yo'q» (his 5a) is a reason and a person, set in the close
+form or on its own, by `costs.enter_batch` at the destination; refused
+while a live cost exists.
+
+1387. **The backfill reads history as the old screen read it, minus the
+union, and pairs only the unambiguous leftover.** Memory rows for every
+linked prixod by the ordered rule; then probe S4's shape — the stop's open
+lines belong to ONE owner, exactly ONE live linked prixod answers nothing,
+and they are of opposite kinds (a client's prixod for marking lines, or an
+unclaimed one for a client's lines) — is paired; then every open trip whose
+lines are all answered closes with an audit row (actor NULL, `backfill:
+true`). Measured on a copy built by the OLD code's probe plus the judge's
+union case: 56 arrived trips → 54 closed; left open exactly the voided one
+and the union case (A's 50 boxes still coming). The backfill test runs the
+migration's own three blocks in a rolled-back transaction.
+
+1388. **One migration behind, the pickup screens say so.** The new close
+columns are on `pickups`, which a dozen whole-row reads name; with a stale
+`migrate` image (trap 2) those 42703. The /zavod pages catch
+`isServerBehind` into «Server hali yangilanmoqda», every pickup action and
+the door route answer `server_behind` in words, and `stopsFor`'s memory read
+falls back to «nothing answered» on a missing table. 19 red proofs by
+string edit for the core (ordered rule, door fence, exactly-one derive,
+auto close in the receive and in removeStop/saveStopLines, closed door vs
+closed card, stale-id fallback, late Olindi, collected-only door, backfill
+pairing and ordering, the declined mark, «extra», the draft's three rules,
+a missing zh-CN sentence).
+
+1389. **A closed trip's last prixod may not take its bill to nothing — voided
+or detached.** The pickup cost base is the live linked prixods' cartons, and
+#1004 let it empty because «a half-received truck» may still get cargo. A
+CLOSED trip gets none by itself (his 2a), so the judge's money-1 is real:
+void the only prixod of a costed closed trip and $300 sat on no carton,
+named by no surface that offered a cure. `costOrphanedByVoid` now judges
+the pickup scope when the trip is closed — read `FOR SHARE` after the cost
+and carton locks (no pickup door holds the trip and then waits on a cost,
+and SHARE, unlike KEY SHARE, blocks the close's own UPDATE) — over a base
+that does NOT ask the prixod's own void flag (`pickupGuardBase`), because
+`voidReceipt` stamps the prixod void in its transaction before it asks; the
+recompute's `scopeBoxIds` would have hidden the very cartons the void takes.
+The detach half is `refuseOrphaningDetach` in `linkReceiptToStop`: trips
+locked in id order after the receipt, and NO cost lock (receipt → costs →
+cartons → trip is the void doors' order; trip → cost would be their
+deadlock pair). Both refuse `shared_cost_orphaned` naming the ZR code; the
+cure is the card's per-line button for the real prixod first, then the
+void. One splitter for both (`costHomedOn`). An open trip keeps #1004,
+pinned. The Balans splits the pickup bucket by trip state: an open trip's
+bill «joins once linked», a closed one's says what to do
+(`balUnpricedPickupClosed`). Stated, unchanged: `gapScopePickup` describes,
+it promises nothing; an UNCONVERTED bill is not judged (it has no dollars to
+lose yet); the annul's empty-scope sweep stays out of pickups.
+
+1390. **A client line takes only that client's cargo; a marking line takes
+any.** Explicit line ids were never compared with the owner (probe S4: a
+marking received under the client it belongs to). The judge's money-3: a
+ticked GS101 line kept across a switch to GS205 answered GS101's line,
+closed the trip for ever and moved GS101's truck share onto GS205.
+`assertLinesOwned` (in `answerLinesInTx`, after the trip lock) refuses
+`line_owner_mismatch` unless the prixod is that client's or was received
+under a marking that is that client's by the code-prefix rule; the wizard
+says it in words (`pickupLineOwner`) with the same «drop the trip» remedy.
+The door's answer for a MARKING whose lines are all one client's records
+that client as the link's owner, so a later switch drops the link instead
+of being refused at the confirm. A sibling code (#407) is refused too —
+received under the right code, the card attaches it as extra and the
+logist answers the line.
+
+1391. **«GS500MANIKEN» is GS500's — written once, read where a person
+looks.** Round 98's convention (#683) as `markingOfCode` +
+`markingOfCodeSql` (pure, pinned equal over eight cases incl. GS5 vs
+GS500X and GS5001 vs GS500 — a code ends where a digit would continue it).
+`ownerLooselyMatches(Sql)` = the exact owner or the prefix either way, used
+by the door question (`openStopsForOwner` — a client is asked about the
+marking lines its code begins and vice versa; the judge's intent-7, the
+reason the plain-form double stayed unlinked), the card's candidates and
+home count (`candidateReceiptSql`), the lookalike warnings and every list
+of the checker. NEVER in a derivation nobody reads: `ownerLinesOf` /
+`ownerMatchSql` (the no-ids derive, the backfill) stay exact — a prefix
+there would answer a line on a guess. Hence `onlyLineId`: a candidate's
+single line is POSTED by the card's button, or the server's exact derive
+would link a prefix match and answer nothing (red-proven).
+
+1392. **The cargo may already be here — said before «Qabul qilish».** The
+judge's intent-5: the old code's commonest double was the plain form first
+(S6 — nothing linked, the line still «waiting» on /receive) and the stale
+list's «Qabul qilish» second (S2). `lookalikesFor` is the card's own
+candidate set (unlinked, live, at the destination, inside the window,
+owner-matching an open line), minus a prixod whose receiver said «Yo'q»
+about this trip, attached to the door's answer, the /receive owner rows and
+the prefill as «⚠ GS777: P-201 (12.10, 30 📦) — … shu yuk emasmi?». Dates
+numeric in Tashkent (#678). The window now opens at the trip's creation
+when nobody pressed «Olindi» (`min(collected_at)` alone was NULL and listed
+nothing — the checker's agent named that hole).
+
+1393. **The checker's list (4) looks both ways from the answer, inside the
+STOP's window.** Its first shape — «received AFTER the line was answered,
+answered in the last 14 days» — missed exactly S6 → S2 (the plain prixod is
+EARLIER than the answer) and hid every double older than two weeks, while
+the owner's question 7 is about history. Now: unlinked live prixods of an
+answered line's owner, received from the stop's «Olindi» (or the trip's
+creation) for 21 days, before or after the answer, minus a declined one,
+labelled «ehtimol» with the line's factory/driver counts beside both
+prixods' cartons — a person tells a twin from later cargo; the script
+decides nothing. Lists (2) and (3) read the same person-facing owner rule.
+List (5)'s fixture moved to the path that still reaches it (a costed trip
+closed by hand with nothing): the detach that used to reach it is now
+#1389's refusal.
+
+1394. **«Xarajat yo'q» is set on a CLOSED trip, and stands only until a bill
+is typed after it.** His 5a reads «yopishda»; the separate door exists for
+the trip that closed by itself and never showed the close form — so it now
+refuses an open trip (`no_cost_closed_only`, the judge's intent-q3; the
+close form carries the tick there). And `noCostStandsSql`: the mark counts
+only while no cost entry, live OR voided, was created after it (money-5) —
+a mark is a statement about its day, and voiding a later bill to re-enter it
+must not bring «somebody else paid» back and silence the alarm. No lock in
+`addCostEntry`: whichever commits second, the later bill wins. One fragment
+for the list tab, the home count and the card (`loadPickup.noCostStands`);
+the close form rewrites a superseded mark; set and clear audit who and why.
+Who may set it stays `costs.enter_batch` at the destination — stated, not
+asked: every plans.manage holder holds it too.
+
+1395. **The terminal doors are scoped; the card's money is for money
+readers.** Every pickup writer is unscoped (stated, unchanged), but close
+and cancel END a trip for ever, so they ask plans.manage AT the destination
+and the card draws them only there (money-8). The card's cost section, the
+«xarajati bor, yuki yo'q» and «xarajat yozilmagan» banners and the mark's
+reason are drawn for `mayReadPickups || reports.all_warehouses` — a receiver
+admitted by the destination clause alone sees the trip, its stops and lines
+and its closed state, never the truck's freight, which every batch's
+Xarajatlar tab already refuses him (money-9). Fenced by source shape (#531)
+and red-proven.
+
+1396. **A line's received cartons are on the card; a short count closes the
+line anyway.** His 1a, read against the judge's intent-q4: holding the
+auto-close on any shortfall would push most trips to a manual close and
+empty the answer; the recount at our door is the truth (B2). So the line is
+answered by any live prixod, and the card prints «qabul: 45 ⚠» beside the
+factory and driver counts when it is fewer than both. The close confirm
+NAMES the candidate prixods it leaves unlinked (intent-6) — «are you sure»
+is pressed through, «P-201» is read. 18 red proofs by string edit for
+#1389-#1396 (closed-trip void and detach, open trip kept, owner refusal,
+door prefix, the TS and SQL digit rules, the declined lookalike, the
+creation-day window, the closed-only mark, the superseding bill, list (4)'s
+both sides and window, the line count, the posted single line, and the
+three fences).
+
+1397. **The arrival names the factory trip — «ZR-00012 · zavod · mashina».**
+His 6: a prixod off a factory trip read «Принято на складе» on the agent
+sheet, because the arrival rule named a truck only for a BATCH movement.
+Now a receipt landing (`receipt` / `lot_edit_add`) whose prixod sits on a
+stop of a trip heading to THIS warehouse names that trip — one statement
+still (stop, trip and factory as one guarded LEFT JOIN with the destination
+check inside it, only pre-0133 columns, so a half-applied deploy reads the
+old answer). `documents/arrival-label.ts` is the one printed form
+(`arrivalLabel`) and the block key (`arrivalKey`: a batch by id or code, a
+trip by trip id); pure, so the client card's fold and the lenta read it with
+no database. ONE block per trip whose heading names its factories in stop
+order — the judge's intent-8 alternative to per-stop blocks, each row
+keeping its own label. Readers: the agent sheet, «Packing (rasmlar)» (a new
+arrival column before the date — his word was «packinglist»), the plan view
+and editor, /stock and its XLSX, the staff bot, the lenta's META, «Yuklar»
+(a /zavod link only under `mayReadPickup`). `moveReceipt` refuses a prixod
+linked to a stop (`pickup_linked`) under the receipt's row lock — moving it
+would have left the trip's line answered by cargo at another warehouse.
+STATED, asked of him: the NEXT warehouse (Kashgar) still names the Yiwu
+batch, not the factory; the per-lot provenance from `pickup_stop_id` is a
+separate rule if he wants it. 14 red proofs (the package's own).
+
+1398. **The double-receive checker reads, through the screens' sentences,
+and decides nothing.** His 7 («ha»): `pickups/double-received.ts` +
+`scripts/zavod-tekshir.ts` — five lists (answered twice; owed lines with
+the cargo already here; linked and answering nothing; «ehtimol» twins,
+#1393; a closed trip's bill on no carton) plus «open trips whose every line
+is answered». Read-only the way `balance-report.ts` is (the URL parameter
+set before a dynamic import of the client, the ledger count and
+`default_transaction_read_only` printed first); no package.json entry
+(#1228) — run through `migrate`. «Answered», the owner rule, the candidates
+and the open statuses are the service's exports, never restated (#513).
+`docs/UPDATE.md` carries the one-time heal SQL for the migrate window (a
+prixod linked by the OLD code while 0133 ran has no memory row): the
+migration's own memory and close statements, re-run once, idempotent.
+STATED: that heal answers every line the owner's ordered rule matches, so
+it is run once right after the deploy, before logists link from the card.
+11 red proofs (the package's own).
+
+1399. **Found by LOOKING at the round's screenshots, not by a test.** A
+fresh-eyes review of twelve shots (360×800 and 1280×900) found three
+things no locator could: the /receive trip strip TRUNCATED to «ZR-00037 ·
+…» at 360 px — this round's own 40 px «Reysdan ajratish» target took the
+label's room, and `toContainText(FACTORY)` reads truncated text happily,
+so m9zy stayed green on a strip nobody could read (the label wraps now,
+fenced: no `truncate` in the strip); the close fold sent the logist to
+the unlinked prixods «below» when the block sits ABOVE it, in all four
+bundles (the sentence now names the block by its title in quotes, fenced
+against `candidatesTitle` — and the fence's first version stayed GREEN,
+because the uz and zh sentences OPEN with the title's own words, so it
+asks for the QUOTED title); and the closed status was the one capitalised
+word among its lowercase siblings in ru, en and uz. REFUTED by two
+verifiers and kept: the GS777MANIKEN line repeats the GS777 lookalike —
+by the prefix convention the off-trip GS777 prixod may be either line's
+cargo, and the receiver is the one who can tell. Also built the same
+afternoon: the trip-opened /receive says the lookalike above the wizard
+(the third surface the CHANGELOG already promised), and the «Yuklar» row's
+status chips sort by the ladder instead of by postgres's grouping order —
+the `client-cargo-now` flake.
+
+## Yo'lkira tarifi — his «1a 2b» (2026-10-15; NO migration of its own, it deploys
+with the zavod round's 0133 — ledger 134; spec `docs/YOLKIRA-TAQSIMOT.md` §15)
+
+Numbered #1379-#1385 on the branch and renumbered #1400-#1406 on the merge — the
+TWENTY-FIRST collision: the zavod-reysi round above took #1379-#1399 and merged
+first. References inside these seven entries were moved with them; the
+yo'lkira entries before the zavod section (#1364-#1378) are unchanged.
+
+1400. **His 1a of 2026-10-15: ONE tariff column for every truck — the 2c
 door is DELETED, not hidden** (docs/YOLKIRA-TAQSIMOT.md §15.1). His words
 after PR #120 merged: «skladlarning o'zini narxi bo'lsin degan narsa kerak
 emas — bizning YW Guangzhou dan Toshkentga sotish narximiz bor, kg kubiga
@@ -3268,7 +3590,7 @@ nothing moves» now moves on deploy. The prices are only the RATIO between
 lots, so a Kashgar or Andijon → Toshkent truck split on the China prices is
 right by his own reading; a hint under the preview says so.
 
-1380. **His 2b: the grain is the LOT, each priced by its own density**
+1401. **His 2b: the grain is the LOT, each priced by its own density**
 (§15.2). `freightLots` keys `l:<lotId>`; a lot's density is a property of
 the lot — `stableMeasure` gives every carton of a lot the same exact
 measure, so 1 or 500 cartons aboard read one band, and the count enters only
@@ -3288,10 +3610,10 @@ freight money now (the lot does not change; only the client stamp, which
 (`productNameRu ?? productNameZh` through `boxMeasures`), or «GS777-A /
 GS777-B» could not tell his yostiq from his kafel.
 
-1381. **Every reader keyed by a group was a SILENT failure under a new key**
+1402. **Every reader keyed by a group was a SILENT failure under a new key**
 (§15.3) — none throws, each just drops words or dollars. The fold's cents
 are keyed `'l:' || b.lot_id`; the Narx line names a client's DISTINCT bands
-(two at most, then «+N») of the lots its part's money sits on (#1384); the re-basis rows stay per
+(two at most, then «+N») of the lots its part's money sits on (#1405); the re-basis rows stay per
 CLIENT (his 5a) with no single band, the freight target carrying its after
 state per lot (`preview.split`) and the token covering the lots' shares, so a
 lot moving bands behind equal client percentages is a different preview. The
@@ -3299,7 +3621,7 @@ client roll-up is computed ONCE (`rollupClients`, clients and lots by share)
 — the order is part of the cents a preview prints. Each pinned by a test and
 a fence (`freight-wire`: no `splitGroup`/`GroupView`/`lightLots` anywhere).
 
-1382. **Bills saved under 0132's client grain are re-split ONCE, never
+1403. **Bills saved under 0132's client grain are re-split ONCE, never
 grain-frozen** (§15.5). The grain is code, not part of the copy (3a freezes
 the tariff, never the arithmetic); freezing it would need 0133, both engines
 and both reader shapes for ever, and would keep the ⓘ-not-held behaviour his
@@ -3311,15 +3633,15 @@ rule 6 per lot contradicts. `scripts/freight-resplit.ts` (dry run, then
 grain, re-derived) and $ (the old allocations) would disagree on one row,
 and ✎ refuses forcing it (same basis, same copy → `rebase_same`).
 
-1383. **Only the newest three tariff versions carry a per-lot split in the
+1404. **Only the newest three tariff versions carry a per-lot split in the
 page** (`FULL_SPLIT_VERSIONS`). The lot grain multiplies the rows: a
 150-lot truck × 20 versions was 3,000 views in the cost panel's payload on
 the China networks (#752). An older version keeps its digest and its problem
 and says the split is drawn after the save; a version dated after
-`latestTxDate()` takes no slot at all (#1384). And every truck's Xarajatlar
+`latestTxDate()` takes no slot at all (#1405). And every truck's Xarajatlar
 tab now runs the offer (the `no_column` short-circuit went with the door).
 
-1384. **The design judge's surviving objections, re-checked against the
+1405. **The design judge's surviving objections, re-checked against the
 SHIPPED code** (81 agents, 38 objections; 18 not refuted by both refuters).
 Six were already true of the build (J6 renamed tests, J19 the `toContain`
 pin, J20/J28 the resplit's logic in `costing/freight-resplit.ts` where a test
@@ -3383,7 +3705,7 @@ run's job, and 0132 had no column), J7, J10 (lot rows carry the goods), J18,
 J24, J32 (rule 6's blast radius — told to him as a fact, not a defect), J35,
 J37, J38.
 
-1385. **The round reviewed AS BUILT** (five lenses, each finding given a
+1406. **The round reviewed AS BUILT** (five lenses, each finding given a
 skeptic; 16 findings — the six money/reader ones were fixed while the
 skeptics read, which is the moving-tree hazard of #977, so each was
 re-checked against the commit that fixed it). Fixed, each pinned:
@@ -3431,7 +3753,7 @@ in the resplit is the correct state (the first ordinary recompute would hold
 it anyway) and is now said in UPDATE.md.
 Then CI and the local CI-order run went red on ONE spec, the cap's own
 (`m9zzzd`, 831 px against 800) — no lens had measured a phone. The cap moved
-from five to three and the 1a hint folded into the column line (#1384); the
+from five to three and the 1a hint folded into the column line (#1405); the
 unit render test and both e2e specs moved with it, with new literals worked
 by hand («+4 mijoz · 260.79», «+4 mijoz · 10.66 USD»).
 Two more, found while LOOKING at the fix's own screenshots and the rerun:

@@ -22,8 +22,19 @@ export const DOC = {
   arrivalBatch: 'Партия прихода / Arrival batch',
   /** When it landed. `DOC.date` says «Received» and is the RECEIPT's date. */
   arrivalDate: 'Дата прихода / Arrival date',
-  /** The heading over the cargo that reached this warehouse on no truck. */
+  /**
+   * The heading over the cargo that reached this warehouse on no truck — a
+   * genuine walk-in. Cargo received off a factory trip is NOT this: it came
+   * on a truck we hired, and says so (`factoryPickup`).
+   */
   receivedHere: 'Принято на складе / Received here',
+  /**
+   * The heading over the cargo a factory trip (`ZR-…`, 0100) brought here,
+   * beside `arrivalBatch` — the owner's «shu zavoddan, shu mashinada»
+   * (docs/ZAVOD-YOPISH.md §5). The agent reads which truck and which factory;
+   * a batch word over a ZR- code would send him looking for a batch.
+   */
+  factoryPickup: 'Заводской рейс / Factory pickup',
   barcode: 'Штрих-код / Barcode',
   boxes: 'Коробок / Boxes',
   code: 'Код / Code',

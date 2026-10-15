@@ -975,7 +975,22 @@
     "noteAndCost": "Note (if needed)",
     "pickupReceiving": "receiving from a factory pickup",
     "pickupDetach": "Detach from the pickup",
-    "pickupInvalid": "This factory pickup goes to another warehouse or was cancelled."
+    "pickupInvalid": "This factory pickup goes to another warehouse or was cancelled.",
+    "pickupDoorTitle": "Did this cargo come on a factory truck?",
+    "pickupDoorYes": "Yes, this trip",
+    "pickupDoorNo": "No",
+    "pickupDoorCount": "factory: {factory} · driver: {driver}",
+    "pickupClosed": "This factory trip is already closed — receive the cargo without it; the logist links it from the receipt card.",
+    "pickupLineAnswered": "This line of the trip was already received by another receipt. If this is other cargo, remove the trip (✕) and receive again.",
+    "pickupLineGone": "The trip’s lines changed while you were receiving. Remove the trip (✕) and choose again.",
+    "pickupDoorPerFactory": "One client has cargo from two factories of this trip — make a separate receipt for each factory.",
+    "pickupExtra": "This is the rest of the same cargo — add to the trip",
+    "pickupDrop": "Receive without the trip",
+    "pickupExtraChip": "rest of the cargo — no line",
+    "pickupStaleGone": "This trip no longer exists (cancelled) — remove it and receive without it.",
+    "pickupStaleTaken": "{n} line(s) of this trip were already received by another receipt — check it is not the same cargo.",
+    "pickupLineOwner": "This trip line belongs to another client — the receipt's client does not match it. Pick the right client, or receive without the trip — the logist links it from the card.",
+    "pickupLookalike": "⚠ {who}: {list} — already received at this warehouse without the trip. Is this the same cargo? If so, do not receive it again — tell the logist, who links it to the trip."
   },
   "receipts": {
     "title": "Receipts",
@@ -1023,6 +1038,7 @@
       "box_not_in_stock": "Part of the cargo has left the warehouse — the move is not possible",
       "box_in_crate": "Dissolve the crates of this receipt first",
       "same_warehouse": "That is the same warehouse",
+      "pickup_linked": "This receipt is linked to a factory pickup — detach it from the trip first (the receipt card names the trip)",
       "validation": "Check the data"
     },
     "openInBrowser": "Open in the browser (if printing did not start)",
@@ -2387,7 +2403,8 @@
     "unsplitForming": "Trucks that have not left yet (not in the table, which lists departed trucks only):",
     "gapFreightHeld": "{count, plural, one {# freight cost} other {# freight costs}} ({usd}) not split over the truck cargo by the tariff — in this report, but in no client's landed cost.",
     "gapFreightHeldHint": "Saved but not split by the tariff: once the lot is fixed or through «Split method» it splits and joins the clients' landed cost by itself — do not void it. The reason is on the truck's cost sheet.",
-    "clientFreightHeldNote": "Of which {usd} ({count, plural, one {# cost} other {# costs}}) is freight not split by the tariff: once the lot is fixed or through «Split method» it splits onto the clients by itself; do not void it."
+    "clientFreightHeldNote": "Of which {usd} ({count, plural, one {# cost} other {# costs}}) is freight not split by the tariff: once the lot is fixed or through «Split method» it splits onto the clients by itself; do not void it.",
+    "balUnpricedPickupClosed": "A closed factory trip's costs on no box ({count} of them, ${usd}) — its receipt was voided, or the trip closed with no cargo. Link the real receipt to the trip from the receipt card or, if no cargo came, void the cost; until then they lower the net position."
   },
   "lidChat": {
     "mark": "Lead",
@@ -4708,13 +4725,16 @@
       "planned": "planned",
       "on_road": "on the road",
       "arrived": "arrived",
-      "cancelled": "cancelled"
+      "cancelled": "cancelled",
+      "closed": "closed"
     },
     "tabs": {
       "live": "Active",
       "arrived": "Arrived",
       "cancelled": "Cancelled",
-      "all": "All"
+      "all": "All",
+      "closed": "Closed",
+      "xarajatsiz": "No cost"
     },
     "errors": {
       "generic": "Could not save. Please try again.",
@@ -4737,8 +4757,53 @@
       "client_not_found": "Client not found.",
       "warehouse_not_found": "Warehouse not found or inactive.",
       "bad_point": "Could not read the coordinates. Example: 29.31, 120.07",
-      "no_point": "There is no map point yet."
-    }
+      "no_point": "There is no map point yet.",
+      "closed": "The trip is closed and cannot be changed.",
+      "already_closed": "The trip is already closed.",
+      "close_reason_required": "Write the reason (at least 3 letters).",
+      "no_cost_reason_required": "Write why there is no cost (at least 3 letters).",
+      "has_costs": "The trip has a cost — it cannot be marked «no cost».",
+      "line_answered": "This line was already received by another receipt.",
+      "line_not_on_stop": "This line is not on this stop.",
+      "not_found": "Trip not found.",
+      "stop_not_found": "Stop not found.",
+      "receipt_not_found": "Receipt not found.",
+      "server_behind": "The server is still updating — try again in a minute.",
+      "shared_cost_orphaned": "Trip {code}'s cost would be left on no cargo — this receipt is all it carries. Link the real receipt to the trip first, or void the cost (finance).",
+      "line_owner_mismatch": "This line belongs to another client — the receipt's client is not the line's. Pick the right client, or receive with «No».",
+      "no_cost_closed_only": "«No cost» can only be marked on a closed trip — mark it when you close the trip."
+    },
+    "closeTrip": "Close the trip",
+    "closeHint": "A trip closes by itself once every line is received. Close it by hand when the rest will not come — it never reopens.",
+    "closeReason": "Why close it? (e.g. the rest will not come)",
+    "closeConfirm": "Close the trip? It cannot be reopened.",
+    "noCostTick": "This trip has no cost",
+    "noCostReason": "Why is there no cost?",
+    "noCostMarked": "No cost: {reason}",
+    "noCostClear": "Remove the mark",
+    "noCostSet": "Mark «no cost»",
+    "closedAuto": "Every line received — trip closed {at}",
+    "closedManual": "Closed {at} · {who}: {reason}",
+    "lineWaiting": "not received yet",
+    "lineNotReceived": "not received",
+    "unmatched": "Receipts from this factory that match no line",
+    "homeCostNoCargo": "{n} with a cost and no cargo",
+    "costNoCargo": "cost, no cargo",
+    "costNoCargoLong": "The trip has a cost but no live receipt — the cost sits on no carton. Link the new receipt to this trip from its card.",
+    "serverBehind": "The server is still updating — try again in a minute.",
+    "linkToLine": "{seq}: {goods}",
+    "declinedAtDoor": "the warehouse said «not from this trip»",
+    "prefillReceived": "{code}: this cargo is already received — {numbers}. Do not receive it twice; if it is other cargo, receive it the ordinary way.",
+    "prefillClosed": "{code} is closed or cancelled — receive without the trip.",
+    "homeStaleOpen": "{n} arrived but not closed",
+    "editHeader": "Truck, driver, note",
+    "closeCandidates": "There are unlinked receipts ({n}) — link them in «Unlinked prixods» above first, or their cargo stays «received here».",
+    "closedByHand": "closed by hand",
+    "closedByItself": "all received",
+    "linesNotCame": "{n} line(s) did not come",
+    "detachClosedConfirm": "The trip is closed. Detach the receipt? It can be re-attached only from the receipt card within 30 days.",
+    "receivedShort": "received",
+    "closeConfirmCandidates": "Close the trip? It will not reopen. These receipts stay unlinked: {numbers} — their cargo will read «received here»."
   },
   "unpriced": {
     "title": "Arrived cargo with no price",

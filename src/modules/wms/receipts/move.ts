@@ -23,14 +23,25 @@ export class MoveError extends Error {
  * box is still in_stock and un-crated (post-departure fixes belong to the M4
  * transfer machinery). The receipt number and letters keep their original WH
  * prefix (immutable labels) — the UI prompts a label reprint after the move.
+ *
+ * Refused while the prixod is linked to a factory trip's stop
+ * (`pickup_linked`): the trip was heading to THIS warehouse, the arrival rule
+ * names the trip here and nowhere else (documents/arrivals.ts), and the trip's
+ * own destination is locked while a prixod is linked (`dest_locked`). Moving
+ * the cargo away under the link would leave a trip whose cargo is nowhere it
+ * says. Detach it first — the trip card names it.
  */
 export async function moveReceipt(receiptId: string, toWarehouseId: string, ctx: AuditContext) {
   if (!ctx.actorId) throw new MoveError('unauthenticated');
   return db.transaction(async (tx) => {
-    const receipt = await tx.query.receipts.findFirst({ where: eq(receipts.id, receiptId) });
+    // Locked before the boxes (the void's order): `linkReceiptToStop` takes
+    // this row first too, so a link pressed during the move waits for it and
+    // then judges the moved warehouse, never the one this read saw.
+    const [receipt] = await tx.select().from(receipts).where(eq(receipts.id, receiptId)).for('update');
     if (!receipt) throw new MoveError('receipt_not_found');
     if (receipt.status !== 'confirmed') throw new MoveError('receipt_not_confirmed');
     if (receipt.warehouseId === toWarehouseId) throw new MoveError('same_warehouse');
+    if (receipt.pickupStopId) throw new MoveError('pickup_linked');
     const target = await tx.query.warehouses.findFirst({
       where: eq(warehouses.id, toWarehouseId),
     });

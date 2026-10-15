@@ -4,12 +4,15 @@ import { eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { db } from '@/modules/platform/db/client';
-import { pickupStops, receipts } from '@/modules/platform/db/schema';
+import { pickups, pickupStops, receipts } from '@/modules/platform/db/schema';
 import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
+import { inScope } from '@/modules/platform/rbac/scope';
 import { requestMeta } from '@/modules/platform/auth/session';
+import { isServerBehind } from '@/modules/platform/db/errors';
 import {
   addStop,
   cancelPickup,
+  closePickup,
   collectStop,
   confirmFactoryPoint,
   createPickup,
@@ -23,6 +26,7 @@ import {
   saveStopLines,
   setFactoryActive,
   setFactoryPoint,
+  setPickupNoCost,
   updatePickupHeader,
 } from '@/modules/wms/pickups/service';
 
@@ -32,6 +36,8 @@ export interface PickupActionResult {
   id?: string;
   /** saveFactory only: what the geocoder said, so the form can say it too. */
   geocoded?: 'found' | 'not_found' | 'kept';
+  /** What a refusal's sentence names (the trip's code for `shared_cost_orphaned`). */
+  detail?: string;
 }
 
 /**
@@ -57,8 +63,11 @@ async function run(
     for (const path of paths) revalidatePath(path);
     return { ok: true, ...(extra ?? {}) };
   } catch (err) {
-    if (err instanceof PickupError) return { ok: false, error: err.code };
+    if (err instanceof PickupError) return { ok: false, error: err.code, ...(err.detail ? { detail: err.detail } : {}) };
     if (err instanceof z.ZodError) return { ok: false, error: 'validation' };
+    // The app one migration ahead of the database (a stale `migrate` image,
+    // trap 2): a sentence, never a white page (#472).
+    if (isServerBehind(err)) return { ok: false, error: 'server_behind' };
     throw err;
   }
 }
@@ -186,9 +195,82 @@ export async function markArrivedAction(pickupId: string): Promise<PickupActionR
   return run(writer, (ctx) => markArrived(pickupId, ctx), [`/zavod/${pickupId}`, '/zavod', '/map']);
 }
 
+/**
+ * The trip as the two TERMINAL doors (cancel, close) must judge it: their
+ * gate is `plans.manage` AT the trip's destination (the judge's money-8) —
+ * every other pickup writer is unscoped (stated), but a scoped role granted
+ * plans.manage to plan trucks must not end another warehouse's trip for
+ * ever. Read on the pool before the action's own write, a refusal in words.
+ */
+async function tripForTerminalDoor(pickupId: string) {
+  return db.query.pickups.findFirst({ where: eq(pickups.id, pickupId) }).catch((err: unknown) => {
+    if (isServerBehind(err)) return 'behind' as const;
+    throw err;
+  });
+}
+
 export async function cancelPickupAction(pickupId: string, reason: string): Promise<PickupActionResult> {
   if (!z.string().uuid().safeParse(pickupId).success) return { ok: false, error: 'validation' };
-  return run(writer, (ctx) => cancelPickup(pickupId, reason, ctx), [`/zavod/${pickupId}`, '/zavod', '/receive']);
+  const pickup = await tripForTerminalDoor(pickupId);
+  if (pickup === 'behind') return { ok: false, error: 'server_behind' };
+  if (!pickup) return { ok: false, error: 'not_found' };
+  return run(
+    () => authorize(PICKUP_WRITE, { warehouseId: pickup.destWarehouseId }),
+    (ctx) => cancelPickup(pickupId, reason, ctx),
+    [`/zavod/${pickupId}`, '/zavod', '/receive'],
+  );
+}
+
+const closeSchema = z.object({
+  reason: z.string().max(500),
+  noCostReason: z.string().max(500).nullable().optional(),
+});
+
+/**
+ * «Reysni yopish» (his 1a): the logist closes a trip whose lines will never
+ * all be answered — a sentence is required, the service says so in its own
+ * code. The optional «xarajat yo'q» tick in the same form is the truck's
+ * MONEY, so it asks what a truck's cost asks — `costs.enter_batch` at the
+ * trip's destination — and the service refuses the tick, not the close, when
+ * the presser lacks it.
+ */
+export async function closePickupAction(pickupId: string, input: unknown): Promise<PickupActionResult> {
+  if (!z.string().uuid().safeParse(pickupId).success) return { ok: false, error: 'validation' };
+  const parsed = closeSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: 'validation' };
+  const pickup = await tripForTerminalDoor(pickupId);
+  if (pickup === 'behind') return { ok: false, error: 'server_behind' };
+  if (!pickup) return { ok: false, error: 'not_found' };
+  return run(
+    () => authorize(PICKUP_WRITE, { warehouseId: pickup.destWarehouseId }),
+    async (ctx) => {
+      const actor = await authorize(PICKUP_WRITE, { warehouseId: pickup.destWarehouseId });
+      const mayMarkNoCost =
+        actor.permissions.has('costs.enter_batch') && inScope(actor, pickup.destWarehouseId);
+      await closePickup(pickupId, parsed.data, ctx, { mayMarkNoCost });
+    },
+    [`/zavod/${pickupId}`, '/zavod', '/receive', '/'],
+  );
+}
+
+/**
+ * «Xarajat yo'q» (his 5a): a trip the company paid nothing for leaves the
+ * «xarajati yozilmagan» count with a reason. `null` takes the mark back.
+ */
+export async function setPickupNoCostAction(pickupId: string, reason: string | null): Promise<PickupActionResult> {
+  if (!z.string().uuid().safeParse(pickupId).success) return { ok: false, error: 'validation' };
+  if (reason !== null && typeof reason !== 'string') return { ok: false, error: 'validation' };
+  const pickup = await db.query.pickups.findFirst({ where: eq(pickups.id, pickupId) }).catch((err: unknown) => {
+    if (isServerBehind(err)) return 'behind' as const;
+    throw err;
+  });
+  if (pickup === 'behind') return { ok: false, error: 'server_behind' };
+  if (!pickup) return { ok: false, error: 'not_found' };
+  return run(
+    () => authorize('costs.enter_batch', { warehouseId: pickup.destWarehouseId }),
+    (ctx) => setPickupNoCost(pickupId, reason, ctx),
+    [`/zavod/${pickupId}`, '/zavod', '/'],
+  );
 }
 
 /**
@@ -196,16 +278,23 @@ export async function cancelPickupAction(pickupId: string, reason: string): Prom
  * truck's MONEY, so the gate is the one a truck's cost has —
  * `costs.enter_batch` — at the RECEIPT's warehouse, not the pickup writer's.
  */
-export async function linkReceiptAction(receiptId: string, stopId: string | null): Promise<PickupActionResult> {
+export async function linkReceiptAction(
+  receiptId: string,
+  stopId: string | null,
+  lineIds?: string[],
+): Promise<PickupActionResult> {
   if (!z.string().uuid().safeParse(receiptId).success) return { ok: false, error: 'validation' };
   if (stopId !== null && !z.string().uuid().safeParse(stopId).success) return { ok: false, error: 'validation' };
+  // A line is a line OF a stop: ids without one are a forged post.
+  const lines = z.array(z.string().uuid()).max(40).optional().safeParse(lineIds);
+  if (!lines.success || (stopId === null && lines.data?.length)) return { ok: false, error: 'validation' };
   const receipt = await db.query.receipts.findFirst({ where: eq(receipts.id, receiptId) });
   if (!receipt) return { ok: false, error: 'receipt_not_found' };
   const before = receipt.pickupStopId ? await pickupOf(receipt.pickupStopId) : null;
   const after = stopId ? await pickupOf(stopId) : null;
   return run(
     () => authorize('costs.enter_batch', { warehouseId: receipt.warehouseId }),
-    (ctx) => linkReceiptToStop(receiptId, stopId, ctx),
+    (ctx) => linkReceiptToStop(receiptId, stopId, ctx, lines.data ?? null),
     [`/receipts/${receiptId}`, ...[before, after].filter(Boolean).map((id) => `/zavod/${id}`)],
   );
 }

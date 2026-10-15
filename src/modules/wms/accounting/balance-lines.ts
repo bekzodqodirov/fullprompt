@@ -133,6 +133,7 @@ export interface UnpricedCargoNotes {
   tillUnrated: { count: number };
   noDebt: { count: number };
   pickupNoBox: { count: number };
+  pickupClosedNoBox: { count: number };
   noBox: { count: number };
   /** Held yo'lkira-tariff bills (docs/YOLKIRA-TAQSIMOT.md §6.3.7) — a note of their own. */
   freightUnsplit: { count: number };
@@ -156,6 +157,7 @@ export function unpricedNotesCount(notes: UnpricedCargoNotes): number {
     notes.tillUnrated.count > 0,
     notes.noDebt.count > 0,
     notes.pickupNoBox.count > 0,
+    notes.pickupClosedNoBox.count > 0,
     notes.noBox.count > 0,
     notes.freightUnsplit.count > 0,
     notes.unconverted > 0,

@@ -46,13 +46,19 @@ const serwist = new Serwist({
        * clock — the sheet asks it «did somebody write under me?». A cached
        * clock answers «nothing changed» for ever, which is the chat pulse's
        * failure on a price: a colleague's baza overwritten with no warning.
+       *
+       * `/api/receive/pickups` (0133) is the receive door's «did this come
+       * off a factory truck?» — a cached answer asks again about a line
+       * another phone just received, which is the double receive the round
+       * exists to stop.
        */
       matcher: ({ url: { pathname }, sameOrigin }) =>
         sameOrigin &&
         (pathname === '/api/version' ||
           pathname === '/api/chat/pulse' ||
           pathname.startsWith('/api/cabinet/') ||
-          pathname.startsWith('/api/calc/rev/')),
+          pathname.startsWith('/api/calc/rev/') ||
+          pathname === '/api/receive/pickups'),
       handler: new NetworkOnly(),
     },
     ...defaultCache,

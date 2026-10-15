@@ -3876,6 +3876,19 @@ export const pickups = pgTable(
     arrivedAt: timestamp('arrived_at', { withTimezone: true }),
     cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
     note: text('note'),
+    /**
+     * The trip is finished (0133, his 1a/2a): by itself when every line is
+     * answered by a live prixod (`auto`, no reason), or by the logist with a
+     * reason (`manual`). Terminal — nothing reopens a closed trip.
+     */
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+    closedBy: uuid('closed_by').references(() => users.id),
+    closeKind: text('close_kind'),
+    closeReason: text('close_reason'),
+    /** «Xarajat yo'q» (0133, his 5a): the truck was paid somewhere else. */
+    noCostAt: timestamp('no_cost_at', { withTimezone: true }),
+    noCostBy: uuid('no_cost_by').references(() => users.id),
+    noCostReason: text('no_cost_reason'),
     createdBy: uuid('created_by')
       .notNull()
       .references(() => users.id),
@@ -3885,7 +3898,15 @@ export const pickups = pgTable(
   (t) => [
     check(
       'pickups_status_check',
-      sql`${t.status} IN ('planned', 'on_road', 'arrived', 'cancelled')`,
+      sql`${t.status} IN ('planned', 'on_road', 'arrived', 'closed', 'cancelled')`,
+    ),
+    check(
+      'pickups_closed_check',
+      sql`(${t.status} = 'closed') = (${t.closedAt} IS NOT NULL) AND (${t.closedAt} IS NULL) = (${t.closeKind} IS NULL) AND (${t.closeKind} IS NULL OR ${t.closeKind} IN ('auto', 'manual')) AND (${t.closeKind} IS DISTINCT FROM 'manual' OR char_length(btrim(${t.closeReason})) BETWEEN 3 AND 500) AND (${t.closeKind} IS DISTINCT FROM 'auto' OR ${t.closeReason} IS NULL)`,
+    ),
+    check(
+      'pickups_no_cost_check',
+      sql`(${t.noCostAt} IS NULL) = (${t.noCostReason} IS NULL) AND (${t.noCostReason} IS NULL OR char_length(btrim(${t.noCostReason})) BETWEEN 3 AND 500)`,
     ),
   ],
 );
@@ -3963,6 +3984,30 @@ export const pickupLines = pgTable(
       'pickup_lines_measure_check',
       sql`(${t.volumeM3} IS NULL OR (${t.volumeM3} > 0 AND ${t.volumeM3} <> 'NaN'::numeric)) AND (${t.weightKg} IS NULL OR (${t.weightKg} > 0 AND ${t.weightKg} <> 'NaN'::numeric))`,
     ),
+  ],
+);
+
+/**
+ * Which pickup lines a prixod ANSWERS (0133) — written once, by the door that
+ * links the prixod to its stop, and never recomputed from the owner's text
+ * (a claimed marking or a client correction must not make a received line
+ * «unreceived» again). A line is answered while one of its prixods is LIVE.
+ */
+export const pickupLineReceipts = pgTable(
+  'pickup_line_receipts',
+  {
+    lineId: uuid('line_id')
+      .notNull()
+      .references(() => pickupLines.id, { onDelete: 'cascade' }),
+    receiptId: uuid('receipt_id')
+      .notNull()
+      .references((): AnyPgColumn => receipts.id, { onDelete: 'cascade' }),
+    createdBy: uuid('created_by').references(() => users.id),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.lineId, t.receiptId] }),
+    index('pickup_line_receipts_receipt_idx').on(t.receiptId),
   ],
 );
 

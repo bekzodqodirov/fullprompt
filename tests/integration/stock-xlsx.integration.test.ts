@@ -65,7 +65,7 @@ const LOT_D = '55555555-5555-5555-5555-555555555555';
 async function build(lines: StockSheetLine[]) {
   const { buffer } = await buildStockXlsx({
     lines,
-    arrivalCodes: new Map(),
+    arrivalLabels: new Map(),
     cols: undefined,
     locale: 'uz',
     can: () => true,
@@ -257,7 +257,7 @@ describe('the stock XLSX carries the photographs', () => {
     expect(built, 'the photo fixture did not insert').toBe(true);
     const { buffer, photos } = await buildStockXlsx({
       lines: FOUR(),
-      arrivalCodes: new Map(),
+      arrivalLabels: new Map(),
       cols: undefined,
       locale: 'uz',
       can: () => true,
@@ -292,7 +292,7 @@ describe('the stock XLSX carries the photographs', () => {
   it('opens as many 📷 columns as the fullest row needs — at the END of the sheet', async () => {
     const { buffer } = await buildStockXlsx({
       lines: FOUR(),
-      arrivalCodes: new Map(),
+      arrivalLabels: new Map(),
       cols: undefined,
       locale: 'uz',
       can: () => true,
@@ -334,7 +334,7 @@ describe('the stock XLSX carries the photographs', () => {
     expect(built, 'the photo fixture did not insert').toBe(true);
     const { buffer, photos, visible } = await buildStockXlsx({
       lines: FOUR(),
-      arrivalCodes: new Map(),
+      arrivalLabels: new Map(),
       // A saved view that names every column a person reads and not the 📷.
       cols: 'code,product,boxes,perBoxKg,stockKg,stockM3,whCode',
       locale: 'uz',
@@ -356,7 +356,7 @@ describe('the stock XLSX carries the photographs', () => {
     const { buffer, photos } = await buildStockXlsx({
       // A lot of a prixod nobody photographed.
       lines: [line({ id: UNMEASURED, receiptId: '00000000-0000-0000-0000-0000000000dd' })],
-      arrivalCodes: new Map(),
+      arrivalLabels: new Map(),
       cols: undefined,
       locale: 'uz',
       can: () => true,
@@ -373,7 +373,7 @@ describe('the stock XLSX carries the photographs', () => {
   it('says on the header that Excel’s Sort leaves the pictures behind', async () => {
     const { buffer } = await buildStockXlsx({
       lines: FOUR(),
-      arrivalCodes: new Map(),
+      arrivalLabels: new Map(),
       cols: undefined,
       locale: 'uz',
       can: () => true,
@@ -399,7 +399,7 @@ describe('the stock XLSX carries the photographs', () => {
      */
     const { buffer, photos, photosSkipped } = await buildStockXlsx({
       lines: FOUR(),
-      arrivalCodes: new Map(),
+      arrivalLabels: new Map(),
       cols: undefined,
       locale: 'uz',
       can: () => true,
@@ -452,7 +452,7 @@ describe('the stock XLSX carries the photographs', () => {
     expect(built, 'the photo fixture did not insert').toBe(true);
     const shipped = await buildStockXlsx({
       lines: FOUR(),
-      arrivalCodes: new Map(),
+      arrivalLabels: new Map(),
       cols: undefined,
       locale: 'uz',
       can: () => true,
@@ -474,7 +474,7 @@ describe('the stock XLSX carries the photographs', () => {
 
     const starved = await buildStockXlsx({
       lines: FOUR(),
-      arrivalCodes: new Map(),
+      arrivalLabels: new Map(),
       cols: undefined,
       locale: 'uz',
       can: () => true,
@@ -488,7 +488,7 @@ describe('the stock XLSX carries the photographs', () => {
     expect(built, 'the photo fixture did not insert').toBe(true);
     const { buffer } = await buildStockXlsx({
       lines: FOUR(),
-      arrivalCodes: new Map(),
+      arrivalLabels: new Map(),
       // A view naming NONE of the three.
       cols: 'code,product,boxes,stockKg,stockM3,whCode',
       locale: 'uz',

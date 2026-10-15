@@ -12,7 +12,9 @@ import { expect, test } from '@playwright/test';
  *
  * The trip is CANCELLED and the factory deactivated in a final TEST: a live
  * trip sits on every later /receive screen of its destination, and a factory
- * is configuration (#183).
+ * is configuration (#183). Nothing here CONFIRMS a receipt through the trip —
+ * a received trip closes by itself (0133) and a closed trip is never
+ * cancelled, by design; the door's answers are proven up to the banner.
  */
 
 const OWNER = '+998900000001';
@@ -24,6 +26,7 @@ const GOODS = `Oyinchoq ${STAMP}`;
 test.describe.configure({ mode: 'serial' });
 
 let pickupUrl = '';
+let destCode = '';
 
 async function login(page: import('@playwright/test').Page) {
   await page.context().clearCookies();
@@ -75,6 +78,7 @@ test('a trip is written from one form, and «Olindi» is one press on the card',
   await page.getByTestId('pickup-create').click();
   await expect(page).toHaveURL(/\/zavod\/[0-9a-f-]{36}$/);
   pickupUrl = page.url();
+  destCode = ((await page.locator('main').first().innerText()).match(/→ (\S+)/) ?? [])[1] ?? '';
 
   const card = page.getByTestId('pickup-stop').first();
   await expect(card.getByTestId('stop-line')).toContainText(GOODS);
@@ -101,6 +105,55 @@ test('the warehouse sees the truck on /receive and the wizard opens pre-filled, 
   await expect(page.getByTestId('lot-count-hint').first()).toContainText('5');
   await expect(page.getByTestId('lot-count-hint').first()).toContainText('4');
   await expect(page.getByTestId('lot-count').first()).toHaveValue('');
+});
+
+test('the receive door asks «Bu yuk … reysidan keldimi?» once the client is known; «Ha» links, «Yo’q» is remembered', async ({
+  page,
+}) => {
+  expect(pickupUrl, 'the trip from the previous test').not.toBe('');
+  expect(destCode, 'the trip’s destination').not.toBe('');
+  await login(page);
+  await page.goto('/receive');
+  await page.evaluate(() => localStorage.removeItem('gsr-receipt-draft'));
+  await page.reload();
+  await page.getByTestId('receive-warehouse').selectOption({ label: destCode });
+  await page.locator('#clientQuery').fill('gs777');
+  await page.getByRole('button', { name: /GS777/ }).click();
+  const door = page.getByTestId('pickup-door');
+  const stop = door.getByTestId('pickup-door-stop').filter({ hasText: FACTORY });
+  await expect(stop).toBeVisible();
+  await expect(stop).toContainText(GOODS);
+  // The buttons wake a moment after the question lands (a thumb on its way
+  // to the goods field must not press «Ha»).
+  await expect(stop.getByTestId('pickup-door-yes')).toBeEnabled();
+  await stop.getByTestId('pickup-door-yes').click();
+  await expect(page.getByTestId('receive-pickup')).toContainText(FACTORY);
+  // A pristine draft became one lot per line, the goods typed in.
+  await expect(page.getByTestId('lot-zh').first()).toHaveValue(GOODS);
+  await expect(door).toHaveCount(0);
+
+  // Off the trip again: the question comes back; «Yo'q» puts it away.
+  await page.getByTestId('receive-pickup-detach').click();
+  await expect(page.getByTestId('receive-pickup')).toHaveCount(0);
+  await expect(stop.getByTestId('pickup-door-no')).toBeEnabled();
+  await stop.getByTestId('pickup-door-no').click();
+  await expect(page.getByTestId('pickup-door-stop').filter({ hasText: FACTORY })).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.clientWidth)).toBeLessThanOrEqual(360);
+  await page.evaluate(() => localStorage.removeItem('gsr-receipt-draft'));
+});
+
+test('a trip that moved offers «Reysni yopish», and a close needs a sentence', async ({ page }) => {
+  expect(pickupUrl).not.toBe('');
+  await login(page);
+  await page.goto(pickupUrl);
+  const close = page.getByTestId('pickup-close');
+  await close.locator('summary').click();
+  await close.getByTestId('pickup-close-reason').fill('ab');
+  page.once('dialog', (dialog) => dialog.accept());
+  await close.getByTestId('pickup-close-submit').click();
+  await expect(close.getByTestId('pickup-close-error')).toBeVisible();
+  // Refused: the trip is still open, and the cleanup below can still cancel it.
+  await expect(page.getByTestId('pickup-cancel')).toBeVisible();
 });
 
 test('cleanup: the trip is cancelled and leaves /receive; the factory is deactivated', async ({ page }) => {

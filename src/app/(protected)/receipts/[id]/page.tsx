@@ -493,12 +493,26 @@ export default async function ReceiptDetailPage({
             <ReceiptPickupControl
               receiptId={id}
               currentStopId={receipt.pickupStopId}
+              currentClosed={pickupInfo?.status === 'closed'}
               options={[
                 ...(pickupInfo && !pickupOptions.some((o) => o.stopId === pickupInfo.stopId)
-                  ? [{ stopId: pickupInfo.stopId, seq: pickupInfo.seq, code: pickupInfo.code, factoryName: pickupInfo.factoryName }]
+                  ? [
+                      {
+                        stopId: pickupInfo.stopId,
+                        seq: pickupInfo.seq,
+                        code: pickupInfo.code,
+                        status: pickupInfo.status,
+                        factoryName: pickupInfo.factoryName,
+                      },
+                    ]
                   : []),
                 ...pickupOptions,
-              ].map((o) => ({ stopId: o.stopId, label: `${o.code} · ${o.seq}. ${o.factoryName}` }))}
+              ].map((o) => ({
+                stopId: o.stopId,
+                // A closed trip may be joined from here (a void-and-redo finds
+                // its truck again) — and says so.
+                label: `${o.status === 'closed' ? '🔒 ' : ''}${o.code} · ${o.seq}. ${o.factoryName}`,
+              }))}
             />
           )}
         </div>

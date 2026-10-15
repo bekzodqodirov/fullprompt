@@ -1,5 +1,7 @@
 import { roundKg, roundM3, shareOf, sumRounded } from '../../platform/telegram/format';
 import { cargoStage, milestoneOf, MILESTONES, type StageBatch } from '../client-cabinet/stages';
+import { CLIENT_ACTIVE_STATUSES } from '../boxes/active';
+import { arrivalLabel, type ArrivalSource } from '../documents/arrival-label';
 import { pushLotName } from '../notices/client-text';
 import { daysSince } from '../reports/dashboard-math';
 
@@ -60,11 +62,29 @@ export interface FoldRow {
   missing: number;
 }
 
-/** When the cartons standing in one warehouse got there (`PairArrival`'s two facts). */
+/**
+ * When the cartons standing in one warehouse got there, and on what
+ * (`PairArrival`'s facts). `sources`, not `codes` + `batchIds` by index: a
+ * factory trip stands among the trucks now and is no batch.
+ */
 export interface FoldArrival {
-  codes: string[];
-  batchIds: string[];
+  sources: ArrivalSource[];
   since: Date;
+}
+
+/**
+ * One truck that brought what stands here: a batch (its card, by id) or a
+ * factory trip (`/zavod/<id>`), with the words `arrivalLabel` prints for it.
+ */
+export type NowArrivedOn =
+  | { kind: 'batch'; id: string; code: string; label: string }
+  | { kind: 'pickup'; id: string; code: string; label: string };
+
+/** A fold's arrival source as the tab draws it. */
+export function arrivedOnOf(source: ArrivalSource): NowArrivedOn {
+  return source.kind === 'batch'
+    ? { kind: 'batch', id: source.id ?? '', code: source.code, label: arrivalLabel(source) }
+    : { kind: 'pickup', id: source.id, code: source.code, label: arrivalLabel(source) };
 }
 
 /** One part of a mixed row: «omborda 3 · rejada 2 → B-00125». */
@@ -100,8 +120,8 @@ export interface NowRow {
   truckId: string | null;
   /** Tashkent days since it reached `warehouseId`; null on a truck or unknown. */
   days: number | null;
-  /** The trucks that brought what stands here (standing rows only). */
-  arrivedOn: { id: string; code: string }[];
+  /** The trucks — batches and factory trips — that brought what stands here (standing rows only). */
+  arrivedOn: NowArrivedOn[];
 }
 
 export interface NowTotals {
@@ -208,7 +228,7 @@ export function foldCargoNow(
       if (!onTruck && r.warehouseId && arrivals) {
         const arrival = arrivals.get(`${r.lotId}|${r.warehouseId}`);
         row.days = waitingDays(arrival, r, today);
-        row.arrivedOn = arrival ? arrival.codes.map((code, i) => ({ id: arrival.batchIds[i] ?? '', code })) : [];
+        row.arrivedOn = arrival ? arrival.sources.map(arrivedOnOf) : [];
       }
       byKey.set(key, row);
     }
@@ -227,7 +247,15 @@ export function foldCargoNow(
   const placeLabel = (r: NowRow) =>
     r.whCode ?? (r.truckId ? (trucks.get(r.truckId)?.code ?? '') : '');
 
+  // A row's parts in the ladder's own order (shelf → plan → loading), never
+  // the order postgres happened to group them in — a hash aggregate answers
+  // differently between two runs, and so did the chips.
+  const rung = (status: string) => {
+    const at = (CLIENT_ACTIVE_STATUSES as readonly string[]).indexOf(status);
+    return at < 0 ? CLIENT_ACTIVE_STATUSES.length : at;
+  };
   for (const { lotKg, lotM3, lotBoxes, ...row } of byKey.values()) {
+    row.parts.sort((a, b) => rung(a.status) - rung(b.status) || (a.truckId ?? '').localeCompare(b.truckId ?? ''));
     // The share of the row's whole count, once — never a sum of per-status
     // shares, which can round the other way from the push (#1115).
     row.kg = lotKg === null ? null : roundKg(shareOf(lotKg, row.n, lotBoxes));
