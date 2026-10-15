@@ -121,6 +121,15 @@ export const confirmReceiptSchema = z.object({
    */
   pickupStopId: z.string().uuid().nullable().optional(),
   /**
+   * Which of that stop's lines this prixod answers (0133) — one per LOT the
+   * operator kept (a lot made from a line names it; a deleted lot takes its
+   * line out, so a partial delivery answers only what came). Absent or empty
+   * from an older phone or a pre-deploy draft: derived instead
+   * (`answerLinesInTx`). Never a `.default()` (#591); the service reads empty
+   * and absent alike, and ids without a stop are refused.
+   */
+  pickupLineIds: z.array(z.string().uuid()).max(40).optional(),
+  /**
    * The office receipt (0112, the owner's Q9 b): the REAL day the cargo came,
    * and who physically took it in. Refused unless the caller says the actor
    * may enter on the floor's behalf (`opts.onBehalf`) — see `officeFacts`.
@@ -131,6 +140,14 @@ export const confirmReceiptSchema = z.object({
 
 export type ConfirmReceiptInput = z.infer<typeof confirmReceiptSchema>;
 
+/** A trip's refusal at the receive door, in a code the wizard can say. */
+function pickupRefusal(code: string): ReceiptError {
+  if (code === 'closed') return new ReceiptError('pickup_closed');
+  if (code === 'line_answered') return new ReceiptError('pickup_line_answered');
+  if (code === 'line_not_on_stop') return new ReceiptError('pickup_line_not_on_stop');
+  return new ReceiptError('pickup_invalid', code);
+}
+
 export class ReceiptError extends Error {
   constructor(
     public readonly code:
@@ -139,6 +156,11 @@ export class ReceiptError extends Error {
       | 'photo_required'
       | 'already_confirmed'
       | 'pickup_invalid'
+      // 0133 — their own codes, so the wizard can say them (a detail behind
+      // `pickup_invalid` reads as the generic sentence).
+      | 'pickup_closed'
+      | 'pickup_line_answered'
+      | 'pickup_line_not_on_stop'
       // The office receipt (0112, Q9 b).
       | 'on_behalf_forbidden'
       | 'receiver_required'
@@ -236,12 +258,13 @@ export async function confirmReceipt(
 
   let pickupId: string | null = null;
   const result = await db.transaction(async (tx) => {
+    if (input.pickupLineIds?.length && !input.pickupStopId) throw new ReceiptError('pickup_invalid', 'validation');
     if (input.pickupStopId) {
       const { assertStopReceivable, PickupError } = await import('../pickups/service');
       try {
-        pickupId = await assertStopReceivable(tx, input.pickupStopId, warehouse.id);
+        pickupId = (await assertStopReceivable(tx, input.pickupStopId, warehouse.id, 'door')).id;
       } catch (err) {
-        if (err instanceof PickupError) throw new ReceiptError('pickup_invalid', err.code);
+        if (err instanceof PickupError) throw pickupRefusal(err.code);
         throw err;
       }
     }
@@ -280,8 +303,31 @@ export async function confirmReceipt(
       })
       .returning();
     if (pickupId) {
-      const { arriveOnReceipt } = await import('../pickups/service');
+      const { answerLinesInTx, arriveOnReceipt, closeIfAnsweredInTx, PickupError } = await import(
+        '../pickups/service'
+      );
+      // The prixod remembers the lines it answers, under the trip lock
+      // `assertStopReceivable` took — a second receive of the same line is
+      // refused here (the DOOR's fence), and the last answered line closes
+      // the trip (his 1a).
+      try {
+        await answerLinesInTx(
+          tx,
+          {
+            receiptId: receipt!.id,
+            stopId: input.pickupStopId!,
+            lineIds: input.pickupLineIds?.length ? input.pickupLineIds : null,
+            owner: { clientId: input.clientId, marking: input.clientId ? null : input.unclaimedMarking || null },
+            mode: 'door',
+          },
+          ctx.actorId ?? null,
+        );
+      } catch (err) {
+        if (err instanceof PickupError) throw pickupRefusal(err.code);
+        throw err;
+      }
       await arriveOnReceipt(tx, pickupId);
+      await closeIfAnsweredInTx(tx, pickupId, { ...ctx, warehouseId: warehouse.id });
     }
 
     const letters = await assignLetters(tx, warehouse.id, input.lots.length);

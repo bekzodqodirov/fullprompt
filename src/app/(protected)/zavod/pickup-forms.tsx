@@ -7,12 +7,14 @@ import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 import {
   addStopAction,
   cancelPickupAction,
+  closePickupAction,
   collectStopAction,
   createPickupAction,
   linkReceiptAction,
   markArrivedAction,
   removeStopAction,
   saveStopLinesAction,
+  setPickupNoCostAction,
   type PickupActionResult,
 } from './actions';
 
@@ -42,6 +44,18 @@ const KNOWN_ERRORS = [
   'warehouse_not_found',
   'bad_point',
   'no_point',
+  // 0133 — the closed trip and the line memory (docs/ZAVOD-YOPISH.md).
+  'closed',
+  'already_closed',
+  'close_reason_required',
+  'no_cost_reason_required',
+  'has_costs',
+  'line_answered',
+  'line_not_on_stop',
+  'not_found',
+  'stop_not_found',
+  'receipt_not_found',
+  'server_behind',
 ] as const;
 
 export function useErrorText() {
@@ -449,6 +463,158 @@ export function PickupButtons({
   );
 }
 
+/**
+ * «Reysni yopish» (his 1a): a trip whose lines will not all arrive is closed
+ * by a person with a sentence, and never reopens (2a). The «xarajat yo'q»
+ * tick rides the same press for whoever may enter the truck's cost (5a) —
+ * offered only while the trip has no cost at all. Controlled inputs: a
+ * refusal keeps what was typed (#463).
+ */
+export function ClosePickupForm({ pickupId, offerNoCost }: { pickupId: string; offerNoCost: boolean }) {
+  const t = useTranslations('pickups');
+  const errorText = useErrorText();
+  const router = useRouter();
+  const [reason, setReason] = useState('');
+  const [noCost, setNoCost] = useState(false);
+  const [noCostReason, setNoCostReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <details className="card text-sm" data-testid="pickup-close">
+      <summary className="cursor-pointer font-semibold">🔒 {t('closeTrip')}</summary>
+      <div className="mt-2 space-y-2">
+        <p className="text-xs text-ink-500">{t('closeHint')}</p>
+        <label className="block">
+          <span className="label">{t('closeReason')}</span>
+          <textarea
+            data-testid="pickup-close-reason"
+            className="input h-20"
+            value={reason}
+            maxLength={500}
+            onChange={(e) => setReason(e.target.value)}
+          />
+        </label>
+        {offerNoCost && (
+          <div className="space-y-1">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                data-testid="pickup-close-nocost"
+                checked={noCost}
+                onChange={(e) => setNoCost(e.target.checked)}
+              />
+              {t('noCostTick')}
+            </label>
+            {noCost && (
+              <input
+                data-testid="pickup-close-nocost-reason"
+                className="input"
+                placeholder={t('noCostReason')}
+                aria-label={t('noCostReason')}
+                value={noCostReason}
+                maxLength={500}
+                onChange={(e) => setNoCostReason(e.target.value)}
+              />
+            )}
+          </div>
+        )}
+        <button
+          type="button"
+          data-testid="pickup-close-submit"
+          className="btn-secondary"
+          disabled={busy}
+          onClick={async () => {
+            if (!window.confirm(t('closeConfirm'))) return;
+            setBusy(true);
+            setError(null);
+            try {
+              const res = await closePickupAction(pickupId, {
+                reason,
+                noCostReason: noCost ? noCostReason : null,
+              }).catch(() => ({ ok: false, error: 'generic' }) as PickupActionResult);
+              if (res.ok) router.refresh();
+              else setError(errorText(res.error));
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          {t('closeTrip')}
+        </button>
+        {error && <p className="text-bad" data-testid="pickup-close-error">⚠ {error}</p>}
+      </div>
+    </details>
+  );
+}
+
+/**
+ * «Xarajat yo'q» on its own (his 5a): the trip leaves the «xarajati
+ * yozilmagan» count with a reason, and the mark can be taken back.
+ */
+export function NoCostControl({
+  pickupId,
+  marked,
+}: {
+  pickupId: string;
+  marked: { reason: string; byName: string | null } | null;
+}) {
+  const t = useTranslations('pickups');
+  const errorText = useErrorText();
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  async function save(value: string | null) {
+    setError(null);
+    const res = await setPickupNoCostAction(pickupId, value).catch(
+      () => ({ ok: false, error: 'generic' }) as PickupActionResult,
+    );
+    if (res.ok) {
+      setOpen(false);
+      router.refresh();
+    } else setError(errorText(res.error));
+  }
+  if (marked) {
+    return (
+      <div className="flex flex-wrap items-center gap-2 text-sm" data-testid="pickup-nocost-mark">
+        <span>
+          ✓ {t('noCostMarked', { reason: marked.reason })}
+          {marked.byName && <span className="text-xs text-ink-500"> · {marked.byName}</span>}
+        </span>
+        <button type="button" className="btn-ghost text-xs" data-testid="pickup-nocost-clear" onClick={() => save(null)}>
+          {t('noCostClear')}
+        </button>
+        {error && <p className="w-full text-bad">⚠ {error}</p>}
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-1 text-sm">
+      {open ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            data-testid="pickup-nocost-reason"
+            className="input min-w-0 flex-1"
+            placeholder={t('noCostReason')}
+            aria-label={t('noCostReason')}
+            value={reason}
+            maxLength={500}
+            onChange={(e) => setReason(e.target.value)}
+          />
+          <button type="button" className="btn-secondary shrink-0" data-testid="pickup-nocost-save" onClick={() => save(reason)}>
+            {t('save')}
+          </button>
+        </div>
+      ) : (
+        <button type="button" className="btn-ghost text-xs" data-testid="pickup-nocost-open" onClick={() => setOpen(true)}>
+          {t('noCostSet')}
+        </button>
+      )}
+      {error && <p className="text-bad">⚠ {error}</p>}
+    </div>
+  );
+}
+
 export function AddStopForm({ pickupId, factories }: { pickupId: string; factories: Option[] }) {
   const t = useTranslations('pickups');
   const errorText = useErrorText();
@@ -500,33 +666,94 @@ export function RemoveStopButton({ stopId }: { stopId: string }) {
   );
 }
 
-/** Attach one candidate prixod to one of the stops that could have brought it. */
+/**
+ * Attach one candidate prixod to one of the stops that could have brought it.
+ * When its owner has several unanswered lines on a stop, the buttons name the
+ * LINE — which of them came is the logist's answer, never a guess.
+ */
 export function LinkReceiptButtons({
   receiptId,
   stops,
 }: {
   receiptId: string;
-  stops: { id: string; seq: number; factoryName: string }[];
+  stops: { id: string; seq: number; factoryName: string; lines: { id: string; goods: string }[] }[];
 }) {
   const t = useTranslations('pickups');
   const errorText = useErrorText();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
+  const press = async (stopId: string, lineIds?: string[]) => {
+    const res = await linkReceiptAction(receiptId, stopId, lineIds).catch(
+      () => ({ ok: false, error: 'generic' }) as PickupActionResult,
+    );
+    if (res.ok) router.refresh();
+    else setError(errorText(res.error));
+  };
   return (
     <span className="inline-flex flex-wrap items-center gap-1">
-      {stops.map((stop) => (
+      {stops.flatMap((stop) =>
+        stop.lines.length
+          ? stop.lines.map((line) => (
+              <button
+                key={line.id}
+                type="button"
+                data-testid="candidate-link"
+                className="btn-secondary !min-h-8 !px-2 !py-0.5 text-xs"
+                onClick={() => press(stop.id, [line.id])}
+              >
+                {t('linkToLine', { seq: stop.seq, goods: line.goods })}
+              </button>
+            ))
+          : [
+              <button
+                key={stop.id}
+                type="button"
+                data-testid="candidate-link"
+                className="btn-secondary !min-h-8 !px-2 !py-0.5 text-xs"
+                onClick={() => press(stop.id)}
+              >
+                {t('linkTo', { seq: stop.seq })}
+              </button>,
+            ],
+      )}
+      {error && <span className="text-xs text-bad">⚠ {error}</span>}
+    </span>
+  );
+}
+
+/**
+ * A prixod already on this stop that answers no line (extra cargo, or a
+ * second part, or a choice nobody made): one button per line it could be.
+ */
+export function AnswerLineButtons({
+  receiptId,
+  stopId,
+  lines,
+}: {
+  receiptId: string;
+  stopId: string;
+  lines: { id: string; goods: string }[];
+}) {
+  const errorText = useErrorText();
+  const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1">
+      {lines.map((line) => (
         <button
-          key={stop.id}
+          key={line.id}
           type="button"
-          data-testid="candidate-link"
+          data-testid="answer-line"
           className="btn-secondary !min-h-8 !px-2 !py-0.5 text-xs"
           onClick={async () => {
-            const res = await linkReceiptAction(receiptId, stop.id);
+            const res = await linkReceiptAction(receiptId, stopId, [line.id]).catch(
+              () => ({ ok: false, error: 'generic' }) as PickupActionResult,
+            );
             if (res.ok) router.refresh();
             else setError(errorText(res.error));
           }}
         >
-          {t('linkTo', { seq: stop.seq })}
+          ✓ {line.goods}
         </button>
       ))}
       {error && <span className="text-xs text-bad">⚠ {error}</span>}

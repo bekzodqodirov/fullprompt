@@ -981,7 +981,15 @@
     "noteAndCost": "备注（如需要）",
     "pickupReceiving": "从工厂提货收货",
     "pickupDetach": "解除与提货的关联",
-    "pickupInvalid": "该工厂提货前往其他仓库或已取消。"
+    "pickupInvalid": "该工厂提货前往其他仓库或已取消。",
+    "pickupDoorTitle": "这批货是工厂车次送来的吗？",
+    "pickupDoorYes": "是，来自此车次",
+    "pickupDoorNo": "不是",
+    "pickupDoorCount": "工厂：{factory} · 司机：{driver}",
+    "pickupClosed": "此工厂车次已关闭——请不带车次收货，物流员会在入库单卡片上关联。",
+    "pickupLineAnswered": "此车次的这一行已由另一张入库单收货。如果是另一批货，请移除车次（✕）后重新收货。",
+    "pickupLineGone": "收货期间车次的行已更改。请移除车次（✕）后重新选择。",
+    "pickupDoorPerFactory": "同一客户的货来自本车次的两个工厂——请每个工厂单独做一张入库单。"
   },
   "receipts": {
     "title": "收货单",
@@ -4707,13 +4715,16 @@
       "planned": "计划中",
       "on_road": "在途",
       "arrived": "已到达",
-      "cancelled": "已取消"
+      "cancelled": "已取消",
+      "closed": "已关闭"
     },
     "tabs": {
       "live": "进行中",
       "arrived": "已到达",
       "cancelled": "已取消",
-      "all": "全部"
+      "all": "全部",
+      "closed": "已关闭",
+      "xarajatsiz": "无费用"
     },
     "errors": {
       "generic": "保存失败，请重试。",
@@ -4736,8 +4747,38 @@
       "client_not_found": "未找到客户。",
       "warehouse_not_found": "仓库不存在或已停用。",
       "bad_point": "无法识别坐标。例如：29.31, 120.07",
-      "no_point": "尚无地图位置。"
-    }
+      "no_point": "尚无地图位置。",
+      "closed": "车次已关闭，不能修改。",
+      "already_closed": "车次已经关闭。",
+      "close_reason_required": "请填写原因（至少3个字）。",
+      "no_cost_reason_required": "请填写没有费用的原因（至少3个字）。",
+      "has_costs": "车次已有费用，不能标记“无费用”。",
+      "line_answered": "此行已由另一张入库单收货。",
+      "line_not_on_stop": "此行不属于这个工厂。",
+      "not_found": "找不到车次。",
+      "stop_not_found": "找不到工厂站点。",
+      "receipt_not_found": "找不到入库单。",
+      "server_behind": "服务器正在更新，请一分钟后再试。"
+    },
+    "closeTrip": "关闭车次",
+    "closeHint": "所有行都收货后车次自动关闭。如果剩余货物不会到，请手动关闭——关闭后不能再打开。",
+    "closeReason": "关闭原因（例如：剩余货物不会到）",
+    "closeConfirm": "关闭车次？关闭后不能再打开。",
+    "noCostTick": "此车次没有费用",
+    "noCostReason": "为什么没有费用？",
+    "noCostMarked": "无费用：{reason}",
+    "noCostClear": "取消标记",
+    "noCostSet": "标记为“无费用”",
+    "closedAuto": "所有行已收货——车次已于 {at} 关闭",
+    "closedManual": "已于 {at} 关闭 · {who}：{reason}",
+    "lineWaiting": "尚未收货",
+    "lineNotReceived": "未收货",
+    "unmatched": "此工厂的入库单，但不对应任何行",
+    "homeCostNoCargo": "{n} 个有费用无货",
+    "costNoCargo": "有费用无货",
+    "costNoCargoLong": "车次有费用，但没有有效入库单——费用没有分摊到任何箱子。请在新入库单的卡片上把它关联到此车次。",
+    "serverBehind": "服务器正在更新，请一分钟后再试。",
+    "linkToLine": "{seq}：{goods}"
   },
   "unpriced": {
     "title": "已到达未定价货物",

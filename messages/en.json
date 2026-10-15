@@ -981,7 +981,15 @@
     "noteAndCost": "Note (if needed)",
     "pickupReceiving": "receiving from a factory pickup",
     "pickupDetach": "Detach from the pickup",
-    "pickupInvalid": "This factory pickup goes to another warehouse or was cancelled."
+    "pickupInvalid": "This factory pickup goes to another warehouse or was cancelled.",
+    "pickupDoorTitle": "Did this cargo come on a factory truck?",
+    "pickupDoorYes": "Yes, this trip",
+    "pickupDoorNo": "No",
+    "pickupDoorCount": "factory: {factory} · driver: {driver}",
+    "pickupClosed": "This factory trip is already closed — receive the cargo without it; the logist links it from the receipt card.",
+    "pickupLineAnswered": "This line of the trip was already received by another receipt. If this is other cargo, remove the trip (✕) and receive again.",
+    "pickupLineGone": "The trip’s lines changed while you were receiving. Remove the trip (✕) and choose again.",
+    "pickupDoorPerFactory": "One client has cargo from two factories of this trip — make a separate receipt for each factory."
   },
   "receipts": {
     "title": "Receipts",
@@ -4707,13 +4715,16 @@
       "planned": "planned",
       "on_road": "on the road",
       "arrived": "arrived",
-      "cancelled": "cancelled"
+      "cancelled": "cancelled",
+      "closed": "Closed"
     },
     "tabs": {
       "live": "Active",
       "arrived": "Arrived",
       "cancelled": "Cancelled",
-      "all": "All"
+      "all": "All",
+      "closed": "Closed",
+      "xarajatsiz": "No cost"
     },
     "errors": {
       "generic": "Could not save. Please try again.",
@@ -4736,8 +4747,38 @@
       "client_not_found": "Client not found.",
       "warehouse_not_found": "Warehouse not found or inactive.",
       "bad_point": "Could not read the coordinates. Example: 29.31, 120.07",
-      "no_point": "There is no map point yet."
-    }
+      "no_point": "There is no map point yet.",
+      "closed": "The trip is closed and cannot be changed.",
+      "already_closed": "The trip is already closed.",
+      "close_reason_required": "Write the reason (at least 3 letters).",
+      "no_cost_reason_required": "Write why there is no cost (at least 3 letters).",
+      "has_costs": "The trip has a cost — it cannot be marked «no cost».",
+      "line_answered": "This line was already received by another receipt.",
+      "line_not_on_stop": "This line is not on this stop.",
+      "not_found": "Trip not found.",
+      "stop_not_found": "Stop not found.",
+      "receipt_not_found": "Receipt not found.",
+      "server_behind": "The server is still updating — try again in a minute."
+    },
+    "closeTrip": "Close the trip",
+    "closeHint": "A trip closes by itself once every line is received. Close it by hand when the rest will not come — it never reopens.",
+    "closeReason": "Why close it? (e.g. the rest will not come)",
+    "closeConfirm": "Close the trip? It cannot be reopened.",
+    "noCostTick": "This trip has no cost",
+    "noCostReason": "Why is there no cost?",
+    "noCostMarked": "No cost: {reason}",
+    "noCostClear": "Remove the mark",
+    "noCostSet": "Mark «no cost»",
+    "closedAuto": "Every line received — trip closed {at}",
+    "closedManual": "Closed {at} · {who}: {reason}",
+    "lineWaiting": "not received yet",
+    "lineNotReceived": "not received",
+    "unmatched": "Receipts from this factory that match no line",
+    "homeCostNoCargo": "{n} with a cost and no cargo",
+    "costNoCargo": "cost, no cargo",
+    "costNoCargoLong": "The trip has a cost but no live receipt — the cost sits on no carton. Link the new receipt to this trip from its card.",
+    "serverBehind": "The server is still updating — try again in a minute.",
+    "linkToLine": "{seq}: {goods}"
   },
   "unpriced": {
     "title": "Arrived cargo with no price",

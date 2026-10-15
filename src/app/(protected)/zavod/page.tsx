@@ -3,11 +3,15 @@ import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { PageHeader } from '@/components/ui/page';
+import { isServerBehind } from '@/modules/platform/db/errors';
 import { listPickups, mayReadPickups, PICKUP_WRITE } from '@/modules/wms/pickups/service';
 
 export const dynamic = 'force-dynamic';
 
-const TABS = ['live', 'arrived', 'cancelled', 'all'] as const;
+// «Yetib kelgan» = came and still OPEN (a line not received); «Yopilgan» =
+// finished, by itself or by the logist (his 1a); «Xarajatsiz» = came with no
+// bill and no «xarajat yo'q» mark (his 5a) — the home row's count opens it.
+const TABS = ['live', 'arrived', 'closed', 'xarajatsiz', 'cancelled', 'all'] as const;
 
 /**
  * «Zavod reysi» — the trucks we hire to collect from the factories (owner,
@@ -22,7 +26,11 @@ export default async function PickupsPage({ searchParams }: { searchParams: Prom
   const t = await getTranslations('pickups');
   const params = await searchParams;
   const tab = (TABS as readonly string[]).includes(params.holat ?? '') ? (params.holat as (typeof TABS)[number]) : 'live';
-  const rows = await listPickups({ status: tab });
+  // One migration behind, the list says so instead of the error page (#472).
+  const rows = await listPickups({ status: tab }).catch((err: unknown) => {
+    if (isServerBehind(err)) return null;
+    throw err;
+  });
   const canWrite = actor.permissions.has(PICKUP_WRITE);
 
   return (
@@ -54,7 +62,11 @@ export default async function PickupsPage({ searchParams }: { searchParams: Prom
           </Link>
         ))}
       </nav>
-      {rows.length === 0 ? (
+      {rows === null ? (
+        <p className="card text-sm text-warn" data-testid="pickups-server-behind">
+          ⚠ {t('serverBehind')}
+        </p>
+      ) : rows.length === 0 ? (
         <p className="card text-sm text-ink-500">{t('empty')}</p>
       ) : (
         <ul className="space-y-2">
@@ -75,9 +87,16 @@ export default async function PickupsPage({ searchParams }: { searchParams: Prom
                   </p>
                   <p className="text-xs text-ink-700">
                     {t('rowSummary', { collected, stops: stops.length, boxes })}
-                    {pickup.status === 'arrived' && liveCostCount === 0 && (
+                    {(pickup.status === 'arrived' || pickup.status === 'closed') && liveCostCount === 0 && !pickup.noCostAt && (
                       <span className="ml-2 font-semibold text-warn">⚠ {t('noCost')}</span>
                     )}
+                    {pickup.status === 'closed' &&
+                      liveCostCount > 0 &&
+                      !stops.some((s) => s.receipts.some((r) => !r.voided)) && (
+                        <span className="ml-2 font-semibold text-warn" data-testid="pickup-row-cost-no-cargo">
+                          ⚠ {t('costNoCargo')}
+                        </span>
+                      )}
                   </p>
                 </Link>
               </li>

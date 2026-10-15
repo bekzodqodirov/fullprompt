@@ -11,6 +11,8 @@ import { DensityBadge } from '@/components/density-badge';
 import { LightboxImg } from '@/components/lightbox-img';
 import { PrintLabels } from '@/components/print-labels';
 import { submitReceiptAction, type SubmitReceiptResult } from './actions';
+import { PickupDoorQuestion } from './pickup-door';
+import type { OpenStopForOwner } from '@/modules/wms/pickups/service';
 import {
   OfficeReceivedFields,
   receivedErrorText,
@@ -65,6 +67,12 @@ interface LotDraft {
   hint?: string;
   /** «QR yopishtirilmadi» (0112): no sticker goes on these cartons. Absent in an old draft = no. */
   qrSkipped?: boolean;
+  /**
+   * The factory line this lot was made from (0133). Deleting the lot takes
+   * its line out of what the prixod answers — a partial delivery must not
+   * answer the lines that did not come (the judge's finding).
+   */
+  pickupLineId?: string;
 }
 
 interface CostDraft {
@@ -98,6 +106,18 @@ interface Draft {
   pickupStopId: string | null;
   /** «🏭 ZR-00012 · <factory>» — what the operator is receiving. */
   pickupLabel?: string;
+  /** The stop's lines offered for this owner (0133), each a tick on the banner. */
+  pickupLines?: { id: string; goods: string }[];
+  /** The ticked ones — what the prixod answers. Posted only when non-empty. */
+  pickupLineIds?: string[];
+  /**
+   * Whose lines they are: a client id, or null for MARKING lines. A client
+   * change keeps the link only when the lines are markings or the new
+   * client's own — a mis-picked client must not answer another's line.
+   */
+  pickupOwnerClientId?: string | null;
+  /** Trips the operator answered «Yo'q» about — the door does not ask again. */
+  pickupDeclined?: string[];
   /** Which prefill made this draft — a refresh must restore it, not re-mint it. */
   prefillKey?: string;
   /** Office receipt (0112, Q9 b): the real day — '' = the warehouse's today. */
@@ -115,7 +135,8 @@ export interface ArrivalPrefill {
   pickup?: {
     stopId: string;
     label: string;
-    lines: { goods: string; hint: string; weightKg: number | null; volumeM3: number | null }[];
+    ownerClientId: string | null;
+    lines: { id: string; goods: string; hint: string; weightKg: number | null; volumeM3: number | null }[];
   };
   warehouseId: string;
   clientId: string | null;
@@ -127,6 +148,15 @@ export interface ArrivalPrefill {
 }
 
 const DRAFT_KEY = 'gsr-receipt-draft';
+
+/** Everything the factory link carries, cleared at once (✕, a client switch, the last tick). */
+const NO_PICKUP: Partial<Draft> = {
+  pickupStopId: null,
+  pickupLabel: undefined,
+  pickupLines: undefined,
+  pickupLineIds: undefined,
+  pickupOwnerClientId: undefined,
+};
 
 /** The refusals `receivedErrorText` puts into words (0112) — the rest keep the old line. */
 const OFFICE_ERRORS: Record<string, true> = {
@@ -313,6 +343,7 @@ export function ReceiveWizard({
           const lot = newLot();
           lot.zh = line.goods;
           lot.hint = line.hint;
+          lot.pickupLineId = line.id;
           if (line.weightKg !== null || line.volumeM3 !== null) {
             lot.dimsMode = 'mixed';
             lot.totalWeightKg = line.weightKg !== null ? String(line.weightKg) : '';
@@ -341,6 +372,13 @@ export function ReceiveWizard({
         expectedArrivalId: prefill.arrivalId,
         pickupStopId: prefill.pickup?.stopId ?? null,
         pickupLabel: prefill.pickup?.label,
+        ...(prefill.pickup
+          ? {
+              pickupLines: prefill.pickup.lines.map((line) => ({ id: line.id, goods: line.goods })),
+              pickupLineIds: prefill.pickup.lines.map((line) => line.id),
+              pickupOwnerClientId: prefill.pickup.ownerClientId,
+            }
+          : {}),
         prefillKey: prefill.key,
       });
       return;
@@ -387,6 +425,64 @@ export function ReceiveWizard({
 
   const update = useCallback((patch: Partial<Draft>) => {
     setDraft((d) => (d ? { ...d, ...patch } : d));
+  }, []);
+
+  /**
+   * A client change keeps the factory link only when its lines are MARKING
+   * lines (the operator received a marking under the client he knows it
+   * belongs to) or the new client's own. Otherwise the link goes and the door
+   * asks again for the new owner.
+   */
+  const keepsPickup = (d: Draft, nextClientId: string | null) =>
+    !d.pickupStopId || d.pickupOwnerClientId == null || d.pickupOwnerClientId === nextClientId;
+
+  /** «Ha» at the door: link the stop with its lines; pristine lots become one lot per line. */
+  const acceptPickup = useCallback((stop: OpenStopForOwner, ownerClientId: string | null) => {
+    setDraft((d) => {
+      if (!d) return d;
+      const pristine = d.lots.every(
+        (lot) => !lot.zh.trim() && !lot.ru.trim() && !lot.boxCount && lot.photoIds.length === 0,
+      );
+      const lots = pristine
+        ? stop.lines.map((line) => {
+            const lot = newLot();
+            lot.zh = line.goods;
+            lot.hint = `${line.factoryBoxes}${line.driverBoxes !== null ? ` / ${line.driverBoxes}` : ''} 📦`;
+            lot.pickupLineId = line.id;
+            if (line.weightKg !== null || line.volumeM3 !== null) {
+              lot.dimsMode = 'mixed';
+              lot.totalWeightKg = line.weightKg !== null ? String(line.weightKg) : '';
+              lot.totalVolumeM3 = line.volumeM3 !== null ? String(line.volumeM3) : '';
+            }
+            return lot;
+          })
+        : d.lots;
+      return {
+        ...d,
+        lots,
+        pickupStopId: stop.stopId,
+        pickupLabel: `🏭 ${stop.code} · ${stop.seq}. ${stop.factoryName}`,
+        pickupLines: stop.lines.map((line) => ({ id: line.id, goods: line.goods })),
+        pickupLineIds: stop.lines.map((line) => line.id),
+        pickupOwnerClientId: ownerClientId,
+      };
+    });
+  }, []);
+
+  /** Delete a lot; a lot made from a factory line takes that line out of the answer. */
+  const dropLot = useCallback((lotId: string) => {
+    setDraft((d) => {
+      if (!d) return d;
+      const gone = d.lots.find((l) => l.id === lotId);
+      const next: Draft = { ...d, lots: d.lots.filter((l) => l.id !== lotId) };
+      if (gone?.pickupLineId && d.pickupLineIds) {
+        const ids = d.pickupLineIds.filter((id) => id !== gone.pickupLineId);
+        // The last line gone = this cargo is not that trip's: the link goes
+        // with it, and the door may ask again.
+        return ids.length ? { ...next, pickupLineIds: ids } : { ...next, ...NO_PICKUP };
+      }
+      return next;
+    });
   }, []);
 
   /**
@@ -701,6 +797,9 @@ export function ReceiveWizard({
         unclaimedMarking: draft!.unclaimedMarking,
         expectedArrivalId: draft!.expectedArrivalId ?? null,
         pickupStopId: draft!.pickupStopId ?? null,
+        // The lines this prixod answers (0133) — only when there are some, so
+        // an older draft with a stop and no ticks lets the server derive.
+        ...(draft!.pickupStopId && draft!.pickupLineIds?.length ? { pickupLineIds: draft!.pickupLineIds } : {}),
         // Only for the office: never sent otherwise, so a stale shared-device
         // draft cannot trip `on_behalf_forbidden` on an operator's phone. The
         // warehouse's own today is the column's default and is not posted.
@@ -954,21 +1053,43 @@ export function ReceiveWizard({
   const clientBlock = (
     <div className="space-y-2">
       {draft.pickupStopId && (
-        <div
-          data-testid="receive-pickup"
-          className="flex items-center gap-2 rounded-lg bg-brand-50 px-2 py-1.5 text-sm"
-        >
-          <span className="min-w-0 flex-1 truncate">
-            {draft.pickupLabel ?? '🏭'} — {t('pickupReceiving')}
-          </span>
-          <button
-            type="button"
-            className="shrink-0 px-1 text-ink-500"
-            aria-label={t('pickupDetach')}
-            onClick={() => update({ pickupStopId: null, pickupLabel: undefined })}
-          >
-            ✕
-          </button>
+        <div data-testid="receive-pickup" className="space-y-1 rounded-lg bg-brand-50 px-2 py-1.5 text-sm">
+          <div className="flex items-center gap-2">
+            <span className="min-w-0 flex-1 truncate">
+              {draft.pickupLabel ?? '🏭'} — {t('pickupReceiving')}
+            </span>
+            <button
+              type="button"
+              className="shrink-0 px-1 text-ink-500"
+              aria-label={t('pickupDetach')}
+              onClick={() => update(NO_PICKUP)}
+            >
+              ✕
+            </button>
+          </div>
+          {/* Which of the factory's lines THIS prixod brings (0133): every
+              line ticked by default, a deleted lot unticks its own, and the
+              last tick gone takes the link with it. */}
+          {(draft.pickupLines?.length ?? 0) > 1 && (
+            <ul className="space-y-0.5 pl-1 text-xs" data-testid="receive-pickup-lines">
+              {draft.pickupLines!.map((line) => (
+                <li key={line.id}>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={draft.pickupLineIds?.includes(line.id) ?? false}
+                      onChange={(e) => {
+                        const ids = (draft.pickupLineIds ?? []).filter((id) => id !== line.id);
+                        const next = e.target.checked ? [...ids, line.id] : ids;
+                        update(next.length ? { pickupLineIds: next } : NO_PICKUP);
+                      }}
+                    />
+                    <span className="[overflow-wrap:anywhere]">{line.goods}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
       <div className="flex gap-2">
@@ -1015,7 +1136,14 @@ export function ReceiveWizard({
                 type="button"
                 aria-label={tc('cancel')}
                 className="ml-auto flex h-10 w-10 shrink-0 items-center justify-center text-lg"
-                onClick={() => update({ clientId: null, clientLabel: '', dealId: null })}
+                onClick={() =>
+                  update({
+                    clientId: null,
+                    clientLabel: '',
+                    dealId: null,
+                    ...(keepsPickup(draft, null) ? {} : NO_PICKUP),
+                  })
+                }
               >
                 ✕
               </button>
@@ -1046,6 +1174,7 @@ export function ReceiveWizard({
                         clientLabel: `${hit.clientCode} — ${hit.name}`,
                         dealId: null,
                         unclaimed: false,
+                        ...(keepsPickup(draft, hit.id) ? {} : NO_PICKUP),
                       });
                       setClientHits([]);
                       setClientQuery('');
@@ -1072,7 +1201,11 @@ export function ReceiveWizard({
                   data-testid="accept-unclaimed-inline"
                   className="w-full bg-orange-50 p-3 text-left text-sm font-semibold text-orange-800 hover:bg-orange-100"
                   onClick={() => {
-                    update({ unclaimed: true, unclaimedMarking: clientQuery.toUpperCase() });
+                    update({
+                      unclaimed: true,
+                      unclaimedMarking: clientQuery.toUpperCase(),
+                      ...(keepsPickup(draft, null) ? {} : NO_PICKUP),
+                    });
                     setClientHits([]);
                   }}
                 >
@@ -1093,6 +1226,19 @@ export function ReceiveWizard({
           me={office.me}
           receivers={office.receivers[draft.warehouseId] ?? []}
           disabled={!draft.warehouseId}
+        />
+      )}
+      {/* His 3a: «Bu yuk ZR-… reysidan keldimi?» — asked once the owner is
+          known, about open factory trips heading here with this owner's
+          unanswered lines. Never while a trip is already linked. */}
+      {!draft.pickupStopId && (draft.clientId || (draft.unclaimed && draft.unclaimedMarking.trim())) && (
+        <PickupDoorQuestion
+          warehouseId={draft.warehouseId}
+          clientId={draft.unclaimed ? null : draft.clientId}
+          marking={draft.unclaimed ? draft.unclaimedMarking.trim() : null}
+          declined={draft.pickupDeclined ?? []}
+          onAccept={(stop) => acceptPickup(stop, draft.unclaimed ? null : draft.clientId)}
+          onDecline={(stopId) => update({ pickupDeclined: [...(draft.pickupDeclined ?? []), stopId] })}
         />
       )}
       {/* The moment that decides whether the price-control alert can do its
@@ -1144,7 +1290,11 @@ export function ReceiveWizard({
               : 'border-line-strong text-ink-700'
           }`}
           onClick={() =>
-            update({ unclaimed: !draft.unclaimed, unclaimedMarking: clientQuery.toUpperCase() })
+            update({
+              unclaimed: !draft.unclaimed,
+              unclaimedMarking: clientQuery.toUpperCase(),
+              ...(keepsPickup(draft, null) ? {} : NO_PICKUP),
+            })
           }
         >
           ❓{' '}
@@ -1409,7 +1559,7 @@ export function ReceiveWizard({
                             // A filled line dies with one mis-tap otherwise (UX audit).
                             const hasData = lot.zh.trim() || lot.photoIds.length > 0 || lot.boxCount;
                             if (hasData && !window.confirm(`${tc('delete')}? ${lot.zh}`)) return;
-                            update({ lots: draft.lots.filter((l) => l.id !== lot.id) });
+                            dropLot(lot.id);
                           }}
                         >
                           🗑
@@ -1457,7 +1607,7 @@ export function ReceiveWizard({
                             // A filled line dies with one mis-tap otherwise (UX audit).
                             const hasData = lot.zh.trim() || lot.photoIds.length > 0 || lot.boxCount;
                             if (hasData && !window.confirm(`${tc('delete')}? ${lot.zh}`)) return;
-                            update({ lots: draft.lots.filter((l) => l.id !== lot.id) });
+                            dropLot(lot.id);
                           }}
                 >
                   🗑
@@ -1557,7 +1707,13 @@ export function ReceiveWizard({
               into words (the office refusals, 0112) is shown as it is. */}
           {!/^[a-z_]+(?::|$)/.test(error)
             ? error
-            : `${error === 'photo_required' ? t('photoRequired') : error === 'pickup_invalid' ? t('pickupInvalid') : tc('error')} (${error})`}
+            : error === 'pickup_closed'
+              ? t('pickupClosed')
+              : error === 'pickup_line_answered'
+                ? t('pickupLineAnswered')
+                : error === 'pickup_line_not_on_stop'
+                  ? t('pickupLineGone')
+                  : `${error === 'photo_required' ? t('photoRequired') : error.startsWith('pickup_invalid') ? t('pickupInvalid') : tc('error')} (${error})`}
         </p>
       )}
 

@@ -317,16 +317,23 @@ async function LogistFlow({ flow }: { flow: LogistFlowCounts }) {
           sub={null}
         />
         <FlowRow
-          href="/zavod?holat=arrived"
+          href={
+            flow.pickups.noCost > 0
+              ? '/zavod?holat=xarajatsiz'
+              : flow.pickups.costNoCargo > 0
+                ? '/zavod?holat=closed'
+                : '/zavod?holat=arrived'
+          }
           icon="truck"
           testid="logist-flow-pickups"
           label={tz('title')}
-          count={flow.pickups.noCost + flow.pickups.unlinked}
-          warn={flow.pickups.noCost > 0}
+          count={flow.pickups.noCost + flow.pickups.unlinked + flow.pickups.costNoCargo}
+          warn={flow.pickups.noCost > 0 || flow.pickups.costNoCargo > 0}
           sub={
-            flow.pickups.noCost || flow.pickups.unlinked
+            flow.pickups.noCost || flow.pickups.unlinked || flow.pickups.costNoCargo
               ? [
                   flow.pickups.noCost ? `⚠ ${tz('homeNoCost', { n: flow.pickups.noCost })}` : '',
+                  flow.pickups.costNoCargo ? `⚠ ${tz('homeCostNoCargo', { n: flow.pickups.costNoCargo })}` : '',
                   flow.pickups.unlinked ? tz('homeUnlinked', { n: flow.pickups.unlinked }) : '',
                 ]
                   .filter(Boolean)

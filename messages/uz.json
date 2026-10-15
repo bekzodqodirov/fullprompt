@@ -981,7 +981,15 @@
     "noteAndCost": "Izoh (kerak bo‘lsa)",
     "pickupReceiving": "zavod reysidan qabul",
     "pickupDetach": "Reysdan ajratish",
-    "pickupInvalid": "Bu zavod reysi boshqa skladga ketyapti yoki bekor qilingan."
+    "pickupInvalid": "Bu zavod reysi boshqa skladga ketyapti yoki bekor qilingan.",
+    "pickupDoorTitle": "Bu yuk zavod reysidan keldimi?",
+    "pickupDoorYes": "Ha, shu reysdan",
+    "pickupDoorNo": "Yo‘q",
+    "pickupDoorCount": "zavod: {factory} · haydovchi: {driver}",
+    "pickupClosed": "Bu zavod reysi allaqachon yopilgan — yukni reyssiz qabul qiling, logist uni prixod kartasidan biriktiradi.",
+    "pickupLineAnswered": "Reysning bu qatori boshqa prixod bilan allaqachon qabul qilingan. Bu boshqa yuk bo‘lsa — reysni (✕) olib tashlab, qayta qabul qiling.",
+    "pickupLineGone": "Siz qabul qilayotganda reys qatorlari o‘zgardi. Reysni (✕) olib tashlab, qaytadan tanlang.",
+    "pickupDoorPerFactory": "Bir mijozning yuki shu reysning ikki zavodidan — har bir zavod uchun alohida prixod qiling."
   },
   "receipts": {
     "title": "Qabullar",
@@ -4707,13 +4715,16 @@
       "planned": "rejada",
       "on_road": "yo‘lda",
       "arrived": "yetib keldi",
-      "cancelled": "bekor qilingan"
+      "cancelled": "bekor qilingan",
+      "closed": "Yopildi"
     },
     "tabs": {
       "live": "Faol",
       "arrived": "Yetib kelgan",
       "cancelled": "Bekor qilingan",
-      "all": "Hammasi"
+      "all": "Hammasi",
+      "closed": "Yopilgan",
+      "xarajatsiz": "Xarajatsiz"
     },
     "errors": {
       "generic": "Saqlab bo‘lmadi. Qayta urinib ko‘ring.",
@@ -4736,8 +4747,38 @@
       "client_not_found": "Mijoz topilmadi.",
       "warehouse_not_found": "Sklad topilmadi yoki faol emas.",
       "bad_point": "Koordinata o‘qilmadi. Masalan: 29.31, 120.07",
-      "no_point": "Avval xaritada nuqta bo‘lishi kerak."
-    }
+      "no_point": "Avval xaritada nuqta bo‘lishi kerak.",
+      "closed": "Reys yopilgan — o‘zgartirib bo‘lmaydi.",
+      "already_closed": "Reys allaqachon yopilgan.",
+      "close_reason_required": "Sababini yozing (kamida 3 harf).",
+      "no_cost_reason_required": "Nima uchun xarajat yo‘qligini yozing (kamida 3 harf).",
+      "has_costs": "Reysda xarajat bor — «xarajat yo‘q» qo‘yib bo‘lmaydi.",
+      "line_answered": "Bu qator boshqa prixod bilan allaqachon qabul qilingan.",
+      "line_not_on_stop": "Bu qator shu zavodda emas.",
+      "not_found": "Reys topilmadi.",
+      "stop_not_found": "Zavod (to‘xtash joyi) topilmadi.",
+      "receipt_not_found": "Prixod topilmadi.",
+      "server_behind": "Server hali yangilanmoqda — bir daqiqadan keyin urinib ko‘ring."
+    },
+    "closeTrip": "Reysni yopish",
+    "closeHint": "Hamma qator qabul qilinganda reys o‘zi yopiladi. Qolgan yuk kelmasa, qo‘lda yoping — reys qayta ochilmaydi.",
+    "closeReason": "Nega yopilyapti? (masalan: qolgan yuk kelmaydi)",
+    "closeConfirm": "Reysni yopasizmi? U qayta ochilmaydi.",
+    "noCostTick": "Bu reysga xarajat yo‘q",
+    "noCostReason": "Nima uchun xarajat yo‘q?",
+    "noCostMarked": "Xarajat yo‘q: {reason}",
+    "noCostClear": "Belgini olib tashlash",
+    "noCostSet": "«Xarajat yo‘q» deb belgilash",
+    "closedAuto": "Hamma qator qabul qilindi — reys yopildi {at}",
+    "closedManual": "Yopildi {at} · {who}: {reason}",
+    "lineWaiting": "hali qabul qilinmagan",
+    "lineNotReceived": "qabul qilinmagan",
+    "unmatched": "Bu zavoddan, lekin hech qaysi qatorga to‘g‘ri kelmagan prixodlar",
+    "homeCostNoCargo": "{n} tasida xarajat bor, yuk yo‘q",
+    "costNoCargo": "xarajat bor, yuk yo‘q",
+    "costNoCargoLong": "Reysda xarajat bor, lekin tirik prixod yo‘q — xarajat hech qaysi karobkaga tushmayapti. Yangi prixodni o‘z kartasidan shu reysga biriktiring.",
+    "serverBehind": "Server hali yangilanmoqda — bir daqiqadan keyin urinib ko‘ring.",
+    "linkToLine": "{seq}: {goods}"
   },
   "unpriced": {
     "title": "Yetib kelgan, narx yozilmagan yuk",

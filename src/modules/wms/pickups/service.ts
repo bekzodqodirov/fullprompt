@@ -1,4 +1,5 @@
-import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
 import { db, type Tx } from '../../platform/db/client';
 import {
@@ -6,6 +7,7 @@ import {
   clients,
   costEntries,
   factories,
+  pickupLineReceipts,
   pickupLines,
   pickups,
   pickupStops,
@@ -15,6 +17,7 @@ import {
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { inScope, type ScopedActor } from '../../platform/rbac/scope';
+import { isServerBehind } from '../../platform/db/errors';
 import { warehousePoint } from '../tracking/warehouse-point';
 import { fetchLeg, geocodeAddress } from './geo-fetch';
 import { gcj02ToWgs84, parsePastedPoint, type LngLat } from './geo';
@@ -41,6 +44,31 @@ export class PickupError extends Error {
   constructor(public readonly code: string) {
     super(code);
   }
+}
+
+/**
+ * Every state a trip can be in — the latest `pickups_status_check` and the
+ * `pickups.status.*` keys in all four bundles are pinned to this list
+ * (tests/unit/pickup-status.test.ts): a status nobody can name throws at
+ * render time (#163).
+ */
+export const PICKUP_STATUSES = ['planned', 'on_road', 'arrived', 'closed', 'cancelled'] as const;
+export type PickupStatus = (typeof PICKUP_STATUSES)[number];
+
+/**
+ * A trip that can still change: collected, received from, linked to, edited.
+ * `closed` (0133, his 1a/2a) is terminal like `cancelled` and never reopens.
+ */
+export const OPEN_STATUSES = ['planned', 'on_road', 'arrived'] as const satisfies readonly PickupStatus[];
+
+export function isOpenStatus(status: string): boolean {
+  return (OPEN_STATUSES as readonly string[]).includes(status);
+}
+
+/** Refuse any edit of a trip that is no longer open, by its own word. */
+function assertOpen(status: string): void {
+  if (status === 'cancelled') throw new PickupError('cancelled');
+  if (status === 'closed') throw new PickupError('closed');
 }
 
 // ---------------------------------------------------------------------------
@@ -380,6 +408,278 @@ async function liveLinkedReceipts(tx: Tx, where: { pickupId?: string; stopId?: s
     );
 }
 
+// ---------------------------------------------------------------------------
+// What a prixod answers (0133)
+// ---------------------------------------------------------------------------
+
+/**
+ * «This line is received»: a LIVE prixod answers it in `pickup_line_receipts`.
+ * The one sentence every reader asks — the /receive list, its prefill, the
+ * door question, the candidates, the home count, the auto-close and the
+ * checker — instead of re-matching the owner's text on every read, which is
+ * how a claimed marking or a voided prixod brought a finished trip back.
+ *
+ * `lineId` must be QUALIFIED by the caller (`sql\`pl.id\``): an unqualified
+ * column inside this subquery would bind to its own `receipts` (#128).
+ */
+export function lineAnsweredSql(lineId: SQL): SQL {
+  return sql`EXISTS (SELECT 1 FROM pickup_line_receipts plr
+                       JOIN receipts plr_r ON plr_r.id = plr.receipt_id AND plr_r.voided_at IS NULL
+                      WHERE plr.line_id = ${lineId})`;
+}
+
+const fold = (v: string | null | undefined) => (v ?? '').trim().toLowerCase();
+
+/**
+ * Which of a stop's lines a prixod's OWNER names — used ONLY to DERIVE what a
+ * prixod answers when nobody chose, and to find candidates. ORDERED, never a
+ * union: a prixod received under a marking keeps that marking after a client
+ * claims it (#683), so a union made «3 MARK cartons, later claimed by A» answer
+ * A's own 50-box line too and closed the trip on cargo still on the road (the
+ * judge's blocker). The door's own identity wins:
+ *
+ *  1. the prixod's marking equals a MARKING line of this stop → those lines;
+ *  2. otherwise → the CLIENT lines of the prixod's client.
+ */
+export function ownerLinesOf<L extends { clientId: string | null; marking: string | null }>(
+  stopLines: L[],
+  receipt: { clientId: string | null; unclaimedMarking: string | null },
+): L[] {
+  const mark = fold(receipt.unclaimedMarking);
+  const byMarking = mark
+    ? stopLines.filter((l) => !l.clientId && fold(l.marking) !== '' && fold(l.marking) === mark)
+    : [];
+  if (byMarking.length) return byMarking;
+  return receipt.clientId ? stopLines.filter((l) => l.clientId === receipt.clientId) : [];
+}
+
+/**
+ * `ownerLinesOf` in SQL for ONE line `line` of its own stop, over the
+ * caller's aliases (pinned equal by a test over a stop holding both kinds).
+ */
+export function ownerMatchSql(line: string, receipt: string): SQL {
+  const l = sql.raw(line);
+  const r = sql.raw(receipt);
+  return sql`(CASE WHEN EXISTS (SELECT 1 FROM pickup_lines ml
+                                 WHERE ml.stop_id = ${l}.stop_id AND ml.client_id IS NULL
+                                   AND btrim(coalesce(ml.marking, '')) <> ''
+                                   AND lower(btrim(ml.marking)) = lower(btrim(${r}.unclaimed_marking)))
+                THEN ${l}.client_id IS NULL
+                     AND lower(btrim(coalesce(${l}.marking, ''))) = lower(btrim(${r}.unclaimed_marking))
+                ELSE ${l}.client_id IS NOT NULL AND ${l}.client_id = ${r}.client_id
+              END)`;
+}
+
+export interface LineOwner {
+  clientId: string | null;
+  /** The prixod's unclaimed marking (kept after a claim), else null. */
+  marking: string | null;
+}
+
+/**
+ * Write which lines of `stopId` the prixod answers — on the caller's
+ * transaction, AFTER `assertStopReceivable` has locked the trip, so the
+ * «already answered» read below cannot race another phone. Everything is
+ * read through `tx`: this runs inside confirmReceipt and linkReceiptToStop,
+ * and a pool read here is #714's freeze.
+ *
+ *  - Explicit ids (the wizard's lots — each lot names the line it is — and
+ *    the card's per-line buttons): each must be a line of THIS stop. At the
+ *    DOOR (`mode: 'door'`) none may already be answered — two operators
+ *    receiving one line is the double receive the round exists to stop; on
+ *    the card (`mode: 'card'`) a person at the money gate may add a second
+ *    prixod to a line (one line delivered in two parts). The owner is NOT
+ *    compared — a marking line received under the client it belongs to was
+ *    answered by it.
+ *  - No ids (an old phone bundle, a stale draft, the receipt card's select):
+ *    the owner's lines (`ownerLinesOf`). Exactly ONE unanswered → that one.
+ *    Several → none: which of two lines a prixod carried is a person's
+ *    answer, never a guess (a partial prixod answering both closed the trip
+ *    on cargo still at the factory); the card then offers the line buttons.
+ *    None left → at the door the double receive (`line_answered`), on the
+ *    card extra cargo from that factory, answering nothing.
+ */
+export async function answerLinesInTx(
+  tx: Tx,
+  input: {
+    receiptId: string;
+    stopId: string;
+    lineIds?: string[] | null;
+    owner: LineOwner;
+    mode: 'door' | 'card';
+  },
+  actorId: string | null,
+): Promise<string[]> {
+  const lines = await tx
+    .select({ id: pickupLines.id, clientId: pickupLines.clientId, marking: pickupLines.marking })
+    .from(pickupLines)
+    .where(eq(pickupLines.stopId, input.stopId));
+  if (!lines.length) {
+    if (input.lineIds?.length) throw new PickupError('line_not_on_stop');
+    return [];
+  }
+  const answered = new Set(
+    (
+      await tx
+        .select({ lineId: pickupLineReceipts.lineId })
+        .from(pickupLineReceipts)
+        .innerJoin(receipts, and(eq(receipts.id, pickupLineReceipts.receiptId), isNull(receipts.voidedAt)))
+        .where(
+          inArray(
+            pickupLineReceipts.lineId,
+            lines.map((l) => l.id),
+          ),
+        )
+    ).map((r) => r.lineId),
+  );
+  let chosen: string[];
+  if (input.lineIds && input.lineIds.length) {
+    const own = new Set(lines.map((l) => l.id));
+    const ids = [...new Set(input.lineIds)];
+    if (ids.some((id) => !own.has(id))) throw new PickupError('line_not_on_stop');
+    if (input.mode === 'door' && ids.some((id) => answered.has(id))) throw new PickupError('line_answered');
+    chosen = ids;
+  } else {
+    const mine = ownerLinesOf(lines, { clientId: input.owner.clientId, unclaimedMarking: input.owner.marking });
+    const open = mine.filter((l) => !answered.has(l.id));
+    if (input.mode === 'door' && mine.length && !open.length) throw new PickupError('line_answered');
+    chosen = open.length === 1 ? [open[0]!.id] : [];
+  }
+  if (chosen.length) {
+    await tx
+      .insert(pickupLineReceipts)
+      .values(chosen.map((lineId) => ({ lineId, receiptId: input.receiptId, createdBy: actorId })))
+      .onConflictDoNothing();
+  }
+  return chosen;
+}
+
+/**
+ * His 1a, the automatic half: a trip whose every line a live prixod answers
+ * is closed — in the transaction of the write that answered the last line,
+ * with the trip already locked by it. A trip with no lines never closes by
+ * itself (nothing to answer), and closed is terminal (his 2a): nothing here
+ * or anywhere reopens it.
+ */
+export async function closeIfAnsweredInTx(tx: Tx, pickupId: string, ctx: AuditContext): Promise<boolean> {
+  const closed = await tx.execute<{ id: string }>(sql`
+    UPDATE pickups p
+       SET status = 'closed', close_kind = 'auto', closed_at = now(),
+           closed_by = ${ctx.actorId ?? null}, updated_at = now()
+     WHERE p.id = ${pickupId}
+       AND p.status IN ('planned', 'on_road', 'arrived')
+       AND EXISTS (SELECT 1 FROM pickup_stops ps JOIN pickup_lines pl ON pl.stop_id = ps.id
+                    WHERE ps.pickup_id = p.id)
+       AND NOT EXISTS (SELECT 1 FROM pickup_stops ps JOIN pickup_lines pl ON pl.stop_id = ps.id
+                        WHERE ps.pickup_id = p.id AND NOT ${lineAnsweredSql(sql`pl.id`)})
+    RETURNING p.id`);
+  if (!closed.length) return false;
+  await writeAudit(tx, ctx, {
+    entityType: 'pickup',
+    entityId: pickupId,
+    action: 'status_change',
+    after: { status: 'closed', closeKind: 'auto' },
+  });
+  return true;
+}
+
+async function liveCostExists(tx: Tx, pickupId: string): Promise<boolean> {
+  const [cost] = await tx
+    .select({ id: costEntries.id })
+    .from(costEntries)
+    .where(and(eq(costEntries.pickupId, pickupId), isNull(costEntries.voidedAt)))
+    .limit(1);
+  return Boolean(cost);
+}
+
+const closeText = (raw: string | null | undefined): string | null => {
+  const text = (raw ?? '').trim();
+  return text ? text : null;
+};
+
+/**
+ * «Reysni yopish» — his 1a, the manual half: the logist finishes a trip whose
+ * remaining lines will never come (the factory did not give them, the cargo
+ * came on another truck), with a reason. The optional «Xarajat yo'q» (5a)
+ * rides on the same press when the truck was paid somewhere else; it is a
+ * money statement, so the ACTION says whether this person may make it.
+ */
+export async function closePickup(
+  pickupId: string,
+  input: { reason: string; noCostReason?: string | null },
+  ctx: AuditContext,
+  opts: { mayMarkNoCost: boolean },
+): Promise<void> {
+  if (!ctx.actorId) throw new PickupError('unauthenticated');
+  const reason = closeText(input.reason);
+  if (!reason || reason.length < 3) throw new PickupError('close_reason_required');
+  if (reason.length > 500) throw new PickupError('validation');
+  const noCost = input.noCostReason === undefined ? null : closeText(input.noCostReason);
+  if (input.noCostReason !== undefined && input.noCostReason !== null && (!noCost || noCost.length < 3)) {
+    throw new PickupError('no_cost_reason_required');
+  }
+  if (noCost && noCost.length > 500) throw new PickupError('validation');
+  if (noCost && !opts.mayMarkNoCost) throw new PickupError('forbidden');
+  await db.transaction(async (tx) => {
+    const pickup = await lockPickup(tx, pickupId);
+    if (pickup.status === 'closed') throw new PickupError('already_closed');
+    assertOpen(pickup.status);
+    if (noCost && (await liveCostExists(tx, pickupId))) throw new PickupError('has_costs');
+    const now = new Date();
+    await tx
+      .update(pickups)
+      .set({
+        status: 'closed',
+        closeKind: 'manual',
+        closeReason: reason,
+        closedAt: now,
+        closedBy: ctx.actorId,
+        ...(noCost && !pickup.noCostAt ? { noCostAt: now, noCostBy: ctx.actorId, noCostReason: noCost } : {}),
+        updatedAt: now,
+      })
+      .where(eq(pickups.id, pickupId));
+    await writeAudit(tx, { ...ctx, warehouseId: pickup.destWarehouseId }, {
+      entityType: 'pickup',
+      entityId: pickupId,
+      action: 'status_change',
+      before: { status: pickup.status },
+      after: { status: 'closed', closeKind: 'manual', closeReason: reason, noCostReason: noCost },
+    });
+  });
+}
+
+/**
+ * «Xarajat yo'q» on its own (5a): set with a reason, or cleared (null) by
+ * whoever may enter the truck's cost — the ACTION asks that. Refused while a
+ * live cost exists: a truck with a bill was not paid «somewhere else».
+ */
+export async function setPickupNoCost(pickupId: string, reason: string | null, ctx: AuditContext): Promise<void> {
+  if (!ctx.actorId) throw new PickupError('unauthenticated');
+  const text = closeText(reason);
+  if (reason !== null && (!text || text.length < 3)) throw new PickupError('no_cost_reason_required');
+  if (text && text.length > 500) throw new PickupError('validation');
+  await db.transaction(async (tx) => {
+    const pickup = await lockPickup(tx, pickupId);
+    if (pickup.status === 'cancelled') throw new PickupError('cancelled');
+    if (text && (await liveCostExists(tx, pickupId))) throw new PickupError('has_costs');
+    await tx
+      .update(pickups)
+      .set(
+        text
+          ? { noCostAt: new Date(), noCostBy: ctx.actorId, noCostReason: text, updatedAt: new Date() }
+          : { noCostAt: null, noCostBy: null, noCostReason: null, updatedAt: new Date() },
+      )
+      .where(eq(pickups.id, pickupId));
+    await writeAudit(tx, { ...ctx, warehouseId: pickup.destWarehouseId }, {
+      entityType: 'pickup',
+      entityId: pickupId,
+      action: 'update',
+      before: { noCostReason: pickup.noCostReason },
+      after: { noCostReason: text },
+    });
+  });
+}
+
 export const pickupHeaderSchema = pickupSchema.omit({ stops: true });
 
 /** The header. The destination only while no prixod is linked — they were received THERE. */
@@ -391,7 +691,7 @@ export async function updatePickupHeader(
   const input = pickupHeaderSchema.parse(raw);
   await db.transaction(async (tx) => {
     const pickup = await lockPickup(tx, pickupId);
-    if (pickup.status === 'cancelled') throw new PickupError('cancelled');
+    assertOpen(pickup.status);
     if (input.destWarehouseId !== pickup.destWarehouseId) {
       if ((await liveLinkedReceipts(tx, { pickupId })).length) throw new PickupError('dest_locked');
       const dest = await tx.query.warehouses.findFirst({ where: eq(warehouses.id, input.destWarehouseId) });
@@ -417,7 +717,7 @@ export async function updatePickupHeader(
 export async function addStop(pickupId: string, factoryId: string, ctx: AuditContext): Promise<string> {
   const stopId = await db.transaction(async (tx) => {
     const pickup = await lockPickup(tx, pickupId);
-    if (pickup.status === 'cancelled') throw new PickupError('cancelled');
+    assertOpen(pickup.status);
     await assertFactoriesExist(tx, [factoryId]);
     const [{ n }] = (await tx.execute<{ n: number }>(
       sql`SELECT coalesce(max(seq), 0)::int AS n FROM pickup_stops WHERE pickup_id = ${pickupId}`,
@@ -440,7 +740,7 @@ export async function removeStop(stopId: string, ctx: AuditContext): Promise<voi
     const stop = await tx.query.pickupStops.findFirst({ where: eq(pickupStops.id, stopId) });
     if (!stop) throw new PickupError('not_found');
     const pickup = await lockPickup(tx, stop.pickupId);
-    if (pickup.status === 'cancelled') throw new PickupError('cancelled');
+    assertOpen(pickup.status);
     if (stop.collectedAt) throw new PickupError('stop_collected');
     // Voided links count here: the FK would refuse the delete, and history
     // pointing at a stop is the reason it must stay.
@@ -460,15 +760,21 @@ export async function removeStop(stopId: string, ctx: AuditContext): Promise<voi
        WHERE ps.id = ranked.id
     `);
     await writeAudit(tx, ctx, { entityType: 'pickup', entityId: stop.pickupId, action: 'update', after: { removeStop: stopId } });
+    // The stop that went may have held the only unanswered line: what is
+    // left is all received, and «by itself» (his 1a) means here too.
+    await closeIfAnsweredInTx(tx, stop.pickupId, { ...ctx, warehouseId: pickup.destWarehouseId });
     return stop.pickupId;
   });
   await refreshLegs(pickupId);
 }
 
 /**
- * Replace a stop's lines. Refused once a prixod came from this stop — the
- * lines are what the receive door and the candidates list read, and editing
- * them under a received prixod would rewrite what was promised after the fact.
+ * Replace a stop's lines. Refused once a LIVE prixod came from this stop —
+ * the lines are what the receive door and the candidates list read, and
+ * editing them under a received prixod would rewrite what was promised after
+ * the fact. A VOIDED prixod's answers go with the lines they named (the FK
+ * cascades): they answered nothing live, and a draft still holding an old
+ * line id is refused `line_not_on_stop` in words.
  */
 export async function saveStopLines(stopId: string, rawLines: LineInput[], ctx: AuditContext): Promise<void> {
   const lines = z.array(lineSchema).max(40).parse(rawLines);
@@ -476,7 +782,7 @@ export async function saveStopLines(stopId: string, rawLines: LineInput[], ctx: 
     const stop = await tx.query.pickupStops.findFirst({ where: eq(pickupStops.id, stopId) });
     if (!stop) throw new PickupError('not_found');
     const pickup = await lockPickup(tx, stop.pickupId);
-    if (pickup.status === 'cancelled') throw new PickupError('cancelled');
+    assertOpen(pickup.status);
     if ((await liveLinkedReceipts(tx, { stopId })).length) throw new PickupError('stop_linked');
     await assertClientsExist(tx, lines.map((l) => l.clientId));
     await tx.delete(pickupLines).where(eq(pickupLines.stopId, stopId));
@@ -487,6 +793,8 @@ export async function saveStopLines(stopId: string, rawLines: LineInput[], ctx: 
       action: 'update',
       after: { stopLines: stopId, lines: lines.length },
     });
+    // Removing the never-given line leaves the rest all received (his 1a).
+    await closeIfAnsweredInTx(tx, stop.pickupId, { ...ctx, warehouseId: pickup.destWarehouseId });
   });
 }
 
@@ -517,7 +825,12 @@ export async function collectStop(
     const stop = await tx.query.pickupStops.findFirst({ where: eq(pickupStops.id, stopId) });
     if (!stop) throw new PickupError('not_found');
     const pickup = await lockPickup(tx, stop.pickupId);
-    if (pickup.status === 'cancelled') throw new PickupError('cancelled');
+    // A trip can close before «Olindi» — the warehouse received the whole
+    // load at 10:00 and the logist presses at 18:00 with the driver's recount.
+    // On a closed trip the press is a RECORD: the count and the stamp land,
+    // the status does not move and nobody is told anything (the cargo is in).
+    const closed = pickup.status === 'closed';
+    if (!closed) assertOpen(pickup.status);
     const now = new Date();
     const claimed = await tx
       .update(pickupStops)
@@ -543,6 +856,10 @@ export async function collectStop(
         .where(eq(pickups.id, pickup.id));
     }
 
+    // «Already received» for the CUSTOMER's message stays the client's own
+    // fact — has «keldi» been said about cargo from this stop — and not the
+    // line memory: the question is what the customer knows, not which line
+    // a prixod answered.
     const received = new Set(
       (
         await tx
@@ -552,7 +869,7 @@ export async function collectStop(
       ).map((r) => r.clientId),
     );
     const clientIds = [...new Set(lines.map((l) => l.clientId).filter((v): v is string => Boolean(v)))];
-    for (const clientId of clientIds) {
+    for (const clientId of closed ? [] : clientIds) {
       if (received.has(clientId)) continue;
       await tx
         .insert(clientNotices)
@@ -573,7 +890,7 @@ export async function collectStop(
 export async function markArrived(pickupId: string, ctx: AuditContext): Promise<void> {
   await db.transaction(async (tx) => {
     const pickup = await lockPickup(tx, pickupId);
-    if (pickup.status === 'cancelled') throw new PickupError('cancelled');
+    assertOpen(pickup.status);
     if (pickup.status === 'arrived') return;
     await arriveInTx(tx, pickup.id);
     await writeAudit(tx, ctx, { entityType: 'pickup', entityId: pickupId, action: 'status_change', after: { status: 'arrived' } });
@@ -600,6 +917,8 @@ export async function cancelPickup(pickupId: string, reason: string, ctx: AuditC
   await db.transaction(async (tx) => {
     const pickup = await lockPickup(tx, pickupId);
     if (pickup.status === 'cancelled') return;
+    // Closed is terminal (his 2a): a finished trip is history, not a mistake.
+    if (pickup.status === 'closed') throw new PickupError('closed');
     const [cost] = await tx
       .select({ id: costEntries.id })
       .from(costEntries)
@@ -644,18 +963,39 @@ export async function pickupIdOfStop(stopId: string | null | undefined): Promise
 /**
  * The receive door's check, on the CALLER's transaction (`confirmReceipt`
  * runs it inside its own — a pool read there is #714's freeze): the stop
- * exists, its truck is live and it is heading to THIS warehouse.
+ * exists, its truck is OPEN and heading to THIS warehouse.
+ *
+ * It LOCKS the trip (FOR UPDATE): the lines it is about to answer are read
+ * after it, so two phones receiving the same line wait on each other and the
+ * second is told `line_answered` instead of making a second prixod of the
+ * same cargo; and a close or a cancel that commits first is SEEN, not
+ * overwritten. The trip is the first row either door locks — `confirmReceipt`
+ * inserts a new receipt after it, and `linkReceiptToStop` locks its receipt
+ * first but that receipt is one no confirm can be holding.
  */
-export async function assertStopReceivable(tx: Tx, stopId: string, warehouseId: string): Promise<string> {
-  const [row] = await tx
-    .select({ pickupId: pickups.id, dest: pickups.destWarehouseId, status: pickups.status })
+/**
+ * Lock the stop's trip and check a prixod may join it. At the DOOR (a
+ * receive) the trip must be open — a closed trip takes no more cargo (his
+ * 2a). From the CARD (a person at the money gate correcting a link) a closed
+ * trip may be joined WITHOUT reopening it: otherwise a void-and-redo of its
+ * prixod left the truck's freight on no carton for good, with no way back
+ * (the judge's money finding).
+ */
+export async function assertStopReceivable(
+  tx: Tx,
+  stopId: string,
+  warehouseId: string,
+  mode: 'door' | 'card' = 'door',
+): Promise<{ id: string; status: string }> {
+  const [stop] = await tx
+    .select({ pickupId: pickupStops.pickupId })
     .from(pickupStops)
-    .innerJoin(pickups, eq(pickupStops.pickupId, pickups.id))
     .where(eq(pickupStops.id, stopId));
-  if (!row) throw new PickupError('stop_not_found');
-  if (row.status === 'cancelled') throw new PickupError('cancelled');
-  if (row.dest !== warehouseId) throw new PickupError('wrong_warehouse');
-  return row.pickupId;
+  if (!stop) throw new PickupError('stop_not_found');
+  const trip = await lockPickup(tx, stop.pickupId);
+  if (!(mode === 'card' && trip.status === 'closed')) assertOpen(trip.status);
+  if (trip.destWarehouseId !== warehouseId) throw new PickupError('wrong_warehouse');
+  return { id: trip.id, status: trip.status };
 }
 
 /** Called by `confirmReceipt` in its transaction once the receipt row exists. */
@@ -669,11 +1009,17 @@ export async function arriveOnReceipt(tx: Tx, pickupId: string): Promise<void> {
  * buttons; the gate (costs.enter_batch at the receipt's warehouse) is the
  * action's, because this moves the truck's money. Both trips — the one it
  * leaves and the one it joins — are re-split after the commit.
+ *
+ * The lines the prixod answered go with it when it leaves (0133); joining,
+ * it answers the stop's lines its owner matches (`answerLinesInTx`). A trip
+ * it leaves stays as it is — a closed one stays closed (his 2a) — and a
+ * CLOSED trip cannot be joined: it is finished.
  */
 export async function linkReceiptToStop(
   receiptId: string,
   stopId: string | null,
   ctx: AuditContext,
+  lineIds?: string[] | null,
 ): Promise<void> {
   const { before, after } = await db.transaction(async (tx) => {
     const [receipt] = await tx.select().from(receipts).where(eq(receipts.id, receiptId)).for('update');
@@ -687,20 +1033,43 @@ export async function linkReceiptToStop(
             .where(eq(pickupStops.id, receipt.pickupStopId))
         )[0]?.id ?? null)
       : null;
-    let afterPickup: string | null = null;
-    if (stopId) {
-      afterPickup = await assertStopReceivable(tx, stopId, receipt.warehouseId);
-      await arriveInTx(tx, afterPickup);
+    // A press that already happened (two logists on one card) is a no-op,
+    // decided BEFORE any lock or derive: the prixod's own rows would read as
+    // «already answered» and refuse a link that succeeded.
+    if (receipt.pickupStopId === stopId && !lineIds?.length) return { before: null, after: null };
+    // Leaving a stop takes the lines it answered with it; a per-line press on
+    // the stop it is already on ADDS to them (the card's «this prixod is that
+    // line»).
+    if (receipt.pickupStopId && receipt.pickupStopId !== stopId) {
+      await tx.delete(pickupLineReceipts).where(eq(pickupLineReceipts.receiptId, receiptId));
     }
-    if (receipt.pickupStopId === stopId) return { before: null, after: null };
+    let afterPickup: string | null = null;
+    let answered: string[] = [];
+    if (stopId) {
+      const trip = await assertStopReceivable(tx, stopId, receipt.warehouseId, 'card');
+      afterPickup = trip.id;
+      answered = await answerLinesInTx(
+        tx,
+        {
+          receiptId,
+          stopId,
+          lineIds: lineIds ?? null,
+          owner: { clientId: receipt.clientId, marking: receipt.unclaimedMarking },
+          mode: 'card',
+        },
+        ctx.actorId ?? null,
+      );
+      if (trip.status !== 'closed') await arriveInTx(tx, afterPickup);
+    }
     await tx.update(receipts).set({ pickupStopId: stopId }).where(eq(receipts.id, receiptId));
     await writeAudit(tx, { ...ctx, warehouseId: receipt.warehouseId }, {
       entityType: 'receipt',
       entityId: receiptId,
       action: 'update',
       before: { pickupStopId: receipt.pickupStopId },
-      after: { pickupStopId: stopId },
+      after: { pickupStopId: stopId, pickupLines: answered.length },
     });
+    if (afterPickup) await closeIfAnsweredInTx(tx, afterPickup, { ...ctx, warehouseId: receipt.warehouseId });
     return { before: beforePickup, after: afterPickup };
   });
   await recomputePickupCosts(before);
@@ -727,7 +1096,8 @@ const keyOf = (from: LngLat, to: LngLat) =>
 export async function refreshLegs(pickupId: string): Promise<void> {
   try {
     const pickup = await db.query.pickups.findFirst({ where: eq(pickups.id, pickupId) });
-    if (!pickup || pickup.status === 'cancelled') return;
+    // A finished trip's road is history: nothing draws or estimates it again.
+    if (!pickup || !isOpenStatus(pickup.status)) return;
     const dest = await db.query.warehouses.findFirst({ where: eq(warehouses.id, pickup.destWarehouseId) });
     const destPoint = dest ? warehousePoint(dest) : null;
     const stops = await db
@@ -771,7 +1141,7 @@ async function refreshLegsForFactory(factoryId: string): Promise<void> {
     .selectDistinct({ id: pickupStops.pickupId })
     .from(pickupStops)
     .innerJoin(pickups, eq(pickupStops.pickupId, pickups.id))
-    .where(and(eq(pickupStops.factoryId, factoryId), ne(pickups.status, 'cancelled')));
+    .where(and(eq(pickupStops.factoryId, factoryId), inArray(pickups.status, [...OPEN_STATUSES])));
   for (const trip of trips) await refreshLegs(trip.id);
 }
 
@@ -791,7 +1161,7 @@ export interface PickupLineView {
   volumeM3: number | null;
   weightKg: number | null;
   note: string | null;
-  /** Live prixods from this stop for this line's owner. */
+  /** The LIVE prixods that answer this line (0133's memory, never re-matched). */
   receipts: { id: string; number: string | null }[];
 }
 
@@ -808,19 +1178,18 @@ export interface PickupStopView {
   lines: PickupLineView[];
   /** Every prixod linked to this stop, live or voided (a voided one is history). */
   receipts: { id: string; number: string | null; clientCode: string | null; voided: boolean }[];
-}
-
-/** Does a line's owner match a prixod's? The client, or the marking as written. */
-export function lineOwnerMatches(
-  line: { clientId: string | null; marking: string | null },
-  receipt: { clientId: string | null; unclaimedMarking: string | null },
-): boolean {
-  if (line.clientId) return receipt.clientId === line.clientId;
-  return (
-    !receipt.clientId &&
-    Boolean(line.marking) &&
-    (receipt.unclaimedMarking ?? '').trim().toLowerCase() === line.marking!.trim().toLowerCase()
-  );
+  /**
+   * Live prixods linked to this stop that answer NO line — extra cargo from
+   * the factory, or cargo received under an owner no line names. Listed on
+   * the card so a count nobody can see does not hide them.
+   */
+  unmatched: {
+    id: string;
+    number: string | null;
+    clientCode: string | null;
+    clientId: string | null;
+    unclaimedMarking: string | null;
+  }[];
 }
 
 async function stopsFor(pickupIds: string[]): Promise<Map<string, PickupStopView[]>> {
@@ -858,9 +1227,31 @@ async function stopsFor(pickupIds: string[]): Promise<Map<string, PickupStopView
         .where(inArray(receipts.pickupStopId, stopIds))
         .orderBy(asc(receipts.confirmedAt))
     : [];
+  const lineIds = lineRows.map((r) => r.line.id);
+  // One migration behind (0133 not applied yet) the memory table does not
+  // exist: the screens read «nothing answered» rather than going down — the
+  // writers refuse in words (`server_behind`) until `migrate` lands.
+  const answerRows = lineIds.length
+    ? await db
+        .select({
+          lineId: pickupLineReceipts.lineId,
+          id: receipts.id,
+          number: receipts.number,
+          voidedAt: receipts.voidedAt,
+        })
+        .from(pickupLineReceipts)
+        .innerJoin(receipts, eq(receipts.id, pickupLineReceipts.receiptId))
+        .where(inArray(pickupLineReceipts.lineId, lineIds))
+        .orderBy(asc(receipts.confirmedAt))
+        .catch((err: unknown) => {
+          if (isServerBehind(err)) return [];
+          throw err;
+        })
+    : [];
   for (const { stop, factory, collectedByName } of stopRows) {
     const linked = receiptRows.filter((r) => r.stopId === stop.id);
-    const live = linked.filter((r) => !r.voidedAt);
+    const stopLineIds = new Set(lineRows.filter((r) => r.line.stopId === stop.id).map((r) => r.line.id));
+    const answering = new Set(answerRows.filter((a) => stopLineIds.has(a.lineId) && !a.voidedAt).map((a) => a.id));
     const view: PickupStopView = {
       id: stop.id,
       seq: stop.seq,
@@ -885,9 +1276,20 @@ async function stopsFor(pickupIds: string[]): Promise<Map<string, PickupStopView
           volumeM3: line.volumeM3 === null ? null : Number(line.volumeM3),
           weightKg: line.weightKg === null ? null : Number(line.weightKg),
           note: line.note,
-          receipts: live.filter((r) => lineOwnerMatches(line, r)).map((r) => ({ id: r.id, number: r.number })),
+          receipts: answerRows
+            .filter((a) => a.lineId === line.id && !a.voidedAt)
+            .map((a) => ({ id: a.id, number: a.number })),
         })),
       receipts: linked.map((r) => ({ id: r.id, number: r.number, clientCode: r.clientCode, voided: Boolean(r.voidedAt) })),
+      unmatched: linked
+        .filter((r) => !r.voidedAt && !answering.has(r.id))
+        .map((r) => ({
+          id: r.id,
+          number: r.number,
+          clientCode: r.clientCode,
+          clientId: r.clientId,
+          unclaimedMarking: r.unclaimedMarking,
+        })),
     };
     const list = out.get(stop.pickupId) ?? [];
     list.push(view);
@@ -904,8 +1306,23 @@ export interface PickupListRow {
   liveCostCount: number;
 }
 
-/** The /zavod list — live trips first, newest first; a finished month is paged by status. */
-export async function listPickups(opts: { status?: 'live' | 'arrived' | 'cancelled' | 'all' } = {}) {
+/**
+ * The /zavod list — newest first, by tab. «Yetib kelgan» is a trip that came and
+ * is still OPEN (a line not received); finished trips are «Yopilgan».
+ */
+export type PickupListTab = 'live' | 'arrived' | 'closed' | 'xarajatsiz' | 'cancelled' | 'all';
+
+/**
+ * «Xarajat yo'q» is still owed: a trip that came (arrived or closed) with no
+ * live cost and no «xarajat yo'q» mark (his 5a). One sentence for the list's
+ * tab, the card's banner and the home row's count.
+ */
+export function noCostOwedSql(pickup: SQL): SQL {
+  return sql`${pickup}.status IN ('arrived', 'closed') AND ${pickup}.no_cost_at IS NULL
+             AND NOT EXISTS (SELECT 1 FROM cost_entries ce WHERE ce.pickup_id = ${pickup}.id AND ce.voided_at IS NULL)`;
+}
+
+export async function listPickups(opts: { status?: PickupListTab } = {}) {
   const status = opts.status ?? 'live';
   const rows = await db
     .select({
@@ -919,9 +1336,11 @@ export async function listPickups(opts: { status?: 'live' | 'arrived' | 'cancell
     .where(
       status === 'live'
         ? inArray(pickups.status, ['planned', 'on_road'])
-        : status === 'all'
-          ? undefined
-          : eq(pickups.status, status),
+        : status === 'xarajatsiz'
+          ? noCostOwedSql(sql`${pickups}`)
+          : status === 'all'
+            ? undefined
+            : eq(pickups.status, status),
     )
     .orderBy(desc(pickups.createdAt))
     .limit(200);
@@ -934,11 +1353,23 @@ export async function listPickups(opts: { status?: 'live' | 'arrived' | 'cancell
 }
 
 export async function loadPickup(pickupId: string) {
+  // Who closed the trip and who marked «xarajat yo'q» are named on the card —
+  // a manual close is a person's sentence and reads as one (his 1a).
+  const closer = alias(users, 'closer');
+  const marker = alias(users, 'no_cost_marker');
   const [row] = await db
-    .select({ pickup: pickups, dest: warehouses, createdByName: users.fullName })
+    .select({
+      pickup: pickups,
+      dest: warehouses,
+      createdByName: users.fullName,
+      closedByName: closer.fullName,
+      noCostByName: marker.fullName,
+    })
     .from(pickups)
     .innerJoin(warehouses, eq(pickups.destWarehouseId, warehouses.id))
     .leftJoin(users, eq(pickups.createdBy, users.id))
+    .leftJoin(closer, eq(pickups.closedBy, closer.id))
+    .leftJoin(marker, eq(pickups.noCostBy, marker.id))
     .where(eq(pickups.id, pickupId));
   if (!row) return null;
   const stops = (await stopsFor([pickupId])).get(pickupId) ?? [];
@@ -946,55 +1377,74 @@ export async function loadPickup(pickupId: string) {
 }
 
 /**
- * Prixods that look like they came off this truck and are linked to nothing:
- * confirmed at its destination, for a client (or marking) on one of its
- * lines, on or after the first «olindi». Said aloud on the card — the logist
- * decides, nothing links itself (#809).
+ * A prixod that looks like it came off trip `p` and is linked to nothing —
+ * over aliases `p` (pickups) and `r` (receipts). Confirmed at the trip's
+ * destination on or after its first «olindi», live, unlinked, and its owner
+ * matching a line of the trip that NO prixod has answered yet: once a line is
+ * answered, every later cargo of that client is somebody else's question (an
+ * old trip lit up by a new prixod months later was probe S5). One sentence
+ * for the card's list and the logist's home count.
+ */
+export function candidateReceiptSql(): SQL {
+  return sql`r.status = 'confirmed' AND r.voided_at IS NULL AND r.pickup_stop_id IS NULL
+    AND r.warehouse_id = p.dest_warehouse_id
+    AND r.confirmed_at >= (SELECT min(s2.collected_at) FROM pickup_stops s2 WHERE s2.pickup_id = p.id)
+    AND EXISTS (SELECT 1 FROM pickup_stops ps JOIN pickup_lines pl ON pl.stop_id = ps.id
+                 WHERE ps.pickup_id = p.id
+                   AND NOT ${lineAnsweredSql(sql`pl.id`)}
+                   AND ${ownerMatchSql('pl', 'r')})`;
+}
+
+/**
+ * Prixods that look like they came off this truck and are linked to nothing
+ * (`candidateReceiptSql`). Said aloud on the card — the logist decides,
+ * nothing links itself (#809).
  */
 export async function pickupCandidates(pickupId: string) {
   const pickup = await db.query.pickups.findFirst({ where: eq(pickups.id, pickupId) });
-  if (!pickup || pickup.status === 'cancelled') return [];
+  // His 4a: only while the trip is open — a closed one owes nothing more.
+  if (!pickup || !isOpenStatus(pickup.status)) return [];
   const stops = (await stopsFor([pickupId])).get(pickupId) ?? [];
-  const firstCollect = stops
-    .map((s) => s.collectedAt?.getTime())
-    .filter((v): v is number => v !== undefined)
-    .sort((a, b) => a - b)[0];
-  if (firstCollect === undefined) return [];
-  const lines = stops.flatMap((s) => s.lines);
-  const clientIds = [...new Set(lines.map((l) => l.clientId).filter((v): v is string => Boolean(v)))];
-  const markings = [...new Set(lines.map((l) => l.marking?.trim().toLowerCase()).filter((v): v is string => Boolean(v)))];
-  if (!clientIds.length && !markings.length) return [];
-  const rows = await db
-    .select({
-      id: receipts.id,
-      number: receipts.number,
-      clientId: receipts.clientId,
-      clientCode: clients.clientCode,
-      unclaimedMarking: receipts.unclaimedMarking,
-      confirmedAt: receipts.confirmedAt,
-    })
-    .from(receipts)
-    .leftJoin(clients, eq(receipts.clientId, clients.id))
-    .where(
-      and(
-        eq(receipts.warehouseId, pickup.destWarehouseId),
-        eq(receipts.status, 'confirmed'),
-        isNull(receipts.voidedAt),
-        isNull(receipts.pickupStopId),
-        sql`${receipts.confirmedAt} >= ${new Date(firstCollect).toISOString()}::timestamptz`,
-        sql`(${clientIds.length ? sql`${receipts.clientId} IN (${sql.join(clientIds.map((id) => sql`${id}`), sql`, `)})` : sql`false`}
-             OR ${markings.length ? sql`(${receipts.clientId} IS NULL AND lower(trim(${receipts.unclaimedMarking})) IN (${sql.join(markings.map((m) => sql`${m}`), sql`, `)}))` : sql`false`})`,
-      ),
-    )
-    .orderBy(asc(receipts.confirmedAt))
-    .limit(50);
-  return rows.map((r) => ({
-    ...r,
-    // Which stops could have brought it — the stop buttons the card offers.
-    stops: stops
-      .filter((s) => s.lines.some((l) => lineOwnerMatches(l, r)))
-      .map((s) => ({ id: s.id, seq: s.seq, factoryName: s.factory.name })),
-  }));
+  const rows = await db.execute<{
+    id: string;
+    number: string | null;
+    client_id: string | null;
+    client_code: string | null;
+    unclaimed_marking: string | null;
+    confirmed_at: string | null;
+  }>(sql`
+    SELECT r.id, r.number, r.client_id, c.client_code, r.unclaimed_marking, r.confirmed_at
+      FROM pickups p
+      JOIN receipts r ON r.warehouse_id = p.dest_warehouse_id
+      LEFT JOIN clients c ON c.id = r.client_id
+     WHERE p.id = ${pickupId}
+       AND ${candidateReceiptSql()}
+     ORDER BY r.confirmed_at
+     LIMIT 50`);
+  return rows.map((r) => {
+    const receipt = { clientId: r.client_id, unclaimedMarking: r.unclaimed_marking };
+    return {
+      id: r.id,
+      number: r.number,
+      clientId: r.client_id,
+      clientCode: r.client_code,
+      unclaimedMarking: r.unclaimed_marking,
+      // Raw `db.execute` hands timestamps back as TEXT.
+      confirmedAt: r.confirmed_at ? new Date(r.confirmed_at) : null,
+      // Which stops could have brought it — a stop with an UNANSWERED line
+      // this prixod's owner names. With several such lines the card offers
+      // one button per LINE: which of them came is a person's answer.
+      stops: stops
+        .map((s) => ({ s, open: ownerLinesOf(s.lines, receipt).filter((l) => !l.receipts.length) }))
+        .filter(({ open }) => open.length > 0)
+        .map(({ s, open }) => ({
+          id: s.id,
+          seq: s.seq,
+          factoryName: s.factory.name,
+          lines: open.length > 1 ? open.map((l) => ({ id: l.id, goods: l.goods })) : [],
+        })),
+    };
+  });
 }
 
 export interface IncomingOwner {
@@ -1026,10 +1476,21 @@ export interface IncomingTruck {
  */
 export async function incomingForWarehouses(warehouseIds: string[]): Promise<IncomingTruck[]> {
   if (!warehouseIds.length) return [];
+  // Open trips with a line nobody has answered yet — decided in SQL BEFORE the
+  // cap. It used to read the oldest 50 trips and drop the finished ones after
+  // the limit, so once 50 trips had come a NEW truck never reached this list
+  // (probe S7).
   const rows = await db
     .select()
     .from(pickups)
-    .where(and(inArray(pickups.destWarehouseId, warehouseIds), inArray(pickups.status, ['planned', 'on_road', 'arrived'])))
+    .where(
+      and(
+        inArray(pickups.destWarehouseId, warehouseIds),
+        inArray(pickups.status, [...OPEN_STATUSES]),
+        sql`EXISTS (SELECT 1 FROM pickup_stops ps JOIN pickup_lines pl ON pl.stop_id = ps.id
+                     WHERE ps.pickup_id = ${pickups}.id AND NOT ${lineAnsweredSql(sql`pl.id`)})`,
+      ),
+    )
     .orderBy(asc(pickups.createdAt))
     .limit(50);
   const stopsBy = await stopsFor(rows.map((r) => r.id));
@@ -1083,7 +1544,8 @@ export async function receivePrefillFor(stopId: string, ownerKey: string) {
     .innerJoin(pickups, eq(pickupStops.pickupId, pickups.id))
     .innerJoin(factories, eq(pickupStops.factoryId, factories.id))
     .where(eq(pickupStops.id, stopId));
-  if (!row || row.pickup.status === 'cancelled') return null;
+  // A finished trip offers nothing to receive (his 2a), even by a typed URL.
+  if (!row || !isOpenStatus(row.pickup.status)) return null;
   const stop = ((await stopsFor([row.pickup.id])).get(row.pickup.id) ?? []).find((s) => s.id === stopId);
   if (!stop) return null;
   const isMarking = ownerKey.startsWith('m:');
@@ -1108,25 +1570,39 @@ export async function receivePrefillFor(stopId: string, ownerKey: string) {
   };
 }
 
-/** The logist home's two counts: arrived with no cost, and trips with prixods to link. */
-export async function pickupAttentionCounts(): Promise<{ noCost: number; unlinked: number }> {
-  const [row] = await db.execute<{ no_cost: number; unlinked: number }>(sql`
+/**
+ * A trip whose truck has a bill and no live cargo to carry it — a CLOSED
+ * trip whose prixod was voided or detached. The money sits on no carton
+ * until somebody links the replacement from the receipt card (the one door
+ * that may join a closed trip). Over alias `p`.
+ */
+export function costWithoutCargoSql(pickup: SQL): SQL {
+  return sql`${pickup}.status = 'closed'
+             AND EXISTS (SELECT 1 FROM cost_entries ce WHERE ce.pickup_id = ${pickup}.id AND ce.voided_at IS NULL)
+             AND NOT EXISTS (SELECT 1 FROM pickup_stops ps JOIN receipts r ON r.pickup_stop_id = ps.id
+                              WHERE ps.pickup_id = ${pickup}.id AND r.voided_at IS NULL)`;
+}
+
+/**
+ * The logist home's counts: trips whose cost is still owed
+ * (`noCostOwedSql`), OPEN trips with a prixod to link (`candidateReceiptSql`
+ * — the card's own list, so the two never disagree), and closed trips whose
+ * bill carries no cargo (`costWithoutCargoSql`).
+ */
+export async function pickupAttentionCounts(): Promise<{ noCost: number; unlinked: number; costNoCargo: number }> {
+  const [row] = await db.execute<{ no_cost: number; unlinked: number; cost_no_cargo: number }>(sql`
     SELECT
+      (SELECT count(*)::int FROM pickups p WHERE ${noCostOwedSql(sql`p`)}) AS no_cost,
       (SELECT count(*)::int FROM pickups p
-        WHERE p.status = 'arrived'
-          AND NOT EXISTS (SELECT 1 FROM cost_entries ce WHERE ce.pickup_id = p.id AND ce.voided_at IS NULL)) AS no_cost,
-      (SELECT count(DISTINCT p.id)::int FROM pickups p
-         JOIN pickup_stops ps ON ps.pickup_id = p.id
-         JOIN pickup_lines pl ON pl.stop_id = ps.id
-         JOIN receipts r ON r.warehouse_id = p.dest_warehouse_id
         WHERE p.status IN ('on_road', 'arrived')
-          AND r.pickup_stop_id IS NULL AND r.voided_at IS NULL AND r.status = 'confirmed'
-          AND r.confirmed_at >= (SELECT min(collected_at) FROM pickup_stops s2 WHERE s2.pickup_id = p.id)
-          AND ((pl.client_id IS NOT NULL AND r.client_id = pl.client_id)
-               OR (pl.client_id IS NULL AND r.client_id IS NULL
-                   AND lower(trim(r.unclaimed_marking)) = lower(trim(pl.marking))))) AS unlinked
+          AND EXISTS (SELECT 1 FROM receipts r WHERE ${candidateReceiptSql()})) AS unlinked,
+      (SELECT count(*)::int FROM pickups p WHERE ${costWithoutCargoSql(sql`p`)}) AS cost_no_cargo
   `);
-  return { noCost: Number(row?.no_cost ?? 0), unlinked: Number(row?.unlinked ?? 0) };
+  return {
+    noCost: Number(row?.no_cost ?? 0),
+    unlinked: Number(row?.unlinked ?? 0),
+    costNoCargo: Number(row?.cost_no_cargo ?? 0),
+  };
 }
 
 /**
@@ -1161,6 +1637,8 @@ export async function receiptPickupInfo(stopId: string | null) {
       seq: pickupStops.seq,
       pickupId: pickups.id,
       code: pickups.code,
+      status: pickups.status,
+      vehiclePlate: pickups.vehiclePlate,
       factoryName: factories.name,
       factoryPhone: factories.phone,
       factoryWechat: factories.wechat,
@@ -1173,9 +1651,11 @@ export async function receiptPickupInfo(stopId: string | null) {
 }
 
 /**
- * The stops a prixod at this warehouse could be attached to: every stop of a
- * live trip heading here, newest trips first. Bounded — the picker is for
- * this month's trucks, and the card's own current stop is added by the page.
+ * The stops a prixod at this warehouse could be attached to from its CARD:
+ * every stop of an open trip heading here, plus trips CLOSED in the last 30
+ * days — the card is the correction door (a void-and-redo must be able to
+ * find its truck again; joining does not reopen it, his 2a). Newest first and
+ * bounded; the card's own current stop is added by the page.
  */
 export async function stopOptionsForWarehouse(warehouseId: string) {
   return db
@@ -1183,14 +1663,105 @@ export async function stopOptionsForWarehouse(warehouseId: string) {
       stopId: pickupStops.id,
       seq: pickupStops.seq,
       code: pickups.code,
+      status: pickups.status,
       factoryName: factories.name,
     })
     .from(pickupStops)
     .innerJoin(pickups, eq(pickupStops.pickupId, pickups.id))
     .innerJoin(factories, eq(pickupStops.factoryId, factories.id))
-    .where(and(eq(pickups.destWarehouseId, warehouseId), ne(pickups.status, 'cancelled')))
+    .where(
+      and(
+        eq(pickups.destWarehouseId, warehouseId),
+        sql`(${pickups}.status IN ('planned', 'on_road', 'arrived')
+             OR (${pickups}.status = 'closed' AND ${pickups}.closed_at > now() - interval '30 days'))`,
+      ),
+    )
     .orderBy(desc(pickups.createdAt), asc(pickupStops.seq))
     .limit(60);
+}
+
+export interface OpenStopForOwner {
+  pickupId: string;
+  code: string;
+  status: string;
+  vehiclePlate: string | null;
+  stopId: string;
+  seq: number;
+  factoryName: string;
+  collected: boolean;
+  lines: Pick<PickupLineView, 'id' | 'goods' | 'factoryBoxes' | 'driverBoxes' | 'weightKg' | 'volumeM3'>[];
+}
+
+/**
+ * The receive door's question (his 3a, «Bu yuk ZR-… reysidan keldimi?»): the
+ * COLLECTED stops of OPEN trips heading to this warehouse with lines of THIS
+ * owner that no prixod has answered. Collected only: a client's courier
+ * parcel on Monday must not be offered Wednesday's truck that has not left
+ * the factory yet — a reflexive «Ha» would arrive it and could close it
+ * before «Olindi» (the judge's floor finding). The «driver forgot Olindi»
+ * case stays reachable through the /receive list and the logist's card. A
+ * client by id; a marking as written (trimmed, case-folded — the line's own
+ * identity). Newest trips first; at most ten.
+ */
+export async function openStopsForOwner(
+  warehouseId: string,
+  owner: { clientId: string } | { marking: string },
+): Promise<OpenStopForOwner[]> {
+  const ownerSql =
+    'clientId' in owner
+      ? sql`pl.client_id = ${owner.clientId}`
+      : sql`pl.client_id IS NULL AND lower(btrim(pl.marking)) = lower(btrim(${owner.marking}))`;
+  const trips = await db.execute<{ id: string }>(sql`
+    SELECT DISTINCT p.id, p.created_at
+      FROM pickups p
+      JOIN pickup_stops ps ON ps.pickup_id = p.id
+      JOIN pickup_lines pl ON pl.stop_id = ps.id
+     WHERE p.dest_warehouse_id = ${warehouseId}
+       AND p.status IN ('planned', 'on_road', 'arrived')
+       AND ps.collected_at IS NOT NULL
+       AND ${ownerSql}
+       AND NOT ${lineAnsweredSql(sql`pl.id`)}
+     ORDER BY p.created_at DESC
+     LIMIT 10`);
+  if (!trips.length) return [];
+  const ids = trips.map((t) => t.id);
+  const header = new Map(
+    (await db.select().from(pickups).where(inArray(pickups.id, ids))).map((p) => [p.id, p]),
+  );
+  const stopsBy = await stopsFor(ids);
+  const wanted = (l: PickupLineView) =>
+    'clientId' in owner
+      ? l.clientId === owner.clientId
+      : !l.clientId && (l.marking ?? '').trim().toLowerCase() === owner.marking.trim().toLowerCase();
+  const out: OpenStopForOwner[] = [];
+  for (const id of ids) {
+    const trip = header.get(id);
+    if (!trip) continue;
+    for (const stop of stopsBy.get(id) ?? []) {
+      if (!stop.collectedAt) continue;
+      const lines = stop.lines.filter((l) => !l.receipts.length && wanted(l));
+      if (!lines.length) continue;
+      out.push({
+        pickupId: trip.id,
+        code: trip.code,
+        status: trip.status,
+        vehiclePlate: trip.vehiclePlate,
+        stopId: stop.id,
+        seq: stop.seq,
+        factoryName: stop.factory.name,
+        collected: Boolean(stop.collectedAt),
+        lines: lines.map((l) => ({
+          id: l.id,
+          goods: l.goods,
+          factoryBoxes: l.factoryBoxes,
+          driverBoxes: l.driverBoxes,
+          weightKg: l.weightKg,
+          volumeM3: l.volumeM3,
+        })),
+      });
+    }
+  }
+  return out.slice(0, 10);
 }
 
 /**

@@ -131,7 +131,9 @@ export default async function ReceivePage({
         pickup: {
           stopId: found.stopId,
           label: `🏭 ${found.pickupCode} · ${found.factoryName}`,
+          ownerClientId: found.clientId,
           lines: found.lines.map((line) => ({
+            id: line.id,
             goods: line.goods,
             hint: tp('countHint', {
               factory: line.factoryBoxes,
