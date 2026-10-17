@@ -24,7 +24,12 @@ import { CHECKPOINT_KEYS, type CheckpointKey } from './map-data';
  * the truck for ever.
  */
 
-export type CheckpointErrorCode = 'forbidden' | 'not_in_transit' | 'unknown_key' | 'not_on_route';
+export type CheckpointErrorCode =
+  | 'forbidden'
+  | 'not_in_transit'
+  | 'unknown_key'
+  | 'not_on_route'
+  | 'checkpoint_changed';
 
 export class CheckpointError extends Error {
   constructor(public readonly code: CheckpointErrorCode) {
@@ -44,12 +49,20 @@ type Pinner = Pick<Actor, 'id' | 'permissions' | 'warehouseScoped' | 'warehouseI
  * then its two ends, the card's door, the status, the road, the write and the
  * audit. The permission is asked here as well as in the action, because the
  * action's door is the session's and this is the one a test can press.
+ *
+ * `seenKey` is the pin the presser's screen showed ('' = none). A press is a
+ * toggle, so on a page a colleague has pinned since, «Chegarada» meant as
+ * «set» would CLEAR the pin that colleague just set — and the batch board
+ * keeps a page open for a long while. Compared under the lock, it refuses
+ * `checkpoint_changed` instead (the rename's `seenCode`, #1252). Absent =
+ * a caller that does not know (an old page), which keeps the old toggle.
  */
 export async function setTrackingCheckpoint(
   actor: Pinner,
   batchId: string,
   key: string,
   meta: { ip: string | null; userAgent: string | null },
+  seenKey?: string,
 ): Promise<{ key: CheckpointKey; at: string } | null> {
   if (!actor.permissions.has('batches.vehicle_info')) throw new CheckpointError('forbidden');
   if (!(CHECKPOINT_KEYS as readonly string[]).includes(key)) throw new CheckpointError('unknown_key');
@@ -69,6 +82,11 @@ export async function setTrackingCheckpoint(
     if (batch.status !== 'in_transit') throw new CheckpointError('not_in_transit');
 
     const current = (batch.trackingCheckpoint as { key?: unknown } | null)?.key;
+    // A stored key the buttons never write is no pin to a screen either
+    // (the Mashina tab draws it as none), so it reads as '' here.
+    const shown =
+      typeof current === 'string' && (CHECKPOINT_KEYS as readonly string[]).includes(current) ? current : '';
+    if (seenKey !== undefined && shown !== seenKey) throw new CheckpointError('checkpoint_changed');
     let next: { key: CheckpointKey; at: string } | null;
     if (current === pressed) {
       next = null;
