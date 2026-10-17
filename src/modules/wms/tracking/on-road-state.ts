@@ -235,6 +235,20 @@ export function truckRow(input: TruckInput, now: Date, today: string, waits: Bor
   };
 }
 
+/**
+ * How old a fix is, as a person reads it: «hozirgina» under five minutes,
+ * then minutes, hours up to two days, days after. Rounded DOWN, so «1 soat»
+ * never means 31 minutes (the /trucks page printed «0 soat oldin» for a fix
+ * taken a quarter of an hour ago). Pure, beside the row it dates.
+ */
+export function fixAge(minutes: number): { unit: 'now' | 'min' | 'hour' | 'day'; n: number } {
+  const m = Math.max(0, Math.floor(minutes));
+  if (m < 5) return { unit: 'now', n: 0 };
+  if (m < 60) return { unit: 'min', n: m };
+  if (m < 48 * 60) return { unit: 'hour', n: Math.floor(m / 60) };
+  return { unit: 'day', n: Math.floor(m / (24 * 60)) };
+}
+
 const KIND_RANK: Record<TruckKind, number> = {
   stuck: 0,
   overdue: 1,
