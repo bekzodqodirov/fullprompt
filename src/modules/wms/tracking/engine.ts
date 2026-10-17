@@ -18,6 +18,23 @@ export interface RoutePoint {
  */
 export type BorderPost = 'khorgos' | 'yallama';
 
+/**
+ * Every leg the route table builds (`map-data.ts`), which is also every
+ * `map.seg_*` label. Typed on the table's legs, so a new leg is one place to
+ * add and `tracking/place.ts` refuses to compile until the leg has a place.
+ */
+export const LEG_KEYS = [
+  'cn_transit',
+  'to_border',
+  'border_wait',
+  'kz',
+  'uz_queue',
+  'kg',
+  'uz',
+  'transit',
+] as const;
+export type LegKey = (typeof LEG_KEYS)[number];
+
 export interface RouteSegment {
   /** Phase key — also the i18n label key (cn_transit, to_border, border_wait, kz, uz_queue, kg, uz, transit). */
   key: string;
