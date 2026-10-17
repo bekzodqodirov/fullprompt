@@ -279,10 +279,12 @@ describe('the trucks card estimates nothing of its own', () => {
   });
 
   it('the map popup says no «~0–0 kun» and draws no bar for a truck with no schedule', () => {
-    // A generic route is now «no schedule» (eta.ts), so a truck there with a
-    // phone fix reaches the popup with remainingDays [0, 0] and progress 0.
+    // A generic route is «no schedule» (eta.ts), so a truck there with a
+    // phone fix reaches the popup with no % and no date — and a truck pinned
+    // in Uzbekistan has a % but no date (O15). The marker says both
+    // (`progress: null`, `dated`), and the popup asks exactly that.
     const src = stripComments(readFileSync('src/app/(protected)/map/tracking-map.tsx', 'utf8'));
-    expect(src).toContain('selTruck.remainingDays[1] > 0');
-    expect(src).toMatch(/selTruck\.routePoints\.length > 0 && \(\s*<div className="h-2 overflow-hidden/);
+    expect(src).toMatch(/: selTruck\.dated\s*\?/);
+    expect(src).toMatch(/selTruck\.progress !== null && \(\s*<div className="h-2 overflow-hidden/);
   });
 });

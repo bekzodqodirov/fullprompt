@@ -40,9 +40,10 @@ export interface MapTruck {
   fixAgeMinutes: number | null;
   fixSource: string | null;
   segKey: string;
-  progress: number;
+  progress: number | null;
   overdue: boolean;
   remainingDays: [number, number];
+  dated: boolean;
   departedAt: string;
   checkpointKey: string | null;
   vehiclePlate: string | null;
@@ -269,17 +270,18 @@ export function TrackingMap({
           <p className={`text-xs font-semibold ${selTruck.overdue ? 'text-bad' : ''}`}>
             📍 {t(`seg_${selTruck.segKey}`)}
             {/* A truck drawn at its phone's fix with NO schedule behind it
-                (an unmapped pair, or since round B a generic one) carries
-                remainingDays [0, 0] and progress 0 — «~0–0 kun» and an empty
-                bar are inventions, so both are left out: the bot's and the
-                cabinet map's rule (`remainingDays[1] > 0`). */}
+                (an unmapped pair, or since round B a generic one) has no
+                date and no % — «~0–0 kun» and an empty bar are inventions —
+                and a truck pinned in Uzbekistan has no date in the
+                customer's cabinet, so none here (`dated`, O15): the bot's
+                and the cabinet map's rule. */}
             {selTruck.overdue
               ? ` — ${t('overdue')}`
-              : selTruck.remainingDays[1] > 0
+              : selTruck.dated
                 ? ` · ${t('eta', { min: selTruck.remainingDays[0], max: selTruck.remainingDays[1] })}`
                 : ''}
           </p>
-          {selTruck.routePoints.length > 0 && (
+          {selTruck.progress !== null && (
             <div className="h-2 overflow-hidden rounded bg-surface-sunken">
               <div
                 className="h-full rounded bg-brand-600"

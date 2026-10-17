@@ -141,7 +141,15 @@ export async function cabinetMap(clientIds: string[]): Promise<CabinetMapPlace[]
     whIds.length ? db.select().from(warehouses).where(inArray(warehouses.id, whIds)) : Promise.resolve([]),
     batchIds.length
       ? db
-          .select({ batch: batches, originCode: origin.code, originName: origin.name, destCode: dest.code, destName: dest.name })
+          .select({
+            batch: batches,
+            originCode: origin.code,
+            originName: origin.name,
+            originCountry: origin.country,
+            destCode: dest.code,
+            destName: dest.name,
+            destCountry: dest.country,
+          })
           .from(batches)
           .innerJoin(origin, eq(batches.originWarehouseId, origin.id))
           .innerJoin(dest, eq(batches.destWarehouseId, dest.id))
@@ -189,9 +197,13 @@ export async function cabinetMap(clientIds: string[]): Promise<CabinetMapPlace[]
     if (!place) continue;
     // A truck with neither a phone nor a known road has no position — it is
     // still the client's cargo, so it is listed rather than dropped.
-    const marker = await truckFor(b.batch, b.originCode, b.destCode, waits, fixes.get(b.batch.id)).catch(
-      () => null,
-    );
+    const ends = {
+      originCode: b.originCode,
+      destCode: b.destCode,
+      originCountry: b.originCountry,
+      destCountry: b.destCountry,
+    };
+    const marker = await truckFor(b.batch, ends, waits, fixes.get(b.batch.id)).catch(() => null);
     out.push({
       key: place.key,
       kind: 'truck',
@@ -199,7 +211,8 @@ export async function cabinetMap(clientIds: string[]): Promise<CabinetMapPlace[]
       point: marker ? { x: marker.x, y: marker.y } : null,
       live: marker?.live ?? false,
       route: marker?.routePoints ?? [],
-      remainingDays: marker && !marker.overdue && marker.remainingDays[1] > 0 ? marker.remainingDays : null,
+      // Only a date the customer's own cabinet would print (`dated`, O15).
+      remainingDays: marker?.dated ? marker.remainingDays : null,
       ...finish(place),
     });
   }

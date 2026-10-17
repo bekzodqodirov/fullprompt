@@ -149,14 +149,19 @@ describe('the map and the customer read one schedule', () => {
    */
   it('truck.ts asks the shared assembler and does not estimate on its own', () => {
     const src = readFileSync('src/modules/wms/tracking/truck.ts', 'utf8');
-    expect(src).toContain('scheduleEstimate(');
+    expect(src).toContain('placeTruck(');
     expect(src).not.toContain('estimateTransit(');
+    expect(src).not.toContain('scheduleEstimate(');
     expect(src).not.toContain('CHECKPOINT_SEGMENTS');
+    // One projection: the dot a fix is drawn at is the point placeTruck laid
+    // on the road, never a second snap that could disagree with the %.
+    expect(src).not.toContain('snapToRoute(');
   });
 
   it('the cabinet asks the same one', () => {
     const src = readFileSync('src/modules/wms/client-cabinet/service.ts', 'utf8');
-    expect(src).toContain('scheduleEstimate(');
+    expect(src).toContain('placeTruck(');
+    expect(src).not.toContain('scheduleEstimate(');
     expect(src).toContain('etaWindow(');
   });
 });

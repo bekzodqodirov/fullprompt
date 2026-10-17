@@ -52,9 +52,17 @@ afterAll(async () => {
   await pgClient.end();
 });
 
+/** Two warehouses the route table has never heard of. */
+const unmapped = () => ({
+  originCode: `QO${STAMP.slice(-4)}`,
+  destCode: `QD${STAMP.slice(-4)}`,
+  originCountry: null,
+  destCountry: null,
+});
+
 describe('a truck between unmapped warehouses', () => {
   it('is drawn at its phone fix — live GPS needs no route table', async () => {
-    const truck = await truckFor(batchRow, `QO${STAMP.slice(-4)}`, `QD${STAMP.slice(-4)}`, {}, {
+    const truck = await truckFor(batchRow, unmapped(), {}, {
       batchId: batchRow.id,
       lat: 40.1,
       lon: 72.5,
@@ -73,12 +81,13 @@ describe('a truck between unmapped warehouses', () => {
 
   it('stays off the map only when there is NOTHING to draw', async () => {
     expect(
-      await truckFor(batchRow, `QO${STAMP.slice(-4)}`, `QD${STAMP.slice(-4)}`, {}, undefined),
+      await truckFor(batchRow, unmapped(), {}, undefined),
     ).toBeNull();
   });
 
   it('a mapped pair still rides the estimate when the fix is stale', async () => {
-    const truck = await truckFor(batchRow, 'YW', 'AND', {}, {
+    const yiwuAndijan = { originCode: 'YW', destCode: 'AND', originCountry: 'CN', destCountry: 'UZ' };
+    const truck = await truckFor(batchRow, yiwuAndijan, {}, {
       batchId: batchRow.id,
       lat: 40.1,
       lon: 72.5,
