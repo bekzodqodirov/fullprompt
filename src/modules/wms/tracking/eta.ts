@@ -1,5 +1,18 @@
-import { estimateTransit, segMid, type BorderPost, type RouteDef, type TransitEstimate } from './engine';
+import {
+  chordDeg,
+  cumulativeLengths,
+  estimateTransit,
+  FRESH_MINUTES,
+  projectOnRoute,
+  segMid,
+  snapToRoute,
+  type BorderPost,
+  type RouteDef,
+  type RoutePoint,
+  type TransitEstimate,
+} from './engine';
 import { CHECKPOINT_KEYS, CHECKPOINT_SEGMENTS, routeFor, type CheckpointKey } from './map-data';
+import { zoneOfGenericRoad, zoneOfLeg, zoneOfRoute, type RoadZone } from './place';
 
 /**
  * «Yo'lga chiqgandan keyin necha kunda taxminiy yetib keladi» — the owner's
@@ -240,27 +253,311 @@ export function scheduleEstimate(
 ): ScheduleEstimate | null {
   const base = routeFor(originCode, destCode);
   if (!base || isGenericRoute(base) || !departedAt) return null;
+  return walkFrom(base, pinAnchor(base, checkpoint) ?? departureAnchor(departedAt), waits, departedAt, now);
+}
+
+/**
+ * Where a walk starts: a leg and the moment the truck BEGAN it. `pinned` =
+ * the evidence puts the truck IN that leg, which `routeWithWaits` reads as
+ * «has not crossed» when the leg is a queue.
+ */
+interface Anchor {
+  segIdx: number;
+  legStartMs: number;
+  pinned: boolean;
+  kind: 'departure' | 'pin' | 'fix';
+}
+
+const departureAnchor = (departedAt: Date): Anchor => ({
+  segIdx: 0,
+  legStartMs: departedAt.getTime(),
+  pinned: false,
+  kind: 'departure',
+});
+
+/** The logist's pin as a walk's start: its leg, begun at the press. */
+function pinAnchor(route: RouteDef, checkpoint: unknown): Anchor | null {
   const cp = checkpoint as { key?: unknown; at?: unknown } | null;
   const segKey =
     typeof cp?.key === 'string' && Object.hasOwn(CHECKPOINT_SEGMENTS, cp.key)
       ? CHECKPOINT_SEGMENTS[cp.key as CheckpointKey]
       : undefined;
-  const idx = segKey ? base.segments.findIndex((s) => s.key === segKey) : -1;
+  const idx = segKey ? route.segments.findIndex((s) => s.key === segKey) : -1;
   const atMs = typeof cp?.at === 'string' ? new Date(cp.at).getTime() : Number.NaN;
-  const anchored = idx >= 0 && Number.isFinite(atMs);
+  return idx >= 0 && Number.isFinite(atMs) ? { segIdx: idx, legStartMs: atMs, pinned: true, kind: 'pin' } : null;
+}
+
+/**
+ * THE walk: the typed queues counted from where the anchor puts the truck,
+ * then the engine from that leg — the one arithmetic every reader's date
+ * and % come out of. A departure walks from the start with no anchor, the
+ * way the schedule always did.
+ */
+function walkFrom(
+  base: RouteDef,
+  anchor: Anchor,
+  waits: BorderHours,
+  departedAt: Date,
+  now: Date,
+): ScheduleEstimate {
   const route = routeWithWaits(
     base,
-    anchored
-      ? { segIdx: idx, atMs, pinned: true }
-      : { segIdx: 0, atMs: departedAt.getTime(), pinned: false },
+    { segIdx: anchor.segIdx, atMs: anchor.legStartMs, pinned: anchor.pinned },
     waits,
   );
   const est = estimateTransit(
     route,
     (now.getTime() - departedAt.getTime()) / HOUR_MS,
-    anchored ? { segKey: segKey!, elapsedInSegHours: (now.getTime() - atMs) / HOUR_MS } : null,
+    anchor.kind === 'departure'
+      ? null
+      : {
+          segKey: route.segments[anchor.segIdx]!.key,
+          segIndex: anchor.segIdx,
+          elapsedInSegHours: (now.getTime() - anchor.legStartMs) / HOUR_MS,
+        },
   );
   return { route, est };
+}
+
+/**
+ * How far off the drawn road a fix may sit and still say WHERE on it the
+ * truck is. Wide on purpose and apart from the map's 0.15° drawing snap: the
+ * Horgos road is still hand-drawn town chains whose chords run up to 2° off
+ * the real road (measured on the stored Yiwu road), and the question here is
+ * «which leg, how far along», not «where to paint the dot».
+ */
+export const PLACE_TOLERANCE_DEG = 2.5;
+
+/**
+ * A fix this near a queue's post, on the road LEADING to it, is in the queue
+ * (Irkeshtam, Khorgos, Yallama — every stationary leg, typed or not). The far
+ * side is the next leg: a truck just past Yallama is in Uzbekistan, and a
+ * radius both ways read the first quarter of Yallama → Tashkent as «navbatda
+ * with 3-4 days to go».
+ */
+export const QUEUE_RADIUS_DEG = 0.05;
+
+/**
+ * The driver's newest fix as the placement reads it (`latestPositions`): its
+ * time is `least(recorded_at, received_at)`, so a phone whose clock runs
+ * ahead cannot make a fix newer than the moment it reached us.
+ */
+export interface PlacementFix {
+  lat: number;
+  lon: number;
+  recordedAt: Date;
+  /** 'device' — the driver's phone; 'manual' — a position the logist typed. */
+  source: string;
+}
+
+export type PlaceSource = 'gps' | 'manual' | 'pin' | 'schedule';
+
+/**
+ * Where a truck on the road is — ONE answer for the batch board, the
+ * dashboard's trucks card, the truck card, the map, the bot and the
+ * customer's cabinet (owner, 2026-10-17, 4a/5a).
+ */
+export interface TruckPlace {
+  /** The place in his four words; null = «Joyi aniq emas». */
+  zone: RoadZone | null;
+  /** The leg (`map.seg_*`), when one can be named. */
+  segKey: string | null;
+  /** 0..1 of the road's LENGTH behind the truck; null = nobody can say. */
+  progress: number | null;
+  /** Null when overdue or when there is no road to walk. */
+  remainingHours: [number, number] | null;
+  /** The walk from the newest evidence is spent. */
+  overdue: boolean;
+  /** What placed it; null = no road, no pin, no fix. */
+  source: PlaceSource | null;
+  /** When that evidence was taken (ISO); null for the bare schedule. */
+  evidenceAt: string | null;
+  /** The fix that placed it is within `FRESH_MINUTES` — the map draws the dot AT it. */
+  fresh: boolean;
+  /** Where to draw the truck (lon/lat); null = nowhere honest. */
+  point: RoutePoint | null;
+  /** The road walked (typed queues in place); null = no schedule. */
+  route: RouteDef | null;
+}
+
+export interface PlaceInput {
+  originCode: string;
+  destCode: string;
+  originCountry: string | null;
+  destCountry: string | null;
+  departedAt: Date | null;
+  /** The raw `tracking_checkpoint` jsonb — `pinOnRoute` judges it here. */
+  checkpoint: unknown;
+  /** The newest fix, if any; absent = nobody asked. */
+  fix?: PlacementFix | null;
+}
+
+const fixSource = (fix: PlacementFix): PlaceSource => (fix.source === 'manual' ? 'manual' : 'gps');
+
+/**
+ * The fix as a walk's start, or null when it says nothing about this road: a
+ * fix from before the departure (the yard), or one off the road beyond the
+ * tolerance (a phone left behind, a detour no leg describes).
+ *
+ * On a moving leg the truck is at the fix's DISTANCE fraction of it and began
+ * it that share of the leg's typical hours earlier. Within the radius of a
+ * queue's post, on the leg leading to it, it is IN the queue — entered at the
+ * pin's moment if the pin names that queue, else the schedule's own entry if
+ * it came before the fix, else the fix's moment, and never before the
+ * departure: one fix cannot say how long the truck has stood there, and the
+ * remaining wait is priced by the hours from entry (`routeWithWaits`).
+ */
+function fixAnchor(
+  base: RouteDef,
+  fix: PlacementFix,
+  prior: Anchor,
+  waits: BorderHours,
+  departedMs: number,
+): (Anchor & { along: number; snapped: RoutePoint | null }) | null {
+  const fixMs = fix.recordedAt.getTime();
+  if (!Number.isFinite(fixMs) || fixMs < departedMs) return null;
+  const at = { x: fix.lon, y: fix.lat };
+  const proj = projectOnRoute(base.points, at);
+  if (!proj || proj.offDeg > PLACE_TOLERANCE_DEG) return null;
+  const g = base.segments.findIndex((s) => s.span[0] <= proj.chord && proj.chord < s.span[1]);
+  if (g < 0) return null;
+  const cum = cumulativeLengths(base.points);
+  const snapped = snapToRoute(base.points, at);
+
+  const queue = base.segments[g + 1];
+  if (queue && queue.span[0] === queue.span[1] && chordDeg(at, base.points[queue.span[0]]!) <= QUEUE_RADIUS_DEG) {
+    const q = g + 1;
+    let entry: number | null = null;
+    if (prior.segIdx === q) entry = prior.legStartMs;
+    else if (prior.segIdx < q) {
+      const walked = routeWithWaits(
+        base,
+        { segIdx: prior.segIdx, atMs: prior.legStartMs, pinned: prior.pinned },
+        waits,
+      );
+      entry = prior.legStartMs;
+      for (let i = prior.segIdx; i < q; i += 1) entry += segMid(walked.segments[i]!.hours) * HOUR_MS;
+    }
+    const entered = Math.max(departedMs, Math.min(fixMs, entry ?? fixMs));
+    return {
+      segIdx: q,
+      legStartMs: entered,
+      pinned: true,
+      kind: 'fix',
+      along: cum[queue.span[0]]!,
+      snapped,
+    };
+  }
+
+  const seg = base.segments[g]!;
+  const legLen = cum[seg.span[1]]! - cum[seg.span[0]]!;
+  const frac = legLen > 0 ? Math.min(1, Math.max(0, (proj.along - cum[seg.span[0]]!) / legLen)) : 0;
+  return {
+    segIdx: g,
+    legStartMs: fixMs - frac * segMid(seg.hours) * HOUR_MS,
+    pinned: false,
+    kind: 'fix',
+    along: proj.along,
+    snapped,
+  };
+}
+
+/**
+ * Where the truck is: the schedule walked from the NEWEST evidence — the
+ * departure, the logist's pin, or the driver's fix (docs/PARTIYA-DOSKASI.md
+ * §2). One mechanism, the pin's: a fix anchors the walk exactly as a pin
+ * does, at its own point instead of a leg's start, so a stale fix keeps the
+ * truck where it was last seen and walking — it never jumps back to the
+ * departure schedule because a phone went quiet.
+ *
+ * The newest evidence wins. A pin newer than the fix that names the fix's own
+ * leg adds nothing the fix did not say and keeps the fix's position: a coarse
+ * «in Kazakhstan» must not drag a truck back to the start of Kazakhstan.
+ *
+ * `waits` is REQUIRED for the reason `scheduleEstimate` states, and in second
+ * place so the wire fence can read it.
+ */
+export function placeTruck(input: PlaceInput, waits: BorderHours, now: Date = new Date()): TruckPlace {
+  const pin = pinOnRoute(input.checkpoint, input.originCode, input.destCode, input.destCountry);
+  const fix = input.fix ?? null;
+  const base = routeFor(input.originCode, input.destCode);
+
+  // No road to walk — an unmapped pair, a generic straight line, a truck with
+  // no departure stamp. Still somewhere when its two ends say so, or when the
+  // logist pinned it (a generic road offers only «in Uzbekistan»).
+  if (!base || isGenericRoute(base) || !input.departedAt) {
+    const pinLeg = pin ? CHECKPOINT_SEGMENTS[pin.key] : null;
+    const fixMs = fix?.recordedAt.getTime() ?? Number.NaN;
+    const byFix = fix !== null && Number.isFinite(fixMs) && (!pin || fixMs >= new Date(pin.at).getTime());
+    return {
+      zone: pinLeg
+        ? zoneOfLeg(pinLeg)
+        : base && !isGenericRoute(base)
+          ? zoneOfRoute(base)
+          : zoneOfGenericRoad(input.originCountry, input.destCountry),
+      segKey: pinLeg,
+      progress: null,
+      remainingHours: null,
+      overdue: false,
+      source: byFix ? fixSource(fix) : pin ? 'pin' : null,
+      evidenceAt: byFix ? fix.recordedAt.toISOString() : (pin?.at ?? null),
+      fresh: byFix && now.getTime() - fixMs <= FRESH_MINUTES * 60_000,
+      point: fix ? { x: fix.lon, y: fix.lat } : null,
+      route: null,
+    };
+  }
+
+  const departedMs = input.departedAt.getTime();
+  const pinned = pinAnchor(base, pin);
+  const prior = pinned ?? departureAnchor(input.departedAt);
+  const byFix = fix ? fixAnchor(base, fix, prior, waits, departedMs) : null;
+  const fixMs = fix?.recordedAt.getTime() ?? Number.NaN;
+  const anchor: Anchor & Partial<{ along: number; snapped: RoutePoint | null }> =
+    byFix && (!pinned || fixMs >= pinned.legStartMs || byFix.segIdx === pinned.segIdx) ? byFix : prior;
+
+  const { route, est } = walkFrom(base, anchor, waits, input.departedAt, now);
+  const cum = cumulativeLengths(base.points);
+  const total = cum[cum.length - 1] ?? 0;
+  const share = (along: number) => (total > 0 ? Math.min(1, Math.max(0, along / total)) : null);
+  const fresh = anchor.kind === 'fix' && now.getTime() - fixMs <= FRESH_MINUTES * 60_000;
+  const source: PlaceSource =
+    anchor.kind === 'fix' ? fixSource(fix!) : anchor.kind === 'pin' ? 'pin' : 'schedule';
+  const evidenceAt =
+    anchor.kind === 'fix' ? fix!.recordedAt.toISOString() : anchor.kind === 'pin' ? (pin?.at ?? null) : null;
+  const fixPoint = anchor.kind === 'fix' ? (anchor.snapped ?? { x: fix!.lon, y: fix!.lat }) : null;
+
+  if (est.overdue) {
+    // The walk ran out: no date. The truck is where its newest evidence last
+    // put it — a fix's point, a pin's leg — and with nothing but the
+    // departure, in the road's one place if the road has only one.
+    const leg = anchor.kind === 'departure' ? null : base.segments[anchor.segIdx]!;
+    return {
+      zone: leg ? zoneOfLeg(leg.key) : zoneOfRoute(base),
+      segKey: leg?.key ?? null,
+      progress:
+        anchor.kind === 'fix' ? share(anchor.along!) : leg ? share(cum[leg.span[0]]!) : null,
+      remainingHours: null,
+      overdue: true,
+      source,
+      evidenceAt,
+      fresh,
+      point: fixPoint ?? (leg ? base.points[leg.span[0]]! : { x: est.x, y: est.y }),
+      route,
+    };
+  }
+
+  return {
+    zone: zoneOfLeg(est.segKey),
+    segKey: est.segKey,
+    progress: est.progress,
+    remainingHours: est.remainingHours,
+    overdue: false,
+    source,
+    evidenceAt,
+    fresh,
+    point: fresh && fixPoint ? fixPoint : { x: est.x, y: est.y },
+    route,
+  };
 }
 
 export interface EtaWindow {
@@ -277,7 +574,10 @@ export interface EtaWindow {
  * already have arrived has no honest date left, and «taxminan kecha» is worse
  * than saying nothing while the office finds out.
  */
-export function etaWindow(est: TransitEstimate, now: Date = new Date()): EtaWindow | null {
+export function etaWindow(
+  est: Pick<TransitEstimate, 'overdue' | 'remainingHours'>,
+  now: Date = new Date(),
+): EtaWindow | null {
   if (est.overdue) return null;
   const [min, max] = est.remainingHours;
   return {

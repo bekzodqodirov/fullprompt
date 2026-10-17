@@ -396,7 +396,14 @@
       "note": "Cargo profit goes to the seller on the day of the receipt; upsale is already inside the cargo price and is not added.",
       "truncated": "upsale is incomplete — too many offers in the period.",
       "inactive": "inactive"
-    }
+    },
+    "truckEstimateGps": "estimate from GPS and the schedule",
+    "truckFixGps": "📡 GPS · {ago}",
+    "truckFixManual": "📍 typed position · {ago}",
+    "agoNow": "just now",
+    "agoMin": "{n} min ago",
+    "agoHour": "{n} h ago",
+    "agoDay": "{n} d ago"
   },
   "inventory": {
     "title": "Stocktake",
@@ -1527,7 +1534,8 @@
       "forbidden": "No access to this truck",
       "not_in_transit": "The truck is not on the road — pins are for trucks in transit",
       "unknown_key": "No such pin",
-      "not_on_route": "This truck does not pass there — choose a pin on its own road"
+      "not_on_route": "This truck does not pass there — choose a pin on its own road",
+      "checkpoint_changed": "The pin changed meanwhile — refresh the page and press again"
     },
     "rename": {
       "codeLabel": "New name",
@@ -5905,5 +5913,21 @@
       "notFound": "Record not found — reload the page.",
       "notATwin": "These records are no longer a pair — reload the page."
     }
+  },
+  "place": {
+    "road": {
+      "cn": "Inside China",
+      "border": "At the border",
+      "transit": "In transit",
+      "uz": "In Uzbekistan"
+    },
+    "unknown": "Location unknown",
+    "wh": {
+      "cn": "Inland China",
+      "border": "Border",
+      "uz": "Uzbekistan"
+    },
+    "kg": "Kyrgyzstan",
+    "kz": "Kazakhstan"
   }
 }

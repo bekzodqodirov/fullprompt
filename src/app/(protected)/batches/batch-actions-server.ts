@@ -689,6 +689,10 @@ export async function setTrackingCheckpointAction(
 ): Promise<CheckpointActionState> {
   const batchId = String(formData.get('batchId') ?? '');
   const key = String(formData.get('key') ?? '');
+  // The pin the presser's screen showed ('' = none) — absent only on a post
+  // from a page older than this field, which keeps the old toggle.
+  const seen = formData.get('seenKey');
+  const seenKey = seen === null ? undefined : String(seen);
   let door: Awaited<ReturnType<typeof authorizeOnBatch>>;
   try {
     door = await authorizeOnBatch('batches.vehicle_info', batchId);
@@ -701,13 +705,15 @@ export async function setTrackingCheckpointAction(
   const meta = await requestMeta();
   const { setTrackingCheckpoint, CheckpointError } = await import('@/modules/wms/tracking/checkpoint');
   try {
-    await setTrackingCheckpoint(door.actor, batchId, key, meta);
+    await setTrackingCheckpoint(door.actor, batchId, key, meta, seenKey);
   } catch (err) {
     if (err instanceof CheckpointError) return { error: err.code };
     throw err;
   }
-  // The pin moves the header's ETA on every tab of the card, not only this one.
+  // The pin moves the header's ETA on every tab of the card, not only this
+  // one — and the truck's section on the board, which presses it too.
   revalidatePath(`/batches/${batchId}`, 'layout');
+  revalidatePath('/batches');
   revalidatePath('/map');
   return { ok: true };
 }

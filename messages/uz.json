@@ -396,7 +396,14 @@
       "note": "Yuk foydasi — prixod qabul qilingan kundagi sotuvchiga; upsale yuk narxining ichida, qo‘shilmaydi.",
       "truncated": "upsale to‘liq emas — davrda takliflar juda ko‘p.",
       "inactive": "faol emas"
-    }
+    },
+    "truckEstimateGps": "GPS va jadval bo‘yicha taxmin",
+    "truckFixGps": "📡 GPS · {ago}",
+    "truckFixManual": "📍 qo‘lda kiritilgan joy · {ago}",
+    "agoNow": "hozirgina",
+    "agoMin": "{n} daqiqa oldin",
+    "agoHour": "{n} soat oldin",
+    "agoDay": "{n} kun oldin"
   },
   "inventory": {
     "title": "Inventarizatsiya",
@@ -1527,7 +1534,8 @@
       "forbidden": "Bu mashinaga ruxsatingiz yo‘q",
       "not_in_transit": "Mashina yo‘lda emas — belgi faqat yo‘ldagi mashinaga qo‘yiladi",
       "unknown_key": "Bunday belgi yo‘q",
-      "not_on_route": "Bu mashina u yerdan o‘tmaydi — o‘z yo‘lining belgisini tanlang"
+      "not_on_route": "Bu mashina u yerdan o‘tmaydi — o‘z yo‘lining belgisini tanlang",
+      "checkpoint_changed": "Bu orada belgi o‘zgardi — sahifani yangilab, qaytadan bosing"
     },
     "rename": {
       "codeLabel": "Yangi nom",
@@ -5905,5 +5913,21 @@
       "notFound": "Yozuv topilmadi — sahifani yangilang.",
       "notATwin": "Bu yozuvlar endi juft emas — sahifani yangilang."
     }
+  },
+  "place": {
+    "road": {
+      "cn": "Xitoy ichida",
+      "border": "Chegarada",
+      "transit": "Tranzitda",
+      "uz": "O‘zbekistonda"
+    },
+    "unknown": "Joyi aniq emas",
+    "wh": {
+      "cn": "Ichki Xitoy",
+      "border": "Chegara",
+      "uz": "O‘zbekiston"
+    },
+    "kg": "Qirg‘iziston",
+    "kz": "Qozog‘iston"
   }
 }

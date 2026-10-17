@@ -1,7 +1,8 @@
 import { isMovingStage, truckStage, type TruckStage } from '../client-cabinet/stages';
 import { daysSince } from '../reports/dashboard-math';
-import { etaWindow, pinOnRoute, scheduleEstimate, type BorderHours } from './eta';
+import { etaWindow, pinOnRoute, placeTruck, type BorderHours, type PlaceSource, type PlacementFix } from './eta';
 import type { CheckpointKey } from './map-data';
+import type { RoadZone } from './place';
 
 /**
  * «Yo'ldagi mashinalar» — what the owner's dashboard says about each truck,
@@ -70,7 +71,12 @@ export interface TruckInput {
   /** What DEPARTED on the truck (void boxes out) — the report's own count. */
   boxCount: number;
   awaitingUnload?: number | null;
-  lastPositionAt?: Date | null;
+  /**
+   * The driver's newest fix (`latestPositions`). It PLACES the truck (his 5a,
+   * `placeTruck`), so it is read for every truck before the rank — a fix can
+   * move a truck from «overdue» back onto the road and change the counts.
+   */
+  fix?: PlacementFix | null;
 }
 
 export interface TruckRow {
@@ -84,8 +90,20 @@ export interface TruckRow {
   kind: TruckKind;
   /** The customer's rung for this truck; null once it has arrived. */
   stage: TruckStage | null;
-  /** round(progress × 100) by the schedule's TIME; null: no/generic schedule, arrived, overdue. */
+  /**
+   * round(progress × 100) — the road's LENGTH behind the truck (4a), from the
+   * newest evidence (`placeTruck`). Null: no/generic schedule, arrived, and an
+   * overdue truck nothing but its departure places.
+   */
   roadPct: number | null;
+  /** Where on the road and on which leg (`placeTruck`); null on an arrived truck. */
+  zone: RoadZone | null;
+  segKey: string | null;
+  /** What placed it — the phone, a typed position, the pin, the schedule — and when. */
+  source: PlaceSource | null;
+  evidenceAt: string | null;
+  /** The fix that placed it is within FRESH_MINUTES. */
+  fresh: boolean;
   /** Only on a MOVING rung (`isMovingStage`), with a schedule, not overdue. */
   eta: { fromIso: string; toIso: string } | null;
   departedAt: Date | null;
@@ -140,7 +158,7 @@ export function truckRow(input: TruckInput, now: Date, today: string, waits: Bor
     departedBoxes: input.boxCount,
     checkpoint,
     pinDays: checkpoint ? daysSince(checkpoint.at, today) : null,
-    lastPositionAt: input.lastPositionAt ?? null,
+    lastPositionAt: input.fix?.recordedAt ?? null,
   };
 
   if (arrived) {
@@ -150,6 +168,11 @@ export function truckRow(input: TruckInput, now: Date, today: string, waits: Bor
       kind: isStuckAtGate(input, today) ? 'stuck' : 'unloading',
       stage: null,
       roadPct: null,
+      zone: null,
+      segKey: null,
+      source: null,
+      evidenceAt: null,
+      fresh: false,
       eta: null,
       days,
       awaitingUnload: input.awaitingUnload ?? null,
@@ -165,31 +188,65 @@ export function truckRow(input: TruckInput, now: Date, today: string, waits: Bor
     customsCleared: input.customsClearedAt !== null,
   });
   const days = daysSince(input.departedAt, today);
-  const off = { ...base, stage, days, awaitingUnload: null };
 
-  // The ONE assembler: an unmapped pair, a generic straight line and a truck
-  // with no departure stamp all come back null here — «no schedule».
-  const schedule = scheduleEstimate(
-    input.originCode,
-    input.destCode,
-    input.departedAt,
-    checkpoint,
+  // The ONE assembler (`placeTruck`): an unmapped pair, a generic straight
+  // line and a truck with no departure stamp come back with no road walked
+  // — «no schedule» — and every other truck is placed by its newest
+  // evidence: the departure, the pin, or the driver's fix.
+  const place = placeTruck(
+    {
+      originCode: input.originCode,
+      destCode: input.destCode,
+      originCountry: input.originCountry,
+      destCountry: input.destCountry,
+      departedAt: input.departedAt,
+      checkpoint: input.trackingCheckpoint,
+      fix: input.fix ?? null,
+    },
     waits,
     now,
   );
-  if (!schedule) {
+  const off = {
+    ...base,
+    stage,
+    days,
+    awaitingUnload: null,
+    zone: place.zone,
+    segKey: place.segKey,
+    source: place.source,
+    evidenceAt: place.evidenceAt,
+    fresh: place.fresh,
+  };
+  const pct = place.progress === null ? null : Math.round(place.progress * 100);
+  if (!place.route) {
     return { ...off, kind: 'no_schedule', roadPct: null, eta: null, arrivalOrder: null };
   }
-  if (schedule.est.overdue) {
-    return { ...off, kind: 'overdue', roadPct: null, eta: null, arrivalOrder: null };
+  if (place.overdue || !place.remainingHours) {
+    // Spent: no date. The bar stays where the newest evidence last put the
+    // truck, and is absent when only the departure speaks.
+    return { ...off, kind: 'overdue', roadPct: pct, eta: null, arrivalOrder: null };
   }
   return {
     ...off,
     kind: 'on_road',
-    roadPct: Math.round(schedule.est.progress * 100),
-    eta: isMovingStage(stage) ? etaWindow(schedule.est, now) : null,
-    arrivalOrder: schedule.est.remainingHours[0],
+    roadPct: pct,
+    eta: isMovingStage(stage) ? etaWindow({ overdue: false, remainingHours: place.remainingHours }, now) : null,
+    arrivalOrder: place.remainingHours[0],
   };
+}
+
+/**
+ * How old a fix is, as a person reads it: «hozirgina» under five minutes,
+ * then minutes, hours up to two days, days after. Rounded DOWN, so «1 soat»
+ * never means 31 minutes (the /trucks page printed «0 soat oldin» for a fix
+ * taken a quarter of an hour ago). Pure, beside the row it dates.
+ */
+export function fixAge(minutes: number): { unit: 'now' | 'min' | 'hour' | 'day'; n: number } {
+  const m = Math.max(0, Math.floor(minutes));
+  if (m < 5) return { unit: 'now', n: 0 };
+  if (m < 60) return { unit: 'min', n: m };
+  if (m < 48 * 60) return { unit: 'hour', n: Math.floor(m / 60) };
+  return { unit: 'day', n: Math.floor(m / (24 * 60)) };
 }
 
 const KIND_RANK: Record<TruckKind, number> = {

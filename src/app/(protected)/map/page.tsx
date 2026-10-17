@@ -125,6 +125,8 @@ export default async function MapPage({
       batch: batches,
       originCode: origin.code,
       destCode: dest.code,
+      originCountry: origin.country,
+      destCountry: dest.country,
     })
     .from(batches)
     .innerJoin(origin, eq(batches.originWarehouseId, origin.id))
@@ -155,8 +157,8 @@ export default async function MapPage({
   const waits = await loadBorderHours();
 
   const trucks: MapTruck[] = [];
-  for (const { batch, originCode, destCode } of transit) {
-    const truck = await truckFor(batch, originCode, destCode, waits, fixes.get(batch.id));
+  for (const { batch, ...ends } of transit) {
+    const truck = await truckFor(batch, ends, waits, fixes.get(batch.id));
     if (truck) trucks.push(truck);
   }
 

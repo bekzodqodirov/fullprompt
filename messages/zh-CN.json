@@ -396,7 +396,14 @@
       "note": "货物利润记在收货当天的销售员名下；upsale已包含在货价中，不再相加。",
       "truncated": "upsale不完整——该期间报价过多。",
       "inactive": "已停用"
-    }
+    },
+    "truckEstimateGps": "按GPS和时刻表估计",
+    "truckFixGps": "📡 GPS · {ago}",
+    "truckFixManual": "📍 手动录入位置 · {ago}",
+    "agoNow": "刚刚",
+    "agoMin": "{n}分钟前",
+    "agoHour": "{n}小时前",
+    "agoDay": "{n}天前"
   },
   "inventory": {
     "title": "盘点",
@@ -1527,7 +1534,8 @@
       "forbidden": "无权操作此车",
       "not_in_transit": "车辆不在途中——只能给在途车辆打点",
       "unknown_key": "没有这个位置标记",
-      "not_on_route": "该车不经过此处——请选择其路线上的标记"
+      "not_on_route": "该车不经过此处——请选择其路线上的标记",
+      "checkpoint_changed": "标记已被他人更改 — 请刷新页面后重试"
     },
     "rename": {
       "codeLabel": "新名称",
@@ -5905,5 +5913,21 @@
       "notFound": "未找到记录——请刷新页面。",
       "notATwin": "这两条记录已不再配对——请刷新页面。"
     }
+  },
+  "place": {
+    "road": {
+      "cn": "中国境内",
+      "border": "在边境",
+      "transit": "过境途中",
+      "uz": "在乌兹别克斯坦"
+    },
+    "unknown": "位置不明",
+    "wh": {
+      "cn": "中国内地",
+      "border": "边境",
+      "uz": "乌兹别克斯坦"
+    },
+    "kg": "吉尔吉斯斯坦",
+    "kz": "哈萨克斯坦"
   }
 }

@@ -36,6 +36,7 @@ export function CheckpointButtons({
     not_in_transit: t('checkpointErrors.not_in_transit'),
     unknown_key: t('checkpointErrors.unknown_key'),
     not_on_route: t('checkpointErrors.not_on_route'),
+    checkpoint_changed: t('checkpointErrors.checkpoint_changed'),
   };
   const refusal = state && 'error' in state ? ERRORS[state.error] : null;
 
@@ -48,6 +49,9 @@ export function CheckpointButtons({
             <form key={key} action={formAction} className="flex-1">
               <input type="hidden" name="batchId" value={batchId} />
               <input type="hidden" name="key" value={key} />
+              {/* What this screen showed, so a press never clears a pin a
+                  colleague set since (`checkpoint_changed`). */}
+              <input type="hidden" name="seenKey" value={current ?? ''} />
               <button
                 type="submit"
                 disabled={pending}

@@ -1,5 +1,5 @@
 import { ROAD_LEG_POINTS } from './road-geometry';
-import type { BorderPost, RouteDef, RoutePoint, RouteSegment } from './engine';
+import type { BorderPost, LegKey, RouteDef, RoutePoint, RouteSegment } from './engine';
 
 /**
  * Corridor geometry (owner's routes). Points are REAL lon/lat (x = lon,
@@ -167,7 +167,7 @@ const W = {
  * border wait.
  */
 interface RouteLeg {
-  key: string;
+  key: LegKey;
   hours: [number, number];
   points: RoutePoint[];
   /** A queue the logist types by hand replaces this leg's hours (`BORDER_POSTS`). */

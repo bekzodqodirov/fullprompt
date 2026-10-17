@@ -690,13 +690,17 @@ function Lot({
         <div className="cab-road" data-testid="cab-road">
           <div className="cab-road-ends">
             <span>{road.fromPlace}</span>
-            <b>{Math.round(road.progress * 100)}%</b>
+            {road.progress !== null && <b>{Math.round(road.progress * 100)}%</b>}
             <span>{road.toPlace}</span>
           </div>
-          <div className="cab-road-bar">
-            <i style={{ width: `${Math.round(road.progress * 100)}%` }} />
-            <u style={{ left: `${Math.round(road.progress * 100)}%` }}>🚛</u>
-          </div>
+          {/* No % is no bar: a truck past its schedule that nothing places
+              is not drawn at 100 %, which reads «arrived». */}
+          {road.progress !== null && (
+            <div className="cab-road-bar">
+              <i style={{ width: `${Math.round(road.progress * 100)}%` }} />
+              <u style={{ left: `${Math.round(road.progress * 100)}%` }}>🚛</u>
+            </div>
+          )}
           {/* The place is INSIDE the estimate (CX-9): a date on the Kashgar
               leg must not read as the day it reaches Tashkent. The bot says
               the same sentence. */}

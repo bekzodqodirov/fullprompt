@@ -331,7 +331,13 @@ async function lookupClient(
   const destWh = alias(warehouses, 'dest_wh');
   const transitBatches = transitBatchIds.length
     ? await db
-        .select({ batch: batches, originCode: originWh.code, destCode: destWh.code })
+        .select({
+          batch: batches,
+          originCode: originWh.code,
+          destCode: destWh.code,
+          originCountry: originWh.country,
+          destCountry: destWh.country,
+        })
         .from(batches)
         .innerJoin(originWh, eq(batches.originWarehouseId, originWh.id))
         .innerJoin(destWh, eq(batches.destWarehouseId, destWh.id))
@@ -451,17 +457,17 @@ async function lookupClient(
   for (const tr of transit.values()) {
     const ends = tr.batchId ? endsById.get(tr.batchId) : undefined;
     const marker = ends
-      ? await truckFor(ends.batch, ends.originCode, ends.destCode, waits, fixes.get(ends.batch.id)).catch(
-          () => null,
-        )
+      ? await truckFor(ends.batch, ends, waits, fixes.get(ends.batch.id)).catch(() => null)
       : null;
     // A live fix on a road the schedule does not know has no clock at all
-    // (`remainingDays` [0, 0]) — say nothing rather than «late».
+    // (`remainingDays` [0, 0]) — say nothing rather than «late». Days only
+    // where a date may be printed (`dated`: O15 — a truck pinned in
+    // Uzbekistan has no date in the customer's cabinet, so none here).
     const days = !marker
       ? ''
       : marker.overdue
         ? ' · ⏱ muddatdan oshdi'
-        : marker.remainingDays[1] > 0
+        : marker.dated
           ? ` · ⏱ ~${marker.remainingDays[0]}–${marker.remainingDays[1]} kun`
           : '';
     transitLines.push(

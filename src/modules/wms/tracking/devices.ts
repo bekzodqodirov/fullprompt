@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { db, type Db, type Tx } from '../../platform/db/client';
 import { batches, driverDevices, driverPositions } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
+import { FRESH_MINUTES } from './engine';
 
 /**
  * Driver phone pairing + position ingest (owner's flow): at loading, the
@@ -28,15 +29,9 @@ function newPairCode(): string {
 
 const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
 
-/**
- * Positions older than this are shown as stale (the estimate takes over).
- *
- * The driver app reports every 2-3 hours by design — the owner asked for a
- * schedule the driver's battery survives, not a live dot. So "fresh" has to
- * cover a missed cycle plus a dead zone; anything tighter would paint every
- * real fix as stale and hand the map back to the estimate.
- */
-export const FRESH_MINUTES = 8 * 60;
+// The freshness line lives with the engine (pure — eta.ts judges it); the
+// silent-truck sweep and the tests read it from here as they always did.
+export { FRESH_MINUTES };
 
 /**
  * Every trip is born with a code (owner: "code shu plan yaratilgani o'zida
@@ -218,26 +213,49 @@ export interface LatestPosition {
   batchId: string;
   lat: number;
   lon: number;
+  /** When the fix was taken, as far as we can trust it — see `latestPositions`. */
   recordedAt: Date;
   source: string;
   ageMinutes: number;
   fresh: boolean;
 }
 
-/** Newest fix per batch (device or manual, whichever is more recent). */
+/**
+ * A fix less accurate than this cannot say which side of a border post a
+ * truck stands on (the queue radius is ~5 km), so it places nothing. The
+ * phone sends an unknown accuracy as 0, which is kept.
+ */
+export const COARSE_FIX_M = 5000;
+
+/**
+ * Newest fix per batch (device or manual, whichever is more recent).
+ *
+ * «Newest» by `least(recorded_at, received_at)`: the phone stamps
+ * `recorded_at` with its OWN clock and nothing bounds it, so a phone running
+ * a day ahead would hand in a fix that stayed «fresh» for a day and outranked
+ * every pin pressed meanwhile (the board's review, D2). No fix is newer than
+ * the moment it reached us. A coarse fix (`COARSE_FIX_M`) is skipped, so the
+ * newest one that can place the truck answers.
+ */
 export async function latestPositions(batchIds: string[]): Promise<Map<string, LatestPosition>> {
   if (batchIds.length === 0) return new Map();
+  const at = sql<Date>`least(${driverPositions.recordedAt}, ${driverPositions.receivedAt})`;
   const rows = await db
     .selectDistinctOn([driverPositions.batchId], {
       batchId: driverPositions.batchId,
       lat: driverPositions.lat,
       lon: driverPositions.lon,
-      recordedAt: driverPositions.recordedAt,
+      recordedAt: at.mapWith(driverPositions.recordedAt),
       source: driverPositions.source,
     })
     .from(driverPositions)
-    .where(inArray(driverPositions.batchId, batchIds))
-    .orderBy(driverPositions.batchId, desc(driverPositions.recordedAt));
+    .where(
+      and(
+        inArray(driverPositions.batchId, batchIds),
+        sql`(${driverPositions.accuracyM} IS NULL OR ${driverPositions.accuracyM} <= ${COARSE_FIX_M})`,
+      ),
+    )
+    .orderBy(driverPositions.batchId, desc(at));
 
   const now = Date.now();
   return new Map(
