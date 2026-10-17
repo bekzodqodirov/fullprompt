@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { db, type Db, type Tx } from '../../platform/db/client';
 import { batches, driverDevices, driverPositions } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
+import { FRESH_MINUTES } from './engine';
 
 /**
  * Driver phone pairing + position ingest (owner's flow): at loading, the
@@ -28,15 +29,9 @@ function newPairCode(): string {
 
 const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
 
-/**
- * Positions older than this are shown as stale (the estimate takes over).
- *
- * The driver app reports every 2-3 hours by design — the owner asked for a
- * schedule the driver's battery survives, not a live dot. So "fresh" has to
- * cover a missed cycle plus a dead zone; anything tighter would paint every
- * real fix as stale and hand the map back to the estimate.
- */
-export const FRESH_MINUTES = 8 * 60;
+// The freshness line lives with the engine (pure — eta.ts judges it); the
+// silent-truck sweep and the tests read it from here as they always did.
+export { FRESH_MINUTES };
 
 /**
  * Every trip is born with a code (owner: "code shu plan yaratilgani o'zida
