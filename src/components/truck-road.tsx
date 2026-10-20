@@ -73,9 +73,11 @@ export async function truckRoadWords({ counts = true }: { counts?: boolean } = {
   } as const;
 
   // At the gate, `gateWord` decides (an unloaded truck nobody finished is not
-  // «Tushirilmay turibdi»); on the road, the leg, the place, or nothing.
+  // «Tushirilmay turibdi», and its word fits the dashboard's one-line chip —
+  // the button it waits on is named in the sentence); on the road, the leg,
+  // the place, or nothing.
   const GATE = {
-    unloaded_open: () => t('truckUnloadedOpen', { button: tu('finishUnload') }),
+    unloaded_open: () => t('truckUnloadedOpen'),
     stuck: () => t('truckKind.stuck'),
     unloading: () => t('truckKind.unloading'),
   } as const;
@@ -97,6 +99,10 @@ export async function truckRoadWords({ counts = true }: { counts?: boolean } = {
     if (row.status === 'arrived') {
       parts.push(t('arrivedDays', { n: row.days }));
       if (counts && (row.awaitingUnload ?? 0) > 0) parts.push(t('truckGate', { n: num(row.awaitingUnload ?? 0) }));
+      // The word is short — the dashboard prints it in a one-line chip — and
+      // the button nobody pressed is named here, on every screen, whatever
+      // `counts` says: it is the truck's own job, not a count of its boxes.
+      if (gateWord(row) === 'unloaded_open') parts.push(t('truckUnloadedOpenHint', { button: tu('finishUnload') }));
     } else {
       parts.push(t('roadDays', { n: row.days }));
       if (row.kind === 'overdue') {

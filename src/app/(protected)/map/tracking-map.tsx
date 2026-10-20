@@ -108,6 +108,7 @@ export function TrackingMap({
   focusPickupId = null,
   clientCode = null,
   basemap,
+  unplacedCount = 0,
 }: {
   warehouses: MapWarehouse[];
   trucks: MapTruck[];
@@ -117,6 +118,8 @@ export function TrackingMap({
   /** `/map?mijoz=<code>`: the popups list only that client's lots. */
   clientCode?: string | null;
   basemap: boolean;
+  /** Trucks on the road the page names under the map instead of drawing — «no trucks» would be false. */
+  unplacedCount?: number;
 }) {
   const t = useTranslations('map');
   const [selected, setSelected] = useState<Selected>(
@@ -378,7 +381,7 @@ export function TrackingMap({
       )}
       {!basemap && !full && <p className="text-[11px] text-ink-400">{t('basemapMissing')}</p>}
 
-      {trucks.length === 0 && !full && <p className="text-sm text-ink-500">{t('noTrucks')}</p>}
+      {trucks.length === 0 && unplacedCount === 0 && !full && <p className="text-sm text-ink-500">{t('noTrucks')}</p>}
     </div>
   );
 }

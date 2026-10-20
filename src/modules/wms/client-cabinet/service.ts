@@ -383,15 +383,19 @@ async function trucksFor(batchIds: string[]): Promise<Map<string, CabinetTruck>>
         : null;
     out.set(r.id, {
       stage: stageBatchOf({ ...r, trackingCheckpoint: r.checkpoint }),
-      transit: place.route
-        ? {
-            fromPlace: r.originName,
-            toPlace: r.destName,
-            progress: place.progress,
-            etaFromIso: window?.fromIso ?? null,
-            etaToIso: window?.toIso ?? null,
-          }
-        : null,
+      // Only while it drives: an ARRIVED truck still carrying cartons nobody
+      // has scanned off has no % and no date left (the walk knows no arrival,
+      // and the office's board says «Yetib keldi» — O15, the review).
+      transit:
+        place.route && r.status === 'in_transit'
+          ? {
+              fromPlace: r.originName,
+              toPlace: r.destName,
+              progress: place.progress,
+              etaFromIso: window?.fromIso ?? null,
+              etaToIso: window?.toIso ?? null,
+            }
+          : null,
       // A truck that ends in China (Yiwu → Kashgar) never enters Uzbekistan,
       // whatever its `arrived_at` says — the rule `truckStage` states. Without
       // it a lot waiting at the hub after an internal leg read «O'zbekistonga

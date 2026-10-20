@@ -121,11 +121,11 @@ describe('the daily message', () => {
       suffix: null,
       href: '/transit',
     };
-    expect(attentionLine(stuck)).toBe('2 kundan beri tushirilmagan fura: 2');
+    expect(attentionLine(stuck)).toBe('2 kundan beri tushirish yakunlanmagan fura: 2');
     expect(plain(attentionLine(missing))).toBe('Yo‘lda yo‘qolgan: 3 karobka · 1.235 m³ · sarflangan $1 234.50');
     const text = summary(facts({ attention: { total: 5, top: [missing, stuck] } }));
     expect(text).toContain('⚠️ E’tibor kerak (5):\n• Yo‘lda yo‘qolgan: 3 karobka');
-    expect(text).toContain('• 2 kundan beri tushirilmagan fura: 2\n… yana 3 ta — ekranda');
+    expect(text).toContain('• 2 kundan beri tushirish yakunlanmagan fura: 2\n… yana 3 ta — ekranda');
   });
 
   it('the pull on a quiet day says so in one line', () => {

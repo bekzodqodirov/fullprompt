@@ -267,7 +267,7 @@
       "lost": "Written off as lost: {n} boxes · {usd} spent",
       "lostNoMoney": "Written off as lost: {n} boxes",
       "undocumented": "Moved without a document: {n} boxes",
-      "stuck": "Trucks unloaded for 2+ days: {n}",
+      "stuck": "Trucks arrived 2+ days ago, unloading not finished: {n}",
       "negativeTills": "Tills below zero: {n}",
       "unratedTills": "Tills with no rate: {n} — left out of the Balance",
       "unplacedPayments": "Payments with no till: {n} · {usd}",
@@ -404,7 +404,8 @@
     "agoMin": "{n} min ago",
     "agoHour": "{n} h ago",
     "agoDay": "{n} d ago",
-    "truckUnloadedOpen": "Unloaded — «{button}» not pressed"
+    "truckUnloadedOpen": "Unloaded, not closed",
+    "truckUnloadedOpenHint": "«{button}» not pressed"
   },
   "inventory": {
     "title": "Stocktake",
@@ -2068,6 +2069,7 @@
     "openBatch": "Open the batch",
     "openMap": "Show on the map",
     "noTrucks": "No trucks on the road right now.",
+    "unplaced": "Location unknown (past the expected date, no pin or GPS) — not drawn on the map:",
     "overdue": "behind schedule — call the driver",
     "eta": "arriving in ~{min}–{max} days",
     "seg_cn_transit": "On the road inside China",

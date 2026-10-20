@@ -208,7 +208,7 @@ export async function cabinetMap(clientIds: string[]): Promise<CabinetMapPlace[]
       key: place.key,
       kind: 'truck',
       name: `${b.originName} → ${b.destName}`,
-      point: marker ? { x: marker.x, y: marker.y } : null,
+      point: marker?.placed ? { x: marker.x, y: marker.y } : null,
       live: marker?.live ?? false,
       route: marker?.routePoints ?? [],
       // Only a date the customer's own cabinet would print (`dated`, O15).

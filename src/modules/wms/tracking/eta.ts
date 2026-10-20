@@ -438,7 +438,17 @@ function fixAnchor(
       entry = prior.legStartMs;
       for (let i = prior.segIdx; i < q; i += 1) entry += segMid(walked.segments[i]!.hours) * HOUR_MS;
     }
-    const entered = Math.max(departedMs, Math.min(fixMs, entry ?? fixMs));
+    let entered = Math.max(departedMs, Math.min(fixMs, entry ?? fixMs));
+    // The fix says the truck is STILL in the queue at its own moment. An
+    // entry whose walk has it out of the queue by then is disproved by the fix
+    // itself — the queue lasted longer than its typical hours, or the truck
+    // reached it late and the walk counted the lateness as waiting — so the
+    // remaining wait is counted from the fix, the rule `routeWithWaits` uses
+    // for a regime that changed mid-queue (the review: a truck 60 h into a
+    // 1-3 day Irkeshtam queue, phoning from the post, read «Qirg'izistonda»
+    // with a date two days early). One fix cannot say how long it has stood.
+    const stands = routeWithWaits(base, { segIdx: q, atMs: entered, pinned: true }, waits).segments[q]!.hours;
+    if (entered + segMid(stands) * HOUR_MS <= fixMs) entered = fixMs;
     return {
       segIdx: q,
       legStartMs: entered,
@@ -471,8 +481,10 @@ function fixAnchor(
  * departure schedule because a phone went quiet.
  *
  * The newest evidence wins. A pin newer than the fix that names the fix's own
- * leg adds nothing the fix did not say and keeps the fix's position: a coarse
- * «in Kazakhstan» must not drag a truck back to the start of Kazakhstan.
+ * leg keeps the fix's position while the two agree (`underNewerPin`): a
+ * coarse «in Kazakhstan» must not drag a truck back to the start of
+ * Kazakhstan. A walk from a fix that is spent while the schedule still runs
+ * is a truck that was ahead of it — not overdue.
  *
  * `waits` is REQUIRED for the reason `scheduleEstimate` states, and in second
  * place so the wire fence can read it.
@@ -510,10 +522,13 @@ export function placeTruck(input: PlaceInput, waits: BorderHours, now: Date = ne
   const departedMs = input.departedAt.getTime();
   const pinned = pinAnchor(base, pin);
   const prior = pinned ?? departureAnchor(input.departedAt);
-  const byFix = fix ? fixAnchor(base, fix, prior, waits, departedMs) : null;
+  const fixed = fix ? fixAnchor(base, fix, prior, waits, departedMs) : null;
   const fixMs = fix?.recordedAt.getTime() ?? Number.NaN;
-  const anchor: Anchor & Partial<{ along: number; snapped: RoutePoint | null }> =
-    byFix && (!pinned || fixMs >= pinned.legStartMs || byFix.segIdx === pinned.segIdx) ? byFix : prior;
+  const byFix =
+    fixed && pinned && fixMs < pinned.legStartMs
+      ? underNewerPin(base, fixed, fixMs, pinned, waits, input.departedAt)
+      : fixed;
+  const anchor: Anchor & Partial<{ along: number; snapped: RoutePoint | null }> = byFix ?? prior;
 
   const { route, est } = walkFrom(base, anchor, waits, input.departedAt, now);
   const cum = cumulativeLengths(base.points);
@@ -525,11 +540,37 @@ export function placeTruck(input: PlaceInput, waits: BorderHours, now: Date = ne
   const evidenceAt =
     anchor.kind === 'fix' ? fix!.recordedAt.toISOString() : anchor.kind === 'pin' ? (pin?.at ?? null) : null;
   const fixPoint = anchor.kind === 'fix' ? (anchor.snapped ?? { x: fix!.lon, y: fix!.lat }) : null;
+  const placed = (e: TransitEstimate, point: RoutePoint): TruckPlace => ({
+    zone: zoneOfLeg(e.segKey),
+    segKey: e.segKey,
+    progress: e.progress,
+    remainingHours: e.remainingHours,
+    overdue: false,
+    source,
+    evidenceAt,
+    fresh,
+    point,
+    route,
+  });
+
+  if (est.overdue && anchor.kind === 'fix' && !walkFrom(base, prior, waits, input.departedAt, now).est.overdue) {
+    // The walk from the FIX is spent while the schedule — the departure, or
+    // the logist's pin — still runs: the truck was AHEAD of its schedule when
+    // the phone last spoke, and by its own pace it is at the destination's
+    // gate, waiting for the unload scan that makes it «arrived». «Muddatdan
+    // oshdi» is a statement about the expected DATE, and that date has not
+    // passed (the review: a fix at the Tashkent yard read «overdue — call the
+    // driver» within the hour, days early, and stayed so overnight). Nothing
+    // is left to drive; it turns overdue when the schedule runs out too.
+    return placed({ ...est, overdue: false, remainingHours: [0, 0] }, fresh && fixPoint ? fixPoint : { x: est.x, y: est.y });
+  }
 
   if (est.overdue) {
     // The walk ran out: no date. The truck is where its newest evidence last
-    // put it — a fix's point, a pin's leg — and with nothing but the
-    // departure, in the road's one place if the road has only one.
+    // put it — a fix's point, a pin's leg. With nothing but the departure the
+    // place is the road's one place if the road has only one, and the POINT
+    // is nowhere: the spent walk ends on the destination warehouse, and a
+    // lorry drawn there reads «arrived» to the customer (the review).
     const leg = anchor.kind === 'departure' ? null : base.segments[anchor.segIdx]!;
     return {
       zone: leg ? zoneOfLeg(leg.key) : zoneOfRoute(base),
@@ -541,23 +582,44 @@ export function placeTruck(input: PlaceInput, waits: BorderHours, now: Date = ne
       source,
       evidenceAt,
       fresh,
-      point: fixPoint ?? (leg ? base.points[leg.span[0]]! : { x: est.x, y: est.y }),
+      point: fixPoint ?? (leg ? base.points[leg.span[0]]! : null),
       route,
     };
   }
 
-  return {
-    zone: zoneOfLeg(est.segKey),
-    segKey: est.segKey,
-    progress: est.progress,
-    remainingHours: est.remainingHours,
-    overdue: false,
-    source,
-    evidenceAt,
-    fresh,
-    point: fresh && fixPoint ? fixPoint : { x: est.x, y: est.y },
-    route,
-  };
+  return placed(est, fresh && fixPoint ? fixPoint : { x: est.x, y: est.y });
+}
+
+/**
+ * An older fix under a NEWER pin. The pin is the newest evidence; the fix
+ * keeps its finer position only while the two agree — while the walk from the
+ * fix still stands on the pin's leg at the moment of the press («in
+ * Kazakhstan» must not drag a truck back to the start of Kazakhstan). When the
+ * walk from the fix has left that leg by the press, the press disproves the
+ * walk (the review: a phone silent 100 h in the Irkeshtam queue, the logist
+ * presses «Chegarada», and the card read «O'zbekistonda»):
+ * - on a MOVING leg the fix keeps its share of the leg, counted from the
+ *   press — the truck was at least where the phone last saw it when the
+ *   logist said it was still on that leg;
+ * - in a QUEUE the pin's own anchor stands: the queue lasted longer than the
+ *   walk said, and its remaining wait is counted from the press (`fixAnchor`'s
+ *   rule for a disproved entry).
+ * A fix on another leg than the pin's is outranked by the pin, as before.
+ */
+function underNewerPin(
+  base: RouteDef,
+  fixed: Anchor & { along: number; snapped: RoutePoint | null },
+  fixMs: number,
+  pinned: Anchor,
+  waits: BorderHours,
+  departedAt: Date,
+): (Anchor & { along: number; snapped: RoutePoint | null }) | null {
+  if (fixed.segIdx !== pinned.segIdx) return null;
+  const atPress = walkFrom(base, fixed, waits, departedAt, new Date(pinned.legStartMs)).est;
+  if (!atPress.overdue && atPress.segIndex === pinned.segIdx) return fixed;
+  const leg = base.segments[pinned.segIdx]!;
+  if (leg.span[0] === leg.span[1]) return null;
+  return { ...fixed, legStartMs: pinned.legStartMs - (fixMs - fixed.legStartMs) };
 }
 
 export interface EtaWindow {

@@ -275,3 +275,124 @@ describe('no road to walk', () => {
     expect(unknown.source).toBeNull();
   });
 });
+
+/**
+ * The fixes' own review (2026-10-20). Each case is a literal scenario the
+ * verifiers measured against the shipped code, and each asserts the place
+ * the BUSINESS reads — the leg, overdue or not — never the engine against
+ * itself.
+ */
+describe('a queue the fix disproves is counted from the fix', () => {
+  it('Irkeshtam: 78 h out, the phone in the queue — still at the border, the whole wait ahead', () => {
+    // The schedule had the truck enter 60 h ago and cross 12 h ago (24-72 h,
+    // mid 48); the phone, half an hour ago, says it is still in the queue.
+    const near = toward(kaTas.points[kaPost]!, kaTas.points[kaPost - 1]!, 0.02);
+    const place = placeTruck({ ...KA_TAS, departedAt: ago(78), checkpoint: null, fix: fixAt(near, 0.5) }, {}, NOW);
+    expect(place.segKey).toBe('border_wait');
+    expect(place.zone).toBe('border');
+    // Entered at the fix: the queue less the half-hour stood, then kg and uz.
+    expect(place.remainingHours).toEqual([96, 167]);
+  });
+
+  it('Khorgos, 96 h late: in the queue, at the road up to the post', () => {
+    const hor = routeFor('HOR', 'TAS1')!;
+    const post = hor.segments.find((s) => s.key === 'border_wait')!.span[0];
+    const near = toward(hor.points[post]!, hor.points[post - 1]!, 0.02);
+    // Schedule: 2 h to the post, 72 h in the queue — out 74 h after leaving.
+    const place = placeTruck({ ...HOR_TAS, departedAt: ago(170), checkpoint: null, fix: fixAt(near, 0.5) }, {}, NOW);
+    expect(place.segKey).toBe('border_wait');
+    expect(place.overdue).toBe(false);
+  });
+
+  it('Yallama, 96 h late: in the queue, not overdue', () => {
+    const hor = routeFor('HOR', 'TAS1')!;
+    const yal = hor.segments.find((s) => s.key === 'uz_queue')!.span[0];
+    const approach = toward(hor.points[yal]!, hor.points[yal - 1]!, 0.02);
+    const place = placeTruck({ ...HOR_TAS, departedAt: ago(280), checkpoint: null, fix: fixAt(approach, 1) }, {}, NOW);
+    expect(place.segKey).toBe('uz_queue');
+    expect(place.overdue).toBe(false);
+    expect(place.remainingHours![0]).toBeGreaterThan(0);
+  });
+});
+
+describe('an older fix under a newer pin on the same leg', () => {
+  it('the phone went quiet 100 h ago in the Irkeshtam queue, the logist pressed «Chegarada» 2 h ago: at the border', () => {
+    const near = toward(kaTas.points[kaPost]!, kaTas.points[kaPost - 1]!, 0.02);
+    const place = placeTruck(
+      {
+        ...KA_TAS,
+        departedAt: ago(120),
+        checkpoint: { key: 'at_border', at: ago(2).toISOString() },
+        fix: fixAt(near, 100),
+      },
+      {},
+      NOW,
+    );
+    // Walked from the fix the truck crossed days ago; the press says no.
+    expect(place.segKey).toBe('border_wait');
+    expect(place.source).toBe('pin');
+  });
+
+  it('the phone 30 h ago mid-Kazakhstan, «Qozog‘istonda» 2 h ago: in Kazakhstan, never behind the phone', () => {
+    const hor = routeFor('HOR', 'TAS1')!;
+    const horCum = cumulativeLengths(hor.points);
+    const horTotal = horCum[horCum.length - 1]!;
+    const kz = hor.segments.find((s) => s.key === 'kz')!;
+    const at = Math.floor((kz.span[0] + kz.span[1]) / 2);
+    const place = placeTruck(
+      {
+        ...HOR_TAS,
+        departedAt: ago(200),
+        checkpoint: { key: 'in_kz', at: ago(2).toISOString() },
+        fix: fixAt(hor.points[at]!, 30),
+      },
+      {},
+      NOW,
+    );
+    // Walked from the fix (18-30 h for the whole leg) it had reached Yallama
+    // by the press; the press says it was still in Kazakhstan.
+    expect(place.segKey).toBe('kz');
+    expect(place.source).toBe('gps');
+    expect(place.progress!).toBeGreaterThanOrEqual(horCum[at]! / horTotal);
+  });
+});
+
+describe('a truck ahead of its schedule is not overdue', () => {
+  const tas = kaTas.points[kaTas.points.length - 1]!;
+
+  it('the phone at the Tashkent yard, 75 h after leaving Kashgar: at the gate, nothing left, not overdue', () => {
+    const place = placeTruck({ ...KA_TAS, departedAt: ago(75), checkpoint: null, fix: fixAt(tas, 2) }, {}, NOW);
+    expect(place.overdue).toBe(false);
+    expect(place.remainingHours).toEqual([0, 0]);
+    expect(place.segKey).toBe('uz');
+    expect(place.zone).toBe('uz');
+    expect(place.source).toBe('gps');
+  });
+
+  it('12 km before the yard, two hours on, and overnight at the yard: still not overdue', () => {
+    const before = toward(tas, kaTas.points[kaTas.points.length - 2]!, 0.11);
+    const near = placeTruck({ ...KA_TAS, departedAt: ago(70), checkpoint: null, fix: fixAt(before, 2) }, {}, NOW);
+    expect(near.overdue).toBe(false);
+    const night = placeTruck({ ...KA_TAS, departedAt: ago(85), checkpoint: null, fix: fixAt(tas, 12) }, {}, NOW);
+    expect(night.overdue).toBe(false);
+    expect(night.remainingHours).toEqual([0, 0]);
+  });
+
+  it('once the schedule runs out too, it is overdue — at the fix, not on the warehouse', () => {
+    const before = toward(tas, kaTas.points[kaTas.points.length - 2]!, 0.11);
+    const place = placeTruck({ ...KA_TAS, departedAt: ago(200), checkpoint: null, fix: fixAt(before, 30) }, {}, NOW);
+    expect(place.overdue).toBe(true);
+    expect(place.remainingHours).toBeNull();
+    expect(place.point).toEqual(before);
+  });
+});
+
+describe('overdue with nothing but the departure is drawn nowhere', () => {
+  it('a spent walk ends on the destination warehouse — no point, so no lorry «arrived» on it', () => {
+    const across = placeTruck({ ...KA_TAS, departedAt: ago(800), checkpoint: null }, {}, NOW);
+    expect(across.overdue).toBe(true);
+    expect(across.point).toBeNull();
+    const china = placeTruck({ originCode: 'YW', destCode: 'KA', originCountry: 'CN', destCountry: 'CN', departedAt: ago(800), checkpoint: null }, {}, NOW);
+    expect(china.point).toBeNull();
+  });
+});

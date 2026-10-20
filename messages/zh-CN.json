@@ -267,7 +267,7 @@
       "lost": "已登记丢失：{n}箱 · 已花费 {usd}",
       "lostNoMoney": "已登记丢失：{n}箱",
       "undocumented": "无单据移动：{n}箱",
-      "stuck": "到达2天以上未卸车：{n}辆",
+      "stuck": "到达2天以上未完成卸货：{n}辆",
       "negativeTills": "余额为负的账户：{n}",
       "unratedTills": "无汇率账户：{n}——未计入资产负债",
       "unplacedPayments": "未指定账户的付款：{n} · {usd}",
@@ -404,7 +404,8 @@
     "agoMin": "{n}分钟前",
     "agoHour": "{n}小时前",
     "agoDay": "{n}天前",
-    "truckUnloadedOpen": "已卸完——未点“{button}”"
+    "truckUnloadedOpen": "已卸完，未结束",
+    "truckUnloadedOpenHint": "未点“{button}”"
   },
   "inventory": {
     "title": "盘点",
@@ -2068,6 +2069,7 @@
     "openBatch": "打开批次",
     "openMap": "在地图上查看",
     "noTrucks": "当前没有在途车辆。",
+    "unplaced": "位置不明（已超过预计时间，无标记和GPS）——未在地图上显示：",
     "overdue": "已超过预计时间——请联系司机",
     "eta": "预计 ~{min}–{max} 天到达",
     "seg_cn_transit": "中国境内运输中",

@@ -1,6 +1,7 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { redirect } from 'next/navigation';
+import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import {
@@ -157,9 +158,13 @@ export default async function MapPage({
   const waits = await loadBorderHours();
 
   const trucks: MapTruck[] = [];
+  // A truck nothing honest places (past its whole schedule, no pin, no fix)
+  // is named under the map rather than drawn on its destination warehouse,
+  // where it would read «arrived» (`TruckMarker.placed`).
+  const unplaced: MapTruck[] = [];
   for (const { batch, ...ends } of transit) {
     const truck = await truckFor(batch, ends, waits, fixes.get(batch.id));
-    if (truck) trucks.push(truck);
+    if (truck) (truck.placed ? trucks : unplaced).push(truck);
   }
 
   // Factory trucks (0100) for whoever may open a pickup card — an estimate
@@ -240,7 +245,21 @@ export default async function MapPage({
         focusPickupId={focusPickupId}
         clientCode={focusClient?.code ?? null}
         basemap={basemapAvailable()}
+        unplacedCount={unplaced.length}
       />
+      {unplaced.length > 0 && (
+        <p data-testid="map-unplaced" className="text-sm text-ink-600">
+          {t('unplaced')}{' '}
+          {unplaced.map((tr, i) => (
+            <span key={tr.batchId}>
+              {i > 0 && ', '}
+              <Link href={`/batches/${tr.batchId}`} className="font-mono font-semibold text-brand-700 underline">
+                {tr.code}
+              </Link>
+            </span>
+          ))}
+        </p>
+      )}
     </div>
   );
 }

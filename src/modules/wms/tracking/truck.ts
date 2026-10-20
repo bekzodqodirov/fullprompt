@@ -22,6 +22,14 @@ export interface TruckMarker {
   x: number;
   /** lat */
   y: number;
+  /**
+   * Something honest places the truck (`placeTruck`'s point): false for a
+   * truck past its whole schedule that nothing but its departure places —
+   * the spent walk ends ON the destination warehouse, and a lorry drawn there
+   * reads «arrived». x/y are then meaningless: /map leaves it off the canvas
+   * and names it under the map, the cabinet map lists it with no point.
+   */
+  placed: boolean;
   /** A fresh fix from the driver's phone places the truck — the dot is the fix. */
   live: boolean;
   fixAgeMinutes: number | null;
@@ -126,6 +134,7 @@ export async function truckFor(
       destCode: ends.destCode,
       x: live.lon,
       y: live.lat,
+      placed: true,
       live: live.fresh,
       fixAgeMinutes: live.ageMinutes,
       fixSource: live.source,
@@ -151,6 +160,37 @@ export async function truckFor(
     }),
   );
   const remaining = place.remainingHours;
+  // An ARRIVED truck still carries cartons nobody has scanned off (a Yiwu →
+  // Kashgar truck that beat its schedule): it stands at its destination, and
+  // the walk — which knows no arrival — must not draw it mid-China with a
+  // date the office no longer has (the review; O15). The board and the
+  // dashboard say «Yetib keldi» about the same truck.
+  if (batch.status === 'arrived') {
+    const gate = place.route.points[place.route.points.length - 1]!;
+    const last = place.route.segments[place.route.segments.length - 1];
+    return {
+      batchId: batch.id,
+      code: batch.code,
+      originCode: ends.originCode,
+      destCode: ends.destCode,
+      x: gate.x,
+      y: gate.y,
+      placed: true,
+      live: false,
+      fixAgeMinutes: fix?.ageMinutes ?? null,
+      fixSource: fix?.source ?? null,
+      segKey: last?.key ?? 'transit',
+      progress: 1,
+      overdue: false,
+      remainingDays: [0, 0],
+      dated: false,
+      departedAt: (batch.departedAt ?? batch.createdAt).toISOString(),
+      checkpointKey: cp?.key ?? null,
+      vehiclePlate: batch.vehiclePlate,
+      routePoints: place.route.points,
+      contents: sortedContents,
+    };
+  }
   return {
     batchId: batch.id,
     code: batch.code,
@@ -160,8 +200,9 @@ export async function truckFor(
     // road when it is near it — round 100, 9a: «mashina kordinatsiyalari
     // toglar ustiga chiqib ketyabti»; a real detour stays raw). Otherwise
     // the walk's own dot — which a newer pin moves off an older fix.
-    x: place.point?.x ?? fix?.lon ?? 0,
-    y: place.point?.y ?? fix?.lat ?? 0,
+    x: place.point?.x ?? 0,
+    y: place.point?.y ?? 0,
+    placed: place.point !== null,
     live: place.fresh,
     fixAgeMinutes: fix?.ageMinutes ?? null,
     fixSource: fix?.source ?? null,
@@ -171,7 +212,12 @@ export async function truckFor(
     remainingDays: remaining
       ? [Math.round((remaining[0] / 24) * 10) / 10, Math.round((remaining[1] / 24) * 10) / 10]
       : [0, 0],
-    dated: !place.overdue && remaining !== null && remaining[1] > 0 && isMovingStage(stage),
+    dated:
+      batch.status === 'in_transit' &&
+      !place.overdue &&
+      remaining !== null &&
+      remaining[1] > 0 &&
+      isMovingStage(stage),
     departedAt: batch.departedAt!.toISOString(),
     checkpointKey: cp?.key ?? null,
     vehiclePlate: batch.vehiclePlate,
