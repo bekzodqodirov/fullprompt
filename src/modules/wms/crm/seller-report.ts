@@ -59,7 +59,7 @@ export interface SellerCargo {
    * The cargo columns are LTL — the KPI's own figure (0135: «FTL … olib kelgan
    * yuki KPI ga kirmaydi»), so this report and /hodimlar never print two kub
    * for one seller's month. The money columns still cover FTL: a whole truck
-   * is the company's revenue and cost all the same.
+   * is the company's money all the same.
    */
   receipts: number;
   weightKg: number;

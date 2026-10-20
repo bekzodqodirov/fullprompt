@@ -60,8 +60,7 @@ export default async function SellerReportPage({
   // some client has no manager (its money can be a moved client's unstamped
   // cargo, or a price of a client with neither a prixod nor a seller).
   const nobody = all?.rows.find((row) => row.managerId === null);
-  const nobodyShown =
-    nobody !== undefined &&
+  const nobodyShown = nobody !== undefined &&
     (nobody.revenueUsd !== 0 || nobody.costUsd !== 0 || nobody.receipts !== 0 || nobody.ftlReceipts !== 0);
 
   const money = (n: number) => `$${n.toFixed(2)}`;
