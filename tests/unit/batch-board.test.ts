@@ -19,6 +19,7 @@ import {
 import { readFileSync } from 'node:fs';
 import { tripSight } from '@/modules/wms/batches/board';
 import { routeFor } from '@/modules/wms/tracking/map-data';
+import { ROLE_MATRIX } from '@/modules/platform/rbac/catalog';
 import { estimateBasis, gateWord } from '@/modules/wms/tracking/on-road-state';
 
 /**
@@ -389,5 +390,29 @@ describe('a truck on the road that the map cannot draw is named, never dropped',
     // The customer's map says «estimated» only about a point it drew.
     const cab = readFileSync('src/components/cabinet-map.tsx', 'utf8');
     expect(cab).toContain("{p.kind === 'truck' && p.point && (");
+  });
+});
+
+describe('who may pin from the board — his answer «1 hozirgidek qolsin» (2026-10-20)', () => {
+  it('the board’s ⋯ asks the Mashina tab’s own permission, and the pin service the same', () => {
+    // As now: the board adds no power. Whoever may set a pin on the truck's
+    // Mashina tab — the logist and the warehouse staff at either end, by the
+    // card's door the service also asks — may set it from the board.
+    const board = readFileSync('src/modules/wms/batches/board.ts', 'utf8');
+    const mashina = readFileSync('src/app/(protected)/batches/[id]/mashina/page.tsx', 'utf8');
+    const service = readFileSync('src/modules/wms/tracking/checkpoint.ts', 'utf8');
+    expect(board).toContain("const mayPin = actor.permissions.has('batches.vehicle_info');");
+    expect(mashina).toContain("actor.permissions.has('batches.vehicle_info')");
+    expect(service).toContain("if (!actor.permissions.has('batches.vehicle_info')) throw new CheckpointError('forbidden');");
+    expect(service).toContain('assertOnBatchCard(actor, batch);');
+  });
+
+  it('the seeded roles that pin are the logist and the warehouse staff — not narrowed to the logist', () => {
+    const holders = (Object.keys(ROLE_MATRIX) as (keyof typeof ROLE_MATRIX)[]).filter((role) =>
+      ROLE_MATRIX[role].includes('batches.vehicle_info'),
+    );
+    expect(holders).toEqual(expect.arrayContaining(['logist', 'warehouse_manager', 'warehouse_operator']));
+    expect(holders).not.toContain('sales_manager');
+    expect(holders).not.toContain('ved_manager');
   });
 });
