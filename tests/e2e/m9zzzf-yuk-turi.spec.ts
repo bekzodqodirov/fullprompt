@@ -6,7 +6,7 @@ import postgres from 'postgres';
  * React resets a form after its action; a CONTROLLED select then snapped back
  * to the mode the page first rendered, so the screen read «LTL» over a deal
  * that was FTL, and the next unrelated save posted the stale mode and quietly
- * turned the deal (and its prixods) back (#1434). The field is uncontrolled
+ * turned the deal (and its prixods) back (#1448). The field is uncontrolled
  * and keyed on the stored mode now: after each save it reads what is stored,
  * and an unrelated save leaves the mode alone.
  *

@@ -2865,7 +2865,8 @@ dollars only); a new code gets «📈 Bu oy: N-mijoz» off the post ledger. Mone
 enters the group in that ONE post — the VED reads it there (law 4), stated to
 him and his call.
 
-**Round — LTL / FTL (2026-10-20 evening; DECISIONS #1416-#1434; migration 0135
+**Round — LTL / FTL (2026-10-20 evening; DECISIONS #1430-#1448 — renumbered from #1416-#1434 on the merge,
+the TWENTY-THIRD collision: «Partiya doskasi» took #1416-#1429 first; migration 0135
 `load_mode` — ledger must reach 136; spec `docs/LTL-FTL.md`).** His «KPI sovrinlar shu LTL
 boyicha hsoblanadi agarda FTL bolsa bunga kpi yozilmaydi … gamificationda FTL va LTL birga
 qoshilib ketyapti», answered «3 b / qolgani sen aytgandek». Five scouts, a four-lens judge
@@ -2887,7 +2888,7 @@ lots lift the density band) and `FtlSuspected` (the departure hint, `ftl/hint.ts
 pure `sole-owner.ts`/`hint-text.ts`; no internal-leg skip, «davomi» skipped, one person by
 phone, markings resolved, never the same prixod twice) are alerts newcomers. Forms: shared
 `components/load-mode-field.tsx`; prixod card `receipts/[id]/load-mode-block.tsx`.
-**Reviewed as built** (#1426-#1434, four lenses, 22 findings): the inheritance asks who PRESSED
+**Reviewed as built** (#1440-#1448, four lenses, 22 findings): the inheritance asks who PRESSED
 (`presser` in `inheritSql`; `linkReceipt(…, ftlDoor: FtlDoor | null)` REQUIRED, `confirmReceipt`'s
 `opts.ftlDoor` — absent = no inheritance; office or the prixod's own stamp); the confirm takes the deal FOR
 SHARE first; a client correction drops the old job's FTL and a seller's pin under both stamps' locks
