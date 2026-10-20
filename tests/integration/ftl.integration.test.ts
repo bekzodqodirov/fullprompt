@@ -178,6 +178,7 @@ afterAll(async () => {
   );
   if (notes.length) await db.delete(notifications).where(inArray(notifications.id, notes.map((r) => r.id)));
   if (madeUsers.length) {
+    await db.execute(sql`DELETE FROM user_roles WHERE user_id IN (${sql.join(madeUsers.map((id) => sql`${id}::uuid`), sql`, `)})`);
     await db.delete(notifications).where(inArray(notifications.userId, madeUsers));
     await db.delete(kpiPayouts).where(inArray(kpiPayouts.sellerId, madeUsers));
   }
@@ -447,6 +448,14 @@ describe('the review’s holes: who presses, a client correction, a stamp that a
   });
 
   it('FtlMarked goes to exactly the door’s office — permission codes, never role names', async () => {
+    // A logist who ALSO holds a warehouse role is scoped (actorGrants' rule —
+    // any scoped role scopes the person), so he is not the office; and an
+    // invented role's holder with «Rejalar» is. Existing roles, a fixture person.
+    const scopedLogist = await mintUser('scoped-logist');
+    await db.execute(sql`
+      INSERT INTO user_roles (user_id, role_id)
+      SELECT ${scopedLogist}::uuid, r.id FROM roles r WHERE r.code IN ('logist', 'warehouse_operator')`);
+    expect(await ftlOfficeUsers()).not.toContain(scopedLogist);
     const rows = (await db.execute(sql`
       SELECT u.id::text AS id,
              coalesce(array_agg(DISTINCT p.code) FILTER (WHERE p.code IS NOT NULL), '{}') AS perms,

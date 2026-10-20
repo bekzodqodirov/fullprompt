@@ -4,7 +4,7 @@ Agreed 2026-10-20. His message: «bizni sohada LTL FTL degan narsalar bor biz od
 va KPI sovrinlar shu LTL boyicha hsoblanadi agarda FTL bolsa bunga kpi yozilmaydi va olib kelgan yuki KPI ga
 kirmaydi hozirgi gamificationda FTL va LTL birga qoshilib ketyabta va bizni sistemada LTL va FTL ni ajratish
 imkoni yoq». Answers: **«3 b / qolgani sen aytgandek»** = 1a 2a **3b** 4a 5a 6a 7a. Migration **0135
-`load_mode`** (ledger 136). Decisions #1416-#1425.
+`load_mode`** (ledger 136). Decisions #1416-#1425; the review as built #1426-#1434.
 
 ## His answers, as built
 
@@ -26,6 +26,11 @@ imkoni yoq». Answers: **«3 b / qolgani sen aytgandek»** = 1a 2a **3b** 4a 5a 
   ~75 whole-row reads and would answer them 42703 one migration behind — receiving and the CRM down (#735).
 - **A prixod inherits FTL** from its deal only when the deal is its client's, the mark may reach it (an office
   mark: every prixod; a seller's: only his own stamp), nobody pinned it by hand, and its month is not paid.
+- **Who PRESSED matters, not only who marked** (#1426): the confirm and a re-file carry an FTL deal's mark only
+  for the office or the seller the prixod is stamped to; a colleague's or the VED's press leaves it LTL, and the
+  prixod card says why («linked») and offers the office «FTL'ini ofis nomidan tasdiqlash» (#1431).
+- **A client correction takes back** the old job's inherited FTL and a seller's own hand pin; the office's hand
+  pin stays (`by_office`, #1428). Cargo stamped later takes its seller's mark the day the client gets him (#1429).
 - **Nothing downgrades by accident.** A re-file to an LTL deal or a detach keeps the mode. FTL → LTL is the
   office's explicit decision; a deal's revert takes back exactly what THAT deal gave (`from_deal_id`).
 - **The freeze (6a)** is a refusal, not a recount: KPI is netted (paid − earned), so letting a paid month move

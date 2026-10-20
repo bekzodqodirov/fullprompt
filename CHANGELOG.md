@@ -14,9 +14,13 @@ Sizning so'zingiz: «biz odatda LTL bo'yicha ishlaymiz va KPI sovrinlar shu LTL 
 - **FTL'ni LTL'ga** faqat **admin, logist yoki buxgalter** qaytaradi. FTL bitimning egasini ham faqat ular almashtiradi.
 - Buxgalter bitim kartasini ocha olmaydi, shuning uchun unga prixod kartasida «Bitimni ham LTL qilish» tugmasi chiqadi.
 - Sotuvchi o'zi FTL belgilasa, ofisga (logist, buxgalter, admin) Telegram xabari boradi. Sabab: yengil yukni FTL qilsa, oyning zichlik bandi ko'tarilib, KPI stavkasi oshib ketishi mumkin.
+- **Prixodni FTL bitimga kim biriktirgani muhim.** Ofis (admin, logist, buxgalter) yoki prixod yozilgan sotuvchining o'zi biriktirsa — prixod FTL bo'ladi. Boshqa sotuvchi yoki VED birovning prixodini FTL bitimga biriktirsa — prixod LTL qoladi va o'sha sotuvchining KPI'sidan chiqib ketmaydi. Skladda qabul qilishda ham shu qoida.
+- Prixod kartasida, bitim FTL bo'lib prixodga o'tmagan bo'lsa, **sababi yoziladi** (boshqa sotuvchi nomida, sotuvchisiz, boshqa mijozga o'tgan, oyi to'langan yoki ofis biriktirmagan). Ofisga «Bitim … FTL'ini ofis nomidan tasdiqlash» tugmasi chiqadi — bosilsa, bitimning barcha prixodlariga o'tadi.
+- **Mijoz tuzatilsa** (prixod A mijozdan B mijozga o'tkazilsa), eski mijozning FTL bitimidan kelgan belgi va sotuvchining o'zi qo'ygan belgi olib tashlanadi — aks holda yangi sotuvchining KPI'si hech kim qaror qilmagan holda kesilardi. Ofis qo'lda qo'ygan belgi qoladi.
+- **Mijozga sotuvchi keyin belgilansa**, o'sha sotuvchi FTL qilgan bitimning sotuvchisiz prixodlari ham FTL bo'ladi — butun mashina yuki uning KPI'siga LTL bo'lib kirib qolmaydi.
 
 ### KPI va reyting
-- **KPI faqat LTL yukni sanaydi.** Bu «Hodimlar» sahifasi, KPI to'lash, profildagi «Bu oy» va /upsale'dagi «Olib kelgan yuk (KPI)» uchun ham amal qiladi. Har birining yonida «🚛 FTL: X kub — KPI'ga kirmaydi» qatori ko'rinadi.
+- **KPI faqat LTL yukni sanaydi.** Bu «Hodimlar» sahifasi, KPI to'lash, profildagi «Bu oy» va /upsale'dagi «Olib kelgan yuk (KPI)» uchun ham amal qiladi. «Hodimlar» va profilda yonida «🚛 FTL: X kub — KPI'ga kirmaydi» qatori ko'rinadi; /upsale'da FTL alohida «🚛 FTL» ustunida turadi.
 - **Sotuvchilar hisoboti:** kub ustunlari endi LTL (KPI bilan bir xil). FTL alohida ustunda. Pul ustunlari (tushum, foyda) ikkalasini ham o'z ichiga oladi.
 - **Shanba reytingi (3b):** ochkolar faqat LTL'dan. FTL alohida qatorda, «Jamoa» qatoridan keyin chiqadi:
   > 🚛 **FTL — butun mashina (ochkosiz):**
