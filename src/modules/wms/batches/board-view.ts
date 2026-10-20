@@ -279,3 +279,16 @@ export function boardRange(firstAt: Date | string, lastAt: Date | string): strin
   const [, bm] = b.split('.');
   return am === bm ? `${ad}–${b}` : `${a}–${b}`;
 }
+
+/**
+ * A driver's number as a `tel:` target: digits only, the leading «+» kept —
+ * the field is free text («+998 90 123-45-67 (Akmal)»), and a `tel:` with a
+ * name in it dials nothing on half the phones. Null when fewer than seven
+ * digits are left: that is a note, not a number.
+ */
+export function telOf(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length < 7) return null;
+  return `${raw.trim().startsWith('+') ? '+' : ''}${digits}`;
+}

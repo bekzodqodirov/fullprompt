@@ -1609,6 +1609,48 @@
         "unauthenticated": "The session has expired — sign in again"
       },
       "noTargetsInScope": "The other warehouses in this country are not assigned to you"
+    },
+    "board": {
+      "strip": "Where the trucks are",
+      "tabs": "Board columns",
+      "filterWarehouse": "Warehouse",
+      "filterRoute": "Route",
+      "filterAll": "All",
+      "route": {
+        "irkeshtam": "Irkeshtam",
+        "horgos": "Khorgos",
+        "ichki": "Domestic trips"
+      },
+      "filterWarnings": "Only with a warning",
+      "filterApply": "Show",
+      "filterClear": "Clear",
+      "mapLink": "Map",
+      "badgeInternal": "domestic trip",
+      "badgeTrip": "factory pickup",
+      "plan": "Planned: {boxes} boxes · {cargo}",
+      "planNone": "no plan",
+      "loaded": "Loaded {a} / {b} boxes · {m3a} / {m3b} m³ · {kga} / {kgb} kg",
+      "loadedAll": "all loaded",
+      "rode": "Departed: {boxes} boxes · {cargo}",
+      "unloaded": "Unloaded {a} / {b} boxes",
+      "loadingSince": "Loading since {date}",
+      "loadedRange": "Loaded {range}",
+      "departedOn": "Departed {date}",
+      "arrivedOn": "Arrived {date}",
+      "roadPct": "{pct}% of the road",
+      "warnStale": "trip arrived, not closed",
+      "menu": "Truck actions",
+      "pinNow": "Now: {pin}",
+      "callDriver": "Driver",
+      "tripCollected": "Collected at {a} of {b} factories",
+      "tripCargo": "Lines: {boxes} boxes",
+      "tripUnknown": "unknown on {n} lines",
+      "tripPlanned": "Planned for {date}",
+      "tripCollectedRange": "Collected from factories {range}",
+      "tripArrival": "Expected {range}",
+      "empty": "Empty",
+      "emptyBoard": "No open trucks.",
+      "capped": "Showing the first {n} — narrow the filter."
     }
   },
   "loading": {

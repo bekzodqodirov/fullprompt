@@ -1609,6 +1609,48 @@
         "unauthenticated": "Sessiya tugagan — qayta kiring"
       },
       "noTargetsInScope": "Shu davlatdagi boshqa skladlar sizga biriktirilmagan"
+    },
+    "board": {
+      "strip": "Mashinalar qayerda",
+      "tabs": "Doska ustunlari",
+      "filterWarehouse": "Sklad",
+      "filterRoute": "Yo‘nalish",
+      "filterAll": "Hammasi",
+      "route": {
+        "irkeshtam": "Irkeshtam",
+        "horgos": "Horgos",
+        "ichki": "Ichki reyslar"
+      },
+      "filterWarnings": "Faqat ogohlantirishli",
+      "filterApply": "Ko‘rsatish",
+      "filterClear": "Tozalash",
+      "mapLink": "Xarita",
+      "badgeInternal": "ichki reys",
+      "badgeTrip": "zavod reysi",
+      "plan": "Rejada: {boxes} karobka · {cargo}",
+      "planNone": "rejasiz",
+      "loaded": "Yuklandi {a} / {b} karobka · {m3a} / {m3b} m³ · {kga} / {kgb} kg",
+      "loadedAll": "hammasi yuklandi",
+      "rode": "Ketdi: {boxes} karobka · {cargo}",
+      "unloaded": "Tushirildi {a} / {b} karobka",
+      "loadingSince": "Yuklanmoqda {date} dan",
+      "loadedRange": "Yuklandi {range}",
+      "departedOn": "Jo‘nadi {date}",
+      "arrivedOn": "Keldi {date}",
+      "roadPct": "yo‘lning {pct}%",
+      "warnStale": "reys keldi, yopilmagan",
+      "menu": "Mashina bo‘yicha amallar",
+      "pinNow": "Hozir: {pin}",
+      "callDriver": "Haydovchi",
+      "tripCollected": "{a} / {b} zavoddan olindi",
+      "tripCargo": "Qatorlar: {boxes} karobka",
+      "tripUnknown": "{n} qatorda noma’lum",
+      "tripPlanned": "Rejada {date}",
+      "tripCollectedRange": "Zavodlardan olindi {range}",
+      "tripArrival": "Kutilmoqda {range}",
+      "empty": "Bo‘sh",
+      "emptyBoard": "Ochiq mashina yo‘q.",
+      "capped": "Birinchi {n} tasi ko‘rsatilmoqda — filtrni toraytiring."
     }
   },
   "loading": {

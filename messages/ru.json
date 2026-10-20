@@ -1609,6 +1609,48 @@
         "unauthenticated": "Сессия истекла — войдите снова"
       },
       "noTargetsInScope": "Другие склады этой страны вам не назначены"
+    },
+    "board": {
+      "strip": "Где машины",
+      "tabs": "Колонки доски",
+      "filterWarehouse": "Склад",
+      "filterRoute": "Направление",
+      "filterAll": "Все",
+      "route": {
+        "irkeshtam": "Иркештам",
+        "horgos": "Хоргос",
+        "ichki": "Внутренние рейсы"
+      },
+      "filterWarnings": "Только с предупреждением",
+      "filterApply": "Показать",
+      "filterClear": "Сбросить",
+      "mapLink": "Карта",
+      "badgeInternal": "внутренний рейс",
+      "badgeTrip": "заводской рейс",
+      "plan": "План: {boxes} кор. · {cargo}",
+      "planNone": "без плана",
+      "loaded": "Погружено {a} / {b} кор. · {m3a} / {m3b} м³ · {kga} / {kgb} кг",
+      "loadedAll": "всё погружено",
+      "rode": "Отправлено: {boxes} кор. · {cargo}",
+      "unloaded": "Выгружено {a} / {b} кор.",
+      "loadingSince": "Грузится с {date}",
+      "loadedRange": "Погружено {range}",
+      "departedOn": "Отправлена {date}",
+      "arrivedOn": "Прибыла {date}",
+      "roadPct": "{pct}% пути",
+      "warnStale": "рейс прибыл и не закрыт",
+      "menu": "Действия с машиной",
+      "pinNow": "Сейчас: {pin}",
+      "callDriver": "Водитель",
+      "tripCollected": "Забрано с {a} из {b} заводов",
+      "tripCargo": "Строки: {boxes} кор.",
+      "tripUnknown": "нет данных в {n} строк.",
+      "tripPlanned": "По плану {date}",
+      "tripCollectedRange": "Забрано с заводов {range}",
+      "tripArrival": "Ожидается {range}",
+      "empty": "Пусто",
+      "emptyBoard": "Открытых машин нет.",
+      "capped": "Показаны первые {n} — сузьте фильтр."
     }
   },
   "loading": {

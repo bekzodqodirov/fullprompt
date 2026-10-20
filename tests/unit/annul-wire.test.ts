@@ -128,7 +128,6 @@ describe('«a void box is not cargo» — the closed set', () => {
       // The dashboard's risk and unbilled reads (the phantom row asks the
       // riders' own left-behind rule).
       'src/modules/wms/reports/business.ts',
-      'src/app/(protected)/batches/page.tsx',
       'src/app/(protected)/trucks/page.tsx',
       'src/modules/wms/finance/client-cargo.ts',
       'src/modules/wms/tracking/truck.ts',
