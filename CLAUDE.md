@@ -157,6 +157,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | The customs calculator fix — units in their own columns, kg+dona rows, excise, the fee, the screen | `docs/RASTAMOJKA-TUZATISH.md` — agreed 2026-10-09 (his two messages, four ⭐ questions), SHIPPED; §7 overrides §1-§3 |
 | A factory trip closes and remembers its lines — the door question, «shu zavoddan, shu mashinada», the checker | `docs/ZAVOD-YOPISH.md` — agreed 2026-10-15 (his 1a-5a, 6, 7 ha), SHIPPED; §10-§11 override §2-§5 |
 | The staff Telegram group — celebrations, the Saturday 18:00 rating, the month's champion, /reyting | `docs/JAMOA-GURUHI.md` — agreed 2026-10-20 (his «3. 2 3 gif … tabriklash ham / qolgani sen aytkandek»), SHIPPED |
+| LTL / FTL — which cargo the KPI and the rating count, who may mark it, the paid-month freeze, the logist's hint | `docs/LTL-FTL.md` — agreed 2026-10-20 (his «3 b / qolgani sen aytgandek» = 1a 2a 3b 4a 5a 6a 7a), SHIPPED |
 
 ## State — 2026-08-23
 
@@ -2864,7 +2865,31 @@ dollars only); a new code gets «📈 Bu oy: N-mijoz» off the post ledger. Mone
 enters the group in that ONE post — the VED reads it there (law 4), stated to
 him and his call.
 
-**Latest migration: 0134** (`staff_group`, `when` …113; ledger must reach **135**). Before
+**Round — LTL / FTL (2026-10-20 evening; DECISIONS #1416-#1425; migration 0135
+`load_mode` — ledger must reach 136; spec `docs/LTL-FTL.md`).** His «KPI sovrinlar shu LTL
+boyicha hsoblanadi agarda FTL bolsa bunga kpi yozilmaydi … gamificationda FTL va LTL birga
+qoshilib ketyapti», answered «3 b / qolgani sen aytgandek». Five scouts, a four-lens judge
+before code (40 objections; v2 absorbed them), built solo. SIDE tables `lead_ftl` /
+`deal_ftl` / `receipt_load_mode` (no row = LTL) — never a column on the three hottest tables
+(~75 whole-row reads, #1381). ONE writer `wms/ftl/service.ts` (fenced); ONE inheritance
+statement `inheritSql` for the confirm, a re-file and the deal's cascade: the deal is the
+prixod's client's, the mark is the office's or the prixod's own STAMPED seller's, no hand pin,
+month not paid. Re-file/detach never downgrade; a deal's revert takes back what THAT deal gave
+(`from_deal_id`). Door `wms/ftl/door.ts`: office = unscoped `plans.manage` ∨ `finance.reports`;
+a seller marks only his own (owner before AND after; owner changes on an FTL record are the
+office's, bulk assign included); on the prixod card a seller only ever WRITES FTL on his own
+stamp. Freeze (6a) `staff/kpi-lock.ts` `kpiPaidMonthSql`, floored at the first KPI month,
+under payKpi's own `kpi:<seller>` key (`kpiSellerLockSql`, payKpi uses it too), sorted. KPI =
+LTL via `KPI_LOAD` (ftl/sql.ts) in kpi-service, kpi-paid's `stamped` scope (ONLY there — u_box
+feeds upsale and the gates), the rating's points, my-month, /upsale's KPI block and the seller
+report's kub; FTL shown beside each, money untouched. `FtlMarked` (a seller's own mark — light
+lots lift the density band) and `FtlSuspected` (the departure hint, `ftl/hint.ts` +
+pure `sole-owner.ts`/`hint-text.ts`; no internal-leg skip, «davomi» skipped, one person by
+phone, markings resolved, never the same prixod twice) are alerts newcomers. Forms: shared
+`components/load-mode-field.tsx`; prixod card `receipts/[id]/load-mode-block.tsx`.
+
+**Latest migration: 0135** (`load_mode`, `when` …114; ledger must reach **136**). Before
+it: 0134 (`staff_group`, `when` …113). Before
 it: 0133 (`pickup_close`, `when` …112). Before
 it: 0132 (`cost_freight_basis`, `when` …111). Before
 it: 0131 (`calc_excise`, `when` …110). Before
@@ -3003,7 +3028,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **135** since 0134 (134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **136** since 0135 (135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read

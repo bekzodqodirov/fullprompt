@@ -1,5 +1,60 @@
 # CHANGELOG
 
+## 2026-10-20 (kechqurun) — LTL va FTL: KPI va reyting faqat sborniy yukni sanaydi
+
+Sizning so'zingiz: «biz odatda LTL bo'yicha ishlaymiz va KPI sovrinlar shu LTL bo'yicha hisoblanadi, agarda FTL bo'lsa bunga KPI yozilmaydi … gamificationda FTL va LTL birga qo'shilib ketyapti». Javobingiz: «3 b / qolgani sen aytgandek» (1a 2a **3b** 4a 5a 6a 7a). **Migratsiya 0135 — deploydan keyin migratsiyalar soni 136 bo'lishi kerak.**
+
+### Qayerda belgilanadi
+- **Bitim va lid** ✏️ formasida yangi «Yuk turi» tanlovi bor: **LTL — sborniy** (odatiy) yoki **FTL — butun mashina**. Lid yutilsa, FTL belgisi bitimga o'tadi.
+- **Prixod** bitimdan belgini o'zi oladi: FTL bitimga ulangan prixod ham FTL bo'ladi. Prixod kartasida yangi «Yuk turi» bloki bor — u yerda belgini tuzatish mumkin.
+- Kartochkalarda (lid, bitim, prixod va taxtadagi kartochkalar) FTL bo'lsa «🚛 FTL» chiqadi. LTL'da hech narsa chiqmaydi.
+
+### Kim nima qila oladi (2a)
+- **Sotuvchi** faqat **o'z** bitimi, lidi yoki prixodini FTL qila oladi. Formada ogohlantirish chiqadi: «FTL tanlansa, bu yuk KPI va reytingga kirmaydi».
+- **FTL'ni LTL'ga** faqat **admin, logist yoki buxgalter** qaytaradi. FTL bitimning egasini ham faqat ular almashtiradi.
+- Buxgalter bitim kartasini ocha olmaydi, shuning uchun unga prixod kartasida «Bitimni ham LTL qilish» tugmasi chiqadi.
+- Sotuvchi o'zi FTL belgilasa, ofisga (logist, buxgalter, admin) Telegram xabari boradi. Sabab: yengil yukni FTL qilsa, oyning zichlik bandi ko'tarilib, KPI stavkasi oshib ketishi mumkin.
+
+### KPI va reyting
+- **KPI faqat LTL yukni sanaydi.** Bu «Hodimlar» sahifasi, KPI to'lash, profildagi «Bu oy» va /upsale'dagi «Olib kelgan yuk (KPI)» uchun ham amal qiladi. Har birining yonida «🚛 FTL: X kub — KPI'ga kirmaydi» qatori ko'rinadi.
+- **Sotuvchilar hisoboti:** kub ustunlari endi LTL (KPI bilan bir xil). FTL alohida ustunda. Pul ustunlari (tushum, foyda) ikkalasini ham o'z ichiga oladi.
+- **Shanba reytingi (3b):** ochkolar faqat LTL'dan. FTL alohida qatorda, «Jamoa» qatoridan keyin chiqadi:
+  > 🚛 **FTL — butun mashina (ochkosiz):**
+  > Vali — 82 kub · 9 500 kg · 1 prixod
+
+  Misolingizdagi «2 mashina» o'rniga «prixod» yoziladi: hafta yukni Xitoyda qabul qilingan kuni bo'yicha sanaydi, o'shanda mashina hali bo'lmaydi.
+- Faqat FTL olib kelgan sotuvchi «yuk olib kelmaganlar» qatoriga tushmaydi.
+- **Haftalik maqsad** endi faqat LTL kubni o'lchaydi.
+- **Upsale (sotuvchi ulushi) o'zgarmadi** (5a).
+
+### Guruhdagi tabriklar (4a)
+- FTL lid yutilsa ham tabriklanadi. Postda «🚛 **FTL** — butun mashina» deb yoziladi, lekin «🔥 Bu oy» qatori chiqmaydi va bu g'alaba oylik hisobga qo'shilmaydi.
+- Mijozning birinchi yuki FTL bo'lsa, unda ham «🚛 FTL» belgisi bo'ladi.
+
+### To'langan oylar o'zgarmaydi (6a)
+- Agar biror oy uchun sotuvchiga KPI **to'langan** bo'lsa, o'sha oydagi prixodlarning yuk turi endi o'zgarmaydi. Kartada «🔒 2026-09 uchun Aziz'ga KPI to'langan — yuk turi o'zgarmaydi» deb yoziladi.
+- **Muhim:** agar sentabr KPI'si allaqachon to'langan bo'lsa, sentabrdagi FTL prixodlarni endi belgilab bo'lmaydi. Sentabrni ham to'g'rilash kerak bo'lsa: o'sha KPI to'lovi xarajatini bekor qiling, prixodlarni FTL qiling, keyin KPI'ni qayta to'lang. KPI boshlanishidan oldingi oylar qulflanmaydi.
+
+### Logistga ogohlantirish (7a)
+Mashina jo'naganda unda faqat bitta mijozning yuki bo'lsa, logistlarga Telegram xabari boradi:
+> 🚛 **FTL bo'lishi mumkin — tekshiring**
+> YW-045: mashinada faqat bitta mijozning yuki
+> 👤 GS500 Ali Valiyev · sotuvchi: Aziz
+> 📦 312 karobka · 84.2 kub · 9 870 kg · reja 86 kub (98 %)
+> LTL turgan prixodlar:
+> • R-01240 · bitimsiz — 44.1 kub · 4 970 kg
+> FTL bo'lsa: bitimni ✏️ orqali «FTL — butun mashina» qiling yoki prixod kartasida belgilang.
+
+- Yiwu → Qashqar mashinasi ham tekshiriladi. Xuddi shu yuk keyingi mashinada ketsa, xabar takrorlanmaydi.
+- Bir odamning bir telefondagi ikki kodi bitta mijoz hisoblanadi.
+- Mijozning ochiq FTL bitimi bo'lsa, xabarda «bitimsiz prixodlarni shunga biriktiring» deb yoziladi.
+- Qaror baribir odamniki: tizim faqat eslatadi, o'zi hech narsani FTL qilmaydi.
+
+### Bilib qo'ying
+- Hozirgi barcha yuklar **LTL** hisoblanadi. FTL bo'lganlarini bitim yoki prixod kartasida belgilang.
+- Skladda bitimsiz qabul qilingan prixod bitimga ulanmaguncha LTL bo'lib turadi. Birinchi yuk tabrigi esa yuk turini o'sha paytdagi holatiga qarab yozadi.
+- O'tgan haftalarning reyting postlari o'zgarmaydi.
+
 ## 2026-10-20 (kechqurun) — Yutilgan lid tabrigi: narx, kub, kg va «bu oy»
 
 Sizning so'rovingiz: «lead yutilganda nech pullik, necha kub, necha kg yuk yutildi — shuni qo'shishimiz kerak» va «yanayam jonliroq bo'lsin, oddiy tabrikdan ham». **Migratsiya yo'q — son 135 qoladi; tekshiruv: `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatsin.**

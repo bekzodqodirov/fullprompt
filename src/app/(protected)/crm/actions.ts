@@ -2,7 +2,9 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-import { AuthError, authorize, getActor } from '@/modules/platform/rbac/authorize';
+import { AuthError, authorize, getActor, type Actor } from '@/modules/platform/rbac/authorize';
+import { ftlDoorFor } from '@/modules/wms/ftl/door';
+import { isLoadMode } from '@/modules/wms/ftl/sql';
 import { requestMeta } from '@/modules/platform/auth/session';
 import { JOB_PROCESS_EVENTS, enqueue } from '@/modules/platform/jobs/boss';
 import { ClientError } from '@/modules/platform/clients/service';
@@ -65,7 +67,7 @@ type Permission = 'crm.leads' | 'crm.manage';
 
 async function run(
   permission: Permission,
-  work: (ctx: { actorId: string } & Record<string, unknown>) => Promise<unknown>,
+  work: (ctx: { actorId: string } & Record<string, unknown>, actor: Actor) => Promise<unknown>,
 ): Promise<CrmFormState> {
   let who;
   try {
@@ -76,7 +78,7 @@ async function run(
   }
   const meta = await requestMeta();
   try {
-    await work({ actorId: who.id, ...meta });
+    await work({ actorId: who.id, ...meta }, who);
     // A stage move is an event now (phase 7); the per-minute sweep would get
     // there, but a rule that opens a task a minute after the drag feels
     // broken — kick the worker. Fire-and-forget: automation lateness must
@@ -120,6 +122,12 @@ function optionalMoney(value: FormDataEntryValue | null): number | null | undefi
   return parseTypedMoney(text) ?? Number.NaN;
 }
 
+/** The posted «Yuk turi» with the presser's door (0135); absent = the service's «unchanged». */
+function readLoad(formData: FormData, actor: Actor) {
+  const mode = formData.get('loadMode');
+  return isLoadMode(mode) ? { mode, door: ftlDoorFor(actor) } : undefined;
+}
+
 function leadFields(formData: FormData) {
   return leadSchema.safeParse({
     name: str(formData, 'name'),
@@ -146,12 +154,12 @@ export async function createLeadAction(
   if (!parsed.success) return { error: 'validation' };
   let leadId = '';
   const custom = await customValues(formData);
-  const state = await run('crm.leads', async (ctx) => {
+  const state = await run('crm.leads', async (ctx, actor) => {
     // Checked BEFORE the lead exists. The two writes are not one transaction,
     // so a value the rules reject used to leave a saved lead behind an error
     // message that read as if nothing had been created.
     await validateValues('lead', custom);
-    const lead = await createLead(parsed.data, ctx);
+    const lead = await createLead({ ...parsed.data, load: readLoad(formData, actor) }, ctx);
     leadId = lead.id;
     await setFieldValues('lead', lead.id, custom, ctx);
   });
@@ -220,8 +228,8 @@ export async function updateLeadAction(
   const parsed = leadFields(formData);
   if (!parsed.success) return { error: 'validation' };
   const custom = await customValues(formData);
-  return run('crm.leads', async (ctx) => {
-    await updateLead(id, parsed.data, ctx);
+  return run('crm.leads', async (ctx, actor) => {
+    await updateLead(id, { ...parsed.data, load: readLoad(formData, actor) }, ctx);
     await setFieldValues('lead', id, custom, ctx);
   });
 }
@@ -300,22 +308,22 @@ export async function bulkMoveLeadsAction(
 
 /** Hand several leads to one person. */
 export async function bulkAssignLeadsAction(ids: string[], ownerId: string): Promise<BulkState> {
-  return runBulk('crm.leads', ids, (id, ctx) => setLeadOwner(id, ownerId || null, ctx));
+  return runBulk('crm.leads', ids, (id, ctx, actor) => setLeadOwner(id, ownerId || null, ctx, ftlDoorFor(actor)));
 }
 
 async function runBulk(
   permission: Permission,
   ids: string[],
-  work: (id: string, ctx: { actorId: string } & Record<string, unknown>) => Promise<unknown>,
+  work: (id: string, ctx: { actorId: string } & Record<string, unknown>, actor: Actor) => Promise<unknown>,
 ): Promise<BulkState> {
   if (ids.length === 0) return { ok: true, done: 0, failed: 0 };
   let done = 0;
   let failed = 0;
   let error: string | undefined;
-  const outcome = await run(permission, async (ctx) => {
+  const outcome = await run(permission, async (ctx, actor) => {
     for (const id of ids) {
       try {
-        await work(id, ctx);
+        await work(id, ctx, actor);
         done += 1;
       } catch (err) {
         // One row's refusal must not abandon the other nineteen — a bulk

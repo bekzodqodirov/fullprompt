@@ -39,6 +39,7 @@ import { receiptHasCompensation } from '../finance/compensation-follow';
 import { claimReceivedNotice } from '../notices/client-claims';
 import { receivedAtFor, receivedDayRefusal, type ReceivedDayRefusal } from './received-day';
 import { stampFor } from '../staff/stamp';
+import { ftlReady, inheritFromDealTx } from '../ftl/service';
 
 export const lotInputSchema = z
   .object({
@@ -271,6 +272,11 @@ export async function confirmReceipt(
   // transaction, told about OUTSIDE it: a Telegram row must not be able to
   // roll back a warehouse's receipt, nor exist for one that rolled back.
   let closedArrival: Awaited<ReturnType<typeof closeExpectedById>> = null;
+
+  // LTL / FTL (0135): may this prixod inherit its deal's FTL? A pool probe,
+  // before the transaction (#714) — on a schema one migration behind the
+  // prixod is simply LTL, and receiving never depends on the round (#735).
+  const ftlOn = input.clientId && input.dealId ? await ftlReady() : false;
 
   let pickupId: string | null = null;
   const result = await db.transaction(async (tx) => {
@@ -580,6 +586,12 @@ export async function confirmReceipt(
     // knows which job the cargo belongs to — would otherwise be the one door
     // that bypassed the join entirely.
     await stampCalcLink(tx, receipt!.id, receipt!.dealId);
+    // …and the deal's FTL (his 1a), by the one inheritance statement the
+    // re-file and the deal's own cascade use — the INSERT above writes
+    // `deal_id` itself and never goes through `linkReceipt` (the calc link's
+    // reason, one line up). No KPI lock: a new prixod cannot land in a paid
+    // month (back-dated ≤ 7 days, a month closes on the 8th).
+    if (ftlOn) await inheritFromDealTx(tx, receipt!.id, ctx.actorId ?? null, null);
 
     return { receiptId: receipt!.id, number: number, lots: summaries };
   });

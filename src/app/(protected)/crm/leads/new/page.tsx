@@ -8,6 +8,8 @@ import { blankFieldsData } from '@/modules/platform/fields/view';
 import { createLeadAction } from '../../actions';
 import { CustomFieldInputs } from '@/components/custom-fields';
 import { LeadForm } from '../lead-form';
+import { ftlReady } from '@/modules/wms/ftl/service';
+import { mayRevertFtl } from '@/modules/wms/ftl/door';
 import { PageHeader } from '@/components/ui/page';
 
 export default async function NewLeadPage() {
@@ -16,11 +18,12 @@ export default async function NewLeadPage() {
   if (!actor.permissions.has('crm.leads')) redirect('/');
   const t = await getTranslations('crm');
 
-  const [sources, stages, managers, fields] = await Promise.all([
+  const [sources, stages, managers, fields, ftlOn] = await Promise.all([
     listSources(),
     listStages(),
     salesManagerOptions(),
     blankFieldsData('lead'),
+    ftlReady(),
   ]);
 
   return (
@@ -29,6 +32,7 @@ export default async function NewLeadPage() {
       {/* No lost stage on a CREATE form: a lead born lost has nobody's reason
           on it, and the service refuses that move anyway (round 83). */}
       <LeadForm
+        load={ftlOn ? { initial: 'ltl', office: mayRevertFtl(actor) } : null}
         action={createLeadAction}
         sources={sources.map((row) => ({ id: row.id, label: row.name }))}
         stages={leadFormStages(stages, null).map((row) => ({ id: row.id, label: row.name }))}

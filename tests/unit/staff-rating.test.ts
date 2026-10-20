@@ -150,6 +150,7 @@ describe('the words', () => {
     records: [{ name: 'Bek', m3: 9.8 }],
     unstamped: { m3: 3.2, receipts: 2 },
     idleSellers: 2,
+    ftl: [],
     ...over,
   });
 

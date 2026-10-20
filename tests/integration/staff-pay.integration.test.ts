@@ -471,7 +471,7 @@ describe('one reader, carton grain', () => {
     await db.update(boxes).set({ status: 'lost' }).where(eq(boxes.id, made.boxIds[0]!));
 
     const range = monthRange('2019-12');
-    const [row] = await stampedCargo(db, range, { kind: 'own', userId: seller });
+    const [row] = await stampedCargo(db, range, { kind: 'own', userId: seller }, 'ltl');
     expect(row!.m3).toBeCloseTo(1.5, 6);
     expect(row!.kg).toBeCloseTo(225, 6);
     expect(row!.receipts).toBe(1);
@@ -481,7 +481,7 @@ describe('one reader, carton grain', () => {
 
     // …and the unpriced rule's own carton set, which the paid part walks.
     const [recon] = (await db.execute(sql`
-      WITH ${uncoveredCtes(unpricedScopeSql({ kind: 'stamped', sellerId: seller, from: range.from, to: range.to }), { landedOnly: false })}
+      WITH ${uncoveredCtes(unpricedScopeSql({ kind: 'stamped', sellerId: seller, from: range.from, to: range.to, load: 'ltl' }), { landedOnly: false })}
       SELECT coalesce(sum(m3), 0)::text AS m3, count(*)::int AS n FROM u_box`)) as unknown as { m3: string; n: number }[];
     expect(Number(recon!.m3)).toBeCloseTo(1.5, 6);
     expect(recon!.n).toBe(3);
@@ -847,7 +847,7 @@ describe('the Tashkent month, at its edges (one label for the reader and the pai
     await ledger(client, 'charge', 70, '2021-10-02', { dealId: deal });
     await ledger(client, 'payment', 70, '2021-10-03');
 
-    const byMonth = new Map((await stampedCargoByMonth(db, seller, '2021-09', '2021-10')).map((r) => [r.month, r.m3]));
+    const byMonth = new Map((await stampedCargoByMonth(db, seller, '2021-09', '2021-10', 'ltl')).map((r) => [r.month, r.m3]));
     expect(byMonth.get('2021-09')).toBe(4);
     expect(byMonth.get('2021-10')).toBe(3);
 
@@ -922,14 +922,14 @@ describe('«Sotuvchisiz yuk» repairs what the form’s stamp raced past', () =>
     await cargo({ clientId: client, sellerId: null, day: '2021-11-10', m3: 2, kg: 300 });
     await cargo({ clientId: bare, sellerId: null, day: '2021-11-11', m3: 1, kg: 150 });
 
-    const list = await unstampedCargo(db, monthRange('2021-11'));
+    const list = await unstampedCargo(db, monthRange('2021-11'), 'all');
     const raced = list.find((row) => row.clientId === client);
     expect(raced?.currentSellerId).toBe(seller);
     expect(list.find((row) => row.clientId === bare)?.currentSellerId).toBeNull();
 
     expect(await stampToCurrentSeller(db, bare, ctx())).toBeNull();
     expect(await stampToCurrentSeller(db, client, ctx())).toEqual({ sellerId: seller, receipts: 1 });
-    const after = await unstampedCargo(db, monthRange('2021-11'));
+    const after = await unstampedCargo(db, monthRange('2021-11'), 'all');
     expect(after.some((row) => row.clientId === client)).toBe(false);
     expect(after.some((row) => row.clientId === bare)).toBe(true);
   });

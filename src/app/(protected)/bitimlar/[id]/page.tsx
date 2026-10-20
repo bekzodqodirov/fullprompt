@@ -39,6 +39,8 @@ import { DeferForm } from '../defer-form';
 import { DiscountForm } from '../discount-form';
 import { ThreadSeen } from '@/components/thread-seen';
 import { threadReadMarks } from '@/modules/wms/crm/thread';
+import { dealLoadMode } from '@/modules/wms/ftl/read';
+import { mayRevertFtl } from '@/modules/wms/ftl/door';
 
 /**
  * The deal card: the quote and the reality, side by side.
@@ -76,6 +78,8 @@ export default async function DealPage({
   if (!row) notFound();
   // A sealed VED calculation locks the quote on this card (docs/VED.md law 2).
   const quoteLocked = (await quoteLockedFor('deal', id)) !== null;
+  // LTL / FTL (0135): null = the server is one migration behind (no control, no chip).
+  const loadMode = await dealLoadMode(id);
   // The thread's filter and the calls' filter live on the same URL; a link
   // that changes one must carry the other (#514 — a literal string drops it).
   const cardHref = (patch: { hodim?: string | null; chodim?: string | null }) => {
@@ -90,6 +94,7 @@ export default async function DealPage({
 
   const t = await getTranslations('deals');
   const tc = await getTranslations('common');
+  const tf = await getTranslations('ftl');
   // The seller's half of the card (17a): its terms. Asked ONCE, here.
   const terms = mayEditDealTerms(actor.permissions);
   const [{ reality, deviation }, stages, managers, threshold, unlinked] = await Promise.all([
@@ -227,6 +232,12 @@ export default async function DealPage({
                 strong
               />
             </dl>
+            {/* FTL shows, LTL — the default — stays silent (0135). */}
+            {loadMode === 'ftl' ? (
+              <p className="mt-1 text-sm" data-testid="deal-ftl-chip">
+                <span className="chip chip-neutral">🚛 {tf('ftlLong')}</span>
+              </p>
+            ) : null}
           </div>
           <div>
             <p className="section-title">{t('actual')}</p>
@@ -306,6 +317,7 @@ export default async function DealPage({
         <Panel title={`✏️ ${tc('edit')}`} testId="deal-edit-panel">
           <DealForm
             quoteLocked={quoteLocked}
+            load={loadMode ? { initial: loadMode, office: mayRevertFtl(actor) } : null}
             dealId={row.deal.id}
             stages={formStages(stages, row.deal.stageId)}
             managers={managers}

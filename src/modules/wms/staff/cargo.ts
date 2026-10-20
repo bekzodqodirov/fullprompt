@@ -2,6 +2,7 @@ import { sql, type SQL } from 'drizzle-orm';
 import type { db } from '../../platform/db/client';
 import { CARGO_STATUSES } from '../finance/unpriced';
 import { monthRange } from './month';
+import { loadFilterSql, type LoadFilter } from '../ftl/sql';
 
 /**
  * The cargo a seller BROUGHT (0117, the owner's 1a / 2a / 5b) — ONE reader for
@@ -61,7 +62,7 @@ export const receivedMonthSql = (receivedAt: SQL): SQL =>
  * cargo anyone measured, so it is flagged (`unmeasured`) rather than summed
  * silently — the engine refuses such a month and names the receipt.
  */
-export function stampedCartonsSql(q: { from: Date; to: Date; who: CartonOwner }): SQL {
+export function stampedCartonsSql(q: { from: Date; to: Date; who: CartonOwner; load: LoadFilter }): SQL {
   return sql`
     SELECT b.id AS box_id, r.id AS receipt_id, r.number, r.client_id, r.sales_manager_id AS seller_id,
            ${receivedMonthSql(sql`r.received_at`)} AS month,
@@ -76,7 +77,8 @@ export function stampedCartonsSql(q: { from: Date; to: Date; who: CartonOwner })
        AND r.received_at >= ${q.from.toISOString()}::timestamptz
        AND r.received_at < ${q.to.toISOString()}::timestamptz
        AND b.status IN ${CARGO_STATUSES}
-       AND ${ownerSql(q.who)}`;
+       AND ${ownerSql(q.who)}
+       AND ${loadFilterSql(sql`r.id`, q.load)}`;
 }
 
 export interface StampedCargo {
@@ -111,7 +113,13 @@ const toCargo = (row: Row): StampedCargo => ({
 });
 
 /** Per seller over a period — the report's and /upsale's read. */
-export async function stampedCargo(exec: Exec, q: { from: Date; to: Date }, scope: StaffScope): Promise<StampedCargo[]> {
+export async function stampedCargo(
+  exec: Exec,
+  q: { from: Date; to: Date },
+  scope: StaffScope,
+  /** LTL / FTL (0135), REQUIRED (#790): the KPI and the rating's points read 'ltl'. */
+  load: LoadFilter,
+): Promise<StampedCargo[]> {
   const who: CartonOwner = scope.kind === 'own' ? { sellerId: scope.userId } : 'stamped';
   const rows = (await exec.execute(sql`
     SELECT c.seller_id,
@@ -120,7 +128,7 @@ export async function stampedCargo(exec: Exec, q: { from: Date; to: Date }, scop
            coalesce(sum(c.kg), 0) AS kg,
            coalesce(sum(c.m3), 0) AS m3,
            array_agg(DISTINCT coalesce(c.number, c.receipt_id::text)) FILTER (WHERE c.unmeasured) AS unmeasured
-      FROM (${stampedCartonsSql({ ...q, who })}) c
+      FROM (${stampedCartonsSql({ ...q, who, load })}) c
       LEFT JOIN users u ON u.id = c.seller_id
      GROUP BY c.seller_id, u.full_name
      ORDER BY sum(c.m3) DESC`)) as unknown as Row[];
@@ -144,6 +152,7 @@ export async function stampedCargoByMonth(
   sellerId: string,
   fromMonth: string,
   toMonth: string,
+  load: LoadFilter,
 ): Promise<MonthCargo[]> {
   const range = monthsRange(fromMonth, toMonth);
   const rows = (await exec.execute(sql`
@@ -153,7 +162,7 @@ export async function stampedCargoByMonth(
            coalesce(sum(c.kg), 0) AS kg,
            coalesce(sum(c.m3), 0) AS m3,
            array_agg(DISTINCT coalesce(c.number, c.receipt_id::text)) FILTER (WHERE c.unmeasured) AS unmeasured
-      FROM (${stampedCartonsSql({ ...range, who: { sellerId } })}) c
+      FROM (${stampedCartonsSql({ ...range, who: { sellerId }, load })}) c
      GROUP BY c.month, c.seller_id
      ORDER BY c.month`)) as unknown as (Row & { month: string })[];
   return [...rows].map((row) => {
@@ -167,6 +176,7 @@ export async function stampedCargoBySellerMonth(
   exec: Exec,
   fromMonth: string,
   toMonth: string,
+  load: LoadFilter,
 ): Promise<(StampedCargo & { month: string })[]> {
   const range = monthsRange(fromMonth, toMonth);
   const rows = (await exec.execute(sql`
@@ -176,7 +186,7 @@ export async function stampedCargoBySellerMonth(
            coalesce(sum(c.kg), 0) AS kg,
            coalesce(sum(c.m3), 0) AS m3,
            array_agg(DISTINCT coalesce(c.number, c.receipt_id::text)) FILTER (WHERE c.unmeasured) AS unmeasured
-      FROM (${stampedCartonsSql({ ...range, who: 'stamped' })}) c
+      FROM (${stampedCartonsSql({ ...range, who: 'stamped', load })}) c
      GROUP BY c.month, c.seller_id`)) as unknown as (Row & { month: string })[];
   return [...rows].map((row) => ({ month: row.month, ...toCargo(row) }));
 }
@@ -205,13 +215,18 @@ export interface UnstampedClientCargo {
  * list /hodimlar shows with «mijozga sotuvchi belgilang», because naming a
  * seller on the client card is what stamps it (`stampUnattributedCargo`).
  */
-export async function unstampedCargo(exec: Exec, q: { from: Date; to: Date }): Promise<UnstampedClientCargo[]> {
+export async function unstampedCargo(
+  exec: Exec,
+  q: { from: Date; to: Date },
+  /** 'all' wherever the question is the missing STAMP (who earns the profit), not the KPI. */
+  load: LoadFilter,
+): Promise<UnstampedClientCargo[]> {
   const rows = (await exec.execute(sql`
     SELECT c.client_id, cl.client_code, cl.name, cl.sales_manager_id, su.full_name AS seller_name,
            count(DISTINCT c.receipt_id) AS receipts,
            coalesce(sum(c.kg), 0) AS kg,
            coalesce(sum(c.m3), 0) AS m3
-      FROM (${stampedCartonsSql({ ...q, who: 'unstamped' })}) c
+      FROM (${stampedCartonsSql({ ...q, who: 'unstamped', load })}) c
       JOIN clients cl ON cl.id = c.client_id
       LEFT JOIN users su ON su.id = cl.sales_manager_id
      GROUP BY c.client_id, cl.client_code, cl.name, cl.sales_manager_id, su.full_name

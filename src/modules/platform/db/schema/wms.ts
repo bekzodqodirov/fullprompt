@@ -2182,6 +2182,61 @@ export const deals = pgTable(
 );
 
 /**
+ * LTL / FTL (0135, the owner's 1a 2a 6a): SIDE tables, never a column on
+ * leads / deals / receipts — a declared column there is named by every
+ * whole-row read of the three hottest tables and would answer them 42703 one
+ * migration behind (#1381, #735). No row = LTL, the business's default.
+ * The one writer is `wms/ftl/service.ts`; see the migration for the rules.
+ */
+export const leadFtl = pgTable('lead_ftl', {
+  leadId: uuid('lead_id')
+    .primaryKey()
+    .references(() => leads.id, { onDelete: 'cascade' }),
+  markedBy: uuid('marked_by').references(() => users.id, { onDelete: 'set null' }),
+  /** An office mark (admin/logist/accountant) reaches every prixod of the client, a seller's only his own. */
+  byOffice: boolean('by_office').notNull(),
+  markedAt: timestamp('marked_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const dealFtl = pgTable('deal_ftl', {
+  dealId: uuid('deal_id')
+    .primaryKey()
+    .references(() => deals.id, { onDelete: 'cascade' }),
+  markedBy: uuid('marked_by').references(() => users.id, { onDelete: 'set null' }),
+  byOffice: boolean('by_office').notNull(),
+  markedAt: timestamp('marked_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * A prixod's mode when it is not simply «LTL, following its deal»: an FTL it
+ * INHERITED from `fromDealId` (hand = false), or a person's decision on the
+ * prixod card (hand = true, either mode), which no deal change overrides.
+ */
+export const receiptLoadMode = pgTable(
+  'receipt_load_mode',
+  {
+    receiptId: uuid('receipt_id')
+      .primaryKey()
+      .references(() => receipts.id, { onDelete: 'cascade' }),
+    mode: text('mode').notNull(),
+    hand: boolean('hand').notNull(),
+    fromDealId: uuid('from_deal_id').references(() => deals.id, { onDelete: 'cascade' }),
+    setBy: uuid('set_by').references(() => users.id, { onDelete: 'set null' }),
+    setAt: timestamp('set_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check('receipt_load_mode_mode_check', sql`${t.mode} IN ('ltl', 'ftl')`),
+    check(
+      'receipt_load_mode_shape_check',
+      sql`(${t.hand} AND ${t.fromDealId} IS NULL) OR (NOT ${t.hand} AND ${t.mode} = 'ftl' AND ${t.fromDealId} IS NOT NULL)`,
+    ),
+    index('receipt_load_mode_deal_idx')
+      .on(t.fromDealId)
+      .where(sql`${t.fromDealId} IS NOT NULL`),
+  ],
+);
+
+/**
  * One priced item. A price may be set per line OR as one total on the deal —
  * the owner's people do both — so amounts here are nullable and the deal's own
  * `quotedAmount` wins when it is set.

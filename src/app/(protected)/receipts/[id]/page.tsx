@@ -73,6 +73,9 @@ import { mayReadThread } from '@/modules/wms/crm/thread-door';
 import { threadReadMarks } from '@/modules/wms/crm/thread';
 import { CargoThread } from '@/components/cargo-thread';
 import { ThreadSeen } from '@/components/thread-seen';
+import { receiptLoadView } from '@/modules/wms/ftl/read';
+import { mayRevertFtl } from '@/modules/wms/ftl/door';
+import { LoadModeBlock } from './load-mode-block';
 
 export default async function ReceiptDetailPage({
   params,
@@ -105,6 +108,10 @@ export default async function ReceiptDetailPage({
   if (!(await mayReadReceipt(actor, { id, warehouseId: receipt.warehouseId }))) notFound();
 
   const t = await getTranslations('receipts');
+  const tf = await getTranslations('ftl');
+  // LTL / FTL (0135). null = the server is one migration behind: nothing drawn.
+  const loadView = await receiptLoadView(id);
+  const ftlOffice = mayRevertFtl(actor);
   const tAny = await getTranslations();
   const tc = await getTranslations('common');
   const ta = await getTranslations('annul');
@@ -526,6 +533,17 @@ export default async function ReceiptDetailPage({
           hasCompensation={hasCompensation}
         />
       )}
+
+      {/* LTL / FTL (0135): the block for whoever the door lets act — the
+          office, or this prixod's own seller (FTL only, his 2a); a chip for
+          everybody else when it is FTL, nothing when it is LTL. */}
+      {loadView && (ftlOffice || (loadView.sellerId === actor.id && loadView.mode === 'ltl')) ? (
+        <LoadModeBlock receiptId={id} view={loadView} office={ftlOffice} />
+      ) : loadView?.mode === 'ftl' ? (
+        <p className="text-sm" data-testid="receipt-ftl-chip">
+          <span className="chip chip-neutral">🚛 {tf('ftlLong')}</span>
+        </p>
+      ) : null}
 
       {mayLinkCalc && calcOptions.length > 0 && (
         <CalcLink

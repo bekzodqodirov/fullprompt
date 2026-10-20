@@ -9,6 +9,9 @@ import { salesManagerOptions } from '@/modules/platform/rbac/queries';
 import { listStages } from '@/modules/wms/deals/service';
 import { mayEditDealTerms } from '@/modules/wms/deals/door';
 import { formStages } from '@/modules/wms/crm/stage-law';
+import { leadLoadMode } from '@/modules/wms/ftl/read';
+import { ftlReady } from '@/modules/wms/ftl/service';
+import { mayRevertFtl } from '@/modules/wms/ftl/door';
 import { DealForm } from '../deal-form';
 import { ClientPicker } from './client-picker';
 
@@ -49,6 +52,9 @@ export default async function NewDealPage({
     ? await db.query.leads.findFirst({ where: eq(leads.id, params.lead) })
     : null;
   const quote = fromLead && preset && fromLead.clientId === preset.id ? fromLead : null;
+  // LTL / FTL (0135): a won lead's FTL is offered on its deal too (his 1a);
+  // null = the server is one migration behind (no choice drawn).
+  const leadMode = quote ? await leadLoadMode(quote.id) : (await ftlReady()) ? 'ltl' : null;
 
   if (!preset) {
     const list = await db
@@ -84,6 +90,7 @@ export default async function NewDealPage({
       <DealForm
         stages={formStages(stages, null)}
         managers={managers}
+        load={leadMode ? { initial: quote ? leadMode : 'ltl', office: mayRevertFtl(actor) } : null}
         initial={{
           clientId: preset.id,
           ownerId: preset.salesManagerId,

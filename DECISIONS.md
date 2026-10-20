@@ -3890,3 +3890,78 @@ LEDGER (the same door, so a code the import or a won lead minted is never this
 person's «yangi mijoz»). The first cargo was left as it was — he named the win.
 Red proofs ×3 by string edit (the unstamped-win clause, the price line, the
 code counter's +1).
+
+## LTL / FTL — sborniy va butun mashina (2026-10-20; migration 0135 `load_mode`, ledger 136; spec `docs/LTL-FTL.md`)
+
+His message: «bizni sohada LTL FTL degan narsalar bor … KPI sovrinlar shu LTL boyicha hsoblanadi agarda FTL
+bolsa bunga kpi yozilmaydi … gamificationda FTL va LTL birga qoshilib ketyabta», answered «3 b / qolgani sen
+aytgandek» = 1a 2a 3b 4a 5a 6a 7a. Five scouts read the code, the design was judged by four lenses before code
+(money/6a, abuse/2a, regression, owner intent — 40 objections, every one absorbed or stated), then built solo.
+
+1416. **Side tables and not columns.** `lead_ftl` / `deal_ftl` (a row = FTL, with who marked it and whether
+that was the office) and `receipt_load_mode` (no row = LTL following its deal; an inherited FTL naming the deal
+it came FROM; or a person's hand decision, either mode). A column on leads / deals / receipts would be named by
+~75 whole-row drizzle reads and every `INSERT … RETURNING`, so one migration behind the receive confirm, both
+boards and every card would answer 42703 — #1381's reason, #735's rule. The judge's regression lens found it;
+v1 had columns. No row = LTL, so nothing is backfilled and every machine creator writes LTL by construction. A
+readiness probe (`ftlReady`) is asked before any transaction by the doors receiving and the CRM depend on.
+
+1417. **The prixod's mode is STORED, with exactly three writers that inherit and one that decides.** One
+statement (`inheritSql`) for the confirm's INSERT, a re-file, and the deal's own change. Derived
+(`coalesce(receipt, deal)`) was refused: the link door is open to every `canWriteDeal` holder with no ownership
+check, so a detach or a re-file would turn FTL back to LTL, and a deal flip would silently reprice a paid month.
+A re-file to an LTL deal or a detach NEVER downgrades; FTL → LTL is only the office's explicit decision, and a
+deal's revert takes back exactly what THAT deal gave (`from_deal_id`), wherever the prixod went since.
+
+1418. **What a mark may reach is decided by the STAMP, not the deal owner** (the abuse lens's two blockers). The
+KPI is `receipts.sales_manager_id`'s; `deals.owner_id` is a select any seller can rewrite. So an inherited FTL
+needs the deal to be the prixod's client's (a client correction keeps `deal_id` — `r.client_id = d.client_id`)
+and the mark to be the office's or the prixod's own seller's. A seller marks a lead/deal only when he owns it
+before AND after the save; an owner change on a record that is FTL before or after is the office's (one ordinary
+save could otherwise hand an FTL job — and its KPI loss — to a colleague), including the bulk assign. On the
+prixod card a seller may only ever WRITE FTL, only on his own stamp: an LTL write would hand-pin his cargo
+against the office's later FTL. Absent = unchanged on update (never `?? 'ltl'`), and a save that must ask the
+door but carries none fails closed (#790).
+
+1419. **The office = unscoped `plans.manage` ∨ `finance.reports`.** Admin, super_admin, logist, accountant —
+tested over every SEEDED role. Not `finance.manage` (the VED holds it, #790's trap), not a warehouse-scoped
+role a future tick gives «Rejalar» (border-queue's rule). The accountant cannot open a deal card, so the prixod
+card offers him «Bitimni ham LTL qilish» through a narrow office-only deal door with the same cascade.
+
+1420. **A PAID month is frozen (6a), by refusal.** The KPI is netted (earned − paid, overpaid «never clawed
+back but later netted»), so a recount of a paid month IS a claw-back from the next. `kpiPaidMonthSql`: a stamped
+prixod whose Tashkent month is on or after the first KPI table AND on or before a LIVE payout's
+`through_month` to its seller. The money lens's blocker: v1 had no floor and froze a paid seller's whole history,
+blocking the backfill he asked for. Voiding the payout lifts it. Every writer takes payKpi's own
+`kpi:<seller>` advisory key (one spelling, `kpiSellerLockSql`, now used by payKpi too), sorted, after the deal
+row and before any receipt row; a stamp that moves under the card door is `stamp_moved`. Cost stated to him: an
+FTL prixod in an already-paid month stays as it was paid.
+
+1421. **KPI = LTL, one constant (`KPI_LOAD`), every KPI reader.** `stampedCartonsSql` and every `cargo.ts` reader
+take a REQUIRED `LoadFilter`; the paid part's `stamped` scope too — and ONLY that scope: `u_box` / `paidCargo`
+feed the upsale (5a), the handover gate, narxsiz and the Balans, so the filter there would have changed money.
+The rating's points, the profile «Bu oy», /hodimlar, /upsale's «Olib kelgan yuk (KPI)» and the seller report's
+kub columns read LTL and show FTL beside them (the intent lens: v1 kept FTL in the report and would have printed
+two kub for one seller's month). Money columns are untouched. The «Sotuvchisiz yuk» repair lists stay 'all' —
+they are about the missing stamp.
+
+1422. **The office hears a seller's own FTL mark (`FtlMarked`, alerts, a newcomer).** The money lens's find:
+the KPI rate RISES with density, so dropping a light lot from a month can lift its band — «it only costs him»
+is not the whole story. Named record, size, no money.
+
+1423. **The rating's FTL line (3b) sits AFTER «Jamoa» and the goal**, plain names, kub-first like the ranked
+rows, counted in PRIXOD (a week counts cargo by its China receipt day, mostly before a truck exists — told to him
+instead of «mashina»). «Nobody brought cargo» says «sborniy (LTL)» when an FTL line is under it; an FTL-only
+seller is not idle; the goal and the intro say FTL does not count. Stored weeks carry `ftl` beside `rows`.
+
+1424. **An FTL win (4a) is labelled «🚛 FTL — butun mashina» and carries NO month line**; the tally counts LTL
+wins only (`NOT EXISTS lead_ftl` at the top level, outside the «this one» OR). A tally under an FTL win would
+read «birinchi g'alaba» under somebody's third. The first cargo is labelled by the prixod's mode at send time.
+
+1425. **The logist's hint (7a) after `departBatch` commits** (one press, once, final), to `logistsForTruck`.
+`soleOwnerOf` (pure): one client, or several codes of one PERSON by phone (a seller splitting a whole truck over
+two codes must not escape the one check his incentive has); unclaimed lots only by their marking; an
+all-unclaimed truck resolves its markings. The intent lens's blocker: v1 skipped internal legs, and Yiwu →
+Kashgar is CN → CN — the very truck a whole-truck job leaves China on — so only «davomi» trucks are skipped. It
+names only prixods that can still change (not frozen, not hand-pinned) and never one an earlier hint named (the
+Kashgar leg stays quiet), and names the client's open FTL deal with «bitimsiz prixodlarni shunga biriktiring».

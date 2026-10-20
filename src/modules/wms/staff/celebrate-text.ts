@@ -108,7 +108,13 @@ export interface WonFacts {
   currency: string | null;
   m3: number | null;
   kg: number | null;
-  /** The hero's wins this Tashkent month, this one included; null when the lead has no owner. */
+  /**
+   * A whole truck (0135, his 4a): labelled «🚛 FTL», and no month line — the
+   * tally is LTL wins only, and printing it under an FTL win reads as if the
+   * win were in it.
+   */
+  ftl: boolean;
+  /** The hero's LTL wins this Tashkent month, this one included; null when not counted. */
   monthWins: number | null;
   /** Σ of those wins' DOLLAR prices; null when none carried one. */
   monthUsd: number | null;
@@ -124,8 +130,9 @@ export function leadWonHtml(hero: Hero, facts: WonFacts, index: number): string 
   if (facts.m3 !== null && facts.m3 > 0) cargo.push(b(`${groupDigits(Math.round(roundM3(facts.m3) * 100) / 100)} kub`));
   if (facts.kg !== null && facts.kg > 0) cargo.push(b(`${groupDigits(Math.round(facts.kg))} kg`));
   if (cargo.length > 0) body.push(`📦 Yuk: ${cargo.join(' · ')}`);
+  if (facts.ftl) body.push(`🚛 ${b('FTL')} — butun mashina`);
   if (body.length > 0) lines.push('', ...body);
-  if (facts.monthWins !== null && facts.monthWins > 0) {
+  if (!facts.ftl && facts.monthWins !== null && facts.monthWins > 0) {
     // The first win's «jami» would only repeat its own price two lines up.
     const sum = facts.monthUsd !== null && facts.monthUsd > 0 ? ` · jami ${b(moneyText(facts.monthUsd, 'USD'))}` : '';
     lines.push(
@@ -140,10 +147,11 @@ export function leadWonHtml(hero: Hero, facts: WonFacts, index: number): string 
 export function firstCargoHtml(
   hero: Hero,
   clientCode: string,
-  cargo: { m3: number; kg: number; place: string | null },
+  cargo: { m3: number; kg: number; place: string | null; ftl?: boolean },
   index: number,
 ): string {
-  const line = h(cargoLine(cargo.m3, cargo.kg)) + (cargo.place ? ` (${h(cargo.place)})` : '');
+  const line =
+    (cargo.ftl ? `🚛 ${b('FTL')} · ` : '') + h(cargoLine(cargo.m3, cargo.kg)) + (cargo.place ? ` (${h(cargo.place)})` : '');
   return pick(FIRST_CARGO, index)({ who: heroHtml(hero), code: code(clientCode), cargo: line });
 }
 
