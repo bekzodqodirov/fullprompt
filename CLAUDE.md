@@ -158,6 +158,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | A factory trip closes and remembers its lines — the door question, «shu zavoddan, shu mashinada», the checker | `docs/ZAVOD-YOPISH.md` — agreed 2026-10-15 (his 1a-5a, 6, 7 ha), SHIPPED; §10-§11 override §2-§5 |
 | The staff Telegram group — celebrations, the Saturday 18:00 rating, the month's champion, /reyting | `docs/JAMOA-GURUHI.md` — agreed 2026-10-20 (his «3. 2 3 gif … tabriklash ham / qolgani sen aytkandek»), SHIPPED |
 | Every truck in one place — the board by place, the % by distance, GPS, the gate | `docs/PARTIYA-DOSKASI.md` — agreed 2026-10-17 (his 1A 2a 3a 4a 5a 6c 7a 8b 9b 10b 11A 12A, then «1 hozirgidek qolsin»), SHIPPED; §2 is the placement as built |
+| His eight items of 2026-10-20 (AI reading, customs, models, odnarodka, VED rota, new deal, kontragent links, one-line tarkib) — verified diagnosis, round plan, the numbered questions | `docs/SAKKIZ-BAND.md` — diagnosed 2026-10-20, **NOT agreed, nothing built**; record his answers in §11 |
 ## State — 2026-08-23
 
 **VED phases A-E1 are on this branch** (`docs/VED.md`; migrations
