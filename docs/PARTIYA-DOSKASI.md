@@ -114,9 +114,11 @@ so the attention row and the 20:00 summary count both. The first unload scan
 does not restart it: an arrived truck stood since the earlier of its scan and
 the phone's yard fix before that scan (`TruckRow.stoodSince`) — «stuck», the
 board's arrived-column order, the bot and /trucks judge by it. **«Keldi» stays
-the scan on every screen**; the phone's earlier yard time is its own line,
-«hovlida N kundan beri (GPS)», shown only when it came on an earlier day (a
-moved arrival date made every reader of the first one disagree). A trip that STARTS in its destination's
+the scan on every screen**; the phone's earlier yard time is its own past
+fact, «GPS: hovliga 16.10 kirgan», shown only when it came on an earlier day
+(a moved arrival date made every reader of the first one disagree, and a
+running count outlived what the phone saw). The dashboard ranks every truck at
+a gate by how long it has stood — the board's own arrived order. A trip that STARTS in its destination's
 yard (TAS1 → TAS2) is never at the gate by the phone (`gateYard`). The
 schedule-based gate clock this replaced flagged a truck that arrived late
 five minutes after it pulled in, and let a late pin hold the alarm back for
