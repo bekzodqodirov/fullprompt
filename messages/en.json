@@ -5914,7 +5914,7 @@
     "connected": "Connected group: {title}",
     "facts": "Members: {members} · since {since}",
     "cannotPost": "The bot cannot post in the group: {error}",
-    "everyoneReads": "Everyone in the group reads these messages. They carry no money and no client names or phones — only the client code, m³ and kg.",
+    "everyoneReads": "Everyone in the group reads these messages (the warehouse and the VED too). A won-lead post carries that lead’s price, m³ and kg; no other post carries money. Client names and phones never appear — only the client code.",
     "test": "Test message",
     "testOk": "Queued — check the group in a minute.",
     "ratingNow": "Send the rating",

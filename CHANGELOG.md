@@ -1,5 +1,25 @@
 # CHANGELOG
 
+## 2026-10-20 (kechqurun) — Yutilgan lid tabrigi: narx, kub, kg va «bu oy»
+
+Sizning so'rovingiz: «lead yutilganda nech pullik, necha kub, necha kg yuk yutildi — shuni qo'shishimiz kerak» va «yanayam jonliroq bo'lsin, oddiy tabrikdan ham». **Migratsiya yo'q — son 135 qoladi; tekshiruv: `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatsin.**
+
+Endi lid yutilganda guruhga shunday xabar boradi (GIF bilan):
+
+> 🏆 **G'ALABA!** Aziz Karimov lidni yutdi — **GS451**!
+>
+> 💰 Narx: **$2 450**
+> 📦 Yuk: **18.5 kub** · **2 300 kg**
+>
+> 🔥 Bu oy: **3-g'alaba** · jami **$7 350**
+> Barakalla, jamoa faxrlanadi! 🚀
+
+- Narx, kub va kg — lidning o'zida yozilgan narx va hajm (bitimga o'tadigan o'sha raqamlar). Lidda biror raqam yozilmagan bo'lsa, o'sha qator chiqmaydi — hech qachon «$0» yoki «0 kub» chiqmaydi.
+- «🔥 Bu oy» — lid egasining shu oydagi yutgan lidlari soni va dollar narxlari jami. Oyning birinchi g'alabasida «Bu oyning birinchi g'alabasi!» deb yoziladi.
+- Sarlavha (G'ALABA! / BITIM YOPILDI! / NISHONGA TEGDI! …) va oxirgi gap har safar almashadi — ketma-ket ikki xabar bir xil chiqmaydi.
+- Yangi mijoz kodi tabrigiga ham «📈 Bu oy: 3-mijoz» qatori qo'shildi.
+- **Eslatma (siz so'radingiz, shuning uchun qilindi):** guruhdagi hamma — sklad va VED ham — endi yutilgan lidning narxini ko'radi. «Jamoa guruhi» sahifasidagi ogohlantirish matni ham shunga o'zgartirildi. Haftalik reyting, oy chempioni va birinchi yuk xabarlarida pul hali ham yo'q.
+
 ## Jamoa guruhi: tabriklar, shanba reytingi va gamifikatsiya — 2026-10-20
 
 **Migratsiya 0134 — deploydan keyin migratsiyalar soni 135 bo'lishi kerak.**

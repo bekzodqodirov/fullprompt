@@ -6,7 +6,9 @@ import {
   firstCargoHtml,
   heroHtml,
   leadWonHtml,
+  moneyText,
   TEMPLATE_COUNTS,
+  type WonFacts,
 } from '@/modules/wms/staff/celebrate-text';
 import { GROUP_ERRORS } from '@/app/(protected)/admin/jamoa-guruhi/errors';
 import { WORKER_REGISTRATIONS } from '@/modules/platform/jobs/boss';
@@ -131,6 +133,25 @@ describe('every runtime-built key exists in all four bundles (#163)', () => {
 
 describe('the celebrations’ words', () => {
   const hero = { name: 'Aziz <&>', telegramUserId: '555' };
+  const nb = (text: string) => text.replace(/(\d) (\d)/g, '$1\u00a0$2');
+  const bare: WonFacts = {
+    clientCode: 'GS512',
+    amount: null,
+    currency: null,
+    m3: null,
+    kg: null,
+    monthWins: null,
+    monthUsd: null,
+  };
+  const full: WonFacts = {
+    clientCode: 'GS512',
+    amount: 2450,
+    currency: 'USD',
+    m3: 18.456,
+    kg: 2300.4,
+    monthWins: 4,
+    monthUsd: 9800,
+  };
 
   it('a name is escaped and becomes a mention only with a linked chat', () => {
     expect(heroHtml(hero)).toBe('<a href="tg://user?id=555"><b>Aziz &lt;&amp;&gt;</b></a>');
@@ -141,9 +162,9 @@ describe('the celebrations’ words', () => {
     for (const [kind, n] of Object.entries(TEMPLATE_COUNTS)) {
       const render = (i: number) =>
         kind === 'client'
-          ? clientMintedHtml(hero, 'GS512', i)
+          ? clientMintedHtml(hero, 'GS512', i, null)
           : kind === 'won'
-            ? leadWonHtml(hero, 'GS512', i)
+            ? leadWonHtml(hero, full, i)
             : firstCargoHtml(hero, 'GS512', { m3: 2.456, kg: 310, place: 'Yiwu' }, i);
       const seen = new Set(Array.from({ length: n }, (_, i) => render(i)));
       expect(seen.size, kind).toBe(n);
@@ -152,12 +173,41 @@ describe('the celebrations’ words', () => {
     }
   });
 
-  it('carries the code and the cargo, never money', () => {
-    const won = leadWonHtml(hero, 'GS512', 0);
+  it('a won lead says the price, the kub and the kg it was won with, and the seller’s month', () => {
+    const won = leadWonHtml(hero, full, 0);
     expect(won).toContain('<b>GS512</b>');
-    expect(leadWonHtml(hero, null, 0)).not.toContain('null');
+    expect(won).toContain(nb('💰 Narx: <b>$2 450</b>'));
+    expect(won).toContain(nb('📦 Yuk: <b>18.46 kub</b> · <b>2 300 kg</b>'));
+    expect(won).toContain(nb("🔥 Bu oy: <b>4-g'alaba</b> · jami <b>$9 800</b>"));
+    // The first win of the month is its own sentence, never «1-g'alaba», and
+    // carries no «jami» — it would repeat the price two lines up.
+    expect(leadWonHtml(hero, { ...full, monthWins: 1, monthUsd: 2450 }, 0)).toContain("🔥 Bu oyning birinchi g'alabasi!\n");
+  });
+
+  it('a part the lead does not carry is left out — never «0», «null» or a bare «$»', () => {
+    const won = leadWonHtml(hero, { ...bare, clientCode: null }, 0);
+    expect(won).not.toMatch(/null|undefined|NaN|\$|Narx|Yuk|Bu oy/);
+    expect(leadWonHtml(hero, { ...full, amount: 0 }, 0)).not.toContain('Narx');
+    expect(leadWonHtml(hero, { ...full, m3: null }, 0)).toContain(nb('📦 Yuk: <b>2 300 kg</b>'));
+    expect(leadWonHtml(hero, { ...full, monthUsd: null }, 0)).toContain("🔥 Bu oy: <b>4-g'alaba</b>\n");
+  });
+
+  it('money is written as a person writes it, and a strange currency is escaped', () => {
+    expect(moneyText(2450, 'USD')).toBe(nb('$2 450'));
+    expect(moneyText(2450.5, 'USD')).toBe(nb('$2 450.50'));
+    expect(moneyText(31000000, 'UZS')).toBe(nb("31 000 000 so'm"));
+    expect(moneyText(12, '<b>')).toBe('12 &lt;b&gt;');
+  });
+
+  it('only a won lead carries money — a new code and a first cargo never do', () => {
     const cargo = firstCargoHtml(hero, 'GS512', { m3: 2.456, kg: 310, place: 'Yiwu' }, 0);
     expect(cargo).toContain('2.46 kub · 310 kg (Yiwu)');
-    for (const html of [won, cargo, clientMintedHtml(hero, 'GS512', 0)]) expect(html).not.toMatch(/\$|USD|narx/i);
+    for (const html of [cargo, clientMintedHtml(hero, 'GS512', 0, 3)]) expect(html).not.toMatch(/\$|USD|narx/i);
+  });
+
+  it('a new code counts the minter’s month', () => {
+    expect(clientMintedHtml(hero, 'GS512', 0, 3)).toContain('📈 Bu oy: <b>3-mijoz</b>');
+    expect(clientMintedHtml(hero, 'GS512', 0, 1)).toContain('📈 Bu oyning birinchi yangi mijozi!');
+    expect(clientMintedHtml(hero, 'GS512', 0, null)).not.toContain('📈');
   });
 });

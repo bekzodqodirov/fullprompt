@@ -301,6 +301,7 @@ describe('the GIFs take turns (his «zerkarli bolmasin»)', () => {
     expect(anim[0]!.body.animation).toMatch(/^known-/);
     expect(String(anim[0]!.body.caption)).toContain(`<b>SG${SUFFIX}</b>`);
     expect(String(anim[0]!.body.caption)).toContain(`tg://user?id=${TG.seller}`);
+    expect(String(anim[0]!.body.caption)).toContain('📈 Bu oyning birinchi yangi mijozi!');
     // The same client again: nobody is praised twice.
     calls = [];
     await celebrateNewClient(clientId, sellerId);
@@ -314,7 +315,20 @@ describe('the three celebrations', () => {
     const stage = await db.query.leadStages.findFirst({ where: eq(leadStages.kind, 'won') });
     const [lead] = await db
       .insert(leads)
-      .values({ name: `Lid ${SUFFIX}`, stageId: stage!.id, ownerId: seller2Id, clientId: client2Id, createdBy: adminId })
+      .values({
+        name: `Lid ${SUFFIX}`,
+        stageId: stage!.id,
+        ownerId: seller2Id,
+        clientId: client2Id,
+        createdBy: adminId,
+        // His «nech pullik necha kub necha kg» — the lead's own quote. closed_at
+        // is left NULL on purpose: a legacy door that never stamped it must not
+        // drop the win from its own month.
+        quotedAmount: '2450.00',
+        quotedCurrency: 'USD',
+        quotedVolumeM3: '18.500',
+        quotedWeightKg: '2300.000',
+      })
       .returning();
     leadId = lead!.id;
     const event = { payload: { leadId, stageKind: 'won' }, actorId: adminId };
@@ -327,6 +341,10 @@ describe('the three celebrations', () => {
     expect(rows[0]!.html).toContain(`<b>Bekzod &lt;Sotuvchi&gt; ${SUFFIX}</b>`);
     expect(rows[0]!.html).not.toContain('tg://');
     expect(rows[0]!.html).toContain(`SH${SUFFIX}`);
+    const nb = (text: string) => text.replace(/(\d) (\d)/g, '$1\u00a0$2');
+    expect(rows[0]!.html).toContain(nb('💰 Narx: <b>$2 450</b>'));
+    expect(rows[0]!.html).toContain(nb('📦 Yuk: <b>18.5 kub</b> · <b>2 300 kg</b>'));
+    expect(rows[0]!.html).toContain("🔥 Bu oyning birinchi g'alabasi!");
   });
 
   it('a lead moved to an OPEN stage is not a win — a real lead, with an owner and a client', async () => {

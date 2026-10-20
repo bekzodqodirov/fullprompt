@@ -1,8 +1,9 @@
 import { sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { logger } from '../../platform/logger';
+import { tashkentDayStart, tashkentMonthStart } from '../../platform/time/tashkent';
 import { queueGroupPost, type GroupPostKind } from '../../platform/telegram/staff-group-posts';
-import { clientMintedHtml, firstCargoHtml, leadWonHtml, type Hero } from './celebrate-text';
+import { clientMintedHtml, firstCargoHtml, leadWonHtml, type Hero, type WonFacts } from './celebrate-text';
 
 /**
  * Praise in front of everybody (0134, the owner, 2026-10-20: «client code
@@ -35,6 +36,11 @@ async function rotationIndex(kind: GroupPostKind): Promise<number> {
   return Number(rows[0]?.n ?? 0);
 }
 
+/** The instant this Tashkent month began — bound as an ISO string (#156). */
+function monthStartIso(now: Date = new Date()): string {
+  return tashkentDayStart(tashkentMonthStart(now)).toISOString();
+}
+
 /**
  * A code minted at one of the two APP doors (the «+» and the client form) —
  * called there, beside the round-111 deal, and NOT in `createClient`, for the
@@ -50,7 +56,14 @@ export async function celebrateNewClient(clientId: string, minterId: string): Pr
     const client = rows[0];
     const hero = await heroOf(minterId);
     if (!client || !hero) return;
-    const html = clientMintedHtml(hero, client.client_code, await rotationIndex('client'));
+    // The month's count is read off the post ledger — what the group was told,
+    // and the same door: a code minted elsewhere (the import, a won lead) was
+    // never this person's «yangi mijoz» post. This post is not written yet.
+    const counted = await db.execute<{ n: string }>(sql`
+      SELECT count(*)::text AS n FROM staff_group_posts
+       WHERE kind = 'client' AND subject_user_id = ${minterId}::uuid
+         AND created_at >= ${monthStartIso()}::timestamptz AND dedupe_key <> ${`client:${clientId}`}`);
+    const html = clientMintedHtml(hero, client.client_code, await rotationIndex('client'), Number(counted[0]?.n ?? 0) + 1);
     await queueGroupPost({ kind: 'client', dedupeKey: `client:${clientId}`, html, subjectUserId: minterId, withMedia: true });
   } catch (err) {
     logger.error({ err, clientId }, '[staff-group] client celebration failed');
@@ -72,8 +85,17 @@ export async function celebrateLeadWon(event: {
   const leadId = typeof event.payload.leadId === 'string' ? event.payload.leadId : null;
   if (!leadId) return;
   try {
-    const rows = await db.execute<{ owner_id: string | null; client_code: string | null }>(sql`
-      SELECT l.owner_id::text AS owner_id, c.client_code
+    const rows = await db.execute<{
+      owner_id: string | null;
+      client_code: string | null;
+      amount: string | null;
+      currency: string | null;
+      m3: string | null;
+      kg: string | null;
+    }>(sql`
+      SELECT l.owner_id::text AS owner_id, c.client_code,
+             l.quoted_amount::text AS amount, l.quoted_currency AS currency,
+             l.quoted_volume_m3::text AS m3, l.quoted_weight_kg::text AS kg
         FROM leads l
         LEFT JOIN clients c ON c.id = l.client_id
        WHERE l.id = ${leadId}::uuid`);
@@ -82,11 +104,48 @@ export async function celebrateLeadWon(event: {
     if (!lead || !heroId) return;
     const hero = await heroOf(heroId);
     if (!hero) return;
-    const html = leadWonHtml(hero, lead.client_code, await rotationIndex('won'));
+    const html = leadWonHtml(hero, await wonFacts(leadId, lead), await rotationIndex('won'));
     await queueGroupPost({ kind: 'won', dedupeKey: `won:${leadId}`, html, subjectUserId: heroId, withMedia: true });
   } catch (err) {
     logger.error({ err, leadId }, '[staff-group] lead-won celebration failed');
   }
+}
+
+const num = (value: string | null): number | null => (value === null ? null : Number(value));
+
+/**
+ * The win's figures: the lead's own quote (what winLead carries into the deal)
+ * and the OWNER's month so far — won leads by `closed_at` (the tahlil clock),
+ * this one counted even if a legacy door left it unstamped. Dollars only in
+ * the month's sum: adding a so'm price to a dollar one is a number nobody can
+ * read. A lead with no owner has no «month» to speak of.
+ */
+async function wonFacts(
+  leadId: string,
+  lead: { owner_id: string | null; client_code: string | null; amount: string | null; currency: string | null; m3: string | null; kg: string | null },
+): Promise<WonFacts> {
+  let monthWins: number | null = null;
+  let monthUsd: number | null = null;
+  if (lead.owner_id) {
+    const tally = await db.execute<{ wins: string; usd: string | null }>(sql`
+      SELECT count(*)::text AS wins,
+             sum(l.quoted_amount) FILTER (WHERE l.quoted_currency = 'USD')::text AS usd
+        FROM leads l
+        JOIN lead_stages s ON s.id = l.stage_id
+       WHERE s.kind = 'won' AND l.owner_id = ${lead.owner_id}::uuid
+         AND (l.closed_at >= ${monthStartIso()}::timestamptz OR l.id = ${leadId}::uuid)`);
+    monthWins = Number(tally[0]?.wins ?? 0);
+    monthUsd = num(tally[0]?.usd ?? null);
+  }
+  return {
+    clientCode: lead.client_code,
+    amount: num(lead.amount),
+    currency: lead.currency,
+    m3: num(lead.m3),
+    kg: num(lead.kg),
+    monthWins,
+    monthUsd,
+  };
 }
 
 /**
