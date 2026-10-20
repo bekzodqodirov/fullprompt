@@ -102,12 +102,17 @@ elsewhere — TAS2 stands in Tashkent, its dot is drawn 85 km off — else the
 warehouse's dot, else the road's end), measured from the fix itself, not its
 projection, on a modelled road or not: «Manzilda, tushirilmagan», 100 %, no
 date, and **never late on the road** — arriving forgives the road's lateness,
-and no pin moves the gate. How long it has stood there is `gateSince`, the
-first fix at the yard after the last accurate fix anywhere else
+and no pin moves the gate's clock (a pin pressed after the fix that agrees
+with it — «O'zbekistonda» at an Uzbek yard — keeps it at the gate; one that
+contradicts it is newer evidence and wins). How long it has stood there is
+`gateSince`, the first fix at the yard after the last accurate fix anywhere
+else, counted in the phone's own order and only from the departure
 (`latestPositions`); once `STUCK_AT_GATE_DAYS` (2) Tashkent days have passed
-the row is «Tushirilmay turibdi — tushirishni tekshiring» (kind `stuck`) —
-the scan-arrived truck's own clock (`isStuckAtGate`), so the attention row
-and the 20:00 summary count both. A trip that STARTS in its destination's
+the row is «Tushirilmay turibdi — tushirishni tekshiring» (kind `stuck`, the
+lorry red on the map) — the scan-arrived truck's own clock (`isStuckAtGate`),
+so the attention row and the 20:00 summary count both. The first unload scan
+does not restart it: an arrived truck stood since the earlier of its scan and
+the phone's yard fix before that scan. A trip that STARTS in its destination's
 yard (TAS1 → TAS2) is never at the gate by the phone (`gateYard`). The
 schedule-based gate clock this replaced flagged a truck that arrived late
 five minutes after it pulled in, and let a late pin hold the alarm back for
