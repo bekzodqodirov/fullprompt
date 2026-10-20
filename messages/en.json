@@ -409,6 +409,7 @@
     "truckAtGate": "At gate, not unloaded",
     "truckAtGateDays": "{n, plural, =0 {came today} one {standing # day} other {standing # days}}",
     "truckAtGateStuck": "check the unloading",
+    "truckYardDays": "{n, plural, one {in the yard # day (GPS)} other {in the yard # days (GPS)}}",
     "truckUnloadedOpenHint": "«{button}» not pressed"
   },
   "inventory": {
@@ -1643,7 +1644,6 @@
       "loadedRange": "Loaded {range}",
       "departedOn": "Departed {date}",
       "arrivedOn": "Arrived {date}",
-      "arrivedOnGps": "Arrived {date} (GPS)",
       "roadPct": "{pct}% of the road",
       "warnStale": "trip arrived, not closed",
       "menu": "Truck actions",

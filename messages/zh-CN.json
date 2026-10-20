@@ -409,6 +409,7 @@
     "truckAtGate": "已到达，未卸货",
     "truckAtGateDays": "{n, plural, =0 {今天到达} other {已停#天}}",
     "truckAtGateStuck": "请检查卸货",
+    "truckYardDays": "{n, plural, other {在院内#天（GPS）}}",
     "truckUnloadedOpenHint": "未点“{button}”"
   },
   "inventory": {
@@ -1643,7 +1644,6 @@
       "loadedRange": "装车 {range}",
       "departedOn": "发车 {date}",
       "arrivedOn": "到达 {date}",
-      "arrivedOnGps": "到达 {date}（GPS）",
       "roadPct": "已走 {pct}%",
       "warnStale": "已到达但未关闭",
       "menu": "车辆操作",

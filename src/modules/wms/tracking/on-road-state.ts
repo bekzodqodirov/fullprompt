@@ -146,13 +146,19 @@ export interface TruckRow {
   fresh: boolean;
   /** The phone put it at its destination's gate (`placeTruck`): no date, not late, not yet unloaded. */
   atGate: boolean;
-  /** At the gate by the phone: Tashkent days since its first fix there; null otherwise. */
+  /**
+   * At the gate by the phone: Tashkent days since its first fix there. On an
+   * ARRIVED row only when that came on an earlier day than the scan (`days`
+   * counts the scan). Null otherwise.
+   */
   gateDays: number | null;
   /**
-   * Since when it has stood at its gate (`stoodSince`) — arrived, or there by
-   * the phone; null on the road. The board's arrived column orders by it and
-   * the cards print it, so a date can never contradict «4 kun» (the sixth
-   * recheck).
+   * ARRIVED: since when it has stood at its gate (`stoodSince`) — the clock
+   * «stuck» and the board's arrived column judge by; null otherwise. Never a
+   * date printed as «Keldi»: that stays the first unload scan on every
+   * screen, and the phone's earlier yard time is its own labelled fact
+   * (`gateDays`, «hovlida N kundan beri (GPS)») — the seventh recheck found
+   * every printed arrival date contradicting another once it moved.
    */
   stoodSince: Date | null;
   /** Only on a MOVING rung (`isMovingStage`), with a schedule, not overdue. */
@@ -213,11 +219,13 @@ export function truckRow(input: TruckInput, now: Date, today: string, waits: Bor
   };
 
   if (arrived) {
-    // Standing since the phone first had it in the yard, when that came
-    // before the first unload scan — one clock for the two arrivals, which
-    // the scan used to reset to «bugun yetib keldi» (the fifth recheck).
+    // «Keldi» is the scan (`days`); whether it stands too long is judged by
+    // the phone's yard time when that came first — one clock for the two
+    // arrivals, which the scan used to reset (the fifth recheck) — and that
+    // time is said apart («hovlida N kundan beri (GPS)», `gateDays`).
     const stood = stoodSince(input.arrivedAt, input.yardSince ?? null);
-    const days = daysSince(stood, today);
+    const days = daysSince(input.arrivedAt, today);
+    const stoodDays = daysSince(stood, today);
     return {
       ...base,
       kind: isStuckAtGate({ status: 'arrived', arrivedAt: stood }, today) ? 'stuck' : 'unloading',
@@ -229,7 +237,7 @@ export function truckRow(input: TruckInput, now: Date, today: string, waits: Bor
       evidenceAt: null,
       fresh: false,
       atGate: false,
-      gateDays: null,
+      gateDays: stoodDays > days ? stoodDays : null,
       stoodSince: stood,
       eta: null,
       days,
@@ -276,7 +284,7 @@ export function truckRow(input: TruckInput, now: Date, today: string, waits: Bor
     fresh: place.fresh,
     atGate: place.atGate,
     gateDays: gateDaysOf(place, today),
-    stoodSince: place.atGate && place.gateSince ? new Date(place.gateSince) : null,
+    stoodSince: null,
   };
   const pct = place.progress === null ? null : Math.round(place.progress * 100);
   if (place.atGate) {

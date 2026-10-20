@@ -107,11 +107,11 @@ export async function TruckCard({ card }: { card: BoardTruck }) {
   if (card.departedAt && card.status !== 'forming' && card.status !== 'loading') {
     dates.push(tb('departedOn', { date: boardDay(card.departedAt) }));
   }
-  if (card.status === 'arrived' && card.arrivedAt) {
-    dates.push(
-      tb(card.arrivedByGps ? 'arrivedOnGps' : 'arrivedOn', { date: boardDay(card.arrivedAt) }),
-    );
-  }
+  if (card.status === 'arrived' && card.arrivedAt) dates.push(tb('arrivedOn', { date: boardDay(card.arrivedAt) }));
+  // The phone had it in the yard days before the scan: said apart, beside
+  // «Keldi» (the scan), never instead of it (the seventh recheck).
+  const yard = card.status === 'arrived' && card.road && words ? words.yard(card.road) : null;
+  if (yard) dates.push(yard);
 
   const pct = card.road?.roadPct ?? null;
   // Both are `ogoh=1` warnings, drawn like the other two.

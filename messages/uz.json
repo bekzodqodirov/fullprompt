@@ -409,6 +409,7 @@
     "truckAtGate": "Manzilda, tushirilmagan",
     "truckAtGateDays": "{n, plural, =0 {bugun keldi} other {# kundan beri turibdi}}",
     "truckAtGateStuck": "tushirishni tekshiring",
+    "truckYardDays": "{n, plural, other {hovlida # kundan beri (GPS)}}",
     "truckUnloadedOpenHint": "«{button}» bosilmagan"
   },
   "inventory": {
@@ -1643,7 +1644,6 @@
       "loadedRange": "Yuklandi {range}",
       "departedOn": "Jo‘nadi {date}",
       "arrivedOn": "Keldi {date}",
-      "arrivedOnGps": "Keldi {date} (GPS)",
       "roadPct": "yo‘lning {pct}%",
       "warnStale": "reys keldi, yopilmagan",
       "menu": "Mashina bo‘yicha amallar",

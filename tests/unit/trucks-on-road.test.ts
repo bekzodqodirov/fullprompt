@@ -355,16 +355,35 @@ describe('a truck at its gate, and a truck due now, read alike on every screen',
       awaitingUnload: 299,
       yardSince: ago(96),
     });
-    expect(truckRow(scanned, NOW, TODAY, {})).toMatchObject({ kind: 'stuck', days: 4 });
+    // Stuck by the yard time; «Keldi» is still the scan (`days`), and the
+    // yard days are their own fact — never a date that moves (the seventh
+    // recheck: every printed arrival date contradicted another once it did).
+    expect(truckRow(scanned, NOW, TODAY, {})).toMatchObject({ kind: 'stuck', days: 0, gateDays: 4, stoodSince: ago(96) });
     // With no phone the scan is the clock, as it always was.
-    expect(truckRow({ ...scanned, yardSince: null }, NOW, TODAY, {})).toMatchObject({ kind: 'unloading', days: 0 });
+    expect(truckRow({ ...scanned, yardSince: null }, NOW, TODAY, {})).toMatchObject({
+      kind: 'unloading',
+      days: 0,
+      gateDays: null,
+    });
     // The arrived truck's newest fix is not its clock — only the yard time is.
-    expect(truckRow({ ...scanned, yardSince: null, fix: fix(gate, 1, 96) }, NOW, TODAY, {})).toMatchObject({ days: 0 });
-    // A phone reading later than the scan never shortens it.
+    expect(truckRow({ ...scanned, yardSince: null, fix: fix(gate, 1, 96) }, NOW, TODAY, {})).toMatchObject({
+      days: 0,
+      gateDays: null,
+    });
+    // A phone reading later than the scan never shortens it, and says nothing.
     expect(truckRow({ ...scanned, arrivedAt: ago(72), yardSince: ago(1) }, NOW, TODAY, {})).toMatchObject({
       kind: 'stuck',
       days: 3,
+      gateDays: null,
     });
+    // An hour before the scan, the same day: nothing to say apart.
+    expect(truckRow({ ...scanned, yardSince: new Date(NOW.getTime() - 3_600_000) }, NOW, TODAY, {})).toMatchObject({
+      gateDays: null,
+    });
+    // The words: «Keldi» from the scan, the yard days beside it.
+    const src = readFileSync('src/components/truck-road.tsx', 'utf8');
+    expect(src).toContain("row.status === 'arrived' && row.gateDays !== null ? t('truckYardDays', { n: row.gateDays }) : null");
+    expect(src).toMatch(/parts\.push\(t\('arrivedDays', \{ n: row\.days \}\)\);\s*const stood = yard\(row\);\s*if \(stood\) parts\.push\(stood\);/);
   });
 
   it('stuck trucks rank by how long they have STOOD, not by days on the road', () => {

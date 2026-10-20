@@ -353,10 +353,7 @@ export async function BatchCard({
   const stepDate: Partial<Record<(typeof LADDER)[number], Date | null>> = {
     forming: batch.createdAt,
     in_transit: batch.departedAt,
-    // Since when it has stood there — the phone's yard fix when it came before
-    // the first unload scan — so the step's date and «yetib keldi · 4 kun»
-    // beside it are one clock (the sixth recheck).
-    arrived: road?.stoodSince ?? batch.arrivedAt,
+    arrived: batch.arrivedAt,
     closed: batch.closedAt,
   };
   const stateOf = (i: number): StepState =>

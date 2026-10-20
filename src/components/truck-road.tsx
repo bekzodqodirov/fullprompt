@@ -100,6 +100,11 @@ export async function truckRoadWords({ counts = true }: { counts?: boolean } = {
   const gateHint = (row: TruckRow): string | null =>
     gateWord(row) === 'unloaded_open' ? t('truckUnloadedOpenHint', { button: tu('finishUnload') }) : null;
 
+  // An ARRIVED truck the phone had in its yard days before the first scan:
+  // «hovlida N kundan beri (GPS)», beside «Keldi», never instead of it.
+  const yard = (row: TruckRow): string | null =>
+    row.status === 'arrived' && row.gateDays !== null ? t('truckYardDays', { n: row.gateDays }) : null;
+
   const byFix = (row: TruckRow) => row.source === 'gps' || row.source === 'manual';
   const BASIS = {
     gps: () => t('truckEstimateGps'),
@@ -111,6 +116,8 @@ export async function truckRoadWords({ counts = true }: { counts?: boolean } = {
     const parts: ReactNode[] = [];
     if (row.status === 'arrived') {
       parts.push(t('arrivedDays', { n: row.days }));
+      const stood = yard(row);
+      if (stood) parts.push(stood);
       if (counts && (row.awaitingUnload ?? 0) > 0) parts.push(t('truckGate', { n: num(row.awaitingUnload ?? 0) }));
       // The word is short — the dashboard prints it in a one-line chip — and
       // the button nobody pressed is named here, on every screen, whatever
@@ -168,5 +175,5 @@ export async function truckRoadWords({ counts = true }: { counts?: boolean } = {
     ));
   };
 
-  return { word, sentence, gateHint };
+  return { word, sentence, gateHint, yard };
 }
