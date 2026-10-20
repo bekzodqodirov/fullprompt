@@ -26,7 +26,7 @@ import { ARRIVED_ON_A_TRUCK } from '../documents/arrivals';
 import { CLIENT_ACTIVE_STATUSES } from '../boxes/active';
 import { arrivalCleared } from '../notices/arrival-text';
 import { clientBalanceUsd, clientLedger } from '../finance/service';
-import { etaWindow, placeTruck } from '../tracking/eta';
+import { etaWindow, placeDated, placeTruck } from '../tracking/eta';
 import { loadBorderHours } from '../tracking/border-queue';
 import { latestPositions, type LatestPosition } from '../tracking/devices';
 import { journeyFromEvents, type JourneyStep } from './journey';
@@ -378,7 +378,7 @@ async function trucksFor(batchIds: string[]): Promise<Map<string, CabinetTruck>>
       now,
     );
     const window =
-      place.remainingHours && !place.overdue
+      place.remainingHours && placeDated(place)
         ? etaWindow({ overdue: false, remainingHours: place.remainingHours }, now)
         : null;
     out.set(r.id, {

@@ -120,13 +120,22 @@ afterAll(async () => {
     .update(boxes)
     .set({ status: 'in_stock', currentBatchId: null, currentWarehouseId: ids.YW })
     .where(eq(boxes.lotId, lotId));
-  await voidReceipt(receiptId, 'board readers test cleanup', { actorId }).catch(() => undefined);
-  for (const id of made) {
-    await db.delete(driverPositions).where(eq(driverPositions.batchId, id));
-    await db.execute(sql`DELETE FROM box_movements WHERE ref_type = 'batch' AND ref_id = ${id}`);
-    await db.delete(batches).where(eq(batches.id, id));
+  try {
+    // A refused void must fail LOUDLY: swallowed, it would leave two
+    // confirmed cartons on the seeded Yiwu shelf for every later spec.
+    await voidReceipt(receiptId, 'board readers test cleanup', { actorId });
+    const left = await db.select({ status: boxes.status }).from(boxes).where(eq(boxes.lotId, lotId));
+    if (left.some((b) => b.status !== 'void')) throw new Error('board-readers: the receipt voided but its cartons did not');
+  } finally {
+    for (const id of made) {
+      await db.delete(driverPositions).where(eq(driverPositions.batchId, id));
+      await db.execute(sql`DELETE FROM box_movements WHERE ref_type = 'batch' AND ref_id = ${id}`);
+      await db.delete(batches).where(eq(batches.id, id));
+    }
+    await db.delete(attachments).where(eq(attachments.entityId, lotId));
+    await db.update(clients).set({ active: false }).where(eq(clients.id, clientId));
+    await pgClient.end();
   }
-  await pgClient.end();
 });
 
 describe('the map and the bot read the one placement', () => {
@@ -179,6 +188,23 @@ describe('the map and the bot read the one placement', () => {
     const walking = (await truckFor({ ...row, status: 'in_transit' }, ends('YW', 'KA'), {}))!;
     expect(walking.progress!).toBeLessThan(0.9);
     expect(walking.dated).toBe(true);
+  });
+
+  it('an arrived truck on a road nobody modelled stands at its gate — not wherever the phone is on the drive back', async () => {
+    const row = { ...truckRow, status: 'arrived', departedAt: new Date(Date.now() - 10 * HOUR) };
+    const internal = { originCode: 'TAS1', destCode: 'AND', originCountry: 'UZ', destCountry: 'UZ' };
+    const marker = (await truckFor(row, internal, {}, {
+      batchId: row.id,
+      lat: 41.0,
+      lon: 70.5,
+      recordedAt: new Date(Date.now() - HOUR),
+      source: 'device',
+      ageMinutes: 60,
+      fresh: true,
+    }))!;
+    expect({ x: marker.x, y: marker.y }).toEqual(WAREHOUSE_POINTS.AND);
+    expect(marker.live).toBe(false);
+    expect(marker.dated).toBe(false);
   });
 
   it('a truck nothing honest places is not drawn — its spent walk ends ON the destination warehouse', async () => {
@@ -243,6 +269,31 @@ describe('the customer reads the same truck', () => {
     const truck = (await cabinetMap([clientId])).find((p) => p.kind === 'truck')!;
     expect(truck).toBeDefined();
     expect(truck.point).toBeNull();
+  });
+
+  it('a truck due NOW (12 km out, past its slowest pace) shows the customer no date — as the office and the map show none', async () => {
+    const b = await mintBatch('KA', 'TAS1', { departedAt: new Date(Date.now() - 70 * HOUR) });
+    await ride(b.id);
+    const route = routeFor('KA', 'TAS1')!;
+    const gate = route.points[route.points.length - 1]!;
+    const prev = route.points[route.points.length - 2]!;
+    const len = Math.hypot(prev.x - gate.x, prev.y - gate.y);
+    const p = { x: gate.x + ((prev.x - gate.x) / len) * 0.11, y: gate.y + ((prev.y - gate.y) / len) * 0.11 };
+    await db.insert(driverPositions).values({
+      batchId: b.id,
+      lat: p.y.toFixed(6),
+      lon: p.x.toFixed(6),
+      accuracyM: 15,
+      recordedAt: new Date(Date.now() - 2 * HOUR),
+      receivedAt: new Date(Date.now() - 2 * HOUR),
+    });
+    const road = (await group()).transit!;
+    expect(road.etaFromIso).toBeNull();
+    const office = (await trucksOnRoadRows([b.id])).get(b.id)!;
+    expect(office.kind).toBe('on_road');
+    expect(office.eta).toBeNull();
+    const truck = (await cabinetMap([clientId])).find((x) => x.kind === 'truck')!;
+    expect(truck.remainingDays).toBeNull();
   });
 
   it('the cabinet’s % follows the driver’s phone, the office’s number to the percent', async () => {

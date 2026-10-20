@@ -152,6 +152,12 @@ export async function TruckCard({ card }: { card: BoardTruck }) {
             {/* At the gate the dates line already says when it came — the
                 sentence would say it a second time («yetib keldi · 3 kun»). */}
             {card.status !== 'arrived' && <p className="text-xs text-ink-500">{words.sentence(card.road)}</p>}
+            {/* …but which button the truck waits on is said here too. */}
+            {card.status === 'arrived' && words.gateHint(card.road) && (
+              <p className="text-xs font-semibold text-warn" data-testid="board-gate-hint">
+                {words.gateHint(card.road)}
+              </p>
+            )}
           </div>
         )}
         {card.awaitingCount && (

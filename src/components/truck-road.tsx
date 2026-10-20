@@ -85,12 +85,20 @@ export async function truckRoadWords({ counts = true }: { counts?: boolean } = {
     const gate = gateWord(row);
     return gate
       ? GATE[gate]()
-      : row.segKey && isLegKey(row.segKey) && row.segKey !== 'transit'
-        ? LEG[row.segKey]
-        : row.zone
-          ? ZONE[row.zone]
-          : tp('unknown');
+      : row.atGate
+        ? t('truckAtGate')
+        : row.segKey && isLegKey(row.segKey) && row.segKey !== 'transit'
+          ? LEG[row.segKey]
+          : row.zone
+            ? ZONE[row.zone]
+            : tp('unknown');
   };
+
+  // The button an unloaded truck waits on, named ONCE for every screen that
+  // prints it — the sentence below and the board's arrived card, which leaves
+  // the sentence out (its dates line already says when the truck came).
+  const gateHint = (row: TruckRow): string | null =>
+    gateWord(row) === 'unloaded_open' ? t('truckUnloadedOpenHint', { button: tu('finishUnload') }) : null;
 
   const byFix = (row: TruckRow) => row.source === 'gps' || row.source === 'manual';
   const BASIS = {
@@ -107,7 +115,8 @@ export async function truckRoadWords({ counts = true }: { counts?: boolean } = {
       // The word is short — the dashboard prints it in a one-line chip — and
       // the button nobody pressed is named here, on every screen, whatever
       // `counts` says: it is the truck's own job, not a count of its boxes.
-      if (gateWord(row) === 'unloaded_open') parts.push(t('truckUnloadedOpenHint', { button: tu('finishUnload') }));
+      const hint = gateHint(row);
+      if (hint) parts.push(hint);
     } else {
       parts.push(t('roadDays', { n: row.days }));
       if (row.kind === 'overdue') {
@@ -147,5 +156,5 @@ export async function truckRoadWords({ counts = true }: { counts?: boolean } = {
     ));
   };
 
-  return { word, sentence };
+  return { word, sentence, gateHint };
 }

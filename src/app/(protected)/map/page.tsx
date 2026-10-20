@@ -158,13 +158,16 @@ export default async function MapPage({
   const waits = await loadBorderHours();
 
   const trucks: MapTruck[] = [];
-  // A truck nothing honest places (past its whole schedule, no pin, no fix)
-  // is named under the map rather than drawn on its destination warehouse,
-  // where it would read «arrived» (`TruckMarker.placed`).
-  const unplaced: MapTruck[] = [];
+  // A truck on the road that nothing honest places is NAMED under the map
+  // rather than drawn wrong or dropped: past its whole schedule with no pin
+  // and no fix (drawn, it would sit on its destination warehouse and read
+  // «arrived» — `TruckMarker.placed`), or on a road nobody modelled with no
+  // phone (`truckFor` null). Either way «no trucks on the road» would be false.
+  const unplaced: { batchId: string; code: string }[] = [];
   for (const { batch, ...ends } of transit) {
     const truck = await truckFor(batch, ends, waits, fixes.get(batch.id));
-    if (truck) (truck.placed ? trucks : unplaced).push(truck);
+    if (truck?.placed) trucks.push(truck);
+    else unplaced.push({ batchId: batch.id, code: batch.code });
   }
 
   // Factory trucks (0100) for whoever may open a pickup card — an estimate

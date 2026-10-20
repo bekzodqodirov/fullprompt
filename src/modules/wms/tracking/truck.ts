@@ -9,7 +9,8 @@ import {
   receipts,
 } from '../../platform/db/schema';
 import { isMovingStage, stageBatchOf, truckStage } from '../client-cabinet/stages';
-import { placeTruck, type BorderHours } from './eta';
+import { placeDated, placeTruck, type BorderHours } from './eta';
+import { WAREHOUSE_POINTS } from './map-data';
 import type { LatestPosition } from './devices';
 
 /** The marker /map draws — structurally the component's MapTruck. */
@@ -95,7 +96,11 @@ export async function truckFor(
     },
     waits,
   );
-  if (!place.route && !fix) return null;
+  // Off the road (below) a truck stands at its destination whether or not a
+  // road is modelled; on it, a truck with neither a road nor a phone has no
+  // place at all.
+  const offRoad = batch.status !== 'in_transit';
+  if (!place.route && !fix && !offRoad) return null;
 
   const contents = await db
     .select({
@@ -122,6 +127,42 @@ export async function truckFor(
     .sort((a, b) => b.n - a.n);
 
   const cp = batch.trackingCheckpoint as { key?: string; at?: string } | null;
+
+  // A truck no longer on the road — ARRIVED, its cartons not all scanned off
+  // (a Yiwu → Kashgar truck that beat its schedule), or past it — stands at
+  // its destination: the walk knows no arrival and must not draw it mid-China
+  // with a date the office no longer has, nor follow a driver's phone that is
+  // still paired on the drive back (the review; O15). The board and the
+  // dashboard say «Yetib keldi» about the same truck. With no destination
+  // point known it is listed with none (`placed: false`).
+  if (offRoad) {
+    const gate = place.route
+      ? place.route.points[place.route.points.length - 1]!
+      : (WAREHOUSE_POINTS[ends.destCode] ?? null);
+    const last = place.route?.segments[place.route.segments.length - 1];
+    return {
+      batchId: batch.id,
+      code: batch.code,
+      originCode: ends.originCode,
+      destCode: ends.destCode,
+      x: gate?.x ?? 0,
+      y: gate?.y ?? 0,
+      placed: gate !== null,
+      live: false,
+      fixAgeMinutes: fix?.ageMinutes ?? null,
+      fixSource: fix?.source ?? null,
+      segKey: last?.key ?? place.segKey ?? 'transit',
+      progress: place.route ? 1 : null,
+      overdue: false,
+      remainingDays: [0, 0],
+      dated: false,
+      departedAt: (batch.departedAt ?? batch.createdAt).toISOString(),
+      checkpointKey: cp?.key ?? null,
+      vehiclePlate: batch.vehiclePlate,
+      routePoints: place.route?.points ?? [],
+      contents: sortedContents,
+    };
+  }
 
   if (!place.route) {
     // No road to walk (or no departure stamp) — the phone's own word is all
@@ -160,37 +201,6 @@ export async function truckFor(
     }),
   );
   const remaining = place.remainingHours;
-  // A truck no longer on the road — ARRIVED, its cartons not all scanned off
-  // (a Yiwu → Kashgar truck that beat its schedule), or past it — stands at
-  // its destination: the walk knows no arrival and must not draw it mid-China
-  // with a date the office no longer has (the review; O15). The board and the
-  // dashboard say «Yetib keldi» about the same truck.
-  if (batch.status !== 'in_transit') {
-    const gate = place.route.points[place.route.points.length - 1]!;
-    const last = place.route.segments[place.route.segments.length - 1];
-    return {
-      batchId: batch.id,
-      code: batch.code,
-      originCode: ends.originCode,
-      destCode: ends.destCode,
-      x: gate.x,
-      y: gate.y,
-      placed: true,
-      live: false,
-      fixAgeMinutes: fix?.ageMinutes ?? null,
-      fixSource: fix?.source ?? null,
-      segKey: last?.key ?? 'transit',
-      progress: 1,
-      overdue: false,
-      remainingDays: [0, 0],
-      dated: false,
-      departedAt: (batch.departedAt ?? batch.createdAt).toISOString(),
-      checkpointKey: cp?.key ?? null,
-      vehiclePlate: batch.vehiclePlate,
-      routePoints: place.route.points,
-      contents: sortedContents,
-    };
-  }
   return {
     batchId: batch.id,
     code: batch.code,
@@ -212,7 +222,8 @@ export async function truckFor(
     remainingDays: remaining
       ? [Math.round((remaining[0] / 24) * 10) / 10, Math.round((remaining[1] / 24) * 10) / 10]
       : [0, 0],
-    dated: !place.overdue && remaining !== null && remaining[1] > 0 && isMovingStage(stage),
+    // The one rule every reader asks (`placeDated`), on a moving rung (O15).
+    dated: placeDated(place) && isMovingStage(stage),
     departedAt: batch.departedAt!.toISOString(),
     checkpointKey: cp?.key ?? null,
     vehiclePlate: batch.vehiclePlate,

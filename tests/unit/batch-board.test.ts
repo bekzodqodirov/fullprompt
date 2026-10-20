@@ -298,7 +298,7 @@ describe('the one box count a truck card prints', () => {
 });
 
 describe('the gate word fits a one-line chip, and the button is named in the sentence', () => {
-  type Dash = { dashboard: { truckUnloadedOpen: string; truckUnloadedOpenHint: string; att: { stuck: string } } };
+  type Dash = { dashboard: { truckUnloadedOpen: string; truckUnloadedOpenHint: string; truckAtGate: string; att: { stuck: string } } };
   const read = (l: string) => (JSON.parse(readFileSync(`messages/${l}.json`, 'utf8')) as Dash).dashboard;
 
   it('the word is short and names no button; the hint carries it', () => {
@@ -308,19 +308,27 @@ describe('the gate word fits a one-line chip, and the button is named in the sen
     for (const l of ['uz', 'ru', 'en', 'zh-CN']) {
       const d = read(l);
       expect(d.truckUnloadedOpen.length).toBeLessThanOrEqual(24);
+      expect(d.truckAtGate.length).toBeLessThanOrEqual(24);
       expect(d.truckUnloadedOpen).not.toContain('{button}');
       expect(d.truckUnloadedOpenHint).toContain('{button}');
     }
     expect(read('uz').truckUnloadedOpen).toBe('Tushirildi, yopilmagan');
   });
 
-  it('the sentence names the button whatever `counts` says', () => {
+  it('the button is named once — in the sentence whatever `counts` says, and on the board’s arrived card', () => {
     const src = readFileSync('src/components/truck-road.tsx', 'utf8');
     expect(src).toContain(
-      "if (gateWord(row) === 'unloaded_open') parts.push(t('truckUnloadedOpenHint', { button: tu('finishUnload') }));",
+      "gateWord(row) === 'unloaded_open' ? t('truckUnloadedOpenHint', { button: tu('finishUnload') }) : null;",
     );
-    const line = src.split('\n').find((l) => l.includes("t('truckUnloadedOpenHint'"))!;
+    const line = src.split('\n').find((l) => l.includes('const hint = gateHint(row);'))!;
+    expect(line).toBeDefined();
     expect(line).not.toContain('counts');
+    // The board leaves the sentence out at the gate (its dates line says when
+    // the truck came), so the hint has its own line there — the fixes'
+    // review found the board saying «Tushirildi, yopilmagan» and nothing else.
+    const card = readFileSync('src/app/(protected)/batches/board-card.tsx', 'utf8');
+    expect(card).toContain("{card.status === 'arrived' && words.gateHint(card.road) && (");
+    expect(card).toContain('data-testid="board-gate-hint"');
   });
 
   it('the attention row says what the predicate counts: arrived 2+ days, not finished — not «not unloaded»', () => {
@@ -368,5 +376,18 @@ describe('the phone tabs over one DOM', () => {
 
   it('the active «Joyi aniq emas» stop stays while it filters the board', () => {
     expect(page).toContain("stop.stop !== 'road_unknown' || stop.count > 0 || filters.joy === stop.stop");
+  });
+});
+
+describe('a truck on the road that the map cannot draw is named, never dropped', () => {
+  it('/map names both kinds under the canvas, and «no trucks» waits for both lists', () => {
+    const page = readFileSync('src/app/(protected)/map/page.tsx', 'utf8');
+    expect(page).toContain('if (truck?.placed) trucks.push(truck);');
+    expect(page).toContain('else unplaced.push({ batchId: batch.id, code: batch.code });');
+    const map = readFileSync('src/app/(protected)/map/tracking-map.tsx', 'utf8');
+    expect(map).toContain("trucks.length === 0 && unplacedCount === 0 && !full");
+    // The customer's map says «estimated» only about a point it drew.
+    const cab = readFileSync('src/components/cabinet-map.tsx', 'utf8');
+    expect(cab).toContain("{p.kind === 'truck' && p.point && (");
   });
 });

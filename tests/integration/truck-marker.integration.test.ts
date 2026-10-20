@@ -102,7 +102,10 @@ describe('a truck between unmapped warehouses', () => {
     // anchors — board-readers.integration.test.ts), and the fix survives as
     // information.
     expect(truck!.live).toBe(false);
-    expect(truck!.x).not.toBe(72.5);
+    // Just left Yiwu, by the departure: the first leg, nothing behind it. A
+    // yard fix that anchored would put it at Andijan, 100 % along.
+    expect(truck!.segKey).toBe('cn_transit');
+    expect(truck!.progress!).toBeLessThan(0.05);
     expect(truck!.fixAgeMinutes).toBe(20 * 60);
     expect(truck!.routePoints.length).toBeGreaterThan(0);
   });

@@ -406,6 +406,7 @@
     "agoHour": "{n} h ago",
     "agoDay": "{n} d ago",
     "truckUnloadedOpen": "Unloaded, not closed",
+    "truckAtGate": "At gate, not unloaded",
     "truckUnloadedOpenHint": "«{button}» not pressed"
   },
   "inventory": {
@@ -2070,7 +2071,7 @@
     "openBatch": "Open the batch",
     "openMap": "Show on the map",
     "noTrucks": "No trucks on the road right now.",
-    "unplaced": "Location unknown (past the expected date, no pin or GPS) — not drawn on the map:",
+    "unplaced": "Location unknown — not drawn on the map:",
     "overdue": "behind schedule — call the driver",
     "eta": "arriving in ~{min}–{max} days",
     "seg_cn_transit": "On the road inside China",

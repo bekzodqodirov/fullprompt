@@ -242,7 +242,9 @@ export function CabinetMap({
                 </button>
                 {on && (
                   <div className="cab-map-detail">
-                    {p.kind === 'truck' && (
+                    {/* Live or estimated is a word about a POINT: a truck with
+                        none is only «not on the map» (the next line). */}
+                    {p.kind === 'truck' && p.point && (
                       <p className="cab-map-note">
                         {p.live ? t.mapLive : t.mapEstimated}
                         {p.remainingDays &&

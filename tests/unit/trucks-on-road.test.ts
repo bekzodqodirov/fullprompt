@@ -288,3 +288,45 @@ describe('the trucks card estimates nothing of its own', () => {
     expect(src).toMatch(/selTruck\.progress !== null && \(\s*<div className="h-2 overflow-hidden/);
   });
 });
+
+describe('a truck at its gate, and a truck due now, read alike on every screen', () => {
+  const ka = routeFor('KA', 'TAS1')!;
+  const gate = ka.points[ka.points.length - 1]!;
+  const fix = (p: { x: number; y: number }, hoursAgo: number) => ({
+    lat: p.y,
+    lon: p.x,
+    recordedAt: ago(hoursAgo),
+    source: 'device',
+  });
+  const kaInput = (over: Partial<TruckInput>) =>
+    input({ originCode: 'KA', originName: 'Kashgar', ...over });
+
+  it('the phone at the yard: on the road, first in the list, no date — and the word says so', () => {
+    const row = truckRow(kaInput({ departedAt: ago(75), fix: fix(gate, 2) }), NOW, TODAY, {});
+    expect(row.kind).toBe('on_road');
+    expect(row.atGate).toBe(true);
+    expect(row.eta).toBeNull();
+    expect(row.arrivalOrder).toBe(0);
+    const src = readFileSync('src/components/truck-road.tsx', 'utf8');
+    expect(src).toContain("? t('truckAtGate')");
+  });
+
+  it('due NOW ([0, 0]) prints no date: the board, the cabinet and the map ask one rule', () => {
+    // 12 km out, two hours ago: its slowest pace is spent, one reporting
+    // window is not. A date here would be «today», renewed every morning.
+    const prev = ka.points[ka.points.length - 2]!;
+    const len = Math.hypot(prev.x - gate.x, prev.y - gate.y);
+    const before = { x: gate.x + ((prev.x - gate.x) / len) * 0.11, y: gate.y + ((prev.y - gate.y) / len) * 0.11 };
+    const row = truckRow(kaInput({ departedAt: ago(70), fix: fix(before, 2) }), NOW, TODAY, {});
+    expect(row.kind).toBe('on_road');
+    expect(row.atGate).toBe(false);
+    expect(row.eta).toBeNull();
+    for (const file of [
+      'src/modules/wms/tracking/on-road-state.ts',
+      'src/modules/wms/client-cabinet/service.ts',
+      'src/modules/wms/tracking/truck.ts',
+    ]) {
+      expect(readFileSync(file, 'utf8')).toContain('placeDated(place)');
+    }
+  });
+});

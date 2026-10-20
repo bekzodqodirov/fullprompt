@@ -1,6 +1,6 @@
 import { isMovingStage, truckStage, type TruckStage } from '../client-cabinet/stages';
 import { daysSince } from '../reports/dashboard-math';
-import { etaWindow, pinOnRoute, placeTruck, type BorderHours, type PlaceSource, type PlacementFix } from './eta';
+import { etaWindow, pinOnRoute, placeDated, placeTruck, type BorderHours, type PlaceSource, type PlacementFix } from './eta';
 import type { CheckpointKey } from './map-data';
 import type { RoadZone } from './place';
 
@@ -104,6 +104,8 @@ export interface TruckRow {
   evidenceAt: string | null;
   /** The fix that placed it is within FRESH_MINUTES. */
   fresh: boolean;
+  /** The phone put it at its destination's gate (`placeTruck`): no date, not late, not yet unloaded. */
+  atGate: boolean;
   /** Only on a MOVING rung (`isMovingStage`), with a schedule, not overdue. */
   eta: { fromIso: string; toIso: string } | null;
   departedAt: Date | null;
@@ -173,6 +175,7 @@ export function truckRow(input: TruckInput, now: Date, today: string, waits: Bor
       source: null,
       evidenceAt: null,
       fresh: false,
+      atGate: false,
       eta: null,
       days,
       awaitingUnload: input.awaitingUnload ?? null,
@@ -216,10 +219,15 @@ export function truckRow(input: TruckInput, now: Date, today: string, waits: Bor
     source: place.source,
     evidenceAt: place.evidenceAt,
     fresh: place.fresh,
+    atGate: place.atGate,
   };
   const pct = place.progress === null ? null : Math.round(place.progress * 100);
   if (!place.route) {
     return { ...off, kind: 'no_schedule', roadPct: null, eta: null, arrivalOrder: null };
+  }
+  if (place.atGate) {
+    // Arrived by the phone, waiting for the scan: first in the list, no date.
+    return { ...off, kind: 'on_road', roadPct: pct, eta: null, arrivalOrder: 0 };
   }
   if (place.overdue || !place.remainingHours) {
     // Spent: no date. The bar stays where the newest evidence last put the
@@ -230,7 +238,12 @@ export function truckRow(input: TruckInput, now: Date, today: string, waits: Bor
     ...off,
     kind: 'on_road',
     roadPct: pct,
-    eta: isMovingStage(stage) ? etaWindow({ overdue: false, remainingHours: place.remainingHours }, now) : null,
+    // `placeDated` is the one rule every reader asks (a truck due NOW has no
+    // date to print).
+    eta:
+      isMovingStage(stage) && placeDated(place)
+        ? etaWindow({ overdue: false, remainingHours: place.remainingHours }, now)
+        : null,
     arrivalOrder: place.remainingHours[0],
   };
 }

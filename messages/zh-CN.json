@@ -406,6 +406,7 @@
     "agoHour": "{n}小时前",
     "agoDay": "{n}天前",
     "truckUnloadedOpen": "已卸完，未结束",
+    "truckAtGate": "已到达，未卸货",
     "truckUnloadedOpenHint": "未点“{button}”"
   },
   "inventory": {
@@ -2070,7 +2071,7 @@
     "openBatch": "打开批次",
     "openMap": "在地图上查看",
     "noTrucks": "当前没有在途车辆。",
-    "unplaced": "位置不明（已超过预计时间，无标记和GPS）——未在地图上显示：",
+    "unplaced": "位置不明——未在地图上显示：",
     "overdue": "已超过预计时间——请联系司机",
     "eta": "预计 ~{min}–{max} 天到达",
     "seg_cn_transit": "中国境内运输中",
