@@ -160,12 +160,12 @@ export async function truckFor(
     }),
   );
   const remaining = place.remainingHours;
-  // An ARRIVED truck still carries cartons nobody has scanned off (a Yiwu →
-  // Kashgar truck that beat its schedule): it stands at its destination, and
-  // the walk — which knows no arrival — must not draw it mid-China with a
-  // date the office no longer has (the review; O15). The board and the
+  // A truck no longer on the road — ARRIVED, its cartons not all scanned off
+  // (a Yiwu → Kashgar truck that beat its schedule), or past it — stands at
+  // its destination: the walk knows no arrival and must not draw it mid-China
+  // with a date the office no longer has (the review; O15). The board and the
   // dashboard say «Yetib keldi» about the same truck.
-  if (batch.status === 'arrived') {
+  if (batch.status !== 'in_transit') {
     const gate = place.route.points[place.route.points.length - 1]!;
     const last = place.route.segments[place.route.segments.length - 1];
     return {
@@ -212,12 +212,7 @@ export async function truckFor(
     remainingDays: remaining
       ? [Math.round((remaining[0] / 24) * 10) / 10, Math.round((remaining[1] / 24) * 10) / 10]
       : [0, 0],
-    dated:
-      batch.status === 'in_transit' &&
-      !place.overdue &&
-      remaining !== null &&
-      remaining[1] > 0 &&
-      isMovingStage(stage),
+    dated: !place.overdue && remaining !== null && remaining[1] > 0 && isMovingStage(stage),
     departedAt: batch.departedAt!.toISOString(),
     checkpointKey: cp?.key ?? null,
     vehiclePlate: batch.vehiclePlate,

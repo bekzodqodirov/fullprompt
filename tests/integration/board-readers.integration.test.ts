@@ -237,6 +237,14 @@ describe('the customer reads the same truck', () => {
     expect(truck.remainingDays).toBeNull();
   });
 
+  it('a truck nothing honest places is listed on the customer’s map with no point — never on the Tashkent dot', async () => {
+    const b = await mintBatch('KA', 'TAS1', { departedAt: new Date(Date.now() - 800 * HOUR) });
+    await ride(b.id);
+    const truck = (await cabinetMap([clientId])).find((p) => p.kind === 'truck')!;
+    expect(truck).toBeDefined();
+    expect(truck.point).toBeNull();
+  });
+
   it('the cabinet’s % follows the driver’s phone, the office’s number to the percent', async () => {
     const b = await mintBatch('KA', 'TAS1', { departedAt: new Date(Date.now() - 30 * HOUR) });
     await ride(b.id);
