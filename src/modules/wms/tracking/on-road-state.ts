@@ -390,6 +390,12 @@ export function rankTrucks(rows: TruckRow[]): TruckRow[] {
     if (a.kind === 'on_road') {
       const soon = (a.arrivalOrder ?? Infinity) - (b.arrivalOrder ?? Infinity);
       if (soon !== 0 && !Number.isNaN(soon)) return soon;
+      // Two at their gates (arrivalOrder 0 both): the one that has stood
+      // longer first — never the plate code (the ninth recheck).
+      if (a.stoodSince && b.stoodSince) {
+        const stood = a.stoodSince.getTime() - b.stoodSince.getTime();
+        if (stood !== 0) return stood;
+      }
     } else {
       // Longest standing first: since it came to its gate when it is at one
       // (the board's own arrived order — an arrived row's `days` count the

@@ -414,6 +414,20 @@ describe('a truck at its gate, and a truck due now, read alike on every screen',
     );
     expect([scannedYesterday.kind, yardYesterday.kind]).toEqual(['unloading', 'unloading']);
     expect(rankTrucks([scannedYesterday, yardYesterday]).map((r) => r.code)).toEqual(['D', 'C']);
+    // Two at their gates by the phone, not yet stuck: by how long each has
+    // stood, never by the plate code (the ninth recheck).
+    const longer = truckRow(kaInput({ id: 'z', code: 'Z-99', departedAt: ago(216), fix: fix(gate, 1, 30) }), NOW, TODAY, {});
+    const fresh = truckRow(kaInput({ id: 'y', code: 'A-00', departedAt: ago(216), fix: fix(gate, 0.1, 0.2) }), NOW, TODAY, {});
+    expect([longer.kind, fresh.kind]).toEqual(['on_road', 'on_road']);
+    expect(rankTrucks([fresh, longer]).map((r) => r.code)).toEqual(['Z-99', 'A-00']);
+    // The yard line is a past event in every language — never «in the yard
+    // since», which the phone no longer reads once the truck is scanned.
+    for (const locale of ['uz', 'ru', 'en', 'zh-CN']) {
+      const text = (JSON.parse(readFileSync(`messages/${locale}.json`, 'utf8')) as { dashboard: Record<string, string> })
+        .dashboard.truckYardFrom!;
+      expect(text, locale).toContain('{date}');
+      expect(text, locale).not.toMatch(/во дворе с|in the yard (from|since)|hovlida .* beri/);
+    }
   });
 
   it('due NOW ([0, 0]) prints no date: the board, the cabinet and the map ask one rule', () => {
