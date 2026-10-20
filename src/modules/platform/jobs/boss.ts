@@ -120,6 +120,9 @@ export const WORKER_REGISTRATIONS: [string, (boss: PgBoss) => Promise<void>][] =
   ],
   // Q5 a (0130): the bot's redelivery records, pruned past what Telegram can redeliver.
   ['telegram-prune', async (b) => (await import('../telegram/once')).registerTelegramPruneWorker(b)],
+  // The staff group (0134): what the bot says there, and the Saturday rating + the month's champion.
+  ['staff-group', async (b) => (await import('../telegram/staff-group-posts')).registerStaffGroupWorker(b)],
+  ['staff-rating', async (b) => (await import('../../wms/staff/rating')).registerStaffRatingWorkers(b)],
 ];
 
 /** Run each registration at most once per process, whatever failed before. */

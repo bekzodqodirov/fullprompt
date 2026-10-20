@@ -156,6 +156,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | The five-lens review of both before code — 115 objections and their BINDING fixes | `docs/TOPSHIRIQ-VED-REVIEW.md` |
 | The customs calculator fix — units in their own columns, kg+dona rows, excise, the fee, the screen | `docs/RASTAMOJKA-TUZATISH.md` — agreed 2026-10-09 (his two messages, four ⭐ questions), SHIPPED; §7 overrides §1-§3 |
 | A factory trip closes and remembers its lines — the door question, «shu zavoddan, shu mashinada», the checker | `docs/ZAVOD-YOPISH.md` — agreed 2026-10-15 (his 1a-5a, 6, 7 ha), SHIPPED; §10-§11 override §2-§5 |
+| The staff Telegram group — celebrations, the Saturday 18:00 rating, the month's champion, /reyting | `docs/JAMOA-GURUHI.md` — agreed 2026-10-20 (his «3. 2 3 gif … tabriklash ham / qolgani sen aytkandek»), SHIPPED |
 
 ## State — 2026-08-23
 
@@ -2831,7 +2832,33 @@ capped rows. e2e `m9zzzc` (D's two lots, the per-lot line) + `m9zzzd` (seven cli
 360 px: Saqlash within one screen). The non-freight e2e specs deliberately ride the new
 default.
 
-**Latest migration: 0133** (`pickup_close`, `when` …112; ledger must reach **134**). Before
+**Round — jamoa guruhi (2026-10-20; DECISIONS #1407-#1413; migration 0134
+`staff_group` — ledger must reach 135; spec `docs/JAMOA-GURUHI.md`).** His
+«client code ochilganda … hammani oldida maqtaydigan gift … lead yutilganda …
+har shanba soat 18:00 da hodimlar reytingi», answers «3. 2 3 gif …
+tabriklash ham / qolgani sen aytkandek». Built SOLO at his «kop agent
+ishlatma» (no workflow). The group is a ROW (`staff_group_chats`, one
+`active_from`, written only by `telegram/staff-group.ts`), adopted when the
+settings admin adds the bot; the bot never reads a group (`registerStaffGroup`
+after the price channel: membership, then a swallow — which also closed the
+older `/start`-in-a-group hazard). One claim per thing said
+(`staff_group_posts.dedupe_key`; `skipped/no_group` when no group; ambiguous
+answers never re-sent; supergroup migration followed via `migrateToChatId` on
+`SendResult`). GIFs = `attachments` of type `staff_group_media` under one fixed
+id, rotated by `last_used_at`, sent by the new `sendAnimation`; sentences
+rotate by post count. Hooks: the two client APP doors (minter), the event
+drain's dynamic import for `LeadStageChanged` won (owner) and
+`ReceiptConfirmed` first prixod (stamp). The rating reads `stampedCargo` only
+(window Sat 18:00 → Sat 18:00 Tashkent; streaks/records from STORED posted
+standings); crons `'0 13 * * 6'` + champion `'0 13 8 * *'`. `/admin/jamoa-guruhi`
+(hub door) + `/reyting` (any login, profile door) + bot `/reyting`. Setting
+`staff_rating_goal_m3`. 11 red proofs by string edit (one re-anchored).
+TEST NOTE: every won lead and first prixod in the suite now writes a post row
+(skipped with no group); `subject_user_id` is ON DELETE SET NULL for the files
+that delete their fixture users.
+
+**Latest migration: 0134** (`staff_group`, `when` …113; ledger must reach **135**). Before
+it: 0133 (`pickup_close`, `when` …112). Before
 it: 0132 (`cost_freight_basis`, `when` …111). Before
 it: 0131 (`calc_excise`, `when` …110). Before
 it: 0130 (`bot_redelivery`, `when` …109). Before
@@ -2969,7 +2996,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **134** since 0133 (133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **135** since 0134 (134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read

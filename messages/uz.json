@@ -737,7 +737,8 @@
       "salary_expense_category_id": "Oyliklar xarajat turi: «Hodimlar» sahifasi oylik va uning to‘lanishini shu turdagi shablonlardan ko‘rsatadi.",
       "price_history_min_sim": "«Oldingi narx» o‘tgan prixod mashinasini ko‘rsatishi uchun tovar nomi o‘xshashligi darajasi (0..1)",
       "price_history_ai_daily_limit": "«Oldingi narx» 🤖 tugmasi kuniga necha marta AI so'rashi mumkin (hisoblash limitidan alohida)",
-      "freight_tariff_cost_type_codes": "Mashina xarajatida «yo‘lkira tarifi bo‘yicha» o‘zi tanlanadigan xarajat turlari (kodlar ro‘yxati)"
+      "freight_tariff_cost_type_codes": "Mashina xarajatida «yo‘lkira tarifi bo‘yicha» o‘zi tanlanadigan xarajat turlari (kodlar ro‘yxati)",
+      "staff_rating_goal_m3": "Jamoa guruhi uchun jamoaning haftalik maqsadi, kubda (0 — maqsad yo‘q). «Jamoa guruhi» sahifasida o‘zgartirish qulayroq."
     },
     "driverApp": "Haydovchi ilovasi",
     "callsApp": "Qo'ng'iroq ilovasi",
@@ -5905,5 +5906,92 @@
       "notFound": "Yozuv topilmadi — sahifani yangilang.",
       "notATwin": "Bu yozuvlar endi juft emas — sahifani yangilang."
     }
+  },
+  "staffGroup": {
+    "title": "Jamoa guruhi",
+    "intro": "Telegram guruhi: bot hodimlarni hammaning oldida tabriklaydi (yangi mijoz kodi, yutilgan lid, yangi mijozning birinchi yuki), har shanba soat 18:00 da esa haftalik reytingni kub va kg bo‘yicha joylaydi.",
+    "serverBehind": "Server hali yangilanmagan (0134 migratsiyasi yo‘q). Migratsiyani ishga tushirib, sahifani qayta oching.",
+    "connected": "Ulangan guruh: {title}",
+    "facts": "A’zolar: {members} · {since} dan",
+    "cannotPost": "Bot guruhga yoza olmayapti: {error}",
+    "everyoneReads": "Bu xabarlarni guruhdagi hamma ko‘radi. Ularda pul, mijoz ismi va telefoni yo‘q — faqat mijoz kodi, kub va kg.",
+    "test": "Sinov xabari",
+    "testOk": "Navbatga qo‘yildi — bir daqiqadan keyin guruhni tekshiring.",
+    "ratingNow": "Reytingni yuborish",
+    "ratingNowOk": "Navbatga qo‘yildi.",
+    "championNow": "Oy chempioni",
+    "disconnect": "Uzish",
+    "disconnectConfirm": "Guruh uzilsinmi? Tabriklar va reyting u yerga bormaydi.",
+    "notConnected": "Guruh ulanmagan.",
+    "step1": "Telegramda guruh oching (yoki borini oching) va hodimlarni qo‘shing.",
+    "step2": "Botni guruhga o‘zingiz qo‘shing — tizimga ulangan Telegramingizdan.",
+    "step3": "Guruh o‘zi ulanadi; keyin «Sinov xabari»ni bosing.",
+    "otherGroups": "Hodimlar botni qo‘shgan boshqa guruhlar:",
+    "connect": "Shu guruhni ulash",
+    "connectConfirm": "«{title}» ulansinmi? Tabriklar va reyting shu yerga keladi.",
+    "mediaTitle": "Tabrik GIF'lari",
+    "mediaHint": "2–3 ta GIF (yoki rasm) yuklang — ular navbat bilan chiqadi, zerikarli bo‘lmaydi. GIF, MP4, JPG, PNG, 20 MB gacha.",
+    "mediaNone": "Hali hech narsa yuklanmagan — tabriklar matn bilan boradi.",
+    "mediaDelete": "O‘chirish",
+    "mediaDeleteConfirm": "Bu fayl tabriklardan olib tashlansinmi?",
+    "upload": "GIF yuklash",
+    "uploading": "Yuklanmoqda…",
+    "uploadTooLarge": "Fayl 20 MB dan katta.",
+    "uploadRefused": "Fayl qabul qilinmadi — GIF, MP4, JPG yoki PNG kerak.",
+    "goalTitle": "Jamoaning haftalik maqsadi",
+    "goalHint": "Jamoa bir haftada necha kub yuk olib kelishi kerak. Shanba reytingida «32 / 40 kub» qatori chiqadi. 0 — maqsad yo‘q.",
+    "goal": "Maqsad, kub",
+    "save": "Saqlash",
+    "goalSaved": "Saqlandi.",
+    "postsTitle": "Oxirgi xabarlar",
+    "postsNone": "Hali xabar bo‘lmagan.",
+    "maybeSent": "Xabar guruhga allaqachon borgan bo‘lishi mumkin — qayta yuborishdan oldin guruhni tekshiring.",
+    "lastError": "Xato: {error}",
+    "retry": "Qayta yuborish",
+    "requeued": "Qayta navbatga qo‘yildi.",
+    "status": {
+      "pending": "navbatda",
+      "sending": "yuborilmoqda",
+      "sent": "yuborildi",
+      "failed": "yuborilmadi",
+      "skipped": "o‘tkazib yuborildi"
+    },
+    "kind": {
+      "client": "Yangi mijoz",
+      "won": "Lid yutildi",
+      "first_cargo": "Birinchi yuk",
+      "rating": "Haftalik reyting",
+      "champion": "Oy chempioni",
+      "test": "Sinov"
+    },
+    "skip": {
+      "no_group": "Guruh ulanmagan edi",
+      "stale": "Eskirdi — yuborilmadi",
+      "group_changed": "Guruh almashdi"
+    },
+    "error": {
+      "not_found": "Guruh topilmadi.",
+      "not_present": "Bot bu guruhda yo‘q.",
+      "telegram": "Telegram javob bermadi — keyinroq urinib ko‘ring.",
+      "not_group": "Bu guruh emas.",
+      "cannot_post": "Bot guruhga yoza olmaydi — unga xabar yozishga ruxsat bering.",
+      "no_group": "Avval guruhni ulang.",
+      "already_posted": "Allaqachon yuborilgan — ikkinchi marta yuborilmaydi.",
+      "bad_goal": "Kub sonini yozing (0 — maqsad yo‘q).",
+      "failed": "Bo‘lmadi — qayta urinib ko‘ring."
+    }
+  },
+  "rating": {
+    "title": "Haftalik reyting",
+    "profileHint": "Kim bir haftada necha kub va kg yuk olib keldi — bot har shanba soat 18:00 da guruhga joylaydigan reyting.",
+    "intro": "Hafta — shanba 18:00 dan shanba 18:00 gacha. Yuk prixodga yozilgan sotuvchi bo‘yicha hisoblanadi (KPI kabi).",
+    "serverBehind": "Server hali yangilanmagan. Yangilangandan keyin oching.",
+    "running": "Shu hafta",
+    "closed": "O‘tgan hafta",
+    "month": "Oy: {month}",
+    "empty": "Hali hech kim yuk olib kelmadi.",
+    "goalDone": "🎯 Jamoa maqsadi {goal} kub — bajarildi! ✅",
+    "goalProgress": "🎯 Jamoa maqsadi: {done} / {goal} kub",
+    "footnote": "Prixod orqa sana bilan kiritilishi mumkin, shuning uchun raqamlar biroz o‘zgarishi mumkin."
   }
 }

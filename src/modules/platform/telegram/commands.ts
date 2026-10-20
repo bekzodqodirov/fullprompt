@@ -48,6 +48,8 @@ export function offerStaffCommands(ctx: { api: CommandsApi }, chatId: number): v
         // where a person can find them.
         { command: 'hisoblatish', description: 'Hisoblatish' },
         { command: 'ai', description: 'AI rastamojka' },
+        // 0134: this week's podium and the person's own place.
+        { command: 'reyting', description: 'Haftalik reyting' },
         ...(holat ? [{ command: 'holat', description: 'Kompaniya holati (kechki xulosa)' }] : []),
       ],
       { scope: { type: 'chat', chat_id: chatId } },

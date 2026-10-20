@@ -63,6 +63,8 @@ export const HUB_DOORS: HubDoor[] = [
   // The price channel (his F, 2026-10-07): which Telegram channel the bot posts
   // every given price into, who it let in, and what it did and did not post.
   { href: '/admin/narx-kanali', label: 'priceChannel.title', icon: 'chat', allow: ['admin.settings.manage'] },
+  // The staff group (0134): where the bot praises people and posts the Saturday rating.
+  { href: '/admin/jamoa-guruhi', label: 'staffGroup.title', icon: 'chat', allow: ['admin.settings.manage'] },
   { href: '/admin/audit', label: 'nav.audit', icon: 'clipboard', allow: ['admin.audit.browse'] },
   // The voided-cargo registry + the owner's cleanup tool. An audit surface,
   // so the audit door: only admin/super_admin hold it, and the tile never

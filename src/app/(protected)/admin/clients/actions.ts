@@ -12,6 +12,7 @@ import { requestMeta } from '@/modules/platform/auth/session';
 import { autoLinkClientToVerifiedChats } from '@/modules/platform/telegram/client-cabinet';
 import { activeClientsByPhone } from '@/modules/wms/client-cabinet/service';
 import { stampUnattributedCargo } from '@/modules/wms/staff/stamp';
+import { celebrateNewClient } from '@/modules/wms/staff/celebrate';
 import {
   ClientError,
   canMintClient,
@@ -224,6 +225,9 @@ export async function quickCreateClientAction(input: {
       actorId: actor.id,
       ...meta,
     });
+    // 0134: the person who opened the code is praised in the staff group —
+    // after the commit, never throwing (celebrateNewClient catches its own).
+    await celebrateNewClient(row.id, actor.id);
     revalidatePath('/admin/clients');
     revalidatePath('/bitimlar', 'layout');
     return { ok: true, id: row.id, code: row.clientCode, name: row.name, dealId };
@@ -282,6 +286,7 @@ export async function createClientAction(
     actorId: actor.id,
     ...meta,
   });
+  await celebrateNewClient(row.id, actor.id);
 
   revalidatePath('/admin/clients');
   revalidatePath('/bitimlar', 'layout');
