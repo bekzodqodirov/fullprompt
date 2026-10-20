@@ -156,8 +156,8 @@ pnpm build && pnpm e2e  # 44 e2e
 | The five-lens review of both before code — 115 objections and their BINDING fixes | `docs/TOPSHIRIQ-VED-REVIEW.md` |
 | The customs calculator fix — units in their own columns, kg+dona rows, excise, the fee, the screen | `docs/RASTAMOJKA-TUZATISH.md` — agreed 2026-10-09 (his two messages, four ⭐ questions), SHIPPED; §7 overrides §1-§3 |
 | A factory trip closes and remembers its lines — the door question, «shu zavoddan, shu mashinada», the checker | `docs/ZAVOD-YOPISH.md` — agreed 2026-10-15 (his 1a-5a, 6, 7 ha), SHIPPED; §10-§11 override §2-§5 |
+| The staff Telegram group — celebrations, the Saturday 18:00 rating, the month's champion, /reyting | `docs/JAMOA-GURUHI.md` — agreed 2026-10-20 (his «3. 2 3 gif … tabriklash ham / qolgani sen aytkandek»), SHIPPED |
 | Every truck in one place — the board by place, the % by distance, GPS, the gate | `docs/PARTIYA-DOSKASI.md` — agreed 2026-10-17 (his 1A 2a 3a 4a 5a 6c 7a 8b 9b 10b 11A 12A, then «1 hozirgidek qolsin»), SHIPPED; §2 is the placement as built |
-
 ## State — 2026-08-23
 
 **VED phases A-E1 are on this branch** (`docs/VED.md`; migrations
@@ -2832,8 +2832,41 @@ capped rows. e2e `m9zzzc` (D's two lots, the per-lot line) + `m9zzzd` (seven cli
 360 px: Saqlash within one screen). The non-freight e2e specs deliberately ride the new
 default.
 
+**Round — jamoa guruhi (2026-10-20; DECISIONS #1407-#1413; migration 0134
+`staff_group` — ledger must reach 135; spec `docs/JAMOA-GURUHI.md`).** His
+«client code ochilganda … hammani oldida maqtaydigan gift … lead yutilganda …
+har shanba soat 18:00 da hodimlar reytingi», answers «3. 2 3 gif …
+tabriklash ham / qolgani sen aytkandek». Built SOLO at his «kop agent
+ishlatma» (no workflow). The group is a ROW (`staff_group_chats`, one
+`active_from`, written only by `telegram/staff-group.ts`), adopted when the
+settings admin adds the bot; the bot never reads a group (`registerStaffGroup`
+after the price channel: membership, then a swallow — which also closed the
+older `/start`-in-a-group hazard). One claim per thing said
+(`staff_group_posts.dedupe_key`; `skipped/no_group` when no group; ambiguous
+answers never re-sent; supergroup migration followed via `migrateToChatId` on
+`SendResult`). GIFs = `attachments` of type `staff_group_media` under one fixed
+id, rotated by `last_used_at`, sent by the new `sendAnimation`; sentences
+rotate by post count. Hooks: the two client APP doors (minter), the event
+drain's dynamic import for `LeadStageChanged` won (owner) and
+`ReceiptConfirmed` first prixod (stamp). The rating reads `stampedCargo` only
+(window Sat 18:00 → Sat 18:00 Tashkent; streaks/records from STORED posted
+standings); crons `'0 13 * * 6'` + champion `'0 13 8 * *'`. `/admin/jamoa-guruhi`
+(hub door) + `/reyting` (any login, profile door) + bot `/reyting`. Setting
+`staff_rating_goal_m3`. 11 red proofs by string edit (one re-anchored).
+TEST NOTE: every won lead and first prixod in the suite now writes a post row
+(skipped with no group); `subject_user_id` is ON DELETE SET NULL for the files
+that delete their fixture users.
+**Same evening, his «lead yutilganda nech pullik necha kub necha kg … yanayam
+jonliroq» (#1414-#1415, NO migration):** the won post carries the LEAD's own
+quote (price/kub/kg, each line left out when missing), rotating CAPS headline +
+closing, and the owner's «🔥 Bu oy: N-g'alaba · jami $X» (`closed_at` month,
+dollars only); a new code gets «📈 Bu oy: N-mijoz» off the post ledger. Money
+enters the group in that ONE post — the VED reads it there (law 4), stated to
+him and his call.
+
 **Round — Partiya doskasi: hamma mashinalar bir joyda (2026-10-17 → 10-20; DECISIONS
-#1407-#1419; NO migration, ledger 134; spec `docs/PARTIYA-DOSKASI.md`).** His «pogruzga
+#1416-#1428 — renumbered from #1407-#1419 on the merge, the TWENTY-SECOND collision: «Jamoa
+guruhi» took #1407-#1415 first; NO migration of its own, it deploys with that round's 0134, ledger 135; spec `docs/PARTIYA-DOSKASI.md`).** His «pogruzga
 qattaligini bilishim kerak … yolda bosqichida mashina qayerda … zavot reyslariniyam shu
 yerda …», answers 1A 2a 3a 4a 5a 6c 7a 8b 9b 10b 11A 12A, then «1 hozirgidek qolsin» (the
 board's ⋯ pins keep the Mashina tab's door, `batches.vehicle_info` + the two ends);
@@ -2848,7 +2881,7 @@ disproves is counted from the fix. The % is DISTANCE (4a) everywhere incl. the c
 A fix-walk spent at the typical pace is DUE ([0, hours to its SLOWEST arrival]) and late
 one reporting window after that (`slowestArrivalMs`); `placeDated` is the ONE date rule
 (truckRow, the cabinet, `truckFor`); a departure-only overdue truck has NO point
-(`TruckMarker.placed`, named under /map). **The gate** (nine rechecks, #1415-#1419): a fix
+(`TruckMarker.placed`, named under /map). **The gate** (nine rechecks, #1424-#1428): a fix
 within 0.05° of `yardFor(dest)` (TAS2's yard is Tashkent) is `atGate` on any road, never
 late; `latestPositions(trips: PositionTrip[])` returns `gateSince` (first yard fix after
 the last accurate fix elsewhere, from the departure, in the phone's own order — a clock
@@ -2857,7 +2890,7 @@ running ahead ties `received_at`) and `truckRow` turns it `stuck` after
 20:00 summary count it; an ARRIVED truck reads positions bounded at `arrivedAt` and stood
 since the earlier of the two (`TruckRow.stoodSince` — «stuck», the arrived column's order,
 the bot), while «Keldi» stays the SCAN on every screen and the phone's earlier yard time is
-its own past fact «GPS: hovliga 16.10 kirgan» (`yardFrom`; #1419: a moved arrival date made
+its own past fact «GPS: hovliga 16.10 kirgan» (`yardFrom`; #1428: a moved arrival date made
 every reader of the first one disagree, and a running count outlived what the phone saw);
 `rankTrucks` orders every truck at a gate by `stoodSince`; an arrived truck reads
 `gateSinceFor` only; `gateYard` refuses a trip that starts in its destination's yard;
@@ -2875,8 +2908,8 @@ the customer's rung does not follow GPS; a typed wait ahead of a silent fix; TAS
 to the drawn dot; the yard is the code's, not coordinates typed on /admin/warehouses.
 DEPLOY: Horgos → type «Konsolidatsiya habi», country CN.
 
-**Latest migration: 0133** (`pickup_close`, `when` …112; ledger must reach **134**). Before
-it: 0132 (`cost_freight_basis`, `when` …111). Before
+**Latest migration: 0134** (`staff_group`, `when` …113; ledger must reach **135**). Before
+it: 0133 (`pickup_close`, `when` …112). Beforeit: 0132 (`cost_freight_basis`, `when` …111). Before
 it: 0131 (`calc_excise`, `when` …110). Before
 it: 0130 (`bot_redelivery`, `when` …109). Before
 it: 0129 (`cargo_threads`, `when` …108). Before
@@ -3013,7 +3046,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **134** since 0133 (133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **135** since 0134 (134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read

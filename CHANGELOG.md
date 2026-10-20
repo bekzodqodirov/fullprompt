@@ -2,7 +2,7 @@
 
 ## Partiya doskasi: hamma mashinalar bir joyda, qayerdaligi bilan — 2026-10-20
 
-**Migratsiya yo'q.** Deploydan keyin migratsiyalar soni o'zgarmaydi (134), shuning uchun tekshiruv — `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatishi.
+**Bu raundning o'zida migratsiya yo'q.** U pastdagi «Jamoa guruhi» yangilanishi (migratsiya 0134) bilan bir deployda chiqadi, agar u serverga hali qo'yilmagan bo'lsa. Shuning uchun deploydan keyin ikkalasini tekshiring: **migratsiyalar soni 135** va `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatsin.
 
 Sizning xabaringiz: «pogruzga qattaligini bilishim kerak visual — ichki xitoydami yokida chegaradami · yolda bosqichida mashina qayerda … zavot reyslariniyam shu yerda … hamma mashinalarni manage qiladgan joy · kartalarda: neccha kub necha kg, yuklandi sanasi, yolga chiqgan kuni, necha foiz yolni bosib otdi». Javoblaringiz: **1A 2a 3a 4a 5a 6c 7a 8b 9b 10b 11A 12A**.
 
@@ -59,13 +59,90 @@ Sizning xabaringiz: «pogruzga qattaligini bilishim kerak visual — ichki xitoy
 
 1. Zaxira oling (0 bayt emasligini tekshiring).
 2. PR'ni merge qiling, keyin serverda `git pull`, `docker compose build migrate`, keyin `docker compose --profile https --profile telegram up -d --build`.
-3. `curl -s https://gsrwms.uz/api/version` — bugungi vaqt (migratsiya yo'q, soni 134 qoladi).
+3. **Migratsiyalar sonini sanang: 135 bo'lishi kerak** (bu raundning o'zida migratsiya yo'q; 135 — «Jamoa guruhi»niki). Kamroq bo'lsa, `docker compose run --rm migrate` ning o'z chiqishini o'qing. Keyin `curl -s https://gsrwms.uz/api/version` — bugungi vaqt.
 4. **Boshqaruv → Skladlar → Horgos** — «Turi» = **Konsolidatsiya habi**, mamlakati = **CN** (Qashqar kabi). Shusiz Horgosdagi yuklash «Ichki Xitoy» bo'limida turadi (11A).
 5. /batches ni telefonda va kompyuterda oching.
 
 ### Tekshirildi
 
 - Yangi testlar: ustun/bo'lim/yo'l chizig'i sanoqlari, filtrlar (begona sklad rad etiladi), sanalar (Toshkent yarim tuni, oy almashishi), yo'l chizig'i masofa bo'yicha, zavod reysini kim ko'radi; haqiqiy bazada — birinchi/oxirgi karobka sanasi, yuklangan/rejadagi, belgi tugmalari, skladchi ko'rinishi; GPS mashinani «kechikkan»dan qaytarsa sanoqlar ham o'zgarishi; telefon (360) va kompyuter (1280) brauzer testlari: yo'l chizig'ini bosish, «⋯» dan Qirg'izistonga belgilash, filtr. Har bir qoida kodi buzilganda test qizil bo'lishi tekshirildi.
+
+## 2026-10-20 (kechqurun) — Yutilgan lid tabrigi: narx, kub, kg va «bu oy»
+
+Sizning so'rovingiz: «lead yutilganda nech pullik, necha kub, necha kg yuk yutildi — shuni qo'shishimiz kerak» va «yanayam jonliroq bo'lsin, oddiy tabrikdan ham». **Migratsiya yo'q — son 135 qoladi; tekshiruv: `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatsin.**
+
+Endi lid yutilganda guruhga shunday xabar boradi (GIF bilan):
+
+> 🏆 **G'ALABA!** Aziz Karimov lidni yutdi — **GS451**!
+>
+> 💰 Narx: **$2 450**
+> 📦 Yuk: **18.5 kub** · **2 300 kg**
+>
+> 🔥 Bu oy: **3-g'alaba** · jami **$7 350**
+> Barakalla, jamoa faxrlanadi! 🚀
+
+- Narx, kub va kg — lidning o'zida yozilgan narx va hajm (bitimga o'tadigan o'sha raqamlar). Lidda biror raqam yozilmagan bo'lsa, o'sha qator chiqmaydi — hech qachon «$0» yoki «0 kub» chiqmaydi.
+- «🔥 Bu oy» — lid egasining shu oydagi yutgan lidlari soni va dollar narxlari jami. Oyning birinchi g'alabasida «Bu oyning birinchi g'alabasi!» deb yoziladi.
+- Sarlavha (G'ALABA! / BITIM YOPILDI! / NISHONGA TEGDI! …) va oxirgi gap har safar almashadi — ketma-ket ikki xabar bir xil chiqmaydi.
+- Yangi mijoz kodi tabrigiga ham «📈 Bu oy: 3-mijoz» qatori qo'shildi.
+- **Eslatma (siz so'radingiz, shuning uchun qilindi):** guruhdagi hamma — sklad va VED ham — endi yutilgan lidning narxini ko'radi. «Jamoa guruhi» sahifasidagi ogohlantirish matni ham shunga o'zgartirildi. Haftalik reyting, oy chempioni va birinchi yuk xabarlarida pul hali ham yo'q.
+
+## Jamoa guruhi: tabriklar, shanba reytingi va gamifikatsiya — 2026-10-20
+
+**Migratsiya 0134 — deploydan keyin migratsiyalar soni 135 bo'lishi kerak.**
+
+Sizning so'zingiz: «telegram botni gurux chat groupga qoshsa … client code ochilganda client code ochgan odamni qutlab hammani oldida maqtaydigan gift … yokida lead yutilganda … har shanba soat 18:00 da hodimlar reytingi … kim necha kub necha kg yuk olib kelgani». Javobingiz: «3. 2 3 gif yuklab qoyaylik zerkarli bolmasin tabriklash ham / qolgani sen aytkandek bolsin».
+
+### 1. Jamoa guruhi
+
+- Botni Telegram guruhiga **o'zingiz** qo'shasiz (tizimga ulangan Telegramingizdan) — guruh o'zi ulanadi. Boshqa hodim qo'shgan guruh Boshqaruv → «Jamoa guruhi» sahifasida «Shu guruhni ulash» tugmasi bilan kutib turadi. Begona odamning guruhi umuman yozilmaydi.
+- Bot guruhdagi yozishmalarni **o'qimaydi va javob bermaydi** — faqat o'zi yozadi. (Shu bilan eski xavf ham yopildi: guruhda kimdir /start yozsa, bot u yerga tugmalarni chiqarib yuborardi.)
+- Guruh oddiy guruhdan supergroupga aylansa ham bot uni kuzatib boradi.
+
+### 2. Tabriklar — hammaning oldida
+
+- 🎉 **Yangi mijoz kodi** — kodni ochgan odam tabriklanadi (➕ tugma va mijoz formasi). Eski bazani import qilish tabrik chiqarmaydi.
+- 🏆 **Lid yutildi** — lidning egasi (sotuvchi) tabriklanadi. Bir lid — bir tabrik (qayta yutilsa takrorlanmaydi).
+- 🚚 **Yangi mijozning birinchi prixodi** — prixodga yozilgan sotuvchi tabriklanadi, kub va kg bilan. Bir mijoz — bir marta.
+- Xabarda: hodimning ismi (Telegramda bosiladigan, agar u botga ulangan bo'lsa) va mijoz kodi. **Hech qachon**: mijoz ismi, telefoni, narx, pul.
+- **GIF'lar navbat bilan** (3-javob): sahifada 2–3 ta GIF (yoki rasm, MP4) yuklaysiz — har safar eng uzoq ko'rsatilmagani chiqadi. **Tabrik matnlari ham navbat bilan**: har tur uchun 4–5 xil gap, ketma-ket ikki xabar bir xil bo'lmaydi.
+- Bir narsa hech qachon ikki marta yozilmaydi. Telegram javobi noaniq bo'lsa (xabar ketgan bo'lishi mumkin), bot o'zi qayta yubormaydi — sahifada «Qayta yuborish» tugmasi chiqadi.
+- Kechasi (22:00–08:00) xabar ovozsiz keladi.
+
+### 3. Har shanba 18:00 — haftalik reyting
+
+- Hafta: shanba 18:00 dan keyingi shanba 18:00 gacha (4a). Shanba 18:00 dan keyingi prixod keyingi haftaga o'tadi.
+- Yuk KPI bilan **bir xil qoida** bo'yicha olinadi (prixodga yozilgan sotuvchi), shuning uchun reyting /hodimlar va profildagi raqam bilan farq qilmaydi. Tartib — kub bo'yicha (5a), keyin kg.
+- Xabarda: 🥇🥈🥉 (bosiladigan ism bilan), qolganlar tartib bilan (20 tagacha), har kimning o'tgan haftaga nisbatan ▲▼, jamoa jami va o'tgan hafta, 🎯 jamoa maqsadi (agar yozilgan bo'lsa) chiziq bilan, 🔥 ketma-ket 1-o'rin, ⭐ shaxsiy rekord, sotuvchisi yozilmagan yuk, yuk olib kelmagan sotuvchilar soni (ismlari yo'q — 6a). Pul yo'q.
+- 👑 **Oy chempioni** — har oyning 8-sanasi 18:00 da (KPI oyi yopilgan kun), o'tgan oyning top-3 i.
+- Bot shanba kuni ishlamay qolgan bo'lsa, sahifadagi «Reytingni yuborish» tugmasi o'sha haftani yuboradi (ikkinchi marta emas).
+
+### 4. Ekranlar
+
+- **Boshqaruv → Jamoa guruhi** (faqat sizga va adminlarga): ulangan guruh, sinov xabari, GIF'lar, jamoa maqsadi, oxirgi xabarlar va ularning holati.
+- **/reyting** — hamma hodim uchun (profildagi «🏆 Haftalik reyting» tugmasi): shu hafta, o'tgan hafta va shu oy. Pul yo'q.
+- Botda **/reyting** — shaxsiy chatda o'z o'rningiz va top-3.
+
+### O'rnatish (deploy)
+
+1. Zaxira oling (0 bayt emasligini tekshiring).
+2. PR'ni merge qiling, keyin serverda `git pull`, `docker compose build migrate`, keyin `docker compose --profile https --profile telegram up -d --build`.
+3. **Migratsiyalar sonini sanang: 135 bo'lishi kerak.** Kamroq bo'lsa, `docker compose run --rm migrate` ning o'z chiqishini o'qing.
+4. `curl -s https://gsrwms.uz/api/version` — bugungi vaqt.
+5. Telegramda hodimlar guruhini oching (yoki borini oching), botni **o'zingiz** qo'shing.
+6. Boshqaruv → «Jamoa guruhi»: «Ulangan guruh: …» yozuvini ko'ring, 2–3 ta GIF yuklang, xohlasangiz jamoa maqsadini (kub) yozing, «Sinov xabari»ni bosing — guruhda GIF bilan xabar chiqishi kerak.
+7. Hodimlar botga bir marta /start yozsin — menyuda /reyting paydo bo'ladi.
+
+### Hali qilinmagan (aytib qo'yaman)
+
+- Egasi keyin topilgan yuk (markirovka keyinroq mijozga berilgan) «birinchi yuk» tabrigini chiqarmaydi.
+- Shanba xabari keyin o'zgartirilmaydi: prixod orqa sana bilan kiritilsa, ekrandagi raqam biroz o'zgarishi mumkin — xabarda «18:00 holati» deb yozilgan.
+- Haqiqiy Telegram sovg'asi (Stars, pullik) — keyinroq qo'shsa bo'ladi.
+- Sklad hodimlarining reytingi — 10a «hozir yo'q».
+
+### Tekshirildi
+
+- Yangi testlar: guruhni faqat hamkasb ulashi, begona guruh yozilmasligi, bitta narsa bir marta, noaniq javob qayta yuborilmasligi, supergroupga o'tish, guruh ulanmaganida keyin «toshqin» bo'lmasligi, GIF navbati, uchala tabrik (bir martalik), shanba 18:00 chegarasi, kub bo'yicha tartib, ketma-ket 1-o'rin va rekord, pul yo'qligi. 11 ta himoya ataylab sindirib tekshirildi — har biri testni qizartirdi.
 
 ## Yo'lkira: bitta jadval hamma mashina uchun, har bir tovar o'z zichligi bilan — 2026-10-15
 

@@ -3770,7 +3770,128 @@ Two more, found while LOOKING at the fix's own screenshots and the rerun:
   a big balance to fall below zero (#653's oracle). The four files whose
   `cents` helper feeds a difference-to-zero assertion add `+ 0`.
 
-## Partiya doskasi — every truck in one place, by where it is (2026-10-17 → 10-20; NO migration, ledger 134; spec `docs/PARTIYA-DOSKASI.md`)
+## Jamoa guruhi — his «3. 2 3 gif … tabriklash ham / qolgani sen aytkandek» (2026-10-20; migration 0134 `staff_group` — ledger must reach 135; spec `docs/JAMOA-GURUHI.md`)
+
+1407. **The staff group is a ROW adopted through Telegram, never a setting.**
+`staff_group_chats` with `active_from` set (a partial UNIQUE index allows one)
+is THE group, and `telegram/staff-group.ts` is its only writer of
+`active_from` (fenced). The price channel's reason holds: /admin/settings
+renders every key as an editable input, so a setting would be a door around
+`decideGroupAdoption`. The owner adds the bot → adopted; a colleague's group is
+recorded and offered on the panel; a stranger's group writes nothing; a known
+group hears every later change (a kick clears it). Not a reuse of
+`price_channel_chats`: its one-connected index admits one row of any kind, its
+adoption refuses supergroups ON PURPOSE (join requests and protected content
+are channel semantics), and its `connected_at` writes are fenced to its own
+file.
+
+1408. **The bot never reads the group, and that closes a hazard older than the
+round.** `registerStaffGroup` sits right after the price channel and before
+every command: its two membership handlers, then a swallow that ends every
+other update from a group or supergroup. Before it, `/start` had no chat-type
+guard — in a group it would have posted the entry keyboard into a room
+everybody reads, and `/start <code>` would have linked the GROUP as somebody's
+staff chat; the staff ladder resolved people by `ctx.chat.id`. Whether Telegram
+delivers group messages at all depends on the bot's privacy mode, which the
+repository cannot see — so the rule holds either way.
+
+1409. **One claim per thing said, written even when nothing can be said.**
+`staff_group_posts.dedupe_key` (`client:<id>`, `won:<lead>`,
+`first_cargo:<client>`, `rating:<saturday>`, `champion:<YYYY-MM>`, a unique
+`test:` per press) is INSERTed … ON CONFLICT DO NOTHING before anything is
+sent, so a redelivered job, a re-won lead or two first receipts confirmed the
+same minute praise once. With no group connected the row is written
+`skipped/no_group`: connecting a group later must not flood it with last
+month's praise. The drain is a pg-boss job (kicked at once, swept every
+minute) and `groupVerdict` is the price channel's rule: a timeout, a reset or a
+502/504 may already have published, so it is `failed/ambiguous_send` and only a
+person re-sends it (#48); a group that became a supergroup refuses with the new
+id and is followed (`migrateToChatId` now rides `SendResult`).
+`subject_user_id` is ON DELETE SET NULL — every won lead in the test suite
+writes a row, and a file deleting its fixture user must not be refused by a
+celebration nobody saw.
+
+1410. **The GIFs rotate and so do the words (his 3).** The GIFs are ordinary
+`attachments` of type `staff_group_media` under one fixed entity id, so the
+off-site copy covers them; upload is the settings admin's only (a per-record
+check in the upload route, a `decide()` case, `own_screen` in `DELETE_RULES`).
+The least recently shown goes next (`staff_group_media.last_used_at`) — a
+rotation, not a random pick, because with three files a random pick repeats
+one twice in a row a third of the time, which is the «zerikarli» he named.
+`sendAnimation` is new in send.ts (GIF/MP4); the file id is cached typed by
+its method; a refused picture sends the words alone. The sentences rotate by
+the count of posts of that kind (5/5/4), fenced so consecutive posts never read
+the same.
+
+1411. **Who is praised, and where the hooks sit.** A code: the MINTER (his
+«client code ochgan odamni»), at the two APP doors beside round 111's deal and
+never in `createClient` (#766's two reasons: the import would post 1,700 times,
+and `winLead` mints a client that is celebrated as the WIN — one person, one
+moment, one message). A win: the lead's owner, from `LeadStageChanged` with
+`stageKind = 'won'`, which every stage door announces. A first cargo: the
+receipt's SELLER STAMP (the person the rating credits), from
+`ReceiptConfirmed`, only when no other confirmed prixod of the client exists;
+an unstamped prixod praises nobody. Both events reach wms by the event drain's
+dynamic-import slot in its own try/catch (platform never imports wms). A
+mention (`tg://user?id=`) only with a linked staff chat — Telegram shows it as
+a mention only to someone who contacted the bot; else the name in bold. Never
+a client's name, phone or money.
+
+1412. **The rating reads the KPI's own cargo and the group sees kub, never
+money.** `stampedCargo` is the one reader (receipt stamp, carton grain,
+`received_at`), so the post, /reyting, /hodimlar and the profile's «Bu oy»
+cannot disagree (#513). Window = the latest Saturday 18:00 in Tashkent and
+seven days back (his 4a); Saturday 18:00 sharp belongs to the NEXT week, so
+nothing falls between two. Ranked kub → kg → name (5a), equal kub AND kg share
+a place, nobody with nothing is ranked (6a, they are a count). The posted
+standings are stored on the row, so 🔥 streaks (consecutive POSTED first
+places — a missed Saturday breaks the run) and ⭐ records (only after two
+posted weeks) read what people saw, never cargo that moved since. Crons are UTC:
+`'0 13 * * 6'` and the champion `'0 13 8 * *'` — the 8th, the KPI month's close.
+A back-dated prixod can move the screen after Saturday; the post says «18:00
+holati» rather than being edited.
+
+1413. **Red proofs, eleven by string edit; one stayed GREEN first.** «Any stage
+is a win» survived because the open-stage test used a lead that did not exist
+— the function returned at «not found» before the guard was asked. Re-anchored
+on a real lead with an owner and a client, it went red. PROCESS: the proof
+helper's empty replacement was not reversible (#815's trap, again) and left a
+file broken mid-run; restored by hand and every strip now writes a marker.
+
+## Jamoa guruhi — the win says its price (2026-10-20; NO migration, ledger 135)
+
+His «bot telegramda ishladi, ko'proq ma'lumot qo'shishimiz kerak — lead
+yutilganda nech pullik, necha kub, necha kg yuk yutildi» and, while it was
+being built, «yanayam jonliroq bo'lsin, oddiy tabrikdan ham».
+
+1414. **A won lead's post carries its own price, kub and kg — the one place
+money enters the group (reverses #1412's «never money» for this post only).**
+The figures are the LEAD's quote columns (`quoted_amount/currency/volume_m3/
+weight_kg`) — what `winLead` carries into the deal, and where a released offer
+writes the client price — read when the event drain hears the win. Each part is
+left out when the lead does not carry it (never «$0», «0 kub» or «null»), a
+currency other than dollars or so'm is escaped and printed by its code, and the
+weekly rating, the champion, a new code and a first cargo still carry no money.
+STATED to him before building, his call: the group is read by everyone in it,
+the warehouse and the VED included, so the VED now reads client prices there —
+law 4 of the VED module (#790) says the VED does not; he asked for it, and the
+page's «everyone reads this» sentence now says so in all four languages.
+
+1415. **«Jonliroq» = structure and a running tally, not more adjectives.** The
+win became a five-line post: a rotating CAPS headline with the hero and the
+code, the price, the cargo, «🔥 Bu oy: N-g'alaba · jami $X» for the OWNER's
+won leads this Tashkent month (`closed_at`, the tahlil clock; this lead counted
+even if a legacy door left it unstamped — red-proven; dollars only in the sum,
+a so'm price is not added to a dollar one; the first win of a month says so and
+carries no «jami», which would repeat the price two lines up — found by
+rendering the post, not by a test), and a rotating closing line. An ownerless
+lead has no month. A new code gets «📈 Bu oy: N-mijoz», counted off the POST
+LEDGER (the same door, so a code the import or a won lead minted is never this
+person's «yangi mijoz»). The first cargo was left as it was — he named the win.
+Red proofs ×3 by string edit (the unstamped-win clause, the price line, the
+code counter's +1).
+
+## Partiya doskasi — every truck in one place, by where it is (2026-10-17 → 10-20; DECISIONS renumbered from #1407-#1419 on the merge, the TWENTY-SECOND collision: «Jamoa guruhi» took #1407-#1415 and merged first; NO migration of its own — it deploys with that round's 0134, so the ledger must reach 135; spec `docs/PARTIYA-DOSKASI.md`)
 
 His message of 2026-10-17 («pogruzga qattaligini bilishim kerak visual —
 ichki xitoydami yokida chegaradami · yolda bosqichida mashina qayerda … zavot
@@ -3781,7 +3902,7 @@ bosib otdi»), a canvas of three designs and twelve questions, his answers
 before code (tracking math, data and doors, the screen and its tests — 41
 findings, 3 blockers); the spec is the judged version.
 
-1407. **Where a truck is has ONE vocabulary, and it is a place, not a rung**
+1416. **Where a truck is has ONE vocabulary, and it is a place, not a rung**
 (`tracking/place.ts`). Four words — `cn` Xitoy ichida, `border` Chegarada,
 `transit` Tranzitda, `uz` O'zbekistonda — and «Joyi aniq emas» when nothing
 honest can be said. A warehouse's place by TYPE and COUNTRY (a CN `hub` is the
@@ -3792,9 +3913,9 @@ reading «unknown» on every truck that drives it. `to_border` is the BORDER:
 read as China, a Horgos truck went «Chegara» while loading, «Xitoy ichida» for
 the 5 km to the post, then «Chegarada» again. The generic straight line takes
 its place from its two ends (two Chinese ends are China even when one is a
-hub). The customer's rung (`stages.ts`) is left alone and says so (#1410).
+hub). The customer's rung (`stages.ts`) is left alone and says so (#1419).
 
-1408. **A truck's place is the schedule walked from the NEWEST evidence**
+1417. **A truck's place is the schedule walked from the NEWEST evidence**
 (`placeTruck`, eta.ts — one assembler for the board, the dashboard, the truck
 card, the map, the bot and the customer's cabinet). His 5a: the phone decides.
 ONE mechanism, the pin's: a fix anchors the walk exactly as a pin does, at its
@@ -3815,14 +3936,14 @@ Irkeshtam too — entered at the pin's moment if the pin names it, else the
 schedule's own entry, else the fix's, never before the departure; the far side
 of the post is the next leg (past Yallama is Uzbekistan).
 
-1409. **The % is distance (his 4a), everywhere.** The road's length behind the
+1418. **The % is distance (his 4a), everywhere.** The road's length behind the
 dot ÷ the whole road, in `chordDeg` — the measure the dot is paced by, so the
 % and the dot cannot disagree. A queue has no length: a truck at the border
 keeps its % for the whole wait, which is why the leg's words always print
 beside it. The customer's cabinet reads the same `placeTruck`, so «necha foiz»
 is one number on every screen; a truck with no % draws no bar (it drew 0 %).
 
-1410. **Every reader follows, and three things are stated rather than built.**
+1419. **Every reader follows, and three things are stated rather than built.**
 `TruckRow` reads the fixes of EVERY truck in scope before the rank — a fix
 that moves a truck from «overdue» back onto the road must change the counts
 too (red-proven: positions read for the drawn slice only left the counts
@@ -3836,7 +3957,7 @@ until a person pins it — his design); the Kashgar road's `uz` leg starts at
 Osh, so ~25 km Osh → Dostlik read «O'zbekistonda»; TAS2's dot is 85 km from
 Tashkent, so a phone at the TAS2 yard reads ~90 %.
 
-1411. **A pin press is judged against the pin the presser SAW**
+1420. **A pin press is judged against the pin the presser SAW**
 (`checkpoint_changed`). The board keeps a page open for a long while; a press
 of «Qirg'izistonda» on a stale page where a colleague has since pressed the
 same button would have CLEARED it (pressing the standing pin toggles it off).
@@ -3844,7 +3965,7 @@ The form posts `seenKey` and the service compares it under the row lock with
 the stored key AS A SCREEN READS IT (a key the buttons never write is no pin);
 absent = an old page, which keeps the toggle.
 
-1412. **The board** (`/batches`, `batches/board.ts` + `board-view.ts`). The four
+1421. **The board** (`/batches`, `batches/board.ts` + `board-view.ts`). The four
 columns stay (his 1A) with sections by place inside them (3a); the road strip
 on top counts each place with every filter but the place itself, from the SAME
 cards the columns draw (#513), uncapped — the oldest open trucks are the stuck
@@ -3871,7 +3992,7 @@ No fill bar (8b). Below `xl` the columns are a native radio group over ONE DOM
 filters fold behind one button, open while a filter is on. The archive counts
 what rode, the board's own number.
 
-1413. **Found on the way.** (a) `m9m`'s «the cancelled batch left the board»
+1422. **Found on the way.** (a) `m9m`'s «the cancelled batch left the board»
 asserted on the page's first `.grid` — since the phone tabs, a row of four tab
 labels that could never hold a truck code: an assertion that could not fail.
 It asks the board by its testid now, with the archive row as the positive
@@ -3881,7 +4002,7 @@ load events 600 times; one grouped pass now. (c) On the round's own 360 px
 screenshot the active strip stop sat off the screen after a tap (the strip is
 wider than a phone) — `StripScroll` brings it into view.
 
-1414. **The round reviewed AS BUILT** (three lenses — data, screen, doors and
+1423. **The round reviewed AS BUILT** (three lenses — data, screen, doors and
 speed — each finding refuted by its own author before reporting; no door
 defect survived, and `loadBoard` measured 24-32 ms on the shaped copy, 85-110
 ms on a synthetic 663-truck fleet, a fixed eleven statements). Fixed:
@@ -3920,11 +4041,11 @@ ms on a synthetic 663-truck fleet, a fixed eleven statements). Fixed:
 Stated, not changed: the ⋯ pins follow `batches.vehicle_info` — the Mashina
 tab's own door, which warehouse staff at either end hold — so the board adds
 no power; his 10b said «logistning belgilari», so he was asked, and answered
-«1 hozirgidek qolsin» (#1416); the riders
+«1 hozirgidek qolsin» (#1425); the riders
 are read twice (the cargo and the dates, ~150 ms at 200 trucks); one render
 holds ~8 of the pool's 10 connections for its 30-100 ms.
 
-1415. **The fixes reviewed before the merge** (a workflow: three lenses, each
+1424. **The fixes reviewed before the merge** (a workflow: three lenses, each
 finding given a verifier with a probe; 5 confirmed, 12 more read and decided by
 hand). Every one of the five was in the tracking math or the words, and each
 came with a literal scenario that is now a test:
@@ -4036,7 +4157,7 @@ in the new rule or a reader of it:
   workflow found a truck landing in the later half of his own range «muddati
   o'tgan» within a minute of reaching the yard and a pin pressed at the yard
   restarting the clock for 42 h. This version shipped one commit and was
-  REPLACED by #1417 — a schedule cannot be the gate's clock at all.
+  REPLACED by #1426 — a schedule cannot be the gate's clock at all.
 - **While the walk runs, a fix's date ends no earlier than its slowest
   arrival** — it used to drop below the deadline and jump back when the walk
   turned due.
@@ -4056,7 +4177,7 @@ flag), 9 for the readers and words — every one by string edit, every file
 restored and hashed; the cleanup of `board-readers` now fails loudly and
 deactivates its client.
 
-1416. **His answer «1 hozirgidek qolsin» (2026-10-20): the board's pins keep the
+1425. **His answer «1 hozirgidek qolsin» (2026-10-20): the board's pins keep the
 Mashina tab's door.** Checked against the code before writing it down (#1229):
 the board offers the ⋯ pins on `batches.vehicle_info` (`mayPin`, board.ts), the
 Mashina tab asks the same, and the pin service refuses without it and then
@@ -4067,7 +4188,7 @@ the card, and a seller or the VED never. Nothing read it until now: pinned in
 logist, warehouse_manager, warehouse_operator, not sales or VED), red-proven
 by narrowing the board to unscoped holders.
 
-1417. **The gate's clock is the days since the truck CAME, never a schedule**
+1426. **The gate's clock is the days since the truck CAME, never a schedule**
 (the fourth recheck: one reviewer, a verifier per finding with probes on
 HEAD; 3 of 4 confirmed, 1 refuted, 1 left unverified and built anyway). Every
 schedule-based gate clock was wrong in a way a person sees: (a) a truck that
@@ -4101,7 +4222,7 @@ would have fired the minute it left). The refuted one: a typed Yallama wait
 moving a gate alarm — moot now, no schedule reaches the gate. 10 red proofs
 by string edit, all red.
 
-1418. **The fifth recheck: the gate's clock across the first scan, an agreeing
+1427. **The fifth recheck: the gate's clock across the first scan, an agreeing
 pin, ties, and the colour** (one reviewer, a verifier per finding; 5 of 5
 confirmed). (a) **The first unload scan restarted the clock**: it flips the
 batch to `arrived` with `arrivedAt = now`, and the arrived branch counted from
@@ -4129,8 +4250,8 @@ by days on the road**, so on the six-row dashboard card a truck two days at
 its gate pushed off one five days unloaded; they rank by how long they stood.
 9 red proofs by string edit, all red.
 
-1419. **The sixth to ninth rechecks: «Keldi» stays the scan; the phone's
-yard time is its own labelled fact.** #1418 moved the stuck clock in `truckRow`
+1428. **The sixth to ninth rechecks: «Keldi» stays the scan; the phone's
+yard time is its own labelled fact.** #1427 moved the stuck clock in `truckRow`
 and left the other readers of an arrived truck on the scan. The sixth recheck
 (3 of 3 confirmed) found the board card printing «Keldi <today>» beside
 «Tushirilmay turibdi» and sorting that truck last; the bot saying «yo'lda»

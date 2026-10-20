@@ -889,6 +889,16 @@ export function registerStaffBot(bot: Bot): void {
       return;
     }
 
+    // «/reyting» (0134): this week's podium and the person's own place, in
+    // the same slot as «📊 Holat» for the same reasons — below the cabinet
+    // pass-through, above both captures and far above the paid model.
+    if (ctx.message.text === '/reyting') {
+      const staff = await staffForChat(chatId);
+      if (!staff) return next();
+      answerRating(chatId, staff.id);
+      return;
+    }
+
     // «📋 Bugun» ABOVE both captures (round C): pressed while a «Bajarildi»
     // result was awaited it used to reach `takeTaskPending` first — which
     // DELETES ON READ — and close the task with «📋 Bugun» as its result;
@@ -1158,6 +1168,23 @@ async function refuseWhileDrafting(ctx: NoteReplyCtx, chatId: bigint): Promise<b
   if (!draftLive(chatId)) return false;
   await ctx.reply(`Hozir topshiriq yozilyapti. ${BUSY_DRAFT}`);
   return true;
+}
+
+/**
+ * «/reyting» — this week's podium and the person's own place (0134). Off the
+ * sequential poller (#706): the read is the KPI's carton aggregate, and a
+ * busy Saturday must not hold every customer's cabinet behind it.
+ */
+function answerRating(chatId: bigint, userId: string): void {
+  void (async () => {
+    try {
+      const { ratingReplyFor } = await import('../../wms/staff/rating');
+      await sendText({ chatId, text: await ratingReplyFor(userId) });
+    } catch (err) {
+      logger.warn({ err }, 'rating reply failed');
+      await sendText({ chatId, text: 'Reytingni hisoblab bo‘lmadi — keyinroq urinib ko‘ring.' }).catch(() => {});
+    }
+  })();
 }
 
 /** Chats whose «📊 Holat» is being computed right now. */

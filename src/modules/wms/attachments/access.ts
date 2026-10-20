@@ -394,6 +394,13 @@ async function decide(
         ? { allow: true, rule: 'broadcast-super-admin' }
         : { allow: false, rule: 'broadcast-not-super-admin' };
     }
+    // The staff group's GIFs and photos (0134): the panel's, and the panel is
+    // the settings admin's. The group SEES them through Telegram, never here.
+    case 'staff_group_media': {
+      return actor.permissions.has('admin.settings.manage')
+        ? { allow: true, rule: 'staff-group-settings-admin' }
+        : { allow: false, rule: 'staff-group-not-settings-admin' };
+    }
     // entityType was free-form before the upload allowlist, so production may
     // hold strings no code writes today — in log-only mode this branch IS the
     // inventory of them.

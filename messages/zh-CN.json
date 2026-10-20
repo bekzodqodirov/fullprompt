@@ -751,7 +751,8 @@
       "salary_expense_category_id": "工资类别：「员工」页面据其月度模板显示工资及支付状态。",
       "price_history_min_sim": "货物名称与以往入库的相似度达到多少时，「以往价格」才显示其车次（0..1）",
       "price_history_ai_daily_limit": "「以往价格」的 🤖 按钮每天可调用 AI 的次数（与计算额度分开）",
-      "freight_tariff_cost_type_codes": "车辆费用中自动选择「按运费价目表」的费用类型（代码列表）"
+      "freight_tariff_cost_type_codes": "车辆费用中自动选择「按运费价目表」的费用类型（代码列表）",
+      "staff_rating_goal_m3": "团队群的每周团队目标（立方，0 = 无目标）。在「团队群」页面修改更方便。"
     },
     "driverApp": "司机应用",
     "callsApp": "通话应用",
@@ -2074,11 +2075,7 @@
     "openBatch": "打开批次",
     "openMap": "在地图上查看",
     "noTrucks": "当前没有在途车辆。",
-    "unplaced": "位置不明——未在地图上显示：",
     "overdue": "已超过预计时间——请联系司机",
-    "atGate": "已到达，未卸货",
-    "atGateDays": "{n, plural, =0 {今天到达} other {已停#天}}",
-    "atGateStuck": "请检查卸货",
     "eta": "预计 ~{min}–{max} 天到达",
     "seg_cn_transit": "中国境内运输中",
     "seg_to_border": "驶向口岸",
@@ -2110,7 +2107,11 @@
     "cargoReceived": "收货 {date}",
     "cargoMore": "还有 {n} 项 — 完整列表见库存",
     "seg_kz": "哈萨克斯坦境内",
-    "seg_uz_queue": "乌兹别克斯坦口岸排队"
+    "seg_uz_queue": "乌兹别克斯坦口岸排队",
+    "unplaced": "位置不明——未在地图上显示：",
+    "atGate": "已到达，未卸货",
+    "atGateDays": "{n, plural, =0 {今天到达} other {已停#天}}",
+    "atGateStuck": "请检查卸货"
   },
   "accounting": {
     "title": "管理会计",
@@ -5967,6 +5968,93 @@
       "notFound": "未找到记录——请刷新页面。",
       "notATwin": "这两条记录已不再配对——请刷新页面。"
     }
+  },
+  "staffGroup": {
+    "title": "团队群",
+    "intro": "Telegram 群：机器人当众祝贺员工（新客户编码、赢得的线索、新客户的第一批货），每周六 18:00 发布本周按立方和公斤的排名。",
+    "serverBehind": "服务器尚未更新（缺少迁移 0134）。请运行迁移后重新打开此页。",
+    "connected": "已连接的群：{title}",
+    "facts": "成员：{members} · 自 {since}",
+    "cannotPost": "机器人无法在群里发消息：{error}",
+    "everyoneReads": "群里每个人都能看到这些消息（仓库和报关也能看到）。成交线索的祝贺中会显示该线索的价格、立方和公斤；其他消息不含金额。任何地方都不显示客户姓名和电话——只有客户编码。",
+    "test": "测试消息",
+    "testOk": "已加入队列——一分钟后查看群。",
+    "ratingNow": "发送排名",
+    "ratingNowOk": "已加入队列。",
+    "championNow": "月度冠军",
+    "disconnect": "断开",
+    "disconnectConfirm": "断开该群？祝贺和排名将不再发到那里。",
+    "notConnected": "未连接群。",
+    "step1": "在 Telegram 创建群（或打开已有的群）并加入员工。",
+    "step2": "用已绑定系统的 Telegram 账号亲自把机器人加入群。",
+    "step3": "群会自动连接；然后点击「测试消息」。",
+    "otherGroups": "员工把机器人加入的其他群：",
+    "connect": "连接此群",
+    "connectConfirm": "连接「{title}」？祝贺和排名将发到那里。",
+    "mediaTitle": "祝贺动图",
+    "mediaHint": "上传 2–3 个动图（或照片）——轮流使用，不会单调。GIF、MP4、JPG、PNG，最大 20 MB。",
+    "mediaNone": "尚未上传——祝贺以文字发送。",
+    "mediaDelete": "删除",
+    "mediaDeleteConfirm": "从祝贺中移除此文件？",
+    "upload": "上传动图",
+    "uploading": "上传中…",
+    "uploadTooLarge": "文件超过 20 MB。",
+    "uploadRefused": "文件被拒——需要 GIF、MP4、JPG 或 PNG。",
+    "goalTitle": "团队每周目标",
+    "goalHint": "团队一周应带来多少立方。周六排名中会显示「32 / 40 立方」一行。0 = 无目标。",
+    "goal": "目标，立方",
+    "save": "保存",
+    "goalSaved": "已保存。",
+    "postsTitle": "最近的消息",
+    "postsNone": "还没有消息。",
+    "maybeSent": "消息可能已在群里——再次发送前请先查看群。",
+    "lastError": "错误：{error}",
+    "retry": "重新发送",
+    "requeued": "已重新加入队列。",
+    "status": {
+      "pending": "排队中",
+      "sending": "发送中",
+      "sent": "已发送",
+      "failed": "未发送",
+      "skipped": "已跳过"
+    },
+    "kind": {
+      "client": "新客户",
+      "won": "赢得线索",
+      "first_cargo": "第一批货",
+      "rating": "每周排名",
+      "champion": "月度冠军",
+      "test": "测试"
+    },
+    "skip": {
+      "no_group": "当时未连接群",
+      "stale": "已过时——未发送",
+      "group_changed": "群已更换"
+    },
+    "error": {
+      "not_found": "未找到群。",
+      "not_present": "机器人不在此群中。",
+      "telegram": "Telegram 没有响应——请稍后再试。",
+      "not_group": "这不是群。",
+      "cannot_post": "机器人无法在群里发消息——请允许它发送消息。",
+      "no_group": "请先连接群。",
+      "already_posted": "已发送过——不会重复发送。",
+      "bad_goal": "请输入立方数（0 = 无目标）。",
+      "failed": "没有成功——请重试。"
+    }
+  },
+  "rating": {
+    "title": "每周排名",
+    "profileHint": "本周谁带来了多少立方和公斤——与机器人每周六 18:00 发到群里的排名相同。",
+    "intro": "一周为周六 18:00 至下周六 18:00。货物按收货单上记录的销售员计算（与 KPI 相同）。",
+    "serverBehind": "服务器尚未更新。更新后再打开此页。",
+    "running": "本周",
+    "closed": "上周",
+    "month": "月份：{month}",
+    "empty": "还没有人带来货物。",
+    "goalDone": "🎯 团队目标 {goal} 立方——已完成！✅",
+    "goalProgress": "🎯 团队目标：{done} / {goal} 立方",
+    "footnote": "收货单可能补录日期，因此数字可能略有变化。"
   },
   "place": {
     "road": {

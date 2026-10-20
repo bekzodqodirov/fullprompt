@@ -22,6 +22,7 @@ import { replyKeyboardFor } from './keyboards';
 import { ensureBotProfile, offerStaffCommands } from './commands';
 import { botCall, noteBotAnswer } from './send';
 import { membershipSettled, registerPriceChannel } from './price-channel-handlers';
+import { registerStaffGroup } from './staff-group-handlers';
 import { installBotShutdown, isStopping, markBoot, stopTelegramBot, stoppingGuard, updateSummary } from './lifecycle';
 import { pressMiddleware } from './press';
 import { coalesceBacklogLabels } from './backlog';
@@ -197,6 +198,9 @@ export function registerBotHandlers(bot: Bot): void {
   // Channel updates first: a command in a channel post would otherwise reach
   // /start and /hodim, whose replies land IN the price channel (his F).
   registerPriceChannel(bot);
+  // The staff group (0134) next: its membership, then a swallow of everything
+  // else a group says, so no command below ever answers into a group.
+  registerStaffGroup(bot);
 
   bot.command('start', async (ctx) => {
     const code = ctx.match?.trim();

@@ -54,6 +54,12 @@ export interface SendResult {
   description: string;
   /** The sent (or edited) message, when Telegram said which. */
   messageId: number | null;
+  /**
+   * A group became a supergroup and took a NEW chat id; Telegram names it on
+   * the refusal (`parameters.migrate_to_chat_id`). Only the staff group's
+   * drain reads it — every other chat here is a person or a channel.
+   */
+  migrateToChatId?: string | null;
   /** Seconds Telegram asked us to wait (a 429) — a moment, not a message. */
   retryAfter: number | null;
   /** True when retrying the SAME message can never succeed. */
@@ -68,7 +74,7 @@ interface BotApiBody {
   ok?: boolean;
   description?: string;
   result?: unknown;
-  parameters?: { retry_after?: number };
+  parameters?: { retry_after?: number; migrate_to_chat_id?: number };
 }
 
 interface CallAnswer {
@@ -77,6 +83,7 @@ interface CallAnswer {
   description: string;
   result: unknown;
   retryAfter: number | null;
+  migrateTo?: string | null;
 }
 
 /**
@@ -200,6 +207,10 @@ export async function botCall(
       result: json?.result ?? null,
       retryAfter:
         typeof json?.parameters?.retry_after === 'number' ? json.parameters.retry_after : null,
+      migrateTo:
+        typeof json?.parameters?.migrate_to_chat_id === 'number'
+          ? String(json.parameters.migrate_to_chat_id)
+          : null,
     };
   } catch (err) {
     // The deadline or the network — this moment, not this message. undici
@@ -249,6 +260,7 @@ function verdict(answer: CallAnswer, usedFallback: boolean): SendResult {
     description: answer.description,
     messageId: answer.ok && typeof result?.message_id === 'number' ? result.message_id : null,
     retryAfter: answer.retryAfter,
+    migrateToChatId: answer.migrateTo ?? null,
     permanent: !answer.ok && isPermanentFailure(answer.status),
     botDown: !answer.ok && isBotFailure(answer.status),
     usedFallback,
@@ -385,6 +397,59 @@ export async function sendPhoto(msg: PhotoMessage): Promise<SendResult & { fileI
   const sent = answer.result as { photo?: { file_id: string }[] } | null;
   // Every size comes back; the LAST is the largest and the one to re-send.
   const fileId = answer.ok && sent?.photo?.length ? sent.photo[sent.photo.length - 1]!.file_id : null;
+  return { ...verdict(answer, usedFallback), fileId };
+}
+
+export interface AnimationMessage {
+  chatId: ChatId;
+  /** Bytes read from our storage, or a file id Telegram gave us earlier for an ANIMATION. */
+  animation: { bytes: Buffer | Uint8Array; filename: string; contentType: string } | { fileId: string };
+  /** Safe HTML; its VISIBLE length must be ≤ 1024 — the caller checks. */
+  captionHtml?: string;
+  silent?: boolean;
+  timeoutMs?: number;
+}
+
+/**
+ * A GIF (or a silent MP4) that plays by itself in the chat — the staff group's
+ * celebration (0134). `sendPhoto`'s shape: bytes are UPLOADED (our storage's
+ * URLs point at `minio:9000`), and a refusal comes back as `ok:false` so the
+ * caller sends the words alone — the picture is an addition, never the news.
+ *
+ * Telegram files a GIF it was sent as an `animation` and keeps a `document`
+ * beside it; the animation's id is the one this method can send again.
+ */
+export async function sendAnimation(msg: AnimationMessage): Promise<SendResult & { fileId: string | null }> {
+  const base: Record<string, unknown> = {
+    chat_id: chatValue(msg.chatId),
+    ...(msg.captionHtml ? { caption: msg.captionHtml, parse_mode: 'HTML' } : {}),
+    ...(msg.silent ? { disable_notification: true } : {}),
+  };
+  const animation = msg.animation;
+  const toForm = (body: Record<string, unknown>) => {
+    const form = new FormData();
+    for (const [key, value] of Object.entries(body)) {
+      form.append(key, typeof value === 'object' ? JSON.stringify(value) : String(value));
+    }
+    if ('fileId' in animation) form.append('animation', animation.fileId);
+    else {
+      form.append(
+        'animation',
+        new Blob([new Uint8Array(animation.bytes)], { type: animation.contentType }),
+        animation.filename,
+      );
+    }
+    return form;
+  };
+  const { answer, usedFallback } = await sendWithFallbacks(
+    'sendAnimation',
+    base,
+    'caption',
+    msg.timeoutMs ?? 60_000,
+    toForm,
+  );
+  const sent = answer.result as { animation?: { file_id: string }; document?: { file_id: string } } | null;
+  const fileId = answer.ok ? (sent?.animation?.file_id ?? sent?.document?.file_id ?? null) : null;
   return { ...verdict(answer, usedFallback), fileId };
 }
 

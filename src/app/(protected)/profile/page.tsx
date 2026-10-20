@@ -31,6 +31,7 @@ export default async function ProfilePage() {
   const tc = await getTranslations('common');
   const tNav = await getTranslations('nav');
   const tn = await getTranslations('notes');
+  const tr = await getTranslations('rating');
   const tk = await getTranslations('kuzatuv');
   const tl = await getTranslations('reklamaLid');
   const format = await getFormatter();
@@ -205,6 +206,15 @@ export default async function ProfilePage() {
         <p className="text-sm text-ink-500">{tn('hint')}</p>
         <Link href="/zametkalar" className="btn-secondary" data-testid="profile-notes">
           {tn('title')}
+        </Link>
+      </section>
+
+      {/* 0134: the Saturday rating, live — every colleague's door to it. */}
+      <section className="space-y-2">
+        <h2 className="text-lg font-bold">🏆 {tr('title')}</h2>
+        <p className="text-sm text-ink-500">{tr('profileHint')}</p>
+        <Link href="/reyting" className="btn-secondary" data-testid="profile-rating">
+          {tr('title')}
         </Link>
       </section>
 
