@@ -17,7 +17,11 @@ import { loadFilterSql } from '@/modules/wms/ftl/sql';
  */
 
 const LOCALES = ['uz', 'ru', 'en', 'zh-CN'] as const;
-const bundle = (locale: string) => JSON.parse(readFileSync(`messages/${locale}.json`, 'utf8')) as Record<string, any>;
+type Bundle = {
+  ftl: { errors: Record<string, string>; skip: Record<string, string> };
+  deals: { errors: Record<string, string> };
+};
+const bundle = (locale: string) => JSON.parse(readFileSync(`messages/${locale}.json`, 'utf8')) as Bundle;
 
 describe('one writer for the three tables', () => {
   it('only wms/ftl/service.ts writes lead_ftl, deal_ftl and receipt_load_mode', () => {
