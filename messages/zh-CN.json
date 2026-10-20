@@ -267,7 +267,7 @@
       "lost": "已登记丢失：{n}箱 · 已花费 {usd}",
       "lostNoMoney": "已登记丢失：{n}箱",
       "undocumented": "无单据移动：{n}箱",
-      "stuck": "到达2天以上未卸车：{n}辆",
+      "stuck": "到达2天以上未完成卸货：{n}辆",
       "negativeTills": "余额为负的账户：{n}",
       "unratedTills": "无汇率账户：{n}——未计入资产负债",
       "unplacedPayments": "未指定账户的付款：{n} · {usd}",
@@ -396,7 +396,21 @@
       "note": "货物利润记在收货当天的销售员名下；upsale已包含在货价中，不再相加。",
       "truncated": "upsale不完整——该期间报价过多。",
       "inactive": "已停用"
-    }
+    },
+    "truckEstimateGps": "按GPS和时刻表估计",
+    "truckEstimatePin": "按标记和时刻表估计",
+    "truckFixGps": "📡 GPS · {ago}",
+    "truckFixManual": "📍 手动录入位置 · {ago}",
+    "agoNow": "刚刚",
+    "agoMin": "{n}分钟前",
+    "agoHour": "{n}小时前",
+    "agoDay": "{n}天前",
+    "truckUnloadedOpen": "已卸完，未结束",
+    "truckAtGate": "已到达，未卸货",
+    "truckAtGateDays": "{n, plural, =0 {今天到达} other {已停#天}}",
+    "truckAtGateStuck": "请检查卸货",
+    "truckYardFrom": "GPS：{date}已进院",
+    "truckUnloadedOpenHint": "未点“{button}”"
   },
   "inventory": {
     "title": "盘点",
@@ -1528,7 +1542,8 @@
       "forbidden": "无权操作此车",
       "not_in_transit": "车辆不在途中——只能给在途车辆打点",
       "unknown_key": "没有这个位置标记",
-      "not_on_route": "该车不经过此处——请选择其路线上的标记"
+      "not_on_route": "该车不经过此处——请选择其路线上的标记",
+      "checkpoint_changed": "标记已被他人更改 — 请刷新页面后重试"
     },
     "rename": {
       "codeLabel": "新名称",
@@ -1602,6 +1617,49 @@
         "unauthenticated": "登录已过期——请重新登录"
       },
       "noTargetsInScope": "该国家的其他仓库未分配给您"
+    },
+    "board": {
+      "strip": "车辆位置",
+      "tabs": "看板列",
+      "filterWarehouse": "仓库",
+      "filterRoute": "线路",
+      "filterAll": "全部",
+      "route": {
+        "irkeshtam": "伊尔克什坦",
+        "horgos": "霍尔果斯",
+        "ichki": "境内运输"
+      },
+      "filterWarnings": "仅显示有提醒的",
+      "filterApply": "显示",
+      "filterClear": "清除",
+      "mapLink": "地图",
+      "badgeInternal": "境内运输",
+      "badgeTrip": "工厂提货",
+      "plan": "计划：{boxes}箱 · {cargo}",
+      "planNone": "无计划",
+      "loaded": "已装 {a} / {b}箱 · {m3a} / {m3b} m³ · {kga} / {kgb} kg",
+      "loadedAll": "已全部装车",
+      "rode": "已发出：{boxes}箱 · {cargo}",
+      "unloaded": "已卸 {a} / {b}箱 · 全车 {cargo}",
+      "loadingSince": "{date}起装车中",
+      "loadedRange": "装车 {range}",
+      "departedOn": "发车 {date}",
+      "arrivedOn": "到达 {date}",
+      "roadPct": "已走 {pct}%",
+      "warnStale": "已到达但未关闭",
+      "menu": "车辆操作",
+      "callDriver": "司机",
+      "tripCollected": "已从 {a} / {b} 家工厂提货",
+      "tripCargo": "明细：{boxes}箱",
+      "tripUnknown": "{n}行未知",
+      "tripPlanned": "计划 {date}",
+      "tripCollectedRange": "工厂提货 {range}",
+      "tripArrival": "预计 {range}",
+      "empty": "空",
+      "emptyBoard": "没有未结束的车辆。",
+      "capped": "仅显示最早的 {n} 辆车。",
+      "filters": "筛选",
+      "loadedNoPlan": "已装 {boxes}箱 · {cargo}"
     }
   },
   "loading": {
@@ -2049,7 +2107,11 @@
     "cargoReceived": "收货 {date}",
     "cargoMore": "还有 {n} 项 — 完整列表见库存",
     "seg_kz": "哈萨克斯坦境内",
-    "seg_uz_queue": "乌兹别克斯坦口岸排队"
+    "seg_uz_queue": "乌兹别克斯坦口岸排队",
+    "unplaced": "位置不明——未在地图上显示：",
+    "atGate": "已到达，未卸货",
+    "atGateDays": "{n, plural, =0 {今天到达} other {已停#天}}",
+    "atGateStuck": "请检查卸货"
   },
   "accounting": {
     "title": "管理会计",
@@ -5993,5 +6055,21 @@
     "goalDone": "🎯 团队目标 {goal} 立方——已完成！✅",
     "goalProgress": "🎯 团队目标：{done} / {goal} 立方",
     "footnote": "收货单可能补录日期，因此数字可能略有变化。"
+  },
+  "place": {
+    "road": {
+      "cn": "中国境内",
+      "border": "在边境",
+      "transit": "过境途中",
+      "uz": "在乌兹别克斯坦"
+    },
+    "unknown": "位置不明",
+    "wh": {
+      "cn": "中国内地",
+      "border": "边境",
+      "uz": "乌兹别克斯坦"
+    },
+    "kg": "吉尔吉斯斯坦",
+    "kz": "哈萨克斯坦"
   }
 }

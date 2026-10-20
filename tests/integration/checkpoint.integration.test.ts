@@ -112,3 +112,28 @@ describe('setTrackingCheckpoint — the truck’s own road decides', () => {
     expect(await codeOf(setTrackingCheckpoint(bare, kaTas, 'in_uz', META))).toBe('forbidden');
   });
 });
+
+describe('a press is judged against the pin the presser SAW (the batch board)', () => {
+  it('a colleague pinned since: «Chegarada» meant as «set» does not clear their pin', async () => {
+    // A known starting point: no pin.
+    const now = await pinOf(kaTas);
+    if (now) await setTrackingCheckpoint(actors.logist, kaTas, now, META, now);
+    expect(await pinOf(kaTas)).toBeNull();
+
+    // The colleague pins «at the border» from the Mashina tab…
+    await setTrackingCheckpoint(actors.logist, kaTas, 'at_border', META, '');
+    // …while the board, opened before, still shows no pin and its viewer
+    // presses the same key to SET it. The toggle would clear it; the
+    // comparison refuses in words and the colleague's pin stands.
+    expect(await codeOf(setTrackingCheckpoint(actors.ka, kaTas, 'at_border', META, ''))).toBe(
+      'checkpoint_changed',
+    );
+    expect(await pinOf(kaTas)).toBe('at_border');
+  });
+
+  it('a screen that saw the pin may press it off, or move it on', async () => {
+    expect((await setTrackingCheckpoint(actors.logist, kaTas, 'in_kg', META, 'at_border'))?.key).toBe('in_kg');
+    expect(await setTrackingCheckpoint(actors.logist, kaTas, 'in_kg', META, 'in_kg')).toBeNull();
+    expect(await pinOf(kaTas)).toBeNull();
+  });
+});

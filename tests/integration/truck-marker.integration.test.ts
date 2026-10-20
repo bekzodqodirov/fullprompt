@@ -52,9 +52,17 @@ afterAll(async () => {
   await pgClient.end();
 });
 
+/** Two warehouses the route table has never heard of. */
+const unmapped = () => ({
+  originCode: `QO${STAMP.slice(-4)}`,
+  destCode: `QD${STAMP.slice(-4)}`,
+  originCountry: null,
+  destCountry: null,
+});
+
 describe('a truck between unmapped warehouses', () => {
   it('is drawn at its phone fix — live GPS needs no route table', async () => {
-    const truck = await truckFor(batchRow, `QO${STAMP.slice(-4)}`, `QD${STAMP.slice(-4)}`, {}, {
+    const truck = await truckFor(batchRow, unmapped(), {}, {
       batchId: batchRow.id,
       lat: 40.1,
       lon: 72.5,
@@ -62,6 +70,7 @@ describe('a truck between unmapped warehouses', () => {
       source: 'device',
       ageMinutes: 3,
       fresh: true,
+      gateSince: null,
     });
     expect(truck).not.toBeNull();
     expect(truck!.x).toBe(72.5);
@@ -73,12 +82,13 @@ describe('a truck between unmapped warehouses', () => {
 
   it('stays off the map only when there is NOTHING to draw', async () => {
     expect(
-      await truckFor(batchRow, `QO${STAMP.slice(-4)}`, `QD${STAMP.slice(-4)}`, {}, undefined),
+      await truckFor(batchRow, unmapped(), {}, undefined),
     ).toBeNull();
   });
 
-  it('a mapped pair still rides the estimate when the fix is stale', async () => {
-    const truck = await truckFor(batchRow, 'YW', 'AND', {}, {
+  it('a fix from before the departure (the yard) is not the road: the estimate draws the truck', async () => {
+    const yiwuAndijan = { originCode: 'YW', destCode: 'AND', originCountry: 'CN', destCountry: 'UZ' };
+    const truck = await truckFor(batchRow, yiwuAndijan, {}, {
       batchId: batchRow.id,
       lat: 40.1,
       lon: 72.5,
@@ -86,10 +96,18 @@ describe('a truck between unmapped warehouses', () => {
       source: 'device',
       ageMinutes: 20 * 60,
       fresh: false,
+      gateSince: null,
     });
     expect(truck).not.toBeNull();
-    // The schedule drives the dot; the stale fix survives as information.
+    // `batchRow` departed at the start of this file, after the fix: the walk
+    // is the departure's, not the fix's (a stale fix AFTER the departure
+    // anchors — board-readers.integration.test.ts), and the fix survives as
+    // information.
     expect(truck!.live).toBe(false);
+    // Just left Yiwu, by the departure: the first leg, nothing behind it. A
+    // yard fix that anchored would put it at Andijan, 100 % along.
+    expect(truck!.segKey).toBe('cn_transit');
+    expect(truck!.progress!).toBeLessThan(0.05);
     expect(truck!.fixAgeMinutes).toBe(20 * 60);
     expect(truck!.routePoints.length).toBeGreaterThan(0);
   });

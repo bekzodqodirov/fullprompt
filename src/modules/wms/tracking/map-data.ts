@@ -1,5 +1,5 @@
 import { ROAD_LEG_POINTS } from './road-geometry';
-import type { BorderPost, RouteDef, RoutePoint, RouteSegment } from './engine';
+import type { BorderPost, LegKey, RouteDef, RoutePoint, RouteSegment } from './engine';
 
 /**
  * Corridor geometry (owner's routes). Points are REAL lon/lat (x = lon,
@@ -167,7 +167,7 @@ const W = {
  * border wait.
  */
 interface RouteLeg {
-  key: string;
+  key: LegKey;
   hours: [number, number];
   points: RoutePoint[];
   /** A queue the logist types by hand replaces this leg's hours (`BORDER_POSTS`). */
@@ -238,6 +238,23 @@ export const WAREHOUSE_POINTS: Record<string, RoutePoint> = {
   TAS1: P.TAS,
   TAS2: { x: P.TAS.x - 0.85, y: P.TAS.y - 0.58 },
 };
+
+/**
+ * Where a warehouse's YARD really is, when its map dot is drawn somewhere
+ * else. TAS2 stands in Tashkent beside TAS1; its dot is drawn 85 km off so
+ * the two stay clickable, and every road into TAS2 ends on that dot — so a
+ * phone in the TAS2 yard was never «at the gate» (`placeTruck`), and read a
+ * date renewed with every fix, then «call the driver» after a quiet night
+ * (the fixes' recheck). The gate is judged here; the drawing keeps the dot.
+ */
+export const YARD_POINTS: Partial<Record<string, RoutePoint>> = {
+  TAS2: P.TAS,
+};
+
+/** The destination's yard: where it really stands, else its map dot; null = unmapped. */
+export function yardFor(destCode: string): RoutePoint | null {
+  return YARD_POINTS[destCode] ?? WAREHOUSE_POINTS[destCode] ?? null;
+}
 
 /** Named dots drawn for context even without a warehouse. */
 export const LANDMARKS: { name: string; p: RoutePoint }[] = [
