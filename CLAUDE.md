@@ -156,6 +156,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | The five-lens review of both before code — 115 objections and their BINDING fixes | `docs/TOPSHIRIQ-VED-REVIEW.md` |
 | The customs calculator fix — units in their own columns, kg+dona rows, excise, the fee, the screen | `docs/RASTAMOJKA-TUZATISH.md` — agreed 2026-10-09 (his two messages, four ⭐ questions), SHIPPED; §7 overrides §1-§3 |
 | A factory trip closes and remembers its lines — the door question, «shu zavoddan, shu mashinada», the checker | `docs/ZAVOD-YOPISH.md` — agreed 2026-10-15 (his 1a-5a, 6, 7 ha), SHIPPED; §10-§11 override §2-§5 |
+| Every truck in one place — the board by place, the % by distance, GPS, the gate | `docs/PARTIYA-DOSKASI.md` — agreed 2026-10-17 (his 1A 2a 3a 4a 5a 6c 7a 8b 9b 10b 11A 12A, then «1 hozirgidek qolsin»), SHIPPED; §2 is the placement as built |
 
 ## State — 2026-08-23
 
@@ -2830,6 +2831,49 @@ with the names it passes (TypeScript's parser), `freight-rows-render.test.ts` re
 capped rows. e2e `m9zzzc` (D's two lots, the per-lot line) + `m9zzzd` (seven clients at
 360 px: Saqlash within one screen). The non-freight e2e specs deliberately ride the new
 default.
+
+**Round — Partiya doskasi: hamma mashinalar bir joyda (2026-10-17 → 10-20; DECISIONS
+#1407-#1419; NO migration, ledger 134; spec `docs/PARTIYA-DOSKASI.md`).** His «pogruzga
+qattaligini bilishim kerak … yolda bosqichida mashina qayerda … zavot reyslariniyam shu
+yerda …», answers 1A 2a 3a 4a 5a 6c 7a 8b 9b 10b 11A 12A, then «1 hozirgidek qolsin» (the
+board's ⋯ pins keep the Mashina tab's door, `batches.vehicle_info` + the two ends);
+judged by three lenses before code. TRACKING: one place vocabulary (`tracking/place.ts`:
+cn/border/transit/uz + «Joyi aniq emas», `LEG_ZONE` a Record over `LEG_KEYS`, a warehouse
+by type+country, `to_border` is the border); `placeTruck` (eta.ts) walks the schedule from
+the NEWEST evidence — departure, pin, or the phone's fix, which anchors like a pin (a stale
+fix is kept; freshness only draws the dot), approach-side queues within 0.05°, 2.5°
+tolerance, accuracy ≤ 5 km, `least(recorded_at, received_at)`; an older fix under a newer
+pin stands only while its walk is still on the pin's leg (`underNewerPin`); a queue the fix
+disproves is counted from the fix. The % is DISTANCE (4a) everywhere incl. the cabinet.
+A fix-walk spent at the typical pace is DUE ([0, hours to its SLOWEST arrival]) and late
+one reporting window after that (`slowestArrivalMs`); `placeDated` is the ONE date rule
+(truckRow, the cabinet, `truckFor`); a departure-only overdue truck has NO point
+(`TruckMarker.placed`, named under /map). **The gate** (nine rechecks, #1415-#1419): a fix
+within 0.05° of `yardFor(dest)` (TAS2's yard is Tashkent) is `atGate` on any road, never
+late; `latestPositions(trips: PositionTrip[])` returns `gateSince` (first yard fix after
+the last accurate fix elsewhere, from the departure, in the phone's own order — a clock
+running ahead ties `received_at`) and `truckRow` turns it `stuck` after
+`STUCK_AT_GATE_DAYS` Tashkent days — `isStuckAtGate`'s clock, so the attention row and
+20:00 summary count it; an ARRIVED truck reads positions bounded at `arrivedAt` and stood
+since the earlier of the two (`TruckRow.stoodSince` — «stuck», the arrived column's order,
+the bot), while «Keldi» stays the SCAN on every screen and the phone's earlier yard time is
+its own past fact «GPS: hovliga 16.10 kirgan» (`yardFrom`; #1419: a moved arrival date made
+every reader of the first one disagree, and a running count outlived what the phone saw);
+`rankTrucks` orders every truck at a gate by `stoodSince`; an arrived truck reads
+`gateSinceFor` only; `gateYard` refuses a trip that starts in its destination's yard;
+`placementFix` is the one LatestPosition → PlacementFix mapping. BOARD: `batches/board.ts` (trucks two-ends scope,
+`batchLoadTotals` = the header's `loadState`, `hasPlan`, load dates in one grouped pass;
+trips through `tripSight`) + `board-view.ts` (pure: columns, sections, the strip from the
+same cards, filters validated, `roadBands`, `cargoLineOf`, `telOf`); the page: strip
+(`StripScroll`), folded filters, one-link cards with a `<details name="board-menu">` ⋯,
+phone tabs as a radio group over one DOM (`:has()` only where supported). Words:
+`truckRoadWords` for four screens + /trucks; `gateWord` («Tushirildi, yopilmagan»,
+«Tushirilmay turibdi»). Tests: `batch-board`, `place-truck`, `trucks-on-road` (unit),
+`board-readers`, `truck-marker`, `driver-tracking` (integration), e2e
+`m9zzze-partiya-doskasi` (+ `.desktop`, cleanup by code prefix in `afterAll`). Stated:
+the customer's rung does not follow GPS; a typed wait ahead of a silent fix; TAS2's % walks
+to the drawn dot; the yard is the code's, not coordinates typed on /admin/warehouses.
+DEPLOY: Horgos → type «Konsolidatsiya habi», country CN.
 
 **Latest migration: 0133** (`pickup_close`, `when` …112; ledger must reach **134**). Before
 it: 0132 (`cost_freight_basis`, `when` …111). Before

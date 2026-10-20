@@ -1,5 +1,72 @@
 # CHANGELOG
 
+## Partiya doskasi: hamma mashinalar bir joyda, qayerdaligi bilan — 2026-10-20
+
+**Migratsiya yo'q.** Deploydan keyin migratsiyalar soni o'zgarmaydi (134), shuning uchun tekshiruv — `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatishi.
+
+Sizning xabaringiz: «pogruzga qattaligini bilishim kerak visual — ichki xitoydami yokida chegaradami · yolda bosqichida mashina qayerda … zavot reyslariniyam shu yerda … hamma mashinalarni manage qiladgan joy · kartalarda: neccha kub necha kg, yuklandi sanasi, yolga chiqgan kuni, necha foiz yolni bosib otdi». Javoblaringiz: **1A 2a 3a 4a 5a 6c 7a 8b 9b 10b 11A 12A**.
+
+### 1. «Partiyalar» sahifasi — doska
+
+- To'rt ustun qoldi (1A): **Shakllanmoqda · Pogruzka · Yo'lda · Yetib keldi**. Har bir ustun ichida mashinalar **joyi bo'yicha** guruhlangan: Ichki Xitoy · Chegara · O'zbekiston; «Yo'lda» ustunida — **Xitoy ichida · Chegarada · Tranzitda · O'zbekistonda** (3a). Joyi aniqlanmaganlar «Joyi aniq emas» bo'limida — hech bir mashina ko'zdan yo'qolmaydi.
+- **Tepada yo'l chizig'i** (2a): har bir joyda nechta mashina turibdi. Bosilsa — doska faqat shu joydagi mashinalarni ko'rsatadi, yana bosilsa — hammasi qaytadi. «Tranzitda» yonida Qirg'iziston va Qozog'istondagilar alohida sanaladi.
+- **Filtr** (bitta tugma ichida): sklad, yo'nalish (Irkeshtam / Horgos / ichki reyslar), «faqat ogohlantirishli».
+- **Telefonda** to'rt ustun to'rtta tab bo'ladi; yo'l chizig'idagi joy bosilsa, kerakli tab o'zi ochiladi.
+
+### 2. Kartada nima yoziladi
+
+- Partiya kodi, qayerdan → qayerga, mashina raqami; Andijon → Toshkent kabi chegaradan o'tmaydigan reysda **«ichki reys»** belgisi (12A).
+- **Yuk** (7a): shakllanayotganida «Rejada: N karobka · kg · m³»; yuklanayotganida **«Yuklandi 12 / 40 karobka · 0.5 / 1.6 m³ · 120 / 400 kg»** (mashina kartasining o'z hisobi bilan bir xil); yo'lga chiqqandan keyin — aslida nima ketgani; yetib kelganda — «Tushirildi a / b».
+- **Sanalar** (6c): «Yuklanmoqda 15.10 dan», «Yuklandi 09–10.10 · Jo'nadi 10.10», «Keldi 12.10» — birinchi va oxirgi karobka, Toshkent vaqti bilan. Telefon soati noto'g'ri bo'lsa ham sana mashinaning o'z kunlari ichida qoladi; xato skanerlab qaytarilgan karobka sanaga kirmaydi.
+- **Yo'lda**: yo'l chizig'i joylar bo'yicha bo'yalgan, **necha foiz yo'l bosilgani — masofa bo'yicha** (4a), joy so'z bilan, taxminiy kelish sanasi va u nimadan hisoblangani (GPS / sizning belgingiz / grafik).
+- Mashinani to'ldirish chizig'i yo'q (8b).
+- Yetib kelgan mashinada: «Tushirildi 10 / 40 karobka · **jami** 12 m³ · 3000 kg» — m³ va kg butun mashinaniki ekani yozilgan.
+- Hamma karobka tushirilgan, lekin «Razgruzkani yakunlash» bosilmagan mashina: **«Tushirildi, yopilmagan»** (dashboardda ham), doska kartasida pastida qaysi tugma bosilmagani yoziladi. Dashboarddagi ogohlantirish ham endi «2 kundan beri tushirish yakunlanmagan fura» deydi (avval «tushirilmagan» derdi — noto'g'ri).
+
+### 3. Kartadagi «⋯» (10b)
+
+- Mashina ma'lumotini kirita oladigan xodim (logist va mashinaning ikkala uchidagi sklad xodimlari — «Mashina» varag'idagidek; javobingiz «1 hozirgidek qolsin») yo'ldagi mashinaga shu yerdan belgi qo'yadi: **«Chegarada» / «Qirg'izistonda» / «Qozog'istonda» / «O'zbekistonda»** — faqat shu mashinaning yo'liga tegishlilari. Turgan belgi tugma emas, yozuv bo'lib ko'rinadi (bosib o'chirib yubormaslik uchun; o'chirish Mashina varag'ida qoladi).
+- **«📞 Haydovchi»** — raqam yozilgan bo'lsa, bir bosishda qo'ng'iroq.
+- Ikki kishi bir vaqtda belgi bossa: ikkinchisiga «belgi o'zgargan, sahifani yangilang» deyiladi — birovning belgisini bilmasdan o'chirib yuborish endi mumkin emas.
+- Jo'natish, bekor qilish, yo'nalish va nomni o'zgartirish — avvalgidek mashina kartasida.
+
+### 4. Zavod reyslari doskada (9b)
+
+- Har bir ochiq zavod reysi mos ustunda «🏭 zavod reysi» belgisi bilan: rejada — Shakllanmoqda; yo'lda — Yo'lda; kelgan — Yetib keldi. Kartada: nechta zavoddan olingani, karobka (haydovchi sanog'i bo'lsa — o'sha), m³/kg (yozilmagan qatorlar «noma'lum» deb sanaladi), sanalar va taxminiy kelish oralig'i. Foiz yo'q — zavod reysining yo'li har bosishda qayta tuziladi.
+- **Kim ko'radi:** logist va zavod reyslarini ko'ra oladiganlar — hammasini (skladga bog'langan bo'lsa — faqat o'z skladiga keladiganlarini); skladchi — faqat o'z skladiga keladigan reyslarni, 14 kundan ortiq yopilmay turganlarsiz (siz bu savolga javob bermagan edingiz — ⭐ variant qo'yildi).
+
+### 5. GPS endi mashinaning joyini o'zi aniqlaydi (5a)
+
+- Haydovchi telefoni yuborgan **eng yangi joy** mashinaning qayerdaligini va foizini belgilaydi — grafik emas. Telefon jim qolsa, mashina oxirgi ko'ringan joyidan grafik bo'yicha davom etadi (avval 8 soatdan keyin grafikning boshiga «sakrab» ketardi).
+- Sizning belgingiz GPS'dan yangiroq bo'lsa — belgi hisobga olinadi.
+- Chegara navbatiga yaqin turgan mashina navbatda deb hisoblanadi; postdan o'tib ketgani — keyingi davlatda.
+- **Shu qoida hamma joyda bir xil:** doska, dashboard, mashina kartasi, xarita, bot va mijozning Telegram kabineti. Mijoz kabinetidagi foiz ham endi masofa bo'yicha va ofisdagi bilan bir xil.
+- Telefon mashinani chegara navbatida ko'rsatsa — mashina navbatda deb hisoblanadi, grafik «allaqachon o'tib ketgan» desa ham; qolgan kutish shu paytdan sanaladi.
+- Siz «Chegarada» belgisini bossangiz, eski GPS (masalan, 4 kun oldin navbatdan kelgan) mashinani O'zbekistonga «o'tkazib» yubormaydi.
+- Telefon mashinani **manzil sklad hovlisida** ko'rsatsa — **«Manzilda, tushirilmagan»**: sana yo'q, «kechikdi» ham demaydi (avval bir soatdan keyin «muddatdan oshdi, haydovchiga qo'ng'iroq qiling» der edi, kechasi ham). Toshkent-2 hovlisi ham shunday taniladi (xaritada uning nuqtasi chetroqqa chizilgan bo'lsa ham).
+- Hovlida turgan, lekin hech kim skanerlab tushirmagan mashina: telefon uni hovliga **qachon** olib kelganini eslab qoladi, va ekranda «**N kundan beri turibdi**» yoziladi. Hovlida **2 kun** tursa — «**Tushirilmay turibdi — tushirishni tekshiring**» (skanerlab qabul qilingan mashinaga ham aynan shu 2 kun qoidasi). Endi bunday mashina dashboarddagi «Diqqat» ro'yxatida va kechki 20:00 xulosada ham sanaladi, xaritada esa qizil bo'lib chiziladi. Birinchi karobka skanerlanganda hisob noldan boshlanmaydi: telefon mashinani hovlida 4 kundan beri ko'rsatgan bo'lsa, «Keldi» sanasi skanerlangan kun bo'lib qoladi (hamma ekranda bir xil), yonida esa alohida «**GPS: hovliga 16.10 kirgan**» deb yoziladi; «Tushirilmay turibdi» shu kundan hisoblanadi va eng uzoq turgani ustunning (va dashboarddagi ro'yxatning) tepasida turadi. Bot va «Mashinalar qayerda» sahifasi ham shuni aytadi. Yo'lda kechikib kelgan mashina hovliga kirishi bilan «kechikdi» bo'lib qolmaydi, belgi ham bu hisobni surmaydi. Doskada, xaritada va botda bir xil; «haydovchiga qo'ng'iroq qiling» demaydi.
+- Yo'li chizilmagan reysda ham (masalan Toshkent → Andijon) telefon hovlida ko'rsatsa — «Manzilda, tushirilmagan». Bir hovlidan chiqadigan reys (Toshkent-1 → Toshkent-2) esa jo'nashi bilan «manzilda» deb chiqmaydi.
+- Telefon mashinani yo'lda ko'rsatib, keyin jim qolsa: mashina o'sha joydan **eng sekin** yurganda ham yetib kelishi kerak bo'lgan vaqt + 8 soat (telefon xabar berish oralig'i) o'tgachgina «muddatdan oshdi» bo'ladi. Chegara navbatida ko'rilgan mashina uchun — navbatning eng uzun kutishidan qancha turgani ayirib hisoblanadi. Ortda qolgan chegara navbatiga keyin yozilgan kutish vaqti bu muddatni o'zgartirmaydi.
+- Bir partiyaning yuki ikki mashinada bo'lsa, mijoz kabineti oxirgi yetib keladiganining sanasini ko'rsatadi (hovlidagi mashina sanani «yo'qotib» qo'ymaydi).
+- «Bugun keladi» degan sana endi har kuni oldinga surilib turmaydi: kutadigan vaqt qolmagan bo'lsa, sana umuman yozilmaydi — doskada, dashboardda, mijoz kabinetida, xaritada va botda bir xil.
+- Belgingiz bo'yicha hisoblangan sana endi «belgi va jadval bo'yicha taxmin» deb yoziladi (avval «jadval bo'yicha» deyilardi).
+- **«Mashinalar qayerda» (/trucks)** sahifasi ham doska bilan bir xil so'zlarni ko'rsatadi: joy, foiz, sana va nimadan hisoblangani. Avval u eski GPS'ni sizning yangi belgingizdan ustun qo'yardi va jo'nashdan oldingi hovli GPS'ini «yo'lda» deb ko'rsatardi.
+- **Xarita:** muddati o'tgan va hech narsa (belgi ham, GPS ham) joyini aytmaydigan mashina endi manzil sklad ustiga chizilmaydi (u yerda «yetib keldi» bo'lib ko'rinardi), yo'li chizilmagan va GPS'i yo'q mashina ham yo'qolib qolmaydi — ikkalasi xarita ostida «Joyi aniq emas» deb nomi bilan yoziladi. Mijoz xaritasida ham ro'yxatda turadi, nuqtasiz.
+- **Mijoz kabineti:** yetib kelgan mashinadagi yuk (hali skanerdan tushirilmagan, masalan Yiwu → Qashqar) endi foiz va «~22.10 ga keladi» degan sanani ko'rsatmaydi — xaritada manzil skladida turadi, haydovchi telefoni qaytish yo'lida bo'lsa ham.
+- **O'zgarmagan (ataylab):** mijozga ko'rinadigan bosqich («Yo'lda», «O'zbekistonda»...) GPS bilan emas, sizning belgingiz yoki yetib kelish bilan o'zgaradi — avvalgi kelishuvingizdek.
+
+### O'rnatish (deploy)
+
+1. Zaxira oling (0 bayt emasligini tekshiring).
+2. PR'ni merge qiling, keyin serverda `git pull`, `docker compose build migrate`, keyin `docker compose --profile https --profile telegram up -d --build`.
+3. `curl -s https://gsrwms.uz/api/version` — bugungi vaqt (migratsiya yo'q, soni 134 qoladi).
+4. **Boshqaruv → Skladlar → Horgos** — «Turi» = **Konsolidatsiya habi**, mamlakati = **CN** (Qashqar kabi). Shusiz Horgosdagi yuklash «Ichki Xitoy» bo'limida turadi (11A).
+5. /batches ni telefonda va kompyuterda oching.
+
+### Tekshirildi
+
+- Yangi testlar: ustun/bo'lim/yo'l chizig'i sanoqlari, filtrlar (begona sklad rad etiladi), sanalar (Toshkent yarim tuni, oy almashishi), yo'l chizig'i masofa bo'yicha, zavod reysini kim ko'radi; haqiqiy bazada — birinchi/oxirgi karobka sanasi, yuklangan/rejadagi, belgi tugmalari, skladchi ko'rinishi; GPS mashinani «kechikkan»dan qaytarsa sanoqlar ham o'zgarishi; telefon (360) va kompyuter (1280) brauzer testlari: yo'l chizig'ini bosish, «⋯» dan Qirg'izistonga belgilash, filtr. Har bir qoida kodi buzilganda test qizil bo'lishi tekshirildi.
+
 ## Yo'lkira: bitta jadval hamma mashina uchun, har bir tovar o'z zichligi bilan — 2026-10-15
 
 **Bu raundning o'zida migratsiya yo'q.** U pastdagi «Zavod reysi yopiladi» raundi (migratsiya 0133) bilan bitta deployda chiqadi, va 14-oktabrdagi yangilanish (PR #120, migratsiya 0132) serverga hali qo'yilmagan bo'lsa, uni ham olib keladi. Shuning uchun deploydan keyin ikkalasini tekshiring: **migratsiyalar soni 134** va `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatsin.
