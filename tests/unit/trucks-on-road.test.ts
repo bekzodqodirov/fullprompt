@@ -2,8 +2,9 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { cargoStage, truckStage, type StageBatch } from '@/modules/wms/client-cabinet/stages';
 import { etaWindow, isGenericRoute, scheduleEstimate } from '@/modules/wms/tracking/eta';
-import { routeFor } from '@/modules/wms/tracking/map-data';
+import { routeFor, WAREHOUSE_POINTS } from '@/modules/wms/tracking/map-data';
 import {
+  gateWord,
   isStuckAtGate,
   rankTrucks,
   STUCK_AT_GATE_DAYS,
@@ -292,11 +293,12 @@ describe('the trucks card estimates nothing of its own', () => {
 describe('a truck at its gate, and a truck due now, read alike on every screen', () => {
   const ka = routeFor('KA', 'TAS1')!;
   const gate = ka.points[ka.points.length - 1]!;
-  const fix = (p: { x: number; y: number }, hoursAgo: number) => ({
+  const fix = (p: { x: number; y: number }, hoursAgo: number, gateSinceH: number | null = null) => ({
     lat: p.y,
     lon: p.x,
     recordedAt: ago(hoursAgo),
     source: 'device',
+    gateSince: gateSinceH === null ? null : ago(gateSinceH),
   });
   const kaInput = (over: Partial<TruckInput>) =>
     input({ originCode: 'KA', originName: 'Kashgar', ...over });
@@ -309,6 +311,30 @@ describe('a truck at its gate, and a truck due now, read alike on every screen',
     expect(row.arrivalOrder).toBe(0);
     const src = readFileSync('src/components/truck-road.tsx', 'utf8');
     expect(src).toContain("? t('truckAtGate')");
+  });
+
+  it('stuck on the arrived truck’s own clock: STUCK_AT_GATE_DAYS Tashkent days since the phone first put it there', () => {
+    // 300 h out — far past his slowest schedule — and in the yard 3 minutes:
+    // on time, first in the list (the fourth recheck: «overdue» on arrival).
+    const pulledIn = truckRow(kaInput({ departedAt: ago(300), fix: fix(gate, 0.05, 0.05) }), NOW, TODAY, {});
+    expect(pulledIn).toMatchObject({ kind: 'on_road', atGate: true, arrivalOrder: 0, gateDays: 0 });
+    const dayOne = truckRow(kaInput({ departedAt: ago(300), fix: fix(gate, 1, 30) }), NOW, TODAY, {});
+    expect(dayOne).toMatchObject({ kind: 'on_road', gateDays: 1 });
+    const stood = truckRow(kaInput({ departedAt: ago(300), fix: fix(gate, 1, 50) }), NOW, TODAY, {});
+    expect(stood).toMatchObject({ kind: 'stuck', atGate: true, gateDays: 2, eta: null, arrivalOrder: null });
+    expect(gateWord(stood)).toBe('stuck');
+    // A road nobody modelled has a yard too: stuck there, not «no schedule».
+    const internal = input({ originCode: 'TAS1', destCode: 'AND', originCountry: 'UZ', destCountry: 'UZ', departedAt: ago(80) });
+    const and = WAREHOUSE_POINTS.AND!;
+    expect(truckRow({ ...internal, fix: fix(and, 1, 50) }, NOW, TODAY, {})).toMatchObject({ kind: 'stuck', atGate: true });
+    expect(truckRow({ ...internal, fix: fix(and, 1, 1) }, NOW, TODAY, {})).toMatchObject({ kind: 'on_road', atGate: true });
+    // The same days by the scan: the attention row's own predicate agrees.
+    expect(isStuckAtGate({ status: 'arrived', arrivedAt: ago(50) }, TODAY)).toBe(true);
+    expect(isStuckAtGate({ status: 'arrived', arrivedAt: ago(30) }, TODAY)).toBe(false);
+    // The sentence says how long it has stood, and the unloading to check.
+    const src = readFileSync('src/components/truck-road.tsx', 'utf8');
+    expect(src).toContain("parts.push(t('truckAtGateDays', { n: row.gateDays }));");
+    expect(src).toMatch(/if \(row\.kind === 'stuck'\) \{\s*parts\.push\(\s*<span key="stuck" className="font-semibold text-warn">\s*\{t\('truckAtGateStuck'\)\}/);
   });
 
   it('due NOW ([0, 0]) prints no date: the board, the cabinet and the map ask one rule', () => {

@@ -28,7 +28,7 @@ import { arrivalCleared } from '../notices/arrival-text';
 import { clientBalanceUsd, clientLedger } from '../finance/service';
 import { etaWindow, placeDated, placeTruck } from '../tracking/eta';
 import { loadBorderHours } from '../tracking/border-queue';
-import { latestPositions, type LatestPosition } from '../tracking/devices';
+import { latestPositions, placementFix, type LatestPosition } from '../tracking/devices';
 import { journeyFromEvents, type JourneyStep } from './journey';
 import {
   cargoStage,
@@ -369,7 +369,7 @@ async function trucksFor(batchIds: string[]): Promise<Map<string, CabinetTruck>>
   // truck in the cabinet (#432) — the same evidence the office's board, map
   // and dashboard place the truck by.
   const waits = rows.length ? await loadBorderHours() : {};
-  const fixes = rows.length ? await latestPositions(rows.map((r) => r.id)) : new Map<string, LatestPosition>();
+  const fixes = rows.length ? await latestPositions(rows) : new Map<string, LatestPosition>();
   for (const r of rows) {
     const cp = r.checkpoint as { key?: string; at?: string } | null;
     const fix = fixes.get(r.id);
@@ -381,7 +381,7 @@ async function trucksFor(batchIds: string[]): Promise<Map<string, CabinetTruck>>
         destCountry: r.destCountry,
         departedAt: r.departedAt,
         checkpoint: r.checkpoint,
-        fix: fix ? { lat: fix.lat, lon: fix.lon, recordedAt: fix.recordedAt, source: fix.source } : null,
+        fix: placementFix(fix),
       },
       waits,
       now,
@@ -392,7 +392,7 @@ async function trucksFor(batchIds: string[]): Promise<Map<string, CabinetTruck>>
         : null;
     out.set(r.id, {
       stage: stageBatchOf({ ...r, trackingCheckpoint: r.checkpoint }),
-      arriveBy: window?.toIso ?? (place.overdue && !place.atGate ? '9999' : now.toISOString()),
+      arriveBy: window?.toIso ?? (place.overdue ? '9999' : now.toISOString()),
       // Only while it drives: an ARRIVED truck still carrying cartons nobody
       // has scanned off has no % and no date left (the walk knows no arrival,
       // and the office's board says «Yetib keldi» — O15, the review).

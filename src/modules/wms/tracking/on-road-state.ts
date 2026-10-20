@@ -5,10 +5,10 @@ import {
   pinOnRoute,
   placeDated,
   placeTruck,
-  STUCK_AT_GATE_DAYS,
   type BorderHours,
   type PlaceSource,
   type PlacementFix,
+  type TruckPlace,
 } from './eta';
 import type { CheckpointKey } from './map-data';
 import type { RoadZone } from './place';
@@ -40,11 +40,12 @@ import type { RoadZone } from './place';
 
 /**
  * A truck standing at its destination unloaded for this many Tashkent days
- * is «stuck». ONE number for the attention list's row, the card's chip and
- * the phone's gate — it lives beside the placement (`eta.ts`), which must not
- * import this file; the rule used to be a literal `>= 2` in two section files.
+ * is «stuck». ONE number for the attention list's row and the card's chip —
+ * for a truck arrived by its scan (`arrivedAt`) AND one arrived by its phone
+ * (`gateSince`, the first fix at its yard), so the two are flagged on one
+ * clock; the rule used to be a literal `>= 2` in two section files.
  */
-export { STUCK_AT_GATE_DAYS };
+export const STUCK_AT_GATE_DAYS = 2;
 
 /** The attention list's «stuck» predicate, stated once (#513). */
 export function isStuckAtGate(
@@ -52,6 +53,16 @@ export function isStuckAtGate(
   today: string,
 ): boolean {
   return row.status === 'arrived' && daysSince(row.arrivedAt, today) >= STUCK_AT_GATE_DAYS;
+}
+
+/** At its gate by the phone: Tashkent days since its first fix there; null anywhere else. */
+export function gateDaysOf(place: Pick<TruckPlace, 'atGate' | 'gateSince'>, today: string): number | null {
+  return place.atGate && place.gateSince ? daysSince(place.gateSince, today) : null;
+}
+
+/** `isStuckAtGate`'s clock for a truck the PHONE put at its gate — one rule for the row, the map and the bot. */
+export function stuckAtPhoneGate(gateDays: number | null): boolean {
+  return gateDays !== null && gateDays >= STUCK_AT_GATE_DAYS;
 }
 
 export type TruckKind = 'stuck' | 'overdue' | 'unloading' | 'on_road' | 'no_schedule';
@@ -116,6 +127,8 @@ export interface TruckRow {
   fresh: boolean;
   /** The phone put it at its destination's gate (`placeTruck`): no date, not late, not yet unloaded. */
   atGate: boolean;
+  /** At the gate by the phone: Tashkent days since its first fix there; null otherwise. */
+  gateDays: number | null;
   /** Only on a MOVING rung (`isMovingStage`), with a schedule, not overdue. */
   eta: { fromIso: string; toIso: string } | null;
   departedAt: Date | null;
@@ -186,6 +199,7 @@ export function truckRow(input: TruckInput, now: Date, today: string, waits: Bor
       evidenceAt: null,
       fresh: false,
       atGate: false,
+      gateDays: null,
       eta: null,
       days,
       awaitingUnload: input.awaitingUnload ?? null,
@@ -230,18 +244,19 @@ export function truckRow(input: TruckInput, now: Date, today: string, waits: Bor
     evidenceAt: place.evidenceAt,
     fresh: place.fresh,
     atGate: place.atGate,
+    gateDays: gateDaysOf(place, today),
   };
   const pct = place.progress === null ? null : Math.round(place.progress * 100);
-  if (!place.route) {
-    return { ...off, kind: 'no_schedule', roadPct: null, eta: null, arrivalOrder: null };
-  }
   if (place.atGate) {
     // Arrived by the phone, waiting for the scan: first in the list, no date
-    // — and late, ranked with the late, once its schedule has run out with
-    // nobody having scanned it off.
-    return place.overdue
-      ? { ...off, kind: 'overdue', roadPct: pct, eta: null, arrivalOrder: null }
+    // — and «stuck», counted by the attention row and the 20:00 summary, on
+    // the arrived truck's own clock: STUCK_AT_GATE_DAYS since it came.
+    return stuckAtPhoneGate(off.gateDays)
+      ? { ...off, kind: 'stuck', roadPct: pct, eta: null, arrivalOrder: null }
       : { ...off, kind: 'on_road', roadPct: pct, eta: null, arrivalOrder: 0 };
+  }
+  if (!place.route) {
+    return { ...off, kind: 'no_schedule', roadPct: null, eta: null, arrivalOrder: null };
   }
   if (place.overdue || !place.remainingHours) {
     // Spent: no date. The bar stays where the newest evidence last put the
@@ -269,10 +284,15 @@ export function truckRow(input: TruckInput, now: Date, today: string, waits: Bor
  * missing: «Tushirilmay turibdi» beside «Tushirildi 40 / 40» contradicted
  * itself (the board's review). The KIND stays — the counts and the attention
  * row still see a truck nobody has finished, which is still somebody's job.
- * Null on the road, and when the unload count was not asked (`null`).
+ * Null on the road, and when the unload count was not asked (`null`); a
+ * truck the phone put at its gate is «stuck» on the same clock, else null.
  */
-export function gateWord(row: Pick<TruckRow, 'status' | 'kind' | 'awaitingUnload'>): 'unloaded_open' | 'stuck' | 'unloading' | null {
-  if (row.status !== 'arrived') return null;
+export function gateWord(
+  row: Pick<TruckRow, 'status' | 'kind' | 'awaitingUnload' | 'atGate'>,
+): 'unloaded_open' | 'stuck' | 'unloading' | null {
+  // At its gate by the phone (still «in transit» — nobody scanned it off):
+  // standing there past the stuck days is the arrived truck's own word.
+  if (row.status !== 'arrived') return row.atGate && row.kind === 'stuck' ? 'stuck' : null;
   if (row.awaitingUnload === 0) return 'unloaded_open';
   return row.kind === 'stuck' ? 'stuck' : 'unloading';
 }

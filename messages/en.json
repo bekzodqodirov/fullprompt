@@ -407,7 +407,8 @@
     "agoDay": "{n} d ago",
     "truckUnloadedOpen": "Unloaded, not closed",
     "truckAtGate": "At gate, not unloaded",
-    "truckAtGateLate": "past its date — check the unloading",
+    "truckAtGateDays": "{n, plural, =0 {came today} one {standing # day} other {standing # days}}",
+    "truckAtGateStuck": "check the unloading",
     "truckUnloadedOpenHint": "«{button}» not pressed"
   },
   "inventory": {
@@ -2075,7 +2076,8 @@
     "unplaced": "Location unknown — not drawn on the map:",
     "overdue": "behind schedule — call the driver",
     "atGate": "At gate, not unloaded",
-    "atGateLate": "past its date — check the unloading",
+    "atGateDays": "{n, plural, =0 {came today} one {standing # day} other {standing # days}}",
+    "atGateStuck": "check the unloading",
     "eta": "arriving in ~{min}–{max} days",
     "seg_cn_transit": "On the road inside China",
     "seg_to_border": "Heading for the border",

@@ -11,7 +11,7 @@ import {
   type RoutePoint,
   type TransitEstimate,
 } from './engine';
-import { CHECKPOINT_KEYS, CHECKPOINT_SEGMENTS, routeFor, YARD_POINTS, type CheckpointKey } from './map-data';
+import { CHECKPOINT_KEYS, CHECKPOINT_SEGMENTS, routeFor, yardFor, type CheckpointKey } from './map-data';
 import { zoneOfGenericRoad, zoneOfLeg, zoneOfRoute, type RoadZone } from './place';
 
 /**
@@ -349,24 +349,31 @@ export const PLACE_TOLERANCE_DEG = 2.5;
 export const QUEUE_RADIUS_DEG = 0.05;
 
 /**
- * A fix this near the destination's YARD — the road's end, or `YARD_POINTS`
- * where the drawn dot is elsewhere — is at the gate: the truck has arrived by
- * its own phone and waits for the unload scan that makes it «arrived».
- * Nothing is left to drive, so it carries no date, and it is not late until
- * its schedule is (the review: a phone at the Tashkent yard read «muddatdan
- * oshdi — haydovchi bilan bog'laning» within the hour, and overnight). The
- * FIX'S OWN distance decides, not its projection: a phone past the road's end
- * projects onto it from anywhere within the tolerance (the recheck).
+ * A fix this near the destination's YARD (`yardFor`: where it really
+ * stands, else its map dot — TAS2's dot is drawn 85 km off) is at the gate:
+ * the truck has arrived by its own phone and waits for the unload scan that
+ * makes it «arrived». Nothing is left to drive, so it carries no date and is
+ * never «late» on the road (the review: a phone at the Tashkent yard read
+ * «muddatdan oshdi — haydovchi bilan bog'laning» within the hour, and
+ * overnight); standing there unloaded is judged by the days since it came
+ * (`gateSince`), on the arrived truck's own clock (`truckRow`). The FIX'S OWN
+ * distance decides, not its projection: a phone past the road's end projects
+ * onto it from anywhere within the tolerance (the recheck).
  */
 export const GATE_RADIUS_DEG = QUEUE_RADIUS_DEG;
 
 /**
- * A truck standing at its gate unloaded for this many days is «stuck» — ONE
- * number for the attention list's row, the card's chip (`isStuckAtGate`) and
- * the phone's gate (`placeTruck`), so a truck arrived by its scan and one
- * arrived by its phone are flagged on the same clock.
+ * The yard a phone is judged «at the gate» against (`yardFor`, else the
+ * road's end), or null when there is none — or when the trip STARTS in it:
+ * TAS1 and TAS2 stand in one Tashkent yard, so a TAS1 → TAS2 truck would be
+ * «at the gate» from the minute it left.
  */
-export const STUCK_AT_GATE_DAYS = 2;
+export function gateYard(originCode: string, destCode: string, roadEnd: RoutePoint | null = null): RoutePoint | null {
+  const yard = yardFor(destCode) ?? roadEnd;
+  if (!yard) return null;
+  const from = yardFor(originCode);
+  return from && chordDeg(from, yard) <= GATE_RADIUS_DEG ? null : yard;
+}
 
 /**
  * The latest a truck can land by its own SLOWEST pace from where an anchor
@@ -402,6 +409,8 @@ export interface PlacementFix {
   recordedAt: Date;
   /** 'device' — the driver's phone; 'manual' — a position the logist typed. */
   source: string;
+  /** When the phone first put it at its yard (`latestPositions`); null = never. REQUIRED: forgotten, a truck in the yard would never read «stuck». */
+  gateSince: Date | null;
 }
 
 export type PlaceSource = 'gps' | 'manual' | 'pin' | 'schedule';
@@ -424,6 +433,8 @@ export interface TruckPlace {
   overdue: boolean;
   /** The newest fix is at the destination's gate (`GATE_RADIUS_DEG`): no date, not overdue. */
   atGate: boolean;
+  /** At the gate: since when (ISO) — the first fix at the yard; null otherwise. */
+  gateSince: string | null;
   /** What placed it; null = no road, no pin, no fix. */
   source: PlaceSource | null;
   /** When that evidence was taken (ISO); null for the bare schedule. */
@@ -560,6 +571,26 @@ export function placeTruck(input: PlaceInput, waits: BorderHours, now: Date = ne
     const pinLeg = pin ? CHECKPOINT_SEGMENTS[pin.key] : null;
     const fixMs = fix?.recordedAt.getTime() ?? Number.NaN;
     const byFix = fix !== null && Number.isFinite(fixMs) && (!pin || fixMs >= new Date(pin.at).getTime());
+    // A road nobody modelled still has a yard: the phone there is at the
+    // gate on these roads too (TAS1 → AND read «yo'lda» for ever otherwise).
+    const yard = gateYard(input.originCode, input.destCode);
+    const departed = input.departedAt?.getTime() ?? Number.NEGATIVE_INFINITY;
+    if (byFix && yard && fixMs >= departed && chordDeg({ x: fix.lon, y: fix.lat }, yard) <= GATE_RADIUS_DEG) {
+      return {
+        zone: base && !isGenericRoute(base) ? zoneOfRoute(base) : zoneOfGenericRoad(input.originCountry, input.destCountry),
+        segKey: null,
+        progress: null,
+        remainingHours: null,
+        overdue: false,
+        atGate: true,
+        gateSince: (fix.gateSince ?? fix.recordedAt).toISOString(),
+        source: fixSource(fix),
+        evidenceAt: fix.recordedAt.toISOString(),
+        fresh: now.getTime() - fixMs <= FRESH_MINUTES * 60_000,
+        point: { x: fix.lon, y: fix.lat },
+        route: null,
+      };
+    }
     return {
       zone: pinLeg
         ? zoneOfLeg(pinLeg)
@@ -571,6 +602,7 @@ export function placeTruck(input: PlaceInput, waits: BorderHours, now: Date = ne
       remainingHours: null,
       overdue: false,
       atGate: false,
+      gateSince: null,
       source: byFix ? fixSource(fix) : pin ? 'pin' : null,
       evidenceAt: byFix ? fix.recordedAt.toISOString() : (pin?.at ?? null),
       fresh: byFix && now.getTime() - fixMs <= FRESH_MINUTES * 60_000,
@@ -607,6 +639,7 @@ export function placeTruck(input: PlaceInput, waits: BorderHours, now: Date = ne
     remainingHours: e.remainingHours,
     overdue: false,
     atGate: false,
+    gateSince: null,
     source,
     evidenceAt,
     fresh,
@@ -619,28 +652,22 @@ export function placeTruck(input: PlaceInput, waits: BorderHours, now: Date = ne
   // deadline and then jump back when the walk turns due — the recheck).
   const latestMs = anchor.kind === 'fix' ? slowestArrivalMs(route, anchor, anchor.atMs!) : null;
 
-  const yard = YARD_POINTS[input.destCode] ?? base.points[base.points.length - 1]!;
-  if (anchor.kind === 'fix' && chordDeg({ x: fix!.lon, y: fix!.lat }, yard) <= GATE_RADIUS_DEG) {
+  const yard = gateYard(input.originCode, input.destCode, base.points[base.points.length - 1]!);
+  if (anchor.kind === 'fix' && yard && chordDeg({ x: fix!.lon, y: fix!.lat }, yard) <= GATE_RADIUS_DEG) {
     // At the destination's gate by the phone: arrived in all but the scan.
-    // Late only once the owner's SLOWEST schedule has run out and the
-    // stuck-at-gate days after it with nobody having scanned it off — a
-    // truck that lands within his own range is never «late» the minute it
-    // reaches the yard (the recheck: it read «muddati o'tgan» on arrival,
-    // 5 h before the window the board had just printed). The clock runs from
-    // evidence the truck had when it reached the gate: a pin pressed before
-    // the fix, else the departure — a press AFTER it (an «in Uzbekistan»
-    // pressed at the yard) must not restart it.
-    const clock = pinned && pinned.legStartMs < fixMs ? pinned : departureAnchor(input.departedAt);
-    const scheduled = walkFrom(base, clock, waits, input.departedAt, now).route;
-    const lateMs = slowestArrivalMs(scheduled, clock, clock.legStartMs) + STUCK_AT_GATE_DAYS * 24 * HOUR_MS;
+    // Never «late» here — whether it stands too long is the days since it
+    // came, on the arrived truck's clock (`truckRow`): a schedule-based
+    // clock flagged a truck the minute it pulled in, or never, or restarted
+    // on a pin pressed at the yard (the third recheck).
     const leg = base.segments[base.segments.length - 1]!;
     return {
       zone: zoneOfLeg(leg.key),
       segKey: leg.key,
       progress: 1,
       remainingHours: null,
-      overdue: now.getTime() > lateMs,
+      overdue: false,
       atGate: true,
+      gateSince: (fix!.gateSince ?? fix!.recordedAt).toISOString(),
       source,
       evidenceAt,
       fresh,
@@ -685,6 +712,7 @@ export function placeTruck(input: PlaceInput, waits: BorderHours, now: Date = ne
       remainingHours: null,
       overdue: true,
       atGate: false,
+      gateSince: null,
       source,
       evidenceAt,
       fresh,

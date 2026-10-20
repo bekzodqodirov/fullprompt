@@ -160,6 +160,7 @@ describe('the map and the bot read the one placement', () => {
       source: 'device',
       ageMinutes: 20 * 60,
       fresh: false,
+      gateSince: null,
     }))!;
     expect(marker.live).toBe(false);
     expect(marker.progress!).toBeGreaterThanOrEqual(cum[at]! / total);
@@ -202,31 +203,47 @@ describe('the map and the bot read the one placement', () => {
       source: 'device',
       ageMinutes: 60,
       fresh: true,
+      gateSince: null,
     }))!;
     expect({ x: marker.x, y: marker.y }).toEqual(WAREHOUSE_POINTS.AND);
     expect(marker.live).toBe(false);
     expect(marker.dated).toBe(false);
   });
 
-  it('a late truck standing at its gate: the map and the bot say «check the unloading», never «call the driver»', async () => {
+  it('a truck standing at its gate: never late on the road — «stuck» after the stuck days since it CAME, on the map and in the bot', async () => {
     const route = routeFor('KA', 'TAS1')!;
     const gate = route.points[route.points.length - 1]!;
-    const row = { ...truckRow, departedAt: new Date(Date.now() - 260 * HOUR) };
-    const marker = (await truckFor(row, ends('KA', 'TAS1'), {}, {
+    // 300 h out, far past the slowest schedule — and it pulled in a minute
+    // ago: the road's lateness is forgiven by arriving (the fourth recheck).
+    const row = { ...truckRow, departedAt: new Date(Date.now() - 300 * HOUR) };
+    const atYard = (sinceH: number) => ({
       batchId: row.id,
       lat: gate.y,
       lon: gate.x,
-      recordedAt: new Date(Date.now() - 30 * HOUR),
+      recordedAt: new Date(Date.now() - 60_000),
       source: 'device',
-      ageMinutes: 30 * 60,
-      fresh: false,
-    }))!;
-    expect(marker).toMatchObject({ atGate: true, overdue: true, dated: false });
+      ageMinutes: 1,
+      fresh: true,
+      gateSince: new Date(Date.now() - sinceH * HOUR),
+    });
+    const fresh = (await truckFor(row, ends('KA', 'TAS1'), {}, atYard(1 / 60)))!;
+    expect(fresh).toMatchObject({ atGate: true, overdue: false, dated: false, gateStuck: false });
+    expect(fresh.gateDays).toBeLessThanOrEqual(1);
+    // Three days there with nobody scanning it off: stuck, by the days.
+    const stood = (await truckFor(row, ends('KA', 'TAS1'), {}, atYard(72)))!;
+    expect(stood).toMatchObject({ atGate: true, overdue: false, gateDays: 3, gateStuck: true });
+    // On a road nobody modelled the marker says the same.
+    const internal = { originCode: 'TAS1', destCode: 'AND', originCountry: 'UZ', destCountry: 'UZ' };
+    const and = WAREHOUSE_POINTS.AND!;
+    const atAnd = (await truckFor(row, internal, {}, { ...atYard(72), lat: and.y, lon: and.x }))!;
+    expect(atAnd).toMatchObject({ atGate: true, gateDays: 3, gateStuck: true, overdue: false });
     const popup = readFileSync('src/app/(protected)/map/tracking-map.tsx', 'utf8');
-    expect(popup).toContain("selTruck.atGate ? t('atGateLate') : t('overdue')");
+    expect(popup).toContain("selTruck.gateStuck ? ` — ${t('atGateStuck')}` : ''");
+    expect(popup).not.toContain('atGateLate');
     const bot = readFileSync('src/modules/wms/bot/lookup.ts', 'utf8');
-    expect(bot).toContain("? ' · ⏱ muddati o‘tgan — tushirishni tekshiring'");
+    expect(bot).toContain("(marker.gateStuck ? ' — ⏱ tushirishni tekshiring' : '')");
     expect(bot).toContain("marker?.atGate ? 'manzilda, tushirilmagan' : 'yo‘lda'");
+    expect(bot).not.toContain('muddati o‘tgan');
   });
 
   it('a truck nothing honest places is not drawn — its spent walk ends ON the destination warehouse', async () => {
@@ -245,19 +262,19 @@ describe('the evidence a fix is', () => {
     await db.insert(driverPositions).values({ batchId: id, lat: '39.9', lon: '74.0', accuracyM: 12, recordedAt: at(-3), receivedAt: at(-3) });
     // A phone a day ahead: stamped tomorrow, received an hour ago.
     await db.insert(driverPositions).values({ batchId: id, lat: '40.1', lon: '73.5', accuracyM: 12, recordedAt: at(24), receivedAt: at(-1) });
-    let latest = (await latestPositions([id])).get(id)!;
+    let latest = (await latestPositions([{ id, destCode: 'TAS1' }])).get(id)!;
     expect(latest.recordedAt.getTime()).toBeCloseTo(at(-1).getTime(), -3);
     expect(latest.lat).toBe(40.1);
 
     // A 20 km cell-tower fix ten minutes ago says nothing about which side
     // of a post the truck stands on.
     await db.insert(driverPositions).values({ batchId: id, lat: '40.5', lon: '72.9', accuracyM: 20_000, recordedAt: at(-1 / 6), receivedAt: at(-1 / 6) });
-    latest = (await latestPositions([id])).get(id)!;
+    latest = (await latestPositions([{ id, destCode: 'TAS1' }])).get(id)!;
     expect(latest.lat).toBe(40.1);
 
     // A reported accuracy of 0 is a precise fix, not a missing one.
     await db.insert(driverPositions).values({ batchId: id, lat: '40.6', lon: '72.8', accuracyM: 0, recordedAt: at(-1 / 12), receivedAt: at(-1 / 12) });
-    latest = (await latestPositions([id])).get(id)!;
+    latest = (await latestPositions([{ id, destCode: 'TAS1' }])).get(id)!;
     expect(latest.lat).toBe(40.6);
     await db.delete(driverPositions).where(eq(driverPositions.batchId, id));
   });
@@ -361,6 +378,7 @@ describe('the customer reads the same truck', () => {
       source: 'device',
       ageMinutes: 30,
       fresh: true,
+      gateSince: null,
     }))!;
     // An hour or so left: dated, and the days say so instead of «0–0».
     expect(marker.overdue).toBe(false);

@@ -6,6 +6,8 @@ import { db, type Db, type Tx } from '../../platform/db/client';
 import { batches, driverDevices, driverPositions } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { FRESH_MINUTES } from './engine';
+import { GATE_RADIUS_DEG, type PlacementFix } from './eta';
+import { yardFor } from './map-data';
 
 /**
  * Driver phone pairing + position ingest (owner's flow): at loading, the
@@ -218,6 +220,14 @@ export interface LatestPosition {
   source: string;
   ageMinutes: number;
   fresh: boolean;
+  /**
+   * When the phone FIRST put the truck at its destination's yard (`yardFor`,
+   * `GATE_RADIUS_DEG` — the placement's own test, in SQL), or null. The
+   * newest fix says it is at the gate; only this says since when — the clock
+   * «standing unloaded for two days» runs on (the board's third recheck: a
+   * schedule-based clock flagged a truck the minute it pulled in, or never).
+   */
+  gateSince: Date | null;
 }
 
 /**
@@ -237,8 +247,11 @@ export const COARSE_FIX_M = 5000;
  * the moment it reached us. A coarse fix (`COARSE_FIX_M`) is skipped, so the
  * newest one that can place the truck answers.
  */
-export async function latestPositions(batchIds: string[]): Promise<Map<string, LatestPosition>> {
-  if (batchIds.length === 0) return new Map();
+export async function latestPositions(
+  trips: readonly { id: string; destCode: string }[],
+): Promise<Map<string, LatestPosition>> {
+  if (trips.length === 0) return new Map();
+  const batchIds = [...new Set(trips.map((t) => t.id))];
   const at = sql<Date>`least(${driverPositions.recordedAt}, ${driverPositions.receivedAt})`;
   const rows = await db
     .selectDistinctOn([driverPositions.batchId], {
@@ -257,6 +270,34 @@ export async function latestPositions(batchIds: string[]): Promise<Map<string, L
     )
     .orderBy(driverPositions.batchId, desc(at));
 
+  // Since when it has stood at each trip's yard: the first fix there after
+  // the last one anywhere else (a truck that left the yard and came back is
+  // judged from its return). One grouped pass, the yards bound as a VALUES
+  // list, the distance `chordDeg`'s own formula.
+  const yards = trips.flatMap((t) => {
+    const y = yardFor(t.destCode);
+    return y ? [sql`(${t.id}::uuid, ${y.x}::float8, ${y.y}::float8)`] : [];
+  });
+  const since = new Map<string, Date>();
+  if (rows.length && yards.length) {
+    const found = await db.execute<{ batch_id: string; since_ms: string | null }>(sql`
+      WITH f AS (
+        SELECT p.batch_id, least(p.recorded_at, p.received_at) AS at,
+               sqrt(power((p.lon::float8 - y.lon) * cos(radians((p.lat::float8 + y.lat) / 2)), 2)
+                    + power(p.lat::float8 - y.lat, 2)) <= ${GATE_RADIUS_DEG} AS inside
+          FROM ${driverPositions} p
+          JOIN (VALUES ${sql.join(yards, sql`, `)}) AS y(batch_id, lon, lat) ON y.batch_id = p.batch_id
+         WHERE p.accuracy_m IS NULL OR p.accuracy_m <= ${COARSE_FIX_M}
+      ), g AS (
+        SELECT f.*, max(at) FILTER (WHERE NOT inside) OVER (PARTITION BY batch_id) AS last_out FROM f
+      )
+      SELECT batch_id, extract(epoch FROM min(at)) * 1000 AS since_ms
+        FROM g
+       WHERE inside AND (last_out IS NULL OR at > last_out)
+       GROUP BY batch_id`);
+    for (const r of found) if (r.since_ms !== null) since.set(r.batch_id, new Date(Number(r.since_ms)));
+  }
+
   const now = Date.now();
   return new Map(
     rows.map((r) => {
@@ -271,10 +312,18 @@ export async function latestPositions(batchIds: string[]): Promise<Map<string, L
           source: r.source,
           ageMinutes,
           fresh: ageMinutes <= FRESH_MINUTES,
+          gateSince: since.get(r.batchId) ?? null,
         },
       ];
     }),
   );
+}
+
+/** The fix as the placement reads it — ONE mapping, so no reader drops `gateSince`. */
+export function placementFix(fix: LatestPosition | null | undefined): PlacementFix | null {
+  return fix
+    ? { lat: fix.lat, lon: fix.lon, recordedAt: fix.recordedAt, source: fix.source, gateSince: fix.gateSince }
+    : null;
 }
 
 /** Paired devices of a trip for the batch card (never exposes the token). */

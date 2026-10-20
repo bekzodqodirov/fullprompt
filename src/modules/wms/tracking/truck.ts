@@ -11,7 +11,9 @@ import {
 import { isMovingStage, stageBatchOf, truckStage } from '../client-cabinet/stages';
 import { placeDated, placeTruck, type BorderHours } from './eta';
 import { WAREHOUSE_POINTS } from './map-data';
-import type { LatestPosition } from './devices';
+import { placementFix, type LatestPosition } from './devices';
+import { gateDaysOf, stuckAtPhoneGate } from './on-road-state';
+import { tashkentDay } from '../../platform/time/tashkent';
 
 /** The marker /map draws — structurally the component's MapTruck. */
 export interface TruckMarker {
@@ -33,10 +35,15 @@ export interface TruckMarker {
   placed: boolean;
   /**
    * The phone has it at its destination's gate (`placeTruck`): the popup and
-   * the bot say «at the gate, not unloaded», and a late one is the
-   * unloading's, never «call the driver» (the recheck).
+   * the bot say «at the gate, not unloaded» — never late on the road and
+   * never «call the driver» (the recheck); how long it has stood is
+   * `gateDays`.
    */
   atGate: boolean;
+  /** At the gate: Tashkent days since the phone first put it there (`gateDaysOf`); null elsewhere. */
+  gateDays: number | null;
+  /** Standing there unloaded past the stuck days (`stuckAtPhoneGate`): the popup and the bot say «check the unloading». */
+  gateStuck: boolean;
   /** A fresh fix from the driver's phone places the truck — the dot is the fix. */
   live: boolean;
   fixAgeMinutes: number | null;
@@ -96,12 +103,11 @@ export async function truckFor(
       ...ends,
       departedAt: batch.departedAt,
       checkpoint: batch.trackingCheckpoint,
-      fix: fix
-        ? { lat: fix.lat, lon: fix.lon, recordedAt: fix.recordedAt, source: fix.source }
-        : null,
+      fix: placementFix(fix),
     },
     waits,
   );
+  const gateDays = gateDaysOf(place, tashkentDay(new Date()));
   // Off the road (below) a truck stands at its destination whether or not a
   // road is modelled; on it, a truck with neither a road nor a phone has no
   // place at all.
@@ -155,6 +161,8 @@ export async function truckFor(
       y: gate?.y ?? 0,
       placed: gate !== null,
       atGate: false,
+      gateDays: null,
+      gateStuck: false,
       live: false,
       fixAgeMinutes: fix?.ageMinutes ?? null,
       fixSource: fix?.source ?? null,
@@ -183,7 +191,10 @@ export async function truckFor(
       x: live.lon,
       y: live.lat,
       placed: true,
-      atGate: false,
+      // A road nobody modelled still has a yard (`placeTruck`'s no-road gate).
+      atGate: place.atGate,
+      gateDays,
+      gateStuck: stuckAtPhoneGate(gateDays),
       live: live.fresh,
       fixAgeMinutes: live.ageMinutes,
       fixSource: live.source,
@@ -222,6 +233,8 @@ export async function truckFor(
     y: place.point?.y ?? 0,
     placed: place.point !== null,
     atGate: place.atGate,
+    gateDays,
+    gateStuck: stuckAtPhoneGate(gateDays),
     live: place.fresh,
     fixAgeMinutes: fix?.ageMinutes ?? null,
     fixSource: fix?.source ?? null,

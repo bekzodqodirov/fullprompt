@@ -449,7 +449,12 @@ async function lookupClient(
   // (`truckFor`: the live phone fix when fresh, else the route's hours
   // anchored on the checkpoint pin), so the bot and the map never disagree.
   const fixes = transit.size
-    ? await latestPositions([...transit.values()].flatMap((tr) => (tr.batchId ? [tr.batchId] : [])))
+    ? await latestPositions(
+        [...transit.values()].flatMap((tr) => {
+          const ends = tr.batchId ? endsById.get(tr.batchId) : undefined;
+          return ends ? [{ id: ends.batch.id, destCode: ends.destCode }] : [];
+        }),
+      )
     : new Map();
   // The typed border queues, once for the answer (#432).
   const waits = transit.size ? await loadBorderHours() : {};
@@ -463,15 +468,16 @@ async function lookupClient(
     // (`remainingDays` [0, 0]) — say nothing rather than «late». Days only
     // where a date may be printed (`dated`: O15 — a truck pinned in
     // Uzbekistan has no date in the customer's cabinet, so none here).
-    // At its gate by the phone the late thing is the unloading, never the
-    // driver — the board's own words (the recheck).
+    // At its gate by the phone: how long it has stood there, and past the
+    // stuck days the unloading to check — never the driver (the board's words).
     const days = !marker
       ? ''
-      : marker.overdue
-        ? marker.atGate
-          ? ' · ⏱ muddati o‘tgan — tushirishni tekshiring'
-          : ' · ⏱ muddatdan oshdi'
-        : marker.dated
+      : marker.atGate && marker.gateDays !== null
+        ? (marker.gateDays === 0 ? ' · bugun keldi' : ` · ${marker.gateDays} kundan beri turibdi`) +
+          (marker.gateStuck ? ' — ⏱ tushirishni tekshiring' : '')
+        : marker.overdue
+          ? ' · ⏱ muddatdan oshdi'
+          : marker.dated
           ? ` · ⏱ ~${marker.remainingDays[0]}–${marker.remainingDays[1]} kun`
           : '';
     transitLines.push(

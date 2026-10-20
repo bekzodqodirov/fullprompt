@@ -119,12 +119,22 @@ export async function truckRoadWords({ counts = true }: { counts?: boolean } = {
       if (hint) parts.push(hint);
     } else {
       parts.push(t('roadDays', { n: row.days }));
-      if (row.kind === 'overdue') {
-        // At its gate the driver has done his part: the late thing is the
-        // unloading, and «call the driver» would send the office the wrong way.
+      if (row.atGate && row.gateDays !== null) {
+        // At its gate the driver has done his part: how long it has stood
+        // there, and — past the stuck days — the unloading to check, never
+        // «call the driver» (the recheck).
+        parts.push(t('truckAtGateDays', { n: row.gateDays }));
+        if (row.kind === 'stuck') {
+          parts.push(
+            <span key="stuck" className="font-semibold text-warn">
+              {t('truckAtGateStuck')}
+            </span>,
+          );
+        }
+      } else if (row.kind === 'overdue') {
         parts.push(
           <span key="late" className="font-semibold text-warn">
-            {row.atGate ? t('truckAtGateLate') : tm('overdue')}
+            {tm('overdue')}
           </span>,
         );
       } else if (row.eta) {

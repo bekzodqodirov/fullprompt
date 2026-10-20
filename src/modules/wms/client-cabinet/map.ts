@@ -137,7 +137,7 @@ export async function cabinetMap(clientIds: string[]): Promise<CabinetMapPlace[]
   const batchIds = [...places.values()].filter((p) => p.kind === 'truck').map((p) => p.ref);
   const origin = alias(warehouses, 'o');
   const dest = alias(warehouses, 'd');
-  const [whRows, batchRows, fixes] = await Promise.all([
+  const [whRows, batchRows] = await Promise.all([
     whIds.length ? db.select().from(warehouses).where(inArray(warehouses.id, whIds)) : Promise.resolve([]),
     batchIds.length
       ? db
@@ -155,8 +155,9 @@ export async function cabinetMap(clientIds: string[]): Promise<CabinetMapPlace[]
           .innerJoin(dest, eq(batches.destWarehouseId, dest.id))
           .where(inArray(batches.id, batchIds))
       : Promise.resolve([]),
-    batchIds.length ? latestPositions(batchIds) : Promise.resolve(new Map()),
   ]);
+  // After the trucks: the gate's «since when» is judged against each one's yard.
+  const fixes = await latestPositions(batchRows.map((b) => ({ id: b.batch.id, destCode: b.destCode })));
 
   const out: CabinetMapPlace[] = [];
   const finish = (p: (typeof places extends Map<string, infer V> ? V : never)) => {

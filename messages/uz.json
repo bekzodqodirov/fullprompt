@@ -407,7 +407,8 @@
     "agoDay": "{n} kun oldin",
     "truckUnloadedOpen": "Tushirildi, yopilmagan",
     "truckAtGate": "Manzilda, tushirilmagan",
-    "truckAtGateLate": "muddati o‘tgan — tushirishni tekshiring",
+    "truckAtGateDays": "{n, plural, =0 {bugun keldi} other {# kundan beri turibdi}}",
+    "truckAtGateStuck": "tushirishni tekshiring",
     "truckUnloadedOpenHint": "«{button}» bosilmagan"
   },
   "inventory": {
@@ -2075,7 +2076,8 @@
     "unplaced": "Joyi aniq emas — xaritada chizilmadi:",
     "overdue": "kutilgan muddatdan oshdi — haydovchi bilan bog‘laning",
     "atGate": "Manzilda, tushirilmagan",
-    "atGateLate": "muddati o‘tgan — tushirishni tekshiring",
+    "atGateDays": "{n, plural, =0 {bugun keldi} other {# kundan beri turibdi}}",
+    "atGateStuck": "tushirishni tekshiring",
     "eta": "yetib kelishiga ~{min}–{max} kun",
     "seg_cn_transit": "Xitoy ichida yo‘lda",
     "seg_to_border": "Chegara tomon yo‘lda",

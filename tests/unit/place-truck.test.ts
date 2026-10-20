@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { chordDeg, cumulativeLengths, type RoutePoint } from '@/modules/wms/tracking/engine';
-import { placeDated, placeTruck, scheduleEstimate, type PlacementFix } from '@/modules/wms/tracking/eta';
-import { routeFor } from '@/modules/wms/tracking/map-data';
+import { gateYard, placeDated, placeTruck, scheduleEstimate, type PlacementFix } from '@/modules/wms/tracking/eta';
+import { routeFor, WAREHOUSE_POINTS, YARD_POINTS } from '@/modules/wms/tracking/map-data';
 import {
   LEG_ZONE,
   zoneOfGenericRoad,
@@ -24,11 +24,12 @@ const NOW = new Date('2026-08-27T04:00:00.000Z');
 const ago = (hours: number) => new Date(NOW.getTime() - hours * HOUR);
 const KA_TAS = { originCode: 'KA', destCode: 'TAS1', originCountry: 'CN', destCountry: 'UZ' };
 const HOR_TAS = { originCode: 'HOR', destCode: 'TAS1', originCountry: 'CN', destCountry: 'UZ' };
-const fixAt = (p: RoutePoint, hoursAgo: number, source = 'device'): PlacementFix => ({
+const fixAt = (p: RoutePoint, hoursAgo: number, source = 'device', gateSinceH: number | null = null): PlacementFix => ({
   lat: p.y,
   lon: p.x,
   recordedAt: ago(hoursAgo),
   source,
+  gateSince: gateSinceH === null ? null : ago(gateSinceH),
 });
 /** A point `deg` from `from` towards `to`. */
 const toward = (from: RoutePoint, to: RoutePoint, deg: number): RoutePoint => {
@@ -384,10 +385,10 @@ describe('a truck ahead of its schedule is not overdue — and a late one is', (
     // «call the driver».
     const night = placeTruck({ ...KA_TAS, departedAt: ago(85), checkpoint: null, fix: fixAt(tas, 12) }, {}, NOW);
     expect(night).toMatchObject({ atGate: true, overdue: false });
-    // Once its schedule has run out with nobody having scanned it off, it is
-    // late — at its gate (the unloading is the late thing, not the driver).
+    // A week there is still not «late» on the road — standing unloaded is
+    // judged by the days since it came (`truckRow`), never by the schedule.
     const week = placeTruck({ ...KA_TAS, departedAt: ago(300), checkpoint: null, fix: fixAt(tas, 170) }, {}, NOW);
-    expect(week).toMatchObject({ atGate: true, overdue: true });
+    expect(week).toMatchObject({ atGate: true, overdue: false });
   });
 
   it('12 km before the yard, two hours on: due, not overdue — and no date of «today»', () => {
@@ -523,29 +524,48 @@ describe('the fixes’ recheck: the yard is where the warehouse stands, and a qu
   });
 });
 
-describe('the gate’s late clock: the owner’s slowest schedule and the stuck days, from evidence before the gate', () => {
+describe('the gate’s clock: since it CAME, never the schedule', () => {
   const tas = kaTas.points[kaTas.points.length - 1]!;
-  // KA → TAS1 at his slowest: 24 + 72 + 48 + 48 h = 192 h, then two days.
+  // KA → TAS1 at his slowest: 24 + 72 + 48 + 48 h = 192 h.
   const SLOWEST = 24 + 72 + 48 + 48;
-  const at = (departedAgo: number, fixAgo: number, checkpoint: unknown = null) =>
-    placeTruck({ ...KA_TAS, departedAt: ago(departedAgo), checkpoint, fix: fixAt(tas, fixAgo) }, {}, NOW);
+  const at = (departedAgo: number, fixAgo: number, checkpoint: unknown = null, gateSinceH: number | null = null) =>
+    placeTruck({ ...KA_TAS, departedAt: ago(departedAgo), checkpoint, fix: fixAt(tas, fixAgo, 'device', gateSinceH) }, {}, NOW);
 
-  it('arriving in the later half of his own range is NOT late on arrival (the recheck: «muddati o‘tgan» within a minute)', () => {
-    // Reached the yard at h161 (typical total 150 h), read at h161.05 and h168.
+  it('arriving late is not «late» the minute it pulls in (the fourth recheck: on-road at h299, overdue at h300)', () => {
     expect(at(161.05, 0.05)).toMatchObject({ atGate: true, overdue: false });
-    expect(at(168, 7)).toMatchObject({ atGate: true, overdue: false });
+    expect(at(300, 0.05, null, 0.05)).toMatchObject({ atGate: true, overdue: false });
+    expect(at(SLOWEST + 48 + 100, 1, null, 2)).toMatchObject({ atGate: true, overdue: false });
   });
 
-  it('late once the slowest schedule and two stuck days have passed with nobody scanning it off', () => {
-    expect(at(SLOWEST + 48 - 0.1, 30).overdue).toBe(false);
-    expect(at(SLOWEST + 48 + 0.1, 30).overdue).toBe(true);
-  });
-
-  it('a pin pressed AFTER the phone reached the gate does not restart the clock', () => {
+  it('no pin moves it — pressed before the gate fix or after it', () => {
     const late = SLOWEST + 48 + 1;
-    const noPin = at(late, late - 160);
-    const pinnedAfter = at(late, late - 160, { key: 'in_uz', at: ago(late - 162).toISOString() });
-    expect(noPin.overdue).toBe(true);
-    expect(pinnedAfter.overdue).toBe(true);
+    expect(at(late, 1, { key: 'in_kg', at: ago(late - 200).toISOString() }, 30).overdue).toBe(false);
+    expect(at(late, 1, { key: 'in_uz', at: ago(2).toISOString() }, 30).overdue).toBe(false);
+  });
+
+  it('carries since when it has stood there — the first fix at the yard, else the fix itself', () => {
+    expect(at(300, 1, null, 50).gateSince).toBe(ago(50).toISOString());
+    expect(at(300, 1).gateSince).toBe(ago(1).toISOString());
+    // Not at the gate: nothing to carry.
+    const before = toward(tas, kaTas.points[kaTas.points.length - 2]!, 0.11);
+    expect(placeTruck({ ...KA_TAS, departedAt: ago(70), checkpoint: null, fix: fixAt(before, 2, 'device', 40) }, {}, NOW).gateSince).toBeNull();
+  });
+
+  it('a road nobody modelled still has a gate: TAS1 → AND at the Andijan yard', () => {
+    const internal = { originCode: 'TAS1', destCode: 'AND', originCountry: 'UZ', destCountry: 'UZ' };
+    const and = WAREHOUSE_POINTS.AND!;
+    const place = placeTruck({ ...internal, departedAt: ago(30), checkpoint: null, fix: fixAt(and, 1, 'device', 20) }, {}, NOW);
+    expect(place).toMatchObject({ atGate: true, overdue: false, remainingHours: null, gateSince: ago(20).toISOString() });
+    // Before the departure the yard is somebody else's: not at the gate.
+    const early = placeTruck({ ...internal, departedAt: ago(1), checkpoint: null, fix: fixAt(and, 2) }, {}, NOW);
+    expect(early.atGate).toBe(false);
+  });
+
+  it('a trip that STARTS in its destination’s yard is never «at the gate» by the phone (TAS1 → TAS2 share one yard)', () => {
+    const local = { originCode: 'TAS1', destCode: 'TAS2', originCountry: 'UZ', destCountry: 'UZ' };
+    const place = placeTruck({ ...local, departedAt: ago(1), checkpoint: null, fix: fixAt(WAREHOUSE_POINTS.TAS1!, 0.5) }, {}, NOW);
+    expect(place.atGate).toBe(false);
+    expect(gateYard('TAS1', 'TAS2')).toBeNull();
+    expect(gateYard('KA', 'TAS2')).toEqual(YARD_POINTS.TAS2);
   });
 });

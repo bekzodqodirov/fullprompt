@@ -6,7 +6,7 @@ import { tashkentDay } from '../../platform/time/tashkent';
 import { batchEndsWhere, inTransitBatches } from '../reports/queries';
 import { awaitingUnloadCounts } from '../scanning/unload';
 import { loadBorderHours } from './border-queue';
-import { latestPositions, type LatestPosition } from './devices';
+import { latestPositions, placementFix, type LatestPosition } from './devices';
 import type { BorderHours } from './eta';
 import {
   rankTrucks,
@@ -83,7 +83,7 @@ export async function trucksOnRoad(
     loadBorderHours(),
   ]);
 
-  const positions = await latestPositions(inputs.filter((r) => r.status === 'in_transit').map((r) => r.id));
+  const positions = await latestPositions(inputs.filter((r) => r.status === 'in_transit'));
   const placed = inputs.map((r) => withFix(r, positions));
   const byId = new Map<string, TruckInput>(placed.map((r) => [r.id, r]));
   const ranked = rankTrucks(placed.map((r) => truckRow(r, now, today, waits)));
@@ -104,7 +104,7 @@ function withFix(input: TruckInput, positions: Map<string, LatestPosition>): Tru
   const fix = positions.get(input.id);
   return {
     ...input,
-    fix: fix ? { lat: fix.lat, lon: fix.lon, recordedAt: fix.recordedAt, source: fix.source } : null,
+    fix: placementFix(fix),
   };
 }
 
@@ -159,7 +159,7 @@ export async function trucksOnRoadRows(batchIds: string[]): Promise<Map<string, 
   ]);
   if (inputs.length === 0) return out;
   const [positions, awaiting] = await Promise.all([
-    latestPositions(inputs.filter((r) => r.status === 'in_transit').map((r) => r.id)),
+    latestPositions(inputs.filter((r) => r.status === 'in_transit')),
     awaitingUnloadCounts(inputs.filter((r) => r.status === 'arrived').map((r) => r.id)),
   ]);
   for (const raw of inputs) {

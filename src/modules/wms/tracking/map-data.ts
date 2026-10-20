@@ -251,6 +251,11 @@ export const YARD_POINTS: Partial<Record<string, RoutePoint>> = {
   TAS2: P.TAS,
 };
 
+/** The destination's yard: where it really stands, else its map dot; null = unmapped. */
+export function yardFor(destCode: string): RoutePoint | null {
+  return YARD_POINTS[destCode] ?? WAREHOUSE_POINTS[destCode] ?? null;
+}
+
 /** Named dots drawn for context even without a warehouse. */
 export const LANDMARKS: { name: string; p: RoutePoint }[] = [
   { name: 'Irkeshtam', p: P.IRK },

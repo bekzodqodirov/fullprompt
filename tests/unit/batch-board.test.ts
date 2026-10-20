@@ -238,13 +238,18 @@ describe('one spelling for a card’s cubes and kilos', () => {
 
 describe('the word for a truck at its gate', () => {
   it('nothing left to scan off is «unloaded, not finished» — never «standing, not unloaded»', () => {
-    expect(gateWord({ status: 'arrived', kind: 'stuck', awaitingUnload: 0 })).toBe('unloaded_open');
-    expect(gateWord({ status: 'arrived', kind: 'unloading', awaitingUnload: 0 })).toBe('unloaded_open');
-    expect(gateWord({ status: 'arrived', kind: 'stuck', awaitingUnload: 12 })).toBe('stuck');
-    expect(gateWord({ status: 'arrived', kind: 'unloading', awaitingUnload: 3 })).toBe('unloading');
+    expect(gateWord({ status: 'arrived', kind: 'stuck', awaitingUnload: 0, atGate: false })).toBe('unloaded_open');
+    expect(gateWord({ status: 'arrived', kind: 'unloading', awaitingUnload: 0, atGate: false })).toBe('unloaded_open');
+    expect(gateWord({ status: 'arrived', kind: 'stuck', awaitingUnload: 12, atGate: false })).toBe('stuck');
+    expect(gateWord({ status: 'arrived', kind: 'unloading', awaitingUnload: 3, atGate: false })).toBe('unloading');
     // Not asked is not zero: the words the screens printed before.
-    expect(gateWord({ status: 'arrived', kind: 'stuck', awaitingUnload: null })).toBe('stuck');
-    expect(gateWord({ status: 'in_transit', kind: 'overdue', awaitingUnload: null })).toBeNull();
+    expect(gateWord({ status: 'arrived', kind: 'stuck', awaitingUnload: null, atGate: false })).toBe('stuck');
+    expect(gateWord({ status: 'in_transit', kind: 'overdue', awaitingUnload: null, atGate: false })).toBeNull();
+    // At its gate by the PHONE (still in transit): «stuck» on the arrived
+    // truck's own clock, nothing before it, nothing on the road.
+    expect(gateWord({ status: 'in_transit', kind: 'stuck', awaitingUnload: null, atGate: true })).toBe('stuck');
+    expect(gateWord({ status: 'in_transit', kind: 'on_road', awaitingUnload: null, atGate: true })).toBeNull();
+    expect(gateWord({ status: 'in_transit', kind: 'stuck', awaitingUnload: null, atGate: false })).toBeNull();
   });
 });
 

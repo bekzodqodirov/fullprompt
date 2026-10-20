@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { eq, like } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
-import { batches, driverDevices, users, warehouses } from '@/modules/platform/db/schema';
+import { batches, driverDevices, driverPositions, users, warehouses } from '@/modules/platform/db/schema';
 import {
   addManualPosition,
   createDriverDevice,
@@ -179,7 +179,7 @@ describe('latest position', () => {
         { lat: 40.53, lon: 72.8, recordedAt: new Date(Date.now() - 2 * 60_000).toISOString() },
       ],
     });
-    const fresh = (await latestPositions([trip])).get(trip)!;
+    const fresh = (await latestPositions([{ id: trip, destCode: 'TAS1' }])).get(trip)!;
     expect(fresh.lat).toBeCloseTo(40.53, 2);
     expect(fresh.source).toBe('device');
     expect(fresh.fresh).toBe(true);
@@ -195,7 +195,7 @@ describe('latest position', () => {
     await ingestPositions(token, {
       positions: [{ lat: 39.9, lon: 74.1, recordedAt: new Date(Date.now() - 5 * 3_600_000).toISOString() }],
     });
-    const recent = (await latestPositions([trip])).get(trip)!;
+    const recent = (await latestPositions([{ id: trip, destCode: 'TAS1' }])).get(trip)!;
     expect(recent.fresh).toBe(true);
     expect(FRESH_MINUTES).toBeGreaterThanOrEqual(3 * 60);
   });
@@ -207,7 +207,7 @@ describe('latest position', () => {
     await ingestPositions(token, {
       positions: [{ lat: 41.3, lon: 69.2, recordedAt: new Date(Date.now() - 12 * 3_600_000).toISOString() }],
     });
-    const stale = (await latestPositions([trip])).get(trip)!;
+    const stale = (await latestPositions([{ id: trip, destCode: 'TAS1' }])).get(trip)!;
     expect(stale.fresh).toBe(false);
     expect(stale.ageMinutes).toBeGreaterThan(FRESH_MINUTES);
   });
@@ -215,15 +215,50 @@ describe('latest position', () => {
   it("the logist's manual pin counts as a position too (iPhone / HarmonyOS)", async () => {
     const trip = await newBatch();
     await addManualPosition({ batchId: trip, lat: 43.83, lon: 87.62 }, ctx());
-    const pinned = (await latestPositions([trip])).get(trip)!;
+    const pinned = (await latestPositions([{ id: trip, destCode: 'TAS1' }])).get(trip)!;
     expect(pinned.source).toBe('manual');
     expect(pinned.fresh).toBe(true);
   });
 
   it('returns nothing for a batch without any fix', async () => {
     const trip = await newBatch();
-    expect((await latestPositions([trip])).size).toBe(0);
+    expect((await latestPositions([{ id: trip, destCode: 'TAS1' }])).size).toBe(0);
     expect((await latestPositions([])).size).toBe(0);
+  });
+
+  // The stuck-at-gate clock for a truck the phone put in its yard: since when
+  // it has stood THERE — the first fix at the yard after the last fix that
+  // placed it anywhere else. The newest fix moves every report, so it cannot
+  // be the clock (a truck parked at the gate would never turn «stuck»).
+  it('since when it has stood at its yard: the first fix there after the last one anywhere else', async () => {
+    const h = (n: number) => new Date(Date.now() - n * 3_600_000);
+    const fixRow = (trip: string, lat: string, lon: string, hoursAgo: number, accuracyM = 10) => ({
+      batchId: trip,
+      lat,
+      lon,
+      accuracyM,
+      recordedAt: h(hoursAgo),
+      receivedAt: h(hoursAgo),
+    });
+    // TAS1's yard is Tashkent (41.31, 69.24); Osh-side 40.53, 72.8 is not.
+    const trip = await newBatch();
+    await db.insert(driverPositions).values([
+      fixRow(trip, '41.31', '69.24', 30),
+      fixRow(trip, '40.53', '72.8', 20),
+      fixRow(trip, '41.3', '69.25', 10),
+      // A cell-tower fix «elsewhere» places nothing, so it breaks no stretch.
+      fixRow(trip, '40.53', '72.8', 5, 20_000),
+      fixRow(trip, '41.31', '69.24', 1),
+    ]);
+    const since = (await latestPositions([{ id: trip, destCode: 'TAS1' }])).get(trip)!.gateSince;
+    expect(Math.abs(since!.getTime() - h(10).getTime())).toBeLessThan(5_000);
+    // A destination with no yard on the map: nobody can say.
+    expect((await latestPositions([{ id: trip, destCode: 'NOPE' }])).get(trip)!.gateSince).toBeNull();
+
+    // Left the yard since: no stretch stands.
+    const left = await newBatch();
+    await db.insert(driverPositions).values([fixRow(left, '41.31', '69.24', 30), fixRow(left, '40.53', '72.8', 2)]);
+    expect((await latestPositions([{ id: left, destCode: 'TAS1' }])).get(left)!.gateSince).toBeNull();
   });
 });
 

@@ -70,6 +70,7 @@ describe('a truck between unmapped warehouses', () => {
       source: 'device',
       ageMinutes: 3,
       fresh: true,
+      gateSince: null,
     });
     expect(truck).not.toBeNull();
     expect(truck!.x).toBe(72.5);
@@ -95,6 +96,7 @@ describe('a truck between unmapped warehouses', () => {
       source: 'device',
       ageMinutes: 20 * 60,
       fresh: false,
+      gateSince: null,
     });
     expect(truck).not.toBeNull();
     // `batchRow` departed at the start of this file, after the fix: the walk

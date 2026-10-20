@@ -45,6 +45,10 @@ export interface MapTruck {
   remainingDays: [number, number];
   dated: boolean;
   atGate: boolean;
+  /** At the gate: days since the phone first put it there; null elsewhere. */
+  gateDays: number | null;
+  /** Standing there unloaded past the stuck days. */
+  gateStuck: boolean;
   departedAt: string;
   checkpointKey: string | null;
   vehiclePlate: string | null;
@@ -271,7 +275,7 @@ export function TrackingMap({
               ? `🟢 ${t('liveFix', { ago: ago(selTruck.fixAgeMinutes ?? 0) })}`
               : `🟡 ${t('estimated')}${selTruck.fixAgeMinutes !== null ? ` · ${t('lastFix', { ago: ago(selTruck.fixAgeMinutes) })}` : ''}`}
           </p>
-          <p className={`text-xs font-semibold ${selTruck.overdue ? 'text-bad' : ''}`}>
+          <p className={`text-xs font-semibold ${selTruck.overdue || selTruck.gateStuck ? 'text-bad' : ''}`}>
             📍 {selTruck.atGate ? t('atGate') : t(`seg_${selTruck.segKey}`)}
             {/* A truck drawn at its phone's fix with NO schedule behind it
                 (an unmapped pair, or since round B a generic one) has no
@@ -279,9 +283,11 @@ export function TrackingMap({
                 and a truck pinned in Uzbekistan has no date in the
                 customer's cabinet, so none here (`dated`, O15): the bot's
                 and the cabinet map's rule. */}
-            {selTruck.overdue
-              ? ` — ${selTruck.atGate ? t('atGateLate') : t('overdue')}`
-              : selTruck.dated
+            {selTruck.atGate && selTruck.gateDays !== null
+              ? ` · ${t('atGateDays', { n: selTruck.gateDays })}${selTruck.gateStuck ? ` — ${t('atGateStuck')}` : ''}`
+              : selTruck.overdue
+                ? ` — ${t('overdue')}`
+                : selTruck.dated
                 ? ` · ${t('eta', { min: selTruck.remainingDays[0], max: selTruck.remainingDays[1] })}`
                 : ''}
           </p>
