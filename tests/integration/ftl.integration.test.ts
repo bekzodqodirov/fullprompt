@@ -521,8 +521,11 @@ describe('the logist’s hint at departure (7a)', () => {
 
   it('one person under two codes (a shared phone) is one owner', async () => {
     const a = await mintUser('phones');
-    const one = await mintClient(a, ['+998 90 111 22 33']);
-    const two = await mintClient(a, ['901112233']);
+    // A run-scoped number: a fixed one would match another file's client
+    // book (telegram-live's +998901112233 did, and picked this file's client).
+    const phone = `9${S}${next()}`.slice(0, 9);
+    const one = await mintClient(a, [`+998 ${phone.slice(0, 2)} ${phone.slice(2, 5)} ${phone.slice(5, 7)} ${phone.slice(7)}`]);
+    const two = await mintClient(a, [phone]);
     const r1 = await cargo({ clientId: one.id, sellerId: a, m3: 30, kg: 3000 });
     const r2 = await cargo({ clientId: two.id, sellerId: a, m3: 30, kg: 3000 });
     const [yw] = await db.select({ id: warehouses.id }).from(warehouses).where(eq(warehouses.code, 'YW'));
