@@ -10,7 +10,7 @@ import { receipts } from '@/modules/platform/db/schema';
 import { eq } from 'drizzle-orm';
 import { FtlError, ftlDoorFor } from '@/modules/wms/ftl/door';
 import { isLoadMode } from '@/modules/wms/ftl/sql';
-import { setDealLoad, setReceiptLoad } from '@/modules/wms/ftl/service';
+import { setDealLoad, setReceiptLoad, type CascadeSkip } from '@/modules/wms/ftl/service';
 
 /**
  * The prixod card's «Yuk turi» (0135, the owner's 1a 2a 6a). Awaited from the
@@ -22,7 +22,12 @@ import { setDealLoad, setReceiptLoad } from '@/modules/wms/ftl/service';
  * refusal).
  */
 export type LoadActionResult =
-  | { ok: true; changed: boolean; cascade?: { changed: number; skipped: number } }
+  | {
+      ok: true;
+      changed: boolean;
+      /** The deal's own cascade — named prixod by prixod, never silent. */
+      cascade?: { changed: number; skipped: { number: string | null; why: CascadeSkip }[] };
+    }
   | { ok: false; error: string; month?: string; sellerName?: string | null };
 
 function refusalOf(err: unknown): LoadActionResult {
@@ -63,7 +68,9 @@ export async function setReceiptLoadAction(receiptId: string, mode: unknown): Pr
 
 /**
  * The office's «Bitimni ham LTL qilish» — the accountant cannot open a deal
- * card, so the deal's own mode is offered here for the deal THIS prixod is on.
+ * card, so the deal's own mode is offered here for the deal THIS prixod is on
+ * — and its «FTL'ni ofis nomidan tasdiqlash», which takes a seller's mark as
+ * the office's and passes it to the cargo it had stopped short of.
  * The door is office-only in the service; the deal id is the receipt's, never
  * one a form posted.
  */
@@ -82,7 +89,12 @@ export async function setLinkedDealLoadAction(receiptId: string, mode: unknown):
     return {
       ok: true,
       changed: result.changed,
-      cascade: result.cascade ? { changed: result.cascade.changed, skipped: result.cascade.skipped.length } : undefined,
+      cascade: result.cascade
+        ? {
+            changed: result.cascade.changed,
+            skipped: result.cascade.skipped.map((skip) => ({ number: skip.number, why: skip.why })),
+          }
+        : undefined,
     };
   } catch (err) {
     return refusalOf(err);

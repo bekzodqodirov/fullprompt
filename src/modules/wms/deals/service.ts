@@ -534,6 +534,14 @@ export async function linkReceipt(
   receiptId: string,
   dealId: string | null,
   ctx: AuditContext,
+  /**
+   * The presser's LTL/FTL door (0135). REQUIRED, and null means «nobody
+   * vouches»: the re-file never carries the deal's FTL. Given, the prixod
+   * inherits only when the presser may reach it — the office, or the seller
+   * it is stamped to (a colleague filing it onto an FTL job must not take it
+   * out of that seller's KPI).
+   */
+  ftlDoor: FtlDoor | null,
 ): Promise<void> {
   const receipt = await db.query.receipts.findFirst({ where: eq(receipts.id, receiptId) });
   if (!receipt) throw new DealError('receipt_not_found');
@@ -554,7 +562,8 @@ export async function linkReceipt(
   // LTL / FTL (0135): may the re-file carry the new deal's FTL? Pool probe
   // first (#714). A re-file to an LTL deal and a detach NEVER downgrade — the
   // prixod keeps its mode; FTL → LTL is only the office's explicit decision.
-  const ftlOn = dealId ? await ftlReady() : false;
+  const ftlOn = dealId && ftlDoor ? await ftlReady() : false;
+  let ftlInherited = false;
   await db.transaction(async (tx) => {
     // The deal row FOR SHARE before anything else (a cascade on that deal
     // holds it FOR NO KEY UPDATE, so the two cannot interleave and lose the
@@ -597,7 +606,7 @@ export async function linkReceipt(
       )
       .where(eq(receipts.id, receiptId));
     if (dealId) await stampCalcLink(tx, receiptId, dealId);
-    if (ftlLocked) await inheritFromDealTx(tx, receiptId, ctx.actorId ?? null, ftlLocked);
+    if (ftlLocked && ftlDoor) ftlInherited = await inheritFromDealTx(tx, receiptId, ftlDoor, ftlLocked, ctx);
     // A «Kompensatsiya» for this prixod's lost cargo (0105) is the job's
     // price taken back: it FOLLOWS the prixod to the right job (or off it),
     // in this transaction, under the row lock the UPDATE above took — or the
@@ -611,6 +620,14 @@ export async function linkReceipt(
       after: { deal: dealId },
     });
   });
+  // A seller's own re-file that carried an FTL deal's mark onto his prixod is
+  // the same news as his own mark (FtlMarked): it is how a light lot leaves
+  // his month and can lift its density band.
+  if (ftlInherited && ftlDoor && !ftlDoor.office) {
+    await notifyFtlMarked({ kind: 'receipt', id: receiptId, actorId: ftlDoor.actorId }).catch((err) =>
+      logger.error({ err, receiptId }, '[ftl] FtlMarked notice failed'),
+    );
+  }
   // Round 26: «sdelkaga qaysi yukligini ulaganimdan keyin…» — linking is where
   // the owner starts, and by then the cargo is usually already sitting in the
   // Chinese warehouse. A confirmed receipt IS received cargo, so the link

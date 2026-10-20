@@ -24,6 +24,7 @@ import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { db } from '@/modules/platform/db/client';
 import { stampedCargo, type StampedCargo } from '@/modules/wms/staff/cargo';
 import { KPI_LOAD } from '@/modules/wms/ftl/sql';
+import { ftlReady } from '@/modules/wms/ftl/service';
 import { maySeeStaffMoney } from '@/modules/wms/staff/door';
 import { mayOpenClientLedger } from '@/modules/wms/finance/scope';
 
@@ -85,9 +86,13 @@ export default async function UpsalePage({
     // LTL — with the FTL beside it (0135). The upsale money above is
     // untouched by the mode (his 5a).
     const cargoScope = scope === 'own' ? ({ kind: 'own', userId: actor.id } as const) : ({ kind: 'all' } as const);
+    // One migration behind (0135) nothing is FTL: all cargo is the KPI's and
+    // the FTL beside it is empty — the payer lists and the approvals below
+    // need nothing new and must not vanish with it.
+    const ftlOn = await ftlReady();
     const [ltlCargo, ftlCargo] = await Promise.all([
-      stampedCargo(db, period, cargoScope, KPI_LOAD),
-      stampedCargo(db, period, cargoScope, 'ftl'),
+      stampedCargo(db, period, cargoScope, ftlOn ? KPI_LOAD : 'all'),
+      ftlOn ? stampedCargo(db, period, cargoScope, 'ftl') : Promise.resolve([]),
     ]);
     const keep = (row: { sellerId: string }) => scope === 'own' || !params.hodim || row.sellerId === params.hodim;
     cargo = ltlCargo.filter(keep);

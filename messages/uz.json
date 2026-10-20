@@ -6017,13 +6017,15 @@
       "kpi_paid": "bu oy uchun KPI to‘langan",
       "hand": "prixod kartasida qo‘lda belgilangan",
       "other_seller": "boshqa sotuvchi nomida (ofis o‘zgartiradi)",
-      "other_client": "boshqa mijozga o‘tkazilgan"
+      "other_client": "boshqa mijozga o‘tkazilgan",
+      "no_seller": "sotuvchisiz — mijozga sotuvchi belgilansa o‘tadi",
+      "stamp_moved": "sotuvchisi hozirgina o‘zgardi — qaytadan bosing"
     },
     "source": {
       "hand": "Prixod kartasida qo‘lda belgilangan.",
       "deal": "Bitimdan ({code}).",
       "earlierDeal": "Oldingi bitimdan ({code}) qolgan — LTL’ga faqat admin, logist yoki buxgalter qaytaradi.",
-      "notReached": "Bitim {code} FTL, lekin bu prixodga o‘tmagan: boshqa sotuvchi nomida yoki oyi uchun KPI to‘langan.",
+      "notReached": "Bitim {code} FTL, lekin bu prixodga o‘tmagan — {why}.",
       "dealLtl": "Bitim {code} — LTL.",
       "default": "Bitim yo‘q — odatiy LTL."
     },
@@ -6042,6 +6044,18 @@
       "busy": "Hozir band — bir ozdan keyin qayta bosing.",
       "validation": "Noto‘g‘ri qiymat.",
       "forbidden": "Ruxsat yo‘q."
+    },
+    "reach": {
+      "other_client": "prixod boshqa mijozga o‘tkazilgan",
+      "kpi_paid": "uning oyi uchun KPI to‘langan",
+      "no_seller": "bitimni sotuvchi belgilagan, prixod esa hech kimning nomida emas",
+      "other_seller": "bitimni sotuvchi belgilagan, prixod esa boshqa sotuvchi nomida",
+      "linked": "uni bitimga ofis yoki prixodning o‘z sotuvchisi biriktirmagan"
+    },
+    "widenDeal": "Bitim {code} FTL’ini ofis nomidan tasdiqlash — barcha prixodlariga o‘tadi",
+    "leadErrors": {
+      "ftl_office_only": "FTL lidni LTL’ga qaytarish va uning egasini almashtirish — faqat admin, logist yoki buxgalter.",
+      "ftl_not_yours": "Faqat o‘z lidingizni FTL qila olasiz."
     }
   }
 }

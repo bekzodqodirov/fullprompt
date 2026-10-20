@@ -6017,13 +6017,15 @@
       "kpi_paid": "该月的 KPI 已发放",
       "hand": "在收货单卡片上手动设置",
       "other_seller": "属于其他销售员（由办公室更改）",
-      "other_client": "已转给其他客户"
+      "other_client": "已转给其他客户",
+      "no_seller": "无销售——客户指定销售后即传入",
+      "stamp_moved": "其销售刚刚变更——请再按一次"
     },
     "source": {
       "hand": "在收货单卡片上手动设置。",
       "deal": "来自交易（{code}）。",
       "earlierDeal": "来自之前的交易（{code}）— 只有管理员、物流员或会计可以改回 LTL。",
-      "notReached": "交易 {code} 是 FTL，但未传到此收货单：属于其他销售员，或该月 KPI 已发放。",
+      "notReached": "交易 {code} 为整车（FTL），但未传到此入库单：{why}。",
       "dealLtl": "交易 {code} — LTL。",
       "default": "无交易 — 默认 LTL。"
     },
@@ -6042,6 +6044,18 @@
       "busy": "当前繁忙 — 请稍后再按。",
       "validation": "值无效。",
       "forbidden": "无权限。"
+    },
+    "reach": {
+      "other_client": "入库单已转给其他客户",
+      "kpi_paid": "其所在月份的 KPI 已发放",
+      "no_seller": "交易由销售标记，而入库单未记在任何人名下",
+      "other_seller": "交易由销售标记，而入库单记在另一位销售名下",
+      "linked": "将其关联到交易的既不是办公室，也不是该入库单的销售"
+    },
+    "widenDeal": "以办公室名义确认交易 {code} 的整车（FTL）——传到其全部入库单",
+    "leadErrors": {
+      "ftl_office_only": "只有管理员、物流或会计可以把整车（FTL）线索改回拼箱（LTL）或更换其负责人。",
+      "ftl_not_yours": "只能把自己的线索标记为整车（FTL）。"
     }
   }
 }

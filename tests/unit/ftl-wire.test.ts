@@ -6,6 +6,7 @@ import { FTL_REFUSALS, isFtlRefusal, leadDealMoveRefusal, mayRevertFtl, ftlDoorF
 import { sql } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { loadFilterSql } from '@/modules/wms/ftl/sql';
+import { CASCADE_SKIPS } from '@/modules/wms/ftl/service';
 
 /**
  * LTL / FTL (0135) — the wiring a behavioural test cannot see on its own:
@@ -18,7 +19,12 @@ import { loadFilterSql } from '@/modules/wms/ftl/sql';
 
 const LOCALES = ['uz', 'ru', 'en', 'zh-CN'] as const;
 type Bundle = {
-  ftl: { errors: Record<string, string>; skip: Record<string, string> };
+  ftl: {
+    errors: Record<string, string>;
+    skip: Record<string, string>;
+    reach: Record<string, string>;
+    leadErrors: Record<string, string>;
+  };
   deals: { errors: Record<string, string> };
 };
 const bundle = (locale: string) => JSON.parse(readFileSync(`messages/${locale}.json`, 'utf8')) as Bundle;
@@ -45,9 +51,50 @@ describe('a prixod that gets a deal carries the deal’s FTL (1a)', () => {
   it('confirmReceipt inherits after its own INSERT writes deal_id', () => {
     const body = bodyOf(read('src/modules/wms/receipts/service.ts'), 'export async function confirmReceipt(');
     expect(body.indexOf('inheritFromDealTx(tx, receipt!.id')).toBeGreaterThan(body.indexOf('.insert(receipts)'));
-    // Asked BEFORE the transaction (#714), and only when there is a deal to read.
-    expect(body).toMatch(/const ftlOn = input\.clientId && input\.dealId \? await ftlReady\(\) : false;/);
+    // Asked BEFORE the transaction (#714), only when there is a deal to read
+    // and a presser who vouches (absent door = no inheritance).
+    expect(body).toMatch(/const ftlOn = input\.clientId && input\.dealId && ftlDoor \? await ftlReady\(\) : false;/);
     expect(body.indexOf('await ftlReady()')).toBeLessThan(body.indexOf('db.transaction('));
+    // The deal row FOR SHARE before the prixod exists — the cascade holds it FOR NO KEY UPDATE.
+    expect(body.indexOf("FROM deals WHERE id = ${input.dealId}::uuid FOR SHARE")).toBeGreaterThan(body.indexOf('db.transaction('));
+    expect(body.indexOf('FOR SHARE')).toBeLessThan(body.indexOf('.insert(receipts)'));
+    expect(body).toContain('inheritFromDealTx(tx, receipt!.id, ftlDoor, null, ctx)');
+  });
+
+  it('the doors that link pass the PRESSER’s door — the receive wizard and the re-file', () => {
+    expect(read('src/app/(protected)/receive/actions.ts')).toContain('{ onBehalf, ftlDoor: ftlDoorFor(actor) }');
+    expect(read('src/app/(protected)/bitimlar/actions.ts')).toContain('linkReceipt(receiptId, dealId, ctx, ftlDoorFor(actor))');
+    const deals = read('src/modules/wms/deals/service.ts');
+    const link = bodyOf(deals, 'export async function linkReceipt(');
+    // REQUIRED, never optional: an optional door fails OPEN (null = nobody vouches).
+    const signature = deals.slice(deals.indexOf('export async function linkReceipt('), deals.indexOf('): Promise<void> {', deals.indexOf('export async function linkReceipt(')));
+    expect(signature).toMatch(/\bftlDoor: FtlDoor \| null,\s*$/);
+    expect(link).toContain('inheritFromDealTx(tx, receiptId, ftlDoor, ftlLocked, ctx)');
+    // A seller's own re-file that carried the mark is told to the office like his own mark.
+    expect(link).toMatch(/if \(ftlInherited && ftlDoor && !ftlDoor\.office\) \{\s*await notifyFtlMarked\(/);
+    // The gate itself: the office reaches what the mark reaches, anybody else only his own stamp.
+    expect(bodyOf(read('src/modules/wms/ftl/service.ts'), 'function inheritSql(')).toContain(
+      "opts.presser === null || opts.presser.office ? sql`true` : sql`r.sales_manager_id = ${opts.presser.actorId}::uuid`",
+    );
+  });
+
+  it('a client correction locks both stamps first and takes back what the old job decided', () => {
+    const body = bodyOf(read('src/modules/wms/receipts/edit.ts'), 'export async function assignReceiptClient(');
+    const update = body.indexOf('.update(receipts)');
+    expect(body.indexOf('takeKpiSellerLocks(tx, [receipt.salesManagerId, client.salesManagerId])')).toBeGreaterThan(-1);
+    expect(body.indexOf('takeKpiSellerLocks(')).toBeLessThan(update);
+    expect(body.indexOf('dropFtlOnClientChangeTx(tx, receiptId,')).toBeGreaterThan(update);
+    expect(body.indexOf('await ftlReady()')).toBeLessThan(body.indexOf('db.transaction('));
+    // …keeping only the office's own hand decision.
+    expect(bodyOf(read('src/modules/wms/ftl/service.ts'), 'export async function dropFtlOnClientChangeTx(')).toContain(
+      "rlm.mode = 'ftl' AND (NOT rlm.hand OR NOT rlm.by_office)",
+    );
+  });
+
+  it('cargo stamped later takes its seller’s mark, under his lock', () => {
+    const body = bodyOf(read('src/modules/wms/staff/stamp.ts'), 'export async function stampUnattributedCargo(');
+    expect(body.indexOf('takeKpiSellerLocks(tx, [managerId])')).toBeLessThan(body.indexOf('UPDATE receipts SET sales_manager_id'));
+    expect(body.indexOf('inheritStampedTx(tx,')).toBeGreaterThan(body.indexOf('UPDATE receipts SET sales_manager_id'));
   });
 
   it('every .update(receipts) that writes dealId also inherits — and never downgrades', () => {
@@ -124,6 +171,40 @@ describe('the paid-month freeze takes the payout’s own lock (6a)', () => {
   });
 });
 
+describe('one migration behind, nothing that worked on 134 breaks', () => {
+  it('the celebrations name the side tables only behind the readiness probe — a lost post is never retried', () => {
+    const body = strip(read('src/modules/wms/staff/celebrate.ts'));
+    for (const fn of ['export async function celebrateLeadWon(', 'async function wonFacts(', 'export async function celebrateFirstCargo(']) {
+      const part = bodyOf(body, fn);
+      for (const table of ['lead_ftl', 'receipt_load_mode']) {
+        for (const m of part.matchAll(new RegExp(`FROM ${table}`, 'g'))) {
+          const before = part.slice(Math.max(0, m.index! - 120), m.index!);
+          expect(before, `${fn} ${table}`).toMatch(/ftlOn \? sql`(NOT )?EXISTS \(SELECT 1 $/);
+        }
+      }
+    }
+  });
+
+  it('the upsale screen and the seller report read ALL cargo when the round is not there', () => {
+    expect(read('src/app/(protected)/upsale/page.tsx')).toContain('ftlOn ? KPI_LOAD : \'all\'');
+    const report = read('src/modules/wms/crm/seller-report.ts');
+    expect(report).toContain("const kpiLoad = ftlOn ? KPI_LOAD : 'all';");
+    expect(report).toContain("ftlOn ? KPI_LOAD : 'all'");
+  });
+});
+
+describe('the form field (S1, A4)', () => {
+  it('is uncontrolled, keyed on the stored mode, and a locked chip posts nothing', () => {
+    const field = strip(read('src/components/load-mode-field.tsx'));
+    expect(field).toContain('defaultValue={load.initial}');
+    expect(field).not.toMatch(/value=\{mode\}/);
+    expect(field).not.toMatch(/type="hidden" name="loadMode"/);
+    for (const form of ['src/app/(protected)/bitimlar/deal-form.tsx', 'src/app/(protected)/crm/leads/lead-form.tsx']) {
+      expect(read(form), form).toContain("<LoadModeField key={`load-${load?.initial ?? 'none'}`} load={load ?? null} />");
+    }
+  });
+});
+
 describe('the departure hint (7a)', () => {
   it('fires after departBatch commits, and the truck lock stays the first await', () => {
     const body = bodyOf(read('src/modules/wms/scanning/service.ts'), 'export async function departBatch(');
@@ -167,8 +248,14 @@ describe('the door, pure (2a)', () => {
       for (const code of ['ftl_office_only', 'ftl_not_yours', 'server_behind']) {
         expect(m.deals.errors[code], `${locale} deals.errors.${code}`).toBeTruthy();
       }
-      for (const why of ['kpi_paid', 'hand', 'other_seller', 'other_client']) {
+      for (const why of CASCADE_SKIPS) {
         expect(m.ftl.skip[why], `${locale} ftl.skip.${why}`).toBeTruthy();
+      }
+      for (const why of ['other_client', 'kpi_paid', 'no_seller', 'other_seller', 'linked']) {
+        expect(m.ftl.reach[why], `${locale} ftl.reach.${why}`).toBeTruthy();
+      }
+      for (const code of ['ftl_office_only', 'ftl_not_yours']) {
+        expect(m.ftl.leadErrors[code], `${locale} ftl.leadErrors.${code}`).toBeTruthy();
       }
     }
     expect(isFtlRefusal('ftl_office_only')).toBe(true);

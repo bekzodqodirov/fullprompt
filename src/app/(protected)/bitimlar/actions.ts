@@ -325,8 +325,9 @@ export async function linkReceiptAction(
   dealId: string | null,
 ): Promise<DealFormState> {
   // G1 a: the VED keeps ALL prixod linking — link, move, detach — and
-  // `linkReceipt` audits each one under the presser's name.
-  const state = await run('work', (ctx) => linkReceipt(receiptId, dealId, ctx));
+  // `linkReceipt` audits each one under the presser's name. The presser's
+  // FTL door decides whether the move carries an FTL deal's mark (0135).
+  const state = await run('work', (ctx, actor) => linkReceipt(receiptId, dealId, ctx, ftlDoorFor(actor)));
   revalidatePath(`/receipts/${receiptId}`);
   return state;
 }

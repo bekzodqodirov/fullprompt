@@ -49,7 +49,7 @@ export function DealForm({
   /** A sealed VED calculation stands on this deal — the quote is not editable. */
   quoteLocked?: boolean;
   /** LTL / FTL (0135): the stored mode and whether the viewer is the office; null = server behind. */
-  load?: { initial: 'ltl' | 'ftl'; office: boolean } | null;
+  load?: { initial: 'ltl' | 'ftl'; office: boolean; creating?: boolean } | null;
   /**
    * The row's own `updated_at`, keying ONLY the inputs the card can also
    * write. Keying the whole form would remount it after every save and take
@@ -142,7 +142,7 @@ export function DealForm({
       )}
 
       {/* LTL / FTL (0135) — outside the lock above: a sealed price does not lock the mode. */}
-      <LoadModeField load={load ?? null} />
+      <LoadModeField key={`load-${load?.initial ?? 'none'}`} load={load ?? null} />
 
       <div className="grid grid-cols-2 gap-2">
         {dealId && (
@@ -182,7 +182,7 @@ export function DealForm({
 
       {state.ok && state.ftlChanged !== undefined ? (
         <div className="text-2xs text-ink-600" data-testid="deal-ftl-cascade">
-          <p>{tf('cascadeChanged', { n: state.ftlChanged })}</p>
+          {state.ftlChanged > 0 ? <p>{tf('cascadeChanged', { n: state.ftlChanged })}</p> : null}
           {(state.ftlSkipped ?? []).map((skip, index) => (
             <p key={`${skip.number}-${index}`} className="text-warn">
               {tf('cascadeSkipped', { number: skip.number ?? '—', why: tf(`skip.${skip.why}` as 'skip.hand') })}

@@ -121,7 +121,7 @@ beforeAll(async () => {
     },
     ctx(),
   );
-  await linkReceipt(receiptId, dealId, ctx());
+  await linkReceipt(receiptId, dealId, ctx(), null);
   boxIds = (await db.select().from(boxes).where(eq(boxes.lotId, lotId))).map((b) => b.id);
 });
 

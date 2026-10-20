@@ -15,6 +15,8 @@
 -- receipt_load_mode: no row = LTL, following its deal. A row is either an INHERITED FTL (hand = false, the deal
 --   it came FROM named — the office's revert of that deal takes back exactly what that deal gave) or a person's
 --   HAND decision on the prixod card (hand = true, ltl or ftl, which a deal change never overrides).
+--   `by_office` says whether the office wrote it: a client correction takes back a seller's own mark (it would
+--   otherwise land on the new client's seller) and keeps the office's (wms/ftl/service.ts).
 --
 -- gsr_ai_reader (0080, allowlist default-deny) is granted NOTHING on these tables (stated).
 -- The users FKs are SET NULL (a test suite deletes fixture users; jamoa guruhi's reason). An inherited row
@@ -38,6 +40,7 @@ CREATE TABLE "receipt_load_mode" (
   "receipt_id" uuid PRIMARY KEY REFERENCES "receipts"("id") ON DELETE CASCADE,
   "mode" text NOT NULL,
   "hand" boolean NOT NULL,
+  "by_office" boolean NOT NULL DEFAULT false,
   "from_deal_id" uuid REFERENCES "deals"("id") ON DELETE CASCADE,
   "set_by" uuid REFERENCES "users"("id") ON DELETE SET NULL,
   "set_at" timestamptz NOT NULL DEFAULT now(),
@@ -48,3 +51,7 @@ CREATE TABLE "receipt_load_mode" (
 );
 
 CREATE INDEX "receipt_load_mode_deal_idx" ON "receipt_load_mode" ("from_deal_id") WHERE "from_deal_id" IS NOT NULL;
+
+-- The departure hint's «never the same prixod twice» reads only its own notices (ftl/hint.ts): without this
+-- the dedupe is a sequential scan of every notification ever sent, inside the warehouse's depart press.
+CREATE INDEX "notifications_ftl_hint_idx" ON "notifications" ("created_at") WHERE "type" = 'FtlSuspected';

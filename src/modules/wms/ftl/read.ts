@@ -79,8 +79,18 @@ export interface ReceiptLoadView {
     | 'earlier_deal'
     /** No row and no FTL deal: the default. */
     | 'default'
-    /** No row, the deal IS FTL, but the mark did not reach this prixod (another seller's stamp, or its month is paid). */
+    /** No row, the deal IS FTL, but the mark did not reach this prixod — `notReached` says why. */
     | 'not_reached';
+  /**
+   * Why an FTL deal's mark stopped short of this prixod (source `not_reached`):
+   * it now belongs to another client; its month is paid; the mark is a
+   * seller's and the prixod is stamped to nobody or to a colleague; or it was
+   * filed onto the deal by somebody whose press may not reach it (`linked` —
+   * the office confirms the mark and it passes).
+   */
+  notReached: 'other_client' | 'kpi_paid' | 'no_seller' | 'other_seller' | 'linked' | null;
+  /** The deal's FTL mark is the office's (it reaches every prixod of the client). */
+  dealMarkByOffice: boolean;
   fromDealCode: string | null;
   deal: { id: string; code: string; ftl: boolean } | null;
   sellerId: string | null;
@@ -94,7 +104,14 @@ export async function receiptLoadView(receiptId: string): Promise<ReceiptLoadVie
       SELECT coalesce(rlm.mode, 'ltl') AS mode, rlm.hand, rlm.from_deal_id::text AS from_deal_id,
              fd.code AS from_deal_code,
              r.deal_id::text AS deal_id, d.code AS deal_code,
-             EXISTS (SELECT 1 FROM deal_ftl df WHERE df.deal_id = r.deal_id) AS deal_ftl,
+             (df.deal_id IS NOT NULL) AS deal_ftl, coalesce(df.by_office, false) AS deal_office,
+             CASE WHEN df.deal_id IS NULL THEN NULL
+                  WHEN r.client_id IS DISTINCT FROM d.client_id THEN 'other_client'
+                  WHEN ${kpiPaidMonthSql('r')} THEN 'kpi_paid'
+                  WHEN NOT df.by_office AND r.sales_manager_id IS NULL THEN 'no_seller'
+                  WHEN NOT df.by_office AND r.sales_manager_id IS DISTINCT FROM df.marked_by THEN 'other_seller'
+                  ELSE 'linked'
+             END AS reach,
              r.sales_manager_id::text AS seller_id, u.full_name AS seller_name,
              ${receivedMonthSql(sql`r.received_at`)} AS month,
              ${kpiPaidMonthSql('r')} AS paid
@@ -102,6 +119,7 @@ export async function receiptLoadView(receiptId: string): Promise<ReceiptLoadVie
         LEFT JOIN receipt_load_mode rlm ON rlm.receipt_id = r.id
         LEFT JOIN deals fd ON fd.id = rlm.from_deal_id
         LEFT JOIN deals d ON d.id = r.deal_id
+        LEFT JOIN deal_ftl df ON df.deal_id = r.deal_id
         LEFT JOIN users u ON u.id = r.sales_manager_id
        WHERE r.id = ${receiptId}::uuid`)) as unknown as {
       mode: LoadMode;
@@ -111,6 +129,8 @@ export async function receiptLoadView(receiptId: string): Promise<ReceiptLoadVie
       deal_id: string | null;
       deal_code: string | null;
       deal_ftl: boolean;
+      deal_office: boolean;
+      reach: NonNullable<ReceiptLoadView['notReached']> | null;
       seller_id: string | null;
       seller_name: string | null;
       month: string;
@@ -129,6 +149,8 @@ export async function receiptLoadView(receiptId: string): Promise<ReceiptLoadVie
     return {
       mode: row.mode,
       source,
+      notReached: source === 'not_reached' ? row.reach : null,
+      dealMarkByOffice: row.deal_office,
       fromDealCode: row.from_deal_code,
       deal: row.deal_id ? { id: row.deal_id, code: row.deal_code ?? '—', ftl: row.deal_ftl } : null,
       sellerId: row.seller_id,

@@ -6017,13 +6017,15 @@
       "kpi_paid": "the KPI for its month is paid",
       "hand": "set by hand on the receipt card",
       "other_seller": "stamped to another seller (the office changes it)",
-      "other_client": "moved to another client"
+      "other_client": "moved to another client",
+      "no_seller": "no seller — passes once the client gets a seller",
+      "stamp_moved": "its seller just changed — press again"
     },
     "source": {
       "hand": "Set by hand on the receipt card.",
       "deal": "From the deal ({code}).",
       "earlierDeal": "Left from an earlier deal ({code}) — only an admin, logist or accountant can turn it back to LTL.",
-      "notReached": "Deal {code} is FTL, but it did not reach this receipt: another seller’s cargo, or its month’s KPI is paid.",
+      "notReached": "Deal {code} is FTL, but it did not pass to this receipt: {why}.",
       "dealLtl": "Deal {code} — LTL.",
       "default": "No deal — LTL by default."
     },
@@ -6042,6 +6044,18 @@
       "busy": "Busy right now — press again in a moment.",
       "validation": "Invalid value.",
       "forbidden": "Not allowed."
+    },
+    "reach": {
+      "other_client": "the receipt was moved to another client",
+      "kpi_paid": "its month's KPI is already paid",
+      "no_seller": "a seller marked the deal, and the receipt is in nobody's name",
+      "other_seller": "a seller marked the deal, and the receipt is in another seller's name",
+      "linked": "it was filed onto the deal by neither the office nor the receipt's own seller"
+    },
+    "widenDeal": "Confirm deal {code}'s FTL as the office's — it passes to all its receipts",
+    "leadErrors": {
+      "ftl_office_only": "Only an admin, logist or accountant can turn an FTL lead back to LTL or change its owner.",
+      "ftl_not_yours": "You can mark only your own lead as FTL."
     }
   }
 }

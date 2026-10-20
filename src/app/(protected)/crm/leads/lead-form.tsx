@@ -63,7 +63,7 @@ export function LeadForm({
    */
   quoteLocked?: boolean;
   /** LTL / FTL (0135): the stored mode and whether the viewer is the office; null = server behind. */
-  load?: { initial: 'ltl' | 'ftl'; office: boolean } | null;
+  load?: { initial: 'ltl' | 'ftl'; office: boolean; creating?: boolean } | null;
   children?: React.ReactNode;
 }) {
   const t = useTranslations('crm');
@@ -214,7 +214,7 @@ export function LeadForm({
       )}
 
       {/* LTL / FTL (0135) — outside the lock above: a sealed price does not lock the mode. */}
-      <LoadModeField load={load ?? null} />
+      <LoadModeField key={`load-${load?.initial ?? 'none'}`} load={load ?? null} />
 
       <div className="flex flex-wrap gap-2">
         <label className="text-sm">
@@ -254,8 +254,10 @@ export function LeadForm({
               ? t('badDate')
               : state.error === 'bad_option'
                 ? t('badOption')
-                : isFtlRefusal(state.error)
-                  ? tf(`errors.${state.error}`)
+                : state.error === 'ftl_office_only' || state.error === 'ftl_not_yours'
+                  ? tf(`leadErrors.${state.error}`)
+                  : isFtlRefusal(state.error)
+                    ? tf(`errors.${state.error}`)
                   : tc('error')}
         </p>
       )}

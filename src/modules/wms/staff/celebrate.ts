@@ -1,4 +1,5 @@
 import { sql } from 'drizzle-orm';
+import { ftlReady } from '../ftl/service';
 import { db } from '../../platform/db/client';
 import { logger } from '../../platform/logger';
 import { tashkentDayStart, tashkentMonthStart } from '../../platform/time/tashkent';
@@ -85,6 +86,10 @@ export async function celebrateLeadWon(event: {
   const leadId = typeof event.payload.leadId === 'string' ? event.payload.leadId : null;
   if (!leadId) return;
   try {
+    // One migration behind (0135 not applied) the side table is not there:
+    // the win is still celebrated, as LTL — a missing table must never lose
+    // the post (the event is already claimed and nothing would retry it).
+    const ftlOn = await ftlReady();
     const rows = await db.execute<{
       owner_id: string | null;
       client_code: string | null;
@@ -97,7 +102,7 @@ export async function celebrateLeadWon(event: {
       SELECT l.owner_id::text AS owner_id, c.client_code,
              l.quoted_amount::text AS amount, l.quoted_currency AS currency,
              l.quoted_volume_m3::text AS m3, l.quoted_weight_kg::text AS kg,
-             EXISTS (SELECT 1 FROM lead_ftl lf WHERE lf.lead_id = l.id) AS ftl
+             ${ftlOn ? sql`EXISTS (SELECT 1 FROM lead_ftl lf WHERE lf.lead_id = l.id)` : sql`false`} AS ftl
         FROM leads l
         LEFT JOIN clients c ON c.id = l.client_id
        WHERE l.id = ${leadId}::uuid`);
@@ -106,7 +111,7 @@ export async function celebrateLeadWon(event: {
     if (!lead || !heroId) return;
     const hero = await heroOf(heroId);
     if (!hero) return;
-    const html = leadWonHtml(hero, await wonFacts(leadId, lead), await rotationIndex('won'));
+    const html = leadWonHtml(hero, await wonFacts(leadId, lead, ftlOn), await rotationIndex('won'));
     await queueGroupPost({ kind: 'won', dedupeKey: `won:${leadId}`, html, subjectUserId: heroId, withMedia: true });
   } catch (err) {
     logger.error({ err, leadId }, '[staff-group] lead-won celebration failed');
@@ -139,6 +144,7 @@ async function wonFacts(
     kg: string | null;
     ftl: boolean;
   },
+  ftlOn: boolean,
 ): Promise<WonFacts> {
   let monthWins: number | null = null;
   let monthUsd: number | null = null;
@@ -150,7 +156,7 @@ async function wonFacts(
         JOIN lead_stages s ON s.id = l.stage_id
        WHERE s.kind = 'won' AND l.owner_id = ${lead.owner_id}::uuid
          AND (l.closed_at >= ${monthStartIso()}::timestamptz OR l.id = ${leadId}::uuid)
-         AND NOT EXISTS (SELECT 1 FROM lead_ftl lf WHERE lf.lead_id = l.id)`);
+         AND ${ftlOn ? sql`NOT EXISTS (SELECT 1 FROM lead_ftl lf WHERE lf.lead_id = l.id)` : sql`true`}`);
     monthWins = Number(tally[0]?.wins ?? 0);
     monthUsd = num(tally[0]?.usd ?? null);
   }
@@ -180,6 +186,7 @@ export async function celebrateFirstCargo(event: { payload: Record<string, unkno
   const clientId = typeof event.payload.clientId === 'string' ? event.payload.clientId : null;
   if (!receiptId || !clientId) return;
   try {
+    const ftlOn = await ftlReady();
     const rows = await db.execute<{
       seller_id: string | null;
       client_code: string;
@@ -190,7 +197,7 @@ export async function celebrateFirstCargo(event: { payload: Record<string, unkno
       ftl: boolean;
     }>(sql`
       SELECT r.sales_manager_id::text AS seller_id, c.client_code,
-             EXISTS (SELECT 1 FROM receipt_load_mode rlm WHERE rlm.receipt_id = r.id AND rlm.mode = 'ftl') AS ftl,
+             ${ftlOn ? sql`EXISTS (SELECT 1 FROM receipt_load_mode rlm WHERE rlm.receipt_id = r.id AND rlm.mode = 'ftl')` : sql`false`} AS ftl,
              coalesce(sum(rl.total_volume_m3), 0)::text AS m3,
              coalesce(sum(rl.total_weight_kg), 0)::text AS kg,
              w.name AS place,

@@ -40,6 +40,7 @@ import { claimReceivedNotice } from '../notices/client-claims';
 import { receivedAtFor, receivedDayRefusal, type ReceivedDayRefusal } from './received-day';
 import { stampFor } from '../staff/stamp';
 import { ftlReady, inheritFromDealTx } from '../ftl/service';
+import type { FtlDoor } from '../ftl/door';
 
 export const lotInputSchema = z
   .object({
@@ -217,8 +218,13 @@ export async function confirmReceipt(
    * count door (`mayCountMove`, plans.manage in scope), asked by the ACTION.
    * Absent = refused (#531): a service that trusted the form would let any
    * operator back-date cargo by posting two extra fields.
+   *
+   * `ftlDoor`: the presser's LTL/FTL door (0135), asked by the ACTION. The
+   * prixod inherits its deal's FTL only when the presser may reach it — the
+   * office, or the seller the prixod is stamped to; absent = no inheritance
+   * (a posted deal id must not take a colleague's cargo out of his KPI).
    */
-  opts: { onBehalf?: boolean } = {},
+  opts: { onBehalf?: boolean; ftlDoor?: FtlDoor } = {},
 ): Promise<{ receiptId: string; number: string; lots: ConfirmedLotSummary[]; alreadyConfirmed: boolean }> {
   const existing = await db.query.receipts.findFirst({
     where: eq(receipts.id, input.receiptId),
@@ -276,10 +282,17 @@ export async function confirmReceipt(
   // LTL / FTL (0135): may this prixod inherit its deal's FTL? A pool probe,
   // before the transaction (#714) — on a schema one migration behind the
   // prixod is simply LTL, and receiving never depends on the round (#735).
-  const ftlOn = input.clientId && input.dealId ? await ftlReady() : false;
+  const ftlDoor = opts.ftlDoor ?? null;
+  const ftlOn = input.clientId && input.dealId && ftlDoor ? await ftlReady() : false;
 
   let pickupId: string | null = null;
   const result = await db.transaction(async (tx) => {
+    // The deal row FOR SHARE first — linkReceipt's order (deal → kpi → receipt
+    // rows): the deal's own cascade holds it FOR NO KEY UPDATE, so the office
+    // turning the deal FTL (or back) and this prixod landing on it cannot
+    // interleave, each blind to the other's uncommitted half, and leave the
+    // prixod LTL on an FTL deal (or FTL on an LTL one).
+    if (ftlOn) await tx.execute(sql`SELECT 1 FROM deals WHERE id = ${input.dealId}::uuid FOR SHARE`);
     if (input.pickupLineIds?.length && !input.pickupStopId) throw new ReceiptError('pickup_invalid', 'validation');
     if (input.pickupStopId) {
       const { assertStopReceivable, PickupError } = await import('../pickups/service');
@@ -591,7 +604,7 @@ export async function confirmReceipt(
     // `deal_id` itself and never goes through `linkReceipt` (the calc link's
     // reason, one line up). No KPI lock: a new prixod cannot land in a paid
     // month (back-dated ≤ 7 days, a month closes on the 8th).
-    if (ftlOn) await inheritFromDealTx(tx, receipt!.id, ctx.actorId ?? null, null);
+    if (ftlOn && ftlDoor) await inheritFromDealTx(tx, receipt!.id, ftlDoor, null, ctx);
 
     return { receiptId: receipt!.id, number: number, lots: summaries };
   });

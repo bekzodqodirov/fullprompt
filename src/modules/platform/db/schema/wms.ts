@@ -2220,6 +2220,7 @@ export const receiptLoadMode = pgTable(
       .references(() => receipts.id, { onDelete: 'cascade' }),
     mode: text('mode').notNull(),
     hand: boolean('hand').notNull(),
+    byOffice: boolean('by_office').notNull().default(false),
     fromDealId: uuid('from_deal_id').references(() => deals.id, { onDelete: 'cascade' }),
     setBy: uuid('set_by').references(() => users.id, { onDelete: 'set null' }),
     setAt: timestamp('set_at', { withTimezone: true }).notNull().defaultNow(),

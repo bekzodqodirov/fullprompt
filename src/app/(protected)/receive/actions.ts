@@ -6,6 +6,7 @@ import { enqueue, JOB_PROCESS_EVENTS } from '@/modules/platform/jobs/boss';
 import { amountRefusal } from '@/modules/wms/finance/money-bounds';
 import { isServerBehind } from '@/modules/platform/db/errors';
 import { mayCountMove } from '@/modules/wms/scanning/count-door';
+import { ftlDoorFor } from '@/modules/wms/ftl/door';
 import {
   confirmReceipt,
   confirmReceiptSchema,
@@ -55,7 +56,7 @@ export async function submitReceiptAction(input: unknown): Promise<SubmitReceipt
   const onBehalf = mayCountMove(actor, parsed.data.warehouseId);
 
   try {
-    const result = await confirmReceipt(parsed.data, { actorId: actor.id, ...meta }, { onBehalf });
+    const result = await confirmReceipt(parsed.data, { actorId: actor.id, ...meta }, { onBehalf, ftlDoor: ftlDoorFor(actor) });
     // Fire the notification fan-out immediately (workers also sweep per minute).
     await enqueue(JOB_PROCESS_EVENTS, {});
     return {

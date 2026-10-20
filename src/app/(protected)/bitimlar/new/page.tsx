@@ -90,7 +90,7 @@ export default async function NewDealPage({
       <DealForm
         stages={formStages(stages, null)}
         managers={managers}
-        load={leadMode ? { initial: quote ? leadMode : 'ltl', office: mayRevertFtl(actor) } : null}
+        load={leadMode ? { initial: quote ? leadMode : 'ltl', office: mayRevertFtl(actor), creating: true } : null}
         initial={{
           clientId: preset.id,
           ownerId: preset.salesManagerId,

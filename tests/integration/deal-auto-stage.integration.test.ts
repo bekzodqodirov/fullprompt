@@ -450,7 +450,7 @@ describe('cargo walks a deal through the funnel', () => {
     madeDeals.push(lateDealId);
     const receiptId = await receiveCargo(null);
     // No event processing: the LINK itself is the trigger.
-    await linkReceipt(receiptId, lateDealId, ctx());
+    await linkReceipt(receiptId, lateDealId, ctx(), null);
     expect(await stageOf(lateDealId)).toBe(stReceived.id);
   });
 });

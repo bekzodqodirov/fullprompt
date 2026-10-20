@@ -27,14 +27,21 @@ export function LoadModeBlock({
   const router = useRouter();
   const [pending, start] = useTransition();
   const [refusal, setRefusal] = useState<LoadActionResult | null>(null);
+  // What the deal's own cascade did, named prixod by prixod — the ✏️ form's
+  // lines, because this is the accountant's only door to a deal's mode and a
+  // revert that left paid prixods FTL must say so here too.
+  const [cascade, setCascade] = useState<Extract<LoadActionResult, { ok: true }>['cascade'] | null>(null);
 
   const run = (press: () => Promise<LoadActionResult>, warn?: string) => {
     if (warn && !window.confirm(warn)) return;
     setRefusal(null);
+    setCascade(null);
     start(async () => {
       const result = await press();
-      if (result.ok) router.refresh();
-      else setRefusal(result);
+      if (result.ok) {
+        setCascade(result.cascade ?? null);
+        router.refresh();
+      } else setRefusal(result);
     });
   };
 
@@ -46,7 +53,10 @@ export function LoadModeBlock({
         : view.source === 'earlier_deal'
           ? t('source.earlierDeal', { code: view.fromDealCode ?? '—' })
           : view.source === 'not_reached'
-            ? t('source.notReached', { code: view.deal?.code ?? '—' })
+            ? t('source.notReached', {
+                code: view.deal?.code ?? '—',
+                why: t(`reach.${view.notReached ?? 'linked'}` as 'reach.linked'),
+              })
             : view.deal
               ? t('source.dealLtl', { code: view.deal.code })
               : t('source.default');
@@ -96,15 +106,39 @@ export function LoadModeBlock({
       {office && view.deal?.ftl ? (
         <div className="space-y-1 border-t border-line pt-2" data-testid="receipt-load-deal">
           <p className="text-2xs text-ink-600">{t('dealAlsoFtl', { code: view.deal.code })}</p>
-          <button
-            type="button"
-            className="btn-secondary"
-            disabled={pending}
-            data-testid="receipt-load-deal-ltl"
-            onClick={() => run(() => setLinkedDealLoadAction(receiptId, 'ltl'))}
-          >
-            {t('makeDealLtl', { code: view.deal.code })}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            {view.source === 'not_reached' &&
+            (view.notReached === 'linked' || view.notReached === 'no_seller' || view.notReached === 'other_seller') ? (
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={pending}
+                data-testid="receipt-load-deal-widen"
+                onClick={() => run(() => setLinkedDealLoadAction(receiptId, 'ftl'))}
+              >
+                🚛 {t('widenDeal', { code: view.deal.code })}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={pending}
+              data-testid="receipt-load-deal-ltl"
+              onClick={() => run(() => setLinkedDealLoadAction(receiptId, 'ltl'))}
+            >
+              {t('makeDealLtl', { code: view.deal.code })}
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {cascade ? (
+        <div className="space-y-0.5 text-2xs" data-testid="receipt-load-cascade">
+          {cascade.changed > 0 ? <p className="text-ink-600">{t('cascadeChanged', { n: cascade.changed })}</p> : null}
+          {cascade.skipped.map((skip, i) => (
+            <p key={`${skip.number ?? '—'}:${i}`} className="text-warn">
+              {t('cascadeSkipped', { number: skip.number ?? '—', why: t(`skip.${skip.why}` as 'skip.hand') })}
+            </p>
+          ))}
         </div>
       ) : null}
       {refusal && !refusal.ok ? (

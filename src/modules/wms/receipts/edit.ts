@@ -28,6 +28,8 @@ import { checkReceiver, ReceiptError, receivedBySchema } from './service';
 import { mayCountMove } from '../scanning/count-door';
 import { dayIn } from '../../platform/time/tashkent';
 import { stampFor } from '../staff/stamp';
+import { takeKpiSellerLocks } from '../staff/kpi-lock';
+import { dropFtlOnClientChangeTx, ftlReady } from '../ftl/service';
 
 export const editLotSchema = z.object({
   lotId: z.string().uuid(),
@@ -769,8 +771,19 @@ export async function assignReceiptClient(
       ? await directCostsAfterClientChange(receiptId, receipt.clientId)
       : { move: [], keep: [] };
   const directToMove = direct.move;
+  // LTL / FTL (0135): a correction takes back what the OLD client's job and
+  // its seller decided about this prixod (`dropFtlOnClientChangeTx`). Pool
+  // probe before the transaction (#714); one migration behind there is
+  // nothing to take back.
+  const clientMoves = !!receipt.clientId && receipt.clientId !== clientId;
+  const ftlOn = clientMoves ? await ftlReady() : false;
 
   await db.transaction(async (tx) => {
+    // Both stamps' KPI locks before the receipt row (the round's order, kpi →
+    // receipt rows): the correction moves the prixod from one seller's KPI to
+    // another's and may turn it back to LTL — a payout must not be computed
+    // on it half-way.
+    if (ftlOn) await takeKpiSellerLocks(tx, [receipt.salesManagerId, client.salesManagerId]);
     // The marking is KEPT, not nulled (round 98, owner: «gs500maniken-al
     // shaklida qolib, client faqat gs500 ni yuki deb belgilay olamizmi»). The
     // sticker on the box physically says `GS500MANIKEN-AL`; nulling the
@@ -795,6 +808,7 @@ export async function assignReceiptClient(
     if (receipt.clientId && receipt.clientId !== clientId && (await receiptHasCompensation(tx, receiptId))) {
       throw new EditError('receipt_has_compensation');
     }
+    if (ftlOn) await dropFtlOnClientChangeTx(tx, receiptId, { ...ctx, warehouseId: warehouse.id });
 
     /**
      * The money follows the cargo.

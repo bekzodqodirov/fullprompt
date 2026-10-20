@@ -23,7 +23,10 @@ import {
 } from '@/modules/platform/db/schema';
 import { receiveStamped, removeStamped } from '../fixtures/stamped-cargo';
 import { ftlDoorFor, FtlError, mayRevertFtl } from '@/modules/wms/ftl/door';
-import { setDealLoad, setReceiptLoad } from '@/modules/wms/ftl/service';
+import { ftlOfficeUsers, setDealLoad, setReceiptLoad } from '@/modules/wms/ftl/service';
+import { assignReceiptClient } from '@/modules/wms/receipts/edit';
+import { stampUnattributedCargo } from '@/modules/wms/staff/stamp';
+import { auditLog } from '@/modules/platform/db/schema';
 import { receiptLoadView } from '@/modules/wms/ftl/read';
 import { createDeal, DealError, linkReceipt, updateDeal } from '@/modules/wms/deals/service';
 import { CrmError, createLead, setLeadOwner, updateLead } from '@/modules/wms/crm/service';
@@ -200,6 +203,17 @@ afterAll(async () => {
       await db.update(boxes).set({ currentBatchId: null }).where(inArray(boxes.id, [...boxIds].map((b) => b.id)));
     }
   }
+  if (stamped.length) {
+    // assignReceiptClient's event and the new owner's notice claim (round C).
+    const evs = await db.select({ id: events.id }).from(events).where(inArray(events.entityId, stamped));
+    if (evs.length) {
+      await db.delete(notifications).where(inArray(notifications.eventId, evs.map((e) => e.id)));
+      await db.delete(events).where(inArray(events.id, evs.map((e) => e.id)));
+    }
+  }
+  if (madeClients.length) {
+    await db.execute(sql`DELETE FROM client_notices WHERE client_id IN (${sql.join(madeClients.map((id) => sql`${id}::uuid`), sql`, `)})`);
+  }
   await removeStamped(stamped);
   if (madeBatches.length) await db.delete(batches).where(inArray(batches.id, madeBatches));
   if (madeDeals.length) await db.delete(deals).where(inArray(deals.id, madeDeals));
@@ -294,11 +308,11 @@ describe('a prixod inherits its deal’s FTL — and only what the mark may reac
     await setDealLoad(ftlDeal, 'ftl', office(), ctx());
     const r = await cargo({ clientId: client.id, sellerId: a, m3: 2, kg: 100 });
 
-    await linkReceipt(r.receiptId, ftlDeal, ctx());
+    await linkReceipt(r.receiptId, ftlDeal, ctx(), office());
     expect(await isFtl(r.receiptId)).toBe(true);
-    await linkReceipt(r.receiptId, ltlDeal, ctx(a));
+    await linkReceipt(r.receiptId, ltlDeal, ctx(a), seller(a));
     expect(await isFtl(r.receiptId)).toBe(true);
-    await linkReceipt(r.receiptId, null, ctx(a));
+    await linkReceipt(r.receiptId, null, ctx(a), seller(a));
     expect(await isFtl(r.receiptId)).toBe(true);
     // The office declares the source deal not FTL: what THAT deal gave goes back, wherever the prixod went.
     await setDealLoad(ftlDeal, 'ltl', office(), ctx());
@@ -316,6 +330,140 @@ describe('a prixod inherits its deal’s FTL — and only what the mark may reac
     const { cascade } = await setDealLoad(deal, 'ftl', office(), ctx());
     expect(await isFtl(r.receiptId)).toBe(false);
     expect(cascade!.skipped.find((s) => s.receiptId === r.receiptId)?.why).toBe('hand');
+  });
+});
+
+describe('the review’s holes: who presses, a client correction, a stamp that arrives later', () => {
+  const auditsOf = async (receiptId: string) =>
+    (
+      await db
+        .select({ before: auditLog.before, after: auditLog.after })
+        .from(auditLog)
+        .where(and(eq(auditLog.entityType, 'receipt'), eq(auditLog.entityId, receiptId)))
+    ).filter((row) => row.after && 'freightMode' in (row.after as Record<string, unknown>));
+
+  it('a colleague’s re-file onto an FTL deal leaves the prixod in its seller’s KPI; the own seller’s carries it, audited and told', async () => {
+    const a = await mintUser('refile-own');
+    const b = await mintUser('refile-colleague');
+    const client = await mintClient(a);
+    const ftlDeal = await mintDeal(client.id, a);
+    const parked = await mintDeal(client.id, a);
+    await setDealLoad(ftlDeal, 'ftl', office(), ctx());
+    const r = await cargo({ clientId: client.id, sellerId: a, m3: 3, kg: 300, dealId: parked });
+
+    // B is not the office and the prixod is not his: the link moves, the mode does not.
+    await linkReceipt(r.receiptId, ftlDeal, ctx(b), seller(b));
+    expect(await isFtl(r.receiptId)).toBe(false);
+    const view = await receiptLoadView(r.receiptId);
+    expect(view?.source).toBe('not_reached');
+    expect(view?.notReached).toBe('linked');
+
+    // A's own re-file carries it — one ltl → ftl history line, and the office is told.
+    await linkReceipt(r.receiptId, parked, ctx(a), seller(a));
+    await linkReceipt(r.receiptId, ftlDeal, ctx(a), seller(a));
+    expect(await isFtl(r.receiptId)).toBe(true);
+    const lines = await auditsOf(r.receiptId);
+    expect(lines.filter((row) => (row.after as Record<string, unknown>).freightMode === 'ftl')).toHaveLength(1);
+    const told = await db
+      .select({ id: notifications.id })
+      .from(notifications)
+      .where(and(eq(notifications.type, 'FtlMarked'), sql`${notifications.payload}->>'text' LIKE ${`%refile-own ${S}%`}`));
+    expect(told.length).toBeGreaterThan(0);
+  });
+
+  it('the office confirming a deal’s FTL passes it to what the first press could not reach', async () => {
+    const a = await mintUser('widen');
+    const b = await mintUser('widen-colleague');
+    const client = await mintClient(a);
+    const deal = await mintDeal(client.id, a);
+    const mine = await cargo({ clientId: client.id, sellerId: a, m3: 2, kg: 100, dealId: deal });
+    const theirs = await cargo({ clientId: client.id, sellerId: b, m3: 2, kg: 100, dealId: deal });
+    await updateDeal(deal, { clientId: client.id, ownerId: a, load: { mode: 'ftl', door: seller(a) } }, ctx(a));
+    expect(await isFtl(mine.receiptId)).toBe(true);
+    expect(await isFtl(theirs.receiptId)).toBe(false);
+    expect((await receiptLoadView(theirs.receiptId))?.notReached).toBe('other_seller');
+
+    const pressed = await setDealLoad(deal, 'ftl', office(), ctx());
+    expect(pressed.changed).toBe(true);
+    expect(pressed.cascade?.changed).toBe(1);
+    expect(await isFtl(theirs.receiptId)).toBe(true);
+    // Pressed again: the mark already is the office's and nothing new is reached.
+    expect((await setDealLoad(deal, 'ftl', office(), ctx())).changed).toBe(false);
+  });
+
+  it('a prixod already FTL from another deal is re-pointed, never counted or audited as a change', async () => {
+    const a = await mintUser('repoint');
+    const client = await mintClient(a);
+    const first = await mintDeal(client.id, a);
+    const second = await mintDeal(client.id, a);
+    await setDealLoad(first, 'ftl', office(), ctx());
+    const r = await cargo({ clientId: client.id, sellerId: a, m3: 2, kg: 100, dealId: second });
+    await linkReceipt(r.receiptId, first, ctx(), office());
+    await linkReceipt(r.receiptId, second, ctx(), office());
+    expect(await isFtl(r.receiptId)).toBe(true);
+    const before = (await auditsOf(r.receiptId)).length;
+
+    const { cascade } = await setDealLoad(second, 'ftl', office(), ctx());
+    expect(cascade?.changed).toBe(0);
+    expect((await auditsOf(r.receiptId)).length).toBe(before);
+  });
+
+  it('a client correction takes back the old job’s FTL and a seller’s own pin — never the office’s', async () => {
+    const a = await mintUser('fix-old');
+    const c = await mintUser('fix-new');
+    const wrong = await mintClient(a);
+    const right = await mintClient(c);
+    const deal = await mintDeal(wrong.id, a);
+    const inherited = await cargo({ clientId: wrong.id, sellerId: a, m3: 2, kg: 100, dealId: deal });
+    const sellerPin = await cargo({ clientId: wrong.id, sellerId: a, m3: 2, kg: 100 });
+    const officePin = await cargo({ clientId: wrong.id, sellerId: a, m3: 2, kg: 100 });
+    await updateDeal(deal, { clientId: wrong.id, ownerId: a, load: { mode: 'ftl', door: seller(a) } }, ctx(a));
+    await setReceiptLoad(sellerPin.receiptId, 'ftl', seller(a), ctx(a));
+    await setReceiptLoad(officePin.receiptId, 'ftl', office(), ctx());
+    expect(await isFtl(inherited.receiptId)).toBe(true);
+
+    for (const r of [inherited, sellerPin, officePin]) await assignReceiptClient(r.receiptId, right.id, ctx());
+    // The cargo is C's now (0117's restamp) and in C's KPI — nobody decided otherwise for C's job.
+    expect(await isFtl(inherited.receiptId)).toBe(false);
+    expect(await isFtl(sellerPin.receiptId)).toBe(false);
+    expect(await isFtl(officePin.receiptId)).toBe(true);
+    const lines = await auditsOf(inherited.receiptId);
+    expect(lines.some((row) => (row.after as Record<string, unknown>).freightModeReason === 'clientChanged')).toBe(true);
+  });
+
+  it('a seller’s FTL reaches cargo that had no seller the day the client gets him', async () => {
+    const a = await mintUser('stamp-late');
+    const client = await mintClient(null);
+    const deal = await mintDeal(client.id, a);
+    const r = await cargo({ clientId: client.id, sellerId: null, m3: 2, kg: 100, dealId: deal });
+    const result = await updateDeal(deal, { clientId: client.id, ownerId: a, load: { mode: 'ftl', door: seller(a) } }, ctx(a));
+    expect(await isFtl(r.receiptId)).toBe(false);
+    expect(result.ftl!.skipped.find((skip) => skip.receiptId === r.receiptId)?.why).toBe('no_seller');
+    expect((await receiptLoadView(r.receiptId))?.notReached).toBe('no_seller');
+
+    await db.update(clients).set({ salesManagerId: a }).where(eq(clients.id, client.id));
+    expect(await stampUnattributedCargo(db, client.id, a, ctx())).toBe(1);
+    expect(await isFtl(r.receiptId)).toBe(true);
+  });
+
+  it('FtlMarked goes to exactly the door’s office — permission codes, never role names', async () => {
+    const rows = (await db.execute(sql`
+      SELECT u.id::text AS id,
+             coalesce(array_agg(DISTINCT p.code) FILTER (WHERE p.code IS NOT NULL), '{}') AS perms,
+             bool_or(coalesce(r.warehouse_scoped, false)) AS scoped
+        FROM users u
+        LEFT JOIN user_roles ur ON ur.user_id = u.id
+        LEFT JOIN roles r ON r.id = ur.role_id
+        LEFT JOIN role_permissions rp ON rp.role_id = r.id
+        LEFT JOIN permissions p ON p.id = rp.permission_id
+       WHERE u.active AND u.login_enabled
+       GROUP BY u.id`)) as unknown as { id: string; perms: string[]; scoped: boolean }[];
+    const expected = [...rows]
+      .filter((row) => mayRevertFtl({ permissions: new Set(row.perms), warehouseScoped: row.scoped }))
+      .map((row) => row.id)
+      .sort();
+    expect(expected.length).toBeGreaterThan(0);
+    expect((await ftlOfficeUsers()).sort()).toEqual(expected);
   });
 });
 

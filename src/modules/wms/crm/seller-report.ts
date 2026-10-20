@@ -5,6 +5,7 @@ import { clients, users } from '@/modules/platform/db/schema';
 import { marginPct } from '../accounting/margin';
 import { stampedCargo, unstampedCargo } from '../staff/cargo';
 import { KPI_LOAD } from '../ftl/sql';
+import { ftlReady } from '../ftl/service';
 import { costByStamp } from '../staff/stamp-cost';
 import { revenueByStamp } from '../staff/stamp-revenue';
 
@@ -126,6 +127,11 @@ export async function sellerPerformanceAll(period: {
   unlinked: MoneyNote;
   split: MoneyNote;
 }> {
+  // One migration behind (0135) nothing is FTL yet: the kub columns read ALL
+  // cargo and the FTL beside them is empty — the revenue and cost columns need
+  // nothing new, so the page must not turn into «server behind» over them.
+  const ftlOn = await ftlReady();
+  const kpiLoad = ftlOn ? KPI_LOAD : 'all';
   const [money, cargoRows, unstamped, clientRows] = await Promise.all([
     // ONE pool connection, sequential statements, JIT off (no-jit.ts) — the rider walk is company-wide.
     withoutJit(async (exec) => {
@@ -135,14 +141,13 @@ export async function sellerPerformanceAll(period: {
     }),
     // from/to: the half-open received_at pair, stamp by stamp (0117); LTL in
     // the cargo columns, FTL beside them (0135).
-    stampedCargo(db, period, { kind: 'all' }, KPI_LOAD),
-    unstampedCargo(db, period, KPI_LOAD),
+    stampedCargo(db, period, { kind: 'all' }, kpiLoad),
+    unstampedCargo(db, period, kpiLoad),
     clientsByManager(),
   ]);
-  const [ftlRows, ftlUnstamped] = await Promise.all([
-    stampedCargo(db, period, { kind: 'all' }, 'ftl'),
-    unstampedCargo(db, period, 'ftl'),
-  ]);
+  const [ftlRows, ftlUnstamped] = ftlOn
+    ? await Promise.all([stampedCargo(db, period, { kind: 'all' }, 'ftl'), unstampedCargo(db, period, 'ftl')])
+    : [[], []];
 
   // CENTS per seller key — integers until the last division, so the totals
   // row is the exact sum of the client rows and never a sum of roundings.
@@ -302,9 +307,10 @@ export async function sellerPerformanceOwn(
   actorId: string,
   period: { from: Date; to: Date; dan: string; gacha: string },
 ): Promise<SellerOwnRow> {
+  const ftlOn = await ftlReady();
   const [cargoRows, ftlRows, clientRows, revenue] = await Promise.all([
-    stampedCargo(db, period, { kind: 'own', userId: actorId }, KPI_LOAD),
-    stampedCargo(db, period, { kind: 'own', userId: actorId }, 'ftl'),
+    stampedCargo(db, period, { kind: 'own', userId: actorId }, ftlOn ? KPI_LOAD : 'all'),
+    ftlOn ? stampedCargo(db, period, { kind: 'own', userId: actorId }, 'ftl') : Promise.resolve([]),
     clientsByManager(actorId),
     withoutJit((exec) => revenueByStamp(exec, period, { kind: 'own', userId: actorId })),
   ]);
