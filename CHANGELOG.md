@@ -29,6 +29,7 @@ Sizning so'zingiz: «biz odatda LTL bo'yicha ishlaymiz va KPI sovrinlar shu LTL 
   Misolingizdagi «2 mashina» o'rniga «prixod» yoziladi: hafta yukni Xitoyda qabul qilingan kuni bo'yicha sanaydi, o'shanda mashina hali bo'lmaydi.
 - Faqat FTL olib kelgan sotuvchi «yuk olib kelmaganlar» qatoriga tushmaydi.
 - **Haftalik maqsad** endi faqat LTL kubni o'lchaydi.
+- **Reyting ekrani telefonda:** «Bu hafta» ro'yxatida ismlar ikki-uch harfdan bo'linib ketardi («Diln / oza»). Endi ism to'liq ko'rinadi, raqamlar kerak bo'lsa pastki qatorga o'tadi.
 - **Upsale (sotuvchi ulushi) o'zgarmadi** (5a).
 
 ### Guruhdagi tabriklar (4a)
