@@ -267,7 +267,7 @@
       "lost": "Written off as lost: {n} boxes · {usd} spent",
       "lostNoMoney": "Written off as lost: {n} boxes",
       "undocumented": "Moved without a document: {n} boxes",
-      "stuck": "Trucks unloaded for 2+ days: {n}",
+      "stuck": "Trucks arrived 2+ days ago, unloading not finished: {n}",
       "negativeTills": "Tills below zero: {n}",
       "unratedTills": "Tills with no rate: {n} — left out of the Balance",
       "unplacedPayments": "Payments with no till: {n} · {usd}",
@@ -396,7 +396,21 @@
       "note": "Cargo profit goes to the seller on the day of the receipt; upsale is already inside the cargo price and is not added.",
       "truncated": "upsale is incomplete — too many offers in the period.",
       "inactive": "inactive"
-    }
+    },
+    "truckEstimateGps": "estimate from GPS and the schedule",
+    "truckEstimatePin": "estimate from the pin and the schedule",
+    "truckFixGps": "📡 GPS · {ago}",
+    "truckFixManual": "📍 typed position · {ago}",
+    "agoNow": "just now",
+    "agoMin": "{n} min ago",
+    "agoHour": "{n} h ago",
+    "agoDay": "{n} d ago",
+    "truckUnloadedOpen": "Unloaded, not closed",
+    "truckAtGate": "At gate, not unloaded",
+    "truckAtGateDays": "{n, plural, =0 {came today} one {standing # day} other {standing # days}}",
+    "truckAtGateStuck": "check the unloading",
+    "truckYardFrom": "GPS: entered the yard on {date}",
+    "truckUnloadedOpenHint": "«{button}» not pressed"
   },
   "inventory": {
     "title": "Stocktake",
@@ -1530,7 +1544,8 @@
       "forbidden": "No access to this truck",
       "not_in_transit": "The truck is not on the road — pins are for trucks in transit",
       "unknown_key": "No such pin",
-      "not_on_route": "This truck does not pass there — choose a pin on its own road"
+      "not_on_route": "This truck does not pass there — choose a pin on its own road",
+      "checkpoint_changed": "The pin changed meanwhile — refresh the page and press again"
     },
     "rename": {
       "codeLabel": "New name",
@@ -1604,6 +1619,49 @@
         "unauthenticated": "The session has expired — sign in again"
       },
       "noTargetsInScope": "The other warehouses in this country are not assigned to you"
+    },
+    "board": {
+      "strip": "Where the trucks are",
+      "tabs": "Board columns",
+      "filterWarehouse": "Warehouse",
+      "filterRoute": "Route",
+      "filterAll": "All",
+      "route": {
+        "irkeshtam": "Irkeshtam",
+        "horgos": "Khorgos",
+        "ichki": "Domestic trips"
+      },
+      "filterWarnings": "Only with a warning",
+      "filterApply": "Show",
+      "filterClear": "Clear",
+      "mapLink": "Map",
+      "badgeInternal": "domestic trip",
+      "badgeTrip": "factory pickup",
+      "plan": "Planned: {boxes} boxes · {cargo}",
+      "planNone": "no plan",
+      "loaded": "Loaded {a} / {b} boxes · {m3a} / {m3b} m³ · {kga} / {kgb} kg",
+      "loadedAll": "all loaded",
+      "rode": "Departed: {boxes} boxes · {cargo}",
+      "unloaded": "Unloaded {a} / {b} boxes · in all {cargo}",
+      "loadingSince": "Loading since {date}",
+      "loadedRange": "Loaded {range}",
+      "departedOn": "Departed {date}",
+      "arrivedOn": "Arrived {date}",
+      "roadPct": "{pct}% of the road",
+      "warnStale": "trip arrived, not closed",
+      "menu": "Truck actions",
+      "callDriver": "Driver",
+      "tripCollected": "Collected at {a} of {b} factories",
+      "tripCargo": "Lines: {boxes} boxes",
+      "tripUnknown": "unknown on {n} lines",
+      "tripPlanned": "Planned for {date}",
+      "tripCollectedRange": "Collected from factories {range}",
+      "tripArrival": "Expected {range}",
+      "empty": "Empty",
+      "emptyBoard": "No open trucks.",
+      "capped": "Showing the {n} oldest trucks.",
+      "filters": "Filter",
+      "loadedNoPlan": "Loaded {boxes} boxes · {cargo}"
     }
   },
   "loading": {
@@ -2051,7 +2109,11 @@
     "cargoReceived": "received {date}",
     "cargoMore": "{n} more items — the full list is in stock",
     "seg_kz": "In Kazakhstan",
-    "seg_uz_queue": "Queueing at the Uzbek border"
+    "seg_uz_queue": "Queueing at the Uzbek border",
+    "unplaced": "Location unknown — not drawn on the map:",
+    "atGate": "At gate, not unloaded",
+    "atGateDays": "{n, plural, =0 {came today} one {standing # day} other {standing # days}}",
+    "atGateStuck": "check the unloading"
   },
   "accounting": {
     "title": "Management accounting",
@@ -6057,5 +6119,21 @@
       "ftl_office_only": "Only an admin, logist or accountant can turn an FTL lead back to LTL or change its owner.",
       "ftl_not_yours": "You can mark only your own lead as FTL."
     }
+  },
+  "place": {
+    "road": {
+      "cn": "Inside China",
+      "border": "At the border",
+      "transit": "In transit",
+      "uz": "In Uzbekistan"
+    },
+    "unknown": "Location unknown",
+    "wh": {
+      "cn": "Inland China",
+      "border": "Border",
+      "uz": "Uzbekistan"
+    },
+    "kg": "Kyrgyzstan",
+    "kz": "Kazakhstan"
   }
 }

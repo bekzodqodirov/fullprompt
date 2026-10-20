@@ -26,8 +26,9 @@ import { ARRIVED_ON_A_TRUCK } from '../documents/arrivals';
 import { CLIENT_ACTIVE_STATUSES } from '../boxes/active';
 import { arrivalCleared } from '../notices/arrival-text';
 import { clientBalanceUsd, clientLedger } from '../finance/service';
-import { etaWindow, scheduleEstimate } from '../tracking/eta';
+import { etaWindow, placeDated, placeTruck } from '../tracking/eta';
 import { loadBorderHours } from '../tracking/border-queue';
+import { latestPositions, placementFix, type LatestPosition } from '../tracking/devices';
 import { journeyFromEvents, type JourneyStep } from './journey';
 import {
   cargoStage,
@@ -228,11 +229,15 @@ export interface CargoTransit {
   fromPlace: string;
   toPlace: string;
   /**
-   * How much of the road the schedule says is behind — 0..1, the map
-   * engine's own figure. The owner's ask verbatim: «yolni qanchasini bosib
-   * otganini korsatadgan … bolishi kerak».
+   * How much of the road is behind — 0..1 of its LENGTH, the office's own
+   * figure (`placeTruck`: the driver's fix, the logist's pin or the
+   * schedule, whichever is newest — his 4a, «one number everywhere»). The
+   * owner's ask verbatim: «yolni qanchasini bosib otganini korsatadgan …
+   * bolishi kerak». Null when nobody can say — a truck past its schedule
+   * with nothing but its departure to go by — and then no bar is drawn
+   * rather than a 100 % that reads «arrived».
    */
-  progress: number;
+  progress: number | null;
   /** Null once the schedule is spent — no honest date left to print. */
   etaFromIso: string | null;
   etaToIso: string | null;
@@ -312,6 +317,15 @@ const ACTIVE_STATUSES: string[] = [...CLIENT_ACTIVE_STATUSES];
 interface CabinetTruck {
   stage: StageBatch;
   transit: CargoTransit | null;
+  /**
+   * When it is expected to land, for ORDERING two trucks on one rung and
+   * nothing else (never shown): its window's end; «now» for a truck with no
+   * date that is not late — at its gate by the phone, or due now — and the
+   * far future for a late one. Ranking a dateless truck as the latest let a
+   * truck that had ARRIVED by its phone take the group's road and date from
+   * the one still 85 % of the way back (the fixes' recheck).
+   */
+  arriveBy: string;
   /** When the truck was first known to be in Uzbekistan (pin or arrival). */
   inUzAt: Date | null;
   customsClearedAt: Date | null;
@@ -351,24 +365,47 @@ async function trucksFor(batchIds: string[]): Promise<Map<string, CabinetTruck>>
     .where(inArray(batches.id, batchIds));
 
   const now = new Date();
-  // The typed border queues, once for every truck in the cabinet (#432) —
-  // the same number the office's map and dashboard read.
+  // The typed border queues and the drivers' newest fixes, once for every
+  // truck in the cabinet (#432) — the same evidence the office's board, map
+  // and dashboard place the truck by.
   const waits = rows.length ? await loadBorderHours() : {};
+  const fixes = rows.length ? await latestPositions(rows) : new Map<string, LatestPosition>();
   for (const r of rows) {
     const cp = r.checkpoint as { key?: string; at?: string } | null;
-    const schedule = scheduleEstimate(r.originCode, r.destCode, r.departedAt, r.checkpoint, waits, now);
-    const window = schedule ? etaWindow(schedule.est, now) : null;
+    const fix = fixes.get(r.id);
+    const place = placeTruck(
+      {
+        originCode: r.originCode,
+        destCode: r.destCode,
+        originCountry: r.originCountry,
+        destCountry: r.destCountry,
+        departedAt: r.departedAt,
+        checkpoint: r.checkpoint,
+        fix: placementFix(fix),
+      },
+      waits,
+      now,
+    );
+    const window =
+      place.remainingHours && placeDated(place)
+        ? etaWindow({ overdue: false, remainingHours: place.remainingHours }, now)
+        : null;
     out.set(r.id, {
       stage: stageBatchOf({ ...r, trackingCheckpoint: r.checkpoint }),
-      transit: schedule
-        ? {
-            fromPlace: r.originName,
-            toPlace: r.destName,
-            progress: Math.min(1, schedule.est.progress),
-            etaFromIso: window?.fromIso ?? null,
-            etaToIso: window?.toIso ?? null,
-          }
-        : null,
+      arriveBy: window?.toIso ?? (place.overdue ? '9999' : now.toISOString()),
+      // Only while it drives: an ARRIVED truck still carrying cartons nobody
+      // has scanned off has no % and no date left (the walk knows no arrival,
+      // and the office's board says «Yetib keldi» — O15, the review).
+      transit:
+        place.route && r.status === 'in_transit'
+          ? {
+              fromPlace: r.originName,
+              toPlace: r.destName,
+              progress: place.progress,
+              etaFromIso: window?.fromIso ?? null,
+              etaToIso: window?.toIso ?? null,
+            }
+          : null,
       // A truck that ends in China (Yiwu → Kashgar) never enters Uzbekistan,
       // whatever its `arrived_at` says — the rule `truckStage` states. Without
       // it a lot waiting at the hub after an internal leg read «O'zbekistonga
@@ -568,7 +605,7 @@ export async function cargoOverview(clientId: string): Promise<CabinetLot[]> {
 
   const byLot = new Map<string, CabinetLot>();
   const lotOf = new Map<string, { kg: number; m3: number; boxes: number }>();
-  const stageCounts = new Map<string, Map<CargoStage, { n: number; transit: CargoTransit | null }>>();
+  const stageCounts = new Map<string, Map<CargoStage, { n: number; transit: CargoTransit | null; arriveBy: string }>>();
   for (const r of rows) {
     let lot = byLot.get(r.lotId);
     if (!lot) {
@@ -603,13 +640,14 @@ export async function cargoOverview(clientId: string): Promise<CabinetLot[]> {
     // Two trucks on the same rung keep the LATER-arriving one's road: the
     // group is not complete until the last of it lands.
     const transit = isMovingStage(stage) ? (truck?.transit ?? null) : null;
-    const keep =
-      !prev?.transit ||
-      (transit &&
-        (transit.etaToIso ?? '9999') > (prev.transit.etaToIso ?? '9999'))
-        ? (transit ?? prev?.transit ?? null)
-        : prev.transit;
-    counts.set(stage, { n: (prev?.n ?? 0) + Number(r.n), transit: keep });
+    const arriveBy = truck?.arriveBy ?? '9999';
+    const later = !prev?.transit || (transit !== null && arriveBy > prev.arriveBy);
+    const keep = later ? (transit ?? prev?.transit ?? null) : prev.transit;
+    counts.set(stage, {
+      n: (prev?.n ?? 0) + Number(r.n),
+      transit: keep,
+      arriveBy: later && transit ? arriveBy : (prev?.arriveBy ?? arriveBy),
+    });
     lot.total += Number(r.n);
     // The share of the WHOLE active count, once, below — not a sum of
     // per-status shares, which can round the other way from the push.

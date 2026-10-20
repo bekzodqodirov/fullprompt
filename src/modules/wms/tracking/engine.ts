@@ -18,6 +18,23 @@ export interface RoutePoint {
  */
 export type BorderPost = 'khorgos' | 'yallama';
 
+/**
+ * Every leg the route table builds (`map-data.ts`), which is also every
+ * `map.seg_*` label. Typed on the table's legs, so a new leg is one place to
+ * add and `tracking/place.ts` refuses to compile until the leg has a place.
+ */
+export const LEG_KEYS = [
+  'cn_transit',
+  'to_border',
+  'border_wait',
+  'kz',
+  'uz_queue',
+  'kg',
+  'uz',
+  'transit',
+] as const;
+export type LegKey = (typeof LEG_KEYS)[number];
+
 export interface RouteSegment {
   /** Phase key — also the i18n label key (cn_transit, to_border, border_wait, kz, uz_queue, kg, uz, transit). */
   key: string;
@@ -43,7 +60,20 @@ export interface TransitEstimate {
   x: number;
   y: number;
   segKey: string;
-  /** 0..1 across the whole route (time-based). */
+  /** Where `segKey`'s leg sits in `route.segments`. */
+  segIndex: number;
+  /**
+   * How far through that leg, 0..1 — the share of its hours the schedule has
+   * walked, which on a moving leg is also the share of its LENGTH
+   * (`pointAlong` spends a leg's length evenly over its hours).
+   */
+  segFrac: number;
+  /**
+   * 0..1 of the road's LENGTH behind the dot (owner, 2026-10-17, 4a: «necha
+   * foiz yolni bosib otdi» is a distance, not a share of the days). A queue
+   * has no length, so a truck waiting at the border keeps its % for the
+   * whole wait. A route with no length at all reads its time share.
+   */
   progress: number;
   /** True once the schedule says the truck should have arrived. */
   overdue: boolean;
@@ -67,6 +97,17 @@ const mid = segMid;
 export function chordDeg(a: RoutePoint, b: RoutePoint): number {
   const midLatRad = (((a.y + b.y) / 2) * Math.PI) / 180;
   return Math.hypot((b.x - a.x) * Math.cos(midLatRad), b.y - a.y);
+}
+
+/**
+ * The road's length from its first point to each of its points, in
+ * `chordDeg` units — the one measure the dot is paced by, so the % and the
+ * dot cannot disagree about how far along it is.
+ */
+export function cumulativeLengths(points: RoutePoint[]): number[] {
+  const out: number[] = [0];
+  for (let i = 1; i < points.length; i += 1) out.push(out[i - 1]! + chordDeg(points[i - 1]!, points[i]!));
+  return out;
 }
 
 function pointAlong(points: RoutePoint[], from: number, to: number, frac: number): RoutePoint {
@@ -101,13 +142,20 @@ function pointAlong(points: RoutePoint[], from: number, to: number, frac: number
 export function estimateTransit(
   route: RouteDef,
   elapsedHours: number,
-  anchor?: { segKey: string; elapsedInSegHours: number } | null,
+  // `segIndex` names the leg by position when the caller knows it (a fix
+  // laid on the road, eta.ts); the key alone is the pin's older form.
+  anchor?: { segKey: string; elapsedInSegHours: number; segIndex?: number } | null,
 ): TransitEstimate {
   const totalMid = route.segments.reduce((a, s) => a + mid(s.hours), 0);
+  const cum = cumulativeLengths(route.points);
+  const totalLen = cum[cum.length - 1] ?? 0;
   let startIdx = 0;
   let remaining = Math.max(0, elapsedHours);
   if (anchor) {
-    const idx = route.segments.findIndex((s) => s.key === anchor.segKey);
+    const idx =
+      anchor.segIndex !== undefined && route.segments[anchor.segIndex]?.key === anchor.segKey
+        ? anchor.segIndex
+        : route.segments.findIndex((s) => s.key === anchor.segKey);
     if (idx >= 0) {
       startIdx = idx;
       remaining = Math.max(0, anchor.elapsedInSegHours);
@@ -125,11 +173,19 @@ export function estimateTransit(
       const remainMin = Math.max(0, seg.hours[0] * (1 - frac)) + later.reduce((a, s) => a + s.hours[0], 0);
       const remainMax = Math.max(0, seg.hours[1] * (1 - frac)) + later.reduce((a, s) => a + s.hours[1], 0);
       const overdue = i === route.segments.length - 1 && remaining >= m;
+      // The length behind the dot: the legs before it whole, this one by the
+      // same fraction `pointAlong` drew it at.
+      const along = cum[seg.span[0]]! + frac * (cum[seg.span[1]]! - cum[seg.span[0]]!);
       return {
         x: pos.x,
         y: pos.y,
         segKey: seg.key,
-        progress: Math.min(1, (doneMid + Math.min(remaining, m)) / totalMid),
+        segIndex: i,
+        segFrac: frac,
+        progress:
+          totalLen > 0
+            ? Math.min(1, along / totalLen)
+            : Math.min(1, (doneMid + Math.min(remaining, m)) / totalMid),
         overdue,
         remainingHours: overdue ? [0, 0] : [Math.round(remainMin), Math.round(remainMax)],
       };
@@ -139,7 +195,71 @@ export function estimateTransit(
   }
   // Unreachable (last segment handled above), but keep TS satisfied.
   const last = route.points[route.points.length - 1]!;
-  return { x: last.x, y: last.y, segKey: 'transit', progress: 1, overdue: true, remainingHours: [0, 0] };
+  return {
+    x: last.x,
+    y: last.y,
+    segKey: 'transit',
+    segIndex: route.segments.length - 1,
+    segFrac: 1,
+    progress: 1,
+    overdue: true,
+    remainingHours: [0, 0],
+  };
+}
+
+/**
+ * A fix older than this is stale: the map stops drawing the dot AT it and the
+ * source line says how old it is (`placeTruck` still anchors the walk on it).
+ *
+ * The driver app reports every 2-3 hours by design — the owner asked for a
+ * schedule the driver's battery survives, not a live dot. So "fresh" has to
+ * cover a missed cycle plus a dead zone; anything tighter would paint every
+ * real fix as stale and hand the map back to the estimate. Pure here (it
+ * moved out of devices.ts, which re-exports it) because the one assembler
+ * that judges it, eta.ts, must not import the database.
+ */
+export const FRESH_MINUTES = 8 * 60;
+
+/**
+ * A fix, laid on the road: the nearest point ON it, which chord holds that
+ * point, how much of the road lies behind it, and how far the fix itself is
+ * from the line. One projection for the map's dot (`snapToRoute`) and the
+ * place a fix gives a truck (eta.ts `placeTruck`), so the dot and the % are
+ * the same point. The parameter along each chord is plain lon/lat (the
+ * drawing's space); the distances are `chordDeg`.
+ */
+export interface RouteProjection {
+  point: RoutePoint;
+  /** The chord `[chord, chord + 1]` the point lies on. */
+  chord: number;
+  /** The road's length from its start to `point` (`chordDeg` units). */
+  along: number;
+  /** How far the fix is from `point` (`chordDeg`). */
+  offDeg: number;
+}
+
+export function projectOnRoute(points: RoutePoint[], fix: RoutePoint): RouteProjection | null {
+  if (points.length < 2) return null;
+  const cum = cumulativeLengths(points);
+  let best: RouteProjection | null = null;
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const a = points[i]!;
+    const b = points[i + 1]!;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const lenSq = dx * dx + dy * dy;
+    const t =
+      lenSq === 0
+        ? 0
+        : Math.max(0, Math.min(1, ((fix.x - a.x) * dx + (fix.y - a.y) * dy) / lenSq));
+    const candidate = { x: a.x + dx * t, y: a.y + dy * t };
+    const offDeg = chordDeg(candidate, fix);
+    // Strictly nearer: at a vertex two legs share, the earlier leg keeps it.
+    if (!best || offDeg < best.offDeg) {
+      best = { point: candidate, chord: i, along: cum[i]! + t * (cum[i + 1]! - cum[i]!), offDeg };
+    }
+  }
+  return best;
 }
 
 /**
@@ -158,24 +278,6 @@ export function snapToRoute(
   fix: RoutePoint,
   tolDeg = 0.15,
 ): RoutePoint | null {
-  let best: RoutePoint | null = null;
-  let bestDist = Infinity;
-  for (let i = 0; i < points.length - 1; i += 1) {
-    const a = points[i]!;
-    const b = points[i + 1]!;
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const lenSq = dx * dx + dy * dy;
-    const t =
-      lenSq === 0
-        ? 0
-        : Math.max(0, Math.min(1, ((fix.x - a.x) * dx + (fix.y - a.y) * dy) / lenSq));
-    const candidate = { x: a.x + dx * t, y: a.y + dy * t };
-    const dist = chordDeg(candidate, fix);
-    if (dist < bestDist) {
-      bestDist = dist;
-      best = candidate;
-    }
-  }
-  return best !== null && bestDist <= tolDeg ? best : null;
+  const p = projectOnRoute(points, fix);
+  return p !== null && p.offDeg <= tolDeg ? p.point : null;
 }

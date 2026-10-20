@@ -3891,6 +3891,428 @@ person's «yangi mijoz»). The first cargo was left as it was — he named the w
 Red proofs ×3 by string edit (the unstamped-win clause, the price line, the
 code counter's +1).
 
+## Partiya doskasi — every truck in one place, by where it is (2026-10-17 → 10-20; DECISIONS renumbered from #1407-#1419 on the merge, the TWENTY-SECOND collision: «Jamoa guruhi» took #1407-#1415 and merged first; NO migration of its own — it deploys with that round's 0134, so the ledger must reach 135; spec `docs/PARTIYA-DOSKASI.md`)
+
+His message of 2026-10-17 («pogruzga qattaligini bilishim kerak visual —
+ichki xitoydami yokida chegaradami · yolda bosqichida mashina qayerda … zavot
+reyslariniyam shu yerda … hamma mashinalarni manage qiladgan joy · kartalarda:
+neccha kub necha kg, yuklandi sanasi, yolga chiqgan kuni, necha foiz yolni
+bosib otdi»), a canvas of three designs and twelve questions, his answers
+«1 A 2 a 3 a 4 a 5 a 6 C 7 a 8 b 9 b 10 b 11 A 12 A». Judged by three lenses
+before code (tracking math, data and doors, the screen and its tests — 41
+findings, 3 blockers); the spec is the judged version.
+
+1416. **Where a truck is has ONE vocabulary, and it is a place, not a rung**
+(`tracking/place.ts`). Four words — `cn` Xitoy ichida, `border` Chegarada,
+`transit` Tranzitda, `uz` O'zbekistonda — and «Joyi aniq emas» when nothing
+honest can be said. A warehouse's place by TYPE and COUNTRY (a CN `hub` is the
+border — Kashgar, and Horgos once its type says so, his 11A), never by code or
+name; a leg's place is `LEG_ZONE`, a `Record` over the route table's
+`LEG_KEYS`, so a leg added without a place fails `pnpm typecheck` instead of
+reading «unknown» on every truck that drives it. `to_border` is the BORDER:
+read as China, a Horgos truck went «Chegara» while loading, «Xitoy ichida» for
+the 5 km to the post, then «Chegarada» again. The generic straight line takes
+its place from its two ends (two Chinese ends are China even when one is a
+hub). The customer's rung (`stages.ts`) is left alone and says so (#1419).
+
+1417. **A truck's place is the schedule walked from the NEWEST evidence**
+(`placeTruck`, eta.ts — one assembler for the board, the dashboard, the truck
+card, the map, the bot and the customer's cabinet). His 5a: the phone decides.
+ONE mechanism, the pin's: a fix anchors the walk exactly as a pin does, at its
+own point instead of a leg's start. So a STALE fix is never thrown away — it
+keeps the truck where it was last seen and walking; the old rule dropped a fix
+older than eight hours and the truck jumped back to the departure schedule the
+moment a phone went quiet in the mountains. `FRESH_MINUTES` now decides only
+whether the map draws the dot at the fix and how the source line reads.
+Precedence: newest wins, except that a pin newer than the fix that names the
+fix's OWN leg keeps the fix (a coarse «in Kazakhstan» must not drag a truck
+back to the start of Kazakhstan). A fix counts after the departure (the yard is
+not the road), within 2.5° of the road (the Horgos road is hand-drawn town
+chains whose chords run 2-5° off — the map's drawing snap stays 0.15°), with a
+known accuracy ≤ 5 km, timed `least(recorded_at, received_at)` (a phone clock
+running ahead never makes a fix newer than its arrival). A fix within 0.05° of
+a queue's post on the APPROACH side is IN the queue — every stationary leg,
+Irkeshtam too — entered at the pin's moment if the pin names it, else the
+schedule's own entry, else the fix's, never before the departure; the far side
+of the post is the next leg (past Yallama is Uzbekistan).
+
+1418. **The % is distance (his 4a), everywhere.** The road's length behind the
+dot ÷ the whole road, in `chordDeg` — the measure the dot is paced by, so the
+% and the dot cannot disagree. A queue has no length: a truck at the border
+keeps its % for the whole wait, which is why the leg's words always print
+beside it. The customer's cabinet reads the same `placeTruck`, so «necha foiz»
+is one number on every screen; a truck with no % draws no bar (it drew 0 %).
+
+1419. **Every reader follows, and three things are stated rather than built.**
+`TruckRow` reads the fixes of EVERY truck in scope before the rank — a fix
+that moves a truck from «overdue» back onto the road must change the counts
+too (red-proven: positions read for the drawn slice only left the counts
+saying «overdue» about a truck the rows drew on the road). The office's words
+(`truckRoadWords`, one builder for four screens) name the LEG and date the
+evidence once («GPS · 3 soat oldin», «belgi 2 kun oldin»); the map popup, the
+bot and the cabinet map print days only for a DATED place (O15 — they printed
+«~a–b kun» for a truck pinned in Uzbekistan). Stated: the customer's rung does
+not follow GPS (a truck GPS puts in Uzbekistan stays «yo'lda» for the customer
+until a person pins it — his design); the Kashgar road's `uz` leg starts at
+Osh, so ~25 km Osh → Dostlik read «O'zbekistonda»; TAS2's dot is 85 km from
+Tashkent, so a phone at the TAS2 yard reads ~90 %.
+
+1420. **A pin press is judged against the pin the presser SAW**
+(`checkpoint_changed`). The board keeps a page open for a long while; a press
+of «Qirg'izistonda» on a stale page where a colleague has since pressed the
+same button would have CLEARED it (pressing the standing pin toggles it off).
+The form posts `seenKey` and the service compares it under the row lock with
+the stored key AS A SCREEN READS IT (a key the buttons never write is no pin);
+absent = an old page, which keeps the toggle.
+
+1421. **The board** (`/batches`, `batches/board.ts` + `board-view.ts`). The four
+columns stay (his 1A) with sections by place inside them (3a); the road strip
+on top counts each place with every filter but the place itself, from the SAME
+cards the columns draw (#513), uncapped — the oldest open trucks are the stuck
+ones — and a tap filters (2a). Factory trips stand in the column they match
+with «zavod reysi» (9b) — a trip on the road is inside its destination's
+country, never in a queue (D12) — and through their own door: the trip list's
+readers see every open trip, a warehouse-scoped holder only its own
+destinations (a role grant must not widen the board past its trucks); a
+receiver (`receipts.create`) the trips coming to their warehouses without the
+stale arrived ones (/receive's rule). A card is a block holding ONE link and,
+beside it, a native `<details name="board-menu">` ⋯ (10b): the truck's own
+road's pins for `batches.vehicle_info` on a truck on the road — the standing
+pin a chip, never a button (pressing it would clear it) — and the driver's
+number as `tel:` digits, printed as written. Nothing else moves to the board:
+departure, cancel, reroute and rename stay on the card. Cargo (7a): plan,
+«Yuklandi a / b karobka · m³ · kg» (the truck header's own sentences,
+`loadState`, so the two cannot disagree), what RODE once departed, and
+«Tushirildi a / b» at the gate. Dates (6c): first and last carton of the
+CURRENT cargo — riders minus what is only reserved — each carton's latest load
+scan on THIS truck, `least(scanned_at, created_at)`, kept inside the truck's
+own days; locale-free Tashkent «12–14.10» (ru prints 12.10, en and zh 10/12).
+No fill bar (8b). Below `xl` the columns are a native radio group over ONE DOM
+(`:has()` shows the checked column), opening on the strip's column; the
+filters fold behind one button, open while a filter is on. The archive counts
+what rode, the board's own number.
+
+1422. **Found on the way.** (a) `m9m`'s «the cancelled batch left the board»
+asserted on the page's first `.grid` — since the phone tabs, a row of four tab
+labels that could never hold a truck code: an assertion that could not fail.
+It asks the board by its testid now, with the archive row as the positive
+control. (b) The first version of the load dates probed `scan_events` per
+carton through the (batch, type) index — a 600-carton truck re-read its 600
+load events 600 times; one grouped pass now. (c) On the round's own 360 px
+screenshot the active strip stop sat off the screen after a tap (the strip is
+wider than a phone) — `StripScroll` brings it into view.
+
+1423. **The round reviewed AS BUILT** (three lenses — data, screen, doors and
+speed — each finding refuted by its own author before reporting; no door
+defect survived, and `loadBoard` measured 24-32 ms on the shaped copy, 85-110
+ms on a synthetic 663-truck fleet, a fixed eleven statements). Fixed:
+- **A quick truck is no plan.** `batchLoadTotals` counts the plan as
+  everything on the pointer, and a truck loaded without a plan has nothing
+  else there — so the first scan read «Yuklandi 1 / 1 · hammasi yuklandi»
+  with fifty cartons on the floor. `hasPlan` (a `load_plans` row names the
+  truck) decides: without one the card says what was scanned, with nothing to
+  divide it by. Both lenses found it independently.
+- **One box count per card** (§3): an arrived card printed «Ketdi: 120 ·
+  Tushirildi 80 / 120» (120 twice) and «Keldi 12.10» beside «yetib keldi ·
+  3 kun». It is «Tushirildi a / b karobka · m³ · kg» and the dates line.
+- **The gate word** (`gateWord`, on-road-state.ts, one pure home for the four
+  screens): a truck with nothing left to scan off is «Tushirib bo'lindi —
+  «Razgruzkani yakunlash» bosilmagan», never «Tushirilmay turibdi» beside
+  «Tushirildi 40 / 40». Its KIND stays `stuck`: the counts and the
+  attention row still see a truck nobody finished, which is still a job.
+- **The standing pin in the ⋯ is a dated fact** («🛃 Chegarada turibdi ·
+  belgi 4 kun oldin»), never «Hozir» — a newer fix or the schedule walked on
+  from it may have moved the truck, and the card above it says where.
+- **The phone tabs follow a strip tap** even when the default column is the
+  same: a search-param change keeps the page's tree and so the radio checked
+  by hand; the wrapper is keyed by the stop as well. The active «Joyi aniq
+  emas» stop stays while it filters, or a pin that placed its last truck took
+  away the only link back.
+- **The tabs HIDE the others, only where `:has()` exists** (`max-xl:` +
+  `@supports selector(:has(*))` for the tab row and the headings): on a
+  WebView without it the four columns stack with their headings, where the
+  first version drew tabs over four hidden columns — an empty board.
+- One m³ · kg spelling on every card (`measureLine`; they swapped between
+  columns); a trip counts a line missing EITHER figure once; the stale-trip
+  door is /receive's own `staleOpenSql`, imported, not restated; the cap
+  message says what it does (the oldest N) instead of advising a filter that
+  runs after it; stuck and overdue words in the warning colour; tab labels
+  wrap rather than truncate.
+Stated, not changed: the ⋯ pins follow `batches.vehicle_info` — the Mashina
+tab's own door, which warehouse staff at either end hold — so the board adds
+no power; his 10b said «logistning belgilari», so he was asked, and answered
+«1 hozirgidek qolsin» (#1425); the riders
+are read twice (the cargo and the dates, ~150 ms at 200 trucks); one render
+holds ~8 of the pool's 10 connections for its 30-100 ms.
+
+1424. **The fixes reviewed before the merge** (a workflow: three lenses, each
+finding given a verifier with a probe; 5 confirmed, 12 more read and decided by
+hand). Every one of the five was in the tracking math or the words, and each
+came with a literal scenario that is now a test:
+- **A queue the fix itself disproves is counted from the fix** (`fixAnchor`).
+  A phone in the Irkeshtam queue 78 h after leaving Kashgar read
+  «Qirg'izistonda» with a date two days early: the walk's entry had the truck
+  in the queue 60 h ago and out of it 12 h ago, and the fix says it is still
+  there. An entry whose typical wait is spent by the fix's own moment is
+  replaced by the fix's moment — `routeWithWaits`'s rule for a regime that
+  changed mid-queue. One fix cannot say how long the truck has stood.
+- **An older fix under a newer pin keeps its place only while the two agree**
+  (`underNewerPin`). The old precedence kept a same-leg fix unconditionally,
+  so a phone silent 100 h in the queue and a «Chegarada» pressed 2 h ago read
+  «O'zbekistonda». Now the fix stands only if the walk from it is still on the
+  pin's leg at the press; otherwise a queue takes the pin's anchor, and a
+  moving leg keeps the fix's share of the leg timed from the press — never
+  behind where the phone saw it.
+- **A truck seen at its gate is not late, and a silent one is late at its OWN
+  slowest pace.** The engine calls a walk spent when the last leg's MID is
+  used up, so a fix at the Tashkent yard read «muddatdan oshdi — haydovchi
+  bilan bog'laning» within the hour, days early, and stayed so overnight (a
+  batch turns «arrived» only at the first unload scan). My first fix held any
+  truck whose fix-walk was spent «on time, today» until the DEPARTURE
+  schedule ran out — and the fixes' own recheck (a second workflow, below)
+  showed that schedule still counted the queues the phone had seen the truck
+  past: a truck 2 h from Tashkent, silent, read «on time, today» for six days,
+  and a Yallama wait typed after it crossed moved its alarm from D+186 to D+134
+  or D+309, while the board printed «Taxminan 20.10 – 20.10», then 21.10, then
+  22.10 — a «today» renewed every morning — beside a map that printed no date
+  for the same truck. Now, three rules: a fix within `GATE_RADIUS_DEG` of the
+  road's END is `atGate` (no date, never overdue, «Manzilda, tushirilmagan»,
+  first in the list); otherwise a fix-walk spent at the typical pace is DUE —
+  `remainingHours` [0, hours to the slowest arrival walked from the fix] —
+  and late one reporting window (`FRESH_MINUTES`) after that slowest arrival,
+  so no queue behind the fix and no wait typed for it can move the deadline;
+  and `placeDated` (not overdue, something left to wait for) is the ONE rule
+  for printing a date, asked by `truckRow`, the cabinet and `truckFor`. A fix
+  under a newer pin is timed from the press (`FixAnchor.atMs`).
+- **The gate word fits the chip.** «Tushirib bo'lindi — «Razgruzkani
+  yakunlash» bosilmagan» was 51 characters in the dashboard's one-line meter
+  chip; the word is «Tushirildi, yopilmagan» and the button is named in the
+  sentence on every screen (`truckUnloadedOpenHint`), whatever `counts` says.
+- **The attention row said the opposite of its own card**: «2 kundan beri
+  tushirilmagan fura» beside «Tushirildi, yopilmagan». `isStuckAtGate` counts
+  trucks nobody FINISHED; it reads «tushirish yakunlanmagan» now, in all four
+  bundles and in the 20:00 Telegram summary (the same key).
+Decided from the rest:
+- **A truck nothing honest places is drawn nowhere.** A spent walk from the
+  departure ends ON the destination warehouse: /map drew a red lorry on
+  Tashkent 1 and the customer's map wrote «taxminiy joy» on the Tashkent dot —
+  «my cargo is in Tashkent». `placeTruck` returns no point there,
+  `TruckMarker.placed` is false, /map names such trucks under the map — and
+  every truck `truckFor` cannot draw at all (no modelled road, no phone) — and
+  no longer says «no trucks» while it does; the cabinet map lists it with no
+  point and no «taxminiy joy» about a point it does not have.
+- **A truck off the road stands at its gate** (`truckFor`, any status but
+  `in_transit`, BEFORE the no-road branch — the recheck found an arrived
+  internal truck following its driver's phone on the drive back): an ARRIVED Yiwu → Kashgar truck whose cartons are still
+  `in_transit` showed the customer a 71 % bar and «Kashgarga ~22.10» while the
+  office said «Yetib keldi»; the cabinet builds `transit` only for a truck on
+  the road.
+- **/trucks speaks the board's words** (`trucksOnRoadRows` + `truckRoadWords`):
+  it printed the raw fix ahead of a newer pin, a yard fix from before the
+  departure as live, and «0 soat oldin».
+- **A date walked from a pin says so** («belgi va jadval bo'yicha taxmin»,
+  `estimateBasis`); it was labelled a plain schedule estimate.
+- **The arrived card's measures are the truck's, and say so** («Tushirildi
+  10 / 40 karobka · jami 12 m³ · 3000 kg»): beside «10 / 40» a bare «12 m³»
+  read as the ten's.
+- **The board's arrived card names the button** («Razgruzkani yakunlash»
+  bosilmagan) on its own line: the card leaves the sentence out at the gate,
+  so the shortened word alone said nothing about what to press (the recheck).
+- **The card's one box count is a table** (`cargoLineOf`, board-view.ts): the
+  quick-truck fix had no test that could fail — the e2e's forming truck read
+  «rejasiz» before and after it.
+- **Tests that could not fail, re-anchored**: the map's «stale fix» case
+  passed a fix from BEFORE the departure (now says so, and a fix after the
+  departure is proven to anchor); the evidence rules (`least(recorded_at,
+  received_at)`, accuracy ≤ 5 km, accuracy 0 kept) and the cabinet following
+  the phone to the office's percent are integration tests
+  (`board-readers.integration.test.ts`); the board specs delete their trucks
+  in `afterAll` by a code prefix, because a failed serial test skips the final
+  cleanup and a CI retry forgets the first attempt's ids.
+The rework was rechecked by a further workflow (two lenses, a verifier per
+finding with probes; 5 confirmed, 3 more decided by hand), and every one was
+in the new rule or a reader of it:
+- **The yard is where the warehouse stands** (`YARD_POINTS`, map-data.ts):
+  every road into TAS2 ends on its dot, drawn 85 km off so the two Tashkent
+  pins stay clickable, so a phone in the TAS2 yard was never at its gate — a
+  date renewed with every fix, then «call the driver» after a quiet night.
+- **The gate is the FIX's own distance**, not its projection: a phone past
+  the road's end projects onto it from anywhere within the 2.5° tolerance
+  (Kokand on a road into Andijan read «at the gate»).
+- **A queue is late at its LONGEST wait less what it has stood**
+  (`slowestArrivalMs`): the engine prices a leg proportionally — 9 h left of a
+  72 h wait after 42 h stood — so a fresher «still queueing» fix brought the
+  alarm EARLIER (a fix at D+60 alarmed 15 h before one at D+30).
+- **A lot on two trucks keeps the road of the one that lands last**
+  (`CabinetTruck.arriveBy`, never shown): a dateless truck had ranked as the
+  latest, so one at its gate took the group's 100 % and blanked the date of
+  the one still on the way.
+- **«~0–0 kun» is gone from the day readers**: `placeDated` judges in hours
+  and the map, the bot and the cabinet map print days to a tenth; the upper
+  end rounds UP.
+- **A truck at its gate is late once the owner's SLOWEST schedule and the
+  stuck-at-gate days after it have passed with nobody having scanned it off.**
+  The first rework had removed the only alarm for a truck standing unscanned
+  in the yard; the second put it back on the departure's MIDPOINT, and a third
+  workflow found a truck landing in the later half of his own range «muddati
+  o'tgan» within a minute of reaching the yard and a pin pressed at the yard
+  restarting the clock for 42 h. This version shipped one commit and was
+  REPLACED by #1426 — a schedule cannot be the gate's clock at all.
+- **While the walk runs, a fix's date ends no earlier than its slowest
+  arrival** — it used to drop below the deadline and jump back when the walk
+  turned due.
+Stated, not changed: a typed wait for a queue AHEAD of a silent fix that the
+walk had the truck cross before the wait was typed does not move its
+deadline; a wait typed while the truck queues is scaled (`withLead`) and the
+slowest end overstates it by up to ~13 h (the safe side); TAS2's % still
+walks to the drawn dot (~90 % in Tashkent); the gate judges the code's yard
+(`yardFor`), not coordinates typed on /admin/warehouses.
+Red proofs: 3 for the queue/pin/unplaced math, 10 for the rework (gate state,
+slowest pace, reporting window, the one date rule in truckRow and the cabinet,
+the gate branch, the off-road order, the yard fix, the board hint, the map
+naming), 7 for the second recheck (TAS2 yard, projection, queue wait, gate
+late, cabinet ranking, day rounding, the gate as a whole), 4 for the third
+(the midpoint clock, the stuck days, a pin after the gate, the marker's gate
+flag), 9 for the readers and words — every one by string edit, every file
+restored and hashed; the cleanup of `board-readers` now fails loudly and
+deactivates its client.
+
+1425. **His answer «1 hozirgidek qolsin» (2026-10-20): the board's pins keep the
+Mashina tab's door.** Checked against the code before writing it down (#1229):
+the board offers the ⋯ pins on `batches.vehicle_info` (`mayPin`, board.ts), the
+Mashina tab asks the same, and the pin service refuses without it and then
+asks the card's two-ends door (`assertOnBatchCard`) — so the logist and the
+warehouse staff at either end of the truck pin from the board exactly as from
+the card, and a seller or the VED never. Nothing read it until now: pinned in
+`batch-board.test.ts` (the three sites' sentences and the seeded holders —
+logist, warehouse_manager, warehouse_operator, not sales or VED), red-proven
+by narrowing the board to unscoped holders.
+
+1426. **The gate's clock is the days since the truck CAME, never a schedule**
+(the fourth recheck: one reviewer, a verifier per finding with probes on
+HEAD; 3 of 4 confirmed, 1 refuted, 1 left unverified and built anyway). Every
+schedule-based gate clock was wrong in a way a person sees: (a) a truck that
+reached the yard after h240 of a 192 h road read `on_road`, due today, an hour
+before the gate and `overdue` — «muddati o'tgan — tushirishni tekshiring» —
+five minutes after it, because the road's walk runs from the fix and forgives
+the road's lateness while the gate clock ran from the departure; the same
+truck arrived by its SCAN was `unloading` for two days; (b) a late pin
+(«Qirg'izistonda» pressed at h200, the yard at h210) held the alarm back to
+h344, the pin's own walk being disproved by the fix and trusted anyway — and
+«a press after the gate does not restart it» held only while the phone was
+silent, because the precedence compared the pin with the NEWEST fix;
+(c) a truck late at its gate by the phone was counted by NOTHING — the
+attention row and the 20:00 summary count `stuck`, and it was `overdue`.
+Now: `latestPositions(trips)` returns `gateSince` — the first fix inside
+`GATE_RADIUS_DEG` of `yardFor(dest)` after the last accurate fix anywhere
+else (one grouped pass, `chordDeg`'s formula in SQL, a cell-tower fix breaks
+no stretch; the newest fix moves every report, so it cannot be the clock);
+`placeTruck` is never overdue at the gate; `truckRow` turns an at-gate row
+`stuck` once `gateDaysOf` reaches `STUCK_AT_GATE_DAYS` — `isStuckAtGate`'s
+Tashkent days, so the two arrivals are flagged on ONE clock and both are
+counted; `gateWord` calls it «Tushirilmay turibdi»; the sentence, the /map
+popup and the bot say «N kundan beri turibdi» and, stuck, «tushirishni
+tekshiring». `placementFix` is the ONE LatestPosition → PlacementFix mapping
+(three readers copied it by hand, and `gateSince` would have been the field
+one of them dropped). Also: a road nobody modelled has a gate too (TAS1 → AND
+read «yo'lda» at the Andijan yard for ever, the unverified finding), and a
+trip that STARTS in its destination's yard is never at the gate by the phone
+(`gateYard` — TAS1 and TAS2 share one Tashkent yard, so the no-road gate
+would have fired the minute it left). The refuted one: a typed Yallama wait
+moving a gate alarm — moot now, no schedule reaches the gate. 10 red proofs
+by string edit, all red.
+
+1427. **The fifth recheck: the gate's clock across the first scan, an agreeing
+pin, ties, and the colour** (one reviewer, a verifier per finding; 5 of 5
+confirmed). (a) **The first unload scan restarted the clock**: it flips the
+batch to `arrived` with `arrivedAt = now`, and the arrived branch counted from
+there, so a truck four days in the yard by the phone read «bugun yetib keldi»
+and left the attention count for two more days. `arrived_at` is NOT
+back-dated — some 27 readers use it (the lead clock, the calc actuals) — the
+office rows read positions for arrived trucks too, bounded at `arrivedAt`
+(`PositionTrip.until`), and the arrived truck stood since the earlier of the
+two. The yard's clock also counts no fix before the departure
+(`departedAt`). (b) **On a road nobody modelled, «O'zbekistonda» pressed
+after the yard fix** took the truck out of «stuck» to «no schedule»: the gate
+sat behind the pin precedence. A newer pin that AGREES (the one pin a generic
+road offers, at an Uzbek destination) keeps the gate — the mapped road's own
+behaviour through `underNewerPin`; a contradicting pin is still newer
+evidence. (c) **Equal fix times**: a phone whose clock runs ahead uploads its
+backlog in one request and every row reads the same `received_at`, so the
+newest fix and the yard stretch were picked in storage order — measured, six
+trucks all read «overdue» on the road while their phones stood in the yard.
+Both now read in the phone's own order (`recorded_at`, then `id`). The test
+stores the backlog in BOTH orders: in one order the stretch proof stayed
+green, in the other the newest-fix proof did — storage luck, not a test.
+(d) **The lorry stayed amber** on both map renderers and /trucks' word was
+plain for a stuck truck (only the popup was red). (e) **Stuck trucks ranked
+by days on the road**, so on the six-row dashboard card a truck two days at
+its gate pushed off one five days unloaded; they rank by how long they stood.
+9 red proofs by string edit, all red.
+
+1428. **The sixth to ninth rechecks: «Keldi» stays the scan; the phone's
+yard time is its own labelled fact.** #1427 moved the stuck clock in `truckRow`
+and left the other readers of an arrived truck on the scan. The sixth recheck
+(3 of 3 confirmed) found the board card printing «Keldi <today>» beside
+«Tushirilmay turibdi» and sorting that truck last; the bot saying «yo'lda»
+about an arrived truck's unscanned cartons from the first scan on (the
+marker's off-road branch hard-coded no gate); /trucks printing a green
+«arrived» for a stuck one; and every arrived truck's newest fix read on every
+render for nothing. The first fix MOVED the printed arrival date to the
+phone's yard time — and the seventh recheck (4 of 5 confirmed) found every
+screen that prints an arrival then disagreeing with another: /trucks still
+printed the scan, the ladder dated the «arrived» step of a truck still on the
+road, the date jumped back four days on «Razgruzkani yakunlash», and the 20:00
+summary counted «arrived today» about a truck the board said came days ago.
+**The decision: an arrival DATE is the first unload scan on every screen, as
+before this round; the phone's earlier yard time is a separate PAST fact** —
+«GPS: hovliga 16.10 kirgan» (`TruckRow.yardFrom`, only when it came on an
+earlier Tashkent day; `truckRoadWords.yard`, the board card). The eighth
+recheck (2 of 2 confirmed) refused the first wording, «hovlida N kundan beri
+(GPS)»: the phone saw the yard only until the scan, and that count ran on for
+a truck unloaded and driven away — evidence is a dated fact, never «still
+there». Only «stuck» and the ORDER judge by the earlier clock
+(`TruckRow.stoodSince`, `stoodSince()`; for a truck still in transit at its
+gate, the phone's first yard fix): `rankTrucks` orders every truck at a gate
+by it, the board's own arrived order — the dashboard had ranked the
+not-yet-stuck ones by scan days and dropped the truck that had stood longest
+— and the ninth recheck (2 of 2) found two trucks at their gates by the phone,
+not yet stuck, still ordered by plate code, and the ru/en line («во дворе с»,
+«in the yard from») claiming the truck is in the yard now; both fixed, every
+bundle read by a test. The marker stands
+an arrived truck at its gate on that clock (the bot and the cabinet map pass
+`until`), /trucks reads arrived rows and prints a stuck one in the board's
+words, and an arrived truck reads `gateSinceFor` alone, never its newest fix.
+A date that moves is a second answer to «when did it come», and every reader
+of the first one then disagrees with it. 22 red proofs by string edit, all
+red (one first stayed green: the card's line was pinned by its declaration,
+not its push).
+
+## The dashboard spec that read two boxes at two moments (2026-10-20; NO migration, ledger 135; tests only)
+
+1429. **Cards compared on one row are read in ONE frame.** The board round's
+full CI-order run on the merged tree (458 passed) went red once on
+`m9c-dashboard.desktop`: «the two money charts share a row» read the P&L and
+cash cards **73.75 px apart**. They stand in one grid row inside ONE section,
+so the layout was never wrong. Run alone the spec was green 6 of 6, then 24 of
+24 with every core busy. The probe sampled both cards every 10 ms for 3 s after
+they showed, and neither moved. **The cause was the reading.** Every dashboard
+card streams under its own Suspense, and a card ABOVE the money section can
+swap its skeleton for content of another height at any moment. Two
+`boundingBox()` calls are two round trips, so one landed before such a swap and
+one after. On a busy full-suite server the boundaries resolve in a different
+order, which is why only the full run saw it. `sameFrame()` reads every box a
+row compares in one `page.evaluate`, after each card is visible. Both tests in
+the file use it, the second for the hero, the four tiles and the two card rows.
+RED PROOF: a 74 px block inserted between the two reads fails the old shape
+3 of 3 («Received: 90»). Inserted before a single-frame read, it moves both
+cards and the assertion holds, 3 of 3. Swept: of the fourteen other specs that
+read several boxes, none compares two of them on a streaming page.
+`/hodimlar` and the two `/accounting/sarflar` pages are the only other
+Suspense pages, and no spec measures there. RULE: a position RELATIVE to
+another element is one measurement. Two reads are two facts about two
+different pages.
+
 ## LTL / FTL — sborniy va butun mashina (2026-10-20; migration 0135 `load_mode`, ledger 136; spec `docs/LTL-FTL.md`; renumbered from #1416-#1434 on the merge, the TWENTY-THIRD collision: «Partiya doskasi» and its dashboard-spec follow-up took #1416-#1429 and merged first)
 
 His message: «bizni sohada LTL FTL degan narsalar bor … KPI sovrinlar shu LTL boyicha hsoblanadi agarda FTL

@@ -5,13 +5,12 @@ import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import { batches, boxes, boxMovements, receiptLots, warehouses } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { latestPositions } from '@/modules/wms/tracking/devices';
+import { trucksOnRoadRows } from '@/modules/wms/tracking/on-road';
+import { truckRoadWords } from '@/components/truck-road';
 import { Icon } from '@/components/ui/icon';
 import { EmptyState, PageHeader, Stat } from '@/components/ui/page';
 import { warehouseScopeEither } from '@/modules/platform/rbac/scope';
 import { mayReadBatches } from '@/modules/wms/batches/read-door';
-import { pinOnRoute } from '@/modules/wms/tracking/eta';
-import { CHECKPOINT_LABEL } from '@/modules/wms/tracking/map-data';
 import { BorderQueuePanel } from './border-queue-panel';
 
 /**
@@ -37,6 +36,7 @@ export default async function TrucksPage({
   if (!mayReadBatches(actor.permissions)) redirect('/');
   const t = await getTranslations('trucks');
   const tb = await getTranslations('batches');
+  const tbb = await getTranslations('batches.board');
   const format = await getFormatter();
   const params = await searchParams;
   const showClosed = params.all === '1';
@@ -94,8 +94,18 @@ export default async function TrucksPage({
     .orderBy(desc(batches.departedAt), desc(batches.createdAt))
     .limit(200);
 
-  // The real GPS fix, when the driver's phone is paired and reporting.
-  const positions = await latestPositions(rows.map((row) => row.id));
+  // Where a truck on the road is: the ONE placement (`placeTruck`, through
+  // the dashboard's own row) — the newest of the departure, the pin and the
+  // phone's fix, a yard fix from before the departure ignored. This page used
+  // to print the raw GPS fix ahead of a newer pin and a pre-departure yard
+  // fix as live (the board's review); the board, the dashboard and the map
+  // read the same row.
+  // Arrived too: one standing unloaded past the stuck days reads as the board
+  // says it, never a green «arrived» (the sixth recheck).
+  const roads = await trucksOnRoadRows(
+    rows.filter((row) => row.status === 'in_transit' || row.status === 'arrived').map((row) => row.id),
+  );
+  const words = await truckRoadWords({ counts: false });
 
   const onRoad = rows.filter((row) => row.status === 'in_transit').length;
   const landed = rows.filter((row) => ['arrived', 'unloaded'].includes(row.status)).length;
@@ -128,15 +138,7 @@ export default async function TrucksPage({
       ) : (
         <div className="space-y-2">
           {rows.map((row) => {
-            const position = positions.get(row.id);
-            // The truck's own road's pin — a Kyrgyz pin left on a Kazakh road
-            // is no position, here as on the dashboard (`pinOnRoute`).
-            const checkpoint = pinOnRoute(
-              row.checkpoint,
-              row.originCode ?? '',
-              row.destCode ?? '',
-              row.destCountry,
-            )?.key;
+            const road = roads.get(row.id);
             return (
               <Link
                 key={row.id}
@@ -175,24 +177,21 @@ export default async function TrucksPage({
                   )}
                 </div>
 
-                {/* Where it actually is: the arrival if it landed, otherwise
-                    the newest GPS fix, otherwise the logist's manual pin. */}
-                <div className="mt-1 flex flex-wrap items-baseline gap-x-3 text-xs">
-                  {row.arrivedAt ? (
+                {/* Where it is: the arrival if it landed, otherwise the
+                    board's own words for the truck on the road. */}
+                <div className="mt-1 text-xs">
+                  {row.arrivedAt && road?.kind !== 'stuck' ? (
                     <span className="font-semibold text-good">
                       🏁 {t('arrivedAt', { wh: row.destCode ?? '' })} ·{' '}
                       {format.dateTime(new Date(row.arrivedAt), { dateStyle: 'short' })}
                     </span>
-                  ) : position ? (
-                    <span className={position.fresh ? 'text-good' : 'text-ink-500'}>
-                      📍 {position.lat.toFixed(2)}, {position.lon.toFixed(2)} ·{' '}
-                      {position.fresh
-                        ? t('freshFix', { h: Math.round(position.ageMinutes / 60) })
-                        : t('staleFix')}
-                    </span>
-                  ) : checkpoint ? (
-                    <span className="text-ink-500">
-                      {CHECKPOINT_LABEL[checkpoint].icon} {tb(CHECKPOINT_LABEL[checkpoint].label)}
+                  ) : road ? (
+                    <span data-testid="truck-row-road" className="text-ink-600">
+                      📍{' '}
+                      <span className={`font-semibold ${road.kind === 'overdue' || road.kind === 'stuck' ? 'text-warn' : ''}`}>
+                        {words.word(road)}
+                      </span>
+                      {road.roadPct !== null && <> · {tbb('roadPct', { pct: road.roadPct })}</>} · {words.sentence(road)}
                     </span>
                   ) : row.departedAt ? (
                     <span className="text-ink-500">

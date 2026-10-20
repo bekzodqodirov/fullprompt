@@ -4,8 +4,8 @@ import { describe, expect, it } from 'vitest';
 /**
  * Every date a person reads carries the logist's typed border queues (0118).
  *
- * `waits` is a REQUIRED argument of `scheduleEstimate` / `truckFor` /
- * `truckRow`, but a literal `{}` satisfies the type: a reader that passes it
+ * `waits` is a REQUIRED argument of `scheduleEstimate` / `placeTruck` /
+ * `truckFor` / `truckRow`, but a literal `{}` satisfies the type: a reader that passes it
  * silently ignores the queue every other screen shows (#790's shape one level
  * down), and every behavioural test stays green — measured: the cabinet's
  * `loadBorderHours()` replaced by `{}` left 53 of 53 tests passing, because no
@@ -24,7 +24,7 @@ const PASS_THROUGH = new Set([
 ]);
 
 /** The callee and the 0-based position of its `waits` argument. */
-const READERS: Record<string, number> = { scheduleEstimate: 4, truckFor: 3, truckRow: 3 };
+const READERS: Record<string, number> = { scheduleEstimate: 4, placeTruck: 1, truckFor: 2, truckRow: 3 };
 
 /** Comments out, strings kept — the quote-walking stripper (#725). */
 function stripComments(source: string): string {

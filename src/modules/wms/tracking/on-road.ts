@@ -6,7 +6,7 @@ import { tashkentDay } from '../../platform/time/tashkent';
 import { batchEndsWhere, inTransitBatches } from '../reports/queries';
 import { awaitingUnloadCounts } from '../scanning/unload';
 import { loadBorderHours } from './border-queue';
-import { latestPositions } from './devices';
+import { gateSinceFor, latestPositions, placementFix, type LatestPosition, type PositionTrip } from './devices';
 import type { BorderHours } from './eta';
 import {
   rankTrucks,
@@ -46,14 +46,17 @@ function zeroCounts(): Record<TruckKind, number> {
  * The dashboard's trucks card: every truck on the road or standing at its
  * destination gate, classified and ranked, `limit` of them drawn.
  *
- * Four statements whatever the fleet: the in-transit report and the loading
- * count, then — for the SLICED rows only — the newest position and the boxes
- * still on board. Membership and the box count are `inTransitBatches`' (the
- * XLSX and the attention row read the same rows); every date and percentage
- * comes from `on-road-state.ts` through `eta.ts`, so the card, the map and the
- * customer's cabinet cannot say different things about one lorry. This file
- * never estimates anything itself — no `truckFor` (one contents query PER
- * truck, for a popup this card does not draw), no `routeFor`.
+ * Five statements whatever the fleet: the in-transit report, the loading
+ * count and the queues, then the newest fix of EVERY truck in scope — a fix
+ * places the truck (his 5a), so it decides kinds, counts and the order, and
+ * read for the slice alone it would rank one way and draw another — then,
+ * for the SLICED rows only, the boxes still on board. Membership and the box
+ * count are `inTransitBatches`' (the XLSX and the attention row read the same
+ * rows); every date and percentage comes from `on-road-state.ts` through
+ * `eta.ts`, so the card, the map and the customer's cabinet cannot say
+ * different things about one lorry. This file never estimates anything
+ * itself — no `truckFor` (one contents query PER truck, for a popup this card
+ * does not draw), no `routeFor`.
  *
  * `warehouseIds`: undefined = the whole company; a list = either end in it.
  * An EMPTY list is a scoped viewer with no warehouse and answers NOTHING —
@@ -80,47 +83,68 @@ export async function trucksOnRoad(
     loadBorderHours(),
   ]);
 
-  const byId = new Map<string, TruckInput>(inputs.map((r) => [r.id, r]));
-  const ranked = rankTrucks(inputs.map((r) => truckRow(r, now, today, waits)));
+  const [positions, yards] = await readEvidence(inputs);
+  const placed = inputs.map((r) => withFix(r, positions, yards));
+  const byId = new Map<string, TruckInput>(placed.map((r) => [r.id, r]));
+  const ranked = rankTrucks(placed.map((r) => truckRow(r, now, today, waits)));
   const counts = zeroCounts();
   for (const r of ranked) counts[r.kind] += 1;
 
   const sliced = ranked.slice(0, Math.max(0, opts.limit));
-  const ids = sliced.map((r) => r.id);
   const arrivedIds = sliced.filter((r) => r.status === 'arrived').map((r) => r.id);
-  const [positions, awaiting] = await Promise.all([
-    latestPositions(ids),
-    awaitingUnloadCounts(arrivedIds),
-  ]);
+  const awaiting = await awaitingUnloadCounts(arrivedIds);
 
-  const rows = sliced.map((row) =>
-    enrichedRow(byId.get(row.id)!, row, positions, awaiting, now, today, waits),
-  );
+  const rows = sliced.map((row) => enrichedRow(byId.get(row.id)!, row, awaiting, now, today, waits));
 
   return { rows, total: ranked.length, counts, loading: Number(loadingRow[0]?.n ?? 0) };
 }
 
 /**
+ * A truck on the road is placed by its positions; one ARRIVED keeps only
+ * since when the phone had it in the yard before the first unload scan
+ * (`until`), so that scan does not restart its «stuck» clock (the fifth
+ * recheck) — its newest fix is nobody's evidence, so it is not read (the
+ * sixth: every fix a paired phone sends on the drive home was).
+ */
+const tripOf = (r: TruckInput): PositionTrip => ({
+  id: r.id,
+  originCode: r.originCode,
+  destCode: r.destCode,
+  departedAt: r.departedAt,
+  until: r.status === 'arrived' ? r.arrivedAt : null,
+});
+
+function readEvidence(inputs: TruckInput[]): Promise<[Map<string, LatestPosition>, Map<string, Date>]> {
+  return Promise.all([
+    latestPositions(inputs.filter((r) => r.status === 'in_transit').map(tripOf)),
+    gateSinceFor(inputs.filter((r) => r.status === 'arrived').map(tripOf)),
+  ]);
+}
+
+/** The input with its evidence: the newest fix `placeTruck` places it by, or the arrived truck's yard time. */
+function withFix(input: TruckInput, positions: Map<string, LatestPosition>, yards: Map<string, Date>): TruckInput {
+  return {
+    ...input,
+    fix: placementFix(positions.get(input.id)),
+    yardSince: input.status === 'arrived' ? (yards.get(input.id) ?? null) : null,
+  };
+}
+
+/**
  * Re-derived from the enriched input rather than patched onto the row, so
- * truckRow stays the one place a row's fields are decided. The enrichment
- * changes no kind and no order: a position never moves the schedule (the
- * map's own rule) and the unload count is not what makes a truck stuck.
+ * truckRow stays the one place a row's fields are decided. The unload count
+ * changes no kind and no order: it is not what makes a truck stuck.
  */
 function enrichedRow(
   input: TruckInput,
   row: TruckRow,
-  positions: Map<string, { recordedAt: Date }>,
   awaiting: Map<string, number>,
   now: Date,
   today: string,
   waits: BorderHours,
 ): TruckRow {
   return truckRow(
-    {
-      ...input,
-      awaitingUnload: row.status === 'arrived' ? (awaiting.get(row.id) ?? 0) : null,
-      lastPositionAt: positions.get(row.id)?.recordedAt ?? null,
-    },
+    { ...input, awaitingUnload: row.status === 'arrived' ? (awaiting.get(row.id) ?? 0) : null },
     now,
     today,
     waits,
@@ -141,8 +165,8 @@ export const truckOnRoadRow = cache(async function truckOnRoadRow(batchId: strin
 /**
  * Several trucks' rows at once, each assembled as `truckOnRoadRow` assembles
  * one — for a surface that names many lorries (the client card's «Yuklar»
- * tab: every truck a client's cargo is riding). Three statements for any
- * number of trucks, never three per truck (#432). A truck not on the road or
+ * tab: every truck a client's cargo is riding). Four statements for any
+ * number of trucks, never four per truck (#432). A truck not on the road or
  * at its gate is simply absent, for the reason `truckOnRoadRow` states.
  */
 export async function trucksOnRoadRows(batchIds: string[]): Promise<Map<string, TruckRow>> {
@@ -156,13 +180,14 @@ export async function trucksOnRoadRows(batchIds: string[]): Promise<Map<string, 
     loadBorderHours(),
   ]);
   if (inputs.length === 0) return out;
-  const rows = inputs.map((input) => ({ input, row: truckRow(input, now, today, waits) }));
-  const [positions, awaiting] = await Promise.all([
-    latestPositions(rows.map((r) => r.input.id)),
-    awaitingUnloadCounts(rows.filter((r) => r.row.status === 'arrived').map((r) => r.input.id)),
+  const [[positions, yards], awaiting] = await Promise.all([
+    readEvidence(inputs),
+    awaitingUnloadCounts(inputs.filter((r) => r.status === 'arrived').map((r) => r.id)),
   ]);
-  for (const { input, row } of rows) {
-    out.set(input.id, enrichedRow(input, row, positions, awaiting, now, today, waits));
+  for (const raw of inputs) {
+    const input = withFix(raw, positions, yards);
+    const row = truckRow(input, now, today, waits);
+    out.set(input.id, enrichedRow(input, row, awaiting, now, today, waits));
   }
   return out;
 }

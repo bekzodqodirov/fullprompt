@@ -331,7 +331,13 @@ async function lookupClient(
   const destWh = alias(warehouses, 'dest_wh');
   const transitBatches = transitBatchIds.length
     ? await db
-        .select({ batch: batches, originCode: originWh.code, destCode: destWh.code })
+        .select({
+          batch: batches,
+          originCode: originWh.code,
+          destCode: destWh.code,
+          originCountry: originWh.country,
+          destCountry: destWh.country,
+        })
         .from(batches)
         .innerJoin(originWh, eq(batches.originWarehouseId, originWh.id))
         .innerJoin(destWh, eq(batches.destWarehouseId, destWh.id))
@@ -443,7 +449,23 @@ async function lookupClient(
   // (`truckFor`: the live phone fix when fresh, else the route's hours
   // anchored on the checkpoint pin), so the bot and the map never disagree.
   const fixes = transit.size
-    ? await latestPositions([...transit.values()].flatMap((tr) => (tr.batchId ? [tr.batchId] : [])))
+    ? await latestPositions(
+        [...transit.values()].flatMap((tr) => {
+          const ends = tr.batchId ? endsById.get(tr.batchId) : undefined;
+          return ends
+            ? [
+                {
+                  id: ends.batch.id,
+                  originCode: ends.originCode,
+                  destCode: ends.destCode,
+                  departedAt: ends.batch.departedAt,
+                  // An arrived truck's yard clock stops at its first unload scan.
+                  until: ends.batch.status === 'arrived' ? ends.batch.arrivedAt : null,
+                },
+              ]
+            : [];
+        }),
+      )
     : new Map();
   // The typed border queues, once for the answer (#432).
   const waits = transit.size ? await loadBorderHours() : {};
@@ -451,21 +473,26 @@ async function lookupClient(
   for (const tr of transit.values()) {
     const ends = tr.batchId ? endsById.get(tr.batchId) : undefined;
     const marker = ends
-      ? await truckFor(ends.batch, ends.originCode, ends.destCode, waits, fixes.get(ends.batch.id)).catch(
-          () => null,
-        )
+      ? await truckFor(ends.batch, ends, waits, fixes.get(ends.batch.id)).catch(() => null)
       : null;
     // A live fix on a road the schedule does not know has no clock at all
-    // (`remainingDays` [0, 0]) — say nothing rather than «late».
+    // (`remainingDays` [0, 0]) — say nothing rather than «late». Days only
+    // where a date may be printed (`dated`: O15 — a truck pinned in
+    // Uzbekistan has no date in the customer's cabinet, so none here).
+    // At its gate by the phone: how long it has stood there, and past the
+    // stuck days the unloading to check — never the driver (the board's words).
     const days = !marker
       ? ''
-      : marker.overdue
-        ? ' · ⏱ muddatdan oshdi'
-        : marker.remainingDays[1] > 0
+      : marker.atGate && marker.gateDays !== null
+        ? (marker.gateDays === 0 ? ' · bugun keldi' : ` · ${marker.gateDays} kundan beri turibdi`) +
+          (marker.gateStuck ? ' — ⏱ tushirishni tekshiring' : '')
+        : marker.overdue
+          ? ' · ⏱ muddatdan oshdi'
+          : marker.dated
           ? ` · ⏱ ~${marker.remainingDays[0]}–${marker.remainingDays[1]} kun`
           : '';
     transitLines.push(
-      `· 🚚 ${tr.code}${tr.route ? ` (${tr.route})` : ''} yo‘lda: ${tr.n} karobka` +
+      `· 🚚 ${tr.code}${tr.route ? ` (${tr.route})` : ''} ${marker?.atGate ? 'manzilda, tushirilmagan' : 'yo‘lda'}: ${tr.n} karobka` +
         (tr.kg > 0 ? ` · ${tr.kg.toFixed(1)} kg` : '') +
         (tr.m3 > 0 ? ` · ${tr.m3.toFixed(3)} m³` : '') +
         days +

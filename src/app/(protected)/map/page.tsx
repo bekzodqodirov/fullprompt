@@ -1,6 +1,7 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { redirect } from 'next/navigation';
+import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import {
@@ -125,6 +126,8 @@ export default async function MapPage({
       batch: batches,
       originCode: origin.code,
       destCode: dest.code,
+      originCountry: origin.country,
+      destCountry: dest.country,
     })
     .from(batches)
     .innerJoin(origin, eq(batches.originWarehouseId, origin.id))
@@ -150,14 +153,23 @@ export default async function MapPage({
 
   // Real fixes from paired driver phones win over the schedule estimate
   // while they are fresh (owner's flow: Android streams, other phones don't).
-  const fixes = await latestPositions(transit.map((t) => t.batch.id));
+  const fixes = await latestPositions(
+    transit.map((t) => ({ id: t.batch.id, originCode: t.originCode, destCode: t.destCode, departedAt: t.batch.departedAt })),
+  );
   // The typed border queues, once for every truck on the page (#432).
   const waits = await loadBorderHours();
 
   const trucks: MapTruck[] = [];
-  for (const { batch, originCode, destCode } of transit) {
-    const truck = await truckFor(batch, originCode, destCode, waits, fixes.get(batch.id));
-    if (truck) trucks.push(truck);
+  // A truck on the road that nothing honest places is NAMED under the map
+  // rather than drawn wrong or dropped: past its whole schedule with no pin
+  // and no fix (drawn, it would sit on its destination warehouse and read
+  // «arrived» — `TruckMarker.placed`), or on a road nobody modelled with no
+  // phone (`truckFor` null). Either way «no trucks on the road» would be false.
+  const unplaced: { batchId: string; code: string }[] = [];
+  for (const { batch, ...ends } of transit) {
+    const truck = await truckFor(batch, ends, waits, fixes.get(batch.id));
+    if (truck?.placed) trucks.push(truck);
+    else unplaced.push({ batchId: batch.id, code: batch.code });
   }
 
   // Factory trucks (0100) for whoever may open a pickup card — an estimate
@@ -238,7 +250,21 @@ export default async function MapPage({
         focusPickupId={focusPickupId}
         clientCode={focusClient?.code ?? null}
         basemap={basemapAvailable()}
+        unplacedCount={unplaced.length}
       />
+      {unplaced.length > 0 && (
+        <p data-testid="map-unplaced" className="text-sm text-ink-600">
+          {t('unplaced')}{' '}
+          {unplaced.map((tr, i) => (
+            <span key={tr.batchId}>
+              {i > 0 && ', '}
+              <Link href={`/batches/${tr.batchId}`} className="font-mono font-semibold text-brand-700 underline">
+                {tr.code}
+              </Link>
+            </span>
+          ))}
+        </p>
+      )}
     </div>
   );
 }

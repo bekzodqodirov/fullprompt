@@ -267,7 +267,7 @@
       "lost": "Yo‘qolgan deb yopilgan: {n} karobka · sarflangan {usd}",
       "lostNoMoney": "Yo‘qolgan deb yopilgan: {n} karobka",
       "undocumented": "Hujjatsiz ko‘chirilgan: {n} karobka",
-      "stuck": "2 kundan beri tushirilmagan fura: {n}",
+      "stuck": "2 kundan beri tushirish yakunlanmagan fura: {n}",
       "negativeTills": "Minusga tushgan kassa: {n}",
       "unratedTills": "Kursi kiritilmagan kassa: {n} — Balans jamiga kirmagan",
       "unplacedPayments": "Kassasi ko‘rsatilmagan to‘lov: {n} · {usd}",
@@ -396,7 +396,21 @@
       "note": "Yuk foydasi — prixod qabul qilingan kundagi sotuvchiga; upsale yuk narxining ichida, qo‘shilmaydi.",
       "truncated": "upsale to‘liq emas — davrda takliflar juda ko‘p.",
       "inactive": "faol emas"
-    }
+    },
+    "truckEstimateGps": "GPS va jadval bo‘yicha taxmin",
+    "truckEstimatePin": "belgi va jadval bo‘yicha taxmin",
+    "truckFixGps": "📡 GPS · {ago}",
+    "truckFixManual": "📍 qo‘lda kiritilgan joy · {ago}",
+    "agoNow": "hozirgina",
+    "agoMin": "{n} daqiqa oldin",
+    "agoHour": "{n} soat oldin",
+    "agoDay": "{n} kun oldin",
+    "truckUnloadedOpen": "Tushirildi, yopilmagan",
+    "truckAtGate": "Manzilda, tushirilmagan",
+    "truckAtGateDays": "{n, plural, =0 {bugun keldi} other {# kundan beri turibdi}}",
+    "truckAtGateStuck": "tushirishni tekshiring",
+    "truckYardFrom": "GPS: hovliga {date} kirgan",
+    "truckUnloadedOpenHint": "«{button}» bosilmagan"
   },
   "inventory": {
     "title": "Inventarizatsiya",
@@ -1530,7 +1544,8 @@
       "forbidden": "Bu mashinaga ruxsatingiz yo‘q",
       "not_in_transit": "Mashina yo‘lda emas — belgi faqat yo‘ldagi mashinaga qo‘yiladi",
       "unknown_key": "Bunday belgi yo‘q",
-      "not_on_route": "Bu mashina u yerdan o‘tmaydi — o‘z yo‘lining belgisini tanlang"
+      "not_on_route": "Bu mashina u yerdan o‘tmaydi — o‘z yo‘lining belgisini tanlang",
+      "checkpoint_changed": "Bu orada belgi o‘zgardi — sahifani yangilab, qaytadan bosing"
     },
     "rename": {
       "codeLabel": "Yangi nom",
@@ -1604,6 +1619,49 @@
         "unauthenticated": "Sessiya tugagan — qayta kiring"
       },
       "noTargetsInScope": "Shu davlatdagi boshqa skladlar sizga biriktirilmagan"
+    },
+    "board": {
+      "strip": "Mashinalar qayerda",
+      "tabs": "Doska ustunlari",
+      "filterWarehouse": "Sklad",
+      "filterRoute": "Yo‘nalish",
+      "filterAll": "Hammasi",
+      "route": {
+        "irkeshtam": "Irkeshtam",
+        "horgos": "Horgos",
+        "ichki": "Ichki reyslar"
+      },
+      "filterWarnings": "Faqat ogohlantirishli",
+      "filterApply": "Ko‘rsatish",
+      "filterClear": "Tozalash",
+      "mapLink": "Xarita",
+      "badgeInternal": "ichki reys",
+      "badgeTrip": "zavod reysi",
+      "plan": "Rejada: {boxes} karobka · {cargo}",
+      "planNone": "rejasiz",
+      "loaded": "Yuklandi {a} / {b} karobka · {m3a} / {m3b} m³ · {kga} / {kgb} kg",
+      "loadedAll": "hammasi yuklandi",
+      "rode": "Ketdi: {boxes} karobka · {cargo}",
+      "unloaded": "Tushirildi {a} / {b} karobka · jami {cargo}",
+      "loadingSince": "Yuklanmoqda {date} dan",
+      "loadedRange": "Yuklandi {range}",
+      "departedOn": "Jo‘nadi {date}",
+      "arrivedOn": "Keldi {date}",
+      "roadPct": "yo‘lning {pct}%",
+      "warnStale": "reys keldi, yopilmagan",
+      "menu": "Mashina bo‘yicha amallar",
+      "callDriver": "Haydovchi",
+      "tripCollected": "{a} / {b} zavoddan olindi",
+      "tripCargo": "Qatorlar: {boxes} karobka",
+      "tripUnknown": "{n} qatorda noma’lum",
+      "tripPlanned": "Rejada {date}",
+      "tripCollectedRange": "Zavodlardan olindi {range}",
+      "tripArrival": "Kutilmoqda {range}",
+      "empty": "Bo‘sh",
+      "emptyBoard": "Ochiq mashina yo‘q.",
+      "capped": "Eng eski {n} ta mashina ko‘rsatilmoqda.",
+      "filters": "Filtr",
+      "loadedNoPlan": "Yuklandi {boxes} karobka · {cargo}"
     }
   },
   "loading": {
@@ -2051,7 +2109,11 @@
     "cargoReceived": "qabul {date}",
     "cargoMore": "yana {n} ta tovar — to‘liq ro‘yxat ostatkada",
     "seg_kz": "Qozog‘iston hududida",
-    "seg_uz_queue": "O‘zbekiston chegarasida navbatda"
+    "seg_uz_queue": "O‘zbekiston chegarasida navbatda",
+    "unplaced": "Joyi aniq emas — xaritada chizilmadi:",
+    "atGate": "Manzilda, tushirilmagan",
+    "atGateDays": "{n, plural, =0 {bugun keldi} other {# kundan beri turibdi}}",
+    "atGateStuck": "tushirishni tekshiring"
   },
   "accounting": {
     "title": "Boshqaruv hisobi",
@@ -6057,5 +6119,21 @@
       "ftl_office_only": "FTL lidni LTL’ga qaytarish va uning egasini almashtirish — faqat admin, logist yoki buxgalter.",
       "ftl_not_yours": "Faqat o‘z lidingizni FTL qila olasiz."
     }
+  },
+  "place": {
+    "road": {
+      "cn": "Xitoy ichida",
+      "border": "Chegarada",
+      "transit": "Tranzitda",
+      "uz": "O‘zbekistonda"
+    },
+    "unknown": "Joyi aniq emas",
+    "wh": {
+      "cn": "Ichki Xitoy",
+      "border": "Chegara",
+      "uz": "O‘zbekiston"
+    },
+    "kg": "Qirg‘iziston",
+    "kz": "Qozog‘iston"
   }
 }

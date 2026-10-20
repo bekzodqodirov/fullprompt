@@ -40,9 +40,15 @@ export interface MapTruck {
   fixAgeMinutes: number | null;
   fixSource: string | null;
   segKey: string;
-  progress: number;
+  progress: number | null;
   overdue: boolean;
   remainingDays: [number, number];
+  dated: boolean;
+  atGate: boolean;
+  /** At the gate: days since the phone first put it there; null elsewhere. */
+  gateDays: number | null;
+  /** Standing there unloaded past the stuck days. */
+  gateStuck: boolean;
   departedAt: string;
   checkpointKey: string | null;
   vehiclePlate: string | null;
@@ -107,6 +113,7 @@ export function TrackingMap({
   focusPickupId = null,
   clientCode = null,
   basemap,
+  unplacedCount = 0,
 }: {
   warehouses: MapWarehouse[];
   trucks: MapTruck[];
@@ -116,6 +123,8 @@ export function TrackingMap({
   /** `/map?mijoz=<code>`: the popups list only that client's lots. */
   clientCode?: string | null;
   basemap: boolean;
+  /** Trucks on the road the page names under the map instead of drawing — «no trucks» would be false. */
+  unplacedCount?: number;
 }) {
   const t = useTranslations('map');
   const [selected, setSelected] = useState<Selected>(
@@ -266,20 +275,23 @@ export function TrackingMap({
               ? `🟢 ${t('liveFix', { ago: ago(selTruck.fixAgeMinutes ?? 0) })}`
               : `🟡 ${t('estimated')}${selTruck.fixAgeMinutes !== null ? ` · ${t('lastFix', { ago: ago(selTruck.fixAgeMinutes) })}` : ''}`}
           </p>
-          <p className={`text-xs font-semibold ${selTruck.overdue ? 'text-bad' : ''}`}>
-            📍 {t(`seg_${selTruck.segKey}`)}
+          <p className={`text-xs font-semibold ${selTruck.overdue || selTruck.gateStuck ? 'text-bad' : ''}`}>
+            📍 {selTruck.atGate ? t('atGate') : t(`seg_${selTruck.segKey}`)}
             {/* A truck drawn at its phone's fix with NO schedule behind it
-                (an unmapped pair, or since round B a generic one) carries
-                remainingDays [0, 0] and progress 0 — «~0–0 kun» and an empty
-                bar are inventions, so both are left out: the bot's and the
-                cabinet map's rule (`remainingDays[1] > 0`). */}
-            {selTruck.overdue
-              ? ` — ${t('overdue')}`
-              : selTruck.remainingDays[1] > 0
+                (an unmapped pair, or since round B a generic one) has no
+                date and no % — «~0–0 kun» and an empty bar are inventions —
+                and a truck pinned in Uzbekistan has no date in the
+                customer's cabinet, so none here (`dated`, O15): the bot's
+                and the cabinet map's rule. */}
+            {selTruck.atGate && selTruck.gateDays !== null
+              ? ` · ${t('atGateDays', { n: selTruck.gateDays })}${selTruck.gateStuck ? ` — ${t('atGateStuck')}` : ''}`
+              : selTruck.overdue
+                ? ` — ${t('overdue')}`
+                : selTruck.dated
                 ? ` · ${t('eta', { min: selTruck.remainingDays[0], max: selTruck.remainingDays[1] })}`
                 : ''}
           </p>
-          {selTruck.routePoints.length > 0 && (
+          {selTruck.progress !== null && (
             <div className="h-2 overflow-hidden rounded bg-surface-sunken">
               <div
                 className="h-full rounded bg-brand-600"
@@ -376,7 +388,7 @@ export function TrackingMap({
       )}
       {!basemap && !full && <p className="text-[11px] text-ink-400">{t('basemapMissing')}</p>}
 
-      {trucks.length === 0 && !full && <p className="text-sm text-ink-500">{t('noTrucks')}</p>}
+      {trucks.length === 0 && unplacedCount === 0 && !full && <p className="text-sm text-ink-500">{t('noTrucks')}</p>}
     </div>
   );
 }
@@ -575,7 +587,7 @@ function SvgCorridor({
             data-testid="map-truck"
             onClick={() => onSelect({ kind: 'truck', batchId: tr.batchId })}
           >
-            <circle cx={s.x} cy={s.y} r={13} className={tr.overdue ? 'fill-bad' : 'fill-warn'} opacity={0.25}>
+            <circle cx={s.x} cy={s.y} r={13} className={tr.overdue || tr.gateStuck ? 'fill-bad' : 'fill-warn'} opacity={0.25}>
               <animate attributeName="r" values="12;18;12" dur="2.2s" repeatCount="indefinite" />
             </circle>
             {/* The SAME lorry the Leaflet marker draws — one shape, both
@@ -587,7 +599,7 @@ function SvgCorridor({
             <g transform={`translate(${s.x - 19} ${s.y - 14})`}>
               <path
                 d="M35 5 H17 V11 H12 L6 17 V22 H35 Z"
-                className={tr.overdue ? 'fill-bad' : 'fill-warn'}
+                className={tr.overdue || tr.gateStuck ? 'fill-bad' : 'fill-warn'}
                 stroke="#fff"
                 strokeWidth={3}
                 paintOrder="stroke"
@@ -602,7 +614,7 @@ function SvgCorridor({
               fontSize={12}
               fontWeight={800}
               textAnchor="middle"
-              className={tr.overdue ? 'fill-bad' : 'fill-warn'}
+              className={tr.overdue || tr.gateStuck ? 'fill-bad' : 'fill-warn'}
               stroke="#fff"
               strokeWidth={3}
               paintOrder="stroke"

@@ -15,6 +15,7 @@ import {
 } from '@/modules/platform/db/schema';
 import { awaitingUnloadCounts, remainingToUnload } from '@/modules/wms/scanning/unload';
 import { etaWindow, scheduleEstimate } from '@/modules/wms/tracking/eta';
+import { routeFor } from '@/modules/wms/tracking/map-data';
 import { trucksOnRoad } from '@/modules/wms/tracking/on-road';
 
 /**
@@ -168,6 +169,26 @@ beforeAll(async () => {
     departedAt: ago(72),
   });
 
+  // Forty days out on a six-day road: overdue by its departure alone — and
+  // the driver's phone sent a fix an hour ago, in the middle of the Chinese
+  // leg. The fix PLACES it (his 5a): back on the road.
+  await mintBatch('LATE', {
+    status: 'in_transit',
+    originWarehouseId: whYW,
+    destWarehouseId: whTAS,
+    departedAt: ago(24 * 40),
+  });
+  const cn = routeFor('YW', 'TAS1')!;
+  const mid = cn.points[Math.floor(cn.segments[0]!.span[1] / 2)]!;
+  await db.insert(driverPositions).values({
+    batchId: batchIds.LATE!,
+    lat: mid.y.toFixed(6),
+    lon: mid.x.toFixed(6),
+    recordedAt: ago(1),
+    source: 'device',
+    createdBy: actorId,
+  });
+
   positionAt = ago(2);
   await db.insert(driverPositions).values({
     batchId: road,
@@ -267,6 +288,20 @@ describe('trucksOnRoad — the in-transit report, classified', () => {
     expect(row.stage).toBe('export_transit');
     expect(row.roadPct).toBe(Math.round(s.est.progress * 100));
     expect(row.eta).toEqual(etaWindow(s.est, NOW));
+  });
+
+  it('a fix places the truck BEFORE the rank — the counts say what the rows say', async () => {
+    const out = await trucksOnRoad([whYW], { limit: 1000, now: NOW });
+    const late = out.rows.find((r) => r.id === batchIds.LATE)!;
+    expect(late.kind).toBe('on_road');
+    expect(late.source).toBe('gps');
+    expect(late.zone).toBe('cn');
+    // Every kind's count is the rows of that kind: a fix read only for the
+    // drawn slice would count this truck «overdue» and draw it on the road.
+    expect(out.rows).toHaveLength(out.total);
+    for (const kind of Object.keys(out.counts) as (keyof typeof out.counts)[]) {
+      expect(out.counts[kind], kind).toBe(out.rows.filter((r) => r.kind === kind).length);
+    }
   });
 
   it('cleans up: no truck of this file is left on anybody’s road', async () => {
