@@ -1650,7 +1650,8 @@
       "tripArrival": "Expected {range}",
       "empty": "Empty",
       "emptyBoard": "No open trucks.",
-      "capped": "Showing the first {n} — narrow the filter."
+      "capped": "Showing the first {n} — narrow the filter.",
+      "filters": "Filter"
     }
   },
   "loading": {

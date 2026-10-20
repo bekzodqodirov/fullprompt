@@ -108,7 +108,7 @@ export async function TruckCard({ card }: { card: BoardTruck }) {
 
   return (
     <article data-testid="batch-board-card" data-code={card.code} className="card relative !p-3">
-      <Link href={`/batches/${card.id}`} className="block space-y-1 pr-10">
+      <Link href={`/batches/${card.id}`} className={`block space-y-1 ${menu ? 'pr-10' : ''}`}>
         <p className="flex flex-wrap items-baseline gap-x-2">
           <span className="font-mono font-extrabold text-brand-700">{card.code}</span>
           <span className="font-mono text-sm">
@@ -183,8 +183,16 @@ export async function TruckCard({ card }: { card: BoardTruck }) {
               </div>
             )}
             {tel && (
-              <a href={`tel:${tel}`} className="btn-secondary w-full justify-center text-sm" data-testid="board-call">
-                📞 {tb('callDriver')} · {card.driverPhone}
+              // Not a `.btn`: its 15 px and 48 px floor break a phone number
+              // over three lines in a 215 px desktop column.
+              <a
+                href={`tel:${tel}`}
+                aria-label={`${tb('callDriver')} ${card.driverPhone}`}
+                className="flex min-h-10 w-full items-center gap-2 rounded-xl border border-line-strong bg-surface-raised px-3 text-sm font-semibold hover:bg-surface-sunken"
+                data-testid="board-call"
+              >
+                <span aria-hidden>📞</span>
+                <span className="min-w-0 truncate">{card.driverPhone}</span>
               </a>
             )}
           </div>

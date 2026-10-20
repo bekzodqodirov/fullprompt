@@ -1650,7 +1650,8 @@
       "tripArrival": "Kutilmoqda {range}",
       "empty": "Bo‘sh",
       "emptyBoard": "Ochiq mashina yo‘q.",
-      "capped": "Birinchi {n} tasi ko‘rsatilmoqda — filtrni toraytiring."
+      "capped": "Birinchi {n} tasi ko‘rsatilmoqda — filtrni toraytiring.",
+      "filters": "Filtr"
     }
   },
   "loading": {

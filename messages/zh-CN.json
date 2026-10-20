@@ -1650,7 +1650,8 @@
       "tripArrival": "预计 {range}",
       "empty": "空",
       "emptyBoard": "没有未结束的车辆。",
-      "capped": "仅显示前 {n} 条——请缩小筛选。"
+      "capped": "仅显示前 {n} 条——请缩小筛选。",
+      "filters": "筛选"
     }
   },
   "loading": {

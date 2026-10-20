@@ -27,6 +27,7 @@ import { batchTextMatchSql, formerCodeHitSql } from '@/modules/wms/batches/forme
 import { likeNeedle } from '@/modules/wms/search/query';
 import { ROAD_ZONES, type RoadZone } from '@/modules/wms/tracking/place';
 import { TripCard, TruckCard, ZONE_BAR } from './board-card';
+import { StripScroll } from './strip-scroll';
 
 /** Finished work: off the board, but the owner still needs to find it. */
 const ARCHIVED = ['unloaded', 'closed', 'cancelled'] as const;
@@ -95,6 +96,8 @@ export default async function BatchesPage({ searchParams }: { searchParams: Prom
   if (filters.ogoh) current.ogoh = '1';
   if (filters.joy) current.joy = filters.joy;
   const filtered = Object.keys(current).length > 0;
+  // The fold's badge counts what the form sets; the place (`joy`) is the strip's.
+  const filterCount = [filters.sklad, filters.yonalish, filters.ogoh ? '1' : null].filter(Boolean).length;
 
   // Literal maps — a key built from a value escapes the i18n tripwire (#163).
   const COLUMN_LABEL: Record<BoardColumn, string> = {
@@ -204,7 +207,7 @@ export default async function BatchesPage({ searchParams }: { searchParams: Prom
       {/* The road strip (2a): a count per place, every filter but `joy`
           applied; a tap filters the board to that place and a second tap
           lets it go. A stop with nothing at it is plain text. */}
-      <nav aria-label={tb('strip')} data-testid="board-strip" className="no-scrollbar -mx-4 overflow-x-auto px-4">
+      <StripScroll active={filters.joy} label={tb('strip')}>
         <ul className="flex items-center gap-1.5 whitespace-nowrap">
           {view.strip
             .filter((stop) => stop.stop !== 'road_unknown' || stop.count > 0)
@@ -253,47 +256,64 @@ export default async function BatchesPage({ searchParams }: { searchParams: Prom
               );
             })}
         </ul>
-      </nav>
+      </StripScroll>
 
-      <form method="get" className="flex flex-wrap items-end gap-2" data-testid="board-filters">
-        {filters.joy && <input type="hidden" name="joy" value={filters.joy} />}
-        {ownWhs.length > 1 && (
-          <label className="min-w-0">
-            <span className="label">{tb('filterWarehouse')}</span>
-            <select name="sklad" defaultValue={filters.sklad ?? ''} className="input !w-auto font-mono">
-              <option value="">{tb('filterAll')}</option>
+      {/* Folded: on a phone the three controls cost a screen before the
+          first truck. Open while a filter is on, so what narrows the board
+          is never hidden; the strip above stays one tap. */}
+      <details open={filterCount > 0} className="group" data-testid="board-filter-fold">
+        <summary className="inline-flex min-h-10 cursor-pointer list-none items-center gap-2 rounded-full border border-line-strong bg-surface-raised px-3 text-sm font-semibold [&::-webkit-details-marker]:hidden">
+          ⚲ {tb('filters')}
+          {filterCount > 0 && <b className="rounded-full bg-brand-600 px-1.5 text-xs text-white">{filterCount}</b>}
+        </summary>
+        <form method="get" className="mt-2 flex flex-wrap items-center gap-2" data-testid="board-filters">
+          {filters.joy && <input type="hidden" name="joy" value={filters.joy} />}
+          {ownWhs.length > 1 && (
+            <select
+              name="sklad"
+              aria-label={tb('filterWarehouse')}
+              defaultValue={filters.sklad ?? ''}
+              className="input !w-auto"
+            >
+              <option value="">
+                {tb('filterWarehouse')}: {tb('filterAll')}
+              </option>
               {ownWhs.map((wh) => (
                 <option key={wh.id} value={wh.id}>
                   {wh.code}
                 </option>
               ))}
             </select>
-          </label>
-        )}
-        <label className="min-w-0">
-          <span className="label">{tb('filterRoute')}</span>
-          <select name="yonalish" defaultValue={filters.yonalish ?? ''} className="input !w-auto">
-            <option value="">{tb('filterAll')}</option>
+          )}
+          <select
+            name="yonalish"
+            aria-label={tb('filterRoute')}
+            defaultValue={filters.yonalish ?? ''}
+            className="input !w-auto"
+          >
+            <option value="">
+              {tb('filterRoute')}: {tb('filterAll')}
+            </option>
             {ROUTE_FILTERS.map((route) => (
               <option key={route} value={route}>
                 {ROUTE_LABEL[route]}
               </option>
             ))}
           </select>
-        </label>
-        <label className="flex min-h-12 items-center gap-2 text-sm">
-          <input type="checkbox" name="ogoh" value="1" defaultChecked={filters.ogoh} className="h-5 w-5" />
-          {tb('filterWarnings')}
-        </label>
-        <button type="submit" className="btn-secondary px-4">
-          {tb('filterApply')}
-        </button>
-        {filtered && (
-          <Link href="/batches" className="flex min-h-12 items-center px-2 text-sm font-semibold text-brand-700">
-            {tb('filterClear')}
-          </Link>
-        )}
-      </form>
+          <label className="flex min-h-12 items-center gap-2 text-sm">
+            <input type="checkbox" name="ogoh" value="1" defaultChecked={filters.ogoh} className="h-5 w-5" />
+            {tb('filterWarnings')}
+          </label>
+          <button type="submit" className="btn-secondary px-4">
+            {tb('filterApply')}
+          </button>
+          {filtered && (
+            <Link href="/batches" className="flex min-h-12 items-center px-2 text-sm font-semibold text-brand-700">
+              {tb('filterClear')}
+            </Link>
+          )}
+        </form>
+      </details>
 
       {board.capped && (
         <p role="status" className="text-sm font-semibold text-warn">
