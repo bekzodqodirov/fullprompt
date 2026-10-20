@@ -4287,3 +4287,28 @@ A date that moves is a second answer to «when did it come», and every reader
 of the first one then disagrees with it. 22 red proofs by string edit, all
 red (one first stayed green: the card's line was pinned by its declaration,
 not its push).
+
+## The dashboard spec that read two boxes at two moments (2026-10-20; NO migration, ledger 135; tests only)
+
+1429. **Cards compared on one row are read in ONE frame.** The board round's
+full CI-order run on the merged tree (458 passed) went red once on
+`m9c-dashboard.desktop`: «the two money charts share a row» read the P&L and
+cash cards **73.75 px apart**. They stand in one grid row inside ONE section,
+so the layout was never wrong. Run alone the spec was green 6 of 6, then 24 of
+24 with every core busy. The probe sampled both cards every 10 ms for 3 s after
+they showed, and neither moved. **The cause was the reading.** Every dashboard
+card streams under its own Suspense, and a card ABOVE the money section can
+swap its skeleton for content of another height at any moment. Two
+`boundingBox()` calls are two round trips, so one landed before such a swap and
+one after. On a busy full-suite server the boundaries resolve in a different
+order, which is why only the full run saw it. `sameFrame()` reads every box a
+row compares in one `page.evaluate`, after each card is visible. Both tests in
+the file use it, the second for the hero, the four tiles and the two card rows.
+RED PROOF: a 74 px block inserted between the two reads fails the old shape
+3 of 3 («Received: 90»). Inserted before a single-frame read, it moves both
+cards and the assertion holds, 3 of 3. Swept: of the fourteen other specs that
+read several boxes, none compares two of them on a streaming page.
+`/hodimlar` and the two `/accounting/sarflar` pages are the only other
+Suspense pages, and no spec measures there. RULE: a position RELATIVE to
+another element is one measurement. Two reads are two facts about two
+different pages.
