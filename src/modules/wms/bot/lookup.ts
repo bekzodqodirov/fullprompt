@@ -452,7 +452,9 @@ async function lookupClient(
     ? await latestPositions(
         [...transit.values()].flatMap((tr) => {
           const ends = tr.batchId ? endsById.get(tr.batchId) : undefined;
-          return ends ? [{ id: ends.batch.id, destCode: ends.destCode }] : [];
+          return ends
+            ? [{ id: ends.batch.id, originCode: ends.originCode, destCode: ends.destCode, departedAt: ends.batch.departedAt }]
+            : [];
         }),
       )
     : new Map();

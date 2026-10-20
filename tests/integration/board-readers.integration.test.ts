@@ -240,10 +240,39 @@ describe('the map and the bot read the one placement', () => {
     const popup = readFileSync('src/app/(protected)/map/tracking-map.tsx', 'utf8');
     expect(popup).toContain("selTruck.gateStuck ? ` — ${t('atGateStuck')}` : ''");
     expect(popup).not.toContain('atGateLate');
+    // The lorry itself goes red, on both renderers, and /trucks' word too.
+    expect(popup.match(/tr\.overdue \|\| tr\.gateStuck \? 'fill-bad' : 'fill-warn'/g)?.length).toBe(3);
+    expect(readFileSync('src/app/(protected)/map/leaflet-corridor.tsx', 'utf8')).toContain('const alarm = tr.overdue || tr.gateStuck;');
+    expect(readFileSync('src/app/(protected)/trucks/page.tsx', 'utf8')).toContain(
+      "road.kind === 'overdue' || road.kind === 'stuck' ? 'text-warn' : ''",
+    );
     const bot = readFileSync('src/modules/wms/bot/lookup.ts', 'utf8');
     expect(bot).toContain("(marker.gateStuck ? ' — ⏱ tushirishni tekshiring' : '')");
     expect(bot).toContain("marker?.atGate ? 'manzilda, tushirilmagan' : 'yo‘lda'");
     expect(bot).not.toContain('muddati o‘tgan');
+  });
+
+  it('the office row of an ARRIVED truck stood since the phone had it in the yard — the first scan does not reset it', async () => {
+    const b = await mintBatch('KA', 'TAS1', {
+      status: 'arrived',
+      departedAt: new Date(Date.now() - 300 * HOUR),
+      arrivedAt: new Date(Date.now() - 60_000),
+    });
+    const fixAgo = (h: number, lat: string, lon: string) => ({
+      batchId: b.id,
+      lat,
+      lon,
+      accuracyM: 10,
+      recordedAt: new Date(Date.now() - h * HOUR),
+      receivedAt: new Date(Date.now() - h * HOUR),
+    });
+    await db.insert(driverPositions).values([
+      fixAgo(120, '40.53', '72.8'),
+      fixAgo(96, '41.31', '69.24'),
+      fixAgo(2, '41.31', '69.24'),
+    ]);
+    const row = (await trucksOnRoadRows([b.id])).get(b.id)!;
+    expect(row).toMatchObject({ status: 'arrived', kind: 'stuck', days: 4 });
   });
 
   it('a truck nothing honest places is not drawn — its spent walk ends ON the destination warehouse', async () => {
@@ -262,19 +291,19 @@ describe('the evidence a fix is', () => {
     await db.insert(driverPositions).values({ batchId: id, lat: '39.9', lon: '74.0', accuracyM: 12, recordedAt: at(-3), receivedAt: at(-3) });
     // A phone a day ahead: stamped tomorrow, received an hour ago.
     await db.insert(driverPositions).values({ batchId: id, lat: '40.1', lon: '73.5', accuracyM: 12, recordedAt: at(24), receivedAt: at(-1) });
-    let latest = (await latestPositions([{ id, destCode: 'TAS1' }])).get(id)!;
+    let latest = (await latestPositions([{ id, originCode: 'KA', destCode: 'TAS1' }])).get(id)!;
     expect(latest.recordedAt.getTime()).toBeCloseTo(at(-1).getTime(), -3);
     expect(latest.lat).toBe(40.1);
 
     // A 20 km cell-tower fix ten minutes ago says nothing about which side
     // of a post the truck stands on.
     await db.insert(driverPositions).values({ batchId: id, lat: '40.5', lon: '72.9', accuracyM: 20_000, recordedAt: at(-1 / 6), receivedAt: at(-1 / 6) });
-    latest = (await latestPositions([{ id, destCode: 'TAS1' }])).get(id)!;
+    latest = (await latestPositions([{ id, originCode: 'KA', destCode: 'TAS1' }])).get(id)!;
     expect(latest.lat).toBe(40.1);
 
     // A reported accuracy of 0 is a precise fix, not a missing one.
     await db.insert(driverPositions).values({ batchId: id, lat: '40.6', lon: '72.8', accuracyM: 0, recordedAt: at(-1 / 12), receivedAt: at(-1 / 12) });
-    latest = (await latestPositions([{ id, destCode: 'TAS1' }])).get(id)!;
+    latest = (await latestPositions([{ id, originCode: 'KA', destCode: 'TAS1' }])).get(id)!;
     expect(latest.lat).toBe(40.6);
     await db.delete(driverPositions).where(eq(driverPositions.batchId, id));
   });

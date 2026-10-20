@@ -153,7 +153,9 @@ export default async function MapPage({
 
   // Real fixes from paired driver phones win over the schedule estimate
   // while they are fresh (owner's flow: Android streams, other phones don't).
-  const fixes = await latestPositions(transit.map((t) => ({ id: t.batch.id, destCode: t.destCode })));
+  const fixes = await latestPositions(
+    transit.map((t) => ({ id: t.batch.id, originCode: t.originCode, destCode: t.destCode, departedAt: t.batch.departedAt })),
+  );
   // The typed border queues, once for every truck on the page (#432).
   const waits = await loadBorderHours();
 

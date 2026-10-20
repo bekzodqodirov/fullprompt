@@ -6,8 +6,7 @@ import { db, type Db, type Tx } from '../../platform/db/client';
 import { batches, driverDevices, driverPositions } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { FRESH_MINUTES } from './engine';
-import { GATE_RADIUS_DEG, type PlacementFix } from './eta';
-import { yardFor } from './map-data';
+import { GATE_RADIUS_DEG, gateYard, type PlacementFix } from './eta';
 
 /**
  * Driver phone pairing + position ingest (owner's flow): at loading, the
@@ -221,7 +220,7 @@ export interface LatestPosition {
   ageMinutes: number;
   fresh: boolean;
   /**
-   * When the phone FIRST put the truck at its destination's yard (`yardFor`,
+   * When the phone FIRST put the truck at its destination's yard (`gateYard`,
    * `GATE_RADIUS_DEG` — the placement's own test, in SQL), or null. The
    * newest fix says it is at the gate; only this says since when — the clock
    * «standing unloaded for two days» runs on (the board's third recheck: a
@@ -247,9 +246,21 @@ export const COARSE_FIX_M = 5000;
  * the moment it reached us. A coarse fix (`COARSE_FIX_M`) is skipped, so the
  * newest one that can place the truck answers.
  */
-export async function latestPositions(
-  trips: readonly { id: string; destCode: string }[],
-): Promise<Map<string, LatestPosition>> {
+export interface PositionTrip {
+  id: string;
+  originCode: string;
+  destCode: string;
+  /** The yard's clock counts no fix before it (the origin's yard is not the destination's). */
+  departedAt?: Date | null;
+  /**
+   * An ARRIVED truck: the yard's clock counts no fix after its first unload
+   * scan — since when it had stood there when the scan flipped it (the fifth
+   * recheck: the first scan reset «4 kundan beri» to «bugun yetib keldi»).
+   */
+  until?: Date | null;
+}
+
+export async function latestPositions(trips: readonly PositionTrip[]): Promise<Map<string, LatestPosition>> {
   if (trips.length === 0) return new Map();
   const batchIds = [...new Set(trips.map((t) => t.id))];
   const at = sql<Date>`least(${driverPositions.recordedAt}, ${driverPositions.receivedAt})`;
@@ -268,32 +279,45 @@ export async function latestPositions(
         sql`(${driverPositions.accuracyM} IS NULL OR ${driverPositions.accuracyM} <= ${COARSE_FIX_M})`,
       ),
     )
-    .orderBy(driverPositions.batchId, desc(at));
+    // Equal times (one upload's backlog from a phone whose clock runs ahead
+    // all reads `received_at`) fall back to the phone's own order.
+    .orderBy(driverPositions.batchId, desc(at), desc(driverPositions.recordedAt), desc(driverPositions.id));
 
   // Since when it has stood at each trip's yard: the first fix there after
   // the last one anywhere else (a truck that left the yard and came back is
-  // judged from its return). One grouped pass, the yards bound as a VALUES
-  // list, the distance `chordDeg`'s own formula.
+  // judged from its return), counted in the phone's own order so one
+  // upload's backlog — every row the same `received_at` — still reads in the
+  // order it was taken. One grouped pass, the yards (`gateYard` — none for a
+  // trip that starts in its destination's yard) bound as a VALUES list, the
+  // distance `chordDeg`'s own formula, ISO strings for the bounds (#156).
   const yards = trips.flatMap((t) => {
-    const y = yardFor(t.destCode);
-    return y ? [sql`(${t.id}::uuid, ${y.x}::float8, ${y.y}::float8)`] : [];
+    const y = gateYard(t.originCode, t.destCode);
+    return y
+      ? [
+          sql`(${t.id}::uuid, ${y.x}::float8, ${y.y}::float8, ${t.departedAt?.toISOString() ?? null}::timestamptz, ${t.until?.toISOString() ?? null}::timestamptz)`,
+        ]
+      : [];
   });
   const since = new Map<string, Date>();
   if (rows.length && yards.length) {
     const found = await db.execute<{ batch_id: string; since_ms: string | null }>(sql`
       WITH f AS (
-        SELECT p.batch_id, least(p.recorded_at, p.received_at) AS at,
+        SELECT p.batch_id, p.id, p.recorded_at, least(p.recorded_at, p.received_at) AS at,
                sqrt(power((p.lon::float8 - y.lon) * cos(radians((p.lat::float8 + y.lat) / 2)), 2)
                     + power(p.lat::float8 - y.lat, 2)) <= ${GATE_RADIUS_DEG} AS inside
           FROM ${driverPositions} p
-          JOIN (VALUES ${sql.join(yards, sql`, `)}) AS y(batch_id, lon, lat) ON y.batch_id = p.batch_id
-         WHERE p.accuracy_m IS NULL OR p.accuracy_m <= ${COARSE_FIX_M}
+          JOIN (VALUES ${sql.join(yards, sql`, `)}) AS y(batch_id, lon, lat, from_at, until_at) ON y.batch_id = p.batch_id
+         WHERE (p.accuracy_m IS NULL OR p.accuracy_m <= ${COARSE_FIX_M})
+           AND (y.from_at IS NULL OR least(p.recorded_at, p.received_at) >= y.from_at)
+           AND (y.until_at IS NULL OR least(p.recorded_at, p.received_at) <= y.until_at)
+      ), n AS (
+        SELECT f.*, row_number() OVER (PARTITION BY batch_id ORDER BY at, recorded_at, id) AS k FROM f
       ), g AS (
-        SELECT f.*, max(at) FILTER (WHERE NOT inside) OVER (PARTITION BY batch_id) AS last_out FROM f
+        SELECT n.*, max(k) FILTER (WHERE NOT inside) OVER (PARTITION BY batch_id) AS last_out FROM n
       )
       SELECT batch_id, extract(epoch FROM min(at)) * 1000 AS since_ms
         FROM g
-       WHERE inside AND (last_out IS NULL OR at > last_out)
+       WHERE inside AND (last_out IS NULL OR k > last_out)
        GROUP BY batch_id`);
     for (const r of found) if (r.since_ms !== null) since.set(r.batch_id, new Date(Number(r.since_ms)));
   }

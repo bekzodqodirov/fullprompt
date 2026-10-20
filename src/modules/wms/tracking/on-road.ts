@@ -6,7 +6,7 @@ import { tashkentDay } from '../../platform/time/tashkent';
 import { batchEndsWhere, inTransitBatches } from '../reports/queries';
 import { awaitingUnloadCounts } from '../scanning/unload';
 import { loadBorderHours } from './border-queue';
-import { latestPositions, placementFix, type LatestPosition } from './devices';
+import { latestPositions, placementFix, type LatestPosition, type PositionTrip } from './devices';
 import type { BorderHours } from './eta';
 import {
   rankTrucks,
@@ -83,7 +83,7 @@ export async function trucksOnRoad(
     loadBorderHours(),
   ]);
 
-  const positions = await latestPositions(inputs.filter((r) => r.status === 'in_transit'));
+  const positions = await latestPositions(inputs.map(tripOf));
   const placed = inputs.map((r) => withFix(r, positions));
   const byId = new Map<string, TruckInput>(placed.map((r) => [r.id, r]));
   const ranked = rankTrucks(placed.map((r) => truckRow(r, now, today, waits)));
@@ -97,6 +97,22 @@ export async function trucksOnRoad(
   const rows = sliced.map((row) => enrichedRow(byId.get(row.id)!, row, awaiting, now, today, waits));
 
   return { rows, total: ranked.length, counts, loading: Number(loadingRow[0]?.n ?? 0) };
+}
+
+/**
+ * Every truck's positions: one on the road is placed by them; one ARRIVED
+ * keeps since when the phone had it in the yard before the first unload scan
+ * (`until`), so that scan does not restart its «stuck» clock (the fifth
+ * recheck).
+ */
+function tripOf(r: TruckInput): PositionTrip {
+  return {
+    id: r.id,
+    originCode: r.originCode,
+    destCode: r.destCode,
+    departedAt: r.departedAt,
+    until: r.status === 'arrived' ? r.arrivedAt : null,
+  };
 }
 
 /** The input with its truck's newest fix — the evidence `placeTruck` places it by. */
@@ -159,7 +175,7 @@ export async function trucksOnRoadRows(batchIds: string[]): Promise<Map<string, 
   ]);
   if (inputs.length === 0) return out;
   const [positions, awaiting] = await Promise.all([
-    latestPositions(inputs.filter((r) => r.status === 'in_transit')),
+    latestPositions(inputs.map(tripOf)),
     awaitingUnloadCounts(inputs.filter((r) => r.status === 'arrived').map((r) => r.id)),
   ]);
   for (const raw of inputs) {

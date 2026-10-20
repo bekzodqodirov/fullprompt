@@ -184,7 +184,7 @@ export default async function TrucksPage({
                   ) : road ? (
                     <span data-testid="truck-row-road" className="text-ink-600">
                       📍{' '}
-                      <span className={`font-semibold ${road.kind === 'overdue' ? 'text-warn' : ''}`}>
+                      <span className={`font-semibold ${road.kind === 'overdue' || road.kind === 'stuck' ? 'text-warn' : ''}`}>
                         {words.word(road)}
                       </span>
                       {road.roadPct !== null && <> · {tbb('roadPct', { pct: road.roadPct })}</>} · {words.sentence(road)}

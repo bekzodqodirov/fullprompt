@@ -328,6 +328,15 @@ describe('a truck at its gate, and a truck due now, read alike on every screen',
     const and = WAREHOUSE_POINTS.AND!;
     expect(truckRow({ ...internal, fix: fix(and, 1, 50) }, NOW, TODAY, {})).toMatchObject({ kind: 'stuck', atGate: true });
     expect(truckRow({ ...internal, fix: fix(and, 1, 1) }, NOW, TODAY, {})).toMatchObject({ kind: 'on_road', atGate: true });
+    // «O'zbekistonda» pressed after the phone reached that Uzbek yard agrees
+    // with it: still at the gate, still stuck (the fifth recheck — it read
+    // «no schedule» and left the count).
+    const pressed = { trackingCheckpoint: { key: 'in_uz', at: ago(2).toISOString() } };
+    expect(truckRow({ ...internal, ...pressed, fix: fix(and, 20, 80) }, NOW, TODAY, {})).toMatchObject({
+      kind: 'stuck',
+      atGate: true,
+      gateDays: 3,
+    });
     // The same days by the scan: the attention row's own predicate agrees.
     expect(isStuckAtGate({ status: 'arrived', arrivedAt: ago(50) }, TODAY)).toBe(true);
     expect(isStuckAtGate({ status: 'arrived', arrivedAt: ago(30) }, TODAY)).toBe(false);
@@ -335,6 +344,32 @@ describe('a truck at its gate, and a truck due now, read alike on every screen',
     const src = readFileSync('src/components/truck-road.tsx', 'utf8');
     expect(src).toContain("parts.push(t('truckAtGateDays', { n: row.gateDays }));");
     expect(src).toMatch(/if \(row\.kind === 'stuck'\) \{\s*parts\.push\(\s*<span key="stuck" className="font-semibold text-warn">\s*\{t\('truckAtGateStuck'\)\}/);
+  });
+
+  it('the first unload scan does not restart the clock: an arrived truck stood since the phone had it in the yard', () => {
+    // Four days in the yard by the phone, then one carton scanned this minute.
+    const scanned = kaInput({
+      status: 'arrived',
+      departedAt: ago(300),
+      arrivedAt: NOW,
+      awaitingUnload: 299,
+      fix: fix(gate, 1, 96),
+    });
+    expect(truckRow(scanned, NOW, TODAY, {})).toMatchObject({ kind: 'stuck', days: 4 });
+    // With no phone the scan is the clock, as it always was.
+    expect(truckRow({ ...scanned, fix: null }, NOW, TODAY, {})).toMatchObject({ kind: 'unloading', days: 0 });
+    // A phone reading later than the scan never shortens it.
+    expect(truckRow({ ...scanned, arrivedAt: ago(72), fix: fix(gate, 1, 1) }, NOW, TODAY, {})).toMatchObject({
+      kind: 'stuck',
+      days: 3,
+    });
+  });
+
+  it('stuck trucks rank by how long they have STOOD, not by days on the road', () => {
+    const byScan = truckRow(kaInput({ id: 'a', code: 'A', status: 'arrived', departedAt: ago(216), arrivedAt: ago(120) }), NOW, TODAY, {});
+    const byPhone = truckRow(kaInput({ id: 'b', code: 'B', departedAt: ago(216), fix: fix(gate, 1, 50) }), NOW, TODAY, {});
+    expect([byScan.kind, byPhone.kind]).toEqual(['stuck', 'stuck']);
+    expect(rankTrucks([byPhone, byScan]).map((r) => r.code)).toEqual(['A', 'B']);
   });
 
   it('due NOW ([0, 0]) prints no date: the board, the cabinet and the map ask one rule', () => {

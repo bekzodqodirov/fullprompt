@@ -210,8 +210,11 @@ export function LeafletCorridor({
     }
 
     for (const tr of trucks) {
-      const color = tr.overdue ? '#dc2626' : '#f59e0b';
-      const text = tr.overdue ? '#b91c1c' : '#92400e';
+      // Late on the road, or standing unloaded past the stuck days — the
+      // popup's own red (the fifth recheck: a stuck truck was drawn amber).
+      const alarm = tr.overdue || tr.gateStuck;
+      const color = alarm ? '#dc2626' : '#f59e0b';
+      const text = alarm ? '#b91c1c' : '#92400e';
       // MEASURED, and the reason he saw the code floating away from the
       // lorry: the label was a BLOCK above the svg inside an 80px wrapper,
       // and Tailwind's preflight makes every `svg` display:block — so

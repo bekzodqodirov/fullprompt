@@ -556,6 +556,13 @@ describe('the gate’s clock: since it CAME, never the schedule', () => {
     const and = WAREHOUSE_POINTS.AND!;
     const place = placeTruck({ ...internal, departedAt: ago(30), checkpoint: null, fix: fixAt(and, 1, 'device', 20) }, {}, NOW);
     expect(place).toMatchObject({ atGate: true, overdue: false, remainingHours: null, gateSince: ago(20).toISOString() });
+    // «O'zbekistonda» pressed after it agrees with an Uzbek yard: still there.
+    const pressed = placeTruck(
+      { ...internal, departedAt: ago(100), checkpoint: { key: 'in_uz', at: ago(2).toISOString() }, fix: fixAt(and, 20, 'device', 80) },
+      {},
+      NOW,
+    );
+    expect(pressed).toMatchObject({ atGate: true, gateSince: ago(80).toISOString() });
     // Before the departure the yard is somebody else's: not at the gate.
     const early = placeTruck({ ...internal, departedAt: ago(1), checkpoint: null, fix: fixAt(and, 2) }, {}, NOW);
     expect(early.atGate).toBe(false);

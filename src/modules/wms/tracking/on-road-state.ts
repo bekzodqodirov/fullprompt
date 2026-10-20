@@ -65,6 +65,13 @@ export function stuckAtPhoneGate(gateDays: number | null): boolean {
   return gateDays !== null && gateDays >= STUCK_AT_GATE_DAYS;
 }
 
+/** The earlier of two moments; either may be absent. */
+function earlier(a: Date | null, b: Date | null): Date | null {
+  if (!a) return b;
+  if (!b) return a;
+  return b.getTime() < a.getTime() ? b : a;
+}
+
 export type TruckKind = 'stuck' | 'overdue' | 'unloading' | 'on_road' | 'no_schedule';
 
 /** Exported so a literal chip map can be typed `Record<TruckKind, …>` and a new kind fails the build. */
@@ -187,10 +194,14 @@ export function truckRow(input: TruckInput, now: Date, today: string, waits: Bor
   };
 
   if (arrived) {
-    const days = daysSince(input.arrivedAt, today);
+    // Standing since the phone first had it in the yard, when that came
+    // before the first unload scan — one clock for the two arrivals, which
+    // the scan used to reset to «bugun yetib keldi» (the fifth recheck).
+    const stoodSince = earlier(input.arrivedAt, input.fix?.gateSince ?? null);
+    const days = daysSince(stoodSince, today);
     return {
       ...base,
-      kind: isStuckAtGate(input, today) ? 'stuck' : 'unloading',
+      kind: isStuckAtGate({ status: 'arrived', arrivedAt: stoodSince }, today) ? 'stuck' : 'unloading',
       stage: null,
       roadPct: null,
       zone: null,
@@ -345,7 +356,11 @@ export function rankTrucks(rows: TruckRow[]): TruckRow[] {
       const soon = (a.arrivalOrder ?? Infinity) - (b.arrivalOrder ?? Infinity);
       if (soon !== 0 && !Number.isNaN(soon)) return soon;
     } else {
-      const longer = b.days - a.days;
+      // A stuck truck waits as long as it has STOOD — an arrived row's days
+      // already count from there, one at its gate by the phone counts
+      // `gateDays`, not its days on the road (the fifth recheck).
+      const waited = (r: TruckRow) => (r.kind === 'stuck' ? (r.gateDays ?? r.days) : r.days);
+      const longer = waited(b) - waited(a);
       if (longer !== 0) return longer;
     }
     return a.code.localeCompare(b.code);

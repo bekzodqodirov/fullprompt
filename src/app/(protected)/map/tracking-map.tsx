@@ -587,7 +587,7 @@ function SvgCorridor({
             data-testid="map-truck"
             onClick={() => onSelect({ kind: 'truck', batchId: tr.batchId })}
           >
-            <circle cx={s.x} cy={s.y} r={13} className={tr.overdue ? 'fill-bad' : 'fill-warn'} opacity={0.25}>
+            <circle cx={s.x} cy={s.y} r={13} className={tr.overdue || tr.gateStuck ? 'fill-bad' : 'fill-warn'} opacity={0.25}>
               <animate attributeName="r" values="12;18;12" dur="2.2s" repeatCount="indefinite" />
             </circle>
             {/* The SAME lorry the Leaflet marker draws — one shape, both
@@ -599,7 +599,7 @@ function SvgCorridor({
             <g transform={`translate(${s.x - 19} ${s.y - 14})`}>
               <path
                 d="M35 5 H17 V11 H12 L6 17 V22 H35 Z"
-                className={tr.overdue ? 'fill-bad' : 'fill-warn'}
+                className={tr.overdue || tr.gateStuck ? 'fill-bad' : 'fill-warn'}
                 stroke="#fff"
                 strokeWidth={3}
                 paintOrder="stroke"
@@ -614,7 +614,7 @@ function SvgCorridor({
               fontSize={12}
               fontWeight={800}
               textAnchor="middle"
-              className={tr.overdue ? 'fill-bad' : 'fill-warn'}
+              className={tr.overdue || tr.gateStuck ? 'fill-bad' : 'fill-warn'}
               stroke="#fff"
               strokeWidth={3}
               paintOrder="stroke"

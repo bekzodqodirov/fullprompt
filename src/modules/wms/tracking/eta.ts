@@ -573,9 +573,21 @@ export function placeTruck(input: PlaceInput, waits: BorderHours, now: Date = ne
     const byFix = fix !== null && Number.isFinite(fixMs) && (!pin || fixMs >= new Date(pin.at).getTime());
     // A road nobody modelled still has a yard: the phone there is at the
     // gate on these roads too (TAS1 → AND read «yo'lda» for ever otherwise).
+    // A pin pressed after the fix outranks it only where it says something
+    // else: «in Uzbekistan» — the one pin a generic road offers — pressed at
+    // an Uzbek yard agrees with it, and took a truck out of «stuck» (the
+    // fifth recheck); the mapped road keeps it the same way (`underNewerPin`).
     const yard = gateYard(input.originCode, input.destCode);
     const departed = input.departedAt?.getTime() ?? Number.NEGATIVE_INFINITY;
-    if (byFix && yard && fixMs >= departed && chordDeg({ x: fix.lon, y: fix.lat }, yard) <= GATE_RADIUS_DEG) {
+    const pinAgrees = !pin || byFix || (pin.key === 'in_uz' && input.destCountry === 'UZ');
+    if (
+      fix !== null &&
+      Number.isFinite(fixMs) &&
+      pinAgrees &&
+      yard &&
+      fixMs >= departed &&
+      chordDeg({ x: fix.lon, y: fix.lat }, yard) <= GATE_RADIUS_DEG
+    ) {
       return {
         zone: base && !isGenericRoute(base) ? zoneOfRoute(base) : zoneOfGenericRoad(input.originCountry, input.destCountry),
         segKey: null,
