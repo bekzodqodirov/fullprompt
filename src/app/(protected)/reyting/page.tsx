@@ -29,6 +29,10 @@ export const dynamic = 'force-dynamic';
 
 const MEDAL = ['🥇', '🥈', '🥉'];
 
+// A name keeps a floor (7rem): with `min-w-0` the figures — wider by the
+// week's 🆕 delta — squeezed a name to three letters a line at 360 px. With
+// the floor, the figures wrap to their own line, right-aligned, instead.
+
 function Table({ rows, me, testId }: { rows: (Standing & { before?: number | null })[]; me: string; testId: string }) {
   return (
     <ol className="divide-y divide-line" data-testid={testId}>
@@ -39,8 +43,8 @@ function Table({ rows, me, testId }: { rows: (Standing & { before?: number | nul
           data-testid={`${testId}-row`}
         >
           <span className="w-7 shrink-0 text-center">{r.rank <= 3 ? MEDAL[r.rank - 1] : `${r.rank}.`}</span>
-          <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{r.name}</span>
-          <span className="font-mono tabular-nums">
+          <span className="min-w-[7rem] flex-1 [overflow-wrap:anywhere]">{r.name}</span>
+          <span className="ml-auto whitespace-nowrap font-mono tabular-nums">
             {kub(r.m3)} kub · {kgText(r.kg)} kg · {r.receipts}
             {r.before !== undefined ? <span className="text-ink-500">{deltaText(r.m3, r.before)}</span> : null}
           </span>
@@ -65,8 +69,8 @@ function FtlList({ rows, me, title, testId }: { rows: FtlLine[]; me: string; tit
             key={r.userId}
             className={`flex flex-wrap items-baseline gap-x-2 text-sm text-ink-600 ${r.userId === me ? 'font-semibold' : ''}`}
           >
-            <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{r.name}</span>
-            <span className="font-mono tabular-nums">
+            <span className="min-w-[7rem] flex-1 [overflow-wrap:anywhere]">{r.name}</span>
+            <span className="ml-auto whitespace-nowrap font-mono tabular-nums">
               {kub(r.m3)} kub · {kgText(r.kg)} kg · {r.receipts}
             </span>
           </li>
