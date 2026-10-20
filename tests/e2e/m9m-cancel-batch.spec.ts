@@ -56,9 +56,16 @@ test('a batch created by mistake is cancelled and leaves the board', async ({ pa
   await expect(page.getByTestId('cancel-batch')).toHaveCount(0);
 
   // And it is off the working board: findable in the archive, not in the way.
+  // The board by its testid — `.grid` first matched whatever grid came first
+  // on the page, which since the board's phone tabs is a row of four tab
+  // labels that could never hold a truck code, i.e. an assertion that could
+  // not fail. The archive row is the positive control: the same code, found.
   await page.goto('/batches');
-  const board = page.locator('.grid').first();
+  const board = page.getByTestId('batch-board');
+  await expect(board).toBeAttached();
   await expect(board).not.toContainText(code);
+  await page.goto(`/batches?archive=1&q=${encodeURIComponent(code)}`);
+  await expect(page.getByTestId('batch-archive-row').filter({ hasText: code })).toHaveCount(1);
 });
 
 test('a warehouse operator is not offered the way out', async ({ page }) => {

@@ -35,7 +35,9 @@ async function login(page: import('@playwright/test').Page) {
 test('a cost typed with no kassa waits on the queue, and one press names its kassa', async ({ page }) => {
   await login(page);
   await page.goto('/batches');
-  const first = page.locator('a[href^="/batches/"]').filter({ hasText: /-\d{3}/ }).first();
+  // A card in the tab the board opens on: below `xl` every column is in the
+  // DOM and only the checked tab's is drawn.
+  const first = page.locator('[data-testid=batch-board-card] a[href^="/batches/"]:visible').filter({ hasText: /-\d{3}/ }).first();
   await first.click();
   await expect(page).toHaveURL(/\/batches\/[0-9a-f-]{36}$/);
   batchUrl = new URL(page.url()).pathname;
