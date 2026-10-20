@@ -107,7 +107,11 @@ export async function TruckCard({ card }: { card: BoardTruck }) {
   if (card.departedAt && card.status !== 'forming' && card.status !== 'loading') {
     dates.push(tb('departedOn', { date: boardDay(card.departedAt) }));
   }
-  if (card.status === 'arrived' && card.arrivedAt) dates.push(tb('arrivedOn', { date: boardDay(card.arrivedAt) }));
+  if (card.status === 'arrived' && card.arrivedAt) {
+    dates.push(
+      tb(card.arrivedByGps ? 'arrivedOnGps' : 'arrivedOn', { date: boardDay(card.arrivedAt) }),
+    );
+  }
 
   const pct = card.road?.roadPct ?? null;
   // Both are `ogoh=1` warnings, drawn like the other two.

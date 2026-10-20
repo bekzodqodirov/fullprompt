@@ -1643,6 +1643,7 @@
       "loadedRange": "Yuklandi {range}",
       "departedOn": "Jo‘nadi {date}",
       "arrivedOn": "Keldi {date}",
+      "arrivedOnGps": "Keldi {date} (GPS)",
       "roadPct": "yo‘lning {pct}%",
       "warnStale": "reys keldi, yopilmagan",
       "menu": "Mashina bo‘yicha amallar",

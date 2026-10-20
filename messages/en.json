@@ -1643,6 +1643,7 @@
       "loadedRange": "Loaded {range}",
       "departedOn": "Departed {date}",
       "arrivedOn": "Arrived {date}",
+      "arrivedOnGps": "Arrived {date} (GPS)",
       "roadPct": "{pct}% of the road",
       "warnStale": "trip arrived, not closed",
       "menu": "Truck actions",

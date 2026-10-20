@@ -78,7 +78,10 @@ export interface BoardTruck extends CardPlacement {
   loadFrom: string | null;
   loadTo: string | null;
   departedAt: string | null;
+  /** Since when it has stood at its gate (`TruckRow.stoodSince`), else the scan's time. */
   arrivedAt: string | null;
+  /** That date is the phone's yard fix, earlier than the first unload scan. */
+  arrivedByGps: boolean;
   /** The dashboard's row (`trucksOnRoadRows`): on the road or at its gate. */
   road: TruckRow | null;
   /** The bar's places, by distance (4a); only beside a %. */
@@ -268,8 +271,15 @@ async function boardTrucks(actor: BoardActor, now: Date): Promise<{ cards: Board
       route: routeFilterOf(mapped),
       internal: crossesNoBorder(r.originCountry, r.destCountry),
       warnings,
+      // The arrived column by how long each has STOOD (`stoodSince` — the
+      // phone's yard fix when it came before the first scan), the order the
+      // dashboard ranks the same trucks in (the sixth recheck).
       order: new Date(
-        (column === 'road' ? r.departedAt : column === 'arrived' ? r.arrivedAt : null) ?? r.createdAt,
+        (column === 'road'
+          ? r.departedAt
+          : column === 'arrived'
+            ? (truck?.stoodSince ?? r.arrivedAt)
+            : null) ?? r.createdAt,
       ).getTime(),
       originCode: r.originCode,
       originName: r.originName,
@@ -283,7 +293,11 @@ async function boardTrucks(actor: BoardActor, now: Date): Promise<{ cards: Board
       loadFrom: date?.from ?? null,
       loadTo: date?.to ?? null,
       departedAt: iso(r.departedAt),
-      arrivedAt: iso(r.arrivedAt),
+      // The date the card prints is the clock it is judged on: «Keldi 16.10»
+      // beside «Tushirilmay turibdi», never today's first scan (`arrivedByGps`
+      // says the phone set it).
+      arrivedAt: iso(truck?.stoodSince ?? r.arrivedAt),
+      arrivedByGps: Boolean(truck?.stoodSince && r.arrivedAt && truck.stoodSince.getTime() < r.arrivedAt.getTime()),
       road: truck,
       bar: column === 'road' && mapped && truck?.roadPct != null ? roadBands(mapped) : null,
       awaitingCount: awaiting.has(r.id),

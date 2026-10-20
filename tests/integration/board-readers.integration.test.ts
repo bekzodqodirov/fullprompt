@@ -12,6 +12,7 @@ import { latestPositions } from '@/modules/wms/tracking/devices';
 import { cumulativeLengths } from '@/modules/wms/tracking/engine';
 import { routeFor, WAREHOUSE_POINTS } from '@/modules/wms/tracking/map-data';
 import { trucksOnRoadRows } from '@/modules/wms/tracking/on-road';
+import { loadBoard, type BoardTruck } from '@/modules/wms/batches/board';
 import { truckFor } from '@/modules/wms/tracking/truck';
 
 /**
@@ -273,6 +274,47 @@ describe('the map and the bot read the one placement', () => {
     ]);
     const row = (await trucksOnRoadRows([b.id])).get(b.id)!;
     expect(row).toMatchObject({ status: 'arrived', kind: 'stuck', days: 4 });
+    expect(Math.abs(row.stoodSince!.getTime() - (Date.now() - 96 * HOUR))).toBeLessThan(60_000);
+    // Its newest fix is nobody's evidence once it arrived, so it is not read
+    // (the sixth recheck: every fix of the drive home was, on every render).
+    expect(row.lastPositionAt).toBeNull();
+
+    // The board prints the clock it judges by and orders by it: «Keldi» four
+    // days ago (GPS) — not today — and ahead of a truck scanned in yesterday.
+    const yesterday = await mintBatch('KA', 'TAS1', {
+      status: 'arrived',
+      departedAt: new Date(Date.now() - 200 * HOUR),
+      arrivedAt: new Date(Date.now() - 30 * HOUR),
+    });
+    const board = await loadBoard({ permissions: new Set(['plans.manage']), warehouseScoped: false, warehouseIds: [] });
+    const cards = board.cards.filter((c): c is BoardTruck => c.type === 'batch');
+    const stood = cards.find((c) => c.id === b.id)!;
+    const scanned = cards.find((c) => c.id === yesterday.id)!;
+    expect(stood).toMatchObject({ arrivedByGps: true, warnings: expect.arrayContaining(['stuck']) });
+    expect(Math.abs(new Date(stood.arrivedAt!).getTime() - (Date.now() - 96 * HOUR))).toBeLessThan(60_000);
+    expect(scanned.arrivedByGps).toBe(false);
+    expect(stood.order).toBeLessThan(scanned.order);
+
+    // The bot's marker for the same truck: at its gate four days, stuck —
+    // never «yo'lda» once the first carton is scanned.
+    const yard = await latestPositions([
+      { id: b.id, originCode: 'KA', destCode: 'TAS1', departedAt: b.departedAt, until: b.arrivedAt },
+    ]);
+    const marker = (await truckFor(b, ends('KA', 'TAS1'), {}, yard.get(b.id)))!;
+    expect(marker).toMatchObject({ atGate: true, gateDays: 4, gateStuck: true, overdue: false });
+    const bare = (await truckFor(yesterday, ends('KA', 'TAS1'), {}))!;
+    expect(bare).toMatchObject({ atGate: true, gateDays: 1, gateStuck: false });
+
+    // /trucks and the truck card's ladder read the same clock.
+    const trucksPage = readFileSync('src/app/(protected)/trucks/page.tsx', 'utf8');
+    expect(trucksPage).toContain("row.status === 'in_transit' || row.status === 'arrived'");
+    expect(trucksPage).toContain("row.arrivedAt && road?.kind !== 'stuck' ? (");
+    expect(readFileSync('src/app/(protected)/batches/[id]/batch-card.tsx', 'utf8')).toContain(
+      'arrived: road?.stoodSince ?? batch.arrivedAt,',
+    );
+    expect(readFileSync('src/app/(protected)/batches/board-card.tsx', 'utf8')).toContain(
+      "tb(card.arrivedByGps ? 'arrivedOnGps' : 'arrivedOn', { date: boardDay(card.arrivedAt) })",
+    );
   });
 
   it('a truck nothing honest places is not drawn — its spent walk ends ON the destination warehouse', async () => {

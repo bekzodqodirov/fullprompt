@@ -1643,6 +1643,7 @@
       "loadedRange": "Погружено {range}",
       "departedOn": "Отправлена {date}",
       "arrivedOn": "Прибыла {date}",
+      "arrivedOnGps": "Прибыла {date} (GPS)",
       "roadPct": "{pct}% пути",
       "warnStale": "рейс прибыл и не закрыт",
       "menu": "Действия с машиной",

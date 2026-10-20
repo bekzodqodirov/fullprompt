@@ -283,10 +283,39 @@ export async function latestPositions(trips: readonly PositionTrip[]): Promise<M
     // all reads `received_at`) fall back to the phone's own order.
     .orderBy(driverPositions.batchId, desc(at), desc(driverPositions.recordedAt), desc(driverPositions.id));
 
-  // Since when it has stood at each trip's yard: the first fix there after
-  // the last one anywhere else (a truck that left the yard and came back is
-  // judged from its return), counted in the phone's own order so one
-  // upload's backlog — every row the same `received_at` — still reads in the
+  const since = rows.length ? await gateSinceFor(trips) : new Map<string, Date>();
+
+  const now = Date.now();
+  return new Map(
+    rows.map((r) => {
+      const ageMinutes = Math.round((now - r.recordedAt.getTime()) / 60_000);
+      return [
+        r.batchId,
+        {
+          batchId: r.batchId,
+          lat: Number(r.lat),
+          lon: Number(r.lon),
+          recordedAt: r.recordedAt,
+          source: r.source,
+          ageMinutes,
+          fresh: ageMinutes <= FRESH_MINUTES,
+          gateSince: since.get(r.batchId) ?? null,
+        },
+      ];
+    }),
+  );
+}
+
+/**
+ * Since when each trip has stood at its destination's yard by the phone: the
+ * first fix there after the last one anywhere else (a truck that left the
+ * yard and came back is judged from its return), or none. Asked on its own
+ * for an ARRIVED truck, whose newest fix nobody reads — only how long the
+ * phone had it in the yard before the first unload scan (`until`).
+ */
+export async function gateSinceFor(trips: readonly PositionTrip[]): Promise<Map<string, Date>> {
+  if (trips.length === 0) return new Map();
+  // Counted in the phone's own order, so one upload's backlog — every row the same `received_at` — still reads in the
   // order it was taken. One grouped pass, the yards (`gateYard` — none for a
   // trip that starts in its destination's yard) bound as a VALUES list, the
   // distance `chordDeg`'s own formula, ISO strings for the bounds (#156).
@@ -299,7 +328,7 @@ export async function latestPositions(trips: readonly PositionTrip[]): Promise<M
       : [];
   });
   const since = new Map<string, Date>();
-  if (rows.length && yards.length) {
+  if (yards.length) {
     const found = await db.execute<{ batch_id: string; since_ms: string | null }>(sql`
       WITH f AS (
         SELECT p.batch_id, p.id, p.recorded_at, least(p.recorded_at, p.received_at) AS at,
@@ -321,26 +350,7 @@ export async function latestPositions(trips: readonly PositionTrip[]): Promise<M
        GROUP BY batch_id`);
     for (const r of found) if (r.since_ms !== null) since.set(r.batch_id, new Date(Number(r.since_ms)));
   }
-
-  const now = Date.now();
-  return new Map(
-    rows.map((r) => {
-      const ageMinutes = Math.round((now - r.recordedAt.getTime()) / 60_000);
-      return [
-        r.batchId,
-        {
-          batchId: r.batchId,
-          lat: Number(r.lat),
-          lon: Number(r.lon),
-          recordedAt: r.recordedAt,
-          source: r.source,
-          ageMinutes,
-          fresh: ageMinutes <= FRESH_MINUTES,
-          gateSince: since.get(r.batchId) ?? null,
-        },
-      ];
-    }),
-  );
+  return since;
 }
 
 /** The fix as the placement reads it — ONE mapping, so no reader drops `gateSince`. */

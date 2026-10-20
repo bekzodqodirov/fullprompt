@@ -353,13 +353,15 @@ describe('a truck at its gate, and a truck due now, read alike on every screen',
       departedAt: ago(300),
       arrivedAt: NOW,
       awaitingUnload: 299,
-      fix: fix(gate, 1, 96),
+      yardSince: ago(96),
     });
     expect(truckRow(scanned, NOW, TODAY, {})).toMatchObject({ kind: 'stuck', days: 4 });
     // With no phone the scan is the clock, as it always was.
-    expect(truckRow({ ...scanned, fix: null }, NOW, TODAY, {})).toMatchObject({ kind: 'unloading', days: 0 });
+    expect(truckRow({ ...scanned, yardSince: null }, NOW, TODAY, {})).toMatchObject({ kind: 'unloading', days: 0 });
+    // The arrived truck's newest fix is not its clock — only the yard time is.
+    expect(truckRow({ ...scanned, yardSince: null, fix: fix(gate, 1, 96) }, NOW, TODAY, {})).toMatchObject({ days: 0 });
     // A phone reading later than the scan never shortens it.
-    expect(truckRow({ ...scanned, arrivedAt: ago(72), fix: fix(gate, 1, 1) }, NOW, TODAY, {})).toMatchObject({
+    expect(truckRow({ ...scanned, arrivedAt: ago(72), yardSince: ago(1) }, NOW, TODAY, {})).toMatchObject({
       kind: 'stuck',
       days: 3,
     });
@@ -367,6 +369,7 @@ describe('a truck at its gate, and a truck due now, read alike on every screen',
 
   it('stuck trucks rank by how long they have STOOD, not by days on the road', () => {
     const byScan = truckRow(kaInput({ id: 'a', code: 'A', status: 'arrived', departedAt: ago(216), arrivedAt: ago(120) }), NOW, TODAY, {});
+    expect(byScan.stoodSince).toEqual(ago(120));
     const byPhone = truckRow(kaInput({ id: 'b', code: 'B', departedAt: ago(216), fix: fix(gate, 1, 50) }), NOW, TODAY, {});
     expect([byScan.kind, byPhone.kind]).toEqual(['stuck', 'stuck']);
     expect(rankTrucks([byPhone, byScan]).map((r) => r.code)).toEqual(['A', 'B']);

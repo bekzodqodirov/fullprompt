@@ -65,11 +65,17 @@ export function stuckAtPhoneGate(gateDays: number | null): boolean {
   return gateDays !== null && gateDays >= STUCK_AT_GATE_DAYS;
 }
 
-/** The earlier of two moments; either may be absent. */
-function earlier(a: Date | null, b: Date | null): Date | null {
-  if (!a) return b;
-  if (!b) return a;
-  return b.getTime() < a.getTime() ? b : a;
+/**
+ * Since when an ARRIVED truck has stood at its gate: its first unload scan,
+ * or the phone's first yard fix before it when that came earlier — ONE clock
+ * for the office row, the map and the bot (the first scan used to reset it to
+ * «bugun yetib keldi»). `arrived_at` itself is never back-dated: the lead
+ * clock and the calc actuals read it.
+ */
+export function stoodSince(arrivedAt: Date | null, yardSince: Date | null): Date | null {
+  if (!arrivedAt) return yardSince;
+  if (!yardSince) return arrivedAt;
+  return yardSince.getTime() < arrivedAt.getTime() ? yardSince : arrivedAt;
 }
 
 export type TruckKind = 'stuck' | 'overdue' | 'unloading' | 'on_road' | 'no_schedule';
@@ -105,6 +111,12 @@ export interface TruckInput {
    * move a truck from «overdue» back onto the road and change the counts.
    */
   fix?: PlacementFix | null;
+  /**
+   * ARRIVED: since when the phone had it in its yard before the first unload
+   * scan (`gateSinceFor`, bounded at `arrivedAt`) — the scan must not restart
+   * the clock it has stood on. Absent = nobody asked, the scan's own time.
+   */
+  yardSince?: Date | null;
 }
 
 export interface TruckRow {
@@ -136,6 +148,13 @@ export interface TruckRow {
   atGate: boolean;
   /** At the gate by the phone: Tashkent days since its first fix there; null otherwise. */
   gateDays: number | null;
+  /**
+   * Since when it has stood at its gate (`stoodSince`) — arrived, or there by
+   * the phone; null on the road. The board's arrived column orders by it and
+   * the cards print it, so a date can never contradict «4 kun» (the sixth
+   * recheck).
+   */
+  stoodSince: Date | null;
   /** Only on a MOVING rung (`isMovingStage`), with a schedule, not overdue. */
   eta: { fromIso: string; toIso: string } | null;
   departedAt: Date | null;
@@ -197,11 +216,11 @@ export function truckRow(input: TruckInput, now: Date, today: string, waits: Bor
     // Standing since the phone first had it in the yard, when that came
     // before the first unload scan — one clock for the two arrivals, which
     // the scan used to reset to «bugun yetib keldi» (the fifth recheck).
-    const stoodSince = earlier(input.arrivedAt, input.fix?.gateSince ?? null);
-    const days = daysSince(stoodSince, today);
+    const stood = stoodSince(input.arrivedAt, input.yardSince ?? null);
+    const days = daysSince(stood, today);
     return {
       ...base,
-      kind: isStuckAtGate({ status: 'arrived', arrivedAt: stoodSince }, today) ? 'stuck' : 'unloading',
+      kind: isStuckAtGate({ status: 'arrived', arrivedAt: stood }, today) ? 'stuck' : 'unloading',
       stage: null,
       roadPct: null,
       zone: null,
@@ -211,6 +230,7 @@ export function truckRow(input: TruckInput, now: Date, today: string, waits: Bor
       fresh: false,
       atGate: false,
       gateDays: null,
+      stoodSince: stood,
       eta: null,
       days,
       awaitingUnload: input.awaitingUnload ?? null,
@@ -256,6 +276,7 @@ export function truckRow(input: TruckInput, now: Date, today: string, waits: Bor
     fresh: place.fresh,
     atGate: place.atGate,
     gateDays: gateDaysOf(place, today),
+    stoodSince: place.atGate && place.gateSince ? new Date(place.gateSince) : null,
   };
   const pct = place.progress === null ? null : Math.round(place.progress * 100);
   if (place.atGate) {

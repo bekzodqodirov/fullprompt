@@ -100,7 +100,11 @@ export default async function TrucksPage({
   // to print the raw GPS fix ahead of a newer pin and a pre-departure yard
   // fix as live (the board's review); the board, the dashboard and the map
   // read the same row.
-  const roads = await trucksOnRoadRows(rows.filter((row) => row.status === 'in_transit').map((row) => row.id));
+  // Arrived too: one standing unloaded past the stuck days reads as the board
+  // says it, never a green «arrived» (the sixth recheck).
+  const roads = await trucksOnRoadRows(
+    rows.filter((row) => row.status === 'in_transit' || row.status === 'arrived').map((row) => row.id),
+  );
   const words = await truckRoadWords({ counts: false });
 
   const onRoad = rows.filter((row) => row.status === 'in_transit').length;
@@ -176,7 +180,7 @@ export default async function TrucksPage({
                 {/* Where it is: the arrival if it landed, otherwise the
                     board's own words for the truck on the road. */}
                 <div className="mt-1 text-xs">
-                  {row.arrivedAt ? (
+                  {row.arrivedAt && road?.kind !== 'stuck' ? (
                     <span className="font-semibold text-good">
                       🏁 {t('arrivedAt', { wh: row.destCode ?? '' })} ·{' '}
                       {format.dateTime(new Date(row.arrivedAt), { dateStyle: 'short' })}

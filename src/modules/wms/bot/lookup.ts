@@ -453,7 +453,16 @@ async function lookupClient(
         [...transit.values()].flatMap((tr) => {
           const ends = tr.batchId ? endsById.get(tr.batchId) : undefined;
           return ends
-            ? [{ id: ends.batch.id, originCode: ends.originCode, destCode: ends.destCode, departedAt: ends.batch.departedAt }]
+            ? [
+                {
+                  id: ends.batch.id,
+                  originCode: ends.originCode,
+                  destCode: ends.destCode,
+                  departedAt: ends.batch.departedAt,
+                  // An arrived truck's yard clock stops at its first unload scan.
+                  until: ends.batch.status === 'arrived' ? ends.batch.arrivedAt : null,
+                },
+              ]
             : [];
         }),
       )

@@ -158,7 +158,13 @@ export async function cabinetMap(clientIds: string[]): Promise<CabinetMapPlace[]
   ]);
   // After the trucks: the gate's «since when» is judged against each one's yard.
   const fixes = await latestPositions(
-    batchRows.map((b) => ({ id: b.batch.id, originCode: b.originCode, destCode: b.destCode, departedAt: b.batch.departedAt })),
+    batchRows.map((b) => ({
+      id: b.batch.id,
+      originCode: b.originCode,
+      destCode: b.destCode,
+      departedAt: b.batch.departedAt,
+      until: b.batch.status === 'arrived' ? b.batch.arrivedAt : null,
+    })),
   );
 
   const out: CabinetMapPlace[] = [];

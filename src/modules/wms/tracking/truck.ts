@@ -12,7 +12,8 @@ import { isMovingStage, stageBatchOf, truckStage } from '../client-cabinet/stage
 import { placeDated, placeTruck, type BorderHours } from './eta';
 import { WAREHOUSE_POINTS } from './map-data';
 import { placementFix, type LatestPosition } from './devices';
-import { gateDaysOf, stuckAtPhoneGate } from './on-road-state';
+import { gateDaysOf, stoodSince, stuckAtPhoneGate } from './on-road-state';
+import { daysSince } from '../reports/dashboard-math';
 import { tashkentDay } from '../../platform/time/tashkent';
 
 /** The marker /map draws — structurally the component's MapTruck. */
@@ -107,7 +108,8 @@ export async function truckFor(
     },
     waits,
   );
-  const gateDays = gateDaysOf(place, tashkentDay(new Date()));
+  const today = tashkentDay(new Date());
+  const gateDays = gateDaysOf(place, today);
   // Off the road (below) a truck stands at its destination whether or not a
   // road is modelled; on it, a truck with neither a road nor a phone has no
   // place at all.
@@ -148,6 +150,13 @@ export async function truckFor(
   // dashboard say «Yetib keldi» about the same truck. With no destination
   // point known it is listed with none (`placed: false`).
   if (offRoad) {
+    // ARRIVED: at its gate on the arrived truck's own clock — since the first
+    // unload scan, or the phone's yard fix before it (`stoodSince`, the
+    // caller's `until`): the bot said «yo'lda» from the first scan on (the
+    // sixth recheck).
+    const arrived = batch.status === 'arrived';
+    const stood = arrived ? stoodSince(batch.arrivedAt, fix?.gateSince ?? null) : null;
+    const stoodDays = stood ? daysSince(stood, today) : null;
     const gate = place.route
       ? place.route.points[place.route.points.length - 1]!
       : (WAREHOUSE_POINTS[ends.destCode] ?? null);
@@ -160,9 +169,9 @@ export async function truckFor(
       x: gate?.x ?? 0,
       y: gate?.y ?? 0,
       placed: gate !== null,
-      atGate: false,
-      gateDays: null,
-      gateStuck: false,
+      atGate: arrived,
+      gateDays: stoodDays,
+      gateStuck: stuckAtPhoneGate(stoodDays),
       live: false,
       fixAgeMinutes: fix?.ageMinutes ?? null,
       fixSource: fix?.source ?? null,

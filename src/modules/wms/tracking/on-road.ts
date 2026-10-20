@@ -6,7 +6,7 @@ import { tashkentDay } from '../../platform/time/tashkent';
 import { batchEndsWhere, inTransitBatches } from '../reports/queries';
 import { awaitingUnloadCounts } from '../scanning/unload';
 import { loadBorderHours } from './border-queue';
-import { latestPositions, placementFix, type LatestPosition, type PositionTrip } from './devices';
+import { gateSinceFor, latestPositions, placementFix, type LatestPosition, type PositionTrip } from './devices';
 import type { BorderHours } from './eta';
 import {
   rankTrucks,
@@ -83,8 +83,8 @@ export async function trucksOnRoad(
     loadBorderHours(),
   ]);
 
-  const positions = await latestPositions(inputs.map(tripOf));
-  const placed = inputs.map((r) => withFix(r, positions));
+  const [positions, yards] = await readEvidence(inputs);
+  const placed = inputs.map((r) => withFix(r, positions, yards));
   const byId = new Map<string, TruckInput>(placed.map((r) => [r.id, r]));
   const ranked = rankTrucks(placed.map((r) => truckRow(r, now, today, waits)));
   const counts = zeroCounts();
@@ -100,27 +100,33 @@ export async function trucksOnRoad(
 }
 
 /**
- * Every truck's positions: one on the road is placed by them; one ARRIVED
- * keeps since when the phone had it in the yard before the first unload scan
+ * A truck on the road is placed by its positions; one ARRIVED keeps only
+ * since when the phone had it in the yard before the first unload scan
  * (`until`), so that scan does not restart its «stuck» clock (the fifth
- * recheck).
+ * recheck) — its newest fix is nobody's evidence, so it is not read (the
+ * sixth: every fix a paired phone sends on the drive home was).
  */
-function tripOf(r: TruckInput): PositionTrip {
-  return {
-    id: r.id,
-    originCode: r.originCode,
-    destCode: r.destCode,
-    departedAt: r.departedAt,
-    until: r.status === 'arrived' ? r.arrivedAt : null,
-  };
+const tripOf = (r: TruckInput): PositionTrip => ({
+  id: r.id,
+  originCode: r.originCode,
+  destCode: r.destCode,
+  departedAt: r.departedAt,
+  until: r.status === 'arrived' ? r.arrivedAt : null,
+});
+
+function readEvidence(inputs: TruckInput[]): Promise<[Map<string, LatestPosition>, Map<string, Date>]> {
+  return Promise.all([
+    latestPositions(inputs.filter((r) => r.status === 'in_transit').map(tripOf)),
+    gateSinceFor(inputs.filter((r) => r.status === 'arrived').map(tripOf)),
+  ]);
 }
 
-/** The input with its truck's newest fix — the evidence `placeTruck` places it by. */
-function withFix(input: TruckInput, positions: Map<string, LatestPosition>): TruckInput {
-  const fix = positions.get(input.id);
+/** The input with its evidence: the newest fix `placeTruck` places it by, or the arrived truck's yard time. */
+function withFix(input: TruckInput, positions: Map<string, LatestPosition>, yards: Map<string, Date>): TruckInput {
   return {
     ...input,
-    fix: placementFix(fix),
+    fix: placementFix(positions.get(input.id)),
+    yardSince: input.status === 'arrived' ? (yards.get(input.id) ?? null) : null,
   };
 }
 
@@ -174,12 +180,12 @@ export async function trucksOnRoadRows(batchIds: string[]): Promise<Map<string, 
     loadBorderHours(),
   ]);
   if (inputs.length === 0) return out;
-  const [positions, awaiting] = await Promise.all([
-    latestPositions(inputs.map(tripOf)),
+  const [[positions, yards], awaiting] = await Promise.all([
+    readEvidence(inputs),
     awaitingUnloadCounts(inputs.filter((r) => r.status === 'arrived').map((r) => r.id)),
   ]);
   for (const raw of inputs) {
-    const input = withFix(raw, positions);
+    const input = withFix(raw, positions, yards);
     const row = truckRow(input, now, today, waits);
     out.set(input.id, enrichedRow(input, row, awaiting, now, today, waits));
   }
