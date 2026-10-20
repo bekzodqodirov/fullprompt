@@ -409,7 +409,7 @@
     "truckAtGate": "At gate, not unloaded",
     "truckAtGateDays": "{n, plural, =0 {came today} one {standing # day} other {standing # days}}",
     "truckAtGateStuck": "check the unloading",
-    "truckYardDays": "{n, plural, one {in the yard # day (GPS)} other {in the yard # days (GPS)}}",
+    "truckYardFrom": "GPS: in the yard from {date}",
     "truckUnloadedOpenHint": "«{button}» not pressed"
   },
   "inventory": {

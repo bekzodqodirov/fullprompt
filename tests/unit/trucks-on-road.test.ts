@@ -358,31 +358,36 @@ describe('a truck at its gate, and a truck due now, read alike on every screen',
     // Stuck by the yard time; «Keldi» is still the scan (`days`), and the
     // yard days are their own fact — never a date that moves (the seventh
     // recheck: every printed arrival date contradicted another once it did).
-    expect(truckRow(scanned, NOW, TODAY, {})).toMatchObject({ kind: 'stuck', days: 0, gateDays: 4, stoodSince: ago(96) });
+    expect(truckRow(scanned, NOW, TODAY, {})).toMatchObject({ kind: 'stuck', days: 0, yardFrom: ago(96), stoodSince: ago(96) });
+    // A past fact: days later, unloaded or gone, it still names the same day.
+    const later = new Date(NOW.getTime() + 7 * 24 * 3_600_000);
+    expect(truckRow({ ...scanned, awaitingUnload: 0 }, later, tashkentDay(later), {}).yardFrom).toEqual(ago(96));
     // With no phone the scan is the clock, as it always was.
     expect(truckRow({ ...scanned, yardSince: null }, NOW, TODAY, {})).toMatchObject({
       kind: 'unloading',
       days: 0,
-      gateDays: null,
+      yardFrom: null,
     });
     // The arrived truck's newest fix is not its clock — only the yard time is.
     expect(truckRow({ ...scanned, yardSince: null, fix: fix(gate, 1, 96) }, NOW, TODAY, {})).toMatchObject({
       days: 0,
-      gateDays: null,
+      yardFrom: null,
     });
     // A phone reading later than the scan never shortens it, and says nothing.
     expect(truckRow({ ...scanned, arrivedAt: ago(72), yardSince: ago(1) }, NOW, TODAY, {})).toMatchObject({
       kind: 'stuck',
       days: 3,
-      gateDays: null,
+      yardFrom: null,
     });
     // An hour before the scan, the same day: nothing to say apart.
     expect(truckRow({ ...scanned, yardSince: new Date(NOW.getTime() - 3_600_000) }, NOW, TODAY, {})).toMatchObject({
-      gateDays: null,
+      yardFrom: null,
     });
     // The words: «Keldi» from the scan, the yard days beside it.
     const src = readFileSync('src/components/truck-road.tsx', 'utf8');
-    expect(src).toContain("row.status === 'arrived' && row.gateDays !== null ? t('truckYardDays', { n: row.gateDays }) : null");
+    expect(src).toContain(
+      "row.status === 'arrived' && row.yardFrom ? t('truckYardFrom', { date: etaDay(row.yardFrom.toISOString()) }) : null",
+    );
     expect(src).toMatch(/parts\.push\(t\('arrivedDays', \{ n: row\.days \}\)\);\s*const stood = yard\(row\);\s*if \(stood\) parts\.push\(stood\);/);
   });
 
@@ -392,6 +397,23 @@ describe('a truck at its gate, and a truck due now, read alike on every screen',
     const byPhone = truckRow(kaInput({ id: 'b', code: 'B', departedAt: ago(216), fix: fix(gate, 1, 50) }), NOW, TODAY, {});
     expect([byScan.kind, byPhone.kind]).toEqual(['stuck', 'stuck']);
     expect(rankTrucks([byPhone, byScan]).map((r) => r.code)).toEqual(['A', 'B']);
+    // Waiting to be unloaded, not yet stuck: by how long each has stood, the
+    // board's own order — a phone's yard fix yesterday morning beats a scan
+    // yesterday afternoon though its scan came this morning (the eighth recheck).
+    const scannedYesterday = truckRow(
+      kaInput({ id: 'c', code: 'C', status: 'arrived', departedAt: ago(216), arrivedAt: ago(14) }),
+      NOW,
+      TODAY,
+      {},
+    );
+    const yardYesterday = truckRow(
+      kaInput({ id: 'd', code: 'D', status: 'arrived', departedAt: ago(216), arrivedAt: ago(1), yardSince: ago(22) }),
+      NOW,
+      TODAY,
+      {},
+    );
+    expect([scannedYesterday.kind, yardYesterday.kind]).toEqual(['unloading', 'unloading']);
+    expect(rankTrucks([scannedYesterday, yardYesterday]).map((r) => r.code)).toEqual(['D', 'C']);
   });
 
   it('due NOW ([0, 0]) prints no date: the board, the cabinet and the map ask one rule', () => {

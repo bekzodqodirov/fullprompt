@@ -273,7 +273,8 @@ describe('the map and the bot read the one placement', () => {
       fixAgo(2, '41.31', '69.24'),
     ]);
     const row = (await trucksOnRoadRows([b.id])).get(b.id)!;
-    expect(row).toMatchObject({ status: 'arrived', kind: 'stuck', days: 0, gateDays: 4 });
+    expect(row).toMatchObject({ status: 'arrived', kind: 'stuck', days: 0 });
+    expect(Math.abs(row.yardFrom!.getTime() - (Date.now() - 96 * HOUR))).toBeLessThan(60_000);
     expect(Math.abs(row.stoodSince!.getTime() - (Date.now() - 96 * HOUR))).toBeLessThan(60_000);
     // Its newest fix is nobody's evidence once it arrived, so it is not read
     // (the sixth recheck: every fix of the drive home was, on every render).
@@ -292,8 +293,8 @@ describe('the map and the bot read the one placement', () => {
     const scanned = cards.find((c) => c.id === yesterday.id)!;
     expect(stood).toMatchObject({ warnings: expect.arrayContaining(['stuck']) });
     expect(Math.abs(new Date(stood.arrivedAt!).getTime() - b.arrivedAt!.getTime())).toBeLessThan(1_000);
-    expect(stood.road?.gateDays).toBe(4);
-    expect(scanned.road?.gateDays).toBeNull();
+    expect(stood.road?.yardFrom).not.toBeNull();
+    expect(scanned.road?.yardFrom).toBeNull();
     expect(stood.order).toBeLessThan(scanned.order);
 
     // The bot's marker for the same truck: at its gate four days, stuck —

@@ -146,19 +146,23 @@ export interface TruckRow {
   fresh: boolean;
   /** The phone put it at its destination's gate (`placeTruck`): no date, not late, not yet unloaded. */
   atGate: boolean;
-  /**
-   * At the gate by the phone: Tashkent days since its first fix there. On an
-   * ARRIVED row only when that came on an earlier day than the scan (`days`
-   * counts the scan). Null otherwise.
-   */
+  /** At the gate by the phone: Tashkent days since its first fix there; null otherwise (an arrived row too). */
   gateDays: number | null;
   /**
-   * ARRIVED: since when it has stood at its gate (`stoodSince`) — the clock
-   * «stuck» and the board's arrived column judge by; null otherwise. Never a
-   * date printed as «Keldi»: that stays the first unload scan on every
-   * screen, and the phone's earlier yard time is its own labelled fact
-   * (`gateDays`, «hovlida N kundan beri (GPS)») — the seventh recheck found
-   * every printed arrival date contradicting another once it moved.
+   * ARRIVED: the phone's first yard fix, when it came on an earlier Tashkent
+   * day than the first unload scan — printed as a past fact («GPS: hovliga
+   * 16.10 kirgan»), never as a running count: the phone saw the yard only
+   * until the scan (the eighth recheck). Null otherwise.
+   */
+  yardFrom: Date | null;
+  /**
+   * Since when it has stood at its gate (`stoodSince` for an arrived truck;
+   * the phone's first yard fix for one still in transit); null on the road.
+   * The clock «stuck», the board's arrived column and the dashboard's waiting
+   * trucks order by — NEVER printed: «Keldi» stays the first unload scan on
+   * every screen (the seventh recheck found every printed arrival date
+   * contradicting another once it moved), and the phone's earlier yard time
+   * is its own past fact (`yardFrom`).
    */
   stoodSince: Date | null;
   /** Only on a MOVING rung (`isMovingStage`), with a schedule, not overdue. */
@@ -222,10 +226,10 @@ export function truckRow(input: TruckInput, now: Date, today: string, waits: Bor
     // «Keldi» is the scan (`days`); whether it stands too long is judged by
     // the phone's yard time when that came first — one clock for the two
     // arrivals, which the scan used to reset (the fifth recheck) — and that
-    // time is said apart («hovlida N kundan beri (GPS)», `gateDays`).
+    // time is said apart as a past fact (`yardFrom`).
     const stood = stoodSince(input.arrivedAt, input.yardSince ?? null);
     const days = daysSince(input.arrivedAt, today);
-    const stoodDays = daysSince(stood, today);
+    const earlierDay = input.yardSince && daysSince(input.yardSince, today) > days ? input.yardSince : null;
     return {
       ...base,
       kind: isStuckAtGate({ status: 'arrived', arrivedAt: stood }, today) ? 'stuck' : 'unloading',
@@ -237,7 +241,8 @@ export function truckRow(input: TruckInput, now: Date, today: string, waits: Bor
       evidenceAt: null,
       fresh: false,
       atGate: false,
-      gateDays: stoodDays > days ? stoodDays : null,
+      gateDays: null,
+      yardFrom: earlierDay,
       stoodSince: stood,
       eta: null,
       days,
@@ -284,7 +289,8 @@ export function truckRow(input: TruckInput, now: Date, today: string, waits: Bor
     fresh: place.fresh,
     atGate: place.atGate,
     gateDays: gateDaysOf(place, today),
-    stoodSince: null,
+    yardFrom: null,
+    stoodSince: place.atGate && place.gateSince ? new Date(place.gateSince) : null,
   };
   const pct = place.progress === null ? null : Math.round(place.progress * 100);
   if (place.atGate) {
@@ -385,11 +391,11 @@ export function rankTrucks(rows: TruckRow[]): TruckRow[] {
       const soon = (a.arrivalOrder ?? Infinity) - (b.arrivalOrder ?? Infinity);
       if (soon !== 0 && !Number.isNaN(soon)) return soon;
     } else {
-      // A stuck truck waits as long as it has STOOD — an arrived row's days
-      // already count from there, one at its gate by the phone counts
-      // `gateDays`, not its days on the road (the fifth recheck).
-      const waited = (r: TruckRow) => (r.kind === 'stuck' ? (r.gateDays ?? r.days) : r.days);
-      const longer = waited(b) - waited(a);
+      // Longest standing first: since it came to its gate when it is at one
+      // (the board's own arrived order — an arrived row's `days` count the
+      // scan, the eighth recheck), else days on the road.
+      const longer =
+        a.stoodSince && b.stoodSince ? a.stoodSince.getTime() - b.stoodSince.getTime() : b.days - a.days;
       if (longer !== 0) return longer;
     }
     return a.code.localeCompare(b.code);

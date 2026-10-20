@@ -409,7 +409,7 @@
     "truckAtGate": "На месте, не разгружена",
     "truckAtGateDays": "{n, plural, =0 {пришла сегодня} one {стоит # день} few {стоит # дня} many {стоит # дней} other {стоит # дня}}",
     "truckAtGateStuck": "проверьте разгрузку",
-    "truckYardDays": "{n, plural, one {во дворе # день (GPS)} few {во дворе # дня (GPS)} many {во дворе # дней (GPS)} other {во дворе # дня (GPS)}}",
+    "truckYardFrom": "по GPS: во дворе с {date}",
     "truckUnloadedOpenHint": "«{button}» не нажата"
   },
   "inventory": {

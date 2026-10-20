@@ -409,7 +409,7 @@
     "truckAtGate": "Manzilda, tushirilmagan",
     "truckAtGateDays": "{n, plural, =0 {bugun keldi} other {# kundan beri turibdi}}",
     "truckAtGateStuck": "tushirishni tekshiring",
-    "truckYardDays": "{n, plural, other {hovlida # kundan beri (GPS)}}",
+    "truckYardFrom": "GPS: hovliga {date} kirgan",
     "truckUnloadedOpenHint": "«{button}» bosilmagan"
   },
   "inventory": {

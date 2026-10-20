@@ -101,9 +101,10 @@ export async function truckRoadWords({ counts = true }: { counts?: boolean } = {
     gateWord(row) === 'unloaded_open' ? t('truckUnloadedOpenHint', { button: tu('finishUnload') }) : null;
 
   // An ARRIVED truck the phone had in its yard days before the first scan:
-  // «hovlida N kundan beri (GPS)», beside «Keldi», never instead of it.
+  // «GPS: hovliga 16.10 kirgan» — a past fact beside «Keldi», never instead
+  // of it and never a count that runs on after the scan (the eighth recheck).
   const yard = (row: TruckRow): string | null =>
-    row.status === 'arrived' && row.gateDays !== null ? t('truckYardDays', { n: row.gateDays }) : null;
+    row.status === 'arrived' && row.yardFrom ? t('truckYardFrom', { date: etaDay(row.yardFrom.toISOString()) }) : null;
 
   const byFix = (row: TruckRow) => row.source === 'gps' || row.source === 'manual';
   const BASIS = {

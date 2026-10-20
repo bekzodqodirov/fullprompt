@@ -409,7 +409,7 @@
     "truckAtGate": "已到达，未卸货",
     "truckAtGateDays": "{n, plural, =0 {今天到达} other {已停#天}}",
     "truckAtGateStuck": "请检查卸货",
-    "truckYardDays": "{n, plural, other {在院内#天（GPS）}}",
+    "truckYardFrom": "GPS：{date}已进院",
     "truckUnloadedOpenHint": "未点“{button}”"
   },
   "inventory": {
