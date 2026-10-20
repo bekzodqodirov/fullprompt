@@ -300,19 +300,22 @@ async function loadDates(batchIds: string[]): Promise<Map<string, { from: string
         JOIN boxes b ON b.id = r.box_id
        WHERE NOT (b.current_batch_id = r.batch_id AND b.status = 'planned')
     ),
-    scanned AS (
-      SELECT c.batch_id, greatest(bt.created_at, least(s.at, bt.departed_at)) AS at
-        FROM cargo c
-        JOIN batches bt ON bt.id = c.batch_id
-        JOIN LATERAL (
-          SELECT max(least(se.scanned_at, se.created_at)) AS at
-            FROM scan_events se
-           WHERE se.batch_id = c.batch_id AND se.box_id = c.box_id AND se.type = 'load'
-        ) s ON s.at IS NOT NULL
+    -- Each carton's latest load scan, in ONE grouped pass over the trucks'
+    -- load events: probed per carton, it re-read the whole truck's events
+    -- for every carton (600 cartons x 600 events on one truck).
+    scans AS (
+      SELECT se.batch_id, se.box_id, max(least(se.scanned_at, se.created_at)) AS at
+        FROM scan_events se
+       WHERE se.batch_id IN (${list}) AND se.type = 'load'
+       GROUP BY se.batch_id, se.box_id
     )
-    SELECT batch_id, min(at) AS first_at, max(at) AS last_at
-      FROM scanned
-     GROUP BY batch_id
+    SELECT c.batch_id,
+           min(greatest(bt.created_at, least(s.at, bt.departed_at))) AS first_at,
+           max(greatest(bt.created_at, least(s.at, bt.departed_at))) AS last_at
+      FROM cargo c
+      JOIN scans s ON s.batch_id = c.batch_id AND s.box_id = c.box_id
+      JOIN batches bt ON bt.id = c.batch_id
+     GROUP BY c.batch_id
   `)) as unknown as { batch_id: string; first_at: string | Date; last_at: string | Date }[];
   // A raw statement hands timestamps back as TEXT (#925): read through Date.
   for (const row of rows) out.set(row.batch_id, { from: iso(row.first_at)!, to: iso(row.last_at)! });
