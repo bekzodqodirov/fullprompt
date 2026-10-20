@@ -204,11 +204,13 @@ export async function TruckCard({ card }: { card: BoardTruck }) {
 
 export async function TripCard({ card }: { card: BoardTrip }) {
   const tb = await getTranslations('batches.board');
+  // Each measure on its own: a line with m³ and no kg must not hide the m³
+  // (the first version printed both or neither — the round's screenshot).
   const missing = Math.max(card.m3Missing, card.kgMissing);
-  const measured = card.lines > 0 && missing < card.lines;
   const cargo = [
     tb('tripCargo', { boxes: card.boxes }),
-    measured ? cargoLine(card.kg, card.m3) : null,
+    card.m3Missing < card.lines ? `${m3Of(card.m3)} m³` : null,
+    card.kgMissing < card.lines ? `${Math.round(card.kg)} kg` : null,
     missing > 0 ? tb('tripUnknown', { n: missing }) : null,
   ].filter(Boolean);
 
