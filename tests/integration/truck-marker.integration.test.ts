@@ -85,7 +85,7 @@ describe('a truck between unmapped warehouses', () => {
     ).toBeNull();
   });
 
-  it('a mapped pair still rides the estimate when the fix is stale', async () => {
+  it('a fix from before the departure (the yard) is not the road: the estimate draws the truck', async () => {
     const yiwuAndijan = { originCode: 'YW', destCode: 'AND', originCountry: 'CN', destCountry: 'UZ' };
     const truck = await truckFor(batchRow, yiwuAndijan, {}, {
       batchId: batchRow.id,
@@ -97,8 +97,12 @@ describe('a truck between unmapped warehouses', () => {
       fresh: false,
     });
     expect(truck).not.toBeNull();
-    // The schedule drives the dot; the stale fix survives as information.
+    // `batchRow` departed at the start of this file, after the fix: the walk
+    // is the departure's, not the fix's (a stale fix AFTER the departure
+    // anchors — board-readers.integration.test.ts), and the fix survives as
+    // information.
     expect(truck!.live).toBe(false);
+    expect(truck!.x).not.toBe(72.5);
     expect(truck!.fixAgeMinutes).toBe(20 * 60);
     expect(truck!.routePoints.length).toBeGreaterThan(0);
   });

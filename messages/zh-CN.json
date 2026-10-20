@@ -398,6 +398,7 @@
       "inactive": "已停用"
     },
     "truckEstimateGps": "按GPS和时刻表估计",
+    "truckEstimatePin": "按标记和时刻表估计",
     "truckFixGps": "📡 GPS · {ago}",
     "truckFixManual": "📍 手动录入位置 · {ago}",
     "agoNow": "刚刚",
@@ -1634,7 +1635,7 @@
       "loaded": "已装 {a} / {b}箱 · {m3a} / {m3b} m³ · {kga} / {kgb} kg",
       "loadedAll": "已全部装车",
       "rode": "已发出：{boxes}箱 · {cargo}",
-      "unloaded": "已卸 {a} / {b}箱 · {cargo}",
+      "unloaded": "已卸 {a} / {b}箱 · 全车 {cargo}",
       "loadingSince": "{date}起装车中",
       "loadedRange": "装车 {range}",
       "departedOn": "发车 {date}",

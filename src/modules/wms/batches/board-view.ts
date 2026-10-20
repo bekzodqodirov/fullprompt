@@ -254,6 +254,58 @@ export function roadBands(route: RouteDef): { bands: RoadBand[]; notches: number
   return { bands, notches };
 }
 
+/** A count with its two measures — the board's own copy of `LoadMeasure`'s shape (this file stays pure). */
+export interface CargoMeasure {
+  boxes: number;
+  kg: number;
+  m3: number;
+}
+
+/**
+ * The ONE box count a truck card prints (docs/PARTIYA-DOSKASI.md §3, 7a),
+ * decided here so every branch is a table test — the review found two of
+ * the card's fixes guarded by nothing that could fail.
+ *
+ * - forming: the plan; loading: what is aboard of the plan, «hammasi
+ *   yuklandi» when it is all aboard;
+ * - a quick truck (no `load_plans` row names it) has no plan: everything on
+ *   the pointer IS the scanned cargo, so «a / b» would read «1 / 1 · hammasi
+ *   yuklandi» from its first carton with fifty on the floor — it says what
+ *   was scanned, with nothing to divide it by;
+ * - on the road: what RODE; at the gate: «a / b» off, and the measures are
+ *   the whole truck's, named as such («jami») — the m³ that came off is not
+ *   known per carton here, and a bare «12 m³» beside «10 / 40» reads as the
+ *   ten's (the review).
+ */
+export type CargoLine =
+  | { kind: 'planNone' }
+  | { kind: 'loadedNoPlan'; loaded: CargoMeasure }
+  | { kind: 'plan'; planned: CargoMeasure }
+  | { kind: 'loaded'; loaded: CargoMeasure; planned: CargoMeasure; all: boolean }
+  | { kind: 'rode'; rode: CargoMeasure }
+  | { kind: 'unloaded'; off: number; rode: CargoMeasure };
+
+export function cargoLineOf(card: {
+  status: string;
+  hasPlan: boolean;
+  load: { loaded: CargoMeasure; planned: CargoMeasure } | null;
+  rode: CargoMeasure | null;
+  awaitingUnload: number | null;
+}): CargoLine | null {
+  if (card.status === 'forming' || card.status === 'loading') {
+    const load = card.load;
+    if (!card.hasPlan) {
+      return load && load.loaded.boxes > 0 ? { kind: 'loadedNoPlan', loaded: load.loaded } : { kind: 'planNone' };
+    }
+    if (!load || load.planned.boxes === 0) return { kind: 'planNone' };
+    if (card.status === 'forming') return { kind: 'plan', planned: load.planned };
+    return { kind: 'loaded', loaded: load.loaded, planned: load.planned, all: load.loaded.boxes === load.planned.boxes };
+  }
+  if (!card.rode) return null;
+  if (card.status !== 'arrived') return { kind: 'rode', rode: card.rode };
+  return { kind: 'unloaded', off: Math.max(0, card.rode.boxes - (card.awaitingUnload ?? 0)), rode: card.rode };
+}
+
 /**
  * «0.13 m³ · 25 kg» — ONE spelling for every card on the board (the plan,
  * what rode, what was unloaded, a trip): cubes first, as his 7a reads

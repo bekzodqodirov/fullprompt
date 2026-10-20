@@ -251,6 +251,17 @@ export function gateWord(row: Pick<TruckRow, 'status' | 'kind' | 'awaitingUnload
 }
 
 /**
+ * What a date on the road was walked from, as its qualifier names it (§2:
+ * «the date's qualifier says its source»): the phone (or a typed position),
+ * the logist's pin, or the bare schedule. A date walked from a pin was called
+ * a plain schedule estimate (the review).
+ */
+export function estimateBasis(source: PlaceSource | null): 'gps' | 'pin' | 'schedule' {
+  if (source === 'gps' || source === 'manual') return 'gps';
+  return source === 'pin' ? 'pin' : 'schedule';
+}
+
+/**
  * How old a fix is, as a person reads it: «hozirgina» under five minutes,
  * then minutes, hours up to two days, days after. Rounded DOWN, so «1 soat»
  * never means 31 minutes (the /trucks page printed «0 soat oldin» for a fix

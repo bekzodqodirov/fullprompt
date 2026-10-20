@@ -3,6 +3,7 @@ import {
   assembleBoard,
   boardDay,
   boardRange,
+  cargoLineOf,
   columnOfStop,
   measureLine,
   readBoardFilters,
@@ -18,7 +19,7 @@ import {
 import { readFileSync } from 'node:fs';
 import { tripSight } from '@/modules/wms/batches/board';
 import { routeFor } from '@/modules/wms/tracking/map-data';
-import { gateWord } from '@/modules/wms/tracking/on-road-state';
+import { estimateBasis, gateWord } from '@/modules/wms/tracking/on-road-state';
 
 /**
  * The batch board's arithmetic (docs/PARTIYA-DOSKASI.md §3-§4) — pure, so
@@ -243,6 +244,103 @@ describe('the word for a truck at its gate', () => {
     // Not asked is not zero: the words the screens printed before.
     expect(gateWord({ status: 'arrived', kind: 'stuck', awaitingUnload: null })).toBe('stuck');
     expect(gateWord({ status: 'in_transit', kind: 'overdue', awaitingUnload: null })).toBeNull();
+  });
+});
+
+describe('the one box count a truck card prints', () => {
+  const m = (boxes: number, kg = boxes * 10, m3 = boxes * 0.1) => ({ boxes, kg, m3 });
+  const card = (over: Partial<Parameters<typeof cargoLineOf>[0]>) => ({
+    status: 'loading',
+    hasPlan: true,
+    load: null,
+    rode: null,
+    awaitingUnload: null,
+    ...over,
+  });
+
+  it('a quick truck says what was scanned — never «1 / 1 · hammasi yuklandi» from its first carton', () => {
+    // `batchLoadTotals` counts the plan as everything on the pointer, and a
+    // quick truck has nothing else there: planned EQUALS loaded.
+    const line = cargoLineOf(card({ hasPlan: false, load: { loaded: m(1), planned: m(1) } }));
+    expect(line).toEqual({ kind: 'loadedNoPlan', loaded: m(1) });
+    expect(cargoLineOf(card({ hasPlan: false, load: null }))).toEqual({ kind: 'planNone' });
+    expect(cargoLineOf(card({ status: 'forming', hasPlan: false, load: { loaded: m(0), planned: m(0) } }))).toEqual({
+      kind: 'planNone',
+    });
+  });
+
+  it('a planned truck: the plan while forming, a / b while loading, «all» only when it is all aboard', () => {
+    expect(cargoLineOf(card({ status: 'forming', load: { loaded: m(0), planned: m(40) } }))).toEqual({
+      kind: 'plan',
+      planned: m(40),
+    });
+    expect(cargoLineOf(card({ load: { loaded: m(12), planned: m(40) } }))).toMatchObject({ kind: 'loaded', all: false });
+    expect(cargoLineOf(card({ load: { loaded: m(40), planned: m(40) } }))).toMatchObject({ kind: 'loaded', all: true });
+    expect(cargoLineOf(card({ load: { loaded: m(0), planned: m(0) } }))).toEqual({ kind: 'planNone' });
+  });
+
+  it('on the road what rode; at the gate a / b off — the whole truck’s measures, named so', () => {
+    expect(cargoLineOf(card({ status: 'in_transit', rode: m(40) }))).toEqual({ kind: 'rode', rode: m(40) });
+    expect(cargoLineOf(card({ status: 'arrived', rode: m(40), awaitingUnload: 30 }))).toEqual({
+      kind: 'unloaded',
+      off: 10,
+      rode: m(40),
+    });
+    expect(cargoLineOf(card({ status: 'arrived', rode: m(40), awaitingUnload: 0 }))).toMatchObject({ off: 40 });
+    expect(cargoLineOf(card({ status: 'in_transit', rode: null }))).toBeNull();
+    // The measures beside «10 / 40» are the truck's, and the words say «jami».
+    const bundles = ['uz', 'ru', 'en', 'zh-CN'].map(
+      (l) => (JSON.parse(readFileSync(`messages/${l}.json`, 'utf8')) as { batches: { board: { unloaded: string } } }).batches.board.unloaded,
+    );
+    expect(bundles[0]).toBe('Tushirildi {a} / {b} karobka · jami {cargo}');
+    for (const text of bundles) expect(text).toMatch(/· [^·{]+ \{cargo\}$/u);
+  });
+});
+
+describe('the gate word fits a one-line chip, and the button is named in the sentence', () => {
+  type Dash = { dashboard: { truckUnloadedOpen: string; truckUnloadedOpenHint: string; att: { stuck: string } } };
+  const read = (l: string) => (JSON.parse(readFileSync(`messages/${l}.json`, 'utf8')) as Dash).dashboard;
+
+  it('the word is short and names no button; the hint carries it', () => {
+    // The dashboard prints the word in a nowrap chip beside the meter: the
+    // first version («Tushirib bo‘lindi — «Razgruzkani yakunlash»
+    // bosilmagan», 51 characters) pushed the card past a phone's width.
+    for (const l of ['uz', 'ru', 'en', 'zh-CN']) {
+      const d = read(l);
+      expect(d.truckUnloadedOpen.length).toBeLessThanOrEqual(24);
+      expect(d.truckUnloadedOpen).not.toContain('{button}');
+      expect(d.truckUnloadedOpenHint).toContain('{button}');
+    }
+    expect(read('uz').truckUnloadedOpen).toBe('Tushirildi, yopilmagan');
+  });
+
+  it('the sentence names the button whatever `counts` says', () => {
+    const src = readFileSync('src/components/truck-road.tsx', 'utf8');
+    expect(src).toContain(
+      "if (gateWord(row) === 'unloaded_open') parts.push(t('truckUnloadedOpenHint', { button: tu('finishUnload') }));",
+    );
+    const line = src.split('\n').find((l) => l.includes("t('truckUnloadedOpenHint'"))!;
+    expect(line).not.toContain('counts');
+  });
+
+  it('the attention row says what the predicate counts: arrived 2+ days, not finished — not «not unloaded»', () => {
+    // `isStuckAtGate` counts a truck nobody FINISHED, all of its cartons off
+    // or not (the card's own word now says «Tushirildi, yopilmagan»).
+    expect(read('uz').att.stuck).toBe('2 kundan beri tushirish yakunlanmagan fura: {n}');
+    for (const l of ['uz', 'ru', 'en', 'zh-CN']) expect(read(l).att.stuck).not.toMatch(/tushirilmagan|не разгруж|unloaded for|未卸车/u);
+  });
+});
+
+describe('a date on the road names what it was walked from', () => {
+  it('the phone, the pin, or the schedule — a pin-walked date is not a «schedule estimate»', () => {
+    expect(estimateBasis('gps')).toBe('gps');
+    expect(estimateBasis('manual')).toBe('gps');
+    expect(estimateBasis('pin')).toBe('pin');
+    expect(estimateBasis('schedule')).toBe('schedule');
+    expect(estimateBasis(null)).toBe('schedule');
+    const src = readFileSync('src/components/truck-road.tsx', 'utf8');
+    expect(src).toContain("pin: () => t('truckEstimatePin'),");
+    expect(src).toContain('BASIS[\n            estimateBasis(row.source)\n          ]()');
   });
 });
 

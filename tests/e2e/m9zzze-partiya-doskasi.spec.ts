@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { database, DRIVER, dropBoardTruck, mintBoardTruck, mintFormingTruck } from './doska-fixture';
+import { database, DRIVER, dropSpecTrucks, mintBoardTruck, mintFormingTruck } from './doska-fixture';
 
 /**
  * Partiya doskasi on a phone (his 1A 2a 3a 10b, docs/PARTIYA-DOSKASI.md §3):
@@ -43,6 +43,9 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
+  // Every truck this spec ever minted, whichever test failed or retried.
+  await dropSpecTrucks(sql, 'DSK');
+  await dropSpecTrucks(sql, 'DSF');
   await sql.end();
 });
 
@@ -85,7 +88,9 @@ test('a strip tap opens its column even after a tab was picked by hand', async (
   await expect(page.getByTestId('board-tab-forming')).toBeChecked();
   const card = page.locator(`[data-testid=batch-board-card][data-code="${forming.code}"]`);
   await expect(card).toBeVisible();
-  // A quick truck with nothing scanned has no plan to divide by.
+  // A quick truck with nothing scanned reads «rejasiz». (The scanned quick
+  // truck — «Yuklandi N karobka», never «N / N · hammasi yuklandi» — is
+  // `cargoLineOf`'s table in tests/unit/batch-board.test.ts.)
   await expect(card.getByTestId('board-cargo')).not.toContainText('/');
 });
 
@@ -118,8 +123,8 @@ test('the ⋯ pins the truck in Kyrgyzstan and the card moves to «Tranzitda»',
 });
 
 test('cleanup: the spec’s trucks leave the board', async () => {
-  await dropBoardTruck(sql, truck.id);
-  await dropBoardTruck(sql, forming.id);
-  const left = await sql`SELECT 1 FROM batches WHERE id IN (${truck.id}, ${forming.id})`;
+  await dropSpecTrucks(sql, 'DSK');
+  await dropSpecTrucks(sql, 'DSF');
+  const left = await sql`SELECT 1 FROM batches WHERE code LIKE 'DSK%' OR code LIKE 'DSF%'`;
   expect(left.length).toBe(0);
 });

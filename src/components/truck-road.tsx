@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { getTranslations } from 'next-intl/server';
 import { formatEtaRange } from '@/modules/platform/telegram/client-labels';
-import { fixAge, gateWord, type TruckRow } from '@/modules/wms/tracking/on-road-state';
+import { estimateBasis, fixAge, gateWord, type TruckRow } from '@/modules/wms/tracking/on-road-state';
 import { CHECKPOINT_LABEL } from '@/modules/wms/tracking/map-data';
 import { LEG_KEYS, type LegKey } from '@/modules/wms/tracking/engine';
 import type { RoadZone } from '@/modules/wms/tracking/place';
@@ -93,6 +93,11 @@ export async function truckRoadWords({ counts = true }: { counts?: boolean } = {
   };
 
   const byFix = (row: TruckRow) => row.source === 'gps' || row.source === 'manual';
+  const BASIS = {
+    gps: () => t('truckEstimateGps'),
+    pin: () => t('truckEstimatePin'),
+    schedule: () => t('truckEstimate'),
+  } as const;
 
   const sentence = (row: TruckRow): ReactNode[] => {
     const parts: ReactNode[] = [];
@@ -113,9 +118,9 @@ export async function truckRoadWords({ counts = true }: { counts?: boolean } = {
         );
       } else if (row.eta) {
         parts.push(
-          `${t('truckEta', { from: etaDay(row.eta.fromIso), to: etaDay(row.eta.toIso) })} (${
-            byFix(row) ? t('truckEstimateGps') : t('truckEstimate')
-          })`,
+          `${t('truckEta', { from: etaDay(row.eta.fromIso), to: etaDay(row.eta.toIso) })} (${BASIS[
+            estimateBasis(row.source)
+          ]()})`,
         );
       } else if (row.kind === 'no_schedule') {
         parts.push(t('truckNoRoute'));

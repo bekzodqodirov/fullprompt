@@ -398,6 +398,7 @@
       "inactive": "inactive"
     },
     "truckEstimateGps": "estimate from GPS and the schedule",
+    "truckEstimatePin": "estimate from the pin and the schedule",
     "truckFixGps": "📡 GPS · {ago}",
     "truckFixManual": "📍 typed position · {ago}",
     "agoNow": "just now",
@@ -1634,7 +1635,7 @@
       "loaded": "Loaded {a} / {b} boxes · {m3a} / {m3b} m³ · {kga} / {kgb} kg",
       "loadedAll": "all loaded",
       "rode": "Departed: {boxes} boxes · {cargo}",
-      "unloaded": "Unloaded {a} / {b} boxes · {cargo}",
+      "unloaded": "Unloaded {a} / {b} boxes · in all {cargo}",
       "loadingSince": "Loading since {date}",
       "loadedRange": "Loaded {range}",
       "departedOn": "Departed {date}",

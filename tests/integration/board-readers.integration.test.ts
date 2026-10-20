@@ -1,0 +1,261 @@
+import 'dotenv/config';
+import { eq, sql } from 'drizzle-orm';
+import { v4 as uuidv4 } from 'uuid';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { db, pgClient } from '@/modules/platform/db/client';
+import { attachments, batches, boxes, clients, driverPositions, users, warehouses } from '@/modules/platform/db/schema';
+import { confirmReceipt, voidReceipt } from '@/modules/wms/receipts/service';
+import { cargoOverview } from '@/modules/wms/client-cabinet/service';
+import { cabinetMap } from '@/modules/wms/client-cabinet/map';
+import { latestPositions } from '@/modules/wms/tracking/devices';
+import { cumulativeLengths } from '@/modules/wms/tracking/engine';
+import { routeFor, WAREHOUSE_POINTS } from '@/modules/wms/tracking/map-data';
+import { trucksOnRoadRows } from '@/modules/wms/tracking/on-road';
+import { truckFor } from '@/modules/wms/tracking/truck';
+
+/**
+ * The readers of a truck's place (docs/PARTIYA-DOSKASI.md §2), each proven
+ * on what it hands a PERSON — the board's review found every one of these
+ * guarded by a test that could not fail:
+ *
+ * - the map and the bot (`truckFor`): a stale fix after the departure
+ *   anchors the walk; a truck pinned in Uzbekistan carries no date (O15); an
+ *   ARRIVED truck stands at its gate with no date; a truck nothing honest
+ *   places is not drawn on its destination warehouse;
+ * - the evidence (`latestPositions`): a phone's clock running ahead never
+ *   makes a fix newer than its arrival, and a coarse cell-tower fix is not
+ *   a position;
+ * - the customer (`cargoOverview`, `cabinetMap`): an arrived China-bound
+ *   truck has no % and no date, and the cabinet's % follows the driver's
+ *   phone exactly as the office's does.
+ */
+
+const HOUR = 3_600_000;
+const STAMP = String(Date.now()).slice(-7);
+let actorId = '';
+let ids: Record<'YW' | 'KA' | 'TAS1', string>;
+let truckRow: typeof batches.$inferSelect;
+let clientId = '';
+let receiptId = '';
+let lotId = '';
+const made: string[] = [];
+
+const ends = (o: 'YW' | 'KA', d: 'KA' | 'TAS1', dc = d === 'KA' ? 'CN' : 'UZ') => ({
+  originCode: o,
+  destCode: d,
+  originCountry: 'CN',
+  destCountry: dc,
+});
+
+async function mintBatch(o: 'YW' | 'KA', d: 'KA' | 'TAS1', over: Partial<typeof batches.$inferInsert>) {
+  const [b] = await db
+    .insert(batches)
+    .values({
+      code: `BRD-${STAMP}-${made.length}`,
+      originWarehouseId: ids[o],
+      destWarehouseId: ids[d],
+      status: 'in_transit',
+      departedAt: new Date(Date.now() - 24 * HOUR),
+      createdBy: actorId,
+      ...over,
+    })
+    .returning();
+  made.push(b!.id);
+  return b!;
+}
+
+beforeAll(async () => {
+  actorId = (await db.select({ id: users.id }).from(users).limit(1))[0]!.id;
+  const rows = await db.select({ id: warehouses.id, code: warehouses.code }).from(warehouses);
+  const byCode = new Map(rows.map((r) => [r.code, r.id]));
+  ids = { YW: byCode.get('YW')!, KA: byCode.get('KA')!, TAS1: byCode.get('TAS1')! };
+  truckRow = await mintBatch('KA', 'TAS1', {});
+
+  const [c] = await db
+    .insert(clients)
+    .values({ clientCode: `BR${STAMP.slice(-6)}`, name: 'Board readers client' })
+    .returning();
+  clientId = c!.id;
+  receiptId = uuidv4();
+  lotId = uuidv4();
+  await db.insert(attachments).values({
+    entityType: 'receipt_lot',
+    entityId: lotId,
+    kind: 'photo',
+    storageKey: `brtest/${lotId}`,
+    fileName: 'x.jpg',
+    contentType: 'image/jpeg',
+    sizeBytes: 1,
+    uploadedBy: actorId,
+  });
+  await confirmReceipt(
+    {
+      receiptId,
+      warehouseId: ids.YW,
+      clientId,
+      unclaimedMarking: '',
+      lots: [
+        {
+          id: lotId,
+          productNameZh: '样品',
+          boxCount: 2,
+          dimsMode: 'uniform',
+          boxLengthCm: 30,
+          boxWidthCm: 30,
+          boxHeightCm: 30,
+          boxWeightKg: 5,
+        },
+      ],
+      extraCosts: [],
+    },
+    { actorId },
+  );
+});
+
+afterAll(async () => {
+  // Nothing here may outlive the file: the boxes stood in the SEEDED Yiwu
+  // warehouse and the trucks are in_transit, which every later board,
+  // dashboard and map reads (#154).
+  await db
+    .update(boxes)
+    .set({ status: 'in_stock', currentBatchId: null, currentWarehouseId: ids.YW })
+    .where(eq(boxes.lotId, lotId));
+  await voidReceipt(receiptId, 'board readers test cleanup', { actorId }).catch(() => undefined);
+  for (const id of made) {
+    await db.delete(driverPositions).where(eq(driverPositions.batchId, id));
+    await db.execute(sql`DELETE FROM box_movements WHERE ref_type = 'batch' AND ref_id = ${id}`);
+    await db.delete(batches).where(eq(batches.id, id));
+  }
+  await pgClient.end();
+});
+
+describe('the map and the bot read the one placement', () => {
+  it('a stale fix AFTER the departure anchors the walk — never the departure schedule', async () => {
+    const route = routeFor('KA', 'TAS1')!;
+    const cum = cumulativeLengths(route.points);
+    const total = cum[cum.length - 1]!;
+    const row = { ...truckRow, departedAt: new Date(Date.now() - 40 * HOUR) };
+    const bare = (await truckFor(row, ends('KA', 'TAS1'), {}))!;
+    // A point well ahead of where the schedule alone puts the truck, on the
+    // Kyrgyz leg (a moving leg, away from any post).
+    const kg = route.segments.find((s) => s.key === 'kg')!;
+    const at = kg.span[1] - 2;
+    expect(cum[at]! / total).toBeGreaterThan(bare.progress! + 0.05);
+    const fixAt = new Date(Date.now() - 20 * HOUR);
+    const marker = (await truckFor(row, ends('KA', 'TAS1'), {}, {
+      batchId: row.id,
+      lat: route.points[at]!.y,
+      lon: route.points[at]!.x,
+      recordedAt: fixAt,
+      source: 'device',
+      ageMinutes: 20 * 60,
+      fresh: false,
+    }))!;
+    expect(marker.live).toBe(false);
+    expect(marker.progress!).toBeGreaterThanOrEqual(cum[at]! / total);
+  });
+
+  it('a truck pinned in Uzbekistan carries no date — the customer is shown none (O15)', async () => {
+    const row = { ...truckRow, departedAt: new Date(Date.now() - 60 * HOUR) };
+    const control = (await truckFor(row, ends('KA', 'TAS1'), {}))!;
+    expect(control.dated).toBe(true);
+    const pinned = (await truckFor(
+      { ...row, trackingCheckpoint: { key: 'in_uz', at: new Date(Date.now() - HOUR).toISOString() } },
+      ends('KA', 'TAS1'),
+      {},
+    ))!;
+    expect(pinned.dated).toBe(false);
+  });
+
+  it('an ARRIVED truck stands at its gate: no date, nothing left', async () => {
+    const row = { ...truckRow, status: 'arrived', departedAt: new Date(Date.now() - 110 * HOUR) };
+    const marker = (await truckFor(row, ends('YW', 'KA'), {}))!;
+    expect(marker.placed).toBe(true);
+    expect({ x: marker.x, y: marker.y }).toEqual(WAREHOUSE_POINTS.KA);
+    expect(marker.dated).toBe(false);
+    expect(marker.progress).toBe(1);
+    // The walk alone, 110 h into Yiwu → Kashgar's 144-168 h, put it 70 %
+    // along with two days to go (the review measured exactly that).
+    const walking = (await truckFor({ ...row, status: 'in_transit' }, ends('YW', 'KA'), {}))!;
+    expect(walking.progress!).toBeLessThan(0.9);
+    expect(walking.dated).toBe(true);
+  });
+
+  it('a truck nothing honest places is not drawn — its spent walk ends ON the destination warehouse', async () => {
+    const row = { ...truckRow, departedAt: new Date(Date.now() - 800 * HOUR) };
+    const marker = (await truckFor(row, ends('KA', 'TAS1'), {}))!;
+    expect(marker.overdue).toBe(true);
+    expect(marker.placed).toBe(false);
+  });
+});
+
+describe('the evidence a fix is', () => {
+  it('a phone clock running ahead is dated by its arrival; a coarse fix is no position; accuracy 0 is kept', async () => {
+    const id = truckRow.id;
+    const at = (h: number) => new Date(Date.now() + h * HOUR);
+    // An honest fix three hours ago.
+    await db.insert(driverPositions).values({ batchId: id, lat: '39.9', lon: '74.0', accuracyM: 12, recordedAt: at(-3), receivedAt: at(-3) });
+    // A phone a day ahead: stamped tomorrow, received an hour ago.
+    await db.insert(driverPositions).values({ batchId: id, lat: '40.1', lon: '73.5', accuracyM: 12, recordedAt: at(24), receivedAt: at(-1) });
+    let latest = (await latestPositions([id])).get(id)!;
+    expect(latest.recordedAt.getTime()).toBeCloseTo(at(-1).getTime(), -3);
+    expect(latest.lat).toBe(40.1);
+
+    // A 20 km cell-tower fix ten minutes ago says nothing about which side
+    // of a post the truck stands on.
+    await db.insert(driverPositions).values({ batchId: id, lat: '40.5', lon: '72.9', accuracyM: 20_000, recordedAt: at(-1 / 6), receivedAt: at(-1 / 6) });
+    latest = (await latestPositions([id])).get(id)!;
+    expect(latest.lat).toBe(40.1);
+
+    // A reported accuracy of 0 is a precise fix, not a missing one.
+    await db.insert(driverPositions).values({ batchId: id, lat: '40.6', lon: '72.8', accuracyM: 0, recordedAt: at(-1 / 12), receivedAt: at(-1 / 12) });
+    latest = (await latestPositions([id])).get(id)!;
+    expect(latest.lat).toBe(40.6);
+    await db.delete(driverPositions).where(eq(driverPositions.batchId, id));
+  });
+});
+
+describe('the customer reads the same truck', () => {
+  async function ride(batchId: string) {
+    await db
+      .update(boxes)
+      .set({ status: 'in_transit', currentBatchId: batchId, currentWarehouseId: null })
+      .where(eq(boxes.lotId, lotId));
+  }
+  const group = async () => (await cargoOverview(clientId)).find((l) => l.lotId === lotId)!.groups[0]!;
+
+  it('an ARRIVED Yiwu → Kashgar truck with the cartons not yet scanned off: no %, no date, the map at Kashgar', async () => {
+    const b = await mintBatch('YW', 'KA', {
+      status: 'arrived',
+      departedAt: new Date(Date.now() - 110 * HOUR),
+      arrivedAt: new Date(Date.now() - HOUR),
+    });
+    await ride(b.id);
+    expect((await group()).transit).toBeNull();
+    const truck = (await cabinetMap([clientId])).find((p) => p.kind === 'truck')!;
+    expect(truck.point).toEqual(WAREHOUSE_POINTS.KA);
+    expect(truck.remainingDays).toBeNull();
+  });
+
+  it('the cabinet’s % follows the driver’s phone, the office’s number to the percent', async () => {
+    const b = await mintBatch('KA', 'TAS1', { departedAt: new Date(Date.now() - 30 * HOUR) });
+    await ride(b.id);
+    const before = (await group()).transit!.progress!;
+    const route = routeFor('KA', 'TAS1')!;
+    const kg = route.segments.find((s) => s.key === 'kg')!;
+    const p = route.points[kg.span[1] - 2]!;
+    await db.insert(driverPositions).values({
+      batchId: b.id,
+      lat: p.y.toFixed(6),
+      lon: p.x.toFixed(6),
+      accuracyM: 15,
+      recordedAt: new Date(Date.now() - HOUR),
+      receivedAt: new Date(Date.now() - HOUR),
+    });
+    const after = (await group()).transit!.progress!;
+    expect(after).toBeGreaterThan(before + 0.05);
+    const office = (await trucksOnRoadRows([b.id])).get(b.id)!;
+    expect(office.source).toBe('gps');
+    expect(Math.round(after * 100)).toBe(office.roadPct);
+  });
+});

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { database, dropBoardTruck, mintBoardTruck } from './doska-fixture';
+import { database, dropSpecTrucks, mintBoardTruck } from './doska-fixture';
 
 /**
  * Partiya doskasi on a desktop (docs/PARTIYA-DOSKASI.md §3): the four
@@ -25,10 +25,11 @@ async function login(page: Page) {
 }
 
 test.beforeAll(async () => {
-  truck = await mintBoardTruck(sql, OWNER);
+  truck = await mintBoardTruck(sql, OWNER, 'DSD');
 });
 
 test.afterAll(async () => {
+  await dropSpecTrucks(sql, 'DSD');
   await sql.end();
 });
 
@@ -71,7 +72,7 @@ test('the corridor filter keeps the Irkeshtam road and drops it from «ichki»',
 });
 
 test('cleanup: the spec’s truck leaves the road', async () => {
-  await dropBoardTruck(sql, truck.id);
-  const left = await sql`SELECT 1 FROM batches WHERE id = ${truck.id}`;
+  await dropSpecTrucks(sql, 'DSD');
+  const left = await sql`SELECT 1 FROM batches WHERE code LIKE 'DSD%'`;
   expect(left.length).toBe(0);
 });

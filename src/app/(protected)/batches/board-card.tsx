@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { truckRoadWords } from '@/components/truck-road';
 import type { BoardTrip, BoardTruck } from '@/modules/wms/batches/board';
-import { boardDay, boardRange, measureLine, telOf, type RoadBand } from '@/modules/wms/batches/board-view';
+import { boardDay, boardRange, cargoLineOf, measureLine, telOf, type RoadBand } from '@/modules/wms/batches/board-view';
 import { CHECKPOINT_LABEL } from '@/modules/wms/tracking/map-data';
 import type { RoadZone } from '@/modules/wms/tracking/place';
 import { CheckpointButtons } from './[id]/mashina/checkpoint-buttons';
@@ -70,42 +70,33 @@ export async function TruckCard({ card }: { card: BoardTruck }) {
   const tel = telOf(card.driverPhone);
   const menu = card.pins !== null || tel !== null;
 
-  // ONE box count per card (§3): the plan or what is aboard while loading,
-  // what rode on the road, what came off at the gate.
+  // ONE box count per card (§3), chosen by `cargoLineOf` (a table test).
+  const line = cargoLineOf({ ...card, awaitingUnload: card.road?.awaitingUnload ?? null });
   const cargo = (() => {
-    if (card.status === 'forming' || card.status === 'loading') {
-      const load = card.load;
-      if (!card.hasPlan) {
-        // A quick truck: what was scanned, with nothing to divide it by.
-        return load && load.loaded.boxes > 0
-          ? tb('loadedNoPlan', { boxes: load.loaded.boxes, cargo: measureLine(load.loaded.m3, load.loaded.kg) })
-          : tb('planNone');
+    if (!line) return null;
+    switch (line.kind) {
+      case 'planNone':
+        return tb('planNone');
+      case 'loadedNoPlan':
+        return tb('loadedNoPlan', { boxes: line.loaded.boxes, cargo: measureLine(line.loaded.m3, line.loaded.kg) });
+      case 'plan':
+        return tb('plan', { boxes: line.planned.boxes, cargo: measureLine(line.planned.m3, line.planned.kg) });
+      case 'loaded': {
+        const text = tb('loaded', {
+          a: line.loaded.boxes,
+          b: line.planned.boxes,
+          m3a: m3Of(line.loaded.m3),
+          m3b: m3Of(line.planned.m3),
+          kga: Math.round(line.loaded.kg),
+          kgb: Math.round(line.planned.kg),
+        });
+        return line.all ? `${text} · ${tb('loadedAll')}` : text;
       }
-      if (!load || load.planned.boxes === 0) return tb('planNone');
-      const { loaded, planned } = load;
-      if (card.status === 'forming') {
-        return tb('plan', { boxes: planned.boxes, cargo: measureLine(planned.m3, planned.kg) });
-      }
-      const line = tb('loaded', {
-        a: loaded.boxes,
-        b: planned.boxes,
-        m3a: m3Of(loaded.m3),
-        m3b: m3Of(planned.m3),
-        kga: Math.round(loaded.kg),
-        kgb: Math.round(planned.kg),
-      });
-      return loaded.boxes === planned.boxes ? `${line} · ${tb('loadedAll')}` : line;
+      case 'rode':
+        return tb('rode', { boxes: line.rode.boxes, cargo: measureLine(line.rode.m3, line.rode.kg) });
+      case 'unloaded':
+        return tb('unloaded', { a: line.off, b: line.rode.boxes, cargo: measureLine(line.rode.m3, line.rode.kg) });
     }
-    if (!card.rode) return null;
-    if (card.status !== 'arrived') {
-      return tb('rode', { boxes: card.rode.boxes, cargo: measureLine(card.rode.m3, card.rode.kg) });
-    }
-    const left = card.road?.awaitingUnload ?? 0;
-    return tb('unloaded', {
-      a: Math.max(0, card.rode.boxes - left),
-      b: card.rode.boxes,
-      cargo: measureLine(card.rode.m3, card.rode.kg),
-    });
   })();
 
   const dates: string[] = [];

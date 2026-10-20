@@ -398,6 +398,7 @@
       "inactive": "неактивен"
     },
     "truckEstimateGps": "оценка по GPS и графику",
+    "truckEstimatePin": "оценка по отметке и графику",
     "truckFixGps": "📡 GPS · {ago}",
     "truckFixManual": "📍 введено вручную · {ago}",
     "agoNow": "только что",
@@ -1634,7 +1635,7 @@
       "loaded": "Погружено {a} / {b} кор. · {m3a} / {m3b} m³ · {kga} / {kgb} kg",
       "loadedAll": "всё погружено",
       "rode": "Отправлено: {boxes} кор. · {cargo}",
-      "unloaded": "Выгружено {a} / {b} кор. · {cargo}",
+      "unloaded": "Выгружено {a} / {b} кор. · всего {cargo}",
       "loadingSince": "Грузится с {date}",
       "loadedRange": "Погружено {range}",
       "departedOn": "Отправлена {date}",

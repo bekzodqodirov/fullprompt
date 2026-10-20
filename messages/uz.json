@@ -398,6 +398,7 @@
       "inactive": "faol emas"
     },
     "truckEstimateGps": "GPS va jadval bo‘yicha taxmin",
+    "truckEstimatePin": "belgi va jadval bo‘yicha taxmin",
     "truckFixGps": "📡 GPS · {ago}",
     "truckFixManual": "📍 qo‘lda kiritilgan joy · {ago}",
     "agoNow": "hozirgina",
@@ -1634,7 +1635,7 @@
       "loaded": "Yuklandi {a} / {b} karobka · {m3a} / {m3b} m³ · {kga} / {kgb} kg",
       "loadedAll": "hammasi yuklandi",
       "rode": "Ketdi: {boxes} karobka · {cargo}",
-      "unloaded": "Tushirildi {a} / {b} karobka · {cargo}",
+      "unloaded": "Tushirildi {a} / {b} karobka · jami {cargo}",
       "loadingSince": "Yuklanmoqda {date} dan",
       "loadedRange": "Yuklandi {range}",
       "departedOn": "Jo‘nadi {date}",
