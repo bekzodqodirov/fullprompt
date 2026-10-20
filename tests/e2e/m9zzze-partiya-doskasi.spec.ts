@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { database, DRIVER, dropBoardTruck, mintBoardTruck } from './doska-fixture';
+import { database, DRIVER, dropBoardTruck, mintBoardTruck, mintFormingTruck } from './doska-fixture';
 
 /**
  * Partiya doskasi on a phone (his 1A 2a 3a 10b, docs/PARTIYA-DOSKASI.md §3):
@@ -16,6 +16,7 @@ const OWNER = '+998900000001';
 const PASSWORD = 'demo1234';
 const sql = database();
 let truck: { id: string; code: string };
+let forming: { id: string; code: string };
 
 async function login(page: Page) {
   await page.context().clearCookies();
@@ -38,6 +39,7 @@ async function fitsThePhone(page: Page) {
 
 test.beforeAll(async () => {
   truck = await mintBoardTruck(sql, OWNER);
+  forming = await mintFormingTruck(sql, OWNER);
 });
 
 test.afterAll(async () => {
@@ -65,6 +67,26 @@ test('the strip filters the board to a place and opens its column', async ({ pag
   await page.locator('label:has(#bt-road)').click();
   await expect(card).toBeVisible();
   await fitsThePhone(page);
+});
+
+test('a strip tap opens its column even after a tab was picked by hand', async ({ page }) => {
+  await login(page);
+  await page.goto('/batches');
+  // The spec's own quick truck makes «Shakllanmoqda» the column the phone
+  // opens on; the person then looks at another column by hand…
+  await expect(page.getByTestId('board-tab-forming')).toBeChecked();
+  await page.locator('label:has(#bt-arrived)').click();
+  await expect(page.getByTestId('board-tab-arrived')).toBeChecked();
+  // …and taps «Shakllanmoqda» on the strip: the default column did not
+  // change, and the tab must follow the tap all the same (the review's
+  // finding — a soft navigation kept the hand-picked radio).
+  await page.getByTestId('board-stop-forming').click();
+  await expect(page).toHaveURL(/[?&]joy=forming/);
+  await expect(page.getByTestId('board-tab-forming')).toBeChecked();
+  const card = page.locator(`[data-testid=batch-board-card][data-code="${forming.code}"]`);
+  await expect(card).toBeVisible();
+  // A quick truck with nothing scanned has no plan to divide by.
+  await expect(card.getByTestId('board-cargo')).not.toContainText('/');
 });
 
 test('the ⋯ pins the truck in Kyrgyzstan and the card moves to «Tranzitda»', async ({ page }) => {
@@ -95,8 +117,9 @@ test('the ⋯ pins the truck in Kyrgyzstan and the card moves to «Tranzitda»',
   await fitsThePhone(page);
 });
 
-test('cleanup: the spec’s truck leaves the road', async () => {
+test('cleanup: the spec’s trucks leave the board', async () => {
   await dropBoardTruck(sql, truck.id);
-  const left = await sql`SELECT 1 FROM batches WHERE id = ${truck.id}`;
+  await dropBoardTruck(sql, forming.id);
+  const left = await sql`SELECT 1 FROM batches WHERE id IN (${truck.id}, ${forming.id})`;
   expect(left.length).toBe(0);
 });

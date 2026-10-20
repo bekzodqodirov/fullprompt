@@ -403,7 +403,8 @@
     "agoNow": "刚刚",
     "agoMin": "{n}分钟前",
     "agoHour": "{n}小时前",
-    "agoDay": "{n}天前"
+    "agoDay": "{n}天前",
+    "truckUnloadedOpen": "已卸完——未点“{button}”"
   },
   "inventory": {
     "title": "盘点",
@@ -1632,7 +1633,7 @@
       "loaded": "已装 {a} / {b}箱 · {m3a} / {m3b} m³ · {kga} / {kgb} kg",
       "loadedAll": "已全部装车",
       "rode": "已发出：{boxes}箱 · {cargo}",
-      "unloaded": "已卸 {a} / {b}箱",
+      "unloaded": "已卸 {a} / {b}箱 · {cargo}",
       "loadingSince": "{date}起装车中",
       "loadedRange": "装车 {range}",
       "departedOn": "发车 {date}",
@@ -1640,7 +1641,6 @@
       "roadPct": "已走 {pct}%",
       "warnStale": "已到达但未关闭",
       "menu": "车辆操作",
-      "pinNow": "当前：{pin}",
       "callDriver": "司机",
       "tripCollected": "已从 {a} / {b} 家工厂提货",
       "tripCargo": "明细：{boxes}箱",
@@ -1650,8 +1650,9 @@
       "tripArrival": "预计 {range}",
       "empty": "空",
       "emptyBoard": "没有未结束的车辆。",
-      "capped": "仅显示前 {n} 条——请缩小筛选。",
-      "filters": "筛选"
+      "capped": "仅显示最早的 {n} 辆车。",
+      "filters": "筛选",
+      "loadedNoPlan": "已装 {boxes}箱 · {cargo}"
     }
   },
   "loading": {

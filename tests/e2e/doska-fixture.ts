@@ -30,6 +30,19 @@ export async function mintBoardTruck(sql: postgres.Sql, ownerPhone: string): Pro
   return { id: row.id, code };
 }
 
+/** A quick truck being formed at Yiwu: no plan, nothing scanned. */
+export async function mintFormingTruck(sql: postgres.Sql, ownerPhone: string): Promise<{ id: string; code: string }> {
+  const code = `DSF${String(Date.now()).slice(-7)}`;
+  const [row] = await sql<{ id: string }[]>`
+    INSERT INTO batches (id, code, origin_warehouse_id, dest_warehouse_id, status, created_by)
+    SELECT gen_random_uuid(), ${code}, o.id, d.id, 'forming', u.id
+    FROM warehouses o, warehouses d, users u
+    WHERE o.code = 'YW' AND d.code = 'TAS1' AND u.phone = ${ownerPhone}
+    RETURNING id`;
+  if (!row) throw new Error('the demo has no YW, TAS1 or owner to mint the truck from');
+  return { id: row.id, code };
+}
+
 export async function dropBoardTruck(sql: postgres.Sql, id: string) {
   await sql`DELETE FROM batches WHERE id = ${id}`;
 }

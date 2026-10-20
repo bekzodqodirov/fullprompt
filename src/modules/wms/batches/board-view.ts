@@ -254,6 +254,17 @@ export function roadBands(route: RouteDef): { bands: RoadBand[]; notches: number
   return { bands, notches };
 }
 
+/**
+ * «0.13 m³ · 25 kg» — ONE spelling for every card on the board (the plan,
+ * what rode, what was unloaded, a trip): cubes first, as his 7a reads
+ * («necha kub necha kg»), two places of m³ and whole kilos. The first version
+ * borrowed the truck header's `cargoLine` («kg · m³») for some lines and wrote
+ * «m³ · kg» in others, so the two figures swapped places between columns.
+ */
+export function measureLine(m3: number, kg: number): string {
+  return `${Math.round(m3 * 100) / 100} m³ · ${Math.round(kg)} kg`;
+}
+
 /** «14.10» in Tashkent — the office's clock (R5), locale-free like every printed date here. */
 export function boardDay(at: Date | string): string {
   const parts = new Intl.DateTimeFormat('en-GB', {

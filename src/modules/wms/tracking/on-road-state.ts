@@ -236,6 +236,21 @@ export function truckRow(input: TruckInput, now: Date, today: string, waits: Bor
 }
 
 /**
+ * What a truck AT ITS GATE is called — the word the four screens print
+ * (`truckRoadWords`), decided here so it is a table test. With nothing left
+ * to scan off it is unloaded and only the «Razgruzkani yakunlash» press is
+ * missing: «Tushirilmay turibdi» beside «Tushirildi 40 / 40» contradicted
+ * itself (the board's review). The KIND stays — the counts and the attention
+ * row still see a truck nobody has finished, which is still somebody's job.
+ * Null on the road, and when the unload count was not asked (`null`).
+ */
+export function gateWord(row: Pick<TruckRow, 'status' | 'kind' | 'awaitingUnload'>): 'unloaded_open' | 'stuck' | 'unloading' | null {
+  if (row.status !== 'arrived') return null;
+  if (row.awaitingUnload === 0) return 'unloaded_open';
+  return row.kind === 'stuck' ? 'stuck' : 'unloading';
+}
+
+/**
  * How old a fix is, as a person reads it: «hozirgina» under five minutes,
  * then minutes, hours up to two days, days after. Rounded DOWN, so «1 soat»
  * never means 31 minutes (the /trucks page printed «0 soat oldin» for a fix

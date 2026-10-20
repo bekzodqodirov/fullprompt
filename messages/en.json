@@ -403,7 +403,8 @@
     "agoNow": "just now",
     "agoMin": "{n} min ago",
     "agoHour": "{n} h ago",
-    "agoDay": "{n} d ago"
+    "agoDay": "{n} d ago",
+    "truckUnloadedOpen": "Unloaded — «{button}» not pressed"
   },
   "inventory": {
     "title": "Stocktake",
@@ -1632,7 +1633,7 @@
       "loaded": "Loaded {a} / {b} boxes · {m3a} / {m3b} m³ · {kga} / {kgb} kg",
       "loadedAll": "all loaded",
       "rode": "Departed: {boxes} boxes · {cargo}",
-      "unloaded": "Unloaded {a} / {b} boxes",
+      "unloaded": "Unloaded {a} / {b} boxes · {cargo}",
       "loadingSince": "Loading since {date}",
       "loadedRange": "Loaded {range}",
       "departedOn": "Departed {date}",
@@ -1640,7 +1641,6 @@
       "roadPct": "{pct}% of the road",
       "warnStale": "trip arrived, not closed",
       "menu": "Truck actions",
-      "pinNow": "Now: {pin}",
       "callDriver": "Driver",
       "tripCollected": "Collected at {a} of {b} factories",
       "tripCargo": "Lines: {boxes} boxes",
@@ -1650,8 +1650,9 @@
       "tripArrival": "Expected {range}",
       "empty": "Empty",
       "emptyBoard": "No open trucks.",
-      "capped": "Showing the first {n} — narrow the filter.",
-      "filters": "Filter"
+      "capped": "Showing the {n} oldest trucks.",
+      "filters": "Filter",
+      "loadedNoPlan": "Loaded {boxes} boxes · {cargo}"
     }
   },
   "loading": {

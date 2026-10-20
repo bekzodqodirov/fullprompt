@@ -2,10 +2,9 @@ import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { truckRoadWords } from '@/components/truck-road';
 import type { BoardTrip, BoardTruck } from '@/modules/wms/batches/board';
-import { boardDay, boardRange, telOf, type RoadBand } from '@/modules/wms/batches/board-view';
+import { boardDay, boardRange, measureLine, telOf, type RoadBand } from '@/modules/wms/batches/board-view';
 import { CHECKPOINT_LABEL } from '@/modules/wms/tracking/map-data';
 import type { RoadZone } from '@/modules/wms/tracking/place';
-import { cargoLine } from './[id]/batch-card';
 import { CheckpointButtons } from './[id]/mashina/checkpoint-buttons';
 
 /**
@@ -66,16 +65,26 @@ export async function TruckCard({ card }: { card: BoardTruck }) {
   const t = await getTranslations('batches');
   const tb = await getTranslations('batches.board');
   const tc = await getTranslations('countLoad');
+  const td = await getTranslations('dashboard');
   const words = card.road ? await truckRoadWords({ counts: false }) : null;
   const tel = telOf(card.driverPhone);
   const menu = card.pins !== null || tel !== null;
 
+  // ONE box count per card (§3): the plan or what is aboard while loading,
+  // what rode on the road, what came off at the gate.
   const cargo = (() => {
     if (card.status === 'forming' || card.status === 'loading') {
-      if (!card.load || card.load.planned.boxes === 0) return tb('planNone');
-      const { loaded, planned } = card.load;
+      const load = card.load;
+      if (!card.hasPlan) {
+        // A quick truck: what was scanned, with nothing to divide it by.
+        return load && load.loaded.boxes > 0
+          ? tb('loadedNoPlan', { boxes: load.loaded.boxes, cargo: measureLine(load.loaded.m3, load.loaded.kg) })
+          : tb('planNone');
+      }
+      if (!load || load.planned.boxes === 0) return tb('planNone');
+      const { loaded, planned } = load;
       if (card.status === 'forming') {
-        return tb('plan', { boxes: planned.boxes, cargo: cargoLine(planned.kg, planned.m3) });
+        return tb('plan', { boxes: planned.boxes, cargo: measureLine(planned.m3, planned.kg) });
       }
       const line = tb('loaded', {
         a: loaded.boxes,
@@ -88,10 +97,15 @@ export async function TruckCard({ card }: { card: BoardTruck }) {
       return loaded.boxes === planned.boxes ? `${line} · ${tb('loadedAll')}` : line;
     }
     if (!card.rode) return null;
-    const rode = tb('rode', { boxes: card.rode.boxes, cargo: cargoLine(card.rode.kg, card.rode.m3) });
-    if (card.status !== 'arrived') return rode;
+    if (card.status !== 'arrived') {
+      return tb('rode', { boxes: card.rode.boxes, cargo: measureLine(card.rode.m3, card.rode.kg) });
+    }
     const left = card.road?.awaitingUnload ?? 0;
-    return `${rode} · ${tb('unloaded', { a: Math.max(0, card.rode.boxes - left), b: card.rode.boxes })}`;
+    return tb('unloaded', {
+      a: Math.max(0, card.rode.boxes - left),
+      b: card.rode.boxes,
+      cargo: measureLine(card.rode.m3, card.rode.kg),
+    });
   })();
 
   const dates: string[] = [];
@@ -105,6 +119,8 @@ export async function TruckCard({ card }: { card: BoardTruck }) {
   if (card.status === 'arrived' && card.arrivedAt) dates.push(tb('arrivedOn', { date: boardDay(card.arrivedAt) }));
 
   const pct = card.road?.roadPct ?? null;
+  // Both are `ogoh=1` warnings, drawn like the other two.
+  const warned = card.warnings.includes('stuck') || card.warnings.includes('overdue');
 
   return (
     <article data-testid="batch-board-card" data-code={card.code} className="card relative !p-3">
@@ -139,10 +155,12 @@ export async function TruckCard({ card }: { card: BoardTruck }) {
           <div className="space-y-1 pt-1" data-testid="board-road">
             {card.bar && pct !== null && <RoadBar bands={card.bar.bands} notches={card.bar.notches} pct={pct} />}
             <p className="text-sm">
-              <span className="font-semibold">{words.word(card.road)}</span>
+              <span className={`font-semibold ${warned ? 'text-warn' : ''}`}>{words.word(card.road)}</span>
               {pct !== null && <span className="tabular-nums text-ink-500"> · {tb('roadPct', { pct })}</span>}
             </p>
-            <p className="text-xs text-ink-500">{words.sentence(card.road)}</p>
+            {/* At the gate the dates line already says when it came — the
+                sentence would say it a second time («yetib keldi · 3 kun»). */}
+            {card.status !== 'arrived' && <p className="text-xs text-ink-500">{words.sentence(card.road)}</p>}
           </div>
         )}
         {card.awaitingCount && (
@@ -163,11 +181,13 @@ export async function TruckCard({ card }: { card: BoardTruck }) {
             {card.pins && (
               <div className="space-y-1">
                 <p className="text-xs font-semibold text-ink-500">📍 {t('whereIsTruck')}</p>
+                {/* The standing pin as a dated FACT and never as «now»: a
+                    newer fix, or the schedule walked on from it, may have
+                    moved the truck since — the card above says where. */}
                 {card.pins.current && (
                   <p className="text-xs" data-testid="board-pin-now">
-                    {tb('pinNow', {
-                      pin: `${CHECKPOINT_LABEL[card.pins.current].icon} ${t(CHECKPOINT_LABEL[card.pins.current].label)}`,
-                    })}
+                    {CHECKPOINT_LABEL[card.pins.current].icon} {t(CHECKPOINT_LABEL[card.pins.current].label)}
+                    {card.pins.days !== null && ` · ${td('truckPin', { n: card.pins.days })}`}
                   </p>
                 )}
                 {card.pins.options.length > 0 && (
@@ -205,13 +225,13 @@ export async function TruckCard({ card }: { card: BoardTruck }) {
 export async function TripCard({ card }: { card: BoardTrip }) {
   const tb = await getTranslations('batches.board');
   // Each measure on its own: a line with m³ and no kg must not hide the m³
-  // (the first version printed both or neither — the round's screenshot).
-  const missing = Math.max(card.m3Missing, card.kgMissing);
+  // (the first version printed both or neither — the round's screenshot),
+  // and «N qatorda noma'lum» counts a line missing EITHER figure once.
   const cargo = [
     tb('tripCargo', { boxes: card.boxes }),
     card.m3Missing < card.lines ? `${m3Of(card.m3)} m³` : null,
     card.kgMissing < card.lines ? `${Math.round(card.kg)} kg` : null,
-    missing > 0 ? tb('tripUnknown', { n: missing }) : null,
+    card.unknownLines > 0 ? tb('tripUnknown', { n: card.unknownLines }) : null,
   ].filter(Boolean);
 
   const dates: string[] = [];

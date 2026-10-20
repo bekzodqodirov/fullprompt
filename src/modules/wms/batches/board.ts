@@ -2,8 +2,10 @@ import { aliasedTable, and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { batches, factories, pickupStops, warehouses } from '../../platform/db/schema';
 import { warehouseScopeEither, type ScopedActor } from '../../platform/rbac/scope';
+import { tashkentDay } from '../../platform/time/tashkent';
 import { pickupEstimate } from '../pickups/eta';
-import { INCOMING_STALE_DAYS, mayReadPickups, OPEN_STATUSES } from '../pickups/service';
+import { mayReadPickups, OPEN_STATUSES, staleOpenSql } from '../pickups/service';
+import { daysSince } from '../reports/dashboard-math';
 import { qrlessUncountedByTruck } from '../scanning/service';
 import { checkpointsFor, isGenericRoute } from '../tracking/eta';
 import { CHECKPOINT_KEYS, routeFor, type CheckpointKey } from '../tracking/map-data';
@@ -62,6 +64,12 @@ export interface BoardTruck extends CardPlacement {
   plate: string | null;
   /** As typed — the card prints it; `telOf` makes the `tel:` link. */
   driverPhone: string | null;
+  /**
+   * A load plan names this truck. A quick truck has none: everything on its
+   * pointer is what was scanned, so «loaded / planned» would read «3 / 3 ·
+   * hammasi yuklandi» from its first carton (the review's finding).
+   */
+  hasPlan: boolean;
   /** Forming and loading: the header's numbers (7a). Null = nothing on the pointer. */
   load: { loaded: LoadMeasure; planned: LoadMeasure } | null;
   /** Departed: what RODE (`riderLoad`). */
@@ -80,9 +88,12 @@ export interface BoardTruck extends CardPlacement {
   /**
    * The ⋯ pins (10b): offered only on the road to a `batches.vehicle_info`
    * holder. `current` is the STORED key — what the CAS compares against, so a
-   * pin the road no longer carries is still the one the screen «saw».
+   * pin the road no longer carries is still the one the screen «saw» —
+   * printed as a dated fact (`days`, Tashkent days since the press), never as
+   * «now»: a newer fix or the schedule walked on from it may have moved the
+   * truck since, and the card above says where.
    */
-  pins: { current: CheckpointKey | null; options: CheckpointKey[] } | null;
+  pins: { current: CheckpointKey | null; days: number | null; options: CheckpointKey[] } | null;
 }
 
 export interface BoardTrip extends CardPlacement {
@@ -97,11 +108,13 @@ export interface BoardTrip extends CardPlacement {
   collected: number;
   /** The driver's recount over the factory's count, per line (B2). */
   boxes: number;
-  /** Known sums, and how many lines carry no figure («noma'lum»). */
+  /** Known sums, each with the lines that lack it. */
   m3: number;
   m3Missing: number;
   kg: number;
   kgMissing: number;
+  /** Lines missing EITHER figure — «N qatorda noma'lum» counts a line once. */
+  unknownLines: number;
   lines: number;
   plannedOn: string | null;
   collectedFrom: string | null;
@@ -147,11 +160,11 @@ export function tripSight(actor: BoardActor): { warehouseIds: string[] | null; f
 }
 
 export async function loadBoard(actor: BoardActor, now: Date = new Date()): Promise<BoardData> {
-  const [trucks, trips] = await Promise.all([boardTrucks(actor), boardTrips(actor, now)]);
+  const [trucks, trips] = await Promise.all([boardTrucks(actor, now), boardTrips(actor, now)]);
   return { cards: [...trucks.cards, ...trips.cards], capped: trucks.capped || trips.capped };
 }
 
-async function boardTrucks(actor: BoardActor): Promise<{ cards: BoardTruck[]; capped: boolean }> {
+async function boardTrucks(actor: BoardActor, now: Date): Promise<{ cards: BoardTruck[]; capped: boolean }> {
   const dest = aliasedTable(warehouses, 'dest');
   const found = await db
     .select({
@@ -164,6 +177,9 @@ async function boardTrucks(actor: BoardActor): Promise<{ cards: BoardTruck[]; ca
       plate: batches.vehiclePlate,
       driverPhone: batches.driverPhone,
       checkpoint: batches.trackingCheckpoint,
+      // `${batches}.id`, never `${batches.id}`: a column may render unqualified
+      // and bind to the subquery's own `id` (#128).
+      hasPlan: sql<boolean>`EXISTS (SELECT 1 FROM load_plans lp WHERE lp.batch_id = ${batches}.id)`,
       originId: batches.originWarehouseId,
       originCode: warehouses.code,
       originName: warehouses.name,
@@ -204,6 +220,7 @@ async function boardTrucks(actor: BoardActor): Promise<{ cards: BoardTruck[]; ca
       : Promise.resolve(new Map<string, unknown>()),
   ]);
   const mayPin = actor.permissions.has('batches.vehicle_info');
+  const today = tashkentDay(now);
 
   const cards = rows.map((r): BoardTruck => {
     const status = r.status as OpenBatchStatus;
@@ -221,11 +238,12 @@ async function boardTrucks(actor: BoardActor): Promise<{ cards: BoardTruck[]; ca
     if (awaiting.has(r.id)) warnings.push('count');
     if (truck?.kind === 'overdue') warnings.push('overdue');
     if (truck?.kind === 'stuck') warnings.push('stuck');
-    const rawPin = (r.checkpoint as { key?: unknown } | null)?.key;
+    const raw = r.checkpoint as { key?: unknown; at?: unknown } | null;
     const storedPin =
-      typeof rawPin === 'string' && (CHECKPOINT_KEYS as readonly string[]).includes(rawPin)
-        ? (rawPin as CheckpointKey)
+      typeof raw?.key === 'string' && (CHECKPOINT_KEYS as readonly string[]).includes(raw.key)
+        ? (raw.key as CheckpointKey)
         : null;
+    const pinAt = storedPin && typeof raw?.at === 'string' && !Number.isNaN(Date.parse(raw.at)) ? raw.at : null;
     // The Mashina tab's options, minus the pin already standing: pressing it
     // would CLEAR it, and clearing stays on the Mashina tab.
     const pinnable = mayPin && status === 'in_transit';
@@ -259,6 +277,7 @@ async function boardTrucks(actor: BoardActor): Promise<{ cards: BoardTruck[]; ca
       destName: r.destName,
       plate: r.plate,
       driverPhone: r.driverPhone,
+      hasPlan: Boolean(r.hasPlan),
       load: column === 'forming' || column === 'loading' ? (totals.get(r.id) ?? null) : null,
       rode: rider ? { boxes: rider.boxCount, kg: rider.kg, m3: rider.m3 } : null,
       loadFrom: date?.from ?? null,
@@ -268,7 +287,10 @@ async function boardTrucks(actor: BoardActor): Promise<{ cards: BoardTruck[]; ca
       road: truck,
       bar: column === 'road' && mapped && truck?.roadPct != null ? roadBands(mapped) : null,
       awaitingCount: awaiting.has(r.id),
-      pins: pinnable && (pinOptions.length > 0 || storedPin) ? { current: storedPin, options: pinOptions } : null,
+      pins:
+        pinnable && (pinOptions.length > 0 || storedPin)
+          ? { current: storedPin, days: pinAt ? daysSince(pinAt, today) : null, options: pinOptions }
+          : null,
     };
   });
   return { cards, capped };
@@ -348,6 +370,7 @@ interface TripRow {
   m3_missing: number;
   kg: string;
   kg_missing: number;
+  unknown_lines: number;
 }
 
 const TRIP_COLUMN: Record<(typeof OPEN_STATUSES)[number], BoardColumn> = {
@@ -365,7 +388,9 @@ async function boardTrips(actor: BoardActor, now: Date): Promise<{ cards: BoardT
         sql`, `,
       )})`
     : sql``;
-  const stale = sql`(p.status = 'arrived' AND coalesce(p.arrived_at, p.created_at) <= now() - make_interval(days => ${INCOMING_STALE_DAYS}))`;
+  // /receive's own sentence (`staleOpenSql`), never a copy of it: it is the
+  // door that hides an old arrived trip from a receiver.
+  const stale = sql`(${staleOpenSql(sql`p`)})`;
   const open = sql.join(
     OPEN_STATUSES.map((s) => sql`${s}`),
     sql`, `,
@@ -377,7 +402,7 @@ async function boardTrips(actor: BoardActor, now: Date): Promise<{ cards: BoardT
            p.created_at, p.started_at, p.arrived_at,
            ${stale} AS stale,
            st.stops, st.collected, st.first_at, st.last_at,
-           ln.lines, ln.boxes, ln.m3, ln.m3_missing, ln.kg, ln.kg_missing
+           ln.lines, ln.boxes, ln.m3, ln.m3_missing, ln.kg, ln.kg_missing, ln.unknown_lines
       FROM pickups p
       JOIN warehouses w ON w.id = p.dest_warehouse_id
       LEFT JOIN LATERAL (
@@ -391,7 +416,8 @@ async function boardTrips(actor: BoardActor, now: Date): Promise<{ cards: BoardT
                coalesce(sum(pl.volume_m3), 0) AS m3,
                (count(*) FILTER (WHERE pl.volume_m3 IS NULL))::int AS m3_missing,
                coalesce(sum(pl.weight_kg), 0) AS kg,
-               (count(*) FILTER (WHERE pl.weight_kg IS NULL))::int AS kg_missing
+               (count(*) FILTER (WHERE pl.weight_kg IS NULL))::int AS kg_missing,
+               (count(*) FILTER (WHERE pl.volume_m3 IS NULL OR pl.weight_kg IS NULL))::int AS unknown_lines
           FROM pickup_stops ps JOIN pickup_lines pl ON pl.stop_id = ps.id
          WHERE ps.pickup_id = p.id
       ) ln ON true
@@ -465,6 +491,7 @@ async function boardTrips(actor: BoardActor, now: Date): Promise<{ cards: BoardT
       m3Missing: Number(r.m3_missing ?? 0),
       kg: Number(r.kg ?? 0),
       kgMissing: Number(r.kg_missing ?? 0),
+      unknownLines: Number(r.unknown_lines ?? 0),
       lines: Number(r.lines ?? 0),
       plannedOn: r.planned_on,
       collectedFrom: iso(r.first_at),

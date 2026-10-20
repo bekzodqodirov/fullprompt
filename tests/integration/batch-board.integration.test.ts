@@ -8,6 +8,7 @@ import {
   boxMovements,
   boxes,
   factories,
+  loadPlans,
   pickupLines,
   pickups,
   pickupStops,
@@ -170,7 +171,7 @@ beforeAll(async () => {
     status: 'in_transit',
     createdAt: at(-120),
     departedAt: at(-48),
-    trackingCheckpoint: { key: 'in_uz', at: at(-10).toISOString() },
+    trackingCheckpoint: { key: 'in_uz', at: at(-72).toISOString() },
     driverPhone: '+998 90 111 22 33',
   });
   await mintBox(5, { status: 'in_transit', currentBatchId: truck.ROAD, currentWarehouseId: null });
@@ -188,6 +189,18 @@ beforeAll(async () => {
   await loadScan(5, 'ROAD', at(-24 * 365), at(-24 * 365));
   await mintBox(6, { status: 'in_transit', currentBatchId: truck.ROAD, currentWarehouseId: null });
   await loadScan(6, 'ROAD', at(-1), at(-1));
+
+  // PLAN — loading against an approved plan: one carton aboard, one reserved.
+  await mintTruck('PLAN', { status: 'loading', createdAt: at(-30) });
+  await db.insert(loadPlans).values({
+    originWarehouseId: whO,
+    destWarehouseId: whD,
+    batchId: truck.PLAN!,
+    status: 'loading',
+    createdBy: actorId,
+  });
+  await mintBox(7, { status: 'loading', currentBatchId: truck.PLAN, currentWarehouseId: whO });
+  await mintBox(8, { status: 'planned', currentBatchId: truck.PLAN, currentWarehouseId: whO });
 
   // FAR — a truck between two Uzbek warehouses, nothing to do with whO.
   await mintTruck('FAR', { status: 'forming', originWarehouseId: whX, destWarehouseId: whY });
@@ -234,6 +247,14 @@ describe('the truck cards', () => {
       planned: { boxes: 3, kg: 30, m3: 0.3 },
     });
     expect(t.LOAD!.column).toBe('loading');
+    // LOAD is a quick truck: everything on its pointer is what was scanned,
+    // so the card must not divide it by itself (the review's finding).
+    expect(t.LOAD!.hasPlan).toBe(false);
+    expect(t.PLAN!.hasPlan).toBe(true);
+    expect(t.PLAN!.load).toEqual({
+      loaded: { boxes: 1, kg: 10, m3: 0.1 },
+      planned: { boxes: 2, kg: 20, m3: 0.2 },
+    });
     expect(t.LOAD!.section).toBe('cn');
     expect(t.ROAD!.load).toBeNull();
     expect(t.ROAD!.rode).toMatchObject({ boxes: 2, kg: 20, m3: 0.2 });
@@ -250,7 +271,8 @@ describe('the truck cards', () => {
       ),
       truck,
     );
-    expect(pinner.ROAD!.pins).toEqual({ current: 'in_uz', options: [] });
+    // The standing pin as a dated fact: three Tashkent days ago, never «now».
+    expect(pinner.ROAD!.pins).toEqual({ current: 'in_uz', days: 3, options: [] });
     expect(pinner.LOAD!.pins).toBeNull();
     const other = mine(
       (await loadBoard(unscoped(['plans.manage']))).cards.filter((c): c is BoardTruck => c.type === 'batch'),
@@ -285,6 +307,8 @@ describe('the factory trips (9b)', () => {
       m3Missing: 1,
       kg: 100,
       kgMissing: 1,
+      // Each line lacks one figure: both are «noma'lum», counted once each.
+      unknownLines: 2,
       lines: 2,
       stops: 1,
       collected: 1,
@@ -324,6 +348,7 @@ describe('cleanup', () => {
     await db.delete(scanEvents).where(inArray(scanEvents.boxId, boxIds));
     await db.delete(boxMovements).where(inArray(boxMovements.boxId, boxIds));
     await db.delete(boxes).where(inArray(boxes.id, boxIds));
+    await db.delete(loadPlans).where(inArray(loadPlans.batchId, truckIds));
     await db.delete(receiptLots).where(eq(receiptLots.receiptId, receiptId));
     await db.delete(receipts).where(eq(receipts.id, receiptId));
     await db.delete(batches).where(inArray(batches.id, truckIds));

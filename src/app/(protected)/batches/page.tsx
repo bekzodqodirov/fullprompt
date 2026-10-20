@@ -38,12 +38,16 @@ const first = (v: string | string[] | undefined): string | undefined => (Array.i
 
 /**
  * Which radio shows which column below `xl` — ONE DOM, every column
- * rendered, the checked tab showing its own (docs/PARTIYA-DOSKASI.md §3).
+ * rendered, the checked tab hiding the other three (docs/PARTIYA-DOSKASI.md
+ * §3). Written as «hide the others» and not «show this one», and only where
+ * the browser has `:has()`: a phone browser without it (Chromium before 105,
+ * an old in-app WebView in a Chinese warehouse) then draws the four columns
+ * stacked, with their headings and no tab row, instead of tabs over nothing.
  * Literal, so Tailwind compiles every selector (a class built at runtime
- * does not exist); the `:has()` selector outranks the column's `hidden`.
+ * does not exist).
  */
-const TAB_SHOWS =
-  '[&:has(#bt-forming:checked)_[data-col=forming]]:block [&:has(#bt-loading:checked)_[data-col=loading]]:block [&:has(#bt-road:checked)_[data-col=road]]:block [&:has(#bt-arrived:checked)_[data-col=arrived]]:block';
+const TAB_HIDES =
+  'max-xl:[&:has(#bt-forming:checked)_[data-col]:not([data-col=forming])]:hidden max-xl:[&:has(#bt-loading:checked)_[data-col]:not([data-col=loading])]:hidden max-xl:[&:has(#bt-road:checked)_[data-col]:not([data-col=road])]:hidden max-xl:[&:has(#bt-arrived:checked)_[data-col]:not([data-col=arrived])]:hidden';
 
 /**
  * Partiya doskasi — every open truck and factory trip in one place, by WHERE
@@ -210,7 +214,10 @@ export default async function BatchesPage({ searchParams }: { searchParams: Prom
       <StripScroll active={filters.joy} label={tb('strip')}>
         <ul className="flex items-center gap-1.5 whitespace-nowrap">
           {view.strip
-            .filter((stop) => stop.stop !== 'road_unknown' || stop.count > 0)
+            // «Joyi aniq emas» only while something is there — or while it is
+            // the stop filtering the board: a pin that places its last truck
+            // must not take away the one link that lets the filter go.
+            .filter((stop) => stop.stop !== 'road_unknown' || stop.count > 0 || filters.joy === stop.stop)
             .map((stop, i) => {
               const active = filters.joy === stop.stop;
               const body = (
@@ -322,13 +329,15 @@ export default async function BatchesPage({ searchParams }: { searchParams: Prom
       )}
       {board.cards.length === 0 && <p className="text-sm text-ink-500">{tb('emptyBoard')}</p>}
 
-      {/* Keyed by the tab it opens on, so a strip tap — a soft navigation —
-          remounts the radios and the new default is the one checked. */}
-      <div key={`tabs:${view.activeColumn}`} data-testid="batch-board" className={TAB_SHOWS}>
+      {/* Keyed by the strip's stop AND the tab it opens on: a strip tap is a
+          soft navigation, which keeps the page's tree and so the radio the
+          person last checked — a tap on «Shakllanmoqda 3» after opening the
+          road tab by hand left the road tab checked (the review's finding). */}
+      <div key={`tabs:${filters.joy ?? '-'}:${view.activeColumn}`} data-testid="batch-board" className={TAB_HIDES}>
         <div
           role="radiogroup"
           aria-label={tb('tabs')}
-          className="mb-3 grid grid-cols-4 gap-1 rounded-xl bg-surface-sunken p-1 xl:hidden"
+          className="mb-3 hidden grid-cols-4 gap-1 rounded-xl bg-surface-sunken p-1 max-xl:supports-[selector(:has(*))]:grid"
         >
           {view.columns.map((column) => (
             <label key={column.key} className="min-w-0 cursor-pointer">
@@ -342,7 +351,10 @@ export default async function BatchesPage({ searchParams }: { searchParams: Prom
                 data-testid={`board-tab-${column.key}`}
               />
               <span className="flex min-h-11 flex-col items-center justify-center rounded-lg px-1 text-center text-xs font-semibold text-ink-500 peer-checked:bg-surface-raised peer-checked:text-ink-900 peer-checked:shadow-card peer-focus-visible:ring-2 peer-focus-visible:ring-brand-500">
-                <span className="w-full truncate">{COLUMN_LABEL[column.key]}</span>
+                {/* Wraps rather than truncates: «Shakllanmoqda» needs more
+                    than a quarter of a 360 px phone, and the column's own
+                    heading is hidden while the tabs show. */}
+                <span className="w-full leading-tight [overflow-wrap:anywhere]">{COLUMN_LABEL[column.key]}</span>
                 <span className="tabular-nums">{column.count}</span>
               </span>
             </label>
@@ -354,9 +366,9 @@ export default async function BatchesPage({ searchParams }: { searchParams: Prom
               key={column.key}
               data-col={column.key}
               data-testid={`board-col-${column.key}`}
-              className="hidden min-w-0 space-y-3 xl:block"
+              className="min-w-0 space-y-3"
             >
-              <h2 className="hidden text-sm font-bold uppercase tracking-wide text-ink-500 xl:block">
+              <h2 className="text-sm font-bold uppercase tracking-wide text-ink-500 max-xl:supports-[selector(:has(*))]:hidden">
                 {COLUMN_LABEL[column.key]} · <span className="tabular-nums">{column.count}</span>
               </h2>
               {column.key === 'road' && column.count > 0 && (

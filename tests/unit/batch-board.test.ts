@@ -4,6 +4,7 @@ import {
   boardDay,
   boardRange,
   columnOfStop,
+  measureLine,
   readBoardFilters,
   roadBands,
   routeFilterOf,
@@ -14,8 +15,10 @@ import {
   type BoardFilters,
   type CardPlacement,
 } from '@/modules/wms/batches/board-view';
+import { readFileSync } from 'node:fs';
 import { tripSight } from '@/modules/wms/batches/board';
 import { routeFor } from '@/modules/wms/tracking/map-data';
+import { gateWord } from '@/modules/wms/tracking/on-road-state';
 
 /**
  * The batch board's arithmetic (docs/PARTIYA-DOSKASI.md §3-§4) — pure, so
@@ -220,5 +223,52 @@ describe('which factory trips the board shows (§4)', () => {
   it('anyone else reads no trip', () => {
     expect(tripSight(actor(['scan.load'], true, [WH_A]))).toBeNull();
     expect(tripSight(actor(['ved.docs']))).toBeNull();
+  });
+});
+
+describe('one spelling for a card’s cubes and kilos', () => {
+  it('m³ first, two places; whole kilos — on every column (the review: they swapped between columns)', () => {
+    expect(measureLine(0.128, 14)).toBe('0.13 m³ · 14 kg');
+    expect(measureLine(12, 2150.6)).toBe('12 m³ · 2151 kg');
+    expect(measureLine(0, 0)).toBe('0 m³ · 0 kg');
+  });
+});
+
+describe('the word for a truck at its gate', () => {
+  it('nothing left to scan off is «unloaded, not finished» — never «standing, not unloaded»', () => {
+    expect(gateWord({ status: 'arrived', kind: 'stuck', awaitingUnload: 0 })).toBe('unloaded_open');
+    expect(gateWord({ status: 'arrived', kind: 'unloading', awaitingUnload: 0 })).toBe('unloaded_open');
+    expect(gateWord({ status: 'arrived', kind: 'stuck', awaitingUnload: 12 })).toBe('stuck');
+    expect(gateWord({ status: 'arrived', kind: 'unloading', awaitingUnload: 3 })).toBe('unloading');
+    // Not asked is not zero: the words the screens printed before.
+    expect(gateWord({ status: 'arrived', kind: 'stuck', awaitingUnload: null })).toBe('stuck');
+    expect(gateWord({ status: 'in_transit', kind: 'overdue', awaitingUnload: null })).toBeNull();
+  });
+});
+
+describe('the phone tabs over one DOM', () => {
+  const page = readFileSync('src/app/(protected)/batches/page.tsx', 'utf8');
+
+  it('a checked tab HIDES the other columns, only where :has() exists — never shows one over hidden ones', () => {
+    // An old browser without :has() must draw the four columns stacked, not
+    // tabs over nothing (the review's finding 8): no column carries `hidden`.
+    for (const col of ['forming', 'loading', 'road', 'arrived']) {
+      expect(page).toContain(
+        `max-xl:[&:has(#bt-${col}:checked)_[data-col]:not([data-col=${col}])]:hidden`,
+      );
+    }
+    const section = page.slice(page.indexOf('data-col={column.key}'), page.indexOf('data-col={column.key}') + 200);
+    expect(section).not.toMatch(/\bhidden\b/);
+    // The tab row and the headings swap only where :has() can drive the tabs.
+    expect(page).toContain('max-xl:supports-[selector(:has(*))]:grid');
+    expect(page).toContain('max-xl:supports-[selector(:has(*))]:hidden');
+  });
+
+  it('a strip tap remounts the radios even when the default column is unchanged', () => {
+    expect(page).toMatch(/key=\{`tabs:\$\{filters\.joy \?\? '-'\}:\$\{view\.activeColumn\}`\}/);
+  });
+
+  it('the active «Joyi aniq emas» stop stays while it filters the board', () => {
+    expect(page).toContain("stop.stop !== 'road_unknown' || stop.count > 0 || filters.joy === stop.stop");
   });
 });

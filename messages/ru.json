@@ -403,7 +403,8 @@
     "agoNow": "только что",
     "agoMin": "{n} мин назад",
     "agoHour": "{n} ч назад",
-    "agoDay": "{n} дн. назад"
+    "agoDay": "{n} дн. назад",
+    "truckUnloadedOpen": "Выгружена — «{button}» не нажата"
   },
   "inventory": {
     "title": "Инвентаризация",
@@ -1632,7 +1633,7 @@
       "loaded": "Погружено {a} / {b} кор. · {m3a} / {m3b} m³ · {kga} / {kgb} kg",
       "loadedAll": "всё погружено",
       "rode": "Отправлено: {boxes} кор. · {cargo}",
-      "unloaded": "Выгружено {a} / {b} кор.",
+      "unloaded": "Выгружено {a} / {b} кор. · {cargo}",
       "loadingSince": "Грузится с {date}",
       "loadedRange": "Погружено {range}",
       "departedOn": "Отправлена {date}",
@@ -1640,7 +1641,6 @@
       "roadPct": "{pct}% пути",
       "warnStale": "рейс прибыл и не закрыт",
       "menu": "Действия с машиной",
-      "pinNow": "Сейчас: {pin}",
       "callDriver": "Водитель",
       "tripCollected": "Забрано с {a} из {b} заводов",
       "tripCargo": "Строки: {boxes} кор.",
@@ -1650,8 +1650,9 @@
       "tripArrival": "Ожидается {range}",
       "empty": "Пусто",
       "emptyBoard": "Открытых машин нет.",
-      "capped": "Показаны первые {n} — сузьте фильтр.",
-      "filters": "Фильтр"
+      "capped": "Показаны {n} самых старых машин.",
+      "filters": "Фильтр",
+      "loadedNoPlan": "Погружено {boxes} кор. · {cargo}"
     }
   },
   "loading": {

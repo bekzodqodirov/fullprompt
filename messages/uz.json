@@ -403,7 +403,8 @@
     "agoNow": "hozirgina",
     "agoMin": "{n} daqiqa oldin",
     "agoHour": "{n} soat oldin",
-    "agoDay": "{n} kun oldin"
+    "agoDay": "{n} kun oldin",
+    "truckUnloadedOpen": "Tushirib bo‘lindi — «{button}» bosilmagan"
   },
   "inventory": {
     "title": "Inventarizatsiya",
@@ -1632,7 +1633,7 @@
       "loaded": "Yuklandi {a} / {b} karobka · {m3a} / {m3b} m³ · {kga} / {kgb} kg",
       "loadedAll": "hammasi yuklandi",
       "rode": "Ketdi: {boxes} karobka · {cargo}",
-      "unloaded": "Tushirildi {a} / {b} karobka",
+      "unloaded": "Tushirildi {a} / {b} karobka · {cargo}",
       "loadingSince": "Yuklanmoqda {date} dan",
       "loadedRange": "Yuklandi {range}",
       "departedOn": "Jo‘nadi {date}",
@@ -1640,7 +1641,6 @@
       "roadPct": "yo‘lning {pct}%",
       "warnStale": "reys keldi, yopilmagan",
       "menu": "Mashina bo‘yicha amallar",
-      "pinNow": "Hozir: {pin}",
       "callDriver": "Haydovchi",
       "tripCollected": "{a} / {b} zavoddan olindi",
       "tripCargo": "Qatorlar: {boxes} karobka",
@@ -1650,8 +1650,9 @@
       "tripArrival": "Kutilmoqda {range}",
       "empty": "Bo‘sh",
       "emptyBoard": "Ochiq mashina yo‘q.",
-      "capped": "Birinchi {n} tasi ko‘rsatilmoqda — filtrni toraytiring.",
-      "filters": "Filtr"
+      "capped": "Eng eski {n} ta mashina ko‘rsatilmoqda.",
+      "filters": "Filtr",
+      "loadedNoPlan": "Yuklandi {boxes} karobka · {cargo}"
     }
   },
   "loading": {

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { getTranslations } from 'next-intl/server';
 import { formatEtaRange } from '@/modules/platform/telegram/client-labels';
-import { fixAge, type TruckRow } from '@/modules/wms/tracking/on-road-state';
+import { fixAge, gateWord, type TruckRow } from '@/modules/wms/tracking/on-road-state';
 import { CHECKPOINT_LABEL } from '@/modules/wms/tracking/map-data';
 import { LEG_KEYS, type LegKey } from '@/modules/wms/tracking/engine';
 import type { RoadZone } from '@/modules/wms/tracking/place';
@@ -46,6 +46,7 @@ export async function truckRoadWords({ counts = true }: { counts?: boolean } = {
   const tb = await getTranslations('batches');
   const tm = await getTranslations('map');
   const tp = await getTranslations('place');
+  const tu = await getTranslations('unloading');
   // Literal maps — a key built from a value escapes the i18n tripwire (#163),
   // and a Record over the union fails the build the day a leg is added.
   const LEG: Record<LegKey, string> = {
@@ -71,16 +72,23 @@ export async function truckRoadWords({ counts = true }: { counts?: boolean } = {
     day: (n: number) => t('agoDay', { n }),
   } as const;
 
-  const word = (row: TruckRow): string =>
-    row.kind === 'stuck'
-      ? t('truckKind.stuck')
-      : row.kind === 'unloading'
-        ? t('truckKind.unloading')
-        : row.segKey && isLegKey(row.segKey) && row.segKey !== 'transit'
-          ? LEG[row.segKey]
-          : row.zone
-            ? ZONE[row.zone]
-            : tp('unknown');
+  // At the gate, `gateWord` decides (an unloaded truck nobody finished is not
+  // «Tushirilmay turibdi»); on the road, the leg, the place, or nothing.
+  const GATE = {
+    unloaded_open: () => t('truckUnloadedOpen', { button: tu('finishUnload') }),
+    stuck: () => t('truckKind.stuck'),
+    unloading: () => t('truckKind.unloading'),
+  } as const;
+  const word = (row: TruckRow): string => {
+    const gate = gateWord(row);
+    return gate
+      ? GATE[gate]()
+      : row.segKey && isLegKey(row.segKey) && row.segKey !== 'transit'
+        ? LEG[row.segKey]
+        : row.zone
+          ? ZONE[row.zone]
+          : tp('unknown');
+  };
 
   const byFix = (row: TruckRow) => row.source === 'gps' || row.source === 'manual';
 
