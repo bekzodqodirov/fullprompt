@@ -96,13 +96,22 @@ From the anchor the engine walks as today — the typed queues through
 waiting at the border keeps its % for the whole wait, which is why the leg's
 words («Chegarada navbatda») always print beside it.
 
-**At the gate** (reviewed 2026-10-20): a fix within 0.05° of the
-destination's YARD — the road's end, or `YARD_POINTS` where the drawn dot is
-elsewhere (TAS2 stands in Tashkent; its dot is drawn 85 km off) — measured
-from the fix itself, not its projection: «Manzilda, tushirilmagan», 100 %, no
-date, not late; late («muddati o‘tgan — tushirishni tekshiring») only once the
-departure's or the pin's schedule has run out with nobody having scanned it
-off.
+**At the gate** (reviewed 2026-10-20, four times): a fix within 0.05° of the
+destination's YARD (`yardFor`: `YARD_POINTS` where the drawn dot is
+elsewhere — TAS2 stands in Tashkent, its dot is drawn 85 km off — else the
+warehouse's dot, else the road's end), measured from the fix itself, not its
+projection, on a modelled road or not: «Manzilda, tushirilmagan», 100 %, no
+date, and **never late on the road** — arriving forgives the road's lateness,
+and no pin moves the gate. How long it has stood there is `gateSince`, the
+first fix at the yard after the last accurate fix anywhere else
+(`latestPositions`); once `STUCK_AT_GATE_DAYS` (2) Tashkent days have passed
+the row is «Tushirilmay turibdi — tushirishni tekshiring» (kind `stuck`) —
+the scan-arrived truck's own clock (`isStuckAtGate`), so the attention row
+and the 20:00 summary count both. A trip that STARTS in its destination's
+yard (TAS1 → TAS2) is never at the gate by the phone (`gateYard`). The
+schedule-based gate clock this replaced flagged a truck that arrived late
+five minutes after it pulled in, and let a late pin hold the alarm back for
+days (the fourth recheck).
 
 **Overdue**: for a walk from the departure or a pin, the walk is spent. For a
 walk from a fix, the truck is late only once its own SLOWEST pace from the fix
@@ -121,7 +130,7 @@ the canvas. **A date is printed only by `placeDated`** (not overdue, something
 left to wait for) — one rule for every reader; «[0, 0]» is due now, no date.
 
 `TruckPlace = { zone, segKey, progress | null, remainingHours | null,
-overdue, atGate, source: 'gps' | 'manual' | 'pin' | 'schedule' | null,
+overdue, atGate, gateSince | null, source: 'gps' | 'manual' | 'pin' | 'schedule' | null,
 evidenceAt, fresh, point | null, route }`.
 
 **Readers**:
