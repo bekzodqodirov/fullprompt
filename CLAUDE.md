@@ -2856,6 +2856,13 @@ standings); crons `'0 13 * * 6'` + champion `'0 13 8 * *'`. `/admin/jamoa-guruhi
 TEST NOTE: every won lead and first prixod in the suite now writes a post row
 (skipped with no group); `subject_user_id` is ON DELETE SET NULL for the files
 that delete their fixture users.
+**Same evening, his «lead yutilganda nech pullik necha kub necha kg … yanayam
+jonliroq» (#1414-#1415, NO migration):** the won post carries the LEAD's own
+quote (price/kub/kg, each line left out when missing), rotating CAPS headline +
+closing, and the owner's «🔥 Bu oy: N-g'alaba · jami $X» (`closed_at` month,
+dollars only); a new code gets «📈 Bu oy: N-mijoz» off the post ledger. Money
+enters the group in that ONE post — the VED reads it there (law 4), stated to
+him and his call.
 
 **Latest migration: 0134** (`staff_group`, `when` …113; ledger must reach **135**). Before
 it: 0133 (`pickup_close`, `when` …112). Before

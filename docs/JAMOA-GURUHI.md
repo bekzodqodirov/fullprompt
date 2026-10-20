@@ -71,6 +71,15 @@ Also from the proposal, agreed with «qolgani sen aytkandek»: the /reyting scre
 - **Screens**: `/admin/jamoa-guruhi` (admin.settings.manage; hub door) and `/reyting` (any login; the profile's
   door). Bot: `/reyting` (own place + podium, private chat only).
 
+## Amended the same evening — the win says its price (#1414-#1415)
+
+His «lead yutilganda nech pullik necha kub necha kg yuk yutildi» and «yanayam jonliroq bolsin»: a won
+lead's post carries the LEAD's own quote (price, kub, kg — each line left out when missing), a rotating
+CAPS headline and closing line, and «🔥 Bu oy: N-g'alaba · jami $X» for the owner's won leads this
+Tashkent month (`closed_at`; dollars only). A new code gets «📈 Bu oy: N-mijoz» off the post ledger. This
+REVERSES «No money anywhere» for the win alone — the group (warehouse and VED included) now reads that
+price; said to him before it was built. The rating, the champion, a code and a first cargo stay money-free.
+
 ## Stated, not built
 
 - A prixod's cargo claimed later (an unclaimed marking given its client) is not a «first cargo» event.

@@ -3857,3 +3857,36 @@ is a win» survived because the open-stage test used a lead that did not exist
 on a real lead with an owner and a client, it went red. PROCESS: the proof
 helper's empty replacement was not reversible (#815's trap, again) and left a
 file broken mid-run; restored by hand and every strip now writes a marker.
+
+## Jamoa guruhi — the win says its price (2026-10-20; NO migration, ledger 135)
+
+His «bot telegramda ishladi, ko'proq ma'lumot qo'shishimiz kerak — lead
+yutilganda nech pullik, necha kub, necha kg yuk yutildi» and, while it was
+being built, «yanayam jonliroq bo'lsin, oddiy tabrikdan ham».
+
+1414. **A won lead's post carries its own price, kub and kg — the one place
+money enters the group (reverses #1412's «never money» for this post only).**
+The figures are the LEAD's quote columns (`quoted_amount/currency/volume_m3/
+weight_kg`) — what `winLead` carries into the deal, and where a released offer
+writes the client price — read when the event drain hears the win. Each part is
+left out when the lead does not carry it (never «$0», «0 kub» or «null»), a
+currency other than dollars or so'm is escaped and printed by its code, and the
+weekly rating, the champion, a new code and a first cargo still carry no money.
+STATED to him before building, his call: the group is read by everyone in it,
+the warehouse and the VED included, so the VED now reads client prices there —
+law 4 of the VED module (#790) says the VED does not; he asked for it, and the
+page's «everyone reads this» sentence now says so in all four languages.
+
+1415. **«Jonliroq» = structure and a running tally, not more adjectives.** The
+win became a five-line post: a rotating CAPS headline with the hero and the
+code, the price, the cargo, «🔥 Bu oy: N-g'alaba · jami $X» for the OWNER's
+won leads this Tashkent month (`closed_at`, the tahlil clock; this lead counted
+even if a legacy door left it unstamped — red-proven; dollars only in the sum,
+a so'm price is not added to a dollar one; the first win of a month says so and
+carries no «jami», which would repeat the price two lines up — found by
+rendering the post, not by a test), and a rotating closing line. An ownerless
+lead has no month. A new code gets «📈 Bu oy: N-mijoz», counted off the POST
+LEDGER (the same door, so a code the import or a won lead minted is never this
+person's «yangi mijoz»). The first cargo was left as it was — he named the win.
+Red proofs ×3 by string edit (the unstamped-win clause, the price line, the
+code counter's +1).

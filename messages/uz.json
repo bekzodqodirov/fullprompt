@@ -5914,7 +5914,7 @@
     "connected": "Ulangan guruh: {title}",
     "facts": "A’zolar: {members} · {since} dan",
     "cannotPost": "Bot guruhga yoza olmayapti: {error}",
-    "everyoneReads": "Bu xabarlarni guruhdagi hamma ko‘radi. Ularda pul, mijoz ismi va telefoni yo‘q — faqat mijoz kodi, kub va kg.",
+    "everyoneReads": "Bu xabarlarni guruhdagi hamma ko‘radi (sklad va VED ham). Yutilgan lid tabrigida o‘sha lidning narxi, kubi va kg si chiqadi; boshqa xabarlarda pul yo‘q. Mijoz ismi va telefoni hech qayerda chiqmaydi — faqat mijoz kodi.",
     "test": "Sinov xabari",
     "testOk": "Navbatga qo‘yildi — bir daqiqadan keyin guruhni tekshiring.",
     "ratingNow": "Reytingni yuborish",
