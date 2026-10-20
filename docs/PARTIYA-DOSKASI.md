@@ -76,9 +76,13 @@ truck card, the map, the bot and the customer's cabinet).
      Yallama is in Uzbekistan).
 
 **Precedence**: the newest wins. A pin newer than the fix that names the fix's
-own leg adds nothing the fix did not say and keeps the fix's position (a
-coarse «in Kazakhstan» must not drag a truck back to the start of
-Kazakhstan). A stale fix is NOT thrown away: it anchors exactly like a pin,
+own leg keeps the fix's position while the two agree — while the walk from
+the fix is still on the pin's leg at the press (a coarse «in Kazakhstan» must
+not drag a truck back to the start of Kazakhstan). When the walk from the fix
+has left that leg by the press, the press disproves it: a queue takes the
+pin's own anchor, a moving leg keeps the fix's share timed from the press
+(`underNewerPin`, reviewed 2026-10-20). A fix in a queue whose typical wait is
+already spent by the fix's own moment is counted from the fix. A stale fix is NOT thrown away: it anchors exactly like a pin,
 so the truck does not jump back to the departure schedule when a phone goes
 quiet. Freshness (`FRESH_MINUTES`, 8 h) only decides whether the map draws the
 dot AT the fix and how the source line reads.
@@ -92,16 +96,33 @@ From the anchor the engine walks as today — the typed queues through
 waiting at the border keeps its % for the whole wait, which is why the leg's
 words («Chegarada navbatda») always print beside it.
 
-**Overdue** (the walk from the newest evidence is spent): no date, «kutilgan
-muddatdan oshdi — haydovchi bilan bog‘laning» as today. The place is the
-evidence's own leg and the % its position (a fix: its point; a pin: its leg's
-start); with nothing but the departure the place is the road's single place
-when every leg shares one (Yiwu → Kashgar is inside China), else «Joyi aniq
-emas», and no %. The map draws an overdue truck at its last fix or pin.
+**At the gate** (reviewed 2026-10-20): a fix within 0.05° of the
+destination's YARD — the road's end, or `YARD_POINTS` where the drawn dot is
+elsewhere (TAS2 stands in Tashkent; its dot is drawn 85 km off) — measured
+from the fix itself, not its projection: «Manzilda, tushirilmagan», 100 %, no
+date, not late; late («muddati o‘tgan — tushirishni tekshiring») only once the
+departure's or the pin's schedule has run out with nobody having scanned it
+off.
+
+**Overdue**: for a walk from the departure or a pin, the walk is spent. For a
+walk from a fix, the truck is late only once its own SLOWEST pace from the fix
+is spent (a queue: its longest wait less what it has stood; a moving leg: its
+slowest hours for the distance left; every later leg at its slowest) and one
+reporting window (`FRESH_MINUTES`) after it; between the typical and the
+slowest arrival it is DUE — `remainingHours` [0, hours to the slowest
+arrival], and while the walk runs the date's end is never earlier than that.
+Overdue: no date, «kutilgan muddatdan oshdi — haydovchi bilan bog‘laning».
+The place is the evidence's own leg and the % its position (a fix: its point;
+a pin: its leg's start); with nothing but the departure the place is the
+road's single place when every leg shares one (Yiwu → Kashgar is inside
+China), else «Joyi aniq emas», no %, and NO point — the spent walk ends on the
+destination warehouse, which reads «arrived»; /map names such a truck under
+the canvas. **A date is printed only by `placeDated`** (not overdue, something
+left to wait for) — one rule for every reader; «[0, 0]» is due now, no date.
 
 `TruckPlace = { zone, segKey, progress | null, remainingHours | null,
-overdue, source: 'gps' | 'manual' | 'pin' | 'schedule' | null, evidenceAt,
-fresh, point, route }`.
+overdue, atGate, source: 'gps' | 'manual' | 'pin' | 'schedule' | null,
+evidenceAt, fresh, point | null, route }`.
 
 **Readers**:
 - `TruckRow` (dashboard, truck card header, the client card's «Yuklar», the
@@ -119,9 +140,14 @@ fresh, point, route }`.
   Uzbekistan is «O‘zbekiston hududida» for the office and still «yo‘lda» for
   the customer until somebody pins it — stated, deliberately.
 - The map (`truckFor`): the place; the dot at a fresh fix (snapped), else the
-  walk's dot; `live` = a fresh fix anchors the walk.
+  walk's dot; `live` = a fresh fix anchors the walk; a truck no longer
+  `in_transit` stands at its destination whatever its road or phone says;
+  `placed: false` = nothing honest places it.
+- /trucks reads the same rows and words as the board.
 - The cabinet (`trucksFor`): one fix read and `placeTruck`, so its % is the
-  office's %; a truck with no % draws no bar.
+  office's %; a truck with no % draws no bar; `transit` only for a truck on
+  the road; two trucks on one rung are ranked by when they land (a truck at
+  its gate lands now).
 - The bot and the cabinet map print days only for a dated place (O15 — they
   printed «~a–b kun» for a truck pinned in Uzbekistan).
 
@@ -224,7 +250,11 @@ strip tap opens the stop's column. Desktop (`xl`) shows the four columns.
 
 - The truck fill bar (8b).
 - A GPS position or a % for factory trips.
-- A Dostlik point on the Kashgar road, and TAS2's real yard as a route end (§1).
+- A Dostlik point on the Kashgar road, and TAS2's real yard as a route END
+  (§1) — the gate judges TAS2 by its yard (`YARD_POINTS`), the % still walks
+  to the drawn dot, so a TAS2 truck on the road nears it ~90 % in Tashkent.
+- A typed wait for a queue AHEAD of a silent fix that the walk had the truck
+  cross before the wait was typed does not move its deadline (minor, stated).
 - The customer's rung following GPS (§2).
 - Per-truck history of places.
 
