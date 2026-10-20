@@ -74,6 +74,9 @@ test('the office marks a deal FTL and back — the select keeps what is stored',
   // An unrelated save must not touch the mode.
   await page.getByTestId('deal-title').fill(`${title} ✓`);
   await page.getByTestId('save-deal').click();
+  // The input holds what was TYPED, so it proves nothing about the save; the
+  // h1 is the server's re-render, i.e. the save has landed.
+  await expect(page.locator('h1').first()).toContainText(`${title} ✓`);
   await expect(page.getByTestId('deal-title')).toHaveValue(`${title} ✓`);
   await expect(form.getByTestId('load-mode')).toHaveValue('ftl');
   expect(await dealIsFtl(`${title} ✓`)).toBe(true);
