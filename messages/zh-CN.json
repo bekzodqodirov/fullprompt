@@ -2074,6 +2074,8 @@
     "noTrucks": "当前没有在途车辆。",
     "unplaced": "位置不明——未在地图上显示：",
     "overdue": "已超过预计时间——请联系司机",
+    "atGate": "已到达，未卸货",
+    "atGateLate": "已过预计日期——请检查卸货",
     "eta": "预计 ~{min}–{max} 天到达",
     "seg_cn_transit": "中国境内运输中",
     "seg_to_border": "驶向口岸",

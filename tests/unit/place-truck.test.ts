@@ -522,3 +522,30 @@ describe('the fixes’ recheck: the yard is where the warehouse stands, and a qu
     expect(at30).toBeGreaterThanOrEqual(18 + 72 + 48 + 48 + 8);
   });
 });
+
+describe('the gate’s late clock: the owner’s slowest schedule and the stuck days, from evidence before the gate', () => {
+  const tas = kaTas.points[kaTas.points.length - 1]!;
+  // KA → TAS1 at his slowest: 24 + 72 + 48 + 48 h = 192 h, then two days.
+  const SLOWEST = 24 + 72 + 48 + 48;
+  const at = (departedAgo: number, fixAgo: number, checkpoint: unknown = null) =>
+    placeTruck({ ...KA_TAS, departedAt: ago(departedAgo), checkpoint, fix: fixAt(tas, fixAgo) }, {}, NOW);
+
+  it('arriving in the later half of his own range is NOT late on arrival (the recheck: «muddati o‘tgan» within a minute)', () => {
+    // Reached the yard at h161 (typical total 150 h), read at h161.05 and h168.
+    expect(at(161.05, 0.05)).toMatchObject({ atGate: true, overdue: false });
+    expect(at(168, 7)).toMatchObject({ atGate: true, overdue: false });
+  });
+
+  it('late once the slowest schedule and two stuck days have passed with nobody scanning it off', () => {
+    expect(at(SLOWEST + 48 - 0.1, 30).overdue).toBe(false);
+    expect(at(SLOWEST + 48 + 0.1, 30).overdue).toBe(true);
+  });
+
+  it('a pin pressed AFTER the phone reached the gate does not restart the clock', () => {
+    const late = SLOWEST + 48 + 1;
+    const noPin = at(late, late - 160);
+    const pinnedAfter = at(late, late - 160, { key: 'in_uz', at: ago(late - 162).toISOString() });
+    expect(noPin.overdue).toBe(true);
+    expect(pinnedAfter.overdue).toBe(true);
+  });
+});

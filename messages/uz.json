@@ -2074,6 +2074,8 @@
     "noTrucks": "Hozir yo‘lda mashina yo‘q.",
     "unplaced": "Joyi aniq emas — xaritada chizilmadi:",
     "overdue": "kutilgan muddatdan oshdi — haydovchi bilan bog‘laning",
+    "atGate": "Manzilda, tushirilmagan",
+    "atGateLate": "muddati o‘tgan — tushirishni tekshiring",
     "eta": "yetib kelishiga ~{min}–{max} kun",
     "seg_cn_transit": "Xitoy ichida yo‘lda",
     "seg_to_border": "Chegara tomon yo‘lda",

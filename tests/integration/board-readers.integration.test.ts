@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { readFileSync } from 'node:fs';
 import { eq, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -205,6 +206,27 @@ describe('the map and the bot read the one placement', () => {
     expect({ x: marker.x, y: marker.y }).toEqual(WAREHOUSE_POINTS.AND);
     expect(marker.live).toBe(false);
     expect(marker.dated).toBe(false);
+  });
+
+  it('a late truck standing at its gate: the map and the bot say «check the unloading», never «call the driver»', async () => {
+    const route = routeFor('KA', 'TAS1')!;
+    const gate = route.points[route.points.length - 1]!;
+    const row = { ...truckRow, departedAt: new Date(Date.now() - 260 * HOUR) };
+    const marker = (await truckFor(row, ends('KA', 'TAS1'), {}, {
+      batchId: row.id,
+      lat: gate.y,
+      lon: gate.x,
+      recordedAt: new Date(Date.now() - 30 * HOUR),
+      source: 'device',
+      ageMinutes: 30 * 60,
+      fresh: false,
+    }))!;
+    expect(marker).toMatchObject({ atGate: true, overdue: true, dated: false });
+    const popup = readFileSync('src/app/(protected)/map/tracking-map.tsx', 'utf8');
+    expect(popup).toContain("selTruck.atGate ? t('atGateLate') : t('overdue')");
+    const bot = readFileSync('src/modules/wms/bot/lookup.ts', 'utf8');
+    expect(bot).toContain("? ' · ⏱ muddati o‘tgan — tushirishni tekshiring'");
+    expect(bot).toContain("marker?.atGate ? 'manzilda, tushirilmagan' : 'yo‘lda'");
   });
 
   it('a truck nothing honest places is not drawn — its spent walk ends ON the destination warehouse', async () => {

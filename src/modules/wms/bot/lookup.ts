@@ -463,15 +463,19 @@ async function lookupClient(
     // (`remainingDays` [0, 0]) — say nothing rather than «late». Days only
     // where a date may be printed (`dated`: O15 — a truck pinned in
     // Uzbekistan has no date in the customer's cabinet, so none here).
+    // At its gate by the phone the late thing is the unloading, never the
+    // driver — the board's own words (the recheck).
     const days = !marker
       ? ''
       : marker.overdue
-        ? ' · ⏱ muddatdan oshdi'
+        ? marker.atGate
+          ? ' · ⏱ muddati o‘tgan — tushirishni tekshiring'
+          : ' · ⏱ muddatdan oshdi'
         : marker.dated
           ? ` · ⏱ ~${marker.remainingDays[0]}–${marker.remainingDays[1]} kun`
           : '';
     transitLines.push(
-      `· 🚚 ${tr.code}${tr.route ? ` (${tr.route})` : ''} yo‘lda: ${tr.n} karobka` +
+      `· 🚚 ${tr.code}${tr.route ? ` (${tr.route})` : ''} ${marker?.atGate ? 'manzilda, tushirilmagan' : 'yo‘lda'}: ${tr.n} karobka` +
         (tr.kg > 0 ? ` · ${tr.kg.toFixed(1)} kg` : '') +
         (tr.m3 > 0 ? ` · ${tr.m3.toFixed(3)} m³` : '') +
         days +

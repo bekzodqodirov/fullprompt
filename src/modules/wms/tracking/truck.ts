@@ -31,6 +31,12 @@ export interface TruckMarker {
    * and names it under the map, the cabinet map lists it with no point.
    */
   placed: boolean;
+  /**
+   * The phone has it at its destination's gate (`placeTruck`): the popup and
+   * the bot say «at the gate, not unloaded», and a late one is the
+   * unloading's, never «call the driver» (the recheck).
+   */
+  atGate: boolean;
   /** A fresh fix from the driver's phone places the truck — the dot is the fix. */
   live: boolean;
   fixAgeMinutes: number | null;
@@ -148,6 +154,7 @@ export async function truckFor(
       x: gate?.x ?? 0,
       y: gate?.y ?? 0,
       placed: gate !== null,
+      atGate: false,
       live: false,
       fixAgeMinutes: fix?.ageMinutes ?? null,
       fixSource: fix?.source ?? null,
@@ -176,6 +183,7 @@ export async function truckFor(
       x: live.lon,
       y: live.lat,
       placed: true,
+      atGate: false,
       live: live.fresh,
       fixAgeMinutes: live.ageMinutes,
       fixSource: live.source,
@@ -213,6 +221,7 @@ export async function truckFor(
     x: place.point?.x ?? 0,
     y: place.point?.y ?? 0,
     placed: place.point !== null,
+    atGate: place.atGate,
     live: place.fresh,
     fixAgeMinutes: fix?.ageMinutes ?? null,
     fixSource: fix?.source ?? null,

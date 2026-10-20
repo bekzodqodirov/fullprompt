@@ -361,6 +361,14 @@ export const QUEUE_RADIUS_DEG = 0.05;
 export const GATE_RADIUS_DEG = QUEUE_RADIUS_DEG;
 
 /**
+ * A truck standing at its gate unloaded for this many days is «stuck» — ONE
+ * number for the attention list's row, the card's chip (`isStuckAtGate`) and
+ * the phone's gate (`placeTruck`), so a truck arrived by its scan and one
+ * arrived by its phone are flagged on the same clock.
+ */
+export const STUCK_AT_GATE_DAYS = 2;
+
+/**
  * The latest a truck can land by its own SLOWEST pace from where an anchor
  * puts it at `atMs`: the rest of a moving leg at its slowest hours for the
  * distance left, the rest of a queue at its longest wait LESS what it has
@@ -614,16 +622,24 @@ export function placeTruck(input: PlaceInput, waits: BorderHours, now: Date = ne
   const yard = YARD_POINTS[input.destCode] ?? base.points[base.points.length - 1]!;
   if (anchor.kind === 'fix' && chordDeg({ x: fix!.lon, y: fix!.lat }, yard) <= GATE_RADIUS_DEG) {
     // At the destination's gate by the phone: arrived in all but the scan.
-    // Late only once the SCHEDULE (the departure's, or the pin's) has run
-    // out with nobody having scanned it off — then the date has passed and
-    // the cargo is still not received, which is somebody's job.
+    // Late only once the owner's SLOWEST schedule has run out and the
+    // stuck-at-gate days after it with nobody having scanned it off — a
+    // truck that lands within his own range is never «late» the minute it
+    // reaches the yard (the recheck: it read «muddati o'tgan» on arrival,
+    // 5 h before the window the board had just printed). The clock runs from
+    // evidence the truck had when it reached the gate: a pin pressed before
+    // the fix, else the departure — a press AFTER it (an «in Uzbekistan»
+    // pressed at the yard) must not restart it.
+    const clock = pinned && pinned.legStartMs < fixMs ? pinned : departureAnchor(input.departedAt);
+    const scheduled = walkFrom(base, clock, waits, input.departedAt, now).route;
+    const lateMs = slowestArrivalMs(scheduled, clock, clock.legStartMs) + STUCK_AT_GATE_DAYS * 24 * HOUR_MS;
     const leg = base.segments[base.segments.length - 1]!;
     return {
       zone: zoneOfLeg(leg.key),
       segKey: leg.key,
       progress: 1,
       remainingHours: null,
-      overdue: walkFrom(base, prior, waits, input.departedAt, now).est.overdue,
+      overdue: now.getTime() > lateMs,
       atGate: true,
       source,
       evidenceAt,

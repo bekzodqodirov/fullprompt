@@ -1,6 +1,15 @@
 import { isMovingStage, truckStage, type TruckStage } from '../client-cabinet/stages';
 import { daysSince } from '../reports/dashboard-math';
-import { etaWindow, pinOnRoute, placeDated, placeTruck, type BorderHours, type PlaceSource, type PlacementFix } from './eta';
+import {
+  etaWindow,
+  pinOnRoute,
+  placeDated,
+  placeTruck,
+  STUCK_AT_GATE_DAYS,
+  type BorderHours,
+  type PlaceSource,
+  type PlacementFix,
+} from './eta';
 import type { CheckpointKey } from './map-data';
 import type { RoadZone } from './place';
 
@@ -31,10 +40,11 @@ import type { RoadZone } from './place';
 
 /**
  * A truck standing at its destination unloaded for this many Tashkent days
- * is «stuck». ONE number for the attention list's row and the card's chip —
- * the rule used to be a literal `>= 2` in two section files.
+ * is «stuck». ONE number for the attention list's row, the card's chip and
+ * the phone's gate — it lives beside the placement (`eta.ts`), which must not
+ * import this file; the rule used to be a literal `>= 2` in two section files.
  */
-export const STUCK_AT_GATE_DAYS = 2;
+export { STUCK_AT_GATE_DAYS };
 
 /** The attention list's «stuck» predicate, stated once (#513). */
 export function isStuckAtGate(
