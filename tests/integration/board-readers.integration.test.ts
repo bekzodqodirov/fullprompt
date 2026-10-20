@@ -254,10 +254,16 @@ describe('the map and the bot read the one placement', () => {
   });
 
   it('the office row of an ARRIVED truck stood since the phone had it in the yard — the first scan does not reset it', async () => {
+    // Day counts are Tashkent CALENDAR days, so «a minute ago» and «30 h ago»
+    // move with the clock this file runs at (#1063: CI went red at 00:13
+    // Tashkent). The scan is pinned inside today's Tashkent day and the
+    // other truck at yesterday's Tashkent noon; the yard fixes are whole
+    // days back, which count the same at any hour.
+    const tashkentMidnightMs = Math.floor((Date.now() + 5 * HOUR) / (24 * HOUR)) * 24 * HOUR - 5 * HOUR;
     const b = await mintBatch('KA', 'TAS1', {
       status: 'arrived',
       departedAt: new Date(Date.now() - 300 * HOUR),
-      arrivedAt: new Date(Date.now() - 60_000),
+      arrivedAt: new Date(Math.max(tashkentMidnightMs + 1_000, Date.now() - 60_000)),
     });
     const fixAgo = (h: number, lat: string, lon: string) => ({
       batchId: b.id,
@@ -285,7 +291,7 @@ describe('the map and the bot read the one placement', () => {
     const yesterday = await mintBatch('KA', 'TAS1', {
       status: 'arrived',
       departedAt: new Date(Date.now() - 200 * HOUR),
-      arrivedAt: new Date(Date.now() - 30 * HOUR),
+      arrivedAt: new Date(tashkentMidnightMs - 12 * HOUR),
     });
     const board = await loadBoard({ permissions: new Set(['plans.manage']), warehouseScoped: false, warehouseIds: [] });
     const cards = board.cards.filter((c): c is BoardTruck => c.type === 'batch');
