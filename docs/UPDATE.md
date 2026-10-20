@@ -334,6 +334,25 @@ tartibida).
 `package.json` buyrug‘i qilinmagani ataylab: `package.json` o‘zgarsa image
 qurilishi npm saytiga ulanadi (DECISIONS #1228).
 
+## Jamoa guruhi (2026-10-20, 0134) — tekshiruv tartibi
+
+Bu raundda migratsiya bor: **0134** — deploydan keyin son **135** bo‘ladi.
+Yuqoridagi «134 bo‘lishi shart» qatorlari o‘z raundlari uchun yozilgan; bu
+deploydan keyin to‘g‘ri son — repo’dagi fayllar soni
+(`ls src/modules/platform/db/migrations/*.sql | wc -l`, ya’ni **135**).
+
+1. Zaxira (§1) — hajmi 0 emasligini tekshiring.
+2. `git pull`, keyin avval `docker compose build migrate`, so‘ng
+   `docker compose --profile https --profile telegram up -d --build`
+   (bot app ichida ishlaydi — u ham qayta quriladi).
+3. Sonni o‘qing — **135**. Kam chiqsa, `docker compose run --rm migrate` ning
+   o‘z chiqishini o‘qing.
+4. `curl -s https://gsrwms.uz/api/version` — bugungi vaqt.
+5. Telegramda botni hodimlar guruhiga **o‘zingiz** qo‘shing, keyin Boshqaruv →
+   «Jamoa guruhi» → «Sinov xabari». Guruhda xabar chiqmasa, sahifadagi
+   xabarlar ro‘yxatidagi xatoni o‘qing va
+   `docker compose logs --since 10m app | grep staff-group` ni yuboring.
+
 ## Agar biror narsa buzilsa
 
 Avvalgi ishlaydigan holatga qaytish (kod):

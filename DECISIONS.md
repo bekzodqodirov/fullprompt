@@ -3769,3 +3769,91 @@ Two more, found while LOOKING at the fix's own screenshots and the rerun:
   `toBe(0)` is `Object.is`. Green on a fresh database because the noise needs
   a big balance to fall below zero (#653's oracle). The four files whose
   `cents` helper feeds a difference-to-zero assertion add `+ 0`.
+
+## Jamoa guruhi — his «3. 2 3 gif … tabriklash ham / qolgani sen aytkandek» (2026-10-20; migration 0134 `staff_group` — ledger must reach 135; spec `docs/JAMOA-GURUHI.md`)
+
+1407. **The staff group is a ROW adopted through Telegram, never a setting.**
+`staff_group_chats` with `active_from` set (a partial UNIQUE index allows one)
+is THE group, and `telegram/staff-group.ts` is its only writer of
+`active_from` (fenced). The price channel's reason holds: /admin/settings
+renders every key as an editable input, so a setting would be a door around
+`decideGroupAdoption`. The owner adds the bot → adopted; a colleague's group is
+recorded and offered on the panel; a stranger's group writes nothing; a known
+group hears every later change (a kick clears it). Not a reuse of
+`price_channel_chats`: its one-connected index admits one row of any kind, its
+adoption refuses supergroups ON PURPOSE (join requests and protected content
+are channel semantics), and its `connected_at` writes are fenced to its own
+file.
+
+1408. **The bot never reads the group, and that closes a hazard older than the
+round.** `registerStaffGroup` sits right after the price channel and before
+every command: its two membership handlers, then a swallow that ends every
+other update from a group or supergroup. Before it, `/start` had no chat-type
+guard — in a group it would have posted the entry keyboard into a room
+everybody reads, and `/start <code>` would have linked the GROUP as somebody's
+staff chat; the staff ladder resolved people by `ctx.chat.id`. Whether Telegram
+delivers group messages at all depends on the bot's privacy mode, which the
+repository cannot see — so the rule holds either way.
+
+1409. **One claim per thing said, written even when nothing can be said.**
+`staff_group_posts.dedupe_key` (`client:<id>`, `won:<lead>`,
+`first_cargo:<client>`, `rating:<saturday>`, `champion:<YYYY-MM>`, a unique
+`test:` per press) is INSERTed … ON CONFLICT DO NOTHING before anything is
+sent, so a redelivered job, a re-won lead or two first receipts confirmed the
+same minute praise once. With no group connected the row is written
+`skipped/no_group`: connecting a group later must not flood it with last
+month's praise. The drain is a pg-boss job (kicked at once, swept every
+minute) and `groupVerdict` is the price channel's rule: a timeout, a reset or a
+502/504 may already have published, so it is `failed/ambiguous_send` and only a
+person re-sends it (#48); a group that became a supergroup refuses with the new
+id and is followed (`migrateToChatId` now rides `SendResult`).
+`subject_user_id` is ON DELETE SET NULL — every won lead in the test suite
+writes a row, and a file deleting its fixture user must not be refused by a
+celebration nobody saw.
+
+1410. **The GIFs rotate and so do the words (his 3).** The GIFs are ordinary
+`attachments` of type `staff_group_media` under one fixed entity id, so the
+off-site copy covers them; upload is the settings admin's only (a per-record
+check in the upload route, a `decide()` case, `own_screen` in `DELETE_RULES`).
+The least recently shown goes next (`staff_group_media.last_used_at`) — a
+rotation, not a random pick, because with three files a random pick repeats
+one twice in a row a third of the time, which is the «zerikarli» he named.
+`sendAnimation` is new in send.ts (GIF/MP4); the file id is cached typed by
+its method; a refused picture sends the words alone. The sentences rotate by
+the count of posts of that kind (5/5/4), fenced so consecutive posts never read
+the same.
+
+1411. **Who is praised, and where the hooks sit.** A code: the MINTER (his
+«client code ochgan odamni»), at the two APP doors beside round 111's deal and
+never in `createClient` (#766's two reasons: the import would post 1,700 times,
+and `winLead` mints a client that is celebrated as the WIN — one person, one
+moment, one message). A win: the lead's owner, from `LeadStageChanged` with
+`stageKind = 'won'`, which every stage door announces. A first cargo: the
+receipt's SELLER STAMP (the person the rating credits), from
+`ReceiptConfirmed`, only when no other confirmed prixod of the client exists;
+an unstamped prixod praises nobody. Both events reach wms by the event drain's
+dynamic-import slot in its own try/catch (platform never imports wms). A
+mention (`tg://user?id=`) only with a linked staff chat — Telegram shows it as
+a mention only to someone who contacted the bot; else the name in bold. Never
+a client's name, phone or money.
+
+1412. **The rating reads the KPI's own cargo and the group sees kub, never
+money.** `stampedCargo` is the one reader (receipt stamp, carton grain,
+`received_at`), so the post, /reyting, /hodimlar and the profile's «Bu oy»
+cannot disagree (#513). Window = the latest Saturday 18:00 in Tashkent and
+seven days back (his 4a); Saturday 18:00 sharp belongs to the NEXT week, so
+nothing falls between two. Ranked kub → kg → name (5a), equal kub AND kg share
+a place, nobody with nothing is ranked (6a, they are a count). The posted
+standings are stored on the row, so 🔥 streaks (consecutive POSTED first
+places — a missed Saturday breaks the run) and ⭐ records (only after two
+posted weeks) read what people saw, never cargo that moved since. Crons are UTC:
+`'0 13 * * 6'` and the champion `'0 13 8 * *'` — the 8th, the KPI month's close.
+A back-dated prixod can move the screen after Saturday; the post says «18:00
+holati» rather than being edited.
+
+1413. **Red proofs, eleven by string edit; one stayed GREEN first.** «Any stage
+is a win» survived because the open-stage test used a lead that did not exist
+— the function returned at «not found» before the guard was asked. Re-anchored
+on a real lead with an owner and a client, it went red. PROCESS: the proof
+helper's empty replacement was not reversible (#815's trap, again) and left a
+file broken mid-run; restored by hand and every strip now writes a marker.

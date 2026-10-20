@@ -598,6 +598,116 @@ export const priceChannelMembers = pgTable(
 );
 
 /**
+ * Jamoa guruhi (0134, the owner, 2026-10-20): every Telegram GROUP the bot was
+ * added to. The ONE row with `active_from` set is THE staff group — a row and
+ * never a setting, the price channel's reason. Written only by
+ * `telegram/staff-group.ts`.
+ */
+export const staffGroupChats = pgTable(
+  'staff_group_chats',
+  {
+    chatId: bigint('chat_id', { mode: 'bigint' }).primaryKey(),
+    chatType: text('chat_type').notNull(),
+    title: text('title').notNull().default(''),
+    status: text('status').notNull(),
+    canPost: boolean('can_post'),
+    memberCount: integer('member_count'),
+    addedByUserId: uuid('added_by_user_id').references(() => users.id),
+    activeFrom: timestamp('active_from', { withTimezone: true }),
+    activeByUserId: uuid('active_by_user_id').references(() => users.id),
+    vettedAt: timestamp('vetted_at', { withTimezone: true }),
+    lastError: text('last_error'),
+    createdAt: createdAt(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check('staff_group_chats_type_check', sql`${t.chatType} IN ('group','supergroup')`),
+    check(
+      'staff_group_chats_status_check',
+      sql`${t.status} IN ('creator','administrator','member','restricted','left','kicked')`,
+    ),
+    check('staff_group_chats_active_check', sql`(${t.activeFrom} IS NULL) = (${t.activeByUserId} IS NULL)`),
+    uniqueIndex('staff_group_chats_one_active')
+      .on(sql`(true)`)
+      .where(sql`${t.activeFrom} IS NOT NULL`),
+  ],
+);
+
+/**
+ * One row per thing said in the staff group (0134): the claim is the UNIQUE
+ * `dedupe_key`, so nobody is praised twice in front of everybody; a rating
+ * row keeps the standings it posted.
+ */
+export const staffGroupPosts = pgTable(
+  'staff_group_posts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    kind: text('kind').notNull(),
+    dedupeKey: text('dedupe_key').notNull(),
+    subjectUserId: uuid('subject_user_id').references(() => users.id, { onDelete: 'set null' }),
+    html: text('html').notNull(),
+    mediaAttachmentId: uuid('media_attachment_id').references(() => attachments.id, { onDelete: 'set null' }),
+    standings: jsonb('standings'),
+    status: text('status').notNull().default('pending'),
+    skipReason: text('skip_reason'),
+    chatId: bigint('chat_id', { mode: 'bigint' }),
+    messageId: integer('message_id'),
+    attempts: integer('attempts').notNull().default(0),
+    notBefore: timestamp('not_before', { withTimezone: true }),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
+    lastError: text('last_error'),
+    createdAt: createdAt(),
+    sentAt: timestamp('sent_at', { withTimezone: true }),
+  },
+  (t) => [
+    unique('staff_group_posts_dedupe_unique').on(t.dedupeKey),
+    check(
+      'staff_group_posts_kind_check',
+      sql`${t.kind} IN ('client','won','first_cargo','rating','champion','test')`,
+    ),
+    check('staff_group_posts_status_check', sql`${t.status} IN ('pending','sending','sent','failed','skipped')`),
+    check(
+      'staff_group_posts_skip_check',
+      sql`(${t.status} = 'skipped') = (${t.skipReason} IS NOT NULL) AND (${t.skipReason} IS NULL OR ${t.skipReason} IN ('no_group','stale','group_changed'))`,
+    ),
+    check(
+      'staff_group_posts_sent_check',
+      sql`${t.status} <> 'sent' OR (${t.messageId} IS NOT NULL AND ${t.chatId} IS NOT NULL AND ${t.sentAt} IS NOT NULL)`,
+    ),
+    index('staff_group_posts_pending_idx')
+      .on(t.createdAt)
+      .where(sql`${t.status} = 'pending'`),
+    index('staff_group_posts_kind_idx').on(t.kind, t.createdAt.desc()),
+  ],
+);
+
+/**
+ * The staff group's GIFs and photos (0134): Telegram's id for the bytes, typed
+ * by the method that minted it, and when each was last shown — the rotation.
+ */
+export const staffGroupMedia = pgTable(
+  'staff_group_media',
+  {
+    attachmentId: uuid('attachment_id')
+      .primaryKey()
+      .references(() => attachments.id, { onDelete: 'cascade' }),
+    telegramFileId: text('telegram_file_id'),
+    telegramSentAs: text('telegram_sent_as'),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+  },
+  (t) => [
+    check(
+      'staff_group_media_sent_as_check',
+      sql`${t.telegramSentAs} IS NULL OR ${t.telegramSentAs} IN ('animation','photo')`,
+    ),
+    check(
+      'staff_group_media_cache_pair_check',
+      sql`(${t.telegramFileId} IS NULL) = (${t.telegramSentAs} IS NULL)`,
+    ),
+  ],
+);
+
+/**
  * What is wrong with the system right now (0115) — one row per standing
  * fault, deleted when it clears. `since` is written once; a repeat moves
  * only `detail`/`updatedAt`. Written by platform/diagnostics/signals.ts and

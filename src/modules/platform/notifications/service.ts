@@ -978,6 +978,19 @@ async function processEventBatch(): Promise<{ created: number; full: boolean }> 
     } catch (err) {
       logger.error({ err, eventId: String(event.id) }, 'deal auto-stage failed');
     }
+    // 0134: a won lead and a new client's first cargo are praised in the
+    // staff group. The same crossing and the same fence: a group that cannot
+    // be written to must not block anybody's notification.
+    try {
+      const { runCelebrations } = await import('../../wms/staff/celebrate');
+      await runCelebrations({
+        type: event.type,
+        payload: event.payload as Record<string, unknown>,
+        actorId: event.actorId,
+      });
+    } catch (err) {
+      logger.error({ err, eventId: String(event.id) }, 'staff-group celebration failed');
+    }
     // Already marked processed by the claim above — see `claimNextEvent`.
   }
   return { created, full: pending.length === 50 };

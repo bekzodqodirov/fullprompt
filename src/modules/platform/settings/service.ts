@@ -220,6 +220,12 @@ export const SETTING_DEFAULTS = {
    */
   client_code_next: '',
   /**
+   * The staff group's weekly TEAM goal in kub (0134, his 8a): the Saturday
+   * rating draws «32 / 40 kub» with a bar, so everybody pulls one number up
+   * and nobody is shamed for a low line. 0 = no goal, no line.
+   */
+  staff_rating_goal_m3: 0,
+  /**
    * From which day a cost with no payer is the accountant's to place (0101):
    * the «kassasi ko'rsatilmagan» queue and the home counter start here.
    * Written by the migration on deploy day — every earlier cost has no kassa

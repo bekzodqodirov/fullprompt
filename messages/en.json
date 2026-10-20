@@ -737,7 +737,8 @@
       "salary_expense_category_id": "Salary category: the «Staff» page shows each salary and whether it was paid from its monthly templates.",
       "price_history_min_sim": "How close a goods name must be to a past receipt before «Previous price» shows its truck (0..1)",
       "price_history_ai_daily_limit": "How many times a day the 🤖 button in «Previous price» may ask the AI (separate from the calculation limit)",
-      "freight_tariff_cost_type_codes": "Truck cost types that preselect «by the freight tariff» (a list of codes)"
+      "freight_tariff_cost_type_codes": "Truck cost types that preselect «by the freight tariff» (a list of codes)",
+      "staff_rating_goal_m3": "The team's weekly goal in m³ for the team group (0 = no goal). Easier to change on the «Team group» page."
     },
     "driverApp": "Driver app",
     "callsApp": "Calls app",
@@ -5905,5 +5906,92 @@
       "notFound": "Record not found — reload the page.",
       "notATwin": "These records are no longer a pair — reload the page."
     }
+  },
+  "staffGroup": {
+    "title": "Team group",
+    "intro": "A Telegram group where the bot congratulates staff in front of everyone (a new client code, a won lead, a new client's first cargo), and every Saturday at 18:00 posts the week's rating by m³ and kg.",
+    "serverBehind": "The server is not updated yet (migration 0134 is missing). Run the migrations and open the page again.",
+    "connected": "Connected group: {title}",
+    "facts": "Members: {members} · since {since}",
+    "cannotPost": "The bot cannot post in the group: {error}",
+    "everyoneReads": "Everyone in the group reads these messages. They carry no money and no client names or phones — only the client code, m³ and kg.",
+    "test": "Test message",
+    "testOk": "Queued — check the group in a minute.",
+    "ratingNow": "Send the rating",
+    "ratingNowOk": "Queued.",
+    "championNow": "Month champion",
+    "disconnect": "Disconnect",
+    "disconnectConfirm": "Disconnect the group? Congratulations and the rating will stop going there.",
+    "notConnected": "No group is connected.",
+    "step1": "Create a Telegram group (or open an existing one) and add the staff.",
+    "step2": "Add the bot to the group yourself, from the Telegram account linked to the system.",
+    "step3": "The group connects by itself; then press «Test message».",
+    "otherGroups": "Other groups staff added the bot to:",
+    "connect": "Connect this group",
+    "connectConfirm": "Connect «{title}»? Congratulations and the rating will go there.",
+    "mediaTitle": "Congratulation GIFs",
+    "mediaHint": "Upload 2–3 GIFs (or photos) — they take turns so it never gets boring. GIF, MP4, JPG, PNG, up to 20 MB.",
+    "mediaNone": "Nothing uploaded yet — congratulations go as text.",
+    "mediaDelete": "Delete",
+    "mediaDeleteConfirm": "Remove this file from the congratulations?",
+    "upload": "Upload GIF",
+    "uploading": "Uploading…",
+    "uploadTooLarge": "The file is larger than 20 MB.",
+    "uploadRefused": "File refused — a GIF, MP4, JPG or PNG is needed.",
+    "goalTitle": "The team's weekly goal",
+    "goalHint": "How many m³ the team should bring in a week. The Saturday rating shows a «32 / 40 m³» line. 0 = no goal.",
+    "goal": "Goal, m³",
+    "save": "Save",
+    "goalSaved": "Saved.",
+    "postsTitle": "Latest messages",
+    "postsNone": "No messages yet.",
+    "maybeSent": "The message may already be in the group — check it before sending again.",
+    "lastError": "Error: {error}",
+    "retry": "Send again",
+    "requeued": "Queued again.",
+    "status": {
+      "pending": "queued",
+      "sending": "sending",
+      "sent": "sent",
+      "failed": "not sent",
+      "skipped": "skipped"
+    },
+    "kind": {
+      "client": "New client",
+      "won": "Lead won",
+      "first_cargo": "First cargo",
+      "rating": "Weekly rating",
+      "champion": "Month champion",
+      "test": "Test"
+    },
+    "skip": {
+      "no_group": "No group was connected",
+      "stale": "Too old — not sent",
+      "group_changed": "The group changed"
+    },
+    "error": {
+      "not_found": "Group not found.",
+      "not_present": "The bot is not in this group.",
+      "telegram": "Telegram did not answer — try again later.",
+      "not_group": "This is not a group.",
+      "cannot_post": "The bot cannot post in the group — allow it to send messages.",
+      "no_group": "Connect a group first.",
+      "already_posted": "Already sent — it is not sent twice.",
+      "bad_goal": "Enter a number of m³ (0 = no goal).",
+      "failed": "That did not work — try again."
+    }
+  },
+  "rating": {
+    "title": "Weekly rating",
+    "profileHint": "Who brought how many m³ and kg this week — the same rating the bot posts to the group every Saturday at 18:00.",
+    "intro": "A week runs from Saturday 18:00 to Saturday 18:00. Cargo counts for the seller recorded on the receipt (as the KPI does).",
+    "serverBehind": "The server is not updated yet. Open the page after the update.",
+    "running": "This week",
+    "closed": "Last week",
+    "month": "Month: {month}",
+    "empty": "Nobody has brought cargo yet.",
+    "goalDone": "🎯 Team goal {goal} m³ — reached! ✅",
+    "goalProgress": "🎯 Team goal: {done} / {goal} m³",
+    "footnote": "A receipt may be entered back-dated, so the figures can move slightly."
   }
 }

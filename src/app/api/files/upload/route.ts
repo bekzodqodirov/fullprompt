@@ -8,6 +8,12 @@ import { BROADCAST_ENTITY_TYPE, mayBroadcast } from '@/modules/platform/broadcas
 import { PICKUP_WRITE } from '@/modules/wms/pickups/service';
 import { FileValidationError, saveAttachment } from '@/modules/platform/files/service';
 import { NOTE_ENTITY_TYPE, canShareNotes } from '@/modules/platform/notes/service';
+import {
+  STAFF_GROUP_MEDIA_ENTITY,
+  STAFF_GROUP_MEDIA_MAX_BYTES,
+  STAFF_GROUP_MEDIA_TYPE,
+  STAFF_GROUP_MEDIA_TYPES,
+} from '@/modules/platform/telegram/staff-group-media';
 
 /**
  * The only things anything in this app attaches a file to.
@@ -64,6 +70,11 @@ const ATTACHABLE = [
   // message went — a file added to a sent broadcast would sit in its record
   // as sent when it never was.
   'broadcast',
+  // 'staff_group_media': a GIF or photo the staff group's celebrations rotate
+  // through (0134). Per-record below: only the settings admin, only against
+  // the one fixed id the group's files live under, and only what the group
+  // can play.
+  'staff_group_media',
 ] as const;
 
 const metaSchema = z.object({
@@ -139,6 +150,14 @@ export async function POST(request: Request) {
   if (meta.data.entityType === BROADCAST_ENTITY_TYPE) {
     const sent = await db.query.broadcasts.findFirst({ where: eq(broadcasts.id, meta.data.entityId) });
     if (!mayBroadcast(actor) || sent) return Response.json({ error: 'forbidden' }, { status: 403 });
+  }
+
+  if (meta.data.entityType === STAFF_GROUP_MEDIA_TYPE) {
+    if (!actor.permissions.has('admin.settings.manage') || meta.data.entityId !== STAFF_GROUP_MEDIA_ENTITY) {
+      return Response.json({ error: 'forbidden' }, { status: 403 });
+    }
+    if (!STAFF_GROUP_MEDIA_TYPES[file.type]) return Response.json({ error: 'validation' }, { status: 400 });
+    if (file.size > STAFF_GROUP_MEDIA_MAX_BYTES) return Response.json({ error: 'too_large' }, { status: 400 });
   }
 
   try {

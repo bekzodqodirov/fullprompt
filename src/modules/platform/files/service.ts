@@ -255,6 +255,9 @@ export class AttachmentDeleteError extends Error {
 export const DELETE_RULES = {
   task: 'task_author',
   staff_note: 'own_screen',
+  // The staff group's GIFs (0134): removed by its panel after its own
+  // question (admin.settings.manage), never by the shared route's receipt-era rule.
+  staff_group_media: 'own_screen',
   crm_activity: 'shared',
   tg_message: 'shared',
   call_log: 'shared',
