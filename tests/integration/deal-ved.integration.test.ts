@@ -562,8 +562,8 @@ describe('G1 — linking a prixod is the VED’s, audited under his name', () =>
       })
       .returning({ id: receipts.id });
     const r = receipt!.id;
-    await linkReceipt(r, dealId, { actorId: P.ved.id });
-    await linkReceipt(r, null, { actorId: P.ved.id });
+    await linkReceipt(r, dealId, { actorId: P.ved.id }, null);
+    await linkReceipt(r, null, { actorId: P.ved.id }, null);
     const trail = await db
       .select()
       .from(auditLog)

@@ -1,5 +1,6 @@
 import { paidCargo } from '../finance/paid-cartons';
 import type { Exec } from './cargo';
+import { KPI_LOAD } from '../ftl/sql';
 
 /**
  * The PAID part of a seller's cargo (0117, the owner's 6b: «KPI is earned only
@@ -23,7 +24,9 @@ export async function paidM3ByMonth(
   const out: PaidM3 = new Map();
   const { cartons } = await paidCargo(
     exec,
-    { kind: 'stamped', sellerId: q.sellerId, from: q.from, to: q.to },
+    // The KPI counts LTL cargo only (0135, his «FTL bolsa bunga kpi yozilmaydi»),
+    // and its paid part is a part of exactly those cartons.
+    { kind: 'stamped', sellerId: q.sellerId, from: q.from, to: q.to, load: KPI_LOAD },
     { elsewhere: false },
   );
   for (const c of cartons) {

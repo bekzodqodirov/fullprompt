@@ -60,6 +60,8 @@ describe('every audit field label the tab can ask for', () => {
       'volumeM3',
       'weightKg',
       'currency',
+      // LTL / FTL (0135) — written beside the diff by both card forms and the prixod card.
+      'freightMode',
     ]) {
       expect(AUDIT_FIELD_LABELS[key], `no label for ${key}`).toBeTruthy();
     }

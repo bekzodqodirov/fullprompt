@@ -221,7 +221,8 @@ describe('the seller’s own card (scope own)', () => {
     const own = await sellerPerformanceOwn(sellerA, PERIOD);
     // The structural fence's runtime half: the object itself carries none.
     expect(Object.keys(own).sort()).toEqual(
-      ['clients', 'receipts', 'revenueUsd', 'volumeM3', 'weightKg'].sort(),
+      // The FTL pair is cargo (0135) — kub and a count, never a cost.
+      ['clients', 'ftlM3', 'ftlReceipts', 'receipts', 'revenueUsd', 'volumeM3', 'weightKg'].sort(),
     );
   });
 });

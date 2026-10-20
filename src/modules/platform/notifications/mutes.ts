@@ -155,6 +155,14 @@ export const MUTE_GROUPS = {
     // it — the accountant and the seller must act before the cargo AND the
     // money leave. BoxLost's alarm, run backwards.
     'CompensatedCargoFound',
+    // LTL / FTL (0135): a SELLER marked his own job or prixod FTL — the office
+    // hears it, because dropping a light lot can lift his month's density band
+    // (FtlMarked); and a truck left with one client's cargo only, which may be
+    // FTL nobody marked (FtlSuspected, his 7a). Both are a KPI decision the
+    // office must take before the month is PAID and freezes (his 6a), so
+    // alarms and not news. Newcomers, so never in FOUNDERS.
+    'FtlMarked',
+    'FtlSuspected',
     'ReceiptMeasureCorrected',
     // A discount was written into a sealed price (phase D) — shipped in no
     // group, like CalcSealed; it moves money a seller is measured against.

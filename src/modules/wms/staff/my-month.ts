@@ -10,6 +10,7 @@ import { earnedOf, upsaleRows } from '../calc/upsale-service';
 import { stampedCargoByMonth } from './cargo';
 import type { KpiRefusal } from './kpi-engine';
 import { lineFor } from './kpi-service';
+import { KPI_LOAD } from '../ftl/sql';
 import { kpiVersions, versionFor } from './kpi-table';
 import { paidM3ByMonth } from './kpi-paid';
 import { monthRange } from './month';
@@ -54,6 +55,11 @@ export interface MyMonth {
     outside: boolean;
   } | null;
   upsale: { earnedUsd: number; offers: number } | null;
+  /**
+   * The month's FTL cargo (0135) — out of the KPI above, shown beside it so
+   * the seller sees why his kub there is smaller than what he brought.
+   */
+  ftl: { receipts: number; m3: number; kg: number } | null;
   /** oylik + KPI (hisoblangan) + upsale, in dollars; null when the salary could not be converted. */
   incomeUsd: number | null;
   work: { receipts: number; sealed: number; answered: number };
@@ -71,9 +77,10 @@ export async function myMonth(actor: {
   const range = monthRange(month);
   const salaryCategoryId = String((await getSetting('salary_expense_category_id')) ?? '').trim();
 
-  const [templates, cargo, versions, work] = await Promise.all([
+  const [templates, cargo, ftlCargo, versions, work] = await Promise.all([
     staffTemplates(db, { today, salaryCategoryId, userId }),
-    stampedCargoByMonth(db, userId, month, month),
+    stampedCargoByMonth(db, userId, month, month, KPI_LOAD),
+    stampedCargoByMonth(db, userId, month, month, 'ftl'),
     kpiVersions(db),
     myWork(userId, range),
   ]);
@@ -141,6 +148,7 @@ export async function myMonth(actor: {
     salaryConverted: salary.some((s) => s.currency !== 'USD'),
     kpi,
     upsale,
+    ftl: ftlCargo[0] ? { receipts: ftlCargo[0].receipts, m3: ftlCargo[0].m3, kg: ftlCargo[0].kg } : null,
     incomeUsd,
     work,
   };

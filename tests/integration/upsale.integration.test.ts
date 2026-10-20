@@ -1207,17 +1207,17 @@ describe('the share follows the cargo that arrived (4b)', () => {
     // The app's clock (R5): a Tashkent day, never a UTC one.
     const day = tashkentDay();
     const window = { from: tashkentDayStart(day), to: tashkentDayStart(addDays(day, 1)) };
-    const mine = await stampedCargo(db, window, { kind: 'own', userId: sellerId });
+    const mine = await stampedCargo(db, window, { kind: 'own', userId: sellerId }, 'ltl');
     expect(mine).toEqual([
       { sellerId, sellerName: `Upsale seller ${SUFFIX}`, receipts: 1, m3: 12.5, kg: 640, unmeasured: [] },
     ]);
     // The same seller as the owner sees them, and nobody else's cargo leaks
     // into a seller's own row.
-    const all = await stampedCargo(db, window, { kind: 'all' });
+    const all = await stampedCargo(db, window, { kind: 'all' }, 'ltl');
     expect(all.filter((row) => row.sellerId === sellerId)).toEqual(mine);
     // Yesterday's window holds none of it.
     const yesterday = { from: tashkentDayStart(addDays(day, -1)), to: tashkentDayStart(day) };
-    expect(await stampedCargo(db, yesterday, { kind: 'own', userId: sellerId })).toEqual([]);
+    expect(await stampedCargo(db, yesterday, { kind: 'own', userId: sellerId }, 'ltl')).toEqual([]);
   });
 });
 
@@ -1468,7 +1468,7 @@ describe('3a — the upsale waits on the KPI’s paid-cargo rule (FIFO)', () => 
     const both = async () => {
       const byDeal = (await paidCargo(db, { kind: 'deals', dealIds: [dealA] }, { elsewhere: false })).cartons;
       const byStamp = (
-        await paidCargo(db, { kind: 'stamped', sellerId, from: window.from, to: window.to }, { elsewhere: false })
+        await paidCargo(db, { kind: 'stamped', sellerId, from: window.from, to: window.to, load: 'ltl' }, { elsewhere: false })
       ).cartons.filter((c) => c.receiptId === receiptId);
       const shape = (list: typeof byDeal) =>
         list.map((c) => [c.boxId, c.covered, c.paid] as const).sort((x, y) => x[0].localeCompare(y[0]));

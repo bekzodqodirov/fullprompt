@@ -287,8 +287,8 @@ describe('filing a prixod onto the deal it is already on moves nothing (review, 
 
     // The receipt card's picker always offers the current deal; pressing it
     // used to run the re-file branch: clear, then stamp with notified NULL.
-    await linkReceipt(refused, dealId, ctx());
-    await linkReceipt(kept, dealId, ctx());
+    await linkReceipt(refused, dealId, ctx(), null);
+    await linkReceipt(kept, dealId, ctx(), null);
 
     const r = await read(refused);
     expect(r!.calcRequestId).toBeNull();
@@ -370,7 +370,7 @@ describe('a press answers about the request it named', () => {
     const other = await newDeal();
     const otherRequest = await openJob(other);
     await sealCalc(otherRequest, SEAL, ctx());
-    await linkReceipt(id, other, ctx());
+    await linkReceipt(id, other, ctx(), null);
     expect((await read(id))!.calcRequestId).toBe(otherRequest);
     expect(await answerLinkAsk(id, prefix(requestId), 'confirm', 'all', ctx())).toBe('changed');
     expect((await read(id))!.calcLinkConfirmedAt).toBeNull();

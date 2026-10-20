@@ -752,7 +752,7 @@
       "price_history_min_sim": "货物名称与以往入库的相似度达到多少时，「以往价格」才显示其车次（0..1）",
       "price_history_ai_daily_limit": "「以往价格」的 🤖 按钮每天可调用 AI 的次数（与计算额度分开）",
       "freight_tariff_cost_type_codes": "车辆费用中自动选择「按运费价目表」的费用类型（代码列表）",
-      "staff_rating_goal_m3": "团队群的每周团队目标（立方，0 = 无目标）。在「团队群」页面修改更方便。"
+      "staff_rating_goal_m3": "团队群的每周团队目标（立方，仅拼车 LTL 货物，0 = 无目标）。在「团队群」页面修改更方便。"
     },
     "driverApp": "司机应用",
     "callsApp": "通话应用",
@@ -874,7 +874,8 @@
       "allocationBasis": "分摊方式",
       "tariffZone": "价目表栏",
       "tariffFrom": "价目表日期",
-      "tariffBands": "价目表各行"
+      "tariffBands": "价目表各行",
+      "freightMode": "货物类型（LTL/FTL）"
     }
   },
   "profile": {
@@ -944,7 +945,8 @@
       "work": "我的工作",
       "workLine": "入库：{receipts} · 已封存核算：{sealed} · 「完成」答复：{answered}",
       "advanceHint": "预支款及欠公司款项见下方「{panel}」。",
-      "salaryNotDue": "本月尚未到付款期"
+      "salaryNotDue": "本月尚未到付款期",
+      "ftlLine": "FTL：{m3} 立方 · {n} 张收货单 — 不计入 KPI"
     }
   },
   "receive": {
@@ -3248,7 +3250,10 @@
       "fx_missing": "该货币没有汇率",
       "discount_reason_required": "折扣需要填写原因",
       "quote_sealed": "价格已封存，无法修改（请重新计算）",
-      "not_your_client": "此客户的延期由其销售、会计或管理员授予"
+      "not_your_client": "此客户的延期由其销售、会计或管理员授予",
+      "ftl_office_only": "只有管理员、物流员或会计可以把 FTL 改回 LTL（或更换 FTL 交易的负责人）。",
+      "ftl_not_yours": "只能把自己的交易标为 FTL。",
+      "server_behind": "服务器未更新 — 管理员需要运行迁移。"
     },
     "discountTitle": "折扣（货损）",
     "discountAmount": "折扣金额",
@@ -4576,7 +4581,8 @@
     "fifoNoLive": "该交易已无剩余货物：丢失、作废或已转给其他客户",
     "fifoNotComputed": "核对超时——请刷新页面",
     "notComputedPage": "部分业务的货物付款未能及时核对——未列入待支付。请刷新页面。",
-    "paidRule": "交易货物及记在交易上的价格付清后才支付提成。客户的付款从最早的欠款开始冲抵（KPI 规则）。"
+    "paidRule": "交易货物及记在交易上的价格付清后才支付提成。客户的付款从最早的欠款开始冲抵（KPI 规则）。",
+    "cargoFtl": "🚛 FTL"
   },
   "sellerReport": {
     "title": "销售业绩",
@@ -4603,7 +4609,9 @@
     "nobodyRow": "「—」行为收货时没有销售员的货物及其金额，以及既无入库单也无销售员的客户的价格。客户被指定第一位销售员后，这些货物及金额将转给该销售员。",
     "unlinked": "{n} 笔价格（{usd}）看不出对应哪批货——在客户账上定的无车次价格、客户货物未随其出发的车次价格，或尚无入库单的交易价格。它们记在客户截至当日最近一张入库单的销售员名下（若无入库单则记在当前经理名下）。会计在客户账上用「🚚 转移」把价格转到货物所乘车次后，将记到该货物的销售员名下。",
     "split": "{n} 笔价格（{usd}）涉及多位销售员的货物，按立方数分摊（若有箱子无立方数则按公斤，仍缺则按箱数）。",
-    "inactive": "已停用"
+    "inactive": "已停用",
+    "ftl": "FTL",
+    "ftlNote": "立方和收货单为拼车货（LTL），与 KPI 相同。FTL（整车）单独一列；金额列两者都包含。"
   },
   "annul": {
     "open": "作废（级联）…",
@@ -5499,7 +5507,8 @@
     "leaversHint": "不登录系统、工资已停用且已结清的员工。如有人回来——点击姓名，在卡片上点「重新启用」。",
     "salaryUnknown": "工资读取失败",
     "salaryInactive": "已标记为离职——不能设置新工资。如已回来，请点击上方的「重新启用」。",
-    "salaryInactiveLogin": "已标记为离职——不能设置新工资。如已回来，由管理员在「管理 → 员工」中重新启用。"
+    "salaryInactiveLogin": "已标记为离职——不能设置新工资。如已回来，由管理员在「管理 → 员工」中重新启用。",
+    "ftlLine": "FTL：{m3} 立方 · {n} 张收货单 — 不计入 KPI"
   },
   "calcSheet": {
     "group": "分组",
@@ -6001,7 +6010,7 @@
     "uploadTooLarge": "文件超过 20 MB。",
     "uploadRefused": "文件被拒——需要 GIF、MP4、JPG 或 PNG。",
     "goalTitle": "团队每周目标",
-    "goalHint": "团队一周应带来多少立方。周六排名中会显示「32 / 40 立方」一行。0 = 无目标。",
+    "goalHint": "团队一周应带来多少立方拼车（LTL）货物 — FTL 不计算。周六排名中会显示「32 / 40 立方」一行。0 = 无目标。",
     "goal": "目标，立方",
     "save": "保存",
     "goalSaved": "已保存。",
@@ -6046,7 +6055,7 @@
   "rating": {
     "title": "每周排名",
     "profileHint": "本周谁带来了多少立方和公斤——与机器人每周六 18:00 发到群里的排名相同。",
-    "intro": "一周为周六 18:00 至下周六 18:00。货物按收货单上记录的销售员计算（与 KPI 相同）。",
+    "intro": "一周为周六 18:00 至下周六 18:00。货物按收货单上记录的销售员计算（与 KPI 相同）。 FTL（整车）货物不计入排名 — 单独显示。",
     "serverBehind": "服务器尚未更新。更新后再打开此页。",
     "running": "本周",
     "closed": "上周",
@@ -6054,7 +6063,62 @@
     "empty": "还没有人带来货物。",
     "goalDone": "🎯 团队目标 {goal} 立方——已完成！✅",
     "goalProgress": "🎯 团队目标：{done} / {goal} 立方",
-    "footnote": "收货单可能补录日期，因此数字可能略有变化。"
+    "footnote": "收货单可能补录日期，因此数字可能略有变化。",
+    "ftlTitle": "FTL — 整车（不计分）",
+    "emptyLtl": "还没有人带来拼车（LTL）货物。"
+  },
+  "ftl": {
+    "label": "货物类型",
+    "ltlLong": "LTL — 拼车",
+    "ftlLong": "FTL — 整车",
+    "officeOnly": "只有管理员、物流员或会计可以改回 LTL。",
+    "sellerWarn": "选择 FTL 后，这批货不计入 KPI 和排名。只有管理员、物流员或会计可以改回 LTL。",
+    "cascadeChanged": "该交易的收货单也已更改：{n} 个。",
+    "cascadeSkipped": "{number}：未更改 — {why}",
+    "skip": {
+      "kpi_paid": "该月的 KPI 已发放",
+      "hand": "在收货单卡片上手动设置",
+      "other_seller": "属于其他销售员（由办公室更改）",
+      "other_client": "已转给其他客户",
+      "no_seller": "无销售——客户指定销售后即传入",
+      "stamp_moved": "其销售刚刚变更——请再按一次"
+    },
+    "source": {
+      "hand": "在收货单卡片上手动设置。",
+      "deal": "来自交易（{code}）。",
+      "earlierDeal": "来自之前的交易（{code}）— 只有管理员、物流员或会计可以改回 LTL。",
+      "notReached": "交易 {code} 为整车（FTL），但未传到此入库单：{why}。",
+      "dealLtl": "交易 {code} — LTL。",
+      "default": "无交易 — 默认 LTL。"
+    },
+    "paidFrozen": "{month} 的 KPI 已发放（{seller}）— 货物类型不再更改。",
+    "makeFtl": "设为 FTL",
+    "makeLtl": "改回 LTL",
+    "dealAlsoFtl": "交易 {code} 也是 FTL — 之后关联到它的收货单也会成为 FTL。",
+    "makeDealLtl": "把交易 {code} 也改为 LTL",
+    "errors": {
+      "ftl_office_only": "只有管理员、物流员或会计可以把 FTL 改回 LTL。",
+      "ftl_not_yours": "只能把自己的交易或货物标为 FTL。",
+      "kpi_paid": "🔒 {month} 的 KPI 已发放（{seller}）— 此收货单的货物类型不再更改。",
+      "stamp_moved": "收货单的销售员刚刚更改 — 请再按一次。",
+      "not_found": "未找到。",
+      "server_behind": "服务器未更新 — 管理员需要运行迁移。",
+      "busy": "当前繁忙 — 请稍后再按。",
+      "validation": "值无效。",
+      "forbidden": "无权限。"
+    },
+    "reach": {
+      "other_client": "入库单已转给其他客户",
+      "kpi_paid": "其所在月份的 KPI 已发放",
+      "no_seller": "交易由销售标记，而入库单未记在任何人名下",
+      "other_seller": "交易由销售标记，而入库单记在另一位销售名下",
+      "linked": "将其关联到交易的既不是办公室，也不是该入库单的销售"
+    },
+    "widenDeal": "以办公室名义确认交易 {code} 的整车（FTL）——传到其全部入库单",
+    "leadErrors": {
+      "ftl_office_only": "只有管理员、物流或会计可以把整车（FTL）线索改回拼箱（LTL）或更换其负责人。",
+      "ftl_not_yours": "只能把自己的线索标记为整车（FTL）。"
+    }
   },
   "place": {
     "road": {

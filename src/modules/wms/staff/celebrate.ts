@@ -1,4 +1,5 @@
 import { sql } from 'drizzle-orm';
+import { ftlReady } from '../ftl/service';
 import { db } from '../../platform/db/client';
 import { logger } from '../../platform/logger';
 import { tashkentDayStart, tashkentMonthStart } from '../../platform/time/tashkent';
@@ -85,6 +86,10 @@ export async function celebrateLeadWon(event: {
   const leadId = typeof event.payload.leadId === 'string' ? event.payload.leadId : null;
   if (!leadId) return;
   try {
+    // One migration behind (0135 not applied) the side table is not there:
+    // the win is still celebrated, as LTL — a missing table must never lose
+    // the post (the event is already claimed and nothing would retry it).
+    const ftlOn = await ftlReady();
     const rows = await db.execute<{
       owner_id: string | null;
       client_code: string | null;
@@ -92,10 +97,12 @@ export async function celebrateLeadWon(event: {
       currency: string | null;
       m3: string | null;
       kg: string | null;
+      ftl: boolean;
     }>(sql`
       SELECT l.owner_id::text AS owner_id, c.client_code,
              l.quoted_amount::text AS amount, l.quoted_currency AS currency,
-             l.quoted_volume_m3::text AS m3, l.quoted_weight_kg::text AS kg
+             l.quoted_volume_m3::text AS m3, l.quoted_weight_kg::text AS kg,
+             ${ftlOn ? sql`EXISTS (SELECT 1 FROM lead_ftl lf WHERE lf.lead_id = l.id)` : sql`false`} AS ftl
         FROM leads l
         LEFT JOIN clients c ON c.id = l.client_id
        WHERE l.id = ${leadId}::uuid`);
@@ -104,7 +111,7 @@ export async function celebrateLeadWon(event: {
     if (!lead || !heroId) return;
     const hero = await heroOf(heroId);
     if (!hero) return;
-    const html = leadWonHtml(hero, await wonFacts(leadId, lead), await rotationIndex('won'));
+    const html = leadWonHtml(hero, await wonFacts(leadId, lead, ftlOn), await rotationIndex('won'));
     await queueGroupPost({ kind: 'won', dedupeKey: `won:${leadId}`, html, subjectUserId: heroId, withMedia: true });
   } catch (err) {
     logger.error({ err, leadId }, '[staff-group] lead-won celebration failed');
@@ -119,21 +126,37 @@ const num = (value: string | null): number | null => (value === null ? null : Nu
  * this one counted even if a legacy door left it unstamped. Dollars only in
  * the month's sum: adding a so'm price to a dollar one is a number nobody can
  * read. A lead with no owner has no «month» to speak of.
+ *
+ * LTL / FTL (0135, his 4a): an FTL win is celebrated and labelled, and is NOT
+ * added to «bu oy» — the tally counts LTL wins only (the clause sits OUTSIDE
+ * the «this one» OR, or the FTL lead would count itself), and an FTL post
+ * carries no month line at all: a tally that leaves out the win it is printed
+ * under would read «Bu oyning birinchi g'alabasi!» under somebody's third.
  */
 async function wonFacts(
   leadId: string,
-  lead: { owner_id: string | null; client_code: string | null; amount: string | null; currency: string | null; m3: string | null; kg: string | null },
+  lead: {
+    owner_id: string | null;
+    client_code: string | null;
+    amount: string | null;
+    currency: string | null;
+    m3: string | null;
+    kg: string | null;
+    ftl: boolean;
+  },
+  ftlOn: boolean,
 ): Promise<WonFacts> {
   let monthWins: number | null = null;
   let monthUsd: number | null = null;
-  if (lead.owner_id) {
+  if (lead.owner_id && !lead.ftl) {
     const tally = await db.execute<{ wins: string; usd: string | null }>(sql`
       SELECT count(*)::text AS wins,
              sum(l.quoted_amount) FILTER (WHERE l.quoted_currency = 'USD')::text AS usd
         FROM leads l
         JOIN lead_stages s ON s.id = l.stage_id
        WHERE s.kind = 'won' AND l.owner_id = ${lead.owner_id}::uuid
-         AND (l.closed_at >= ${monthStartIso()}::timestamptz OR l.id = ${leadId}::uuid)`);
+         AND (l.closed_at >= ${monthStartIso()}::timestamptz OR l.id = ${leadId}::uuid)
+         AND ${ftlOn ? sql`NOT EXISTS (SELECT 1 FROM lead_ftl lf WHERE lf.lead_id = l.id)` : sql`true`}`);
     monthWins = Number(tally[0]?.wins ?? 0);
     monthUsd = num(tally[0]?.usd ?? null);
   }
@@ -143,6 +166,7 @@ async function wonFacts(
     currency: lead.currency,
     m3: num(lead.m3),
     kg: num(lead.kg),
+    ftl: lead.ftl,
     monthWins,
     monthUsd,
   };
@@ -162,6 +186,7 @@ export async function celebrateFirstCargo(event: { payload: Record<string, unkno
   const clientId = typeof event.payload.clientId === 'string' ? event.payload.clientId : null;
   if (!receiptId || !clientId) return;
   try {
+    const ftlOn = await ftlReady();
     const rows = await db.execute<{
       seller_id: string | null;
       client_code: string;
@@ -169,8 +194,10 @@ export async function celebrateFirstCargo(event: { payload: Record<string, unkno
       kg: string;
       place: string | null;
       earlier: boolean;
+      ftl: boolean;
     }>(sql`
       SELECT r.sales_manager_id::text AS seller_id, c.client_code,
+             ${ftlOn ? sql`EXISTS (SELECT 1 FROM receipt_load_mode rlm WHERE rlm.receipt_id = r.id AND rlm.mode = 'ftl')` : sql`false`} AS ftl,
              coalesce(sum(rl.total_volume_m3), 0)::text AS m3,
              coalesce(sum(rl.total_weight_kg), 0)::text AS kg,
              w.name AS place,
@@ -189,7 +216,9 @@ export async function celebrateFirstCargo(event: { payload: Record<string, unkno
     const html = firstCargoHtml(
       hero,
       row.client_code,
-      { m3: Number(row.m3), kg: Number(row.kg), place: row.place },
+      // The prixod's mode AT SEND TIME (0135, his 4a) — a warehouse prixod
+      // confirmed with no deal is LTL then (stated).
+      { m3: Number(row.m3), kg: Number(row.kg), place: row.place, ftl: row.ftl },
       await rotationIndex('first_cargo'),
     );
     await queueGroupPost({

@@ -28,6 +28,8 @@ export interface BoardDeal {
   /** How many more goods lines there are beyond the first. */
   goodsExtra: number;
   deferred: boolean;
+  /** A whole truck (0135) — a neutral token on the card, always drawn; LTL draws nothing. */
+  ftl?: boolean;
   /** Set when the cargo landed outside the threshold, or landed unpriced. */
   flag: 'deviation' | 'unpriced' | null;
   flagPct: number | null;
@@ -171,6 +173,13 @@ export function DealBoard({
               ))}
             <MetaLine
               parts={[
+                // Not a card-field switch: whether this job counts for the KPI
+                // is not a matter of taste (0135). Neutral — colour means urgency.
+                deal.ftl ? (
+                  <span key="ftl" className="font-semibold" data-testid="card-ftl">
+                    🚛 FTL
+                  </span>
+                ) : null,
                 // The client's NAME, kept small and kept here: the owner reads
                 // the code, but a name is what tells two similar codes apart
                 // when somebody is not sure. «Klient ismi juda kichkinada

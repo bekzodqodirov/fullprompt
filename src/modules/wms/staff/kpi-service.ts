@@ -12,6 +12,8 @@ import { stampedCargoByMonth, stampedCargoBySellerMonth, type Exec, type StaffSc
 import { earnedOnPaid, kpiFor, type KpiRefusal, type KpiResult } from './kpi-engine';
 import { firstKpiMonth, kpiVersions, versionFor } from './kpi-table';
 import { paidM3ByMonth } from './kpi-paid';
+import { kpiSellerLockSql } from './kpi-lock';
+import { KPI_LOAD } from '../ftl/sql';
 import { addMonths, monthRange, monthsBetween } from './month';
 
 /**
@@ -135,10 +137,10 @@ export async function kpiMonth(
   const range = monthRange(month);
   const [cargo, versions, paid] = await Promise.all([
     scope.kind === 'own'
-      ? stampedCargoByMonth(exec, scope.userId, month, month).then((rows) =>
+      ? stampedCargoByMonth(exec, scope.userId, month, month, KPI_LOAD).then((rows) =>
           rows.map((row) => ({ ...row, sellerId: scope.userId })),
         )
-      : stampedCargoBySellerMonth(exec, month, month),
+      : stampedCargoBySellerMonth(exec, month, month, KPI_LOAD),
     kpiVersions(exec),
     paidM3ByMonth(exec, { sellerId: scope.kind === 'own' ? scope.userId : undefined, ...range }),
   ]);
@@ -214,7 +216,7 @@ export async function kpiPayable(exec: Exec, sellerId: string, today: string): P
   let lines: KpiMonthLine[] = [];
   if (months.length > 0) {
     const [cargo, paid] = await Promise.all([
-      stampedCargoByMonth(exec, sellerId, months[0]!, months.at(-1)!),
+      stampedCargoByMonth(exec, sellerId, months[0]!, months.at(-1)!, KPI_LOAD),
       paidM3ByMonth(exec, { sellerId, from: monthRange(months[0]!).from, to: monthRange(months.at(-1)!).to }),
     ]);
     const byMonth = new Map(cargo.map((row) => [row.month, row]));
@@ -240,7 +242,7 @@ export async function kpiPayableAll(exec: Exec, today: string): Promise<Map<stri
   let paid = new Map<string, Map<string, number>>();
   if (months.length > 0) {
     const [cargo, paidAll] = await Promise.all([
-      stampedCargoBySellerMonth(exec, months[0]!, months.at(-1)!),
+      stampedCargoBySellerMonth(exec, months[0]!, months.at(-1)!, KPI_LOAD),
       paidM3ByMonth(exec, { sellerId: undefined, from: monthRange(months[0]!).from, to: monthRange(months.at(-1)!).to }),
     ]);
     for (const row of cargo) {
@@ -328,7 +330,9 @@ export async function payKpi(
     await tx.execute(sql`SET LOCAL statement_timeout = 20000`);
     // The table is not re-versioned under a payout being computed on it.
     await tx.execute(sql`SELECT pg_advisory_xact_lock_shared(hashtext('kpi:table'))`);
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('kpi:' || ${sellerId}))`);
+    // The LTL/FTL doors take this very key (kpi-lock.ts), so a payout is never
+    // computed on cargo whose mode changes under it (0135, his 6a).
+    await tx.execute(kpiSellerLockSql(sellerId));
 
     const payable = await kpiPayable(tx, sellerId, today);
     if (payable.throughMonth === null) throw new KpiError('month_open');

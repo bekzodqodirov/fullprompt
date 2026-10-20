@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-import { getActor } from '@/modules/platform/rbac/authorize';
+import { getActor, type Actor } from '@/modules/platform/rbac/authorize';
 import { requestMeta } from '@/modules/platform/auth/session';
 import {
   DealError,
@@ -24,10 +24,15 @@ import {
 import { mayEditDealTerms } from '@/modules/wms/deals/door';
 import { JOB_PROCESS_EVENTS, enqueue } from '@/modules/platform/jobs/boss';
 import { parseTypedMoney } from '@/modules/wms/calc/money-input';
+import { ftlDoorFor } from '@/modules/wms/ftl/door';
+import { isLoadMode } from '@/modules/wms/ftl/sql';
 
 export interface DealFormState {
   ok?: boolean;
   error?: string;
+  /** LTL / FTL (0135): the prixods a mode change left as they were, and why — named, never silent. */
+  ftlSkipped?: { number: string | null; why: string }[];
+  ftlChanged?: number;
 }
 
 /**
@@ -52,7 +57,7 @@ type DealGate = 'terms' | 'work';
 
 async function run(
   gate: DealGate,
-  work: (ctx: { actorId: string }) => Promise<unknown>,
+  work: (ctx: { actorId: string }, actor: Actor) => Promise<unknown>,
 ): Promise<DealFormState> {
   const actor = await getActor();
   if (!actor) return { error: 'forbidden' };
@@ -62,7 +67,7 @@ async function run(
   }
   const meta = await requestMeta();
   try {
-    await work({ actorId: actor.id, ...meta });
+    await work({ actorId: actor.id, ...meta }, actor);
     // Phase 7: a stage move emits an event a rule may be waiting on — kick
     // the worker so the rule fires now, not on the minute sweep. Failure to
     // kick must never fail the save.
@@ -99,6 +104,16 @@ function optionalMoney(value: FormDataEntryValue | null): number | null | undefi
   return parseTypedMoney(text) ?? Number.NaN;
 }
 
+/**
+ * The posted «Yuk turi» with the presser's door (0135) — or nothing when the
+ * form carried no choice (a screen one migration behind draws none), which
+ * the service reads as «unchanged».
+ */
+function readLoad(form: FormData, actor: Actor) {
+  const mode = form.get('loadMode');
+  return isLoadMode(mode) ? { mode, door: ftlDoorFor(actor) } : undefined;
+}
+
 function readDeal(form: FormData) {
   return dealSchema.safeParse({
     clientId: String(form.get('clientId') ?? ''),
@@ -120,8 +135,8 @@ export async function createDealAction(
   const parsed = readDeal(form);
   if (!parsed.success) return { error: 'validation' };
   let id: string | null = null;
-  const state = await run('terms', async (ctx) => {
-    id = await createDeal(parsed.data, ctx);
+  const state = await run('terms', async (ctx, actor) => {
+    id = await createDeal({ ...parsed.data, load: readLoad(form, actor) }, ctx);
   });
   // Straight to the card: a deal that was just created is a deal somebody is
   // about to price, and the list is one more tap in the way.
@@ -136,7 +151,17 @@ export async function updateDealAction(
 ): Promise<DealFormState> {
   const parsed = readDeal(form);
   if (!parsed.success) return { error: 'validation' };
-  return run('terms', (ctx) => updateDeal(id, parsed.data, ctx));
+  let moved: Awaited<ReturnType<typeof updateDeal>>['ftl'] = null;
+  const state = await run('terms', async (ctx, actor) => {
+    moved = (await updateDeal(id, { ...parsed.data, load: readLoad(form, actor) }, ctx)).ftl;
+  });
+  const cascade = moved as Awaited<ReturnType<typeof updateDeal>>['ftl'];
+  if (!state.ok || !cascade) return state;
+  return {
+    ...state,
+    ftlChanged: cascade.changed,
+    ftlSkipped: cascade.skipped.map((skip) => ({ number: skip.number, why: skip.why })),
+  };
 }
 
 /**
@@ -300,8 +325,9 @@ export async function linkReceiptAction(
   dealId: string | null,
 ): Promise<DealFormState> {
   // G1 a: the VED keeps ALL prixod linking — link, move, detach — and
-  // `linkReceipt` audits each one under the presser's name.
-  const state = await run('work', (ctx) => linkReceipt(receiptId, dealId, ctx));
+  // `linkReceipt` audits each one under the presser's name. The presser's
+  // FTL door decides whether the move carries an FTL deal's mark (0135).
+  const state = await run('work', (ctx, actor) => linkReceipt(receiptId, dealId, ctx, ftlDoorFor(actor)));
   revalidatePath(`/receipts/${receiptId}`);
   return state;
 }

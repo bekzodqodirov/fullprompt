@@ -42,6 +42,15 @@ export function windowLabel(from: Date, to: Date): string {
   return `${f(from)} — ${f(to)}`;
 }
 
+/** One seller's FTL for the separate, pointless line (0135, his 3b). */
+export interface FtlLine {
+  userId: string;
+  name: string;
+  m3: number;
+  kg: number;
+  receipts: number;
+}
+
 export interface RatingView {
   from: Date;
   to: Date;
@@ -53,6 +62,27 @@ export interface RatingView {
   records: { name: string; m3: number }[];
   unstamped: { m3: number; receipts: number };
   idleSellers: number;
+  /** The week's FTL per seller — out of the ranking and the team's kub, named apart. */
+  ftl: FtlLine[];
+}
+
+/** How many FTL lines the post names — the rest is a count. */
+export const FTL_ROWS = 10;
+
+/**
+ * The FTL block (0135, his 3b «alohida qatorda … ochkosiz»): AFTER the team and
+ * the goal, so «Jamoa:» is never read as including it; plain names, no rank,
+ * no mention, kub-first like the ranked rows. «prixod» and not «mashina»: a week
+ * counts cargo by its China receipt day, mostly before any truck exists.
+ */
+export function ftlBlock(rows: FtlLine[]): string[] {
+  if (rows.length === 0) return [];
+  const lines = [`🚛 ${b('FTL — butun mashina (ochkosiz):')}`];
+  for (const row of rows.slice(0, FTL_ROWS)) {
+    lines.push(h(`${row.name} — ${kub(row.m3)} kub · ${kgText(row.kg)} kg · ${row.receipts} prixod`));
+  }
+  if (rows.length > FTL_ROWS) lines.push(h(`… yana ${rows.length - FTL_ROWS} kishi`));
+  return lines;
 }
 
 /** How many people the post lists by name — the rest is a count, and Telegram's 4096 is never near. */
@@ -64,7 +94,8 @@ export function ratingHtml(v: RatingView): string {
   lines.push(h(windowLabel(v.from, v.to)));
   lines.push('');
   if (v.rows.length === 0) {
-    lines.push('Bu hafta hali yuk olib kelinmadi.');
+    // With an FTL line below, «no cargo» would contradict it (0135).
+    lines.push(v.ftl.length > 0 ? 'Bu hafta sborniy (LTL) yuk hali olib kelinmadi.' : 'Bu hafta hali yuk olib kelinmadi.');
   }
   for (const row of v.rows.slice(0, RATING_ROWS)) {
     const place = row.rank <= 3 ? MEDAL[row.rank - 1]! : `${row.rank}.`;
@@ -87,6 +118,8 @@ export function ratingHtml(v: RatingView): string {
         : `🎯 ${h(`Jamoa maqsadi: ${kub(v.team.m3)} / ${kub(v.goalM3)} kub — ${pct} % ${goalBar(v.team.m3, v.goalM3)}`)}`,
     );
   }
+  const ftl = ftlBlock(v.ftl);
+  if (ftl.length > 0) lines.push('', ...ftl, '');
   for (const s of v.streaks) lines.push(`🔥 ${h(`${s.name} — ${s.weeks} hafta ketma-ket 1-o'rinda!`)}`);
   for (const r of v.records) lines.push(`⭐ ${h(`${r.name} — shaxsiy rekord: ${kub(r.m3)} kub!`)}`);
   if (v.unstamped.receipts > 0) {

@@ -334,11 +334,11 @@ describe('the join is written by one function and only a person makes it count',
     const receiptId = await receiptOn(other);
     // Born with no deal, so `linkReceipt` is the door that makes it.
     await db.update(receipts).set({ dealId: null }).where(eq(receipts.id, receiptId));
-    await linkReceipt(receiptId, other, ctx());
+    await linkReceipt(receiptId, other, ctx(), null);
     const linked = await db.query.receipts.findFirst({ where: eq(receipts.id, receiptId) });
     expect(linked!.calcRequestId).not.toBeNull();
 
-    await linkReceipt(receiptId, null, ctx());
+    await linkReceipt(receiptId, null, ctx(), null);
     const cleared = await db.query.receipts.findFirst({ where: eq(receipts.id, receiptId) });
     expect(cleared!.calcRequestId).toBeNull();
     expect(cleared!.calcLinkSource).toBeNull();
@@ -385,7 +385,7 @@ describe('the join is written by one function and only a person makes it count',
     expect(before!.calcRequestId).toBe(requestId);
     expect(before!.calcLinkConfirmedAt).not.toBeNull();
 
-    await linkReceipt(receiptId, to, ctx());
+    await linkReceipt(receiptId, to, ctx(), null);
 
     const after = await db.query.receipts.findFirst({ where: eq(receipts.id, receiptId) });
     expect(after!.dealId).toBe(to);

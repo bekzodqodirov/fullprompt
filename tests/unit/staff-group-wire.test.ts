@@ -140,6 +140,7 @@ describe('the celebrations’ words', () => {
     currency: null,
     m3: null,
     kg: null,
+    ftl: false,
     monthWins: null,
     monthUsd: null,
   };
@@ -149,6 +150,7 @@ describe('the celebrations’ words', () => {
     currency: 'USD',
     m3: 18.456,
     kg: 2300.4,
+    ftl: false,
     monthWins: 4,
     monthUsd: 9800,
   };

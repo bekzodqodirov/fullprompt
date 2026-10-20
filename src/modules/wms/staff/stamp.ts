@@ -1,6 +1,8 @@
 import { sql, type SQL } from 'drizzle-orm';
 import type { Db, Tx } from '../../platform/db/client';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
+import { ftlReady, inheritStampedTx } from '../ftl/service';
+import { takeKpiSellerLocks } from './kpi-lock';
 
 /**
  * WHOSE cargo a prixod is (0117, the owner's 1a/2a, 2026-09-29): «a seller's
@@ -47,20 +49,30 @@ export async function stampUnattributedCargo(
   managerId: string,
   ctx: AuditContext,
 ): Promise<number> {
-  const rows = await exec.execute<{ id: string }>(sql`
-    UPDATE receipts SET sales_manager_id = ${managerId}::uuid
-     WHERE client_id = ${clientId}::uuid AND sales_manager_id IS NULL
-    RETURNING id`);
-  const n = rows.length;
-  if (n > 0) {
-    await writeAudit(exec, ctx, {
-      entityType: 'client',
-      entityId: clientId,
-      action: 'update',
-      after: { cargoStampedTo: managerId, receipts: n },
-    });
-  }
-  return n;
+  // LTL / FTL (0135): the seller's own FTL mark could not reach cargo that
+  // had no stamp — the day it becomes his, it does (inheritStampedTx). Pool
+  // probe first (#714; every caller is outside a transaction), then ONE
+  // transaction — a savepoint when the caller already holds one — with the
+  // seller's KPI lock before the receipt rows (the round's order).
+  const ftlOn = await ftlReady();
+  return exec.transaction(async (tx) => {
+    if (ftlOn) await takeKpiSellerLocks(tx, [managerId]);
+    const rows = await tx.execute<{ id: string }>(sql`
+      UPDATE receipts SET sales_manager_id = ${managerId}::uuid
+       WHERE client_id = ${clientId}::uuid AND sales_manager_id IS NULL
+      RETURNING id`);
+    const n = rows.length;
+    if (n > 0) {
+      await writeAudit(tx, ctx, {
+        entityType: 'client',
+        entityId: clientId,
+        action: 'update',
+        after: { cargoStampedTo: managerId, receipts: n },
+      });
+      if (ftlOn) await inheritStampedTx(tx, [...rows].map((row) => row.id), managerId, ctx);
+    }
+    return n;
+  });
 }
 
 /**

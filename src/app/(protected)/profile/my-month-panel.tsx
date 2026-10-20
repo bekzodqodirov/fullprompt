@@ -81,6 +81,14 @@ export async function MyMonthPanel({ data, showAdvance }: { data: MyMonth; showA
         </div>
       ) : null}
 
+      {/* The month's FTL (0135): out of the KPI above, named so the seller
+          sees why his kub there is smaller than what he brought. */}
+      {data.ftl ? (
+        <p className="border-t border-line pt-2 text-sm text-ink-600" data-testid="profile-month-ftl">
+          🚛 {t('ftlLine', { m3: data.ftl.m3.toFixed(2), n: data.ftl.receipts })}
+        </p>
+      ) : null}
+
       {data.upsale ? (
         <div className="space-y-1 border-t border-line pt-2 text-sm" data-testid="profile-month-upsale">
           <p className="text-2xs uppercase text-ink-500">{t('upsale')}</p>

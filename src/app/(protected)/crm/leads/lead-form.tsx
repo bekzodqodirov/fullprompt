@@ -3,6 +3,8 @@
 import { useActionState } from 'react';
 import { useTranslations } from 'next-intl';
 import type { CrmFormState } from '../actions';
+import { LoadModeField } from '@/components/load-mode-field';
+import { isFtlRefusal } from '@/modules/wms/ftl/door';
 
 interface Option {
   id: string;
@@ -23,6 +25,7 @@ export function LeadForm({
   owners,
   initial,
   quoteLocked,
+  load,
   children,
 }: {
   action: (state: CrmFormState, formData: FormData) => Promise<CrmFormState>;
@@ -59,10 +62,13 @@ export function LeadForm({
    * a changed quote anyway — the two agree, which is the point.
    */
   quoteLocked?: boolean;
+  /** LTL / FTL (0135): the stored mode and whether the viewer is the office; null = server behind. */
+  load?: { initial: 'ltl' | 'ftl'; office: boolean; creating?: boolean } | null;
   children?: React.ReactNode;
 }) {
   const t = useTranslations('crm');
   const tc = useTranslations('common');
+  const tf = useTranslations('ftl');
   const [state, formAction, pending] = useActionState<CrmFormState, FormData>(action, {});
 
   return (
@@ -207,6 +213,9 @@ export function LeadForm({
         </div>
       )}
 
+      {/* LTL / FTL (0135) — outside the lock above: a sealed price does not lock the mode. */}
+      <LoadModeField key={`load-${load?.initial ?? 'none'}`} load={load ?? null} />
+
       <div className="flex flex-wrap gap-2">
         <label className="text-sm">
           <span className="block text-xs text-ink-500">{t('nextAction')}</span>
@@ -245,7 +254,11 @@ export function LeadForm({
               ? t('badDate')
               : state.error === 'bad_option'
                 ? t('badOption')
-                : tc('error')}
+                : state.error === 'ftl_office_only' || state.error === 'ftl_not_yours'
+                  ? tf(`leadErrors.${state.error}`)
+                  : isFtlRefusal(state.error)
+                    ? tf(`errors.${state.error}`)
+                  : tc('error')}
         </p>
       )}
     </form>

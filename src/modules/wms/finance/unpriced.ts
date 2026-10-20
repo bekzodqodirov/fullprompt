@@ -5,6 +5,7 @@ import { parseDayOrInstant, tashkentDayStart } from '../../platform/time/tashken
 import { FOUND_BACK_SQL, RIDE_CAUSES, leftBehindSql, rideMovementSql, riderRowsSql } from '../batches/riders';
 import { crossesBorderSql, receivedInUzSql } from '../batches/internal';
 import { ISSUABLE_STATUSES } from '../issue/parties';
+import { loadFilterSql, type LoadFilter } from '../ftl/sql';
 
 /**
  * «Narxi yozilmagan yuk» — the ONE rule for which cargo has no price (owner,
@@ -94,7 +95,7 @@ export type UnpricedScope =
    * absent. The same set `staff/cargo.ts` counts, so the paid part is always
    * a part of the whole.
    */
-  | { kind: 'stamped'; sellerId: string | undefined; from: Date; to: Date }
+  | { kind: 'stamped'; sellerId: string | undefined; from: Date; to: Date; load: LoadFilter }
   /**
    * The cartons of the confirmed prixods linked to these DEALS whose client
    * IS the deal's client — the upsale's paid-cargo walk (3a). The client
@@ -194,7 +195,8 @@ export function unpricedScopeSql(scope: UnpricedScope): SQL {
     case 'stamped':
       return sql`${scope.sellerId ? sql`r.sales_manager_id = ${scope.sellerId}::uuid` : sql`r.sales_manager_id IS NOT NULL`}
         AND r.received_at >= ${scope.from.toISOString()}::timestamptz
-        AND r.received_at < ${scope.to.toISOString()}::timestamptz`;
+        AND r.received_at < ${scope.to.toISOString()}::timestamptz
+        AND ${loadFilterSql(sql`r.id`, scope.load)}`;
     case 'deals':
       return scope.dealIds.length
         ? sql`r.deal_id IN (${idList(scope.dealIds)})

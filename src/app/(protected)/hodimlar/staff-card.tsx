@@ -52,11 +52,14 @@ export async function StaffCard({
   tierLabel,
   bandLabel,
   closesOn,
+  ftl,
 }: {
   person: { id: string; name: string; active: boolean; loginEnabled: boolean; phone: string | null };
   salary: StaffTemplate[];
   others: StaffTemplate[];
   kpi: KpiMonthLine | undefined;
+  /** The month's FTL cargo (0135) — out of the KPI line above, named beside it. */
+  ftl: { receipts: number; m3: number } | undefined;
   payable: KpiPayable | undefined;
   /**
    * The KPI reads ran out of their budget and this person carries cargo —
@@ -104,6 +107,7 @@ export async function StaffCard({
   const showKpi =
     kpiUnavailable ||
     kpi !== undefined ||
+    ftl !== undefined ||
     (payable !== undefined && (payable.payableUsd > 0 || payable.overpaidUsd > 0));
 
   return (
@@ -256,6 +260,11 @@ export async function StaffCard({
                 {kpi.result.receipts?.length ? ` (${kpi.result.receipts.join(', ')})` : ''}
               </p>
             )
+          ) : null}
+          {ftl ? (
+            <p className="text-2xs text-ink-600" data-testid="staff-kpi-ftl">
+              🚛 {t('ftlLine', { m3: ftl.m3.toFixed(2), n: ftl.receipts })}
+            </p>
           ) : null}
           {kpi && !kpi.closed ? <p className="text-2xs text-ink-500">{t('monthOpen', { day: closesOn })}</p> : null}
           {payable ? (

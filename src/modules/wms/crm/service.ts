@@ -22,6 +22,9 @@ import { orderForMove, topOfColumn, type BoardTable } from './board-place';
 import { isUniqueViolation } from '../../platform/db/errors';
 import { logger } from '../../platform/logger';
 import { isServerBehind } from '../../platform/db/errors';
+import { ftlReady, leadIsFtl, notifyFtlMarked, setLeadFtlTx } from '../ftl/service';
+import { leadDealMoveRefusal, type FtlDoor } from '../ftl/door';
+import type { LoadMode } from '../ftl/sql';
 
 /**
  * The funnel's own board-order table (0075).
@@ -324,7 +327,8 @@ export const leadSchema = z.object({
   nextActionAt: OPTIONAL_DATE,
   nextActionNote: z.string().trim().max(500).optional().or(z.literal('')),
 });
-export type LeadInput = z.infer<typeof leadSchema>;
+/** The mode beside the validated fields, never inside them — see `DealInput` (0135). */
+export type LeadInput = z.infer<typeof leadSchema> & { load?: { mode: LoadMode; door: FtlDoor } };
 
 /** The first open stage, used when a lead is created without one. */
 async function defaultStageId() {
@@ -500,6 +504,14 @@ export async function createLead(input: LeadInput, ctx: AuditContext, opts?: Sys
     if (stage.kind === 'won') throw new CrmError('convert_required');
     if (stage.kind === 'lost') throw new CrmError('reason_required');
   }
+  // LTL / FTL (0135, his 2a) — asked about the very owner the INSERT writes.
+  const markFtl = input.load?.mode === 'ftl';
+  if (markFtl) {
+    if (!(await ftlReady())) throw new CrmError('server_behind');
+    const owner = input.ownerId || ctx.actorId || null;
+    const refusal = leadDealMoveRefusal(input.load!.door, { before: false, after: true, ownerBefore: owner, ownerAfter: owner });
+    if (refusal) throw new CrmError(refusal);
+  }
   const [row] = await db
     .insert(leads)
     .values({
@@ -526,12 +538,20 @@ export async function createLead(input: LeadInput, ctx: AuditContext, opts?: Sys
       boardOrder: await topOfColumn(db, LEAD_BOARD, stageId),
     })
     .returning();
+  if (markFtl) {
+    await setLeadFtlTx(db, row!.id, true, { actorId: input.load!.door.actorId, office: input.load!.door.office });
+  }
   await writeAudit(db, ctx, {
     entityType: 'lead',
     entityId: row!.id,
     action: 'create',
-    after: { name: input.name, phone: input.phone, stageId },
+    after: { name: input.name, phone: input.phone, stageId, ...(markFtl ? { freightMode: 'ftl' } : {}) },
   });
+  if (markFtl && !input.load!.door.office) {
+    await notifyFtlMarked({ kind: 'lead', id: row!.id, actorId: input.load!.door.actorId }).catch((err) =>
+      logger.error({ err, leadId: row!.id }, '[ftl] FtlMarked notice failed'),
+    );
+  }
   return row!;
 }
 
@@ -568,6 +588,24 @@ export async function updateLead(id: string, input: LeadInput, ctx: AuditContext
   const sealedTotal = await quoteLockedFor('lead', id);
   if (sealedTotal !== null && !sameMoney(sealedTotal, values.quotedAmount)) {
     throw new CrmError('quote_sealed');
+  }
+
+  // LTL / FTL (0135, his 2a), decided on the values about to be WRITTEN: a
+  // mode change, or an owner change on a lead that is FTL before or after,
+  // needs the door — and a save that carries none fails CLOSED (#790).
+  const ftlOn = await ftlReady();
+  if (!ftlOn && input.load?.mode === 'ftl') throw new CrmError('server_behind');
+  const wasFtl = ftlOn ? await leadIsFtl(db, id) : false;
+  const willFtl = input.load ? input.load.mode === 'ftl' : wasFtl;
+  if (willFtl !== wasFtl || ((wasFtl || willFtl) && values.ownerId !== before.ownerId)) {
+    if (!input.load) throw new CrmError('ftl_office_only');
+    const refusal = leadDealMoveRefusal(input.load.door, {
+      before: wasFtl,
+      after: willFtl,
+      ownerBefore: before.ownerId,
+      ownerAfter: values.ownerId,
+    });
+    if (refusal) throw new CrmError(refusal);
   }
 
   /*
@@ -629,6 +667,22 @@ export async function updateLead(id: string, input: LeadInput, ctx: AuditContext
       after: diff.after,
     });
   }
+  if (willFtl !== wasFtl) {
+    const door = input.load!.door;
+    await setLeadFtlTx(db, id, willFtl, { actorId: door.actorId, office: door.office });
+    await writeAudit(db, ctx, {
+      entityType: 'lead',
+      entityId: id,
+      action: 'update',
+      before: { freightMode: wasFtl ? 'ftl' : 'ltl' },
+      after: { freightMode: willFtl ? 'ftl' : 'ltl' },
+    });
+    if (willFtl && !door.office) {
+      await notifyFtlMarked({ kind: 'lead', id, actorId: door.actorId }).catch((err) =>
+        logger.error({ err, leadId: id }, '[ftl] FtlMarked notice failed'),
+      );
+    }
+  }
   if (values.stageId !== before.stageId) await announceLeadStage(row!, values.stageId, ctx);
   if (values.ownerId !== before.ownerId) await announceOwnerChange(id, values.ownerId, ctx.actorId);
   return row!;
@@ -642,11 +696,23 @@ export async function updateLead(id: string, input: LeadInput, ctx: AuditContext
  * for a form that HAS them all and wrong for a bulk action that has an id and
  * a name. The audit row says exactly what changed, which is the point.
  */
-export async function setLeadOwner(id: string, ownerId: string | null, ctx: AuditContext) {
+export async function setLeadOwner(
+  id: string,
+  ownerId: string | null,
+  ctx: AuditContext,
+  /**
+   * Handing an FTL lead to somebody else is the office's (0135, his 2a) — a
+   * seller's FTL mark lands on whoever owns the job, so a bulk «Biriktirish»
+   * must not move one. Absent = not the office: the sweep refuses that lead
+   * and goes on with the rest.
+   */
+  door: FtlDoor | null = null,
+) {
   if (!ctx.actorId) throw new CrmError('unauthenticated');
   const before = await db.query.leads.findFirst({ where: eq(leads.id, id) });
   if (!before) throw new CrmError('not_found');
   if (before.ownerId === ownerId) return;
+  if (!door?.office && (await ftlReady()) && (await leadIsFtl(db, id))) throw new CrmError('ftl_office_only');
   await db.update(leads).set({ ownerId, updatedAt: new Date() }).where(eq(leads.id, id));
   await writeAudit(db, ctx, {
     entityType: 'lead',
@@ -922,6 +988,10 @@ export async function winLead(
       quotedWeightKg: lead.quotedWeightKg === null ? null : Number(lead.quotedWeightKg),
     },
     ctx,
+    // The lead's FTL travels with its quote (his 1a), marker and all — the
+    // lead's door was asked when it was set, so the presser of «Yutildi» is
+    // not asked again AFTER the client has already been written (#882).
+    { carryFtlFromLead: id },
   );
   const deal = await db.query.deals.findFirst({ where: eq(deals.id, dealId) });
 
