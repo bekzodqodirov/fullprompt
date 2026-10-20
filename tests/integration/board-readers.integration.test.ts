@@ -296,6 +296,57 @@ describe('the customer reads the same truck', () => {
     expect(truck.remainingDays).toBeNull();
   });
 
+  it('one lot on two trucks: the one at its gate does not take the road and the date from the one still on the way', async () => {
+    const route = routeFor('KA', 'TAS1')!;
+    const gate = route.points[route.points.length - 1]!;
+    const atGate = await mintBatch('KA', 'TAS1', { departedAt: new Date(Date.now() - 60 * HOUR) });
+    const onRoad = await mintBatch('KA', 'TAS1', { departedAt: new Date(Date.now() - 10 * HOUR) });
+    const [a, b] = await db.select({ id: boxes.id }).from(boxes).where(eq(boxes.lotId, lotId)).orderBy(boxes.id);
+    for (const [box, truck] of [[a!.id, atGate.id], [b!.id, onRoad.id]] as const) {
+      await db.update(boxes).set({ status: 'in_transit', currentBatchId: truck, currentWarehouseId: null }).where(eq(boxes.id, box));
+    }
+    await db.insert(driverPositions).values({
+      batchId: atGate.id,
+      lat: gate.y.toFixed(6),
+      lon: gate.x.toFixed(6),
+      accuracyM: 15,
+      recordedAt: new Date(Date.now() - HOUR),
+      receivedAt: new Date(Date.now() - HOUR),
+    });
+    const g = await group();
+    expect(g.n).toBe(2);
+    // The group lands when its LAST carton does: the road truck's date.
+    const office = (await trucksOnRoadRows([onRoad.id])).get(onRoad.id)!;
+    expect(office.eta).not.toBeNull();
+    // Both windows end at the same moment, computed a few milliseconds apart.
+    expect(g.transit!.etaToIso).not.toBeNull();
+    expect(Math.abs(new Date(g.transit!.etaToIso!).getTime() - new Date(office.eta!.toIso).getTime())).toBeLessThan(60_000);
+    expect(g.transit!.progress!).toBeLessThan(0.5);
+  });
+
+  it('a dated truck an hour out reads «~0–0.1 kun» on the map and in the bot — never «~0–0»', async () => {
+    const b = await mintBatch('KA', 'TAS1', { departedAt: new Date(Date.now() - 70 * HOUR) });
+    const route = routeFor('KA', 'TAS1')!;
+    const gate = route.points[route.points.length - 1]!;
+    const prev = route.points[route.points.length - 2]!;
+    const len = Math.hypot(prev.x - gate.x, prev.y - gate.y);
+    const p = { x: gate.x + ((prev.x - gate.x) / len) * 0.11, y: gate.y + ((prev.y - gate.y) / len) * 0.11 };
+    const marker = (await truckFor(b, ends('KA', 'TAS1'), {}, {
+      batchId: b.id,
+      lat: p.y,
+      lon: p.x,
+      recordedAt: new Date(Date.now() - 30 * 60_000),
+      source: 'device',
+      ageMinutes: 30,
+      fresh: true,
+    }))!;
+    // An hour or so left: dated, and the days say so instead of «0–0».
+    expect(marker.overdue).toBe(false);
+    expect(marker.dated).toBe(true);
+    expect(marker.remainingDays[1]).toBeGreaterThan(0);
+    expect(marker.remainingDays[1]).toBeLessThanOrEqual(0.2);
+  });
+
   it('the cabinet’s % follows the driver’s phone, the office’s number to the percent', async () => {
     const b = await mintBatch('KA', 'TAS1', { departedAt: new Date(Date.now() - 30 * HOUR) });
     await ride(b.id);

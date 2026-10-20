@@ -407,6 +407,7 @@
     "agoDay": "{n}天前",
     "truckUnloadedOpen": "已卸完，未结束",
     "truckAtGate": "已到达，未卸货",
+    "truckAtGateLate": "已过预计日期——请检查卸货",
     "truckUnloadedOpenHint": "未点“{button}”"
   },
   "inventory": {

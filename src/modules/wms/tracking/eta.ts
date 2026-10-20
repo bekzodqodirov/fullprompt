@@ -11,7 +11,7 @@ import {
   type RoutePoint,
   type TransitEstimate,
 } from './engine';
-import { CHECKPOINT_KEYS, CHECKPOINT_SEGMENTS, routeFor, type CheckpointKey } from './map-data';
+import { CHECKPOINT_KEYS, CHECKPOINT_SEGMENTS, routeFor, YARD_POINTS, type CheckpointKey } from './map-data';
 import { zoneOfGenericRoad, zoneOfLeg, zoneOfRoute, type RoadZone } from './place';
 
 /**
@@ -349,13 +349,39 @@ export const PLACE_TOLERANCE_DEG = 2.5;
 export const QUEUE_RADIUS_DEG = 0.05;
 
 /**
- * A fix this near the road's END is at the destination's gate — the yard:
- * the truck has arrived by its own phone and waits for the unload scan that
- * makes it «arrived». Nothing is left to drive, so it carries no date, and it
- * is not late (the review: a phone at the Tashkent yard read «muddatdan
- * oshdi — haydovchi bilan bog'laning» within the hour, and overnight).
+ * A fix this near the destination's YARD — the road's end, or `YARD_POINTS`
+ * where the drawn dot is elsewhere — is at the gate: the truck has arrived by
+ * its own phone and waits for the unload scan that makes it «arrived».
+ * Nothing is left to drive, so it carries no date, and it is not late until
+ * its schedule is (the review: a phone at the Tashkent yard read «muddatdan
+ * oshdi — haydovchi bilan bog'laning» within the hour, and overnight). The
+ * FIX'S OWN distance decides, not its projection: a phone past the road's end
+ * projects onto it from anywhere within the tolerance (the recheck).
  */
 export const GATE_RADIUS_DEG = QUEUE_RADIUS_DEG;
+
+/**
+ * The latest a truck can land by its own SLOWEST pace from where an anchor
+ * puts it at `atMs`: the rest of a moving leg at its slowest hours for the
+ * distance left, the rest of a queue at its longest wait LESS what it has
+ * stood (the engine's proportional remainder would read 9 h of a 72 h wait
+ * after 42 h stood, and a fresher «still queueing» fix would move the alarm
+ * EARLIER — the recheck), then every later leg at its slowest. `route` is the
+ * walk's own, typed queues in place.
+ */
+function slowestArrivalMs(route: RouteDef, anchor: Anchor, atMs: number): number {
+  const seg = route.segments[anchor.segIdx]!;
+  const stood = Math.max(0, (atMs - anchor.legStartMs) / HOUR_MS);
+  const mid = segMid(seg.hours);
+  const here =
+    seg.span[0] === seg.span[1]
+      ? Math.max(0, seg.hours[1] - stood)
+      : mid > 0
+        ? seg.hours[1] * Math.max(0, 1 - stood / mid)
+        : 0;
+  const later = route.segments.slice(anchor.segIdx + 1).reduce((sum, s) => sum + s.hours[1], 0);
+  return atMs + (here + later) * HOUR_MS;
+}
 
 /**
  * The driver's newest fix as the placement reads it (`latestPositions`): its
@@ -580,25 +606,34 @@ export function placeTruck(input: PlaceInput, waits: BorderHours, now: Date = ne
     route,
   });
 
-  if (anchor.kind === 'fix' && total - anchor.along! <= GATE_RADIUS_DEG) {
+  // The slowest arrival from a fix, ONE figure for the due window and for
+  // the end of the date while the walk runs (it must not drop below the
+  // deadline and then jump back when the walk turns due — the recheck).
+  const latestMs = anchor.kind === 'fix' ? slowestArrivalMs(route, anchor, anchor.atMs!) : null;
+
+  const yard = YARD_POINTS[input.destCode] ?? base.points[base.points.length - 1]!;
+  if (anchor.kind === 'fix' && chordDeg({ x: fix!.lon, y: fix!.lat }, yard) <= GATE_RADIUS_DEG) {
     // At the destination's gate by the phone: arrived in all but the scan.
+    // Late only once the SCHEDULE (the departure's, or the pin's) has run
+    // out with nobody having scanned it off — then the date has passed and
+    // the cargo is still not received, which is somebody's job.
     const leg = base.segments[base.segments.length - 1]!;
     return {
       zone: zoneOfLeg(leg.key),
       segKey: leg.key,
-      progress: share(anchor.along!),
+      progress: 1,
       remainingHours: null,
-      overdue: false,
+      overdue: walkFrom(base, prior, waits, input.departedAt, now).est.overdue,
       atGate: true,
       source,
       evidenceAt,
       fresh,
-      point: fixPoint,
+      point: { x: fix!.lon, y: fix!.lat },
       route,
     };
   }
 
-  if (est.overdue && anchor.kind === 'fix') {
+  if (est.overdue && latestMs !== null) {
     // The walk from the fix ran out at the leg's TYPICAL pace — and a fix
     // says where the truck was, not how fast it goes. It is late only once
     // its own SLOWEST pace from that point is spent too, and one reporting
@@ -610,8 +645,6 @@ export function placeTruck(input: PlaceInput, waits: BorderHours, now: Date = ne
     // nor can a wait the logist types for that queue later (the fixes'
     // review: a first version held such a truck «on time, today» for the
     // whole DEPARTURE schedule, which still counted the queues behind it).
-    const atMs = anchor.atMs!;
-    const latestMs = atMs + walkFrom(base, anchor, waits, input.departedAt, new Date(atMs)).est.remainingHours[1] * HOUR_MS;
     if (now.getTime() <= latestMs + FRESH_MINUTES * 60_000) {
       const left = Math.max(0, Math.round((latestMs - now.getTime()) / HOUR_MS));
       return placed(
@@ -644,7 +677,12 @@ export function placeTruck(input: PlaceInput, waits: BorderHours, now: Date = ne
     };
   }
 
-  return placed(est, fresh && fixPoint ? fixPoint : { x: est.x, y: est.y });
+  // From a fix the window closes on its slowest arrival, never earlier.
+  const window: [number, number] =
+    latestMs === null
+      ? est.remainingHours
+      : [est.remainingHours[0], Math.max(est.remainingHours[1], Math.round((latestMs - now.getTime()) / HOUR_MS))];
+  return placed({ ...est, remainingHours: window }, fresh && fixPoint ? fixPoint : { x: est.x, y: est.y });
 }
 
 /**

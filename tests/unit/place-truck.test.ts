@@ -126,8 +126,9 @@ describe('a fix places the truck (5a)', () => {
     expect(place.zone).toBe('border');
     // The schedule would reach the post 5 h from now, so the truck entered
     // at the fix: the whole wait (24-72 h, half an hour stood) plus the two
-    // legs after it (36-48 h each).
-    expect(place.remainingHours).toEqual([96, 167]);
+    // legs after it (36-48 h each) — the slowest end is the longest wait
+    // LESS what it stood, 71.5 + 48 + 48 h.
+    expect(place.remainingHours).toEqual([96, 168]);
   });
 
   it('just past the post it is on the next leg — a truck past Yallama is in Uzbekistan', () => {
@@ -145,7 +146,9 @@ describe('a fix places the truck (5a)', () => {
     const queued = placeTruck({ ...HOR_TAS, departedAt: ago(150), checkpoint: null, fix: fixAt(approach, 1) }, {}, NOW);
     expect(queued.segKey).toBe('uz_queue');
     expect(queued.zone).toBe('border');
-    expect(queued.remainingHours).toEqual([29, 43]);
+    // Stood 51 h of a 72-96 h queue: at the slowest it waits 45 h more,
+    // then Yallama → Tashkent's 6 h — from the fix an hour ago.
+    expect(queued.remainingHours).toEqual([29, 50]);
   });
 
   it('a stale fix still anchors: the truck walks on from it, it does not jump back', () => {
@@ -291,7 +294,7 @@ describe('a queue the fix disproves is counted from the fix', () => {
     expect(place.segKey).toBe('border_wait');
     expect(place.zone).toBe('border');
     // Entered at the fix: the queue less the half-hour stood, then kg and uz.
-    expect(place.remainingHours).toEqual([96, 167]);
+    expect(place.remainingHours).toEqual([96, 168]);
   });
 
   it('Khorgos, 96 h late: in the queue, at the road up to the post', () => {
@@ -377,10 +380,14 @@ describe('a truck ahead of its schedule is not overdue — and a late one is', (
     expect(place.zone).toBe('uz');
     expect(place.source).toBe('gps');
     expect(place.point).toEqual(tas);
-    // Overnight, and a week later, it is still at its gate: nobody scanned it
-    // off, and a truck in the yard is not «call the driver».
-    expect(placeTruck({ ...KA_TAS, departedAt: ago(85), checkpoint: null, fix: fixAt(tas, 12) }, {}, NOW).atGate).toBe(true);
-    expect(placeTruck({ ...KA_TAS, departedAt: ago(300), checkpoint: null, fix: fixAt(tas, 170) }, {}, NOW).overdue).toBe(false);
+    // Overnight it is still at its gate, not late: a truck in the yard is not
+    // «call the driver».
+    const night = placeTruck({ ...KA_TAS, departedAt: ago(85), checkpoint: null, fix: fixAt(tas, 12) }, {}, NOW);
+    expect(night).toMatchObject({ atGate: true, overdue: false });
+    // Once its schedule has run out with nobody having scanned it off, it is
+    // late — at its gate (the unloading is the late thing, not the driver).
+    const week = placeTruck({ ...KA_TAS, departedAt: ago(300), checkpoint: null, fix: fixAt(tas, 170) }, {}, NOW);
+    expect(week).toMatchObject({ atGate: true, overdue: true });
   });
 
   it('12 km before the yard, two hours on: due, not overdue — and no date of «today»', () => {
@@ -468,5 +475,50 @@ describe('overdue with nothing but the departure is drawn nowhere', () => {
     expect(across.point).toBeNull();
     const china = placeTruck({ originCode: 'YW', destCode: 'KA', originCountry: 'CN', destCountry: 'CN', departedAt: ago(800), checkpoint: null }, {}, NOW);
     expect(china.point).toBeNull();
+  });
+});
+
+describe('the fixes’ recheck: the yard is where the warehouse stands, and a queue is late at its longest wait', () => {
+  const KA_TAS2 = { originCode: 'KA', destCode: 'TAS2', originCountry: 'CN', destCountry: 'UZ' };
+  const tashkent = { x: 69.24, y: 41.31 };
+
+  it('a phone in the TAS2 yard is at its gate — the dot drawn 85 km off is only a drawing', () => {
+    for (const hours of [1, 12]) {
+      const place = placeTruck({ ...KA_TAS2, departedAt: ago(90), checkpoint: null, fix: fixAt(tashkent, hours) }, {}, NOW);
+      expect(place).toMatchObject({ atGate: true, overdue: false, remainingHours: null, progress: 1 });
+    }
+  });
+
+  it('a phone that only PROJECTS onto the road’s end is not at the gate', () => {
+    // Kokand is a long way past nothing, but on a road into Andijan a fix
+    // well off the line projected onto its end used to read «at the gate».
+    const kokand = { x: 70.94, y: 40.53 };
+    const place = placeTruck(
+      { originCode: 'KA', destCode: 'AND', originCountry: 'CN', destCountry: 'UZ', departedAt: ago(90), checkpoint: null, fix: fixAt(kokand, 1) },
+      {},
+      NOW,
+    );
+    expect(place.atGate).toBe(false);
+  });
+
+  it('a fresher «still in the queue» fix never brings the alarm EARLIER', () => {
+    // KA → TAS1, the schedule's queue entry at D+18 (to_border 12-24 h).
+    const D = ago(600);
+    const near = toward(kaTas.points[kaPost]!, kaTas.points[kaPost - 1]!, 0.01);
+    const firstOverdue = (fixAtHour: number) => {
+      const fix = { ...fixAt(near, 0), recordedAt: new Date(D.getTime() + fixAtHour * HOUR) };
+      for (let h = fixAtHour; h <= 400; h += 0.25) {
+        if (placeTruck({ ...KA_TAS, departedAt: D, checkpoint: null, fix }, {}, new Date(D.getTime() + h * HOUR)).overdue) return h;
+      }
+      return null;
+    };
+    const at30 = firstOverdue(30)!;
+    const at50 = firstOverdue(50)!;
+    const at60 = firstOverdue(60)!;
+    expect(at50).toBeGreaterThanOrEqual(at30);
+    expect(at60).toBeGreaterThanOrEqual(at50);
+    // By his own numbers: in the queue from D+18, at most 72 h, then
+    // 48 + 48 h, then one reporting window — late only after D+194.
+    expect(at30).toBeGreaterThanOrEqual(18 + 72 + 48 + 48 + 8);
   });
 });

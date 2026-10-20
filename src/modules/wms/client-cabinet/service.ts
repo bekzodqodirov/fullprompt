@@ -317,6 +317,15 @@ const ACTIVE_STATUSES: string[] = [...CLIENT_ACTIVE_STATUSES];
 interface CabinetTruck {
   stage: StageBatch;
   transit: CargoTransit | null;
+  /**
+   * When it is expected to land, for ORDERING two trucks on one rung and
+   * nothing else (never shown): its window's end; «now» for a truck with no
+   * date that is not late — at its gate by the phone, or due now — and the
+   * far future for a late one. Ranking a dateless truck as the latest let a
+   * truck that had ARRIVED by its phone take the group's road and date from
+   * the one still 85 % of the way back (the fixes' recheck).
+   */
+  arriveBy: string;
   /** When the truck was first known to be in Uzbekistan (pin or arrival). */
   inUzAt: Date | null;
   customsClearedAt: Date | null;
@@ -383,6 +392,7 @@ async function trucksFor(batchIds: string[]): Promise<Map<string, CabinetTruck>>
         : null;
     out.set(r.id, {
       stage: stageBatchOf({ ...r, trackingCheckpoint: r.checkpoint }),
+      arriveBy: window?.toIso ?? (place.overdue && !place.atGate ? '9999' : now.toISOString()),
       // Only while it drives: an ARRIVED truck still carrying cartons nobody
       // has scanned off has no % and no date left (the walk knows no arrival,
       // and the office's board says «Yetib keldi» — O15, the review).
@@ -595,7 +605,7 @@ export async function cargoOverview(clientId: string): Promise<CabinetLot[]> {
 
   const byLot = new Map<string, CabinetLot>();
   const lotOf = new Map<string, { kg: number; m3: number; boxes: number }>();
-  const stageCounts = new Map<string, Map<CargoStage, { n: number; transit: CargoTransit | null }>>();
+  const stageCounts = new Map<string, Map<CargoStage, { n: number; transit: CargoTransit | null; arriveBy: string }>>();
   for (const r of rows) {
     let lot = byLot.get(r.lotId);
     if (!lot) {
@@ -630,13 +640,14 @@ export async function cargoOverview(clientId: string): Promise<CabinetLot[]> {
     // Two trucks on the same rung keep the LATER-arriving one's road: the
     // group is not complete until the last of it lands.
     const transit = isMovingStage(stage) ? (truck?.transit ?? null) : null;
-    const keep =
-      !prev?.transit ||
-      (transit &&
-        (transit.etaToIso ?? '9999') > (prev.transit.etaToIso ?? '9999'))
-        ? (transit ?? prev?.transit ?? null)
-        : prev.transit;
-    counts.set(stage, { n: (prev?.n ?? 0) + Number(r.n), transit: keep });
+    const arriveBy = truck?.arriveBy ?? '9999';
+    const later = !prev?.transit || (transit !== null && arriveBy > prev.arriveBy);
+    const keep = later ? (transit ?? prev?.transit ?? null) : prev.transit;
+    counts.set(stage, {
+      n: (prev?.n ?? 0) + Number(r.n),
+      transit: keep,
+      arriveBy: later && transit ? arriveBy : (prev?.arriveBy ?? arriveBy),
+    });
     lot.total += Number(r.n);
     // The share of the WHOLE active count, once, below — not a sum of
     // per-status shares, which can round the other way from the push.

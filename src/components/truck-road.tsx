@@ -120,9 +120,11 @@ export async function truckRoadWords({ counts = true }: { counts?: boolean } = {
     } else {
       parts.push(t('roadDays', { n: row.days }));
       if (row.kind === 'overdue') {
+        // At its gate the driver has done his part: the late thing is the
+        // unloading, and «call the driver» would send the office the wrong way.
         parts.push(
           <span key="late" className="font-semibold text-warn">
-            {tm('overdue')}
+            {row.atGate ? t('truckAtGateLate') : tm('overdue')}
           </span>,
         );
       } else if (row.eta) {

@@ -407,6 +407,7 @@
     "agoDay": "{n} дн. назад",
     "truckUnloadedOpen": "Выгружена, не закрыта",
     "truckAtGate": "На месте, не разгружена",
+    "truckAtGateLate": "срок прошёл — проверьте разгрузку",
     "truckUnloadedOpenHint": "«{button}» не нажата"
   },
   "inventory": {

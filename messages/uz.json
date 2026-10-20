@@ -407,6 +407,7 @@
     "agoDay": "{n} kun oldin",
     "truckUnloadedOpen": "Tushirildi, yopilmagan",
     "truckAtGate": "Manzilda, tushirilmagan",
+    "truckAtGateLate": "muddati o‘tgan — tushirishni tekshiring",
     "truckUnloadedOpenHint": "«{button}» bosilmagan"
   },
   "inventory": {

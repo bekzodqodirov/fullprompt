@@ -226,8 +226,12 @@ export function truckRow(input: TruckInput, now: Date, today: string, waits: Bor
     return { ...off, kind: 'no_schedule', roadPct: null, eta: null, arrivalOrder: null };
   }
   if (place.atGate) {
-    // Arrived by the phone, waiting for the scan: first in the list, no date.
-    return { ...off, kind: 'on_road', roadPct: pct, eta: null, arrivalOrder: 0 };
+    // Arrived by the phone, waiting for the scan: first in the list, no date
+    // — and late, ranked with the late, once its schedule has run out with
+    // nobody having scanned it off.
+    return place.overdue
+      ? { ...off, kind: 'overdue', roadPct: pct, eta: null, arrivalOrder: null }
+      : { ...off, kind: 'on_road', roadPct: pct, eta: null, arrivalOrder: 0 };
   }
   if (place.overdue || !place.remainingHours) {
     // Spent: no date. The bar stays where the newest evidence last put the

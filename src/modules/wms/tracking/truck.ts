@@ -220,7 +220,9 @@ export async function truckFor(
     progress: place.progress,
     overdue: place.overdue,
     remainingDays: remaining
-      ? [Math.round((remaining[0] / 24) * 10) / 10, Math.round((remaining[1] / 24) * 10) / 10]
+      ? // The upper end rounded UP: a dated truck an hour out is «~0–0.1 kun»,
+        // never the «~0–0 kun» `placeDated` exists to keep off every screen.
+        [Math.round((remaining[0] / 24) * 10) / 10, Math.ceil((remaining[1] / 24) * 10) / 10]
       : [0, 0],
     // The one rule every reader asks (`placeDated`), on a moving rung (O15).
     dated: placeDated(place) && isMovingStage(stage),

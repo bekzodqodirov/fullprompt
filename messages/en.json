@@ -407,6 +407,7 @@
     "agoDay": "{n} d ago",
     "truckUnloadedOpen": "Unloaded, not closed",
     "truckAtGate": "At gate, not unloaded",
+    "truckAtGateLate": "past its date — check the unloading",
     "truckUnloadedOpenHint": "«{button}» not pressed"
   },
   "inventory": {
