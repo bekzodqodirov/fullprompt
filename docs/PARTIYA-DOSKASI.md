@@ -112,7 +112,9 @@ the row is «Tushirilmay turibdi — tushirishni tekshiring» (kind `stuck`, the
 lorry red on the map) — the scan-arrived truck's own clock (`isStuckAtGate`),
 so the attention row and the 20:00 summary count both. The first unload scan
 does not restart it: an arrived truck stood since the earlier of its scan and
-the phone's yard fix before that scan. A trip that STARTS in its destination's
+the phone's yard fix before that scan (`TruckRow.stoodSince`) — the board's
+arrived column orders by it and prints it («Keldi 16.10 (GPS)»), the truck
+card's ladder dates by it, the bot and /trucks judge by it. A trip that STARTS in its destination's
 yard (TAS1 → TAS2) is never at the gate by the phone (`gateYard`). The
 schedule-based gate clock this replaced flagged a truck that arrived late
 five minutes after it pulled in, and let a late pin hold the alarm back for
