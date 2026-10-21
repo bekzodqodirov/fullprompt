@@ -2,13 +2,28 @@ import ExcelJS from 'exceljs';
 import { parseGoods, type Cell, type GoodsRow } from './goods-import';
 import {
   MAX_COLS,
+  MAX_MARKUP_CHARS,
   MAX_ROWS,
   htmlTableSheets,
   isCompoundFile,
+  markupOf,
   readXls,
   spreadsheetMlSheets,
   type SheetRows,
 } from './xls';
+
+/**
+ * The most text a spreadsheet hands the model — per file, every sheet's text
+ * together. The model reads the first 15,000 characters of the sheets'
+ * text and no more, so a longer string was memory and nothing else: 41 KB
+ * of XLSX whose cells all point at one 30,000-character shared string became
+ * a 510-million-character text held for the intake's 30 minutes (the review;
+ * three such forwards ended the process).
+ */
+export const SHEET_TEXT_BUDGET = 15_000;
+
+/** A cell in that text is cut where `parseGoods` cuts a description. */
+const CELL_TEXT_CHARS = 300;
 
 /**
  * A spreadsheet the customer sent, read into rows.
@@ -63,9 +78,14 @@ export async function workbookRows(body: ArrayBuffer | Buffer): Promise<Cell[][]
  * in, so a mis-split file is a refusal, not a wrong invoice.
  */
 export function csvRows(text: string): Cell[][] {
-  const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+  // Bounded like every other shape (`MAX_ROWS` × `MAX_COLS`): one line of a
+  // million commas was a million-column header the detector walked per key.
+  const lines = text
+    .split(/\r?\n/)
+    .filter((l) => l.trim().length > 0)
+    .slice(0, MAX_ROWS);
   if (lines.length === 0) return [];
-  const first = lines[0]!;
+  const first = lines[0]!.slice(0, 64 * 1024);
   const delim = [';', '\t', ','].reduce((best, d) =>
     first.split(d).length > first.split(best).length ? d : best,
   );
@@ -76,7 +96,7 @@ function splitCsvLine(line: string, delim: string): Cell[] {
   const out: Cell[] = [];
   let cell = '';
   let quoted = false;
-  for (let i = 0; i < line.length; i += 1) {
+  for (let i = 0; i < line.length && out.length < MAX_COLS; i += 1) {
     const ch = line[i]!;
     if (quoted) {
       if (ch === '"' && line[i + 1] === '"') {
@@ -92,7 +112,7 @@ function splitCsvLine(line: string, delim: string): Cell[] {
       cell = '';
     } else cell += ch;
   }
-  out.push(cell.trim() || null);
+  if (out.length < MAX_COLS) out.push(cell.trim() || null);
   return out;
 }
 
@@ -116,7 +136,9 @@ export async function workbookSheets(body: ArrayBuffer | Buffer): Promise<SheetR
       for (let c = 1; c <= Math.min(row.cellCount, MAX_COLS); c += 1) values.push(cellValue(row.getCell(c).value));
       rows.push(values);
     });
-    sheets.push({ name: sheet.name, rows });
+    // exceljs hands back every sheet whatever its `state`.
+    const hidden = sheet.state === 'hidden' || sheet.state === 'veryHidden';
+    sheets.push(hidden ? { name: sheet.name, rows, hidden } : { name: sheet.name, rows });
   }
   return sheets;
 }
@@ -156,18 +178,48 @@ export type GoodsFileRead =
    * double the order. The other sheets go to the model as `text` (their
    * gross weights and volumes are the shipment's totals).
    */
-  | { kind: 'goods'; goods: GoodsRow[]; sheet: string; sheets: number; text: string }
+  | { kind: 'goods'; goods: GoodsRow[]; sheet: string; sheets: number; text: string; textCut: boolean }
   /** A table with no header the reader knows — handed to the model as text. */
-  | { kind: 'text'; text: string; sheets: number }
-  /** A spreadsheet that cannot be read, and why — said to the seller. */
+  | { kind: 'text'; text: string; sheets: number; textCut: boolean }
+  /**
+   * A spreadsheet that cannot be read, and why — said to the seller. A markup
+   * text past `MAX_MARKUP_CHARS` is `broken`: «save it again» (as .xlsx) is
+   * the honest cure.
+   */
   | { kind: 'refused'; reason: 'old_format' | 'encrypted' | 'broken' | 'empty' };
 
-/** A table as text for the model: one line per row, cells joined by « | ». */
-function sheetAsText(sheet: SheetRows): string {
-  const lines = sheet.rows
-    .map((row) => row.map((cell) => (cell === null ? '' : String(cell).trim())).filter(Boolean).join(' | '))
-    .filter(Boolean);
-  return lines.length ? `[${sheet.name}]\n${lines.join('\n')}` : '';
+/**
+ * Sheets as text for the model: `[name]`, then one line per row with its
+ * cells joined by « | ». Built under ONE budget for the whole file and
+ * stopped where it runs out — never joined first and sliced after (that join
+ * WAS the 510-million-character string). `cut` says the model saw only the
+ * beginning (`textCut` on the answer).
+ */
+function sheetsAsText(sheets: SheetRows[]): { text: string; cut: boolean } {
+  let text = '';
+  let cut = false;
+  const add = (piece: string): boolean => {
+    const room = SHEET_TEXT_BUDGET - text.length;
+    if (piece.length > room) {
+      text += piece.slice(0, room);
+      cut = true;
+      return false;
+    }
+    text += piece;
+    return true;
+  };
+  const cellText = (cell: Cell) => (cell === null ? '' : String(cell).trim().slice(0, CELL_TEXT_CHARS));
+  each: for (const sheet of sheets) {
+    let opened = false;
+    for (const row of sheet.rows) {
+      const line = row.map(cellText).filter(Boolean).join(' | ');
+      if (!line) continue;
+      const head = opened ? '\n' : `${text ? '\n\n' : ''}[${sheet.name}]\n`;
+      opened = true;
+      if (!add(head + line)) break each;
+    }
+  }
+  return { text, cut };
 }
 
 /**
@@ -184,6 +236,11 @@ function sheetAsText(sheet: SheetRows): string {
  * company name, the address and «Invoice No» became goods and overruled the
  * model's reading); it goes to the model as text, which can read a table it
  * has never seen.
+ *
+ * Only VISIBLE sheets are chosen from (the review: a hidden 300-line price
+ * list behind the order form's drop-downs out-counted the 20-line order and
+ * became the job). A workbook of nothing but hidden sheets — no office writes
+ * one, a script might — is read as it is rather than called empty.
  */
 export async function readGoodsFile(body: Buffer, contentType: string | null): Promise<GoodsFileRead | null> {
   let sheets: SheetRows[] | null = null;
@@ -196,13 +253,15 @@ export async function readGoodsFile(body: Buffer, contentType: string | null): P
     sheets = xls.sheets;
   } else if (looksTextual(body, contentType)) {
     const text = decodeText(body);
+    if (markupOf(text) !== null && text.length > MAX_MARKUP_CHARS) return { kind: 'refused', reason: 'broken' };
     sheets = spreadsheetMlSheets(text) ?? htmlTableSheets(text) ?? [{ name: 'CSV', rows: csvRows(text) }];
   } else {
     return null;
   }
 
+  const shown = sheets.filter((sheet) => !sheet.hidden);
   let best: { sheet: SheetRows; goods: GoodsRow[] } | null = null;
-  const filled = sheets.filter((sheet) =>
+  const filled = (shown.length > 0 ? shown : sheets).filter((sheet) =>
     sheet.rows.some((row) => row.some((cell) => cell !== null && String(cell).trim() !== '')),
   );
   for (const sheet of filled) {
@@ -211,15 +270,18 @@ export async function readGoodsFile(body: Buffer, contentType: string | null): P
       best = { sheet, goods: parsed.goods };
     }
   }
-  const others = filled
-    .filter((sheet) => sheet !== best?.sheet)
-    .map(sheetAsText)
-    .filter(Boolean)
-    .join('\n\n');
+  const others = sheetsAsText(filled.filter((sheet) => sheet !== best?.sheet));
   if (best) {
-    return { kind: 'goods', goods: best.goods, sheet: best.sheet.name, sheets: filled.length, text: others };
+    return {
+      kind: 'goods',
+      goods: best.goods,
+      sheet: best.sheet.name,
+      sheets: filled.length,
+      text: others.text,
+      textCut: others.cut,
+    };
   }
-  if (others) return { kind: 'text', text: others, sheets: filled.length };
+  if (others.text) return { kind: 'text', text: others.text, sheets: filled.length, textCut: others.cut };
   return { kind: 'refused', reason: 'empty' };
 }
 

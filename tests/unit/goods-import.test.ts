@@ -148,3 +148,115 @@ describe('goods file parsing', () => {
     expect(parseNumber('шт')).toBeNull();
   });
 });
+
+/**
+ * The round-1 review (2026-10-21): what the reader learned that round read
+ * some ordinary files WORSE than before it. Each case is a file shape the
+ * business receives.
+ */
+describe('the round-1 review of the header detective', () => {
+  it('«1,200KGS» and «12,500PCS» are ambiguous and stay unread — never 1.2 kg (#10)', () => {
+    const rows = [
+      ['Description', 'Quantity', 'N.W.', 'CBM'],
+      ['LED panel light', '12,500PCS', '1,200KGS', '2.5CBM'],
+      ['LED bulb', '300PCS', '1,200.50KGS', '0,125CBM'],
+      ['LED strip', '1 200 PCS', '12.500KGS', '1.5 CBM'],
+    ];
+    expect(parseGoods(rows).goods.map((g) => [g.quantity, g.weightKg, g.volumeM3])).toEqual([
+      [null, null, 2.5],
+      [300, 1200.5, 0.125],
+      [1200, 12.5, 1.5],
+    ]);
+  });
+
+  it('a per-carton «N.W./CTN» before «TOTAL N.W.» is not the line’s weight (#11)', () => {
+    const rows = [
+      ['Description', 'CTNS', 'QTY/CTN', 'TOTAL QTY', 'N.W./CTN', 'G.W./CTN', 'TOTAL N.W.', 'TOTAL G.W.', 'MEAS.(CBM)'],
+      ['LED panel', 20, 12, 240, 12, 13, 240, 260, 1.2],
+    ];
+    expect(parseGoods(rows).goods[0]).toMatchObject({ quantity: 240, weightKg: 240, volumeM3: 1.2 });
+  });
+
+  it('«Net price», «Net amount», «Цена нетто» are money, never the weight (#11)', () => {
+    const price = parseGoods([
+      ['Description', 'Qty', 'Net price', 'Amount', 'Gross weight'],
+      ['Chair', 10, 25.5, 255, 120],
+    ]).goods[0];
+    expect(price).toMatchObject({ weightKg: 120, amount: 255 });
+
+    const amount = parseGoods([
+      ['Description', 'Qty', 'Unit price', 'Net amount'],
+      ['Chair', 10, 25.5, 255],
+    ]).goods[0];
+    expect(amount).toMatchObject({ weightKg: null, amount: 255 });
+
+    const ru = parseGoods([
+      ['Наименование', 'Кол-во', 'Цена нетто', 'Сумма', 'Вес брутто, кг'],
+      ['Стул', 10, 25.5, 255, 120],
+    ]).goods[0];
+    expect(ru).toMatchObject({ weightKg: 120, amount: 255 });
+
+    // A bare «net» is inside words that are no weight at all.
+    const cabinet = parseGoods([
+      ['Description', 'Cabinet No.', 'Qty', 'Weight (kg)'],
+      ['Shelf', 'C-12', 4, 80],
+    ]).goods[0];
+    expect(cabinet).toMatchObject({ weightKg: 80 });
+
+    // «Суммарный вес» is a weight, not a sum of money.
+    const total = parseGoods([
+      ['Наименование', 'Кол-во', 'Суммарный вес, кг'],
+      ['Стул', 10, 120],
+    ]).goods[0];
+    expect(total).toMatchObject({ weightKg: 120 });
+  });
+
+  it('«Товар» / «Product Name» stay the name beside «Описание» / «Description» (#12)', () => {
+    expect(
+      detectColumns([
+        ['Товар', 'Описание', 'Кол-во'],
+        ['Куртка женская', 'Ткань полиэстер, размер S-XL', 100],
+      ])!.columns.name,
+    ).toBe(0);
+    expect(
+      detectColumns([
+        ['No.', 'Product Name', 'Description', 'Qty'],
+        [1, 'Plastic chair', 'Color: white, size 45x45cm', 10],
+      ])!.columns.name,
+    ).toBe(1);
+    // «Item No.» still loses to the description (the round's own case).
+    expect(
+      detectColumns([
+        ['Item No.', 'Description', 'Qty'],
+        ['YW-2301', 'Women jacket', 300],
+      ])!.columns.name,
+    ).toBe(1);
+  });
+
+  it('a short name ending in a number is a name, not an article number (#12)', () => {
+    expect(
+      detectColumns([
+        ['Наименование', 'Описание', 'Кол-во'],
+        ['Труба 32', 'PPR pipe, 4 m', 10],
+        ['Кран 1/2', 'brass ball valve', 5],
+        ['Муфта 25', 'coupling', 20],
+      ])!.columns.name,
+    ).toBe(0);
+    // …while capital-letter article numbers still are.
+    expect(
+      detectColumns([
+        ['Код товара', 'Наименование', 'Кол-во'],
+        ['A-17', 'Носки', 10],
+        ['SKU 0042', 'Футболки', 5],
+      ])!.columns.name,
+    ).toBe(1);
+  });
+
+  it('a one-column list keeps its one-cell header; a one-cell TITLE over a table is still no header (#15)', () => {
+    const list = parseGoods([['Наименование товара'], ['Стол'], ['Стул'], ['Шкаф']]);
+    expect(list.headerRow).toBe(0);
+    expect(list.goods.map((g) => g.description)).toEqual(['Стол', 'Стул', 'Шкаф']);
+
+    expect(detectColumns([['Товарная накладная № 15'], ['№', 'Наименование', 'Кол-во'], [1, 'Носки', 100]])!.headerRow).toBe(1);
+  });
+});

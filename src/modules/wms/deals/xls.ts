@@ -21,16 +21,37 @@ import type { Cell } from './goods-import';
  * not be verified against the original. Reading cell VALUES of a BIFF8 stream
  * is a few record types; the parser below refuses anything else in words.
  *
- * Every answer is bounded (`MAX_ROWS` × `MAX_COLS`) — a stranger's file is
- * read, so its size is never trusted.
+ * Every answer is bounded — a stranger's file is read, so its size is never
+ * trusted: `MAX_ROWS` × `MAX_COLS` per sheet, `MAX_SHEETS` per workbook, a
+ * markup text no longer than `MAX_MARKUP_CHARS`, and every reader LINEAR in
+ * its input (the review's 300 sheet entries pointing at one sheet, and an
+ * HTML file with no `</tr>`, each froze the one Node process for seconds to
+ * hours — the bot polls inside the app).
  */
 
 export const MAX_ROWS = 5_000;
 export const MAX_COLS = 100;
+/** More sheets than any invoice or packing list carries; each costs a grid. */
+export const MAX_SHEETS = 32;
+/**
+ * The longest HTML / SpreadsheetML text read at all. Measured: 5,000 rows of
+ * a web export with its styles on every cell are ~1.1 MB, so this holds more
+ * than `MAX_ROWS` of any real export; above it the honest answer is «save it
+ * as .xlsx», which is what the refusal says.
+ */
+export const MAX_MARKUP_CHARS = 4_000_000;
 
 export interface SheetRows {
   name: string;
   rows: Cell[][];
+  /**
+   * The sheet is hidden in its workbook (a price list behind a drop-down, an
+   * old proforma left in a factory template). Read, so a workbook of nothing
+   * BUT hidden sheets still answers, and never chosen while a visible one
+   * exists — the review's hidden 300-line «Справочник» replaced the 20-line
+   * order.
+   */
+  hidden?: boolean;
 }
 
 export type XlsRead =
@@ -65,7 +86,18 @@ const R = {
   FORMULA: 0x0006,
   STRING: 0x0207,
   BOOLERR: 0x0205,
+  SHRFMLA: 0x04bc,
+  ARRAY: 0x0221,
+  TABLE: 0x0236,
 } as const;
+
+/**
+ * BIFF8's cell grammar is `FORMULA [ShrFmla / Array / Table] [String]`: the
+ * cached string of a formula arrives AFTER these. A filled-down column of
+ * `=VLOOKUP(…)` or `=A2&B2` names carries a ShrFmla after its first cell, and
+ * clearing the pending cell there lost the first product of every block.
+ */
+const BETWEEN_FORMULA_AND_STRING: ReadonlySet<number> = new Set([R.SHRFMLA, R.ARRAY, R.TABLE]);
 
 interface RecordAt {
   type: number;
@@ -260,7 +292,10 @@ export function readXls(body: Buffer): XlsRead {
     }
 
     // The workbook globals: the sheet directory and the shared strings.
-    const sheetDir: { at: number; name: string }[] = [];
+    // A directory entry costs 13 bytes and a whole sheet's parse, so the same
+    // offset is read once and the directory stops at `MAX_SHEETS`.
+    const sheetDir: { at: number; name: string; hidden: boolean }[] = [];
+    const seen = new Set<number>();
     let sst: string[] = [];
     let at = first.next;
     for (let rec = recordAt(stream, at); rec; rec = recordAt(stream, at)) {
@@ -268,8 +303,13 @@ export function readXls(body: Buffer): XlsRead {
       if (rec.type === R.EOF) break;
       if (rec.type === R.FILEPASS) return { ok: false, reason: 'encrypted' };
       if (rec.type === R.BOUNDSHEET && rec.data.length >= 8) {
-        // dt = 0 is a worksheet; charts and macro sheets carry no cells.
-        if (rec.data[5] === 0) sheetDir.push({ at: rec.data.readUInt32LE(0), name: shortString(rec.data, 6) });
+        const offset = rec.data.readUInt32LE(0);
+        // dt = 0 is a worksheet; charts and macro sheets carry no cells. The
+        // low two bits of hsState say visible (0), hidden or very hidden.
+        if (rec.data[5] === 0 && !seen.has(offset) && sheetDir.length < MAX_SHEETS) {
+          seen.add(offset);
+          sheetDir.push({ at: offset, name: shortString(rec.data, 6), hidden: (rec.data[4]! & 0x03) !== 0 });
+        }
       } else if (rec.type === R.SST && rec.data.length >= 8) {
         const segs = [rec.data.subarray(8)];
         for (let more = recordAt(stream, at); more && more.type === R.CONTINUE; more = recordAt(stream, at)) {
@@ -292,21 +332,28 @@ export function readXls(body: Buffer): XlsRead {
     }
 
     const sheets: SheetRows[] = [];
-    for (const { at: sheetAt, name } of sheetDir) {
+    // Real sheets never overlap, so a real file never walks a byte twice;
+    // entries at DISTINCT offsets into one sheet's records (the dedupe's
+    // bypass) stop once the whole stream has been walked once, and the sheet
+    // the budget ran out in is not answered half-read.
+    let walked = 0;
+    for (const { at: sheetAt, name, hidden } of sheetDir) {
       const bof = recordAt(stream, sheetAt);
       if (!bof || bof.type !== R.BOF) continue;
       const grid = new Grid();
       let pendingString: { row: number; col: number } | null = null;
       let p = bof.next;
       for (let rec = recordAt(stream, p); rec; rec = recordAt(stream, p)) {
+        walked += rec.next - p;
         p = rec.next;
         const d = rec.data;
-        if (rec.type === R.EOF) break;
+        if (rec.type === R.EOF || walked > stream.length) break;
         if (rec.type === R.STRING && pendingString) {
           grid.set(pendingString.row, pendingString.col, plainString(d, 0));
           pendingString = null;
           continue;
         }
+        if (pendingString && BETWEEN_FORMULA_AND_STRING.has(rec.type)) continue;
         pendingString = null;
         if (d.length < 6) continue;
         const row = d.readUInt16LE(0);
@@ -351,7 +398,8 @@ export function readXls(body: Buffer): XlsRead {
             break;
         }
       }
-      sheets.push({ name, rows: grid.toRows() });
+      if (walked > stream.length) break;
+      sheets.push(hidden ? { name, rows: grid.toRows(), hidden } : { name, rows: grid.toRows() });
     }
     return { ok: true, sheets };
   } catch {
@@ -371,57 +419,142 @@ function decodeEntities(text: string): string {
   });
 }
 
+/**
+ * A cell's markup → its text. `<[^<>]*>`, not `<[^>]*>`: a cell holding many
+ * «<» and no «>» made every «<» scan to the end of the cell (quadratic); this
+ * one stops at the next «<».
+ */
 const cellOf = (html: string): Cell => {
-  const text = decodeEntities(html.replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]*>/g, ''))
+  const text = decodeEntities(html.replace(/<br\s*\/?>/gi, ' ').replace(/<[^<>]*>/g, ''))
     .replace(/\s+/g, ' ')
     .trim();
   return text === '' ? null : text;
 };
 
-/** An HTML page with a table — a web system's «Excel» export. */
+/** Which markup a text file is — decided before any reader runs. */
+export function markupOf(text: string): 'spreadsheetml' | 'html' | null {
+  if (/urn:schemas-microsoft-com:office:spreadsheet/.test(text) && /<(?:ss:)?Workbook\b/.test(text)) {
+    return 'spreadsheetml';
+  }
+  return /<table[\s>]/i.test(text) ? 'html' : null;
+}
+
+/** The text up to a closer, or all of it when the closer was left out. */
+function upTo(piece: string, closer: RegExp): string {
+  const end = piece.search(closer);
+  return end < 0 ? piece : piece.slice(0, end);
+}
+
+/** A span attribute (`colspan="2"`): a whole number from 1 up to `max`. */
+function spanOf(attrs: string, name: RegExp, max: number): number {
+  const n = Number(name.exec(attrs)?.[1] ?? 1);
+  return n >= 1 ? Math.min(Math.floor(n), Math.max(1, max)) : 1;
+}
+
+/**
+ * An HTML page with a table — a web system's «Excel» export.
+ *
+ * TOKENISED, never matched lazily to a closer: HTML lets `</tr>` and `</td>`
+ * be left out, and `<tr>(.*?)</tr>` then scanned from every row to the end of
+ * the file — 930 KB of rows froze the app for 10.8 s and still read nothing
+ * (the review). Each piece is cut at its OWN optional closer, so the pass is
+ * linear and an omitted closer reads the way a browser reads it.
+ *
+ * Spans keep every column where the header put it (the review: a two-row
+ * header «Вес, кг» over «нетто | брутто» read the gross weight as the line's
+ * money, and the sub-header became a product). A covered position is NULL —
+ * a merged amount or carton weight is stated ONCE, so it is counted once, and
+ * the sub-header row under a merged name carries no name and is no product.
+ */
 export function htmlTableSheets(text: string): SheetRows[] | null {
-  if (!/<table[\s>]/i.test(text)) return null;
+  if (markupOf(text) !== 'html') return null;
   const sheets: SheetRows[] = [];
-  let n = 0;
-  for (const table of text.matchAll(/<table\b[^>]*>([\s\S]*?)<\/table>/gi)) {
-    n += 1;
+  const tables = text.split(/<table\b[^<>]*>/i).slice(1);
+  for (const [n, piece] of tables.entries()) {
+    if (sheets.length >= MAX_SHEETS) break;
     const rows: Cell[][] = [];
-    for (const tr of table[1]!.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)) {
+    /** Per column: how many more rows a rowspan above still covers. */
+    const carry: number[] = [];
+    for (const tr of upTo(piece, /<\/table\s*>/i).split(/<tr\b[^<>]*>/i).slice(1)) {
       if (rows.length >= MAX_ROWS) break;
-      rows.push(
-        [...tr[1]!.matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)].slice(0, MAX_COLS).map((m) => cellOf(m[1]!)),
-      );
+      const parts = upTo(tr, /<\/tr\s*>/i).split(/(<t[dh]\b[^<>]*>)/i);
+      const cells: Cell[] = [];
+      const skipCovered = () => {
+        while (cells.length < MAX_COLS && (carry[cells.length] ?? 0) > 0) {
+          carry[cells.length]! -= 1;
+          cells.push(null);
+        }
+      };
+      for (let i = 1; i + 1 < parts.length; i += 2) {
+        skipCovered();
+        if (cells.length >= MAX_COLS) break;
+        const tag = parts[i]!;
+        const col = cells.length;
+        const colspan = spanOf(tag, /\bcolspan\s*=\s*["']?\s*(\d+)/i, MAX_COLS - col);
+        const rowspan = spanOf(tag, /\browspan\s*=\s*["']?\s*(\d+)/i, MAX_ROWS);
+        cells.push(cellOf(upTo(parts[i + 1]!, /<\/t[dh]\s*>/i)));
+        for (let k = 1; k < colspan; k += 1) cells.push(null);
+        for (let k = 0; k < colspan; k += 1) carry[col + k] = rowspan - 1;
+      }
+      // The columns a rowspan still covers past the row's last cell.
+      for (let c = cells.length; c < carry.length; c += 1) {
+        if ((carry[c] ?? 0) > 0) carry[c]! -= 1;
+      }
+      rows.push(cells);
     }
-    if (rows.length > 0) sheets.push({ name: `Jadval ${n}`, rows });
+    if (rows.length > 0) sheets.push({ name: `Jadval ${n + 1}`, rows });
   }
   return sheets.length > 0 ? sheets : null;
 }
 
-/** Excel 2003 «XML Spreadsheet». */
+/**
+ * Excel 2003 «XML Spreadsheet» — tokenised like the HTML table, for the same
+ * reason (an unclosed `<Row>` was the same quadratic scan). `ss:Index` places
+ * a cell after skipped ones and `ss:MergeAcross` covers the cells to its
+ * right; a merge DOWN needs nothing, because the writer gives the next row's
+ * cells their own `ss:Index`.
+ */
 export function spreadsheetMlSheets(text: string): SheetRows[] | null {
-  if (!/urn:schemas-microsoft-com:office:spreadsheet/.test(text) || !/<(?:ss:)?Workbook\b/.test(text)) {
-    return null;
-  }
+  if (markupOf(text) !== 'spreadsheetml') return null;
   const sheets: SheetRows[] = [];
-  for (const ws of text.matchAll(/<(?:ss:)?Worksheet\b([^>]*)>([\s\S]*?)<\/(?:ss:)?Worksheet>/g)) {
-    const name = /(?:ss:)?Name="([^"]*)"/.exec(ws[1]!)?.[1] ?? `Varaq ${sheets.length + 1}`;
+  const parts = text.split(/<(?:ss:)?Worksheet\b([^<>]*)>/);
+  for (let w = 1; w + 1 < parts.length && sheets.length < MAX_SHEETS; w += 2) {
+    const body = upTo(parts[w + 1]!, /<\/(?:ss:)?Worksheet\s*>/);
+    const name = /(?:ss:)?Name\s*=\s*"([^"]*)"/.exec(parts[w]!)?.[1] ?? `Varaq ${sheets.length + 1}`;
     const rows: Cell[][] = [];
-    for (const row of ws[2]!.matchAll(/<(?:ss:)?Row\b[^>]*?(?:\/>|>([\s\S]*?)<\/(?:ss:)?Row>)/g)) {
+    const rowParts = body.split(/<(?:ss:)?Row\b([^<>]*)>/);
+    for (let r = 1; r + 1 < rowParts.length; r += 2) {
       if (rows.length >= MAX_ROWS) break;
       const cells: Cell[] = [];
-      for (const cell of (row[1] ?? '').matchAll(/<(?:ss:)?Cell\b([^>]*?)(?:\/>|>([\s\S]*?)<\/(?:ss:)?Cell>)/g)) {
-        const index = /(?:ss:)?Index="(\d+)"/.exec(cell[1]!);
-        if (index) {
-          const at = Number(index[1]) - 1;
-          while (cells.length < at && cells.length < MAX_COLS) cells.push(null);
+      // `<Row/>` is an empty row; what follows it belongs to no row.
+      if (!rowParts[r]!.endsWith('/')) {
+        const cellParts = upTo(rowParts[r + 1]!, /<\/(?:ss:)?Row\s*>/).split(/<(?:ss:)?Cell\b([^<>]*)>/);
+        for (let c = 1; c + 1 < cellParts.length; c += 2) {
+          const attrs = cellParts[c]!;
+          const index = /(?:ss:)?Index\s*=\s*"(\d+)"/.exec(attrs);
+          if (index) {
+            const at = Number(index[1]) - 1;
+            while (cells.length < at && cells.length < MAX_COLS) cells.push(null);
+          }
+          if (cells.length >= MAX_COLS) break;
+          let value: Cell = null;
+          if (!attrs.endsWith('/')) {
+            const content = upTo(cellParts[c + 1]!, /<\/(?:ss:)?Cell\s*>/);
+            const open = /<(?:ss:)?Data\b[^<>]*>/.exec(content);
+            if (open) value = cellOf(upTo(content.slice(open.index + open[0].length), /<\/(?:ss:)?Data\s*>/));
+          }
+          cells.push(value);
+          // MergeAcross="N" covers N cells MORE.
+          const across = Number(/(?:ss:)?MergeAcross\s*=\s*"(\d+)"/.exec(attrs)?.[1] ?? 0);
+          for (let k = 0; k < across && cells.length < MAX_COLS; k += 1) cells.push(null);
         }
-        if (cells.length >= MAX_COLS) break;
-        const data = /<(?:ss:)?Data\b[^>]*>([\s\S]*?)<\/(?:ss:)?Data>/.exec(cell[2] ?? '');
-        cells.push(data ? cellOf(data[1]!) : null);
       }
       rows.push(cells);
     }
-    sheets.push({ name: decodeEntities(name), rows });
+    const sheet: SheetRows = { name: decodeEntities(name), rows };
+    // WorksheetOptions' <Visible>SheetHidden</Visible> (or …VeryHidden).
+    if (/<(?:x:)?Visible>\s*Sheet(?:Very)?Hidden\b/.test(body)) sheet.hidden = true;
+    sheets.push(sheet);
   }
   return sheets.length > 0 ? sheets : null;
 }

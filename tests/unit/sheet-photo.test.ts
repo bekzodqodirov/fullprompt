@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import ExcelJS from 'exceljs';
 import { describe, expect, it } from 'vitest';
 import { SHEET_PHOTO_PX, fitInBox, sheetPhoto, sheetPhotoKey } from '@/modules/wms/documents/sheet-photo';
 
@@ -40,5 +41,28 @@ describe('a photograph in a spreadsheet', () => {
       expect(text, file).not.toContain('thumb200Key');
       expect(text, file).not.toContain('ext: { width: 78, height: 72 }');
     }
+  });
+
+  it('all three sheets are STORED, never deflated — JPEG does not shrink, the CPU was the cost (the review)', () => {
+    for (const file of SHEETS) {
+      const text = src(file);
+      const writes = text.match(/\.writeBuffer\([^)]*\)/g) ?? [];
+      expect(writes, file).toEqual([".writeBuffer({ zip: { compression: 'STORE' } })"]);
+    }
+  });
+
+  it('a STORED workbook is still a workbook exceljs reads back, photo included', async () => {
+    const sharp = (await import('sharp')).default;
+    const jpeg = await sharp({ create: { width: 64, height: 48, channels: 3, background: '#3a3' } }).jpeg().toBuffer();
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('S');
+    sheet.addRow(['Стол', 5]);
+    const imageId = workbook.addImage({ buffer: jpeg as unknown as ExcelJS.Buffer, extension: 'jpeg' });
+    sheet.addImage(imageId, { tl: { col: 2, row: 0 }, ext: { width: 64, height: 48 } });
+    const stored = Buffer.from(await workbook.xlsx.writeBuffer({ zip: { compression: 'STORE' } }));
+    const back = new ExcelJS.Workbook();
+    await back.xlsx.load(stored as unknown as ArrayBuffer);
+    expect(back.worksheets[0]!.getRow(1).values).toEqual([undefined, 'Стол', 5]);
+    expect(back.model.media).toHaveLength(1);
   });
 });

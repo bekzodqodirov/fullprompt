@@ -517,7 +517,10 @@ export async function buildStockXlsx(input: {
   }
 
   return {
-    buffer: Buffer.from(await workbook.xlsx.writeBuffer()),
+    // STORED, not deflated: JPEG does not shrink under deflate, and exceljs's
+    // default ran pure-JS deflate over every photograph on the one Node
+    // process — 7.5 s of CPU at the photo cap for ~3 % of size (the review).
+    buffer: Buffer.from(await workbook.xlsx.writeBuffer({ zip: { compression: 'STORE' } })),
     visible,
     /** What the file actually carries — the audit row could not tell a
      *  twelve-photograph export from a three-thousand-photograph one. */

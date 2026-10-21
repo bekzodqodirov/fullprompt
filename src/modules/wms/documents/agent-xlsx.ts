@@ -225,7 +225,10 @@ export async function buildAgentXlsx(planId: string, versionNo: number): Promise
     }
   }
 
-  return Buffer.from(await workbook.xlsx.writeBuffer());
+  // STORED, not deflated: JPEG does not shrink under deflate, and exceljs's
+  // default ran pure-JS deflate over every photograph on the one Node process
+  // — 9 s of CPU at 1,200 photos for ~1 % of size (the review).
+  return Buffer.from(await workbook.xlsx.writeBuffer({ zip: { compression: 'STORE' } }));
 }
 
 /** «Crosses a border», `crossesBorderSql` restated for a plan with no truck yet. */
