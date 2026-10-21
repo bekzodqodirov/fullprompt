@@ -145,15 +145,58 @@ export function readAmountText(raw: string): Amount {
 const CODE_LABEL = /(?:^|[\s,;(])(?:tnved|тнвэд|тн\s?вэд|tn\s?ved|hs|kod|код|code)\s*[:=№#-]?\s*(\d{4,10})(?!\d)/iu;
 const CODE_DOTTED = /(?<![\d.])(\d{4})[. ](\d{2})(?:[. ](\d{2}))?(?:[. ](\d{2}))?(?![\d.,])/u;
 const CODE_TEN = /(?<![\d.,])(\d{10})(?![\d.,])/u;
+/**
+ * The two forms a customs declaration and the PP-3818 book PRINT a ten-digit
+ * code in — 4-2-4 «6201 93 0000» and 4-2-3-1 «2710 19 820 0», with spaces or
+ * dots (round-1 review 2, T3). Only 4-2-2-2 was known, so «Kurtka 6201 93 000
+ * 0» stated no goods and the bot filed it as the customer's PHONE. The first
+ * group must be a chapter (01-97), the same rule a four-digit code cell obeys:
+ * nothing else in a goods line opens 4-2 and runs on to ten digits.
+ */
+const CODE_PRINTED =
+  /(?<![\d.])((?:0[1-9]|[1-8]\d|9[0-7])\d{2})[. ](\d{2})[. ](?:(\d{4})|(\d{3})[. ](\d))(?![\d.,])/u;
+
+/** The word written right after `end`, when it names a unit — «6201 93 3000 dona» is a
+ * subheading and three thousand pieces, never a ten-digit code. */
+function unitWordAfter(text: string, end: number): boolean {
+  const word = /^\s*([\p{L}²³][\p{L}\d²³.]*)/u.exec(text.slice(end));
+  return word !== null && unitOf(word[1]) !== null;
+}
+
+/** A printed or dotted code that starts exactly at `at` — what a label points at. */
+function writtenCodeAt(text: string, at: number): { code: string; end: number } | null {
+  for (const re of [CODE_PRINTED, CODE_DOTTED]) {
+    const sticky = new RegExp(re.source, 'uy');
+    sticky.lastIndex = at;
+    const hit = sticky.exec(text);
+    if (!hit) continue;
+    const groups = hit.slice(1).filter((g): g is string => g !== undefined);
+    const end = at + hit[0].length;
+    // Three groups at least for the dotted form (below), and never a code
+    // whose last group is a count in a unit.
+    if (groups.length < 3 || (re === CODE_PRINTED && unitWordAfter(text, end))) continue;
+    return { code: groups.join(''), end };
+  }
+  return null;
+}
 
 export function codeIn(text: string): { code: string; start: number; end: number } | null {
   const labelled = CODE_LABEL.exec(text);
   if (labelled) {
     const start = labelled.index + labelled[0].indexOf(labelled[1]!);
+    // «tnved 6201.93.0000»: the label points at the WHOLE printed code, not at
+    // its first four digits with «.93.0000» left behind as figures (T3).
+    const whole = writtenCodeAt(text, start);
+    if (whole) return { code: whole.code, start: labelled.index, end: whole.end };
     return { code: labelled[1]!, start: labelled.index, end: start + labelled[1]!.length };
   }
   const ten = CODE_TEN.exec(text);
   if (ten) return { code: ten[1]!, start: ten.index, end: ten.index + ten[0].length };
+  const printed = CODE_PRINTED.exec(text);
+  if (printed && !unitWordAfter(text, printed.index + printed[0].length)) {
+    const code = printed.slice(1).filter(Boolean).join('');
+    return { code, start: printed.index, end: printed.index + printed[0].length };
+  }
   const dotted = CODE_DOTTED.exec(text);
   // At least three groups («6907.21.00»): «1200 50» is two numbers, not a code.
   if (dotted && dotted[3] !== undefined) {
@@ -161,6 +204,19 @@ export function codeIn(text: string): { code: string; start: number; end: number
     return { code, start: dotted.index, end: dotted.index + dotted[0].length };
   }
   return null;
+}
+
+/**
+ * Is `code` (as `codeIn` found it in `text`) WRITTEN as a code — dotted, spaced
+ * or printed — rather than ten digits that could be anybody's number? A phone
+ * is never written 4-2-…, so such a line names goods even with no word beside
+ * it (T3: «6201.93.0000», «2710 19 820 0» typed alone).
+ */
+export function codeWrittenAsCode(text: string): boolean {
+  const found = codeIn(text);
+  if (!found) return false;
+  const digitsAt = text.slice(found.start, found.end).search(/\d/);
+  return /[. ]/.test(text.slice(found.start + digitsAt, found.end));
 }
 
 /**

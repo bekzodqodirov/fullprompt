@@ -1,4 +1,13 @@
-import { parseClientHint, statesGoods, type AmbiguousTotal, type CalcFacts } from './intake';
+import {
+  clientCodePrefix,
+  notGoodsWord,
+  parseClientHint,
+  prefixCode,
+  statesGoods,
+  type AmbiguousTotal,
+  type CalcFacts,
+  type ClientHintOpts,
+} from './intake';
 import type { MeasureUnit } from './pricing';
 import { normalizeTnved, parseGoodsLine, readAmountText, unitOf, type SellerUnit } from './units';
 
@@ -107,64 +116,71 @@ export function parseManualFacts(text: string): CalcFacts & { ambiguous: Ambiguo
  * A line naming itself a goods line: «Tovar: …», «Товар - …», «Tovar nomi:
  * …», «Tovarlar: …». The label is a WHOLE word (review #25): «Tovarni rasmi»
  * and «Tovarlar» were matched by their first five letters and glued the rest
- * of the word onto a product («lar Kurtka»). The separator is CAPTURED — a
- * label with one says «what follows is the goods»; a label without one
- * («Tovar синтетическое … 1.1 kub 240 kg», his screenshot) must still read
- * as a name followed by figures, or «Tovar keldimi», «Tovar narxi 1200$» and
- * «Mahsulot sifati yaxshi» are products.
+ * of the word onto a product («lar Kurtka»). The separator is CAPTURED (group
+ * 2), and so is whether the label says «the NAME is» (group 1, T7):
+ *  - after a NAMING label — «Tovar nomi:», «Наименование:», «Product name:»,
+ *    «品名:» — what follows is the product's name, figures or not;
+ *  - after a plain «Tovar:» / «Товар -» the body must still read as a name
+ *    followed by figures, exactly as an unlabelled line — «Tovar: tayyor»,
+ *    «Товар: готов», «Tovar: keldi», «Mahsulot: 5 kun ichida» are what a
+ *    customer says ABOUT the goods, and a status list never ends;
+ *  - with no separator at all («Tovar синтетическое … 1.1 kub 240 kg», his
+ *    screenshot) the same test, or «Tovar keldimi», «Tovar narxi 1200$» and
+ *    «Mahsulot sifati yaxshi» are products.
  */
 const GOODS_LABEL =
-  /^\s*(?:tovar(?:lar)?(?:\s*nomi)?|товар(?:ы)?(?:\s*номи)?|mahsulot(?:lar)?(?:\s*nomi)?|махсулот(?:лар)?|наименование(?:\s*товара)?|название|goods|products?(?:\s*name)?|品名)(?![\p{L}\p{N}])\s*([:：\-–—])?\s*/iu;
+  /^\s*(?:(tovar(?:lar)?\s*nomi|товар(?:лар|ы)?\s*номи|mahsulot(?:lar)?\s*nomi|махсулот(?:лар)?\s*номи|наименование(?:\s*товара)?|название(?:\s*товара)?|(?:goods|products?)\s*names?|品名)|tovar(?:lar)?|товар(?:лар|ы)?|mahsulot(?:lar)?|махсулот(?:лар)?|goods|products?)(?![\p{L}\p{N}])\s*([:：\-–—])?\s*/iu;
 
-/** «Og’irligi», «ogʻirligi», «og‘irligi» are one word — phones type all three. */
-const APOSTROPHES = /[’ʻʼ‘`´]/gu;
+/** A body that is a LIST — «shim, kurtka» — is several products, and with no
+ * figures nobody can say where one ends: the model's job, never one name (T7). */
+const LIST_BODY = /[,;、，；]/u;
 
 /**
- * Words that make a line something other than a product, in their ASCII
- * apostrophe spelling (review #22, #24). A name made ONLY of these (and of
- * client codes) is never a goods line:
- *  - a TOTAL — «vazni 120 kg», «Вес груза: 3500 кг», «Кубатура: 12 м3»: the
- *    shipment's totals are read by `readNumber`;
- *  - a COUNT or CARTON label — «Кол-во: 300 шт», «Soni: 300 dona», «Мест: 45»:
- *    the figure belongs to the product named elsewhere, and a carton count is
- *    never pieces;
- *  - a FIELD — a phone, a client, an order, a rate, a date;
- *  - a greeting or an «about» — «Salom, 12 kub 3500 kg», «Taxminan 12 kub».
+ * The carton nouns that are also products (T6/T12): «Korobka 1000 dona» is a
+ * thousand boxes for sale, «Karobka: 45 ta» is how many cartons the goods
+ * came in — a FIELD, the name followed by its separator.
  */
-const NOT_GOODS_WORDS = new Set([
-  // totals
-  'vazni', 'vazn', "og'irligi", 'ogirligi', "og'irlik", 'ogirlik', 'hajmi', 'hajm', 'kub', 'kg', 'umumiy', 'jami',
-  'brutto', 'netto', 'ves', 'вес', 'весом', 'объем', 'объём', 'обьем', 'обьём', 'обем', 'кубатура', 'kubatura',
-  'obyom', 'obyem', 'общий', 'общая', 'общее', 'итого', 'всего', 'брутто', 'нетто', 'weight', 'volume', 'gross',
-  'net', 'total', 'yuk', 'yukning', 'yuki', 'груз', 'груза', "jo'natma", 'партия', 'partiya', '重量', '毛重',
-  '净重', '体积', '总重', '合计',
-  // counts and cartons
-  'кол-во', 'количество', 'soni', 'son', 'miqdori', 'miqdor', 'qty', 'quantity', 'pcs', '数量', '箱数', 'мест',
-  'места', 'место', 'joy', 'joyi', 'karobka', 'korobka', 'коробка', 'коробки', 'коробок', 'qop', 'ctns', 'ctn',
-  'dona', 'шт',
-  // fields
-  'tel', 'telefon', 'тел', 'телефон', 'raqam', 'raqami', 'raqamim', 'номер', 'mijoz', 'мижоз', 'klient',
-  'клиент', 'client', 'kod', 'код', 'zakaz', 'заказ', 'invoice', 'no', '№', 'kurs', 'курс', 'inn', 'инн',
-  'sana', 'дата',
-  // greetings and «about»
-  'salom', 'assalomu', 'assalom', 'alaykum', 'привет', 'здравствуйте', 'taxminan', 'taxminiy', 'примерно',
-  'около', 'hammasi', "bo'lib",
+const CARTON_NOUNS = new Set([
+  'karobka', 'karopka', 'korobka', 'коробка', 'коробки', 'коробок', 'qop', 'quti', 'кути', 'box', 'boxes', 'carton',
+  'cartons',
+]);
+const FIELD_SHAPED = /^[\p{L}\s'’‘ʻ`-]+[:：]/u;
+
+/**
+ * Words that make ten bare digits beside them a NUMBER and not a TNVED code
+ * (T11): a line accepted on its code alone has no unit to vouch for it, so
+ * «Telefon 8901234567» and «Mening raqamim 8901234567» are a phone — a phone
+ * written with its 8 is ten digits, and 89 is a real chapter.
+ */
+const NUMBER_FIELD_WORDS = new Set([
+  'tel', 'tlf', 'telefon', 'telefoni', 'telefonim', 'тел', 'телефон', 'raqam', 'raqami', 'raqamim', 'номер', 'nomer',
+  'nomeri', 'nomerim', 'zakaz', 'заказ', 'order', 'invoice', 'инвойс', 'schet', 'счет', 'счёт', 'inn', 'инн', 'kurs',
+  'курс', 'sana', 'дата', 'no', '№', 'nr', 'id',
 ]);
 
-/** A client code standing as a word of the name — «Mijoz GS777». Never a unit («m2»). */
-const isCodeWord = (word: string) => /^[a-z]{1,4}\d{1,8}$/u.test(word) && unitOf(word) === null;
+/**
+ * A client code standing as a word of the name — «Mijoz GS777». The company's
+ * prefix always is one; any other letters-and-digits word only when the line
+ * states no count or pair, because then it is a MODEL (T12: «LED32 100 dona»
+ * was dropped as a client code). Never a unit («m2»).
+ */
+function codeWord(word: string, prefix: string | null, counted: boolean): boolean {
+  if (prefixCode(word, prefix)) return true;
+  return !counted && /^[a-z]{1,4}\d{1,8}$/u.test(word) && unitOf(word) === null;
+}
 
 /** A client code on its own — glued, spaced or hyphenated («GS777», «GS 777», «GS-777»). */
 const CLIENT_CODE_LINE = /^[A-Za-z]{1,4}\s*[-–]?\s*\d{1,8}$/;
 
 /**
  * The tail of an unlabelled line: every token a figure, a unit word or a code
- * word, and at least ONE unit that is not a carton (review #24). A bare
- * trailing number is not a goods line — «Tel 90 123 45 67», «Kurs 12650»,
- * «Sana 21.10.2026», «Partiya YW-123» were read as products with that number
- * as their count — and a carton count alone states no measure of the goods.
+ * word, and — when `measured` is asked — at least ONE unit that is not a
+ * carton (review #24). A bare trailing number is not a goods line — «Tel 90
+ * 123 45 67», «Kurs 12650», «Sana 21.10.2026», «Partiya YW-123» were read as
+ * products with that number as their count — and a carton count alone states
+ * no measure of the goods.
  */
-function unitFigures(tail: string): boolean {
+function unitFigures(tail: string, opts: { measured: boolean } = { measured: true }): boolean {
   const tokens = tail.split(/[\s,;/+]+/u).filter(Boolean);
   let measured = false;
   for (const token of tokens) {
@@ -178,8 +194,11 @@ function unitFigures(tail: string): boolean {
     if (/^(?:kod|код|tnved|тнвэд|hs)$/iu.test(token)) continue;
     return false;
   }
-  return measured;
+  return measured || !opts.measured;
 }
+
+/** Where the first figure starts its OWN token: «iPhone15 300 dona»'s is «300». */
+const firstFigure = (body: string) => body.search(/(?<![\p{L}\p{N}])\d/u);
 
 /**
  * A name, THEN figures — the figure starting its OWN token. «Bobur aka GS777»
@@ -188,8 +207,20 @@ function unitFigures(tail: string): boolean {
  * «300».
  */
 function nameThenFigures(body: string): boolean {
-  const at = body.search(/(?<![\p{L}\p{N}])\d/u);
+  const at = firstFigure(body);
   return at > 0 && unitFigures(body.slice(at));
+}
+
+/**
+ * A name, then its TNVED code — «Kurtka 6201930000», «Kurtka 6201.93.00.00»,
+ * «Kurtka tnved 6201930000» (T11). The finding's own fix allowed «a count or a
+ * pair unit … or a TNVED code», and `statesGoods` calls the line goods: with
+ * the model down, a seller who typed products with their codes got «Tovarlar:
+ * —» and lost the codes. Figures after the code may follow; nothing else.
+ */
+function nameThenCode(body: string): boolean {
+  const at = firstFigure(body);
+  return at > 0 && unitFigures(body.slice(at), { measured: false }) && parseGoodsLine(body).tnvedCode !== null;
 }
 
 /**
@@ -220,9 +251,20 @@ const DASH_ROUTE = /^\p{Lu}[\p{L}']*(?:\s+[-–—]\s+|\s*[–—]\s*)\p{Lu}[\p{
  * `labelledOnly` (review #22): when the model DID read the material and found
  * no goods, a regex must not overrule it with «Salom» or «Guangzhou -
  * Toshkent» — only a line that names itself goods still answers. When the
- * model did not read (no key, budget, failure), every typed line answers.
+ * model did not read (no key, budget, failure), every typed line answers —
+ * and then the word list is what keeps a totals line («Andijonga 5 kub 1200
+ * kg», «Hayrli kun, 12 kub 3500 kg», «Yukimiz 12 kub») out (T1/T8), while
+ * «Kurtka 150 kg» and «Kafel 12 kub» stay products.
+ *
+ * The word list judges UNLABELLED lines only (T6): a «Tovar: …» line names the
+ * goods explicitly, so «Tovar: korobka 1000 dona» is a thousand boxes.
+ * `prefix` is the company's client-code prefix (`ClientHintOpts`).
  */
-export function readGoodsLines(text: string, opts?: { labelledOnly?: boolean }): NonNullable<CalcFacts['goods']> {
+export function readGoodsLines(
+  text: string,
+  opts?: { labelledOnly?: boolean } & ClientHintOpts,
+): NonNullable<CalcFacts['goods']> {
+  const prefix = clientCodePrefix(opts);
   const out: NonNullable<CalcFacts['goods']> = [];
   for (const raw of text.split(/\r?\n/)) {
     if (out.length >= 50) break;
@@ -234,17 +276,26 @@ export function readGoodsLines(text: string, opts?: { labelledOnly?: boolean }):
     if (/[?？]$/u.test(line)) continue;
     const label = GOODS_LABEL.exec(line);
     if (opts?.labelledOnly && !label) continue;
-    const separated = Boolean(label?.[1]);
+    const naming = Boolean(label?.[1]);
+    const separated = Boolean(label?.[2]);
     const body = label ? line.slice(label[0].length) : line;
-    if (!separated && !nameThenFigures(body)) continue;
+    const figured = nameThenFigures(body);
+    const coded = !figured && nameThenCode(body);
+    if (!figured && !coded && !(naming && separated && !LIST_BODY.test(body))) continue;
     const parsed = parseGoodsLine(body);
     const name = parsed.name.replace(/^[\s:\-–—.,]+|[\s:\-–—.,]+$/gu, '').trim();
     const words = name
       .toLowerCase()
-      .replace(APOSTROPHES, "'")
       .split(/[\s,.;:()]+/u)
       .filter(Boolean);
-    if (words.length === 0 || words.every((w) => NOT_GOODS_WORDS.has(w) || isCodeWord(w))) continue;
+    if (words.length === 0) continue;
+    if (!label) {
+      const counted = parsed.quantity !== null || parsed.measureQty !== null;
+      if (words.every((w) => notGoodsWord(w) || codeWord(w, prefix, counted))) continue;
+      if (FIELD_SHAPED.test(line) && words.every((w) => CARTON_NOUNS.has(w))) continue;
+    }
+    // Ten digits on a line with no unit are a number when a field names them.
+    if (coded && words.some((w) => NUMBER_FIELD_WORDS.has(w.replace(/[’ʻʼ‘`´']/gu, '')))) continue;
     if ((name.match(/\p{L}/gu) ?? []).length < 2) continue;
     if (!separated && parsed.quantity === null && parsed.measureQty === null && DASH_ROUTE.test(name)) continue;
     // An answer the parser could not settle («1,200 kg») is not a figure, and
@@ -403,6 +454,11 @@ export function parseLineAnswer(raw: string): LineAnswer {
   return { kind: 'figures', figures, code: line.tnvedCode };
 }
 
+/** «Shim 200», «Stol 1000»: one word and its count. */
+const ONE_WORD_COUNT = /^\p{L}[\p{L}'’‘ʻ`-]*\s+\d{2,}$/u;
+/** «Samsung A54», «Xiaomi Redmi K60»: a product and its one-letter model. */
+const MODEL_TAIL = /\p{L}\s+[A-Z]\d{1,4}$/u;
+
 /**
  * Is the first message of a collection MATERIAL rather than the customer's
  * name (his 1.7 b)? The bot asks «who is the customer» and a seller in a
@@ -416,15 +472,24 @@ export function parseLineAnswer(raw: string): LineAnswer {
  * several lines or a long text is material. What is left — a short line of
  * words, perhaps with a bare number («Ali aka 2», «OOO Asia Trade 2020») —
  * is a NAME: filing a name as material re-asked the same question for ever.
+ *
+ * Except the two shapes a goods line has and a name does not (the second
+ * review's T4): ONE word and its count («Shim 200», «Stol 1000», «Olma 300»
+ * — the «nomi, soni» line of every list), and a product ending in its model
+ * («Samsung A54», «Xiaomi Redmi K60»). Both used to be read as a client code
+ * nobody holds, so the goods named the lead and never reached the model; as a
+ * NAME they would do the same. `opts.prefix` is the company's client-code
+ * prefix (`ClientHintOpts`), which the bot passes.
  */
-export function looksLikeMaterial(raw: string): boolean {
+export function looksLikeMaterial(raw: string, opts?: ClientHintOpts): boolean {
   const text = raw.trim();
   if (!text) return false;
   const lines = text
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter(Boolean);
-  if (lines.some((l) => statesGoods(l) || readGoodsLines(l, { labelledOnly: true }).length > 0)) return true;
-  if (parseClientHint(text)) return false;
-  return lines.length > 1 || text.length > 60;
+  const labelled = { labelledOnly: true, prefix: opts?.prefix };
+  if (lines.some((l) => statesGoods(l) || readGoodsLines(l, labelled).length > 0)) return true;
+  if (parseClientHint(text, opts)) return false;
+  return lines.length > 1 || text.length > 60 || ONE_WORD_COUNT.test(text) || MODEL_TAIL.test(text);
 }

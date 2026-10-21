@@ -8,7 +8,7 @@ import {
   type AiReadFailure,
 } from '@/modules/wms/calc/intake';
 import { looksLikeMaterial, parseManualFacts, readGoodsLines } from '@/modules/wms/calc/intake-manual';
-import { threadAiRetry } from '@/modules/wms/calc/from-thread';
+import { threadAiAdvice } from '@/modules/wms/calc/from-thread';
 import type { NeedLaw } from '@/modules/wms/calc/needs';
 
 /**
@@ -21,6 +21,11 @@ import type { NeedLaw } from '@/modules/wms/calc/needs';
 const noLaws: ReadonlyMap<string, NeedLaw> = new Map();
 const names = (text: string, opts?: { labelledOnly?: boolean }) => readGoodsLines(text, opts).map((g) => g.name);
 const read = (p: string) => readFileSync(p, 'utf8');
+// A source-shape pin reads CODE, never a comment quoting it (T14, #725/#919):
+// thread-calc-wire.test.ts's stripper, so a deleted line cannot stay green
+// because a comment still says it.
+const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+const source = (p: string) => code(read(p));
 
 describe('a goods label is a whole word with its separator (review #25)', () => {
   it('«Tovarlar: …» is the label, not «lar Kurtka»', () => {
@@ -56,7 +61,9 @@ describe('a goods label is a whole word with its separator (review #25)', () => 
         expect.objectContaining({ name: 'синтетическое компрессорное масло', weightKg: 240, volumeM3: 1.1 }),
       ]);
     }
-    expect(names('Товар - куртка\nTovar nomi: shim', { labelledOnly: true })).toEqual(['куртка', 'shim']);
+    // Under a plain label the product carries its figure; a bare name needs
+    // the NAMING label (T7 — «Товар - куртка» is the shape of «Товар: готов»).
+    expect(names('Товар - куртка 300 шт\nTovar nomi: shim', { labelledOnly: true })).toEqual(['куртка', 'shim']);
   });
 });
 
@@ -89,7 +96,7 @@ describe('a bare trailing number is never a goods line (review #24)', () => {
     expect(readGoodsLines('Наименование: куртка женская\nКол-во: 300 шт\nМест: 45')).toEqual([
       expect.objectContaining({ name: 'куртка женская', quantity: null }),
     ]);
-    expect(names('Tovar: kurtka\nSoni: 300 dona\nVazni: 150 kg\nHajmi: 3 kub')).toEqual(['kurtka']);
+    expect(names('Tovar nomi: kurtka\nSoni: 300 dona\nVazni: 150 kg\nHajmi: 3 kub')).toEqual(['kurtka']);
   });
 
   it('two products welded onto one line are left to the model, not read as «Kurtka Shim»', () => {
@@ -137,13 +144,15 @@ describe('totals, greetings and routes are never a product (review #22)', () => 
   });
 
   it('when the model READ, only a line that names itself goods answers', () => {
-    const text = 'Andijonga 5 kub 1200 kg\nTovar: kurtka 300 dona';
-    expect(names(text)).toEqual(['Andijonga', 'kurtka']);
+    // With the model down every typed line answers — and a destination with
+    // its totals is still not one of them (T1/T8); a product line is.
+    const text = 'Andijonga 5 kub 1200 kg\nShim 200 dona\nTovar: kurtka 300 dona';
+    expect(names(text)).toEqual(['Shim', 'kurtka']);
     expect(names(text, { labelledOnly: true })).toEqual(['kurtka']);
   });
 
   it('the chat door reads labelled lines only when the model read', () => {
-    const service = read('src/modules/wms/calc/from-thread.ts');
+    const service = source('src/modules/wms/calc/from-thread.ts');
     expect(service).toContain("readGoodsLines(material.bodies.join('\\n'), { labelledOnly: ai !== null })");
     // …and reads them AFTER the model answered, or `ai` is not yet known.
     expect(service.indexOf('const typedGoods')).toBeGreaterThan(service.indexOf('const ai = outcome.ok'));
@@ -228,18 +237,21 @@ describe('the advice follows the failure (review #20, #21)', () => {
   it('the chat door says «later» only where a retry can help', () => {
     const never: AiReadFailure[] = ['not_configured', 'auth', 'refused', 'rejected', 'truncated', 'budget'];
     const later: AiReadFailure[] = ['timeout', 'network', 'rate_limited', 'overloaded', 'unreadable'];
-    for (const f of never) expect(threadAiRetry(f), f).toBe(false);
-    for (const f of later) expect(threadAiRetry(f), f).toBe(true);
-    expect(threadAiRetry(null)).toBe(false);
+    for (const f of never) expect(threadAiAdvice(f), f).not.toBe('retry');
+    for (const f of later) expect(threadAiAdvice(f), f).toBe('retry');
+    expect(threadAiAdvice(null)).toBeNull();
   });
 
   it('the preview carries the flag and the island words both cases, in every bundle', () => {
-    expect(read('src/modules/wms/calc/from-thread.ts')).toContain(
-      'aiRetry: threadAiRetry(outcome.ok ? null : outcome.failure)',
+    expect(source('src/modules/wms/calc/from-thread.ts')).toContain(
+      'aiAdvice: threadAiAdvice(outcome.ok ? null : outcome.failure)',
     );
-    expect(read('src/components/thread-calc.tsx')).toContain(
-      "{t('threadAiFailed')} {preview.aiRetry ? t('threadAiRetry') : t('threadAiNoRetry')}",
-    );
+    // The island words the advice — and only after the failure line (T13).
+    const island = source('src/components/thread-calc.tsx');
+    const line = island.slice(island.indexOf("{t('threadAiFailed')}"));
+    expect(line.slice(0, 300)).toContain("preview.aiAdvice === 'retry'");
+    expect(line.slice(0, 300)).toContain("? t('threadAiRetry')");
+    expect(line.slice(0, 300)).toContain(": t('threadAiNoRetry')");
     for (const locale of ['uz', 'ru', 'en', 'zh-CN']) {
       const calc = JSON.parse(read(`messages/${locale}.json`)).calc as Record<string, string>;
       expect(calc.threadAiRetry, locale).toBeTruthy();

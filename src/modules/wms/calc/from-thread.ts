@@ -146,19 +146,30 @@ export interface ThreadCalcPreview {
   /** Why the model's reading is missing, when it is (his 1.6 a). */
   aiFailure: AiReadFailure | null;
   /**
-   * Whether pressing «Tahlil» again can help (review #20) — the bot's own
-   * flag, decided HERE so the island imports none of the intake's rules. A
-   * keyless server or a dead key must say «tell the admin», never «later».
+   * What the person can DO about a missing reading (review #20, T13) —
+   * decided HERE so the island imports none of the intake's rules.
    */
-  aiRetry: boolean;
+  aiAdvice: ThreadAiAdvice | null;
   missing: string[];
   lines: number;
   fileCount: number;
 }
 
-/** «Try again later» only where a retry can change the answer — `AI_READ_FAILURE`'s flag. */
-export function threadAiRetry(failure: AiReadFailure | null): boolean {
-  return failure !== null && AI_READ_FAILURE[failure].retry;
+/**
+ * The three remedies a failed reading has: press again later (`retry`),
+ * select fewer messages or send the file another way (`smaller` — the input
+ * itself was too big or unreadable, and re-reading the same selection is cut
+ * the same way), or tell the admin (`admin` — a keyless server, a dead key, a
+ * refusal or the day's budget, which no press changes). One sentence for all
+ * of them was review #20; «tell the admin» about a selection that is merely
+ * too long was T13, its second half.
+ */
+export type ThreadAiAdvice = 'retry' | 'smaller' | 'admin';
+
+export function threadAiAdvice(failure: AiReadFailure | null): ThreadAiAdvice | null {
+  if (failure === null || failure === 'nothing_to_read') return null;
+  if (AI_READ_FAILURE[failure].retry) return 'retry';
+  return failure === 'truncated' || failure === 'rejected' ? 'smaller' : 'admin';
 }
 
 /**
@@ -204,7 +215,7 @@ export async function threadCalcAnalyze(
     facts,
     steps: ai?.steps ?? [],
     aiFailure: outcome.ok ? null : outcome.failure,
-    aiRetry: threadAiRetry(outcome.ok ? null : outcome.failure),
+    aiAdvice: threadAiAdvice(outcome.ok ? null : outcome.failure),
     missing: missingFields(input.section, facts, laws),
     lines: material.lines.length,
     fileCount: material.fileCount,

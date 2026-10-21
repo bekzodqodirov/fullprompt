@@ -3882,6 +3882,7 @@
     "threadAiFailed": "⚠ AI could not read this — the figures are from the typed text only.",
     "threadAiRetry": "Try again later.",
     "threadAiNoRetry": "Retrying will not help — tell the admin; the VED will review it by hand.",
+    "threadAiTooBig": "The selection is too big or a file could not be read — select fewer messages, or send the file another way.",
     "threadMissing": "Some data is missing — the VED will still take it",
     "threadSendBtn": "Send to VED",
     "threadCancel": "Cancel",
