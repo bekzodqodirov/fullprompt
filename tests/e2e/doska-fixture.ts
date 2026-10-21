@@ -51,14 +51,25 @@ export async function mintBoardTruck(
  * 2026-10-21).
  */
 export async function mintInlandTruck(sql: postgres.Sql, ownerPhone: string, prefix = 'DSI'): Promise<{ id: string; code: string }> {
+  return mintRoadTruck(sql, ownerPhone, prefix, 'YW', 'KA');
+}
+
+/** A truck a day out on the road between two seeded warehouses. */
+export async function mintRoadTruck(
+  sql: postgres.Sql,
+  ownerPhone: string,
+  prefix: string,
+  origin: string,
+  dest: string,
+): Promise<{ id: string; code: string }> {
   const code = `${prefix}${String(Date.now()).slice(-7)}`;
   const [row] = await sql<{ id: string }[]>`
     INSERT INTO batches (id, code, origin_warehouse_id, dest_warehouse_id, status, departed_at, created_by)
     SELECT gen_random_uuid(), ${code}, o.id, d.id, 'in_transit', now() - interval '24 hours', u.id
     FROM warehouses o, warehouses d, users u
-    WHERE o.code = 'YW' AND d.code = 'KA' AND u.phone = ${ownerPhone}
+    WHERE o.code = ${origin} AND d.code = ${dest} AND u.phone = ${ownerPhone}
     RETURNING id`;
-  if (!row) throw new Error('the demo has no YW, KA or owner to mint the truck from');
+  if (!row) throw new Error(`the demo has no ${origin}, ${dest} or owner to mint the truck from`);
   return { id: row.id, code };
 }
 

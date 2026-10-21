@@ -1623,7 +1623,7 @@
     "board": {
       "strip": "Mashinalar qayerda",
       "tabs": "Doska ustunlari",
-      "colInland": "Yo‘lda: Xitoy ichida",
+      "colInland": "Yo‘lda: Xitoy ichidagi reyslar",
       "colOutbound": "Yo‘lda: Xitoydan tashqariga",
       "filterWarehouse": "Sklad",
       "filterRoute": "Yo‘nalish",

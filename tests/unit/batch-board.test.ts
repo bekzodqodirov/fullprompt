@@ -11,6 +11,8 @@ import {
   roadColumnOf,
   routeFilterOf,
   stopOf,
+  tabCounts,
+  tabOf,
   telOf,
   toSection,
   tripRoadSection,
@@ -113,17 +115,22 @@ describe('the strip and the columns', () => {
     const KA = '0190a000-0000-7000-8000-0000000000ka';
     const HOR = '0190a000-0000-7000-8000-000000000hor';
     const UCH = '0190a000-0000-7000-8000-000000000uch';
+    const AKS = '0190a000-0000-7000-8000-000000000aks';
     const cards = [
       inland(UCH, 'Urumqi', { order: 1 }),
       inland(KA, 'Qashqar', { destHub: true, order: 3, code: 'B' }),
+      // A warehouse that is no hub and sorts before both hubs by name: the
+      // hubs still come first (the review — the order was alphabetical by luck).
+      inland(AKS, 'Aksu', { order: 4 }),
       inland(HOR, 'Horgos', { destHub: true, order: 2 }),
       inland(KA, 'Qashqar', { destHub: true, order: 3, code: 'A' }),
     ];
     const col = assembleBoard(cards, NONE).columns.find((c) => c.key === 'inland')!;
-    expect(col.count).toBe(4);
+    expect(col.count).toBe(5);
     expect(col.sections.map((s) => [s.key, s.destName])).toEqual([
       [`to:${HOR}`, 'Horgos'],
       [`to:${KA}`, 'Qashqar'],
+      [`to:${AKS}`, 'Aksu'],
       [`to:${UCH}`, 'Urumqi'],
     ]);
     // Oldest first inside a destination, ties by code.
@@ -131,6 +138,18 @@ describe('the strip and the columns', () => {
     // A place section carries no name: the page names it.
     const outbound = assembleBoard([out('uz')], NONE).columns.find((c) => c.key === 'outbound')!;
     expect(outbound.sections[0]).toMatchObject({ key: 'uz', destName: null });
+  });
+
+  it('four phone tabs: the «Yo’lda» tab holds both road columns and counts them both', () => {
+    expect(tabOf('inland')).toBe('road');
+    expect(tabOf('outbound')).toBe('road');
+    expect(tabOf('forming')).toBe('forming');
+    const KA = '0190a000-0000-7000-8000-0000000000ka';
+    const view = assembleBoard(
+      [inland(KA, 'Qashqar'), inland(KA, 'Qashqar'), out('uz'), card({ column: 'arrived', section: 'uz', place: 'uz' })],
+      NONE,
+    );
+    expect(tabCounts(view.columns)).toEqual({ forming: 0, loading: 0, road: 3, arrived: 1 });
   });
 
   it('a strip stop spanning both road columns opens the first one holding a card', () => {
@@ -441,10 +460,12 @@ describe('the phone tabs over one DOM', () => {
     expect(page).toContain(
       'max-xl:[&:has(#bt-road:checked)_[data-col]:not([data-col=inland]):not([data-col=outbound])]:hidden',
     );
-    expect(page).toContain("const TABS = ['forming', 'loading', 'road', 'arrived'] as const;");
+    expect(page).toContain('{BOARD_TABS.map((tab) => (');
     // No selector names a column key with `_`: Tailwind reads `_` in an
     // arbitrary variant as a space, and `#bt-road_cn` would select nothing.
-    const hides = page.slice(page.indexOf('const TAB_HIDES ='), page.indexOf('/** The phone'));
+    const start = page.indexOf('const TAB_HIDES =');
+    const hides = page.slice(start, page.indexOf("';", start));
+    expect(hides.length).toBeGreaterThan(100);
     expect(hides).not.toMatch(/#bt-[a-z]+_[a-z]/);
     expect(hides).not.toMatch(/data-col=[a-z]+_[a-z]/);
     const section = page.slice(page.indexOf('data-col={column.key}'), page.indexOf('data-col={column.key}') + 200);

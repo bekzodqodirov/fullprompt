@@ -1,5 +1,19 @@
+import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
-import { database, DRIVER, dropSpecTrucks, mintBoardTruck, mintFormingTruck, mintInlandTruck } from './doska-fixture';
+import {
+  database,
+  DRIVER,
+  dropSpecTrucks,
+  mintBoardTruck,
+  mintFormingTruck,
+  mintInlandTruck,
+  mintRoadTruck,
+} from './doska-fixture';
+
+/** One message in every bundle — the spec does not know which language the owner reads in. */
+const bundles = ['uz', 'ru', 'en', 'zh-CN'].map((l) => JSON.parse(readFileSync(`messages/${l}.json`, 'utf8')));
+const allOf = (pick: (m: any) => string) => bundles.map(pick); // eslint-disable-line @typescript-eslint/no-explicit-any
+const oneOf = (words: string[]) => new RegExp(words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'i');
 
 /**
  * Partiya doskasi on a phone (his 1A 2a 3a 10b, docs/PARTIYA-DOSKASI.md §3):
@@ -19,6 +33,7 @@ const sql = database();
 let truck: { id: string; code: string };
 let forming: { id: string; code: string };
 let inland: { id: string; code: string };
+let uzInternal: { id: string; code: string };
 
 async function login(page: Page) {
   await page.context().clearCookies();
@@ -43,6 +58,8 @@ test.beforeAll(async () => {
   truck = await mintBoardTruck(sql, OWNER);
   forming = await mintFormingTruck(sql, OWNER);
   inland = await mintInlandTruck(sql, OWNER);
+  // Andijan → Tashkent: never touches China, so it is on the outbound road — an «ichki reys».
+  uzInternal = await mintRoadTruck(sql, OWNER, 'DSU', 'AND', 'TAS1');
 });
 
 test.afterAll(async () => {
@@ -50,6 +67,7 @@ test.afterAll(async () => {
   await dropSpecTrucks(sql, 'DSK');
   await dropSpecTrucks(sql, 'DSF');
   await dropSpecTrucks(sql, 'DSI');
+  await dropSpecTrucks(sql, 'DSU');
   await sql.end();
 });
 
@@ -82,17 +100,41 @@ test('the «Yo’lda» tab holds both road columns: to Kashgar inside China, to 
   await page.locator('label:has(#bt-road)').click();
   const inlandCol = page.getByTestId('board-col-inland');
   const outboundCol = page.getByTestId('board-col-outbound');
-  // Both halves on the one tab, each told apart by its own heading.
+  // Both halves on the one tab, each told apart by its OWN heading — the
+  // trips' direction, never a place word the strip also uses.
+  const inlandWords = allOf((m) => m.batches.board.colInland);
+  const outboundWords = allOf((m) => m.batches.board.colOutbound);
   await expect(inlandCol.locator('h2')).toBeVisible();
   await expect(outboundCol.locator('h2')).toBeVisible();
+  await expect(inlandCol.locator('h2')).toHaveText(oneOf(inlandWords));
+  await expect(outboundCol.locator('h2')).toHaveText(oneOf(outboundWords));
+  await expect(inlandCol.locator('h2')).not.toHaveText(oneOf(outboundWords));
+  // The «Yo'lda» tab counts both halves.
+  const count = async (h2: ReturnType<Page['locator']>) => Number((await h2.textContent())!.match(/(\d+)\s*$/)![1]);
+  const both = (await count(inlandCol.locator('h2'))) + (await count(outboundCol.locator('h2')));
+  await expect(page.locator('label:has(#bt-road) .tabular-nums')).toHaveText(String(both));
   // Yiwu → Kashgar is inland, under its destination; Yiwu → Tashkent outbound.
   const inlandCard = inlandCol.locator(`[data-testid=batch-board-card][data-code="${inland.code}"]`);
   await expect(inlandCard).toBeVisible();
   await expect(inlandCard.locator('xpath=ancestor::div[starts-with(@data-testid, "board-section-inland-to:")]').locator('h3')).toContainText('→ Kashgar');
   await expect(outboundCol.locator(`[data-testid=batch-board-card][data-code="${truck.code}"]`)).toBeVisible();
   await expect(inlandCol.locator(`[data-testid=batch-board-card][data-code="${truck.code}"]`)).toHaveCount(0);
-  // Every inland trip is inside China: the «ichki reys» badge would say nothing there.
+  // An inland truck draws its road bar and its % like any truck on the road.
+  await expect(inlandCard.getByTestId('board-road')).toContainText('%');
+  await expect(inlandCard.getByTestId('board-road').locator('[aria-hidden="true"]').first()).toBeAttached();
+  // Every inland trip is inside China: the «ichki reys» badge would say nothing there…
   await expect(inlandCard.getByTestId('board-badge-internal')).toHaveCount(0);
+  // …while an Uzbek internal leg on the outbound road keeps it.
+  const uzCard = outboundCol.locator(`[data-testid=batch-board-card][data-code="${uzInternal.code}"]`);
+  await expect(uzCard).toBeVisible();
+  await expect(uzCard.getByTestId('board-badge-internal')).toBeVisible();
+  // The outbound column names its sections by PLACE, in the road's words.
+  await expect(outboundCol.getByTestId('board-section-outbound-cn').locator('h3')).toHaveText(
+    oneOf(allOf((m) => m.place.road.cn)),
+  );
+  // The colour legend stands over the outbound road only: an inland bar is one colour.
+  await expect(outboundCol.getByTestId('board-legend')).toBeAttached();
+  await expect(inlandCol.getByTestId('board-legend')).toHaveCount(0);
   // The other tabs hide both halves.
   await page.locator('label:has(#bt-arrived)').click();
   await expect(inlandCol).toBeHidden();
@@ -154,6 +196,7 @@ test('cleanup: the spec’s trucks leave the board', async () => {
   await dropSpecTrucks(sql, 'DSK');
   await dropSpecTrucks(sql, 'DSF');
   await dropSpecTrucks(sql, 'DSI');
-  const left = await sql`SELECT 1 FROM batches WHERE code LIKE 'DSK%' OR code LIKE 'DSF%' OR code LIKE 'DSI%'`;
+  await dropSpecTrucks(sql, 'DSU');
+  const left = await sql`SELECT 1 FROM batches WHERE code LIKE 'DSK%' OR code LIKE 'DSF%' OR code LIKE 'DSI%' OR code LIKE 'DSU%'`;
   expect(left.length).toBe(0);
 });

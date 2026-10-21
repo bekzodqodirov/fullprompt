@@ -1623,8 +1623,8 @@
     "board": {
       "strip": "Where the trucks are",
       "tabs": "Board columns",
-      "colInland": "In transit: within China",
-      "colOutbound": "In transit: beyond China",
+      "colInland": "In transit: trips within China",
+      "colOutbound": "In transit: bound outside China",
       "filterWarehouse": "Warehouse",
       "filterRoute": "Route",
       "filterAll": "All",

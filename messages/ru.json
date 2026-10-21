@@ -1623,8 +1623,8 @@
     "board": {
       "strip": "Где машины",
       "tabs": "Колонки доски",
-      "colInland": "В пути: по Китаю",
-      "colOutbound": "В пути: вне Китая",
+      "colInland": "В пути: рейсы внутри Китая",
+      "colOutbound": "В пути: за пределы Китая",
       "filterWarehouse": "Склад",
       "filterRoute": "Направление",
       "filterAll": "Все",

@@ -207,7 +207,10 @@ export async function TruckCard({ card }: { card: BoardTruck }) {
             )}
             {tel && (
               // Not a `.btn`: its 15 px and 48 px floor break a phone number
-              // over three lines in a 215 px desktop column.
+              // over three lines in a narrow desktop column. The number WRAPS
+              // and is never cut: in a 170 px column (five columns, the
+              // sidebar open) `truncate` drew «+998 90 …», and at a desk the
+              // logist reads it to dial it on his own phone (the review).
               <a
                 href={`tel:${tel}`}
                 aria-label={`${tb('callDriver')} ${card.driverPhone}`}
@@ -215,7 +218,7 @@ export async function TruckCard({ card }: { card: BoardTruck }) {
                 data-testid="board-call"
               >
                 <span aria-hidden>📞</span>
-                <span className="min-w-0 truncate">{card.driverPhone}</span>
+                <span className="min-w-0 [overflow-wrap:anywhere]">{card.driverPhone}</span>
               </a>
             )}
           </div>

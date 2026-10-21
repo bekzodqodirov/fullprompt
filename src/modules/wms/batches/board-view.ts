@@ -36,6 +36,23 @@ export function roadColumnOf(destCountry: string | null | undefined): RoadColumn
   return countryKey(destCountry) === 'CN' ? 'inland' : 'outbound';
 }
 
+/**
+ * The phone's tabs (below `xl`): the board's columns, the two road columns
+ * under ONE «Yo'lda» tab, each half under its own heading — five tabs on a
+ * 360 px phone cut «Shakllanmoqda» mid-word.
+ */
+export const BOARD_TABS = ['forming', 'loading', 'road', 'arrived'] as const;
+export type BoardTab = (typeof BOARD_TABS)[number];
+
+export const tabOf = (column: BoardColumn): BoardTab => (isRoadColumn(column) ? 'road' : column);
+
+/** A tab's number: every card its columns hold — the road tab is inland plus outbound. */
+export function tabCounts(columns: readonly { key: BoardColumn; count: number }[]): Record<BoardTab, number> {
+  const out: Record<BoardTab, number> = { forming: 0, loading: 0, road: 0, arrived: 0 };
+  for (const column of columns) out[tabOf(column.key)] += column.count;
+  return out;
+}
+
 /** A place, or «Joyi aniq emas». */
 export type BoardPlace = RoadZone | 'unknown';
 

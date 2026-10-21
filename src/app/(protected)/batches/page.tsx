@@ -15,11 +15,15 @@ import { mayReadBatches } from '@/modules/wms/batches/read-door';
 import { BOARD_CAP, loadBoard } from '@/modules/wms/batches/board';
 import {
   assembleBoard,
+  BOARD_TABS,
   isRoadColumn,
   readBoardFilters,
   ROUTE_FILTERS,
+  tabCounts,
+  tabOf,
   type BoardColumn,
   type BoardSectionView,
+  type BoardTab,
   type RouteFilter,
   type StripStop,
 } from '@/modules/wms/batches/board-view';
@@ -51,11 +55,6 @@ const first = (v: string | string[] | undefined): string | undefined => (Array.i
  */
 const TAB_HIDES =
   'max-xl:[&:has(#bt-forming:checked)_[data-col]:not([data-col=forming])]:hidden max-xl:[&:has(#bt-loading:checked)_[data-col]:not([data-col=loading])]:hidden max-xl:[&:has(#bt-road:checked)_[data-col]:not([data-col=inland]):not([data-col=outbound])]:hidden max-xl:[&:has(#bt-arrived:checked)_[data-col]:not([data-col=arrived])]:hidden';
-
-/** The phone's tabs: the board's columns, the two road ones under one «Yo'lda». */
-const TABS = ['forming', 'loading', 'road', 'arrived'] as const;
-type BoardTab = (typeof TABS)[number];
-const tabOf = (column: BoardColumn): BoardTab => (isRoadColumn(column) ? 'road' : column);
 
 /**
  * Partiya doskasi — every open truck and factory trip in one place, by WHERE
@@ -125,8 +124,7 @@ export default async function BatchesPage({ searchParams }: { searchParams: Prom
     road: t('statuses.in_transit'),
     arrived: t('statuses.arrived'),
   };
-  const tabCount = (tab: BoardTab) =>
-    view.columns.filter((c) => tabOf(c.key) === tab).reduce((sum, c) => sum + c.count, 0);
+  const tabCount = tabCounts(view.columns);
   const ROAD: Record<RoadZone, string> = {
     cn: tp('road.cn'),
     border: tp('road.border'),
@@ -358,7 +356,7 @@ export default async function BatchesPage({ searchParams }: { searchParams: Prom
           aria-label={tb('tabs')}
           className="mb-3 hidden grid-cols-4 gap-1 rounded-xl bg-surface-sunken p-1 max-xl:supports-[selector(:has(*))]:grid"
         >
-          {TABS.map((tab) => (
+          {BOARD_TABS.map((tab) => (
             <label key={tab} className="min-w-0 cursor-pointer">
               <input
                 type="radio"
@@ -374,7 +372,7 @@ export default async function BatchesPage({ searchParams }: { searchParams: Prom
                     than a quarter of a 360 px phone, and the column's own
                     heading is hidden while the tabs show. */}
                 <span className="w-full leading-tight [overflow-wrap:anywhere]">{TAB_LABEL[tab]}</span>
-                <span className="tabular-nums">{tabCount(tab)}</span>
+                <span className="tabular-nums">{tabCount[tab]}</span>
               </span>
             </label>
           ))}
@@ -399,7 +397,7 @@ export default async function BatchesPage({ searchParams }: { searchParams: Prom
               {/* The colours of the outbound bars; an inland bar is one colour,
                   the one its heading names. */}
               {column.key === 'outbound' && column.count > 0 && (
-                <p aria-hidden className="flex flex-wrap gap-x-3 gap-y-1 text-2xs text-ink-500">
+                <p aria-hidden data-testid="board-legend" className="flex flex-wrap gap-x-3 gap-y-1 text-2xs text-ink-500">
                   {ROAD_ZONES.map((zone) => (
                     <span key={zone} className="inline-flex items-center gap-1">
                       <span className={`h-2 w-3 rounded-sm ${ZONE_BAR[zone]}`} />
