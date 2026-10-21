@@ -883,6 +883,58 @@ export function notGoodsWord(raw: string): boolean {
 }
 
 /**
+ * A greeting or a REQUEST — what a person writes TO us, never what a product
+ * is called (R3-T6/T8). Compared as `notGoodsWord` compares: lower-cased,
+ * every apostrophe dropped. The stems are the request verbs and nouns in all
+ * their endings — «hisoblab», «hisoblang»; «narxi», «narxini»; «растаможить»,
+ * «растаможка».
+ */
+const REQUEST_WORDS = new Set([
+  'salom', 'salam', 'assalomu', 'assalom', 'assalamu', 'alaykum', 'aleykum', 'alaikum', 'aleikum', 'alekum',
+  'hayrli', 'xayrli', 'hello', 'hi', 'hey', 'привет', 'здравствуйте', 'добрый', 'kerak', 'нужно', 'надо',
+  'iltimos', 'пожалуйста', 'please', 'rahmat', 'спасибо',
+]);
+const REQUEST_STEMS = /^(?:hisobla|хисобла|narx|нарх|растамож|rastamoj|rastamozh)/u;
+
+const lowered = (raw: string) => raw.toLowerCase().replace(/[’ʻʼ‘`´']/gu, '');
+
+/** Is this word a greeting or a request? (the contact reader's list, R3-T6). */
+export function requestWord(raw: string): boolean {
+  const word = lowered(raw);
+  return word !== '' && (REQUEST_WORDS.has(word) || REQUEST_STEMS.test(word));
+}
+
+/**
+ * Words of a CHAT line about the shipment — «Salom aka, 12 kub 3500 kg»,
+ * «Bugun 5 kub», «Наш груз 12 куб», «Toshkent shahriga 12 kub» (R3-T8). The
+ * typed-goods reader skips a line holding ANY of these when it states no
+ * count, pair or code, where `notGoodsWord` needs EVERY word: one word off
+ * that list («aka», «bugun», «shahriga») used to make the line a product.
+ * Only words no product is called — a greeting or request, a person's
+ * address (aka, opa, uka), a day, «our», «cargo», a total, «also», a city
+ * word. Not a vehicle: «Mashina moyi 1200 kg» is motor oil. Not a place name
+ * either: «Andijon olmasi», «Xitoy choyi» are products.
+ */
+const CHAT_WORDS = new Set([
+  'aka', 'akam', 'opa', 'opajon', 'uka', 'ukam', 'bugun', 'ertaga', 'kecha', 'bizning', 'bizni', 'bizga',
+  'наш', 'наша', 'наше', 'наши', 'груз', 'груза', 'грузы', 'грузов', 'jami', 'umumiy', 'итого', 'всего', 'yana',
+  'shahar', 'shahri', 'shahriga', 'shahridan', 'shahrida', 'shaharga', 'shahardan', 'shaharda', 'город', 'города',
+  'городу', 'городе',
+]);
+
+/**
+ * Is this word one that makes a figures-only line a chat line? `next` is the
+ * word after it: «yuk» before «mashina» is a TRUCK — «Yuk mashina shinasi
+ * 150 kg» is truck tyres, and the every-word list had always kept it.
+ */
+export function chatWord(raw: string, next = ''): boolean {
+  const word = lowered(raw);
+  if (word === '') return false;
+  if (YUK_WORD.test(word)) return !/^mashin/u.test(lowered(next));
+  return requestWord(word) || CHAT_WORDS.has(word);
+}
+
+/**
  * The company's `client_code_prefix` setting (round-1 review 2, T4/T10): the
  * bot passes it. Left out, it is the setting's own default, «GS»; null or
  * empty is a company with no prefix.
@@ -937,16 +989,28 @@ function codeLettersOk(letters: string, prefix: string | null): boolean {
  * figure: «kg 5», «ta 5» and «m2» are amounts in a unit (review #6). The
  * glued and the labelled forms say «code» by their shape; the separated one
  * is a code only when its letters may be one (`codeLettersOk`).
+ *
+ * A label and bare digits — «Mijoz 777», «Kod: 777», «Klient 1234» — are the
+ * company's code written without its prefix (R3-T7): the seller SAID it is
+ * the customer, and filing it as goods material re-asked him for ever. With
+ * no prefix configured there is nothing to complete it with, and the label
+ * still keeps it out of the goods (`looksLikeMaterial`).
+ *
+ * `strict` is a line of a MULTI-line hint (R3-T9): there a code other than
+ * the company's prefix needs its label — «Kurtka» over «LG55» is a product
+ * and its model, not a contact.
  */
-function codeWritten(raw: string, prefix: string | null): string | null {
+function codeWritten(raw: string, prefix: string | null, strict = false): string | null {
   const body = raw.replace(CLIENT_LABEL, '');
   const labelled = body.length < raw.length;
   const own = prefixCode(body, prefix);
   if (own) return own;
+  if (labelled && prefix !== null && /^\d{1,8}$/.test(body)) return `${prefix}${body}`.toUpperCase();
   const m = /^([A-Za-z]{1,4})(\s*[-–]?\s*)(\d{1,8})$/.exec(body);
   if (!m) return null;
   const [, letters, gap, digits] = m as unknown as [string, string, string, string];
   if (unitOf(letters) !== null || unitOf(letters + digits) !== null || NOT_CODE_LETTERS.test(letters)) return null;
+  if (strict && !labelled && prefix !== null) return null;
   if (gap !== '' && !labelled && !codeLettersOk(letters, prefix)) return null;
   if (notGoodsWord(letters)) return null;
   return (letters + digits).toUpperCase();
@@ -958,6 +1022,14 @@ function codeWritten(raw: string, prefix: string | null): string | null {
  * a name AND the code, which is the best answer there is. The token's letters
  * must be a code's (`codeLettersOk`): «Samsung A54», «Xiaomi Redmi K60» name a
  * phone model (T4). A second digit anywhere makes it a guess.
+ *
+ * With a configured prefix ONLY the prefix is a code among words (R3-T9):
+ * two or three capitals beside a word are how a MODEL is written —
+ * «Televizor LG55», «Printer HP400», «Lampa LED32», «Truba PPR20», «Nike AF1»
+ * — and each became a client code nobody holds, the goods text naming the
+ * lead and never reaching the model. Other capitals stay a code on a line
+ * that is just the code («AB 123») or after a label («Mijoz: AB123»), in
+ * `codeWritten`; a company with no prefix keeps the capitals rule here.
  */
 function codeAmongWords(line: string, prefix: string | null): string | null {
   const tokens = line.split(/[\s,;:()«»"'‘’ʻ.]+/u).filter(Boolean);
@@ -979,7 +1051,7 @@ function codeAmongWords(line: string, prefix: string | null): string | null {
         continue;
       }
     }
-    const glued = /^([A-Za-z]{1,4})[-–]?(\d{1,8})$/.exec(token);
+    const glued = prefix === null ? /^([A-Za-z]{1,4})[-–]?(\d{1,8})$/.exec(token) : null;
     if (glued && unitOf(token) === null && codeLettersOk(glued[1]!, prefix)) {
       codes.push(`${glued[1]}${glued[2]}`.toUpperCase());
     }
@@ -1001,14 +1073,32 @@ function codeAmongWords(line: string, prefix: string | null): string | null {
  */
 const PHONE_RUN = /(?<![\p{L}\d])\+?\d(?:[\d\s.-]|\(\d{2,3}\)|\)){6,20}\d/u;
 
-/** «… 67 5 rasta», «… 67 2-do‘kon», «… 67 12-rasta» — a number that names a stall. */
+/**
+ * A WHOLE phone number's digits: nine (the Uzbek mobile without its country
+ * code), or a full international or trunk form — 998 + nine, 8 + nine, 7/8 +
+ * ten (Russia, Kazakhstan), 86 + eleven (China).
+ */
+const completePhone = (digits: string) =>
+  digits.length === 9 || /^(?:998\d{9}|8\d{9}|[78]\d{10}|86\d{11})$/.test(digits);
+
+/**
+ * «… 67 5 rasta», «… 67 2-do‘kon», «… 67 12-rasta», «… 67 12 rasta» — a
+ * number that names a stall. A one-digit group, or one a hyphen joins to a
+ * word, always does; a longer group only when a WORD follows it and the
+ * number is whole without it but not with it (R3-T10: «Ali 90 123 45 67 12
+ * rasta» was read as the eleven-digit phone «90 123 45 67 12», whose last
+ * nine match nobody). «998 90 123 45 67 Ali» and «+7 701 234 56 78 Ivan» keep
+ * their last group: without it the number is not whole.
+ */
 function stallAfter(run: string, after: string): string {
   const last = /^(.*\d)[\s.-]+(\d+)$/su.exec(run);
   if (!last) return run;
   const [, head, group] = last as unknown as [string, string, string];
-  const digits = head.replace(/\D/g, '').length;
-  const labels = group.length === 1 || /^[-–]\s*\p{L}/u.test(after);
-  return labels && digits >= 9 ? head : run;
+  const headDigits = head.replace(/\D/g, '');
+  const named =
+    /^\s+\p{L}/u.test(after) && completePhone(headDigits) && !completePhone(headDigits + group);
+  const labels = group.length === 1 || /^[-–]\s*\p{L}/u.test(after) || named;
+  return labels && headDigits.length >= 9 ? head : run;
 }
 
 /**
@@ -1054,19 +1144,66 @@ function phoneIn(line: string): { phone: string; start: number; end: number } | 
  */
 const LONG_HINT_CAP = 120;
 
-function lineHint(line: string, prefix: string | null): { code?: string; phone?: string } | null {
+/**
+ * Is what a long line holds besides its phone a CONTACT — a name, a place, a
+ * shop — rather than a message with a phone signed under it (R3-T6)? A
+ * forwarded request — «Здравствуйте, нужно растаможить куртки и обувь из
+ * Китая, мой номер +998 …», «Salom, bizga kurtka va shimlar keladi, iltimos
+ * hisoblab bering, tel …» — became the customer: the lead was named with the
+ * paragraph and its goods never reached the model. A contact has at most
+ * eight words, no sentence ends inside it, and no greeting or request word.
+ */
+function contactShaped(rest: string): boolean {
+  const words = rest.split(/[\s,;:()«»"]+/u).filter((w) => /[\p{L}\p{N}]/u.test(w));
+  if (words.length > 8) return false;
+  if (/\p{L}[.!?](?:\s|$)/u.test(rest)) return false;
+  if (/(?<![\p{L}])olib\s+kel/iu.test(rest)) return false;
+  return !words.some((w) => requestWord(w.replace(/[.!?]+$/u, '')));
+}
+
+/**
+ * The company's prefix written APART from its digits before a phone —
+ * «GS 777 90 123 45 67», «GS-777 90 …» (R3-T11). The phone's digit run
+ * starts at «777» (a space is part of a phone), so the code was swallowed
+ * into an eleven-digit «phone» and lost; it is found and masked FIRST. A
+ * client label and its digits are the same code (R3-T7): «Mijoz 777 90 123 45
+ * 67». Two such codes on one line are a list, never a contact.
+ */
+function codeBeforePhone(line: string, prefix: string | null): { code?: string; phone?: string } | null {
+  if (prefix === null) return null;
+  const label = String.raw`(?:mijoz|мижоз|klient|клиент|client|kod|код)(?:\s*(?:kodi|коди|кода|code))?\s*[:\-–—]?`;
+  const re = new RegExp(`(?<![\\p{L}\\d])(?:${escapeRe(prefix)}|${label})\\s*[-–]?\\s*(\\d{1,8})(?!\\d)`, 'giu');
+  const hits = [...line.matchAll(re)];
+  if (hits.length !== 1) return null;
+  const hit = hits[0]!;
+  const masked = line.slice(0, hit.index) + ' '.repeat(hit[0].length) + line.slice(hit.index + hit[0].length);
+  const found = phoneIn(masked);
+  if (!found) return null;
+  return { code: `${prefix}${hit[1]}`.toUpperCase(), phone: found.phone };
+}
+
+/**
+ * One line of the answer. `multi` is a line of a two- or three-line answer:
+ * there a code other than the company's prefix needs its label (R3-T9).
+ */
+function lineHint(line: string, prefix: string | null, multi = false): { code?: string; phone?: string } | null {
   if (line.length > LONG_HINT_CAP) return null;
   const long = line.length > 60;
-  const code = long ? null : codeWritten(line, prefix);
+  const code = long ? null : codeWritten(line, prefix, multi);
   if (code) return { code };
+  const both = long ? null : codeBeforePhone(line, prefix);
+  if (both) return both;
   const found = phoneIn(line);
   if (found) {
     const rest = `${line.slice(0, found.start)} ${line.slice(found.end)}`;
-    if (long && phoneIn(rest) !== null) return null;
+    // A long line is a contact only by its shape, and never names a code
+    // beside the phone (R3-T6: «Bu mijoz GS777 ning akasi, … telefoni 90 …»
+    // is GS777's BROTHER, and his job landed on GS777's deal).
+    if (long) return phoneIn(rest) === null && contactShaped(rest) ? { phone: found.phone } : null;
     // A code BESIDE the phone is the seller's best answer: both (T9). With
     // only the phone the job of a person holding several codes on one number
     // (#407) lands on a new lead.
-    const beside = codeAmongWords(rest, prefix) ?? (rest.trim() ? codeWritten(rest.trim(), prefix) : null);
+    const beside = codeAmongWords(rest, prefix) ?? (rest.trim() ? codeWritten(rest.trim(), prefix, multi) : null);
     return beside ? { code: beside, phone: found.phone } : { phone: found.phone };
   }
   if (long) return null;
@@ -1099,7 +1236,7 @@ export function parseClientHint(raw: string, opts?: ClientHintOpts): { code?: st
   if (lines.length > 3 || lines.some(statesGoods)) return null;
   if (lines.length === 1) return lineHint(lines[0]!, prefix);
   if (lines.some((l) => l.length > 60)) return null;
-  const hints = lines.filter((l) => /\d/.test(l)).map((l) => lineHint(l, prefix));
+  const hints = lines.filter((l) => /\d/.test(l)).map((l) => lineHint(l, prefix, true));
   if (hints.length === 0 || hints.length > 2 || hints.some((h) => h === null)) return null;
   const codes = hints.flatMap((h) => (h?.code ? [h.code] : []));
   const phones = hints.flatMap((h) => (h?.phone ? [h.phone] : []));

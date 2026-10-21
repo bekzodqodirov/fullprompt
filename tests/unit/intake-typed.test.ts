@@ -61,8 +61,10 @@ describe('a goods label is a whole word with its separator (review #25)', () => 
         expect.objectContaining({ name: 'синтетическое компрессорное масло', weightKg: 240, volumeM3: 1.1 }),
       ]);
     }
-    // Under a plain label the product carries its figure; a bare name needs
-    // the NAMING label (T7 — «Товар - куртка» is the shape of «Товар: готов»).
+    // The round-1 fixture, restored by R3-T2: a plain label over a bare name
+    // is the name (T7's figure requirement lost it); «Товар: готов» is
+    // refused by its status word, not by its shape.
+    expect(names('Товар - куртка\nTovar nomi: shim', { labelledOnly: true })).toEqual(['куртка', 'shim']);
     expect(names('Товар - куртка 300 шт\nTovar nomi: shim', { labelledOnly: true })).toEqual(['куртка', 'shim']);
   });
 });
@@ -96,6 +98,10 @@ describe('a bare trailing number is never a goods line (review #24)', () => {
     expect(readGoodsLines('Наименование: куртка женская\nКол-во: 300 шт\nМест: 45')).toEqual([
       expect.objectContaining({ name: 'куртка женская', quantity: null }),
     ]);
+    // The round-1 fixture, restored by R3-T2 (round 2 had re-anchored it to
+    // «Tovar nomi:»), with its Russian twin.
+    expect(names('Tovar: kurtka\nSoni: 300 dona\nVazni: 150 kg\nHajmi: 3 kub')).toEqual(['kurtka']);
+    expect(names('Товар: куртка женская\nКол-во: 300 шт\nВес: 150 кг')).toEqual(['куртка женская']);
     expect(names('Tovar nomi: kurtka\nSoni: 300 dona\nVazni: 150 kg\nHajmi: 3 kub')).toEqual(['kurtka']);
   });
 

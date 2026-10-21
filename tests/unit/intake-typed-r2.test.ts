@@ -101,7 +101,12 @@ describe('T4 / T10 — a product and its count is not a client code', () => {
       expect(looksLikeMaterial(hint, GS), hint).toBe(false);
     }
     expect(parseClientHint('AB 123', GS)).toEqual({ code: 'AB123' });
-    expect(parseClientHint('Bobur ABC777', GS)).toEqual({ code: 'ABC777' });
+    // Re-anchored by R3-T9 (the lead's decision): with a prefix, capitals
+    // beside a word are a product's MODEL («Televizor LG55»), so «Bobur
+    // ABC777» is material. A seller who meant it as the customer sends it
+    // again, and the collector's repeat rule believes him (C3).
+    expect(parseClientHint('Bobur ABC777', GS)).toBeNull();
+    expect(looksLikeMaterial('Bobur ABC777', GS)).toBe(true);
     // Another company's prefix is read as ITS code, and «GS» then is not special.
     expect(parseClientHint('xy 45', { prefix: 'XY' })).toEqual({ code: 'XY45' });
     expect(parseClientHint('gs 45', { prefix: 'XY' })).toBeNull();
@@ -220,22 +225,27 @@ describe('T7 — a goods label names the goods only when what follows is a produ
       'Tovar: rasmi bor',
       'Mahsulot: 5 kun ichida',
       'Tovar: 3 xil',
-      'Tovar: kurtka',
     ]) {
       expect(readGoodsLines(not), not).toEqual([]);
       expect(readGoodsLines(not, { labelledOnly: true }), not).toEqual([]);
     }
+    // «Tovar: kurtka» left this list in R3-T2: a figure-less body under a
+    // plain label is the product's name (intake-typed-r3.test.ts).
+    expect(names('Tovar: kurtka')).toEqual(['kurtka']);
   });
 
-  it('a naming label takes a bare name; a list with no figures goes to the model, never welded', () => {
+  it('a naming label takes a bare name; a list with no figures is never welded', () => {
     expect(names('Tovar nomi: shim')).toEqual(['shim']);
     expect(names('Наименование: куртка женская', { labelledOnly: true })).toEqual(['куртка женская']);
     expect(names('Название: iPhone 15 Pro')).toEqual(['iPhone 15 Pro']);
     expect(names('Product name: LED lamp')).toEqual(['LED lamp']);
     expect(names('品名: 外套')).toEqual(['外套']);
-    for (const list of ['Mahsulotlar: shim, kurtka', 'Tovar nomi: shim, kurtka', 'Наименование: шорты; куртки']) {
-      expect(readGoodsLines(list), list).toEqual([]);
-    }
+    // Re-anchored by R3-T2 (the lead's decision): a PLURAL label splits the
+    // list into names; a singular or naming label keeps it whole, commas and
+    // all — what the seller typed, never «shim kurtka».
+    expect(names('Mahsulotlar: shim, kurtka')).toEqual(['shim', 'kurtka']);
+    expect(names('Tovar nomi: shim, kurtka')).toEqual(['shim, kurtka']);
+    expect(names('Наименование: шорты; куртки')).toEqual(['шорты; куртки']);
   });
 
   it('under a plain label a product with its figure still reads', () => {

@@ -140,21 +140,44 @@ export function readAmountText(raw: string): Amount {
  * A TNVED code as people write it in a line of text: ten digits, or the dotted
  * or spaced form «6907.21.00.00» / «6907 21 00 00», or a shorter code that is
  * LABELLED («kod 6907», «ТН ВЭД 640399»). A bare short number is never taken
- * as a code — «Stol 1000» is a thousand tables.
+ * as a code — «Stol 1000» is a thousand tables. The dotted or spaced form
+ * opens with a real heading, as the printed one does (R3-T5, `CODE_PRINTED`):
+ * «Kurtka 1200 50 30» is three numbers, not the code 12005030.
  */
 const CODE_LABEL = /(?:^|[\s,;(])(?:tnved|тнвэд|тн\s?вэд|tn\s?ved|hs|kod|код|code)\s*[:=№#-]?\s*(\d{4,10})(?!\d)/iu;
-const CODE_DOTTED = /(?<![\d.])(\d{4})[. ](\d{2})(?:[. ](\d{2}))?(?:[. ](\d{2}))?(?![\d.,])/u;
+const CODE_DOTTED =
+  /(?<![\d.])((?:0[1-9]|[1-8]\d|9[0-7])(?:0[1-9]|[1-9]\d))[. ](\d{2})(?:[. ](\d{2}))?(?:[. ](\d{2}))?(?![\d.,])/u;
 const CODE_TEN = /(?<![\d.,])(\d{10})(?![\d.,])/u;
 /**
  * The two forms a customs declaration and the PP-3818 book PRINT a ten-digit
  * code in — 4-2-4 «6201 93 0000» and 4-2-3-1 «2710 19 820 0», with spaces or
  * dots (round-1 review 2, T3). Only 4-2-2-2 was known, so «Kurtka 6201 93 000
- * 0» stated no goods and the bot filed it as the customer's PHONE. The first
- * group must be a chapter (01-97), the same rule a four-digit code cell obeys:
- * nothing else in a goods line opens 4-2 and runs on to ten digits.
+ * 0» stated no goods and the bot filed it as the customer's PHONE.
+ *
+ * The first group must be a real HEADING — chapter 01-97 AND a heading 01-99,
+ * never xx00 (R3-T5) — the rule a four-digit code cell obeys. A chapter alone
+ * let a row of plain numbers through: «Kurtka 1200 50 3000», «Futbolka 2000 10
+ * 5000» (price, count, sum, copied from a PDF) were read as the codes
+ * 1200503000 and 2000105000, grouping the row and pulling a law by its
+ * prefix. And the SPACED form is not a code when another bare number follows
+ * it on the line (`bareNumberAfter`): «Kurtka 1500 30 2400 12.5» is a row of
+ * figures. The dotted form stays unambiguous — «Kurtka 6201.93.0000 300».
+ * Left: a row whose first figure happens to be a heading («Ayollar kurtkasi
+ * 1250 50 3000», 12-50) with nothing after it reads as «Kurtka 6201 93 0000»
+ * does — without the tariff's own list of headings the two are one text.
  */
 const CODE_PRINTED =
-  /(?<![\d.])((?:0[1-9]|[1-8]\d|9[0-7])\d{2})[. ](\d{2})[. ](?:(\d{4})|(\d{3})[. ](\d))(?![\d.,])/u;
+  /(?<![\d.])((?:0[1-9]|[1-8]\d|9[0-7])(?:0[1-9]|[1-9]\d))[. ](\d{2})[. ](?:(\d{4})|(\d{3})[. ](\d))(?![\d.,])/u;
+
+/** A bare number — no unit word after it — anywhere after `end`: «… 2400 12.5». */
+function bareNumberAfter(text: string, end: number): boolean {
+  const tail = text.slice(end);
+  const re = /(?<![\p{L}\p{N}.,])\d[\d.,]*(?![\p{L}\p{N}])/gu;
+  for (let hit = re.exec(tail); hit; hit = re.exec(tail)) {
+    if (!unitWordAfter(tail, hit.index + hit[0].length)) return true;
+  }
+  return false;
+}
 
 /** The word written right after `end`, when it names a unit — «6201 93 3000 dona» is a
  * subheading and three thousand pieces, never a ten-digit code. */
@@ -193,7 +216,9 @@ export function codeIn(text: string): { code: string; start: number; end: number
   const ten = CODE_TEN.exec(text);
   if (ten) return { code: ten[1]!, start: ten.index, end: ten.index + ten[0].length };
   const printed = CODE_PRINTED.exec(text);
-  if (printed && !unitWordAfter(text, printed.index + printed[0].length)) {
+  const printedEnd = printed ? printed.index + printed[0].length : 0;
+  const spacedRow = printed !== null && !printed[0].includes('.') && bareNumberAfter(text, printedEnd);
+  if (printed && !unitWordAfter(text, printedEnd) && !spacedRow) {
     const code = printed.slice(1).filter(Boolean).join('');
     return { code, start: printed.index, end: printed.index + printed[0].length };
   }
