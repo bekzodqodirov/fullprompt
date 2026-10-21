@@ -158,7 +158,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | A factory trip closes and remembers its lines — the door question, «shu zavoddan, shu mashinada», the checker | `docs/ZAVOD-YOPISH.md` — agreed 2026-10-15 (his 1a-5a, 6, 7 ha), SHIPPED; §10-§11 override §2-§5 |
 | The staff Telegram group — celebrations, the Saturday 18:00 rating, the month's champion, /reyting | `docs/JAMOA-GURUHI.md` — agreed 2026-10-20 (his «3. 2 3 gif … tabriklash ham / qolgani sen aytkandek»), SHIPPED |
 | Every truck in one place — the board by place, the % by distance, GPS, the gate | `docs/PARTIYA-DOSKASI.md` — agreed 2026-10-17 (his 1A 2a 3a 4a 5a 6c 7a 8b 9b 10b 11A 12A, then «1 hozirgidek qolsin»), SHIPPED; §2 is the placement as built |
-| His eight items of 2026-10-20 (AI reading, customs, models, odnarodka, VED rota, new deal, kontragent links, one-line tarkib) — verified diagnosis, round plan, the numbered questions | `docs/SAKKIZ-BAND.md` — diagnosed 2026-10-20, **NOT agreed, nothing built**; record his answers in §11 |
+| His eight items of 2026-10-20 (AI reading, customs, models, odnarodka, VED rota, new deal, kontragent links, one-line tarkib) — verified diagnosis, round plan, the numbered questions | `docs/SAKKIZ-BAND.md` — his answers in §11 (2026-10-21, unnamed = ⭐); **round 1 SHIPPED** (DECISIONS #1455-#1462); 4.5 and 6.8 asked back; rounds 2-10 open |
 ## State — 2026-08-23
 
 **VED phases A-E1 are on this branch** (`docs/VED.md`; migrations
@@ -2908,6 +2908,31 @@ phone tabs as a radio group over one DOM (`:has()` only where supported). Words:
 the customer's rung does not follow GPS; a typed wait ahead of a silent fix; TAS2's % walks
 to the drawn dot; the yard is the code's, not coordinates typed on /admin/warehouses.
 DEPLOY: Horgos → type «Konsolidatsiya habi», country CN.
+
+**Round — Sakkiz band, round 1 (2026-10-21; DECISIONS #1455-#1462; NO
+migration; spec `docs/SAKKIZ-BAND.md`, his answers §11).** The VED rota: free
+first, then fewest handed TODAY, then longest wait, then id, picked INSIDE both
+landing transactions under `pg_advisory_xact_lock(hashtext('ved-rota'))`
+(`nextVedAssigneeInTx(tx, pool)`; his «faqat Murodga» = the NULL tie, reproduced
+`[9,0,0]` → `[3,3,3]`); admins holding the `ved_manager` ROLE join (5.7). The
+bot: `analyzeIntake` answers `{ok}|{ok:false, failure: AiReadFailure}` (twelve
+named, `AI_READ_FAILURE`, «🔄 AI qayta o'qisin»), 16k `max_tokens` because the
+heavy model's thinking counts inside it, own single retry, 150 s; typed goods
+lines read without the model (`readGoodsLines`, narrow, LAST in order);
+`readGoodsFile` = every sheet / content-sniffed XLSX, Excel 97 (OUR BIFF8 value
+reader `deals/xls.ts` over SheetJS's `cfb` — the full SheetJS reader is
+CVE-laden on npm and its fixed host is unreachable), HTML, XML, CSV in
+cp1251/GBK/UTF-16; the best sheet's goods, the rest + header-less sheets to the
+model as text; the header needs ≥2 cells and prefers word-like name columns. The
+collector: picture-files shown, HEIC/voice refused in words, 12 photos, 3 PDFs,
+a second invoice ASKED (`c:inv_add`/`c:inv_replace`), first message may be
+material (`looksLikeMaterial`), a phone is phone-shaped, an analysis lands only
+under its token (`settleAnalysis`) and keeps what arrived meanwhile, the confirm
+needs `stage === 'review'`, per-line answers live in `answers`, not material.
+Excel photos: `documents/sheet-photo.ts` — 800 px documents, 400 px stock, JPEG
+88, fitted into the box. The queued AI pass says when it stands down. ORACLE:
+LibreOffice is installed here — make a file with exceljs, save it as «MS Excel
+97», read it back. «шт» in packing lists (8.5) waits for round 8.
 
 **Latest migration: 0134** (`staff_group`, `when` …113; ledger must reach **135**). Before
 it: 0133 (`pickup_close`, `when` …112). Beforeit: 0132 (`cost_freight_basis`, `when` …111). Before

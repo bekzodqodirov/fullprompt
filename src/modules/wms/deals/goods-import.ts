@@ -70,7 +70,13 @@ const NAME_KEYS_FIRST = ['наимен', 'описан', 'назван', 'nomi',
 const TNVED_KEYS = ['hs code', 'hs-code', 'тн вэд', 'тнвэд', 'tn ved', 'tnved', '海关编码', '商品编码'];
 const QTY_KEYS = ['кол-во', 'кол.', 'количество', 'колич', 'soni', 'miqdor', 'dona', 'qty', 'quantity', 'pcs', '数量', '件数'];
 const UNIT_KEYS = ['ед.', 'ед изм', 'единиц', 'birlik', 'unit', '单位'];
-const WEIGHT_KEYS = ['вес', 'кг', "og'irlik", 'ogirlik', 'vazn', 'weight', 'kg', '重量', '毛重', '净重'];
+const WEIGHT_KEYS = ['вес', 'кг', "og'irlik", 'ogirlik', 'vazn', 'weight', 'kg', '重量', '毛重', '净重', 'g.w', 'n.w', 'gross'];
+/**
+ * A line's weight is NETTO (the row's own unit of account, `CalcField`), so a
+ * packing list carrying both «N.W.» and «G.W.» is read by its net column
+ * whichever stands first.
+ */
+const NET_WEIGHT_KEYS = ['нетто', 'netto', 'n.w', 'net', '净重'];
 const VOLUME_KEYS = ['объем', 'объём', 'куб', 'м3', 'м³', 'hajm', 'kub', 'volume', 'cbm', 'm3', 'm³', '体积', '立方'];
 // Totals first: a file carrying both «цена» (per unit) and «сумма» (the line
 // total) must land on the total — profit and customs both read line money.
@@ -104,6 +110,21 @@ export function parseNumber(cell: Cell): number | null {
       : text.replace(',', '.');
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * A number with the column's OWN unit glued on — «120KGS», «12.5 CBM», «300
+ * PCS» — as Chinese packing lists write every cell (the diagnosis' cause 3:
+ * those cells read as nothing). Only the unit the column stands for is taken
+ * off: «5 CTNS» in a quantity column is cartons, not pieces, and stays
+ * unread rather than become a wrong count.
+ */
+function parseMeasure(cell: Cell, accept: 'dona' | 'kg' | 'm3'): number | null {
+  const plain = parseNumber(cell);
+  if (plain !== null || typeof cell !== 'string') return plain;
+  const glued = /^(-?[\d\s.,]*\d)\s*([\p{L}][\p{L}\d²³.]*)$/u.exec(cell.trim());
+  if (!glued) return null;
+  return unitOf(glued[2]!.replace(/\.$/, '')) === accept ? parseNumber(glued[1]!) : null;
 }
 
 /** A cell that reads as a TNVED code — the kernel's own shape rule. */
@@ -223,7 +244,7 @@ export function detectColumns(rows: Cell[][]): { headerRow: number; columns: Col
     // Volume before weight: «вес, кг» must not be eaten by a stray m3 match,
     // and the volume keys are the more specific set.
     const volume = volumeFromQty ?? claim(VOLUME_KEYS);
-    const weight = weightFromQty ?? claim(WEIGHT_KEYS);
+    const weight = weightFromQty ?? claim(NET_WEIGHT_KEYS) ?? claim(WEIGHT_KEYS);
     const amount = claim(AMOUNT_TOTAL_KEYS) ?? claim(AMOUNT_PRICE_KEYS);
     return {
       headerRow: r,
@@ -272,10 +293,14 @@ export function parseGoods(rows: Cell[][]): { goods: GoodsRow[]; headerRow: numb
               : null;
       push({
         description: cellText(at(columns.name)),
-        quantity: parseNumber(at(columns.quantity)),
+        // A piece column takes «300 PCS»; a column whose header names
+        // another unit («Кол-во, м2») keeps the plain number, as before.
+        quantity: columns.quantityUnit
+          ? parseNumber(at(columns.quantity))
+          : parseMeasure(at(columns.quantity), 'dona'),
         unit: (cellText(at(columns.unit)) || columns.quantityUnit || '').slice(0, 20) || null,
-        weightKg: parseNumber(at(columns.weight)),
-        volumeM3: parseNumber(at(columns.volume)),
+        weightKg: parseMeasure(at(columns.weight), 'kg'),
+        volumeM3: parseMeasure(at(columns.volume), 'm3'),
         amount: parseNumber(at(columns.amount)),
         tnvedCode: code && 'code' in code ? code.code : null,
         note: codeNote,

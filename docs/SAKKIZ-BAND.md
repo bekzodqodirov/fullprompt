@@ -1,6 +1,9 @@
 # Sakkiz band — his eight items of 2026-10-20 (diagnosis, NOT yet agreed)
 
-Status: **diagnosed and adversarially verified; nothing built.** His message
+Status: **diagnosed and adversarially verified; his answers in §11 (2026-10-21);
+round 1 BUILT (DECISIONS #1455-#1462, CHANGELOG 2026-10-21); rounds 2-10 open;
+4.5 (who types the odnarodka price) and 6.8 («yangi klient bo'lib») asked back.**
+Below, the diagnosis as written before any code. His message
 (verbatim, abridged): AI rastamojka in the bot cannot read goods from files,
 photos or typed text and does not analyse everything together; adding missing
 information works badly (1); it very often fails to compute customs, and
@@ -200,7 +203,11 @@ Recommended: a separate dated `calc_truck_tariffs` table, `freight_basis` +
 `truck_count` on requests and versions, a list price owned by
 `admin.dictionaries.manage`, every reader above taught in the same round
 (no A-lite with known-wrong money readers), a derived fence over freight_zone
-writers. Size L, migration.
+writers. Size L, migration. **Overtaken by his 4.5 (2026-10-21):** there is no
+preset truck price — one overall price is typed per cargo, so the dated table is
+out unless he says otherwise (asked back). And since `main`'s 0135
+(`load_mode`, LTL/FTL for KPI) a deal carries an FTL flag: an odnarodka quote is
+an FTL job and must set it.
 
 ## 6. Item 5 — the VED rota
 

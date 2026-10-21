@@ -1,5 +1,46 @@
 # CHANGELOG
 
+## 2026-10-21 — 8 band, 1-raund: bot yuborilgan narsani yo'qotmaydi, VED navbati bitta odamga tushmaydi
+
+**Migratsiya yo'q.** Deploydan keyin migratsiyalar soni o'zgarmaydi, shuning uchun tekshirish: `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatishi kerak.
+
+Javoblaringiz: «1 chi band 3 b / 2chi bolim 4 c / … / umumiy savollar 0 1 a». Siz yozmagan savollarga ⭐ variant olindi (`docs/SAKKIZ-BAND.md` §11). Bu raundda javoblaringiz to'liq qamragan qismlar qilindi: 1-banddagi yo'qotishlar, 5-banddagi navbat xatosi va 8-bandga qo'shgan xira rasmlaringiz.
+
+### VED navbati (5-band)
+- **Xato topildi va tuzatildi.** Hamma VED bo'sh bo'lganda tizim har safar ro'yxatdagi birinchi odamni tanlardi. Siz ko'rgan «hammasi Murodga» shu edi. Sinovda 9 ta ish 3 ta bo'sh VED ga 9 / 0 / 0 bo'lib tushdi, endi 3 / 3 / 3.
+- Yangi tartib (5.1): avval qo'lida ochiq ishi yo'q odam; teng bo'lsa — bugun kamroq ish olgan; yana teng bo'lsa — eng uzoq ish olmagan.
+- Ikki so'rov bir soniyada kelsa, endi ikkalasi bitta odamga tushmaydi.
+- **Admin + VED roli** bo'lgan xodim ham navbatga kiradi (5.7). Faqat admin roli bo'lgan kiritilmaydi.
+- Qayta hisoblash avvalgidek o'sha VED ning o'ziga qaytadi (5.4 a).
+
+### Bot AI rastamojka va 🧮 Hisoblatish (1-band)
+- **«AI mavjud emas» degan umumiy gap yo'q.** AI o'qiy olmasa, bot sababini yozadi: javob sig'madi, vaqt tugadi, AI band, kalit ishlamayapti, xavfsizlik filtri rad etdi va hokazo. Yordam berishi mumkin bo'lsa «🔄 AI qayta o'qisin» tugmasi chiqadi.
+- **Skrinshotingizdagi holatning eng ehtimolli sababi tuzatildi.** AI javobi uchun joy kichik edi (AI ning o'ylashi ham shu joyni egallaydi), katta materialda javob yarmida kesilib qolardi. Joy 4 barobar oshirildi, kutish 3 daqiqagacha (3.4 b).
+- **Yozilgan tovar nomi o'qiladi.** AI ishlamasa ham «Tovar синтетическое компрессорное масло 1.1 kub 240 kg» endi «Tovarlar: —» bo'lmaydi: nomi, kubi va kg si chiqadi.
+- AI nima qilganini 2-3 qatorda yozadi (1.6 a). Tovar nomlari ruscha, asl nomi qavsda (1.5 b).
+- **Fayl qilib yuborilgan rasm o'qiladi.** WeChat yoki kompyuterdan kelgan siqilmagan rasm eng tiniq nusxa, avval AI uni ko'rmas edi. HEIC rasm o'qilmasa, shuni aytadi.
+- **12 tagacha rasm (1.4 b) va 3 tagacha PDF** birga o'qiladi.
+- **Excel'ning hamma varaqlari** o'qiladi. **Eski .xls ham o'qiladi** (1.3 b): Excel 97, WPS fayllari va web tizimlardan «.xls» bo'lib keladigan jadvallar. Rus Windows'idagi va xitoy ofisidagi CSV ham to'g'ri harflar bilan o'qiladi.
+- **Excel'dan «uydirma» tovar chiqmaydi.** Avval sarlavhasi topilmagan faylda sotuvchi firma nomi, manzil va «Invoice No» tovar bo'lib qolardi. Endi bunday jadvalni AI o'qiydi (1.2 b). «Item No.» ustuni ham endi tovar nomi deb olinmaydi.
+- Bir faylda «Invoice» va «Packing list» varaqlari bo'lsa, tovarlar ikki marta qo'shilmaydi: eng ko'p tovarli varaq olinadi, qolganini AI o'qiydi.
+- Xitoy packing list'laridagi «120KGS», «12.5 CBM», «300PCS» kabi kataklar endi o'qiladi. «5 CTNS» (karobka) esa dona deb olinmaydi. Faylda N.W. (netto) va G.W. (brutto) ikkalasi bo'lsa, tovar og'irligi netto'dan olinadi. Bu bitim tovarlarini Excel'dan yuklashda ham ishlaydi.
+- **Ikkinchi invoys kelsa bot so'raydi** (1.13 c): «➕ Qatorlari qo'shilsin» yoki «🔁 Oldingisining o'rniga». Avval jimgina birinchisining o'rniga yozilardi.
+- **Birinchi xabar tovar ro'yxati bo'lsa** (1.7 b), u ma'lumot sifatida olinadi va mijoz qayta so'raladi. TNVED kodi endi telefon raqami deb olinmaydi.
+- **«Bo'ldi» dan keyin yuborilgan narsa o'chmaydi.** AI o'qiyotgan paytda kelgan xabar saqlanadi, bot «yana Bo'ldi ni bosing» deydi. «Bo'ldi» ikki marta bosilsa, ikki marta pul ketmaydi.
+- **Qatorga bergan javobingiz** («150 kg») endi butun yukning og'irligi bo'lib qolmaydi.
+- Ovozli xabar yuborilsa: «Ovozli xabar o'qilmaydi — yozib yuboring» (1.12 a).
+- AI navbatdagi hisobni to'xtatsa (masalan VED allaqachon ochgan bo'lsa), sotuvchiga sababi yoziladi. Avval javob umuman kelmasdi.
+
+### Excel'dagi rasmlar xira edi (8-band, 5)
+- Packing list, agent fayli va sklad qoldig'i (Ostatka) fayllarida **kichik 200 px nusxa** ishlatilgan, u ikki marta siqilgan va katakka cho'zib joylashtirilgan edi.
+- Endi packing list va agent faylida **800 px tiniq nusxa**, Ostatka faylida **400 px** (avvalgidan 2 barobar tiniq). Rasm tomonlarining nisbati buzilmaydi.
+- Ostatka'da 400 px bo'lishining sababi: bu fayl butun skladning minglab rasmini tashiydi, 800 px da yuzlab megabayt bo'lib ketadi. Kerak bo'lsa ayting, ko'taramiz.
+
+### Keyingi raundlarda
+- Packing list'dagi **«шт» ustuni** 8-band raundida chiqadi. Dona tarkib qatorida saqlanadi, 8-band aynan bitta qatorli tarkibni ochadi.
+- Siz bilan aniqlashtirilishi kerak: odnarodka narxini kim yozadi (4.5), «jo'natgan sotuvchining CRM'iga yangi klient bo'lib» nimani anglatadi (6.8).
+
+
 ## Partiya doskasi: hamma mashinalar bir joyda, qayerdaligi bilan — 2026-10-20
 
 **Bu raundning o'zida migratsiya yo'q.** U pastdagi «Jamoa guruhi» yangilanishi (migratsiya 0134) bilan bir deployda chiqadi, agar u serverga hali qo'yilmagan bo'lsa. Shuning uchun deploydan keyin ikkalasini tekshiring: **migratsiyalar soni 135** va `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatsin.

@@ -3,7 +3,7 @@ import path from 'node:path';
 import * as CFB from 'cfb';
 import { describe, expect, it } from 'vitest';
 import { decodeText, readGoodsFile } from '@/modules/wms/deals/goods-file';
-import { detectColumns } from '@/modules/wms/deals/goods-import';
+import { detectColumns, parseGoods } from '@/modules/wms/deals/goods-import';
 import { htmlTableSheets, readXls, rkValue, spreadsheetMlSheets } from '@/modules/wms/deals/xls';
 
 /**
@@ -226,5 +226,20 @@ describe('a sheet the reader cannot map goes to the model, never becomes goods',
       ['YW-2302', 'Men shoes', 40],
     ];
     expect(detectColumns(rows)!.columns.name).toBe(1);
+  });
+});
+
+describe('a figure with its unit glued on (Chinese packing lists)', () => {
+  it('«120KGS», «12.5 CBM», «300PCS» read in their own columns; «5 CTNS» is never pieces; NET over gross', () => {
+    const rows = [
+      ['Description', 'Qty', 'G.W.(KGS)', 'N.W.(KGS)', 'CBM'],
+      ['Women jacket', '300PCS', '130KGS', '120KGS', '12.5 CBM'],
+      ['Men shoes', '5 CTNS', '1 300 kg', '1 200 kg', '0,8m3'],
+    ];
+    const goods = parseGoods(rows).goods;
+    expect(goods.map((g) => [g.quantity, g.weightKg, g.volumeM3])).toEqual([
+      [300, 120, 12.5],
+      [null, 1200, 0.8],
+    ]);
   });
 });
