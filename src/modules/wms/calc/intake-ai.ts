@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { logger } from '../../platform/logger';
 import { aiConfigured, ANALYST_MODEL } from '../../platform/ai/model';
+import { SHEET_TEXT_BUDGET } from '../deals/goods-file';
 import type { AiReadFailure, CalcFacts, CalcGoodsFact, CalcSection } from './intake';
 import { normalizeRowUnit, normalizeTnved, unitOf } from './units';
 
@@ -158,6 +159,80 @@ export function aiFailureOf(err: unknown): AiReadFailure {
 /** A failure worth one more attempt inside the same leash: the call never ran. */
 const transient = (f: AiReadFailure) => f === 'rate_limited' || f === 'overloaded' || f === 'network';
 
+/** Two attempts at most, and this long between them. */
+export const INTAKE_ATTEMPTS = 2;
+export const INTAKE_RETRY_PAUSE_MS = 2_000;
+
+/**
+ * Is another attempt worth the pause, decided BEFORE pausing (round-1 review,
+ * a19)? The pause used to run after every transient failure — the LAST one
+ * too, so every failed reading cost two seconds of nothing, and a failure
+ * near the end of the leash slept past it (measured: a 10 s leash answered
+ * at 12 s, the chat door's 20 s at 22 s). One more attempt only when there
+ * is one, and only when half the leash is still left once the pause is over
+ * — which also bounds the whole reading by the leash. Pure, so the rule is a
+ * test rather than a stopwatch.
+ */
+export function retryAfterPause(failure: AiReadFailure, attempt: number, elapsedMs: number, leashMs: number): boolean {
+  if (!transient(failure)) return false;
+  if (attempt + 1 >= INTAKE_ATTEMPTS) return false;
+  return leashMs - elapsedMs - INTAKE_RETRY_PAUSE_MS >= leashMs / 2;
+}
+
+/**
+ * Spreadsheet text as the model is shown it: whole LINES while they fit in
+ * `cap` characters, and a count of what was kept (round-1 review, a17).
+ *
+ * The text was cut with `slice(0, 15000)`: in the middle of a row, with
+ * nothing said to the model or the seller — a 300-line header-less packing
+ * list came back as 229 goods, the half row as a broken one, and the job
+ * landed short with no word anywhere. A row is kept whole or not at all; the
+ * model is told the table was cut (`intakeContent`), and the bot tells the
+ * seller when the file ARRIVES, with the same function over the same texts.
+ *
+ * Per text, in order, so a caller can name what one file loses: `kept[i]` of
+ * `total[i]` lines of `texts[i]`. Once a line does not fit nothing after it
+ * is taken — a later line read without the ones above it is a row without
+ * its table.
+ */
+export function fitSheetTexts(
+  texts: readonly string[],
+  cap: number,
+): { text: string; kept: number[]; total: number[] } {
+  const out: string[] = [];
+  const kept: number[] = [];
+  const total: number[] = [];
+  let used = 0;
+  let full = false;
+  for (const text of texts) {
+    const lines = text.split('\n');
+    total.push(lines.length);
+    let n = 0;
+    if (!full) {
+      // The blank line between two texts costs what it is.
+      const gap = out.length > 0 ? 2 : 0;
+      const taken: string[] = [];
+      let size = gap;
+      for (const line of lines) {
+        const cost = (taken.length > 0 ? 1 : 0) + line.length;
+        if (used + size + cost > cap) {
+          full = true;
+          break;
+        }
+        taken.push(line);
+        size += cost;
+      }
+      if (taken.length > 0) {
+        out.push(taken.join('\n'));
+        used += size;
+      }
+      n = taken.length;
+    }
+    kept.push(n);
+  }
+  return { text: out.join('\n\n'), kept, total };
+}
+
 /**
  * Read the collected material. Returns null when AI is not available at all
  * — the caller then keeps whatever the person typed and says so plainly.
@@ -198,6 +273,13 @@ export async function analyzeIntake(input: {
    */
   sheetText?: string | null;
   /**
+   * Line names the seller's Excel already lists (round-1 review, c4): the
+   * seller said a separate PDF or sheet is ANOTHER factory's goods, so the
+   * model's lines are appended to the Excel's — and a model not told what is
+   * already there repeats it from the caption. The caller caps the list.
+   */
+  knownGoods?: readonly string[];
+  /**
    * The caller's leash. The bot answers asynchronously and affords the
    * default 60 s; an interactive press (the thread door) cannot hold a
    * person that long and passes ~20 s — past it the manual parser answers.
@@ -226,8 +308,9 @@ export async function analyzeIntake(input: {
   // left.
   const leash = input.timeoutMs ?? INTAKE_TIMEOUT_MS;
   const started = Date.now();
+  const known = (input.knownGoods ?? []).map((n) => n.trim()).filter(Boolean);
   let failure: AiReadFailure = 'network';
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  for (let attempt = 0; attempt < INTAKE_ATTEMPTS; attempt += 1) {
     const left = leash - (Date.now() - started);
     if (attempt > 0 && left < leash / 2) break;
     try {
@@ -237,7 +320,9 @@ export async function analyzeIntake(input: {
         max_tokens: INTAKE_MAX_TOKENS,
         system: SYSTEM,
         output_config: { format: { type: 'json_schema', schema: FACTS_JSON_SCHEMA } },
-        messages: [{ role: 'user', content: intakeContent(input.section, input.fileCount, material, images, pdfs, sheetText) }],
+        messages: [
+          { role: 'user', content: intakeContent(input.section, input.fileCount, material, images, pdfs, sheetText, known) },
+        ],
       });
       // Spec §3: «no new cap in v1, but log token use». Until this round
       // every model call was a person pressing a button; the pass makes
@@ -253,8 +338,8 @@ export async function analyzeIntake(input: {
       // Never fatal: the intake goes on with what the person typed, and the
       // seller is told WHY. The reason is in the log beside the error.
       logger.warn({ err, failure, attempt }, 'calc intake AI failed');
-      if (!transient(failure)) break;
-      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      if (!retryAfterPause(failure, attempt, Date.now() - started, leash)) break;
+      await new Promise((resolve) => setTimeout(resolve, INTAKE_RETRY_PAUSE_MS));
     }
   }
   return { ok: false, failure };
@@ -339,7 +424,11 @@ function intakeContent(
   images: NonNullable<Parameters<typeof analyzeIntake>[0]['images']>,
   pdfs: { data: Buffer; name: string }[],
   sheetText: string,
+  known: readonly string[],
 ): Anthropic.ContentBlockParam[] {
+  const sheet = fitSheetTexts([sheetText], SHEET_TEXT_BUDGET);
+  const keptLines = sheet.kept[0] ?? 0;
+  const totalLines = sheet.total[0] ?? 0;
   return [
     // Images FIRST: the model reads them as context for the text that
     // follows, which is how the packing list and its caption actually relate.
@@ -364,7 +453,19 @@ function intakeContent(
         (fileCount ? `Прикреплено файлов: ${fileCount}\n` : '') +
         (images.length ? `Фотографий для чтения: ${images.length}\n` : '') +
         (pdfs.length ? `Приложены PDF: ${pdfs.map((p) => p.name).join(', ')}\n` : '') +
-        (sheetText ? `Таблица Excel (текстом):\n${sheetText.slice(0, 15000)}\n\n` : '') +
+        (sheetText
+          ? `Таблица Excel (текстом):\n${sheet.text}\n` +
+            // Said, never silent (round-1 review, a17): a model not told the
+            // table stops reads the visible rows as the whole order.
+            (keptLines < totalLines
+              ? `[Таблица обрезана: показаны первые ${keptLines} из ${totalLines} строк. ` +
+                'Остальные строки ты не видишь — не считай итоги по видимой части и напиши в steps, что таблица прочитана не целиком.]\n'
+              : '') +
+            '\n'
+          : '') +
+        (known.length
+          ? `Эти товары уже взяты из таблицы Excel — НЕ повторяй их в goods, перечисли только другие:\n${known.map((n) => `- ${n.slice(0, 120)}`).join('\n')}\n\n`
+          : '') +
         (material ? `Материалы:\n${material.slice(0, 20000)}` : 'Текста нет — читай фото и документы.'),
     },
   ];

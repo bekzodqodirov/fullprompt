@@ -91,20 +91,47 @@ export async function registerCalcLinkAskWorker(boss: PgBoss): Promise<void> {
   });
 }
 
+/** The seller's sentence when the pass itself failed. */
+export const PASS_FAILED = '🤖 AI bu so‘rovni hisoblay olmadi — so‘rov VED navbatida, narxni VED beradi.';
+
+/**
+ * Why the machine stood down: `prefillStanding`'s answer, or `unfinished` — a
+ * re-delivered pass that found the revision moved (`attemptStanding`).
+ */
+export type StandDown = Exclude<import('./prefill').PrefillStand, 'ok'> | 'unfinished';
+
 /**
  * What the seller is told when the machine stands down (2026-10-21, the round
- * plan's «stand-down message»). Keyed by `prefillStanding`'s answer; null =
- * nothing to say (a request that no longer exists has nobody waiting on it).
+ * plan's «stand-down message»). Keyed by why; null = nothing to say (a
+ * request that no longer exists has nobody waiting on it).
  */
-export const STOOD_DOWN: Record<Exclude<import('./prefill').PrefillStand, 'ok'>, string | null> = {
+export const STOOD_DOWN: Record<StandDown, string | null> = {
   touched: '🤖 AI hisoblamadi: VED bu so‘rovni allaqachon ochib ishlayapti — narxni VED beradi.',
   confirmed: '🤖 AI hisoblamadi: VED guruhlarni tasdiqlab bo‘lgan — narxni VED beradi.',
   closed: '🤖 AI hisoblamadi: so‘rov allaqachon yopilgan.',
   not_found: null,
+  unfinished: PASS_FAILED,
 };
 
-/** The seller's sentence when the pass itself failed. */
-export const PASS_FAILED = '🤖 AI bu so‘rovni hisoblay olmadi — so‘rov VED navbatida, narxni VED beradi.';
+/**
+ * The standing, read with the attempt (round-1 review, a18).
+ *
+ * `touched` means «the revision moved since this was queued», and on a FIRST
+ * attempt only a person can have moved it. A RE-DELIVERED job is the process
+ * dying mid-pass (the handler never rethrows), and the dead pass's own writes
+ * — the memory save, the groups, the codes — moved the clock under the
+ * machine's name: telling the seller «VED bu so'rovni allaqachon ochib
+ * ishlayapti» then is a sentence about a person nobody saw, repeated to the
+ * customer. A retry is `unfinished` — the AI did not finish, the VED has the
+ * job. `confirmed` and `closed` only a person produces (the machine never
+ * ticks ✅ and never seals), so they stand on any attempt.
+ */
+export function attemptStanding(
+  standing: import('./prefill').PrefillStand,
+  retryCount: number,
+): import('./prefill').PrefillStand | 'unfinished' {
+  return standing === 'touched' && retryCount > 0 ? 'unfinished' : standing;
+}
 
 /**
  * The AI VED hodimi's pass, OWNED.
@@ -131,7 +158,9 @@ export const PASS_FAILED = '🤖 AI bu so‘rovni hisoblay olmadi — so‘rov V
  */
 export async function registerCalcPrefillWorker(boss: PgBoss): Promise<void> {
   await boss.createQueue(JOB_CALC_PREFILL);
-  await boss.work<CalcPrefillJob>(JOB_CALC_PREFILL, async (jobs) => {
+  // `includeMetadata`: the stand-down sentence depends on whether this is a
+  // re-delivery (`attemptStanding`) — customs/jobs.ts asks for it the same way.
+  await boss.work<CalcPrefillJob>(JOB_CALC_PREFILL, { includeMetadata: true }, async (jobs) => {
     for (const job of jobs) {
       const { requestId, staffId } = job.data;
       try {
@@ -140,9 +169,12 @@ export async function registerCalcPrefillWorker(boss: PgBoss): Promise<void> {
         // A person may have reached the request first — the queue drains
         // when it drains, and pg-boss re-delivers. The machine stands down
         // rather than deleting their groups and un-ticking their ✅.
-        const standing = await prefillStanding(requestId, job.data.rev ?? null);
+        const standing = attemptStanding(await prefillStanding(requestId, job.data.rev ?? null), job.retryCount ?? 0);
         if (standing !== 'ok') {
-          logger.info({ requestId, standing }, '[calc-prefill] stood down — the request has moved');
+          logger.info(
+            { requestId, standing, retryCount: job.retryCount },
+            '[calc-prefill] stood down — the request has moved',
+          );
           // Said, not silent (2026-10-21): the seller was promised a figure in
           // this chat, and a pass that stood down used to leave him waiting.
           const said = STOOD_DOWN[standing];

@@ -30,9 +30,10 @@ describe('the analysis actually looks at the photographs', () => {
     expect(AI).toMatch(/type: 'image'/);
     expect(AI).toContain("type: 'base64'");
     // The text block travels WITH them — a content array, not a bare string
-    // (built by `intakeContent` since 2026-10-21, one place for its order).
+    // (built by `intakeContent` since 2026-10-21, one place for its order;
+    // the spreadsheet's fit is measured first since the round-1 review).
     expect(AI).toContain('content: intakeContent(');
-    expect(AI).toMatch(/\): Anthropic\.ContentBlockParam\[\] \{\n  return \[/);
+    expect(AI).toMatch(/\): Anthropic\.ContentBlockParam\[\] \{\n(?: {2}.*\n)*? {2}return \[/);
   });
 
   it('a collection of photographs alone is still analysed', () => {
