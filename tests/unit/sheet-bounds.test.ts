@@ -1,7 +1,8 @@
 import * as CFB from 'cfb';
 import ExcelJS from 'exceljs';
 import { describe, expect, it } from 'vitest';
-import { SHEET_TEXT_BUDGET, csvRows, readGoodsFile } from '@/modules/wms/deals/goods-file';
+import { SHEET_TEXT_BUDGET, csvRows, readGoodsFile, workbookRows, workbookSheets } from '@/modules/wms/deals/goods-file';
+import { parseGoods } from '@/modules/wms/deals/goods-import';
 import {
   MAX_COLS,
   MAX_MARKUP_CHARS,
@@ -229,12 +230,16 @@ describe('the markup readers are linear and keep spanned columns in place (#9)',
       <tr><td>Стол</td><td>5</td><td>100</td><td>110</td><td>2500</td></tr>
       <tr><td>Стул</td><td>3</td><td>55</td><td>60</td><td>900</td></tr>
     </table>`;
+    // The sub-header row repeats the header's merged WORDS (S8, the second
+    // review: a merged text names every row it covers) — every column still
+    // where the header put it.
     expect(htmlTableSheets(html)![0]!.rows.slice(0, 2)).toEqual([
       ['Наименование', 'Кол-во', 'Вес, кг', null, 'Сумма'],
-      [null, null, 'нетто', 'брутто'],
+      ['Наименование', 'Кол-во', 'нетто', 'брутто', 'Сумма'],
     ]);
     const read = await readGoodsFile(Buffer.from(html, 'utf8'), null);
-    // No «нетто» product, the net weight and the line's money where they stand.
+    // No «нетто» product — the row naming the header is the header again —
+    // the net weight and the line's money where they stand.
     expect(read?.kind === 'goods' && read.goods.map((g) => [g.description, g.quantity, g.weightKg, g.amount])).toEqual([
       ['Стол', 5, 100, 2500],
       ['Стул', 3, 55, 900],
@@ -384,5 +389,153 @@ describe('a hidden sheet is never chosen over a visible one (#14)', () => {
 
     const onlyHidden = await readGoodsFile(Buffer.from(xml(sheet('Заказ', true, order))), null);
     expect(onlyHidden?.kind === 'goods' && [onlyHidden.sheet, onlyHidden.goods.length]).toEqual(['Заказ', 2]);
+  });
+});
+
+/**
+ * The second review (2026-10-21, S2/S9, S4, S7, S8, S11): what the first fix
+ * round's door did with an empty visible sheet, a long sheet's last row and a
+ * merged cell — the same table now reads the same from every format.
+ */
+describe('the second review of the spreadsheet door', () => {
+  it('an empty visible sheet does not hide the order on a hidden one (S2, S9)', async () => {
+    const body = await xlsxOf([
+      { name: 'Sheet1', rows: [] },
+      { name: 'Data', state: 'hidden', rows: [['Наименование', 'Кол-во'], ['Стол', 5]] },
+    ]);
+    const read = await readGoodsFile(body, null);
+    expect(read?.kind === 'goods' && [read.sheet, read.goods.map((g) => [g.description, g.quantity])]).toEqual(['Data', [['Стол', 5]]]);
+  });
+
+  it('a long header-less sheet is cut on a WHOLE row and says so (S4)', async () => {
+    const lines = Array.from({ length: 300 }, (_, i) => `PL-${i};LED panel light 600x600 40W, ${i} PCS;12.5 kg;0.125 cbm;carton ${i}`);
+    const read = await readGoodsFile(Buffer.from(lines.join('\n'), 'utf8'), 'text/csv');
+    expect(read?.kind).toBe('text');
+    if (read?.kind !== 'text') return;
+    expect(read.text.length).toBeLessThanOrEqual(SHEET_TEXT_BUDGET);
+    expect(read.textCut).toBe(true);
+    const shown = read.text.split('\n').slice(1);
+    // Every line handed over is a whole source row, the last one included.
+    shown.forEach((line, i) => expect(line).toBe(lines[i]!.replace(/;/g, ' | ')));
+    expect(shown.length).toBeGreaterThan(100);
+    expect(shown.length).toBeLessThan(300);
+  });
+
+  it('one huge row cannot empty the text: a row is capped first, whole cells only (S4)', async () => {
+    const row = Array.from({ length: 100 }, (_, i) => `${'Ж'.repeat(290)} ${i}`);
+    const read = await readGoodsFile(await xlsxOf([{ name: 'S', rows: [row, ['Стол 5 шт']] }]), null);
+    expect(read?.kind).toBe('text');
+    if (read?.kind !== 'text') return;
+    expect(read.textCut).toBe(true);
+    const [, first, second] = read.text.split('\n');
+    expect(first!.length).toBeLessThanOrEqual(2_000);
+    expect(first!.split(' | ').every((cell, i) => cell === row[i])).toBe(true);
+    expect(second).toBe('Стол 5 шт');
+  });
+
+  it('a cell’s own line break is not a row: the text keeps one line per row (S4)', async () => {
+    const read = await readGoodsFile(await xlsxOf([{ name: 'S', rows: [['Yiwu Trading'], ['Куртка\nженская', 'синяя']] }]), null);
+    expect(read?.kind === 'text' && read.text).toBe('[S]\nYiwu Trading\nКуртка женская | синяя');
+    expect(read?.kind === 'text' && read.textCut).toBe(false);
+  });
+
+  it('a cell cut at its 300 characters is something left out (S4)', async () => {
+    const read = await readGoodsFile(await xlsxOf([{ name: 'S', rows: [['Yiwu Trading'], ['Ж'.repeat(400)]] }]), null);
+    expect(read?.kind === 'text' && read.textCut).toBe(true);
+  });
+
+  it('the S7 gate reads a one-column list in linear time — five cells of thirty thousand digits', () => {
+    // Measured: the figure scan over one such cell unbounded took 2 s.
+    const digits = '1'.repeat(30_000);
+    const started = Date.now();
+    parseGoods([['Наименование'], ...Array.from({ length: 5 }, () => [digits])]);
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
+  it('a TITLE over typed lines with figures goes to the model, never as goods with no figures (S7)', async () => {
+    const csv = 'Товарная накладная № 15 от 01.10.2026\nСтол офисный 5 шт 100 кг\nСтул 30 шт 150 кг\n';
+    const read = await readGoodsFile(Buffer.from(csv, 'utf8'), 'text/csv');
+    expect(read?.kind).toBe('text');
+    expect(read?.kind === 'text' && read.text).toContain('Стол офисный 5 шт 100 кг');
+  });
+
+  it('HTML: a name merged down over two lines names both; its figures stay in their columns (S8)', async () => {
+    const html = `<table><tr><td>Наименование</td><td>Кол-во</td><td>Вес, кг</td></tr>
+      <tr><td rowspan="2">Стол</td><td>5</td><td>100</td></tr><tr><td>3</td><td>60</td></tr></table>`;
+    expect(htmlTableSheets(html)![0]!.rows.slice(1)).toEqual([
+      ['Стол', '5', '100'],
+      ['Стол', '3', '60'],
+    ]);
+    const read = await readGoodsFile(Buffer.from(html, 'utf8'), null);
+    expect(read?.kind === 'goods' && read.goods.map((g) => [g.description, g.quantity, g.weightKg])).toEqual([
+      ['Стол', 5, 100],
+      ['Стол', 3, 60],
+    ]);
+  });
+
+  /**
+   * One table, three formats: a title merged ACROSS, a name and a carton's
+   * amount merged DOWN over two lines. Measured before the fix: the XLSX
+   * read the title as the header (four «goods» with no figures, «Наименование»
+   * among them), the HTML dropped the second line.
+   */
+  const table = { title: 'Товарная накладная', header: ['Наименование', 'Кол-во', 'Вес, кг', 'Сумма'] };
+  const expected = [
+    ['Стол', 5, 100, 900],
+    ['Стол', 3, 60, null],
+    ['Стул', 2, 10, 50],
+  ];
+  const goodsOf = (read: Awaited<ReturnType<typeof readGoodsFile>>) =>
+    read?.kind === 'goods' && read.goods.map((g) => [g.description, g.quantity, g.weightKg, g.amount]);
+
+  it('XLSX: a covered cell repeats a merged TEXT down its column, a merged FIGURE is counted once (S11)', async () => {
+    const workbook = new ExcelJS.Workbook();
+    const ws = workbook.addWorksheet('S');
+    ws.addRow([table.title, null, null, null]);
+    ws.mergeCells('A1:D1');
+    ws.addRow(table.header);
+    ws.addRow(['Стол', 5, 100, 900]);
+    ws.addRow([null, 3, 60, null]);
+    ws.mergeCells('A3:A4');
+    ws.mergeCells('D3:D4');
+    ws.addRow(['Стул', 2, 10, 50]);
+    const body = Buffer.from(await workbook.xlsx.writeBuffer());
+    const sheets = await workbookSheets(body);
+    expect(sheets![0]!.rows).toEqual([
+      [table.title, null, null, null],
+      table.header,
+      ['Стол', 5, 100, 900],
+      ['Стол', 3, 60, null],
+      ['Стул', 2, 10, 50],
+    ]);
+    expect(goodsOf(await readGoodsFile(body, null))).toEqual(expected);
+    // The deal import's own reader follows the same rule.
+    expect(await workbookRows(body)).toEqual(sheets![0]!.rows);
+  });
+
+  it('HTML: the same table reads the same goods (S11)', async () => {
+    const html = `<table><tr><td colspan="4">${table.title}</td></tr>
+      <tr>${table.header.map((h) => `<td>${h}</td>`).join('')}</tr>
+      <tr><td rowspan="2">Стол</td><td>5</td><td>100</td><td rowspan="2">900</td></tr>
+      <tr><td>3</td><td>60</td></tr>
+      <tr><td>Стул</td><td>2</td><td>10</td><td>50</td></tr></table>`;
+    expect(goodsOf(await readGoodsFile(Buffer.from(html, 'utf8'), null))).toEqual(expected);
+  });
+
+  it('SpreadsheetML: MergeDown reads the same goods (S11)', async () => {
+    const cell = (v: string | number, attrs = '') =>
+      `<Cell${attrs}><Data ss:Type="${typeof v === 'number' ? 'Number' : 'String'}">${v}</Data></Cell>`;
+    const xml = `<?xml version="1.0"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+ <Worksheet ss:Name="S"><Table>
+  <Row>${cell(table.title, ' ss:MergeAcross="3"')}</Row>
+  <Row>${table.header.map((h) => cell(h)).join('')}</Row>
+  <Row>${cell('Стол', ' ss:MergeDown="1"')}${cell(5)}${cell(100)}${cell(900, ' ss:MergeDown="1"')}</Row>
+  <Row>${cell(3, ' ss:Index="2"')}${cell(60)}</Row>
+  <Row>${cell('Стул')}${cell(2)}${cell(10)}${cell(50)}</Row>
+ </Table></Worksheet>
+</Workbook>`;
+    expect(spreadsheetMlSheets(xml)![0]!.rows[3]).toEqual(['Стол', '3', '60']);
+    expect(goodsOf(await readGoodsFile(Buffer.from(xml, 'utf8'), null))).toEqual(expected);
   });
 });

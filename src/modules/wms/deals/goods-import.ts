@@ -65,6 +65,24 @@ const NAME_KEYS = ['наимен', 'товар', 'описан', 'назван',
  */
 const NAME_KEYS_FIRST = NAME_KEYS.filter((key) => key !== 'item');
 /**
+ * A header that carries a name key and names something ELSE (S5, the second
+ * review): «Код товара», «Артикул товара», «Товарный знак», «Tovar kodi»,
+ * «Brand name», «品牌名称» are an attribute OF the goods; «Customer name»,
+ * «Mijoz nomi», «Наименование покупателя» a party. «товар» and «name» are
+ * first-tier keys, so such a column to the LEFT of the real name took it —
+ * a УПД's 1C code «ЦБ-00012345» became every product's name, the brand
+ * «Xiaomi» the vacuum cleaner's. Judged on the header's HEAD, before the first
+ * «(», «,» or «;»: «Наименование товара (марка, модель)» LISTS what the
+ * column holds and is the name.
+ */
+const NAME_ATTRIBUTE = /код|kod|code|артикул|арт(?![а-яё])|art\.|sku|номер|number|raqam|знак|марк|brand|бренд|brend|model|модел|编号|编码|代码|货号|型号|品牌/i;
+const NAME_PARTY =
+  /customer|client|consignee|shipper|supplier|manufact|vendor|buyer|seller|клиент|покупател|получател|отправител|поставщ|производител|изготовител|продав|mijoz|xaridor|客户|收货|发货|供应|厂家|厂商|买方|卖方/i;
+const namesSomethingElse = (header: string): boolean => {
+  const head = header.split(/[(,;]/)[0] ?? '';
+  return NAME_ATTRIBUTE.test(head) || NAME_PARTY.test(head);
+};
+/**
  * The TNVED / HS column (judge MR-19). Never a bare «hs» or «kod»: header
  * keys match as SUBSTRINGS, so «hs» is inside «Widths» and «kod» inside
  * «Tovar kodi» / «Mijoz kodi» — an article number then priced under a real
@@ -77,23 +95,39 @@ const WEIGHT_KEYS = ['вес', 'кг', "og'irlik", 'ogirlik', 'vazn', 'weight', 
 /**
  * A line's weight is NETTO (the row's own unit of account, `CalcField`), so a
  * packing list carrying both «N.W.» and «G.W.» is read by its net column
- * whichever stands first. Never a bare «net»: it is inside «Net price» and
- * «Net amount», and the line's money became its weight (the review).
+ * whichever stands first. Never «net» as a SUBSTRING: it is inside «Net
+ * price», «Net amount» and «Cabinet No.», and the line's money became its
+ * weight (the review).
  */
 const NET_WEIGHT_KEYS = ['нетто', 'netto', 'n.w', 'net w', 'net.w', '净重'];
 /**
+ * …but «net» as a WORD is the net column when the header says it weighs
+ * («Net, kg», «NET (KG)») or a gross column stands in the same header
+ * («Gross | Net») — S6, the second review: dropping the word altogether made
+ * «Gross, kg | Net, kg» read the gross, and per-kg duty took the cartons'
+ * weight. A «Net» on an invoice with no weight beside it stays unread: there
+ * it is as often the line's money.
+ */
+const NET_WORD = /(?:^|[^\p{L}])net(?:[^\p{L}]|$)/iu;
+const WEIGHT_WORD = /kgs?\b|кг|weight|\bwt\b|вес/i;
+const GROSS_HEADER = /gross|g\.\s*w|брутто|brutto|毛重/i;
+/**
  * A weight header that is not the LINE's weight. Per package — «N.W./CTN»
  * stands before «TOTAL N.W.» on a Chinese packing list and is one carton's,
- * 20× short — or money («Цена нетто», «Net price»). «total» / «итог» are not
- * money words here: «TOTAL N.W.» IS the line's weight; nor is «Суммарный вес».
+ * 20× short; «毛重/箱», «净重/件» the same in Chinese (S3) — or money («Цена
+ * нетто», «Net price»). «total» / «итог» are not money words here: «TOTAL
+ * N.W.» IS the line's weight; nor is «Суммарный вес».
  */
-const PER_PACKAGE = /\/\s*(?:ctns?|cartons?|box(?:es)?|pcs?|pieces?|units?|шт|кор|мест)|\bper\b|\beach\b|на\s*1\b|每|单箱|单件|单重/i;
+const PER_PACKAGE =
+  /\/\s*(?:ctns?|cartons?|box(?:es)?|pcs?|pieces?|units?|шт|кор|мест|箱|件|个|只|包)|\bper\b|\beach\b|на\s*1\b|每|单箱|单件|单重/i;
 const MONEY_HEADER = /цен[аы]|сумм[аы](?!р)|стоимост|narx|summa|price|amount|cost|value|金额|单价|价格|总价/i;
 const VOLUME_KEYS = ['объем', 'объём', 'куб', 'м3', 'м³', 'hajm', 'kub', 'volume', 'cbm', 'm3', 'm³', '体积', '立方'];
 // Totals first: a file carrying both «цена» (per unit) and «сумма» (the line
 // total) must land on the total — profit and customs both read line money.
 const AMOUNT_TOTAL_KEYS = ['сумма', 'стоимость', 'итог', 'summa', 'umumiy', 'amount', 'total', '金额', '总价'];
 const AMOUNT_PRICE_KEYS = ['цена', 'narx', 'price', '单价', '价格'];
+/** A count of packages — «TOTAL CTNS», «Кол-во мест», «箱数» — is no money either. */
+const PACKAGE_COUNT = /ctns?\b|cartons?|pkgs?\b|packages?|короб|мест|箱数|件数|包数/i;
 
 /** Rows that are arithmetic, not goods. */
 const TOTAL_ROW_KEYS = ['итого', 'всего', 'jami', 'total', '合计', '总计'];
@@ -150,16 +184,37 @@ function parseMeasure(cell: Cell, accept: 'dona' | 'kg' | 'm3'): number | null {
 const isCodeCell = (cell: Cell) => cellText(cell) !== '' && normalizeTnved(cell) !== null;
 
 /**
- * A cell that reads as a product's NAME: two letters at least, and not an
- * article number («YW-2301», «A-17», «SKU 0042») — a few CAPITAL Latin
- * letters, then digits. Any letters at all made «Труба 32», «Кран 1/2» and
- * «Муфта 25» article numbers, and a column of such names lost to the
- * «Описание» beside it (the review).
+ * An article number: a few CAPITAL letters then digits («YW-2301», «A-17»,
+ * «SKU 0042», «ЦБ-00012345», «УТ-00000077»), or a few letters of any case
+ * JOINED to the digits by a mark («gs-1201», «Art. 2301», «Арт. 2301»).
+ * «Труба 32», «Кран 1/2», «Муфта 25» are names: a capital and then lower-case
+ * letters, and a space where an article has a mark (the review). Capitals in
+ * ANY script (S1, the second review): the first fix took only Latin [A-Z], so
+ * a 1C code «ЦБ-00012345» read as a word and a УПД's code column became the
+ * name of every product.
  */
+const ARTICLE_NUMBER = /^(?:\p{Lu}{1,5}[\s\-_./#№]*|\p{L}{1,5}[\-_./#№]+\s*)?\d[\d\s\-_./]*$/u;
+
+/** A cell that reads as a product's NAME: two letters at least, and not an article number. */
 const isWordCell = (cell: Cell) => {
   const text = cellText(cell);
   if ((text.match(/\p{L}/gu) ?? []).length < 2) return false;
-  return !/^[A-Z]{0,5}[\s\-_./#№]*\d[\d\s\-_./]*$/.test(text);
+  return !ARTICLE_NUMBER.test(text);
+};
+
+/**
+ * A typed line with its figures in it — «Стол офисный 5 шт 100 кг»: a number
+ * followed by a unit word the kernel knows. «Труба 32» and «Кран 1/2» carry a
+ * number and no unit; they are names.
+ */
+const carriesFigure = (cell: Cell): boolean => {
+  if (typeof cell === 'number') return true;
+  // The head a description keeps: a cell of thirty thousand digits (one
+  // shared string, #8) would make this scan quadratic.
+  for (const m of cellText(cell).slice(0, 300).matchAll(/\d(?:[.,]?\d)*\s*(\p{L}+[²³]?)/gu)) {
+    if (unitOf(m[1]!) !== null) return true;
+  }
+  return false;
 };
 
 /** The non-empty data cells of one column, under a header row. */
@@ -176,8 +231,13 @@ function findColumn(
   taken: Set<number>,
   accept: (index: number) => boolean = () => true,
 ): number | null {
+  return findWhere(header, taken, (text, i) => matchKey(text, keys) && accept(i));
+}
+
+/** The leftmost free header cell the test accepts. */
+function findWhere(header: Cell[], taken: Set<number>, test: (text: string, index: number) => boolean): number | null {
   for (let i = 0; i < header.length; i++) {
-    if (!taken.has(i) && matchKey(cellText(header[i]!), keys) && accept(i)) return i;
+    if (!taken.has(i) && test(cellText(header[i]!), i)) return i;
   }
   return null;
 }
@@ -212,7 +272,24 @@ export function detectColumns(rows: Cell[][]): { headerRow: number; columns: Col
     // one-cell header («Наименование товара» over Стол / Стул), or the header
     // became the first product (the review).
     const filled = (row: Cell[] | undefined) => (row ?? []).filter((cell) => cellText(cell) !== '').length;
-    if (filled(header) < 2 && rows.slice(r + 1, r + 1 + SAMPLE_ROWS).some((row) => filled(row) > 1)) continue;
+    if (filled(header) < 2) {
+      const below = rows.slice(r + 1, r + 1 + SAMPLE_ROWS);
+      if (below.some((row) => filled(row) > 1)) continue;
+      // …and only a HEADER over a LIST (S7, the second review): «Товарная
+      // накладная № 15 от 01.10.2026» over «Стол офисный 5 шт 100 кг» was
+      // taken as the header, every line landed with no quantity and no
+      // weight, and the sheet never reached the model that reads them.
+      // Typed lines carry their figures, a list of names does not; and a
+      // header with a number in it is a title, so over lines with numbers
+      // it hands them to the model too. A list of NAMES keeps its header
+      // whatever it is — «Труба 32», «Кран 1/2» are names, and the names
+      // are read exactly.
+      const listed = below.flat().filter((cell) => cellText(cell) !== '');
+      const most = (test: (cell: Cell) => boolean) => listed.filter(test).length * 2 > listed.length;
+      const hasDigit = (cell: Cell) => /\d/.test(cellText(cell));
+      if (most(carriesFigure)) continue;
+      if (header.some(hasDigit) && most(hasDigit)) continue;
+    }
     // The TNVED column is claimed BEFORE the name keys run: «Код ТН ВЭД
     // товара» contains «товар», and taken as the NAME it named every
     // product by its code and lost the code (the audit, reproduced).
@@ -225,9 +302,13 @@ export function detectColumns(rows: Cell[][]): { headerRow: number; columns: Col
       const cells = columnCells(rows, r, i);
       return cells.length === 0 || cells.filter(isWordCell).length * 2 > cells.length;
     };
+    // The first two tiers pass over a header that names a code, a brand or a
+    // party (S5); the last resort still takes it when nothing else names the
+    // goods at all.
+    const theGoods = (i: number) => !namesSomethingElse(cellText(header[i]!)) && !allCodes(i) && wordy(i);
     const name =
-      findColumn(header, NAME_KEYS_FIRST, taken, (i) => !allCodes(i) && wordy(i)) ??
-      findColumn(header, NAME_KEYS, taken, (i) => !allCodes(i) && wordy(i)) ??
+      findColumn(header, NAME_KEYS_FIRST, taken, theGoods) ??
+      findColumn(header, NAME_KEYS, taken, theGoods) ??
       findColumn(header, NAME_KEYS, taken, (i) => !allCodes(i));
     if (name === null) continue;
     taken.add(name);
@@ -271,16 +352,38 @@ export function detectColumns(rows: Cell[][]): { headerRow: number; columns: Col
     // and the volume keys are the more specific set.
     const volume = volumeFromQty ?? claim(VOLUME_KEYS);
     // The line's weight, never one package's and never a price.
-    const lineWeight = (keys: string[]): number | null => {
+    const lineWeight = (isWeight: (text: string) => boolean): number | null => {
+      const idx = findWhere(header, taken, (text) => isWeight(text) && !PER_PACKAGE.test(text) && !MONEY_HEADER.test(text));
+      if (idx !== null) taken.add(idx);
+      return idx;
+    };
+    // A gross WEIGHT — «Gross amount | Discount | Net» is an invoice's money.
+    const grossBeside = header.some((cell) => GROSS_HEADER.test(cellText(cell)) && !MONEY_HEADER.test(cellText(cell)));
+    const isNetWeight = (text: string) =>
+      matchKey(text, NET_WEIGHT_KEYS) || (NET_WORD.test(text) && (WEIGHT_WORD.test(text) || grossBeside));
+    const weight = weightFromQty ?? lineWeight(isNetWeight) ?? lineWeight((text) => matchKey(text, WEIGHT_KEYS));
+    // The line's money is never a weight, a volume or a package count (S10,
+    // the second review): «total» is a money key, and a packing list's
+    // «TOTAL G.W.» — left free once «TOTAL N.W.» took the weight — or its
+    // «TOTAL CTNS» became the line's sum. A money word keeps a column money
+    // whatever else it says («Gross amount», «Цена за кг»).
+    const money = (keys: string[]): number | null => {
       const idx = findColumn(header, keys, taken, (i) => {
         const text = cellText(header[i]!);
-        return !PER_PACKAGE.test(text) && !MONEY_HEADER.test(text);
+        if (MONEY_HEADER.test(text)) return true;
+        return !(
+          matchKey(text, WEIGHT_KEYS) ||
+          isNetWeight(text) ||
+          matchKey(text, VOLUME_KEYS) ||
+          matchKey(text, QTY_KEYS) ||
+          PER_PACKAGE.test(text) ||
+          PACKAGE_COUNT.test(text)
+        );
       });
       if (idx !== null) taken.add(idx);
       return idx;
     };
-    const weight = weightFromQty ?? lineWeight(NET_WEIGHT_KEYS) ?? lineWeight(WEIGHT_KEYS);
-    const amount = claim(AMOUNT_TOTAL_KEYS) ?? claim(AMOUNT_PRICE_KEYS);
+    const amount = money(AMOUNT_TOTAL_KEYS) ?? money(AMOUNT_PRICE_KEYS);
     return {
       headerRow: r,
       columns: { name, tnved, quantity, quantityUnit, unit, volume, weight, amount },
@@ -310,9 +413,14 @@ export function parseGoods(rows: Cell[][]): { goods: GoodsRow[]; headerRow: numb
 
   if (detected) {
     const { headerRow, columns } = detected;
+    const headerName = cellText(rows[headerRow]![columns.name] ?? null).toLowerCase();
     for (let r = headerRow + 1; r < rows.length; r++) {
       const row = rows[r]!;
       const at = (idx: number | null): Cell => (idx === null ? null : (row[idx] ?? null));
+      // A row whose name IS the header's is the header again (S8, the second
+      // review): repeated at a page break, or the sub-header row under a
+      // two-row header, whose merged name cell now reads as its text.
+      if (cellText(at(columns.name)).toLowerCase() === headerName) continue;
       // The code cell as the file holds it: a NUMERIC nine-digit cell lost
       // its leading zero to Excel and is padded; typed text of nine digits is
       // a question, and any other non-code is said rather than dropped.

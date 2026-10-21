@@ -445,6 +445,28 @@ function upTo(piece: string, closer: RegExp): string {
   return end < 0 ? piece : piece.slice(0, end);
 }
 
+/**
+ * A figure as a cell holds it — «900», «1 200,50», «120KGS», «12.5 CBM»,
+ * «$500», «USD 500», «15%» — and not a word.
+ */
+const FIGURE = /^(?:\p{Lu}{3}\s*)?[-+]?[$€¥₽£]?\s*\d[\d\s.,]*(?:\p{L}{1,6}\.?|[%$€¥₽£])?$/u;
+
+/**
+ * What a position covered by a merge DOWN its master's column reads as, in
+ * every format (S8, S11 — the second review). A TEXT is repeated: a name
+ * merged over the two lines packed in one carton names both, where the
+ * covered row used to lose its name and be dropped as no product at all. A
+ * FIGURE is null: a carton's weight or amount merged over its lines is stated
+ * once and counted once. A position covered to the RIGHT of its master is
+ * null whatever it holds, so a title merged across the sheet stays ONE cell
+ * and is never mistaken for a header.
+ */
+export function coveredValue(value: Cell): Cell {
+  if (typeof value !== 'string') return null;
+  const text = value.trim();
+  return text === '' || FIGURE.test(text) ? null : value;
+}
+
 /** A span attribute (`colspan="2"`): a whole number from 1 up to `max`. */
 function spanOf(attrs: string, name: RegExp, max: number): number {
   const n = Number(name.exec(attrs)?.[1] ?? 1);
@@ -462,9 +484,11 @@ function spanOf(attrs: string, name: RegExp, max: number): number {
  *
  * Spans keep every column where the header put it (the review: a two-row
  * header «Вес, кг» over «нетто | брутто» read the gross weight as the line's
- * money, and the sub-header became a product). A covered position is NULL —
- * a merged amount or carton weight is stated ONCE, so it is counted once, and
- * the sub-header row under a merged name carries no name and is no product.
+ * money, and the sub-header became a product). A covered position reads as
+ * `coveredValue` says — a merged amount or carton weight is stated ONCE, so
+ * it is counted once; a merged NAME names every row it covers (S8), and the
+ * sub-header row under a two-row header, which now repeats the header's own
+ * name, is no product (`parseGoods` skips a row that names the header).
  */
 export function htmlTableSheets(text: string): SheetRows[] | null {
   if (markupOf(text) !== 'html') return null;
@@ -473,34 +497,25 @@ export function htmlTableSheets(text: string): SheetRows[] | null {
   for (const [n, piece] of tables.entries()) {
     if (sheets.length >= MAX_SHEETS) break;
     const rows: Cell[][] = [];
-    /** Per column: how many more rows a rowspan above still covers. */
-    const carry: number[] = [];
+    const spans = new DownSpans();
     for (const tr of upTo(piece, /<\/table\s*>/i).split(/<tr\b[^<>]*>/i).slice(1)) {
       if (rows.length >= MAX_ROWS) break;
       const parts = upTo(tr, /<\/tr\s*>/i).split(/(<t[dh]\b[^<>]*>)/i);
       const cells: Cell[] = [];
-      const skipCovered = () => {
-        while (cells.length < MAX_COLS && (carry[cells.length] ?? 0) > 0) {
-          carry[cells.length]! -= 1;
-          cells.push(null);
-        }
-      };
       for (let i = 1; i + 1 < parts.length; i += 2) {
-        skipCovered();
+        // A browser places a cell past the positions a rowspan above covers.
+        while (cells.length < MAX_COLS && spans.covers(cells.length)) cells.push(spans.take(cells.length));
         if (cells.length >= MAX_COLS) break;
         const tag = parts[i]!;
         const col = cells.length;
         const colspan = spanOf(tag, /\bcolspan\s*=\s*["']?\s*(\d+)/i, MAX_COLS - col);
         const rowspan = spanOf(tag, /\browspan\s*=\s*["']?\s*(\d+)/i, MAX_ROWS);
-        cells.push(cellOf(upTo(parts[i + 1]!, /<\/t[dh]\s*>/i)));
+        const value = cellOf(upTo(parts[i + 1]!, /<\/t[dh]\s*>/i));
+        cells.push(value);
         for (let k = 1; k < colspan; k += 1) cells.push(null);
-        for (let k = 0; k < colspan; k += 1) carry[col + k] = rowspan - 1;
+        spans.open(col, colspan, rowspan - 1, value);
       }
-      // The columns a rowspan still covers past the row's last cell.
-      for (let c = cells.length; c < carry.length; c += 1) {
-        if ((carry[c] ?? 0) > 0) carry[c]! -= 1;
-      }
-      rows.push(cells);
+      rows.push(spans.finish(cells));
     }
     if (rows.length > 0) sheets.push({ name: `Jadval ${n + 1}`, rows });
   }
@@ -508,11 +523,62 @@ export function htmlTableSheets(text: string): SheetRows[] | null {
 }
 
 /**
+ * The merges DOWN still open over the next rows, per column — one home for
+ * the HTML rowspan and SpreadsheetML's `MergeDown`, so the two read a merged
+ * cell the same way (`coveredValue`, S8/S11).
+ */
+class DownSpans {
+  /** Per column: how many more rows a merge above still covers… */
+  private readonly left: number[] = [];
+  /** …and what the covered position reads as. */
+  private readonly value: Cell[] = [];
+
+  /** A cell at `col`, `across` wide, covering `down` more rows. */
+  open(col: number, across: number, down: number, value: Cell): void {
+    for (let k = 0; k < across && col + k < MAX_COLS; k += 1) {
+      this.left[col + k] = down;
+      this.value[col + k] = k === 0 ? coveredValue(value) : null;
+    }
+  }
+
+  covers(col: number): boolean {
+    return (this.left[col] ?? 0) > 0;
+  }
+
+  /** The covered position's value, the merge one row nearer its end. */
+  take(col: number): Cell {
+    this.left[col]! -= 1;
+    return this.value[col] ?? null;
+  }
+
+  /** A cell the writer put on a covered position wins it; the merge still moves on. */
+  claim(col: number): void {
+    if (this.covers(col)) this.left[col]! -= 1;
+  }
+
+  /**
+   * The row with the positions a merge still covers past its last cell —
+   * a merged name in the last column, or a row with no cells of its own —
+   * and no trailing empties.
+   */
+  finish(cells: Cell[]): Cell[] {
+    const own = cells.length;
+    for (let c = own; c < Math.min(this.left.length, MAX_COLS); c += 1) {
+      cells.push(this.covers(c) ? this.take(c) : null);
+    }
+    while (cells.length > own && cells[cells.length - 1] === null) cells.pop();
+    return cells;
+  }
+}
+
+/**
  * Excel 2003 «XML Spreadsheet» — tokenised like the HTML table, for the same
  * reason (an unclosed `<Row>` was the same quadratic scan). `ss:Index` places
  * a cell after skipped ones and `ss:MergeAcross` covers the cells to its
- * right; a merge DOWN needs nothing, because the writer gives the next row's
- * cells their own `ss:Index`.
+ * right. A merge DOWN (`ss:MergeDown`) leaves the covered positions out of the
+ * next rows — the writer gives the cells after them their own `ss:Index` —
+ * and those positions read as the HTML reader reads a rowspan (`DownSpans`,
+ * S11): a merged name repeated, a merged figure counted once.
  */
 export function spreadsheetMlSheets(text: string): SheetRows[] | null {
   if (markupOf(text) !== 'spreadsheetml') return null;
@@ -522,6 +588,7 @@ export function spreadsheetMlSheets(text: string): SheetRows[] | null {
     const body = upTo(parts[w + 1]!, /<\/(?:ss:)?Worksheet\s*>/);
     const name = /(?:ss:)?Name\s*=\s*"([^"]*)"/.exec(parts[w]!)?.[1] ?? `Varaq ${sheets.length + 1}`;
     const rows: Cell[][] = [];
+    const spans = new DownSpans();
     const rowParts = body.split(/<(?:ss:)?Row\b([^<>]*)>/);
     for (let r = 1; r + 1 < rowParts.length; r += 2) {
       if (rows.length >= MAX_ROWS) break;
@@ -534,7 +601,9 @@ export function spreadsheetMlSheets(text: string): SheetRows[] | null {
           const index = /(?:ss:)?Index\s*=\s*"(\d+)"/.exec(attrs);
           if (index) {
             const at = Number(index[1]) - 1;
-            while (cells.length < at && cells.length < MAX_COLS) cells.push(null);
+            while (cells.length < at && cells.length < MAX_COLS) {
+              cells.push(spans.covers(cells.length) ? spans.take(cells.length) : null);
+            }
           }
           if (cells.length >= MAX_COLS) break;
           let value: Cell = null;
@@ -543,13 +612,20 @@ export function spreadsheetMlSheets(text: string): SheetRows[] | null {
             const open = /<(?:ss:)?Data\b[^<>]*>/.exec(content);
             if (open) value = cellOf(upTo(content.slice(open.index + open[0].length), /<\/(?:ss:)?Data\s*>/));
           }
+          const col = cells.length;
+          spans.claim(col);
           cells.push(value);
-          // MergeAcross="N" covers N cells MORE.
+          // MergeAcross="N" covers N cells MORE; MergeDown="N" N rows more.
           const across = Number(/(?:ss:)?MergeAcross\s*=\s*"(\d+)"/.exec(attrs)?.[1] ?? 0);
-          for (let k = 0; k < across && cells.length < MAX_COLS; k += 1) cells.push(null);
+          for (let k = 0; k < across && cells.length < MAX_COLS; k += 1) {
+            spans.claim(cells.length);
+            cells.push(null);
+          }
+          const down = Math.min(Number(/(?:ss:)?MergeDown\s*=\s*"(\d+)"/.exec(attrs)?.[1] ?? 0), MAX_ROWS);
+          if (down > 0) spans.open(col, across + 1, down, value);
         }
       }
-      rows.push(cells);
+      rows.push(spans.finish(cells));
     }
     const sheet: SheetRows = { name: decodeEntities(name), rows };
     // WorksheetOptions' <Visible>SheetHidden</Visible> (or …VeryHidden).
