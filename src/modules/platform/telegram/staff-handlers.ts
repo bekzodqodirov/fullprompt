@@ -724,13 +724,19 @@ export function registerStaffBot(bot: Bot): void {
     // be refused before the client was named, and in the zone stage it
     // skipped both questions. The question stays open and is asked again.
     const waiting = state.stage === 'client' || state.stage === 'section';
+    // An album is ten messages: the open question is asked again once per
+    // album, not once per photograph.
+    const group = ctx.message.media_group_id ?? null;
+    const asked = waiting && group !== null && group === state.reaskedGroup;
     const updated = updateIntake(chatId, {
       ...read.patch,
       stage: waiting ? state.stage : 'material',
       fileCount: state.fileCount + 1,
       material: caption ? [...state.material, caption] : state.material,
+      reaskedGroup: group,
     });
     if (read.say) await ctx.reply(read.say, read.keyboard ? { reply_markup: read.keyboard } : undefined);
+    if (asked) return;
     if (state.stage === 'section') {
       await ctx.reply('Qabul qilindi. Avval yuk qayerdan chiqishini tanlang:', {
         reply_markup: zoneKeyboard(await pricedZonesNow()),
@@ -1859,6 +1865,10 @@ async function readIntakeFile(
     return { patch: { pdfs: [...state.pdfs, { data: saved.body, name: fileName || 'invoice.pdf' }] }, say: `📄 ${label} — AI o‘qiydi.` };
   }
   if (kind === 'docx') return { patch: {}, say: `📄 ${label} — Word fayl o‘qilmaydi. PDF yoki Excel qilib yuboring.` };
+  if (kind === 'video') return { patch: {}, say: `🎬 ${label} — video o‘qilmaydi. Rasm yoki matn yuboring.` };
+  if (kind === 'archive') {
+    return { patch: {}, say: `🗜 ${label} — arxiv o‘qilmaydi. Ichidagi fayllarni alohida yuboring.` };
+  }
 
   const { readGoodsFile } = await import('../../wms/deals/goods-file');
   const sheet = await readGoodsFile(saved.body, mime).catch((err: unknown) => {
@@ -2229,7 +2239,9 @@ async function handleCalcCallback(
     await ctx.reply('⏳ Tahlil davom etmoqda — natijani kuting.');
     return;
   }
-  if (state.stage !== 'review') {
+  // A reading the seller was shown is 'review', or 'question' while a line is
+  // asked about; anything else holds material nobody has read yet.
+  if (state.stage !== 'review' && state.stage !== 'question') {
     await ctx.reply('Yangi ma’lumot hali o‘qilmagan — avval «Bo‘ldi» ni bosing.', { reply_markup: doneKeyboard });
     return;
   }

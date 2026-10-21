@@ -4640,7 +4640,13 @@ and the question re-asked (they used to be refused, or to skip both
 questions). The analysis runs under a TOKEN (`analysing`): a second «Bo'ldi»
 waits, a cancel or a restart throws the late result away, and a message that
 arrived while it ran is KEPT — the seller is asked to press «Bo'ldi» again
-(`settleAnalysis`, pure). The confirm lands only a reviewed reading. Per-line
+(`settleAnalysis`, pure). The confirm lands only a reading the seller was
+shown (`review`, or `question` while a line is asked). Found by re-reading the
+diff before the push: a phone VIDEO sent as a file is ISO media like a HEIC
+(`ftyp`), so the brand decides (a picture brand is tried, anything else is «video
+o'qilmaydi»); a .zip is named an archive, not «a broken Excel»; and an album
+before the customer is named re-asks the question once, not once per photo
+(`reaskedGroup`). Per-line
 answers are kept apart from the material (`answers`, landed on the card) — a
 line's «150 kg» re-read as the whole truck's weight is what made a re-analysis
 overrule the documents.

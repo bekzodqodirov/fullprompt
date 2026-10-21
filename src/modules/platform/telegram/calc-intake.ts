@@ -176,6 +176,8 @@ export interface IntakeState {
    * overrule the documents (the diagnosis' cause 5).
    */
   answers: string[];
+  /** The album the open question was last re-asked for (one ask per album). */
+  reaskedGroup: string | null;
   expires: number;
 }
 
@@ -227,7 +229,10 @@ export const MAX_INTAKE_PDF_BYTES = 12 * 1024 * 1024;
  * and says so in words when it fails. `sheet` = let the spreadsheet reader
  * decide (XLSX, Excel 97, an HTML or XML table, a CSV).
  */
-export type IntakeFileKind = 'image' | 'isomedia' | 'pdf' | 'docx' | 'sheet';
+export type IntakeFileKind = 'image' | 'isomedia' | 'video' | 'archive' | 'pdf' | 'docx' | 'sheet';
+
+/** The ISO-media brands of a still picture: HEIC (tried, often refused) and AVIF. */
+const PICTURE_BRANDS = /^(heic|heix|hevc|hevx|heim|heis|hevm|hevs|mif1|msf1|avif|avis)$/;
 
 export function intakeFileKind(
   body: Buffer,
@@ -243,8 +248,11 @@ export function intakeFileKind(
   if (ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP') return 'image';
   if (ascii(0, 4) === 'GIF8') return 'image';
   if (ascii(0, 4) === 'II*\u0000' || ascii(0, 4) === 'MM\u0000*') return 'image';
-  if (ascii(4, 8) === 'ftyp') return 'isomedia';
+  // ISO media is a HEIC photo OR a phone video (mp4, mov): the brand says.
+  if (ascii(4, 8) === 'ftyp') return PICTURE_BRANDS.test(ascii(8, 12)) ? 'isomedia' : 'video';
   if (/\.docx?$/i.test(fileName) || /wordprocessingml|msword/i.test(mime ?? '')) return 'docx';
+  // An archive is a zip like an xlsx — named, so it is not «a broken Excel».
+  if (/\.(zip|rar|7z)$/i.test(fileName) || /zip|rar|7z-compressed/i.test(mime ?? '')) return 'archive';
   return 'sheet';
 }
 
@@ -291,6 +299,7 @@ export function startIntake(
     aiFailure: null,
     analysing: null,
     answers: [],
+    reaskedGroup: null,
     expires: Date.now() + TTL_MS,
   };
   collections.set(key(chatId), state);

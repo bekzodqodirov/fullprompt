@@ -183,8 +183,8 @@ describe('an analysis lands only where it still belongs (the diagnosis’ cause 
 
   it('the confirm lands only what the seller was shown', () => {
     const save = HANDLERS.slice(HANDLERS.indexOf('  // save — only what the seller was SHOWN.'));
-    expect(save.slice(0, 900)).toContain("if (state.stage !== 'review') {");
-    expect(save.slice(0, 900)).toContain('if (state.analysing) {');
+    expect(save.slice(0, 1100)).toContain("if (state.stage !== 'review' && state.stage !== 'question') {");
+    expect(save.slice(0, 1100)).toContain('if (state.analysing) {');
   });
 });
 
@@ -197,6 +197,10 @@ describe('a file is read by what its bytes are (the diagnosis’ cause 2)', () =
     expect(intakeFileKind(Buffer.concat([Buffer.alloc(4), Buffer.from('ftypheic')]), false, 'IMG.HEIC', null)).toBe(
       'isomedia',
     );
+    // A phone video is ISO media too — its brand keeps it from being called a HEIC.
+    expect(intakeFileKind(Buffer.concat([Buffer.alloc(4), Buffer.from('ftypmp42')]), false, 'v.mp4', null)).toBe('video');
+    expect(intakeFileKind(Buffer.concat([Buffer.alloc(4), Buffer.from('ftypqt  ')]), false, 'v.mov', null)).toBe('video');
+    expect(intakeFileKind(Buffer.from('PK\u0003\u0004'), false, 'photos.zip', null)).toBe('archive');
     expect(intakeFileKind(Buffer.from('PK\u0003\u0004'), false, 'a.docx', null)).toBe('docx');
     expect(intakeFileKind(Buffer.from('PK\u0003\u0004'), false, 'invoice.xlsx', null)).toBe('sheet');
   });
@@ -211,5 +215,15 @@ describe('the queued AI pass is never silent when it does not answer', () => {
     expect(told).toBeLessThan(branch.indexOf('continue;'));
     const failed = JOBS.slice(JOBS.indexOf("'[calc-prefill] pass failed — the VED still has the job'"));
     expect(failed.slice(0, 600)).toContain('text: PASS_FAILED');
+  });
+});
+
+describe('an album before the customer is named is asked about once', () => {
+  it('the re-ask is skipped for the rest of the same album', () => {
+    const handler = HANDLERS.slice(HANDLERS.indexOf("const waiting = state.stage === 'client' || state.stage === 'section';"));
+    const skip = handler.indexOf('if (asked) return;');
+    expect(skip, 'the album guard has moved — re-anchor').toBeGreaterThan(-1);
+    expect(skip).toBeLessThan(handler.indexOf("if (state.stage === 'section') {"));
+    expect(handler.slice(0, 600)).toContain('group === state.reaskedGroup');
   });
 });
