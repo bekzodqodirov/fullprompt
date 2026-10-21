@@ -145,15 +145,52 @@ export interface IntakeState {
   /**
    * Spreadsheets the reader could not map onto columns (no header it knows),
    * as text — the model reads them (his 1.2 b). A sheet the reader DID map is
-   * `invoiceGoods`, exact, and never sent to the model twice.
+   * `invoiceGoods`, exact, and never sent to the model twice. SEPARATE files
+   * only: the other sheets of a mapped workbook are `invoiceTexts`, because
+   * they belong to that workbook and leave with it (round-1 review, c7).
    */
   sheetTexts: string[];
   /**
-   * A second spreadsheet of goods, waiting for the seller's answer: add its
-   * lines to the first's, or replace them (his 1.13 c — the bot asks). The
-   * second used to REPLACE the first in silence.
+   * The OTHER sheets of the workbooks `invoiceGoods` came from — the
+   * «Packing list» beside the «Invoice», whose TOTAL G.W./CBM are the
+   * shipment's totals. Shown to the model as context, never as a second
+   * goods list (#1458). Kept per accepted workbook so «🔁 Oldingisining
+   * o'rniga» drops the replaced file's totals WITH its goods: they used to
+   * stay in `sheetTexts`, and the job's kg/m³ could come from the very file
+   * the seller had just been told was replaced (round-1 review, c7).
    */
-  pendingInvoice: { goods: import('../../wms/calc/intake').CalcFacts['goods']; label: string } | null;
+  invoiceTexts: string[];
+  /**
+   * Further spreadsheets of goods, waiting for the seller's answer: add their
+   * lines to the first's, or replace them (his 1.13 c — the bot asks). The
+   * second used to REPLACE the first in silence. A THIRD file while the
+   * question is open FOLDS into it — it used to overwrite the second, whose
+   * lines then reached nobody (round-1 review, c1) — and its other sheets wait here
+   * too, until the answer says whether they stay.
+   */
+  pendingInvoice: {
+    goods: import('../../wms/calc/intake').CalcFacts['goods'];
+    label: string;
+    texts: string[];
+  } | null;
+  /**
+   * What the MODEL's goods are worth once an Excel list exists (round-1
+   * review, c4; his 1.13: two invoices from two factories). A PDF or a header-less sheet
+   * is read by the model, and its lines used to be thrown away whenever a
+   * mapped sheet answered — after the bot had promised «AI o'qiydi». So a
+   * separate model-read file beside an Excel list is ASKED about: `ask` =
+   * the question is open (and «Bo'ldi» waits for it), `add` = another
+   * factory's goods, appended to the Excel's, `context` = the same goods, the
+   * file is read for its totals only. Null = no such pair has arisen.
+   */
+  aiGoods: 'ask' | 'add' | 'context' | null;
+  /**
+   * The last text the customer question filed as MATERIAL. The same text sent
+   * again is the seller insisting it IS the customer, and is taken as one —
+   * otherwise a name the goods reader mistook for a line («Ali aka 2») looped
+   * on the question for ever (round-1 review, t23).
+   */
+  clientAskedWith: string | null;
   /** What the analysis cost, carried to the landing — see `AiIntakeResult`. */
   usage: { model: string; inputTokens: number; outputTokens: number } | null;
   /** Why the model's reading is missing (his 1.6 a) — null when it read. */
@@ -210,6 +247,67 @@ export function mergeLineAnswers(
   }
   return out;
 }
+
+type GoodsList = NonNullable<import('../../wms/calc/intake').CalcFacts['goods']>;
+
+/**
+ * A goods name as two lists compare it: case, spacing and punctuation are not
+ * what makes two lines the same product. Exported for the test.
+ */
+export function goodsNameKey(name: string): string {
+  return name.toLowerCase().replace(/[\s\p{P}]+/gu, ' ').trim();
+}
+
+/**
+ * Which goods list a collection lands, in the order of how EXACT each source
+ * is about the lines. Pure, so the order is a test and not a reading of
+ * `analyzeCollected`.
+ *
+ *  1. An attached invoice (XLSX/CSV) answers whenever it yields a line
+ *     (2026-10-09, P1.6): its rows carry the supplier's own codes, units,
+ *     weights and volumes. When the seller said a separate model-read file is
+ *     ANOTHER factory's (`aiGoods: 'add'`, round-1 review c4), the model's lines are
+ *     appended — those whose name the Excel does not already carry, because
+ *     the model was shown the PDF and the text, and the text can repeat a
+ *     line the Excel has.
+ *  2. The model's goods, when there is no file — and when it READ and found
+ *     none, only the lines the seller LABELLED as goods («Tovar: …»): an
+ *     unlabelled «Salom, 12 kub 3500 kg» is not a product the model missed,
+ *     and a regex must not overrule a reading that said «no goods» (round-1
+ *     review, t22).
+ *  3. Every typed line, when there was no reading at all (no key, budget,
+ *     an outage) — before 2026-10-21 that left «Tovarlar: —» over a typed
+ *     name.
+ */
+export function pickGoods(input: {
+  invoice: GoodsList;
+  aiGoods: IntakeState['aiGoods'];
+  /** The model's goods — null when the model did not read. */
+  model: GoodsList | null;
+  typed: GoodsList;
+  typedLabelled: GoodsList;
+}): GoodsList {
+  if (input.invoice.length > 0) {
+    if (input.aiGoods !== 'add' || !input.model?.length) return input.invoice;
+    const seen = new Set(input.invoice.map((g) => goodsNameKey(g.name)));
+    const added = input.model.filter((g) => {
+      const k = goodsNameKey(g.name);
+      if (!k || seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+    return [...input.invoice, ...added];
+  }
+  if (input.model === null) return input.typed;
+  return input.model.length > 0 ? input.model : input.typedLabelled;
+}
+
+/**
+ * The invoice's line names the model is told it need not repeat (review c4)
+ * — capped, because a 500-line Excel is a prompt nobody budgeted for and the
+ * name check in `pickGoods` is the fence whatever the model does.
+ */
+export const KNOWN_GOODS_CAP = 100;
 
 /** At most this many photographs reach the model (his 1.4 b: twelve). */
 export const MAX_INTAKE_IMAGES = 12;
@@ -294,7 +392,10 @@ export function startIntake(
     invoiceGoods: [],
     pdfs: [],
     sheetTexts: [],
+    invoiceTexts: [],
     pendingInvoice: null,
+    aiGoods: null,
+    clientAskedWith: null,
     usage: null,
     aiFailure: null,
     analysing: null,
@@ -339,9 +440,10 @@ export function endIntake(chatId: bigint): void {
  */
 export async function analyzeCollected(state: IntakeState): Promise<IntakeState> {
   const { analyzeIntake } = await import('../../wms/calc/intake-ai');
-  const { parseManualFacts } = await import('../../wms/calc/intake-manual');
+  const { parseManualFacts, readGoodsLines } = await import('../../wms/calc/intake-manual');
   const text = state.material.join('\n');
   const manual = parseManualFacts(text);
+  const invoice = state.invoiceGoods ?? [];
 
   // The day's budget gates the READING too — it is the most expensive call
   // on this path (Opus, with photographs). Over the cap the manual parser
@@ -360,7 +462,13 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
           images: state.images,
           pdf: state.pdfs[0] ?? null,
           morePdfs: state.pdfs.slice(1),
-          sheetText: state.sheetTexts.join('\n\n') || null,
+          // The separate files first: their LINES are what the model is
+          // asked for, while a mapped workbook's other sheets are context.
+          // Past its cap `analyzeIntake` cuts on a line and says so
+          // (round-1 review, a17).
+          sheetText: [...state.sheetTexts, ...state.invoiceTexts].join('\n\n') || null,
+          knownGoods:
+            state.aiGoods === 'add' ? invoice.slice(0, KNOWN_GOODS_CAP).map((g) => g.name) : undefined,
         }).catch((err: unknown): Outcome => {
           logger.warn({ err }, 'intake analyze failed');
           return { ok: false, failure: 'network' };
@@ -376,28 +484,17 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
     toCity: manual.toCity ?? ai?.facts.toCity ?? state.route?.toCity ?? null,
     weightKg: manual.weightKg ?? (asked('weightKg') ? null : (ai?.facts.weightKg ?? null)),
     volumeM3: manual.volumeM3 ?? (asked('volumeM3') ? null : (ai?.facts.volumeM3 ?? null)),
-    /**
-     * Three sources, in the order of how EXACT they are about the lines.
-     *
-     * An attached invoice (XLSX/CSV) answers whenever it yields a line
-     * (2026-10-09, P1.6): its rows carry the supplier's own codes, units,
-     * weights and volumes, and a model's reading of a caption or a photo
-     * used to REPLACE them whenever it found one line — the audit's «used
-     * only when the AI found no lines at all». The model's goods answer when
-     * there is no file. `manual.goods` — lines the person TYPED as goods
-     * («Tovar: …», «Kurtka 300 dona 150 kg») — answer last, when neither of
-     * the others found anything: before 2026-10-21 they were always empty,
-     * so a model that failed left «Tovarlar: —» over a typed name.
-     *
-     * …and the seller's per-line answers go back on top (P1.3): a re-read
-     * after «➕ Yana ma'lumot» must not erase them.
-     */
+    // Three sources, in the order of how EXACT they are (`pickGoods`) — and
+    // the seller's per-line answers go back on top (P1.3): a re-read after
+    // «➕ Yana ma'lumot» must not erase them.
     goods: mergeLineAnswers(
-      state.invoiceGoods?.length
-        ? state.invoiceGoods
-        : ai?.facts.goods?.length
-          ? ai.facts.goods
-          : (manual.goods ?? []),
+      pickGoods({
+        invoice,
+        aiGoods: state.aiGoods,
+        model: ai ? (ai.facts.goods ?? []) : null,
+        typed: manual.goods ?? [],
+        typedLabelled: readGoodsLines(text, { labelledOnly: true }),
+      }),
       state.lineAnswers,
     ),
   };

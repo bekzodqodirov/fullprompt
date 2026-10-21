@@ -66,6 +66,7 @@ import {
   activeIntake,
   analyzeCollected,
   intakeFileKind,
+  mergeLineAnswers,
   MAX_INTAKE_IMAGES,
   MAX_INTAKE_PDF_BYTES,
   MAX_INTAKE_PDFS,
@@ -828,12 +829,12 @@ export function registerStaffBot(bot: Bot): void {
         // 1.7 b): it is MATERIAL, and the question is asked again. It used to
         // become the lead's name and was never shown to the model.
         const { looksLikeMaterial } = await import('../../wms/calc/intake-manual');
-        if (looksLikeMaterial(ctx.message.text)) {
-          updateIntake(chatId, { material: [...intake.material, ctx.message.text] });
-          await ctx.reply(`✍️ Ma’lumot sifatida olindi.\n\n${CLIENT_QUESTION}`, { parse_mode: 'Markdown' });
+        const answer = clientAnswer(intake, ctx.message.text, looksLikeMaterial(ctx.message.text));
+        updateIntake(chatId, answer.patch);
+        if (answer.kind === 'material') {
+          await ctx.reply(answer.say, { parse_mode: 'Markdown' });
           return;
         }
-        updateIntake(chatId, { clientHintRaw: ctx.message.text.trim(), stage: 'material' });
         // Per section (judge UX14): a customs job is asked for the LINES —
         // «300 dona, 150 kg, 120 m², 40 juft» and the code if known — which
         // the old «kub/kg» prompt never said could be sent.
@@ -1678,6 +1679,44 @@ async function analyseIntakeAndReply(
 }
 
 /**
+ * The answer to the customer question — pure, so the rule is a test.
+ *
+ * Text that looks like goods is MATERIAL and the question is asked again (his
+ * 1.7 b). But the goods reader is a guess, and a customer it mistook for a
+ * line («Ali aka 2», «OOO Asia Trade 2020») used to loop on the question with
+ * no way forward (round-1 review, t23). So the re-ask says WHY, and the SAME
+ * text sent again is the seller insisting: it is the customer, and it leaves
+ * the material it was filed into — a name read as a goods line is an
+ * invented product on the card.
+ */
+export function clientAnswer(
+  state: IntakeState,
+  raw: string,
+  looksMaterial: boolean,
+):
+  | { kind: 'material'; patch: Partial<IntakeState>; say: string }
+  | { kind: 'customer'; patch: Partial<IntakeState> } {
+  const text = raw.trim();
+  const again = state.clientAskedWith !== null && state.clientAskedWith === text;
+  if (looksMaterial && !again) {
+    return {
+      kind: 'material',
+      patch: { material: [...state.material, raw], clientAskedWith: text },
+      say:
+        '✍️ Ma’lumot sifatida olindi — tovar ro‘yxatiga o‘xshaydi.\n' +
+        'Mijozni bitta qatorda yozing: kod yoki telefon. (Shu matnni yana yuborsangiz — mijoz deb olinadi.)\n\n' +
+        CLIENT_QUESTION,
+    };
+  }
+  let material = state.material;
+  if (again) {
+    const at = material.map((m) => m.trim()).lastIndexOf(text);
+    if (at >= 0) material = [...material.slice(0, at), ...material.slice(at + 1)];
+  }
+  return { kind: 'customer', patch: { clientHintRaw: text, stage: 'material', material, clientAskedWith: null } };
+}
+
+/**
  * Where an analysis lands (the diagnosis' cause 7). Pure, so the race is
  * tested without a bot.
  *
@@ -1705,7 +1744,12 @@ export function settleAnalysis(
     live.material.length - snapshot.material.length + (live.fileCount - snapshot.fileCount);
   const state: IntakeState = {
     ...live,
-    facts: analysed.facts,
+    // The LIVE answers go back on top (round-1 review, c2): the reading was
+    // merged with the SNAPSHOT's answers, and a line answered while it ran —
+    // into `answers`, not material, so nothing counts it as «arrived» —
+    // landed without its figure. Re-applying an answer the snapshot already
+    // had is idempotent, so both outcomes take the same merge.
+    facts: { ...analysed.facts, goods: mergeLineAnswers(analysed.facts.goods ?? [], live.lineAnswers) },
     steps: analysed.steps,
     aiUsed: analysed.aiUsed,
     aiFailure: analysed.aiFailure,
@@ -1786,8 +1830,13 @@ const FILE_DOWNLOAD_MS = 30_000;
 /** A PDF past this is not shown to the model — Anthropic refuses it anyway. */
 const MAX_PDF_BYTES = 10 * 1024 * 1024;
 
-/** A spreadsheet that cannot be read, said per reason (his 1.6 a). */
-const SHEET_REFUSAL: Record<'old_format' | 'encrypted' | 'broken' | 'empty', (label: string) => string> = {
+/**
+ * A spreadsheet that cannot be read, said per reason (his 1.6 a). Keyed by the
+ * reader's OWN union, so a reason it learns tomorrow is a compile error here
+ * rather than a seller reading «undefined».
+ */
+type SheetRefusalReason = Extract<import('../../wms/deals/goods-file').GoodsFileRead, { kind: 'refused' }>['reason'];
+const SHEET_REFUSAL: Record<SheetRefusalReason, (label: string) => string> = {
   old_format: (label) => `📄 ${label} — Excel 95 yoki undan eski format, o‘qilmaydi. .xlsx qilib saqlab yuboring.`,
   encrypted: (label) => `📄 ${label} — parol bilan himoyalangan, o‘qilmaydi. Parolsiz yuboring.`,
   broken: (label) => `📄 ${label} — Excel fayl buzilgan yoki o‘qib bo‘lmadi. Qayta saqlab yuboring.`,
@@ -1801,6 +1850,198 @@ function invoiceChoiceKeyboard() {
       [{ text: '➕ Qatorlari qo‘shilsin', callback_data: 'c:inv_add' }],
       [{ text: '🔁 Oldingisining o‘rniga', callback_data: 'c:inv_replace' }],
     ],
+  };
+}
+
+/** The two answers to «a PDF or a sheet the AI reads, beside an Excel list» (round-1 review, c4). */
+function otherFilesKeyboard() {
+  return {
+    inline_keyboard: [
+      [{ text: '➕ Ha, boshqa zavod — tovarlari qo‘shilsin', callback_data: 'c:other_add' }],
+      [{ text: '📄 Yo‘q, o‘sha tovarlar — faqat jami o‘qilsin', callback_data: 'c:other_same' }],
+    ],
+  };
+}
+
+/** What a file is worth to the collection, and what the seller is told — pure. */
+export interface FileAnswer {
+  patch: Partial<IntakeState>;
+  say: string | null;
+  keyboard?: { inline_keyboard: { text: string; callback_data: string }[][] };
+}
+
+/**
+ * «Boshqa zavodning tovarlarimi?» — asked when a file the MODEL reads (a PDF,
+ * a header-less sheet) meets an Excel list the reader mapped, in either order
+ * (round-1 review, c4). The Excel list answers for the goods, so the model's
+ * lines were thrown away whatever the file was — after the bot had said «AI
+ * o'qiydi». A second factory's invoice is the commonest reason to send two
+ * documents (his 1.13), and the same invoice twice is the second commonest:
+ * only the seller knows which, and merging blind would double the order.
+ * Asked again for each new such file, because one answer about the first PDF
+ * says nothing about the next.
+ */
+function otherFilesQuestion(invoiceLines: number): string {
+  return (
+    `\nExcel ro‘yxatida ${invoiceLines} ta tovar bor. AI o‘qiydigan fayl — boshqa zavodning tovarlarimi?` +
+    '\n(Javob AI o‘qiydigan hamma fayllarga tegishli; javobgacha tahlil boshlanmaydi.)'
+  );
+}
+
+/** How spreadsheet texts fit what the model reads — `fitSheetTexts` at the reader's cap. */
+export type SheetFit = (texts: readonly string[]) => { kept: number[]; total: number[] };
+
+/**
+ * A PDF: shown to the model, within the count and byte caps — and asked about
+ * when an Excel list already answers for the goods.
+ */
+export function receivePdf(state: IntakeState, pdf: { data: Buffer; name: string }, label: string): FileAnswer {
+  if (pdf.data.length > MAX_PDF_BYTES) {
+    return { patch: {}, say: `📄 ${label} — PDF juda katta (10 MB dan ortiq), AI o‘qimaydi. Kartada saqlandi.` };
+  }
+  const bytes = state.pdfs.reduce((n, p) => n + p.data.length, 0);
+  if (state.pdfs.length >= MAX_INTAKE_PDFS || bytes + pdf.data.length > MAX_INTAKE_PDF_BYTES) {
+    return {
+      patch: {},
+      say: `📄 ${label} — bitta so‘rovga ${MAX_INTAKE_PDFS} tadan ortiq PDF o‘qilmaydi. Kartada saqlandi.`,
+    };
+  }
+  const invoice = (state.invoiceGoods ?? []).length;
+  return {
+    patch: { pdfs: [...state.pdfs, pdf], ...(invoice > 0 ? { aiGoods: 'ask' as const } : {}) },
+    say: `📄 ${label} — AI o‘qiydi.` + (invoice > 0 ? otherFilesQuestion(invoice) : ''),
+    ...(invoice > 0 ? { keyboard: otherFilesKeyboard() } : {}),
+  };
+}
+
+/**
+ * A spreadsheet with no header the reader knows: its text goes to the model
+ * (his 1.2 b) — and the seller is told NOW when it will not fit in what the
+ * model reads (round-1 review, a17), rather than the job landing short.
+ */
+export function receiveSheetText(state: IntakeState, label: string, text: string, fit: SheetFit): FileAnswer {
+  const sheetTexts = [...state.sheetTexts, text];
+  // The new file's place in what the model is shown (`analyzeCollected`):
+  // after the separate files before it, ahead of any workbook's other sheets.
+  const at = sheetTexts.length - 1;
+  const fitted = fit([...sheetTexts, ...state.invoiceTexts]);
+  const kept = fitted.kept[at] ?? 0;
+  const total = fitted.total[at] ?? 0;
+  const cut =
+    kept >= total
+      ? ''
+      : kept === 0
+        ? '\n⚠️ Bu jadval AI ga sig‘madi (oldingi jadvallar bilan birga juda katta) — VED faylni kartadan o‘qiydi.'
+        : `\n⚠️ Jadval katta: AI faqat birinchi ${kept} / ${total} qatorini o‘qiydi — qolganini VED fayldan ko‘radi.`;
+  const invoice = (state.invoiceGoods ?? []).length;
+  return {
+    patch: { sheetTexts, ...(invoice > 0 ? { aiGoods: 'ask' as const } : {}) },
+    say:
+      `📄 ${label} — jadval sarlavhasini topa olmadim, AI o‘qiydi.` +
+      cut +
+      (invoice > 0 ? otherFilesQuestion(invoice) : ''),
+    ...(invoice > 0 ? { keyboard: otherFilesKeyboard() } : {}),
+  };
+}
+
+/**
+ * A spreadsheet the reader MAPPED: its lines are exact (P1.6).
+ *
+ *  - the first one IS the goods list, and its other sheets ride with it as
+ *    `invoiceTexts`; when the model already holds a separate PDF or sheet,
+ *    the «boshqa zavod?» question is asked here — the same pair in the
+ *    other order (round-1 review, c4);
+ *  - a further one is ASKED about (his 1.13 c), and while that question is
+ *    open every further file FOLDS into it — a third used to overwrite the
+ *    second, whose lines then reached nobody (round-1 review, c1). Its other
+ *    sheets wait with it, so a replace can drop them (c7).
+ */
+export function receiveGoodsSheet(
+  state: IntakeState,
+  sheet: {
+    goods: NonNullable<IntakeState['invoiceGoods']>;
+    label: string;
+    text: string;
+    where: string;
+  },
+): FileAnswer {
+  const { goods, label, where } = sheet;
+  const texts = sheet.text ? [sheet.text] : [];
+  const invoice = state.invoiceGoods ?? [];
+  if (invoice.length > 0) {
+    const waiting = state.pendingInvoice;
+    const pending = waiting
+      ? {
+          goods: [...(waiting.goods ?? []), ...goods],
+          label: `${waiting.label}, ${label}`,
+          texts: [...waiting.texts, ...texts],
+        }
+      : { goods, label, texts };
+    return {
+      patch: { pendingInvoice: pending },
+      say:
+        `📄 ${label} — ${goods.length} ta tovar${where}.\n` +
+        (waiting ? `Javob kutayotgan fayllar: ${pending.label} — jami ${pending.goods.length} ta tovar.\n` : '') +
+        `Oldingi faylda ${invoice.length} ta tovar bor. Nima qilamiz?`,
+      keyboard: invoiceChoiceKeyboard(),
+    };
+  }
+  const ask = state.aiGoods === null && (state.pdfs.length > 0 || state.sheetTexts.length > 0);
+  return {
+    patch: { invoiceGoods: goods, invoiceTexts: texts, ...(ask ? { aiGoods: 'ask' as const } : {}) },
+    say: `📄 ${label} — ${goods.length} ta tovar o‘qildi${where}.` + (ask ? otherFilesQuestion(goods.length) : ''),
+    ...(ask ? { keyboard: otherFilesKeyboard() } : {}),
+  };
+}
+
+/**
+ * The answer to «a second invoice arrived» (his 1.13 c), as a patch — pure.
+ *
+ * A collection still waiting for the customer (or the podklyuch door's
+ * «qayerdan?») KEEPS waiting: the answer used to move it to 'material', so the
+ * open question was never asked again, a code typed next was filed as
+ * material, and the job landed as a nameless lead with no road (round-1
+ * review, c0). `reask` names the question to ask again. Null = nothing waits:
+ * the button is stale.
+ */
+export function invoiceChoice(
+  state: IntakeState,
+  step: 'inv_add' | 'inv_replace',
+): { patch: Partial<IntakeState>; said: string; reask: 'client' | 'section' | null } | null {
+  const pending = state.pendingInvoice;
+  if (!pending) return null;
+  const add = step === 'inv_add';
+  const goods = add ? [...(state.invoiceGoods ?? []), ...(pending.goods ?? [])] : (pending.goods ?? []);
+  const reask = state.stage === 'client' || state.stage === 'section' ? state.stage : null;
+  return {
+    patch: {
+      invoiceGoods: goods,
+      // The replaced workbook's other sheets leave with its goods (c7).
+      invoiceTexts: add ? [...state.invoiceTexts, ...pending.texts] : pending.texts,
+      pendingInvoice: null,
+      stage: reask ?? 'material',
+    },
+    said: add
+      ? `➕ ${pending.label} qo‘shildi: endi fayllarda ${goods.length} ta tovar.`
+      : `🔁 ${pending.label} oldingisining o‘rniga olindi: ${goods.length} ta tovar.`,
+    reask,
+  };
+}
+
+/** The answer to «boshqa zavodning tovarlarimi?» (round-1 review, c4) — pure, like `invoiceChoice`. */
+export function otherFilesChoice(
+  state: IntakeState,
+  step: 'other_add' | 'other_same',
+): { patch: Partial<IntakeState>; said: string; reask: 'client' | 'section' | null } | null {
+  if (state.aiGoods !== 'ask') return null;
+  const reask = state.stage === 'client' || state.stage === 'section' ? state.stage : null;
+  return {
+    patch: { aiGoods: step === 'other_add' ? 'add' : 'context', stage: reask ?? 'material' },
+    said:
+      step === 'other_add'
+        ? '➕ Boshqa zavod: AI o‘qigan tovarlar Excel ro‘yxatiga qo‘shiladi.'
+        : '📄 O‘sha tovarlar: ro‘yxat Excel fayldan olinadi, qolgan fayllardan faqat jami (kub/kg) o‘qiladi.',
+    reask,
   };
 }
 
@@ -1826,11 +2067,7 @@ async function readIntakeFile(
   fileName: string,
   mime: string | null,
   state: IntakeState,
-): Promise<{
-  patch: Partial<IntakeState>;
-  say: string | null;
-  keyboard?: ReturnType<typeof invoiceChoiceKeyboard>;
-}> {
+): Promise<FileAnswer> {
   const label = fileName ? `«${fileName}»` : 'Fayl';
   const kind = intakeFileKind(saved.body, saved.isPhoto, fileName, mime);
   if (kind === 'image' || kind === 'isomedia') {
@@ -1851,26 +2088,14 @@ async function readIntakeFile(
       say: saved.isPhoto ? null : `🖼 ${label} — rasm sifatida o‘qiladi.`,
     };
   }
-  if (kind === 'pdf') {
-    if (saved.body.length > MAX_PDF_BYTES) {
-      return { patch: {}, say: `📄 ${label} — PDF juda katta (10 MB dan ortiq), AI o‘qimaydi. Kartada saqlandi.` };
-    }
-    const bytes = state.pdfs.reduce((n, pdf) => n + pdf.data.length, 0);
-    if (state.pdfs.length >= MAX_INTAKE_PDFS || bytes + saved.body.length > MAX_INTAKE_PDF_BYTES) {
-      return {
-        patch: {},
-        say: `📄 ${label} — bitta so‘rovga ${MAX_INTAKE_PDFS} tadan ortiq PDF o‘qilmaydi. Kartada saqlandi.`,
-      };
-    }
-    return { patch: { pdfs: [...state.pdfs, { data: saved.body, name: fileName || 'invoice.pdf' }] }, say: `📄 ${label} — AI o‘qiydi.` };
-  }
+  if (kind === 'pdf') return receivePdf(state, { data: saved.body, name: fileName || 'invoice.pdf' }, label);
   if (kind === 'docx') return { patch: {}, say: `📄 ${label} — Word fayl o‘qilmaydi. PDF yoki Excel qilib yuboring.` };
   if (kind === 'video') return { patch: {}, say: `🎬 ${label} — video o‘qilmaydi. Rasm yoki matn yuboring.` };
   if (kind === 'archive') {
     return { patch: {}, say: `🗜 ${label} — arxiv o‘qilmaydi. Ichidagi fayllarni alohida yuboring.` };
   }
 
-  const { readGoodsFile } = await import('../../wms/deals/goods-file');
+  const { readGoodsFile, SHEET_TEXT_BUDGET } = await import('../../wms/deals/goods-file');
   const sheet = await readGoodsFile(saved.body, mime).catch((err: unknown) => {
     logger.warn({ err }, '[calc-intake] spreadsheet unreadable');
     return { kind: 'refused', reason: 'broken' } as const;
@@ -1880,29 +2105,14 @@ async function readIntakeFile(
   }
   if (sheet.kind === 'refused') return { patch: {}, say: SHEET_REFUSAL[sheet.reason](label) };
   if (sheet.kind === 'text') {
-    return {
-      patch: { sheetTexts: [...state.sheetTexts, sheet.text] },
-      say: `📄 ${label} — jadval sarlavhasini topa olmadim, AI o‘qiydi.`,
-    };
+    const { fitSheetTexts } = await import('../../wms/calc/intake-ai');
+    return receiveSheetText(state, label, sheet.text, (texts) => fitSheetTexts(texts, SHEET_TEXT_BUDGET));
   }
   // Everything the file states reaches the landing (2026-10-09, P1.6) —
   // through the one mapping the landing's own test reads.
   const { invoiceFacts } = await import('../../wms/calc/intake');
-  const goods = invoiceFacts(sheet.goods);
-  const sheetTexts = sheet.text ? [...state.sheetTexts, sheet.text] : state.sheetTexts;
   const where = sheet.sheets > 1 ? ` («${sheet.sheet}» varag‘idan; boshqa varaqlarni AI o‘qiydi)` : '';
-  if ((state.invoiceGoods ?? []).length > 0) {
-    // His 1.13 c: a second invoice is ASKED about. It used to replace the
-    // first in silence — the first factory's goods vanished from the job.
-    return {
-      patch: { sheetTexts, pendingInvoice: { goods, label } },
-      say:
-        `📄 ${label} — ${goods.length} ta tovar${where}.\n` +
-        `Oldingi faylda ${(state.invoiceGoods ?? []).length} ta tovar bor. Nima qilamiz?`,
-      keyboard: invoiceChoiceKeyboard(),
-    };
-  }
-  return { patch: { invoiceGoods: goods, sheetTexts }, say: `📄 ${label} — ${goods.length} ta tovar o‘qildi${where}.` };
+  return receiveGoodsSheet(state, { goods: invoiceFacts(sheet.goods), label, text: sheet.text, where });
 }
 
 type BotFileCtx = {
@@ -2050,7 +2260,7 @@ async function showIntakePrompt(
  * step reads the live collection rather than trusting the button: a stale
  * keyboard from yesterday's message must not resurrect a finished intake.
  */
-async function handleCalcCallback(
+export async function handleCalcCallback(
   ctx: { reply: (text: string, extra?: Record<string, unknown>) => Promise<unknown> },
   chatId: bigint,
   step: CalcStep,
@@ -2148,6 +2358,15 @@ async function handleCalcCallback(
   }
 
   if (step === 'skip') {
+    // Only the question that is OPEN, like `pick_N` (round-1 review, c5): a ⏭
+    // under an old question used to run the next-or-confirm step from the
+    // facts as they stood — so material sent since, or a collection not yet
+    // read at all, reached 'review' with no analysis, and the confirm guard
+    // below («only what the seller was SHOWN») trusted that stage.
+    if (state.stage !== 'question' || state.analysing) {
+      await ctx.reply('Bu tugma eskirgan.');
+      return;
+    }
     // The skipped line is DONE for this collection — never asked again, not
     // even after «➕ Yana ma'lumot» re-reads the material (P1.3).
     const lineDone =
@@ -2172,20 +2391,27 @@ async function handleCalcCallback(
     return;
   }
 
-  if (step === 'inv_add' || step === 'inv_replace') {
-    // His 1.13 c: the second invoice waits for this answer.
-    const pending = state.pendingInvoice;
-    if (!pending) {
+  if (step === 'inv_add' || step === 'inv_replace' || step === 'other_add' || step === 'other_same') {
+    // His 1.13 c: the second invoice waits for this answer — and, beside an
+    // Excel list, a file the AI reads waits for «boshqa zavodmi?» (c4).
+    const choice =
+      step === 'inv_add' || step === 'inv_replace' ? invoiceChoice(state, step) : otherFilesChoice(state, step);
+    if (!choice) {
       await ctx.reply('Bu tugma eskirgan.');
       return;
     }
-    const goods = step === 'inv_add' ? [...(state.invoiceGoods ?? []), ...(pending.goods ?? [])] : (pending.goods ?? []);
-    const next = updateIntake(chatId, { invoiceGoods: goods, pendingInvoice: null, stage: 'material' });
-    await ctx.reply(
-      step === 'inv_add'
-        ? `➕ Qo‘shildi: endi fayllarda ${goods.length} ta tovar.`
-        : `🔁 ${pending.label} oldingisining o‘rniga olindi: ${goods.length} ta tovar.`,
-    );
+    const next = updateIntake(chatId, choice.patch);
+    await ctx.reply(choice.said);
+    // The question the collection is still waiting on is asked again — the
+    // file handler's own words (round-1 review, c0).
+    if (choice.reask === 'section') {
+      await ctx.reply('Avval yuk qayerdan chiqishini tanlang:', { reply_markup: zoneKeyboard(await pricedZonesNow()) });
+      return;
+    }
+    if (choice.reask === 'client') {
+      await ctx.reply(CLIENT_QUESTION, { parse_mode: 'Markdown' });
+      return;
+    }
     if (next) await showIntakePrompt(ctx as Parameters<typeof showIntakePrompt>[0], chatId, next);
     return;
   }
@@ -2216,13 +2442,27 @@ async function handleCalcCallback(
       await ctx.reply('Avval ikkinchi fayl haqida javob bering:', { reply_markup: invoiceChoiceKeyboard() });
       return;
     }
+    if (state.aiGoods === 'ask') {
+      await ctx.reply('Avval javob bering: AI o‘qiydigan fayl — boshqa zavodning tovarlarimi?', {
+        reply_markup: otherFilesKeyboard(),
+      });
+      return;
+    }
     if (state.material.length === 0 && state.fileCount === 0) {
       await ctx.reply('Hali hech narsa yuborilmadi.');
       return;
     }
     const token = randomUUID();
     const owned = updateIntake(chatId, { analysing: token }) ?? state;
-    await ctx.reply('⏳ AI o‘qiyapti… (3 daqiqagacha)');
+    // The notice must not decide whether the analysis runs (round-1 review,
+    // c3): the token is already written, only the analysis releases it, and
+    // a refused notice — a 429 past `briefRetry`'s five seconds, a blip to
+    // api.telegram.org — used to throw before the dispatch, leaving every
+    // later «Bo'ldi» and «Tasdiqlash» answering «Tahlil davom etmoqda» for an
+    // analysis that never started, until the seller threw the collection away.
+    await ctx.reply('⏳ AI o‘qiyapti… (3 daqiqagacha)').catch((err: unknown) =>
+      logger.warn({ err }, '[calc-intake] analysing notice not sent'),
+    );
     // OFF the middleware chain, exactly like the assistant's answer (#706):
     // grammy's poller is sequential and the same bot serves every customer,
     // so awaiting an Opus call over twenty thousand characters here freezes

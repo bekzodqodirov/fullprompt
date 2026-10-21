@@ -498,6 +498,11 @@ const CALC_STEPS = [
   'reread',
   'inv_add',
   'inv_replace',
+  // «Boshqa zavodning tovarlarimi?» (round-1 review, c4): a PDF or a sheet
+  // the model reads, beside an Excel list — another factory's goods to add,
+  // or the same goods, read for their totals.
+  'other_add',
+  'other_same',
 ] as const;
 
 export type CalcStep = (typeof CALC_STEPS)[number];
