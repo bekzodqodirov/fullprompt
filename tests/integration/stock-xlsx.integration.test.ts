@@ -280,7 +280,9 @@ describe('the stock XLSX carries the photographs', () => {
       placements.find((p) => p.row === row && p.col === col)!.shape;
     expect(shape(1, 0), 'the lot’s own photo leads the row').toBe('40x40');
     expect(shape(1, 1), 'the prixod’s general photo follows it').toBe('80x20');
-    expect(shape(2, 0), 'a full-size photo is resized before it is embedded').toBe('200x100');
+    // Resized to the stock sheet's own size — 400 px on the long side since
+    // his «hira korinyabti» (2026-10-21), 200 before (`sheet-photo.ts`).
+    expect(shape(2, 0), 'a full-size photo is resized before it is embedded').toBe('400x200');
     expect(shape(2, 1), 'the same general photo, on the other lot of that prixod').toBe('80x20');
     expect(shape(3, 0), 'the SECOND prixod’s own general photo').toBe('20x80');
     expect(shape(4, 0), 'shared again — and NOT the first prixod’s picture').toBe('20x80');

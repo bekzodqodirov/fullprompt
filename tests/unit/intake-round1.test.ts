@@ -201,3 +201,15 @@ describe('a file is read by what its bytes are (the diagnosis’ cause 2)', () =
     expect(intakeFileKind(Buffer.from('PK\u0003\u0004'), false, 'invoice.xlsx', null)).toBe('sheet');
   });
 });
+
+describe('the queued AI pass is never silent when it does not answer', () => {
+  const JOBS = readFileSync(path.join(__dirname, '..', '..', 'src', 'modules', 'wms', 'calc', 'jobs.ts'), 'utf8');
+  it('a stand-down and a failure both reach the seller', () => {
+    const branch = JOBS.slice(JOBS.indexOf("if (standing !== 'ok') {"));
+    const told = branch.indexOf('const said = STOOD_DOWN[standing];');
+    expect(told, 'the stand-down no longer speaks — re-anchor').toBeGreaterThan(-1);
+    expect(told).toBeLessThan(branch.indexOf('continue;'));
+    const failed = JOBS.slice(JOBS.indexOf("'[calc-prefill] pass failed — the VED still has the job'"));
+    expect(failed.slice(0, 600)).toContain('text: PASS_FAILED');
+  });
+});

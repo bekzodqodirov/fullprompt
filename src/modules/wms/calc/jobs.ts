@@ -92,6 +92,21 @@ export async function registerCalcLinkAskWorker(boss: PgBoss): Promise<void> {
 }
 
 /**
+ * What the seller is told when the machine stands down (2026-10-21, the round
+ * plan's «stand-down message»). Keyed by `prefillStanding`'s answer; null =
+ * nothing to say (a request that no longer exists has nobody waiting on it).
+ */
+export const STOOD_DOWN: Record<Exclude<import('./prefill').PrefillStand, 'ok'>, string | null> = {
+  touched: '🤖 AI hisoblamadi: VED bu so‘rovni allaqachon ochib ishlayapti — narxni VED beradi.',
+  confirmed: '🤖 AI hisoblamadi: VED guruhlarni tasdiqlab bo‘lgan — narxni VED beradi.',
+  closed: '🤖 AI hisoblamadi: so‘rov allaqachon yopilgan.',
+  not_found: null,
+};
+
+/** The seller's sentence when the pass itself failed. */
+export const PASS_FAILED = '🤖 AI bu so‘rovni hisoblay olmadi — so‘rov VED navbatida, narxni VED beradi.';
+
+/**
  * The AI VED hodimi's pass, OWNED.
  *
  * It was dispatched with `void` from the staff bot, which polls inside the
@@ -128,6 +143,10 @@ export async function registerCalcPrefillWorker(boss: PgBoss): Promise<void> {
         const standing = await prefillStanding(requestId, job.data.rev ?? null);
         if (standing !== 'ok') {
           logger.info({ requestId, standing }, '[calc-prefill] stood down — the request has moved');
+          // Said, not silent (2026-10-21): the seller was promised a figure in
+          // this chat, and a pass that stood down used to leave him waiting.
+          const said = STOOD_DOWN[standing];
+          if (said) await notifyStaffTelegram({ userIds: [staffId], type: 'CalcPrefilled', text: said });
           continue;
         }
         // NOBODY typed this. The pass ran under the seller's id, so every
@@ -164,6 +183,14 @@ export async function registerCalcPrefillWorker(boss: PgBoss): Promise<void> {
         );
       } catch (err) {
         logger.error({ err, requestId }, '[calc-prefill] pass failed — the VED still has the job');
+        // …and the seller is told so, rather than waiting for a figure that
+        // will not come. Best-effort: the drain may be what failed.
+        try {
+          const { notifyStaffTelegram } = await import('@/modules/platform/notifications/staff');
+          await notifyStaffTelegram({ userIds: [staffId], type: 'CalcPrefilled', text: PASS_FAILED });
+        } catch {
+          /* the log line above is the record */
+        }
       }
     }
   });
