@@ -4501,3 +4501,14 @@ test anchored on the strip's own words in the same bundle — no road heading ma
 in any locale — red-proven by putting back both first drafts («Yo'lda: Xitoy ichida», «В пути: по Китаю»).
 Refuted, kept as answers: the Horgos column depends on its warehouse row being CN (his deploy step since the board
 round), and zh/en headings built on a place stem are the approved shape, not the collision.
+
+1453. **A plan test that rode on a tie, the batches half** (found by this round's CI, not caused by it). Round
+#1252's «(n) EXPLAIN names both 0121 indexes» had already removed `audit_entity_idx`'s tie with the partial index
+inside its rolled-back transaction; the `batches` side kept one. On a freshly migrated, near-empty `batches` a
+lookup through `batches_code_upper_idx` and an index-only whole scan of `batches_code_unique` (it holds `code`, so
+it can filter `upper(code)`) BOTH price 0.12..8.14 — measured on a fresh database, CI's exact plan reproduced by
+pricing the competitor alone — and CI drew the competitor on 4a2fc6e after passing on 7741342 with no change to
+either index. The test now plants 2,000 trucks (production holds ~1,400) inside the same rolled-back transaction:
+the whole-index scan prices 173-341 against the lookup's 8.29, so the oracle is «the 0121 index is usable»
+again and not «the planner broke a tie our way»; dropping `batches_code_upper_idx` in there still turns it red.
+Nothing is written (the transaction rolls back) and nothing is locked beyond the rows it inserts.

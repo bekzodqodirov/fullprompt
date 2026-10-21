@@ -835,6 +835,21 @@ describe('(n) the reads are the indexes’, even as a generic plan', () => {
         // is used if its predicate is provable, and a Seq Scan appears if it
         // is not — whatever the table's size or its statistics.
         await tx.execute(sql`DROP INDEX audit_entity_idx`);
+        // The batches half had the same tie, one table over. On a near-empty
+        // `batches` a lookup through `batches_code_upper_idx` and a whole-index
+        // scan of `batches_code_unique` (it holds `code`, so it can filter
+        // `upper(code)` index-only) both price 0.12..8.14 — measured on a
+        // freshly migrated database — and CI drew the second (2026-10-21:
+        // «Index Only Scan using batches_code_unique … Filter: upper(code)»).
+        // Production carries ~1,400 trucks; give the table that shape inside
+        // this rolled-back transaction and the whole-index scan prices twenty
+        // times the lookup the 0121 index exists for or more (measured 8.29
+        // against 173-341), whatever the statistics say — and with the index
+        // dropped in here the assertion still goes red (red-proven).
+        await tx.execute(sql`
+          INSERT INTO batches (id, code, origin_warehouse_id, dest_warehouse_id, status, created_by)
+          SELECT gen_random_uuid(), ${`ZZPLAN${STAMP}-`} || g, ${originId}::uuid, ${destId}::uuid, 'forming', ${actorId}::uuid
+            FROM generate_series(1, 2000) g`);
         await tx.execute(sql`SET LOCAL enable_seqscan = off`);
         const worn = codeEverWornSql('ZZ-NOPE-1', null);
         const text: SQL = sql`SELECT "batches"."id" FROM batches WHERE ${batchTextMatchSql('%ZZ-NOPE%')}`;
