@@ -281,7 +281,17 @@ joyga ketayotganlarini aloxida column bolsin».
   is one. The colour legend stands over the outbound column only: an inland
   bar is the one colour its heading names.
 - The phone keeps four tabs: five on a 360 px phone cut «Shakllanmoqda»
-  mid-word.
+  mid-word. The «Yo'lda» tab holds both columns and counts both
+  (`tabCounts`, one sum for the tab and its heading).
+- **The two headings name the DIRECTION, never a place**: «Yo'lda: Xitoy
+  ichidagi reyslar» and «Yo'lda: Xitoydan tashqariga». The first draft headed
+  the inland one «Yo'lda: Xitoy ichida» (ru «В пути: по Китаю») — the strip's
+  word for a PLACE, and a Yiwu → Tashkent truck still in China sat under an
+  outbound SECTION called «Xitoy ichida» beside an inland column called the
+  same. Both headings stay visible on the phone tab (the other tabs hide
+  theirs, the tab names them).
+- A column is ~170 px at 1280 px beside the open sidebar, so the driver's
+  phone number WRAPS on the card instead of being cut to «+998 90 12…».
 
 ## 4. Who sees what
 

@@ -4451,3 +4451,37 @@ mode and silently reverted (or re-marked) the deal and its prixods. The locked c
 «unchanged»). A new deal from a won FTL lead is a preselected CHOICE (`creating`), never a lock. A lead gets its
 own sentences (`ftl.leadErrors`), the zero «0 ta prixod o'zgardi» line is gone, and the prixod card names the
 deal cascade's skipped prixods like the ✏️ form does.
+
+## «Yo'lda» in two columns — inside China / outside China (2026-10-21; NO migration of its own, ledger 136 with the LTL round's 0135; spec `docs/PARTIYA-DOSKASI.md` §3a)
+
+His message: «yolda deganini xitoy ichidagi va tashqisi alohida column qilishimiz kerak yani hargoz va qashqarga
+ketayotganlar va ulardan boshqa joyga ketayotganlarini aloxida column bolsin».
+
+1449. **The road column is the DESTINATION's country, by data** (`roadColumnOf`, board-view.ts): to a Chinese
+warehouse = `inland`, anything else = `outbound` (an Uzbek internal leg, an unknown country — nothing is claimed
+about a place the data does not name). He named Horgos and Kashgar; the rule names China, so a factory trip to
+Yiwu or a truck to Urumqi goes inland too and a third border hub needs no code — stated to him as a ⭐ question,
+reversible in one line. Never by warehouse code or name (§1's rule, #1416). The truck reader and the trip reader
+both ask it (`columnOf`, `tripColumnOf`), so a factory trip lands beside the trucks of its own road.
+
+1450. **Inland is grouped by destination, outbound by place, and the strip stays the road as a line.** Every
+inland card is inside China, so a place section there would be one heading over everything; the sections are
+`to:<warehouseId>` («→ Kashgar · 3»), the border hubs first (`destHub` = `zoneOfWarehouse` says `border`), then by
+name. The strip counts a card by its PLACE (`CardPlacement.place`) whichever column holds it, so «Xitoy ichida»
+counts inland trucks AND an outbound truck still in China — a strip that counted by column would lie about
+where the trucks are. A tap opens the first column holding what is shown (`activeColumn`); with nothing there,
+`columnOfStop`. The phone keeps FOUR tabs (five cut «Shakllanmoqda» mid-word at 360 px); the «Yo'lda» tab shows
+both columns and its number is `tabCounts` — pure, because a tab that sums two columns is arithmetic a test
+can reach. Column keys carry no `_`: Tailwind reads `_` in an arbitrary variant as a space (fenced).
+
+1451. **Reviewed as built (five lenses), eight findings, all fixed.** The one a person would have met first:
+the inland heading was a place word — «Yo'lda: Xitoy ichida» (ru «В пути: по Китаю», letter for letter the
+strip's «По Китаю») — while the outbound column carried a SECTION called «Xitoy ichida» (a Yiwu → Tashkent truck
+that has not left China). The headings name the DIRECTION now — «Yo'lda: Xitoy ichidagi reyslar» / «Yo'lda:
+Xitoydan tashqariga» — and the e2e reads them out of all four bundles. Also: at 170 px the driver's phone was truncated to «+998 90 12…» (`[overflow-wrap:anywhere]`
+now); the legend stands over the outbound column only; and seven behaviours that only reading proved were
+pinned — the «ichki reys» badge dropped only in the inland column (an Andijan → Tashkent leg on the outbound road
+keeps it, both ways), hub order with a non-hub name sorting first (Aksu), the inland order clock (the
+departure, like outbound), the inland bar, the tab sum, the trip's `destHub`, the headings. Nine red proofs by
+string edit, all red. STATED, not changed: `?yonalish=irkeshtam|horgos` drops inland trucks (a corridor is a road
+OUT of China; pre-existing), and at 1280 px with the sidebar open the two road headings wrap to different heights.

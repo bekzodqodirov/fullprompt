@@ -157,7 +157,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | The customs calculator fix — units in their own columns, kg+dona rows, excise, the fee, the screen | `docs/RASTAMOJKA-TUZATISH.md` — agreed 2026-10-09 (his two messages, four ⭐ questions), SHIPPED; §7 overrides §1-§3 |
 | A factory trip closes and remembers its lines — the door question, «shu zavoddan, shu mashinada», the checker | `docs/ZAVOD-YOPISH.md` — agreed 2026-10-15 (his 1a-5a, 6, 7 ha), SHIPPED; §10-§11 override §2-§5 |
 | The staff Telegram group — celebrations, the Saturday 18:00 rating, the month's champion, /reyting | `docs/JAMOA-GURUHI.md` — agreed 2026-10-20 (his «3. 2 3 gif … tabriklash ham / qolgani sen aytkandek»), SHIPPED |
-| Every truck in one place — the board by place, the % by distance, GPS, the gate | `docs/PARTIYA-DOSKASI.md` — agreed 2026-10-17 (his 1A 2a 3a 4a 5a 6c 7a 8b 9b 10b 11A 12A, then «1 hozirgidek qolsin»), SHIPPED; §2 is the placement as built |
+| Every truck in one place — the board by place, the % by distance, GPS, the gate | `docs/PARTIYA-DOSKASI.md` — agreed 2026-10-17 (his 1A 2a 3a 4a 5a 6c 7a 8b 9b 10b 11A 12A, then «1 hozirgidek qolsin»), SHIPPED; §2 is the placement as built; §3a = «Yo'lda» in two columns, inside / outside China (2026-10-21) |
 | LTL / FTL — which cargo the KPI and the rating count, who may mark it, the paid-month freeze, the logist's hint | `docs/LTL-FTL.md` — agreed 2026-10-20 (his «3 b / qolgani sen aytgandek» = 1a 2a 3b 4a 5a 6a 7a), SHIPPED |
 
 ## State — 2026-08-23
@@ -2942,6 +2942,20 @@ SHARE first; a client correction drops the old job's FTL and a seller's pin unde
 `stamp_moved`; office FTL on an FTL deal = take the mark as its own + re-inherit; `ftlOfficeUsers` =
 the door's own set; celebrations / /upsale / seller report survive one migration behind; the field is
 uncontrolled + keyed, a locked chip posts nothing, a new deal from an FTL lead is a choice (`creating`).
+
+**Round — «Yo'lda» ikki ustun (2026-10-21; DECISIONS #1449-#1451; NO migration, ledger 136; spec
+`docs/PARTIYA-DOSKASI.md` §3a).** His «xitoy ichidagi va tashqisi alohida column … hargoz va qashqarga
+ketayotganlar va ulardan boshqa joyga ketayotganlar». The board has FIVE columns: the road split by the
+DESTINATION's country (`roadColumnOf`, board-view.ts — CN = `inland`, anything else = `outbound`; by data, so any
+Chinese warehouse incl. a factory trip to Yiwu goes inland — ⭐ asked). Inland sections are destinations
+(`to:<warehouseId>`, `destHub` first, then name); outbound keeps the place sections; the strip counts by
+`CardPlacement.place` in either column; a tap opens the first column with shown cards (`columnOfStop`
+otherwise). Phone: FOUR tabs (`BOARD_TABS`, `tabOf`, `tabCounts` — «Yo'lda» shows and counts both columns; no
+`_` in a column key, Tailwind reads it as a space). Headings name the DIRECTION («Yo'lda: Xitoy ichidagi
+reyslar» / «… Xitoydan tashqariga») — the first draft's «Xitoy ichida» was the strip's PLACE word, caught by
+review. Badge «ichki reys» off in the inland column only; legend over outbound only; the driver's phone wraps at
+170 px. Pinned: `batch-board` unit + integration, e2e `m9zzze-partiya-doskasi` (+ `.desktop`, fixture
+`mintRoadTruck`, prefixes DSI/DSU dropped in cleanup). 9 red proofs. STATED: `?yonalish=` drops inland trucks.
 
 **Latest migration: 0135** (`load_mode`, `when` …114; ledger must reach **136**). Before
 it: 0134 (`staff_group`, `when` …113). Before
