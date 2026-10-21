@@ -45,6 +45,7 @@ import { allLabelVariants } from './client-labels';
 import { buttonLabel } from './limits';
 import { editMarkup, editText } from './send';
 
+import { getSetting, SETTING_DEFAULTS } from '../settings/service';
 import { canLogInSql, staffPhonesMatch } from '../users/login';
 import { THREAD_PING_TYPES, threadOfPayload } from '../notifications/thread-ref';
 import { isBacklog } from './lifecycle';
@@ -1249,6 +1250,23 @@ export async function assistantFromBot(
 }
 
 /**
+ * The company's client-code prefix («GS»), as the customer readers
+ * (`parseClientHint`, `looksLikeMaterial`) take it: a code is the COMPANY's
+ * shape, not any letters before digits. Read once per handler call, on the
+ * pool and never inside a transaction (#714). An unreadable setting answers
+ * the shipped default and says so in the log — the reader still has a shape,
+ * and the database being down fails the landing on its own anyway.
+ */
+export async function clientCodePrefix(): Promise<string> {
+  try {
+    return String((await getSetting('client_code_prefix')) ?? '').trim();
+  } catch (err) {
+    logger.warn({ err }, '[calc-intake] client_code_prefix unreadable — the default is used');
+    return SETTING_DEFAULTS.client_code_prefix;
+  }
+}
+
+/**
  * Land a confirmed «Hisoblatish» on a card. Everything it decides — which
  * client the typed hint names, deal or lead, what the note says — lives in
  * wms and is tested there; this is the crossing.
@@ -1268,13 +1286,13 @@ export async function landCollectedIntake(
   /** Why not, when it did not (audit A38) — the bot turns it into a sentence. */
   queueError?: string | null;
 } | null> {
-  const { activeIntake } = await import('./calc-intake');
+  const { activeIntake, intakeClientLabel } = await import('./calc-intake');
   const state = activeIntake(chatId);
   if (!state) return null;
   const { parseClientHint } = await import('../../wms/calc/intake');
   const { landIntake, resolveIntakeClient } = await import('../../wms/calc/intake-land');
 
-  const hint = parseClientHint(state.clientHintRaw);
+  const hint = parseClientHint(state.clientHintRaw, { prefix: await clientCodePrefix() });
   const client = hint ? await resolveIntakeClient(hint) : null;
   return landIntake({
     noteId: state.noteId,
@@ -1289,9 +1307,11 @@ export async function landCollectedIntake(
     collectedBy: staffId,
     collectedByName: staffName,
     client,
-    // A prospect's card is named by whatever staff typed; the phone, when
-    // one was typed, is what a second request will find it by.
-    leadName: state.clientHintRaw.trim() || 'Hisoblatish (nomsiz)',
+    // A prospect's card is named by whatever staff typed — on ONE line, the
+    // phone left to its own column (round-2 review, C8/C9: a two-line hint
+    // named the lead «Ali aka\n+998 …»); the phone, when one was typed, is
+    // what a second request will find it by.
+    leadName: intakeClientLabel(state.clientHintRaw) ?? 'Hisoblatish (nomsiz)',
     leadPhone: hint?.phone ?? null,
     // Only the AI door offers the toggle; every other collection lands the
     // column's own default, which is what it landed before this round.

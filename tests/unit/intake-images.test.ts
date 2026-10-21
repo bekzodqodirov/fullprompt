@@ -43,7 +43,10 @@ describe('the analysis actually looks at the photographs', () => {
     // nothing but an invoice PDF — same rule, one more way of having sent
     // something. 2026-10-21: and a spreadsheet the reader handed over as
     // text, and several PDFs — and an empty one is now SAID, not null.
-    expect(AI).toContain('if (!material && images.length === 0 && pdfs.length === 0 && !sheetText) {');
+    // Since the round-2 review the sheets are two inputs (goods files and a
+    // workbook's other sheets), either of which is something to read.
+    expect(AI).toContain('if (!material && images.length === 0 && pdfs.length === 0 && !hasSheets) {');
+    expect(AI).toContain("const hasSheets = [...sheets, ...contextSheets].some((s) => s.text.trim() !== '');");
     expect(AI).toContain("return { ok: false, failure: 'nothing_to_read' };");
   });
 

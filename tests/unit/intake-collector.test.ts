@@ -28,6 +28,8 @@ import {
   handleCalcCallback,
   invoiceChoice,
   otherFilesChoice,
+  readCustomerText,
+  readIntakeFile,
   receiveGoodsSheet,
   receivePdf,
   receiveSheetText,
@@ -99,7 +101,7 @@ describe('«➕ / 🔁» keeps the question the collection is waiting on (review
     // The customer question, not «Yana yuboring yoki Bo'ldi».
     expect(ctx.texts().at(-1)).toContain('Mijozni yozing');
     // …so the code typed next is the customer, never material.
-    expect(clientAnswer(live, 'GS777', false)).toMatchObject({ kind: 'customer', patch: { clientHintRaw: 'GS777' } });
+    expect(clientAnswer(live, 'GS777', { material: false, couldBeCustomer: true })).toMatchObject({ kind: 'customer', patch: { clientHintRaw: 'GS777' } });
   });
 
   it('the podklyuch door’s «qayerdan?» is kept too; only a collecting stage moves to material', () => {
@@ -120,9 +122,9 @@ describe('a third goods file folds into the open question (review c1)', () => {
       state = { ...state, ...answer.patch };
       return answer;
     };
-    take({ goods: [line('Kurtka'), line('Shim')], label: '«A.xlsx»', text: '', where: '' });
-    take({ goods: [line('Choynak'), line('Piyola'), line('Lagan')], label: '«B.xlsx»', text: '', where: '' });
-    const third = take({ goods: [line('Poyabzal')], label: '«C.xlsx»', text: '', where: '' });
+    take({ goods: [line('Kurtka'), line('Shim')], label: '«A.xlsx»', text: '', textCut: false, where: '' });
+    take({ goods: [line('Choynak'), line('Piyola'), line('Lagan')], label: '«B.xlsx»', text: '', textCut: false, where: '' });
+    const third = take({ goods: [line('Poyabzal')], label: '«C.xlsx»', text: '', textCut: false, where: '' });
     // The waiting files are named, both of them.
     expect(third.say).toContain('«B.xlsx», «C.xlsx»');
     expect(callbacksOf(third.keyboard)).toEqual(['c:inv_add', 'c:inv_replace']);
@@ -189,12 +191,13 @@ describe('a PDF or a header-less sheet beside an Excel list is ASKED about (revi
 
   it('a header-less sheet after the Excel, and an Excel after a PDF (the other order), ask too', () => {
     const fit = (texts: readonly string[]) => fitSheetTexts(texts, 10_000);
-    const sheetAfter = receiveSheetText(collection({ invoiceGoods: [line('Kurtka')] }).state, '«B.xlsx»', 'a | b', fit);
+    const sheetAfter = receiveSheetText(collection({ invoiceGoods: [line('Kurtka')] }).state, '«B.xlsx»', { text: 'a | b', cut: false }, fit);
     expect(sheetAfter.patch).toMatchObject({ aiGoods: 'ask' });
     const excelAfterPdf = receiveGoodsSheet(collection({ pdfs: [pdf] }).state, {
       goods: [line('Kurtka')],
       label: '«A.xlsx»',
       text: '',
+      textCut: false,
       where: '',
     });
     expect(excelAfterPdf.patch).toMatchObject({ aiGoods: 'ask', invoiceGoods: [line('Kurtka')] });
@@ -235,21 +238,25 @@ describe('a replaced workbook takes its other sheets with it (review c7)', () =>
       goods: [line('Kurtka')],
       label: '«WRONG.xlsx»',
       text: '[Packing list]\nTOTAL G.W. | 9999 KGS',
+      textCut: false,
       where: '',
     });
-    expect(first.patch.invoiceTexts).toEqual(['[Packing list]\nTOTAL G.W. | 9999 KGS']);
+    expect(first.patch.invoiceTexts).toEqual([{ text: '[Packing list]\nTOTAL G.W. | 9999 KGS', cut: false }]);
     expect(first.patch).not.toHaveProperty('sheetTexts');
   });
 
   it('🔁 drops the replaced one’s totals; ➕ keeps both', () => {
     const state = collection({
       invoiceGoods: [line('Kurtka')],
-      invoiceTexts: ['WRONG 9999 KGS'],
-      pendingInvoice: { goods: [line('Kurtka')], label: '«RIGHT.xlsx»', texts: ['RIGHT 1200 KGS'] },
+      invoiceTexts: [{ text: 'WRONG 9999 KGS', cut: false }],
+      pendingInvoice: { goods: [line('Kurtka')], label: '«RIGHT.xlsx»', texts: [{ text: 'RIGHT 1200 KGS', cut: true }] },
       stage: 'material',
     }).state;
-    expect(invoiceChoice(state, 'inv_replace')?.patch.invoiceTexts).toEqual(['RIGHT 1200 KGS']);
-    expect(invoiceChoice(state, 'inv_add')?.patch.invoiceTexts).toEqual(['WRONG 9999 KGS', 'RIGHT 1200 KGS']);
+    expect(invoiceChoice(state, 'inv_replace')?.patch.invoiceTexts).toEqual([{ text: 'RIGHT 1200 KGS', cut: true }]);
+    expect(invoiceChoice(state, 'inv_add')?.patch.invoiceTexts).toEqual([
+      { text: 'WRONG 9999 KGS', cut: false },
+      { text: 'RIGHT 1200 KGS', cut: true },
+    ]);
   });
 });
 
@@ -258,38 +265,158 @@ describe('a header-less sheet that will not fit is SAID when it arrives (review 
   const fit = (texts: readonly string[]) => fitSheetTexts(texts, 400);
 
   it('a file cut part-way names how many of its lines the AI reads', () => {
-    const answer = receiveSheetText(collection().state, '«PL.xlsx»', rows(60, 'Kurtka'), fit);
+    const answer = receiveSheetText(collection().state, '«PL.xlsx»', { text: rows(60, 'Kurtka'), cut: false }, fit);
     expect(answer.say).toMatch(/AI faqat birinchi \d+ \/ 60 qatorini o‘qiydi/);
   });
 
   it('a file that does not fit at all is said to be outside the AI’s reading', () => {
-    const answer = receiveSheetText(collection({ sheetTexts: [rows(60, 'A')] }).state, '«B.xlsx»', rows(10, 'B'), fit);
+    const answer = receiveSheetText(collection({ sheetTexts: [{ text: rows(60, 'A'), cut: false }] }).state, '«B.xlsx»', {
+      text: rows(10, 'B'),
+      cut: false,
+    }, fit);
     expect(answer.say).toContain('AI ga sig‘madi');
   });
 
   it('a file that fits says nothing more', () => {
-    const answer = receiveSheetText(collection().state, '«S.xlsx»', rows(3, 'Sumka'), fit);
+    const answer = receiveSheetText(collection().state, '«S.xlsx»', { text: rows(3, 'Sumka'), cut: false }, fit);
     expect(answer.say).toBe('📄 «S.xlsx» — jadval sarlavhasini topa olmadim, AI o‘qiydi.');
   });
 });
 
 describe('the customer question has a way forward (review t23)', () => {
+  // A short line the goods reader mistook for goods — the case t23 is for.
+  const NAME_READ_AS_GOODS = { material: true, couldBeCustomer: true };
+  const GOODS = { material: true, couldBeCustomer: false };
   it('the re-ask says why, and the SAME text again is the customer — out of the material', () => {
     const state = collection().state;
-    const first = clientAnswer(state, 'Ali aka 2', true);
+    const first = clientAnswer(state, 'Ali aka 2', NAME_READ_AS_GOODS);
     expect(first.kind).toBe('material');
     if (first.kind !== 'material') return;
     expect(first.say).toContain('tovar ro‘yxatiga o‘xshaydi');
     const after = { ...state, ...first.patch };
     expect(after.material).toEqual(['Ali aka 2']);
 
-    const again = clientAnswer(after, ' Ali aka 2 ', true);
+    const again = clientAnswer(after, ' Ali aka 2 ', NAME_READ_AS_GOODS);
     expect(again).toMatchObject({ kind: 'customer', patch: { clientHintRaw: 'Ali aka 2', stage: 'material' } });
     expect(again.patch.material).toEqual([]);
   });
 
   it('a different text is not «again»', () => {
     const state = { ...collection().state, clientAskedWith: 'Kurtka 300 dona' };
-    expect(clientAnswer(state, 'Shim 50 dona', true).kind).toBe('material');
+    expect(clientAnswer(state, 'Shim 50 dona', GOODS).kind).toBe('material');
+  });
+});
+
+describe('a goods list sent twice stays goods (round-2 review, C3/C7)', () => {
+  const list = 'Kurtka 300 dona 150 kg\nShim 200 dona 80 kg\nSharf 100 dona';
+
+  it('the readers: a goods list cannot name a customer; a name and a two-line contact can', async () => {
+    expect(await readCustomerText(list, 'GS')).toEqual({ material: true, couldBeCustomer: false });
+    expect((await readCustomerText('Kurtka 300 dona 150 kg', 'GS')).couldBeCustomer).toBe(false);
+    expect((await readCustomerText('Ali aka 2', 'GS')).couldBeCustomer).toBe(true);
+    expect((await readCustomerText('Ali aka\n+998 90 123 45 67', 'GS')).couldBeCustomer).toBe(true);
+  });
+
+  it('sent twice — a double forward: ONE copy in the material, the question again, never the customer', async () => {
+    const state = collection().state;
+    const read = await readCustomerText(list, 'GS');
+    const first = clientAnswer(state, list, read);
+    expect(first.kind).toBe('material');
+    const after = { ...state, ...first.patch };
+    const second = clientAnswer(after, list, read);
+    expect(second.kind).toBe('material');
+    const end = { ...after, ...second.patch };
+    expect(end.material).toEqual([list]);
+    expect(end.clientHintRaw).toBe('');
+    expect(end.stage).toBe('client');
+    if (first.kind === 'material' && second.kind === 'material') {
+      expect(second.say).toContain('Mijozni yozing');
+      // Neither re-ask promises what it cannot keep.
+      expect(first.say).not.toContain('mijoz deb olinadi');
+      expect(second.say).not.toContain('mijoz deb olinadi');
+    }
+    // A third send is still one copy.
+    const third = clientAnswer(end, list, read);
+    expect({ ...end, ...third.patch }.material).toEqual([list]);
+  });
+});
+
+describe('a line passed with ⏭ is never asked again (round-2 review, C10)', () => {
+  it('⏭ on line 1, then ⏭ on line 2: line 3 is asked — the stored collection remembers both', async () => {
+    const { chatId } = collection({
+      stage: 'question',
+      askingIndex: 0,
+      round: 1,
+      facts: { goods: [line('Kurtka'), line('Shim'), line('Sharf')] },
+    });
+    const ctx = fakeCtx();
+    await handleCalcCallback(ctx, chatId, 'skip');
+    expect(activeIntake(chatId)).toMatchObject({ stage: 'question', askingIndex: 1, lineDone: [0] });
+    await handleCalcCallback(ctx, chatId, 'skip');
+    expect(activeIntake(chatId)).toMatchObject({ stage: 'question', askingIndex: 2, lineDone: [0, 1] });
+    expect(ctx.texts().map((t) => t.split(' — ')[0])).toEqual(['❓ 2-qator «Shim»', '❓ 3-qator «Sharf»']);
+  });
+
+  it('the summary keeps the list too, so «➕ Yana ma’lumot» cannot bring a passed line back', async () => {
+    const { chatId } = collection({
+      stage: 'question',
+      askingIndex: 0,
+      round: 1,
+      facts: { goods: [line('Kurtka')] },
+    });
+    await handleCalcCallback(fakeCtx(), chatId, 'skip');
+    expect(activeIntake(chatId)).toMatchObject({ stage: 'review', lineDone: [0] });
+  });
+});
+
+describe('the summary names the customer on ONE line (round-2 review, C9)', () => {
+  it('«Ali aka» over the phone reads «Mijoz: Ali aka» — the phone has its own column', async () => {
+    const { chatId } = collection({
+      stage: 'question',
+      askingIndex: 0,
+      round: 1,
+      clientHintRaw: 'Ali aka\n+998 90 123 45 67',
+      facts: { goods: [line('Kurtka', { weightKg: 150 })] },
+    });
+    const ctx = fakeCtx();
+    await handleCalcCallback(ctx, chatId, 'skip');
+    const summary = ctx.texts().at(-1)!;
+    expect(summary).toContain('Mijoz: Ali aka\n');
+    expect(summary).not.toContain('+998');
+  });
+});
+
+describe('a file the READER stopped short is said, and carries its cut (round-2 review, C1/C4/C5)', () => {
+  const rows = (n: number, tag: string) => Array.from({ length: n }, (_, i) => `${i + 1} | ${tag} model ${i}`).join('\n');
+  const fit = (texts: readonly string[]) => fitSheetTexts(texts, 10_000);
+
+  it('a header-less sheet the reader cut: the warning, though what is left fits', () => {
+    const sheet = { text: rows(20, 'Kurtka'), cut: true };
+    const answer = receiveSheetText(collection().state, '«PL.csv»', sheet, fit);
+    expect(answer.say).toContain('⚠️ Jadval katta: AI faqat boshini o‘qiydi');
+    expect(answer.patch.sheetTexts).toEqual([sheet]);
+  });
+
+  it('a mapped workbook whose other sheets the reader cut: said (the goods are whole), the cut kept with the workbook', () => {
+    const answer = receiveGoodsSheet(collection().state, {
+      goods: [line('Kurtka')],
+      label: '«A.xlsx»',
+      text: '[Packing list]\n1 | 2',
+      textCut: true,
+      where: '',
+    });
+    expect(answer.say).toContain('⚠️ Jadval katta: AI boshqa varaqlarning faqat boshini o‘qiydi');
+    expect(answer.patch.invoiceTexts).toEqual([{ text: '[Packing list]\n1 | 2', cut: true }]);
+  });
+
+  it('the real reader on a 300-row header-less CSV: its cut reaches the collection and the seller', async () => {
+    const csv = Array.from(
+      { length: 300 },
+      (_, i) => `${i + 1};Куртка женская модель YW-${i} (女士夹克);${300 + i};PCS;${i}.5;${i}.9;0.${i}`,
+    ).join('\n');
+    const state = collection().state;
+    const answer = await readIntakeFile({ isPhoto: false, body: Buffer.from(csv) }, 'PL.csv', 'text/csv', state);
+    expect(answer.say).toContain('⚠️ Jadval katta');
+    expect(answer.patch.sheetTexts?.[0]?.cut).toBe(true);
   });
 });

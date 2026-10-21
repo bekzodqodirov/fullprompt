@@ -15,6 +15,8 @@ import {
   analyzeCollected,
   endIntake,
   goodsNameKey,
+  goodsNameKeys,
+  intakeClientLabel,
   pickGoods,
   startIntake,
   updateIntake,
@@ -70,8 +72,14 @@ describe('another factory’s goods, beside an Excel list (review c4)', () => {
 describe('what the model is shown of the spreadsheets (review c7)', () => {
   it('the separate files first, then the accepted workbooks’ other sheets — and nothing a replace dropped', async () => {
     model.analyze.mockResolvedValueOnce(reads([]));
-    await analyzeCollected(collection({ sheetTexts: ['[S] headerless'], invoiceTexts: ['[Packing list] RIGHT 1200 KGS'] }));
-    expect(model.analyze.mock.calls[0]![0].sheetText).toBe('[S] headerless\n\n[Packing list] RIGHT 1200 KGS');
+    const sheet = { text: '[S] headerless', cut: true };
+    const packing = { text: '[Packing list] RIGHT 1200 KGS', cut: false };
+    await analyzeCollected(collection({ sheetTexts: [sheet], invoiceTexts: [packing] }));
+    // Two inputs, never one block (round-2 review, C2/C6): the separate file
+    // is goods material, the workbook's own packing list is totals only —
+    // each with the reader's cut flag (C1).
+    expect(model.analyze.mock.calls[0]![0].sheets).toEqual([sheet]);
+    expect(model.analyze.mock.calls[0]![0].contextSheets).toEqual([packing]);
   });
 });
 
@@ -91,5 +99,46 @@ describe('the order of the sources (pickGoods)', () => {
   it('a name is compared without its case, spacing or punctuation', () => {
     expect(goodsNameKey('  Куртка, женская ')).toBe(goodsNameKey('куртка женская'));
     expect(goodsNameKey('Shim')).not.toBe(goodsNameKey('Shimlar'));
+  });
+});
+
+describe('a line the Excel already lists is not added again under the model’s name for it (round-2 review, C2/C6)', () => {
+  it('«Russian (original)» is its original, «X (原文)» is X — and a colour in brackets is not a duplicate', () => {
+    const invoice = [line('Ladies jacket', { quantity: 300 }), line('Куртка мужская'), line('Kurtka (qora)')];
+    const model = [
+      line('Куртка женская (Ladies jacket)'),
+      line('Куртка мужская（男士夹克）'),
+      line('Kurtka (oq)'),
+      line('Choynak (茶壶)'),
+      line('Choynak'),
+    ];
+    const names = pickGoods({ invoice, aiGoods: 'add', model, typed: [], typedLabelled: [] }).map((g) => g.name);
+    expect(names).toEqual(['Ladies jacket', 'Куртка мужская', 'Kurtka (qora)', 'Kurtka (oq)', 'Choynak (茶壶)']);
+  });
+
+  it('the names a line answers to: whole, outside the brackets, inside each', () => {
+    expect(goodsNameKeys('Куртка женская (Ladies jacket)')).toEqual({
+      whole: 'куртка женская ladies jacket',
+      keys: ['куртка женская ladies jacket', 'куртка женская', 'ladies jacket'],
+    });
+    expect(goodsNameKeys('Shim').keys).toEqual(['shim']);
+  });
+
+  it('every Excel name reaches the model — the renderer budgets them, a 100-name cut does not', async () => {
+    model.analyze.mockResolvedValueOnce(reads([]));
+    const invoice = Array.from({ length: 150 }, (_, i) => line(`Tovar ${i + 1}`));
+    await analyzeCollected(collection({ invoiceGoods: invoice, aiGoods: 'add' }));
+    expect(model.analyze.mock.calls[0]![0].knownGoods).toHaveLength(150);
+  });
+});
+
+describe('the customer as one line (round-2 review, C8/C9)', () => {
+  it('the lines without a digit are the name; a bare label is not; else the text on one line', () => {
+    expect(intakeClientLabel('Ali aka\n+998 90 123 45 67')).toBe('Ali aka');
+    expect(intakeClientLabel('Ism: Ali aka\nTel: +998 90 123 45 67')).toBe('Ism: Ali aka');
+    expect(intakeClientLabel('Mijoz:\nGS777')).toBe('Mijoz: GS777');
+    expect(intakeClientLabel('  GS777  Bobur ')).toBe('GS777 Bobur');
+    expect(intakeClientLabel('OOO  Asia\nTrade')).toBe('OOO Asia Trade');
+    expect(intakeClientLabel(' \n ')).toBeNull();
   });
 });

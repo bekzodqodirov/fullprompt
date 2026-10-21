@@ -187,27 +187,31 @@ export function retryAfterPause(failure: AiReadFailure, attempt: number, elapsed
  * nothing said to the model or the seller — a 300-line header-less packing
  * list came back as 229 goods, the half row as a broken one, and the job
  * landed short with no word anywhere. A row is kept whole or not at all; the
- * model is told the table was cut (`intakeContent`), and the bot tells the
+ * model is told the table was cut (`sheetsPromptText`), and the bot tells the
  * seller when the file ARRIVES, with the same function over the same texts.
  *
  * Per text, in order, so a caller can name what one file loses: `kept[i]` of
- * `total[i]` lines of `texts[i]`. Once a line does not fit nothing after it
- * is taken — a later line read without the ones above it is a row without
- * its table.
+ * `total[i]` lines of `texts[i]`, and `parts[i]` is those lines — so a goods
+ * file and a workbook's other sheets can be shown under their own headings
+ * while sharing ONE budget (round-2 review, C2). Once a line does not fit
+ * nothing after it is taken — a later line read without the ones above it is
+ * a row without its table.
  */
 export function fitSheetTexts(
   texts: readonly string[],
   cap: number,
-): { text: string; kept: number[]; total: number[] } {
+): { text: string; kept: number[]; total: number[]; parts: string[] } {
   const out: string[] = [];
   const kept: number[] = [];
   const total: number[] = [];
+  const parts: string[] = [];
   let used = 0;
   let full = false;
   for (const text of texts) {
     const lines = text.split('\n');
     total.push(lines.length);
     let n = 0;
+    let part = '';
     if (!full) {
       // The blank line between two texts costs what it is.
       const gap = out.length > 0 ? 2 : 0;
@@ -223,14 +227,124 @@ export function fitSheetTexts(
         size += cost;
       }
       if (taken.length > 0) {
-        out.push(taken.join('\n'));
+        part = taken.join('\n');
+        out.push(part);
         used += size;
       }
       n = taken.length;
     }
     kept.push(n);
+    parts.push(part);
   }
-  return { text: out.join('\n\n'), kept, total };
+  return { text: out.join('\n\n'), kept, total, parts };
+}
+
+/**
+ * A spreadsheet's text as the collector holds it: what the reader handed
+ * over, and whether the READER stopped before the file's end — its `textCut`
+ * (round-2 review, C1/C4/C5). The reader caps every file at its own budget
+ * and says so; the fit above only ever sees what is left, so ONE oversized
+ * file passed it whole and reached the model with no «обрезана» note, and the
+ * seller heard only «AI o'qiydi». The model then took the visible rows for
+ * the whole order.
+ */
+export interface IntakeSheetText {
+  text: string;
+  cut: boolean;
+}
+
+/**
+ * How the spreadsheets are shown to the model — pure, so the headings and the
+ * notes are a test (round-2 review, C1/C2).
+ *
+ * Two kinds under ONE budget, in this order (the order `receiveSheetText`
+ * measures the seller's warning by):
+ *  - `goods` — separate files whose LINES the model is asked for (a sheet with
+ *    no header the reader knows);
+ *  - `context` — the other sheets of a workbook whose goods the reader already
+ *    took exactly («Packing list» beside «Invoice»). They list the SAME goods,
+ *    so they stand under their own heading, for the totals only: joined into
+ *    the goods block, with the seller's «boshqa zavod» answer, the model
+ *    re-listed the workbook's own lines and a 150-line Excel landed 201
+ *    (round-2 review, C2/C6).
+ *
+ * A text cut by the reader (`cut`) or by this budget carries the note right
+ * under it; a text that did not fit at all is said too, never dropped.
+ */
+export function sheetsPromptText(
+  goods: readonly IntakeSheetText[],
+  context: readonly IntakeSheetText[],
+  cap: number,
+): string {
+  const all = [...goods, ...context].map((s) => ({ text: s.text.trim(), cut: s.cut }));
+  const fit = fitSheetTexts(all.map((s) => s.text), cap);
+  const block = (from: number, to: number): string => {
+    const out: string[] = [];
+    for (let i = from; i < to; i += 1) {
+      const sheet = all[i]!;
+      if (!sheet.text) continue;
+      const kept = fit.kept[i] ?? 0;
+      const total = fit.total[i] ?? 0;
+      if (kept === 0) {
+        out.push('[Ещё одна таблица не поместилась — ты её не видишь. Напиши в steps, что она не прочитана.]');
+        continue;
+      }
+      const fitCut = kept < total;
+      out.push(
+        (fit.parts[i] ?? '') +
+          (fitCut || sheet.cut
+            ? `\n[Таблица обрезана: показаны первые ${kept}${sheet.cut ? '' : ` из ${total}`} строк` +
+              (sheet.cut ? ', файл длиннее' : '') +
+              '. Остальные строки ты не видишь — не считай итоги по видимой части и напиши в steps, что таблица прочитана не целиком.]'
+            : ''),
+      );
+    }
+    return out.join('\n\n');
+  };
+  const goodsText = block(0, goods.length);
+  const contextText = block(goods.length, all.length);
+  return (
+    (goodsText ? `Таблица Excel (текстом):\n${goodsText}\n\n` : '') +
+    (contextText
+      ? 'Другие листы книги, товары из которой уже взяты в список, — только для итогов (общий вес/объём). ' +
+        `Товары отсюда НЕ перечисляй в goods:\n${contextText}\n\n`
+      : '')
+  );
+}
+
+/**
+ * The most characters the «already taken» names may cost the prompt (round-2
+ * review, C2). It was the first 100 NAMES: the 101st line of a 150-line Excel
+ * went unmentioned, so the model was not even told the list went on. A
+ * budget of characters, and a count of the rest.
+ */
+export const KNOWN_GOODS_CHARS = 6_000;
+
+/**
+ * «These are already taken — do not repeat them»: whole names while they fit
+ * `budget`, then how many more there are. One of two fences, and neither is
+ * whole: `pickGoods` drops a model line whose name — or the original in its
+ * brackets — an Excel line already is, but a line the model renamed with no
+ * trace of the Excel's words gets past it, and only this list tells the model
+ * not to write one (round-2 review, C2: the old comment called the name check
+ * «the fence whatever the model does», and a translated name walked through).
+ */
+export function knownGoodsText(names: readonly string[], budget: number): string {
+  const shown: string[] = [];
+  let used = 0;
+  for (const name of names) {
+    const line = `- ${name.slice(0, 120)}`;
+    if (used + line.length + 1 > budget) break;
+    shown.push(line);
+    used += line.length + 1;
+  }
+  const rest = names.length - shown.length;
+  return (
+    'Эти товары уже взяты из таблицы Excel — НЕ повторяй их в goods, перечисли только другие:\n' +
+    shown.join('\n') +
+    (rest > 0 ? `${shown.length > 0 ? '\n' : ''}…и ещё ${rest} строк этой таблицы — их тоже не повторяй.` : '') +
+    '\n\n'
+  );
 }
 
 /**
@@ -267,16 +381,23 @@ export async function analyzeIntake(input: {
    */
   morePdfs?: { data: Buffer; name: string }[];
   /**
-   * A spreadsheet the reader could not map onto columns, as text — the model
-   * reads it with everything else (his 1.2 b: the reader answers when it finds
-   * the header, the model when it does not).
+   * Spreadsheets the reader could not map onto columns, as text — the model
+   * reads them with everything else and lists their goods (his 1.2 b: the
+   * reader answers when it finds the header, the model when it does not).
    */
-  sheetText?: string | null;
+  sheets?: readonly IntakeSheetText[];
+  /**
+   * The OTHER sheets of workbooks whose goods the reader already took — shown
+   * for the shipment's totals under their own heading, never as goods
+   * (round-2 review, C2/C6).
+   */
+  contextSheets?: readonly IntakeSheetText[];
   /**
    * Line names the seller's Excel already lists (round-1 review, c4): the
    * seller said a separate PDF or sheet is ANOTHER factory's goods, so the
    * model's lines are appended to the Excel's — and a model not told what is
-   * already there repeats it from the caption. The caller caps the list.
+   * already there repeats it from the caption. Shown within
+   * `KNOWN_GOODS_CHARS`, the rest counted.
    */
   knownGoods?: readonly string[];
   /**
@@ -292,11 +413,13 @@ export async function analyzeIntake(input: {
   const pdfs = [input.pdf ?? null, ...(input.morePdfs ?? [])].filter(
     (p): p is { data: Buffer; name: string } => p !== null,
   );
-  const sheetText = input.sheetText?.trim() || '';
+  const sheets = input.sheets ?? [];
+  const contextSheets = input.contextSheets ?? [];
+  const hasSheets = [...sheets, ...contextSheets].some((s) => s.text.trim() !== '');
   // A collection of nothing but photographs — or nothing but an invoice — is
   // still a collection: before this round the empty-text guard refused it
   // outright.
-  if (!material && images.length === 0 && pdfs.length === 0 && !sheetText) {
+  if (!material && images.length === 0 && pdfs.length === 0 && !hasSheets) {
     return { ok: false, failure: 'nothing_to_read' };
   }
 
@@ -321,7 +444,10 @@ export async function analyzeIntake(input: {
         system: SYSTEM,
         output_config: { format: { type: 'json_schema', schema: FACTS_JSON_SCHEMA } },
         messages: [
-          { role: 'user', content: intakeContent(input.section, input.fileCount, material, images, pdfs, sheetText, known) },
+          {
+            role: 'user',
+            content: intakeContent(input.section, input.fileCount, material, images, pdfs, sheets, contextSheets, known),
+          },
         ],
       });
       // Spec §3: «no new cap in v1, but log token use». Until this round
@@ -423,12 +549,10 @@ function intakeContent(
   material: string,
   images: NonNullable<Parameters<typeof analyzeIntake>[0]['images']>,
   pdfs: { data: Buffer; name: string }[],
-  sheetText: string,
+  sheets: readonly IntakeSheetText[],
+  contextSheets: readonly IntakeSheetText[],
   known: readonly string[],
 ): Anthropic.ContentBlockParam[] {
-  const sheet = fitSheetTexts([sheetText], SHEET_TEXT_BUDGET);
-  const keptLines = sheet.kept[0] ?? 0;
-  const totalLines = sheet.total[0] ?? 0;
   return [
     // Images FIRST: the model reads them as context for the text that
     // follows, which is how the packing list and its caption actually relate.
@@ -453,19 +577,10 @@ function intakeContent(
         (fileCount ? `Прикреплено файлов: ${fileCount}\n` : '') +
         (images.length ? `Фотографий для чтения: ${images.length}\n` : '') +
         (pdfs.length ? `Приложены PDF: ${pdfs.map((p) => p.name).join(', ')}\n` : '') +
-        (sheetText
-          ? `Таблица Excel (текстом):\n${sheet.text}\n` +
-            // Said, never silent (round-1 review, a17): a model not told the
-            // table stops reads the visible rows as the whole order.
-            (keptLines < totalLines
-              ? `[Таблица обрезана: показаны первые ${keptLines} из ${totalLines} строк. ` +
-                'Остальные строки ты не видишь — не считай итоги по видимой части и напиши в steps, что таблица прочитана не целиком.]\n'
-              : '') +
-            '\n'
-          : '') +
-        (known.length
-          ? `Эти товары уже взяты из таблицы Excel — НЕ повторяй их в goods, перечисли только другие:\n${known.map((n) => `- ${n.slice(0, 120)}`).join('\n')}\n\n`
-          : '') +
+        // Said, never silent (round-1 review, a17; round-2, C1): a model not
+        // told a table stops reads the visible rows as the whole order.
+        sheetsPromptText(sheets, contextSheets, SHEET_TEXT_BUDGET) +
+        (known.length ? knownGoodsText(known, KNOWN_GOODS_CHARS) : '') +
         (material ? `Материалы:\n${material.slice(0, 20000)}` : 'Текста нет — читай фото и документы.'),
     },
   ];

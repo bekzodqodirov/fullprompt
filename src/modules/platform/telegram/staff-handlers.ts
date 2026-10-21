@@ -29,6 +29,7 @@ import {
   assistantFromBot,
   closeLeadMessage,
   closeTaskMessage,
+  clientCodePrefix,
   completeTaskFromBot,
   dayButtons,
   decideApprovalFromBot,
@@ -65,12 +66,14 @@ import { clientLabels } from './client-labels';
 import {
   activeIntake,
   analyzeCollected,
+  intakeClientLabel,
   intakeFileKind,
   mergeLineAnswers,
   MAX_INTAKE_IMAGES,
   MAX_INTAKE_PDF_BYTES,
   MAX_INTAKE_PDFS,
   type IntakeState,
+  type SheetText,
   endIntake,
   mayCollect,
   startIntake,
@@ -827,9 +830,10 @@ export function registerStaffBot(bot: Bot): void {
       if (intake.stage === 'client') {
         // The goods list forwarded where the customer was asked for (his
         // 1.7 b): it is MATERIAL, and the question is asked again. It used to
-        // become the lead's name and was never shown to the model.
-        const { looksLikeMaterial } = await import('../../wms/calc/intake-manual');
-        const answer = clientAnswer(intake, ctx.message.text, looksLikeMaterial(ctx.message.text));
+        // become the lead's name and was never shown to the model. The
+        // company's code prefix is read once, here, off any transaction.
+        const read = await readCustomerText(ctx.message.text, await clientCodePrefix());
+        const answer = clientAnswer(intake, ctx.message.text, read);
         updateIntake(chatId, answer.patch);
         if (answer.kind === 'material') {
           await ctx.reply(answer.say, { parse_mode: 'Markdown' });
@@ -1306,6 +1310,12 @@ async function askNextOrConfirm(
       ? nextLineToAsk(state.section, state.facts, laws, { skip: state.lineDone })
       : null;
 
+  // The lines dealt with are WRITTEN BACK on every way out (round-2 review,
+  // C10): every caller hands this function a `lineDone` with the line it just
+  // answered or skipped, and it used to be read for the choice below and then
+  // dropped — the stored collection kept the old list, so the next answer or
+  // ⏭ rebuilt it from that, and a line skipped with ⏭ was asked again.
+  const lineDone = state.lineDone;
   if (line) {
     updateIntake(chatId, {
       stage: 'question',
@@ -1314,6 +1324,7 @@ async function askNextOrConfirm(
       round: state.round + 1,
       reasked: false,
       offers: [],
+      lineDone,
     });
     await ctx.reply(lineQuestionText(line), { reply_markup: skipKeyboard() });
     return;
@@ -1335,6 +1346,7 @@ async function askNextOrConfirm(
       totalsAsked: true,
       reasked: false,
       offers: [],
+      lineDone,
     });
     await ctx.reply(
       'Yo‘lkira uchun umumiy hajm va og‘irlik kerak. Masalan: «12 kub 3500 kg»' +
@@ -1346,7 +1358,7 @@ async function askNextOrConfirm(
   }
 
   const settled =
-    updateIntake(chatId, { stage: 'review', askingIndex: null, askingTotals: false, offers: [] }) ?? state;
+    updateIntake(chatId, { stage: 'review', askingIndex: null, askingTotals: false, offers: [], lineDone }) ?? state;
   const { AI_READ_FAILURE } = await import('../../wms/calc/intake');
   const failure = settled.aiUsed ? null : (settled.aiFailure ?? 'not_configured');
   await ctx.reply(
@@ -1354,7 +1366,8 @@ async function askNextOrConfirm(
       section: settled.section,
       facts: settled.facts,
       laws,
-      clientLabel: settled.clientHintRaw || null,
+      // One line, the lead's own name (round-2 review, C9).
+      clientLabel: intakeClientLabel(settled.clientHintRaw),
       fileCount: settled.fileCount,
       ambiguous: settled.ambiguousTotals,
     }) +
@@ -1679,6 +1692,37 @@ async function analyseIntakeAndReply(
 }
 
 /**
+ * What an answer to the customer question looks like, by wms's own readers
+ * (a dynamic import: platform never imports wms statically) and the company's
+ * code prefix. Two facts, kept apart because they answer different things:
+ *  - `material` — `looksLikeMaterial`: is it goods rather than a customer?
+ *  - `couldBeCustomer` — could it NAME one at all: no goods evidence
+ *    (`statesGoods`, a labelled goods line — the reader's own first test) and
+ *    either one short line or a hint `parseClientHint` finds. Only such a
+ *    text may be insisted on as the customer (round-2 review, C3/C7).
+ */
+export interface CustomerTextRead {
+  material: boolean;
+  couldBeCustomer: boolean;
+}
+
+export async function readCustomerText(raw: string, prefix: string): Promise<CustomerTextRead> {
+  const { looksLikeMaterial, readGoodsLines } = await import('../../wms/calc/intake-manual');
+  const { parseClientHint, statesGoods } = await import('../../wms/calc/intake');
+  const text = raw.trim();
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const goods = lines.some((l) => statesGoods(l) || readGoodsLines(l, { labelledOnly: true }).length > 0);
+  return {
+    material: looksLikeMaterial(raw, { prefix }),
+    couldBeCustomer:
+      text !== '' && !goods && ((lines.length === 1 && text.length <= 60) || parseClientHint(text, { prefix }) !== null),
+  };
+}
+
+/**
  * The answer to the customer question — pure, so the rule is a test.
  *
  * Text that looks like goods is MATERIAL and the question is asked again (his
@@ -1688,23 +1732,42 @@ async function analyseIntakeAndReply(
  * text sent again is the seller insisting: it is the customer, and it leaves
  * the material it was filed into — a name read as a goods line is an
  * invented product on the card.
+ *
+ * Insisting is believed only of a text that COULD be a customer (round-2
+ * review, C3/C7): a goods list sent twice — a double forward, or re-sent after
+ * the re-ask — became the customer, the lead was named with the goods and the
+ * only copy of them left what the model reads. Such a repeat is kept ONCE as
+ * material, and the question is asked again without the promise it cannot
+ * keep.
  */
 export function clientAnswer(
   state: IntakeState,
   raw: string,
-  looksMaterial: boolean,
+  read: CustomerTextRead,
 ):
   | { kind: 'material'; patch: Partial<IntakeState>; say: string }
   | { kind: 'customer'; patch: Partial<IntakeState> } {
   const text = raw.trim();
   const again = state.clientAskedWith !== null && state.clientAskedWith === text;
-  if (looksMaterial && !again) {
+  if (read.material && !(again && read.couldBeCustomer)) {
+    if (again) {
+      return {
+        kind: 'material',
+        patch: {},
+        say:
+          '✍️ Bu matn allaqachon olingan — ikkinchi marta qo‘shilmadi. Tovar ro‘yxati mijoz bo‘la olmaydi.\n' +
+          'Mijozni bitta qatorda yozing: kod yoki telefon.\n\n' +
+          CLIENT_QUESTION,
+      };
+    }
     return {
       kind: 'material',
       patch: { material: [...state.material, raw], clientAskedWith: text },
       say:
         '✍️ Ma’lumot sifatida olindi — tovar ro‘yxatiga o‘xshaydi.\n' +
-        'Mijozni bitta qatorda yozing: kod yoki telefon. (Shu matnni yana yuborsangiz — mijoz deb olinadi.)\n\n' +
+        'Mijozni bitta qatorda yozing: kod yoki telefon.' +
+        (read.couldBeCustomer ? ' (Shu matnni yana yuborsangiz — mijoz deb olinadi.)' : '') +
+        '\n\n' +
         CLIENT_QUESTION,
     };
   }
@@ -1879,7 +1942,10 @@ export interface FileAnswer {
  * documents (his 1.13), and the same invoice twice is the second commonest:
  * only the seller knows which, and merging blind would double the order.
  * Asked again for each new such file, because one answer about the first PDF
- * says nothing about the next.
+ * says nothing about the next — and the LAST answer then stands for all of
+ * them: the model reads the files together and its list names no file per
+ * line, so «A's own PDF beside B's» has no right answer (round-2 review, C2;
+ * stated, not built — see `IntakeState.aiGoods`). The question says so.
  */
 function otherFilesQuestion(invoiceLines: number): string {
   return (
@@ -1916,23 +1982,30 @@ export function receivePdf(state: IntakeState, pdf: { data: Buffer; name: string
 
 /**
  * A spreadsheet with no header the reader knows: its text goes to the model
- * (his 1.2 b) — and the seller is told NOW when it will not fit in what the
- * model reads (round-1 review, a17), rather than the job landing short.
+ * (his 1.2 b) — and the seller is told NOW when the model will not read all
+ * of it (round-1 review, a17), rather than the job landing short.
+ *
+ * Two cuts, both said: the READER's (`sheet.cut` — it stops every file at its
+ * own budget, so one oversized file reached this fit already short and passed
+ * it whole: «AI o‘qiydi» and nothing more, round-2 review C1/C4/C5), and this
+ * fit's, when the files together outgrow what the model reads.
  */
-export function receiveSheetText(state: IntakeState, label: string, text: string, fit: SheetFit): FileAnswer {
-  const sheetTexts = [...state.sheetTexts, text];
+export function receiveSheetText(state: IntakeState, label: string, sheet: SheetText, fit: SheetFit): FileAnswer {
+  const sheetTexts = [...state.sheetTexts, sheet];
   // The new file's place in what the model is shown (`analyzeCollected`):
   // after the separate files before it, ahead of any workbook's other sheets.
   const at = sheetTexts.length - 1;
-  const fitted = fit([...sheetTexts, ...state.invoiceTexts]);
+  const fitted = fit([...sheetTexts, ...state.invoiceTexts].map((s) => s.text.trim()));
   const kept = fitted.kept[at] ?? 0;
   const total = fitted.total[at] ?? 0;
   const cut =
-    kept >= total
-      ? ''
-      : kept === 0
-        ? '\n⚠️ Bu jadval AI ga sig‘madi (oldingi jadvallar bilan birga juda katta) — VED faylni kartadan o‘qiydi.'
-        : `\n⚠️ Jadval katta: AI faqat birinchi ${kept} / ${total} qatorini o‘qiydi — qolganini VED fayldan ko‘radi.`;
+    kept === 0
+      ? '\n⚠️ Bu jadval AI ga sig‘madi (oldingi jadvallar bilan birga juda katta) — VED faylni kartadan o‘qiydi.'
+      : sheet.cut
+        ? `\n⚠️ Jadval katta: AI faqat boshini o‘qiydi (birinchi ${kept} qator) — qolganini VED fayldan ko‘radi.`
+        : kept < total
+          ? `\n⚠️ Jadval katta: AI faqat birinchi ${kept} / ${total} qatorini o‘qiydi — qolganini VED fayldan ko‘radi.`
+          : '';
   const invoice = (state.invoiceGoods ?? []).length;
   return {
     patch: { sheetTexts, ...(invoice > 0 ? { aiGoods: 'ask' as const } : {}) },
@@ -1955,6 +2028,10 @@ export function receiveSheetText(state: IntakeState, label: string, text: string
  *    open every further file FOLDS into it — a third used to overwrite the
  *    second, whose lines then reached nobody (round-1 review, c1). Its other
  *    sheets wait with it, so a replace can drop them (c7).
+ *
+ * The goods rows are exact whatever the size; the OTHER sheets' text is what
+ * the reader cuts (`textCut`), and that is said too — those sheets are where
+ * the shipment's totals are read from (round-2 review, C1).
  */
 export function receiveGoodsSheet(
   state: IntakeState,
@@ -1962,11 +2039,16 @@ export function receiveGoodsSheet(
     goods: NonNullable<IntakeState['invoiceGoods']>;
     label: string;
     text: string;
+    textCut: boolean;
     where: string;
   },
 ): FileAnswer {
   const { goods, label, where } = sheet;
-  const texts = sheet.text ? [sheet.text] : [];
+  const texts: SheetText[] = sheet.text ? [{ text: sheet.text, cut: sheet.textCut }] : [];
+  const cut =
+    sheet.text && sheet.textCut
+      ? '\n⚠️ Jadval katta: AI boshqa varaqlarning faqat boshini o‘qiydi (tovarlar ro‘yxati to‘liq olindi).'
+      : '';
   const invoice = state.invoiceGoods ?? [];
   if (invoice.length > 0) {
     const waiting = state.pendingInvoice;
@@ -1980,7 +2062,7 @@ export function receiveGoodsSheet(
     return {
       patch: { pendingInvoice: pending },
       say:
-        `📄 ${label} — ${goods.length} ta tovar${where}.\n` +
+        `📄 ${label} — ${goods.length} ta tovar${where}.${cut}\n` +
         (waiting ? `Javob kutayotgan fayllar: ${pending.label} — jami ${pending.goods.length} ta tovar.\n` : '') +
         `Oldingi faylda ${invoice.length} ta tovar bor. Nima qilamiz?`,
       keyboard: invoiceChoiceKeyboard(),
@@ -1989,7 +2071,7 @@ export function receiveGoodsSheet(
   const ask = state.aiGoods === null && (state.pdfs.length > 0 || state.sheetTexts.length > 0);
   return {
     patch: { invoiceGoods: goods, invoiceTexts: texts, ...(ask ? { aiGoods: 'ask' as const } : {}) },
-    say: `📄 ${label} — ${goods.length} ta tovar o‘qildi${where}.` + (ask ? otherFilesQuestion(goods.length) : ''),
+    say: `📄 ${label} — ${goods.length} ta tovar o‘qildi${where}.` + cut + (ask ? otherFilesQuestion(goods.length) : ''),
     ...(ask ? { keyboard: otherFilesKeyboard() } : {}),
   };
 }
@@ -2061,8 +2143,12 @@ export function otherFilesChoice(
  *    is ASKED about (his 1.13 c);
  *  - a DOCX is refused in words — it is a zip like an xlsx and would read as
  *    «no goods».
+ *
+ * Exported for the test: the reader's `textCut` reaching the collection is a
+ * wire through THIS function, and a test of the two pure halves beside it
+ * cannot see a wire that drops it (round-2 review, C1 — #531's shape).
  */
-async function readIntakeFile(
+export async function readIntakeFile(
   saved: { isPhoto: boolean; body: Buffer },
   fileName: string,
   mime: string | null,
@@ -2104,15 +2190,25 @@ async function readIntakeFile(
     return { patch: {}, say: `📎 ${label} kartada saqlandi, lekin o‘qilmaydi: faqat rasm, PDF va Excel/CSV o‘qiladi.` };
   }
   if (sheet.kind === 'refused') return { patch: {}, say: SHEET_REFUSAL[sheet.reason](label) };
+  // The reader's own cut (`textCut`) travels with the text, so the seller and
+  // the model are both told (round-2 review, C1/C4/C5).
   if (sheet.kind === 'text') {
     const { fitSheetTexts } = await import('../../wms/calc/intake-ai');
-    return receiveSheetText(state, label, sheet.text, (texts) => fitSheetTexts(texts, SHEET_TEXT_BUDGET));
+    return receiveSheetText(state, label, { text: sheet.text, cut: sheet.textCut }, (texts) =>
+      fitSheetTexts(texts, SHEET_TEXT_BUDGET),
+    );
   }
   // Everything the file states reaches the landing (2026-10-09, P1.6) —
   // through the one mapping the landing's own test reads.
   const { invoiceFacts } = await import('../../wms/calc/intake');
   const where = sheet.sheets > 1 ? ` («${sheet.sheet}» varag‘idan; boshqa varaqlarni AI o‘qiydi)` : '';
-  return receiveGoodsSheet(state, { goods: invoiceFacts(sheet.goods), label, text: sheet.text, where });
+  return receiveGoodsSheet(state, {
+    goods: invoiceFacts(sheet.goods),
+    label,
+    text: sheet.text,
+    textCut: sheet.textCut,
+    where,
+  });
 }
 
 type BotFileCtx = {

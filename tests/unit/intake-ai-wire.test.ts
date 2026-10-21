@@ -18,7 +18,9 @@ import {
   analyzeIntake,
   fitSheetTexts,
   INTAKE_RETRY_PAUSE_MS,
+  knownGoodsText,
   retryAfterPause,
+  sheetsPromptText,
 } from '@/modules/wms/calc/intake-ai';
 
 type Scripted = { status: number; delayMs: number };
@@ -84,13 +86,19 @@ describe('a spreadsheet is cut on a ROW, and the cut is said (review a17)', () =
   it('what fits is passed through unchanged', () => {
     const a = rows(2).join('\n');
     const b = rows(1).join('\n');
-    expect(fitSheetTexts([a, b], 10_000)).toEqual({ text: `${a}\n\n${b}`, kept: [2, 1], total: [2, 1] });
+    expect(fitSheetTexts([a, b], 10_000)).toEqual({ text: `${a}\n\n${b}`, kept: [2, 1], total: [2, 1], parts: [a, b] });
   });
 
   it('the model is shown whole rows and TOLD the table stops', async () => {
     script.push({ status: 400, delayMs: 0 });
     const sheet = rows(40).join('\n');
-    const out = await analyzeIntake({ section: 'rastamojka', text: '', fileCount: 1, sheetText: sheet, timeoutMs: 10_000 });
+    const out = await analyzeIntake({
+      section: 'rastamojka',
+      text: '',
+      fileCount: 1,
+      sheets: [{ text: sheet, cut: false }],
+      timeoutMs: 10_000,
+    });
     expect(out).toEqual({ ok: false, failure: 'rejected' });
     const text = promptText();
     expect(text).toMatch(/Таблица обрезана: показаны первые \d+ из 40 строк/);
@@ -106,6 +114,61 @@ describe('the Excel’s line names reach the model when the seller said «anothe
     await analyzeIntake({ section: 'rastamojka', text: 'Kurtka', fileCount: 1, knownGoods: ['Kurtka', 'Shim'], timeoutMs: 10_000 });
     expect(promptText()).toContain('НЕ повторяй их в goods');
     expect(promptText()).toContain('- Shim');
+  });
+});
+
+describe('what the model is told of each spreadsheet (round-2 review, C1/C2)', () => {
+  const rows = (n: number) => Array.from({ length: n }, (_, i) => `${i + 1} | Куртка женская модель YW-${i}`).join('\n');
+
+  it('a text the READER cut is said to be cut, though what is left fits whole', () => {
+    const cut = sheetsPromptText([{ text: rows(5), cut: true }], [], 10_000);
+    expect(cut).toContain(`${rows(5)}\n[Таблица обрезана: показаны первые 5 строк, файл длиннее.`);
+    expect(sheetsPromptText([{ text: rows(5), cut: false }], [], 10_000)).not.toContain('обрезана');
+  });
+
+  it('a workbook’s other sheets stand under their own heading, for the totals — never in the goods block', () => {
+    const text = sheetsPromptText(
+      [{ text: '[S]\nA | 1', cut: false }],
+      [{ text: '[Packing list]\nLadies jacket | 300 | 150', cut: false }],
+      10_000,
+    );
+    const goods = text.slice(0, text.indexOf('Другие листы книги'));
+    expect(goods).toContain('Таблица Excel (текстом):\n[S]\nA | 1');
+    expect(goods).not.toContain('Packing list');
+    expect(text).toContain('только для итогов');
+    expect(text).toContain('Товары отсюда НЕ перечисляй в goods:\n[Packing list]\nLadies jacket | 300 | 150');
+    expect(sheetsPromptText([], [{ text: 'x | 1', cut: false }], 10_000)).not.toContain('Таблица Excel');
+  });
+
+  it('one budget over both, and a sheet that does not fit at all is SAID', () => {
+    const text = sheetsPromptText([{ text: rows(40), cut: false }], [{ text: '[Packing list]\nTOTAL | 9', cut: false }], 300);
+    expect(text).toMatch(/Таблица обрезана: показаны первые \d+ из 40 строк/);
+    expect(text).toContain('[Ещё одна таблица не поместилась');
+    expect(text).not.toContain('TOTAL | 9');
+  });
+
+  it('the Excel’s names within a character budget, and how many more there are', () => {
+    const names = Array.from({ length: 150 }, (_, i) => `Tovar ${i + 1}`);
+    const text = knownGoodsText(names, 200);
+    const shown = text.split('\n').filter((l) => l.startsWith('- ')).length;
+    expect(shown).toBeGreaterThan(0);
+    expect(shown).toBeLessThan(150);
+    expect(text).toContain(`…и ещё ${150 - shown} строк этой таблицы — их тоже не повторяй.`);
+    expect(knownGoodsText(['Kurtka'], 200)).not.toContain('и ещё');
+  });
+
+  it('the wire: analyzeIntake shows the reader’s cut and the totals-only heading', async () => {
+    script.push({ status: 400, delayMs: 0 });
+    await analyzeIntake({
+      section: 'rastamojka',
+      text: 'Kurtka',
+      fileCount: 2,
+      sheets: [{ text: 'A | 1', cut: true }],
+      contextSheets: [{ text: '[Packing list]\nB | 2', cut: false }],
+      timeoutMs: 10_000,
+    });
+    expect(promptText()).toContain('A | 1\n[Таблица обрезана: показаны первые 1 строк, файл длиннее.');
+    expect(promptText()).toContain('Товары отсюда НЕ перечисляй в goods:\n[Packing list]\nB | 2');
   });
 });
 

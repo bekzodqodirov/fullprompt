@@ -21,6 +21,9 @@ import { staffForChat } from './staff-bot';
 
 export type IntakeStage = 'section' | 'client' | 'material' | 'review' | 'question';
 
+/** A spreadsheet's text and whether its reader stopped before the end (round-2 review, C1). */
+export type SheetText = import('../../wms/calc/intake-ai').IntakeSheetText;
+
 export interface IntakeState {
   section: import('../../wms/calc/intake').CalcSection;
   stage: IntakeStage;
@@ -148,18 +151,24 @@ export interface IntakeState {
    * `invoiceGoods`, exact, and never sent to the model twice. SEPARATE files
    * only: the other sheets of a mapped workbook are `invoiceTexts`, because
    * they belong to that workbook and leave with it (round-1 review, c7).
+   * Each carries the reader's own «I stopped before the end» (`cut`), so the
+   * seller is told when the file arrives and the model when it reads (round-2
+   * review, C1).
    */
-  sheetTexts: string[];
+  sheetTexts: SheetText[];
   /**
    * The OTHER sheets of the workbooks `invoiceGoods` came from — the
    * «Packing list» beside the «Invoice», whose TOTAL G.W./CBM are the
    * shipment's totals. Shown to the model as context, never as a second
-   * goods list (#1458). Kept per accepted workbook so «🔁 Oldingisining
-   * o'rniga» drops the replaced file's totals WITH its goods: they used to
-   * stay in `sheetTexts`, and the job's kg/m³ could come from the very file
-   * the seller had just been told was replaced (round-1 review, c7).
+   * goods list (#1458) — under their OWN heading, «for the totals, do not
+   * list these goods» (round-2 review, C2: joined into the goods block, a
+   * «boshqa zavod» answer re-listed the workbook's own lines). Kept per
+   * accepted workbook so «🔁 Oldingisining o'rniga» drops the replaced file's
+   * totals WITH its goods: they used to stay in `sheetTexts`, and the job's
+   * kg/m³ could come from the very file the seller had just been told was
+   * replaced (round-1 review, c7).
    */
-  invoiceTexts: string[];
+  invoiceTexts: SheetText[];
   /**
    * Further spreadsheets of goods, waiting for the seller's answer: add their
    * lines to the first's, or replace them (his 1.13 c — the bot asks). The
@@ -171,7 +180,7 @@ export interface IntakeState {
   pendingInvoice: {
     goods: import('../../wms/calc/intake').CalcFacts['goods'];
     label: string;
-    texts: string[];
+    texts: SheetText[];
   } | null;
   /**
    * What the MODEL's goods are worth once an Excel list exists (round-1
@@ -182,6 +191,15 @@ export interface IntakeState {
    * the question is open (and «Bo'ldi» waits for it), `add` = another
    * factory's goods, appended to the Excel's, `context` = the same goods, the
    * file is read for its totals only. Null = no such pair has arisen.
+   *
+   * STATED, not built (round-2 review, C2): ONE answer covers every file the
+   * model reads in this collection — the model reads them together and
+   * returns one list, which carries no file per line. So factory A's own
+   * invoice.pdf beside factory B's PDF has no right answer: «add» repeats A's
+   * lines wherever their names differ from the Excel's, «context» drops B's.
+   * The question says so to the seller («Javob AI o‘qiydigan hamma
+   * fayllarga tegishli»); per-file answers would need the model to name a
+   * line's source.
    */
   aiGoods: 'ask' | 'add' | 'context' | null;
   /**
@@ -248,6 +266,25 @@ export function mergeLineAnswers(
   return out;
 }
 
+/**
+ * The customer as ONE line: the lead's name and the summary's «Mijoz:» (round-2
+ * review, C8/C9). Since the typed round a hint may be two or three lines («Ali
+ * aka» over «+998 90 123 45 67»), and the raw text named the lead with a
+ * newline AND the phone — on the board card, in «Lid: …» and in the summary.
+ * The lines without a digit are the name; a line that is only a label waiting
+ * for its value («Mijoz:») is not one. When no line is a name, the whole text
+ * collapsed onto one line. Null = nothing typed: each caller has its own word
+ * for that. Pure.
+ */
+export function intakeClientLabel(raw: string): string | null {
+  const lines = raw
+    .split(/\r?\n/)
+    .map((l) => l.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+  const named = lines.filter((l) => !/\d/.test(l) && !/[:：]$/.test(l));
+  return (named.length > 0 ? named : lines).join(' ') || null;
+}
+
 type GoodsList = NonNullable<import('../../wms/calc/intake').CalcFacts['goods']>;
 
 /**
@@ -256,6 +293,45 @@ type GoodsList = NonNullable<import('../../wms/calc/intake').CalcFacts['goods']>
  */
 export function goodsNameKey(name: string): string {
   return name.toLowerCase().replace(/[\s\p{P}]+/gu, ' ').trim();
+}
+
+/**
+ * The names one goods line answers to (round-2 review, C2/C6): the whole name,
+ * the name outside its brackets, and what each bracket holds — every one
+ * through `goodsNameKey`. The model is TOLD to write «Куртка женская (Ladies
+ * jacket)» (its SYSTEM prompt: Russian, the original in brackets), so the
+ * whole name alone never equalled the Excel's «Ladies jacket» and an «add»
+ * landed the same line twice. Empty keys are dropped.
+ */
+export function goodsNameKeys(name: string): { whole: string; keys: string[] } {
+  const whole = goodsNameKey(name);
+  // ASCII and full-width brackets: a Chinese original often comes in （）.
+  const inside = [...name.matchAll(/[(（]([^()（）]*)[)）]/gu)].map((m) => goodsNameKey(m[1] ?? ''));
+  const outside = goodsNameKey(name.replace(/[(（][^()（）]*[)）]/gu, ' '));
+  return { whole, keys: [...new Set([whole, outside, ...inside])].filter(Boolean) };
+}
+
+/**
+ * Two lines are the same product when a name ONE of them answers to is the
+ * OTHER's whole name — «Куртка женская (Ladies jacket)» is «Ladies jacket»,
+ * «Kurtka» is «Kurtka (qora)». Never bracket against bracket or outside
+ * against outside: a bracket is as often a colour or a size, and «Kurtka
+ * (qora)» beside «Kurtka (oq)» are two lines of one order.
+ */
+function namesSeen(): { has: (name: string) => boolean; add: (name: string) => void } {
+  const wholes = new Set<string>();
+  const keys = new Set<string>();
+  return {
+    has(name) {
+      const k = goodsNameKeys(name);
+      return k.keys.some((key) => wholes.has(key)) || keys.has(k.whole);
+    },
+    add(name) {
+      const k = goodsNameKeys(name);
+      if (k.whole) wholes.add(k.whole);
+      for (const key of k.keys) keys.add(key);
+    },
+  };
 }
 
 /**
@@ -269,7 +345,9 @@ export function goodsNameKey(name: string): string {
  *     ANOTHER factory's (`aiGoods: 'add'`, round-1 review c4), the model's lines are
  *     appended — those whose name the Excel does not already carry, because
  *     the model was shown the PDF and the text, and the text can repeat a
- *     line the Excel has.
+ *     line the Excel has. «Already carry» is by the names a line answers to
+ *     (`goodsNameKeys`), so the model's «Russian (original)» meets its Excel
+ *     original (round-2 review, C2).
  *  2. The model's goods, when there is no file — and when it READ and found
  *     none, only the lines the seller LABELLED as goods («Tovar: …»): an
  *     unlabelled «Salom, 12 kub 3500 kg» is not a product the model missed,
@@ -289,11 +367,11 @@ export function pickGoods(input: {
 }): GoodsList {
   if (input.invoice.length > 0) {
     if (input.aiGoods !== 'add' || !input.model?.length) return input.invoice;
-    const seen = new Set(input.invoice.map((g) => goodsNameKey(g.name)));
+    const seen = namesSeen();
+    for (const g of input.invoice) seen.add(g.name);
     const added = input.model.filter((g) => {
-      const k = goodsNameKey(g.name);
-      if (!k || seen.has(k)) return false;
-      seen.add(k);
+      if (!goodsNameKey(g.name) || seen.has(g.name)) return false;
+      seen.add(g.name);
       return true;
     });
     return [...input.invoice, ...added];
@@ -301,13 +379,6 @@ export function pickGoods(input: {
   if (input.model === null) return input.typed;
   return input.model.length > 0 ? input.model : input.typedLabelled;
 }
-
-/**
- * The invoice's line names the model is told it need not repeat (review c4)
- * — capped, because a 500-line Excel is a prompt nobody budgeted for and the
- * name check in `pickGoods` is the fence whatever the model does.
- */
-export const KNOWN_GOODS_CAP = 100;
 
 /** At most this many photographs reach the model (his 1.4 b: twelve). */
 export const MAX_INTAKE_IMAGES = 12;
@@ -462,13 +533,17 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
           images: state.images,
           pdf: state.pdfs[0] ?? null,
           morePdfs: state.pdfs.slice(1),
-          // The separate files first: their LINES are what the model is
-          // asked for, while a mapped workbook's other sheets are context.
-          // Past its cap `analyzeIntake` cuts on a line and says so
-          // (round-1 review, a17).
-          sheetText: [...state.sheetTexts, ...state.invoiceTexts].join('\n\n') || null,
-          knownGoods:
-            state.aiGoods === 'add' ? invoice.slice(0, KNOWN_GOODS_CAP).map((g) => g.name) : undefined,
+          // The separate files are goods material; a mapped workbook's other
+          // sheets are TOTALS only, under their own heading — in one block
+          // with the files, an «add» answer had the model re-list the
+          // workbook's own packing list (round-2 review, C2/C6). One budget
+          // over both, cut on a line and said per text — the reader's own
+          // cut included (round-1 a17, round-2 C1).
+          sheets: state.sheetTexts,
+          contextSheets: state.invoiceTexts,
+          // Every name: `analyzeIntake` shows what fits its character budget
+          // and counts the rest.
+          knownGoods: state.aiGoods === 'add' ? invoice.map((g) => g.name) : undefined,
         }).catch((err: unknown): Outcome => {
           logger.warn({ err }, 'intake analyze failed');
           return { ok: false, failure: 'network' };
