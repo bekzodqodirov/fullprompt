@@ -1,8 +1,16 @@
 import * as CFB from 'cfb';
 import ExcelJS from 'exceljs';
 import { describe, expect, it } from 'vitest';
-import { SHEET_TEXT_BUDGET, readGoodsFile } from '@/modules/wms/deals/goods-file';
-import { MAX_MARKUP_CHARS, MAX_ROWS, MAX_SHEETS, htmlTableSheets, readXls, spreadsheetMlSheets } from '@/modules/wms/deals/xls';
+import { SHEET_TEXT_BUDGET, csvRows, readGoodsFile } from '@/modules/wms/deals/goods-file';
+import {
+  MAX_COLS,
+  MAX_MARKUP_CHARS,
+  MAX_ROWS,
+  MAX_SHEETS,
+  htmlTableSheets,
+  readXls,
+  spreadsheetMlSheets,
+} from '@/modules/wms/deals/xls';
 
 /**
  * The spreadsheet door against files built to hurt it, and against the shapes
@@ -149,6 +157,13 @@ describe('a small file never becomes a huge text (#8)', () => {
     expect(read?.kind === 'text' && read.textCut).toBe(false);
   });
 
+  it('a CSV is bounded like the other shapes — MAX_ROWS lines, MAX_COLS cells', () => {
+    const wide = csvRows(`${'a;'.repeat(1_000)}b\nx;y`);
+    expect(wide[0]).toHaveLength(MAX_COLS);
+    expect(wide[1]).toEqual(['x', 'y']);
+    expect(csvRows('Товар;Кол-во\n' + 'Стол;5\n'.repeat(MAX_ROWS + 50))).toHaveLength(MAX_ROWS);
+  });
+
   it('three hundred directory entries pointing at ONE sheet read it once', () => {
     const one = Buffer.concat([bof(), ...orderCells, eof()]);
     const entries = Array.from({ length: 300 }, () => ({ at: 0, name: 'S' }));
@@ -248,17 +263,21 @@ describe('the markup readers are linear and keep spanned columns in place (#9)',
     ]);
   });
 
-  it('SpreadsheetML: thirty thousand unclosed <Row> read in linear time; MergeAcross covers its cells', () => {
-    const cell = (text: string, attrs = '') => `<Cell${attrs}><Data ss:Type="String">${text}</Data></Cell>`;
-    const xml = (rows: string) => `<?xml version="1.0"?>
+  const xmlCell = (text: string, attrs = '') => `<Cell${attrs}><Data ss:Type="String">${text}</Data></Cell>`;
+  const xml = (rows: string) => `<?xml version="1.0"?>
 <Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
  <Worksheet ss:Name="Лист1"><Table>${rows}</Table></Worksheet>
 </Workbook>`;
+
+  it('SpreadsheetML: MergeAcross covers the cells to its right', () => {
     const merged = spreadsheetMlSheets(
-      xml(`<Row>${cell('Наименование')}${cell('Вес, кг', ' ss:MergeAcross="1"')}${cell('Сумма')}</Row>`),
+      xml(`<Row>${xmlCell('Наименование')}${xmlCell('Вес, кг', ' ss:MergeAcross="1"')}${xmlCell('Сумма')}</Row>`),
     )!;
     expect(merged[0]!.rows[0]).toEqual(['Наименование', 'Вес, кг', null, 'Сумма']);
+  });
 
+  it('SpreadsheetML: thirty thousand unclosed <Row> read in linear time', () => {
+    const cell = xmlCell;
     const started = Date.now();
     const rows = spreadsheetMlSheets(xml(`<Row>${cell('Наименование')}`.repeat(30_000)))![0]!.rows;
     expect(Date.now() - started).toBeLessThan(2_000);
