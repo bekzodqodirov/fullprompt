@@ -1,5 +1,38 @@
 # CHANGELOG
 
+## 2026-10-21 — Partiya doskasi: «Yo'lda» endi ikki ustun — Xitoy skladlariga va Xitoydan tashqariga
+
+Sizning so'zingiz: «yolda deganini xitoy ichidagi va tashqisi alohida column qilishimiz kerak yani hargoz va qashqarga ketayotganlar va ulardan boshqa joyga ketayotganlarini aloxida column bolsin». **Migratsiya yo'q.** Bu o'zgarish main'dagi LTL/FTL raundi bilan birga deploy bo'ladi, shuning uchun deploydan keyin migratsiyalar soni **136** bo'lishi kerak.
+
+### Doskada endi 5 ustun
+**Shakllanmoqda · Pogruzka · Yo'lda: Xitoy skladlariga · Yo'lda: Xitoydan tashqariga · Yetib keldi**
+
+- **Qaysi ustunga tushishi mashina boradigan SKLAD qaysi davlatda ekaniga bog'liq.** Xitoydagi skladga ketayotgan mashina (Qashqar, Horgos yoki boshqa xitoy skladi) birinchi ustunga tushadi. Qolganlari ikkinchi ustunga tushadi: O'zbekistonga, O'zbekiston ichidagi reys (Andijon → Toshkent), davlati yozilmagan sklad.
+- Qoida davlat bo'yicha, sklad nomi bo'yicha emas. Yangi xitoy skladi ochilsa ham kodga tegmasdan ishlaydi.
+- Zavod reyslari ham shu qoida bilan o'z ustuniga tushadi.
+
+### «Xitoy skladlariga» ustuni — qayerga ketayotgani bo'yicha
+- Bu ustundagi mashinalarning deyarli hammasi Xitoy ichida yuradi. Shuning uchun guruhlar joy bo'yicha emas, **boradigan sklad** bo'yicha: «→ Kashgar · 3», «→ Horgos · 2».
+- Sarlavha «qayerga ketyapti»ni aytadi, «qayerda turibdi»ni emas. Kamdan-kam holatda mashina Xitoyga tashqaridan ketsa (masalan Toshkent → Qashqar), u ham shu ustunda turadi. Uning hozir qayerdaligi tepadagi yo'l chizig'ida o'z joyida sanaladi.
+- Avval chegara skladlari (Qashqar, Horgos), keyin qolganlari alifbo tartibida.
+- Bu ustunda «ichki reys» belgisi chiqmaydi, chunki bu yerdagi hamma reys ichki. Andijon → Toshkent kabi O'zbekiston ichidagi reysda belgi qoladi.
+
+### «Xitoydan tashqariga» ustuni — avvalgidek, joy bo'yicha
+- Guruhlar: Xitoy ichida / Chegarada / Tranzitda / O'zbekistonda.
+- Masalan, Yiwu → Toshkent mashinasi hali Xitoydan chiqmagan bo'lsa, shu ustunning «Xitoy ichida» guruhida turadi.
+- Rang izohi (legend) faqat shu ustun tepasida chiqadi.
+
+### Tepadagi yo'l chizig'i o'zgarmadi
+- «Xitoy ichida 15» kabi raqamlar mashina **hozir qayerda turgani** bo'yicha sanaladi, ikkala ustundagilar ham kiradi. Bosilsa, o'sha mashinalar turgan ustun ochiladi.
+
+### Telefonda
+- 4 ta tab qoldi. «Yo'lda» tabida ikkala ustun ham bor, har biri o'z sarlavhasi bilan. Tabdagi raqam ikkalasining yig'indisi.
+- Kompyuterda ustun tor bo'lgani uchun haydovchi telefoni endi «+998 90 12…» deb kesilmaydi, keyingi qatorga o'tadi.
+
+### Bilib qo'ying
+- «Yo'nalish» filtri (Irkeshtam / Horgos) tanlansa, xitoy ichidagi mashinalar ko'rinmaydi: bu filtr Xitoydan chiqadigan yo'lni bildiradi. Bu avval ham shunday edi.
+- Kompyuterda chap menyu ochiq bo'lsa, ustunlar tor bo'ladi (taxminan 170 px). Menyuni yig'sangiz kengayadi.
+
 ## 2026-10-20 (kechqurun) — LTL va FTL: KPI va reyting faqat sborniy yukni sanaydi
 
 Sizning so'zingiz: «biz odatda LTL bo'yicha ishlaymiz va KPI sovrinlar shu LTL bo'yicha hisoblanadi, agarda FTL bo'lsa bunga KPI yozilmaydi … gamificationda FTL va LTL birga qo'shilib ketyapti». Javobingiz: «3 b / qolgani sen aytgandek» (1a 2a **3b** 4a 5a 6a 7a). **Migratsiya 0135 — deploydan keyin migratsiyalar soni 136 bo'lishi kerak.**

@@ -1623,6 +1623,8 @@
     "board": {
       "strip": "Where the trucks are",
       "tabs": "Board columns",
+      "colInland": "On the road: to warehouses in China",
+      "colOutbound": "On the road: bound outside China",
       "filterWarehouse": "Warehouse",
       "filterRoute": "Route",
       "filterAll": "All",

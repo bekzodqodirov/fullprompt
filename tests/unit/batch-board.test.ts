@@ -8,9 +8,13 @@ import {
   measureLine,
   readBoardFilters,
   roadBands,
+  roadColumnOf,
   routeFilterOf,
   stopOf,
+  tabCounts,
+  tabOf,
   telOf,
+  toSection,
   tripRoadSection,
   warehouseSection,
   type BoardFilters,
@@ -37,8 +41,11 @@ function card(over: Partial<CardPlacement>): CardPlacement {
   return {
     key: `k${seq}`,
     code: `T${String(seq).padStart(3, '0')}`,
-    column: 'road',
+    column: 'outbound',
     section: 'cn',
+    place: 'cn',
+    destName: 'Toshkent',
+    destHub: false,
     transitLeg: null,
     warehouseIds: [WH_A, WH_B],
     route: null,
@@ -48,6 +55,14 @@ function card(over: Partial<CardPlacement>): CardPlacement {
     ...over,
   };
 }
+
+/** An outbound card: its section IS its place. */
+const out = (place: CardPlacement['place'], over: Partial<CardPlacement> = {}) =>
+  card({ column: 'outbound', section: place, place, ...over });
+
+/** An inland card heading for a Chinese warehouse: the section is the destination, the place is the road's. */
+const inland = (destId: string, destName: string, over: Partial<CardPlacement> = {}) =>
+  card({ column: 'inland', section: toSection(destId), place: 'cn', destName, ...over });
 
 describe('readBoardFilters — every value validated (#514)', () => {
   it('a warehouse only from the viewer’s own options, first value of a repeated key', () => {
@@ -72,32 +87,104 @@ describe('readBoardFilters — every value validated (#514)', () => {
 });
 
 describe('the strip and the columns', () => {
-  it('a stop is a column, or the road column’s place', () => {
-    expect(stopOf({ column: 'forming', section: 'cn' })).toBe('forming');
-    expect(stopOf({ column: 'road', section: 'border' })).toBe('road_border');
-    expect(stopOf({ column: 'road', section: 'unknown' })).toBe('road_unknown');
-    expect(stopOf({ column: 'arrived', section: 'uz' })).toBe('arrived');
-    expect(columnOfStop('road_transit')).toBe('road');
+  it('a stop is a column, or the PLACE of a card on either road column', () => {
+    expect(stopOf({ column: 'forming', place: 'cn' })).toBe('forming');
+    expect(stopOf({ column: 'outbound', place: 'border' })).toBe('road_border');
+    expect(stopOf({ column: 'outbound', place: 'unknown' })).toBe('road_unknown');
+    expect(stopOf({ column: 'arrived', place: 'uz' })).toBe('arrived');
+    // An inland card's section is its destination; the strip asks where it IS.
+    expect(stopOf({ column: 'inland', place: 'cn' })).toBe('road_cn');
+    expect(stopOf({ column: 'inland', place: 'border' })).toBe('road_border');
+    // With nothing left at a stop: «Xitoy ichida» opens inland, the rest of the road outbound.
+    expect(columnOfStop('road_cn')).toBe('inland');
+    expect(columnOfStop('road_transit')).toBe('outbound');
     expect(columnOfStop('loading')).toBe('loading');
+  });
+
+  it('the road column is the DESTINATION’s country — his «xitoy ichidagi va tashqisi» (2026-10-21)', () => {
+    expect(roadColumnOf('CN')).toBe('inland');
+    // `warehouses.country` is free text (`countryKey`).
+    expect(roadColumnOf(' cn ')).toBe('inland');
+    expect(roadColumnOf('UZ')).toBe('outbound');
+    // Unknown is not «inside China»: nothing is claimed about it.
+    expect(roadColumnOf(null)).toBe('outbound');
+    expect(roadColumnOf('')).toBe('outbound');
+  });
+
+  it('the inland column is grouped by destination, the border hubs first, then by name', () => {
+    const KA = '0190a000-0000-7000-8000-0000000000ka';
+    const HOR = '0190a000-0000-7000-8000-000000000hor';
+    const UCH = '0190a000-0000-7000-8000-000000000uch';
+    const AKS = '0190a000-0000-7000-8000-000000000aks';
+    const cards = [
+      inland(UCH, 'Urumqi', { order: 1 }),
+      inland(KA, 'Qashqar', { destHub: true, order: 3, code: 'B' }),
+      // A warehouse that is no hub and sorts before both hubs by name: the
+      // hubs still come first (the review — the order was alphabetical by luck).
+      inland(AKS, 'Aksu', { order: 4 }),
+      inland(HOR, 'Horgos', { destHub: true, order: 2 }),
+      inland(KA, 'Qashqar', { destHub: true, order: 3, code: 'A' }),
+    ];
+    const col = assembleBoard(cards, NONE).columns.find((c) => c.key === 'inland')!;
+    expect(col.count).toBe(5);
+    expect(col.sections.map((s) => [s.key, s.destName])).toEqual([
+      [`to:${HOR}`, 'Horgos'],
+      [`to:${KA}`, 'Qashqar'],
+      [`to:${AKS}`, 'Aksu'],
+      [`to:${UCH}`, 'Urumqi'],
+    ]);
+    // Oldest first inside a destination, ties by code.
+    expect(col.sections[1]!.cards.map((c) => c.code)).toEqual(['A', 'B']);
+    // A place section carries no name: the page names it.
+    const outbound = assembleBoard([out('uz')], NONE).columns.find((c) => c.key === 'outbound')!;
+    expect(outbound.sections[0]).toMatchObject({ key: 'uz', destName: null });
+  });
+
+  it('four phone tabs: the «Yo’lda» tab holds both road columns and counts them both', () => {
+    expect(tabOf('inland')).toBe('road');
+    expect(tabOf('outbound')).toBe('road');
+    expect(tabOf('forming')).toBe('forming');
+    const KA = '0190a000-0000-7000-8000-0000000000ka';
+    const view = assembleBoard(
+      [inland(KA, 'Qashqar'), inland(KA, 'Qashqar'), out('uz'), card({ column: 'arrived', section: 'uz', place: 'uz' })],
+      NONE,
+    );
+    expect(tabCounts(view.columns)).toEqual({ forming: 0, loading: 0, road: 3, arrived: 1 });
+  });
+
+  it('a strip stop spanning both road columns opens the first one holding a card', () => {
+    const KA = '0190a000-0000-7000-8000-0000000000ka';
+    // «Xitoy ichida» holds a Yiwu → Kashgar truck AND a Yiwu → Tashkent one still in China.
+    const both = [inland(KA, 'Qashqar'), out('cn'), out('uz')];
+    const view = assembleBoard(both, { ...NONE, joy: 'road_cn' });
+    expect(view.strip.find((s) => s.stop === 'road_cn')!.count).toBe(2);
+    expect(view.columns.find((c) => c.key === 'inland')!.count).toBe(1);
+    expect(view.columns.find((c) => c.key === 'outbound')!.count).toBe(1);
+    expect(view.activeColumn).toBe('inland');
+    // Only outbound trucks there: the phone opens outbound, not an empty inland tab.
+    expect(assembleBoard([out('cn')], { ...NONE, joy: 'road_cn' }).activeColumn).toBe('outbound');
+    // Nothing there any more: the stop's own column.
+    expect(assembleBoard([], { ...NONE, joy: 'road_cn' }).activeColumn).toBe('inland');
+    expect(assembleBoard([], { ...NONE, joy: 'road_border' }).activeColumn).toBe('outbound');
   });
 
   it('the strip counts every filter but `joy`, from the same cards the columns draw', () => {
     const cards = [
-      card({ column: 'forming', section: 'cn' }),
-      card({ column: 'road', section: 'cn' }),
-      card({ column: 'road', section: 'transit', transitLeg: 'kg' }),
-      card({ column: 'road', section: 'transit', transitLeg: 'kz' }),
-      card({ column: 'road', section: 'transit', transitLeg: 'kg', warehouseIds: [WH_B] }),
-      card({ column: 'arrived', section: 'uz', warnings: ['stuck'] }),
+      card({ column: 'forming', section: 'cn', place: 'cn' }),
+      out('cn'),
+      out('transit', { transitLeg: 'kg' }),
+      out('transit', { transitLeg: 'kz' }),
+      out('transit', { transitLeg: 'kg', warehouseIds: [WH_B] }),
+      card({ column: 'arrived', section: 'uz', place: 'uz', warnings: ['stuck'] }),
     ];
     const all = assembleBoard(cards, { ...NONE, joy: 'road_transit' });
     const at = Object.fromEntries(all.strip.map((s) => [s.stop, s]));
     // `joy` narrows the columns, never the strip — a tap must not zero the other stops.
     expect(at.forming!.count).toBe(1);
     expect(at.road_transit).toMatchObject({ count: 3, kg: 2, kz: 1 });
-    expect(all.columns.find((c) => c.key === 'road')!.count).toBe(3);
+    expect(all.columns.find((c) => c.key === 'outbound')!.count).toBe(3);
     expect(all.columns.find((c) => c.key === 'forming')!.count).toBe(0);
-    expect(all.activeColumn).toBe('road');
+    expect(all.activeColumn).toBe('outbound');
     // Every other filter narrows both, so a stop's number is the cards it opens.
     const byWh = assembleBoard(cards, { ...NONE, sklad: WH_A });
     expect(byWh.strip.find((s) => s.stop === 'road_transit')!.count).toBe(2);
@@ -120,17 +207,17 @@ describe('the strip and the columns', () => {
   });
 
   it('sections in road order, empty ones left out, oldest first, ties by code', () => {
-    const late = card({ column: 'road', section: 'uz', order: 5, code: 'B' });
-    const early = card({ column: 'road', section: 'uz', order: 5, code: 'A' });
-    const first = card({ column: 'road', section: 'cn', order: 9 });
-    const lost = card({ column: 'road', section: 'unknown', order: 1 });
-    const road = assembleBoard([late, lost, early, first], NONE).columns.find((c) => c.key === 'road')!;
+    const late = out('uz', { order: 5, code: 'B' });
+    const early = out('uz', { order: 5, code: 'A' });
+    const first = out('cn', { order: 9 });
+    const lost = out('unknown', { order: 1 });
+    const road = assembleBoard([late, lost, early, first], NONE).columns.find((c) => c.key === 'outbound')!;
     expect(road.sections.map((s) => s.key)).toEqual(['cn', 'uz', 'unknown']);
     expect(road.sections[1]!.cards.map((c) => c.code)).toEqual(['A', 'B']);
   });
 
   it('opens the phone on the first column holding a card', () => {
-    expect(assembleBoard([card({ column: 'arrived', section: 'uz' })], NONE).activeColumn).toBe('arrived');
+    expect(assembleBoard([card({ column: 'arrived', section: 'uz', place: 'uz' })], NONE).activeColumn).toBe('arrived');
     expect(assembleBoard([], NONE).activeColumn).toBe('forming');
   });
 });
@@ -362,13 +449,25 @@ describe('the phone tabs over one DOM', () => {
   const page = readFileSync('src/app/(protected)/batches/page.tsx', 'utf8');
 
   it('a checked tab HIDES the other columns, only where :has() exists — never shows one over hidden ones', () => {
-    // An old browser without :has() must draw the four columns stacked, not
+    // An old browser without :has() must draw the columns stacked, not
     // tabs over nothing (the review's finding 8): no column carries `hidden`.
-    for (const col of ['forming', 'loading', 'road', 'arrived']) {
+    for (const col of ['forming', 'loading', 'arrived']) {
       expect(page).toContain(
         `max-xl:[&:has(#bt-${col}:checked)_[data-col]:not([data-col=${col}])]:hidden`,
       );
     }
+    // Four tabs on a phone: the «Yo'lda» tab keeps BOTH road columns.
+    expect(page).toContain(
+      'max-xl:[&:has(#bt-road:checked)_[data-col]:not([data-col=inland]):not([data-col=outbound])]:hidden',
+    );
+    expect(page).toContain('{BOARD_TABS.map((tab) => (');
+    // No selector names a column key with `_`: Tailwind reads `_` in an
+    // arbitrary variant as a space, and `#bt-road_cn` would select nothing.
+    const start = page.indexOf('const TAB_HIDES =');
+    const hides = page.slice(start, page.indexOf("';", start));
+    expect(hides.length).toBeGreaterThan(100);
+    expect(hides).not.toMatch(/#bt-[a-z]+_[a-z]/);
+    expect(hides).not.toMatch(/data-col=[a-z]+_[a-z]/);
     const section = page.slice(page.indexOf('data-col={column.key}'), page.indexOf('data-col={column.key}') + 200);
     expect(section).not.toMatch(/\bhidden\b/);
     // The tab row and the headings swap only where :has() can drive the tabs.
@@ -382,6 +481,32 @@ describe('the phone tabs over one DOM', () => {
 
   it('the active «Joyi aniq emas» stop stays while it filters the board', () => {
     expect(page).toContain("stop.stop !== 'road_unknown' || stop.count > 0 || filters.joy === stop.stop");
+  });
+});
+
+describe('the two road headings name where the trucks GO, never a place on the strip', () => {
+  type Bundle = {
+    batches: { board: { colInland: string; colOutbound: string } };
+    place: { road: Record<string, string> };
+  };
+  const bundles = ['uz', 'ru', 'en', 'zh-CN'].map(
+    (l) => [l, JSON.parse(readFileSync(`messages/${l}.json`, 'utf8')) as Bundle] as const,
+  );
+
+  it('no heading carries a strip place word (the first draft headed inland «Yo‘lda: Xitoy ichida»)', () => {
+    // A heading that is a place word claims every card in it stands there —
+    // false for an outbound truck still in Yiwu (strip «Xitoy ichida») and for
+    // a rare truck sent INTO China from outside (inland column, its place
+    // «Joyi aniq emas» or «O'zbekistonda»). The source of truth is the strip's
+    // own words in the same bundle, so a fourth locale is checked the day it lands.
+    for (const [locale, m] of bundles) {
+      const places = Object.values(m.place.road).map((w) => w.toLowerCase());
+      expect(places.length, locale).toBeGreaterThanOrEqual(4);
+      for (const heading of [m.batches.board.colInland, m.batches.board.colOutbound]) {
+        for (const word of places) expect(heading.toLowerCase(), `${locale}: «${heading}» ∋ «${word}»`).not.toContain(word);
+      }
+      expect(m.batches.board.colInland, locale).not.toBe(m.batches.board.colOutbound);
+    }
   });
 });
 

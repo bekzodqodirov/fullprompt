@@ -1623,6 +1623,8 @@
     "board": {
       "strip": "Mashinalar qayerda",
       "tabs": "Doska ustunlari",
+      "colInland": "Yo‘lda: Xitoy skladlariga",
+      "colOutbound": "Yo‘lda: Xitoydan tashqariga",
       "filterWarehouse": "Sklad",
       "filterRoute": "Yo‘nalish",
       "filterAll": "Hammasi",

@@ -40,6 +40,7 @@ let whO = '';
 let whD = '';
 let whX = '';
 let whY = '';
+let whK = '';
 let receiptId = '';
 let lotId = '';
 const truck: Record<string, string> = {};
@@ -131,6 +132,10 @@ beforeAll(async () => {
   whD = await mintWarehouse(`ZBD${SFX.slice(0, 3)}`, 'UZ', 'distribution');
   whX = await mintWarehouse(`ZBX${SFX.slice(0, 3)}`, 'UZ', 'distribution');
   whY = await mintWarehouse(`ZBY${SFX.slice(0, 3)}`, 'UZ', 'distribution');
+  // A Chinese border hub, like Kashgar: the inland road's destination. Its
+  // name sorts AFTER whO's («ZBZ» > «ZBO»), so the hub heading first can
+  // only come from the hub rule, never from the alphabet (the review).
+  whK = await mintWarehouse(`ZBZ${SFX.slice(0, 3)}`, 'CN', 'hub');
 
   receiptId = randomUUID();
   await db.insert(receipts).values({ id: receiptId, number: `BB-${SFX}`, warehouseId: whO, status: 'confirmed', createdBy: actorId });
@@ -202,6 +207,9 @@ beforeAll(async () => {
   await mintBox(7, { status: 'loading', currentBatchId: truck.PLAN, currentWarehouseId: whO });
   await mintBox(8, { status: 'planned', currentBatchId: truck.PLAN, currentWarehouseId: whO });
 
+  // INL — on the Chinese road to the border hub, departed ten hours ago.
+  await mintTruck('INL', { status: 'in_transit', createdAt: at(-30), departedAt: at(-10), destWarehouseId: whK });
+
   // FAR — a truck between two Uzbek warehouses, nothing to do with whO.
   await mintTruck('FAR', { status: 'forming', originWarehouseId: whX, destWarehouseId: whY });
 
@@ -218,6 +226,9 @@ beforeAll(async () => {
   );
   await mintTrip('OLD', { status: 'arrived', destWarehouseId: whD, arrivedAt: at(-24 * 20) }, [{ factoryBoxes: 1 }], at(-24 * 21));
   await mintTrip('NEXT', { status: 'planned', destWarehouseId: whX, plannedOn: '2026-11-01' }, [{ factoryBoxes: 3 }], null);
+  // CNGO — a factory truck on its way to our Chinese warehouse; CNHUB to the hub.
+  await mintTrip('CNGO', { status: 'on_road', destWarehouseId: whO, startedAt: at(-3) }, [{ factoryBoxes: 4 }], at(-3));
+  await mintTrip('CNHUB', { status: 'on_road', destWarehouseId: whK, startedAt: at(-2) }, [{ factoryBoxes: 2 }], at(-2));
 });
 
 afterAll(async () => {
@@ -300,8 +311,9 @@ describe('the factory trips (9b)', () => {
     const board = await loadBoard(unscoped(['plans.manage']));
     const p = mine(board.cards.filter((c): c is BoardTrip => c.type === 'trip'), trip);
     expect(p.GO).toMatchObject({
-      column: 'road',
+      column: 'outbound',
       section: 'uz',
+      place: 'uz',
       boxes: 17,
       m3: 1.5,
       m3Missing: 1,
@@ -338,6 +350,44 @@ describe('the factory trips (9b)', () => {
     expect(shown).toContain(trip.NEXT);
     expect(shown).not.toContain(truck.LOAD);
     expect(shown).not.toContain(trip.GO);
+  });
+});
+
+describe('the road in two columns — his «xitoy ichidagi va tashqisi» (2026-10-21)', () => {
+  it('a truck or a trip goes to the road column of its DESTINATION’s country', async () => {
+    const board = await loadBoard(unscoped(['plans.manage']));
+    const t = mine(board.cards.filter((c): c is BoardTruck => c.type === 'batch'), truck);
+    const p = mine(board.cards.filter((c): c is BoardTrip => c.type === 'trip'), trip);
+    // To the Chinese border hub: inland, grouped under the hub. No road is
+    // drawn between these two minted warehouses, and a road whose two ends
+    // are Chinese is inside China (`zoneOfGenericRoad`) — the strip's
+    // «Xitoy ichida», whatever the column groups it by.
+    expect(t.INL).toMatchObject({
+      column: 'inland',
+      section: `to:${whK}`,
+      destHub: true,
+      destName: `Board ZBZ${SFX.slice(0, 3)}`,
+      place: 'cn',
+    });
+    // On the road its cards are ordered by the departure, never the creation (-30 h).
+    expect(t.INL!.order).toBe(at(-10).getTime());
+    expect(p.CNGO!.order).toBe(at(-3).getTime());
+    // To Uzbekistan: outbound, its section its place.
+    expect(t.ROAD).toMatchObject({ column: 'outbound', destHub: false });
+    expect(t.ROAD!.section).toBe(t.ROAD!.place);
+    // A factory truck to our Chinese warehouse is inland too, «inside China» on the strip.
+    expect(p.CNGO).toMatchObject({ column: 'inland', section: `to:${whO}`, place: 'cn', destHub: false });
+    expect(p.CNHUB).toMatchObject({ column: 'inland', section: `to:${whK}`, place: 'cn', destHub: true });
+    // The page's own assembly: both inland cards under their two destinations, the hub first.
+    const view = assembleBoard(board.cards, { sklad: null, yonalish: null, ogoh: false, joy: null });
+    const inland = view.columns.find((c) => c.key === 'inland')!;
+    const keys = inland.sections.map((s) => s.key);
+    expect(keys.indexOf(`to:${whK}`)).toBeGreaterThanOrEqual(0);
+    expect(keys.indexOf(`to:${whK}`)).toBeLessThan(keys.indexOf(`to:${whO}`));
+    expect(inland.sections.find((s) => s.key === `to:${whK}`)!.cards.map((c) => c.id)).toContain(truck.INL);
+    expect(view.columns.find((c) => c.key === 'outbound')!.sections.flatMap((s) => s.cards.map((c) => c.id))).toContain(
+      truck.ROAD,
+    );
   });
 });
 
