@@ -14,22 +14,53 @@ import { zoneOfLeg, zoneOfWarehouse, type RoadZone } from '../tracking/place';
  * `placeTruck` gave it, and nothing here estimates anything.
  */
 
-export const BOARD_COLUMNS = ['forming', 'loading', 'road', 'arrived'] as const;
+/**
+ * The road is TWO columns (his 2026-10-21: «yolda deganini xitoy ichidagi va
+ * tashqisi alohida column qilishimiz kerak — hargoz va qashqarga
+ * ketayotganlar va ulardan boshqa joyga ketayotganlarini»): `inland` = a trip
+ * whose destination is in China (Kashgar, Horgos, any other Chinese
+ * warehouse — `roadColumnOf`), `outbound` = every other trip on the road
+ * (Uzbekistan, an Uzbek internal leg, anything else).
+ */
+export const BOARD_COLUMNS = ['forming', 'loading', 'inland', 'outbound', 'arrived'] as const;
 export type BoardColumn = (typeof BOARD_COLUMNS)[number];
 
-/** A section inside a column: a place, or «Joyi aniq emas». */
-export type BoardSection = RoadZone | 'unknown';
+export const ROAD_COLUMNS = ['inland', 'outbound'] as const;
+export type RoadColumn = (typeof ROAD_COLUMNS)[number];
+
+export const isRoadColumn = (column: BoardColumn): column is RoadColumn =>
+  (ROAD_COLUMNS as readonly string[]).includes(column);
+
+/** Where a truck or a factory trip is going decides its road column: China → `inland`, anything else → `outbound`. */
+export function roadColumnOf(destCountry: string | null | undefined): RoadColumn {
+  return countryKey(destCountry) === 'CN' ? 'inland' : 'outbound';
+}
+
+/** A place, or «Joyi aniq emas». */
+export type BoardPlace = RoadZone | 'unknown';
 
 /**
- * The sections each column offers, in road order. A warehouse is never «in
- * transit» (`zoneOfWarehouse` has no such answer), so only the road column
- * has that section; every column has the catch-all, or a truck from a
- * warehouse with an unexpected country would vanish from the board.
+ * A section inside a column: a place, or — in the `inland` column — the
+ * destination warehouse the trip is heading for (`to:<warehouse id>`, his
+ * «hargoz va qashqarga ketayotganlar»: every card in that column is inside
+ * China, so a place section would be one heading over everything).
  */
-export const COLUMN_SECTIONS: Record<BoardColumn, readonly BoardSection[]> = {
+export type BoardSection = BoardPlace | `to:${string}`;
+
+export const toSection = (warehouseId: string): BoardSection => `to:${warehouseId}`;
+
+/**
+ * The sections each column offers, in road order; `inland` groups by
+ * destination (`destination`). A warehouse is never «in transit»
+ * (`zoneOfWarehouse` has no such answer), so only the outbound road has that
+ * section; every place column has the catch-all, or a truck from a warehouse
+ * with an unexpected country would vanish from the board.
+ */
+export const COLUMN_SECTIONS: Record<BoardColumn, readonly BoardPlace[] | 'destination'> = {
   forming: ['cn', 'border', 'uz', 'unknown'],
   loading: ['cn', 'border', 'uz', 'unknown'],
-  road: ['cn', 'border', 'transit', 'uz', 'unknown'],
+  inland: 'destination',
+  outbound: ['cn', 'border', 'transit', 'uz', 'unknown'],
   arrived: ['cn', 'border', 'uz', 'unknown'],
 };
 
@@ -64,6 +95,15 @@ export interface CardPlacement {
   code: string;
   column: BoardColumn;
   section: BoardSection;
+  /**
+   * Where the card IS — the strip's stop. On the outbound road it is the
+   * section; on the inland road the section is the destination, and the
+   * place is still `placeTruck`'s.
+   */
+  place: BoardPlace;
+  /** The destination's name and whether it is a border hub — the inland column's headings and their order. */
+  destName: string;
+  destHub: boolean;
   /** On the road: which third country, for the strip's «Qirg'iziston N · Qozog'iston N». */
   transitLeg: 'kg' | 'kz' | null;
   /** The warehouses `?sklad=` matches: a truck's two ends, a trip's destination. */
@@ -106,23 +146,29 @@ export function readBoardFilters(
   };
 }
 
-/** The strip stop a card stands at. */
-export function stopOf(card: Pick<CardPlacement, 'column' | 'section'>): StripStop {
-  if (card.column !== 'road') return card.column;
-  return card.section === 'unknown' ? 'road_unknown' : (`road_${card.section}` as StripStop);
+/**
+ * The strip stop a card stands at — its PLACE, in either road column: the
+ * strip is the road as a line, and a Yiwu → Tashkent truck still in China
+ * stands at «Xitoy ichida» beside the Yiwu → Kashgar ones.
+ */
+export function stopOf(card: Pick<CardPlacement, 'column' | 'place'>): StripStop {
+  if (card.column === 'forming' || card.column === 'loading' || card.column === 'arrived') return card.column;
+  return card.place === 'unknown' ? 'road_unknown' : (`road_${card.place}` as StripStop);
 }
 
 /**
- * Which column the strip's stop opens — the phone shows one column at a time,
- * and a tap on «Chegarada 3» that leaves the reader on an empty
- * «Shakllanmoqda» tab is a tap that did nothing.
+ * Which column a stop opens when nothing stands at it (a stop that is still
+ * the active filter after its last truck moved on). With something there,
+ * the board opens the first column holding it — «Xitoy ichida» holds inland
+ * AND outbound trucks.
  */
 export function columnOfStop(stop: StripStop): BoardColumn {
-  return stop.startsWith('road_') ? 'road' : (stop as BoardColumn);
+  if (stop === 'road_cn') return 'inland';
+  return stop.startsWith('road_') ? 'outbound' : (stop as BoardColumn);
 }
 
 /** A warehouse-standing card's section: its warehouse's place, or the catch-all. */
-export function warehouseSection(country: string | null, type: string | null): BoardSection {
+export function warehouseSection(country: string | null, type: string | null): BoardPlace {
   return zoneOfWarehouse(country, type) ?? 'unknown';
 }
 
@@ -133,7 +179,7 @@ export function warehouseSection(country: string | null, type: string | null): B
  * «Chegarada» (the board's review, D12). Planned and arrived trips stand at
  * their destination and take its place.
  */
-export function tripRoadSection(destCountry: string | null): BoardSection {
+export function tripRoadSection(destCountry: string | null): BoardPlace {
   const c = countryKey(destCountry);
   return c === 'UZ' ? 'uz' : c === 'CN' ? 'cn' : 'unknown';
 }
@@ -153,6 +199,8 @@ export function routeFilterOf(route: RouteDef | null): RouteFilter | null {
 
 export interface BoardSectionView<T> {
   key: BoardSection;
+  /** A destination section's warehouse name; a place section is named by the page. */
+  destName: string | null;
   cards: T[];
 }
 
@@ -205,18 +253,47 @@ export function assembleBoard<T extends CardPlacement>(cards: T[], filters: Boar
   const byOrder = (a: T, b: T) => a.order - b.order || a.code.localeCompare(b.code);
   const columns = BOARD_COLUMNS.map((key) => {
     const inColumn = shown.filter((c) => c.column === key);
+    const offered = COLUMN_SECTIONS[key];
     return {
       key,
       count: inColumn.length,
-      sections: COLUMN_SECTIONS[key]
-        .map((section) => ({ key: section, cards: inColumn.filter((c) => c.section === section).sort(byOrder) }))
-        .filter((s) => s.cards.length > 0),
+      sections:
+        offered === 'destination'
+          ? destinationSections(inColumn, byOrder)
+          : offered
+              .map((section) => ({
+                key: section as BoardSection,
+                destName: null,
+                cards: inColumn.filter((c) => c.section === section).sort(byOrder),
+              }))
+              .filter((s) => s.cards.length > 0),
     };
   });
+  // The first column holding what is shown: a strip tap on «Xitoy ichida»
+  // may hold inland and outbound trucks both, and a tap that leaves the
+  // phone on an empty tab is a tap that did nothing.
+  const firstWithCards = columns.find((c) => c.count > 0)?.key;
   const activeColumn = filters.joy
-    ? columnOfStop(filters.joy)
-    : (columns.find((c) => c.count > 0)?.key ?? 'forming');
+    ? (firstWithCards ?? columnOfStop(filters.joy))
+    : (firstWithCards ?? 'forming');
   return { columns, strip, total: kept.length, activeColumn };
+}
+
+/**
+ * The inland column's sections: one per destination, the border hubs first
+ * (Kashgar, Horgos — what he named), then by name. Every destination with a
+ * card gets its heading, so a new Chinese warehouse needs no code.
+ */
+function destinationSections<T extends CardPlacement>(
+  cards: T[],
+  byOrder: (a: T, b: T) => number,
+): BoardSectionView<T>[] {
+  const groups = new Map<BoardSection, T[]>();
+  for (const card of cards) groups.set(card.section, [...(groups.get(card.section) ?? []), card]);
+  return [...groups.entries()]
+    .map(([key, list]) => ({ key, destName: list[0]!.destName, hub: list[0]!.destHub, cards: list.sort(byOrder) }))
+    .sort((a, b) => Number(b.hub) - Number(a.hub) || a.destName.localeCompare(b.destName) || a.key.localeCompare(b.key))
+    .map(({ key, destName, cards: list }) => ({ key, destName, cards: list }));
 }
 
 /** One stretch of a road's bar: a place and where it starts and ends, 0..1 of the length. */

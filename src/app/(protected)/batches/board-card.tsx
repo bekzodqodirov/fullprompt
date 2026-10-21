@@ -114,6 +114,8 @@ export async function TruckCard({ card }: { card: BoardTruck }) {
   if (yard) dates.push(yard);
 
   const pct = card.road?.roadPct ?? null;
+  // «ichki reys» says nothing in the inland column, where every trip is one.
+  const internal = card.internal && card.column !== 'inland';
   // Both are `ogoh=1` warnings, drawn like the other two.
   const warned = card.warnings.includes('stuck') || card.warnings.includes('overdue');
 
@@ -126,10 +128,10 @@ export async function TruckCard({ card }: { card: BoardTruck }) {
             {card.originCode} → {card.destCode}
           </span>
         </p>
-        {(card.plate || card.internal) && (
+        {(card.plate || internal) && (
           <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-500">
             {card.plate && <span>🚛 {card.plate}</span>}
-            {card.internal && (
+            {internal && (
               <span className="chip-neutral" data-testid="board-badge-internal">
                 {tb('badgeInternal')}
               </span>

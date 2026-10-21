@@ -15,10 +15,11 @@ import { mayReadBatches } from '@/modules/wms/batches/read-door';
 import { BOARD_CAP, loadBoard } from '@/modules/wms/batches/board';
 import {
   assembleBoard,
+  isRoadColumn,
   readBoardFilters,
   ROUTE_FILTERS,
   type BoardColumn,
-  type BoardSection,
+  type BoardSectionView,
   type RouteFilter,
   type StripStop,
 } from '@/modules/wms/batches/board-view';
@@ -38,16 +39,23 @@ const first = (v: string | string[] | undefined): string | undefined => (Array.i
 
 /**
  * Which radio shows which column below `xl` — ONE DOM, every column
- * rendered, the checked tab hiding the other three (docs/PARTIYA-DOSKASI.md
- * §3). Written as «hide the others» and not «show this one», and only where
- * the browser has `:has()`: a phone browser without it (Chromium before 105,
- * an old in-app WebView in a Chinese warehouse) then draws the four columns
- * stacked, with their headings and no tab row, instead of tabs over nothing.
- * Literal, so Tailwind compiles every selector (a class built at runtime
- * does not exist).
+ * rendered, the checked tab hiding the others (docs/PARTIYA-DOSKASI.md §3).
+ * The phone keeps FOUR tabs: the «Yo'lda» tab shows both road columns, one
+ * under the other with their own headings — five tabs on a 360 px phone cut
+ * «Shakllanmoqda» mid-word. Written as «hide the others» and not «show this
+ * one», and only where the browser has `:has()`: a phone browser without it
+ * (Chromium before 105, an old in-app WebView in a Chinese warehouse) then
+ * draws the columns stacked, with their headings and no tab row, instead of
+ * tabs over nothing. Literal, so Tailwind compiles every selector (a class
+ * built at runtime does not exist).
  */
 const TAB_HIDES =
-  'max-xl:[&:has(#bt-forming:checked)_[data-col]:not([data-col=forming])]:hidden max-xl:[&:has(#bt-loading:checked)_[data-col]:not([data-col=loading])]:hidden max-xl:[&:has(#bt-road:checked)_[data-col]:not([data-col=road])]:hidden max-xl:[&:has(#bt-arrived:checked)_[data-col]:not([data-col=arrived])]:hidden';
+  'max-xl:[&:has(#bt-forming:checked)_[data-col]:not([data-col=forming])]:hidden max-xl:[&:has(#bt-loading:checked)_[data-col]:not([data-col=loading])]:hidden max-xl:[&:has(#bt-road:checked)_[data-col]:not([data-col=inland]):not([data-col=outbound])]:hidden max-xl:[&:has(#bt-arrived:checked)_[data-col]:not([data-col=arrived])]:hidden';
+
+/** The phone's tabs: the board's columns, the two road ones under one «Yo'lda». */
+const TABS = ['forming', 'loading', 'road', 'arrived'] as const;
+type BoardTab = (typeof TABS)[number];
+const tabOf = (column: BoardColumn): BoardTab => (isRoadColumn(column) ? 'road' : column);
 
 /**
  * Partiya doskasi — every open truck and factory trip in one place, by WHERE
@@ -107,9 +115,18 @@ export default async function BatchesPage({ searchParams }: { searchParams: Prom
   const COLUMN_LABEL: Record<BoardColumn, string> = {
     forming: t('statuses.forming'),
     loading: t('statuses.loading'),
+    inland: tb('colInland'),
+    outbound: tb('colOutbound'),
+    arrived: t('statuses.arrived'),
+  };
+  const TAB_LABEL: Record<BoardTab, string> = {
+    forming: t('statuses.forming'),
+    loading: t('statuses.loading'),
     road: t('statuses.in_transit'),
     arrived: t('statuses.arrived'),
   };
+  const tabCount = (tab: BoardTab) =>
+    view.columns.filter((c) => tabOf(c.key) === tab).reduce((sum, c) => sum + c.count, 0);
   const ROAD: Record<RoadZone, string> = {
     cn: tp('road.cn'),
     border: tp('road.border'),
@@ -136,13 +153,15 @@ export default async function BatchesPage({ searchParams }: { searchParams: Prom
     horgos: tb('route.horgos'),
     ichki: tb('route.ichki'),
   };
-  // A warehouse is never «in transit», so that word is the road's alone.
-  const sectionLabel = (column: BoardColumn, section: BoardSection) =>
-    section === 'unknown'
-      ? tp('unknown')
-      : section === 'transit' || column === 'road'
-        ? ROAD[section]
-        : WAREHOUSE[section];
+  // A warehouse is never «in transit», so that word is the road's alone; an
+  // inland section is the warehouse the trips are heading for.
+  const sectionLabel = (column: BoardColumn, section: BoardSectionView<unknown>) => {
+    const key = section.key;
+    if (key.startsWith('to:')) return `→ ${section.destName ?? ''}`;
+    if (key === 'unknown') return tp('unknown');
+    const zone = key as RoadZone;
+    return zone === 'transit' || isRoadColumn(column) ? ROAD[zone] : WAREHOUSE[zone as Exclude<RoadZone, 'transit'>];
+  };
 
   return (
     <div className="space-y-4">
@@ -339,28 +358,28 @@ export default async function BatchesPage({ searchParams }: { searchParams: Prom
           aria-label={tb('tabs')}
           className="mb-3 hidden grid-cols-4 gap-1 rounded-xl bg-surface-sunken p-1 max-xl:supports-[selector(:has(*))]:grid"
         >
-          {view.columns.map((column) => (
-            <label key={column.key} className="min-w-0 cursor-pointer">
+          {TABS.map((tab) => (
+            <label key={tab} className="min-w-0 cursor-pointer">
               <input
                 type="radio"
                 name="board-tab"
-                id={`bt-${column.key}`}
-                value={column.key}
-                defaultChecked={column.key === view.activeColumn}
+                id={`bt-${tab}`}
+                value={tab}
+                defaultChecked={tab === tabOf(view.activeColumn)}
                 className="peer sr-only"
-                data-testid={`board-tab-${column.key}`}
+                data-testid={`board-tab-${tab}`}
               />
               <span className="flex min-h-11 flex-col items-center justify-center rounded-lg px-1 text-center text-xs font-semibold text-ink-500 peer-checked:bg-surface-raised peer-checked:text-ink-900 peer-checked:shadow-card peer-focus-visible:ring-2 peer-focus-visible:ring-brand-500">
                 {/* Wraps rather than truncates: «Shakllanmoqda» needs more
                     than a quarter of a 360 px phone, and the column's own
                     heading is hidden while the tabs show. */}
-                <span className="w-full leading-tight [overflow-wrap:anywhere]">{COLUMN_LABEL[column.key]}</span>
-                <span className="tabular-nums">{column.count}</span>
+                <span className="w-full leading-tight [overflow-wrap:anywhere]">{TAB_LABEL[tab]}</span>
+                <span className="tabular-nums">{tabCount(tab)}</span>
               </span>
             </label>
           ))}
         </div>
-        <div className="grid gap-3 xl:grid-cols-4">
+        <div className="grid gap-3 xl:grid-cols-5">
           {view.columns.map((column) => (
             <section
               key={column.key}
@@ -368,10 +387,18 @@ export default async function BatchesPage({ searchParams }: { searchParams: Prom
               data-testid={`board-col-${column.key}`}
               className="min-w-0 space-y-3"
             >
-              <h2 className="text-sm font-bold uppercase tracking-wide text-ink-500 max-xl:supports-[selector(:has(*))]:hidden">
+              {/* Hidden while the tabs show — except the two road columns,
+                  which share one tab and are told apart by their headings. */}
+              <h2
+                className={`text-sm font-bold uppercase tracking-wide text-ink-500 ${
+                  isRoadColumn(column.key) ? '' : 'max-xl:supports-[selector(:has(*))]:hidden'
+                }`}
+              >
                 {COLUMN_LABEL[column.key]} · <span className="tabular-nums">{column.count}</span>
               </h2>
-              {column.key === 'road' && column.count > 0 && (
+              {/* The colours of the outbound bars; an inland bar is one colour,
+                  the one its heading names. */}
+              {column.key === 'outbound' && column.count > 0 && (
                 <p aria-hidden className="flex flex-wrap gap-x-3 gap-y-1 text-2xs text-ink-500">
                   {ROAD_ZONES.map((zone) => (
                     <span key={zone} className="inline-flex items-center gap-1">
@@ -385,7 +412,7 @@ export default async function BatchesPage({ searchParams }: { searchParams: Prom
               {column.sections.map((section) => (
                 <div key={section.key} className="space-y-2" data-testid={`board-section-${column.key}-${section.key}`}>
                   <h3 className="section-title">
-                    {sectionLabel(column.key, section.key)} · {section.cards.length}
+                    {sectionLabel(column.key, section)} · {section.cards.length}
                   </h3>
                   {section.cards.map((card) =>
                     card.type === 'batch' ? (

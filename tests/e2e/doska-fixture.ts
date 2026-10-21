@@ -45,6 +45,23 @@ export async function mintBoardTruck(
   return { id: row.id, code };
 }
 
+/**
+ * A truck on the Chinese road from Yiwu to the Kashgar hub, departed a day
+ * ago — the inland road column's card (his «xitoy ichidagi va tashqisi»,
+ * 2026-10-21).
+ */
+export async function mintInlandTruck(sql: postgres.Sql, ownerPhone: string, prefix = 'DSI'): Promise<{ id: string; code: string }> {
+  const code = `${prefix}${String(Date.now()).slice(-7)}`;
+  const [row] = await sql<{ id: string }[]>`
+    INSERT INTO batches (id, code, origin_warehouse_id, dest_warehouse_id, status, departed_at, created_by)
+    SELECT gen_random_uuid(), ${code}, o.id, d.id, 'in_transit', now() - interval '24 hours', u.id
+    FROM warehouses o, warehouses d, users u
+    WHERE o.code = 'YW' AND d.code = 'KA' AND u.phone = ${ownerPhone}
+    RETURNING id`;
+  if (!row) throw new Error('the demo has no YW, KA or owner to mint the truck from');
+  return { id: row.id, code };
+}
+
 /** A quick truck being formed at Yiwu: no plan, nothing scanned. */
 export async function mintFormingTruck(sql: postgres.Sql, ownerPhone: string): Promise<{ id: string; code: string }> {
   const code = `DSF${String(Date.now()).slice(-7)}`;

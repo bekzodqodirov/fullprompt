@@ -10,10 +10,14 @@ import { qrlessUncountedByTruck } from '../scanning/service';
 import { checkpointsFor, isGenericRoute } from '../tracking/eta';
 import { CHECKPOINT_KEYS, routeFor, type CheckpointKey } from '../tracking/map-data';
 import { trucksOnRoadRows } from '../tracking/on-road';
+import { zoneOfWarehouse } from '../tracking/place';
 import type { TruckRow } from '../tracking/on-road-state';
 import {
+  isRoadColumn,
   roadBands,
+  roadColumnOf,
   routeFilterOf,
+  toSection,
   tripRoadSection,
   warehouseSection,
   type BoardColumn,
@@ -46,12 +50,10 @@ export const BOARD_CAP = 1000;
 const OPEN_BATCH_STATUSES = ['forming', 'loading', 'in_transit', 'arrived'] as const;
 type OpenBatchStatus = (typeof OPEN_BATCH_STATUSES)[number];
 
-const COLUMN_OF: Record<OpenBatchStatus, BoardColumn> = {
-  forming: 'forming',
-  loading: 'loading',
-  in_transit: 'road',
-  arrived: 'arrived',
-};
+/** A truck on the road goes to the road column of its destination (`roadColumnOf`). */
+function columnOf(status: OpenBatchStatus, destCountry: string | null): BoardColumn {
+  return status === 'in_transit' ? roadColumnOf(destCountry) : status;
+}
 
 export interface BoardTruck extends CardPlacement {
   type: 'batch';
@@ -224,16 +226,19 @@ async function boardTrucks(actor: BoardActor, now: Date): Promise<{ cards: Board
 
   const cards = rows.map((r): BoardTruck => {
     const status = r.status as OpenBatchStatus;
-    const column = COLUMN_OF[status];
+    const column = columnOf(status, r.destCountry);
+    const onRoad = isRoadColumn(column);
     const truck = road.get(r.id) ?? null;
     const route = routeFor(r.originCode, r.destCode);
     const mapped = route && !isGenericRoute(route) ? route : null;
-    const section =
-      column === 'road'
-        ? (truck?.zone ?? 'unknown')
-        : column === 'arrived'
-          ? warehouseSection(r.destCountry, r.destType)
-          : warehouseSection(r.originCountry, r.originType);
+    const place = onRoad
+      ? (truck?.zone ?? 'unknown')
+      : column === 'arrived'
+        ? warehouseSection(r.destCountry, r.destType)
+        : warehouseSection(r.originCountry, r.originType);
+    // The inland road is grouped by where it is going («→ Qashqar»); the
+    // outbound one by where it is.
+    const section = column === 'inland' ? toSection(r.destId) : place;
     const warnings: CardWarning[] = [];
     if (awaiting.has(r.id)) warnings.push('count');
     if (truck?.kind === 'overdue') warnings.push('overdue');
@@ -260,8 +265,10 @@ async function boardTrucks(actor: BoardActor, now: Date): Promise<{ cards: Board
       status,
       column,
       section,
+      place,
+      destHub: zoneOfWarehouse(r.destCountry, r.destType) === 'border',
       transitLeg:
-        column === 'road' && truck?.zone === 'transit' && (truck.segKey === 'kg' || truck.segKey === 'kz')
+        onRoad && truck?.zone === 'transit' && (truck.segKey === 'kg' || truck.segKey === 'kz')
           ? truck.segKey
           : null,
       warehouseIds: [r.originId, r.destId],
@@ -272,7 +279,7 @@ async function boardTrucks(actor: BoardActor, now: Date): Promise<{ cards: Board
       // phone's yard fix when it came before the first scan), the order the
       // dashboard ranks the same trucks in (the sixth recheck).
       order: new Date(
-        (column === 'road'
+        (onRoad
           ? r.departedAt
           : column === 'arrived'
             ? (truck?.stoodSince ?? r.arrivedAt)
@@ -292,7 +299,7 @@ async function boardTrucks(actor: BoardActor, now: Date): Promise<{ cards: Board
       departedAt: iso(r.departedAt),
       arrivedAt: iso(r.arrivedAt),
       road: truck,
-      bar: column === 'road' && mapped && truck?.roadPct != null ? roadBands(mapped) : null,
+      bar: onRoad && mapped && truck?.roadPct != null ? roadBands(mapped) : null,
       awaitingCount: awaiting.has(r.id),
       pins:
         pinnable && (pinOptions.length > 0 || storedPin)
@@ -380,11 +387,10 @@ interface TripRow {
   unknown_lines: number;
 }
 
-const TRIP_COLUMN: Record<(typeof OPEN_STATUSES)[number], BoardColumn> = {
-  planned: 'forming',
-  on_road: 'road',
-  arrived: 'arrived',
-};
+/** A trip on the road goes to the road column of its destination, like a truck. */
+function tripColumnOf(status: (typeof OPEN_STATUSES)[number], destCountry: string | null): BoardColumn {
+  return status === 'planned' ? 'forming' : status === 'on_road' ? roadColumnOf(destCountry) : 'arrived';
+}
 
 async function boardTrips(actor: BoardActor, now: Date): Promise<{ cards: BoardTrip[]; capped: boolean }> {
   const sight = tripSight(actor);
@@ -458,7 +464,9 @@ async function boardTrips(actor: BoardActor, now: Date): Promise<{ cards: BoardT
   for (const s of stops) stopsBy.set(s.pickupId, [...(stopsBy.get(s.pickupId) ?? []), s]);
 
   const cards = rows.map((r): BoardTrip => {
-    const column = TRIP_COLUMN[r.status];
+    const column = tripColumnOf(r.status, r.dest_country);
+    const onRoad = isRoadColumn(column);
+    const place = onRoad ? tripRoadSection(r.dest_country) : warehouseSection(r.dest_country, r.dest_type);
     const own = stopsBy.get(r.id);
     const eta = own
       ? pickupEstimate(
@@ -478,14 +486,16 @@ async function boardTrips(actor: BoardActor, now: Date): Promise<{ cards: BoardT
       code: r.code,
       status: r.status,
       column,
-      section: column === 'road' ? tripRoadSection(r.dest_country) : warehouseSection(r.dest_country, r.dest_type),
+      section: column === 'inland' ? toSection(r.dest_id) : place,
+      place,
+      destHub: zoneOfWarehouse(r.dest_country, r.dest_type) === 'border',
       transitLeg: null,
       warehouseIds: [r.dest_id],
       route: null,
       internal: false,
       warnings: r.stale ? ['stale'] : [],
       order: new Date(
-        (column === 'road' ? r.started_at : column === 'arrived' ? r.arrived_at : null) ?? r.created_at,
+        (onRoad ? r.started_at : column === 'arrived' ? r.arrived_at : null) ?? r.created_at,
       ).getTime(),
       destCode: r.dest_code,
       destName: r.dest_name,
