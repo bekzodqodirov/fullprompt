@@ -92,8 +92,15 @@ describe('a bare trailing number is never a goods line (review #24)', () => {
     expect(names('Tovar: kurtka\nSoni: 300 dona\nVazni: 150 kg\nHajmi: 3 kub')).toEqual(['kurtka']);
   });
 
+  it('two products welded onto one line are left to the model, not read as «Kurtka Shim»', () => {
+    expect(readGoodsLines('Tovarlar: Kurtka 300 dona 150 kg, Shim 200 dona')).toEqual([]);
+  });
+
   it('a real line still reads — a code inside its name, a dash, a count after the code', () => {
     expect(readGoodsLines('iPhone15 300 dona')).toEqual([expect.objectContaining({ name: 'iPhone15', quantity: 300 })]);
+    // The figures start at the first digit that starts a TOKEN: «A4»'s digit
+    // is part of the name, and the line's count is «500».
+    expect(readGoodsLines('A4 qog‘oz 500 dona')).toEqual([expect.objectContaining({ name: 'A4 qog‘oz', quantity: 500 })]);
     expect(names('Samsung A54 300 dona')).toEqual(['Samsung A54']);
     expect(names('Futbolka - oq 300 dona')).toEqual(['Futbolka - oq']);
     expect(readGoodsLines('Kurtka 6201930000 300 dona')).toEqual([
