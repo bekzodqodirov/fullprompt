@@ -4485,3 +4485,19 @@ keeps it, both ways), hub order with a non-hub name sorting first (Aksu), the in
 departure, like outbound), the inland bar, the tab sum, the trip's `destHub`, the headings. Nine red proofs by
 string edit, all red. STATED, not changed: `?yonalish=irkeshtam|horgos` drops inland trucks (a corridor is a road
 OUT of China; pre-existing), and at 1280 px with the sidebar open the two road headings wrap to different heights.
+
+1452. **The review of the BUILT round: the inland heading names the destination, never «inside China».** The
+fixed heading «Yo'lda: Xitoy ichidagi reyslar» (ru «рейсы внутри Китая») still made a claim about where the trucks
+ARE, and the column is decided by where they GO (#1449): nothing stops a quick truck from Tashkent to Kashgar
+(the destination list is every active warehouse, the action checks no direction), and once departed it sits in the
+inland column with its own place «Joyi aniq emas» on the strip — under a heading saying it is inside China. Both
+verifiers upheld it; moving such a truck to outbound would not help, since «Xitoydan tashqariga» is just as false
+for it. His own words were about destinations («hargoz va qashqarga ketayotganlar»), so the headings are now
+«Yo'lda: Xitoy skladlariga» / «Yo'lda: Xitoydan tashqariga» (ru «на склады в Китае» / «за пределы Китая»; en «On
+the road: …», because en's «In transit» IS the strip's transit word; zh «发往中国仓库» / «发往境外»), and the
+comment, §3a and the CHANGELOG say «nearly every» card is inside China. The test lens also showed the e2e could
+not catch a revert to the first draft (it reads the heading from the bundle it checks); the pin is now a unit
+test anchored on the strip's own words in the same bundle — no road heading may contain any `place.road.*` word,
+in any locale — red-proven by putting back both first drafts («Yo'lda: Xitoy ichida», «В пути: по Китаю»).
+Refuted, kept as answers: the Horgos column depends on its warehouse row being CN (his deploy step since the board
+round), and zh/en headings built on a place stem are the approved shape, not the collision.

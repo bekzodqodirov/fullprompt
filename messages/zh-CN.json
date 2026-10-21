@@ -1623,7 +1623,7 @@
     "board": {
       "strip": "车辆位置",
       "tabs": "看板列",
-      "colInland": "在途：中国境内线路",
+      "colInland": "在途：发往中国仓库",
       "colOutbound": "在途：发往境外",
       "filterWarehouse": "仓库",
       "filterRoute": "线路",

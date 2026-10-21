@@ -1,18 +1,19 @@
 # CHANGELOG
 
-## 2026-10-21 — Partiya doskasi: «Yo'lda» endi ikki ustun — Xitoy ichidagi reyslar va Xitoydan tashqariga
+## 2026-10-21 — Partiya doskasi: «Yo'lda» endi ikki ustun — Xitoy skladlariga va Xitoydan tashqariga
 
 Sizning so'zingiz: «yolda deganini xitoy ichidagi va tashqisi alohida column qilishimiz kerak yani hargoz va qashqarga ketayotganlar va ulardan boshqa joyga ketayotganlarini aloxida column bolsin». **Migratsiya yo'q.** Bu o'zgarish main'dagi LTL/FTL raundi bilan birga deploy bo'ladi, shuning uchun deploydan keyin migratsiyalar soni **136** bo'lishi kerak.
 
 ### Doskada endi 5 ustun
-**Shakllanmoqda · Pogruzka · Yo'lda: Xitoy ichidagi reyslar · Yo'lda: Xitoydan tashqariga · Yetib keldi**
+**Shakllanmoqda · Pogruzka · Yo'lda: Xitoy skladlariga · Yo'lda: Xitoydan tashqariga · Yetib keldi**
 
 - **Qaysi ustunga tushishi mashina boradigan SKLAD qaysi davlatda ekaniga bog'liq.** Xitoydagi skladga ketayotgan mashina (Qashqar, Horgos yoki boshqa xitoy skladi) birinchi ustunga tushadi. Qolganlari ikkinchi ustunga tushadi: O'zbekistonga, O'zbekiston ichidagi reys (Andijon → Toshkent), davlati yozilmagan sklad.
 - Qoida davlat bo'yicha, sklad nomi bo'yicha emas. Yangi xitoy skladi ochilsa ham kodga tegmasdan ishlaydi.
 - Zavod reyslari ham shu qoida bilan o'z ustuniga tushadi.
 
-### «Xitoy ichidagi reyslar» ustuni — qayerga ketayotgani bo'yicha
-- Bu ustundagi hamma mashina Xitoy ichida. Shuning uchun guruhlar joy bo'yicha emas, **boradigan sklad** bo'yicha: «→ Kashgar · 3», «→ Horgos · 2».
+### «Xitoy skladlariga» ustuni — qayerga ketayotgani bo'yicha
+- Bu ustundagi mashinalarning deyarli hammasi Xitoy ichida yuradi. Shuning uchun guruhlar joy bo'yicha emas, **boradigan sklad** bo'yicha: «→ Kashgar · 3», «→ Horgos · 2».
+- Sarlavha «qayerga ketyapti»ni aytadi, «qayerda turibdi»ni emas. Kamdan-kam holatda mashina Xitoyga tashqaridan ketsa (masalan Toshkent → Qashqar), u ham shu ustunda turadi. Uning hozir qayerdaligi tepadagi yo'l chizig'ida o'z joyida sanaladi.
 - Avval chegara skladlari (Qashqar, Horgos), keyin qolganlari alifbo tartibida.
 - Bu ustunda «ichki reys» belgisi chiqmaydi, chunki bu yerdagi hamma reys ichki. Andijon → Toshkent kabi O'zbekiston ichidagi reysda belgi qoladi.
 

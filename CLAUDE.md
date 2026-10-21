@@ -2951,9 +2951,10 @@ Chinese warehouse incl. a factory trip to Yiwu goes inland — ⭐ asked). Inlan
 (`to:<warehouseId>`, `destHub` first, then name); outbound keeps the place sections; the strip counts by
 `CardPlacement.place` in either column; a tap opens the first column with shown cards (`columnOfStop`
 otherwise). Phone: FOUR tabs (`BOARD_TABS`, `tabOf`, `tabCounts` — «Yo'lda» shows and counts both columns; no
-`_` in a column key, Tailwind reads it as a space). Headings name the DIRECTION («Yo'lda: Xitoy ichidagi
-reyslar» / «… Xitoydan tashqariga») — the first draft's «Xitoy ichida» was the strip's PLACE word, caught by
-review. Badge «ichki reys» off in the inland column only; legend over outbound only; the driver's phone wraps at
+`_` in a column key, Tailwind reads it as a space). Headings name the DESTINATION («Yo'lda: Xitoy
+skladlariga» / «… Xitoydan tashqariga», his own words were about where trucks go) — the first draft's «Xitoy
+ichida» was the strip's PLACE word, and its fix «Xitoy ichidagi reyslar» still claimed a rare Tashkent → Kashgar
+truck was inside China (#1452); `batch-board.test.ts` refuses any strip place word in either heading. Badge «ichki reys» off in the inland column only; legend over outbound only; the driver's phone wraps at
 170 px. Pinned: `batch-board` unit + integration, e2e `m9zzze-partiya-doskasi` (+ `.desktop`, fixture
 `mintRoadTruck`, prefixes DSI/DSU dropped in cleanup). 9 red proofs. STATED: `?yonalish=` drops inland trucks.
 

@@ -268,10 +268,13 @@ joyga ketayotganlarini aloxida column bolsin».
   every other trip is `outbound` — to Uzbekistan, an Uzbek internal leg
   (Andijan → Tashkent), or a warehouse whose country is unknown (nothing is
   claimed about it). By country and never by code or name (§1's rule).
-- **Inland sections are destinations**: every card in that column is inside
-  China, so a place section would be one heading over everything. Headings
-  read «→ Kashgar · 3», the border hubs first (`destHub` = the destination's
-  place is `border`), then by name.
+- **Inland sections are destinations**: nearly every card in that column is
+  inside China, so a place section would be one heading over everything.
+  Headings read «→ Kashgar · 3», the border hubs first (`destHub` = the
+  destination's place is `border`), then by name. The column is where the trip
+  is GOING: a rare truck sent into China from outside it (Tashkent → Kashgar)
+  is here too, with its own place on the strip — so the column's heading names
+  the destination, never «inside China».
 - **The strip stays the road as a line**: a card's stop is its PLACE
   (`CardPlacement.place`), in either column, so «Xitoy ichida» counts the
   inland trucks AND an outbound truck still in China (Yiwu → Tashkent). A tap
@@ -283,8 +286,9 @@ joyga ketayotganlarini aloxida column bolsin».
 - The phone keeps four tabs: five on a 360 px phone cut «Shakllanmoqda»
   mid-word. The «Yo'lda» tab holds both columns and counts both
   (`tabCounts`, one sum for the tab and its heading).
-- **The two headings name the DIRECTION, never a place**: «Yo'lda: Xitoy
-  ichidagi reyslar» and «Yo'lda: Xitoydan tashqariga». The first draft headed
+- **The two headings name the DESTINATION, never a place**: «Yo'lda: Xitoy
+  skladlariga» and «Yo'lda: Xitoydan tashqariga» (his own words were about
+  where the trucks go). The first draft headed
   the inland one «Yo'lda: Xitoy ichida» (ru «В пути: по Китаю») — the strip's
   word for a PLACE, and a Yiwu → Tashkent truck still in China sat under an
   outbound SECTION called «Xitoy ichida» beside an inland column called the

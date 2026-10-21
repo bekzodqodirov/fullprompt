@@ -59,8 +59,11 @@ export type BoardPlace = RoadZone | 'unknown';
 /**
  * A section inside a column: a place, or — in the `inland` column — the
  * destination warehouse the trip is heading for (`to:<warehouse id>`, his
- * «hargoz va qashqarga ketayotganlar»: every card in that column is inside
- * China, so a place section would be one heading over everything).
+ * «hargoz va qashqarga ketayotganlar»: nearly every card in that column is
+ * inside China, so a place section would be one heading over everything).
+ * The column is defined by where the trip is GOING, not where it is: a rare
+ * truck sent into China from outside it is here too, and its own place still
+ * counts it on the strip — which is why the heading names the destination.
  */
 export type BoardSection = BoardPlace | `to:${string}`;
 

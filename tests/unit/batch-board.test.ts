@@ -484,6 +484,32 @@ describe('the phone tabs over one DOM', () => {
   });
 });
 
+describe('the two road headings name where the trucks GO, never a place on the strip', () => {
+  type Bundle = {
+    batches: { board: { colInland: string; colOutbound: string } };
+    place: { road: Record<string, string> };
+  };
+  const bundles = ['uz', 'ru', 'en', 'zh-CN'].map(
+    (l) => [l, JSON.parse(readFileSync(`messages/${l}.json`, 'utf8')) as Bundle] as const,
+  );
+
+  it('no heading carries a strip place word (the first draft headed inland «Yo‘lda: Xitoy ichida»)', () => {
+    // A heading that is a place word claims every card in it stands there —
+    // false for an outbound truck still in Yiwu (strip «Xitoy ichida») and for
+    // a rare truck sent INTO China from outside (inland column, its place
+    // «Joyi aniq emas» or «O'zbekistonda»). The source of truth is the strip's
+    // own words in the same bundle, so a fourth locale is checked the day it lands.
+    for (const [locale, m] of bundles) {
+      const places = Object.values(m.place.road).map((w) => w.toLowerCase());
+      expect(places.length, locale).toBeGreaterThanOrEqual(4);
+      for (const heading of [m.batches.board.colInland, m.batches.board.colOutbound]) {
+        for (const word of places) expect(heading.toLowerCase(), `${locale}: «${heading}» ∋ «${word}»`).not.toContain(word);
+      }
+      expect(m.batches.board.colInland, locale).not.toBe(m.batches.board.colOutbound);
+    }
+  });
+});
+
 describe('a truck on the road that the map cannot draw is named, never dropped', () => {
   it('/map names both kinds under the canvas, and «no trucks» waits for both lists', () => {
     const page = readFileSync('src/app/(protected)/map/page.tsx', 'utf8');
