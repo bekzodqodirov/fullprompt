@@ -7,6 +7,7 @@ import { tgViewerFor } from '../crm/conversations';
 import { threadClientFor } from '../crm/conversations';
 import { CalcError, openCalcRequest } from './service';
 import {
+  AI_READ_FAILURE,
   CALC_SECTIONS,
   intakeNoteText,
   landingItems,
@@ -144,9 +145,20 @@ export interface ThreadCalcPreview {
   steps: string[];
   /** Why the model's reading is missing, when it is (his 1.6 a). */
   aiFailure: AiReadFailure | null;
+  /**
+   * Whether pressing «Tahlil» again can help (review #20) — the bot's own
+   * flag, decided HERE so the island imports none of the intake's rules. A
+   * keyless server or a dead key must say «tell the admin», never «later».
+   */
+  aiRetry: boolean;
   missing: string[];
   lines: number;
   fileCount: number;
+}
+
+/** «Try again later» only where a retry can change the answer — `AI_READ_FAILURE`'s flag. */
+export function threadAiRetry(failure: AiReadFailure | null): boolean {
+  return failure !== null && AI_READ_FAILURE[failure].retry;
 }
 
 /**
@@ -161,9 +173,6 @@ export async function threadCalcAnalyze(
   const material = await threadMaterial(actor, input.entity, input.messageIds);
   const text = material.lines.join('\n');
   const manual = parseManualFacts(text);
-  // Typed goods lines are read from the messages THEMSELVES: the material's
-  // «Mijoz: » / «Ali: » prefix would otherwise become part of a goods name.
-  const typedGoods = readGoodsLines(material.bodies.join('\n'));
   const outcome = await analyzeIntake({
     section: input.section,
     text,
@@ -171,6 +180,12 @@ export async function threadCalcAnalyze(
     timeoutMs: 20_000,
   });
   const ai = outcome.ok ? outcome : null;
+  // Typed goods lines are read from the messages THEMSELVES: the material's
+  // «Mijoz: » / «Ali: » prefix would otherwise become part of a goods name.
+  // A model that READ the chat and found no goods is not overruled by a
+  // regex reading «Salom» or a route as a product (review #22): then only a
+  // line that names itself goods answers; when it did not read, every one.
+  const typedGoods = readGoodsLines(material.bodies.join('\n'), { labelledOnly: ai !== null });
   // Typed/manual facts win over read ones, the bot's own rule — and a total
   // the text writes two ways («1,200 kg») is left for the person to type in
   // the preview, never taken from the model that read the same text.
@@ -189,6 +204,7 @@ export async function threadCalcAnalyze(
     facts,
     steps: ai?.steps ?? [],
     aiFailure: outcome.ok ? null : outcome.failure,
+    aiRetry: threadAiRetry(outcome.ok ? null : outcome.failure),
     missing: missingFields(input.section, facts, laws),
     lines: material.lines.length,
     fileCount: material.fileCount,

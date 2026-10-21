@@ -144,8 +144,12 @@ export function ThreadCalc({ entity }: { entity: ThreadCalcEntity }) {
             {preview.facts.volumeM3 !== null ? ` · ${preview.facts.volumeM3} m³` : ''}
             {(preview.facts.goods?.length ?? 0) > 0 ? ` · ${preview.facts.goods!.length} ${t('items')}` : ''}
           </p>
+          {/* The advice follows the failure (review #20): «try later» only where
+              a retry can help, «tell the admin» where no press ever will. */}
           {preview.aiFailure && preview.aiFailure !== 'nothing_to_read' ? (
-            <p className="text-warn" data-testid="thread-calc-ai-failed">{t('threadAiFailed')}</p>
+            <p className="text-warn" data-testid="thread-calc-ai-failed">
+              {t('threadAiFailed')} {preview.aiRetry ? t('threadAiRetry') : t('threadAiNoRetry')}
+            </p>
           ) : null}
           {preview.missing.length > 0 ? (
             <p className="text-warn">⚠ {t('threadMissing')}</p>

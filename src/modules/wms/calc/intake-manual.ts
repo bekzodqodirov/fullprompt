@@ -1,4 +1,4 @@
-import { parseClientHint, type AmbiguousTotal, type CalcFacts } from './intake';
+import { parseClientHint, statesGoods, type AmbiguousTotal, type CalcFacts } from './intake';
 import type { MeasureUnit } from './pricing';
 import { normalizeTnved, parseGoodsLine, readAmountText, unitOf, type SellerUnit } from './units';
 
@@ -103,33 +103,103 @@ export function parseManualFacts(text: string): CalcFacts & { ambiguous: Ambiguo
   };
 }
 
-/** A line naming itself a goods line: «Tovar: …», «Товар …», «Mahsulot nomi …». */
+/**
+ * A line naming itself a goods line: «Tovar: …», «Товар - …», «Tovar nomi:
+ * …», «Tovarlar: …». The label is a WHOLE word (review #25): «Tovarni rasmi»
+ * and «Tovarlar» were matched by their first five letters and glued the rest
+ * of the word onto a product («lar Kurtka»). The separator is CAPTURED — a
+ * label with one says «what follows is the goods»; a label without one
+ * («Tovar синтетическое … 1.1 kub 240 kg», his screenshot) must still read
+ * as a name followed by figures, or «Tovar keldimi», «Tovar narxi 1200$» and
+ * «Mahsulot sifati yaxshi» are products.
+ */
 const GOODS_LABEL =
-  /^\s*(?:tovar(?:\s*nomi)?|товар(?:\s*номи)?|mahsulot(?:\s*nomi)?|махсулот|наименование(?:\s*товара)?|название|goods|product(?:\s*name)?|品名)\s*[:\-–—]?\s*/iu;
+  /^\s*(?:tovar(?:lar)?(?:\s*nomi)?|товар(?:ы)?(?:\s*номи)?|mahsulot(?:lar)?(?:\s*nomi)?|махсулот(?:лар)?|наименование(?:\s*товара)?|название|goods|products?(?:\s*name)?|品名)(?![\p{L}\p{N}])\s*([:：\-–—])?\s*/iu;
+
+/** «Og’irligi», «ogʻirligi», «og‘irligi» are one word — phones type all three. */
+const APOSTROPHES = /[’ʻʼ‘`´]/gu;
 
 /**
- * Words that make a line a TOTAL, not a product — «vazni 120 kg», «umumiy 12
- * kub», «итого 240 кг». The shipment's totals are read by `readNumber`; a
- * line made only of these words is never a goods line called «vazni».
+ * Words that make a line something other than a product, in their ASCII
+ * apostrophe spelling (review #22, #24). A name made ONLY of these (and of
+ * client codes) is never a goods line:
+ *  - a TOTAL — «vazni 120 kg», «Вес груза: 3500 кг», «Кубатура: 12 м3»: the
+ *    shipment's totals are read by `readNumber`;
+ *  - a COUNT or CARTON label — «Кол-во: 300 шт», «Soni: 300 dona», «Мест: 45»:
+ *    the figure belongs to the product named elsewhere, and a carton count is
+ *    never pieces;
+ *  - a FIELD — a phone, a client, an order, a rate, a date;
+ *  - a greeting or an «about» — «Salom, 12 kub 3500 kg», «Taxminan 12 kub».
  */
-const TOTAL_WORDS = new Set([
-  'vazni', 'vazn', 'og‘irligi', "og'irligi", 'ogirligi', 'og‘irlik', "og'irlik", 'hajmi', 'hajm', 'kub', 'kg',
-  'umumiy', 'jami', 'brutto', 'netto', 'вес', 'весом', 'объем', 'объём', 'общий', 'общая', 'итого', 'всего',
-  'брутто', 'нетто', 'weight', 'volume', 'gross', 'net', 'total', 'yuk', 'груз', 'jo‘natma', 'партия',
+const NOT_GOODS_WORDS = new Set([
+  // totals
+  'vazni', 'vazn', "og'irligi", 'ogirligi', "og'irlik", 'ogirlik', 'hajmi', 'hajm', 'kub', 'kg', 'umumiy', 'jami',
+  'brutto', 'netto', 'ves', 'вес', 'весом', 'объем', 'объём', 'обьем', 'обьём', 'обем', 'кубатура', 'kubatura',
+  'obyom', 'obyem', 'общий', 'общая', 'общее', 'итого', 'всего', 'брутто', 'нетто', 'weight', 'volume', 'gross',
+  'net', 'total', 'yuk', 'yukning', 'yuki', 'груз', 'груза', "jo'natma", 'партия', 'partiya', '重量', '毛重',
+  '净重', '体积', '总重', '合计',
+  // counts and cartons
+  'кол-во', 'количество', 'soni', 'son', 'miqdori', 'miqdor', 'qty', 'quantity', 'pcs', '数量', '箱数', 'мест',
+  'места', 'место', 'joy', 'joyi', 'karobka', 'korobka', 'коробка', 'коробки', 'коробок', 'qop', 'ctns', 'ctn',
+  'dona', 'шт',
+  // fields
+  'tel', 'telefon', 'тел', 'телефон', 'raqam', 'raqami', 'raqamim', 'номер', 'mijoz', 'мижоз', 'klient',
+  'клиент', 'client', 'kod', 'код', 'zakaz', 'заказ', 'invoice', 'no', '№', 'kurs', 'курс', 'inn', 'инн',
+  'sana', 'дата',
+  // greetings and «about»
+  'salom', 'assalomu', 'assalom', 'alaykum', 'привет', 'здравствуйте', 'taxminan', 'taxminiy', 'примерно',
+  'около', 'hammasi', "bo'lib",
 ]);
 
-/** Every token of a line's TAIL is a figure: a number, a unit word, or a code. */
-function figuresOnly(tail: string): boolean {
+/** A client code standing as a word of the name — «Mijoz GS777». Never a unit («m2»). */
+const isCodeWord = (word: string) => /^[a-z]{1,4}\d{1,8}$/u.test(word) && unitOf(word) === null;
+
+/** A client code on its own — glued, spaced or hyphenated («GS777», «GS 777», «GS-777»). */
+const CLIENT_CODE_LINE = /^[A-Za-z]{1,4}\s*[-–]?\s*\d{1,8}$/;
+
+/**
+ * The tail of an unlabelled line: every token a figure, a unit word or a code
+ * word, and at least ONE unit that is not a carton (review #24). A bare
+ * trailing number is not a goods line — «Tel 90 123 45 67», «Kurs 12650»,
+ * «Sana 21.10.2026», «Partiya YW-123» were read as products with that number
+ * as their count — and a carton count alone states no measure of the goods.
+ */
+function unitFigures(tail: string): boolean {
   const tokens = tail.split(/[\s,;/+]+/u).filter(Boolean);
-  if (tokens.length === 0) return false;
-  return tokens.every((token) => {
-    if (/^\d[\d.,]*$/u.test(token)) return true;
-    if (unitOf(token) !== null) return true;
+  let measured = false;
+  for (const token of tokens) {
+    if (/^\d[\d.,]*$/u.test(token)) continue;
     const glued = /^(\d[\d.,]*)([\p{L}²³]+\.?)$/u.exec(token);
-    if (glued && unitOf(glued[2]!) !== null) return true;
-    return /^(?:kod|код|tnved|тнвэд|hs)$/iu.test(token);
-  });
+    const unit = unitOf(token) ?? (glued ? unitOf(glued[2]!) : null);
+    if (unit !== null) {
+      if (unit !== 'karobka') measured = true;
+      continue;
+    }
+    if (/^(?:kod|код|tnved|тнвэд|hs)$/iu.test(token)) continue;
+    return false;
+  }
+  return measured;
 }
+
+/**
+ * A name, THEN figures — the figure starting its OWN token. «Bobur aka GS777»
+ * and «Mijoz GS777» are not a name followed by «777» (review #6): the digit
+ * sits inside a code. «iPhone15 300 dona» still reads: its first figure is
+ * «300».
+ */
+function nameThenFigures(body: string): boolean {
+  const at = body.search(/(?<![\p{L}\p{N}])\d/u);
+  return at > 0 && unitFigures(body.slice(at));
+}
+
+/**
+ * «Guangzhou - Toshkent 12 kub 3500 kg»: two place names joined by a dash and
+ * only the shipment's totals after them is the ROUTE (review #22), which
+ * `readRoute` does not trust from a hyphen alone. A product with a dash in it
+ * states a count or a pair («Futbolka - oq 300 dona»), so it never reaches
+ * this test, and «Coca-Cola» has no spaces round its hyphen.
+ */
+const DASH_ROUTE = /^\p{Lu}[\p{L}']*(?:\s+[-–—]\s+|\s*[–—]\s*)\p{Lu}[\p{L}']*$/u;
 
 /**
  * The goods a person TYPED, line by line, read without a model — so that when
@@ -140,34 +210,49 @@ function figuresOnly(tail: string): boolean {
  *
  * Narrow on purpose — a wrong split reads as fact on the card. A line counts
  * only when it SAYS it is a goods line («Tovar: …»), or when it is a name
- * followed by nothing but figures («Kurtka 300 dona 150 kg»). Not a route
- * line, not a line of totals words («vazni 120 kg»), not a sentence with a
- * number in the middle («yana 250 kg deb yozishdi»), not a client code.
- * These lines sit LAST in every caller's order: an invoice's rows and the
- * model's reading both win over them.
+ * followed by nothing but figures that carry a unit («Kurtka 300 dona 150
+ * kg»). Not a route line, not a line of totals, count or field words («vazni
+ * 120 kg», «Кол-во: 300 шт», «Tel 90 123 45 67»), not a sentence with a
+ * number in the middle («yana 250 kg deb yozishdi»), not a question, not a
+ * client code. These lines sit LAST in every caller's order: an invoice's
+ * rows and the model's reading both win over them.
+ *
+ * `labelledOnly` (review #22): when the model DID read the material and found
+ * no goods, a regex must not overrule it with «Salom» or «Guangzhou -
+ * Toshkent» — only a line that names itself goods still answers. When the
+ * model did not read (no key, budget, failure), every typed line answers.
  */
-export function readGoodsLines(text: string): NonNullable<CalcFacts['goods']> {
+export function readGoodsLines(text: string, opts?: { labelledOnly?: boolean }): NonNullable<CalcFacts['goods']> {
   const out: NonNullable<CalcFacts['goods']> = [];
   for (const raw of text.split(/\r?\n/)) {
     if (out.length >= 50) break;
     const line = raw.trim();
     if (!line || !/\p{L}/u.test(line)) continue;
     if (readRoute(line).fromCity !== null) continue;
-    if (/^[A-Za-z]{1,4}\d{1,8}$/.test(line)) continue;
-    const labelled = GOODS_LABEL.exec(line);
-    const body = labelled ? line.slice(labelled[0].length) : line;
-    const firstDigit = body.search(/\d/);
-    if (!labelled) {
-      // A name, THEN figures and nothing else.
-      if (firstDigit <= 0 || !figuresOnly(body.slice(firstDigit))) continue;
-    }
+    if (CLIENT_CODE_LINE.test(line)) continue;
+    // «Tovar keldimi?» — a question about the goods is not a goods line.
+    if (/[?？]$/u.test(line)) continue;
+    const label = GOODS_LABEL.exec(line);
+    if (opts?.labelledOnly && !label) continue;
+    const separated = Boolean(label?.[1]);
+    const body = label ? line.slice(label[0].length) : line;
+    if (!separated && !nameThenFigures(body)) continue;
     const parsed = parseGoodsLine(body);
     const name = parsed.name.replace(/^[\s:\-–—.,]+|[\s:\-–—.,]+$/gu, '').trim();
-    const words = name.toLowerCase().split(/[\s,.;:]+/u).filter(Boolean);
-    if (words.length === 0 || words.every((w) => TOTAL_WORDS.has(w))) continue;
+    const words = name
+      .toLowerCase()
+      .replace(APOSTROPHES, "'")
+      .split(/[\s,.;:()]+/u)
+      .filter(Boolean);
+    if (words.length === 0 || words.every((w) => NOT_GOODS_WORDS.has(w) || isCodeWord(w))) continue;
     if ((name.match(/\p{L}/gu) ?? []).length < 2) continue;
-    // An answer the parser could not settle («1,200 kg») is not a figure.
-    if (parsed.problems.some((p) => p.kind === 'ambiguous')) continue;
+    if (!separated && parsed.quantity === null && parsed.measureQty === null && DASH_ROUTE.test(name)) continue;
+    // An answer the parser could not settle («1,200 kg») is not a figure, and
+    // a unit stated twice («300 dona …, 200 dona») is two lines welded into
+    // one — splitting them is the model's job.
+    if (parsed.problems.some((p) => p.kind === 'ambiguous' || p.kind === 'repeated' || p.kind === 'two_pairs')) {
+      continue;
+    }
     out.push({
       name: name.slice(0, 200),
       quantity: parsed.quantity,
@@ -322,17 +407,24 @@ export function parseLineAnswer(raw: string): LineAnswer {
  * Is the first message of a collection MATERIAL rather than the customer's
  * name (his 1.7 b)? The bot asks «who is the customer» and a seller in a
  * hurry forwards the goods list instead; it used to become the lead's NAME
- * and was never shown to the model. A code or a phone is the customer; several
- * lines, a long text, a goods line or a figure with a unit is material; a short
- * line of words is a name.
+ * and was never shown to the model.
+ *
+ * Goods evidence decides FIRST (review #16, #23): a unit word, a TNVED code
+ * or a line naming itself goods is material, whatever digits it also holds.
+ * Then the customer: a code or a phone, written the ways people write them
+ * («GS 777», «Bobur aka GS777», «Ali aka» over «+998 90 123 45 67»). Then
+ * several lines or a long text is material. What is left — a short line of
+ * words, perhaps with a bare number («Ali aka 2», «OOO Asia Trade 2020») —
+ * is a NAME: filing a name as material re-asked the same question for ever.
  */
 export function looksLikeMaterial(raw: string): boolean {
   const text = raw.trim();
   if (!text) return false;
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (lines.some((l) => statesGoods(l) || readGoodsLines(l, { labelledOnly: true }).length > 0)) return true;
   if (parseClientHint(text)) return false;
-  if (text.split(/\r?\n/).filter((l) => l.trim()).length > 1) return true;
-  if (text.length > 60) return true;
-  if (readGoodsLines(text).length > 0) return true;
-  const line = parseGoodsLine(text);
-  return line.unitWords.length > 0 || line.tnvedCode !== null;
+  return lines.length > 1 || text.length > 60;
 }

@@ -30,7 +30,7 @@ import {
 } from './needs';
 import type { GoodsRow } from '../deals/goods-import';
 import type { BazaBasis, MeasureUnit } from './pricing';
-import { routeAmount, unitOf } from './units';
+import { parseGoodsLine, routeAmount, unitOf } from './units';
 
 export type CalcSection = 'yolkira' | 'rastamojka' | 'podklyuch';
 
@@ -145,9 +145,12 @@ export const AI_READ_FAILURE: Record<AiReadFailure, { text: string; retry: boole
     text: 'AI bu materialni o‘qishdan bosh tortdi (xavfsizlik filtri) — VED qo‘lda ko‘radi.',
     retry: false,
   },
+  // No retry (review #21): the cut is a property of the INPUT — the same
+  // material under the same ceiling is cut again, each press a paid call the
+  // day's budget never counts. The sentence already names the one remedy.
   truncated: {
     text: 'Material juda katta — AI javobi sig‘madi. Kamroq sahifa yoki Excel yuboring.',
-    retry: true,
+    retry: false,
   },
   timeout: { text: 'AI belgilangan vaqtda javob bermadi.', retry: true },
   rate_limited: { text: 'AI hozir band (so‘rov ko‘p) — bir daqiqadan keyin qayta urinib ko‘ring.', retry: true },
@@ -773,27 +776,117 @@ export function collectPromptText(section: CalcSection): string {
 }
 
 /**
+ * Does this line STATE goods — a unit word after a figure («300 dona», «1.1
+ * kub»), or a TNVED code beside a word («Kurtka 6201930000», «6201.93.00.00»)?
+ *
+ * The one test both readers of «who is the customer» ask FIRST (review #16):
+ * a phone carries neither, and a goods line that also happens to hold nine
+ * digits («Kurtka 6201930000 300 dona» — the code and the count glue into
+ * one 13-digit run) must never become the lead's phone. A bare line of
+ * digits is not a code here: «8901234567» typed alone is somebody's number.
+ */
+export function statesGoods(line: string): boolean {
+  const read = parseGoodsLine(line);
+  return read.unitWords.length > 0 || (read.tnvedCode !== null && /\p{L}/u.test(line));
+}
+
+/** «Mijoz: GS777», «Klient GS777», «Kod - GS 777» — the label before a code. */
+const CLIENT_LABEL =
+  /^(?:mijoz|мижоз|klient|клиент|client|kod|код)(?:\s*(?:kodi|коди|кода|code))?(?![\p{L}\p{N}])\s*[:\-–—]?\s*/iu;
+
+/** Letters that are a field's name, not a code's prefix: «Tel 2345678», «No 125». */
+const NOT_CODE_LETTERS = /^(?:tel|tlf|no|nr|inn|id)$/i;
+
+/**
+ * A client code written whole: glued («GS777»), with a separator («GS 777»,
+ * «GS-777» — a phone keyboard puts the space in), or after a label. Never a
+ * figure: «kg 5», «ta 5» and «m2» are amounts in a unit (review #6).
+ */
+function codeWritten(raw: string): string | null {
+  const m = /^([A-Za-z]{1,4})\s*[-–]?\s*(\d{1,8})$/.exec(raw.replace(CLIENT_LABEL, ''));
+  if (!m) return null;
+  const letters = m[1]!;
+  const digits = m[2]!;
+  if (unitOf(letters) !== null || unitOf(letters + digits) !== null || NOT_CODE_LETTERS.test(letters)) return null;
+  return (letters + digits).toUpperCase();
+}
+
+/**
+ * ONE glued code among words, and no other digit — «Bobur aka GS777», «GS777
+ * Bobur» (review #6, #23): the seller answered «who» with a name AND the code,
+ * which is the best answer there is. A second digit anywhere makes it a guess.
+ */
+function codeAmongWords(line: string): string | null {
+  const codes = line
+    .split(/[\s,;:()«»"'‘’ʻ.]+/u)
+    .filter((t) => /^[A-Za-z]{1,4}\d{1,8}$/.test(t) && unitOf(t) === null);
+  if (codes.length !== 1) return null;
+  const code = codes[0]!;
+  const digitsIn = (s: string) => (s.match(/\d/g) ?? []).length;
+  return digitsIn(line) === digitsIn(code) ? code.toUpperCase() : null;
+}
+
+/**
+ * The phone in a line, as the NUMBER RUN (review #26) — the matchers
+ * downstream read its digits (`activeClientsByPhone`'s last seven,
+ * `openLeadForPhone`'s last nine), and a run is what belongs in the lead's
+ * phone column, never «Ali aka +998…».
+ *
+ * Written as phones are written: digits grouped by spaces, brackets, hyphens
+ * or DOTS («90.175.78.00» — the office writes it so, the import parser found
+ * eight in one spreadsheet), 9-15 of them. A stall or row number beside it
+ * («Dilshod (Andijon, 5-rasta) 90 123 45 67») is allowed; a run of four to
+ * eight digits is not — an order number, a landline or a code makes the line
+ * something other than a contact. Ten CONTIGUOUS digits after a word are a
+ * TNVED code («Kurtka 6201930000»); ten spaced ones are a phone written with
+ * its 8 («Ali aka 8 90 123 45 67», review #23).
+ */
+function phoneIn(line: string): string | null {
+  const m = /\+?\d[\d\s().-]{6,20}\d/.exec(line);
+  if (!m) return null;
+  const run = m[0];
+  const digits = run.replace(/\D/g, '');
+  if (digits.length < 9 || digits.length > 15) return null;
+  if (/^\d{10}$/.test(run) && /\p{L}/u.test(line)) return null;
+  const rest = `${line.slice(0, m.index)} ${line.slice(m.index + run.length)}`;
+  if (/(?<!\d)\d{4,8}(?!\d)/.test(rest)) return null;
+  // «(90) 123-45-67»: the bracket the run opened belongs to it.
+  return line[m.index - 1] === '(' ? `(${run}` : run;
+}
+
+function lineHint(line: string): { code?: string; phone?: string } | null {
+  if (line.length > 60) return null;
+  const code = codeWritten(line);
+  if (code) return { code };
+  const phone = phoneIn(line);
+  if (phone) return { phone };
+  const among = codeAmongWords(line);
+  return among ? { code: among } : null;
+}
+
+/**
  * A phone or a client code typed into the collection — the two ways staff
  * name a customer. Neither is validated here beyond shape: WHICH client it
  * is gets resolved against the book, where the honest answer lives.
+ *
+ * NOT «any text with seven digits» (the diagnosis' cause 6): a forwarded
+ * goods list carrying a TNVED code used to name the lead AND become its
+ * «phone». A line that states goods (`statesGoods`) is never a hint. What a
+ * seller actually types is (review #23): one short line holding a code or a
+ * phone, a name beside either — or up to three lines where exactly ONE carries
+ * digits («Ali aka» / «+998 90 123 45 67»), which is how Telegram users write
+ * a contact.
  */
 export function parseClientHint(raw: string): { code?: string; phone?: string } | null {
   const text = raw.trim();
   if (!text) return null;
-  if (/^[A-Za-z]{1,4}\d{1,8}$/.test(text)) return { code: text.toUpperCase() };
-  // A PHONE, not «any text with seven digits» (the diagnosis' cause 6): a
-  // forwarded goods list carrying a TNVED code used to name the lead AND
-  // become its «phone». A phone is one short line holding one number of 9-15
-  // digits, written as phones are written; a name beside it is allowed
-  // («Ali aka +998 90 123 45 67»).
-  if (text.includes('\n') || text.length > 60) return null;
-  const phone = /\+?\d[\d\s()-]{6,20}\d/.exec(text);
-  if (!phone) return null;
-  const digits = phone[0].replace(/\D/g, '');
-  if (digits.length < 9 || digits.length > 15) return null;
-  if ((text.match(/\d/g) ?? []).length !== digits.length) return null;
-  // Ten bare digits after a word are a TNVED code («Kurtka 6201930000»), not
-  // a phone: his customers' numbers are nine digits or twelve with 998.
-  if (digits.length === 10 && !phone[0].includes('+') && /\p{L}/u.test(text)) return null;
-  return { phone: text };
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (lines.length > 3 || lines.some(statesGoods)) return null;
+  if (lines.length === 1) return lineHint(lines[0]!);
+  if (lines.some((l) => l.length > 60)) return null;
+  const withDigits = lines.filter((l) => /\d/.test(l));
+  return withDigits.length === 1 ? lineHint(withDigits[0]!) : null;
 }

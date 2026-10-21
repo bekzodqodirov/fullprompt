@@ -137,7 +137,9 @@ describe('the first message: the customer, or material (his 1.7 b)', () => {
   it('a TNVED code is never a phone (the diagnosis’ cause 6)', () => {
     expect(parseClientHint('Kurtka 6201930000')).toBeNull();
     expect(parseClientHint('Kurtka 6201930000\nSumka 4202')).toBeNull();
-    expect(parseClientHint('Ali aka +998901234567')).toEqual({ phone: 'Ali aka +998901234567' });
+    // The NUMBER, not the line (review #26): it is what the lead's phone
+    // column holds and what the matchers read the last digits of.
+    expect(parseClientHint('Ali aka +998901234567')).toEqual({ phone: '+998901234567' });
   });
 });
 
