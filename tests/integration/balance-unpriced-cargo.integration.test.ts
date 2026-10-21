@@ -548,7 +548,7 @@ describe('his (i): a price that names no cargo takes its client’s cargo off th
     // Both prixods out (his (i), card-like b): +1000 of receivable, −500 of line.
     expect(delta(before, priced, 'line')).toBe(-500);
     expect(delta(before, priced, 'net')).toBe(500);
-    await linkReceipt(p.receiptId, dealId, ctx());
+    await linkReceipt(p.receiptId, dealId, ctx(), null);
     const linked = await snap();
     // Now the price names P (clause 1) — Q is somebody's cargo with no price
     // again: information, +200.

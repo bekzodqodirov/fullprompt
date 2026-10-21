@@ -15,6 +15,8 @@ import { customFieldsData } from '@/modules/platform/fields/view';
 import { convertLeadAction, updateLeadAction } from '../../actions';
 import { CustomFieldInputs } from '@/components/custom-fields';
 import { LeadForm } from '../lead-form';
+import { leadLoadMode } from '@/modules/wms/ftl/read';
+import { mayRevertFtl } from '@/modules/wms/ftl/door';
 import { LeadFacts } from './facts';
 import { ConvertForm } from './convert-form';
 import { StageMover } from './stage-mover';
@@ -76,6 +78,9 @@ export default async function LeadPage({
 
   const t = await getTranslations('crm');
   const tc = await getTranslations('common');
+  const tf = await getTranslations('ftl');
+  // LTL / FTL (0135): null = the server is one migration behind (no control, no chip).
+  const loadMode = await leadLoadMode(lead.id);
   const [sources, stages, managers, custom, codePrefix, lostReasonList] = await Promise.all([
     listSources(),
     listStages(),
@@ -218,6 +223,13 @@ export default async function LeadPage({
         }
         nextAction={[lead.nextActionAt, lead.nextActionNote].filter(Boolean).join(' · ')}
       />
+      {/* FTL shows, LTL — the default — stays silent; never an empty fact,
+          which CardFacts would list as «To'ldirilmagan» on every lead (0135). */}
+      {loadMode === 'ftl' ? (
+        <p className="text-sm" data-testid="lead-ftl-chip">
+          <span className="chip chip-neutral">🚛 {tf('ftlLong')}</span>
+        </p>
+      ) : null}
 
       {/* Directly under the phone number it is about: «somebody here already
           has a Telegram chat with this number» (round 82). Renders nothing
@@ -267,6 +279,7 @@ export default async function LeadPage({
             fall back to its first option and Save would revive it. */}
         <LeadForm
           quoteLocked={quoteLocked}
+          load={loadMode ? { initial: loadMode, office: mayRevertFtl(actor) } : null}
           action={update}
           sources={sources.map((row) => ({ id: row.id, label: row.name }))}
           stages={leadFormStages(stages, lead.stageId).map((row) => ({ id: row.id, label: row.name }))}

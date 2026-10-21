@@ -300,14 +300,14 @@ describe('the reality side is summed from the receipts, never typed in', () => {
     expect((await dealReality(wrong)).receiptCount).toBe(1);
 
     // Straight across, with no detach step in between — what the picker does.
-    await linkReceipt(receiptId, right, ctx());
+    await linkReceipt(receiptId, right, ctx(), null);
     expect((await dealReality(wrong)).receiptCount).toBe(0);
     expect((await dealReality(right)).boxCount).toBe(9);
     expect(await unlinkedFor(clientId, receiptId)).toBe(false);
 
     // And the empty option puts it back among the client's free receipts,
     // where the deal card's own picker can find it again.
-    await linkReceipt(receiptId, null, ctx());
+    await linkReceipt(receiptId, null, ctx(), null);
     expect((await dealReality(right)).receiptCount).toBe(0);
     expect(await unlinkedFor(clientId, receiptId)).toBe(true);
   });
@@ -329,7 +329,7 @@ describe('the reality side is summed from the receipts, never typed in', () => {
     const id = await newDeal();
     const receiptId = await receiveCargo(0.5, 50, 5, null);
     await db.update(receipts).set({ clientId: otherClientId }).where(eq(receipts.id, receiptId));
-    await expect(linkReceipt(receiptId, id, ctx())).rejects.toThrow('client_mismatch');
+    await expect(linkReceipt(receiptId, id, ctx(), null)).rejects.toThrow('client_mismatch');
     await db.update(receipts).set({ clientId }).where(eq(receipts.id, receiptId));
   });
 });

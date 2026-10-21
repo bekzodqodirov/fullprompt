@@ -5,7 +5,15 @@ import { isServerBehind } from '@/modules/platform/db/errors';
 import { logger } from '@/modules/platform/logger';
 import { PageHeader } from '@/components/ui/page';
 import { ratingScreen } from '@/modules/wms/staff/rating';
-import { deltaText, kgText, kub, monthName, windowLabel, type RatingView } from '@/modules/wms/staff/rating-text';
+import {
+  deltaText,
+  kgText,
+  kub,
+  monthName,
+  windowLabel,
+  type FtlLine,
+  type RatingView,
+} from '@/modules/wms/staff/rating-text';
 import type { Standing } from '@/modules/wms/staff/rating-math';
 
 /**
@@ -21,6 +29,10 @@ export const dynamic = 'force-dynamic';
 
 const MEDAL = ['🥇', '🥈', '🥉'];
 
+// A name keeps a floor (7rem): with `min-w-0` the figures — wider by the
+// week's 🆕 delta — squeezed a name to three letters a line at 360 px. With
+// the floor, the figures wrap to their own line, right-aligned, instead.
+
 function Table({ rows, me, testId }: { rows: (Standing & { before?: number | null })[]; me: string; testId: string }) {
   return (
     <ol className="divide-y divide-line" data-testid={testId}>
@@ -31,14 +43,40 @@ function Table({ rows, me, testId }: { rows: (Standing & { before?: number | nul
           data-testid={`${testId}-row`}
         >
           <span className="w-7 shrink-0 text-center">{r.rank <= 3 ? MEDAL[r.rank - 1] : `${r.rank}.`}</span>
-          <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{r.name}</span>
-          <span className="font-mono tabular-nums">
+          <span className="min-w-[7rem] flex-1 [overflow-wrap:anywhere]">{r.name}</span>
+          <span className="ml-auto whitespace-nowrap font-mono tabular-nums">
             {kub(r.m3)} kub · {kgText(r.kg)} kg · {r.receipts}
             {r.before !== undefined ? <span className="text-ink-500">{deltaText(r.m3, r.before)}</span> : null}
           </span>
         </li>
       ))}
     </ol>
+  );
+}
+
+/**
+ * The FTL block (0135, his 3b): after Σ, so the team's kub is never read as
+ * including it; plain names, no rank, no points.
+ */
+function FtlList({ rows, me, title, testId }: { rows: FtlLine[]; me: string; title: string; testId: string }) {
+  if (rows.length === 0) return null;
+  return (
+    <div className="space-y-1 border-t border-line pt-2" data-testid={testId}>
+      <p className="text-2xs uppercase text-ink-500">🚛 {title}</p>
+      <ul className="space-y-0.5">
+        {rows.map((r) => (
+          <li
+            key={r.userId}
+            className={`flex flex-wrap items-baseline gap-x-2 text-sm text-ink-600 ${r.userId === me ? 'font-semibold' : ''}`}
+          >
+            <span className="min-w-[7rem] flex-1 [overflow-wrap:anywhere]">{r.name}</span>
+            <span className="ml-auto whitespace-nowrap font-mono tabular-nums">
+              {kub(r.m3)} kub · {kgText(r.kg)} kg · {r.receipts}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -49,19 +87,24 @@ function WeekCard({
   testId,
   empty,
   goalWords,
+  ftlTitle,
 }: {
   title: string;
   view: RatingView;
   me: string;
   testId: string;
-  empty: string;
+  /** [nothing at all, no LTL but an FTL list below] — «nobody brought cargo» must not contradict it. */
+  empty: [string, string];
   goalWords: string | null;
+  ftlTitle: string;
 }) {
   return (
     <section className="card space-y-2" data-testid={testId}>
       <h2 className="section-title">{title}</h2>
       <p className="text-xs text-ink-500">{windowLabel(view.from, view.to)}</p>
-      {view.rows.length === 0 ? <p className="text-sm text-ink-500">{empty}</p> : null}
+      {view.rows.length === 0 ? (
+        <p className="text-sm text-ink-500">{view.ftl.length > 0 ? empty[1] : empty[0]}</p>
+      ) : null}
       <Table rows={view.rows} me={me} testId={`${testId}-table`} />
       <p className="text-sm">
         <span className="font-semibold">Σ</span>{' '}
@@ -70,6 +113,7 @@ function WeekCard({
         </span>
       </p>
       {goalWords ? <p className="text-sm" data-testid={`${testId}-goal`}>{goalWords}</p> : null}
+      <FtlList rows={view.ftl} me={me} title={ftlTitle} testId={`${testId}-ftl`} />
     </section>
   );
 }
@@ -114,17 +158,29 @@ export default async function RatingPage() {
         view={running}
         me={actor.id}
         testId="rating-running"
-        empty={t('empty')}
+        empty={[t('empty'), t('emptyLtl')]}
         goalWords={goalWords}
+        ftlTitle={t('ftlTitle')}
       />
-      <WeekCard title={t('closed')} view={closed} me={actor.id} testId="rating-closed" empty={t('empty')} goalWords={null} />
+      <WeekCard
+        title={t('closed')}
+        view={closed}
+        me={actor.id}
+        testId="rating-closed"
+        empty={[t('empty'), t('emptyLtl')]}
+        goalWords={null}
+        ftlTitle={t('ftlTitle')}
+      />
       <section className="card space-y-2" data-testid="rating-month">
         <h2 className="section-title">{t('month', { month: monthName(month.month) })}</h2>
-        {month.rows.length === 0 ? <p className="text-sm text-ink-500">{t('empty')}</p> : null}
+        {month.rows.length === 0 ? (
+          <p className="text-sm text-ink-500">{month.ftl.length > 0 ? t('emptyLtl') : t('empty')}</p>
+        ) : null}
         <Table rows={month.rows} me={actor.id} testId="rating-month-table" />
         <p className="text-sm">
           <span className="font-semibold">Σ</span> <span className="font-mono tabular-nums">{kub(monthTeam)} kub</span>
         </p>
+        <FtlList rows={month.ftl} me={actor.id} title={t('ftlTitle')} testId="rating-month-ftl" />
       </section>
       <p className="text-xs text-ink-500">{t('footnote')}</p>
     </div>

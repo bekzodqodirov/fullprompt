@@ -23,6 +23,8 @@ import { hintOf, STATE_CLASS, stateKeyOf } from './state-words';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { db } from '@/modules/platform/db/client';
 import { stampedCargo, type StampedCargo } from '@/modules/wms/staff/cargo';
+import { KPI_LOAD } from '@/modules/wms/ftl/sql';
+import { ftlReady } from '@/modules/wms/ftl/service';
 import { maySeeStaffMoney } from '@/modules/wms/staff/door';
 import { mayOpenClientLedger } from '@/modules/wms/finance/scope';
 
@@ -61,6 +63,7 @@ export default async function UpsalePage({
   let truncated = false;
   let pending: Awaited<ReturnType<typeof pendingBelowFloor>> = [];
   let cargo: StampedCargo[] = [];
+  let ftlBySeller = new Map<string, StampedCargo>();
   let accounts: Awaited<ReturnType<typeof listAccounts>> = [];
   let categories: Awaited<ReturnType<typeof listCategories>> = [];
   let categoryId = '';
@@ -79,9 +82,27 @@ export default async function UpsalePage({
     // is overturned by his 1a: «the client card's seller», on the day the
     // cargo was received (2a). A forged `?hodim` narrows nothing it may not
     // see: the own scope ignores it, and the all scope only filters.
-    cargo = (
-      await stampedCargo(db, period, scope === 'own' ? { kind: 'own', userId: actor.id } : { kind: 'all' })
-    ).filter((row) => scope === 'own' || !params.hodim || row.sellerId === params.hodim);
+    // The block is «Olib kelgan yuk (KPI)», so it reads the KPI's cargo —
+    // LTL — with the FTL beside it (0135). The upsale money above is
+    // untouched by the mode (his 5a).
+    const cargoScope = scope === 'own' ? ({ kind: 'own', userId: actor.id } as const) : ({ kind: 'all' } as const);
+    // One migration behind (0135) nothing is FTL: all cargo is the KPI's and
+    // the FTL beside it is empty — the payer lists and the approvals below
+    // need nothing new and must not vanish with it.
+    const ftlOn = await ftlReady();
+    const [ltlCargo, ftlCargo] = await Promise.all([
+      stampedCargo(db, period, cargoScope, ftlOn ? KPI_LOAD : 'all'),
+      ftlOn ? stampedCargo(db, period, cargoScope, 'ftl') : Promise.resolve([]),
+    ]);
+    const keep = (row: { sellerId: string }) => scope === 'own' || !params.hodim || row.sellerId === params.hodim;
+    cargo = ltlCargo.filter(keep);
+    ftlBySeller = new Map(ftlCargo.filter(keep).map((row) => [row.sellerId, row]));
+    // A seller who brought only FTL still gets his row (0 LTL, his FTL beside it).
+    for (const row of ftlCargo.filter(keep)) {
+      if (!cargo.some((c) => c.sellerId === row.sellerId)) {
+        cargo.push({ ...row, receipts: 0, m3: 0, kg: 0, unmeasured: [] });
+      }
+    }
     if (mayApproveBelowFloor(actor)) pending = await pendingBelowFloor();
     if (actor.permissions.has('finance.expenses') && scope === 'all') {
       // The payer's two questions: out of which till, and under which cost
@@ -199,7 +220,8 @@ export default async function UpsalePage({
                 <th className="py-1 pr-2">{t('seller')}</th>
                 <th className="py-1 pr-2 text-right">{t('cargoReceipts')}</th>
                 <th className="py-1 pr-2 text-right">m³</th>
-                <th className="py-1 text-right">kg</th>
+                <th className="py-1 pr-2 text-right">kg</th>
+                <th className="py-1 text-right">{t('cargoFtl')}</th>
               </tr>
             </thead>
             <tbody>
@@ -218,7 +240,10 @@ export default async function UpsalePage({
                   </td>
                   <td className="py-1 pr-2 text-right font-mono tabular-nums">{c.receipts}</td>
                   <td className="py-1 pr-2 text-right font-mono font-semibold tabular-nums">{c.m3.toFixed(2)}</td>
-                  <td className="py-1 text-right font-mono tabular-nums">{Math.round(c.kg)}</td>
+                  <td className="py-1 pr-2 text-right font-mono tabular-nums">{Math.round(c.kg)}</td>
+                  <td className="py-1 text-right font-mono tabular-nums text-ink-500">
+                    {ftlBySeller.get(c.sellerId) ? `${ftlBySeller.get(c.sellerId)!.m3.toFixed(2)} m³` : '—'}
+                  </td>
                 </tr>
               ))}
             </tbody>

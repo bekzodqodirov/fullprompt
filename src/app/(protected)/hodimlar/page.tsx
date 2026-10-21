@@ -14,7 +14,7 @@ import { listAccounts, listCategories } from '@/modules/wms/accounting/service';
 import { listPartners } from '@/modules/wms/partners/service';
 import { bySeller, upsaleRows } from '@/modules/wms/calc/upsale-service';
 import { mayEditKpiTable, mayPayCommission, maySeeStaffMoney, maySeeStaffUpsale } from '@/modules/wms/staff/door';
-import { unstampedCargo } from '@/modules/wms/staff/cargo';
+import { stampedCargoBySellerMonth, unstampedCargo } from '@/modules/wms/staff/cargo';
 import {
   kpiCloseDay,
   kpiMonth,
@@ -159,7 +159,7 @@ async function StaffList({
   // (5.6 s over twelve months on the shaped copy, and a month longer every
   // month); when it runs out, each seller's card links to their OWN pass
   // (`?hodim=`, 0.7 s), where the figure and «KPI to'lash» are.
-  const [people, templates, owed, kpiLines, payables, kpiSellers, unstamped, versions, categories, accounts, warehouseRows, currencyRows, partnerRows, upsale] =
+  const [people, templates, owed, kpiLines, payables, kpiSellers, unstamped, versions, categories, accounts, warehouseRows, currencyRows, partnerRows, upsale, ftlCargo] =
     await Promise.all([
       // Payroll lists EVERY person, logins and people who never sign in —
       // `visibleStaff` decides who shows (the fence's payroll allowlist).
@@ -217,7 +217,8 @@ async function StaffList({
       // Who COULD carry a KPI line — cheap, and asked beside the budgeted
       // reads so that their failure still knows whose card must say so.
       safe(kpiSellerIds(db), new Set<string>(), 'kpi sellers'),
-      safe(unstampedCargo(db, range), [], 'unstamped'),
+      // The repair list is about the missing STAMP, whatever the mode (0135).
+      safe(unstampedCargo(db, range, 'all'), [], 'unstamped'),
       safe(kpiVersions(db), [], 'versions'),
       listCategories(),
       listAccounts(),
@@ -242,7 +243,10 @@ async function StaffList({
             'upsale',
           )
         : Promise.resolve(null),
+      // The month's FTL (0135): out of every KPI line above, named beside it.
+      safe(stampedCargoBySellerMonth(db, month, month, 'ftl'), [], 'ftl cargo'),
     ]);
+  const ftlBySeller = new Map(ftlCargo.map((row) => [row.sellerId, { receipts: row.receipts, m3: row.m3 }]));
 
   // The ONE per-seller fold /upsale's scoreboard reads too (#513): «to'lanadi»
   // is only what is payable NOW, and a row the walk did not reach is counted
@@ -381,6 +385,7 @@ async function StaffList({
               salary={mine.filter((tpl) => tpl.salary)}
               others={mine.filter((tpl) => !tpl.salary)}
               kpi={kpiLines.get(person.id)}
+              ftl={ftlBySeller.get(person.id)}
               payable={payables.get(person.id)}
               kpiUnavailable={failed.kpi && kpiSellers.has(person.id)}
               ownHref={`/hodimlar?oy=${month}&hodim=${person.id}`}

@@ -820,5 +820,12 @@ export async function departBatch(batchId: string, ctx: AuditContext) {
       actorId,
     });
     return { batch: updated!, boxCount: loaded.length };
+  }).then(async (result) => {
+    // LTL / FTL (0135, his 7a): a truck that left with ONE client's cargo only
+    // may be FTL nobody marked — the logists hear it now, after the commit
+    // (departure is one press, once, final). It logs and never fails the press.
+    const { notifyFtlSuspected } = await import('../ftl/hint');
+    await notifyFtlSuspected(batchId);
+    return result;
   });
 }

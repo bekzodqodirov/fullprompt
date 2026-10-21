@@ -34,7 +34,7 @@ function topKeys(): string[] {
 describe('MyMonth', () => {
   it('carries exactly the person’s own lines', () => {
     expect(topKeys().sort()).toEqual(
-      ['incomeUsd', 'kpi', 'month', 'salary', 'salaryConverted', 'salaryUsd', 'upsale', 'work'].sort(),
+      ['ftl', 'incomeUsd', 'kpi', 'month', 'salary', 'salaryConverted', 'salaryUsd', 'upsale', 'work'].sort(),
     );
   });
 

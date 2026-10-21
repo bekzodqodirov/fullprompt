@@ -752,7 +752,7 @@
       "price_history_min_sim": "How close a goods name must be to a past receipt before «Previous price» shows its truck (0..1)",
       "price_history_ai_daily_limit": "How many times a day the 🤖 button in «Previous price» may ask the AI (separate from the calculation limit)",
       "freight_tariff_cost_type_codes": "Truck cost types that preselect «by the freight tariff» (a list of codes)",
-      "staff_rating_goal_m3": "The team's weekly goal in m³ for the team group (0 = no goal). Easier to change on the «Team group» page."
+      "staff_rating_goal_m3": "The team’s weekly goal in m³ for the team group, groupage (LTL) cargo only (0 = no goal). Easier to change on the «Team group» page."
     },
     "driverApp": "Driver app",
     "callsApp": "Calls app",
@@ -874,7 +874,8 @@
       "allocationBasis": "Split basis",
       "tariffZone": "Tariff column",
       "tariffFrom": "Tariff date",
-      "tariffBands": "Tariff rows"
+      "tariffBands": "Tariff rows",
+      "freightMode": "Load type (LTL/FTL)"
     }
   },
   "profile": {
@@ -944,7 +945,8 @@
       "work": "My work",
       "workLine": "Receipts: {receipts} · calculations sealed: {sealed} · «Done» answers: {answered}",
       "advanceHint": "Advances and what you owe the company are in «{panel}» below.",
-      "salaryNotDue": "not due this month yet"
+      "salaryNotDue": "not due this month yet",
+      "ftlLine": "FTL: {m3} m³ · {n} receipts — not in the KPI"
     }
   },
   "receive": {
@@ -1621,6 +1623,8 @@
     "board": {
       "strip": "Where the trucks are",
       "tabs": "Board columns",
+      "colInland": "On the road: to warehouses in China",
+      "colOutbound": "On the road: bound outside China",
       "filterWarehouse": "Warehouse",
       "filterRoute": "Route",
       "filterAll": "All",
@@ -3248,7 +3252,10 @@
       "fx_missing": "No exchange rate for that currency",
       "discount_reason_required": "A discount needs a reason",
       "quote_sealed": "The price is sealed — it cannot be edited (recalculate instead)",
-      "not_your_client": "A deferral for this client is granted by his seller, the accountant or an admin"
+      "not_your_client": "A deferral for this client is granted by his seller, the accountant or an admin",
+      "ftl_office_only": "Only an admin, logist or accountant can turn FTL back to LTL (or change who owns an FTL deal).",
+      "ftl_not_yours": "You can mark FTL only on your own deal.",
+      "server_behind": "The server is behind — an administrator must run the migrations."
     },
     "discountTitle": "Discount (damage)",
     "discountAmount": "Discount amount",
@@ -4577,7 +4584,8 @@
     "fifoNoLive": "No cargo left on this deal: lost, voided or moved to another client",
     "fifoNotComputed": "Ran out of time checking — reload the page",
     "notComputedPage": "For some jobs the cargo payment could not be checked in time — they are not offered for payout. Reload the page.",
-    "paidRule": "A share is paid once the deal's cargo and the prices written on the deal are paid for. The client's money settles the oldest debt first (the KPI rule)."
+    "paidRule": "A share is paid once the deal's cargo and the prices written on the deal are paid for. The client's money settles the oldest debt first (the KPI rule).",
+    "cargoFtl": "🚛 FTL"
   },
   "sellerReport": {
     "title": "Sellers: results",
@@ -4604,7 +4612,9 @@
     "nobodyRow": "The «—» row is cargo received with no seller and its money, plus prices of clients who have neither a receipt nor a seller yet. When a client gets its first seller, that cargo and its money move to them.",
     "unlinked": "Prices naming no cargo: {n} ({usd}) — prices set on a client’s ledger with no truck, prices on a truck the client’s cargo did not ride, or a deal’s price before its first receipt. They went to the seller of the client’s latest receipt by that day (to the current manager when there is none). When the accountant moves such a price with «🚚 Move» on the client’s ledger to the truck the cargo rode, it goes to that cargo’s seller.",
     "split": "Prices over several sellers’ cargo: {n} ({usd}) — split by m³ (by kg when some carton has no m³, by carton count when some has no kg either).",
-    "inactive": "inactive"
+    "inactive": "inactive",
+    "ftl": "FTL",
+    "ftlNote": "m³ and receipts are groupage (LTL), the same as the KPI. FTL (full truck) is in its own column; the money columns include both."
   },
   "annul": {
     "open": "Annul (cascade)…",
@@ -5500,7 +5510,8 @@
     "leaversHint": "People who never sign in, whose salary is stopped and settled. If someone is back, open the name and press «Reactivate» on the card.",
     "salaryUnknown": "the salary could not be read",
     "salaryInactive": "Marked as left — no new salary can be set. If they are back, press «Reactivate» above.",
-    "salaryInactiveLogin": "Marked as left — no new salary can be set. If they are back, an admin reactivates them under «Administration → Employees»."
+    "salaryInactiveLogin": "Marked as left — no new salary can be set. If they are back, an admin reactivates them under «Administration → Employees».",
+    "ftlLine": "FTL: {m3} m³ · {n} receipts — not in the KPI"
   },
   "calcSheet": {
     "group": "Group",
@@ -6002,7 +6013,7 @@
     "uploadTooLarge": "The file is larger than 20 MB.",
     "uploadRefused": "File refused — a GIF, MP4, JPG or PNG is needed.",
     "goalTitle": "The team's weekly goal",
-    "goalHint": "How many m³ the team should bring in a week. The Saturday rating shows a «32 / 40 m³» line. 0 = no goal.",
+    "goalHint": "How many m³ of groupage (LTL) cargo the team should bring in a week — FTL does not count. The Saturday rating shows a «32 / 40 m³» line. 0 = no goal.",
     "goal": "Goal, m³",
     "save": "Save",
     "goalSaved": "Saved.",
@@ -6047,7 +6058,7 @@
   "rating": {
     "title": "Weekly rating",
     "profileHint": "Who brought how many m³ and kg this week — the same rating the bot posts to the group every Saturday at 18:00.",
-    "intro": "A week runs from Saturday 18:00 to Saturday 18:00. Cargo counts for the seller recorded on the receipt (as the KPI does).",
+    "intro": "A week runs from Saturday 18:00 to Saturday 18:00. Cargo counts for the seller recorded on the receipt (as the KPI does). FTL (full truck) cargo is not in the rating — it is shown apart.",
     "serverBehind": "The server is not updated yet. Open the page after the update.",
     "running": "This week",
     "closed": "Last week",
@@ -6055,7 +6066,62 @@
     "empty": "Nobody has brought cargo yet.",
     "goalDone": "🎯 Team goal {goal} m³ — reached! ✅",
     "goalProgress": "🎯 Team goal: {done} / {goal} m³",
-    "footnote": "A receipt may be entered back-dated, so the figures can move slightly."
+    "footnote": "A receipt may be entered back-dated, so the figures can move slightly.",
+    "ftlTitle": "FTL — full truck (no points)",
+    "emptyLtl": "Nobody has brought groupage (LTL) cargo yet."
+  },
+  "ftl": {
+    "label": "Load type",
+    "ltlLong": "LTL — groupage",
+    "ftlLong": "FTL — full truck",
+    "officeOnly": "Only an admin, logist or accountant can turn it back to LTL.",
+    "sellerWarn": "If FTL is chosen, this cargo is left out of the KPI and the rating. Only an admin, logist or accountant can turn it back to LTL.",
+    "cascadeChanged": "The deal’s receipts changed too: {n}.",
+    "cascadeSkipped": "{number}: unchanged — {why}",
+    "skip": {
+      "kpi_paid": "the KPI for its month is paid",
+      "hand": "set by hand on the receipt card",
+      "other_seller": "stamped to another seller (the office changes it)",
+      "other_client": "moved to another client",
+      "no_seller": "no seller — passes once the client gets a seller",
+      "stamp_moved": "its seller just changed — press again"
+    },
+    "source": {
+      "hand": "Set by hand on the receipt card.",
+      "deal": "From the deal ({code}).",
+      "earlierDeal": "Left from an earlier deal ({code}) — only an admin, logist or accountant can turn it back to LTL.",
+      "notReached": "Deal {code} is FTL, but it did not pass to this receipt: {why}.",
+      "dealLtl": "Deal {code} — LTL.",
+      "default": "No deal — LTL by default."
+    },
+    "paidFrozen": "The KPI for {month} is paid ({seller}) — the load type is frozen.",
+    "makeFtl": "Make FTL",
+    "makeLtl": "Back to LTL",
+    "dealAlsoFtl": "Deal {code} is FTL too — receipts linked to it later become FTL as well.",
+    "makeDealLtl": "Make deal {code} LTL too",
+    "errors": {
+      "ftl_office_only": "Only an admin, logist or accountant can turn FTL back to LTL.",
+      "ftl_not_yours": "You can mark FTL only on your own deal or cargo.",
+      "kpi_paid": "🔒 The KPI for {month} is paid ({seller}) — this receipt’s load type does not change.",
+      "stamp_moved": "The receipt’s seller just changed — press again.",
+      "not_found": "Not found.",
+      "server_behind": "The server is behind — an administrator must run the migrations.",
+      "busy": "Busy right now — press again in a moment.",
+      "validation": "Invalid value.",
+      "forbidden": "Not allowed."
+    },
+    "reach": {
+      "other_client": "the receipt was moved to another client",
+      "kpi_paid": "its month's KPI is already paid",
+      "no_seller": "a seller marked the deal, and the receipt is in nobody's name",
+      "other_seller": "a seller marked the deal, and the receipt is in another seller's name",
+      "linked": "it was filed onto the deal by neither the office nor the receipt's own seller"
+    },
+    "widenDeal": "Confirm deal {code}'s FTL as the office's — it passes to all its receipts",
+    "leadErrors": {
+      "ftl_office_only": "Only an admin, logist or accountant can turn an FTL lead back to LTL or change its owner.",
+      "ftl_not_yours": "You can mark only your own lead as FTL."
+    }
   },
   "place": {
     "road": {

@@ -21,7 +21,8 @@ import {
   type RatingWindow,
   type Standing,
 } from './rating-math';
-import { championHtml, kub, ratingHtml, type RatingView } from './rating-text';
+import { championHtml, kub, ratingHtml, type FtlLine, type RatingView } from './rating-text';
+import { KPI_LOAD } from '../ftl/sql';
 
 /**
  * The staff group's Saturday rating and the month's champion (0134, the
@@ -52,8 +53,13 @@ async function heroesFor(ids: string[]): Promise<Map<string, Hero>> {
   return out;
 }
 
+/**
+ * The ranked standings — LTL cargo only (0135, his 3b: FTL «alohida qatorda
+ * … ochkosiz»): the rating is the KPI's competition, and the KPI does not
+ * count a whole truck. The KPI's own constant, so the two cannot drift.
+ */
 async function standingsFor(w: { from: Date; to: Date }): Promise<Standing[]> {
-  const cargo = await stampedCargo(db, { from: w.from, to: w.to }, { kind: 'all' });
+  const cargo = await stampedCargo(db, { from: w.from, to: w.to }, { kind: 'all' }, KPI_LOAD);
   return rankStandings(
     cargo.map((c) => ({
       userId: c.sellerId,
@@ -63,6 +69,18 @@ async function standingsFor(w: { from: Date; to: Date }): Promise<Standing[]> {
       receipts: c.receipts,
     })),
   );
+}
+
+/**
+ * The week's FTL, per seller, for the separate line: the same reader with the
+ * other half of the filter, ordered like the ranked rows (kub, then kg).
+ */
+async function ftlFor(w: { from: Date; to: Date }): Promise<FtlLine[]> {
+  const cargo = await stampedCargo(db, { from: w.from, to: w.to }, { kind: 'all' }, 'ftl');
+  return cargo
+    .filter((c) => c.m3 > 0 || c.kg > 0)
+    .map((c) => ({ userId: c.sellerId, name: c.sellerName ?? '—', m3: c.m3, kg: c.kg, receipts: c.receipts }))
+    .sort((a, b) => b.m3 - a.m3 || b.kg - a.kg || a.name.localeCompare(b.name));
 }
 
 /** The weeks the group SAW, newest first — what streaks and records are read from. */
@@ -90,10 +108,12 @@ export async function ratingViewFor(w: RatingWindow, opts: { withHistory: boolea
   standings: Standing[];
 }> {
   const before = previousWindow(w);
-  const [standings, previous, unstamped, sellers, goal] = await Promise.all([
+  const [standings, previous, ftl, unstamped, sellers, goal] = await Promise.all([
     standingsFor(w),
     standingsFor(before),
-    unstampedCargo(db, { from: w.from, to: w.to }),
+    ftlFor(w),
+    // «Sotuvchisi yozilmagan yuk» is about the missing STAMP, whatever the mode.
+    unstampedCargo(db, { from: w.from, to: w.to }, 'all'),
     usersWithRoles(['sales_manager']),
     getSetting('staff_rating_goal_m3'),
   ]);
@@ -112,7 +132,8 @@ export async function ratingViewFor(w: RatingWindow, opts: { withHistory: boolea
         .slice(0, 3)
         .map((s) => ({ name: s.name, m3: s.m3 }))
     : [];
-  const brought = new Set(standings.map((s) => s.userId));
+  // A seller who brought only a whole truck is not idle — he is on the FTL line.
+  const brought = new Set([...standings.map((s) => s.userId), ...ftl.map((f) => f.userId)]);
   const goalM3 = Number(goal);
   const view: RatingView = {
     from: w.from,
@@ -132,6 +153,7 @@ export async function ratingViewFor(w: RatingWindow, opts: { withHistory: boolea
       receipts: unstamped.reduce((t, u) => t + u.receipts, 0),
     },
     idleSellers: sellers.filter((id) => !brought.has(id)).length,
+    ftl,
   };
   return { view, standings };
 }
@@ -149,7 +171,8 @@ export async function postWeeklyRating(
   const w = ratingWindowEnding(now);
   const { view, standings } = await ratingViewFor(w, { withHistory: true });
   const html = ratingHtml(view);
-  const stored = { key: w.key, from: w.from.toISOString(), to: w.to.toISOString(), rows: standings };
+  // `ftl` beside `rows`: what the group saw, and `postedWeeks` reads `rows` alone.
+  const stored = { key: w.key, from: w.from.toISOString(), to: w.to.toISOString(), rows: standings, ftl: view.ftl };
   const dedupeKey = `rating:${w.key}`;
   if (await queueGroupPost({ kind: 'rating', dedupeKey, html, standings: stored })) return 'queued';
   if (opts.manual && (await requeueSkippedGroupPost(dedupeKey, html, stored))) return 'requeued';
@@ -188,15 +211,17 @@ export async function postMonthChampion(
 export async function ratingScreen(now: Date = new Date()): Promise<{
   running: RatingView;
   closed: RatingView;
-  month: { month: string; rows: Standing[] };
+  month: { month: string; rows: Standing[]; ftl: FtlLine[] };
 }> {
   const month = tashkentMonth(now);
-  const [running, closed, monthRows] = await Promise.all([
+  const monthWindow = { from: monthRange(month).from, to: now };
+  const [running, closed, monthRows, monthFtl] = await Promise.all([
     ratingViewFor(runningWindow(now), { withHistory: false }),
     ratingViewFor(ratingWindowEnding(now), { withHistory: false }),
-    standingsFor({ from: monthRange(month).from, to: now }),
+    standingsFor(monthWindow),
+    ftlFor(monthWindow),
   ]);
-  return { running: running.view, closed: closed.view, month: { month, rows: monthRows } };
+  return { running: running.view, closed: closed.view, month: { month, rows: monthRows, ftl: monthFtl } };
 }
 
 /**
@@ -206,19 +231,26 @@ export async function ratingScreen(now: Date = new Date()): Promise<{
  */
 export async function ratingReplyFor(userId: string, now: Date = new Date()): Promise<string> {
   const w = runningWindow(now);
-  const standings = await standingsFor(w);
+  const [standings, ftl] = await Promise.all([standingsFor(w), ftlFor(w)]);
   const me = standings.find((s) => s.userId === userId);
+  const myFtl = ftl.find((f) => f.userId === userId);
   const lines = ['📊 Shu hafta (shanba 18:00 dan beri):'];
   for (const s of standings.filter((r) => r.rank <= 3)) {
     lines.push(`${['🥇', '🥈', '🥉'][s.rank - 1]} ${s.name} — ${kub(s.m3)} kub`);
   }
-  if (standings.length === 0) lines.push('Hali hech kim yuk olib kelmadi.');
+  // «Nobody brought cargo» would contradict the FTL line under it (0135).
+  if (standings.length === 0) lines.push(ftl.length > 0 ? 'Hali hech kim sborniy (LTL) yuk olib kelmadi.' : 'Hali hech kim yuk olib kelmadi.');
   lines.push('');
   lines.push(
     me
       ? `Siz: ${me.rank}-o'rin — ${kub(me.m3)} kub · ${Math.round(me.kg)} kg · ${me.receipts} prixod`
-      : 'Siz bu hafta hali yuk olib kelmadingiz.',
+      : myFtl
+        ? 'Siz bu hafta sborniy (LTL) yuk olib kelmadingiz.'
+        : 'Siz bu hafta hali yuk olib kelmadingiz.',
   );
+  if (myFtl) {
+    lines.push(`🚛 FTL (ochkosiz): ${kub(myFtl.m3)} kub · ${Math.round(myFtl.kg)} kg · ${myFtl.receipts} prixod`);
+  }
   return lines.join('\n');
 }
 

@@ -30,6 +30,7 @@ import { ViewsMenu } from '@/components/list/views-menu';
 import { canPublishViews, normalizeQuery } from '@/modules/platform/lists/query';
 import { defaultViewFor, listViewsFor } from '@/modules/platform/lists/service';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
+import { ftlLeadIds } from '@/modules/wms/ftl/read';
 
 /**
  * The funnel board — and nothing else.
@@ -165,6 +166,8 @@ export default async function LeadsPage({
     ],
     leadIds: rows.filter((row) => !row.lead.clientId).map((row) => row.lead.id),
   });
+  // LTL / FTL (0135): one read for the drawn cards, never one per card (#432).
+  const ftl = await ftlLeadIds(rows.map((row) => row.lead.id));
   // What each column HOLDS versus what it was handed — one map for both
   // halves, so an open column that was capped says «+N» exactly as a closed
   // one always did.
@@ -376,6 +379,7 @@ export default async function LeadsPage({
           chat:
             (lead.clientId ? badges.clients.get(lead.clientId) : badges.leads.get(lead.id)) ??
             null,
+          ftl: ftl.has(lead.id),
         }))}
         hidden={hidden}
         archiveHref={`/crm${hrefWith(carried, { arxiv: '1' })}`}

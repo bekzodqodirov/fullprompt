@@ -60,11 +60,14 @@ export default async function SellerReportPage({
   // some client has no manager (its money can be a moved client's unstamped
   // cargo, or a price of a client with neither a prixod nor a seller).
   const nobody = all?.rows.find((row) => row.managerId === null);
-  const nobodyShown = nobody !== undefined && (nobody.revenueUsd !== 0 || nobody.costUsd !== 0 || nobody.receipts !== 0);
+  const nobodyShown = nobody !== undefined &&
+    (nobody.revenueUsd !== 0 || nobody.costUsd !== 0 || nobody.receipts !== 0 || nobody.ftlReceipts !== 0);
 
   const money = (n: number) => `$${n.toFixed(2)}`;
   const size = (r: SellerOwnRow | SellerAllRow) =>
     `${r.volumeM3.toFixed(3)} m³ · ${r.weightKg.toFixed(1)} kg`;
+  // LTL / FTL (0135): the kub columns are the KPI's (LTL); a whole truck is named apart.
+  const ftl = (r: SellerOwnRow | SellerAllRow) => (r.ftlReceipts > 0 ? `${r.ftlM3.toFixed(3)} m³ · ${r.ftlReceipts}` : '—');
 
   return (
     <div className="mx-auto max-w-4xl space-y-4">
@@ -127,7 +130,14 @@ export default async function SellerReportPage({
               <dt className="text-2xs uppercase text-ink-500">{t('revenue')}</dt>
               <dd className="font-mono text-lg font-bold tabular-nums">{money(own.revenueUsd)}</dd>
             </div>
+            {own.ftlReceipts > 0 ? (
+              <div data-testid="seller-own-ftl">
+                <dt className="text-2xs uppercase text-ink-500">🚛 {t('ftl')}</dt>
+                <dd className="font-mono tabular-nums">{ftl(own)}</dd>
+              </div>
+            ) : null}
           </dl>
+          <p className="text-2xs text-ink-500">{t('ftlNote')}</p>
         </section>
       ) : null}
 
@@ -154,6 +164,7 @@ export default async function SellerReportPage({
                   <th className="p-2 text-right">{t('clients')}</th>
                   <th className="p-2 text-right">{t('receipts')}</th>
                   <th className="p-2 text-right">{t('cargo')}</th>
+                  <th className="p-2 text-right">🚛 {t('ftl')}</th>
                   <th className="p-2 text-right">{t('revenue')}</th>
                   <th className="p-2 text-right">{t('profit')}</th>
                   <th className="p-2 text-right">%</th>
@@ -173,6 +184,9 @@ export default async function SellerReportPage({
                     <td className="p-2 text-right font-mono tabular-nums">{row.clients}</td>
                     <td className="p-2 text-right font-mono tabular-nums">{row.receipts}</td>
                     <td className="p-2 text-right font-mono tabular-nums">{size(row)}</td>
+                    <td className="p-2 text-right font-mono tabular-nums text-ink-500" data-testid="seller-ftl">
+                      {ftl(row)}
+                    </td>
                     <td className="p-2 text-right font-mono tabular-nums" data-testid="seller-revenue">
                       {money(row.revenueUsd)}
                     </td>
@@ -189,6 +203,7 @@ export default async function SellerReportPage({
                   <td className="p-2 text-right font-mono tabular-nums">{all.totals.clients}</td>
                   <td className="p-2 text-right font-mono tabular-nums">{all.totals.receipts}</td>
                   <td className="p-2 text-right font-mono tabular-nums">{size(all.totals)}</td>
+                  <td className="p-2 text-right font-mono tabular-nums">{ftl(all.totals)}</td>
                   <td className="p-2 text-right font-mono tabular-nums">
                     {money(all.totals.revenueUsd)}
                   </td>
@@ -200,6 +215,9 @@ export default async function SellerReportPage({
               </tbody>
             </table>
           </div>
+          <p className="px-3 pb-1 text-2xs text-ink-500" data-testid="seller-ftl-note">
+            {t('ftlNote')}
+          </p>
           {all.unlinked.charges > 0 ? (
             <p className="px-3 pb-1 text-2xs text-ink-500" data-testid="seller-unlinked">
               {t('unlinked', { n: all.unlinked.charges, usd: money(all.unlinked.usd) })}

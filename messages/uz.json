@@ -752,7 +752,7 @@
       "price_history_min_sim": "«Oldingi narx» o‘tgan prixod mashinasini ko‘rsatishi uchun tovar nomi o‘xshashligi darajasi (0..1)",
       "price_history_ai_daily_limit": "«Oldingi narx» 🤖 tugmasi kuniga necha marta AI so'rashi mumkin (hisoblash limitidan alohida)",
       "freight_tariff_cost_type_codes": "Mashina xarajatida «yo‘lkira tarifi bo‘yicha» o‘zi tanlanadigan xarajat turlari (kodlar ro‘yxati)",
-      "staff_rating_goal_m3": "Jamoa guruhi uchun jamoaning haftalik maqsadi, kubda (0 — maqsad yo‘q). «Jamoa guruhi» sahifasida o‘zgartirish qulayroq."
+      "staff_rating_goal_m3": "Jamoa guruhi uchun jamoaning haftalik maqsadi, kubda, faqat sborniy (LTL) yuk (0 — maqsad yo‘q). «Jamoa guruhi» sahifasida o‘zgartirish qulayroq."
     },
     "driverApp": "Haydovchi ilovasi",
     "callsApp": "Qo'ng'iroq ilovasi",
@@ -874,7 +874,8 @@
       "allocationBasis": "Bo‘lish usuli",
       "tariffZone": "Tarif ustuni",
       "tariffFrom": "Tarif sanasi",
-      "tariffBands": "Tarif qatorlari"
+      "tariffBands": "Tarif qatorlari",
+      "freightMode": "Yuk turi (LTL/FTL)"
     }
   },
   "profile": {
@@ -944,7 +945,8 @@
       "work": "Mening ishim",
       "workLine": "Prixodlar: {receipts} · muhrlangan hisoblar: {sealed} · «Tayyor» javoblari: {answered}",
       "advanceHint": "Avans va kompaniyadan qarzingiz — pastdagi «{panel}» blokida.",
-      "salaryNotDue": "bu oy hali to‘lanmaydi"
+      "salaryNotDue": "bu oy hali to‘lanmaydi",
+      "ftlLine": "FTL: {m3} kub · {n} prixod — KPI’ga kirmaydi"
     }
   },
   "receive": {
@@ -1621,6 +1623,8 @@
     "board": {
       "strip": "Mashinalar qayerda",
       "tabs": "Doska ustunlari",
+      "colInland": "Yo‘lda: Xitoy skladlariga",
+      "colOutbound": "Yo‘lda: Xitoydan tashqariga",
       "filterWarehouse": "Sklad",
       "filterRoute": "Yo‘nalish",
       "filterAll": "Hammasi",
@@ -3248,7 +3252,10 @@
       "fx_missing": "Bu valyutaga kurs yo‘q",
       "discount_reason_required": "Chegirma uchun sabab kerak",
       "quote_sealed": "Narx muhrlangan — o‘zgartirib bo‘lmaydi (qayta hisoblang)",
-      "not_your_client": "Bu mijozga muddatni uning sotuvchisi, buxgalter yoki admin beradi"
+      "not_your_client": "Bu mijozga muddatni uning sotuvchisi, buxgalter yoki admin beradi",
+      "ftl_office_only": "FTL’ni LTL’ga faqat admin, logist yoki buxgalter qaytaradi (FTL bitimning egasini ham faqat ular almashtiradi).",
+      "ftl_not_yours": "Faqat o‘z bitimingizni FTL qila olasiz.",
+      "server_behind": "Server yangilanmagan — administrator migratsiyani ishga tushirsin."
     },
     "discountTitle": "Chegirma (shikast)",
     "discountAmount": "Chegirma summasi",
@@ -4577,7 +4584,8 @@
     "fifoNoLive": "Bitimda qolgan yuk yo‘q: yo‘qolgan, bekor qilingan yoki boshqa mijozga o‘tkazilgan",
     "fifoNotComputed": "Tekshirishga vaqt yetmadi — sahifani yangilang",
     "notComputedPage": "Ba’zi ishlarda yukning to‘langani vaqtida tekshirilmadi — ular to‘lovga qo‘yilmadi. Sahifani yangilang.",
-    "paidRule": "Ulush bitim yukining va bitimga yozilgan narxlarning puli kelgach to‘lanadi. Mijozning puli eng eski qarzidan boshlab yopiladi (KPI qoidasi)."
+    "paidRule": "Ulush bitim yukining va bitimga yozilgan narxlarning puli kelgach to‘lanadi. Mijozning puli eng eski qarzidan boshlab yopiladi (KPI qoidasi).",
+    "cargoFtl": "🚛 FTL"
   },
   "sellerReport": {
     "title": "Sotuvchilar: natija",
@@ -4604,7 +4612,9 @@
     "nobodyRow": "«—» qatori — sotuvchisiz qabul qilingan yuk va uning puli, hamda hali prixodi ham, sotuvchisi ham yo‘q mijozlarning narxlari. Mijozga birinchi sotuvchi belgilansa, o‘sha yuk va puli unga o‘tadi.",
     "unlinked": "{n} ta narx ({usd}) qaysi yuk uchunligi ko‘rinmaydi — mijoz hisobida partiyasiz qo‘yilgan narx, yuki o‘sha mashinada ketmagan narx yoki prixodi hali yo‘q bitim narxi. Ular mijozning o‘sha kungacha kelgan oxirgi prixodi sotuvchisiga yozildi (prixodi umuman bo‘lmasa — hozirgi menejeriga). Buxgalter narxni mijoz hisobidagi «🚚 Ko‘chirish» bilan yuk ketgan mashinaga o‘tkazsa, o‘sha yuk sotuvchisiga o‘tadi.",
     "split": "{n} ta narx ({usd}) bir necha sotuvchining yukiga qo‘yilgan — kub bo‘yicha bo‘lindi (biror karobkada kub bo‘lmasa kg, u ham bo‘lmasa karobka soni bo‘yicha).",
-    "inactive": "faol emas"
+    "inactive": "faol emas",
+    "ftl": "FTL",
+    "ftlNote": "Kub va prixod — sborniy (LTL), KPI bilan bir xil. FTL (butun mashina) alohida ustunda; pul ustunlari ikkalasini ham o‘z ichiga oladi."
   },
   "annul": {
     "open": "Anulirovka (kaskad)…",
@@ -5500,7 +5510,8 @@
     "leaversHint": "Tizimga kirmaydigan, oyligi to‘xtatilgan va hisob-kitobi yopilgan hodimlar. Qaytib kelgan bo‘lsa — ismini bosing va kartasida «Qayta faollashtirish»ni bosing.",
     "salaryUnknown": "oylik o‘qilmadi",
     "salaryInactive": "Ishdan ketgan deb belgilangan — yangi oylik kiritilmaydi. Qaytib kelgan bo‘lsa, yuqoridagi «Qayta faollashtirish»ni bosing.",
-    "salaryInactiveLogin": "Ishdan ketgan deb belgilangan — yangi oylik kiritilmaydi. Qaytib kelgan bo‘lsa, admin «Boshqaruv → Xodimlar»da uni qayta faollashtiradi."
+    "salaryInactiveLogin": "Ishdan ketgan deb belgilangan — yangi oylik kiritilmaydi. Qaytib kelgan bo‘lsa, admin «Boshqaruv → Xodimlar»da uni qayta faollashtiradi.",
+    "ftlLine": "FTL: {m3} kub · {n} prixod — KPI’ga kirmaydi"
   },
   "calcSheet": {
     "group": "Guruh",
@@ -6002,7 +6013,7 @@
     "uploadTooLarge": "Fayl 20 MB dan katta.",
     "uploadRefused": "Fayl qabul qilinmadi — GIF, MP4, JPG yoki PNG kerak.",
     "goalTitle": "Jamoaning haftalik maqsadi",
-    "goalHint": "Jamoa bir haftada necha kub yuk olib kelishi kerak. Shanba reytingida «32 / 40 kub» qatori chiqadi. 0 — maqsad yo‘q.",
+    "goalHint": "Jamoa bir haftada necha kub sborniy (LTL) yuk olib kelishi kerak — FTL hisobga kirmaydi. Shanba reytingida «32 / 40 kub» qatori chiqadi. 0 — maqsad yo‘q.",
     "goal": "Maqsad, kub",
     "save": "Saqlash",
     "goalSaved": "Saqlandi.",
@@ -6047,7 +6058,7 @@
   "rating": {
     "title": "Haftalik reyting",
     "profileHint": "Kim bir haftada necha kub va kg yuk olib keldi — bot har shanba soat 18:00 da guruhga joylaydigan reyting.",
-    "intro": "Hafta — shanba 18:00 dan shanba 18:00 gacha. Yuk prixodga yozilgan sotuvchi bo‘yicha hisoblanadi (KPI kabi).",
+    "intro": "Hafta — shanba 18:00 dan shanba 18:00 gacha. Yuk prixodga yozilgan sotuvchi bo‘yicha hisoblanadi (KPI kabi). FTL (butun mashina) yuki reytingga kirmaydi — alohida ko‘rsatiladi.",
     "serverBehind": "Server hali yangilanmagan. Yangilangandan keyin oching.",
     "running": "Shu hafta",
     "closed": "O‘tgan hafta",
@@ -6055,7 +6066,62 @@
     "empty": "Hali hech kim yuk olib kelmadi.",
     "goalDone": "🎯 Jamoa maqsadi {goal} kub — bajarildi! ✅",
     "goalProgress": "🎯 Jamoa maqsadi: {done} / {goal} kub",
-    "footnote": "Prixod orqa sana bilan kiritilishi mumkin, shuning uchun raqamlar biroz o‘zgarishi mumkin."
+    "footnote": "Prixod orqa sana bilan kiritilishi mumkin, shuning uchun raqamlar biroz o‘zgarishi mumkin.",
+    "ftlTitle": "FTL — butun mashina (ochkosiz)",
+    "emptyLtl": "Hali hech kim sborniy (LTL) yuk olib kelmadi."
+  },
+  "ftl": {
+    "label": "Yuk turi",
+    "ltlLong": "LTL — sborniy",
+    "ftlLong": "FTL — butun mashina",
+    "officeOnly": "LTL’ga faqat admin, logist yoki buxgalter qaytaradi.",
+    "sellerWarn": "FTL tanlansa, bu yuk KPI va reytingga kirmaydi. LTL’ga faqat admin, logist yoki buxgalter qaytaradi.",
+    "cascadeChanged": "Bitimning {n} ta prixodi ham o‘zgardi.",
+    "cascadeSkipped": "{number}: o‘zgarmadi — {why}",
+    "skip": {
+      "kpi_paid": "bu oy uchun KPI to‘langan",
+      "hand": "prixod kartasida qo‘lda belgilangan",
+      "other_seller": "boshqa sotuvchi nomida (ofis o‘zgartiradi)",
+      "other_client": "boshqa mijozga o‘tkazilgan",
+      "no_seller": "sotuvchisiz — mijozga sotuvchi belgilansa o‘tadi",
+      "stamp_moved": "sotuvchisi hozirgina o‘zgardi — qaytadan bosing"
+    },
+    "source": {
+      "hand": "Prixod kartasida qo‘lda belgilangan.",
+      "deal": "Bitimdan ({code}).",
+      "earlierDeal": "Oldingi bitimdan ({code}) qolgan — LTL’ga faqat admin, logist yoki buxgalter qaytaradi.",
+      "notReached": "Bitim {code} FTL, lekin bu prixodga o‘tmagan — {why}.",
+      "dealLtl": "Bitim {code} — LTL.",
+      "default": "Bitim yo‘q — odatiy LTL."
+    },
+    "paidFrozen": "{month} uchun {seller}’ga KPI to‘langan — yuk turi o‘zgarmaydi.",
+    "makeFtl": "FTL qilish",
+    "makeLtl": "LTL’ga qaytarish",
+    "dealAlsoFtl": "Bitim {code} ham FTL — unga keyin ulangan prixodlar ham FTL bo‘ladi.",
+    "makeDealLtl": "Bitim {code} ni ham LTL qilish",
+    "errors": {
+      "ftl_office_only": "FTL’ni LTL’ga faqat admin, logist yoki buxgalter qaytaradi.",
+      "ftl_not_yours": "Faqat o‘z bitimingiz yoki o‘z yukingizni FTL qila olasiz.",
+      "kpi_paid": "🔒 {month} uchun {seller}’ga KPI to‘langan — bu prixodning yuk turi o‘zgarmaydi.",
+      "stamp_moved": "Prixodning sotuvchisi hozirgina o‘zgardi — qaytadan bosing.",
+      "not_found": "Topilmadi.",
+      "server_behind": "Server yangilanmagan — administrator migratsiyani ishga tushirsin.",
+      "busy": "Hozir band — bir ozdan keyin qayta bosing.",
+      "validation": "Noto‘g‘ri qiymat.",
+      "forbidden": "Ruxsat yo‘q."
+    },
+    "reach": {
+      "other_client": "prixod boshqa mijozga o‘tkazilgan",
+      "kpi_paid": "uning oyi uchun KPI to‘langan",
+      "no_seller": "bitimni sotuvchi belgilagan, prixod esa hech kimning nomida emas",
+      "other_seller": "bitimni sotuvchi belgilagan, prixod esa boshqa sotuvchi nomida",
+      "linked": "uni bitimga ofis yoki prixodning o‘z sotuvchisi biriktirmagan"
+    },
+    "widenDeal": "Bitim {code} FTL’ini ofis nomidan tasdiqlash — barcha prixodlariga o‘tadi",
+    "leadErrors": {
+      "ftl_office_only": "FTL lidni LTL’ga qaytarish va uning egasini almashtirish — faqat admin, logist yoki buxgalter.",
+      "ftl_not_yours": "Faqat o‘z lidingizni FTL qila olasiz."
+    }
   },
   "place": {
     "road": {

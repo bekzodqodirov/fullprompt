@@ -157,8 +157,10 @@ pnpm build && pnpm e2e  # 44 e2e
 | The customs calculator fix — units in their own columns, kg+dona rows, excise, the fee, the screen | `docs/RASTAMOJKA-TUZATISH.md` — agreed 2026-10-09 (his two messages, four ⭐ questions), SHIPPED; §7 overrides §1-§3 |
 | A factory trip closes and remembers its lines — the door question, «shu zavoddan, shu mashinada», the checker | `docs/ZAVOD-YOPISH.md` — agreed 2026-10-15 (his 1a-5a, 6, 7 ha), SHIPPED; §10-§11 override §2-§5 |
 | The staff Telegram group — celebrations, the Saturday 18:00 rating, the month's champion, /reyting | `docs/JAMOA-GURUHI.md` — agreed 2026-10-20 (his «3. 2 3 gif … tabriklash ham / qolgani sen aytkandek»), SHIPPED |
-| Every truck in one place — the board by place, the % by distance, GPS, the gate | `docs/PARTIYA-DOSKASI.md` — agreed 2026-10-17 (his 1A 2a 3a 4a 5a 6c 7a 8b 9b 10b 11A 12A, then «1 hozirgidek qolsin»), SHIPPED; §2 is the placement as built |
+| Every truck in one place — the board by place, the % by distance, GPS, the gate | `docs/PARTIYA-DOSKASI.md` — agreed 2026-10-17 (his 1A 2a 3a 4a 5a 6c 7a 8b 9b 10b 11A 12A, then «1 hozirgidek qolsin»), SHIPPED; §2 is the placement as built; §3a = «Yo'lda» in two columns, inside / outside China (2026-10-21) |
+| LTL / FTL — which cargo the KPI and the rating count, who may mark it, the paid-month freeze, the logist's hint | `docs/LTL-FTL.md` — agreed 2026-10-20 (his «3 b / qolgani sen aytgandek» = 1a 2a 3b 4a 5a 6a 7a), SHIPPED |
 | His eight items of 2026-10-20 (AI reading, customs, models, odnarodka, VED rota, new deal, kontragent links, one-line tarkib) — verified diagnosis, round plan, the numbered questions | `docs/SAKKIZ-BAND.md` — his answers in §11 (2026-10-21, unnamed = ⭐); **round 1 SHIPPED** (DECISIONS #1455-#1462); 4.5 and 6.8 asked back; rounds 2-10 open |
+
 ## State — 2026-08-23
 
 **VED phases A-E1 are on this branch** (`docs/VED.md`; migrations
@@ -2909,6 +2911,58 @@ the customer's rung does not follow GPS; a typed wait ahead of a silent fix; TAS
 to the drawn dot; the yard is the code's, not coordinates typed on /admin/warehouses.
 DEPLOY: Horgos → type «Konsolidatsiya habi», country CN.
 
+**Round — LTL / FTL (2026-10-20 evening; DECISIONS #1430-#1448 — renumbered from #1416-#1434 on the merge,
+the TWENTY-THIRD collision: «Partiya doskasi» took #1416-#1429 first; migration 0135
+`load_mode` — ledger must reach 136; spec `docs/LTL-FTL.md`).** His «KPI sovrinlar shu LTL
+boyicha hsoblanadi agarda FTL bolsa bunga kpi yozilmaydi … gamificationda FTL va LTL birga
+qoshilib ketyapti», answered «3 b / qolgani sen aytgandek». Five scouts, a four-lens judge
+before code (40 objections; v2 absorbed them), built solo. SIDE tables `lead_ftl` /
+`deal_ftl` / `receipt_load_mode` (no row = LTL) — never a column on the three hottest tables
+(~75 whole-row reads, #1381). ONE writer `wms/ftl/service.ts` (fenced); ONE inheritance
+statement `inheritSql` for the confirm, a re-file and the deal's cascade: the deal is the
+prixod's client's, the mark is the office's or the prixod's own STAMPED seller's, no hand pin,
+month not paid. Re-file/detach never downgrade; a deal's revert takes back what THAT deal gave
+(`from_deal_id`). Door `wms/ftl/door.ts`: office = unscoped `plans.manage` ∨ `finance.reports`;
+a seller marks only his own (owner before AND after; owner changes on an FTL record are the
+office's, bulk assign included); on the prixod card a seller only ever WRITES FTL on his own
+stamp. Freeze (6a) `staff/kpi-lock.ts` `kpiPaidMonthSql`, floored at the first KPI month,
+under payKpi's own `kpi:<seller>` key (`kpiSellerLockSql`, payKpi uses it too), sorted. KPI =
+LTL via `KPI_LOAD` (ftl/sql.ts) in kpi-service, kpi-paid's `stamped` scope (ONLY there — u_box
+feeds upsale and the gates), the rating's points, my-month, /upsale's KPI block and the seller
+report's kub; FTL shown beside each, money untouched. `FtlMarked` (a seller's own mark — light
+lots lift the density band) and `FtlSuspected` (the departure hint, `ftl/hint.ts` +
+pure `sole-owner.ts`/`hint-text.ts`; no internal-leg skip, «davomi» skipped, one person by
+phone, markings resolved, never the same prixod twice) are alerts newcomers. Forms: shared
+`components/load-mode-field.tsx`; prixod card `receipts/[id]/load-mode-block.tsx`.
+**Reviewed as built** (#1440-#1448, four lenses, 22 findings): the inheritance asks who PRESSED
+(`presser` in `inheritSql`; `linkReceipt(…, ftlDoor: FtlDoor | null)` REQUIRED, `confirmReceipt`'s
+`opts.ftlDoor` — absent = no inheritance; office or the prixod's own stamp); the confirm takes the deal FOR
+SHARE first; a client correction drops the old job's FTL and a seller's pin under both stamps' locks
+(`dropFtlOnClientChangeTx`, `receipt_load_mode.by_office` — the office's pin stays); late stamping inherits
+(`inheritStampedTx`); only `xmax = 0` rows count and every inheritance door audits; skips `no_seller` /
+`stamp_moved`; office FTL on an FTL deal = take the mark as its own + re-inherit; `ftlOfficeUsers` =
+the door's own set; celebrations / /upsale / seller report survive one migration behind; the field is
+uncontrolled + keyed, a locked chip posts nothing, a new deal from an FTL lead is a choice (`creating`).
+
+**Round — «Yo'lda» ikki ustun (2026-10-21; DECISIONS #1449-#1451; NO migration, ledger 136; spec
+`docs/PARTIYA-DOSKASI.md` §3a).** His «xitoy ichidagi va tashqisi alohida column … hargoz va qashqarga
+ketayotganlar va ulardan boshqa joyga ketayotganlar». The board has FIVE columns: the road split by the
+DESTINATION's country (`roadColumnOf`, board-view.ts — CN = `inland`, anything else = `outbound`; by data, so any
+Chinese warehouse incl. a factory trip to Yiwu goes inland — ⭐ asked). Inland sections are destinations
+(`to:<warehouseId>`, `destHub` first, then name); outbound keeps the place sections; the strip counts by
+`CardPlacement.place` in either column; a tap opens the first column with shown cards (`columnOfStop`
+otherwise). Phone: FOUR tabs (`BOARD_TABS`, `tabOf`, `tabCounts` — «Yo'lda» shows and counts both columns; no
+`_` in a column key, Tailwind reads it as a space). Headings name the DESTINATION («Yo'lda: Xitoy
+skladlariga» / «… Xitoydan tashqariga», his own words were about where trucks go) — the first draft's «Xitoy
+ichida» was the strip's PLACE word, and its fix «Xitoy ichidagi reyslar» still claimed a rare Tashkent → Kashgar
+truck was inside China (#1452); `batch-board.test.ts` refuses any strip place word in either heading. Badge «ichki reys» off in the inland column only; legend over outbound only; the driver's phone wraps at
+170 px. Pinned: `batch-board` unit + integration, e2e `m9zzze-partiya-doskasi` (+ `.desktop`, fixture
+`mintRoadTruck`, prefixes DSI/DSU dropped in cleanup). 9 red proofs. STATED: `?yonalish=` drops inland trucks.
+His answer «1 A / 2 a / 3 a» (#1454): all three the shipped default, checked against the code, then pinned — any
+CN destination is inland (no hub test), ONE arrived column (`columnOf` splits only the road), and a corridor
+filter hides everything bound for China (`routeFilterOf` = a `kg`/`kz` leg; a map walk over every pair proves no
+road into China has one, and refuses an unclassed new map code).
+
 **Round — Sakkiz band, round 1 (2026-10-21; DECISIONS #1455-#1462; NO
 migration; spec `docs/SAKKIZ-BAND.md`, his answers §11).** The VED rota: free
 first, then fewest handed TODAY, then longest wait, then id, picked INSIDE both
@@ -2934,8 +2988,10 @@ Excel photos: `documents/sheet-photo.ts` — 800 px documents, 400 px stock, JPE
 LibreOffice is installed here — make a file with exceljs, save it as «MS Excel
 97», read it back. «шт» in packing lists (8.5) waits for round 8.
 
-**Latest migration: 0134** (`staff_group`, `when` …113; ledger must reach **135**). Before
-it: 0133 (`pickup_close`, `when` …112). Beforeit: 0132 (`cost_freight_basis`, `when` …111). Before
+**Latest migration: 0135** (`load_mode`, `when` …114; ledger must reach **136**). Before
+it: 0134 (`staff_group`, `when` …113). Before
+it: 0133 (`pickup_close`, `when` …112). Before
+it: 0132 (`cost_freight_basis`, `when` …111). Before
 it: 0131 (`calc_excise`, `when` …110). Before
 it: 0130 (`bot_redelivery`, `when` …109). Before
 it: 0129 (`cargo_threads`, `when` …108). Before
@@ -3072,7 +3128,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **135** since 0134 (134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **136** since 0135 (135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read

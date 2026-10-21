@@ -32,6 +32,8 @@ export interface KanbanLead {
   nextActionAt: string | null;
   /** The viewer holds a Telegram chat with this client; 'waiting' = client spoke last. */
   chat: 'waiting' | 'yes' | null;
+  /** A whole truck (0135) — a neutral token on the card, always drawn; LTL draws nothing. */
+  ftl?: boolean;
 }
 
 /**
@@ -167,6 +169,14 @@ export function KanbanBoard({
             )}
             <MetaLine
               parts={[
+                // Not a card-field switch: whether this job counts for the KPI
+                // is not a matter of taste (0135). Neutral — colour on a card
+                // means urgency only (board-card.test).
+                lead.ftl ? (
+                  <span key="ftl" className="font-semibold" data-testid="card-ftl">
+                    🚛 FTL
+                  </span>
+                ) : null,
                 fields.has('code') && lead.clientCode ? (
                   <span key="code" className="font-mono font-semibold">
                     {lead.clientCode}

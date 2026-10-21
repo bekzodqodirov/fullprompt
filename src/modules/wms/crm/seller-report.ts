@@ -4,6 +4,8 @@ import { withoutJit } from '@/modules/platform/db/no-jit';
 import { clients, users } from '@/modules/platform/db/schema';
 import { marginPct } from '../accounting/margin';
 import { stampedCargo, unstampedCargo } from '../staff/cargo';
+import { KPI_LOAD } from '../ftl/sql';
+import { ftlReady } from '../ftl/service';
 import { costByStamp } from '../staff/stamp-cost';
 import { revenueByStamp } from '../staff/stamp-revenue';
 
@@ -54,9 +56,18 @@ import { revenueByStamp } from '../staff/stamp-revenue';
  */
 export interface SellerCargo {
   clients: number;
+  /**
+   * The cargo columns are LTL — the KPI's own figure (0135: «FTL … olib kelgan
+   * yuki KPI ga kirmaydi»), so this report and /hodimlar never print two kub
+   * for one seller's month. The money columns still cover FTL: a whole truck
+   * is the company's money all the same.
+   */
   receipts: number;
   weightKg: number;
   volumeM3: number;
+  /** The FTL cargo, out of the kub above and named beside it. */
+  ftlReceipts: number;
+  ftlM3: number;
   revenueUsd: number;
 }
 
@@ -116,6 +127,11 @@ export async function sellerPerformanceAll(period: {
   unlinked: MoneyNote;
   split: MoneyNote;
 }> {
+  // One migration behind (0135) nothing is FTL yet: the kub columns read ALL
+  // cargo and the FTL beside them is empty — the revenue and cost columns need
+  // nothing new, so the page must not turn into «server behind» over them.
+  const ftlOn = await ftlReady();
+  const kpiLoad = ftlOn ? KPI_LOAD : 'all';
   const [money, cargoRows, unstamped, clientRows] = await Promise.all([
     // ONE pool connection, sequential statements, JIT off (no-jit.ts) — the rider walk is company-wide.
     withoutJit(async (exec) => {
@@ -123,11 +139,15 @@ export async function sellerPerformanceAll(period: {
       const cost = await costByStamp(exec, period);
       return { revenue, cost };
     }),
-    // from/to: the half-open received_at pair, stamp by stamp (0117).
-    stampedCargo(db, period, { kind: 'all' }),
-    unstampedCargo(db, period),
+    // from/to: the half-open received_at pair, stamp by stamp (0117); LTL in
+    // the cargo columns, FTL beside them (0135).
+    stampedCargo(db, period, { kind: 'all' }, kpiLoad),
+    unstampedCargo(db, period, kpiLoad),
     clientsByManager(),
   ]);
+  const [ftlRows, ftlUnstamped] = ftlOn
+    ? await Promise.all([stampedCargo(db, period, { kind: 'all' }, 'ftl'), unstampedCargo(db, period, 'ftl')])
+    : [[], []];
 
   // CENTS per seller key — integers until the last division, so the totals
   // row is the exact sum of the client rows and never a sum of roundings.
@@ -148,6 +168,8 @@ export async function sellerPerformanceAll(period: {
         receipts: 0,
         weightKg: 0,
         volumeM3: 0,
+        ftlReceipts: 0,
+        ftlM3: 0,
         revenueUsd: 0,
         costUsd: 0,
         profitUsd: 0,
@@ -168,6 +190,12 @@ export async function sellerPerformanceAll(period: {
   // Cargo nobody was named on the day it came is the «—» cohort's — the same
   // row as the book's managerless clients, so the totals still cover it all.
   for (const c of unstamped) addCargo(rowFor(null), c);
+  const addFtl = (row: SellerAllRow, c: { receipts: number; m3: number }) => {
+    row.ftlReceipts += c.receipts;
+    row.ftlM3 = Math.round((row.ftlM3 + c.m3) * 1000) / 1000;
+  };
+  for (const c of ftlRows) addFtl(rowFor(c.sellerId), c);
+  for (const c of ftlUnstamped) addFtl(rowFor(null), c);
   let unassignedClients = 0;
   for (const c of clientRows) {
     rowFor(c.managerId).clients = Number(c.n);
@@ -219,6 +247,8 @@ export async function sellerPerformanceAll(period: {
       receipts: t.receipts + r.receipts,
       weightKg: Math.round((t.weightKg + r.weightKg) * 1000) / 1000,
       volumeM3: Math.round((t.volumeM3 + r.volumeM3) * 1000) / 1000,
+      ftlReceipts: t.ftlReceipts + r.ftlReceipts,
+      ftlM3: Math.round((t.ftlM3 + r.ftlM3) * 1000) / 1000,
     }),
     {
       managerId: null,
@@ -228,6 +258,8 @@ export async function sellerPerformanceAll(period: {
       receipts: 0,
       weightKg: 0,
       volumeM3: 0,
+      ftlReceipts: 0,
+      ftlM3: 0,
       revenueUsd: totalRevenue / 100,
       costUsd: totalCost / 100,
       profitUsd: (totalRevenue - totalCost) / 100,
@@ -275,17 +307,22 @@ export async function sellerPerformanceOwn(
   actorId: string,
   period: { from: Date; to: Date; dan: string; gacha: string },
 ): Promise<SellerOwnRow> {
-  const [cargoRows, clientRows, revenue] = await Promise.all([
-    stampedCargo(db, period, { kind: 'own', userId: actorId }),
+  const ftlOn = await ftlReady();
+  const [cargoRows, ftlRows, clientRows, revenue] = await Promise.all([
+    stampedCargo(db, period, { kind: 'own', userId: actorId }, ftlOn ? KPI_LOAD : 'all'),
+    ftlOn ? stampedCargo(db, period, { kind: 'own', userId: actorId }, 'ftl') : Promise.resolve([]),
     clientsByManager(actorId),
     withoutJit((exec) => revenueByStamp(exec, period, { kind: 'own', userId: actorId })),
   ]);
   const cargo = cargoRows[0];
+  const ftl = ftlRows[0];
   return {
     clients: Number(clientRows[0]?.n ?? 0),
     receipts: cargo?.receipts ?? 0,
     weightKg: Math.round((cargo?.kg ?? 0) * 1000) / 1000,
     volumeM3: Math.round((cargo?.m3 ?? 0) * 1000) / 1000,
+    ftlReceipts: ftl?.receipts ?? 0,
+    ftlM3: Math.round((ftl?.m3 ?? 0) * 1000) / 1000,
     revenueUsd: revenue.rows.reduce((sum, row) => sum + row.cents, 0) / 100,
   };
 }

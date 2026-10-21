@@ -29,6 +29,7 @@ import {
 import { dealBoardShape, dealBoardWhose } from '@/modules/wms/deals/door';
 import { activeLostReasonLabels } from '@/modules/wms/crm/service';
 import { DealBoard, type BoardDeal } from './board';
+import { ftlDealIds } from '@/modules/wms/ftl/read';
 
 /**
  * The deal board — "which of my jobs is stuck".
@@ -165,6 +166,8 @@ export default async function DealsPage({
   );
 
   const flags = new Map(attention.map((row) => [row.id, row]));
+  // LTL / FTL (0135): one read for the drawn cards (#432).
+  const ftl = await ftlDealIds(rows.map((row) => row.id));
   const deals: BoardDeal[] = rows.map((row) => {
     const flag = flags.get(row.id);
     return {
@@ -187,6 +190,7 @@ export default async function DealsPage({
       flagPct: flag?.pct ?? null,
       chat: badges.clients.get(row.clientId) ?? null,
       tnvedMissing: row.tnvedMissing,
+      ftl: ftl.has(row.id),
     };
   });
 

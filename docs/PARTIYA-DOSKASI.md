@@ -175,7 +175,7 @@ evidenceAt, fresh, point | null, route }`.
 
 Header (title, «Yo‘lda» → /transit as today, «Xarita» → /map for its
 readers, the quick-batch form unchanged — five specs fill its selects), the
-**road strip**, the filters, the four columns, the archive (unchanged, its
+**road strip**, the filters, the five columns (four until 2026-10-21, §3a), the archive (unchanged, its
 box count now the riders' like the board's).
 
 **Strip** (2a): one stop per place with its count, a link `?joy=<stop>`;
@@ -200,7 +200,8 @@ road has a `kg` leg) | `horgos` (a `kz` leg) | `ichki` (no border crossed);
 |---|---|---|---|
 | Shakllanmoqda | `forming` | `planned` | by the origin's place (a trip: its destination's) |
 | Pogruzka | `loading` | — | by the origin's place: Ichki Xitoy · Chegara · O‘zbekiston |
-| Yo‘lda | `in_transit` | `on_road` | by the place (§2); a trip on the road is `cn` (`uz` to an Uzbek warehouse) — a factory truck is on a road, not in a queue |
+| Yo‘lda: Xitoy skladlariga (`inland`, §3a) | `in_transit` to a Chinese warehouse | `on_road` to a Chinese warehouse | by DESTINATION («→ Kashgar»), the border hubs first, then by name |
+| Yo‘lda: Xitoydan tashqariga (`outbound`, §3a) | every other `in_transit` | `on_road` to an Uzbek warehouse | by the place (§2); a trip on the road is `uz` (`cn` would be an inland trip) — a factory truck is on a road, not in a queue |
 | Yetib keldi | `arrived` | `arrived` (open) | by the destination's place |
 
 **The card** — a plain `div` holding a `Link` (text only) and, beside it, the
@@ -248,10 +249,65 @@ road has a `kg` leg) | `horgos` (a `kz` leg) | `ichki` (no border crossed);
   trip: its road is re-planned by every out-of-order press (B3), and a % would
   run backwards.
 
-**Phone and narrow screens** (below `xl`, where four columns are ~120-215 px):
-the four columns become tabs — a native radio group, ONE DOM (every panel
+**Phone and narrow screens** (below `xl`, where the columns would be ~120-170 px):
+the columns become FOUR tabs, the «Yo‘lda» tab holding both road columns under
+their own headings (§3a) — a native radio group, ONE DOM (every panel
 rendered, the tab shows one), the default the first column with a card, and a
-strip tap opens the stop's column. Desktop (`xl`) shows the four columns.
+strip tap opens the stop's column. Desktop (`xl`) shows the five columns
+(~170 px each at 1280 px beside the open sidebar).
+
+### 3a. The road in two columns (2026-10-21)
+
+His message: «yolda deganini xitoy ichidagi va tashqisi alohida column
+qilishimiz kerak yani hargoz va qashqarga ketayotganlar va ulardan boshqa
+joyga ketayotganlarini aloxida column bolsin».
+
+- **The rule is the DESTINATION's country** (`roadColumnOf`, board-view.ts): a
+  truck or a factory trip on the road to a Chinese warehouse is `inland` —
+  Kashgar, Horgos and any other Chinese warehouse, so a new one needs no code;
+  every other trip is `outbound` — to Uzbekistan, an Uzbek internal leg
+  (Andijan → Tashkent), or a warehouse whose country is unknown (nothing is
+  claimed about it). By country and never by code or name (§1's rule).
+- **Inland sections are destinations**: nearly every card in that column is
+  inside China, so a place section would be one heading over everything.
+  Headings read «→ Kashgar · 3», the border hubs first (`destHub` = the
+  destination's place is `border`), then by name. The column is where the trip
+  is GOING: a rare truck sent into China from outside it (Tashkent → Kashgar)
+  is here too, with its own place on the strip — so the column's heading names
+  the destination, never «inside China».
+- **The strip stays the road as a line**: a card's stop is its PLACE
+  (`CardPlacement.place`), in either column, so «Xitoy ichida» counts the
+  inland trucks AND an outbound truck still in China (Yiwu → Tashkent). A tap
+  opens the first column holding what is shown; with nothing left there,
+  «Xitoy ichida» opens inland and the other road stops outbound.
+- The «ichki reys» badge is not drawn in the inland column, where every trip
+  is one. The colour legend stands over the outbound column only: an inland
+  bar is the one colour its heading names.
+- The phone keeps four tabs: five on a 360 px phone cut «Shakllanmoqda»
+  mid-word. The «Yo'lda» tab holds both columns and counts both
+  (`tabCounts`, one sum for the tab and its heading).
+- **The two headings name the DESTINATION, never a place**: «Yo'lda: Xitoy
+  skladlariga» and «Yo'lda: Xitoydan tashqariga» (his own words were about
+  where the trucks go). The first draft headed
+  the inland one «Yo'lda: Xitoy ichida» (ru «В пути: по Китаю») — the strip's
+  word for a PLACE, and a Yiwu → Tashkent truck still in China sat under an
+  outbound SECTION called «Xitoy ichida» beside an inland column called the
+  same. Both headings stay visible on the phone tab (the other tabs hide
+  theirs, the tab names them).
+- A column is ~170 px at 1280 px beside the open sidebar, so the driver's
+  phone number WRAPS on the card instead of being cut to «+998 90 12…».
+- **His answers «1 A / 2 a / 3 a»** (2026-10-21, DECISIONS #1454), all three
+  the shipped default and each checked against the code first:
+  1. ANY Chinese destination is inland, a non-hub one too (a factory trip to
+     Yiwu). Nothing in `roadColumnOf` asks for a hub.
+  2. «Yetib keldi» stays ONE column. Only `in_transit` / `on_road` is split by
+     the destination; an arrived truck or trip is `arrived` wherever it stands.
+  3. «Yo'nalish» = Irkeshtam / Horgos keeps naming the road OUT of China, so it
+     shows no truck bound for China. `routeFilterOf` names a corridor by its
+     `kg` / `kz` leg, and no road the map draws into a Chinese warehouse has
+     one (measured over every pair). «Ichki» keeps a China → China truck; a
+     factory trip is in no corridor and no «ichki reys», so every corridor
+     value hides it.
 
 ## 4. Who sees what
 

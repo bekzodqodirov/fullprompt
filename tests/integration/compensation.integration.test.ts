@@ -535,13 +535,13 @@ describe('C8 — the prixod carries it: the deal follows, a client change and a 
     const w = await world('08', { deal: false });
     const { compensationId } = await compensate(w, 1500, day('08', '12'));
     const target = await mintDeal(w.clientId);
-    await linkReceipt(w.receiptId, target, ctx());
+    await linkReceipt(w.receiptId, target, ctx(), null);
     const read = async () =>
       (await db.select({ dealId: clientTransactions.dealId }).from(clientTransactions).where(eq(clientTransactions.id, compensationId!)))[0]!
         .dealId;
     expect(await read()).toBe(target);
     expect((await dealProfit(target)).compensationUsd).toBe(1500);
-    await linkReceipt(w.receiptId, null, ctx());
+    await linkReceipt(w.receiptId, null, ctx(), null);
     expect(await read()).toBeNull();
     expect((await dealProfit(target)).compensationUsd).toBe(0);
   });

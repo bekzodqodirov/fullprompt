@@ -50,6 +50,8 @@ export const AUDIT_FIELD_LABELS: Record<string, string> = {
   quotedCurrency: 'currency',
   quotedVolumeM3: 'volumeM3',
   quotedWeightKg: 'weightKg',
+  // LTL / FTL (0135): the lead's, the deal's and the prixod's mode.
+  freightMode: 'freightMode',
   discount: 'discount',
   discountReason: 'discountReason',
   rateToUsd: 'rateToUsd',

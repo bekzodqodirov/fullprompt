@@ -4288,6 +4288,250 @@ of the first one then disagrees with it. 22 red proofs by string edit, all
 red (one first stayed green: the card's line was pinned by its declaration,
 not its push).
 
+## The dashboard spec that read two boxes at two moments (2026-10-20; NO migration, ledger 135; tests only)
+
+1429. **Cards compared on one row are read in ONE frame.** The board round's
+full CI-order run on the merged tree (458 passed) went red once on
+`m9c-dashboard.desktop`: «the two money charts share a row» read the P&L and
+cash cards **73.75 px apart**. They stand in one grid row inside ONE section,
+so the layout was never wrong. Run alone the spec was green 6 of 6, then 24 of
+24 with every core busy. The probe sampled both cards every 10 ms for 3 s after
+they showed, and neither moved. **The cause was the reading.** Every dashboard
+card streams under its own Suspense, and a card ABOVE the money section can
+swap its skeleton for content of another height at any moment. Two
+`boundingBox()` calls are two round trips, so one landed before such a swap and
+one after. On a busy full-suite server the boundaries resolve in a different
+order, which is why only the full run saw it. `sameFrame()` reads every box a
+row compares in one `page.evaluate`, after each card is visible. Both tests in
+the file use it, the second for the hero, the four tiles and the two card rows.
+RED PROOF: a 74 px block inserted between the two reads fails the old shape
+3 of 3 («Received: 90»). Inserted before a single-frame read, it moves both
+cards and the assertion holds, 3 of 3. Swept: of the fourteen other specs that
+read several boxes, none compares two of them on a streaming page.
+`/hodimlar` and the two `/accounting/sarflar` pages are the only other
+Suspense pages, and no spec measures there. RULE: a position RELATIVE to
+another element is one measurement. Two reads are two facts about two
+different pages.
+
+## LTL / FTL — sborniy va butun mashina (2026-10-20; migration 0135 `load_mode`, ledger 136; spec `docs/LTL-FTL.md`; renumbered from #1416-#1434 on the merge, the TWENTY-THIRD collision: «Partiya doskasi» and its dashboard-spec follow-up took #1416-#1429 and merged first)
+
+His message: «bizni sohada LTL FTL degan narsalar bor … KPI sovrinlar shu LTL boyicha hsoblanadi agarda FTL
+bolsa bunga kpi yozilmaydi … gamificationda FTL va LTL birga qoshilib ketyabta», answered «3 b / qolgani sen
+aytgandek» = 1a 2a 3b 4a 5a 6a 7a. Five scouts read the code, the design was judged by four lenses before code
+(money/6a, abuse/2a, regression, owner intent — 40 objections, every one absorbed or stated), then built solo.
+
+1430. **Side tables and not columns.** `lead_ftl` / `deal_ftl` (a row = FTL, with who marked it and whether
+that was the office) and `receipt_load_mode` (no row = LTL following its deal; an inherited FTL naming the deal
+it came FROM; or a person's hand decision, either mode). A column on leads / deals / receipts would be named by
+~75 whole-row drizzle reads and every `INSERT … RETURNING`, so one migration behind the receive confirm, both
+boards and every card would answer 42703 — #1381's reason, #735's rule. The judge's regression lens found it;
+v1 had columns. No row = LTL, so nothing is backfilled and every machine creator writes LTL by construction. A
+readiness probe (`ftlReady`) is asked before any transaction by the doors receiving and the CRM depend on.
+
+1431. **The prixod's mode is STORED, with exactly three writers that inherit and one that decides.** One
+statement (`inheritSql`) for the confirm's INSERT, a re-file, and the deal's own change. Derived
+(`coalesce(receipt, deal)`) was refused: the link door is open to every `canWriteDeal` holder with no ownership
+check, so a detach or a re-file would turn FTL back to LTL, and a deal flip would silently reprice a paid month.
+A re-file to an LTL deal or a detach NEVER downgrades; FTL → LTL is only the office's explicit decision, and a
+deal's revert takes back exactly what THAT deal gave (`from_deal_id`), wherever the prixod went since.
+
+1432. **What a mark may reach is decided by the STAMP, not the deal owner** (the abuse lens's two blockers). The
+KPI is `receipts.sales_manager_id`'s; `deals.owner_id` is a select any seller can rewrite. So an inherited FTL
+needs the deal to be the prixod's client's (a client correction keeps `deal_id` — `r.client_id = d.client_id`)
+and the mark to be the office's or the prixod's own seller's. A seller marks a lead/deal only when he owns it
+before AND after the save; an owner change on a record that is FTL before or after is the office's (one ordinary
+save could otherwise hand an FTL job — and its KPI loss — to a colleague), including the bulk assign. On the
+prixod card a seller may only ever WRITE FTL, only on his own stamp: an LTL write would hand-pin his cargo
+against the office's later FTL. Absent = unchanged on update (never `?? 'ltl'`), and a save that must ask the
+door but carries none fails closed (#790).
+
+1433. **The office = unscoped `plans.manage` ∨ `finance.reports`.** Admin, super_admin, logist, accountant —
+tested over every SEEDED role. Not `finance.manage` (the VED holds it, #790's trap), not a warehouse-scoped
+role a future tick gives «Rejalar» (border-queue's rule). The accountant cannot open a deal card, so the prixod
+card offers him «Bitimni ham LTL qilish» through a narrow office-only deal door with the same cascade.
+
+1434. **A PAID month is frozen (6a), by refusal.** The KPI is netted (earned − paid, overpaid «never clawed
+back but later netted»), so a recount of a paid month IS a claw-back from the next. `kpiPaidMonthSql`: a stamped
+prixod whose Tashkent month is on or after the first KPI table AND on or before a LIVE payout's
+`through_month` to its seller. The money lens's blocker: v1 had no floor and froze a paid seller's whole history,
+blocking the backfill he asked for. Voiding the payout lifts it. Every writer takes payKpi's own
+`kpi:<seller>` advisory key (one spelling, `kpiSellerLockSql`, now used by payKpi too), sorted, after the deal
+row and before any receipt row; a stamp that moves under the card door is `stamp_moved`. Cost stated to him: an
+FTL prixod in an already-paid month stays as it was paid.
+
+1435. **KPI = LTL, one constant (`KPI_LOAD`), every KPI reader.** `stampedCartonsSql` and every `cargo.ts` reader
+take a REQUIRED `LoadFilter`; the paid part's `stamped` scope too — and ONLY that scope: `u_box` / `paidCargo`
+feed the upsale (5a), the handover gate, narxsiz and the Balans, so the filter there would have changed money.
+The rating's points, the profile «Bu oy», /hodimlar, /upsale's «Olib kelgan yuk (KPI)» and the seller report's
+kub columns read LTL and show FTL beside them (the intent lens: v1 kept FTL in the report and would have printed
+two kub for one seller's month). Money columns are untouched. The «Sotuvchisiz yuk» repair lists stay 'all' —
+they are about the missing stamp.
+
+1436. **The office hears a seller's own FTL mark (`FtlMarked`, alerts, a newcomer).** The money lens's find:
+the KPI rate RISES with density, so dropping a light lot from a month can lift its band — «it only costs him»
+is not the whole story. Named record, size, no money.
+
+1437. **The rating's FTL line (3b) sits AFTER «Jamoa» and the goal**, plain names, kub-first like the ranked
+rows, counted in PRIXOD (a week counts cargo by its China receipt day, mostly before a truck exists — told to him
+instead of «mashina»). «Nobody brought cargo» says «sborniy (LTL)» when an FTL line is under it; an FTL-only
+seller is not idle; the goal and the intro say FTL does not count. Stored weeks carry `ftl` beside `rows`.
+
+1438. **An FTL win (4a) is labelled «🚛 FTL — butun mashina» and carries NO month line**; the tally counts LTL
+wins only (`NOT EXISTS lead_ftl` at the top level, outside the «this one» OR). A tally under an FTL win would
+read «birinchi g'alaba» under somebody's third. The first cargo is labelled by the prixod's mode at send time.
+
+1439. **The logist's hint (7a) after `departBatch` commits** (one press, once, final), to `logistsForTruck`.
+`soleOwnerOf` (pure): one client, or several codes of one PERSON by phone (a seller splitting a whole truck over
+two codes must not escape the one check his incentive has); unclaimed lots only by their marking; an
+all-unclaimed truck resolves its markings. The intent lens's blocker: v1 skipped internal legs, and Yiwu →
+Kashgar is CN → CN — the very truck a whole-truck job leaves China on — so only «davomi» trucks are skipped. It
+names only prixods that can still change (not frozen, not hand-pinned) and never one an earlier hint named (the
+Kashgar leg stays quiet), and names the client's open FTL deal with «bitimsiz prixodlarni shunga biriktiring».
+
+## LTL / FTL — the round reviewed as built (2026-10-20; NO migration of its own — 0135 grew `by_office` and the hint's index before it ever deployed, ledger 136)
+
+Four lenses (money, abuse, regression, screens) over the built round: 22 findings, every one fixed or answered.
+The pattern, again, was the door nobody named: the inheritance asked who MARKED the deal and never who PRESSED.
+
+1440. **The inheritance asks who pressed.** `inheritSql` takes a `presser`: the confirm and a re-file carry an
+FTL deal's mark only for the office or the seller the prixod is STAMPED to. Before, any `canWriteDeal` holder (a
+colleague seller, the VED) could file someone's LTL prixod onto an office-marked FTL deal and take it out of
+that seller's KPI with nothing in the history and no way for him to undo it — and the receive wizard posted
+`dealId` with only `receipts.create` asked. `linkReceipt(…, ftlDoor: FtlDoor | null)` is REQUIRED (null =
+nobody vouches = no inheritance; an optional door fails open), `confirmReceipt`'s `opts.ftlDoor` likewise, both
+actions pass `ftlDoorFor(actor)`. A seller's own re-file that carried the mark sends `FtlMarked` like his own
+mark. The deal's cascade and the stamping pass no presser — their door was the mark's.
+
+1441. **The confirm takes the deal row FOR SHARE first** — linkReceipt's order. Without it the office turning a
+deal FTL and the warehouse confirming a prixod onto it each read before the other committed: the deal FTL, the
+prixod LTL, and re-pressing FTL was a no-op. Fenced by source shape (a race has no deterministic test here).
+
+1442. **A client correction takes back what the old job decided** (`dropFtlOnClientChangeTx`, under both
+stamps' KPI locks before the receipt row): the inherited row (its deal is no longer the prixod's client's) and a
+SELLER's own hand pin (left standing it would cut the NEW client's seller's KPI on nobody's decision). The
+OFFICE's hand pin stays — it was about the cargo, not about whose it is — hence `receipt_load_mode.by_office`,
+added to 0135 before it deployed. No freeze here: the correction itself already moves the prixod between
+sellers' months (0117's rule, absorbed by the payout's netting), and the mode that leaves with the old job
+follows that rule. Audited `freightModeReason: 'clientChanged'`.
+
+1443. **Cargo stamped later takes its seller's mark** (`stampUnattributedCargo` → `inheritStampedTx`, one
+transaction — a savepoint under a caller's — with the seller's KPI lock before the receipt rows). A seller's
+FTL deal on a client with NO seller reached nothing (NULL is not his stamp), and the day the office named him on
+the client card the whole-truck job entered his KPI and rating as LTL.
+
+1444. **Only rows that BECAME FTL are counted and audited** (`RETURNING (xmax = 0) AS inserted`): a prixod
+already FTL from an earlier deal is re-pointed, not changed, and «ltl → ftl» about it was a false history line
+and an inflated «N ta prixod o'zgardi». Every inheritance door now writes that one history line (the confirm and
+a re-file wrote none). Every cascade skip has a reason — `no_seller` and `stamp_moved` joined the list, so
+nothing reaches the screen as a NULL dropped after LIMIT spent a slot on it.
+
+1445. **The office pressing FTL on an FTL deal takes the mark as its own** (`setDealLoad`): `by_office` becomes
+true and the inheritance runs again over the deal, no revert step. That is how a seller's mark that stopped at
+his own stamp, an unstamped prixod, or a prixod filed by somebody the press gate refused, is passed on. Offered
+on the prixod card as «Bitim … FTL'ini ofis nomidan tasdiqlash» exactly when the card says why it did not reach
+(`receiptLoadView.notReached` — other_client / kpi_paid / no_seller / other_seller / linked). The ✏️ form does
+NOT widen on an ordinary save: it cannot tell «chose FTL» from «left FTL showing».
+
+1446. **`FtlMarked` goes to exactly the door's office** (`ftlOfficeUsers`): holders of `FTL_OFFICE_PERMISSIONS`
+with no warehouse-scoped role, permission codes never role names (#170) — it had asked `finance.reports` ∪ the
+`logist` ROLE, so a role given «Rejalar» never heard and an unticked logist still did. Pinned by recomputing
+the set through `mayRevertFtl` itself.
+
+1447. **One migration behind, nothing that worked on 134 breaks** (#472). The celebrations named the side tables
+unguarded: the won post and the first-cargo post were LOST for good (the event is claimed before it is handled
+and nothing retries it) — each now asks `ftlReady()` first and reads `false`. /upsale's payer lists and pending
+approvals, and the seller report's money columns, sat behind the cargo reads in one `try` — both read ALL cargo
+and an empty FTL list when the round is not there. The hint's dedupe got a partial index (`type =
+'FtlSuspected'`) in 0135: it ran a sequential scan of every notification inside the depart press.
+
+1448. **The form field is uncontrolled and keyed on the stored mode.** React resets a form after its action, and a
+controlled select snapped back to the mode the page FIRST rendered — the next unrelated save posted the stale
+mode and silently reverted (or re-marked) the deal and its prixods. The locked chip posts NOTHING (a hidden
+`ftl` undid an office revert made while the card stood open — the services already read absence as
+«unchanged»). A new deal from a won FTL lead is a preselected CHOICE (`creating`), never a lock. A lead gets its
+own sentences (`ftl.leadErrors`), the zero «0 ta prixod o'zgardi» line is gone, and the prixod card names the
+deal cascade's skipped prixods like the ✏️ form does.
+
+## «Yo'lda» in two columns — inside China / outside China (2026-10-21; NO migration of its own, ledger 136 with the LTL round's 0135; spec `docs/PARTIYA-DOSKASI.md` §3a)
+
+His message: «yolda deganini xitoy ichidagi va tashqisi alohida column qilishimiz kerak yani hargoz va qashqarga
+ketayotganlar va ulardan boshqa joyga ketayotganlarini aloxida column bolsin».
+
+1449. **The road column is the DESTINATION's country, by data** (`roadColumnOf`, board-view.ts): to a Chinese
+warehouse = `inland`, anything else = `outbound` (an Uzbek internal leg, an unknown country — nothing is claimed
+about a place the data does not name). He named Horgos and Kashgar; the rule names China, so a factory trip to
+Yiwu or a truck to Urumqi goes inland too and a third border hub needs no code — stated to him as a ⭐ question,
+reversible in one line. Never by warehouse code or name (§1's rule, #1416). The truck reader and the trip reader
+both ask it (`columnOf`, `tripColumnOf`), so a factory trip lands beside the trucks of its own road.
+
+1450. **Inland is grouped by destination, outbound by place, and the strip stays the road as a line.** Every
+inland card is inside China, so a place section there would be one heading over everything; the sections are
+`to:<warehouseId>` («→ Kashgar · 3»), the border hubs first (`destHub` = `zoneOfWarehouse` says `border`), then by
+name. The strip counts a card by its PLACE (`CardPlacement.place`) whichever column holds it, so «Xitoy ichida»
+counts inland trucks AND an outbound truck still in China — a strip that counted by column would lie about
+where the trucks are. A tap opens the first column holding what is shown (`activeColumn`); with nothing there,
+`columnOfStop`. The phone keeps FOUR tabs (five cut «Shakllanmoqda» mid-word at 360 px); the «Yo'lda» tab shows
+both columns and its number is `tabCounts` — pure, because a tab that sums two columns is arithmetic a test
+can reach. Column keys carry no `_`: Tailwind reads `_` in an arbitrary variant as a space (fenced).
+
+1451. **Reviewed as built (five lenses), eight findings, all fixed.** The one a person would have met first:
+the inland heading was a place word — «Yo'lda: Xitoy ichida» (ru «В пути: по Китаю», letter for letter the
+strip's «По Китаю») — while the outbound column carried a SECTION called «Xitoy ichida» (a Yiwu → Tashkent truck
+that has not left China). The headings name the DIRECTION now — «Yo'lda: Xitoy ichidagi reyslar» / «Yo'lda:
+Xitoydan tashqariga» — and the e2e reads them out of all four bundles. Also: at 170 px the driver's phone was truncated to «+998 90 12…» (`[overflow-wrap:anywhere]`
+now); the legend stands over the outbound column only; and seven behaviours that only reading proved were
+pinned — the «ichki reys» badge dropped only in the inland column (an Andijan → Tashkent leg on the outbound road
+keeps it, both ways), hub order with a non-hub name sorting first (Aksu), the inland order clock (the
+departure, like outbound), the inland bar, the tab sum, the trip's `destHub`, the headings. Nine red proofs by
+string edit, all red. STATED, not changed: `?yonalish=irkeshtam|horgos` drops inland trucks (a corridor is a road
+OUT of China; pre-existing), and at 1280 px with the sidebar open the two road headings wrap to different heights.
+
+1452. **The review of the BUILT round: the inland heading names the destination, never «inside China».** The
+fixed heading «Yo'lda: Xitoy ichidagi reyslar» (ru «рейсы внутри Китая») still made a claim about where the trucks
+ARE, and the column is decided by where they GO (#1449): nothing stops a quick truck from Tashkent to Kashgar
+(the destination list is every active warehouse, the action checks no direction), and once departed it sits in the
+inland column with its own place «Joyi aniq emas» on the strip — under a heading saying it is inside China. Both
+verifiers upheld it; moving such a truck to outbound would not help, since «Xitoydan tashqariga» is just as false
+for it. His own words were about destinations («hargoz va qashqarga ketayotganlar»), so the headings are now
+«Yo'lda: Xitoy skladlariga» / «Yo'lda: Xitoydan tashqariga» (ru «на склады в Китае» / «за пределы Китая»; en «On
+the road: …», because en's «In transit» IS the strip's transit word; zh «发往中国仓库» / «发往境外»), and the
+comment, §3a and the CHANGELOG say «nearly every» card is inside China. The test lens also showed the e2e could
+not catch a revert to the first draft (it reads the heading from the bundle it checks); the pin is now a unit
+test anchored on the strip's own words in the same bundle — no road heading may contain any `place.road.*` word,
+in any locale — red-proven by putting back both first drafts («Yo'lda: Xitoy ichida», «В пути: по Китаю»).
+Refuted, kept as answers: the Horgos column depends on its warehouse row being CN (his deploy step since the board
+round), and zh/en headings built on a place stem are the approved shape, not the collision.
+
+1453. **A plan test that rode on a tie, the batches half** (found by this round's CI, not caused by it). Round
+#1252's «(n) EXPLAIN names both 0121 indexes» had already removed `audit_entity_idx`'s tie with the partial index
+inside its rolled-back transaction; the `batches` side kept one. On a freshly migrated, near-empty `batches` a
+lookup through `batches_code_upper_idx` and an index-only whole scan of `batches_code_unique` (it holds `code`, so
+it can filter `upper(code)`) BOTH price 0.12..8.14 — measured on a fresh database, CI's exact plan reproduced by
+pricing the competitor alone — and CI drew the competitor on 4a2fc6e after passing on 7741342 with no change to
+either index. The test now plants 2,000 trucks (production holds ~1,400) inside the same rolled-back transaction:
+the whole-index scan prices 173-341 against the lookup's 8.29, so the oracle is «the 0121 index is usable»
+again and not «the planner broke a tie our way»; dropping `batches_code_upper_idx` in there still turns it red.
+Nothing is written (the transaction rolls back) and nothing is locked beyond the rows it inserts.
+
+1454. **His «1 A / 2 a / 3 a» on the two road columns: all three are the shipped default — checked, then pinned.**
+Following #1229 / #1256, each answer was read against the code before anything was written down. (1A) Every
+Chinese destination is `inland`, a non-hub one included: `roadColumnOf` is the country alone and asks no hub; it
+was already pinned by the unit table and by the CNGO factory trip to a non-hub Chinese warehouse. (2a) «Yetib
+keldi» stays one column: `columnOf` and `tripColumnOf` split only `in_transit` / `on_road` by the destination, so
+an arrived truck at a Chinese hub, an arrived factory trip to one and the old trip to Uzbekistan stand in the ONE
+arrived column — nothing pinned that until now. (3a) The corridor filter keeps naming the road OUT of China:
+`routeFilterOf` names `irkeshtam` / `horgos` by a `kg` / `kz` leg, and walking every pair of the eight warehouse
+codes the map draws shows that no road into a Chinese warehouse has one (Tashkent → Kashgar is a generic
+`transit`, Yiwu → Horgos is `cn_transit`). So with Irkeshtam or Horgos picked the inland column is empty, «ichki»
+keeps a China → China truck, and a factory trip, which is in no corridor and is no «ichki reys», is hidden by
+every corridor value — that last half is the board round's own rule and was not changed. New pins: the unit
+file's three tests (the filter over inland cards as `board.ts` builds them; the map walk, which also refuses a
+new map code until it is classed as Chinese or Uzbek; the single arrived column) and the integration file's two
+(an arrived truck INA and trip CNIN at the hub; INL's `route: null, internal: true` under every filter value).
+Red-proven by string edit four ways: arrivals at a Chinese warehouse sent to `inland`; the filter keeping
+`column === 'inland'`; `cn_transit` counted as Irkeshtam; a ninth map code. The third first stayed GREEN — the
+edit named the Chinese leg `cn`, which no segment is called — and was redone on the real key.
+
 ## Sakkiz band, round 1 — the bot stops losing what it is sent; the VED rota stops picking one person (2026-10-21; NO migration; spec `docs/SAKKIZ-BAND.md`, his answers §11)
 
 His eight items of 2026-10-20, diagnosed and answered («1 chi band 3 b / 2chi

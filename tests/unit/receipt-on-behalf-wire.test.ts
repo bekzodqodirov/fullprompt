@@ -33,7 +33,9 @@ describe('the office receipt, end to end on the wire', () => {
   it('the action asks the door at the posted warehouse and passes the answer', () => {
     const action = read('src/app/(protected)/receive/actions.ts');
     expect(action).toMatch(/mayCountMove\(actor, parsed\.data\.warehouseId\)/);
-    expect(action).toMatch(/confirmReceipt\(parsed\.data, \{[^}]*\}, \{ onBehalf \}\)/);
+    // The options also carry the FTL door (0135) — the door's answer must
+    // still be the one that reaches `onBehalf`.
+    expect(action).toMatch(/confirmReceipt\(parsed\.data, \{[^}]*\}, \{ onBehalf(, [^{}]*)? \}\)/);
     expect(action).toContain('isServerBehind(err)');
   });
 

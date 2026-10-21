@@ -2,7 +2,7 @@
 
 ## 2026-10-21 — 8 band, 1-raund: bot yuborilgan narsani yo'qotmaydi, VED navbati bitta odamga tushmaydi
 
-**Migratsiya yo'q.** Deploydan keyin migratsiyalar soni o'zgarmaydi, shuning uchun tekshirish: `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatishi kerak.
+**Bu raundning o'zida migratsiya yo'q.** U pastdagi LTL/FTL yangilanishi (migratsiya 0135) bilan bir deployda chiqishi mumkin, agar u hali serverga qo'yilmagan bo'lsa. Deploydan keyin ikkalasini tekshiring: **migratsiyalar soni 136** va `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatsin.
 
 Javoblaringiz: «1 chi band 3 b / 2chi bolim 4 c / … / umumiy savollar 0 1 a». Siz yozmagan savollarga ⭐ variant olindi (`docs/SAKKIZ-BAND.md` §11). Bu raundda javoblaringiz to'liq qamragan qismlar qilindi: 1-banddagi yo'qotishlar, 5-banddagi navbat xatosi va 8-bandga qo'shgan xira rasmlaringiz.
 
@@ -40,6 +40,106 @@ Javoblaringiz: «1 chi band 3 b / 2chi bolim 4 c / … / umumiy savollar 0 1 a»
 - Packing list'dagi **«шт» ustuni** 8-band raundida chiqadi. Dona tarkib qatorida saqlanadi, 8-band aynan bitta qatorli tarkibni ochadi.
 - Siz bilan aniqlashtirilishi kerak: odnarodka narxini kim yozadi (4.5), «jo'natgan sotuvchining CRM'iga yangi klient bo'lib» nimani anglatadi (6.8).
 
+## 2026-10-21 — Doska: «1 A / 2 a / 3 a» javoblaringiz — hammasi hozirgidek qoladi
+
+Uchala javob ham ⭐ variant, ya'ni hozir qanday qurilgan bo'lsa shunday. **Kodda o'zgarish yo'q, migratsiya yo'q, deploy shart emas.** Har birini kodda tekshirdim va testga mahkamladim: endi kimdir tasodifan o'zgartirsa, test qizaradi.
+
+1. **Xitoydagi har qanday skladga** ketayotgan mashina yoki zavod reysi (masalan zavoddan Yiwu skladiga) «Yo'lda: Xitoy skladlariga» ustuniga tushadi. Faqat Qashqar va Horgos emas.
+2. **«Yetib keldi» bitta ustun bo'lib qoladi.** Qashqarga yetib kelgan mashina ham, Toshkentga yetib kelgani ham shu ustunda turadi.
+3. **«Yo'nalish» filtri** (Irkeshtam / Horgos) Xitoydan chiqadigan yo'lni bildiradi. Shuning uchun uni tanlasangiz, Xitoy skladlariga ketayotgan mashinalar ko'rinmaydi. Xaritadagi hamma yo'lni tekshirdim: Xitoy skladiga boradigan birorta yo'l Irkeshtam yoki Horgos chegarasidan o'tmaydi. Filtrda «Ichki reyslar»ni tanlasangiz, ichki reyslar ko'rinadi: Xitoy ichidagilar ham, O'zbekiston ichidagilar ham (Andijon → Toshkent). Zavod reysi esa «ichki reys» hisoblanmaydi, shuning uchun bu filtrlarning hech birida chiqmaydi. Bu doska qurilgandan beri shunday.
+
+## 2026-10-21 — Partiya doskasi: «Yo'lda» endi ikki ustun — Xitoy skladlariga va Xitoydan tashqariga
+
+Sizning so'zingiz: «yolda deganini xitoy ichidagi va tashqisi alohida column qilishimiz kerak yani hargoz va qashqarga ketayotganlar va ulardan boshqa joyga ketayotganlarini aloxida column bolsin». **Migratsiya yo'q.** Bu o'zgarish main'dagi LTL/FTL raundi bilan birga deploy bo'ladi, shuning uchun deploydan keyin migratsiyalar soni **136** bo'lishi kerak.
+
+### Doskada endi 5 ustun
+**Shakllanmoqda · Pogruzka · Yo'lda: Xitoy skladlariga · Yo'lda: Xitoydan tashqariga · Yetib keldi**
+
+- **Qaysi ustunga tushishi mashina boradigan SKLAD qaysi davlatda ekaniga bog'liq.** Xitoydagi skladga ketayotgan mashina (Qashqar, Horgos yoki boshqa xitoy skladi) birinchi ustunga tushadi. Qolganlari ikkinchi ustunga tushadi: O'zbekistonga, O'zbekiston ichidagi reys (Andijon → Toshkent), davlati yozilmagan sklad.
+- Qoida davlat bo'yicha, sklad nomi bo'yicha emas. Yangi xitoy skladi ochilsa ham kodga tegmasdan ishlaydi.
+- Zavod reyslari ham shu qoida bilan o'z ustuniga tushadi.
+
+### «Xitoy skladlariga» ustuni — qayerga ketayotgani bo'yicha
+- Bu ustundagi mashinalarning deyarli hammasi Xitoy ichida yuradi. Shuning uchun guruhlar joy bo'yicha emas, **boradigan sklad** bo'yicha: «→ Kashgar · 3», «→ Horgos · 2».
+- Sarlavha «qayerga ketyapti»ni aytadi, «qayerda turibdi»ni emas. Kamdan-kam holatda mashina Xitoyga tashqaridan ketsa (masalan Toshkent → Qashqar), u ham shu ustunda turadi. Uning hozir qayerdaligi tepadagi yo'l chizig'ida o'z joyida sanaladi.
+- Avval chegara skladlari (Qashqar, Horgos), keyin qolganlari alifbo tartibida.
+- Bu ustunda «ichki reys» belgisi chiqmaydi, chunki bu yerdagi hamma reys ichki. Andijon → Toshkent kabi O'zbekiston ichidagi reysda belgi qoladi.
+
+### «Xitoydan tashqariga» ustuni — avvalgidek, joy bo'yicha
+- Guruhlar: Xitoy ichida / Chegarada / Tranzitda / O'zbekistonda.
+- Masalan, Yiwu → Toshkent mashinasi hali Xitoydan chiqmagan bo'lsa, shu ustunning «Xitoy ichida» guruhida turadi.
+- Rang izohi (legend) faqat shu ustun tepasida chiqadi.
+
+### Tepadagi yo'l chizig'i o'zgarmadi
+- «Xitoy ichida 15» kabi raqamlar mashina **hozir qayerda turgani** bo'yicha sanaladi, ikkala ustundagilar ham kiradi. Bosilsa, o'sha mashinalar turgan ustun ochiladi.
+
+### Telefonda
+- 4 ta tab qoldi. «Yo'lda» tabida ikkala ustun ham bor, har biri o'z sarlavhasi bilan. Tabdagi raqam ikkalasining yig'indisi.
+- Kompyuterda ustun tor bo'lgani uchun haydovchi telefoni endi «+998 90 12…» deb kesilmaydi, keyingi qatorga o'tadi.
+
+### Bilib qo'ying
+- «Yo'nalish» filtri (Irkeshtam / Horgos) tanlansa, xitoy ichidagi mashinalar ko'rinmaydi: bu filtr Xitoydan chiqadigan yo'lni bildiradi. Bu avval ham shunday edi.
+- Kompyuterda chap menyu ochiq bo'lsa, ustunlar tor bo'ladi (taxminan 170 px). Menyuni yig'sangiz kengayadi.
+
+## 2026-10-20 (kechqurun) — LTL va FTL: KPI va reyting faqat sborniy yukni sanaydi
+
+Sizning so'zingiz: «biz odatda LTL bo'yicha ishlaymiz va KPI sovrinlar shu LTL bo'yicha hisoblanadi, agarda FTL bo'lsa bunga KPI yozilmaydi … gamificationda FTL va LTL birga qo'shilib ketyapti». Javobingiz: «3 b / qolgani sen aytgandek» (1a 2a **3b** 4a 5a 6a 7a). **Migratsiya 0135 — deploydan keyin migratsiyalar soni 136 bo'lishi kerak.**
+
+### Qayerda belgilanadi
+- **Bitim va lid** ✏️ formasida yangi «Yuk turi» tanlovi bor: **LTL — sborniy** (odatiy) yoki **FTL — butun mashina**. Lid yutilsa, FTL belgisi bitimga o'tadi.
+- **Prixod** bitimdan belgini o'zi oladi: FTL bitimga ulangan prixod ham FTL bo'ladi. Prixod kartasida yangi «Yuk turi» bloki bor — u yerda belgini tuzatish mumkin.
+- Kartochkalarda (lid, bitim, prixod va taxtadagi kartochkalar) FTL bo'lsa «🚛 FTL» chiqadi. LTL'da hech narsa chiqmaydi.
+
+### Kim nima qila oladi (2a)
+- **Sotuvchi** faqat **o'z** bitimi, lidi yoki prixodini FTL qila oladi. Formada ogohlantirish chiqadi: «FTL tanlansa, bu yuk KPI va reytingga kirmaydi».
+- **FTL'ni LTL'ga** faqat **admin, logist yoki buxgalter** qaytaradi. FTL bitimning egasini ham faqat ular almashtiradi.
+- Buxgalter bitim kartasini ocha olmaydi, shuning uchun unga prixod kartasida «Bitimni ham LTL qilish» tugmasi chiqadi.
+- Sotuvchi o'zi FTL belgilasa, ofisga (logist, buxgalter, admin) Telegram xabari boradi. Sabab: yengil yukni FTL qilsa, oyning zichlik bandi ko'tarilib, KPI stavkasi oshib ketishi mumkin.
+- **Prixodni FTL bitimga kim biriktirgani muhim.** Ofis (admin, logist, buxgalter) yoki prixod yozilgan sotuvchining o'zi biriktirsa — prixod FTL bo'ladi. Boshqa sotuvchi yoki VED birovning prixodini FTL bitimga biriktirsa — prixod LTL qoladi va o'sha sotuvchining KPI'sidan chiqib ketmaydi. Skladda qabul qilishda ham shu qoida.
+- Prixod kartasida, bitim FTL bo'lib prixodga o'tmagan bo'lsa, **sababi yoziladi** (boshqa sotuvchi nomida, sotuvchisiz, boshqa mijozga o'tgan, oyi to'langan yoki ofis biriktirmagan). Ofisga «Bitim … FTL'ini ofis nomidan tasdiqlash» tugmasi chiqadi — bosilsa, bitimning barcha prixodlariga o'tadi.
+- **Mijoz tuzatilsa** (prixod A mijozdan B mijozga o'tkazilsa), eski mijozning FTL bitimidan kelgan belgi va sotuvchining o'zi qo'ygan belgi olib tashlanadi — aks holda yangi sotuvchining KPI'si hech kim qaror qilmagan holda kesilardi. Ofis qo'lda qo'ygan belgi qoladi.
+- **Mijozga sotuvchi keyin belgilansa**, o'sha sotuvchi FTL qilgan bitimning sotuvchisiz prixodlari ham FTL bo'ladi — butun mashina yuki uning KPI'siga LTL bo'lib kirib qolmaydi.
+
+### KPI va reyting
+- **KPI faqat LTL yukni sanaydi.** Bu «Hodimlar» sahifasi, KPI to'lash, profildagi «Bu oy» va /upsale'dagi «Olib kelgan yuk (KPI)» uchun ham amal qiladi. «Hodimlar» va profilda yonida «🚛 FTL: X kub — KPI'ga kirmaydi» qatori ko'rinadi; /upsale'da FTL alohida «🚛 FTL» ustunida turadi.
+- **Sotuvchilar hisoboti:** kub ustunlari endi LTL (KPI bilan bir xil). FTL alohida ustunda. Pul ustunlari (tushum, foyda) ikkalasini ham o'z ichiga oladi.
+- **Shanba reytingi (3b):** ochkolar faqat LTL'dan. FTL alohida qatorda, «Jamoa» qatoridan keyin chiqadi:
+  > 🚛 **FTL — butun mashina (ochkosiz):**
+  > Vali — 82 kub · 9 500 kg · 1 prixod
+
+  Misolingizdagi «2 mashina» o'rniga «prixod» yoziladi: hafta yukni Xitoyda qabul qilingan kuni bo'yicha sanaydi, o'shanda mashina hali bo'lmaydi.
+- Faqat FTL olib kelgan sotuvchi «yuk olib kelmaganlar» qatoriga tushmaydi.
+- **Haftalik maqsad** endi faqat LTL kubni o'lchaydi.
+- **Reyting ekrani telefonda:** «Bu hafta» ro'yxatida ismlar ikki-uch harfdan bo'linib ketardi («Diln / oza»). Endi ism to'liq ko'rinadi, raqamlar kerak bo'lsa pastki qatorga o'tadi.
+- **Upsale (sotuvchi ulushi) o'zgarmadi** (5a).
+
+### Guruhdagi tabriklar (4a)
+- FTL lid yutilsa ham tabriklanadi. Postda «🚛 **FTL** — butun mashina» deb yoziladi, lekin «🔥 Bu oy» qatori chiqmaydi va bu g'alaba oylik hisobga qo'shilmaydi.
+- Mijozning birinchi yuki FTL bo'lsa, unda ham «🚛 FTL» belgisi bo'ladi.
+
+### To'langan oylar o'zgarmaydi (6a)
+- Agar biror oy uchun sotuvchiga KPI **to'langan** bo'lsa, o'sha oydagi prixodlarning yuk turi endi o'zgarmaydi. Kartada «🔒 2026-09 uchun Aziz'ga KPI to'langan — yuk turi o'zgarmaydi» deb yoziladi.
+- **Muhim:** agar sentabr KPI'si allaqachon to'langan bo'lsa, sentabrdagi FTL prixodlarni endi belgilab bo'lmaydi. Sentabrni ham to'g'rilash kerak bo'lsa: o'sha KPI to'lovi xarajatini bekor qiling, prixodlarni FTL qiling, keyin KPI'ni qayta to'lang. KPI boshlanishidan oldingi oylar qulflanmaydi.
+
+### Logistga ogohlantirish (7a)
+Mashina jo'naganda unda faqat bitta mijozning yuki bo'lsa, logistlarga Telegram xabari boradi:
+> 🚛 **FTL bo'lishi mumkin — tekshiring**
+> YW-045: mashinada faqat bitta mijozning yuki
+> 👤 GS500 Ali Valiyev · sotuvchi: Aziz
+> 📦 312 karobka · 84.2 kub · 9 870 kg · reja 86 kub (98 %)
+> LTL turgan prixodlar:
+> • R-01240 · bitimsiz — 44.1 kub · 4 970 kg
+> FTL bo'lsa: bitimni ✏️ orqali «FTL — butun mashina» qiling yoki prixod kartasida belgilang.
+
+- Yiwu → Qashqar mashinasi ham tekshiriladi. Xuddi shu yuk keyingi mashinada ketsa, xabar takrorlanmaydi.
+- Bir odamning bir telefondagi ikki kodi bitta mijoz hisoblanadi.
+- Mijozning ochiq FTL bitimi bo'lsa, xabarda «bitimsiz prixodlarni shunga biriktiring» deb yoziladi.
+- Qaror baribir odamniki: tizim faqat eslatadi, o'zi hech narsani FTL qilmaydi.
+
+### Bilib qo'ying
+- Hozirgi barcha yuklar **LTL** hisoblanadi. FTL bo'lganlarini bitim yoki prixod kartasida belgilang.
+- Skladda bitimsiz qabul qilingan prixod bitimga ulanmaguncha LTL bo'lib turadi. Birinchi yuk tabrigi esa yuk turini o'sha paytdagi holatiga qarab yozadi.
+- O'tgan haftalarning reyting postlari o'zgarmaydi.
 
 ## Partiya doskasi: hamma mashinalar bir joyda, qayerdaligi bilan — 2026-10-20
 

@@ -25,6 +25,10 @@ import { likeNeedle } from '../search/query';
 import { dealCargoLabel, type DealCargo } from './cargo-label';
 import { dealCarriesCalcSql, dealMissingTnvedSql, vedWorkSql } from './ved-work';
 import { stampCalcLink } from '../calc/link';
+import { carryLeadFtlTx, dealIsFtl, ftlReady, inheritFromDealTx, notifyFtlMarked, setDealFtlTx, type CascadeResult } from '../ftl/service';
+import { leadDealMoveRefusal, type FtlDoor } from '../ftl/door';
+import type { LoadMode } from '../ftl/sql';
+import { takeKpiSellerLocks } from '../staff/kpi-lock';
 import { followCompensationDealTx } from '../finance/compensation-follow';
 import { revenueUsdSql } from '../finance/ledger-sql';
 import { REVENUE_TYPES } from '../finance/ledger-kinds';
@@ -80,7 +84,14 @@ export const dealSchema = z.object({
   note: z.string().trim().max(2000).optional(),
 });
 
-export type DealInput = z.infer<typeof dealSchema>;
+/**
+ * LTL / FTL travels BESIDE the validated fields and never inside them (0135):
+ * a mode and the door that may move it arrive together or not at all, so no
+ * caller can post a mode unchecked. Absent = LTL on create, UNCHANGED on
+ * update — never «absent means LTL», or any post that simply omits it would
+ * turn an FTL job back without meeting the door (2a).
+ */
+export type DealInput = z.infer<typeof dealSchema> & { load?: { mode: LoadMode; door: FtlDoor } };
 
 export const dealLineSchema = z.object({
   description: z.string().trim().min(1).max(300),
@@ -142,12 +153,33 @@ export async function createDeal(
    * seller opens an OWNERLESS deal the admin distributes, and without this the
    * chain below would have made it the VED's again.
    */
-  options: { atBottom?: boolean; ownerAsGiven?: boolean } = {},
+  options: { atBottom?: boolean; ownerAsGiven?: boolean; carryFtlFromLead?: string } = {},
 ): Promise<string> {
   const client = await db.query.clients.findFirst({ where: eq(clients.id, input.clientId) });
   if (!client) throw new DealError('client_not_found');
 
-  return db.transaction(async (tx) => {
+  // Whoever raises it owns it until somebody hands it on; falling back to
+  // the client's sales manager keeps ownership true for a deal the
+  // warehouse opens on somebody else's client. The calc doors pass
+  // their owner as given (G2 a) — see `ownerAsGiven` above. Resolved ONCE:
+  // the FTL door below is asked about the very owner the INSERT writes.
+  const ownerId = options.ownerAsGiven
+    ? (input.ownerId ?? null)
+    : (input.ownerId ?? ctx.actorId ?? client.salesManagerId ?? null);
+  const markFtl = input.load?.mode === 'ftl';
+  const ftlOn = markFtl || options.carryFtlFromLead ? await ftlReady() : false;
+  if (markFtl) {
+    if (!ftlOn) throw new DealError('server_behind');
+    const refusal = leadDealMoveRefusal(input.load!.door, {
+      before: false,
+      after: true,
+      ownerBefore: ownerId,
+      ownerAfter: ownerId,
+    });
+    if (refusal) throw new DealError(refusal);
+  }
+
+  const id = await db.transaction(async (tx) => {
     const code = await nextDealCode(tx);
     const stageId = input.stageId ?? (await firstStageId(tx));
     // The quote is only "given" once a price exists; a deal opened to collect
@@ -160,13 +192,7 @@ export async function createDeal(
         code,
         clientId: input.clientId,
         stageId,
-        // Whoever raises it owns it until somebody hands it on; falling back to
-        // the client's sales manager keeps ownership true for a deal the
-        // warehouse opens on somebody else's client. The calc doors pass
-        // their owner as given (G2 a) — see `ownerAsGiven` above.
-        ownerId: options.ownerAsGiven
-          ? (input.ownerId ?? null)
-          : (input.ownerId ?? ctx.actorId ?? client.salesManagerId ?? null),
+        ownerId,
         title: input.title || null,
         quotedVolumeM3: num(input.quotedVolumeM3),
         quotedWeightKg: num(input.quotedWeightKg),
@@ -184,19 +210,43 @@ export async function createDeal(
       })
       .returning();
 
+    // A new job has no prixods yet, so marking it moves nothing but the mark.
+    let ftl = false;
+    if (markFtl) {
+      await setDealFtlTx(tx, row!.id, true, { actorId: input.load!.door.actorId, office: input.load!.door.office }, ctx);
+      ftl = true;
+    } else if (options.carryFtlFromLead && ftlOn) {
+      ftl = await carryLeadFtlTx(tx, options.carryFtlFromLead, row!.id);
+    }
+
     await writeAudit(tx, ctx, {
       entityType: 'deal',
       entityId: row!.id,
       action: 'create',
-      after: { code, client: client.clientCode, amount: input.quotedAmount ?? null },
+      after: { code, client: client.clientCode, amount: input.quotedAmount ?? null, ...(ftl ? { freightMode: 'ftl' } : {}) },
     });
     return row!.id;
   });
+  if (markFtl && !input.load!.door.office) {
+    await notifyFtlMarked({ kind: 'deal', id, actorId: input.load!.door.actorId }).catch((err) =>
+      logger.error({ err, dealId: id }, '[ftl] FtlMarked notice failed'),
+    );
+  }
+  return id;
 }
 
-export async function updateDeal(id: string, input: DealInput, ctx: AuditContext): Promise<void> {
+export async function updateDeal(
+  id: string,
+  input: DealInput,
+  ctx: AuditContext,
+): Promise<{ ftl: CascadeResult | null }> {
   const before = await db.query.deals.findFirst({ where: eq(deals.id, id) });
   if (!before) throw new DealError('not_found');
+  // LTL / FTL (0135). The probe on the pool, before the transaction (#714);
+  // one migration behind, a posted FTL is refused in words and an LTL post
+  // is the nothing it would have changed.
+  const ftlOn = await ftlReady();
+  if (!ftlOn && input.load?.mode === 'ftl') throw new DealError('server_behind');
 
   // Re-pricing stamps who and when: the whole point of the deal is that the
   // number the client was told has an author and a date behind it. Compared as
@@ -267,7 +317,9 @@ export async function updateDeal(id: string, input: DealInput, ctx: AuditContext
     closedAt = closedAtFor(stage.kind, new Date());
   }
 
-  await db.transaction(async (tx) => {
+  const ownerAfter = input.ownerId === undefined ? before.ownerId : input.ownerId;
+  let ftlMarkedBySeller = false;
+  const cascade = await db.transaction(async (tx) => {
     await tx
       .update(deals)
       .set({
@@ -300,9 +352,47 @@ export async function updateDeal(id: string, input: DealInput, ctx: AuditContext
         after: diff.after,
       });
     }
+
+    // LTL / FTL — decided on the values about to be WRITTEN, read under the
+    // deal row the UPDATE above holds (2a). An owner change on a job that is
+    // FTL before or after needs the office, posted mode or not: a save that
+    // carries no door fails CLOSED rather than handing an FTL job to a
+    // colleague (#790).
+    if (!ftlOn) return null;
+    const wasFtl = await dealIsFtl(tx, id);
+    const willFtl = input.load ? input.load.mode === 'ftl' : wasFtl;
+    const ownerMoves = ownerAfter !== before.ownerId;
+    if (willFtl !== wasFtl || ((wasFtl || willFtl) && ownerMoves)) {
+      if (!input.load) throw new DealError('ftl_office_only');
+      const refusal = leadDealMoveRefusal(input.load.door, {
+        before: wasFtl,
+        after: willFtl,
+        ownerBefore: before.ownerId,
+        ownerAfter,
+      });
+      if (refusal) throw new DealError(refusal);
+    }
+    if (willFtl === wasFtl) return null;
+    const door = input.load!.door;
+    const moved = await setDealFtlTx(tx, id, willFtl, { actorId: door.actorId, office: door.office }, ctx);
+    await writeAudit(tx, ctx, {
+      entityType: 'deal',
+      entityId: id,
+      action: 'update',
+      before: { freightMode: wasFtl ? 'ftl' : 'ltl' },
+      after: { freightMode: willFtl ? 'ftl' : 'ltl' },
+    });
+    ftlMarkedBySeller = willFtl && !door.office;
+    return moved;
   });
   const newStageId = input.stageId ?? before.stageId;
   if (newStageId !== before.stageId) await announceDealStage(before, newStageId, ctx);
+  if (ftlMarkedBySeller) {
+    await notifyFtlMarked({ kind: 'deal', id, actorId: input.load!.door.actorId }).catch((err) =>
+      logger.error({ err, dealId: id }, '[ftl] FtlMarked notice failed'),
+    );
+  }
+  return { ftl: cascade };
 }
 
 /**
@@ -444,6 +534,14 @@ export async function linkReceipt(
   receiptId: string,
   dealId: string | null,
   ctx: AuditContext,
+  /**
+   * The presser's LTL/FTL door (0135). REQUIRED, and null means «nobody
+   * vouches»: the re-file never carries the deal's FTL. Given, the prixod
+   * inherits only when the presser may reach it — the office, or the seller
+   * it is stamped to (a colleague filing it onto an FTL job must not take it
+   * out of that seller's KPI).
+   */
+  ftlDoor: FtlDoor | null,
 ): Promise<void> {
   const receipt = await db.query.receipts.findFirst({ where: eq(receipts.id, receiptId) });
   if (!receipt) throw new DealError('receipt_not_found');
@@ -461,7 +559,21 @@ export async function linkReceipt(
       throw new DealError('client_mismatch');
     }
   }
+  // LTL / FTL (0135): may the re-file carry the new deal's FTL? Pool probe
+  // first (#714). A re-file to an LTL deal and a detach NEVER downgrade — the
+  // prixod keeps its mode; FTL → LTL is only the office's explicit decision.
+  const ftlOn = dealId && ftlDoor ? await ftlReady() : false;
+  let ftlInherited = false;
   await db.transaction(async (tx) => {
+    // The deal row FOR SHARE before anything else (a cascade on that deal
+    // holds it FOR NO KEY UPDATE, so the two cannot interleave and lose the
+    // upgrade), then the stamp's KPI lock — the round's one order: deal →
+    // kpi:<seller> → receipt rows (staff/kpi-lock.ts).
+    let ftlLocked: string[] | null = null;
+    if (ftlOn && dealId) {
+      await tx.execute(sql`SELECT 1 FROM deals WHERE id = ${dealId}::uuid FOR SHARE`);
+      if (await dealIsFtl(tx, dealId)) ftlLocked = await takeKpiSellerLocks(tx, [receipt.salesManagerId]);
+    }
     await tx
       .update(receipts)
       .set(
@@ -494,6 +606,7 @@ export async function linkReceipt(
       )
       .where(eq(receipts.id, receiptId));
     if (dealId) await stampCalcLink(tx, receiptId, dealId);
+    if (ftlLocked && ftlDoor) ftlInherited = await inheritFromDealTx(tx, receiptId, ftlDoor, ftlLocked, ctx);
     // A «Kompensatsiya» for this prixod's lost cargo (0105) is the job's
     // price taken back: it FOLLOWS the prixod to the right job (or off it),
     // in this transaction, under the row lock the UPDATE above took — or the
@@ -507,6 +620,14 @@ export async function linkReceipt(
       after: { deal: dealId },
     });
   });
+  // A seller's own re-file that carried an FTL deal's mark onto his prixod is
+  // the same news as his own mark (FtlMarked): it is how a light lot leaves
+  // his month and can lift its density band.
+  if (ftlInherited && ftlDoor && !ftlDoor.office) {
+    await notifyFtlMarked({ kind: 'receipt', id: receiptId, actorId: ftlDoor.actorId }).catch((err) =>
+      logger.error({ err, receiptId }, '[ftl] FtlMarked notice failed'),
+    );
+  }
   // Round 26: «sdelkaga qaysi yukligini ulaganimdan keyin…» — linking is where
   // the owner starts, and by then the cargo is usually already sitting in the
   // Chinese warehouse. A confirmed receipt IS received cargo, so the link
