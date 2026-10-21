@@ -210,6 +210,15 @@ beforeAll(async () => {
   // INL — on the Chinese road to the border hub, departed ten hours ago.
   await mintTruck('INL', { status: 'in_transit', createdAt: at(-30), departedAt: at(-10), destWarehouseId: whK });
 
+  // INA — arrived at the Chinese hub: the ONE «Yetib keldi» column all the same (his 2a).
+  await mintTruck('INA', {
+    status: 'arrived',
+    createdAt: at(-60),
+    departedAt: at(-48),
+    arrivedAt: at(-4),
+    destWarehouseId: whK,
+  });
+
   // FAR — a truck between two Uzbek warehouses, nothing to do with whO.
   await mintTruck('FAR', { status: 'forming', originWarehouseId: whX, destWarehouseId: whY });
 
@@ -229,6 +238,7 @@ beforeAll(async () => {
   // CNGO — a factory truck on its way to our Chinese warehouse; CNHUB to the hub.
   await mintTrip('CNGO', { status: 'on_road', destWarehouseId: whO, startedAt: at(-3) }, [{ factoryBoxes: 4 }], at(-3));
   await mintTrip('CNHUB', { status: 'on_road', destWarehouseId: whK, startedAt: at(-2) }, [{ factoryBoxes: 2 }], at(-2));
+  await mintTrip('CNIN', { status: 'arrived', destWarehouseId: whK, arrivedAt: at(-1) }, [{ factoryBoxes: 1 }], at(-6));
 });
 
 afterAll(async () => {
@@ -388,6 +398,37 @@ describe('the road in two columns — his «xitoy ichidagi va tashqisi» (2026-1
     expect(view.columns.find((c) => c.key === 'outbound')!.sections.flatMap((s) => s.cards.map((c) => c.id))).toContain(
       truck.ROAD,
     );
+  });
+});
+
+describe('his answers of 2026-10-21 — «1 A / 2 a / 3 a»', () => {
+  it('2a: whatever country it reached, an arrived truck or trip stands in the ONE arrived column', async () => {
+    const board = await loadBoard(unscoped(['plans.manage']));
+    const t = mine(board.cards.filter((c): c is BoardTruck => c.type === 'batch'), truck);
+    const p = mine(board.cards.filter((c): c is BoardTrip => c.type === 'trip'), trip);
+    expect(t.INA).toMatchObject({ column: 'arrived' });
+    expect(p.CNIN).toMatchObject({ column: 'arrived' });
+    expect(p.OLD).toMatchObject({ column: 'arrived' });
+    const view = assembleBoard(board.cards, { sklad: null, yonalish: null, ogoh: false, joy: null });
+    const arrived = view.columns.filter((c) => c.key === 'arrived');
+    expect(arrived).toHaveLength(1);
+    const ids = arrived[0]!.sections.flatMap((s) => s.cards.map((c) => c.id));
+    expect(ids).toEqual(expect.arrayContaining([truck.INA, trip.CNIN, trip.OLD]));
+  });
+
+  it('3a: a corridor filter drops every truck and trip bound for China; «ichki» keeps the truck', async () => {
+    const board = await loadBoard(unscoped(['plans.manage']));
+    const t = mine(board.cards.filter((c): c is BoardTruck => c.type === 'batch'), truck);
+    expect(t.INL).toMatchObject({ route: null, internal: true });
+    const inbound = [truck.INL, trip.CNGO, trip.CNHUB];
+    for (const yonalish of ['irkeshtam', 'horgos'] as const) {
+      const view = assembleBoard(board.cards, { sklad: null, yonalish, ogoh: false, joy: null });
+      const shown = view.columns.flatMap((c) => c.sections.flatMap((s) => s.cards.map((card) => card.id)));
+      for (const id of inbound) expect(shown).not.toContain(id);
+    }
+    const own = assembleBoard(board.cards, { sklad: null, yonalish: 'ichki', ogoh: false, joy: null });
+    const inland = own.columns.find((c) => c.key === 'inland')!.sections.flatMap((s) => s.cards.map((c) => c.id));
+    expect(inland).toContain(truck.INL);
   });
 });
 

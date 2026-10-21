@@ -2957,6 +2957,10 @@ ichida» was the strip's PLACE word, and its fix «Xitoy ichidagi reyslar» stil
 truck was inside China (#1452); `batch-board.test.ts` refuses any strip place word in either heading. Badge «ichki reys» off in the inland column only; legend over outbound only; the driver's phone wraps at
 170 px. Pinned: `batch-board` unit + integration, e2e `m9zzze-partiya-doskasi` (+ `.desktop`, fixture
 `mintRoadTruck`, prefixes DSI/DSU dropped in cleanup). 9 red proofs. STATED: `?yonalish=` drops inland trucks.
+His answer «1 A / 2 a / 3 a» (#1454): all three the shipped default, checked against the code, then pinned — any
+CN destination is inland (no hub test), ONE arrived column (`columnOf` splits only the road), and a corridor
+filter hides everything bound for China (`routeFilterOf` = a `kg`/`kz` leg; a map walk over every pair proves no
+road into China has one, and refuses an unclassed new map code).
 
 **Latest migration: 0135** (`load_mode`, `when` …114; ledger must reach **136**). Before
 it: 0134 (`staff_group`, `when` …113). Before

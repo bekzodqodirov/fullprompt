@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BOARD_COLUMNS,
   assembleBoard,
   boardDay,
   boardRange,
@@ -22,7 +23,7 @@ import {
 } from '@/modules/wms/batches/board-view';
 import { readFileSync } from 'node:fs';
 import { tripSight } from '@/modules/wms/batches/board';
-import { routeFor } from '@/modules/wms/tracking/map-data';
+import { routeFor, WAREHOUSE_POINTS } from '@/modules/wms/tracking/map-data';
 import { ROLE_MATRIX } from '@/modules/platform/rbac/catalog';
 import { estimateBasis, gateWord } from '@/modules/wms/tracking/on-road-state';
 
@@ -204,6 +205,54 @@ describe('the strip and the columns', () => {
     expect(assembleBoard(cards, { ...NONE, yonalish: 'ichki' }).total).toBe(1);
     expect(assembleBoard(cards, { ...NONE, yonalish: 'horgos' }).total).toBe(1);
     expect(assembleBoard(cards, NONE).total).toBe(4);
+  });
+
+  it('his 3a: a corridor filter shows no truck bound for China — it names the road OUT of China', () => {
+    // The inland cards as the board makes them: a truck between two Chinese
+    // warehouses is an «ichki reys» with no corridor, a factory trip neither.
+    const truckIn = card({ column: 'inland', section: 'to:ka', place: 'cn', route: null, internal: true });
+    const tripIn = card({ column: 'inland', section: 'to:ka', place: 'cn', route: null, internal: false });
+    const viaKg = out('transit', { route: 'irkeshtam', transitLeg: 'kg' });
+    const viaKz = out('transit', { route: 'horgos', transitLeg: 'kz' });
+    const cards = [truckIn, tripIn, viaKg, viaKz];
+    for (const yonalish of ['irkeshtam', 'horgos'] as const) {
+      const view = assembleBoard(cards, { ...NONE, yonalish });
+      expect(view.columns.find((c) => c.key === 'inland')!.count).toBe(0);
+      expect(view.columns.find((c) => c.key === 'outbound')!.count).toBe(1);
+    }
+    // «ichki» is where the Chinese truck stays visible.
+    const own = assembleBoard(cards, { ...NONE, yonalish: 'ichki' });
+    expect(own.columns.find((c) => c.key === 'inland')!.sections.flatMap((s) => s.cards)).toEqual([truckIn]);
+  });
+
+  it('his 3a holds for every road the map draws: a road ending in China drives no corridor', () => {
+    // A new code on the map turns this red until somebody says which country it is in.
+    const CHINESE = ['GZ', 'HOR', 'KA', 'UCH', 'YW'];
+    const UZBEK = ['AND', 'TAS1', 'TAS2'];
+    expect(Object.keys(WAREHOUSE_POINTS).sort()).toEqual([...CHINESE, ...UZBEK].sort());
+    let roads = 0;
+    for (const origin of [...CHINESE, ...UZBEK]) {
+      for (const dest of CHINESE) {
+        if (origin === dest) continue;
+        const route = routeFor(origin, dest);
+        if (route) roads += 1;
+        expect([origin, dest, routeFilterOf(route)]).toEqual([origin, dest, null]);
+      }
+    }
+    // The walk saw real roads, not a map that answers null for everything.
+    expect(roads).toBeGreaterThan(20);
+    expect(routeFilterOf(routeFor('KA', 'TAS1'))).toBe('irkeshtam');
+    expect(routeFilterOf(routeFor('HOR', 'TAS1'))).toBe('horgos');
+  });
+
+  it('his 2a: one «Yetib keldi» column, wherever the truck arrived', () => {
+    expect(BOARD_COLUMNS).toEqual(['forming', 'loading', 'inland', 'outbound', 'arrived']);
+    expect(tabOf('arrived')).toBe('arrived');
+    const cnArrived = card({ column: 'arrived', section: 'cn', place: 'cn' });
+    const uzArrived = card({ column: 'arrived', section: 'uz', place: 'uz' });
+    const arrived = assembleBoard([cnArrived, uzArrived], NONE).columns.filter((c) => c.key === 'arrived');
+    expect(arrived).toHaveLength(1);
+    expect(arrived[0]!.count).toBe(2);
   });
 
   it('sections in road order, empty ones left out, oldest first, ties by code', () => {
