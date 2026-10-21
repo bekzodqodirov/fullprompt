@@ -144,6 +144,9 @@ export function ThreadCalc({ entity }: { entity: ThreadCalcEntity }) {
             {preview.facts.volumeM3 !== null ? ` · ${preview.facts.volumeM3} m³` : ''}
             {(preview.facts.goods?.length ?? 0) > 0 ? ` · ${preview.facts.goods!.length} ${t('items')}` : ''}
           </p>
+          {preview.aiFailure && preview.aiFailure !== 'nothing_to_read' ? (
+            <p className="text-warn" data-testid="thread-calc-ai-failed">{t('threadAiFailed')}</p>
+          ) : null}
           {preview.missing.length > 0 ? (
             <p className="text-warn">⚠ {t('threadMissing')}</p>
           ) : null}

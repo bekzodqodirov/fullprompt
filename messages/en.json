@@ -3872,6 +3872,7 @@
     "threadAnalyze": "Read",
     "threadReading": "AI is reading…",
     "threadRead": "{lines} lines · {files} files",
+    "threadAiFailed": "⚠ AI could not read this — the figures are from the typed text only. Try again later.",
     "threadMissing": "Some data is missing — the VED will still take it",
     "threadSendBtn": "Send to VED",
     "threadCancel": "Cancel",

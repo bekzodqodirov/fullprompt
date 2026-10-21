@@ -3872,6 +3872,7 @@
     "threadAnalyze": "读取",
     "threadReading": "AI 读取中…",
     "threadRead": "{lines} 行 · {files} 个文件",
+    "threadAiFailed": "⚠ AI 未能读取 — 数字仅取自文本。请稍后再试。",
     "threadMissing": "信息不全 — VED 仍会受理",
     "threadSendBtn": "发送给 VED",
     "threadCancel": "取消",

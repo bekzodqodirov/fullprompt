@@ -133,18 +133,49 @@ export interface IntakeState {
    */
   invoiceGoods: import('../../wms/calc/intake').CalcFacts['goods'];
   /**
-   * A PDF invoice, small enough to show the model as a document block.
+   * PDF invoices, small enough to show the model as document blocks.
    *
-   * Same cap as the images and the same reason: a request body nobody
-   * budgeted for is a request that fails slowly. One document — the first
-   * that fits — because a seller forwarding a folder is forwarding context,
-   * not a second invoice.
+   * Capped like the images and for the same reason: a request body nobody
+   * budgeted for is a request that fails slowly. It used to be ONE — «the
+   * first wins» — so the second factory's invoice of a two-factory order was
+   * stored on the card and read by nobody (his 1.13). Up to
+   * `MAX_INTAKE_PDFS`, read TOGETHER; past the cap the seller is told.
    */
-  pdf: { data: Buffer; name: string } | null;
+  pdfs: { data: Buffer; name: string }[];
+  /**
+   * Spreadsheets the reader could not map onto columns (no header it knows),
+   * as text — the model reads them (his 1.2 b). A sheet the reader DID map is
+   * `invoiceGoods`, exact, and never sent to the model twice.
+   */
+  sheetTexts: string[];
+  /**
+   * A second spreadsheet of goods, waiting for the seller's answer: add its
+   * lines to the first's, or replace them (his 1.13 c — the bot asks). The
+   * second used to REPLACE the first in silence.
+   */
+  pendingInvoice: { goods: import('../../wms/calc/intake').CalcFacts['goods']; label: string } | null;
   /** What the analysis cost, carried to the landing — see `AiIntakeResult`. */
   usage: { model: string; inputTokens: number; outputTokens: number } | null;
-  /** The day's AI budget was spent before this collection was read. */
-  budgetSpent: boolean;
+  /** Why the model's reading is missing (his 1.6 a) — null when it read. */
+  aiFailure: import('../../wms/calc/intake').AiReadFailure | null;
+  /**
+   * The analysis in flight, by a token minted at «Bo'ldi».
+   *
+   * The analysis runs on a SNAPSHOT for up to a few minutes, and its result
+   * used to be written back over the live collection — so a message sent
+   * while it ran (the bot had answered «Qabul qilindi») was erased, a second
+   * «Bo'ldi» started a second paid call, and a cancel mid-analysis was undone
+   * by the result arriving. The result now lands only on the collection that
+   * still carries ITS token, and keeps whatever arrived meanwhile.
+   */
+  analysing: string | null;
+  /**
+   * The seller's typed answers to per-line questions, verbatim, for the card.
+   * NOT material: material is re-read for the shipment's totals, and a line's
+   * «150 kg» read as the whole truck's weight is what made a re-analysis
+   * overrule the documents (the diagnosis' cause 5).
+   */
+  answers: string[];
   expires: number;
 }
 
@@ -178,8 +209,44 @@ export function mergeLineAnswers(
   return out;
 }
 
-/** At most this many photographs reach the model. */
-export const MAX_INTAKE_IMAGES = 6;
+/** At most this many photographs reach the model (his 1.4 b: twelve). */
+export const MAX_INTAKE_IMAGES = 12;
+
+/** At most this many PDFs, and this many bytes of them, reach the model. */
+export const MAX_INTAKE_PDFS = 3;
+export const MAX_INTAKE_PDF_BYTES = 12 * 1024 * 1024;
+
+/**
+ * What a file the seller forwarded IS, by its bytes (#284's rule — never the
+ * name alone), so each kind reaches the reader that can read it.
+ *
+ * `image` covers a photo sent AS A FILE — the sharpest copy a seller has
+ * (WeChat originals, a scan from the office PC) — which used to be stored and
+ * shown to nobody (the diagnosis' cause 2). An ISO-media file (`ftyp`) may be
+ * HEIC, which this server's image library cannot decode: the caller tries it
+ * and says so in words when it fails. `sheet` = let the spreadsheet reader
+ * decide (XLSX, Excel 97, an HTML or XML table, a CSV).
+ */
+export type IntakeFileKind = 'image' | 'isomedia' | 'pdf' | 'docx' | 'sheet';
+
+export function intakeFileKind(
+  body: Buffer,
+  isPhoto: boolean,
+  fileName: string,
+  mime: string | null,
+): IntakeFileKind {
+  if (isPhoto) return 'image';
+  const ascii = (from: number, to: number) => body.subarray(from, to).toString('latin1');
+  if (ascii(0, 5) === '%PDF-') return 'pdf';
+  if (body[0] === 0xff && body[1] === 0xd8 && body[2] === 0xff) return 'image';
+  if (body[0] === 0x89 && ascii(1, 4) === 'PNG') return 'image';
+  if (ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP') return 'image';
+  if (ascii(0, 4) === 'GIF8') return 'image';
+  if (ascii(0, 4) === 'II*\u0000' || ascii(0, 4) === 'MM\u0000*') return 'image';
+  if (ascii(4, 8) === 'ftyp') return 'isomedia';
+  if (/\.docx?$/i.test(fileName) || /wordprocessingml|msword/i.test(mime ?? '')) return 'docx';
+  return 'sheet';
+}
 
 const TTL_MS = 30 * 60_000;
 const collections = new Map<string, IntakeState>();
@@ -217,9 +284,13 @@ export function startIntake(
     offers: [],
     ambiguousTotals: [],
     invoiceGoods: [],
-    pdf: null,
+    pdfs: [],
+    sheetTexts: [],
+    pendingInvoice: null,
     usage: null,
-    budgetSpent: false,
+    aiFailure: null,
+    analysing: null,
+    answers: [],
     expires: Date.now() + TTL_MS,
   };
   collections.set(key(chatId), state);
@@ -269,16 +340,23 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
   // summary says so rather than looking like a model that found nothing.
   const { aiCalcBudgetLeft } = await import('../../wms/calc/ai-cost');
   const budgetLeft = await aiCalcBudgetLeft().catch(() => Number.POSITIVE_INFINITY);
-  const ai = budgetLeft <= 0 ? null : await analyzeIntake({
-    section: state.section,
-    text,
-    fileCount: state.fileCount,
-    images: state.images,
-    pdf: state.pdf,
-  }).catch((err: unknown) => {
-    logger.warn({ err }, 'intake analyze failed');
-    return null;
-  });
+  type Outcome = Awaited<ReturnType<typeof analyzeIntake>>;
+  const outcome: Outcome =
+    budgetLeft <= 0
+      ? { ok: false, failure: 'budget' }
+      : await analyzeIntake({
+          section: state.section,
+          text,
+          fileCount: state.fileCount,
+          images: state.images,
+          pdf: state.pdfs[0] ?? null,
+          morePdfs: state.pdfs.slice(1),
+          sheetText: state.sheetTexts.join('\n\n') || null,
+        }).catch((err: unknown): Outcome => {
+          logger.warn({ err }, 'intake analyze failed');
+          return { ok: false, failure: 'network' };
+        });
+  const ai = outcome.ok ? outcome : null;
 
   // Typed facts win over read ones: the person is looking at the material.
   // A total the text writes TWO ways («1,200 kg») is asked, and the model —
@@ -297,9 +375,10 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
      * weights and volumes, and a model's reading of a caption or a photo
      * used to REPLACE them whenever it found one line — the audit's «used
      * only when the AI found no lines at all». The model's goods answer when
-     * there is no file. `manual.goods` is deliberately always empty
-     * (splitting a typed list is the model's job, not a regex's) and stays
-     * last so the shape never changes.
+     * there is no file. `manual.goods` — lines the person TYPED as goods
+     * («Tovar: …», «Kurtka 300 dona 150 kg») — answer last, when neither of
+     * the others found anything: before 2026-10-21 they were always empty,
+     * so a model that failed left «Tovarlar: —» over a typed name.
      *
      * …and the seller's per-line answers go back on top (P1.3): a re-read
      * after «➕ Yana ma'lumot» must not erase them.
@@ -318,7 +397,7 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
     facts,
     steps: ai?.steps ?? [],
     aiUsed: Boolean(ai),
-    budgetSpent: budgetLeft <= 0,
+    aiFailure: outcome.ok ? null : outcome.failure,
     usage: ai?.usage ?? null,
     ambiguousTotals: manual.ambiguous,
     stage: 'review',

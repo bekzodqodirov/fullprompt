@@ -1,4 +1,4 @@
-import type { AmbiguousTotal, CalcFacts } from './intake';
+import { parseClientHint, type AmbiguousTotal, type CalcFacts } from './intake';
 import type { MeasureUnit } from './pricing';
 import { normalizeTnved, parseGoodsLine, readAmountText, unitOf, type SellerUnit } from './units';
 
@@ -98,12 +98,88 @@ export function parseManualFacts(text: string): CalcFacts & { ambiguous: Ambiguo
     toCity: route.toCity,
     weightKg: weight.value,
     volumeM3: volume.value,
-    // A typed product list is not parsed into items: guessing where one name
-    // ends and the next begins is exactly the job the model does better, and
-    // a wrong split reads as fact on the card.
-    goods: [],
+    goods: readGoodsLines(text),
     ambiguous,
   };
+}
+
+/** A line naming itself a goods line: «Tovar: …», «Товар …», «Mahsulot nomi …». */
+const GOODS_LABEL =
+  /^\s*(?:tovar(?:\s*nomi)?|товар(?:\s*номи)?|mahsulot(?:\s*nomi)?|махсулот|наименование(?:\s*товара)?|название|goods|product(?:\s*name)?|品名)\s*[:\-–—]?\s*/iu;
+
+/**
+ * Words that make a line a TOTAL, not a product — «vazni 120 kg», «umumiy 12
+ * kub», «итого 240 кг». The shipment's totals are read by `readNumber`; a
+ * line made only of these words is never a goods line called «vazni».
+ */
+const TOTAL_WORDS = new Set([
+  'vazni', 'vazn', 'og‘irligi', "og'irligi", 'ogirligi', 'og‘irlik', "og'irlik", 'hajmi', 'hajm', 'kub', 'kg',
+  'umumiy', 'jami', 'brutto', 'netto', 'вес', 'весом', 'объем', 'объём', 'общий', 'общая', 'итого', 'всего',
+  'брутто', 'нетто', 'weight', 'volume', 'gross', 'net', 'total', 'yuk', 'груз', 'jo‘natma', 'партия',
+]);
+
+/** Every token of a line's TAIL is a figure: a number, a unit word, or a code. */
+function figuresOnly(tail: string): boolean {
+  const tokens = tail.split(/[\s,;/+]+/u).filter(Boolean);
+  if (tokens.length === 0) return false;
+  return tokens.every((token) => {
+    if (/^\d[\d.,]*$/u.test(token)) return true;
+    if (unitOf(token) !== null) return true;
+    const glued = /^(\d[\d.,]*)([\p{L}²³]+\.?)$/u.exec(token);
+    if (glued && unitOf(glued[2]!) !== null) return true;
+    return /^(?:kod|код|tnved|тнвэд|hs)$/iu.test(token);
+  });
+}
+
+/**
+ * The goods a person TYPED, line by line, read without a model — so that when
+ * the model is down or found nothing, the summary still says what the goods
+ * are. His screenshot of 2026-10-21 is the case: «Tovar синтетическое
+ * компрессорное масло 1.1 kub 240 kg» came back «Tovarlar: —» because this
+ * reader used to return none, ever.
+ *
+ * Narrow on purpose — a wrong split reads as fact on the card. A line counts
+ * only when it SAYS it is a goods line («Tovar: …»), or when it is a name
+ * followed by nothing but figures («Kurtka 300 dona 150 kg»). Not a route
+ * line, not a line of totals words («vazni 120 kg»), not a sentence with a
+ * number in the middle («yana 250 kg deb yozishdi»), not a client code.
+ * These lines sit LAST in every caller's order: an invoice's rows and the
+ * model's reading both win over them.
+ */
+export function readGoodsLines(text: string): NonNullable<CalcFacts['goods']> {
+  const out: NonNullable<CalcFacts['goods']> = [];
+  for (const raw of text.split(/\r?\n/)) {
+    if (out.length >= 50) break;
+    const line = raw.trim();
+    if (!line || !/\p{L}/u.test(line)) continue;
+    if (readRoute(line).fromCity !== null) continue;
+    if (/^[A-Za-z]{1,4}\d{1,8}$/.test(line)) continue;
+    const labelled = GOODS_LABEL.exec(line);
+    const body = labelled ? line.slice(labelled[0].length) : line;
+    const firstDigit = body.search(/\d/);
+    if (!labelled) {
+      // A name, THEN figures and nothing else.
+      if (firstDigit <= 0 || !figuresOnly(body.slice(firstDigit))) continue;
+    }
+    const parsed = parseGoodsLine(body);
+    const name = parsed.name.replace(/^[\s:\-–—.,]+|[\s:\-–—.,]+$/gu, '').trim();
+    const words = name.toLowerCase().split(/[\s,.;:]+/u).filter(Boolean);
+    if (words.length === 0 || words.every((w) => TOTAL_WORDS.has(w))) continue;
+    if ((name.match(/\p{L}/gu) ?? []).length < 2) continue;
+    // An answer the parser could not settle («1,200 kg») is not a figure.
+    if (parsed.problems.some((p) => p.kind === 'ambiguous')) continue;
+    out.push({
+      name: name.slice(0, 200),
+      quantity: parsed.quantity,
+      weightKg: parsed.weightKg,
+      volumeM3: parsed.volumeM3,
+      measureUnit: parsed.measureUnit,
+      measureQty: parsed.measureQty,
+      tnvedCode: parsed.tnvedCode,
+      note: null,
+    });
+  }
+  return out;
 }
 
 /**
@@ -240,4 +316,23 @@ export function parseLineAnswer(raw: string): LineAnswer {
   }
   if (stated === 0 && !line.tnvedCode) return { kind: 'refused', reason: 'nothing' };
   return { kind: 'figures', figures, code: line.tnvedCode };
+}
+
+/**
+ * Is the first message of a collection MATERIAL rather than the customer's
+ * name (his 1.7 b)? The bot asks «who is the customer» and a seller in a
+ * hurry forwards the goods list instead; it used to become the lead's NAME
+ * and was never shown to the model. A code or a phone is the customer; several
+ * lines, a long text, a goods line or a figure with a unit is material; a short
+ * line of words is a name.
+ */
+export function looksLikeMaterial(raw: string): boolean {
+  const text = raw.trim();
+  if (!text) return false;
+  if (parseClientHint(text)) return false;
+  if (text.split(/\r?\n/).filter((l) => l.trim()).length > 1) return true;
+  if (text.length > 60) return true;
+  if (readGoodsLines(text).length > 0) return true;
+  const line = parseGoodsLine(text);
+  return line.unitWords.length > 0 || line.tnvedCode !== null;
 }

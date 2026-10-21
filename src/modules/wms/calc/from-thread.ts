@@ -11,11 +11,12 @@ import {
   intakeNoteText,
   landingItems,
   missingFields,
+  type AiReadFailure,
   type CalcFacts,
   type CalcSection,
 } from './intake';
 import { bookLawsFor } from './book-laws';
-import { parseManualFacts } from './intake-manual';
+import { parseManualFacts, readGoodsLines } from './intake-manual';
 import { routeAmount } from './units';
 import { analyzeIntake } from './intake-ai';
 import { calcDealOwnerFor, dealFor } from './intake-land';
@@ -46,6 +47,8 @@ export type ThreadCalcEntity =
 export interface ThreadMaterial {
   /** The seller's and the customer's words, labeled, in sent order. */
   lines: string[];
+  /** The same words without the speaker's label — what typed goods are read from. */
+  bodies: string[];
   fileCount: number;
   clientId: string | null;
 }
@@ -122,21 +125,25 @@ export async function threadMaterial(
   }
 
   const lines: string[] = [];
+  const bodies: string[] = [];
   let fileCount = 0;
   for (const row of rows) {
     if (row.hasMedia) fileCount += 1;
     const body = (row.body ?? '').trim();
     if (!body) continue;
+    bodies.push(body);
     const who = row.direction === 'in' ? 'Mijoz' : (names.get(row.managerUserId) ?? 'Biz');
     lines.push(`${who}: ${body}`);
   }
   if (fileCount > 0) lines.push(`(${fileCount} ta fayl suhbatda — kartadagi chat panelida)`);
-  return { lines, fileCount, clientId };
+  return { lines, bodies, fileCount, clientId };
 }
 
 export interface ThreadCalcPreview {
   facts: CalcFacts;
   steps: string[];
+  /** Why the model's reading is missing, when it is (his 1.6 a). */
+  aiFailure: AiReadFailure | null;
   missing: string[];
   lines: number;
   fileCount: number;
@@ -154,12 +161,16 @@ export async function threadCalcAnalyze(
   const material = await threadMaterial(actor, input.entity, input.messageIds);
   const text = material.lines.join('\n');
   const manual = parseManualFacts(text);
-  const ai = await analyzeIntake({
+  // Typed goods lines are read from the messages THEMSELVES: the material's
+  // «Mijoz: » / «Ali: » prefix would otherwise become part of a goods name.
+  const typedGoods = readGoodsLines(material.bodies.join('\n'));
+  const outcome = await analyzeIntake({
     section: input.section,
     text,
     fileCount: material.fileCount,
     timeoutMs: 20_000,
   });
+  const ai = outcome.ok ? outcome : null;
   // Typed/manual facts win over read ones, the bot's own rule — and a total
   // the text writes two ways («1,200 kg») is left for the person to type in
   // the preview, never taken from the model that read the same text.
@@ -169,7 +180,7 @@ export async function threadCalcAnalyze(
     toCity: manual.toCity ?? ai?.facts.toCity ?? null,
     weightKg: manual.weightKg ?? (asked('weightKg') ? null : (ai?.facts.weightKg ?? null)),
     volumeM3: manual.volumeM3 ?? (asked('volumeM3') ? null : (ai?.facts.volumeM3 ?? null)),
-    goods: (ai?.facts.goods?.length ? ai.facts.goods : manual.goods) ?? [],
+    goods: ai?.facts.goods?.length ? ai.facts.goods : typedGoods,
   };
   // The book's law for the read codes — the preview asks what the LAW asks
   // (judge TT-5), on the pool, before anything lands.
@@ -177,6 +188,7 @@ export async function threadCalcAnalyze(
   return {
     facts,
     steps: ai?.steps ?? [],
+    aiFailure: outcome.ok ? null : outcome.failure,
     missing: missingFields(input.section, facts, laws),
     lines: material.lines.length,
     fileCount: material.fileCount,
@@ -194,8 +206,8 @@ function pairOf(qty: number | null, unit: unknown) {
 }
 
 /** What the browser may claim about the cargo — its own request, sanitized. */
-function cleanFacts(raw: CalcFacts | null | undefined, material: string): CalcFacts {
-  if (!raw) return parseManualFacts(material);
+function cleanFacts(raw: CalcFacts | null | undefined, material: string, bodies: string): CalcFacts {
+  if (!raw) return { ...parseManualFacts(material), goods: readGoodsLines(bodies) };
   const num = (v: unknown) =>
     typeof v === 'number' && Number.isFinite(v) && v >= 0 && v < 1_000_000 ? v : null;
   const str = (v: unknown, cap: number) =>
@@ -253,7 +265,7 @@ export async function threadCalcSend(
   if (!CALC_SECTIONS.includes(input.section)) throw new CalcError('bad_section');
   const material = await threadMaterial(actor, input.entity, input.messageIds);
   const text = material.lines.join('\n');
-  const facts = cleanFacts(input.facts, text);
+  const facts = cleanFacts(input.facts, text, material.bodies.join('\n'));
   const steps = (Array.isArray(input.steps) ? input.steps : [])
     .filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
     .slice(0, 20)

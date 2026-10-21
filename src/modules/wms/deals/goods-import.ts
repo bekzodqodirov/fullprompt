@@ -55,6 +55,13 @@ interface ColumnMap {
 /** Substring keywords per column, lowercased — ru/uz/zh/en, the four the clients actually write. */
 const NAME_KEYS = ['наимен', 'товар', 'описан', 'назван', 'nomi', 'mahsulot', 'tovar', 'name', 'descri', 'goods', 'item', '品名', '名称', '货物', '商品', '产品'];
 /**
+ * The keys that say «this is what the product is CALLED» — tried before the
+ * generic ones (2026-10-21, the diagnosis' cause 1). Left to right over the
+ * whole list, «Item No.» took the name column from «Description» two cells
+ * further on, and every product was called YW-2301.
+ */
+const NAME_KEYS_FIRST = ['наимен', 'описан', 'назван', 'nomi', 'mahsulot', 'descri', 'goods', '品名', '名称', '货物', '商品', '产品'];
+/**
  * The TNVED / HS column (judge MR-19). Never a bare «hs» or «kod»: header
  * keys match as SUBSTRINGS, so «hs» is inside «Widths» and «kod» inside
  * «Tovar kodi» / «Mijoz kodi» — an article number then priced under a real
@@ -102,6 +109,16 @@ export function parseNumber(cell: Cell): number | null {
 /** A cell that reads as a TNVED code — the kernel's own shape rule. */
 const isCodeCell = (cell: Cell) => cellText(cell) !== '' && normalizeTnved(cell) !== null;
 
+/**
+ * A cell that reads as a product's NAME: two letters at least, and not an
+ * article number («YW-2301», «A-17», «SKU 0042») — letters, then digits.
+ */
+const isWordCell = (cell: Cell) => {
+  const text = cellText(cell);
+  if ((text.match(/\p{L}/gu) ?? []).length < 2) return false;
+  return !/^\p{L}{0,5}[\s\-_./#№]*\d[\d\s\-_./]*$/u.test(text);
+};
+
 /** The non-empty data cells of one column, under a header row. */
 function columnCells(rows: Cell[][], headerRow: number, col: number): Cell[] {
   return rows
@@ -146,14 +163,25 @@ export function detectColumns(rows: Cell[][]): { headerRow: number; columns: Col
       const cells = columnCells(rows, r, i);
       return cells.length > 0 && cells.every(isCodeCell);
     };
+    // A title row is one merged cell («COMMERCIAL INVOICE / Товарная
+    // накладная»): it names «товар» and is no header. A header has columns.
+    if (header.filter((cell) => cellText(cell) !== '').length < 2) continue;
     // The TNVED column is claimed BEFORE the name keys run: «Код ТН ВЭД
     // товара» contains «товар», and taken as the NAME it named every
     // product by its code and lost the code (the audit, reproduced).
     const tnved = findColumn(header, TNVED_KEYS, taken, mostlyCodes);
     if (tnved !== null) taken.add(tnved);
     // …and a name column is never one whose data are all codes («Goods
-    // code», «Tovar kodi» to the left of the real name).
-    const name = findColumn(header, NAME_KEYS, taken, (i) => !allCodes(i));
+    // code», «Tovar kodi» to the left of the real name), and prefers a
+    // column whose data READ as words over an article number («YW-2301»).
+    const wordy = (i: number) => {
+      const cells = columnCells(rows, r, i);
+      return cells.length === 0 || cells.filter(isWordCell).length * 2 > cells.length;
+    };
+    const name =
+      findColumn(header, NAME_KEYS_FIRST, taken, (i) => !allCodes(i) && wordy(i)) ??
+      findColumn(header, NAME_KEYS, taken, (i) => !allCodes(i) && wordy(i)) ??
+      findColumn(header, NAME_KEYS, taken, (i) => !allCodes(i));
     if (name === null) continue;
     taken.add(name);
     const claim = (keys: string[]): number | null => {

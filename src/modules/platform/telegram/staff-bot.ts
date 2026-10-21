@@ -493,6 +493,11 @@ const CALC_STEPS = [
   'save',
   'more',
   'cancel',
+  // 2026-10-21 (his 1.6 a, 1.13 c): read again after a transient AI
+  // failure; answer «a second invoice arrived» — add its lines or replace.
+  'reread',
+  'inv_add',
+  'inv_replace',
 ] as const;
 
 export type CalcStep = (typeof CALC_STEPS)[number];
@@ -1272,8 +1277,9 @@ export async function landCollectedIntake(
     facts: state.facts,
     steps: state.steps,
     // Law 11: the words themselves go onto the card, not only what the
-    // parser made of them.
-    material: state.material,
+    // parser made of them — the per-line answers included, labelled, since
+    // they are kept out of the material the totals are read from.
+    material: [...state.material, ...state.answers],
     fileCount: state.fileCount,
     collectedBy: staffId,
     collectedByName: staffName,

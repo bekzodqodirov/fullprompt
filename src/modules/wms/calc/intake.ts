@@ -112,6 +112,55 @@ export const FIELD_LABEL: Record<CalcField, string> = {
   lineNeed: 'kod so‘ragan o‘lchov',
 };
 
+/**
+ * Why the model's reading is missing, named (his 1.6 a, 2026-10-21).
+ *
+ * Every one of these used to reach the seller as the same sentence, «AI
+ * mavjud emas» — a key that expired, a packing list too long for the answer,
+ * a five-second Anthropic outage and a refused chemical were one message, so
+ * nobody could tell «try again in a minute» from «tell the admin». His own
+ * screenshot of 2026-10-21 is that sentence over a message the model never
+ * read. `budget` is the caller's (the day's cap), the rest come from the call.
+ */
+export type AiReadFailure =
+  | 'not_configured'
+  | 'nothing_to_read'
+  | 'budget'
+  | 'refused'
+  | 'truncated'
+  | 'timeout'
+  | 'rate_limited'
+  | 'overloaded'
+  | 'auth'
+  | 'rejected'
+  | 'unreadable'
+  | 'network';
+
+/** The sentence per failure, and whether pressing «🔄 Qayta o‘qish» can help. */
+export const AI_READ_FAILURE: Record<AiReadFailure, { text: string; retry: boolean }> = {
+  not_configured: { text: 'AI ulanmagan (serverda kalit yo‘q) — adminga ayting.', retry: false },
+  nothing_to_read: { text: 'AI ga o‘qish uchun matn, rasm yoki PDF yo‘q edi.', retry: false },
+  budget: { text: 'AI kunlik limiti tugadi.', retry: false },
+  refused: {
+    text: 'AI bu materialni o‘qishdan bosh tortdi (xavfsizlik filtri) — VED qo‘lda ko‘radi.',
+    retry: false,
+  },
+  truncated: {
+    text: 'Material juda katta — AI javobi sig‘madi. Kamroq sahifa yoki Excel yuboring.',
+    retry: true,
+  },
+  timeout: { text: 'AI belgilangan vaqtda javob bermadi.', retry: true },
+  rate_limited: { text: 'AI hozir band (so‘rov ko‘p) — bir daqiqadan keyin qayta urinib ko‘ring.', retry: true },
+  overloaded: { text: 'AI xizmatida vaqtinchalik nosozlik — birozdan keyin qayta urinib ko‘ring.', retry: true },
+  auth: { text: 'AI kaliti ishlamayapti (eskirgan yoki noto‘g‘ri) — adminga ayting.', retry: false },
+  rejected: {
+    text: 'AI so‘rovni qabul qilmadi (fayl o‘qilmaydigan yoki juda katta) — fayllarni boshqacha yuboring.',
+    retry: false,
+  },
+  unreadable: { text: 'AI javobini o‘qib bo‘lmadi.', retry: true },
+  network: { text: 'AI bilan aloqa uzildi.', retry: true },
+};
+
 /** What the AI (or a human) managed to read out of the sent material. */
 export interface CalcFacts {
   fromCity?: string | null;
@@ -731,8 +780,20 @@ export function collectPromptText(section: CalcSection): string {
 export function parseClientHint(raw: string): { code?: string; phone?: string } | null {
   const text = raw.trim();
   if (!text) return null;
-  const digits = text.replace(/\D/g, '');
-  if (digits.length >= 7) return { phone: text };
   if (/^[A-Za-z]{1,4}\d{1,8}$/.test(text)) return { code: text.toUpperCase() };
-  return null;
+  // A PHONE, not «any text with seven digits» (the diagnosis' cause 6): a
+  // forwarded goods list carrying a TNVED code used to name the lead AND
+  // become its «phone». A phone is one short line holding one number of 9-15
+  // digits, written as phones are written; a name beside it is allowed
+  // («Ali aka +998 90 123 45 67»).
+  if (text.includes('\n') || text.length > 60) return null;
+  const phone = /\+?\d[\d\s()-]{6,20}\d/.exec(text);
+  if (!phone) return null;
+  const digits = phone[0].replace(/\D/g, '');
+  if (digits.length < 9 || digits.length > 15) return null;
+  if ((text.match(/\d/g) ?? []).length !== digits.length) return null;
+  // Ten bare digits after a word are a TNVED code («Kurtka 6201930000»), not
+  // a phone: his customers' numbers are nine digits or twelve with 998.
+  if (digits.length === 10 && !phone[0].includes('+') && /\p{L}/u.test(text)) return null;
+  return { phone: text };
 }

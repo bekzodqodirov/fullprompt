@@ -3872,6 +3872,7 @@
     "threadAnalyze": "O‘qish",
     "threadReading": "AI o‘qimoqda…",
     "threadRead": "qator: {lines} · fayl: {files}",
+    "threadAiFailed": "⚠ AI o‘qiy olmadi — raqamlar faqat yozilgan matndan olindi. Keyinroq qayta urinib ko‘ring.",
     "threadMissing": "Ma’lumot yetishmaydi — VED baribir qabul qiladi",
     "threadSendBtn": "VEDga yuborish",
     "threadCancel": "Bekor",

@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { logger } from '../../platform/logger';
 import { aiConfigured, ANALYST_MODEL } from '../../platform/ai/model';
-import type { CalcFacts, CalcGoodsFact, CalcSection } from './intake';
+import type { AiReadFailure, CalcFacts, CalcGoodsFact, CalcSection } from './intake';
 import { normalizeRowUnit, normalizeTnved, unitOf } from './units';
 
 /**
@@ -85,6 +85,15 @@ const SYSTEM = `Ты — помощник карго-компании GSR LOGIST
 наклейке коробки, от руки на накладной. Возьми числа оттуда, если в тексте
 их нет. В steps напиши, что именно ты прочитал с фотографии.
 
+ВСЁ ВМЕСТЕ. Сотрудник пересылает материал кусками: текст, фото, PDF, таблицу
+Excel (её содержимое дано текстом). Это ОДНА заявка — прочитай всё и собери
+один список. Один и тот же товар, упомянутый в тексте и в документе, — одна
+строка, не две. Если числа в разных местах расходятся, бери из документа и
+напиши об этом в steps (что где написано).
+
+НАЗВАНИЕ товара пиши по-русски; если в документе оно на китайском или
+английском, добавь оригинал в скобках: «Куртка женская (女士夹克)».
+
 Ничего не выдумывай. Если факта нет — null. Лучше пустой список товаров, чем придуманный.
 Коды ТН ВЭД ставь только там, где уверен; иначе null.`;
 
@@ -103,6 +112,51 @@ export interface AiIntakeResult {
    */
   usage?: { model: string; inputTokens: number; outputTokens: number };
 }
+
+/** The reading, or why there is none (his 1.6 a — never one sentence for all). */
+export type AiIntakeOutcome = ({ ok: true } & AiIntakeResult) | { ok: false; failure: AiReadFailure };
+
+/**
+ * Room for the answer AND the thinking that precedes it.
+ *
+ * The heavy model thinks by default and its thinking is counted INSIDE
+ * `max_tokens`. At 4096 a forty-line packing list left the JSON no room: the
+ * answer stopped mid-object, `JSON.parse` threw, and the catch reported «no
+ * AI» — the most likely reading of his 2026-10-21 screenshot. Below the SDK's
+ * non-streaming ceiling (it refuses a request it estimates past ten minutes).
+ */
+export const INTAKE_MAX_TOKENS = 16_000;
+
+/**
+ * How long the bot waits for one reading (his 3.4 b: up to three minutes with
+ * «⏳» on the screen). The bot's answer is delivered off the poller, so a long
+ * wait holds nobody else; the thread door passes its own shorter leash.
+ */
+export const INTAKE_TIMEOUT_MS = 150_000;
+
+/**
+ * An SDK error, as one of the words the seller is told.
+ *
+ * Exported so the mapping can be tested with the SDK's own error classes
+ * rather than with hand-typed objects (#1209's lesson: a test error built by
+ * hand is a guess at what the library throws).
+ */
+export function aiFailureOf(err: unknown): AiReadFailure {
+  if (err instanceof Anthropic.APIConnectionTimeoutError) return 'timeout';
+  if (err instanceof Anthropic.APIUserAbortError) return 'timeout';
+  if (err instanceof Anthropic.APIConnectionError) return 'network';
+  if (err instanceof Anthropic.AuthenticationError || err instanceof Anthropic.PermissionDeniedError) {
+    return 'auth';
+  }
+  if (err instanceof Anthropic.RateLimitError) return 'rate_limited';
+  if (err instanceof Anthropic.InternalServerError) return 'overloaded';
+  if (err instanceof Anthropic.APIError) return 'rejected';
+  if (err instanceof SyntaxError || err instanceof z.ZodError) return 'unreadable';
+  return 'network';
+}
+
+/** A failure worth one more attempt inside the same leash: the call never ran. */
+const transient = (f: AiReadFailure) => f === 'rate_limited' || f === 'overloaded' || f === 'network';
 
 /**
  * Read the collected material. Returns null when AI is not available at all
@@ -133,150 +187,187 @@ export async function analyzeIntake(input: {
    */
   pdf?: { data: Buffer; name: string } | null;
   /**
+   * Further PDFs (his 1.4 b, 1.13: two invoices from two factories are read
+   * TOGETHER, not the first one alone). The caller caps the count and bytes.
+   */
+  morePdfs?: { data: Buffer; name: string }[];
+  /**
+   * A spreadsheet the reader could not map onto columns, as text — the model
+   * reads it with everything else (his 1.2 b: the reader answers when it finds
+   * the header, the model when it does not).
+   */
+  sheetText?: string | null;
+  /**
    * The caller's leash. The bot answers asynchronously and affords the
    * default 60 s; an interactive press (the thread door) cannot hold a
    * person that long and passes ~20 s — past it the manual parser answers.
    */
   timeoutMs?: number;
-}): Promise<AiIntakeResult | null> {
-  if (!aiConfigured()) return null;
+}): Promise<AiIntakeOutcome> {
+  if (!aiConfigured()) return { ok: false, failure: 'not_configured' };
   const material = input.text.trim();
   const images = input.images ?? [];
-  const pdf = input.pdf ?? null;
+  const pdfs = [input.pdf ?? null, ...(input.morePdfs ?? [])].filter(
+    (p): p is { data: Buffer; name: string } => p !== null,
+  );
+  const sheetText = input.sheetText?.trim() || '';
   // A collection of nothing but photographs — or nothing but an invoice — is
   // still a collection: before this round the empty-text guard refused it
   // outright.
-  if (!material && images.length === 0 && !pdf) return null;
-
-  try {
-    // A deadline of its own, for the same reason round 101 gave the
-    // assistant one: the SDK's default is about ten minutes, and this call
-    // is made from the staff bot, whose poller is sequential — a hung socket
-    // there is a customer bot that answers nobody until it clears.
-    const client = new Anthropic({ timeout: input.timeoutMs ?? 60_000, maxRetries: 1 });
-    const response = await client.messages.create({
-      model: ANALYST_MODEL,
-      max_tokens: 4096,
-      system: SYSTEM,
-      output_config: {
-        format: {
-          type: 'json_schema',
-          schema: {
-            type: 'object',
-            properties: {
-              from_city: { type: ['string', 'null'] },
-              to_city: { type: ['string', 'null'] },
-              weight_kg: { type: ['number', 'null'] },
-              volume_m3: { type: ['number', 'null'] },
-              goods: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  properties: {
-                    name: { type: 'string' },
-                    quantity: { type: ['number', 'null'] },
-                    weight_kg: { type: ['number', 'null'] },
-                    volume_m3: { type: ['number', 'null'] },
-                    unit: { type: ['string', 'null'], enum: [...AI_UNITS, null] },
-                    measure_qty: { type: ['number', 'null'] },
-                    tnved_code: { type: ['string', 'null'] },
-                    note: { type: ['string', 'null'] },
-                  },
-                  required: [
-                    'name',
-                    'quantity',
-                    'weight_kg',
-                    'volume_m3',
-                    'unit',
-                    'measure_qty',
-                    'tnved_code',
-                    'note',
-                  ],
-                  additionalProperties: false,
-                },
-              },
-              steps: { type: 'array', items: { type: 'string' } },
-            },
-            required: ['from_city', 'to_city', 'weight_kg', 'volume_m3', 'goods', 'steps'],
-            additionalProperties: false,
-          },
-        },
-      },
-      messages: [
-        {
-          role: 'user',
-          content: [
-            // Images FIRST: the model reads them as context for the text
-            // that follows, which is how the packing list and its caption
-            // actually relate.
-            ...images.map(
-              (img): Anthropic.ContentBlockParam => ({
-                type: 'image',
-                source: {
-                  type: 'base64',
-                  media_type: img.mediaType,
-                  data: img.data.toString('base64'),
-                },
-              }),
-            ),
-            // …and the invoice after them, before the text: it is the most
-            // exact thing in the message and the caption usually refers to it.
-            ...(pdf
-              ? [
-                  {
-                    type: 'document',
-                    source: {
-                      type: 'base64',
-                      media_type: 'application/pdf',
-                      data: pdf.data.toString('base64'),
-                    },
-                  } as Anthropic.ContentBlockParam,
-                ]
-              : []),
-            {
-              type: 'text',
-              text:
-                `Раздел: ${input.section}\n` +
-                (input.fileCount ? `Прикреплено файлов: ${input.fileCount}\n` : '') +
-                (images.length ? `Фотографий для чтения: ${images.length}\n` : '') +
-                (pdf ? `Приложен инвойс PDF: ${pdf.name}\n` : '') +
-                (material ? `Материалы:\n${material.slice(0, 20000)}` : 'Текста нет — читай фото.'),
-            },
-          ],
-        },
-      ],
-    });
-    // Spec §3: «no new cap in v1, but log token use». Until this round
-    // every model call was a person pressing a button; the pass makes
-    // them automatic, so what it costs has to be readable in the log or
-    // the owner cannot answer whether it is affordable.
-    logger.info(
-      { in: response.usage?.input_tokens, out: response.usage?.output_tokens },
-      '[calc intake] model tokens',
-    );
-    if (response.stop_reason === 'refusal') return null;
-    const raw = response.content.find((b) => b.type === 'text')?.text ?? '';
-    const parsed = factsSchema.parse(JSON.parse(raw));
-    return {
-      usage: {
-        model: ANALYST_MODEL,
-        inputTokens: response.usage?.input_tokens ?? 0,
-        outputTokens: response.usage?.output_tokens ?? 0,
-      },
-      facts: {
-        fromCity: parsed.from_city,
-        toCity: parsed.to_city,
-        weightKg: parsed.weight_kg,
-        volumeM3: parsed.volume_m3,
-        goods: parsed.goods.map(aiGoodsLine),
-      },
-      steps: parsed.steps.slice(0, 20),
-    };
-  } catch (err) {
-    // Never fatal: the intake goes on with what the person typed.
-    logger.warn({ err }, 'calc intake AI failed');
-    return null;
+  if (!material && images.length === 0 && pdfs.length === 0 && !sheetText) {
+    return { ok: false, failure: 'nothing_to_read' };
   }
+
+  // A deadline of its own, for the same reason round 101 gave the assistant
+  // one: the SDK's default is about ten minutes. Retries are OURS, not the
+  // SDK's: its retry restarted the whole leash, so a timed-out call waited
+  // twice as long and re-sent every image — one more attempt is made only
+  // for a failure where the call never ran, and only while half the leash is
+  // left.
+  const leash = input.timeoutMs ?? INTAKE_TIMEOUT_MS;
+  const started = Date.now();
+  let failure: AiReadFailure = 'network';
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const left = leash - (Date.now() - started);
+    if (attempt > 0 && left < leash / 2) break;
+    try {
+      const client = new Anthropic({ timeout: left, maxRetries: 0 });
+      const response = await client.messages.create({
+        model: ANALYST_MODEL,
+        max_tokens: INTAKE_MAX_TOKENS,
+        system: SYSTEM,
+        output_config: { format: { type: 'json_schema', schema: FACTS_JSON_SCHEMA } },
+        messages: [{ role: 'user', content: intakeContent(input.section, input.fileCount, material, images, pdfs, sheetText) }],
+      });
+      // Spec §3: «no new cap in v1, but log token use». Until this round
+      // every model call was a person pressing a button; the pass makes
+      // them automatic, so what it costs has to be readable in the log or
+      // the owner cannot answer whether it is affordable.
+      logger.info(
+        { in: response.usage?.input_tokens, out: response.usage?.output_tokens, stop: response.stop_reason },
+        '[calc intake] model tokens',
+      );
+      return readIntakeResponse(response);
+    } catch (err) {
+      failure = aiFailureOf(err);
+      // Never fatal: the intake goes on with what the person typed, and the
+      // seller is told WHY. The reason is in the log beside the error.
+      logger.warn({ err, failure, attempt }, 'calc intake AI failed');
+      if (!transient(failure)) break;
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+    }
+  }
+  return { ok: false, failure };
+}
+
+/**
+ * The model's answer, read — or the reason it cannot be. Pure over the
+ * response's shape, so a truncated or refused answer is tested without a call.
+ */
+export function readIntakeResponse(response: {
+  stop_reason: string | null;
+  content: { type: string; text?: string }[];
+  usage?: { input_tokens?: number; output_tokens?: number } | null;
+}): AiIntakeOutcome {
+  if (response.stop_reason === 'refusal') return { ok: false, failure: 'refused' };
+  // Cut short: the JSON is half an object, and parsing it would throw and be
+  // reported as «the AI could not be reached» (the 4096 trap).
+  if (response.stop_reason === 'max_tokens') return { ok: false, failure: 'truncated' };
+  const raw = response.content.find((b) => b.type === 'text')?.text ?? '';
+  let parsed: z.infer<typeof factsSchema>;
+  try {
+    parsed = factsSchema.parse(JSON.parse(raw));
+  } catch (err) {
+    logger.warn({ err, head: raw.slice(0, 200) }, '[calc intake] answer not readable');
+    return { ok: false, failure: 'unreadable' };
+  }
+  return {
+    ok: true,
+    usage: {
+      model: ANALYST_MODEL,
+      inputTokens: response.usage?.input_tokens ?? 0,
+      outputTokens: response.usage?.output_tokens ?? 0,
+    },
+    facts: {
+      fromCity: parsed.from_city,
+      toCity: parsed.to_city,
+      weightKg: parsed.weight_kg,
+      volumeM3: parsed.volume_m3,
+      goods: parsed.goods.map(aiGoodsLine),
+    },
+    steps: parsed.steps.slice(0, 20),
+  };
+}
+
+/** The structured-output schema the answer must follow. */
+const FACTS_JSON_SCHEMA = {
+  type: 'object',
+  properties: {
+    from_city: { type: ['string', 'null'] },
+    to_city: { type: ['string', 'null'] },
+    weight_kg: { type: ['number', 'null'] },
+    volume_m3: { type: ['number', 'null'] },
+    goods: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          quantity: { type: ['number', 'null'] },
+          weight_kg: { type: ['number', 'null'] },
+          volume_m3: { type: ['number', 'null'] },
+          unit: { type: ['string', 'null'], enum: [...AI_UNITS, null] },
+          measure_qty: { type: ['number', 'null'] },
+          tnved_code: { type: ['string', 'null'] },
+          note: { type: ['string', 'null'] },
+        },
+        required: ['name', 'quantity', 'weight_kg', 'volume_m3', 'unit', 'measure_qty', 'tnved_code', 'note'],
+        additionalProperties: false,
+      },
+    },
+    steps: { type: 'array', items: { type: 'string' } },
+  },
+  required: ['from_city', 'to_city', 'weight_kg', 'volume_m3', 'goods', 'steps'],
+  additionalProperties: false,
+} as const;
+
+/** What the model is shown, in the order a person reads a forwarded pile. */
+function intakeContent(
+  section: CalcSection,
+  fileCount: number,
+  material: string,
+  images: NonNullable<Parameters<typeof analyzeIntake>[0]['images']>,
+  pdfs: { data: Buffer; name: string }[],
+  sheetText: string,
+): Anthropic.ContentBlockParam[] {
+  return [
+    // Images FIRST: the model reads them as context for the text that
+    // follows, which is how the packing list and its caption actually relate.
+    ...images.map(
+      (img): Anthropic.ContentBlockParam => ({
+        type: 'image',
+        source: { type: 'base64', media_type: img.mediaType, data: img.data.toString('base64') },
+      }),
+    ),
+    // …and the invoices after them, before the text: they are the most exact
+    // thing in the message and the caption usually refers to them.
+    ...pdfs.map(
+      (pdf): Anthropic.ContentBlockParam => ({
+        type: 'document',
+        source: { type: 'base64', media_type: 'application/pdf', data: pdf.data.toString('base64') },
+      }),
+    ),
+    {
+      type: 'text',
+      text:
+        `Раздел: ${section}\n` +
+        (fileCount ? `Прикреплено файлов: ${fileCount}\n` : '') +
+        (images.length ? `Фотографий для чтения: ${images.length}\n` : '') +
+        (pdfs.length ? `Приложены PDF: ${pdfs.map((p) => p.name).join(', ')}\n` : '') +
+        (sheetText ? `Таблица Excel (текстом):\n${sheetText.slice(0, 15000)}\n\n` : '') +
+        (material ? `Материалы:\n${material.slice(0, 20000)}` : 'Текста нет — читай фото и документы.'),
+    },
+  ];
 }
 
 /**

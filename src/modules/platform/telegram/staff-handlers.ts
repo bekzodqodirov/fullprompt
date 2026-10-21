@@ -1,4 +1,5 @@
 import type { Bot } from 'grammy';
+import { randomUUID } from 'node:crypto';
 import { bugunReply } from '../tasks/digest';
 import { logger } from '../logger';
 import { keyboardOf, staffTextHtml } from '../notifications/staff-html';
@@ -64,7 +65,10 @@ import { clientLabels } from './client-labels';
 import {
   activeIntake,
   analyzeCollected,
+  intakeFileKind,
   MAX_INTAKE_IMAGES,
+  MAX_INTAKE_PDF_BYTES,
+  MAX_INTAKE_PDFS,
   type IntakeState,
   endIntake,
   mayCollect,
@@ -704,61 +708,38 @@ export function registerStaffBot(bot: Bot): void {
     }
     const staff = await staffForChat(chatId);
     if (!staff) return next();
-    // A photo sent BEFORE the customer is named used to fall through to the
-    // cabinet, which answers a staff chat with nothing at all — so the first
-    // thing a seller does after pressing the button vanished. Say what is
-    // wanted; the photo is not stored, because the note it would be bound to
-    // is only meaningful once the collection is under way.
-    if (state.stage === 'client') {
-      await ctx.reply('Avval mijozni yozing: kodi (GS777), telefon raqami yoki ismi.');
-      return;
-    }
-
     const saved = await saveIntakeFile(ctx, state.noteId, staff.id).catch((err: unknown) => {
       logger.warn({ err }, 'intake file save failed');
       return null;
-    });
-    const caption = ctx.message.caption?.trim();
-    // The reduced copy the model will LOOK at (his third report: the cube and
-    // the kilos are written on the packing list, and the analysis only ever
-    // read text). Capped: a forwarded album is a request body nobody
-    // budgeted for, and what does not fit is COUNTED, never dropped in
-    // silence — the summary says how many were read.
-    let images = state.images;
-    let imagesSkipped = state.imagesSkipped;
-    if (saved && saved.isPhoto) {
-      if (images.length < MAX_INTAKE_IMAGES) {
-        const reduced = await reduceForModel(saved.body).catch(() => null);
-        if (reduced) images = [...images, { data: reduced, mediaType: 'image/jpeg' as const }];
-        else imagesSkipped += 1;
-      } else {
-        imagesSkipped += 1;
-      }
-    }
-    // The invoice, READ rather than merely stored (sub-round C). Until now
-    // an attached document was saved to the card and never opened by
-    // anything — a fifty-row packing list the seller had already been sent
-    // by the supplier, retyped by hand or lost.
-    const read = saved && !saved.isPhoto ? await readInvoice(ctx, saved.body) : null;
-
-    const updated = updateIntake(chatId, {
-      stage: 'material',
-      fileCount: state.fileCount + (saved ? 1 : 0),
-      material: caption ? [...state.material, caption] : state.material,
-      images,
-      imagesSkipped,
-      invoiceGoods: read?.goods?.length ? read.goods : state.invoiceGoods,
-      // First one wins: a second PDF about the same shipment is a
-      // contradiction nobody can resolve from a chat.
-      pdf: state.pdf ?? read?.pdf ?? null,
     });
     if (!saved) {
       await ctx.reply('Faylni saqlab bo‘lmadi — matn bilan yozib yuboring.');
       return;
     }
-    if (read?.refusal) await ctx.reply(read.refusal);
-    else if (read?.goods?.length) {
-      await ctx.reply(`📄 Fayldan ${read.goods.length} ta tovar o‘qildi.`);
+    const caption = ctx.message.caption?.trim();
+    const fileName = ctx.message.document?.file_name ?? '';
+    const read = await readIntakeFile(saved, fileName, ctx.message.document?.mime_type ?? null, state);
+    // A file sent BEFORE the customer is named — or before the podklyuch
+    // door's «qayerdan?» — is material like any other (his 1.7 b). It used to
+    // be refused before the client was named, and in the zone stage it
+    // skipped both questions. The question stays open and is asked again.
+    const waiting = state.stage === 'client' || state.stage === 'section';
+    const updated = updateIntake(chatId, {
+      ...read.patch,
+      stage: waiting ? state.stage : 'material',
+      fileCount: state.fileCount + 1,
+      material: caption ? [...state.material, caption] : state.material,
+    });
+    if (read.say) await ctx.reply(read.say, read.keyboard ? { reply_markup: read.keyboard } : undefined);
+    if (state.stage === 'section') {
+      await ctx.reply('Qabul qilindi. Avval yuk qayerdan chiqishini tanlang:', {
+        reply_markup: zoneKeyboard(await pricedZonesNow()),
+      });
+      return;
+    }
+    if (state.stage === 'client') {
+      await ctx.reply(`Qabul qilindi.\n\n${CLIENT_QUESTION}`, { parse_mode: 'Markdown' });
+      return;
     }
     await showIntakePrompt(ctx, chatId, updated ?? state);
   });
@@ -774,7 +755,22 @@ export function registerStaffBot(bot: Bot): void {
     async (ctx, next) => {
       const chatId = BigInt(ctx.chat.id);
       const late = isBacklog(ctx.message.date);
-      if (!late && (activeIntake(chatId) || activeCapture(chatId))) return next();
+      // A live calc collection answers these in WORDS (his 1.12 a): a voice
+      // note into a collection used to reach the cabinet, which answers a
+      // staff chat with nothing — the seller believed it was part of the job.
+      if (!late && activeIntake(chatId)) {
+        const m = ctx.message;
+        const said = m.voice || m.audio || m.video_note
+          ? '🎤 Ovozli xabar o‘qilmaydi — yozib yuboring.'
+          : m.video
+            ? '🎬 Video o‘qilmaydi — rasm yoki matn yuboring.'
+            : m.location
+              ? '📍 Joylashuv hisoblashda o‘qilmaydi — shahar nomini yozing.'
+              : null;
+        if (said) await ctx.reply(said);
+        return;
+      }
+      if (!late && activeCapture(chatId)) return next();
       if (await draftMedia(ctx, chatId)) return;
       // A voice note as a REPLY to a thread or task ping (E10 a, text first) —
       // after the draft declined it, so a live draft's part still joins it.
@@ -822,6 +818,15 @@ export function registerStaffBot(bot: Bot): void {
         return;
       }
       if (intake.stage === 'client') {
+        // The goods list forwarded where the customer was asked for (his
+        // 1.7 b): it is MATERIAL, and the question is asked again. It used to
+        // become the lead's name and was never shown to the model.
+        const { looksLikeMaterial } = await import('../../wms/calc/intake-manual');
+        if (looksLikeMaterial(ctx.message.text)) {
+          updateIntake(chatId, { material: [...intake.material, ctx.message.text] });
+          await ctx.reply(`✍️ Ma’lumot sifatida olindi.\n\n${CLIENT_QUESTION}`, { parse_mode: 'Markdown' });
+          return;
+        }
         updateIntake(chatId, { clientHintRaw: ctx.message.text.trim(), stage: 'material' });
         // Per section (judge UX14): a customs job is asked for the LINES —
         // «300 dona, 150 kg, 120 m², 40 juft» and the code if known — which
@@ -1335,6 +1340,8 @@ async function askNextOrConfirm(
 
   const settled =
     updateIntake(chatId, { stage: 'review', askingIndex: null, askingTotals: false, offers: [] }) ?? state;
+  const { AI_READ_FAILURE } = await import('../../wms/calc/intake');
+  const failure = settled.aiUsed ? null : (settled.aiFailure ?? 'not_configured');
   await ctx.reply(
     intakeSummaryText({
       section: settled.section,
@@ -1344,16 +1351,43 @@ async function askNextOrConfirm(
       fileCount: settled.fileCount,
       ambiguous: settled.ambiguousTotals,
     }) +
-      (settled.aiUsed
-        ? ''
-        : settled.budgetSpent
-          ? '\n\n(AI kunlik limiti tugadi — faqat yozilganidan o‘qildi)'
-          : '\n\n(AI mavjud emas — faqat yozilganidan o‘qildi)') +
+      // Why the model's reading is missing, in words (his 1.6 a) — never one
+      // sentence for a dead key, a cut answer and a five-second outage.
+      (failure ? `\n\n⚠️ ${AI_READ_FAILURE[failure].text}\nFaqat yozilganidan o‘qildi.` : aiStepsText(settled.steps)) +
       (settled.ai
         ? `\n\n📄 Sertifikat: ${settled.hasCertificate ? 'bor' : 'yo‘q'} (o‘zgartirish uchun tugmani bosing)`
         : ''),
-    { reply_markup: settled.ai ? aiConfirmKeyboard(settled.hasCertificate) : confirmKeyboard },
+    {
+      reply_markup: reviewKeyboard(
+        settled.ai ? aiConfirmKeyboard(settled.hasCertificate) : confirmKeyboard,
+        failure !== null && AI_READ_FAILURE[failure].retry,
+      ),
+    },
   );
+}
+
+/**
+ * Two or three of the model's own notes on what it did (his 1.6 a: «AI ning
+ * 2-3 izohi»). They used to reach only the card's lenta, so the seller saw a
+ * list with no word on where it came from.
+ */
+export function aiStepsText(steps: readonly string[]): string {
+  const shown = steps
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .slice(0, 3)
+    .map((s) => `· ${s.length > 200 ? `${s.slice(0, 199)}…` : s}`);
+  return shown.length ? `\n\n🤖 AI:\n${shown.join('\n')}` : '';
+}
+
+/** The confirm keyboard, with «🔄 Qayta o‘qish» on top when a retry can help. */
+function reviewKeyboard(
+  base: { inline_keyboard: { text: string; callback_data: string }[][] },
+  retry: boolean,
+): { inline_keyboard: { text: string; callback_data: string }[][] } {
+  return retry
+    ? { inline_keyboard: [[{ text: '🔄 AI qayta o‘qisin', callback_data: 'c:reread' }], ...base.inline_keyboard] }
+    : base;
 }
 
 /** «⏭ Bilmayman, o‘tkazib yubor» — under every question, the way out. */
@@ -1464,7 +1498,10 @@ async function applyLineAnswer(
   const goods = state.facts.goods ?? [];
   const row = goods[index];
   const answer = row ? parseLineAnswer(text) : parseLineAnswer('');
-  const withText = updateIntake(chatId, { material: [...state.material, text] }) ?? state;
+  // Kept for the card, NOT as material: a re-read takes the shipment's totals
+  // from the material, and one line's «150 kg» became the whole truck's
+  // weight there (the diagnosis' cause 5).
+  const withText = updateIntake(chatId, { answers: [...state.answers, `${index + 1}-qator: ${text}`] }) ?? state;
 
   if (answer.kind === 'figures') {
     const patch: Partial<NonNullable<IntakeState['facts']['goods']>[number]> = {};
@@ -1607,17 +1644,71 @@ async function analyseIntakeAndReply(
   ctx: { reply: (text: string, extra?: Record<string, unknown>) => Promise<unknown> },
   chatId: bigint,
   state: Parameters<typeof analyzeCollected>[0],
+  token: string,
 ): Promise<void> {
   try {
     const analysed = await analyzeCollected(state);
-    updateIntake(chatId, analysed);
+    const outcome = settleAnalysis(activeIntake(chatId), state, analysed, token);
+    if (outcome.kind === 'gone') return;
+    updateIntake(chatId, outcome.state);
+    if (outcome.kind === 'arrived') {
+      await ctx.reply(
+        `Tahlil paytida yana ${outcome.arrived} ta xabar/fayl keldi — ular hali o‘qilmagan.\n` +
+          'Hammasini birga o‘qish uchun «Bo‘ldi» ni yana bosing.',
+        { reply_markup: doneKeyboard },
+      );
+      return;
+    }
     // ONE exit from the analysis: ask about the first line that cannot be
     // priced, else offer the confirm. Both shapes are the same function, so
     // the summary the seller reads is identical whichever way they arrive.
-    await askNextOrConfirm(ctx, chatId, analysed);
-  } catch {
-    await ctx.reply('Tahlil qilib bo‘lmadi. Qaytadan urinib ko‘ring.').catch(() => {});
+    await askNextOrConfirm(ctx, chatId, outcome.state);
+  } catch (err) {
+    logger.warn({ err }, '[calc-intake] analysis failed');
+    const live = activeIntake(chatId);
+    if (live?.analysing === token) updateIntake(chatId, { analysing: null, stage: 'material' });
+    await ctx.reply('Tahlil qilib bo‘lmadi. «Bo‘ldi» ni qayta bosing.', { reply_markup: doneKeyboard }).catch(() => {});
   }
+}
+
+/**
+ * Where an analysis lands (the diagnosis' cause 7). Pure, so the race is
+ * tested without a bot.
+ *
+ *  - `gone`: the collection was cancelled, restarted (a new note id), or a
+ *    newer analysis owns it — the result is thrown away, never written back
+ *    over somebody's fresh start;
+ *  - `arrived`: messages or files came in while it ran — the reading is kept
+ *    for its facts, but the LIVE material stays and the seller is asked to
+ *    press «Bo'ldi» again, so nothing the bot answered «Qabul qilindi» to is
+ *    erased or left unread;
+ *  - `done`: the result replaces the facts, and everything else is the live
+ *    collection's own.
+ */
+export function settleAnalysis(
+  live: IntakeState | null,
+  snapshot: IntakeState,
+  analysed: IntakeState,
+  token: string,
+):
+  | { kind: 'gone' }
+  | { kind: 'arrived'; state: IntakeState; arrived: number }
+  | { kind: 'done'; state: IntakeState } {
+  if (!live || live.noteId !== snapshot.noteId || live.analysing !== token) return { kind: 'gone' };
+  const arrived =
+    live.material.length - snapshot.material.length + (live.fileCount - snapshot.fileCount);
+  const state: IntakeState = {
+    ...live,
+    facts: analysed.facts,
+    steps: analysed.steps,
+    aiUsed: analysed.aiUsed,
+    aiFailure: analysed.aiFailure,
+    usage: analysed.usage,
+    ambiguousTotals: analysed.ambiguousTotals,
+    analysing: null,
+    stage: arrived > 0 ? 'material' : 'review',
+  };
+  return arrived > 0 ? { kind: 'arrived', state, arrived } : { kind: 'done', state };
 }
 
 /**
@@ -1689,45 +1780,119 @@ const FILE_DOWNLOAD_MS = 30_000;
 /** A PDF past this is not shown to the model — Anthropic refuses it anyway. */
 const MAX_PDF_BYTES = 10 * 1024 * 1024;
 
+/** A spreadsheet that cannot be read, said per reason (his 1.6 a). */
+const SHEET_REFUSAL: Record<'old_format' | 'encrypted' | 'broken' | 'empty', (label: string) => string> = {
+  old_format: (label) => `📄 ${label} — Excel 95 yoki undan eski format, o‘qilmaydi. .xlsx qilib saqlab yuboring.`,
+  encrypted: (label) => `📄 ${label} — parol bilan himoyalangan, o‘qilmaydi. Parolsiz yuboring.`,
+  broken: (label) => `📄 ${label} — Excel fayl buzilgan yoki o‘qib bo‘lmadi. Qayta saqlab yuboring.`,
+  empty: (label) => `📄 ${label} — jadval bo‘sh.`,
+};
+
+/** The two answers to «a second invoice arrived» (his 1.13 c). */
+function invoiceChoiceKeyboard() {
+  return {
+    inline_keyboard: [
+      [{ text: '➕ Qatorlari qo‘shilsin', callback_data: 'c:inv_add' }],
+      [{ text: '🔁 Oldingisining o‘rniga', callback_data: 'c:inv_replace' }],
+    ],
+  };
+}
+
 /**
- * What an attached document is worth to the calculation.
+ * What a forwarded file is worth to the calculation, and the one sentence the
+ * seller is told about it — every file is ANSWERED (the diagnosis' cause 3:
+ * an .xls, a second PDF, a seventh photo, a photo sent as a file were all
+ * dropped in silence).
  *
- * Three answers and they are different in kind:
- *  - a WORKBOOK or a CSV is READ, exactly, by the same parser the deal's
- *    «Позиции» import uses — no model, no tokens, no guessing;
- *  - a PDF cannot be read here, so it is carried to the model as a document
- *    block, which is the one thing that can look at it;
- *  - a DOCX is refused IN WORDS. It is a zip like an xlsx, so the sniff would
- *    call it a workbook and the parser would answer «no goods» — a silent
- *    nothing where the seller is waiting for a figure.
+ *  - a PHOTO, or a picture sent as a FILE, is downscaled and shown to the
+ *    model — up to `MAX_INTAKE_IMAGES` (his 1.4 b: twelve); a HEIC this
+ *    server cannot decode is refused in words;
+ *  - a PDF is shown to the model as a document — up to `MAX_INTAKE_PDFS`,
+ *    read together;
+ *  - a SPREADSHEET is read by `readGoodsFile`: the reader's rows when it finds
+ *    the header, the model when it does not (his 1.2 b); a second goods file
+ *    is ASKED about (his 1.13 c);
+ *  - a DOCX is refused in words — it is a zip like an xlsx and would read as
+ *    «no goods».
  */
-async function readInvoice(
-  ctx: { message: { document?: { file_name?: string; mime_type?: string } } },
-  body: Buffer,
+async function readIntakeFile(
+  saved: { isPhoto: boolean; body: Buffer },
+  fileName: string,
+  mime: string | null,
+  state: IntakeState,
 ): Promise<{
-  goods?: import('../../wms/calc/intake').CalcFacts['goods'];
-  pdf?: { data: Buffer; name: string } | null;
-  refusal?: string;
-} | null> {
-  const name = ctx.message.document?.file_name ?? '';
-  const mime = ctx.message.document?.mime_type ?? null;
-  const isPdf = body.subarray(0, 5).toString('latin1') === '%PDF-';
-  if (isPdf) {
-    if (body.length > MAX_PDF_BYTES) {
-      return { refusal: '📄 PDF juda katta (10 MB dan ortiq) — Excel yoki matn bilan yuboring.' };
+  patch: Partial<IntakeState>;
+  say: string | null;
+  keyboard?: ReturnType<typeof invoiceChoiceKeyboard>;
+}> {
+  const label = fileName ? `«${fileName}»` : 'Fayl';
+  const kind = intakeFileKind(saved.body, saved.isPhoto, fileName, mime);
+  if (kind === 'image' || kind === 'isomedia') {
+    // Counted, never silent: the prompt says how many will not be read.
+    if (state.images.length >= MAX_INTAKE_IMAGES) return { patch: { imagesSkipped: state.imagesSkipped + 1 }, say: null };
+    const reduced = await reduceForModel(saved.body).catch(() => null);
+    if (!reduced) {
+      return {
+        patch: { imagesSkipped: state.imagesSkipped + 1 },
+        say:
+          kind === 'isomedia'
+            ? `📷 ${label} — HEIC rasm, o‘qib bo‘lmaydi. JPG yoki skrinshot qilib yuboring.`
+            : `📷 ${label} — rasmni o‘qib bo‘lmadi (buzilgan yoki juda katta).`,
+      };
     }
-    return { pdf: { data: body, name: name || 'invoice.pdf' } };
+    return {
+      patch: { images: [...state.images, { data: reduced, mediaType: 'image/jpeg' }] },
+      say: saved.isPhoto ? null : `🖼 ${label} — rasm sifatida o‘qiladi.`,
+    };
   }
-  if (/\.docx?$/i.test(name) || (mime ?? '').includes('wordprocessingml')) {
-    return { refusal: '📄 DOCX o‘qilmaydi — PDF yoki Excel qilib yuboring.' };
+  if (kind === 'pdf') {
+    if (saved.body.length > MAX_PDF_BYTES) {
+      return { patch: {}, say: `📄 ${label} — PDF juda katta (10 MB dan ortiq), AI o‘qimaydi. Kartada saqlandi.` };
+    }
+    const bytes = state.pdfs.reduce((n, pdf) => n + pdf.data.length, 0);
+    if (state.pdfs.length >= MAX_INTAKE_PDFS || bytes + saved.body.length > MAX_INTAKE_PDF_BYTES) {
+      return {
+        patch: {},
+        say: `📄 ${label} — bitta so‘rovga ${MAX_INTAKE_PDFS} tadan ortiq PDF o‘qilmaydi. Kartada saqlandi.`,
+      };
+    }
+    return { patch: { pdfs: [...state.pdfs, { data: saved.body, name: fileName || 'invoice.pdf' }] }, say: `📄 ${label} — AI o‘qiydi.` };
   }
-  const { goodsFromFile } = await import('../../wms/deals/goods-file');
-  const goods = await goodsFromFile(body, mime).catch(() => null);
-  if (!goods) return null;
+  if (kind === 'docx') return { patch: {}, say: `📄 ${label} — Word fayl o‘qilmaydi. PDF yoki Excel qilib yuboring.` };
+
+  const { readGoodsFile } = await import('../../wms/deals/goods-file');
+  const sheet = await readGoodsFile(saved.body, mime).catch((err: unknown) => {
+    logger.warn({ err }, '[calc-intake] spreadsheet unreadable');
+    return { kind: 'refused', reason: 'broken' } as const;
+  });
+  if (!sheet) {
+    return { patch: {}, say: `📎 ${label} kartada saqlandi, lekin o‘qilmaydi: faqat rasm, PDF va Excel/CSV o‘qiladi.` };
+  }
+  if (sheet.kind === 'refused') return { patch: {}, say: SHEET_REFUSAL[sheet.reason](label) };
+  if (sheet.kind === 'text') {
+    return {
+      patch: { sheetTexts: [...state.sheetTexts, sheet.text] },
+      say: `📄 ${label} — jadval sarlavhasini topa olmadim, AI o‘qiydi.`,
+    };
+  }
   // Everything the file states reaches the landing (2026-10-09, P1.6) —
   // through the one mapping the landing's own test reads.
   const { invoiceFacts } = await import('../../wms/calc/intake');
-  return { goods: invoiceFacts(goods) };
+  const goods = invoiceFacts(sheet.goods);
+  const sheetTexts = sheet.text ? [...state.sheetTexts, sheet.text] : state.sheetTexts;
+  const where = sheet.sheets > 1 ? ` («${sheet.sheet}» varag‘idan; boshqa varaqlarni AI o‘qiydi)` : '';
+  if ((state.invoiceGoods ?? []).length > 0) {
+    // His 1.13 c: a second invoice is ASKED about. It used to replace the
+    // first in silence — the first factory's goods vanished from the job.
+    return {
+      patch: { sheetTexts, pendingInvoice: { goods, label } },
+      say:
+        `📄 ${label} — ${goods.length} ta tovar${where}.\n` +
+        `Oldingi faylda ${(state.invoiceGoods ?? []).length} ta tovar bor. Nima qilamiz?`,
+      keyboard: invoiceChoiceKeyboard(),
+    };
+  }
+  return { patch: { invoiceGoods: goods, sheetTexts }, say: `📄 ${label} — ${goods.length} ta tovar o‘qildi${where}.` };
 }
 
 type BotFileCtx = {
@@ -1846,7 +2011,11 @@ async function showIntakePrompt(
     state.material.length ? `✍️ ${state.material.length} ta xabar` : '',
     state.fileCount ? `📎 ${state.fileCount} ta fayl` : '',
     state.images.length ? `🖼 ${state.images.length} ta rasm o‘qiladi` : '',
-    state.imagesSkipped ? `⚠️ ${state.imagesSkipped} ta rasm o‘qilmaydi` : '',
+    state.pdfs.length ? `📄 ${state.pdfs.length} ta PDF o‘qiladi` : '',
+    (state.invoiceGoods ?? []).length ? `📊 fayldan ${(state.invoiceGoods ?? []).length} ta tovar` : '',
+    state.imagesSkipped
+      ? `⚠️ ${state.imagesSkipped} ta rasm o‘qilmaydi${state.images.length >= MAX_INTAKE_IMAGES ? ` (${MAX_INTAKE_IMAGES} tadan ortig‘i)` : ''}`
+      : '',
   ].filter(Boolean);
   const text = `Qabul qilindi: ${parts.join(' · ')}\nYana yuboring yoki «Bo‘ldi» ni bosing.`;
 
@@ -1993,6 +2162,24 @@ async function handleCalcCallback(
     return;
   }
 
+  if (step === 'inv_add' || step === 'inv_replace') {
+    // His 1.13 c: the second invoice waits for this answer.
+    const pending = state.pendingInvoice;
+    if (!pending) {
+      await ctx.reply('Bu tugma eskirgan.');
+      return;
+    }
+    const goods = step === 'inv_add' ? [...(state.invoiceGoods ?? []), ...(pending.goods ?? [])] : (pending.goods ?? []);
+    const next = updateIntake(chatId, { invoiceGoods: goods, pendingInvoice: null, stage: 'material' });
+    await ctx.reply(
+      step === 'inv_add'
+        ? `➕ Qo‘shildi: endi fayllarda ${goods.length} ta tovar.`
+        : `🔁 ${pending.label} oldingisining o‘rniga olindi: ${goods.length} ta tovar.`,
+    );
+    if (next) await showIntakePrompt(ctx as Parameters<typeof showIntakePrompt>[0], chatId, next);
+    return;
+  }
+
   if (step === 'more') {
     updateIntake(chatId, { stage: 'material' });
     await ctx.reply('Yana ma’lumot yuboring, tugagach «Bo‘ldi» ni bosing.', {
@@ -2001,22 +2188,51 @@ async function handleCalcCallback(
     return;
   }
 
-  if (step === 'done') {
+  if (step === 'done' || step === 'reread') {
+    // One analysis at a time: a second press used to start a second paid
+    // call whose result overwrote the first (cause 7).
+    if (state.analysing) {
+      await ctx.reply('⏳ Tahlil davom etmoqda — natijani kuting.');
+      return;
+    }
+    if (state.stage === 'client' || state.stage === 'section') {
+      await ctx.reply(
+        state.stage === 'client' ? CLIENT_QUESTION : 'Avval yuk qayerdan chiqishini tanlang.',
+        state.stage === 'client' ? { parse_mode: 'Markdown' } : { reply_markup: zoneKeyboard(await pricedZonesNow()) },
+      );
+      return;
+    }
+    if (state.pendingInvoice) {
+      await ctx.reply('Avval ikkinchi fayl haqida javob bering:', { reply_markup: invoiceChoiceKeyboard() });
+      return;
+    }
     if (state.material.length === 0 && state.fileCount === 0) {
       await ctx.reply('Hali hech narsa yuborilmadi.');
       return;
     }
-    await ctx.reply('⏳ Tahlil qilinmoqda…');
+    const token = randomUUID();
+    const owned = updateIntake(chatId, { analysing: token }) ?? state;
+    await ctx.reply('⏳ AI o‘qiyapti… (3 daqiqagacha)');
     // OFF the middleware chain, exactly like the assistant's answer (#706):
     // grammy's poller is sequential and the same bot serves every customer,
     // so awaiting an Opus call over twenty thousand characters here freezes
     // every cabinet tap, every /start and every «yukingiz keldi» until it
     // returns.
-    void analyseIntakeAndReply(ctx, chatId, state);
+    void analyseIntakeAndReply(ctx, chatId, owned, token);
     return;
   }
 
-  // save
+  // save — only what the seller was SHOWN. An old «Tasdiqlash» pressed
+  // after «➕ Yana ma'lumot», or while the analysis runs, used to land facts
+  // that never included the newest material.
+  if (state.analysing) {
+    await ctx.reply('⏳ Tahlil davom etmoqda — natijani kuting.');
+    return;
+  }
+  if (state.stage !== 'review') {
+    await ctx.reply('Yangi ma’lumot hali o‘qilmagan — avval «Bo‘ldi» ni bosing.', { reply_markup: doneKeyboard });
+    return;
+  }
   const staff = await staffForChat(chatId);
   if (!staff) {
     await ctx.reply('Ulanmagan.');

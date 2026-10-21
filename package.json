@@ -51,6 +51,7 @@
     "@serwist/next": "^9.0.11",
     "@zxing/browser": "^0.2.1",
     "browser-image-compression": "^2.0.2",
+    "cfb": "1.2.2",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.38.3",
     "grammy": "^1.45.1",
