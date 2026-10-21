@@ -349,3 +349,50 @@ paid/open per bill.
 8.1 what a one-kind lot needs · 8.2 keep or reverse 1a · 8.3 document · 8.4 TNVED
 source · 8.5 packing-list name · 8.6 auto-✅ · 8.7 yellow mark · 8.8 dona from
 the linked job.
+
+### His answers (2026-10-21), verbatim
+
+«1 chi band 3 b / 2chi bolim 4 c / 4chi bolim 5 fura olchami boyicha narx qoyish
+oldindan biz sotadgan narximiz yoq yukga qarab 1 ta umumiy narx beriladi / 8 b /
+10 b / 11 ikkalasi ham chiqsin / 5chi bolim 4 a / 7 adminga ham tushsin agar ved
+roli ochiq bolsa / 9 hisoblash royhatidan kordim u yerda faqat murodga tushgan
+10foizcha boshqa hodimga tushganini kordim / 6 chi bolim 8 agar boshqa
+sotuvchidan kelsa jonatgan sotuvchini CRMiga tushsin yangi klient bolib / 7chi
+bolim 1 rasxod qilingan partiya zavod tovar shu rasxodga tegishli hamma
+narsalar / 8chi bolim 5 yana 1 column qoshishimiz kerak karobka sonidan oldin
+shtuk donasi yozilsin yoqlari bosh qolsin va aynan packing list sklad
+excellarida rasimlar kachestvasini ozgartirmasin hozir hira korinyabti / umumiy
+savollar 0 1 a» — with one screenshot of a failed bot case (typed «Tovar
+синтетическое компрессорное масло 1.1 kub 240 kg» → «Tovarlar: —», «AI mavjud
+emas»).
+
+Every number he did not name is the ⭐ (the message's own convention). So:
+
+- **1.3 b** — `.xls` is READ (a library), not refused.
+- **2.4 c** — the chat estimate goes on the card's lenta in full, marked for the VED.
+- **4.5** — no preset truck price: one overall price per cargo. This reverses
+  4.6 ⭐ (an admin list price): the price is typed per job. **Asked back**: who
+  types it, whether it is the upsale floor like a «Готово» answer, and how much
+  of the cargo «1 fura» covers for 4.8 b.
+- **4.8 b** — cargo over one truck = 1 truck's price + the rest by the table.
+- **4.10 b** — kub and kg always mandatory for an odnarodka.
+- **4.11 b** — the offer prints «1 fura» AND «1 m³ uchun».
+- **5.4 a** — a correction returns to its pricer, busy or not (today's rule).
+- **5.7** — an admin who also holds the VED ROLE is in the rota; the admin role
+  alone (which carries `ved.docs`) is not.
+- **5.9 a** — he saw it on /hisoblash: ~90 % on Murod. Matches the tie defect.
+- **6.8** — the deal goes to the SENDING seller (option a, not the ⭐ b), «yangi
+  klient bo'lib». **Asked back** what «yangi klient» means: a deal in the
+  sender's name on the same code (⭐), a new lead, or a new client code.
+- **7.1** — everything about the expense: truck, factory trip, goods (≈ c).
+- **8.5** — packing lists gain a «шт» column BEFORE the carton count, blank when
+  unknown; and the photos in the packing-list/warehouse Excel files must keep
+  their quality («hira korinyabti»).
+- **0.1 a** — real cases arriving (one so far).
+
+Taken as ⭐ (named here so a later round does not re-ask): 1.1 c, 1.2 b, 1.4 b
+(12), 1.5 b, 1.6 a, 1.7 b, 1.8 c, 1.9 a, 1.10 c, 1.11 c, 1.12 a, 1.13 c; 2.1 b,
+2.2 b, 2.3 a, 2.5 b, 2.6 b, 2.7 b, 2.8 b, 2.9 c; 3.1 a, 3.2 a, 3.3 b, 3.4 b,
+3.5 b, 3.6 a, 3.7 a, 3.8 a; 4.1 a, 4.2 a, 4.3 a, 4.4 a, 4.7 a, 4.9 a, 4.12 b,
+4.13 b; 5.1 c, 5.2 b, 5.3 b, 5.5 b, 5.6 a, 5.8 a; 6.1 a-6.7 a, 6.9 a, 6.10 a;
+7.2 b-7.7 a, 7.8 b; 8.1 b-8.4 a, 8.6 b, 8.7 a, 8.8 a; 0.2 a, 0.3 a.

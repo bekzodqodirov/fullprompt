@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
-import { db } from '@/modules/platform/db/client';
+import { db, type Tx } from '@/modules/platform/db/client';
 import {
   calcGroups,
   calcOffers,
@@ -17,6 +17,7 @@ import { createTask } from '@/modules/platform/tasks/service';
 import { notifyStaffTelegram, userName } from '@/modules/platform/notifications/staff';
 import { usersWithPermission, usersWithRoles } from '@/modules/platform/notifications/service';
 import { canLogInSql } from '@/modules/platform/users/login';
+import { tashkentDay, tashkentDayStart } from '@/modules/platform/time/tashkent';
 import { cardLink } from '@/modules/platform/notifications/links';
 import { logger } from '@/modules/platform/logger';
 import { retireTaskCopiesSoon } from '@/modules/platform/notifications/retire-tasks';
@@ -127,10 +128,22 @@ export const openRequests = isNull(calcRequests.completedAt);
  * Measured on his own data. A correction routed «to whoever priced the
  * parent» would bring that back for every job he sealed himself, so it asks
  * the same subtraction. They keep the manual «Olaman» door.
+ *
+ * …unless the admin also holds the VED ROLE (his 5.7, 2026-10-21: «adminga
+ * ham tushsin agar ved roli ochiq bolsa»). The admin role alone carries
+ * `ved.docs` as one grant among all of them and says nothing about who
+ * calculates; the `ved_manager` role on the same person is the owner saying
+ * that this one does.
  */
 export async function vedRotaPool(): Promise<string[]> {
-  const adminIds = new Set(await usersWithRoles(['super_admin', 'admin']));
-  const pool = (await usersWithPermission('ved.docs')).filter((id) => !adminIds.has(id));
+  const [admins, vedRole, holders] = await Promise.all([
+    usersWithRoles(['super_admin', 'admin']),
+    usersWithRoles(['ved_manager']),
+    usersWithPermission('ved.docs'),
+  ]);
+  const adminIds = new Set(admins);
+  const calculators = new Set(vedRole);
+  const pool = holders.filter((id) => !adminIds.has(id) || calculators.has(id));
   if (pool.length === 0) return [];
   const rows = await db
     .select({ id: users.id })
@@ -140,34 +153,55 @@ export async function vedRotaPool(): Promise<string[]> {
 }
 
 /**
- * Whose turn it is to calculate: fewest OPEN requests, longest-since breaks a
- * tie, never-had-one sorts FIRST — over `vedRotaPool`.
+ * Whose turn it is to calculate, over `vedRotaPool` (his 5.1 c):
  *
- * The counting rule is the taqsimot rota's (`crm/routing.ts` — round 96) and
- * the comment there explains why it is worth restating rather than sharing:
- * that one answers «whose lead is this», this one «whose calculation is
- * this», and a shared query would have to take a table name as an argument.
- * When the pool is empty — a company whose only `ved.docs` holders are
- * admins — the request is stored UNASSIGNED, which is an honest state the
- * queue already draws and the overdue sweep already announces to the pool.
+ *  1. whoever has the fewest OPEN requests — a free person first;
+ *  2. then whoever was handed the fewest TODAY (the Tashkent day);
+ *  3. then whoever has waited longest since they were last handed one,
+ *     never-had-one first;
+ *  4. then the id, so a tie is decided by something that cannot move.
+ *
+ * Rules 2-4 are the fix for his «faqat Murodga tushgan» (2026-10-21, ~90 % on
+ * one person). The old order stopped at rule 1 and then `max(requested_at)`
+ * over OPEN requests — and when everybody has nothing open, which is the
+ * normal state of a VED team that keeps up, that maximum is NULL for all of
+ * them: every candidate tied, and postgres handed back the same first row of
+ * the aggregate every time. «Handed» is `coalesce(taken_at, requested_at)`
+ * of a request the person HOLDS, so a job taken with «Olaman» counts for its
+ * taker and one released with «Bo'shatish» counts for nobody.
+ *
+ * Inside the caller's transaction, under ONE advisory lock: two requests
+ * landing in the same second read the same counts and both went to the same
+ * person. The lock makes the second wait for the first's commit, and the
+ * count then sees it (a new statement, a new snapshot in READ COMMITTED). The
+ * pool is computed BEFORE the transaction by the caller — it reads through
+ * the pool (#714).
+ *
+ * The counting rule is the taqsimot rota's in spirit (`crm/routing.ts` —
+ * round 96) and is restated rather than shared: that one answers «whose lead
+ * is this», this one «whose calculation is this». When the pool is empty — a
+ * company whose only `ved.docs` holders are admins — the request is stored
+ * UNASSIGNED, which is an honest state the queue already draws and the
+ * overdue sweep already announces to the pool.
  */
-export async function nextVedAssignee(): Promise<string | null> {
-  const pool = await vedRotaPool();
+export async function nextVedAssigneeInTx(tx: Tx, pool: readonly string[]): Promise<string | null> {
   if (pool.length === 0) return null;
-  const rows = await db
-    .select({
-      id: users.id,
-      n: sql<number>`count(${calcRequests.id})`,
-      last: sql<Date | null>`max(${calcRequests.requestedAt})`,
-    })
-    .from(users)
-    .leftJoin(calcRequests, and(eq(calcRequests.assigneeId, users.id), openRequests))
-    .where(inArray(users.id, pool))
-    .groupBy(users.id)
-    .orderBy(
-      sql`count(${calcRequests.id}) asc, max(${calcRequests.requestedAt}) asc nulls first`,
-    )
-    .limit(1);
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('ved-rota'))`);
+  const dayStart = tashkentDayStart(tashkentDay()).toISOString();
+  const rows = await tx.execute<{ id: string }>(sql`
+    SELECT u.id::text AS id
+      FROM users u
+      LEFT JOIN calc_requests r ON r.assignee_id = u.id
+     WHERE u.id IN (${sql.join(pool.map((id) => sql`${id}::uuid`), sql`, `)})
+     GROUP BY u.id
+     ORDER BY count(r.id) FILTER (WHERE r.completed_at IS NULL) ASC,
+              count(r.id) FILTER (
+                WHERE coalesce(r.taken_at, r.requested_at) >= ${dayStart}::timestamptz
+              ) ASC,
+              max(coalesce(r.taken_at, r.requested_at)) ASC NULLS FIRST,
+              u.id ASC
+     LIMIT 1
+  `);
   return rows[0]?.id ?? null;
 }
 
@@ -358,11 +392,13 @@ export async function openCalcRequest(
     note: row.note,
   }));
 
-  const assigneeId = await nextVedAssignee();
+  // Pooled, so BEFORE the transaction (#714); the pick itself is inside it.
+  const pool = await vedRotaPool();
   const hasMaterials = Boolean(noteId) || Boolean(input.hasMaterials);
   const dueAt = new Date(Date.now() + calcDueMinutes(items.length, hasMaterials) * 60_000);
 
-  const requestId = await db.transaction(async (tx) => {
+  const { requestId, assigneeId } = await db.transaction(async (tx) => {
+    const assigneeId = await nextVedAssigneeInTx(tx, pool);
     const [row] = await tx
       .insert(calcRequests)
       .values({
@@ -399,7 +435,7 @@ export async function openCalcRequest(
         dueAt: dueAt.toISOString(),
       },
     });
-    return id;
+    return { requestId: id, assigneeId };
   });
 
   // The task is what puts the job on somebody's /bugun and their phone; it
