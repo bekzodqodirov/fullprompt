@@ -2,7 +2,7 @@
 
 Status: **diagnosed and adversarially verified; his answers in §11 (2026-10-21);
 round 1 BUILT (DECISIONS #1455-#1462, CHANGELOG 2026-10-21); rounds 2-10 open;
-4.5 (who types the odnarodka price) and 6.8 («yangi klient bo'lib») asked back.**
+4.5 and 6.8 asked back and ANSWERED the same day («2 c / 3 b», §11).**
 Below, the diagnosis as written before any code. His message
 (verbatim, abridged): AI rastamojka in the bot cannot read goods from files,
 photos or typed text and does not analyse everything together; adding missing
@@ -396,6 +396,22 @@ Every number he did not name is the ⭐ (the message's own convention). So:
   unknown; and the photos in the packing-list/warehouse Excel files must keep
   their quality («hira korinyabti»).
 - **0.1 a** — real cases arriving (one so far).
+
+**His answers to the two questions asked back (2026-10-21, «2 c / 3 b»):**
+
+- **4.5 → A1 c: BOTH the VED and the seller may type the odnarodka price.** A2
+  and A3 unnamed = ⭐: the price is the upsale floor like a «Готово» answer, and
+  how much of the cargo «1 fura» covers (4.8 b) is typed by the VED each time.
+  Built as: the VED's figure is the floor (cost side), the seller's is the
+  client price (an offer above it) — a seller's own figure on a job with no VED
+  figure is a price with NO upsale, since a person cannot set the floor of his
+  own commission (law 4). Round 10 states this to him before code.
+- **6.8 → b: a request a seller sends for ANOTHER seller's client opens a new
+  LEAD in the SENDER's funnel**, not a deal on the client's code. Constraint for
+  round 4: a client code carries at most one lead (0021 `leads_client_unique`,
+  `client_has_lead`), so this lead cannot be bound to the code — it carries the
+  client's name and phone and says whose client it is; the round must decide
+  what «won» does with it (attach refused while the code has a lead).
 
 Taken as ⭐ (named here so a later round does not re-ask): 1.1 c, 1.2 b, 1.4 b
 (12), 1.5 b, 1.6 a, 1.7 b, 1.8 c, 1.9 a, 1.10 c, 1.11 c, 1.12 a, 1.13 c; 2.1 b,
