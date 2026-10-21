@@ -200,7 +200,7 @@ road has a `kg` leg) | `horgos` (a `kz` leg) | `ichki` (no border crossed);
 |---|---|---|---|
 | Shakllanmoqda | `forming` | `planned` | by the origin's place (a trip: its destination's) |
 | Pogruzka | `loading` | — | by the origin's place: Ichki Xitoy · Chegara · O‘zbekiston |
-| Yo‘lda: Xitoy ichida (`inland`, §3a) | `in_transit` to a Chinese warehouse | `on_road` to a Chinese warehouse | by DESTINATION («→ Kashgar»), the border hubs first, then by name |
+| Yo‘lda: Xitoy skladlariga (`inland`, §3a) | `in_transit` to a Chinese warehouse | `on_road` to a Chinese warehouse | by DESTINATION («→ Kashgar»), the border hubs first, then by name |
 | Yo‘lda: Xitoydan tashqariga (`outbound`, §3a) | every other `in_transit` | `on_road` to an Uzbek warehouse | by the place (§2); a trip on the road is `uz` (`cn` would be an inland trip) — a factory truck is on a road, not in a queue |
 | Yetib keldi | `arrived` | `arrived` (open) | by the destination's place |
 
@@ -296,6 +296,18 @@ joyga ketayotganlarini aloxida column bolsin».
   theirs, the tab names them).
 - A column is ~170 px at 1280 px beside the open sidebar, so the driver's
   phone number WRAPS on the card instead of being cut to «+998 90 12…».
+- **His answers «1 A / 2 a / 3 a»** (2026-10-21, DECISIONS #1454), all three
+  the shipped default and each checked against the code first:
+  1. ANY Chinese destination is inland, a non-hub one too (a factory trip to
+     Yiwu). Nothing in `roadColumnOf` asks for a hub.
+  2. «Yetib keldi» stays ONE column. Only `in_transit` / `on_road` is split by
+     the destination; an arrived truck or trip is `arrived` wherever it stands.
+  3. «Yo'nalish» = Irkeshtam / Horgos keeps naming the road OUT of China, so it
+     shows no truck bound for China. `routeFilterOf` names a corridor by its
+     `kg` / `kz` leg, and no road the map draws into a Chinese warehouse has
+     one (measured over every pair). «Ichki» keeps a China → China truck; a
+     factory trip is in no corridor and no «ichki reys», so every corridor
+     value hides it.
 
 ## 4. Who sees what
 

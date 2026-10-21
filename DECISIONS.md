@@ -4512,3 +4512,22 @@ either index. The test now plants 2,000 trucks (production holds ~1,400) inside 
 the whole-index scan prices 173-341 against the lookup's 8.29, so the oracle is «the 0121 index is usable»
 again and not «the planner broke a tie our way»; dropping `batches_code_upper_idx` in there still turns it red.
 Nothing is written (the transaction rolls back) and nothing is locked beyond the rows it inserts.
+
+1454. **His «1 A / 2 a / 3 a» on the two road columns: all three are the shipped default — checked, then pinned.**
+Following #1229 / #1256, each answer was read against the code before anything was written down. (1A) Every
+Chinese destination is `inland`, a non-hub one included: `roadColumnOf` is the country alone and asks no hub; it
+was already pinned by the unit table and by the CNGO factory trip to a non-hub Chinese warehouse. (2a) «Yetib
+keldi» stays one column: `columnOf` and `tripColumnOf` split only `in_transit` / `on_road` by the destination, so
+an arrived truck at a Chinese hub, an arrived factory trip to one and the old trip to Uzbekistan stand in the ONE
+arrived column — nothing pinned that until now. (3a) The corridor filter keeps naming the road OUT of China:
+`routeFilterOf` names `irkeshtam` / `horgos` by a `kg` / `kz` leg, and walking every pair of the eight warehouse
+codes the map draws shows that no road into a Chinese warehouse has one (Tashkent → Kashgar is a generic
+`transit`, Yiwu → Horgos is `cn_transit`). So with Irkeshtam or Horgos picked the inland column is empty, «ichki»
+keeps a China → China truck, and a factory trip, which is in no corridor and is no «ichki reys», is hidden by
+every corridor value — that last half is the board round's own rule and was not changed. New pins: the unit
+file's three tests (the filter over inland cards as `board.ts` builds them; the map walk, which also refuses a
+new map code until it is classed as Chinese or Uzbek; the single arrived column) and the integration file's two
+(an arrived truck INA and trip CNIN at the hub; INL's `route: null, internal: true` under every filter value).
+Red-proven by string edit four ways: arrivals at a Chinese warehouse sent to `inland`; the filter keeping
+`column === 'inland'`; `cn_transit` counted as Irkeshtam; a ninth map code. The third first stayed GREEN — the
+edit named the Chinese leg `cn`, which no segment is called — and was redone on the real key.

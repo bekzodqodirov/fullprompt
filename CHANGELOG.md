@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## 2026-10-21 — Doska: «1 A / 2 a / 3 a» javoblaringiz — hammasi hozirgidek qoladi
+
+Uchala javob ham ⭐ variant, ya'ni hozir qanday qurilgan bo'lsa shunday. **Kodda o'zgarish yo'q, migratsiya yo'q, deploy shart emas.** Har birini kodda tekshirdim va testga mahkamladim: endi kimdir tasodifan o'zgartirsa, test qizaradi.
+
+1. **Xitoydagi har qanday skladga** ketayotgan mashina yoki zavod reysi (masalan zavoddan Yiwu skladiga) «Yo'lda: Xitoy skladlariga» ustuniga tushadi. Faqat Qashqar va Horgos emas.
+2. **«Yetib keldi» bitta ustun bo'lib qoladi.** Qashqarga yetib kelgan mashina ham, Toshkentga yetib kelgani ham shu ustunda turadi.
+3. **«Yo'nalish» filtri** (Irkeshtam / Horgos) Xitoydan chiqadigan yo'lni bildiradi. Shuning uchun uni tanlasangiz, Xitoy skladlariga ketayotgan mashinalar ko'rinmaydi. Xaritadagi hamma yo'lni tekshirdim: Xitoy skladiga boradigan birorta yo'l Irkeshtam yoki Horgos chegarasidan o'tmaydi. Filtrda «Ichki reyslar»ni tanlasangiz, ichki reyslar ko'rinadi: Xitoy ichidagilar ham, O'zbekiston ichidagilar ham (Andijon → Toshkent). Zavod reysi esa «ichki reys» hisoblanmaydi, shuning uchun bu filtrlarning hech birida chiqmaydi. Bu doska qurilgandan beri shunday.
+
 ## 2026-10-21 — Partiya doskasi: «Yo'lda» endi ikki ustun — Xitoy skladlariga va Xitoydan tashqariga
 
 Sizning so'zingiz: «yolda deganini xitoy ichidagi va tashqisi alohida column qilishimiz kerak yani hargoz va qashqarga ketayotganlar va ulardan boshqa joyga ketayotganlarini aloxida column bolsin». **Migratsiya yo'q.** Bu o'zgarish main'dagi LTL/FTL raundi bilan birga deploy bo'ladi, shuning uchun deploydan keyin migratsiyalar soni **136** bo'lishi kerak.
