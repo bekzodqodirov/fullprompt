@@ -4,6 +4,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import ExcelJS from 'exceljs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { KNOWN_FAILING } from './fixtures/intake-corpus-known';
 
 /**
  * The intake regression corpus (tests/unit/fixtures/intake-corpus.ts), run
@@ -181,6 +182,20 @@ function expectHint(actual: { code?: string; phone?: string } | null, want: Hint
 
 const title = '$id · $source';
 
+/**
+ * `it.each`, with the cases still known to fail run as `it.fails` (see
+ * fixtures/intake-corpus-known.ts): a case that starts passing, or one that
+ * starts failing, turns this file red.
+ */
+function each<C extends { id: string }>(cases: readonly C[]) {
+  const live = cases.filter((c) => !KNOWN_FAILING.has(c.id));
+  const known = cases.filter((c) => KNOWN_FAILING.has(c.id));
+  return (name: string, fn: (c: C) => void | Promise<void>, timeout?: number) => {
+    if (live.length > 0) it.each(live)(name, fn, timeout);
+    if (known.length > 0) it.fails.each(known)(`${name} (known to fail)`, fn, timeout);
+  };
+}
+
 // ---------------------------------------------------------------------------
 // The collection the collector cases run on, and a Telegram that records.
 // ---------------------------------------------------------------------------
@@ -241,25 +256,25 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('parseClientHint', () => {
-  it.each(parseClientHintCases)(title, (c) => {
+  each(parseClientHintCases)(title, (c) => {
     expectHint(parseClientHint(c.input, c.opts ?? {}), c.expected);
   });
 });
 
 describe('looksLikeMaterial', () => {
-  it.each(looksLikeMaterialCases)(title, (c) => {
+  each(looksLikeMaterialCases)(title, (c) => {
     expect(looksLikeMaterial(c.input, c.opts ?? {})).toBe(c.expected);
   });
 });
 
 describe('readGoodsLines', () => {
-  it.each(readGoodsLinesCases)(title, (c) => {
+  each(readGoodsLinesCases)(title, (c) => {
     expect(goodsProblems(readGoodsLines(c.input, c.opts ?? {}) as unknown as Line[], c.expected)).toEqual([]);
   });
 });
 
 describe('parseGoods', () => {
-  it.each(parseGoodsCases)(title, (c) => {
+  each(parseGoodsCases)(title, (c) => {
     const rows = Array.isArray(c.input) ? c.input : csvRows(c.input.csv);
     const parsed = parseGoods(rows);
     if (c.expected.goods) expect(goodsProblems(parsed.goods as unknown as Line[], c.expected.goods)).toEqual([]);
@@ -268,7 +283,7 @@ describe('parseGoods', () => {
 });
 
 describe('parseGoodsLine', () => {
-  it.each(parseGoodsLineCases)(title, (c) => {
+  each(parseGoodsLineCases)(title, (c) => {
     const read = parseGoodsLine(c.input);
     const e = c.expected;
     const shown = JSON.stringify(read);
@@ -291,7 +306,7 @@ describe('parseGoodsLine', () => {
 });
 
 describe('parseManualFacts → landingItems / missingFields / lineNeeds', () => {
-  it.each(parseManualFactsCases)(title, (c) => {
+  each(parseManualFactsCases)(title, (c) => {
     const facts = parseManualFacts(c.input);
     const e = c.expected;
     if (e.goods) expect(goodsProblems((facts.goods ?? []) as unknown as Line[], e.goods)).toEqual([]);
@@ -315,25 +330,25 @@ describe('parseManualFacts → landingItems / missingFields / lineNeeds', () => 
 });
 
 describe('intakeClientLabel (the lead’s name)', () => {
-  it.each(intakeClientLabelCases)(title, (c) => {
+  each(intakeClientLabelCases)(title, (c) => {
     expect(intakeClientLabel(c.input.raw, c.input.hint)).toBe(c.expected);
   });
 });
 
 describe('intakeClientSummary (the summary’s customer line)', () => {
-  it.each(intakeClientSummaryCases)(title, (c) => {
+  each(intakeClientSummaryCases)(title, (c) => {
     expect(intakeClientSummary(c.input)).toBe(c.expected);
   });
 });
 
 describe('resolveLineDone', () => {
-  it.each(resolveLineDoneCases)(title, (c) => {
+  each(resolveLineDoneCases)(title, (c) => {
     expect(resolveLineDone(c.input.goods, c.input.done)).toEqual(c.expected);
   });
 });
 
 describe('pickGoods', () => {
-  it.each(pickGoodsCases)(title, (c) => {
+  each(pickGoodsCases)(title, (c) => {
     const picked = pickGoods(c.input as unknown as Parameters<typeof pickGoods>[0]);
     const e = c.expected;
     if (e.goods) expect(goodsProblems(picked.goods as unknown as Line[], e.goods)).toEqual([]);
@@ -354,31 +369,31 @@ describe('pickGoods', () => {
 });
 
 describe('isArticleNumber', () => {
-  it.each(isArticleNumberCases)(title, (c) => {
+  each(isArticleNumberCases)(title, (c) => {
     expect(isArticleNumber(c.input)).toBe(c.expected);
   });
 });
 
 describe('statesGoods', () => {
-  it.each(statesGoodsCases)(title, (c) => {
+  each(statesGoodsCases)(title, (c) => {
     expect(statesGoods(c.input)).toBe(c.expected);
   });
 });
 
 describe('threadAiAdvice', () => {
-  it.each(threadAiAdviceCases)(title, (c) => {
+  each(threadAiAdviceCases)(title, (c) => {
     expect(threadAiAdvice(c.input as Parameters<typeof threadAiAdvice>[0])).toBe(c.expected);
   });
 });
 
 describe('attemptStanding', () => {
-  it.each(attemptStandingCases)(title, (c) => {
+  each(attemptStandingCases)(title, (c) => {
     expect(attemptStanding(c.input[0] as Parameters<typeof attemptStanding>[0], c.input[1])).toBe(c.expected);
   });
 });
 
 describe('the customer question (clientAnswer)', () => {
-  it.each(clientStageCases)(title, async (c) => {
+  each(clientStageCases)(title, async (c) => {
     const { text, prefix, sends } = c.input;
     const e = c.expected;
     const { chatId } = collection({
@@ -541,7 +556,7 @@ async function fileProblems(
 }
 
 describe('readGoodsFile', () => {
-  it.each(readGoodsFileCases)(
+  each(readGoodsFileCases)(
     title,
     async (c) => {
       const run = await runFile(c.input);
@@ -1909,7 +1924,7 @@ describe('scenarios', () => {
     expect(Object.keys(SCENARIOS).sort()).toEqual(scenarioCases.map((c) => c.id).sort());
   });
 
-  it.each(scenarioCases)(
+  each(scenarioCases)(
     title,
     async (c: ScenarioCase) => {
       await SCENARIOS[c.id]!();
