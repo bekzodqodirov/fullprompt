@@ -170,7 +170,11 @@ function csvSheet(text: string): SheetRows {
     if (read.leftOut) colsLeftOut = true;
     return read.cells;
   });
-  return withLeftOut({ name: 'CSV', rows }, filled.length > lines.length, colsLeftOut);
+  // A line of nothing but separators is the blank row Excel's «Save as CSV»
+  // writes for every empty row of a template's used range (the fifth review):
+  // an empty tail past the bound is no row left out.
+  const rowsLeftOut = filled.slice(MAX_ROWS).some((line) => /[^\s;,\t"]/.test(line));
+  return withLeftOut({ name: 'CSV', rows }, rowsLeftOut, colsLeftOut);
 }
 
 function splitCsvLine(line: string, delim: string): { cells: Cell[]; leftOut: boolean } {

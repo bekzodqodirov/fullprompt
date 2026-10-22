@@ -14,33 +14,6 @@ export const KNOWN_FAILING: ReadonlySet<string> = new Set([
   // pieces in the kernel (units.ts parseGoodsLine); owed to the next round.
   'c0347',
 
-  // ── r4-probe sheets ──────────────────────────────────────────────────────
-  // parseGoods: a bare «Net total»/«Gross total» is money only beside a
-  // discount column, so a VAT / tax / price invoice reads the money as kilos.
-  'c1894', 'c1895', 'c1896', 'c1897',
-  // parseGoods: the DESCRIPTION rung demotes «Описание/Description/描述/tavsif»
-  // for any other name-key column — country, colour, material, category,
-  // packing, factory, or a quantity/weight column whose cells read as words.
-  'c1898', 'c1899', 'c1900', 'c1901', 'c1902', 'c1903', 'c1904', 'c1905', 'c1906',
-  'c1907', 'c1908', 'c1909', 'c1910', 'c1911', 'c1912', 'c1913', 'c1914', 'c1915',
-  // parseGoods: `listOpening` skips a one-column list's heading only when it
-  // is LIST_WORDS alone in the first two lines («Список товаров для расчёта»,
-  // «Tovar nomlari:», «货物明细表», «Товары:» on line 3) — the heading is a product.
-  'c1916', 'c1917', 'c1918', 'c1919', 'c1920', 'c1921', 'c1922',
-  'c1923', 'c1924', 'c1925', 'c1926', 'c1927', 'c1928', 'c1929',
-  // parseGoods: TITLE_LINE drops a first-line PRODUCT as a title («№12»,
-  // «No. 12», a tee «20/16/20» read as a date).
-  'c1930', 'c1931', 'c1932', 'c1933', 'c1934',
-  // parseGoods: VOLUME_WORD claims «Meas»/«Vol» as m³ whatever unit the
-  // header names (carton cm, litres, ml).
-  'c1935', 'c1936', 'c1937',
-  // readGoodsFile: `rowLine` repeats a merged covered cell `readsAsFigure`
-  // does not know («$1,200.00», «1 200 000 сўм», «3600元», «120KG/CTN»).
-  'c1938', 'c1939', 'c1940', 'c1941',
-  // readGoodsFile: `csvSheet` counts a «;;;» line as filled, so an empty tail
-  // reads as rows left out (textCut true).
-  'c1942',
-
   // ── r4-probe typed ───────────────────────────────────────────────────────
   // parseClientHint / looksLikeMaterial: phoneIn's guard refuses a phone whose
   // country code is glued to the operator code («+99890 123 45 67», «+86138 …»).

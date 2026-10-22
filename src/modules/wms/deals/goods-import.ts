@@ -166,8 +166,27 @@ const namesTheGoods = (header: string): boolean => {
  * «white plastic» became the chair; the fourth review's «品名/型号 | 产品描述»:
  * «网布 黑色» became the office chair). Alone it is the name, as on every
  * Western invoice.
+ *
+ * So the first rung is a header that names the PRODUCT and nothing else: a
+ * part of its head made only of naming words — a word for «name» or the
+ * goods themselves, by stem, so every case form counts («Наименование
+ * продукции», «Tovar nomlari», «Name of goods», «商品名称»). A goods word
+ * QUALIFIED by anything else names something else about the goods (the fifth
+ * review): «Страна происхождения товара», «Goods weight», «产品颜色», «Category
+ * Name», «Наименование группы», «Factory name», «工厂名称», «Zavod nomi» each
+ * named every product by its country, colour, group or factory, and outranked
+ * the description beside it.
  */
-const DESCRIPTION_HEADER = /описан|descri|描述|tavsif/i;
+const NAMING_WORD = /^(?:наимен|назван|номенклатур|товар|продук|маҳсулот|махсулот|номи$|номлари$|tovar|mahsulot|nomi$|nomlari$|name|goods$|product|item|commodit|of$)/;
+const NAMING_HAN = ['品名', '名称', '商品', '货物', '产品', '货品'];
+const namesTheProduct = (header: string): boolean => {
+  const head = header.split(/[(（,;]/)[0] ?? '';
+  if (/^\s*(?:品名|名称)/.test(head)) return true;
+  return head.split(NAME_PARTS).some((part) => {
+    const words = part.toLowerCase().match(/[\p{L}']+/gu) ?? [];
+    return words.length > 0 && words.every((word) => NAMING_WORD.test(word) || hanRunOf(word, NAMING_HAN));
+  });
+};
 /**
  * The TNVED / HS column (judge MR-19). Never a bare «hs» or «kod»: header
  * keys match as SUBSTRINGS, so «hs» is inside «Widths» and «kod» inside
@@ -220,8 +239,13 @@ const VOLUME_KEYS = ['объем', 'объём', 'куб', 'м3', 'м³', 'hajm'
  * «Total Vol.» (the volume), «TOTAL WT» (the weight). None of them is a key,
  * so «total» made each the line's MONEY (the third review's S10 note); they
  * are read as what they measure when no keyed column does, and never as money.
+ * A unit of its own beside the word — «MEAS (CM)», «Vol (L)», «Vol, ml» — is
+ * never cubic metres (those are keys: «MEAS.(CBM)»), but a carton's
+ * centimetres or a bottle's litres, which read as m³ made a 60 cm carton 60 m³
+ * (the fifth review); such a column stays no volume and no money.
  */
 const VOLUME_WORD = /\b(?:meas(?:urement)?s?|vol)\b/i;
+const OWN_UNIT = /[(（,]/;
 const WEIGHT_ABBREV = /\bwt\b/i;
 // Totals first: a file carrying both «цена» (per unit) and «сумма» (the line
 // total) must land on the total — profit and customs both read line money.
@@ -237,11 +261,26 @@ const AMOUNT_PRICE_KEYS = ['цена', 'narx', 'price', '单价', '价格'];
  * carton's kilos — read as money, the net weight became the line's sum and
  * the line lost its weight. A total that DOES say it weighs stays a weight
  * either way: «TOTAL N.W.», «Total G.W.», «Суммарный вес», «Umumiy vazn».
+ *
+ * A discount is one sign of an invoice; a TAX column is another, and so is a
+ * unit price with no other money column to be the line's sum (the fifth
+ * review): «Unit price | Net total | VAT 12% | Gross total», «Narxi | Net
+ * total | QQS» — read as a packing list, the net money became the line's
+ * kilos and the unit price its sum. A price BESIDE a money column («Unit
+ * price | Amount | Total gross | Total net») leaves the totals the packing
+ * list's weights.
  */
 const WEIGHT_STATED = [...WEIGHT_KEYS.filter((key) => key !== 'gross'), ...NET_WEIGHT_KEYS, 'брутто', 'brutto'];
 const namesMoneyTotal = (text: string): boolean =>
   matchKey(text, AMOUNT_TOTAL_KEYS) && !matchKey(text, WEIGHT_STATED) && !WEIGHT_WORD.test(text);
 const DISCOUNT_HEADER = /discount|скидк|chegirma|折扣|优惠/i;
+const TAX_HEADER = /\b(?:vat|tax(?:es)?)\b|ндс|налог|qqs|soliq|税/i;
+/** Does this header row read as an INVOICE — the context in which a bare total is money? */
+function invoiceHeader(texts: string[]): boolean {
+  if (texts.some((text) => DISCOUNT_HEADER.test(text) || TAX_HEADER.test(text))) return true;
+  const price = (text: string) => matchKey(text, AMOUNT_PRICE_KEYS);
+  return texts.some(price) && !texts.some((text) => MONEY_HEADER.test(text) && !price(text));
+}
 /** A count of packages — «TOTAL CTNS», «Кол-во мест», «箱数» — is no money either. */
 const PACKAGE_COUNT = /ctns?\b|cartons?|pkgs?\b|packages?|короб|мест|箱数|件数|包数/i;
 
@@ -299,21 +338,31 @@ function parseMeasure(cell: Cell, accept: 'dona' | 'kg' | 'm3'): number | null {
 const GLUED_FIGURE = /^(-?[\d\s.,]*\d)\s*([\p{L}][\p{L}\d²³.]*)$/u;
 
 /**
- * A cell that states a FIGURE — a number, or a number with a unit the kernel
- * knows («120 KGS», «1,200», «5 CTNS») — as opposed to text that has a number
- * in it («LED 50W», «12V», «42 размер»). Decided by the cell's shape on its
- * first 64 characters, so a covered cell costs the same whatever its master
- * holds (R3-S7): what the model's text repeats under a merge and what it
- * leaves empty (`sheetsAsText`).
+ * A cell that states a FIGURE — one number and, around it, only what it is
+ * counted in: units the kernel knows or a currency («120 KGS», «1,200», «5
+ * CTNS», «$1,200.00», «1 200 000 сўм», «3600元», «120KG/CTN») — as opposed
+ * to text that has a number in it («LED 50W», «12V», «42 размер»: a word
+ * that counts nothing). A money or a per-carton weight read as text was
+ * repeated on every line its merge covers, and a model summing the column
+ * counted it three times (the fifth review). Decided by the cell's shape on
+ * its first 64 characters, so a covered cell costs the same whatever its
+ * master holds (R3-S7): what the model's text repeats under a merge and what
+ * it leaves empty (`sheetsAsText`).
  */
 export function readsAsFigure(cell: Cell): boolean {
   if (typeof cell === 'number') return true;
   const text = cellText(cell);
   if (text === '' || text.length > 64) return false;
-  if (/^-?[\d\s.,]*\d$/.test(text)) return true;
-  const glued = GLUED_FIGURE.exec(text);
-  return glued !== null && unitOf(glued[2]!.replace(/\.$/, '')) !== null;
+  const shape = FIGURE_SHAPE.exec(text);
+  if (!shape) return false;
+  const words = `${shape[1] ?? ''} ${shape[2] ?? ''}`.split(/[\s/／]+/).filter(Boolean);
+  return words.every((word) => CURRENCY_WORD.test(word) || unitOf(word.replace(/\.$/, '')) !== null);
 }
+
+/** A currency sign or word before the number, the number, and the words after it («KG/CTN»: per package). */
+const FIGURE_SHAPE = /^([$¥€₽]|\p{L}+\.?)?\s*-?[\d\s.,]*\d\s*([\p{L}][\p{L}\d²³.\s/／]*)?$/u;
+/** A currency as a cell writes it beside its sum — never a substring. */
+const CURRENCY_WORD = /^(?:[$¥€₽元]|usd|rmb|cny|eur|uzs|rub|руб\.?|сўм|сум|so['ʻ‘’]?m|юан[ьяей]?|yuan)$/i;
 
 /** A cell that reads as a TNVED code — the kernel's own shape rule. */
 const isCodeCell = (cell: Cell) => cellText(cell) !== '' && normalizeTnved(cell) !== null;
@@ -507,15 +556,17 @@ function findHeader(rows: Cell[][]): { found: Detected | null; refused: number |
     };
     const stated = (i: number) => sampled(i).length > 0 && !allCodes(i);
     // One ladder, the header's rank before the data's: a header that names
-    // the GOODS (never a code, a brand or a party — S5 — unless it only
-    // mentions one beside the name, `namesTheGoods`) over words, then over
-    // any data, then any name key at all. The fourth review found the round-3
+    // the PRODUCT alone (`namesTheProduct`, which outranks a description)
+    // over words, then one that names the GOODS (never a code, a brand or a
+    // party — S5 — unless it only mentions one beside the name,
+    // `namesTheGoods`) over words, then over any data, then any name key at
+    // all. The fourth review found the round-3
     // tiers' «any header over words» rung naming RTX-4090 / GTX-1660 by the
     // «Brand name» column beside them: a model number is not a word, but it
     // is the product.
     const goods = (i: number) => namesTheGoods(cellText(header[i]!));
     const name =
-      findColumn(header, NAME_KEYS_FIRST, taken, (i) => goods(i) && !DESCRIPTION_HEADER.test(cellText(header[i]!)) && wordy(i)) ??
+      findColumn(header, NAME_KEYS_FIRST, taken, (i) => namesTheProduct(cellText(header[i]!)) && wordy(i)) ??
       findColumn(header, NAME_KEYS_FIRST, taken, (i) => goods(i) && wordy(i)) ??
       findColumn(header, NAME_KEYS, taken, (i) => goods(i) && wordy(i)) ??
       findColumn(header, NAME_KEYS_FIRST, taken, (i) => goods(i) && stated(i)) ??
@@ -561,14 +612,15 @@ function findHeader(rows: Cell[][]): { found: Detected | null; refused: number |
     const unit = claim(UNIT_KEYS);
     // Volume before weight: «вес, кг» must not be eaten by a stray m3 match,
     // and the volume keys are the more specific set.
-    const claimWhere = (test: RegExp): number | null => {
-      const idx = findWhere(header, taken, (text) => test.test(text));
+    const claimWhere = (test: (text: string) => boolean): number | null => {
+      const idx = findWhere(header, taken, test);
       if (idx !== null) taken.add(idx);
       return idx;
     };
-    const volume = volumeFromQty ?? claim(VOLUME_KEYS) ?? claimWhere(VOLUME_WORD);
-    const discounted = header.some((cell) => DISCOUNT_HEADER.test(cellText(cell)));
-    const moneyTotal = (text: string) => discounted && namesMoneyTotal(text);
+    const volume =
+      volumeFromQty ?? claim(VOLUME_KEYS) ?? claimWhere((text) => VOLUME_WORD.test(text) && !OWN_UNIT.test(text));
+    const invoiced = invoiceHeader(header.map(cellText));
+    const moneyTotal = (text: string) => invoiced && namesMoneyTotal(text);
     // The line's weight, never one package's and never a price.
     const lineWeight = (isWeight: (text: string) => boolean): number | null => {
       const idx = findWhere(
@@ -630,59 +682,110 @@ function findHeader(rows: Cell[][]): { found: Detected | null; refused: number |
 /**
  * The last of a refused one-column list's opening lines that is no product
  * (R3-S4: the refused header became the first good of the deal import,
- * «Наименование» over «Масло моторное 4 л», and a title its first line):
- *  - a line SHAPED like a header — nothing but the words a list is headed
- *    with (`listHeading`) — as the first line, or as the second under the
- *    one line above it («Yiwu Trading» over «Наименование»: neither was a
- *    product under it);
- *  - else a first line shaped like a TITLE: a document's number or date
- *    («Товарная накладная № 15 от 01.10.2026», «Заявка от 15.10.2026»).
- * Never a line because a name key is somewhere inside it (the fourth
- * review): «Name badge holder», «Enamel mug white», «Полка для товаров»,
- * «电子产品配件», a «Contact name: Ali» further down — each was taken for the
- * header, and it and every product above it left the import. Null: the list
- * opens with a product.
+ * «Наименование» over «Масло моторное 4 л», and a title its first line).
+ * The list's HEAD is read from the top, among the lines above the first that
+ * carries its figures: a run of TITLES (`TITLE_LINE`) and HEADINGS
+ * (`listHeadingLine`), each with at most one other line before it — the
+ * sender's, which the head takes with it («Yiwu Trading» over «Наименование»;
+ * «ООО «Ромашка»», «Заявка на расчёт», «Товары:» — the fifth review: the
+ * round-4 rule looked at two lines only, and a heading under a title became
+ * the first product). A heading further down, under products, is a product
+ * itself («Куртка женская», «Брюки мужские», «Товары»).
+ * Never a line because a name key is somewhere INSIDE it (the fourth review):
+ * «Name badge holder», «Enamel mug white», «Полка для товаров», «Sports
+ * goods», «电子产品配件» are products — a heading opens with what it lists.
+ * Null: the list opens with a product.
  */
 function listOpening(rows: Cell[][]): number | null {
-  let title: number | null = null;
-  let lines = 0;
-  for (let k = 0; k < Math.min(rows.length, 10) && lines < 2; k += 1) {
+  let head: number | null = null;
+  let since = 0;
+  for (let k = 0; k < Math.min(rows.length, 10); k += 1) {
     const cells = (rows[k] ?? []).filter((c) => cellText(c) !== '');
     if (cells.length === 0) continue;
-    lines += 1;
     if (cells.length !== 1 || carriesFigure(cells[0]!)) break;
     const text = cellText(cells[0]!);
-    if (listHeading(text)) return k;
-    if (lines === 1 && TITLE_LINE.test(text)) title = k;
+    if (since <= 1 && (listHeadingLine(text) || TITLE_LINE.test(text))) {
+      head = k;
+      since = 0;
+    } else {
+      since += 1;
+    }
   }
-  return title;
+  return head;
 }
 
-/** A document's own number or date — what a title line carries and a product's name does not. */
-const TITLE_LINE = /№|\bno\.?\s*\d|\b\d{1,2}[./]\d{1,2}[./]\d{2,4}\b|\b\d{4}-\d{2}-\d{2}\b/i;
+/**
+ * A document's own name or its date — what a title line carries and a
+ * product's name does not. Never a bare «№ 12» / «No. 12» or three numbers
+ * between slashes: that is how a product writes its size («Кисть малярная
+ * №12», «Тройник 20/16/20» — the fifth review), so a date needs a month that
+ * is one, or a whole year.
+ */
+const TITLE_LINE =
+  /(?<!\p{L})(?:invoice|proforma|packing\s*list|накладн|заявк|заказ|сч[её]т(?!\p{L})|спецификац|ariza|buyurtma|faktura|发票|订单|装箱单)|(?<!\d)(?:0?[1-9]|[12]\d|3[01])\.(?:0?[1-9]|1[0-2])\.(?:\d{4}|\d{2})(?!\d)|(?<!\d)\d{1,2}[/-]\d{1,2}[/-]\d{4}(?!\d)|(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)/iu;
 
-/** The words a goods list is headed with, as whole words — never a substring. */
+/**
+ * The words a goods list is headed with, as whole words — never a substring.
+ * The Uzbek ones in both scripts: «Товарлар рўйхати», «Товар номи» were
+ * products for want of their Cyrillic spelling (the fifth review).
+ */
 const LIST_WORDS = new Set([
   'наименование', 'наименования', 'название', 'товар', 'товара', 'товары', 'товаров', 'список', 'перечень',
   'продукция', 'описание', 'номенклатура',
-  'tovar', 'tovarlar', 'tovarlarning', 'nomi', 'mahsulot', 'mahsulotlar', "ro'yxati", "ro'yxat",
+  'tovar', 'tovarlar', 'tovarlarning', 'nomi', 'nomlari', 'mahsulot', 'mahsulotlar', "ro'yxati", "ro'yxat",
+  'товарлар', 'товарларнинг', 'номи', 'номлари', 'маҳсулот', 'маҳсулотлар', 'махсулот', 'махсулотлар', 'рўйхати', 'рўйхат',
   'name', 'names', 'goods', 'list', 'item', 'items', 'product', 'products', 'description', 'of',
 ]);
 /** …and in Chinese, which writes them with nothing between: «商品名称», «货物清单». */
 const LIST_WORDS_HAN = ['品名', '名称', '货物', '商品', '产品', '清单', '列表', '货品', '明细'];
 
+/** A line's words, lower-cased, the Uzbek apostrophe in one spelling. */
+const lineWords = (text: string): string[] => text.toLowerCase().replace(/[ʻ‘’`]/g, "'").match(/[\p{L}']+/gu) ?? [];
+
 /** A cell made of nothing but list words — «Наименование товара», «Tovar nomi», «Goods list», «商品名称». */
 function listHeading(text: string): boolean {
-  const words = text.toLowerCase().replace(/[ʻ‘’`]/g, "'").match(/[\p{L}']+/gu) ?? [];
+  const words = lineWords(text);
   if (words.length === 0 || words.length > 4) return false;
   return words.every((word) => LIST_WORDS.has(word) || hanListWords(word));
 }
 
+/**
+ * A line a goods list is headed with: nothing but list words
+ * (`listHeading`), or OPENING with two of them and going on to say what the
+ * list is for or gives («Список товаров для расчёта», «Tovar nomi, soni,
+ * og'irligi», «Product names and quantities», «货物明细表», «商品名称及规格»), or
+ * announcing the lines under it with a colon («Goods to be shipped:»,
+ * «产品清单如下：»). One list word opens a product's name as often as a heading
+ * («Goods trolley», «Name badge holder»).
+ */
+function listHeadingLine(text: string): boolean {
+  if (listHeading(text) || /[:：]\s*$/.test(text)) return true;
+  const words = lineWords(text);
+  const first = words[0];
+  if (first === undefined) return false;
+  if (/^\p{Script=Han}/u.test(first)) return hanListPrefix(first) >= 2;
+  return words.length >= 2 && LIST_WORDS.has(first) && LIST_WORDS.has(words[1]!);
+}
+
+/** How many list words a run of Chinese characters opens with, read left to right. */
+function hanListPrefix(word: string): number {
+  let count = 0;
+  for (let at = 0; at < word.length; count += 1) {
+    const next = LIST_WORDS_HAN.find((w) => word.startsWith(w, at));
+    if (!next) break;
+    at += next.length;
+  }
+  return count;
+}
+
 /** A run of Chinese characters that is list words end to end, read left to right. */
-function hanListWords(word: string): boolean {
+const hanListWords = (word: string): boolean => hanRunOf(word, LIST_WORDS_HAN);
+
+/** A run of Chinese characters made of these words end to end, read left to right. */
+function hanRunOf(word: string, vocabulary: readonly string[]): boolean {
   if (!/^\p{Script=Han}+$/u.test(word)) return false;
   for (let at = 0; at < word.length; ) {
-    const next = LIST_WORDS_HAN.find((w) => word.startsWith(w, at));
+    const next = vocabulary.find((w) => word.startsWith(w, at));
     if (!next) return false;
     at += next.length;
   }
