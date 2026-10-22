@@ -131,8 +131,10 @@ describe('a line the Excel already lists is not added again under the model’s 
   it('the names a line answers to: whole, outside the brackets, inside each', () => {
     expect(goodsNameKeys('Куртка женская (Ladies jacket)')).toEqual({
       whole: 'куртка женская ladies jacket',
-      forms: ['куртка женская ladies jacket'],
+      outside: 'куртка женская',
+      inside: ['ladies jacket'],
       keys: ['куртка женская ladies jacket', 'куртка женская', 'ladies jacket'],
+      halves: [],
     });
     expect(goodsNameKeys('Shim').keys).toEqual(['shim']);
   });

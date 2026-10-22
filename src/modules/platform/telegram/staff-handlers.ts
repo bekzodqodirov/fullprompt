@@ -1751,9 +1751,13 @@ export async function readCustomerText(raw: string, prefix: string): Promise<Cus
   const goods = goodsEvidence(text, { prefix });
   // A word and a row of bare figures («Kurtka 1200 50 3000») is a packing-list
   // row, never a name — asked AFTER the hint, which reads a phone in the same
-  // shape («Ali 90 123 45 67»).
+  // shape («Ali 90 123 45 67»). Only a row of THREE figures or more: a word
+  // and two is as often a market stall or a phone in two groups («Ippodrom 4
+  // 115», «王先生 8512 3456»), and the seller who sends it twice has said
+  // which (round-4 probe, collector).
   const hint = parseClientHint(text, { prefix });
-  const row = hint === null && figureRow(text);
+  const figures = /(?:\s+\d[\d.,]*)+$/u.exec(text)?.[0].trim().split(/\s+/).length ?? 0;
+  const row = hint === null && figures >= 3 && figureRow(text);
   const couldBeCustomer = text !== '' && !goods && (hint !== null || (!row && lines.length === 1 && text.length <= 60));
   return {
     material: looksLikeMaterial(raw, { prefix }),

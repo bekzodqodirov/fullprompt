@@ -390,12 +390,17 @@ const CONTACT_WORDS = new Set([
 
 /** Where a cut was made in a line: a character no seller types. */
 const CUT = '\u0000';
-/** A run of digits as a phone is written: «+998 90 123-45-67», «(90) 123 45 67». */
-const DIGIT_RUN = /\+?\d(?:[\d\s\-–().]*\d)?/g;
+/**
+ * A run of digits as a phone is written: «+998 90 123-45-67», «(90) 123 45
+ * 67». An opening bracket belongs to the run when it closes around the run's
+ * first digits — cut without it, «Sardor (90) 123-45-67» named the lead
+ * «Sardor (» (round-4 probe, collector).
+ */
+const DIGIT_RUN = /\+?(?:\(\d+\)|\d)(?:[\d\s\-–().]*\d)?/g;
 /** A Telegram handle — contact, never a name («Telegram: @murod_uz»). */
 const HANDLE = /@[\p{L}\p{N}_.]+/gu;
-/** The code's number written after its label, the prefix left off: «Kod 777», «Mijoz kodi: 777» for GS777. */
-const CODE_LABEL = String.raw`(?:mijoz(?:\s+kodi)?|klient(?:\s+kodi)?|client(?:\s+code)?|клиент|kod(?:i)?|код|code|id)[\s.:：#№\-–]*|№\s*`;
+/** The code's number written after its label, the prefix left off: «Kod 777», «Mijoz kodi: 777», «Код клиента 777» for GS777. */
+const CODE_LABEL = String.raw`(?:mijoz(?:\s+kodi)?|klient(?:\s+kodi)?|client(?:\s+code)?|клиент|kod(?:i)?|код(?:\s+клиента)?|code|id)[\s.:：#№\-–]*|№\s*`;
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
@@ -459,8 +464,18 @@ function cutHint(line: string, hint: { code?: string; phone?: string }): { text:
   return { text, took };
 }
 
-/** The words of a text — letters and digits, everything else a separator. */
-const wordsOf = (text: string) => text.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+/**
+ * The apostrophes a seller types inside an Uzbek Latin word («Ra'no», «Sa’id»,
+ * «o‘g‘li»); ʻ and ʼ are letters already. Between two letters one is part of
+ * the word, never a boundary — read as one, the tail of «Ra'no» was the
+ * contact word «no» and the lead was named «Ra» (round-4 probe, collector).
+ */
+const APOS = "['’‘`]";
+/** A word: letters and digits, an apostrophe between two of them included. */
+const WORD = String.raw`[\p{L}\p{N}]+(?:${APOS}[\p{L}\p{N}]+)*`;
+
+/** The words of a text — `WORD`s, everything else a separator. */
+const wordsOf = (text: string) => text.match(new RegExp(WORD, 'gu')) ?? [];
 
 /**
  * Is this line contact and nothing else (round-4 review, C-r1/C-r2 ND1) — the
@@ -479,25 +494,73 @@ function isContactLine(line: string, hint: { code?: string; phone?: string } | n
 /** A contact word standing beside a cut — «Ali aka, tel: ⟨cut⟩» is «Ali aka». */
 const CONTACT_WORD_RE = [...CONTACT_WORDS].sort((a, b) => b.length - a.length).map(escapeRe).join('|');
 const HUG_SEP = String.raw`[\s.,:：;/|\\#№«»"'\-–—+]*`;
-const HUG = new RegExp(
-  `(?:${HUG_SEP}(?<![\\p{L}\\p{N}])(?:${CONTACT_WORD_RE})(?![\\p{L}\\p{N}]))*${HUG_SEP}${CUT}` +
-    `(?:${HUG_SEP}(?<![\\p{L}\\p{N}])(?:${CONTACT_WORD_RE})(?![\\p{L}\\p{N}]))*${HUG_SEP}`,
-  'giu',
-);
+/** A contact word as a whole `WORD` — never the tail of «Ra'no» or the head of «No'mon». */
+const HUG_WORD = String.raw`(?<![\p{L}\p{N}]${APOS}?)(?:${CONTACT_WORD_RE})(?![\p{L}\p{N}]|${APOS}[\p{L}\p{N}])`;
+const HUG = new RegExp(`(?:${HUG_SEP}${HUG_WORD})*${HUG_SEP}${CUT}(?:${HUG_SEP}${HUG_WORD})*${HUG_SEP}`, 'giu');
+/** The first word of a text with what stands before and after it — and `TAIL_WORD` the last. */
+const LEAD_WORD = new RegExp(String.raw`^([^\p{L}\p{N}]*)(${WORD})([^\p{L}\p{N}]*)`, 'u');
+const TAIL_WORD = new RegExp(String.raw`([^\p{L}\p{N}]*)(${WORD})([^\p{L}\p{N}]*)$`, 'u');
+
+/**
+ * A capitalised contact word of four letters or more, joined by a bare space
+ * or hyphen to a capitalised word that is not one, is a word of a shop's or
+ * firm's NAME — «Smart Mobile», «Uz-Mobile», «Магазин Телефон», «Phone
+ * Market» — and never the phone's label (round-4 probe, collector: the name
+ * lost its last word). A label is written as one: lower case («Ali aka tel»),
+ * short («Ali Tel»), with its mark («Telefon:»), or apart from any name
+ * («Mijoz GS777 …»).
+ */
+function nameOwnWord(word: string, joint: string, neighbour: string | undefined, mark: string): boolean {
+  return (
+    /^\p{Lu}/u.test(word) &&
+    word.replace(/[^\p{L}]/gu, '').length >= 4 &&
+    /^\s*[-–]?\s*$/u.test(joint) &&
+    !/[:：.№#]/u.test(mark) &&
+    neighbour !== undefined &&
+    /^\p{Lu}/u.test(neighbour) &&
+    !CONTACT_WORDS.has(neighbour.toLowerCase())
+  );
+}
+
+/**
+ * One `HUG` (the contact words on both sides of a cut, the cut, their
+ * separators) as it leaves the line: a space, with the OUTERMOST word of each
+ * side given back when it is the name's own (`nameOwnWord`).
+ */
+function unhug(hug: string, at: number, line: string): string {
+  const cut = hug.indexOf(CUT);
+  const left = hug.slice(0, cut);
+  const right = hug.slice(cut + 1);
+  let keep = ' ';
+  const first = LEAD_WORD.exec(left);
+  if (first) {
+    const [, lead, word, mark] = first;
+    const before = TAIL_WORD.exec(line.slice(0, at));
+    if (nameOwnWord(word!, `${before?.[3] ?? ''}${lead}`, before?.[2], mark!)) keep = `${lead}${word} `;
+  }
+  const last = TAIL_WORD.exec(right);
+  if (last) {
+    const [, , word, trail] = last;
+    const after = LEAD_WORD.exec(line.slice(at + hug.length));
+    if (nameOwnWord(word!, `${trail}${after?.[1] ?? ''}`, after?.[2], '')) keep += `${word}${trail}`;
+  }
+  return keep;
+}
 
 /**
  * A ONE-line hint with the hint's phone and code cut OUT of it (round-4
  * review, C-r2 close-variant: «Ali aka +998 90 123 45 67», «Murod GS777»,
  * «Rustam (GS777)» — the commonest way a seller types a prospect — named the
  * lead with the phone, which the hint already puts in its own column). The
- * contact words beside a cut go with it, and a bracket left empty. Null =
+ * contact words beside a cut go with it — bar a shop’s own word
+ * (`nameOwnWord`) — and a bracket left empty. Null =
  * nothing name-like is left («GS 777 90 123 45 67», «Kod 777»).
  */
 function nameBesideHint(line: string, hint: { code?: string; phone?: string }): string | null {
   const cut = cutHint(line, hint);
   if (!cut.took) return line;
   const rest = cut.text
-    .replace(HUG, ' ')
+    .replace(HUG, unhug)
     // «Rustam (aka ⟨cut⟩)» keeps «(aka)», and «Rustam (⟨cut⟩)» loses the pair.
     .replace(/([(（\[])\s+/gu, '$1')
     .replace(/\s+([)）\]])/gu, '$1')
@@ -604,46 +667,79 @@ function bracketParts(name: string): { inside: string[]; outside: string } {
 /**
  * The names one goods line answers to (round-2 review, C2/C6), each through
  * `goodsNameKey`:
- *  - `whole` — the name as written;
- *  - `forms` — the names the line IS: the whole, and for a Chinese factory's
- *    bilingual cell with no brackets («女士夹克 Ladies jacket», «女士夹克\nLadies
- *    jacket») its Chinese half and the rest — the model reads such a cell as
- *    «Куртка женская (女士夹克)» and the Excel's whole name met neither half
- *    (round-3 review, collector C2 note);
- *  - `keys` — everything the line answers to: its forms, the name outside its
- *    outermost brackets, and what each holds. The model is TOLD to write
- *    «Куртка женская (Ladies jacket)» (its SYSTEM prompt: Russian, the
- *    original in brackets), so the whole name alone never equalled the
- *    Excel's «Ladies jacket» and an «add» landed the same line twice.
- * Halves only without brackets: «Kurtka (黑色)» split by script would make
- * «Kurtka» a form and meet «Kurtka (qora)» outside against outside — the
- * colour is the bracket. Empty keys are dropped.
+ *  - `whole` — the name as written: the one name the line IS;
+ *  - `outside` / `inside` — the name outside its outermost brackets, and what
+ *    each holds;
+ *  - `keys` — everything the line answers to: the whole, the outside, the
+ *    insides. The model is TOLD to write «Куртка женская (Ladies jacket)»
+ *    (its SYSTEM prompt: Russian, the original in brackets), so the whole
+ *    name alone never equalled the Excel's «Ladies jacket» and an «add»
+ *    landed the same line twice;
+ *  - `halves` — for a Chinese factory's bilingual cell with no brackets
+ *    («女士夹克 Ladies jacket», «女士夹克\nLadies jacket») its Chinese half and
+ *    the rest, each beside the OTHER half (`rest`): the model reads such a
+ *    cell as «Куртка женская (女士夹克)» and the Excel's whole name met neither
+ *    half (round-3 review, collector C2 note). How a half may meet is
+ *    `halfMeets` — not as a name the line IS: «Kurtka 黑色» is a black jacket
+ *    and «LED灯泡» a bulb, and nothing says a half is the other's translation
+ *    (round-4 probe, collector).
+ * Halves only without brackets: in «Kurtka (黑色)» the colour is the bracket.
+ * Empty keys are dropped.
  */
-export function goodsNameKeys(name: string): { whole: string; forms: string[]; keys: string[] } {
+export function goodsNameKeys(name: string): {
+  whole: string;
+  outside: string;
+  inside: string[];
+  keys: string[];
+  halves: { key: string; rest: string }[];
+} {
   const whole = goodsNameKey(name);
-  const { inside, outside } = bracketParts(name);
-  const han = (name.match(/\p{Script=Han}+/gu) ?? []).join(' ');
-  const rest = name.replace(/\p{Script=Han}+/gu, ' ');
-  const halves = inside.length === 0 && han && /\p{L}/u.test(rest) ? [goodsNameKey(han), goodsNameKey(rest)] : [];
-  const forms = [...new Set([whole, ...halves])].filter(Boolean);
+  const parts = bracketParts(name);
+  const outside = goodsNameKey(parts.outside);
+  const inside = parts.inside.map(goodsNameKey).filter(Boolean);
+  const han = goodsNameKey((name.match(/\p{Script=Han}+/gu) ?? []).join(' '));
+  const rest = goodsNameKey(name.replace(/\p{Script=Han}+/gu, ' '));
+  const split = parts.inside.length === 0 && han !== '' && /\p{L}/u.test(rest);
   return {
     whole,
-    forms,
-    keys: [...new Set([...forms, goodsNameKey(outside), ...inside.map(goodsNameKey)])].filter(Boolean),
+    outside,
+    inside,
+    keys: [...new Set([whole, outside, ...inside])].filter(Boolean),
+    halves: split ? [{ key: han, rest }, { key: rest, rest: han }] : [],
   };
 }
 
 /**
  * Do two names point at the same product the WIDE way — a name ONE of them
- * answers to is a name the OTHER is: «Куртка женская (Ladies jacket)» is
+ * answers to is the name the OTHER is: «Куртка женская (Ladies jacket)» is
  * «Ladies jacket», «Kurtka» is «Kurtka (qora)» (round-2 review, C2/C6)? Never
  * bracket against bracket or outside against outside: a bracket is as often a
  * colour or a size, and «Kurtka (qora)» beside «Kurtka (oq)» are two lines of
- * one order.
+ * one order. A bilingual cell's half meets by `halfMeets` alone.
  */
 type NameKeys = ReturnType<typeof goodsNameKeys>;
 function namesMeet(a: NameKeys, b: NameKeys): boolean {
-  return a.keys.some((k) => b.forms.includes(k)) || b.keys.some((k) => a.forms.includes(k));
+  return a.keys.includes(b.whole) || b.keys.includes(a.whole) || halfMeets(a, b) || halfMeets(b, a);
+}
+
+const SCRIPTS = [/\p{Script=Han}/u, /\p{Script=Cyrillic}/u, /\p{Script=Latin}/u];
+
+/**
+ * A bilingual cell meets another line through a half only where a
+ * translation stands: the other line's bracket — the model's «Куртка женская
+ * (女士夹克)» — unless that line's outside is another name in the script of
+ * the cell's other half («Shirt (黑色)» is not «Jacket 黑色»), or the other's
+ * whole bare name («Ladies jacket»). Half against half, or against an
+ * outside, met «夹克 XL» with «衬衫 XL» and «Kurtka 黑色» with «Kurtka (oq)»
+ * (round-4 probe, collector).
+ */
+function halfMeets(cell: NameKeys, other: NameKeys): boolean {
+  return cell.halves.some(({ key, rest }) => {
+    if (other.inside.length === 0) return other.whole === key;
+    if (!other.inside.includes(key)) return false;
+    const clash = other.outside !== '' && other.outside !== rest && SCRIPTS.some((s) => s.test(other.outside) && s.test(rest));
+    return !clash;
+  });
 }
 
 /**
