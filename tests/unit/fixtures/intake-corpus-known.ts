@@ -12,21 +12,6 @@
  * newly fails is a regression.
  */
 export const KNOWN_FAILING: ReadonlySet<string> = new Set([
-  // ── r5-probe sheets ──────────────────────────────────────────────────────
-  // parseGoods: OWN_UNIT refuses every bracketed «Meas»/«Vol» header, so a
-  // cubic-metre unit VOLUME_KEYS do not spell («(CU.M)», «(Cu.M)», «(CUBIC
-  // METER)», «(cu m)») loses the line's volume.
-  'c2028', 'c2029', 'c2030', 'c2031',
-  // parseGoods: namesTheProduct wants EVERY head word a naming word, so a name
-  // header qualified by its language or its cargo («Наименование товара на
-  // русском языке», «Name in Russian», «中文品名», «Наименование груза») falls
-  // below the description rung and the description becomes the name.
-  'c2032', 'c2033', 'c2034', 'c2035',
-  // parseGoods: TITLE_LINE's «накладн» anywhere in a line takes a product
-  // («Светильник накладной», «Накладные ресницы», «Накладные ногти - 3000»)
-  // for the waybill's title.
-  'c2036', 'c2037', 'c2038',
-
   // ── r5-probe typed ───────────────────────────────────────────────────────
   // readGoodsLines / parseManualFacts: statusBody's STATUS_ALONE refuses a
   // status body only as ONE word or an Uzbek predicate, so «Товар: по

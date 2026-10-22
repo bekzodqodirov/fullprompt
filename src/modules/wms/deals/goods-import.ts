@@ -176,15 +176,39 @@ const namesTheGoods = (header: string): boolean => {
  * Name», «Наименование группы», «Factory name», «工厂名称», «Zavod nomi» each
  * named every product by its country, colour, group or factory, and outranked
  * the description beside it.
+ *
+ * The sixth review found that rung too strict three ways, each a name the
+ * VED needs that fell below the description and left the spec beside it the
+ * product: the cargo is the goods too («Наименование груза», «Cargo name» —
+ * the forwarder's word); a word that says WHICH name the column holds — its
+ * language, its length, the customs it is declared to — qualifies nothing
+ * about the goods («Name in Russian», «Наименование товара на русском
+ * языке», «中文品名», «报关品名», «Полное наименование»); and after the word
+ * for NAME a preposition and all it governs say where that name is written
+ * («Наименование по накладной», «Name as per invoice»). After a goods word
+ * the same words say where the goods are («Товар в наличии») and qualify it.
  */
-const NAMING_WORD = /^(?:наимен|назван|номенклатур|товар|продук|маҳсулот|махсулот|номи$|номлари$|tovar|mahsulot|nomi$|nomlari$|name|goods$|product|item|commodit|of$)/;
+const NAMING_WORD =
+  /^(?:наимен|назван|номенклатур|товар|продук|маҳсулот|махсулот|номи$|номлари$|tovar|mahsulot|nomi$|nomlari$|name|goods$|product|item|commodit|of$|груз(?:а|ы|ов)?$|cargo(?:e?s)?$|yuk(?:lar)?(?:ning)?$|юк(?:лар)?(?:нинг)?$)/;
 const NAMING_HAN = ['品名', '名称', '商品', '货物', '产品', '货品'];
+/** Which name — its language, its length, its customs — said beside a naming word and never naming one. */
+const WHICH_NAME =
+  /^(?:the|a|an|на|по|in|рус(?:ск\p{L}*)?|англ(?:ийск\p{L}*)?|китайск\p{L}*|узбекск\p{L}*|russian|english|chinese|uzbek|ru|en|zh|cn|uz|eng|rus|chn|язык\p{L}*|ruscha|inglizcha|xitoycha|o'zbekcha|tilida|tilidagi|русча|инглизча|хитойча|ўзбекча|тилида|тилидаги|полн\p{L}*|кратк\p{L}*|таможенн\p{L}*|официальн\p{L}*|full|short|customs|declared|official)$/u;
+/** …and in Chinese, written before the name with nothing between: «中文品名», «报关品名». */
+const WHICH_NAME_HAN = /^(?:中英文|中文|英文|俄文|俄语|英语|汉语|乌兹别克[文语]|报关|申报|海关)+/;
+/** A preposition after the word for NAME: what follows says where that name is written. */
+const NAME_IN = /^(?:на|по|в|во|для|in|on|for|per|by|as)$/;
+/** The word for NAME itself — the only one such a preposition may follow. */
+const NAME_WORD = /^(?:наимен|назван|name|nomi$|nomlari$|номи$|номлари$)/;
 const namesTheProduct = (header: string): boolean => {
   const head = header.split(/[(（,;]/)[0] ?? '';
-  if (/^\s*(?:品名|名称)/.test(head)) return true;
+  if (/^\s*(?:品名|名称)/.test(head.trim().replace(WHICH_NAME_HAN, ''))) return true;
   return head.split(NAME_PARTS).some((part) => {
-    const words = part.toLowerCase().match(/[\p{L}']+/gu) ?? [];
-    return words.length > 0 && words.every((word) => NAMING_WORD.test(word) || hanRunOf(word, NAMING_HAN));
+    const all = part.toLowerCase().replace(/[ʻ‘’`]/g, "'").match(/[\p{L}']+/gu) ?? [];
+    const cut = all.findIndex((word, at) => NAME_IN.test(word) && all.slice(0, at).some((w) => NAME_WORD.test(w)));
+    const words = cut < 0 ? all : all.slice(0, cut);
+    const naming = (word: string) => NAMING_WORD.test(word) || hanRunOf(word.replace(WHICH_NAME_HAN, ''), NAMING_HAN);
+    return words.some(naming) && words.every((word) => naming(word) || WHICH_NAME.test(word));
   });
 };
 /**
@@ -240,12 +264,17 @@ const VOLUME_KEYS = ['объем', 'объём', 'куб', 'м3', 'м³', 'hajm'
  * so «total» made each the line's MONEY (the third review's S10 note); they
  * are read as what they measure when no keyed column does, and never as money.
  * A unit of its own beside the word — «MEAS (CM)», «Vol (L)», «Vol, ml» — is
- * never cubic metres (those are keys: «MEAS.(CBM)»), but a carton's
- * centimetres or a bottle's litres, which read as m³ made a 60 cm carton 60 m³
- * (the fifth review); such a column stays no volume and no money.
+ * a carton's centimetres or a bottle's litres, which read as m³ made a 60 cm
+ * carton 60 m³ (the fifth review); such a column stays no volume and no
+ * money. Unless that unit spells cubic metres OUT — «(CU.M)», «(CUBIC
+ * METER)», «(cu m)» are no key, and refusing every bracket lost the stock
+ * volume column of a Chinese packing list (the sixth review); the
+ * abbreviations («MEAS.(CBM)», «Vol, m3») are keys and never reach here.
  */
 const VOLUME_WORD = /\b(?:meas(?:urement)?s?|vol)\b/i;
 const OWN_UNIT = /[(（,]/;
+/** Cubic metres written out — «cu.m», «cu m», «cubic metre(s)», «CU.MTS» — never «cu.ft» or «cu.cm». */
+const CUBIC_METRE = /\bcu(?:bic)?\.?\s*m(?:et(?:er|re)s?|trs?|ts?)?\b/i;
 const WEIGHT_ABBREV = /\bwt\b/i;
 // Totals first: a file carrying both «цена» (per unit) and «сумма» (the line
 // total) must land on the total — profit and customs both read line money.
@@ -618,7 +647,9 @@ function findHeader(rows: Cell[][]): { found: Detected | null; refused: number |
       return idx;
     };
     const volume =
-      volumeFromQty ?? claim(VOLUME_KEYS) ?? claimWhere((text) => VOLUME_WORD.test(text) && !OWN_UNIT.test(text));
+      volumeFromQty ??
+      claim(VOLUME_KEYS) ??
+      claimWhere((text) => VOLUME_WORD.test(text) && (!OWN_UNIT.test(text) || CUBIC_METRE.test(text)));
     const invoiced = invoiceHeader(header.map(cellText));
     const moneyTotal = (text: string) => invoiced && namesMoneyTotal(text);
     // The line's weight, never one package's and never a price.
@@ -719,10 +750,16 @@ function listOpening(rows: Cell[][]): number | null {
  * product's name does not. Never a bare «№ 12» / «No. 12» or three numbers
  * between slashes: that is how a product writes its size («Кисть малярная
  * №12», «Тройник 20/16/20» — the fifth review), so a date needs a month that
- * is one, or a whole year.
+ * is one, or a whole year. «Накладн…» is also the adjective of a product
+ * («Светильник накладной», «Накладные ресницы», «Розетка двойная накладная»
+ * — the sixth review), so it is the waybill only in the waybill's own phrase:
+ * after the adjective that says which waybill («Товарная», «Расходная»,
+ * «Товарно-транспортная»), or opening the line with nothing after it but its
+ * number, its date or what it is for («Накладная № 15», «Накладная от
+ * 01.10», «Накладная на отпуск»).
  */
 const TITLE_LINE =
-  /(?<!\p{L})(?:invoice|proforma|packing\s*list|накладн|заявк|заказ|сч[её]т(?!\p{L})|спецификац|ariza|buyurtma|faktura|发票|订单|装箱单)|(?<!\d)(?:0?[1-9]|[12]\d|3[01])\.(?:0?[1-9]|1[0-2])\.(?:\d{4}|\d{2})(?!\d)|(?<!\d)\d{1,2}[/-]\d{1,2}[/-]\d{4}(?!\d)|(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)/iu;
+  /(?<!\p{L})(?:товарн|транспортн|расходн|приходн|сопроводительн|отгрузочн|возвратн)\p{L}*[\s-]+накладн|^накладная(?=\s*(?:$|№|\(|\d|от(?!\p{L})|на(?!\p{L})))|^накладные(?=\s*(?:$|№|\d|от(?!\p{L})))|(?<!\p{L})(?:invoice|proforma|packing\s*list|заявк|заказ|сч[её]т(?!\p{L})|спецификац|ariza|buyurtma|faktura|发票|订单|装箱单)|(?<!\d)(?:0?[1-9]|[12]\d|3[01])\.(?:0?[1-9]|1[0-2])\.(?:\d{4}|\d{2})(?!\d)|(?<!\d)\d{1,2}[/-]\d{1,2}[/-]\d{4}(?!\d)|(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)/iu;
 
 /**
  * The words a goods list is headed with, as whole words — never a substring.
