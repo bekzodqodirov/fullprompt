@@ -83,7 +83,7 @@ import {
   MAX_CALC_ITEMS,
   calcDueMinutes,
   linkLine,
-  nextVedAssignee,
+  nextVedAssigneeInTx,
   requestLabel,
   vedRotaPool,
 } from './service';
@@ -2438,7 +2438,11 @@ export async function recalcFromSealed(
 
   // Pooled, so BEFORE the transaction (#714).
   const pool = await vedRotaPool();
-  const assigneeId = pricer && pool.includes(pricer) ? pricer : await nextVedAssignee();
+  // His 5.4 a: a correction goes back to whoever priced it, busy or not. Only
+  // a pricer the rota no longer holds (left, signed out) hands it to the rota,
+  // and that pick is made inside the transaction, under the rota's lock.
+  const pricerHolds = pricer !== null && pool.includes(pricer);
+  let assigneeId: string | null = pricerHolds ? pricer : null;
   const dueAt = new Date(Date.now() + calcDueMinutes(old.itemCount, Boolean(old.noteId)) * 60_000);
   // Today's book for the parent's dictionary groups — on the pool, before
   // the tx (#714). The parent is closed, so its groups cannot move meanwhile
@@ -2493,6 +2497,7 @@ export async function recalcFromSealed(
       }
       if (child?.state) throw new CalcError('recalc_superseded');
 
+      if (!pricerHolds) assigneeId = await nextVedAssigneeInTx(tx, pool);
       const [fresh] = await tx
         .insert(calcRequests)
         .values({

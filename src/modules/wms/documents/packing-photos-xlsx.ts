@@ -13,6 +13,8 @@ import {
   warehouses,
 } from '../../platform/db/schema';
 import { getStorage } from '../../platform/files/storage';
+import { runPooled } from '../../../components/pooled';
+import { SHEET_PHOTO_PX, fitInBox, sheetPhoto, sheetPhotoKey, type SheetPhoto } from './sheet-photo';
 import { aboardFilter } from '../scanning/unload';
 import { compositionMode, paperLines, truckSegments } from '../receipts/composition-math';
 import { lotTrucksFor, paperCompositionsFor } from '../receipts/lot-composition';
@@ -113,19 +115,17 @@ export async function buildPackingPhotosXlsx(batchId: string): Promise<Buffer | 
   ]);
   sheet.getRow(1).font = { bold: true, size: 13 };
 
-  // exceljs embeds png/jpeg only; thumbs are webp — convert.
-  const thumbs = new Map<string, Buffer>();
-  if (photoRows.length) {
-    const sharp = (await import('sharp')).default;
-    for (const att of photoRows) {
-      try {
-        const bytes = await getStorage().get(att.thumb200Key ?? att.storageKey);
-        thumbs.set(att.id, await sharp(bytes).jpeg({ quality: 70 }).toBuffer());
-      } catch {
-        /* photo unavailable — leave the cell empty */
-      }
+  // The 800-px copy, fitted into its cell (`sheet-photo.ts` — his «hira
+  // korinyabti»); four at a time, as every other photo pipe here.
+  const thumbs = new Map<string, SheetPhoto>();
+  await runPooled(photoRows, 4, async (att) => {
+    try {
+      const bytes = await getStorage().get(sheetPhotoKey(att));
+      thumbs.set(att.id, await sheetPhoto(bytes, SHEET_PHOTO_PX.document));
+    } catch {
+      /* photo unavailable — leave the cell empty */
     }
-  }
+  });
 
   // Lot tarkibi: a composed lot prints one row per line on this truck —
   // frozen while the truck is ticked «hujjat yuborildi».
@@ -200,15 +200,18 @@ export async function buildPackingPhotosXlsx(batchId: string): Promise<Buffer | 
       const thumb = thumbs.get(photoId);
       if (!thumb) return;
       const imageId = workbook.addImage({
-        buffer: thumb as unknown as ExcelJS.Buffer,
+        buffer: thumb.buffer as unknown as ExcelJS.Buffer,
         extension: 'jpeg',
       });
       sheet.addImage(imageId, {
         tl: { col: PHOTO_START_COL + i + 0.1, row: photoRow - 1 + 0.1 },
-        ext: { width: 78, height: 72 },
+        ext: fitInBox(thumb),
       });
     });
   }
 
-  return Buffer.from(await workbook.xlsx.writeBuffer());
+  // STORED, not deflated: JPEG does not shrink under deflate, and exceljs's
+  // default ran pure-JS deflate over every photograph on the one Node process
+  // — 9 s of CPU at 1,200 photos for ~1 % of size (the review).
+  return Buffer.from(await workbook.xlsx.writeBuffer({ zip: { compression: 'STORE' } }));
 }

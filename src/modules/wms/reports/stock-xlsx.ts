@@ -4,6 +4,7 @@ import { db } from '../../platform/db/client';
 import { attachments } from '../../platform/db/schema';
 import { getStorage } from '../../platform/files/storage';
 import { runPooled } from '../../../components/pooled';
+import { SHEET_PHOTO_PX, fitInBox, sheetPhoto, sheetPhotoKey, type SheetPhoto } from '../documents/sheet-photo';
 import { parseCols, visibleColumns } from '../../platform/lists/columns';
 import { STOCK_COLUMNS } from '../inventory/columns';
 import { reportLabels } from './labels';
@@ -229,7 +230,7 @@ export async function buildStockXlsx(input: {
   // …and the audit row must not say «no photo column» about a file that has
   // one. `visible` is what the route records as `cols`.
   visible.add('photo');
-  const thumbs = new Map<string, Buffer>();
+  const thumbs = new Map<string, SheetPhoto>();
   /** Admitted photographs per row index, in the order they must be drawn. */
   const photosByRow = new Map<number, string[]>();
   let photosSkipped = 0;
@@ -253,7 +254,9 @@ export async function buildStockXlsx(input: {
             .select({
               entityId: attachments.entityId,
               id: attachments.id,
-              thumbKey: attachments.thumb200Key,
+              // The 800-px copy (`sheet-photo.ts`): the 200-px one was the
+              // smear he reported as «hira».
+              thumbKey: attachments.thumb800Key,
               storageKey: attachments.storageKey,
             })
             .from(attachments)
@@ -325,24 +328,19 @@ export async function buildStockXlsx(input: {
      * exceljs embeds png/jpeg only and thumbs are webp — convert, four at a
      * time (#102's own lesson from the other end of the same pipe).
      *
-     * RESIZED first, and that is not decoration: `thumb200Key` is NULL
+     * RESIZED first, and that is not decoration: the thumbnail key is NULL
      * whenever the thumbnail job has not run (and for every photo this
      * container has), and the fallback is the ORIGINAL — a 3-4 MB phone
-     * photograph re-encoded at full resolution to be drawn at 78×72 px.
+     * photograph that must not be embedded at full resolution. The size is
+     * `SHEET_PHOTO_PX.stock` (400 px since his «hira», 2026-10-21: double
+     * the old 200, and the sheet's whole-warehouse size kept in mind).
      */
-    const sharp = (await import('sharp')).default;
     await runPooled([...needed], 8, async (id) => {
       const keys = keysById.get(id);
       if (!keys) return;
       try {
-        const bytes = await getStorage().get(keys.thumbKey ?? keys.storageKey);
-        thumbs.set(
-          id,
-          await sharp(bytes)
-            .resize(200, 200, { fit: 'inside', withoutEnlargement: true })
-            .jpeg({ quality: 70 })
-            .toBuffer(),
-        );
+        const bytes = await getStorage().get(sheetPhotoKey({ thumb800Key: keys.thumbKey, storageKey: keys.storageKey }));
+        thumbs.set(id, await sheetPhoto(bytes, SHEET_PHOTO_PX.stock));
       } catch {
         /* photo unavailable — the cell simply stays empty */
       }
@@ -502,7 +500,7 @@ export async function buildStockXlsx(input: {
     imageIdOf.set(
       placement.attId,
       workbook.addImage({
-        buffer: thumbs.get(placement.attId) as unknown as ExcelJS.Buffer,
+        buffer: thumbs.get(placement.attId)!.buffer as unknown as ExcelJS.Buffer,
         extension: 'jpeg',
       }),
     );
@@ -514,12 +512,15 @@ export async function buildStockXlsx(input: {
   for (const placement of byImage) {
     sheet.addImage(imageIdOf.get(placement.attId)!, {
       tl: { col: placement.col + 0.1, row: placement.row + 0.1 },
-      ext: { width: 78, height: 72 },
+      ext: fitInBox(thumbs.get(placement.attId)!),
     });
   }
 
   return {
-    buffer: Buffer.from(await workbook.xlsx.writeBuffer()),
+    // STORED, not deflated: JPEG does not shrink under deflate, and exceljs's
+    // default ran pure-JS deflate over every photograph on the one Node
+    // process — 7.5 s of CPU at the photo cap for ~3 % of size (the review).
+    buffer: Buffer.from(await workbook.xlsx.writeBuffer({ zip: { compression: 'STORE' } })),
     visible,
     /** What the file actually carries — the audit row could not tell a
      *  twelve-photograph export from a three-thousand-photograph one. */

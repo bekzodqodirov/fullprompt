@@ -4531,3 +4531,152 @@ new map code until it is classed as Chinese or Uzbek; the single arrived column)
 Red-proven by string edit four ways: arrivals at a Chinese warehouse sent to `inland`; the filter keeping
 `column === 'inland'`; `cn_transit` counted as Irkeshtam; a ninth map code. The third first stayed GREEN — the
 edit named the Chinese leg `cn`, which no segment is called — and was redone on the real key.
+
+## Sakkiz band, round 1 — the bot stops losing what it is sent; the VED rota stops picking one person (2026-10-21; NO migration; spec `docs/SAKKIZ-BAND.md`, his answers §11)
+
+His eight items of 2026-10-20, diagnosed and answered («1 chi band 3 b / 2chi
+bolim 4 c / … / umumiy savollar 0 1 a», every unnamed question = ⭐). Round 1 is
+the part his answers fully cover: item 1's losses, item 5's tie, and the blurry
+photos he added to item 8. Numbered #1455 — `main` had reached #1454 (the other
+session's board rounds) while this was built.
+
+**#1455 — The VED rota: a free person first, then the fewest handed TODAY, then
+the longest wait, then the id — inside the landing's transaction, under one
+advisory lock.** His «faqat Murodga tushgan, 10 foizcha boshqa hodimga» is the
+tie: the old order stopped at «fewest OPEN» and then `max(requested_at)` over
+OPEN requests, which is NULL for everybody when nobody holds anything — the
+normal state of a team that keeps up — so postgres handed back the same first
+aggregate row every time. Reproduced exactly: nine requests over three free
+people went `[9, 0, 0]`; now `[3, 3, 3]`. «Handed» = `coalesce(taken_at,
+requested_at)` of a request the person HOLDS («Olaman» counts for the taker,
+«Bo'shatish» for nobody); «today» is the Tashkent day (`tashkentDayStart`). The
+pick moved INTO both writers' transactions (`openCalcRequest`,
+`recalcFromSealed`) as `nextVedAssigneeInTx(tx, pool)` with the pool read on the
+pool before (#714); `pg_advisory_xact_lock(hashtext('ved-rota'))` makes a second
+landing wait for the first's commit, proven deterministically with a held-open
+transaction (without the lock both went to the same person). His 5.7: an admin
+who ALSO holds the `ved_manager` ROLE is in the pool — the admin role alone
+carries `ved.docs` as one grant among all and says nothing about who calculates.
+His 5.4 a: a correction still goes back to its pricer, busy or not. Weights by
+line count (5.2 b), the rota checkbox (5.3 b) and the «Bugun» line (5.6 a) are
+round 9. 3 red proofs.
+
+**#1456 — The model's reading fails in WORDS, never «AI mavjud emas».** His
+screenshot was that sentence over a typed goods line. `analyzeIntake` now
+answers `{ok} | {ok:false, failure}` over twelve named failures
+(`AiReadFailure`, `AI_READ_FAILURE` — not_configured, nothing_to_read, budget,
+refused, truncated, timeout, rate_limited, overloaded, auth, rejected,
+unreadable, network), each a sentence and a «can a retry help» flag that draws
+«🔄 AI qayta o'qisin». The likeliest cause of his case is named and fixed:
+the heavy model thinks by default and thinking counts INSIDE `max_tokens`, so
+4096 left a forty-line packing list no room — the JSON stopped mid-object, the
+parse threw, and the catch reported «no AI». `INTAKE_MAX_TOKENS = 16_000`
+(under the SDK's non-streaming ceiling), `stop_reason === 'max_tokens'` →
+`truncated`, the leash 150 s for the bot (his 3.4 b, «⏳ AI o'qiyapti… (3
+daqiqagacha)») and the SDK's own retry OFF — it restarted the whole leash and
+re-sent every image; one retry of ours, only for a failure where the call never
+ran and only while half the leash is left. `aiFailureOf` is tested against the
+SDK's OWN error classes (#1209). The model's notes reach the seller (two or
+three, his 1.6 a); the system prompt asks it to merge one order's pieces into
+one list and to write names in Russian with the original in brackets (1.5 b).
+The model itself is unchanged — round 5 (his 3.x) picks it from a settings
+screen. The chat door shows a one-line `threadAiFailed` in four locales.
+
+**#1457 — What a person TYPED as goods is read without the model**
+(`readGoodsLines`). It returned `[]` by design («splitting a list is the model's
+job»), so a failed model left «Tovarlar: —» over «Tovar синтетическое
+компрессорное масло 1.1 kub 240 kg». Narrow on purpose: a line counts only when
+it says it is one («Tovar: …») or is a name followed by nothing but figures
+(«Kurtka 300 dona 150 kg»); a route, a line of totals words («vazni 120 kg»),
+a sentence with a number in it («yana 250 kg deb yozishdi»), a code, or an
+ambiguous figure («1,200») is not. These lines sit LAST — the invoice's rows and
+the model's reading win. The chat door reads them from the messages' bodies,
+not from the «Mijoz: » labelled material, or the speaker would join the name.
+
+**#1458 — Spreadsheets: every sheet, every shape, and a sheet the reader cannot
+map goes to the MODEL, never becomes invented goods** (`readGoodsFile`). Content
+decides the shape (#284): `PK` = XLSX, the OLE signature = Excel 97, text = an
+HTML table, an Excel 2003 XML sheet or a CSV decoded by BOM → strict UTF-8 →
+strict GBK → cp1251. **.xls (his 1.3 b) is read by our own BIFF8 value reader
+(`deals/xls.ts`) over SheetJS's official `cfb`**: the full SheetJS reader is on
+npm only in the version with the crafted-file CVEs, the fixed one lives on a
+host this build cannot reach (403 here), and a third-party republish could not
+be verified against the original. The reader takes shared strings (with the
+CONTINUE width flag), inline strings, numbers, RK/MULRK, formula results and
+booleans, bounded 5 000 × 100; Excel 95 / a password / a broken stream are
+refused in words. Proven against a REAL file: LibreOffice in this container
+saves an exceljs workbook as «MS Excel 97» (`tests/fixtures/invoice-97.xls`,
+150 lines of Cyrillic and Chinese, decimals, formulas, a CONTINUE) and every
+cell comes back exactly. The goods come from the ONE sheet with the most lines —
+an «Invoice» and a «Packing list» sheet list the same goods, and adding them
+would double the order — and the other sheets go to the model as text. The
+header detector (shared with the deal import and the VED paste) learned two
+things: a header has at least two cells (a one-cell title row naming «товар»
+was the header), and the name column prefers the keys that mean a NAME and data
+that READ as words over an article number — «Item No.» took the name from
+«Description» and every product was «YW-2301». A cell with its unit glued on
+(«120KGS», «12.5 CBM», «300PCS») reads in the column whose OWN unit it carries
+(`parseMeasure`) — «5 CTNS» in a quantity column is cartons and stays unread
+rather than become a wrong count — and a sheet with both «N.W.» and «G.W.» is
+read by its NET column (`NET_WEIGHT_KEYS` claimed first), the row's weight
+being netto by definition. A sheet with no header the reader
+knows used to make every row's first text cell a product (the seller's company,
+its address, «Invoice No») and those overruled the model (his 1.2 b).
+
+**#1459 — The collector keeps everything it was sent, and lands only what it
+showed.** A picture sent as a FILE (WeChat originals, office scans — the
+sharpest copy) is shown to the model (`intakeFileKind` sniffs bytes); HEIC,
+which this server's image library cannot decode, is refused in words; voice,
+video and location get a sentence instead of the cabinet's silence (1.12 a).
+Twelve photos (1.4 b) and three PDFs read TOGETHER instead of the first;
+a second goods file is ASKED about — add or replace (1.13 c, `c:inv_add` /
+`c:inv_replace`) — instead of silently replacing the first. The first message
+can be MATERIAL (1.7 b, `looksLikeMaterial`): several lines, a long text, a
+goods line or a figure with a unit is filed and the customer asked again; and a
+PHONE is one short line of 9-15 digits, never «any text with seven digits» (a
+goods list with a TNVED code named the lead and became its phone; ten bare
+digits after a word are a code). Files before the customer or the zone are kept
+and the question re-asked (they used to be refused, or to skip both
+questions). The analysis runs under a TOKEN (`analysing`): a second «Bo'ldi»
+waits, a cancel or a restart throws the late result away, and a message that
+arrived while it ran is KEPT — the seller is asked to press «Bo'ldi» again
+(`settleAnalysis`, pure). The confirm lands only a reading the seller was
+shown (`review`, or `question` while a line is asked). Found by re-reading the
+diff before the push: a phone VIDEO sent as a file is ISO media like a HEIC
+(`ftyp`), so the brand decides (a picture brand is tried, anything else is «video
+o'qilmaydi»); a .zip is named an archive, not «a broken Excel»; and an album
+before the customer is named re-asks the question once, not once per photo
+(`reaskedGroup`). Per-line
+answers are kept apart from the material (`answers`, landed on the card) — a
+line's «150 kg» re-read as the whole truck's weight is what made a re-analysis
+overrule the documents.
+
+**#1460 — Photos in the spreadsheets at their real sharpness** (his «packing
+list sklad excellarida rasimlar … hira korinyabti»). Three causes, one rule
+(`documents/sheet-photo.ts`, used by the packing list, the agent's file and the
+stock sheet): the 200-px LIST thumbnail was embedded (now the 800-px copy, the
+original when it is missing), it was compressed twice (WebP 75 then JPEG 70; now
+JPEG 88), and every picture was squeezed into a fixed 78×72 box (now fitted,
+proportions kept). The stock «Ostatka» takes 400 px, not 800: it carries up to
+three thousand pictures of a whole warehouse in one file built in memory by the
+one Node process, and at 800 px that is hundreds of megabytes — double the old
+resolution, stated as the trade.
+
+**#1461 — The queued AI pass is never silent when it does not answer.** A pass
+that stands down because a VED reached the request first (`touched`,
+`confirmed`) or it was closed tells the seller so (`STOOD_DOWN`), and a pass that
+failed says the job is in the VED's queue (`PASS_FAILED`) — the seller had been
+promised a figure in the chat and waited for one that never came.
+
+**#1462 — PROCESS.** (1) A red proof stayed GREEN: ignoring the CONTINUE width
+flag left LibreOffice's file reading perfectly, because its one split did not
+change width. Evidence about the fixture (#166) — a hand-built stream that
+switches from one byte to two at the boundary now goes red. (2) LibreOffice is
+installed here and is the oracle for any old Office format: make the file with
+the app's own library, let LibreOffice save it, read it back. (3) The «шт»
+column he asked for in the packing lists (8.5) waits for round 8: pieces live on
+tarkib lines, which round 8 opens to a single line. (4) `main` had moved by
+twenty-odd commits, a migration (0135 `load_mode`, the other session's LTL/FTL)
+and #1429-#1454 while this was built — read the journal and the DECISIONS tail
+after a fetch, every time. The FTL flag on a deal is what round 10's odnarodka
+must set.

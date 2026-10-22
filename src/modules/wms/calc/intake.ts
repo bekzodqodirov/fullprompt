@@ -30,7 +30,7 @@ import {
 } from './needs';
 import type { GoodsRow } from '../deals/goods-import';
 import type { BazaBasis, MeasureUnit } from './pricing';
-import { routeAmount, unitOf } from './units';
+import { codeWrittenAsCode, parseGoodsLine, routeAmount, unitOf } from './units';
 
 export type CalcSection = 'yolkira' | 'rastamojka' | 'podklyuch';
 
@@ -110,6 +110,58 @@ export const FIELD_LABEL: Record<CalcField, string> = {
   goods: 'tovar nomi',
   itemMeasure: 'tovarning soni yoki og‘irligi',
   lineNeed: 'kod so‘ragan o‘lchov',
+};
+
+/**
+ * Why the model's reading is missing, named (his 1.6 a, 2026-10-21).
+ *
+ * Every one of these used to reach the seller as the same sentence, «AI
+ * mavjud emas» — a key that expired, a packing list too long for the answer,
+ * a five-second Anthropic outage and a refused chemical were one message, so
+ * nobody could tell «try again in a minute» from «tell the admin». His own
+ * screenshot of 2026-10-21 is that sentence over a message the model never
+ * read. `budget` is the caller's (the day's cap), the rest come from the call.
+ */
+export type AiReadFailure =
+  | 'not_configured'
+  | 'nothing_to_read'
+  | 'budget'
+  | 'refused'
+  | 'truncated'
+  | 'timeout'
+  | 'rate_limited'
+  | 'overloaded'
+  | 'auth'
+  | 'rejected'
+  | 'unreadable'
+  | 'network';
+
+/** The sentence per failure, and whether pressing «🔄 Qayta o‘qish» can help. */
+export const AI_READ_FAILURE: Record<AiReadFailure, { text: string; retry: boolean }> = {
+  not_configured: { text: 'AI ulanmagan (serverda kalit yo‘q) — adminga ayting.', retry: false },
+  nothing_to_read: { text: 'AI ga o‘qish uchun matn, rasm yoki PDF yo‘q edi.', retry: false },
+  budget: { text: 'AI kunlik limiti tugadi.', retry: false },
+  refused: {
+    text: 'AI bu materialni o‘qishdan bosh tortdi (xavfsizlik filtri) — VED qo‘lda ko‘radi.',
+    retry: false,
+  },
+  // No retry (review #21): the cut is a property of the INPUT — the same
+  // material under the same ceiling is cut again, each press a paid call the
+  // day's budget never counts. The sentence already names the one remedy.
+  truncated: {
+    text: 'Material juda katta — AI javobi sig‘madi. Kamroq sahifa yoki Excel yuboring.',
+    retry: false,
+  },
+  timeout: { text: 'AI belgilangan vaqtda javob bermadi.', retry: true },
+  rate_limited: { text: 'AI hozir band (so‘rov ko‘p) — bir daqiqadan keyin qayta urinib ko‘ring.', retry: true },
+  overloaded: { text: 'AI xizmatida vaqtinchalik nosozlik — birozdan keyin qayta urinib ko‘ring.', retry: true },
+  auth: { text: 'AI kaliti ishlamayapti (eskirgan yoki noto‘g‘ri) — adminga ayting.', retry: false },
+  rejected: {
+    text: 'AI so‘rovni qabul qilmadi (fayl o‘qilmaydigan yoki juda katta) — fayllarni boshqacha yuboring.',
+    retry: false,
+  },
+  unreadable: { text: 'AI javobini o‘qib bo‘lmadi.', retry: true },
+  network: { text: 'AI bilan aloqa uzildi.', retry: true },
 };
 
 /** What the AI (or a human) managed to read out of the sent material. */
@@ -724,15 +776,626 @@ export function collectPromptText(section: CalcSection): string {
 }
 
 /**
+ * Does this line STATE goods — a unit word after a figure («300 dona», «1.1
+ * kub»), or a TNVED code beside a word («Kurtka 6201930000», «6201.93.00.00»)?
+ *
+ * The one test both readers of «who is the customer» ask FIRST (review #16):
+ * a phone carries neither, and a goods line that also happens to hold nine
+ * digits («Kurtka 6201930000 300 dona» — the code and the count glue into
+ * one 13-digit run) must never become the lead's phone. A bare line of
+ * digits is not a code here: «8901234567» typed alone is somebody's number.
+ */
+export function statesGoods(line: string): boolean {
+  const read = parseGoodsLine(line);
+  if (read.unitWords.length > 0) return true;
+  // …and a code PRINTED as one («6201.93.0000», «2710 19 820 0») is goods
+  // with no word beside it (T3): no phone is written 4-2-…
+  return read.tnvedCode !== null && (/\p{L}/u.test(line) || codeWrittenAsCode(line));
+}
+
+/**
+ * Words that make a line something other than a product — ONE list, read by
+ * the typed-goods reader (a line named only by these is not goods) and by the
+ * customer reader (letters that are one of these are never a client code).
+ * Compared lower-cased with every apostrophe DROPPED: «Og’irligi»,
+ * «O'g'irligi» and «ogʻirligi» are one word, and phones type all three (the
+ * second review's T8 — «O'g'irligi» with its first apostrophe slipped past).
+ *
+ *  - a TOTAL — «vazni 120 kg», «Вес груза: 3500 кг», «总重量 3500 kg»: the
+ *    shipment's totals are read by `parseManualFacts`;
+ *  - a COUNT or CARTON-COUNT label — «Кол-во: 300 шт», «Мест: 45»: the figure
+ *    belongs to the product named elsewhere. The carton NOUNS that are also
+ *    products («Korobka 1000 dona», «Qop 500 dona») are not here (T6/T12) —
+ *    intake-manual's `CARTON_NOUNS` says when they are a field;
+ *  - a FIELD — a phone, a client, an order, a rate, a date. «Telefon» and
+ *    «Телефон» are not here: mobile phones are a staple of this cargo (T6),
+ *    and a phone NUMBER carries no unit, so it never reads as goods anyway;
+ *  - a greeting, an «about», an «also» — «Hayrli kun, 12 kub», «Yana 5 kub»;
+ *  - our own cargo — «Yukimiz 12 kub» (`YUK_WORD`) — and a PLACE with its
+ *    case ending, «Andijonga», «Xitoydan» (`placeWord`): the route, not goods;
+ *  - a variety — «har xil», «turli», «разные» — never what it is a variety of.
+ */
+const NOT_GOODS_WORDS = new Set([
+  // totals
+  'vazni', 'vazn', 'ogirligi', 'ogirlik', 'hajmi', 'hajm', 'kub', 'kg', 'umumiy', 'jami', 'brutto', 'netto',
+  'ves', 'вес', 'весом', 'объем', 'объём', 'обьем', 'обьём', 'обем', 'кубатура', 'kubatura', 'obyom', 'obyem',
+  'общий', 'общая', 'общее', 'итого', 'всего', 'брутто', 'нетто', 'weight', 'volume', 'gross', 'net', 'total',
+  'груз', 'груза', 'грузы', 'грузов', 'jonatma', 'партия', 'partiya',
+  // …in the Latin a phone keyboard writes them (round 3 residual): «Itogo 12
+  // kub», «Obshiy ves 3500 kg», «Vsego 12 kub», «N.W. 3000 kg» (`wordsOf`
+  // reads «N.W.» as one word)
+  'itogo', 'vsego', 'obshiy', 'obshij', 'obshchiy', 'obshchij', 'nw', 'gw',
+  // counts and carton-count labels
+  'кол-во', 'количество', 'soni', 'son', 'miqdori', 'miqdor', 'qty', 'quantity', 'pcs', 'мест', 'места', 'место',
+  'joy', 'joyi', 'ctns', 'ctn', 'dona', 'шт',
+  // fields
+  'tel', 'tlf', 'тел', 'raqam', 'raqami', 'raqamim', 'номер', 'nomer', 'nomeri', 'mijoz', 'мижоз', 'klient',
+  'клиент', 'client', 'kod', 'код', 'zakaz', 'заказ', 'invoice', 'no', '№', 'kurs', 'курс', 'inn', 'инн', 'sana',
+  'дата',
+  // greetings, «about», «also»
+  'salom', 'salam', 'assalomu', 'assalom', 'assalamu', 'alaykum', 'aleykum', 'alaikum', 'aleikum', 'alekum',
+  'hayrli', 'xayrli', 'kun', 'kech', 'tong', 'hello', 'hi', 'hey', 'привет', 'здравствуйте', 'добрый', 'день',
+  'утро', 'вечер', 'taxminan', 'taxminiy', 'примерно', 'около', 'hammasi', 'bolib', 'yana', 'ham', 'va', 'и',
+  'ещё', 'еще', 'also',
+  // the route's own words — «Xitoydan kelgan yuk 12 kub» is the shipment
+  'в', 'из', 'до', 'dan', 'ga', 'gacha', 'kelgan', 'keladigan', 'kelayotgan', 'ketgan', 'ketadigan',
+  'ketayotgan', 'jonatilgan', 'boradigan',
+  // a variety, never what it is of — «Tovar: har xil» names no product, while
+  // «har xil kiyimlar» does by its last word (round-4 probe: «xil» left the
+  // status words, and the bare «various» became a product)
+  'har', 'xil', 'хил', 'turli', 'турли', 'разные', 'различные', 'various', 'assorted',
+]);
+
+/** «Yuk», «Yukimiz», «Yuklarimiz», «Юкимиз» — our cargo, never its name. */
+const YUK_WORD = /^(?:yuk|юк)(?:i|im|imiz|ingiz|lar|lari|larim|larimiz|larni|ni|ning|ka|ga|da|dan|и|им|имиз|ингиз|лар|ни|нинг|га|да|дан)?$/u;
+
+/**
+ * Where the cargo goes or comes from (T1/T8): «Andijonga 5 kub 1200 kg»,
+ * «Xitoydan 12 kub», «Из Китая 12 кубов». A STEM list and the case endings,
+ * not an ending alone — «Kurtka», «Sumka» and «Chemodan» end in a case
+ * ending too, and they are the commonest cargo there is.
+ */
+const PLACE_STEMS = new Set([
+  'toshkent', 'tashkent', 'andijon', 'andijan', 'namangan', 'fargona', 'fergana', 'qoqon', 'kokand', 'margilon',
+  'samarqand', 'samarkand', 'buxoro', 'bukhara', 'xorazm', 'urganch', 'xiva', 'nukus', 'termiz', 'qarshi',
+  'navoiy', 'jizzax', 'guliston', 'chirchiq', 'olmaliq', 'angren', 'ozbekiston', 'uzbekiston', 'uzbekistan',
+  'xitoy', 'kitay', 'yiwu', 'iwu', 'ivu', 'guangzhou', 'guanchjou', 'gonchjou', 'urumchi', 'urumqi', 'qashqar',
+  'kashgar', 'shanghai', 'shanxay', 'beijing', 'pekin', 'shenzhen', 'foshan', 'ningbo', 'horgos', 'xorgos',
+  'khorgos', 'irkeshtam', 'bishkek', 'almati', 'almaty', 'olmaota', 'moskva', 'moscow', 'rossiya', 'qozogiston',
+  'kazakhstan', 'qirgiziston', 'kyrgyzstan', 'dushanbe',
+  'тошкент', 'ташкент', 'андижон', 'андижан', 'наманган', 'фаргона', 'фергана', 'самарканд', 'самарқанд',
+  'бухара', 'бухоро', 'хитой', 'иу', 'иву', 'гуанчжоу', 'урумчи', 'кашгар', 'қашқар', 'бишкек', 'алматы',
+  'узбекистан', 'ўзбекистон',
+  // Russian forms whose ending is not a suffix of the stem
+  'китай', 'китая', 'китае', 'китаю', 'москва', 'москвы', 'москве', 'москву', 'россия', 'россии', 'россию',
+]);
+const PLACE_ENDINGS = [
+  '', 'ga', 'ka', 'qa', 'gacha', 'kacha', 'qacha', 'dan', 'tan', 'da', 'ta', 'dagi', 'ning', 'ni', 'га', 'ка',
+  'қа', 'гача', 'дан', 'тан', 'да', 'та', 'даги', 'нинг', 'ни', 'а', 'е', 'у', 'ом',
+];
+export function placeWord(word: string): boolean {
+  return PLACE_ENDINGS.some((e) => word.endsWith(e) && PLACE_STEMS.has(word.slice(0, word.length - e.length)));
+}
+
+/** A Chinese packing-list total is one unspaced word: «总重量», «总体积», «合计». */
+const CJK_TOTALS = ['重量', '毛重', '净重', '体积', '总重', '总计', '合计', '数量', '箱数', '件数', '立方'];
+
+/** Is this word one that makes a line something other than a product? */
+export function notGoodsWord(raw: string): boolean {
+  const word = raw.toLowerCase().replace(/[’ʻʼ‘`´']/gu, '');
+  if (!word) return false;
+  if (NOT_GOODS_WORDS.has(word) || YUK_WORD.test(word) || placeWord(word)) return true;
+  if (/^\p{Script=Han}+$/u.test(word) && CJK_TOTALS.some((t) => word.includes(t))) return true;
+  // «Guangzhou-Toshkent» glued by a hyphen is two places (T1); «Coca-Cola» is not.
+  const parts = word.split(/[-–—]/u).filter(Boolean);
+  return parts.length > 1 && parts.every(notGoodsWord);
+}
+
+/**
+ * A greeting or a REQUEST — what a person writes TO us, never what a product
+ * is called (R3-T6/T8). Compared as `notGoodsWord` compares: lower-cased,
+ * every apostrophe dropped. The stems are the request VERB forms — «hisoblab»,
+ * «hisoblang»; «narxi», «narxini»; «растаможить», «растаможка» — and never
+ * the bare nouns they share with products (round 4, T-r1 ND3): «Elektr
+ * hisoblagichlari», «Hisoblash mashinasi» (a calculator), «Narx yorliqlari»
+ * and «Narxlagich» are cargo, and a «hisobla*» / «narx*» stem dropped every
+ * one of them. The CAUSATIVE «hisoblat-» («hisoblatmoqchi», «hisoblatib
+ * bering») and the bare imperative «hisobla» are verbs no product is named by
+ * (round-4 probe: the narrowing lost them), and nor is «how much» — «Narx
+ * qancha 12 kub» asks, while «Narx yorliqlari» are price tags.
+ */
+const REQUEST_WORDS = new Set([
+  'salom', 'salam', 'assalomu', 'assalom', 'assalamu', 'alaykum', 'aleykum', 'alaikum', 'aleikum', 'alekum',
+  'салом', 'ассалому', 'ассалом', 'ассаламу', 'алайкум', 'алейкум', 'hayrli', 'xayrli', 'hello', 'hi', 'hey',
+  'привет', 'здравствуйте', 'добрый', 'kerak', 'нужно', 'надо', 'керак', 'iltimos', 'илтимос', 'пожалуйста',
+  'please', 'rahmat', 'рахмат', 'спасибо', 'hisobla', 'хисобла', 'qancha', 'канча', 'қанча', 'сколько',
+]);
+const REQUEST_STEMS =
+  /^(?:hisoblab|hisoblang|hisoblay|hisoblasa|hisoblat|хисоблаб|хисобланг|хисоблат|narxi|narxlari|нархи|нархлари|растамож|rastamoj|rastamozh)/u;
+
+const lowered = (raw: string) => raw.toLowerCase().replace(/[’ʻʼ‘`´']/gu, '');
+
+/** Is this word a greeting or a request? (the contact reader's list, R3-T6). */
+export function requestWord(raw: string): boolean {
+  const word = lowered(raw);
+  return word !== '' && (REQUEST_WORDS.has(word) || REQUEST_STEMS.test(word));
+}
+
+/**
+ * Words that make a figures-only line a CHAT line about the shipment —
+ * «Salom aka, 12 kub 3500 kg», «Bugun 5 kub», «Наш груз 12 куб» (R3-T8):
+ * a greeting or request, a person's address (aka, opa, uka), a day, «our».
+ * ONE of them is enough. Only words no product is called.
+ */
+const CHAT_WORDS = new Set([
+  'aka', 'akam', 'opa', 'opajon', 'uka', 'ukam', 'bugun', 'ertaga', 'kecha', 'bizning', 'bizni', 'bizga',
+  'наш', 'наша', 'наше', 'наши',
+]);
+
+/**
+ * Words that NAME the shipment or what carries it — the cargo, a city, a
+ * total, «also», the truck — and are also how a product is described
+ * (round 4, T-r1 ND3 / T-r2 ND5): «Yuk aravasi» is a hand truck, «Ремни для
+ * груза» are cargo straps, «Shahar velosipedi» a city bike, «Kurtka jami 150
+ * kg» the jackets' own total, «Yana kurtka 150 kg» more jackets. So they make
+ * a chat line only when EVERY word of the name is chat or not-goods:
+ * «Toshkent shahriga 12 kub», «Bizning yuk 12 kub», «Fura 82 kub», «Mashina
+ * 12 kub» (the truck's own total — a round-3 residual). «Mashina moyi 1200
+ * kg» is motor oil and «Yuk mashina shinasi 150 kg» truck tyres: a word of
+ * the name is neither.
+ */
+const SHIPMENT_WORDS = new Set([
+  'shahar', 'shahri', 'shahriga', 'shahridan', 'shahrida', 'shaharga', 'shahardan', 'shaharda', 'город', 'города',
+  'городу', 'городе', 'груз', 'груза', 'грузы', 'грузов', 'jami', 'umumiy', 'итого', 'всего', 'yana', 'fura',
+  'фура', 'mashina', 'машина', 'konteyner', 'контейнер', 'container', 'truck',
+]);
+
+/** A word of the shipment (`SHIPMENT_WORDS`, or our cargo — «yuk», «yukimiz»). */
+function shipmentWord(raw: string): boolean {
+  const word = lowered(raw);
+  return SHIPMENT_WORDS.has(word) || YUK_WORD.test(word);
+}
+
+/**
+ * Beside a shipment word, a word that only says WHOSE, WHICH or HOW the cargo
+ * is — a possessive, the client's genitive, a count word, today's, «bor» /
+ * «готов» — names no product either (round-4 probe: «Mening yukim 12 kub»,
+ * «Груз клиента», «Yuk bor», «Yana bitta mashina» became products carrying
+ * the shipment's whole total). «Yuk aravasi», «Mashina moyi» still name one.
+ */
+const SHIPMENT_COMPANIONS = new Set([
+  'mening', 'менинг', 'мой', 'моя', 'моё', 'мое', 'мои', 'my', 'our', 'sizning', 'сизнинг', 'ваш', 'ваша', 'uning',
+  'унинг', 'его', 'её', 'ее', 'mijozning', 'мижознинг', 'mijozimiz', 'mijozimizning', 'клиента', 'клиентов',
+  'clients', 'customers', 'bitta', 'битта', 'bir', 'бир', 'один', 'одна', 'одно', 'one', 'bugungi', 'бугунги',
+  'ertangi', 'эртанги', 'сегодняшний', 'сегодняшняя', 'todays', 'bor', 'бор', 'tayyor', 'тайёр', 'готов',
+  'готова', 'готово', 'готовы', 'ready',
+]);
+
+/** Is this word ONE that makes a figures-only line a chat line by itself? */
+export function chatWord(raw: string): boolean {
+  const word = lowered(raw);
+  return word !== '' && (requestWord(word) || CHAT_WORDS.has(word));
+}
+
+/**
+ * Is a figures-only name (no count, pair or code) a CHAT line about the
+ * shipment rather than a product? One chat word says so; shipment words say
+ * so only when nothing else names a product (`SHIPMENT_COMPANIONS` name none).
+ */
+export function chatLine(words: readonly string[]): boolean {
+  if (words.some(chatWord)) return true;
+  const plain = (w: string) => shipmentWord(w) || notGoodsWord(w) || SHIPMENT_COMPANIONS.has(lowered(w));
+  return words.some(shipmentWord) && words.every(plain);
+}
+
+/**
+ * The company's `client_code_prefix` setting (round-1 review 2, T4/T10): the
+ * bot passes it. Left out, it is the setting's own default, «GS»; null or
+ * empty is a company with no prefix.
+ */
+export interface ClientHintOpts {
+  prefix?: string | null;
+}
+
+/** The default of `client_code_prefix` in platform/settings — this module is
+ * pure and never reads a setting. */
+const DEFAULT_CLIENT_CODE_PREFIX = 'GS';
+
+export function clientCodePrefix(opts?: ClientHintOpts): string | null {
+  const prefix = (opts?.prefix === undefined ? DEFAULT_CLIENT_CODE_PREFIX : opts.prefix)?.trim();
+  return prefix ? prefix : null;
+}
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** «GS777», «gs 777», «GS-777» — the company's own prefix and its digits, as one code. */
+export function prefixCode(text: string, prefix: string | null): string | null {
+  if (!prefix) return null;
+  const m = new RegExp(`^${escapeRe(prefix)}\\s*[-–]?\\s*(\\d{1,8})$`, 'iu').exec(text);
+  return m ? `${prefix}${m[1]}`.toUpperCase() : null;
+}
+
+/**
+ * The label words before a client code — «Mijoz», «Klient», «Kod», and their
+ * two-word forms «Mijoz kodi», «Client code», «Код клиента» (round 4, T-r2:
+ * «Код клиента 777» named nobody). ONE list for the code reader and the
+ * code-before-phone reader.
+ */
+const CLIENT_LABEL_WORDS = String.raw`(?:mijoz|мижоз|klient|клиент|client|kod|код)(?:\s*(?:kodi|коди|кода|code|клиента|klienta))?`;
+
+/** «Mijoz: GS777», «Klient GS777», «Kod - GS 777» — the label before a code. */
+const CLIENT_LABEL = new RegExp(String.raw`^${CLIENT_LABEL_WORDS}(?![\p{L}\p{N}])\s*[:\-–—]?\s*`, 'iu');
+
+/** Letters that are a field's name, not a code's prefix: «Tel 2345678», «No 125». */
+const NOT_CODE_LETTERS = /^(?:tel|tlf|no|nr|inn|id)$/i;
+
+/**
+ * May these letters, written APART from their digits or among other words, be
+ * a client code? (the second review's T4/T10). «GS 777» and «Bobur aka GS777»
+ * are the best answers a seller gives — but «Shim 200», «Stol 1000», «Olma
+ * 300» and «Samsung A54» are the same shape and are a product and its count or
+ * model. So: the company's own prefix, in any case; otherwise two or three
+ * CAPITALS («AB 123»), the way a code is printed on a carton. Never a unit,
+ * a field or a total word — «JAMI 300», «VES 300», «KUB 5» are figures.
+ */
+function codeLettersOk(letters: string, prefix: string | null): boolean {
+  if (prefix !== null && letters.toLowerCase() === prefix.toLowerCase()) return true;
+  if (unitOf(letters) !== null || NOT_CODE_LETTERS.test(letters) || notGoodsWord(letters)) return false;
+  return /^[A-Z]{2,3}$/.test(letters);
+}
+
+/**
+ * A client code written whole: glued («GS777»), with a separator («GS 777»,
+ * «GS-777» — a phone keyboard puts the space in), or after a label. Never a
+ * figure: «kg 5», «ta 5» and «m2» are amounts in a unit (review #6). The
+ * glued and the labelled forms say «code» by their shape; the separated one
+ * is a code only when its letters may be one (`codeLettersOk`).
+ *
+ * A label and bare digits — «Mijoz 777», «Kod: 777», «Klient 1234» — are the
+ * company's code written without its prefix (R3-T7): the seller SAID it is
+ * the customer, and filing it as goods material re-asked him for ever. A
+ * company with no prefix mints codes that ARE the digits, so there the digits
+ * are the code (round 4, integration S-e: «Ali aka\nMijoz 777» was refused as
+ * a multi-line text on the repeat, with no way to name the customer).
+ *
+ * `strict` is a line of a MULTI-line hint (R3-T9): there a code other than
+ * the company's prefix needs its label — «Kurtka» over «LG55» is a product
+ * and its model, not a contact.
+ */
+function codeWritten(raw: string, prefix: string | null, strict = false): string | null {
+  const body = raw.replace(CLIENT_LABEL, '');
+  const labelled = body.length < raw.length;
+  const own = prefixCode(body, prefix);
+  if (own) return own;
+  if (labelled && /^\d{1,8}$/.test(body)) return `${prefix ?? ''}${body}`.toUpperCase();
+  const m = /^([A-Za-z]{1,4})(\s*[-–]?\s*)(\d{1,8})$/.exec(body);
+  if (!m) return null;
+  const [, letters, gap, digits] = m as unknown as [string, string, string, string];
+  if (unitOf(letters) !== null || unitOf(letters + digits) !== null || NOT_CODE_LETTERS.test(letters)) return null;
+  if (strict && !labelled && prefix !== null) return null;
+  if (gap !== '' && !labelled && !codeLettersOk(letters, prefix)) return null;
+  if (notGoodsWord(letters)) return null;
+  return (letters + digits).toUpperCase();
+}
+
+/**
+ * ONE code among words, and no other digit — «Bobur aka GS777», «GS777
+ * Bobur», «Bobur aka GS 777» (review #6, #23): the seller answered «who» with
+ * a name AND the code, which is the best answer there is. The token's letters
+ * must be a code's (`codeLettersOk`): «Samsung A54», «Xiaomi Redmi K60» name a
+ * phone model (T4). A second digit anywhere makes it a guess.
+ *
+ * With a configured prefix ONLY the prefix is a code among words (R3-T9):
+ * two or three capitals beside a word are how a MODEL is written —
+ * «Televizor LG55», «Printer HP400», «Lampa LED32», «Truba PPR20», «Nike AF1»
+ * — and each became a client code nobody holds, the goods text naming the
+ * lead and never reaching the model. Other capitals stay a code on a line
+ * that is just the code («AB 123») or after a label («Mijoz: AB123»), in
+ * `codeWritten`; a company with no prefix keeps the capitals rule here.
+ */
+function codeAmongWords(line: string, prefix: string | null): string | null {
+  const tokens = line.split(/[\s,;:()«»"'‘’ʻ.]+/u).filter(Boolean);
+  const codes: string[] = [];
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = tokens[i]!;
+    const own = prefixCode(token, prefix);
+    if (own) {
+      codes.push(own);
+      continue;
+    }
+    // The company's prefix and its digits as two words.
+    const next = tokens[i + 1];
+    if (next !== undefined && /^\d{1,8}$/.test(next)) {
+      const split = prefixCode(`${token}${next}`, prefix);
+      if (split && token.toLowerCase() === prefix?.toLowerCase()) {
+        codes.push(split);
+        i += 1;
+        continue;
+      }
+    }
+    const glued = prefix === null ? /^([A-Za-z]{1,4})[-–]?(\d{1,8})$/.exec(token) : null;
+    if (glued && unitOf(token) === null && codeLettersOk(glued[1]!, prefix)) {
+      codes.push(`${glued[1]}${glued[2]}`.toUpperCase());
+    }
+  }
+  if (codes.length !== 1) return null;
+  const code = codes[0]!;
+  // A stall or block number («5-rasta», «2-do‘kon», «9-kvartal») is an
+  // address, never a second code or a count.
+  const digitsIn = (s: string) => (s.replace(/(?<![\p{L}\d])\d{1,2}[-–]\p{L}+/gu, '').match(/\d/g) ?? []).length;
+  return digitsIn(line) === digitsIn(code) ? code : null;
+}
+
+/**
+ * A phone's digit run: it STARTS at a digit no letter or digit is glued to
+ * (T9 — «GS777 901234567» was read as the phone «777 901234567», the code
+ * thrown away), and a bracket inside it only holds a two- or three-digit
+ * group, «+998 (90) 123-45-67» — «(5-rasta)» after the number is not part of
+ * it (T5). A leading «(90) 123-45-67» keeps its bracket below.
+ */
+const PHONE_RUN = /(?<![\p{L}\d])\+?\d(?:[\d\s.-]|\(\d{2,3}\)|\)){6,20}\d/u;
+
+/**
+ * Uzbekistan's 998 and China's 86: a number written in full international
+ * form — 998 + nine digits, 86 + eleven — is a phone however its groups fall,
+ * and no client code or count is so long.
+ */
+const COUNTRY_CODES: readonly string[] = ['998', '86'];
+const international = (digits: string) => /^(?:998\d{9}|86\d{11})$/u.test(digits);
+
+/**
+ * Is this run a WHOLE phone number? Nine digits (the Uzbek mobile without its
+ * country code), or a full international or trunk form — 998 + nine, 8 + nine,
+ * 0 + nine (the Kyrgyz trunk, and how «Mijoz 0 90 123 45 67» is written),
+ * 86 + eleven (China), or 7/8 + ten (Russia, Kazakhstan) with the 7 or 8
+ * written APART («+7 701 …», «8 916 …») or the whole number glued. A run
+ * opening «71 234 56 78» is a Tashkent number, so «71 234 56 78 12» is it and
+ * a room — never a Russian number that happens to start with 7 (round 4,
+ * T-r2: «Ali 71 234 56 78 12 xona» kept the room in the phone).
+ */
+function completePhone(run: string): boolean {
+  const digits = run.replace(/\D/g, '');
+  if (digits.length === 9 || /^(?:998\d{9}|8\d{9}|0\d{9}|86\d{11})$/.test(digits)) return true;
+  return /^[78]\d{10}$/.test(digits) && /^\+?(?:[78](?!\d)|\d{11}$)/.test(run.trim());
+}
+
+/**
+ * «… 67 5 rasta», «… 67 2-do‘kon», «… 67 12-rasta», «… 67 12 rasta» — a
+ * number that names a stall. A one-digit group, or one a hyphen joins to a
+ * word, always does; a longer group only when a WORD follows it and the
+ * number is whole without it but not with it (R3-T10: «Ali 90 123 45 67 12
+ * rasta» was read as the eleven-digit phone «90 123 45 67 12», whose last
+ * nine match nobody). «998 90 123 45 67 Ali» and «+7 701 234 56 78 Ivan» keep
+ * their last group: without it the number is not whole.
+ */
+function stallAfter(run: string, after: string): string {
+  const last = /^(.*\d)[\s.-]+(\d+)$/su.exec(run);
+  if (!last) return run;
+  const [, head, group] = last as unknown as [string, string, string];
+  const headDigits = head.replace(/\D/g, '');
+  const named = /^\s+\p{L}/u.test(after) && completePhone(head) && !completePhone(run);
+  const labels = group.length === 1 || /^[-–]\s*\p{L}/u.test(after) || named;
+  return labels && headDigits.length >= 9 ? head : run;
+}
+
+/**
+ * The phone in a line, as the NUMBER RUN (review #26) — the matchers
+ * downstream read its digits (`activeClientsByPhone`'s last seven,
+ * `openLeadForPhone`'s last nine), and a run is what belongs in the lead's
+ * phone column, never «Ali aka +998…».
+ *
+ * Written as phones are written: digits grouped by spaces, brackets, hyphens
+ * or DOTS («90.175.78.00» — the office writes it so, the import parser found
+ * eight in one spreadsheet), 9-15 of them. A stall or row number beside it
+ * («Dilshod (Andijon, 5-rasta) 90 123 45 67», «… 90 123 45 67 5 rasta») is
+ * allowed and left OUT of the run (T5: it used to be read into it, a
+ * different number the right one could never join); a free run of four to
+ * eight digits is not — an order number, a landline or a code makes the line
+ * something other than a contact. Digits glued to letters are a client code
+ * and never count against it (T9). Ten CONTIGUOUS digits after a word are a
+ * TNVED code («Kurtka 6201930000»), and a run opening 4-2 is one printed
+ * («6201 93 000 0», T3); ten spaced ones are a phone written with its 8 («Ali
+ * aka 8 90 123 45 67», review #23).
+ */
+function phoneIn(line: string): { phone: string; start: number; end: number } | null {
+  const m = PHONE_RUN.exec(line);
+  if (!m) return null;
+  const run = stallAfter(m[0], line.slice(m.index + m[0].length));
+  const digits = run.replace(/\D/g, '');
+  if (digits.length < 9 || digits.length > 15) return null;
+  if (/^\d{10}$/.test(run) && /\p{L}/u.test(line)) return null;
+  if (/^\d{4}[\s.-]\d{2}(?!\d)/.test(run)) return null;
+  // A phone puts its long part LAST — «90 1234567», «998 901234567». Five to
+  // eight digits BEFORE another group are a short code and a count, «Kurtka
+  // 620193 300» (round 1, #16), and a phone holds no such group — unless the
+  // group opens with the country code glued to the operator's, which is how
+  // a number is typed after «+998901234567»: «+99890 123 45 67», «+86138 1234
+  // 5678» (round-4 probe: the guard refused the commonest Uzbek form).
+  if (/^\+?\d{5,8}[\s.()-]+\d/u.test(run) && !international(digits)) return null;
+  const end = m.index + run.length;
+  const rest = `${line.slice(0, m.index)} ${line.slice(end)}`;
+  if (/(?<![\p{L}\d])\d{4,8}(?!\d)/u.test(rest)) return null;
+  // «(90) 123-45-67»: the bracket the run opened belongs to it.
+  const bracket = line[m.index - 1] === '(';
+  return { phone: bracket ? `(${run}` : run, start: bracket ? m.index - 1 : m.index, end };
+}
+
+/**
+ * Past sixty characters only a phone answers, and only ONE (T2): «Abdulloh
+ * aka Toshkent Chilonzor 9-kvartal dokoni +998 90 123 45 67» is a contact
+ * with an address, and re-asking it is the loop #23 closed. Past this it is a
+ * paragraph, and a paragraph is material.
+ */
+const LONG_HINT_CAP = 120;
+
+/**
+ * Is what a long line holds besides its phone a CONTACT — a name, a place, a
+ * shop — rather than a message with a phone signed under it (R3-T6)? A
+ * forwarded request — «Здравствуйте, нужно растаможить куртки и обувь из
+ * Китая, мой номер +998 …», «Salom, bizga kurtka va shimlar keladi, iltimos
+ * hisoblab bering, tel …» — became the customer: the lead was named with the
+ * paragraph and its goods never reached the model. A contact has at most
+ * twelve words, no sentence ends inside it, and no greeting or request word.
+ *
+ * Round 4 (T-r1 ND7, T-r2 ND2) found the round-3 shape refusing the contacts
+ * it exists for: an address is written with abbreviations — «г. Ташкент»,
+ * «ул. Регистан», «Toshkent sh.», «Urgut t.», «Samarqand vil.», «Ip.» — and a
+ * dot after any letter was a «sentence», while «Olimjon aka Andijon viloyati
+ * Asaka tumani bozor yonidagi do'kon egasi» is ten words of contact. So a
+ * sentence ends at «!» or «?», or at a dot after a word of four letters or
+ * more that a capital (or the end) follows; the request words carry the
+ * refusal of a request paragraph, and twelve words bound the rest.
+ *
+ * A line naming somebody's RELATIVE — «akasi», «ukasi», «opasi», «брат» —
+ * is about another person (R3-T6's «Bu mijoz GS777 ning akasi, … telefoni
+ * 90 …»: whose job and whose phone is the very question), so it is no
+ * contact; eight words used to refuse it, and twelve no longer do. «O'g'li»
+ * and «qizi» are a relative only after a genitive («Boburning o'g'li»): after
+ * a bare name they are the PATRONYMIC a passport writes, «Vali o'g'li»,
+ * «Akmal qizi» (round-4 probe).
+ *
+ * And a contact never speaks of the cargo or what it costs (round-4 probe:
+ * twelve words let «У меня груз из Китая хочу узнать стоимость доставки мой
+ * номер …» through as the customer, with none of the few request words in it).
+ */
+const RELATIVE_WORDS = new Set([
+  'akasi', 'ukasi', 'opasi', 'singlisi', 'otasi', 'onasi', 'xotini', 'qarindoshi', 'tanishi', 'dosti', 'брат',
+  'брата', 'сестра', 'сестры', 'отец', 'мать', 'жена', 'муж', 'сын', 'дочь', 'друг', 'знакомый',
+]);
+const CHILD_WORDS = new Set(['ogli', 'qizi', 'ўғли', 'угли', 'қизи', 'кизи']);
+const CARGO_TALK = /^(?:груз\p{L}*|cargo|доставк\p{L}*|стоимост\p{L}*|цен[аыуе]|price|narx\p{L}*|нарх\p{L}*)$/u;
+
+function contactShaped(rest: string): boolean {
+  const words = rest.split(/[\s,;:()«»"]+/u).filter((w) => /[\p{L}\p{N}]/u.test(w));
+  if (words.length > 12) return false;
+  if (/\p{L}[!?](?:\s|$)|\p{L}{4}\.(?:\s+\p{Lu}|\s*$)/u.test(rest)) return false;
+  if (/(?<![\p{L}])olib\s+kel/iu.test(rest)) return false;
+  const afterGenitive = (i: number) => /(?:ning|нинг)$/u.test(lowered(words[i - 1] ?? ''));
+  return !words.some((raw, i) => {
+    const w = lowered(raw.replace(/[.!?]+$/u, ''));
+    const relative = RELATIVE_WORDS.has(w) || (CHILD_WORDS.has(w) && afterGenitive(i));
+    return requestWord(w) || relative || CARGO_TALK.test(w) || YUK_WORD.test(w);
+  });
+}
+
+/**
+ * The company's prefix written APART from its digits before a phone —
+ * «GS 777 90 123 45 67», «GS-777 90 …» (R3-T11). The phone's digit run
+ * starts at «777» (a space is part of a phone), so the code was swallowed
+ * into an eleven-digit «phone» and lost; it is found and masked FIRST. A
+ * client label and its digits are the same code (R3-T7): «Mijoz 777 90 123 45
+ * 67». Two such codes on one line are a list, never a contact.
+ *
+ * Unless the «code» is the phone's own head (round 4, T-r1/T-r2 ND1): a label
+ * is how a seller introduces a PHONE as readily as a code — «Mijoz: 998 90
+ * 123 45 67», «Klient 8 90 …», «Mijoz 7 701 …», «Mijoz 0 90 …» — and the
+ * country or trunk digits were taken for the client GS998 / GS8 / GS7 / GS0,
+ * whose deal the job then landed on (the landing looks the CODE up first).
+ * When the digits and the phone after them make one whole number, they are
+ * the number, and `phoneIn` reads it whole; «GS 777 90 123 45 67» is no whole
+ * number and stays a code and a phone. After the company's PREFIX only a
+ * country code (`COUNTRY_CODES`) is the phone's own head — «GS 998 90 …»; a
+ * trunk digit there is the code, «GS 8 90 123 45 67» is GS8 and a mobile,
+ * never the trunk-dialled «8 90 …» (round-4 probe).
+ */
+function codeBeforePhone(line: string, prefix: string | null): { code?: string; phone?: string } | null {
+  if (prefix === null) return null;
+  const label = String.raw`(?:${CLIENT_LABEL_WORDS})\s*[:\-–—]?`;
+  const re = new RegExp(`(?<![\\p{L}\\d])(?:(${escapeRe(prefix)})|${label})\\s*[-–]?\\s*(\\d{1,8})(?!\\d)`, 'giu');
+  const hits = [...line.matchAll(re)];
+  if (hits.length !== 1) return null;
+  const hit = hits[0]!;
+  const [, prefixed, digits] = hit as unknown as [string, string | undefined, string];
+  const masked = line.slice(0, hit.index) + ' '.repeat(hit[0].length) + line.slice(hit.index + hit[0].length);
+  const found = phoneIn(masked);
+  const head = prefixed === undefined || COUNTRY_CODES.includes(digits);
+  if (!found || (head && completePhone(`${digits} ${found.phone}`))) return null;
+  return { code: `${prefix}${digits}`.toUpperCase(), phone: found.phone };
+}
+
+/**
+ * One line of the answer. `multi` is a line of a two- or three-line answer:
+ * there a code other than the company's prefix needs its label (R3-T9).
+ */
+function lineHint(line: string, prefix: string | null, multi = false): { code?: string; phone?: string } | null {
+  if (line.length > LONG_HINT_CAP) return null;
+  const long = line.length > 60;
+  const code = long ? null : codeWritten(line, prefix, multi);
+  if (code) return { code };
+  const both = long ? null : codeBeforePhone(line, prefix);
+  if (both) return both;
+  const found = phoneIn(line);
+  if (found) {
+    const rest = `${line.slice(0, found.start)} ${line.slice(found.end)}`;
+    // A long line is a contact only by its shape, and never names a code
+    // beside the phone (R3-T6: «Bu mijoz GS777 ning akasi, … telefoni 90 …»
+    // is GS777's BROTHER, and his job landed on GS777's deal).
+    if (long) return phoneIn(rest) === null && contactShaped(rest) ? { phone: found.phone } : null;
+    // A code BESIDE the phone is the seller's best answer: both (T9). With
+    // only the phone the job of a person holding several codes on one number
+    // (#407) lands on a new lead.
+    const beside = codeAmongWords(rest, prefix) ?? (rest.trim() ? codeWritten(rest.trim(), prefix, multi) : null);
+    return beside ? { code: beside, phone: found.phone } : { phone: found.phone };
+  }
+  if (long) return null;
+  const among = codeAmongWords(line, prefix);
+  return among ? { code: among } : null;
+}
+
+/**
  * A phone or a client code typed into the collection — the two ways staff
  * name a customer. Neither is validated here beyond shape: WHICH client it
  * is gets resolved against the book, where the honest answer lives.
+ *
+ * NOT «any text with seven digits» (the diagnosis' cause 6): a forwarded
+ * goods list carrying a TNVED code used to name the lead AND become its
+ * «phone». A line that states goods (`statesGoods`) is never a hint. What a
+ * seller actually types is (review #23): one short line holding a code or a
+ * phone, a name beside either — or up to three lines where ONE carries digits
+ * («Ali aka» / «+998 90 123 45 67»), which is how Telegram users write a
+ * contact, or two that carry a code and a phone («GS777» / «+998 …», T2/T9).
+ * `opts.prefix` is the company's client-code prefix (`ClientHintOpts`).
+ *
+ * A digit line no hint reads is still the NAME when its digits are a small
+ * number or a numbered place — «Ali aka 2», «Dilshod 5-rasta», «OOO "Asia
+ * Trade" 3-filial» (`nameDigits`) — and another line names the customer
+ * (round 4, integration defect 2: one such line voided the whole hint, so
+ * R3-C4's own pins could never reach the landing). Three digits or more
+ * («Kurtka 300», «OOO Asia Trade 2020») still void it: a goods line, or a
+ * number nobody can tell from a count — and so does ONE word and its count
+ * of two digits or more (`ONE_WORD_COUNT`, round-4 probe: «Kurtka 50» /
+ * «Shim 40» over a phone were read as the customer's name lines).
  */
-export function parseClientHint(raw: string): { code?: string; phone?: string } | null {
+export function parseClientHint(raw: string, opts?: ClientHintOpts): { code?: string; phone?: string } | null {
   const text = raw.trim();
   if (!text) return null;
-  const digits = text.replace(/\D/g, '');
-  if (digits.length >= 7) return { phone: text };
-  if (/^[A-Za-z]{1,4}\d{1,8}$/.test(text)) return { code: text.toUpperCase() };
-  return null;
+  const prefix = clientCodePrefix(opts);
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (lines.length > 3 || lines.some(statesGoods)) return null;
+  if (lines.length === 1) return lineHint(lines[0]!, prefix);
+  if (lines.some((l) => l.length > 60)) return null;
+  const read = lines.filter((l) => /\d/.test(l)).map((l) => ({ line: l, hint: lineHint(l, prefix, true) }));
+  if (read.some((r) => r.hint === null && !nameDigits(r.line))) return null;
+  const hints = read.flatMap((r) => (r.hint ? [r.hint] : []));
+  if (hints.length === 0 || hints.length > 2) return null;
+  const codes = hints.flatMap((h) => (h.code ? [h.code] : []));
+  const phones = hints.flatMap((h) => (h.phone ? [h.phone] : []));
+  if (codes.length > 1 || phones.length > 1) return null;
+  return { ...(codes[0] ? { code: codes[0] } : {}), ...(phones[0] ? { phone: phones[0] } : {}) };
 }
+
+/** A name line's digits: «2», «12», «5-rasta», «3-filial» — never three bare digits in a row, nor a goods line's «nomi, soni». */
+function nameDigits(line: string): boolean {
+  if (ONE_WORD_COUNT.test(line)) return false;
+  return !/\d{3}/u.test(line.replace(/(?<![\p{L}\d])\d{1,3}[-–]\p{L}+/gu, ''));
+}
+
+/**
+ * «Shim 200», «Stol 1000», «Kurtka 50»: ONE word and its count of two digits
+ * or more — the «nomi, soni» line of every list, never a name. ONE home for the
+ * customer reader and the material reader (`looksLikeMaterial`).
+ */
+export const ONE_WORD_COUNT = /^\p{L}[\p{L}'’‘ʻ`-]*\s+\d{2,}$/u;

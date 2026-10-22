@@ -92,6 +92,8 @@ describe('law 11: the bot hands the words themselves to the card', () => {
   it('landCollectedIntake passes state.material through', () => {
     const bot = code(read('src/modules/platform/telegram/staff-bot.ts'));
     const fn = bot.slice(bot.indexOf('export async function landCollectedIntake'));
-    expect(fn.slice(0, fn.indexOf('leadName'))).toContain('material: state.material');
+    // …with the per-line answers, which are kept OUT of the material the
+    // totals are read from since 2026-10-21 and must still reach the card.
+    expect(fn.slice(0, fn.indexOf('leadName'))).toContain('material: [...state.material, ...state.answers]');
   });
 });
