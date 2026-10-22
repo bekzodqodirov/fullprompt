@@ -612,6 +612,9 @@ describe('the fourth review of the header detective', () => {
     expect(first([['Description', 'Qty', 'N.W.', 'Total Vol.'], ['LED', 240, 100, 1.5]])).toMatchObject({ volumeM3: 1.5, amount: null });
     // A keyed volume column wins: «Meas.(cm)» is the carton's size beside it.
     expect(first([['Description', 'Qty', 'Meas.(cm)', 'CBM'], ['LED', 240, '60*40*45', 0.35]])).toMatchObject({ volumeM3: 0.35 });
+    // …and a second weight or volume column beside the one read is still no money.
+    expect(first([['Description', 'Qty', 'CBM', 'TOTAL MEAS.'], ['LED', 240, 1.5, 1.5]])).toMatchObject({ volumeM3: 1.5, amount: null });
+    expect(first([['Description', 'Qty', 'N.W.', 'TOTAL WT'], ['LED', 240, 100, 110]])).toMatchObject({ weightKg: 100, amount: null });
   });
 
   it('a currency in the header is money: «Gross (USD) | Net (USD)» is no weight, «Weight (kg)» is', () => {
