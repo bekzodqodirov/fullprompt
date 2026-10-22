@@ -243,7 +243,9 @@ describe('a replaced workbook takes its other sheets with it (review c7)', () =>
       cellsCut: false,
       where: '',
     });
-    expect(first.patch.invoiceTexts).toEqual([{ text: '[Packing list]\nTOTAL G.W. | 9999 KGS', cut: false, cellsCut: false }]);
+    expect(first.patch.invoiceTexts).toEqual([
+      { text: '[Packing list]\nTOTAL G.W. | 9999 KGS', cut: false, cellsCut: false, label: '«WRONG.xlsx»' },
+    ]);
     expect(first.patch).not.toHaveProperty('sheetTexts');
   });
 
@@ -403,7 +405,8 @@ describe('a file the READER stopped short is said, and carries its cut (round-2 
     const sheet = { text: rows(20, 'Kurtka'), cut: true, cellsCut: false };
     const answer = receiveSheetText(collection().state, '«PL.csv»', sheet, fit);
     expect(answer.say).toContain('⚠️ Jadval katta: AI faqat boshini o‘qiydi');
-    expect(answer.patch.sheetTexts).toEqual([sheet]);
+    // The text keeps the file's label, so a later file squeezing it can name it (round-4 S-d).
+    expect(answer.patch.sheetTexts).toEqual([{ ...sheet, label: '«PL.csv»' }]);
   });
 
   it('a mapped workbook whose other sheets the reader cut: said (the goods are whole), the cut kept with the workbook', () => {
@@ -416,7 +419,7 @@ describe('a file the READER stopped short is said, and carries its cut (round-2 
       where: '',
     });
     expect(answer.say).toContain('⚠️ Jadval katta: AI boshqa varaqlarning faqat boshini o‘qiydi');
-    expect(answer.patch.invoiceTexts).toEqual([{ text: '[Packing list]\n1 | 2', cut: true, cellsCut: false }]);
+    expect(answer.patch.invoiceTexts).toEqual([{ text: '[Packing list]\n1 | 2', cut: true, cellsCut: false, label: '«A.xlsx»' }]);
   });
 
   it('the real reader on a 300-row header-less CSV: its cut reaches the collection and the seller', async () => {

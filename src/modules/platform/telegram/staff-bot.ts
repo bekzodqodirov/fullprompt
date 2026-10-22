@@ -1298,7 +1298,9 @@ export async function landCollectedIntake(
     noteId: state.noteId,
     section: state.section,
     facts: state.facts,
-    steps: state.steps,
+    // The bot's own notes (the lines an Excel kept out) ahead of the model's,
+    // as the lenta has always carried them; the summary prints them apart.
+    steps: [...state.notes, ...state.steps],
     // Law 11: the words themselves go onto the card, not only what the
     // parser made of them — the per-line answers included, labelled, since
     // they are kept out of the material the totals are read from.

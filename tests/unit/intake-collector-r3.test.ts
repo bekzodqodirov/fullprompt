@@ -133,7 +133,7 @@ describe('another factory’s same-named line is kept (R3-C1)', () => {
       line('Куртка женская (Ladies jacket)', { quantity: 299, weightKg: 150 }),
       line('Куртка женская (Ladies jacket)'),
     ]) {
-      expect(add([excel], [read]), JSON.stringify(read)).toEqual({ goods: [excel], sameAsInvoice: [read] });
+      expect(add([excel], [read]), JSON.stringify(read)).toEqual({ goods: [excel], sameAsInvoice: [{ ...read, why: 'same' }] });
     }
     // A weight a whole kilo and more away is another line.
     expect(add([excel], [line('Ladies jacket (女士夹克)', { weightKg: 151.2 })]).goods).toHaveLength(2);
@@ -145,7 +145,7 @@ describe('another factory’s same-named line is kept (R3-C1)', () => {
     expect(picked.sameAsInvoice.map((g) => g.name)).toEqual(['KURTKA']);
   });
 
-  it('the left-out lines are SAID: first among the notes, so the summary prints them', async () => {
+  it('the left-out lines are SAID: in the bot’s own notes, never one of the model’s three (round-4 C-r1 nit)', async () => {
     model.analyze.mockResolvedValueOnce(
       reads([line('Куртка женская (Ladies jacket)', { quantity: 300 }), line('Choynak', { quantity: 40 })], ['a', 'b', 'c']),
     );
@@ -158,9 +158,10 @@ describe('another factory’s same-named line is kept (R3-C1)', () => {
       }).state,
     );
     expect(out.facts.goods?.map((g) => g.name)).toEqual(['Ladies jacket', 'Choynak']);
-    expect(out.steps[0]).toBe('⚠️ 1 ta qator Excel’dagi bilan bir xil deb qo‘shilmadi: «Куртка женская (Ladies jacket)».');
-    expect(aiStepsText(out.steps)).toContain('qo‘shilmadi: «Куртка женская (Ladies jacket)»');
-    expect(out.steps.slice(1)).toEqual(['a', 'b', 'c']);
+    expect(out.notes).toEqual(['⚠️ 1 ta qator Excel’dagi bilan bir xil deb qo‘shilmadi: «Куртка женская (Ladies jacket)».']);
+    // The model's three stay three: the bot's sentence used to push the third out.
+    expect(out.steps).toEqual(['a', 'b', 'c']);
+    expect(aiStepsText(out.steps)).toContain('· c');
   });
 
   it('the note names three and counts the rest, whole within the summary’s cut; nothing left out says nothing', () => {
@@ -206,7 +207,7 @@ describe('rows missing vs cells shortened (R3-C2, the sheets package’s two fla
     const fit = (texts: readonly string[]) => fitSheetRows(texts, 10_000);
     const cells = receiveSheetText(collection().state, '«PL.csv»', { text: csv(20), cut: false, cellsCut: true }, fit);
     expect(cells.say).toBe('📄 «PL.csv» — jadval sarlavhasini topa olmadim, AI o‘qiydi.');
-    expect(cells.patch.sheetTexts).toEqual([{ text: csv(20), cut: false, cellsCut: true }]);
+    expect(cells.patch.sheetTexts).toEqual([{ text: csv(20), cut: false, cellsCut: true, label: '«PL.csv»' }]);
     const missing = receiveSheetText(collection().state, '«PL.csv»', { text: csv(20), cut: true, cellsCut: false }, fit);
     expect(missing.say).toContain('AI faqat boshini o‘qiydi (birinchi 20 qator)');
     const small = (texts: readonly string[]) => fitSheetRows(texts, 400);
@@ -224,14 +225,14 @@ describe('rows missing vs cells shortened (R3-C2, the sheets package’s two fla
       where: '',
     });
     expect(answer.say).toBe('📄 «A.xlsx» — 1 ta tovar o‘qildi.');
-    expect(answer.patch.invoiceTexts).toEqual([{ text: '[Packing list]\n1 | 2', cut: false, cellsCut: true }]);
+    expect(answer.patch.invoiceTexts).toEqual([{ text: '[Packing list]\n1 | 2', cut: false, cellsCut: true, label: '«A.xlsx»' }]);
   });
 
   it('the wire: the reader’s two words reach the collection through readIntakeFile', async () => {
     reader.answer = { kind: 'text', text: csv(20), sheets: 1, textCut: false, cellsCut: true };
     const text = await readIntakeFile({ isPhoto: false, body: Buffer.from('x') }, 'PL.csv', 'text/csv', collection().state);
     expect(text.say).not.toContain('⚠️');
-    expect(text.patch.sheetTexts).toEqual([{ text: csv(20), cut: false, cellsCut: true }]);
+    expect(text.patch.sheetTexts).toEqual([{ text: csv(20), cut: false, cellsCut: true, label: '«PL.csv»' }]);
 
     reader.answer = {
       kind: 'goods',
@@ -244,7 +245,7 @@ describe('rows missing vs cells shortened (R3-C2, the sheets package’s two fla
     };
     const goods = await readIntakeFile({ isPhoto: false, body: Buffer.from('x') }, 'A.xlsx', null, collection().state);
     expect(goods.say).not.toContain('⚠️');
-    expect(goods.patch.invoiceTexts).toEqual([{ text: '[Packing list]\nTOTAL | 150', cut: false, cellsCut: true }]);
+    expect(goods.patch.invoiceTexts).toEqual([{ text: '[Packing list]\nTOTAL | 150', cut: false, cellsCut: true, label: '«A.xlsx»' }]);
   });
 });
 

@@ -66,6 +66,7 @@ import { clientLabels } from './client-labels';
 import {
   activeIntake,
   analyzeCollected,
+  carryLineDone,
   doneLine,
   intakeClientSummary,
   intakeFileKind,
@@ -1308,20 +1309,21 @@ async function askNextOrConfirm(
   // review, R3-C5): a re-read after «➕ Yana ma'lumot» rebuilds the list, and
   // an index carried over from the old one marked some other line done while
   // the skipped one was asked again. By name, like the per-line answers.
-  const lineDone = resolveLineDone(state.facts.goods, state.lineDone);
+  const skip = resolveLineDone(state.facts.goods, state.lineDone).map((d) => d.index);
   // BOTH doors ask now (P1.3): the plain «🧮 Hisoblatish» used to land a
   // ten-line rastamojka job with seven lines nobody had a figure for, and a
   // summary that named none of them. The same cap holds.
-  const line =
-    state.round < MAX_QUESTION_ROUNDS
-      ? nextLineToAsk(state.section, state.facts, laws, { skip: lineDone.map((d) => d.index) })
-      : null;
+  const line = state.round < MAX_QUESTION_ROUNDS ? nextLineToAsk(state.section, state.facts, laws, { skip }) : null;
 
   // The lines dealt with are WRITTEN BACK on every way out (round-2 review,
   // C10): every caller hands this function a `lineDone` with the line it just
   // answered or skipped, and it used to be read for the choice below and then
   // dropped — the stored collection kept the old list, so the next answer or
-  // ⏭ rebuilt it from that, and a line skipped with ⏭ was asked again.
+  // ⏭ rebuilt it from that, and a line skipped with ⏭ was asked again. What
+  // is written is every entry, placed where this reading has it and kept as
+  // it was where it has not (`carryLineDone`, round-4 review C-r2): writing
+  // back only the placed ones let one empty reading erase every ⏭.
+  const lineDone = carryLineDone(state.facts.goods, state.lineDone);
   if (line) {
     updateIntake(chatId, {
       stage: 'question',
@@ -1380,9 +1382,20 @@ async function askNextOrConfirm(
       fileCount: settled.fileCount,
       ambiguous: settled.ambiguousTotals,
     }) +
+      // The bot's own word on the lines an Excel kept out, each on its own
+      // line and never one of the model's three notes (round-4 review, C-r1
+      // nit: put first among them, it pushed the third out).
+      settled.notes.map((n) => `\n\n${n}`).join('') +
       // Why the model's reading is missing, in words (his 1.6 a) — never one
-      // sentence for a dead key, a cut answer and a five-second outage.
-      (failure ? `\n\n⚠️ ${AI_READ_FAILURE[failure].text}\nFaqat yozilganidan o‘qildi.` : aiStepsText(settled.steps)) +
+      // sentence for a dead key, a cut answer and a five-second outage. And
+      // what WAS read instead: with an Excel, its lines are the goods, so
+      // «faqat yozilganidan» was false (round-4 integration S-a).
+      (failure
+        ? `\n\n⚠️ ${AI_READ_FAILURE[failure].text}\n` +
+          ((settled.invoiceGoods ?? []).length > 0
+            ? 'Faqat Excel va yozilganidan o‘qildi.'
+            : 'Faqat yozilganidan o‘qildi.')
+        : aiStepsText(settled.steps)) +
       (settled.ai
         ? `\n\n📄 Sertifikat: ${settled.hasCertificate ? 'bor' : 'yo‘q'} (o‘zgartirish uchun tugmani bosing)`
         : ''),
@@ -1707,8 +1720,9 @@ async function analyseIntakeAndReply(
  * code prefix. Two facts, kept apart because they answer different things:
  *  - `material` — `looksLikeMaterial`: is it goods rather than a customer?
  *  - `couldBeCustomer` — could it NAME one at all: no goods evidence
- *    (`statesGoods`, a labelled goods line — the reader's own first test) and
- *    either one short line or a hint `parseClientHint` finds. Only such a
+ *    (`goodsEvidence` — the material reader's own first test, round-4
+ *    integration defect 1) and either a hint `parseClientHint` finds or one
+ *    short line that is not a row of bare figures (`figureRow`). Only such a
  *    text may be insisted on as the customer (round-2 review, C3/C7).
  *  - `why` — when it cannot, which of the two it fails (round-3 review,
  *    R3-C6): `goods` = it states goods; `shape` = no goods in it, but several
@@ -1723,20 +1737,28 @@ export interface CustomerTextRead {
 }
 
 export async function readCustomerText(raw: string, prefix: string): Promise<CustomerTextRead> {
-  const { looksLikeMaterial, readGoodsLines } = await import('../../wms/calc/intake-manual');
-  const { parseClientHint, statesGoods } = await import('../../wms/calc/intake');
+  const { figureRow, goodsEvidence, looksLikeMaterial } = await import('../../wms/calc/intake-manual');
+  const { parseClientHint } = await import('../../wms/calc/intake');
   const text = raw.trim();
   const lines = text
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter(Boolean);
-  const goods = lines.some((l) => statesGoods(l) || readGoodsLines(l, { labelledOnly: true }).length > 0);
-  const couldBeCustomer =
-    text !== '' && !goods && ((lines.length === 1 && text.length <= 60) || parseClientHint(text, { prefix }) !== null);
+  // ONE goods test with the material reader's own first test (round-4
+  // integration, defect 1): this side kept the old two-part check, so «Tovar:
+  // tayyor» was material on the first send AND a believable customer on the
+  // repeat — the lead was named «Tovar: tayyor».
+  const goods = goodsEvidence(text, { prefix });
+  // A word and a row of bare figures («Kurtka 1200 50 3000») is a packing-list
+  // row, never a name — asked AFTER the hint, which reads a phone in the same
+  // shape («Ali 90 123 45 67»).
+  const hint = parseClientHint(text, { prefix });
+  const row = hint === null && figureRow(text);
+  const couldBeCustomer = text !== '' && !goods && (hint !== null || (!row && lines.length === 1 && text.length <= 60));
   return {
     material: looksLikeMaterial(raw, { prefix }),
     couldBeCustomer,
-    why: couldBeCustomer ? null : goods ? 'goods' : 'shape',
+    why: couldBeCustomer ? null : goods || row ? 'goods' : 'shape',
   };
 }
 
@@ -1838,6 +1860,7 @@ export function settleAnalysis(
     // had is idempotent, so both outcomes take the same merge.
     facts: { ...analysed.facts, goods: mergeLineAnswers(analysed.facts.goods ?? [], live.lineAnswers) },
     steps: analysed.steps,
+    notes: analysed.notes,
     aiUsed: analysed.aiUsed,
     aiFailure: analysed.aiFailure,
     usage: analysed.usage,
@@ -2023,11 +2046,12 @@ export function receivePdf(state: IntakeState, pdf: { data: Buffer; name: string
  * (round-3 review, R3-C2 — the model is told, `sheetsPromptText`).
  */
 export function receiveSheetText(state: IntakeState, label: string, sheet: SheetText, fit: SheetFit): FileAnswer {
-  const sheetTexts = [...state.sheetTexts, sheet];
+  const sheetTexts = [...state.sheetTexts, { ...sheet, label }];
   // The new file's place in what the model is shown (`analyzeCollected`):
   // after the separate files before it, ahead of any workbook's other sheets.
   const at = sheetTexts.length - 1;
-  const fitted = fit([...sheetTexts, ...state.invoiceTexts].map((s) => s.text.trim()));
+  const texts = (list: readonly SheetText[]) => list.map((s) => s.text.trim());
+  const fitted = fit(texts([...sheetTexts, ...state.invoiceTexts]));
   const kept = fitted.kept[at] ?? 0;
   const total = fitted.total[at] ?? 0;
   const cut =
@@ -2038,12 +2062,30 @@ export function receiveSheetText(state: IntakeState, label: string, sheet: Sheet
         : kept < total
           ? `\n⚠️ Jadval katta: AI faqat birinchi ${kept} / ${total} qatorini o‘qiydi — qolganini VED fayldan ko‘radi.`
           : '';
+  // The budget is SHARED and this file stands ahead of the workbooks' other
+  // sheets, so it can push THEIR rows out — the packing list the shipment's
+  // totals are read from. The model is told under the sheet; the seller was
+  // told nothing (round-4 integration S-d: 192 rows of «A.xlsx» fell to 49).
+  const before = fit(texts([...state.sheetTexts, ...state.invoiceTexts]));
+  const squeezed = state.invoiceTexts.flatMap((t, j) => {
+    const was = before.kept[state.sheetTexts.length + j] ?? 0;
+    const now = fitted.kept[sheetTexts.length + j] ?? 0;
+    const of = fitted.total[sheetTexts.length + j] ?? 0;
+    if (now >= was) return [];
+    const whose = t.label ? `${t.label} ning` : 'oldingi Excel faylning';
+    return [
+      now === 0
+        ? `\n⚠️ Shu jadval tufayli ${whose} boshqa varaqlari AI ga sig‘madi — u yerdagi jami (kub/kg) o‘qilmaydi.`
+        : `\n⚠️ Shu jadval tufayli AI ${whose} boshqa varaqlaridan endi faqat ${now} / ${of} qatorini o‘qiydi.`,
+    ];
+  });
   const invoice = (state.invoiceGoods ?? []).length;
   return {
     patch: { sheetTexts, ...(invoice > 0 ? { aiGoods: 'ask' as const } : {}) },
     say:
       `📄 ${label} — jadval sarlavhasini topa olmadim, AI o‘qiydi.` +
       cut +
+      squeezed.join('') +
       (invoice > 0 ? otherFilesQuestion(invoice) : ''),
     ...(invoice > 0 ? { keyboard: otherFilesKeyboard() } : {}),
   };
@@ -2076,14 +2118,27 @@ export function receiveGoodsSheet(
     textCut: boolean;
     cellsCut: boolean;
     where: string;
+    /**
+     * The reader's ceiling on goods rows, when this file reached it
+     * (`MAX_GOODS_ROWS`): a 6,000-line list answered «500 ta tovar o‘qildi»
+     * and nothing about the rest (round-4 integration S-b).
+     */
+    capped?: number;
   },
 ): FileAnswer {
   const { goods, label, where } = sheet;
-  const texts: SheetText[] = sheet.text ? [{ text: sheet.text, cut: sheet.textCut, cellsCut: sheet.cellsCut }] : [];
+  const texts: SheetText[] = sheet.text
+    ? [{ text: sheet.text, cut: sheet.textCut, cellsCut: sheet.cellsCut, label }]
+    : [];
   const cut =
-    sheet.text && sheet.textCut
-      ? '\n⚠️ Jadval katta: AI boshqa varaqlarning faqat boshini o‘qiydi (tovarlar ro‘yxati to‘liq olindi).'
-      : '';
+    (sheet.capped
+      ? `\n⚠️ Bitta fayldan ko‘pi bilan ${sheet.capped} ta tovar qatori o‘qiladi — fayl uzunroq bo‘lsa, qolganini VED fayldan ko‘radi.`
+      : '') +
+    (sheet.text && sheet.textCut
+      ? '\n⚠️ Jadval katta: AI boshqa varaqlarning faqat boshini o‘qiydi' +
+        // «the goods list was read in full» is false of a capped one.
+        (sheet.capped ? '.' : ' (tovarlar ro‘yxati to‘liq olindi).')
+      : '');
   const invoice = state.invoiceGoods ?? [];
   if (invoice.length > 0) {
     const waiting = state.pendingInvoice;
@@ -2238,6 +2293,7 @@ export async function readIntakeFile(
   // Everything the file states reaches the landing (2026-10-09, P1.6) —
   // through the one mapping the landing's own test reads.
   const { invoiceFacts } = await import('../../wms/calc/intake');
+  const { MAX_GOODS_ROWS } = await import('../../wms/deals/goods-import');
   const where = sheet.sheets > 1 ? ` («${sheet.sheet}» varag‘idan; boshqa varaqlarni AI o‘qiydi)` : '';
   return receiveGoodsSheet(state, {
     goods: invoiceFacts(sheet.goods),
@@ -2246,6 +2302,9 @@ export async function readIntakeFile(
     textCut: sheet.textCut,
     cellsCut: sheet.cellsCut,
     where,
+    // The reader stops at its ceiling and says nothing; reaching it is the
+    // one sign the file may hold more (round-4 integration S-b).
+    ...(sheet.goods.length >= MAX_GOODS_ROWS ? { capped: MAX_GOODS_ROWS } : {}),
   });
 }
 

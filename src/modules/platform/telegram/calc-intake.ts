@@ -23,9 +23,12 @@ export type IntakeStage = 'section' | 'client' | 'material' | 'review' | 'questi
 
 /**
  * A spreadsheet's text, whether its reader stopped before the end (round-2
- * review, C1) and whether it only shortened some cells (round-3, R3-C2).
+ * review, C1) and whether it only shortened some cells (round-3, R3-C2) — and
+ * the file it came from, as the seller was told it («A.xlsx»), so a LATER file
+ * that squeezes it out of the model's shared budget can name it (round-4
+ * integration S-d). The model is never shown the label.
  */
-export type SheetText = import('../../wms/calc/intake-ai').IntakeSheetText;
+export type SheetText = import('../../wms/calc/intake-ai').IntakeSheetText & { label?: string };
 
 export interface IntakeState {
   section: import('../../wms/calc/intake').CalcSection;
@@ -38,7 +41,17 @@ export interface IntakeState {
   material: string[];
   fileCount: number;
   facts: import('../../wms/calc/intake').CalcFacts;
+  /** The model's own notes on what it did — the summary shows three. */
   steps: string[];
+  /**
+   * The BOT's own sentences about the reading — the lines left out because an
+   * Excel answered for them (`sameAsInvoiceNote`, `typedLeftOutNote`). Kept
+   * apart from `steps` (round-4 review, C-r1 nit): put first among the model's
+   * notes, one of its three was pushed out of the summary, and the sentence
+   * read as the AI's. The summary prints them on their own lines; the card's
+   * lenta keeps them ahead of the model's notes, as before.
+   */
+  notes: string[];
   aiUsed: boolean;
   /**
    * Photographs the model is allowed to LOOK at, downscaled.
@@ -289,32 +302,61 @@ export function doneLine(
 }
 
 /**
- * The lines dealt with, put onto the goods list as it stands now (round-3
+ * Where each entry of `lineDone` stands on the goods list as it is now (round-3
  * review, R3-C5) — `mergeLineAnswers`' rule: the same index while the line
- * there still carries the name, else the first line of that name, else the
- * entry is dropped (a line the re-read no longer lists is nothing to skip).
- * One step stricter than that rule, because a skip has no figure to show it
- * landed: a line is claimed once, so two «Kurtka» lines are two entries and
- * never one line marked twice while the other is lost. Pure.
+ * there still carries the name, else the first line of that name, else
+ * nowhere (-1). One step stricter than that rule, because a skip has no figure
+ * to show it landed: a line is claimed once, so two «Kurtka» lines are two
+ * entries and never one line marked twice while the other is lost.
+ */
+function placeLineDone(
+  goods: import('../../wms/calc/intake').CalcFacts['goods'],
+  done: IntakeState['lineDone'],
+): { entry: IntakeState['lineDone'][number]; at: number }[] {
+  const list = goods ?? [];
+  const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+  const taken = new Set<number>();
+  return done.map((entry) => {
+    const at =
+      list[entry.index] && !taken.has(entry.index) && sameName(list[entry.index]!.name, entry.name)
+        ? entry.index
+        : list.findIndex((g, i) => !taken.has(i) && sameName(g.name, entry.name));
+    if (at >= 0) taken.add(at);
+    return { entry, at };
+  });
+}
+
+/**
+ * The lines dealt with, put onto the goods list as it stands now (R3-C5,
+ * `placeLineDone`); an entry the list does not hold is left out — a line this
+ * reading does not list is nothing to skip. What the next QUESTION is chosen
+ * by. Pure.
  */
 export function resolveLineDone(
   goods: import('../../wms/calc/intake').CalcFacts['goods'],
   done: IntakeState['lineDone'],
 ): IntakeState['lineDone'] {
   const list = goods ?? [];
-  const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
-  const taken = new Set<number>();
-  const out: IntakeState['lineDone'] = [];
-  for (const entry of done) {
-    const at =
-      list[entry.index] && !taken.has(entry.index) && sameName(list[entry.index]!.name, entry.name)
-        ? entry.index
-        : list.findIndex((g, i) => !taken.has(i) && sameName(g.name, entry.name));
-    if (at < 0) continue;
-    taken.add(at);
-    out.push({ index: at, name: list[at]!.name });
-  }
-  return out;
+  return placeLineDone(goods, done)
+    .filter((p) => p.at >= 0)
+    .map((p) => ({ index: p.at, name: list[p.at]!.name }));
+}
+
+/**
+ * What a collection STORES of the lines dealt with: each entry put onto the
+ * list as it stands now where it is found (`placeLineDone`), and kept as it was
+ * where it is not (round-4 review, C-r2: the resolved list was written back,
+ * so ONE reading without the goods — a model timeout after «➕ Yana ma'lumot»
+ * — erased every ⏭ for good, and the next «🔄 AI qayta o'qisin» asked the
+ * skipped line again). A line missing from one reading stays passed when a
+ * later reading brings it back. Pure.
+ */
+export function carryLineDone(
+  goods: import('../../wms/calc/intake').CalcFacts['goods'],
+  done: IntakeState['lineDone'],
+): IntakeState['lineDone'] {
+  const list = goods ?? [];
+  return placeLineDone(goods, done).map((p) => (p.at >= 0 ? { index: p.at, name: list[p.at]!.name } : p.entry));
 }
 
 /** The hint's non-empty lines, each with its spacing collapsed. */
@@ -329,44 +371,140 @@ function hintLines(raw: string): string[] {
 const isBareLabel = (line: string) => /[:：]$/.test(line);
 
 /**
- * The words a contact line opens with before its value — «Tel: 90 …»,
- * «Mijoz kodi GS777», «Код клиента: …». A lookahead and not `\b`: JS's `\b`
- * is ASCII-only, so «Тел» would never end a word.
+ * The words a contact line carries beside its value, in the spellings a
+ * seller writes them — «Tel», «Telefon raqami», «Номер телефона», «Phone
+ * number», «WhatsApp», «Kontakt», «Aloqa», «T:», «ID», «Mijoz kodi» — and the
+ * joining words between two values («va», «и»). Judged WORD by word, never as
+ * one listed label (round-4 review, C-r1/C-r2 ND1: a fixed list of opening
+ * labels missed «Telefon raqami» — the very words the bot's own question asks
+ * for — and the phone went back into the lead's name). Lower case.
  */
-const CONTACT_LABEL =
-  /^(?:tel(?:efon)?|тел(?:ефон)?|phone|mob(?:il)?|моб(?:ильный)?|mijoz(?:\s+kodi)?|klient(?:\s+kodi)?|client(?:\s+code)?|клиент|kod(?:i)?|код(?:\s+клиента)?|code|raqam(?:i)?|номер|nomer)(?![\p{L}\p{N}])[.\s]*[:：\-–—]?\s*/iu;
+const CONTACT_WORDS = new Set([
+  'tel', 'telefon', 'telefoni', 'telefonim', 'raqam', 'raqami', 'raqamim', 'nomer', 'nomeri', 'mob', 'mobil',
+  'kontakt', 'kontakti', 'aloqa', 'mijoz', 'klient', 'kod', 'kodi', 'id', 't', 'va', 'yoki',
+  'тел', 'телефон', 'телефона', 'номер', 'номера', 'моб', 'мобильный', 'контакт', 'контакты', 'клиент',
+  'клиента', 'код', 'т', 'и', 'или',
+  'phone', 'number', 'no', 'mobile', 'contact', 'client', 'code', 'and', 'or',
+  'whatsapp', 'вотсап', 'ватсап', 'telegram', 'телеграм', 'tg', 'viber', 'wechat',
+]);
+
+/** Where a cut was made in a line: a character no seller types. */
+const CUT = '\u0000';
+/** A run of digits as a phone is written: «+998 90 123-45-67», «(90) 123 45 67». */
+const DIGIT_RUN = /\+?\d(?:[\d\s\-–().]*\d)?/g;
+/** A Telegram handle — contact, never a name («Telegram: @murod_uz»). */
+const HANDLE = /@[\p{L}\p{N}_.]+/gu;
+/** The code's number written after its label, the prefix left off: «Kod 777», «Mijoz kodi: 777» for GS777. */
+const CODE_LABEL = String.raw`(?:mijoz(?:\s+kodi)?|klient(?:\s+kodi)?|client(?:\s+code)?|клиент|kod(?:i)?|код|code|id)[\s.:：#№\-–]*|№\s*`;
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
- * Is this line the hint's phone or code and nothing else (round-3 review,
- * R3-C4)? Its contact label off, its spacing and «+ - ( ) .» off, what is left
- * is the code (or the code's own number — «Kod 777» for GS777), the phone's
- * digits, or both side by side. Judged against what `parseClientHint` TOOK,
- * never by the shape alone: «3-filial» and «Ali aka 2» carry digits and are
- * names, and a phone the hint did not take stays in the name — the one place
- * it is still written down.
+ * The line with the hint's OWN phone and code cut out (each cut marked
+ * `CUT`), and whether anything was (round-4 review, C-r1/C-r2 ND1). Judged
+ * against what `parseClientHint` TOOK, never by the shape alone: «3-filial»
+ * and «Ali aka 2» carry digits and are names, and a phone the hint did not
+ * take stays where it is written (round-3, R3-C4). The phone is found by its
+ * digits whatever the spacing, the code with or without its separator
+ * («GS 777», «gs-777») or as its own number after its label («Kod 777»).
+ * Once the hint was found here, a second phone and a handle on the same line
+ * are contact too («Tel: 90 123 45 67, 91 234 56 78») and are cut with it.
+ */
+function cutHint(line: string, hint: { code?: string; phone?: string }): { text: string; took: boolean } {
+  let text = line;
+  let took = false;
+  const phone = hint.phone ? hint.phone.replace(/\D/g, '') : '';
+  if (phone.length >= 7) {
+    text = text.replace(DIGIT_RUN, (run) => {
+      const digits = run.replace(/\D/g, '');
+      if (digits.length >= 7 && phone.endsWith(digits)) {
+        took = true;
+        return CUT;
+      }
+      if (!digits.endsWith(phone)) return run;
+      // The phone is the run's TAIL — what stands before it («Mijoz 777 90 …»,
+      // «GS 777 90 …») is somebody else's digits and stays.
+      took = true;
+      let seen = 0;
+      const head = digits.length - phone.length;
+      for (let i = 0; i < run.length; i += 1) {
+        if (!/\d/.test(run[i]!)) continue;
+        if (seen === head) return head === 0 ? CUT : `${run.slice(0, i)}${CUT}`;
+        seen += 1;
+      }
+      return run;
+    });
+  }
+  const code = hint.code?.replace(/[\s\-–]/g, '').toUpperCase() ?? '';
+  const parts = /^(\p{L}*)(\d+)$/u.exec(code);
+  if (code) {
+    const whole = parts
+      ? `${escapeRe(parts[1]!)}[\\s\\-–.]*${parts[2]}`
+      : code.split('').map(escapeRe).join('[\\s\\-–.]*');
+    text = text.replace(new RegExp(`(?<![\\p{L}\\p{N}])${whole}(?!\\p{N})`, 'giu'), () => {
+      took = true;
+      return CUT;
+    });
+    if (parts?.[1]) {
+      text = text.replace(new RegExp(`((?<![\\p{L}\\p{N}])(?:${CODE_LABEL}))${parts[2]}(?!\\p{N})`, 'giu'), (_m, label: string) => {
+        took = true;
+        return `${label}${CUT}`;
+      });
+    }
+  }
+  if (took) {
+    text = text
+      .replace(HANDLE, CUT)
+      .replace(DIGIT_RUN, (run) => (run.replace(/\D/g, '').length >= 7 ? CUT : run));
+  }
+  return { text, took };
+}
+
+/** The words of a text — letters and digits, everything else a separator. */
+const wordsOf = (text: string) => text.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+
+/**
+ * Is this line contact and nothing else (round-4 review, C-r1/C-r2 ND1) — the
+ * hint's phone or code was cut out of it (`cutHint`), and every word left is
+ * contact vocabulary (`CONTACT_WORDS`)? «Telefon raqami: 90 123 45 67», «GS777
+ * / +998 …», «Kod GS777 tel 90 …», «ID: GS777», «+998 … (WhatsApp)» are; «Tel:
+ * 90 123 45 67 Ali» is not — a name word is left, so the line stays as written
+ * (both round-4 reviewers' «what is left» rule).
  */
 function isContactLine(line: string, hint: { code?: string; phone?: string } | null): boolean {
   if (!hint) return false;
-  const compact = line
-    .replace(CONTACT_LABEL, '')
-    .replace(/[\s+\-–—().]/g, '')
-    .toUpperCase();
-  if (!compact) return false;
-  const code = hint.code ? hint.code.replace(/[\s-]/g, '').toUpperCase() : null;
-  const phone = hint.phone ? hint.phone.replace(/\D/g, '') : null;
-  let rest = compact;
-  if (code && rest.startsWith(code)) rest = rest.slice(code.length);
-  else if (code && rest.endsWith(code)) rest = rest.slice(0, -code.length);
-  if (!rest) return true;
-  if (phone && phone.length >= 7 && /^\d{7,}$/.test(rest) && (phone.endsWith(rest) || rest.endsWith(phone))) return true;
-  // The code's number alone, its prefix left off — only while nothing else was taken from the line.
-  return (
-    rest === compact &&
-    code !== null &&
-    /^\d+$/.test(rest) &&
-    code.endsWith(rest) &&
-    /^\p{L}+$/u.test(code.slice(0, -rest.length))
-  );
+  const cut = cutHint(line, hint);
+  return cut.took && wordsOf(cut.text).every((w) => CONTACT_WORDS.has(w.toLowerCase()));
+}
+
+/** A contact word standing beside a cut — «Ali aka, tel: ⟨cut⟩» is «Ali aka». */
+const CONTACT_WORD_RE = [...CONTACT_WORDS].sort((a, b) => b.length - a.length).map(escapeRe).join('|');
+const HUG_SEP = String.raw`[\s.,:：;/|\\#№«»"'\-–—+]*`;
+const HUG = new RegExp(
+  `(?:${HUG_SEP}(?<![\\p{L}\\p{N}])(?:${CONTACT_WORD_RE})(?![\\p{L}\\p{N}]))*${HUG_SEP}${CUT}` +
+    `(?:${HUG_SEP}(?<![\\p{L}\\p{N}])(?:${CONTACT_WORD_RE})(?![\\p{L}\\p{N}]))*${HUG_SEP}`,
+  'giu',
+);
+
+/**
+ * A ONE-line hint with the hint's phone and code cut OUT of it (round-4
+ * review, C-r2 close-variant: «Ali aka +998 90 123 45 67», «Murod GS777»,
+ * «Rustam (GS777)» — the commonest way a seller types a prospect — named the
+ * lead with the phone, which the hint already puts in its own column). The
+ * contact words beside a cut go with it, and a bracket left empty. Null =
+ * nothing name-like is left («GS 777 90 123 45 67», «Kod 777»).
+ */
+function nameBesideHint(line: string, hint: { code?: string; phone?: string }): string | null {
+  const cut = cutHint(line, hint);
+  if (!cut.took) return line;
+  const rest = cut.text
+    .replace(HUG, ' ')
+    // «Rustam (aka ⟨cut⟩)» keeps «(aka)», and «Rustam (⟨cut⟩)» loses the pair.
+    .replace(/([(（\[])\s+/gu, '$1')
+    .replace(/\s+([)）\]])/gu, '$1')
+    .replace(/[(（\[][\s.,:：;/|\-–—]*[)）\]]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s.,:：;/|\\\-–—]+|[\s.,:：;/|\\\-–—]+$/gu, '');
+  return /\p{L}/u.test(rest) ? rest : null;
 }
 
 /**
@@ -376,16 +514,26 @@ function isContactLine(line: string, hint: { code?: string; phone?: string } | n
  * the raw text named the lead with a newline AND the phone, which the hint
  * already puts in its own column.
  *
- * The lines dropped are the ones that ARE the hint's phone or code
- * (`isContactLine`, round-3 review R3-C4) — no longer every line with a digit:
- * «Ali aka 2» over the phone fell back to the whole text and put the phone in
- * the name, and so did «OOO "Asia Trade" 3-filial» over «Tel: …». A line that
- * is only a label waiting for its value («Mijoz:») is not a name either. When
- * nothing is left, the whole text collapsed onto one line. Null = nothing
- * typed: the caller has its own word for that. Pure.
+ * Several lines: the lines dropped are the ones that are the hint's contact
+ * and nothing else (`isContactLine`; round-3 review R3-C4 — no longer every
+ * line with a digit, «Ali aka 2» keeps its «2»; round 4 — any label, a second
+ * phone, a handle), and a line that is only a label waiting for its value
+ * («Mijoz:»). Every other line is kept as written. When nothing is left, the
+ * whole text collapsed onto one line (R3-C4).
+ *
+ * One line: the hint's phone and code are cut out of it (`nameBesideHint`,
+ * round 4), and when nothing name-like is left the lead is named by the code,
+ * or by nobody (round-4 integration S-c: «GS 777 90 123 45 67» named it with
+ * the phone). The several-lines fallback stays R3-C4's — a binding decision
+ * this round may not move (the corpus's c1677); that the two differ is stated
+ * to the lead.
+ *
+ * Null = nothing typed, or a one-line hint that is only a phone: the caller
+ * has its own word for that. Pure.
  */
 export function intakeClientLabel(raw: string, hint: { code?: string; phone?: string } | null): string | null {
   const lines = hintLines(raw);
+  if (lines.length === 1 && hint) return nameBesideHint(lines[0]!, hint) ?? hint.code ?? null;
   const named = lines.filter((l) => !isBareLabel(l) && !isContactLine(l, hint));
   return (named.length > 0 ? named : lines).join(' ') || null;
 }
@@ -421,31 +569,77 @@ export function goodsNameKey(name: string): string {
 }
 
 /**
- * The names one goods line answers to (round-2 review, C2/C6): the whole name,
- * the name outside its brackets, and what each bracket holds — every one
- * through `goodsNameKey`. The model is TOLD to write «Куртка женская (Ladies
- * jacket)» (its SYSTEM prompt: Russian, the original in brackets), so the
- * whole name alone never equalled the Excel's «Ladies jacket» and an «add»
- * landed the same line twice. Empty keys are dropped.
+ * A name's OUTERMOST brackets (ASCII and full-width — a Chinese original often
+ * comes in （）): what each holds, and the name outside them. «Куртка женская
+ * (Ladies jacket (XL))» holds «Ladies jacket (XL)» — the innermost pair alone
+ * read «XL» and left the original's half outside (round-3 review, collector
+ * C2 note). Unbalanced brackets are no brackets: nothing is guessed open.
  */
-export function goodsNameKeys(name: string): { whole: string; keys: string[] } {
+function bracketParts(name: string): { inside: string[]; outside: string } {
+  const inside: string[] = [];
+  let outside = '';
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < name.length; i += 1) {
+    const ch = name[i]!;
+    if (ch === '(' || ch === '（') {
+      if (depth === 0) {
+        start = i + 1;
+        outside += ' ';
+      }
+      depth += 1;
+    } else if (ch === ')' || ch === '）') {
+      if (depth === 0) return { inside: [], outside: name };
+      depth -= 1;
+      if (depth === 0) inside.push(name.slice(start, i));
+    } else if (depth === 0) outside += ch;
+  }
+  return depth === 0 ? { inside, outside } : { inside: [], outside: name };
+}
+
+/**
+ * The names one goods line answers to (round-2 review, C2/C6), each through
+ * `goodsNameKey`:
+ *  - `whole` — the name as written;
+ *  - `forms` — the names the line IS: the whole, and for a Chinese factory's
+ *    bilingual cell with no brackets («女士夹克 Ladies jacket», «女士夹克\nLadies
+ *    jacket») its Chinese half and the rest — the model reads such a cell as
+ *    «Куртка женская (女士夹克)» and the Excel's whole name met neither half
+ *    (round-3 review, collector C2 note);
+ *  - `keys` — everything the line answers to: its forms, the name outside its
+ *    outermost brackets, and what each holds. The model is TOLD to write
+ *    «Куртка женская (Ladies jacket)» (its SYSTEM prompt: Russian, the
+ *    original in brackets), so the whole name alone never equalled the
+ *    Excel's «Ladies jacket» and an «add» landed the same line twice.
+ * Halves only without brackets: «Kurtka (黑色)» split by script would make
+ * «Kurtka» a form and meet «Kurtka (qora)» outside against outside — the
+ * colour is the bracket. Empty keys are dropped.
+ */
+export function goodsNameKeys(name: string): { whole: string; forms: string[]; keys: string[] } {
   const whole = goodsNameKey(name);
-  // ASCII and full-width brackets: a Chinese original often comes in （）.
-  const inside = [...name.matchAll(/[(（]([^()（）]*)[)）]/gu)].map((m) => goodsNameKey(m[1] ?? ''));
-  const outside = goodsNameKey(name.replace(/[(（][^()（）]*[)）]/gu, ' '));
-  return { whole, keys: [...new Set([whole, outside, ...inside])].filter(Boolean) };
+  const { inside, outside } = bracketParts(name);
+  const han = (name.match(/\p{Script=Han}+/gu) ?? []).join(' ');
+  const rest = name.replace(/\p{Script=Han}+/gu, ' ');
+  const halves = inside.length === 0 && han && /\p{L}/u.test(rest) ? [goodsNameKey(han), goodsNameKey(rest)] : [];
+  const forms = [...new Set([whole, ...halves])].filter(Boolean);
+  return {
+    whole,
+    forms,
+    keys: [...new Set([...forms, goodsNameKey(outside), ...inside.map(goodsNameKey)])].filter(Boolean),
+  };
 }
 
 /**
  * Do two names point at the same product the WIDE way — a name ONE of them
- * answers to is the OTHER's whole name: «Куртка женская (Ladies jacket)» is
+ * answers to is a name the OTHER is: «Куртка женская (Ladies jacket)» is
  * «Ladies jacket», «Kurtka» is «Kurtka (qora)» (round-2 review, C2/C6)? Never
  * bracket against bracket or outside against outside: a bracket is as often a
  * colour or a size, and «Kurtka (qora)» beside «Kurtka (oq)» are two lines of
  * one order.
  */
-function namesMeet(a: { whole: string; keys: string[] }, b: { whole: string; keys: string[] }): boolean {
-  return a.keys.includes(b.whole) || b.keys.includes(a.whole);
+type NameKeys = ReturnType<typeof goodsNameKeys>;
+function namesMeet(a: NameKeys, b: NameKeys): boolean {
+  return a.keys.some((k) => b.forms.includes(k)) || b.keys.some((k) => a.forms.includes(k));
 }
 
 /**
@@ -470,32 +664,45 @@ function figureOf(g: GoodsList[number], field: (typeof LINE_FIGURES)[number]['fi
 /**
  * Is the model's line the Excel line READ AGAIN, by its figures (round-3
  * review, R3-C1)? A packing list re-read carries the Excel line's own count or
- * weight; another factory's same-named product does not. So: the model line
- * states no figure at all (nothing says it is another line), or a figure both
- * lines state agrees.
+ * weight; another factory's same-named product does not. Only the figures
+ * BOTH lines state are compared (round-4 review, C-r2 ND2 and integration
+ * defect 3): a re-read that states the count beside an Excel line stating
+ * only the weight — the Invoice sheet beside the Packing list, or a count the
+ * reader took once from a merged cell — shares nothing to disagree on, and
+ * counting «the Excel has no count» as a disagreement landed the order twice.
+ * So: nothing shared (nothing says it is another line), or a shared figure
+ * agrees.
  */
 function figuresAgree(model: GoodsList[number], invoice: GoodsList[number]): boolean {
-  const stated = LINE_FIGURES.filter((f) => figureOf(model, f.field) !== null);
-  if (stated.length === 0) return true;
-  return stated.some((f) => {
+  const shared = LINE_FIGURES.filter((f) => figureOf(model, f.field) !== null && figureOf(invoice, f.field) !== null);
+  if (shared.length === 0) return true;
+  return shared.some((f) => {
     const ours = figureOf(model, f.field)!;
-    const theirs = figureOf(invoice, f.field);
-    if (theirs === null) return false;
+    const theirs = figureOf(invoice, f.field)!;
     if (f.unit === null) return ours === theirs;
     const gap = Math.abs(ours - theirs);
     return gap < f.unit || gap <= 0.005 * Math.max(Math.abs(ours), Math.abs(theirs));
   });
 }
 
-/** What `pickGoods` lands, and the model's lines it left out as the Excel's own. */
+/** A line the Excel kept out of the job, and why — see `PickedGoods.sameAsInvoice`. */
+export type LeftOutLine = GoodsList[number] & { why: 'same' | 'typed' };
+
+/** What `pickGoods` lands, and the lines it left out because an Excel answered for them. */
 export interface PickedGoods {
   goods: GoodsList;
   /**
-   * The model's lines NOT added because an Excel line is the same product
-   * (round-3 review, R3-C1) — named to the seller, never dropped in silence:
-   * the job would land short by them with no word anywhere.
+   * The lines NOT landed because an Excel answers for them — named to the
+   * seller, never dropped in silence: the job would land short by them with
+   * no word anywhere. `why`:
+   *  - `same` — a model line an Excel line is the same product as (round-3
+   *    review, R3-C1);
+   *  - `typed` — a line the seller TYPED, which the model read too, that the
+   *    Excel does not carry, while nobody was asked whether another file is
+   *    another factory's (round-4 integration S-a: an Excel and a typed «Shim
+   *    200 dona», no PDF — the line was dropped and nobody was asked).
    */
-  sameAsInvoice: GoodsList;
+  sameAsInvoice: LeftOutLine[];
 }
 
 /**
@@ -507,9 +714,11 @@ export interface PickedGoods {
  *     (2026-10-09, P1.6): its rows carry the supplier's own codes, units,
  *     weights and volumes. When the seller said a separate model-read file is
  *     ANOTHER factory's (`aiGoods: 'add'`, round-1 review c4), the model's
- *     lines are appended — except those the Excel already carries, because
- *     the model was shown the PDF and the text, and the text can repeat a
- *     line the Excel has. «Already carries» (round-3 review, R3-C1):
+ *     lines are appended — or, when the model did not read, the TYPED lines
+ *     (round-4 integration S-a: «add» answered, the PDF unread, and the typed
+ *     «Shim 200 dona» vanished) — except those the Excel already carries,
+ *     because the model was shown the PDF and the text, and the text can
+ *     repeat a line the Excel has. «Already carries» (round-3 review, R3-C1):
  *      - the same WHOLE name (`goodsNameKey`) — base's rule, kept;
  *      - a name the line answers to (`goodsNameKeys`: the model's «Russian
  *        (original)» meets its Excel original, round-2 review C2) — and then
@@ -518,9 +727,17 @@ export interface PickedGoods {
  *        «Kurtka» 300, and two factories shipping one generic name is this
  *        business's ordinary day.
  *     The wide match is between a model line and the INVOICE only; among the
- *     model's own lines, the same whole name is one line and nothing wider —
- *     its «Kurtka» and «Kurtka (qora)» are two products it read. What was
- *     left out is returned (`sameAsInvoice`), for the seller to see.
+ *     lines ADDED, the same whole name is one line and nothing wider — the
+ *     model's «Kurtka» and «Kurtka (qora)» are two products it read. A line
+ *     whose same-named twin was the Excel's is judged on its own (round-4,
+ *     C-r1 nit / C-r2 ND: «Куртка женская (Ladies jacket)» 300 beside the
+ *     same name at 200 lost the 200 unnamed). What was left out is returned
+ *     (`sameAsInvoice`), for the seller to see.
+ *     When nobody was asked (`aiGoods` null: no PDF and no header-less sheet
+ *     beside the Excel), the Excel alone answers — and a typed line the model
+ *     read too and the Excel does not carry is NAMED (round-4 integration
+ *     S-a). Only one the model read: a typed reading alone is the regex's
+ *     guess, and t22 says a guess does not overrule a reading.
  *  2. The model's goods, when there is no file — and when it READ and found
  *     none, only the lines the seller LABELLED as goods («Tovar: …»): an
  *     unlabelled «Salom, 12 kub 3500 kg» is not a product the model missed,
@@ -539,19 +756,43 @@ export function pickGoods(input: {
   typedLabelled: GoodsList;
 }): PickedGoods {
   if (input.invoice.length > 0) {
-    if (input.aiGoods !== 'add' || !input.model?.length) return { goods: input.invoice, sameAsInvoice: [] };
     const invoice = input.invoice.map((row) => ({ row, names: goodsNameKeys(row.name) }));
-    const modelWholes = new Set<string>();
+    const carried = (g: GoodsList[number], names: NameKeys) =>
+      invoice.some((inv) => inv.names.whole === names.whole || (namesMeet(names, inv.names) && figuresAgree(g, inv.row)));
+    if (input.aiGoods !== 'add') {
+      if (input.aiGoods !== null || !input.model?.length) return { goods: input.invoice, sameAsInvoice: [] };
+      const read = input.model.map((g) => goodsNameKeys(g.name));
+      const named = new Set<string>();
+      const sameAsInvoice: LeftOutLine[] = [];
+      for (const t of input.typed) {
+        const names = goodsNameKeys(t.name);
+        if (!names.whole || named.has(names.whole) || carried(t, names)) continue;
+        if (!read.some((m) => m.whole === names.whole || namesMeet(m, names))) continue;
+        named.add(names.whole);
+        sameAsInvoice.push({ ...t, why: 'typed' });
+      }
+      return { goods: input.invoice, sameAsInvoice };
+    }
+    const extra = input.model ?? input.typed;
+    const addedWholes = new Set<string>();
+    const leftOut = new Set<string>();
     const added: GoodsList = [];
-    const sameAsInvoice: GoodsList = [];
-    for (const g of input.model) {
+    const sameAsInvoice: LeftOutLine[] = [];
+    for (const g of extra) {
       const names = goodsNameKeys(g.name);
-      if (!names.whole || modelWholes.has(names.whole)) continue;
-      modelWholes.add(names.whole);
-      const theExcels = invoice.some(
-        (inv) => inv.names.whole === names.whole || (namesMeet(names, inv.names) && figuresAgree(g, inv.row)),
-      );
-      (theExcels ? sameAsInvoice : added).push(g);
+      if (!names.whole) continue;
+      if (carried(g, names)) {
+        // One reading is named once; two readings of one name with different
+        // figures are both said.
+        const reading = `${names.whole}|${LINE_FIGURES.map((f) => figureOf(g, f.field)).join('|')}`;
+        if (leftOut.has(reading)) continue;
+        leftOut.add(reading);
+        sameAsInvoice.push({ ...g, why: 'same' });
+        continue;
+      }
+      if (addedWholes.has(names.whole)) continue;
+      addedWholes.add(names.whole);
+      added.push(g);
     }
     return { goods: [...input.invoice, ...added], sameAsInvoice };
   }
@@ -559,19 +800,35 @@ export function pickGoods(input: {
   return { goods: input.model.length > 0 ? input.model : input.typedLabelled, sameAsInvoice: [] };
 }
 
-/**
- * The seller's word for the model's lines `pickGoods` left out as the Excel's
- * own (round-3 review, R3-C1): one line, put FIRST in the AI notes — the
- * summary prints the first three notes, each cut at 200 characters
- * (`aiStepsText`), and the card's lenta keeps them. So three names, each cut
- * at 30, and a count of the rest: the whole sentence fits the cut. Null =
- * none were left out.
- */
-export function sameAsInvoiceNote(lines: GoodsList): string | null {
-  if (lines.length === 0) return null;
+/** Three names, each cut at 30, and a count of the rest — the whole sentence fits the summary's cut. */
+function namedLines(lines: readonly { name: string }[]): string {
   const names = lines.slice(0, 3).map((g) => `«${g.name.length > 30 ? `${g.name.slice(0, 29)}…` : g.name}»`);
   const more = lines.length > 3 ? ` va yana ${lines.length - 3} ta` : '';
-  return `⚠️ ${lines.length} ta qator Excel’dagi bilan bir xil deb qo‘shilmadi: ${names.join(', ')}${more}.`;
+  return `${names.join(', ')}${more}`;
+}
+
+/**
+ * The seller's word for the model's lines `pickGoods` left out as the Excel's
+ * own (round-3 review, R3-C1): one line, printed on its own above the AI notes
+ * (`IntakeState.notes`) and kept on the card's lenta. Null = none were left
+ * out. A line `pickGoods` marked `typed` is not this sentence's
+ * (`typedLeftOutNote`).
+ */
+export function sameAsInvoiceNote(lines: readonly (GoodsList[number] & { why?: LeftOutLine['why'] })[]): string | null {
+  const same = lines.filter((g) => g.why !== 'typed');
+  if (same.length === 0) return null;
+  return `⚠️ ${same.length} ta qator Excel’dagi bilan bir xil deb qo‘shilmadi: ${namedLines(same)}.`;
+}
+
+/**
+ * The seller's word for the typed lines left out because the Excel answers
+ * for the goods (round-4 integration S-a) — they are NOT the Excel's, so
+ * «bir xil» would be false of them. Null = none.
+ */
+export function typedLeftOutNote(lines: readonly LeftOutLine[]): string | null {
+  const typed = lines.filter((g) => g.why === 'typed');
+  if (typed.length === 0) return null;
+  return `⚠️ ${typed.length} ta yozilgan qator Excel’da yo‘q, ro‘yxatga qo‘shilmadi (tovarlar Excel’dan olindi): ${namedLines(typed)}.`;
 }
 
 /** At most this many photographs reach the model (his 1.4 b: twelve). */
@@ -638,6 +895,7 @@ export function startIntake(
     fileCount: 0,
     facts: {},
     steps: [],
+    notes: [],
     aiUsed: false,
     images: [],
     imagesSkipped: 0,
@@ -756,9 +1014,12 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
     typed: manual.goods ?? [],
     typedLabelled: readGoodsLines(text, { labelledOnly: true }),
   });
-  // The model's lines left out as the Excel's own are SAID, first among the
-  // notes, so the summary shows them and the card keeps them (R3-C1).
-  const sameNote = sameAsInvoiceNote(picked.sameAsInvoice);
+  // The lines left out because the Excel answers are SAID, in the bot's own
+  // notes, so the summary shows them beside the model's three and the card
+  // keeps them (R3-C1; round 4, C-r1 nit and integration S-a).
+  const notes = [sameAsInvoiceNote(picked.sameAsInvoice), typedLeftOutNote(picked.sameAsInvoice)].filter(
+    (n): n is string => n !== null,
+  );
   const facts = {
     fromCity: manual.fromCity ?? ai?.facts.fromCity ?? state.route?.fromCity ?? null,
     toCity: manual.toCity ?? ai?.facts.toCity ?? state.route?.toCity ?? null,
@@ -771,10 +1032,14 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
   return {
     ...state,
     facts,
-    steps: [...(sameNote ? [sameNote] : []), ...(ai?.steps ?? [])],
+    steps: ai?.steps ?? [],
+    notes,
     aiUsed: Boolean(ai),
     aiFailure: outcome.ok ? null : outcome.failure,
-    usage: ai?.usage ?? null,
+    // A paid read that failed (cut, refused, unreadable) still cost what it
+    // cost: the day's budget is written from this at the landing (r1-fix
+    // typed #21; the typed package's `usage` on a failed outcome).
+    usage: ai?.usage ?? (outcome.ok ? null : (outcome.usage ?? null)),
     ambiguousTotals: manual.ambiguous,
     stage: 'review',
   };

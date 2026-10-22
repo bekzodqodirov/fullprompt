@@ -131,6 +131,7 @@ describe('a line the Excel already lists is not added again under the model’s 
   it('the names a line answers to: whole, outside the brackets, inside each', () => {
     expect(goodsNameKeys('Куртка женская (Ladies jacket)')).toEqual({
       whole: 'куртка женская ladies jacket',
+      forms: ['куртка женская ladies jacket'],
       keys: ['куртка женская ladies jacket', 'куртка женская', 'ladies jacket'],
     });
     expect(goodsNameKeys('Shim').keys).toEqual(['shim']);
@@ -150,7 +151,9 @@ describe('the customer as one line (round-2 review, C8/C9)', () => {
     expect(intakeClientLabel('Ali aka\n+998 90 123 45 67', phone)).toBe('Ali aka');
     expect(intakeClientLabel('Ism: Ali aka\nTel: +998 90 123 45 67', phone)).toBe('Ism: Ali aka');
     expect(intakeClientLabel('Mijoz:\nGS777', { code: 'GS777' })).toBe('Mijoz: GS777');
-    expect(intakeClientLabel('  GS777  Bobur ', { code: 'GS777' })).toBe('GS777 Bobur');
+    // One line: the hint's code is cut out of it and the name kept (round-4
+    // review, C-r2 close-variant — the corpus's c1672 «gs777 Ali» → «Ali»).
+    expect(intakeClientLabel('  GS777  Bobur ', { code: 'GS777' })).toBe('Bobur');
     expect(intakeClientLabel('OOO  Asia\nTrade', null)).toBe('OOO Asia Trade');
     expect(intakeClientLabel(' \n ', null)).toBeNull();
   });
