@@ -4136,6 +4136,261 @@
    "why": "base {code:GS8, phone:\"90 123 45 67\"}; new {phone:\"8 90 123 45 67\"}.",
    "source": "r4-probe typed",
    "weight": "regression"
+  },
+  {
+   "id": "c2056",
+   "input": "Rustam aka\nChilonzor 12\n90 123 45 67",
+   "opts": {
+    "prefix": "GS"
+   },
+   "expected": {
+    "equal": {
+     "phone": "90 123 45 67"
+    }
+   },
+   "said": "`nameDigits` (intake.ts) now refuses any «one word + 2+ digits» line (`ONE_WORD_COUNT`), and a digit line nameDigits refuses VOIDS the whole hint — so an address line with a district/quarter or shop number («Chilonzor 12», «Do'kon 45») throws away the phone/code on the next line. Main: {\"phone\": \"90 123 45 67\"}; worktree: null (and readCustomerText then calls it material, why 'shape'). (Tension: c1995/c1997 «Kurtka 50» / «Куртки 20» over a phone must still void — a district/venue word, not the digit count, tells them apart.)",
+   "why": "Main: {\"phone\": \"90 123 45 67\"}; worktree: null (and readCustomerText then calls it material, why 'shape'). (Tension: c1995/c1997 «Kurtka 50» / «Куртки 20» over a phone must still void — a district/venue word, not the digit count, tells them apart.)",
+   "realistic": "The Telegram-contact shape: name / district+quarter (Chilonzor-12 is a Tashkent kvartal) / phone.",
+   "source": "r5-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c2057",
+   "input": "Dilshod\nYunusobod 19\n+998 90 123 45 67",
+   "opts": {
+    "prefix": "GS"
+   },
+   "expected": {
+    "equal": {
+     "phone": "+998 90 123 45 67"
+    }
+   },
+   "said": "`nameDigits` (intake.ts) now refuses any «one word + 2+ digits» line (`ONE_WORD_COUNT`), and a digit line nameDigits refuses VOIDS the whole hint — so an address line with a district/quarter or shop number («Chilonzor 12», «Do'kon 45») throws away the phone/code on the next line. Main: {\"phone\": \"+998 90 123 45 67\"}; worktree: null (and readCustomerText then calls it material, why 'shape'). (Tension: c1995/c1997 «Kurtka 50» / «Куртки 20» over a phone must still void — a district/venue word, not the digit count, tells them apart.)",
+   "why": "Main: {\"phone\": \"+998 90 123 45 67\"}; worktree: null (and readCustomerText then calls it material, why 'shape'). (Tension: c1995/c1997 «Kurtka 50» / «Куртки 20» over a phone must still void — a district/venue word, not the digit count, tells them apart.)",
+   "realistic": "Name, Yunusobod 19th quarter, full phone — how a seller copies a client's delivery contact.",
+   "source": "r5-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c2058",
+   "input": "Rustam aka\nDo'kon 45\n+998 90 123 45 67",
+   "opts": {
+    "prefix": "GS"
+   },
+   "expected": {
+    "equal": {
+     "phone": "+998 90 123 45 67"
+    }
+   },
+   "said": "`nameDigits` (intake.ts) now refuses any «one word + 2+ digits» line (`ONE_WORD_COUNT`), and a digit line nameDigits refuses VOIDS the whole hint — so an address line with a district/quarter or shop number («Chilonzor 12», «Do'kon 45») throws away the phone/code on the next line. Main: {\"phone\": \"+998 90 123 45 67\"}; worktree: null (and readCustomerText then calls it material, why 'shape'). (Tension: c1995/c1997 «Kurtka 50» / «Куртки 20» over a phone must still void — a district/venue word, not the digit count, tells them apart.)",
+   "why": "Main: {\"phone\": \"+998 90 123 45 67\"}; worktree: null (and readCustomerText then calls it material, why 'shape'). (Tension: c1995/c1997 «Kurtka 50» / «Куртки 20» over a phone must still void — a district/venue word, not the digit count, tells them apart.)",
+   "realistic": "A market trader: name, shop number, phone.",
+   "source": "r5-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c2059",
+   "input": "Рустам\nОфис 12\n+998 90 123 45 67",
+   "opts": {
+    "prefix": "GS"
+   },
+   "expected": {
+    "equal": {
+     "phone": "+998 90 123 45 67"
+    }
+   },
+   "said": "`nameDigits` (intake.ts) now refuses any «one word + 2+ digits» line (`ONE_WORD_COUNT`), and a digit line nameDigits refuses VOIDS the whole hint — so an address line with a district/quarter or shop number («Chilonzor 12», «Do'kon 45») throws away the phone/code on the next line. Main: {\"phone\": \"+998 90 123 45 67\"}; worktree: null (and readCustomerText then calls it material, why 'shape'). (Tension: c1995/c1997 «Kurtka 50» / «Куртки 20» over a phone must still void — a district/venue word, not the digit count, tells them apart.)",
+   "why": "Main: {\"phone\": \"+998 90 123 45 67\"}; worktree: null (and readCustomerText then calls it material, why 'shape'). (Tension: c1995/c1997 «Kurtka 50» / «Куртки 20» over a phone must still void — a district/venue word, not the digit count, tells them apart.)",
+   "realistic": "Russian-typed contact with the office number.",
+   "source": "r5-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c2060",
+   "input": "GS777\nChilonzor 12",
+   "opts": {
+    "prefix": "GS"
+   },
+   "expected": {
+    "equal": {
+     "code": "GS777"
+    }
+   },
+   "said": "`nameDigits` (intake.ts) now refuses any «one word + 2+ digits» line (`ONE_WORD_COUNT`), and a digit line nameDigits refuses VOIDS the whole hint — so an address line with a district/quarter or shop number («Chilonzor 12», «Do'kon 45») throws away the phone/code on the next line. Main: {\"code\": \"GS777\"}; worktree: null (and readCustomerText then calls it material, why 'shape'). (Tension: c1995/c1997 «Kurtka 50» / «Куртки 20» over a phone must still void — a district/venue word, not the digit count, tells them apart.)",
+   "why": "Main: {\"code\": \"GS777\"}; worktree: null (and readCustomerText then calls it material, why 'shape'). (Tension: c1995/c1997 «Kurtka 50» / «Куртки 20» over a phone must still void — a district/venue word, not the digit count, tells them apart.)",
+   "realistic": "The client's code and where he is — the code alone must survive.",
+   "source": "r5-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c2061",
+   "input": "Mijoz: Asia Cargo Express, Bobur aka, Toshkent, +998 93 555 12 12",
+   "opts": {
+    "prefix": "GS"
+   },
+   "expected": {
+    "equal": {
+     "phone": "+998 93 555 12 12"
+    }
+   },
+   "said": "`contactShaped` (intake.ts, the >60-char contact line) now refuses any line holding a CARGO_TALK word (груз*, cargo, доставк*, …) or YUK_WORD — but the customer of a cargo company is very often a cargo/logistics firm itself, and «грузополучатель» / «yuk egasi» / «yuk qabul qiluvchi» are exactly the words that NAME the customer. Main: {\"phone\": \"+998 93 555 12 12\"}; worktree: null. (Tension: c1954/c1956 «У меня груз … хочу узнать стоимость доставки мой номер …» must stay null — that line also asks; a company name or a consignee label does not.)",
+   "why": "Main: {\"phone\": \"+998 93 555 12 12\"}; worktree: null. (Tension: c1954/c1956 «У меня груз … хочу узнать стоимость доставки мой номер …» must stay null — that line also asks; a company name or a consignee label does not.)",
+   "realistic": "Sub-forwarders («… Cargo») are a large share of the client book; the seller types the firm, the person, the city, the phone.",
+   "source": "r5-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c2062",
+   "input": "Грузополучатель: ООО Азия Карго, Ташкент, тел. +998 71 200 30 40",
+   "opts": {
+    "prefix": "GS"
+   },
+   "expected": {
+    "equal": {
+     "phone": "+998 71 200 30 40"
+    }
+   },
+   "said": "`contactShaped` (intake.ts, the >60-char contact line) now refuses any line holding a CARGO_TALK word (груз*, cargo, доставк*, …) or YUK_WORD — but the customer of a cargo company is very often a cargo/logistics firm itself, and «грузополучатель» / «yuk egasi» / «yuk qabul qiluvchi» are exactly the words that NAME the customer. Main: {\"phone\": \"+998 71 200 30 40\"}; worktree: null. (Tension: c1954/c1956 «У меня груз … хочу узнать стоимость доставки мой номер …» must stay null — that line also asks; a company name or a consignee label does not.)",
+   "why": "Main: {\"phone\": \"+998 71 200 30 40\"}; worktree: null. (Tension: c1954/c1956 «У меня груз … хочу узнать стоимость доставки мой номер …» must stay null — that line also asks; a company name or a consignee label does not.)",
+   "realistic": "The consignee line copied from a CMR/invoice — «Грузополучатель» is the document's own word for the customer.",
+   "source": "r5-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c2063",
+   "input": "Consignee: Asia Cargo LLC, Tashkent, Uzbekistan, tel +998 71 200 30 40",
+   "opts": {
+    "prefix": "GS"
+   },
+   "expected": {
+    "equal": {
+     "phone": "+998 71 200 30 40"
+    }
+   },
+   "said": "`contactShaped` (intake.ts, the >60-char contact line) now refuses any line holding a CARGO_TALK word (груз*, cargo, доставк*, …) or YUK_WORD — but the customer of a cargo company is very often a cargo/logistics firm itself, and «грузополучатель» / «yuk egasi» / «yuk qabul qiluvchi» are exactly the words that NAME the customer. Main: {\"phone\": \"+998 71 200 30 40\"}; worktree: null. (Tension: c1954/c1956 «У меня груз … хочу узнать стоимость доставки мой номер …» must stay null — that line also asks; a company name or a consignee label does not.)",
+   "why": "Main: {\"phone\": \"+998 71 200 30 40\"}; worktree: null. (Tension: c1954/c1956 «У меня груз … хочу узнать стоимость доставки мой номер …» must stay null — that line also asks; a company name or a consignee label does not.)",
+   "realistic": "The consignee block of a Chinese supplier's English commercial invoice, forwarded as text.",
+   "source": "r5-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c2064",
+   "input": "Yuk egasi Rustam aka Andijondan, telefon raqami +998 90 123 45 67",
+   "opts": {
+    "prefix": "GS"
+   },
+   "expected": {
+    "equal": {
+     "phone": "+998 90 123 45 67"
+    }
+   },
+   "said": "`contactShaped` (intake.ts, the >60-char contact line) now refuses any line holding a CARGO_TALK word (груз*, cargo, доставк*, …) or YUK_WORD — but the customer of a cargo company is very often a cargo/logistics firm itself, and «грузополучатель» / «yuk egasi» / «yuk qabul qiluvchi» are exactly the words that NAME the customer. Main: {\"phone\": \"+998 90 123 45 67\"}; worktree: null. (Tension: c1954/c1956 «У меня груз … хочу узнать стоимость доставки мой номер …» must stay null — that line also asks; a company name or a consignee label does not.)",
+   "why": "Main: {\"phone\": \"+998 90 123 45 67\"}; worktree: null. (Tension: c1954/c1956 «У меня груз … хочу узнать стоимость доставки мой номер …» must stay null — that line also asks; a company name or a consignee label does not.)",
+   "realistic": "«Owner of the cargo: Rustam from Andijan, phone …» — the Uzbek way to name the client.",
+   "source": "r5-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c2065",
+   "input": "Mijoz Bobur aka, yuk qabul qiluvchi, Toshkent, tel +998 90 123 45 67",
+   "opts": {
+    "prefix": "GS"
+   },
+   "expected": {
+    "equal": {
+     "phone": "+998 90 123 45 67"
+    }
+   },
+   "said": "`contactShaped` (intake.ts, the >60-char contact line) now refuses any line holding a CARGO_TALK word (груз*, cargo, доставк*, …) or YUK_WORD — but the customer of a cargo company is very often a cargo/logistics firm itself, and «грузополучатель» / «yuk egasi» / «yuk qabul qiluvchi» are exactly the words that NAME the customer. Main: {\"phone\": \"+998 90 123 45 67\"}; worktree: null. (Tension: c1954/c1956 «У меня груз … хочу узнать стоимость доставки мой номер …» must stay null — that line also asks; a company name or a consignee label does not.)",
+   "why": "Main: {\"phone\": \"+998 90 123 45 67\"}; worktree: null. (Tension: c1954/c1956 «У меня груз … хочу узнать стоимость доставки мой номер …» must stay null — that line also asks; a company name or a consignee label does not.)",
+   "realistic": "«Client Bobur, the one receiving the cargo, Tashkent, phone».",
+   "source": "r5-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c2066",
+   "input": "Получатель груза: Рустам Алиев, Андижан, тел +998 90 123 45 67",
+   "opts": {
+    "prefix": "GS"
+   },
+   "expected": {
+    "equal": {
+     "phone": "+998 90 123 45 67"
+    }
+   },
+   "said": "`contactShaped` (intake.ts, the >60-char contact line) now refuses any line holding a CARGO_TALK word (груз*, cargo, доставк*, …) or YUK_WORD — but the customer of a cargo company is very often a cargo/logistics firm itself, and «грузополучатель» / «yuk egasi» / «yuk qabul qiluvchi» are exactly the words that NAME the customer. Main: {\"phone\": \"+998 90 123 45 67\"}; worktree: null. (Tension: c1954/c1956 «У меня груз … хочу узнать стоимость доставки мой номер …» must stay null — that line also asks; a company name or a consignee label does not.)",
+   "why": "Main: {\"phone\": \"+998 90 123 45 67\"}; worktree: null. (Tension: c1954/c1956 «У меня груз … хочу узнать стоимость доставки мой номер …» must stay null — that line also asks; a company name or a consignee label does not.)",
+   "realistic": "Russian «recipient of the cargo» line — how a broker passes the client on.",
+   "source": "r5-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c2067",
+   "input": "Rustam, Chilonzor 12, kv: 45, tel +998 90 123 45 67",
+   "opts": {
+    "prefix": "GS"
+   },
+   "expected": {
+    "equal": {
+     "phone": "+998 90 123 45 67"
+    }
+   },
+   "said": "units.ts `UNIT_FIELD_BEFORE` now gives a bare number the unit of a word+colon before it, and «kv»/«кв» are m² unit words — so an address's APARTMENT field «kv: 45» makes `statesGoods` true (45 m²), and `parseClientHint` returns null for any text with a goods-stating line. Main: {\"phone\": \"+998 90 123 45 67\"}; worktree: null (readCustomerText: material, why 'goods').",
+   "why": "Main: {\"phone\": \"+998 90 123 45 67\"}; worktree: null (readCustomerText: material, why 'goods').",
+   "realistic": "A delivery contact with the flat number — «kv: 45» is how the apartment is written.",
+   "source": "r5-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c2068",
+   "input": "Рустам, ул. Навои 12, кв: 45, тел +998 90 123 45 67",
+   "opts": {
+    "prefix": "GS"
+   },
+   "expected": {
+    "equal": {
+     "phone": "+998 90 123 45 67"
+    }
+   },
+   "said": "units.ts `UNIT_FIELD_BEFORE` now gives a bare number the unit of a word+colon before it, and «kv»/«кв» are m² unit words — so an address's APARTMENT field «kv: 45» makes `statesGoods` true (45 m²), and `parseClientHint` returns null for any text with a goods-stating line. Main: {\"phone\": \"+998 90 123 45 67\"}; worktree: null (readCustomerText: material, why 'goods').",
+   "why": "Main: {\"phone\": \"+998 90 123 45 67\"}; worktree: null (readCustomerText: material, why 'goods').",
+   "realistic": "The same address in Russian: street, house, «кв: 45».",
+   "source": "r5-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c2069",
+   "input": "Rustam aka\nChilonzor 9, kv: 45\n+998 90 123 45 67",
+   "opts": {
+    "prefix": "GS"
+   },
+   "expected": {
+    "equal": {
+     "phone": "+998 90 123 45 67"
+    }
+   },
+   "said": "units.ts `UNIT_FIELD_BEFORE` now gives a bare number the unit of a word+colon before it, and «kv»/«кв» are m² unit words — so an address's APARTMENT field «kv: 45» makes `statesGoods` true (45 m²), and `parseClientHint` returns null for any text with a goods-stating line. Main: {\"phone\": \"+998 90 123 45 67\"}; worktree: null (readCustomerText: material, why 'goods').",
+   "why": "Main: {\"phone\": \"+998 90 123 45 67\"}; worktree: null (readCustomerText: material, why 'goods').",
+   "realistic": "Three-line contact: name / address with the flat / phone.",
+   "source": "r5-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c2070",
+   "input": "Рустам, дом: 12, кв: 45, +998 90 123 45 67",
+   "opts": {
+    "prefix": "GS"
+   },
+   "expected": {
+    "equal": {
+     "phone": "+998 90 123 45 67"
+    }
+   },
+   "said": "units.ts `UNIT_FIELD_BEFORE` now gives a bare number the unit of a word+colon before it, and «kv»/«кв» are m² unit words — so an address's APARTMENT field «kv: 45» makes `statesGoods` true (45 m²), and `parseClientHint` returns null for any text with a goods-stating line. Main: {\"phone\": \"+998 90 123 45 67\"}; worktree: null (readCustomerText: material, why 'goods').",
+   "why": "Main: {\"phone\": \"+998 90 123 45 67\"}; worktree: null (readCustomerText: material, why 'goods').",
+   "realistic": "Form-style address «дом: 12, кв: 45» copied from the client's message.",
+   "source": "r5-probe typed",
+   "weight": "regression"
   }
  ],
  "looksLikeMaterialCases": [
@@ -13763,6 +14018,254 @@
    "said": "«phone» left the list (for «Phone case»), so a contact line in English is a product with a code. base []; new [{name:\"Contact phone\",tnved}].",
    "why": "base []; new [{name:\"Contact phone\",tnved}].",
    "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c2039",
+   "input": "Товар: завтра скину",
+   "expected": {
+    "rows": [],
+    "count": 0,
+    "absent": [
+     "завтра скину"
+    ]
+   },
+   "said": "`statusBody` (intake-manual.ts) narrowed STATUS_ANY to STATUS_ALONE: a time/file/photo/invoice word now refuses the body only when it is the ONE word, and the multi-word sentence must end in an Uzbek predicate (STATUS_LAST/STATUS_ENDING) — a Russian/English status sentence never does, so it lands as a figureless PRODUCT named by the sentence. Main: []. Worktree: [{name:\"завтра скину\"}] — a product nobody named, which also satisfies missingFields' «goods» so the bot never asks for the real name.",
+   "why": "Main: []. Worktree: [{name:\"завтра скину\"}] — a product nobody named, which also satisfies missingFields' «goods» so the bot never asks for the real name.",
+   "realistic": "A seller answering the bot's goods question before the supplier's list arrives: «tomorrow I'll send it».",
+   "source": "r5-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c2040",
+   "input": "Товар: фото ниже",
+   "expected": {
+    "rows": [],
+    "count": 0,
+    "absent": [
+     "фото ниже"
+    ]
+   },
+   "said": "`statusBody` (intake-manual.ts) narrowed STATUS_ANY to STATUS_ALONE: a time/file/photo/invoice word now refuses the body only when it is the ONE word, and the multi-word sentence must end in an Uzbek predicate (STATUS_LAST/STATUS_ENDING) — a Russian/English status sentence never does, so it lands as a figureless PRODUCT named by the sentence. Main: []. Worktree: [{name:\"фото ниже\"}] — a product nobody named, which also satisfies missingFields' «goods» so the bot never asks for the real name.",
+   "why": "Main: []. Worktree: [{name:\"фото ниже\"}] — a product nobody named, which also satisfies missingFields' «goods» so the bot never asks for the real name.",
+   "realistic": "The commonest Telegram form: the label, then «photo below», then the photos as the next messages.",
+   "source": "r5-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c2041",
+   "input": "Товар: пришлю фото",
+   "expected": {
+    "rows": [],
+    "count": 0,
+    "absent": [
+     "пришлю фото"
+    ]
+   },
+   "said": "`statusBody` (intake-manual.ts) narrowed STATUS_ANY to STATUS_ALONE: a time/file/photo/invoice word now refuses the body only when it is the ONE word, and the multi-word sentence must end in an Uzbek predicate (STATUS_LAST/STATUS_ENDING) — a Russian/English status sentence never does, so it lands as a figureless PRODUCT named by the sentence. Main: []. Worktree: [{name:\"пришлю фото\"}] — a product nobody named, which also satisfies missingFields' «goods» so the bot never asks for the real name.",
+   "why": "Main: []. Worktree: [{name:\"пришлю фото\"}] — a product nobody named, which also satisfies missingFields' «goods» so the bot never asks for the real name.",
+   "realistic": "«I'll send a photo» — the seller has the goods only as pictures from the client.",
+   "source": "r5-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c2042",
+   "input": "Товар: позже уточню",
+   "expected": {
+    "rows": [],
+    "count": 0,
+    "absent": [
+     "позже уточню"
+    ]
+   },
+   "said": "`statusBody` (intake-manual.ts) narrowed STATUS_ANY to STATUS_ALONE: a time/file/photo/invoice word now refuses the body only when it is the ONE word, and the multi-word sentence must end in an Uzbek predicate (STATUS_LAST/STATUS_ENDING) — a Russian/English status sentence never does, so it lands as a figureless PRODUCT named by the sentence. Main: []. Worktree: [{name:\"позже уточню\"}] — a product nobody named, which also satisfies missingFields' «goods» so the bot never asks for the real name.",
+   "why": "Main: []. Worktree: [{name:\"позже уточню\"}] — a product nobody named, which also satisfies missingFields' «goods» so the bot never asks for the real name.",
+   "realistic": "«I'll clarify later» while the client is still deciding.",
+   "source": "r5-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c2043",
+   "input": "Товар: по инвойсу",
+   "expected": {
+    "rows": [],
+    "count": 0,
+    "absent": [
+     "по инвойсу"
+    ]
+   },
+   "said": "`statusBody` (intake-manual.ts) narrowed STATUS_ANY to STATUS_ALONE: a time/file/photo/invoice word now refuses the body only when it is the ONE word, and the multi-word sentence must end in an Uzbek predicate (STATUS_LAST/STATUS_ENDING) — a Russian/English status sentence never does, so it lands as a figureless PRODUCT named by the sentence. Main: []. Worktree: [{name:\"по инвойсу\"}] — a product nobody named, which also satisfies missingFields' «goods» so the bot never asks for the real name.",
+   "why": "Main: []. Worktree: [{name:\"по инвойсу\"}] — a product nobody named, which also satisfies missingFields' «goods» so the bot never asks for the real name.",
+   "realistic": "«As per the invoice» — the invoice PDF is forwarded right after the totals.",
+   "source": "r5-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c2044",
+   "input": "Наименование: согласно инвойсу",
+   "expected": {
+    "rows": [],
+    "count": 0,
+    "absent": [
+     "согласно инвойсу"
+    ]
+   },
+   "said": "`statusBody` (intake-manual.ts) narrowed STATUS_ANY to STATUS_ALONE: a time/file/photo/invoice word now refuses the body only when it is the ONE word, and the multi-word sentence must end in an Uzbek predicate (STATUS_LAST/STATUS_ENDING) — a Russian/English status sentence never does, so it lands as a figureless PRODUCT named by the sentence. Main: []. Worktree: [{name:\"согласно инвойсу\"}] — a product nobody named, which also satisfies missingFields' «goods» so the bot never asks for the real name.",
+   "why": "Main: []. Worktree: [{name:\"согласно инвойсу\"}] — a product nobody named, which also satisfies missingFields' «goods» so the bot never asks for the real name.",
+   "realistic": "The document phrasing Russian-speaking suppliers and brokers use: «per the invoice».",
+   "source": "r5-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c2045",
+   "input": "Товар: файл ниже",
+   "expected": {
+    "rows": [],
+    "count": 0,
+    "absent": [
+     "файл ниже"
+    ]
+   },
+   "said": "`statusBody` (intake-manual.ts) narrowed STATUS_ANY to STATUS_ALONE: a time/file/photo/invoice word now refuses the body only when it is the ONE word, and the multi-word sentence must end in an Uzbek predicate (STATUS_LAST/STATUS_ENDING) — a Russian/English status sentence never does, so it lands as a figureless PRODUCT named by the sentence. Main: []. Worktree: [{name:\"файл ниже\"}] — a product nobody named, which also satisfies missingFields' «goods» so the bot never asks for the real name.",
+   "why": "Main: []. Worktree: [{name:\"файл ниже\"}] — a product nobody named, which also satisfies missingFields' «goods» so the bot never asks for the real name.",
+   "realistic": "«file below» — the Excel packing list follows as a document.",
+   "source": "r5-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c2046",
+   "input": "Tovar: kecha yubordim",
+   "expected": {
+    "rows": [],
+    "count": 0,
+    "absent": [
+     "kecha yubordim"
+    ]
+   },
+   "said": "`statusBody` (intake-manual.ts) narrowed STATUS_ANY to STATUS_ALONE: a time/file/photo/invoice word now refuses the body only when it is the ONE word, and the multi-word sentence must end in an Uzbek predicate (STATUS_LAST/STATUS_ENDING) — a Russian/English status sentence never does, so it lands as a figureless PRODUCT named by the sentence. Main: []. Worktree: [{name:\"kecha yubordim\"}] — a product nobody named, which also satisfies missingFields' «goods» so the bot never asks for the real name.",
+   "why": "Main: []. Worktree: [{name:\"kecha yubordim\"}] — a product nobody named, which also satisfies missingFields' «goods» so the bot never asks for the real name.",
+   "realistic": "«I sent it yesterday» — the seller already forwarded the list in another chat.",
+   "source": "r5-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c2047",
+   "input": "Tovar: invoys bo'yicha",
+   "expected": {
+    "rows": [],
+    "count": 0,
+    "absent": [
+     "invoys bo'yicha"
+    ]
+   },
+   "said": "`statusBody` (intake-manual.ts) narrowed STATUS_ANY to STATUS_ALONE: a time/file/photo/invoice word now refuses the body only when it is the ONE word, and the multi-word sentence must end in an Uzbek predicate (STATUS_LAST/STATUS_ENDING) — a Russian/English status sentence never does, so it lands as a figureless PRODUCT named by the sentence. Main: []. Worktree: [{name:\"invoys bo'yicha\"}] — a product nobody named, which also satisfies missingFields' «goods» so the bot never asks for the real name.",
+   "why": "Main: []. Worktree: [{name:\"invoys bo'yicha\"}] — a product nobody named, which also satisfies missingFields' «goods» so the bot never asks for the real name.",
+   "realistic": "Uzbek «per the invoice».",
+   "source": "r5-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c2048",
+   "input": "Tovar nomi: keyin yozaman",
+   "expected": {
+    "rows": [],
+    "count": 0,
+    "absent": [
+     "keyin yozaman"
+    ]
+   },
+   "said": "`statusBody` (intake-manual.ts) narrowed STATUS_ANY to STATUS_ALONE: a time/file/photo/invoice word now refuses the body only when it is the ONE word, and the multi-word sentence must end in an Uzbek predicate (STATUS_LAST/STATUS_ENDING) — a Russian/English status sentence never does, so it lands as a figureless PRODUCT named by the sentence. Main: []. Worktree: [{name:\"keyin yozaman\"}] — a product nobody named, which also satisfies missingFields' «goods» so the bot never asks for the real name.",
+   "why": "Main: []. Worktree: [{name:\"keyin yozaman\"}] — a product nobody named, which also satisfies missingFields' «goods» so the bot never asks for the real name.",
+   "realistic": "«I'll write it later» — fills the template line and moves on to kub/kg.",
+   "source": "r5-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c2049",
+   "input": "Goods: will send photo later",
+   "expected": {
+    "rows": [],
+    "count": 0,
+    "absent": [
+     "will send photo later"
+    ]
+   },
+   "said": "`statusBody` (intake-manual.ts) narrowed STATUS_ANY to STATUS_ALONE: a time/file/photo/invoice word now refuses the body only when it is the ONE word, and the multi-word sentence must end in an Uzbek predicate (STATUS_LAST/STATUS_ENDING) — a Russian/English status sentence never does, so it lands as a figureless PRODUCT named by the sentence. Main: []. Worktree: [{name:\"will send photo later\"}] — a product nobody named, which also satisfies missingFields' «goods» so the bot never asks for the real name.",
+   "why": "Main: []. Worktree: [{name:\"will send photo later\"}] — a product nobody named, which also satisfies missingFields' «goods» so the bot never asks for the real name.",
+   "realistic": "A Chinese supplier's English reply forwarded verbatim to the bot.",
+   "source": "r5-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c2052",
+   "input": "Telefonga chexol 4202320000",
+   "expected": {
+    "rows": [
+     {
+      "name": "Telefonga chexol",
+      "tnvedCode": "4202320000"
+     }
+    ],
+    "count": 1
+   },
+   "said": "`contactWord` (intake-manual.ts) now reads CONTACT_FORMS in their CASES («telefonga», «telefonda», «raqamga», «nomerga») and any hyphen part, and `bareCodeOk` then refuses the bare 10-digit code as a phone/account number — but «Telefonga X» is «X for a phone», the Uzbek name of the accessory. Main: [{name:\"Telefonga chexol\", tnvedCode:\"4202320000\"}]; worktree: [] — the product and its code are lost. (Tension: the package's own «Telefonimga 9161234567» and c1988 «По номеру 9161234567» must stay [] — there the contact form is the WHOLE name; here it modifies the product noun after it.)",
+   "why": "Main: [{name:\"Telefonga chexol\", tnvedCode:\"4202320000\"}]; worktree: [] — the product and its code are lost. (Tension: the package's own «Telefonimga 9161234567» and c1988 «По номеру 9161234567» must stay [] — there the contact form is the WHOLE name; here it modifies the product noun after it.)",
+   "realistic": "Phone cases — one of the commonest Yiwu imports — named the Uzbek way («a case for the phone») with the TNVED code the seller copied from the classifier.",
+   "source": "r5-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c2053",
+   "input": "Telefonga zaryadka 8504405500",
+   "expected": {
+    "rows": [
+     {
+      "name": "Telefonga zaryadka",
+      "tnvedCode": "8504405500"
+     }
+    ],
+    "count": 1
+   },
+   "said": "`contactWord` (intake-manual.ts) now reads CONTACT_FORMS in their CASES («telefonga», «telefonda», «raqamga», «nomerga») and any hyphen part, and `bareCodeOk` then refuses the bare 10-digit code as a phone/account number — but «Telefonga X» is «X for a phone», the Uzbek name of the accessory. Main: [{name:\"Telefonga zaryadka\", tnvedCode:\"8504405500\"}]; worktree: [] — the product and its code are lost. (Tension: the package's own «Telefonimga 9161234567» and c1988 «По номеру 9161234567» must stay [] — there the contact form is the WHOLE name; here it modifies the product noun after it.)",
+   "why": "Main: [{name:\"Telefonga zaryadka\", tnvedCode:\"8504405500\"}]; worktree: [] — the product and its code are lost. (Tension: the package's own «Telefonimga 9161234567» and c1988 «По номеру 9161234567» must stay [] — there the contact form is the WHOLE name; here it modifies the product noun after it.)",
+   "realistic": "Phone chargers, typed with their code 8504405500.",
+   "source": "r5-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c2054",
+   "input": "Telefonga ushlagich 3926909709",
+   "expected": {
+    "rows": [
+     {
+      "name": "Telefonga ushlagich",
+      "tnvedCode": "3926909709"
+     }
+    ],
+    "count": 1
+   },
+   "said": "`contactWord` (intake-manual.ts) now reads CONTACT_FORMS in their CASES («telefonga», «telefonda», «raqamga», «nomerga») and any hyphen part, and `bareCodeOk` then refuses the bare 10-digit code as a phone/account number — but «Telefonga X» is «X for a phone», the Uzbek name of the accessory. Main: [{name:\"Telefonga ushlagich\", tnvedCode:\"3926909709\"}]; worktree: [] — the product and its code are lost. (Tension: the package's own «Telefonimga 9161234567» and c1988 «По номеру 9161234567» must stay [] — there the contact form is the WHOLE name; here it modifies the product noun after it.)",
+   "why": "Main: [{name:\"Telefonga ushlagich\", tnvedCode:\"3926909709\"}]; worktree: [] — the product and its code are lost. (Tension: the package's own «Telefonimga 9161234567» and c1988 «По номеру 9161234567» must stay [] — there the contact form is the WHOLE name; here it modifies the product noun after it.)",
+   "realistic": "Car phone holders, typed with their code.",
+   "source": "r5-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c2055",
+   "input": "Mobil-telefon 8517130000",
+   "expected": {
+    "rows": [
+     {
+      "name": "Mobil-telefon",
+      "tnvedCode": "8517130000"
+     }
+    ],
+    "count": 1
+   },
+   "said": "`contactWord` (intake-manual.ts) now reads CONTACT_FORMS in their CASES («telefonga», «telefonda», «raqamga», «nomerga») and any hyphen part, and `bareCodeOk` then refuses the bare 10-digit code as a phone/account number — but «Telefonga X» is «X for a phone», the Uzbek name of the accessory. Main: [{name:\"Mobil-telefon\", tnvedCode:\"8517130000\"}]; worktree: [] — the product and its code are lost. (Tension: the package's own «Telefonimga 9161234567» and c1988 «По номеру 9161234567» must stay [] — there the contact form is the WHOLE name; here it modifies the product noun after it.)",
+   "why": "Main: [{name:\"Mobil-telefon\", tnvedCode:\"8517130000\"}]; worktree: [] — the product and its code are lost. (Tension: the package's own «Telefonimga 9161234567» and c1988 «По номеру 9161234567» must stay [] — there the contact form is the WHOLE name; here it modifies the product noun after it.)",
+   "realistic": "Mobile phones (8517130000) written hyphenated, as on many Uzbek price lists.",
+   "source": "r5-probe typed",
    "weight": "regression"
   }
  ],
@@ -24812,6 +25315,512 @@
    "why": "Base: volumeM3 null. New: 500 m³.",
    "source": "r4-probe sheets",
    "weight": "regression"
+  },
+  {
+   "id": "c2028",
+   "input": [
+    [
+     "MARKS",
+     "DESCRIPTION",
+     "QTY (PCS)",
+     "CTNS",
+     "N.W. (KGS)",
+     "G.W. (KGS)",
+     "MEASUREMENT (CU.M)"
+    ],
+    [
+     "GS777",
+     "Office chair",
+     100,
+     10,
+     150,
+     160,
+     2.5
+    ],
+    [
+     "GS777",
+     "Writing desk",
+     20,
+     4,
+     200,
+     210,
+     1.8
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Office chair",
+       "quantity": 100,
+       "weightKg": 150,
+       "volumeM3": 2.5
+      },
+      {
+       "name": "Writing desk",
+       "quantity": 20,
+       "weightKg": 200,
+       "volumeM3": 1.8
+      }
+     ],
+     "count": 2
+    },
+    "headerRow": 0
+   },
+   "said": "OWN_UNIT refuses every «Meas/Vol» header carrying a bracket, so a CUBIC-METRE unit the VOLUME_KEYS do not spell («CU.M») loses the line's volume. Main: volumeM3 2.5 / 1.8. Worktree: volumeM3 null on both lines.",
+   "why": "Main: volumeM3 2.5 / 1.8. Worktree: volumeM3 null on both lines.",
+   "realistic": "«MEASUREMENT (CU.M)» is the stock volume header of Chinese export packing lists (Yiwu/Guangzhou forwarders' templates); the seller forwards that PL to the bot as-is.",
+   "source": "r5-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c2029",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "Ctns",
+     "Total G.W.",
+     "Total Meas. (Cu.M)"
+    ],
+    [
+     "LED panel 600x600",
+     500,
+     50,
+     600,
+     3.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "LED panel 600x600",
+       "quantity": 500,
+       "weightKg": 600,
+       "volumeM3": 3.2
+      }
+     ],
+     "count": 1
+    },
+    "headerRow": 0
+   },
+   "said": "Same rule: «Total Meas. (Cu.M)» is cubic metres but the bracket alone makes OWN_UNIT drop it. Main: volumeM3 3.2. Worktree: volumeM3 null.",
+   "why": "Main: volumeM3 3.2. Worktree: volumeM3 null.",
+   "realistic": "Chinese factory packing list in English with totals columns, «Total Meas. (Cu.M)» spelled with capitals per word as Excel templates do.",
+   "source": "r5-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c2030",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W.(KG)",
+     "MEAS (CUBIC METER)"
+    ],
+    [
+     "Plastic chair",
+     1000,
+     2000,
+     12.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Plastic chair",
+       "quantity": 1000,
+       "weightKg": 2000,
+       "volumeM3": 12.5
+      }
+     ],
+     "count": 1
+    },
+    "headerRow": 0
+   },
+   "said": "«(CUBIC METER)» names cubic metres in words; OWN_UNIT refuses it like «(CM)». Main: volumeM3 12.5. Worktree: volumeM3 null.",
+   "why": "Main: volumeM3 12.5. Worktree: volumeM3 null.",
+   "realistic": "A supplier writing the unit in words in the PL header — common on hand-made English packing lists from small Chinese factories.",
+   "source": "r5-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c2031",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "Gross weight (kg)",
+     "Measurement (cu m)"
+    ],
+    [
+     "Plastic chair",
+     1000,
+     2000,
+     12.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Plastic chair",
+       "quantity": 1000,
+       "weightKg": 2000,
+       "volumeM3": 12.5
+      }
+     ],
+     "count": 1
+    },
+    "headerRow": 0
+   },
+   "said": "«(cu m)» is cubic metres; the worktree's bracket test drops the column. Main: volumeM3 12.5. Worktree: volumeM3 null.",
+   "why": "Main: volumeM3 12.5. Worktree: volumeM3 null.",
+   "realistic": "Lower-case «cu m» spelling of a packing list's volume column, as typed by a forwarder's office.",
+   "source": "r5-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c2032",
+   "input": [
+    [
+     "№",
+     "Description",
+     "Наименование товара на русском языке",
+     "Код ТН ВЭД",
+     "Кол-во",
+     "Вес нетто, кг",
+     "Сумма, USD"
+    ],
+    [
+     1,
+     "Mesh office chair, black, with armrest",
+     "Кресло офисное",
+     "9401300000",
+     100,
+     1500,
+     2500
+    ],
+    [
+     2,
+     "Computer desk 1.2 m, white",
+     "Стол компьютерный",
+     "9403300000",
+     50,
+     2000,
+     2000
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Кресло офисное",
+       "quantity": 100,
+       "tnvedCode": "9401300000"
+      },
+      {
+       "name": "Стол компьютерный",
+       "quantity": 50,
+       "tnvedCode": "9403300000"
+      }
+     ],
+     "count": 2
+    },
+    "headerRow": 0
+   },
+   "said": "namesTheProduct demands EVERY word of the head be a naming word, so «Наименование товара на русском языке» (a name qualified by its LANGUAGE) falls to rung 2, where the English «Description» to its left wins — the round-1 rule (a name header beside a description is the name) broken. Main: «Кресло офисное» / «Стол компьютерный». Worktree: the English spec «Mesh office chair, black, with armrest» / «Computer desk 1.2 m, white».",
+   "why": "Main: «Кресло офисное» / «Стол компьютерный». Worktree: the English spec «Mesh office chair, black, with armrest» / «Computer desk 1.2 m, white».",
+   "realistic": "A China→Uzbekistan customs specification: the supplier's English description column with the VED agent's «Наименование товара на русском языке» added beside it — the standard bilingual spec layout.",
+   "source": "r5-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c2033",
+   "input": [
+    [
+     "No.",
+     "Picture",
+     "Description",
+     "Name in Russian",
+     "Qty",
+     "Price",
+     "Amount"
+    ],
+    [
+     1,
+     null,
+     "Mesh office chair, black",
+     "Кресло офисное сетка",
+     100,
+     25,
+     2500
+    ],
+    [
+     2,
+     null,
+     "Computer desk 1.2m",
+     "Стол компьютерный",
+     50,
+     40,
+     2000
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Кресло офисное сетка",
+       "quantity": 100
+      },
+      {
+       "name": "Стол компьютерный",
+       "quantity": 50
+      }
+     ],
+     "count": 2
+    },
+    "headerRow": 0
+   },
+   "said": "«Name in Russian»: «in» and «russian» are not naming words, so the header drops below the description rung. Main: the Russian names. Worktree: «Mesh office chair, black» / «Computer desk 1.2m».",
+   "why": "Main: the Russian names. Worktree: «Mesh office chair, black» / «Computer desk 1.2m».",
+   "realistic": "A Chinese PI the supplier filled with a «Name in Russian» column for a CIS buyer, the description column left of it as on every Alibaba PI template.",
+   "source": "r5-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c2034",
+   "input": [
+    [
+     "序号",
+     "图片",
+     "产品描述",
+     "中文品名",
+     "英文品名",
+     "数量",
+     "单价",
+     "金额"
+    ],
+    [
+     1,
+     null,
+     "网布 黑色 带扶手",
+     "办公椅",
+     "Office chair",
+     100,
+     25,
+     2500
+    ],
+    [
+     2,
+     null,
+     "钢木 1.2米",
+     "电脑桌",
+     "Computer desk",
+     50,
+     40,
+     2000
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "办公椅",
+       "quantity": 100
+      },
+      {
+       "name": "电脑桌",
+       "quantity": 50
+      }
+     ],
+     "count": 2
+    },
+    "headerRow": 0
+   },
+   "said": "«中文品名» opens with 中文, so neither the 品名-prefix test nor hanRunOf(NAMING_HAN) accepts it; rung 2 then takes the leftmost goods column, «产品描述». Main: 办公椅 / 电脑桌. Worktree: the spec «网布 黑色 带扶手» / «钢木 1.2米» as the product.",
+   "why": "Main: 办公椅 / 电脑桌. Worktree: the spec «网布 黑色 带扶手» / «钢木 1.2米» as the product.",
+   "realistic": "A Chinese factory's bilingual PI: 产品描述 (spec) then 中文品名 / 英文品名 — the Chinese customs-name column every export declaration needs.",
+   "source": "r5-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c2035",
+   "input": [
+    [
+     "Маркировка",
+     "Описание",
+     "Наименование груза",
+     "Кол-во мест",
+     "Вес брутто, кг",
+     "Объём, м3"
+    ],
+    [
+     "GS777",
+     "зимняя, синтепон",
+     "Куртки женские",
+     15,
+     160,
+     2.5
+    ],
+    [
+     "GS777",
+     "джинс",
+     "Брюки мужские",
+     10,
+     85,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртки женские",
+       "weightKg": 160,
+       "volumeM3": 2.5
+      },
+      {
+       "name": "Брюки мужские",
+       "weightKg": 85,
+       "volumeM3": 1.2
+      }
+     ],
+     "count": 2
+    },
+    "headerRow": 0
+   },
+   "said": "«Наименование груза» (груз is not in NAMING_WORD) drops to rung 2 and «Описание» to its left becomes the name. Main: «Куртки женские» / «Брюки мужские». Worktree: «зимняя, синтепон» / «джинс».",
+   "why": "Main: «Куртки женские» / «Брюки мужские». Worktree: «зимняя, синтепон» / «джинс».",
+   "realistic": "«Наименование груза» is the logistics term (CMR / cargo manifest) a forwarder's Russian packing list uses; the material note sits in an «Описание» column.",
+   "source": "r5-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c2036",
+   "input": [
+    [
+     "Заявка от 15.10.2026"
+    ],
+    [
+     "Кресло офисное"
+    ],
+    [
+     "Светильник накладной"
+    ],
+    [
+     "Стол письменный 5 шт 200 кг"
+    ],
+    [
+     "Шкаф 2 шт 120 кг"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Кресло офисное"
+      },
+      {
+       "name": "Светильник накладной"
+      },
+      {
+       "name": "Стол письменный 5 шт 200 кг"
+      },
+      {
+       "name": "Шкаф 2 шт 120 кг"
+      }
+     ],
+     "count": 4
+    },
+    "headerRow": null
+   },
+   "said": "TITLE_LINE now matches «накладн» anywhere in a line, and listOpening lets a «title» stand after one other line — so the product «Светильник накладной» becomes the head and takes «Кресло офисное» above it with it. Main: the dated title dropped, all four products kept. Worktree: «Кресло офисное» and «Светильник накладной» lost.",
+   "why": "Main: the dated title dropped, all four products kept. Worktree: «Кресло офисное» and «Светильник накладной» lost.",
+   "realistic": "A seller's one-column list in Excel: a dated «Заявка» line, then items — some still without quantity — including a surface-mounted lamp («светильник накладной», a standard electrical-goods name).",
+   "source": "r5-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c2037",
+   "input": [
+    [
+     "Накладные ресницы"
+    ],
+    [
+     "Клей для ресниц 200 шт 10 кг"
+    ],
+    [
+     "Пинцет 100 шт 3 кг"
+    ],
+    [
+     "Кисточки для макияжа 500 шт 5 кг"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Накладные ресницы"
+      },
+      {
+       "name": "Клей для ресниц 200 шт 10 кг"
+      },
+      {
+       "name": "Пинцет 100 шт 3 кг"
+      },
+      {
+       "name": "Кисточки для макияжа 500 шт 5 кг"
+      }
+     ],
+     "count": 4
+    },
+    "headerRow": null
+   },
+   "said": "«Накладные ресницы» (false eyelashes) matches TITLE_LINE's «накладн» (a word meant for «накладная», the waybill), so the first product is read as the list's title and dropped. Main: four products. Worktree: three, the eyelashes gone.",
+   "why": "Main: four products. Worktree: three, the eyelashes gone.",
+   "realistic": "Cosmetics from Yiwu are a staple cargo; a seller lists «Накладные ресницы» first, quantity not yet known, the rest with pieces and kilos.",
+   "source": "r5-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c2038",
+   "input": [
+    [
+     "Накладные ногти - 3000"
+    ],
+    [
+     "Гель-лак 1000 шт 40 кг"
+    ],
+    [
+     "Лампа УФ 50 шт 25 кг"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Накладные ногти - 3000"
+      },
+      {
+       "name": "Гель-лак 1000 шт 40 кг"
+      },
+      {
+       "name": "Лампа УФ 50 шт 25 кг"
+      }
+     ],
+     "count": 3
+    },
+    "headerRow": null
+   },
+   "said": "A count with no unit («- 3000») carries no figure, so the line is a head candidate and TITLE_LINE's «накладн» takes it for a waybill title. Main: three products. Worktree: «Накладные ногти - 3000» dropped.",
+   "why": "Main: three products. Worktree: «Накладные ногти - 3000» dropped.",
+   "realistic": "Sellers type a bare count after a dash («- 3000») on one line and units on the others; press-on nails are a common nail-salon cargo from China.",
+   "source": "r5-probe sheets",
+   "weight": "regression"
   }
  ],
  "parseGoodsLineCases": [
@@ -25396,6 +26405,58 @@
    "why": "accepted (R3-T5 fix)",
    "source": "T-r1 T5",
    "weight": "pinned"
+  },
+  {
+   "id": "c2071",
+   "input": "Pitsa korobka: 5000",
+   "expected": {
+    "name": "Pitsa korobka",
+    "quantity": 5000
+   },
+   "said": "units.ts `UNIT_FIELD_BEFORE`: a word+colon before a bare number now names its unit, and the box words («korobka», «box», «quti») are CARTON units — so a product whose NAME ends in that word («Pitsa korobka», «Lunch box») is read as N cartons with no pieces (`cartons_only`), the name cut to its first word. This reaches the seller's quick textarea (`textRows`) and the workspace paste. Main: name «Pitsa korobka», quantity 5000; worktree: name «Pitsa», quantity null, unitWords [box word], problems ['cartons_only']. (c0347 «Мест: 45» — the label word alone — is what the rule exists for; here a product name precedes the box word.)",
+   "why": "Main: name «Pitsa korobka», quantity 5000; worktree: name «Pitsa», quantity null, unitWords [box word], problems ['cartons_only']. (c0347 «Мест: 45» — the label word alone — is what the rule exists for; here a product name precedes the box word.)",
+   "realistic": "Pizza boxes are bought by the thousand from China; a seller lists them «nomi: soni».",
+   "source": "r5-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c2072",
+   "input": "Lunch box: 500",
+   "expected": {
+    "name": "Lunch box",
+    "quantity": 500
+   },
+   "said": "units.ts `UNIT_FIELD_BEFORE`: a word+colon before a bare number now names its unit, and the box words («korobka», «box», «quti») are CARTON units — so a product whose NAME ends in that word («Pitsa korobka», «Lunch box») is read as N cartons with no pieces (`cartons_only`), the name cut to its first word. This reaches the seller's quick textarea (`textRows`) and the workspace paste. Main: name «Lunch box», quantity 500; worktree: name «Lunch», quantity null, unitWords [box word], problems ['cartons_only']. (c0347 «Мест: 45» — the label word alone — is what the rule exists for; here a product name precedes the box word.)",
+   "why": "Main: name «Lunch box», quantity 500; worktree: name «Lunch», quantity null, unitWords [box word], problems ['cartons_only']. (c0347 «Мест: 45» — the label word alone — is what the rule exists for; here a product name precedes the box word.)",
+   "realistic": "Lunch boxes (ланч-бокс) — a staple household import, typed in English as on the supplier's list.",
+   "source": "r5-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c2073",
+   "input": "Sovg'a korobka: 300",
+   "expected": {
+    "name": "Sovg'a korobka",
+    "quantity": 300
+   },
+   "said": "units.ts `UNIT_FIELD_BEFORE`: a word+colon before a bare number now names its unit, and the box words («korobka», «box», «quti») are CARTON units — so a product whose NAME ends in that word («Pitsa korobka», «Lunch box») is read as N cartons with no pieces (`cartons_only`), the name cut to its first word. This reaches the seller's quick textarea (`textRows`) and the workspace paste. Main: name «Sovg'a korobka», quantity 300; worktree: name «Sovg'a», quantity null, unitWords [box word], problems ['cartons_only']. (c0347 «Мест: 45» — the label word alone — is what the rule exists for; here a product name precedes the box word.)",
+   "why": "Main: name «Sovg'a korobka», quantity 300; worktree: name «Sovg'a», quantity null, unitWords [box word], problems ['cartons_only']. (c0347 «Мест: 45» — the label word alone — is what the rule exists for; here a product name precedes the box word.)",
+   "realistic": "Gift boxes, Uzbek, «name: count».",
+   "source": "r5-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c2074",
+   "input": "Tool box: 100",
+   "expected": {
+    "name": "Tool box",
+    "quantity": 100
+   },
+   "said": "units.ts `UNIT_FIELD_BEFORE`: a word+colon before a bare number now names its unit, and the box words («korobka», «box», «quti») are CARTON units — so a product whose NAME ends in that word («Pitsa korobka», «Lunch box») is read as N cartons with no pieces (`cartons_only`), the name cut to its first word. This reaches the seller's quick textarea (`textRows`) and the workspace paste. Main: name «Tool box», quantity 100; worktree: name «Tool», quantity null, unitWords [box word], problems ['cartons_only']. (c0347 «Мест: 45» — the label word alone — is what the rule exists for; here a product name precedes the box word.)",
+   "why": "Main: name «Tool box», quantity 100; worktree: name «Tool», quantity null, unitWords [box word], problems ['cartons_only']. (c0347 «Мест: 45» — the label word alone — is what the rule exists for; here a product name precedes the box word.)",
+   "realistic": "Tool boxes from a hardware order.",
+   "source": "r5-probe typed",
+   "weight": "regression"
   }
  ],
  "parseManualFactsCases": [
@@ -26010,6 +27071,52 @@
    "said": "Same in Russian: the shipment line becomes the only «product». base goods []; new [{name:\"Мой груз\",12 m³,3500 kg}].",
    "why": "base goods []; new [{name:\"Мой груз\",12 m³,3500 kg}].",
    "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c2050",
+   "input": "Товар: по инвойсу\nМест: 45\nВес: 1500 кг\nОбъем: 12 куб",
+   "expected": {
+    "goods": {
+     "rows": [],
+     "count": 0
+    },
+    "weightKg": 1500,
+    "volumeM3": 12,
+    "missing": {
+     "section": "rastamojka",
+     "equal": [
+      "goods"
+     ]
+    }
+   },
+   "said": "`statusBody` (intake-manual.ts) narrowed STATUS_ANY to STATUS_ALONE: a time/file/photo/invoice word now refuses the body only when it is the ONE word, and the multi-word sentence must end in an Uzbek predicate (STATUS_LAST/STATUS_ENDING) — a Russian/English status sentence never does, so it lands as a figureless PRODUCT named by the sentence. End to end: main goods [] and missingFields('rastamojka') = ['goods'] (the bot asks the goods); worktree goods [{name:\"по инвойсу\"}] and missingFields = [] — the job lands with the product «по инвойсу».",
+   "why": "End to end: main goods [] and missingFields('rastamojka') = ['goods'] (the bot asks the goods); worktree goods [{name:\"по инвойсу\"}] and missingFields = [] — the job lands with the product «по инвойсу».",
+   "realistic": "A broker's typical four-line message: «goods per invoice», places, gross weight, volume — the invoice follows as a file.",
+   "source": "r5-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c2051",
+   "input": "Assalomu alaykum\nTovar: ertaga aniq bo'ladi\n12 kub 3500 kg\nGuangzhou - Toshkent",
+   "expected": {
+    "goods": {
+     "rows": [],
+     "count": 0
+    },
+    "weightKg": 3500,
+    "volumeM3": 12,
+    "missing": {
+     "section": "rastamojka",
+     "equal": [
+      "goods"
+     ]
+    }
+   },
+   "said": "`statusBody` (intake-manual.ts) narrowed STATUS_ANY to STATUS_ALONE: a time/file/photo/invoice word now refuses the body only when it is the ONE word, and the multi-word sentence must end in an Uzbek predicate (STATUS_LAST/STATUS_ENDING) — a Russian/English status sentence never does, so it lands as a figureless PRODUCT named by the sentence. Main: goods [], missing ['goods']; worktree: goods [{name:\"ertaga aniq bo'ladi\"}], missing [] — «it'll be clear tomorrow» becomes the cargo.",
+   "why": "Main: goods [], missing ['goods']; worktree: goods [{name:\"ertaga aniq bo'ladi\"}], missing [] — «it'll be clear tomorrow» becomes the cargo.",
+   "realistic": "A seller who knows the truckload's size but not yet its contents: greeting, «goods: clear tomorrow», totals, route.",
+   "source": "r5-probe typed",
    "weight": "regression"
   }
  ],
@@ -27071,6 +28178,96 @@
    "said": "Multi-line hint: base CONTACT_LABEL had `код(?:\\s+клиента)?` and dropped the line «Код клиента 777» as the code's own number; the new CODE_LABEL lists `код` and `клиент` but not «код клиента», so the cut never happens and the line stays in the lead's name. The hint IS {code:'GS777'} in the real flow: the typed package's parseClientHint now reads «Код клиента 777» as GS777 (corpus c1587, lead R3-T7), so this is exactly the pair the bot builds. base \"Иван\"; new \"Иван Код клиента 777\".",
    "why": "base \"Иван\"; new \"Иван Код клиента 777\".",
    "source": "r4-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2077",
+   "input": {
+    "raw": "Sardor WhatsApp +998 90 123 45 67",
+    "hint": {
+     "phone": "+998 90 123 45 67"
+    }
+   },
+   "expected": "Sardor",
+   "said": "nameOwnWord keeps a capitalised contact word of 4+ letters standing between a capitalised name word and the phone, as if it were a shop's own word («Smart Mobile»). A messenger's brand name is ALWAYS capitalised (the phone's autocorrect writes «WhatsApp», «Telegram», «Viber»), so the label that says which app the number is on joins the lead's name. main \"Sardor\"; worktree \"Sardor WhatsApp\".",
+   "why": "main \"Sardor\"; worktree \"Sardor WhatsApp\".",
+   "realistic": "A seller types the prospect's name and the WhatsApp number in one line; the keyboard capitalises «WhatsApp» by itself.",
+   "source": "r5-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2078",
+   "input": {
+    "raw": "Bobur Telegram @bobur_uz +998 93 555 12 34",
+    "hint": {
+     "phone": "+998 93 555 12 34"
+    }
+   },
+   "expected": "Bobur",
+   "said": "nameOwnWord keeps a capitalised contact word of 4+ letters standing between a capitalised name word and the phone, as if it were a shop's own word («Smart Mobile»). A messenger's brand name is ALWAYS capitalised (the phone's autocorrect writes «WhatsApp», «Telegram», «Viber»), so the label that says which app the number is on joins the lead's name. The handle is cut too, the brand word stays. main \"Bobur\"; worktree \"Bobur Telegram\".",
+   "why": "main \"Bobur\"; worktree \"Bobur Telegram\".",
+   "realistic": "Name, Telegram handle and number — the way a customer's contact card is copied out of a chat.",
+   "source": "r5-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2079",
+   "input": {
+    "raw": "Jasur Viber +998 97 777 88 99",
+    "hint": {
+     "phone": "+998 97 777 88 99"
+    }
+   },
+   "expected": "Jasur",
+   "said": "nameOwnWord keeps a capitalised contact word of 4+ letters standing between a capitalised name word and the phone, as if it were a shop's own word («Smart Mobile»). A messenger's brand name is ALWAYS capitalised (the phone's autocorrect writes «WhatsApp», «Telegram», «Viber»), so the label that says which app the number is on joins the lead's name. main \"Jasur\"; worktree \"Jasur Viber\".",
+   "why": "main \"Jasur\"; worktree \"Jasur Viber\".",
+   "realistic": "Older traders in Uzbekistan still give a Viber number; the name and «Viber» typed before it on one line.",
+   "source": "r5-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2080",
+   "input": {
+    "raw": "Иван WhatsApp +998 90 123 45 67",
+    "hint": {
+     "phone": "+998 90 123 45 67"
+    }
+   },
+   "expected": "Иван",
+   "said": "nameOwnWord keeps a capitalised contact word of 4+ letters standing between a capitalised name word and the phone, as if it were a shop's own word («Smart Mobile»). A messenger's brand name is ALWAYS capitalised (the phone's autocorrect writes «WhatsApp», «Telegram», «Viber»), so the label that says which app the number is on joins the lead's name. Cyrillic name, Latin brand: the neighbour test only asks for a capital letter. main \"Иван\"; worktree \"Иван WhatsApp\".",
+   "why": "main \"Иван\"; worktree \"Иван WhatsApp\".",
+   "realistic": "A Russian-speaking seller writes the client's name in Cyrillic and the app's name as the phone shows it.",
+   "source": "r5-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2081",
+   "input": {
+    "raw": "Sardor Toshkent WhatsApp +998 90 123 45 67",
+    "hint": {
+     "phone": "+998 90 123 45 67"
+    }
+   },
+   "expected": "Sardor Toshkent",
+   "said": "nameOwnWord keeps a capitalised contact word of 4+ letters standing between a capitalised name word and the phone, as if it were a shop's own word («Smart Mobile»). A messenger's brand name is ALWAYS capitalised (the phone's autocorrect writes «WhatsApp», «Telegram», «Viber»), so the label that says which app the number is on joins the lead's name. Name + city before the label, the commonest prospect line. main \"Sardor Toshkent\"; worktree \"Sardor Toshkent WhatsApp\".",
+   "why": "main \"Sardor Toshkent\"; worktree \"Sardor Toshkent WhatsApp\".",
+   "realistic": "Name, city and the WhatsApp number — how a seller notes a new prospect from an advert.",
+   "source": "r5-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2082",
+   "input": {
+    "raw": "SARDOR TELEFON 90 123 45 67",
+    "hint": {
+     "phone": "90 123 45 67"
+    }
+   },
+   "expected": "SARDOR",
+   "said": "nameOwnWord's capital test is passed by every word of an all-caps line, so the label «TELEFON» (4+ letters, no colon) is read as a shop's word. main \"SARDOR\"; worktree \"SARDOR TELEFON\".",
+   "why": "main \"SARDOR\"; worktree \"SARDOR TELEFON\".",
+   "realistic": "Some sellers type with Caps Lock on («SARDOR TELEFON 90 …»), the label written without a colon.",
+   "source": "r5-probe collector",
    "weight": "regression"
   }
  ],
@@ -28711,6 +29908,122 @@
    "said": "readCustomerText now refuses `couldBeCustomer` to a one-line text with no hint that `figureRow` calls a row (a word + ≥2 bare figures, not all 2-3-digit groups). The insisting repeat (c1052 «Bobur 77», c1056 «Sardor 1985») is then lost for a customer named by a word and TWO numbers — a Tashkent wholesale-market stall («block 4, stall 115») or a phone written in 4-digit groups — and the repeat is answered «Tovar ro‘yxati mijoz bo‘la olmaydi» about text with no goods in it. c1612 («Kurtka 1200 50 3000», three figures) stays a row; these carry two. base: material then customer, couldBeCustomer true; new: material, material, couldBeCustomer false, why 'goods'. A Chinese 8-digit landline written 4-4 (parseClientHint reads no phone in it, so only the repeat can name him).",
    "why": "base: material then customer, couldBeCustomer true; new: material, material, couldBeCustomer false, why 'goods'. A Chinese 8-digit landline written 4-4 (parseClientHint reads no phone in it, so only the repeat can name him).",
    "source": "r4-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2075",
+   "input": {
+    "text": "Kurtka 300 1200",
+    "prefix": "GS",
+    "sends": 2
+   },
+   "expected": {
+    "first": "material",
+    "second": "material",
+    "couldBeCustomer": false,
+    "why": "goods"
+   },
+   "said": "`figureRow` (intake-manual.ts) now refuses the insisting repeat only for a word and THREE+ bare figures, so a goods row of a word and TWO figures (count + weight) sent twice becomes the CUSTOMER and names the lead. (Tension: c2024-c2027 want «Ippodrom 4 115» / «王先生 8512 3456» believed — a product word, not the figure count, has to tell them apart.) Main: couldBeCustomer false, why 'goods' — material, material. Worktree: couldBeCustomer true — material, then CUSTOMER (clientHintRaw «Kurtka 300 1200»).",
+   "why": "Main: couldBeCustomer false, why 'goods' — material, material. Worktree: couldBeCustomer true — material, then CUSTOMER (clientHintRaw «Kurtka 300 1200»).",
+   "realistic": "A forwarded goods row «jackets 300 pcs 1200 kg» — forwarded twice (or re-sent after the bot's re-ask), the double-send c1612 exists for.",
+   "source": "r5-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c2076",
+   "input": {
+    "text": "Oyinchoq 1500 25",
+    "prefix": "GS",
+    "sends": 2
+   },
+   "expected": {
+    "first": "material",
+    "second": "material",
+    "couldBeCustomer": false,
+    "why": "goods"
+   },
+   "said": "`figureRow` (intake-manual.ts) now refuses the insisting repeat only for a word and THREE+ bare figures, so a goods row of a word and TWO figures (count + weight) sent twice becomes the CUSTOMER and names the lead. (Tension: c2024-c2027 want «Ippodrom 4 115» / «王先生 8512 3456» believed — a product word, not the figure count, has to tell them apart.) Main: couldBeCustomer false, why 'goods' — material, material. Worktree: couldBeCustomer true — material, then CUSTOMER (clientHintRaw «Oyinchoq 1500 25»).",
+   "why": "Main: couldBeCustomer false, why 'goods' — material, material. Worktree: couldBeCustomer true — material, then CUSTOMER (clientHintRaw «Oyinchoq 1500 25»).",
+   "realistic": "«toys 1500 pcs 25 kub» forwarded twice from the client's chat.",
+   "source": "r5-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c2090",
+   "input": {
+    "text": "Kafel 2400 36,5",
+    "prefix": "GS",
+    "sends": 2
+   },
+   "expected": {
+    "couldBeCustomer": false,
+    "first": "material",
+    "second": "material",
+    "materialCopies": 1,
+    "stage": "client",
+    "firstSayExcludes": [
+     "Shu matnni yana yuborsangiz"
+    ],
+    "secondSayIncludes": [
+     "Tovar ro‘yxati mijoz bo‘la olmaydi"
+    ]
+   },
+   "said": "readCustomerText now treats a word + TWO bare figures as a possible customer (the market-stall / split-phone reading of c2024-c2027). A DECIMAL figure is neither a stall number nor a phone group (NUMBER_ROW's own doc: a decimal is what a phone never has), so a goods line sent twice now becomes the customer and the lead is named with it. main: material twice, kept once, «Tovar ro‘yxati mijoz bo‘la olmaydi»; worktree: couldBeCustomer true, second send = customer, lead «Kafel 2400 36,5», material emptied.",
+   "why": "main: material twice, kept once, «Tovar ro‘yxati mijoz bo‘la olmaydi»; worktree: couldBeCustomer true, second send = customer, lead «Kafel 2400 36,5», material emptied.",
+   "realistic": "A seller forwards the client's «kafel 2400 dona, 36,5 kub» shortened to bare figures, twice (a double forward) while the bot asks for the customer; comma decimals are how Uzbek and Russian sellers write.",
+   "source": "r5-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2091",
+   "input": {
+    "text": "Куртка 1200 12,5",
+    "prefix": "GS",
+    "sends": 2
+   },
+   "expected": {
+    "couldBeCustomer": false,
+    "first": "material",
+    "second": "material",
+    "materialCopies": 1,
+    "stage": "client",
+    "firstSayExcludes": [
+     "Shu matnni yana yuborsangiz"
+    ],
+    "secondSayIncludes": [
+     "Tovar ro‘yxati mijoz bo‘la olmaydi"
+    ]
+   },
+   "said": "readCustomerText now treats a word + TWO bare figures as a possible customer (the market-stall / split-phone reading of c2024-c2027). A DECIMAL figure is neither a stall number nor a phone group (NUMBER_ROW's own doc: a decimal is what a phone never has), so a goods line sent twice now becomes the customer and the lead is named with it. main: material twice, kept once, «Tovar ro‘yxati mijoz bo‘la olmaydi»; worktree: couldBeCustomer true, second send = customer, lead «Куртка 1200 12,5».",
+   "why": "main: material twice, kept once, «Tovar ro‘yxati mijoz bo‘la olmaydi»; worktree: couldBeCustomer true, second send = customer, lead «Куртка 1200 12,5».",
+   "realistic": "The same in Russian: the quantity and the volume with a comma decimal, forwarded twice.",
+   "source": "r5-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2092",
+   "input": {
+    "text": "Kurtka 1200 12.5",
+    "prefix": "GS",
+    "sends": 2
+   },
+   "expected": {
+    "couldBeCustomer": false,
+    "first": "material",
+    "second": "material",
+    "materialCopies": 1,
+    "stage": "client",
+    "firstSayExcludes": [
+     "Shu matnni yana yuborsangiz"
+    ],
+    "secondSayIncludes": [
+     "Tovar ro‘yxati mijoz bo‘la olmaydi"
+    ]
+   },
+   "said": "readCustomerText now treats a word + TWO bare figures as a possible customer (the market-stall / split-phone reading of c2024-c2027). A DECIMAL figure is neither a stall number nor a phone group (NUMBER_ROW's own doc: a decimal is what a phone never has), so a goods line sent twice now becomes the customer and the lead is named with it. main: material twice, kept once, «Tovar ro‘yxati mijoz bo‘la olmaydi»; worktree: couldBeCustomer true, second send = customer, lead «Kurtka 1200 12.5».",
+   "why": "main: material twice, kept once, «Tovar ro‘yxati mijoz bo‘la olmaydi»; worktree: couldBeCustomer true, second send = customer, lead «Kurtka 1200 12.5».",
+   "realistic": "A goods line with a dot decimal (pieces, cubes) pasted twice from the client's message.",
+   "source": "r5-probe collector",
    "weight": "regression"
   }
  ],
@@ -38689,6 +40002,288 @@
    "said": "`goodsNameKeys` now splits an UNBRACKETED name with Han script into its Han half and the rest as FORMS (round-4 bilingual-cell fix), and `namesMeet` matches any key against those forms. Nothing checks that the halves are translations of each other: a Han colour/attribute beside a Latin/Cyrillic noun, or a shared Latin term («LED», «USB», «PVC», «XL») beside different Chinese nouns, now makes two DIFFERENT products meet — outside against outside, which the function's own doc forbids («Kurtka (qora)» beside «Kurtka (oq)» are two lines). With aiGoods 'add' the other factory's line is then left out as «Excel’dagi bilan bir xil» whenever a shared figure agrees or none is shared (figuresAgree). Base: no meet, both lines land. Black bag vs black BACKPACK meet through «黑色». base 2; new 1.",
    "why": "base 2; new 1.",
    "source": "r4-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2083",
+   "input": {
+    "invoice": [
+     {
+      "name": "女士夹克 Ladies jacket Куртка женская",
+      "quantity": 300,
+      "weightKg": 450
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Куртка женская (女士夹克)",
+      "quantity": 300,
+      "weightKg": 450
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "女士夹克 Ladies jacket Куртка женская",
+       "quantity": 300,
+       "weightKg": 450
+      }
+     ],
+     "count": 1
+    },
+    "sameAsInvoice": [
+     "Куртка женская (女士夹克)"
+    ]
+   },
+   "said": "halfMeets refuses the model's «Russian (Chinese original)» line when its outside shares a script with the cell's non-Han half and is not equal to it. A trilingual cell's non-Han half is «English Русский», so the model writing the cell's OWN Russian (or English) outside the brackets is a «clash»; the Chinese original verbatim in the brackets and every figure agreeing no longer meet, and the same order lands twice. main: 1 line, the model's line named in sameAsInvoice; worktree: 2 lines (the same 300 jackets twice), sameAsInvoice empty.",
+   "why": "main: 1 line, the model's line named in sameAsInvoice; worktree: 2 lines (the same 300 jackets twice), sameAsInvoice empty.",
+   "realistic": "Chinese export invoices for the CIS print the description in three languages in one cell; the model is told to write Russian with the original in brackets and copies the cell's own Russian.",
+   "source": "r5-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2084",
+   "input": {
+    "invoice": [
+     {
+      "name": "女士夹克\nLadies jacket\nКуртка женская",
+      "quantity": 300
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Куртка женская (女士夹克)",
+      "quantity": 300
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "女士夹克\nLadies jacket\nКуртка женская",
+       "quantity": 300
+      }
+     ],
+     "count": 1
+    },
+    "sameAsInvoice": [
+     "Куртка женская (女士夹克)"
+    ]
+   },
+   "said": "halfMeets refuses the model's «Russian (Chinese original)» line when its outside shares a script with the cell's non-Han half and is not equal to it. A trilingual cell's non-Han half is «English Русский», so the model writing the cell's OWN Russian (or English) outside the brackets is a «clash»; the Chinese original verbatim in the brackets and every figure agreeing no longer meet, and the same order lands twice. Same with the cell's three languages on three lines (Alt+Enter in Excel). main: 1 line; worktree: 2.",
+   "why": "main: 1 line; worktree: 2.",
+   "realistic": "Factories stack the three languages inside one cell with line breaks; that is how the round-3 note's «女士夹克\\nLadies jacket» cell looks with the Russian added.",
+   "source": "r5-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2085",
+   "input": {
+    "invoice": [
+     {
+      "name": "女士夹克 Ladies jacket Куртка женская",
+      "quantity": 300
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Ladies jacket (女士夹克)",
+      "quantity": 300
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "女士夹克 Ladies jacket Куртка женская",
+       "quantity": 300
+      }
+     ],
+     "count": 1
+    },
+    "sameAsInvoice": [
+     "Ladies jacket (女士夹克)"
+    ]
+   },
+   "said": "halfMeets refuses the model's «Russian (Chinese original)» line when its outside shares a script with the cell's non-Han half and is not equal to it. A trilingual cell's non-Han half is «English Русский», so the model writing the cell's OWN Russian (or English) outside the brackets is a «clash»; the Chinese original verbatim in the brackets and every figure agreeing no longer meet, and the same order lands twice. The model kept the cell's English exactly. main: 1 line; worktree: 2.",
+   "why": "main: 1 line; worktree: 2.",
+   "realistic": "The model sometimes keeps the factory's English instead of translating; the bracket is still the Excel's Chinese, verbatim.",
+   "source": "r5-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2086",
+   "input": {
+    "invoice": [
+     {
+      "name": "蓝牙耳机 Bluetooth earphones",
+      "quantity": 2000,
+      "weightKg": 180
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Наушники Bluetooth (蓝牙耳机)",
+      "quantity": 2000,
+      "weightKg": 180
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "蓝牙耳机 Bluetooth earphones",
+       "quantity": 2000,
+       "weightKg": 180
+      }
+     ],
+     "count": 1
+    },
+    "sameAsInvoice": [
+     "Наушники Bluetooth (蓝牙耳机)"
+    ]
+   },
+   "said": "halfMeets' clash compares SCRIPTS: a Russian name that carries a Latin tech word or size («Bluetooth», «XL», «Power bank») shares the Latin script with the cell's English half, so the model's line with the Excel's exact Chinese in brackets and the same figures no longer meets it. main: 1 line + sameAsInvoice; worktree: 2 lines, 2000 earphones counted twice.",
+   "why": "main: 1 line + sameAsInvoice; worktree: 2 lines, 2000 earphones counted twice.",
+   "realistic": "Guangzhou electronics: Russian customs names keep «Bluetooth» in Latin, the invoice cell is Chinese + English.",
+   "source": "r5-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2087",
+   "input": {
+    "invoice": [
+     {
+      "name": "女士夹克 Ladies jacket XL",
+      "quantity": 300
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Куртка женская XL (女士夹克)",
+      "quantity": 300
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "女士夹克 Ladies jacket XL",
+       "quantity": 300
+      }
+     ],
+     "count": 1
+    },
+    "sameAsInvoice": [
+     "Куртка женская XL (女士夹克)"
+    ]
+   },
+   "said": "halfMeets' clash compares SCRIPTS: a Russian name that carries a Latin tech word or size («Bluetooth», «XL», «Power bank») shares the Latin script with the cell's English half, so the model's line with the Excel's exact Chinese in brackets and the same figures no longer meets it. The size «XL» is Latin in both. main: 1 line; worktree: 2.",
+   "why": "main: 1 line; worktree: 2.",
+   "realistic": "Sizes are written in Latin letters in every language; the model carries the size into its Russian name.",
+   "source": "r5-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2088",
+   "input": {
+    "invoice": [
+     {
+      "name": "移动电源 Power bank",
+      "quantity": 1500,
+      "weightKg": 450
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Внешний аккумулятор Power bank (移动电源)",
+      "quantity": 1500,
+      "weightKg": 450
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "移动电源 Power bank",
+       "quantity": 1500,
+       "weightKg": 450
+      }
+     ],
+     "count": 1
+    },
+    "sameAsInvoice": [
+     "Внешний аккумулятор Power bank (移动电源)"
+    ]
+   },
+   "said": "halfMeets' clash compares SCRIPTS: a Russian name that carries a Latin tech word or size («Bluetooth», «XL», «Power bank») shares the Latin script with the cell's English half, so the model's line with the Excel's exact Chinese in brackets and the same figures no longer meets it. main: 1 line; worktree: 2.",
+   "why": "main: 1 line; worktree: 2.",
+   "realistic": "«Power bank» is kept in Latin in Russian trade names; the invoice cell is Chinese + English.",
+   "source": "r5-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2089",
+   "input": {
+    "invoice": [
+     {
+      "name": "男士运动鞋 Кроссовки мужские",
+      "quantity": 600
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Мужские кроссовки (男士运动鞋)",
+      "quantity": 600
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "男士运动鞋 Кроссовки мужские",
+       "quantity": 600
+      }
+     ],
+     "count": 1
+    },
+    "sameAsInvoice": [
+     "Мужские кроссовки (男士运动鞋)"
+    ]
+   },
+   "said": "halfMeets' clash: the model's Russian outside is the cell's own Russian words in the other order, same script, so it is read as «another name»; the Excel's Chinese verbatim in brackets and the same count no longer meet. main: 1 line + sameAsInvoice; worktree: 2.",
+   "why": "main: 1 line + sameAsInvoice; worktree: 2.",
+   "realistic": "A Chinese factory's Russian is often adjective-first («Кроссовки мужские» / «Мужские кроссовки») and the model writes whichever order it likes.",
+   "source": "r5-probe collector",
    "weight": "regression"
   }
  ],

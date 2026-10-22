@@ -11,7 +11,9 @@
  * decisions of the round-3 review first (R3-*), else the latest round. The
  * round-4 probers' regressions (source «r4-probe …», c1894-c2027) were
  * appended to the end of each list afterwards: `said` is the prober's
- * sentence, `why` its base-vs-round-4 evidence.
+ * sentence, `why` its base-vs-round-4 evidence. The round-5 probers'
+ * (source «r5-probe …», c2028-c2092) followed the same way, `why` their
+ * main-vs-round-5 evidence and `realistic` why a seller sends such an input.
  *
  * An expectation names only what the reviewer named — a figure, a name, a
  * count — and every name a goods list states is asserted in order. A case
@@ -44,6 +46,8 @@ export interface CorpusCase<I, E, O = never> {
   vague?: string;
   /** How the input was built where the reviewer only described it. */
   note?: string;
+  /** Why a real seller sends this input (the round-5 probers' own sentence). */
+  realistic?: string;
 }
 
 /**
