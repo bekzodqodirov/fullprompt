@@ -56,9 +56,26 @@ export interface SheetRows {
    * The positions a merge DOWN covers, which hold their master's value
    * repeated (R3-S3): `parseGoods` counts a covered figure once and reads a
    * covered name or code as the line's own, and the model's text leaves a
-   * covered position empty. Present only when a merge covers something.
+   * covered figure empty. Present only when a merge covers something.
    */
   covered?: Covered;
+  /**
+   * The reader left out a row past `MAX_ROWS` (`rowsLeftOut`) or a cell past
+   * `MAX_COLS` (`colsLeftOut`) that HELD something — an empty tail is no
+   * loss. The bound protects the process; it must not hide a line (the
+   * fourth review: «LAST» at line 5,500 of a CSV and two figured lines at
+   * A5200 were dropped and `readGoodsFile` said nothing), so the cut is said:
+   * a row left out as `textCut`, a cell as `cellsCut` (R3-S6).
+   */
+  rowsLeftOut?: true;
+  colsLeftOut?: true;
+}
+
+/** A sheet's two left-out words, set only when true — every reader's one shape. */
+export function withLeftOut(sheet: SheetRows, rows: boolean, cols: boolean): SheetRows {
+  if (rows) sheet.rowsLeftOut = true;
+  if (cols) sheet.colsLeftOut = true;
+  return sheet;
 }
 
 export type XlsRead =
@@ -96,6 +113,7 @@ const R = {
   SHRFMLA: 0x04bc,
   ARRAY: 0x0221,
   TABLE: 0x0236,
+  MERGEDCELLS: 0x00e5,
 } as const;
 
 /**
@@ -249,14 +267,29 @@ export function rkValue(rk: number): number {
 class Grid {
   private readonly rows = new Map<number, Map<number, Cell>>();
   private maxRow = -1;
+  rowsLeftOut = false;
+  colsLeftOut = false;
 
   set(row: number, col: number, value: Cell): void {
-    if (row >= MAX_ROWS || col >= MAX_COLS || value === null) return;
-    if (typeof value === 'string' && value.trim() === '') return;
+    if (value === null || (typeof value === 'string' && value.trim() === '')) return;
+    if (row >= MAX_ROWS || col >= MAX_COLS) {
+      if (row >= MAX_ROWS) this.rowsLeftOut = true;
+      else this.colsLeftOut = true;
+      return;
+    }
     let r = this.rows.get(row);
     if (!r) this.rows.set(row, (r = new Map()));
     r.set(col, value);
     if (row > this.maxRow) this.maxRow = row;
+  }
+
+  get(row: number, col: number): Cell {
+    return this.rows.get(row)?.get(col) ?? null;
+  }
+
+  /** A position's value gone: the cells a merge covers to the RIGHT of its master read as nothing. */
+  clear(row: number, col: number): void {
+    this.rows.get(row)?.delete(col);
   }
 
   toRows(): Cell[][] {
@@ -274,6 +307,53 @@ class Grid {
     }
     return out;
   }
+}
+
+/** One merged range, inclusive, as BIFF8's Ref8 states it. */
+interface Merge {
+  r1: number;
+  r2: number;
+  c1: number;
+  c2: number;
+}
+
+/**
+ * Excel 97's merged cells, read the way the other three readers read theirs
+ * (R3-S3; the fourth review: an .xls ignored them, so a name merged over two
+ * lines named only the first and the second line, its own figures and all,
+ * was dropped as no product): DOWN the master's own column its value repeats
+ * and the position is covered; to its RIGHT a covered position reads as
+ * nothing. LibreOffice and Excel write a BLANK record in a covered cell, so
+ * the grid holds nothing there to keep.
+ *
+ * Bounded like the rest of the reader: a stranger's file can state a merge
+ * of the whole sheet a thousand times, so the positions all its merges touch
+ * together stop at one sheet's worth (`MAX_ROWS` × `MAX_COLS`).
+ */
+function applyMerges(grid: Grid, merges: readonly Merge[]): CoverMask {
+  const covered = new CoverMask();
+  let budget = MAX_ROWS * MAX_COLS;
+  for (const m of merges) {
+    const lastRow = Math.min(m.r2, MAX_ROWS - 1);
+    const lastCol = Math.min(m.c2, MAX_COLS - 1);
+    if (m.r1 > lastRow || m.c1 > lastCol) continue;
+    const area = (lastRow - m.r1 + 1) * (lastCol - m.c1 + 1);
+    if (area > budget) break;
+    budget -= area;
+    const master = grid.get(m.r1, m.c1);
+    for (let r = m.r1; r <= lastRow; r += 1) {
+      for (let c = m.c1; c <= lastCol; c += 1) {
+        if (r === m.r1 && c === m.c1) continue;
+        if (c === m.c1 && master !== null) {
+          grid.set(r, c, master);
+          covered.add(r, c);
+        } else {
+          grid.clear(r, c);
+        }
+      }
+    }
+  }
+  return covered;
 }
 
 /** A real Excel 97-2003 file, read into rows per worksheet. */
@@ -348,6 +428,7 @@ export function readXls(body: Buffer): XlsRead {
       const bof = recordAt(stream, sheetAt);
       if (!bof || bof.type !== R.BOF) continue;
       const grid = new Grid();
+      const merges: Merge[] = [];
       let pendingString: { row: number; col: number } | null = null;
       let p = bof.next;
       for (let rec = recordAt(stream, p); rec; rec = recordAt(stream, p)) {
@@ -362,6 +443,16 @@ export function readXls(body: Buffer): XlsRead {
         }
         if (pendingString && BETWEEN_FORMULA_AND_STRING.has(rec.type)) continue;
         pendingString = null;
+        if (rec.type === R.MERGEDCELLS) {
+          // cmcs, then cmcs × Ref8 (first row, last row, first col, last
+          // col); a sheet may carry several such records.
+          const count = d.length >= 2 ? Math.min(d.readUInt16LE(0), Math.floor((d.length - 2) / 8)) : 0;
+          for (let i = 0; i < count; i += 1) {
+            const at = 2 + i * 8;
+            merges.push({ r1: d.readUInt16LE(at), r2: d.readUInt16LE(at + 2), c1: d.readUInt16LE(at + 4), c2: d.readUInt16LE(at + 6) });
+          }
+          continue;
+        }
         if (d.length < 6) continue;
         const row = d.readUInt16LE(0);
         const col = d.readUInt16LE(2);
@@ -406,7 +497,9 @@ export function readXls(body: Buffer): XlsRead {
         }
       }
       if (walked > stream.length) break;
-      sheets.push(hidden ? { name, rows: grid.toRows(), hidden } : { name, rows: grid.toRows() });
+      const covered = applyMerges(grid, merges);
+      const sheet = withCovered(hidden ? { name, rows: grid.toRows(), hidden } : { name, rows: grid.toRows() }, covered);
+      sheets.push(withLeftOut(sheet, grid.rowsLeftOut, grid.colsLeftOut));
     }
     return { ok: true, sheets };
   } catch {
@@ -484,15 +577,28 @@ export function htmlTableSheets(text: string): SheetRows[] | null {
     if (sheets.length >= MAX_SHEETS) break;
     const rows: Cell[][] = [];
     const spans = new DownSpans();
+    let rowsLeftOut = false;
+    let colsLeftOut = false;
     for (const tr of upTo(piece, /<\/table\s*>/i).split(/<tr\b[^<>]*>/i).slice(1)) {
-      if (rows.length >= MAX_ROWS) break;
-      spans.row = rows.length;
       const parts = upTo(tr, /<\/tr\s*>/i).split(/(<t[dh]\b[^<>]*>)/i);
+      if (rows.length >= MAX_ROWS) {
+        // Past the bound only to learn whether anything was left out — and
+        // stopped at the first row that holds something.
+        if (cellsHoldText(parts, 1)) {
+          rowsLeftOut = true;
+          break;
+        }
+        continue;
+      }
+      spans.row = rows.length;
       const cells: Cell[] = [];
       for (let i = 1; i + 1 < parts.length; i += 2) {
         // A browser places a cell past the positions a rowspan above covers.
         while (cells.length < MAX_COLS && spans.covers(cells.length)) cells.push(spans.take(cells.length));
-        if (cells.length >= MAX_COLS) break;
+        if (cells.length >= MAX_COLS) {
+          if (cellsHoldText(parts, i)) colsLeftOut = true;
+          break;
+        }
         const tag = parts[i]!;
         const col = cells.length;
         const colspan = spanOf(tag, /\bcolspan\s*=\s*["']?\s*(\d+)/i, MAX_COLS - col);
@@ -504,9 +610,19 @@ export function htmlTableSheets(text: string): SheetRows[] | null {
       }
       rows.push(spans.finish(cells));
     }
-    if (rows.length > 0) sheets.push(withCovered({ name: `Jadval ${n + 1}`, rows }, spans.covered));
+    if (rows.length > 0) {
+      sheets.push(withLeftOut(withCovered({ name: `Jadval ${n + 1}`, rows }, spans.covered), rowsLeftOut, colsLeftOut));
+    }
   }
   return sheets.length > 0 ? sheets : null;
+}
+
+/** Does any cell from `parts[from]` on (a row split on its cell tags) hold text? */
+function cellsHoldText(parts: readonly string[], from: number): boolean {
+  for (let i = from; i + 1 < parts.length; i += 2) {
+    if (cellOf(upTo(parts[i + 1]!, /<\/t[dh]\s*>/i)) !== null) return true;
+  }
+  return false;
 }
 
 /** A sheet, carrying its covered positions only when a merge covers any — every reader's one shape. */
@@ -601,49 +717,72 @@ export function spreadsheetMlSheets(text: string): SheetRows[] | null {
     const name = /(?:ss:)?Name\s*=\s*"([^"]*)"/.exec(parts[w]!)?.[1] ?? `Varaq ${sheets.length + 1}`;
     const rows: Cell[][] = [];
     const spans = new DownSpans();
+    let rowsLeftOut = false;
+    let colsLeftOut = false;
     const rowParts = body.split(/<(?:ss:)?Row\b([^<>]*)>/);
     for (let r = 1; r + 1 < rowParts.length; r += 2) {
-      if (rows.length >= MAX_ROWS) break;
+      // `<Row/>` is an empty row; what follows it belongs to no row.
+      const cellParts = rowParts[r]!.endsWith('/')
+        ? []
+        : upTo(rowParts[r + 1]!, /<\/(?:ss:)?Row\s*>/).split(/<(?:ss:)?Cell\b([^<>]*)>/);
+      if (rows.length >= MAX_ROWS) {
+        // Past the bound only to learn whether anything was left out, as the HTML reader.
+        if (xmlCellsHoldText(cellParts, 1)) {
+          rowsLeftOut = true;
+          break;
+        }
+        continue;
+      }
       spans.row = rows.length;
       const cells: Cell[] = [];
-      // `<Row/>` is an empty row; what follows it belongs to no row.
-      if (!rowParts[r]!.endsWith('/')) {
-        const cellParts = upTo(rowParts[r + 1]!, /<\/(?:ss:)?Row\s*>/).split(/<(?:ss:)?Cell\b([^<>]*)>/);
-        for (let c = 1; c + 1 < cellParts.length; c += 2) {
-          const attrs = cellParts[c]!;
-          const index = /(?:ss:)?Index\s*=\s*"(\d+)"/.exec(attrs);
-          if (index) {
-            const at = Number(index[1]) - 1;
-            while (cells.length < at && cells.length < MAX_COLS) {
-              cells.push(spans.covers(cells.length) ? spans.take(cells.length) : null);
-            }
+      for (let c = 1; c + 1 < cellParts.length; c += 2) {
+        const attrs = cellParts[c]!;
+        const index = /(?:ss:)?Index\s*=\s*"(\d+)"/.exec(attrs);
+        if (index) {
+          const at = Number(index[1]) - 1;
+          while (cells.length < at && cells.length < MAX_COLS) {
+            cells.push(spans.covers(cells.length) ? spans.take(cells.length) : null);
           }
-          if (cells.length >= MAX_COLS) break;
-          let value: Cell = null;
-          if (!attrs.endsWith('/')) {
-            const content = upTo(cellParts[c + 1]!, /<\/(?:ss:)?Cell\s*>/);
-            const open = /<(?:ss:)?Data\b[^<>]*>/.exec(content);
-            if (open) value = cellOf(upTo(content.slice(open.index + open[0].length), /<\/(?:ss:)?Data\s*>/));
-          }
-          const col = cells.length;
-          spans.claim(col);
-          cells.push(value);
-          // MergeAcross="N" covers N cells MORE; MergeDown="N" N rows more.
-          const across = Number(/(?:ss:)?MergeAcross\s*=\s*"(\d+)"/.exec(attrs)?.[1] ?? 0);
-          for (let k = 0; k < across && cells.length < MAX_COLS; k += 1) {
-            spans.claim(cells.length);
-            cells.push(null);
-          }
-          const down = Math.min(Number(/(?:ss:)?MergeDown\s*=\s*"(\d+)"/.exec(attrs)?.[1] ?? 0), MAX_ROWS);
-          if (down > 0) spans.open(col, across + 1, down, value);
         }
+        if (cells.length >= MAX_COLS) {
+          if (xmlCellsHoldText(cellParts, c)) colsLeftOut = true;
+          break;
+        }
+        const value = xmlCellValue(attrs, cellParts[c + 1]!);
+        const col = cells.length;
+        spans.claim(col);
+        cells.push(value);
+        // MergeAcross="N" covers N cells MORE; MergeDown="N" N rows more.
+        const across = Number(/(?:ss:)?MergeAcross\s*=\s*"(\d+)"/.exec(attrs)?.[1] ?? 0);
+        for (let k = 0; k < across && cells.length < MAX_COLS; k += 1) {
+          spans.claim(cells.length);
+          cells.push(null);
+        }
+        const down = Math.min(Number(/(?:ss:)?MergeDown\s*=\s*"(\d+)"/.exec(attrs)?.[1] ?? 0), MAX_ROWS);
+        if (down > 0) spans.open(col, across + 1, down, value);
       }
       rows.push(spans.finish(cells));
     }
-    const sheet: SheetRows = withCovered({ name: decodeEntities(name), rows }, spans.covered);
+    const sheet: SheetRows = withLeftOut(withCovered({ name: decodeEntities(name), rows }, spans.covered), rowsLeftOut, colsLeftOut);
     // WorksheetOptions' <Visible>SheetHidden</Visible> (or …VeryHidden).
     if (/<(?:x:)?Visible>\s*Sheet(?:Very)?Hidden\b/.test(body)) sheet.hidden = true;
     sheets.push(sheet);
   }
   return sheets.length > 0 ? sheets : null;
+}
+
+/** A SpreadsheetML cell's text: its <Data>, or nothing for a self-closed cell. */
+function xmlCellValue(attrs: string, after: string): Cell {
+  if (attrs.endsWith('/')) return null;
+  const content = upTo(after, /<\/(?:ss:)?Cell\s*>/);
+  const open = /<(?:ss:)?Data\b[^<>]*>/.exec(content);
+  return open ? cellOf(upTo(content.slice(open.index + open[0].length), /<\/(?:ss:)?Data\s*>/)) : null;
+}
+
+/** Does any cell from `cellParts[from]` on (a row split on its cell tags) hold text? */
+function xmlCellsHoldText(cellParts: readonly string[], from: number): boolean {
+  for (let c = from; c + 1 < cellParts.length; c += 2) {
+    if (xmlCellValue(cellParts[c]!, cellParts[c + 1]!) !== null) return true;
+  }
+  return false;
 }

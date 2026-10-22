@@ -682,7 +682,7 @@ describe('the third review of the spreadsheet door', () => {
     },
   );
 
-  it('the model’s text leaves a covered position empty: a merged carton weight is written ONCE (R3-S3)', async () => {
+  it('the model’s text leaves a covered FIGURE empty: a merged carton weight is written ONCE (R3-S3)', async () => {
     // No header the reader knows — this sheet goes to the model as text, the
     // way the packing-list sheet beside an invoice does.
     const page = html(
@@ -735,4 +735,102 @@ describe('the third review of the spreadsheet door', () => {
     expect(sheets![0]!.covered?.has(4_999, 3)).toBe(true);
     expect(grown).toBeLessThan(200 * 1024 * 1024);
   }, 30_000);
+});
+
+/**
+ * The fourth review (2026-10-22): Excel 97 learns the merges the other three
+ * readers know, every reader says what its bounds left out, and the model's
+ * text repeats a merged NAME while it still writes a merged figure once.
+ */
+describe('the fourth review of the readers', () => {
+  /** MERGEDCELLS: cmcs, then (first row, last row, first col, last col) per range. */
+  const mergedCells = (...ranges: [number, number, number, number][]) => {
+    const data = Buffer.alloc(2 + ranges.length * 8);
+    data.writeUInt16LE(ranges.length, 0);
+    ranges.forEach((range, i) => range.forEach((v, k) => data.writeUInt16LE(v, 2 + i * 8 + k * 2)));
+    return record(0x00e5, data);
+  };
+
+  it('Excel 97: a merge DOWN repeats its master and is covered; to its right a merged cell reads nothing', () => {
+    const cells = [
+      label(0, 0, 'Счёт № 15'),
+      label(0, 1, 'stray text a writer left under the merge'),
+      label(1, 0, 'Наименование'),
+      label(1, 1, 'Кол-во'),
+      label(1, 2, 'Вес, кг'),
+      label(1, 3, 'Сумма'),
+      label(2, 0, 'Стол'),
+      number(2, 1, 5),
+      number(2, 2, 100),
+      number(2, 3, 900),
+      number(3, 1, 3),
+      number(3, 2, 60),
+      label(4, 0, 'Стул'),
+      number(4, 1, 10),
+      number(4, 2, 50),
+      number(4, 3, 200),
+      mergedCells([0, 0, 0, 3], [2, 3, 0, 0], [2, 3, 3, 3]),
+    ];
+    const read = readXls(compound(sheets97([{ name: 'Inv', cells }])));
+    const sheet = read.ok ? read.sheets[0]! : null;
+    expect(sheet?.rows[0]).toEqual(['Счёт № 15']);
+    expect(sheet?.rows[3]).toEqual(['Стол', 3, 60, 900]);
+    expect([sheet?.covered?.has(3, 0), sheet?.covered?.has(3, 3), sheet?.covered?.has(3, 1)]).toEqual([true, true, false]);
+    expect(parseGoods(sheet!.rows, sheet!.covered ?? null).goods.map((g) => [g.description, g.quantity, g.weightKg, g.amount])).toEqual([
+      ['Стол', 5, 100, 900],
+      ['Стол', 3, 60, null],
+      ['Стул', 10, 50, 200],
+    ]);
+  });
+
+  it('Excel 97: a file stating a whole-sheet merge thousands of times is read in bounded time', () => {
+    const whole = Array.from({ length: 4_000 }, (): [number, number, number, number] => [0, 65_535, 0, 255]);
+    const cells = [label(0, 0, 'Стол'), ...Array.from({ length: 4 }, () => mergedCells(...whole.slice(0, 1_000)))];
+    const started = Date.now();
+    const read = readXls(compound(sheets97([{ name: 'S', cells }])));
+    expect(Date.now() - started).toBeLessThan(3_000);
+    expect(read.ok && read.sheets[0]!.rows).toHaveLength(MAX_ROWS);
+  });
+
+  it('every reader says a row or a cell its bound left out — and never an empty tail', () => {
+    const htmlRow = (text: string) => `<tr><td>${text}</td></tr>`;
+    const tail = (n: number, text: string) => Array.from({ length: n }, () => htmlRow(text)).join('');
+    expect(htmlTableSheets(`<table>${tail(MAX_ROWS, 'a')}${htmlRow('LAST')}</table>`)![0]!.rowsLeftOut).toBe(true);
+    expect(htmlTableSheets(`<table>${tail(MAX_ROWS, 'a')}${tail(50, '')}</table>`)![0]!.rowsLeftOut).toBeUndefined();
+    const wide = (last: string) => `<table><tr>${Array.from({ length: 150 }, (_, c) => `<td>${c === 140 ? last : c < 100 ? `c${c}` : ''}</td>`).join('')}</tr></table>`;
+    expect(htmlTableSheets(wide('TOTAL 1500 kg'))![0]!.colsLeftOut).toBe(true);
+    expect(htmlTableSheets(wide(''))![0]!.colsLeftOut).toBeUndefined();
+
+    const xmlRow = (text: string) => `<Row><Cell><Data ss:Type="String">${text}</Data></Cell></Row>`;
+    const xmlBook = (rows: string) =>
+      `<?xml version="1.0"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"><Worksheet ss:Name="A"><Table>${rows}</Table></Worksheet></Workbook>`;
+    expect(spreadsheetMlSheets(xmlBook(xmlRow('a').repeat(MAX_ROWS) + xmlRow('LAST')))![0]!.rowsLeftOut).toBe(true);
+    expect(spreadsheetMlSheets(xmlBook(xmlRow('a').repeat(MAX_ROWS) + '<Row/>'.repeat(20)))![0]!.rowsLeftOut).toBeUndefined();
+    const far = `<Row><Cell><Data ss:Type="String">a</Data></Cell><Cell ss:Index="141"><Data ss:Type="String">TOTAL</Data></Cell></Row>`;
+    expect(spreadsheetMlSheets(xmlBook(far))![0]!.colsLeftOut).toBe(true);
+
+    const xls = readXls(compound(sheets97([{ name: 'S', cells: [label(0, 0, 'a'), label(5_200, 0, 'Стол 5 шт'), label(1, 140, 'TOTAL')] }])));
+    expect(xls.ok && [xls.sheets[0]!.rowsLeftOut, xls.sheets[0]!.colsLeftOut]).toEqual([true, true]);
+
+    expect(csvRows(`${'a;'.repeat(150)}b`)).toHaveLength(1);
+  });
+
+  it('a cut the reader made reaches readGoodsFile’s two words: a row as textCut, a cell as cellsCut', async () => {
+    const rows = await readGoodsFile(Buffer.from(`<table>${'<tr><td>a</td></tr>'.repeat(MAX_ROWS)}<tr><td>LAST</td></tr></table>`), 'text/html');
+    expect(rows?.kind === 'text' && [rows.textCut, rows.cellsCut]).toEqual([true, false]);
+    const wide = await readGoodsFile(Buffer.from(`${Array.from({ length: 140 }, (_, c) => `c${c}`).join(';')}\nx;y`), 'text/csv');
+    expect(wide?.kind === 'text' && [wide.textCut, wide.cellsCut]).toEqual([false, true]);
+    // Delimiters past the bound with nothing between them are no loss.
+    const narrow = await readGoodsFile(Buffer.from(`${'a;'.repeat(50)}${';'.repeat(100)}\nx;y`), 'text/csv');
+    expect(narrow?.kind === 'text' && [narrow.textCut, narrow.cellsCut]).toEqual([false, false]);
+  });
+
+  it('the model’s text repeats a merged NAME — «12V», «LED 50W» are names — and writes a merged figure once', async () => {
+    const page = Buffer.from(
+      '<table><tr><td rowspan=2>12V</td><td>5 шт</td><td rowspan=2>160 кг</td></tr><tr><td>3 шт</td></tr>' +
+        '<tr><td rowspan=2>LED 50W</td><td>2 шт</td><td rowspan=2>40</td></tr><tr><td>7 шт</td></tr></table>',
+    );
+    const read = await readGoodsFile(page, null);
+    expect(read?.kind === 'text' && read.text).toBe('[Jadval 1]\n12V | 5 шт | 160 кг\n12V | 3 шт\nLED 50W | 2 шт | 40\nLED 50W | 7 шт');
+  });
 });

@@ -1,5 +1,5 @@
 import ExcelJS from 'exceljs';
-import { CoverMask, parseGoods, type Cell, type Covered, type GoodsRow } from './goods-import';
+import { CoverMask, parseGoods, readsAsFigure, type Cell, type Covered, type GoodsRow } from './goods-import';
 import {
   MAX_COLS,
   MAX_MARKUP_CHARS,
@@ -10,6 +10,7 @@ import {
   readXls,
   spreadsheetMlSheets,
   withCovered,
+  withLeftOut,
   type SheetRows,
 } from './xls';
 
@@ -83,8 +84,20 @@ function worksheetRows(sheet: ExcelJS.Worksheet): SheetRows {
     if (!masters.has(master)) masters.set(master, cellValue(master.value));
     return masters.get(master) ?? null;
   };
+  let rowsLeftOut = false;
+  let colsLeftOut = false;
   sheet.eachRow({ includeEmpty: true }, (row) => {
-    if (rows.length >= MAX_ROWS) return;
+    if (rows.length >= MAX_ROWS) {
+      if (!rowsLeftOut && row.hasValues) rowsLeftOut = true;
+      return;
+    }
+    // A value past the column bound: exceljs holds the row's cells already,
+    // so asking costs one walk of them, and only on a row that wide.
+    if (!colsLeftOut && row.cellCount > MAX_COLS) {
+      row.eachCell((cell, col) => {
+        if (col > MAX_COLS && cell.type !== ExcelJS.ValueType.Merge) colsLeftOut = true;
+      });
+    }
     const r = rows.length;
     const values: Cell[] = [];
     // row.values is 1-based with a hole at 0.
@@ -107,7 +120,8 @@ function worksheetRows(sheet: ExcelJS.Worksheet): SheetRows {
   });
   // exceljs hands back every sheet whatever its `state`.
   const hidden = sheet.state === 'hidden' || sheet.state === 'veryHidden';
-  return withCovered(hidden ? { name: sheet.name, rows, hidden } : { name: sheet.name, rows }, covered);
+  const read = withCovered(hidden ? { name: sheet.name, rows, hidden } : { name: sheet.name, rows }, covered);
+  return withLeftOut(read, rowsLeftOut, colsLeftOut);
 }
 
 /**
@@ -136,25 +150,35 @@ export async function workbookRows(body: ArrayBuffer | Buffer): Promise<SheetRow
  * in, so a mis-split file is a refusal, not a wrong invoice.
  */
 export function csvRows(text: string): Cell[][] {
+  return csvSheet(text).rows;
+}
+
+/** The CSV as a sheet, saying what its bounds left out (`SheetRows.rowsLeftOut`). */
+function csvSheet(text: string): SheetRows {
   // Bounded like every other shape (`MAX_ROWS` × `MAX_COLS`): one line of a
   // million commas was a million-column header the detector walked per key.
-  const lines = text
-    .split(/\r?\n/)
-    .filter((l) => l.trim().length > 0)
-    .slice(0, MAX_ROWS);
-  if (lines.length === 0) return [];
+  const filled = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+  const lines = filled.slice(0, MAX_ROWS);
+  if (lines.length === 0) return { name: 'CSV', rows: [] };
   const first = lines[0]!.slice(0, 64 * 1024);
   const delim = [';', '\t', ','].reduce((best, d) =>
     first.split(d).length > first.split(best).length ? d : best,
   );
-  return lines.map((line) => splitCsvLine(line, delim));
+  let colsLeftOut = false;
+  const rows = lines.map((line) => {
+    const read = splitCsvLine(line, delim);
+    if (read.leftOut) colsLeftOut = true;
+    return read.cells;
+  });
+  return withLeftOut({ name: 'CSV', rows }, filled.length > lines.length, colsLeftOut);
 }
 
-function splitCsvLine(line: string, delim: string): Cell[] {
+function splitCsvLine(line: string, delim: string): { cells: Cell[]; leftOut: boolean } {
   const out: Cell[] = [];
   let cell = '';
   let quoted = false;
-  for (let i = 0; i < line.length && out.length < MAX_COLS; i += 1) {
+  let i = 0;
+  for (; i < line.length && out.length < MAX_COLS; i += 1) {
     const ch = line[i]!;
     if (quoted) {
       if (ch === '"' && line[i + 1] === '"') {
@@ -171,7 +195,15 @@ function splitCsvLine(line: string, delim: string): Cell[] {
     } else cell += ch;
   }
   if (out.length < MAX_COLS) out.push(cell.trim() || null);
-  return out;
+  // The bound stopped the line with something still in it — a cell, not
+  // only more delimiters (scanned, never split: the line may be a million
+  // commas).
+  let leftOut = false;
+  for (let k = i; out.length >= MAX_COLS && k < line.length && !leftOut; k += 1) {
+    const ch = line[k]!;
+    leftOut = ch !== delim && ch !== '"' && ch.trim() !== '';
+  }
+  return { cells: out, leftOut };
 }
 
 /**
@@ -231,11 +263,13 @@ export type GoodsFileRead =
    * `SHEET_TEXT_BUDGET` characters (`sheetsAsText`), and two different
    * things can be shortened in it (R3-S6, the third review):
    *  - `textCut` — some ROW is missing: the budget ran out before the sheets
-   *    did. A row-wise fitter downstream cannot see rows it was never given,
+   *    did, or a reader's `MAX_ROWS` left one out (`SheetRows.rowsLeftOut`).
+   *    A row-wise fitter downstream cannot see rows it was never given,
    *    so this is the only word that they are missing (S4) — «AI reads only
    *    the start» is true, and the totals the model sums are partial;
    *  - `cellsCut` — every row is there, but a cell was cut at its 300
-   *    characters or a too-long row lost its last cells. A customs
+   *    characters, a too-long row lost its last cells, or a reader's
+   *    `MAX_COLS` left a cell out (`SheetRows.colsLeftOut`). A customs
    *    description past 300 characters is ordinary, and calling that «rows
    *    left out» told the seller and the model so on almost every invoice.
    */
@@ -261,22 +295,26 @@ export type GoodsFileRead =
  * (R3-S9: «Стол 5 шт» and «Стул 3 шт» typed one per line in one cell were one
  * run-on line), so a line here is always one row and its items still show.
  *
- * A position a merge DOWN covers is EMPTY here (R3-S3), however `parseGoods`
- * reads it: the readers repeat the master's value there, and a carton's
- * weight merged over three lines, written three times or as «〃» («the same
- * again»), is a weight a model sums three times — on the packing-list sheets
- * the model reads the shipment's totals from. An empty cell under a merged
- * figure is also exactly what Excel's own CSV export writes, the shape the
- * model has seen most. The cost, stated: a merged NAME in this text names
- * only its first line; the exact reader still names every line.
+ * A position a merge DOWN covers is EMPTY here when its master is a FIGURE
+ * (R3-S3, `readsAsFigure`): the readers repeat the master's value there, and
+ * a carton's weight merged over three lines, written three times or as «〃»
+ * («the same again»), is a weight a model sums three times — on the
+ * packing-list sheets the model reads the shipment's totals from. An empty
+ * cell under a merged figure is also exactly what Excel's own CSV export
+ * writes, the shape the model has seen most. A merged TEXT — a name, a spec
+ * — is repeated on every line it covers (the fourth review): left empty, the
+ * covered line reached the model with no identity and its figures shifted
+ * into the name's place («2 | 120 | 60» for «2 | 女士夹克 黑色 | 120 | 60»), and
+ * a sheet with no header the reader knows has no other reader of its names.
  *
- * `rowsCut` is a row the budget did not reach; `cellsCut` a cell or a row's
- * tail shortened while the row itself is there (R3-S6).
+ * `rowsCut` is a row the budget did not reach, or one the sheet's reader left
+ * out past its bound; `cellsCut` a cell or a row's tail shortened while the
+ * row itself is there, here or by the reader (R3-S6, `SheetRows.rowsLeftOut`).
  */
 function sheetsAsText(sheets: SheetRows[]): { text: string; rowsCut: boolean; cellsCut: boolean } {
   let text = '';
-  let rowsCut = false;
-  let cellsCut = false;
+  let rowsCut = sheets.some((sheet) => sheet.rowsLeftOut);
+  let cellsCut = sheets.some((sheet) => sheet.colsLeftOut);
   each: for (const sheet of sheets) {
     let opened = false;
     for (const [r, row] of sheet.rows.entries()) {
@@ -300,7 +338,7 @@ function rowLine(row: Cell[], r: number, covered: Covered | null): { line: strin
   let line = '';
   let cut = false;
   for (const [c, cell] of row.entries()) {
-    if (cell === null || covered?.has(r, c)) continue;
+    if (cell === null || (covered?.has(r, c) && readsAsFigure(cell))) continue;
     const raw = String(cell);
     // Only the head of a long cell is read: a cell is never the length of
     // the text it lands in (the 30,000-character shared string, #8).
@@ -354,7 +392,7 @@ export async function readGoodsFile(body: Buffer, contentType: string | null): P
   } else if (looksTextual(body, contentType)) {
     const text = decodeText(body);
     if (markupOf(text) !== null && text.length > MAX_MARKUP_CHARS) return { kind: 'refused', reason: 'broken' };
-    sheets = spreadsheetMlSheets(text) ?? htmlTableSheets(text) ?? [{ name: 'CSV', rows: csvRows(text) }];
+    sheets = spreadsheetMlSheets(text) ?? htmlTableSheets(text) ?? [csvSheet(text)];
   } else {
     return null;
   }

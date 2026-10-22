@@ -594,3 +594,70 @@ describe('the third review of the header detective', () => {
     }
   });
 });
+
+/**
+ * The fourth review of the header detective (2026-10-22, the regression
+ * corpus): the behaviours its cases do not state outright, pinned here.
+ */
+describe('the fourth review of the header detective', () => {
+  const first = (rows: (string | number | null)[][]) => parseGoods(rows).goods[0]!;
+
+  it('«TOTAL WT», «TOTAL MEAS.», «Total Vol.» are the weight and the volume they abbreviate — never the money', () => {
+    expect(first([['Description', 'Qty', 'TOTAL WT'], ['LED', 240, 100]])).toMatchObject({ weightKg: 100, amount: null });
+    expect(first([['Description', 'Qty', 'TOTAL N.W.', 'TOTAL MEAS.'], ['LED', 240, 100, 1.5]])).toMatchObject({
+      weightKg: 100,
+      volumeM3: 1.5,
+      amount: null,
+    });
+    expect(first([['Description', 'Qty', 'N.W.', 'Total Vol.'], ['LED', 240, 100, 1.5]])).toMatchObject({ volumeM3: 1.5, amount: null });
+    // A keyed volume column wins: «Meas.(cm)» is the carton's size beside it.
+    expect(first([['Description', 'Qty', 'Meas.(cm)', 'CBM'], ['LED', 240, '60*40*45', 0.35]])).toMatchObject({ volumeM3: 0.35 });
+  });
+
+  it('a currency in the header is money: «Gross (USD) | Net (USD)» is no weight, «Weight (kg)» is', () => {
+    expect(first([['Description', 'Qty', 'Gross (USD)', 'Net (USD)'], ['Chair', 10, 120, 100]]).weightKg).toBeNull();
+    expect(first([['Description', 'Qty', 'Gross, $', 'Net, $'], ['Chair', 10, 120, 100]]).weightKg).toBeNull();
+    expect(first([['Description', 'Qty', 'Weight (kg)'], ['Chair', 10, 120]]).weightKg).toBe(120);
+  });
+
+  it('a one-column list over typed lines skips a TITLE line and a header-shaped line, and never a product', () => {
+    const names = (rows: string[]) => parseGoods(rows.map((r) => [r])).goods.map((g) => g.description);
+    expect(names(['Invoice No 12', 'Desk 5 pcs 100 kg', 'Chair 10 pcs 50 kg'])).toEqual(['Desk 5 pcs 100 kg', 'Chair 10 pcs 50 kg']);
+    expect(names(['商品名称', '耳机 300个 15kg', '充电器 200个 20kg'])).toEqual(['耳机 300个 15kg', '充电器 200个 20kg']);
+    expect(names(['Yiwu order 2026-10-21', 'Tovar nomi', 'Stol 5 dona 100 kg', 'Stul 3 dona 50 kg'])).toEqual([
+      'Stol 5 dona 100 kg',
+      'Stul 3 dona 50 kg',
+    ]);
+    // A product that happens to carry a list word is a product…
+    expect(names(['Goods trolley', 'Desk 5 pcs 100 kg'])).toEqual(['Goods trolley', 'Desk 5 pcs 100 kg']);
+    // …and a heading lower down never takes the products above it with it.
+    expect(names(['Куртка женская', 'Брюки мужские', 'Товары', 'Стол 5 шт 100 кг'])).toEqual([
+      'Куртка женская',
+      'Брюки мужские',
+      'Товары',
+      'Стол 5 шт 100 кг',
+    ]);
+  });
+
+  it('a figure the reader cannot use is said in the line’s note — never for a covered or a wordless cell', () => {
+    const line = first([['Description', 'Quantity', 'N.W.', 'CBM', 'Amount'], ['LED panel', '12,500PCS', '1,200KGS', '2.5CBM', 'n/a']]);
+    expect(line).toMatchObject({ quantity: null, weightKg: null, volumeM3: 2.5 });
+    expect(line.note).toBe('soni «12,500PCS» — aniq emas · vazn «1,200KGS» — aniq emas');
+    // A carton's weight merged over two lines is counted once and is no loss on the second.
+    const covered = new CoverMask();
+    covered.add(2, 2);
+    const goods = parseGoods([['Description', 'Qty', 'G.W.'], ['Chair', 5, '60 KGS'], ['Desk', 3, '60 KGS']], covered).goods;
+    expect(goods.map((g) => [g.weightKg, g.note])).toEqual([
+      [60, null],
+      [null, null],
+    ]);
+  });
+
+  it('a Description column is the name only when no header names the product beside it', () => {
+    expect(first([['Description', 'Product Name', 'Qty'], ['white plastic', 'Chair', 100]]).description).toBe('Chair');
+    expect(first([['Описание', 'Наименование', 'Кол-во'], ['пластик белый', 'Стул', 100]]).description).toBe('Стул');
+    // Beside a name column of article numbers, or with an «Item No.», it is the name.
+    expect(first([['Name', 'Description', 'Qty'], ['YW-2301', 'Office chair', 10]]).description).toBe('Office chair');
+    expect(first([['Item No.', 'Description', 'Qty'], ['YW-2301', 'Office chair', 10]]).description).toBe('Office chair');
+  });
+});
