@@ -69,7 +69,7 @@ import { threadAiAdvice } from '@/modules/wms/calc/from-thread';
 import { PASS_FAILED, STOOD_DOWN, attemptStanding, registerCalcPrefillWorker } from '@/modules/wms/calc/jobs';
 import { SHEET_TEXT_BUDGET, csvRows, readGoodsFile, workbookRows } from '@/modules/wms/deals/goods-file';
 import { isArticleNumber, parseGoods, type Cell } from '@/modules/wms/deals/goods-import';
-import { MAX_SHEETS, htmlTableSheets, readXls, spreadsheetMlSheets } from '@/modules/wms/deals/xls';
+import { MAX_ROWS, MAX_SHEETS, htmlTableSheets, readXls, spreadsheetMlSheets } from '@/modules/wms/deals/xls';
 import {
   activeIntake,
   analyzeCollected,
@@ -741,7 +741,10 @@ function expectLinear(build: (n: number) => string, read: (text: string) => numb
   time(n); // warm
   const one = time(n);
   const two = time(2 * n);
-  expect(one.rows, 'rows read').toBe(n);
+  // The readers stop at MAX_ROWS since round 1 and SAY so (S-r1 ND8); a
+  // bigger table is read to the cap, still in linear time (c0068/c0069,
+  // lead 2026-10-22: «8000 rows read» was the harvest loop's template).
+  expect(one.rows, 'rows read').toBe(Math.min(n, MAX_ROWS));
   expect(two.ms, `${Math.round(one.ms)} ms at ${n}, ${Math.round(two.ms)} ms at ${2 * n}`).toBeLessThan(3 * one.ms + 40);
 }
 const htmlRows = (n: number) => '<html><body><table>' + '<tr><td>Стол</td><td>5</td>\n'.repeat(n) + '</table></body></html>';
@@ -1025,8 +1028,14 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
   c0065: async () => expectLinear(xmlRows, (t) => spreadsheetMlSheets(t)![0]!.rows.length, 2000),
   c0066: async () => expectLinear(htmlRows, (t) => htmlTableSheets(t)![0]!.rows.length, 4000),
   c0067: async () => expectLinear(xmlRows, (t) => spreadsheetMlSheets(t)![0]!.rows.length, 4000),
-  c0068: async () => expectLinear(htmlRows, (t) => htmlTableSheets(t)![0]!.rows.length, 8000),
-  c0069: async () => expectLinear(xmlRows, (t) => spreadsheetMlSheets(t)![0]!.rows.length, 8000),
+  c0068: async () => {
+    expectLinear(htmlRows, (t) => htmlTableSheets(t)![0]!.rows.length, 8000);
+    expect(htmlTableSheets(htmlRows(8000))![0]!.rowsLeftOut).toBe(true);
+  },
+  c0069: async () => {
+    expectLinear(xmlRows, (t) => spreadsheetMlSheets(t)![0]!.rows.length, 8000);
+    expect(spreadsheetMlSheets(xmlRows(8000))![0]!.rowsLeftOut).toBe(true);
+  },
   c0075: async () => {
     const rows = htmlTableSheets(
       '<table>\n<tr><th rowspan=2>Наименование</th><th rowspan=2>Кол-во</th><th colspan=2>Вес, кг</th><th rowspan=2>Сумма</th></tr>\n<tr><th>нетто</th><th>брутто</th></tr>\n<tr><td>Стол</td><td>5</td><td>100</td><td>110</td><td>2500</td></tr>\n<tr><td>Стул</td><td>10</td><td>50</td><td>60</td><td>900</td></tr>\n</table>',
@@ -1566,7 +1575,9 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
   c1002: async () => {
     const items = pasteItems('Kurtka 1200 50 3000');
     expect(items).toHaveLength(1);
-    expect([items[0]!.name, items[0]!.tnvedCode]).toEqual(['Kurtka', null]);
+    // The CODE is R3-T5's subject; the name is the kernel's one-cell rule
+    // («Stul 2 21»), not asserted (lead 2026-10-22, the skeptic's c1002).
+    expect(items[0]!.tnvedCode).toBeNull();
   },
   c1289: async () => {
     const built = await buildFile(
