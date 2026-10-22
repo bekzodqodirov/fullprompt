@@ -93,12 +93,10 @@ describe('the lead’s name: the hint cut out of one line, contact lines dropped
     expect(leadName('Murod @murod_uz +998 90 123 45 67')).toBe('Murod');
   });
 
-  it('nothing name-like left: one line is named by the code or by nobody; several lines keep R3-C4’s collapse', () => {
+  it('nothing name-like left: one line or several, the lead is named by the code or by nobody', () => {
     expect(leadName('Kod GS777 tel 90 123 45 67')).toBe('GS777');
     expect(intakeClientLabel('+998 90 123 45 67', { phone: '+998 90 123 45 67' })).toBeNull();
-    expect(intakeClientLabel('GS777\n+998 90 123 45 67', { code: 'GS777', phone: '+998 90 123 45 67' })).toBe(
-      'GS777 +998 90 123 45 67',
-    );
+    expect(intakeClientLabel('GS777\n+998 90 123 45 67', { code: 'GS777', phone: '+998 90 123 45 67' })).toBe('GS777');
   });
 });
 

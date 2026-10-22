@@ -518,15 +518,15 @@ function nameBesideHint(line: string, hint: { code?: string; phone?: string }): 
  * and nothing else (`isContactLine`; round-3 review R3-C4 — no longer every
  * line with a digit, «Ali aka 2» keeps its «2»; round 4 — any label, a second
  * phone, a handle), and a line that is only a label waiting for its value
- * («Mijoz:»). Every other line is kept as written. When nothing is left, the
- * whole text collapsed onto one line (R3-C4).
+ * («Mijoz:»). Every other line is kept as written. When nothing is left: the
+ * code, or nobody (the lead's call of 2026-10-22 over R3-C4's collapsed text,
+ * which put the phone back into the name); with no hint at all, the text
+ * collapsed onto one line.
  *
  * One line: the hint's phone and code are cut out of it (`nameBesideHint`,
  * round 4), and when nothing name-like is left the lead is named by the code,
  * or by nobody (round-4 integration S-c: «GS 777 90 123 45 67» named it with
- * the phone). The several-lines fallback stays R3-C4's — a binding decision
- * this round may not move (the corpus's c1677); that the two differ is stated
- * to the lead.
+ * the phone) — the same rule as several lines now.
  *
  * Null = nothing typed, or a one-line hint that is only a phone: the caller
  * has its own word for that. Pure.
@@ -535,7 +535,11 @@ export function intakeClientLabel(raw: string, hint: { code?: string; phone?: st
   const lines = hintLines(raw);
   if (lines.length === 1 && hint) return nameBesideHint(lines[0]!, hint) ?? hint.code ?? null;
   const named = lines.filter((l) => !isBareLabel(l) && !isContactLine(l, hint));
-  return (named.length > 0 ? named : lines).join(' ') || null;
+  if (named.length > 0) return named.join(' ');
+  // Nothing name-like left: the lead is named by the code, or by nobody —
+  // never by the phone (lead 2026-10-22: S-c over R3-C4's collapsed text,
+  // «GS777\n+998 90 …» named the lead with the number its own column holds).
+  return hint ? (hint.code ?? null) : lines.join(' ') || null;
 }
 
 /**

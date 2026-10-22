@@ -146,11 +146,12 @@ describe('a line the Excel already lists is not added again under the model’s 
 });
 
 describe('the customer as one line (round-2 review, C8/C9)', () => {
-  it('the lines that ARE the hint’s phone or code leave the name; a bare label too; else the text on one line', () => {
+  it('the lines that ARE the hint’s phone or code leave the name; a bare label too; nothing left → the code', () => {
     const phone = { phone: '+998 90 123 45 67' };
     expect(intakeClientLabel('Ali aka\n+998 90 123 45 67', phone)).toBe('Ali aka');
     expect(intakeClientLabel('Ism: Ali aka\nTel: +998 90 123 45 67', phone)).toBe('Ism: Ali aka');
-    expect(intakeClientLabel('Mijoz:\nGS777', { code: 'GS777' })).toBe('Mijoz: GS777');
+    // Nothing name-like left: the code (the lead's call of 2026-10-22).
+    expect(intakeClientLabel('Mijoz:\nGS777', { code: 'GS777' })).toBe('GS777');
     // One line: the hint's code is cut out of it and the name kept (round-4
     // review, C-r2 close-variant — the corpus's c1672 «gs777 Ali» → «Ali»).
     expect(intakeClientLabel('  GS777  Bobur ', { code: 'GS777' })).toBe('Bobur');

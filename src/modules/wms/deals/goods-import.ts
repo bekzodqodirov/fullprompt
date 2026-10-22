@@ -480,9 +480,13 @@ function findHeader(rows: Cell[][]): { found: Detected | null; refused: number |
       const listed = below.flat().filter((cell) => cellText(cell) !== '');
       const most = (test: (cell: Cell) => boolean) => listed.filter(test).length * 2 > listed.length;
       const hasDigit = (cell: Cell) => /\d/.test(cellText(cell));
-      if (most(carriesFigure) || (header.some(hasDigit) && most(hasDigit))) {
-        return { found: null, refused: listOpening(rows) };
-      }
+      if (most(carriesFigure)) return { found: null, refused: listOpening(rows) };
+      // A numbered TITLE («Заявка от 15.10.2026», «Заказ № 15») over a list
+      // of names is passed over, not a refusal: the real one-cell header may
+      // stand on the next row (S-r2 ND1 — stopping here made «Наименование»
+      // over Труба ППР 32 / Кран 1/2 / Муфта 25 a text sheet, and the VED
+      // paste landed the title and the header as items).
+      if (header.some(hasDigit) && most(hasDigit)) continue;
     }
     // The TNVED column is claimed BEFORE the name keys run: «Код ТН ВЭД
     // товара» contains «товар», and taken as the NAME it named every

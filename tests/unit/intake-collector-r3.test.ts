@@ -292,10 +292,9 @@ describe('the summary prints the whole hint; the lead is named without its phone
     expect(intakeClientLabel('Ali aka\n+998 90 555 44 33', { phone: '+998 90 123 45 67' })).toBe(
       'Ali aka +998 90 555 44 33',
     );
-    // Nothing but the contact: the whole text, on one line.
-    expect(intakeClientLabel('GS777\n+998 90 123 45 67', { code: 'GS777', phone: '+998 90 123 45 67' })).toBe(
-      'GS777 +998 90 123 45 67',
-    );
+    // Nothing but the contact: the code names the lead, never the phone (the
+    // lead's call of 2026-10-22 over R3-C4's collapsed text).
+    expect(intakeClientLabel('GS777\n+998 90 123 45 67', { code: 'GS777', phone: '+998 90 123 45 67' })).toBe('GS777');
   });
 });
 
