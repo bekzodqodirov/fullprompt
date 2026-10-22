@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { detectColumns, parseGoods, parseNumber } from '@/modules/wms/deals/goods-import';
+import { CoverMask, detectColumns, isArticleNumber, parseGoods, parseNumber } from '@/modules/wms/deals/goods-import';
 
 /**
  * The 50-goods file detective work (DEALS.md answer 6), against the shapes
@@ -404,5 +404,193 @@ describe('the second review of the header detective', () => {
     // A money word keeps a money column money, whatever else it says.
     const gross = parseGoods([['Description', 'Qty', 'Gross weight', 'Gross amount'], ['Chair', 10, 120, 500]]).goods[0];
     expect(gross).toMatchObject({ weightKg: 120, amount: 500 });
+  });
+});
+
+/**
+ * The third review (2026-10-21, R3-S1 … R3-S10): what the second fix round's
+ * header detective read worse than the round before it, and the close
+ * variants worth closing while here. Every table is a shape the business
+ * receives; the cases the lead pinned are listed whole.
+ */
+describe('the third review of the header detective', () => {
+  const names = (rows: (string | number | null)[][]) => parseGoods(rows).goods.map((g) => g.description);
+
+  it('a name header that MENTIONS a model or a brand is still the name over an «Item No.» column (R3-S1)', () => {
+    const cases: [string[], (string | number)[][], string[]][] = [
+      [['Item No.', 'Description / Model', 'Qty'], [['YW-1', 'Table', 5], ['YW-2', 'Chair', 3]], ['Table', 'Chair']],
+      [['Item No.', '品名/型号', '数量'], [['A1201', '桌子', 5]], ['桌子']],
+      [['Item', 'Name/Model', 'Qty'], [['YW-2301', 'Office chair', 5]], ['Office chair']],
+      [['Goods code', 'Goods name/brand', 'Qty'], [['A1201', 'Office chair', 5]], ['Office chair']],
+      [['商品编码', '品名规格型号', '数量'], [['A1201', '桌子 T1', 5]], ['桌子 T1']],
+      [['Item No.', 'Product Name & Model', 'Qty'], [['YW-2301', 'Office chair X1', 5]], ['Office chair X1']],
+      [['Item code', 'Product name / Model', 'Qty'], [['A-17', 'Office chair', 5]], ['Office chair']],
+      [['Item No.', 'Brand & description', 'Qty'], [['YW-2301', 'Xiaomi robot vacuum', 5]], ['Xiaomi robot vacuum']],
+      [['Item No.', 'Model/Description', 'Qty', 'N.W.'], [['YW-2301', 'Office chair, mesh', 10, 50]], ['Office chair, mesh']],
+    ];
+    for (const [header, rows, expected] of cases) expect(names([header, ...rows]), header.join(' | ')).toEqual(expected);
+    // …and S5 still holds: a code, a brand or a party to the LEFT is passed
+    // over while the name column reads as words.
+    expect(names([['Brand name', 'Product description', 'Qty'], ['XIAOMI', 'Robot vacuum cleaner', 5]])).toEqual(['Robot vacuum cleaner']);
+    expect(names([['Код товара', 'Наименование', 'Кол-во'], ['УТ-00012345', 'Стол', 5]])).toEqual(['Стол']);
+  });
+
+  it('a header repeated into the sub-header row is not data: a one-line invoice keeps its TNVED column (R3-S2)', () => {
+    // What every reader hands over for a two-row header: the merged header
+    // cells repeated down into the second row.
+    const rows = [
+      ['Код ТН ВЭД товара', 'Наименование', 'Кол-во', 'Вес, кг', null],
+      ['Код ТН ВЭД товара', 'Наименование', 'Кол-во', 'нетто', 'брутто'],
+      ['9403301100', 'Стол', 5, 100, 110],
+    ];
+    expect(detectColumns(rows)!.columns.tnved).toBe(0);
+    expect(parseGoods(rows).goods.map((g) => [g.description, g.tnvedCode])).toEqual([['Стол', '9403301100']]);
+  });
+
+  it('a merged position counts a quantity, weight, volume or line total once; a name, code, unit or unit price repeats (R3-S3)', () => {
+    const rows = [
+      ['Наименование', 'Код ТН ВЭД', 'Кол-во', 'Ед.', 'Вес, кг', 'Объем, м3', 'Сумма'],
+      ['LED 50W', '9405110000', 10, 'шт', 100, 1.2, 900],
+      ['LED 50W', '9405110000', 10, 'шт', 100, 1.2, 900],
+    ];
+    const covered = new CoverMask();
+    for (let col = 0; col < 7; col += 1) covered.add(2, col);
+    expect(parseGoods(rows, covered).goods.map((g) => [g.description, g.tnvedCode, g.quantity, g.unit, g.weightKg, g.volumeM3, g.amount])).toEqual([
+      ['LED 50W', '9405110000', 10, 'шт', 100, 1.2, 900],
+      ['LED 50W', '9405110000', null, 'шт', null, null, null],
+    ]);
+    // A unit PRICE is the price of every line it covers.
+    const priced = [
+      ['Наименование', 'Кол-во', 'Цена'],
+      ['Кресло чёрное', 5, 50],
+      ['Кресло белое', 3, 50],
+    ];
+    const price = new CoverMask();
+    price.add(2, 2);
+    expect(parseGoods(priced, price).goods.map((g) => g.amount)).toEqual([50, 50]);
+    // With no mask, nothing is taken for merged.
+    expect(parseGoods(rows).goods.map((g) => g.amount)).toEqual([900, 900]);
+  });
+
+  it('a one-column list that carries its figures has no header ANYWHERE, and the would-be header is no product (R3-S4)', () => {
+    const oil = parseGoods([['Наименование товара'], ['Масло моторное 4 л'], ['Перчатки рабочие 12 пар'], ['Краска белая 2.5 л']]);
+    expect([oil.headerRow, oil.goods.map((g) => g.description)]).toEqual([
+      null,
+      ['Масло моторное 4 л', 'Перчатки рабочие 12 пар', 'Краска белая 2.5 л'],
+    ]);
+    expect(names([['Наименование'], ['Стол офисный 5 шт 100 кг'], ['Стул 30 шт 150 кг']])).toEqual([
+      'Стол офисный 5 шт 100 кг',
+      'Стул 30 шт 150 кг',
+    ]);
+    expect(names([['Tovar nomi'], ['Stul 4 ta oyoqli'], ['Stol'], ['Shkaf 2 joy']])).toEqual(['Stul 4 ta oyoqli', 'Stol', 'Shkaf 2 joy']);
+    // A LATER one-cell line with a name key in it never becomes the header
+    // and takes the lines above it with it.
+    const list = parseGoods([
+      ['Список товаров'],
+      ['Стол офисный 5 шт 100 кг'],
+      ['Стул 30 шт 150 кг'],
+      ['Шкаф 2 шт 80 кг'],
+      ['Товар забрать со склада'],
+      ['Менеджер Алишер'],
+    ]);
+    expect([list.headerRow, list.goods.map((g) => g.description)]).toEqual([
+      null,
+      ['Стол офисный 5 шт 100 кг', 'Стул 30 шт 150 кг', 'Шкаф 2 шт 80 кг', 'Товар забрать со склада', 'Менеджер Алишер'],
+    ]);
+    expect(names([['Goods list'], ['Office chair 10 pcs 50 kg'], ['Desk 5 pcs 100 kg'], ['Contact name: Ali']])).toEqual([
+      'Office chair 10 pcs 50 kg',
+      'Desk 5 pcs 100 kg',
+      'Contact name: Ali',
+    ]);
+    // The would-be header below a title is skipped with the title above it —
+    // neither was ever a product under it; a list with no header at all, or
+    // whose «header» comes after a line with its figures, keeps every line.
+    expect(names([['Yiwu Trading'], ['Наименование'], ['Стол офисный 5 шт 100 кг'], ['Стул 30 шт 150 кг']])).toEqual([
+      'Стол офисный 5 шт 100 кг',
+      'Стул 30 шт 150 кг',
+    ]);
+    expect(names([['Стол офисный 5 шт 100 кг'], ['Товары'], ['Стул 30 шт 150 кг']])).toEqual([
+      'Стол офисный 5 шт 100 кг',
+      'Товары',
+      'Стул 30 шт 150 кг',
+    ]);
+    expect(names([[null], ['Наименование'], ['Стол офисный 5 шт 100 кг'], ['Стул 30 шт 150 кг']])).toEqual([
+      'Стол офисный 5 шт 100 кг',
+      'Стул 30 шт 150 кг',
+    ]);
+  });
+
+  it('capital letters make an article only when they JOIN the digits like one (R3-S5)', () => {
+    const articles = [
+      'SKU 0042',
+      'YW-2301',
+      'YW2301',
+      'YW 2301',
+      'A-17',
+      'AB17',
+      'ЦБ-00012345',
+      'УТ-00000077',
+      'АБ-1201',
+      'gs-1201',
+      'Art. 2301',
+      'Арт. 2301',
+    ];
+    const words = [
+      'Труба 32',
+      'Кран 1/2',
+      'Муфта 25',
+      'ДСП 16',
+      'МДФ 18',
+      'ГКЛ 12',
+      'ПВХ 50',
+      'ПВХ 110',
+      'ТРУБА 32',
+      'КРАН 1/2',
+      'МУФТА 25',
+      'СТОЛ 2',
+      'LED 50',
+      'LCD 32',
+      'USB 3.0',
+    ];
+    expect(articles.filter((text) => !isArticleNumber(text))).toEqual([]);
+    expect(words.filter(isArticleNumber)).toEqual([]);
+    // …and so the name column is the names, not the description beside it.
+    expect(names([['Наименование', 'Описание', 'Кол-во'], ['ДСП 16', 'ламинированная белая', 5], ['МДФ 18', 'сырая', 3], ['ГКЛ 12', 'влагостойкий', 2]])).toEqual([
+      'ДСП 16',
+      'МДФ 18',
+      'ГКЛ 12',
+    ]);
+    expect(names([['Наименование', 'Описание', 'Кол-во'], ['ТРУБА 32', 'Полипропилен PN20', 10], ['КРАН 1/2', 'Латунь', 5], ['МУФТА 25', 'ПП', 3]])).toEqual([
+      'ТРУБА 32',
+      'КРАН 1/2',
+      'МУФТА 25',
+    ]);
+  });
+
+  it('«Gross total | Discount | Net total» is the invoice’s money, never the weight (R3-S8)', () => {
+    expect(
+      parseGoods([['Description', 'Qty', 'Unit price', 'Gross total', 'Discount', 'Net total'], ['Chair', 10, 50, 500, 50, 450]]).goods[0],
+    ).toMatchObject({ weightKg: null, amount: 450 });
+    // …with a real gross WEIGHT beside it, «Net total» is still money, never
+    // the net weight that gross column would vouch for…
+    expect(
+      parseGoods([['Description', 'Qty', 'Gross weight', 'Gross total', 'Discount', 'Net total'], ['Chair', 10, 120, 500, 50, 450]]).goods[0],
+    ).toMatchObject({ weightKg: 120, amount: 450 });
+    // …and «Gross total» vouches for no «Net» being a weight.
+    expect(
+      parseGoods([['Description', 'Qty', 'Unit price', 'Gross total', 'Discount', 'Net'], ['Chair', 10, 50, 500, 50, 450]]).goods[0]!.weightKg,
+    ).toBeNull();
+    // A total that SAYS it weighs is still the weight.
+    expect(parseGoods([['Tovar nomi', 'Soni', 'Umumiy vazn'], ['Stul', 10, 120]]).goods[0]).toMatchObject({ weightKg: 120 });
+    expect(parseGoods([['Description', 'Qty', 'Total G.W.', 'Total amount'], ['Chair', 10, 120, 500]]).goods[0]).toMatchObject({
+      weightKg: 120,
+      amount: 500,
+    });
+  });
+
+  it('«毛重／箱», «毛重(箱)», «毛重（箱）» are one package’s weight, never the line’s (R3-S10)', () => {
+    for (const header of ['毛重／箱', '毛重(箱)', '毛重（箱）', '净重／件', '净重(件)']) {
+      expect(parseGoods([['品名', '数量', header, '总毛重'], ['椅子', 10, 12, 120]]).goods[0]!.weightKg, header).toBe(120);
+    }
   });
 });

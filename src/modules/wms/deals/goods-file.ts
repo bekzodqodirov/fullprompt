@@ -1,15 +1,15 @@
 import ExcelJS from 'exceljs';
-import { parseGoods, type Cell, type GoodsRow } from './goods-import';
+import { CoverMask, parseGoods, type Cell, type Covered, type GoodsRow } from './goods-import';
 import {
   MAX_COLS,
   MAX_MARKUP_CHARS,
   MAX_ROWS,
-  coveredValue,
   htmlTableSheets,
   isCompoundFile,
   markupOf,
   readXls,
   spreadsheetMlSheets,
+  withCovered,
   type SheetRows,
 } from './xls';
 
@@ -58,22 +58,64 @@ function cellValue(value: ExcelJS.CellValue): Cell {
 }
 
 /**
- * One cell of a sheet, a merged region's covered cells included (S11, the
- * second review). exceljs answers a covered cell with its master's value, so
- * a carton's amount merged over two lines was counted twice from an .xlsx and
- * once from the same table as HTML, and a title merged across the sheet read
- * as a header of four «Товарная накладная» cells. Now one rule for every
- * format (`coveredValue`): DOWN the master's own column a text repeats and a
- * figure is null; to its right a covered cell is null.
+ * One worksheet read into rows, a merged region's covered cells included,
+ * bounded like every other shape (`MAX_ROWS` × `MAX_COLS`).
+ *
+ * exceljs answers a covered cell with its master's value; one rule for every
+ * format now (R3-S3, the third review): DOWN the master's own column the value
+ * repeats and the position is `covered`, so `parseGoods` counts a merged
+ * carton weight or line total once and reads a merged name, code or unit
+ * price as every covered line's own; to the RIGHT of the master a covered
+ * cell is null, so a title merged across the sheet is never a header of four
+ * «Товарная накладная» cells (S11). The second round decided by what the TEXT
+ * looked like and lost a merged HS code, a merged price and names such as
+ * «LED 50W» — and ran a pattern over the master's text per covered cell
+ * (R3-S7: 18.7 s measured for one 370 KB file). A master is read once
+ * (`masters`): a rich-text master merged down five thousand rows is joined
+ * once, not five thousand times — measured, four such columns held +603 MB of
+ * copies of one string.
  */
-function sheetCell(cell: ExcelJS.Cell): Cell {
-  if (cell.type !== ExcelJS.ValueType.Merge) return cellValue(cell.value);
-  const master = cell.master;
-  if (master === cell || master.fullAddress.col !== cell.fullAddress.col) return null;
-  return coveredValue(cellValue(master.value));
+function worksheetRows(sheet: ExcelJS.Worksheet): SheetRows {
+  const rows: Cell[][] = [];
+  const covered = new CoverMask();
+  const masters = new WeakMap<ExcelJS.Cell, Cell>();
+  const masterValue = (master: ExcelJS.Cell): Cell => {
+    if (!masters.has(master)) masters.set(master, cellValue(master.value));
+    return masters.get(master) ?? null;
+  };
+  sheet.eachRow({ includeEmpty: true }, (row) => {
+    if (rows.length >= MAX_ROWS) return;
+    const r = rows.length;
+    const values: Cell[] = [];
+    // row.values is 1-based with a hole at 0.
+    for (let c = 1; c <= Math.min(row.cellCount, MAX_COLS); c += 1) {
+      const cell = row.getCell(c);
+      if (cell.type !== ExcelJS.ValueType.Merge) {
+        values.push(cellValue(cell.value));
+        continue;
+      }
+      const master = cell.master;
+      if (master === cell || master.fullAddress.col !== cell.fullAddress.col) {
+        values.push(null);
+        continue;
+      }
+      const value = masterValue(master);
+      if (value !== null) covered.add(r, c - 1);
+      values.push(value);
+    }
+    rows.push(values);
+  });
+  // exceljs hands back every sheet whatever its `state`.
+  const hidden = sheet.state === 'hidden' || sheet.state === 'veryHidden';
+  return withCovered(hidden ? { name: sheet.name, rows, hidden } : { name: sheet.name, rows }, covered);
 }
 
-export async function workbookRows(body: ArrayBuffer | Buffer): Promise<Cell[][] | null> {
+/**
+ * The deal import's reader: the FIRST worksheet, with its covered positions —
+ * `parseGoods(sheet.rows, sheet.covered)`, or a merged amount is counted
+ * twice (R3-S3).
+ */
+export async function workbookRows(body: ArrayBuffer | Buffer): Promise<SheetRows | null> {
   const workbook = new ExcelJS.Workbook();
   try {
     await workbook.xlsx.load(body as ArrayBuffer);
@@ -81,15 +123,7 @@ export async function workbookRows(body: ArrayBuffer | Buffer): Promise<Cell[][]
     return null;
   }
   const sheet = workbook.worksheets[0];
-  if (!sheet) return null;
-  const rows: Cell[][] = [];
-  sheet.eachRow({ includeEmpty: true }, (row) => {
-    const values: Cell[] = [];
-    // row.values is 1-based with a hole at 0.
-    for (let c = 1; c <= row.cellCount; c += 1) values.push(sheetCell(row.getCell(c)));
-    rows.push(values);
-  });
-  return rows;
+  return sheet ? worksheetRows(sheet) : null;
 }
 
 /**
@@ -151,20 +185,7 @@ export async function workbookSheets(body: ArrayBuffer | Buffer): Promise<SheetR
   } catch {
     return null;
   }
-  const sheets: SheetRows[] = [];
-  for (const sheet of workbook.worksheets) {
-    const rows: Cell[][] = [];
-    sheet.eachRow({ includeEmpty: true }, (row) => {
-      if (rows.length >= MAX_ROWS) return;
-      const values: Cell[] = [];
-      for (let c = 1; c <= Math.min(row.cellCount, MAX_COLS); c += 1) values.push(sheetCell(row.getCell(c)));
-      rows.push(values);
-    });
-    // exceljs hands back every sheet whatever its `state`.
-    const hidden = sheet.state === 'hidden' || sheet.state === 'veryHidden';
-    sheets.push(hidden ? { name: sheet.name, rows, hidden } : { name: sheet.name, rows });
-  }
-  return sheets;
+  return workbook.worksheets.map(worksheetRows);
 }
 
 /**
@@ -202,17 +223,23 @@ export type GoodsFileRead =
    * double the order. The other sheets go to the model as `text` (their
    * gross weights and volumes are the shipment's totals).
    */
-  | { kind: 'goods'; goods: GoodsRow[]; sheet: string; sheets: number; text: string; textCut: boolean }
+  | { kind: 'goods'; goods: GoodsRow[]; sheet: string; sheets: number; text: string; textCut: boolean; cellsCut: boolean }
   /**
    * A table with no header the reader knows — handed to the model as text.
    *
    * On both kinds `text` is whole lines, one per row, at most
-   * `SHEET_TEXT_BUDGET` characters, and `textCut` is true exactly when
-   * something was left out of it (`sheetsAsText`). A row-wise fitter
-   * downstream cannot see rows it was never given, so `textCut` is the only
-   * word that they are missing (S4).
+   * `SHEET_TEXT_BUDGET` characters (`sheetsAsText`), and two different
+   * things can be shortened in it (R3-S6, the third review):
+   *  - `textCut` — some ROW is missing: the budget ran out before the sheets
+   *    did. A row-wise fitter downstream cannot see rows it was never given,
+   *    so this is the only word that they are missing (S4) — «AI reads only
+   *    the start» is true, and the totals the model sums are partial;
+   *  - `cellsCut` — every row is there, but a cell was cut at its 300
+   *    characters or a too-long row lost its last cells. A customs
+   *    description past 300 characters is ordinary, and calling that «rows
+   *    left out» told the seller and the model so on almost every invoice.
    */
-  | { kind: 'text'; text: string; sheets: number; textCut: boolean }
+  | { kind: 'text'; text: string; sheets: number; textCut: boolean; cellsCut: boolean }
   /**
    * A spreadsheet that cannot be read, and why — said to the seller. A markup
    * text past `MAX_MARKUP_CHARS` is `broken`: «save it again» (as .xlsx) is
@@ -230,45 +257,58 @@ export type GoodsFileRead =
  * text in the middle of a row, the half row reached the model as a product,
  * and the row-wise fitter downstream (`fitSheetTexts`) counted the text as
  * fitting whole — so nobody told the seller. A row's own line is capped first
- * (`LINE_TEXT_CHARS`, whole cells), and a cell's line break is a space, so a
- * line here is always one row.
+ * (`LINE_TEXT_CHARS`, whole cells), and a cell's own line breaks are « / »
+ * (R3-S9: «Стол 5 шт» and «Стул 3 шт» typed one per line in one cell were one
+ * run-on line), so a line here is always one row and its items still show.
  *
- * `cut` (`textCut` on the answer) is true exactly when something of these
- * sheets was left out of the text: a row the budget did not reach, cells past
- * a row's cap, or a cell's characters past `CELL_TEXT_CHARS`.
+ * A position a merge DOWN covers is EMPTY here (R3-S3), however `parseGoods`
+ * reads it: the readers repeat the master's value there, and a carton's
+ * weight merged over three lines, written three times or as «〃» («the same
+ * again»), is a weight a model sums three times — on the packing-list sheets
+ * the model reads the shipment's totals from. An empty cell under a merged
+ * figure is also exactly what Excel's own CSV export writes, the shape the
+ * model has seen most. The cost, stated: a merged NAME in this text names
+ * only its first line; the exact reader still names every line.
+ *
+ * `rowsCut` is a row the budget did not reach; `cellsCut` a cell or a row's
+ * tail shortened while the row itself is there (R3-S6).
  */
-function sheetsAsText(sheets: SheetRows[]): { text: string; cut: boolean } {
+function sheetsAsText(sheets: SheetRows[]): { text: string; rowsCut: boolean; cellsCut: boolean } {
   let text = '';
-  let cut = false;
+  let rowsCut = false;
+  let cellsCut = false;
   each: for (const sheet of sheets) {
     let opened = false;
-    for (const row of sheet.rows) {
-      const read = rowLine(row);
+    for (const [r, row] of sheet.rows.entries()) {
+      const read = rowLine(row, r, sheet.covered ?? null);
       if (!read.line) continue;
       const head = opened ? '\n' : `${text ? '\n\n' : ''}[${sheet.name.slice(0, 100)}]\n`;
       if (text.length + head.length + read.line.length > SHEET_TEXT_BUDGET) {
-        cut = true;
+        rowsCut = true;
         break each;
       }
       text += head + read.line;
       opened = true;
-      if (read.cut) cut = true;
+      if (read.cut) cellsCut = true;
     }
   }
-  return { text, cut };
+  return { text, rowsCut, cellsCut };
 }
 
 /** One row as one line: its cells, each cut at `CELL_TEXT_CHARS`, while they fit `LINE_TEXT_CHARS`. */
-function rowLine(row: Cell[]): { line: string; cut: boolean } {
+function rowLine(row: Cell[], r: number, covered: Covered | null): { line: string; cut: boolean } {
   let line = '';
   let cut = false;
-  for (const cell of row) {
-    if (cell === null) continue;
+  for (const [c, cell] of row.entries()) {
+    if (cell === null || covered?.has(r, c)) continue;
     const raw = String(cell);
     // Only the head of a long cell is read: a cell is never the length of
     // the text it lands in (the 30,000-character shared string, #8).
     const window = raw.slice(0, CELL_TEXT_CHARS * 4);
-    const flat = window.replace(/\s+/g, ' ').trim();
+    const flat = window
+      .trim()
+      .replace(/\s*[\r\n]+\s*/g, ' / ')
+      .replace(/\s+/g, ' ');
     if (!flat) continue;
     const kept = flat.slice(0, CELL_TEXT_CHARS);
     if (kept.length < flat.length || /\S/.test(raw.slice(window.length))) cut = true;
@@ -324,23 +364,17 @@ export async function readGoodsFile(body: Buffer, contentType: string | null): P
   const filled = shown.length > 0 ? shown : nonEmpty;
   let best: { sheet: SheetRows; goods: GoodsRow[] } | null = null;
   for (const sheet of filled) {
-    const parsed = parseGoods(sheet.rows);
+    const parsed = parseGoods(sheet.rows, sheet.covered ?? null);
     if (parsed.headerRow !== null && parsed.goods.length > (best?.goods.length ?? 0)) {
       best = { sheet, goods: parsed.goods };
     }
   }
   const others = sheetsAsText(filled.filter((sheet) => sheet !== best?.sheet));
+  const cut = { textCut: others.rowsCut, cellsCut: others.cellsCut };
   if (best) {
-    return {
-      kind: 'goods',
-      goods: best.goods,
-      sheet: best.sheet.name,
-      sheets: filled.length,
-      text: others.text,
-      textCut: others.cut,
-    };
+    return { kind: 'goods', goods: best.goods, sheet: best.sheet.name, sheets: filled.length, text: others.text, ...cut };
   }
-  if (others.text) return { kind: 'text', text: others.text, sheets: filled.length, textCut: others.cut };
+  if (others.text) return { kind: 'text', text: others.text, sheets: filled.length, ...cut };
   return { kind: 'refused', reason: 'empty' };
 }
 

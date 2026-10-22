@@ -1,5 +1,5 @@
 import * as CFB from 'cfb';
-import type { Cell } from './goods-import';
+import { CoverMask, SHEET_MAX_COLS, type Cell, type Covered } from './goods-import';
 
 /**
  * The three shapes a file called «.xls» arrives in, read into rows (his 1.3 b,
@@ -30,7 +30,7 @@ import type { Cell } from './goods-import';
  */
 
 export const MAX_ROWS = 5_000;
-export const MAX_COLS = 100;
+export const MAX_COLS = SHEET_MAX_COLS;
 /** More sheets than any invoice or packing list carries; each costs a grid. */
 export const MAX_SHEETS = 32;
 /**
@@ -52,6 +52,13 @@ export interface SheetRows {
    * order.
    */
   hidden?: boolean;
+  /**
+   * The positions a merge DOWN covers, which hold their master's value
+   * repeated (R3-S3): `parseGoods` counts a covered figure once and reads a
+   * covered name or code as the line's own, and the model's text leaves a
+   * covered position empty. Present only when a merge covers something.
+   */
+  covered?: Covered;
 }
 
 export type XlsRead =
@@ -445,28 +452,6 @@ function upTo(piece: string, closer: RegExp): string {
   return end < 0 ? piece : piece.slice(0, end);
 }
 
-/**
- * A figure as a cell holds it — «900», «1 200,50», «120KGS», «12.5 CBM»,
- * «$500», «USD 500», «15%» — and not a word.
- */
-const FIGURE = /^(?:\p{Lu}{3}\s*)?[-+]?[$€¥₽£]?\s*\d[\d\s.,]*(?:\p{L}{1,6}\.?|[%$€¥₽£])?$/u;
-
-/**
- * What a position covered by a merge DOWN its master's column reads as, in
- * every format (S8, S11 — the second review). A TEXT is repeated: a name
- * merged over the two lines packed in one carton names both, where the
- * covered row used to lose its name and be dropped as no product at all. A
- * FIGURE is null: a carton's weight or amount merged over its lines is stated
- * once and counted once. A position covered to the RIGHT of its master is
- * null whatever it holds, so a title merged across the sheet stays ONE cell
- * and is never mistaken for a header.
- */
-export function coveredValue(value: Cell): Cell {
-  if (typeof value !== 'string') return null;
-  const text = value.trim();
-  return text === '' || FIGURE.test(text) ? null : value;
-}
-
 /** A span attribute (`colspan="2"`): a whole number from 1 up to `max`. */
 function spanOf(attrs: string, name: RegExp, max: number): number {
   const n = Number(name.exec(attrs)?.[1] ?? 1);
@@ -484,11 +469,12 @@ function spanOf(attrs: string, name: RegExp, max: number): number {
  *
  * Spans keep every column where the header put it (the review: a two-row
  * header «Вес, кг» over «нетто | брутто» read the gross weight as the line's
- * money, and the sub-header became a product). A covered position reads as
- * `coveredValue` says — a merged amount or carton weight is stated ONCE, so
- * it is counted once; a merged NAME names every row it covers (S8), and the
- * sub-header row under a two-row header, which now repeats the header's own
- * name, is no product (`parseGoods` skips a row that names the header).
+ * money, and the sub-header became a product). A rowspan repeats its value
+ * DOWN its own column and says which positions it covers (`DownSpans`,
+ * R3-S3): a merged name or code names every row it covers, a merged carton
+ * weight or amount is counted once, and the sub-header row under a two-row
+ * header, which repeats the header's own name, is no product (`parseGoods`
+ * skips a row that names the header).
  */
 export function htmlTableSheets(text: string): SheetRows[] | null {
   if (markupOf(text) !== 'html') return null;
@@ -500,6 +486,7 @@ export function htmlTableSheets(text: string): SheetRows[] | null {
     const spans = new DownSpans();
     for (const tr of upTo(piece, /<\/table\s*>/i).split(/<tr\b[^<>]*>/i).slice(1)) {
       if (rows.length >= MAX_ROWS) break;
+      spans.row = rows.length;
       const parts = upTo(tr, /<\/tr\s*>/i).split(/(<t[dh]\b[^<>]*>)/i);
       const cells: Cell[] = [];
       for (let i = 1; i + 1 < parts.length; i += 2) {
@@ -517,27 +504,51 @@ export function htmlTableSheets(text: string): SheetRows[] | null {
       }
       rows.push(spans.finish(cells));
     }
-    if (rows.length > 0) sheets.push({ name: `Jadval ${n + 1}`, rows });
+    if (rows.length > 0) sheets.push(withCovered({ name: `Jadval ${n + 1}`, rows }, spans.covered));
   }
   return sheets.length > 0 ? sheets : null;
+}
+
+/** A sheet, carrying its covered positions only when a merge covers any — every reader's one shape. */
+export function withCovered(sheet: SheetRows, covered: CoverMask): SheetRows {
+  return covered.size > 0 ? { ...sheet, covered } : sheet;
 }
 
 /**
  * The merges DOWN still open over the next rows, per column — one home for
  * the HTML rowspan and SpreadsheetML's `MergeDown`, so the two read a merged
- * cell the same way (`coveredValue`, S8/S11).
+ * cell the same way, and the way exceljs reads an .xlsx (R3-S3): DOWN the
+ * master's own column the value repeats and the position is `covered`; to
+ * the RIGHT of the master a covered position is null whatever it holds, so a
+ * title merged across the sheet stays ONE cell and is never mistaken for a
+ * header (S11).
+ *
+ * The decision is by POSITION, never by what the text looks like: the second
+ * round's content rule nulled anything shaped like a figure, and a TNVED code
+ * merged over the lines sharing it, a merged unit price and the names «LED
+ * 50W», «USB 3.0», «12V», «42 размер» were lost with the cartons' weights —
+ * the covered line dropped as no product, in silence. It also ran a pattern
+ * over the master's whole text for every covered cell (R3-S7: 18.7 s measured
+ * for one 370 KB .xlsx); a repeat is a reference.
  */
 class DownSpans {
   /** Per column: how many more rows a merge above still covers… */
   private readonly left: number[] = [];
-  /** …and what the covered position reads as. */
+  /** …what the covered position reads as… */
   private readonly value: Cell[] = [];
+  /** …and whether it is DOWN its master's own column. */
+  private readonly repeats: boolean[] = [];
+  /** The positions that repeat a master, for `SheetRows.covered`. */
+  readonly covered = new CoverMask();
+  /** The row the covered positions taken next stand in. */
+  row = 0;
 
   /** A cell at `col`, `across` wide, covering `down` more rows. */
   open(col: number, across: number, down: number, value: Cell): void {
     for (let k = 0; k < across && col + k < MAX_COLS; k += 1) {
       this.left[col + k] = down;
-      this.value[col + k] = k === 0 ? coveredValue(value) : null;
+      this.value[col + k] = k === 0 ? value : null;
+      this.repeats[col + k] = k === 0 && value !== null;
     }
   }
 
@@ -548,6 +559,7 @@ class DownSpans {
   /** The covered position's value, the merge one row nearer its end. */
   take(col: number): Cell {
     this.left[col]! -= 1;
+    if (this.repeats[col]) this.covered.add(this.row, col);
     return this.value[col] ?? null;
   }
 
@@ -578,7 +590,7 @@ class DownSpans {
  * right. A merge DOWN (`ss:MergeDown`) leaves the covered positions out of the
  * next rows — the writer gives the cells after them their own `ss:Index` —
  * and those positions read as the HTML reader reads a rowspan (`DownSpans`,
- * S11): a merged name repeated, a merged figure counted once.
+ * S11, R3-S3): the value repeated down its column, the position covered.
  */
 export function spreadsheetMlSheets(text: string): SheetRows[] | null {
   if (markupOf(text) !== 'spreadsheetml') return null;
@@ -592,6 +604,7 @@ export function spreadsheetMlSheets(text: string): SheetRows[] | null {
     const rowParts = body.split(/<(?:ss:)?Row\b([^<>]*)>/);
     for (let r = 1; r + 1 < rowParts.length; r += 2) {
       if (rows.length >= MAX_ROWS) break;
+      spans.row = rows.length;
       const cells: Cell[] = [];
       // `<Row/>` is an empty row; what follows it belongs to no row.
       if (!rowParts[r]!.endsWith('/')) {
@@ -627,7 +640,7 @@ export function spreadsheetMlSheets(text: string): SheetRows[] | null {
       }
       rows.push(spans.finish(cells));
     }
-    const sheet: SheetRows = { name: decodeEntities(name), rows };
+    const sheet: SheetRows = withCovered({ name: decodeEntities(name), rows }, spans.covered);
     // WorksheetOptions' <Visible>SheetHidden</Visible> (or …VeryHidden).
     if (/<(?:x:)?Visible>\s*Sheet(?:Very)?Hidden\b/.test(body)) sheet.hidden = true;
     sheets.push(sheet);

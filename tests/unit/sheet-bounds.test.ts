@@ -255,16 +255,24 @@ describe('the markup readers are linear and keep spanned columns in place (#9)',
     expect(read?.kind === 'goods' && read.goods[0]).toMatchObject({ description: 'Стол', weightKg: 100, amount: 2500 });
   });
 
-  it('a rowspan in the data keeps the next row’s figures in their columns, stated once', () => {
-    // One carton's gross weight merged over the two lines packed in it.
+  it('a rowspan in the data keeps the next row’s figures in their columns, stated once', async () => {
+    // One carton's gross weight merged over the two lines packed in it. The
+    // reader repeats it where the merge covers it and SAYS so (R3-S3); the
+    // parse counts it once and the model's text shows it once.
     const html = `<table>
       <tr><td>Наименование</td><td>Вес, кг</td><td>Кол-во</td></tr>
       <tr><td>Стол</td><td rowspan="2">160</td><td>5</td></tr>
       <tr><td>Стул</td><td>3</td></tr>
     </table>`;
-    expect(htmlTableSheets(html)![0]!.rows.slice(1)).toEqual([
+    const [sheet] = htmlTableSheets(html)!;
+    expect(sheet!.rows.slice(1)).toEqual([
       ['Стол', '160', '5'],
-      ['Стул', null, '3'],
+      ['Стул', '160', '3'],
+    ]);
+    expect([sheet!.covered?.has(1, 1), sheet!.covered?.has(2, 1), sheet!.covered?.has(2, 0)]).toEqual([false, true, false]);
+    expect(parseGoods(sheet!.rows, sheet!.covered).goods.map((g) => [g.description, g.weightKg, g.quantity])).toEqual([
+      ['Стол', 160, 5],
+      ['Стул', null, 3],
     ]);
   });
 
@@ -426,22 +434,38 @@ describe('the second review of the spreadsheet door', () => {
     const read = await readGoodsFile(await xlsxOf([{ name: 'S', rows: [row, ['Стол 5 шт']] }]), null);
     expect(read?.kind).toBe('text');
     if (read?.kind !== 'text') return;
-    expect(read.textCut).toBe(true);
+    // Both rows are there; the first lost its tail — cells, not rows (R3-S6).
+    expect([read.textCut, read.cellsCut]).toEqual([false, true]);
     const [, first, second] = read.text.split('\n');
     expect(first!.length).toBeLessThanOrEqual(2_000);
     expect(first!.split(' | ').every((cell, i) => cell === row[i])).toBe(true);
     expect(second).toBe('Стол 5 шт');
   });
 
-  it('a cell’s own line break is not a row: the text keeps one line per row (S4)', async () => {
-    const read = await readGoodsFile(await xlsxOf([{ name: 'S', rows: [['Yiwu Trading'], ['Куртка\nженская', 'синяя']] }]), null);
-    expect(read?.kind === 'text' && read.text).toBe('[S]\nYiwu Trading\nКуртка женская | синяя');
-    expect(read?.kind === 'text' && read.textCut).toBe(false);
+  it('a cell’s own line break is not a row: the text keeps one line per row, its lines joined by « / » (S4, R3-S9)', async () => {
+    const read = await readGoodsFile(
+      await xlsxOf([{ name: 'S', rows: [['Yiwu Trading'], ['Куртка\nженская', 'синяя'], ['Стол 5 шт\r\n\r\nСтул 3 шт\n']] }]),
+      null,
+    );
+    // The goods a seller typed one per line in ONE cell stay apart for the
+    // model — «Стол 5 шт Стул 3 шт» read as one run-on product.
+    expect(read?.kind === 'text' && read.text).toBe('[S]\nYiwu Trading\nКуртка / женская | синяя\nСтол 5 шт / Стул 3 шт');
+    expect(read?.kind === 'text' && [read.textCut, read.cellsCut]).toEqual([false, false]);
   });
 
-  it('a cell cut at its 300 characters is something left out (S4)', async () => {
-    const read = await readGoodsFile(await xlsxOf([{ name: 'S', rows: [['Yiwu Trading'], ['Ж'.repeat(400)]] }]), null);
-    expect(read?.kind === 'text' && read.textCut).toBe(true);
+  it('a cell cut at its 300 characters is a cell shortened, never a row left out (S4, R3-S6)', async () => {
+    // Every row is there: telling the seller «AI reads only the start» and the
+    // model «don’t sum, the file is longer» on every invoice whose customs
+    // description runs past 300 characters is false.
+    const read = await readGoodsFile(await xlsxOf([{ name: 'S', rows: [['Yiwu Trading'], ['Ж'.repeat(534)], ['Стол 5 шт']] }]), null);
+    expect(read?.kind === 'text' && [read.textCut, read.cellsCut]).toEqual([false, true]);
+    expect(read?.kind === 'text' && read.text.split('\n')).toHaveLength(4);
+  });
+
+  it('a row the budget never reached is a row left out, and only that (R3-S6)', async () => {
+    const lines = Array.from({ length: 300 }, (_, i) => `PL-${i};LED panel light 600x600 40W, ${i} PCS;12.5 kg`);
+    const read = await readGoodsFile(Buffer.from(lines.join('\n'), 'utf8'), 'text/csv');
+    expect(read?.kind === 'text' && [read.textCut, read.cellsCut]).toEqual([true, false]);
   });
 
   it('the S7 gate reads a one-column list in linear time — five cells of thirty thousand digits', () => {
@@ -488,7 +512,7 @@ describe('the second review of the spreadsheet door', () => {
   const goodsOf = (read: Awaited<ReturnType<typeof readGoodsFile>>) =>
     read?.kind === 'goods' && read.goods.map((g) => [g.description, g.quantity, g.weightKg, g.amount]);
 
-  it('XLSX: a covered cell repeats a merged TEXT down its column, a merged FIGURE is counted once (S11)', async () => {
+  it('XLSX: a covered cell repeats its master DOWN its column and is marked covered; a merged FIGURE is counted once (S11, R3-S3)', async () => {
     const workbook = new ExcelJS.Workbook();
     const ws = workbook.addWorksheet('S');
     ws.addRow([table.title, null, null, null]);
@@ -501,16 +525,29 @@ describe('the second review of the spreadsheet door', () => {
     ws.addRow(['Стул', 2, 10, 50]);
     const body = Buffer.from(await workbook.xlsx.writeBuffer());
     const sheets = await workbookSheets(body);
+    // Across the title: null. Down the name and the amount: the value, covered.
     expect(sheets![0]!.rows).toEqual([
       [table.title, null, null, null],
       table.header,
       ['Стол', 5, 100, 900],
-      ['Стол', 3, 60, null],
+      ['Стол', 3, 60, 900],
       ['Стул', 2, 10, 50],
     ]);
+    const covered = sheets![0]!.covered!;
+    expect([covered.has(3, 0), covered.has(3, 3), covered.has(2, 0), covered.has(0, 1), covered.has(3, 1)]).toEqual([
+      true,
+      true,
+      false,
+      false,
+      false,
+    ]);
     expect(goodsOf(await readGoodsFile(body, null))).toEqual(expected);
-    // The deal import's own reader follows the same rule.
-    expect(await workbookRows(body)).toEqual(sheets![0]!.rows);
+    // The deal import's own reader follows the same rule, mask and all.
+    const first = await workbookRows(body);
+    expect(first?.rows).toEqual(sheets![0]!.rows);
+    expect(parseGoods(first!.rows, first!.covered).goods.map((g) => [g.description, g.quantity, g.weightKg, g.amount])).toEqual(
+      expected,
+    );
   });
 
   it('HTML: the same table reads the same goods (S11)', async () => {
@@ -535,7 +572,167 @@ describe('the second review of the spreadsheet door', () => {
   <Row>${cell('Стул')}${cell(2)}${cell(10)}${cell(50)}</Row>
  </Table></Worksheet>
 </Workbook>`;
-    expect(spreadsheetMlSheets(xml)![0]!.rows[3]).toEqual(['Стол', '3', '60']);
+    const [sheet] = spreadsheetMlSheets(xml)!;
+    expect(sheet!.rows[3]).toEqual(['Стол', '3', '60', '900']);
+    expect([sheet!.covered?.has(3, 0), sheet!.covered?.has(3, 3), sheet!.covered?.has(3, 1)]).toEqual([true, true, false]);
     expect(goodsOf(await readGoodsFile(Buffer.from(xml, 'utf8'), null))).toEqual(expected);
   });
+});
+
+/**
+ * The third review (2026-10-21, R3-S2, R3-S3, R3-S7): a merged cell is
+ * decided by the COLUMN it stands in, never by what its text looks like, and
+ * every format hands the same rows and the same covered positions.
+ */
+describe('the third review of the spreadsheet door', () => {
+  const goodsOf = (read: Awaited<ReturnType<typeof readGoodsFile>>) =>
+    read?.kind === 'goods' && read.goods.map((g) => [g.description, g.tnvedCode, g.quantity, g.weightKg, g.amount]);
+
+  /** An .xlsx of rows, with the merges given in A1 notation. */
+  async function merged(rows: (string | number | null)[][], merges: string[]) {
+    const workbook = new ExcelJS.Workbook();
+    const ws = workbook.addWorksheet('S');
+    for (const row of rows) ws.addRow(row);
+    for (const range of merges) ws.mergeCells(range);
+    return Buffer.from(await workbook.xlsx.writeBuffer());
+  }
+  const html = (rows: string) => Buffer.from(`<table>${rows}</table>`, 'utf8');
+
+  it('a one-line invoice under a two-row header keeps its TNVED — HTML and XLSX (R3-S2)', async () => {
+    const page = html(
+      '<tr><td rowspan=2>Код ТН ВЭД товара</td><td rowspan=2>Наименование</td><td rowspan=2>Кол-во</td><td colspan=2>Вес, кг</td></tr>' +
+        '<tr><td>нетто</td><td>брутто</td></tr>' +
+        '<tr><td>9403301100</td><td>Стол</td><td>5</td><td>100</td><td>110</td></tr>',
+    );
+    expect(goodsOf(await readGoodsFile(page, null))).toEqual([['Стол', '9403301100', 5, 100, null]]);
+    const hs = html(
+      '<tr><th rowspan=2>Наименование</th><th rowspan=2>Код ТН ВЭД</th><th rowspan=2>Кол-во</th><th colspan=2>Вес, кг</th></tr>' +
+        '<tr><th>нетто</th><th>брутто</th></tr>' +
+        '<tr><td>Кресло офисное</td><td>9401300000</td><td>10</td><td>100</td><td>110</td></tr>',
+    );
+    expect(goodsOf(await readGoodsFile(hs, null))).toEqual([['Кресло офисное', '9401300000', 10, 100, null]]);
+    const book = await merged(
+      [
+        ['Код ТН ВЭД товара', 'Наименование', 'Кол-во', 'Вес, кг', null],
+        [null, null, null, 'нетто', 'брутто'],
+        ['9403301100', 'Стол', 5, 100, 110],
+      ],
+      ['A1:A2', 'B1:B2', 'C1:C2', 'D1:E1'],
+    );
+    expect(goodsOf(await readGoodsFile(book, null))).toEqual([['Стол', '9403301100', 5, 100, null]]);
+  });
+
+  it('a TNVED code or a unit PRICE merged over the lines sharing it is every line’s — XLSX and HTML (R3-S3)', async () => {
+    const code = await merged(
+      [
+        ['Description', 'HS code', 'Qty', 'Amount'],
+        ['Gaming chair', 9401300000, 5, 500],
+        ['Office chair', null, 3, 300],
+      ],
+      ['B2:B3'],
+    );
+    expect(goodsOf(await readGoodsFile(code, null))).toEqual([
+      ['Gaming chair', '9401300000', 5, null, 500],
+      ['Office chair', '9401300000', 3, null, 300],
+    ]);
+    const codePage = html(
+      '<tr><td>Description</td><td>HS code</td><td>Qty</td><td>Amount</td></tr>' +
+        '<tr><td>Gaming chair</td><td rowspan=2>9401300000</td><td>5</td><td>500</td></tr>' +
+        '<tr><td>Office chair</td><td>3</td><td>300</td></tr>',
+    );
+    expect(goodsOf(await readGoodsFile(codePage, null))).toEqual([
+      ['Gaming chair', '9401300000', 5, null, 500],
+      ['Office chair', '9401300000', 3, null, 300],
+    ]);
+    const price = await merged(
+      [
+        ['Наименование', 'Кол-во', 'Цена'],
+        ['Кресло чёрное', 5, 50],
+        ['Кресло белое', 3, null],
+      ],
+      ['C2:C3'],
+    );
+    expect(goodsOf(await readGoodsFile(price, null))).toEqual([
+      ['Кресло чёрное', null, 5, null, 50],
+      ['Кресло белое', null, 3, null, 50],
+    ]);
+  });
+
+  it.each(['LED 50W', 'LED 12', 'USB 3.0', 'ДСП 16мм', '12V', '42 размер'])(
+    'a NAME that looks like a figure — «%s» — merged over two lines names both, each with its own figures (R3-S3)',
+    async (name) => {
+      const book = await merged(
+        [
+          ['Description', 'Color', 'Qty', 'Weight, kg'],
+          [name, 'black', 10, 100],
+          [null, 'white', 5, 50],
+        ],
+        ['A2:A3'],
+      );
+      const want = [
+        [name, null, 10, 100, null],
+        [name, null, 5, 50, null],
+      ];
+      expect(goodsOf(await readGoodsFile(book, null))).toEqual(want);
+      const page = html(
+        '<tr><td>Description</td><td>Color</td><td>Qty</td><td>Weight, kg</td></tr>' +
+          `<tr><td rowspan=2>${name}</td><td>black</td><td>10</td><td>100</td></tr><tr><td>white</td><td>5</td><td>50</td></tr>`,
+      );
+      expect(goodsOf(await readGoodsFile(page, null))).toEqual(want);
+    },
+  );
+
+  it('the model’s text leaves a covered position empty: a merged carton weight is written ONCE (R3-S3)', async () => {
+    // No header the reader knows — this sheet goes to the model as text, the
+    // way the packing-list sheet beside an invoice does.
+    const page = html(
+      '<tr><td>Стол</td><td>5 шт</td><td rowspan=3>160 кг</td></tr><tr><td>Стул</td><td>3 шт</td></tr><tr><td>Полка</td><td>2 шт</td></tr>',
+    );
+    const read = await readGoodsFile(page, null);
+    expect(read?.kind === 'text' && read.text).toBe('[Jadval 1]\nСтол | 5 шт | 160 кг\nСтул | 3 шт\nПолка | 2 шт');
+    const book = await merged(
+      [
+        ['Стол', '5 шт', '160 кг'],
+        ['Стул', '3 шт', null],
+      ],
+      ['C1:C2'],
+    );
+    const fromBook = await readGoodsFile(book, null);
+    expect(fromBook?.kind === 'text' && fromBook.text).toBe('[S]\nСтол | 5 шт | 160 кг\nСтул | 3 шт');
+  });
+
+  it('a long text merged down five thousand rows is read in linear time (R3-S7)', async () => {
+    // The review's file: thirty cells of thirty thousand characters, each
+    // merged down to row 5,000. The content rule ran a pattern over the
+    // master's whole text for every covered cell — 18.7 s here.
+    const workbook = new ExcelJS.Workbook();
+    const ws = workbook.addWorksheet('S');
+    const long = `${'1 '.repeat(15_000)}abcdefghij`;
+    ws.addRow(Array.from({ length: 30 }, () => long));
+    for (let c = 1; c <= 30; c += 1) ws.mergeCells(5_000, c, 1, c);
+    const body = Buffer.from(await workbook.xlsx.writeBuffer());
+    const started = Date.now();
+    const read = await readGoodsFile(body, null);
+    expect(Date.now() - started).toBeLessThan(4_000);
+    expect(read?.kind).toBe('text');
+  }, 30_000);
+
+  it('a RICH-TEXT master merged down five thousand rows is read once, not once per covered cell (R3-S7)', async () => {
+    // exceljs hands every covered cell the master's rich-text OBJECT; joined
+    // per cell, a 72 KB file of four such columns held +603 MB of copies of
+    // one string (measured), the #8 shape one layer down.
+    const workbook = new ExcelJS.Workbook();
+    const ws = workbook.addWorksheet('S');
+    const half = '1 '.repeat(7_500);
+    const row = ws.addRow([null, null, null, null]);
+    for (let c = 1; c <= 4; c += 1) row.getCell(c).value = { richText: [{ text: half }, { text: `${half}abcdefghij`, font: { bold: true } }] };
+    for (let c = 1; c <= 4; c += 1) ws.mergeCells(5_000, c, 1, c);
+    const body = Buffer.from(await workbook.xlsx.writeBuffer());
+    const before = process.memoryUsage().heapUsed;
+    const sheets = await workbookSheets(body);
+    const grown = process.memoryUsage().heapUsed - before;
+    expect(sheets![0]!.rows).toHaveLength(5_000);
+    expect(sheets![0]!.covered?.has(4_999, 3)).toBe(true);
+    expect(grown).toBeLessThan(200 * 1024 * 1024);
+  }, 30_000);
 });
