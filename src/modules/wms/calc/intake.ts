@@ -820,6 +820,10 @@ const NOT_GOODS_WORDS = new Set([
   'ves', 'вес', 'весом', 'объем', 'объём', 'обьем', 'обьём', 'обем', 'кубатура', 'kubatura', 'obyom', 'obyem',
   'общий', 'общая', 'общее', 'итого', 'всего', 'брутто', 'нетто', 'weight', 'volume', 'gross', 'net', 'total',
   'груз', 'груза', 'грузы', 'грузов', 'jonatma', 'партия', 'partiya',
+  // …in the Latin a phone keyboard writes them (round 3 residual): «Itogo 12
+  // kub», «Obshiy ves 3500 kg», «Vsego 12 kub», «N.W. 3000 kg» (`wordsOf`
+  // reads «N.W.» as one word)
+  'itogo', 'vsego', 'obshiy', 'obshij', 'obshchiy', 'obshchij', 'nw', 'gw',
   // counts and carton-count labels
   'кол-во', 'количество', 'soni', 'son', 'miqdori', 'miqdor', 'qty', 'quantity', 'pcs', 'мест', 'места', 'место',
   'joy', 'joyi', 'ctns', 'ctn', 'dona', 'шт',
@@ -864,7 +868,7 @@ const PLACE_ENDINGS = [
   '', 'ga', 'ka', 'qa', 'gacha', 'kacha', 'qacha', 'dan', 'tan', 'da', 'ta', 'dagi', 'ning', 'ni', 'га', 'ка',
   'қа', 'гача', 'дан', 'тан', 'да', 'та', 'даги', 'нинг', 'ни', 'а', 'е', 'у', 'ом',
 ];
-function placeWord(word: string): boolean {
+export function placeWord(word: string): boolean {
   return PLACE_ENDINGS.some((e) => word.endsWith(e) && PLACE_STEMS.has(word.slice(0, word.length - e.length)));
 }
 
@@ -885,16 +889,21 @@ export function notGoodsWord(raw: string): boolean {
 /**
  * A greeting or a REQUEST — what a person writes TO us, never what a product
  * is called (R3-T6/T8). Compared as `notGoodsWord` compares: lower-cased,
- * every apostrophe dropped. The stems are the request verbs and nouns in all
- * their endings — «hisoblab», «hisoblang»; «narxi», «narxini»; «растаможить»,
- * «растаможка».
+ * every apostrophe dropped. The stems are the request VERB forms — «hisoblab»,
+ * «hisoblang»; «narxi», «narxini»; «растаможить», «растаможка» — and never
+ * the bare nouns they share with products (round 4, T-r1 ND3): «Elektr
+ * hisoblagichlari», «Hisoblash mashinasi» (a calculator), «Narx yorliqlari»
+ * and «Narxlagich» are cargo, and a «hisobla*» / «narx*» stem dropped every
+ * one of them.
  */
 const REQUEST_WORDS = new Set([
   'salom', 'salam', 'assalomu', 'assalom', 'assalamu', 'alaykum', 'aleykum', 'alaikum', 'aleikum', 'alekum',
-  'hayrli', 'xayrli', 'hello', 'hi', 'hey', 'привет', 'здравствуйте', 'добрый', 'kerak', 'нужно', 'надо',
-  'iltimos', 'пожалуйста', 'please', 'rahmat', 'спасибо',
+  'салом', 'ассалому', 'ассалом', 'ассаламу', 'алайкум', 'алейкум', 'hayrli', 'xayrli', 'hello', 'hi', 'hey',
+  'привет', 'здравствуйте', 'добрый', 'kerak', 'нужно', 'надо', 'керак', 'iltimos', 'илтимос', 'пожалуйста',
+  'please', 'rahmat', 'рахмат', 'спасибо',
 ]);
-const REQUEST_STEMS = /^(?:hisobla|хисобла|narx|нарх|растамож|rastamoj|rastamozh)/u;
+const REQUEST_STEMS =
+  /^(?:hisoblab|hisoblang|hisoblay|hisoblasa|хисоблаб|хисобланг|narxi|narxlari|нархи|нархлари|растамож|rastamoj|rastamozh)/u;
 
 const lowered = (raw: string) => raw.toLowerCase().replace(/[’ʻʼ‘`´']/gu, '');
 
@@ -905,33 +914,54 @@ export function requestWord(raw: string): boolean {
 }
 
 /**
- * Words of a CHAT line about the shipment — «Salom aka, 12 kub 3500 kg»,
- * «Bugun 5 kub», «Наш груз 12 куб», «Toshkent shahriga 12 kub» (R3-T8). The
- * typed-goods reader skips a line holding ANY of these when it states no
- * count, pair or code, where `notGoodsWord` needs EVERY word: one word off
- * that list («aka», «bugun», «shahriga») used to make the line a product.
- * Only words no product is called — a greeting or request, a person's
- * address (aka, opa, uka), a day, «our», «cargo», a total, «also», a city
- * word. Not a vehicle: «Mashina moyi 1200 kg» is motor oil. Not a place name
- * either: «Andijon olmasi», «Xitoy choyi» are products.
+ * Words that make a figures-only line a CHAT line about the shipment —
+ * «Salom aka, 12 kub 3500 kg», «Bugun 5 kub», «Наш груз 12 куб» (R3-T8):
+ * a greeting or request, a person's address (aka, opa, uka), a day, «our».
+ * ONE of them is enough. Only words no product is called.
  */
 const CHAT_WORDS = new Set([
   'aka', 'akam', 'opa', 'opajon', 'uka', 'ukam', 'bugun', 'ertaga', 'kecha', 'bizning', 'bizni', 'bizga',
-  'наш', 'наша', 'наше', 'наши', 'груз', 'груза', 'грузы', 'грузов', 'jami', 'umumiy', 'итого', 'всего', 'yana',
-  'shahar', 'shahri', 'shahriga', 'shahridan', 'shahrida', 'shaharga', 'shahardan', 'shaharda', 'город', 'города',
-  'городу', 'городе',
+  'наш', 'наша', 'наше', 'наши',
 ]);
 
 /**
- * Is this word one that makes a figures-only line a chat line? `next` is the
- * word after it: «yuk» before «mashina» is a TRUCK — «Yuk mashina shinasi
- * 150 kg» is truck tyres, and the every-word list had always kept it.
+ * Words that NAME the shipment or what carries it — the cargo, a city, a
+ * total, «also», the truck — and are also how a product is described
+ * (round 4, T-r1 ND3 / T-r2 ND5): «Yuk aravasi» is a hand truck, «Ремни для
+ * груза» are cargo straps, «Shahar velosipedi» a city bike, «Kurtka jami 150
+ * kg» the jackets' own total, «Yana kurtka 150 kg» more jackets. So they make
+ * a chat line only when EVERY word of the name is chat or not-goods:
+ * «Toshkent shahriga 12 kub», «Bizning yuk 12 kub», «Fura 82 kub», «Mashina
+ * 12 kub» (the truck's own total — a round-3 residual). «Mashina moyi 1200
+ * kg» is motor oil and «Yuk mashina shinasi 150 kg» truck tyres: a word of
+ * the name is neither.
  */
-export function chatWord(raw: string, next = ''): boolean {
+const SHIPMENT_WORDS = new Set([
+  'shahar', 'shahri', 'shahriga', 'shahridan', 'shahrida', 'shaharga', 'shahardan', 'shaharda', 'город', 'города',
+  'городу', 'городе', 'груз', 'груза', 'грузы', 'грузов', 'jami', 'umumiy', 'итого', 'всего', 'yana', 'fura',
+  'фура', 'mashina', 'машина', 'konteyner', 'контейнер', 'container', 'truck',
+]);
+
+/** A word of the shipment (`SHIPMENT_WORDS`, or our cargo — «yuk», «yukimiz»). */
+function shipmentWord(raw: string): boolean {
   const word = lowered(raw);
-  if (word === '') return false;
-  if (YUK_WORD.test(word)) return !/^mashin/u.test(lowered(next));
-  return requestWord(word) || CHAT_WORDS.has(word);
+  return SHIPMENT_WORDS.has(word) || YUK_WORD.test(word);
+}
+
+/** Is this word ONE that makes a figures-only line a chat line by itself? */
+export function chatWord(raw: string): boolean {
+  const word = lowered(raw);
+  return word !== '' && (requestWord(word) || CHAT_WORDS.has(word));
+}
+
+/**
+ * Is a figures-only name (no count, pair or code) a CHAT line about the
+ * shipment rather than a product? One chat word says so; shipment words say
+ * so only when nothing else names a product.
+ */
+export function chatLine(words: readonly string[]): boolean {
+  if (words.some(chatWord)) return true;
+  return words.some(shipmentWord) && words.every((w) => shipmentWord(w) || notGoodsWord(w));
 }
 
 /**
@@ -961,9 +991,16 @@ export function prefixCode(text: string, prefix: string | null): string | null {
   return m ? `${prefix}${m[1]}`.toUpperCase() : null;
 }
 
+/**
+ * The label words before a client code — «Mijoz», «Klient», «Kod», and their
+ * two-word forms «Mijoz kodi», «Client code», «Код клиента» (round 4, T-r2:
+ * «Код клиента 777» named nobody). ONE list for the code reader and the
+ * code-before-phone reader.
+ */
+const CLIENT_LABEL_WORDS = String.raw`(?:mijoz|мижоз|klient|клиент|client|kod|код)(?:\s*(?:kodi|коди|кода|code|клиента|klienta))?`;
+
 /** «Mijoz: GS777», «Klient GS777», «Kod - GS 777» — the label before a code. */
-const CLIENT_LABEL =
-  /^(?:mijoz|мижоз|klient|клиент|client|kod|код)(?:\s*(?:kodi|коди|кода|code))?(?![\p{L}\p{N}])\s*[:\-–—]?\s*/iu;
+const CLIENT_LABEL = new RegExp(String.raw`^${CLIENT_LABEL_WORDS}(?![\p{L}\p{N}])\s*[:\-–—]?\s*`, 'iu');
 
 /** Letters that are a field's name, not a code's prefix: «Tel 2345678», «No 125». */
 const NOT_CODE_LETTERS = /^(?:tel|tlf|no|nr|inn|id)$/i;
@@ -992,9 +1029,10 @@ function codeLettersOk(letters: string, prefix: string | null): boolean {
  *
  * A label and bare digits — «Mijoz 777», «Kod: 777», «Klient 1234» — are the
  * company's code written without its prefix (R3-T7): the seller SAID it is
- * the customer, and filing it as goods material re-asked him for ever. With
- * no prefix configured there is nothing to complete it with, and the label
- * still keeps it out of the goods (`looksLikeMaterial`).
+ * the customer, and filing it as goods material re-asked him for ever. A
+ * company with no prefix mints codes that ARE the digits, so there the digits
+ * are the code (round 4, integration S-e: «Ali aka\nMijoz 777» was refused as
+ * a multi-line text on the repeat, with no way to name the customer).
  *
  * `strict` is a line of a MULTI-line hint (R3-T9): there a code other than
  * the company's prefix needs its label — «Kurtka» over «LG55» is a product
@@ -1005,7 +1043,7 @@ function codeWritten(raw: string, prefix: string | null, strict = false): string
   const labelled = body.length < raw.length;
   const own = prefixCode(body, prefix);
   if (own) return own;
-  if (labelled && prefix !== null && /^\d{1,8}$/.test(body)) return `${prefix}${body}`.toUpperCase();
+  if (labelled && /^\d{1,8}$/.test(body)) return `${prefix ?? ''}${body}`.toUpperCase();
   const m = /^([A-Za-z]{1,4})(\s*[-–]?\s*)(\d{1,8})$/.exec(body);
   if (!m) return null;
   const [, letters, gap, digits] = m as unknown as [string, string, string, string];
@@ -1074,12 +1112,20 @@ function codeAmongWords(line: string, prefix: string | null): string | null {
 const PHONE_RUN = /(?<![\p{L}\d])\+?\d(?:[\d\s.-]|\(\d{2,3}\)|\)){6,20}\d/u;
 
 /**
- * A WHOLE phone number's digits: nine (the Uzbek mobile without its country
- * code), or a full international or trunk form — 998 + nine, 8 + nine, 7/8 +
- * ten (Russia, Kazakhstan), 86 + eleven (China).
+ * Is this run a WHOLE phone number? Nine digits (the Uzbek mobile without its
+ * country code), or a full international or trunk form — 998 + nine, 8 + nine,
+ * 0 + nine (the Kyrgyz trunk, and how «Mijoz 0 90 123 45 67» is written),
+ * 86 + eleven (China), or 7/8 + ten (Russia, Kazakhstan) with the 7 or 8
+ * written APART («+7 701 …», «8 916 …») or the whole number glued. A run
+ * opening «71 234 56 78» is a Tashkent number, so «71 234 56 78 12» is it and
+ * a room — never a Russian number that happens to start with 7 (round 4,
+ * T-r2: «Ali 71 234 56 78 12 xona» kept the room in the phone).
  */
-const completePhone = (digits: string) =>
-  digits.length === 9 || /^(?:998\d{9}|8\d{9}|[78]\d{10}|86\d{11})$/.test(digits);
+function completePhone(run: string): boolean {
+  const digits = run.replace(/\D/g, '');
+  if (digits.length === 9 || /^(?:998\d{9}|8\d{9}|0\d{9}|86\d{11})$/.test(digits)) return true;
+  return /^[78]\d{10}$/.test(digits) && /^\+?(?:[78](?!\d)|\d{11}$)/.test(run.trim());
+}
 
 /**
  * «… 67 5 rasta», «… 67 2-do‘kon», «… 67 12-rasta», «… 67 12 rasta» — a
@@ -1095,8 +1141,7 @@ function stallAfter(run: string, after: string): string {
   if (!last) return run;
   const [, head, group] = last as unknown as [string, string, string];
   const headDigits = head.replace(/\D/g, '');
-  const named =
-    /^\s+\p{L}/u.test(after) && completePhone(headDigits) && !completePhone(headDigits + group);
+  const named = /^\s+\p{L}/u.test(after) && completePhone(head) && !completePhone(run);
   const labels = group.length === 1 || /^[-–]\s*\p{L}/u.test(after) || named;
   return labels && headDigits.length >= 9 ? head : run;
 }
@@ -1127,7 +1172,11 @@ function phoneIn(line: string): { phone: string; start: number; end: number } | 
   const digits = run.replace(/\D/g, '');
   if (digits.length < 9 || digits.length > 15) return null;
   if (/^\d{10}$/.test(run) && /\p{L}/u.test(line)) return null;
-  if (/^\d{4}[\s.]\d{2}(?!\d)/.test(run)) return null;
+  if (/^\d{4}[\s.-]\d{2}(?!\d)/.test(run)) return null;
+  // A phone puts its long part LAST — «90 1234567», «998 901234567». Five to
+  // eight digits BEFORE another group are a short code and a count, «Kurtka
+  // 620193 300» (round 1, #16), and a phone holds no such group.
+  if (/^\+?\d{5,8}[\s.()-]+\d/u.test(run)) return null;
   const end = m.index + run.length;
   const rest = `${line.slice(0, m.index)} ${line.slice(end)}`;
   if (/(?<![\p{L}\d])\d{4,8}(?!\d)/u.test(rest)) return null;
@@ -1151,14 +1200,33 @@ const LONG_HINT_CAP = 120;
  * Китая, мой номер +998 …», «Salom, bizga kurtka va shimlar keladi, iltimos
  * hisoblab bering, tel …» — became the customer: the lead was named with the
  * paragraph and its goods never reached the model. A contact has at most
- * eight words, no sentence ends inside it, and no greeting or request word.
+ * twelve words, no sentence ends inside it, and no greeting or request word.
+ *
+ * Round 4 (T-r1 ND7, T-r2 ND2) found the round-3 shape refusing the contacts
+ * it exists for: an address is written with abbreviations — «г. Ташкент»,
+ * «ул. Регистан», «Toshkent sh.», «Urgut t.», «Samarqand vil.», «Ip.» — and a
+ * dot after any letter was a «sentence», while «Olimjon aka Andijon viloyati
+ * Asaka tumani bozor yonidagi do'kon egasi» is ten words of contact. So a
+ * sentence ends at «!» or «?», or at a dot after a word of four letters or
+ * more that a capital (or the end) follows; the request words carry the
+ * refusal of a request paragraph, and twelve words bound the rest.
+ *
+ * A line naming somebody's RELATIVE — «akasi», «ukasi», «opasi», «брат» —
+ * is about another person (R3-T6's «Bu mijoz GS777 ning akasi, … telefoni
+ * 90 …»: whose job and whose phone is the very question), so it is no
+ * contact; eight words used to refuse it, and twelve no longer do.
  */
+const RELATIVE_WORDS = new Set([
+  'akasi', 'ukasi', 'opasi', 'singlisi', 'otasi', 'onasi', 'ogli', 'qizi', 'xotini', 'qarindoshi', 'tanishi',
+  'dosti', 'брат', 'брата', 'сестра', 'сестры', 'отец', 'мать', 'жена', 'муж', 'сын', 'дочь', 'друг', 'знакомый',
+]);
+
 function contactShaped(rest: string): boolean {
   const words = rest.split(/[\s,;:()«»"]+/u).filter((w) => /[\p{L}\p{N}]/u.test(w));
-  if (words.length > 8) return false;
-  if (/\p{L}[.!?](?:\s|$)/u.test(rest)) return false;
+  if (words.length > 12) return false;
+  if (/\p{L}[!?](?:\s|$)|\p{L}{4}\.(?:\s+\p{Lu}|\s*$)/u.test(rest)) return false;
   if (/(?<![\p{L}])olib\s+kel/iu.test(rest)) return false;
-  return !words.some((w) => requestWord(w.replace(/[.!?]+$/u, '')));
+  return !words.some((w) => requestWord(w.replace(/[.!?]+$/u, '')) || RELATIVE_WORDS.has(lowered(w)));
 }
 
 /**
@@ -1168,17 +1236,26 @@ function contactShaped(rest: string): boolean {
  * into an eleven-digit «phone» and lost; it is found and masked FIRST. A
  * client label and its digits are the same code (R3-T7): «Mijoz 777 90 123 45
  * 67». Two such codes on one line are a list, never a contact.
+ *
+ * Unless the «code» is the phone's own head (round 4, T-r1/T-r2 ND1): a label
+ * is how a seller introduces a PHONE as readily as a code — «Mijoz: 998 90
+ * 123 45 67», «Klient 8 90 …», «Mijoz 7 701 …», «Mijoz 0 90 …» — and the
+ * country or trunk digits were taken for the client GS998 / GS8 / GS7 / GS0,
+ * whose deal the job then landed on (the landing looks the CODE up first).
+ * When the digits and the phone after them make one whole number, they are
+ * the number, and `phoneIn` reads it whole; «GS 777 90 123 45 67» is no whole
+ * number and stays a code and a phone.
  */
 function codeBeforePhone(line: string, prefix: string | null): { code?: string; phone?: string } | null {
   if (prefix === null) return null;
-  const label = String.raw`(?:mijoz|мижоз|klient|клиент|client|kod|код)(?:\s*(?:kodi|коди|кода|code))?\s*[:\-–—]?`;
+  const label = String.raw`(?:${CLIENT_LABEL_WORDS})\s*[:\-–—]?`;
   const re = new RegExp(`(?<![\\p{L}\\d])(?:${escapeRe(prefix)}|${label})\\s*[-–]?\\s*(\\d{1,8})(?!\\d)`, 'giu');
   const hits = [...line.matchAll(re)];
   if (hits.length !== 1) return null;
   const hit = hits[0]!;
   const masked = line.slice(0, hit.index) + ' '.repeat(hit[0].length) + line.slice(hit.index + hit[0].length);
   const found = phoneIn(masked);
-  if (!found) return null;
+  if (!found || completePhone(`${hit[1]} ${found.phone}`)) return null;
   return { code: `${prefix}${hit[1]}`.toUpperCase(), phone: found.phone };
 }
 
@@ -1224,6 +1301,14 @@ function lineHint(line: string, prefix: string | null, multi = false): { code?: 
  * («Ali aka» / «+998 90 123 45 67»), which is how Telegram users write a
  * contact, or two that carry a code and a phone («GS777» / «+998 …», T2/T9).
  * `opts.prefix` is the company's client-code prefix (`ClientHintOpts`).
+ *
+ * A digit line no hint reads is still the NAME when its digits are a small
+ * number or a numbered place — «Ali aka 2», «Dilshod 5-rasta», «OOO "Asia
+ * Trade" 3-filial» (`nameDigits`) — and another line names the customer
+ * (round 4, integration defect 2: one such line voided the whole hint, so
+ * R3-C4's own pins could never reach the landing). Three digits or more
+ * («Kurtka 300», «OOO Asia Trade 2020») still void it: a goods line, or a
+ * number nobody can tell from a count.
  */
 export function parseClientHint(raw: string, opts?: ClientHintOpts): { code?: string; phone?: string } | null {
   const text = raw.trim();
@@ -1236,10 +1321,17 @@ export function parseClientHint(raw: string, opts?: ClientHintOpts): { code?: st
   if (lines.length > 3 || lines.some(statesGoods)) return null;
   if (lines.length === 1) return lineHint(lines[0]!, prefix);
   if (lines.some((l) => l.length > 60)) return null;
-  const hints = lines.filter((l) => /\d/.test(l)).map((l) => lineHint(l, prefix, true));
-  if (hints.length === 0 || hints.length > 2 || hints.some((h) => h === null)) return null;
-  const codes = hints.flatMap((h) => (h?.code ? [h.code] : []));
-  const phones = hints.flatMap((h) => (h?.phone ? [h.phone] : []));
+  const read = lines.filter((l) => /\d/.test(l)).map((l) => ({ line: l, hint: lineHint(l, prefix, true) }));
+  if (read.some((r) => r.hint === null && !nameDigits(r.line))) return null;
+  const hints = read.flatMap((r) => (r.hint ? [r.hint] : []));
+  if (hints.length === 0 || hints.length > 2) return null;
+  const codes = hints.flatMap((h) => (h.code ? [h.code] : []));
+  const phones = hints.flatMap((h) => (h.phone ? [h.phone] : []));
   if (codes.length > 1 || phones.length > 1) return null;
   return { ...(codes[0] ? { code: codes[0] } : {}), ...(phones[0] ? { phone: phones[0] } : {}) };
+}
+
+/** A name line's digits: «2», «12», «5-rasta», «3-filial» — never three bare digits in a row. */
+function nameDigits(line: string): boolean {
+  return !/\d{3}/u.test(line.replace(/(?<![\p{L}\d])\d{1,3}[-–]\p{L}+/gu, ''));
 }

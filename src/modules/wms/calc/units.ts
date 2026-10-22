@@ -137,46 +137,96 @@ export function readAmountText(raw: string): Amount {
 }
 
 /**
- * A TNVED code as people write it in a line of text: ten digits, or the dotted
- * or spaced form «6907.21.00.00» / «6907 21 00 00», or a shorter code that is
- * LABELLED («kod 6907», «ТН ВЭД 640399»). A bare short number is never taken
- * as a code — «Stol 1000» is a thousand tables. The dotted or spaced form
- * opens with a real heading, as the printed one does (R3-T5, `CODE_PRINTED`):
+ * The book's LAST heading of every chapter, two digits each for chapters
+ * 01-97 («00»: chapter 77 is reserved and has none). Derived from the PP-3818
+ * book every code here is priced by (`pp3818-rates.json`, all 1,228 of its
+ * headings) and fenced against it by a test (`tnved-notation.test.ts`) — a
+ * table and not the book, because this module ships to the browser and the
+ * book is half a megabyte.
+ */
+const LAST_HEADING =
+  '0610091011041414100809140204220504060509' +
+  '0609090430211653420605150707070607272617' +
+  '1506042104020723110713121108160905111106' +
+  '1717100607030415142018292619081600060707' +
+  '1315118749091607083314090706082006';
+
+/**
+ * Do the first four digits open a REAL heading — chapter 01-97 and a heading
+ * from 01 up to that chapter's last (R3-T5)? «xx00» is no heading, and nor is
+ * «1250»: chapter 12 ends at 1214. The round-3 rule (any heading 01-99) let
+ * «Ayollar kurtkasi 1250 50 3000» — price, count, sum — read as the code
+ * 1250503000, and the comment called the two texts one «without the tariff's
+ * own list of headings»; the list is the book, and this is its shape.
+ */
+export function opensRealHeading(code: string): boolean {
+  if (!/^\d{4}/.test(code)) return false;
+  const chapter = Number(code.slice(0, 2));
+  const heading = Number(code.slice(2, 4));
+  if (chapter < 1 || chapter > 97 || heading < 1) return false;
+  return heading <= Number(LAST_HEADING.slice((chapter - 1) * 2, chapter * 2));
+}
+
+/**
+ * A TNVED code as people write it in a line of text: ten digits, or the dotted,
+ * spaced or hyphenated form «6907.21.00.00» / «6907 21 00 00» / «6907-21-00-00»,
+ * or a shorter code that is LABELLED («kod 6907», «ТН ВЭД 640399»). A bare
+ * short number is never taken as a code — «Stol 1000» is a thousand tables.
+ * The written forms open with a real heading (`opensRealHeading`, R3-T5):
  * «Kurtka 1200 50 30» is three numbers, not the code 12005030.
  */
 const CODE_LABEL = /(?:^|[\s,;(])(?:tnved|тнвэд|тн\s?вэд|tn\s?ved|hs|kod|код|code)\s*[:=№#-]?\s*(\d{4,10})(?!\d)/iu;
-const CODE_DOTTED =
-  /(?<![\d.])((?:0[1-9]|[1-8]\d|9[0-7])(?:0[1-9]|[1-9]\d))[. ](\d{2})(?:[. ](\d{2}))?(?:[. ](\d{2}))?(?![\d.,])/u;
+const CODE_DOTTED = /(?<![\d.])(?<!\d-)(\d{4})[. -](\d{2})(?:[. -](\d{2}))?(?:[. -](\d{2}))?(?![\d.,])(?!-\d)/gu;
 const CODE_TEN = /(?<![\d.,])(\d{10})(?![\d.,])/u;
 /**
  * The two forms a customs declaration and the PP-3818 book PRINT a ten-digit
- * code in — 4-2-4 «6201 93 0000» and 4-2-3-1 «2710 19 820 0», with spaces or
- * dots (round-1 review 2, T3). Only 4-2-2-2 was known, so «Kurtka 6201 93 000
- * 0» stated no goods and the bot filed it as the customer's PHONE.
+ * code in — 4-2-4 «6201 93 0000» and 4-2-3-1 «2710 19 820 0», with spaces,
+ * dots or hyphens (round-1 review 2, T3; «Kurtka 6201-93-0000» was read as a
+ * PHONE, round-3 note). Only 4-2-2-2 was known, so «Kurtka 6201 93 000 0»
+ * stated no goods and the bot filed it as the customer's phone.
  *
- * The first group must be a real HEADING — chapter 01-97 AND a heading 01-99,
- * never xx00 (R3-T5) — the rule a four-digit code cell obeys. A chapter alone
- * let a row of plain numbers through: «Kurtka 1200 50 3000», «Futbolka 2000 10
- * 5000» (price, count, sum, copied from a PDF) were read as the codes
- * 1200503000 and 2000105000, grouping the row and pulling a law by its
- * prefix. And the SPACED form is not a code when another bare number follows
- * it on the line (`bareNumberAfter`): «Kurtka 1500 30 2400 12.5» is a row of
- * figures. The dotted form stays unambiguous — «Kurtka 6201.93.0000 300».
- * Left: a row whose first figure happens to be a heading («Ayollar kurtkasi
- * 1250 50 3000», 12-50) with nothing after it reads as «Kurtka 6201 93 0000»
- * does — without the tariff's own list of headings the two are one text.
+ * The first group must open a real heading (`opensRealHeading`, R3-T5). A
+ * chapter alone let a row of plain numbers through: «Kurtka 1200 50 3000»,
+ * «Futbolka 2000 10 5000» (price, count, sum, copied from a PDF) were read as
+ * the codes 1200503000 and 2000105000, grouping the row and pulling a law by
+ * its prefix.
  */
 const CODE_PRINTED =
-  /(?<![\d.])((?:0[1-9]|[1-8]\d|9[0-7])(?:0[1-9]|[1-9]\d))[. ](\d{2})[. ](?:(\d{4})|(\d{3})[. ](\d))(?![\d.,])/u;
+  /(?<![\d.])(?<!\d-)(\d{4})[. -](\d{2})[. -](?:(\d{4})|(\d{3})[. -](\d))(?![\d.,])(?!-\d)/gu;
 
-/** A bare number — no unit word after it — anywhere after `end`: «… 2400 12.5». */
-function bareNumberAfter(text: string, end: number): boolean {
-  const tail = text.slice(end);
-  const re = /(?<![\p{L}\p{N}.,])\d[\d.,]*(?![\p{L}\p{N}])/gu;
-  for (let hit = re.exec(tail); hit; hit = re.exec(tail)) {
-    if (!unitWordAfter(tail, hit.index + hit[0].length)) return true;
+/**
+ * Is everything after a SPACED code on the line a row of bare unit-less
+ * numbers — «Kurtka 1500 30 2400 12.5», «Kurtka 6201 93 00 00 300» (round-4
+ * T-r1 ND8, T-r2 ND6)? Then the run is a row of figures copied without its
+ * units and nothing in it is a code. Only a PURE row: a size, a count in a
+ * unit, a price with its «$», «№1» or a bracket after the code are what a
+ * goods line carries beside its code — the round-3 rule refused the code
+ * when ANY bare number followed it anywhere, and «Kurtka 6201 93 0000 300
+ * dona 12.5$» lost its code into the name. A dotted or hyphenated code is
+ * never a row: nobody prints figures so.
+ */
+function pureRowAfter(text: string, end: number): boolean {
+  return /^(?:\s+\d[\d.,]*)+\s*$/u.test(text.slice(end));
+}
+
+/**
+ * The first match of a written-code form that IS a code: a real heading, and
+ * — for the spaced form — not the head of a row of figures. `accept` says
+ * what else the caller needs of it.
+ */
+function writtenCode(
+  re: RegExp,
+  text: string,
+  accept: (hit: RegExpExecArray, end: number) => boolean,
+): RegExpExecArray | null {
+  const scan = new RegExp(re.source, re.flags);
+  for (let hit = scan.exec(text); hit; hit = scan.exec(text)) {
+    const end = hit.index + hit[0].length;
+    const spaced = !/[.-]/.test(hit[0]);
+    if (opensRealHeading(hit[1]!) && !(spaced && pureRowAfter(text, end)) && accept(hit, end)) return hit;
+    scan.lastIndex = hit.index + 1;
   }
-  return false;
+  return null;
 }
 
 /** The word written right after `end`, when it names a unit — «6201 93 3000 dona» is a
@@ -192,7 +242,7 @@ function writtenCodeAt(text: string, at: number): { code: string; end: number } 
     const sticky = new RegExp(re.source, 'uy');
     sticky.lastIndex = at;
     const hit = sticky.exec(text);
-    if (!hit) continue;
+    if (!hit || !opensRealHeading(hit[1]!)) continue;
     const groups = hit.slice(1).filter((g): g is string => g !== undefined);
     const end = at + hit[0].length;
     // Three groups at least for the dotted form (below), and never a code
@@ -215,16 +265,14 @@ export function codeIn(text: string): { code: string; start: number; end: number
   }
   const ten = CODE_TEN.exec(text);
   if (ten) return { code: ten[1]!, start: ten.index, end: ten.index + ten[0].length };
-  const printed = CODE_PRINTED.exec(text);
-  const printedEnd = printed ? printed.index + printed[0].length : 0;
-  const spacedRow = printed !== null && !printed[0].includes('.') && bareNumberAfter(text, printedEnd);
-  if (printed && !unitWordAfter(text, printedEnd) && !spacedRow) {
+  const printed = writtenCode(CODE_PRINTED, text, (_, end) => !unitWordAfter(text, end));
+  if (printed) {
     const code = printed.slice(1).filter(Boolean).join('');
     return { code, start: printed.index, end: printed.index + printed[0].length };
   }
-  const dotted = CODE_DOTTED.exec(text);
   // At least three groups («6907.21.00»): «1200 50» is two numbers, not a code.
-  if (dotted && dotted[3] !== undefined) {
+  const dotted = writtenCode(CODE_DOTTED, text, (hit) => hit[3] !== undefined);
+  if (dotted) {
     const code = [dotted[1], dotted[2], dotted[3], dotted[4]].filter(Boolean).join('');
     return { code, start: dotted.index, end: dotted.index + dotted[0].length };
   }
@@ -241,7 +289,7 @@ export function codeWrittenAsCode(text: string): boolean {
   const found = codeIn(text);
   if (!found) return false;
   const digitsAt = text.slice(found.start, found.end).search(/\d/);
-  return /[. ]/.test(text.slice(found.start + digitsAt, found.end));
+  return /[. -]/.test(text.slice(found.start + digitsAt, found.end));
 }
 
 /**

@@ -121,8 +121,12 @@ describe('R3-T2 — a plain label over a bare name is the product', () => {
     expect(names('Товары: куртки, обувь')).toEqual(['куртки', 'обувь']);
     expect(names('Наименование: Куртка женская, зимняя')).toEqual(['Куртка женская, зимняя']);
     expect(names('Tovar: kurtka, shim')).toEqual(['kurtka, shim']);
-    // A figured list is two lines welded into one — still the model's job.
-    expect(readGoodsLines('Tovarlar: Kurtka 300 dona 150 kg, Shim 200 dona')).toEqual([]);
+    // Re-anchored (round 4, T-r1 ND4 fix): a FIGURED list under a plural
+    // label splits too, each piece read as a line of its own.
+    expect(readGoodsLines('Tovarlar: Kurtka 300 dona 150 kg, Shim 200 dona')).toEqual([
+      expect.objectContaining({ name: 'Kurtka', quantity: 300, weightKg: 150 }),
+      expect.objectContaining({ name: 'Shim', quantity: 200, weightKg: null }),
+    ]);
   });
 
   it('a line opening with a goods label is material, never the customer', () => {
@@ -248,8 +252,12 @@ describe('R3-T5 — a row of plain numbers is not a printed code', () => {
     for (const name of ['OOO Asia Trade 2020', 'Ali aka 2']) expect(looksLikeMaterial(name, GS), name).toBe(false);
   });
 
-  it('the residue, stated: a row opening with a real heading and nothing after it', () => {
-    expect(parseGoodsLine('Ayollar kurtkasi 1250 50 3000').tnvedCode).toBe('1250503000');
+  // Re-anchored (round 4): the residue round 3 stated is closed by the book's
+  // own last heading per chapter — chapter 12 ends at 1214, so «1250» opens no
+  // heading (R3-T5 names this very line as a row of figures).
+  it('a row opening with a heading the book does not have is no code either', () => {
+    expect(parseGoodsLine('Ayollar kurtkasi 1250 50 3000').tnvedCode).toBeNull();
+    expect(parseGoodsLine('Kurtka 6201 93 0000').tnvedCode).toBe('6201930000');
   });
 });
 
@@ -300,8 +308,13 @@ describe('R3-T7 — a client label and digits is the company’s code', () => {
     expect(parseClientHint('Mijoz 90 123 45 67', GS)).toEqual({ phone: '90 123 45 67' });
   });
 
-  it('with no prefix it is still not goods', () => {
-    expect(parseClientHint('Mijoz 777', { prefix: null })).toBeNull();
+  // Re-anchored (round 4, integration S-e): a company with no prefix mints
+  // codes that ARE the digits, so the label names its code — null left
+  // «Ali aka\nMijoz 777» no way to become the customer.
+  it('with no prefix the digits are the code, and still not goods', () => {
+    expect(parseClientHint('Mijoz 777', { prefix: null })).toEqual({ code: '777' });
+    expect(parseClientHint('Ali aka\nMijoz 777', { prefix: null })).toEqual({ code: '777' });
+    expect(parseClientHint('777', { prefix: null })).toBeNull();
     expect(looksLikeMaterial('Mijoz 777', { prefix: null })).toBe(false);
     // …and a product with its count stays material.
     expect(looksLikeMaterial('Shim 200', { prefix: null })).toBe(true);

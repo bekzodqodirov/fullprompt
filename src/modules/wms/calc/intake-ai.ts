@@ -114,8 +114,17 @@ export interface AiIntakeResult {
   usage?: { model: string; inputTokens: number; outputTokens: number };
 }
 
-/** The reading, or why there is none (his 1.6 a — never one sentence for all). */
-export type AiIntakeOutcome = ({ ok: true } & AiIntakeResult) | { ok: false; failure: AiReadFailure };
+/**
+ * The reading, or why there is none (his 1.6 a — never one sentence for all).
+ *
+ * A failure the model was PAID for — cut short, refused, unreadable — carries
+ * its `usage` too (round 1, c21; both typed reviewers on #21): dropped, a
+ * failed read never reached the day's budget, and a material too long for the
+ * answer is exactly the one that costs the most.
+ */
+export type AiIntakeOutcome =
+  | ({ ok: true } & AiIntakeResult)
+  | { ok: false; failure: AiReadFailure; usage?: AiIntakeResult['usage'] };
 
 /**
  * Room for the answer AND the thinking that precedes it.
@@ -531,25 +540,26 @@ export function readIntakeResponse(response: {
   content: { type: string; text?: string }[];
   usage?: { input_tokens?: number; output_tokens?: number } | null;
 }): AiIntakeOutcome {
-  if (response.stop_reason === 'refusal') return { ok: false, failure: 'refused' };
+  const usage = {
+    model: ANALYST_MODEL,
+    inputTokens: response.usage?.input_tokens ?? 0,
+    outputTokens: response.usage?.output_tokens ?? 0,
+  };
+  if (response.stop_reason === 'refusal') return { ok: false, failure: 'refused', usage };
   // Cut short: the JSON is half an object, and parsing it would throw and be
   // reported as «the AI could not be reached» (the 4096 trap).
-  if (response.stop_reason === 'max_tokens') return { ok: false, failure: 'truncated' };
+  if (response.stop_reason === 'max_tokens') return { ok: false, failure: 'truncated', usage };
   const raw = response.content.find((b) => b.type === 'text')?.text ?? '';
   let parsed: z.infer<typeof factsSchema>;
   try {
     parsed = factsSchema.parse(JSON.parse(raw));
   } catch (err) {
     logger.warn({ err, head: raw.slice(0, 200) }, '[calc intake] answer not readable');
-    return { ok: false, failure: 'unreadable' };
+    return { ok: false, failure: 'unreadable', usage };
   }
   return {
     ok: true,
-    usage: {
-      model: ANALYST_MODEL,
-      inputTokens: response.usage?.input_tokens ?? 0,
-      outputTokens: response.usage?.output_tokens ?? 0,
-    },
+    usage,
     facts: {
       fromCity: parsed.from_city,
       toCity: parsed.to_city,

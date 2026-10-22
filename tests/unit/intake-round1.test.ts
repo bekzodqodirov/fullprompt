@@ -52,15 +52,31 @@ describe('the model’s answer, read — or the reason it is missing (his 1.6 a)
 
   it('a CUT answer is «truncated», never «the AI is unavailable» (the 4096 trap)', () => {
     const cut = readIntakeResponse({ stop_reason: 'max_tokens', content: [{ type: 'text', text: good.slice(0, 60) }] });
-    expect(cut).toEqual({ ok: false, failure: 'truncated' });
+    expect(cut).toMatchObject({ ok: false, failure: 'truncated' });
   });
 
   it('a refusal and an unreadable answer are named apart', () => {
-    expect(readIntakeResponse({ stop_reason: 'refusal', content: [] })).toEqual({ ok: false, failure: 'refused' });
-    expect(readIntakeResponse({ stop_reason: 'end_turn', content: [{ type: 'text', text: '{"goods":' }] })).toEqual({
+    expect(readIntakeResponse({ stop_reason: 'refusal', content: [] })).toMatchObject({ ok: false, failure: 'refused' });
+    expect(readIntakeResponse({ stop_reason: 'end_turn', content: [{ type: 'text', text: '{"goods":' }] })).toMatchObject({
       ok: false,
       failure: 'unreadable',
     });
+  });
+
+  // Round 1, c21 (re-anchored from the two exact-shape pins above): a read the
+  // model was PAID for and that failed still says what it cost, or the day's
+  // budget never sees the most expensive calls on the path.
+  it('a paid read that failed carries its usage', () => {
+    const usage = { input_tokens: 40_000, output_tokens: 16_000 };
+    for (const response of [
+      { stop_reason: 'max_tokens', content: [], usage },
+      { stop_reason: 'refusal', content: [], usage },
+      { stop_reason: 'end_turn', content: [{ type: 'text', text: '{"goods":' }], usage },
+    ]) {
+      const out = readIntakeResponse(response);
+      expect(out.ok, response.stop_reason).toBe(false);
+      expect(out.usage, response.stop_reason).toMatchObject({ inputTokens: 40_000, outputTokens: 16_000 });
+    }
   });
 
   it('every SDK error is one of the words the seller is told', () => {

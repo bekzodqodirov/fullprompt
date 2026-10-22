@@ -105,8 +105,12 @@ describe('a bare trailing number is never a goods line (review #24)', () => {
     expect(names('Tovar nomi: kurtka\nSoni: 300 dona\nVazni: 150 kg\nHajmi: 3 kub')).toEqual(['kurtka']);
   });
 
-  it('two products welded onto one line are left to the model, not read as «Kurtka Shim»', () => {
-    expect(readGoodsLines('Tovarlar: Kurtka 300 dona 150 kg, Shim 200 dona')).toEqual([]);
+  // Re-anchored (round 4, T-r1 ND4 fix): under a plural label the list is
+  // split and each product read on its own — still never «Kurtka Shim».
+  it('two products listed on one line are two products, never «Kurtka Shim»', () => {
+    expect(names('Tovarlar: Kurtka 300 dona 150 kg, Shim 200 dona')).toEqual(['Kurtka', 'Shim']);
+    // …and a singular label over two figured products is still the model's job.
+    expect(readGoodsLines('Tovar: kurtka 300 dona, shim 150 kg')).toEqual([]);
   });
 
   it('a real line still reads — a code inside its name, a dash, a count after the code', () => {
