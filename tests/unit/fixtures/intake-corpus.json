@@ -3938,6 +3938,204 @@
    "why": "a hyphenated «5-rasta» is part of the name line",
    "source": "integ p2b",
    "weight": "close-variant"
+  },
+  {
+   "id": "c1943",
+   "input": "Ali aka +99890 123 45 67",
+   "expected": {
+    "equal": {
+     "phone": "+99890 123 45 67"
+    }
+   },
+   "said": "phoneIn's new guard /^\\+?\\d{5,8}[\\s.()-]+\\d/ (round 1 #16, for «Kurtka 620193 300») refuses every phone whose country code is glued to the operator code — the commonest way an Uzbek number is typed after «+998901234567». It is c0188's REJECTED «run ≥6 digits» rule in a new hat. base {phone:\"+99890 123 45 67\"}; new null.",
+   "why": "base {phone:\"+99890 123 45 67\"}; new null.",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1944",
+   "input": "Rustam +99893 333-44-55",
+   "expected": {
+    "equal": {
+     "phone": "+99893 333-44-55"
+    }
+   },
+   "said": "Same guard, hyphen-grouped tail. base {phone}; new null.",
+   "why": "base {phone}; new null.",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1945",
+   "input": "Дилшод ака +99891 234-56-78",
+   "expected": {
+    "equal": {
+     "phone": "+99891 234-56-78"
+    }
+   },
+   "said": "Same guard in Uzbek Cyrillic. base {phone}; new null.",
+   "why": "base {phone}; new null.",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1946",
+   "input": "Rustam 99890 1234567",
+   "expected": {
+    "equal": {
+     "phone": "99890 1234567"
+    }
+   },
+   "said": "Same guard without the plus — c0188 names «Ali 90 1234567» / «Ali 998 901234567» as the shapes the ≥6-digit rule was rejected for. base {phone}; new null.",
+   "why": "base {phone}; new null.",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1947",
+   "input": "+99890.123.45.67",
+   "expected": {
+    "equal": {
+     "phone": "+99890.123.45.67"
+    }
+   },
+   "said": "Same guard, the dotted office form. base {phone}; new null.",
+   "why": "base {phone}; new null.",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1948",
+   "input": "王先生 +86138 1234 5678",
+   "expected": {
+    "equal": {
+     "phone": "+86138 1234 5678"
+    }
+   },
+   "said": "Same guard on a Chinese mobile with its 86 glued to the 138. base {phone}; new null.",
+   "why": "base {phone}; new null.",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1949",
+   "input": "Ali aka\n+99890 123 45 67",
+   "expected": {
+    "equal": {
+     "phone": "+99890 123 45 67"
+    }
+   },
+   "said": "The two-line contact Telegram users write (review #23), broken by the same guard. base {phone}; new null.",
+   "why": "base {phone}; new null.",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1951",
+   "input": "GS777\n+99890 123 45 67",
+   "expected": {
+    "equal": {
+     "code": "GS777",
+     "phone": "+99890 123 45 67"
+    }
+   },
+   "said": "Code over phone (T2/T9) — the phone line now reads nothing, so the whole hint is void and the code is lost too. base {code:GS777, phone}; new null (and looksLikeMaterial flips false → true).",
+   "why": "base {code:GS777, phone}; new null (and looksLikeMaterial flips false → true).",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1952",
+   "input": "Aliyev Rustam Valiyevich o'g'li, Andijon viloyati Asaka tumani, +998 90 123 45 67",
+   "expected": {
+    "equal": {
+     "phone": "+998 90 123 45 67"
+    }
+   },
+   "said": "RELATIVE_WORDS holds «ogli»/«qizi», and `lowered` drops the apostrophes, so the PATRONYMIC of a full Uzbek name («… Vali o‘g‘li», «… Akmal qizi» — how a name is written on a passport or a contract) reads as «somebody's relative» and the long contact line is refused. 8 words, no request word. base {phone}; new null.",
+   "why": "base {phone}; new null.",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1954",
+   "input": "У меня груз из Китая хочу узнать стоимость доставки мой номер +998 90 123 45 67",
+   "expected": {
+    "null": true
+   },
+   "said": "R3-T6: a request with a phone signed under it is material, not a contact. Raising the cap 8 → 12 words lets every 9-12-word request without one of the few REQUEST_WORDS («хочу узнать стоимость») through as the customer, naming the lead with the paragraph. base null; new {phone}. looksLikeMaterial base true; new false.",
+   "why": "base null; new {phone}. looksLikeMaterial base true; new false.",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1955",
+   "input": "Bizda Xitoydan kelayotgan yuk bor shuni qancha bolishini bilmoqchiman tel 90 123 45 67",
+   "expected": {
+    "null": true
+   },
+   "said": "Same in Uzbek («… qancha bo‘lishini bilmoqchiman» = «I want to know how much»). 10 words. base null; new {phone}.",
+   "why": "base null; new {phone}.",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1956",
+   "input": "I have cargo from Yiwu need price to Tashkent my number +998 90 123 45 67",
+   "expected": {
+    "null": true
+   },
+   "said": "Same in English. 11 words. base null; new {phone}.",
+   "why": "base null; new {phone}.",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1957",
+   "input": "Mijoz yukini hisoblatmoqchi, Andijon Asaka bozori, telefoni +998 90 123 45 67",
+   "expected": {
+    "null": true
+   },
+   "said": "REQUEST_STEMS dropped «hisobla*» for an explicit list (hisoblab/hisoblang/hisoblay/hisoblasa); the causative forms every seller writes — «hisoblatmoqchi», «hisoblatib», «hisoblatish», bare «hisobla», «narx» — are request words no more. 7 words, so only the request word refused it. base null; new {phone}.",
+   "why": "base null; new {phone}.",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1995",
+   "input": "Kurtka 50\nShim 40\n+998 90 123 45 67",
+   "expected": {
+    "null": true
+   },
+   "said": "`nameDigits` lets any line with at most two digits pass as a NAME line (for «Ali aka 2», «5-rasta»), so two goods lines with two-digit counts and a phone are read as the customer, and looksLikeMaterial answers false — the goods never reach the model. base null; new {phone}; looksLikeMaterial base true, new false.",
+   "why": "base null; new {phone}; looksLikeMaterial base true, new false.",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1997",
+   "input": "Rustam\nКуртки 20\n90 123 45 67",
+   "expected": {
+    "null": true
+   },
+   "said": "Same with a name line: «Куртки 20» is goods, not part of the name. base null; new {phone}.",
+   "why": "base null; new {phone}.",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1998",
+   "input": "GS 8 90 123 45 67",
+   "expected": {
+    "equal": {
+     "code": "GS8",
+     "phone": "90 123 45 67"
+    }
+   },
+   "said": "The new «digits + phone make a whole number» rule (meant for a LABEL: «Mijoz 8 90 …») also fires on the company PREFIX: «GS 8» (a phone keyboard puts the space in) + a nine-digit mobile = 8 + nine, so the explicit code GS8 is dropped and its 8 glued to the phone. Glued «GS8 90 …» still gives the code. base {code:GS8, phone:\"90 123 45 67\"}; new {phone:\"8 90 123 45 67\"}.",
+   "why": "base {code:GS8, phone:\"90 123 45 67\"}; new {phone:\"8 90 123 45 67\"}.",
+   "source": "r4-probe typed",
+   "weight": "regression"
   }
  ],
  "looksLikeMaterialCases": [
@@ -5854,6 +6052,60 @@
    "why": "accepted (R3-T9 fix)",
    "source": "T-r1 T9",
    "weight": "pinned"
+  },
+  {
+   "id": "c1950",
+   "input": "Ali aka\n+99890 123 45 67",
+   "expected": false,
+   "said": "Consequence of the guard: with no hint the two-line contact falls to «lines > 1» and is filed as GOODS MATERIAL. base false; new true.",
+   "why": "base false; new true.",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1953",
+   "input": "Karimova Nodira Akmal qizi, Toshkent, Chilonzor 9-kvartal +998 90 123 45 67",
+   "expected": false,
+   "said": "Same: «qizi» is the patronymic, not «somebody's daughter»; the contact is now filed as goods material. base false; new true (parseClientHint base {phone}, new null).",
+   "why": "base false; new true (parseClientHint base {phone}, new null).",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1993",
+   "input": "Rustam, Asaka, bozor",
+   "expected": false,
+   "said": "`wordList` calls three single comma words a goods list unless one is a place `notGoodsWord` knows; a contact «name, town, market» with a town not in PLACE_STEMS (Asaka) is filed as goods. base false; new true.",
+   "why": "base false; new true.",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1994",
+   "input": "Олимжон, Ипподром, магазин",
+   "expected": false,
+   "said": "Same: name, the Hippodrome market, shop. base false; new true.",
+   "why": "base false; new true.",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1996",
+   "input": "Kurtka 50\nShim 40\n+998 90 123 45 67",
+   "expected": true,
+   "said": "Same, the material question. base true; new false.",
+   "why": "base true; new false.",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1999",
+   "input": "Kurtka 12 25 300",
+   "expected": true,
+   "said": "PHONE_GROUPS exempts any 2-3-digit groups from `figureRow`, so a price × count = sum row (12 × 25 = 300) copied without units is no longer material (same class as the stated «Kurtka 120 50 30» residue; a phone being typed ends in a two-digit group, «123 45 67», this row ends in 300). base true; new false.",
+   "why": "base true; new false.",
+   "source": "r4-probe typed",
+   "weight": "regression"
   }
  ],
  "readGoodsLinesCases": [
@@ -13077,6 +13329,441 @@
    "why": "lead-named; unchanged from base, accepted",
    "source": "T-r2 t2",
    "weight": "pinned"
+  },
+  {
+   "id": "c1958",
+   "input": "Hisoblatib bering 12 kub 3500 kg",
+   "expected": {
+    "rows": [],
+    "count": 0
+   },
+   "said": "Same narrowing in the chat-line skip (R3-T8): «please have it calculated, 12 kub 3500 kg» becomes the product «Hisoblatib bering». base []; new [{name:\"Hisoblatib bering\",12 m³,3500 kg}].",
+   "why": "base []; new [{name:\"Hisoblatib bering\",12 m³,3500 kg}].",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1959",
+   "input": "Narx qancha 12 kub",
+   "expected": {
+    "rows": [],
+    "count": 0
+   },
+   "said": "«narx» bare is no request word any more: «what is the price, 12 kub» becomes the product «Narx qancha». base []; new [{name:\"Narx qancha\",12 m³}].",
+   "why": "base []; new [{name:\"Narx qancha\",12 m³}].",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1960",
+   "input": "Нарх канча 12 куб",
+   "expected": {
+    "rows": [],
+    "count": 0
+   },
+   "said": "Same in Uzbek Cyrillic (the stems list lost «нарх» too). base []; new [{name:\"Нарх канча\"}].",
+   "why": "base []; new [{name:\"Нарх канча\"}].",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1961",
+   "input": "Hisobla 12 kub 3500 kg",
+   "expected": {
+    "rows": [],
+    "count": 0
+   },
+   "said": "The bare imperative «hisobla» left the stems. base []; new [{name:\"Hisobla\",12 m³,3500 kg}].",
+   "why": "base []; new [{name:\"Hisobla\",12 m³,3500 kg}].",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1962",
+   "input": "Mening yukim 12 kub 3500 kg",
+   "expected": {
+    "rows": [],
+    "count": 0
+   },
+   "said": "`chatLine` moved «yuk*»/«груз» into SHIPMENT_WORDS, which make a chat line only when EVERY word is shipment or not-goods; «mening» (my) is neither, so «my cargo is 12 kub 3500 kg» — the commonest way a seller states the shipment total — is now a product carrying the whole shipment's figures. base []; new [{name:\"Mening yukim\",12 m³,3500 kg}].",
+   "why": "base []; new [{name:\"Mening yukim\",12 m³,3500 kg}].",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1963",
+   "input": "Менинг юким 12 куб 3500 кг",
+   "expected": {
+    "rows": [],
+    "count": 0
+   },
+   "said": "Same in Uzbek Cyrillic. base []; new [{name:\"Менинг юким\"}].",
+   "why": "base []; new [{name:\"Менинг юким\"}].",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1964",
+   "input": "Мой груз 12 куб 3500 кг",
+   "expected": {
+    "rows": [],
+    "count": 0
+   },
+   "said": "Same in Russian («наш» is a CHAT word, «мой» is not). base []; new [{name:\"Мой груз\"}].",
+   "why": "base []; new [{name:\"Мой груз\"}].",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1965",
+   "input": "Груз готов 12 куб",
+   "expected": {
+    "rows": [],
+    "count": 0
+   },
+   "said": "«the cargo is ready, 12 kub». base []; new [{name:\"Груз готов\"}].",
+   "why": "base []; new [{name:\"Груз готов\"}].",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1966",
+   "input": "Yuk bor 12 kub",
+   "expected": {
+    "rows": [],
+    "count": 0
+   },
+   "said": "«there is cargo, 12 kub». base []; new [{name:\"Yuk bor\"}].",
+   "why": "base []; new [{name:\"Yuk bor\"}].",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1967",
+   "input": "Mijozning yuki 12 kub",
+   "expected": {
+    "rows": [],
+    "count": 0
+   },
+   "said": "«the client's cargo 12 kub». base []; new [{name:\"Mijozning yuki\"}].",
+   "why": "base []; new [{name:\"Mijozning yuki\"}].",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1968",
+   "input": "Груз клиента 12 куб 3500 кг",
+   "expected": {
+    "rows": [],
+    "count": 0
+   },
+   "said": "Same in Russian. base []; new [{name:\"Груз клиента\"}].",
+   "why": "base []; new [{name:\"Груз клиента\"}].",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1969",
+   "input": "Bugungi yuk 12 kub",
+   "expected": {
+    "rows": [],
+    "count": 0
+   },
+   "said": "«today's cargo» — «bugun» is a chat word, «bugungi» is not. base []; new [{name:\"Bugungi yuk\"}].",
+   "why": "base []; new [{name:\"Bugungi yuk\"}].",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1970",
+   "input": "Yana bitta mashina 82 kub",
+   "expected": {
+    "rows": [],
+    "count": 0
+   },
+   "said": "«one more truck, 82 kub» — «bitta» breaks the every-word rule. base []; new [{name:\"Yana bitta mashina\"}].",
+   "why": "base []; new [{name:\"Yana bitta mashina\"}].",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1973",
+   "input": "Товар: куртки 300 шт, вес 500 кг, объем 3 куб",
+   "expected": {
+    "rows": [
+     {
+      "quantity": 300,
+      "weightKg": 500,
+      "volumeM3": 3
+     }
+    ],
+    "count": 1
+   },
+   "said": "`oneFigureRun` (T-r1 ND4, for «kurtka 300 dona, shim 150 kg») treats the measure FIELD words «вес»/«объем» between the figures as a second product's name and drops the line — the commonest labelled Russian goods line now reads NOTHING. Right: one line «куртки» ×300, 500 kg, 3 m³ (base had the figures, with «вес объем» left in the name). base [{name:\"куртки вес объем\",300,500,3}]; new [].",
+   "why": "base [{name:\"куртки вес объем\",300,500,3}]; new [].",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1974",
+   "input": "Tovar: kurtka 300 dona, og'irligi 500 kg",
+   "expected": {
+    "rows": [
+     {
+      "quantity": 300,
+      "weightKg": 500
+     }
+    ],
+    "count": 1
+   },
+   "said": "Same in Uzbek («og‘irligi» = its weight). Right: «kurtka» ×300, 500 kg. base [{name:\"kurtka og'irligi\",300,500}]; new [].",
+   "why": "base [{name:\"kurtka og'irligi\",300,500}]; new [].",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1975",
+   "input": "Tovar: poyabzal 200 juft, jami 800 kg",
+   "expected": {
+    "rows": [
+     {
+      "measureUnit": "juft",
+      "measureQty": 200,
+      "weightKg": 800
+     }
+    ],
+    "count": 1
+   },
+   "said": "Same with «jami» (total). Right: «poyabzal» 200 juft, 800 kg. base [{name:\"poyabzal jami\",200 juft,800 kg}]; new [].",
+   "why": "base [{name:\"poyabzal jami\",200 juft,800 kg}]; new [].",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1976",
+   "input": "Product: jackets 300 pcs weight 500 kg volume 3 cbm",
+   "expected": {
+    "rows": [
+     {
+      "quantity": 300,
+      "weightKg": 500,
+      "volumeM3": 3
+     }
+    ],
+    "count": 1
+   },
+   "said": "Same in English. base [{name:\"jackets weight volume\",300,500,3}]; new [].",
+   "why": "base [{name:\"jackets weight volume\",300,500,3}]; new [].",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1977",
+   "input": "Tovar nomi: Rasm ramkalari\nSoni: 500 dona\nVazni: 300 kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "Rasm ramkalari"
+     }
+    ],
+    "count": 1
+   },
+   "said": "`statusBody` now runs after a NAMING label too, and STATUS_ANY_STEMS takes «rasm» anywhere: picture frames under «Tovar nomi:» are «a photo» and vanish. base [{name:\"Rasm ramkalari\"}]; new [].",
+   "why": "base [{name:\"Rasm ramkalari\"}]; new [].",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1978",
+   "input": "Наименование: Фото рамка",
+   "expected": {
+    "rows": [
+     {
+      "name": "Фото рамка"
+     }
+    ],
+    "count": 1
+   },
+   "said": "Same with «фото» in STATUS_ANY. base [{name:\"Фото рамка\"}]; new [].",
+   "why": "base [{name:\"Фото рамка\"}]; new [].",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1979",
+   "input": "Tovar nomi: Kun kremi",
+   "expected": {
+    "rows": [
+     {
+      "name": "Kun kremi"
+     }
+    ],
+    "count": 1
+   },
+   "said": "«kun» (day) is a status anywhere in the body: day cream under a naming label vanishes. base [{name:\"Kun kremi\"}]; new [].",
+   "why": "base [{name:\"Kun kremi\"}]; new [].",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1980",
+   "input": "Tovar nomi: Bolalar rasm albomi",
+   "expected": {
+    "rows": [
+     {
+      "name": "Bolalar rasm albomi"
+     }
+    ],
+    "count": 1
+   },
+   "said": "A children's drawing album — «rasm» again. base [{name}]; new [].",
+   "why": "base [{name}]; new [].",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1981",
+   "input": "Tovar nomi: Choy Xitoydan",
+   "expected": {
+    "count": 1
+   },
+   "said": "The last word as a PLACE in a case (`PLACE_CASES` × `placeWord`) is a status: «tea from China» under a naming label is dropped. Right: one line, the tea. base [{name:\"Choy Xitoydan\"}]; new [].",
+   "why": "base [{name:\"Choy Xitoydan\"}]; new [].",
+   "source": "r4-probe typed",
+   "weight": "regression",
+   "vague": "«Right: one line, the tea» — the line count is exact; the NAME is not stated (base: «Choy Xitoydan»), so it is not asserted"
+  },
+  {
+   "id": "c1982",
+   "input": "Tovar: kiyim Xitoydan",
+   "expected": {
+    "count": 1
+   },
+   "said": "Same under a plain label («goods: clothes from China»). base [{name:\"kiyim Xitoydan\"}]; new [].",
+   "why": "base [{name:\"kiyim Xitoydan\"}]; new [].",
+   "source": "r4-probe typed",
+   "weight": "regression",
+   "vague": "«Same» as «Choy Xitoydan» (one line) — the line count is exact; the NAME is not stated (base: «kiyim Xitoydan»), so it is not asserted"
+  },
+  {
+   "id": "c1983",
+   "input": "Tovar nomi: 3 xil",
+   "expected": {
+    "rows": [],
+    "count": 0
+   },
+   "said": "A digit-first body after a NAMING label is now a name (T-r2 ND3: «3D принтер»), so the variety count «3 kinds» — pinned [] under «Tovar:» (c-cases for «Tovar: 3 xil») — is a product under «Tovar nomi:». base []; new [{name:\"3 xil\"}].",
+   "why": "base []; new [{name:\"3 xil\"}].",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1984",
+   "input": "Наименование: 2 позиции",
+   "expected": {
+    "rows": [],
+    "count": 0
+   },
+   "said": "Same in Russian («2 items»). base []; new [{name:\"2 позиции\"}].",
+   "why": "base []; new [{name:\"2 позиции\"}].",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1985",
+   "input": "Product name: 3 types",
+   "expected": {
+    "rows": [],
+    "count": 0
+   },
+   "said": "Same in English. base []; new [{name:\"3 types\"}].",
+   "why": "base []; new [{name:\"3 types\"}].",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1986",
+   "input": "Наименование: 1 контейнер",
+   "expected": {
+    "rows": [],
+    "count": 0
+   },
+   "said": "«one container» is the shipment, not a product. base []; new [{name:\"1 контейнер\"}].",
+   "why": "base []; new [{name:\"1 контейнер\"}].",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1987",
+   "input": "Tovar: har xil",
+   "expected": {
+    "rows": [],
+    "count": 0
+   },
+   "said": "«xil» left the status words (for «har xil kiyimlar»), so the bare «various» — no product at all — is now one. base []; new [{name:\"har xil\"}].",
+   "why": "base []; new [{name:\"har xil\"}].",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1988",
+   "input": "По номеру 9161234567",
+   "expected": {
+    "rows": [],
+    "count": 0
+   },
+   "said": "CONTACT_WORD lost its stems «номер»/«raqam»/«telefon» for an exact list, so every other case ending names nothing: «по номеру» + a Russian mobile becomes a product with TNVED 9161234567 (the bare-ten rule keeps R3-T4's 01-99 heading test). base []; new [{name:\"По номеру\",tnvedCode:\"9161234567\"}].",
+   "why": "base []; new [{name:\"По номеру\",tnvedCode:\"9161234567\"}].",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1989",
+   "input": "Raqamga 9161234567",
+   "expected": {
+    "rows": [],
+    "count": 0
+   },
+   "said": "Same, Uzbek dative of «raqam». base []; new [{name:\"Raqamga\",tnved}].",
+   "why": "base []; new [{name:\"Raqamga\",tnved}].",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1990",
+   "input": "Telefoniga 9161234567",
+   "expected": {
+    "rows": [],
+    "count": 0
+   },
+   "said": "Same, «telefoniga». base []; new [{name:\"Telefoniga\",tnved}].",
+   "why": "base []; new [{name:\"Telefoniga\",tnved}].",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1991",
+   "input": "Счёт-фактура 1234567890",
+   "expected": {
+    "rows": [],
+    "count": 0
+   },
+   "said": "«счёт» became an exact word, and `wordsOf` keeps «счёт-фактура» whole: an invoice number becomes a product with TNVED 1234567890. base []; new [{name:\"Счёт-фактура\",tnved}].",
+   "why": "base []; new [{name:\"Счёт-фактура\",tnved}].",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1992",
+   "input": "Contact phone 9161234567",
+   "expected": {
+    "rows": [],
+    "count": 0
+   },
+   "said": "«phone» left the list (for «Phone case»), so a contact line in English is a product with a code. base []; new [{name:\"Contact phone\",tnved}].",
+   "why": "base []; new [{name:\"Contact phone\",tnved}].",
+   "source": "r4-probe typed",
+   "weight": "regression"
   }
  ],
  "parseGoodsCases": [
@@ -22272,6 +22959,1859 @@
    "why": "accepted (R3-S10 fix)",
    "source": "S-r1 m1",
    "weight": "pinned"
+  },
+  {
+   "id": "c1894",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "Unit price",
+     "Net total",
+     "VAT 12%",
+     "Gross total"
+    ],
+    [
+     "Office chair",
+     10,
+     25,
+     250,
+     30,
+     280
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Office chair",
+       "quantity": 10,
+       "weightKg": null,
+       "amount": 250
+      }
+     ],
+     "count": 1
+    },
+    "headerRow": 0
+   },
+   "said": "A — a bare «Net total» / «Gross total» is money only beside a discount column (goods-import.ts `moneyTotal = discounted && namesMoneyTotal`): an invoice with VAT instead of a discount. Base: amount 250, weightKg null. New: weightKg 250 (the net money as kilos), amount null. A VAT/tax column (or a price column with no other money column) is the invoice context the discount rule stands for.",
+   "why": "Base: amount 250, weightKg null. New: weightKg 250 (the net money as kilos), amount null. A VAT/tax column (or a price column with no other money column) is the invoice context the discount rule stands for.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1895",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "Price",
+     "Gross total",
+     "Tax",
+     "Net total"
+    ],
+    [
+     "Office chair",
+     10,
+     25,
+     280,
+     30,
+     250
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Office chair",
+       "quantity": 10,
+       "weightKg": null,
+       "amount": 250
+      }
+     ],
+     "count": 1
+    },
+    "headerRow": 0
+   },
+   "said": "A — a bare «Net total» / «Gross total» is money only beside a discount column (goods-import.ts `moneyTotal = discounted && namesMoneyTotal`): «Gross total | Tax | Net total». Base: amount 250, weightKg null. New: weightKg 250, amount 25 (the unit price taken as the line money).",
+   "why": "Base: amount 250, weightKg null. New: weightKg 250, amount 25 (the unit price taken as the line money).",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1896",
+   "input": [
+    [
+     "Tovar nomi",
+     "Soni",
+     "Narxi",
+     "Net total",
+     "QQS",
+     "Gross total"
+    ],
+    [
+     "Stul",
+     10,
+     25,
+     250,
+     30,
+     280
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Stul",
+       "quantity": 10,
+       "weightKg": null,
+       "amount": 250
+      }
+     ],
+     "count": 1
+    },
+    "headerRow": 0
+   },
+   "said": "A — a bare «Net total» / «Gross total» is money only beside a discount column (goods-import.ts `moneyTotal = discounted && namesMoneyTotal`): an Uzbek invoice with QQS (VAT). Base: amount 250, weightKg null. New: weightKg 250, amount 25 (Narxi).",
+   "why": "Base: amount 250, weightKg null. New: weightKg 250, amount 25 (Narxi).",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1897",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "Unit Price",
+     "Net Total",
+     "G.W. (kg)"
+    ],
+    [
+     "Office chair",
+     10,
+     25,
+     250,
+     120
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Office chair",
+       "quantity": 10,
+       "weightKg": 120,
+       "amount": 250
+      }
+     ],
+     "count": 1
+    },
+    "headerRow": 0
+   },
+   "said": "A — a bare «Net total» / «Gross total» is money only beside a discount column (goods-import.ts `moneyTotal = discounted && namesMoneyTotal`): a combined invoice/packing line: Unit Price × Qty = Net Total, and the weight column says «(kg)». Base: weightKg 120, amount 250. New: weightKg 250 (the money), amount null, and the stated G.W. 120 kg is lost. Close to c1754 («G.W. | Total net» = weight), told apart by the price column and no other money column.",
+   "why": "Base: weightKg 120, amount 250. New: weightKg 250 (the money), amount null, and the stated G.W. 120 kg is lost. Close to c1754 («G.W. | Total net» = weight), told apart by the price column and no other money column.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1898",
+   "input": [
+    [
+     "№ п/п",
+     "Наименование товара (описание выполненных работ, оказанных услуг), имущественного права",
+     "Код вида товара",
+     "Ед. изм.",
+     "Количество (объем)",
+     "Цена за единицу",
+     "Стоимость товаров без налога",
+     "Страна происхождения товара",
+     "Регистрационный номер таможенной декларации"
+    ],
+    [
+     1,
+     "Кресло офисное на колёсах",
+     null,
+     "шт",
+     10,
+     50,
+     500,
+     "КИТАЙ",
+     "10702010/011026/3012345/1"
+    ],
+    [
+     2,
+     "Стол письменный",
+     null,
+     "шт",
+     5,
+     80,
+     400,
+     "КИТАЙ",
+     "10702010/011026/3012345/1"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Кресло офисное на колёсах",
+       "quantity": 10
+      },
+      {
+       "name": "Стол письменный",
+       "quantity": 5
+      }
+     ],
+     "count": 2
+    },
+    "headerRow": 0
+   },
+   "said": "B — the DESCRIPTION rung (`!DESCRIPTION_HEADER` in the first name rung) skips a «Description/Описание/描述/tavsif» column for ANY other name-key column, wherever it stands, and `namesTheGoods` does not ask whether that column names the product: the standard Russian счёт-фактура header «Наименование товара (описание выполненных работ…)» contains «описан» (DESCRIPTION_HEADER tests the WHOLE header, not its head), so the name column is demoted and «Страна происхождения товара» (column 10a) names every line. Base: the goods. New: «КИТАЙ», «КИТАЙ».",
+   "why": "Base: the goods. New: «КИТАЙ», «КИТАЙ».",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1899",
+   "input": [
+    [
+     "№",
+     "Описание товара",
+     "Код ТН ВЭД",
+     "Страна происхождения товара",
+     "Кол-во",
+     "Вес нетто, кг",
+     "Стоимость, USD"
+    ],
+    [
+     1,
+     "Кресло офисное на колёсах",
+     "9401300000",
+     "Китай",
+     10,
+     150,
+     500
+    ],
+    [
+     2,
+     "Стол письменный",
+     "9403300000",
+     "Китай",
+     5,
+     200,
+     400
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Кресло офисное на колёсах",
+       "tnvedCode": "9401300000"
+      },
+      {
+       "name": "Стол письменный",
+       "tnvedCode": "9403300000"
+      }
+     ],
+     "count": 2
+    },
+    "headerRow": 0
+   },
+   "said": "B — the DESCRIPTION rung (`!DESCRIPTION_HEADER` in the first name rung) skips a «Description/Описание/描述/tavsif» column for ANY other name-key column, wherever it stands, and `namesTheGoods` does not ask whether that column names the product: a customs specification. Base: the goods. New: every line named «Китай».",
+   "why": "Base: the goods. New: every line named «Китай».",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1900",
+   "input": [
+    [
+     "№",
+     "Описание товара",
+     "Количество товара",
+     "Сумма"
+    ],
+    [
+     1,
+     "Кресло офисное",
+     "10 шт",
+     500
+    ],
+    [
+     2,
+     "Стол письменный",
+     "5 шт",
+     400
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Кресло офисное",
+       "quantity": 10
+      },
+      {
+       "name": "Стол письменный",
+       "quantity": 5
+      }
+     ],
+     "count": 2
+    },
+    "headerRow": 0
+   },
+   "said": "B — the DESCRIPTION rung (`!DESCRIPTION_HEADER` in the first name rung) skips a «Description/Описание/描述/tavsif» column for ANY other name-key column, wherever it stands, and `namesTheGoods` does not ask whether that column names the product: «10 шт» reads as a word (two letters), so the QUANTITY column becomes the name. Base: names + quantity 10/5. New: names «10 шт», «5 шт», quantity null.",
+   "why": "Base: names + quantity 10/5. New: names «10 шт», «5 шт», quantity null.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1901",
+   "input": [
+    [
+     "No.",
+     "Description of goods",
+     "Goods weight",
+     "Amount"
+    ],
+    [
+     1,
+     "LED panel light",
+     "120KGS",
+     500
+    ],
+    [
+     2,
+     "LED bulb",
+     "80KGS",
+     300
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "LED panel light",
+       "weightKg": 120
+      },
+      {
+       "name": "LED bulb",
+       "weightKg": 80
+      }
+     ],
+     "count": 2
+    },
+    "headerRow": 0
+   },
+   "said": "B — the DESCRIPTION rung (`!DESCRIPTION_HEADER` in the first name rung) skips a «Description/Описание/描述/tavsif» column for ANY other name-key column, wherever it stands, and `namesTheGoods` does not ask whether that column names the product: the weight column («120KGS» reads as a word) becomes the name. Base: names + weightKg 120/80. New: names «120KGS», «80KGS», no weight.",
+   "why": "Base: names + weightKg 120/80. New: names «120KGS», «80KGS», no weight.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1902",
+   "input": [
+    [
+     "Описание товара",
+     "Вес товара, кг",
+     "Сумма"
+    ],
+    [
+     "Кресло офисное",
+     "100 кг",
+     500
+    ],
+    [
+     "Стол письменный",
+     "80 кг",
+     400
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Кресло офисное",
+       "weightKg": 100
+      },
+      {
+       "name": "Стол письменный",
+       "weightKg": 80
+      }
+     ],
+     "count": 2
+    },
+    "headerRow": 0
+   },
+   "said": "B — the DESCRIPTION rung (`!DESCRIPTION_HEADER` in the first name rung) skips a «Description/Описание/描述/tavsif» column for ANY other name-key column, wherever it stands, and `namesTheGoods` does not ask whether that column names the product: Russian: «Вес товара, кг» with «100 кг» cells becomes the name. Base: names + weight. New: names «100 кг», «80 кг», no weight.",
+   "why": "Base: names + weight. New: names «100 кг», «80 кг», no weight.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1903",
+   "input": [
+    [
+     "序号",
+     "产品描述",
+     "产品颜色",
+     "数量",
+     "单价",
+     "金额"
+    ],
+    [
+     1,
+     "办公椅 网布 带扶手",
+     "黑色",
+     100,
+     25,
+     2500
+    ],
+    [
+     2,
+     "电脑桌 1.2米",
+     "白色",
+     50,
+     40,
+     2000
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "办公椅 网布 带扶手",
+       "quantity": 100
+      },
+      {
+       "name": "电脑桌 1.2米",
+       "quantity": 50
+      }
+     ],
+     "count": 2
+    },
+    "headerRow": 0
+   },
+   "said": "B — the DESCRIPTION rung (`!DESCRIPTION_HEADER` in the first name rung) skips a «Description/Описание/描述/tavsif» column for ANY other name-key column, wherever it stands, and `namesTheGoods` does not ask whether that column names the product: a Chinese PI: 产品颜色 (colour) names every line. Base: the goods. New: «黑色», «白色».",
+   "why": "Base: the goods. New: «黑色», «白色».",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1904",
+   "input": [
+    [
+     "序号",
+     "产品描述",
+     "产品材质",
+     "数量",
+     "金额"
+    ],
+    [
+     1,
+     "办公椅 带扶手",
+     "网布",
+     100,
+     2500
+    ],
+    [
+     2,
+     "电脑桌",
+     "钢木",
+     50,
+     2000
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "办公椅 带扶手"
+      },
+      {
+       "name": "电脑桌"
+      }
+     ],
+     "count": 2
+    },
+    "headerRow": 0
+   },
+   "said": "B — the DESCRIPTION rung (`!DESCRIPTION_HEADER` in the first name rung) skips a «Description/Описание/描述/tavsif» column for ANY other name-key column, wherever it stands, and `namesTheGoods` does not ask whether that column names the product: a Chinese PI: 产品材质 (material) names every line. Base: the goods. New: «网布», «钢木».",
+   "why": "Base: the goods. New: «网布», «钢木».",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1905",
+   "input": [
+    [
+     "№",
+     "Mahsulot tavsifi",
+     "Mahsulot rangi",
+     "Soni",
+     "Summa"
+    ],
+    [
+     1,
+     "Ofis kreslosi",
+     "qora",
+     10,
+     500
+    ],
+    [
+     2,
+     "Yozuv stoli",
+     "oq",
+     5,
+     400
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ofis kreslosi",
+       "quantity": 10
+      },
+      {
+       "name": "Yozuv stoli",
+       "quantity": 5
+      }
+     ],
+     "count": 2
+    },
+    "headerRow": 0
+   },
+   "said": "B — the DESCRIPTION rung (`!DESCRIPTION_HEADER` in the first name rung) skips a «Description/Описание/描述/tavsif» column for ANY other name-key column, wherever it stands, and `namesTheGoods` does not ask whether that column names the product: Uzbek Latin: «Mahsulot rangi» (colour) names every line. Base: the goods. New: «qora», «oq».",
+   "why": "Base: the goods. New: «qora», «oq».",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1906",
+   "input": [
+    [
+     "№",
+     "Tovar tavsifi",
+     "Tovar kelib chiqish mamlakati",
+     "Soni",
+     "Summa"
+    ],
+    [
+     1,
+     "Ofis kreslosi",
+     "Xitoy",
+     10,
+     500
+    ],
+    [
+     2,
+     "Yozuv stoli",
+     "Xitoy",
+     5,
+     400
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ofis kreslosi"
+      },
+      {
+       "name": "Yozuv stoli"
+      }
+     ],
+     "count": 2
+    },
+    "headerRow": 0
+   },
+   "said": "B — the DESCRIPTION rung (`!DESCRIPTION_HEADER` in the first name rung) skips a «Description/Описание/描述/tavsif» column for ANY other name-key column, wherever it stands, and `namesTheGoods` does not ask whether that column names the product: Uzbek Latin: the country-of-origin column names every line «Xitoy». Base: the goods.",
+   "why": "Base: the goods.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1907",
+   "input": [
+    [
+     "Description",
+     "Goods origin",
+     "Qty",
+     "Amount"
+    ],
+    [
+     "Office chair with armrest",
+     "China",
+     10,
+     500
+    ],
+    [
+     "Writing desk",
+     "China",
+     5,
+     400
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Office chair with armrest"
+      },
+      {
+       "name": "Writing desk"
+      }
+     ],
+     "count": 2
+    },
+    "headerRow": 0
+   },
+   "said": "B — the DESCRIPTION rung (`!DESCRIPTION_HEADER` in the first name rung) skips a «Description/Описание/描述/tavsif» column for ANY other name-key column, wherever it stands, and `namesTheGoods` does not ask whether that column names the product: English: «Goods origin» names every line «China». Base: the goods.",
+   "why": "Base: the goods.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1908",
+   "input": [
+    [
+     "Item No.",
+     "Description",
+     "Goods type",
+     "Qty",
+     "Unit Price",
+     "Amount"
+    ],
+    [
+     "YW-2301",
+     "Ergonomic mesh office chair",
+     "Furniture",
+     100,
+     25,
+     2500
+    ],
+    [
+     "YW-2302",
+     "Computer desk 1.2 m",
+     "Furniture",
+     50,
+     40,
+     2000
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ergonomic mesh office chair"
+      },
+      {
+       "name": "Computer desk 1.2 m"
+      }
+     ],
+     "count": 2
+    },
+    "headerRow": 0
+   },
+   "said": "B — the DESCRIPTION rung (`!DESCRIPTION_HEADER` in the first name rung) skips a «Description/Описание/描述/tavsif» column for ANY other name-key column, wherever it stands, and `namesTheGoods` does not ask whether that column names the product: English PI: «Goods type» (the category) names every line «Furniture». Base: the goods.",
+   "why": "Base: the goods.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1909",
+   "input": [
+    [
+     "Description",
+     "Category Name",
+     "Qty",
+     "Amount"
+    ],
+    [
+     "Office chair with armrest",
+     "Furniture",
+     10,
+     500
+    ],
+    [
+     "Writing desk 120x60",
+     "Furniture",
+     5,
+     400
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Office chair with armrest"
+      },
+      {
+       "name": "Writing desk 120x60"
+      }
+     ],
+     "count": 2
+    },
+    "headerRow": 0
+   },
+   "said": "B — the DESCRIPTION rung (`!DESCRIPTION_HEADER` in the first name rung) skips a «Description/Описание/描述/tavsif» column for ANY other name-key column, wherever it stands, and `namesTheGoods` does not ask whether that column names the product: «Category Name» carries «name» but names the category, not the product. Base: the goods. New: «Furniture» ×2.",
+   "why": "Base: the goods. New: «Furniture» ×2.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1910",
+   "input": [
+    [
+     "Описание",
+     "Наименование группы",
+     "Кол-во",
+     "Сумма"
+    ],
+    [
+     "Кресло офисное",
+     "Мебель",
+     10,
+     500
+    ],
+    [
+     "Стол письменный",
+     "Мебель",
+     5,
+     400
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Кресло офисное"
+      },
+      {
+       "name": "Стол письменный"
+      }
+     ],
+     "count": 2
+    },
+    "headerRow": 0
+   },
+   "said": "B — the DESCRIPTION rung (`!DESCRIPTION_HEADER` in the first name rung) skips a «Description/Описание/描述/tavsif» column for ANY other name-key column, wherever it stands, and `namesTheGoods` does not ask whether that column names the product: «Наименование группы» names the product GROUP. Base: the goods. New: «Мебель» ×2.",
+   "why": "Base: the goods. New: «Мебель» ×2.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1911",
+   "input": [
+    [
+     "Описание товара",
+     "Упаковка товара",
+     "Кол-во",
+     "Сумма"
+    ],
+    [
+     "Кресло офисное",
+     "коробка",
+     10,
+     500
+    ],
+    [
+     "Стол письменный",
+     "паллет",
+     5,
+     400
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Кресло офисное"
+      },
+      {
+       "name": "Стол письменный"
+      }
+     ],
+     "count": 2
+    },
+    "headerRow": 0
+   },
+   "said": "B — the DESCRIPTION rung (`!DESCRIPTION_HEADER` in the first name rung) skips a «Description/Описание/描述/tavsif» column for ANY other name-key column, wherever it stands, and `namesTheGoods` does not ask whether that column names the product: the packaging column names every line («коробка», «паллет»). Base: the goods.",
+   "why": "Base: the goods.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1912",
+   "input": [
+    [
+     "Mark",
+     "Description",
+     "Factory name",
+     "Qty",
+     "CTNS",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "GS777",
+     "Ladies winter jacket",
+     "Yiwu Hongda Garment Co.",
+     300,
+     15,
+     160,
+     2.5
+    ],
+    [
+     "GS777",
+     "Mens trousers",
+     "Guangzhou Baiyun Textile",
+     200,
+     10,
+     85,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies winter jacket",
+       "weightKg": 160
+      },
+      {
+       "name": "Mens trousers",
+       "weightKg": 85
+      }
+     ],
+     "count": 2
+    },
+    "headerRow": 0
+   },
+   "said": "B — the DESCRIPTION rung (`!DESCRIPTION_HEADER` in the first name rung) skips a «Description/Описание/描述/tavsif» column for ANY other name-key column, wherever it stands, and `namesTheGoods` does not ask whether that column names the product: a consolidation packing list (GSR's own trade: several factories, one truck): «Factory name» names every product by its factory. NAME_PARTY has no factory word, so `namesTheGoods` lets it through. Base: the goods. New: «Yiwu Hongda Garment Co.», «Guangzhou Baiyun Textile».",
+   "why": "Base: the goods. New: «Yiwu Hongda Garment Co.», «Guangzhou Baiyun Textile».",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1913",
+   "input": [
+    [
+     "唛头",
+     "货物描述",
+     "工厂名称",
+     "数量",
+     "箱数",
+     "毛重(KG)",
+     "体积(CBM)"
+    ],
+    [
+     "GS777",
+     "女士冬季夹克",
+     "义乌宏达服装厂",
+     300,
+     15,
+     160,
+     2.5
+    ],
+    [
+     "GS777",
+     "男士长裤",
+     "广州白云纺织",
+     200,
+     10,
+     85,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "女士冬季夹克"
+      },
+      {
+       "name": "男士长裤"
+      }
+     ],
+     "count": 2
+    },
+    "headerRow": 0
+   },
+   "said": "B — the DESCRIPTION rung (`!DESCRIPTION_HEADER` in the first name rung) skips a «Description/Описание/描述/tavsif» column for ANY other name-key column, wherever it stands, and `namesTheGoods` does not ask whether that column names the product: the same consolidation list in Chinese: 工厂名称 names every line by its factory (厂家/厂商 are party words, 工厂 is not). Base: the goods.",
+   "why": "Base: the goods.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1914",
+   "input": [
+    [
+     "Маркировка",
+     "Описание товара",
+     "Название фабрики",
+     "Кол-во",
+     "Мест",
+     "Вес брутто, кг",
+     "Объём, м3"
+    ],
+    [
+     "GS777",
+     "Куртка женская зимняя",
+     "Yiwu Hongda Garment",
+     300,
+     15,
+     160,
+     2.5
+    ],
+    [
+     "GS777",
+     "Брюки мужские",
+     "Guangzhou Baiyun Textile",
+     200,
+     10,
+     85,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская зимняя"
+      },
+      {
+       "name": "Брюки мужские"
+      }
+     ],
+     "count": 2
+    },
+    "headerRow": 0
+   },
+   "said": "B — the DESCRIPTION rung (`!DESCRIPTION_HEADER` in the first name rung) skips a «Description/Описание/描述/tavsif» column for ANY other name-key column, wherever it stands, and `namesTheGoods` does not ask whether that column names the product: the consolidation list in Russian: «Название фабрики» names every line. Base: the goods.",
+   "why": "Base: the goods.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1915",
+   "input": [
+    [
+     "Marka",
+     "Tovar tavsifi",
+     "Zavod nomi",
+     "Soni",
+     "Karobka",
+     "Og'irligi, kg",
+     "Hajmi, m3"
+    ],
+    [
+     "GS777",
+     "Ayollar qishki kurtkasi",
+     "Yiwu Hongda",
+     300,
+     15,
+     160,
+     2.5
+    ],
+    [
+     "GS777",
+     "Erkaklar shimi",
+     "Guangzhou Baiyun",
+     200,
+     10,
+     85,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ayollar qishki kurtkasi"
+      },
+      {
+       "name": "Erkaklar shimi"
+      }
+     ],
+     "count": 2
+    },
+    "headerRow": 0
+   },
+   "said": "B — the DESCRIPTION rung (`!DESCRIPTION_HEADER` in the first name rung) skips a «Description/Описание/描述/tavsif» column for ANY other name-key column, wherever it stands, and `namesTheGoods` does not ask whether that column names the product: the consolidation list in Uzbek Latin: «Zavod nomi» names every line. Base: the goods.",
+   "why": "Base: the goods.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1916",
+   "input": [
+    [
+     "Список товаров для расчёта"
+    ],
+    [
+     "Кресло офисное 10 шт 150 кг"
+    ],
+    [
+     "Стол письменный 5 шт 200 кг"
+    ],
+    [
+     "Шкаф 2 шт 120 кг"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Кресло офисное 10 шт 150 кг"
+      },
+      {
+       "name": "Стол письменный 5 шт 200 кг"
+      },
+      {
+       "name": "Шкаф 2 шт 120 кг"
+      }
+     ],
+     "count": 3
+    },
+    "headerRow": null
+   },
+   "said": "C — `listOpening` takes a one-column list's heading only when it is made of LIST_WORDS alone and is one of the first two lines; «Список товаров для расчёта» has «для»/«расчёта». Base: skipped it. New: it is the first product.",
+   "why": "Base: skipped it. New: it is the first product.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1917",
+   "input": [
+    [
+     "Перечень товаров к отправке:"
+    ],
+    [
+     "Кресло офисное 10 шт 150 кг"
+    ],
+    [
+     "Стол письменный 5 шт 200 кг"
+    ],
+    [
+     "Шкаф 2 шт 120 кг"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Кресло офисное 10 шт 150 кг"
+      },
+      {
+       "name": "Стол письменный 5 шт 200 кг"
+      },
+      {
+       "name": "Шкаф 2 шт 120 кг"
+      }
+     ],
+     "count": 3
+    },
+    "headerRow": null
+   },
+   "said": "C — `listOpening` takes a one-column list's heading only when it is made of LIST_WORDS alone and is one of the first two lines; «Перечень товаров к отправке:». Base: skipped. New: a product.",
+   "why": "Base: skipped. New: a product.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1918",
+   "input": [
+    [
+     "Наименование товара, кол-во, вес"
+    ],
+    [
+     "Кресло офисное 10 шт 150 кг"
+    ],
+    [
+     "Стол письменный 5 шт 200 кг"
+    ],
+    [
+     "Шкаф 2 шт 120 кг"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Кресло офисное 10 шт 150 кг"
+      },
+      {
+       "name": "Стол письменный 5 шт 200 кг"
+      },
+      {
+       "name": "Шкаф 2 шт 120 кг"
+      }
+     ],
+     "count": 3
+    },
+    "headerRow": null
+   },
+   "said": "C — `listOpening` takes a one-column list's heading only when it is made of LIST_WORDS alone and is one of the first two lines; a heading that lists its columns («кол-во, вес»). Base: skipped. New: a product.",
+   "why": "Base: skipped. New: a product.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1919",
+   "input": [
+    [
+     "Tovar nomi, soni, og'irligi"
+    ],
+    [
+     "Ofis kreslosi 10 dona 150 kg"
+    ],
+    [
+     "Yozuv stoli 5 dona 200 kg"
+    ],
+    [
+     "Shkaf 2 dona 120 kg"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ofis kreslosi 10 dona 150 kg"
+      },
+      {
+       "name": "Yozuv stoli 5 dona 200 kg"
+      },
+      {
+       "name": "Shkaf 2 dona 120 kg"
+      }
+     ],
+     "count": 3
+    },
+    "headerRow": null
+   },
+   "said": "C — `listOpening` takes a one-column list's heading only when it is made of LIST_WORDS alone and is one of the first two lines; Uzbek Latin «Tovar nomi, soni, og'irligi». Base: skipped. New: a product.",
+   "why": "Base: skipped. New: a product.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1920",
+   "input": [
+    [
+     "Tovar nomlari:"
+    ],
+    [
+     "Ofis kreslosi 10 dona 150 kg"
+    ],
+    [
+     "Yozuv stoli 5 dona 200 kg"
+    ],
+    [
+     "Shkaf 2 dona 120 kg"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ofis kreslosi 10 dona 150 kg"
+      },
+      {
+       "name": "Yozuv stoli 5 dona 200 kg"
+      },
+      {
+       "name": "Shkaf 2 dona 120 kg"
+      }
+     ],
+     "count": 3
+    },
+    "headerRow": null
+   },
+   "said": "C — `listOpening` takes a one-column list's heading only when it is made of LIST_WORDS alone and is one of the first two lines; Uzbek Latin plural «nomlari» is not in LIST_WORDS. Base: skipped. New: a product.",
+   "why": "Base: skipped. New: a product.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1921",
+   "input": [
+    [
+     "Mahsulot nomlari"
+    ],
+    [
+     "Ofis kreslosi 10 dona 150 kg"
+    ],
+    [
+     "Yozuv stoli 5 dona 200 kg"
+    ],
+    [
+     "Shkaf 2 dona 120 kg"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ofis kreslosi 10 dona 150 kg"
+      },
+      {
+       "name": "Yozuv stoli 5 dona 200 kg"
+      },
+      {
+       "name": "Shkaf 2 dona 120 kg"
+      }
+     ],
+     "count": 3
+    },
+    "headerRow": null
+   },
+   "said": "C — `listOpening` takes a one-column list's heading only when it is made of LIST_WORDS alone and is one of the first two lines; «Mahsulot nomlari». Base: skipped. New: a product.",
+   "why": "Base: skipped. New: a product.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1922",
+   "input": [
+    [
+     "Товарлар рўйхати"
+    ],
+    [
+     "Офис креслоси 10 дона 150 кг"
+    ],
+    [
+     "Ёзув столи 5 дона 200 кг"
+    ],
+    [
+     "Шкаф 2 дона 120 кг"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Офис креслоси 10 дона 150 кг"
+      },
+      {
+       "name": "Ёзув столи 5 дона 200 кг"
+      },
+      {
+       "name": "Шкаф 2 дона 120 кг"
+      }
+     ],
+     "count": 3
+    },
+    "headerRow": null
+   },
+   "said": "C — `listOpening` takes a one-column list's heading only when it is made of LIST_WORDS alone and is one of the first two lines; Uzbek CYRILLIC «Товарлар рўйхати» — LIST_WORDS has no Uzbek Cyrillic word. Base: skipped («товар» key). New: a product.",
+   "why": "Base: skipped («товар» key). New: a product.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1923",
+   "input": [
+    [
+     "Товар номи"
+    ],
+    [
+     "Офис креслоси 10 дона 150 кг"
+    ],
+    [
+     "Ёзув столи 5 дона 200 кг"
+    ],
+    [
+     "Шкаф 2 дона 120 кг"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Офис креслоси 10 дона 150 кг"
+      },
+      {
+       "name": "Ёзув столи 5 дона 200 кг"
+      },
+      {
+       "name": "Шкаф 2 дона 120 кг"
+      }
+     ],
+     "count": 3
+    },
+    "headerRow": null
+   },
+   "said": "C — `listOpening` takes a one-column list's heading only when it is made of LIST_WORDS alone and is one of the first two lines; Uzbek Cyrillic «Товар номи» («номи» is not a list word). Base: skipped. New: a product.",
+   "why": "Base: skipped. New: a product.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1924",
+   "input": [
+    [
+     "商品名称及规格"
+    ],
+    [
+     "办公椅 100件 500公斤"
+    ],
+    [
+     "电脑桌 50件 800公斤"
+    ],
+    [
+     "书柜 20件 400公斤"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "办公椅 100件 500公斤"
+      },
+      {
+       "name": "电脑桌 50件 800公斤"
+      },
+      {
+       "name": "书柜 20件 400公斤"
+      }
+     ],
+     "count": 3
+    },
+    "headerRow": null
+   },
+   "said": "C — `listOpening` takes a one-column list's heading only when it is made of LIST_WORDS alone and is one of the first two lines; «商品名称及规格» — 及/规格 break the Han list-word walk. Base: skipped. New: a product.",
+   "why": "Base: skipped. New: a product.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1925",
+   "input": [
+    [
+     "货物明细表"
+    ],
+    [
+     "办公椅 100件 500公斤"
+    ],
+    [
+     "电脑桌 50件 800公斤"
+    ],
+    [
+     "书柜 20件 400公斤"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "办公椅 100件 500公斤"
+      },
+      {
+       "name": "电脑桌 50件 800公斤"
+      },
+      {
+       "name": "书柜 20件 400公斤"
+      }
+     ],
+     "count": 3
+    },
+    "headerRow": null
+   },
+   "said": "C — `listOpening` takes a one-column list's heading only when it is made of LIST_WORDS alone and is one of the first two lines; «货物明细表» (表 = table). Base: skipped. New: a product.",
+   "why": "Base: skipped. New: a product.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1926",
+   "input": [
+    [
+     "产品清单如下："
+    ],
+    [
+     "办公椅 100件 500公斤"
+    ],
+    [
+     "电脑桌 50件 800公斤"
+    ],
+    [
+     "书柜 20件 400公斤"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "办公椅 100件 500公斤"
+      },
+      {
+       "name": "电脑桌 50件 800公斤"
+      },
+      {
+       "name": "书柜 20件 400公斤"
+      }
+     ],
+     "count": 3
+    },
+    "headerRow": null
+   },
+   "said": "C — `listOpening` takes a one-column list's heading only when it is made of LIST_WORDS alone and is one of the first two lines; «产品清单如下：» («as follows»). Base: skipped. New: a product.",
+   "why": "Base: skipped. New: a product.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1927",
+   "input": [
+    [
+     "Goods to be shipped:"
+    ],
+    [
+     "Office chair 10 pcs 150 kg"
+    ],
+    [
+     "Writing desk 5 pcs 200 kg"
+    ],
+    [
+     "Cabinet 2 pcs 120 kg"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Office chair 10 pcs 150 kg"
+      },
+      {
+       "name": "Writing desk 5 pcs 200 kg"
+      },
+      {
+       "name": "Cabinet 2 pcs 120 kg"
+      }
+     ],
+     "count": 3
+    },
+    "headerRow": null
+   },
+   "said": "C — `listOpening` takes a one-column list's heading only when it is made of LIST_WORDS alone and is one of the first two lines; «Goods to be shipped:». Base: skipped. New: a product.",
+   "why": "Base: skipped. New: a product.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1928",
+   "input": [
+    [
+     "Product names and quantities"
+    ],
+    [
+     "Office chair 10 pcs 150 kg"
+    ],
+    [
+     "Writing desk 5 pcs 200 kg"
+    ],
+    [
+     "Cabinet 2 pcs 120 kg"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Office chair 10 pcs 150 kg"
+      },
+      {
+       "name": "Writing desk 5 pcs 200 kg"
+      },
+      {
+       "name": "Cabinet 2 pcs 120 kg"
+      }
+     ],
+     "count": 3
+    },
+    "headerRow": null
+   },
+   "said": "C — `listOpening` takes a one-column list's heading only when it is made of LIST_WORDS alone and is one of the first two lines; «Product names and quantities». Base: skipped. New: a product.",
+   "why": "Base: skipped. New: a product.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1929",
+   "input": [
+    [
+     "ООО «Ромашка»"
+    ],
+    [
+     "Заявка на расчёт"
+    ],
+    [
+     "Товары:"
+    ],
+    [
+     "Кресло офисное 10 шт 150 кг"
+    ],
+    [
+     "Стол письменный 5 шт 200 кг"
+    ],
+    [
+     "Шкаф 2 шт 120 кг"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Кресло офисное 10 шт 150 кг"
+      },
+      {
+       "name": "Стол письменный 5 шт 200 кг"
+      },
+      {
+       "name": "Шкаф 2 шт 120 кг"
+      }
+     ],
+     "count": 3
+    },
+    "headerRow": null
+   },
+   "said": "C — `listOpening` takes a one-column list's heading only when it is made of LIST_WORDS alone and is one of the first two lines; company, title, then the pure heading «Товары:» on the THIRD line. Base: started after «Товары:». New: looks at two lines only — the company, the title and «Товары:» all become products.",
+   "why": "Base: started after «Товары:». New: looks at two lines only — the company, the title and «Товары:» all become products.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1930",
+   "input": [
+    [
+     "Кисть малярная №12"
+    ],
+    [
+     "Валик малярный 10 шт 2 кг"
+    ],
+    [
+     "Краска водоэмульсионная 20 шт 100 кг"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Кисть малярная №12"
+      },
+      {
+       "name": "Валик малярный 10 шт 2 кг"
+      },
+      {
+       "name": "Краска водоэмульсионная 20 шт 100 кг"
+      }
+     ],
+     "count": 3
+    },
+    "headerRow": null
+   },
+   "said": "D — `TITLE_LINE` (№ / «No. 5» / d/d/dd) takes a FIRST line that is a product as a title: a brush size «№12» on a first line with no quantity. Base: 3 lines. New: the brush is dropped as a title.",
+   "why": "Base: 3 lines. New: the brush is dropped as a title.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1931",
+   "input": [
+    [
+     "Тройник 20/16/20"
+    ],
+    [
+     "Муфта 25 100 шт 5 кг"
+    ],
+    [
+     "Труба 32 200 шт 80 кг"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Тройник 20/16/20"
+      },
+      {
+       "name": "Муфта 25 100 шт 5 кг"
+      },
+      {
+       "name": "Труба 32 200 шт 80 кг"
+      }
+     ],
+     "count": 3
+    },
+    "headerRow": null
+   },
+   "said": "D — `TITLE_LINE` (№ / «No. 5» / d/d/dd) takes a FIRST line that is a product as a title: a plumbing tee «20/16/20» reads as a date d/d/dd. Base: 3 lines. New: the tee is dropped.",
+   "why": "Base: 3 lines. New: the tee is dropped.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1932",
+   "input": [
+    [
+     "Paint brush No. 12"
+    ],
+    [
+     "Roller 10 pcs 2 kg"
+    ],
+    [
+     "Paint 20 pcs 100 kg"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Paint brush No. 12"
+      },
+      {
+       "name": "Roller 10 pcs 2 kg"
+      },
+      {
+       "name": "Paint 20 pcs 100 kg"
+      }
+     ],
+     "count": 3
+    },
+    "headerRow": null
+   },
+   "said": "D — `TITLE_LINE` (№ / «No. 5» / d/d/dd) takes a FIRST line that is a product as a title: «No. 12» is a size. Base: 3 lines. New: the brush is dropped.",
+   "why": "Base: 3 lines. New: the brush is dropped.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1933",
+   "input": [
+    [
+     "Cho'tka №12"
+    ],
+    [
+     "Valik 10 dona 2 kg"
+    ],
+    [
+     "Bo'yoq 20 dona 100 kg"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Cho'tka №12"
+      },
+      {
+       "name": "Valik 10 dona 2 kg"
+      },
+      {
+       "name": "Bo'yoq 20 dona 100 kg"
+      }
+     ],
+     "count": 3
+    },
+    "headerRow": null
+   },
+   "said": "D — `TITLE_LINE` (№ / «No. 5» / d/d/dd) takes a FIRST line that is a product as a title: Uzbek: «Cho'tka №12». Base: 3 lines. New: dropped.",
+   "why": "Base: 3 lines. New: dropped.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1934",
+   "input": [
+    [
+     "三通 20/16/20"
+    ],
+    [
+     "直接 100件 5公斤"
+    ],
+    [
+     "水管 200件 80公斤"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "三通 20/16/20"
+      },
+      {
+       "name": "直接 100件 5公斤"
+      },
+      {
+       "name": "水管 200件 80公斤"
+      }
+     ],
+     "count": 3
+    },
+    "headerRow": null
+   },
+   "said": "D — `TITLE_LINE` (№ / «No. 5» / d/d/dd) takes a FIRST line that is a product as a title: Chinese tee 三通 20/16/20. Base: 3 lines. New: dropped.",
+   "why": "Base: 3 lines. New: dropped.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1935",
+   "input": [
+    [
+     "Description",
+     "Qty (pcs)",
+     "CTNS",
+     "N.W. (kg)",
+     "G.W. (kg)",
+     "MEAS (CM)",
+     null,
+     null
+    ],
+    [
+     null,
+     null,
+     null,
+     null,
+     null,
+     "L",
+     "W",
+     "H"
+    ],
+    [
+     "Office chair",
+     100,
+     10,
+     150,
+     160,
+     60,
+     40,
+     45
+    ],
+    [
+     "Writing desk",
+     20,
+     4,
+     200,
+     210,
+     120,
+     60,
+     15
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Office chair",
+       "quantity": 100,
+       "weightKg": 150,
+       "volumeM3": null
+      },
+      {
+       "name": "Writing desk",
+       "quantity": 20,
+       "weightKg": 200,
+       "volumeM3": null
+      }
+     ],
+     "count": 2
+    },
+    "headerRow": 0
+   },
+   "said": "E — `VOLUME_WORD` claims «Meas» / «Vol» as the line volume whatever unit the header names: a packing list whose «MEAS (CM)» holds the carton's L/W/H in sub-columns and no CBM column. Base: volumeM3 null. New: volumeM3 60 and 120 — the carton LENGTH in cm as cubic metres.",
+   "why": "Base: volumeM3 null. New: volumeM3 60 and 120 — the carton LENGTH in cm as cubic metres.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1936",
+   "input": [
+    [
+     "Product",
+     "Name",
+     "Vol (L)",
+     "Qty",
+     "Price",
+     "Amount"
+    ],
+    [
+     "Motor oil",
+     "Shell Helix 5W-40",
+     4,
+     120,
+     18,
+     2160
+    ],
+    [
+     "Motor oil",
+     "Shell Helix 10W-40",
+     1,
+     200,
+     6,
+     1200
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Shell Helix 5W-40",
+       "quantity": 120,
+       "volumeM3": null
+      },
+      {
+       "name": "Shell Helix 10W-40",
+       "quantity": 200,
+       "volumeM3": null
+      }
+     ],
+     "count": 2
+    },
+    "headerRow": 0
+   },
+   "said": "E — `VOLUME_WORD` claims «Meas» / «Vol» as the line volume whatever unit the header names: a motor-oil invoice: «Vol (L)» is the canister in litres. Base: volumeM3 null. New: 4 m³ and 1 m³ per line.",
+   "why": "Base: volumeM3 null. New: 4 m³ and 1 m³ per line.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1937",
+   "input": [
+    [
+     "Item name",
+     "Vol, ml",
+     "Qty",
+     "Amount"
+    ],
+    [
+     "Shampoo",
+     500,
+     1000,
+     1500
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Shampoo",
+       "quantity": 1000,
+       "volumeM3": null
+      }
+     ],
+     "count": 1
+    },
+    "headerRow": 0
+   },
+   "said": "E — `VOLUME_WORD` claims «Meas» / «Vol» as the line volume whatever unit the header names: a cosmetics invoice: «Vol, ml» = 500 ml bottles. Base: volumeM3 null. New: 500 m³.",
+   "why": "Base: volumeM3 null. New: 500 m³.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
   }
  ],
  "parseGoodsLineCases": [
@@ -23435,6 +25975,42 @@
    "why": "no row «bojxonada» on the card",
    "source": "T-r1 A3 landing",
    "weight": "defect"
+  },
+  {
+   "id": "c1971",
+   "input": "Юк бор 12 куб 3500 кг\nТовар: кийим",
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "кийим"
+      }
+     ],
+     "count": 1
+    },
+    "weightKg": 3500,
+    "volumeM3": 12
+   },
+   "said": "The whole-message effect: a phantom product «Юк бор» carrying the shipment's 12 m³ / 3500 kg lands beside the real goods line, so the totals are counted twice per line. base goods [кийим]; new [Юк бор (12 m³, 3500 kg), кийим].",
+   "why": "base goods [кийим]; new [Юк бор (12 m³, 3500 kg), кийим].",
+   "source": "r4-probe typed",
+   "weight": "regression"
+  },
+  {
+   "id": "c1972",
+   "input": "Добрый день\nМой груз 12 куб 3500 кг\nКуртки и брюки\nИз Иу в Ташкент",
+   "expected": {
+    "goods": {
+     "rows": [],
+     "count": 0
+    },
+    "weightKg": 3500,
+    "volumeM3": 12
+   },
+   "said": "Same in Russian: the shipment line becomes the only «product». base goods []; new [{name:\"Мой груз\",12 m³,3500 kg}].",
+   "why": "base goods []; new [{name:\"Мой груз\",12 m³,3500 kg}].",
+   "source": "r4-probe typed",
+   "weight": "regression"
   }
  ],
  "intakeClientLabelCases": [
@@ -24314,6 +26890,188 @@
    "why": "accepted (contact line dropped)",
    "source": "C-r1 probes label.mts/hints.txt; C-r2 c4",
    "weight": "pinned"
+  },
+  {
+   "id": "c2000",
+   "input": {
+    "raw": "Ra'no 90 123 45 67",
+    "hint": {
+     "phone": "90 123 45 67"
+    }
+   },
+   "expected": "Ra'no",
+   "said": "One-line hint (`nameBesideHint`): HUG eats CONTACT_WORDS standing beside the cut, and its lookbehind `(?<![\\p{L}\\p{N}])` treats an ASCII/typographic apostrophe as a word boundary — so the tail of an Uzbek Latin name («Ra'no», «Sa'id», «Ma'no») reads as the contact word «no»/«id» and is cut with the phone/code. Raʼno with U+02BC (a letter) survives; ' ’ ‘ ` do not. base \"Ra'no 90 123 45 67\"; new \"Ra\".",
+   "why": "base \"Ra'no 90 123 45 67\"; new \"Ra\".",
+   "source": "r4-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2001",
+   "input": {
+    "raw": "Sa'id GS777",
+    "hint": {
+     "code": "GS777"
+    }
+   },
+   "expected": "Sa'id",
+   "said": "One-line hint (`nameBesideHint`): HUG eats CONTACT_WORDS standing beside the cut, and its lookbehind `(?<![\\p{L}\\p{N}])` treats an ASCII/typographic apostrophe as a word boundary — so the tail of an Uzbek Latin name («Ra'no», «Sa'id», «Ma'no») reads as the contact word «no»/«id» and is cut with the phone/code. Raʼno with U+02BC (a letter) survives; ' ’ ‘ ` do not. Same with the code cut. base \"Sa'id GS777\"; new \"Sa\".",
+   "why": "base \"Sa'id GS777\"; new \"Sa\".",
+   "source": "r4-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2002",
+   "input": {
+    "raw": "Ra’no +998 90 123 45 67",
+    "hint": {
+     "phone": "+998 90 123 45 67"
+    }
+   },
+   "expected": "Ra’no",
+   "said": "One-line hint (`nameBesideHint`): HUG eats CONTACT_WORDS standing beside the cut, and its lookbehind `(?<![\\p{L}\\p{N}])` treats an ASCII/typographic apostrophe as a word boundary — so the tail of an Uzbek Latin name («Ra'no», «Sa'id», «Ma'no») reads as the contact word «no»/«id» and is cut with the phone/code. Raʼno with U+02BC (a letter) survives; ' ’ ‘ ` do not. U+2019, the apostrophe phone keyboards insert. base \"Ra’no +998 90 123 45 67\"; new \"Ra’\".",
+   "why": "base \"Ra’no +998 90 123 45 67\"; new \"Ra’\".",
+   "source": "r4-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2003",
+   "input": {
+    "raw": "Ma'no, tel: 90 123 45 67",
+    "hint": {
+     "phone": "90 123 45 67"
+    }
+   },
+   "expected": "Ma'no",
+   "said": "One-line hint (`nameBesideHint`): HUG eats CONTACT_WORDS standing beside the cut, and its lookbehind `(?<![\\p{L}\\p{N}])` treats an ASCII/typographic apostrophe as a word boundary — so the tail of an Uzbek Latin name («Ra'no», «Sa'id», «Ma'no») reads as the contact word «no»/«id» and is cut with the phone/code. Raʼno with U+02BC (a letter) survives; ' ’ ‘ ` do not. base \"Ma'no, tel: 90 123 45 67\"; new \"Ma\".",
+   "why": "base \"Ma'no, tel: 90 123 45 67\"; new \"Ma\".",
+   "source": "r4-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2004",
+   "input": {
+    "raw": "Smart Mobile 90 123 45 67",
+    "hint": {
+     "phone": "90 123 45 67"
+    }
+   },
+   "expected": "Smart Mobile",
+   "said": "One-line hint: a CONTACT_WORDS word that is the LAST word of a shop/company name before the phone/code is taken as the phone's label and cut with it (HUG). The name loses a word; base kept the whole name (with the redundant phone). base \"Smart Mobile 90 123 45 67\"; new \"Smart\".",
+   "why": "base \"Smart Mobile 90 123 45 67\"; new \"Smart\".",
+   "source": "r4-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2005",
+   "input": {
+    "raw": "Uz-Mobile +998 90 123 45 67",
+    "hint": {
+     "phone": "+998 90 123 45 67"
+    }
+   },
+   "expected": "Uz-Mobile",
+   "said": "One-line hint: a CONTACT_WORDS word that is the LAST word of a shop/company name before the phone/code is taken as the phone's label and cut with it (HUG). The name loses a word; base kept the whole name (with the redundant phone). HUG_SEP includes «-», so a hyphenated brand is split too. base \"Uz-Mobile +998 90 123 45 67\"; new \"Uz\".",
+   "why": "base \"Uz-Mobile +998 90 123 45 67\"; new \"Uz\".",
+   "source": "r4-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2006",
+   "input": {
+    "raw": "Магазин Телефон +998 90 123 45 67",
+    "hint": {
+     "phone": "+998 90 123 45 67"
+    }
+   },
+   "expected": "Магазин Телефон",
+   "said": "One-line hint: a CONTACT_WORDS word that is the LAST word of a shop/company name before the phone/code is taken as the phone's label and cut with it (HUG). The name loses a word; base kept the whole name (with the redundant phone). base \"Магазин Телефон +998 90 123 45 67\"; new \"Магазин\".",
+   "why": "base \"Магазин Телефон +998 90 123 45 67\"; new \"Магазин\".",
+   "source": "r4-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2007",
+   "input": {
+    "raw": "ООО Связь Контакт GS777",
+    "hint": {
+     "code": "GS777"
+    }
+   },
+   "expected": "ООО Связь Контакт",
+   "said": "One-line hint: a CONTACT_WORDS word that is the LAST word of a shop/company name before the phone/code is taken as the phone's label and cut with it (HUG). The name loses a word; base kept the whole name (with the redundant phone). With the code. base \"ООО Связь Контакт GS777\"; new \"ООО Связь\".",
+   "why": "base \"ООО Связь Контакт GS777\"; new \"ООО Связь\".",
+   "source": "r4-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2008",
+   "input": {
+    "raw": "Hong Kong Phone 90 123 45 67",
+    "hint": {
+     "phone": "90 123 45 67"
+    }
+   },
+   "expected": "Hong Kong Phone",
+   "said": "One-line hint: a CONTACT_WORDS word that is the LAST word of a shop/company name before the phone/code is taken as the phone's label and cut with it (HUG). The name loses a word; base kept the whole name (with the redundant phone). base \"Hong Kong Phone 90 123 45 67\"; new \"Hong Kong\".",
+   "why": "base \"Hong Kong Phone 90 123 45 67\"; new \"Hong Kong\".",
+   "source": "r4-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2009",
+   "input": {
+    "raw": "GS777 Phone Market",
+    "hint": {
+     "code": "GS777"
+    }
+   },
+   "expected": "Phone Market",
+   "said": "One-line hint: a CONTACT_WORDS word that is the LAST word of a shop/company name before the phone/code is taken as the phone's label and cut with it (HUG). The name loses a word; base kept the whole name (with the redundant phone). The contact words AFTER the cut are eaten too, so the first word of a name written after the code goes. base \"GS777 Phone Market\"; new \"Market\".",
+   "why": "base \"GS777 Phone Market\"; new \"Market\".",
+   "source": "r4-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2010",
+   "input": {
+    "raw": "Sardor (90) 123-45-67",
+    "hint": {
+     "phone": "(90) 123-45-67"
+    }
+   },
+   "expected": "Sardor",
+   "said": "One-line hint: the phone «(90) 123-45-67» (parseClientHint's own c-case «Sardor (90) 123-45-67» → {phone:'(90) 123-45-67'}) is cut by DIGIT_RUN, which must START on a digit or «+», so the opening bracket is left behind and nothing closes it — the lead is named with a dangling «(». base \"Sardor (90) 123-45-67\"; new \"Sardor (\".",
+   "why": "base \"Sardor (90) 123-45-67\"; new \"Sardor (\".",
+   "source": "r4-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2011",
+   "input": {
+    "raw": "Rustam (90) 123 45 67 Andijon",
+    "hint": {
+     "phone": "(90) 123 45 67"
+    }
+   },
+   "expected": "Rustam Andijon",
+   "said": "One-line hint: the phone «(90) 123-45-67» (parseClientHint's own c-case «Sardor (90) 123-45-67» → {phone:'(90) 123-45-67'}) is cut by DIGIT_RUN, which must START on a digit or «+», so the opening bracket is left behind and nothing closes it — the lead is named with a dangling «(». Mid-line it glues the bracket to the next word. base \"Rustam (90) 123 45 67 Andijon\"; new \"Rustam (Andijon\".",
+   "why": "base \"Rustam (90) 123 45 67 Andijon\"; new \"Rustam (Andijon\".",
+   "source": "r4-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2012",
+   "input": {
+    "raw": "Иван\nКод клиента 777",
+    "hint": {
+     "code": "GS777"
+    }
+   },
+   "expected": "Иван",
+   "said": "Multi-line hint: base CONTACT_LABEL had `код(?:\\s+клиента)?` and dropped the line «Код клиента 777» as the code's own number; the new CODE_LABEL lists `код` and `клиент` but not «код клиента», so the cut never happens and the line stays in the lead's name. The hint IS {code:'GS777'} in the real flow: the typed package's parseClientHint now reads «Код клиента 777» as GS777 (corpus c1587, lead R3-T7), so this is exactly the pair the bot builds. base \"Иван\"; new \"Иван Код клиента 777\".",
+   "why": "base \"Иван\"; new \"Иван Код клиента 777\".",
+   "source": "r4-probe collector",
+   "weight": "regression"
   }
  ],
  "resolveLineDoneCases": [
@@ -25870,6 +28628,90 @@
    "why": "no-prefix company: a labelled «Mijoz 777» line is a client hint",
    "source": "integ S-e",
    "weight": "defect"
+  },
+  {
+   "id": "c2024",
+   "input": {
+    "text": "Ippodrom 4 115",
+    "prefix": "GS",
+    "sends": 2
+   },
+   "expected": {
+    "couldBeCustomer": true,
+    "first": "material",
+    "firstSayIncludes": [
+     "Shu matnni yana yuborsangiz — mijoz deb olinadi"
+    ],
+    "second": "customer",
+    "materialCopies": 0
+   },
+   "said": "readCustomerText now refuses `couldBeCustomer` to a one-line text with no hint that `figureRow` calls a row (a word + ≥2 bare figures, not all 2-3-digit groups). The insisting repeat (c1052 «Bobur 77», c1056 «Sardor 1985») is then lost for a customer named by a word and TWO numbers — a Tashkent wholesale-market stall («block 4, stall 115») or a phone written in 4-digit groups — and the repeat is answered «Tovar ro‘yxati mijoz bo‘la olmaydi» about text with no goods in it. c1612 («Kurtka 1200 50 3000», three figures) stays a row; these carry two. base: material then customer, couldBeCustomer true; new: material, material, couldBeCustomer false, why 'goods'.",
+   "why": "base: material then customer, couldBeCustomer true; new: material, material, couldBeCustomer false, why 'goods'.",
+   "source": "r4-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2025",
+   "input": {
+    "text": "Чорсу бозори 5 12",
+    "prefix": "GS",
+    "sends": 2
+   },
+   "expected": {
+    "couldBeCustomer": true,
+    "first": "material",
+    "firstSayIncludes": [
+     "Shu matnni yana yuborsangiz — mijoz deb olinadi"
+    ],
+    "second": "customer",
+    "materialCopies": 0
+   },
+   "said": "readCustomerText now refuses `couldBeCustomer` to a one-line text with no hint that `figureRow` calls a row (a word + ≥2 bare figures, not all 2-3-digit groups). The insisting repeat (c1052 «Bobur 77», c1056 «Sardor 1985») is then lost for a customer named by a word and TWO numbers — a Tashkent wholesale-market stall («block 4, stall 115») or a phone written in 4-digit groups — and the repeat is answered «Tovar ro‘yxati mijoz bo‘la olmaydi» about text with no goods in it. c1612 («Kurtka 1200 50 3000», three figures) stays a row; these carry two. base: material then customer, couldBeCustomer true; new: material, material, couldBeCustomer false, why 'goods'. (Uzbek Cyrillic.)",
+   "why": "base: material then customer, couldBeCustomer true; new: material, material, couldBeCustomer false, why 'goods'. (Uzbek Cyrillic.)",
+   "source": "r4-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2026",
+   "input": {
+    "text": "Abu Saxiy 2 47",
+    "prefix": "GS",
+    "sends": 2
+   },
+   "expected": {
+    "couldBeCustomer": true,
+    "first": "material",
+    "firstSayIncludes": [
+     "Shu matnni yana yuborsangiz — mijoz deb olinadi"
+    ],
+    "second": "customer",
+    "materialCopies": 0
+   },
+   "said": "readCustomerText now refuses `couldBeCustomer` to a one-line text with no hint that `figureRow` calls a row (a word + ≥2 bare figures, not all 2-3-digit groups). The insisting repeat (c1052 «Bobur 77», c1056 «Sardor 1985») is then lost for a customer named by a word and TWO numbers — a Tashkent wholesale-market stall («block 4, stall 115») or a phone written in 4-digit groups — and the repeat is answered «Tovar ro‘yxati mijoz bo‘la olmaydi» about text with no goods in it. c1612 («Kurtka 1200 50 3000», three figures) stays a row; these carry two. base: material then customer, couldBeCustomer true; new: material, material, couldBeCustomer false, why 'goods'.",
+   "why": "base: material then customer, couldBeCustomer true; new: material, material, couldBeCustomer false, why 'goods'.",
+   "source": "r4-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2027",
+   "input": {
+    "text": "王先生 8512 3456",
+    "prefix": "GS",
+    "sends": 2
+   },
+   "expected": {
+    "couldBeCustomer": true,
+    "first": "material",
+    "firstSayIncludes": [
+     "Shu matnni yana yuborsangiz — mijoz deb olinadi"
+    ],
+    "second": "customer",
+    "materialCopies": 0
+   },
+   "said": "readCustomerText now refuses `couldBeCustomer` to a one-line text with no hint that `figureRow` calls a row (a word + ≥2 bare figures, not all 2-3-digit groups). The insisting repeat (c1052 «Bobur 77», c1056 «Sardor 1985») is then lost for a customer named by a word and TWO numbers — a Tashkent wholesale-market stall («block 4, stall 115») or a phone written in 4-digit groups — and the repeat is answered «Tovar ro‘yxati mijoz bo‘la olmaydi» about text with no goods in it. c1612 («Kurtka 1200 50 3000», three figures) stays a row; these carry two. base: material then customer, couldBeCustomer true; new: material, material, couldBeCustomer false, why 'goods'. A Chinese 8-digit landline written 4-4 (parseClientHint reads no phone in it, so only the repeat can name him).",
+   "why": "base: material then customer, couldBeCustomer true; new: material, material, couldBeCustomer false, why 'goods'. A Chinese 8-digit landline written 4-4 (parseClientHint reads no phone in it, so only the repeat can name him).",
+   "source": "r4-probe collector",
+   "weight": "regression"
   }
  ],
  "pickGoodsCases": [
@@ -35396,6 +38238,458 @@
    "why": "«same» answer: the Excel stands for the goods",
    "source": "integ p3",
    "weight": "pinned"
+  },
+  {
+   "id": "c2013",
+   "input": {
+    "invoice": [
+     {
+      "name": "Kurtka 黑色",
+      "quantity": 100
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Kurtka (oq)",
+      "quantity": 100
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Kurtka 黑色",
+       "quantity": 100
+      },
+      {
+       "name": "Kurtka (oq)",
+       "quantity": 100
+      }
+     ],
+     "count": 2
+    },
+    "sameAsInvoice": []
+   },
+   "said": "`goodsNameKeys` now splits an UNBRACKETED name with Han script into its Han half and the rest as FORMS (round-4 bilingual-cell fix), and `namesMeet` matches any key against those forms. Nothing checks that the halves are translations of each other: a Han colour/attribute beside a Latin/Cyrillic noun, or a shared Latin term («LED», «USB», «PVC», «XL») beside different Chinese nouns, now makes two DIFFERENT products meet — outside against outside, which the function's own doc forbids («Kurtka (qora)» beside «Kurtka (oq)» are two lines). With aiGoods 'add' the other factory's line is then left out as «Excel’dagi bilan bir xil» whenever a shared figure agrees or none is shared (figuresAgree). Base: no meet, both lines land. Black jacket (Excel, colour in Chinese) vs white jacket (other factory). base goods 2 lines; new 1 line, «Kurtka (oq)» in sameAsInvoice.",
+   "why": "base goods 2 lines; new 1 line, «Kurtka (oq)» in sameAsInvoice.",
+   "source": "r4-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2014",
+   "input": {
+    "invoice": [
+     {
+      "name": "Kurtka 黑色",
+      "quantity": 100
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Kurtka 白色",
+      "quantity": 100
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Kurtka 黑色",
+       "quantity": 100
+      },
+      {
+       "name": "Kurtka 白色",
+       "quantity": 100
+      }
+     ],
+     "count": 2
+    },
+    "sameAsInvoice": []
+   },
+   "said": "`goodsNameKeys` now splits an UNBRACKETED name with Han script into its Han half and the rest as FORMS (round-4 bilingual-cell fix), and `namesMeet` matches any key against those forms. Nothing checks that the halves are translations of each other: a Han colour/attribute beside a Latin/Cyrillic noun, or a shared Latin term («LED», «USB», «PVC», «XL») beside different Chinese nouns, now makes two DIFFERENT products meet — outside against outside, which the function's own doc forbids («Kurtka (qora)» beside «Kurtka (oq)» are two lines). With aiGoods 'add' the other factory's line is then left out as «Excel’dagi bilan bir xil» whenever a shared figure agrees or none is shared (figuresAgree). Base: no meet, both lines land. Black vs white, both unbracketed. base 2 lines; new 1, «Kurtka 白色» left out.",
+   "why": "base 2 lines; new 1, «Kurtka 白色» left out.",
+   "source": "r4-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2015",
+   "input": {
+    "invoice": [
+     {
+      "name": "夹克 XL",
+      "quantity": 50
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "衬衫 XL",
+      "quantity": 50
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "夹克 XL",
+       "quantity": 50
+      },
+      {
+       "name": "衬衫 XL",
+       "quantity": 50
+      }
+     ],
+     "count": 2
+    },
+    "sameAsInvoice": []
+   },
+   "said": "`goodsNameKeys` now splits an UNBRACKETED name with Han script into its Han half and the rest as FORMS (round-4 bilingual-cell fix), and `namesMeet` matches any key against those forms. Nothing checks that the halves are translations of each other: a Han colour/attribute beside a Latin/Cyrillic noun, or a shared Latin term («LED», «USB», «PVC», «XL») beside different Chinese nouns, now makes two DIFFERENT products meet — outside against outside, which the function's own doc forbids («Kurtka (qora)» beside «Kurtka (oq)» are two lines). With aiGoods 'add' the other factory's line is then left out as «Excel’dagi bilan bir xil» whenever a shared figure agrees or none is shared (figuresAgree). Base: no meet, both lines land. Jacket XL vs SHIRT XL meet through the size «xl». base 2; new 1.",
+   "why": "base 2; new 1.",
+   "source": "r4-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2016",
+   "input": {
+    "invoice": [
+     {
+      "name": "夹克 XL",
+      "quantity": 50
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "夹克 M",
+      "quantity": 50
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "夹克 XL",
+       "quantity": 50
+      },
+      {
+       "name": "夹克 M",
+       "quantity": 50
+      }
+     ],
+     "count": 2
+    },
+    "sameAsInvoice": []
+   },
+   "said": "`goodsNameKeys` now splits an UNBRACKETED name with Han script into its Han half and the rest as FORMS (round-4 bilingual-cell fix), and `namesMeet` matches any key against those forms. Nothing checks that the halves are translations of each other: a Han colour/attribute beside a Latin/Cyrillic noun, or a shared Latin term («LED», «USB», «PVC», «XL») beside different Chinese nouns, now makes two DIFFERENT products meet — outside against outside, which the function's own doc forbids («Kurtka (qora)» beside «Kurtka (oq)» are two lines). With aiGoods 'add' the other factory's line is then left out as «Excel’dagi bilan bir xil» whenever a shared figure agrees or none is shared (figuresAgree). Base: no meet, both lines land. Two sizes of one jacket (same qty, the ordinary case). base 2; new 1.",
+   "why": "base 2; new 1.",
+   "source": "r4-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2017",
+   "input": {
+    "invoice": [
+     {
+      "name": "Jacket 黑色",
+      "weightKg": 120
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Shirt (黑色)",
+      "quantity": 300
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket 黑色",
+       "weightKg": 120
+      },
+      {
+       "name": "Shirt (黑色)",
+       "quantity": 300
+      }
+     ],
+     "count": 2
+    },
+    "sameAsInvoice": []
+   },
+   "said": "`goodsNameKeys` now splits an UNBRACKETED name with Han script into its Han half and the rest as FORMS (round-4 bilingual-cell fix), and `namesMeet` matches any key against those forms. Nothing checks that the halves are translations of each other: a Han colour/attribute beside a Latin/Cyrillic noun, or a shared Latin term («LED», «USB», «PVC», «XL») beside different Chinese nouns, now makes two DIFFERENT products meet — outside against outside, which the function's own doc forbids («Kurtka (qora)» beside «Kurtka (oq)» are two lines). With aiGoods 'add' the other factory's line is then left out as «Excel’dagi bilan bir xil» whenever a shared figure agrees or none is shared (figuresAgree). Base: no meet, both lines land. Black jacket vs black SHIRT meet through «黑色»; no shared figure, so figuresAgree says yes. base 2; new 1.",
+   "why": "base 2; new 1.",
+   "source": "r4-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2018",
+   "input": {
+    "invoice": [
+     {
+      "name": "LED灯泡",
+      "quantity": 500
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "LED显示屏",
+      "weightKg": 300
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "LED灯泡",
+       "quantity": 500
+      },
+      {
+       "name": "LED显示屏",
+       "weightKg": 300
+      }
+     ],
+     "count": 2
+    },
+    "sameAsInvoice": []
+   },
+   "said": "`goodsNameKeys` now splits an UNBRACKETED name with Han script into its Han half and the rest as FORMS (round-4 bilingual-cell fix), and `namesMeet` matches any key against those forms. Nothing checks that the halves are translations of each other: a Han colour/attribute beside a Latin/Cyrillic noun, or a shared Latin term («LED», «USB», «PVC», «XL») beside different Chinese nouns, now makes two DIFFERENT products meet — outside against outside, which the function's own doc forbids («Kurtka (qora)» beside «Kurtka (oq)» are two lines). With aiGoods 'add' the other factory's line is then left out as «Excel’dagi bilan bir xil» whenever a shared figure agrees or none is shared (figuresAgree). Base: no meet, both lines land. LED bulbs vs LED display screens (the commonest Guangzhou electronics naming) meet through «led». base 2; new 1.",
+   "why": "base 2; new 1.",
+   "source": "r4-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2019",
+   "input": {
+    "invoice": [
+     {
+      "name": "USB充电器",
+      "quantity": 1000,
+      "weightKg": 120
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "USB数据线",
+      "quantity": 1000,
+      "weightKg": 80
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "USB充电器",
+       "quantity": 1000,
+       "weightKg": 120
+      },
+      {
+       "name": "USB数据线",
+       "quantity": 1000,
+       "weightKg": 80
+      }
+     ],
+     "count": 2
+    },
+    "sameAsInvoice": []
+   },
+   "said": "`goodsNameKeys` now splits an UNBRACKETED name with Han script into its Han half and the rest as FORMS (round-4 bilingual-cell fix), and `namesMeet` matches any key against those forms. Nothing checks that the halves are translations of each other: a Han colour/attribute beside a Latin/Cyrillic noun, or a shared Latin term («LED», «USB», «PVC», «XL») beside different Chinese nouns, now makes two DIFFERENT products meet — outside against outside, which the function's own doc forbids («Kurtka (qora)» beside «Kurtka (oq)» are two lines). With aiGoods 'add' the other factory's line is then left out as «Excel’dagi bilan bir xil» whenever a shared figure agrees or none is shared (figuresAgree). Base: no meet, both lines land. USB chargers vs USB cables: the counts agree (1000) so the 120 vs 80 kg disagreement is overruled by `some`. base 2; new 1.",
+   "why": "base 2; new 1.",
+   "source": "r4-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2020",
+   "input": {
+    "invoice": [
+     {
+      "name": "PVC管",
+      "weightKg": 2000
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "PVC地板",
+      "quantity": 400
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "PVC管",
+       "weightKg": 2000
+      },
+      {
+       "name": "PVC地板",
+       "quantity": 400
+      }
+     ],
+     "count": 2
+    },
+    "sameAsInvoice": []
+   },
+   "said": "`goodsNameKeys` now splits an UNBRACKETED name with Han script into its Han half and the rest as FORMS (round-4 bilingual-cell fix), and `namesMeet` matches any key against those forms. Nothing checks that the halves are translations of each other: a Han colour/attribute beside a Latin/Cyrillic noun, or a shared Latin term («LED», «USB», «PVC», «XL») beside different Chinese nouns, now makes two DIFFERENT products meet — outside against outside, which the function's own doc forbids («Kurtka (qora)» beside «Kurtka (oq)» are two lines). With aiGoods 'add' the other factory's line is then left out as «Excel’dagi bilan bir xil» whenever a shared figure agrees or none is shared (figuresAgree). Base: no meet, both lines land. PVC pipe vs PVC flooring. base 2; new 1.",
+   "why": "base 2; new 1.",
+   "source": "r4-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2021",
+   "input": {
+    "invoice": [
+     {
+      "name": "手机壳 iPhone 14",
+      "quantity": 500
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "手机壳 iPhone 15",
+      "quantity": 500
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "手机壳 iPhone 14",
+       "quantity": 500
+      },
+      {
+       "name": "手机壳 iPhone 15",
+       "quantity": 500
+      }
+     ],
+     "count": 2
+    },
+    "sameAsInvoice": []
+   },
+   "said": "`goodsNameKeys` now splits an UNBRACKETED name with Han script into its Han half and the rest as FORMS (round-4 bilingual-cell fix), and `namesMeet` matches any key against those forms. Nothing checks that the halves are translations of each other: a Han colour/attribute beside a Latin/Cyrillic noun, or a shared Latin term («LED», «USB», «PVC», «XL») beside different Chinese nouns, now makes two DIFFERENT products meet — outside against outside, which the function's own doc forbids («Kurtka (qora)» beside «Kurtka (oq)» are two lines). With aiGoods 'add' the other factory's line is then left out as «Excel’dagi bilan bir xil» whenever a shared figure agrees or none is shared (figuresAgree). Base: no meet, both lines land. Phone cases for two models meet through «手机壳». base 2; new 1.",
+   "why": "base 2; new 1.",
+   "source": "r4-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2022",
+   "input": {
+    "invoice": [
+     {
+      "name": "Ladies jacket 黑色",
+      "quantity": 100
+     },
+     {
+      "name": "Ladies jacket 白色",
+      "quantity": 100
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Ladies jacket 红色",
+      "quantity": 100
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket 黑色",
+       "quantity": 100
+      },
+      {
+       "name": "Ladies jacket 白色",
+       "quantity": 100
+      },
+      {
+       "name": "Ladies jacket 红色",
+       "quantity": 100
+      }
+     ],
+     "count": 3
+    },
+    "sameAsInvoice": []
+   },
+   "said": "`goodsNameKeys` now splits an UNBRACKETED name with Han script into its Han half and the rest as FORMS (round-4 bilingual-cell fix), and `namesMeet` matches any key against those forms. Nothing checks that the halves are translations of each other: a Han colour/attribute beside a Latin/Cyrillic noun, or a shared Latin term («LED», «USB», «PVC», «XL») beside different Chinese nouns, now makes two DIFFERENT products meet — outside against outside, which the function's own doc forbids («Kurtka (qora)» beside «Kurtka (oq)» are two lines). With aiGoods 'add' the other factory's line is then left out as «Excel’dagi bilan bir xil» whenever a shared figure agrees or none is shared (figuresAgree). Base: no meet, both lines land. A third colour (red) from the other factory beside the Excel's black and white. base 3; new 2, «Ladies jacket 红色» left out.",
+   "why": "base 3; new 2, «Ladies jacket 红色» left out.",
+   "source": "r4-probe collector",
+   "weight": "regression"
+  },
+  {
+   "id": "c2023",
+   "input": {
+    "invoice": [
+     {
+      "name": "Сумка 黑色",
+      "quantity": 200
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Рюкзак (黑色)",
+      "quantity": 200
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Сумка 黑色",
+       "quantity": 200
+      },
+      {
+       "name": "Рюкзак (黑色)",
+       "quantity": 200
+      }
+     ],
+     "count": 2
+    },
+    "sameAsInvoice": []
+   },
+   "said": "`goodsNameKeys` now splits an UNBRACKETED name with Han script into its Han half and the rest as FORMS (round-4 bilingual-cell fix), and `namesMeet` matches any key against those forms. Nothing checks that the halves are translations of each other: a Han colour/attribute beside a Latin/Cyrillic noun, or a shared Latin term («LED», «USB», «PVC», «XL») beside different Chinese nouns, now makes two DIFFERENT products meet — outside against outside, which the function's own doc forbids («Kurtka (qora)» beside «Kurtka (oq)» are two lines). With aiGoods 'add' the other factory's line is then left out as «Excel’dagi bilan bir xil» whenever a shared figure agrees or none is shared (figuresAgree). Base: no meet, both lines land. Black bag vs black BACKPACK meet through «黑色». base 2; new 1.",
+   "why": "base 2; new 1.",
+   "source": "r4-probe collector",
+   "weight": "regression"
   }
  ],
  "readGoodsFileCases": [
@@ -40531,6 +43825,213 @@
   {
    "id": "c1881",
    "$ts": true
+  },
+  {
+   "id": "c1938",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "PL",
+      "rows": [
+       [
+        "Marka",
+        "Tavar",
+        "Dona",
+        "Pul"
+       ],
+       [
+        "GS777",
+        "Ofis kreslosi qora",
+        10,
+        "$1,200.00"
+       ],
+       [
+        "GS777",
+        "Ofis kreslosi oq",
+        10,
+        null
+       ],
+       [
+        "GS777",
+        "Ofis kreslosi kulrang",
+        10,
+        null
+       ]
+      ],
+      "merges": [
+       "D2:D4"
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "text": "[PL]\nMarka | Tavar | Dona | Pul\nGS777 | Ofis kreslosi qora | 10 | $1,200.00\nGS777 | Ofis kreslosi oq | 10\nGS777 | Ofis kreslosi kulrang | 10"
+   },
+   "said": "F — `rowLine` now repeats a covered cell whose master `readsAsFigure` does not recognise; money and weights written with a currency or a «/CTN» are not «figures» to it, so the model text repeats one merged sum on every covered line (R3-S3: a merged figure is said once): one sum «$1,200.00» merged over three lines. Base: written once. New: written three times — a model summing the column reads $3,600.",
+   "why": "Base: written once. New: written three times — a model summing the column reads $3,600.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1939",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "PL",
+      "rows": [
+       [
+        "Marka",
+        "Tavar",
+        "Dona",
+        "Pul"
+       ],
+       [
+        "GS777",
+        "Ofis kreslosi qora",
+        10,
+        "1 200 000 сўм"
+       ],
+       [
+        "GS777",
+        "Ofis kreslosi oq",
+        10,
+        null
+       ],
+       [
+        "GS777",
+        "Ofis kreslosi kulrang",
+        10,
+        null
+       ]
+      ],
+      "merges": [
+       "D2:D4"
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "text": "[PL]\nMarka | Tavar | Dona | Pul\nGS777 | Ofis kreslosi qora | 10 | 1 200 000 сўм\nGS777 | Ofis kreslosi oq | 10\nGS777 | Ofis kreslosi kulrang | 10"
+   },
+   "said": "F — `rowLine` now repeats a covered cell whose master `readsAsFigure` does not recognise; money and weights written with a currency or a «/CTN» are not «figures» to it, so the model text repeats one merged sum on every covered line (R3-S3: a merged figure is said once): Uzbek sum «1 200 000 сўм» merged over three lines. Base: once. New: three times.",
+   "why": "Base: once. New: three times.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1940",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "PL",
+      "rows": [
+       [
+        "Marka",
+        "Tavar",
+        "Dona",
+        "Pul"
+       ],
+       [
+        "GS777",
+        "Ofis kreslosi qora",
+        10,
+        "3600元"
+       ],
+       [
+        "GS777",
+        "Ofis kreslosi oq",
+        10,
+        null
+       ],
+       [
+        "GS777",
+        "Ofis kreslosi kulrang",
+        10,
+        null
+       ]
+      ],
+      "merges": [
+       "D2:D4"
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "text": "[PL]\nMarka | Tavar | Dona | Pul\nGS777 | Ofis kreslosi qora | 10 | 3600元\nGS777 | Ofis kreslosi oq | 10\nGS777 | Ofis kreslosi kulrang | 10"
+   },
+   "said": "F — `rowLine` now repeats a covered cell whose master `readsAsFigure` does not recognise; money and weights written with a currency or a «/CTN» are not «figures» to it, so the model text repeats one merged sum on every covered line (R3-S3: a merged figure is said once): a Chinese PI's «3600元» merged over three lines. Base: once. New: three times.",
+   "why": "Base: once. New: three times.",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1941",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "PL",
+      "rows": [
+       [
+        "Marka",
+        "Tavar",
+        "Dona",
+        "Pul"
+       ],
+       [
+        "GS777",
+        "Ofis kreslosi qora",
+        10,
+        "120KG/CTN"
+       ],
+       [
+        "GS777",
+        "Ofis kreslosi oq",
+        10,
+        null
+       ],
+       [
+        "GS777",
+        "Ofis kreslosi kulrang",
+        10,
+        null
+       ]
+      ],
+      "merges": [
+       "D2:D4"
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "text": "[PL]\nMarka | Tavar | Dona | Pul\nGS777 | Ofis kreslosi qora | 10 | 120KG/CTN\nGS777 | Ofis kreslosi oq | 10\nGS777 | Ofis kreslosi kulrang | 10"
+   },
+   "said": "F — `rowLine` now repeats a covered cell whose master `readsAsFigure` does not recognise; money and weights written with a currency or a «/CTN» are not «figures» to it, so the model text repeats one merged sum on every covered line (R3-S3: a merged figure is said once): a carton weight «120KG/CTN» merged over the three lines packed in it. Base: once. New: three times (the model sums 360 kg).",
+   "why": "Base: once. New: three times (the model sums 360 kg).",
+   "source": "r4-probe sheets",
+   "weight": "regression"
+  },
+  {
+   "id": "c1942",
+   "input": {
+    "kind": "csv",
+    "text": "Marka;Tavar;Dona;Pul\nGS777;Ofis kreslosi;10;500\nGS777;Yozuv stoli;5;400\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;\n;;;"
+   },
+   "expected": {
+    "kind": "text",
+    "textCut": false
+   },
+   "said": "G — `csvSheet` sets rowsLeftOut from `filled.length > lines.length`, and «filled» counts a line of delimiters only: an Excel «Save as CSV» of a formatted template writes «;;;» for every empty row of the used range. Base: textCut false. New: textCut true — `receiveSheetText` then tells the seller «⚠️ Jadval katta: AI faqat boshini o‘qiydi (birinchi 3 qator)» about a file nothing was left out of. The SheetRows doc says «an empty tail is no loss».",
+   "why": "Base: textCut false. New: textCut true — `receiveSheetText` then tells the seller «⚠️ Jadval katta: AI faqat boshini o‘qiydi (birinchi 3 qator)» about a file nothing was left out of. The SheetRows doc says «an empty tail is no loss».",
+   "source": "r4-probe sheets",
+   "weight": "regression"
   }
  ],
  "isArticleNumberCases": [
