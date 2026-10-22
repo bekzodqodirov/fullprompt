@@ -11,14 +11,7 @@ import {
   type ClientHintOpts,
 } from './intake';
 import type { MeasureUnit } from './pricing';
-import {
-  codeIn,
-  normalizeTnved,
-  parseGoodsLine,
-  readAmountText,
-  unitOf,
-  type SellerUnit,
-} from './units';
+import { codeIn, normalizeTnved, parseGoodsLine, readAmountText, unitOf, type SellerUnit } from './units';
 
 /**
  * The facts a staff member typed, read without a model.
@@ -128,14 +121,17 @@ export function parseManualFacts(text: string): CalcFacts & { ambiguous: Ambiguo
  * of the word onto a product («lar Kurtka»). The separator is CAPTURED (group
  * 2), and so is whether the label says «the NAME is» (group 1, T7):
  *  - after a NAMING label — «Tovar nomi:», «Наименование:», «Product name:»,
- *    «品名:» — what follows is the product's name, figures or not;
+ *    «品名:» — what follows is the product's name, figures or not, a digit
+ *    first included («3D принтер»);
  *  - after a plain «Tovar:» / «Товар -» a product with its figures reads as
  *    an unlabelled line does, and a body with NO figure is the product's
  *    name too (R3-T2: «Tovar: kurtka», «Товар: куртка» — the commonest
  *    labelled shape — came back «Tovarlar: —» when T7 asked for a figure),
- *    except what a customer says ABOUT the goods: a status or a time
- *    («Tovar: tayyor», «Товар: готов», «Tovar: keldi», `STATUS_WORDS`) or a
- *    body opening with a number («Mahsulot: 5 kun ichida», «Tovar: 3 xil»);
+ *    except a body opening with a number («Mahsulot: 5 kun ichida», «Tovar:
+ *    3 xil»);
+ *  - after either, what a customer says ABOUT the goods is no product: a
+ *    status, a time, a place, a file («Tovar: tayyor», «Товар: в пути»,
+ *    «Tovar nomi: hali yo'q», `statusBody`);
  *  - with no separator at all («Tovar синтетическое … 1.1 kub 240 kg», his
  *    screenshot) the line is read as an unlabelled one, the word list
  *    included (R3-T1) — «Tovar keldimi», «Tovar narxi 1200$», «Tovar vazni
