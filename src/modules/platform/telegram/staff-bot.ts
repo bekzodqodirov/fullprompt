@@ -1310,8 +1310,10 @@ export async function landCollectedIntake(
     // A prospect's card is named by whatever staff typed — on ONE line, the
     // phone left to its own column (round-2 review, C8/C9: a two-line hint
     // named the lead «Ali aka\n+998 …»); the phone, when one was typed, is
-    // what a second request will find it by.
-    leadName: intakeClientLabel(state.clientHintRaw) ?? 'Hisoblatish (nomsiz)',
+    // what a second request will find it by. Only the lines that ARE the
+    // hint's phone or code leave the name — judged against what THIS hint
+    // took (round-3 review, R3-C4), so «Ali aka 2» keeps its «2».
+    leadName: intakeClientLabel(state.clientHintRaw, hint) ?? 'Hisoblatish (nomsiz)',
     leadPhone: hint?.phone ?? null,
     // Only the AI door offers the toggle; every other collection lands the
     // column's own default, which is what it landed before this round.

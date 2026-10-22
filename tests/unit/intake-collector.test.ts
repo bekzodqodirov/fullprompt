@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CalcFacts } from '@/modules/wms/calc/intake';
-import { fitSheetTexts } from '@/modules/wms/calc/intake-ai';
+import { fitSheetRows } from '@/modules/wms/calc/intake-ai';
 
 /**
  * The «Hisoblatish» collector's own state machine, after the round-1 review
@@ -101,7 +101,7 @@ describe('«➕ / 🔁» keeps the question the collection is waiting on (review
     // The customer question, not «Yana yuboring yoki Bo'ldi».
     expect(ctx.texts().at(-1)).toContain('Mijozni yozing');
     // …so the code typed next is the customer, never material.
-    expect(clientAnswer(live, 'GS777', { material: false, couldBeCustomer: true })).toMatchObject({ kind: 'customer', patch: { clientHintRaw: 'GS777' } });
+    expect(clientAnswer(live, 'GS777', { material: false, couldBeCustomer: true, why: null })).toMatchObject({ kind: 'customer', patch: { clientHintRaw: 'GS777' } });
   });
 
   it('the podklyuch door’s «qayerdan?» is kept too; only a collecting stage moves to material', () => {
@@ -122,9 +122,9 @@ describe('a third goods file folds into the open question (review c1)', () => {
       state = { ...state, ...answer.patch };
       return answer;
     };
-    take({ goods: [line('Kurtka'), line('Shim')], label: '«A.xlsx»', text: '', textCut: false, where: '' });
-    take({ goods: [line('Choynak'), line('Piyola'), line('Lagan')], label: '«B.xlsx»', text: '', textCut: false, where: '' });
-    const third = take({ goods: [line('Poyabzal')], label: '«C.xlsx»', text: '', textCut: false, where: '' });
+    take({ goods: [line('Kurtka'), line('Shim')], label: '«A.xlsx»', text: '', textCut: false, cellsCut: false, where: '' });
+    take({ goods: [line('Choynak'), line('Piyola'), line('Lagan')], label: '«B.xlsx»', text: '', textCut: false, cellsCut: false, where: '' });
+    const third = take({ goods: [line('Poyabzal')], label: '«C.xlsx»', text: '', textCut: false, cellsCut: false, where: '' });
     // The waiting files are named, both of them.
     expect(third.say).toContain('«B.xlsx», «C.xlsx»');
     expect(callbacksOf(third.keyboard)).toEqual(['c:inv_add', 'c:inv_replace']);
@@ -190,14 +190,15 @@ describe('a PDF or a header-less sheet beside an Excel list is ASKED about (revi
   });
 
   it('a header-less sheet after the Excel, and an Excel after a PDF (the other order), ask too', () => {
-    const fit = (texts: readonly string[]) => fitSheetTexts(texts, 10_000);
-    const sheetAfter = receiveSheetText(collection({ invoiceGoods: [line('Kurtka')] }).state, '«B.xlsx»', { text: 'a | b', cut: false }, fit);
+    const fit = (texts: readonly string[]) => fitSheetRows(texts, 10_000);
+    const sheetAfter = receiveSheetText(collection({ invoiceGoods: [line('Kurtka')] }).state, '«B.xlsx»', { text: 'a | b', cut: false, cellsCut: false }, fit);
     expect(sheetAfter.patch).toMatchObject({ aiGoods: 'ask' });
     const excelAfterPdf = receiveGoodsSheet(collection({ pdfs: [pdf] }).state, {
       goods: [line('Kurtka')],
       label: '«A.xlsx»',
       text: '',
       textCut: false,
+      cellsCut: false,
       where: '',
     });
     expect(excelAfterPdf.patch).toMatchObject({ aiGoods: 'ask', invoiceGoods: [line('Kurtka')] });
@@ -239,54 +240,56 @@ describe('a replaced workbook takes its other sheets with it (review c7)', () =>
       label: '«WRONG.xlsx»',
       text: '[Packing list]\nTOTAL G.W. | 9999 KGS',
       textCut: false,
+      cellsCut: false,
       where: '',
     });
-    expect(first.patch.invoiceTexts).toEqual([{ text: '[Packing list]\nTOTAL G.W. | 9999 KGS', cut: false }]);
+    expect(first.patch.invoiceTexts).toEqual([{ text: '[Packing list]\nTOTAL G.W. | 9999 KGS', cut: false, cellsCut: false }]);
     expect(first.patch).not.toHaveProperty('sheetTexts');
   });
 
   it('🔁 drops the replaced one’s totals; ➕ keeps both', () => {
     const state = collection({
       invoiceGoods: [line('Kurtka')],
-      invoiceTexts: [{ text: 'WRONG 9999 KGS', cut: false }],
-      pendingInvoice: { goods: [line('Kurtka')], label: '«RIGHT.xlsx»', texts: [{ text: 'RIGHT 1200 KGS', cut: true }] },
+      invoiceTexts: [{ text: 'WRONG 9999 KGS', cut: false, cellsCut: false }],
+      pendingInvoice: { goods: [line('Kurtka')], label: '«RIGHT.xlsx»', texts: [{ text: 'RIGHT 1200 KGS', cut: true, cellsCut: false }] },
       stage: 'material',
     }).state;
-    expect(invoiceChoice(state, 'inv_replace')?.patch.invoiceTexts).toEqual([{ text: 'RIGHT 1200 KGS', cut: true }]);
+    expect(invoiceChoice(state, 'inv_replace')?.patch.invoiceTexts).toEqual([{ text: 'RIGHT 1200 KGS', cut: true, cellsCut: false }]);
     expect(invoiceChoice(state, 'inv_add')?.patch.invoiceTexts).toEqual([
-      { text: 'WRONG 9999 KGS', cut: false },
-      { text: 'RIGHT 1200 KGS', cut: true },
+      { text: 'WRONG 9999 KGS', cut: false, cellsCut: false },
+      { text: 'RIGHT 1200 KGS', cut: true, cellsCut: false },
     ]);
   });
 });
 
 describe('a header-less sheet that will not fit is SAID when it arrives (review a17)', () => {
   const rows = (n: number, tag: string) => Array.from({ length: n }, (_, i) => `${i + 1} | ${tag} model ${i}`).join('\n');
-  const fit = (texts: readonly string[]) => fitSheetTexts(texts, 400);
+  const fit = (texts: readonly string[]) => fitSheetRows(texts, 400);
 
   it('a file cut part-way names how many of its lines the AI reads', () => {
-    const answer = receiveSheetText(collection().state, '«PL.xlsx»', { text: rows(60, 'Kurtka'), cut: false }, fit);
+    const answer = receiveSheetText(collection().state, '«PL.xlsx»', { text: rows(60, 'Kurtka'), cut: false, cellsCut: false }, fit);
     expect(answer.say).toMatch(/AI faqat birinchi \d+ \/ 60 qatorini o‘qiydi/);
   });
 
   it('a file that does not fit at all is said to be outside the AI’s reading', () => {
-    const answer = receiveSheetText(collection({ sheetTexts: [{ text: rows(60, 'A'), cut: false }] }).state, '«B.xlsx»', {
+    const answer = receiveSheetText(collection({ sheetTexts: [{ text: rows(60, 'A'), cut: false, cellsCut: false }] }).state, '«B.xlsx»', {
       text: rows(10, 'B'),
       cut: false,
+      cellsCut: false,
     }, fit);
     expect(answer.say).toContain('AI ga sig‘madi');
   });
 
   it('a file that fits says nothing more', () => {
-    const answer = receiveSheetText(collection().state, '«S.xlsx»', { text: rows(3, 'Sumka'), cut: false }, fit);
+    const answer = receiveSheetText(collection().state, '«S.xlsx»', { text: rows(3, 'Sumka'), cut: false, cellsCut: false }, fit);
     expect(answer.say).toBe('📄 «S.xlsx» — jadval sarlavhasini topa olmadim, AI o‘qiydi.');
   });
 });
 
 describe('the customer question has a way forward (review t23)', () => {
   // A short line the goods reader mistook for goods — the case t23 is for.
-  const NAME_READ_AS_GOODS = { material: true, couldBeCustomer: true };
-  const GOODS = { material: true, couldBeCustomer: false };
+  const NAME_READ_AS_GOODS = { material: true, couldBeCustomer: true, why: null };
+  const GOODS = { material: true, couldBeCustomer: false, why: 'goods' as const };
   it('the re-ask says why, and the SAME text again is the customer — out of the material', () => {
     const state = collection().state;
     const first = clientAnswer(state, 'Ali aka 2', NAME_READ_AS_GOODS);
@@ -311,7 +314,7 @@ describe('a goods list sent twice stays goods (round-2 review, C3/C7)', () => {
   const list = 'Kurtka 300 dona 150 kg\nShim 200 dona 80 kg\nSharf 100 dona';
 
   it('the readers: a goods list cannot name a customer; a name and a two-line contact can', async () => {
-    expect(await readCustomerText(list, 'GS')).toEqual({ material: true, couldBeCustomer: false });
+    expect(await readCustomerText(list, 'GS')).toEqual({ material: true, couldBeCustomer: false, why: 'goods' });
     expect((await readCustomerText('Kurtka 300 dona 150 kg', 'GS')).couldBeCustomer).toBe(false);
     expect((await readCustomerText('Ali aka 2', 'GS')).couldBeCustomer).toBe(true);
     expect((await readCustomerText('Ali aka\n+998 90 123 45 67', 'GS')).couldBeCustomer).toBe(true);
@@ -351,9 +354,16 @@ describe('a line passed with ⏭ is never asked again (round-2 review, C10)', ()
     });
     const ctx = fakeCtx();
     await handleCalcCallback(ctx, chatId, 'skip');
-    expect(activeIntake(chatId)).toMatchObject({ stage: 'question', askingIndex: 1, lineDone: [0] });
+    expect(activeIntake(chatId)).toMatchObject({ stage: 'question', askingIndex: 1, lineDone: [{ index: 0, name: 'Kurtka' }] });
     await handleCalcCallback(ctx, chatId, 'skip');
-    expect(activeIntake(chatId)).toMatchObject({ stage: 'question', askingIndex: 2, lineDone: [0, 1] });
+    expect(activeIntake(chatId)).toMatchObject({
+      stage: 'question',
+      askingIndex: 2,
+      lineDone: [
+        { index: 0, name: 'Kurtka' },
+        { index: 1, name: 'Shim' },
+      ],
+    });
     expect(ctx.texts().map((t) => t.split(' — ')[0])).toEqual(['❓ 2-qator «Shim»', '❓ 3-qator «Sharf»']);
   });
 
@@ -365,12 +375,12 @@ describe('a line passed with ⏭ is never asked again (round-2 review, C10)', ()
       facts: { goods: [line('Kurtka')] },
     });
     await handleCalcCallback(fakeCtx(), chatId, 'skip');
-    expect(activeIntake(chatId)).toMatchObject({ stage: 'review', lineDone: [0] });
+    expect(activeIntake(chatId)).toMatchObject({ stage: 'review', lineDone: [{ index: 0, name: 'Kurtka' }] });
   });
 });
 
-describe('the summary names the customer on ONE line (round-2 review, C9)', () => {
-  it('«Ali aka» over the phone reads «Mijoz: Ali aka» — the phone has its own column', async () => {
+describe('the summary names the customer on ONE line (round-2 review, C9; round-3, R3-C3)', () => {
+  it('«Ali aka» over the phone reads «Mijoz: Ali aka · +998 …» — one line, and the phone the landing reads', async () => {
     const { chatId } = collection({
       stage: 'question',
       askingIndex: 0,
@@ -381,17 +391,16 @@ describe('the summary names the customer on ONE line (round-2 review, C9)', () =
     const ctx = fakeCtx();
     await handleCalcCallback(ctx, chatId, 'skip');
     const summary = ctx.texts().at(-1)!;
-    expect(summary).toContain('Mijoz: Ali aka\n');
-    expect(summary).not.toContain('+998');
+    expect(summary).toContain('Mijoz: Ali aka · +998 90 123 45 67\n');
   });
 });
 
 describe('a file the READER stopped short is said, and carries its cut (round-2 review, C1/C4/C5)', () => {
   const rows = (n: number, tag: string) => Array.from({ length: n }, (_, i) => `${i + 1} | ${tag} model ${i}`).join('\n');
-  const fit = (texts: readonly string[]) => fitSheetTexts(texts, 10_000);
+  const fit = (texts: readonly string[]) => fitSheetRows(texts, 10_000);
 
   it('a header-less sheet the reader cut: the warning, though what is left fits', () => {
-    const sheet = { text: rows(20, 'Kurtka'), cut: true };
+    const sheet = { text: rows(20, 'Kurtka'), cut: true, cellsCut: false };
     const answer = receiveSheetText(collection().state, '«PL.csv»', sheet, fit);
     expect(answer.say).toContain('⚠️ Jadval katta: AI faqat boshini o‘qiydi');
     expect(answer.patch.sheetTexts).toEqual([sheet]);
@@ -403,10 +412,11 @@ describe('a file the READER stopped short is said, and carries its cut (round-2 
       label: '«A.xlsx»',
       text: '[Packing list]\n1 | 2',
       textCut: true,
+      cellsCut: false,
       where: '',
     });
     expect(answer.say).toContain('⚠️ Jadval katta: AI boshqa varaqlarning faqat boshini o‘qiydi');
-    expect(answer.patch.invoiceTexts).toEqual([{ text: '[Packing list]\n1 | 2', cut: true }]);
+    expect(answer.patch.invoiceTexts).toEqual([{ text: '[Packing list]\n1 | 2', cut: true, cellsCut: false }]);
   });
 
   it('the real reader on a 300-row header-less CSV: its cut reaches the collection and the seller', async () => {

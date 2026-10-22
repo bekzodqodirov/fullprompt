@@ -66,9 +66,11 @@ import { clientLabels } from './client-labels';
 import {
   activeIntake,
   analyzeCollected,
-  intakeClientLabel,
+  doneLine,
+  intakeClientSummary,
   intakeFileKind,
   mergeLineAnswers,
+  resolveLineDone,
   MAX_INTAKE_IMAGES,
   MAX_INTAKE_PDF_BYTES,
   MAX_INTAKE_PDFS,
@@ -1302,12 +1304,17 @@ async function askNextOrConfirm(
     '../../wms/calc/intake'
   );
   const laws = await intakeLaws(state);
+  // The lines dealt with, put onto the goods list as it stands NOW (round-3
+  // review, R3-C5): a re-read after «➕ Yana ma'lumot» rebuilds the list, and
+  // an index carried over from the old one marked some other line done while
+  // the skipped one was asked again. By name, like the per-line answers.
+  const lineDone = resolveLineDone(state.facts.goods, state.lineDone);
   // BOTH doors ask now (P1.3): the plain «🧮 Hisoblatish» used to land a
   // ten-line rastamojka job with seven lines nobody had a figure for, and a
   // summary that named none of them. The same cap holds.
   const line =
     state.round < MAX_QUESTION_ROUNDS
-      ? nextLineToAsk(state.section, state.facts, laws, { skip: state.lineDone })
+      ? nextLineToAsk(state.section, state.facts, laws, { skip: lineDone.map((d) => d.index) })
       : null;
 
   // The lines dealt with are WRITTEN BACK on every way out (round-2 review,
@@ -1315,7 +1322,6 @@ async function askNextOrConfirm(
   // answered or skipped, and it used to be read for the choice below and then
   // dropped — the stored collection kept the old list, so the next answer or
   // ⏭ rebuilt it from that, and a line skipped with ⏭ was asked again.
-  const lineDone = state.lineDone;
   if (line) {
     updateIntake(chatId, {
       stage: 'question',
@@ -1366,8 +1372,11 @@ async function askNextOrConfirm(
       section: settled.section,
       facts: settled.facts,
       laws,
-      // One line, the lead's own name (round-2 review, C9).
-      clientLabel: intakeClientLabel(settled.clientHintRaw),
+      // Everything the seller typed for the customer, on one line (round-3
+      // review, R3-C3): the code or phone the landing finds the customer by
+      // is on the one screen checked before «Tasdiqlash» — printed as the
+      // lead's name alone, «Ali aka / GS771» could not be caught here.
+      clientLabel: intakeClientSummary(settled.clientHintRaw),
       fileCount: settled.fileCount,
       ambiguous: settled.ambiguousTotals,
     }) +
@@ -1605,7 +1614,8 @@ async function refuseLine(
     await ctx.reply(LINE_REFUSAL[reason](detail), { reply_markup: skipKeyboard() });
     return;
   }
-  const done = state.askingIndex === null ? state.lineDone : [...state.lineDone, state.askingIndex];
+  const asked = state.askingIndex === null ? null : doneLine(state.facts.goods, state.askingIndex);
+  const done = asked ? [...state.lineDone, asked] : state.lineDone;
   await askNextOrConfirm(ctx, chatId, { ...state, lineDone: done, reasked: false, offers: [] });
 }
 
@@ -1651,7 +1661,7 @@ async function applyLinePatch(
     await ctx.reply(`Yozildi. ${lineQuestionText(still)}`, { reply_markup: skipKeyboard() });
     return;
   }
-  await askNextOrConfirm(ctx, chatId, { ...next, lineDone: [...next.lineDone, index] });
+  await askNextOrConfirm(ctx, chatId, { ...next, lineDone: [...next.lineDone, { index, name: row.name }] });
 }
 
 /**
@@ -1700,10 +1710,16 @@ async function analyseIntakeAndReply(
  *    (`statesGoods`, a labelled goods line — the reader's own first test) and
  *    either one short line or a hint `parseClientHint` finds. Only such a
  *    text may be insisted on as the customer (round-2 review, C3/C7).
+ *  - `why` — when it cannot, which of the two it fails (round-3 review,
+ *    R3-C6): `goods` = it states goods; `shape` = no goods in it, but several
+ *    lines (or one long one) that no hint reads. The refusal of a repeat says
+ *    the one that is TRUE: «Rustam / Andijon» sent twice was told it was a
+ *    goods list. Null when it could.
  */
 export interface CustomerTextRead {
   material: boolean;
   couldBeCustomer: boolean;
+  why: 'goods' | 'shape' | null;
 }
 
 export async function readCustomerText(raw: string, prefix: string): Promise<CustomerTextRead> {
@@ -1715,10 +1731,12 @@ export async function readCustomerText(raw: string, prefix: string): Promise<Cus
     .map((l) => l.trim())
     .filter(Boolean);
   const goods = lines.some((l) => statesGoods(l) || readGoodsLines(l, { labelledOnly: true }).length > 0);
+  const couldBeCustomer =
+    text !== '' && !goods && ((lines.length === 1 && text.length <= 60) || parseClientHint(text, { prefix }) !== null);
   return {
     material: looksLikeMaterial(raw, { prefix }),
-    couldBeCustomer:
-      text !== '' && !goods && ((lines.length === 1 && text.length <= 60) || parseClientHint(text, { prefix }) !== null),
+    couldBeCustomer,
+    why: couldBeCustomer ? null : goods ? 'goods' : 'shape',
   };
 }
 
@@ -1751,12 +1769,16 @@ export function clientAnswer(
   const again = state.clientAskedWith !== null && state.clientAskedWith === text;
   if (read.material && !(again && read.couldBeCustomer)) {
     if (again) {
+      // Worded by the reason that is true (R3-C6): a goods list, or a text no
+      // hint reads — «Rustam / Andijon» has no goods in it.
       return {
         kind: 'material',
         patch: {},
         say:
-          '✍️ Bu matn allaqachon olingan — ikkinchi marta qo‘shilmadi. Tovar ro‘yxati mijoz bo‘la olmaydi.\n' +
-          'Mijozni bitta qatorda yozing: kod yoki telefon.\n\n' +
+          '✍️ Bu matn allaqachon olingan — ikkinchi marta qo‘shilmadi. ' +
+          (read.why === 'shape'
+            ? 'Bir necha qatorli (yoki uzun) matn mijoz bo‘la olmaydi.\nIsm, kod yoki telefonni bitta qatorda yozing.\n\n'
+            : 'Tovar ro‘yxati mijoz bo‘la olmaydi.\nMijozni bitta qatorda yozing: kod yoki telefon.\n\n') +
           CLIENT_QUESTION,
       };
     }
@@ -1764,7 +1786,9 @@ export function clientAnswer(
       kind: 'material',
       patch: { material: [...state.material, raw], clientAskedWith: text },
       say:
-        '✍️ Ma’lumot sifatida olindi — tovar ro‘yxatiga o‘xshaydi.\n' +
+        (read.why === 'shape'
+          ? '✍️ Ma’lumot sifatida olindi — bu matndan mijozni o‘qib bo‘lmadi.\n'
+          : '✍️ Ma’lumot sifatida olindi — tovar ro‘yxatiga o‘xshaydi.\n') +
         'Mijozni bitta qatorda yozing: kod yoki telefon.' +
         (read.couldBeCustomer ? ' (Shu matnni yana yuborsangiz — mijoz deb olinadi.)' : '') +
         '\n\n' +
@@ -1954,7 +1978,11 @@ function otherFilesQuestion(invoiceLines: number): string {
   );
 }
 
-/** How spreadsheet texts fit what the model reads — `fitSheetTexts` at the reader's cap. */
+/**
+ * How spreadsheet texts fit what the model reads, in ROWS — `fitSheetRows` at
+ * the reader's cap (round-3 review, R3-C2: counted in lines, a sheet's
+ * «[name]» heading was a row, and a 20-row file read «birinchi 21 qator»).
+ */
 export type SheetFit = (texts: readonly string[]) => { kept: number[]; total: number[] };
 
 /**
@@ -1988,7 +2016,11 @@ export function receivePdf(state: IntakeState, pdf: { data: Buffer; name: string
  * Two cuts, both said: the READER's (`sheet.cut` — it stops every file at its
  * own budget, so one oversized file reached this fit already short and passed
  * it whole: «AI o‘qiydi» and nothing more, round-2 review C1/C4/C5), and this
- * fit's, when the files together outgrow what the model reads.
+ * fit's, when the files together outgrow what the model reads. Both are ROWS
+ * missing. A file whose rows are all there and only some long cells were
+ * shortened (`sheet.cellsCut`) is told nothing: «faqat boshini o‘qiydi» about
+ * a table the model reads in full was false, and the seller cannot act on it
+ * (round-3 review, R3-C2 — the model is told, `sheetsPromptText`).
  */
 export function receiveSheetText(state: IntakeState, label: string, sheet: SheetText, fit: SheetFit): FileAnswer {
   const sheetTexts = [...state.sheetTexts, sheet];
@@ -2031,7 +2063,9 @@ export function receiveSheetText(state: IntakeState, label: string, sheet: Sheet
  *
  * The goods rows are exact whatever the size; the OTHER sheets' text is what
  * the reader cuts (`textCut`), and that is said too — those sheets are where
- * the shipment's totals are read from (round-2 review, C1).
+ * the shipment's totals are read from (round-2 review, C1). Only when ROWS are
+ * missing: shortened cells (`cellsCut`) travel to the model and say nothing
+ * here (round-3 review, R3-C2).
  */
 export function receiveGoodsSheet(
   state: IntakeState,
@@ -2040,11 +2074,12 @@ export function receiveGoodsSheet(
     label: string;
     text: string;
     textCut: boolean;
+    cellsCut: boolean;
     where: string;
   },
 ): FileAnswer {
   const { goods, label, where } = sheet;
-  const texts: SheetText[] = sheet.text ? [{ text: sheet.text, cut: sheet.textCut }] : [];
+  const texts: SheetText[] = sheet.text ? [{ text: sheet.text, cut: sheet.textCut, cellsCut: sheet.cellsCut }] : [];
   const cut =
     sheet.text && sheet.textCut
       ? '\n⚠️ Jadval katta: AI boshqa varaqlarning faqat boshini o‘qiydi (tovarlar ro‘yxati to‘liq olindi).'
@@ -2190,12 +2225,14 @@ export async function readIntakeFile(
     return { patch: {}, say: `📎 ${label} kartada saqlandi, lekin o‘qilmaydi: faqat rasm, PDF va Excel/CSV o‘qiladi.` };
   }
   if (sheet.kind === 'refused') return { patch: {}, say: SHEET_REFUSAL[sheet.reason](label) };
-  // The reader's own cut (`textCut`) travels with the text, so the seller and
-  // the model are both told (round-2 review, C1/C4/C5).
+  // The reader's own two words travel with the text (round-2 review,
+  // C1/C4/C5; round-3, R3-C2): `textCut` = rows are missing — the seller and
+  // the model are told; `cellsCut` = every row is there, some cells shortened
+  // — the model is told, the seller nothing.
   if (sheet.kind === 'text') {
-    const { fitSheetTexts } = await import('../../wms/calc/intake-ai');
-    return receiveSheetText(state, label, { text: sheet.text, cut: sheet.textCut }, (texts) =>
-      fitSheetTexts(texts, SHEET_TEXT_BUDGET),
+    const { fitSheetRows } = await import('../../wms/calc/intake-ai');
+    return receiveSheetText(state, label, { text: sheet.text, cut: sheet.textCut, cellsCut: sheet.cellsCut }, (texts) =>
+      fitSheetRows(texts, SHEET_TEXT_BUDGET),
     );
   }
   // Everything the file states reaches the landing (2026-10-09, P1.6) —
@@ -2207,6 +2244,7 @@ export async function readIntakeFile(
     label,
     text: sheet.text,
     textCut: sheet.textCut,
+    cellsCut: sheet.cellsCut,
     where,
   });
 }
@@ -2465,10 +2503,11 @@ export async function handleCalcCallback(
     }
     // The skipped line is DONE for this collection — never asked again, not
     // even after «➕ Yana ma'lumot» re-reads the material (P1.3).
-    const lineDone =
+    const skipped =
       state.stage === 'question' && state.askingIndex !== null && !state.askingTotals
-        ? [...state.lineDone, state.askingIndex]
-        : state.lineDone;
+        ? doneLine(state.facts.goods, state.askingIndex)
+        : null;
+    const lineDone = skipped ? [...state.lineDone, skipped] : state.lineDone;
     await askNextOrConfirm(ctx, chatId, { ...state, lineDone, reasked: false, offers: [] });
     return;
   }

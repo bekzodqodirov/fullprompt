@@ -72,8 +72,8 @@ describe('another factory’s goods, beside an Excel list (review c4)', () => {
 describe('what the model is shown of the spreadsheets (review c7)', () => {
   it('the separate files first, then the accepted workbooks’ other sheets — and nothing a replace dropped', async () => {
     model.analyze.mockResolvedValueOnce(reads([]));
-    const sheet = { text: '[S] headerless', cut: true };
-    const packing = { text: '[Packing list] RIGHT 1200 KGS', cut: false };
+    const sheet = { text: '[S] headerless', cut: true, cellsCut: false };
+    const packing = { text: '[Packing list] RIGHT 1200 KGS', cut: false, cellsCut: false };
     await analyzeCollected(collection({ sheetTexts: [sheet], invoiceTexts: [packing] }));
     // Two inputs, never one block (round-2 review, C2/C6): the separate file
     // is goods material, the workbook's own packing list is totals only —
@@ -88,12 +88,12 @@ describe('the order of the sources (pickGoods)', () => {
   const typedLabelled = [line('Kurtka', { quantity: 300 })];
 
   it('a model that READ and found no goods is not overruled by an unlabelled typed line (review t22)', () => {
-    expect(pickGoods({ invoice: [], aiGoods: null, model: [], typed, typedLabelled })).toEqual(typedLabelled);
+    expect(pickGoods({ invoice: [], aiGoods: null, model: [], typed, typedLabelled }).goods).toEqual(typedLabelled);
   });
 
   it('no reading at all: every typed line answers; a reading with goods answers itself', () => {
-    expect(pickGoods({ invoice: [], aiGoods: null, model: null, typed, typedLabelled })).toEqual(typed);
-    expect(pickGoods({ invoice: [], aiGoods: null, model: [line('Choynak')], typed, typedLabelled })).toEqual([line('Choynak')]);
+    expect(pickGoods({ invoice: [], aiGoods: null, model: null, typed, typedLabelled }).goods).toEqual(typed);
+    expect(pickGoods({ invoice: [], aiGoods: null, model: [line('Choynak')], typed, typedLabelled }).goods).toEqual([line('Choynak')]);
   });
 
   it('a name is compared without its case, spacing or punctuation', () => {
@@ -111,9 +111,21 @@ describe('a line the Excel already lists is not added again under the model’s 
       line('Kurtka (oq)'),
       line('Choynak (茶壶)'),
       line('Choynak'),
+      line('choynak (茶壶)'),
     ];
-    const names = pickGoods({ invoice, aiGoods: 'add', model, typed: [], typedLabelled: [] }).map((g) => g.name);
-    expect(names).toEqual(['Ladies jacket', 'Куртка мужская', 'Kurtka (qora)', 'Kurtka (oq)', 'Choynak (茶壶)']);
+    const picked = pickGoods({ invoice, aiGoods: 'add', model, typed: [], typedLabelled: [] });
+    // A model line stating no figure is the Excel's own when a name meets.
+    // Among the model's OWN lines only the same whole name is one line
+    // (round-3 review, R3-C1): «Choynak» and «Choynak (茶壶)» are two it read.
+    expect(picked.goods.map((g) => g.name)).toEqual([
+      'Ladies jacket',
+      'Куртка мужская',
+      'Kurtka (qora)',
+      'Kurtka (oq)',
+      'Choynak (茶壶)',
+      'Choynak',
+    ]);
+    expect(picked.sameAsInvoice.map((g) => g.name)).toEqual(['Куртка женская (Ladies jacket)', 'Куртка мужская（男士夹克）']);
   });
 
   it('the names a line answers to: whole, outside the brackets, inside each', () => {
@@ -133,12 +145,13 @@ describe('a line the Excel already lists is not added again under the model’s 
 });
 
 describe('the customer as one line (round-2 review, C8/C9)', () => {
-  it('the lines without a digit are the name; a bare label is not; else the text on one line', () => {
-    expect(intakeClientLabel('Ali aka\n+998 90 123 45 67')).toBe('Ali aka');
-    expect(intakeClientLabel('Ism: Ali aka\nTel: +998 90 123 45 67')).toBe('Ism: Ali aka');
-    expect(intakeClientLabel('Mijoz:\nGS777')).toBe('Mijoz: GS777');
-    expect(intakeClientLabel('  GS777  Bobur ')).toBe('GS777 Bobur');
-    expect(intakeClientLabel('OOO  Asia\nTrade')).toBe('OOO Asia Trade');
-    expect(intakeClientLabel(' \n ')).toBeNull();
+  it('the lines that ARE the hint’s phone or code leave the name; a bare label too; else the text on one line', () => {
+    const phone = { phone: '+998 90 123 45 67' };
+    expect(intakeClientLabel('Ali aka\n+998 90 123 45 67', phone)).toBe('Ali aka');
+    expect(intakeClientLabel('Ism: Ali aka\nTel: +998 90 123 45 67', phone)).toBe('Ism: Ali aka');
+    expect(intakeClientLabel('Mijoz:\nGS777', { code: 'GS777' })).toBe('Mijoz: GS777');
+    expect(intakeClientLabel('  GS777  Bobur ', { code: 'GS777' })).toBe('GS777 Bobur');
+    expect(intakeClientLabel('OOO  Asia\nTrade', null)).toBe('OOO Asia Trade');
+    expect(intakeClientLabel(' \n ', null)).toBeNull();
   });
 });

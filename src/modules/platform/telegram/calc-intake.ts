@@ -21,7 +21,10 @@ import { staffForChat } from './staff-bot';
 
 export type IntakeStage = 'section' | 'client' | 'material' | 'review' | 'question';
 
-/** A spreadsheet's text and whether its reader stopped before the end (round-2 review, C1). */
+/**
+ * A spreadsheet's text, whether its reader stopped before the end (round-2
+ * review, C1) and whether it only shortened some cells (round-3, R3-C2).
+ */
 export type SheetText = import('../../wms/calc/intake-ai').IntakeSheetText;
 
 export interface IntakeState {
@@ -99,10 +102,17 @@ export interface IntakeState {
   reasked: boolean;
   /**
    * The lines dealt with this collection — answered, or passed with «⏭» —
-   * by index. Kept across «➕ Yana ma'lumot»: an answered line is never asked
-   * twice (P1.3).
+   * by index AND name. Kept across «➕ Yana ma'lumot»: an answered line is
+   * never asked twice (P1.3).
+   *
+   * The name is what makes «kept» true (round-3 review, R3-C5): an index
+   * alone survived a re-read onto a list rebuilt from scratch — the model
+   * returned [Shim, Kurtka] where it had said [Kurtka], index 0 now named
+   * Shim, so the skipped Kurtka was asked and Shim never. Resolved onto the
+   * goods list the question is about (`resolveLineDone`) by the same rule as
+   * `lineAnswers`.
    */
-  lineDone: number[];
+  lineDone: { index: number; name: string }[];
   /**
    * What the seller ANSWERED per line, kept so a re-analysis after «➕ Yana
    * ma'lumot» can put it back. The audit's finding: the re-read rebuilt the
@@ -267,22 +277,137 @@ export function mergeLineAnswers(
 }
 
 /**
- * The customer as ONE line: the lead's name and the summary's «Mijoz:» (round-2
- * review, C8/C9). Since the typed round a hint may be two or three lines («Ali
- * aka» over «+998 90 123 45 67»), and the raw text named the lead with a
- * newline AND the phone — on the board card, in «Lid: …» and in the summary.
- * The lines without a digit are the name; a line that is only a label waiting
- * for its value («Mijoz:») is not one. When no line is a name, the whole text
- * collapsed onto one line. Null = nothing typed: each caller has its own word
- * for that. Pure.
+ * The goods line `index` names, as `lineDone` records it — null when the list
+ * has no such line (a stale index records nothing). Pure.
  */
-export function intakeClientLabel(raw: string): string | null {
-  const lines = raw
+export function doneLine(
+  goods: import('../../wms/calc/intake').CalcFacts['goods'],
+  index: number,
+): IntakeState['lineDone'][number] | null {
+  const row = goods?.[index];
+  return row ? { index, name: row.name } : null;
+}
+
+/**
+ * The lines dealt with, put onto the goods list as it stands now (round-3
+ * review, R3-C5) — `mergeLineAnswers`' rule: the same index while the line
+ * there still carries the name, else the first line of that name, else the
+ * entry is dropped (a line the re-read no longer lists is nothing to skip).
+ * One step stricter than that rule, because a skip has no figure to show it
+ * landed: a line is claimed once, so two «Kurtka» lines are two entries and
+ * never one line marked twice while the other is lost. Pure.
+ */
+export function resolveLineDone(
+  goods: import('../../wms/calc/intake').CalcFacts['goods'],
+  done: IntakeState['lineDone'],
+): IntakeState['lineDone'] {
+  const list = goods ?? [];
+  const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+  const taken = new Set<number>();
+  const out: IntakeState['lineDone'] = [];
+  for (const entry of done) {
+    const at =
+      list[entry.index] && !taken.has(entry.index) && sameName(list[entry.index]!.name, entry.name)
+        ? entry.index
+        : list.findIndex((g, i) => !taken.has(i) && sameName(g.name, entry.name));
+    if (at < 0) continue;
+    taken.add(at);
+    out.push({ index: at, name: list[at]!.name });
+  }
+  return out;
+}
+
+/** The hint's non-empty lines, each with its spacing collapsed. */
+function hintLines(raw: string): string[] {
+  return raw
     .split(/\r?\n/)
     .map((l) => l.replace(/\s+/g, ' ').trim())
     .filter(Boolean);
-  const named = lines.filter((l) => !/\d/.test(l) && !/[:：]$/.test(l));
+}
+
+/** A line that is only a label waiting for its value («Mijoz:»). */
+const isBareLabel = (line: string) => /[:：]$/.test(line);
+
+/**
+ * The words a contact line opens with before its value — «Tel: 90 …»,
+ * «Mijoz kodi GS777», «Код клиента: …». A lookahead and not `\b`: JS's `\b`
+ * is ASCII-only, so «Тел» would never end a word.
+ */
+const CONTACT_LABEL =
+  /^(?:tel(?:efon)?|тел(?:ефон)?|phone|mob(?:il)?|моб(?:ильный)?|mijoz(?:\s+kodi)?|klient(?:\s+kodi)?|client(?:\s+code)?|клиент|kod(?:i)?|код(?:\s+клиента)?|code|raqam(?:i)?|номер|nomer)(?![\p{L}\p{N}])[.\s]*[:：\-–—]?\s*/iu;
+
+/**
+ * Is this line the hint's phone or code and nothing else (round-3 review,
+ * R3-C4)? Its contact label off, its spacing and «+ - ( ) .» off, what is left
+ * is the code (or the code's own number — «Kod 777» for GS777), the phone's
+ * digits, or both side by side. Judged against what `parseClientHint` TOOK,
+ * never by the shape alone: «3-filial» and «Ali aka 2» carry digits and are
+ * names, and a phone the hint did not take stays in the name — the one place
+ * it is still written down.
+ */
+function isContactLine(line: string, hint: { code?: string; phone?: string } | null): boolean {
+  if (!hint) return false;
+  const compact = line
+    .replace(CONTACT_LABEL, '')
+    .replace(/[\s+\-–—().]/g, '')
+    .toUpperCase();
+  if (!compact) return false;
+  const code = hint.code ? hint.code.replace(/[\s-]/g, '').toUpperCase() : null;
+  const phone = hint.phone ? hint.phone.replace(/\D/g, '') : null;
+  let rest = compact;
+  if (code && rest.startsWith(code)) rest = rest.slice(code.length);
+  else if (code && rest.endsWith(code)) rest = rest.slice(0, -code.length);
+  if (!rest) return true;
+  if (phone && phone.length >= 7 && /^\d{7,}$/.test(rest) && (phone.endsWith(rest) || rest.endsWith(phone))) return true;
+  // The code's number alone, its prefix left off — only while nothing else was taken from the line.
+  return (
+    rest === compact &&
+    code !== null &&
+    /^\d+$/.test(rest) &&
+    code.endsWith(rest) &&
+    /^\p{L}+$/u.test(code.slice(0, -rest.length))
+  );
+}
+
+/**
+ * The customer's NAME, on one line: the lead's name (round-2 review, C8; the
+ * summary prints the whole hint, `intakeClientSummary`). Since the typed round
+ * a hint may be two or three lines («Ali aka» over «+998 90 123 45 67»), and
+ * the raw text named the lead with a newline AND the phone, which the hint
+ * already puts in its own column.
+ *
+ * The lines dropped are the ones that ARE the hint's phone or code
+ * (`isContactLine`, round-3 review R3-C4) — no longer every line with a digit:
+ * «Ali aka 2» over the phone fell back to the whole text and put the phone in
+ * the name, and so did «OOO "Asia Trade" 3-filial» over «Tel: …». A line that
+ * is only a label waiting for its value («Mijoz:») is not a name either. When
+ * nothing is left, the whole text collapsed onto one line. Null = nothing
+ * typed: the caller has its own word for that. Pure.
+ */
+export function intakeClientLabel(raw: string, hint: { code?: string; phone?: string } | null): string | null {
+  const lines = hintLines(raw);
+  const named = lines.filter((l) => !isBareLabel(l) && !isContactLine(l, hint));
   return (named.length > 0 ? named : lines).join(' ') || null;
+}
+
+/**
+ * The customer as the confirm's «Mijoz:» prints it — EVERYTHING typed, on one
+ * line (round-3 review, R3-C3). The summary is the one screen the seller
+ * checks before «Tasdiqlash», and the landing finds the customer by the code
+ * or phone in the hint: printed as the lead's name («Ali aka» for «Ali aka /
+ * GS777»), a mistyped GS771 could not be seen before it landed. Lines are
+ * joined by « · »; a bare label («Mijoz:») takes its value with a space, so
+ * «Mijoz:» over «GS777» reads «Mijoz: GS777». Null = nothing typed. Pure.
+ */
+export function intakeClientSummary(raw: string): string | null {
+  const parts: string[] = [];
+  let open = false;
+  for (const line of hintLines(raw)) {
+    if (open && parts.length > 0) parts[parts.length - 1] += ` ${line}`;
+    else parts.push(line);
+    open = isBareLabel(line);
+  }
+  return parts.join(' · ') || null;
 }
 
 type GoodsList = NonNullable<import('../../wms/calc/intake').CalcFacts['goods']>;
@@ -312,26 +437,65 @@ export function goodsNameKeys(name: string): { whole: string; keys: string[] } {
 }
 
 /**
- * Two lines are the same product when a name ONE of them answers to is the
- * OTHER's whole name — «Куртка женская (Ladies jacket)» is «Ladies jacket»,
- * «Kurtka» is «Kurtka (qora)». Never bracket against bracket or outside
- * against outside: a bracket is as often a colour or a size, and «Kurtka
- * (qora)» beside «Kurtka (oq)» are two lines of one order.
+ * Do two names point at the same product the WIDE way — a name ONE of them
+ * answers to is the OTHER's whole name: «Куртка женская (Ladies jacket)» is
+ * «Ladies jacket», «Kurtka» is «Kurtka (qora)» (round-2 review, C2/C6)? Never
+ * bracket against bracket or outside against outside: a bracket is as often a
+ * colour or a size, and «Kurtka (qora)» beside «Kurtka (oq)» are two lines of
+ * one order.
  */
-function namesSeen(): { has: (name: string) => boolean; add: (name: string) => void } {
-  const wholes = new Set<string>();
-  const keys = new Set<string>();
-  return {
-    has(name) {
-      const k = goodsNameKeys(name);
-      return k.keys.some((key) => wholes.has(key)) || keys.has(k.whole);
-    },
-    add(name) {
-      const k = goodsNameKeys(name);
-      if (k.whole) wholes.add(k.whole);
-      for (const key of k.keys) keys.add(key);
-    },
-  };
+function namesMeet(a: { whole: string; keys: string[] }, b: { whole: string; keys: string[] }): boolean {
+  return a.keys.includes(b.whole) || b.keys.includes(a.whole);
+}
+
+/**
+ * The figures a goods line can state, and what «equal» means for each: a
+ * count is exact (300 and 299 are two lines); a weight, volume or amount is
+ * equal within rounding — under `unit` apart, or within 0.5 % (a PDF's
+ * «1 234,5 kg» read as 1234).
+ */
+const LINE_FIGURES: { field: 'quantity' | 'weightKg' | 'volumeM3' | 'measureQty' | 'amount'; unit: number | null }[] = [
+  { field: 'quantity', unit: null },
+  { field: 'weightKg', unit: 1 },
+  { field: 'volumeM3', unit: 0.01 },
+  { field: 'measureQty', unit: null },
+  { field: 'amount', unit: 0.01 },
+];
+
+function figureOf(g: GoodsList[number], field: (typeof LINE_FIGURES)[number]['field']): number | null {
+  const v = g[field];
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
+
+/**
+ * Is the model's line the Excel line READ AGAIN, by its figures (round-3
+ * review, R3-C1)? A packing list re-read carries the Excel line's own count or
+ * weight; another factory's same-named product does not. So: the model line
+ * states no figure at all (nothing says it is another line), or a figure both
+ * lines state agrees.
+ */
+function figuresAgree(model: GoodsList[number], invoice: GoodsList[number]): boolean {
+  const stated = LINE_FIGURES.filter((f) => figureOf(model, f.field) !== null);
+  if (stated.length === 0) return true;
+  return stated.some((f) => {
+    const ours = figureOf(model, f.field)!;
+    const theirs = figureOf(invoice, f.field);
+    if (theirs === null) return false;
+    if (f.unit === null) return ours === theirs;
+    const gap = Math.abs(ours - theirs);
+    return gap < f.unit || gap <= 0.005 * Math.max(Math.abs(ours), Math.abs(theirs));
+  });
+}
+
+/** What `pickGoods` lands, and the model's lines it left out as the Excel's own. */
+export interface PickedGoods {
+  goods: GoodsList;
+  /**
+   * The model's lines NOT added because an Excel line is the same product
+   * (round-3 review, R3-C1) — named to the seller, never dropped in silence:
+   * the job would land short by them with no word anywhere.
+   */
+  sameAsInvoice: GoodsList;
 }
 
 /**
@@ -342,12 +506,21 @@ function namesSeen(): { has: (name: string) => boolean; add: (name: string) => v
  *  1. An attached invoice (XLSX/CSV) answers whenever it yields a line
  *     (2026-10-09, P1.6): its rows carry the supplier's own codes, units,
  *     weights and volumes. When the seller said a separate model-read file is
- *     ANOTHER factory's (`aiGoods: 'add'`, round-1 review c4), the model's lines are
- *     appended — those whose name the Excel does not already carry, because
+ *     ANOTHER factory's (`aiGoods: 'add'`, round-1 review c4), the model's
+ *     lines are appended — except those the Excel already carries, because
  *     the model was shown the PDF and the text, and the text can repeat a
- *     line the Excel has. «Already carry» is by the names a line answers to
- *     (`goodsNameKeys`), so the model's «Russian (original)» meets its Excel
- *     original (round-2 review, C2).
+ *     line the Excel has. «Already carries» (round-3 review, R3-C1):
+ *      - the same WHOLE name (`goodsNameKey`) — base's rule, kept;
+ *      - a name the line answers to (`goodsNameKeys`: the model's «Russian
+ *        (original)» meets its Excel original, round-2 review C2) — and then
+ *        only when the figures agree too (`figuresAgree`). The wide match
+ *        alone threw factory B's «Kurtka (qora)» 200 away against factory A's
+ *        «Kurtka» 300, and two factories shipping one generic name is this
+ *        business's ordinary day.
+ *     The wide match is between a model line and the INVOICE only; among the
+ *     model's own lines, the same whole name is one line and nothing wider —
+ *     its «Kurtka» and «Kurtka (qora)» are two products it read. What was
+ *     left out is returned (`sameAsInvoice`), for the seller to see.
  *  2. The model's goods, when there is no file — and when it READ and found
  *     none, only the lines the seller LABELLED as goods («Tovar: …»): an
  *     unlabelled «Salom, 12 kub 3500 kg» is not a product the model missed,
@@ -364,20 +537,41 @@ export function pickGoods(input: {
   model: GoodsList | null;
   typed: GoodsList;
   typedLabelled: GoodsList;
-}): GoodsList {
+}): PickedGoods {
   if (input.invoice.length > 0) {
-    if (input.aiGoods !== 'add' || !input.model?.length) return input.invoice;
-    const seen = namesSeen();
-    for (const g of input.invoice) seen.add(g.name);
-    const added = input.model.filter((g) => {
-      if (!goodsNameKey(g.name) || seen.has(g.name)) return false;
-      seen.add(g.name);
-      return true;
-    });
-    return [...input.invoice, ...added];
+    if (input.aiGoods !== 'add' || !input.model?.length) return { goods: input.invoice, sameAsInvoice: [] };
+    const invoice = input.invoice.map((row) => ({ row, names: goodsNameKeys(row.name) }));
+    const modelWholes = new Set<string>();
+    const added: GoodsList = [];
+    const sameAsInvoice: GoodsList = [];
+    for (const g of input.model) {
+      const names = goodsNameKeys(g.name);
+      if (!names.whole || modelWholes.has(names.whole)) continue;
+      modelWholes.add(names.whole);
+      const theExcels = invoice.some(
+        (inv) => inv.names.whole === names.whole || (namesMeet(names, inv.names) && figuresAgree(g, inv.row)),
+      );
+      (theExcels ? sameAsInvoice : added).push(g);
+    }
+    return { goods: [...input.invoice, ...added], sameAsInvoice };
   }
-  if (input.model === null) return input.typed;
-  return input.model.length > 0 ? input.model : input.typedLabelled;
+  if (input.model === null) return { goods: input.typed, sameAsInvoice: [] };
+  return { goods: input.model.length > 0 ? input.model : input.typedLabelled, sameAsInvoice: [] };
+}
+
+/**
+ * The seller's word for the model's lines `pickGoods` left out as the Excel's
+ * own (round-3 review, R3-C1): one line, put FIRST in the AI notes — the
+ * summary prints the first three notes, each cut at 200 characters
+ * (`aiStepsText`), and the card's lenta keeps them. So three names, each cut
+ * at 30, and a count of the rest: the whole sentence fits the cut. Null =
+ * none were left out.
+ */
+export function sameAsInvoiceNote(lines: GoodsList): string | null {
+  if (lines.length === 0) return null;
+  const names = lines.slice(0, 3).map((g) => `«${g.name.length > 30 ? `${g.name.slice(0, 29)}…` : g.name}»`);
+  const more = lines.length > 3 ? ` va yana ${lines.length - 3} ta` : '';
+  return `⚠️ ${lines.length} ta qator Excel’dagi bilan bir xil deb qo‘shilmadi: ${names.join(', ')}${more}.`;
 }
 
 /** At most this many photographs reach the model (his 1.4 b: twelve). */
@@ -554,29 +748,30 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
   // A total the text writes TWO ways («1,200 kg») is asked, and the model —
   // which read the same ambiguous text — does not get to answer it either.
   const asked = (field: 'weightKg' | 'volumeM3') => manual.ambiguous.some((a) => a.field === field);
+  // Three sources, in the order of how EXACT they are (`pickGoods`).
+  const picked = pickGoods({
+    invoice,
+    aiGoods: state.aiGoods,
+    model: ai ? (ai.facts.goods ?? []) : null,
+    typed: manual.goods ?? [],
+    typedLabelled: readGoodsLines(text, { labelledOnly: true }),
+  });
+  // The model's lines left out as the Excel's own are SAID, first among the
+  // notes, so the summary shows them and the card keeps them (R3-C1).
+  const sameNote = sameAsInvoiceNote(picked.sameAsInvoice);
   const facts = {
     fromCity: manual.fromCity ?? ai?.facts.fromCity ?? state.route?.fromCity ?? null,
     toCity: manual.toCity ?? ai?.facts.toCity ?? state.route?.toCity ?? null,
     weightKg: manual.weightKg ?? (asked('weightKg') ? null : (ai?.facts.weightKg ?? null)),
     volumeM3: manual.volumeM3 ?? (asked('volumeM3') ? null : (ai?.facts.volumeM3 ?? null)),
-    // Three sources, in the order of how EXACT they are (`pickGoods`) — and
-    // the seller's per-line answers go back on top (P1.3): a re-read after
+    // The seller's per-line answers go back on top (P1.3): a re-read after
     // «➕ Yana ma'lumot» must not erase them.
-    goods: mergeLineAnswers(
-      pickGoods({
-        invoice,
-        aiGoods: state.aiGoods,
-        model: ai ? (ai.facts.goods ?? []) : null,
-        typed: manual.goods ?? [],
-        typedLabelled: readGoodsLines(text, { labelledOnly: true }),
-      }),
-      state.lineAnswers,
-    ),
+    goods: mergeLineAnswers(picked.goods, state.lineAnswers),
   };
   return {
     ...state,
     facts,
-    steps: ai?.steps ?? [],
+    steps: [...(sameNote ? [sameNote] : []), ...(ai?.steps ?? [])],
     aiUsed: Boolean(ai),
     aiFailure: outcome.ok ? null : outcome.failure,
     usage: ai?.usage ?? null,

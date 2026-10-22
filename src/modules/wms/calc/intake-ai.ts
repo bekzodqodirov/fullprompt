@@ -241,16 +241,57 @@ export function fitSheetTexts(
 
 /**
  * A spreadsheet's text as the collector holds it: what the reader handed
- * over, and whether the READER stopped before the file's end — its `textCut`
- * (round-2 review, C1/C4/C5). The reader caps every file at its own budget
- * and says so; the fit above only ever sees what is left, so ONE oversized
- * file passed it whole and reached the model with no «обрезана» note, and the
- * seller heard only «AI o'qiydi». The model then took the visible rows for
- * the whole order.
+ * over, and the reader's two words about what it left out.
+ *
+ *  - `cut` — ROWS are missing: the reader stopped before the file's end — its
+ *    `textCut` (round-2 review, C1/C4/C5). The reader caps every file at its
+ *    own budget and says so; the fit above only ever sees what is left, so ONE
+ *    oversized file passed it whole and reached the model with no «обрезана»
+ *    note, and the seller heard only «AI o'qiydi». The model then took the
+ *    visible rows for the whole order.
+ *  - `cellsCut` — every row is there, but a long cell (or a too-long row's
+ *    tail) was shortened — the reader's `cellsCut` (round-3 review, R3-C2/
+ *    R3-S6). One flag for both told the seller «faqat boshini o'qiydi» and the
+ *    model «не считай итоги» about a table it had in FULL, because one Chinese
+ *    description ran past 300 characters — and the totals it could see
+ *    were the very figures the job needed.
  */
 export interface IntakeSheetText {
   text: string;
   cut: boolean;
+  cellsCut: boolean;
+}
+
+/**
+ * The ROWS a sheet text holds (round-3 review, R3-C2): its lines without the
+ * blank lines between sheets and without a sheet's «[name]» heading — the
+ * reader writes `[name]` as the first line of each sheet, after a blank line.
+ * «kept 21» for a 20-row CSV was the «[CSV]» line counted as a row, to the
+ * seller («birinchi 21 qator») and to the model alike. Pure.
+ */
+export function sheetRowCount(text: string): number {
+  const lines = text.split('\n');
+  let rows = 0;
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i]!;
+    if (!line.trim()) continue;
+    const heading = (i === 0 || !lines[i - 1]!.trim()) && /^\[[^\]\n]*\]$/.test(line.trim());
+    if (!heading) rows += 1;
+  }
+  return rows;
+}
+
+/**
+ * `fitSheetTexts` counted in ROWS (`sheetRowCount`): how many rows of each
+ * text the model is shown, of how many it has. What the collector tells the
+ * seller when a file ARRIVES, so the count is the one the model's note uses.
+ */
+export function fitSheetRows(
+  texts: readonly string[],
+  cap: number,
+): { kept: number[]; total: number[] } {
+  const fit = fitSheetTexts(texts, cap);
+  return { kept: fit.parts.map(sheetRowCount), total: texts.map(sheetRowCount) };
 }
 
 /**
@@ -269,22 +310,28 @@ export interface IntakeSheetText {
  *    (round-2 review, C2/C6).
  *
  * A text cut by the reader (`cut`) or by this budget carries the note right
- * under it; a text that did not fit at all is said too, never dropped.
+ * under it, counted in ROWS (`sheetRowCount` — never the «[name]» heading);
+ * a text that did not fit at all is said too, never dropped. A text whose
+ * rows are all there and only some cells were shortened (`cellsCut`) says
+ * exactly that — and nothing about totals, because the totals it shows are
+ * the file's (round-3 review, R3-C2).
  */
 export function sheetsPromptText(
   goods: readonly IntakeSheetText[],
   context: readonly IntakeSheetText[],
   cap: number,
 ): string {
-  const all = [...goods, ...context].map((s) => ({ text: s.text.trim(), cut: s.cut }));
+  const all = [...goods, ...context].map((s) => ({ text: s.text.trim(), cut: s.cut, cellsCut: s.cellsCut }));
   const fit = fitSheetTexts(all.map((s) => s.text), cap);
   const block = (from: number, to: number): string => {
     const out: string[] = [];
     for (let i = from; i < to; i += 1) {
       const sheet = all[i]!;
       if (!sheet.text) continue;
-      const kept = fit.kept[i] ?? 0;
-      const total = fit.total[i] ?? 0;
+      const kept = sheetRowCount(fit.parts[i] ?? '');
+      const total = sheetRowCount(sheet.text);
+      // A text of headings and no row has nothing to show or to miss.
+      if (total === 0) continue;
       if (kept === 0) {
         out.push('[Ещё одна таблица не поместилась — ты её не видишь. Напиши в steps, что она не прочитана.]');
         continue;
@@ -296,7 +343,9 @@ export function sheetsPromptText(
             ? `\n[Таблица обрезана: показаны первые ${kept}${sheet.cut ? '' : ` из ${total}`} строк` +
               (sheet.cut ? ', файл длиннее' : '') +
               '. Остальные строки ты не видишь — не считай итоги по видимой части и напиши в steps, что таблица прочитана не целиком.]'
-            : ''),
+            : sheet.cellsCut
+              ? '\n[Длинные ячейки сокращены, все строки показаны.]'
+              : ''),
       );
     }
     return out.join('\n\n');
@@ -323,11 +372,13 @@ export const KNOWN_GOODS_CHARS = 6_000;
 /**
  * «These are already taken — do not repeat them»: whole names while they fit
  * `budget`, then how many more there are. One of two fences, and neither is
- * whole: `pickGoods` drops a model line whose name — or the original in its
- * brackets — an Excel line already is, but a line the model renamed with no
- * trace of the Excel's words gets past it, and only this list tells the model
- * not to write one (round-2 review, C2: the old comment called the name check
- * «the fence whatever the model does», and a translated name walked through).
+ * whole: `pickGoods` drops a model line whose whole name an Excel line is, or
+ * whose original in brackets is one AND whose figures agree with it (round-3
+ * review, R3-C1 — another factory's same-named line is kept, and what was
+ * dropped is named to the seller); a line the model renamed with no trace of
+ * the Excel's words gets past it, and only this list tells the model not to
+ * write one (round-2 review, C2: the old comment called the name check «the
+ * fence whatever the model does», and a translated name walked through).
  */
 export function knownGoodsText(names: readonly string[], budget: number): string {
   const shown: string[] = [];

@@ -96,7 +96,7 @@ describe('a spreadsheet is cut on a ROW, and the cut is said (review a17)', () =
       section: 'rastamojka',
       text: '',
       fileCount: 1,
-      sheets: [{ text: sheet, cut: false }],
+      sheets: [{ text: sheet, cut: false, cellsCut: false }],
       timeoutMs: 10_000,
     });
     expect(out).toEqual({ ok: false, failure: 'rejected' });
@@ -121,15 +121,15 @@ describe('what the model is told of each spreadsheet (round-2 review, C1/C2)', (
   const rows = (n: number) => Array.from({ length: n }, (_, i) => `${i + 1} | Куртка женская модель YW-${i}`).join('\n');
 
   it('a text the READER cut is said to be cut, though what is left fits whole', () => {
-    const cut = sheetsPromptText([{ text: rows(5), cut: true }], [], 10_000);
+    const cut = sheetsPromptText([{ text: rows(5), cut: true, cellsCut: false }], [], 10_000);
     expect(cut).toContain(`${rows(5)}\n[Таблица обрезана: показаны первые 5 строк, файл длиннее.`);
-    expect(sheetsPromptText([{ text: rows(5), cut: false }], [], 10_000)).not.toContain('обрезана');
+    expect(sheetsPromptText([{ text: rows(5), cut: false, cellsCut: false }], [], 10_000)).not.toContain('обрезана');
   });
 
   it('a workbook’s other sheets stand under their own heading, for the totals — never in the goods block', () => {
     const text = sheetsPromptText(
-      [{ text: '[S]\nA | 1', cut: false }],
-      [{ text: '[Packing list]\nLadies jacket | 300 | 150', cut: false }],
+      [{ text: '[S]\nA | 1', cut: false, cellsCut: false }],
+      [{ text: '[Packing list]\nLadies jacket | 300 | 150', cut: false, cellsCut: false }],
       10_000,
     );
     const goods = text.slice(0, text.indexOf('Другие листы книги'));
@@ -137,11 +137,11 @@ describe('what the model is told of each spreadsheet (round-2 review, C1/C2)', (
     expect(goods).not.toContain('Packing list');
     expect(text).toContain('только для итогов');
     expect(text).toContain('Товары отсюда НЕ перечисляй в goods:\n[Packing list]\nLadies jacket | 300 | 150');
-    expect(sheetsPromptText([], [{ text: 'x | 1', cut: false }], 10_000)).not.toContain('Таблица Excel');
+    expect(sheetsPromptText([], [{ text: 'x | 1', cut: false, cellsCut: false }], 10_000)).not.toContain('Таблица Excel');
   });
 
   it('one budget over both, and a sheet that does not fit at all is SAID', () => {
-    const text = sheetsPromptText([{ text: rows(40), cut: false }], [{ text: '[Packing list]\nTOTAL | 9', cut: false }], 300);
+    const text = sheetsPromptText([{ text: rows(40), cut: false, cellsCut: false }], [{ text: '[Packing list]\nTOTAL | 9', cut: false, cellsCut: false }], 300);
     expect(text).toMatch(/Таблица обрезана: показаны первые \d+ из 40 строк/);
     expect(text).toContain('[Ещё одна таблица не поместилась');
     expect(text).not.toContain('TOTAL | 9');
@@ -163,8 +163,8 @@ describe('what the model is told of each spreadsheet (round-2 review, C1/C2)', (
       section: 'rastamojka',
       text: 'Kurtka',
       fileCount: 2,
-      sheets: [{ text: 'A | 1', cut: true }],
-      contextSheets: [{ text: '[Packing list]\nB | 2', cut: false }],
+      sheets: [{ text: 'A | 1', cut: true, cellsCut: false }],
+      contextSheets: [{ text: '[Packing list]\nB | 2', cut: false, cellsCut: false }],
       timeoutMs: 10_000,
     });
     expect(promptText()).toContain('A | 1\n[Таблица обрезана: показаны первые 1 строк, файл длиннее.');
