@@ -2,6 +2,7 @@ import {
   chatLine,
   clientCodePrefix,
   notGoodsWord,
+  ONE_WORD_COUNT,
   parseClientHint,
   placeWord,
   prefixCode,
@@ -173,12 +174,12 @@ const LIST_MARKER = /^(?:\d{1,3}[.)]|[-•*·–—])\s+/u;
  * ketyapti», «Yiwu skladida», «mijozniki» — so the predicate is read off the
  * LAST word (`STATUS_LAST`, `STATUS_ENDING`, a place or a store in the
  * locative), and a product that only OPENS with such a word stays a product:
- * «Bor kislotasi» is boric acid (T-r2 t12). A time, a file or a photo can
- * stand anywhere (`STATUS_ANY`: «ertaga yuboraman», «Excel faylda», «см.
- * файл»), and a Russian or English status opens with its preposition («в
- * пути», «на складе», «in transit», «see attached», «as per invoice»). A body
- * of one word that only points — «shu», «ok» — names nothing, and nor does
- * one opening with the customer's code («GS777 niki»).
+ * «Bor kislotasi» is boric acid (T-r2 t12). A Russian or English status
+ * opens with its preposition («в пути», «на складе», «см. файл», «in
+ * transit», «see attached», «as per invoice»). A body of one word that only
+ * points — «shu», «ok» — names nothing, nor a time, a file or a photo alone
+ * (`STATUS_ALONE`: «Tovar: ertaga», «Tovar: rasmlar»), nor one opening with the
+ * customer's code («GS777 niki»).
  *
  * Narrowed where the round-3 list refused descriptions (T-r1 ND9): no «xil»
  * («har xil kiyimlar» — a variety COUNT opens with its digit, «3 xil»), «rasm»
@@ -186,6 +187,13 @@ const LIST_MARKER = /^(?:\d{1,3}[.)]|[-•*·–—])\s+/u;
  * day («kunlik kiyim», «Kunlik krem», «kungaboqar» are products). The short
  * Russian forms only — «готов», «готовы» say a status; «готовая одежда» is a
  * description.
+ *
+ * A time, file or photo word refused ANY body until round 4's probe: beside
+ * other words it is what the product is — «Rasm ramkalari», «Фото рамка»,
+ * «Kun kremi» under «Tovar nomi:» vanished — and a status sentence ends in its
+ * predicate anyway: «ertaga yuboraman», «hali yo'q», «Excel faylda». A place
+ * closes a status only where the goods ARE or GO (`PLACE_CASES`): where they
+ * come FROM is the product's origin, «kiyim Xitoydan».
  */
 const STATUS_LAST = new Set([
   'tayyor', 'keldi', 'kelmadi', 'keladi', 'kelyapti', 'ketdi', 'ketmadi', 'jonatildi', 'jonatilmadi', 'bor', 'yoq',
@@ -199,12 +207,12 @@ const STATUS_ENDING = /(?:magan|ilgan|ingan|yapti|yapdi|moqda|ildi|indi|dimi|ram
 const STORE_LOCATIVE =
   /^(?:sklad|склад|ombor|bojxona|tamojnya|fayl|invoys|excel|pdf|past|yol|mashina|fura|konteyner|dokon)(?:i)?(?:da|dagi|ga|dan)$/u;
 /** A place in the locative or the directive — «Guangzhouda», «Toshkentga» (the bare name is a product's origin: «Xitoy choyi»). */
-const PLACE_CASES = ['da', 'ta', 'dagi', 'ga', 'ka', 'qa', 'dan', 'tan', 'га', 'да', 'дан'];
-const STATUS_ANY = new Set([
+const PLACE_CASES = ['da', 'ta', 'dagi', 'ga', 'ka', 'qa', 'га', 'да'];
+const STATUS_ALONE = new Set([
   'qachon', 'когда', 'hali', 'ertaga', 'keyin', 'kecha', 'hafta', 'завтра', 'сегодня', 'вчера', 'пока', 'скоро',
   'позже', 'потом', 'tomorrow', 'later', 'soon', 'фото', 'photo', 'photos', 'excel', 'pdf', 'invoice', 'инвойс',
 ]);
-const STATUS_ANY_STEMS =
+const STATUS_ALONE_STEMS =
   /^(?:rasm(?:i|lar|lari|ni|larni)?|kun(?:i|da|dan|ga|lari|larda)?|fayl\p{L}*|файл\p{L}*|invoys\p{L}*|инвойс\p{L}*|приш\p{L}*|отправ\p{L}*|отгруж\p{L}*|загруж\p{L}*|доставл\p{L}*)$/u;
 /** A Russian or English status opens with its preposition. */
 const STATUS_FIRST = new Set(['в', 'на', 'см', 'in', 'see', 'as', 'per']);
@@ -222,7 +230,7 @@ function statusBody(body: string, prefix: string | null): boolean {
   const last = words.at(-1)!;
   if (words.length === 1 && POINTER_BODY.has(last)) return true;
   if (STATUS_FIRST.has(words[0]!)) return true;
-  if (words.some((w) => STATUS_ANY.has(w) || STATUS_ANY_STEMS.test(w))) return true;
+  if (words.length === 1 && (STATUS_ALONE.has(last) || STATUS_ALONE_STEMS.test(last))) return true;
   if (STATUS_LAST.has(last) || STATUS_ENDING.test(last) || STORE_LOCATIVE.test(last)) return true;
   return PLACE_CASES.some((e) => last.length > e.length && last.endsWith(e) && placeWord(last.slice(0, -e.length)));
 }
@@ -240,10 +248,18 @@ const CARTON_NOUNS = new Set([
 ]);
 const FIELD_SHAPED = /^[\p{L}\s'’‘ʻ`-]+[:：]/u;
 
-/** The measure fields of a goods line — its weight, volume, count — in the possessive a label puts them in. */
+/** A word as the field lists hold it: lower-cased, every apostrophe dropped. */
+const fieldKey = (word: string) => word.toLowerCase().replace(/[’ʻʼ‘`´']/gu, '');
+
+/**
+ * The measure fields of a goods line — its weight, volume, count, total — in
+ * the possessive a label puts them in, or as the word before the figure it
+ * names («вес 500 кг», «jami 800 kg», «weight 500 kg»).
+ */
 const MEASURE_FIELDS = new Set([
   'vazni', 'vazn', 'ogirligi', 'ogirlik', 'hajmi', 'hajm', 'soni', 'miqdori', 'miqdor', 'вес', 'весом', 'объем',
-  'объём', 'обьем', 'количество', 'кол-во',
+  'объём', 'обьем', 'количество', 'кол-во', 'jami', 'umumiy', 'brutto', 'netto', 'итого', 'всего', 'weight',
+  'volume', 'qty', 'quantity',
 ]);
 
 /**
@@ -268,15 +284,24 @@ const NUMBER_FIELD_WORDS = new Set([
  * phones, a camera, meters and a lock with their codes, and «karta» / «phone»
  * are products themselves («SIM karta», «Phone case»). Only the person, the
  * document and the request words keep their stems («shartnomasi», «заказа»).
+ *
+ * A contact field is read in its CASES too (round-4 probe): «по номеру»,
+ * «raqamga», «telefoniga» say where a number goes, as no plural («-lar»,
+ * «-чики») or adjective («-li») does. A hyphenated word is a contact word when
+ * a part of it is («счёт-фактура»), and in English the field is a phrase —
+ * «contact phone», «phone number», «my number» — since «phone» alone is the
+ * product of «Phone case».
  */
-const CONTACT_FIELD = new Set([
-  'aka', 'akam', 'akasi', 'akamiz', 'opa', 'opam', 'opasi', 'uka', 'ukam', 'ukasi', 'tel', 'tlf', 'telefon',
-  'telefoni', 'telefonim', 'telefonimiz', 'telefoningiz', 'телефон', 'телефона', 'телефону', 'raqam', 'raqami',
-  'raqamim', 'raqamimiz', 'raqamingiz', 'nomer', 'nomeri', 'nomerim', 'номер', 'номера', 'счёт', 'счет', 'счета',
-  'schet',
-]);
+const CONTACT_FIELD = new Set(['aka', 'akam', 'akasi', 'akamiz', 'opa', 'opam', 'opasi', 'uka', 'ukam', 'ukasi']);
+const CONTACT_FORMS =
+  /^(?:tel|tlf|тел|schet|(?:telefon|raqam|nomer)(?:i|im|imiz|ingiz)?(?:ga|da|dan|ni|ning)?|(?:телефон|рақам|номер)(?:и|им|имиз|ингиз)?(?:га|да|дан|ни|нинг)?|(?:телефон|номер|сч[её]т)(?:а|у|ом|е)?)$/u;
 const CONTACT_STEM = /^(?:murojaat|shartnoma|buyurtma|договор|заказ|contract)/u;
-const contactWord = (word: string) => CONTACT_FIELD.has(word) || CONTACT_STEM.test(word);
+const CONTACT_PHRASE = /(?:^|\s)(?:(?:contact|my|our)\s+(?:phone|number|tel)|phone\s+(?:number|no))(?:\s|$)/u;
+function contactWord(word: string): boolean {
+  if (CONTACT_FIELD.has(word) || CONTACT_FORMS.test(word) || CONTACT_STEM.test(word)) return true;
+  const parts = word.split(/[-–]/u).filter(Boolean);
+  return parts.length > 1 && parts.some(contactWord);
+}
 
 /**
  * Is a code-only line's code ten digits written BARE — no dots, no spaces, no
@@ -307,7 +332,8 @@ function bareTenDigits(body: string): string | null {
  */
 function bareCodeOk(code: string, words: string[]): boolean {
   if (code.startsWith('89') || !/^(?:0[1-9]|[1-8]\d|9[0-7])(?:0[1-9]|[1-9]\d)/u.test(code)) return false;
-  return !words.some((w) => contactWord(w.replace(/[’ʻʼ‘`´']/gu, '')));
+  const keys = words.map(fieldKey);
+  return !keys.some(contactWord) && !CONTACT_PHRASE.test(keys.join(' '));
 }
 
 /**
@@ -456,8 +482,10 @@ const figureless = (name: string): TypedGoods => ({
  * A body opening with a digit is a time or a count under a plain label
  * («Mahsulot: 5 kun ichida», «Tovar: 3 xil»); after a NAMING label it is the
  * name, as the label promises (T-r2 ND3: «Наименование: 3D принтер», «Tovar
- * nomi: 7up ichimlik», «Название: 4K монитор»). What a customer says about the
- * goods is refused under both (`statusBody`): «Tovar nomi: hali yo'q».
+ * nomi: 7up ichimlik», «Название: 4K монитор»), never a number and one word
+ * («Tovar nomi: 3 xil» is a count of kinds).
+ * What a customer says about the goods is refused under both (`statusBody`):
+ * «Tovar nomi: hali yo'q».
  */
 function bareGoods(body: string, labelText: string, naming: boolean, prefix: string | null): TypedGoods[] {
   const text = body.trim().replace(ETC_TAIL, '');
@@ -469,18 +497,34 @@ function bareGoods(body: string, labelText: string, naming: boolean, prefix: str
   }
   const parsed = parseGoodsLine(text);
   if (parsed.unitWords.length === 0 && parsed.tnvedCode === null) {
+    // A number and ONE word is a count of something — «3 xil», «2 позиции»,
+    // «1 контейнер» (round-4 probe, after a naming label) — where a name's
+    // digit is glued to it («3D принтер», «100% хлопок») or the name goes on
+    // («2 в 1 шампунь», «5 litrli suv»).
+    if (/^\d[\d.,]*\s+\S+$/u.test(text)) return [];
     const whole = tidyName(text);
     return nameOk(whole) ? [figureless(whole)] : [];
   }
-  if (!oneFigureRun(text)) return [];
-  const read = kernelGoods(parsed);
+  const labels = figureRunLabels(text);
+  if (labels === null) return [];
+  const read = kernelGoods(parsed, labels);
   return read ? [read] : [];
 }
 
-/** The kernel's reading of a goods text as one product, or null when it cannot be settled. */
-function kernelGoods(parsed: ReturnType<typeof parseGoodsLine>): TypedGoods | null {
+/**
+ * The kernel's reading of a goods text as one product, or null when it cannot
+ * be settled. `fields` are the measure field words that labelled its figures
+ * («вес», «jami» — `figureRunLabels`): they name a figure, not the product.
+ */
+function kernelGoods(parsed: ReturnType<typeof parseGoodsLine>, fields: readonly string[] = []): TypedGoods | null {
   if (parsed.problems.some((p) => PROBLEM_KINDS.has(p.kind))) return null;
-  const name = tidyName(parsed.name);
+  const labelWords = new Set(fields.map(fieldKey));
+  const name = tidyName(
+    parsed.name
+      .split(/\s+/u)
+      .filter((w) => !labelWords.has(fieldKey(w)))
+      .join(' '),
+  );
   if (!nameOk(name)) return null;
   return {
     ...figureless(name),
@@ -508,14 +552,19 @@ function listPiece(piece: string): TypedGoods | null {
 /**
  * Are a text's figures ONE run — every number and unit word side by side,
  * with no word of a name between them? «300 dona kurtka» and «kurtka 300 dona
- * qora rangda» are; «kurtka 300 dona, shim 150 kg» is two runs.
+ * qora rangda» are; «kurtka 300 dona, shim 150 kg» is two runs (null). A
+ * measure FIELD between two figures labels the one after it and splits
+ * nothing (round-4 probe: «куртки 300 шт, вес 500 кг, объем 3 куб» read
+ * nothing): those words are returned, for the name to drop.
  */
-function oneFigureRun(text: string): boolean {
+function figureRunLabels(text: string): string[] | null {
   const tokens = text.split(/[\s,;/+]+/u).filter(Boolean);
   const figure = tokens.map((t) => /^\d/u.test(t) || unitOf(t) !== null);
   const first = figure.indexOf(true);
   const last = figure.lastIndexOf(true);
-  return first < 0 || figure.slice(first, last + 1).every(Boolean);
+  if (first < 0) return [];
+  const inside = tokens.slice(first, last + 1).filter((_, i) => !figure[first + i]);
+  return inside.every((w) => MEASURE_FIELDS.has(fieldKey(w))) ? inside : null;
 }
 
 /**
@@ -773,8 +822,6 @@ export function parseLineAnswer(raw: string): LineAnswer {
   return { kind: 'figures', figures, code: line.tnvedCode };
 }
 
-/** «Shim 200», «Stol 1000»: one word and its count. */
-const ONE_WORD_COUNT = /^\p{L}[\p{L}'’‘ʻ`-]*\s+\d{2,}$/u;
 /**
  * «Samsung A54», «Xiaomi Redmi K60», «Televizor LG55», «Truba PPR20»: a
  * product and its model — one to three capitals and the digits (R3-T9 widened
@@ -796,10 +843,14 @@ const NUMBER_ROW = /\p{L}\s+\d[\d.,]*(?:\s+\d[\d.,]*)+$/u;
  * written, and one that is not whole is still a contact being typed — «Ali
  * aka 123 45 67», «Ali 90 123 45» (round 4, T-r2 ND9: NUMBER_ROW filed them
  * as goods). A row of figures carries what a phone never has: a group of four
- * digits or more, or a decimal. Left: «Kurtka 120 50 30» reads as a name;
- * the repeat rule and the model see it either way.
+ * digits or more, or a decimal. And a phone ENDS in a two-digit group («123
+ * 45 67», «90 123 45»), so a row ending in three — the price × count = sum
+ * «Kurtka 12 25 300» — is figures (round-4 probe). Left: «Kurtka 120 50 30»
+ * reads as a name; the repeat rule and the model see it either way.
  */
-const PHONE_GROUPS = /\p{L}\s+\d{2,3}(?:\s+\d{2,3})+$/u;
+const PHONE_GROUPS = /\p{L}\s+\d{2,3}(?:\s+\d{2,3})*\s+\d{2}$/u;
+/** A word and THREE or more bare figures — a packing-list row («Kurtka 1200 50 3000»). */
+const THREE_FIGURES = /\p{L}\s+\d[\d.,]*(?:\s+\d[\d.,]*){2,}$/u;
 /** The label words of a customer's code: «Mijoz 777» names a customer, never a product's count (R3-T7). */
 const CLIENT_WORD = /^(?:mijoz|мижоз|klient|клиент|client|kod|код)$/iu;
 
@@ -849,7 +900,7 @@ export function looksLikeMaterial(raw: string, opts?: ClientHintOpts): boolean {
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
   const oneWordCount = ONE_WORD_COUNT.test(text) && !CLIENT_WORD.test(text.split(/\s+/u)[0]!);
   return (
-    lines.length > 1 || text.length > 60 || oneWordCount || MODEL_TAIL.test(text) || figureRow(text) || wordList(text)
+    lines.length > 1 || text.length > 60 || oneWordCount || MODEL_TAIL.test(text) || numberRow(text) || wordList(text)
   );
 }
 
@@ -870,14 +921,22 @@ export function goodsEvidence(raw: string, opts?: ClientHintOpts): boolean {
     .some((l) => labelledGoodsLine(l) || statesGoods(l) || readGoodsLines(l, labelled).length > 0);
 }
 
+/** A word and a ROW of bare figures with no phone's shape (`NUMBER_ROW`, `PHONE_GROUPS`) — material on the first send. */
+function numberRow(text: string): boolean {
+  return NUMBER_ROW.test(text) && !PHONE_GROUPS.test(text);
+}
+
 /**
- * A word and a ROW of bare figures with no phone's shape (`NUMBER_ROW`,
- * `PHONE_GROUPS`) — «Kurtka 1200 50 3000». Exported for the same reason as
- * `goodsEvidence`: such a line is material, and on a repeat no customer.
+ * A row of THREE bare figures or more — «Kurtka 1200 50 3000» — that no
+ * repeat may insist is the customer. Exported for the customer question, as
+ * `goodsEvidence` is. A word and TWO figures is material on the first send
+ * (`numberRow`), but may name a person on the repeat: a market stall
+ * «Ippodrom 4 115», «Чорсу бозори 5 12», a landline written 4-4 «王先生 8512
+ * 3456» (round-4 probe: refusing those left the seller no way to name him).
  */
 export function figureRow(raw: string): boolean {
   const text = raw.trim();
-  return NUMBER_ROW.test(text) && !PHONE_GROUPS.test(text);
+  return numberRow(text) && THREE_FIGURES.test(text);
 }
 
 /**
@@ -886,9 +945,16 @@ export function figureRow(raw: string): boolean {
  * goods list was taken as the customer on the first send). A contact is a
  * name and a place, «Rustam, Andijon», «Ali aka, Toshkent, Chilonzor», never
  * a list of bare nouns. A seller who meant it as the customer sends it again,
- * and the repeat rule believes one short line.
+ * and the repeat rule believes one short line. Nor is a list that names a
+ * place of business — «Rustam, Asaka, bozor», «Олимжон, Ипподром, магазин»
+ * (round-4 probe: a town the place list does not know made it «goods»).
  */
+const VENUE_WORDS = new Set([
+  'bozor', 'bozori', 'бозор', 'бозори', 'dokon', 'dokoni', 'докон', 'дўкон', 'дўкони', 'rasta', 'раста',
+  'магазин', 'рынок', 'базар', 'market', 'shop', 'store',
+]);
 function wordList(text: string): boolean {
   const items = text.split(/\s*[,，、;]\s*/u).filter(Boolean);
-  return items.length >= 3 && items.every((i) => /^\p{L}[\p{L}'’‘ʻ`-]*$/u.test(i) && !notGoodsWord(i));
+  const plainNoun = (i: string) => /^\p{L}[\p{L}'’‘ʻ`-]*$/u.test(i) && !notGoodsWord(i) && !VENUE_WORDS.has(fieldKey(i));
+  return items.length >= 3 && items.every(plainNoun);
 }

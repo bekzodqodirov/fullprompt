@@ -348,6 +348,13 @@ const AMOUNT =
 const COUNTER_THEN_UNIT = /^\s+([\p{L}²³][\p{L}\d²³.]*)/u;
 
 /**
+ * A word and a colon just before a bare number — «Мест: 45», «Kg：150» — the
+ * field form of a unit. Two letters at least: a lone «L:» is a SIZE on a
+ * clothing line («Futbolka L: 50»), never fifty litres.
+ */
+const UNIT_FIELD_BEFORE = /(?<![\p{L}\d])([\p{L}²³][\p{L}\d²³]+)\s*[:：]\s*$/u;
+
+/**
  * A TNVED code as stored: digits only, 4-10 of them.
  *
  * A NUMERIC spreadsheet cell of nine digits has lost its leading zero (Excel
@@ -462,8 +469,15 @@ export function parseGoodsLine(raw: string): GoodsLine {
     for (const hit of cellText.matchAll(AMOUNT)) {
       const number = hit[1]!;
       let word = hit[2] ?? null;
-      const start = hit.index!;
+      let start = hit.index!;
       let end = start + hit[0].length;
+      // «Мест: 45», «Kg: 150» — a unit word written as a FIELD before its
+      // number names that number: a carton count is never 45 pieces (c0347).
+      const field = word ? null : UNIT_FIELD_BEFORE.exec(cellText.slice(0, start));
+      if (field && unitOf(field[1]!) !== null) {
+        word = field[1]!;
+        start = field.index;
+      }
       // «120 ta juft» — a counter word followed by a unit word: the unit wins.
       if (word && unitOf(word) === 'dona') {
         const next = COUNTER_THEN_UNIT.exec(cellText.slice(end));

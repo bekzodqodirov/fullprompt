@@ -812,7 +812,8 @@ export function statesGoods(line: string): boolean {
  *    and a phone NUMBER carries no unit, so it never reads as goods anyway;
  *  - a greeting, an «about», an «also» — «Hayrli kun, 12 kub», «Yana 5 kub»;
  *  - our own cargo — «Yukimiz 12 kub» (`YUK_WORD`) — and a PLACE with its
- *    case ending, «Andijonga», «Xitoydan» (`placeWord`): the route, not goods.
+ *    case ending, «Andijonga», «Xitoydan» (`placeWord`): the route, not goods;
+ *  - a variety — «har xil», «turli», «разные» — never what it is a variety of.
  */
 const NOT_GOODS_WORDS = new Set([
   // totals
@@ -839,6 +840,10 @@ const NOT_GOODS_WORDS = new Set([
   // the route's own words — «Xitoydan kelgan yuk 12 kub» is the shipment
   'в', 'из', 'до', 'dan', 'ga', 'gacha', 'kelgan', 'keladigan', 'kelayotgan', 'ketgan', 'ketadigan',
   'ketayotgan', 'jonatilgan', 'boradigan',
+  // a variety, never what it is of — «Tovar: har xil» names no product, while
+  // «har xil kiyimlar» does by its last word (round-4 probe: «xil» left the
+  // status words, and the bare «various» became a product)
+  'har', 'xil', 'хил', 'turli', 'турли', 'разные', 'различные', 'various', 'assorted',
 ]);
 
 /** «Yuk», «Yukimiz», «Yuklarimiz», «Юкимиз» — our cargo, never its name. */
@@ -894,16 +899,19 @@ export function notGoodsWord(raw: string): boolean {
  * the bare nouns they share with products (round 4, T-r1 ND3): «Elektr
  * hisoblagichlari», «Hisoblash mashinasi» (a calculator), «Narx yorliqlari»
  * and «Narxlagich» are cargo, and a «hisobla*» / «narx*» stem dropped every
- * one of them.
+ * one of them. The CAUSATIVE «hisoblat-» («hisoblatmoqchi», «hisoblatib
+ * bering») and the bare imperative «hisobla» are verbs no product is named by
+ * (round-4 probe: the narrowing lost them), and nor is «how much» — «Narx
+ * qancha 12 kub» asks, while «Narx yorliqlari» are price tags.
  */
 const REQUEST_WORDS = new Set([
   'salom', 'salam', 'assalomu', 'assalom', 'assalamu', 'alaykum', 'aleykum', 'alaikum', 'aleikum', 'alekum',
   'салом', 'ассалому', 'ассалом', 'ассаламу', 'алайкум', 'алейкум', 'hayrli', 'xayrli', 'hello', 'hi', 'hey',
   'привет', 'здравствуйте', 'добрый', 'kerak', 'нужно', 'надо', 'керак', 'iltimos', 'илтимос', 'пожалуйста',
-  'please', 'rahmat', 'рахмат', 'спасибо',
+  'please', 'rahmat', 'рахмат', 'спасибо', 'hisobla', 'хисобла', 'qancha', 'канча', 'қанча', 'сколько',
 ]);
 const REQUEST_STEMS =
-  /^(?:hisoblab|hisoblang|hisoblay|hisoblasa|хисоблаб|хисобланг|narxi|narxlari|нархи|нархлари|растамож|rastamoj|rastamozh)/u;
+  /^(?:hisoblab|hisoblang|hisoblay|hisoblasa|hisoblat|хисоблаб|хисобланг|хисоблат|narxi|narxlari|нархи|нархлари|растамож|rastamoj|rastamozh)/u;
 
 const lowered = (raw: string) => raw.toLowerCase().replace(/[’ʻʼ‘`´']/gu, '');
 
@@ -948,6 +956,21 @@ function shipmentWord(raw: string): boolean {
   return SHIPMENT_WORDS.has(word) || YUK_WORD.test(word);
 }
 
+/**
+ * Beside a shipment word, a word that only says WHOSE, WHICH or HOW the cargo
+ * is — a possessive, the client's genitive, a count word, today's, «bor» /
+ * «готов» — names no product either (round-4 probe: «Mening yukim 12 kub»,
+ * «Груз клиента», «Yuk bor», «Yana bitta mashina» became products carrying
+ * the shipment's whole total). «Yuk aravasi», «Mashina moyi» still name one.
+ */
+const SHIPMENT_COMPANIONS = new Set([
+  'mening', 'менинг', 'мой', 'моя', 'моё', 'мое', 'мои', 'my', 'our', 'sizning', 'сизнинг', 'ваш', 'ваша', 'uning',
+  'унинг', 'его', 'её', 'ее', 'mijozning', 'мижознинг', 'mijozimiz', 'mijozimizning', 'клиента', 'клиентов',
+  'clients', 'customers', 'bitta', 'битта', 'bir', 'бир', 'один', 'одна', 'одно', 'one', 'bugungi', 'бугунги',
+  'ertangi', 'эртанги', 'сегодняшний', 'сегодняшняя', 'todays', 'bor', 'бор', 'tayyor', 'тайёр', 'готов',
+  'готова', 'готово', 'готовы', 'ready',
+]);
+
 /** Is this word ONE that makes a figures-only line a chat line by itself? */
 export function chatWord(raw: string): boolean {
   const word = lowered(raw);
@@ -957,11 +980,12 @@ export function chatWord(raw: string): boolean {
 /**
  * Is a figures-only name (no count, pair or code) a CHAT line about the
  * shipment rather than a product? One chat word says so; shipment words say
- * so only when nothing else names a product.
+ * so only when nothing else names a product (`SHIPMENT_COMPANIONS` name none).
  */
 export function chatLine(words: readonly string[]): boolean {
   if (words.some(chatWord)) return true;
-  return words.some(shipmentWord) && words.every((w) => shipmentWord(w) || notGoodsWord(w));
+  const plain = (w: string) => shipmentWord(w) || notGoodsWord(w) || SHIPMENT_COMPANIONS.has(lowered(w));
+  return words.some(shipmentWord) && words.every(plain);
 }
 
 /**
@@ -1112,6 +1136,14 @@ function codeAmongWords(line: string, prefix: string | null): string | null {
 const PHONE_RUN = /(?<![\p{L}\d])\+?\d(?:[\d\s.-]|\(\d{2,3}\)|\)){6,20}\d/u;
 
 /**
+ * Uzbekistan's 998 and China's 86: a number written in full international
+ * form — 998 + nine digits, 86 + eleven — is a phone however its groups fall,
+ * and no client code or count is so long.
+ */
+const COUNTRY_CODES: readonly string[] = ['998', '86'];
+const international = (digits: string) => /^(?:998\d{9}|86\d{11})$/u.test(digits);
+
+/**
  * Is this run a WHOLE phone number? Nine digits (the Uzbek mobile without its
  * country code), or a full international or trunk form — 998 + nine, 8 + nine,
  * 0 + nine (the Kyrgyz trunk, and how «Mijoz 0 90 123 45 67» is written),
@@ -1175,8 +1207,11 @@ function phoneIn(line: string): { phone: string; start: number; end: number } | 
   if (/^\d{4}[\s.-]\d{2}(?!\d)/.test(run)) return null;
   // A phone puts its long part LAST — «90 1234567», «998 901234567». Five to
   // eight digits BEFORE another group are a short code and a count, «Kurtka
-  // 620193 300» (round 1, #16), and a phone holds no such group.
-  if (/^\+?\d{5,8}[\s.()-]+\d/u.test(run)) return null;
+  // 620193 300» (round 1, #16), and a phone holds no such group — unless the
+  // group opens with the country code glued to the operator's, which is how
+  // a number is typed after «+998901234567»: «+99890 123 45 67», «+86138 1234
+  // 5678» (round-4 probe: the guard refused the commonest Uzbek form).
+  if (/^\+?\d{5,8}[\s.()-]+\d/u.test(run) && !international(digits)) return null;
   const end = m.index + run.length;
   const rest = `${line.slice(0, m.index)} ${line.slice(end)}`;
   if (/(?<![\p{L}\d])\d{4,8}(?!\d)/u.test(rest)) return null;
@@ -1214,19 +1249,33 @@ const LONG_HINT_CAP = 120;
  * A line naming somebody's RELATIVE — «akasi», «ukasi», «opasi», «брат» —
  * is about another person (R3-T6's «Bu mijoz GS777 ning akasi, … telefoni
  * 90 …»: whose job and whose phone is the very question), so it is no
- * contact; eight words used to refuse it, and twelve no longer do.
+ * contact; eight words used to refuse it, and twelve no longer do. «O'g'li»
+ * and «qizi» are a relative only after a genitive («Boburning o'g'li»): after
+ * a bare name they are the PATRONYMIC a passport writes, «Vali o'g'li»,
+ * «Akmal qizi» (round-4 probe).
+ *
+ * And a contact never speaks of the cargo or what it costs (round-4 probe:
+ * twelve words let «У меня груз из Китая хочу узнать стоимость доставки мой
+ * номер …» through as the customer, with none of the few request words in it).
  */
 const RELATIVE_WORDS = new Set([
-  'akasi', 'ukasi', 'opasi', 'singlisi', 'otasi', 'onasi', 'ogli', 'qizi', 'xotini', 'qarindoshi', 'tanishi',
-  'dosti', 'брат', 'брата', 'сестра', 'сестры', 'отец', 'мать', 'жена', 'муж', 'сын', 'дочь', 'друг', 'знакомый',
+  'akasi', 'ukasi', 'opasi', 'singlisi', 'otasi', 'onasi', 'xotini', 'qarindoshi', 'tanishi', 'dosti', 'брат',
+  'брата', 'сестра', 'сестры', 'отец', 'мать', 'жена', 'муж', 'сын', 'дочь', 'друг', 'знакомый',
 ]);
+const CHILD_WORDS = new Set(['ogli', 'qizi', 'ўғли', 'угли', 'қизи', 'кизи']);
+const CARGO_TALK = /^(?:груз\p{L}*|cargo|доставк\p{L}*|стоимост\p{L}*|цен[аыуе]|price|narx\p{L}*|нарх\p{L}*)$/u;
 
 function contactShaped(rest: string): boolean {
   const words = rest.split(/[\s,;:()«»"]+/u).filter((w) => /[\p{L}\p{N}]/u.test(w));
   if (words.length > 12) return false;
   if (/\p{L}[!?](?:\s|$)|\p{L}{4}\.(?:\s+\p{Lu}|\s*$)/u.test(rest)) return false;
   if (/(?<![\p{L}])olib\s+kel/iu.test(rest)) return false;
-  return !words.some((w) => requestWord(w.replace(/[.!?]+$/u, '')) || RELATIVE_WORDS.has(lowered(w)));
+  const afterGenitive = (i: number) => /(?:ning|нинг)$/u.test(lowered(words[i - 1] ?? ''));
+  return !words.some((raw, i) => {
+    const w = lowered(raw.replace(/[.!?]+$/u, ''));
+    const relative = RELATIVE_WORDS.has(w) || (CHILD_WORDS.has(w) && afterGenitive(i));
+    return requestWord(w) || relative || CARGO_TALK.test(w) || YUK_WORD.test(w);
+  });
 }
 
 /**
@@ -1244,19 +1293,24 @@ function contactShaped(rest: string): boolean {
  * whose deal the job then landed on (the landing looks the CODE up first).
  * When the digits and the phone after them make one whole number, they are
  * the number, and `phoneIn` reads it whole; «GS 777 90 123 45 67» is no whole
- * number and stays a code and a phone.
+ * number and stays a code and a phone. After the company's PREFIX only a
+ * country code (`COUNTRY_CODES`) is the phone's own head — «GS 998 90 …»; a
+ * trunk digit there is the code, «GS 8 90 123 45 67» is GS8 and a mobile,
+ * never the trunk-dialled «8 90 …» (round-4 probe).
  */
 function codeBeforePhone(line: string, prefix: string | null): { code?: string; phone?: string } | null {
   if (prefix === null) return null;
   const label = String.raw`(?:${CLIENT_LABEL_WORDS})\s*[:\-–—]?`;
-  const re = new RegExp(`(?<![\\p{L}\\d])(?:${escapeRe(prefix)}|${label})\\s*[-–]?\\s*(\\d{1,8})(?!\\d)`, 'giu');
+  const re = new RegExp(`(?<![\\p{L}\\d])(?:(${escapeRe(prefix)})|${label})\\s*[-–]?\\s*(\\d{1,8})(?!\\d)`, 'giu');
   const hits = [...line.matchAll(re)];
   if (hits.length !== 1) return null;
   const hit = hits[0]!;
+  const [, prefixed, digits] = hit as unknown as [string, string | undefined, string];
   const masked = line.slice(0, hit.index) + ' '.repeat(hit[0].length) + line.slice(hit.index + hit[0].length);
   const found = phoneIn(masked);
-  if (!found || completePhone(`${hit[1]} ${found.phone}`)) return null;
-  return { code: `${prefix}${hit[1]}`.toUpperCase(), phone: found.phone };
+  const head = prefixed === undefined || COUNTRY_CODES.includes(digits);
+  if (!found || (head && completePhone(`${digits} ${found.phone}`))) return null;
+  return { code: `${prefix}${digits}`.toUpperCase(), phone: found.phone };
 }
 
 /**
@@ -1308,7 +1362,9 @@ function lineHint(line: string, prefix: string | null, multi = false): { code?: 
  * (round 4, integration defect 2: one such line voided the whole hint, so
  * R3-C4's own pins could never reach the landing). Three digits or more
  * («Kurtka 300», «OOO Asia Trade 2020») still void it: a goods line, or a
- * number nobody can tell from a count.
+ * number nobody can tell from a count — and so does ONE word and its count
+ * of two digits or more (`ONE_WORD_COUNT`, round-4 probe: «Kurtka 50» /
+ * «Shim 40» over a phone were read as the customer's name lines).
  */
 export function parseClientHint(raw: string, opts?: ClientHintOpts): { code?: string; phone?: string } | null {
   const text = raw.trim();
@@ -1331,7 +1387,15 @@ export function parseClientHint(raw: string, opts?: ClientHintOpts): { code?: st
   return { ...(codes[0] ? { code: codes[0] } : {}), ...(phones[0] ? { phone: phones[0] } : {}) };
 }
 
-/** A name line's digits: «2», «12», «5-rasta», «3-filial» — never three bare digits in a row. */
+/** A name line's digits: «2», «12», «5-rasta», «3-filial» — never three bare digits in a row, nor a goods line's «nomi, soni». */
 function nameDigits(line: string): boolean {
+  if (ONE_WORD_COUNT.test(line)) return false;
   return !/\d{3}/u.test(line.replace(/(?<![\p{L}\d])\d{1,3}[-–]\p{L}+/gu, ''));
 }
+
+/**
+ * «Shim 200», «Stol 1000», «Kurtka 50»: ONE word and its count of two digits
+ * or more — the «nomi, soni» line of every list, never a name. ONE home for the
+ * customer reader and the material reader (`looksLikeMaterial`).
+ */
+export const ONE_WORD_COUNT = /^\p{L}[\p{L}'’‘ʻ`-]*\s+\d{2,}$/u;
