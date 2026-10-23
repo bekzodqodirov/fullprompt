@@ -4,6 +4,16 @@
 > (`docs/SAYT-TAQSIMOT.md`, `docs/JAMOA-GURUHI.md`) u egasining javoblari bilan
 > «kelishilgan» holatga keladi, keyin bosqichma-bosqich quriladi.
 
+> **2026-10-23 — egasining tuzatishi (hali kelishilmagan holat):** «Telegram
+> businessdagi bot emas mening shaxsiy account seansimdan ishlatsin ai va ban
+> havfini minimum qilsin». Demak AI mijozga **o'z shaxsiy akkauntidan, tizim
+> allaqachon ushlab turgan seans orqali** yozadi — §1 dagi «gramjs orqali hech
+> qachon», §3.1 (Business bot, alohida raqam) va §13 ning birinchi bandi shu
+> tuzatish bilan bekor. Uning oqibatlari (bitta seans — bitta jarayon, `tg_outbox`
+> o'zgaradi, 24 soat oynasi kodda o'zimiz qo'yadigan qoida, kampaniyalar shaxsiy
+> akkauntdan emas) `docs/AI-SOTUVCHI-MAP.md` §0 da. Matnning qolgan qismi
+> egasining birinchi hisobotga javoblari bilan qayta yoziladi.
+
 ## Qisqacha — egasi uchun
 
 Nima quriladi: mijozlar bilan **Bekzod uslubida** yozishadigan AI sotuvchi. Uch kanal:
