@@ -7,7 +7,7 @@ import { AGENT_LIMITS } from '@/modules/wms/agent/limits';
 import { AGENT_LOCALES } from '@/modules/wms/agent/locale';
 import { extractNumbers } from '@/modules/wms/agent/numbers';
 import { namedOrigin, zoneForOrigin } from '@/modules/wms/agent/origin';
-import { checkAgentReply } from '@/modules/wms/agent/policy';
+import { checkAgentReply, WAREHOUSE_SENTENCES } from '@/modules/wms/agent/policy';
 import { priceReplyText } from '@/modules/wms/agent/price-reply';
 import { stableHead } from '@/modules/wms/agent/prompt';
 import { memoryFor, validateActions, withRailRule, type ComposeReply } from '@/modules/wms/agent/run';
@@ -194,7 +194,14 @@ describe('the truck’s minimum and avia (his 7, 2026-10-24)', () => {
         fromOurWarehouse: memory.fromOurWarehouse === true,
       });
     expect(check('Avia 637.5 $.').blocks.map((b) => b.code)).toContain('estimate_unhedged');
-    expect(check('Avia bilan taxminan 637.5 $, 2-5 kun. Boj va QQS alohida hisoblanadi.').ok).toBe(true);
+    // A flight whose start nobody said is priced from our warehouse (fix round, K32): the condition and the
+    // factory leg are asked of it, as of a flight from «Xitoy».
+    expect(memory.fromOurWarehouse).toBe(true);
+    expect(check('Avia bilan taxminan 637.5 $, 2-5 kun. Boj va QQS alohida hisoblanadi.').blocks.map((b) => b.code)).toEqual([
+      'warehouse_condition',
+    ]);
+    const w = WAREHOUSE_SENTENCES.uz;
+    expect(check(`Avia bilan taxminan 637.5 $, 2-5 kun. Boj va QQS alohida hisoblanadi. ${w.condition} ${w.factory}`).ok).toBe(true);
   });
 
   it('the toolset offers avia_estimate taking a REFERENCE, never a figure', () => {

@@ -93,6 +93,14 @@ export interface NumberSource {
   /** A money source's role (K21). Absent = a total. */
   role?: MoneyRole;
   /**
+   * The figure's FORM says what it is — an hour, a clock, an ordinal, a
+   * numbered thing (`FoundNumber.fixed`). A customer's fixed figure vouches
+   * for the same fixed figure in a reply (fix round): «soat 10 da olib
+   * ketaman» → «ertaga soat 10 da kutamiz», «Buyurtma raqamim 4521» →
+   * «4521 raqamli buyurtmangiz» — never for a bare one.
+   */
+  fixed?: boolean;
+  /**
    * The road a DURATION is the time of (fix round): the avia tool's and the
    * avia fact's «2–5 kun» are a flight's, the website's and the transit
    * fact's «15–25 kun» a truck's. Every chat's memory carries both seeded
@@ -116,6 +124,11 @@ const MODE_WORDS: Record<TravelMode, RegExp> = {
   road: /(?<![\p{L}])(?:mashina\p{L}*|avto(?![mr])\p{L}*|avtomobil\p{L}*|fura\p{L}*|машин\p{L}*|авто(?![мр])\p{L}*|автомобил\p{L}*|фур[аыуе]\p{L}*|trucks?|trucking|by\s+road|road\s+freight)(?![\p{L}])|کامیون|زمینی|汽运|陆运|卡车|汽车/iu,
   rail: /(?<![\p{L}])(?:temir\s*yo['‘’ʻ`]?l\p{L}*|poyezd\p{L}*|темир\s*йўл\p{L}*|поезд\p{L}*|железн\p{L}*\s+дорог\p{L}*|ж\/д|rail\p{L}*|trains?)(?![\p{L}])|قطار|راه\s*آهن|铁路|火车/iu,
 };
+
+/** Whether a text names this road — in any of the six languages. */
+export function namesMode(text: string, mode: TravelMode): boolean {
+  return MODE_WORDS[mode].test(text);
+}
 
 /** The one road a text names, or null — none, or more than one. */
 export function oneModeIn(text: string): TravelMode | null {
@@ -196,9 +209,60 @@ const DURATION_AFTER =
  */
 const SIZE_WORD =
   "(?:mayda|katta|kichik|kichkina|o['‘’ʻ`]?rta|og['‘’ʻ`]?ir|yengil|майда|катта|кичик|кичкина|ўрта|оғир|енгил|больш\\p{L}*|маленьк\\p{L}*|крупн\\p{L}*|мелк\\p{L}*|средн\\p{L}*|small|big|large|heavy|light)\\s+";
+/**
+ * The things cargo is counted in — the cartons, and every other bundle a
+ * customer writes (fix round): «200 juft krossovka», «50 qop», «20 мешков»,
+ * «20 bags», «10 rulon», «3 xil tovar», «5包货» read as bare figures, and a
+ * customer's bare figure vouches for nothing (K17), so the reply could not
+ * repeat his own count back. `\b` is an ASCII edge even under `u`, so «5 та»
+ * — Cyrillic — was never a count at all: every edge here is a letter's.
+ */
+const COUNT_UNIT = [
+  'ta(?![\\p{L}])',
+  'та(?![\\p{L}])',
+  'dona\\p{L}*',
+  'дона\\p{L}*',
+  'шт\\p{L}*',
+  'штук\\p{L}*',
+  'pcs(?![\\p{L}])',
+  'piece\\p{L}*',
+  '件',
+  '个',
+  '箱',
+  '包',
+  '袋',
+  '双',
+  '卷',
+  '套',
+  'عدد',
+  'کارتن',
+  'جعبه',
+  'mesta(?![\\p{L}])',
+  'мест\\p{L}*',
+  'joy(?![\\p{L}])',
+  'juft\\p{L}*',
+  'жуфт\\p{L}*',
+  'qop\\p{L}*',
+  'қоп\\p{L}*',
+  'meshok\\p{L}*',
+  'мешок',
+  'мешк\\p{L}*',
+  'pachka\\p{L}*',
+  'пачк\\p{L}*',
+  'rulon\\p{L}*',
+  'рулон\\p{L}*',
+  'paket\\p{L}*',
+  'пакет\\p{L}*',
+  'komplekt\\p{L}*',
+  'комплект\\p{L}*',
+  'xil(?![\\p{L}])',
+  'хил(?![\\p{L}])',
+  'пар[аыу]?(?![\\p{L}])',
+  'упаков\\p{L}*',
+  '(?:bag|sack|roll|pair|set|pack|package|bundle)s?(?![\\p{L}])',
+].join('|');
 const COUNT_AFTER = new RegExp(
-  `^\\s*(?:ta\\b|та\\b|dona\\w*|дона\\w*|шт\\w*|штук\\w*|pcs\\b|piece\\w*|件|个|箱|عدد|کارتن|جعبه|mesta\\b|мест\\w*|joy\\b|` +
-    `(?:${SIZE_WORD})?(?:karobka\\w*|коробк\\w*|коробок|box\\w*|carton\\w*|quti\\w*|қути\\w*))`,
+  `^\\s*(?:${COUNT_UNIT}|(?:${SIZE_WORD})?(?:karobka\\p{L}*|коробк\\p{L}*|коробок|box\\p{L}*|carton\\p{L}*|quti\\p{L}*|қути\\p{L}*))`,
   'iu',
 );
 const PERCENT_AFTER = /^\s*(?:%|٪|foiz\w*|фоиз\w*|процент\w*|percent\w*)/iu;
@@ -281,6 +345,13 @@ const PRICE_VERB_BEFORE =
 // Latin only: a Russian «480-ти долларов» hangs a CARDINAL's case on the hyphen, and must stay money.
 const ORDINAL_AFTER = /^-(?!(?:ga|da|dan|ni|ning|gacha|cha|lik|dek|ta|tadan|tasi|tagacha)(?![\p{L}]))[a-z]/iu;
 const HOUR_BEFORE = /(?<![\p{L}])(?:soat|соат|ساعت)\s*(?:\d{1,2}(?:[.:]\d{2})?\s*(?:dan|дан|-|–|—|تا)\s*)?$/iu;
+/**
+ * A NUMBERED thing — «Buyurtma raqamim 4521», «заказ № 4521», «order number
+ * 4521», «4521 raqamli buyurtma» (fix round): an identifier, never a price or
+ * a count, which the customer's own message vouches for as itself.
+ */
+const ID_BEFORE = /(?:№|(?<![\p{L}])(?:raqam\p{L}*|рақам\p{L}*|номер\p{L}*|(?:order|invoice)\s+(?:no\.?|number|#)))\s*:?\s*$/iu;
+const ID_AFTER = /^\s*-?\s*(?:raqamli|рақамли)(?![\p{L}])/iu;
 
 /**
  * A figure said PER UNIT (K21) — the price of one kilo or one cube, never of
@@ -290,11 +361,19 @@ const HOUR_BEFORE = /(?<![\p{L}])(?:soat|соат|ساعت)\s*(?:\d{1,2}(?:[.:]\
  * «每公斤17美元», «کیلویی ۱۷ دلار», a hedge allowed between («kubiga
  * taxminan 110 $»). «3 kub uchun 330 $» is the price of three cubes: only ONE
  * unit, or none, before «uchun» makes a rate.
+ *
+ * A figure multiplied by a measure is the price of one unit too (fix round):
+ * «3 kub × 110 $ = taxminan 330 $» is the avia tool's own «30 kg × 17 $/kg»
+ * with the slash dropped, and read as a total its 110 vouched for nothing.
+ * «Tarif» and «rate» alone are NOT a unit: «Sayt tarifi: taxminan 330 $» is
+ * the website's price of the load, which read as per-unit no total backed.
  */
 const UNIT_WORD =
   '(?:kg|кг|kilo\\p{L}*|кило\\p{L}*|kub\\p{L}*|куб\\p{L}*|m3|м3|m³|м³|cbm|cubes?|cubic\\s+met\\p{L}*|tonn\\p{L}*|тонн\\p{L}*|tons?|公斤|千克|方|立方\\p{L}*|کیلو\\p{L}*|متر\\s*مکعب)';
+/** «×», «*», or a spaced «x» / Cyrillic «х» — the multiplication sign as people type it. */
+const TIMES = '(?:\\s*[×✕*]|\\s+[xх](?=\\s))';
 const PER_UNIT_AFTER = new RegExp(
-  `^\\s*(?:(?:\\/|per\\s+|за\\s+|в\\s+|for\\s+(?:one|1|each|a|every)\\s+|har\\s+(?:bir\\s+)?|(?:برای\\s+)?هر\\s+|每)\\s*(?:1\\s*)?${UNIT_WORD}|(?:kilo(?:si)?ga|kub(?:i)?ga|tonna(?:si)?ga|кило(?:си)?га|куб(?:и)?га|کیلویی)(?![\\p{L}]))`,
+  `^\\s*(?:(?:\\/|per\\s+|за\\s+|в\\s+|for\\s+(?:one|1|each|a|every)\\s+|har\\s+(?:bir\\s+)?|(?:برای\\s+)?هر\\s+|每)\\s*(?:1\\s*)?${UNIT_WORD}|(?:kilo(?:si)?ga|kub(?:i)?ga|tonna(?:si)?ga|кило(?:си)?га|куб(?:и)?га|کیلویی)(?![\\p{L}])|${TIMES}\\s*\\d+(?:[.,]\\d+)?\\s*${UNIT_WORD})`,
   'iu',
 );
 const PER_UNIT_BEFORE = new RegExp(
@@ -308,7 +387,7 @@ const PER_UNIT_BEFORE = new RegExp(
       `per\\s+${UNIT_WORD}`,
       `(?<![\\d.,])(?:a|one|1)\\s+${UNIT_WORD}\\s+(?:costs?|is)`,
       `за\\s+(?:1\\s+|один\\s+|одну\\s+)?${UNIT_WORD}`,
-      'tarif\\p{L}*|тариф\\p{L}*|(?<![\\p{L}])rate(?![\\p{L}])',
+      `(?<![\\p{L}])${UNIT_WORD}${TIMES}`,
       '每(?:公斤|千克|方|立方米?)',
       '(?:برای\\s+)?هر\\s+(?:کیلو\\p{L}*|متر\\s*مکعب)|کیلویی',
     ].join('|') +
@@ -456,7 +535,7 @@ export function extractNumbers(
     const value = parseFigure(m[0]) * read.scale;
     if (!Number.isFinite(value)) continue;
     const before = t.slice(Math.max(0, start - 24), start);
-    const fixed = ORDINAL_AFTER.test(after) || HOUR_BEFORE.test(before);
+    const fixed = ORDINAL_AFTER.test(after) || HOUR_BEFORE.test(before) || ID_BEFORE.test(before) || ID_AFTER.test(after);
     const priced = PRICE_VERB_BEFORE.test(before);
     // In a text that names money anywhere, a bare figure is money (P1): «Narx (dollarda): 480».
     const kind: NumberKind =
@@ -507,7 +586,7 @@ function moneyFits(found: FoundNumber, s: NumberSource): boolean {
  * Which source lets a figure through, or null. A money figure needs a money
  * source of its currency and its role, and nothing else will do; every other
  * kind takes a source of its own kind, and a bare figure takes any source but
- * the customer's money.
+ * money.
  *
  * A percent is the company's word too (K20): «Ha, boj 20% bo'ladi» on the
  * customer's own «Boj 20% bo'ladimi?» is a duty rate confirmed on his guess.
@@ -515,6 +594,15 @@ function moneyFits(found: FoundNumber, s: NumberSource): boolean {
  * kub, 250 bo'ladimi?» in a chat whose inbound messages name no money left
  * his 250 'plain', and «Ha, 250 bo'ladi» agreed to his price — a figure with
  * no unit has no kind he can be said to have stated.
+ *
+ * Both rules are about what the SOURCE is, not only the reply figure (fix
+ * round): the reply that drops the «%» — «Ha, boj 20 bo'ladi» — is a bare
+ * figure, and a bare figure took the customer's percent; and a bare figure
+ * took ANY money source, the yo'lkira RATE among them, so «3 kub yukingiz
+ * uchun 110 chiqadi» quoted the price of one cube as the load's with no
+ * hedge, no exclusion and no warehouse condition asked (G11 reads money
+ * lines). A money source vouches only through `placedLedger`'s upgrade, which
+ * asks the role and the currency.
  */
 export function sourceFor(
   found: FoundNumber,
@@ -525,7 +613,11 @@ export function sourceFor(
     if (!sameValue(s.value, found.value)) return false;
     if (s.kind === 'customer_money') return false;
     if (COMPANY_KINDS.has(found.kind) && !companySaid(s)) return false;
-    if (s.kind === 'plain' && !companySaid(s)) return false;
+    // His percent, day count or date is his wish or his guess, whatever form the reply figure takes.
+    if (COMPANY_KINDS.has(s.kind) && !companySaid(s)) return false;
+    // His clock, his hour, his order number — said as the same fixed figure — and nothing bare of his.
+    if (s.kind === 'plain' && !companySaid(s)) return s.fixed === true && found.fixed === true;
+    if (found.kind === 'plain' && s.kind === 'money') return false;
     // A day count said of one road is never vouched for by another road's: a truck's «5 kunda» on the
     // flight's five is a promise nobody made.
     if (found.kind === 'duration' && mode !== null && s.mode !== undefined && s.mode !== mode) return false;
@@ -622,7 +714,13 @@ export function customerSources(texts: readonly { text: string; label: string }[
   const out: NumberSource[] = [];
   for (const { text, label } of texts) {
     for (const f of extractNumbers(text, [], { moneyContext })) {
-      out.push({ value: f.value, kind: f.kind === 'money' ? 'customer_money' : f.kind, label, origin: 'customer' });
+      out.push({
+        value: f.value,
+        kind: f.kind === 'money' ? 'customer_money' : f.kind,
+        label,
+        origin: 'customer',
+        ...(f.fixed ? { fixed: true } : {}),
+      });
     }
   }
   return out;

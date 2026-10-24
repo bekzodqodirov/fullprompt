@@ -221,19 +221,52 @@ function newestMeasure(ctx: AgentContext, kind: MeasureCandidate['kind']): Measu
 }
 
 /**
+ * A message that adds a SECOND load rather than correcting the first (fix
+ * round): «yana Guanchjoudan 5 kub 800 kg bor, ikkalasiga narx?», «ещё одна
+ * партия», «another 2 cbm», «还有一批». Its figures are a load of their own,
+ * and the first stays priceable.
+ */
+const ADDS_A_LOAD =
+  /(?<![\p{L}])(?:yana|tag['‘’ʻ]?in|qo['‘’ʻ]?shimcha|ikkinchi\p{L}*|ikkala\p{L}*|ikkisi\p{L}*|boshqa|яна|тағин|қўшимча|иккинчи\p{L}*|иккала\p{L}*|бошқа|ещ[её]|также|друг(?:ой|ая|ую|ие)|втор(?:ой|ая|ую)|оба|обе|another|also|additional|second|both|plus|دیگر|همچنین|دوم)(?![\p{L}])|还有|另外|另一|再来|第二|两批|هر\s+دو/iu;
+
+/** …unless it says it is a correction: «yana» is also «again» — «Yana o'lchadim, kechirasiz, 0.5 kub ekan». */
+const CORRECTS =
+  /(?<![\p{L}])(?:kechirasiz|uzr|ekan|aslida|to['‘’ʻ]?g['‘’ʻ]?risi|xato|кечирасиз|экан|асли|извините|ошиб\p{L}*|точнее|sorry|actually|correction|mistake|ببخشید|اشتباه)(?![\p{L}])|на\s+самом\s+деле|抱歉|不好意思|其实|更正/iu;
+
+function addsALoad(ctx: AgentContext, m: MeasureCandidate): boolean {
+  const body = ctx.messages.find((x) => x.ref === m.messageRef)?.body ?? '';
+  return ADDS_A_LOAD.test(body) && !CORRECTS.test(body);
+}
+
+/**
  * Words for the model when a reference it passed is not the customer's newest
  * of its kind; null when every one is. An older reference carrying the SAME
  * figure is no stale one — «40 kg», then «yana 40 kg avia bilan?» states one
  * weight twice, and the price is the same either way.
+ *
+ * «The newest statement wins» is about a CORRECTION (fix round): a pair
+ * taken from one message is one load, and only a later message that is not a
+ * second load supersedes it — «Ivudan 3 kub 300 kg», then «yana Guanchjoudan
+ * 5 kub 800 kg bor, ikkalasiga narx?» are two loads, and the first was refused
+ * as stale. A pair taken from TWO messages is still each its kind's newest, or
+ * the weight of one load would be priced with the volume of the other.
  */
 function staleRefs(ctx: AgentContext, given: readonly MeasureCandidate[]): string | null {
+  const oneLoad = given.length === 1 || given.every((m) => m.messageRef === given[0]!.messageRef);
   for (const m of given) {
-    const newest = newestMeasure(ctx, m.kind);
+    const newest = oneLoad && !m.ref.startsWith('d') ? newestCorrection(ctx, m) : newestMeasure(ctx, m.kind);
     if (newest && newest.ref !== m.ref && !close(newest.value, m.value)) {
       return `${m.ref} eskirgan — mijozning eng oxirgi ${m.kind === 'weight' ? "og'irligi" : 'hajmi'} ${newest.ref} = ${newest.value} ${m.kind === 'weight' ? 'kg' : 'kub'} (${newest.messageRef}). Shu havolani ber.`;
     }
   }
   return null;
+}
+
+/** The newest stated figure of `m`'s kind that CORRECTS it — said after it, in a message that adds no load. */
+function newestCorrection(ctx: AgentContext, m: MeasureCandidate): MeasureCandidate | null {
+  const stated = ctx.measures.filter((x) => x.kind === m.kind && !x.ref.startsWith('d'));
+  const after = stated.slice(stated.indexOf(m) + 1).filter((x) => !addsALoad(ctx, x));
+  return after.at(-1) ?? null;
 }
 
 /**
@@ -489,14 +522,19 @@ async function avia(input: Record<string, unknown>, env: ToolEnv): Promise<ToolO
   // His third set «3» is the flight's too (K32): cargo that starts at «Xitoy» or a Chinese city we do not
   // stand in flies from OUR warehouse, and the reply says so — the condition and the factory leg — as the
   // truck's does. Kashgar and Urumqi are no refusal here: his rate is one figure from wherever we load it.
-  const fromOurWarehouse = aviaOrigin(inboundText(ctx), await env.chinaPlaces()) === 'our_warehouse';
+  // A flight whose start nobody said is priced from our warehouse too (fix round): «Avia 30 kg qancha?»
+  // went out with no condition, and the customer could read it as a pickup from his factory. The truck
+  // asks instead, because its price differs by where it starts; his avia rate does not.
+  const origin = aviaOrigin(inboundText(ctx), await env.chinaPlaces());
+  const fromOurWarehouse = origin !== 'warehouse';
   return {
     ok: true,
     text:
       `Taxminiy avia yo'lkira: ${total} $ (${kg} kg × ${rate} $/kg). Yetib borishi taxminan ${daysMin}-${daysMax} kun, ` +
       `reys bo'lsa ${daysMin} kun — va'da emas. Boj va QQS bu narxga KIRMAYDI.` +
       (fromOurWarehouse
-        ? ` Mijoz faqat Xitoyni yoki omborimiz yo'q joyni aytdi — bu narx Xitoydagi OMBORIMIZDAN. Narxni aytsang, mijoz tilida ` +
+        ? ` ${origin === 'unknown' ? "Mijoz qayerdan jo'natishini aytmadi" : "Mijoz faqat Xitoyni yoki omborimiz yo'q joyni aytdi"} — ` +
+          `bu narx Xitoydagi OMBORIMIZDAN. Narxni aytsang, mijoz tilida ` +
           `ikkala jumla ham bo'lsin — har tilda aynan shu: ${warehouseSentencesText()}.`
         : ''),
     estimate: true,

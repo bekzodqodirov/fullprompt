@@ -76,7 +76,27 @@ const CURRENCY_NAMES = [
   'dollor\\p{L}*',
   'bucks?(?!\\p{L})',
   'us\\$',
-  '(?:usdt?|uzs|rmb|cny|eur|rub|kzt|afn|irr|gbp)(?!\\p{L})',
+  '(?:usdt?|uzs|rmb|cny|eur|rub|kzt|afn|irr|gbp|tjs|tmt|aed|inr|jpy|uah)(?!\\p{L})',
+  // The neighbours' currencies (fix round): «330 somoni», «330 manat», «330 dirham» named no currency anybody
+  // listed, so the figure was read in DOLLARS and the tool's 330 $ vouched for it — the card printing «330 $»
+  // beside a body his Tajik customer reads in somoni. Each is its own code here, which no tool source carries.
+  'somoni\\p{L}*',
+  'сомони\\p{L}*',
+  'manat\\p{L}*',
+  'манат\\p{L}*',
+  'dirham\\p{L}*',
+  'дирхам\\p{L}*',
+  'lira(?:s|si|ga|da|dan|ni)?(?!\\p{L})',
+  'лир(?:а|ы|у|ах)(?!\\p{L})',
+  'rupee\\p{L}*',
+  'rupiy\\p{L}*',
+  'рупи\\p{L}*',
+  'yen(?!\\p{L})',
+  'iyena\\p{L}*',
+  'иен\\p{L}*',
+  'йен(?:а|ы|ов)?(?!\\p{L})',
+  'гривн\\p{L}*',
+  'hryvn\\p{L}*',
   'euros?(?!\\p{L})',
   'y?evro(?:ga|da|dan|ni|ning|lar\\p{L}*)?(?!\\p{L})',
   'yuan\\p{L}*',
@@ -107,9 +127,12 @@ const CURRENCY_NAMES = [
   'ریال',
   'یوان',
   'یورو',
+  'منات',
+  'روپیه',
+  'لیر(?:ه|ا)?',
 ];
 /** Han has no word edges: these are matched anywhere. */
-const CURRENCY_HAN = ['美元', '美金', '人民币', '欧元', '卢布', '坚戈'];
+const CURRENCY_HAN = ['美元', '美金', '人民币', '欧元', '卢布', '坚戈', '日元', '卢比', '里拉', '迪拉姆', '索莫尼', '马纳特'];
 /** …and these only right after a figure: «单元» is a unit and «一块» a piece. */
 const CURRENCY_HAN_AFTER = ['元', '块'];
 /**
@@ -201,16 +224,41 @@ export const MONEY_WORD = new RegExp(
  * in dollars today; a figure now carries the currency its spelling names, and
  * the two must agree.
  */
-export type Currency = 'USD' | 'USDT' | 'CNY' | 'UZS' | 'RUB' | 'EUR' | 'KZT' | 'AFN' | 'IRR' | 'GBP' | 'TRY';
+export type Currency =
+  | 'USD'
+  | 'USDT'
+  | 'CNY'
+  | 'UZS'
+  | 'RUB'
+  | 'EUR'
+  | 'KZT'
+  | 'AFN'
+  | 'IRR'
+  | 'GBP'
+  | 'TRY'
+  | 'TJS'
+  | 'TMT'
+  | 'AED'
+  | 'INR'
+  | 'JPY'
+  | 'UAH';
 
 /**
  * A currency spelling to its code, tried in order: «美元» and «欧元» hold «元»
  * and are asked before the yuan, «USDT» before the dollar. «сом» / «som» are
- * the Uzbek so'm as his customers write it.
+ * the Uzbek so'm as his customers write it — so «сомони», which starts with
+ * it, is asked first, as «日元» is before the yuan.
  */
 const CURRENCY_CODES: readonly (readonly [RegExp, Currency])[] = [
   [/usdt/iu, 'USDT'],
   [/\$|(?:^|[^\p{L}])us|usd|dollar|dollor|bucks?|доллар|долар|долл|бакс|у\.\s?е|美元|美金|دلار/iu, 'USD'],
+  [/somoni|сомони|tjs|索莫尼/iu, 'TJS'],
+  [/manat|манат|tmt|منات|马纳特/iu, 'TMT'],
+  [/dirham|дирхам|aed|迪拉姆/iu, 'AED'],
+  [/rupee|rupiy|рупи|inr|روپیه|卢比/iu, 'INR'],
+  [/(?:^|[^\p{L}])yen|iyena|иен|йен|jpy|日元/iu, 'JPY'],
+  [/гривн|hryvn|uah/iu, 'UAH'],
+  [/₺|lira|лир|لیر|里拉/iu, 'TRY'],
   [/€|eur|euro|evro|евро|欧元|یورو/iu, 'EUR'],
   [/₽|rub|рубл|руб|卢布/iu, 'RUB'],
   [/₸|kzt|tenge|тенге|坚戈/iu, 'KZT'],
@@ -219,7 +267,6 @@ const CURRENCY_CODES: readonly (readonly [RegExp, Currency])[] = [
   [/؋|afn|افغانی/iu, 'AFN'],
   [/irr|تومان|ریال/iu, 'IRR'],
   [/£|gbp/iu, 'GBP'],
-  [/₺/u, 'TRY'],
 ];
 
 /** The code of a currency spelling, or null — a spelling nothing here names reads as no currency anybody quoted. */
@@ -256,6 +303,12 @@ export const CURRENCY_LABEL: Record<Currency, string> = {
   IRR: 'rial/tumon',
   GBP: 'funt',
   TRY: 'lira',
+  TJS: 'somoni',
+  TMT: 'manat',
+  AED: 'dirham',
+  INR: 'rupiya',
+  JPY: 'iyena',
+  UAH: 'grivna',
 };
 
 /** A numeral NFKC could not make plain digits of, in any script — nothing here can read it. */

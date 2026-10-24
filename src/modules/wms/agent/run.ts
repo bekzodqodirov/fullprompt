@@ -13,7 +13,7 @@ import { loadContext, type AgentContext } from './context';
 import { eligibleForRun, type Ineligible } from './eligibility';
 import { generalFacts, kbSearch, type KbHit } from './kb';
 import { AGENT_LIMITS } from './limits';
-import { detectLocale, type AgentLocale } from './locale';
+import { detectLocale, dominantScript, type AgentLocale } from './locale';
 import { askedLocation, customerNumberSources, policyFor, splitUrls, type PolicyMemory } from './policy-input';
 import { chatBlock, runTail, stableHead } from './prompt';
 import { JOB_AGENT_INBOUND, type AgentInboundJob } from './queues';
@@ -21,7 +21,7 @@ import { dayRunCounts } from './today';
 import { belowTruckMinimumFacts, ourChinaPlaces, runTool, TOOL_SPECS, TRUCK_SECTIONS, type ChecklistState, type ToolOutcome } from './tools';
 import { draftWorthy, mentionsRail, RAIL_OWNER_QUESTION } from './worthy';
 import { writeDraft, writeNotice, type ComposedAction } from './drafts';
-import { factSources, oneModeIn, type NumberSource } from './numbers';
+import { extractNumbers, factSources, namesMode, oneModeIn, type NumberSource } from './numbers';
 import { nameWordsOf } from './policy';
 import { AGENT_LOCALES } from './locale';
 
@@ -469,10 +469,10 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
   // as a rail one, not the avia rate. Dropped from the memory the ✅ re-runs
   // the policy on, so G1 blocks every money figure in the body, at the write
   // AND at the press; only his own ✏️ words (the owner subset) can say one.
-  // Asked of the reply and of the chat's whole inbound window, not the burst
-  // alone (final review K18): «temir yo'l bilan qancha?», his «aniqlab
-  // aytaman», then «5 kub, 800 kg» left the rail question one burst back and
-  // «Temir yo'l bilan taxminan 960 $» passed on the truck's figure.
+  // Asked of the reply and of the chat's inbound window, not the burst alone
+  // (final review K18): «temir yo'l bilan qancha?», his «aniqlab aytaman»,
+  // then «5 kub, 800 kg» left the rail question one burst back and «Temir
+  // yo'l bilan taxminan 960 $» passed on the truck's figure.
   const rail = railChat(ctx, loop.compose);
   const found = loop.outcomes.flatMap((o) => o.sources).filter((s) => !rail || s.kind !== 'money');
   const sources: NumberSource[] = [...customerNumberSources(ctx.messages), ...found];
@@ -508,7 +508,7 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
       oneModeIn(ctx.burst.map((m) => m.body).join('\n')) ??
       oneModeIn(ctx.messages.filter((m) => m.direction === 'in').map((m) => m.body).join('\n')),
     // His 13 + ⭐3 (K29): a Persian or Chinese reply comes with its Uzbek translation, or carries no ✅.
-    hasGloss: loop.compose.glossUz.trim() !== '',
+    hasGloss: glossReadable(loop.compose.glossUz),
     ownCodes: ctx.identity.codes.map((c) => c.clientCode),
     managerName: ctx.identity.managerName,
     canary,
@@ -524,18 +524,46 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
  * listening.
  */
 export function withRailRule(c: ComposeReply, ctx: Pick<AgentContext, 'burst'>): ComposeReply {
-  // The burst, or the reply itself speaking of rail (K18) — then the model is answering a rail question.
-  if (!mentionsRail([...ctx.burst.map((m) => m.body), c.replyText])) return c;
+  if (!railQuestion(ctx, c)) return c;
   return { ...c, needsOwner: true, ownerQuestion: c.ownerQuestion || RAIL_OWNER_QUESTION };
 }
 
-/** The chat is about rail: the burst, the customer's whole window, or the reply (K18). */
+/**
+ * The customer is asking about rail NOW: the newest of these messages that
+ * names a road names rail (fix round) — «the newest statement wins», the
+ * checklist's rule. A chat that asked «temir yo'l bilan qancha?», heard «Temir
+ * yo'l hozir ishlamayapti, fura bilan yuboramiz» and then chose «Unda fura
+ * bilan 5 kub 800 kg qancha?» is a truck chat again; one that asked rail and
+ * then sent only «5 kub, 800 kg» is still a rail chat — his own «aniqlab
+ * aytaman» is no other road.
+ */
+function railAsked(messages: readonly { body: string }[]): boolean {
+  for (const m of [...messages].reverse()) {
+    if (mentionsRail([m.body])) return true;
+    if (namesMode(m.body, 'road') || namesMode(m.body, 'air')) return false;
+  }
+  return false;
+}
+
+/**
+ * The reply speaks of rail AND carries a figure that could be its price (K18).
+ * A rail word alone is no rail quote: the seeded «…faqat avto yoki temir yo'l
+ * bilan ketadi» answers a power-bank question, and the card asked him «Mijoz
+ * temir yo'l narxini so'rayapti» about it (fix round).
+ */
+function railQuoted(replyText: string): boolean {
+  if (!mentionsRail([replyText])) return false;
+  return extractNumbers(replyText).some((f) => f.kind === 'money' || (f.kind === 'plain' && f.fixed !== true));
+}
+
+/** His question: the burst asks about rail, or the model is answering one with a figure. */
+function railQuestion(ctx: Pick<AgentContext, 'burst'>, c: Pick<ComposeReply, 'replyText'>): boolean {
+  return railAsked(ctx.burst) || railQuoted(c.replyText);
+}
+
+/** The chat is about rail: its inbound window's newest road, the burst's, or the reply's rail figure (K18). */
 export function railChat(ctx: Pick<AgentContext, 'burst' | 'messages'>, c: Pick<ComposeReply, 'replyText'>): boolean {
-  return mentionsRail([
-    ...ctx.burst.map((m) => m.body),
-    ...ctx.messages.filter((m) => m.direction === 'in').map((m) => m.body),
-    c.replyText,
-  ]);
+  return railAsked(ctx.messages.filter((m) => m.direction === 'in')) || railQuestion(ctx, c);
 }
 
 /**
@@ -544,8 +572,20 @@ export function railChat(ctx: Pick<AgentContext, 'burst' | 'messages'>, c: Pick<
  * «manbasi yo'q» would not tell him why.
  */
 export function railNote(ctx: Pick<AgentContext, 'burst' | 'messages'>, c: Pick<ComposeReply, 'replyText'>): string | null {
-  if (!railChat(ctx, c) || mentionsRail([...ctx.burst.map((m) => m.body), c.replyText])) return null;
+  if (!railChat(ctx, c) || railQuestion(ctx, c)) return null;
   return "Suhbatda avvalroq temir yo'l so'ralgan — AI narx aytmaydi, narxni siz ayting.";
+}
+
+/**
+ * A translation he can READ (K29, fix round): three letters at least, in the
+ * Latin or Cyrillic script. The Persian reply copied into `gloss_uz`, or a
+ * lone «.», unlocked ✅ on a draft he still could not read.
+ */
+export function glossReadable(gloss: string): boolean {
+  const g = gloss.trim();
+  if ([...g.matchAll(/\p{L}/gu)].length < 3) return false;
+  const script = dominantScript(g);
+  return script === 'latin' || script === 'cyrillic';
 }
 
 export function stripFor(ctx: AgentContext): string[] {

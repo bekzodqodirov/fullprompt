@@ -284,8 +284,11 @@ describe('K21 — a rate vouches for a per-unit figure only, a total for the res
     expect(codes("3 kub uchun taxminan 110 $ bo'ladi. Boj va QQS alohida hisoblanadi.", quote)).toContain('number_unsourced');
     expect(codes("3 kub uchun taxminan 330 $ bo'ladi (kubiga 110 $). Boj va QQS alohida hisoblanadi.", quote)).toEqual([]);
     expect(codes("Taxminan 330 $ (har kub uchun $110). Boj va QQS alohida hisoblanadi.", quote)).toEqual([]);
-    // The rate is a price too: said in a clause of its own, it is hedged there or the estimate is unhedged (K12).
-    expect(codes("Taxminan 330 $, har kub uchun $110. Boj va QQS alohida hisoblanadi.", quote)).toEqual(['estimate_unhedged']);
+    // A rate beside its hedged total in one sentence is that estimate's arithmetic (fix round, reversing the
+    // first fix's «a rate in its own clause needs its own hedge» — the tool writes «330 $ — 110 $/kub»).
+    expect(codes("Taxminan 330 $, har kub uchun $110. Boj va QQS alohida hisoblanadi.", quote)).toEqual([]);
+    // …but a rate in a sentence whose total is NOT hedged hedges nothing.
+    expect(codes("330 $ bo'ladi, har kub uchun $110. Boj va QQS alohida hisoblanadi.", quote)).toEqual(['estimate_unhedged']);
     // …and the total is no per-unit price.
     expect(codes("Taxminan kubiga 330 $. Boj va QQS alohida hisoblanadi.", quote)).toContain('number_unsourced');
   });
