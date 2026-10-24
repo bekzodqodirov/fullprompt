@@ -68,7 +68,8 @@ export function urlsIn(text: string): string[] {
   return [...text.matchAll(URL_RE)].map((m) => m[0].replace(/[.,!?)»]+$/u, ''));
 }
 
-const MONEY_AFTER = new RegExp(`^\\s*(?:${CURRENCY_AFTER_SRC})`, 'iu');
+/** «480 $», «480 AQSH dollari», and «500-dollarlik» — Uzbek hangs a case or suffix on a figure with a hyphen. */
+const MONEY_AFTER = new RegExp(`^\\s*-?(?:${CURRENCY_AFTER_SRC})`, 'iu');
 /** The currency touching the figure, no space: «480$», «480usd» — a glued figure is money, never a code. */
 const MONEY_GLUED_AFTER = new RegExp(`^(?:${CURRENCY_AFTER_SRC})`, 'iu');
 const MONEY_BEFORE = new RegExp(`(?:${CURRENCY_BEFORE_SRC})\\s*:?\\s*$`, 'iu');
@@ -102,8 +103,26 @@ const SCALES: readonly (readonly [RegExp, number])[] = [
   [/^\s*百万/u, 1e6],
   [/^\s*亿/u, 1e8],
   [/^\s*万/u, 1e4],
-  [/^\s*千/u, 1e3],
+  // …but «千克» is a kilogram and «千米» a kilometre: there 千 is the unit's, not a thousand (fix round:
+  // «500千克» read as 500 000 of money, and a Chinese customer's weight stopped vouching for itself).
+  [/^\s*千(?![克米瓦伏])/u, 1e3],
 ];
+
+/**
+ * «стоит 480», «будет стоить 480» — the price verb right before a bare figure. Not a money word for the
+ * whole text: «стоит» is also «stands», and «Машина стоит на границе, в очереди 15» is a status line.
+ */
+const PRICE_VERB_BEFORE =
+  /(?<![\p{L}])(?:сто(?:ит|ят|ить|ило|ила|или|ил)|обойд[её]тся|обойдутся)\s+(?:(?:всего|около|примерно|только|лишь)\s+)?$/iu;
+
+/**
+ * Figures whose FORM says what they are, so a money word elsewhere in the text never makes them money:
+ * an Uzbek ordinal glued to its noun («3-ko'chada», «2-omborda», «15-uy» — but not a case ending on a
+ * cardinal, «480-ga»), and an hour of the day after «soat» («soat 9 dan 18 gacha»). Before this a fact
+ * «To'lov naqd, ombor 3-ko'chada» read as a price and the kb refused it.
+ */
+const ORDINAL_AFTER = /^-(?!(?:ga|da|dan|ni|ning|gacha|cha|lik|dek|ta|tadan|tasi|tagacha)(?![\p{L}]))\p{L}/u;
+const HOUR_BEFORE = /(?<![\p{L}])(?:soat|соат|ساعت)\s*(?:\d{1,2}(?:[.:]\d{2})?\s*(?:dan|дан|-|–|—|تا)\s*)?$/iu;
 
 /** A figure as written: thousands by space, comma or dot groups of three, decimals by dot or comma. */
 const NUMBER_RE = /\d{1,3}(?:[ ,. ]\d{3})+(?![\d])(?:[.,]\d+)?|\d+(?:[.,]\d+)?/gu;
@@ -160,22 +179,36 @@ function kindAt(text: string, start: number, end: number): NumberKind {
   return readAt(text, start, end).kind;
 }
 
-/**
- * Every figure in a text, with its kind. `removeWhole` are strings taken out
- * before anything is read (the persona phone, an approved link) — whole, so
- * their digits are never figures. Phones are always taken out; the caller
- * judges them separately (G6).
- */
-export function extractNumbers(text: string, removeWhole: readonly string[] = []): FoundNumber[] {
+/** The text as the figures are read: digits folded, the given strings, links and phones blanked out. */
+function blanked(text: string, removeWhole: readonly string[]): string {
   let t = normalizeDigits(text);
   for (const r of removeWhole) {
     const whole = r ? normalizeDigits(r) : '';
     if (whole) t = t.split(whole).join(' '.repeat(whole.length));
   }
   for (const u of urlsIn(t)) t = t.split(u).join(' '.repeat(u.length));
-  t = t.replace(PHONE_RE, (m) => ' '.repeat(m.length));
-  // Read after the phones and links are out: «gsrlogistics.uz/narxlar» names no money.
-  const moneyText = MONEY_WORD.test(t);
+  return t.replace(PHONE_RE, (m) => ' '.repeat(m.length));
+}
+
+/** Whether a text names money anywhere — read after the phones and links are out: «gsrlogistics.uz/narxlar» names none. */
+export function namesMoney(text: string): boolean {
+  return MONEY_WORD.test(blanked(text, []));
+}
+
+/**
+ * Every figure in a text, with its kind. `removeWhole` are strings taken out
+ * before anything is read (the persona phone, an approved link) — whole, so
+ * their digits are never figures. Phones are always taken out; the caller
+ * judges them separately (G6). `moneyContext` says money was named around
+ * this text, not in it — a customer's earlier «Narxi qancha?» (customerSources).
+ */
+export function extractNumbers(
+  text: string,
+  removeWhole: readonly string[] = [],
+  opts: { moneyContext?: boolean } = {},
+): FoundNumber[] {
+  const t = blanked(text, removeWhole);
+  const moneyText = opts.moneyContext === true || MONEY_WORD.test(t);
   const out: FoundNumber[] = [];
   const taken: [number, number][] = [];
   for (const m of t.matchAll(DATE_RE)) {
@@ -209,8 +242,12 @@ export function extractNumbers(text: string, removeWhole: readonly string[] = []
     const read = readAt(t, start, end);
     const value = parseFigure(m[0]) * read.scale;
     if (!Number.isFinite(value)) continue;
+    const before = t.slice(Math.max(0, start - 24), start);
+    const fixed = ORDINAL_AFTER.test(after) || HOUR_BEFORE.test(before);
+    const priced = PRICE_VERB_BEFORE.test(before);
     // In a text that names money anywhere, a bare figure is money (P1): «Narx (dollarda): 480».
-    const kind: NumberKind = glued || (read.kind === 'plain' && moneyText) ? 'money' : read.kind;
+    const kind: NumberKind =
+      glued || (read.kind === 'plain' && !fixed && (moneyText || priced)) ? 'money' : read.kind;
     out.push({ raw: `${m[0]}${read.scaleText}`.trimEnd(), value, kind, index: start });
   }
   return out.sort((a, b) => a.index - b.index);
@@ -254,14 +291,17 @@ export function numberLedger(
 /**
  * Sources from text the CUSTOMER wrote: every figure of theirs vouches for
  * itself as a measure, a count, a duration — but a money figure of theirs
- * («90$ qilib bering», «90 AQSH dollari», a bare «90» in a message that asks
- * the price) is a request, never a price we may repeat as ours, and never a
- * bare-number source either: «Mayli, 90 bo'ladi» agrees to it just the same.
+ * («90$ qilib bering», «90 AQSH dollari», a bare «90» in a conversation that
+ * asks the price) is a request, never a price we may repeat as ours, and never
+ * a bare-number source either: «Mayli, 90 bo'ladi» agrees to it just the same.
  */
 export function customerSources(texts: readonly { text: string; label: string }[]): NumberSource[] {
+  // Bargaining spans messages: «Narxi qancha?», then «90 bo'lsa olaman». So money named in ANY of the
+  // texts (the context window, AGENT_LIMITS.contextMessages) makes every bare figure in all of them money.
+  const moneyContext = texts.some((t) => namesMoney(t.text));
   const out: NumberSource[] = [];
   for (const { text, label } of texts) {
-    for (const f of extractNumbers(text)) {
+    for (const f of extractNumbers(text, [], { moneyContext })) {
       out.push({ value: f.value, kind: f.kind === 'money' ? 'customer_money' : f.kind, label });
     }
   }

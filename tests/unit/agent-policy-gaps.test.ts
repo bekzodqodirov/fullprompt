@@ -94,7 +94,10 @@ describe('P1: a figure is money whenever money is written near it', () => {
   it('a number spelled out beside a price word is unreadable, currency or not', () => {
     expect(unverifiableNumeral('narxi besh yuz')).toBe('word_numeral');
     expect(unverifiableNumeral('сто евро')).toBe('word_numeral');
-    expect(unverifiableNumeral('ikki hafta ichida')).toBeNull();
+    // A spelled-out DURATION is a figure too since the fix round — «ikki hafta» is a count of weeks nothing
+    // can check against a source (agent-policy-fixes.test.ts) — while a word numeral far from any unit is not.
+    expect(unverifiableNumeral('ikki hafta ichida')).toBe('word_numeral');
+    expect(unverifiableNumeral('ikki narsa kerak')).toBeNull();
   });
 
   it('a multi-word currency makes the customer’s figure a request, never our price', () => {
