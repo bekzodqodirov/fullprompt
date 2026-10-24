@@ -287,6 +287,13 @@ export async function openLeadForChat(
 }
 
 /**
+ * The name a hidden-number lead gets when Telegram gave no title either — a
+ * placeholder, never a person's name, so the 📌 general fact's name check
+ * leaves it out (its words «Telegram», «raqam» are not anybody's name).
+ */
+export const PHONELESS_LEAD_NAME = 'Telegram (raqam yashirin)';
+
+/**
  * A lead for a hidden-number first contact (his Q18 ⭐: a «📵» card's «🆕
  * Yangi lid»). There is no number to look an open lead up by — which is the
  * rule `leadForChat` keeps from minting twice — so the RULE's own lead is
@@ -301,7 +308,7 @@ async function phonelessLeadFor(rule: typeof tgChatRules.$inferSelect, ctx: Audi
   }
   const lead = await createLead(
     {
-      name: (rule.peerTitle ?? '').trim() || 'Telegram (raqam yashirin)',
+      name: (rule.peerTitle ?? '').trim() || PHONELESS_LEAD_NAME,
       ownerId: rule.managerUserId,
       note: "Telegram: raqami yashirin — AI sotuvchining «📵» kartasidan ochildi.",
     },

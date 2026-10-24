@@ -149,6 +149,12 @@ describe('the stranger and echo cards (review I1)', () => {
     expect(buttonsFor('AgentStranger', { ruleId: rule, text: 'x', live: false })).toBeNull();
     expect(buttonsFor('AgentStranger', { ruleId: rule, text: 'x' })).not.toBeNull();
   });
+
+  it('a purged calculation answer offers no price — «💵» would arm a wait whose link is gone', () => {
+    const answer = { requestId: rule, priceable: true, text: 'x' };
+    expect(buttonsFor('AgentCalcAnswered', answer)).not.toBeNull();
+    expect(buttonsFor('AgentCalcAnswered', { ...answer, live: false })).toBeNull();
+  });
 });
 
 describe('a general fact refuses a name by any word of it (review I3)', () => {
@@ -161,6 +167,23 @@ describe('a general fact refuses a name by any word of it (review I3)', () => {
     // (never «Bo», «Li» or «777»); the apostrophe stays inside a name.
     expect(nameNeedles(['Bo Li 777', "O'ktam Ali"])).toEqual(["O'ktam Ali", 'Bo Li 777', "O'ktam", 'Ali']);
     expect(personalBits('ktam yozdi', ["O'ktam"])).toEqual([]);
+  });
+
+  it('…and by the name as a customer is actually greeted: a suffix on it, in Cyrillic, with any apostrophe', async () => {
+    const { maskForModel, personalBits } = await import('@/modules/wms/agent/kb');
+    const names = ['Shahzod Aliyev', 'Laylo Karimova', "O'ktam Xo'jayev", 'Ali Valiyev'];
+    // The reviewer's four, each of which a whole-word match let through.
+    expect(personalBits('Shahzodjon, yakshanba ombor dam oladi.', names)).toContain('Shahzod');
+    expect(personalBits('Layloxon opa, yakshanba ombor dam oladi.', names)).toContain('Laylo');
+    expect(personalBits('Шахзод ака, якшанба омбор дам олади.', names)).toContain('Shahzod');
+    expect(personalBits('Oʻktam aka, yakshanba ombor dam oladi.', names)).toContain("O'ktam");
+    expect(personalBits('Хўжаев ака, дам оламиз.', names)).toContain("Xo'jayev");
+    // A three-letter name takes only a name's endings: «Alijon» is Ali, «Alibaba» is not.
+    expect(personalBits('Alijon aka, dam olamiz.', names)).toContain('Ali');
+    expect(personalBits('Alibaba orqali buyurtma bering.', names)).toEqual([]);
+    expect(personalBits('Yakshanba ombor dam oladi.', names)).toEqual([]);
+    // The mask covers the word as it was written, suffix and script included.
+    expect(maskForModel('Шахзоджон, salom', names)).toBe('[ism], salom');
   });
 
   it('the 📌 yes is a button on the question with an eight-hex token — the one the parser takes', async () => {

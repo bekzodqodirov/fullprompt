@@ -23,19 +23,22 @@ import { Bot } from 'grammy';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
   agentConfig,
+  agentConversations,
   agentDrafts,
   clients,
   notifications,
   roles,
   tasks,
   telegramLinks,
+  tgChatRules,
   userRoles,
   users,
 } from '@/modules/platform/db/schema';
 import { createTask } from '@/modules/platform/tasks/service';
 import { registerAgentCommand } from '@/modules/platform/telegram/agent-bot';
 import { __resetLifecycle, markBoot } from '@/modules/platform/telegram/lifecycle';
-import { __forgetWaitMemory, flushWaitWrites, readWait } from '@/modules/platform/telegram/waits';
+import { noteReplyPending, noteTaskPending } from '@/modules/platform/telegram/staff-bot';
+import { __forgetWaitMemory, flushWaitWrites, nowSec, readWait } from '@/modules/platform/telegram/waits';
 import { __resetPresses } from '@/modules/platform/telegram/press';
 import { __resetBacklog } from '@/modules/platform/telegram/backlog';
 import { __resetDrafts } from '@/modules/platform/telegram/task-draft';
@@ -164,6 +167,8 @@ afterAll(async () => {
   await __restoreAgentConfig(snapshot);
   await db.delete(agentDrafts).where(eq(agentDrafts.clientId, clientId));
   await db.delete(notifications).where(inArray(notifications.userId, madeUsers));
+  await db.delete(agentConversations).where(inArray(agentConversations.managerUserId, madeUsers));
+  await db.delete(tgChatRules).where(inArray(tgChatRules.managerUserId, madeUsers));
   if (madeTasks.length) await db.delete(tasks).where(inArray(tasks.id, madeTasks));
   await db.execute(sql`DELETE FROM telegram_once WHERE key LIKE ${`m:${PREFIX}%`} OR key LIKE ${`q:${PREFIX}%`}`);
   await db.execute(sql`DELETE FROM telegram_chat_waits WHERE chat_id::text LIKE ${`${PREFIX}%`}`);
@@ -226,6 +231,21 @@ describe('the newest question on the screen is the one a text answers (I2 b)', (
     expect(await statusOf(T)).not.toBe('done');
   });
 
+  it('«✅ Bajarildi» pressed AGAIN on the same task after ✏️ is still the newer question (the merged wait keeps its first time)', async () => {
+    const { me, draftId } = await owner();
+    const giver = await person('sales_manager');
+    const T = await handTask(me, giver);
+    // The first «Bajarildi», fifteen minutes ago — its wait run out by the clock, so ✏️ is free.
+    noteTaskPending(BigInt(me.chat), T, null, 'result', { armedAt: nowSec() - 900, promptMessageId: nextMsg() });
+    await pressEdit(me, draftId);
+    // Pressed again: the same target, so waits.ts merges and keeps the FIRST prompt's time.
+    await h.handle(tg.callback(me.chat, nextMsg(), `t:${T}`));
+    await h.handle(tg.text(me.chat, `qildim ${STAMP}`));
+    await flushWaitWrites();
+    expect(await statusOf(T)).toBe('done');
+    expect((await draftOf(draftId)).finalBody).toBeNull();
+  });
+
   it('✏️ while a task’s answer is awaited is refused in words — nothing is armed', async () => {
     const { me, draftId } = await owner();
     const giver = await person('sales_manager');
@@ -236,6 +256,54 @@ describe('the newest question on the screen is the one a text answers (I2 b)', (
     expect(h.textsTo(me.chat, m).some((t) => t.startsWith("Avval topshiriq bo'yicha so'ralgan javobni yozing"))).toBe(true);
     expect(readWait(BigInt(me.chat), 'agent_edit')).toBeNull();
     expect((await draftOf(draftId)).status).toBe('pending');
+  });
+
+  it('…and while «💬 Javob yozish» awaits a reply, the words name THAT, not a task', async () => {
+    const { me, draftId } = await owner();
+    noteReplyPending(BigInt(me.chat), nextMsg(), { armedAt: nowSec() });
+    const m = h.mark();
+    await h.handle(tg.callback(me.chat, nextMsg(), `ag:e:${draftId}`));
+    expect(h.textsTo(me.chat, m).some((t) => t.startsWith('Avval «💬 Javob yozish»'))).toBe(true);
+    expect(readWait(BigInt(me.chat), 'agent_edit')).toBeNull();
+  });
+});
+
+describe('a reply to an EARLIER prompt, or to the stranger card itself (review I2)', () => {
+  it('✏️ tapped twice: a swipe-reply to the FIRST prompt is still this draft’s text', async () => {
+    const { me, draftId } = await owner();
+    const first = await pressEdit(me, draftId);
+    await pressEdit(me, draftId);
+    await h.handle(tg.text(me.chat, `Birinchisiga ${STAMP}`, { replyTo: first }));
+    expect((await draftOf(draftId)).finalBody).toBe(`Birinchisiga ${STAMP}`);
+  });
+
+  /** A pending stranger rule on the owner's account, with its card SENT to him. */
+  async function strangerWithCard(me: Person): Promise<{ ruleId: string; card: number }> {
+    const [rule] = await db
+      .insert(tgChatRules)
+      .values({ managerUserId: me.id, peerId: BigInt(`${PREFIX}8${(peerSeq += 1)}`), peerTitle: 'Notanish', peerPhone: '+998901112233' })
+      .returning({ id: tgChatRules.id });
+    const card = await sentCopy(me, 'AgentStranger', { ruleId: rule!.id });
+    return { ruleId: rule!.id, card };
+  }
+
+  const echoes = async (me: Person) =>
+    db.select({ id: notifications.id }).from(notifications).where(and(eq(notifications.userId, me.id), eq(notifications.type, 'AgentCodeEcho')));
+
+  it('«👤 Mijoz — kod», then the code as a reply to the stranger card: the code is echoed', async () => {
+    const { me } = await owner();
+    const { ruleId, card } = await strangerWithCard(me);
+    await h.handle(tg.callback(me.chat, nextMsg(), `ag:k:${ruleId}`));
+    await h.handle(tg.text(me.chat, `ZP${STAMP.slice(-5)}`, { replyTo: card }));
+    expect(await echoes(me)).toHaveLength(1);
+    expect(readWait(BigInt(me.chat), 'agent_code')).toBeNull();
+  });
+
+  it('…but a reply to the stranger card with no code asked for opens no echo', async () => {
+    const { me } = await owner();
+    const { card } = await strangerWithCard(me);
+    await h.handle(tg.text(me.chat, `ZP${STAMP.slice(-5)}`, { replyTo: card }));
+    expect(await echoes(me)).toHaveLength(0);
   });
 });
 

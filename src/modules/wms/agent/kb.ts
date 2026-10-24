@@ -110,29 +110,124 @@ export function nameNeedles(knownNames: readonly (string | null | undefined)[]):
   return [...out].sort((a, b) => [...b].length - [...a].length);
 }
 
-function nameRe(needle: string, flags: string): RegExp {
-  return new RegExp(`(?<![\\p{L}])${needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}])`, flags);
+/**
+ * Uzbek Cyrillic and Russian in Latin, letter by letter — the one way a name
+ * stored in Latin is still found written in Cyrillic («Шахзод ака» for
+ * «Shahzod»). ъ/ь write nothing.
+ */
+const CYRILLIC: Record<string, string> = {
+  а: 'a', б: 'b', в: 'v', г: 'g', ғ: 'g', д: 'd', е: 'e', ё: 'yo', ж: 'j', з: 'z', и: 'i', й: 'y', к: 'k', қ: 'k',
+  л: 'l', м: 'm', н: 'n', о: 'o', ў: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'h', ҳ: 'h', ц: 'ts',
+  ч: 'ch', ш: 'sh', щ: 'sh', ъ: '', ы: 'i', ь: '', э: 'e', ю: 'yu', я: 'ya',
+};
+
+/**
+ * One spelling for a name and for the text it hides in (review I3): lower
+ * case, Cyrillic in Latin, the apostrophes of o‘/g‘ and the tutuq belgisi
+ * dropped in every shape they are typed in (', ʻ, ʼ, ‘, ’, `), and the letter
+ * pairs one name is written both ways with folded together — x/h
+ * («Shahzod»/«Шахзод»), q/k, and «ye» as «e» (the Cyrillic е after a vowel
+ * is the Latin «ye»: «Xo'jayev»/«Хўжаев», «Aliyev»/«Алиев»). Each folded
+ * character remembers the span of the input it came from, so a mask covers
+ * the text as he wrote it.
+ */
+function fold(text: string): { out: string[]; from: number[]; to: number[] } {
+  const out: string[] = [];
+  const from: number[] = [];
+  const to: number[] = [];
+  let i = 0;
+  for (const ch of text) {
+    const lower = ch.toLowerCase();
+    const latin = /['ʻʼ‘’`]/u.test(ch) ? '' : (CYRILLIC[lower] ?? (lower === 'x' ? 'h' : lower === 'q' ? 'k' : lower));
+    // By code UNIT, so an index into the joined string is an index into these arrays.
+    for (const c of latin.split('')) {
+      if (c === 'e' && out[out.length - 1] === 'y') {
+        // «ye» → «e», spanning both inputs.
+        out[out.length - 1] = 'e';
+        to[to.length - 1] = i + ch.length;
+        continue;
+      }
+      out.push(c);
+      from.push(i);
+      to.push(i + ch.length);
+    }
+    i += ch.length;
+  }
+  return { out, from, to };
+}
+
+/** The folded text as one string — one array element per code unit, so a match index maps back through `from`/`to`. */
+const foldedText = (text: string) => fold(text).out.join('');
+
+/**
+ * Where one folded needle sits in the folded text, as a pattern. A name is
+ * the START of a word: Uzbek greets by suffixing it — «Shahzodjon»,
+ * «Layloxon», «Shahzodga», and Russian declines it — so a needle of four
+ * letters or more takes any letters after it (refusing too much is the safe
+ * direction: he picks «👤 Faqat shu mijoz» instead). A three-letter needle
+ * («Ali») would also start «Alibaba», so it takes only the endings a name
+ * takes.
+ */
+const SHORT_NAME_ENDINGS = '(?:jon|hon|bek|boy|oy|ga|ni|ning|dan|da|lar)?';
+
+function nameRe(folded: string, flags: string): RegExp {
+  const esc = folded.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const tail = [...folded].length >= 4 ? '\\p{L}*' : `${SHORT_NAME_ENDINGS}(?![\\p{L}])`;
+  return new RegExp(`(?<![\\p{L}])${esc}${tail}`, flags);
+}
+
+/** Every needle, folded, beside the name it was cut from — a needle that folds to under three letters is dropped. */
+function foldedNeedles(knownNames: readonly (string | null | undefined)[]): { name: string; folded: string }[] {
+  return nameNeedles(knownNames)
+    .map((name) => ({ name, folded: foldedText(name) }))
+    .filter((n) => [...n.folded.replace(/[^\p{L}]/gu, '')].length >= 3);
+}
+
+/** The spans of the ORIGINAL text that carry a known name, merged, left to right. */
+function nameSpans(text: string, knownNames: readonly (string | null | undefined)[]): [number, number][] {
+  const needles = foldedNeedles(knownNames);
+  if (needles.length === 0) return [];
+  const f = fold(text);
+  const folded = f.out.join('');
+  const spans: [number, number][] = [];
+  for (const n of needles) {
+    for (const m of folded.matchAll(nameRe(n.folded, 'gu'))) {
+      const at = m.index ?? 0;
+      if (m[0].length === 0) continue;
+      spans.push([f.from[at]!, f.to[at + m[0].length - 1]!]);
+    }
+  }
+  spans.sort((a, b) => a[0] - b[0]);
+  const merged: [number, number][] = [];
+  for (const s of spans) {
+    const last = merged[merged.length - 1];
+    if (last && s[0] <= last[1]) last[1] = Math.max(last[1], s[1]);
+    else merged.push([s[0], s[1]]);
+  }
+  return merged;
 }
 
 /**
  * What would make a text PERSONAL — another customer's code, a phone, a name
- * the caller knows (whole, or any word of it). A general fact is written only
- * from text in which this finds nothing (leak-2); the style guide is proposed
- * through the same mask.
+ * the caller knows (whole, or any word of it, in either script, with its
+ * suffixes). A general fact is written only from text in which this finds
+ * nothing (leak-2); the style guide is proposed through the same mask.
  */
 export function personalBits(text: string, knownNames: readonly (string | null | undefined)[] = []): string[] {
   const t = normalizeDigits(text);
   const out: string[] = [];
   for (const c of codeCandidates([t])) if (/^[A-Z]{1,4}\d{2,}/u.test(c)) out.push(c);
   for (const m of t.matchAll(PHONE_RE)) out.push(m[0]);
-  for (const n of nameNeedles(knownNames)) if (nameRe(n, 'iu').test(t)) out.push(n);
+  const folded = foldedText(t);
+  for (const n of foldedNeedles(knownNames)) if (nameRe(n.folded, 'u').test(folded)) out.push(n.name);
   return out;
 }
 
 /** The text with every personal bit masked — what the style proposal shows him (leak-1). */
 export function maskForModel(text: string, knownNames: readonly (string | null | undefined)[] = []): string {
   let t = normalizeDigits(text);
-  for (const n of nameNeedles(knownNames)) t = t.replace(nameRe(n, 'giu'), '[ism]');
+  // Right to left, so a span replaced never moves the ones still to come.
+  for (const [start, end] of nameSpans(t, knownNames).reverse()) t = `${t.slice(0, start)}[ism]${t.slice(end)}`;
   t = t.replace(PHONE_RE, '[telefon]');
   for (const u of urlsIn(t)) t = t.split(u).join('[havola]');
   t = t.replace(/\b[A-Za-z]{1,4}\s?-?\s?\d{2,}[A-Za-z0-9-]*\b/gu, '[kod]');

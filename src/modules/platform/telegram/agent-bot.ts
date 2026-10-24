@@ -24,16 +24,40 @@ export const AGENT_WAIT_TTL_MS = 30 * 60_000;
 
 const BUSY = 'Avval boshlangan ishni tugating (hisoblatish, zametka yoki topshiriq).';
 const BUSY_TASK = "Avval topshiriq bo'yicha so'ralgan javobni yozing (natija, savol yoki sana) — keyin qayta bosing.";
+// The same wait holds the thread's «💬 Javob yozish», which is no task (taskId '').
+const BUSY_REPLY = "Avval «💬 Javob yozish» so'ragan javobni yozing — keyin qayta bosing.";
 
 /**
  * A live collector — or a task's one-text wait (a «Bajarildi» result, «💬
  * Javob yozish», a ⏰ date, review I2 b): a press that ARMS an agent wait
  * while another question is on the screen would leave his next text to
- * whichever reads first. Null = free; otherwise the words that say which.
+ * whichever reads first. Null = free; otherwise the words that name the
+ * question actually waiting.
  */
 function busy(chatId: bigint): string | null {
   if (activeIntake(chatId) || activeCapture(chatId) || activeDraft(chatId)) return BUSY;
-  return peekTaskPending(chatId) ? BUSY_TASK : null;
+  const task = peekTaskPending(chatId);
+  if (!task) return null;
+  return task.kind === 'reply' ? BUSY_REPLY : BUSY_TASK;
+}
+
+/** How many of one target's prompts a swipe-reply may still name (✏️ tapped again re-asks the same thing). */
+const PROMPTS_KEPT = 5;
+
+/**
+ * Was a task's question put on the screen AFTER this agent wait? The task
+ * wait's own `armedAt` cannot say: a re-press of the same task MERGES and
+ * keeps the earliest prompt's time (waits.ts, judge Q5H-1), so a «✅
+ * Bajarildi» pressed again after ✏️ read as older than ✏️. The agent wait
+ * records the task wait's expiry as it stood when the agent asked
+ * (`taskSeen`); any arm or re-arm since moves that expiry later — the merge
+ * keeps the LATEST expiry. An agent wait from before the record compares the
+ * old way.
+ */
+function taskArmedSince(task: { armedAt: number; expiresAt: number }, agent: { payload: Record<string, string>; armedAt: number }): boolean {
+  const seen = agent.payload.taskSeen;
+  if (seen === undefined || !/^\d+$/.test(seen)) return task.armedAt >= agent.armedAt;
+  return task.expiresAt > Number(seen);
 }
 
 /** One agent press: decided on the server, answered in words. */
@@ -58,12 +82,20 @@ export async function handleAgentPress(
   try {
     const { agentPress, releaseEdit } = await import('../../wms/agent/bot-door');
     const out = await agentPress(staff.id, parsed.op, parsed.id, parsed.digest);
+    // The same target asked again keeps its earlier prompts answerable (a
+    // swipe-reply to the FIRST ✏️ prompt is still this draft's text).
+    let earlierPrompts: string[] = [];
     if (out.arm) {
       // One live agent wait at a time; a second ✏️ releases the first draft
       // in words rather than silently re-targeting it (leak-6).
       const prev = readWait<{ draftId?: string }>(chatId, 'agent_edit');
       if (prev?.payload.draftId && prev.payload.draftId !== out.arm.payload.draftId) {
         await releaseEdit(staff.id, prev.payload.draftId);
+      }
+      const same = readWait<Record<string, string>>(chatId, out.arm.kind);
+      const arm = out.arm;
+      if (same && Object.entries(arm.payload).every(([k, v]) => same.payload[k] === v)) {
+        earlierPrompts = (same.payload.promptMessageIds ?? same.payload.promptMessageId ?? '').split(',').filter(Boolean);
       }
       for (const kind of AGENT_WAITS) if (kind !== out.arm.kind) dropWait(chatId, kind);
     }
@@ -74,12 +106,19 @@ export async function handleAgentPress(
       : null;
     if (out.arm) {
       // Armed AFTER its prompt, at the prompt's own date, naming the prompt
-      // (the task waits' rule, Q5 a): a swipe-reply to THIS question answers
-      // it, and a newer question's armedAt is comparable with it (I2).
+      // (the task waits' rule, Q5 a): a swipe-reply to THIS question — or to
+      // an earlier one for the same target — answers it, and the task wait as
+      // it stands now is recorded, so a question asked after this one is
+      // known to be newer (I2).
+      const prompts = [...earlierPrompts, ...(prompt ? [String(prompt.message_id)] : [])].slice(-PROMPTS_KEPT);
       armWait(
         chatId,
         out.arm.kind,
-        prompt ? { ...out.arm.payload, promptMessageId: String(prompt.message_id) } : out.arm.payload,
+        {
+          ...out.arm.payload,
+          ...(prompts.length > 0 ? { promptMessageIds: prompts.join(',') } : {}),
+          taskSeen: String(readWait<unknown>(chatId, 'task')?.expiresAt ?? 0),
+        },
         AGENT_WAIT_TTL_MS,
         prompt?.date ?? nowSec(),
       );
@@ -128,7 +167,7 @@ export async function agentTextSlot(ctx: Context, chatId: bigint, msg: AgentSlot
   let plain = waited;
   if (waited) {
     const task = readWait<unknown>(chatId, 'task');
-    if (task && waitVerdict(task, msg.dateSec, isBacklog(msg.dateSec)) === 'answers' && task.armedAt >= waited.armedAt) {
+    if (task && waitVerdict(task, msg.dateSec, isBacklog(msg.dateSec)) === 'answers' && taskArmedSince(task, waited)) {
       plain = null;
     }
   }
@@ -140,7 +179,13 @@ export async function agentTextSlot(ctx: Context, chatId: bigint, msg: AgentSlot
   if (msg.replyToMessageId !== null) {
     // A reply's target is the message it names — the agent prompt's too, newer task wait or not.
     target = await agentCardFor(staff.id, chatId, msg.replyToMessageId);
-    if (!target && waited && waited.payload.promptMessageId === String(msg.replyToMessageId)) target = waited;
+    // A reply to a stranger or echo card is a CODE only while that rule's
+    // code wait is armed (he pressed «👤 Mijoz — kod»): a reply alone opens no echo.
+    if (target?.kind === 'agent_code' && !(waited?.kind === 'agent_code' && waited.payload.ruleId === target.payload.ruleId)) {
+      target = null;
+    }
+    const prompts = (waited?.payload.promptMessageIds ?? waited?.payload.promptMessageId ?? '').split(',');
+    if (!target && waited && prompts.includes(String(msg.replyToMessageId))) target = waited;
   } else {
     target = plain;
   }

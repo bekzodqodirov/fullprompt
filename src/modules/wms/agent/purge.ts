@@ -131,13 +131,18 @@ export async function purgeAgentChat(managerUserId: string, peerId: bigint): Pro
       // Facts learned in this chat (scope client/lead, born from its drafts).
       await tx.delete(kbFacts).where(sql`${kbFacts.scope} <> 'general' AND ${kbFacts.sourceRef}->>'draftId' IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})`);
     }
-    // Every card of the chat says nothing of it any more; a copy not yet sent
-    // is never sent (a blank card is noise, not news) — a claimed one is the
-    // drain's to finish, and the edit below reaches it once it is sent.
+    // Every card of the chat says nothing of it any more, and offers nothing:
+    // `live`, `kbAsk` and `priceable` are what `agentButtons` draws a door
+    // from, and a calculation answer's «💵 Narx yozaman» would arm a price
+    // wait whose link this same transaction deletes. A copy not yet sent is
+    // never sent (a blank card is noise, not news). A copy the drain has
+    // CLAIMED (`sending`) carries no `tg` yet: the edit below skips it, and it
+    // arrives with the text it was claimed with — the drain re-reads nothing
+    // after a send, and that after-send check is owed (stated).
     const blanked = await tx
       .update(notifications)
       .set({
-        payload: sql`${notifications.payload} || ${JSON.stringify({ text: PURGED_CARD_TEXT, live: false, kbAsk: false })}::jsonb`,
+        payload: sql`${notifications.payload} || ${JSON.stringify({ text: PURGED_CARD_TEXT, live: false, kbAsk: false, priceable: false })}::jsonb`,
         status: sql`CASE WHEN ${notifications.status} = 'pending' THEN 'muted' ELSE ${notifications.status} END`,
         error: sql`CASE WHEN ${notifications.status} = 'pending' THEN 'chat purged' ELSE ${notifications.error} END`,
       })
@@ -156,7 +161,11 @@ export async function purgeAgentChat(managerUserId: string, peerId: bigint): Pro
     await tx.delete(tgPeerPulls).where(and(eq(tgPeerPulls.managerUserId, managerUserId), eq(tgPeerPulls.peerId, peerId)));
     return { drafts: ids.length, blanked: blanked.map((b) => ({ ...b, payload: b.payload as Record<string, unknown> })) };
   });
-  // The Telegram copies already sent, after the commit (#714): best-effort.
-  await editAgentCopies(out.blanked).catch((err: unknown) => logger.warn({ err }, '[agent] purged copies not edited'));
+  // The Telegram copies already sent, after the commit (#714): best-effort,
+  // and NOT awaited — the web tray's «Qo'shma» waits on this function before
+  // it deletes the messages, and N cards × a 10-second Telegram deadline on a
+  // bad day (round 48's outage) is a button that hangs while the customer's
+  // text is still stored.
+  void editAgentCopies(out.blanked).catch((err: unknown) => logger.warn({ err }, '[agent] purged copies not edited'));
   return { drafts: out.drafts, cards: out.blanked.length };
 }

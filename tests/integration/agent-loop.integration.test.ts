@@ -54,6 +54,8 @@ let siblingClientId = '';
 let snapshot: AgentConfig | null = null;
 const requestIds: string[] = [];
 const leadIds: string[] = [];
+/** Drafts whose 📌 may write a GENERAL fact — read in every chat, so swept by draft in afterAll (#183). */
+const generalDraftIds: string[] = [];
 let msgSeq = 5000n;
 /** Laylo's card phone — the one number that PROVES the chat (his Q19 ⭐). */
 const CARD_PHONE = `+99897${SUFFIX}66`;
@@ -189,6 +191,7 @@ beforeEach(clearChat);
 afterAll(async () => {
   await clearChat();
   await db.delete(kbFacts).where(sql`${kbFacts.sourceRef}->>'suffix' = ${SUFFIX} OR ${kbFacts.clientId} = ${clientId}`);
+  if (generalDraftIds.length > 0) await db.delete(kbFacts).where(inArray(sql`${kbFacts.sourceRef}->>'draftId'`, generalDraftIds));
   if (requestIds.length > 0) await db.delete(calcRequests).where(inArray(calcRequests.id, [...requestIds].reverse()));
   await db.delete(tgAccounts).where(eq(tgAccounts.id, accountId));
   if (leadIds.length > 0) await db.delete(leads).where(inArray(leads.id, leadIds));
@@ -457,8 +460,9 @@ describe('a hand-made bind serves no cargo until the chat proves it (his Q19 ⭐
     expect(await ruleOf(ruleId)).toMatchObject({ decision: 'pending', clientId: null });
     const [conv] = await db.select().from(agentConversations).where(and(eq(agentConversations.managerUserId, ownerId), eq(agentConversations.peerId, PEER)));
     expect(conv).toMatchObject({ identityClientId: null, identityStrength: null });
-    // The message the rule stored keeps its client_id — and serves nothing.
-    expect(await chatIdentity(ownerId, PEER)).toMatchObject({ clientId, cargoAllowed: false });
+    // The message the rule stored keeps its client_id — and it is nobody's
+    // identity any more: no knowledge scope, no name, no deal to land on (I7).
+    expect(await chatIdentity(ownerId, PEER)).toMatchObject({ clientId: null, leadId: null, strength: null, codes: [], customerName: null });
   });
 
   it('the echo card is closed after ✅: no ✅, no ↩ — its verdict instead', async () => {
@@ -488,7 +492,7 @@ describe('a hand-made bind serves no cargo until the chat proves it (his Q19 ⭐
     expect(await ruleOf(ruleId)).toMatchObject({ decision: 'pending', clientId: null });
     const [conv] = await db.select().from(agentConversations).where(and(eq(agentConversations.managerUserId, ownerId), eq(agentConversations.peerId, PEER)));
     expect(conv).toMatchObject({ identityClientId: otherClientId, identityStrength: null });
-    expect(await chatIdentity(ownerId, PEER)).toMatchObject({ clientId, cargoAllowed: false });
+    expect(await chatIdentity(ownerId, PEER)).toMatchObject({ clientId: null, codes: [], cargoAllowed: false });
     // The first echo card lost its buttons; only the newest one is live — and a
     // closed copy the drain had not sent yet is never sent.
     const echoes = await ownerCards('AgentCodeEcho');
@@ -718,8 +722,8 @@ describe('the purge blanks EVERY agent card of the chat (review I5)', () => {
     const ids = {
       stranger: await card('AgentStranger', { ruleId }),
       echo: await card('AgentCodeEcho', { ruleId, clientId }, 'pending'),
-      root: await card('AgentCalcAnswered', { requestId: root }),
-      child: await card('AgentCalcAnswered', { requestId: child }),
+      root: await card('AgentCalcAnswered', { requestId: root, priceable: true }),
+      child: await card('AgentCalcAnswered', { requestId: child, priceable: true, tg: { chatId: 990001, messageId: 4242 } }),
       notice: await card('AgentNotice', { peerId: String(PEER) }),
       otherNotice: await card('AgentNotice', { peerId: String(OTHER_PEER) }),
     };
@@ -738,5 +742,161 @@ describe('the purge blanks EVERY agent card of the chat (review I5)', () => {
     // A closed card draws no buttons when its copy is edited.
     expect(buttonsFor('AgentCodeEcho', by.get(ids.echo)!.payload as Record<string, unknown>)).toBeNull();
     expect(buttonsFor('AgentStranger', by.get(ids.stranger)!.payload as Record<string, unknown>)).toBeNull();
+    // …and a calculation answer's «💵 Narx yozaman» is no door either: its
+    // link went in the same transaction, a press would arm a wait that eats a text.
+    for (const key of ['root', 'child'] as const) {
+      const p = by.get(ids[key])!.payload as Record<string, unknown>;
+      expect(p.priceable, key).toBe(false);
+      expect(buttonsFor('AgentCalcAnswered', p), key).toBeNull();
+    }
+    expect(await agentCardFor(ownerId, 990001n, 4242)).toBeNull();
+  });
+});
+
+describe('a late press on the stranger card is never a second decision (review I1)', () => {
+  it('«🆕» after the web tray said «Shaxsiy»: no lead, no pull — and the card is closed', async () => {
+    const ruleId = await strangerRule();
+    await strangerCards(ownerId, new Date());
+    await decideChat({ id: ruleId, decision: 'exclude' }, { actorId: ownerId });
+    const out = await agentPress(ownerId, 'n', ruleId, undefined);
+    expect(out.reply).toContain('shaxsiy');
+    expect(await ruleOf(ruleId)).toMatchObject({ decision: 'exclude', clientId: null, leadId: null });
+    expect(await db.select().from(tgPeerPulls).where(eq(tgPeerPulls.peerId, PEER))).toHaveLength(0);
+    const [card] = (await ownerCards('AgentStranger')).filter((n) => (n.payload as { ruleId: string }).ruleId === ruleId);
+    expect(buttonsFor('AgentStranger', card!.payload as Record<string, unknown>)).toBeNull();
+  });
+
+  it('«🚫» after the web tray\'s «Bu mijoz» does not exclude the client\'s chat', async () => {
+    const ruleId = await strangerRule();
+    await decideChat({ id: ruleId, decision: 'include', clientId }, { actorId: ownerId });
+    expect((await agentPress(ownerId, 'x', ruleId, undefined)).reply).toContain("mijozga bog'langan");
+    expect(await ruleOf(ruleId)).toMatchObject({ decision: 'include', clientId });
+  });
+
+  it('a code typed AFTER a web «Shaxsiy» is echoed by nobody — the ✅ never comes', async () => {
+    const ruleId = await strangerRule();
+    // 👤 pressed while the chat was still in question…
+    const ask = await agentPress(ownerId, 'k', ruleId, undefined);
+    // …the web tray answers, and only then is the code typed.
+    await decideChat({ id: ruleId, decision: 'exclude' }, { actorId: ownerId });
+    expect(await agentText(ownerId, ask.arm!, `AL${SUFFIX}`)).toContain('shaxsiy');
+    expect(await ownerCards('AgentCodeEcho')).toHaveLength(0);
+    expect((await agentPress(ownerId, 'k', ruleId, undefined)).arm).toBeUndefined();
+    expect(await ruleOf(ruleId)).toMatchObject({ decision: 'exclude', clientId: null });
+  });
+
+  it('an echo’s ✅ after a web «Shaxsiy» is refused even when the conversation was written since', async () => {
+    const ruleId = await strangerRule();
+    await agentText(ownerId, { kind: 'agent_code', payload: { ruleId } }, `AL${SUFFIX}`);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await decideChat({ id: ruleId, decision: 'exclude' }, { actorId: ownerId });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    // Any agent write moves the conversation's clock past the web decision.
+    await db.update(agentConversations).set({ updatedAt: new Date() }).where(and(eq(agentConversations.managerUserId, ownerId), eq(agentConversations.peerId, PEER)));
+    expect((await agentPress(ownerId, 'c', ruleId, clientId.slice(-8))).toast).toContain('hal qilingan');
+    expect(await ruleOf(ruleId)).toMatchObject({ decision: 'exclude', clientId: null });
+  });
+
+  it('↩ after the web tray re-decided the SAME client is not the flow’s to undo', async () => {
+    const ruleId = await strangerRule();
+    await confirmCode(ruleId, `AL${SUFFIX}`);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await decideChat({ id: ruleId, decision: 'include', clientId }, { actorId: ownerId });
+    expect((await agentPress(ownerId, 'b', ruleId, clientId.slice(-8))).toast).toContain('hal qilingan');
+    expect(await ruleOf(ruleId)).toMatchObject({ decision: 'include', clientId });
+  });
+});
+
+describe('↩ takes back the bind, and with it what was built on it (review I1, I7)', () => {
+  it('a draft written under the withdrawn client expires — it can never be approved onto that client', async () => {
+    const ruleId = await strangerRule();
+    await confirmCode(ruleId, `AL${SUFFIX}`);
+    const [d] = await db
+      .insert(agentDrafts)
+      .values({ managerUserId: ownerId, peerId: PEER, clientId, anchorTgMessageId: 1n, proposedBody: 'Yukingiz Yiwuda.', status: 'pending' })
+      .returning({ id: agentDrafts.id });
+    await agentPress(ownerId, 'b', ruleId, clientId.slice(-8));
+    const [after] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, d!.id));
+    expect(after!.status).toBe('expired');
+  });
+
+  it('an approved reply still waiting to go is cancelled — it was written to the client he took back', async () => {
+    const ruleId = await strangerRule();
+    await confirmCode(ruleId, `AL${SUFFIX}`);
+    const [d] = await db
+      .insert(agentDrafts)
+      .values({ managerUserId: ownerId, peerId: PEER, clientId, anchorTgMessageId: 1n, proposedBody: 'Yukingiz Yiwuda.', status: 'approved', decidedBy: ownerId, decidedAt: new Date() })
+      .returning({ id: agentDrafts.id });
+    const [o] = await db
+      .insert(agentOutbox)
+      .values({
+        draftId: d!.id,
+        managerUserId: ownerId,
+        peerId: PEER,
+        clientId,
+        body: 'Yukingiz Yiwuda.',
+        randomId: BigInt(`9${SUFFIX}01`),
+        answersTgMessageId: 1n,
+        queuedBy: ownerId,
+        nextStepAt: new Date(Date.now() + 3_600_000),
+      })
+      .returning({ id: agentOutbox.id });
+    await agentPress(ownerId, 'b', ruleId, clientId.slice(-8));
+    const [row] = await db.select().from(agentOutbox).where(eq(agentOutbox.id, o!.id));
+    expect(row).toMatchObject({ status: 'cancelled' });
+    expect(row!.lastError).toMatch(/^identity_changed/);
+  });
+
+  it('the chat left in question gets a live stranger card back — the ✅ had closed the first', async () => {
+    const ruleId = await strangerRule();
+    await strangerCards(ownerId, new Date());
+    await confirmCode(ruleId, `AL${SUFFIX}`);
+    const before = (await ownerCards('AgentStranger')).filter((n) => (n.payload as { ruleId: string }).ruleId === ruleId);
+    expect(before.every((n) => buttonsFor('AgentStranger', n.payload as Record<string, unknown>) === null)).toBe(true);
+    await agentPress(ownerId, 'b', ruleId, clientId.slice(-8));
+    const live = (await ownerCards('AgentStranger')).filter(
+      (n) => (n.payload as { ruleId: string }).ruleId === ruleId && buttonsFor('AgentStranger', n.payload as Record<string, unknown>) !== null,
+    );
+    expect(live).toHaveLength(1);
+    expect(textOf(live[0]!)).toContain('qaytadan tanlang');
+    // …and ↩ before any ✅ (the stranger card still live) sends no second one.
+    await clearChat();
+    const pendingRule = await strangerRule();
+    await strangerCards(ownerId, new Date());
+    await agentText(ownerId, { kind: 'agent_code', payload: { ruleId: pendingRule } }, `AL${SUFFIX}`);
+    await agentPress(ownerId, 'b', pendingRule, clientId.slice(-8));
+    expect((await ownerCards('AgentStranger')).filter((n) => (n.payload as { ruleId: string }).ruleId === pendingRule)).toHaveLength(1);
+  });
+});
+
+describe('a «📵» lead with no title is named by a placeholder, not a person (review I3)', () => {
+  it('a general fact with «Telegram» in it is not refused as the lead’s name', async () => {
+    const ruleId = await strangerRule(null, '');
+    await agentPress(ownerId, 'n', ruleId, undefined);
+    const rule = await ruleOf(ruleId);
+    leadIds.push(rule.leadId!);
+    const [d] = await db
+      .insert(agentDrafts)
+      .values({
+        managerUserId: ownerId,
+        peerId: PEER,
+        leadId: rule.leadId!,
+        anchorTgMessageId: 3n,
+        proposedBody: 'x',
+        finalBody: "Raqamingizni yuboring, Telegram orqali ham yozsa bo'ladi.",
+        needsOwner: true,
+        status: 'approved',
+        decidedBy: ownerId,
+        decidedAt: new Date(),
+        policy: { suffix: SUFFIX },
+      })
+      .returning({ id: agentDrafts.id });
+    generalDraftIds.push(d!.id);
+    const first = await agentPress(ownerId, 'g', d!.id, undefined);
+    const digest = (parseCallback(first.buttons!.flat()[0]!.callback_data) as { digest?: string }).digest;
+    expect((await agentPress(ownerId, 'g', d!.id, digest)).toast).toContain('saqlandi');
+    const facts = await db.select().from(kbFacts).where(sql`${kbFacts.sourceRef}->>'draftId' = ${d!.id}`);
+    expect(facts).toHaveLength(1);
+    await db.delete(kbFacts).where(eq(kbFacts.id, facts[0]!.id));
   });
 });

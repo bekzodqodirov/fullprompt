@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
-import { agentConversations, agentDrafts, clients, leads, notifications, tgChatRules, tgPeerPulls } from '../../platform/db/schema';
+import { agentConversations, agentDrafts, agentOutbox, clients, leads, notifications, tgChatRules, tgPeerPulls } from '../../platform/db/schema';
 import { logger } from '../../platform/logger';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { actorGrants } from '../../platform/rbac/authorize';
@@ -161,7 +161,7 @@ export async function agentCardFor(
     .where(
       and(
         eq(notifications.userId, staffId),
-        sql`${notifications.type} IN ('AgentDraft', 'AgentCalcAnswered')`,
+        sql`${notifications.type} IN ('AgentDraft', 'AgentCalcAnswered', 'AgentStranger', 'AgentCodeEcho')`,
         sql`(${notifications.payload}->'tg'->>'chatId') = ${String(chatId)}`,
         sql`(${notifications.payload}->'tg'->>'messageId') = ${String(messageId)}`,
       ),
@@ -172,8 +172,15 @@ export async function agentCardFor(
   const p = row.payload as Record<string, unknown>;
   // A swipe-reply IS an edit: `submitOwnText` takes a pending draft as well as an editing one.
   if (row.type === 'AgentDraft' && typeof p.draftId === 'string') return { kind: 'agent_edit', payload: { draftId: p.draftId } };
-  if (row.type === 'AgentCalcAnswered' && typeof p.requestId === 'string' && p.priceable === true) {
+  // A purged answer card (`live: false`) is no door: its link is gone with the chat.
+  if (row.type === 'AgentCalcAnswered' && typeof p.requestId === 'string' && p.priceable === true && p.live !== false) {
     return { kind: 'agent_price', payload: { requestId: p.requestId } };
+  }
+  // A code typed as a reply to the stranger card (or to an echo card) after
+  // «👤 Mijoz — kod»: the shell takes it only while that rule's code wait is
+  // armed — a reply alone opens no echo.
+  if ((row.type === 'AgentStranger' || row.type === 'AgentCodeEcho') && typeof p.ruleId === 'string') {
+    return { kind: 'agent_code', payload: { ruleId: p.ruleId } };
   }
   return null;
 }
@@ -194,7 +201,9 @@ async function knownNamesFor(d: typeof agentDrafts.$inferSelect): Promise<string
   }
   if (d.leadId) {
     const [l] = await db.select({ name: leads.name }).from(leads).where(eq(leads.id, d.leadId));
-    if (l) names.push(l.name);
+    // A «📵» lead with no title is named by a placeholder, not by a person.
+    const { PHONELESS_LEAD_NAME } = await import('../crm/chat-rules');
+    if (l && l.name !== PHONELESS_LEAD_NAME) names.push(l.name);
   }
   const [rule] = await db
     .select({ title: tgChatRules.peerTitle })
@@ -284,16 +293,81 @@ async function convIdentity(staffId: string, peerId: bigint): Promise<ConvIdenti
 }
 
 /**
- * What the echo flow bound, taken back — and nothing it did not bind (review
- * I1). The flow's ✅ is the only writer of `typed_code`, so a rule that names
- * the conversation's typed client is the flow's own; a rule the web tray or a
- * lookback decided is somebody's deliberate answer and stays.
+ * Is the chat's include the echo flow's OWN — the one its ✅ wrote, and that
+ * nobody has decided over since (review I1)? The ✅ stamps the `decided_at`
+ * it wrote onto the echo card it confirmed (`boundAt`); any later decision —
+ * the web tray's «Bu mijoz» naming the very same client included — moves
+ * `decided_at`, and the include is then somebody's deliberate answer that ↩
+ * must not undo. The conversation's own `updated_at` cannot tell: every agent
+ * write to the conversation moves that clock.
  */
-async function withdrawTypedBind(staffId: string, rule: RuleRow, conv: ConvIdentity): Promise<void> {
-  if (conv?.strength !== 'typed_code' || !conv.clientId) return;
-  if (rule.decision !== 'include' || rule.clientId !== conv.clientId) return;
+async function typedBindStands(staffId: string, rule: RuleRow, conv: ConvIdentity): Promise<boolean> {
+  if (conv?.strength !== 'typed_code' || !conv.clientId) return false;
+  if (rule.decision !== 'include' || rule.clientId !== conv.clientId || !rule.decidedAt) return false;
+  const [echo] = await db
+    .select({ id: notifications.id })
+    .from(notifications)
+    .where(
+      and(
+        eq(notifications.userId, staffId),
+        eq(notifications.type, 'AgentCodeEcho'),
+        sql`${notifications.payload}->>'ruleId' = ${rule.id}`,
+        sql`${notifications.payload}->>'boundAt' = ${rule.decidedAt.toISOString()}`,
+      ),
+    )
+    .limit(1);
+  return echo !== undefined;
+}
+
+/**
+ * What the echo flow bound, taken back — and nothing it did not bind (review
+ * I1): the rule goes back to pending; every draft still waiting for his ✅
+ * that was written under that client expires, because approving one later
+ * would land its calculation on that client's deal and book the follow-up on
+ * that client's card — the client he has just said this chat is NOT; and an
+ * approved reply still WAITING to go (the night hold, the human delay) is
+ * cancelled, `agent_off`'s compare-and-set on 'agent' (config.ts): the send
+ * step claims a row by that same status, so a row already claimed is the
+ * one in flight and is let finish.
+ */
+async function withdrawTypedBind(staffId: string, rule: RuleRow, conv: ConvIdentity): Promise<boolean> {
+  if (!(await typedBindStands(staffId, rule, conv))) return false;
   const { decideChat } = await import('../crm/chat-rules');
   await decideChat({ id: rule.id, decision: 'pending' }, { actorId: staffId });
+  const cancelled = await db
+    .update(agentOutbox)
+    .set({ status: 'cancelled', lastError: 'identity_changed: the typed code was taken back' })
+    .where(
+      and(
+        eq(agentOutbox.managerUserId, staffId),
+        eq(agentOutbox.peerId, rule.peerId),
+        eq(agentOutbox.clientId, conv!.clientId!),
+        eq(agentOutbox.status, 'agent'),
+      ),
+    )
+    .returning({ draftId: agentOutbox.draftId });
+  const expired = await db
+    .update(agentDrafts)
+    .set({ status: 'expired', updatedAt: new Date() })
+    .where(
+      and(
+        eq(agentDrafts.managerUserId, staffId),
+        eq(agentDrafts.peerId, rule.peerId),
+        eq(agentDrafts.clientId, conv!.clientId!),
+        inArray(agentDrafts.status, ['pending', 'editing']),
+      ),
+    )
+    .returning({ id: agentDrafts.id });
+  if (expired.length > 0 || cancelled.length > 0) {
+    const { refreshAgentCard } = await import('./card-io');
+    const ids = [...expired.map((d) => d.id), ...cancelled.map((o) => o.draftId)];
+    for (const id of ids) {
+      await refreshAgentCard(id, ["↩ Chat bu mijozga bog'lanmadi — javob ketmaydi."]).catch((err: unknown) =>
+        logger.warn({ err, draftId: id }, '[agent] withdrawn draft card not refreshed'),
+      );
+    }
+  }
+  return true;
 }
 
 /**
@@ -302,14 +376,22 @@ async function withdrawTypedBind(staffId: string, rule: RuleRow, conv: ConvIdent
  * copy not yet sent goes out with, and on the copies already sent (review I1:
  * a ✅ / ↩ that stays pressable after the decision is a second decision).
  * A copy the drain has not sent yet is never sent — a closed card arriving
- * after its own answer is noise (the approval copies' rule); one the drain
- * has claimed is its to finish. `lineFor` may return null to leave a card.
+ * after its own answer is noise (the approval copies' rule). A copy the drain
+ * has CLAIMED (`sending`) carries no `tg` yet, so its edit is skipped, and it
+ * arrives with the buttons it was claimed with: the drain re-reads nothing
+ * after a send (an owed after-send check, stated). A press on such a copy is
+ * judged like any late press, by the chat as it stands: a ✅ already true
+ * writes nothing, a stranger button on a decided chat writes nothing, and a ↩
+ * takes back only the flow's own bind — and hands the chat its stranger card
+ * back. `lineFor` may return null to leave a card; `extraFor` adds to the
+ * closed card's payload.
  */
 async function closeRuleCards(
   staffId: string,
   type: 'AgentStranger' | 'AgentCodeEcho',
   ruleId: string,
   lineFor: (clientId: string | undefined) => string | null,
+  extraFor: (clientId: string | undefined) => Record<string, string> = () => ({}),
 ): Promise<void> {
   const rows = await db
     .select({ id: notifications.id, payload: notifications.payload, userId: notifications.userId })
@@ -325,9 +407,10 @@ async function closeRuleCards(
   const closed: AgentCopy[] = [];
   for (const row of rows) {
     const payload = row.payload as Record<string, unknown>;
-    const line = lineFor(typeof payload.clientId === 'string' ? payload.clientId : undefined);
+    const cid = typeof payload.clientId === 'string' ? payload.clientId : undefined;
+    const line = lineFor(cid);
     if (line === null) continue;
-    const patch = { live: false, text: `${typeof payload.text === 'string' ? payload.text : ''}\n\n${line}` };
+    const patch = { ...extraFor(cid), live: false, text: `${typeof payload.text === 'string' ? payload.text : ''}\n\n${line}` };
     await db
       .update(notifications)
       .set({
@@ -341,7 +424,51 @@ async function closeRuleCards(
   await editAgentCopies(closed).catch((err: unknown) => logger.warn({ err, ruleId }, '[agent] card copies not closed'));
 }
 
-/** The stranger card's buttons (§17.11): a lead, a client by its code (echoed first), or personal. */
+/**
+ * A chat ↩ leaves in question again gets a stranger card back when it has no
+ * live one (review I1): the ✅ closed the first, the one-card-per-peer claim
+ * is spent, and the listener stores nothing for a pending chat — without a
+ * fresh card nothing in the bot could decide this chat again.
+ */
+async function reopenStrangerCard(staffId: string, ruleId: string): Promise<void> {
+  const [rule] = await db.select().from(tgChatRules).where(eq(tgChatRules.id, ruleId));
+  if (!rule || rule.decision !== 'pending') return;
+  const [live] = await db
+    .select({ id: notifications.id })
+    .from(notifications)
+    .where(
+      and(
+        eq(notifications.userId, staffId),
+        eq(notifications.type, 'AgentStranger'),
+        sql`${notifications.payload}->>'ruleId' = ${ruleId}`,
+        sql`(${notifications.payload}->>'live') IS DISTINCT FROM 'false'`,
+      ),
+    )
+    .limit(1);
+  if (live) return;
+  const { strangerCardText } = await import('./jobs');
+  await notifyStaffTelegram({
+    userIds: [staffId],
+    type: 'AgentStranger',
+    text: `${strangerCardText(rule.peerTitle, rule.peerPhone)}\n\n↩ Oldingi bog'lash bekor qilindi — qaytadan tanlang.`,
+    extra: { ruleId },
+  });
+}
+
+/** What a press on a stranger card hears once the chat is no longer pending — whoever decided it. */
+function decidedWords(rule: RuleRow): string {
+  if (rule.decision === 'exclude') return "Bu chat allaqachon shaxsiy deb belgilangan — karta eskirgan.";
+  if (rule.clientId) return "Bu chat allaqachon mijozga bog'langan — karta eskirgan.";
+  return "Bu chat allaqachon lid sifatida ochilgan — karta eskirgan.";
+}
+
+/**
+ * The stranger card's buttons (§17.11): a lead, a client by its code (echoed
+ * first), or personal. The card is an answer to a PENDING chat, and only to
+ * one: once the chat is decided — here, or on the web tray, whose door closes
+ * no card of the bot's — a press on it is late (a live copy nobody closed, a
+ * backlog press), and a late press is never a second decision (review I1).
+ */
 async function strangerPress(
   staffId: string,
   op: 'n' | 'k' | 'x' | 'c' | 'b',
@@ -352,6 +479,15 @@ async function strangerPress(
   if (!rule || rule.managerUserId !== staffId) return { toast: 'Topilmadi' };
   const ctx = { actorId: staffId };
   const { decideChat, openLeadForChat } = await import('../crm/chat-rules');
+  if (op === 'n' || op === 'k' || op === 'x') {
+    if (rule.decision !== 'pending') {
+      await closeRuleCards(staffId, 'AgentStranger', ruleId, () => '↪️ Bu chat boshqa joyda hal qilingan.');
+      // The same answer again (a redelivered press) is not a refusal — it is done.
+      if (op === 'n' && rule.decision === 'include' && rule.leadId && !rule.clientId) return { toast: '🆕 Lid allaqachon ochilgan' };
+      if (op === 'x' && rule.decision === 'exclude') return { toast: '🚫 Allaqachon shaxsiy' };
+      return { toast: '⚠️ Allaqachon hal qilingan', reply: decidedWords(rule) };
+    }
+  }
   if (op === 'x') {
     await decideChat({ id: ruleId, decision: 'exclude' }, ctx);
     await db
@@ -363,11 +499,6 @@ async function strangerPress(
     return { toast: '🚫 Shaxsiy — saqlanmaydi' };
   }
   if (op === 'n') {
-    // A late press on the card of a chat already bound to a client does not
-    // turn that client's chat into a lead (openLeadForChat clears the client).
-    if (rule.decision === 'include' && rule.clientId) {
-      return { toast: '⚠️', reply: "Bu chat allaqachon mijozga bog'langan — lid ochilmadi." };
-    }
     try {
       // The «📵» card's lead goes by name (his Q18 ⭐) — the one door that may.
       await openLeadForChat(ruleId, ctx, { phoneless: 'agent_stranger' });
@@ -376,6 +507,7 @@ async function strangerPress(
     }
     await queuePull(staffId, rule.peerId);
     await closeRuleCards(staffId, 'AgentStranger', ruleId, () => '🆕 Lid ochildi.');
+    await closeRuleCards(staffId, 'AgentCodeEcho', ruleId, () => '🆕 Chat lid sifatida ochildi.');
     return { toast: '🆕 Lid ochildi' };
   }
   if (op === 'k') {
@@ -390,33 +522,58 @@ async function strangerPress(
     }
     // ↩ takes back what the echo flow wrote — the rule as well as the
     // conversation (I1 A): clearing the conversation alone left the rule
-    // naming the client the owner had just said this chat is NOT.
-    await withdrawTypedBind(staffId, rule, conv);
+    // naming the client the owner had just said this chat is NOT…
+    const withdrawn = await withdrawTypedBind(staffId, rule, conv);
+    // …and nothing it did not write: a chat decided since (here, on the web
+    // tray, even «Bu mijoz» for this very client) is that decision's.
+    if (!withdrawn && rule.decision !== 'pending') {
+      await closeRuleCards(staffId, 'AgentCodeEcho', ruleId, () => '↪️ Eskirgan — chat boshqa joyda hal qilingan.');
+      return { toast: 'Chat boshqa joyda hal qilingan', reply: decidedWords(rule) };
+    }
     await db
       .update(agentConversations)
       .set({ identityClientId: null, identityStrength: null, updatedAt: new Date() })
       .where(and(eq(agentConversations.managerUserId, staffId), eq(agentConversations.peerId, rule.peerId)));
     await closeRuleCards(staffId, 'AgentCodeEcho', ruleId, () => "↩ Bekor qilindi — chat bu mijozga bog'lanmadi.");
+    await reopenStrangerCard(staffId, ruleId);
     return { toast: '↩ Bekor qilindi' };
   }
   // 'c' — the echo was right: the chat is this client's, by a code HE typed.
   if (!conv?.clientId) return { toast: 'Kod topilmadi — qaytadan yozing' };
   // The card confirms the code IT showed (leak-4): a newer typed code needs its own card.
   if (!echoedTail || tailOf(conv.clientId) !== echoedTail) return { toast: 'Kod o‘zgargan — oxirgi kartani tasdiqlang' };
-  // …and the chat as it stood when it was echoed: a decision made since, on
-  // the web tray, is newer than this card (a backlog ✅ never undoes it).
-  if (rule.decidedAt && rule.decidedAt.getTime() > conv.updatedAt.getTime() && !(rule.decision === 'include' && rule.clientId === conv.clientId)) {
+  const confirmed = conv.clientId;
+  if (rule.decision === 'include' && rule.clientId === confirmed) {
+    // Already this client's (a redelivered ✅, or the web tray said the same):
+    // nothing is written twice, and the bind stays whoever made it.
+    await closeRuleCards(staffId, 'AgentCodeEcho', ruleId, (cid) => (cid === confirmed ? '✅ Chat shu mijozga bog‘langan.' : '↪️ Eskirgan — boshqa kod tasdiqlandi.'));
+    await closeRuleCards(staffId, 'AgentStranger', ruleId, () => '👤 Mijozga bog‘langan.');
+    return { toast: '✅ Allaqachon bog‘langan' };
+  }
+  // …and only a chat still in question: a decision made since the echo — on
+  // the web tray, before or after the code was typed — is newer than this
+  // card (a backlog ✅ never undoes it). The pending rule's own clock is
+  // asked too: the web tray may have put the chat back in question after the
+  // echo, and its last word is «ask again», not «this client».
+  if (rule.decision !== 'pending' || (rule.decidedAt && rule.decidedAt.getTime() > conv.updatedAt.getTime())) {
+    await closeRuleCards(staffId, 'AgentCodeEcho', ruleId, () => '↪️ Eskirgan — chat boshqa joyda hal qilingan.');
     return { toast: 'Chat boshqa joyda hal qilingan', reply: "Bu chat kod yozilgandan keyin boshqa joyda (Qaysi chatlar) hal qilingan — karta eskirgan." };
   }
-  await decideChat({ id: ruleId, decision: 'include', clientId: conv.clientId }, ctx);
+  await decideChat({ id: ruleId, decision: 'include', clientId: confirmed }, ctx);
+  // The decision as it was WRITTEN — stamped on the card it confirms, so a ↩
+  // later can tell this bind from one somebody made over it (typedBindStands).
+  const [bound] = await db.select({ decidedAt: tgChatRules.decidedAt }).from(tgChatRules).where(eq(tgChatRules.id, ruleId));
   await db
     .update(agentConversations)
     .set({ identityStrength: 'typed_code', updatedAt: new Date() })
     .where(and(eq(agentConversations.managerUserId, staffId), eq(agentConversations.peerId, rule.peerId)));
   await queuePull(staffId, rule.peerId);
-  const confirmed = conv.clientId;
-  await closeRuleCards(staffId, 'AgentCodeEcho', ruleId, (cid) =>
-    cid === confirmed ? '✅ Tasdiqlandi — chat shu mijozga bog‘landi.' : '↪️ Eskirgan — boshqa kod tasdiqlandi.',
+  await closeRuleCards(
+    staffId,
+    'AgentCodeEcho',
+    ruleId,
+    (cid) => (cid === confirmed ? '✅ Tasdiqlandi — chat shu mijozga bog‘landi.' : '↪️ Eskirgan — boshqa kod tasdiqlandi.'),
+    (cid): Record<string, string> => (cid === confirmed && bound?.decidedAt ? { boundAt: bound.decidedAt.toISOString() } : {}),
   );
   await closeRuleCards(staffId, 'AgentStranger', ruleId, () => '👤 Mijozga bog‘landi.');
   return { toast: '✅ Bog‘landi' };
@@ -437,6 +594,13 @@ async function codeEcho(staffId: string, ruleId: string, text: string): Promise<
   if (!/^[A-Z0-9]{2,10}$/u.test(code)) return 'Kod bitta so‘z bo‘lishi kerak, masalan GS777.';
   const [rule] = await db.select().from(tgChatRules).where(eq(tgChatRules.id, ruleId));
   if (!rule || rule.managerUserId !== staffId) return 'Topilmadi.';
+  const conv = await convIdentity(staffId, rule.peerId);
+  // A code is asked about a chat still in question — or one the flow itself
+  // bound (a second code typed after a ✅, I1 B). A chat the web tray decided
+  // while the wait was armed is that decision's (review I1): no echo, no
+  // card whose ✅ could undo it.
+  const ownBind = await typedBindStands(staffId, rule, conv);
+  if (rule.decision !== 'pending' && !ownBind) return decidedWords(rule);
   const [client] = await db
     .select({ id: clients.id, code: clients.clientCode, name: clients.name, phones: clients.phones })
     .from(clients)
@@ -445,7 +609,7 @@ async function codeEcho(staffId: string, ruleId: string, text: string): Promise<
   // A second code withdraws what the first one bound (I1 B) — the chat is in
   // question again until THIS echo is confirmed — and every older echo card
   // loses its buttons.
-  await withdrawTypedBind(staffId, rule, await convIdentity(staffId, rule.peerId));
+  if (ownBind) await withdrawTypedBind(staffId, rule, conv);
   await closeRuleCards(staffId, 'AgentCodeEcho', ruleId, () => '↪️ Eskirgan — yangi kod yozildi.');
   await db
     .insert(agentConversations)

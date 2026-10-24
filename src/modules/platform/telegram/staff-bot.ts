@@ -756,7 +756,8 @@ function agentButtons(type: string, payload: Record<string, unknown>): BotButton
     return [first, [{ text: '❌ Kerak emas', callback_data: `ag:r:${id}` }, { text: '🙋 Suhbat meniki', callback_data: `ag:h:${id}` }]];
   }
   const requestId = typeof payload.requestId === 'string' && UUID.test(payload.requestId) ? payload.requestId : null;
-  if (type === 'AgentCalcAnswered' && requestId && payload.priceable === true) {
+  // A purged answer card (`live: false`) offers no price: its link went with the chat.
+  if (type === 'AgentCalcAnswered' && requestId && payload.priceable === true && payload.live !== false) {
     return [[{ text: '💵 Narx yozaman', callback_data: `ag:p:${requestId}` }]];
   }
   const ruleId = typeof payload.ruleId === 'string' && UUID.test(payload.ruleId) ? payload.ruleId : null;

@@ -176,7 +176,15 @@ export async function chatProof(
  * chat (review I1), whoever made it: the echo flow's typed code, the web
  * tray's «Bu mijoz» (a stranger card exists only because the number was NOT
  * on any card, leak-4), a lookback attach, and messages a rule stored before
- * it was taken back to pending (↩) — their `client_id` outlives the decision.
+ * it was taken back (↩, a second code, the web tray's «pending» or
+ * «Shaxsiy») — their `client_id` / `lead_id` outlive the decision.
+ *
+ * Such leftovers are HISTORY, not identity: when the rule no longer includes
+ * the chat, a stored client stands only if the chat itself proves it, and a
+ * stored lead not at all. «It serves no cargo» was not enough — the client's
+ * id still scoped the knowledge search, named the customer in the prompt,
+ * and carried a calculation approved later onto that client's deal (review
+ * I1/I7).
  */
 export async function chatIdentity(managerUserId: string, peerId: bigint): Promise<ChatIdentity & { ruleDecision: string | null }> {
   const [newest] = await db
@@ -195,15 +203,22 @@ export async function chatIdentity(managerUserId: string, peerId: bigint): Promi
     .from(agentConversations)
     .where(and(eq(agentConversations.managerUserId, managerUserId), eq(agentConversations.peerId, peerId)));
 
-  const clientId = newest?.clientId ?? null;
-  const leadId = clientId ? null : (newest?.leadId ?? null);
+  let clientId = newest?.clientId ?? null;
+  let leadId = clientId ? null : (newest?.leadId ?? null);
   let strength: IdentityStrength | null = null;
-  let codes: { id: string; clientCode: string }[] = [];
+  let codes: { id: string; clientCode: string }[] = clientId ? await phoneSiblingClients(clientId) : [];
   let customerName: string | null = null;
   let managerId: string | null = null;
   let cargoAllowed = false;
+  // Only the chat's own proof is asked of a rule-derived client, once.
+  const proof = clientId && rule ? await chatProof(managerUserId, peerId, codes.map((x) => x.id), rule.peerPhone) : null;
+  if (rule && rule.decision !== 'include' && proof === null) {
+    // Taken back: the stored messages name nobody this chat now is.
+    clientId = null;
+    leadId = null;
+    codes = [];
+  }
   if (clientId) {
-    codes = await phoneSiblingClients(clientId);
     const [c] = await db
       .select({ name: clients.name, managerId: clients.salesManagerId })
       .from(clients)
@@ -216,7 +231,6 @@ export async function chatIdentity(managerUserId: string, peerId: bigint): Promi
     } else {
       const named = rule.decision === 'include' && rule.clientId === clientId;
       const typed = named && conv?.strength === 'typed_code' && conv.clientId === clientId;
-      const proof = await chatProof(managerUserId, peerId, codes.map((x) => x.id), rule.peerPhone);
       cargoAllowed = proof !== null;
       strength = typed ? 'typed_code' : named ? 'rule' : (proof ?? 'rule');
     }
