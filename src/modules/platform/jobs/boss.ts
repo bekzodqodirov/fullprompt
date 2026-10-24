@@ -193,6 +193,12 @@ export interface EnqueueOptions {
   expireInSeconds?: number;
   /** Retries after the first attempt. */
   retryLimit?: number;
+  /**
+   * Seconds before the job may be claimed — the AI sotuvchi's debounce
+   * (docs/AI-SOTUVCHI.md §17.3): a customer's burst of three lines is one
+   * question, so the worker looks after twelve quiet seconds.
+   */
+  startAfter?: number;
 }
 
 export async function enqueue<T extends object>(

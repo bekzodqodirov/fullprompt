@@ -337,3 +337,45 @@ export async function __restoreAgentConfig(snapshot: AgentConfig | null): Promis
     })
     .where(eq(agentConfig.id, 1));
 }
+
+/**
+ * The machine's own «off» (review ban-2, ban-10, map P13): a restriction, a
+ * second send-path flood in a day, two blocks in a week. Same effect as the
+ * kill switch — no approved reply left to send, no live draft — written with
+ * no actor, because nobody pressed anything. Returns null when the agent was
+ * already off (the alarm is sent once, by the call that switched it).
+ */
+export async function forceAgentOff(reason: string): Promise<ModeChange | null> {
+  if (!(await agentTablesReady())) return null;
+  return db.transaction(async (tx) => {
+    const before = await lockConfig(tx);
+    if (before.mode === 'off') return null;
+    const cancelled = await tx
+      .update(agentOutbox)
+      .set({ status: 'cancelled', lastError: `agent_off: ${reason}`.slice(0, 500) })
+      .where(eq(agentOutbox.status, 'agent'))
+      .returning({ id: agentOutbox.id });
+    const expired = await tx
+      .update(agentDrafts)
+      .set({ status: 'expired', updatedAt: new Date() })
+      .where(inArray(agentDrafts.status, ['pending', 'editing']))
+      .returning({ id: agentDrafts.id });
+    const [row] = await tx
+      .update(agentConfig)
+      .set({ mode: 'off', updatedBy: null, updatedAt: new Date() })
+      .where(eq(agentConfig.id, 1))
+      .returning();
+    await writeAudit(tx, { actorId: null }, {
+      entityType: 'agent_config',
+      entityId: '00000000-0000-0000-0000-000000000136',
+      action: 'update',
+      before: { mode: before.mode },
+      after: { mode: 'off', reason, expired: expired.length, cancelled: cancelled.length },
+    });
+    return {
+      config: toConfig(row!),
+      expiredDraftIds: expired.map((r) => r.id),
+      cancelledOutboxIds: cancelled.map((r) => r.id),
+    };
+  });
+}
