@@ -148,8 +148,9 @@ describe('the truck’s minimum and avia (his 7, 2026-10-24)', () => {
       expect.arrayContaining([
         { value: 637.5, kind: 'money', label: 'avia (tarif × kg)', origin: 'tool' },
         { value: 17, kind: 'money', label: 'avia tarifi', origin: 'tool' },
-        { value: AGENT_LIMITS.avia.daysMin, kind: 'duration', label: 'avia muddati', origin: 'tool' },
-        { value: AGENT_LIMITS.avia.daysMax, kind: 'duration', label: 'avia muddati', origin: 'tool' },
+        // The days are a FLIGHT's — never a truck's figure (fix round).
+        { value: AGENT_LIMITS.avia.daysMin, kind: 'duration', label: 'avia muddati', origin: 'tool', mode: 'air' },
+        { value: AGENT_LIMITS.avia.daysMax, kind: 'duration', label: 'avia muddati', origin: 'tool', mode: 'air' },
       ]),
     );
   });

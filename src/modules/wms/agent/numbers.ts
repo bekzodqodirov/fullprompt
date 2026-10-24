@@ -60,6 +60,54 @@ export interface NumberSource {
    * without it.
    */
   origin?: SourceOrigin;
+  /**
+   * The road a DURATION is the time of (fix round): the avia tool's and the
+   * avia fact's «2–5 kun» are a flight's, the website's and the transit
+   * fact's «15–25 kun» a truck's. Every chat's memory carries both seeded
+   * facts, so without it «Odatda mashina bilan 5 kunda yetib keladi» was
+   * backed by the AVIA fact's five. Absent = said of no road in particular.
+   */
+  mode?: TravelMode;
+}
+
+/** How cargo travels — the three roads a day count can be the time of. */
+export type TravelMode = 'air' | 'road' | 'rail';
+
+/**
+ * The words that name each road, in the six languages. «Avto» and «авто» are
+ * the road's — but not «avtomat», «автор». A truck carries goods that are
+ * machines too («kir yuvish mashinasi»); that reads as the road, which can
+ * only make a flight's figure unusable, never the reverse.
+ */
+const MODE_WORDS: Record<TravelMode, RegExp> = {
+  air: /(?<![\p{L}])(?:avia\p{L}*|samol[yi]?ot\p{L}*|авиа\p{L}*|самол[её]т\p{L}*|air(?:freight|cargo)?|by\s+air|flights?|plane)(?![\p{L}])|هوایی|هواپیما|空运|航空|飞机/iu,
+  road: /(?<![\p{L}])(?:mashina\p{L}*|avto(?![mr])\p{L}*|avtomobil\p{L}*|fura\p{L}*|машин\p{L}*|авто(?![мр])\p{L}*|автомобил\p{L}*|фур[аыуе]\p{L}*|trucks?|trucking|by\s+road|road\s+freight)(?![\p{L}])|کامیون|زمینی|汽运|陆运|卡车|汽车/iu,
+  rail: /(?<![\p{L}])(?:temir\s*yo['‘’ʻ`]?l\p{L}*|poyezd\p{L}*|темир\s*йўл\p{L}*|поезд\p{L}*|железн\p{L}*\s+дорог\p{L}*|ж\/д|rail\p{L}*|trains?)(?![\p{L}])|قطار|راه\s*آهن|铁路|火车/iu,
+};
+
+/** The one road a text names, or null — none, or more than one. */
+export function oneModeIn(text: string): TravelMode | null {
+  const named = (Object.keys(MODE_WORDS) as TravelMode[]).filter((m) => MODE_WORDS[m].test(text));
+  return named.length === 1 ? named[0]! : null;
+}
+
+/** A figure's road: the one its clause names, else its sentence's, else the whole text's — or null. */
+function modeAt(text: string, index: number): TravelMode | null {
+  const span = (boundary: RegExp): string => {
+    let start = 0;
+    let end = text.length;
+    for (const m of text.matchAll(boundary)) {
+      if (m.index + m[0].length <= index) start = m.index + m[0].length;
+      else if (m.index >= index) {
+        end = m.index;
+        break;
+      }
+    }
+    return text.slice(start, end);
+  };
+  // A comma or a dash between two digits is inside a figure («1,5», «15–25»), not between clauses.
+  const clause = /(?<!\d)[,—–]|[,—–](?!\d)|[;:!?؟。！？\n]+|\.(?=\s|$)|\s-\s/gu;
+  return oneModeIn(span(clause)) ?? oneModeIn(span(/[!?؟。！？\n]+|\.(?=\s|$)/gu)) ?? oneModeIn(text);
 }
 
 export interface LedgerEntry {
@@ -92,23 +140,57 @@ const MONEY_BEFORE = new RegExp(`(?:${CURRENCY_BEFORE_SRC})\\s*:?\\s*$`, 'iu');
 const MONEY_GLUED_BEFORE = new RegExp(`(?:${CURRENCY_BEFORE_SRC}|(?<![\\p{L}])us)$`, 'iu');
 const MEASURE_AFTER =
   /^\s*(?:kg\b|кг\b|kilo\w*|кило\w*|kub\w*|куб\w*|m3\b|м3\b|m³|м³|m2\b|м2\b|tonna\w*|тонн\w*|公斤|千克|吨|立方|کیلو\w*|متر\s*مکعب|کیلوگرم)/iu;
+/**
+ * The word a day count is written with. A working or a calendar day is a
+ * day too (fix round): «5 ish kunida», «через 5 рабочих дней», «in 5
+ * business days», «5 sutkada» read as bare figures, a bare figure takes any
+ * source — the customer's own «5 kunda kelsinmi?» among them — and G2 saw no
+ * duration to judge.
+ */
 const DURATION_AFTER =
-  /^\s*(?:kun\w*|кун\w*|день|дн[яейь]\w*|сут\w*|day\w*|天|日|روز|hafta\w*|ҳафта\w*|недел\w*|week\w*|周|星期|هفته|soat\w*|соат\w*|час\w*|hour\w*|小时|ساعت|oy\b|ой\b|месяц\w*|month\w*|个月|ماه|daqiqa\w*|дақиқа\w*|минут\w*|minute\w*|分钟|دقیقه)/iu;
+  /^\s*(?:(?:ish|иш)\s+(?:kun\w*|кун\w*)|(?:рабоч|календарн)\p{L}*\s+(?:дн\p{L}*|день|сут\p{L}*)|(?:business|working|calendar)\s+day\w*|个?工作(?:日|天)|kun\w*|кун\w*|день|дн[яейь]\w*|сут\w*|sutka\w*|day\w*|天|日|روز|hafta\w*|ҳафта\w*|недел\w*|week\w*|周|星期|هفته|soat\w*|соат\w*|час\w*|hour\w*|小时|ساعت|oy\b|ой\b|месяц\w*|month\w*|个月|ماه|daqiqa\w*|дақиқа\w*|минут\w*|minute\w*|分钟|دقیقه)/iu;
 const COUNT_AFTER =
   /^\s*(?:ta\b|та\b|dona\w*|дона\w*|шт\w*|штук\w*|pcs\b|piece\w*|karobka\w*|коробк\w*|box\w*|carton\w*|件|个|箱|عدد|کارتن|جعبه|mesta\b|мест\w*|joy\b|quti\w*|қути\w*)/iu;
 const PERCENT_AFTER = /^\s*(?:%|٪|foiz\w*|фоиз\w*|процент\w*|percent\w*)/iu;
 /**
  * A month after a day. Each stem ends where its month does (policy review B4):
  * «2 marta» is TWICE, not the second of March, so «Mashina haftada 2 marta
- * chiqadi» asked for a date source; «5 mayda» stays May but «5 maydon» is
- * not, «5 майка» is five T-shirts, «2 separate boxes» no September, and the
- * English stems are words of their own, never the head of «marta», «market»,
- * «decimal». Russian «2 марта» is left a date — it is the Russian «of March»
- * (the Uzbek Cyrillic «марта» is «times», and the two cannot be told apart
- * here; a bare figure source backs either reading).
+ * chiqadi» asked for a date source; «5 maydon» is no May, «5 майка» is five
+ * T-shirts, «2 separate boxes» no September, and the English stems are words
+ * of their own, never the head of «marta», «market», «decimal».
+ *
+ * The fix round found the same trap three more ways, and the opposite one:
+ *  - «mayda» / «майда» is also the Uzbek «small» — «30 mayda quti» is thirty
+ *    small boxes, and as a date it was a figure only the company could vouch
+ *    for, so the customer's own count could not be repeated back: before a
+ *    thing that is counted it is no May;
+ *  - the Uzbek Cyrillic «2 марта» is «twice» where the Russian is «of March»:
+ *    in a text that writes the Uzbek letters (ў қ ғ ҳ) it is no date, and
+ *    «мартаба» never is one;
+ *  - «Box 2 may arrive» is the English modal before its verb;
+ *  - and the other way, «5-mayigacha», «5-mayni», «5-майигача» (the
+ *    possessive and the accusative) and «sentyabr», «oktyabr» (the common
+ *    Latin spellings) ARE dates — read as bare figures they took any source.
  */
-const MONTH_AFTER =
-  /^\s*-?\s*(?:(?:yanvar|fevral|mart(?!a)|aprel|may(?=da|dan|ga|gacha|ning|(?![\p{L}]))|iyun|iyul|avgust|sentabr|oktabr|noyabr|dekabr|январ|феврал|март|апрел|ма[яй](?=да|дан|га|гача|нинг|(?![\p{L}]))|июн|июл|август|сентябр|октябр|ноябр|декабр)|(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?![\p{L}])|月)/iu;
+const MAY_ENDING = '(?:i(?:ga|gacha|dan|da|ning|ni)?|ni|da|dan|ga|gacha|ning)?';
+const MAY_ENDING_CYRL = '(?:и(?:га|гача|дан|да|нинг|ни)?|ни|да|дан|га|гача|нинг)?';
+/** What «mayda» means «small» before, and what English «may» is a modal before. */
+const NOT_MAY_AFTER =
+  '(?:-?\\s*(?:chuyda|чуйда)|\\s+(?:quti|karobka|korobka|yuk|tovar|posilka|paket|narsa|detal|qism|buyum|қути|коробк|юк|товар|посилка|пакет|нарса|детал|қисм|буюм)|' +
+  '\\s+(?:be|not|arrive|take|need|come|have|get|vary|change|cost|differ|require|depend|reach|leave|also|still|only|already|apply|exceed|include|contain|weigh)(?![\\p{L}]))';
+const MONTH_AFTER = new RegExp(
+  '^\\s*-?\\s*(?:(?:yanvar|fevral|mart(?!a)|aprel|' +
+    `may${MAY_ENDING}(?![\\p{L}])(?!${NOT_MAY_AFTER})|` +
+    'iyun|iyul|avgust|sent(?:y)?abr|okt(?:y)?abr|noyabr|dekabr|январ|феврал|март(?!аба)|апрел|' +
+    `ма(?:я|й${MAY_ENDING_CYRL})(?![\\p{L}])(?!${NOT_MAY_AFTER})|` +
+    'июн|июл|август|сентябр|октябр|ноябр|декабр)|' +
+    '(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?![\\p{L}])|月)',
+  'iu',
+);
+/** The Uzbek Cyrillic «марта» — «times» — after a figure, in a text that writes the Uzbek letters. */
+const UZ_CYRL_TIMES = /^\s*марта(?![\p{L}])/iu;
+const UZ_CYRL_LETTERS = /[ўқғҳ]/iu;
+
 /** A range: «15-25 kun», «15 dan 25 gacha», «15 до 25». The unit after the second number names both. */
 const RANGE_TAIL = /^\s*(?:[-–—~]|dan|до|to|تا|到|至)\s*\d+(?:[.,]\d+)?(?:\s*(?:gacha|гача))?/iu;
 
@@ -195,7 +277,7 @@ function readAt(text: string, start: number, end: number): Reading {
   if (MONEY_AFTER.test(tail)) return at('money');
   if (MEASURE_AFTER.test(tail)) return at('measure');
   if (DURATION_AFTER.test(tail)) return at('duration');
-  if (MONTH_AFTER.test(tail)) return at('date');
+  if (MONTH_AFTER.test(tail) && !(UZ_CYRL_TIMES.test(tail) && UZ_CYRL_LETTERS.test(text))) return at('date');
   if (COUNT_AFTER.test(tail)) return at('count');
   // «480 ming», «1,5 mln» with no unit: a scaled figure is money.
   return at(scale === 1 ? 'plain' : 'money');
@@ -299,11 +381,18 @@ const companySaid = (s: NumberSource) => s.origin === 'tool' || s.origin === 'kb
  * source and nothing else will do; every other kind takes a source of its
  * own kind, and a bare figure takes any source but the customer's money.
  */
-export function sourceFor(found: FoundNumber, sources: readonly NumberSource[]): NumberSource | null {
+export function sourceFor(
+  found: FoundNumber,
+  sources: readonly NumberSource[],
+  mode: TravelMode | null = null,
+): NumberSource | null {
   const fits = (s: NumberSource) => {
     if (!sameValue(s.value, found.value)) return false;
     if (s.kind === 'customer_money') return false;
     if (COMPANY_KINDS.has(found.kind) && !companySaid(s)) return false;
+    // A day count said of one road is never vouched for by another road's: a truck's «5 kunda» on the
+    // flight's five is a promise nobody made.
+    if (found.kind === 'duration' && mode !== null && s.mode !== undefined && s.mode !== mode) return false;
     if (found.kind === 'money') return s.kind === 'money';
     if (found.kind === 'plain') return true;
     // A measure can be stated as a bare count of the same thing and vice versa.
@@ -313,16 +402,24 @@ export function sourceFor(found: FoundNumber, sources: readonly NumberSource[]):
   return sources.find(fits) ?? null;
 }
 
-/** The ledger for one text: each figure beside the source that let it through. */
+/**
+ * The ledger for one text: each figure beside the source that let it through.
+ * A day count takes the road its clause, its sentence or the text names, and
+ * when the text names none, `askedMode` — the one road the customer asked
+ * about: «Mashinada 5 kunda kelsinmi?» → «Odatda 5 kunda yetib keladi» is
+ * the truck's time.
+ */
 export function numberLedger(
   text: string,
   sources: readonly NumberSource[],
   removeWhole: readonly string[] = [],
+  askedMode: TravelMode | null = null,
 ): LedgerEntry[] {
+  const t = blanked(text, removeWhole);
   return extractNumbers(text, removeWhole).map((f) => ({
     raw: f.raw,
     kind: f.kind,
-    source: sourceFor(f, sources)?.label ?? null,
+    source: sourceFor(f, sources, f.kind === 'duration' ? (modeAt(t, f.index) ?? askedMode) : null)?.label ?? null,
   }));
 }
 
@@ -354,10 +451,16 @@ export function customerSources(texts: readonly { text: string; label: string }[
  * figure of a fact is still never a money source (money-9).
  */
 export function factSources(text: string, label: string): NumberSource[] {
-  return extractNumbers(text).map((f) => ({
-    value: f.value,
-    kind: f.kind === 'money' ? 'customer_money' : f.kind,
-    label,
-    origin: 'kb' as const,
-  }));
+  const t = blanked(text, []);
+  return extractNumbers(text).map((f): NumberSource => {
+    // The road a fact's day count is the time of — its own clause's, sentence's or the fact's.
+    const mode = f.kind === 'duration' ? modeAt(t, f.index) : null;
+    return {
+      value: f.value,
+      kind: f.kind === 'money' ? 'customer_money' : f.kind,
+      label,
+      origin: 'kb',
+      ...(mode ? { mode } : {}),
+    };
+  });
 }

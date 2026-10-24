@@ -5,7 +5,7 @@ import { getSetting } from '../../platform/settings/service';
 import { canLogInSql } from '../../platform/users/login';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import type { AgentLocale, ScriptName } from './locale';
-import { customerSources, urlsIn, type NumberSource } from './numbers';
+import { customerSources, urlsIn, type NumberSource, type TravelMode } from './numbers';
 import { checkAgentReply, checkOwnerReply, codeCandidatesIn, textFingerprint, type PolicyResult } from './policy';
 
 /**
@@ -34,6 +34,8 @@ export interface PolicyMemory {
   fromOurWarehouse?: boolean;
   /** The approved facts' name words (`nameWordsOf`, B9) — a colleague a fact names is the fact's. */
   factNameWords?: string[];
+  /** The one road the customer asked about — a reply's day count naming none is that road's. Absent = none known. */
+  askedMode?: TravelMode | null;
   ownCodes: string[];
   /** The customer's own manager — the one staff name a reply may carry. */
   managerName: string | null;
@@ -147,6 +149,7 @@ export async function policyFor(input: {
     hasEstimate: input.memory.hasEstimate,
     fromOurWarehouse: input.memory.fromOurWarehouse === true,
     factNameWords: input.memory.factNameWords ?? [],
+    askedMode: input.memory.askedMode ?? null,
   });
 }
 

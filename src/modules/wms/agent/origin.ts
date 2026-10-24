@@ -20,6 +20,8 @@ interface Place {
   place: string;
   zone: OriginZone | null;
   re: RegExp;
+  /** A province, not a city: «Zhejiang» on a warehouse's address is where it stands, never where a customer's cargo starts. */
+  province?: true;
 }
 
 // Start-of-word anchors where a short spelling is the tail of another word
@@ -28,21 +30,59 @@ interface Place {
 // customer names — so the Kashgar spelling never runs on into «-adar…».
 // «Иу» is the Russian Yiwu, written alone or with an Uzbek case ending
 // («Иудан»), and never the start of a longer word.
+//
+// The coast is listed wide (fix round): a Chinese city missing here read as
+// «nothing named», so «Dongguandan Toshkentga» was refused as «qayerdan
+// jo'natilishi aytilmagan» — the customer asked where his cargo comes from —
+// and a podklyuch job from it landed with no zone and no factory-leg note.
+// Each place is written as customers write it: Latin (the Uzbek spellings
+// too), Russian, Chinese, Persian.
+const L = '(?<![\\p{L}])';
+const cn = (place: string, spellings: string, province?: true): Place => ({
+  place,
+  zone: 'cn',
+  re: new RegExp(spellings, 'iu'),
+  ...(province ? { province } : {}),
+});
 const PLACES: readonly Place[] = [
-  { place: 'Qashqar', zone: 'kashgar', re: /kashg|qashq(?!adar)|кашг|қашқ(?!адар)|喀什/iu },
-  { place: 'Horgos', zone: 'horgos', re: /horgo|xorgo|хорго|霍尔果斯/iu },
-  { place: 'Urumchi', zone: null, re: /urumch|урумч|乌鲁木齐/iu },
+  { place: 'Qashqar', zone: 'kashgar', re: /kashg|qashq(?!adar)|кашг|қашқ(?!адар)|喀什|کاشغر/iu },
+  { place: 'Horgos', zone: 'horgos', re: /horgo|xorgo|хорго|霍尔果斯|خورگوس/iu },
+  { place: 'Urumchi', zone: null, re: /urumch|урумч|乌鲁木齐|اورومچی/iu },
   {
     place: 'Yiwu',
     zone: 'cn',
-    re: /(?<!\p{L})(?:yiwu|ivu|иву|иу(?:дан|даги|да|га|нинг)?(?!\p{L}))|义乌/iu,
+    re: /(?<!\p{L})(?:yiwu|ivu|иву|иу(?:дан|даги|да|га|нинг)?(?!\p{L}))|义乌|ییوو/iu,
   },
-  { place: 'Guangzhou', zone: 'cn', re: /guangzhou|guanchjou|гуанчжоу|广州/iu },
-  { place: 'Foshan', zone: 'cn', re: /foshan|фошань|佛山/iu },
-  { place: 'Shenzhen', zone: 'cn', re: /shenzhen|шэньчжэнь|шеньчжень|深圳/iu },
-  { place: 'Shanghai', zone: 'cn', re: /shanghai|шанхай|上海/iu },
-  { place: 'Ningbo', zone: 'cn', re: /ningbo|нинбо|宁波/iu },
-  { place: 'Beijing', zone: 'cn', re: /beijing|pekin|пекин|北京/iu },
+  cn('Guangzhou', 'guangzhou|guanchjou|guanjou|гуанчжоу|广州|گوانگژو'),
+  cn('Foshan', 'foshan|фошань|佛山|فوشان'),
+  cn('Shenzhen', 'shenzhen|shenchjen|shenjen|шэньчжэнь|шеньчжень|深圳|شنژن'),
+  cn('Shanghai', 'shanghai|shanxay|shanxai|шанхай|上海|شانگهای'),
+  cn('Ningbo', 'ningbo|нинбо|宁波|نینگبو'),
+  cn('Beijing', `beijing|${L}pekin|${L}пекин|北京|پکن`),
+  cn('Dongguan', 'dongguan|dunguan|donguan|дунгуань|东莞|دونگوان'),
+  cn('Hangzhou', 'hangzhou|xanchjou|hanchjou|ханчжоу|杭州|هانگژو'),
+  cn('Jinhua', 'jinhua|цзиньхуа|金华|جینهوا'),
+  cn('Wenzhou', 'wenzhou|venchjou|вэньчжоу|венчжоу|温州'),
+  cn('Xiamen', 'xiamen|сямынь|сямэнь|厦门|شیامن'),
+  cn('Qingdao', 'qingdao|tsindao|циндао|青岛|چینگدائو'),
+  cn('Tianjin', 'tianjin|тяньцзинь|天津|تیانجین'),
+  cn('Suzhou', 'suzhou|сучжоу|苏州'),
+  cn('Quanzhou', 'quanzhou|цюаньчжоу|泉州'),
+  cn('Shantou', 'shantou|шаньтоу|汕头'),
+  cn('Zhongshan', 'zhongshan|чжуншань|中山'),
+  cn('Linyi', `${L}linyi|${L}линьи|临沂`),
+  cn('Baigou', 'baigou|байгоу|白沟'),
+  cn('Chengdu', 'chengdu|чэнду|成都'),
+  cn('Chongqing', 'chongqing|чунцин|重庆'),
+  cn('Wuhan', `${L}wuhan|${L}ухань|武汉`),
+  cn('Zhengzhou', 'zhengzhou|чжэнчжоу|郑州'),
+  cn('Nanjing', `nanjing|${L}нанкин|南京`),
+  cn('Hong Kong', 'hong\\s*kong|gonkong|гонконг|香港|هنگ\\s*کنگ'),
+  cn('Guangdong', 'guangdong|guandun|гуандун|广东|گوانگدونگ', true),
+  cn('Zhejiang', 'zhejiang|чжэцзян|浙江', true),
+  cn('Fujian', 'fujian|фуцзянь|福建', true),
+  cn('Jiangsu', 'jiangsu|цзянсу|江苏', true),
+  cn('Shandong', 'shandong|шаньдун|山东', true),
 ];
 
 /**
@@ -112,9 +152,13 @@ export function quoteOrigin(text: string | null, ours: ReadonlySet<string>): Quo
  * are one place.
  */
 export function placesOf(rows: readonly { name: string; code?: string | null; address?: string | null }[]): Set<string> {
+  const provinces = new Set(PLACES.filter((p) => p.province).map((p) => p.place));
   const out = new Set<string>();
   for (const r of rows) {
-    for (const p of namedOrigins([r.name, r.code ?? '', r.address ?? ''].join('\n'))) out.add(p.place);
+    for (const p of namedOrigins([r.name, r.code ?? '', r.address ?? ''].join('\n'))) {
+      // «Yiwu, Zhejiang» stands in Yiwu: a customer's «Zhejiangdan» names a province, priced from our warehouse.
+      if (!provinces.has(p.place)) out.add(p.place);
+    }
   }
   return out;
 }

@@ -46,6 +46,8 @@ import { announceAgentCalc, handleHandBack, HAND_BACK_RETRY_S, priceDraftFromTex
 import { readAgentConfig, __restoreAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
 import { decideDraft, noteIdFor } from '@/modules/wms/agent/decide';
 import { priceReplyText } from '@/modules/wms/agent/price-reply';
+import { AGENT_LOCALES } from '@/modules/wms/agent/locale';
+import { WAREHOUSE_SENTENCES } from '@/modules/wms/agent/policy';
 import { JOB_AGENT_HAND_BACK } from '@/modules/wms/agent/queues';
 import { handleInbound, runOwnerTriggered } from '@/modules/wms/agent/run';
 import { RAIL_OWNER_QUESTION } from '@/modules/wms/agent/worthy';
@@ -633,13 +635,21 @@ describe('«from China» is priced from our China warehouses, and the reply says
 
   it('the website figure on the China column, blocked until both sentences are in the reply', async () => {
     const a = await inbound("Xitoydan Toshkentga 5 kub 1000 kg yuk bor, yo'lkira qancha bo'ladi?");
-    const bare = await handleInbound(job(a), {
-      callModel: scripted([
-        { name: 'yolkira_estimate', input: { weight_ref: 'w1', volume_ref: 'v1' } },
-        compose("Yo'lkira taxminan 800 $ bo'ladi. Boj va QQS alohida hisoblanadi."),
-      ]),
-    });
+    const model = scripted([
+      { name: 'yolkira_estimate', input: { weight_ref: 'w1', volume_ref: 'v1' } },
+      compose("Yo'lkira taxminan 800 $ bo'ladi. Boj va QQS alohida hisoblanadi."),
+    ]);
+    const bare = await handleInbound(job(a), { callModel: model });
     expect(bare).toMatchObject({ outcome: 'draft', blocked: true });
+    // The tool hands the model both sentences in every language it may answer in — a Persian, Chinese or
+    // Uzbek Cyrillic reply had to invent its own words before, against a check that asks for exact ones.
+    const toolText = model.requests[1]!.messages
+      .flatMap((m) => m.content)
+      .find((x): x is { type: 'tool_result'; tool_use_id: string; content: string } => x.type === 'tool_result')!.content;
+    for (const l of AGENT_LOCALES) {
+      expect(toolText, l).toContain(WAREHOUSE_SENTENCES[l].condition);
+      expect(toolText, l).toContain(WAREHOUSE_SENTENCES[l].factory);
+    }
     const d = await liveDraft();
     expect((d!.policy as { blocks: { code: string }[] }).blocks.map((x) => x.code)).toEqual(['warehouse_condition']);
     expect((d!.policy as { memory: { fromOurWarehouse?: boolean } }).memory.fromOurWarehouse).toBe(true);
@@ -685,5 +695,63 @@ describe('«from China» is priced from our China warehouses, and the reply says
     expect(req).toMatchObject({ freightZone: 'cn', fromCity: 'Xitoy' });
     const [note] = await db.select({ note: crmActivities.note }).from(crmActivities).where(eq(crmActivities.id, noteIdFor(d!.id)));
     expect(note!.note).toContain('Narx Xitoydagi omborimizdan; zavoddan omborgacha olib kelish alohida.');
+  });
+
+  it('…and so does one from a Chinese city we have no warehouse in — Dongguan, which read as «not said» (fix round)', async () => {
+    const a = await inbound('Dongguandan Toshkentga podklyuch kerak: 3 kub 500 kg, kurtka 100 dona');
+    const out = await handleInbound(job(a), {
+      callModel: scripted([
+        { name: 'calc_checklist', input: { section: 'podklyuch', goods: [{ name: 'kurtka', quantity: 100, weight_kg: null }] } },
+        compose('Hisoblatishga yubordim, javob kelishi bilan aytaman.', {
+          category: 'qualification',
+          next_step: 'calc',
+          actions: [{ type: 'calc_submit', section: 'podklyuch', cited_message_refs: ['#1'], date: '', note: '' }],
+        }),
+      ]),
+    });
+    expect(out).toMatchObject({ outcome: 'draft', blocked: false });
+    const d = await liveDraft();
+    expect((d!.actions as { fromOurWarehouse?: boolean }[])[0]!.fromOurWarehouse).toBe(true);
+    expect(await decideDraft(actor(), d!.id, 'send', { digest: await cardDigestOf(d!.id) }, ctx())).toMatchObject({ ok: true });
+    const [req] = await db.select().from(calcRequests).where(eq(calcRequests.noteId, noteIdFor(d!.id)));
+    expect(req).toMatchObject({ freightZone: 'cn', fromCity: 'Dongguan' });
+    const [note] = await db.select({ note: crmActivities.note }).from(crmActivities).where(eq(crmActivities.id, noteIdFor(d!.id)));
+    expect(note!.note).toContain('Narx Xitoydagi omborimizdan; zavoddan omborgacha olib kelish alohida.');
+  });
+});
+
+describe('a day count is the time of the road the customer asked about (fix round)', () => {
+  it('«mashinada 5 kunda kelsinmi?» is not answered on the avia tool’s five — at the write, and the memory says why', async () => {
+    const a = await inbound('40 kg yuk bor, mashinada 5 kunda kelsinmi?');
+    const out = await handleInbound(job(a), {
+      callModel: scripted([{ name: 'avia_estimate', input: { weight_ref: 'w1' } }, compose('Odatda 5 kunda yetib keladi.')]),
+    });
+    expect(out).toMatchObject({ outcome: 'draft', blocked: true });
+    const d = await liveDraft();
+    const policy = d!.policy as { blocks: { code: string; detail?: string }[]; memory: { askedMode?: string | null } };
+    expect(policy.blocks).toContainEqual(expect.objectContaining({ code: 'number_unsourced', detail: '5' }));
+    expect(policy.memory.askedMode).toBe('road');
+  });
+
+  it('the website’s truck days are no flight’s: «Avia bilan … 15-25 kunda» on them is unsourced', async () => {
+    const a = await inbound("Xitoydan Toshkentga 5 kub 1000 kg yuk bor, qancha kunda keladi?");
+    const out = await handleInbound(job(a), {
+      callModel: scripted([
+        { name: 'yolkira_estimate', input: { weight_ref: 'w1', volume_ref: 'v1' } },
+        compose('Avia bilan taxminan 15-25 kunda yetib boradi.'),
+      ]),
+    });
+    expect(out).toMatchObject({ outcome: 'draft', blocked: true });
+    const d = await liveDraft();
+    const blocks = (d!.policy as { blocks: { code: string; detail?: string }[] }).blocks;
+    expect(blocks).toContainEqual(expect.objectContaining({ code: 'number_unsourced', detail: '15' }));
+  });
+
+  it('…while the same five, asked about avia, is the flight’s and passes', async () => {
+    const a = await inbound('40 kg yuk bor, avia bilan necha kunda keladi?');
+    const out = await handleInbound(job(a), {
+      callModel: scripted([{ name: 'avia_estimate', input: { weight_ref: 'w1' } }, compose('Odatda 2-5 kunda yetib boradi.')]),
+    });
+    expect(out).toMatchObject({ outcome: 'draft', blocked: false });
   });
 });

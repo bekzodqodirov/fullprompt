@@ -14,7 +14,7 @@ import { AGENT_LIMITS } from './limits';
 import { AGENT_LOCALES } from './locale';
 import { namedOrigin, placesOf, quoteOrigin, type QuoteOrigin } from './origin';
 import { customerSources, extractNumbers, factSources, type NumberSource } from './numbers';
-import { WAREHOUSE_SENTENCES } from './policy';
+import { warehouseSentencesText } from './policy';
 import { SITE_TARIFF, siteEstimate } from './site-estimate';
 import type { AgentContext, MeasureCandidate } from './context';
 import type { KbHit } from './kb';
@@ -380,15 +380,13 @@ async function yolkira(input: Record<string, unknown>, env: ToolEnv): Promise<To
   if (!same) {
     return { ...refuse("sayt va /admin/tarif farq qiladi"), tariffMismatch: true };
   }
-  const w = WAREHOUSE_SENTENCES;
   const text =
     `Taxminiy yo'lkira (sayt kalkulyatori): ${e.total} $ — ${e.unit === 'kg' ? `${e.rate} $/kg` : `${e.rate} $/kub`}, ` +
     `zichlik ${e.densityKgM3 ?? '—'} kg/kub, ${m3} kub, ${kg} kg; muddat ${e.days[0]}-${e.days[1]} kun (va'da emas). ` +
     `Boj va QQS bu narxga KIRMAYDI.` +
     (fromOurWarehouse
       ? ` Mijoz faqat Xitoyni yoki omborimiz yo'q joyni aytdi — bu narx Xitoydagi OMBORIMIZDAN. Narxni aytsang, mijoz tilida ` +
-        `ikkala jumla ham bo'lsin: «${w.uz.condition}» va «${w.uz.factory}» (ru «${w.ru.condition}» «${w.ru.factory}», ` +
-        `en «${w.en.condition}» «${w.en.factory}»).`
+        `ikkala jumla ham bo'lsin — har tilda aynan shu: ${warehouseSentencesText()}.`
       : '');
   return {
     ok: true,
@@ -398,8 +396,9 @@ async function yolkira(input: Record<string, unknown>, env: ToolEnv): Promise<To
     sources: [
       { value: e.total, kind: 'money', label: "yo'lkira (sayt kalkulyatori)", origin: 'tool' },
       { value: e.rate, kind: 'money', label: "yo'lkira tarifi (sayt)", origin: 'tool' },
-      { value: e.days[0], kind: 'duration', label: 'sayt muddati', origin: 'tool' },
-      { value: e.days[1], kind: 'duration', label: 'sayt muddati', origin: 'tool' },
+      // The website's days are the TRUCK's — never a flight's figure.
+      { value: e.days[0], kind: 'duration', label: 'sayt muddati', origin: 'tool', mode: 'road' },
+      { value: e.days[1], kind: 'duration', label: 'sayt muddati', origin: 'tool', mode: 'road' },
       { value: m3, kind: 'measure', label: `mijoz ${volume.messageRef}`, origin: 'tool' },
       { value: kg, kind: 'measure', label: `mijoz ${weight.messageRef}`, origin: 'tool' },
       ...(e.densityKgM3 ? [{ value: e.densityKgM3, kind: 'measure' as const, label: 'zichlik (hisob)', origin: 'tool' as const }] : []),
@@ -458,8 +457,8 @@ function avia(input: Record<string, unknown>, env: ToolEnv): ToolOutcome {
     sources: [
       { value: total, kind: 'money', label: 'avia (tarif × kg)', origin: 'tool' },
       { value: rate, kind: 'money', label: AVIA_RATE_LABEL, origin: 'tool' },
-      { value: daysMin, kind: 'duration', label: 'avia muddati', origin: 'tool' },
-      { value: daysMax, kind: 'duration', label: 'avia muddati', origin: 'tool' },
+      { value: daysMin, kind: 'duration', label: 'avia muddati', origin: 'tool', mode: 'air' },
+      { value: daysMax, kind: 'duration', label: 'avia muddati', origin: 'tool', mode: 'air' },
       { value: kg, kind: 'measure', label: `mijoz ${weight.messageRef}`, origin: 'tool' },
     ],
   };

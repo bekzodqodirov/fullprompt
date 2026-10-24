@@ -1,8 +1,17 @@
 import { codeCandidates } from '../calc/channel-post';
 import { normalizeDigits, SPELLED_DURATION_SRC, unverifiableNumeral } from './digits';
 import { AGENT_LIMITS } from './limits';
-import { dominantScript, scriptOf, type AgentLocale, type ScriptName } from './locale';
-import { extractNumbers, numberLedger, phoneDigits, PHONE_RE, urlsIn, type LedgerEntry, type NumberSource } from './numbers';
+import { AGENT_LOCALES, dominantScript, scriptOf, type AgentLocale, type ScriptName } from './locale';
+import {
+  extractNumbers,
+  numberLedger,
+  phoneDigits,
+  PHONE_RE,
+  urlsIn,
+  type LedgerEntry,
+  type NumberSource,
+  type TravelMode,
+} from './numbers';
 
 /**
  * The rules a reply must pass before ✅ exists (spec §6, review §17.6).
@@ -392,6 +401,41 @@ function durationsIn(clause: string): [number, number][] {
   return out;
 }
 
+/**
+ * The NOUNS made of the travel verbs — «yetib borishi», «jo'natilishi»,
+ * «yetkazib berish», «доставка», «отправка» — which name the trip and say
+ * nothing about when this cargo comes: «…, yetib borishi 2-5 kun» is the
+ * earlier clause's estimate said again. The Uzbek «-ish» noun ends there, or
+ * takes a case or a possessive; «jo'natishadi», «yetib kelishadi» go on into a
+ * verb ending and are verbs.
+ */
+const UZ_NOUN_END = '(?:i|ni|ga|da|dan|ning|i(?:ga|da|dan|ni|ning)|lari\\p{L}*)?(?![\\p{L}])';
+const VERBAL_NOUN = new RegExp(
+  [
+    `(?<![\\p{L}])(?:jo${AP}?nat|yubor|yetkaz)(?:il)?ish${UZ_NOUN_END}`,
+    `(?<![\\p{L}])(?:jo${AP}?nat|yubor|yetkaz)ib\\s+(?:ber|yubor)(?:il)?ish${UZ_NOUN_END}`,
+    `(?<![\\p{L}])yetib\\s+(?:kel|bor)ish${UZ_NOUN_END}`,
+    '(?<![\\p{L}])(?:жўнат|юбор|етказ)(?:ил)?иш(?:и|ни|га|да|дан|нинг|и(?:га|да|дан|ни|нинг))?(?![\\p{L}])',
+    '(?<![\\p{L}])етиб\\s+(?:кел|бор)иш(?:и|ни|га|да|дан|нинг)?(?![\\p{L}])',
+    '(?<![\\p{L}])(?:доставк|отправк|отгрузк)\\p{L}*',
+  ].join('|'),
+  'giu',
+);
+
+/** The clause says when cargo comes or goes with a verb of its OWN — a finite one, not a noun of the trip. */
+function finiteVerbIn(clause: string): boolean {
+  const verbs = clause.replace(VERBAL_NOUN, (m) => ' '.repeat(m.length));
+  return SENDING_VERB.some((re) => re.test(verbs)) || COMING_VERB.some((re) => re.test(verbs));
+}
+
+/**
+ * A clause that turns against what came before it — «…, lekin yukingiz 2
+ * kunda», «…, sizniki esa 5 kunda», «…, но ваш через 2 дня» — says its own
+ * figure, and no earlier estimate covers it.
+ */
+const CONTRAST =
+  /(?<![\p{L}])(?:lekin|ammo|biroq|esa|лекин|аммо|бироқ|эса|но|однако|зато|а|but|however|whereas|while|though|although|اما|ولی|ولیکن)(?![\p{L}])|但|而|可是|不过|然而/iu;
+
 /** A figure's hedge, inside its own clause: an adverb before it, or a word right beside it. */
 function hedgedAt(clause: string, start: number, end: number): boolean {
   const before = clause.slice(0, start).replace(RANGE_START, '');
@@ -424,9 +468,10 @@ function statesEstimate(clause: string): boolean {
  * duration, or a certainty word anywhere, is a dispatch promise; a timetable
  * («mashina har 3 kunda chiqadi») is a fact about the company. The hedge must
  * be in the same sentence as the figure — in its clause, before it or right
- * after it, or in an EARLIER clause that states an estimate itself (B1: «Avia
- * bilan taxminan 680 $ bo'ladi, yetib borishi 2-5 kun» is one hedged
- * estimate): «Taxminan shunday. 2 kunda yetib keladi.» still promises.
+ * after it — or, for a clause with no verb of its own, in an EARLIER clause
+ * that states an estimate itself (B1: «Avia bilan taxminan 680 $ bo'ladi,
+ * yetib borishi 2-5 kun» is one hedged estimate): «Taxminan shunday. 2 kunda
+ * yetib keladi.» still promises.
  */
 export function timePromise(text: string): boolean {
   for (const s of sentencesOf(normalizeDigits(text))) {
@@ -434,22 +479,23 @@ export function timePromise(text: string): boolean {
     if (!sending && !COMING_VERB.some((re) => re.test(s))) continue;
     const certain = CERTAINTY.test(s);
     if (!certain && DISCLAIMER.test(s)) continue;
-    // An estimate stated in an earlier clause of THIS sentence covers its later ones (B1).
+    // An estimate stated in an earlier clause of THIS sentence (B1).
     let estimated = false;
-    for (const { text: c, at } of clausesOf(s)) {
-      const covered = estimated;
+    for (const { text: c } of clausesOf(s)) {
+      const before = estimated;
       estimated ||= statesEstimate(c);
       if (!sending && !aboutCargo(c, s)) continue;
-      // A clause with its own verb is judged alone; one without — «…yetib boradi, reys bo'lsa 2 kunda» —
-      // is the earlier clause's figure said again, and carries that clause's hedge.
-      const ownVerb = SENDING_VERB.some((re) => re.test(c)) || COMING_VERB.some((re) => re.test(c));
+      // A clause with a verb of its own — «…, yukingiz 2 kunda yetib keladi», «…, 2 kunda jo'natamiz» — is
+      // judged ALONE: it says when THIS cargo comes, whatever was estimated before it. Only a clause with
+      // none — «…, reys bo'lsa 2 kunda», «…, yetib borishi 2-5 kun» — is the earlier clause's figure said
+      // again, and takes the estimate that clause stated; never one that turns against it («…, lekin …»,
+      // «… esa …»). A hedge on no figure («odatda tez ishlaymiz») covers nothing (B1 review).
+      const covered = before && !finiteVerbIn(c) && !CONTRAST.test(c);
       for (const [start, end] of durationsIn(c)) {
-        const before = (ownVerb ? c.slice(0, start) : s.slice(0, at + start)).replace(RANGE_START, '');
-        if (FREQUENCY.test(before)) continue;
+        if (FREQUENCY.test(c.slice(0, start).replace(RANGE_START, ''))) continue;
         // A certainty word anywhere in the sentence makes it a promise again, estimate or not.
         if (certain) return true;
-        const hedged = covered || HEDGE_ADVERB.test(before) || HEDGE_BEFORE_FIGURE.test(before) || HEDGE_AFTER_FIGURE.test(c.slice(end));
-        if (!hedged) return true;
+        if (!covered && !hedgedAt(c, start, end)) return true;
       }
     }
   }
@@ -533,50 +579,111 @@ export const WAREHOUSE_SENTENCES: Record<AgentLocale, { condition: string; facto
 };
 
 /**
- * What each of the two sentences must hold, per language — every word of a
- * list inside ONE sentence that does not deny it: «alohida» from «Boj va QQS
- * alohida» must not stand in for the factory leg, and «Zavoddan olib kelish
- * alohida hisoblanmaydi» says the opposite.
+ * Both sentences in EVERY language the agent writes, as the model is told
+ * them (the yolkira tool's text, prompt rule 8). Three languages was the
+ * shipped list, so a Persian, Chinese or Uzbek Cyrillic reply had to invent
+ * its own words and met a check that asks for exact ones (fix round).
  */
-const WAREHOUSE_TERMS: Record<AgentLocale, { condition: readonly RegExp[]; factory: readonly RegExp[]; denied: RegExp }> = {
+export function warehouseSentencesText(): string {
+  return AGENT_LOCALES.map((l) => `${l} «${WAREHOUSE_SENTENCES[l].condition}» «${WAREHOUSE_SENTENCES[l].factory}»`).join('; ');
+}
+
+/** The exclusion sentence in every language, the same way. */
+export function exclusionSentencesText(): string {
+  return AGENT_LOCALES.map((l) => `${l} «${EXCLUSION_SENTENCE[l]}»`).join('; ');
+}
+
+/**
+ * What each of the two sentences must hold, per language.
+ *
+ * The CONDITION: every word of its list inside ONE sentence that does not
+ * deny it.
+ *
+ * The FACTORY LEG: a sentence that names it, says in a clause that does not
+ * deny it that it is apart from the price — «alohida», «отдельно», «单独» —
+ * or that it is NOT in the price — «narxga kirmaydi», «не входит», «not
+ * included» — and says in no clause that it IS in the price. «alohida» from
+ * «Boj va QQS alohida» must not stand in for it: «Zavoddan olib kelish ham
+ * shu narxga kiradi, boj alohida» says the opposite in its first clause, and
+ * so does «…alohida hisoblanmaydi». The fix round measured the words-only
+ * check passing the first and refusing the natural «…narxga kirmaydi,
+ * alohida hisoblanadi» and the Chinese «…需单独计算».
+ */
+interface WarehouseTerms {
+  condition: readonly RegExp[];
+  factory: RegExp;
+  apart: RegExp;
+  notIn: RegExp;
+  inPrice: RegExp;
+  denied: RegExp;
+}
+
+const WAREHOUSE_TERMS: Record<AgentLocale, WarehouseTerms> = {
   uz: {
     condition: [/narx|hisob/iu, /ombor|sklad/iu, /xitoy|hitoy/iu],
-    factory: [/zavod|fabrik|ishlab\s+chiqar/iu, /alohida/iu],
+    factory: /zavod|fabrik|ishlab\s+chiqar/iu,
+    apart: /alohida/iu,
+    notIn: /(?<![\p{L}])kirmaydi(?![\p{L}])|narx\p{L}*\s+ichida\s+emas|qo['‘’ʻ]?shilmaydi/iu,
+    inPrice: /(?<![\p{L}])(?:kiradi|kiritilgan|qo['‘’ʻ]?shilgan)(?![\p{L}])|narx\p{L}*\s+ichida/iu,
     denied: /(?<![\p{L}])(?:emas|yo['‘’ʻ]?q)(?![\p{L}])|\p{L}ma(?:ydi|ymiz|ysiz)(?![\p{L}])/iu,
   },
   uz_cyrl: {
     condition: [/нарх|ҳисоб/iu, /омбор|склад/iu, /хитой/iu],
-    factory: [/завод|фабрик/iu, /алоҳида/iu],
+    factory: /завод|фабрик/iu,
+    apart: /алоҳида/iu,
+    notIn: /(?<![\p{L}])кирмайди(?![\p{L}])|нарх\p{L}*\s+ичида\s+эмас|қўшилмайди/iu,
+    inPrice: /(?<![\p{L}])(?:киради|киритилган|қўшилган)(?![\p{L}])|нарх\p{L}*\s+ичида/iu,
     denied: /(?<![\p{L}])(?:эмас|йўқ)(?![\p{L}])|\p{L}ма(?:йди|ймиз|йсиз)(?![\p{L}])/iu,
   },
   ru: {
     condition: [/цен|стоимост|расч[её]т/iu, /склад/iu, /кита[йяеюи]/iu],
-    factory: [/завод|фабрик|производ|поставщик/iu, /отдельно/iu],
+    factory: /завод|фабрик|производ|поставщик/iu,
+    apart: /отдельно/iu,
+    notIn: /не\s+(?:входит|включ)|исключ/iu,
+    inPrice: /входит|включ/iu,
     denied: /(?<![\p{L}])(?:не|нет|без)(?![\p{L}])/iu,
   },
   en: {
     condition: [/price|rate|quote|cost/iu, /warehouse/iu, /china/iu],
-    factory: [/factory|manufacturer|supplier/iu, /separate/iu],
+    factory: /factory|manufacturer|supplier/iu,
+    apart: /separate/iu,
+    notIn: /(?:not|n['’]t)\s+(?:\p{L}+\s+)?included|excluded|excludes|not\s+part\s+of/iu,
+    inPrice: /includ/iu,
     denied: /(?<![\p{L}])(?:not|no|never)(?![\p{L}])|n['’]t(?![\p{L}])/iu,
   },
   fa: {
     condition: [/قیمت|نرخ/u, /انبار/u, /چین/u],
-    factory: [/کارخانه|تولیدکننده/u, /جداگانه/u],
+    factory: /کارخانه|تولیدکننده/u,
+    apart: /جداگانه/u,
+    notIn: /شامل\s+(?:\p{L}+\s+)?(?:نمی|نیست)/u,
+    inPrice: /شامل/u,
     denied: /نمی|نیست|ندارد/u,
   },
   zh: {
     condition: [/价格|价|运费|报价/u, /仓库|仓/u, /中国/u],
-    factory: [/工厂|厂家|供应商/u, /另/u],
+    factory: /工厂|厂家|供应商/u,
+    apart: /另|单独|额外/u,
+    notIn: /不包括|不包含|不含/u,
+    inPrice: /包括|包含|含/u,
     denied: /不|没|未/u,
   },
 };
 
+/** A sentence's clauses, as the factory check reads its polarity — every script's comma. */
+const CLAUSE_BREAK = /[,，、;；:：—–،]|\s-\s/u;
+
 /** Both of the warehouse sentences are in the reply, each in a sentence of its own words. */
 function saysWarehouseCondition(text: string, language: AgentLocale): boolean {
   const terms = WAREHOUSE_TERMS[language];
-  const sentences = sentencesOf(text).filter((s) => !terms.denied.test(s));
-  const said = (words: readonly RegExp[]) => sentences.some((s) => words.every((re) => re.test(s)));
-  return said(terms.condition) && said(terms.factory);
+  const sentences = sentencesOf(text);
+  const condition = sentences.some((s) => !terms.denied.test(s) && terms.condition.every((re) => re.test(s)));
+  const factory = sentences.some((s) => {
+    if (!terms.factory.test(s)) return false;
+    const clauses = s.split(CLAUSE_BREAK);
+    if (clauses.some((c) => terms.inPrice.test(c) && !terms.denied.test(c))) return false;
+    return clauses.some((c) => (terms.apart.test(c) && !terms.denied.test(c)) || terms.notIn.test(c));
+  });
+  return condition && factory;
 }
 
 /** The system's own minted shapes (crate, box, receipt, pickup, deal) — never in a customer reply. */
@@ -636,6 +743,12 @@ export interface PolicyInput {
    * no name is the facts'.
    */
   factNameWords?: readonly string[];
+  /**
+   * The one road the customer asked about (`oneModeIn` over the chat) — the
+   * road a reply's day count is the time of when the reply names none.
+   * Absent = none known.
+   */
+  askedMode?: TravelMode | null;
 }
 
 export interface PolicyResult {
@@ -860,7 +973,7 @@ export function checkAgentReply(input: PolicyInput): PolicyResult {
   const unverifiable = unverifiableNumeral(text);
   if (unverifiable) blocks.push({ rule: 'G1', code: 'number_unverifiable', detail: unverifiable });
   const removeWhole = [...input.removeWhole, ...input.allowedUrls, ...input.mapUrls];
-  const ledger = numberLedger(text, input.numberSources, removeWhole);
+  const ledger = numberLedger(text, input.numberSources, removeWhole, input.askedMode ?? null);
   for (const e of ledger) {
     if (e.source === null) blocks.push({ rule: 'G1', code: 'number_unsourced', detail: e.raw });
   }

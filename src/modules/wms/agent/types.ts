@@ -23,6 +23,25 @@ export type ComposedAction =
   | { type: 'set_followup'; date: string; note: string }
   | { type: 'mute'; reason: string };
 
+/**
+ * Whether the calculation a draft landed was priced FROM our China warehouses
+ * (his third set «3») — read off the draft's stored actions, the one record
+ * of what the customer was told. Every reader asks this: the landing's zone
+ * and note, and the price the VED's answer becomes («💵 Narx yozaman»), which
+ * must say the same condition and that the factory leg is extra. `=== true`:
+ * an action stored before the flag existed carries none, and none is no.
+ */
+export function calcFromOurWarehouse(actions: unknown): boolean {
+  if (!Array.isArray(actions)) return false;
+  return actions.some(
+    (a: unknown) =>
+      typeof a === 'object' &&
+      a !== null &&
+      (a as { type?: unknown }).type === 'calc_submit' &&
+      (a as { fromOurWarehouse?: unknown }).fromOurWarehouse === true,
+  );
+}
+
 /** What the card shows of the chat — kept on the draft, so a refresh needs no re-read. */
 export interface CardMemory {
   customerLabel: string;

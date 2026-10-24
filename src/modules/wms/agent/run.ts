@@ -21,7 +21,7 @@ import { dayRunCounts } from './today';
 import { belowTruckMinimumFacts, ourChinaPlaces, runTool, TOOL_SPECS, TRUCK_SECTIONS, type ChecklistState, type ToolOutcome } from './tools';
 import { draftWorthy, mentionsRail, RAIL_OWNER_QUESTION } from './worthy';
 import { writeDraft, writeNotice, type ComposedAction } from './drafts';
-import { factSources, type NumberSource } from './numbers';
+import { factSources, oneModeIn, type NumberSource } from './numbers';
 import { nameWordsOf } from './policy';
 import { AGENT_LOCALES } from './locale';
 
@@ -496,6 +496,11 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
     // returned — may name the colleague they point at (B9), as they may carry
     // his phone.
     factNameWords: nameWordsOf([...facts.map((f) => f.answer), ...loop.outcomes.flatMap((o) => o.factTexts ?? [])]),
+    // The road the customer asked about — his burst's, else the chat's — is the one a reply's day count
+    // naming no road is the time of: «Mashinada 5 kunda kelsinmi?» is never answered on the flight's five.
+    askedMode:
+      oneModeIn(ctx.burst.map((m) => m.body).join('\n')) ??
+      oneModeIn(ctx.messages.filter((m) => m.direction === 'in').map((m) => m.body).join('\n')),
     ownCodes: ctx.identity.codes.map((c) => c.clientCode),
     managerName: ctx.identity.managerName,
     canary,
