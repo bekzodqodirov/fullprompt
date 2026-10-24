@@ -401,10 +401,11 @@ async function withdrawTypedBind(staffId: string, rule: RuleRow, conv: ConvIdent
  * a ✅ / ↩ that stays pressable after the decision is a second decision).
  * A copy the drain has not sent yet is never sent — a closed card arriving
  * after its own answer is noise (the approval copies' rule). A copy the drain
- * has CLAIMED (`sending`) carries no `tg` yet, so its edit is skipped, and it
- * arrives with the buttons it was claimed with: the drain re-reads nothing
- * after a send (an owed after-send check, stated). A press on such a copy is
- * judged like any late press, by the chat as it stands: a ✅ already true
+ * has CLAIMED (`sending`) carries no `tg` yet, so its edit is skipped here —
+ * and the drain corrects it itself once sent (`correctAgentCopyInFlight`,
+ * notifications/service.ts: the row is read again after its `tg` is written
+ * and the copy edited to it). A press in the moment between is judged like
+ * any late press, by the chat as it stands: a ✅ already true
  * writes nothing, a stranger button on a decided chat writes nothing, and a ↩
  * takes back only the flow's own bind — and hands the chat its stranger card
  * back. `lineFor` may return null to leave a card; `extraFor` adds to the

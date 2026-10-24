@@ -1337,6 +1337,41 @@ async function taskCopyLive(
 }
 
 /**
+ * An AI sotuvchi card corrected after its send (identity review): the purge
+ * that blanked a chat's cards, a decision that closed a stranger or echo
+ * card, a draft card re-rendered — each edits the copies that carry `tg`,
+ * and a copy this drain had CLAIMED ('sending') carried none yet, so it went
+ * out with the words and buttons it was claimed with: a purged customer's
+ * lines, a live «🆕 Yangi lid» on a decided chat, «💵 Narx yozaman» on an
+ * answer whose link is gone. Asked once the copy's `tg` is written — the
+ * order is the argument, as `retireIfClosedInFlight`'s: a writer that commits
+ * after the merge finds the copy by `tg` and edits it itself, one that
+ * committed before this read is seen by it. The row as it stands is rendered
+ * by the drain's own composer (the payload is the whole card — platform asks
+ * no wms) and the copy just sent is edited only when that differs from what
+ * went out. Best-effort: the copy is sent, and an edit is a courtesy.
+ */
+async function correctAgentCopyInFlight(
+  notificationId: string,
+  type: string,
+  sent: { html: string; rows: BotButton[][] },
+  tg: { chatId: number; messageId: number },
+  locale: string | null,
+): Promise<void> {
+  const [row] = await db
+    .select({ payload: notifications.payload })
+    .from(notifications)
+    .where(eq(notifications.id, notificationId));
+  if (!row) return;
+  const now = row.payload as Record<string, unknown>;
+  const message = composeStaffMessage(type, now, locale);
+  const rows = [...(buttonsFor(type, now) ?? []), ...(message.urlRow ? [message.urlRow] : [])];
+  if (message.html === sent.html && JSON.stringify(rows) === JSON.stringify(sent.rows)) return;
+  const res = await editText({ chatId: tg.chatId, messageId: tg.messageId, html: message.html, replyMarkup: keyboardOf(rows) });
+  if (!res.ok) logger.warn({ notificationId, description: res.description }, 'agent card copy not corrected after its send');
+}
+
+/**
  * The second half of the send-time check, asked AFTER the row reads 'sent'
  * with its message id (review tasks-1). A door that closed or moved the task
  * while this copy was in flight — the author's «🗑 Bekor qilish» seconds after
@@ -1488,6 +1523,8 @@ export async function sendPendingTelegram(now: Date = new Date()): Promise<void>
     const sendPayload = live.payload ?? payload;
 
     let res: SendResult;
+    // What went out — the text and every keyboard row — for the agent card's after-send check.
+    let sentAs: { html: string; rows: BotButton[][] } | null = null;
     try {
       // Inline buttons ride on the send, by type (staff bot, round 35): a
       // task lands with its buttons, a debtor request with «Ruxsat / Yo‘q».
@@ -1496,6 +1533,7 @@ export async function sendPendingTelegram(now: Date = new Date()): Promise<void>
       // claimed row behind it in «sending» until the reclaim charged them.
       const buttons = buttonsFor(notification.type, sendPayload);
       const message = composeStaffMessage(notification.type, payload, recipient.locale);
+      sentAs = { html: message.html, rows: [...(buttons ?? []), ...(message.urlRow ? [message.urlRow] : [])] };
       res =
         (await forwardOriginal(notification.id, link.telegramChatId, payload)) ??
         (await forwardSources(notification.id, link.telegramChatId, payload)) ??
@@ -1545,6 +1583,13 @@ export async function sendPendingTelegram(now: Date = new Date()): Promise<void>
       if (tg) {
         await retireIfClosedInFlight(notification.id, notification.type, sendPayload, notification.userId).catch(
           (err: unknown) => logger.warn({ err, notificationId: notification.id }, 'task copy after-send check failed'),
+        );
+      }
+      // An agent card closed or purged while this copy was in flight (identity review) — never a
+      // forward, which is the customer's own message and no card to edit.
+      if (tg && sentAs && notification.type.startsWith('Agent') && payload.forwardFrom === undefined && payload.forwards === undefined) {
+        await correctAgentCopyInFlight(notification.id, notification.type, sentAs, tg, recipient.locale).catch((err: unknown) =>
+          logger.warn({ err, notificationId: notification.id }, 'agent card after-send check failed'),
         );
       }
       continue;
