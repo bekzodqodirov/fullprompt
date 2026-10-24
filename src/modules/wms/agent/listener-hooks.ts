@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { tgChatRules } from '../../platform/db/schema';
+import { isTelegramServicePeer, TELEGRAM_SERVICE_PEER } from '../crm/telegram-import';
 import { agentTablesReady } from './config';
 
 /**
@@ -52,11 +53,10 @@ export async function isNewestInbound(managerUserId: string, peerId: bigint, tgM
   return rows[0]?.tg_message_id === tgMessageId.toString();
 }
 
-/**
- * Telegram's own service account: API-terms and limitation notices, login
- * codes, «new login» alerts — all from this one id.
- */
-export const TELEGRAM_SERVICE_PEER = 777000n;
+// Telegram's own service account: API-terms and limitation notices, login
+// codes, «new login» alerts — all from this one id. One home, in the import's
+// classifier, which also keeps it out of every stored chat.
+export { TELEGRAM_SERVICE_PEER };
 
 /**
  * Pure: is this line a notice from Telegram itself (his ⭐2, final review
@@ -70,7 +70,7 @@ export function isTelegramServiceNotice(
   peer: { id: bigint; isPrivate: boolean; isSelf?: boolean },
   out: boolean,
 ): boolean {
-  return !out && peer.isPrivate && peer.isSelf !== true && peer.id === TELEGRAM_SERVICE_PEER;
+  return !out && peer.isSelf !== true && isTelegramServicePeer(peer);
 }
 
 /**

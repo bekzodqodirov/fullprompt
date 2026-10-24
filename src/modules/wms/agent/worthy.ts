@@ -71,7 +71,7 @@ export function isPashto(text: string): boolean {
  * a false positive only puts the question to him, which is the safe direction.
  */
 const RAIL =
-  /temir[\s-]?y[ou]['‘’ʻ`]?l(?!duz)|po(?:ye|e|y)zd|темир[\s-]?й[ўу]л|поезд|(?<!\p{L})ж\s?[./]?\s?д\.?(?!\p{L})|железн|железк|вагон|vagon|(?<!\p{L})rail(?:way|road)?s?(?!\p{L})|(?<!\p{L})trains?(?!\p{L})|قطار|راه[\s‌]?آهن|铁路|火车|班列/iu;
+  /temir[\s-]?y[ou]['‘’ʻ`]?l(?!duz)|po(?:ye|e|y)zd|темир[\s-]?й[ўу]л|поезд(?!к)|(?<!\p{L})ж\s?[./]?\s?д\.?(?!\p{L})|железнодорож|железн\p{L}*\s+дорог|железк|вагон|vagon|(?<!\p{L})rail(?:way|road)?s?(?!\p{L})|(?<!\p{L})trains?(?!\p{L})|قطار|راه[\s‌]?آهن|铁路|火车|班列/iu;
 
 /** The question the draft carries for him when a burst asks about rail and the model asked none. */
 export const RAIL_OWNER_QUESTION = "Mijoz temir yo'l narxini so'rayapti — narxni siz ayting.";

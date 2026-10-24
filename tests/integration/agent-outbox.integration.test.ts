@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { and, eq, gte, inArray } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 /**
  * The drain kick of an alarm would start pg-boss inside the test process;
@@ -400,9 +400,30 @@ describe('the facts a send is decided from', () => {
     expect((await sendFactsFor(row, new Date(), ctx(account.id))).identityChanged).toBe(true);
   });
 
+  it('a chat bound to another code BEFORE it wrote again: the new customer\'s reply leaves, the old one\'s does not (final review, identity package)', async () => {
+    // The tray's «Qo'shish» on another code names the chat's owner from the
+    // moment it is written; the stored rows still name the old client until the
+    // customer writes again. The one «same person» rule reads both.
+    const forOld = await approved({});
+    const forNew = await approved({ peer: forOld.peer, anchor: forOld.anchor, storeAnchor: false, client: otherClientId });
+    await db.insert(tgChatRules).values({ managerUserId: managerId, peerId: forOld.peer, decision: 'include', clientId: otherClientId });
+    onTestFinished(async () => {
+      await db.delete(tgChatRules).where(and(eq(tgChatRules.managerUserId, managerId), eq(tgChatRules.peerId, forOld.peer)));
+    });
+    expect((await sendFactsFor(forNew.row, new Date(), ctx(account.id))).identityChanged).toBe(false);
+    expect((await sendFactsFor(forOld.row, new Date(), ctx(account.id))).identityChanged).toBe(true);
+  });
+
   it('a lead chat whose lead was won keeps its identity', async () => {
     const { row, peer, anchor } = await approved({ lead: leadId });
-    // storeIncoming fills the client beside a won lead; the lead is still the chat's.
+    // WON = the lead carries its client — `storeIncoming` fills the client
+    // beside such a lead from exactly that column, and «same person» is now
+    // read through `chatIdentity`, which keeps the lead only beside the client
+    // it became (K25). A row naming a client the lead never became is a move.
+    await db.update(leads).set({ clientId }).where(eq(leads.id, leadId));
+    onTestFinished(async () => {
+      await db.update(leads).set({ clientId: null }).where(eq(leads.id, leadId));
+    });
     await db.insert(tgMessages).values({
       clientId,
       leadId,

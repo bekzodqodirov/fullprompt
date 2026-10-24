@@ -142,7 +142,7 @@ describe('K3 — the 💵 template counted against the same fuse, as a warning',
     expect(warned.blocks).toEqual([]);
     expect(warned.warnings).toContainEqual(expect.objectContaining({ rule: 'G10', code: 'fingerprint' }));
     // His own ✏️ words — no chat given — are counted against nothing.
-    expect((await ownerPolicyFor(body, [me])).warnings).toEqual([]);
+    expect((await ownerPolicyFor(body, [me], null)).warnings).toEqual([]);
   });
 });
 
@@ -152,7 +152,7 @@ describe('K29 — the translation rides the memory, so ✅ asks what the write a
     const body = 'سلام، بار شما در انبار است.';
     const without = await policyFor({ managerUserId: managerId, peerId: next(), body, memory: fa(false), strip: [] });
     expect(without.ok).toBe(false);
-    expect(without.blocks).toContainEqual(expect.objectContaining({ rule: 'G5', detail: expect.stringContaining('tarjima') }));
+    expect(without.blocks).toContainEqual(expect.objectContaining({ rule: 'G5', code: 'gloss_missing' }));
     expect((await policyFor({ managerUserId: managerId, peerId: next(), body, memory: fa(true), strip: [] })).ok).toBe(true);
     // A memory written before the flag says none — read as none, for these two languages only.
     const old: PolicyMemory = { ...fa(true) };

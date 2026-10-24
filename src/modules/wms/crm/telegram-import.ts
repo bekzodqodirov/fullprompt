@@ -62,11 +62,24 @@ export interface ClientPhones {
   phones: unknown;
 }
 
+/** Telegram's own service account — login codes, «new login» alerts, limitation notices. */
+export const TELEGRAM_SERVICE_PEER = 777000n;
+
+/**
+ * Is this dialog Telegram's own service chat? A PRIVATE chat with 777000 —
+ * a group or a channel whose number happens to read the same is not it. Every
+ * door that could keep a chat asks this one question: the classifiers below,
+ * the tray scan, the live listener's lead branch and its notice alarm.
+ */
+export function isTelegramServicePeer(peer: { id: bigint; isPrivate: boolean }): boolean {
+  return peer.isPrivate && peer.id === TELEGRAM_SERVICE_PEER;
+}
+
 export type DialogVerdict =
   | { keep: true; clientId: string; clientCode: string }
   | {
       keep: false;
-      reason: 'not_private' | 'is_bot' | 'no_phone' | 'not_a_client' | 'excluded' | 'self';
+      reason: 'not_private' | 'is_bot' | 'no_phone' | 'not_a_client' | 'excluded' | 'self' | 'service';
     };
 
 /**
@@ -114,6 +127,12 @@ export function classifyWithRules(
   // Ahead of the rule, and deliberately: a chat with yourself is not a
   // conversation with a customer under any decision anybody could write down.
   if (peer.isSelf) return { keep: false, reason: 'self' };
+  // Nor is Telegram's own service account (777000: login codes, «new login»,
+  // limitation notices). It is no bot by Telegram's flag and may even show a
+  // phone, so on a work account it would mint a lead — and a stored chat is
+  // one the AI sotuvchi may read: a login code in a model's context and on a
+  // card (final review, the send package's note).
+  if (isTelegramServicePeer(peer)) return { keep: false, reason: 'service' };
   const rule = rules.get(peer.id);
   if (rule?.decision === 'exclude') return { keep: false, reason: 'excluded' };
   if (rule?.decision === 'include' && rule.clientId) {
@@ -146,6 +165,9 @@ export function classifyDialog(peer: DialogPeer, clients: ClientPhones[]): Dialo
   // consulted at all, and refused even by an explicit rule: nobody should be
   // able to opt into it by accident.
   if (peer.isSelf) return { keep: false, reason: 'self' };
+  // Telegram's service chat may show a number (42777), and a number is all the
+  // book is matched on.
+  if (isTelegramServicePeer(peer)) return { keep: false, reason: 'service' };
   const phone = (peer.phone ?? '').trim();
   if (!phone) return { keep: false, reason: 'no_phone' };
   const match = clients.find((c) => phoneBelongsToClient(phone, c.phones));
@@ -174,7 +196,7 @@ export function scanVerdict(
 ): ScanVerdict {
   const decision = rules.get(peer.id)?.decision;
   if (decision === 'include' || decision === 'exclude') return 'answered';
-  if (!peer.isPrivate || peer.isBot || peer.isSelf) return 'skip';
+  if (!peer.isPrivate || peer.isBot || peer.isSelf || isTelegramServicePeer(peer)) return 'skip';
   // Already coming in on its own — asking would be noise on a list whose only
   // job is to be short enough that somebody actually goes through it.
   if (classifyDialog(peer, clients).keep) return 'auto';

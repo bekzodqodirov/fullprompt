@@ -250,3 +250,45 @@ describe('a short reference is taken from the id’s random tail', () => {
     expect(kbRef(a)).not.toBe(kbRef(b));
   });
 });
+
+describe('a card his own words go out on counts the same text (final review K3)', () => {
+  /** Every `ownerPolicyFor(…)` call in src, cut at its own closing bracket, with the function it sits in. */
+  function ownerPolicyCalls(): { file: string; fn: string; args: string }[] {
+    const out: { file: string; fn: string; args: string }[] = [];
+    for (const file of filesUnder('src')) {
+      const src = strip(readFileSync(file, 'utf8'));
+      let at = src.indexOf('ownerPolicyFor(');
+      while (at !== -1) {
+        const before = src.slice(0, at);
+        const isDecl = /export\s+async\s+function\s+$/.test(before);
+        if (!isDecl) {
+          let depth = 0;
+          let end = at + 'ownerPolicyFor'.length;
+          for (; end < src.length; end++) {
+            if (src[end] === '(') depth++;
+            else if (src[end] === ')' && --depth === 0) break;
+          }
+          const fn = [...before.matchAll(/(?:async\s+)?function\s+(\w+)/g)].at(-1)?.[1] ?? '?';
+          out.push({ file, fn, args: src.slice(at + 'ownerPolicyFor('.length, end) });
+        }
+        at = src.indexOf('ownerPolicyFor(', at + 1);
+      }
+    }
+    return out;
+  }
+
+  it('the two doors that WRITE a card name the chat; only the ✅ press, which asks the blocks alone, passes null', () => {
+    const calls = ownerPolicyCalls();
+    const byFn = new Map(calls.map((c) => [c.fn, c]));
+    // The 💵 draft from his typed figure, and his ✏️ text.
+    for (const door of ['priceDraftFromText', 'submitOwnText']) {
+      const call = byFn.get(door);
+      expect(call, door).toBeDefined();
+      expect(call!.args, door).toMatch(/peerId/);
+      expect(call!.args, door).toMatch(/strip/);
+    }
+    const nulls = calls.filter((c) => /,\s*null\s*$/.test(c.args.trim()));
+    expect(nulls.map((c) => c.fn)).toEqual(['decideDraft']);
+    expect(calls.length).toBe(3);
+  });
+});

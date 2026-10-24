@@ -450,7 +450,8 @@ export async function decideDraft(
   // His own words — typed, or the offer text made from his typed price — pass
   // the owner subset; the machine's pass the whole policy again.
   const policy = d.finalBody || d.kind === 'price'
-    ? await ownerPolicyFor(body, p.memory?.ownCodes ?? [])
+    ? // The press asks only the blocks; the same-text warning was on the card he pressed.
+      await ownerPolicyFor(body, p.memory?.ownCodes ?? [], null)
     : p.memory
       ? await policyFor({
           managerUserId: d.managerUserId,
@@ -632,7 +633,12 @@ export async function submitOwnText(actor: DeciderActor, draftId: string, text: 
   const body = text.trim();
   if (!body) return { ok: false, code: 'empty' };
   const p = (d.policy ?? {}) as Partial<DraftPolicyJson>;
-  const policy = await ownerPolicyFor(body, p.memory?.ownCodes ?? []);
+  // His words pass the owner subset; the same-text count is only a warning on his card (K3).
+  const policy = await ownerPolicyFor(body, p.memory?.ownCodes ?? [], {
+    managerUserId: d.managerUserId,
+    peerId: d.peerId,
+    strip: p.card?.customerLabel ? p.card.customerLabel.split(/[\s,·]+/u) : [],
+  });
   const [row] = await db
     .update(agentDrafts)
     .set({

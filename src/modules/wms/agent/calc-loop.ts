@@ -521,7 +521,15 @@ export async function priceDraftFromText(staffId: string, requestId: string, tex
   const body = fromOurs
     ? `${priceReplyText(locale, req.section, amount)} ${WAREHOUSE_SENTENCES[locale].condition} ${WAREHOUSE_SENTENCES[locale].factory}`
     : priceReplyText(locale, req.section, amount);
-  const policy = await ownerPolicyFor(body, identity.codes.map((c) => c.clientCode));
+  // The 💵 sentence is one template for every customer: the same-text count
+  // (G10, review K3) rides on the card as a warning — a block at three peers
+  // would stop ordinary daily quoting.
+  const codes = identity.codes.map((c) => c.clientCode);
+  const policy = await ownerPolicyFor(body, codes, {
+    managerUserId: link.managerUserId,
+    peerId: link.peerId,
+    strip: [...codes, ...(identity.customerName ? identity.customerName.split(/\s+/u) : [])],
+  });
   // The request his figure answers rides on the draft (review A1): a
   // recalculation of its chain retires the draft (`retirePricesOf`), and the
   // send step asks the same of it before an approved one goes

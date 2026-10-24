@@ -126,9 +126,6 @@ type ChatFactsRow = {
   human_pressed_ms: number | null;
   muted: boolean;
   excluded: boolean;
-  newest_client_id: string | null;
-  newest_lead_id: string | null;
-  newest_found: boolean;
   chat_today: number;
   last_hour: number;
   today: number;
@@ -222,9 +219,6 @@ async function chatFacts(row: AgentOutboxRow, now: Date): Promise<ChatFactsRow> 
         SELECT 1 FROM tg_chat_rules r
          WHERE r.manager_user_id = ${m} AND r.peer_id = ${p} AND r.decision = 'exclude'
       ) AS excluded,
-      nw.client_id AS newest_client_id,
-      nw.lead_id AS newest_lead_id,
-      (nw.found IS NOT NULL) AS newest_found,
       caps.chat_today, caps.last_hour, caps.today,
       ${msOf(sql`caps.last_chat`)} AS last_chat_ms,
       ${msOf(sql`caps.last_account`)} AS last_account_ms
@@ -233,12 +227,6 @@ async function chatFacts(row: AgentOutboxRow, now: Date): Promise<ChatFactsRow> 
       ON a.manager_user_id = ${m} AND a.peer_id = ${p} AND a.tg_message_id = ${anchor}
     LEFT JOIN tg_message_flags f ON f.message_id = a.id
     LEFT JOIN agent_drafts d ON d.id = ${row.draftId}::uuid
-    LEFT JOIN LATERAL (
-      SELECT n.client_id, n.lead_id, 1 AS found FROM tg_messages n
-       WHERE n.manager_user_id = ${m} AND n.peer_id = ${p}
-       ORDER BY n.tg_message_id DESC
-       LIMIT 1
-    ) nw ON true
     CROSS JOIN LATERAL (
       SELECT count(*) FILTER (WHERE s.peer_id = ${p} AND s.at >= ${dayStart})::int AS chat_today,
              count(*) FILTER (WHERE s.at >= ${hourAgo})::int AS last_hour,
@@ -336,9 +324,15 @@ export async function sendFactsFor(row: AgentOutboxRow, now: Date, ctx: StoreCon
   const offerStands = await offerStandsFor(row.draftId);
   const average = config?.startedAt ? await ownAverage(row.managerUserId, config.startedAt) : 0;
 
-  const identityChanged =
-    chat.newest_found &&
-    (row.clientId !== null ? chat.newest_client_id !== row.clientId : chat.newest_lead_id !== row.leadId);
+  // ONE «same person» rule (`bindMoved` over today's `chatIdentity`) — the
+  // ✅ asks it and every tray door's withdrawal asks it; the stored newest
+  // row alone would cancel a reply written for the NEW customer after a
+  // rebind, until that customer wrote again (final review, identity package).
+  const { bindMoved, chatIdentity } = await import('./context');
+  const identityChanged = bindMoved(
+    { clientId: row.clientId, leadId: row.leadId },
+    await chatIdentity(row.managerUserId, row.peerId),
+  );
 
   return {
     now,

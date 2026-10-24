@@ -49,7 +49,8 @@ export type PolicyCode =
   | 'fingerprint'
   | 'url_cap'
   | 'estimate_unhedged'
-  | 'warehouse_condition';
+  | 'warehouse_condition'
+  | 'gloss_missing';
 
 export interface PolicyHit {
   rule: PolicyRule;
@@ -1494,7 +1495,7 @@ export function checkAgentReply(input: PolicyInput): PolicyResult {
   // His 13 + ⭐3: a Persian or Chinese reply he cannot read is approved through its Uzbek translation — a
   // draft without one has nothing he can check, so it carries no ✅ (K29). Said in words beside the block.
   if ((input.language === 'fa' || input.language === 'zh') && input.hasGloss === false && trimmed !== '') {
-    blocks.push({ rule: 'G5', code: 'empty', detail: 'o‘zbekcha tarjimasi yo‘q — ✏️ bilan o‘zingiz yozing yoki ❌' });
+    blocks.push({ rule: 'G5', code: 'gloss_missing' });
   }
 
   // G1 — numbers.

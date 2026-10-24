@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { POLICY_WORDS } from '@/modules/wms/agent/card';
 import { normalizeDigits } from '@/modules/wms/agent/digits';
 import type { AgentContext, ChatMessage, MeasureCandidate } from '@/modules/wms/agent/context';
 import { AGENT_LOCALES, type AgentLocale } from '@/modules/wms/agent/locale';
@@ -526,9 +527,11 @@ describe('K19 — the figure-less concessions', () => {
 describe('K29 — a Persian or Chinese draft he cannot read carries its translation or no ✅', () => {
   it('blocked in words without one, passes with one; an Uzbek or Russian draft needs none', () => {
     const fa = { body: 'سلام، بار شما در انبار است.', language: 'fa' as const, customerScript: 'arabic' as const };
+    // Its own code, so the card names it in words — under 'empty' the card read «bo'sh» beside a full reply.
     expect(checkAgentReply({ ...base, ...fa, hasGloss: false }).blocks).toContainEqual(
-      expect.objectContaining({ rule: 'G5', detail: expect.stringContaining('tarjima') }),
+      expect.objectContaining({ rule: 'G5', code: 'gloss_missing' }),
     );
+    expect(POLICY_WORDS.gloss_missing).toContain('tarjima');
     expect(checkAgentReply({ ...base, ...fa, hasGloss: true }).ok).toBe(true);
     expect(checkAgentReply({ ...base, body: '您好，货在仓库。', language: 'zh', hasGloss: false }).ok).toBe(false);
     expect(checkAgentReply({ ...base, body: 'Yukingiz omborda.', hasGloss: false }).ok).toBe(true);

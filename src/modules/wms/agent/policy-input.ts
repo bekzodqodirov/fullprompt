@@ -193,7 +193,9 @@ export async function policyFor(input: {
 export async function ownerPolicyFor(
   body: string,
   ownCodes: string[],
-  sameText?: { managerUserId: string; peerId: bigint; strip: string[] },
+  // REQUIRED, null included: the card's G10 warning is counted only where a
+  // caller names the chat, and an optional argument is one a new caller forgets.
+  sameText: { managerUserId: string; peerId: bigint; strip: string[] } | null,
 ): Promise<PolicyResult> {
   const [bookCodes, codePrefix, counts] = await Promise.all([
     bookCodesIn(body),

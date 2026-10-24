@@ -39,6 +39,7 @@ export const POLICY_WORDS: Record<PolicyCode, string> = {
   url_cap: 'havola juda tez-tez',
   estimate_unhedged: '«taxminan» yoki «boj va QQS alohida» yo‘q',
   warehouse_condition: '«Xitoydagi omborimizdan» sharti yoki «zavoddan omborgacha alohida» yo‘q',
+  gloss_missing: 'o‘zbekcha tarjimasi yo‘q — ✏️ bilan o‘zingiz yozing yoki ❌',
 };
 
 export const PROMISE_WORDS: Record<PromiseCategory, string> = {

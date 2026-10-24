@@ -158,7 +158,10 @@ describe('rail: the spellings customers type, and no machine figure on a rail an
     for (const t of ['temir yulda qancha', 'temiryul bilan', 'poyzd bilan', 'сколько стоит ж.д.?', 'вагоном', 'по железке', '中亚班列', 'vagon bilan']) {
       expect(mentionsRail([t]), t).toBe(true);
     }
-    for (const t of ['temir yulduz', 'Жду ответа', 'trailer bilan']) expect(mentionsRail([t]), t).toBe(false);
+    // A trip and iron shelving are no railway (final review, the policy package's note).
+    for (const t of ['temir yulduz', 'Жду ответа', 'trailer bilan', 'поездка в Китай', 'железные стеллажи 20 шт'])
+      expect(mentionsRail([t]), t).toBe(false);
+    for (const t of ['по железной дороге', 'железнодорожный тариф', 'поездом']) expect(mentionsRail([t]), t).toBe(true);
   });
 
   it('in a rail burst the tools’ money leaves the memory, so G1 blocks the figure and G11 does not apply', async () => {
