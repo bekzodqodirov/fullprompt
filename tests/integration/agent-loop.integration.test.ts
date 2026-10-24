@@ -961,3 +961,55 @@ describe('«💵 Narx yozaman» says what it does — his 6 b, nothing is record
     for (const w of words) expect(w).not.toMatch(/^[a-z_]+$/u);
   });
 });
+
+describe('a recalculation takes back the 💵 he approved and is still waiting (answers review)', () => {
+  it('the waiting row is cancelled as offer_gone, its card says why, and the ping says it will not go', async () => {
+    const root = await request();
+    await link(root);
+    await storedInbound(clientId);
+    const [d] = await db
+      .insert(agentDrafts)
+      .values({
+        managerUserId: ownerId,
+        peerId: PEER,
+        clientId,
+        anchorTgMessageId: msgSeq,
+        kind: 'price',
+        proposedBody: `Narxi 1250 $ ${SUFFIX}`,
+        status: 'approved',
+        decidedBy: ownerId,
+        decidedAt: new Date(),
+        policy: { priceRequestId: root },
+      })
+      .returning({ id: agentDrafts.id });
+    await db.insert(notifications).values({ userId: ownerId, channel: 'telegram', type: 'AgentDraft', payload: { draftId: d!.id, text: 'x' }, status: 'sent' });
+    // Held to the morning by the night rule — the wait that let the old figure out after the recalc.
+    const [o] = await db
+      .insert(agentOutbox)
+      .values({
+        draftId: d!.id,
+        managerUserId: ownerId,
+        peerId: PEER,
+        clientId,
+        body: `Narxi 1250 $ ${SUFFIX}`,
+        randomId: BigInt(`6${SUFFIX}1`),
+        answersTgMessageId: msgSeq,
+        status: 'agent',
+        nextStepAt: new Date(Date.now() + 9 * 3_600_000),
+        queuedBy: ownerId,
+      })
+      .returning({ id: agentOutbox.id });
+    const fix = await request(root);
+    expect(await announceAgentCalc(fix, 'recalc')).toBe(true);
+
+    const [row] = await db.select().from(agentOutbox).where(eq(agentOutbox.id, o!.id));
+    expect(row).toMatchObject({ status: 'cancelled' });
+    expect(row!.lastError).toMatch(/^offer_gone/u);
+    const [card] = (await ownerCards('AgentDraft')).filter((n) => (n.payload as { draftId?: string }).draftId === d!.id);
+    expect(textOf(card!)).toContain('VED qayta hisobladi');
+    const ping = (await ownerCards('AgentCalcAnswered')).find((n) => (n.payload as { event?: string }).event === 'recalc')!;
+    expect(textOf(ping)).toContain('endi yuborilmaydi');
+    expect(textOf(ping)).toContain(`Narxi 1250 $ ${SUFFIX}`);
+    expect(textOf(ping)).not.toContain('da ketadi');
+  });
+});

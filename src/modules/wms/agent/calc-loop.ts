@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import {
   agentCalcLinks,
@@ -11,7 +11,6 @@ import {
 } from '../../platform/db/schema';
 import { logger } from '../../platform/logger';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
-import { tashkentMinute } from '../../platform/time/tashkent';
 import { parseTypedMoney } from '../calc/money-input';
 import { agentRunning, readAgentConfig } from './config';
 import { chatIdentity } from './context';
@@ -128,7 +127,7 @@ export async function announceAgentCalc(
     returned: `🔁 VED hisobni qaytardi — ${who}\n${detail.reason ?? ''}`,
     recalc:
       `🔄 Qayta hisoblanmoqda — ${who}\n${section}: eski narx endi amal qilmaydi.` +
-      held.map((h) => `\n⚠️ Siz bergan narx hali ketmagan — ${h.at} da ketadi: «${h.body}». Kerak bo'lmasa suhbatda «Bekor qilish»ni bosing.`).join(''),
+      held.map((h) => `\n⚠️ Siz bergan narx hali ketmagan edi — endi yuborilmaydi: «${h.body}». Yangi javob kelganda narx bering.`).join(''),
   };
   await notifyStaffTelegram({
     userIds: [link.managerUserId],
@@ -164,19 +163,23 @@ export async function announceAgentCalc(
 }
 
 /**
- * A recalculation started on the chain a 💵 price was typed on (review A1:
- * with no offer row behind it, the send step's `offer_gone` can never fire
- * for one). Every PENDING price draft of this chat priced on a request the
- * correction replaces is retired — `superseded`, its card saying why — so a
- * ✅ on the old card is refused as «not live», never sent. A price he already
- * APPROVED is his decision and stays in the outbox; the recalc message names
- * each one still waiting, with the time it leaves, so he can take it back on
- * the chat. Returns those, as the ping prints them.
+ * A recalculation started on the chain a 💵 price was typed on (review A1).
+ * Every PENDING price draft of this chat priced on a request the correction
+ * replaces is retired — `superseded`, its card saying why — so a ✅ on the old
+ * card is refused as «not live», never sent. And a price he already APPROVED
+ * that is still waiting to go (the night hold, the gaps) does not go either
+ * (answers review): the figure answers a request that no longer stands, the
+ * send step refuses it as `offer_gone` (drafts `draftOfferStands`), and it is
+ * cancelled HERE already — the compare-and-set on 'agent' that every withdraw
+ * uses (config's `agent_off`), so a row the listener has claimed is the one
+ * in flight and is let finish — so its card says so now rather than reading
+ * «08:30 da ketadi» until the morning it would have been refused. Returns
+ * those, as the ping names them.
  */
 async function retirePricesOf(
   link: { managerUserId: string; peerId: bigint },
   requestId: string,
-): Promise<{ body: string; at: string }[]> {
+): Promise<{ body: string }[]> {
   const replaced = await chainAncestors(requestId);
   if (replaced.length === 0) return [];
   const priced = sql`${agentDrafts.policy}->>'priceRequestId' IN (${sql.join(replaced.map((id) => sql`${id}`), sql`, `)})`;
@@ -186,16 +189,24 @@ async function retirePricesOf(
     .set({ status: 'superseded', policy: sql`${agentDrafts.policy} || ${JSON.stringify({ stale: 'recalc' })}::jsonb`, updatedAt: new Date() })
     .where(and(mine, eq(agentDrafts.status, 'pending')))
     .returning({ id: agentDrafts.id });
-  for (const r of retired) {
-    const { refreshAgentCard } = await import('./card-io');
-    await refreshAgentCard(r.id).catch((err: unknown) => logger.warn({ err, draftId: r.id }, '[agent] card not refreshed'));
+  const withdrawn = await db
+    .update(agentOutbox)
+    .set({ status: 'cancelled', lastError: 'offer_gone: the priced request was recalculated' })
+    .where(
+      and(
+        eq(agentOutbox.status, 'agent'),
+        inArray(
+          agentOutbox.draftId,
+          db.select({ id: agentDrafts.id }).from(agentDrafts).where(and(mine, eq(agentDrafts.status, 'approved'))),
+        ),
+      ),
+    )
+    .returning({ draftId: agentOutbox.draftId, body: agentOutbox.body });
+  const { refreshAgentCard } = await import('./card-io');
+  for (const id of [...retired.map((r) => r.id), ...withdrawn.map((w) => w.draftId)]) {
+    await refreshAgentCard(id).catch((err: unknown) => logger.warn({ err, draftId: id }, '[agent] card not refreshed'));
   }
-  const waiting = await db
-    .select({ body: agentOutbox.body, at: agentOutbox.nextStepAt })
-    .from(agentOutbox)
-    .innerJoin(agentDrafts, eq(agentDrafts.id, agentOutbox.draftId))
-    .where(and(mine, eq(agentDrafts.status, 'approved'), eq(agentOutbox.status, 'agent'), eq(agentOutbox.readDone, false)));
-  return waiting.map((w) => ({ body: w.body, at: tashkentMinute(w.at) }));
+  return withdrawn.map((w) => ({ body: w.body }));
 }
 
 /** The hand-back run's instruction — the VED's reason is for the model, never for the customer word for word. */

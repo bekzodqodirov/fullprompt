@@ -11,7 +11,12 @@ export async function onAgentOutboxSettled(outboxId: string): Promise<void> {
   await refreshCardForOutbox(outboxId);
 }
 
-/** A price reply's offer still stands (released, not superseded) — null when the draft carries none. */
+/**
+ * A price reply's figure still stands — its request not superseded by a
+ * recalculation (his 6 b: a 💵 has no offer row), or its offer released and
+ * not superseded; null when the draft carries neither. False cancels the row
+ * as `offer_gone` at its next step.
+ */
 export async function offerStandsFor(draftId: string): Promise<boolean | null> {
   const { draftOfferStands } = await import('./drafts');
   return draftOfferStands(draftId);

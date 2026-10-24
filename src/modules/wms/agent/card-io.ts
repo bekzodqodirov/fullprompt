@@ -47,7 +47,8 @@ const CANCEL_WORDS: Record<string, string> = {
   muted: "chatda AI o'chirilgan",
   excluded: 'chat shaxsiy deb belgilangan',
   identity_changed: "chat boshqa mijozga o'tdi",
-  offer_gone: 'narx amal qilmaydi',
+  // Since his 6 b the one way a figure stops standing is a VED recalculation of its request (drafts `draftOfferStands`).
+  offer_gone: 'VED qayta hisobladi — bu narx endi amal qilmaydi',
   // The web cancel's own lastError (web-thread.ts) — keyed by the constant, so
   // a reworded value still has its word and never prints raw.
   [CANCELLED_BY_HOLDER]: 'o‘zingiz qaytarib oldingiz',

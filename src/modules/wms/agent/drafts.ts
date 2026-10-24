@@ -1,6 +1,6 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db, type Tx } from '../../platform/db/client';
-import { agentDrafts, agentOutbox, calcOffers, notifications } from '../../platform/db/schema';
+import { agentDrafts, agentOutbox, calcOffers, calcRequests, notifications } from '../../platform/db/schema';
 import { logger } from '../../platform/logger';
 import { kickTelegramDrain, notifyStaffTelegram, queueStaffTelegram } from '../../platform/notifications/staff';
 import { offerStandsSql, releasedOfferWhere } from '../calc/workspace';
@@ -241,9 +241,35 @@ export async function notifyCapReached(ownerUserId: string, reason: string): Pro
   });
 }
 
-/** A price reply's offer still stands — released and not superseded; null when the draft carries none. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+
+/**
+ * A price reply's figure still stands; null when the draft carries none.
+ *
+ * Two anchors. Since his 6 b a 💵 writes no offer row — the figure answers
+ * the REQUEST it was typed on (`policy.priceRequestId`), and it stops
+ * standing the moment a VED recalculation supersedes that request
+ * (`notSupersededSql`'s rule, the money side's: a correction exists, so the
+ * promise no longer stands — sealed or not). Without this an approval he made
+ * before the recalc, waiting in agent_outbox (the night hold, the gaps), went
+ * out with the old figure: there was no offer to be gone (answers review). A
+ * draft from before 6 b still carries an offer row, asked as before.
+ */
 export async function draftOfferStands(draftId: string): Promise<boolean | null> {
-  const [draft] = await db.select({ offerId: agentDrafts.offerId }).from(agentDrafts).where(eq(agentDrafts.id, draftId));
+  const [draft] = await db
+    .select({ offerId: agentDrafts.offerId, kind: agentDrafts.kind, policy: agentDrafts.policy })
+    .from(agentDrafts)
+    .where(eq(agentDrafts.id, draftId));
+  const priced = draft?.kind === 'price' ? ((draft.policy ?? {}) as { priceRequestId?: unknown }).priceRequestId : undefined;
+  if (typeof priced === 'string' && UUID.test(priced)) {
+    const [newer] = await db
+      .select({ id: calcRequests.id })
+      .from(calcRequests)
+      .where(eq(calcRequests.supersedesRequestId, priced))
+      .limit(1);
+    if (newer) return false;
+    if (!draft!.offerId) return true;
+  }
   if (!draft?.offerId) return null;
   const [row] = await db
     .select({ id: calcOffers.id })

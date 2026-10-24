@@ -21,6 +21,7 @@ import {
   agentDrafts,
   agentOutbox,
   attachments,
+  calcRequests,
   clients,
   leads,
   leadStages,
@@ -45,7 +46,7 @@ import {
   recoverAgentInFlight,
   sendFactsFor,
 } from '@/modules/wms/agent/outbox-store';
-import type { AgentOutboxRow, StepOutcome } from '@/modules/wms/agent/send-step';
+import { agentSendVerdict, verdictOutcome, type AgentOutboxRow, type StepOutcome } from '@/modules/wms/agent/send-step';
 import type { AlarmAccount } from '@/modules/wms/crm/account-alarm';
 import { readGuard, recordFlood } from '@/modules/wms/crm/account-guard';
 import { clientHasWritten, recordSent } from '@/modules/wms/crm/outbox';
@@ -74,6 +75,7 @@ const startedAt = new Date();
 const madeUsers: string[] = [];
 const madeAccounts: string[] = [];
 const madeFiles: string[] = [];
+const madeRequests: string[] = [];
 let managerId: string;
 let account: AlarmAccount;
 let clientId: string;
@@ -272,6 +274,8 @@ afterAll(async () => {
     await db.delete(tgAccountGuard).where(inArray(tgAccountGuard.accountId, madeAccounts));
     await db.delete(tgAccounts).where(inArray(tgAccounts.id, madeAccounts));
   }
+  // Newest first: a correction names the request it replaces.
+  if (madeRequests.length) await db.delete(calcRequests).where(inArray(calcRequests.id, [...madeRequests].reverse()));
   await db.delete(leads).where(eq(leads.id, leadId));
   await db.delete(clients).where(inArray(clients.id, [clientId, otherClientId]));
   for (const id of madeUsers) {
@@ -813,6 +817,68 @@ describe('the send path’s review fixes', () => {
     expect((await readGuard(own.account.id)).floodUntil).toBeNull();
     await recordFlood({ accountId: own.account.id, method: 'messages.SendMessage', seconds: 600, source: 'raise' });
     expect((await readGuard(own.account.id)).floodUntil!.getTime()).toBeGreaterThan(Date.now() + 590_000);
+  });
+});
+
+describe('an approved 💵 whose request a VED recalculation replaced never goes (answers review)', () => {
+  async function priceRequest(supersedes: string | null = null): Promise<string> {
+    const [r] = await db
+      .insert(calcRequests)
+      .values({
+        entityType: 'deal',
+        entityId: '00000000-0000-4000-8000-000000000136',
+        requestedBy: managerId,
+        itemCount: 1,
+        section: 'podklyuch',
+        dueAt: new Date(Date.now() + 3_600_000),
+        supersedesRequestId: supersedes,
+      })
+      .returning({ id: calcRequests.id });
+    madeRequests.push(r!.id);
+    return r!.id;
+  }
+
+  it('its figure stands until a correction supersedes the request, then the step cancels it as offer_gone and the card says why', async () => {
+    const own = await makeManager('price-recalc');
+    const { row, draftId } = await approved({ manager: own.userId });
+    const priced = await priceRequest();
+    // What `priceDraftFromText` writes (his 6 b): no offer row, the request on the policy.
+    await db.update(agentDrafts).set({ kind: 'price', policy: { priceRequestId: priced } }).where(eq(agentDrafts.id, draftId));
+    await db.insert(notifications).values({
+      userId: own.userId,
+      channel: 'telegram',
+      type: 'AgentDraft',
+      payload: { draftId, text: '✅ Tasdiqlandi · 08:30 da ketadi.' },
+      status: 'sent',
+    });
+    const standing = await sendFactsFor(row, new Date(), ctx(own.account.id));
+    expect(standing.offerStands).toBe(true);
+    const on = { agentOn: true, ownerUserId: own.userId, sendingEnabled: true } as const;
+    // Nothing makes it WRONG — at most a wait (this file's agent has no start day, so the ramp holds it).
+    expect(agentSendVerdict(row, { ...standing, ...on })).not.toMatchObject({ final: true });
+
+    // The VED presses «Qayta hisoblash»: a correction is a NEW request naming this one.
+    await priceRequest(priced);
+    const facts = await sendFactsFor(row, new Date(), ctx(own.account.id));
+    expect(facts.offerStands).toBe(false);
+    const verdict = agentSendVerdict(row, { ...facts, ...on });
+    expect(verdict).toEqual({ ok: false, final: true, reason: 'offer_gone' });
+    await applyAgentOutcome(row, verdictOutcome(row, verdict)!, own.account);
+    expect(await agentRowById(row.id)).toMatchObject({ status: 'cancelled' });
+    const [card] = await db
+      .select()
+      .from(notifications)
+      .where(and(eq(notifications.userId, own.userId), eq(notifications.type, 'AgentDraft')));
+    expect(String((card!.payload as { text?: unknown }).text)).toContain('VED qayta hisobladi');
+  });
+
+  it('a reply with no price behind it is not asked about a request at all', async () => {
+    const { row, draftId } = await approved({});
+    const unrelated = await priceRequest();
+    await priceRequest(unrelated);
+    // A plain reply carrying a stray key is still no price draft.
+    await db.update(agentDrafts).set({ policy: { priceRequestId: unrelated } }).where(eq(agentDrafts.id, draftId));
+    expect((await sendFactsFor(row, new Date(), ctx(account.id))).offerStands).toBeNull();
   });
 });
 
