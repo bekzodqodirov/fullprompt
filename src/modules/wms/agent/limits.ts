@@ -13,6 +13,17 @@ import { DEFAULT_LIMITS } from '../crm/telegram-send';
  * Every send cap is at or below the human queue's own (`DEFAULT_LIMITS`), and
  * `tests/unit/agent-limits.test.ts` says so: the agent may never be the reason
  * the account hits a ceiling the human bridge already respects.
+ *
+ * Whose sends each queue counts (final review K5). The AGENT's account-wide
+ * fuses — `perHour`, `perDay` (with the ramp's ceiling) and the jittered gap
+ * between two sends (`sendJitterMs`) — count its own rows AND the account's
+ * sent CRM replies (`outbox-store.ts` chatFacts), so the machine yields to
+ * the people: what it may send is what the account has left. Its per-chat
+ * numbers (`perChatGapMs`, `perChatPerDay`) count its own voice only — a
+ * person's reply after the anchor cancels the row outright. The HUMAN queue's
+ * `DEFAULT_LIMITS` count tg_outbox rows only, exactly as they always have: a
+ * person's reply is never held back because the machine spoke, and the
+ * human path is not changed by the agent's existence.
  */
 export const AGENT_LIMITS = {
   /**

@@ -48,6 +48,7 @@ const facts: SendFacts = {
   anchorDeleted: false,
   anchorEditedSinceDraft: false,
   humanReplied: false,
+  humanUntil: null,
   newerSubstantiveInbound: false,
   peerHasWritten: true,
   lastInboundAt: new Date(now.getTime() - 10 * 60_000),
@@ -124,6 +125,7 @@ describe('agentSendVerdict', () => {
     [{ anchorDeleted: true }, 'anchor_gone'],
     [{ anchorEditedSinceDraft: true }, 'anchor_edited'],
     [{ humanReplied: true }, 'human_replied'],
+    [{ humanUntil: new Date(now.getTime() + 23 * 3_600_000) }, 'human_replied'],
     [{ newerSubstantiveInbound: true }, 'anchor_superseded'],
     [{ anchorSentAt: new Date(now.getTime() - 25 * 3_600_000) }, 'anchor_too_old'],
     [{ peerHasWritten: false }, 'never_wrote'],
@@ -133,6 +135,21 @@ describe('agentSendVerdict', () => {
     [{ offerStands: false }, 'offer_gone'],
   ] as const)('refuses for good: %o → %s', (patch, reason) => {
     expect(agentSendVerdict(row, { ...facts, ...patch })).toEqual({ ok: false, final: true, reason });
+  });
+
+  it('his 🙋 refuses a reply already approved — for good, before any wait, and only while the chat is his (K2)', () => {
+    const his = { ...facts, humanUntil: new Date(now.getTime() + 60_000) };
+    const final = { ok: false, final: true, reason: 'human_replied' };
+    // Night-held to the morning, flooded, or capped: the chat he took is still his, so the reply never goes.
+    expect(agentSendVerdict(row, { ...his, floodUntil: new Date(now.getTime() + 3_600_000) })).toEqual(final);
+    expect(agentSendVerdict(row, { ...his, sentToday: 80 })).toEqual(final);
+    const night = new Date('2026-10-24T20:00:00Z'); // 01:00 Tashkent
+    const atNight = { ...facts, now: night, anchorSentAt: new Date(night.getTime() - 3 * 3_600_000), lastInboundAt: null };
+    const pressed = { ...row, queuedAt: new Date(night.getTime() - 60_000) };
+    expect(agentSendVerdict(pressed, atNight), 'without 🙋 the night only holds it').toMatchObject({ final: false, reason: 'night' });
+    expect(agentSendVerdict(pressed, { ...atNight, humanUntil: new Date(night.getTime() + 60_000) })).toEqual(final);
+    // A day later the chat is the agent's again.
+    expect(agentSendVerdict(row, { ...facts, humanUntil: new Date(now.getTime() - 1) })).toEqual({ ok: true });
   });
 
   it('refuses an approval older than six hours', () => {

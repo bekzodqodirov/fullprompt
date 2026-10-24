@@ -50,11 +50,15 @@ export function pausedAlarmText(input: {
   );
 }
 
-export type AgentOffReason = 'flood_repeat' | 'blocks';
+export type AgentOffReason = 'flood_repeat' | 'blocks' | 'telegram_notice';
 
 const AGENT_OFF_WORDS: Record<AgentOffReason, string> = {
   flood_repeat: '24 soat ichida Telegram ikki marta yuborishni kutishga buyurdi (FLOOD_WAIT)',
   blocks: '7 kun ichida AI javob yubormoqchi bo‘lgan ikki mijoz akkauntni bloklagan bo‘lib chiqdi',
+  // Never the notice's own words: 777000 also sends login codes, and a code copied into a bot message is a
+  // code handed to whoever reads that chat. He reads the notice where Telegram put it.
+  telegram_notice:
+    'Telegramning o‘z xizmat akkaunti (777000) bu akkauntga xabar yubordi — uni Telegram ilovasida o‘qing',
 };
 
 /** Pure: the machine switched itself off to keep the account — said once, with the reason. */
@@ -174,6 +178,36 @@ export async function agentBlocked(account: AlarmAccount): Promise<{ agentOff: b
   const agentOff = await agentOffFor(account, 'blocks');
   if (agentOff) {
     await alarm(account, 'AgentForcedOff', agentOffAlarmText({ managerName: account.managerName, reason: 'blocks' }));
+  }
+  return { agentOff };
+}
+
+/**
+ * Telegram's own service account (777000) wrote to the account the agent
+ * speaks from (his ⭐2 «AI off at once on any official notice», final review
+ * K33): the agent goes off at once, with the approved replies and the live
+ * drafts, and ONE alarm says so in words.
+ *
+ * Any line from it, not a guess at which ones are serious: a notice about the
+ * API terms or a limitation is the warning his account gets before a ban, and
+ * Telegram words it differently every time. The same account sends login
+ * codes and «new login» alerts — and a new login is exactly what his
+ * «session exclusive» confirmation said would not happen while the machine
+ * speaks for him. Switching back on is one press; reading the notice first
+ * is the point.
+ *
+ * Nothing of the message is kept here — not its text, not a row — and only
+ * the account the agent speaks from is touched (`agentOffFor`); every other
+ * account, and this one with the agent off, does nothing at all.
+ */
+export async function agentTelegramNotice(account: AlarmAccount): Promise<{ agentOff: boolean }> {
+  const agentOff = await agentOffFor(account, 'telegram_notice');
+  if (agentOff) {
+    await alarm(
+      account,
+      'AgentForcedOff',
+      agentOffAlarmText({ managerName: account.managerName, reason: 'telegram_notice' }),
+    );
   }
   return { agentOff };
 }

@@ -1,6 +1,7 @@
 import { Api, helpers } from 'telegram';
 import { describe, expect, it } from 'vitest';
 import { agentOffAlarmText, pausedAlarmText, sessionDeadOthersText } from '@/modules/wms/crm/account-alarm';
+import { isTelegramServiceNotice, TELEGRAM_SERVICE_PEER } from '@/modules/wms/agent/listener-hooks';
 import { wasAutoSent } from '@/modules/wms/crm/message-flags';
 
 /**
@@ -44,11 +45,18 @@ describe('the alarms', () => {
   });
 
   it('the machine’s own «off» says why and where it is switched back on', () => {
-    for (const reason of ['flood_repeat', 'blocks'] as const) {
+    for (const reason of ['flood_repeat', 'blocks', 'telegram_notice'] as const) {
       const text = agentOffAlarmText({ managerName: 'Bekzod', reason });
       expect(text).toContain('Bekzod');
       expect(text).toContain('«Suhbatlar → AI»');
     }
+  });
+
+  it('Telegram’s own notice is named by whose it is and where to read it — never quoted (K33)', () => {
+    const text = agentOffAlarmText({ managerName: 'Bekzod', reason: 'telegram_notice' });
+    expect(text).toContain('777000');
+    // Where to read it — the alarm itself carries none of the notice, which may be a login code.
+    expect(text).toContain('Telegram ilovasida');
   });
 
   it('a colleague’s copy of the session alarm names the manager, not «you»', () => {
@@ -56,5 +64,21 @@ describe('the alarms', () => {
     expect(text).toContain('Siroj');
     expect(text).toContain('SESSION_REVOKED');
     expect(text).not.toContain('seansingiz');
+  });
+});
+
+describe('Telegram’s own service account (his ⭐2, final review K33)', () => {
+  const service = { id: TELEGRAM_SERVICE_PEER, isPrivate: true, isSelf: false };
+
+  it('is its own inbound line in its private chat', () => {
+    expect(TELEGRAM_SERVICE_PEER).toBe(777000n);
+    expect(isTelegramServiceNotice(service, false)).toBe(true);
+  });
+
+  it('is never a line of his, his Saved Messages, a group or channel with the same id, or a customer', () => {
+    expect(isTelegramServiceNotice(service, true)).toBe(false);
+    expect(isTelegramServiceNotice({ ...service, isSelf: true }, false)).toBe(false);
+    expect(isTelegramServiceNotice({ ...service, isPrivate: false }, false)).toBe(false);
+    expect(isTelegramServiceNotice({ ...service, id: 777001n }, false)).toBe(false);
   });
 });

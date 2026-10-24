@@ -65,6 +65,13 @@ export interface SendFacts {
   anchorEditedSinceDraft: boolean;
   /** An out row in this chat after the anchor that is not this outbox row (his phone, a CRM reply). */
   humanReplied: boolean;
+  /**
+   * The chat's 🙋 «24 soat menda» (`agent_conversations.human_until`), or null — when he took the chat
+   * over himself. Read at THIS tick like every other fact (final review K2): a reply approved before the
+   * press and still waiting (night-held to 08:30, a flood, a cap) was otherwise sent into the chat he had
+   * just said is his.
+   */
+  humanUntil: Date | null;
   /** An inbound in this chat after the anchor that is not a nudge (`draftWorthy` says it wants its own answer). */
   newerSubstantiveInbound: boolean;
   /** This peer has written to this account (G7 per PEER, ban-8). */
@@ -142,6 +149,10 @@ export function agentSendVerdict(
   if (f.anchorSentAt === null || f.anchorDeleted) return fin('anchor_gone');
   if (f.anchorEditedSinceDraft) return fin('anchor_edited');
   if (f.humanReplied) return fin('human_replied');
+  // 🙋 is the same promise as a reply of his own, made a moment before he types it — so the same refusal
+  // and the card's same words («o'zingiz javob berdingiz», the draft's own `taken_over` line). FINAL, not a
+  // wait: the chat is his for a day, and a reply carried past that would answer a conversation he ran.
+  if (f.humanUntil && f.humanUntil.getTime() > now) return fin('human_replied');
   if (f.newerSubstantiveInbound) return fin('anchor_superseded');
   if (now - f.anchorSentAt.getTime() > AGENT_LIMITS.anchorMaxAgeMs) return fin('anchor_too_old');
   // From the later of the press and the morning it was held to (S2) — or every night-held ✅ is cancelled
@@ -222,8 +233,11 @@ export interface SlotState {
  *     read (`headAt`): a person's CRM reply that went first. The head is read
  *     again on the next step, and it says `human_replied`.
  *
- * A WAIT for the agent's row; for a person's reply the claim is released and
- * the next tick takes it again. Pure: the listener holds the memory.
+ * A WAIT for the agent's row; for a person's reply the claim is given back,
+ * its attempt with it (`giveClaimBack`, final review K4), and the human pump
+ * asks this same question BEFORE its next claim, so a held turn is not
+ * claimed again and again while it lasts (K22). Pure: the listener holds the
+ * memory.
  */
 export function slotHold(s: SlotState, headAt: Date | null): { reason: WaitReason; until: Date } | null {
   const now = s.now.getTime();

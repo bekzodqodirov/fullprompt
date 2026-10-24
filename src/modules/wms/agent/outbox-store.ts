@@ -122,6 +122,7 @@ type ChatFactsRow = {
   human_replied: boolean;
   peer_has_written: boolean;
   last_inbound_ms: number | null;
+  human_until_ms: number | null;
   muted: boolean;
   excluded: boolean;
   newest_client_id: string | null;
@@ -149,12 +150,23 @@ type ChatFactsRow = {
  *                   for a client;
  *   newest        — the chat's newest stored row's owner (leak-4);
  *   last_inbound  — when the customer last wrote, for the night rule (S3);
- *   caps          — AI sends only, the Tashkent day and the last hour —
- *                   every row handed to Telegram: 'sent', and 'unknown'
+ *   human_until   — his 🙋 on this chat (K2), whatever row it was pressed on;
+ *   caps          — the Tashkent day and the last hour. The AI's rows are
+ *                   every one handed to Telegram: 'sent', and 'unknown'
  *                   (S5: perhaps delivered, and a fuse that cannot see it
  *                   lets the next reply go as if it were not), each on the
  *                   moment it left (`sent_at`, else the claim before the
- *                   send).
+ *                   send). And the account's own CRM replies (tg_outbox
+ *                   'sent', on `sent_at`) count in the ACCOUNT's hour, day
+ *                   and gap (final review K5): one personal account is one
+ *                   voice to Telegram, so the machine's ceilings are what
+ *                   is left of them after the people — never 200 of theirs
+ *                   plus 80 of its own, never its reply a second after a
+ *                   colleague's. Not in the CHAT's two: those are about the
+ *                   machine's own voice in one conversation, and a person's
+ *                   reply there after the anchor already cancels the row
+ *                   (`human_replied`). The human queue counts only its own
+ *                   rows, as it always has (`limits.ts`).
  */
 async function chatFacts(row: AgentOutboxRow, now: Date): Promise<ChatFactsRow> {
   const m = sql`${row.managerUserId}::uuid`;
@@ -183,6 +195,9 @@ async function chatFacts(row: AgentOutboxRow, now: Date): Promise<ChatFactsRow> 
       ${msOf(sql`(
         SELECT max(li.sent_at) FROM tg_messages li
          WHERE li.manager_user_id = ${m} AND li.peer_id = ${p} AND li.direction = 'in')`)} AS last_inbound_ms,
+      ${msOf(sql`(
+        SELECT h.human_until FROM agent_conversations h
+         WHERE h.manager_user_id = ${m} AND h.peer_id = ${p})`)} AS human_until_ms,
       EXISTS (
         SELECT 1 FROM agent_conversations c
          WHERE c.manager_user_id = ${m} AND c.peer_id = ${p} AND c.muted_at IS NOT NULL
@@ -217,6 +232,10 @@ async function chatFacts(row: AgentOutboxRow, now: Date): Promise<ChatFactsRow> 
         FROM (
           SELECT x.peer_id, coalesce(x.sent_at, x.step_claimed_at) AS at FROM agent_outbox x
            WHERE x.manager_user_id = ${m} AND x.status IN ('sent', 'unknown')
+          UNION ALL
+          -- A person's CRM reply: the account's windows only, so it names no chat (a NULL peer matches none).
+          SELECT NULL::bigint, t.sent_at FROM tg_outbox t
+           WHERE t.manager_user_id = ${m} AND t.status = 'sent' AND t.sent_at IS NOT NULL
         ) s
        WHERE s.at >= least(${dayStart}, ${hourAgo})
     ) caps`);
@@ -317,6 +336,7 @@ export async function sendFactsFor(row: AgentOutboxRow, now: Date, ctx: StoreCon
     anchorDeleted: chat.anchor_deleted,
     anchorEditedSinceDraft: chat.anchor_edited,
     humanReplied: chat.human_replied,
+    humanUntil: dateOf(chat.human_until_ms),
     newerSubstantiveInbound: substantive,
     peerHasWritten: chat.peer_has_written,
     lastInboundAt: dateOf(chat.last_inbound_ms),

@@ -30,16 +30,35 @@ describe('the pump asks the gate before every claim (ban-1)', () => {
     expect(refused).toContain("gate.reason !== 'flood_wait'");
   });
 
-  it('a restriction pauses the account and releases the row, never failing it', () => {
+  it('a restriction pauses the account and gives the claim back, never failing it', () => {
     const branch = pump.slice(
       pump.indexOf("kind.kind === 'restricted'"),
       pump.indexOf("typeof seconds === 'number'", pump.indexOf("kind.kind === 'restricted'")),
     );
     expect(branch).toContain('accountRestricted(');
-    expect(branch).toContain('releaseClaim(job.id)');
+    // K4: the claim's own attempt is taken back with it — the account's trouble spends none of the reply's retries.
+    expect(branch).toContain('giveClaimBack(job.id)');
+    expect(branch, 'releaseClaim keeps the claim counted').not.toContain('releaseClaim(');
     expect(branch, 'no attempt is counted').not.toContain('markAttemptFailed');
     // The pause is committed FIRST: released before it, the row would be claimed again.
-    expect(branch.indexOf('accountRestricted(')).toBeLessThan(branch.indexOf('releaseClaim(job.id)'));
+    expect(branch.indexOf('accountRestricted(')).toBeLessThan(branch.indexOf('giveClaimBack(job.id)'));
+  });
+
+  it('K22: a turn the slot would hold is not claimed at all — asked after the gate, before claimNext', () => {
+    const between = pump.slice(pump.indexOf('if (!gate.ok) {'), pump.indexOf('claimNext('));
+    const held = between.slice(between.indexOf('slotHold('));
+    expect(between.indexOf('slotHold('), 'the slot’s own question, from the slot’s own memory').toBeGreaterThan(0);
+    expect(held).toContain('restrictedAt: slotRestrictedAt');
+    expect(held).toContain('floodUntil: floodWaitUntil');
+    expect(held.slice(0, held.indexOf('return;') + 'return;'.length)).toMatch(/\)\s*\{\s*return;$/);
+  });
+
+  it('K22: the slot remembers a restriction only where 0136 can hold the pause that retires it', () => {
+    const note = body('const noteSlotRestricted = () => {', 'const noteSlotFailure =');
+    expect(note).toContain('if (tablesKnownReady) slotRestrictedAt = new Date();');
+    // The one writer of the note: a person's send's failure and the agent's own both go through it.
+    expect(source.match(/slotRestrictedAt = new Date\(\)/g)).toHaveLength(1);
+    expect(body('const noteSlotFailure = (err: unknown) => {', 'const sendSlot = <T>')).toContain('noteSlotRestricted()');
   });
 
   it('a raised flood is persisted, uncapped, beside the in-memory clock', () => {
@@ -197,7 +216,7 @@ describe('the send path’s review fixes, as wired', () => {
     const turn = body('const agentTurn: SendTurn = async', 'const restoreBadge = async');
     const inside = turn.slice(turn.indexOf('await sendSlot(turn,'), turn.indexOf('} catch (err) {'));
     expect(inside).toContain("if (outcome.kind === 'flooded') noteSlotFlood(outcome.seconds)");
-    expect(inside).toContain("outcome.error.kind === 'restricted') slotRestrictedAt = new Date()");
+    expect(inside).toContain("outcome.error.kind === 'restricted') noteSlotRestricted()");
     expect(turn).toContain("if (err instanceof SlotHeld) return { kind: 'wait', nextStepAt: err.until, reason: err.reason }");
   });
 
@@ -205,7 +224,9 @@ describe('the send path’s review fixes, as wired', () => {
     const failed = pump.slice(pump.indexOf('} catch (err) {', pump.indexOf('sent += 1;')));
     const held = failed.slice(0, failed.indexOf('const message ='));
     expect(held).toContain('if (err instanceof SlotHeld) {');
-    expect(held).toContain('releaseClaim(job.id)');
+    // K4: «no attempt counted» is made TRUE — claimNext counted one, and it is taken back.
+    expect(held).toContain('giveClaimBack(job.id)');
+    expect(held).not.toContain('releaseClaim(');
     expect(held).not.toContain('markAttemptFailed');
     // The guard row holding the pause retires the slot's own note of it, so «Tekshirdim» takes effect.
     const before = pump.slice(0, pump.indexOf('pumpGate('));
@@ -242,6 +263,27 @@ describe('the send path’s review fixes, as wired', () => {
     expect(handle).toContain("if (verdict.reason === 'no_phone') await strangerSeen(peer, msg.out === true, 'no_phone')");
     // The live line, a pull and the site sweep all carry the user's flags; nothing else reads them.
     expect(source.match(/listenPeer\(await msg\.getChat\?\.\(\)\)/g)).toHaveLength(3);
+  });
+});
+
+describe('Telegram’s own notice (his ⭐2, final review K33)', () => {
+  it('the live handler asks it of every line, before the line is decided or stored', () => {
+    const live = source.slice(source.indexOf('client.addEventHandler(async (event: { message?: unknown }) => {'), source.indexOf('new NewMessage({})'));
+    const ask = live.indexOf('if (isTelegramServiceNotice(peer, msg.out === true)) await telegramNoticeSeen();');
+    expect(ask).toBeGreaterThan(0);
+    expect(ask).toBeLessThan(live.indexOf("handleMessage(peer, msg, 'live')"));
+  });
+
+  it('switches the agent off through the alarm’s one door, from fresh settings, and keeps nothing of the message', () => {
+    // The closure alone: from its declaration to its own closing brace.
+    const seen = body('const telegramNoticeSeen = async () => {', '\n  };\n');
+    expect(seen.indexOf('tablesReady()'), 'one migration behind, there is no agent to switch off').toBeGreaterThan(0);
+    expect(seen.indexOf('tablesReady()')).toBeLessThan(seen.indexOf('agentTelegramNotice(alarmAccount)'));
+    // Not the half-minute cache: a notice just after the switch was flipped on must not slip through.
+    expect(seen).not.toContain('agentConfigSoon');
+    expect(seen).not.toContain('agentHere');
+    // Nothing of the line: no text, no row, no tray candidate.
+    expect(seen).not.toMatch(/msg\.|message:|body:|storeIncoming|recordCandidates/);
   });
 });
 

@@ -52,6 +52,27 @@ export async function isNewestInbound(managerUserId: string, peerId: bigint, tgM
   return rows[0]?.tg_message_id === tgMessageId.toString();
 }
 
+/**
+ * Telegram's own service account: API-terms and limitation notices, login
+ * codes, «new login» alerts — all from this one id.
+ */
+export const TELEGRAM_SERVICE_PEER = 777000n;
+
+/**
+ * Pure: is this line a notice from Telegram itself (his ⭐2, final review
+ * K33)? Its own inbound line in its private chat — never his Saved Messages,
+ * never a group or a channel whose id happens to read the same, never a line
+ * of his. The listener asks it of a LIVE message only, before anything else
+ * decides about it, and what follows is `agentTelegramNotice` — nothing of
+ * the message is stored by that.
+ */
+export function isTelegramServiceNotice(
+  peer: { id: bigint; isPrivate: boolean; isSelf?: boolean },
+  out: boolean,
+): boolean {
+  return !out && peer.isPrivate && peer.isSelf !== true && peer.id === TELEGRAM_SERVICE_PEER;
+}
+
 /** What the gramjs user says about itself — read off the chat a stranger's message came from. */
 export interface StrangerUser {
   /** In his contacts (or mutually so): a friend or a colleague, never a lead (review fit-7). */

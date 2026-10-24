@@ -5,6 +5,7 @@ import { recordCandidates, rulesFor } from '../src/modules/wms/crm/chat-rules';
 import {
   claimNext,
   clientHasWritten,
+  giveClaimBack,
   loadOutboxFile,
   markAttemptFailed,
   markSent,
@@ -87,6 +88,7 @@ import { readGuard, stampAgentPump } from '../src/modules/wms/crm/account-guard'
 import {
   accountFlooded,
   accountRestricted,
+  agentTelegramNotice,
   announceSessionDeadToOthers,
   type AlarmAccount,
 } from '../src/modules/wms/crm/account-alarm';
@@ -128,6 +130,7 @@ import { agentTelegramOver } from '../src/modules/wms/agent/gramjs-adapter';
 import { isNudge } from '../src/modules/wms/agent/worthy';
 import {
   isNewestInbound,
+  isTelegramServiceNotice,
   noteStranger,
   stampPeerTyping,
   strangerUserOf,
@@ -422,6 +425,26 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
   };
 
   /**
+   * Telegram itself wrote to this account (his ⭐2, final review K33): the
+   * agent goes off at once when it speaks from here, and the alarm says so in
+   * words (`agentTelegramNotice`). Not the cached settings — a notice minutes
+   * after the switch was flipped on must not slip through a stale cache — and
+   * nothing of the message is stored by this: the line goes on to
+   * `handleMessage` exactly as it always did. A database one migration behind
+   * has no agent to switch off. A failure is a logged line, never a downed
+   * bridge.
+   */
+  const telegramNoticeSeen = async () => {
+    try {
+      if (!(await tablesReady())) return;
+      const { agentOff } = await agentTelegramNotice(alarmAccount);
+      if (agentOff) console.error('TELEGRAM XIZMATI (777000) XABAR YUBORDI — AI sotuvchi o‘chirildi');
+    } catch (err) {
+      console.error('Telegram xizmati xabari AI ni o‘chirmadi:', err instanceof Error ? err.message : err);
+    }
+  };
+
+  /**
    * A website visitor's tag, turned into the chat's rule BEFORE the message
    * is decided (round 113) — so the tagged message and every later one take
    * the lead-rule road that already works, instead of a second one.
@@ -523,6 +546,8 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       // it is what the import iterates, so both paths reduce a conversation
       // identically.
       const peer = listenPeer(await msg.getChat?.());
+      // Before anything else decides about the line: an official notice switches the agent off first.
+      if (isTelegramServiceNotice(peer, msg.out === true)) await telegramNoticeSeen();
       await serialised(peer.id.toString(), () => handleMessage(peer, msg, 'live'));
     } catch (err) {
       // One bad event must not take the bridge down: it would stop receiving
@@ -1065,10 +1090,22 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
   const noteSlotFlood = (seconds: number) => {
     floodWaitUntil = laterOf(floodWaitUntil, computeFloodWait(seconds));
   };
+  /**
+   * A restriction a send met, held by the slot until the guard row is seen to
+   * hold the pause — and only where there IS a guard row (final review K22).
+   * One migration behind, nothing writes the pause and nothing clears this
+   * note (`guard` is null below), the restricted reply fails the old way, and
+   * a two-minute hold would only bounce every later person's reply off the
+   * slot: today's path is to try them, and on an old schema the listener runs
+   * today's paths (regression-3 b).
+   */
+  const noteSlotRestricted = () => {
+    if (tablesKnownReady) slotRestrictedAt = new Date();
+  };
   const noteSlotFailure = (err: unknown) => {
     const kind = tgErrorKind(err);
     if (kind.kind === 'flood') noteSlotFlood(kind.seconds);
-    else if (kind.kind === 'restricted') slotRestrictedAt = new Date();
+    else if (kind.kind === 'restricted') noteSlotRestricted();
   };
   const sendSlot = <T>(turn: { peerId: bigint | null; headAt: Date | null }, work: () => Promise<T>): Promise<T> => {
     const run = async () => {
@@ -1119,7 +1156,7 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       return await sendSlot(turn, async () => {
         const outcome = await send();
         if (outcome.kind === 'flooded') noteSlotFlood(outcome.seconds);
-        else if (outcome.kind === 'failed' && outcome.error.kind === 'restricted') slotRestrictedAt = new Date();
+        else if (outcome.kind === 'failed' && outcome.error.kind === 'restricted') noteSlotRestricted();
         return outcome;
       });
     } catch (err) {
@@ -1484,6 +1521,18 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       }
       return;
     }
+    // A turn the slot would refuse is never claimed (final review K22): a
+    // restriction the send ahead of this one met, which the guard row does
+    // not hold yet. Claimed anyway, the slot throws `SlotHeld`, and every tick
+    // and every knock of the two-minute hold cost the reply one of its
+    // attempts. The same question the slot asks at the turn, from the same
+    // memory, before the claim — a wait that lands while this tick is on its
+    // way is still caught there, and that claim is given back.
+    if (
+      slotHold({ now: new Date(), floodUntil: floodWaitUntil, restrictedAt: slotRestrictedAt, peerSentAt: null }, null)
+    ) {
+      return;
+    }
 
     const job = await claimNext(account.managerUserId);
     if (!job) {
@@ -1595,11 +1644,13 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       if (echo) void crmReplied(echo.peerId, echo.tgMessageId);
     } catch (err) {
       // The slot refused the turn — a wait or a restriction the send ahead of
-      // this one met. Nothing was called: the reply goes back to the queue, no
-      // attempt counted, and the gate says why on the next tick.
+      // this one met. Nothing was called: the reply goes back to the queue
+      // with its claim GIVEN BACK (final review K4) — `claimNext` counted an
+      // attempt, and the account's trouble must not spend the reply's retries
+      // — and the gate says why on the next tick.
       if (err instanceof SlotHeld) {
         console.log(`  ⏸ ${job.id.slice(0, 8)}: navbatga qaytdi (${err.reason})`);
-        await releaseClaim(job.id).catch(() => {});
+        await giveClaimBack(job.id).catch(() => {});
         return;
       }
       const message = err instanceof Error ? err.message : String(err);
@@ -1636,15 +1687,17 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       // three seconds later is exactly the knocking that makes it worse. The
       // pause is committed FIRST — the gate above reads it before the next
       // claim, human rows included — and the row goes back to the queue with
-      // no attempt counted: the reply is fine, the account is not. On a
-      // database without 0136 there is nowhere to keep a pause, so the old
-      // answer (the row fails, permanently) stands below.
+      // its claim given back (final review K4: `claimNext` had counted it):
+      // the reply is fine, the account is not, and «Tekshirdim» must find the
+      // reply with every retry it had. On a database without 0136 there is
+      // nowhere to keep a pause, so the old answer (the row fails,
+      // permanently) stands below.
       if (kind.kind === 'restricted' && (await tablesReady())) {
         console.error(`AKKAUNT CHEKLANDI (${kind.code}) — yuborish to‘xtatildi, «Tekshirdim» kutilmoqda`);
         await accountRestricted(alarmAccount, { pause: kind.pause, code: kind.code }).catch(async (e: unknown) => {
           await noteDbFailure(e);
         });
-        await releaseClaim(job.id).catch(() => {});
+        await giveClaimBack(job.id).catch(() => {});
         return;
       }
       if (typeof seconds === 'number') {

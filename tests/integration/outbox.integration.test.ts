@@ -20,6 +20,7 @@ import {
   cancelQueued,
   claimNext,
   clientHasWritten,
+  giveClaimBack,
   loadOutboxFile,
   markAttemptFailed,
   markSent,
@@ -306,6 +307,49 @@ describe('when sending goes wrong', () => {
     // waiting for. Neither is safe to do silently, so a person is told.
     expect(row!.status).toBe('failed');
     expect(row!.lastError).toContain('listener restarted');
+  });
+});
+
+describe('a bounce about the ACCOUNT gives the claim back (final review K4, K22)', () => {
+  it('a held slot or a restriction spends none of the reply’s retries — the first real blip after it still re-queues', async () => {
+    await db.delete(tgOutbox).where(eq(tgOutbox.clientId, clientId));
+    const { id } = await queueReply({ clientId, managerUserId: managerId, body: 'qaytariladi' }, ctx());
+    // Ticks of a held slot: claimed, refused before any call, given back — the pump's SlotHeld branch.
+    for (let i = 0; i < 10; i += 1) {
+      const job = await claimNext(managerId);
+      expect(job?.id).toBe(id);
+      await giveClaimBack(id);
+    }
+    const [held] = await db.select().from(tgOutbox).where(eq(tgOutbox.id, id));
+    expect(held!.status).toBe('queued');
+    expect(held!.attempts, 'nothing was ever tried').toBe(0);
+    // The hold lapses; the first real try meets one network blip — re-queued, exactly as with no hold at all.
+    const job = await claimNext(managerId);
+    expect(job?.attempts).toBe(1);
+    await markAttemptFailed(id, 'socket hang up', false, MAX_ATTEMPTS);
+    const [after] = await db.select().from(tgOutbox).where(eq(tgOutbox.id, id));
+    expect(after!.status).toBe('queued');
+  });
+
+  it('takes back only a claim that stands: a replay, or a row that is no longer sending, moves nothing', async () => {
+    await db.delete(tgOutbox).where(eq(tgOutbox.clientId, clientId));
+    const { id } = await queueReply({ clientId, managerUserId: managerId, body: 'bir marta' }, ctx());
+    await claimNext(managerId);
+    await claimNext(managerId).then((none) => expect(none).toBeNull());
+    await releaseClaim(id);
+    await claimNext(managerId); // attempts 2: one ordinary limit bounce stays counted
+    await giveClaimBack(id);
+    // The listener's catch running twice after a database blip takes back one claim, not two.
+    await giveClaimBack(id);
+    const [back] = await db.select().from(tgOutbox).where(eq(tgOutbox.id, id));
+    expect(back!.status).toBe('queued');
+    expect(back!.attempts).toBe(1);
+    const job = await claimNext(managerId);
+    await markSent(job!.id, 123456789n);
+    await giveClaimBack(id);
+    const [sent] = await db.select().from(tgOutbox).where(eq(tgOutbox.id, id));
+    expect(sent!.status, 'a message that left stays sent').toBe('sent');
+    expect(sent!.attempts).toBe(2);
   });
 });
 

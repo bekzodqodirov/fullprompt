@@ -32,6 +32,7 @@ import {
   tgChatRules,
   tgMessageFlags,
   tgMessages,
+  tgOutbox,
   users,
 } from '@/modules/platform/db/schema';
 import { __restoreAgentConfig, readAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
@@ -47,7 +48,7 @@ import {
   sendFactsFor,
 } from '@/modules/wms/agent/outbox-store';
 import { agentSendVerdict, verdictOutcome, type AgentOutboxRow, type StepOutcome } from '@/modules/wms/agent/send-step';
-import type { AlarmAccount } from '@/modules/wms/crm/account-alarm';
+import { agentTelegramNotice, type AlarmAccount } from '@/modules/wms/crm/account-alarm';
 import { readGuard, recordFlood } from '@/modules/wms/crm/account-guard';
 import { clientHasWritten, recordSent } from '@/modules/wms/crm/outbox';
 import { tgErrorKind } from '@/modules/wms/crm/telegram-guard';
@@ -211,6 +212,28 @@ async function approved(input: {
 
 const ctx = (accountId: string) => ({ accountId, caughtUp: () => true, random: () => 0 });
 
+/** A person's reply from the CRM on this account — the human queue's row, as the listener leaves it. */
+async function crmReply(manager: string, peer: bigint, status: 'sent' | 'queued' | 'failed', sentAt: Date | null): Promise<void> {
+  await db.insert(tgOutbox).values({
+    clientId,
+    managerUserId: manager,
+    peerId: peer,
+    body: 'Odam javobi',
+    status,
+    queuedBy: manager,
+    queuedAt: sentAt ?? new Date(),
+    sentAt,
+  });
+}
+
+/** The verdict as it would be with the agent on here and the CRM's switch on — the facts' own reading otherwise. */
+const speaking = (f: Awaited<ReturnType<typeof sendFactsFor>>, owner: string) => ({
+  ...f,
+  agentOn: true,
+  ownerUserId: owner,
+  sendingEnabled: true,
+});
+
 /** «25.10 08:30» — a time as the card prints it (Tashkent, UTC+5), computed here, not by the card. */
 function tashkentStamp(d: Date): string {
   const t = new Date(d.getTime() + 5 * 3_600_000);
@@ -271,6 +294,7 @@ afterAll(async () => {
   if (madeUsers.length) {
     await db.delete(notifications).where(inArray(notifications.userId, madeUsers));
     await db.delete(agentOutbox).where(inArray(agentOutbox.managerUserId, madeUsers));
+    await db.delete(tgOutbox).where(inArray(tgOutbox.managerUserId, madeUsers));
     await db.delete(agentDrafts).where(inArray(agentDrafts.managerUserId, madeUsers));
     await db.delete(agentConversations).where(inArray(agentConversations.managerUserId, madeUsers));
     await db.delete(tgChatRules).where(inArray(tgChatRules.managerUserId, madeUsers));
@@ -433,6 +457,35 @@ describe('the facts a send is decided from', () => {
     expect(f.lastChatSendAt?.toISOString(), 'but the per-chat gap still sees it').toBe('2025-03-10T18:45:00.000Z');
   });
 
+  it('the account’s hour, day and gap count its sent CRM replies too — the machine yields to the people (K5)', async () => {
+    const own = await makeManager('crm-caps');
+    const now = new Date('2025-05-10T10:00:00Z'); // 15:00 Tashkent; the day began 2025-05-09T19:00Z
+    const peer = next();
+    const { row } = await approved({ manager: own.userId, peer });
+    // The machine's own send, two hours ago.
+    await approved({ manager: own.userId, storeAnchor: false, status: 'sent', sentAt: new Date(now.getTime() - 2 * 3_600_000) });
+    // People: to this chat 20 minutes ago, to another three seconds ago, one yesterday, and two that never left.
+    await crmReply(own.userId, peer, 'sent', new Date(now.getTime() - 20 * 60_000));
+    await crmReply(own.userId, next(), 'sent', new Date(now.getTime() - 3_000));
+    await crmReply(own.userId, next(), 'sent', new Date('2025-05-09T18:00:00Z'));
+    await crmReply(own.userId, next(), 'queued', null);
+    await crmReply(own.userId, next(), 'failed', null);
+    const f = await sendFactsFor(row, now, ctx(own.account.id));
+    expect(f.sentLastHour).toBe(2);
+    expect(f.sentToday).toBe(3);
+    expect(f.lastAccountSendAt?.getTime(), 'the colleague’s reply three seconds ago').toBe(now.getTime() - 3_000);
+    // The chat's own numbers stay the machine's voice: a person's reply here after the anchor cancels instead.
+    expect(f.sentToChatToday).toBe(0);
+    expect(f.lastChatSendAt).toBeNull();
+    // And the verdict obeys: the jittered gap runs from the person's send, not from the machine's last.
+    expect(agentSendVerdict(row, speaking(f, own.userId))).toEqual({
+      ok: false,
+      final: false,
+      reason: 'account_gap',
+      until: new Date(now.getTime() - 3_000 + f.accountGapMs),
+    });
+  });
+
   it('the ramp is his own average from the 30 days before the start (his Q11 ⭐)', async () => {
     const own = await makeManager('ramp');
     const started = new Date('2025-06-01T06:00:00Z');
@@ -459,6 +512,79 @@ describe('the facts a send is decided from', () => {
     } finally {
       await agentOff();
     }
+  });
+});
+
+describe('his 🙋 on the chat (final review K2)', () => {
+  it('refuses for good a reply approved before the press and still waiting, whichever draft he pressed it on', async () => {
+    const { row, peer } = await approved({});
+    expect((await sendFactsFor(row, new Date(), ctx(account.id))).humanUntil).toBeNull();
+    // The press on a NEWER draft of the same chat: the takeover lives on the conversation, not on a draft.
+    await db
+      .insert(agentConversations)
+      .values({ managerUserId: managerId, peerId: peer, humanUntil: new Date(Date.now() + 24 * 3_600_000) });
+    const f = await sendFactsFor(row, new Date(), ctx(account.id));
+    expect(f.humanUntil!.getTime()).toBeGreaterThan(Date.now() + 23 * 3_600_000);
+    const verdict = agentSendVerdict(row, speaking(f, managerId));
+    expect(verdict).toEqual({ ok: false, final: true, reason: 'human_replied' });
+    await applyAgentOutcome(row, verdictOutcome(row, verdict)!, account);
+    const [after] = await db.select().from(agentOutbox).where(eq(agentOutbox.id, row.id));
+    expect(after!.status).toBe('cancelled');
+    // The card's word for it is the draft's own `taken_over` line: «o'zingiz javob berdingiz».
+    expect(after!.lastError).toBe('human_replied');
+    // Another chat of the same account is not his for being this one's.
+    const elsewhere = await approved({});
+    expect((await sendFactsFor(elsewhere.row, new Date(), ctx(account.id))).humanUntil).toBeNull();
+  });
+});
+
+describe('Telegram’s own notice switches the agent off at once (his ⭐2, final review K33)', () => {
+  it('on the account it speaks from: off, the approved replies cancelled, ONE alarm in its own words', async () => {
+    const own = await makeManager('notice');
+    await agentOn(own.userId);
+    try {
+      const waiting = await approved({ manager: own.userId });
+      expect(await agentTelegramNotice(own.account)).toEqual({ agentOff: true });
+      expect((await readAgentConfig())?.mode).toBe('off');
+      const [cancelled] = await db.select().from(agentOutbox).where(eq(agentOutbox.id, waiting.row.id));
+      expect(cancelled!.status).toBe('cancelled');
+      expect(cancelled!.lastError).toBe('agent_off: telegram_notice');
+      const alarms = async () =>
+        db
+          .select()
+          .from(notifications)
+          .where(and(eq(notifications.userId, own.userId), eq(notifications.type, 'AgentForcedOff')));
+      const first = await alarms();
+      expect(first).toHaveLength(1);
+      const text = String((first[0]!.payload as { text?: unknown }).text);
+      expect(text).toContain(own.account.managerName);
+      expect(text).toContain('777000');
+      // A second notice finds the agent already off: nothing switched, nothing said twice.
+      expect(await agentTelegramNotice(own.account)).toEqual({ agentOff: false });
+      expect(await alarms()).toHaveLength(1);
+    } finally {
+      await agentOff();
+    }
+  });
+
+  it('on any other account — a colleague’s, or his with the agent off — it does nothing at all', async () => {
+    const own = await makeManager('notice-owner');
+    const other = await makeManager('notice-other');
+    await agentOn(own.userId);
+    try {
+      const waiting = await approved({ manager: own.userId });
+      expect(await agentTelegramNotice(other.account)).toEqual({ agentOff: false });
+      expect((await readAgentConfig())?.mode).toBe('shadow');
+      expect((await agentRowById(waiting.row.id))?.status).toBe('agent');
+      const alarms = await db
+        .select()
+        .from(notifications)
+        .where(and(inArray(notifications.userId, [own.userId, other.userId]), eq(notifications.type, 'AgentForcedOff')));
+      expect(alarms).toHaveLength(0);
+    } finally {
+      await agentOff();
+    }
+    expect(await agentTelegramNotice(own.account), 'the agent off: nothing to switch').toEqual({ agentOff: false });
   });
 });
 

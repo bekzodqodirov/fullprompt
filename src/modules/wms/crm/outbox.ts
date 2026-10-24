@@ -494,6 +494,27 @@ export async function releaseClaim(id: string): Promise<void> {
   await db.update(tgOutbox).set({ status: 'queued' }).where(eq(tgOutbox.id, id));
 }
 
+/**
+ * Put a claimed job back AS IF IT WAS NEVER CLAIMED — the claim's own
+ * `attempts + 1` (`claimNext`) taken back with it (final review K4, K22).
+ *
+ * For a bounce that says nothing about the REPLY: the account's send slot
+ * held the turn (a wait or a restriction the send ahead of it met, often the
+ * agent's), or Telegram said the ACCOUNT is limited. `releaseClaim`'s count
+ * would spend the reply's retries on the account's trouble — two minutes of
+ * a held slot is forty claims, and the reply then failed for good on the
+ * first ordinary network blip after it (`markAttemptFailed`, MAX_ATTEMPTS).
+ *
+ * Only a row still in 'sending' moves, so a second call — the listener's
+ * catch running again after a database blip — takes nothing back twice.
+ */
+export async function giveClaimBack(id: string): Promise<void> {
+  await db
+    .update(tgOutbox)
+    .set({ status: 'queued', attempts: sql`greatest(${tgOutbox.attempts} - 1, 0)` })
+    .where(and(eq(tgOutbox.id, id), eq(tgOutbox.status, 'sending')));
+}
+
 export async function markSent(id: string, tgMessageId: bigint | null): Promise<void> {
   await db
     .update(tgOutbox)
