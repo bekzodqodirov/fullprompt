@@ -2761,6 +2761,7 @@
     "bridgeAccounts": "{n} 个账号",
     "chatBookMatch": "客户编号",
     "chatBookMatchHint": "这个被排除的聊天是客户名册里的号码，可能被误排除。",
+    "chatServiceChat": "这是 Telegram 官方服务对话，不能加入 CRM",
     "analytics": "分析",
     "statFresh": "新线索",
     "statWon": "赢单",

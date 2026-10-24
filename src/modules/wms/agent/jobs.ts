@@ -8,6 +8,7 @@ import { logger } from '../../platform/logger';
 import { actorGrants } from '../../platform/rbac/authorize';
 import { quietHour } from '../../platform/telegram/send';
 import { canLogInSql } from '../../platform/users/login';
+import { TELEGRAM_SERVICE_PEER } from '../crm/telegram-import';
 import { agentRunning, agentTablesReady, readAgentConfig } from './config';
 import { AGENT_LIMITS } from './limits';
 import {
@@ -353,6 +354,8 @@ export async function strangerCards(ownerUserId: string, now: Date): Promise<num
       FROM tg_chat_rules r
      WHERE r.manager_user_id = ${ownerUserId}
        AND r.decision = 'pending'
+       -- 777000, the service chat an old scan may have left pending, is no stranger to ask about.
+       AND r.peer_id <> ${TELEGRAM_SERVICE_PEER.toString()}::bigint
        AND r.created_at > ${new Date(now.getTime() - 24 * 3_600_000).toISOString()}::timestamptz
        AND NOT EXISTS (SELECT 1 FROM agent_conversations c
                         WHERE c.manager_user_id = r.manager_user_id AND c.peer_id = r.peer_id

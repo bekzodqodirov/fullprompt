@@ -2761,6 +2761,7 @@
     "bridgeAccounts": "{n} ta akkaunt",
     "chatBookMatch": "mijoz kodi",
     "chatBookMatchHint": "Bu olinmagan chat — bazadagi mijozning raqami. Ehtimol xato olinmagan.",
+    "chatServiceChat": "Bu Telegramning o'z xizmat chati — uni CRMga qo'shib bo'lmaydi",
     "analytics": "Tahlil",
     "statFresh": "Yangi lidlar",
     "statWon": "Yutilgan",

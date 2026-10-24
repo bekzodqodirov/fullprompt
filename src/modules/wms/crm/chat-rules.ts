@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import {
   attachments,
@@ -13,7 +13,7 @@ import { getStorage } from '../../platform/files/storage';
 import { logger } from '../../platform/logger';
 import { leadForChat } from './chat-lead';
 import { createLead } from './service';
-import type { ChatRule } from './telegram-import';
+import { TELEGRAM_SERVICE_PEER, type ChatRule } from './telegram-import';
 
 /**
  * The chats a person has said yes or no to.
@@ -28,6 +28,18 @@ import type { ChatRule } from './telegram-import';
  */
 
 export class ChatRuleError extends Error {}
+
+/*
+ * Telegram's own service chat (777000 — login codes, «new login», limitation
+ * notices) is no customer under any answer. The classifiers have refused to
+ * keep it since the AI sotuvchi round, but a tray rule written BEFORE that
+ * (a scan's `pending`, even a decision) is still a row these doors can be
+ * pressed on, and every one of them that makes a chat a card's —
+ * `decideChat`'s include, «Yangi lid», «Chatni qo'shish» — would start
+ * keeping a stream of login codes the agent then reads. Each refuses it in
+ * words (`service_chat`) before writing anything; «hech qachon» stays open,
+ * because that is the right answer and what the cleanup script writes.
+ */
 
 /** The rules the import and the listener consult, keyed by peer. */
 export async function rulesFor(managerUserId: string): Promise<Map<bigint, ChatRule>> {
@@ -144,6 +156,10 @@ export async function listCandidates(filter: {
   decision?: 'pending' | 'include' | 'exclude';
 }): Promise<CandidateRow[]> {
   const where = [
+    // Never on the tray, whatever an old scan recorded: there is no answer to
+    // give about it but «never», and the cleanup script gives that one. The
+    // badge (`pendingCount`) counts through here, so it drops out of both.
+    ne(tgChatRules.peerId, TELEGRAM_SERVICE_PEER),
     filter.managerUserId ? eq(tgChatRules.managerUserId, filter.managerUserId) : undefined,
     filter.decision ? eq(tgChatRules.decision, filter.decision) : undefined,
   ].filter(Boolean);
@@ -167,7 +183,7 @@ export async function listCandidates(filter: {
     .innerJoin(users, eq(tgChatRules.managerUserId, users.id))
     .leftJoin(clients, eq(tgChatRules.clientId, clients.id))
     .leftJoin(leads, eq(tgChatRules.leadId, leads.id))
-    .where(where.length > 0 ? and(...where) : undefined)
+    .where(and(...where))
     .orderBy(asc(tgChatRules.peerTitle));
 
   // `peerId` is a bigint and this crosses to a client component; it goes as a
@@ -196,6 +212,9 @@ export async function decideChat(
 ): Promise<void> {
   const [rule] = await db.select().from(tgChatRules).where(eq(tgChatRules.id, input.id));
   if (!rule) throw new ChatRuleError('chat_rule_not_found');
+  if (input.decision === 'include' && rule.peerId === TELEGRAM_SERVICE_PEER) {
+    throw new ChatRuleError('service_chat');
+  }
 
   const clientId = input.decision === 'include' ? (input.clientId ?? null) : null;
   if (input.decision === 'include' && !clientId) throw new ChatRuleError('client_required');
@@ -293,6 +312,9 @@ export async function openLeadForChat(
 ): Promise<{ leadId: string }> {
   const [rule] = await db.select().from(tgChatRules).where(eq(tgChatRules.id, ruleId));
   if (!rule) throw new ChatRuleError('chat_rule_not_found');
+  // Ahead of the phone: 777000 may well show one (42777), and a lead on it is
+  // a funnel card whose «conversation» is a login code.
+  if (rule.peerId === TELEGRAM_SERVICE_PEER) throw new ChatRuleError('service_chat');
   const phone = (rule.peerPhone ?? '').trim();
   // The same refusal `unknownChatAction` makes about `no_phone`: a lead
   // nobody can ring is a row with a name in it. The tray's own button keeps
@@ -381,6 +403,10 @@ export async function attachPeerToCard(
   },
   ctx: AuditContext,
 ): Promise<void> {
+  // No card may own it, so the question of WHICH card does not arise. The
+  // upsert below would otherwise turn a stale `pending` (or a person's
+  // «never») into an include in one press.
+  if (input.peerId === TELEGRAM_SERVICE_PEER) throw new ChatRuleError('service_chat');
   const clientId = input.clientId ?? null;
   const leadId = input.leadId ?? null;
   // The CHECK says the same thing in the database; saying it here too is what

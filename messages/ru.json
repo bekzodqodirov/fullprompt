@@ -2761,6 +2761,7 @@
     "bridgeAccounts": "аккаунтов: {n}",
     "chatBookMatch": "код клиента",
     "chatBookMatchHint": "Этот исключённый чат — номер клиента из базы. Возможно, исключён по ошибке.",
+    "chatServiceChat": "Это служебный чат самого Telegram — его нельзя добавить в CRM",
     "analytics": "Аналитика",
     "statFresh": "Новые лиды",
     "statWon": "Выиграно",

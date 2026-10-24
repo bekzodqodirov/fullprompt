@@ -2761,6 +2761,7 @@
     "bridgeAccounts": "{n} accounts",
     "chatBookMatch": "client code",
     "chatBookMatchHint": "This excluded chat is a client's number from the book — possibly excluded by mistake.",
+    "chatServiceChat": "This is Telegram's own service chat — it cannot be added to the CRM",
     "analytics": "Analytics",
     "statFresh": "New leads",
     "statWon": "Won",
