@@ -32,9 +32,10 @@ import {
   agentText,
   PRICE_DRAFTED,
   PRICE_PROMPT,
+  PRICE_RETYPE,
   priceRefusalText,
 } from '@/modules/wms/agent/bot-door';
-import { announceAgentCalc, priceDraftFromText } from '@/modules/wms/agent/calc-loop';
+import { announceAgentCalc, priceDraftFromText, REPLACED_ANSWER_LINE } from '@/modules/wms/agent/calc-loop';
 import { readAgentConfig, __restoreAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
 import { chatIdentity, type AgentContext } from '@/modules/wms/agent/context';
 import { writeNotice } from '@/modules/wms/agent/drafts';
@@ -966,7 +967,7 @@ describe('«💵 Narx yozaman» says what it does — his 6 b, nothing is record
       code: 'ambiguous_number',
       readings: { thousands: 1250, decimal: '1,25' },
     });
-    expect(await agentText(ownerId, price, '1.250')).toBe('«1.250» — 1250 dollarmi yoki 1,25 dollarmi? Aniq yozing: 1250 yoki 1,25');
+    expect(await agentText(ownerId, price, '1.250')).toBe(`«1.250» — 1250 dollarmi yoki 1,25 dollarmi? Aniq yozing: 1250 yoki 1,25. ${PRICE_RETYPE}`);
 
     // His own reply to this chat is being typed: the price waits for it.
     const [own] = await db
@@ -977,13 +978,13 @@ describe('«💵 Narx yozaman» says what it does — his 6 b, nothing is record
     expect(await agentText(ownerId, price, '1250')).toContain('siz yozayotgan javob bor');
     expect((await db.select().from(agentDrafts).where(eq(agentDrafts.peerId, PEER))).map((d) => d.id)).toEqual([own!.id]);
 
-    // Five refusals, five sentences — none of them a raw code.
+    // Six refusals, six sentences — none of them a raw code.
     const words = new Set(
-      (['not_linked', 'not_account_holder', 'bad_number', 'editing_open', 'no_anchor'] as const).map((code) =>
+      (['not_linked', 'not_account_holder', 'bad_number', 'editing_open', 'no_anchor', 'recalculated'] as const).map((code) =>
         priceRefusalText({ ok: false, code }, 'x'),
       ),
     );
-    expect(words.size).toBe(5);
+    expect(words.size).toBe(6);
     for (const w of words) expect(w).not.toMatch(/^[a-z_]+$/u);
   });
 });
@@ -1037,5 +1038,73 @@ describe('a recalculation takes back the 💵 he approved and is still waiting (
     expect(textOf(ping)).toContain('endi yuborilmaydi');
     expect(textOf(ping)).toContain(`Narxi 1250 $ ${SUFFIX}`);
     expect(textOf(ping)).not.toContain('da ketadi');
+  });
+});
+
+describe('a replaced answer takes no figure — the door asks what the send step asks (cards review)', () => {
+  it('after a recalculation the old card loses its 💵, a swipe-reply to it arms nothing, and a figure typed on it is refused before anything is written', async () => {
+    const root = await request();
+    await link(root);
+    await storedInbound(clientId);
+    expect(await announceAgentCalc(root, 'done', { amountText: '1 250 $' })).toBe(true);
+    const [old] = await ownerCards('AgentCalcAnswered');
+    // Its copy already reached him: a swipe-reply names it by `tg`.
+    await db
+      .update(notifications)
+      .set({ status: 'sent', payload: sql`${notifications.payload} || ${JSON.stringify({ tg: { chatId: '556', messageId: 43 } })}::jsonb` })
+      .where(eq(notifications.id, old!.id));
+    expect(await agentCardFor(ownerId, 556n, 43)).toEqual({ kind: 'agent_price', payload: { requestId: root } });
+
+    const fix = await request(root);
+    expect(await announceAgentCalc(fix, 'recalc')).toBe(true);
+
+    // The old card offers no door any more, and says why.
+    const [closed] = await db.select().from(notifications).where(eq(notifications.id, old!.id));
+    expect(closed!.payload).toMatchObject({ priceable: false, requestId: root });
+    expect(textOf(closed!)).toContain('1 250 $');
+    expect(textOf(closed!)).toContain(REPLACED_ANSWER_LINE);
+    expect(buttonsFor('AgentCalcAnswered', closed!.payload as Record<string, unknown>)).toBeNull();
+    expect(await agentCardFor(ownerId, 556n, 43)).toBeNull();
+    // …the recalculation's own ping is a different card, and not closed by it.
+    const ping = (await ownerCards('AgentCalcAnswered')).find((n) => (n.payload as { event?: string }).event === 'recalc')!;
+    expect(textOf(ping)).not.toContain(REPLACED_ANSWER_LINE);
+
+    // A wait armed before the recalculation still reaches the door: refused,
+    // whatever the figure — the answer it would price no longer stands.
+    expect(await priceDraftFromText(ownerId, root, '1250')).toEqual({ ok: false, code: 'recalculated' });
+    expect(await priceDraftFromText(ownerId, root, '1.250')).toEqual({ ok: false, code: 'recalculated' });
+    const said = await agentText(ownerId, { kind: 'agent_price', payload: { requestId: root } }, '1250');
+    expect(said).not.toBe(PRICE_DRAFTED);
+    expect(said).toContain('qayta hisoblayapti');
+    expect(await db.select().from(agentDrafts).where(eq(agentDrafts.peerId, PEER))).toHaveLength(0);
+
+    // The correction's own answer takes his figure.
+    expect(await priceDraftFromText(ownerId, fix, '1300')).toMatchObject({ ok: true });
+  });
+
+  it('a copy of the replaced answer not yet sent is never sent; a second correction closes no card twice', async () => {
+    const root = await request();
+    await link(root);
+    await announceAgentCalc(root, 'sealed', { amountText: '900 $' });
+    const [old] = await ownerCards('AgentCalcAnswered');
+    expect(old!.status).toBe('pending');
+    const fix = await request(root);
+    await announceAgentCalc(fix, 'recalc');
+    const [muted] = await db.select().from(notifications).where(eq(notifications.id, old!.id));
+    expect(muted).toMatchObject({ status: 'muted' });
+
+    // The correction is answered, then corrected again: its own answer card
+    // closes; the first one, closed already, says so once.
+    await announceAgentCalc(fix, 'done', { amountText: '950 $' });
+    const fixCard = (await ownerCards('AgentCalcAnswered')).find(
+      (n) => (n.payload as { requestId?: string; event?: string }).requestId === fix && (n.payload as { event?: string }).event === 'done',
+    )!;
+    const again = await request(fix);
+    await announceAgentCalc(again, 'recalc');
+    const [first] = await db.select().from(notifications).where(eq(notifications.id, old!.id));
+    expect(textOf(first!).split(REPLACED_ANSWER_LINE)).toHaveLength(2);
+    const [second] = await db.select().from(notifications).where(eq(notifications.id, fixCard.id));
+    expect(second!.payload).toMatchObject({ priceable: false });
+    expect(textOf(second!)).toContain(REPLACED_ANSWER_LINE);
   });
 });

@@ -250,6 +250,24 @@ export async function notifyCapReached(ownerUserId: string, reason: string): Pro
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
 /**
+ * A VED correction replaced this request — some request names it as
+ * `supersedes_request_id` (`notSupersededSql`'s rule, the money side's: a
+ * correction exists, so the promise no longer stands, sealed or not). The ONE
+ * question both ends of a 💵 ask: the door before a figure is drafted on it
+ * (calc-loop `priceDraftFromText`) and the send step before an approved one
+ * goes (`draftOfferStands`) — asked at one end only, the door drafted a reply
+ * the step was certain to cancel.
+ */
+export async function requestRecalculated(requestId: string): Promise<boolean> {
+  const [newer] = await db
+    .select({ id: calcRequests.id })
+    .from(calcRequests)
+    .where(eq(calcRequests.supersedesRequestId, requestId))
+    .limit(1);
+  return newer !== undefined;
+}
+
+/**
  * A price reply's figure still stands; null when the draft carries none.
  *
  * Two anchors. Since his 6 b a 💵 writes no offer row — the figure answers
@@ -268,12 +286,7 @@ export async function draftOfferStands(draftId: string): Promise<boolean | null>
     .where(eq(agentDrafts.id, draftId));
   const priced = draft?.kind === 'price' ? ((draft.policy ?? {}) as { priceRequestId?: unknown }).priceRequestId : undefined;
   if (typeof priced === 'string' && UUID.test(priced)) {
-    const [newer] = await db
-      .select({ id: calcRequests.id })
-      .from(calcRequests)
-      .where(eq(calcRequests.supersedesRequestId, priced))
-      .limit(1);
-    if (newer) return false;
+    if (await requestRecalculated(priced)) return false;
     if (!draft!.offerId) return true;
   }
   if (!draft?.offerId) return null;

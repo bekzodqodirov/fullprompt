@@ -6328,6 +6328,7 @@
       "ambiguous_number": "The price reads two ways (for example «1.250» — 1250 dollars or 1.25?). Write it exactly: 1250 or 1,25.",
       "editing_open": "You are already writing your own reply in this chat — finish or close it first. No price reply was written.",
       "no_anchor": "This chat has no customer message to answer — no price reply was written.",
+      "recalculated": "The VED is recalculating this — no price is written on the old answer. Give the price when the new answer arrives.",
       "unknown": "That did not work — try again."
     }
   }

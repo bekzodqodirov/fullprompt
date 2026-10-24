@@ -6328,6 +6328,7 @@
       "ambiguous_number": "Narx ikki xil o‘qiladi (masalan «1.250» — 1250 dollarmi yoki 1,25 dollarmi?). Aniq yozing: 1250 yoki 1,25.",
       "editing_open": "Bu suhbatda siz yozayotgan javob bor — avval uni tugating yoki yoping. Narx javobi yozilmadi.",
       "no_anchor": "Bu chatda mijozning javob beriladigan xabari yo‘q — narx javobi yozilmadi.",
+      "recalculated": "VED bu hisobni qayta hisoblayapti — eski javobga narx yozilmaydi. Yangi javob kelganda narx bering.",
       "unknown": "Bo‘lmadi — qayta urinib ko‘ring."
     }
   }

@@ -6,6 +6,7 @@ import {
   agentDrafts,
   agentOutbox,
   calcRequests,
+  notifications,
   tgMessageFlags,
   tgMessages,
 } from '../../platform/db/schema';
@@ -14,10 +15,11 @@ import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { parseTypedMoney } from '../calc/money-input';
 import { agentRunning, readAgentConfig } from './config';
 import { chatIdentity } from './context';
-import { createDraft, type DraftPolicyJson } from './drafts';
+import { createDraft, requestRecalculated, type DraftPolicyJson } from './drafts';
 import { AGENT_LOCALES, detectLocale, type AgentLocale } from './locale';
 import { ownerPolicyFor } from './policy-input';
 import { priceReplyText } from './price-reply';
+import { editAgentCopies } from './purge';
 import { JOB_AGENT_HAND_BACK, type AgentHandBackJob } from './queues';
 import type { Ineligible } from './eligibility';
 import type { RunDeps, RunResult } from './run';
@@ -162,6 +164,9 @@ export async function announceAgentCalc(
   return true;
 }
 
+/** What a replaced answer's card says once its «💵 Narx yozaman» is gone (`retirePricesOf`). */
+export const REPLACED_ANSWER_LINE = '🔄 VED qayta hisoblayapti — bu javobga endi narx yozilmaydi. Yangi javob kelganda narx bering.';
+
 /**
  * A recalculation started on the chain a 💵 price was typed on (review A1).
  * Every PENDING price draft of this chat priced on a request the correction
@@ -175,6 +180,14 @@ export async function announceAgentCalc(
  * in flight and is let finish — so its card says so now rather than reading
  * «08:30 da ketadi» until the morning it would have been refused. Returns
  * those, as the ping names them.
+ *
+ * And the answer cards of the requests it replaces lose their «💵 Narx
+ * yozaman» (`priceable` — what `agentButtons` draws the door from, and what a
+ * swipe-reply to the card is resolved by, bot-door `agentCardFor`): the door
+ * refuses a figure typed on a replaced answer (`recalculated`), and a button
+ * that can only be refused is a button that lies. The card says why, on the
+ * row a copy not yet sent goes out with (it is not sent — the recalculation's
+ * own ping says it all) and on the copies already sent.
  */
 async function retirePricesOf(
   link: { managerUserId: string; peerId: bigint },
@@ -206,6 +219,28 @@ async function retirePricesOf(
   for (const id of [...retired.map((r) => r.id), ...withdrawn.map((w) => w.draftId)]) {
     await refreshAgentCard(id).catch((err: unknown) => logger.warn({ err, draftId: id }, '[agent] card not refreshed'));
   }
+  // Only a card still offering the door: one closed by an earlier correction
+  // of the same chain says so once.
+  const closed = await db
+    .update(notifications)
+    .set({
+      payload: sql`${notifications.payload} || jsonb_build_object('priceable', false, 'text', coalesce(${notifications.payload}->>'text', '') || ${`\n\n${REPLACED_ANSWER_LINE}`}::text)`,
+      status: sql`CASE WHEN ${notifications.status} = 'pending' THEN 'muted' ELSE ${notifications.status} END`,
+      error: sql`CASE WHEN ${notifications.status} = 'pending' THEN 'recalculated before it was sent' ELSE ${notifications.error} END`,
+    })
+    .where(
+      and(
+        eq(notifications.userId, link.managerUserId),
+        eq(notifications.type, 'AgentCalcAnswered'),
+        sql`${notifications.payload}->>'requestId' IN (${sql.join(replaced.map((id) => sql`${id}`), sql`, `)})`,
+        sql`(${notifications.payload}->>'priceable') = 'true'`,
+      ),
+    )
+    // The payload as written — a `tg` the drain merged after any read of ours is in it (bot-door `closeRuleCards`).
+    .returning({ id: notifications.id, type: notifications.type, payload: notifications.payload, userId: notifications.userId });
+  await editAgentCopies(closed.map((c) => ({ ...c, payload: c.payload as Record<string, unknown> }))).catch((err: unknown) =>
+    logger.warn({ err, requestId }, '[agent] replaced answer cards not edited'),
+  );
   return withdrawn.map((w) => ({ body: w.body }));
 }
 
@@ -336,7 +371,16 @@ export async function announceAgentCalcSafe(
  *                       two readings ride beside the code, `readings`);
  *   editing_open      — his own reply to this chat is being typed (an
  *                       'editing' draft is never superseded, drafts.ts);
- *   no_anchor         — the chat holds no customer message to answer.
+ *   no_anchor         — the chat holds no customer message to answer;
+ *   recalculated      — a VED correction replaced the request (drafts
+ *                       `requestRecalculated`): the card he pressed 💵 on
+ *                       answers a figure that no longer stands, and a draft
+ *                       on it would be cancelled at its first send step.
+ *
+ * `recalculated` rides beside `PriceRefusal` and not in it: the page's
+ * `ERROR_KEYS` is typed by `PriceRefusal`, and the page has no price door —
+ * the code is met only through the bot, which words it (bot-door
+ * `PRICE_WORDS`).
  */
 export type PriceRefusal = 'not_linked' | 'not_account_holder' | 'bad_number' | 'ambiguous_number' | 'editing_open' | 'no_anchor';
 
@@ -349,7 +393,7 @@ export interface PriceReadings {
 
 export type PriceDraftResult =
   | { ok: true; draftId: string }
-  | { ok: false; code: Exclude<PriceRefusal, 'ambiguous_number'> }
+  | { ok: false; code: Exclude<PriceRefusal, 'ambiguous_number'> | 'recalculated' }
   | { ok: false; code: 'ambiguous_number'; readings: PriceReadings };
 
 /** Above this a typed «price» is a slip, not a quote — and past it the grouping would print an exponent. */
@@ -390,13 +434,26 @@ export function typedPriceUsd(text: string): number | null {
  * «taxmin» card, which has no seal and no Готово to anchor an offer on.
  *
  * Every refusal is decided BEFORE anything is written: not linked, not the
- * account holder, a number that is not a price or reads two ways, no
- * customer message to answer, his own reply to this chat being typed.
+ * account holder, a request a correction replaced, a number that is not a
+ * price or reads two ways, no customer message to answer, his own reply to
+ * this chat being typed.
  */
 export async function priceDraftFromText(staffId: string, requestId: string, text: string): Promise<PriceDraftResult> {
   const link = await linkFor(requestId);
   if (!link) return { ok: false, code: 'not_linked' };
   if (link.managerUserId !== staffId) return { ok: false, code: 'not_account_holder' };
+  const [req] = await db
+    .select({ section: calcRequests.section })
+    .from(calcRequests)
+    .where(eq(calcRequests.id, requestId));
+  // The link outlived its request (a request is never deleted in use): there is nothing to price.
+  if (!req) return { ok: false, code: 'not_linked' };
+  // The question the send step asks of an approved 💵 (`draftOfferStands`),
+  // asked first: a figure typed on a replaced answer — an older card's 💵, a
+  // wait armed before the recalculation — would be drafted, approved, and
+  // then cancelled as offer_gone, after the bot had told him it was ready.
+  // Before the figure, too: whatever he typed, this answer takes none.
+  if (await requestRecalculated(requestId)) return { ok: false, code: 'recalculated' };
   const both = ambiguousPrice(text);
   if (both) {
     // Each way to retype it is one this reader takes without asking again:
@@ -411,12 +468,6 @@ export async function priceDraftFromText(staffId: string, requestId: string, tex
   }
   const amount = typedPriceUsd(text);
   if (amount === null) return { ok: false, code: 'bad_number' };
-  const [req] = await db
-    .select({ section: calcRequests.section })
-    .from(calcRequests)
-    .where(eq(calcRequests.id, requestId));
-  // The link outlived its request (a request is never deleted in use): there is nothing to price.
-  if (!req) return { ok: false, code: 'not_linked' };
   const [editing] = await db
     .select({ id: agentDrafts.id })
     .from(agentDrafts)
@@ -459,7 +510,8 @@ export async function priceDraftFromText(staffId: string, requestId: string, tex
   const policy = await ownerPolicyFor(body, identity.codes.map((c) => c.clientCode));
   // The request his figure answers rides on the draft (review A1): a
   // recalculation of its chain retires the draft (`retirePricesOf`), and the
-  // send step can ask the same once it learns to.
+  // send step asks the same of it before an approved one goes
+  // (`draftOfferStands`).
   const stored: DraftPolicyJson & { priceRequestId: string } = {
     blocks: policy.blocks,
     warnings: policy.warnings,

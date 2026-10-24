@@ -10,7 +10,7 @@ import { agentRunning, readAgentConfig, setAgentMode, AgentConfigError } from '.
 import { chatProof } from './context';
 import { decideDraft, submitOwnText, type DecideRefusal } from './decide';
 import { KbError, writeKbFact } from './kb';
-import { priceDraftFromText, type PriceDraftResult, type PriceRefusal } from './calc-loop';
+import { priceDraftFromText, type PriceDraftResult } from './calc-loop';
 import { editAgentCopies, type AgentCopy } from './purge';
 import type { DraftPolicyJson } from './types';
 
@@ -53,16 +53,28 @@ const DECIDE_WORDS: Record<DecideRefusal, string> = {
 };
 
 /**
+ * How a figure is typed AGAIN after a refusal. The text that was refused
+ * consumed the price wait (the shell drops it before the effect — the
+ * redelivery rule, agent-bot `agentTextSlot`), so a plain retype reaches
+ * nobody; a swipe-reply to the answer card names its own target
+ * (`agentCardFor`), and a second 💵 arms the wait afresh. A refusal that
+ * asks him to type again says one of the two, or it promises what the bot
+ * does not do.
+ */
+export const PRICE_RETYPE = "Qaytadan: «💵 Narx yozaman» turgan kartaga javob (reply) qilib yozing yoki tugmani qayta bosing.";
+
+/**
  * «💵 Narx yozaman»'s refusals, in his words (his 6 b: nothing is recorded,
  * so none of them speaks of an offer, a floor or a deal card). The ambiguous
  * figure's sentence is built from its two readings (`priceRefusalText`).
  */
-const PRICE_WORDS: Record<Exclude<PriceRefusal, 'ambiguous_number'>, string> = {
+const PRICE_WORDS: Record<Exclude<Exclude<PriceDraftResult, { ok: true }>['code'], 'ambiguous_number'>, string> = {
   not_linked: "Bu hisob AI sotuvchi orqali yuborilmagan — narx javobi yozilmadi.",
   not_account_holder: 'Bu suhbat sizning akkauntingizda emas.',
-  bad_number: "Narxni dollarda son bilan yozing, masalan: 1250",
-  editing_open: "Bu suhbatda siz yozayotgan javob bor — avval uni tugating yoki ❌ bilan yoping. Narx javobi yozilmadi.",
+  bad_number: `Narxni dollarda son bilan yozing, masalan: 1250. ${PRICE_RETYPE}`,
+  editing_open: `Bu suhbatda siz yozayotgan javob bor — avval uni tugating yoki ❌ bilan yoping. Narx javobi yozilmadi. ${PRICE_RETYPE}`,
   no_anchor: "Bu chatda mijozning javob beriladigan xabari yo'q — narx javobi yozilmadi.",
+  recalculated: "🔄 VED bu hisobni qayta hisoblayapti — eski javobga narx yozilmaydi. Yangi javob kelganda uning kartasidagi «💵 Narx yozaman» bilan narx bering.",
 };
 
 /** What a refused «💵» says — an ambiguous figure asks back with both readings (his B4 a), never guesses. */
@@ -71,8 +83,8 @@ export function priceRefusalText(r: Exclude<PriceDraftResult, { ok: true }>, typ
   const { thousands, decimal } = r.readings;
   const shown = typed.trim();
   return decimal !== null
-    ? `«${shown}» — ${thousands} dollarmi yoki ${decimal} dollarmi? Aniq yozing: ${thousands} yoki ${decimal}`
-    : `«${shown}» — ${thousands} dollarmi? Unda shunday yozing: ${thousands}`;
+    ? `«${shown}» — ${thousands} dollarmi yoki ${decimal} dollarmi? Aniq yozing: ${thousands} yoki ${decimal}. ${PRICE_RETYPE}`
+    : `«${shown}» — ${thousands} dollarmi? Unda shunday yozing: ${thousands}. ${PRICE_RETYPE}`;
 }
 
 /**
