@@ -4,6 +4,7 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { salesManagerOptions } from '@/modules/platform/rbac/queries';
 import { listSources, listStages } from '@/modules/wms/crm/service';
 import { leadFormStages } from '@/modules/wms/crm/stage-law';
+import { personPickableSources } from '@/modules/wms/crm/agent-source';
 import { blankFieldsData } from '@/modules/platform/fields/view';
 import { createLeadAction } from '../../actions';
 import { CustomFieldInputs } from '@/components/custom-fields';
@@ -34,7 +35,7 @@ export default async function NewLeadPage() {
       <LeadForm
         load={ftlOn ? { initial: 'ltl', office: mayRevertFtl(actor) } : null}
         action={createLeadAction}
-        sources={sources.map((row) => ({ id: row.id, label: row.name }))}
+        sources={personPickableSources(sources, null).map((row) => ({ id: row.id, label: row.name }))}
         stages={leadFormStages(stages, null).map((row) => ({ id: row.id, label: row.name }))}
         owners={managers.map((row) => ({ id: row.id, label: row.fullName }))}
         initial={{

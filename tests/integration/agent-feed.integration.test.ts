@@ -10,20 +10,24 @@ import {
   leadSources,
   leadStages,
   leads,
+  lostReasons,
   roles,
   settings,
   userRoles,
   users,
 } from '@/modules/platform/db/schema';
 import {
+  decodeCursor,
   hashTail,
   HASH_RULE,
   outcomesPage,
+  reasonTextSql,
   saltIdFor,
   suppressionPage,
   type OutcomeRow,
   type SuppressionEntry,
 } from '@/modules/wms/crm/agent-feed';
+import { normaliseReason } from '@/modules/platform/settings/reason-list';
 import {
   landInboundLead,
   setSourceWebhookSecret,
@@ -71,11 +75,34 @@ const P3 = phone(); // an open lead
 const P4 = phone(); // a lead lost «Narx» (not listed)
 const P6 = phone(); // an INACTIVE client
 const P7 = phone(); // a lead lost «  Test   sabab » (listed, untidy spacing)
+const PN = phone(); // a lead lost «Qayta qilinmasin» typed with a NO-BREAK space
+const PW = phone(); // a lead WON onto an existing client's code (the attach copies no phone)
+const PW2 = phone(); // a lead on a won stage with no client at all (before round 107)
+
+/**
+ * Card phones of SEVEN and EIGHT digits (a truncated import, a number typed
+ * without its code) — the app's phone rule (`phonesMatch`) matches them by
+ * suffix, so the landing's client check does too. Digits 91-99 and 71-79
+ * after the stamp: `phone()` stays far below.
+ */
+const CARD7 = `${STAMP.slice(2)}91`;
+const CARD8 = `${STAMP.slice(1)}92`;
+const CARD7_OLD = `${STAMP.slice(2)}93`;
+const ARRIVAL7 = `+998 90 ${CARD7}`;
+const ARRIVAL8 = `+998 9${CARD8}`;
+const ARRIVAL7_OLD = `+998 90 ${CARD7_OLD}`;
+/** Several numbers in ONE phones value, the three ways they reach a card. */
+const M = (n: number) => `${STAMP}${70 + n}`;
+const MULTI_TYPED = `+998 ${M(1)} / +998 ${M(2)}`;
+const MULTI_SPACED = `+998${M(7)} +998${M(8)}`;
+const MULTI_IMPORTED_998 = `+998${M(3)}998${M(4)}`;
+const MULTI_IMPORTED_9 = `+${M(5)}${M(6)}`;
 
 let secret = '';
 let adminId = '';
 let lostStage = '';
 let openStage = '';
+let wonStage = '';
 let fixturesFrom = '';
 const clientsMade: string[] = [];
 const leadsMade: string[] = [];
@@ -207,6 +234,32 @@ beforeAll(async () => {
   await insertLead('open', P3, openStage, null);
   await insertLead('lost-price', P4, lostStage, 'Narx');
   await insertLead('lost-untidy', P7, lostStage, '  Test   sabab ');
+  await insertLead('lost-nbsp', PN, lostStage, 'Qayta\u00a0qilinmasin');
+
+  const short = await db
+    .insert(clients)
+    .values([
+      { clientCode: `${code}D`, name: NAME('7 raqam'), phones: [CARD7] },
+      { clientCode: `${code}E`, name: NAME('8 raqam'), phones: [CARD8] },
+      { clientCode: `${code}F`, name: NAME('eski 7 raqam'), phones: [CARD7_OLD], active: false },
+      {
+        clientCode: `${code}G`,
+        name: NAME('bir qatorda ikki raqam'),
+        phones: [MULTI_TYPED, MULTI_SPACED, MULTI_IMPORTED_998, MULTI_IMPORTED_9],
+      },
+    ])
+    .returning({ id: clients.id });
+  clientsMade.push(...short.map((row) => row.id));
+
+  const [won] = await db
+    .select({ id: leadStages.id })
+    .from(leadStages)
+    .where(eq(leadStages.kind, 'won'))
+    .limit(1);
+  wonStage = won!.id;
+  const attached = await insertLead('won-attached', PW, wonStage, null);
+  await db.update(leads).set({ clientId: clientsMade[0]! }).where(eq(leads.id, attached));
+  await insertLead('won-no-client', PW2, wonStage, null);
 });
 
 afterAll(async () => {
@@ -288,6 +341,38 @@ describe('the suppression feed', () => {
     for (const p of [P1, P1b, P2, P6, P7]) expect(delta).toContain(hashTail(secret, tailOf(p)));
   });
 
+  it('a lead that became a client is the client book too — and one lost with a no-break space is listed', async () => {
+    const kinds = new Map((await fullSet()).map((e) => [e.h, e.kind]));
+    expect(kinds.get(hashTail(secret, tailOf(PW))), 'won onto an existing code').toBe('client');
+    expect(kinds.get(hashTail(secret, tailOf(PW2))), 'won with no client').toBe('client');
+    expect(kinds.get(hashTail(secret, tailOf(PN))), 'U+00A0 is whitespace to both sides').toBe(
+      'lost',
+    );
+  });
+
+  it('every number in one phones value: typed with «/», with «+», imported as one run of digits', async () => {
+    const hashes = new Set((await fullSet()).map((e) => e.h));
+    for (let n = 1; n <= 8; n += 1) {
+      expect(hashes.has(hashTail(secret, M(n))), `number ${n}`).toBe(true);
+    }
+  });
+
+  it('the column normalises a reason exactly as the setting is normalised', async () => {
+    for (const text of [
+      '  Qayta\u00a0 qilinmasin\n',
+      '\tTest\u2009\u3000sabab\ufeff',
+      'A\u2028B\u202fC',
+      'Повторно  НЕ   звонить',
+      'plain',
+      '',
+    ]) {
+      const [row] = await db.execute<{ v: string }>(
+        sql`SELECT ${reasonTextSql(sql`${text}::text`)} AS v`,
+      );
+      expect(row!.v, JSON.stringify(text)).toBe(normaliseReason(text));
+    }
+  });
+
   it('follows the setting: a reason taken off the list stops suppressing', async () => {
     await setReasons('boshqa');
     const without = (await fullSet()).map((e) => e.h);
@@ -344,6 +429,115 @@ describe('the landing belt', () => {
       });
       expect(result, tag).toEqual({ outcome: 'dropped', reason: 'suppressed' });
     }
+  });
+
+  it('by the app’s own phone rule: a card of seven or eight digits is a client too — active or not', async () => {
+    for (const [tag, p, card] of [
+      ['belt-7', ARRIVAL7, 3],
+      ['belt-8', ARRIVAL8, 4],
+      ['belt-7-old', ARRIVAL7_OLD, 5],
+      ['belt-multi', `+998${M(1)}`, 6],
+      ['belt-imported', `+998 ${M(3)}`, 6],
+      ['belt-won', PW, -1],
+    ] as const) {
+      const id = ext(tag);
+      const result = await landInboundLead({
+        channel: 'webhook',
+        sourceKey: 'agent',
+        externalId: id,
+        name: NAME(tag),
+        phone: p,
+        note: 'NEGA TOPILDI: OLX',
+      });
+      expect(result, tag).toEqual({ outcome: 'dropped', reason: 'suppressed' });
+      const intake = await intakeByExt(id);
+      const pushes = await db.execute(
+        sql`SELECT 1 FROM notifications WHERE payload ->> 'intakeId' = ${intake.id}`,
+      );
+      expect(pushes.length, `${tag}: nobody told`).toBe(0);
+      if (card >= 0) {
+        const onClient = await db
+          .select()
+          .from(crmActivities)
+          .where(eq(crmActivities.entityId, clientsMade[card]!));
+        expect(onClient, `${tag}: nothing on the card`).toEqual([]);
+      }
+    }
+    // The feed cannot carry a seven- or eight-digit card (its rule is nine
+    // digits, and the agent hashes nine): for those the belt is the guard.
+    const hashes = new Set((await fullSet()).map((e) => e.h));
+    expect(hashes.has(hashTail(secret, tailOf(ARRIVAL7)))).toBe(false);
+  });
+
+  it('a push it cannot check — no phone of nine digits — reaches nobody', async () => {
+    for (const [tag, p] of [
+      ['no-phone', null],
+      ['short-phone', '123 45 67'],
+    ] as const) {
+      const result = await landInboundLead({
+        channel: 'webhook',
+        sourceKey: 'agent',
+        externalId: ext(tag),
+        name: NAME(tag),
+        phone: p,
+      });
+      expect(result, tag).toEqual({ outcome: 'dropped', reason: 'no_phone' });
+    }
+    const made = await db
+      .select()
+      .from(leads)
+      .where(inArray(leads.name, [NAME('no-phone'), NAME('short-phone')]));
+    expect(made).toEqual([]);
+  });
+
+  it('the agent’s pushes do not spend a person’s daily cap on a phone, nor theirs the agent’s', async () => {
+    // A client's number the agent hit three times today (three firms sharing
+    // one phone): the person's own enquiry still lands on their card.
+    const PC = phone();
+    const [cl] = await db
+      .insert(clients)
+      .values({ clientCode: `AGT${STAMP}H`, name: NAME('cap mijoz'), phones: [PC] })
+      .returning({ id: clients.id });
+    clientsMade.push(cl!.id);
+    for (let n = 0; n < 3; n += 1) {
+      const pushed = await landInboundLead({
+        channel: 'webhook',
+        sourceKey: 'agent',
+        externalId: ext(`cap-${n}`),
+        name: NAME(`cap agent ${n}`),
+        phone: PC,
+      });
+      expect(pushed).toEqual({ outcome: 'dropped', reason: 'suppressed' });
+    }
+    const person = await landInboundLead({
+      channel: 'form',
+      sourceKey: 'tiktok',
+      name: NAME('cap person'),
+      phone: PC,
+      note: 'yukim bor',
+    });
+    expect(person.outcome).toBe('client');
+
+    // …and the other way: three advert arrivals on a number leave the
+    // agent's own push free to land.
+    const PD = phone();
+    for (let n = 0; n < 3; n += 1) {
+      await landInboundLead({
+        channel: 'webhook',
+        sourceKey: 'tiktok',
+        externalId: `wh-${PREFIX}-cap-${n}`,
+        name: NAME(`cap tiktok ${n}`),
+        phone: PD,
+      });
+    }
+    const agent = await landInboundLead({
+      channel: 'webhook',
+      sourceKey: 'agent',
+      externalId: ext('cap-after-adverts'),
+      name: NAME('cap agent after'),
+      phone: PD,
+    });
+    expect(agent.outcome).toBe('joined');
   });
 
   it('is the agent’s alone: the same phone through an advert still lands on the client’s card', async () => {
@@ -456,6 +650,46 @@ describe('the contact clock of an agent lead', () => {
   });
 });
 
+describe('a contact made after the first week', () => {
+  it('is still stamped on an agent arrival — nobody else would ever ask — and on an advert’s it is not', async () => {
+    const agent = await landInboundLead({
+      channel: 'webhook',
+      sourceKey: 'agent',
+      externalId: ext('late'),
+      name: NAME('late agent'),
+      phone: phone(),
+    });
+    const advert = await landInboundLead({
+      channel: 'webhook',
+      sourceKey: 'tiktok',
+      externalId: `wh-${PREFIX}-late`,
+      name: NAME('late tiktok'),
+      phone: phone(),
+    });
+    expect(agent.outcome).toBe('created');
+    expect(advert.outcome).toBe('created');
+    const a = await intakeByExt(ext('late'));
+    const t = await intakeByExt(`wh-${PREFIX}-late`);
+    // Nine days old, as postgres counts time (#1063: never the JS clock).
+    await db.execute(sql`
+      UPDATE lead_intakes
+         SET created_at = now() - interval '9 days',
+             contact_clock_at = now() - interval '9 days'
+       WHERE id IN (${a.id}::uuid, ${t.id}::uuid)`);
+    for (const leadId of [agent.leadId!, advert.leadId!]) {
+      await addActivity(
+        { entityType: 'lead', entityId: leadId, kind: 'call', note: CONTACT_NOTE },
+        { actorId: adminId },
+      );
+      await stampFirstContacts(new Date(), leadId);
+    }
+    expect((await intakeByExt(ext('late'))).contactedAt).not.toBeNull();
+    expect((await agentOutcome(ext('late')))!.contacted_at).not.toBeNull();
+    // Every other door's week is exactly what it was.
+    expect((await intakeByExt(`wh-${PREFIX}-late`)).contactedAt).toBeNull();
+  });
+});
+
 describe('the outcomes feed', () => {
   const FIELDS = [
     'external_id',
@@ -467,6 +701,7 @@ describe('the outcomes feed', () => {
     'stage_kind',
     'stage_name',
     'lost_reason',
+    'no_contact',
     'closed_at',
     'contacted_at',
     'contact_kind',
@@ -474,7 +709,7 @@ describe('the outcomes feed', () => {
     'at',
   ].sort();
 
-  it('reports every agent arrival with what became of it, in the 14 fields and nothing else', async () => {
+  it('reports every agent arrival with what became of it, in the 15 fields and nothing else', async () => {
     const created = await agentOutcome(ext('clock'));
     expect(created).toMatchObject({
       outcome: 'created',
@@ -508,7 +743,11 @@ describe('the outcomes feed', () => {
     const row = await agentOutcome(ext('clock'));
     await moveLead(row!.lead_id!, lostStage, 'Qayta qilinmasin', { actorId: adminId });
     const after = await agentOutcome(ext('clock'));
-    expect(after).toMatchObject({ stage_kind: 'lost', lost_reason: 'Qayta qilinmasin' });
+    expect(after).toMatchObject({
+      stage_kind: 'lost',
+      lost_reason: 'Qayta qilinmasin',
+      no_contact: true,
+    });
     expect(after!.closed_at).not.toBeNull();
     expect(after!.at >= row!.at).toBe(true);
 
@@ -518,6 +757,60 @@ describe('the outcomes feed', () => {
       .where(eq(leads.id, row!.lead_id!));
     const hashes = (await fullSet()).map((e) => e.h);
     expect(hashes).toContain(hashTail(secret, tailOf(lead!.phone!)));
+  });
+
+  it('a lost reason leaves only as a LABEL — a seller’s free text with a name and a number does not', async () => {
+    const landed = await landInboundLead({
+      channel: 'webhook',
+      sourceKey: 'agent',
+      externalId: ext('scrub'),
+      name: NAME('scrub'),
+      phone: phone(),
+    });
+    expect(landed.outcome).toBe('created');
+    const typed = 'Akmal aka (direktor) +998 90 111 22 33 ga qo‘ng‘iroq qiling';
+    await db
+      .update(leads)
+      .set({ stageId: lostStage, lostReason: typed, closedAt: new Date() })
+      .where(eq(leads.id, landed.leadId!));
+    const free = await agentOutcome(ext('scrub'));
+    expect(free).toMatchObject({ stage_kind: 'lost', lost_reason: null, no_contact: false });
+    expect(JSON.stringify(free)).not.toContain('111 22 33');
+
+    // The owner's dictionary label is his word, not a seller's: it leaves,
+    // spelt as the lead stores it — matched however it is spaced.
+    const label = `AGL${STAMP} Narx qimmat`;
+    const [row] = await db.insert(lostReasons).values({ label }).returning({ id: lostReasons.id });
+    try {
+      await db
+        .update(leads)
+        .set({ lostReason: `agl${STAMP}  narx QIMMAT` })
+        .where(eq(leads.id, landed.leadId!));
+      const listed = await agentOutcome(ext('scrub'));
+      expect(listed).toMatchObject({ lost_reason: `agl${STAMP}  narx QIMMAT`, no_contact: false });
+    } finally {
+      // A dictionary row is CONFIGURATION: while it exists every lost move in
+      // the app is list-only (#183).
+      await db.delete(lostReasons).where(eq(lostReasons.id, row!.id));
+    }
+  });
+
+  it('a walk that reached the end is handed where to resume — on the last page too', async () => {
+    const all = (await outcomesPage({ since: fixturesFrom, cursor: null, limit: 5000 })).rows;
+    const page = await outcomesPage({ since: fixturesFrom, cursor: null, limit: 5000 });
+    expect(page.next).toBeNull();
+    const resume = decodeCursor(page.resume);
+    if (!resume || resume === 'invalid') throw new Error('no resume cursor on the last page');
+    const last = all.at(-1)!;
+    expect(resume.id).toBe(last.intake_id);
+    expect(resume.at.slice(0, 23)).toBe(last.at.slice(0, 23));
+    // …and from there, nothing again — and the same place to come back to.
+    const after = await outcomesPage({ since: fixturesFrom, cursor: resume, limit: 5000 });
+    expect(after.rows).toEqual([]);
+    expect(after.resume).toBe(page.resume);
+    const sup = await suppressionPage({ secret, since: fixturesFrom, cursor: null, limit: 5000 });
+    expect(sup.next).toBeNull();
+    expect(decodeCursor(sup.resume)).not.toBeNull();
   });
 
   it('picks up the fallback months: «Boshqa» pushes tagged clientscrapper, and only those', async () => {
@@ -556,6 +849,24 @@ describe('the outcomes feed', () => {
     }
     expect(walked.map((row) => row.intake_id)).toEqual(all.map((row) => row.intake_id));
     expect(all.length).toBeGreaterThanOrEqual(6);
+  });
+
+  it('every other door leaves a posted firm where it always was — not on the card’s column', async () => {
+    const landed = await landInboundLead({
+      channel: 'webhook',
+      sourceKey: 'tiktok',
+      externalId: `wh-${PREFIX}-company`,
+      name: NAME('company tiktok'),
+      phone: phone(),
+      note: 'Yiwudan 5 kub\ncompany: Acme LLC',
+      company: 'Acme LLC',
+    });
+    expect(landed.outcome).toBe('created');
+    const [lead] = await db
+      .select({ company: leads.company })
+      .from(leads)
+      .where(eq(leads.id, landed.leadId!));
+    expect(lead!.company).toBeNull();
   });
 
   it('writes the firm the agent sent onto the card', async () => {
@@ -597,9 +908,11 @@ describe('the two routes', () => {
     const badCursor = await suppressionGET(ask('suppression?cursor=bm9wZQ'));
     expect(badCursor.status).toBe(400);
     expect(await badCursor.json()).toEqual({ error: 'bad_cursor' });
-    const badSince = await outcomesGET(ask('outcomes?since=yesterday'));
-    expect(badSince.status).toBe(400);
-    expect(await badSince.json()).toEqual({ error: 'bad_since' });
+    for (const since of ['yesterday', '1', '2026-02-30T00:00:00Z']) {
+      const badSince = await outcomesGET(ask(`outcomes?since=${encodeURIComponent(since)}`));
+      expect(badSince.status, since).toBe(400);
+      expect(await badSince.json()).toEqual({ error: 'bad_since' });
+    }
   });
 
   it('200 with the documented body, gzipped when asked and big enough, never cached by a proxy', async () => {
@@ -614,6 +927,7 @@ describe('the two routes', () => {
       'generated_at',
       'mode',
       'next',
+      'resume',
       'rule',
       'salt_id',
     ]);
@@ -641,7 +955,7 @@ describe('the two routes', () => {
     const outcomes = await outcomesGET(ask('outcomes'));
     expect(outcomes.status).toBe(200);
     const ob = await outcomes.json();
-    expect(Object.keys(ob).sort()).toEqual(['generated_at', 'next', 'rows']);
+    expect(Object.keys(ob).sort()).toEqual(['generated_at', 'next', 'resume', 'rows']);
     expect(ob.rows.some((row: OutcomeRow) => row.external_id === ext('clock'))).toBe(true);
   });
 

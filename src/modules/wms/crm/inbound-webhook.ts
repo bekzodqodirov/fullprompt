@@ -25,9 +25,12 @@ export interface InboundFields {
   phone: string | null;
   note: string | null;
   /**
-   * The sender's firm, when it names one (`company` / `firma`) — the lead
-   * card's own column, so it needs no mapping and is not repeated as a note
-   * line. Google's form has no such field id we read; null there.
+   * The sender's firm, when it names one (`company` / `firma`). Read BESIDE
+   * the note line and the question pair it has always been, never instead of
+   * them: only the agent's landing writes it onto the card's own column, and
+   * a website or connector posting `company` keeps its lenta line, its push,
+   * its keyword routes and its mapping exactly as before (review, regression
+   * lens). Google's form has no such field id we read; null there.
    */
   company: string | null;
   /** The sender's own id for this lead, when it has one — the retry fence. */
@@ -121,10 +124,6 @@ function fromPlain(body: unknown): InboundFields {
     'izoh',
     'id',
     'external_id',
-    // The card has a column for these (the client-finding agent sends
-    // `firma`, docs/AGENT-FEED.md), so they land there and not as a pair.
-    'company',
-    'firma',
     ...SECRET_BODY_KEYS,
   ]);
   if (body && typeof body === 'object' && !Array.isArray(body)) {
@@ -142,8 +141,7 @@ function fromPlain(body: unknown): InboundFields {
     name: str(pick(body, 'name')) ?? str(pick(body, 'ism')),
     phone: str(pick(body, 'phone')) ?? str(pick(body, 'telefon')),
     note: [note, extras.join('\n')].filter(Boolean).join('\n') || null,
-    // By lower-cased name, the way `known` skips it: `{Firma: …}` must land
-    // somewhere, not be dropped from the note and missed here.
+    // By lower-cased name: `{Firma: …}` is the same firm as `{firma: …}`.
     company: firstCi(body, ['company', 'firma']),
     externalId: str(pick(body, 'external_id')) ?? str(pick(body, 'id')),
     fields,

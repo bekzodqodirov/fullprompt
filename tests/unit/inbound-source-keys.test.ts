@@ -66,11 +66,17 @@ describe('inbound source keys', () => {
 });
 
 describe('the firm on the plain webhook', () => {
-  it('lands in `company` and nowhere else — no pair to map, no note line', () => {
+  it('is read as `company` AND stays the note line and question pair it always was', () => {
+    // Only the agent's landing writes `company` onto the card; a website or a
+    // connector that posts it keeps its lenta line, its push, its keyword
+    // routes and its mapping exactly as before (review, regression lens).
     const fields = parseInboundPayload({ firma: 'X MChJ', name: 'A', phone: '9' });
     expect(fields.company).toBe('X MChJ');
-    expect(fields.fields.some((pair) => pair.key.toLowerCase() === 'firma')).toBe(false);
-    expect(fields.note ?? '').not.toContain('X MChJ');
+    expect(fields.fields).toContainEqual({ key: 'firma', value: 'X MChJ' });
+    expect(fields.note).toBe('firma: X MChJ');
+    expect(parseInboundPayload({ company: 'Acme LLC', note: 'Yiwudan 5 kub' }).note).toBe(
+      'Yiwudan 5 kub\ncompany: Acme LLC',
+    );
   });
 
   it('`company` wins over `firma`, whatever the sender’s capitals', () => {

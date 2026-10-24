@@ -10,9 +10,15 @@ import {
   parseSince,
   saltIdFor,
 } from '@/modules/wms/crm/agent-feed';
-import { parseReasonList, reasonListValid } from '@/modules/platform/settings/reason-list';
+import {
+  normaliseReason,
+  parseReasonList,
+  reasonListValid,
+} from '@/modules/platform/settings/reason-list';
 import { isReminderExempt, REMINDER_EXEMPT_SOURCES } from '@/modules/wms/crm/first-contact';
-import { AGENT_SOURCE_KEY, inboundSourceKey } from '@/modules/wms/crm/inbound';
+import { AGENT_SOURCE_KEY, formSourceKey, inboundSourceKey } from '@/modules/wms/crm/inbound';
+import { personPickableSources } from '@/modules/wms/crm/agent-source';
+import { doorViews } from '@/app/(protected)/crm/(pages)/kelganlar/door-views';
 
 /**
  * The agent feeds' pure half (docs/AGENT-FEED.md): the hash both sides must
@@ -70,10 +76,32 @@ describe('the cursor', () => {
     }
   });
 
-  it('since is an ISO instant or «invalid»', () => {
+  it('since is a full ISO instant — date, time and zone — or «invalid»', () => {
     expect(parseSince(null)).toBeNull();
-    expect(parseSince('2026-10-24T05:00:00+05:00')).toBe('2026-10-24T00:00:00.000Z');
-    expect(parseSince('soon')).toBe('invalid');
+    expect(parseSince('2026-10-24T05:00:00+05:00')).toBe('2026-10-24T00:00:00.000000Z');
+    expect(parseSince('2026-10-24T05:00+0500')).toBe('2026-10-24T00:00:00.000000Z');
+    // The cursor's own precision survives: a since cut to the millisecond
+    // re-reads what the agent already holds.
+    expect(parseSince('2026-10-24T05:06:07.123456Z')).toBe('2026-10-24T05:06:07.123456Z');
+    expect(parseSince('2026-10-24T05:06:07.5Z')).toBe('2026-10-24T05:06:07.500000Z');
+    for (const raw of [
+      'soon',
+      // `Date.parse` reads these as 2000-01-01 and 2001-01-01 (review, feed lens).
+      '0',
+      '1',
+      '-1',
+      // …and rolls this into March.
+      '2026-02-30T00:00:00Z',
+      '2026-13-01T00:00:00Z',
+      '2026-10-24T24:00:00Z',
+      '2026-10-24T05:60:00Z',
+      // A day with no time, and a time with no zone, are not instants.
+      '2026-10-24',
+      '2026-10-24T05:00:00',
+      '2026-10-24 05:00:00Z',
+    ]) {
+      expect(parseSince(raw), raw).toBe('invalid');
+    }
   });
 });
 
@@ -92,6 +120,11 @@ describe('the page size', () => {
 });
 
 describe('agent_no_contact_reasons', () => {
+  it('one normalisation for a label and a reason: JS whitespace, collapsed then trimmed, lower case', () => {
+    expect(normaliseReason('  Qayta\u00a0 qilinmasin\n')).toBe('qayta qilinmasin');
+    expect(normaliseReason('\tTest\u2009\u3000sabab\ufeff')).toBe('test sabab');
+  });
+
   it('splits on «;», trims, lower-cases, de-duplicates and drops stubs', () => {
     expect(parseReasonList(' Qayta qilinmasin ; NARX;;')).toEqual(['qayta qilinmasin', 'narx']);
     expect(parseReasonList('Qayta   qilinmasin;qayta qilinmasin;x')).toEqual(['qayta qilinmasin']);
@@ -119,6 +152,26 @@ describe('the agent key', () => {
     expect([...REMINDER_EXEMPT_SOURCES]).toEqual([AGENT_SOURCE_KEY]);
   });
 
+  it('the public form never offers it: `?manba=agent` is an unknown word, «Sayt», as before the key', () => {
+    expect(formSourceKey('agent')).toBe('sayt');
+    expect(formSourceKey('tiktok')).toBe('tiktok');
+    expect(formSourceKey('nonsense')).toBe('sayt');
+    expect(formSourceKey('')).toBe('sayt');
+  });
+
+  it('a person’s lead form does not offer it — except as the record’s own source', () => {
+    const rows = [
+      { id: 'a', key: 'tiktok' },
+      { id: 'b', key: 'agent' },
+      { id: 'c', key: null },
+    ];
+    expect(personPickableSources(rows, null).map((row) => row.id)).toEqual(['a', 'c']);
+    expect(personPickableSources(rows, 'a').map((row) => row.id)).toEqual(['a', 'c']);
+    // An agent lead's ✏️ form must still render its source, or the save
+    // posts «—» and erases it (#171).
+    expect(personPickableSources(rows, 'b').map((row) => row.id)).toEqual(['a', 'b', 'c']);
+  });
+
   it('only the webhook may claim it — a person through the form or the bot lands under «Boshqa»', () => {
     expect(inboundSourceKey('agent', 'webhook')).toBe('agent');
     expect(inboundSourceKey('agent', 'form')).toBe('other');
@@ -129,5 +182,34 @@ describe('the agent key', () => {
     expect(inboundSourceKey('tiktok', 'webhook')).toBe('tiktok');
     expect(inboundSourceKey('nonsense', 'webhook')).toBe('other');
     expect(inboundSourceKey(null, 'form')).toBe('other');
+  });
+});
+
+describe('the doors screen', () => {
+  const rows = [
+    { key: 'tiktok', name: 'TikTok', secret: 'tiktok-key' },
+    { key: 'agent', name: 'Agent (qidiruv)', secret: 'agent-key' },
+    { key: 'sayt', name: 'Sayt', secret: null },
+  ];
+  const o = { appUrl: 'https://erp.test', botName: 'gsr_bot' };
+
+  it('sends a key only to whoever may change settings — a client prop is page data, rendered or not', () => {
+    const others = doorViews(rows, { ...o, canManage: false });
+    expect(others.map((door) => door.secret)).toEqual([null, null, null]);
+    // …while the on/off state is still everybody's to read.
+    expect(others.map((door) => door.on)).toEqual([true, true, false]);
+    expect(JSON.stringify(others)).not.toContain('-key');
+
+    const admin = doorViews(rows, { ...o, canManage: true });
+    expect(admin.map((door) => door.secret)).toEqual(['tiktok-key', 'agent-key', null]);
+  });
+
+  it('the agent’s door offers no form and no bot link; every other door both', () => {
+    const [tiktok, agent] = doorViews(rows, { ...o, canManage: false });
+    expect(agent!.formUrl).toBeNull();
+    expect(agent!.botUrl).toBeNull();
+    expect(agent!.webhookUrl).toBe('https://erp.test/api/leads/in/agent');
+    expect(tiktok!.formUrl).toBe('https://erp.test/ariza?manba=tiktok');
+    expect(tiktok!.botUrl).toBe('https://t.me/gsr_bot?start=ad_tiktok');
   });
 });

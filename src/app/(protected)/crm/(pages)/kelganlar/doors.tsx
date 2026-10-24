@@ -20,8 +20,9 @@ import { setSourceWebhookAction } from './actions';
  *     owner has switched it on.
  *
  * The key is behind a fold and only for whoever may change settings: it is a
- * password for writing into the funnel, and a screenshot of this page taken
- * for any other reason must not carry it.
+ * password for writing into the funnel (and, on the agent's door, for reading
+ * the agent feeds), and a screenshot of this page taken for any other reason
+ * must not carry it. It is not even SENT to anybody else (`door-views.ts`).
  */
 
 export interface DoorView {
@@ -31,6 +32,12 @@ export interface DoorView {
   formUrl: string | null;
   botUrl: string | null;
   webhookUrl: string;
+  /** Whether the webhook is switched on — for every reader of the screen. */
+  on: boolean;
+  /**
+   * The key itself, ONLY for `admin.settings.manage` (`door-views.ts`): a
+   * prop of this component is in the page's data whether or not it renders.
+   */
   secret: string | null;
   /**
    * The website's «who should they write to?» door (round 113) — only on the
@@ -73,7 +80,7 @@ export function InboundDoors({
           {canManage && (
             <details className="rounded-xl border border-line p-2">
               <summary className="cursor-pointer text-xs font-semibold text-ink-500">
-                {t('doorWebhook')} · {door.secret ? t('doorOn') : t('doorOff')}
+                {t('doorWebhook')} · {door.on ? t('doorOn') : t('doorOff')}
               </summary>
               <div className="mt-1.5 space-y-1.5">
                 <p className="text-xs text-ink-500">{t('doorWebhookHint')}</p>
@@ -85,12 +92,12 @@ export function InboundDoors({
                 )}
                 <button
                   type="button"
-                  onClick={() => toggle(door.key, !door.secret)}
+                  onClick={() => toggle(door.key, !door.on)}
                   disabled={busy === door.key}
                   data-testid="door-toggle"
                   className="btn w-full"
                 >
-                  {door.secret ? t('doorTurnOff') : t('doorTurnOn')}
+                  {door.on ? t('doorTurnOff') : t('doorTurnOn')}
                 </button>
               </div>
             </details>

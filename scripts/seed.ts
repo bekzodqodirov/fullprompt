@@ -286,8 +286,10 @@ async function seedCrm() {
     { key: 'google', name: 'Google', sortOrder: 55 },
     { key: 'sayt', name: 'Sayt', sortOrder: 80 },
     // The client-finding agent's door (docs/AGENT-FEED.md): a machine posts
-    // here, never a person — its form and bot links are not offered.
-    { key: 'agent', name: 'Agent (qidiruv)', sortOrder: 90 },
+    // here, never a person — its form and bot links are not offered, and the
+    // lead forms do not offer it either. Just above «Boshqa», and not at 90,
+    // which the first seed gave «O‘zi keldi».
+    { key: 'agent', name: 'Agent (qidiruv)', sortOrder: 190 },
     { key: 'other', name: 'Boshqa', sortOrder: 200 },
   ];
   for (const want of KEYED) {

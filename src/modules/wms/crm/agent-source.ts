@@ -12,3 +12,18 @@
 export const AGENT_SOURCE_KEY = 'agent';
 
 export const isAgentSource = (key: string | null | undefined): boolean => key === AGENT_SOURCE_KEY;
+
+/**
+ * The lead sources a PERSON may pick on a lead form: every one but the
+ * agent's, which only the agent's door writes — a seller tagging a hand-made
+ * lead «Agent (qidiruv)» would count it in the agent's figures on
+ * /crm/tahlil (review, regression lens). The record's OWN source stays even
+ * when it is the agent's: a select that cannot render the stored value posts
+ * «—» on the next save and erases it (#171).
+ */
+export function personPickableSources<T extends { id: string; key: string | null }>(
+  rows: T[],
+  currentId: string | null | undefined,
+): T[] {
+  return rows.filter((row) => !isAgentSource(row.key) || row.id === currentId);
+}

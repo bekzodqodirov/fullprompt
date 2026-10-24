@@ -28,8 +28,11 @@ import {
  * a code for a cursor or `since` it sent wrong (a bug on its side, not worth
  * retrying), 503 when we are down (it backs off and comes back). Never a
  * stack, never a 500 — Next's own error page carries no JSON. A database that
- * fails BEFORE the key could be checked is a 503 as well: answering 404 there
- * would trip the agent's breaker and tell the owner his key is wrong.
+ * fails BEFORE the key could be checked is a 503 too — but only to a caller
+ * that SENT a key: answering 404 there would trip the agent's breaker and
+ * tell the owner his key is wrong, while to a caller with no key at all a 503
+ * says «this feed exists, and its database is down right now» (review, sec
+ * lens). Without a key it is the same 404 as every other refusal.
  */
 
 export type AgentFeed = 'suppression' | 'outcomes';
@@ -43,14 +46,19 @@ export async function agentFeedResponse(request: Request, feed: AgentFeed): Prom
     return json(request, { error: 'unavailable' }, { status: 503, headers: NO_STORE });
   };
 
+  const sent = request.headers.get('x-gsr-key');
   let secret: string | null;
   try {
     secret = await sourceWebhookSecret(AGENT_SOURCE_KEY);
   } catch (err) {
+    if (!sent) {
+      logger.error({ err, feed }, '[agent-feed] failed');
+      return notFound();
+    }
     return unavailable(err);
   }
   if (!secret) return notFound();
-  if (!secretMatches(request.headers.get('x-gsr-key'), secret)) {
+  if (!secretMatches(sent, secret)) {
     logger.warn({ feed }, '[agent-feed] bad key');
     return notFound();
   }
@@ -79,6 +87,7 @@ export async function agentFeedResponse(request: Request, feed: AgentFeed): Prom
           rule: HASH_RULE,
           entries: page.entries,
           next: page.next,
+          resume: page.resume,
         },
         { headers: NO_STORE },
       );
@@ -86,7 +95,12 @@ export async function agentFeedResponse(request: Request, feed: AgentFeed): Prom
     const page = await outcomesPage({ since, cursor, limit });
     return json(
       request,
-      { generated_at: new Date().toISOString(), rows: page.rows, next: page.next },
+      {
+        generated_at: new Date().toISOString(),
+        rows: page.rows,
+        next: page.next,
+        resume: page.resume,
+      },
       { headers: NO_STORE },
     );
   } catch (err) {

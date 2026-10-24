@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { and, count, desc, eq, gt, inArray, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gt, inArray, ne, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { leadIntakes, leadSources, leadStages, leads, users } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
@@ -18,7 +18,7 @@ import {
 } from './field-map';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { announceArrival, type LandedArrival } from './inbound-notify';
-import { isAgentSource } from './agent-source';
+import { AGENT_SOURCE_KEY, isAgentSource } from './agent-source';
 import { isSuppressedTail, noContactReasons } from './agent-feed';
 
 export { AGENT_SOURCE_KEY, isAgentSource } from './agent-source';
@@ -74,6 +74,19 @@ export function inboundSourceKey(raw: string | null | undefined, channel: Inboun
   if (!(INBOUND_SOURCE_KEYS as readonly string[]).includes(raw ?? '')) return 'other';
   if (isAgentSource(raw) && channel !== 'webhook') return 'other';
   return raw!;
+}
+
+/**
+ * The source the public form (`/ariza?manba=…`) offers: a key it knows, and
+ * `sayt` for anything else — `agent` included, because nobody filling in a
+ * form is the machine, and before the agent's key existed `?manba=agent` was
+ * an unknown word the page turned into «Sayt». It still is (review,
+ * regression lens).
+ */
+export function formSourceKey(asked: string): string {
+  return (INBOUND_SOURCE_KEYS as readonly string[]).includes(asked) && !isAgentSource(asked)
+    ? asked
+    : 'sayt';
 }
 
 /**
@@ -345,12 +358,29 @@ export async function landInboundLead(arrival: InboundArrival): Promise<InboundR
     if (seen) return { outcome: 'dropped', reason: 'replay' };
   }
 
+  // A machine-found lead the belt below cannot CHECK must not reach a seller:
+  // with no phone of nine digits it is neither ruled out as a client nor as a
+  // «Qayta qilinmasin» number (review, feed lens). The agent refuses such a
+  // candidate itself; this is the ERP's last line. After the replay fence, so
+  // a re-send writes no second row.
+  if (isAgentSource(sourceKey) && !phone) {
+    await record('dropped', { reason: 'no_phone' });
+    return { outcome: 'dropped', reason: 'no_phone' };
+  }
+
   // The ceilings, asked BEFORE anything is created and counted over the
   // arrivals ledger rather than over `leads` — a flood that was correctly
   // dropped still has to count towards the next one, or the cap is escapable
-  // by making every attempt look like a duplicate.
+  // by making every attempt look like a duplicate. The per-phone count is per
+  // FAMILY: the agent's arrivals count only against the agent, everybody
+  // else's only against everybody else — three agent pushes on one number
+  // (three firms sharing a phone) must not stop that person's own enquiry
+  // through the form for a day (review, sec lens). Every door that is not the
+  // agent counts exactly what it counted before the agent existed.
   const capped =
-    (phone && (await inboundCount({ phone, sinceMs: DAY_MS })) >= PHONE_CAP_PER_DAY) ||
+    (phone &&
+      (await inboundCount({ phone, sinceMs: DAY_MS, agent: isAgentSource(sourceKey) })) >=
+        PHONE_CAP_PER_DAY) ||
     (await inboundCount({ sourceKey, sinceMs: DAY_MS })) >= SOURCE_CAP_PER_DAY;
   if (capped) {
     await record('dropped', { reason: 'capped' });
@@ -463,8 +493,12 @@ export async function landInboundLead(arrival: InboundArrival): Promise<InboundR
       // `leadSchema` wants two characters and an advert may send none.
       name: name ?? `${sourceKey} · ${phone ?? '—'}`,
       phone: arrival.phone ?? '',
-      // `leadSchema`'s own ceiling for the card's firm.
-      company: trim(arrival.company, 200) ?? undefined,
+      // The agent's firm onto the card's own column, at `leadSchema`'s
+      // ceiling. The agent's only: every other door keeps a posted `company`
+      // as the note line and question pair it always was (review, regression
+      // lens), and the agent's copy is in its note too, so a JOINED push
+      // still shows it.
+      company: isAgentSource(sourceKey) ? (trim(arrival.company, 200) ?? undefined) : undefined,
       sourceId: sourceId ?? '',
       ownerId: ownerId ?? '',
       // `note` deliberately left empty. What the person WROTE goes on the
@@ -550,16 +584,23 @@ function inboundNote(sourceKey: string, text: string): string {
   return [`📣 ${sourceKey}`, text].filter(Boolean).join('\n');
 }
 
-/** How many arrivals a source produced in a window — for the caps and reports. */
+/**
+ * How many arrivals a source produced in a window — for the caps and reports.
+ * `agent` splits the ledger in two families: true counts only the agent's
+ * rows, false only everybody else's; absent counts all.
+ */
 export async function inboundCount(where: {
   phone?: string | null;
   sourceKey?: string | null;
+  agent?: boolean;
   sinceMs: number;
 }): Promise<number> {
   const since = new Date(Date.now() - where.sinceMs);
   const conditions = [gt(leadIntakes.createdAt, since)];
   if (where.phone) conditions.push(eq(leadIntakes.phone, where.phone));
   if (where.sourceKey) conditions.push(eq(leadIntakes.sourceKey, where.sourceKey));
+  if (where.agent === true) conditions.push(eq(leadIntakes.sourceKey, AGENT_SOURCE_KEY));
+  if (where.agent === false) conditions.push(ne(leadIntakes.sourceKey, AGENT_SOURCE_KEY));
   const [row] = await db
     .select({ n: count() })
     .from(leadIntakes)

@@ -11,6 +11,7 @@ import { getSetting } from '@/modules/platform/settings/service';
 import { Panel } from '@/components/panel';
 import { activeLostReasonLabels, listSources, listStages } from '@/modules/wms/crm/service';
 import { leadFormStages } from '@/modules/wms/crm/stage-law';
+import { personPickableSources } from '@/modules/wms/crm/agent-source';
 import { customFieldsData } from '@/modules/platform/fields/view';
 import { convertLeadAction, updateLeadAction } from '../../actions';
 import { CustomFieldInputs } from '@/components/custom-fields';
@@ -281,7 +282,10 @@ export default async function LeadPage({
           quoteLocked={quoteLocked}
           load={loadMode ? { initial: loadMode, office: mayRevertFtl(actor) } : null}
           action={update}
-          sources={sources.map((row) => ({ id: row.id, label: row.name }))}
+          sources={personPickableSources(sources, lead.sourceId).map((row) => ({
+            id: row.id,
+            label: row.name,
+          }))}
           stages={leadFormStages(stages, lead.stageId).map((row) => ({ id: row.id, label: row.name }))}
           owners={managers.map((row) => ({ id: row.id, label: row.fullName }))}
           initial={{

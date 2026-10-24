@@ -2,18 +2,14 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import {
-  inboundDoors,
-  intakesBySource,
-  isAgentSource,
-  recentIntakes,
-} from '@/modules/wms/crm/inbound';
+import { inboundDoors, intakesBySource, recentIntakes } from '@/modules/wms/crm/inbound';
 import { funnelReport } from '@/modules/wms/crm/service';
 import { PageHeader, Section } from '@/components/ui/page';
 import { Panel } from '@/components/panel';
 import { MetaLine } from '@/components/board-meta';
 import { getBotUsername } from '@/modules/platform/telegram/bot';
 import { InboundDoors, type DoorView } from './doors';
+import { doorViews } from './door-views';
 
 /**
  * Everything an advert sent us, including what it did NOT turn into.
@@ -52,20 +48,8 @@ export default async function ArrivalsPage() {
   ]);
 
   const appUrl = (process.env.APP_URL ?? '').replace(/\/$/, '');
-  const doors: DoorView[] = doorRows.map((door) => ({
-    key: door.key,
-    name: door.name,
-    // The agent's door is a machine's: a person reaching it through the form
-    // or the bot lands under «Boshqa» (`inboundSourceKey`), so a link that
-    // looks like a door to it would be one that does not go there.
-    formUrl: isAgentSource(door.key) ? null : `${appUrl}/ariza?manba=${door.key}`,
-    // The bot's third door only exists once the bot has a name to link to.
-    botUrl:
-      botName && !isAgentSource(door.key) ? `https://t.me/${botName}?start=ad_${door.key}` : null,
-    webhookUrl: `${appUrl}/api/leads/in/${door.key}`,
-    secret: door.secret,
-    assignUrl: door.key === 'sayt' ? `${appUrl}/api/lead/assign` : null,
-  }));
+  const canManage = actor.permissions.has('admin.settings.manage');
+  const doors: DoorView[] = doorViews(doorRows, { appUrl, botName, canManage });
 
   /**
    * Arrivals and money, per source, joined in JS over two grouped queries.
@@ -100,7 +84,7 @@ export default async function ArrivalsPage() {
 
       <Panel title={`🔗 ${t('doors')}`} testId="doors-panel">
         <p className="mb-2 text-xs text-ink-500">{t('doorsHint')}</p>
-        <InboundDoors doors={doors} canManage={actor.permissions.has('admin.settings.manage')} />
+        <InboundDoors doors={doors} canManage={canManage} />
       </Panel>
 
       {results.length > 0 && (

@@ -83,6 +83,18 @@ export const REMINDER_EXEMPT_SOURCES: ReadonlySet<string> = new Set([AGENT_SOURC
 export const isReminderExempt = (sourceKey: string | null | undefined): boolean =>
   REMINDER_EXEMPT_SOURCES.has(sourceKey ?? '');
 
+/**
+ * How long an UNSTAMPED arrival from a reminder-exempt source is still looked
+ * at (below). An advert lead's question «has anybody called» stops being worth
+ * a query after a week, because by then the owner was reminded and the
+ * answer is on the board. Nobody is reminded about an agent lead, and the
+ * agent reads `contacted_at` back for months (its outcomes feed): a seller
+ * who rings on day nine is a contact the agent must hear about, not a null
+ * for ever (review, feed lens). Ninety days covers the agent's precision
+ * window three times; the rows are its unstamped arrivals only.
+ */
+export const EXEMPT_CONTACT_LOOKBACK_DAYS = 90;
+
 /** A joined re-enquiry inside a conversation this fresh gets no clock of its own. */
 export const JOINED_FRESH_CONTACT_HOURS = 24;
 
@@ -210,7 +222,8 @@ export function firstContactSql(): SQL {
  * twelve is corrected to the call at minute four when the phone reports.
  * Arrivals of the last day are re-read for exactly that; an unstamped one is
  * looked at for a week, which is as long as «nobody ever called» stays a
- * question worth a query.
+ * question worth a query — and for EXEMPT_CONTACT_LOOKBACK_DAYS when its
+ * source is never reminded, because then nothing else ever asks.
  *
  * `leadId` narrows it to one lead — the button's own press, so the ledger
  * says «contacted» before the next minute's sweep.
@@ -224,9 +237,18 @@ export async function stampFirstContacts(now: Date = new Date(), leadId?: string
         JOIN leads l ON l.id = i.lead_id
         CROSS JOIN LATERAL ${firstContactSql()} fc
        WHERE i.contact_clock_at IS NOT NULL
-         AND i.contact_clock_at >= ${at}::timestamptz - interval '8 days'
-         AND (i.created_at >= ${at}::timestamptz - interval '1 day'
-              OR (i.contacted_at IS NULL AND i.created_at >= ${at}::timestamptz - interval '7 days'))
+         AND (
+           (i.contact_clock_at >= ${at}::timestamptz - interval '8 days'
+            AND (i.created_at >= ${at}::timestamptz - interval '1 day'
+                 OR (i.contacted_at IS NULL AND i.created_at >= ${at}::timestamptz - interval '7 days')))
+           OR (i.contacted_at IS NULL
+               AND i.source_key IN (${sql.join(
+                 [...REMINDER_EXEMPT_SOURCES].map((key) => sql`${key}`),
+                 sql`, `,
+               )})
+               AND i.contact_clock_at >= ${at}::timestamptz - make_interval(days => ${EXEMPT_CONTACT_LOOKBACK_DAYS})
+               AND i.created_at >= ${at}::timestamptz - make_interval(days => ${EXEMPT_CONTACT_LOOKBACK_DAYS}))
+         )
          ${leadId ? sql`AND i.lead_id = ${leadId}` : sql``}
     )
     UPDATE lead_intakes t
