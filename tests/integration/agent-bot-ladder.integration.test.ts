@@ -215,6 +215,17 @@ describe('the newest question on the screen is the one a text answers (I2 b)', (
     expect((await draftOf(draftId)).finalBody).toBe(`Javob ${STAMP}`);
   });
 
+  it('…but a swipe-reply to the ✏️ prompt still names the prompt — the task’s question keeps waiting', async () => {
+    const { me, draftId } = await owner();
+    const giver = await person('sales_manager');
+    const T = await handTask(me, giver);
+    const prompt = await pressEdit(me, draftId);
+    await h.handle(tg.callback(me.chat, nextMsg(), `t:${T}`));
+    await h.handle(tg.text(me.chat, `Javob ${STAMP}`, { replyTo: prompt }));
+    expect((await draftOf(draftId)).finalBody).toBe(`Javob ${STAMP}`);
+    expect(await statusOf(T)).not.toBe('done');
+  });
+
   it('✏️ while a task’s answer is awaited is refused in words — nothing is armed', async () => {
     const { me, draftId } = await owner();
     const giver = await person('sales_manager');

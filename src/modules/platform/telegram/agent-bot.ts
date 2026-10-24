@@ -123,22 +123,26 @@ export async function agentTextSlot(ctx: Context, chatId: bigint, msg: AgentSlot
       break;
     }
   }
+  // The text a plain (non-reply) message answers: the agent wait, unless a
+  // task's question went on the screen after it.
+  let plain = waited;
   if (waited) {
     const task = readWait<unknown>(chatId, 'task');
     if (task && waitVerdict(task, msg.dateSec, isBacklog(msg.dateSec)) === 'answers' && task.armedAt >= waited.armedAt) {
-      waited = null;
+      plain = null;
     }
   }
-  if (!waited && msg.replyToMessageId === null) return false;
+  if (!plain && msg.replyToMessageId === null) return false;
   const staff = await staffForChat(chatId);
   if (!staff) return false;
   const { agentCardFor, agentText } = await import('../../wms/agent/bot-door');
   let target: { kind: AgentWait; payload: Record<string, string> } | null = null;
   if (msg.replyToMessageId !== null) {
+    // A reply's target is the message it names — the agent prompt's too, newer task wait or not.
     target = await agentCardFor(staff.id, chatId, msg.replyToMessageId);
     if (!target && waited && waited.payload.promptMessageId === String(msg.replyToMessageId)) target = waited;
   } else {
-    target = waited;
+    target = plain;
   }
   if (!target) return false;
   // The wait is consumed before the effect (the redelivery rule): a kill after
