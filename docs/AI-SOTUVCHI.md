@@ -1016,3 +1016,12 @@ skladlarimizdan narxi shuncha deb aytsin. Va zavotidan olib skladga olib kelish 
 | 1 | **b** — avia has no upper weight bound. | No ceiling guard on `avia_estimate`. |
 | 2 | **b** — avia is $17 per ACTUAL kg. | Volume never enters the avia figure; the review's volumetric refusal goes. |
 | 3 | A customer who names only «China», or a Chinese place where we have no warehouse, is quoted FROM OUR CHINESE WAREHOUSES, on the condition that he sends the cargo there; **bringing it from the factory to the warehouse is priced separately**. | The origin resolves to our China warehouses' column (cn) and the reply must carry both sentences (the warehouse condition and «zavoddan omborgacha olib kelish alohida hisoblanadi») in the customer's language — enforced by the policy, like the hedge; the podklyuch landing gets the cn zone and the intake note says the same; a seed fact says it. |
+
+**Fourth set (2026-10-24, late evening), answering the final review's two questions.** His message: «1 Xtoy sklad
+[the three addresses below, and the company's address card as an image] / 2 yukini infosini menga bersang men adres
+beraman telegramda sorasin».
+
+| # | Agreed | What it changes |
+|---|---|---|
+| 1 | The China receiving addresses ARE given by the AI (his 10b): **YIWU** (YW) 浙江省 义乌市 稠江街道 荷花南街 2255号，周先生，小周 13429089596; **GUANGZHOU** (GZ) 广东省佛山市南海区里水镇胜利社区胜利工业区29号3栋 拓派国际物流有限公司，提货调车电话：王红 13266376775; **HORGOS** (HRG) 霍尔果斯金亿国际物流中心 新疆维吾尔自治区伊犁哈萨克自治州霍尔果斯市南京路与宁波路交叉口正东方向168米左右，ASQAR 18309082036. His card also says «!!! Yuklaringizni jonatish oldi GS codini (markirovka) yozishni unutmang !!!» / «!!! 发货前请不要忘记标注GS编码（唛头）!!!». | Seed facts, one per warehouse, written verbatim in Chinese (a Chinese supplier reads them) with the contact's phone (the seed fence allows exactly these three phones); a fact for the GS-code reminder. Kashgar is not on his card, so no Kashgar address is given. Which warehouse a customer uses is not decided by the AI. |
+| 2 | **Avia: the AI collects the cargo's details and asks him in Telegram; he gives the address.** | An avia enquiry still gets his kg × 17 $ figure (hedged, §17.14), but the AI never states a receiving address for avia: the draft carries the cargo's details as a `needs_owner` question («Avia: <goods>, <kg>, <from where> — manzilni siz bering»). The final review's K32 (the warehouse-condition sentences on avia) is replaced by this. |
