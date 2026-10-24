@@ -15,12 +15,13 @@ import {
   setAgentMode,
   setAgentNumbers,
   setAgentOwner,
+  setAviaRate,
 } from './config';
 import { decideDraft, submitOwnText, type DraftDecision } from './decide';
 import { KbError } from './kb';
 import { approveStyleGuide } from './style';
 import { AgentCancelError, cancelAgentReply } from './web-thread';
-import { RetireError, addGeneralFact, retireKbFact } from './web-kb';
+import { RetireError, addGeneralFact, editKbFact, retireKbFact } from './web-kb';
 import { AGENT_PAGE } from './web-door';
 
 /**
@@ -132,6 +133,26 @@ export async function agentRememberAction(draftId: string, op: 'g' | 'u' | 'z'):
 export async function agentAddFactAction(question: string, answer: string): Promise<AgentActionResult> {
   return run(async ({ ctx }) => {
     await addGeneralFact({ question: question.trim() || null, answer }, ctx);
+  });
+}
+
+/** A fact's words corrected — the old row retired, a new approved one written (web-kb `editKbFact`). */
+export async function agentEditFactAction(factId: string, question: string, answer: string): Promise<AgentActionResult> {
+  return run(async ({ ctx }) => {
+    await editKbFact(factId, { question: question.trim() || null, answer }, ctx);
+  });
+}
+
+/**
+ * His avia rate, $/kg. An empty box means «avia is not quoted» (the tool then
+ * refuses and the model asks him); anything else must read as dollars with at
+ * most cents — refused, never rounded.
+ */
+export async function agentAviaRateAction(raw: string): Promise<AgentActionResult> {
+  const text = raw.trim();
+  const value = text === '' ? null : /^\d{1,3}(?:[.,]\d{1,2})?$/u.test(text) ? Number(text.replace(',', '.')) : Number.NaN;
+  return run(async ({ actor, ctx }) => {
+    await setAviaRate(actor, value, ctx);
   });
 }
 

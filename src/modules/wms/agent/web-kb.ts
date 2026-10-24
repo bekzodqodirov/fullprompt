@@ -49,6 +49,71 @@ export class RetireError extends Error {
 }
 
 /**
+ * Correct a fact's words on the page (§17.14: «bilimlar turadigan page …
+ * qo'shiladi, o'zgartiriladi, olib tashlanadi»). Never an UPDATE of the row:
+ * what the agent said yesterday was said with yesterday's words, so the old
+ * row is RETIRED and a new approved one is written in its place — through
+ * `writeKbFact`, the one writer, so the money and «nothing personal»
+ * refusals are the add form's exactly, and they refuse BEFORE anything moves.
+ * The new row names the one it replaces; both writes are audited.
+ *
+ * `writeKbFact` runs on the pool, so it cannot sit inside the retiring
+ * transaction (#714). The order is therefore write-then-retire, and an edit
+ * that loses a race to another retire takes its own new row back and says so
+ * — a fact is never live twice.
+ */
+export async function editKbFact(
+  factId: string,
+  input: { question: string | null; answer: string },
+  ctx: AuditContext,
+): Promise<string> {
+  if (!(await agentTablesReady())) throw new AgentConfigError('not_ready');
+  const [old] = await db.select().from(kbFacts).where(eq(kbFacts.id, factId));
+  if (!old) throw new RetireError('not_found');
+  if (old.retiredAt) throw new RetireError('already_retired');
+  const question = input.question?.trim() || null;
+  const answer = input.answer.trim();
+  if (question === (old.question ?? null) && answer === old.answer) return old.id;
+  const text = `${question ?? ''}\n${answer}`.toLowerCase();
+  const names =
+    old.scope === 'general' ? (await knownNamesForMask(false)).filter((n) => text.includes(n.toLowerCase())) : [];
+  const newId = await writeKbFact(
+    {
+      scope: old.scope as 'general' | 'client' | 'lead',
+      clientId: old.clientId,
+      leadId: old.leadId,
+      question,
+      answer,
+      locale: old.locale ?? 'uz',
+      sourceRef: { door: 'web', replaces: old.id },
+      knownNames: names,
+    },
+    ctx,
+  );
+  const retired = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(kbFacts)
+      .set({ retiredAt: new Date() })
+      .where(and(eq(kbFacts.id, old.id), isNull(kbFacts.retiredAt)))
+      .returning({ id: kbFacts.id });
+    if (!row) return false;
+    await writeAudit(tx, ctx, {
+      entityType: 'kb_fact',
+      entityId: old.id,
+      action: 'update',
+      before: { answer: old.answer, question: old.question },
+      after: { retired: true, replacedBy: newId },
+    });
+    return true;
+  });
+  if (!retired) {
+    await retireKbFact(newId, ctx);
+    throw new RetireError('already_retired');
+  }
+  return newId;
+}
+
+/**
  * Retire a fact: it stops being read by every run from this moment (kb.ts's
  * `live` predicate), and stays in the table — what the agent once said is a
  * fact about the past, and the audit row names who took it back.

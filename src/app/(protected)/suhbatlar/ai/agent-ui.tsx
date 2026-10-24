@@ -5,7 +5,9 @@ import { useTranslations } from 'next-intl';
 import {
   agentAddFactAction,
   agentApproveStyleAction,
+  agentAviaRateAction,
   agentDecideAction,
+  agentEditFactAction,
   agentModeAction,
   agentNumbersAction,
   agentOwnTextAction,
@@ -257,6 +259,108 @@ export function FactForm() {
         {t('factSave')}
       </button>
       <Feedback error={error} note={note} />
+    </div>
+  );
+}
+
+/**
+ * ✏️ on one fact: its words in the add form's boxes, saved as a NEW approved
+ * fact while the old one is retired (web-kb `editKbFact`) — the same money
+ * and «nothing personal» refusals as adding, said in words.
+ */
+export function FactEditor({ factId, question, answer }: { factId: string; question: string | null; answer: string }) {
+  const t = useTranslations('agentAi');
+  const { pending, error, run } = useAction();
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState(question ?? '');
+  const [a, setA] = useState(answer);
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className="btn-ghost !min-h-8 !px-2 text-xs"
+        data-testid="agent-fact-edit"
+        onClick={() => setOpen(true)}
+      >
+        ✏️ {t('factEdit')}
+      </button>
+    );
+  }
+  return (
+    <div className="w-full space-y-2" data-testid="agent-fact-edit-box">
+      <label className="label" htmlFor={`fact-q-${factId}`}>
+        {t('factQuestion')}
+      </label>
+      <input
+        id={`fact-q-${factId}`}
+        className="input"
+        value={q}
+        maxLength={300}
+        onChange={(event) => setQ(event.target.value)}
+        data-testid="agent-fact-edit-question"
+      />
+      <label className="label" htmlFor={`fact-a-${factId}`}>
+        {t('factAnswer')}
+      </label>
+      <textarea
+        id={`fact-a-${factId}`}
+        className="input h-28"
+        value={a}
+        maxLength={2000}
+        onChange={(event) => setA(event.target.value)}
+        data-testid="agent-fact-edit-answer"
+      />
+      <p className="text-xs text-ink-500">{t('factEditHint')}</p>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          className="btn-primary"
+          disabled={pending || a.trim() === ''}
+          data-testid="agent-fact-edit-save"
+          onClick={() => run(() => agentEditFactAction(factId, q, a), () => setOpen(false))}
+        >
+          {t('factEditSave')}
+        </button>
+        <button type="button" className="btn-secondary" disabled={pending} onClick={() => setOpen(false)}>
+          {t('factEditCancel')}
+        </button>
+      </div>
+      <Feedback error={error} note={null} />
+    </div>
+  );
+}
+
+/** His avia rate, $/kg — an empty box means avia is not quoted. Refused in words, never rounded. */
+export function AviaRateForm({ current }: { current: number | null }) {
+  const t = useTranslations('agentAi');
+  const { pending, error, run } = useAction();
+  const initial = current === null ? '' : String(current);
+  const [value, setValue] = useState(initial);
+  return (
+    <div className="space-y-1" data-testid="agent-avia-rate">
+      <label className="label" htmlFor="agent-avia-rate-input">
+        {t('ruleAviaRateLabel')}
+      </label>
+      <div className="flex flex-wrap gap-2">
+        <input
+          id="agent-avia-rate-input"
+          className="input min-w-0 flex-1"
+          inputMode="decimal"
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          data-testid="agent-avia-rate-input"
+        />
+        <button
+          type="button"
+          className="btn-secondary"
+          disabled={pending || value.trim() === initial}
+          data-testid="agent-avia-rate-save"
+          onClick={() => run(() => agentAviaRateAction(value))}
+        >
+          {t('save')}
+        </button>
+      </div>
+      <Feedback error={error} note={null} />
     </div>
   );
 }

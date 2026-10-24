@@ -1,14 +1,16 @@
 import 'dotenv/config';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
-import { agentConfig, agentDrafts, agentOutbox, clients, kbFacts, roles, userRoles, users } from '@/modules/platform/db/schema';
+import { agentConfig, agentDrafts, agentOutbox, auditLog, clients, kbFacts, roles, userRoles, users } from '@/modules/platform/db/schema';
 import {
   AgentConfigError,
   __restoreAgentConfig,
   readAgentConfig,
+  setAviaRate,
   type AgentConfig,
 } from '@/modules/wms/agent/config';
+import { agentRules } from '@/modules/wms/agent/web-page';
 import { approveStyleGuide } from '@/modules/wms/agent/style';
 import {
   AgentCancelError,
@@ -17,7 +19,7 @@ import {
   cancelAgentReply,
   waitingAgentReplies,
 } from '@/modules/wms/agent/web-thread';
-import { addGeneralFact, retireKbFact, RetireError } from '@/modules/wms/agent/web-kb';
+import { addGeneralFact, editKbFact, retireKbFact, RetireError } from '@/modules/wms/agent/web-kb';
 import { KbError } from '@/modules/wms/agent/kb';
 
 /**
@@ -207,6 +209,66 @@ describe('the 🤖 marker', () => {
       { id: 'human', direction: 'out', managerUserId: holderId, tgMessageId: tgId + 1n },
     ]);
     expect([...marked]).toEqual(['ours']);
+  });
+});
+
+describe('the avia rate on «AI qoidalari» (§17.14) — the page’s door, cents at most, audited', () => {
+  it('refuses a colleague who is neither the owner nor a super_admin', async () => {
+    await db.update(agentConfig).set({ mode: 'off', ownerUserId: holderId }).where(eq(agentConfig.id, 1));
+    await expect(setAviaRate({ id: otherId, roles: ['accountant'] }, 18, ctx(otherId))).rejects.toMatchObject({ code: 'forbidden' });
+  });
+
+  it('refuses what is not a rate — zero, 1 000, NaN, more than cents — and never rounds', async () => {
+    for (const bad of [0, -1, 1000, Number.NaN, 17.555]) {
+      await expect(setAviaRate({ id: holderId, roles: [] }, bad, ctx(holderId)), String(bad)).rejects.toMatchObject({ code: 'bad_value' });
+    }
+  });
+
+  it('the owner sets it (stamped, audited, read back by every run); empty = avia is not quoted', async () => {
+    const out = await setAviaRate({ id: holderId, roles: ['sales_manager'] }, 18.5, ctx(holderId));
+    expect(out).toMatchObject({ aviaUsdPerKg: 18.5, aviaRateSetBy: holderId });
+    expect(out.aviaRateSetAt).not.toBeNull();
+    expect((await readAgentConfig())!.aviaUsdPerKg).toBe(18.5);
+    expect(agentRules((await readAgentConfig())!).avia).toMatchObject({ usdPerKg: 18.5, minKg: 1, daysMin: 2, daysMax: 5 });
+    const [audit] = await db
+      .select()
+      .from(auditLog)
+      .where(and(eq(auditLog.entityType, 'agent_config'), eq(auditLog.actorId, holderId)))
+      .orderBy(desc(auditLog.id))
+      .limit(1);
+    expect(audit!.after).toMatchObject({ aviaUsdPerKg: 18.5 });
+    const cleared = await setAviaRate({ id: superAdminId, roles: ['super_admin'] }, null, ctx(superAdminId));
+    expect(cleared.aviaUsdPerKg).toBeNull();
+  });
+});
+
+describe('a fact’s words corrected — the old row retired, a new approved one in its place', () => {
+  it('writes the new words, names what they replace, and retires the old', async () => {
+    const id = await addGeneralFact({ question: 'Ish vaqti?', answer: `Dushanba–juma ishlaymiz. ${SUFFIX}` }, ctx(holderId));
+    factIds.push(id);
+    const next = await editKbFact(id, { question: 'Ish vaqti?', answer: `Dushanba–shanba ishlaymiz. ${SUFFIX}` }, ctx(holderId));
+    factIds.push(next);
+    expect(next).not.toBe(id);
+    const [old] = await db.select().from(kbFacts).where(eq(kbFacts.id, id));
+    expect(old!.retiredAt).not.toBeNull();
+    const [row] = await db.select().from(kbFacts).where(eq(kbFacts.id, next));
+    expect(row).toMatchObject({ scope: 'general', answer: `Dushanba–shanba ishlaymiz. ${SUFFIX}`, retiredAt: null, approvedBy: holderId });
+    expect(row!.sourceRef).toMatchObject({ door: 'web', replaces: id });
+    // The same words again change nothing.
+    expect(await editKbFact(next, { question: 'Ish vaqti?', answer: `Dushanba–shanba ishlaymiz. ${SUFFIX}` }, ctx(holderId))).toBe(next);
+    // A retired fact is not edited.
+    await expect(editKbFact(id, { question: null, answer: `Boshqa ${SUFFIX}` }, ctx(holderId))).rejects.toMatchObject({ code: 'already_retired' });
+  });
+
+  it('refuses a price BEFORE anything moves — the old fact stays live, no new row', async () => {
+    const id = await addGeneralFact({ question: null, answer: `Ombor 9:00 da ochiladi. ${SUFFIX}` }, ctx(holderId));
+    factIds.push(id);
+    const before = await db.select({ id: kbFacts.id }).from(kbFacts).where(sql`${kbFacts.answer} LIKE ${`%${SUFFIX}%`}`);
+    await expect(editKbFact(id, { question: null, answer: `Yo‘lkira 1 kub 110 $ ${SUFFIX}` }, ctx(holderId))).rejects.toBeInstanceOf(KbError);
+    const [still] = await db.select().from(kbFacts).where(eq(kbFacts.id, id));
+    expect(still!.retiredAt).toBeNull();
+    const after = await db.select({ id: kbFacts.id }).from(kbFacts).where(sql`${kbFacts.answer} LIKE ${`%${SUFFIX}%`}`);
+    expect(after.length).toBe(before.length);
   });
 });
 

@@ -6,6 +6,7 @@ import { agentRunning, mayRunAgent, readAgentConfig, type AgentConfig } from '@/
 import { AGENT_PAGE } from '@/modules/wms/agent/web-door';
 import { cancellable } from '@/modules/wms/agent/web-thread';
 import {
+  agentRules,
   agentToday,
   openCalcsFor,
   ownerAccountState,
@@ -22,7 +23,9 @@ import { AgentCancelButton } from '@/components/agent-cancel-button';
 import { ClearPauseButton } from '@/components/clear-pause-button';
 import { agentSendAtLabel } from '@/components/agent-waiting-bubble';
 import {
+  AviaRateForm,
   DraftActions,
+  FactEditor,
   FactForm,
   ModeSwitch,
   NumbersForm,
@@ -268,7 +271,7 @@ export default async function AgentPage({ searchParams }: { searchParams: Promis
         </>
       )}
 
-      {section === 'bilimlar' && <KnowledgeSection t={t} />}
+      {section === 'bilimlar' && <KnowledgeSection t={t} config={config} />}
 
       {section === 'sozlamalar' && (
         <SettingsSection
@@ -283,10 +286,47 @@ export default async function AgentPage({ searchParams }: { searchParams: Promis
   );
 }
 
-async function KnowledgeSection({ t }: { t: T }) {
+/**
+ * «AI qoidalari» (§17.14 e): what the agent follows that is not a fact — the
+ * truck's minimum, avia's minimum, time and rate, rail, the certificate. Every
+ * number is `agentRules`, i.e. the constant or the config the agent itself
+ * reads; the avia rate is the one editable here (the page's own door, the
+ * owner or the super_admin role, is `setAviaRate`'s too).
+ */
+function RulesCard({ t, config }: { t: T; config: AgentConfig }) {
+  const rules = agentRules(config);
+  const { avia, truckMin } = rules;
+  return (
+    <section className="card space-y-2" data-testid="agent-rules">
+      <h2 className="section-title">{t('rulesTitle')}</h2>
+      <p className="text-xs text-ink-500">{t('rulesHint')}</p>
+      <ul className="space-y-1.5 text-sm [overflow-wrap:anywhere]">
+        <li data-testid="agent-rule-truck">🚚 {t('ruleTruckMin', { m3: truckMin.m3, kg: truckMin.kg })}</li>
+        <li data-testid="agent-rule-avia">
+          ✈️ {t('ruleAviaMin', { kg: avia.minKg, min: avia.daysMin, max: avia.daysMax })}
+        </li>
+        <li data-testid="agent-rule-avia-rate">
+          💵 {t('ruleAviaRate')}:{' '}
+          <span className="font-semibold">
+            {avia.usdPerKg === null ? t('ruleAviaRateNone') : t('ruleAviaRateValue', { rate: avia.usdPerKg })}
+          </span>
+          {avia.setAt && (
+            <span className="text-xs text-ink-500"> · {t('ruleAviaRateSetAt', { when: tashkentWhen(avia.setAt) })}</span>
+          )}
+        </li>
+        <li data-testid="agent-rule-rail">🚆 {t('ruleRail')}</li>
+        <li data-testid="agent-rule-certificate">📄 {t('ruleCertificate')}</li>
+      </ul>
+      <AviaRateForm current={avia.usdPerKg} />
+    </section>
+  );
+}
+
+async function KnowledgeSection({ t, config }: { t: T; config: AgentConfig }) {
   const { facts, retired } = await webKbFacts();
   return (
     <>
+      <RulesCard t={t} config={config} />
       <p className="text-sm text-ink-500">{t('knowledgeHint')}</p>
       <FactForm />
       <section className="space-y-2" data-testid="agent-facts">
@@ -308,6 +348,7 @@ async function KnowledgeSection({ t }: { t: T }) {
               </div>
               {f.question && <p className="text-sm font-semibold [overflow-wrap:anywhere]">{f.question}</p>}
               <p className="whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{f.answer}</p>
+              <FactEditor factId={f.id} question={f.question} answer={f.answer} />
             </article>
           ))
         )}
