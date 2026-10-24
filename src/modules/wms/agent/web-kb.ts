@@ -3,8 +3,7 @@ import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { db } from '../../platform/db/client';
 import { kbFacts } from '../../platform/db/schema';
 import { AgentConfigError, agentTablesReady } from './config';
-import { KbError, personalBits, writeKbFact } from './kb';
-import { extractNumbers } from './numbers';
+import { writeKbFact } from './kb';
 import { knownNamesForMask } from './style';
 
 /**
@@ -63,14 +62,11 @@ export class RetireError extends Error {
  * that loses a race to another retire takes its own new row back and says so
  * — a fact is never live twice.
  *
- * The «nothing personal» refusal is about a NEW datum (review A7). A fact
- * already approved may carry the company's own phone, map link or a word the
- * mask reads as a code — his Toshkent sklad fact carries Umriddin's number,
- * the map fact a Yandex link, the minimum «yoki 100 kg» (read as «YOKI100») —
- * and refusing every edit of those would freeze them. So an edit is refused
- * only for a personal bit the OLD text did not already carry; one whose bits
- * are all inherited is written by `writeKeptFact`, which is `writeKbFact`
- * with that one check narrowed and every other refusal the same.
+ * The «nothing personal» refusal is about a NEW datum (review A7): his
+ * Toshkent sklad fact carries Umriddin's number, and refusing every edit of
+ * it would freeze it. So the old words go to `writeKbFact` as `kept`, and a
+ * bit they already carried is not refused again. (The map link and the
+ * minimum's «yoki 100 kg» are no personal bits at all — `codesIn`.)
  */
 export async function editKbFact(
   factId: string,
@@ -95,17 +91,10 @@ export async function editKbFact(
   };
   let newId: string;
   if (old.scope === 'general') {
-    const all = await knownNamesForMask(false);
-    const namesIn = (t: string) => all.filter((n) => t.toLowerCase().includes(n.toLowerCase()));
-    const newText = `${question ?? ''}\n${answer}`;
-    const oldText = `${old.question ?? ''}\n${old.answer}`;
-    const kept = new Set(personalBits(oldText, namesIn(oldText)).map(bitKey));
-    const names = namesIn(newText);
-    const bits = personalBits(newText, names);
-    const fresh = bits.find((b) => !kept.has(bitKey(b)));
-    if (fresh !== undefined) throw new KbError('personal', fresh);
-    // Nothing personal at all: the one writer, as the add form.
-    newId = bits.length === 0 ? await writeKbFact({ ...fact, knownNames: names }, ctx) : await writeKeptFact(fact, ctx);
+    // Only the names the new words can contain: the mask builds one pattern per name.
+    const text = `${question ?? ''}\n${answer}`.toLowerCase();
+    const names = (await knownNamesForMask(false)).filter((n) => text.includes(n.toLowerCase()));
+    newId = await writeKbFact({ ...fact, knownNames: names, kept: { question: old.question, answer: old.answer } }, ctx);
   } else {
     newId = await writeKbFact({ ...fact, knownNames: [] }, ctx);
   }
@@ -130,43 +119,6 @@ export async function editKbFact(
     throw new RetireError('already_retired');
   }
   return newId;
-}
-
-/** One personal bit as compared across an edit: a phone by its digits (spacing is not a new number), the rest by letters. */
-function bitKey(bit: string): string {
-  const digits = bit.replace(/\D/gu, '');
-  return digits.length >= 7 ? digits : bit.toLowerCase();
-}
-
-/**
- * A general fact's corrected words whose personal bits were all approved
- * before (`editKbFact`). `writeKbFact`'s insert and audit exactly, and its
- * refusals in its order — empty, too long, a money figure — minus the
- * personal one, which the caller has narrowed to «nothing new».
- */
-async function writeKeptFact(
-  input: { question: string | null; answer: string; locale: string; sourceRef: Record<string, unknown> },
-  ctx: AuditContext,
-): Promise<string> {
-  const answer = input.answer.trim();
-  if (!answer) throw new KbError('empty');
-  if ([...answer].length > 2000) throw new KbError('too_long');
-  if (extractNumbers(answer).some((f) => f.kind === 'money')) throw new KbError('money');
-  const [row] = await db
-    .insert(kbFacts)
-    .values({
-      scope: 'general',
-      question: input.question?.trim() || null,
-      answer,
-      locale: input.locale,
-      source: 'owner',
-      sourceRef: input.sourceRef,
-      approvedAt: new Date(),
-      approvedBy: ctx.actorId,
-    })
-    .returning({ id: kbFacts.id });
-  await writeAudit(db, ctx, { entityType: 'kb_fact', entityId: row!.id, action: 'create', after: { scope: 'general' } });
-  return row!.id;
 }
 
 /**

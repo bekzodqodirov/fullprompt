@@ -208,6 +208,22 @@ function nameSpans(text: string, knownNames: readonly (string | null | undefined
 }
 
 /**
+ * The client codes a text carries. A code is ONE token as it is written on a
+ * carton — «GS555», «gs-555» — never a word and a number a space apart:
+ * `codeCandidates` joins the runs either side of one separator (the price
+ * channel's scrub wants «GS 555» too, and over-scrubbing a post is safe), and
+ * read that way the company's own minimum, «1 kub yoki 100 kg», carried a
+ * code YOKI100 (answers review). Nor is a piece of a link one: the Yandex
+ * map's path «/-/CXQr78ni» is no customer, so every link `urlsIn` finds is
+ * cut out first.
+ */
+function codesIn(text: string): string[] {
+  let t = text;
+  for (const u of urlsIn(t)) t = t.split(u).join(' ');
+  return codeCandidates(t.split(/\s+/u).filter((token) => token !== '')).filter((c) => /^[A-Z]{1,4}\d{2,}/u.test(c));
+}
+
+/**
  * What would make a text PERSONAL — another customer's code, a phone, a name
  * the caller knows (whole, or any word of it, in either script, with its
  * suffixes). A general fact is written only from text in which this finds
@@ -216,7 +232,7 @@ function nameSpans(text: string, knownNames: readonly (string | null | undefined
 export function personalBits(text: string, knownNames: readonly (string | null | undefined)[] = []): string[] {
   const t = normalizeDigits(text);
   const out: string[] = [];
-  for (const c of codeCandidates([t])) if (/^[A-Z]{1,4}\d{2,}/u.test(c)) out.push(c);
+  out.push(...codesIn(t));
   for (const m of t.matchAll(PHONE_RE)) out.push(m[0]);
   const folded = foldedText(t);
   for (const n of foldedNeedles(knownNames)) if (nameRe(n.folded, 'u').test(folded)) out.push(n.name);
@@ -245,9 +261,22 @@ export class KbError extends Error {
   }
 }
 
+/** One personal bit as compared across an edit: a phone by its digits (spacing is not a new number), the rest by letters. */
+function bitKey(bit: string): string {
+  const digits = bit.replace(/\D/gu, '');
+  return digits.length >= 7 ? digits : bit.toLowerCase();
+}
+
 /**
  * Write a fact HE approved. A general fact must carry nothing personal; no
  * fact may carry money (money-9). The text is exactly what he saw.
+ *
+ * `kept` is the approved fact these words correct (the page's ✎, review A7):
+ * the «nothing personal» refusal is about a NEW datum, and a fact already
+ * approved may carry the company's own phone or a contact's name — his
+ * Toshkent sklad fact names Umriddin and his number — so a bit the kept
+ * words already carried is not refused again. Every other refusal is the
+ * same; this is the one writer, edit or not.
  */
 export async function writeKbFact(
   input: {
@@ -259,6 +288,7 @@ export async function writeKbFact(
     locale?: string | null;
     sourceRef?: Record<string, unknown> | null;
     knownNames?: readonly (string | null | undefined)[];
+    kept?: { question: string | null; answer: string } | null;
   },
   ctx: AuditContext,
 ): Promise<string> {
@@ -267,8 +297,11 @@ export async function writeKbFact(
   if ([...answer].length > 2000) throw new KbError('too_long');
   if (extractNumbers(answer).some((f) => f.kind === 'money')) throw new KbError('money');
   if (input.scope === 'general') {
-    const bits = personalBits(`${input.question ?? ''}\n${answer}`, input.knownNames ?? []);
-    if (bits.length > 0) throw new KbError('personal', bits[0]);
+    const names = input.knownNames ?? [];
+    const bits = personalBits(`${input.question ?? ''}\n${answer}`, names);
+    const approved = input.kept ? new Set(personalBits(`${input.kept.question ?? ''}\n${input.kept.answer}`, names).map(bitKey)) : null;
+    const fresh = approved ? bits.filter((b) => !approved.has(bitKey(b))) : bits;
+    if (fresh.length > 0) throw new KbError('personal', fresh[0]);
   }
   if ((input.scope === 'client') !== Boolean(input.clientId) || (input.scope === 'lead') !== Boolean(input.leadId)) {
     throw new KbError('scope');

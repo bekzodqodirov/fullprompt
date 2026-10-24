@@ -194,6 +194,34 @@ describe('a general fact refuses a name by any word of it (review I3)', () => {
   });
 });
 
+describe('a code is one token on a carton — never «word + number», never a piece of a link (answers review)', () => {
+  it('the company’s own seeded facts carry no personal bit', async () => {
+    const { personalBits } = await import('@/modules/wms/agent/kb');
+    const { SEED_FACTS } = await import('@/modules/wms/agent/seed-kb');
+    for (const key of ['min_shipment@1', 'tashkent_map@1', 'avia@1', 'certificate@1', 'transit@1']) {
+      const f = SEED_FACTS.find((s) => s.key === key)!;
+      expect(personalBits(`${f.question}\n${f.answer}`), key).toEqual([]);
+    }
+    expect(personalBits('Avto orqali eng kamida 1 kub yoki 100 kg dan yuk qabul qilamiz.')).toEqual([]);
+    expect(personalBits('Xarita: https://yandex.uz/maps/-/CXQr78ni yoki yandex.uz/maps/-/AB12cd')).toEqual([]);
+  });
+
+  it('…while a customer’s code is still refused, however it is written and wherever it stands', async () => {
+    const { personalBits } = await import('@/modules/wms/agent/kb');
+    expect(personalBits('GS555 ning yuki keldi.')).toEqual(['GS555']);
+    expect(personalBits('kod: gs555')).toEqual(['GS555']);
+    expect(personalBits('(GS-555) yuki')).toEqual(['GS555']);
+    expect(personalBits('Ｇｓ５５５ yuki')).toEqual(['GS555']);
+    // A link beside it hides nothing outside it.
+    expect(personalBits('https://yandex.uz/maps/-/CXQr78ni — GS555 uchun')).toEqual(['GS555']);
+  });
+
+  it('writeKbFact is the one writer of a fact — the page’s ✎ included', () => {
+    const offenders = filesUnder('src').filter((file) => /\.insert\(\s*kbFacts\s*\)/u.test(strip(readFileSync(file, 'utf8'))));
+    expect(offenders).toEqual(['src/modules/wms/agent/kb.ts']);
+  });
+});
+
 describe('a short reference is taken from the id’s random tail', () => {
   it('two facts minted the same minute (one v7 clock head) get different refs', async () => {
     const { kbRef } = await import('@/modules/wms/agent/kb');

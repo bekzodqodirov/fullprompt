@@ -339,6 +339,28 @@ describe('his own seeded facts can be edited (review A7) — only a NEW personal
     expect(still!.retiredAt).toBeNull();
   });
 
+  it('the minimum and the map are no personal facts at all — typed afresh on the page, both are written (answers review)', async () => {
+    for (const key of ['min_shipment@1', 'tashkent_map@1']) {
+      const seed = SEED_FACTS.find((f) => f.key === key)!;
+      const id = await addGeneralFact({ question: `${seed.question} (${SUFFIX})`, answer: seed.answer }, ctx(holderId));
+      factIds.push(id);
+      const [row] = await db.select().from(kbFacts).where(eq(kbFacts.id, id));
+      expect(row, key).toMatchObject({ scope: 'general', answer: seed.answer, retiredAt: null, source: 'owner' });
+    }
+  });
+
+  it('an edit is written by the one writer: the kept phone passes, a new code beside it does not', async () => {
+    const seed = SEED_FACTS.find((f) => f.key === 'tashkent_warehouse@1')!;
+    const id = await fact(seed.question, seed.answer);
+    const err = await editKbFact(id, { question: seed.question, answer: `${seed.answer} GS555 ham shu yerdan oladi.` }, ctx(holderId)).catch(
+      (e: unknown) => e,
+    );
+    expect((err as KbError).code).toBe('personal');
+    expect((err as KbError).detail).toBe('GS555');
+    const [still] = await db.select({ retiredAt: kbFacts.retiredAt }).from(kbFacts).where(eq(kbFacts.id, id));
+    expect(still!.retiredAt).toBeNull();
+  });
+
   it('a money figure is still refused on an inherited-bits fact', async () => {
     const seed = SEED_FACTS.find((f) => f.key === 'min_shipment@1')!;
     const id = await fact(seed.question, seed.answer);
