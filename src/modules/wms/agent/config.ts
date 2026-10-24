@@ -1,4 +1,4 @@
-import { eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { db, type Db, type Tx } from '../../platform/db/client';
 import { agentConfig, agentDrafts, agentOutbox, tgAccounts, users } from '../../platform/db/schema';
@@ -319,12 +319,27 @@ export async function setAgentNumbers(
 }
 
 /**
+ * The avia rate's label among a draft's stored number sources (tools.ts
+ * `avia`) — how a new rate finds the live drafts quoted at the old one. Here,
+ * beside the rate, so the writer and the reader name one word.
+ */
+export const AVIA_RATE_LABEL = 'avia tarifi';
+
+/**
  * His avia rate on /suhbatlar/ai (§17.14: «Avia hozir kg uchun 17$ dan») — the
  * one money figure the agent multiplies that is not the website's table. The
  * same door as the numbers: the configured owner or the super_admin role.
  * Null = avia is not quoted (the tool refuses and the model asks him). A rate
  * with more than cents is refused, never rounded: numeric(10,2) would round
  * it silently into a figure nobody typed. Stamped and audited.
+ *
+ * A pending draft quoted at another rate stops being sendable in the same
+ * transaction (review A3): ✅ re-runs the policy over the draft's STORED
+ * sources, which still carry the old rate and the old total, so without this
+ * yesterday's figure would pass G1 and leave. It is retired — `superseded`,
+ * `policy.stale = 'avia_rate'` — and its card says why. A draft he is
+ * rewriting himself ('editing') is his words and is left alone; one he already
+ * approved was his decision on the figure the card showed.
  */
 export async function setAviaRate(actor: AgentActor, value: number | null, ctx: AuditContext): Promise<AgentConfig> {
   if (value !== null) {
@@ -332,7 +347,7 @@ export async function setAviaRate(actor: AgentActor, value: number | null, ctx: 
     if (Math.abs(Math.round(value * 100) - value * 100) > 1e-6) throw new AgentConfigError('bad_value');
   }
   if (!(await agentTablesReady())) throw new AgentConfigError('not_ready');
-  return db.transaction(async (tx) => {
+  const out = await db.transaction(async (tx) => {
     const before = await lockConfig(tx);
     if (!mayRunAgent(actor, before)) throw new AgentConfigError('forbidden');
     const now = new Date();
@@ -354,8 +369,20 @@ export async function setAviaRate(actor: AgentActor, value: number | null, ctx: 
       before: { aviaUsdPerKg: before.aviaUsdPerKg },
       after: { aviaUsdPerKg: value },
     });
-    return toConfig(row!);
+    // jsonpath, so a draft whose policy has no sources array is simply not one.
+    const quoted = sql`jsonb_path_exists(${agentDrafts.policy}, '$.memory.sources[*] ? (@.label == $l && (!($v.type() == "number") || @.value != $v))', ${JSON.stringify({ l: AVIA_RATE_LABEL, v: value })}::jsonb)`;
+    const stale = await tx
+      .update(agentDrafts)
+      .set({ status: 'superseded', policy: sql`${agentDrafts.policy} || ${JSON.stringify({ stale: 'avia_rate' })}::jsonb`, updatedAt: now })
+      .where(and(eq(agentDrafts.status, 'pending'), quoted))
+      .returning({ id: agentDrafts.id });
+    return { config: toConfig(row!), stale: stale.map((r) => r.id) };
   });
+  for (const id of out.stale) {
+    const { refreshAgentCard } = await import('./card-io');
+    await refreshAgentCard(id).catch((err: unknown) => logger.warn({ err, draftId: id }, '[agent] card not refreshed'));
+  }
+  return out.config;
 }
 
 /**

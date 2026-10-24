@@ -6,11 +6,12 @@ import { FIELD_LABEL, missingFields, type CalcFacts, type CalcGoodsFact, type Ca
 import { parseManualFacts } from '../calc/intake-manual';
 import { freightFor } from '../calc/pricing';
 import { tariffFor } from '../calc/tariff-read';
+import { AVIA_RATE_LABEL } from './config';
 import { AGENT_LIMITS } from './limits';
 import { AGENT_LOCALES } from './locale';
-import { namedOrigin } from './origin';
+import { namedOrigin, namedOrigins, namesWesternOrigin } from './origin';
 import { customerSources, extractNumbers, type NumberSource } from './numbers';
-import { siteEstimate } from './site-estimate';
+import { SITE_TARIFF, siteEstimate } from './site-estimate';
 import type { AgentContext, MeasureCandidate } from './context';
 import type { KbHit } from './kb';
 
@@ -188,15 +189,18 @@ function sourcesOf(text: string, label: string, money: boolean): NumberSource[] 
   }));
 }
 
-const ORIGIN_OTHER = /kashg|qashq|кашг|қашқ|urumch|урумч|horgo|xorgo|хорго|喀什|乌鲁木齐|霍尔果斯/iu;
 const ORIGIN_CN =
   /xitoy|хитой|китай|china|چین|中国|yiwu|иву|guangzhou|гуанчжоу|guanchjou|foshan|shenzhen|шэньчжэнь|shanghai|шанхай|beijing|пекин|ningbo|нинбо|义乌|广州|佛山|深圳|上海/iu;
 
-/** Where the cargo starts, from what the customer wrote: China's coast, a western hub, or not said. */
+/**
+ * Where the cargo starts, from what the customer wrote: China's coast, a
+ * western hub, or not said. The western half is origin.ts's own list of
+ * places — one set of spellings for this refusal and the landing's zone.
+ */
 export function originZone(ctx: AgentContext): 'cn' | 'other' | 'unknown' {
   const text = ctx.messages.filter((m) => m.direction === 'in').map((m) => m.body).join('\n');
-  if (ORIGIN_OTHER.test(text)) return 'other';
-  if (ORIGIN_CN.test(text)) return 'cn';
+  if (namesWesternOrigin(text)) return 'other';
+  if (ORIGIN_CN.test(text) || namedOrigins(text).length > 0) return 'cn';
   return 'unknown';
 }
 
@@ -277,6 +281,22 @@ export async function runTool(name: string, input: Record<string, unknown>, env:
  */
 export const YOLKIRA_GUARDS = { maxM3: 100, maxKg: 20_000, minTotalUsd: 50, minDensity: 1 } as const;
 
+/**
+ * Cargo below BOTH halves of the truck's minimum (his «eng kamida 1 kub yoki
+ * 100 kg»). Both figures must be KNOWN: a missing one is a question the
+ * checklist asks, never a reason to refuse. One rule for the website figure,
+ * the hisoblatish checklist and the ✅'s action check — «qabul qilmasin» is
+ * about not taking the cargo, whichever door it would come through.
+ */
+export function belowTruckMinimumFacts(facts: Pick<CalcFacts, 'weightKg' | 'volumeM3'>): boolean {
+  const kg = Number(facts.weightKg);
+  const m3 = Number(facts.volumeM3);
+  return kg > 0 && m3 > 0 && m3 < AGENT_LIMITS.minShipment.m3 && kg < AGENT_LIMITS.minShipment.kg;
+}
+
+/** The truck sections — a rastamojka-only job can be avia cargo and is not bound by it. */
+export const TRUCK_SECTIONS: readonly CalcSection[] = ['yolkira', 'podklyuch'];
+
 /** Below the truck's minimum: no figure — the minimum itself, as the reply's only numbers. */
 function belowTruckMinimum(): ToolOutcome {
   const { m3, kg } = AGENT_LIMITS.minShipment;
@@ -309,7 +329,7 @@ async function yolkira(input: Record<string, unknown>, env: ToolEnv): Promise<To
   const m3 = volume.value;
   // The company's floor comes before every other question: below BOTH halves
   // nothing is accepted, whichever road it would take (his 2026-10-24).
-  if (m3 < AGENT_LIMITS.minShipment.m3 && kg < AGENT_LIMITS.minShipment.kg) return belowTruckMinimum();
+  if (belowTruckMinimumFacts({ weightKg: kg, volumeM3: m3 })) return belowTruckMinimum();
   const zone = originZone(ctx);
   if (zone === 'other') return refuse("Qashqar/Urumchi/Xorgos yo'nalishi saytda narxlanmagan");
   if (zone === 'unknown') return refuse("qayerdan jo'natilishi aytilmagan — so'ra");
@@ -359,6 +379,15 @@ async function yolkira(input: Record<string, unknown>, env: ToolEnv): Promise<To
  * source, the total is one, the days are duration sources — and an estimate,
  * so G11 asks for «taxminan» and «boj, QQS alohida» exactly as on the truck.
  * No rate set = avia is not quoted: refused, and the model asks him.
+ *
+ * Light, bulky cargo flies by its VOLUME: the company's own air calculator
+ * (site-estimate.ts `air`, gsrlogistics.uz) bills max(kg, m³ × 1 000 000 ÷
+ * 5 000). His «kg uchun 17$» said nothing about that, so a load the customer
+ * gave a volume for whose volumetric weight is above its kilos gets NO figure
+ * — his question (needs_owner) — rather than kilos × rate, which on 2 m³ of
+ * 50 kg is an eight-fold under-quote the card would label as correct. Every
+ * volume the chat stated counts: a refusal costs him one answer, an
+ * under-quote costs the company the difference.
  */
 function avia(input: Record<string, unknown>, env: ToolEnv): ToolOutcome {
   const { ctx } = env;
@@ -381,6 +410,19 @@ function avia(input: Record<string, unknown>, env: ToolEnv): ToolOutcome {
       sources: [{ value: minKg, kind: 'measure', label: `avia minimal yuk (${minKg} kg)` }],
     };
   }
+  const volumetricKg = Math.max(
+    0,
+    ...ctx.measures.filter((m) => m.kind === 'volume').map((m) => (m.value * 1_000_000) / SITE_TARIFF.air.volumetricDivisor),
+  );
+  if (volumetricKg > kg) {
+    return {
+      ok: false,
+      text:
+        `Hajmli yuk: hajmiy og'irligi taxminan ${Math.round(volumetricKg)} kg, haqiqiy og'irligidan (${kg} kg) ko'p — ` +
+        "avia narxini Bekzod aytadi. Narx AYTMA: needs_owner=true, owner_question'da so'ra.",
+      sources: [],
+    };
+  }
   const total = Math.round(kg * rate * 100) / 100;
   return {
     ok: true,
@@ -390,7 +432,7 @@ function avia(input: Record<string, unknown>, env: ToolEnv): ToolOutcome {
     estimate: true,
     sources: [
       { value: total, kind: 'money', label: 'avia (tarif × kg)' },
-      { value: rate, kind: 'money', label: 'avia tarifi' },
+      { value: rate, kind: 'money', label: AVIA_RATE_LABEL },
       { value: daysMin, kind: 'duration', label: 'avia muddati' },
       { value: daysMax, kind: 'duration', label: 'avia muddati' },
       { value: kg, kind: 'measure', label: `mijoz ${weight.messageRef}` },
@@ -426,6 +468,11 @@ async function checklist(input: Record<string, unknown>, env: ToolEnv): Promise<
   // (`zoneForOrigin`); a bare «Xitoy» names no zone and the VED chooses.
   if (!facts.fromCity) facts.fromCity = namedOrigin(inbound.map((m) => m.body).join('\n'))?.place ?? null;
   if (!facts.fromCity && originZone(ctx) === 'cn') facts.fromCity = 'Xitoy';
+  // The company does not carry it by truck — so it is not collected for the
+  // VED either: «hisoblatishga yubordim» would be accepting the cargo.
+  if (TRUCK_SECTIONS.includes(section) && belowTruckMinimumFacts(facts)) {
+    return { ...belowTruckMinimum(), checklist: { section, facts, complete: false } };
+  }
   const goodsIn = Array.isArray(input.goods) ? (input.goods as Record<string, unknown>[]) : [];
   const goods: CalcGoodsFact[] = [];
   for (const g of goodsIn) {

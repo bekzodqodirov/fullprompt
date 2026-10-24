@@ -42,7 +42,7 @@ import {
 } from '@/modules/platform/db/schema';
 import { getSetting, setSetting } from '@/modules/platform/settings/service';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
-import { announceAgentCalc, handleHandBack, priceDraftFromText } from '@/modules/wms/agent/calc-loop';
+import { announceAgentCalc, handleHandBack, HAND_BACK_RETRY_S, priceDraftFromText } from '@/modules/wms/agent/calc-loop';
 import { readAgentConfig, __restoreAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
 import { decideDraft, noteIdFor } from '@/modules/wms/agent/decide';
 import { priceReplyText } from '@/modules/wms/agent/price-reply';
@@ -288,7 +288,7 @@ describe('«💵 Narx yozaman» — the price goes to the customer ONLY (his 6 b
       answerAmount: '900.00',
       answerCurrency: 'USD',
     });
-    await inbound('Narxi qancha bo‘ladi?');
+    await inbound('Сколько это будет стоить?');
     await db.insert(agentConversations).values({ managerUserId: ownerId, peerId: PEER, locale: 'ru' });
     const [offersBefore] = await db.select({ n: sql<number>`count(*)::int` }).from(calcOffers).where(eq(calcOffers.entityId, deal.id));
 
@@ -330,7 +330,7 @@ describe('«💵 Narx yozaman» — the price goes to the customer ONLY (his 6 b
     const rows = await db.select().from(agentDrafts).where(eq(agentDrafts.peerId, PEER));
     expect(rows.map((x) => x.id)).toEqual([editing!.id]);
     // A figure he did not type — more than cents — is not his price either.
-    expect(await priceDraftFromText(ownerId, requestId, '12.345')).toEqual({ ok: false, code: 'bad_number' });
+    expect(await priceDraftFromText(ownerId, requestId, '12.3456')).toEqual({ ok: false, code: 'bad_number' });
   });
 });
 
@@ -452,5 +452,169 @@ describe('a VED hand-back — queued off the VED’s button, and the chat’s ow
     expect(runs.map((x) => ({ trigger: x.trigger, outcome: x.outcome, error: x.error }))).toEqual([
       { trigger: 'hand_back', outcome: 'refused', error: 'human_active' },
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The review of this package (2026-10-24): what each finding looks like on a
+// real database once fixed.
+
+describe('«💵 Narx yozaman» after the review — the language it answers, and a figure he must say twice', () => {
+  it('writes the price in the language of the message it answers, not the last run’s', async () => {
+    const { requestId } = await linkedRequest();
+    // The last run was Uzbek; the customer has since written in Russian.
+    await db.insert(agentConversations).values({ managerUserId: ownerId, peerId: PEER, locale: 'uz' });
+    await inbound('Сколько будет стоить доставка?');
+    expect(await priceDraftFromText(ownerId, requestId, '1250')).toMatchObject({ ok: true });
+    const d = await liveDraft();
+    expect(d).toMatchObject({ language: 'ru' });
+    expect(d!.proposedBody).toBe(priceReplyText('ru', 'podklyuch', 1250));
+  });
+
+  it('asks «1.250» back — 1250 or 1,25 — and writes nothing', async () => {
+    const { requestId } = await linkedRequest();
+    await inbound('Narxi qancha?');
+    const r = await priceDraftFromText(ownerId, requestId, '1.250');
+    expect(r).toMatchObject({ ok: false, code: 'refused' });
+    expect((r as { detail?: string }).detail).toContain('1250 dollarmi yoki 1,25 dollarmi');
+    expect(await liveDraft()).toBeNull();
+  });
+});
+
+describe('a recalculation retires the 💵 typed on the price it replaces (review A1)', () => {
+  it('a pending price draft on the old request is superseded and says why; a price on another job stays', async () => {
+    const { requestId: priced } = await linkedRequest({ completedAt: new Date(), completedBy: vedId, completedVia: 'task', answerAmount: '900.00', answerCurrency: 'USD' });
+    await inbound('Narxi qancha?');
+    const r = await priceDraftFromText(ownerId, priced, '1250');
+    expect(r).toMatchObject({ ok: true });
+    const draftId = (r as { draftId: string }).draftId;
+    expect((await liveDraft())!.policy).toMatchObject({ priceRequestId: priced });
+
+    // A recalculation of ANOTHER chain of the same chat leaves it alone.
+    const { requestId: other } = await linkedRequest();
+    const [otherFix] = await db
+      .insert(calcRequests)
+      .values({ entityType: 'deal', entityId: madeDeals.at(-1)!, requestedBy: ownerId, itemCount: 1, section: 'yolkira', dueAt: new Date(), supersedesRequestId: other })
+      .returning({ id: calcRequests.id });
+    madeRequests.push(otherFix!.id);
+    await announceAgentCalc(otherFix!.id, 'recalc');
+    expect((await liveDraft())?.id).toBe(draftId);
+
+    const [fix] = await db
+      .insert(calcRequests)
+      .values({ entityType: 'deal', entityId: madeDeals[madeDeals.length - 2]!, requestedBy: ownerId, itemCount: 1, section: 'podklyuch', dueAt: new Date(), supersedesRequestId: priced })
+      .returning({ id: calcRequests.id });
+    madeRequests.push(fix!.id);
+    expect(await announceAgentCalc(fix!.id, 'recalc')).toBe(true);
+    const [after] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, draftId));
+    expect(after).toMatchObject({ status: 'superseded' });
+    expect(after!.policy).toMatchObject({ stale: 'recalc' });
+    // …so the old card's ✅ is refused, never sent.
+    expect(await decideDraft(actor(), draftId, 'send', {}, ctx())).toMatchObject({ ok: false, code: 'not_live' });
+    expect(await db.select().from(agentOutbox).where(eq(agentOutbox.draftId, draftId))).toHaveLength(0);
+  });
+
+  it('a price he already approved, still waiting to leave, is named on the recalculation message', async () => {
+    const { requestId: priced, deal } = await linkedRequest({ completedAt: new Date(), completedBy: vedId, completedVia: 'task', answerAmount: '900.00', answerCurrency: 'USD' });
+    await inbound('Narxi qancha?');
+    const r = await priceDraftFromText(ownerId, priced, '1250');
+    const draftId = (r as { draftId: string }).draftId;
+    expect(await decideDraft(actor(), draftId, 'send', { digest: await cardDigestOf(draftId) }, ctx())).toMatchObject({ ok: true });
+    const [fix] = await db
+      .insert(calcRequests)
+      .values({ entityType: 'deal', entityId: deal.id, requestedBy: ownerId, itemCount: 1, section: 'podklyuch', dueAt: new Date(), supersedesRequestId: priced })
+      .returning({ id: calcRequests.id });
+    madeRequests.push(fix!.id);
+    await announceAgentCalc(fix!.id, 'recalc');
+    const [ping] = await db
+      .select({ payload: notifications.payload })
+      .from(notifications)
+      .where(and(eq(notifications.userId, ownerId), eq(notifications.type, 'AgentCalcAnswered')))
+      .orderBy(sql`${notifications.createdAt} DESC`)
+      .limit(1);
+    const text = (ping!.payload as { text: string }).text;
+    expect(text).toContain('eski narx endi amal qilmaydi');
+    expect(text).toContain('Siz bergan narx hali ketmagan');
+    expect(text).toContain(priceReplyText('uz', 'podklyuch', 1250));
+  });
+});
+
+describe('a hand-back that cannot draft now is tried again, or said (review A9)', () => {
+  const handBack = (requestId: string, attempt?: number) => ({
+    managerUserId: ownerId,
+    peerId: String(PEER),
+    requestId,
+    reason: 'Tovar nomi yetarli emas',
+    ...(attempt === undefined ? {} : { attempt }),
+  });
+
+  it('during a tg-listen rebuild: recorded without the key, queued once more — and the retry still drafts', async () => {
+    const { requestId } = await linkedRequest();
+    await inbound('Hisob qachon bo‘ladi?');
+    await db.update(tgAccountGuard).set({ agentPumpAt: new Date(Date.now() - 10 * 60_000) }).where(eq(tgAccountGuard.accountId, accountId));
+    const requeued: { job: unknown; after: number }[] = [];
+    const model = scripted([compose('Tovaringiz nomini aniqroq yozib bera olasizmi?', { category: 'qualification' })]);
+    const requeue = async (job: unknown, after: number) => {
+      requeued.push({ job, after });
+    };
+    const first = await handleHandBack(handBack(requestId), { callModel: model, requeue });
+    expect(first).toEqual({ outcome: 'refused', reason: 'listener_behind' });
+    expect(requeued).toEqual([{ job: handBack(requestId, 1), after: HAND_BACK_RETRY_S }]);
+    const [row] = await db.select().from(agentRuns).where(eq(agentRuns.peerId, PEER));
+    expect(row).toMatchObject({ outcome: 'refused', error: 'listener_behind', sourceKey: null });
+
+    // The listener is back: the retry takes the key and drafts the question.
+    await stampAgentPump(accountId, true);
+    const second = await handleHandBack(handBack(requestId, 1), { callModel: model, requeue });
+    expect(second).toMatchObject({ outcome: 'draft' });
+    expect((await liveDraft())!.kind).toBe('hand_back');
+    expect(requeued).toHaveLength(1);
+  });
+
+  it('a refusal that does not pass by itself — or a retry that is refused again — tells him in words, once', async () => {
+    const { requestId } = await linkedRequest();
+    await inbound('Hisob qachon bo‘ladi?');
+    await db.insert(agentConversations).values({ managerUserId: ownerId, peerId: PEER, humanUntil: new Date(Date.now() + 3_600_000) });
+    const requeued: unknown[] = [];
+    const out = await handleHandBack(handBack(requestId), {
+      callModel: scripted([compose('x')]),
+      requeue: async (job) => {
+        requeued.push(job);
+      },
+    });
+    expect(out).toEqual({ outcome: 'refused', reason: 'human_active' });
+    expect(requeued).toEqual([]);
+    const pings = await db
+      .select({ payload: notifications.payload })
+      .from(notifications)
+      .where(and(eq(notifications.userId, ownerId), eq(notifications.type, 'AgentCalcAnswered')));
+    const texts = pings.map((p) => (p.payload as { text: string }).text);
+    expect(texts.filter((t) => t.startsWith('🔁 AI mijozga savol yozmadi'))).toHaveLength(1);
+    expect(texts.join('\n')).toContain("Sabab: bu chatda o'zingiz yozayapsiz.");
+    expect(texts.join('\n')).toContain('VED sababi: Tovar nomi yetarli emas');
+
+    // The retry of a deploy-minute refusal that meets the listener still behind: said, not queued again.
+    await db.delete(agentConversations).where(eq(agentConversations.peerId, PEER));
+    await db.update(tgAccountGuard).set({ agentPumpAt: new Date(Date.now() - 10 * 60_000) }).where(eq(tgAccountGuard.accountId, accountId));
+    const { requestId: second } = await linkedRequest();
+    await handleHandBack(handBack(second, 1), { callModel: scripted([compose('x')]), requeue: async (job) => { requeued.push(job); } });
+    expect(requeued).toEqual([]);
+  });
+
+  it('a hand-back about rail is his question too, and carries no machine figure (review A4)', async () => {
+    await inbound("Temir yo'l bilan 40 kg yuborsak qancha bo'ladi?");
+    const out = await runOwnerTriggered(
+      { trigger: 'hand_back', managerUserId: ownerId, peerId: PEER, sourceKey: `${SUFFIX}:rail`, instruction: 'x' },
+      {
+        callModel: scripted([
+          { name: 'avia_estimate', input: { weight_ref: 'w1' } },
+          compose('Taxminan 680 $ bo‘ladi. Boj va QQS alohida hisoblanadi.'),
+        ]),
+      },
+    );
+    expect(out).toMatchObject({ outcome: 'draft', blocked: true });
+    const d = await liveDraft();
+    expect(d).toMatchObject({ needsOwner: true, ownerQuestion: RAIL_OWNER_QUESTION });
+    expect((d!.policy as { blocks: { code: string }[] }).blocks.map((b) => b.code)).toContain('number_unsourced');
   });
 });

@@ -45,6 +45,8 @@ export interface AgentHandBackJob {
   peerId: string;
   requestId: string;
   reason: string;
+  /** 0 (absent) from the VED's button; 1 = the one retry after a refusal that passes by itself (run.ts `passesByItself`). */
+  attempt?: number;
 }
 
 /** Seconds of quiet before the worker looks (AGENT_LIMITS.debounceMs). */

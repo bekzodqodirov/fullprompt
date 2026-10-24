@@ -53,6 +53,18 @@ const CANCEL_WORDS: Record<string, string> = {
   [CANCELLED_BY_HOLDER]: 'o‘zingiz qaytarib oldingiz',
 };
 
+/**
+ * A draft retired because the figure on it stopped standing, not because the
+ * customer wrote again (`policy.stale`): a recalculation of the chain a 💵 was
+ * typed on (calc-loop `retirePricesOf`), a new avia rate (config
+ * `setAviaRate`). Said as itself — «Mijoz yana yozdi» would send him looking
+ * for a message that is not there.
+ */
+const STALE_WORDS: Record<string, string> = {
+  recalc: '🔄 VED qayta hisoblayapti — bu narx endi amal qilmaydi. Yangi javob kelganda narx bering.',
+  avia_rate: '💱 Avia tarifi o‘zgardi — bu narx eskirdi. Mijozga o‘zingiz javob bering.',
+};
+
 function statusLine(d: DraftRow, o: OutboxRow | null): string | null {
   switch (d.status) {
     case 'pending':
@@ -62,7 +74,7 @@ function statusLine(d: DraftRow, o: OutboxRow | null): string | null {
     case 'rejected':
       return '❌ Rad etildi.';
     case 'superseded':
-      return '↪️ Mijoz yana yozdi — yangi qoralama.';
+      return STALE_WORDS[((d.policy ?? {}) as { stale?: string }).stale ?? ''] ?? '↪️ Mijoz yana yozdi — yangi qoralama.';
     case 'expired':
       return '⌛ Muddati o‘tdi.';
     case 'taken_over':

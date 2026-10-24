@@ -18,7 +18,7 @@ import { askedLocation, customerNumberSources, policyFor, splitUrls, type Policy
 import { chatBlock, runTail, stableHead } from './prompt';
 import { JOB_AGENT_INBOUND, type AgentInboundJob } from './queues';
 import { dayRunCounts } from './today';
-import { runTool, TOOL_SPECS, type ChecklistState, type ToolOutcome } from './tools';
+import { belowTruckMinimumFacts, runTool, TOOL_SPECS, TRUCK_SECTIONS, type ChecklistState, type ToolOutcome } from './tools';
 import { draftWorthy, mentionsRail, RAIL_OWNER_QUESTION } from './worthy';
 import { writeDraft, writeNotice, type ComposedAction } from './drafts';
 import type { NumberSource } from './numbers';
@@ -453,7 +453,14 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
 
 /** What the run learned, kept on the draft so ✅ re-runs the policy on the same evidence (leak-3). */
 export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], canary: string): PolicyMemory {
-  const sources: NumberSource[] = [...customerNumberSources(ctx.messages), ...loop.outcomes.flatMap((o) => o.sources)];
+  // His «Temir yo'l mendan so'rasin»: in a burst about rail no figure the
+  // machine found may carry a price — not the truck's website figure worded
+  // as a rail one, not the avia rate. Dropped from the memory the ✅ re-runs
+  // the policy on, so G1 blocks every money figure in the body, at the write
+  // AND at the press; only his own ✏️ words (the owner subset) can say one.
+  const rail = mentionsRail(ctx.burst.map((m) => m.body));
+  const found = loop.outcomes.flatMap((o) => o.sources).filter((s) => !rail || s.kind !== 'money');
+  const sources: NumberSource[] = [...customerNumberSources(ctx.messages), ...found];
   // General facts are in every prompt: their non-money figures, phones and
   // links count as said by the company (a kb money figure never does — the
   // customer-sources reading turns it into `customer_money`, money-9).
@@ -471,7 +478,7 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
     askedLocation: askedLocation(ctx.burst.map((m) => m.body)),
     // Either estimate tool — the truck's website figure or the avia rate × kg
     // (his 2026-10-24) — makes G11 apply: «taxminan» and «boj, QQS alohida».
-    hasEstimate: loop.outcomes.some((o) => o.estimate === true),
+    hasEstimate: !rail && loop.outcomes.some((o) => o.estimate === true),
     ownCodes: ctx.identity.codes.map((c) => c.clientCode),
     managerName: ctx.identity.managerName,
     canary,
@@ -514,6 +521,15 @@ export function validateActions(
   for (const a of c.actions) {
     if (a.type === 'calc_submit') {
       const cl: ChecklistState | null = lastChecklist && lastChecklist.section === a.section ? lastChecklist : null;
+      // The truck's minimum is the server's too (his «1 kubdan kam yuk qabul
+      // qilmasin»): a job below it is never landed, whatever the checklist
+      // the model ran said — asked first, so the card names the real reason.
+      if (cl && TRUCK_SECTIONS.includes(cl.section) && belowTruckMinimumFacts(cl.facts)) {
+        notes.push(
+          `Yuk avto minimumidan kam (${AGENT_LIMITS.minShipment.m3} kub / ${AGENT_LIMITS.minShipment.kg} kg) — hisoblatishga yuborilmaydi.`,
+        );
+        continue;
+      }
       if (!cl || !cl.complete) {
         notes.push("Hisoblatish taklif qilindi, lekin ma'lumot to'liq emas — yuborilmaydi.");
         continue;
@@ -569,6 +585,16 @@ export async function __runsFor(managerUserId: string, peerId: bigint) {
 }
 
 /**
+ * An owner-triggered run's refusal that clears without anybody acting — the
+ * listener stamping again after a deploy. His own message in the chat
+ * (`human_active`) and a limited account are not: the first is him answering,
+ * the second waits on Telegram, and both are said to him instead.
+ */
+export function passesByItself(reason: Ineligible): boolean {
+  return reason === 'listener_behind';
+}
+
+/**
  * A run the OWNER's side starts — a VED hand-back's question for the customer
  * (fit-5). Keyed by its own source (`agent_runs_source_unique`), so the same
  * hand-back drafts once; the token cap holds, the inbound draft cap does not
@@ -608,6 +634,10 @@ export async function runOwnerTriggered(
     anchorRepeats: false,
   });
   if (!elig.ok) {
+    // A refusal that passes by itself (a tg-listen rebuild) is recorded
+    // WITHOUT the source key: the key is what makes one hand-back one draft,
+    // and taking it here would make a deploy-minute refusal final (review
+    // A9). The caller tries once more; every other refusal takes the key.
     await db
       .insert(agentRuns)
       .values({
@@ -615,7 +645,7 @@ export async function runOwnerTriggered(
         peerId: input.peerId,
         trigger: input.trigger,
         anchorTgMessageId: ctx.anchor.tgMessageId,
-        sourceKey: input.sourceKey,
+        sourceKey: passesByItself(elig.reason) ? null : input.sourceKey,
         outcome: 'refused',
         error: elig.reason,
       })

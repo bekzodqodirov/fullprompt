@@ -63,13 +63,15 @@ export function isPashto(text: string): boolean {
 
 /**
  * Rail, in the agent's six languages (his 2026-10-24: «Temir yo'l mendan
- * so'rasin narxini»). Whole words where a short form is a piece of another
- * word: «жд» is the start of «жду» (I am waiting), «rail» sits inside
- * «trailer». «железн…» also matches iron goods («железные изделия») — a false
- * positive only puts the question to him, which is the safe direction.
+ * so'rasin narxini»), as customers actually type it — «temir yul», «temiryul»,
+ * «poyzd», «ж.д.», «вагоном», «по железке», «班列». Whole words where a short
+ * form is a piece of another word: «жд» is the start of «жду» (I am
+ * waiting), «rail» sits inside «trailer», «temir yul» starts «temir yulduz»
+ * (a star). «железн…»/«железк…» also match iron goods («железные изделия») —
+ * a false positive only puts the question to him, which is the safe direction.
  */
 const RAIL =
-  /temir[\s-]?yo['‘’ʻ`]?l|poyezd|poezd|темир[\s-]?й[ўу]л|поезд|(?<!\p{L})ж\s?\/\s?д(?!\p{L})|(?<!\p{L})жд(?!\p{L})|железн|(?<!\p{L})rail(?:way|road)?s?(?!\p{L})|(?<!\p{L})trains?(?!\p{L})|قطار|راه[\s‌]?آهن|铁路|火车/iu;
+  /temir[\s-]?y[ou]['‘’ʻ`]?l(?!duz)|po(?:ye|e|y)zd|темир[\s-]?й[ўу]л|поезд|(?<!\p{L})ж\s?[./]?\s?д\.?(?!\p{L})|железн|железк|вагон|vagon|(?<!\p{L})rail(?:way|road)?s?(?!\p{L})|(?<!\p{L})trains?(?!\p{L})|قطار|راه[\s‌]?آهن|铁路|火车|班列/iu;
 
 /** The question the draft carries for him when a burst asks about rail and the model asked none. */
 export const RAIL_OWNER_QUESTION = "Mijoz temir yo'l narxini so'rayapti — narxni siz ayting.";

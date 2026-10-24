@@ -4,6 +4,7 @@ import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import { agentConfig, agentDrafts, agentOutbox, auditLog, clients, kbFacts, roles, userRoles, users } from '@/modules/platform/db/schema';
 import {
+  AVIA_RATE_LABEL,
   AgentConfigError,
   __restoreAgentConfig,
   readAgentConfig,
@@ -21,6 +22,7 @@ import {
 } from '@/modules/wms/agent/web-thread';
 import { addGeneralFact, editKbFact, retireKbFact, RetireError } from '@/modules/wms/agent/web-kb';
 import { KbError } from '@/modules/wms/agent/kb';
+import { SEED_FACTS } from '@/modules/wms/agent/seed-kb';
 
 /**
  * The web half of the AI sotuvchi (spec §17.12) — the rules a page cannot
@@ -291,5 +293,102 @@ describe('Bilimlar on the page — the one kb writer, and retiring', () => {
     await expect(retireKbFact(id, ctx(holderId))).rejects.toBeInstanceOf(RetireError);
     const live = await db.select({ id: kbFacts.id }).from(kbFacts).where(and(eq(kbFacts.id, id), isNull(kbFacts.retiredAt)));
     expect(live).toEqual([]);
+  });
+});
+
+describe('his own seeded facts can be edited (review A7) — only a NEW personal bit is refused', () => {
+  /** A live approved general fact with exactly this text — the shape the seed and the page leave. */
+  async function fact(question: string, answer: string): Promise<string> {
+    const [row] = await db
+      .insert(kbFacts)
+      .values({ scope: 'general', question, answer, locale: 'uz', source: 'owner', approvedAt: new Date(), approvedBy: holderId })
+      .returning({ id: kbFacts.id });
+    factIds.push(row!.id);
+    return row!.id;
+  }
+
+  it('edits the minimum, the Toshkent sklad and its map — the facts the mask reads a code or a phone in', async () => {
+    for (const key of ['min_shipment@1', 'tashkent_warehouse@1', 'tashkent_map@1']) {
+      const seed = SEED_FACTS.find((f) => f.key === key)!;
+      const id = await fact(seed.question, seed.answer);
+      const next = await editKbFact(id, { question: `${seed.question} (${SUFFIX})`, answer: seed.answer }, ctx(holderId));
+      factIds.push(next);
+      expect(next, key).not.toBe(id);
+      const [row] = await db.select().from(kbFacts).where(eq(kbFacts.id, next));
+      expect(row, key).toMatchObject({ scope: 'general', answer: seed.answer, retiredAt: null, approvedBy: holderId, source: 'owner' });
+      expect(row!.sourceRef).toMatchObject({ door: 'web', replaces: id });
+      const [old] = await db.select({ retiredAt: kbFacts.retiredAt }).from(kbFacts).where(eq(kbFacts.id, id));
+      expect(old!.retiredAt, key).not.toBeNull();
+    }
+  });
+
+  it('the same phone written another way is not a new one; a different phone is, and nothing moves', async () => {
+    const seed = SEED_FACTS.find((f) => f.key === 'tashkent_warehouse@1')!;
+    const id = await fact(seed.question, seed.answer);
+    const spaced = await editKbFact(id, { question: seed.question, answer: seed.answer.replace('+998 95 018 30 33', '+998950183033') }, ctx(holderId));
+    factIds.push(spaced);
+    const before = await db.select({ id: kbFacts.id }).from(kbFacts).where(isNull(kbFacts.retiredAt));
+    const err = await editKbFact(spaced, { question: seed.question, answer: `${seed.answer} Yoki +998 90 111 22 33.` }, ctx(holderId)).catch(
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(KbError);
+    expect((err as KbError).code).toBe('personal');
+    const after = await db.select({ id: kbFacts.id }).from(kbFacts).where(isNull(kbFacts.retiredAt));
+    expect(after.length).toBe(before.length);
+    const [still] = await db.select({ retiredAt: kbFacts.retiredAt }).from(kbFacts).where(eq(kbFacts.id, spaced));
+    expect(still!.retiredAt).toBeNull();
+  });
+
+  it('a money figure is still refused on an inherited-bits fact', async () => {
+    const seed = SEED_FACTS.find((f) => f.key === 'min_shipment@1')!;
+    const id = await fact(seed.question, seed.answer);
+    await expect(editKbFact(id, { question: seed.question, answer: `${seed.answer} Narxi 110 $.` }, ctx(holderId))).rejects.toMatchObject({
+      code: 'money',
+    });
+  });
+});
+
+describe('a new avia rate retires the pending drafts quoted at the old one (review A3)', () => {
+  async function draft(sources: { value: number; kind: string; label: string }[], status = 'pending') {
+    const n = next();
+    const [row] = await db
+      .insert(agentDrafts)
+      .values({
+        managerUserId: holderId,
+        peerId: BigInt(`8${SUFFIX}${String(n).padStart(3, '0')}`),
+        clientId,
+        anchorTgMessageId: BigInt(2000 + n),
+        proposedBody: `Avia ${SUFFIX}-${n}`,
+        status,
+        policy: { blocks: [], warnings: [], ledger: [], notes: [], memory: { sources } },
+      })
+      .returning({ id: agentDrafts.id });
+    draftIds.push(row!.id);
+    return row!.id;
+  }
+  const avia = (rate: number) => [
+    { value: rate * 40, kind: 'money', label: 'avia (tarif × kg)' },
+    { value: rate, kind: 'money', label: AVIA_RATE_LABEL },
+  ];
+  const statusOf = async (id: string) => (await db.select().from(agentDrafts).where(eq(agentDrafts.id, id)))[0]!;
+
+  it('supersedes only pending drafts at another rate, marks why, and leaves his own words and other replies alone', async () => {
+    await db.update(agentConfig).set({ mode: 'off', ownerUserId: holderId }).where(eq(agentConfig.id, 1));
+    await setAviaRate({ id: holderId, roles: [] }, 17, ctx(holderId));
+    const old = await draft(avia(17));
+    const same = await draft(avia(18));
+    const editing = await draft(avia(17), 'editing');
+    const plain = await draft([{ value: 50, kind: 'money', label: "yo'lkira (sayt kalkulyatori)" }]);
+
+    await setAviaRate({ id: holderId, roles: [] }, 18, ctx(holderId));
+    expect(await statusOf(old)).toMatchObject({ status: 'superseded', policy: expect.objectContaining({ stale: 'avia_rate' }) });
+    expect((await statusOf(same)).status).toBe('pending');
+    expect((await statusOf(editing)).status).toBe('editing');
+    expect((await statusOf(plain)).status).toBe('pending');
+
+    // Avia switched off: every pending avia figure stops, whatever its rate.
+    await setAviaRate({ id: holderId, roles: [] }, null, ctx(holderId));
+    expect((await statusOf(same)).status).toBe('superseded');
+    expect((await statusOf(plain)).status).toBe('pending');
   });
 });

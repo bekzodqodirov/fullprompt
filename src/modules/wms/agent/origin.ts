@@ -23,12 +23,20 @@ interface Place {
 }
 
 // Start-of-word anchors where a short spelling is the tail of another word
-// («иву» ends «живу» — I live).
+// («иву» ends «живу» — I live). «Qashq…» is also the head of Qashqadaryo /
+// Қашқадарё — an Uzbek DESTINATION region, the commonest place a Karshi
+// customer names — so the Kashgar spelling never runs on into «-adar…».
+// «Иу» is the Russian Yiwu, written alone or with an Uzbek case ending
+// («Иудан»), and never the start of a longer word.
 const PLACES: readonly Place[] = [
-  { place: 'Qashqar', zone: 'kashgar', re: /kashg|qashq|кашг|қашқ|喀什/iu },
+  { place: 'Qashqar', zone: 'kashgar', re: /kashg|qashq(?!adar)|кашг|қашқ(?!адар)|喀什/iu },
   { place: 'Horgos', zone: 'horgos', re: /horgo|xorgo|хорго|霍尔果斯/iu },
   { place: 'Urumchi', zone: null, re: /urumch|урумч|乌鲁木齐/iu },
-  { place: 'Yiwu', zone: 'cn', re: /(?<!\p{L})(?:yiwu|ivu|иву)|义乌/iu },
+  {
+    place: 'Yiwu',
+    zone: 'cn',
+    re: /(?<!\p{L})(?:yiwu|ivu|иву|иу(?:дан|даги|да|га|нинг)?(?!\p{L}))|义乌/iu,
+  },
   { place: 'Guangzhou', zone: 'cn', re: /guangzhou|guanchjou|гуанчжоу|广州/iu },
   { place: 'Foshan', zone: 'cn', re: /foshan|фошань|佛山/iu },
   { place: 'Shenzhen', zone: 'cn', re: /shenzhen|шэньчжэнь|шеньчжень|深圳/iu },
@@ -40,6 +48,16 @@ const PLACES: readonly Place[] = [
 export function namedOrigins(text: string | null): { place: string; zone: OriginZone | null }[] {
   const t = text ?? '';
   return PLACES.filter((p) => p.re.test(t)).map(({ place, zone }) => ({ place, zone }));
+}
+
+/**
+ * The text names a place outside China's coast — a western hub the website
+ * does not price (Kashgar, Horgos, Urumchi). The same list as `namedOrigins`,
+ * so the truck tool's refusal and the landing's zone read one set of
+ * spellings (#513: Qashqadaryo was a Kashgar in both until both were fixed).
+ */
+export function namesWesternOrigin(text: string | null): boolean {
+  return namedOrigins(text).some((p) => p.zone !== 'cn');
 }
 
 /** The one place the text names, or null — none, or more than one. */
