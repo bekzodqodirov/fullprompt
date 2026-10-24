@@ -60,13 +60,18 @@ export interface StrangerUser {
   deleted: boolean;
 }
 
-/** Pure: the two flags off a raw `User`, or null for anything that is not one (a group, a channel, nothing). */
+/**
+ * Pure: the two flags off a raw `User`, or null for anything that is not a
+ * PERSON — a group, a channel, a bot, his own Saved Messages, nothing. The
+ * verdicts that ask already exclude the last three; refusing them here too
+ * keeps `noteStranger`'s promise its own.
+ */
 export function strangerUserOf(chat: unknown): StrangerUser | null {
   const user = chat as
-    | { className?: string; contact?: unknown; mutualContact?: unknown; deleted?: unknown }
+    | { className?: string; contact?: unknown; mutualContact?: unknown; deleted?: unknown; bot?: unknown; self?: unknown }
     | null
     | undefined;
-  if (!user || user.className !== 'User') return null;
+  if (!user || user.className !== 'User' || user.bot === true || user.self === true) return null;
   return { contact: user.contact === true || user.mutualContact === true, deleted: user.deleted === true };
 }
 

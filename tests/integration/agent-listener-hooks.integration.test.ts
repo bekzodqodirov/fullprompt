@@ -223,6 +223,9 @@ describe('a stranger on the agent owner’s account (his Q18 ⭐, review fit-7)'
     expect(strangerUserOf(new Api.User({ id, mutualContact: true }))).toEqual({ contact: true, deleted: false });
     expect(strangerUserOf(new Api.User({ id, deleted: true }))).toEqual({ contact: false, deleted: true });
     expect(strangerUserOf(new Api.User({ id }))).toEqual({ contact: false, deleted: false });
+    // A bot and his own Saved Messages are nobody to ask about.
+    expect(strangerUserOf(new Api.User({ id, bot: true }))).toBeNull();
+    expect(strangerUserOf(new Api.User({ id, self: true }))).toBeNull();
     expect(strangerUserOf(new Api.Chat({ id, title: 'g', photo: new Api.ChatPhotoEmpty(), participantsCount: 2, date: 1, version: 1 }))).toBeNull();
     expect(strangerUserOf(undefined)).toBeNull();
   });
