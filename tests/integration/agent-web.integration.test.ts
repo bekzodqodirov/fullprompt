@@ -1,0 +1,233 @@
+import 'dotenv/config';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { db } from '@/modules/platform/db/client';
+import { agentConfig, agentDrafts, agentOutbox, clients, kbFacts, roles, userRoles, users } from '@/modules/platform/db/schema';
+import {
+  AgentConfigError,
+  __restoreAgentConfig,
+  readAgentConfig,
+  type AgentConfig,
+} from '@/modules/wms/agent/config';
+import { approveStyleGuide } from '@/modules/wms/agent/style';
+import {
+  AgentCancelError,
+  CANCELLED_BY_HOLDER,
+  agentSentIds,
+  cancelAgentReply,
+  waitingAgentReplies,
+} from '@/modules/wms/agent/web-thread';
+import { addGeneralFact, retireKbFact, RetireError } from '@/modules/wms/agent/web-kb';
+import { KbError } from '@/modules/wms/agent/kb';
+
+/**
+ * The web half of the AI sotuvchi (spec §17.12) — the rules a page cannot
+ * enforce by drawing less:
+ *  - the style guide is approved by the configured owner or the super_admin
+ *    ROLE, and only from a proposal;
+ *  - a waiting AI reply is taken back by its ACCOUNT HOLDER alone, by a
+ *    compare-and-set that loses to the listener once it has started (the read
+ *    step done, or 'sending'), and says so;
+ *  - the 🤖 marker is derived from agent_outbox by (account, Telegram id).
+ *
+ * agent_config is a singleton CONFIGURATION row on the one database vitest
+ * and Playwright share (#183): snapshotted once, restored in afterAll.
+ */
+
+const SUFFIX = String(Date.now()).slice(-7);
+let counter = 0;
+const next = () => (counter += 1);
+
+let snapshot: AgentConfig | null = null;
+let superAdminId = '';
+let holderId = '';
+let otherId = '';
+let clientId = '';
+const draftIds: string[] = [];
+const factIds: string[] = [];
+
+async function userWithRole(code: string, not: string[] = []): Promise<string> {
+  const rows = await db
+    .select({ id: users.id })
+    .from(users)
+    .innerJoin(userRoles, eq(userRoles.userId, users.id))
+    .innerJoin(roles, eq(roles.id, userRoles.roleId))
+    .where(and(eq(roles.code, code), eq(users.active, true)));
+  const found = rows.find((r) => !not.includes(r.id));
+  if (!found) throw new Error(`no active user with role ${code}`);
+  return found.id;
+}
+
+/** An approved draft and its outbox row, the shape `decideDraft` writes. */
+async function waitingReply(over: { readDone?: boolean; status?: string; tgMessageId?: bigint | null } = {}) {
+  const n = next();
+  const peerId = BigInt(`9${SUFFIX}${String(n).padStart(3, '0')}`);
+  const [draft] = await db
+    .insert(agentDrafts)
+    .values({
+      managerUserId: holderId,
+      peerId,
+      clientId,
+      anchorTgMessageId: BigInt(1000 + n),
+      proposedBody: `Javob ${SUFFIX}-${n}`,
+      status: 'approved',
+      decidedBy: holderId,
+      decidedAt: new Date(),
+    })
+    .returning({ id: agentDrafts.id });
+  draftIds.push(draft!.id);
+  const status = over.status ?? 'agent';
+  const [outbox] = await db
+    .insert(agentOutbox)
+    .values({
+      draftId: draft!.id,
+      managerUserId: holderId,
+      peerId,
+      clientId,
+      body: `Javob ${SUFFIX}-${n}`,
+      randomId: BigInt(`7${SUFFIX}${String(n).padStart(4, '0')}`),
+      answersTgMessageId: BigInt(1000 + n),
+      status,
+      readDone: over.readDone ?? false,
+      queuedBy: holderId,
+      nextStepAt: new Date(Date.now() + 6 * 3_600_000),
+      tgMessageId: over.tgMessageId ?? null,
+      ...(status === 'sent' ? { sentAt: new Date() } : {}),
+    })
+    .returning({ id: agentOutbox.id });
+  return { draftId: draft!.id, outboxId: outbox!.id, peerId };
+}
+
+beforeAll(async () => {
+  snapshot = await readAgentConfig();
+  if (!snapshot) throw new Error('0136 is not applied on this database');
+  superAdminId = await userWithRole('super_admin');
+  holderId = await userWithRole('sales_manager', [superAdminId]);
+  otherId = await userWithRole('accountant', [superAdminId, holderId]);
+  const [client] = await db.select({ id: clients.id }).from(clients).limit(1);
+  clientId = client!.id;
+});
+
+afterAll(async () => {
+  if (draftIds.length > 0) {
+    await db.delete(agentOutbox).where(inArray(agentOutbox.draftId, draftIds));
+    await db.delete(agentDrafts).where(inArray(agentDrafts.id, draftIds));
+  }
+  if (factIds.length > 0) await db.delete(kbFacts).where(inArray(kbFacts.id, factIds));
+  await __restoreAgentConfig(snapshot);
+});
+
+const ctx = (actorId: string) => ({ actorId, ip: null, userAgent: null });
+
+describe('approveStyleGuide — the configured owner or the super_admin role, from a proposal', () => {
+  const proposal = `Qisqa yozadi, «aka» deb murojaat qiladi. ${SUFFIX}`;
+
+  it('refuses a colleague who is neither', async () => {
+    await db
+      .update(agentConfig)
+      .set({ mode: 'off', ownerUserId: holderId, styleGuideProposed: proposal })
+      .where(eq(agentConfig.id, 1));
+    await expect(approveStyleGuide({ id: otherId, roles: ['accountant'] }, ctx(otherId))).rejects.toMatchObject({
+      code: 'forbidden',
+    });
+    expect((await readAgentConfig())!.styleGuide).not.toBe(proposal);
+  });
+
+  it('lets the configured owner approve — without the super_admin role — and copies the proposal as it stands', async () => {
+    const out = await approveStyleGuide({ id: holderId, roles: ['sales_manager'] }, ctx(holderId));
+    expect(out.styleGuide).toBe(proposal);
+    const [row] = await db.select().from(agentConfig).where(eq(agentConfig.id, 1));
+    expect(row!.styleGuide).toBe(proposal);
+    expect(row!.styleApprovedBy).toBe(holderId);
+    expect(row!.styleApprovedAt).not.toBeNull();
+  });
+
+  it('lets the super_admin role approve on somebody else’s account', async () => {
+    const out = await approveStyleGuide({ id: superAdminId, roles: ['super_admin'] }, ctx(superAdminId));
+    expect(out.styleGuide).toBe(proposal);
+  });
+
+  it('refuses when there is nothing proposed', async () => {
+    await db.update(agentConfig).set({ styleGuideProposed: null }).where(eq(agentConfig.id, 1));
+    const err = await approveStyleGuide({ id: holderId, roles: [] }, ctx(holderId)).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AgentConfigError);
+    expect((err as AgentConfigError).code).toBe('bad_value');
+  });
+});
+
+describe('cancelAgentReply — the account holder only, a compare-and-set that loses to the listener', () => {
+  it('lists the waiting reply for its holder and the supervision view, never for another account', async () => {
+    const { outboxId } = await waitingReply();
+    const mine = await waitingAgentReplies({ clientId }, { id: holderId });
+    expect(mine.map((r) => r.id)).toContain(outboxId);
+    const all = await waitingAgentReplies({ clientId }, { id: superAdminId, all: true });
+    expect(all.map((r) => r.id)).toContain(outboxId);
+    const theirs = await waitingAgentReplies({ clientId }, { id: otherId });
+    expect(theirs.map((r) => r.id)).not.toContain(outboxId);
+  });
+
+  it('refuses a colleague, even a super_admin — a message leaves a personal account only by its holder', async () => {
+    const { outboxId } = await waitingReply();
+    for (const who of [otherId, superAdminId]) {
+      const err = await cancelAgentReply({ id: who }, outboxId, ctx(who)).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(AgentCancelError);
+      expect((err as AgentCancelError).code).toBe('not_account_holder');
+    }
+    const [row] = await db.select({ status: agentOutbox.status }).from(agentOutbox).where(eq(agentOutbox.id, outboxId));
+    expect(row!.status).toBe('agent');
+  });
+
+  it('cancels for the holder, once — the second press is «too late», not a second write', async () => {
+    const { outboxId } = await waitingReply();
+    await cancelAgentReply({ id: holderId }, outboxId, ctx(holderId));
+    const [row] = await db.select().from(agentOutbox).where(eq(agentOutbox.id, outboxId));
+    expect(row!.status).toBe('cancelled');
+    expect(row!.lastError).toBe(CANCELLED_BY_HOLDER);
+    await expect(cancelAgentReply({ id: holderId }, outboxId, ctx(holderId))).rejects.toMatchObject({ code: 'too_late' });
+  });
+
+  it('loses to a listener that has started: past the read step, or sending', async () => {
+    for (const over of [{ readDone: true }, { status: 'sending' }]) {
+      const { outboxId } = await waitingReply(over);
+      await expect(cancelAgentReply({ id: holderId }, outboxId, ctx(holderId))).rejects.toMatchObject({ code: 'too_late' });
+      const [row] = await db.select({ status: agentOutbox.status }).from(agentOutbox).where(eq(agentOutbox.id, outboxId));
+      expect(row!.status).toBe(over.status ?? 'agent');
+    }
+  });
+});
+
+describe('the 🤖 marker', () => {
+  it('marks exactly the OUT rows whose (account, Telegram id) an agent_outbox row carries', async () => {
+    const tgId = BigInt(`5${SUFFIX}${next()}`);
+    await waitingReply({ status: 'sent', tgMessageId: tgId });
+    const marked = await agentSentIds([
+      { id: 'ours', direction: 'out', managerUserId: holderId, tgMessageId: tgId },
+      { id: 'inbound-same-id', direction: 'in', managerUserId: holderId, tgMessageId: tgId },
+      { id: 'other-account', direction: 'out', managerUserId: otherId, tgMessageId: tgId },
+      { id: 'human', direction: 'out', managerUserId: holderId, tgMessageId: tgId + 1n },
+    ]);
+    expect([...marked]).toEqual(['ours']);
+  });
+});
+
+describe('Bilimlar on the page — the one kb writer, and retiring', () => {
+  it('refuses a price as knowledge and a customer’s phone in a general fact', async () => {
+    await expect(addGeneralFact({ question: null, answer: `Yo‘lkira 1 kub 110 $ ${SUFFIX}` }, ctx(holderId))).rejects.toBeInstanceOf(KbError);
+    const err = await addGeneralFact({ question: null, answer: `Qo‘ng‘iroq qiling +998 90 123 45 67 ${SUFFIX}` }, ctx(holderId)).catch(
+      (e: unknown) => e,
+    );
+    expect((err as KbError).code).toBe('personal');
+  });
+
+  it('writes a clean general fact, retires it once, and keeps the row', async () => {
+    const id = await addGeneralFact({ question: 'Ish vaqti?', answer: `Dushanba–shanba ishlaymiz. ${SUFFIX}` }, ctx(holderId));
+    factIds.push(id);
+    await retireKbFact(id, ctx(holderId));
+    const [row] = await db.select().from(kbFacts).where(eq(kbFacts.id, id));
+    expect(row!.retiredAt).not.toBeNull();
+    expect(row!.scope).toBe('general');
+    await expect(retireKbFact(id, ctx(holderId))).rejects.toBeInstanceOf(RetireError);
+    const live = await db.select({ id: kbFacts.id }).from(kbFacts).where(and(eq(kbFacts.id, id), isNull(kbFacts.retiredAt)));
+    expect(live).toEqual([]);
+  });
+});

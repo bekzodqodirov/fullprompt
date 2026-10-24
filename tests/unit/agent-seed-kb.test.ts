@@ -1,0 +1,48 @@
+import { describe, expect, it } from 'vitest';
+import { SEED_FACTS } from '@/modules/wms/agent/seed-kb';
+import { extractNumbers, PHONE_RE, urlsIn } from '@/modules/wms/agent/numbers';
+import { normalizeDigits } from '@/modules/wms/agent/digits';
+
+/**
+ * The starting knowledge is a REVIEWED list, and these are the review's rules
+ * as code (spec §16.12, his answer 8 ⭐): no prices, none of the website's
+ * extras, never «our warehouse», and the one phone and the one link he gave
+ * — each where it belongs. A fact is read in EVERY chat, so a slip here is a
+ * slip in every customer's draft.
+ */
+
+const text = (f: { question: string; answer: string }) => normalizeDigits(`${f.question}\n${f.answer}`);
+
+describe('the seeded knowledge', () => {
+  it('carries no money figure at all — prices come from the calculation (money-3, money-9)', () => {
+    for (const f of SEED_FACTS) {
+      expect(extractNumbers(text(f)).filter((n) => n.kind === 'money'), f.key).toEqual([]);
+    }
+  });
+
+  it('states none of the site’s extras — storage days, insurance, photos, repacking, door delivery (Q8 ⭐)', () => {
+    const extras = /bepul|sug[ʻ‘’']?urta|foto|suratga|qadoqla|saqlash|uygacha|eshikkacha/iu;
+    for (const f of SEED_FACTS) expect(extras.test(text(f)), f.key).toBe(false);
+  });
+
+  it('never calls a receiving point «ours»', () => {
+    for (const f of SEED_FACTS) expect(/omborimiz|omborimizga|bizning ombor/iu.test(text(f)), f.key).toBe(false);
+  });
+
+  it('holds exactly one phone (the Tashkent contact) and one link (the map, in a fact of its own)', () => {
+    const phones = SEED_FACTS.flatMap((f) => [...text(f).matchAll(PHONE_RE)].map((m) => [f.key, m[0]] as const));
+    expect(phones.map(([key]) => key)).toEqual(['tashkent_warehouse@1']);
+    const links = SEED_FACTS.flatMap((f) => urlsIn(text(f)).map((u) => [f.key, u] as const));
+    expect(links).toEqual([['tashkent_map@1', 'https://yandex.uz/maps/-/CXQr78ni']]);
+  });
+
+  it('keys every fact once, with a version, inside the kb CHECK’s 2 000 characters', () => {
+    const keys = SEED_FACTS.map((f) => f.key);
+    expect(new Set(keys).size).toBe(keys.length);
+    for (const f of SEED_FACTS) {
+      expect(f.key).toMatch(/^[a-z_]+@\d+$/u);
+      expect([...f.answer].length).toBeLessThanOrEqual(2000);
+      expect(f.question.trim()).not.toBe('');
+    }
+  });
+});

@@ -1,6 +1,8 @@
 import { getTranslations } from 'next-intl/server';
 import { accountStatuses } from '@/modules/wms/crm/telegram-accounts';
 import { secondsBehind, type BridgeState } from '@/modules/wms/crm/telegram-live';
+import { pausedAccounts } from '@/modules/wms/agent/web-page';
+import { ClearPauseButton } from './clear-pause-button';
 
 /**
  * Whether messages are actually arriving — phase 3's one piece of screen.
@@ -43,12 +45,31 @@ export const BRIDGE_LABELS: Record<BridgeState, string> = {
   signed_out: 'bridgeSignedOut',
 };
 
-export async function TelegramBridgeStatus() {
+export async function TelegramBridgeStatus({
+  viewer,
+}: {
+  /** Who is reading — the pause's «Tekshirdim» is drawn for the account's own manager and the super_admin role. */
+  viewer?: { id: string; roles: readonly string[] };
+} = {}) {
   const now = new Date();
   const accounts = await accountStatuses(now);
   if (accounts.length === 0) return null;
 
   const t = await getTranslations('crm');
+  /**
+   * A PAUSED account (0136, review regression-11): Telegram said the account
+   * is limited (PEER_FLOOD, a restriction, a freeze), and every send from it
+   * — the CRM's human replies included — waits until a person who looked
+   * says so. A heartbeat cannot show it (the listener is alive and running),
+   * so it is its own red line under the account, with the «Tekshirdim» for
+   * whoever may clear it. The fold stays SHUT (his round-98 word: «boshidan
+   * folded turishi kerak»); the summary line carries the alarm instead — red,
+   * and counting the paused accounts — exactly as it does for a signed-out one.
+   */
+  const paused = await pausedAccounts();
+  const mayClear = (managerUserId: string) =>
+    viewer !== undefined && (viewer.id === managerUserId || viewer.roles.includes('super_admin'));
+  const pausedHere = accounts.filter((a) => paused.has(a.id));
 
   /**
    * One line, not one banner per phone.
@@ -75,9 +96,16 @@ export async function TelegramBridgeStatus() {
   return (
     <details className="text-sm" data-testid="tg-bridge">
       <summary
-        className={`flex cursor-pointer list-none flex-wrap items-baseline gap-x-2 rounded-xl px-3 py-1.5 ${TONE[worst]}`}
+        className={`flex cursor-pointer list-none flex-wrap items-baseline gap-x-2 rounded-xl px-3 py-1.5 ${
+          pausedHere.length > 0 ? TONE.signed_out : TONE[worst]
+        }`}
         data-testid={`tg-bridge-${worst}`}
       >
+        {pausedHere.length > 0 && (
+          <span className="font-bold" data-testid="tg-bridge-paused">
+            ⛔ {t('bridgePausedCount', { n: pausedHere.length })}
+          </span>
+        )}
         <span className="font-semibold">
           {worst === 'live'
             ? t(BRIDGE_LABELS.live as 'bridgeLive')
@@ -95,6 +123,7 @@ export async function TelegramBridgeStatus() {
       <div className="mt-1.5 space-y-1" data-testid="tg-bridge-detail">
         {accounts.map((account) => {
           const behind = secondsBehind(account.lastSeenAt, now);
+          const pause = paused.get(account.id);
           return (
             <div
               key={account.id}
@@ -116,6 +145,18 @@ export async function TelegramBridgeStatus() {
                   problem from a dead session, and only this line separates them. */}
               {!account.keyOpens && (
                 <span className="text-xs font-bold">{t('bridgeKeyBroken')}</span>
+              )}
+              {pause && (
+                <div
+                  className="mt-1 flex w-full flex-wrap items-center gap-x-2 gap-y-1 rounded-lg bg-bad/15 px-2 py-1.5 text-bad"
+                  data-testid="tg-bridge-pause"
+                >
+                  <span className="min-w-0 flex-1 font-semibold [overflow-wrap:anywhere]">
+                    ⛔ {t('bridgePaused')}
+                    {pause.pauseReason ? `: ${pause.pauseReason}` : ''}
+                  </span>
+                  {mayClear(account.managerUserId) && <ClearPauseButton accountId={account.id} />}
+                </div>
               )}
             </div>
           );

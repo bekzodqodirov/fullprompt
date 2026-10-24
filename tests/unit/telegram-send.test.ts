@@ -68,6 +68,18 @@ describe('queueing a reply', () => {
     });
   });
 
+  it('refuses on a PAUSED account, before the bridge and the limits (regression-11)', () => {
+    // The pump holds every row of a paused account, human ones too; a reply
+    // accepted into that queue reads «navbatda» for as long as nobody looks.
+    // The composer maps this code to words (telegram-reply.tsx, dock.tsx).
+    expect(canQueue('salom', ok({ accountPaused: true, bridgeLive: false }))).toEqual({
+      ok: false,
+      reason: 'account_paused',
+    });
+    // A context built before the guard existed is not a paused one.
+    expect(canQueue('salom', ok({ accountPaused: undefined }))).toEqual({ ok: true });
+  });
+
   it('refuses an empty message before anything else', () => {
     expect(canQueue('   ', ok())).toEqual({ ok: false, reason: 'empty' });
   });

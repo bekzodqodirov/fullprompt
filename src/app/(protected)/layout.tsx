@@ -26,6 +26,7 @@ import { Dock } from '@/components/dock';
 import { canReadTg } from '@/modules/wms/crm/conversations';
 import { mayHaveThreads } from '@/modules/wms/crm/thread-door';
 import { mayEditDealTerms } from '@/modules/wms/deals/door';
+import { agentNavDoors } from '@/modules/wms/agent/web-door';
 import { primaryItems } from '@/modules/platform/rbac/nav';
 import { REPORT_GROUPS } from '@/modules/platform/rbac/workspaces';
 import { frequentFor, workspacesFor, type FrequentRow } from '@/modules/platform/nav/usage';
@@ -69,7 +70,9 @@ export default async function ProtectedLayout({ children }: { children: React.Re
   const label = async (namespace: string, key: string) =>
     (await getTranslations(namespace as 'home'))(key as 'receiving');
 
-  const viewer = { permissions: actor.permissions, roles: actor.roles };
+  // `doors`: pages a server fact opens (the AI sotuvchi's — its configured
+  // owner need not hold the super_admin role, review fit-11).
+  const viewer = { permissions: actor.permissions, roles: actor.roles, doors: await agentNavDoors(actor) };
 
   // The menu by job (2026-09-26, docs/NAV-WORKSPACES.md): ONE model for the
   // sidebar, the ••• sheet and the tab strip, so none of them can offer a

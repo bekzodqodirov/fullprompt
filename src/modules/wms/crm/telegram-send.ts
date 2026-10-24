@@ -60,6 +60,12 @@ export interface SendContext {
   floodWaitUntil: Date | null;
   /** The account is connected and the listener is running. */
   bridgeLive: boolean;
+  /**
+   * Telegram limited the account and a person has not yet said they looked
+   * (0136 `tg_account_guard.paused_at`, review regression-11). Optional: a
+   * context built without it is one from before the guard existed.
+   */
+  accountPaused?: boolean;
 }
 
 export type SendRefusal =
@@ -70,6 +76,7 @@ export type SendRefusal =
   | 'rate_day'
   | 'rate_chat'
   | 'bridge_down'
+  | 'account_paused'
   | 'empty';
 
 export type SendVerdict = { ok: true } | { ok: false; reason: SendRefusal };
@@ -95,6 +102,11 @@ export function canQueue(
 ): SendVerdict {
   if (!hasAttachment && body.trim().length === 0) return { ok: false, reason: 'empty' };
   if (!ctx.sendingEnabled) return { ok: false, reason: 'sending_disabled' };
+  // A paused account sends NOTHING until a person clears it — the pump holds
+  // human rows too (`pumpGate`). Accepting a reply into that queue would tell
+  // the manager it is on its way when it is not, which is `bridge_down`'s
+  // reasoning one step on: refuse, and say why.
+  if (ctx.accountPaused) return { ok: false, reason: 'account_paused' };
   // The single most important rule. Unsolicited outbound to somebody who never
   // messaged you is what "report spam" is for, and a few reports is all it
   // takes. Replying inside a conversation the client started is the safe half

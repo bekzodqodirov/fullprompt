@@ -10,6 +10,8 @@ import { autogrow, sendOnEnter, useCoarsePointer } from '@/components/composer';
 import { ReplyTemplates, type ReplyTemplate } from '@/components/reply-templates';
 import { OutboxBubble } from '@/components/outbox-bubble';
 import { TelegramBubble } from '@/components/telegram-bubble';
+import { AgentWaitingBubble, agentSendAtLabel } from '@/components/agent-waiting-bubble';
+import { AgentCancelButton } from '@/components/agent-cancel-button';
 import { sendReplyAction } from '@/modules/wms/crm/reply-actions';
 import { completeTaskAction } from '@/modules/platform/tasks/actions';
 // A TYPE from the pure module the route builds its answer with: the JSON
@@ -71,7 +73,11 @@ interface DockThread {
     files: { id: string; fileName: string; sizeBytes: number }[];
     fwdFrom: string | null;
     quoted: { body: string | null; direction: string; hasMedia: boolean } | null;
+    /** The AI sotuvchi sent it (0136). */
+    agent?: boolean;
   }[];
+  /** Approved AI replies still on their way (0136) — absent from a route one release behind. */
+  agentWaiting?: { id: string; body: string; nextStepAt: string; mayCancel: boolean }[];
   /** Replies still in the queue — the drawer must not swallow them. */
   pending: {
     id: string;
@@ -330,6 +336,8 @@ export function Dock({
     sending_disabled: t('replyDisabled'),
     never_wrote_first: t('replyNeverWrote'),
     bridge_down: t('replyBridgeDown'),
+    // Telegram limited the account (0136); «Tekshirdim» is on the Suhbatlar bridge panel.
+    account_paused: t('replyAccountPaused'),
     rate_minute: t('replyRateLimited'),
     rate_day: t('replyRateLimited'),
     rate_chat: t('replyRateLimited'),
@@ -485,10 +493,27 @@ export function Dock({
                       </Link>
                     </div>
                     <div className="flex min-h-0 flex-1 flex-col-reverse gap-1.5 overflow-y-auto p-3">
+                      {/* FIRST in a reversed box = the newest end, under the last message. */}
+                      {(thread.agentWaiting ?? []).map((row) => {
+                        const at = agentSendAtLabel(new Date(row.nextStepAt));
+                        return (
+                          <AgentWaitingBubble
+                            key={row.id}
+                            body={row.body}
+                            text={at ? t('agentWaitingAt', { time: at }) : t('agentSending')}
+                            action={
+                              row.mayCancel ? (
+                                <AgentCancelButton outboxId={row.id} onDone={() => void refreshThread(thread.client.id)} />
+                              ) : undefined
+                            }
+                          />
+                        );
+                      })}
                       {thread.messages.map((m) => (
                         <TelegramBubble
                           key={m.id}
                           message={{ ...m, sentAt: new Date(m.sentAt) }}
+                          agentLabel={t('agentSent')}
                           clientLabel={thread.client.name}
                           mediaLabel={t('telegramMedia')}
                         />
@@ -504,7 +529,9 @@ export function Dock({
                           }}
                         />
                       ))}
-                      {thread.messages.length === 0 && thread.pending.length === 0 && (
+                      {thread.messages.length === 0 &&
+                        thread.pending.length === 0 &&
+                        (thread.agentWaiting ?? []).length === 0 && (
                         <p className="text-center text-sm text-ink-500">
                           {t('conversationsEmpty')}
                         </p>

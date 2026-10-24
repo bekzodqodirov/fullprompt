@@ -82,6 +82,8 @@ export async function TelegramReply({
     sending_disabled: t('replyDisabled'),
     never_wrote_first: t('replyNeverWrote'),
     bridge_down: t('replyBridgeDown'),
+    // Telegram limited the account (0136); «Tekshirdim» is on the Suhbatlar bridge panel.
+    account_paused: t('replyAccountPaused'),
     rate_minute: t('replyRateLimited'),
     rate_day: t('replyRateLimited'),
     rate_chat: t('replyRateLimited'),

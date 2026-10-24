@@ -5,6 +5,7 @@ import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { getSetting } from '../../platform/settings/service';
 import { getStorage } from '../../platform/files/storage';
 import { bridgeState } from './telegram-live';
+import { readGuard } from './account-guard';
 import { storeIncoming } from './telegram-accounts';
 import { MAX_TG_FILE_BYTES, MAX_TG_PHOTO_BYTES } from './telegram-import';
 import {
@@ -116,12 +117,15 @@ export async function sendContextFor(input: {
   const [enabled, account] = await Promise.all([
     getSetting('tg_sending_enabled'),
     db
-      .select({ status: tgAccounts.status, lastSeenAt: tgAccounts.lastSeenAt })
+      .select({ id: tgAccounts.id, status: tgAccounts.status, lastSeenAt: tgAccounts.lastSeenAt })
       .from(tgAccounts)
       .where(eq(tgAccounts.managerUserId, input.managerUserId))
       .limit(1)
       .then((rows) => rows[0] ?? null),
   ]);
+  // The account's pause (0136) — `readGuard` answers «nothing wrong» on a
+  // database one migration behind, so this costs today's behaviour nothing.
+  const guard = account ? await readGuard(account.id) : null;
 
   const counted = async (since: Date, peerId?: bigint) => {
     const where = [
@@ -165,6 +169,7 @@ export async function sendContextFor(input: {
     // Held on the account row by the listener when Telegram tells it to wait.
     floodWaitUntil: null,
     bridgeLive: account !== null && bridgeState(account, now) === 'live',
+    accountPaused: guard?.pausedAt != null,
   };
 }
 
