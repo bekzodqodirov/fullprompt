@@ -2377,6 +2377,8 @@ export const tgMessages = pgTable(
     index('tg_messages_client_idx').on(t.clientId, t.sentAt),
     // The round-20 scoped reads lead with the manager (migration 0048).
     index('tg_messages_manager_idx').on(t.managerUserId, t.clientId, t.sentAt),
+    // A delete names message ids, not chats (0136, the agent's «deleted for both sides»).
+    index('tg_messages_manager_message_idx').on(t.managerUserId, t.tgMessageId),
   ],
 );
 
