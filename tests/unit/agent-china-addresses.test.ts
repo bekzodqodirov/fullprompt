@@ -245,9 +245,16 @@ describe('an avia quote: the address is his (his fourth set «2»)', () => {
     const road = ctxOf('Manzil qayerga yuboraman?', 'latin', [said('Ivudan fura bilan 5 kub qancha?', 1)]);
     expect(judge(road, 'latin', 'uz', `Assalomu alaykum! ${answer('china_address_yiwu@1')}`)).not.toContain('avia_address');
     expect(withAviaRule(compose('uz'), [], road)).toMatchObject({ needsOwner: false, ownerQuestion: '' });
-    // An avia chat that asks something else is not his address question.
-    const other = ctxOf('Necha kunda keladi?', 'latin', [said('Shenzhendan avia 30 kg qancha?', 1)]);
-    expect(withAviaRule(compose('uz'), [], other)).toMatchObject({ needsOwner: false, ownerQuestion: '' });
+    // An avia chat that asks something else is not his address question — «where IS my cargo» included.
+    for (const body of ['Necha kunda keladi?', 'Yuk qayerda?', 'Где мой груз?']) {
+      const other = ctxOf(body, 'latin', [said('Shenzhendan avia 30 kg qancha?', 1)]);
+      expect(withAviaRule(compose('uz'), [], other), body).toMatchObject({ needsOwner: false, ownerQuestion: '' });
+    }
+    // «Where to» in the customer's own words is.
+    for (const body of ['Qayerga yuboray?', 'Куда отправить?', '寄到哪里？']) {
+      const ask = ctxOf(body, 'latin', [said('Shenzhendan avia 30 kg qancha?', 1)], [{ ref: 'w1', kind: 'weight', value: 30, messageRef: '#1' }]);
+      expect(withAviaRule(compose('uz'), [], ask).needsOwner, body).toBe(true);
+    }
     // The kilos are not known — the card says so instead of inventing them.
     expect(aviaOwnerQuestion({ kg: null, origin: null })).toContain("og'irligi aytilmagan");
   });

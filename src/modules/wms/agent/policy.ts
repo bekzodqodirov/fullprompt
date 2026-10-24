@@ -1434,25 +1434,28 @@ export function hanOnly(text: string): string {
 const HAN_RUN = /[\p{Script=Han}，。：；、！？（）「」『』【】《》〈〉·][\p{Script=Han}，。：；、！？（）「」『』【】《》〈〉·\s]*/gu;
 
 /**
- * The shortest stretch that counts as a QUOTATION of a fact (review D2). A
- * single «亿» is in the facts — Horgos's «金亿» — and taken out as «quoted»
- * it would let «1亿 dollar» through G1; three characters are a piece of a
- * name or a street, which no spelled-out figure in this business is.
+ * The shortest stretch that counts as a QUOTATION of a fact when a FIGURE is
+ * looked for (review D2). A single «亿» is in the facts — Horgos's «金亿» —
+ * and taken out as «quoted» it would let «1亿 dollar» through G1; three
+ * characters are a piece of a name or a street, which no spelled-out figure
+ * in this business is. The script check takes out any length: a quoted «义乌»
+ * cannot carry a number, and kept it weighs three letters a character.
  */
-const QUOTED_MIN = 3;
+const QUOTED_MIN_FIGURE = 3;
 
 /**
  * The reply with every Chinese stretch a fact holds verbatim taken out (his
  * fourth set): «Ivu ombori: 浙江省 义乌市 …» is an Uzbek sentence carrying
  * the supplier's address, and measured whole it read as Chinese — every
  * address reply was refused `wrong_script`. A stretch the facts do NOT hold
- * — the model's own Chinese — still counts.
+ * — the model's own Chinese — still counts, and so does one shorter than
+ * `min` characters.
  */
-export function withoutQuotedHan(text: string, quotable: string): string {
+export function withoutQuotedHan(text: string, quotable: string, min = 1): string {
   if (!quotable) return text;
   return text.replace(HAN_RUN, (run) => {
     const h = hanOnly(run);
-    return [...h].length >= QUOTED_MIN && quotable.includes(h) ? ' ' : run;
+    return [...h].length >= min && quotable.includes(h) ? ' ' : run;
   });
 }
 
@@ -1625,7 +1628,7 @@ export function checkAgentReply(input: PolicyInput): PolicyResult {
 
   // G1 — numbers. A numeral character inside a quoted address is the fact's spelling, not a figure:
   // Horgos's «金亿» beside any «kub» read as a spelled-out number (review D2).
-  const unverifiable = unverifiableNumeral(withoutQuotedHan(text, quotable));
+  const unverifiable = unverifiableNumeral(withoutQuotedHan(text, quotable, QUOTED_MIN_FIGURE));
   if (unverifiable) blocks.push({ rule: 'G1', code: 'number_unverifiable', detail: unverifiable });
   const removeWhole = [...input.removeWhole, ...input.allowedUrls, ...input.mapUrls];
   // His «Temir yo'l mendan so'rasin» in the reply's OWN words (final review K18): a body that speaks of rail

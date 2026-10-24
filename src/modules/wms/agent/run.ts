@@ -572,12 +572,19 @@ export function withAviaRule(
  * The kilos are the customer's newest, as the avia tool reads them.
  */
 function aviaAddressAsked(ctx: Pick<AgentContext, 'burst' | 'messages' | 'measures'>): AviaCargo | null {
-  if (askedModeOf(ctx) !== 'air' || !askedLocation(ctx.burst.map((m) => m.body))) return null;
+  if (askedModeOf(ctx) !== 'air' || !ctx.burst.some((m) => SEND_ASK.test(m.body))) return null;
   const inbound = ctx.messages.filter((m) => m.direction === 'in').map((m) => m.body).join('\n');
   return { kg: newestMeasure(ctx, 'weight')?.value ?? null, origin: namedOrigin(inbound)?.place ?? null };
 }
 
 const ADDRESS_WORD = /manzil|адрес|address|地址|آدرس/iu;
+
+/**
+ * The customer asks where to SEND the cargo — an address word, or «where to».
+ * Not `askedLocation`'s wider «qayer»: «Yuk qayerda?» asks where the cargo IS,
+ * and in an avia chat it would have put an address question on his card.
+ */
+const SEND_ASK = /manzil|адрес|address|地址|آدرس|qayerga|қаерга|куда|where\s+(?:do|should|can|to)\b|寄到哪|发到哪|送到哪|كجا بفرستم|کجا بفرستم/iu;
 
 /**
  * The model's own question already asks the flight's ADDRESS (review D8):

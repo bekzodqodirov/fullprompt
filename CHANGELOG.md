@@ -58,7 +58,7 @@ minimum qilsin». Yangi migratsiya bor (**0136**): deploydan keyin baza hisobi *
   - muddati «taxminan 2–5 kun, reys bo'lsa 2 kun».
   - Narxni **Bilimlar → AI qoidalari** da o'zingiz o'zgartirasiz.
   - **Avia manzilini AI aytmaydi** (sizning «yukini infosini menga bersang men adres beraman» javobingiz). Avia narxini aytganda kartochkada sizdan so'raydi, masalan: «❓ Avia: 30 kg, qayerdan: Shenzhen — mijozga avia manzilini yozing (✏️)». ✏️ bilan manzilni o'zingiz yozasiz.
-  - Mijoz avia narxini eshitgandan keyin keyingi xabarda «manzil qayerga?» deb so'rasa ham shunday: AI ombor manzilini bermaydi, kartochkada sizdan so'raydi. Mijoz kg aytmagan bo'lsa, kartochkada «og'irligi aytilmagan» deb yoziladi.
+  - Mijoz avia narxini eshitgandan keyin keyingi xabarda «manzil qayerga?» deb so'rasa ham shunday: AI ombor manzilini bermaydi, kartochkada sizdan so'raydi. Mijoz kg aytmagan bo'lsa, kartochkada «og'irligi aytilmagan» deb yoziladi. «Yuk qayerda?» (yuk holati) degan savol uchun manzil so'ralmaydi.
   - Avia javobida bizning uchta qabul omborimizdan birining manzili yoki telefoni bo'lsa, ✅ chiqmaydi. Bu Bilimlardagi manzillar bo'yicha tekshiriladi. Manzilni Bilimlarda tuzatsangiz, tekshiruv yangisini taniydi.
   - Oddiy xitoycha so'zlar to'xtatilmaydi. Masalan, AI xitoylik mijozdan «qaysi shahardan jo'natasiz?» (从哪个城市发货) deb so'rasa, bu manzil hisoblanmaydi.
   - Mijoz bir xabarda ham avia, ham mashina narxini so'rasa, mashina uchun ombor manzilini berish mumkin.

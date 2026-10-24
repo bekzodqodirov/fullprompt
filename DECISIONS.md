@@ -4780,3 +4780,7 @@ quotation, or «1亿 dollar» would pass because the facts hold a «亿». **And
 (D7) — he said only that he gives the flight's address; and «Narx Xitoydagi omborlarimizdan» (his third set,
 answering the truck question) was served into avia chats as if it priced the flight too (D6) — it says «Avto
 (mashina) narxi» now. Both seed facts were edited in place, not versioned: neither has ever been seeded anywhere.
+Found while re-reading the fix: the follow-up first fired on `askedLocation`, whose «qayer» also matches «Yuk
+qayerda?» — where the cargo IS — so an avia customer asking for status put an address question on his card. It asks
+for «where to SEND» now (`SEND_ASK`: an address word, «qayerga», «куда», «寄到哪» …). And the three-character
+minimum is the FIGURE check's alone: the script check takes out a quoted «义乌» as before.
