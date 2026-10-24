@@ -636,7 +636,9 @@ export function Dock({
                             ` · ${thread.managers.join(', ')}`}
                         </p>
                       )}
-                      {sendError && (
+                      {/* A press the hold refused, once the re-read thread names that hold
+                          itself: the grey line above says it — said twice, it reads as two problems. */}
+                      {sendError && (thread.canReply || thread.reason !== sendError) && (
                         <p className="mt-1 text-center text-xs font-semibold text-bad">
                           {reasons[sendError] ?? tc('error')}
                         </p>

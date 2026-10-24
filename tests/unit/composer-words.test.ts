@@ -99,4 +99,13 @@ describe('the composers say why the ACCOUNT holds a reply (send review)', () => 
     expect(route).toMatch(/floodUntil = context\.floodWaitUntil\?\.toISOString\(\)/u);
     expect(route).toMatch(/\n\s+floodUntil,\n/u);
   });
+
+  it('the dock says a hold ONCE — the press’s red line steps aside for the re-read thread’s grey one (cards review)', () => {
+    const dock = strip(readFileSync('src/components/dock.tsx', 'utf8'));
+    // A hold the press met re-reads the thread, which then carries the same code as its reason…
+    expect(dock).toMatch(/result\.error === 'flood_wait' \|\| result\.error === 'account_paused'\) void refreshThread\(target\)/u);
+    // …and the blocked line already says it: the error line renders only for anything else.
+    expect(dock).toMatch(/\{sendError && \(thread\.canReply \|\| thread\.reason !== sendError\) && \(/u);
+    expect(dock).not.toMatch(/\{sendError && \(\s*<p/u);
+  });
 });
