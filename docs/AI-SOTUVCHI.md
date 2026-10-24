@@ -606,7 +606,7 @@ report's ⭐, stated back to him in the same reply.
 | 16 | @bekzodkodirov556 is the connected account | ha |
 | 17 | 2FA on | ha |
 | 18 | CRM sending works (`tg_sending_enabled` on) | ha |
-| 19 | Old server stopped | **NOT answered** (his 19 answered question 1). Re-asked before go-live: a second copy of the session kills it. |
+| 19 | Old server stopped | **Answered 2026-10-24 (second message): his Telegram is removed from the old server** (§17.14). |
 | 20 | Staff-bot messages reach him | ha |
 
 ## 16. Phase 1 — the design under review (2026-10-24)
@@ -984,3 +984,23 @@ inbound gets a run.
 Auto mode; campaigns; WhatsApp, Gmail, calls; copying a customer's files onto the intake note (the note names
 them and links the chat) [fit-2]; random_id for HUMAN sends (agent rows only) [ban-5]; the relay of Telegram's
 777000 service notices; deletes learned while the listener is down.
+
+### 17.14 His answers to the second set (2026-10-24, second message) — AGREED, these override §17.0
+
+His message, verbatim: «1 eski serverdan telegramimni olib tashlaganman / 6b / 7 ha shunday malumot uchun buni
+yozib qoy va gsrwmsda qayergadur shunday page bolishi kerak yani bilimlar turadgan. Avia hozir kg ychun 17$ dan /
+Temiryol mendan sorasin narxini / 1kubdan kam yuk qabul qilmasin ai bizning kompaniya eng kamida 1 kub yuk yokida
+100kg dan boshlab tashish hizmatini korsatadi. Qolgani sening ozingni aytganing / 9 yoq kelib chiqish sertifikati
+bor biz ozimiz olamiz muammo yoq undan / Qolgani sen aytgandek».
+
+| # | Agreed | What it changes in phase 1 |
+|---|---|---|
+| 1 (+ first set 19) | His Telegram session is gone from the old server. | The «Eski serverda sessiya yo'q» confirm stays HIS press on the page (audited, `session_exclusive_at`); nothing else waits on the old server. |
+| 6 | **b** — a price he types goes to the customer ONLY; nothing is written on the deal card. | «💵 Narx yozaman» no longer calls `recordOffer`: no offer row, no floor approval, no upsale. The reply is a deterministic sentence in the customer's language carrying exactly his figure (`priceReplyText`, pure), drafted as kind 'price' and approved by his ✅ like any draft; the only money source is his typed number. |
+| 7 | ha — yo'lkira by the website's truck table; **avia $17/kg now**; **rail: ask him**; **the company carries from 1 m³ OR 100 kg — less is not accepted**; the rest as proposed (> 100 m³ / > 20 t → hisoblatish, a list-price difference → «farq bor»). And «write this down» + **a page in gsrwms where the knowledge lives**. | (a) `AGENT_LIMITS.minShipment = {m3: 1, kg: 100}`: below BOTH no figure is quoted — the tool answers `below_minimum` and the reply says the minimum; it replaces the old 0.1 m³ guard. (b) `avia_estimate`: weight × `agent_config.avia_usd_per_kg` (17, editable on the page, NULL = not quoted), the company minimum applies, labelled and hedged like the truck figure. (c) Rail: a burst that asks about rail forces `needs_owner` («temir yo'l narxini siz aytasiz»), and G1 already blocks any unsourced figure. (d) The seed knowledge carries the minimum, the certificate, the addresses. (e) The page is `/suhbatlar/ai` → «Bilimlar»: every fact listed, added, edited, retired; the avia rate and the minimum shown there as the agent's tariff. |
+| 9 | **The certificate exists — the company obtains it itself.** | The AI never asks for it; every agent calculation lands with `has_certificate = true`; the checklist drops the question. A seed fact says the company arranges it. |
+| rest | ⭐ as sent (§17.0). | Including **18 ⭐ the «📵 raqam yashirin» card** (a hidden-number non-contact's first message on his account → one card: [🆕 Yangi lid] by name, [🚫 Shaxsiy]) and fit-7's rule that no stranger card is sent for a peer in his contacts. |
+
+Asked back in the same reply (built with ⭐ until he answers): whether the 1 m³ / 100 kg minimum also holds for
+avia (⭐ yes, it is the company's minimum), and whether avia has a fixed delivery time the AI may state (⭐ no time
+is stated).
