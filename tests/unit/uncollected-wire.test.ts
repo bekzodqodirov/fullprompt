@@ -1,6 +1,6 @@
 import { globSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { FOUNDERS, MUTE_GROUPS } from '@/modules/platform/notifications/mutes';
+import { FOUNDERS, MUTE_GROUPS, UNMUTABLE_TYPES } from '@/modules/platform/notifications/mutes';
 
 /**
  * The wiring of «Olib ketilmagan yuk» (0116) that no behaviour can see.
@@ -182,7 +182,8 @@ describe('the sweep', () => {
 
 describe('every staff message can be muted', () => {
   it('each type passed to notifyStaffTelegram anywhere in src/ sits in a mute group', () => {
-    const covered = new Set<string>(Object.values(MUTE_GROUPS).flat());
+    // The AI sotuvchi's cards are unmutable ON PURPOSE (mutes.ts UNMUTABLE_TYPES, his Q16 ⭐).
+    const covered = new Set<string>([...Object.values(MUTE_GROUPS).flat(), ...UNMUTABLE_TYPES]);
     const found = new Set<string>();
     for (const file of globSync('src/**/*.{ts,tsx}')) {
       const src = read(file);

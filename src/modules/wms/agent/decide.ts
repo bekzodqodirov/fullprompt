@@ -9,7 +9,6 @@ import {
   agentDrafts,
   agentOutbox,
   calcRequests,
-  crmActivities,
   leads,
   tgAccounts,
   tgMessageFlags,
@@ -159,8 +158,8 @@ async function landCalc(
   actor: DeciderActor,
 ): Promise<{ queued: boolean; requestId: string | null; queueError: string | null }> {
   const noteId = noteIdFor(d.id);
-  const [note] = await db.select({ id: crmActivities.id }).from(crmActivities).where(eq(crmActivities.id, noteId));
-  if (note) {
+  const { intakeNoteExists } = await import('./calc-note');
+  if (await intakeNoteExists(noteId)) {
     const [req] = await db.select({ id: calcRequests.id }).from(calcRequests).where(eq(calcRequests.noteId, noteId));
     return { queued: req !== undefined, requestId: req?.id ?? null, queueError: req ? null : 'already_landed' };
   }
@@ -261,7 +260,7 @@ export async function decideDraft(
       return true;
     });
     if (!changed) return { ok: false, code: 'not_live' };
-    await refresh(draftId);
+    await refreshDraftCard(draftId);
     return { ok: true, status };
   }
 
@@ -299,7 +298,7 @@ export async function decideDraft(
         .update(agentDrafts)
         .set({ blocked: true, policy: { ...p, blocks: policy.blocks, ledger: policy.ledger }, updatedAt: new Date() })
         .where(eq(agentDrafts.id, draftId));
-      await refresh(draftId);
+      await refreshDraftCard(draftId);
     }
     return { ok: false, code: 'policy_block', detail: policy?.blocks.map((b) => b.code).join(',') };
   }
@@ -308,7 +307,7 @@ export async function decideDraft(
   if (moved) {
     const status = moved === 'taken_over' ? 'taken_over' : 'superseded';
     await db.update(agentDrafts).set({ status, updatedAt: new Date() }).where(and(eq(agentDrafts.id, draftId), eq(agentDrafts.status, 'pending')));
-    await refresh(draftId);
+    await refreshDraftCard(draftId);
     return { ok: false, code: moved === 'taken_over' ? 'taken_over' : 'superseded' };
   }
   if ((await budgetLeft(d.managerUserId, config!.startedAt, now)) <= 0) return { ok: false, code: 'budget_spent' };
@@ -323,7 +322,7 @@ export async function decideDraft(
         .update(agentDrafts)
         .set({ actionStatus: 'failed', actionError: landed.queueError ?? 'not_queued', updatedAt: new Date() })
         .where(eq(agentDrafts.id, draftId));
-      await refresh(draftId, [`Hisoblatish navbatga tushmadi (${landed.queueError ?? '—'}) — javob yuborilmadi. Kartadan qo'lda yuboring yoki matnni o'zgartiring.`]);
+      await refreshDraftCard(draftId, [`Hisoblatish navbatga tushmadi (${landed.queueError ?? '—'}) — javob yuborilmadi. Kartadan qo'lda yuboring yoki matnni o'zgartiring.`]);
       return { ok: false, code: 'calc_not_queued', detail: landed.queueError ?? undefined };
     }
     requestId = landed.requestId;
@@ -373,7 +372,7 @@ export async function decideDraft(
   });
   if (!approved) return { ok: false, code: 'not_live' };
   await runDraftActions(draftId, actor).catch((err: unknown) => logger.error({ err, draftId }, '[agent] actions failed'));
-  await refresh(draftId);
+  await refreshDraftCard(draftId);
   return { ok: true, status: 'approved', sendAt, requestId };
 }
 
@@ -441,11 +440,11 @@ export async function submitOwnText(actor: DeciderActor, draftId: string, text: 
     .returning({ id: agentDrafts.id });
   if (!row) return { ok: false, code: 'not_live' };
   await writeAudit(db, ctx, { entityType: 'agent_draft', entityId: draftId, action: 'update', after: { finalBody: true } });
-  await refresh(draftId);
+  await refreshDraftCard(draftId);
   return { ok: true, status: 'pending' };
 }
 
-async function refresh(draftId: string, notes: string[] = []): Promise<void> {
+async function refreshDraftCard(draftId: string, notes: string[] = []): Promise<void> {
   try {
     const { refreshAgentCard } = await import('./card-io');
     await refreshAgentCard(draftId, notes);

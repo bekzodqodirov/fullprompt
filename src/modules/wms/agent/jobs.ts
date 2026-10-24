@@ -6,6 +6,7 @@ import { agentDrafts, agentOutbox, agentRuns, tgMessages } from '../../platform/
 import { enqueue } from '../../platform/jobs/boss';
 import { logger } from '../../platform/logger';
 import { actorGrants } from '../../platform/rbac/authorize';
+import { canLogInSql } from '../../platform/users/login';
 import { agentRunning, agentTablesReady, readAgentConfig } from './config';
 import { AGENT_LIMITS } from './limits';
 import {
@@ -60,7 +61,7 @@ export async function registerAgentWorkers(boss: PgBoss): Promise<void> {
   });
 }
 
-async function refresh(draftId: string): Promise<void> {
+async function refreshCardOf(draftId: string): Promise<void> {
   const { refreshAgentCard } = await import('./card-io');
   await refreshAgentCard(draftId).catch((err: unknown) => logger.warn({ err, draftId }, '[agent] card not refreshed'));
 }
@@ -89,7 +90,7 @@ export async function retireOnHumanReply(managerUserId: string, peerId: bigint, 
       ),
     )
     .returning({ id: agentDrafts.id });
-  for (const r of retired) await refresh(r.id);
+  for (const r of retired) await refreshCardOf(r.id);
   return retired.length;
 }
 
@@ -104,7 +105,7 @@ export async function agentSweep(now: Date = new Date()): Promise<{ expired: num
        AND m.manager_user_id = d.manager_user_id AND m.peer_id = d.peer_id AND m.tg_message_id = d.anchor_tg_message_id
        AND m.sent_at < ${new Date(now.getTime() - AGENT_LIMITS.draftTtlMs).toISOString()}::timestamptz
     RETURNING d.id`);
-  for (const r of expired) await refresh(r.id);
+  for (const r of expired) await refreshCardOf(r.id);
 
   // 2. His own reply the hook did not carry (a CRM reply is recorded by the
   //    pump, not by NewMessage) — the human-reply fallback.
@@ -118,7 +119,7 @@ export async function agentSweep(now: Date = new Date()): Promise<{ expired: num
             AND NOT EXISTS (SELECT 1 FROM agent_outbox o WHERE o.manager_user_id = m.manager_user_id AND o.tg_message_id = m.tg_message_id)
             AND NOT EXISTS (SELECT 1 FROM tg_message_flags f WHERE f.message_id = m.id AND f.deleted_at IS NOT NULL))
     RETURNING d.id`);
-  for (const r of retired) await refresh(r.id);
+  for (const r of retired) await refreshCardOf(r.id);
 
   const config = await readAgentConfig();
   let gap = 0;
@@ -227,7 +228,7 @@ async function strangerCards(ownerUserId: string, now: Date): Promise<number> {
                         WHERE c.manager_user_id = r.manager_user_id AND c.peer_id = r.peer_id
                           AND c.stranger_card_at IS NOT NULL)
        AND NOT EXISTS (SELECT 1 FROM users u
-                        WHERE u.active AND u.phone IS NOT NULL AND r.peer_phone IS NOT NULL
+                        WHERE ${canLogInSql('u')} AND u.phone IS NOT NULL AND r.peer_phone IS NOT NULL
                           AND right(regexp_replace(u.phone, '\\D', '', 'g'), 9) = right(regexp_replace(r.peer_phone, '\\D', '', 'g'), 9))
      ORDER BY r.created_at
      LIMIT 10`);

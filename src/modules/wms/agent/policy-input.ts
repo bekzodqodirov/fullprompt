@@ -2,6 +2,7 @@ import { and, eq, gte, inArray } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { agentOutbox, clients, users } from '../../platform/db/schema';
 import { getSetting } from '../../platform/settings/service';
+import { canLogInSql } from '../../platform/users/login';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import { codeCandidates } from '../calc/channel-post';
 import type { AgentLocale, ScriptName } from './locale';
@@ -61,7 +62,8 @@ async function bookCodesIn(body: string): Promise<Set<string>> {
 }
 
 async function staffNamesExcept(managerName: string | null): Promise<string[]> {
-  const rows = await db.select({ name: users.fullName }).from(users).where(eq(users.active, true));
+  // A colleague NOW (`canLogInSql`, 0120) — the login rule every staff list asks.
+  const rows = await db.select({ name: users.fullName }).from(users).where(canLogInSql());
   return rows.map((r) => r.name).filter((n) => n && n !== managerName);
 }
 

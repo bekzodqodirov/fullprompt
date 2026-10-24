@@ -3,7 +3,7 @@ import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { db, type Db, type Tx } from '../../platform/db/client';
 import { agentConfig, agentDrafts, agentOutbox, tgAccounts, users } from '../../platform/db/schema';
 import { logger } from '../../platform/logger';
-import { canLogIn } from '../../platform/users/login';
+import { canLogInSql } from '../../platform/users/login';
 
 /**
  * Whether the AI sotuvchi runs, from whose account, and who may say so.
@@ -220,11 +220,8 @@ export async function setAgentOwner(actor: AgentActor, userId: string | null, ct
   if (!actor.roles.includes('super_admin')) throw new AgentConfigError('forbidden');
   if (!(await agentTablesReady())) throw new AgentConfigError('not_ready');
   if (userId !== null) {
-    const [u] = await db
-      .select({ active: users.active, loginEnabled: users.loginEnabled })
-      .from(users)
-      .where(eq(users.id, userId));
-    if (!u || !canLogIn(u)) throw new AgentConfigError('bad_value');
+    const [u] = await db.select({ live: canLogInSql() }).from(users).where(eq(users.id, userId));
+    if (!u?.live) throw new AgentConfigError('bad_value');
     if (!(await ownerConnected(db, userId))) throw new AgentConfigError('owner_not_connected');
   }
   return db.transaction(async (tx) => {

@@ -6,6 +6,7 @@ import { agentConversations, agentOutbox, agentRuns, clients, tgChatRules, tgOut
 import { enqueue } from '../../platform/jobs/boss';
 import { logger } from '../../platform/logger';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
+import { canLogInSql } from '../../platform/users/login';
 import { readGuard } from '../crm/account-guard';
 import { agentRunning, agentTablesReady, readAgentConfig, type AgentConfig } from './config';
 import { loadContext, type AgentContext } from './context';
@@ -87,7 +88,7 @@ async function reschedule(job: AgentInboundJob, startAfterS: number, deps: RunDe
 }
 
 /** The ledger row for a run that never reached the model — one per anchor and attempt, idempotent. */
-async function ledger(job: AgentInboundJob, attempt: number, outcome: 'refused' | 'notice' | 'capped', error: string): Promise<boolean> {
+async function runLedgerRow(job: AgentInboundJob, attempt: number, outcome: 'refused' | 'notice' | 'capped', error: string): Promise<boolean> {
   const rows = await db
     .insert(agentRuns)
     .values({
@@ -244,7 +245,7 @@ async function eligibilityFacts(ctx: AgentContext, config: AgentConfig, now: Dat
     const staff = await db
       .select({ id: users.id })
       .from(users)
-      .where(and(eq(users.active, true), isNotNull(users.phone), sql`right(regexp_replace(${users.phone}, '\\D', '', 'g'), 9) IN (${sql.join(tails.map((t) => sql`${t}`), sql`, `)})`))
+      .where(and(canLogInSql(), isNotNull(users.phone), sql`right(regexp_replace(${users.phone}, '\\D', '', 'g'), 9) IN (${sql.join(tails.map((t) => sql`${t}`), sql`, `)})`))
       .limit(1);
     peerIsStaff = staff.length > 0;
   }
@@ -363,11 +364,11 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
   const attempt = await attemptFor(job);
   if (!worthy.worthy) {
     if ('notice' in worthy) {
-      if (await ledger(job, attempt, 'notice', worthy.reason)) await writeNotice(ctx, worthy.reason);
+      if (await runLedgerRow(job, attempt, 'notice', worthy.reason)) await writeNotice(ctx, worthy.reason);
       return { outcome: 'notice', reason: worthy.reason };
     }
     // A ledger row, so the sweep's deploy-gap pass does not ask again every minute.
-    await ledger(job, attempt, 'refused', worthy.reason);
+    await runLedgerRow(job, attempt, 'refused', worthy.reason);
     return { outcome: 'skipped', reason: worthy.reason };
   }
   if (worthy.greetingOnly && ageMs < AGENT_LIMITS.greetingWaitMs) {
@@ -377,14 +378,14 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
 
   const elig = eligibleForRun(await eligibilityFacts(ctx, config, t));
   if (!elig.ok) {
-    await ledger(job, attempt, 'refused', elig.reason);
+    await runLedgerRow(job, attempt, 'refused', elig.reason);
     return { outcome: 'refused', reason: elig.reason };
   }
 
   const reserved = await reserve(job, attempt, config, t);
   if (reserved === 'duplicate') return { outcome: 'stood_down', reason: 'duplicate' };
   if (reserved.startsWith('capped:')) {
-    const fresh = await ledger(job, attempt, 'capped', reserved.slice(7));
+    const fresh = await runLedgerRow(job, attempt, 'capped', reserved.slice(7));
     if (fresh) await capNoticeOnce(ctx, reserved.slice(7), t);
     return { outcome: 'capped', reason: reserved.slice(7) };
   }

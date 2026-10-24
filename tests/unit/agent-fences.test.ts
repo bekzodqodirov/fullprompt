@@ -1,0 +1,117 @@
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+import { getTableColumns, getTableName } from 'drizzle-orm';
+import { describe, expect, it } from 'vitest';
+import * as schema from '@/modules/platform/db/schema';
+import { isTelegramMuted, UNMUTABLE_TYPES } from '@/modules/platform/notifications/mutes';
+import { AGENT_OPS, parseCallback } from '@/modules/platform/telegram/staff-bot';
+import { PURGED_TABLES } from '@/modules/wms/agent/purge';
+import { TOOL_SPECS } from '@/modules/wms/agent/tools';
+
+/**
+ * The AI sotuvchi's fences — each derived from the code it guards, so a file
+ * or a table added next month is caught the day it lands.
+ */
+
+function filesUnder(dir: string): string[] {
+  return readdirSync(dir).flatMap((name) => {
+    const p = join(dir, name);
+    return statSync(p).isDirectory() ? filesUnder(p) : /\.tsx?$/.test(name) ? [p] : [];
+  });
+}
+
+const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+
+describe('the agent reads nothing wider than its own chat (review leak-11)', () => {
+  const FORBIDDEN = ['platform/ai/tools', 'platform/ai/sql-runner', 'wms/bot/lookup', 'wms/search'];
+  const files = filesUnder('src/modules/wms/agent');
+
+  it('no file under wms/agent imports the staff toolset, the SQL runner, the staff lookup or the search', () => {
+    expect(files.length).toBeGreaterThan(10);
+    for (const file of files) {
+      const src = strip(readFileSync(file, 'utf8'));
+      for (const bad of FORBIDDEN) {
+        const re = new RegExp(`from\\s+['"][^'"]*${bad.replace('/', '\\/')}['"]|import\\(\\s*['"][^'"]*${bad.replace('/', '\\/')}['"]`);
+        expect(re.test(src), `${file} imports ${bad}`).toBe(false);
+      }
+    }
+  });
+
+  it('the toolset is the closed list the review agreed', () => {
+    expect(TOOL_SPECS.map((t) => t.name).sort()).toEqual(
+      ['calc_checklist', 'cargo_status', 'cargo_volume', 'compose_reply', 'kb_search', 'own_balance', 'yolkira_estimate'].sort(),
+    );
+    // compose_reply is the strict terminal one; nothing takes a client id or a code.
+    expect(TOOL_SPECS.find((t) => t.name === 'compose_reply')!.strict).toBe(true);
+    for (const t of TOOL_SPECS) {
+      const props = Object.keys((t.input_schema as { properties: Record<string, unknown> }).properties);
+      for (const p of props) expect(/client|code|phone|peer/i.test(p), `${t.name}.${p}`).toBe(false);
+    }
+  });
+});
+
+describe('a purged chat takes every agent copy with it (review leak-9)', () => {
+  /** Tables keyed by (account, Telegram person) that the purge treats on purpose elsewhere. */
+  const HANDLED_ELSEWHERE: Record<string, string> = {
+    tg_messages: 'purgeExcludedChat deletes them itself',
+    tg_outbox: 'kept deliberately — a queue record, not the conversation (round 22)',
+    tg_chat_rules: 'the exclude decision IS the rule',
+    tg_chat_reads: 'a read pointer, no text',
+    tg_peer_index: 'a phone hash, no text',
+  };
+
+  it('every table with manager_user_id + peer_id is named by the purge or by a reason', () => {
+    const keyed: string[] = [];
+    for (const value of Object.values(schema)) {
+      if (!value || typeof value !== 'object' || !(Symbol.for('drizzle:IsDrizzleTable') in (value as object))) continue;
+      const cols = (Object.values(getTableColumns(value as never)) as { name: string }[]).map((c) => c.name);
+      if (cols.includes('manager_user_id') && cols.includes('peer_id')) keyed.push(getTableName(value as never));
+    }
+    expect(keyed).toContain('agent_drafts');
+    for (const table of keyed) {
+      const named = (PURGED_TABLES as readonly string[]).includes(table) || table in HANDLED_ELSEWHERE;
+      expect(named, `${table} is keyed by chat and the purge does not name it`).toBe(true);
+    }
+  });
+
+  it('purgeExcludedChat calls the agent purge before it deletes the messages', () => {
+    const src = strip(readFileSync('src/modules/wms/crm/chat-rules.ts', 'utf8'));
+    const body = src.slice(src.indexOf('export async function purgeExcludedChat'));
+    expect(body.indexOf('purgeAgentChat(')).toBeGreaterThan(0);
+    expect(body.indexOf('purgeAgentChat(')).toBeLessThan(body.indexOf('db.delete(tgMessages)'));
+  });
+});
+
+describe('platform still reaches wms only by dynamic import', () => {
+  it('the static platform → wms imports are exactly the two that predate this round', () => {
+    const offenders = filesUnder('src/modules/platform').filter((file) =>
+      /^import[^;]*from\s+['"][^'"]*\/wms\//m.test(strip(readFileSync(file, 'utf8'))),
+    );
+    expect(offenders.map((f) => f.replace(/^src\/modules\/platform\//, '')).sort()).toEqual(
+      ['telegram/bot.ts', 'telegram/client-cabinet.ts'].sort(),
+    );
+  });
+});
+
+describe('the agent’s cards cannot be muted (his Q16 ⭐)', () => {
+  it('not by name, not by group, not by «all»', () => {
+    for (const type of UNMUTABLE_TYPES) {
+      expect(isTelegramMuted(['all'], type), type).toBe(false);
+      expect(isTelegramMuted([type], type), type).toBe(false);
+    }
+    // …and everything else still mutes as before.
+    expect(isTelegramMuted(['all'], 'TaskAssigned')).toBe(true);
+  });
+});
+
+describe('the ag: grammar', () => {
+  it('parses every op with a uuid, the digest only as eight hex', () => {
+    const id = '0f1e2d3c-4b5a-4968-8776-655443322110';
+    for (const op of AGENT_OPS) expect(parseCallback(`ag:${op}:${id}`)).toEqual({ kind: 'agent', op, id });
+    expect(parseCallback(`ag:s:${id}:a1b2c3d4`)).toEqual({ kind: 'agent', op: 's', id, digest: 'a1b2c3d4' });
+    expect(parseCallback(`ag:s:${id}:zzzz`)).toBeNull();
+    expect(parseCallback(`ag:q:${id}`)).toBeNull();
+    // The old approval grammar is untouched.
+    expect(parseCallback(`a:1:${id}`)).toMatchObject({ kind: 'approval' });
+  });
+});
