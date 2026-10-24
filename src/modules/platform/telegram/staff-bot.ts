@@ -427,7 +427,10 @@ export const PRESS_REPEAT: Record<BotCallback['kind'], 'cas' | 'keyed' | 'prompt
   forward: 'keyed',
   thread_reply: 'prompt',
   // Every agent press is decided by a CAS in its service: a draft that is no
-  // longer pending, a rule already decided, an offer already written.
+  // longer pending, a rule already decided, an offer already written. The 📌
+  // general fact's yes is the one two-press op, and its second press is a
+  // button on the QUESTION carrying the arm's token (I3) — a press on the
+  // card, redelivered or tapped twice into a bot that was down, only asks.
   agent: 'cas',
 };
 
@@ -757,6 +760,9 @@ function agentButtons(type: string, payload: Record<string, unknown>): BotButton
     return [[{ text: '💵 Narx yozaman', callback_data: `ag:p:${requestId}` }]];
   }
   const ruleId = typeof payload.ruleId === 'string' && UUID.test(payload.ruleId) ? payload.ruleId : null;
+  // A stranger or echo card that was answered is closed (`live: false`): its
+  // buttons would be a second decision about a chat already decided (I1).
+  if ((type === 'AgentStranger' || type === 'AgentCodeEcho') && payload.live === false) return null;
   if (type === 'AgentStranger' && ruleId) {
     return [
       [
@@ -767,11 +773,12 @@ function agentButtons(type: string, payload: Record<string, unknown>): BotButton
     ];
   }
   if (type === 'AgentCodeEcho' && ruleId && typeof payload.clientId === 'string' && UUID.test(payload.clientId)) {
-    // The ✅ carries the ECHOED client's id TAIL (the random end — a v7 id's head
-    // is its clock, shared by rows minted the same minute): a second code typed later
-    // re-points the chat, and this older card must not confirm the newer one.
+    // Both buttons carry the ECHOED client's id TAIL (the random end — a v7 id's
+    // head is its clock, shared by rows minted the same minute): a second code
+    // typed later re-points the chat, and this older card must neither confirm
+    // the newer one nor take it back.
     const tail = payload.clientId.slice(-8).toLowerCase();
-    return [[{ text: '✅ Ha, shu mijoz', callback_data: `ag:c:${ruleId}:${tail}` }, { text: '↩ Yo‘q', callback_data: `ag:b:${ruleId}` }]];
+    return [[{ text: '✅ Ha, shu mijoz', callback_data: `ag:c:${ruleId}:${tail}` }, { text: '↩ Yo‘q', callback_data: `ag:b:${ruleId}:${tail}` }]];
   }
   return null;
 }

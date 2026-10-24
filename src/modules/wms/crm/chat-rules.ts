@@ -11,6 +11,7 @@ import {
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { getStorage } from '../../platform/files/storage';
 import { leadForChat } from './chat-lead';
+import { createLead } from './service';
 import type { ChatRule } from './telegram-import';
 
 /**
@@ -250,19 +251,19 @@ export async function decideChat(
 export async function openLeadForChat(
   ruleId: string,
   ctx: AuditContext,
+  opts: { phoneless?: 'agent_stranger' } = {},
 ): Promise<{ leadId: string }> {
   const [rule] = await db.select().from(tgChatRules).where(eq(tgChatRules.id, ruleId));
   if (!rule) throw new ChatRuleError('chat_rule_not_found');
   const phone = (rule.peerPhone ?? '').trim();
   // The same refusal `unknownChatAction` makes about `no_phone`: a lead
-  // nobody can ring is a row with a name in it.
-  if (!phone) throw new ChatRuleError('chat_no_phone');
+  // nobody can ring is a row with a name in it. The tray's own button keeps
+  // it; only the AI sotuvchi's «📵» card (his Q18 ⭐) passes `phoneless`.
+  if (!phone && opts.phoneless !== 'agent_stranger') throw new ChatRuleError('chat_no_phone');
 
-  const leadId = await leadForChat(
-    rule.managerUserId,
-    { phone, title: rule.peerTitle },
-    ctx,
-  );
+  const leadId = phone
+    ? await leadForChat(rule.managerUserId, { phone, title: rule.peerTitle }, ctx)
+    : await phonelessLeadFor(rule, ctx);
 
   await db
     .update(tgChatRules)
@@ -280,9 +281,33 @@ export async function openLeadForChat(
     entityId: ruleId,
     action: 'update',
     before: { decision: rule.decision, clientId: rule.clientId, leadId: rule.leadId },
-    after: { decision: 'include', clientId: null, leadId },
+    after: { decision: 'include', clientId: null, leadId, ...(phone ? {} : { reason: 'agent_stranger_phoneless' }) },
   });
   return { leadId };
+}
+
+/**
+ * A lead for a hidden-number first contact (his Q18 ⭐: a «📵» card's «🆕
+ * Yangi lid»). There is no number to look an open lead up by — which is the
+ * rule `leadForChat` keeps from minting twice — so the RULE's own lead is
+ * that fence: a second press (or a redelivered one) finds the lead the first
+ * press wrote onto this rule and mints nothing. Named by the peer's Telegram
+ * title; owned, like every chat lead, by the manager whose account it is.
+ */
+async function phonelessLeadFor(rule: typeof tgChatRules.$inferSelect, ctx: AuditContext): Promise<string> {
+  if (rule.leadId) {
+    const [existing] = await db.select({ id: leads.id }).from(leads).where(eq(leads.id, rule.leadId));
+    if (existing) return existing.id;
+  }
+  const lead = await createLead(
+    {
+      name: (rule.peerTitle ?? '').trim() || 'Telegram (raqam yashirin)',
+      ownerId: rule.managerUserId,
+      note: "Telegram: raqami yashirin — AI sotuvchining «📵» kartasidan ochildi.",
+    },
+    { ...ctx, actorId: ctx.actorId ?? rule.managerUserId },
+  );
+  return lead.id;
 }
 
 /**

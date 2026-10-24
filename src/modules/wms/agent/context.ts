@@ -6,14 +6,17 @@ import {
   attachments,
   calcRequests,
   clients,
+  clientTelegramLinks,
   leads,
   tgChatRules,
   tgMessageFlags,
   tgMessages,
+  tgPeerIndex,
   users,
 } from '../../platform/db/schema';
 import { phoneSiblingClients } from '../client-cabinet/service';
 import { parseManualFacts } from '../calc/intake-manual';
+import { phoneFingerprint } from '../crm/peer-index';
 import { normalizeDigits } from './digits';
 import { AGENT_LIMITS } from './limits';
 import { dominantScript, type AgentLocale, type ScriptName } from './locale';
@@ -42,7 +45,11 @@ export interface ChatIdentity {
   customerName: string | null;
   /** The customer's own manager — the one name a reply may carry (G6). */
   managerName: string | null;
-  /** A typed-code bind whose chat phone is not on the card: no cargo, no balance (his Q19 ⭐). */
+  /**
+   * May the agent speak about cargo and money here? Only when the CHAT itself
+   * proves the client — its phone on the card, or the customer's own cabinet
+   * link (his Q19 ⭐, review I1). A bind a person made by hand is not proof.
+   */
   cargoAllowed: boolean;
 }
 
@@ -97,7 +104,80 @@ function clip(text: string, max: number): string {
   return chars.length <= max ? text : `${chars.slice(0, max).join('')}…`;
 }
 
-/** The chat's identity, decided by the server. */
+const last9 = (raw: unknown): string | null => {
+  const d = (typeof raw === 'string' ? raw : '').replace(/\D/gu, '');
+  return d.length >= 9 ? d.slice(-9) : null;
+};
+
+export type ChatProof = 'phone' | 'cabinet';
+
+/**
+ * What the CHAT ITSELF carries that says it is one of these clients' person
+ * (his Q19 ⭐: «no cargo or balance until the chat's phone is on the card»;
+ * review I1). Three things count, and nothing a person typed or picked:
+ *
+ *  - the chat's phone (the tray's `peer_phone`) on one of the cards — the
+ *    client's or a phone sibling's (fit-12, the cabinet's «same person»);
+ *  - the listener's hashed peer index naming that number — the only phone a
+ *    lookback-attached chat carries (0064 stores no number, by design);
+ *  - a LINKED cabinet: the customer shared their own Telegram-verified number
+ *    with the company bot, and a private chat's id is the person's id.
+ *
+ * A hidden number has none of the first two, so a hand-made bind on one stays
+ * closed by construction until the customer links the cabinet.
+ */
+export async function chatProof(
+  managerUserId: string,
+  peerId: bigint,
+  clientIds: readonly string[],
+  peerPhone: string | null,
+): Promise<ChatProof | null> {
+  if (clientIds.length === 0) return null;
+  const cards = await db.select({ phones: clients.phones }).from(clients).where(inArray(clients.id, [...clientIds]));
+  const tails = new Set<string>();
+  const prints = new Set<string>();
+  for (const card of cards) {
+    for (const raw of Array.isArray(card.phones) ? (card.phones as unknown[]) : []) {
+      const tail = last9(raw);
+      if (!tail) continue;
+      tails.add(tail);
+      const print = phoneFingerprint(tail);
+      if (print) prints.add(print);
+    }
+  }
+  const chat = last9(peerPhone);
+  if (chat && tails.has(chat)) return 'phone';
+  if (prints.size > 0) {
+    const [indexed] = await db
+      .select({ hash: tgPeerIndex.phoneHash })
+      .from(tgPeerIndex)
+      .where(and(eq(tgPeerIndex.managerUserId, managerUserId), eq(tgPeerIndex.peerId, peerId)));
+    if (indexed && prints.has(indexed.hash)) return 'phone';
+  }
+  const [link] = await db
+    .select({ id: clientTelegramLinks.id })
+    .from(clientTelegramLinks)
+    .where(
+      and(
+        eq(clientTelegramLinks.telegramChatId, peerId),
+        eq(clientTelegramLinks.status, 'linked'),
+        inArray(clientTelegramLinks.clientId, [...clientIds]),
+      ),
+    )
+    .limit(1);
+  return link ? 'cabinet' : null;
+}
+
+/**
+ * The chat's identity, decided by the server.
+ *
+ * A chat with NO rule row was given its client by the listener's own phone
+ * classifier — that is proof. EVERY rule-derived bind is checked against the
+ * chat (review I1), whoever made it: the echo flow's typed code, the web
+ * tray's «Bu mijoz» (a stranger card exists only because the number was NOT
+ * on any card, leak-4), a lookback attach, and messages a rule stored before
+ * it was taken back to pending (↩) — their `client_id` outlives the decision.
+ */
 export async function chatIdentity(managerUserId: string, peerId: bigint): Promise<ChatIdentity & { ruleDecision: string | null }> {
   const [newest] = await db
     .select({ clientId: tgMessages.clientId, leadId: tgMessages.leadId })
@@ -111,18 +191,13 @@ export async function chatIdentity(managerUserId: string, peerId: bigint): Promi
     .where(and(eq(tgChatRules.managerUserId, managerUserId), eq(tgChatRules.peerId, peerId)))
     .limit(1);
   const [conv] = await db
-    .select({ strength: agentConversations.identityStrength })
+    .select({ strength: agentConversations.identityStrength, clientId: agentConversations.identityClientId })
     .from(agentConversations)
     .where(and(eq(agentConversations.managerUserId, managerUserId), eq(agentConversations.peerId, peerId)));
 
   const clientId = newest?.clientId ?? null;
   const leadId = clientId ? null : (newest?.leadId ?? null);
   let strength: IdentityStrength | null = null;
-  if (conv?.strength === 'typed_code' && rule?.clientId === clientId) strength = 'typed_code';
-  else if (clientId && rule?.decision === 'include' && rule.clientId === clientId) strength = 'rule';
-  else if (clientId) strength = 'phone';
-  else if (leadId) strength = 'lead';
-
   let codes: { id: string; clientCode: string }[] = [];
   let customerName: string | null = null;
   let managerId: string | null = null;
@@ -130,21 +205,23 @@ export async function chatIdentity(managerUserId: string, peerId: bigint): Promi
   if (clientId) {
     codes = await phoneSiblingClients(clientId);
     const [c] = await db
-      .select({ name: clients.name, phones: clients.phones, managerId: clients.salesManagerId })
+      .select({ name: clients.name, managerId: clients.salesManagerId })
       .from(clients)
       .where(eq(clients.id, clientId));
     customerName = c?.name ?? null;
     managerId = c?.managerId ?? null;
-    if (strength === 'typed_code') {
-      // The bind came from a code HE typed: the chat's phone must be on the
-      // card before the agent speaks about cargo or money in it (leak-4).
-      const phones = Array.isArray(c?.phones) ? (c!.phones as string[]) : [];
-      const chat = (rule?.peerPhone ?? '').replace(/\D/gu, '').slice(-9);
-      cargoAllowed = chat.length === 9 && phones.some((p) => p.replace(/\D/gu, '').slice(-9) === chat);
-    } else {
+    if (!rule) {
+      strength = 'phone';
       cargoAllowed = true;
+    } else {
+      const named = rule.decision === 'include' && rule.clientId === clientId;
+      const typed = named && conv?.strength === 'typed_code' && conv.clientId === clientId;
+      const proof = await chatProof(managerUserId, peerId, codes.map((x) => x.id), rule.peerPhone);
+      cargoAllowed = proof !== null;
+      strength = typed ? 'typed_code' : named ? 'rule' : (proof ?? 'rule');
     }
   } else if (leadId) {
+    strength = 'lead';
     const [l] = await db.select({ name: leads.name, ownerId: leads.ownerId }).from(leads).where(eq(leads.id, leadId));
     customerName = l?.name ?? null;
     managerId = l?.ownerId ?? null;

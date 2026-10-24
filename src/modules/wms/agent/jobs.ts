@@ -233,7 +233,28 @@ export async function agentSweep(now: Date = new Date()): Promise<{ expired: num
   return { expired: expired.length, retired: retired.length, gap, retried, actions: stuck.length };
 }
 
-async function strangerCards(ownerUserId: string, now: Date): Promise<number> {
+/**
+ * The words of a stranger card — never the message's own text (§17.11). A
+ * hidden number (his Q18 ⭐) says so in its first line, and says what binding
+ * it to a client can and cannot do: no number can ever be on a card, so the
+ * agent will not speak of cargo or money there (his Q19 ⭐, review I1).
+ */
+export function strangerCardText(title: string | null, phone: string | null): string {
+  const who = title?.trim() || 'Nomsiz';
+  const ask = 'Kim bu? Tanlang — AI faqat mijoz yoki lidga javob tayyorlaydi.';
+  if (phone) return `🆕 Yangi odam yozdi: ${who}\n📞 ${phone}\n\n${ask}`;
+  return `📵 Raqami yashirin yangi odam yozdi: ${who}\n\n${ask}\nRaqam yashirin: mijozga bog'lansa ham AI bu chatda yuk va qarzni aytmaydi.`;
+}
+
+/**
+ * ONE card per peer (agent_conversations.stranger_card_at) for the agent
+ * owner's pending tray rules of the last day: a visible number no card
+ * carries (the tray's own ask) and a hidden-number first contact (a rule with
+ * no `peer_phone`, his Q18 ⭐). Never for a peer in his own contacts — a friend
+ * or a colleague is not a lead (fit-7, `peer_contact`) — nor for an active
+ * colleague's phone.
+ */
+export async function strangerCards(ownerUserId: string, now: Date): Promise<number> {
   const rows = await db.execute<{ id: string; peer_id: string; peer_title: string | null; peer_phone: string | null }>(sql`
     SELECT r.id, r.peer_id::text AS peer_id, r.peer_title, r.peer_phone
       FROM tg_chat_rules r
@@ -242,29 +263,31 @@ async function strangerCards(ownerUserId: string, now: Date): Promise<number> {
        AND r.created_at > ${new Date(now.getTime() - 24 * 3_600_000).toISOString()}::timestamptz
        AND NOT EXISTS (SELECT 1 FROM agent_conversations c
                         WHERE c.manager_user_id = r.manager_user_id AND c.peer_id = r.peer_id
-                          AND c.stranger_card_at IS NOT NULL)
+                          AND (c.stranger_card_at IS NOT NULL OR c.peer_contact IS TRUE))
        AND NOT EXISTS (SELECT 1 FROM users u
                         WHERE ${canLogInSql('u')} AND u.phone IS NOT NULL AND r.peer_phone IS NOT NULL
                           AND right(regexp_replace(u.phone, '\\D', '', 'g'), 9) = right(regexp_replace(r.peer_phone, '\\D', '', 'g'), 9))
      ORDER BY r.created_at
      LIMIT 10`);
   const { notifyStaffTelegram } = await import('../../platform/notifications/staff');
+  let sent = 0;
   for (const r of rows) {
-    // The claim first: one card per peer even when two sweeps overlap.
+    // The claim first: one card per peer even when two sweeps overlap — and
+    // never once the listener has read the peer as a contact meanwhile.
     const claimed = await db.execute<{ peer_id: string }>(sql`
       INSERT INTO agent_conversations (manager_user_id, peer_id, stranger_card_at)
       VALUES (${ownerUserId}, ${r.peer_id}::bigint, now())
       ON CONFLICT (manager_user_id, peer_id) DO UPDATE SET stranger_card_at = now(), updated_at = now()
-        WHERE agent_conversations.stranger_card_at IS NULL
+        WHERE agent_conversations.stranger_card_at IS NULL AND agent_conversations.peer_contact IS NOT TRUE
       RETURNING peer_id::text`);
     if (claimed.length === 0) continue;
-    const who = r.peer_title?.trim() || 'Nomsiz';
     await notifyStaffTelegram({
       userIds: [ownerUserId],
       type: 'AgentStranger',
-      text: `🆕 Yangi odam yozdi: ${who}\n${r.peer_phone ? `📞 ${r.peer_phone}` : '📵 raqam yashirin'}\n\nKim bu? Tanlang — AI faqat mijoz yoki lidga javob tayyorlaydi.`,
+      text: strangerCardText(r.peer_title, r.peer_phone),
       extra: { ruleId: r.id },
     });
+    sent += 1;
   }
-  return rows.length;
+  return sent;
 }

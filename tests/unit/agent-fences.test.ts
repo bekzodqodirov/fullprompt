@@ -4,7 +4,7 @@ import { getTableColumns, getTableName } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import * as schema from '@/modules/platform/db/schema';
 import { isTelegramMuted, UNMUTABLE_TYPES } from '@/modules/platform/notifications/mutes';
-import { AGENT_OPS, parseCallback } from '@/modules/platform/telegram/staff-bot';
+import { AGENT_OPS, buttonsFor, parseCallback } from '@/modules/platform/telegram/staff-bot';
 import { PURGED_TABLES } from '@/modules/wms/agent/purge';
 import { TOOL_SPECS } from '@/modules/wms/agent/tools';
 
@@ -75,6 +75,22 @@ describe('a purged chat takes every agent copy with it (review leak-9)', () => {
     }
   });
 
+  it('every agent card type is blanked by the purge, or is about no chat (review I5)', () => {
+    /** Types that name an account or a day, never one customer's chat. */
+    const NO_CHAT: Record<string, string> = {
+      AgentCapReached: "the day's cap — no customer in it",
+      AgentForcedOff: 'the account switched itself off — no customer in it',
+      TgAccountPaused: 'the account was limited — no customer in it',
+    };
+    const src = strip(readFileSync('src/modules/wms/agent/purge.ts', 'utf8'));
+    const where = src.slice(src.indexOf('function chatCardsWhere'), src.indexOf('export async function purgeAgentChat'));
+    expect(where.length, 're-anchor: chatCardsWhere').toBeGreaterThan(100);
+    for (const type of UNMUTABLE_TYPES) {
+      const named = where.includes(`'${type}'`) || type in NO_CHAT;
+      expect(named, `${type} can quote a chat and the purge does not blank it`).toBe(true);
+    }
+  });
+
   it('purgeExcludedChat calls the agent purge before it deletes the messages', () => {
     const src = strip(readFileSync('src/modules/wms/crm/chat-rules.ts', 'utf8'));
     const body = src.slice(src.indexOf('export async function purgeExcludedChat'));
@@ -114,6 +130,44 @@ describe('the ag: grammar', () => {
     expect(parseCallback(`ag:q:${id}`)).toBeNull();
     // The old approval grammar is untouched.
     expect(parseCallback(`a:1:${id}`)).toMatchObject({ kind: 'approval' });
+  });
+});
+
+describe('the stranger and echo cards (review I1)', () => {
+  const rule = '0f1e2d3c-4b5a-4968-8776-655443322110';
+  const client = '019a2b3c-4d5e-7f00-8a1b-2c3d4e5f6071';
+
+  it('both echo buttons carry the echoed client’s tail, and both parse', () => {
+    const rows = buttonsFor('AgentCodeEcho', { ruleId: rule, clientId: client, text: 'x' })!;
+    const data = rows.flat().map((b) => ('callback_data' in b ? b.callback_data : ''));
+    expect(data).toEqual([`ag:c:${rule}:4e5f6071`, `ag:b:${rule}:4e5f6071`]);
+    for (const d of data) expect(parseCallback(d)).toMatchObject({ kind: 'agent', id: rule, digest: '4e5f6071' });
+  });
+
+  it('a closed card draws no buttons — not the echo, not the stranger card', () => {
+    expect(buttonsFor('AgentCodeEcho', { ruleId: rule, clientId: client, text: 'x', live: false })).toBeNull();
+    expect(buttonsFor('AgentStranger', { ruleId: rule, text: 'x', live: false })).toBeNull();
+    expect(buttonsFor('AgentStranger', { ruleId: rule, text: 'x' })).not.toBeNull();
+  });
+});
+
+describe('a general fact refuses a name by any word of it (review I3)', () => {
+  it('«Laylo opa» is Laylo Karimova’s; a bare number, a two-letter word and a stranger are not', async () => {
+    const { nameNeedles, personalBits } = await import('@/modules/wms/agent/kb');
+    expect(personalBits('Laylo opa, yakshanba dam olamiz.', ['Laylo Karimova'])).toContain('Laylo');
+    expect(personalBits('Karimova xonim, dam olamiz.', ['Laylo Karimova'])).toContain('Karimova');
+    expect(personalBits('Yakshanba ombor dam oladi.', ['Laylo Karimova', 'Shahzod Aliyev 123456', null])).toEqual([]);
+    // The whole name, then its words of three or more characters with a letter
+    // (never «Bo», «Li» or «777»); the apostrophe stays inside a name.
+    expect(nameNeedles(['Bo Li 777', "O'ktam Ali"])).toEqual(["O'ktam Ali", 'Bo Li 777', "O'ktam", 'Ali']);
+    expect(personalBits('ktam yozdi', ["O'ktam"])).toEqual([]);
+  });
+
+  it('the 📌 yes is a button on the question with an eight-hex token — the one the parser takes', async () => {
+    const src = strip(readFileSync('src/modules/wms/agent/bot-door.ts', 'utf8'));
+    expect(src).toMatch(/callback_data: `ag:g:\$\{draftId\}:\$\{token\}`/);
+    expect(src).toMatch(/randomBytes\(4\)\.toString\('hex'\)/);
+    expect(parseCallback('ag:g:0f1e2d3c-4b5a-4968-8776-655443322110:a1b2c3d4')).toMatchObject({ op: 'g', digest: 'a1b2c3d4' });
   });
 });
 

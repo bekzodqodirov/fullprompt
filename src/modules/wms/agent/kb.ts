@@ -89,31 +89,50 @@ export async function kbSearch(scope: KbScope, query: string, limit = 8): Promis
 }
 
 /**
- * What would make a text PERSONAL — another customer's code, a phone, a name
- * the caller knows. A general fact is written only from text in which this
- * finds nothing (leak-2); the style guide is proposed through the same mask.
+ * The names a text must not carry, as the needles that find them: each whole
+ * name AND each of its words of three or more characters that has a letter
+ * (review I3). A customer is greeted by a PART of the stored name — «Laylo
+ * opa» for «Laylo Karimova» — so the whole name alone let the first name
+ * through. A bare number is no name (the code and phone checks own numbers).
+ * Longest first, so a mask replaces «Laylo Karimova» before «Laylo».
  */
-export function personalBits(text: string, knownNames: readonly string[] = []): string[] {
+export function nameNeedles(knownNames: readonly (string | null | undefined)[]): string[] {
+  const out = new Set<string>();
+  for (const raw of knownNames) {
+    const name = (raw ?? '').trim();
+    if ([...name].length >= 3) out.add(name);
+    // The Uzbek apostrophes stay inside a word: «O'ktam» is one name, never «ktam».
+    for (const piece of name.split(/[^\p{L}\p{N}'ʻʼ‘’]+/u)) {
+      const word = piece.replace(/^['ʻʼ‘’]+|['ʻʼ‘’]+$/gu, '');
+      if ([...word].length >= 3 && /\p{L}/u.test(word)) out.add(word);
+    }
+  }
+  return [...out].sort((a, b) => [...b].length - [...a].length);
+}
+
+function nameRe(needle: string, flags: string): RegExp {
+  return new RegExp(`(?<![\\p{L}])${needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}])`, flags);
+}
+
+/**
+ * What would make a text PERSONAL — another customer's code, a phone, a name
+ * the caller knows (whole, or any word of it). A general fact is written only
+ * from text in which this finds nothing (leak-2); the style guide is proposed
+ * through the same mask.
+ */
+export function personalBits(text: string, knownNames: readonly (string | null | undefined)[] = []): string[] {
   const t = normalizeDigits(text);
   const out: string[] = [];
   for (const c of codeCandidates([t])) if (/^[A-Z]{1,4}\d{2,}/u.test(c)) out.push(c);
   for (const m of t.matchAll(PHONE_RE)) out.push(m[0]);
-  for (const n of knownNames) {
-    if ([...n.trim()].length >= 3 && new RegExp(`(?<![\\p{L}])${n.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}])`, 'iu').test(t)) {
-      out.push(n.trim());
-    }
-  }
+  for (const n of nameNeedles(knownNames)) if (nameRe(n, 'iu').test(t)) out.push(n);
   return out;
 }
 
 /** The text with every personal bit masked — what the style proposal shows him (leak-1). */
-export function maskForModel(text: string, knownNames: readonly string[] = []): string {
+export function maskForModel(text: string, knownNames: readonly (string | null | undefined)[] = []): string {
   let t = normalizeDigits(text);
-  for (const n of knownNames) {
-    if ([...n.trim()].length >= 3) {
-      t = t.replace(new RegExp(`(?<![\\p{L}])${n.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}])`, 'giu'), '[ism]');
-    }
-  }
+  for (const n of nameNeedles(knownNames)) t = t.replace(nameRe(n, 'giu'), '[ism]');
   t = t.replace(PHONE_RE, '[telefon]');
   for (const u of urlsIn(t)) t = t.split(u).join('[havola]');
   t = t.replace(/\b[A-Za-z]{1,4}\s?-?\s?\d{2,}[A-Za-z0-9-]*\b/gu, '[kod]');
@@ -144,7 +163,7 @@ export async function writeKbFact(
     answer: string;
     locale?: string | null;
     sourceRef?: Record<string, unknown> | null;
-    knownNames?: readonly string[];
+    knownNames?: readonly (string | null | undefined)[];
   },
   ctx: AuditContext,
 ): Promise<string> {

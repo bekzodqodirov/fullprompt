@@ -977,19 +977,20 @@ export function registerStaffBot(bot: Bot): void {
     // The AI sotuvchi's ONE text slot (0136, regression-6): his edited reply,
     // his price, a stranger's code — BELOW every live collector (one
     // collector at a time) and ABOVE the reply door and `takeTaskPending`
-    // (which deletes on read). A swipe-reply to an agent card names its own
-    // draft; otherwise the one live agent wait does.
+    // (which deletes on read). A swipe-reply names its own target, a newer
+    // task wait wins over an older agent wait, and a forward is Door B's
+    // (review I2) — all decided inside the slot.
     if (
       !escapesIntake(ctx.message.text) &&
-      (await agentTextSlot(
-        ctx,
-        chatId,
-        ctx.message.text,
-        ctx.message.date,
-        ctx.message.reply_to_message && ctx.message.reply_to_message.from?.id === ctx.me.id
-          ? ctx.message.reply_to_message.message_id
-          : null,
-      ))
+      (await agentTextSlot(ctx, chatId, {
+        text: ctx.message.text,
+        dateSec: ctx.message.date,
+        replyToMessageId:
+          ctx.message.reply_to_message && ctx.message.reply_to_message.from?.id === ctx.me.id
+            ? ctx.message.reply_to_message.message_id
+            : null,
+        forwarded: Boolean(ctx.message.forward_origin),
+      }))
     ) {
       return;
     }

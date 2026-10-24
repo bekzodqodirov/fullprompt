@@ -11,11 +11,15 @@ import {
   agentRuns,
   calcRequests,
   clients,
+  clientTelegramLinks,
   kbFacts,
+  leads,
   notifications,
   roles,
   tgAccounts,
   tgChatRules,
+  tgMessages,
+  tgPeerIndex,
   tgPeerPulls,
   userRoles,
   users,
@@ -24,7 +28,11 @@ import { buttonsFor, parseCallback } from '@/modules/platform/telegram/staff-bot
 import { agentCardFor, agentCommand, agentPress, agentText } from '@/modules/wms/agent/bot-door';
 import { announceAgentCalc, priceDraftFromText } from '@/modules/wms/agent/calc-loop';
 import { readAgentConfig, __restoreAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
-import { purgeAgentChat } from '@/modules/wms/agent/purge';
+import { chatIdentity } from '@/modules/wms/agent/context';
+import { strangerCards } from '@/modules/wms/agent/jobs';
+import { purgeAgentChat, PURGED_CARD_TEXT } from '@/modules/wms/agent/purge';
+import { decideChat, openLeadForChat } from '@/modules/wms/crm/chat-rules';
+import { phoneFingerprint } from '@/modules/wms/crm/peer-index';
 
 /**
  * The AI sotuvchi's loops around the draft (spec §17.9-§17.11): the
@@ -42,8 +50,15 @@ let sellerId = '';
 let accountId = '';
 let clientId = '';
 let otherClientId = '';
+let siblingClientId = '';
 let snapshot: AgentConfig | null = null;
 const requestIds: string[] = [];
+const leadIds: string[] = [];
+let msgSeq = 5000n;
+/** Laylo's card phone — the one number that PROVES the chat (his Q19 ⭐). */
+const CARD_PHONE = `+99897${SUFFIX}66`;
+/** A phone only the sibling's card carries (fit-12). */
+const SIBLING_ONLY_PHONE = `+99897${SUFFIX}88`;
 
 async function makeUser(name: string, role: string, tail: string): Promise<string> {
   const [u] = await db
@@ -83,12 +98,40 @@ async function ownerCards(type: string) {
     .where(and(eq(notifications.userId, ownerId), eq(notifications.type, type)));
 }
 
-async function strangerRule(phone: string | null = '+998901112233'): Promise<string> {
+async function strangerRule(phone: string | null = '+998901112233', title = 'Notanish'): Promise<string> {
   const [r] = await db
     .insert(tgChatRules)
-    .values({ managerUserId: ownerId, peerId: PEER, peerTitle: 'Notanish', peerPhone: phone })
+    .values({ managerUserId: ownerId, peerId: PEER, peerTitle: title, peerPhone: phone })
     .returning({ id: tgChatRules.id });
   return r!.id;
+}
+
+/** An inbound message the listener stored onto `client` — what chatIdentity reads the bind from. */
+async function storedInbound(client: string, peer = PEER): Promise<void> {
+  msgSeq += 1n;
+  await db.insert(tgMessages).values({
+    clientId: client,
+    managerUserId: ownerId,
+    peerId: peer,
+    tgMessageId: msgSeq,
+    direction: 'in',
+    body: 'Yukim qayerda?',
+    sentAt: new Date(),
+  });
+}
+
+/** The echo flow to its ✅: code typed, the card's own ✅ pressed. */
+async function confirmCode(ruleId: string, code: string): Promise<void> {
+  await agentText(ownerId, { kind: 'agent_code', payload: { ruleId } }, code);
+  const echo = (await ownerCards('AgentCodeEcho')).find((n) => (n.payload as { live?: boolean }).live !== false)!;
+  const yes = buttonsFor('AgentCodeEcho', echo.payload as Record<string, unknown>)!.flat()[0]!;
+  const parsed = parseCallback('callback_data' in yes ? yes.callback_data : '') as { digest?: string };
+  expect((await agentPress(ownerId, 'c', ruleId, parsed.digest)).toast).toContain('Bog');
+}
+
+async function ruleOf(ruleId: string) {
+  const [rule] = await db.select().from(tgChatRules).where(eq(tgChatRules.id, ruleId));
+  return rule!;
 }
 
 async function clearChat() {
@@ -100,6 +143,9 @@ async function clearChat() {
     await db.delete(agentConversations).where(eq(agentConversations.peerId, peer));
     await db.delete(tgPeerPulls).where(eq(tgPeerPulls.peerId, peer));
     await db.delete(tgChatRules).where(eq(tgChatRules.peerId, peer));
+    await db.delete(tgMessages).where(and(eq(tgMessages.managerUserId, ownerId), eq(tgMessages.peerId, peer)));
+    await db.delete(tgPeerIndex).where(and(eq(tgPeerIndex.managerUserId, ownerId), eq(tgPeerIndex.peerId, peer)));
+    await db.delete(clientTelegramLinks).where(eq(clientTelegramLinks.telegramChatId, peer));
   }
   await db.delete(notifications).where(and(inArray(notifications.userId, [ownerId, otherId]), sql`${notifications.type} LIKE 'Agent%'`));
 }
@@ -124,6 +170,12 @@ beforeAll(async () => {
     .values({ clientCode: `AM${SUFFIX}`, name: `Boshqa Mijoz ${SUFFIX}`, phones: [`+99897${SUFFIX}77`], salesManagerId: ownerId })
     .returning({ id: clients.id });
   otherClientId = c2!.id;
+  // Laylo's second code: one person, two cards, one shared phone (fit-12).
+  const [c3] = await db
+    .insert(clients)
+    .values({ clientCode: `AN${SUFFIX}`, name: `Laylo Ikkinchi ${SUFFIX}`, phones: [CARD_PHONE, SIBLING_ONLY_PHONE], salesManagerId: ownerId })
+    .returning({ id: clients.id });
+  siblingClientId = c3!.id;
   await db
     .update(agentConfig)
     .set({ mode: 'shadow', ownerUserId: ownerId, sessionExclusiveAt: new Date(), sessionExclusiveBy: ownerId, startedAt: new Date() })
@@ -137,7 +189,8 @@ afterAll(async () => {
   await db.delete(kbFacts).where(sql`${kbFacts.sourceRef}->>'suffix' = ${SUFFIX} OR ${kbFacts.clientId} = ${clientId}`);
   if (requestIds.length > 0) await db.delete(calcRequests).where(inArray(calcRequests.id, [...requestIds].reverse()));
   await db.delete(tgAccounts).where(eq(tgAccounts.id, accountId));
-  await db.delete(clients).where(inArray(clients.id, [clientId, otherClientId]));
+  if (leadIds.length > 0) await db.delete(leads).where(inArray(leads.id, leadIds));
+  await db.delete(clients).where(inArray(clients.id, [clientId, otherClientId, siblingClientId]));
   await __restoreAgentConfig(snapshot);
   await db.update(users).set({ active: false }).where(inArray(users.id, [ownerId, otherId, sellerId]));
 });
@@ -302,7 +355,11 @@ describe('the knowledge base learns only what he approved (§17.8, leak-2)', () 
     const first = await agentPress(ownerId, 'g', id, undefined);
     expect(first.reply).toContain('BARCHA');
     expect(await db.select().from(kbFacts).where(sql`${kbFacts.sourceRef}->>'draftId' = ${id}`)).toHaveLength(0);
-    const second = await agentPress(ownerId, 'g', id, undefined);
+    // The yes is the QUESTION's own button, carrying the arm's token (I3).
+    const yes = first.buttons!.flat()[0]!;
+    const parsed = parseCallback(yes.callback_data) as { op: string; id: string; digest?: string };
+    expect(parsed).toMatchObject({ kind: 'agent', op: 'g', id });
+    const second = await agentPress(ownerId, 'g', id, parsed.digest);
     expect(second.toast).toContain('saqlandi');
     const facts = await db.select().from(kbFacts).where(sql`${kbFacts.sourceRef}->>'draftId' = ${id}`);
     expect(facts).toHaveLength(1);
@@ -355,7 +412,7 @@ describe('the purge takes this chat and nothing else (§17.12)', () => {
     };
     const gone = await mk(PEER);
     const kept = await mk(OTHER_PEER);
-    expect(await purgeAgentChat(ownerId, PEER)).toEqual({ drafts: 1 });
+    expect(await purgeAgentChat(ownerId, PEER)).toMatchObject({ drafts: 1 });
     expect(await db.select().from(agentDrafts).where(eq(agentDrafts.id, gone))).toHaveLength(0);
     expect(await db.select().from(agentDrafts).where(eq(agentDrafts.id, kept))).toHaveLength(1);
     expect(await db.select().from(agentConversations).where(eq(agentConversations.peerId, PEER))).toHaveLength(0);
@@ -377,5 +434,304 @@ describe('«/agent» — the bot’s kill switch', () => {
     expect(await agentCommand(ownerId, '')).toContain("o'chiq");
     expect(await agentCommand(ownerId, 'on')).toContain('yoqildi');
     expect((await readAgentConfig())!.mode).toBe('shadow');
+  });
+});
+
+describe('a hand-made bind serves no cargo until the chat proves it (his Q19 ⭐, review I1)', () => {
+  it('a chat the listener matched by phone (no rule at all) is proven by construction', async () => {
+    await storedInbound(clientId);
+    const id = await chatIdentity(ownerId, PEER);
+    expect(id).toMatchObject({ clientId, strength: 'phone', cargoAllowed: true });
+  });
+
+  it('(A) «↩ Yo‘q» after ✅ takes the RULE back too — not only the conversation', async () => {
+    const ruleId = await strangerRule();
+    await confirmCode(ruleId, `AL${SUFFIX}`);
+    await storedInbound(clientId);
+    expect(await ruleOf(ruleId)).toMatchObject({ decision: 'include', clientId });
+    // The ↩ of the card that was confirmed — a press that raced the card's close.
+    const back = await agentPress(ownerId, 'b', ruleId, clientId.slice(-8));
+    expect(back.toast).toContain('Bekor');
+    expect(await ruleOf(ruleId)).toMatchObject({ decision: 'pending', clientId: null });
+    const [conv] = await db.select().from(agentConversations).where(and(eq(agentConversations.managerUserId, ownerId), eq(agentConversations.peerId, PEER)));
+    expect(conv).toMatchObject({ identityClientId: null, identityStrength: null });
+    // The message the rule stored keeps its client_id — and serves nothing.
+    expect(await chatIdentity(ownerId, PEER)).toMatchObject({ clientId, cargoAllowed: false });
+  });
+
+  it('the echo card is closed after ✅: no ✅, no ↩ — its verdict instead', async () => {
+    const ruleId = await strangerRule();
+    await confirmCode(ruleId, `AL${SUFFIX}`);
+    const [echo] = await ownerCards('AgentCodeEcho');
+    const payload = echo!.payload as Record<string, unknown>;
+    expect(payload.live).toBe(false);
+    expect(String(payload.text)).toContain('Tasdiqlandi');
+    expect(buttonsFor('AgentCodeEcho', payload)).toBeNull();
+  });
+
+  it('the stranger card is closed by the decision too — a late 🆕 on it is not a second answer', async () => {
+    const ruleId = await strangerRule();
+    await strangerCards(ownerId, new Date());
+    await confirmCode(ruleId, `AL${SUFFIX}`);
+    const [card] = (await ownerCards('AgentStranger')).filter((n) => (n.payload as { ruleId: string }).ruleId === ruleId);
+    expect((card!.payload as Record<string, unknown>).live).toBe(false);
+    expect(buttonsFor('AgentStranger', card!.payload as Record<string, unknown>)).toBeNull();
+  });
+
+  it('(B) a second code withdraws the first one’s include — no stale bind stays', async () => {
+    const ruleId = await strangerRule();
+    await confirmCode(ruleId, `AL${SUFFIX}`);
+    await storedInbound(clientId);
+    await agentText(ownerId, { kind: 'agent_code', payload: { ruleId } }, `AM${SUFFIX}`);
+    expect(await ruleOf(ruleId)).toMatchObject({ decision: 'pending', clientId: null });
+    const [conv] = await db.select().from(agentConversations).where(and(eq(agentConversations.managerUserId, ownerId), eq(agentConversations.peerId, PEER)));
+    expect(conv).toMatchObject({ identityClientId: otherClientId, identityStrength: null });
+    expect(await chatIdentity(ownerId, PEER)).toMatchObject({ clientId, cargoAllowed: false });
+    // The first echo card lost its buttons; only the newest one is live.
+    const live = (await ownerCards('AgentCodeEcho')).filter((n) => (n.payload as { live?: boolean }).live !== false);
+    expect(live.map((n) => (n.payload as { clientId: string }).clientId)).toEqual([otherClientId]);
+  });
+
+  it('(C) the web tray’s «Bu mijoz» on a chat whose phone is not on the card serves nothing', async () => {
+    const ruleId = await strangerRule('+998901112233');
+    await decideChat({ id: ruleId, decision: 'include', clientId }, { actorId: ownerId });
+    await storedInbound(clientId);
+    expect(await chatIdentity(ownerId, PEER)).toMatchObject({ clientId, strength: 'rule', cargoAllowed: false });
+  });
+
+  it('a rule bind IS proven by the chat’s phone on the card — or on a phone sibling’s card', async () => {
+    const own = await strangerRule(CARD_PHONE);
+    await decideChat({ id: own, decision: 'include', clientId }, { actorId: ownerId });
+    await storedInbound(clientId);
+    expect(await chatIdentity(ownerId, PEER)).toMatchObject({ strength: 'rule', cargoAllowed: true });
+    await clearChat();
+    const sib = await strangerRule(SIBLING_ONLY_PHONE);
+    await decideChat({ id: sib, decision: 'include', clientId }, { actorId: ownerId });
+    await storedInbound(clientId);
+    expect(await chatIdentity(ownerId, PEER)).toMatchObject({ cargoAllowed: true });
+  });
+
+  it('…by the listener’s hashed peer index (a lookback attach stores no number)', async () => {
+    const [rule] = await db
+      .insert(tgChatRules)
+      .values({ managerUserId: ownerId, peerId: PEER, decision: 'include', clientId, decidedBy: ownerId, decidedAt: new Date() })
+      .returning({ id: tgChatRules.id });
+    await storedInbound(clientId);
+    expect(await chatIdentity(ownerId, PEER)).toMatchObject({ cargoAllowed: false });
+    await db.insert(tgPeerIndex).values({ managerUserId: ownerId, peerId: PEER, phoneHash: phoneFingerprint(CARD_PHONE)! });
+    expect(await chatIdentity(ownerId, PEER)).toMatchObject({ cargoAllowed: true });
+    expect(rule).toBeDefined();
+  });
+
+  it('…and by the customer’s own linked cabinet — a hidden number’s only way', async () => {
+    const ruleId = await strangerRule(null);
+    await confirmCode(ruleId, `AL${SUFFIX}`);
+    await storedInbound(clientId);
+    expect(await chatIdentity(ownerId, PEER)).toMatchObject({ strength: 'typed_code', cargoAllowed: false });
+    await db.insert(clientTelegramLinks).values({ clientId, telegramChatId: PEER, status: 'linked', linkedAt: new Date() });
+    expect(await chatIdentity(ownerId, PEER)).toMatchObject({ strength: 'typed_code', cargoAllowed: true });
+  });
+
+  it('the echo card says what the bind will allow, before he confirms', async () => {
+    const hidden = await strangerRule(null);
+    await agentText(ownerId, { kind: 'agent_code', payload: { ruleId: hidden } }, `AL${SUFFIX}`);
+    expect(String((await ownerCards('AgentCodeEcho'))[0]!.payload.text)).toContain('📵 Chat raqami yashirin');
+    await clearChat();
+    const onCard = await strangerRule(CARD_PHONE);
+    await agentText(ownerId, { kind: 'agent_code', payload: { ruleId: onCard } }, `AL${SUFFIX}`);
+    expect(String((await ownerCards('AgentCodeEcho'))[0]!.payload.text)).toContain('✔ Chat raqami kartada');
+    await clearChat();
+    const off = await strangerRule('+998901112233');
+    await agentText(ownerId, { kind: 'agent_code', payload: { ruleId: off } }, `AL${SUFFIX}`);
+    expect(String((await ownerCards('AgentCodeEcho'))[0]!.payload.text)).toContain("kartada yo'q");
+  });
+
+  it('a ✅ from before a web-tray decision does not undo it', async () => {
+    const ruleId = await strangerRule();
+    await agentText(ownerId, { kind: 'agent_code', payload: { ruleId } }, `AL${SUFFIX}`);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await decideChat({ id: ruleId, decision: 'exclude' }, { actorId: ownerId });
+    const refused = await agentPress(ownerId, 'c', ruleId, clientId.slice(-8));
+    expect(refused.toast).toContain('hal qilingan');
+    expect(await ruleOf(ruleId)).toMatchObject({ decision: 'exclude' });
+  });
+
+  it('a late «🆕 Yangi lid» never turns a client’s chat into a lead', async () => {
+    const ruleId = await strangerRule();
+    await confirmCode(ruleId, `AL${SUFFIX}`);
+    const out = await agentPress(ownerId, 'n', ruleId, undefined);
+    expect(out.reply).toContain('allaqachon');
+    expect(await ruleOf(ruleId)).toMatchObject({ decision: 'include', clientId, leadId: null });
+  });
+});
+
+describe('the «📵» card: a hidden-number first contact (his Q18 ⭐, review fit-7)', () => {
+  it('one card per peer, in its own words, never the message text', async () => {
+    const ruleId = await strangerRule(null, `Yashirin ${SUFFIX}`);
+    expect(await strangerCards(ownerId, new Date())).toBeGreaterThanOrEqual(1);
+    const cards = (await ownerCards('AgentStranger')).filter((n) => (n.payload as { ruleId: string }).ruleId === ruleId);
+    expect(cards).toHaveLength(1);
+    expect(String(cards[0]!.payload.text)).toContain(`📵 Raqami yashirin yangi odam yozdi: Yashirin ${SUFFIX}`);
+    const rows = buttonsFor('AgentStranger', cards[0]!.payload as Record<string, unknown>)!;
+    expect(rows.flat().map((b) => ('callback_data' in b ? b.callback_data : ''))).toEqual([`ag:n:${ruleId}`, `ag:k:${ruleId}`, `ag:x:${ruleId}`]);
+    await strangerCards(ownerId, new Date());
+    expect((await ownerCards('AgentStranger')).filter((n) => (n.payload as { ruleId: string }).ruleId === ruleId)).toHaveLength(1);
+  });
+
+  it('a peer in his own contacts gets no card — a friend is not a lead', async () => {
+    const ruleId = await strangerRule(null, `Do'st ${SUFFIX}`);
+    await db.insert(agentConversations).values({ managerUserId: ownerId, peerId: PEER, peerContact: true });
+    await strangerCards(ownerId, new Date());
+    expect((await ownerCards('AgentStranger')).filter((n) => (n.payload as { ruleId: string }).ruleId === ruleId)).toHaveLength(0);
+  });
+
+  it('«🆕 Yangi lid» opens a lead BY NAME through the agent door only — and never twice', async () => {
+    const ruleId = await strangerRule(null, `Yashirin Lid ${SUFFIX}`);
+    // The tray's own door keeps its refusal.
+    await expect(openLeadForChat(ruleId, { actorId: ownerId })).rejects.toThrow('chat_no_phone');
+    const first = await agentPress(ownerId, 'n', ruleId, undefined);
+    expect(first.toast).toContain('Lid ochildi');
+    const rule = await ruleOf(ruleId);
+    expect(rule).toMatchObject({ decision: 'include', clientId: null });
+    leadIds.push(rule.leadId!);
+    const [lead] = await db.select().from(leads).where(eq(leads.id, rule.leadId!));
+    expect(lead).toMatchObject({ name: `Yashirin Lid ${SUFFIX}`, phone: null, ownerId });
+    // A redelivered press finds the rule's own lead.
+    await agentPress(ownerId, 'n', ruleId, undefined);
+    expect((await ruleOf(ruleId)).leadId).toBe(rule.leadId);
+    expect(await db.select().from(leads).where(eq(leads.name, `Yashirin Lid ${SUFFIX}`))).toHaveLength(1);
+  });
+});
+
+describe('a general fact refuses every name the chat is known by (review I3)', () => {
+  async function leadAnswered(finalBody: string) {
+    const [stage] = await db.execute<{ id: string }>(sql`SELECT id FROM lead_stages WHERE kind = 'open' ORDER BY sort_order LIMIT 1`);
+    const [lead] = await db
+      .insert(leads)
+      .values({ name: `Shahzod Aliyev ${SUFFIX}`, stageId: stage!.id, ownerId })
+      .returning({ id: leads.id });
+    leadIds.push(lead!.id);
+    const [d] = await db
+      .insert(agentDrafts)
+      .values({
+        managerUserId: ownerId,
+        peerId: PEER,
+        leadId: lead!.id,
+        anchorTgMessageId: 1n,
+        proposedBody: 'Tekshirib aytaman.',
+        finalBody,
+        needsOwner: true,
+        ownerQuestion: 'Ombor yakshanba ishlaydimi?',
+        status: 'approved',
+        decidedBy: ownerId,
+        decidedAt: new Date(),
+        policy: { suffix: SUFFIX },
+      })
+      .returning({ id: agentDrafts.id });
+    return d!.id;
+  }
+
+  async function generalAttempt(id: string) {
+    const first = await agentPress(ownerId, 'g', id, undefined);
+    const digest = (parseCallback(first.buttons!.flat()[0]!.callback_data) as { digest?: string }).digest;
+    return agentPress(ownerId, 'g', id, digest);
+  }
+
+  it('a lead chat’s first name alone is refused («Shahzod aka» for «Shahzod Aliyev»)', async () => {
+    const id = await leadAnswered('Shahzod aka, yakshanba ombor dam oladi.');
+    expect((await generalAttempt(id)).reply).toContain("mijoz ma'lumoti bor");
+    expect(await db.select().from(kbFacts).where(sql`${kbFacts.sourceRef}->>'draftId' = ${id}`)).toHaveLength(0);
+  });
+
+  it('a client’s first name alone, and the peer’s own Telegram title, are refused', async () => {
+    const [d] = await db
+      .insert(agentDrafts)
+      .values({
+        managerUserId: ownerId,
+        peerId: PEER,
+        clientId,
+        anchorTgMessageId: 1n,
+        proposedBody: 'x',
+        finalBody: 'Laylo opa, yakshanba ombor dam oladi.',
+        needsOwner: true,
+        status: 'approved',
+        decidedBy: ownerId,
+        decidedAt: new Date(),
+        policy: { suffix: SUFFIX },
+      })
+      .returning({ id: agentDrafts.id });
+    expect((await generalAttempt(d!.id)).reply).toContain("mijoz ma'lumoti bor");
+    await strangerRule(null, 'Dilnoza Tursunova');
+    const [d2] = await db
+      .insert(agentDrafts)
+      .values({
+        managerUserId: ownerId,
+        peerId: PEER,
+        clientId: otherClientId,
+        anchorTgMessageId: 2n,
+        proposedBody: 'x',
+        finalBody: 'Dilnoza, yakshanba ombor dam oladi.',
+        needsOwner: true,
+        status: 'approved',
+        decidedBy: ownerId,
+        decidedAt: new Date(),
+        policy: { suffix: SUFFIX },
+      })
+      .returning({ id: agentDrafts.id });
+    expect((await generalAttempt(d2!.id)).reply).toContain("mijoz ma'lumoti bor");
+  });
+
+  it('two presses on the CARD — a redelivery, or two taps into a bot that was down — only ask', async () => {
+    const id = await leadAnswered('Yakshanba ombor dam oladi, dushanbadan ishlaydi.');
+    const one = await agentPress(ownerId, 'g', id, undefined);
+    const two = await agentPress(ownerId, 'g', id, undefined);
+    expect(one.reply).toContain('BARCHA');
+    expect(two.reply).toContain('BARCHA');
+    expect(await db.select().from(kbFacts).where(sql`${kbFacts.sourceRef}->>'draftId' = ${id}`)).toHaveLength(0);
+    // Both questions carry the SAME token: either one's yes is the yes.
+    expect(two.buttons).toEqual(one.buttons);
+    // A forged token is no yes either.
+    expect((await agentPress(ownerId, 'g', id, '00000000')).reply).toContain('BARCHA');
+    expect(await db.select().from(kbFacts).where(sql`${kbFacts.sourceRef}->>'draftId' = ${id}`)).toHaveLength(0);
+  });
+});
+
+describe('the purge blanks EVERY agent card of the chat (review I5)', () => {
+  async function card(type: string, payload: Record<string, unknown>, status = 'sent') {
+    const [n] = await db
+      .insert(notifications)
+      .values({ userId: ownerId, channel: 'telegram', type, status, payload: { text: `Mijoz: «yukim qayerda» ${SUFFIX}`, ...payload } })
+      .returning({ id: notifications.id });
+    return n!.id;
+  }
+
+  it('stranger, echo, calc answer (the whole chain), notice — this chat’s only; an unsent copy is never sent', async () => {
+    const ruleId = await strangerRule();
+    const root = await request();
+    await link(root);
+    const child = await request(root);
+    const ids = {
+      stranger: await card('AgentStranger', { ruleId }),
+      echo: await card('AgentCodeEcho', { ruleId, clientId }, 'pending'),
+      root: await card('AgentCalcAnswered', { requestId: root }),
+      child: await card('AgentCalcAnswered', { requestId: child }),
+      notice: await card('AgentNotice', { peerId: String(PEER) }),
+      otherNotice: await card('AgentNotice', { peerId: String(OTHER_PEER) }),
+    };
+    const out = await purgeAgentChat(ownerId, PEER);
+    expect(out.cards).toBeGreaterThanOrEqual(5);
+    const rows = await db.select().from(notifications).where(inArray(notifications.id, Object.values(ids)));
+    const by = new Map(rows.map((r) => [r.id, r]));
+    for (const key of ['stranger', 'echo', 'root', 'child', 'notice'] as const) {
+      const p = by.get(ids[key])!.payload as Record<string, unknown>;
+      expect(p.text, key).toBe(PURGED_CARD_TEXT);
+      expect(p.live, key).toBe(false);
+    }
+    expect(by.get(ids.echo)!.status).toBe('muted');
+    expect(by.get(ids.stranger)!.status).toBe('sent');
+    expect(String((by.get(ids.otherNotice)!.payload as Record<string, unknown>).text)).toContain('yukim qayerda');
+    // A closed card draws no buttons when its copy is edited.
+    expect(buttonsFor('AgentCodeEcho', by.get(ids.echo)!.payload as Record<string, unknown>)).toBeNull();
+    expect(buttonsFor('AgentStranger', by.get(ids.stranger)!.payload as Record<string, unknown>)).toBeNull();
   });
 });
