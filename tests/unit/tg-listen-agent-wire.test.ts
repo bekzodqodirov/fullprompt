@@ -72,9 +72,24 @@ describe('the agent pump runs after the human rows (§17.8)', () => {
     expect(tick.indexOf('badgesToRestore(')).toBeLessThan(tick.indexOf('dueAgentRow('));
   });
 
+  it('a one-peer pull never holds a person’s reply: it runs off the pump’s flight, one at a time', () => {
+    const tick = source.slice(source.indexOf('const agentTickBody = async'), source.indexOf('const crmReplied = async'));
+    expect(tick).toContain('startPull()');
+    expect(tick).not.toContain('await pullTick()');
+    const start = source.slice(source.indexOf('const startPull = () => {'), source.indexOf('const pullTick = async'));
+    expect(start).toContain('if (pulling ||');
+    expect(start).toContain('void pullTick()');
+  });
+
   it('stamps the pump so the app can refuse ✅ into a listener that will never send (regression-3)', () => {
     expect(pump).toContain('stampTick()');
     expect(source).toContain('stampAgentPump(account.id, caughtUp)');
+  });
+
+  it('a CRM reply tells the worker he answered — after the send is booked, never inside its failure path', () => {
+    const success = pump.slice(pump.indexOf('sent += 1;'), pump.indexOf('} catch (err) {', pump.indexOf('sent += 1;')));
+    expect(success).toContain('void crmReplied(');
+    expect(pump.slice(pump.indexOf('} catch (err) {', pump.indexOf('sent += 1;')))).not.toContain('crmReplied(');
   });
 
   it('a held agent outcome is only a database that is not there', () => {

@@ -1028,8 +1028,24 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
    * and a pull decided against it would put the whole day on the tray.
    */
   let lastPullAt = 0;
+  let pulling = false;
+  /**
+   * Off the pump's own flight: a day of a stranger's chat can carry photos
+   * to download, and a read must never hold a person's reply in the queue.
+   * Single-flight of its own, so pulls stay one at a time.
+   */
+  const startPull = () => {
+    if (pulling || Date.now() - lastPullAt < PULL_GAP_MS) return;
+    pulling = true;
+    void pullTick()
+      .catch((err: unknown) => {
+        console.error('suhbat tortilmadi:', err instanceof Error ? err.message : err);
+      })
+      .finally(() => {
+        pulling = false;
+      });
+  };
   const pullTick = async () => {
-    if (Date.now() - lastPullAt < PULL_GAP_MS) return;
     const pull = await claimPeerPull(account.managerUserId);
     if (!pull) return;
     lastPullAt = Date.now();
@@ -1073,6 +1089,20 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      const kind = tgErrorKind(err);
+      if (kind.kind === 'flood') {
+        await accountFlooded(alarmAccount, { method: 'messages.GetHistory', seconds: kind.seconds, source: 'raise' }).catch(
+          () => undefined,
+        );
+      }
+      // Not this chat's fault — a wait Telegram ordered, a database blip, a
+      // connection going down under a stop: the pull is owed again (storing
+      // is idempotent). Anything else is the chat's answer, written down.
+      if (kind.kind === 'flood' || kind.kind === 'db' || client.connected === false) {
+        console.error('suhbat tortish keyinga qoldi:', message);
+        await releaseStalePulls(account.managerUserId).catch(() => undefined);
+        return;
+      }
       console.error('suhbat tortilmadi:', message);
       await finishPeerPull(pull.id, { storedCount, error: message }).catch(() => undefined);
     }
@@ -1115,7 +1145,7 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       await settleAgentOutcome(row, outcome);
       return;
     }
-    if (opts.pulls) await pullTick();
+    if (opts.pulls) startPull();
   };
 
   /** A CRM reply on the agent's account retires the chat's live draft — the worker decides how. */
