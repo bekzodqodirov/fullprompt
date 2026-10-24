@@ -175,11 +175,15 @@ describe('the tray doors refuse 777000 in words', () => {
 });
 
 describe('the lists leave 777000 out', () => {
-  it('the tray and its badge show the ordinary question and not the service chat', async () => {
+  it('the badge counts the ordinary question and not the service chat', async () => {
+    await serviceRule();
+    expect(await pendingCount(managerId)).toBe(1);
+  });
+
+  it('the tray lists the ordinary question and not the service chat', async () => {
     await serviceRule();
     const mine = await listCandidates({ managerUserId: managerId });
     expect(mine.map((r) => r.peerId)).toEqual([ORDINARY_PEER.toString()]);
-    expect(await pendingCount(managerId)).toBe(1);
     // …and on the owner's all-accounts view too.
     const everybody = await listCandidates({ decision: 'pending' });
     expect(everybody.some((r) => r.peerId === TELEGRAM_SERVICE_PEER.toString())).toBe(false);

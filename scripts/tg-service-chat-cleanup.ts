@@ -35,7 +35,11 @@ function decisionWord(decision: ServiceChatAccount['decision']): string {
 
 async function main() {
   const accounts = await serviceChatInventory();
-  console.log(`Telegram xizmat chati (777000): ${accounts.length} ta akkauntda iz bor`);
+  // A second run finds the «never» it wrote with nothing behind it: listed, owed nothing.
+  const owed = accounts.filter((a) => a.decision !== 'exclude' || a.messages > 0 || a.attachments > 0);
+  console.log(
+    `Telegram xizmat chati (777000): ${accounts.length} ta akkauntda qoida yoki xabar bor, ${owed.length} tasini tozalash kerak`,
+  );
   for (const a of accounts) {
     console.log(
       `  ${a.managerName} — ${decisionWord(a.decision)} · xabar: ${a.messages} · fayl: ${a.attachments}` +
@@ -47,11 +51,14 @@ async function main() {
   const files = accounts.reduce((n, a) => n + a.attachments, 0);
   console.log(`Jami: ${messages} ta xabar, ${files} ta fayl.`);
 
+  if (owed.length === 0) {
+    console.log('\nTozalash kerak emas.');
+    return;
+  }
   if (!apply) {
     console.log("\nDRY RUN — hech narsa o'zgarmadi. O'chirish uchun --apply bilan qayta ishga tushiring.");
     return;
   }
-  if (accounts.length === 0) return;
 
   const done = await cleanUpServiceChat({ actorId: null });
   console.log('\n--- bajarildi ---');
