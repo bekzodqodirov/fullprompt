@@ -43,6 +43,10 @@ export interface PolicyMemory {
    * written before it, the 💵 draft's) reads as none.
    */
   hasGloss?: boolean;
+  /** An avia quote and no truck's (his fourth set «2»): no China address in the reply. Absent = not one. */
+  aviaOnly?: boolean;
+  /** The Chinese characters of the facts the run read — a verbatim address is the fact's script (his fourth set). Absent = none. */
+  quotableHan?: string;
   ownCodes: string[];
   /** The customer's own manager — the one staff name a reply may carry. */
   managerName: string | null;
@@ -178,6 +182,8 @@ export async function policyFor(input: {
     factNameWords: input.memory.factNameWords ?? [],
     askedMode: input.memory.askedMode ?? null,
     hasGloss: input.memory.hasGloss === true,
+    aviaOnly: input.memory.aviaOnly === true,
+    quotableHan: input.memory.quotableHan ?? '',
   });
 }
 

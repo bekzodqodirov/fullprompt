@@ -1025,3 +1025,17 @@ beraman telegramda sorasin».
 |---|---|---|
 | 1 | The China receiving addresses ARE given by the AI (his 10b): **YIWU** (YW) 浙江省 义乌市 稠江街道 荷花南街 2255号，周先生，小周 13429089596; **GUANGZHOU** (GZ) 广东省佛山市南海区里水镇胜利社区胜利工业区29号3栋 拓派国际物流有限公司，提货调车电话：王红 13266376775; **HORGOS** (HRG) 霍尔果斯金亿国际物流中心 新疆维吾尔自治区伊犁哈萨克自治州霍尔果斯市南京路与宁波路交叉口正东方向168米左右，ASQAR 18309082036. His card also says «!!! Yuklaringizni jonatish oldi GS codini (markirovka) yozishni unutmang !!!» / «!!! 发货前请不要忘记标注GS编码（唛头）!!!». | Seed facts, one per warehouse, written verbatim in Chinese (a Chinese supplier reads them) with the contact's phone (the seed fence allows exactly these three phones); a fact for the GS-code reminder. Kashgar is not on his card, so no Kashgar address is given. Which warehouse a customer uses is not decided by the AI. |
 | 2 | **Avia: the AI collects the cargo's details and asks him in Telegram; he gives the address.** | An avia enquiry still gets his kg × 17 $ figure (hedged, §17.14), but the AI never states a receiving address for avia: the draft carries the cargo's details as a `needs_owner` question («Avia: <goods>, <kg>, <from where> — manzilni siz bering»). The final review's K32 (the warehouse-condition sentences on avia) is replaced by this. |
+
+**As built (fourth set).** `china_points@4` names his three warehouses (Qashqar is gone from it) and says avia
+cargo does not go there; `china_address_yiwu@1`, `china_address_guangzhou@1`, `china_address_horgos@1` carry each
+address verbatim, its contact, and the GS reminder in both languages inside the same fact (so a reply that quotes an
+address quotes the reminder with it). His Horgos line lost «距你966.0公里» on purpose — the map app's distance from
+where he stood when he copied it. A newer seed version retires the untouched older one (`seedKb`); his own edited
+copy is never touched. Two things only a measurement found: an Uzbek or Russian reply quoting a Chinese address read
+as Chinese and was refused `wrong_script` — the script is now measured without the Chinese stretches a fact the run
+read holds verbatim (`withoutQuotedHan`, `memory.quotableHan`), while the model's own Chinese still counts; and
+rule 5 of the prompt forbade staff phones, which the addresses are — a contact a fact carries is now the fact's.
+Avia: the tool states no warehouse sentence and no address, `withAviaRule` puts «Avia: N kg, qayerdan: … —
+mijozga avia manzilini yozing (✏️)» on his card whatever the model composed (the model's own avia question, with the
+goods, stands), and an avia-only reply that states a Chinese mobile or a Chinese street address is refused
+`avia_address` (a reply quoting the truck as well may give the truck's warehouse).

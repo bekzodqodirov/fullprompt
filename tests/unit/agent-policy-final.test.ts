@@ -4,7 +4,6 @@ import { normalizeDigits } from '@/modules/wms/agent/digits';
 import type { AgentContext, ChatMessage, MeasureCandidate } from '@/modules/wms/agent/context';
 import { AGENT_LOCALES, type AgentLocale } from '@/modules/wms/agent/locale';
 import { customerSources, extractNumbers, factSources, numberLedger, type NumberSource } from '@/modules/wms/agent/numbers';
-import { aviaOrigin } from '@/modules/wms/agent/origin';
 import {
   checkAgentReply,
   dayPromise,
@@ -397,41 +396,34 @@ describe('K21 — the tools price the customer’s NEWEST figures', () => {
   });
 });
 
-describe('K32 — avia from «Xitoy» or a city we do not stand in carries his third-set «3»', () => {
-  it('the origin of a flight: no western refusal, ours when we stand there', () => {
-    expect(aviaOrigin('Shenzhendan avia', OURS)).toBe('our_warehouse');
-    expect(aviaOrigin('Xitoydan avia 30 kg', OURS)).toBe('our_warehouse');
-    expect(aviaOrigin('Urumchidan avia', OURS)).toBe('our_warehouse');
-    expect(aviaOrigin('Qashqardan avia', OURS)).toBe('warehouse');
-    expect(aviaOrigin('Yiwudan avia', OURS)).toBe('warehouse');
-    expect(aviaOrigin('avia 30 kg qancha?', OURS)).toBe('unknown');
-  });
-
-  it('the tool flags it and hands the model both sentences in every language; a Yiwu flight does not', async () => {
+describe('K32 withdrawn for the flight — his fourth set «2»: the avia address is his, so no warehouse condition is asked of it', () => {
+  it('the tool states no warehouse sentence, tells the model to give no address, and carries the cargo for his question', async () => {
     const w = [{ ref: 'w1', kind: 'weight', value: 30, messageRef: '#1' } as const];
     const out = await runTool('avia_estimate', { weight_ref: 'w1' }, envOf(ctxOf([msg('#1', 'Shenzhen zavodidan avia 30 kg qancha?')], [...w])));
-    expect(out).toMatchObject({ ok: true, estimate: true, fromOurWarehouse: true });
-    for (const l of AGENT_LOCALES) {
-      expect(out.text, l).toContain(WAREHOUSE_SENTENCES[l].condition);
-      expect(out.text, l).toContain(WAREHOUSE_SENTENCES[l].factory);
-    }
-    const yiwu = await runTool('avia_estimate', { weight_ref: 'w1' }, envOf(ctxOf([msg('#1', 'Yiwudan avia 30 kg qancha?')], [...w])));
-    expect(yiwu.fromOurWarehouse).toBeUndefined();
+    expect(out).toMatchObject({ ok: true, estimate: true, air: { kg: 30, origin: 'Shenzhen' } });
+    expect(out.fromOurWarehouse).toBeUndefined();
+    for (const l of AGENT_LOCALES) expect(out.text, l).not.toContain(WAREHOUSE_SENTENCES[l].condition);
+    expect(out.text).toMatch(/avia manzilini AYTMA/u);
+    expect(out.text).toContain('needs_owner=true');
+    const nowhere = await runTool('avia_estimate', { weight_ref: 'w1' }, envOf(ctxOf([msg('#1', 'Avia 30 kg qancha?')], [...w])));
+    expect(nowhere.air).toEqual({ kg: 30, origin: null });
   });
 
-  it('the run carries the flag to the policy, which asks the condition of the flight’s price', async () => {
+  it('the run asks no condition of the flight\'s price — and marks the quote avia-only', async () => {
     const ctx = ctxOf([msg('#1', 'Shenzhen zavodidan avia 30 kg qancha?')], [{ ref: 'w1', kind: 'weight', value: 30, messageRef: '#1' }]);
     const out = await runTool('avia_estimate', { weight_ref: 'w1' }, envOf(ctx));
     const memory = memoryFor(ctx, loopOf(out, compose("Avia bilan taxminan 510 $ bo'ladi. Boj va QQS alohida hisoblanadi.")), [], 'c');
-    expect(memory.fromOurWarehouse).toBe(true);
+    expect(memory.fromOurWarehouse).toBe(false);
+    expect(memory.aviaOnly).toBe(true);
     const policy = checkAgentReply({
       ...base,
       body: "Avia bilan taxminan 510 $ bo'ladi. Boj va QQS alohida hisoblanadi.",
       numberSources: memory.sources,
       hasEstimate: memory.hasEstimate,
       fromOurWarehouse: memory.fromOurWarehouse === true,
+      aviaOnly: memory.aviaOnly === true,
     });
-    expect(policy.blocks.map((b) => b.code)).toEqual(['warehouse_condition']);
+    expect(policy.blocks).toEqual([]);
   });
 });
 

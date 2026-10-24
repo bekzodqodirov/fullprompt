@@ -159,7 +159,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | The staff Telegram group — celebrations, the Saturday 18:00 rating, the month's champion, /reyting | `docs/JAMOA-GURUHI.md` — agreed 2026-10-20 (his «3. 2 3 gif … tabriklash ham / qolgani sen aytkandek»), SHIPPED |
 | Every truck in one place — the board by place, the % by distance, GPS, the gate | `docs/PARTIYA-DOSKASI.md` — agreed 2026-10-17 (his 1A 2a 3a 4a 5a 6c 7a 8b 9b 10b 11A 12A, then «1 hozirgidek qolsin»), SHIPPED; §2 is the placement as built; §3a = «Yo'lda» in two columns, inside / outside China (2026-10-21) |
 | LTL / FTL — which cargo the KPI and the rating count, who may mark it, the paid-month freeze, the logist's hint | `docs/LTL-FTL.md` — agreed 2026-10-20 (his «3 b / qolgani sen aytgandek» = 1a 2a 3b 4a 5a 6a 7a), SHIPPED |
-| **AI sotuvchi** — the shadow salesperson on HIS personal Telegram session: drafts, his ✅, the ban fuses, the calc loop, strangers, the knowledge page | `docs/AI-SOTUVCHI.md` (§17 = phase 1 as built, §17.14 = his three sets of answers 2026-10-24, binding) + `docs/AI-SOTUVCHI-REVIEW.md` (the pre-code review); phase 1 SHIPPED on the branch |
+| **AI sotuvchi** — the shadow salesperson on HIS personal Telegram session: drafts, his ✅, the ban fuses, the calc loop, strangers, the knowledge page | `docs/AI-SOTUVCHI.md` (§17 = phase 1 as built, §17.14 = his four sets of answers 2026-10-24, binding) + `docs/AI-SOTUVCHI-REVIEW.md` (the pre-code review); phase 1 SHIPPED on the branch |
 
 ## State — 2026-08-23
 
@@ -2963,7 +2963,7 @@ CN destination is inland (no hub test), ONE arrived column (`columnOf` splits on
 filter hides everything bound for China (`routeFilterOf` = a `kg`/`kz` leg; a map walk over every pair proves no
 road into China has one, and refuses an unclassed new map code).
 
-**Round — AI sotuvchi, phase 1 (2026-10-24; DECISIONS #1463-#1475 — numbered past the open
+**Round — AI sotuvchi, phase 1 (2026-10-24; DECISIONS #1463-#1479 — numbered past the open
 `telegram-customs-ai-issues` branch's #1455-#1462; migration 0136 `ai_sotuvchi` — ledger must reach 137; spec
 `docs/AI-SOTUVCHI.md` §17 + §17.14).** His «Telegram businessdagi bot emas mening shaxsiy account seansimdan
 ishlatsin ai va ban havfini minimum qilsin». SHADOW only: the listener (`scripts/tg-listen.ts`, the one process that
@@ -2986,6 +2986,14 @@ stored actions failed every first ✅ — canonical JSON). TRAPS AGAIN: an agent
 (name helpers by owner); `cmd ; git commit` committed a lint error. DEPLOY: rebuild tg-listen; seed the knowledge
 (`scripts/agent-seed-kb.ts` through `migrate`); on the page pick the owner, press the session confirm, then `/agent on`.
 NOT verifiable here: every gramjs call against a real account — watch the first day in the tg-listen logs.
+**The final review's 34 (#1476) and his fourth set (#1477-#1479):** the seed carries his three China warehouses
+verbatim (Ivu, Guanchjou/Foshan, Xorgos — no Qashqar; the GS reminder inside each fact; a newer seed version
+retires the untouched older one); an Uzbek/Russian reply quoting a Chinese address read as Chinese and was refused
+`wrong_script` until the script was measured without the Han a fact the run read holds (`withoutQuotedHan`,
+`memory.quotableHan`) — found by MEASURING a real address reply, no test had one. Avia (his «2»): K32's warehouse
+sentences are withdrawn for the flight, `withAviaRule` asks HIM «Avia: N kg, qayerdan: …», and an avia-only reply
+stating a Chinese mobile or street address is refused `avia_address`. Telegram's 777000 is never kept by any door
+(`isTelegramServicePeer`); the send step asks `bindMoved` like the ✅.
 
 **Latest migration: 0136** (`ai_sotuvchi`, `when` …115; ledger must reach **137**). Before
 it: 0135 (`load_mode`, `when` …114). Before

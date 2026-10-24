@@ -28,6 +28,10 @@ minimum qilsin». Yangi migratsiya bor (**0136**): deploydan keyin baza hisobi *
   - Telegram'ni tekshirib bo'lgach, **Suhbatlar** sahifasidagi ko'prik panelida **«Tekshirdim»** ni bosasiz.
   - To'xtab turgan paytda CRM'dagi yozish oynasi buni ochiq aytadi, xabar «navbatda» deb osilib qolmaydi.
 - **«/agent off»** botda AI'ni darhol o'chiradi: navbatdagi javoblar bekor bo'ladi, qoralamalar yopiladi.
+- **Telegram'ning o'zidan rasmiy xabar kelsa** (777000 xizmat akkaunti — qoidalar, cheklov haqida ogohlantirish), AI o'sha zahoti o'zi o'chadi va sizga xabar keladi. Sizning kirish kodlaringiz (Telegram Desktop'ga, yangi telefonga kirganingizda) AI'ni o'chirmaydi. Bu xizmat chati hech qachon CRM'ga saqlanmaydi va AI uni o'qimaydi.
+- **AI sizdan keyin turadi:** AI'ning daqiqalik va kunlik chegaralari CRM'dan o'zingiz yuborgan xabarlarni ham sanaydi. Sizning CRM javoblaringiz uchun chegaralar avvalgidek.
+- **Kechasi** (22:00–08:00) AI kartochkalari telefoningizni ovoz bilan bezovta qilmaydi, jim keladi.
+- **AI sizga savol bersa** (❓ Sizdan savol) va 30 daqiqa javob bermasangiz, bot bir marta eslatadi. Kechasi eslatmaydi: ertalab 08:00 dan keyin hammasini bitta xabarda eslatadi.
 
 ### AI nima qiladi va nima qilmaydi
 - **Narx, muddat yoki sana** faqat tizimdan olinadi:
@@ -53,8 +57,16 @@ minimum qilsin». Yangi migratsiya bor (**0136**): deploydan keyin baza hisobi *
   - faqat haqiqiy kg hisobga olinadi, hajm (kub) emas;
   - muddati «taxminan 2–5 kun, reys bo'lsa 2 kun».
   - Narxni **Bilimlar → AI qoidalari** da o'zingiz o'zgartirasiz.
+  - **Avia manzilini AI aytmaydi** (sizning «yukini infosini menga bersang men adres beraman» javobingiz). Avia narxini aytganda kartochkada sizdan so'raydi, masalan: «❓ Avia: 30 kg, qayerdan: Shenzhen — mijozga avia manzilini yozing (✏️)». ✏️ bilan manzilni o'zingiz yozasiz. AI javobida avia uchun Xitoy ombori manzili yoki xitoycha telefon bo'lsa, ✅ chiqmaydi.
+  - Avia'da «omborimizga yuborsangiz…» jumlasi endi talab qilinmaydi.
 - **Temir yo'l:** narxni AI aytmaydi, sizdan so'raydi.
-- **«Xitoydan»** desa (yoki omborimiz yo'q xitoy shahrini aytsa), narx omborlarimizdan aytiladi. Javobda ikki jumla bo'lishi shart: «yukni omborimizga yuborsangiz…» va «zavoddan omborgacha olib kelish alohida hisoblanadi».
+- **Avtoda «Xitoydan»** desa (yoki omborimiz yo'q xitoy shahrini aytsa), narx omborlarimizdan aytiladi. Javobda ikki jumla bo'lishi shart: «yukni omborimizga yuborsangiz…» va «zavoddan omborgacha olib kelish alohida hisoblanadi».
+- **Xitoy omborlarining manzili** (siz yuborgan ro'yxat): AI mijoz so'ragan omborning manzilini, qabul qiluvchisini va telefonini **bilimdagidek** beradi. Xitoycha qismi o'zgartirilmaydi va tarjima qilinmaydi, chunki uni xitoylik yetkazib beruvchi o'qiydi. Har manzil bilan birga eslatma ketadi: «Yuklaringizni jo'natishdan oldin GS kodini (markirovka) yozishni unutmang» va xitoycha «发货前请不要忘记标注GS编码（唛头）».
+  - Omborlar: **Ivu (YW)**, **Guanchjou (GZ)** — ombor Foshan shahrida, **Xorgos (HRG)**.
+  - Mijoz qaysi omborni aytmasa, AI qaysi shahardan jo'natishini so'raydi.
+  - **Qashqar** endi manzil sifatida aytilmaydi, chunki u sizning ro'yxatingizda yo'q.
+  - Xorgos qatoridan «距你966.0公里» («sizdan 966 km») olib tashlandi: bu xarita ilovasi siz turgan joydan hisoblagan masofa, mijoz uchun noto'g'ri.
+  - Avval o'zbekcha yoki ruscha javobda xitoycha manzil bo'lsa, tizim javobni «boshqa alifboda» deb to'xtatar edi. Endi bilimdan aynan ko'chirilgan xitoycha qism hisobga olinmaydi. AI o'zi xitoycha yozsa, avvalgidek to'xtatiladi.
 - **Kelib chiqish sertifikati** so'ralmaydi: hisob «kompaniya o'zi oladi» deb yuboriladi.
 - **Podklyuch va rastamojka:**
   1. AI mijozdan ma'lumotlarni to'liq yig'adi.
@@ -69,7 +81,7 @@ minimum qilsin». Yangi migratsiya bor (**0136**): deploydan keyin baza hisobi *
 2. `docker compose build migrate`, keyin `docker compose up -d --build` va `docker compose --profile telegram up -d --build tg-listen`.
    **Tinglovchi (tg-listen) albatta qayta qurilishi kerak.** Aks holda sahifada «tinglovchi yangilanmagan» chiqadi va ✅ ishlamaydi.
 3. Baza hisobi **137** ekanini va `curl -s https://gsrwms.uz/api/version` yangi vaqtni ko'rsatishini tekshiring.
-4. Bilimlarni kiritish:
+4. Bilimlarni kiritish (Xitoy omborlari manzillari ham shu yerda, qo'lda yozish shart emas):
    - avval sinov uchun: `docker compose run --rm migrate pnpm exec tsx scripts/agent-seed-kb.ts`;
    - so'ng shu buyruq oxiriga `--apply` qo'shib haqiqiy kiritish.
 5. **Suhbatlar → AI sotuvchi → Sozlamalar** da:

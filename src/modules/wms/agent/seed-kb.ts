@@ -7,7 +7,8 @@ import { agentTablesReady } from './config';
  * VENDORED, reviewed list: the website's own words where the website says
  * it (gsrlogistics.uz `src/data/faq.ts` and `services/*.content.ts`, read on
  * 2026-10-24), his own words for what only he said (the Tashkent warehouse,
- * its contact, its map), and nothing else.
+ * its contact, its map; the three China receiving warehouses with their
+ * contacts, verbatim from his fourth set), and nothing else.
  *
  * Deliberately ABSENT, and fenced by `tests/unit/agent-seed-kb.test.ts`:
  *  - every price — a price comes from the calculation, never from a fact the
@@ -30,27 +31,57 @@ export interface SeedFact {
   answer: string;
 }
 
+/**
+ * His reminder under the addresses (his fourth set's picture), in his words
+ * and in the Chinese the supplier reads: every address fact carries it, so a
+ * reply that quotes an address quotes the reminder with it.
+ */
+const GS_REMINDER =
+  'Yuklaringizni joʻnatishdan oldin GS kodini (markirovka) yozishni unutmang. 发货前请不要忘记标注GS编码（唛头）。';
+
 export const SEED_FACTS: readonly SeedFact[] = [
   {
     // His 10 b (2026-10-24): the AI GIVES the China receiving address. @1
-    // told the customer the exact address comes «kelishuvdan keyin» and that
-    // the manager says which point — a fact that answers, so the question
-    // never reached him and the customer was put off. The seed holds only the
-    // three cities; the exact addresses are his to type on «Bilimlar» (the
-    // deploy steps ask him), and until he has, a customer asking for one is a
-    // needs_owner question to him — never a deferral (final review K27).
-    // @2 only dropped the deferral, and three city names still ANSWER «manzil
-    // tashlang» (ident fix F4): nothing told the model the street address is
-    // missing, so no question ever reached him. @3 says so where the model
-    // reads it — in the fact every run is served — in the prompt's own words
-    // (`needs_owner`, prompt rule 12's «so'ralsa needs_owner=true»).
-    key: 'china_points@3',
-    question: 'Xitoyda yukni qayerga yuboraman? Qabul manzillari qayerda?',
+    // deferred the customer («kelishuvdan keyin»), @2 named three cities and
+    // still ANSWERED «manzil tashlang» (ident fix F4), @3 told the model the
+    // street addresses were missing and to ask him. His fourth set (the same
+    // night) GAVE them — three receiving warehouses, each a fact of its own
+    // below — so @4 points at those facts. Qashqar is no longer named: his list
+    // is Ivu, Guanchjou and Xorgos.
+    // His «2 yukini infosini menga bersang men adres beraman telegramda
+    // sorasin»: avia cargo does NOT go to these addresses — the flight's address
+    // is his to give, so the fact says so where every run reads it.
+    key: 'china_points@4',
+    question: 'Xitoyda yukni qayerga yuboraman? Qabul omborlari qayerda?',
     answer:
-      'Xitoyda uchta qabul manzili bor: Ivu (义乌), Guanchjou (广州) va Qashqar (喀什). ' +
-      'Yukni faqat qabul manzili va GS kod tasdiqlangandan keyin joʻnating — tovar adashib ketmasligi uchun. ' +
-      'Aniq koʻcha manzili, qabul qiluvchi va uning telefoni bu bilimda yoʻq: mijoz aniq manzilni soʻrasa, AI oʻzi aytmaydi va oʻylab topmaydi — ' +
-      'akkaunt egasidan soʻraydi (needs_owner=true, owner_question="qabul manzilini yozing").',
+      'Xitoyda uchta qabul ombori bor: Ivu (YW, 义乌), Guanchjou (GZ, 广州 — ombor Foshan shahrida, 佛山) va Xorgos (HRG, 霍尔果斯). ' +
+      'Har birining aniq manzili, qabul qiluvchisi va telefoni alohida bilimda: mijoz qaysi omborga yuborishini aytsa — oʻshaning manzilini bilimdagidek bering; ' +
+      'aytmasa — qaysi shahardan joʻnatishini soʻrang. ' +
+      'Avia yuk uchun bu manzillar EMAS: avia manzilini akkaunt egasi beradi — AI aytmaydi (needs_owner=true).',
+  },
+  // His fourth set, verbatim (the Chinese text is the supplier's to read and is
+  // never translated or re-spelled). One fact per warehouse, so a reply quotes
+  // the one it was asked for. Dropped from his Horgos line, on purpose: «距你
+  // 966.0公里» («966 km from you») — the map app's distance from where HE stood
+  // when he copied it, wrong for every customer who reads it.
+  {
+    key: 'china_address_yiwu@1',
+    question: 'Ivu (义乌, YW) qabul omborining manzili qanday?',
+    answer: `Ivu (YW) qabul ombori: 浙江省 义乌市 稠江街道 荷花南街 2255号，周先生，小周 13429089596. ${GS_REMINDER}`,
+  },
+  {
+    key: 'china_address_guangzhou@1',
+    question: 'Guanchjou (广州, GZ) qabul omborining manzili qanday?',
+    answer:
+      'Guanchjou (GZ) qabul ombori: 广东省佛山市南海区里水镇胜利社区胜利工业区29号3栋 拓派国际物流有限公司. ' +
+      `Yukni olib kelish (mashina) boʻyicha telefon: 提货调车电话：王红 13266376775. ${GS_REMINDER}`,
+  },
+  {
+    key: 'china_address_horgos@1',
+    question: 'Xorgos (霍尔果斯, HRG) qabul omborining manzili qanday?',
+    answer:
+      'Xorgos (HRG) qabul ombori: 霍尔果斯金亿国际物流中心 新疆维吾尔自治区伊犁哈萨克自治州霍尔果斯市南京路与宁波路交叉口正东方向168米左右. ' +
+      `Qabul qiluvchi: ASQAR 18309082036. ${GS_REMINDER}`,
   },
   {
     key: 'tashkent_warehouse@1',
@@ -132,9 +163,10 @@ export async function seededKeys(): Promise<Set<string>> {
 }
 
 /**
- * Insert the facts not yet seeded. One statement per fact, each guarded by
- * its own NOT EXISTS, under one advisory lock — two runs at once insert each
- * fact once. Returns the keys it inserted.
+ * Insert the facts not yet seeded, and retire the untouched older versions
+ * of each. One statement per fact, each guarded by its own NOT EXISTS, under
+ * one advisory lock — two runs at once insert each fact once. Returns the
+ * keys it inserted.
  */
 export async function seedKb(facts: readonly SeedFact[] = SEED_FACTS): Promise<string[]> {
   if (!(await agentTablesReady())) throw new Error('kb_facts does not exist yet — run the migrations first (0136).');
@@ -150,6 +182,16 @@ export async function seedKb(facts: readonly SeedFact[] = SEED_FACTS): Promise<s
            SELECT 1 FROM kb_facts WHERE source = 'seed' AND source_ref->>'seed' = ${f.key})
         RETURNING id`);
       if (rows.length > 0) inserted.push(f.key);
+      // A newer version supersedes the older ones the seed wrote and nobody
+      // touched (china_points@3 → @4): two answers to one question would both
+      // sit in every prompt. A copy he EDITED is his own row (`editKbFact`
+      // writes it as source 'owner') and is never touched here.
+      const [base, version] = f.key.split('@') as [string, string];
+      await tx.execute(sql`
+        UPDATE kb_facts SET retired_at = now()
+         WHERE source = 'seed' AND retired_at IS NULL AND source_ref ? 'seed'
+           AND split_part(source_ref->>'seed', '@', 1) = ${base}
+           AND split_part(source_ref->>'seed', '@', 2)::int < ${Number(version)}`);
     }
     return inserted;
   });

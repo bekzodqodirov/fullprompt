@@ -441,18 +441,17 @@ function loopOf(out: ToolOutcome, c: ComposeReply) {
   return { compose: c, tools: [], outcomes: [out], usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } };
 }
 
-describe('K32: a flight whose start nobody said is priced from our warehouse', () => {
-  it('the tool flags it and hands the model both sentences; the policy asks them', async () => {
+describe('a flight whose start nobody said: no warehouse condition — the address is his (his fourth set «2», K32 withdrawn)', () => {
+  it('the tool flags no warehouse price; the policy asks no condition of the hedged figure', async () => {
     const ctx = ctxOf([msg('#1', 'Avia 30 kg qancha?')], [{ ref: 'w1', kind: 'weight', value: 30, messageRef: '#1' }]);
     const out = await runTool('avia_estimate', { weight_ref: 'w1' }, envOf(ctx));
-    expect(out).toMatchObject({ ok: true, estimate: true, fromOurWarehouse: true });
-    expect(out.text).toContain(WAREHOUSE_SENTENCES.uz.condition);
+    expect(out).toMatchObject({ ok: true, estimate: true, air: { kg: 30, origin: null } });
+    expect(out.fromOurWarehouse).toBeUndefined();
+    expect(out.text).not.toContain(WAREHOUSE_SENTENCES.uz.condition);
     const memory = memoryFor(ctx, loopOf(out, compose('x')), [], 'c');
-    expect(memory.fromOurWarehouse).toBe(true);
+    expect(memory.fromOurWarehouse).toBe(false);
     const body = "Avia bilan taxminan 510 $ bo'ladi. Boj va QQS alohida hisoblanadi.";
-    const check = (b: string) => codes(b, { numberSources: memory.sources, hasEstimate: true, fromOurWarehouse: true });
-    expect(check(body)).toEqual(['warehouse_condition']);
-    expect(check(`${body} ${WAREHOUSE_SENTENCES.uz.condition} ${WAREHOUSE_SENTENCES.uz.factory}`)).toEqual([]);
+    expect(codes(body, { numberSources: memory.sources, hasEstimate: true, fromOurWarehouse: false, aviaOnly: true })).toEqual([]);
   });
 });
 

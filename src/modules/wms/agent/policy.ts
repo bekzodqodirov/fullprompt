@@ -50,7 +50,8 @@ export type PolicyCode =
   | 'url_cap'
   | 'estimate_unhedged'
   | 'warehouse_condition'
-  | 'gloss_missing';
+  | 'gloss_missing'
+  | 'avia_address';
 
 export interface PolicyHit {
   rule: PolicyRule;
@@ -1241,6 +1242,18 @@ export interface PolicyInput {
    * draft); `policyFor` always says.
    */
   hasGloss?: boolean;
+  /**
+   * The reply's figure is a flight's and no truck's (his fourth set «2»):
+   * the flight's address is his, so a China address in it is refused. Absent
+   * = not an avia quote.
+   */
+  aviaOnly?: boolean;
+  /**
+   * The Chinese characters of the facts this run read (`hanOnly`): a run of
+   * them the reply quotes — a warehouse address — is not the reply's script.
+   * Absent = nothing is quoted, every character counts.
+   */
+  quotableHan?: string;
 }
 
 export interface PolicyResult {
@@ -1406,6 +1419,44 @@ function staffNameHits(
 }
 
 /** Phones in a text that are not allowed. */
+/** The Chinese characters of a text, nothing else — how a quoted run is compared, whatever spacing or punctuation it was copied with. */
+export function hanOnly(text: string): string {
+  return text.replace(/[^\p{Script=Han}]/gu, '');
+}
+
+/** A stretch of Chinese with the punctuation and spaces Chinese is written with. */
+const HAN_RUN = /[\p{Script=Han}，。：；、！？（）「」『』【】《》〈〉·][\p{Script=Han}，。：；、！？（）「」『』【】《》〈〉·\s]*/gu;
+
+/**
+ * The reply with every Chinese stretch a fact holds verbatim taken out (his
+ * fourth set): «Ivu ombori: 浙江省 义乌市 …» is an Uzbek sentence carrying
+ * the supplier's address, and measured whole it read as Chinese — every
+ * address reply was refused `wrong_script`. A stretch the facts do NOT hold
+ * — the model's own Chinese — still counts.
+ */
+export function withoutQuotedHan(text: string, quotable: string): string {
+  if (!quotable) return text;
+  return text.replace(HAN_RUN, (run) => {
+    const h = hanOnly(run);
+    return h !== '' && quotable.includes(h) ? ' ' : run;
+  });
+}
+
+/** A Chinese mobile number (+86 1xx xxxx xxxx). */
+const CN_MOBILE = /^(?:86)?1[3-9]\d{9}$/u;
+/** A Chinese street address: a stretch naming a province, city, district, street, number or building. */
+const CN_ADDRESS = /\p{Script=Han}*[省市区县镇街路号栋]\p{Script=Han}*/u;
+
+/**
+ * Does the reply state a place in China to send to — a Chinese mobile (every
+ * receiving contact is one) or a Chinese street address? Asked of an avia
+ * quote only (his fourth set «2»): the flight's address is his.
+ */
+export function statesChinaAddress(text: string): boolean {
+  for (const m of text.matchAll(PHONE_RE)) if (CN_MOBILE.test(phoneDigits(m[0]))) return true;
+  return [...text.matchAll(HAN_RUN)].some((r) => hanOnly(r[0]).length >= 4 && CN_ADDRESS.test(r[0]));
+}
+
 export function foreignPhones(text: string, allowed: readonly string[]): string[] {
   const ok = new Set(allowed.map(phoneDigits).filter((d) => d.length >= 9).map((d) => d.slice(-9)));
   const found: string[] = [];
@@ -1484,8 +1535,9 @@ export function checkAgentReply(input: PolicyInput): PolicyResult {
   }
   if (questionCount(trimmed) > 1) blocks.push({ rule: 'G4', code: 'questions', detail: String(questionCount(trimmed)) });
 
-  // G5 — the customer's script; Uzbek Cyrillic and Russian are one script here.
-  const draftScript = dominantScript(trimmed);
+  // G5 — the customer's script; Uzbek Cyrillic and Russian are one script here. A fact's Chinese
+  // address quoted in the reply is the fact's script, not the reply's (his fourth set).
+  const draftScript = dominantScript(withoutQuotedHan(trimmed, input.quotableHan ?? ''));
   if (input.customerScript && draftScript !== 'none' && draftScript !== input.customerScript) {
     blocks.push({ rule: 'G5', code: 'wrong_script', detail: `${input.customerScript}→${draftScript}` });
   }
@@ -1526,6 +1578,8 @@ export function checkAgentReply(input: PolicyInput): PolicyResult {
     if (m) blocks.push({ rule: 'G6', code: 'system_code', detail: m[0] });
   }
   for (const p of foreignPhones(text, input.allowedPhones)) blocks.push({ rule: 'G6', code: 'foreign_phone', detail: p });
+  // His fourth set «2»: avia cargo goes to the address HE gives — never to a receiving warehouse the facts name.
+  if (input.aviaOnly === true && statesChinaAddress(text)) blocks.push({ rule: 'G6', code: 'avia_address' });
   staffNameHits(text, input.staffNames, input.customerNames ?? [], input.factNameWords ?? [], blocks, warnings);
   if (input.canary && text.includes(input.canary)) blocks.push({ rule: 'G6', code: 'canary' });
   if (AI_DENIAL.some((re) => re.test(text))) blocks.push({ rule: 'G6', code: 'ai_denial' });

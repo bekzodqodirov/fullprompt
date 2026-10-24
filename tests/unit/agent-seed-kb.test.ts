@@ -34,9 +34,14 @@ describe('the seeded knowledge', () => {
     for (const f of SEED_FACTS) expect(ours.test(text(f)), f.key).toBe(OWN_WORDS.has(f.key));
   });
 
-  it('holds exactly one phone (the Tashkent contact) and one link (the map, in a fact of its own)', () => {
+  it('holds the phones he gave — the Tashkent contact and the three China warehouses — and one link (the map, in a fact of its own)', () => {
     const phones = SEED_FACTS.flatMap((f) => [...text(f).matchAll(PHONE_RE)].map((m) => [f.key, m[0]] as const));
-    expect(phones.map(([key]) => key)).toEqual(['tashkent_warehouse@1']);
+    expect(phones).toEqual([
+      ['china_address_yiwu@1', '13429089596'],
+      ['china_address_guangzhou@1', '13266376775'],
+      ['china_address_horgos@1', '18309082036'],
+      ['tashkent_warehouse@1', '+998 95 018 30 33'],
+    ]);
     const links = SEED_FACTS.flatMap((f) => urlsIn(text(f)).map((u) => [f.key, u] as const));
     expect(links).toEqual([['tashkent_map@1', 'https://yandex.uz/maps/-/CXQr78ni']]);
   });
@@ -51,24 +56,38 @@ describe('the seeded knowledge', () => {
     expect(byKey.get('certificate@1')).toMatch(/kompaniyamiz oʻzi/u);
   });
 
-  it('the China points fact defers the customer nowhere — an exact address it does not hold is HIS question (K27, his 10 b)', () => {
-    // His 10 b: the AI gives the receiving address. A fact that says «the
-    // address comes after the agreement» or «the manager will tell you»
-    // ANSWERS the question, so no needs_owner card ever asks him for it.
+  it('the China points fact defers the customer nowhere and names HIS three warehouses (K27, his 10 b and fourth set)', () => {
     const points = SEED_FACTS.filter((f) => f.key.startsWith('china_points@'));
-    expect(points.map((f) => f.key)).toEqual(['china_points@3']);
+    expect(points.map((f) => f.key)).toEqual(['china_points@4']);
     const answer = normalizeDigits(points[0]!.answer);
-    for (const city of ['Ivu', 'Guanchjou', 'Qashqar']) expect(answer).toContain(city);
-    expect(answer).not.toMatch(/kelishuvdan keyin|menejer aytadi|keyin beriladi/iu);
+    for (const city of ['Ivu', 'Guanchjou', 'Xorgos', '义乌', '广州', '霍尔果斯']) expect(answer).toContain(city);
+    // His list is three warehouses; Qashqar is not one of them.
+    expect(answer).not.toMatch(/qashqar|喀什/iu);
+    expect(answer).not.toMatch(/kelishuvdan keyin|menejer aytadi|keyin beriladi|bu bilimda yoʻq/iu);
   });
 
-  it('…and says, where the model reads it, that the street address is missing — and that it is HIS question (ident fix F4)', () => {
-    // Three city names still ANSWER «manzilingizni tashlang»: without this the
-    // model replies «Ivu, Guanchjou, Qashqar» and no needs_owner card asks him.
+  it('…and says, where every run reads it, that avia cargo does not go there — the flight\'s address is his (his «2 … telegramda sorasin»)', () => {
     const answer = normalizeDigits(SEED_FACTS.find((f) => f.key.startsWith('china_points@'))!.answer);
-    expect(answer).toMatch(/aniq koʻcha manzili[^.]*bu bilimda yoʻq/iu);
+    expect(answer).toMatch(/avia yuk uchun bu manzillar emas/iu);
     expect(answer).toContain('needs_owner=true');
-    expect(answer).toContain('owner_question="qabul manzilini yozing"');
+  });
+
+  it('each China warehouse is a fact of its own, its address in the Chinese he sent, with the GS reminder in both languages', () => {
+    const byKey = new Map(SEED_FACTS.map((f) => [f.key, f.answer]));
+    // His fourth set, character for character (the supplier reads it).
+    expect(byKey.get('china_address_yiwu@1')).toContain('浙江省 义乌市 稠江街道 荷花南街 2255号，周先生，小周 13429089596');
+    expect(byKey.get('china_address_guangzhou@1')).toContain('广东省佛山市南海区里水镇胜利社区胜利工业区29号3栋 拓派国际物流有限公司');
+    expect(byKey.get('china_address_guangzhou@1')).toContain('提货调车电话：王红 13266376775');
+    expect(byKey.get('china_address_horgos@1')).toContain(
+      '霍尔果斯金亿国际物流中心 新疆维吾尔自治区伊犁哈萨克自治州霍尔果斯市南京路与宁波路交叉口正东方向168米左右',
+    );
+    expect(byKey.get('china_address_horgos@1')).toContain('ASQAR 18309082036');
+    // The map app's «966 km from you» was where HE stood — never a customer's distance.
+    for (const f of SEED_FACTS) expect(f.answer, f.key).not.toMatch(/距你|公里/u);
+    for (const key of ['china_address_yiwu@1', 'china_address_guangzhou@1', 'china_address_horgos@1']) {
+      expect(byKey.get(key), key).toContain('GS kodini (markirovka) yozishni unutmang');
+      expect(byKey.get(key), key).toContain('发货前请不要忘记标注GS编码（唛头）');
+    }
   });
 
   it('keys every fact once, with a version, inside the kb CHECK’s 2 000 characters', () => {

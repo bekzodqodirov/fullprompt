@@ -22,7 +22,7 @@ import { belowTruckMinimumFacts, ourChinaPlaces, runTool, TOOL_SPECS, TRUCK_SECT
 import { draftWorthy, mentionsRail, RAIL_OWNER_QUESTION } from './worthy';
 import { writeDraft, writeNotice, type ComposedAction } from './drafts';
 import { extractNumbers, factSources, namesMode, oneModeIn, type NumberSource } from './numbers';
-import { nameWordsOf } from './policy';
+import { hanOnly, nameWordsOf } from './policy';
 import { AGENT_LOCALES } from './locale';
 
 /**
@@ -407,7 +407,7 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
       cacheWriteTokens: loop.usage.cacheWriteTokens,
       toolCalls: loop.tools.map((x) => ({ name: x.name, ok: x.ok, text: x.text })),
     };
-    const c = withRailRule(loop.compose, ctx);
+    const c = withAviaRule(withRailRule(loop.compose, ctx), loop.outcomes, ctx);
     if (!c.replyNeeded && !c.needsOwner) {
       settle = { ...settle, outcome: 'no_reply', error: null };
       return { outcome: 'no_reply' };
@@ -498,6 +498,12 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
     // …and a truck figure priced FROM our China warehouses asks for the
     // condition and the factory leg too (his third set «3»).
     fromOurWarehouse: !rail && loop.outcomes.some((o) => o.estimate === true && o.fromOurWarehouse === true),
+    // The figure is a flight's and no truck's (his fourth set «2»): the reply
+    // may state no China address — the flight's is his to give.
+    aviaOnly: !rail && loop.outcomes.some((o) => o.air) && !loop.outcomes.some((o) => o.estimate === true && !o.air),
+    // The Chinese the facts this run read hold (his fourth set): a reply that
+    // quotes a warehouse address verbatim is measured in its OWN script.
+    quotableHan: hanOnly([...facts.map((f) => f.answer), ...loop.outcomes.flatMap((o) => o.factTexts ?? [])].join('')),
     // The facts this run read — the prompt's general ones and what kb_search
     // returned — may name the colleague they point at (B9), as they may carry
     // his phone.
@@ -513,6 +519,34 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
     managerName: ctx.identity.managerName,
     canary,
   };
+}
+
+/**
+ * His fourth set «2» (2026-10-24): «yukini infosini menga bersang men adres
+ * beraman telegramda sorasin». An avia figure went into the reply, so the
+ * flight's address is HIS question whatever the model composed — the card
+ * asks it with the cargo the tool read (kilos, the place named). A question
+ * the model already asked about the flight stands; one about something else
+ * keeps its place and the avia line follows it. Never in a rail chat: there
+ * no machine figure goes out (`memoryFor`), so no flight was quoted — the
+ * question is the rail one.
+ */
+export function withAviaRule(
+  c: ComposeReply,
+  outcomes: readonly Pick<ToolOutcome, 'air'>[],
+  ctx: Pick<AgentContext, 'burst' | 'messages'>,
+): ComposeReply {
+  const air = outcomes.find((o) => o.air)?.air;
+  if (!air || railChat(ctx, c)) return c;
+  const asked = c.ownerQuestion.trim();
+  if (/avia|авиа|air/iu.test(asked)) return { ...c, needsOwner: true };
+  const line = aviaOwnerQuestion(air);
+  return { ...c, needsOwner: true, ownerQuestion: asked ? `${asked} · ${line}` : line };
+}
+
+/** The card's avia line: what he needs to give the address. */
+export function aviaOwnerQuestion(air: { kg: number; origin: string | null }): string {
+  return `Avia: ${air.kg} kg, qayerdan: ${air.origin ?? 'aytilmagan'} — mijozga avia manzilini yozing (✏️).`;
 }
 
 /**
@@ -782,7 +816,7 @@ export async function runOwnerTriggered(
       cacheWriteTokens: loop.usage.cacheWriteTokens,
       toolCalls: loop.tools.map((x) => ({ name: x.name, ok: x.ok, text: x.text })),
     };
-    const c = withRailRule(loop.compose, ctx);
+    const c = withAviaRule(withRailRule(loop.compose, ctx), loop.outcomes, ctx);
     if (!c.replyNeeded && !c.needsOwner) {
       settle = { ...settle, outcome: 'no_reply', error: null };
       return { outcome: 'no_reply' };

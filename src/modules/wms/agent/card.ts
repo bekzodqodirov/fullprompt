@@ -40,6 +40,7 @@ export const POLICY_WORDS: Record<PolicyCode, string> = {
   estimate_unhedged: '«taxminan» yoki «boj va QQS alohida» yo‘q',
   warehouse_condition: '«Xitoydagi omborimizdan» sharti yoki «zavoddan omborgacha alohida» yo‘q',
   gloss_missing: 'o‘zbekcha tarjimasi yo‘q — ✏️ bilan o‘zingiz yozing yoki ❌',
+  avia_address: 'avia yukka Xitoy omborining manzili yozilgan — avia manzilini siz berasiz (✏️)',
 };
 
 export const PROMISE_WORDS: Record<PromiseCategory, string> = {

@@ -12,7 +12,7 @@ import { tariffFor } from '../calc/tariff-read';
 import { AVIA_RATE_LABEL } from './config';
 import { AGENT_LIMITS } from './limits';
 import { AGENT_LOCALES } from './locale';
-import { aviaOrigin, namedOrigin, placesOf, quoteOrigin, type QuoteOrigin } from './origin';
+import { namedOrigin, placesOf, quoteOrigin, type QuoteOrigin } from './origin';
 import { customerSources, extractNumbers, factSources, type NumberSource } from './numbers';
 import { warehouseSentencesText } from './policy';
 import { siteEstimate } from './site-estimate';
@@ -70,6 +70,12 @@ export interface ToolOutcome {
   estimate?: boolean;
   /** That figure is our China warehouses' price (his third set «3»): the reply says the condition and the factory leg. */
   fromOurWarehouse?: boolean;
+  /**
+   * An avia figure was quoted (his fourth set «2»): the flight's address is
+   * HIS to give, so the draft asks him with the cargo it knows — the kilos
+   * and the one place the customer named, null when none or several.
+   */
+  air?: { kg: number; origin: string | null };
   /** The answers of the kb facts the tool returned — their name words are the facts' (B9). */
   factTexts?: string[];
   /** The website and /admin/tarif disagree for this load (money-3). */
@@ -493,6 +499,11 @@ async function yolkira(input: Record<string, unknown>, env: ToolEnv): Promise<To
  * is the ACTUAL kilos × the rate — a volume the chat stated never enters it.
  * The review's volumetric refusal (the website's air calculator bills
  * max(kg, m³ × 200)) is gone with that answer.
+ *
+ * His fourth set «2»: the flight's ADDRESS is his. The quote carries no
+ * warehouse condition (K32's, withdrawn) and names no address; `air` makes the
+ * run put the question to him with the cargo (`withAviaRule`), and the policy
+ * refuses an avia reply that states a China address (`avia_address`).
  */
 async function avia(input: Record<string, unknown>, env: ToolEnv): Promise<ToolOutcome> {
   const { ctx } = env;
@@ -519,26 +530,20 @@ async function avia(input: Record<string, unknown>, env: ToolEnv): Promise<ToolO
     };
   }
   const total = Math.round(kg * rate * 100) / 100;
-  // His third set «3» is the flight's too (K32): cargo that starts at «Xitoy» or a Chinese city we do not
-  // stand in flies from OUR warehouse, and the reply says so — the condition and the factory leg — as the
-  // truck's does. Kashgar and Urumqi are no refusal here: his rate is one figure from wherever we load it.
-  // A flight whose start nobody said is priced from our warehouse too (fix round): «Avia 30 kg qancha?»
-  // went out with no condition, and the customer could read it as a pickup from his factory. The truck
-  // asks instead, because its price differs by where it starts; his avia rate does not.
-  const origin = aviaOrigin(inboundText(ctx), await env.chinaPlaces());
-  const fromOurWarehouse = origin !== 'warehouse';
+  // His fourth set «2» («yukini infosini menga bersang men adres beraman
+  // telegramda sorasin») replaces K32's condition for the flight: avia cargo
+  // does not go to the China receiving warehouses, so no warehouse sentence is
+  // said and no address is given — the run asks HIM, with the cargo (`air`).
+  const origin = namedOrigin(inboundText(ctx))?.place ?? null;
   return {
     ok: true,
     text:
       `Taxminiy avia yo'lkira: ${total} $ (${kg} kg × ${rate} $/kg). Yetib borishi taxminan ${daysMin}-${daysMax} kun, ` +
-      `reys bo'lsa ${daysMin} kun — va'da emas. Boj va QQS bu narxga KIRMAYDI.` +
-      (fromOurWarehouse
-        ? ` ${origin === 'unknown' ? "Mijoz qayerdan jo'natishini aytmadi" : "Mijoz faqat Xitoyni yoki omborimiz yo'q joyni aytdi"} — ` +
-          `bu narx Xitoydagi OMBORIMIZDAN. Narxni aytsang, mijoz tilida ` +
-          `ikkala jumla ham bo'lsin — har tilda aynan shu: ${warehouseSentencesText()}.`
-        : ''),
+      `reys bo'lsa ${daysMin} kun — va'da emas. Boj va QQS bu narxga KIRMAYDI. ` +
+      `Avia yuk Xitoydagi qabul omborlariga YUBORILMAYDI — avia manzilini AYTMA, bilimdagi ombor manzilini ham: manzilni Bekzod beradi. ` +
+      `needs_owner=true, owner_question="Avia: <tovar>, ${kg} kg, <qayerdan> — manzilni bering" — tovar va qayerdanni mijoz xabaridan yoz.`,
     estimate: true,
-    ...(fromOurWarehouse ? { fromOurWarehouse: true } : {}),
+    air: { kg, origin },
     sources: [
       { value: total, kind: 'money', label: 'avia (tarif × kg)', origin: 'tool', currency: 'USD', role: 'total' },
       { value: rate, kind: 'money', label: AVIA_RATE_LABEL, origin: 'tool', currency: 'USD', role: 'rate' },

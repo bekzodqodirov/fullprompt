@@ -4687,3 +4687,61 @@ commit with a lint error a `&&` would have stopped (#803's trap, again). Not ver
 `docker compose --profile telegram logs -f tg-listen` on the first real day: every gramjs call (GetHistory,
 ReadHistory, SetTyping, MarkDialogUnread, SendMessage with randomId), a real flood and a real restriction, deletes and
 typing updates, and the model's own drafting quality on his chats.
+
+1476. **The final review, as built: 34 findings kept, and the shape most of them share.** Six lenses (ban, leak,
+money, regression, deploy, his own answers) over the whole build, two skeptics per finding. Most were ONE rule
+restated in two places that had drifted: the same-text fuse fingerprinted every other customer's row with THIS
+chat's names, so a reply greeting each customer by name never tripped it (K1 — each stored row is now folded with
+its own customer's names and codes, read off the draft it came from), and the 💵 template went through the owner
+subset, which has no G10 at all (K3 — counted, as a warning on his card); the send step judged «same person» from
+the newest stored row while the ✅ judged nothing (K7 — `bindMoved` over `chatIdentity` in both); the two queues'
+caps could not see each other, so one account could send 200 + 80 a day (K5 — the agent yields to his CRM
+replies). The money lens found the policy's tables reading words without polarity or order — «boj narx ichida» in a
+yo'lkira quote passed both G2 and G11 (K12), an estimate window became a firm date (K14), weekday and «next week»
+promises passed with no digit to check (K15), a dollar source vouched for the same number in yuan (K16), the
+customer's own bare bargained price vouched for our agreeing to it (K17). The owner lens found four of his answers
+not built at all: night-silent cards (K28), the Uzbek translation of a fa/zh draft (K29), the 30-minute escalation
+reminder (K30), and «AI off at once on any official notice» (K33, 777000). And state that never heals: a run killed
+mid-flight stayed `reserved` for good (K24), a 👤 fact on a lead stopped being read the moment the lead was won (K25,
+#789's shape), one refused landing made a calc draft answer `already_landed` for ever (K26). Every one fixed and
+red-proven in three packages; the fixes were then reviewed again (38 findings, fixed). STATED, not done: the queue's
+refusal words live in two maps (platform cannot import wms), a 777000 notice that arrives while the listener is
+down is not seen, and his own login codes deliberately do not switch the agent off.
+
+1477. **Telegram's service chat (777000) is never kept — by number, by rule, or on a work account.** Its lines are
+login codes and account notices; it is no bot by Telegram's flag and may show a number, so on a work account it
+would mint a lead, and a kept chat is one the AI sotuvchi READS — a login code in a model's context and on a card.
+ONE predicate, `isTelegramServicePeer` (a PRIVATE chat with 777000 — a group whose number reads the same is a
+group), asked by both classifiers, the tray scan and the live lead branch, which sits ahead of the classifier on
+purpose (#596) and so needed it on its own. Found while fixing it: `sendFactsFor` still judged «same person» from
+the newest stored row, so a reply written for the customer a chat had just been bound to was cancelled until that
+customer wrote again — it asks `bindMoved` now, the ✅'s own rule. `ownerPolicyFor`'s chat argument is REQUIRED
+(an optional one is the one a new caller forgets): the two doors that write a card name the chat, the ✅ press passes
+null and asks the blocks alone. A fa/zh draft with no Uzbek gloss carries its own code, `gloss_missing`, instead of
+`empty` (the card read «javob bo'sh» beside a full reply). «поездка» and «железные стеллажи» are no rail question.
+
+1478. **The China receiving warehouses, his fourth set, verbatim.** `china_points@4` names his three — Ivu (YW),
+Guanchjou (GZ, the warehouse is in Foshan) and Xorgos (HRG); Qashqar is not on his card and is no longer named —
+and each address is a fact of its own, in the Chinese he sent (the supplier reads it; never translated, never
+re-spelled), with its contact and his GS-code reminder in both languages INSIDE the fact, so a reply that quotes an
+address quotes the reminder with it. «距你966.0公里» was dropped from his Horgos line: it is the map app's distance
+from where he stood when he copied it. **The headline was found by measuring, not reading**: every Uzbek or Russian
+reply that quoted an address was refused `wrong_script`, because Han is weighted three to a character and forty of
+them outweigh the Uzbek sentence around them. The script is now measured without the Chinese stretches a fact the
+run read holds verbatim (`withoutQuotedHan`, compared by Han characters alone so spacing and punctuation do not
+matter; `memory.quotableHan` so the ✅ re-runs the same evidence), and the model's own Chinese to an Uzbek customer
+still counts. Prompt rule 5 forbade staff phones — which the addresses are — so a contact a fact carries is the
+fact's, as G6 already treated it. And a newer seed version retires the untouched older one (`seedKb`): two answers
+to «where do I send it» would both sit in every prompt; his own edited copy is an 'owner' row and is never touched.
+
+1479. **Avia: the address is his (fourth set «2»), and K32 is withdrawn for the flight.** «yukini infosini menga
+bersang men adres beraman telegramda sorasin». The avia figure still goes out (kg × his rate, hedged), but avia cargo
+does not go to the receiving warehouses, so the tool states no warehouse sentence and no address. Three halves,
+each red-proven: `withAviaRule` puts «Avia: N kg, qayerdan: … — mijozga avia manzilini yozing (✏️)» on his card
+whatever the model composed (the model's own avia question — it can name the goods — stands; a question about
+something else keeps its place and the avia line follows); `memory.aviaOnly` (a flight's figure and no truck's) makes
+the policy refuse `avia_address` — a Chinese mobile or a Chinese street address in the reply; and a reply quoting the
+truck AND the flight may still give the truck's warehouse. `aviaOrigin` went with K32, its only reader. Found by an EXISTING
+test, not a new one: in a rail chat the model may call the avia tool, the rail rule then drops every machine figure,
+and the card asked him for an avia address about a flight nobody was quoted — `withAviaRule` stands down in a rail
+chat (`railChat`, the memory's own rule).
