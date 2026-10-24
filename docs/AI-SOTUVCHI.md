@@ -569,3 +569,242 @@ bo'yicha nimalar o'tdi), **nimani qilmading** — ochiq, keyingi qadam va undan 
 bo'lgan narsa (masalan `.env` ga kiritiladigan kalit nomlari, telefonda bosiladigan
 sozlamalar — qadam-baqadam, skrinshot so'rab). Jadval va funksiya nomlari — faqat
 `DECISIONS.md` va kodda, egasiga xabarda emas.
+
+---
+
+## 15. Egasining javoblari (2026-10-24) — KELISHILGAN
+
+His message, verbatim: «5 a / 8 telegram botda hsoblatish bor shu yerga jonatsin klientdan olgan
+malumotlarini va botdan javobni kuzatb tursa boladi. Klientdan hamma malumotlarni toliq olib botga
+jonatsin hsoblatish uchun botdan javob kelgandan keyin menga aytsin javob keldi narx bersang boladi
+deb / 9 Saytlarga tegma agar klient yolkira logistikani ozini sorasa saytdagi kalkulyatorni ozi
+boyicha agarda podklyuch rastamojkasi ichida sorasa sistemaga hsoblatishga jonatishi kereak / 10 b.
+Toshkent manzili Chuqursoy sklad … Umriddin +998 950183033 https://yandex.uz/maps/-/CXQr78ni / 13 fors
+va xtoycha ham gaplashaversin afgon eron klientlarim bor / 14 ha / 16 ha / 17 ha / 18 ha / 19 kochirish
+shart emas agar fullprompni ichida yozaman desang ushanga yoz / 20 ha kelyabti».
+
+The first report's questions (chat, 2026-10-23) and what is now agreed. Unanswered ones take the
+report's ⭐, stated back to him in the same reply.
+
+| # | Question | Agreed |
+|---|---|---|
+| 1 | Where | **Inside `fullprompt`** (his 19: «ko'chirish shart emas … fullprompt ichida»). gsrerpv1 untouched. |
+| 2 | Channel | **His personal session** (his 2026-10-23 override). Business bot on his own account was offered and not taken. |
+| 3 | A stranger writes | ⭐ a — a staff-bot card [🆕 Yangi lid] [👤 Mijoz — kod] [🚫 Shaxsiy]; lid/mijoz pulls the chat in WITH its first message, shaxsiy stores nothing. |
+| 4 | In whose name | ⭐ a — first person, his own style; asked «bot?» → honest. Re-asked before any auto mode. |
+| 5 | Pilot | **a — every client and lead who writes to his account.** |
+| 6 | Night | ⭐ a — drafts are prepared at night and arrive silently 22:00-08:00. |
+| 7 | Human pause | ⭐ 120 min after he writes in that chat himself. |
+| 8 | Price | **The AI never prices a calculation itself.** It collects the customer's data COMPLETELY, sends it to the VED queue through the bot's «Hisoblatish» door, watches for the answer, and when the answer arrives tells him: «javob keldi, narx bersang bo'ladi». |
+| 9 | What to quote | **Do not touch the websites.** Yo'lkira ALONE → the AI quotes per the website's own calculator. Podklyuch / rastamojka → send to the system's hisoblatish (8). |
+| 10 | Code and address | **b** — the AI gives the China receiving address; HE opens the GS code. Tashkent: «Chuqursoy sklad», Umriddin +998 95 018 30 33, https://yandex.uz/maps/-/CXQr78ni. |
+| 11 | Own balance | ⭐ a — the customer's OWN balance, as the Mini App shows it. |
+| 12 | Owner of AI-opened leads/requests | ⭐ a — him. |
+| 13 | Languages | uz (Latin + Cyrillic), ru, en ⭐, **+ Persian (Afghan, Iranian clients) and Chinese**. |
+| 14 | Budget | ha — 150 drafts/day in the pilot; escalation wait 30 min. |
+| 15 | Managers see drafts | ⭐ no — him only. |
+| 16 | @bekzodkodirov556 is the connected account | ha |
+| 17 | 2FA on | ha |
+| 18 | CRM sending works (`tg_sending_enabled` on) | ha |
+| 19 | Old server stopped | **NOT answered** (his 19 answered question 1). Re-asked before go-live: a second copy of the session kills it. |
+| 20 | Staff-bot messages reach him | ha |
+
+## 16. Phase 1 — the design under review (2026-10-24)
+
+English, because it is the review's target and the house writes its technical record in English.
+Where this section and §§1-14 disagree, THIS section wins (it carries the override and his answers);
+where `docs/AI-SOTUVCHI-REVIEW.md` and this section disagree, the review's fix wins.
+
+### 16.1 Shape
+
+- **Channel = his personal account, through the listener.** The model runs in the APP's pg-boss
+  worker; the listener (`scripts/tg-listen.ts`) is the only process that touches Telegram and only
+  ever (a) enqueues a run after storing a NEW inbound row, and (b) executes approved sends with the
+  read → typing → send choreography. Nothing opens a second gramjs client.
+- **The conversation is `tg_messages`** keyed (manager_user_id, peer_id). The agent stores STATE only.
+- **Shadow only in phase 1.** `agent_config.mode ∈ {off, shadow}`; `auto` is reserved in the CHECK
+  but refused by every writer until phase 2 (his re-answer to Q4 first). Default `off`.
+- **Only the agent owner's account** (`agent_config.owner_user_id`, chosen on /agent, empty = off).
+- **Pilot = every client and lead chat** on that account that passes eligibility (§16.4).
+
+### 16.2 Migration 0136 `ai_sotuvchi` (additive)
+
+- `agent_config` — a single row (id = 1): mode ('off'|'shadow'|'auto', default 'off'),
+  owner_user_id (FK users, null), human_pause_min (120), daily_draft_cap (150),
+  escalation_timeout_min (30), style_guide (text), style_guide_proposed (text),
+  style_approved_at, updated_by, updated_at. NOT in `SETTING_DEFAULTS` — /admin/settings would be a
+  second, unreviewed door to the mode and a one-line input mangles a style guide.
+- `agent_conversations` — PK (manager_user_id, peer_id): locale, human_until, muted_at,
+  summary, last_inbound_tg_id, created_at, updated_at.
+- `agent_runs` — the cost/audit ledger: manager_user_id, peer_id, trigger
+  ('inbound'|'owner_answer'|'calc_answer'|'style'), anchor_tg_message_id, model, input_tokens,
+  output_tokens, tool_calls jsonb, duration_ms, outcome, error, created_at; UNIQUE (manager, peer,
+  anchor, trigger) = one run per inbound anchor (debounce + replay safety); the Tashkent-day count
+  under an advisory lock is the cap (`reserveQuestion`'s shape, fails CLOSED).
+- `agent_drafts` — run_id, manager_user_id, peer_id, client_id, lead_id, anchor_tg_message_id,
+  proposed_body, final_body, category, confidence, language, policy jsonb, needs_owner,
+  owner_question, actions jsonb, status ('pending'|'editing'|'approved'|'rejected'|'superseded'|
+  'expired'|'taken_over'|'sent'|'failed'), decided_by, decided_at, outbox_id, created_at;
+  partial UNIQUE (manager, peer) WHERE status IN ('pending','editing') = one live draft per chat.
+- `agent_escalations` — as spec §4, keyed to a draft.
+- `kb_facts` — as spec §4; search by pg_trgm `word_similarity` (house standard, 0094/0096), not
+  tsvector; `source` adds 'site'; `client_id` null = general.
+- `agent_calc_links` — request_id PK (FK calc_requests), manager_user_id, peer_id, draft_id,
+  notified_at: which VED job the agent opened for which chat, so the answer finds its way back.
+- `tg_outbox`: client_id DROP NOT NULL + lead_id (FK leads) + CHECK (client_id IS NOT NULL OR
+  lead_id IS NOT NULL) — the owed #1199; agent_draft_id (FK agent_drafts, UNIQUE); answers_tg_message_id;
+  not_before; agent_step ('read'|'typing'|'send'); status CHECK widened by 'agent' — an approved
+  agent row waits as status 'agent', which an OLD pump's `claimNext` (status='queued') cannot see
+  (version skew); index (manager_user_id, peer_id, tg_message_id).
+- `tg_accounts`: paused_at, pause_reason, flood_until — a restriction and a flood wait survive a
+  restart; a pause is cleared only by a human press.
+- `telegram_chat_waits.kind` CHECK widened by 'agent' — the ✏️ wait must not share the PK
+  (chat_id, kind) with the task/💬 wait.
+- `gsr_ai_reader`: grants NOTHING (header says so).
+
+### 16.3 Start of a run
+
+1. Listener, `handleMessage`'s `if (written)` block, after `saveMediaFor`: when
+   `account.managerUserId` is the agent owner, the row is `direction='in'` and the live path stored
+   it (not catch-up, not backfill, not `siteTagSweep`'s replay of an old message): `enqueue('agent.inbound',
+   {managerUserId, peerId, tgMessageId}, {startAfter: 12, singletonKey: manager:peer, retryLimit: 0})`.
+   `EnqueueOptions` widens.
+2. App worker `agent.inbound`: stand down unless the anchor is still the chat's newest inbound
+   (a later message has its own job), then eligibility (§16.4), then reserve the run (cap), then
+   build the context, run the loop, check the policy, write the draft, queue the staff-bot card —
+   all in one short tx for the draft + `queueStaffTelegram(tx, …)`, kick the drain after commit.
+   A newer draft supersedes the chat's pending one and retires its card.
+3. Catch-up gaps: a sweep every 5 min drafts for chats whose newest stored message is an inbound
+   ≤ 30 min old with no run for that anchor (the deploy-gap blindness).
+
+### 16.4 Eligibility (pure, `wms/agent/eligibility.ts`, red-proven)
+
+Private one-to-one chat with a real user (not self, not 777000, not a bot); the stored rows name a
+client or a lead; the chat's rule is not `exclude`; not muted; not in a human pause (an `out` row in
+the last `human_pause_min` that has NO matching tg_outbox row = he typed it on another device, or a
+non-agent outbox row = he answered from the CRM); the newest stored message is INBOUND and ≤ 24 h
+old; the account is not paused; mode ≠ off.
+
+### 16.5 The brain (`wms/agent/*`)
+
+- Model: `STAFF_MODEL` for the reply, `ANALYST_MODEL` for the style proposal — no new id. The shared
+  seam (`ai/model.ts`) widens backward-compatibly: usage on the response, optional `toolChoice` /
+  strict tools on the request.
+- Loop: `askAssistant`'s shape (≤ 6 rounds, injectable `callModel`), terminal tool `compose_reply`
+  {reply_text, language, category, confidence, needs_owner, owner_question, actions[], used_fact_ids[]}.
+  `max_tokens` / `refusal` / no compose_reply after one retry → no draft text, an escalation card.
+- Context: persona + approved style guide + the rules (also enforced in code), the customer-safe card
+  (name, code, own manager's name), the last 30 messages of THIS chat, kb top-8 (general + this
+  client's), 3-5 of his own past replies to similar inbound (`word_similarity`, excluding agent-sent
+  rows), and the sales goal for the stage.
+- Tools (conversation-scoped; the client/lead id comes from the SERVER's identity, never from the
+  model or the customer):
+  - `cargo_status` — the Mini App's `cargoOverview` + its renderers (never `botLookup`);
+  - `own_balance` — `debtSummary` (11a);
+  - `kb_search`;
+  - `yolkira_estimate` — a pure port of the website's `estimateTruck` / `estimateAir` / `estimateRail`
+    (gsrlogistics.uz `src/lib/pricing.ts`) over a VENDORED snapshot of its `tariffs.json`
+    (updated 2026-09-08, validThrough 2026-12-31; after validThrough it refuses and the AI sends to
+    hisoblatish). «Saytlarga tegma»: the site is read, never written; a fence pins the snapshot's CN
+    bands to `OWNER_TARIFF_BANDS` so a drift is named;
+  - `calc_checklist` — `missingFields(section, facts, laws)`: what is still missing for a
+    rastamojka/podklyuch calculation, so the AI asks ONE missing thing per message;
+  - `escalate`.
+  Actions the model may PROPOSE (executed only on his ✅): `calc_submit` (section + facts) and
+  `mute` (customer said «yozmang»).
+- Persona: first person; asked «bot/AI/бот/ربات/机器人?» → the honest sentence; a denial phrase in
+  the draft is a policy failure.
+- Languages: uz-Latn, uz-Cyrl, ru, en, fa, zh — detected by script from the customer's last message;
+  the reply must be in the same script (G5).
+
+### 16.6 Policy (pure, `wms/agent/policy.ts`, every rule red-proven)
+
+G1 numbers whitelist (tool outputs, used kb facts, the customer's own messages EXCEPT currency
+figures, persona constants; a website-tag first line's «≈ 220 $» is excluded), G2 forbidden phrases
+(negation-aware: «100% kafolat bermaymiz» passes), G3 categories (phase 1: everything is a draft
+anyway; the category is recorded for phase 2's approval rates), G4 ≤ 700 chars and ≤ 1 «?», G5
+script, G6 secrets (floor fields are never in context; the outbound scrub reused: other clients'
+codes and markings, batch codes, staff names other than the owner and the customer's own manager,
+system-prompt fragments), G7 never first, G8 per-chat and account caps (§16.8), G9 off. Plus:
+no URL except an approved kb fact's (the Tashkent map link), no @mention, no denial of being an AI.
+
+### 16.7 Approval (staff bot + web)
+
+- Card `AgentDraft` (new mute group `agent`, its own FOUNDERS, night-silent): customer (name · code
+  or «lid»), their last ≤ 3 messages clipped, the proposed reply, warnings, the proposed action
+  (e.g. «📦 Hisoblatishga: podklyuch · 5 kub · 800 kg · …»). Buttons `ag:s|e|r|h:<uuid>`:
+  ✅ Yubor · ✏️ O'zim yozaman · ❌ Rad · 🙋 O'zim bog'lanaman.
+- ✅ → `decideDraft` (CAS pending→approved), re-validate (newer inbound → superseded and a fresh run;
+  he wrote meanwhile → taken_over), insert the tg_outbox row (status 'agent', peer pinned, client or
+  lead, queued_by = the approver, answers = the anchor), execute the approved action, audit.
+- ✏️ → wait kind 'agent' (durable, 10 min): his next text becomes `final_body` and the card returns
+  with ✅/❌ — it is NEVER sent by the typing alone.
+- 🙋 → the chat's human_until = now + 24 h; draft taken_over.
+- The same decisions on /agent (web); both doors call one function; other copies retired.
+- `/agent` command (status · off · shadow) beside /hodim, and the same switch on the web page
+  (the bot lives on the account at risk).
+
+### 16.8 Sending (listener)
+
+- `claimNext` serves human rows first; agent rows only when `not_before ≤ now`.
+- Per agent row, one step per tick: re-validate (pure `agentSendVerdict`: mode on, account not paused,
+  no newer inbound than the anchor, no human out since approval, rule not exclude) → ReadHistory up
+  to the anchor → `not_before` = read delay → SetTyping (refreshed each tick) for a time from the
+  reply length → send → `recordSent` (lead-aware). Abort → SendMessageCancelAction, row cancelled.
+- Caps (agent only): ≥ 10-25 s (jitter) between agent sends; ≥ 20 s per chat; ≤ 20/hour; ≤ 80/day;
+  never split; never media in phase 1. Human + agent together stay inside `DEFAULT_LIMITS`.
+- Night: an approved draft at night goes out only if the inbound is ≤ 15 min old; otherwise it waits
+  to 08:30.
+
+### 16.9 Ban protection (all sends, human too)
+
+- `isAccountRestricted` (PEER_FLOOD, USER_RESTRICTED, FROZEN_METHOD_INVALID, FROZEN_PARTICIPANT_MISSING)
+  checked BEFORE `isPermanentSendError` → persist `tg_accounts.paused_at/pause_reason`, release the
+  claim, agent mode off, cancel queued agent rows, alarm through the BOT and a banner on /suhbatlar and
+  /agent; `canQueue` refuses while paused; cleared only by «Tekshirdim, qayta yoqish».
+- FLOOD_WAIT persisted to `tg_accounts.flood_until`; an agent row waits max(2X, 15 min); two in 24 h
+  → mode off + alarm. The 3 s tick honours `MIN_SEND_GAP_MS` too. Ambiguous timeouts after a send are
+  never re-sent with a new random id.
+- Per-recipient finals (blocked, privacy) → the conversation is muted; two blocks within 7 days of an
+  AI message → mode off + alarm.
+
+### 16.10 Calculation (his 8 and 9)
+
+- Yo'lkira only → `yolkira_estimate`; the reply says «taxminan … saytdagi kalkulyator bo'yicha» and
+  offers an exact calculation.
+- Podklyuch / rastamojka → the AI asks for what `calc_checklist` says is missing, one thing per
+  message, then proposes `calc_submit`. On ✅ it lands through `landIntake` (the bot's door: the
+  same queue, the same AI VED pre-pass), collectedBy = the owner, on the chat's client (newest open
+  deal) or the chat's own lead (a `leadId` input added to `landIntake`), material = the customer's
+  messages; `agent_calc_links` records it.
+- When the VED answers (Готово) or seals, the requester's existing `CalcDone` / `CalcSealed` message
+  gains «🤖 Mijoz Telegramda kutyapti — narx bersangiz bo'ladi» and a button ✏️ Narx yozaman; his
+  typed price comes back as a draft in his style carrying exactly his figure (G1), ✅ to send. The
+  floor is never drafted as the price.
+
+### 16.11 Strangers (3a)
+
+- On the agent owner's account, a stranger (visible phone → the tray's `{ask}`; hidden number →
+  today's silent skip) produces ONE card `AgentStranger` per peer: title, phone if visible, NO message
+  text; [🆕 Yangi lid] [👤 Mijoz — kod] [🚫 Shaxsiy].
+- 🆕 → the tray's own `openLeadForChat` (no phone → a lead by name); 👤 → wait for a code → include
+  rule on that client; 🚫 → exclude rule. Lid/mijoz then queue a ONE-PEER pull (`tg_peer_pulls`
+  table, drained by the listener: the last 24 h of that chat through the ordinary decide/store path),
+  after which the newest unanswered inbound gets a run.
+
+### 16.12 Knowledge, style, screens
+
+- `kb_facts` seeded by `pnpm exec tsx scripts/agent-seed-kb.ts` (through `migrate`) from a REVIEWED
+  vendored list: the three China receiving points (never «omborimiz»), the Tashkent address he gave,
+  transit 15-25 days («va'da emas»), payment rules, prohibited goods, free storage days; nothing that
+  contradicts itself on the site (customs inside the price) and no prices (prices come from the tool).
+- Escalation answers → 📌 Umumiy / 👤 Faqat shu mijoz → kb_facts (source 'owner').
+- `scripts/agent-style.ts` proposes the style guide from his own out rows (agent-sent rows excluded);
+  he approves it on /agent.
+- `/suhbatlar/ai` (super_admin ROLE — `mayBroadcast`'s idiom, no new permission code): Kutilmoqda ·
+  Savollar · Bilimlar · Sozlamalar (mode, owner account, pause state + clear, budget left today,
+  approval rate by category, style guide).
+- AI-sent bubbles carry 🤖 in the CRM thread, card panel and dock (derived from
+  `tg_outbox.agent_draft_id`); the customer never sees it.
+- An AI send is NOT a person's contact for the advert first-contact clock; it IS «answered» for the
+  waiting state (he approved it).
