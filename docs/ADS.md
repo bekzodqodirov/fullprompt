@@ -284,7 +284,8 @@ Boshqa maydonlar ham yuborilsa — izohga tushadi, yo'qolmaydi (`company` yoki
 raqami: bir xil `external_id` ikkinchi marta kelsa, ikkinchi lid ochilmaydi.
 Mijoz topuvchi agentning eshigi (`/api/leads/in/agent`) va u o'qiydigan ikki
 ro'yxat: `docs/AGENT-FEED.md` (faqat shu eshikda firma nomi lidning
-«Kompaniya» maydoniga ham yoziladi).
+«Kompaniya» maydoniga ham yoziladi, va bazada xato bo'lsa javob 503 —
+agent qayta yuboradi; boshqa eshiklarda pastdagidek har doim `{"ok":true}`).
 
 **Muhim:** javob har doim bir xil — `{"ok":true}`. Lead ochildimi, eskisiga
 qo'shildimi, mijoz ekan deb tanildimi, chegaraga urildimi — yuboruvchiga farqi

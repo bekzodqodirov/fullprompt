@@ -17,6 +17,14 @@ Sizning 23-oktabrdagi qaroringiz: alohida dastur (agent) internetdan Xitoydan yu
 - «Agent (qidiruv)» manbasi lid ochish formasida tanlanmaydi — uni faqat agent yozadi (agent ochgan lidning o'z kartasida esa ko'rinib turadi).
 - «Kelgan arizalar» sahifasi platforma kalitlarini endi faqat sozlamalarni o'zgartira oladigan odamga yuboradi. Avval kalit ko'rinmasa ham sahifa ichida boshqa CRM boshqaruvchilariga ham borardi.
 
+### Ikkinchi tekshiruvdan keyin tuzatilganlar (barcha arizalar uchun)
+- **Ariza yarmida to'xtab qolmaydi.** Ism, izoh yoki forma javobida emoji (masalan 🔥) aynan chegarada turgan bo'lsa (ism 120, javob 300 belgi), tizim lidni ochardi-yu, keyin arizani yozolmay qolardi: lid sotuvchiga xabarsiz, «Kelgan arizalar»da yozuvsiz osilib qolardi. Bu reklama, forma va agent — hammasida bor edi. Endi emoji hech qachon yarmidan kesilmaydi.
+- **Bitta noto'g'ri saqlangan mijoz kartasi hamma arizani to'xtatmaydi.** Kartadagi telefonlar ro'yxat emas, bitta matn bo'lib saqlangan bo'lsa (qo'lda yoki eski importdan), telefonli har qanday ariza xato berardi. Endi bunday karta «telefonsiz» o'qiladi. Serveringizda shunday karta bor-yo'qligini bilmayman — xohlasangiz bitta faqat o'qiydigan so'rov bilan sanab beraman.
+- **Bitta ariza tez-tez ikki marta kelsa, ikkita lid ochilmaydi.** Agent yoki platforma birinchi javobni kutmay qayta yuborsa, ikkinchisi endi birinchisini kutadi va «takror» hisoblanadi.
+- **Agent eshigida xato bo'lsa, agent buni biladi:** bazada muammo bo'lsa agent «keyinroq qayta yuboring» javobini oladi va o'zi qayta yuboradi. Reklama eshiklari avvalgidek har doim «qabul qilindi» deydi.
+- Agent mijozlarimizni tanishda endi xato qilmaydi: bir qatorga yozilgan raqamning bo'lagi («90/283-65-94» dagi «2836594») boshqa yuzlab raqamlarni to'smaydi, uchta raqam bitta qatorga qo'shilib ketgan bo'lsa ham faqat o'sha uch raqam taniladi, «Odam» kartasiga kod biriktirilgan zahoti uning raqamlari agentga darhol boradi. Tekshiruv ham taxminan 3 marta tezlashdi.
+- **/crm/tahlil:** sotuvchining «Birinchi aloqa» o'rtacha vaqti hamma manba uchun bitta qoida bilan hisoblanadi — bir haftadan keyingi aloqa «kech» soniga kiradi, o'rtacha vaqtga kirmaydi (reklama lidlari uchun hech narsa o'zgarmadi).
+
 ### Siz qiladigan besh qadam (batafsil: `docs/AGENT-FEED.md` §0)
 1. **CRM → ⋯ → Kelgan arizalar → Reklama havolalari → «Agent (qidiruv)» → «Platformaning o'z formasi» → «Yoqish va kalit yaratish».** Kalitni agent serveridagi `.env` ga qo'ying, chatga yozmang.
 2. **CRM → ⋯ → CRM sozlamalari → «Yo'qotish sabablari»**: «Qayta qilinmasin» qo'shing. Ro'yxat hozir bo'sh bo'lsa, birinchi sabab qo'shilgan zahoti faqat ro'yxatdagi sabablarni tanlash mumkin bo'ladi — jamoa ishlatadigan boshqa sabablarni ham o'sha zahoti qo'shing.
@@ -28,7 +36,7 @@ Sizning 23-oktabrdagi qaroringiz: alohida dastur (agent) internetdan Xitoydan yu
 - Kalitni qayta yaratsangiz eskisi darhol ishlamay qoladi — agent `.env` dagi kalit yangilanmaguncha lid yubora olmaydi.
 - Ro'yxatdagi yo'qotish sababining nomini keyin o'zgartirmang: kerak bo'lsa eskisini o'chirib, yangisini qo'shing va sozlamaga ham yozing. Aks holda o'sha sabab bilan yopilgan lidlar agent ro'yxatidan chiqib ketadi.
 - Agent yozgan izoh lid lentasida bitta paragraf bo'lib ko'rinadi (qatorlar birlashadi) — barcha arizalardagidek.
-- **Sizga ikki savol:** (1) agent lidlari /crm/tahlil dagi sotuvchining «kech bog'landi» sonlariga kirsinmi (hozir kiradi; ⭐ tavsiyam — kirsin, lekin tahlilda manba bo'yicha ajratib ko'rasiz)? (2) agent lidlari «Bugun qo'ng'iroq» ro'yxatiga va 08:00 dagi xabarga tushsinmi (hozir tushadi — kuniga 25 tagacha qator; ⭐ tavsiyam — tushsin, chunki sotuvchi aynan shu ro'yxatdan ishlaydi)?
+- **Sizga ikki savol:** (1) agent lidlari /crm/tahlil dagi sotuvchining «kech bog'landi» sonlariga kirsinmi (hozir kiradi; bir haftadan keyingi aloqa faqat «kech» soniga kiradi, o'rtacha vaqtga kirmaydi — reklama lidlaridagidek; ⭐ tavsiyam — kirsin, lekin tahlilda manba bo'yicha ajratib ko'rasiz)? (2) agent lidlari «Bugun qo'ng'iroq» ro'yxatiga va 08:00 dagi xabarga tushsinmi (hozir tushadi — kuniga 25 tagacha qator; ⭐ tavsiyam — tushsin, chunki sotuvchi aynan shu ro'yxatdan ishlaydi)?
 
 ## 2026-10-21 — Doska: «1 A / 2 a / 3 a» javoblaringiz — hammasi hozirgidek qoladi
 

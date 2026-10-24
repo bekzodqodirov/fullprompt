@@ -11,7 +11,7 @@ Code: `src/modules/wms/crm/agent-source.ts` (the key), `inbound.ts` (the
 landing and its belt), `agent-feed.ts` (the feeds), `agent-feed-door.ts` (the
 GET door), `first-contact.ts` / `inbound-notify.ts` (the clock),
 `platform/settings/reason-list.ts` (the setting's parser). Decisions #1455-#1459,
-and the review's corrections #1460-#1466.
+the first review's corrections #1460-#1466, and the second's #1467-#1472.
 
 ---
 
@@ -62,17 +62,20 @@ The ordinary webhook door (docs/ADS.md §5.3) on the `agent` source.
 
 - Header **`X-GSR-Key: <kalit>`** — the `agent` source's own webhook secret,
   minted on the doors screen (§0 step 1). The agent may also send
-  `X-ERP-Key` with the same value; only `X-GSR-Key` is read.
+  `X-ERP-Key` with the same value; it is not read. With no `X-GSR-Key`
+  header the door also takes the key from a body field `key` or `google_key`
+  (Google's lead form cannot set a header) — the agent sends the header,
+  and only a caller that sent it is told 503 below.
 - Body: JSON object, plain shape.
 
   | Key | Read as | Limit |
   |---|---|---|
-  | `name` (or `ism`) | the lead's name | 120 chars (cut, whitespace collapsed) |
+  | `name` (or `ism`) | the lead's name | 120 characters — counted in code points, so an emoji is one and is never cut in half (whitespace collapsed first) |
   | `phone` (or `telefon`) | the phone; identity = its last 9 digits | 9+ digits, or the push is `dropped/no_phone` |
   | `note` (or `izoh`) | the first lenta note | see below |
   | `external_id` (or `id`) | the replay key | — |
   | `company` / `firma` | `leads.company` (the card's own column) on a CREATED lead — **and** a note line and a pair like any other key, so a joined push still shows it | 200 chars on the card |
-  | any other key | a `key: value` line appended to the note, AND a question pair for the mapping screen | 30 pairs, key 80, value 300 chars |
+  | any other key | a `key: value` line appended to the note, AND a question pair for the mapping screen | 30 pairs, key 80, value 300 characters (code points) |
 
   `company`/`firma` reach the card's column through the agent's door only;
   every other webhook door keeps them as the note line and pair they always
@@ -85,20 +88,41 @@ The ordinary webhook door (docs/ADS.md §5.3) on the `agent` source.
   Telegram push shows its first 160 characters: keep the note ≤ 700 and its
   opening sentence self-sufficient; put keys the ERP must keep (e.g.
   `utm_source`) where a 1000-character cut cannot reach them, or rely on `ref`
-  (below), which stores the whole body minus the key, uncut.
+  (below), which stores the whole body minus the key, uncut. A lone UTF-16
+  surrogate the body carries (`"\ud83d"` is valid JSON) is stored as U+FFFD
+  wherever it lands.
 - `external_id = cs:<company_uuid>:<yyyymm>`. The outcomes feed only reports
   ids that start with `cs:`.
-- Answer: **always `200 {"ok":true}`** — created, joined, recognised,
-  suppressed, capped and a database failure all read the same. **404** when
-  the door is off, the key is wrong or absent, or the body is not JSON.
+- Answer:
+
+  | Code | Means | Do |
+  |---|---|---|
+  | `200 {"ok":true}` | the arrival was RECORDED — whatever became of it: created, joined, suppressed, capped, no_phone … — or it is a replay of one that was | done; the outcomes feed says which |
+  | `503 {"error":"unavailable"}` | the landing failed (or, when `X-GSR-Key` was sent, the key lookup did): nothing was recorded | retry, same `external_id` |
+  | `5xx` HTML (Next's error page) | the database failed before the key could be checked and no `X-GSR-Key` header was sent | retry |
+  | `404` | the door is off, the key is wrong or absent, or the body is not JSON | do not retry; tell the owner |
+
+  The outcome itself never changes the answer: created and suppressed read
+  the same 200. Only a FAILED landing differs, and only on this door — every
+  advert door, the «Boshqa» fallback (§6) included, answers 200 even then.
 - Replay fence: the same `(channel='webhook', external_id)` a second time is
-  answered 200 and lands NOTHING — no second lead, no second ledger row. A
-  re-send after a timeout is therefore safe.
+  answered 200 and lands NOTHING — no second lead, no second ledger row —
+  once the first delivery has FINISHED. A delivery that arrives while an
+  earlier one of the same id is still running waits for it (the app is one
+  process and chains them per id) and is then that replay: a re-send after a
+  read timeout cannot make a second lead. A landing that failed AFTER its
+  lead was written (a database failure half-way — the landing's own cuts no
+  longer throw) leaves that lead standing; the retry then JOINS it, so the
+  outcome reads `joined` and the seller hears «🔁 Qayta yozdi» about a lead
+  whose «🆕» never came (§5).
 - Caps (counted over the arrivals ledger, dropped arrivals included):
   3 per phone per day, 200 per source per day → `dropped/capped`. The
-  per-phone count is per FAMILY: an agent push counts only the agent's
-  arrivals on that phone, and the agent's arrivals never count against a
-  person's form, advert or bot enquiry on the same number.
+  per-phone count is per FAMILY: an agent push through THIS door counts only
+  the agent's arrivals on that phone, and those never count against a
+  person's form, advert or bot enquiry on the same number. A push through the
+  «Boshqa» fallback (§6) is an ordinary arrival: it counts in the people's
+  family, so three of them on one phone do cap that person's own enquiry for
+  a day.
 - `agent` is accepted ONLY through this webhook: a person typing
   `/ariza?manba=agent` is recorded under «Sayt» (the form's answer to any
   word it does not offer, as before the key existed), and one opening
@@ -120,8 +144,11 @@ In order (`landInboundLead`):
    copy of the feed was stale; the outcomes feed tells it so. The belt reads
    the suppression set (§3.1) by the app's OWN phone rule (`phonesMatch`):
    the arrival's last nine digits against every tail, and against a card or
-   lead phone of only seven or eight digits by those last seven or eight —
-   over inactive clients too. So it is never narrower than the advert path's
+   lead phone VALUE of only seven or eight digits by those last seven or
+   eight — over inactive clients too. (A seven-digit PIECE of a longer value,
+   «90/283-65-94» → «2836594», is no tail: matched by suffix it would answer a
+   hundred strangers.) About 90 ms an arrival at 2,000 clients and 40,000
+   leads — linear in the lead history. So it is never narrower than the advert path's
    «already a customer» step that follows it, and that step (`client`) cannot
    fire for an agent push;
 6. the one open lead on the same phone (≤ 30 days) → `joined` (a note on that
@@ -140,10 +167,19 @@ nothing else ever asks about an agent lead). A `joined` push into a
 conversation already live in the last 24 hours gets **no clock**: its
 `contacted_at` stays null, and its `outcome` says what happened. /crm/tahlil's
 «Birinchi aloqa» reads `contact_clock_at`/`contacted_at`, never the due time,
-so agent leads ARE in a seller's median and late counts there.
+so agent leads ARE in a seller's late counts there — and in the median by
+the rule every source has: a first contact within the week is a median
+sample, a later one (stamped only for the agent's sake) is late and nothing
+else.
 
 Adverts, the form and the bot are unchanged: a client's phone through an
 advert still lands on the client's card (`client`), only for ACTIVE clients.
+Three fixes of the second review reach every door, and none changes what a
+landing that worked did (#1467-#1469): text is cut by code points and a lone
+surrogate stored as U+FFFD (an emoji at an edge used to throw after the lead
+was written); a client card whose `phones` is not a list is read as no
+phones (one such card failed every arrival with a phone); and a delivery of
+an `external_id` already in flight waits for it.
 
 ## 3. The feeds
 
@@ -167,8 +203,19 @@ microseconds kept; anything else, `0` or `2026-02-30…` included, is 400
 hand it back verbatim). Follow `next` until it is `null`. Keep the same
 `since` while following one walk. Every body also carries **`resume`**: the
 cursor of this page's last row — on the last page too, where `next` is null —
-or, on an empty page, the cursor that was sent; store it to start the next
-walk there.
+or, on an empty page, the cursor that was sent, or `null` when none was
+(keep the one you had).
+
+- `resume` continues the OUTCOMES walk and a suppression DELTA. A FULL
+  suppression pull always starts from nothing — neither `since` nor
+  `cursor` — and only a walk that started that way may delete the rows it did
+  not see: a walk started from a stored cursor without `since` is still
+  labelled `mode: "full"`, but holds only the rows after the cursor.
+- `limit`: absent, `0` or not a number → 1000; below 1 → 1; above 5000 → 5000.
+- `since` with an offset: the `+` must be URL-encoded (`%2B05:00`), or it
+  arrives as a space and is 400 `bad_since`. `Z` needs nothing.
+- Every suppression page computes the whole set again (≈0.3 s at 17,000
+  entries): pull with `limit=5000`, not in small pages.
 
 ### 3.1 `GET /api/agent/suppression`
 
@@ -204,10 +251,16 @@ walk there.
   each part when it holds several numbers (split at `, ; / | \`, a line
   break, two spaces, or a space before `+`); and, inside a part of more than
   fifteen digits (no single phone is that long — the client import keeps a
-  multi-number cell as one run), every whole 12-digit `998…` number or every
-  whole 9-digit number. A run that is neither is read by its last nine only.
+  multi-number cell as one run), every whole 12-digit `998…` number — or,
+  only when the run is NOT made of those, every whole 9-digit number (three
+  998 numbers are 36 digits, a multiple of nine too, and their 9-digit
+  pieces are nobody's phone). A run that is neither is read by its last nine
+  only. A part shorter than nine digits yields nothing of its own.
 - `at`: when the row last moved — a client card's `max(created_at,
-  updated_at)`, a lead's `max(closed_at, updated_at)`.
+  updated_at)`, a lead's `max(closed_at, updated_at)`, a person's
+  `max(created_at, updated_at)` and the newest `updated_at` of the cards
+  that hold it (tying a code to a person writes the CARD, so that is the
+  moment the person's numbers join the set).
 - Not deduplicated: two cards on one phone are two entries with one `h`;
   upsert on `(kind, h)`.
 - **A delta cannot express a deletion**, and a label ADDED to the setting brings
@@ -218,7 +271,8 @@ walk there.
   (open ↔ won ↔ lost, CRM sozlamalari): every lead on it joins or leaves the
   set with no `at` moving. Only the full pull sees it.
 - Tails shorter than nine digits never appear in the feed. A card or lead
-  phone of seven or eight digits is still matched by the BELT (§2 step 5), so
+  phone VALUE of seven or eight digits is still matched by the BELT (§2
+  step 5), so
   a push on it comes back `dropped/suppressed` — the agent should then keep
   the phone it pushed in its own suppression; the nightly feed will never
   bring that number as a hash.
@@ -269,8 +323,9 @@ Exactly these 15 fields, nothing else:
   a read can carry an `at` older than that read's last row; and a row whose
   transaction committed after a read can carry an `at` the read already
   passed. Read nightly **by cursor AND with `since = now − 8 days`** (no
-  cursor), and weekly with `since = now − 90 days` (the stamping horizon,
-  §2). Upsert by `external_id`; a re-read row is the same row.
+  cursor), weekly with `since = now − 90 days` (the stamping horizon, §2),
+  and monthly with **neither** `since` nor `cursor` (the whole year — below).
+  Upsert by `external_id`; a re-read row is the same row.
 - `outcome = joined` reports the stage of a lead somebody else was already
   working, even one that came from another source — its stage, its kub and its
   decision become visible to the agent for that lead (stated, not hidden: the
@@ -279,7 +334,9 @@ Exactly these 15 fields, nothing else:
   door suppresses every phone a client card answers to first (§2).
 - The feed reads a stage's KIND live: when the owner changes a stage from
   open to lost (or back) every lead on it changes `stage_kind` with no `at`
-  moving — the weekly re-read is what catches it.
+  moving. A `since` read cannot see it for a row whose `at` is older than
+  that `since`; only the monthly read with neither `since` nor `cursor`
+  (every row of the year) catches it everywhere.
 - Never: a name, a phone, a note, an owner, a price.
 
 ## 4. Privacy
@@ -321,6 +378,13 @@ suppression list; it never receives the client book.
   pushed. The replay fence is per channel across every source, so a `cs:` id
   posted first through another door makes your push a replay; the ids carry
   your own company uuid, which nobody else knows.
+- A landing that fails half-way (the database, after the lead's INSERT)
+  leaves the lead; the agent's retry joins it (`joined`, «🔁 Qayta yozdi»
+  for a lead never announced). The landing's own text cuts no longer cause
+  one (code points, #1467).
+- The in-flight fence (§1) is per app process. Production runs one; across
+  processes the ledger's unique index still keeps one ledger row, not one
+  lead.
 - The doors screen sends a door's key only to whoever holds
   `admin.settings.manage` — the page data of every other `crm.manage` holder
   carries none (it is the agent key that reads the feeds).
@@ -330,7 +394,9 @@ suppression list; it never receives the client book.
 The agent may push through `POST /api/leads/in/other` with the «Boshqa» door's
 key and `utm_source: clientscrapper` in the body. Those arrivals are reported
 by the outcomes feed (the `other` + `utm_source` clause) once this branch is
-deployed, but they are ordinary arrivals: no belt, and the owner's 15-minute
-reminder DOES fire for them. **Never re-push an `external_id` after switching
+deployed, but they are ordinary arrivals: no belt, the owner's 15-minute
+reminder DOES fire for them, they count in the people's per-phone cap, and a
+landing that fails there is still answered 200 — reconcile a push that never
+shows up in the outcomes. **Never re-push an `external_id` after switching
 the source to `agent`:** the channel is the same (`webhook`), so the second
 push is a replay and lands nothing.

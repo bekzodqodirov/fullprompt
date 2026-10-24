@@ -4706,3 +4706,94 @@ the converted leads; the per-family cap; the no-phone drop; the verbatim reason;
 to everybody; a page building a key itself; the firm on every door's card; the firm out of the note; the form
 offering `agent`; the pickers offering it. One first stayed GREEN: deleting the day check of `parseSince` left
 «02-30» refused, because the month check alone catches a rolled day — re-done by removing the whole round trip.
+
+### The second review — the fixes reviewed as built (2026-10-24, same day; NO migration, ledger 136)
+
+Two lenses (the fixes, and the rest of the branch) over `f2d96526`; every finding and suspicion verified here
+before it was fixed or refuted, each fix red-proven by string edit with a hash-verified restore.
+
+1467. **A landing never stands half-written: every cut that reaches jsonb counts code points.** Pre-existing on
+EVERY door, found through the agent's: `trim()` cut the name at 120 and `capturePairs` a value at 300 in UTF-16
+units, so an emoji at the edge left a lone surrogate, and jsonb refuses one (22P02). The refusal came AFTER the
+lead's own INSERT — `createLead`'s audit row for the name, the ledger's `fields` for a pair — so the lead stood with
+an owner and today's date, no ledger row, no «🆕», no clock, no outcomes row, and the replay fence open (probed by
+the reviewer through the route). The same cut sat one call further down, unseen by the review: `addActivity`
+audits `note.slice(0, 200)`, and the landing's lenta note puts an emoji at 199-200 as easily. And a JSON body may
+carry a lone half outright (`"\ud83d"` is valid JSON). `platform/text/clip.ts` holds the rule: `clipCodePoints`
+(no mark — `clipText` is the same rule with an ellipsis), `wellFormed` (lone halves → U+FFFD), `wellFormedJson`
+(the stored `ref`, keys too). Applied to the landing's name/note/push phone, the card's phone (it rides into the
+audit), `normalizeKey`, `capturePairs` and `addActivity`'s excerpt — a change for every door and every typed note
+in the app, and harmless: a well-formed string is unchanged and a cut moves by at most one character. Pinned by
+integration tests at each edge (agent door, plus a tiktok control for the body-carried half) and unit tests.
+
+1468. **A client card whose `phones` is not a list no longer fails every arrival.** `activeClientsByPhone` (the
+landing's step 0, every door) ran `jsonb_array_elements_text(phones)` over every active card, and one card holding
+a jsonb string or object made it throw «cannot extract elements from a scalar» for every arrival with a phone;
+`clients.phones` has no CHECK. It now reads such a value as no phones, the feed's own guard; the JS arbiter already
+answered «no» for it. STATED, not fixed: three other readers of the client book have the same unguarded call —
+`platform/clients/search.ts`, `wms/search/service.ts` (⌘K) and the clients XLSX — and fail loudly to a person, not
+silently for a stranger. NOT verified: whether production holds such a value (gsr_dev was not touched); the owner
+can count it read-only with `SELECT count(*) FROM clients WHERE jsonb_typeof(phones) <> 'array'`, and a CHECK can
+follow in a later migration.
+
+1469. **One delivery of an id at a time, and the agent's own door says when it failed.** The replay fence is a
+SELECT at the start of the landing and the ledger's ON CONFLICT at its end, so two deliveries of one
+`(channel, external_id)` in flight both passed and both created a lead; the index kept one ledger row and the
+other lead stood unannounced and outside the outcomes (the reviewer measured it with the first held on a lock;
+pinned here deterministically with an uncommitted ledger row on the same id). `landInboundLead` chains deliveries
+per id in the process: the second waits, then meets the fence as a replay. Every door that can repeat an id lands
+in the app process (the webhook, the Meta worker under pg-boss, the bot); the site door in tg-listen keeps its own
+`serialised`. Harmless for live doors: only a second copy of an id still in flight waits. Then the answer: the
+agent door answered `200 {"ok":true}` to a landing that threw, the agent's spec maps that to `sent`, and the push
+was never re-sent or flagged. The `agent` door alone now answers `503 {"error":"unavailable"}` when the landing
+throws, and when the key lookup throws while `X-GSR-Key` was sent (the GET feeds' rule) — first-review #27, which
+was a 500 page. A retry is fenced: every throw is at or before the ledger row (`announce` has its own catch), and a
+row that committed answers the retry as a replay. Every advert door keeps its constant 200 — a platform reads a
+5xx as «send it again» for hours; the «Boshqa» fallback is such a door. STATED: a landing that throws after its
+lead was written (now only a database failure) leaves that lead, and the retry JOINS it — outcome `joined`, a
+«🔁 Qayta yozdi» for a lead never announced. The structural cure (claim the ledger row first) touches every door's
+caps and arrivals screen and was not taken. AGENT-FEED.md §1 no longer promises «always 200» nor «a re-send after
+a timeout is safe» without saying when.
+
+1470. **The suppression tails read one number as one number.** Three findings on #1460's table: (a) a split part
+shorter than nine digits («+998 90/283-65-94» → «2836594») was a tail, and the belt matched it by suffix — a
+hundred strangers' numbers `phonesMatch` never reads; a part yields its tail only from nine digits up, so the only
+short tails left are whole values, the case the app's rule matches. (b) The 9-digit chunking fired on runs the
+998 branch had cut already — three 998 numbers are 36 digits, a multiple of nine — putting «998902836»-shaped
+garbage in the feed and the belt, each a valid Uzbek mobile; it runs only when the run is not made of 998
+numbers. (c) A person's rows carried the person's own instant, while tying a code to a person writes the CARD
+(`attachClient`), so the person's numbers entered every delta in the past; their `at` now includes the newest
+`updated_at` of the cards that hold it. And the belt's cost (~240 ms an agent arrival at 2,000 clients / 40,000
+leads, measured here; 8× the pre-fix shape): the derived table takes the arrival's last seven digits and every
+branch keeps only the phone texts whose digits contain them — a superset filter by construction (a tail is a run
+of its text's digits and holds the last seven of anything it matches) — ~90 ms. What is left is one digit pass
+over every lead's phone, linear in history, which only an index could remove. The feed's own tests read ONE page,
+so on a long-lived database (#653) the fixtures fell off it (7 of 31 red on the reviewer's shaped copy): the full
+set is walked, the paging tests compare this run's own rows, and the two walks have a 60 s budget (12 s on a
+17,000-entry copy).
+
+1471. **/crm/tahlil's median reads every source by one rule.** #1464 stamps an unstamped agent arrival for 90
+days, so a day-30 call entered a seller's first-contact median, while an advert's day-9 call never could (its
+sweep stops at a week) — the screen's number came to depend on which door a lead used, beyond the owner question
+#1466 asked (the late counts). The median and its count take a contact within `CONTACT_LOOKBACK_DAYS` (7, now
+named, the sweep's own literal) of the clock; later ones stay in the late counts. For every non-agent source this
+filters nothing: nothing stamps them later. The contact worker's comment («a quiet minute costs two index probes»)
+was false since #1464 and now states the 90-day agent branch and its cost (50-80 ms a run at ~4,500 untouched agent
+arrivals, past `jit_above_cost` above ~5,000); the sweep was left without `withoutJit` — at ~25 pushes a day the
+set stays far below it, and compose's `jit=off` applies once postgres is recreated.
+
+1472. **What only the documents could fix, and what was refuted.** AGENT-FEED.md §3: `resume` is null on an empty
+page when no cursor was sent (keep the old one); a FULL suppression pull starts from neither `since` nor `cursor`
+and only such a walk may delete what it did not see (a walk resumed without `since` is labelled `full` and holds
+the tail); `limit` below 1 is 1; an offset's `+` must be `%2B`; the POST door also reads a body `key` when no header
+is sent; a stage-kind flip is caught only by a monthly read with neither `since` nor `cursor`; the per-family cap
+covers the agent's own door, not the «Boshqa» fallback; each suppression page recomputes the set (pull with
+`limit=5000`). VERIFIED, not changed: the Meta worker runs in the app process with one worker per queue, so its
+jobs are serial and also inside the chain; Next keeps a route handler running after its caller disconnects (it
+never reads `request.signal`) — reasoned, not measured on a live server. STATED: the doors screen's RSC payload for
+a `crm.manage`-only viewer was not rendered (no seeded role has that shape; `doorViews` is unit-tested); production's
+share of split or run phone shapes is unknown. Red proofs (16), all by string edit and hash-verified restore, all
+red: the name's cut, a pair value's cut, the key's cut, the activity excerpt's cut, the stored `ref`, the card's
+phone, the scalar guard, the in-flight chain, the agent door's 503 on a landing, its 503 on a key lookup, the
+short part, the 998 garbage, the person's instant, the belt's narrowing (wrong digits → the belt tests red), the
+median window, and the one-page full set (on a 17,000-entry copy: 6 red).
