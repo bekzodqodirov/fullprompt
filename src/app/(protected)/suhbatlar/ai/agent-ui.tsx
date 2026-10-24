@@ -42,7 +42,9 @@ function useAction() {
         onOk?.(res);
       } else {
         setNote(null);
-        setError(t(errorKey(res.error) as 'errors.unknown'));
+        const words = t(errorKey(res.error) as 'errors.unknown');
+        // A money refusal names the number it read as a price (F7) — never «a price» about a text with none.
+        setError(res.detail ? `${words} ${t('errors.figureRead', { figure: res.detail })}` : words);
       }
     });
   return { pending, error, note, run };
@@ -78,6 +80,7 @@ export function DraftActions({
   holder,
   holderName,
   canSend,
+  waitingInChat,
 }: {
   draftId: string;
   digest: string;
@@ -85,6 +88,8 @@ export function DraftActions({
   holder: boolean;
   holderName: string;
   canSend: boolean;
+  /** The chat's approved replies still waiting — 🙋 takes them back too, so it asks first (F10). */
+  waitingInChat: number;
 }) {
   const t = useTranslations('agentAi');
   const { pending, error, note, run } = useAction();
@@ -134,7 +139,10 @@ export function DraftActions({
           className="btn-secondary"
           disabled={pending}
           data-testid="agent-human"
-          onClick={() => run(() => agentDecideAction(draftId, 'human', null))}
+          onClick={() => {
+            if (waitingInChat > 0 && !window.confirm(t('humanWithdrawConfirm', { count: waitingInChat }))) return;
+            run(() => agentDecideAction(draftId, 'human', null));
+          }}
         >
           🙋 {t('human')}
         </button>

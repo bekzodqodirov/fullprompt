@@ -56,6 +56,7 @@ export const ERROR_KEYS: Record<AgentErrorCode, string> = {
   taken_over: 'errors.taken_over',
   budget_spent: 'errors.budget_spent',
   calc_not_queued: 'errors.calc_not_queued',
+  calc_in_flight: 'errors.calc_in_flight',
   identity_changed: 'errors.identity_changed',
   empty: 'errors.empty',
   // the config's writers
@@ -69,6 +70,7 @@ export const ERROR_KEYS: Record<AgentErrorCode, string> = {
   bad_value: 'errors.bad_value',
   // writeKbFact
   money: 'errors.money',
+  money_context: 'errors.money_context',
   personal: 'errors.personal',
   too_long: 'errors.too_long',
   scope: 'errors.scope',

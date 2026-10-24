@@ -44,6 +44,8 @@ export interface AgentActionResult {
   error?: string;
   /** A sentence the bot's own door answered with (the «remember this» presses). */
   message?: string;
+  /** The figure a knowledge refusal read as money (`KbError` money / money_context, ident fix F7). */
+  detail?: string;
   /** For a ✅: when the reply will leave, ISO. */
   sendAt?: string;
 }
@@ -69,6 +71,11 @@ function refreshPage(): void {
   revalidatePath(AGENT_PAGE);
 }
 
+/** The figure a money refusal names — the page says WHICH number it read as a price (F7). */
+function detailOf(err: unknown): { detail?: string } {
+  return err instanceof KbError && (err.code === 'money' || err.code === 'money_context') && err.detail ? { detail: err.detail } : {};
+}
+
 /** Errors the services raise as a code, and the server one migration behind; anything else is a real fault. */
 function codeOf(err: unknown): string | null {
   if (err instanceof AgentConfigError || err instanceof KbError || err instanceof GuardError) return err.code;
@@ -86,7 +93,7 @@ async function run(work: (g: Gate) => Promise<AgentActionResult | void>): Promis
     return out ?? { ok: true };
   } catch (err) {
     const code = codeOf(err);
-    if (code) return { ok: false, error: code };
+    if (code) return { ok: false, error: code, ...detailOf(err) };
     logger.error({ err }, '[agent] web action failed');
     throw err;
   }

@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The re-queued calculation hands the AI VED pass to pg-boss; nothing here
@@ -45,23 +45,25 @@ import {
   userRoles,
   users,
 } from '@/modules/platform/db/schema';
+import { sendsSilently } from '@/modules/platform/notifications/night';
 import { getSetting, setSetting } from '@/modules/platform/settings/service';
-import { agentPress } from '@/modules/wms/agent/bot-door';
-import { renderDraftCard } from '@/modules/wms/agent/card-io';
+import { agentPress, QUESTION_DROPPED } from '@/modules/wms/agent/bot-door';
+import { LANDING_CLAIM, renderDraftCard } from '@/modules/wms/agent/card-io';
 import { __restoreAgentConfig, readAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
 import { chatIdentity } from '@/modules/wms/agent/context';
-import { decideDraft, noteIdFor } from '@/modules/wms/agent/decide';
+import { decideDraft, LANDING_STALE_MS, noteIdFor } from '@/modules/wms/agent/decide';
+import { withdrawMovedReplies, withdrawRepliesFor } from '@/modules/wms/agent/drafts';
 import { agentSweep, OWNER_QUESTION_WAIT_MS, remindOwnerQuestions } from '@/modules/wms/agent/jobs';
 import { kbSearch, writeKbFact } from '@/modules/wms/agent/kb';
 import { purgeAgentChat } from '@/modules/wms/agent/purge';
 import { handleInbound } from '@/modules/wms/agent/run';
 import { humanOutBodies } from '@/modules/wms/agent/style';
-import { assertFactSeen, editKbFact } from '@/modules/wms/agent/web-kb';
+import { addGeneralFact, assertFactSeen, editKbFact } from '@/modules/wms/agent/web-kb';
 import { webDrafts, webKbFacts } from '@/modules/wms/agent/web-page';
 import { MAX_OPEN_PER_REQUESTER } from '@/modules/wms/calc/service';
 import { JOB_CALC_PREFILL } from '@/modules/wms/calc/jobs';
 import { stampAgentPump } from '@/modules/wms/crm/account-guard';
-import { decideChat } from '@/modules/wms/crm/chat-rules';
+import { attachPeerToCard, decideChat, openLeadForChat } from '@/modules/wms/crm/chat-rules';
 
 /**
  * The final review's identity and knowledge package, on a real database —
@@ -81,7 +83,7 @@ import { decideChat } from '@/modules/wms/crm/chat-rules';
 const SUFFIX = String(Date.now()).slice(-6);
 /** One chat per scenario, so no scenario's rows are another's input (#154). */
 const peer = (n: number) => BigInt(`74${SUFFIX}${String(n).padStart(2, '0')}`);
-const PEERS = Array.from({ length: 12 }, (_, i) => peer(i + 1));
+const PEERS = Array.from({ length: 32 }, (_, i) => peer(i + 1));
 let ownerId = '';
 let sellerId = '';
 let vedId = '';
@@ -95,6 +97,8 @@ let msgSeq = 7000n;
 const madeLeads: string[] = [];
 const madeRequests: string[] = [];
 const madeFacts: string[] = [];
+/** Clients a scenario mints for itself (a lead to win, a phone pair) — deleted with the file's own two. */
+const madeClients: string[] = [];
 
 const CLIENT_PHONE = `+99897${SUFFIX}11`;
 const OTHER_NAME = `Saidaxon Boshqayeva ${SUFFIX}`;
@@ -150,8 +154,13 @@ async function draft(peerId: bigint, over: Partial<typeof agentDrafts.$inferInse
 }
 
 /** An approved draft and its outbox row, waiting — the shape `decideDraft` writes. */
-async function waiting(peerId: bigint, status: 'agent' | 'sending' = 'agent', owner: { clientId: string | null } = { clientId }) {
-  const draftId = await draft(peerId, { status: 'approved', decidedBy: ownerId, decidedAt: new Date(), clientId: owner.clientId });
+async function waiting(
+  peerId: bigint,
+  status: 'agent' | 'sending' = 'agent',
+  owner: { clientId: string | null; leadId?: string | null } = { clientId },
+) {
+  const leadId = owner.clientId ? null : (owner.leadId ?? null);
+  const draftId = await draft(peerId, { status: 'approved', decidedBy: ownerId, decidedAt: new Date(), clientId: owner.clientId, leadId });
   msgSeq += 1n;
   const [o] = await db
     .insert(agentOutbox)
@@ -160,6 +169,7 @@ async function waiting(peerId: bigint, status: 'agent' | 'sending' = 'agent', ow
       managerUserId: ownerId,
       peerId,
       clientId: owner.clientId,
+      leadId,
       body: 'Ertalab javob.',
       randomId: BigInt(`6${SUFFIX}${String(msgSeq).padStart(6, '0')}`),
       answersTgMessageId: 1n,
@@ -201,6 +211,39 @@ function scripted(steps: { name: string; input: Record<string, unknown> }[]): Ca
       usage: { inputTokens: 1000, outputTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 0 },
     };
   }) as CallModel;
+}
+
+/** A pending podklyuch draft carrying a calc_submit — the model scripted (CI has no key). */
+async function calcDraft(p: bigint): Promise<string> {
+  const { tgId: anchor } = await message(p, { body: 'Xitoydan Toshkentga podklyuch kerak: 3 kub 500 kg, kurtka 100 dona' });
+  const out = await handleInbound(
+    { managerUserId: ownerId, peerId: String(p), anchorTgMessageId: String(anchor), origin: 'live' },
+    {
+      callModel: scripted([
+        { name: 'calc_checklist', input: { section: 'podklyuch', goods: [{ name: 'kurtka', quantity: 100, weight_kg: null }] } },
+        {
+          name: 'compose_reply',
+          input: {
+            reply_needed: true,
+            reply_text: 'Hisoblatishga yubordim, javob kelishi bilan aytaman.',
+            language: 'uz',
+            gloss_uz: '',
+            category: 'qualification',
+            confidence: 0.8,
+            needs_owner: false,
+            owner_question: '',
+            next_step: 'calc',
+            actions: [{ type: 'calc_submit', section: 'podklyuch', cited_message_refs: ['#1'], date: '', note: '' }],
+            used_fact_ids: [],
+            cited_message_refs: [],
+          },
+        },
+      ]),
+    },
+  );
+  expect(out).toMatchObject({ outcome: 'draft', blocked: false });
+  const [d] = await db.select().from(agentDrafts).where(and(eq(agentDrafts.peerId, p), eq(agentDrafts.status, 'pending')));
+  return d!.id;
 }
 
 async function clearChats() {
@@ -266,7 +309,7 @@ afterAll(async () => {
   if (madeFacts.length) await db.delete(kbFacts).where(inArray(kbFacts.id, madeFacts));
   // By OWNER too (#523): a red proof that drops a fact's provenance leaves a
   // copy no draft id finds — and its FK would stop the client's own delete.
-  await db.delete(kbFacts).where(inArray(kbFacts.clientId, [clientId, otherClientId]));
+  await db.delete(kbFacts).where(inArray(kbFacts.clientId, [clientId, otherClientId, ...madeClients]));
   if (madeLeads.length) await db.delete(kbFacts).where(inArray(kbFacts.leadId, madeLeads));
   const requests = await db
     .select({ id: calcRequests.id, taskId: calcRequests.taskId })
@@ -284,7 +327,7 @@ afterAll(async () => {
     await db.delete(events).where(inArray(events.entityId, taskIds));
     await db.delete(tasks).where(inArray(tasks.id, taskIds));
   }
-  const dealIds = (await db.select({ id: deals.id }).from(deals).where(inArray(deals.clientId, [clientId, otherClientId]))).map((d) => d.id);
+  const dealIds = (await db.select({ id: deals.id }).from(deals).where(inArray(deals.clientId, [clientId, otherClientId, ...madeClients]))).map((d) => d.id);
   if (dealIds.length) {
     await db.delete(events).where(inArray(events.entityId, dealIds));
     await db.delete(crmActivities).where(and(eq(crmActivities.entityType, 'deal'), inArray(crmActivities.entityId, dealIds)));
@@ -298,8 +341,8 @@ afterAll(async () => {
   await db.delete(notifications).where(inArray(notifications.userId, [ownerId, sellerId, vedId]));
   await db.delete(tgAccountGuard).where(eq(tgAccountGuard.accountId, accountId));
   await db.delete(tgAccounts).where(eq(tgAccounts.id, accountId));
-  await db.delete(events).where(inArray(events.entityId, [clientId, otherClientId]));
-  await db.delete(clients).where(inArray(clients.id, [clientId, otherClientId]));
+  await db.delete(events).where(inArray(events.entityId, [clientId, otherClientId, ...madeClients]));
+  await db.delete(clients).where(inArray(clients.id, [clientId, otherClientId, ...madeClients]));
   await __restoreAgentConfig(snapshot);
   await setSetting('tg_sending_enabled', sendingBefore, ownerId);
   await db.update(users).set({ active: false }).where(inArray(users.id, [ownerId, sellerId, vedId]));
@@ -431,6 +474,8 @@ describe('what a fact carries into every prompt (K6)', () => {
     expect(token, 're-anchor: the 📌 yes button').toBeTruthy();
     const yes = await agentPress(ownerId, 'g', d, token);
     expect(yes.toast).toContain('Umumiy qoida saqlandi');
+    // …and says the fact went in without the question he saw on the card (F8).
+    expect(yes.reply).toContain(QUESTION_DROPPED);
     const [fact] = await db.select().from(kbFacts).where(sql`${kbFacts.sourceRef}->>'draftId' = ${d}`);
     expect(fact).toMatchObject({ scope: 'general', question: null, answer: `Ha, bo‘lib to‘lash mumkin ${SUFFIX}.` });
   });
@@ -505,17 +550,29 @@ describe('the style corpus reads only what he still stands behind (K11)', () => 
   });
 });
 
+/** Today's `hour:minute` on the Tashkent clock (UTC+5) — the reminder rings by day only (F9), never by the clock this file happens to run at. */
+function tashkentAt(hour: number, minute = 0): Date {
+  const d = new Date();
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), hour - 5, minute));
+}
+
+/** His AgentNotice rows — this file's owner is this file's own (#653): asserted instead of the sweep's whole-database count (F6). */
+async function ownerNotices() {
+  return db
+    .select({ payload: notifications.payload })
+    .from(notifications)
+    .where(and(eq(notifications.userId, ownerId), eq(notifications.type, 'AgentNotice')));
+}
+
 describe('his unanswered question, reminded once (K30, his 14)', () => {
   it('a question waiting more than 30 minutes gets ONE reminder naming its chat — counts, no customer text', async () => {
     const p = PEERS[0]!;
-    const old = await draft(p, { needsOwner: true, ownerQuestion: `Mijoz Bobur so‘rayapti ${SUFFIX}`, createdAt: new Date(Date.now() - OWNER_QUESTION_WAIT_MS - 60_000) });
-    const fresh = await draft(PEERS[1]!, { needsOwner: true, ownerQuestion: 'Yangi savol', createdAt: new Date(Date.now() - 5 * 60_000) });
-    const now = new Date();
-    expect(await remindOwnerQuestions(now)).toBe(1);
-    const cards = await db
-      .select({ payload: notifications.payload })
-      .from(notifications)
-      .where(and(eq(notifications.userId, ownerId), eq(notifications.type, 'AgentNotice')));
+    const now = tashkentAt(12);
+    const old = await draft(p, { needsOwner: true, ownerQuestion: `Mijoz Bobur so‘rayapti ${SUFFIX}`, createdAt: new Date(now.getTime() - OWNER_QUESTION_WAIT_MS - 60_000) });
+    const fresh = await draft(PEERS[1]!, { needsOwner: true, ownerQuestion: 'Yangi savol', createdAt: new Date(now.getTime() - 5 * 60_000) });
+    // The sweep is the whole database's (other files' managers have questions too): this file's own rows are the oracle (F6).
+    await remindOwnerQuestions(now);
+    const cards = await ownerNotices();
     expect(cards).toHaveLength(1);
     const payload = cards[0]!.payload as { text: string; peerId: string };
     expect(payload.peerId).toBe(String(p));
@@ -524,7 +581,31 @@ describe('his unanswered question, reminded once (K30, his 14)', () => {
     expect((await draftRow(old)).ownerRemindedAt).not.toBeNull();
     expect((await draftRow(fresh)).ownerRemindedAt).toBeNull();
     // Once: the next sweep finds it already reminded.
-    expect(await remindOwnerQuestions(new Date())).toBe(0);
+    await remindOwnerQuestions(new Date(now.getTime() + 60_000));
+    expect(await ownerNotices()).toHaveLength(1);
+  });
+
+  it('…by DAY: a question crossing the half hour at night is reminded by the first sweep after 08:00 — audibly, and in ONE notice for all of them (F9)', async () => {
+    const night = tashkentAt(3);
+    const first = await draft(PEERS[24]!, { needsOwner: true, ownerQuestion: 'Kechasi savol', createdAt: new Date(night.getTime() - 40 * 60_000) });
+    const second = await draft(PEERS[25]!, { needsOwner: true, ownerQuestion: 'Yana savol', createdAt: new Date(night.getTime() - 35 * 60_000) });
+    // 03:00: claimed now, it would arrive silent (night.ts) — and, once-only, never ring at all.
+    await remindOwnerQuestions(night);
+    expect(await ownerNotices()).toHaveLength(0);
+    expect((await draftRow(first)).ownerRemindedAt).toBeNull();
+    expect((await draftRow(second)).ownerRemindedAt).toBeNull();
+    const morning = tashkentAt(8, 1);
+    await remindOwnerQuestions(morning);
+    const cards = await ownerNotices();
+    // Two questions crossed: ONE notice saying «2 ta», never two copies of it.
+    expect(cards).toHaveLength(1);
+    const payload = cards[0]!.payload as { text: string; peerId: string };
+    expect(payload.text).toContain('Javobsiz savollar: 2 ta');
+    // It names the chat of the newest question it reminds of.
+    expect(payload.peerId).toBe(String(PEERS[25]));
+    expect(sendsSilently('AgentNotice', payload, morning)).toBe(false);
+    expect((await draftRow(first)).ownerRemindedAt).not.toBeNull();
+    expect((await draftRow(second)).ownerRemindedAt).not.toBeNull();
   });
 });
 
@@ -551,34 +632,7 @@ describe('a run its process died inside (K24)', () => {
 describe('a calculation the queue refused lands on a later ✅ (K26)', () => {
   it('twenty open requests refuse the first ✅ in words; once one is answered, the next ✅ queues the SAME job', async () => {
     const p = PEERS[3]!;
-    const { tgId: anchor } = await message(p, { body: 'Xitoydan Toshkentga podklyuch kerak: 3 kub 500 kg, kurtka 100 dona' });
-    const out = await handleInbound(
-      { managerUserId: ownerId, peerId: String(p), anchorTgMessageId: String(anchor), origin: 'live' },
-      {
-        callModel: scripted([
-          { name: 'calc_checklist', input: { section: 'podklyuch', goods: [{ name: 'kurtka', quantity: 100, weight_kg: null }] } },
-          {
-            name: 'compose_reply',
-            input: {
-              reply_needed: true,
-              reply_text: 'Hisoblatishga yubordim, javob kelishi bilan aytaman.',
-              language: 'uz',
-              gloss_uz: '',
-              category: 'qualification',
-              confidence: 0.8,
-              needs_owner: false,
-              owner_question: '',
-              next_step: 'calc',
-              actions: [{ type: 'calc_submit', section: 'podklyuch', cited_message_refs: ['#1'], date: '', note: '' }],
-              used_fact_ids: [],
-              cited_message_refs: [],
-            },
-          },
-        ]),
-      },
-    );
-    expect(out).toMatchObject({ outcome: 'draft', blocked: false });
-    const [d] = await db.select().from(agentDrafts).where(and(eq(agentDrafts.peerId, p), eq(agentDrafts.status, 'pending')));
+    const draftId = await calcDraft(p);
     // Twenty jobs of his already wait on the VED (his Q10 ⭐ keeps the cap).
     const busy = await db
       .insert(calcRequests)
@@ -593,9 +647,9 @@ describe('a calculation the queue refused lands on a later ✅ (K26)', () => {
       )
       .returning({ id: calcRequests.id });
     madeRequests.push(...busy.map((b) => b.id));
-    const first = await decideDraft(actor(), d!.id, 'send', {}, ctx());
+    const first = await decideDraft(actor(), draftId, 'send', {}, ctx());
     expect(first).toEqual({ ok: false, code: 'calc_not_queued', detail: 'too_many_open' });
-    const refused = await draftRow(d!.id);
+    const refused = await draftRow(draftId);
     expect(refused).toMatchObject({ status: 'pending', actionStatus: 'failed', actionError: 'too_many_open' });
     const card = renderDraftCard(refused, null);
     expect(card).toContain(`${MAX_OPEN_PER_REQUESTER} ta ochiq so‘rov`);
@@ -603,15 +657,326 @@ describe('a calculation the queue refused lands on a later ✅ (K26)', () => {
 
     // One of the twenty answered: the very next ✅ lands the job the note promised — never «already landed».
     await db.update(calcRequests).set({ completedAt: new Date(), completedBy: vedId, completedVia: 'task' }).where(eq(calcRequests.id, busy[0]!.id));
-    const second = await decideDraft(actor(), d!.id, 'send', {}, ctx());
+    const second = await decideDraft(actor(), draftId, 'send', {}, ctx());
     expect(second).toMatchObject({ ok: true, status: 'approved' });
-    const landed = await db.select().from(calcRequests).where(eq(calcRequests.noteId, noteIdFor(d!.id)));
+    const landed = await db.select().from(calcRequests).where(eq(calcRequests.noteId, noteIdFor(draftId)));
     expect(landed).toHaveLength(1);
     expect(landed[0]).toMatchObject({ section: 'podklyuch', source: 'bot', hasCertificate: true, freightZone: 'cn' });
     expect((second as { requestId?: string }).requestId).toBe(landed[0]!.id);
     // The AI VED hodimi is handed the re-asked job like a first landing.
     expect(queued.some((q) => q.name === JOB_CALC_PREFILL && (q.data as { requestId?: string }).requestId === landed[0]!.id)).toBe(true);
     // The note was written once, on the first press.
-    expect(await db.select({ id: crmActivities.id }).from(crmActivities).where(eq(crmActivities.id, noteIdFor(d!.id)))).toHaveLength(1);
+    expect(await db.select({ id: crmActivities.id }).from(crmActivities).where(eq(crmActivities.id, noteIdFor(draftId)))).toHaveLength(1);
+  });
+});
+
+/** A tray rule on a chat, by default the file's client bound by hand on a number no card holds (no proof). */
+async function ruleOn(p: bigint, over: Partial<typeof tgChatRules.$inferInsert> = {}): Promise<string> {
+  const [rule] = await db
+    .insert(tgChatRules)
+    .values({
+      managerUserId: ownerId,
+      peerId: p,
+      decision: 'include',
+      clientId,
+      peerTitle: 'Notanish',
+      peerPhone: `+99890${SUFFIX}${String(p).slice(-2)}`,
+      decidedBy: ownerId,
+      decidedAt: new Date(),
+      ...over,
+    })
+    .returning({ id: tgChatRules.id });
+  return rule!.id;
+}
+
+async function madeClient(code: string, phones: string[]): Promise<string> {
+  const [c] = await db
+    .insert(clients)
+    .values({ clientCode: `${code}${SUFFIX}`, name: `Qo‘shimcha ${code} ${SUFFIX}`, phones, salesManagerId: ownerId })
+    .returning({ id: clients.id });
+  madeClients.push(c!.id);
+  return c!.id;
+}
+
+describe('a bind moved elsewhere is the new customer from the press — and takes the old one’s replies (ident fix F1)', () => {
+  it('«Qo‘shish» on ANOTHER code: the chat is that code at once, and a draft written for the old one is refused at ✅', async () => {
+    const p = PEERS[12]!;
+    const ruleId = await ruleOn(p);
+    // The stored row names the old client until the customer writes again.
+    const { tgId } = await message(p);
+    await decideChat({ id: ruleId, decision: 'pending' }, ctx());
+    await decideChat({ id: ruleId, decision: 'include', clientId: otherClientId }, ctx());
+    expect(await chatIdentity(ownerId, p)).toMatchObject({ clientId: otherClientId, strength: 'rule', customerName: OTHER_NAME });
+    // A draft minted between the rebind and the next inbound — the 💵 answer, a hand-back, the sweep's retry.
+    const late = await draft(p, { anchorTgMessageId: tgId, clientId });
+    expect(await decideDraft(actor(), late, 'send', {}, ctx())).toEqual({ ok: false, code: 'identity_changed' });
+    expect(await db.select().from(agentOutbox).where(eq(agentOutbox.draftId, late))).toHaveLength(0);
+  });
+
+  it('«Yangi lid» from a stale tab on a bound chat: the chat is the lead, the client’s live draft expires, its waiting reply is cancelled', async () => {
+    const p = PEERS[13]!;
+    const ruleId = await ruleOn(p);
+    const { tgId } = await message(p);
+    const live = await draft(p, { anchorTgMessageId: tgId });
+    const held = await waiting(p);
+    const { leadId } = await openLeadForChat(ruleId, ctx());
+    madeLeads.push(leadId);
+    expect(await chatIdentity(ownerId, p)).toMatchObject({ clientId: null, leadId, strength: 'lead', codes: [] });
+    expect((await draftRow(live)).status).toBe('expired');
+    const row = await outboxRow(held.outboxId);
+    expect(row.status).toBe('cancelled');
+    expect(row.lastError).toMatch(/^identity_changed/u);
+  });
+
+  it('a card’s «Chatni qo‘shish» naming another customer takes the old one’s waiting reply too', async () => {
+    const p = PEERS[14]!;
+    await ruleOn(p);
+    await message(p);
+    const held = await waiting(p);
+    await attachPeerToCard({ peerId: p, managerUserId: ownerId, clientId: otherClientId }, ctx());
+    expect((await outboxRow(held.outboxId)).status).toBe('cancelled');
+  });
+});
+
+describe('the tray’s «same customer» is the ✅’s (ident fix F11)', () => {
+  it('naming the client a WON lead became keeps that lead’s draft and its waiting reply — and the ✅ still lets it through', async () => {
+    const p = PEERS[15]!;
+    const won = await madeClient('AW', [`+99897${SUFFIX}44`]);
+    const l = await lead(`Lid yutildi ${SUFFIX}`, `+99891${SUFFIX}77`, won);
+    const ruleId = await ruleOn(p, { clientId: null, leadId: l });
+    const { tgId } = await message(p, { clientId: null, leadId: l });
+    const live = await draft(p, { anchorTgMessageId: tgId, clientId: null, leadId: l });
+    const held = await waiting(p, 'agent', { clientId: null, leadId: l });
+    await decideChat({ id: ruleId, decision: 'include', clientId: won }, ctx());
+    expect((await draftRow(live)).status).toBe('pending');
+    expect((await outboxRow(held.outboxId)).status).toBe('agent');
+    expect(await decideDraft(actor(), live, 'send', {}, ctx())).toMatchObject({ ok: true, status: 'approved' });
+  });
+
+  it('…and so does re-picking a phone SIBLING of the bound code — one person, two codes (fit-12)', async () => {
+    const p = PEERS[16]!;
+    const shared = `+99897${SUFFIX}55`;
+    const first = await madeClient('AS', [shared]);
+    const sibling = await madeClient('AT', [shared]);
+    const ruleId = await ruleOn(p, { clientId: first });
+    const { tgId } = await message(p, { clientId: first });
+    const live = await draft(p, { anchorTgMessageId: tgId, clientId: first });
+    const held = await waiting(p, 'agent', { clientId: first });
+    await decideChat({ id: ruleId, decision: 'include', clientId: sibling }, ctx());
+    expect((await draftRow(live)).status).toBe('pending');
+    expect((await outboxRow(held.outboxId)).status).toBe('agent');
+  });
+});
+
+describe('a ✅ committing in the middle of a withdrawal is still caught (ident fix F3)', () => {
+  /** Until a statement on agent_drafts waits on a row lock — through the POOL, never inside a transaction (round VED 2.0 phase 3). */
+  async function aWaiterOnDrafts(): Promise<void> {
+    for (let i = 0; i < 400; i += 1) {
+      const [row] = await db.execute<{ n: number }>(sql`
+        SELECT count(*)::int AS n FROM pg_stat_activity
+         WHERE datname = current_database() AND wait_event_type = 'Lock' AND query ILIKE '%agent_drafts%'`);
+      if (Number(row?.n ?? 0) > 0) return;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    throw new Error('the withdrawal never waited on the approval');
+  }
+
+  /**
+   * The approval's own two writes — the draft 'approved', its row queued — held
+   * open in one transaction while `withdraw` runs, committed once the withdrawal
+   * waits on the draft's lock: the interleaving a bot ✅ and a tray press make.
+   */
+  async function approvalMidWithdrawal(p: bigint, withdraw: () => Promise<unknown>): Promise<string> {
+    const { tgId } = await message(p);
+    const d = await draft(p, { anchorTgMessageId: tgId });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let outboxId = '';
+    const holder = db.transaction(async (tx) => {
+      await tx.update(agentDrafts).set({ status: 'approved', decidedBy: ownerId, decidedAt: new Date() }).where(eq(agentDrafts.id, d));
+      msgSeq += 1n;
+      const [o] = await tx
+        .insert(agentOutbox)
+        .values({
+          draftId: d,
+          managerUserId: ownerId,
+          peerId: p,
+          clientId,
+          body: 'Ertalab javob.',
+          randomId: BigInt(`7${SUFFIX}${String(msgSeq).padStart(6, '0')}`),
+          answersTgMessageId: tgId,
+          queuedBy: ownerId,
+          nextStepAt: new Date(Date.now() + 6 * 3_600_000),
+        })
+        .returning({ id: agentOutbox.id });
+      outboxId = o!.id;
+      await gate;
+    });
+    while (!outboxId) await new Promise((resolve) => setTimeout(resolve, 10));
+    const running = withdraw();
+    await aWaiterOnDrafts();
+    release();
+    await holder;
+    await running;
+    return outboxId;
+  }
+
+  it('the bot’s ↩ (withdrawRepliesFor): the reply approved while it ran is cancelled, not sent with the old name', async () => {
+    const p = PEERS[17]!;
+    const outboxId = await approvalMidWithdrawal(p, () =>
+      withdrawRepliesFor({ managerUserId: ownerId, peerId: p, clientId, leadId: null, why: 'identity_changed: test', note: '↩ test' }),
+    );
+    expect((await outboxRow(outboxId)).status).toBe('cancelled');
+  });
+
+  it('the tray’s doors (withdrawMovedReplies): the same', async () => {
+    const p = PEERS[18]!;
+    await ruleOn(p, { decision: 'pending', clientId: null });
+    const outboxId = await approvalMidWithdrawal(p, () =>
+      withdrawMovedReplies({ managerUserId: ownerId, peerId: p, why: 'identity_changed: test', note: '↩ test' }),
+    );
+    expect((await outboxRow(outboxId)).status).toBe('cancelled');
+  });
+});
+
+async function answered(p: bigint, question: string, answer: string, over: Partial<typeof agentDrafts.$inferInsert> = {}): Promise<string> {
+  return draft(p, { status: 'approved', decidedBy: ownerId, decidedAt: new Date(), needsOwner: true, ownerQuestion: question, finalBody: answer, ...over });
+}
+
+async function factOf(draftId: string) {
+  const [fact] = await db.select().from(kbFacts).where(sql`${kbFacts.sourceRef}->>'draftId' = ${draftId}`);
+  return fact;
+}
+
+describe('a fact is refused for a price it states — never for a word beside it (ident fix F7)', () => {
+  it('👤: the model’s question with a price WORD costs him nothing — his answer is saved alone, and he is told so', async () => {
+    const p = PEERS[19]!;
+    const d = await answered(p, 'Mijoz narx so‘rayapti, nima deyay?', 'Ertaga 10 da VED hisoblab beradi.');
+    const r = await agentPress(ownerId, 'u', d, undefined);
+    expect(r.toast).toContain('Shu mijoz uchun saqlandi');
+    expect(r.reply).toContain(QUESTION_DROPPED);
+    expect(await factOf(d)).toMatchObject({ scope: 'client', question: null, answer: 'Ertaga 10 da VED hisoblab beradi.' });
+  });
+
+  it('…while an answer that states a price is still refused — naming the figure', async () => {
+    const p = PEERS[20]!;
+    const d = await answered(p, 'Qancha bo‘ladi?', 'Bu safar 250 dollar bo‘ladi.');
+    const r = await agentPress(ownerId, 'u', d, undefined);
+    expect(r.reply).toMatch(/^«250[^»]*» — narx\. Narx bilimga yozilmaydi/u);
+    expect(await factOf(d)).toBeUndefined();
+  });
+
+  it('the page’s add form says which number it read as a price — and when only the question’s word made it one', async () => {
+    await expect(
+      addGeneralFact({ question: 'Narx qayerdan hisoblanadi?', answer: 'Yiwu qabul punktidan — Futian ko‘chasi 88' }, ctx()),
+    ).rejects.toMatchObject({ code: 'money_context', detail: '88' });
+    await expect(addGeneralFact({ question: null, answer: 'Yo‘lkira 250 dollar.' }, ctx())).rejects.toMatchObject({ code: 'money' });
+  });
+});
+
+describe('📌 keeps a clean question — a subject-less answer is never served to every chat (ident fix F8)', () => {
+  async function pin(d: string) {
+    const ask = await agentPress(ownerId, 'g', d, undefined);
+    const token = /:([0-9a-f]{8})$/u.exec(ask.buttons?.[0]?.[0]?.callback_data ?? '')?.[1];
+    expect(token, 're-anchor: the 📌 yes button').toBeTruthy();
+    return agentPress(ownerId, 'g', d, token);
+  }
+
+  it('a question with no figure, code, phone or name stays beside his «Ha, bo‘ladi»', async () => {
+    const p = PEERS[21]!;
+    const d = await answered(p, 'Kartaga to‘lasa bo‘ladimi?', 'Ha, bo‘ladi aka.');
+    const yes = await pin(d);
+    expect(yes.toast).toContain('Umumiy qoida saqlandi');
+    expect(yes.reply).toBeUndefined();
+    expect(await factOf(d)).toMatchObject({ scope: 'general', question: 'Kartaga to‘lasa bo‘ladimi?', answer: 'Ha, bo‘ladi aka.' });
+  });
+
+  it('…one naming this customer goes, and he is told the fact went in without it', async () => {
+    const p = PEERS[22]!;
+    const d = await answered(p, 'Saidaxon opa kartaga to‘lasa bo‘ladimi?', 'Ha, kartaga ham bo‘ladi.', { clientId: otherClientId });
+    const yes = await pin(d);
+    expect(yes.reply).toContain(QUESTION_DROPPED);
+    expect(await factOf(d)).toMatchObject({ scope: 'general', question: null, answer: 'Ha, kartaga ham bo‘ladi.' });
+  });
+});
+
+describe('🙋 says what it took back (ident fix F10)', () => {
+  it('the press names the approved replies it cancelled — and how many were his own words; the page asks first', async () => {
+    const p = PEERS[23]!;
+    // `waiting` stores his ✏️ words as the body (`finalBody`): his own reply, held for the morning.
+    const held = await waiting(p);
+    const { tgId } = await message(p, { body: '??' });
+    const d2 = await draft(p, { anchorTgMessageId: tgId, finalBody: null, proposedBody: 'Ertalab aniqlab aytaman.' });
+    expect((await webDrafts(actor())).pending.find((w) => w.id === d2)?.waitingInChat).toBe(1);
+    const r = await agentPress(ownerId, 'h', d2, undefined);
+    expect(r.toast).toBe('🙋 Suhbat 24 soat sizniki — 1 ta javob bekor qilindi');
+    expect(r.reply).toContain('1 tasi — o‘zingiz yozgan matn');
+    expect((await outboxRow(held.outboxId)).status).toBe('cancelled');
+  });
+
+  it('…and nothing more when nothing was waiting', async () => {
+    const p = PEERS[26]!;
+    const { tgId } = await message(p);
+    const d = await draft(p, { anchorTgMessageId: tgId });
+    expect((await webDrafts(actor())).pending.find((w) => w.id === d)?.waitingInChat).toBe(0);
+    const r = await agentPress(ownerId, 'h', d, undefined);
+    expect(r).toMatchObject({ toast: '🙋 Suhbat 24 soat sizniki' });
+    expect(r.reply).toBeUndefined();
+  });
+});
+
+describe('a calculation landing is ONE press’s (ident fix F12)', () => {
+  it('a ✅ that meets another press landing the same job writes nothing and says so; a claim a dead press left is taken over', async () => {
+    const p = PEERS[27]!;
+    // Every job of his answered: the queue's cap is not this test's subject.
+    await db
+      .update(calcRequests)
+      .set({ completedAt: new Date(), completedBy: vedId, completedVia: 'task' })
+      .where(and(eq(calcRequests.requestedBy, ownerId), isNull(calcRequests.completedAt)));
+    const d = await calcDraft(p);
+    // Another press is between the intake note and the queue (decide `claimLanding`).
+    await db.update(agentDrafts).set({ actionError: LANDING_CLAIM, updatedAt: new Date() }).where(eq(agentDrafts.id, d));
+    expect(await decideDraft(actor(), d, 'send', {}, ctx())).toEqual({ ok: false, code: 'calc_in_flight' });
+    expect(await db.select().from(calcRequests).where(eq(calcRequests.noteId, noteIdFor(d)))).toHaveLength(0);
+    const inFlight = await draftRow(d);
+    expect(inFlight).toMatchObject({ status: 'pending', actionError: LANDING_CLAIM });
+    expect(renderDraftCard(inFlight, null)).toContain('⏳ Hisoblatish hozir navbatga qo‘yilmoqda');
+    // That press died (a deploy): past the claim's window the next ✅ lands the job, once.
+    await db.update(agentDrafts).set({ updatedAt: new Date(Date.now() - LANDING_STALE_MS - 60_000) }).where(eq(agentDrafts.id, d));
+    expect(await decideDraft(actor(), d, 'send', {}, ctx())).toMatchObject({ ok: true, status: 'approved' });
+    expect(await db.select().from(calcRequests).where(eq(calcRequests.noteId, noteIdFor(d)))).toHaveLength(1);
+  });
+
+  it('a refusal the next ✅ meets again points to 🙋 — never to ✏️, which keeps the calculation', async () => {
+    for (const [p, code] of [[PEERS[28]!, 'too_many_items'], [PEERS[30]!, 'not_found']] as const) {
+      const d = await draft(p, { actionStatus: 'failed', actionError: code });
+      const card = renderDraftCard(await draftRow(d), null);
+      expect(card).toContain('🙋 bosing');
+      expect(card).not.toContain('✏️ bilan');
+    }
+  });
+});
+
+describe('what the agent’s runs may say, its owner may read (ident fix F13)', () => {
+  const seller = () => ({ id: sellerId, roles: ['sales_manager'] as const, permissions: new Set<string>(['crm.leads']) });
+
+  it('a per-customer fact another account taught is listed to the CURRENT owner — and he may correct or retire it', async () => {
+    const p = PEERS[29]!;
+    const mine = await draft(p);
+    const fact = await writeKbFact(
+      { scope: 'client', clientId, question: null, answer: `Faqat ertalab qo‘ng‘iroq qiling ${SUFFIX}.`, sourceRef: { draftId: mine } },
+      ctx(),
+    );
+    expect((await webKbFacts(seller())).facts.map((f) => f.id)).not.toContain(fact);
+    // The super_admin moved the agent to the seller's account: his runs are served this fact by its client (kbSearch).
+    await db.update(agentConfig).set({ ownerUserId: sellerId }).where(eq(agentConfig.id, 1));
+    try {
+      expect((await webKbFacts(seller())).facts.map((f) => f.id)).toContain(fact);
+      await expect(assertFactSeen(seller(), fact)).resolves.toBeUndefined();
+      // …the drafts of the chat it came from stay the other account's.
+      expect([...(await webDrafts(seller())).pending].map((d) => d.id)).not.toContain(mine);
+    } finally {
+      await db.update(agentConfig).set({ ownerUserId: ownerId }).where(eq(agentConfig.id, 1));
+    }
   });
 });

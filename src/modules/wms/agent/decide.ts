@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { and, desc, eq, gt, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNotNull, lt, or, sql } from 'drizzle-orm';
 import { v5 as uuidv5 } from 'uuid';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { db } from '../../platform/db/client';
@@ -20,8 +20,9 @@ import { logger } from '../../platform/logger';
 import { getSetting } from '../../platform/settings/service';
 import { listenerIsCurrent, readGuard } from '../crm/account-guard';
 import { cardDigest } from './card';
+import { LANDING_CLAIM } from './card-io';
 import { agentRunning, readAgentConfig } from './config';
-import { chatIdentity } from './context';
+import { bindMoved, chatIdentity } from './context';
 import { zoneForOrigin } from './origin';
 import { ownerPolicyFor, policyFor } from './policy-input';
 import { keptFileSql } from './outbox-store';
@@ -64,11 +65,24 @@ export type DecideRefusal =
   | 'taken_over'
   | 'budget_spent'
   | 'calc_not_queued'
+  | 'calc_in_flight'
   | 'identity_changed'
   | 'empty';
 
 export type DecideResult =
-  | { ok: true; status: string; sendAt?: Date; requestId?: string | null }
+  | {
+      ok: true;
+      status: string;
+      sendAt?: Date;
+      requestId?: string | null;
+      /**
+       * 🙋's withdrawals, said on the press (ident fix F10): the approved
+       * replies still waiting that it cancelled, and how many of them were HIS
+       * OWN words (a ✏️ text, a 💵 price) — the one kind he would not expect a
+       * «the chat is mine» to take back.
+       */
+      withdrawn?: { total: number; own: number };
+    }
   | { ok: false; code: DecideRefusal; detail?: string };
 
 export interface DeciderActor {
@@ -133,15 +147,13 @@ async function chatMoved(d: typeof agentDrafts.$inferSelect): Promise<'supersede
 }
 
 /**
- * Is the chat no longer the customer this draft was written for? The client
- * by any of the chat's phone-sibling codes; with no client on the draft, its
- * lead. A draft that named nobody names nobody to change.
+ * Is the chat no longer the customer this draft was written for? Asked of the
+ * server's identity NOW, by the one rule the tray's withdrawal asks too
+ * (context `bindMoved`).
  */
 async function identityMoved(d: typeof agentDrafts.$inferSelect): Promise<boolean> {
   if (!d.clientId && !d.leadId) return false;
-  const now = await chatIdentity(d.managerUserId, d.peerId);
-  if (d.clientId) return !now.codes.some((c) => c.id === d.clientId);
-  return now.leadId !== d.leadId;
+  return bindMoved(d, await chatIdentity(d.managerUserId, d.peerId));
 }
 
 /** Today's AI sends against the ceiling — a ✅ beyond it is refused with the text to copy (fit-8). One home: today.ts. */
@@ -160,10 +172,40 @@ async function lastInboundAt(d: typeof agentDrafts.$inferSelect): Promise<Date |
   return row?.sentAt ?? null;
 }
 
+/** A claim older than this is a press that died mid-landing (a deploy, a kill), and the next ✅ takes it over. */
+export const LANDING_STALE_MS = 2 * 60_000;
+
+/**
+ * The landing's claim (ident fix F12): `action_error` holds `LANDING_CLAIM`
+ * while one press lands the job. Two ✅ a second apart — the bot and the
+ * page, or a press redelivered — used to land it TWICE once K26 made a
+ * standing note re-askable: the second press found the first one's note with
+ * no request yet and opened a request of its own on it. A unique index on
+ * the request's note cannot say this — a recalculation copies its note on
+ * purpose (workspace `recalcFromSealed`) — so the claim is the draft's own
+ * row, a compare-and-set like every other claim here.
+ */
+async function claimLanding(draftId: string): Promise<boolean> {
+  const [row] = await db
+    .update(agentDrafts)
+    .set({ actionError: LANDING_CLAIM, updatedAt: new Date() })
+    .where(
+      and(
+        eq(agentDrafts.id, draftId),
+        or(sql`${agentDrafts.actionError} IS DISTINCT FROM ${LANDING_CLAIM}`, lt(agentDrafts.updatedAt, new Date(Date.now() - LANDING_STALE_MS))),
+      ),
+    )
+    .returning({ id: agentDrafts.id });
+  return row !== undefined;
+}
+
 /**
  * The calculation, landed (or found already landed) — through the bot's own
  * door, `landIntake`, so the job reaches the same queue, the same AI VED
- * pre-pass and the same stage move as one a seller collected.
+ * pre-pass and the same stage move as one a seller collected. A landing is
+ * claimed first (`claimLanding`); a press that finds another one landing is
+ * told `in_flight` and writes nothing — the claim is released by whatever
+ * that press writes next (the approval, or the refusal).
  */
 async function landCalc(
   d: typeof agentDrafts.$inferSelect,
@@ -179,8 +221,10 @@ async function landCalc(
     // requests, or a server mid-deploy. `landIntake` writes the note and moves
     // the stage before it asks the queue, so this ✅ is the job asked again —
     // never «already landed» for ever over a job no VED will ever see.
+    if (!(await claimLanding(d.id))) return { queued: false, requestId: null, queueError: 'in_flight' };
     return requeueLanded(noteId, action, actor);
   }
+  if (!(await claimLanding(d.id))) return { queued: false, requestId: null, queueError: 'in_flight' };
   const identity = await chatIdentity(d.managerUserId, d.peerId);
   const cited = action.citedMessageIds.length
     ? await db
@@ -317,7 +361,7 @@ export async function decideDraft(
 
   if (decision === 'reject' || decision === 'human' || decision === 'edit') {
     const status = decision === 'reject' ? 'rejected' : decision === 'human' ? 'taken_over' : 'editing';
-    const changed = await db.transaction(async (tx): Promise<{ held: string[] } | null> => {
+    const changed = await db.transaction(async (tx): Promise<{ held: string[]; own: number } | null> => {
       const [row] = await tx
         .update(agentDrafts)
         .set({
@@ -329,6 +373,7 @@ export async function decideDraft(
         .returning({ id: agentDrafts.id });
       if (!row) return null;
       let held: string[] = [];
+      let own = 0;
       if (decision === 'human') {
         const until = new Date(Date.now() + 24 * 3_600_000);
         await tx
@@ -344,13 +389,24 @@ export async function decideDraft(
         // has just taken over. In this same transaction, by `agent_off`'s
         // compare-and-set on 'agent' (withdrawTypedBind's): the send step
         // claims by that status, so a row already claimed is the one in flight
-        // — and its next step reads `human_until` and stands down.
+        // — and its next step reads the press (`human_until`, approved before
+        // it: send-step `approvedBeforePress`) and stands down. A reply he
+        // approves AFTER the press is his newer word and goes. His own words
+        // go with the machine's — the send step cannot tell them apart and
+        // must not — so the press SAYS how many it took (F10).
         const cancelled = await tx
           .update(agentOutbox)
           .set({ status: 'cancelled', lastError: 'taken_over: 🙋 he took the chat over for 24 hours' })
           .where(and(eq(agentOutbox.managerUserId, d.managerUserId), eq(agentOutbox.peerId, d.peerId), eq(agentOutbox.status, 'agent')))
           .returning({ draftId: agentOutbox.draftId });
         held = cancelled.map((o) => o.draftId);
+        if (held.length > 0) {
+          const mine = await tx
+            .select({ id: agentDrafts.id })
+            .from(agentDrafts)
+            .where(and(inArray(agentDrafts.id, held), or(isNotNull(agentDrafts.finalBody), eq(agentDrafts.kind, 'price'))));
+          own = mine.length;
+        }
       }
       if (decision !== 'edit') {
         await writeAudit(tx, ctx, {
@@ -361,13 +417,13 @@ export async function decideDraft(
           after: { status, ...(held.length > 0 ? { cancelledWaiting: held.length } : {}) },
         });
       }
-      return { held };
+      return { held, own };
     });
     if (!changed) return { ok: false, code: 'not_live' };
     await refreshDraftCard(draftId);
     // Each cancelled reply's own card says it will not go (card-io's CANCEL_WORDS `taken_over`).
     for (const held of changed.held) await refreshDraftCard(held);
-    return { ok: true, status };
+    return { ok: true, status, ...(decision === 'human' ? { withdrawn: { total: changed.held.length, own: changed.own } } : {}) };
   }
 
   // ✅
@@ -445,6 +501,8 @@ export async function decideDraft(
   let requestId: string | null = null;
   if (calc) {
     const landed = await landCalc(d, calc, actor);
+    // Another press is landing this very job: nothing is written here — its own outcome releases the claim (F12).
+    if (landed.queueError === 'in_flight') return { ok: false, code: 'calc_in_flight' };
     if (!landed.queued || !landed.requestId) {
       await db
         .update(agentDrafts)

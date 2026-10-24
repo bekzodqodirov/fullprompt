@@ -228,45 +228,41 @@ export async function decideChat(
     after: { decision: input.decision, clientId, leadId: null },
   });
 
-  await withdrawAgentRepliesOf(rule, { decision: input.decision, clientId });
+  await withdrawAgentRepliesOf(rule);
 }
 
 /**
- * decideChat's one hook into the AI sotuvchi (final review K7): a decision
- * that takes the chat away from the client — or the lead — it was bound to
- * («↩» to pending, «Shaxsiy», another client) takes back the agent's replies
- * written for that bind, exactly as the bot's own ↩ does (`withdrawRepliesFor`,
- * one home). Without it the web tray's undo left an approval held for the
- * morning to go out with the old client's name and codes into a chat bound to
- * nobody. The same client named again keeps everything.
+ * The rule doors' one hook into the AI sotuvchi (final review K7, ident fix
+ * F1/F11): a decision that makes the chat somebody else's — the tray's «↩»,
+ * «Shaxsiy», another client, «Yangi lid» from a stale tab, a card's «Chatni
+ * qo'shish» — takes back the agent's replies written for whoever it was,
+ * asked of the chat's identity AFTER the write by the ✅'s own rule (drafts
+ * `withdrawMovedReplies`, context `bindMoved`): the same person — a phone
+ * sibling, the client a won lead became — keeps everything, exactly as the
+ * ✅ would let it through. Without it the web tray's undo left an approval
+ * held for the morning to go out with the old client's name and codes into a
+ * chat bound to nobody, and the send step's own identity check compares the
+ * stored rows, which still name that client.
  *
  * After the rule is written, so a ✅ pressed in between asks the NEW rule
- * (decide.ts re-asks the chat's identity) or is cancelled here. Best-effort:
- * the decision stands whatever the agent's tables say — on a server one
- * migration behind they are not there at all — and a row this misses is
- * still refused by the send step's identity check.
+ * (decide.ts re-asks the chat's identity) or — committed before it — is
+ * cancelled here (drafts first, then the waiting rows). Best-effort: the
+ * decision stands whatever the agent's tables say, and on a server one
+ * migration behind they are not there at all.
  */
-async function withdrawAgentRepliesOf(
-  rule: typeof tgChatRules.$inferSelect,
-  next: { decision: 'include' | 'exclude' | 'pending'; clientId: string | null },
-): Promise<void> {
-  if (rule.decision !== 'include') return;
-  const keepsClient = rule.clientId !== null && next.decision === 'include' && next.clientId === rule.clientId;
-  if (keepsClient || (!rule.clientId && !rule.leadId)) return;
+async function withdrawAgentRepliesOf(rule: { id?: string; managerUserId: string; peerId: bigint }): Promise<void> {
   try {
     const { agentTablesReady } = await import('../agent/config');
     if (!(await agentTablesReady())) return;
-    const { withdrawRepliesFor } = await import('../agent/drafts');
-    await withdrawRepliesFor({
+    const { withdrawMovedReplies } = await import('../agent/drafts');
+    await withdrawMovedReplies({
       managerUserId: rule.managerUserId,
       peerId: rule.peerId,
-      clientId: rule.clientId,
-      leadId: rule.clientId ? null : rule.leadId,
       why: 'identity_changed: the chat was decided again on the tray',
       note: '↩ Chat qayta hal qilindi — bu javob ketmaydi.',
     });
   } catch (err) {
-    logger.warn({ err, ruleId: rule.id }, '[chat-rules] agent replies not withdrawn');
+    logger.warn({ err, ruleId: rule.id, peerId: String(rule.peerId) }, '[chat-rules] agent replies not withdrawn');
   }
 }
 
@@ -325,6 +321,7 @@ export async function openLeadForChat(
     before: { decision: rule.decision, clientId: rule.clientId, leadId: rule.leadId },
     after: { decision: 'include', clientId: null, leadId, ...(phone ? {} : { reason: 'agent_stranger_phoneless' }) },
   });
+  await withdrawAgentRepliesOf(rule);
   return { leadId };
 }
 
@@ -419,6 +416,7 @@ export async function attachPeerToCard(
     action: 'update',
     after: { decision: 'include', clientId, leadId, reason: 'attached_from_card' },
   });
+  await withdrawAgentRepliesOf({ id: row!.id, managerUserId: input.managerUserId, peerId: input.peerId });
 }
 
 /**

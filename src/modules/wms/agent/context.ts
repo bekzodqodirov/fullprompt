@@ -233,16 +233,41 @@ export async function chatIdentity(managerUserId: string, peerId: bigint): Promi
         .orderBy(desc(tgMessages.sentAt))
         .limit(1)
     : [{ leadId: newest?.leadId ?? null }];
-  const [lead] = leadRow?.leadId
-    ? await db
-        .select({ id: leads.id, name: leads.name, ownerId: leads.ownerId, phone: leads.phone, clientId: leads.clientId })
-        .from(leads)
-        .where(eq(leads.id, leadRow.leadId))
-    : [];
+  const leadById = async (id: string) => {
+    const [row] = await db
+      .select({ id: leads.id, name: leads.name, ownerId: leads.ownerId, phone: leads.phone, clientId: leads.clientId })
+      .from(leads)
+      .where(eq(leads.id, id));
+    return row;
+  };
+  let lead = leadRow?.leadId ? await leadById(leadRow.leadId) : undefined;
   // Beside a client, only the lead that WAS this client — the win (K25).
   let leadId = lead && (!clientId || lead.clientId === clientId) ? lead.id : null;
   let strength: IdentityStrength | null = null;
   let codes: { id: string; clientCode: string }[] = clientId ? await phoneSiblingClients(clientId) : [];
+  // An include written AFTER the stored rows is the chat's owner from the
+  // moment it is written (ident fix F1): the tray's «Qo'shish» on another
+  // code, its «Yangi lid» from a stale tab, a card's «Chatni qo'shish». The
+  // listener files the NEXT message under it, and until that message the rows
+  // still name the customer the chat was taken from — whose name, codes and
+  // card a ✅ would otherwise carry. The same person is not a move: a phone
+  // sibling of the stored client (fit-12), or the lead that client was won
+  // from (K25).
+  if (rule?.decision === 'include') {
+    if (rule.clientId && !codes.some((c) => c.id === rule.clientId)) {
+      clientId = rule.clientId;
+      codes = await phoneSiblingClients(clientId);
+      leadId = lead && lead.clientId === clientId ? lead.id : null;
+    } else if (!rule.clientId && rule.leadId && rule.leadId !== leadId) {
+      lead = await leadById(rule.leadId);
+      const won = Boolean(clientId) && lead?.clientId === clientId;
+      if (!won) {
+        clientId = null;
+        codes = [];
+      }
+      leadId = lead?.id ?? null;
+    }
+  }
   let customerName: string | null = null;
   let managerId: string | null = null;
   let cargoAllowed = false;
@@ -288,6 +313,25 @@ export async function chatIdentity(managerUserId: string, peerId: bigint): Promi
     managerName = u?.name ?? null;
   }
   return { clientId, leadId, strength, codes, customerName, managerName, cargoAllowed, ruleDecision: rule?.decision ?? null };
+}
+
+/**
+ * Is the chat no longer the customer a reply was written for — a draft
+ * waiting for his ✅, or an approved one waiting to leave? The client by any
+ * of the chat's phone-sibling codes (fit-12); with no client on the reply,
+ * its lead, which a WON lead still is (`chatIdentity` keeps it beside its
+ * client, K25). A reply that named nobody names nobody to change. ONE rule
+ * for the ✅ (decide.ts) and for the tray's withdrawal (drafts
+ * `withdrawMovedReplies`), so the two cannot disagree about who is the same
+ * person (ident fix F11).
+ */
+export function bindMoved(
+  was: { clientId: string | null; leadId: string | null },
+  now: Pick<ChatIdentity, 'codes' | 'leadId'>,
+): boolean {
+  if (!was.clientId && !was.leadId) return false;
+  if (was.clientId) return !now.codes.some((c) => c.id === was.clientId);
+  return now.leadId !== was.leadId;
 }
 
 /** The chat's live messages, newest `limit`, oldest first — deleted ones never (leak-8). */

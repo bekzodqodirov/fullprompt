@@ -6,7 +6,7 @@ import { kickTelegramDrain, notifyStaffTelegram, queueStaffTelegram } from '../.
 import { offerStandsSql, releasedOfferWhere } from '../calc/workspace';
 import { cardExtra } from './card';
 import { renderDraftCard, type DraftRow } from './card-io';
-import type { AgentContext } from './context';
+import { bindMoved, chatIdentity, type AgentContext } from './context';
 import type { PolicyMemory } from './policy-input';
 import type { PolicyResult } from './policy';
 import type { CardMemory, ComposedAction, DraftPolicyJson } from './types';
@@ -299,16 +299,23 @@ export async function draftOfferStands(draftId: string): Promise<boolean | null>
 
 /**
  * The replies a chat's OLD owner was written for, taken back with the bind
- * (final review K7; review I1's rule, now one home for both doors): every
- * draft still waiting for his ✅ under that client — or that lead — expires,
- * because approving it later would land its calculation on that card and send
- * that customer's name and codes into a chat that is no longer theirs; and an
- * approved reply still WAITING to go (the night hold, the human delay) is
- * cancelled by `agent_off`'s compare-and-set on 'agent' — the send step
- * claims a row by that same status, so a row already claimed is the one in
- * flight and is let finish (its next step asks the chat again). The cards
- * say so. Called by the bot's ↩ and by the web tray's own door
- * (`decideChat`), whichever takes the bind back.
+ * (final review K7; review I1's rule): every draft still waiting for his ✅
+ * under that client — or that lead — expires, because approving it later
+ * would land its calculation on that card and send that customer's name and
+ * codes into a chat that is no longer theirs; and an approved reply still
+ * WAITING to go (the night hold, the human delay) is cancelled by
+ * `agent_off`'s compare-and-set on 'agent' — the send step claims a row by
+ * that same status, so a row already claimed is the one in flight and is let
+ * finish (its next step asks the chat again). The cards say so. The bot's ↩
+ * names the bind it takes back; the tray's doors ask the chat's identity
+ * instead (`withdrawMovedReplies`).
+ *
+ * The DRAFTS first, then the waiting rows (ident fix F3): a ✅ committing
+ * between the two writes is then caught by the second — its draft was still
+ * 'pending' when the expire looked, so it either lost the expire's
+ * compare-and-set or its row is already there for the cancel to find. The
+ * other order let an approval slip between them: the cancel found no row yet,
+ * the expire found the draft already 'approved'.
  */
 export async function withdrawRepliesFor(input: {
   managerUserId: string;
@@ -328,11 +335,6 @@ export async function withdrawRepliesFor(input: {
   const ownedDraft = input.clientId
     ? eq(agentDrafts.clientId, input.clientId)
     : and(isNull(agentDrafts.clientId), eq(agentDrafts.leadId, input.leadId!));
-  const cancelled = await db
-    .update(agentOutbox)
-    .set({ status: 'cancelled', lastError: input.why })
-    .where(and(eq(agentOutbox.managerUserId, input.managerUserId), eq(agentOutbox.peerId, input.peerId), ownedOutbox, eq(agentOutbox.status, 'agent')))
-    .returning({ draftId: agentOutbox.draftId });
   const expired = await db
     .update(agentDrafts)
     .set({ status: 'expired', updatedAt: new Date() })
@@ -345,16 +347,85 @@ export async function withdrawRepliesFor(input: {
       ),
     )
     .returning({ id: agentDrafts.id });
-  const ids = [...expired.map((d) => d.id), ...cancelled.map((o) => o.draftId)];
+  const cancelled = await db
+    .update(agentOutbox)
+    .set({ status: 'cancelled', lastError: input.why })
+    .where(and(eq(agentOutbox.managerUserId, input.managerUserId), eq(agentOutbox.peerId, input.peerId), ownedOutbox, eq(agentOutbox.status, 'agent')))
+    .returning({ draftId: agentOutbox.draftId });
+  return withdrawn(expired.map((d) => d.id), cancelled.map((o) => o.draftId), input.note);
+}
+
+/** The withdrawn replies' cards say so — every one, whichever door took them back. */
+async function withdrawn(expired: string[], cancelled: string[], note: string): Promise<{ expired: string[]; cancelled: string[] }> {
+  const ids = [...expired, ...cancelled];
   if (ids.length > 0) {
     const { refreshAgentCard } = await import('./card-io');
     for (const id of ids) {
-      await refreshAgentCard(id, [input.note]).catch((err: unknown) =>
+      await refreshAgentCard(id, [note]).catch((err: unknown) =>
         logger.warn({ err, draftId: id }, '[agent] withdrawn draft card not refreshed'),
       );
     }
   }
-  return { expired: expired.map((d) => d.id), cancelled: cancelled.map((o) => o.draftId) };
+  return { expired, cancelled };
+}
+
+/**
+ * The replies a chat's decision made somebody else's, taken back — asked of
+ * the chat's identity AFTER the rule was written (ident fix F1/F11), by the
+ * one rule the ✅ asks (`bindMoved`). Whatever the tray's door — «↩»,
+ * another code, «Yangi lid», a card's «Chatni qo'shish» — a reply still
+ * written for the person the chat now is stays (a phone sibling of the same
+ * customer, fit-12; the client a won lead became, K25), and every other one
+ * goes. A door that compared the old rule's client with the new one's took
+ * back replies the ✅ would have let through, and missed the doors that
+ * never asked at all.
+ *
+ * Drafts first, then the waiting rows — `withdrawRepliesFor`'s order (F3).
+ * A chat the agent holds nothing for asks no identity at all.
+ */
+export async function withdrawMovedReplies(input: {
+  managerUserId: string;
+  peerId: bigint;
+  /** The outbox row's `last_error`: `identity_changed: …` (card-io's CANCEL_WORDS key). */
+  why: string;
+  /** The line every withdrawn card gains. */
+  note: string;
+}): Promise<{ expired: string[]; cancelled: string[] }> {
+  const live = await db
+    .select({ id: agentDrafts.id, clientId: agentDrafts.clientId, leadId: agentDrafts.leadId })
+    .from(agentDrafts)
+    .where(
+      and(
+        eq(agentDrafts.managerUserId, input.managerUserId),
+        eq(agentDrafts.peerId, input.peerId),
+        inArray(agentDrafts.status, ['pending', 'editing']),
+      ),
+    );
+  const waitingNow = () =>
+    db
+      .select({ id: agentOutbox.id, clientId: agentOutbox.clientId, leadId: agentOutbox.leadId })
+      .from(agentOutbox)
+      .where(and(eq(agentOutbox.managerUserId, input.managerUserId), eq(agentOutbox.peerId, input.peerId), eq(agentOutbox.status, 'agent')));
+  if (live.length === 0 && (await waitingNow()).length === 0) return { expired: [], cancelled: [] };
+  const now = await chatIdentity(input.managerUserId, input.peerId);
+  const goneDrafts = live.filter((d) => bindMoved(d, now)).map((d) => d.id);
+  const expired = goneDrafts.length
+    ? await db
+        .update(agentDrafts)
+        .set({ status: 'expired', updatedAt: new Date() })
+        .where(and(inArray(agentDrafts.id, goneDrafts), inArray(agentDrafts.status, ['pending', 'editing'])))
+        .returning({ id: agentDrafts.id })
+    : [];
+  // Read AFTER the expire: an approval that committed meanwhile has its row here (F3).
+  const goneRows = (await waitingNow()).filter((o) => bindMoved(o, now)).map((o) => o.id);
+  const cancelled = goneRows.length
+    ? await db
+        .update(agentOutbox)
+        .set({ status: 'cancelled', lastError: input.why })
+        .where(and(inArray(agentOutbox.id, goneRows), eq(agentOutbox.status, 'agent')))
+        .returning({ draftId: agentOutbox.draftId })
+    : [];
+  return withdrawn(expired.map((d) => d.id), cancelled.map((o) => o.draftId), input.note);
 }
 
 /** The card of the draft this outbox row carries is re-rendered with the outcome. */

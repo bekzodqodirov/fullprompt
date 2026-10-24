@@ -9,7 +9,8 @@ import { phoneSiblingClients } from '../client-cabinet/service';
 import { agentRunning, readAgentConfig, setAgentMode, AgentConfigError } from './config';
 import { chatProof } from './context';
 import { decideDraft, submitOwnText, type DecideRefusal } from './decide';
-import { KbError, carriesMoney, writeKbFact } from './kb';
+import { KbError, carriesMoney, moneyIn, personalBitsWithBook, writeKbFact, type KbRefusal } from './kb';
+import { extractNumbers } from './numbers';
 import { knownNamesForMask } from './style';
 import { priceDraftFromText, type PriceDraftResult } from './calc-loop';
 import { withdrawRepliesFor } from './drafts';
@@ -51,6 +52,7 @@ const DECIDE_WORDS: Record<DecideRefusal, string> = {
   taken_over: "Siz allaqachon o'zingiz javob bergansiz.",
   budget_spent: "Bugungi AI yuborish chegarasi tugadi — matnni nusxalab o'zingiz yuboring.",
   calc_not_queued: 'Hisoblatish navbatga tushmadi — javob yuborilmadi (sababi kartada).',
+  calc_in_flight: '⏳ Hisoblatish hozir navbatga qo‘yilmoqda — bir daqiqadan keyin kartani qarang.',
   identity_changed: "Chat endi boshqa mijozga bog'langan (yoki hech kimga) — bu javob ketmaydi.",
   empty: "Javob bo'sh.",
 };
@@ -110,6 +112,23 @@ async function deciderFor(userId: string) {
   return { id: userId, roles: grants.roles, permissions: grants.permissions };
 }
 
+/**
+ * What 🙋 says when it took approved replies back with it (ident fix F10):
+ * «the chat is mine» cancels every reply still waiting in that chat — his
+ * own ✏️ words and 💵 price among them, which the send step cannot tell from
+ * the machine's — and the only other trace was an edit to an older card
+ * further up the chat. Said on the press, in a message that stays.
+ */
+export function humanTakeoverWords(withdrawn: { total: number; own: number } | undefined): { toast: string; reply?: string } {
+  const toast = '🙋 Suhbat 24 soat sizniki';
+  if (!withdrawn || withdrawn.total === 0) return { toast };
+  const own = withdrawn.own > 0 ? ` (${withdrawn.own} tasi — o‘zingiz yozgan matn)` : '';
+  return {
+    toast: `${toast} — ${withdrawn.total} ta javob bekor qilindi`,
+    reply: `${toast}. Tasdiqlangan, hali ketmagan ${withdrawn.total} ta javob bekor qilindi${own} — kerak bo‘lsa mijozga Telegramda o‘zingiz yozing.`,
+  };
+}
+
 /** One press of an agent button. `staffId` is the chat's linked person — never an id from the button. */
 export async function agentPress(staffId: string, op: AgentOp, id: string, digest: string | undefined): Promise<PressAnswer> {
   const actor = await deciderFor(staffId);
@@ -142,7 +161,9 @@ export async function agentPress(staffId: string, op: AgentOp, id: string, diges
     case 'h': {
       const r = await decideDraft(actor, id, op === 'r' ? 'reject' : 'human', {}, ctx);
       if (!r.ok) return { toast: DECIDE_WORDS[r.code].slice(0, 190) };
-      return { toast: op === 'r' ? '❌ Rad etildi' : '🙋 Suhbat 24 soat sizniki', drop: 'agent_edit' };
+      if (op === 'r') return { toast: '❌ Rad etildi', drop: 'agent_edit' };
+      const taken = humanTakeoverWords(r.withdrawn);
+      return { toast: taken.toast, ...(taken.reply ? { reply: taken.reply } : {}), drop: 'agent_edit' };
     }
     case 'p': {
       return {
@@ -286,23 +307,18 @@ async function kbPress(staffId: string, op: 'g' | 'u' | 'z', draftId: string, di
       };
     }
   }
+  let dropped = false;
   try {
     const answer = d.finalBody ?? '';
-    // A GENERAL fact is his ANSWER alone (final review K6): the question is the
-    // MODEL's account of this one customer — «Mijoz qarzi 1500$ …, 12 kub mebel
-    // ham bor» — and a general fact is read in every chat, where each of its
-    // figures would vouch for a reply to somebody else. He approved the answer
-    // for everybody («📌 Bu javob BARCHA mijozlarga»), never the model's words.
-    // And it is checked against EVERY name the client book and the staff hold,
-    // as the page's own add form checks (`addGeneralFact`): his answer to one
-    // customer can name another. A fact for THIS customer keeps the question
-    // that gives his answer its sense — unless it states money, which no fact
-    // may carry and which he could not take out of the model's words himself.
-    const question = op === 'g' || !d.ownerQuestion || carriesMoney(d.ownerQuestion) ? null : d.ownerQuestion;
     const chatNames = await knownNamesFor(d);
-    const lowered = answer.toLowerCase();
+    // A GENERAL fact is checked against EVERY name the client book and the
+    // staff hold, as the page's own add form checks (`addGeneralFact`): his
+    // answer to one customer can name another — and so can the model's question.
+    const lowered = `${d.ownerQuestion ?? ''}\n${answer}`.toLowerCase();
     const bookNames =
       op === 'g' ? (await knownNamesForMask(false)).filter((n) => lowered.includes(n.toLowerCase())) : [];
+    const question = await keptQuestion(op, d.ownerQuestion, answer, [...chatNames, ...bookNames]);
+    dropped = Boolean(d.ownerQuestion?.trim()) && question === null;
     await writeKbFact(
       {
         scope: op === 'g' ? 'general' : d.clientId ? 'client' : 'lead',
@@ -318,19 +334,61 @@ async function kbPress(staffId: string, op: 'g' | 'u' | 'z', draftId: string, di
     );
   } catch (err) {
     if (err instanceof KbError) {
-      const words: Record<string, string> = {
-        money: "Narx bilimga yozilmaydi — narx «💵 Narx yozaman» orqali beriladi.",
+      const figure = err.detail ? `«${err.detail}» — ` : '';
+      const words: Record<KbRefusal, string> = {
+        money: `${figure}narx. Narx bilimga yozilmaydi — narx «💵 Narx yozaman» orqali beriladi.`,
+        // `keptQuestion` drops a question that would do this before it is written; said all the same.
+        money_context: `${figure}savoldagi narx so‘zi bilan birga narx deb o‘qiladi — savolni «Bilimlar» sahifasida narx so‘zisiz yozing.`,
         personal: "Matnda mijoz ma'lumoti bor — «👤 Faqat shu mijoz» ni tanlang.",
         empty: "Matn bo'sh.",
         too_long: 'Matn juda uzun.',
         scope: "Bu chat mijoz yoki lidga bog'lanmagan.",
       };
-      return { toast: '⚠️', reply: words[err.code] ?? err.code };
+      return { toast: '⚠️', reply: words[err.code] };
     }
     throw err;
   }
   await setKb('saved');
-  return { toast: op === 'g' ? '📌 Umumiy qoida saqlandi' : '👤 Shu mijoz uchun saqlandi' };
+  const toast = op === 'g' ? '📌 Umumiy qoida saqlandi' : '👤 Shu mijoz uchun saqlandi';
+  // Said where it stays (a toast vanishes): the fact went in WITHOUT the question he saw on the card.
+  return dropped ? { toast, reply: `${toast} — ${QUESTION_DROPPED}` } : { toast };
+}
+
+/**
+ * Why a remembered fact carries his answer alone — told when the card's
+ * question was not kept (`keptQuestion`), with the way to give it one.
+ */
+export const QUESTION_DROPPED =
+  'faqat javobingiz yozildi: savolda raqam, narx so‘zi yoki mijoz ma’lumoti bor edi. Savolni «Bilimlar» sahifasida ✎ bilan qo‘shishingiz mumkin.';
+
+/**
+ * The question a fact remembered from a card keeps. It is the MODEL's
+ * account of ONE customer, never his words, so it stays only where it can
+ * neither cost him the fact nor carry that customer into the knowledge
+ * (ident fix F7/F8):
+ *  - never one that states money, or that makes HIS answer's bare figure read
+ *    as money beside it (P1: «Mijoz narx so‘rayapti» + «Ertaga 10 da VED
+ *    hisoblab beradi» — the 10 is a price joined, `moneyIn` 'context'): the
+ *    answer is saved alone rather than refused for words he did not write;
+ *  - for a GENERAL fact (read in every chat, K6), never one that carries a
+ *    figure («12 kub mebel» would vouch for somebody else's reply), a code, a
+ *    phone or a name. A clean question stays: «Ha, bo‘ladi» with no subject,
+ *    served to every chat, is the other way to be wrong.
+ */
+async function keptQuestion(
+  op: 'g' | 'u',
+  raw: string | null,
+  answer: string,
+  names: readonly string[],
+): Promise<string | null> {
+  const question = raw?.trim() || null;
+  if (!question) return null;
+  if (carriesMoney(question) || (moneyIn(question, answer) !== null && !carriesMoney(answer))) return null;
+  if (op === 'g') {
+    if (extractNumbers(question).length > 0) return null;
+    if ((await personalBitsWithBook(question, names)).length > 0) return null;
+  }
+  return question;
 }
 
 type RuleRow = typeof tgChatRules.$inferSelect;

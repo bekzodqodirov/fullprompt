@@ -56,10 +56,19 @@ describe('the seeded knowledge', () => {
     // address comes after the agreement» or «the manager will tell you»
     // ANSWERS the question, so no needs_owner card ever asks him for it.
     const points = SEED_FACTS.filter((f) => f.key.startsWith('china_points@'));
-    expect(points.map((f) => f.key)).toEqual(['china_points@2']);
+    expect(points.map((f) => f.key)).toEqual(['china_points@3']);
     const answer = normalizeDigits(points[0]!.answer);
     for (const city of ['Ivu', 'Guanchjou', 'Qashqar']) expect(answer).toContain(city);
     expect(answer).not.toMatch(/kelishuvdan keyin|menejer aytadi|keyin beriladi/iu);
+  });
+
+  it('…and says, where the model reads it, that the street address is missing — and that it is HIS question (ident fix F4)', () => {
+    // Three city names still ANSWER «manzilingizni tashlang»: without this the
+    // model replies «Ivu, Guanchjou, Qashqar» and no needs_owner card asks him.
+    const answer = normalizeDigits(SEED_FACTS.find((f) => f.key.startsWith('china_points@'))!.answer);
+    expect(answer).toMatch(/aniq koʻcha manzili[^.]*bu bilimda yoʻq/iu);
+    expect(answer).toContain('needs_owner=true');
+    expect(answer).toContain('owner_question="qabul manzilini yozing"');
   });
 
   it('keys every fact once, with a version, inside the kb CHECK’s 2 000 characters', () => {

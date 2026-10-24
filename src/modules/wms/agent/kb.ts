@@ -44,9 +44,26 @@ export function servedText(question: string | null, answer: string): string {
   return question ? `${question} — ${answer}` : answer;
 }
 
-/** Does a fact's text state money — the write's one money question, asked of what is served (K6). */
+/** Does a text state money (P1 — a bare figure in a text that names money anywhere is money too)? */
 export function carriesMoney(text: string): boolean {
   return extractNumbers(text).some((f) => f.kind === 'money');
+}
+
+/**
+ * The first figure a fact reads as money, and why (ident fix F7): `own` — its
+ * answer, or its question, states it on its own; `context` — neither does,
+ * but SERVED together (K6) the price word of one makes the other's bare
+ * figure a price: «Narx qayerdan hisoblanadi? — … Futian ko‘chasi 88». The
+ * write refuses both, because the joined text is what every prompt reads —
+ * but it says which, and names the figure, instead of telling him «a price
+ * is not knowledge» about a text with no price in it.
+ */
+export function moneyIn(question: string | null, answer: string): { raw: string; why: 'own' | 'context' } | null {
+  const first = (text: string) => extractNumbers(text).find((f) => f.kind === 'money')?.raw ?? null;
+  const own = first(answer) ?? (question ? first(question) : null);
+  if (own) return { raw: own, why: 'own' };
+  const joined = first(servedText(question, answer));
+  return joined ? { raw: joined, why: 'context' } : null;
 }
 
 function hitOf(row: { id: string; answer: string; question: string | null }): KbHit {
@@ -300,7 +317,12 @@ export function maskForModel(text: string, knownNames: readonly (string | null |
   return t.replace(/\d+(?:[.,]\d+)?/gu, 'N');
 }
 
-export type KbRefusal = 'money' | 'personal' | 'empty' | 'too_long' | 'scope';
+/**
+ * `money` — the fact states a price; `money_context` — it reads as one only
+ * because the question's price word sits beside the answer's bare figure
+ * (`moneyIn`). Both carry the figure as `detail`.
+ */
+export type KbRefusal = 'money' | 'money_context' | 'personal' | 'empty' | 'too_long' | 'scope';
 
 export class KbError extends Error {
   constructor(
@@ -346,8 +368,10 @@ export async function writeKbFact(
   if (!answer) throw new KbError('empty');
   if ([...answer].length > 2000) throw new KbError('too_long');
   // The text as it is SERVED, question included (K6): a figure in the question
-  // reaches every prompt this fact reaches, exactly like one in the answer.
-  if (carriesMoney(servedText(input.question?.trim() || null, answer))) throw new KbError('money');
+  // reaches every prompt this fact reaches, exactly like one in the answer —
+  // refused naming the figure, and saying when only the joining made it one.
+  const money = moneyIn(input.question?.trim() || null, answer);
+  if (money) throw new KbError(money.why === 'own' ? 'money' : 'money_context', money.raw);
   if (input.scope === 'general') {
     const names = input.knownNames ?? [];
     const bits = await personalBitsWithBook(`${input.question ?? ''}\n${answer}`, names);

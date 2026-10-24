@@ -6,6 +6,7 @@ import { agentDrafts, agentOutbox, agentRuns, tgMessages } from '../../platform/
 import { enqueue } from '../../platform/jobs/boss';
 import { logger } from '../../platform/logger';
 import { actorGrants } from '../../platform/rbac/authorize';
+import { quietHour } from '../../platform/telegram/send';
 import { canLogInSql } from '../../platform/users/login';
 import { agentRunning, agentTablesReady, readAgentConfig } from './config';
 import { AGENT_LIMITS } from './limits';
@@ -101,37 +102,49 @@ export function ownerQuestionReminderText(waiting: number): string {
 }
 
 /**
- * One reminder for every question that crossed the half hour since the last
- * sweep — claimed per draft by its own column, so two sweeps at once remind
- * once. Each names the CHAT its question is about (`peerId`, the key the
- * purge finds an AgentNotice by): a purged chat takes its reminder with it
- * like every other card of it. The count is every question still waiting on
- * him, the newly crossed and the ones already reminded alike.
+ * One reminder per MANAGER for the questions that crossed the half hour since
+ * the last sweep — claimed per draft by its own column, so two sweeps at once
+ * remind once — and only by DAY (ident fix F9). The reminder exists to ring:
+ * claimed at 07:10 it would arrive silent (an AgentNotice is night-silent,
+ * night.ts) and, being once-only, no question asked in the night would ever
+ * ring at all. So the night claims nothing, and the first sweep after 08:00
+ * Tashkent reminds of every one, audibly. Three questions crossing in one
+ * minute are ONE notice, never three copies of «3 ta».
+ *
+ * It names the CHAT of the newest question it reminds of (`peerId`, the key
+ * the purge finds an AgentNotice by): a count carries no customer's words
+ * (leak-13), and a purged chat takes the notice that pointed at it. The count
+ * is every question still waiting on him, the newly crossed and the ones
+ * already reminded alike. Returns how many questions it claimed.
  */
 export async function remindOwnerQuestions(now: Date): Promise<number> {
+  if (quietHour(now)) return 0;
   const cutoff = new Date(now.getTime() - OWNER_QUESTION_WAIT_MS).toISOString();
-  const claimed = await db.execute<{ manager_user_id: string; peer_id: string }>(sql`
+  // `created_ms` as a number: a raw execute hands timestamps back as TEXT (history.ts's lesson).
+  const claimed = await db.execute<{ manager_user_id: string; peer_id: string; created_ms: number }>(sql`
     UPDATE agent_drafts SET owner_reminded_at = now()
      WHERE status = 'pending' AND needs_owner AND owner_reminded_at IS NULL
        AND created_at < ${cutoff}::timestamptz
-    RETURNING manager_user_id::text, peer_id::text`);
+    RETURNING manager_user_id::text, peer_id::text, (extract(epoch FROM created_at) * 1000)::float8 AS created_ms`);
   if (claimed.length === 0) return 0;
   const { notifyStaffTelegram } = await import('../../platform/notifications/staff');
-  const waiting = new Map<string, number>();
+  // The newest claimed question per manager names the notice's chat.
+  const newest = new Map<string, { peerId: string; at: number }>();
   for (const r of claimed) {
-    if (!waiting.has(r.manager_user_id)) {
-      const [row] = await db.execute<{ n: number }>(sql`
-        SELECT count(*)::int AS n FROM agent_drafts
-         WHERE manager_user_id = ${r.manager_user_id}::uuid AND status = 'pending' AND needs_owner
-           AND created_at < ${cutoff}::timestamptz`);
-      waiting.set(r.manager_user_id, Number(row?.n ?? 0));
-    }
-    // Night-silent like his other agent cards (night.ts).
+    const at = Number(r.created_ms);
+    const seen = newest.get(r.manager_user_id);
+    if (!seen || at > seen.at) newest.set(r.manager_user_id, { peerId: r.peer_id, at });
+  }
+  for (const [managerUserId, { peerId }] of newest) {
+    const [row] = await db.execute<{ n: number }>(sql`
+      SELECT count(*)::int AS n FROM agent_drafts
+       WHERE manager_user_id = ${managerUserId}::uuid AND status = 'pending' AND needs_owner
+         AND created_at < ${cutoff}::timestamptz`);
     await notifyStaffTelegram({
-      userIds: [r.manager_user_id],
+      userIds: [managerUserId],
       type: 'AgentNotice',
-      text: ownerQuestionReminderText(waiting.get(r.manager_user_id)!),
-      extra: { peerId: String(r.peer_id) },
+      text: ownerQuestionReminderText(Number(row?.n ?? 0)),
+      extra: { peerId: String(peerId) },
     });
   }
   return claimed.length;

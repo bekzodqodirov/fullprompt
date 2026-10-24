@@ -70,15 +70,28 @@ const STALE_WORDS: Record<string, string> = {
 };
 
 /**
+ * The marker a ✅ writes on `action_error` while it lands the draft's
+ * calculation (decide `claimLanding`, ident fix F12) — here, beside its
+ * words, so the card and the claim share one constant.
+ */
+export const LANDING_CLAIM = 'landing';
+
+/**
  * Why the VED queue did not take a calculation, in words (final review K26)
  * — the staff bot's own sentences for the same refusals (staff-handlers
  * `QUEUE_REFUSAL`), told as what HE can do about them: a job is never «sent
- * by hand from the card», there is no such door.
+ * by hand from the card», there is no such door. And never «✏️ bilan
+ * javob bering» about a refusal the next ✅ meets again (ident fix F12): ✏️
+ * changes the words and keeps the calculation, so the landing is asked again
+ * and refused the same way — what ends it is 🙋, the chat taken over and
+ * answered from his own Telegram.
  */
 const CALC_QUEUE_WORDS: Record<string, string> = {
   too_many_open: `sizda ${MAX_OPEN_PER_REQUESTER} ta ochiq so‘rov bor — VED birortasiga javob bergach ✅ ni qayta bosing`,
-  too_many_items: 'tovarlar juda ko‘p (1000 dan ortiq) — ✏️ bilan o‘zingiz javob bering',
-  not_found: 'karta topilmadi — ✏️ bilan o‘zingiz javob bering',
+  too_many_items: 'tovarlar juda ko‘p (1000 dan ortiq) — 🙋 bosing va mijozga Telegramda o‘zingiz javob bering',
+  not_found: 'karta topilmadi — 🙋 bosing va mijozga Telegramda o‘zingiz javob bering',
+  // Another press is landing this very job (decide `claimLanding`).
+  [LANDING_CLAIM]: 'hozir navbatga qo‘yilmoqda — bir daqiqadan keyin kartani qarang',
   note_taken: 'bu material allaqachon boshqa so‘rovda',
   note_foreign: 'material boshqa kartaga tegishli',
   unauthenticated: 'siz tizimda emassiz',
@@ -125,6 +138,8 @@ function statusLine(d: DraftRow, o: OutboxRow | null): string | null {
   switch (d.status) {
     case 'pending':
       // A ✅ whose calculation the queue refused (K26): the draft waits, and says why, for as long as it stands.
+      // A press landing it right now (decide `claimLanding`) says so, never «did not reach the queue».
+      if (d.actionError === LANDING_CLAIM) return `⏳ Hisoblatish ${CALC_QUEUE_WORDS[LANDING_CLAIM]}.`;
       return d.actionStatus === 'failed' ? `⚠️ Hisoblatish navbatga tushmadi: ${calcQueueWords(d.actionError)}. Javob yuborilmadi.` : null;
     case 'editing':
       return "✏️ O'z matningizni yozing (shu kartaga javob qilib yoki oddiy xabar bilan).";

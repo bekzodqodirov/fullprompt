@@ -107,6 +107,7 @@ function DraftCard({ d, viewerId, t }: { d: WebDraft; viewerId: string; t: T }) 
         holder={d.managerUserId === viewerId}
         holderName={d.holderName}
         canSend={!d.blocked && d.status === 'pending'}
+        waitingInChat={d.waitingInChat}
       />
     </article>
   );

@@ -39,11 +39,18 @@ export const SEED_FACTS: readonly SeedFact[] = [
     // three cities; the exact addresses are his to type on «Bilimlar» (the
     // deploy steps ask him), and until he has, a customer asking for one is a
     // needs_owner question to him — never a deferral (final review K27).
-    key: 'china_points@2',
+    // @2 only dropped the deferral, and three city names still ANSWER «manzil
+    // tashlang» (ident fix F4): nothing told the model the street address is
+    // missing, so no question ever reached him. @3 says so where the model
+    // reads it — in the fact every run is served — in the prompt's own words
+    // (`needs_owner`, prompt rule 12's «so'ralsa needs_owner=true»).
+    key: 'china_points@3',
     question: 'Xitoyda yukni qayerga yuboraman? Qabul manzillari qayerda?',
     answer:
       'Xitoyda uchta qabul manzili bor: Ivu (义乌), Guanchjou (广州) va Qashqar (喀什). ' +
-      'Yukni faqat qabul manzili va GS kod tasdiqlangandan keyin joʻnating — tovar adashib ketmasligi uchun.',
+      'Yukni faqat qabul manzili va GS kod tasdiqlangandan keyin joʻnating — tovar adashib ketmasligi uchun. ' +
+      'Aniq koʻcha manzili, qabul qiluvchi va uning telefoni bu bilimda yoʻq: mijoz aniq manzilni soʻrasa, AI oʻzi aytmaydi va oʻylab topmaydi — ' +
+      'akkaunt egasidan soʻraydi (needs_owner=true, owner_question="qabul manzilini yozing").',
   },
   {
     key: 'tashkent_warehouse@1',

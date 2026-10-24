@@ -54,6 +54,12 @@ export interface WebDraft {
   /** The «remember this answer» question is open (spec §7.1.4) — and armed for a general fact. */
   kbAsk: boolean;
   kbArmed: boolean;
+  /**
+   * Approved replies of this draft's chat still waiting to leave — what its 🙋
+   * would take back with it (ident fix F10): the page asks before the press,
+   * because a card the press retires is gone from the page with the note.
+   */
+  waitingInChat: number;
 }
 
 type DraftRow = typeof agentDrafts.$inferSelect;
@@ -70,7 +76,7 @@ function chatHrefOf(d: Pick<DraftRow, 'clientId' | 'leadId'>): string | null {
   return null;
 }
 
-function toWeb(d: DraftRow, o: OutboxRow | null, holderName: string): WebDraft {
+function toWeb(d: DraftRow, o: OutboxRow | null, holderName: string, waitingInChat = 0): WebDraft {
   const kb = ((d.policy ?? {}) as { kb?: string }).kb;
   return {
     id: d.id,
@@ -88,6 +94,7 @@ function toWeb(d: DraftRow, o: OutboxRow | null, holderName: string): WebDraft {
     outbox: o ? { id: o.id, status: o.status, nextStepAt: o.nextStepAt, readDone: o.readDone, step: o.step } : null,
     kbAsk: d.status === 'approved' && d.needsOwner && d.finalBody !== null && kb !== 'saved' && kb !== 'skipped',
     kbArmed: kb === 'general_armed',
+    waitingInChat,
   };
 }
 
@@ -121,12 +128,22 @@ function draftsSeenBy(viewer: WebViewer) {
  * may read that chat's drafts. A general fact is the company's, seen by
  * everybody the page admits. A per-customer fact with no draft to trace is
  * seen by the supervision view only — fail closed.
+ *
+ * And by the agent's CURRENT owner, every one (ident fix F13): the knowledge
+ * search serves a per-customer fact by its CLIENT, whichever account learned
+ * it (kb `kbSearch`), so after the owner moves to another account that
+ * account's drafts may state a fact the previous one was taught. What his
+ * runs may say, he must be able to read, correct and retire — never only a
+ * super_admin. It is a distilled sentence he approved for the customer, not
+ * the chat it came from: the drafts (the customer's lines, our last message)
+ * stay behind `draftsSeenBy`.
  */
 export function factSeenBySql(viewer: WebViewer) {
   if (seesAllTg(viewer)) return sql`true`;
   return sql`(${kbFacts}.scope = 'general' OR EXISTS (
     SELECT 1 FROM agent_drafts fd
-     WHERE fd.id::text = ${kbFacts}.source_ref->>'draftId' AND fd.manager_user_id = ${viewer.id}::uuid))`;
+     WHERE fd.id::text = ${kbFacts}.source_ref->>'draftId' AND fd.manager_user_id = ${viewer.id}::uuid)
+    OR EXISTS (SELECT 1 FROM agent_config ac WHERE ac.id = 1 AND ac.owner_user_id = ${viewer.id}::uuid))`;
 }
 
 /**
@@ -171,7 +188,17 @@ export async function webDrafts(viewer: WebViewer, now = new Date()): Promise<{
       .orderBy(desc(agentDrafts.updatedAt))
       .limit(20),
   ]);
-  const live = liveRows.map((r) => toWeb(r.d, r.o, r.holder));
+  // What each live draft's 🙋 would take back with it: the chat's approved replies still waiting (F10).
+  const peers = [...new Set(liveRows.map((r) => r.d.peerId))];
+  const waitingCounts = peers.length
+    ? await db
+        .select({ managerUserId: agentOutbox.managerUserId, peerId: agentOutbox.peerId, n: sql<number>`count(*)::int` })
+        .from(agentOutbox)
+        .where(and(eq(agentOutbox.status, 'agent'), inArray(agentOutbox.peerId, peers)))
+        .groupBy(agentOutbox.managerUserId, agentOutbox.peerId)
+    : [];
+  const waitingIn = new Map(waitingCounts.map((w) => [`${w.managerUserId}:${String(w.peerId)}`, Number(w.n)]));
+  const live = liveRows.map((r) => toWeb(r.d, r.o, r.holder, waitingIn.get(`${r.d.managerUserId}:${String(r.d.peerId)}`) ?? 0));
   return {
     pending: live.filter((d) => !d.needsOwner),
     questions: live.filter((d) => d.needsOwner),
