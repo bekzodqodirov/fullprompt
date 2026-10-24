@@ -66,6 +66,21 @@ describe('the pump asks the gate before every claim (ban-1)', () => {
     expect(branch).toContain('accountFlooded(');
     expect(branch).toContain("source: 'raise'");
   });
+
+  it('K22’s follow-up: every claim the pump puts back is given back whole — a limit, a blink, a dead session, a wait', () => {
+    // The minute's limit says «not yet» about the ACCOUNT: nothing was tried.
+    const limit = pump.slice(pump.indexOf('if (!verdict.ok) {'), pump.indexOf('const target = helpers.returnBigInt('));
+    expect(limit).toContain("markAttemptFailed(job.id, 'never_wrote_first', true, MAX_ATTEMPTS)");
+    expect(limit.slice(limit.indexOf('} else {'))).toContain('giveClaimBack(job.id)');
+    // A database that blinked before the call, a session Telegram ended, a wait Telegram ordered.
+    const failed = pump.slice(pump.indexOf('const message = err instanceof Error'));
+    const branchOf = (open: string, close: string) => failed.slice(failed.indexOf(open), failed.indexOf(close, failed.indexOf(open)));
+    expect(branchOf('if (isDbUnreachable(message)) {', 'return;')).toContain('giveClaimBack(job.id)');
+    expect(branchOf('if (isSessionDead(message)) {', 'return;')).toContain('giveClaimBack(job.id)');
+    expect(branchOf("if (typeof seconds === 'number') {", 'accountFlooded(')).toContain('giveClaimBack(job.id)');
+    // And no way back that keeps the claim counted: `markAttemptFailed` is the one place a try is spent.
+    expect(source, 'the counting release').not.toMatch(/releaseClaim\(/);
+  });
 });
 
 describe('the agent pump runs after the human rows (§17.8)', () => {
@@ -269,21 +284,35 @@ describe('the send path’s review fixes, as wired', () => {
 describe('Telegram’s own notice (his ⭐2, final review K33)', () => {
   it('the live handler asks it of every line, before the line is decided or stored', () => {
     const live = source.slice(source.indexOf('client.addEventHandler(async (event: { message?: unknown }) => {'), source.indexOf('new NewMessage({})'));
-    const ask = live.indexOf('if (isTelegramServiceNotice(peer, msg.out === true)) await telegramNoticeSeen();');
+    const ask = live.indexOf(
+      "if (isTelegramServiceNotice(peer, msg.out === true)) await telegramNoticeSeen(telegramNoticeKind(msg.message ?? ''));",
+    );
     expect(ask).toBeGreaterThan(0);
     expect(ask).toBeLessThan(live.indexOf("handleMessage(peer, msg, 'live')"));
   });
 
   it('switches the agent off through the alarm’s one door, from fresh settings, and keeps nothing of the message', () => {
     // The closure alone: from its declaration to its own closing brace.
-    const seen = body('const telegramNoticeSeen = async () => {', '\n  };\n');
+    const seen = body('const telegramNoticeSeen = async (kind: TelegramNoticeKind) => {', '\n  };\n');
     expect(seen.indexOf('tablesReady()'), 'one migration behind, there is no agent to switch off').toBeGreaterThan(0);
-    expect(seen.indexOf('tablesReady()')).toBeLessThan(seen.indexOf('agentTelegramNotice(alarmAccount)'));
+    // Only the line's KIND reaches the alarm's door — his login traffic is decided there (K33's follow-up).
+    expect(seen.indexOf('tablesReady()')).toBeLessThan(seen.indexOf('agentTelegramNotice(alarmAccount, kind)'));
     // Not the half-minute cache: a notice just after the switch was flipped on must not slip through.
     expect(seen).not.toContain('agentConfigSoon');
     expect(seen).not.toContain('agentHere');
     // Nothing of the line: no text, no row, no tray candidate.
     expect(seen).not.toMatch(/msg\.|message:|body:|storeIncoming|recordCandidates/);
+  });
+
+  it('K33’s follow-up: the notices that come as `updateServiceNotification` switch it off too — never as login traffic', () => {
+    // gramjs makes no NewMessage of this update (its NewMessage reads the four message updates only), so a
+    // Raw handler of its own is the only ear for the notices the API delivers this way.
+    const at = source.indexOf('new Raw({ types: [Api.UpdateServiceNotification] })');
+    expect(at, 'a Raw handler on the class').toBeGreaterThan(0);
+    const raw = source.slice(0, at);
+    const handler = raw.slice(raw.lastIndexOf('client.addEventHandler('));
+    expect(handler).toContain("telegramNoticeSeen('notice')");
+    expect(handler, 'the update is the notice: nothing of it is read, kept or classified').not.toMatch(/update\.|message|telegramNoticeKind/);
   });
 });
 

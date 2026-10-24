@@ -487,23 +487,22 @@ export async function recoverInFlight(managerUserId: string): Promise<number> {
   return rows.length;
 }
 
-/** Put a claimed job back when a rate limit says "not yet" — not a failure. */
-export async function releaseClaim(id: string): Promise<void> {
-  // `attempts` is deliberately NOT decremented: it counts trips through the
-  // sender, and a row that keeps bouncing off a limit is worth noticing.
-  await db.update(tgOutbox).set({ status: 'queued' }).where(eq(tgOutbox.id, id));
-}
-
 /**
  * Put a claimed job back AS IF IT WAS NEVER CLAIMED — the claim's own
  * `attempts + 1` (`claimNext`) taken back with it (final review K4, K22).
  *
- * For a bounce that says nothing about the REPLY: the account's send slot
- * held the turn (a wait or a restriction the send ahead of it met, often the
- * agent's), or Telegram said the ACCOUNT is limited. `releaseClaim`'s count
- * would spend the reply's retries on the account's trouble — two minutes of
- * a held slot is forty claims, and the reply then failed for good on the
- * first ordinary network blip after it (`markAttemptFailed`, MAX_ATTEMPTS).
+ * The ONE way a claim goes back to the queue, for every bounce that says
+ * nothing about the REPLY: a rate limit's «not yet», the account's send slot
+ * holding the turn (a wait or a restriction the send ahead of it met, often
+ * the agent's), Telegram saying the ACCOUNT is limited or must wait, a
+ * session that ended, a database that blinked before the call. Counting
+ * those spent the reply's retries on the account's trouble — two minutes of
+ * a held slot is forty claims, and two bounces off the minute's limit were
+ * enough — and the reply then failed for good on the first ordinary network
+ * blip after it (`markAttemptFailed` against MAX_ATTEMPTS). `attempts`
+ * counts tries of THIS reply, and a claim that called nothing tried nothing.
+ * (The old «a row bouncing off a limit is worth noticing» had no reader but
+ * the chat pulse's token, which a bounce every three seconds only woke.)
  *
  * Only a row still in 'sending' moves, so a second call — the listener's
  * catch running again after a database blip — takes nothing back twice.

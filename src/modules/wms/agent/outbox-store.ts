@@ -123,6 +123,7 @@ type ChatFactsRow = {
   peer_has_written: boolean;
   last_inbound_ms: number | null;
   human_until_ms: number | null;
+  human_pressed_ms: number | null;
   muted: boolean;
   excluded: boolean;
   newest_client_id: string | null;
@@ -151,22 +152,33 @@ type ChatFactsRow = {
  *   newest        — the chat's newest stored row's owner (leak-4);
  *   last_inbound  — when the customer last wrote, for the night rule (S3);
  *   human_until   — his 🙋 on this chat (K2), whatever row it was pressed on;
+ *   human_pressed — when he pressed it: the newest draft of the chat a
+ *                   PERSON decided 'taken_over' (`decideDraft` stamps
+ *                   `decided_by`/`decided_at`; the machine's «he answered
+ *                   himself» — `chatMoved`, the human-reply job — writes
+ *                   neither), so a reply he approves AFTER the press is not
+ *                   withdrawn by it (K2's follow-up);
  *   caps          — the Tashkent day and the last hour. The AI's rows are
  *                   every one handed to Telegram: 'sent', and 'unknown'
  *                   (S5: perhaps delivered, and a fuse that cannot see it
  *                   lets the next reply go as if it were not), each on the
  *                   moment it left (`sent_at`, else the claim before the
- *                   send). And the account's own CRM replies (tg_outbox
- *                   'sent', on `sent_at`) count in the ACCOUNT's hour, day
- *                   and gap (final review K5): one personal account is one
- *                   voice to Telegram, so the machine's ceilings are what
- *                   is left of them after the people — never 200 of theirs
- *                   plus 80 of its own, never its reply a second after a
- *                   colleague's. Not in the CHAT's two: those are about the
- *                   machine's own voice in one conversation, and a person's
- *                   reply there after the anchor already cancels the row
- *                   (`human_replied`). The human queue counts only its own
- *                   rows, as it always has (`limits.ts`).
+ *                   send). The account's own CRM replies (tg_outbox 'sent',
+ *                   on `sent_at`) count in the ACCOUNT's hour and its gap
+ *                   (final review K5): one personal account is one voice to
+ *                   Telegram, so the machine never speaks a second after a
+ *                   colleague, nor adds a twentieth message to an hour the
+ *                   people already filled. NOT in the day: the day's cap is
+ *                   his Q11 — the AI's own sends against his own average —
+ *                   and it is the number the ✅ door and the page read
+ *                   (`today.ts` sendsToday, agent rows only); counting the
+ *                   people here as well would let the door accept a reply
+ *                   this step then holds to the morning, where the six-hour
+ *                   approval age cancels it. Not in the CHAT's two either:
+ *                   those are the machine's own voice in one conversation,
+ *                   and a person's reply there after the anchor already
+ *                   cancels the row (`human_replied`). The human queue
+ *                   counts only its own rows, as it always has (`limits.ts`).
  */
 async function chatFacts(row: AgentOutboxRow, now: Date): Promise<ChatFactsRow> {
   const m = sql`${row.managerUserId}::uuid`;
@@ -198,6 +210,10 @@ async function chatFacts(row: AgentOutboxRow, now: Date): Promise<ChatFactsRow> 
       ${msOf(sql`(
         SELECT h.human_until FROM agent_conversations h
          WHERE h.manager_user_id = ${m} AND h.peer_id = ${p})`)} AS human_until_ms,
+      ${msOf(sql`(
+        SELECT max(tk.decided_at) FROM agent_drafts tk
+         WHERE tk.manager_user_id = ${m} AND tk.peer_id = ${p}
+           AND tk.status = 'taken_over' AND tk.decided_by IS NOT NULL)`)} AS human_pressed_ms,
       EXISTS (
         SELECT 1 FROM agent_conversations c
          WHERE c.manager_user_id = ${m} AND c.peer_id = ${p} AND c.muted_at IS NOT NULL
@@ -226,15 +242,15 @@ async function chatFacts(row: AgentOutboxRow, now: Date): Promise<ChatFactsRow> 
     CROSS JOIN LATERAL (
       SELECT count(*) FILTER (WHERE s.peer_id = ${p} AND s.at >= ${dayStart})::int AS chat_today,
              count(*) FILTER (WHERE s.at >= ${hourAgo})::int AS last_hour,
-             count(*) FILTER (WHERE s.at >= ${dayStart})::int AS today,
+             count(*) FILTER (WHERE s.ai AND s.at >= ${dayStart})::int AS today,
              max(s.at) FILTER (WHERE s.peer_id = ${p}) AS last_chat,
              max(s.at) AS last_account
         FROM (
-          SELECT x.peer_id, coalesce(x.sent_at, x.step_claimed_at) AS at FROM agent_outbox x
+          SELECT x.peer_id, coalesce(x.sent_at, x.step_claimed_at) AS at, true AS ai FROM agent_outbox x
            WHERE x.manager_user_id = ${m} AND x.status IN ('sent', 'unknown')
           UNION ALL
-          -- A person's CRM reply: the account's windows only, so it names no chat (a NULL peer matches none).
-          SELECT NULL::bigint, t.sent_at FROM tg_outbox t
+          -- A person's CRM reply: the account's hour and gap only — no chat (a NULL peer matches none), no day.
+          SELECT NULL::bigint, t.sent_at, false FROM tg_outbox t
            WHERE t.manager_user_id = ${m} AND t.status = 'sent' AND t.sent_at IS NOT NULL
         ) s
        WHERE s.at >= least(${dayStart}, ${hourAgo})
@@ -337,6 +353,7 @@ export async function sendFactsFor(row: AgentOutboxRow, now: Date, ctx: StoreCon
     anchorEditedSinceDraft: chat.anchor_edited,
     humanReplied: chat.human_replied,
     humanUntil: dateOf(chat.human_until_ms),
+    humanPressedAt: dateOf(chat.human_pressed_ms),
     newerSubstantiveInbound: substantive,
     peerHasWritten: chat.peer_has_written,
     lastInboundAt: dateOf(chat.last_inbound_ms),

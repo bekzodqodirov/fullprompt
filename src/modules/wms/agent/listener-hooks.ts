@@ -73,6 +73,42 @@ export function isTelegramServiceNotice(
   return !out && peer.isPrivate && peer.isSelf !== true && peer.id === TELEGRAM_SERVICE_PEER;
 }
 
+/**
+ * What a line from Telegram's service account is: the account's own LOGIN
+ * traffic, or a NOTICE about the account (K33's follow-up).
+ */
+export type TelegramNoticeKind = 'login' | 'notice';
+
+/** «Login code: 12345.» / «Код для входа в Telegram: 12345.» — the code is the first line's own number. */
+const LOGIN_CODE = /[:：]\s*\d{5,6}(?!\d)/u;
+/** The «new login» alert names the session's address the same way in every language: «(IP = 1.2.3.4)». */
+const NEW_LOGIN = /\(\s*IP\s*=\s*[0-9A-Fa-f.:]+\s*\)/u;
+
+/**
+ * Pure: is this 777000 line his own login — the code Telegram sends when
+ * somebody signs in (Telegram Desktop at the office, a new phone, his own
+ * re-connect on /suhbatlar/ulash), or the «new login» alert that follows it
+ * — or a notice about the account?
+ *
+ * The difference is what the agent's «off» costs: it cancels every approved
+ * reply still waiting (the night-held ✅s included) and expires every live
+ * draft, the one being edited too, and none of them comes back when he
+ * switches it on again. His ⭐2 is about the warnings an account gets before
+ * a ban — the API terms, a limitation — and those are never a login code.
+ * So only the two shapes Telegram itself gives its login lines in every
+ * language count as login, and ANYTHING else, an empty line or a shape this
+ * does not know included, is a notice: guessing wrong toward «notice» costs a
+ * routine morning's queue, guessing wrong toward «login» would keep the
+ * machine talking through a warning. The text is only looked at here — never
+ * kept, never logged, never copied into an alarm (it may be a login code).
+ */
+export function telegramNoticeKind(text: string): TelegramNoticeKind {
+  const firstLine = text.split('\n', 1)[0] ?? '';
+  if (LOGIN_CODE.test(firstLine)) return 'login';
+  if (NEW_LOGIN.test(text)) return 'login';
+  return 'notice';
+}
+
 /** What the gramjs user says about itself — read off the chat a stranger's message came from. */
 export interface StrangerUser {
   /** In his contacts (or mutually so): a friend or a colleague, never a lead (review fit-7). */

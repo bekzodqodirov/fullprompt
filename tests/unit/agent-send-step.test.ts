@@ -49,6 +49,7 @@ const facts: SendFacts = {
   anchorEditedSinceDraft: false,
   humanReplied: false,
   humanUntil: null,
+  humanPressedAt: null,
   newerSubstantiveInbound: false,
   peerHasWritten: true,
   lastInboundAt: new Date(now.getTime() - 10 * 60_000),
@@ -150,6 +151,22 @@ describe('agentSendVerdict', () => {
     expect(agentSendVerdict(pressed, { ...atNight, humanUntil: new Date(night.getTime() + 60_000) })).toEqual(final);
     // A day later the chat is the agent's again.
     expect(agentSendVerdict(row, { ...facts, humanUntil: new Date(now.getTime() - 1) })).toEqual({ ok: true });
+  });
+
+  it('his 🙋 withdraws what he approved at or before the press — never a ✅ he gives after it (K2’s follow-up)', () => {
+    // 🙋 at 11:00, the chat his until 11:00 tomorrow; the row was approved at queuedAt.
+    const pressedAt = new Date(now.getTime() - 4 * 3_600_000);
+    const his = { ...facts, humanUntil: new Date(pressedAt.getTime() + 24 * 3_600_000), humanPressedAt: pressedAt };
+    const final = { ok: false, final: true, reason: 'human_replied' };
+    // His own price typed through «💵 Narx yozaman» at 14:59 and ✅'d: the man who took the chat chose to send it.
+    expect(agentSendVerdict({ ...row, queuedAt: new Date(now.getTime() - 60_000) }, his)).toEqual({ ok: true });
+    // A reply approved the evening before and night-held to 08:30 — that is the one the press withdrew.
+    const evening = { ...row, queuedAt: new Date(pressedAt.getTime() - 12 * 3_600_000), releaseAt: new Date(pressedAt.getTime() - 2 * 3_600_000) };
+    expect(agentSendVerdict(evening, { ...his, now: new Date(pressedAt.getTime() + 60_000) })).toEqual(final);
+    // At the very instant of the press: withdrawn — a tie is the press's.
+    expect(agentSendVerdict({ ...row, queuedAt: pressedAt }, his)).toEqual(final);
+    // A takeover with no press on record withdraws everything, as before.
+    expect(agentSendVerdict(row, { ...his, humanPressedAt: null })).toEqual(final);
   });
 
   it('refuses an approval older than six hours', () => {

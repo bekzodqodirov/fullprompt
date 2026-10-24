@@ -3,6 +3,7 @@ import { usersWithRoles } from '../../platform/notifications/service';
 import type { UnmutableType } from '../../platform/notifications/mutes';
 import { agentRunning, forceAgentOff, readAgentConfig } from '../agent/config';
 import { AGENT_LIMITS } from '../agent/limits';
+import type { TelegramNoticeKind } from '../agent/listener-hooks';
 import { onAgentDraftsRetired, onAgentOutboxSettled } from '../agent/settle-hooks';
 import { pauseAccount, recordFlood, sendFloodsSince } from './account-guard';
 import type { PauseKind } from './telegram-guard';
@@ -188,19 +189,27 @@ export async function agentBlocked(account: AlarmAccount): Promise<{ agentOff: b
  * K33): the agent goes off at once, with the approved replies and the live
  * drafts, and ONE alarm says so in words.
  *
- * Any line from it, not a guess at which ones are serious: a notice about the
- * API terms or a limitation is the warning his account gets before a ban, and
- * Telegram words it differently every time. The same account sends login
- * codes and «new login» alerts — and a new login is exactly what his
- * «session exclusive» confirmation said would not happen while the machine
- * speaks for him. Switching back on is one press; reading the notice first
- * is the point.
+ * Any NOTICE, not a guess at which ones are serious: a notice about the API
+ * terms or a limitation is the warning his account gets before a ban, and
+ * Telegram words it differently every time — so a line of a shape nobody
+ * knows is a notice too. What is NOT a notice is his own login traffic
+ * (`telegramNoticeKind` 'login'): the code Telegram sends for every new
+ * sign-in and the «new login» alert after it. The same account sends them,
+ * and an «off» on them cost real work for nothing — every approved reply
+ * still waiting (the night-held ✅s he gave the evening before) cancelled and
+ * every live draft expired, the one he was editing too, none of them back
+ * when he switches it on again — each time he signed in on Telegram Desktop
+ * or re-connected his account here. His «session exclusive» confirmation
+ * promised nothing about that: it says the OLD server holds no copy of the
+ * session (spec §17.14 row 1), not that he never logs in anywhere else.
+ * Telegram shows him the login itself on every device he has.
  *
  * Nothing of the message is kept here — not its text, not a row — and only
  * the account the agent speaks from is touched (`agentOffFor`); every other
  * account, and this one with the agent off, does nothing at all.
  */
-export async function agentTelegramNotice(account: AlarmAccount): Promise<{ agentOff: boolean }> {
+export async function agentTelegramNotice(account: AlarmAccount, kind: TelegramNoticeKind): Promise<{ agentOff: boolean }> {
+  if (kind === 'login') return { agentOff: false };
   const agentOff = await agentOffFor(account, 'telegram_notice');
   if (agentOff) {
     await alarm(

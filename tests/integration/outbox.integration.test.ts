@@ -31,7 +31,6 @@ import {
   dismissFailed,
   recordSent,
   recoverInFlight,
-  releaseClaim,
   replyAccountFor,
   replyVerdict,
   sendContextFor,
@@ -249,14 +248,13 @@ describe('the listener taking a job', () => {
     expect(claimed[0]!.peerId).toBe(PEER);
   });
 
-  it('puts a job back when a rate limit says “not yet”', async () => {
+  it('puts a job back when a rate limit says “not yet” — with the claim’s attempt (K22’s follow-up)', async () => {
     const [row] = await db.select().from(tgOutbox).where(eq(tgOutbox.clientId, clientId));
-    await releaseClaim(row!.id);
+    await giveClaimBack(row!.id);
     const again = await claimNext(managerId);
     expect(again?.id).toBe(row!.id);
-    // Attempts still counts up: a row bouncing off a limit for ever is worth
-    // being able to see.
-    expect(again?.attempts).toBe(2);
+    // Nothing was tried: the minute's limit was the account's, and `attempts` counts this reply's tries.
+    expect(again?.attempts).toBe(1);
   });
 
   it('marks a sent message with Telegram’s own id', async () => {
@@ -336,20 +334,22 @@ describe('a bounce about the ACCOUNT gives the claim back (final review K4, K22)
     const { id } = await queueReply({ clientId, managerUserId: managerId, body: 'bir marta' }, ctx());
     await claimNext(managerId);
     await claimNext(managerId).then((none) => expect(none).toBeNull());
-    await releaseClaim(id);
-    await claimNext(managerId); // attempts 2: one ordinary limit bounce stays counted
+    // One real try that met a network blip: re-queued, and it stays counted.
+    await markAttemptFailed(id, 'socket hang up', false, MAX_ATTEMPTS);
+    const [tried] = await db.select().from(tgOutbox).where(eq(tgOutbox.id, id));
+    await claimNext(managerId);
     await giveClaimBack(id);
     // The listener's catch running twice after a database blip takes back one claim, not two.
     await giveClaimBack(id);
     const [back] = await db.select().from(tgOutbox).where(eq(tgOutbox.id, id));
     expect(back!.status).toBe('queued');
-    expect(back!.attempts).toBe(1);
+    expect(back!.attempts, 'the real try stays; the bounce’s claim does not').toBe(tried!.attempts);
     const job = await claimNext(managerId);
     await markSent(job!.id, 123456789n);
     await giveClaimBack(id);
     const [sent] = await db.select().from(tgOutbox).where(eq(tgOutbox.id, id));
     expect(sent!.status, 'a message that left stays sent').toBe('sent');
-    expect(sent!.attempts).toBe(2);
+    expect(sent!.attempts).toBe(tried!.attempts + 1);
   });
 });
 

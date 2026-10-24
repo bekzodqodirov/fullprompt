@@ -12,7 +12,6 @@ import {
   OUTBOX_CHANNEL,
   recordSent,
   recoverInFlight,
-  releaseClaim,
   sentCounts,
   wasSentWithPhoto,
 } from '../src/modules/wms/crm/outbox';
@@ -134,7 +133,9 @@ import {
   noteStranger,
   stampPeerTyping,
   strangerUserOf,
+  telegramNoticeKind,
   type StrangerUser,
+  type TelegramNoticeKind,
 } from '../src/modules/wms/agent/listener-hooks';
 import {
   claimPeerPull,
@@ -427,18 +428,21 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
   /**
    * Telegram itself wrote to this account (his ⭐2, final review K33): the
    * agent goes off at once when it speaks from here, and the alarm says so in
-   * words (`agentTelegramNotice`). Not the cached settings — a notice minutes
-   * after the switch was flipped on must not slip through a stale cache — and
-   * nothing of the message is stored by this: the line goes on to
-   * `handleMessage` exactly as it always did. A database one migration behind
-   * has no agent to switch off. A failure is a logged line, never a downed
-   * bridge.
+   * words (`agentTelegramNotice`) — unless the line is his own login traffic
+   * (`telegramNoticeKind`), which switches nothing off and costs nothing of
+   * the waiting work. Not the cached settings — a notice minutes after the
+   * switch was flipped on must not slip through a stale cache — and nothing
+   * of the message is stored, logged or forwarded by this: only its KIND
+   * arrives here, and the line goes on to `handleMessage` exactly as it
+   * always did. A database one migration behind has no agent to switch off.
+   * A failure is a logged line, never a downed bridge.
    */
-  const telegramNoticeSeen = async () => {
+  const telegramNoticeSeen = async (kind: TelegramNoticeKind) => {
     try {
       if (!(await tablesReady())) return;
-      const { agentOff } = await agentTelegramNotice(alarmAccount);
+      const { agentOff } = await agentTelegramNotice(alarmAccount, kind);
       if (agentOff) console.error('TELEGRAM XIZMATI (777000) XABAR YUBORDI — AI sotuvchi o‘chirildi');
+      else if (kind === 'login') console.log('  🔑 Telegram (777000): kirish kodi yoki yangi kirish — AI o‘chirilmadi');
     } catch (err) {
       console.error('Telegram xizmati xabari AI ni o‘chirmadi:', err instanceof Error ? err.message : err);
     }
@@ -547,7 +551,7 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       // identically.
       const peer = listenPeer(await msg.getChat?.());
       // Before anything else decides about the line: an official notice switches the agent off first.
-      if (isTelegramServiceNotice(peer, msg.out === true)) await telegramNoticeSeen();
+      if (isTelegramServiceNotice(peer, msg.out === true)) await telegramNoticeSeen(telegramNoticeKind(msg.message ?? ''));
       await serialised(peer.id.toString(), () => handleMessage(peer, msg, 'live'));
     } catch (err) {
       // One bad event must not take the bridge down: it would stop receiving
@@ -859,6 +863,19 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       console.error("o'qildi belgisi yozilmadi:", err instanceof Error ? err.message : err);
     }
   }, new Raw({ types: [Api.UpdateReadHistoryInbox] }));
+
+  // Telegram's notices about the account itself — the API terms, a
+  // limitation, a popup — need not arrive as a message from 777000 at all:
+  // the API delivers them as `updateServiceNotification`, which a client is
+  // expected to file into the 777000 chat ITSELF (K33's follow-up). gramjs
+  // turns no such update into a NewMessage, so it is matched by class like
+  // the reads above, or his ⭐2 «off at once on any official notice» hears
+  // only the login codes. Always a notice, never login traffic, and never
+  // kept: the update IS the notice.
+  // One that came while this listener was down is not learned (stated).
+  client.addEventHandler(async () => {
+    await telegramNoticeSeen('notice');
+  }, new Raw({ types: [Api.UpdateServiceNotification] }));
 
   // The manager renamed their own @handle (round 113). Written at once rather
   // than at the next refresh: a released handle can be registered by a
@@ -1555,11 +1572,15 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       });
       if (!verdict.ok) {
         // A limit is "not yet", not "never" — except the two that ARE never,
-        // and those must not sit in the queue pretending they will go.
+        // and those must not sit in the queue pretending they will go. «Not
+        // yet» gives the claim back WITH its attempt (K22's follow-up): the
+        // limit is the account's minute or day, nothing was tried, and a
+        // reply that bounced twice here used to fail for good on its first
+        // real network blip (`markAttemptFailed` against MAX_ATTEMPTS).
         if (verdict.reason === 'never_wrote_first') {
           await markAttemptFailed(job.id, 'never_wrote_first', true, MAX_ATTEMPTS);
         } else {
-          await releaseClaim(job.id);
+          await giveClaimBack(job.id);
         }
         return;
       }
@@ -1658,11 +1679,12 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       // on through a FLOOD_WAIT is the fastest way to lose the account.
       const seconds = (err as { seconds?: number })?.seconds;
       // A database that is not there is not a send that failed: the message
-      // never left, so the row must go back in the queue rather than be
-      // marked failed by a write that would fail too.
+      // never left, so the row must go back in the queue — its claim given
+      // back, nothing was tried — rather than be marked failed by a write
+      // that would fail too.
       if (isDbUnreachable(message)) {
         await noteDbFailure(err);
-        await releaseClaim(job.id).catch(() => {});
+        await giveClaimBack(job.id).catch(() => {});
         return;
       }
       // Telegram ended the SESSION. Nothing this account sends will work
@@ -1672,9 +1694,10 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       // session while the screen said the bridge was live.
       if (isSessionDead(message)) {
         console.error(`SESSION o‘lgan: ${message} — qayta ulanish kerak`);
-        // The reply itself is fine and goes out when he reconnects; failing
-        // it would throw away an answer a client is still waiting for.
-        await releaseClaim(job.id).catch(() => {});
+        // The reply itself is fine and goes out when he reconnects, with every
+        // retry it had; failing it would throw away an answer a client is
+        // still waiting for.
+        await giveClaimBack(job.id).catch(() => {});
         await announceSessionDead(message);
         void stop(message, 'signed_out');
         return;
@@ -1703,7 +1726,8 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       if (typeof seconds === 'number') {
         floodWaitUntil = computeFloodWait(seconds);
         console.error(`FLOOD_WAIT ${seconds}s — ${floodWaitUntil.toISOString()} gacha to‘xtadim`);
-        await releaseClaim(job.id);
+        // Telegram refused the CALL with a wait — about the account, never this reply: the claim goes back whole.
+        await giveClaimBack(job.id);
         // The wait itself, persisted UNCAPPED on the guard row (ban-2): the
         // in-memory clock above stays as the fast path, capped as it always
         // was, and is all a database without 0136 gets. It only ever reaches

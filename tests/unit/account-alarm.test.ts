@@ -1,7 +1,7 @@
 import { Api, helpers } from 'telegram';
 import { describe, expect, it } from 'vitest';
 import { agentOffAlarmText, pausedAlarmText, sessionDeadOthersText } from '@/modules/wms/crm/account-alarm';
-import { isTelegramServiceNotice, TELEGRAM_SERVICE_PEER } from '@/modules/wms/agent/listener-hooks';
+import { isTelegramServiceNotice, TELEGRAM_SERVICE_PEER, telegramNoticeKind } from '@/modules/wms/agent/listener-hooks';
 import { wasAutoSent } from '@/modules/wms/crm/message-flags';
 
 /**
@@ -80,5 +80,42 @@ describe('Telegram’s own service account (his ⭐2, final review K33)', () => 
     expect(isTelegramServiceNotice({ ...service, isSelf: true }, false)).toBe(false);
     expect(isTelegramServiceNotice({ ...service, isPrivate: false }, false)).toBe(false);
     expect(isTelegramServiceNotice({ ...service, id: 777001n }, false)).toBe(false);
+  });
+});
+
+describe('what a line from 777000 is (K33’s follow-up)', () => {
+  // Telegram's own wording, as its apps show it (en, ru). The digits and the address are made up.
+  const LOGIN_EN =
+    'Login code: 52814. Do not give this code to anyone, even if they say they are from Telegram!\n\n' +
+    '❗️This code can be used to log in to your Telegram account. We never ask it for anything else.\n\n' +
+    "If you didn't request this code by trying to log in on another device, simply ignore this message.";
+  const LOGIN_RU =
+    'Код для входа в Telegram: 52814. Не давайте код никому, даже если его требуют от имени Telegram!\n\n' +
+    '❗️Этот код используется для входа в Ваш аккаунт в Telegram. Он никогда не нужен для чего-то ещё.';
+  const NEW_LOGIN_EN =
+    'New login. Dear Bekzod, we detected a login into your account from a new device on 24/10/2026 at 03:10:12 UTC.\n\n' +
+    'Device: Telegram Desktop, 5.6.3, Windows 10\nLocation: Tashkent, Uzbekistan (IP = 213.230.80.11)\n\n' +
+    'If this wasn\'t you, you can terminate that session in Settings > Devices.';
+  const NEW_LOGIN_RU =
+    'Новый вход в аккаунт. Bekzod, мы обнаружили вход в Ваш аккаунт с нового устройства 24/10/2026 в 03:10:12 UTC.\n\n' +
+    'Устройство: Telegram Desktop, 5.6.3, Windows 10\nМестоположение: Ташкент, Узбекистан (IP = 2a03:2880:f12c::1)';
+
+  it('his own login traffic is login: the code, in any language, and the «new login» alert', () => {
+    for (const text of [LOGIN_EN, LOGIN_RU, NEW_LOGIN_EN, NEW_LOGIN_RU]) expect(telegramNoticeKind(text), text).toBe('login');
+  });
+
+  it('anything else is a notice — the shape guesses toward «off», never toward «keep talking»', () => {
+    for (const text of [
+      '',
+      'Your account was limited for violating the Telegram Terms of Service (section 1.5). Until 25.10.2026 you can only…',
+      'Hisobingiz cheklandi. Murojaat raqami: 2026\nBatafsil: telegram.org/faq_spam',
+      // A number of a code's size, but not the first line's: a notice quoting one is still a notice.
+      'Important: your account was used in an unofficial app.\nTicket: 52814.',
+      // Seven digits are no login code, an IP without Telegram's «(IP = …)» is no login alert.
+      'Appeal number: 1234567.',
+      'We detected suspicious activity from IP 213.230.80.11 using a third-party app.',
+    ]) {
+      expect(telegramNoticeKind(text), text).toBe('notice');
+    }
   });
 });

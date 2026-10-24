@@ -72,6 +72,14 @@ export interface SendFacts {
    * just said is his.
    */
   humanUntil: Date | null;
+  /**
+   * When he pressed that 🙋 — the newest draft of this chat a PERSON decided `taken_over` (`decideDraft`'s
+   * own `decided_at`; the machine's «he answered himself» writes no decider) — or null when no press is on
+   * record. The takeover covers what he approved BEFORE it; a reply he approves after it is his own new
+   * word (a price typed through «💵 Narx yozaman»), never one the press withdrew (final review K2's
+   * follow-up).
+   */
+  humanPressedAt: Date | null;
   /** An inbound in this chat after the anchor that is not a nudge (`draftWorthy` says it wants its own answer). */
   newerSubstantiveInbound: boolean;
   /** This peer has written to this account (G7 per PEER, ban-8). */
@@ -84,7 +92,11 @@ export interface SendFacts {
   identityChanged: boolean;
   /** A price draft's offer: null when the draft carries none. */
   offerStands: boolean | null;
-  /** Caps, counted over agent_outbox rows handed to Telegram — 'sent' AND 'unknown' (S5). */
+  /**
+   * Caps, counted over agent_outbox rows handed to Telegram — 'sent' AND 'unknown' (S5). The hour and the
+   * account's last send count the account's sent CRM replies as well (K5); the day and the chat's two are
+   * the machine's own voice (`limits.ts`).
+   */
   sentToChatToday: number;
   sentLastHour: number;
   sentToday: number;
@@ -152,7 +164,12 @@ export function agentSendVerdict(
   // 🙋 is the same promise as a reply of his own, made a moment before he types it — so the same refusal
   // and the card's same words («o'zingiz javob berdingiz», the draft's own `taken_over` line). FINAL, not a
   // wait: the chat is his for a day, and a reply carried past that would answer a conversation he ran.
-  if (f.humanUntil && f.humanUntil.getTime() > now) return fin('human_replied');
+  // Only for what he approved at or BEFORE the press: a ✅ he gives after it is the man who took the chat
+  // choosing to send this — his typed price — and refusing it would cancel his own word and tell him he
+  // had answered himself. A takeover with no press on record withdraws everything, as it always did.
+  if (f.humanUntil && f.humanUntil.getTime() > now && approvedBeforePress(row, f.humanPressedAt)) {
+    return fin('human_replied');
+  }
   if (f.newerSubstantiveInbound) return fin('anchor_superseded');
   if (now - f.anchorSentAt.getTime() > AGENT_LIMITS.anchorMaxAgeMs) return fin('anchor_too_old');
   // From the later of the press and the morning it was held to (S2) — or every night-held ✅ is cancelled
@@ -188,6 +205,16 @@ export function agentSendVerdict(
   if (f.sentLastHour >= AGENT_LIMITS.perHour) return wait('hour_cap', new Date(now + 5 * 60_000));
   if (f.sentToday >= Math.min(f.dailyCeiling, AGENT_LIMITS.perDay)) return wait('day_cap', nextTashkentMorning(f.now));
   return { ok: true };
+}
+
+/**
+ * Was this reply approved at or before his 🙋? The approval is the ✅'s own
+ * instant (`queued_at`), never the morning a night-held row was promised for:
+ * a reply approved at 23:00 and held to 08:30 was approved BEFORE a 07:30
+ * press, and that is exactly the reply the press withdraws (K2).
+ */
+function approvedBeforePress(row: Pick<AgentOutboxRow, 'queuedAt'>, pressedAt: Date | null): boolean {
+  return pressedAt === null || pressedAt.getTime() >= row.queuedAt.getTime();
 }
 
 /**
