@@ -77,15 +77,18 @@ export function strangerUserOf(chat: unknown): StrangerUser | null {
 
 /**
  * May a hidden number get the pending rule the «📵 raqam yashirin» card acts
- * on? Not yet. The card's first button, «🆕 Yangi lid», opens the lead through
- * `openLeadForChat`, which refuses a rule with no phone (`chat_no_phone`) —
- * the card package's by-name lead door is what lets it — so a phone-less rule
- * written today is a card whose 🆕 answers «Lid ochilmadi: chat_no_phone» the
- * first time he presses it. The rule waits for the door, and is flipped in
- * the same change that lands it: `agent-listener-hooks.integration.test.ts`
- * presses the door with a phone-less rule and goes red the day it opens.
+ * on? Yes, now (his Q18 ⭐): the card's «🆕 Yangi lid» opens the lead BY NAME
+ * through `openLeadForChat(…, { phoneless: 'agent_stranger' })` — the one door
+ * that may, the tray's own still refusing `chat_no_phone` — so a phone-less
+ * rule is a card whose every button works.
+ * `agent-listener-hooks.integration.test.ts` drives one from the listener's
+ * call through the card's 🆕 to its lead.
+ *
+ * It guards nothing any more and stays only because the listener names it
+ * (`scripts/tg-listen.ts`, pinned by `tg-listen-agent-wire.test.ts`); the
+ * listener package can drop both it and `noteStranger`'s `hiddenNumberRule`.
  */
-export const HIDDEN_NUMBER_CARD_READY = false;
+export const HIDDEN_NUMBER_CARD_READY = true;
 
 /**
  * A stranger wrote to the agent owner's account (spec §17.11, his Q18 ⭐,

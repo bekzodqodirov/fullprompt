@@ -12,6 +12,7 @@ import { db, pgClient } from '@/modules/platform/db/client';
 import {
   agentConversations,
   clients,
+  leads,
   notifications,
   roles,
   tgChatRules,
@@ -30,6 +31,8 @@ import {
   strangerUserOf,
 } from '@/modules/wms/agent/listener-hooks';
 import { openLeadForChat } from '@/modules/wms/crm/chat-rules';
+import { agentPress } from '@/modules/wms/agent/bot-door';
+import { strangerCards } from '@/modules/wms/agent/jobs';
 import {
   claimPeerPull,
   finishPeerPull,
@@ -51,6 +54,7 @@ let seq = 0n;
 const next = () => BASE + ++seq;
 
 const madeUsers: string[] = [];
+const madeLeads: string[] = [];
 let managerId: string;
 let colleagueId: string;
 let superId: string;
@@ -121,6 +125,7 @@ afterAll(async () => {
   await db.delete(tgPeerPulls).where(inArray(tgPeerPulls.managerUserId, madeUsers));
   await db.delete(agentConversations).where(inArray(agentConversations.managerUserId, madeUsers));
   await db.delete(tgChatRules).where(inArray(tgChatRules.managerUserId, madeUsers));
+  if (madeLeads.length) await db.delete(leads).where(inArray(leads.id, madeLeads));
   await db.delete(tgMessages).where(inArray(tgMessages.managerUserId, madeUsers));
   await db.delete(clients).where(eq(clients.id, clientId));
   for (const id of madeUsers) {
@@ -237,36 +242,45 @@ describe('a stranger on the agent owner’s account (his Q18 ⭐, review fit-7)'
     expect(strangerUserOf(undefined)).toBeNull();
   });
 
-  it('until the «📵» card can open a lead without a phone, the listener’s call writes no phone-less rule', async () => {
+  it('the listener’s call gives a hidden number its rule, and the «📵» card’s «🆕 Yangi lid» opens the lead by name', async () => {
     const peer = next();
+    const title = `Yashirin ${STAMP}`;
     expect(
       await noteStranger({
         managerUserId: managerId,
         peerId: peer,
-        title: 'Yashirin',
+        title,
         verdict: 'no_phone',
         user: { contact: false, deleted: false },
         // What the listener passes (tg-listen-agent-wire pins it).
         hiddenNumberRule: HIDDEN_NUMBER_CARD_READY,
       }),
-    ).toEqual({ contactStamped: true, ruleAdded: false });
-    expect(await rule(peer), 'no card is sent for a rule nobody can act on').toBeUndefined();
-  });
-
-  it('the gate opens with the door: «🆕 Yangi lid» still refuses a rule with no phone, so the gate stays shut', async () => {
-    const peer = next();
-    const [r] = await db
-      .insert(tgChatRules)
-      .values({ managerUserId: managerId, peerId: peer, decision: 'pending', peerTitle: 'Yashirin', peerPhone: null })
-      .returning({ id: tgChatRules.id });
-    const answer = await openLeadForChat(r!.id, { actorId: managerId }).then(
-      () => 'opened',
-      (err: unknown) => (err instanceof Error ? err.message : String(err)),
-    );
-    // The day the card package's by-name lead door opens this, HIDDEN_NUMBER_CARD_READY flips with it
-    // — and this test is rewritten to say the door works.
-    expect(answer).toBe('chat_no_phone');
-    expect(HIDDEN_NUMBER_CARD_READY).toBe(false);
+    ).toEqual({ contactStamped: true, ruleAdded: true });
+    const pending = (await rule(peer))!;
+    expect(pending).toMatchObject({ decision: 'pending', peerPhone: null, peerTitle: title });
+    // The sweep's one card per peer, in the hidden number's own words…
+    expect(await strangerCards(managerId, new Date())).toBeGreaterThanOrEqual(1);
+    const [card] = await db
+      .select()
+      .from(notifications)
+      .where(and(eq(notifications.userId, managerId), eq(notifications.type, 'AgentStranger'), sql`${notifications.payload}->>'ruleId' = ${pending.id}`));
+    expect(String((card!.payload as { text?: unknown }).text)).toContain(`📵 Raqami yashirin yangi odam yozdi: ${title}`);
+    // …whose first button is the agent's by-name door — the tray's own still refuses a rule with no phone.
+    await expect(openLeadForChat(pending.id, { actorId: managerId })).rejects.toThrow('chat_no_phone');
+    const pressed = await agentPress(managerId, 'n', pending.id, undefined);
+    expect(pressed.toast).toContain('Lid ochildi');
+    const opened = (await rule(peer))!;
+    expect(opened).toMatchObject({ decision: 'include', clientId: null });
+    madeLeads.push(opened.leadId!);
+    const [lead] = await db.select().from(leads).where(eq(leads.id, opened.leadId!));
+    expect(lead).toMatchObject({ name: title, phone: null, ownerId: managerId });
+    // The chat is pulled into the CRM — and the pull is this test's, taken off the queue the
+    // one-peer-pulls block below reads (#154).
+    const pulls = await db
+      .delete(tgPeerPulls)
+      .where(and(eq(tgPeerPulls.managerUserId, managerId), eq(tgPeerPulls.peerId, peer)))
+      .returning({ id: tgPeerPulls.id });
+    expect(pulls).toHaveLength(1);
   });
 
   it('once the card can act on it, a hidden number from a real non-contact gets a pending rule with no phone and no text — once', async () => {
