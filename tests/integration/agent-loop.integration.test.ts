@@ -25,7 +25,15 @@ import {
   users,
 } from '@/modules/platform/db/schema';
 import { buttonsFor, parseCallback } from '@/modules/platform/telegram/staff-bot';
-import { agentCardFor, agentCommand, agentPress, agentText } from '@/modules/wms/agent/bot-door';
+import {
+  agentCardFor,
+  agentCommand,
+  agentPress,
+  agentText,
+  PRICE_DRAFTED,
+  PRICE_PROMPT,
+  priceRefusalText,
+} from '@/modules/wms/agent/bot-door';
 import { announceAgentCalc, priceDraftFromText } from '@/modules/wms/agent/calc-loop';
 import { readAgentConfig, __restoreAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
 import { chatIdentity } from '@/modules/wms/agent/context';
@@ -898,5 +906,58 @@ describe('a «📵» lead with no title is named by a placeholder, not a person 
     const facts = await db.select().from(kbFacts).where(sql`${kbFacts.sourceRef}->>'draftId' = ${d!.id}`);
     expect(facts).toHaveLength(1);
     await db.delete(kbFacts).where(eq(kbFacts.id, facts[0]!.id));
+  });
+});
+
+describe('«💵 Narx yozaman» says what it does — his 6 b, nothing is recorded (answers review)', () => {
+  it('the question and the answer speak of one sentence to the customer, never of an offer', async () => {
+    const id = await request();
+    await link(id);
+    await storedInbound(clientId);
+    const asked = await agentPress(ownerId, 'p', id, undefined);
+    expect(asked.reply).toBe(PRICE_PROMPT);
+    expect(asked.reply).toContain('bitim kartasiga hech narsa yozilmaydi');
+    expect(asked.arm).toEqual({ kind: 'agent_price', payload: { requestId: id } });
+    const answered = await agentText(ownerId, { kind: 'agent_price', payload: { requestId: id } }, '1250');
+    expect(answered).toBe(PRICE_DRAFTED);
+    // Neither sentence promises the offer the bot no longer writes.
+    for (const words of [asked.reply!, answered!]) expect(words).not.toMatch(/taklif/iu);
+  });
+
+  it('each refusal has its own code and its own words — the editing reply, the two readings, no message to answer', async () => {
+    const id = await request();
+    await link(id);
+    const price = { kind: 'agent_price' as const, payload: { requestId: id } };
+    // No customer message stored in this chat: nothing to answer — and no price or answer is blamed.
+    expect(await priceDraftFromText(ownerId, id, '1250')).toEqual({ ok: false, code: 'no_anchor' });
+    const noAnchor = await agentText(ownerId, price, '1250');
+    expect(noAnchor).toContain("javob beriladigan xabari yo'q");
+    expect(noAnchor).not.toMatch(/narxi yoki javobi topilmadi/u);
+
+    await storedInbound(clientId);
+    expect(await priceDraftFromText(ownerId, id, '1.250')).toEqual({
+      ok: false,
+      code: 'ambiguous_number',
+      readings: { thousands: 1250, decimal: '1,25' },
+    });
+    expect(await agentText(ownerId, price, '1.250')).toBe('«1.250» — 1250 dollarmi yoki 1,25 dollarmi? Aniq yozing: 1250 yoki 1,25');
+
+    // His own reply to this chat is being typed: the price waits for it.
+    const [own] = await db
+      .insert(agentDrafts)
+      .values({ managerUserId: ownerId, peerId: PEER, clientId, anchorTgMessageId: msgSeq, proposedBody: 'x', status: 'editing' })
+      .returning({ id: agentDrafts.id });
+    expect(await priceDraftFromText(ownerId, id, '1250')).toEqual({ ok: false, code: 'editing_open' });
+    expect(await agentText(ownerId, price, '1250')).toContain('siz yozayotgan javob bor');
+    expect((await db.select().from(agentDrafts).where(eq(agentDrafts.peerId, PEER))).map((d) => d.id)).toEqual([own!.id]);
+
+    // Five refusals, five sentences — none of them a raw code.
+    const words = new Set(
+      (['not_linked', 'not_account_holder', 'bad_number', 'editing_open', 'no_anchor'] as const).map((code) =>
+        priceRefusalText({ ok: false, code }, 'x'),
+      ),
+    );
+    expect(words.size).toBe(5);
+    for (const w of words) expect(w).not.toMatch(/^[a-z_]+$/u);
   });
 });

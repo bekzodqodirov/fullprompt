@@ -6322,6 +6322,11 @@
       "not_paused": "The account is no longer paused.",
       "too_late": "Already sending — it cannot be cancelled.",
       "already_retired": "Already retired.",
+      "not_linked": "This calculation was not sent through the AI salesperson — no price reply was written.",
+      "bad_number": "Write the price in dollars as a number, for example: 1250.",
+      "ambiguous_number": "The price reads two ways (for example «1.250» — 1250 dollars or 1.25?). Write it exactly: 1250 or 1,25.",
+      "editing_open": "You are already writing your own reply in this chat — finish or close it first. No price reply was written.",
+      "no_anchor": "This chat has no customer message to answer — no price reply was written.",
       "unknown": "That did not work — try again."
     }
   }

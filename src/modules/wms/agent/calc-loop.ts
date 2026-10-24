@@ -314,12 +314,32 @@ export async function announceAgentCalcSafe(
 }
 
 /**
- * Why «💵 Narx yozaman» wrote nothing. `pending` is no longer returned — there
- * is no floor approval now that nothing reaches the deal card (his 6 b) — and
- * stays in the union only while the bot's `PRICE_WORDS` (bot-door.ts) still
- * names it; `refused` carries its reason as WORDS in `detail`.
+ * Why «💵 Narx yozaman» wrote nothing — each its own code, so the bot and the
+ * page each say it in their own words (bot-door `PRICE_WORDS`, the page's
+ * `ERROR_KEYS`) and neither prints a reason the machine composed. There is no
+ * floor approval to wait for now that nothing reaches the deal card (his 6 b):
+ *
+ *   not_linked        — the request is not one the agent sent, or is gone;
+ *   bad_number        — not a price at all;
+ *   ambiguous_number  — «1.250»: a thousand times apart by who typed it (the
+ *                       two readings ride beside the code, `readings`);
+ *   editing_open      — his own reply to this chat is being typed (an
+ *                       'editing' draft is never superseded, drafts.ts);
+ *   no_anchor         — the chat holds no customer message to answer.
  */
-export type PriceRefusal = 'not_linked' | 'not_account_holder' | 'bad_number' | 'pending' | 'no_anchor' | 'refused';
+export type PriceRefusal = 'not_linked' | 'not_account_holder' | 'bad_number' | 'ambiguous_number' | 'editing_open' | 'no_anchor';
+
+/** The two ways an ambiguous figure reads — `decimal` null when that reading is more than cents (no price). */
+export interface PriceReadings {
+  thousands: number;
+  /** «1,25» as he would retype it; null when the decimal reading is no price at all. */
+  decimal: string | null;
+}
+
+export type PriceDraftResult =
+  | { ok: true; draftId: string }
+  | { ok: false; code: Exclude<PriceRefusal, 'ambiguous_number'> }
+  | { ok: false; code: 'ambiguous_number'; readings: PriceReadings };
 
 /** Above this a typed «price» is a slip, not a quote — and past it the grouping would print an exponent. */
 const PRICE_MAX_USD = 1_000_000_000;
@@ -351,8 +371,6 @@ export function typedPriceUsd(text: string): number | null {
   return amount;
 }
 
-const EDITING_WORDS = "bu suhbatda siz yozayotgan javob bor — avval uni tugating yoki ❌ bilan yoping";
-
 /**
  * «💵 Narx yozaman»: his typed dollars → a price draft whose body is ONE
  * deterministic sentence in the customer's language carrying exactly his
@@ -361,15 +379,10 @@ const EDITING_WORDS = "bu suhbatda siz yozayotgan javob bor — avval uni tugati
  * «taxmin» card, which has no seal and no Готово to anchor an offer on.
  *
  * Every refusal is decided BEFORE anything is written: not linked, not the
- * account holder, a number that is not a price, no customer message to
- * answer, his own reply to this chat being typed (an 'editing' draft is
- * never superseded, drafts.ts).
+ * account holder, a number that is not a price or reads two ways, no
+ * customer message to answer, his own reply to this chat being typed.
  */
-export async function priceDraftFromText(
-  staffId: string,
-  requestId: string,
-  text: string,
-): Promise<{ ok: true; draftId: string } | { ok: false; code: PriceRefusal; detail?: string }> {
+export async function priceDraftFromText(staffId: string, requestId: string, text: string): Promise<PriceDraftResult> {
   const link = await linkFor(requestId);
   if (!link) return { ok: false, code: 'not_linked' };
   if (link.managerUserId !== staffId) return { ok: false, code: 'not_account_holder' };
@@ -379,13 +392,10 @@ export async function priceDraftFromText(
     // the whole dollars bare, the cents with two digits («1,25»). A decimal
     // reading with more than cents is no price at all, so it is not offered.
     const cents = Math.abs(Math.round(both.decimal * 100) - both.decimal * 100) < 1e-6;
-    const dec = String(both.decimal).replace('.', ',');
     return {
       ok: false,
-      code: 'refused',
-      detail: cents
-        ? `«${text.trim()}» — ${both.thousands} dollarmi yoki ${dec} dollarmi? Aniq yozing: ${both.thousands} yoki ${dec}`
-        : `«${text.trim()}» — ${both.thousands} dollarmi? Unda shunday yozing: ${both.thousands}`,
+      code: 'ambiguous_number',
+      readings: { thousands: both.thousands, decimal: cents ? String(both.decimal).replace('.', ',') : null },
     };
   }
   const amount = typedPriceUsd(text);
@@ -394,7 +404,8 @@ export async function priceDraftFromText(
     .select({ section: calcRequests.section })
     .from(calcRequests)
     .where(eq(calcRequests.id, requestId));
-  if (!req) return { ok: false, code: 'no_anchor' };
+  // The link outlived its request (a request is never deleted in use): there is nothing to price.
+  if (!req) return { ok: false, code: 'not_linked' };
   const [editing] = await db
     .select({ id: agentDrafts.id })
     .from(agentDrafts)
@@ -405,7 +416,7 @@ export async function priceDraftFromText(
         eq(agentDrafts.status, 'editing'),
       ),
     );
-  if (editing) return { ok: false, code: 'refused', detail: EDITING_WORDS };
+  if (editing) return { ok: false, code: 'editing_open' };
 
   // The draft answers the chat's newest live inbound.
   const [anchor] = await db
@@ -485,6 +496,6 @@ export async function priceDraftFromText(
   });
   // The check above ran before the write; a ✏️ pressed in between still lands
   // here, and createDraft wrote nothing for it.
-  if (written.kind === 'editing') return { ok: false, code: 'refused', detail: EDITING_WORDS };
+  if (written.kind === 'editing') return { ok: false, code: 'editing_open' };
   return { ok: true, draftId: written.draftId };
 }

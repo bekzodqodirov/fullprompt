@@ -10,7 +10,7 @@ import { agentRunning, readAgentConfig, setAgentMode, AgentConfigError } from '.
 import { chatProof } from './context';
 import { decideDraft, submitOwnText, type DecideRefusal } from './decide';
 import { KbError, writeKbFact } from './kb';
-import { priceDraftFromText, type PriceRefusal } from './calc-loop';
+import { priceDraftFromText, type PriceDraftResult, type PriceRefusal } from './calc-loop';
 import { editAgentCopies, type AgentCopy } from './purge';
 import type { DraftPolicyJson } from './types';
 
@@ -52,14 +52,38 @@ const DECIDE_WORDS: Record<DecideRefusal, string> = {
   empty: "Javob bo'sh.",
 };
 
-const PRICE_WORDS: Record<PriceRefusal, string> = {
-  not_linked: "Bu hisob AI sotuvchi orqali yuborilmagan.",
+/**
+ * «💵 Narx yozaman»'s refusals, in his words (his 6 b: nothing is recorded,
+ * so none of them speaks of an offer, a floor or a deal card). The ambiguous
+ * figure's sentence is built from its two readings (`priceRefusalText`).
+ */
+const PRICE_WORDS: Record<Exclude<PriceRefusal, 'ambiguous_number'>, string> = {
+  not_linked: "Bu hisob AI sotuvchi orqali yuborilmagan — narx javobi yozilmadi.",
   not_account_holder: 'Bu suhbat sizning akkauntingizda emas.',
   bad_number: "Narxni dollarda son bilan yozing, masalan: 1250",
-  pending: "Narx poldan past — tasdiq kutilmoqda. Mijozga hech narsa yozilmadi.",
-  no_anchor: "Bu hisobning narxi yoki javobi topilmadi.",
-  refused: 'Narx yozilmadi',
+  editing_open: "Bu suhbatda siz yozayotgan javob bor — avval uni tugating yoki ❌ bilan yoping. Narx javobi yozilmadi.",
+  no_anchor: "Bu chatda mijozning javob beriladigan xabari yo'q — narx javobi yozilmadi.",
 };
+
+/** What a refused «💵» says — an ambiguous figure asks back with both readings (his B4 a), never guesses. */
+export function priceRefusalText(r: Exclude<PriceDraftResult, { ok: true }>, typed: string): string {
+  if (r.code !== 'ambiguous_number') return PRICE_WORDS[r.code];
+  const { thousands, decimal } = r.readings;
+  const shown = typed.trim();
+  return decimal !== null
+    ? `«${shown}» — ${thousands} dollarmi yoki ${decimal} dollarmi? Aniq yozing: ${thousands} yoki ${decimal}`
+    : `«${shown}» — ${thousands} dollarmi? Unda shunday yozing: ${thousands}`;
+}
+
+/**
+ * «💵 Narx yozaman»'s question and its answer (his 6 b, 2026-10-24): his
+ * figure becomes ONE sentence in the customer's language and nothing else is
+ * written anywhere — so neither sentence says «taklif» (an offer is a row on
+ * the deal card, and there is none).
+ */
+export const PRICE_PROMPT =
+  '💵 Mijozga beriladigan narxni dollarda yozing (masalan 1250). Men uni mijoz tilida bitta jumla qilib qoralama tayyorlayman — bitim kartasiga hech narsa yozilmaydi, siz ✅ bosasiz.';
+export const PRICE_DRAFTED = '💵 Narx javobi tayyor — kartani tekshirib ✅ bosing.';
 
 function hhmm(d: Date): string {
   const t = new Date(d.getTime() + 5 * 3_600_000);
@@ -108,7 +132,8 @@ export async function agentPress(staffId: string, op: AgentOp, id: string, diges
     case 'p': {
       return {
         toast: '💵',
-        reply: "💵 Mijozga beriladigan narxni dollarda yozing (masalan 1250). Men uni taklif sifatida yozib, mijoz tilida qoralama tayyorlayman — siz ✅ bosasiz.",
+        // His 6 b: the figure goes to the customer only — the prompt promises nothing it does not do.
+        reply: PRICE_PROMPT,
         arm: { kind: 'agent_price', payload: { requestId: id } },
       };
     }
@@ -143,8 +168,7 @@ export async function agentText(
   }
   if (target.kind === 'agent_price') {
     const r = await priceDraftFromText(staffId, target.payload.requestId!, text);
-    if (r.ok) return '💵 Narx taklif sifatida yozildi — qoralama kartasini tekshirib ✅ bosing.';
-    return r.code === 'refused' ? `${PRICE_WORDS.refused}: ${r.detail ?? ''}` : PRICE_WORDS[r.code];
+    return r.ok ? PRICE_DRAFTED : priceRefusalText(r, text);
   }
   return codeEcho(staffId, target.payload.ruleId!, text);
 }

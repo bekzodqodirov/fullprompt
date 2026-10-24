@@ -1,3 +1,4 @@
+import type { PriceRefusal } from '@/modules/wms/agent/calc-loop';
 import type { AgentConfigRefusal } from '@/modules/wms/agent/config';
 import type { DecideRefusal } from '@/modules/wms/agent/decide';
 import type { KbRefusal } from '@/modules/wms/agent/kb';
@@ -37,6 +38,7 @@ export type AgentErrorCode =
   | ClearRefusal
   | CancelRefusal
   | RetireRefusal
+  | PriceRefusal
   | 'unknown';
 
 export const ERROR_KEYS: Record<AgentErrorCode, string> = {
@@ -73,6 +75,13 @@ export const ERROR_KEYS: Record<AgentErrorCode, string> = {
   not_paused: 'errors.not_paused',
   too_late: 'errors.too_late',
   already_retired: 'errors.already_retired',
+  // «💵 Narx yozaman» (calc-loop `priceDraftFromText`) — the bot's refusals,
+  // in the page's words, so a price door here can never print a raw code.
+  not_linked: 'errors.not_linked',
+  bad_number: 'errors.bad_number',
+  ambiguous_number: 'errors.ambiguous_number',
+  editing_open: 'errors.editing_open',
+  no_anchor: 'errors.no_anchor',
   unknown: 'errors.unknown',
 };
 
