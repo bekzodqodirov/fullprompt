@@ -57,16 +57,23 @@ minimum qilsin». Yangi migratsiya bor (**0136**): deploydan keyin baza hisobi *
   - faqat haqiqiy kg hisobga olinadi, hajm (kub) emas;
   - muddati «taxminan 2–5 kun, reys bo'lsa 2 kun».
   - Narxni **Bilimlar → AI qoidalari** da o'zingiz o'zgartirasiz.
-  - **Avia manzilini AI aytmaydi** (sizning «yukini infosini menga bersang men adres beraman» javobingiz). Avia narxini aytganda kartochkada sizdan so'raydi, masalan: «❓ Avia: 30 kg, qayerdan: Shenzhen — mijozga avia manzilini yozing (✏️)». ✏️ bilan manzilni o'zingiz yozasiz. AI javobida avia uchun Xitoy ombori manzili yoki xitoycha telefon bo'lsa, ✅ chiqmaydi.
+  - **Avia manzilini AI aytmaydi** (sizning «yukini infosini menga bersang men adres beraman» javobingiz). Avia narxini aytganda kartochkada sizdan so'raydi, masalan: «❓ Avia: 30 kg, qayerdan: Shenzhen — mijozga avia manzilini yozing (✏️)». ✏️ bilan manzilni o'zingiz yozasiz.
+  - Mijoz avia narxini eshitgandan keyin keyingi xabarda «manzil qayerga?» deb so'rasa ham shunday: AI ombor manzilini bermaydi, kartochkada sizdan so'raydi. Mijoz kg aytmagan bo'lsa, kartochkada «og'irligi aytilmagan» deb yoziladi.
+  - Avia javobida bizning uchta qabul omborimizdan birining manzili yoki telefoni bo'lsa, ✅ chiqmaydi. Bu Bilimlardagi manzillar bo'yicha tekshiriladi. Manzilni Bilimlarda tuzatsangiz, tekshiruv yangisini taniydi.
+  - Oddiy xitoycha so'zlar to'xtatilmaydi. Masalan, AI xitoylik mijozdan «qaysi shahardan jo'natasiz?» (从哪个城市发货) deb so'rasa, bu manzil hisoblanmaydi.
+  - Mijoz bir xabarda ham avia, ham mashina narxini so'rasa, mashina uchun ombor manzilini berish mumkin.
   - Avia'da «omborimizga yuborsangiz…» jumlasi endi talab qilinmaydi.
 - **Temir yo'l:** narxni AI aytmaydi, sizdan so'raydi.
 - **Avtoda «Xitoydan»** desa (yoki omborimiz yo'q xitoy shahrini aytsa), narx omborlarimizdan aytiladi. Javobda ikki jumla bo'lishi shart: «yukni omborimizga yuborsangiz…» va «zavoddan omborgacha olib kelish alohida hisoblanadi».
+  - Bilimdagi shu qoida endi «**Avto (mashina) narxi** Xitoydagi omborlarimizdan hisoblanadi» deb yozilgan, chunki siz uni mashina haqida aytgansiz. Avval «Narx» deb yozilgani uchun avia suhbatida ham ishlatilib qolishi mumkin edi.
 - **Xitoy omborlarining manzili** (siz yuborgan ro'yxat): AI mijoz so'ragan omborning manzilini, qabul qiluvchisini va telefonini **bilimdagidek** beradi. Xitoycha qismi o'zgartirilmaydi va tarjima qilinmaydi, chunki uni xitoylik yetkazib beruvchi o'qiydi. Har manzil bilan birga eslatma ketadi: «Yuklaringizni jo'natishdan oldin GS kodini (markirovka) yozishni unutmang» va xitoycha «发货前请不要忘记标注GS编码（唛头）».
   - Omborlar: **Ivu (YW)**, **Guanchjou (GZ)** — ombor Foshan shahrida, **Xorgos (HRG)**.
   - Mijoz qaysi omborni aytmasa, AI qaysi shahardan jo'natishini so'raydi.
   - **Qashqar** endi manzil sifatida aytilmaydi, chunki u sizning ro'yxatingizda yo'q.
   - Xorgos qatoridan «距你966.0公里» («sizdan 966 km») olib tashlandi: bu xarita ilovasi siz turgan joydan hisoblagan masofa, mijoz uchun noto'g'ri.
   - Avval o'zbekcha yoki ruscha javobda xitoycha manzil bo'lsa, tizim javobni «boshqa alifboda» deb to'xtatar edi. Endi bilimdan aynan ko'chirilgan xitoycha qism hisobga olinmaydi. AI o'zi xitoycha yozsa, avvalgidek to'xtatiladi.
+  - Xitoylik mijozga xitoycha javobda manzil bo'lsa ham to'xtatilmaydi.
+  - Xorgos ombori nomidagi «金亿» belgisi (bu belgi «yuz million» ham degani) endi yozilgan son deb hisoblanmaydi. AI narxni xitoycha so'z bilan yozsa (masalan «五百美元»), avvalgidek to'xtatiladi.
 - **Kelib chiqish sertifikati** so'ralmaydi: hisob «kompaniya o'zi oladi» deb yuboriladi.
 - **Podklyuch va rastamojka:**
   1. AI mijozdan ma'lumotlarni to'liq yig'adi.

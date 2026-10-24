@@ -4745,3 +4745,38 @@ truck AND the flight may still give the truck's warehouse. `aviaOrigin` went wit
 test, not a new one: in a rail chat the model may call the avia tool, the rail rule then drops every machine figure,
 and the card asked him for an avia address about a flight nobody was quoted — `withAviaRule` stands down in a rail
 chat (`railChat`, the memory's own rule).
+
+1480. **A form of address names nobody.** The full run on a fresh database found it, not a new test: two test files
+mint a client called «Aka», and from then on every 📌 style rule carrying «aka» was refused as naming a customer —
+and with name parts on, a client «Jasur aka» masked «aka» out of his style samples, so «Ha, bo'ladi aka.» lost the
+word that makes it his. `knownNamesForMask` leaves out a whole name made only of forms of address and any such part
+(`isAddressWord`: aka, opa, uka, singil, brat, ака, опа … — apostrophes normalised). The F8 test mints its own «Aka»
+client, so its answer no longer depends on which file ran first. A real customer called «Aka» is not protected by
+the mask any more; a name that is a form of address is said to everyone in the chat anyway.
+
+1481. **The flight's address, reviewed (D1-D8).** #1478-#1479 were reviewed as built and eight findings were each
+reproduced as a failing test before the fix, and each fix red-proven by string edit. **The rule is now anchored on
+his warehouses, not on what Chinese looks like** (D3): the first `avia_address` refused any Chinese stretch carrying
+市 or 路 or any Chinese mobile, which is «从哪个城市发货» and «空运路线» — an ordinary question to a Chinese
+customer. `addressAnchorsOf` reads the receiving-warehouse facts as the knowledge states them NOW
+(`warehouseAddressTexts`: live general facts under the `china_address_` seed key, which `web-kb.ts` carries forward
+when he edits one), keeps every four-or-more stretch carrying a street character and every contact's last nine
+digits, and a reply states an address when it carries one of those phones or a FIVE-character piece of an anchor
+that itself carries a street character (the model wraps what it copies in «地址：…», so the whole anchor never
+appears; «国际物流中心» is in Horgos's name and in every forwarder's). Read in `policyFor` beside the other world
+facts, so an older draft's ✅ refuses the address he corrected this morning; a Chinese mobile that is no warehouse's
+is `foreign_phone`'s already. **The follow-up was unguarded** (D4): the flight is quoted, the customer writes
+«manzil qayerga?», no tool runs — and the Yiwu address went out with no rule asking. `aviaOnly` and the card's
+question now follow the chat's one road (`askedModeOf`, the memory's own `askedMode`, now one function) when the
+burst asks where; the kilos are the customer's newest (`newestMeasure`, the avia tool's own read), and an unknown
+weight is said as «og'irligi aytilmagan», never a number. A truck asked in the same run makes it the truck's chat
+even when the tool refused (D5, `truckAsked` over `loop.tools`). The model's own question stands only when it names
+the flight AND the address (D8: `/air/` matched «chair» and «Kairat», and «Avia narxini tasdiqlang» asked for no
+address). In the script check a Chinese reply is measured whole (D1: without its quoted stretches the fact's Uzbek
+words and the reminder outweighed «您好»), and a numeral inside a quoted stretch is the fact's spelling (D2: Horgos's
+«金亿» beside any «kub» read as a spelled-out figure) — but a stretch shorter than three characters is never a
+quotation, or «1亿 dollar» would pass because the facts hold a «亿». **And two sentences said more than he did**:
+#1479 and the prompt, the tool and `china_points@4` claimed avia cargo «does not go to» the receiving warehouses
+(D7) — he said only that he gives the flight's address; and «Narx Xitoydagi omborlarimizdan» (his third set,
+answering the truck question) was served into avia chats as if it priced the flight too (D6) — it says «Avto
+(mashina) narxi» now. Both seed facts were edited in place, not versioned: neither has ever been seeded anywhere.
