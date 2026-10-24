@@ -1,17 +1,19 @@
 import { codeCandidates } from '../calc/channel-post';
-import { normalizeDigits, SPELLED_DURATION_SRC, unverifiableNumeral } from './digits';
+import { CURRENCY_AFTER_SRC, CURRENCY_BEFORE_SRC, normalizeDigits, SPELLED_DURATION_SRC, unverifiableNumeral } from './digits';
 import { AGENT_LIMITS } from './limits';
 import { AGENT_LOCALES, dominantScript, scriptOf, type AgentLocale, type ScriptName } from './locale';
 import {
   extractNumbers,
-  numberLedger,
+  ledgerLine,
   phoneDigits,
   PHONE_RE,
+  placedLedger,
   urlsIn,
   type LedgerEntry,
   type NumberSource,
   type TravelMode,
 } from './numbers';
+import { mentionsRail } from './worthy';
 
 /**
  * The rules a reply must pass before ✅ exists (spec §6, review §17.6).
@@ -179,6 +181,15 @@ export const PROMISE_TABLE: Record<PromiseCategory, readonly RegExp[]> = {
     // «Скинем 10%», «скину цену» — never the imperative «скиньте фото и цену товара», nor «не можем снизить».
     /(?<!не\s+(?:\p{L}+\s+)?)скин(?!ь)\p{L}*\s+(?:\p{L}+\s+){0,2}(?:\d+\s*%|цен|процент)|(?<!не\s+(?:\p{L}+\s+)?)сбав(?:лю|им|ит|ить|ляем|ляю)|(?<!не\s+(?:\p{L}+\s+)?)сниз\p{L}*\s+(?:\p{L}+\s+)?цен|цен\p{L}*\s+(?:(?!не(?!\p{L}))\p{L}+\s+)?сниз/iu,
     /\bdiscount|\bcheaper\b|(?<!(?:can['’]?t|cannot|won['’]?t|not)\s+)(?:lower|reduce)\s+(the\s+)?price/iu,
+    // A better price with no figure (final review K19): «Sizga yaxshi narx qilib beramiz», «Arzonlatib beramiz»,
+    // «Siz uchun maxsus narx», «Сделаем вам хорошую цену», «Для вас сделаем цену ниже», «a better price», «Special
+    // price for you». A bare «alohida narx» stays out — «zavoddan olib kelish alohida narxda» is his own
+    // factory-leg sentence — and is a discount only when it is made FOR the customer.
+    /(?<![\p{L}])(?:yaxshi|maxsus|qulay)\s+narx|(?:siz(?:ga)?\s+(?:uchun\s+)?)alohida\s+narx|alohida\s+narx\p{L}*\s+(?:qil|ber|chiqar)/iu,
+    new RegExp(`(?<![\\p{L}])arzonlat(?:ib\\s+(?:beraman|beramiz|qo${AP}?yaman|qo${AP}?yamiz)|aman|amiz|ishim(?:iz)?\\s+mumkin(?!\\s+emas)|sak|sam)`, 'iu'),
+    /(?<![\p{L}])(?:яхши|махсус|қулай)\s+нарх|сиз(?:га)?\s+(?:учун\s+)?алоҳида\s+нарх|арзонлат(?:иб\s+(?:бераман|берамиз)|аман|амиз|сак)/iu,
+    /(?<!(?:не|нет)\s+(?:\p{L}+\s+){0,2})(?:хорош|специальн|особ|льготн|выгодн)\p{L}*\s+цен|(?<!не\s+(?:\p{L}+\s+)?)(?:сдела|дад|предлож)\p{L}*\s+(?:\p{L}+\s+){0,2}цен\p{L}*\s+(?:пониже|ниже|меньше)/iu,
+    /(?<!(?:not|n['’]t|no|never)\s+(?:\p{L}+\s+){0,2})(?:better|special|best|good|lower|reduced|discounted)\s+(?:price|rate|deal|offer)\b/iu,
     /\boff\s+the\s+price|price\s+(?:cut|drop)|knock\s+(?:\S+\s+){0,2}off\b/iu,
     // A percent taken off, in any language: «10% kamroq», «10 foiz arzonroq», «10% off», «10%优惠».
     /\d+(?:[.,]\d+)?\s*(?:%|٪|foiz\p{L}*|фоиз\p{L}*|процент\p{L}*|percent)\s*(?:\p{L}+\s+)?(?:kam|arzon|chegirma|skidka|кам|арзон|скид|дешевле|меньше|off\b|less\b|cheaper|تخفیف|کمتر|折|优惠|便宜|少)/iu,
@@ -197,13 +208,19 @@ export const PROMISE_TABLE: Record<PromiseCategory, readonly RegExp[]> = {
   ],
   credit_release: [
     /qarzga|nasiya|keyin\s+to['‘’ʻ]?laysiz|to['‘’ʻ]?lovsiz\s+(beramiz|beraman|olib\s+ketasiz)/iu,
+    // Released with no payment in any word order (K19): «Yukni to'lovsiz olib ketishingiz mumkin», «pulsiz berib
+    // yuboramiz».
+    /(?<![\p{L}])(?:to['‘’ʻ]?lovsiz|pulsiz)\s+(?:[\p{L}'‘’ʻ]+\s+){0,2}(?:olib\s+ket|ber|chiqar|ol)\p{L}*/iu,
     // «Pulini keyin berasiz», «to'lovni keyinroq qilasiz» — the money, later, paid by you; and «pulini yuk
     // kelgandan so'ng berasiz», «yuk kelgach to'laysiz» — paid once the cargo comes, the same credit (fix round).
-    /(?:pul|to['‘’ʻ]?lov|haq|summa)\p{L}*\s+(?:[\p{L}'‘’ʻ]+\s+){0,2}(?:keyin\p{L}*|so['‘’ʻ]?ng|\p{L}+(?:ganda|gach))\s+(?:berasiz|bersangiz|qilasiz|o['‘’ʻ]?tkazasiz|to['‘’ʻ]?laysiz|to['‘’ʻ]?lasangiz)/iu,
+    // «To'lovni keyinroq qilsangiz ham bo'ladi», «Qarzni keyin yopasiz» (K19) — the debt too, and the «-sangiz» forms.
+    /(?:pul|to['‘’ʻ]?lov|haq|summa|qarz)\p{L}*\s+(?:[\p{L}'‘’ʻ]+\s+){0,2}(?:keyin\p{L}*|so['‘’ʻ]?ng|\p{L}+(?:ganda|gach))\s+(?:berasiz|bersangiz|qilasiz|qilsangiz|o['‘’ʻ]?tkazasiz|o['‘’ʻ]?tkazsangiz|to['‘’ʻ]?laysiz|to['‘’ʻ]?lasangiz|yopasiz|yopsangiz)/iu,
     /(?:keyin\p{L}*|so['‘’ʻ]?ng|\p{L}+(?:ganda|gach))\s+(?:to['‘’ʻ]?la(?:ysiz|sangiz)|o['‘’ʻ]?tkazasiz)/iu,
     /қарзга|насия/iu,
     /(?:пул|тўлов)\p{L}*\s+(?:\p{L}+\s+){0,2}(?:кейин\p{L}*|сўнг|\p{L}+(?:ганда|гач))\s+(?:берасиз|қиласиз|тўлайсиз)|(?:кейин\p{L}*|сўнг|\p{L}+(?:ганда|гач))\s+тўлайсиз/iu,
     /в\s+долг|в\s+кредит|рассрочк|оплатите\s+(потом|позже)|потом\s+заплатите/iu,
+    // «Груз выдадим без оплаты» (K19), either order.
+    /(?:выда|отда|отпуст|забер|заб(?:ир|е)р)\p{L}*\s+(?:\p{L}+\s+){0,3}без\s+(?:\p{L}+\s+)?(?:пред)?оплат|без\s+(?:\p{L}+\s+)?(?:пред)?оплат\p{L}*\s+(?:\p{L}+\s+){0,3}(?:выда|отда|отпуст|забер|заб(?:ир|е)р)/iu,
     // «Оплатите после получения», «…после того, как получите», a bare «оплатите после», «по факту», «при
     // получении» are credit; «отправим после оплаты» is the opposite and is not matched — nor is «оплату
     // после расчёта сообщим».
@@ -211,6 +228,8 @@ export const PROMISE_TABLE: Record<PromiseCategory, readonly RegExp[]> = {
     /(?:после\s+(?:получения|прибытия|доставки|разгрузки|выдачи)|по\s+прибытии|при\s+получении)\s*,?\s+(?:\p{L}+\s+){0,2}(?:оплат|заплат|плат)/iu,
     /наложенн\p{L}*\s+плат[её]ж/iu,
     /on\s+credit|pay\s+later|deferred\s+payment|cash\s+on\s+delivery|payment\s+(?:on|upon)\s+(?:delivery|arrival|receipt)/iu,
+    // «Pay when you can», «release it without payment» (K19).
+    /pay\p{L}*\s+(?:\p{L}+\s+){0,2}when(?:ever)?\s+you(?:['’]re)?\s+(?:can|able|ready)|(?:release|give|hand|collect|take)\p{L}*\s+(?:\p{L}+\s+){0,3}without\s+(?:any\s+)?pay(?:ment|ing)/iu,
     /pay\p{L}*\s+(?:\p{L}+\s+){0,2}(?:later|after\s+(?:delivery|arrival|you\s+(?:get|receive|collect)|it\s+arrives)|when\s+(?:it|they|the\s+\p{L}+|your\s+\p{L}+|you)\s+(?:\p{L}+\s+)?(?:arriv|deliver|reach|get|receiv|collect|pick)|(?:on|upon)\s+(?:delivery|arrival|receipt))/iu,
     /نسیه|قرضی|بعدا\s+پرداخت/u,
     /بعد(?:اً|ًا|ا)?\s+(?:\p{L}+\s+)?(?:پرداخت|بپردازید)|پرداخت\s+(?:\p{L}+\s+)?بعد(?:اً|ًا|ا)?(?!\p{L})/u,
@@ -228,9 +247,13 @@ export const PROMISE_TABLE: Record<PromiseCategory, readonly RegExp[]> = {
   ],
   free_extras: [
     /bepul|tekin|sug['‘’ʻ]?urta|eshikkacha|uyingizgacha|fotootchet|foto\s*hisobot|qayta\s+qadoq/iu,
+    // «…sizdan pul olinmaydi» beside a service (K19) — never «hisoblash uchun pul olinmaydi», which is true.
+    /(?:saqla|qadoq|upakovk|yetkaz|sug['‘’ʻ]?urt|foto|rasm|tushir|ortish|dostavk)\p{L}*\s+(?:[\p{L}'‘’ʻ]+\s+){0,3}(?:pul|haq|to['‘’ʻ]?lov)\p{L}*\s+(?:olinmaydi|olmaymiz|olmayman|so['‘’ʻ]?ralmaydi)/iu,
     /бепул|текин|суғурта|эшиккача/iu,
     /бесплатн|страхов|до\s+двери|фотоотч|переупаков/iu,
-    /\bfree\b|insurance|door[\s-]to[\s-]door|door\s+delivery|photo\s+report|repack/iu,
+    // A service «без оплаты» / «без доплаты» (K19).
+    /(?:хранени|доставк|упаковк|страховк|фото|погрузк|разгрузк|склад)\p{L}*\s+(?:\p{L}+\s+){0,2}без\s+(?:\p{L}+\s+)?(?:до)?оплат|без\s+(?:до)?оплат\p{L}*\s+(?:\p{L}+\s+)?(?:хранени|доставк|упаковк|страховк|фото|погрузк|разгрузк)|без\s+доплат/iu,
+    /\bfree\b|insurance|door[\s-]to[\s-]door|door\s+delivery|photo\s+report|repack|at\s+no\s+(?:extra\s+|additional\s+)?(?:cost|charge)/iu,
     /رایگان|مجانی|بیمه|درب\s+منزل/u,
     /免费|保险|送货上门|拍照报告|重新包装/u,
   ],
@@ -250,16 +273,31 @@ export const PROMISE_TABLE: Record<PromiseCategory, readonly RegExp[]> = {
     new RegExp(`${EN_NOT_YOURS}${EN_GO_ANY}\\s+${GAP}tomorrow|tomorrow\\s+${GAP}${EN_GO_ANY}`, 'iu'),
     new RegExp(`(?:${EN_NOT_YOURS}${EN_GO_NOW}|${EN_FUTURE})\\s+${GAP}today|today\\s+${GAP}(?:${EN_GO_NOW}|${EN_FUTURE})`, 'iu'),
     /\bi\s+promise|\bwe\s+promise|will\s+arrive\s+(by|on)\b/iu,
-    /قول\s+می‌?دهم|فردا\s+ارسال|امروز\s+ارسال/u,
-    /承诺|明天发货|今天发货|保证到/u,
+    // A day beside a verb is `dayPromise`'s, in every language (K15): «فردا ارسال» and «明天发货» were the
+    // only Persian and Chinese days, and «فردا بار شما می‌رسد», «下周发货» passed.
+    /قول\s+می‌?دهم/u,
+    /承诺|保证到/u,
   ],
   customs_included: [
-    /(boj|bojxona|rastamojka)\p{L}*\s+(ham\s+)?(narx(ga|ida)?\s+)?(kiradi|ichida|bilan\s+birga)/iu,
-    /(бож|божхона|растаможка)\p{L}*\s+(ҳам\s+)?(киради|ичида)/iu,
+    /(boj|bojxona|rastamojka)\p{L}*\s+(ham\s+)?(narx(ga|ida)?\s+)?(kiradi|ichida(?!\s+emas)|bilan\s+birga)/iu,
+    // The ordinary word orders (final review K12): «Boj ham shu narxga kiradi», «Boj kiritilgan», «Narxda boj bor»,
+    // «Narxga boj ham kiradi» — never the negative «kirmaydi», «kiritilmagan», «narx ichida emas».
+    /(?:boj|bojxona|rastamojka|qqs)\p{L}*\s+(?:[\p{L}'‘’ʻ]+\s+){0,3}(?:kiradi|kiritilgan|qo['‘’ʻ]?shilgan)(?![\p{L}])/iu,
+    /narx\p{L}*\s+(?:[\p{L}'‘’ʻ]+\s+){0,2}(?:boj|bojxona|rastamojka|qqs)\p{L}*\s+(?:ham\s+)?(?:bor|kiradi|kiritilgan)(?![\p{L}])/iu,
+    /(бож|божхона|растаможка)\p{L}*\s+(ҳам\s+)?(киради|ичида(?!\s+эмас))/iu,
+    /(?:бож|божхона|растаможка|ққс)\p{L}*\s+(?:\p{L}+\s+){0,3}(?:киради|киритилган|қўшилган)(?![\p{L}])|нарх\p{L}*\s+(?:\p{L}+\s+){0,2}(?:бож|божхона|растаможка|ққс)\p{L}*\s+(?:ҳам\s+)?(?:бор|киради)(?![\p{L}])/iu,
     /(растаможк|таможн|пошлин)\p{L}*\s+(тоже\s+)?включ|с\s+растаможкой|включая\s+(таможн|растаможк|пошлин)/iu,
+    // «Растаможка тоже входит в цену», «В цену входит растаможка», «Цена включает растаможку» — never «не входит».
+    /(?:растаможк|таможн|пошлин|ндс)\p{L}*\s+(?:(?!не(?![\p{L}]))\p{L}+\s+){0,3}(?:входит|входят|включен\p{L}*|учт[её]н\p{L}*)|(?<!не\s)(?:входит|входят|включа\p{L}*)\s+(?:\p{L}+\s+){0,2}(?:растаможк|таможн|пошлин|ндс)/iu,
     /(customs|duty|duties)\s+(is\s+|are\s+)?included|including\s+(customs|duty|duties)/iu,
-    /(گمرک|عوارض)\s+(هم\s+)?شامل/u,
-    /包税|含税|包清关|含关税/u,
+    // «Customs duty is in the price», «Customs clearance is included in the price», «The price covers customs».
+    /(?:customs|dut(?:y|ies)|clearance|vat)\s+(?:\p{L}+\s+){0,2}(?:is|are)\s+(?:also\s+)?(?:in(?:cluded)?\s+(?:in\s+)?the\s+(?:price|quote|rate)|part\s+of\s+the\s+(?:price|quote)|covered)|(?<!(?:not|n['’]t)\s+)(?:includes?|covers?)\s+(?:the\s+)?(?:\p{L}+\s+)?(?:customs|dut(?:y|ies)|clearance|vat)/iu,
+    /(گمرک|عوارض)\s+(هم\s+)?شامل(?!(?:\s+\p{L}+){0,2}\s*(?:نمی|نیست))/u,
+    /قیمت\s+(?:\p{L}+\s+){0,2}شامل\s+(?:\p{L}+\s+)?(?:گمرک|عوارض|ترخیص|مالیات)|(?:گمرک|عوارض|ترخیص)\p{L}*\s+(?:\p{L}+\s+){0,2}(?:در|داخل)\s+قیمت\s+(?:\p{L}+\s+)?(?:است|هست)/u,
+    // …never inside its negation: «运费不包含关税» holds «含关税» (K12).
+    /(?<![不没未])包税|(?<![不没未包])含税|(?<![不没未])包清关|(?<![不没未包])含关税/u,
+    // «关税包含在运费内», «运费包括关税» — never «不包含», «不含».
+    /(?:关税|增值税|清关|税费)[^，。！？,.!?不没未]{0,8}?(?<![不没未])(?:包含|包括|已含|在内)|(?:(?<![不没未])(?:包含|包括)|(?<![不没未包])含)了?[^，。！？,.!?不没未]{0,4}(?:关税|增值税|清关)/u,
   ],
   no_duty: [
     /bojsiz|boj\s+yo['‘’ʻ]?q|boj\s+to['‘’ʻ]?lamaysiz/iu,
@@ -286,8 +324,8 @@ const SENDING_VERB: readonly RegExp[] = [
   new RegExp(uzcSending(`${UZC_YOURS}|${UZC_NEG}|${UZC_PAST}`), 'iu'),
   new RegExp(ruSending(true), 'iu'),
   /\b(?:arrive|arrives|deliver|delivers|ship|ships|reach|reaches|dispatch)\b|get\s+there|will\s+be\s+(?:shipped|delivered|dispatched|sent)\b/iu,
-  /می‌?\s?رسد|میرسد|می‌?\s?رسه|ارسال\s+می|تحویل\s+می|می‌?\s?فرستیم|خواهد\s+رسید/u,
-  /到达|送到|运到|到货|发货|能到|会到|送达|抵达/u,
+  /می‌?\s?رسد|میرسد|می‌?\s?رسه|ارسال\s+(?:می|خواه)|تحویل\s+می|می‌?\s?فرستیم|خواهد\s+رسید/u,
+  /到达|送到|运到|到货|发货|发出|寄出|运出|出发|能到|会到|送达|抵达/u,
 ];
 const COMING_VERB: readonly RegExp[] = [
   // With a day count a bare «keladi» / «boradi» is the cargo's: «mashina 5 kunda boradi».
@@ -302,7 +340,8 @@ const COMING_VERB: readonly RegExp[] = [
   new RegExp(`${RU_COMING}|получ(?:ите|ишь|ат|им)|забер[её]те|(?:будет|будут)\\s+готов`, 'iu'),
   /will\s+(?:have|get|receive|collect)\b|you(?:'ll|\s+will)\s+(?:have|get|receive)\b|will\s+be\s+(?:\p{L}+\s+)?(?:in|with|at|ready|there)\b/iu,
   /دریافت\s+(?:می|خواهید)|به\s+دستتان/u,
-  /收到|拿到|到手/u,
+  // «明天货就到了» — «就到», «要到», «将到» say the cargo comes; «了» after a coming day is no past.
+  /收到|拿到|到手|(?:就|要|将|可以)到/u,
 ];
 
 /**
@@ -367,7 +406,9 @@ function sentencesOf(text: string): string[] {
 function clausesOf(sentence: string): { text: string; at: number }[] {
   const parts: { text: string; at: number }[] = [];
   let last = 0;
-  for (const m of sentence.matchAll(/[,;:—–]|\s-\s/gu)) {
+  // A dash or a comma BETWEEN two figures is inside a range or a figure — «taxminan 05.11 – 09.11», «1,200» —
+  // never between clauses (final review K14: cut there, the range's second date lost its hedge).
+  for (const m of sentence.matchAll(/(?<!\d\s?)[,—–]|[,—–](?!\s?\d)|[;:]|(?<!\d)\s-\s|\s-\s(?!\d)/gu)) {
     parts.push({ text: sentence.slice(last, m.index), at: last });
     last = m.index + m[0].length;
   }
@@ -391,6 +432,13 @@ function clausesOf(sentence: string): { text: string; at: number }[] {
 const SPELLED_DURATION_G = new RegExp(SPELLED_DURATION_SRC, 'giu');
 /** The first figure of a range is where its hedge or its «har» stands: «около 2-5», «har 2-3». */
 const RANGE_START = /\d+(?:[.,]\d+)?\s*(?:[-–—~]|dan|до|to|تا|到|至)\s*$/iu;
+
+/** Every date in a text — «09.11», «5-noyabr» — as [start, end). */
+function datesIn(text: string): [number, number][] {
+  return extractNumbers(text)
+    .filter((f) => f.kind === 'date')
+    .map((f) => [f.index, f.index + f.raw.length]);
+}
 
 /** Every duration in a clause — written in digits or in words — as [start, end). */
 function durationsIn(clause: string): [number, number][] {
@@ -479,11 +527,23 @@ export function timePromise(text: string): boolean {
     if (!sending && !COMING_VERB.some((re) => re.test(s))) continue;
     const certain = CERTAINTY.test(s);
     if (!certain && DISCLAIMER.test(s)) continue;
+    // A DATE is the same promise as a day count in another shape (final review K14): cargo_status hands the
+    // model «taxminan 05.11 – 09.11», and «Yukingiz 09.11 da albatta yetib keladi» restated the window as a
+    // dated promise — G1 found the date sourced and the day rule saw no duration. A certainty word beside a
+    // date the cargo comes or goes on is a promise wherever its commas fall.
+    if (certain && datesIn(s).length > 0 && (sending || aboutCargo(s, s))) return true;
     // An estimate stated in an earlier clause of THIS sentence (B1).
     let estimated = false;
     for (const { text: c } of clausesOf(s)) {
       const before = estimated;
       estimated ||= statesEstimate(c);
+      // A date only where the clause ITSELF says the cargo comes or goes — «Yukingiz 03.11 da omborga keldi,
+      // …» is a fact about a day that passed, and its past verb is no verb of these lists.
+      if (SENDING_VERB.some((re) => re.test(c)) || (COMING_VERB.some((re) => re.test(c)) && aboutCargo(c, s))) {
+        for (const [start, end] of datesIn(c)) {
+          if (!hedgedAt(c, start, end)) return true;
+        }
+      }
       if (!sending && !aboutCargo(c, s)) continue;
       // A clause with a verb of its own — «…, yukingiz 2 kunda yetib keladi», «…, 2 kunda jo'natamiz» — is
       // judged ALONE: it says when THIS cargo comes, whatever was estimated before it. Only a clause with
@@ -502,6 +562,73 @@ export function timePromise(text: string): boolean {
   return false;
 }
 
+/**
+ * A DAY the cargo comes or goes on, in the six languages (final review K15):
+ * tomorrow and today, the weekdays, «keyingi / kelasi hafta», «на следующей
+ * неделе», «next week / month», «oy oxirigacha», a named month. The shipped
+ * day rule paired «ertaga / bugun / indinga / tomorrow / today» with the
+ * SENDING verbs alone (Russian added its coming ones), so «Ertaga yukingiz
+ * Toshkentga keladi», «Yukingiz ertaga tayyor bo'ladi», «You will get your
+ * cargo tomorrow», «Dushanba kuni jo'natamiz», «Your cargo will arrive next
+ * week», «Yukingiz yanvar oyida keladi», «明天货就到了», «فردا بار شما
+ * می‌رسد» each passed G2 with no digit for G1 to ask about.
+ */
+const UZ_MONTHS = `(?:yanvar|fevral|mart(?!a)|aprel|iyun|iyul|avgust|sent(?:y)?abr|okt(?:y)?abr|noyabr|dekabr)\\p{L}{0,6}(?:\\s+oy\\p{L}*)?|may(?:ga|gacha|ning|dan)(?![\\p{L}])|may\\s+oy\\p{L}*`;
+const UZC_MONTHS = '(?:январ|феврал|март(?!а)|апрел|июн|июл|август|сентябр|октябр|ноябр|декабр)\\p{L}{0,6}(?:\\s+ой\\p{L}*)?|май(?:га|гача|нинг|дан)(?![\\p{L}])|май\\s+ой\\p{L}*';
+const DAY_WORD = new RegExp(
+  [
+    `(?<![\\p{L}])(?:(?:ertaga|indinga|bugun)\\p{L}{0,4}|(?:dushanba|seshanba|chorshanba|payshanba|shanba|yakshanba)\\p{L}{0,5}(?:\\s+kun\\p{L}*)?|juma(?:da|gacha|ga|\\s+kun\\p{L}*)(?![\\p{L}])|(?:keyingi|kelasi|shu|ushbu)\\s+(?:hafta|oy)\\p{L}*|(?:hafta|oy)\\s+oxiri\\p{L}*|${UZ_MONTHS})`,
+    `(?<![\\p{L}])(?:(?:эртага|индинга|бугун)\\p{L}{0,4}|(?:душанба|сешанба|чоршанба|пайшанба|шанба|якшанба)\\p{L}{0,5}(?:\\s+кун\\p{L}*)?|жума(?:да|гача|га|\\s+кун\\p{L}*)(?![\\p{L}])|(?:кейинги|келаси|шу)\\s+(?:ҳафта|ой)\\p{L}*|(?:ҳафта|ой)\\s+охири\\p{L}*|${UZC_MONTHS})`,
+    '(?<![\\p{L}])(?:(?:после)?завтра|сегодня)(?:шн\\p{L}*)?',
+    '(?<![\\p{L}])(?:в|во|к|до|с)\\s+(?:(?:эт|следующ|ближайш|будущ)\\p{L}*\\s+)?(?:понедельник\\p{L}*|вторник\\p{L}*|сред[уеы]|четверг\\p{L}*|пятниц[уеы]|суббот[уеы]|воскресень[еяю])',
+    '(?<![\\p{L}])на\\s+(?:эт|следующ|будущ)\\p{L}*\\s+недел\\p{L}*|(?<![\\p{L}])(?:в|на)\\s+(?:следующ|будущ|эт)\\p{L}*\\s+месяц\\p{L}*|(?<![\\p{L}])(?:до|к)\\s+конц[ау]\\s+(?:недел|месяц)\\p{L}*',
+    '(?<![\\p{L}])(?:в|к|до)\\s+(?:январ|феврал|март|апрел|ма|июн|июл|август|сентябр|октябр|ноябр|декабр)[еюя](?![\\p{L}])',
+    '(?<![\\p{L}])(?:tomorrow|today|tonight|(?:(?:on|this|next|by|until)\\s+)?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|(?:next|this|the\\s+following)\\s+(?:week|month)|(?:by|until|at)\\s+the\\s+end\\s+of\\s+(?:the|this|next)\\s+(?:week|month)|(?:in|by|until|early|late|mid|next)\\s+(?:january|february|march|april|may|june|july|august|september|october|november|december))(?![\\p{L}])',
+    '(?<![\\p{L}])(?:فردا|پس[\\s\\u200c]?فردا|امروز|امشب|(?:دوشنبه|سه[\\s\\u200c]?شنبه|چهارشنبه|پنج[\\s\\u200c]?شنبه|جمعه|یکشنبه|شنبه)|هفته[\\s\\u200c]?(?:ی\\s+)?(?:بعد|آینده)|ماه[\\s\\u200c]?(?:ی\\s+)?(?:بعد|آینده)|آخر\\s+(?:ماه|هفته)|ژانویه|فوریه|مارس|آوریل|ژوئن|ژوئیه|سپتامبر|اکتبر|نوامبر|دسامبر|فروردین|اردیبهشت|خرداد|مرداد|شهریور|آبان|بهمن|اسفند)',
+    '明天|明日|后天|今天|今日|今晚|下(?:个)?(?:周|星期|礼拜)[一二三四五六日天]?|(?:本|这)(?:个)?(?:周|星期|礼拜)[一二三四五六日天]?|(?:周|星期|礼拜)[一二三四五六日天]|下(?:个)?月|月底|月末|(?:这个|本)月|(?:十[一二]|[一二三四五六七八九十])月(?!份?\\d)',
+  ].join('|'),
+  'giu',
+);
+/**
+ * «har dushanba», «каждую пятницу», «every Monday», «每周一» — a timetable, as for a day count. «Juma» is
+ * Friday only as a day — «juma kuni», «jumada» — because it is also a customer's name: «Juma aka, …».
+ */
+const DAY_FREQUENCY = /(?:(?<![\p{L}])(?:har|ҳар|каждые|каждый|каждую|каждое|every|هر)\s+(?:bir\s+|бир\s+)?|每\s*)$/iu;
+/** «today» is also the day cargo LEFT: «今天已经发货了», «今天到货了» are facts, not promises. */
+const TODAY_WORD = /bugun|бугун|сегодня|today|tonight|امروز|امشب|今天|今日|今晚/iu;
+const ZH_DONE = /已|了(?!解)/u;
+const NEGATED = /(?<![\p{L}])(?:не|not|never)(?![\p{L}])|won['’]t|can['’]t|cannot|don['’]t|didn['’]t|isn['’]t|نمی|نخواه|不|没|未/iu;
+
+/**
+ * G2 for a DAY (K15): a clause naming a day the cargo comes or goes on, with a
+ * SENDING verb, or a COMING one about the cargo (`aboutCargo` — «Ertaga hisob
+ * tayyor bo'ladi» is the calculation's time), is a dispatch promise; a
+ * timetable («har dushanba chiqadi») and a refusal («завтра не отправим») are
+ * not. A clause that is only the day — «Ertaga, inshaalloh, yukingiz yetib
+ * keladi» — is carried to the verb that follows it.
+ */
+export function dayPromise(text: string): boolean {
+  for (const s of sentencesOf(normalizeDigits(text))) {
+    let pendingDay = false;
+    for (const { text: c } of clausesOf(s)) {
+      const days = [...c.matchAll(DAY_WORD)].filter((m) => !DAY_FREQUENCY.test(c.slice(0, m.index)));
+      const sending = SENDING_VERB.some((re) => re.test(c));
+      const coming = COMING_VERB.some((re) => re.test(c)) && aboutCargo(c, s);
+      if (!sending && !coming) {
+        pendingDay ||= days.length > 0;
+        continue;
+      }
+      const day = days.length > 0 || pendingDay;
+      pendingDay = false;
+      if (!day || NEGATED.test(c)) continue;
+      // «Today» with a finished verb is the cargo that left — in Chinese the tense is a word of its own.
+      if (days.length > 0 && days.every((m) => TODAY_WORD.test(m[0])) && ZH_DONE.test(c)) continue;
+      return true;
+    }
+  }
+  return false;
+}
+
 /** «I am not a bot» in every language — never written by a machine about itself (spec G6). */
 const AI_DENIAL = [
   /bot\s+emas(man)?|men\s+(odam|inson)(man)?\b|robot\s+emas/iu,
@@ -512,25 +639,147 @@ const AI_DENIAL = [
   /我不是机器人|我是真人/u,
 ];
 
-/** Spec G11: the approximation word, per language. */
+/**
+ * Spec G11: the approximation word, per language — in the PRICE's own clause
+ * (final review K12). Read across the whole text it was satisfied by a hedge
+ * on the days: «3 kub uchun narx 330 $. Yetib kelishi taxminan 15-25 kun»
+ * stated the price flat and passed. «About», «around», «около», «حدود», «约»
+ * hedge only right beside the figure (`HEDGE_BEFORE_FIGURE`): «the info about
+ * your cargo: $330» is no estimate, and «约定» — «agreed» — is the opposite.
+ */
 const APPROX: Record<AgentLocale, RegExp> = {
   uz: /taxmin/iu,
   uz_cyrl: /тахмин/iu,
   ru: /примерн|ориентировочн|приблизительн/iu,
-  en: /approx|estimat|about\b|around\b/iu,
-  fa: /تقریب|حدود/u,
-  zh: /大约|约|大概|预计|估/u,
+  en: /approx|estimat|roughly/iu,
+  fa: /تقریب/u,
+  zh: /大约|(?<!预)约(?![定好束])|大概|预计|估计/u,
+};
+/** …and the hedge said right AFTER the figure and its currency: «330 $ atrofida», «330美元左右», «$330 or so». */
+const APPROX_AFTER =
+  /^\s*\p{L}*\s*(?:atrofida|chamasi\p{L}*|атрофида|左右|примерно|приблизительно|or\s+so\b|approximately|roughly|تقریب\p{L}*)/iu;
+const CURRENCY_BEFORE_END = new RegExp(`(?:${CURRENCY_BEFORE_SRC})\\s*:?\\s*$`, 'iu');
+const CURRENCY_AFTER_START = new RegExp(`^\\s*-?(?:${CURRENCY_AFTER_SRC})`, 'iu');
+const RANGE_AFTER = /^\s*(?:[-–—~]|dan|до|to|تا|到|至)\s*\d+(?:[ ,.]\d{3})*(?:[.,]\d+)?/iu;
+
+/** A price's clause: cut at commas and sentence ends, never between digits («1,200 $») — every script's comma. */
+const PRICE_CLAUSE_BREAK = /(?<!\d)[,，、]|[,，、](?!\d)|[;；!?؟。！？\n،]+|\.(?=\s|$)/gu;
+
+/**
+ * The figure at `[start, end)` is hedged in its OWN clause (K12): the
+ * approximation word before it in the clause, or a hedge right beside it. A
+ * clause that is only the hedge — «Taxminan, 330 $» — is the next one's.
+ */
+function priceHedged(text: string, start: number, end: number, language: AgentLocale): boolean {
+  const cuts = [...text.matchAll(PRICE_CLAUSE_BREAK)].map((m) => [m.index, m.index + m[0].length] as const);
+  let from = 0;
+  let prevFrom = 0;
+  let to = text.length;
+  for (const [a, b] of cuts) {
+    if (b <= start) {
+      prevFrom = from;
+      from = b;
+    } else if (a >= end) {
+      to = a;
+      break;
+    }
+  }
+  const prev = text.slice(prevFrom, from).replace(PRICE_CLAUSE_BREAK, ' ').trim();
+  const words = prev.split(/\s+/u).filter(Boolean);
+  if (from > 0 && words.length > 0 && words.length <= 2 && (APPROX[language].test(prev) || HEDGE_ADVERB.test(prev))) from = prevFrom;
+  const before = text.slice(from, start).replace(RANGE_START, '').replace(CURRENCY_BEFORE_END, '');
+  let after = text.slice(end, to).replace(RANGE_AFTER, '');
+  after = after.replace(CURRENCY_AFTER_START, '');
+  return APPROX[language].test(before) || HEDGE_BEFORE_FIGURE.test(before) || APPROX_AFTER.test(after);
+}
+
+/**
+ * Spec G11: «boj va QQS alohida», per language — with POLARITY (K12). A bag
+ * of words passed «Boj ham shu narxga kiradi, QQS alohida» (duty IS in the
+ * price) and «Примерно 330 $, растаможка тоже входит в цену, НДС отдельно».
+ * Now the duty and the VAT are each said apart — or not in — in a clause that
+ * does not deny it, and no clause naming the customs says it is IN the price.
+ */
+interface ExclusionTerms {
+  duty: RegExp;
+  vat: RegExp;
+  /** Any word of the customs — duty, VAT, clearance — whose clause must not say «in the price». */
+  customs: RegExp;
+  apart: RegExp;
+  notIn: RegExp;
+  inPrice: RegExp;
+  denied: RegExp;
+}
+
+const EXCLUSION: Record<AgentLocale, ExclusionTerms> = {
+  uz: {
+    duty: /(?<![\p{L}])boj/iu,
+    vat: /qqs/iu,
+    customs: /(?<![\p{L}])boj|qqs|rastamojka|bojxona/iu,
+    apart: /alohida/iu,
+    notIn: /(?<![\p{L}])kirmaydi(?![\p{L}])|narx\p{L}*\s+ichida\s+emas|qo['‘’ʻ]?shilmaydi|kiritilmagan/iu,
+    inPrice: /(?<![\p{L}])(?:kiradi|kiritilgan|qo['‘’ʻ]?shilgan|ichida|birga)(?![\p{L}])|narx(?:da|ida)\s+(?:[\p{L}'‘’ʻ]+\s+){0,2}bor(?![\p{L}])/iu,
+    denied: /(?<![\p{L}])(?:emas|yo['‘’ʻ]?q)(?![\p{L}])|\p{L}ma(?:ydi|ymiz|ysiz|gan)(?![\p{L}])/iu,
+  },
+  uz_cyrl: {
+    duty: /(?<![\p{L}])бож/iu,
+    vat: /ққс/iu,
+    customs: /(?<![\p{L}])бож|ққс|растаможка|божхона/iu,
+    apart: /алоҳида/iu,
+    notIn: /(?<![\p{L}])кирмайди(?![\p{L}])|нарх\p{L}*\s+ичида\s+эмас|қўшилмайди|киритилмаган/iu,
+    inPrice: /(?<![\p{L}])(?:киради|киритилган|қўшилган|ичида|бирга)(?![\p{L}])|нарх(?:да|ида)\s+(?:\p{L}+\s+){0,2}бор(?![\p{L}])/iu,
+    denied: /(?<![\p{L}])(?:эмас|йўқ)(?![\p{L}])|\p{L}ма(?:йди|ймиз|йсиз|ган)(?![\p{L}])/iu,
+  },
+  ru: {
+    duty: /пошлин|растаможк|таможн/iu,
+    vat: /ндс/iu,
+    customs: /пошлин|растаможк|таможн|ндс/iu,
+    apart: /отдельно/iu,
+    notIn: /не\s+(?:входит|входят|включ)|исключ|сверх/iu,
+    inPrice: /входит|входят|включ|в\s+том\s+числе|учт[её]н/iu,
+    denied: /(?<![\p{L}])(?:не|нет|без)(?![\p{L}])/iu,
+  },
+  en: {
+    duty: /dut(?:y|ies)|customs/iu,
+    vat: /(?<![\p{L}])vat(?![\p{L}])/iu,
+    customs: /dut(?:y|ies)|customs|(?<![\p{L}])vat(?![\p{L}])|clearance/iu,
+    apart: /separate/iu,
+    notIn: /(?:not|n['’]t)\s+(?:\p{L}+\s+)?included|excluded|excludes|not\s+part\s+of|on\s+top/iu,
+    inPrice: /includ|in\s+the\s+(?:price|quote|rate)|part\s+of\s+the\s+(?:price|quote)|(?<![\p{L}])cover(?:s|ed)?(?![\p{L}])/iu,
+    denied: /(?<![\p{L}])(?:not|no|never)(?![\p{L}])|n['’]t(?![\p{L}])/iu,
+  },
+  fa: {
+    duty: /عوارض|گمرک/u,
+    vat: /مالیات/u,
+    customs: /عوارض|گمرک|مالیات|ترخیص/u,
+    apart: /جداگانه/u,
+    notIn: /شامل\s+(?:\p{L}+\s+)?(?:نمی|نیست)/u,
+    inPrice: /شامل|داخل\s+قیمت|در\s+قیمت/u,
+    denied: /نمی|نیست|ندارد/u,
+  },
+  zh: {
+    duty: /关税/u,
+    vat: /增值税/u,
+    customs: /关税|增值税|清关|税费/u,
+    apart: /另|单独|额外/u,
+    notIn: /不包括|不包含|不含|不在/u,
+    inPrice: /包括|包含|含|在内|包税/u,
+    denied: /不|没|未/u,
+  },
 };
 
-/** Spec G11: «boj va QQS alohida», per language — each word that must be there. */
-const EXCLUSION: Record<AgentLocale, readonly RegExp[]> = {
-  uz: [/boj/iu, /qqs/iu, /alohida/iu],
-  uz_cyrl: [/бож/iu, /ққс|ҚҚС/u, /алоҳида/iu],
-  ru: [/пошлин/iu, /ндс/iu, /отдельно/iu],
-  en: [/dut(y|ies)/iu, /vat/iu, /separate/iu],
-  fa: [/عوارض|گمرک/u, /مالیات/u, /جداگانه/u],
-  zh: [/关税/u, /增值税/u, /另/u],
-};
+/** The duty and the VAT are each said apart, and nothing says the customs is in the price. */
+function saysExclusion(text: string, language: AgentLocale): boolean {
+  const terms = EXCLUSION[language];
+  const sentences = sentencesOf(text);
+  const clausesAll = sentences.flatMap((s) => s.split(CLAUSE_BREAK));
+  if (clausesAll.some((c) => terms.customs.test(c) && terms.inPrice.test(c) && !terms.denied.test(c))) return false;
+  const saidApart = (word: RegExp) =>
+    sentences.some(
+      (s) => word.test(s) && s.split(CLAUSE_BREAK).some((c) => (terms.apart.test(c) && !terms.denied.test(c)) || terms.notIn.test(c)),
+    );
+  return saidApart(terms.duty) && saidApart(terms.vat);
+}
 
 /** The exclusion sentence as the reply should carry it — the model is told it, and the policy checks it. */
 export const EXCLUSION_SENTENCE: Record<AgentLocale, string> = {
@@ -749,6 +998,13 @@ export interface PolicyInput {
    * Absent = none known.
    */
   askedMode?: TravelMode | null;
+  /**
+   * The draft carries its Uzbek translation (`gloss_uz`). His 13 + ⭐3: a
+   * Persian or Chinese reply comes with one, because he cannot read the reply
+   * he is approving (final review K29). Absent = not asked (a caller with no
+   * draft); `policyFor` always says.
+   */
+  hasGloss?: boolean;
 }
 
 export interface PolicyResult {
@@ -931,7 +1187,15 @@ export function foreignPhones(text: string, allowed: readonly string[]): string[
  */
 export function textFingerprint(text: string, strip: readonly string[] = []): string {
   let t = normalizeDigits(text).toLowerCase();
-  for (const s of strip) if (s.trim()) t = t.split(s.trim().toLowerCase()).join(' ');
+  for (const raw of strip) {
+    const s = normalizeDigits(raw).trim().toLowerCase();
+    if (!s) continue;
+    // As a WORD, with a short case ending on a longer name («Boburga»): each row is folded with its own
+    // customer's names now (K1), and a substring cut — «Ali» out of «alohida» — would fold one text and not
+    // the other, so the same sentence read as two.
+    const esc = s.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+    t = t.replace(new RegExp(`(?<![\\p{L}\\p{N}])${esc}${[...s].length >= 4 ? '\\p{L}{0,3}' : ''}(?![\\p{L}\\p{N}])`, 'gu'), ' ');
+  }
   return t.replace(/\d+/gu, '#').replace(/[\s\p{P}]+/gu, ' ').trim();
 }
 
@@ -943,7 +1207,7 @@ export function questionCount(text: string): number {
 export function promiseHits(text: string): PromiseCategory[] {
   const t = normalizeDigits(text);
   return PROMISE_CATEGORIES.filter(
-    (c) => PROMISE_TABLE[c].some((re) => re.test(t)) || (c === 'dispatch_promise' && timePromise(t)),
+    (c) => PROMISE_TABLE[c].some((re) => re.test(t)) || (c === 'dispatch_promise' && (timePromise(t) || dayPromise(t))),
   );
 }
 
@@ -968,14 +1232,27 @@ export function checkAgentReply(input: PolicyInput): PolicyResult {
   if (draftScript !== 'none' && draftScript !== scriptOf(input.language)) {
     blocks.push({ rule: 'G5', code: 'wrong_script', detail: `${input.language}→${draftScript}` });
   }
+  // His 13 + ⭐3: a Persian or Chinese reply he cannot read is approved through its Uzbek translation — a
+  // draft without one has nothing he can check, so it carries no ✅ (K29). Said in words beside the block.
+  if ((input.language === 'fa' || input.language === 'zh') && input.hasGloss === false && trimmed !== '') {
+    blocks.push({ rule: 'G5', code: 'empty', detail: 'o‘zbekcha tarjimasi yo‘q — ✏️ bilan o‘zingiz yozing yoki ❌' });
+  }
 
   // G1 — numbers.
   const unverifiable = unverifiableNumeral(text);
   if (unverifiable) blocks.push({ rule: 'G1', code: 'number_unverifiable', detail: unverifiable });
   const removeWhole = [...input.removeWhole, ...input.allowedUrls, ...input.mapUrls];
-  const ledger = numberLedger(text, input.numberSources, removeWhole, input.askedMode ?? null);
-  for (const e of ledger) {
-    if (e.source === null) blocks.push({ rule: 'G1', code: 'number_unsourced', detail: e.raw });
+  // His «Temir yo'l mendan so'rasin» in the reply's OWN words (final review K18): a body that speaks of rail
+  // carries no figure a machine found — the run's rail rule read the customer's burst only, so a truck figure
+  // presented as the rail price passed once the rail question was one burst back.
+  const rail = mentionsRail([text]);
+  const sources = rail ? input.numberSources.filter((s) => s.kind !== 'money') : input.numberSources;
+  const placed = placedLedger(text, sources, removeWhole, input.askedMode ?? null);
+  const ledger: LedgerEntry[] = placed.map(ledgerLine);
+  for (const e of placed) {
+    if (e.source !== null) continue;
+    const detail = rail && e.kind === 'money' ? `${e.raw} — temir yo‘l narxini Bekzod aytadi` : e.raw;
+    blocks.push({ rule: 'G1', code: 'number_unsourced', detail });
   }
 
   // G2 — promises.
@@ -1011,12 +1288,14 @@ export function checkAgentReply(input: PolicyInput): PolicyResult {
     blocks.push({ rule: 'G10', code: 'url_cap' });
   }
 
-  // G11 — a yo'lkira figure is an approximation and says what it leaves out.
-  const quoted = ledger.some((e) => e.kind === 'money' && e.source !== null);
+  // G11 — a yo'lkira figure is an approximation and says what it leaves out. «Quoted» is every money line
+  // a source vouched for — a bare figure the tool's money alone vouches for is money too (K13) — and each is
+  // hedged in its own clause (K12).
+  const quotedAt = placed.filter((e) => e.kind === 'money' && e.source !== null);
+  const quoted = quotedAt.length > 0;
   if (input.hasEstimate && quoted) {
-    const approx = APPROX[input.language].test(text);
-    const exclusion = EXCLUSION[input.language].every((re) => re.test(text));
-    if (!approx || !exclusion) blocks.push({ rule: 'G11', code: 'estimate_unhedged' });
+    const approx = quotedAt.every((e) => priceHedged(text, e.index, e.end, input.language));
+    if (!approx || !saysExclusion(text, input.language)) blocks.push({ rule: 'G11', code: 'estimate_unhedged' });
   }
   // …and our warehouse's price says where it starts, and that the factory leg is extra (his third set «3»).
   if (input.fromOurWarehouse && quoted && !saysWarehouseCondition(text, input.language)) {

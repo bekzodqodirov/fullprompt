@@ -1,4 +1,13 @@
-import { CURRENCY_AFTER_SRC, CURRENCY_BEFORE_SRC, MONEY_WORD, normalizeDigits } from './digits';
+import {
+  CURRENCY_AFTER_SRC,
+  CURRENCY_BEFORE_SRC,
+  CURRENCY_LABEL,
+  currenciesNamed,
+  currencyOf,
+  MONEY_WORD,
+  normalizeDigits,
+  type Currency,
+} from './digits';
 
 /**
  * G1 by KIND and SOURCE (review money-1).
@@ -37,7 +46,26 @@ export interface FoundNumber {
   value: number;
   kind: NumberKind;
   index: number;
+  /**
+   * A money figure's currency (K16): the one its spelling names, else the
+   * one its text names, else dollars — every tool states dollars. Null =
+   * nothing here can say which (two currencies named, a spelling with no
+   * code), and such a figure matches no source.
+   */
+  currency?: Currency | null;
+  /** Said per unit — «$/kub», «kilosiga 17», «за кг», «per kg» (K21): only a tool's RATE vouches for it. */
+  perUnit?: boolean;
+  /** Its FORM says what it is (an ordinal, an hour, a clock) — never read as money. */
+  fixed?: boolean;
 }
+
+/**
+ * What a money source IS (K21): the price of the whole load, a per-unit rate,
+ * or the customer's balance. The yo'lkira tool gives a total and a rate, and
+ * the rate of 110 $/kub vouched for «3 kub uchun taxminan 110 $» — the price
+ * of three cubes quoted at the price of one. Absent = a total.
+ */
+export type MoneyRole = 'total' | 'rate' | 'balance';
 
 /**
  * Who said a figure (policy review B3): a tool of this run, an approved kb
@@ -60,6 +88,10 @@ export interface NumberSource {
    * without it.
    */
   origin?: SourceOrigin;
+  /** A money source's currency (K16). Absent = dollars, which every tool states. */
+  currency?: Currency;
+  /** A money source's role (K21). Absent = a total. */
+  role?: MoneyRole;
   /**
    * The road a DURATION is the time of (fix round): the avia tool's and the
    * avia fact's «2–5 kun» are a flight's, the website's and the transit
@@ -111,10 +143,13 @@ function modeAt(text: string, index: number): TravelMode | null {
 }
 
 export interface LedgerEntry {
+  /** As the card prints it — a money figure with the currency it was READ in («330 $», «330 yuan»), K16. */
   raw: string;
   kind: NumberKind;
   /** The source that let it through, or null — a null is a G1 block. */
   source: string | null;
+  /** A money figure's currency as read; null = none could be told. */
+  currency?: Currency | null;
 }
 
 /** A phone in any spelling: an optional +, then ≥ 9 digits with spaces, dashes, dots or brackets between. */
@@ -138,8 +173,12 @@ const MONEY_GLUED_AFTER = new RegExp(`^(?:${CURRENCY_AFTER_SRC})`, 'iu');
 const MONEY_BEFORE = new RegExp(`(?:${CURRENCY_BEFORE_SRC})\\s*:?\\s*$`, 'iu');
 /** The letters glued before a figure are a currency, not a code prefix: «USD480», «RMB480», «US480». */
 const MONEY_GLUED_BEFORE = new RegExp(`(?:${CURRENCY_BEFORE_SRC}|(?<![\\p{L}])us)$`, 'iu');
+/**
+ * `\b` is an ASCII word edge even under `u`, so «кг\b» never matched before a space: «за 1 кг 17 $» read the
+ * one kilo as MONEY in any text that names money (final review, met while reading K21's per-unit prices).
+ */
 const MEASURE_AFTER =
-  /^\s*(?:kg\b|кг\b|kilo\w*|кило\w*|kub\w*|куб\w*|m3\b|м3\b|m³|м³|m2\b|м2\b|tonna\w*|тонн\w*|公斤|千克|吨|立方|کیلو\w*|متر\s*مکعب|کیلوگرم)/iu;
+  /^\s*(?:kg\b|кг(?![\p{L}\d])|kilo\w*|кило\w*|kub\w*|куб\w*|m3\b|м3(?![\p{L}\d])|m³|м³|m2\b|м2(?![\p{L}\d])|tonna\w*|тонн\w*|公斤|千克|吨|立方|کیلو\w*|متر\s*مکعب|کیلوگرم)/iu;
 /**
  * The word a day count is written with. A working or a calendar day is a
  * day too (fix round): «5 ish kunida», «через 5 рабочих дней», «in 5
@@ -149,8 +188,18 @@ const MEASURE_AFTER =
  */
 const DURATION_AFTER =
   /^\s*(?:(?:ish|иш)\s+(?:kun\w*|кун\w*)|(?:рабоч|календарн)\p{L}*\s+(?:дн\p{L}*|день|сут\p{L}*)|(?:business|working|calendar)\s+day\w*|个?工作(?:日|天)|kun\w*|кун\w*|день|дн[яейь]\w*|сут\w*|sutka\w*|day\w*|天|日|روز|hafta\w*|ҳафта\w*|недел\w*|week\w*|周|星期|هفته|soat\w*|соат\w*|час\w*|hour\w*|小时|ساعت|oy\b|ой\b|месяц\w*|month\w*|个月|ماه|daqiqa\w*|дақиқа\w*|минут\w*|minute\w*|分钟|دقیقه)/iu;
-const COUNT_AFTER =
-  /^\s*(?:ta\b|та\b|dona\w*|дона\w*|шт\w*|штук\w*|pcs\b|piece\w*|karobka\w*|коробк\w*|box\w*|carton\w*|件|个|箱|عدد|کارتن|جعبه|mesta\b|мест\w*|joy\b|quti\w*|қути\w*)/iu;
+/**
+ * A size word between a count and its carton — «30 mayda quti», «10 katta karobka», «5 больших коробок»
+ * (final review K17): read as a bare figure, the customer's own count could vouch for nothing once a bare
+ * figure of his stopped vouching for anything.
+ */
+const SIZE_WORD =
+  "(?:mayda|katta|kichik|kichkina|o['‘’ʻ`]?rta|og['‘’ʻ`]?ir|yengil|майда|катта|кичик|кичкина|ўрта|оғир|енгил|больш\\p{L}*|маленьк\\p{L}*|крупн\\p{L}*|мелк\\p{L}*|средн\\p{L}*|small|big|large|heavy|light)\\s+";
+const COUNT_AFTER = new RegExp(
+  `^\\s*(?:ta\\b|та\\b|dona\\w*|дона\\w*|шт\\w*|штук\\w*|pcs\\b|piece\\w*|件|个|箱|عدد|کارتن|جعبه|mesta\\b|мест\\w*|joy\\b|` +
+    `(?:${SIZE_WORD})?(?:karobka\\w*|коробк\\w*|коробок|box\\w*|carton\\w*|quti\\w*|қути\\w*))`,
+  'iu',
+);
 const PERCENT_AFTER = /^\s*(?:%|٪|foiz\w*|фоиз\w*|процент\w*|percent\w*)/iu;
 /**
  * A month after a day. Each stem ends where its month does (policy review B4):
@@ -232,6 +281,41 @@ const PRICE_VERB_BEFORE =
 const ORDINAL_AFTER = /^-(?!(?:ga|da|dan|ni|ning|gacha|cha|lik|dek|ta|tadan|tasi|tagacha)(?![\p{L}]))[a-z]/iu;
 const HOUR_BEFORE = /(?<![\p{L}])(?:soat|соат|ساعت)\s*(?:\d{1,2}(?:[.:]\d{2})?\s*(?:dan|дан|-|–|—|تا)\s*)?$/iu;
 
+/**
+ * A figure said PER UNIT (K21) — the price of one kilo or one cube, never of
+ * the load. After it: «110 $/kub», «17 $ kilosiga», «17 долларов за кг»,
+ * «$17 per kg», «110 $ har kub uchun», «17美元/公斤», «۱۷ دلار برای هر کیلو».
+ * Before it: «kubiga 110 $», «1 kub uchun $110», «за 1 кг 17 $», «per kg $17»,
+ * «每公斤17美元», «کیلویی ۱۷ دلار», a hedge allowed between («kubiga
+ * taxminan 110 $»). «3 kub uchun 330 $» is the price of three cubes: only ONE
+ * unit, or none, before «uchun» makes a rate.
+ */
+const UNIT_WORD =
+  '(?:kg|кг|kilo\\p{L}*|кило\\p{L}*|kub\\p{L}*|куб\\p{L}*|m3|м3|m³|м³|cbm|cubes?|cubic\\s+met\\p{L}*|tonn\\p{L}*|тонн\\p{L}*|tons?|公斤|千克|方|立方\\p{L}*|کیلو\\p{L}*|متر\\s*مکعب)';
+const PER_UNIT_AFTER = new RegExp(
+  `^\\s*(?:(?:\\/|per\\s+|за\\s+|в\\s+|for\\s+(?:one|1|each|a|every)\\s+|har\\s+(?:bir\\s+)?|(?:برای\\s+)?هر\\s+|每)\\s*(?:1\\s*)?${UNIT_WORD}|(?:kilo(?:si)?ga|kub(?:i)?ga|tonna(?:si)?ga|кило(?:си)?га|куб(?:и)?га|کیلویی)(?![\\p{L}]))`,
+  'iu',
+);
+const PER_UNIT_BEFORE = new RegExp(
+  '(?:' +
+    [
+      'kilo(?:si)?ga|kub(?:i)?ga|tonna(?:si)?ga|кило(?:си)?га|куб(?:и)?га',
+      '(?<![\\p{L}])(?<!\\d\\s{0,2})(?:kilosi|kubi)',
+      `(?:kilo(?:si|sining)?|kub(?:i|ining)?)\\s+narxi`,
+      `(?<![\\p{L}\\d.,])(?:1|bir)\\s+${UNIT_WORD}\\s+(?:uchun|narxi|ga)`,
+      `har\\s+(?:bir\\s+)?${UNIT_WORD}\\s*(?:uchun|ga)?`,
+      `per\\s+${UNIT_WORD}`,
+      `(?<![\\d.,])(?:a|one|1)\\s+${UNIT_WORD}\\s+(?:costs?|is)`,
+      `за\\s+(?:1\\s+|один\\s+|одну\\s+)?${UNIT_WORD}`,
+      'tarif\\p{L}*|тариф\\p{L}*|(?<![\\p{L}])rate(?![\\p{L}])',
+      '每(?:公斤|千克|方|立方米?)',
+      '(?:برای\\s+)?هر\\s+(?:کیلو\\p{L}*|متر\\s*مکعب)|کیلویی',
+    ].join('|') +
+    ')\\s*[:\\-–—]?\\s*(?:(?:taxminan|тахминан|примерно|около|about|around|approximately|roughly|大约|约|حدود|تقریباً?)\\s*)?' +
+    `(?:(?:${CURRENCY_BEFORE_SRC})\\s*:?\\s*)?$`,
+  'iu',
+);
+
 /** A figure as written: thousands by space, comma or dot groups of three, decimals by dot or comma. */
 const NUMBER_RE = /\d{1,3}(?:[ ,. ]\d{3})+(?![\d])(?:[.,]\d+)?|\d+(?:[.,]\d+)?/gu;
 /** dd.mm(.yyyy) with a two-digit month — the spelling every date the system prints uses («dd.MM»). */
@@ -254,6 +338,10 @@ interface Reading {
   scale: number;
   /** The scale word as written right after the figure («mln»), for the ledger's `raw`; '' when none or after a range. */
   scaleText: string;
+  /** The currency as written beside the figure, when one is (K16). */
+  token: string | null;
+  /** What follows the figure, its range, its scale word and its currency — where a per-unit word stands (K21). */
+  rest: string;
 }
 
 /** The word beside a figure — before it, after it, after its range and its scale word. */
@@ -271,10 +359,16 @@ function readAt(text: string, start: number, end: number): Reading {
     tail = tail.slice(m[0].length);
     break;
   }
-  const at = (kind: NumberKind): Reading => ({ kind, scale, scaleText });
-  if (MONEY_BEFORE.test(text.slice(Math.max(0, start - 12), start))) return at('money');
+  const at = (kind: NumberKind, token: string | null = null, rest = tail): Reading => ({ kind, scale, scaleText, token, rest });
+  const before = MONEY_BEFORE.exec(text.slice(Math.max(0, start - 12), start));
+  if (before) {
+    // «$480 /kg»: a currency written after it too is still part of the figure's phrase.
+    const after = MONEY_AFTER.exec(tail);
+    return at('money', before[0], after ? tail.slice(after[0].length) : tail);
+  }
   if (PERCENT_AFTER.test(tail)) return at('percent');
-  if (MONEY_AFTER.test(tail)) return at('money');
+  const money = MONEY_AFTER.exec(tail);
+  if (money) return at('money', money[0], tail.slice(money[0].length));
   if (MEASURE_AFTER.test(tail)) return at('measure');
   if (DURATION_AFTER.test(tail)) return at('duration');
   if (MONTH_AFTER.test(tail) && !(UZ_CYRL_TIMES.test(tail) && UZ_CYRL_LETTERS.test(text))) return at('date');
@@ -317,6 +411,15 @@ export function extractNumbers(
 ): FoundNumber[] {
   const t = blanked(text, removeWhole);
   const moneyText = opts.moneyContext === true || MONEY_WORD.test(t);
+  // A figure that is money because its TEXT names money takes the one currency the text names — «Narx
+  // (yuanda): 480» is yuan — dollars when it names none, and no currency at all when it names two (K16).
+  let textCurrency: Currency | null | undefined;
+  const currencyOfText = (): Currency | null => {
+    if (textCurrency !== undefined) return textCurrency;
+    const named = currenciesNamed(t);
+    textCurrency = named.size === 0 ? 'USD' : named.size === 1 ? [...named][0]! : null;
+    return textCurrency;
+  };
   const out: FoundNumber[] = [];
   const taken: [number, number][] = [];
   for (const m of t.matchAll(DATE_RE)) {
@@ -332,7 +435,7 @@ export function extractNumbers(
   // A clock is a time of day whatever the text says — never upgraded to money below.
   for (const m of t.matchAll(TIME_RE)) {
     if (taken.some(([a, b]) => m.index >= a && m.index < b)) continue;
-    out.push({ raw: m[0], value: Number(m[0].replace(':', '.')), kind: 'plain', index: m.index });
+    out.push({ raw: m[0], value: Number(m[0].replace(':', '.')), kind: 'plain', index: m.index, fixed: true });
     taken.push([m.index, m.index + m[0].length]);
   }
   for (const m of t.matchAll(NUMBER_RE)) {
@@ -343,8 +446,9 @@ export function extractNumbers(
     // Unless the letters ARE a currency, or a currency is glued on the other side: «USD480», «Jami-480$».
     const prev = t[start - 1];
     const after = t.slice(end, end + 24);
-    const glued =
-      MONEY_GLUED_AFTER.test(after) || (prev !== undefined && MONEY_GLUED_BEFORE.test(t.slice(Math.max(0, start - 12), start)));
+    const gluedAfter = MONEY_GLUED_AFTER.exec(after);
+    const gluedBefore = prev !== undefined ? MONEY_GLUED_BEFORE.exec(t.slice(Math.max(0, start - 12), start)) : null;
+    const glued = gluedAfter !== null || gluedBefore !== null;
     if (!glued && prev !== undefined && /[\p{L}]/u.test(prev) && !/[\p{Script=Han}]/u.test(prev)) continue;
     if (prev === '-' && /[\p{L}]/u.test(t[start - 2] ?? '') && !glued && !MONEY_AFTER.test(after)) continue;
     const read = readAt(t, start, end);
@@ -356,7 +460,17 @@ export function extractNumbers(
     // In a text that names money anywhere, a bare figure is money (P1): «Narx (dollarda): 480».
     const kind: NumberKind =
       glued || (read.kind === 'plain' && !fixed && (moneyText || priced)) ? 'money' : read.kind;
-    out.push({ raw: `${m[0]}${read.scaleText}`.trimEnd(), value, kind, index: start });
+    const token = read.token ?? gluedAfter?.[0] ?? gluedBefore?.[0] ?? null;
+    const perUnit = PER_UNIT_AFTER.test(read.rest) || PER_UNIT_BEFORE.test(t.slice(Math.max(0, start - 40), start));
+    out.push({
+      raw: `${m[0]}${read.scaleText}`.trimEnd(),
+      value,
+      kind,
+      index: start,
+      ...(kind === 'money' ? { currency: token !== null ? currencyOf(token) : currencyOfText() } : {}),
+      ...(perUnit ? { perUnit } : {}),
+      ...(fixed ? { fixed } : {}),
+    });
   }
   return out.sort((a, b) => a.index - b.index);
 }
@@ -373,13 +487,33 @@ function sameValue(a: number, b: number): boolean {
  * another shape, and G2 reads no dates. His kilos, cubes and cartons are his
  * to have repeated back.
  */
-const COMPANY_KINDS: ReadonlySet<NumberKind> = new Set(['money', 'duration', 'date']);
+const COMPANY_KINDS: ReadonlySet<NumberKind> = new Set(['money', 'duration', 'date', 'percent']);
 const companySaid = (s: NumberSource) => s.origin === 'tool' || s.origin === 'kb';
 
 /**
+ * A money figure and a money source are one claim only when they are in one
+ * currency (K16) and the same KIND of money (K21): a figure said per unit is
+ * a rate's, anything else a total's or a balance's.
+ */
+function moneyFits(found: FoundNumber, s: NumberSource): boolean {
+  if (s.kind !== 'money') return false;
+  if ((found.currency ?? null) === null || found.currency !== (s.currency ?? 'USD')) return false;
+  const role = s.role ?? 'total';
+  return found.perUnit === true ? role === 'rate' : role !== 'rate';
+}
+
+/**
  * Which source lets a figure through, or null. A money figure needs a money
- * source and nothing else will do; every other kind takes a source of its
- * own kind, and a bare figure takes any source but the customer's money.
+ * source of its currency and its role, and nothing else will do; every other
+ * kind takes a source of its own kind, and a bare figure takes any source but
+ * the customer's money.
+ *
+ * A percent is the company's word too (K20): «Ha, boj 20% bo'ladi» on the
+ * customer's own «Boj 20% bo'ladimi?» is a duty rate confirmed on his guess.
+ * And a BARE figure of the customer's vouches for nothing (K17): «Ivudan 3
+ * kub, 250 bo'ladimi?» in a chat whose inbound messages name no money left
+ * his 250 'plain', and «Ha, 250 bo'ladi» agreed to his price — a figure with
+ * no unit has no kind he can be said to have stated.
  */
 export function sourceFor(
   found: FoundNumber,
@@ -390,10 +524,11 @@ export function sourceFor(
     if (!sameValue(s.value, found.value)) return false;
     if (s.kind === 'customer_money') return false;
     if (COMPANY_KINDS.has(found.kind) && !companySaid(s)) return false;
+    if (s.kind === 'plain' && !companySaid(s)) return false;
     // A day count said of one road is never vouched for by another road's: a truck's «5 kunda» on the
     // flight's five is a promise nobody made.
     if (found.kind === 'duration' && mode !== null && s.mode !== undefined && s.mode !== mode) return false;
-    if (found.kind === 'money') return s.kind === 'money';
+    if (found.kind === 'money') return moneyFits(found, s);
     if (found.kind === 'plain') return true;
     // A measure can be stated as a bare count of the same thing and vice versa.
     if (found.kind === 'count') return s.kind === 'count' || s.kind === 'measure' || s.kind === 'plain';
@@ -402,12 +537,61 @@ export function sourceFor(
   return sources.find(fits) ?? null;
 }
 
+/** A ledger line and where its figure stands in the (digit-normalised) text — the policy reads clauses around it. */
+export interface PlacedEntry extends LedgerEntry {
+  index: number;
+  /** Where the figure as written ends — before its currency. */
+  end: number;
+  /** The figure was said per unit (K21). */
+  perUnit: boolean;
+}
+
+/**
+ * The ledger with each figure's place (G11 asks the hedge in the price's own
+ * clause, K12). A BARE figure only a money source vouches for IS money (K13):
+ * «3 kub yukingiz uchun 330 chiqadi» names no currency and still quotes the
+ * tool's 330 dollars, and as a 'plain' line it was asked for no hedge, no
+ * exclusion sentence and no warehouse condition — while «330 $» was. A figure
+ * whose FORM says what it is (an hour, an ordinal, a clock) never is.
+ */
+export function placedLedger(
+  text: string,
+  sources: readonly NumberSource[],
+  removeWhole: readonly string[] = [],
+  askedMode: TravelMode | null = null,
+): PlacedEntry[] {
+  const t = blanked(text, removeWhole);
+  return extractNumbers(text, removeWhole).map((f) => {
+    let found = f;
+    let source: NumberSource | null = null;
+    if (f.kind === 'plain' && f.fixed !== true) {
+      // Read as money first — in dollars, the only currency a text naming none can be in.
+      const asMoney: FoundNumber = { ...f, kind: 'money', currency: 'USD' };
+      source = sourceFor(asMoney, sources);
+      if (source) found = asMoney;
+    }
+    source ??= sourceFor(f, sources, f.kind === 'duration' ? (modeAt(t, f.index) ?? askedMode) : null);
+    const money = found.kind === 'money';
+    const currency = money ? (found.currency ?? null) : undefined;
+    return {
+      raw: money ? `${f.raw} ${currency ? CURRENCY_LABEL[currency] : '(valyuta noma’lum)'}` : f.raw,
+      kind: found.kind,
+      source: source?.label ?? null,
+      ...(money ? { currency } : {}),
+      index: f.index,
+      end: f.index + f.raw.length,
+      perUnit: f.perUnit === true,
+    };
+  });
+}
+
 /**
  * The ledger for one text: each figure beside the source that let it through.
  * A day count takes the road its clause, its sentence or the text names, and
  * when the text names none, `askedMode` — the one road the customer asked
  * about: «Mashinada 5 kunda kelsinmi?» → «Odatda 5 kunda yetib keladi» is
- * the truck's time.
+ * the truck's time. A money line carries the currency it was read in, so the
+ * card's «🔢 Raqamlar» says «330 yuan» where the tool said 330 dollars (K16).
  */
 export function numberLedger(
   text: string,
@@ -415,12 +599,12 @@ export function numberLedger(
   removeWhole: readonly string[] = [],
   askedMode: TravelMode | null = null,
 ): LedgerEntry[] {
-  const t = blanked(text, removeWhole);
-  return extractNumbers(text, removeWhole).map((f) => ({
-    raw: f.raw,
-    kind: f.kind,
-    source: sourceFor(f, sources, f.kind === 'duration' ? (modeAt(t, f.index) ?? askedMode) : null)?.label ?? null,
-  }));
+  return placedLedger(text, sources, removeWhole, askedMode).map(ledgerLine);
+}
+
+/** A placed line as the card and the draft store it — without its place. */
+export function ledgerLine(e: PlacedEntry): LedgerEntry {
+  return { raw: e.raw, kind: e.kind, source: e.source, ...(e.currency !== undefined ? { currency: e.currency } : {}) };
 }
 
 /**

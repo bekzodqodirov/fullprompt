@@ -135,7 +135,14 @@ describe('avia is the ACTUAL kilos × his rate — volume never changes the figu
       const out = await aviaFor(50, m3);
       expect(out, String(m3)).toMatchObject({ ok: true, estimate: true });
       expect(total(out), String(m3)).toBe(850);
-      expect(out.sources, String(m3)).toContainEqual({ value: 850, kind: 'money', label: 'avia (tarif × kg)', origin: 'tool' });
+      expect(out.sources, String(m3)).toContainEqual({
+        value: 850,
+        kind: 'money',
+        label: 'avia (tarif × kg)',
+        origin: 'tool',
+        currency: 'USD',
+        role: 'total',
+      });
     }
   });
 

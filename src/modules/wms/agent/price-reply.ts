@@ -36,7 +36,9 @@ const SECTION_WORDS: Record<AgentLocale, Record<PriceSection, string>> = {
   en: {
     yolkira: 'freight',
     rastamojka: 'customs clearance',
-    podklyuch: 'door-to-door (freight and customs clearance)',
+    // Podklyuch is the road AND the customs — never «door-to-door», which states door delivery, one of
+    // the website's extras his ⭐8 says nobody promises (final review K31; `promiseHits` flags it).
+    podklyuch: 'turnkey (freight and customs clearance)',
   },
   fa: {
     yolkira: 'حمل و نقل',

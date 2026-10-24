@@ -1,12 +1,13 @@
 import { and, eq, gte, inArray, ne } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
-import { agentOutbox, clients, users } from '../../platform/db/schema';
+import { agentDrafts, agentOutbox, clients, users } from '../../platform/db/schema';
 import { getSetting } from '../../platform/settings/service';
 import { canLogInSql } from '../../platform/users/login';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import type { AgentLocale, ScriptName } from './locale';
 import { customerSources, urlsIn, type NumberSource, type TravelMode } from './numbers';
-import { checkAgentReply, checkOwnerReply, codeCandidatesIn, textFingerprint, type PolicyResult } from './policy';
+import { checkAgentReply, checkOwnerReply, codeCandidatesIn, textFingerprint, type PolicyHit, type PolicyResult } from './policy';
+import { AGENT_LIMITS } from './limits';
 
 /**
  * The policy's inputs that are FACTS ABOUT THE WORLD (who else got this text,
@@ -36,6 +37,12 @@ export interface PolicyMemory {
   factNameWords?: string[];
   /** The one road the customer asked about — a reply's day count naming none is that road's. Absent = none known. */
   askedMode?: TravelMode | null;
+  /**
+   * The draft carries an Uzbek translation (K29) — a Persian or Chinese
+   * reply without one is blocked at the write AND at ✅. Absent (a memory
+   * written before it, the 💵 draft's) reads as none.
+   */
+  hasGloss?: boolean;
   ownCodes: string[];
   /** The customer's own manager — the one staff name a reply may carry. */
   managerName: string | null;
@@ -86,12 +93,29 @@ async function staffNamesExcept(managerName: string | null, accountUserId: strin
   return rows.map((r) => r.name).filter((n) => n && n !== managerName);
 }
 
+/**
+ * The words a stored row's fingerprint leaves out — ITS customer's codes and
+ * name, read off the draft it was approved from (final review K1). Every row
+ * was fingerprinted with THIS chat's names, so ten customers greeted by name
+ * with one address sentence kept ten different names in ten fingerprints and
+ * the same-text fuse never tripped. A draft that stored none leaves nothing out.
+ */
+export function stripOfDraftPolicy(policy: unknown): string[] {
+  const p = (policy ?? {}) as { memory?: { ownCodes?: unknown }; card?: { customerLabel?: unknown } };
+  const codes = Array.isArray(p.memory?.ownCodes) ? p.memory.ownCodes.filter((c): c is string => typeof c === 'string') : [];
+  const label = typeof p.card?.customerLabel === 'string' ? p.card.customerLabel : '';
+  // «GS777, GS778 · Bobur Aliyev» / «Lid: Bobur» — the label's words; «Lid:» is the same word in every lead's.
+  const words = label.split(/[\s,·]+/u).filter((w) => w !== '' && w !== 'Lid:');
+  return [...new Set([...codes, ...words])];
+}
+
 /** Distinct OTHER peers that got the same fingerprint from the agent in 24 h, and the link counts (G10). */
 async function sendCounts(managerUserId: string, peerId: bigint, body: string, strip: string[]) {
   const since = new Date(Date.now() - 24 * 3_600_000);
   const rows = await db
-    .select({ peerId: agentOutbox.peerId, body: agentOutbox.body, sentAt: agentOutbox.sentAt })
+    .select({ peerId: agentOutbox.peerId, body: agentOutbox.body, sentAt: agentOutbox.sentAt, policy: agentDrafts.policy })
     .from(agentOutbox)
+    .leftJoin(agentDrafts, eq(agentDrafts.id, agentOutbox.draftId))
     .where(
       and(
         eq(agentOutbox.managerUserId, managerUserId),
@@ -108,7 +132,10 @@ async function sendCounts(managerUserId: string, peerId: bigint, body: string, s
     const hasUrl = urlsIn(r.body).length > 0;
     if (hasUrl && r.peerId === peerId) urlsToChat7d += 1;
     if (hasUrl && (r.sentAt ?? new Date()) >= dayStart) urlsToday += 1;
-    if (r.peerId !== peerId && (r.sentAt ?? new Date()) >= since && textFingerprint(r.body, strip) === fp) peers.add(String(r.peerId));
+    // Each stored row folded with ITS OWN customer's names and codes (K1).
+    if (r.peerId !== peerId && (r.sentAt ?? new Date()) >= since && textFingerprint(r.body, stripOfDraftPolicy(r.policy)) === fp) {
+      peers.add(String(r.peerId));
+    }
   }
   return { fingerprintPeers: peers.size, urlsToChat7d, urlsToday };
 }
@@ -150,12 +177,38 @@ export async function policyFor(input: {
     fromOurWarehouse: input.memory.fromOurWarehouse === true,
     factNameWords: input.memory.factNameWords ?? [],
     askedMode: input.memory.askedMode ?? null,
+    hasGloss: input.memory.hasGloss === true,
   });
 }
 
-/** His own ✏️ text — only what would be refused anyway blocks (§17.6). */
-export async function ownerPolicyFor(body: string, ownCodes: string[]): Promise<PolicyResult> {
-  const [bookCodes, codePrefix] = await Promise.all([bookCodesIn(body), getSetting('client_code_prefix')]);
-  return checkOwnerReply({ body, ownCodes, bookCodes, codePrefix: String(codePrefix ?? '') });
+/**
+ * His own ✏️ text — only what would be refused anyway blocks (§17.6).
+ *
+ * The 💵 price reply is a fixed template, the one AI text certain to be the
+ * same to every customer once its digits fold away — and the owner subset has
+ * no G10 (final review K3). Given the chat (`sameText`), the same-text count
+ * is asked and said as a WARNING on the card: five quotes a day are his
+ * ordinary work, and a block at three peers would stop it.
+ */
+export async function ownerPolicyFor(
+  body: string,
+  ownCodes: string[],
+  sameText?: { managerUserId: string; peerId: bigint; strip: string[] },
+): Promise<PolicyResult> {
+  const [bookCodes, codePrefix, counts] = await Promise.all([
+    bookCodesIn(body),
+    getSetting('client_code_prefix'),
+    sameText ? sendCounts(sameText.managerUserId, sameText.peerId, body, sameText.strip) : null,
+  ]);
+  const result = checkOwnerReply({ body, ownCodes, bookCodes, codePrefix: String(codePrefix ?? '') });
+  const warning = sameTextWarning(counts?.fingerprintPeers ?? 0);
+  return warning ? { ...result, warnings: [...result.warnings, warning] } : result;
+}
+
+/** The G10 fingerprint as a warning — the same number of peers the machine's block counts. */
+export function sameTextWarning(fingerprintPeers: number): PolicyHit | null {
+  return fingerprintPeers > AGENT_LIMITS.fingerprintPeers
+    ? { rule: 'G10', code: 'fingerprint', detail: String(fingerprintPeers) }
+    : null;
 }
 

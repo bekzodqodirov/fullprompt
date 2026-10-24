@@ -12,7 +12,7 @@ import { tariffFor } from '../calc/tariff-read';
 import { AVIA_RATE_LABEL } from './config';
 import { AGENT_LIMITS } from './limits';
 import { AGENT_LOCALES } from './locale';
-import { namedOrigin, placesOf, quoteOrigin, type QuoteOrigin } from './origin';
+import { aviaOrigin, namedOrigin, placesOf, quoteOrigin, type QuoteOrigin } from './origin';
 import { customerSources, extractNumbers, factSources, type NumberSource } from './numbers';
 import { warehouseSentencesText } from './policy';
 import { siteEstimate } from './site-estimate';
@@ -193,14 +193,47 @@ function stated(ctx: AgentContext, values: readonly (number | null | undefined)[
   return values.every((v) => v === null || v === undefined || figures.some((f) => close(f, v)));
 }
 
-/** A tool's own text read for its figures — every one of them the tool's word (B3). */
+/**
+ * A tool's own text read for its figures — every one of them the tool's word
+ * (B3). A money figure of the balance is a BALANCE (K21), in the currency the
+ * text writes it in — «+5 000 000 UZS (≈ 380 $)» is so'm and dollars, not two
+ * dollar amounts (K16); one whose currency cannot be told vouches for nothing.
+ */
 function sourcesOf(text: string, label: string, money: boolean): NumberSource[] {
-  return extractNumbers(text).map((f) => ({
-    value: f.value,
-    kind: f.kind === 'money' ? (money ? 'money' : 'customer_money') : f.kind,
-    label,
-    origin: 'tool' as const,
-  }));
+  return extractNumbers(text).map((f): NumberSource => {
+    if (f.kind !== 'money') return { value: f.value, kind: f.kind, label, origin: 'tool' };
+    if (!money || !f.currency) return { value: f.value, kind: 'customer_money', label, origin: 'tool' };
+    return { value: f.value, kind: 'money', label, origin: 'tool', currency: f.currency, role: 'balance' };
+  });
+}
+
+/**
+ * The newest figure of a kind the customer stated (K21) — the checklist's
+ * rule, «the newest statement wins»: a customer who wrote «3 kub, 400 kg» and
+ * then «kechirasiz, 0.5 kub 60 kg ekan» means the second, and the tool took
+ * any reference that existed, so the model could price the first. A stated
+ * volume beats one computed from carton sizes, as in the checklist.
+ */
+function newestMeasure(ctx: AgentContext, kind: MeasureCandidate['kind']): MeasureCandidate | null {
+  const of = ctx.measures.filter((m) => m.kind === kind);
+  const stated = of.filter((m) => !m.ref.startsWith('d'));
+  return (stated.length > 0 ? stated : of).at(-1) ?? null;
+}
+
+/**
+ * Words for the model when a reference it passed is not the customer's newest
+ * of its kind; null when every one is. An older reference carrying the SAME
+ * figure is no stale one — «40 kg», then «yana 40 kg avia bilan?» states one
+ * weight twice, and the price is the same either way.
+ */
+function staleRefs(ctx: AgentContext, given: readonly MeasureCandidate[]): string | null {
+  for (const m of given) {
+    const newest = newestMeasure(ctx, m.kind);
+    if (newest && newest.ref !== m.ref && !close(newest.value, m.value)) {
+      return `${m.ref} eskirgan — mijozning eng oxirgi ${m.kind === 'weight' ? "og'irligi" : 'hajmi'} ${newest.ref} = ${newest.value} ${m.kind === 'weight' ? 'kg' : 'kub'} (${newest.messageRef}). Shu havolani ber.`;
+    }
+  }
+  return null;
 }
 
 /**
@@ -210,7 +243,12 @@ function sourcesOf(text: string, label: string, money: boolean): NumberSource[] 
  * of spellings for this tool, the checklist and the landing's zone.
  */
 export function originZone(ctx: AgentContext, ours: ReadonlySet<string>): QuoteOrigin {
-  return quoteOrigin(ctx.messages.filter((m) => m.direction === 'in').map((m) => m.body).join('\n'), ours);
+  return quoteOrigin(inboundText(ctx), ours);
+}
+
+/** Everything the customer wrote in the chat's window — where the places he named are read from. */
+function inboundText(ctx: AgentContext): string {
+  return ctx.messages.filter((m) => m.direction === 'in').map((m) => m.body).join('\n');
 }
 
 /**
@@ -351,6 +389,9 @@ async function yolkira(input: Record<string, unknown>, env: ToolEnv): Promise<To
   const volume = find(input.volume_ref, 'volume');
   if (!volume) return refuse("hajm havolasi yo'q");
   if (!weight) return refuse("og'irlik havolasi yo'q");
+  // Only the customer's NEWEST figures (K21) — a corrected load is priced as corrected, never as first said.
+  const stale = staleRefs(ctx, [weight, volume]);
+  if (stale) return { ok: false, text: stale, sources: [] };
   const kg = weight.value;
   const m3 = volume.value;
   // The company's floor comes before every other question: below BOTH halves
@@ -394,8 +435,9 @@ async function yolkira(input: Record<string, unknown>, env: ToolEnv): Promise<To
     estimate: true,
     ...(fromOurWarehouse ? { fromOurWarehouse: true } : {}),
     sources: [
-      { value: e.total, kind: 'money', label: "yo'lkira (sayt kalkulyatori)", origin: 'tool' },
-      { value: e.rate, kind: 'money', label: "yo'lkira tarifi (sayt)", origin: 'tool' },
+      // Dollars, and which is the load's price and which the price of one unit (K16, K21).
+      { value: e.total, kind: 'money', label: "yo'lkira (sayt kalkulyatori)", origin: 'tool', currency: 'USD', role: 'total' },
+      { value: e.rate, kind: 'money', label: "yo'lkira tarifi (sayt)", origin: 'tool', currency: 'USD', role: 'rate' },
       // The website's days are the TRUCK's — never a flight's figure.
       { value: e.days[0], kind: 'duration', label: 'sayt muddati', origin: 'tool', mode: 'road' },
       { value: e.days[1], kind: 'duration', label: 'sayt muddati', origin: 'tool', mode: 'road' },
@@ -419,7 +461,7 @@ async function yolkira(input: Record<string, unknown>, env: ToolEnv): Promise<To
  * The review's volumetric refusal (the website's air calculator bills
  * max(kg, m³ × 200)) is gone with that answer.
  */
-function avia(input: Record<string, unknown>, env: ToolEnv): ToolOutcome {
+async function avia(input: Record<string, unknown>, env: ToolEnv): Promise<ToolOutcome> {
   const { ctx } = env;
   const rate = env.aviaUsdPerKg;
   if (rate === null || !(rate > 0)) {
@@ -431,6 +473,9 @@ function avia(input: Record<string, unknown>, env: ToolEnv): ToolOutcome {
   }
   const weight = ctx.measures.find((m) => m.ref === String(input.weight_ref ?? '').trim() && m.kind === 'weight') ?? null;
   if (!weight) return { ok: false, text: "Og'irlik havolasi yo'q — mijozdan yukning og'irligini (kg) so'ra.", sources: [] };
+  // The customer's newest kilos only (K21), as on the truck.
+  const stale = staleRefs(ctx, [weight]);
+  if (stale) return { ok: false, text: stale, sources: [] };
   const kg = weight.value;
   const { minKg, daysMin, daysMax } = AGENT_LIMITS.avia;
   if (!(kg >= minKg)) {
@@ -441,15 +486,24 @@ function avia(input: Record<string, unknown>, env: ToolEnv): ToolOutcome {
     };
   }
   const total = Math.round(kg * rate * 100) / 100;
+  // His third set «3» is the flight's too (K32): cargo that starts at «Xitoy» or a Chinese city we do not
+  // stand in flies from OUR warehouse, and the reply says so — the condition and the factory leg — as the
+  // truck's does. Kashgar and Urumqi are no refusal here: his rate is one figure from wherever we load it.
+  const fromOurWarehouse = aviaOrigin(inboundText(ctx), await env.chinaPlaces()) === 'our_warehouse';
   return {
     ok: true,
     text:
       `Taxminiy avia yo'lkira: ${total} $ (${kg} kg × ${rate} $/kg). Yetib borishi taxminan ${daysMin}-${daysMax} kun, ` +
-      `reys bo'lsa ${daysMin} kun — va'da emas. Boj va QQS bu narxga KIRMAYDI.`,
+      `reys bo'lsa ${daysMin} kun — va'da emas. Boj va QQS bu narxga KIRMAYDI.` +
+      (fromOurWarehouse
+        ? ` Mijoz faqat Xitoyni yoki omborimiz yo'q joyni aytdi — bu narx Xitoydagi OMBORIMIZDAN. Narxni aytsang, mijoz tilida ` +
+          `ikkala jumla ham bo'lsin — har tilda aynan shu: ${warehouseSentencesText()}.`
+        : ''),
     estimate: true,
+    ...(fromOurWarehouse ? { fromOurWarehouse: true } : {}),
     sources: [
-      { value: total, kind: 'money', label: 'avia (tarif × kg)', origin: 'tool' },
-      { value: rate, kind: 'money', label: AVIA_RATE_LABEL, origin: 'tool' },
+      { value: total, kind: 'money', label: 'avia (tarif × kg)', origin: 'tool', currency: 'USD', role: 'total' },
+      { value: rate, kind: 'money', label: AVIA_RATE_LABEL, origin: 'tool', currency: 'USD', role: 'rate' },
       { value: daysMin, kind: 'duration', label: 'avia muddati', origin: 'tool', mode: 'air' },
       { value: daysMax, kind: 'duration', label: 'avia muddati', origin: 'tool', mode: 'air' },
       { value: kg, kind: 'measure', label: `mijoz ${weight.messageRef}`, origin: 'tool' },

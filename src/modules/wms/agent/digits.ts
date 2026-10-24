@@ -192,6 +192,72 @@ export const MONEY_WORD = new RegExp(
   'iu',
 );
 
+/**
+ * Which currency a figure is in (final review K16). G1 compared a figure's
+ * VALUE and KIND, so the yo'lkira tool's 330 dollars vouched for «330元»,
+ * «330 so'm», «330 рублей», «۳۳۰ تومان» — a seventh of the price to a Chinese
+ * supplier, the card's «🔢 Raqamlar» printing a bare «330 (pul)» and the
+ * Uzbek gloss under it the model's own words. Every money source of a tool is
+ * in dollars today; a figure now carries the currency its spelling names, and
+ * the two must agree.
+ */
+export type Currency = 'USD' | 'USDT' | 'CNY' | 'UZS' | 'RUB' | 'EUR' | 'KZT' | 'AFN' | 'IRR' | 'GBP' | 'TRY';
+
+/**
+ * A currency spelling to its code, tried in order: «美元» and «欧元» hold «元»
+ * and are asked before the yuan, «USDT» before the dollar. «сом» / «som» are
+ * the Uzbek so'm as his customers write it.
+ */
+const CURRENCY_CODES: readonly (readonly [RegExp, Currency])[] = [
+  [/usdt/iu, 'USDT'],
+  [/\$|(?:^|[^\p{L}])us|usd|dollar|dollor|bucks?|доллар|долар|долл|бакс|у\.\s?е|美元|美金|دلار/iu, 'USD'],
+  [/€|eur|euro|evro|евро|欧元|یورو/iu, 'EUR'],
+  [/₽|rub|рубл|руб|卢布/iu, 'RUB'],
+  [/₸|kzt|tenge|тенге|坚戈/iu, 'KZT'],
+  [/¥|rmb|cny|yuan|renminbi|юан|人民币|元|块|یوان/iu, 'CNY'],
+  [/uzs|so['‘’ʻ`]m|сўм|(?:^|[^\p{L}])(?:sum|som)|сум|сом/iu, 'UZS'],
+  [/؋|afn|افغانی/iu, 'AFN'],
+  [/irr|تومان|ریال/iu, 'IRR'],
+  [/£|gbp/iu, 'GBP'],
+  [/₺/u, 'TRY'],
+];
+
+/** The code of a currency spelling, or null — a spelling nothing here names reads as no currency anybody quoted. */
+export function currencyOf(token: string): Currency | null {
+  const t = token.trim();
+  if (t === '') return null;
+  return CURRENCY_CODES.find(([re]) => re.test(t))?.[1] ?? null;
+}
+
+/**
+ * Every currency a text names, wherever — «元» and «块» only right after a
+ * figure (alone «单元» is a unit and «一块» a piece). Read when a bare figure
+ * is money because the TEXT names money: «Narx (yuanda): 480» is 480 yuan.
+ */
+const CURRENCY_ANYWHERE = new RegExp(
+  `${alt(SIGNS)}|${alt(CURRENCY_HAN)}|(?<=\\d\\s?)(?:${alt(CURRENCY_HAN_AFTER)})|(?<![\\p{L}])(?:${alt(CURRENCY_NAMES)})`,
+  'giu',
+);
+
+export function currenciesNamed(text: string): Set<Currency | null> {
+  return new Set([...text.matchAll(CURRENCY_ANYWHERE)].map((m) => currencyOf(m[0])));
+}
+
+/** How the card names a currency — beside the figure on «🔢 Raqamlar». */
+export const CURRENCY_LABEL: Record<Currency, string> = {
+  USD: '$',
+  USDT: 'USDT',
+  CNY: 'yuan',
+  UZS: 'so‘m',
+  RUB: 'rubl',
+  EUR: 'yevro',
+  KZT: 'tenge',
+  AFN: 'afg‘oni',
+  IRR: 'rial/tumon',
+  GBP: 'funt',
+  TRY: 'lira',
+};
+
 /** A numeral NFKC could not make plain digits of, in any script — nothing here can read it. */
 const OTHER_DIGIT = /(?![0-9〇])\p{N}/u;
 

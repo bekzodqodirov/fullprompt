@@ -422,6 +422,8 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
       strip: stripFor(ctx),
     });
     const { actions, notes } = validateActions(c, ctx, loop.outcomes, t);
+    const rail = railNote(ctx, c);
+    if (rail) notes.push(rail);
     const tariffMismatch = loop.outcomes.some((o) => o.tariffMismatch);
     if (tariffMismatch) notes.push("Sayt narxi va /admin/tarif farq qiladi — yo'lkira narxi aytilmadi.");
 
@@ -462,12 +464,16 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
 
 /** What the run learned, kept on the draft so ✅ re-runs the policy on the same evidence (leak-3). */
 export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], canary: string): PolicyMemory {
-  // His «Temir yo'l mendan so'rasin»: in a burst about rail no figure the
+  // His «Temir yo'l mendan so'rasin»: in a chat about rail no figure the
   // machine found may carry a price — not the truck's website figure worded
   // as a rail one, not the avia rate. Dropped from the memory the ✅ re-runs
   // the policy on, so G1 blocks every money figure in the body, at the write
   // AND at the press; only his own ✏️ words (the owner subset) can say one.
-  const rail = mentionsRail(ctx.burst.map((m) => m.body));
+  // Asked of the reply and of the chat's whole inbound window, not the burst
+  // alone (final review K18): «temir yo'l bilan qancha?», his «aniqlab
+  // aytaman», then «5 kub, 800 kg» left the rail question one burst back and
+  // «Temir yo'l bilan taxminan 960 $» passed on the truck's figure.
+  const rail = railChat(ctx, loop.compose);
   const found = loop.outcomes.flatMap((o) => o.sources).filter((s) => !rail || s.kind !== 'money');
   const sources: NumberSource[] = [...customerNumberSources(ctx.messages), ...found];
   // General facts are in every prompt: their non-money figures, phones and
@@ -501,6 +507,8 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
     askedMode:
       oneModeIn(ctx.burst.map((m) => m.body).join('\n')) ??
       oneModeIn(ctx.messages.filter((m) => m.direction === 'in').map((m) => m.body).join('\n')),
+    // His 13 + ⭐3 (K29): a Persian or Chinese reply comes with its Uzbek translation, or carries no ✅.
+    hasGloss: loop.compose.glossUz.trim() !== '',
     ownCodes: ctx.identity.codes.map((c) => c.clientCode),
     managerName: ctx.identity.managerName,
     canary,
@@ -516,8 +524,28 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
  * listening.
  */
 export function withRailRule(c: ComposeReply, ctx: Pick<AgentContext, 'burst'>): ComposeReply {
-  if (!mentionsRail(ctx.burst.map((m) => m.body))) return c;
+  // The burst, or the reply itself speaking of rail (K18) — then the model is answering a rail question.
+  if (!mentionsRail([...ctx.burst.map((m) => m.body), c.replyText])) return c;
   return { ...c, needsOwner: true, ownerQuestion: c.ownerQuestion || RAIL_OWNER_QUESTION };
+}
+
+/** The chat is about rail: the burst, the customer's whole window, or the reply (K18). */
+export function railChat(ctx: Pick<AgentContext, 'burst' | 'messages'>, c: Pick<ComposeReply, 'replyText'>): boolean {
+  return mentionsRail([
+    ...ctx.burst.map((m) => m.body),
+    ...ctx.messages.filter((m) => m.direction === 'in').map((m) => m.body),
+    c.replyText,
+  ]);
+}
+
+/**
+ * Said on the card when the rail question is only EARLIER in the chat — the
+ * draft is not his question, but its figures carry no source, and a bare
+ * «manbasi yo'q» would not tell him why.
+ */
+export function railNote(ctx: Pick<AgentContext, 'burst' | 'messages'>, c: Pick<ComposeReply, 'replyText'>): string | null {
+  if (!railChat(ctx, c) || mentionsRail([...ctx.burst.map((m) => m.body), c.replyText])) return null;
+  return "Suhbatda avvalroq temir yo'l so'ralgan — AI narx aytmaydi, narxni siz ayting.";
 }
 
 export function stripFor(ctx: AgentContext): string[] {
@@ -722,6 +750,8 @@ export async function runOwnerTriggered(
     const memory = memoryFor(ctx, loop, facts, canary);
     const policy = await policyFor({ managerUserId: ctx.managerUserId, peerId: ctx.peerId, body: c.replyText, memory, strip: stripFor(ctx) });
     const { actions, notes } = validateActions(c, ctx, loop.outcomes, t);
+    const rail = railNote(ctx, c);
+    if (rail) notes.push(rail);
     const written = await writeDraft({ runId, ctx, compose: c, policy, memory, actions, notes, kind: input.trigger === 'hand_back' ? 'hand_back' : 'reply' });
     settle = { ...settle, outcome: written.kind === 'editing' ? 'stood_down' : 'draft', error: written.kind === 'editing' ? 'editing' : null };
     return written.kind === 'editing'

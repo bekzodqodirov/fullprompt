@@ -206,10 +206,11 @@ describe('a working day is a day: the duration words the reader did not know', (
 
 describe('a month is read where it is one, and only there', () => {
   it.each([
-    ['Bizda 30 mayda quti bor', 'plain'],
-    ['Bizda 10 mayda karobka bor', 'plain'],
-    ['30 mayda qutilar', 'plain'],
-    ['10 майда қути бор', 'plain'],
+    // A count of small cartons (final review K17: a bare figure of his vouches for nothing now, so his count must read as one).
+    ['Bizda 30 mayda quti bor', 'count'],
+    ['Bizda 10 mayda karobka bor', 'count'],
+    ['30 mayda qutilar', 'count'],
+    ['10 майда қути бор', 'count'],
     ['5 mayda-chuyda narsa', 'plain'],
     ['Машина ҳафтада 2 марта чиқади', 'plain'],
     ['Ҳафтада 2 мартаба чиқади', 'plain'],

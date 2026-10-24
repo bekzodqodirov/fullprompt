@@ -146,6 +146,21 @@ export function quoteOrigin(text: string | null, ours: ReadonlySet<string>): Quo
 }
 
 /**
+ * Where a FLIGHT's price starts (final review K32) — `quoteOrigin` without
+ * its western refusal: the website prices no truck from Kashgar or Urumqi,
+ * but his avia rate is one figure wherever we load it. So the hubs are places
+ * like any other — ours when a warehouse of ours stands there (Kashgar),
+ * priced from ours when none does (Urumqi, Shenzhen) — and «Xitoy» alone is
+ * priced from ours, on his third set's condition, as the truck is.
+ */
+export function aviaOrigin(text: string | null, ours: ReadonlySet<string>): Exclude<QuoteOrigin, 'western'> {
+  const t = text ?? '';
+  const named = namedOrigins(t);
+  if (named.length > 0) return named.every((p) => ours.has(p.place)) ? 'warehouse' : 'our_warehouse';
+  return CHINA.test(t) ? 'our_warehouse' : 'unknown';
+}
+
+/**
  * Which of the places a customer can name our warehouses stand in — each
  * warehouse row read by the SAME spellings a customer's message is (its name,
  * code and address), so «Yiwu» on the warehouse card and «Ивудан» in the chat

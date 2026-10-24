@@ -101,7 +101,7 @@ describe('«💵 Narx yozaman»: his figure, and no other number, in six languag
   it('names the section in the customer’s language and groups thousands as that language does', () => {
     expect(priceReplyText('uz', 'yolkira', 1250)).toBe('Hisob tayyor: yo‘lkira narxi — 1 250 $.');
     expect(priceReplyText('ru', 'rastamojka', 1250)).toBe('Расчёт готов: растаможка — 1 250 $.');
-    expect(priceReplyText('en', 'podklyuch', 1250.5)).toBe('Your quote is ready: door-to-door (freight and customs clearance) — $1,250.50.');
+    expect(priceReplyText('en', 'podklyuch', 1250.5)).toBe('Your quote is ready: turnkey (freight and customs clearance) — $1,250.50.');
     expect(priceReplyText('zh', 'yolkira', 1250)).toContain('运费');
     expect(priceReplyText('fa', 'rastamojka', 1250)).toContain('ترخیص گمرکی');
     expect(priceReplyText('uz_cyrl', 'podklyuch', 1250)).toContain('подключ');
@@ -146,8 +146,9 @@ describe('the truck’s minimum and avia (his 7, 2026-10-24)', () => {
     expect(out).toMatchObject({ ok: true, estimate: true });
     expect(out.sources).toEqual(
       expect.arrayContaining([
-        { value: 637.5, kind: 'money', label: 'avia (tarif × kg)', origin: 'tool' },
-        { value: 17, kind: 'money', label: 'avia tarifi', origin: 'tool' },
+        // In dollars, and which is the load's price and which the kilo's (K16, K21).
+        { value: 637.5, kind: 'money', label: 'avia (tarif × kg)', origin: 'tool', currency: 'USD', role: 'total' },
+        { value: 17, kind: 'money', label: 'avia tarifi', origin: 'tool', currency: 'USD', role: 'rate' },
         // The days are a FLIGHT's — never a truck's figure (fix round).
         { value: AGENT_LIMITS.avia.daysMin, kind: 'duration', label: 'avia muddati', origin: 'tool', mode: 'air' },
         { value: AGENT_LIMITS.avia.daysMax, kind: 'duration', label: 'avia muddati', origin: 'tool', mode: 'air' },

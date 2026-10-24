@@ -76,9 +76,10 @@ describe('P1: a figure is money whenever money is written near it', () => {
 
   it('reads the currencies that are money only right after a figure, and a sign before a decimal', () => {
     expect(kinds('480元')).toEqual([['480', 'money']]);
-    // «€12.10» is twelve euros ten, not the twelfth of October.
-    const money: NumberSource = { value: 12.1, kind: 'money', label: 'tarif', origin: 'tool' };
+    // «€12.10» is twelve euros ten, not the twelfth of October — and a euro figure is a euro source's (K16).
+    const money: NumberSource = { value: 12.1, kind: 'money', label: 'tarif', origin: 'tool', currency: 'EUR' };
     expect(codes({ body: 'Narxi €12.10', numberSources: [money] })).not.toContain('number_unsourced');
+    expect(codes({ body: 'Narxi €12.10', numberSources: [{ ...money, currency: 'USD' }] })).toContain('number_unsourced');
   });
 
   it('keeps «№» a sign, so the figure it numbers is still read', () => {
@@ -147,10 +148,11 @@ describe('P1: a figure is money whenever money is written near it', () => {
     expect(extractNumbers("1,5 mln so'm").map((f) => f.raw)).toEqual(['1,5 mln']);
     // «5 ming dona» is five thousand pieces: a count, scaled.
     expect(extractNumbers('5 ming dona').map((f) => [f.value, f.kind])).toEqual([[5_000, 'count']]);
-    const tool: NumberSource = { value: 1_500_000, kind: 'money', label: 'mijozning balansi', origin: 'tool' };
+    // A balance in so'm is a so'm source's (K16) — the balance tool reads each figure's currency off its own text.
+    const tool: NumberSource = { value: 1_500_000, kind: 'money', label: 'mijozning balansi', origin: 'tool', currency: 'UZS', role: 'balance' };
     expect(codes({ body: "Balansingiz 1,5 mln so'm", numberSources: [tool] })).not.toContain('number_unsourced');
     // The unscaled value is a different number.
-    const rate: NumberSource = { value: 1.5, kind: 'money', label: 'tarif', origin: 'tool' };
+    const rate: NumberSource = { value: 1.5, kind: 'money', label: 'tarif', origin: 'tool', currency: 'UZS', role: 'balance' };
     expect(codes({ body: "Balansingiz 1,5 mln so'm", numberSources: [rate] })).toContain('number_unsourced');
   });
 
