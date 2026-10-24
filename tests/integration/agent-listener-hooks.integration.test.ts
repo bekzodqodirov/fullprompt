@@ -14,13 +14,15 @@ import {
   clients,
   notifications,
   roles,
+  tgChatRules,
   tgMessageFlags,
   tgMessages,
   tgPeerPulls,
   userRoles,
   users,
 } from '@/modules/platform/db/schema';
-import { isNewestInbound, stampPeerTyping } from '@/modules/wms/agent/listener-hooks';
+import { Api, helpers } from 'telegram';
+import { isNewestInbound, noteStranger, stampPeerTyping, strangerUserOf } from '@/modules/wms/agent/listener-hooks';
 import {
   claimPeerPull,
   finishPeerPull,
@@ -111,6 +113,7 @@ afterAll(async () => {
     );
   await db.delete(tgPeerPulls).where(inArray(tgPeerPulls.managerUserId, madeUsers));
   await db.delete(agentConversations).where(inArray(agentConversations.managerUserId, madeUsers));
+  await db.delete(tgChatRules).where(inArray(tgChatRules.managerUserId, madeUsers));
   await db.delete(tgMessages).where(inArray(tgMessages.managerUserId, madeUsers));
   await db.delete(clients).where(eq(clients.id, clientId));
   for (const id of madeUsers) {
@@ -200,6 +203,89 @@ describe('an edit of the newest line (regression-10)', () => {
     await markDeleted(managerId, [newest]);
     // The customer took the newest back: the older line is the question again.
     expect(await isNewestInbound(managerId, peer, older)).toBe(true);
+  });
+});
+
+describe('a stranger on the agent owner’s account (his Q18 ⭐, review fit-7)', () => {
+  const conv = async (peer: bigint) =>
+    (
+      await db
+        .select()
+        .from(agentConversations)
+        .where(and(eq(agentConversations.managerUserId, managerId), eq(agentConversations.peerId, peer)))
+    )[0];
+  const rule = async (peer: bigint) =>
+    (await db.select().from(tgChatRules).where(and(eq(tgChatRules.managerUserId, managerId), eq(tgChatRules.peerId, peer))))[0];
+
+  it('reads the two flags off the user gramjs hands over — and nothing off a group', () => {
+    const id = helpers.returnBigInt('42');
+    expect(strangerUserOf(new Api.User({ id, contact: true }))).toEqual({ contact: true, deleted: false });
+    expect(strangerUserOf(new Api.User({ id, mutualContact: true }))).toEqual({ contact: true, deleted: false });
+    expect(strangerUserOf(new Api.User({ id, deleted: true }))).toEqual({ contact: false, deleted: true });
+    expect(strangerUserOf(new Api.User({ id }))).toEqual({ contact: false, deleted: false });
+    expect(strangerUserOf(new Api.Chat({ id, title: 'g', photo: new Api.ChatPhotoEmpty(), participantsCount: 2, date: 1, version: 1 }))).toBeNull();
+    expect(strangerUserOf(undefined)).toBeNull();
+  });
+
+  it('a hidden number from a real non-contact gets a pending rule with no phone and no text — once', async () => {
+    const peer = next();
+    const user = { contact: false, deleted: false };
+    expect(await noteStranger({ managerUserId: managerId, peerId: peer, title: 'Anvar', verdict: 'no_phone', user })).toEqual({
+      contactStamped: true,
+      ruleAdded: true,
+    });
+    const r = await rule(peer);
+    expect(r).toMatchObject({ decision: 'pending', peerTitle: 'Anvar', peerPhone: null, clientId: null, leadId: null });
+    expect((await conv(peer))!.peerContact).toBe(false);
+    // Not a word of what he wrote.
+    expect(await db.select().from(tgMessages).where(eq(tgMessages.peerId, peer))).toHaveLength(0);
+    // The second line: nothing new, the rule as it was.
+    expect(await noteStranger({ managerUserId: managerId, peerId: peer, title: 'Anvar 2', verdict: 'no_phone', user })).toEqual({
+      contactStamped: false,
+      ruleAdded: false,
+    });
+    expect((await rule(peer))!.peerTitle).toBe('Anvar');
+  });
+
+  it('a rule somebody already decided is never touched', async () => {
+    const peer = next();
+    await db.insert(tgChatRules).values({ managerUserId: managerId, peerId: peer, decision: 'exclude', peerTitle: 'Do‘stim' });
+    const out = await noteStranger({
+      managerUserId: managerId,
+      peerId: peer,
+      title: 'Boshqa ism',
+      verdict: 'no_phone',
+      user: { contact: false, deleted: false },
+    });
+    expect(out.ruleAdded).toBe(false);
+    expect(await rule(peer)).toMatchObject({ decision: 'exclude', peerTitle: 'Do‘stim' });
+  });
+
+  it('a contact is stamped as one and gets no rule; a visible-phone stranger is stamped and left to the tray', async () => {
+    const friend = next();
+    expect(
+      await noteStranger({ managerUserId: managerId, peerId: friend, title: 'Do‘st', verdict: 'no_phone', user: { contact: true, deleted: false } }),
+    ).toEqual({ contactStamped: true, ruleAdded: false });
+    expect((await conv(friend))!.peerContact).toBe(true);
+    expect(await rule(friend)).toBeUndefined();
+
+    const asked = next();
+    expect(
+      await noteStranger({ managerUserId: managerId, peerId: asked, title: 'Yangi', verdict: 'ask', user: { contact: false, deleted: false } }),
+    ).toEqual({ contactStamped: true, ruleAdded: false });
+    expect((await conv(asked))!.peerContact).toBe(false);
+    // He saves the number later: the next line says so.
+    await noteStranger({ managerUserId: managerId, peerId: asked, title: 'Yangi', verdict: 'ask', user: { contact: true, deleted: false } });
+    expect((await conv(asked))!.peerContact).toBe(true);
+  });
+
+  it('a deleted account gets nothing at all', async () => {
+    const gone = next();
+    expect(
+      await noteStranger({ managerUserId: managerId, peerId: gone, title: 'Deleted Account', verdict: 'no_phone', user: { contact: false, deleted: true } }),
+    ).toEqual({ contactStamped: false, ruleAdded: false });
+    expect(await conv(gone)).toBeUndefined();
+    expect(await rule(gone)).toBeUndefined();
   });
 });
 

@@ -53,9 +53,9 @@ describe('the agent pump runs after the human rows (§17.8)', () => {
   it('only when no human row was claimed this tick', () => {
     const afterClaim = pump.slice(pump.indexOf('claimNext('));
     const noJob = afterClaim.slice(afterClaim.indexOf('if (!job) {'), afterClaim.indexOf('try {'));
-    expect(noJob).toContain('agentTick(');
+    expect(noJob).toContain('startAgentTick(');
     // …and never once a human reply is on its way out.
-    expect(afterClaim.slice(afterClaim.indexOf('try {'))).not.toContain('agentTick(');
+    expect(afterClaim.slice(afterClaim.indexOf('try {'))).not.toMatch(/[aA]gentTick\(/);
   });
 
   it('steps a row only through the pure step machine and the store', () => {
@@ -96,12 +96,113 @@ describe('the agent pump runs after the human rows (§17.8)', () => {
     const settle = source.slice(source.indexOf('const settleAgentOutcome = async'), source.indexOf('const pullTick = async'));
     const held = settle.slice(settle.indexOf('catch (err)'));
     expect(held).toContain('isDbUnreachable(message)');
-    expect(held).toContain('agentUnsettled = { row, outcome }');
+    expect(held).toContain('agentUnsettled = { row, outcome, at: opts.at }');
   });
 
   it('caughtUp turns true only when the start-up catch-up has run', () => {
     const at = source.indexOf('caughtUp = true');
     expect(at).toBeGreaterThan(source.indexOf('await catchUp()'));
+  });
+});
+
+/** One closure's body, from its declaration to the next one named. */
+const body = (from: string, to: string) => source.slice(source.indexOf(from), source.indexOf(to, source.indexOf(from)));
+
+describe('the send path’s review fixes, as wired', () => {
+  it('S1: the gate reads the guard row on EVERY tick — a «Tekshirdim» takes effect at the next one', () => {
+    const before = pump.slice(0, pump.indexOf('pumpGate('));
+    expect(before).toContain('await readGuard(account.id)');
+    // No memo between the row and the gate: the guard is read fresh each time the pump runs.
+    expect(source).not.toMatch(/let\s+\w*[gG]uard\w*\s*[:=]/);
+  });
+
+  it('S7: a held outcome is replayed with the instant Telegram first gave it', () => {
+    const settle = body('const settleAgentOutcome = async', 'const pullTick = async');
+    expect(settle).toContain('applyAgentOutcome(row, outcome, alarmAccount, opts.at)');
+    const tick = body('const agentTickBody = async', 'const crmReplied = async');
+    expect(tick).toContain('at: agentUnsettled.at');
+    // The pull's own flood is recorded at the instant it was seen, like every other.
+    const pull = body('const pullTick = async', 'const agentTick = async');
+    expect(pull).toMatch(/accountFlooded\(\s*alarmAccount,[\s\S]*?\bat,\s*\)/);
+  });
+
+  it('S8: while paused or switched off, the tick calls Telegram for nothing — no step, no pull, no badge', () => {
+    const refused = pump.slice(pump.indexOf('if (!gate.ok) {'), pump.indexOf('claimNext('));
+    expect(refused).toContain('startAgentTick({ pulls: false, telegram: false })');
+    const tick = body('const agentTickBody = async', 'const crmReplied = async');
+    // The badge only when Telegram may be called.
+    expect(tick.slice(0, tick.indexOf('badgesToRestore('))).toContain('if (telegram) {');
+    // The offline branch asks the verdict alone and returns before any step.
+    const offline = tick.slice(tick.indexOf('if (!opts.telegram) {'), tick.indexOf('runAgentStep('));
+    expect(offline).toContain('agentSendVerdict(');
+    expect(offline).toContain('return;');
+    expect(offline).not.toContain('restoreBadge(');
+    expect(offline).not.toContain('startPull(');
+    expect(tick).toContain('if (opts.pulls && telegram) startPull()');
+    // An outcome's owed badge waits for the clear rather than calling now.
+    const settle = body('const settleAgentOutcome = async', 'const pullTick = async');
+    expect(settle).toContain('if (report.markUnread && opts.telegram && !agentHeld())');
+  });
+
+  it('S9: a wait on the agent’s own read or cosmetic call holds the agent — the store’s clock, the pulls, the badges', () => {
+    const settle = body('const settleAgentOutcome = async', 'const pullTick = async');
+    expect(settle).toContain("outcome.kind === 'flooded' && !isSendFloodMethod(outcome.method)");
+    expect(settle.indexOf('agentHoldUntil = laterOf(')).toBeLessThan(settle.indexOf('applyAgentOutcome('));
+    expect(source).toContain('memoryFloodUntil: () => laterOf(floodWaitUntil, agentHoldUntil)');
+    const start = body('const startPull = () => {', 'const pullTick = async');
+    expect(start).toContain('agentHeld()');
+    const pull = body('const pullTick = async', 'const agentTick = async');
+    expect(pull).toContain('agentHoldUntil = laterOf(');
+  });
+
+  it('S10: every send to a chat goes through one slot that keeps the gap from the last SEND', () => {
+    const slot = body('const sendSlot = <T>', 'const rawAgentTg =');
+    expect(slot).toContain('lastSendAt + MIN_SEND_GAP_MS - Date.now()');
+    // Stamped after the call, thrown or not — a refused send was a call too.
+    expect(slot.indexOf('finally {')).toBeLessThan(slot.indexOf('lastSendAt = Date.now()'));
+    expect(slot).toContain('sendTail.then(run, run)');
+    // The agent's reply…
+    expect(source).toContain('send: (input) => sendSlot(() => rawAgentTg.send(input))');
+    // …and both of the human queue's sends.
+    expect(pump).toContain('sendSlot(() =>\n          client.sendFile(');
+    expect(pump).toContain('sendSlot(() => client.sendMessage(target');
+    expect(pump.match(/client\.send(?:Message|File)\(/g)).toHaveLength(2);
+    // The agent step machine never reaches the raw adapter.
+    const tick = body('const agentTickBody = async', 'const crmReplied = async');
+    expect(tick).toContain('tg: agentTg');
+    expect(tick).not.toContain('rawAgentTg');
+  });
+
+  it('S11: a failed catch-up is tried again, a bounded number of times, and stop() cancels the retry', () => {
+    const run = body('const runCatchUp = async', 'await runCatchUp();');
+    expect(run).toContain('await catchUp();');
+    expect(run.indexOf('await catchUp();')).toBeLessThan(run.indexOf('caughtUp = true'));
+    expect(run).toContain('catchUpAttempts < CATCHUP_ATTEMPTS');
+    expect(run).toContain('setTimeout(');
+    expect(run).toContain('void runCatchUp()');
+    const stop = body('const stop = async (', 'return stop;');
+    expect(stop).toContain('clearTimeout(catchUpRetry)');
+  });
+
+  it('S12: the agent’s tick runs beside the human pump, single-flight, never awaited inside it', () => {
+    expect(pump).not.toContain('await agentTick(');
+    expect(pump).not.toContain('await startAgentTick(');
+    const start = body('const startAgentTick = (', 'const crmReplied = async');
+    expect(start).toContain('if (agentTicking) return;');
+    expect(start).toContain('void agentTick(opts)');
+    expect(start).toContain('agentTicking = false');
+  });
+
+  it('S13: a stranger is noted only on the agent owner’s account, only for their own line, never with its text', () => {
+    const seen = body('const strangerSeen = async', 'const handleMessage = async');
+    expect(seen).toContain('if (out || !peer.user) return;');
+    expect(seen.indexOf('agentHere()')).toBeLessThan(seen.indexOf('noteStranger('));
+    expect(seen).not.toMatch(/msg\.|message:|body:/);
+    const handle = body('const handleMessage = async', 'const rethinkOnEdit = async');
+    expect(handle).toContain("strangerSeen(peer, msg.out === true, 'ask')");
+    expect(handle).toContain("if (verdict.reason === 'no_phone') await strangerSeen(peer, msg.out === true, 'no_phone')");
+    // The live line, a pull and the site sweep all carry the user's flags; nothing else reads them.
+    expect(source.match(/listenPeer\(await msg\.getChat\?\.\(\)\)/g)).toHaveLength(3);
   });
 });
 

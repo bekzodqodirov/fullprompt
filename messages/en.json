@@ -2632,6 +2632,7 @@
     "replyNeverWrote": "This client has not written to you — you may not message first.",
     "replyBridgeDown": "Telegram is not connected — the message will not go.",
     "replyRateLimited": "Too fast. Wait a minute.",
+    "replyAccountPaused": "Telegram has restricted this account — sending is stopped. Check the account in the Telegram app, then clear the pause in Conversations.",
     "replyNotYours": "This conversation is on another manager’s account — only they can reply.",
     "replyTooLong": "Message is too long.",
     "replyAttach": "Attach a photo",

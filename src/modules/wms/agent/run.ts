@@ -7,7 +7,7 @@ import { enqueue } from '../../platform/jobs/boss';
 import { logger } from '../../platform/logger';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import { canLogInSql } from '../../platform/users/login';
-import { readGuard } from '../crm/account-guard';
+import { listenerIsCurrent, readGuard } from '../crm/account-guard';
 import { agentRunning, agentTablesReady, readAgentConfig, type AgentConfig } from './config';
 import { loadContext, type AgentContext } from './context';
 import { eligibleForRun, type Ineligible } from './eligibility';
@@ -259,7 +259,8 @@ async function eligibilityFacts(ctx: AgentContext, config: AgentConfig, now: Dat
     now,
     agentOn: agentRunning(config),
     sessionConfirmed: config.sessionExclusiveAt !== null,
-    listenerCurrent: guard?.agentPumpAt ? now.getTime() - guard.agentPumpAt.getTime() < AGENT_LIMITS.pumpFreshMs : false,
+    // The ✅'s own predicate: a fresh pump AND a finished catch-up (review S11).
+    listenerCurrent: listenerIsCurrent(guard, now),
     accountPaused: guard?.pausedAt != null,
     privateUser: ctx.peerId > 0n,
     hasOwner: ctx.identity.clientId !== null || ctx.identity.leadId !== null,

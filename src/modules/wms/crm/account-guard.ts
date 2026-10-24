@@ -1,9 +1,10 @@
-import { and, count, eq, gte, isNotNull, sql } from 'drizzle-orm';
+import { and, count, eq, gte, inArray, isNotNull, sql } from 'drizzle-orm';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { db, type Db, type Tx } from '../../platform/db/client';
 import { tgAccountFloods, tgAccountGuard, tgAccounts } from '../../platform/db/schema';
 import { agentTablesReady } from '../agent/config';
-import { floodEnds, type PauseKind } from './telegram-guard';
+import { AGENT_LIMITS } from '../agent/limits';
+import { floodEnds, isSendFloodMethod, SEND_FLOOD_METHODS, type PauseKind } from './telegram-guard';
 
 /**
  * The account's guard row (0136): its pause, the wait Telegram ordered, and
@@ -65,9 +66,23 @@ export async function pauseAccount(accountId: string, kind: PauseKind, reason: s
 
 /**
  * A flood wait: always a ledger row; a RAISED one (gramjs did not sleep
- * through it) also moves `flood_until`, uncapped — the wait is Telegram's
- * terms of keeping the account, and `MAX_FLOOD_WAIT_S` shortening it was a
- * finding (map §3). Never earlier than a wait already in force.
+ * through it) on a SEND method also moves `flood_until`, uncapped — the wait
+ * is Telegram's terms of keeping the account, and `MAX_FLOOD_WAIT_S`
+ * shortening it was a finding (map §3). Never earlier than a wait already in
+ * force.
+ *
+ * Only a send method (review S9): `flood_until` is the clock that stops every
+ * person's CRM reply, and Telegram's waits are per method — a wait on the
+ * agent's GetHistory held the whole sales team's replies for an hour while
+ * SendMessage was free. A read's or a cosmetic call's wait stays in the
+ * ledger and holds the agent's own call alone (the row's clock, the
+ * listener's agent hold).
+ *
+ * One row per wait (S7): the caller's `now` IS the wait's instant, and the
+ * listener replays a held outcome with the instant it first saw — so a
+ * replay after a database blip lands on `tg_account_floods_once` and inserts
+ * nothing, and one FLOOD_WAIT never reads as the «two in 24 h» that switches
+ * the agent off.
  */
 export async function recordFlood(input: {
   accountId: string;
@@ -78,14 +93,18 @@ export async function recordFlood(input: {
 }): Promise<void> {
   if (!(await agentTablesReady())) return;
   const now = input.now ?? new Date();
-  await db.insert(tgAccountFloods).values({
-    accountId: input.accountId,
-    method: input.method.slice(0, 120),
-    seconds: Math.max(0, Math.round(input.seconds)),
-    source: input.source,
-    at: now,
-  });
-  if (input.source === 'raise') {
+  const method = input.method.slice(0, 120);
+  await db
+    .insert(tgAccountFloods)
+    .values({
+      accountId: input.accountId,
+      method,
+      seconds: Math.max(0, Math.round(input.seconds)),
+      source: input.source,
+      at: now,
+    })
+    .onConflictDoNothing({ target: [tgAccountFloods.accountId, tgAccountFloods.method, tgAccountFloods.at] });
+  if (input.source === 'raise' && isSendFloodMethod(method)) {
     const until = floodEnds(input.seconds, now).toISOString();
     await db.execute(sql`
       INSERT INTO tg_account_guard (account_id, flood_until, updated_at)
@@ -106,7 +125,7 @@ export async function sendFloodsSince(accountId: string, since: Date): Promise<n
       and(
         eq(tgAccountFloods.accountId, accountId),
         gte(tgAccountFloods.at, since),
-        sql`${tgAccountFloods.method} IN ('messages.SendMessage', 'SendMessage', 'messages.SendMedia', 'sendMessage', 'sendFile')`,
+        inArray(tgAccountFloods.method, [...SEND_FLOOD_METHODS]),
       ),
     );
   return Number(row?.n ?? 0);
@@ -122,6 +141,21 @@ export async function stampAgentPump(accountId: string, caughtUp: boolean): Prom
       SET agent_pump_at = now(),
           caught_up_at = CASE WHEN ${caughtUp} THEN coalesce(tg_account_guard.caught_up_at, now()) ELSE NULL END,
           updated_at = now()`);
+}
+
+/**
+ * Is a CURRENT listener running on this account — the one the app may hand an
+ * approved reply to (regression-3)? Two stamps, both written by the process
+ * holding the session: a fresh pump stamp («a pump that knows agent_outbox
+ * runs here») AND the catch-up stamp (review S11). The second is NULLed by a
+ * process's first stamp and set only when its start-up walk is done, so a
+ * listener whose catch-up failed is not current: a ✅ into it would only wait
+ * on `not_caught_up` until the six-hour expiry. One predicate for the ✅ and
+ * the run's own gate, so the two cannot disagree.
+ */
+export function listenerIsCurrent(guard: Pick<GuardState, 'agentPumpAt' | 'caughtUpAt'> | null, now: Date): boolean {
+  if (!guard?.agentPumpAt || !guard.caughtUpAt) return false;
+  return now.getTime() - guard.agentPumpAt.getTime() <= AGENT_LIMITS.pumpFreshMs;
 }
 
 /** The guard of the account a USER holds — what the web and the bot read. */

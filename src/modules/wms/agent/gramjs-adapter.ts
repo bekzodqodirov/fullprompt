@@ -39,6 +39,27 @@ interface RawMessageLike {
   id?: number;
   out?: boolean;
   message?: unknown;
+  media?: unknown;
+}
+
+/** Media classes that are not something the customer SENT: nothing, a link's own unfurl, a client too old to say. */
+const NOT_CONTENT = new Set(['MessageMediaEmpty', 'MessageMediaWebPage', 'MessageMediaUnsupported', 'MessageMediaDice']);
+
+/**
+ * Does this message carry something the customer sent (review S4)? A photo, a
+ * voice note, an audio, a file, a video, a place, a contact — each wants its
+ * own answer, and its text is '' so the text alone read it as a nudge. Not a
+ * sticker: it is the «👍» it stands for, and the listener keeps no file of it
+ * either (`tgMediaPlan`), so the stored check and the head agree.
+ */
+export function carriesContent(media: unknown): boolean {
+  const m = media as { className?: string; document?: { attributes?: { className?: string }[] } } | null | undefined;
+  if (!m || typeof m.className !== 'string' || NOT_CONTENT.has(m.className)) return false;
+  if (m.className === 'MessageMediaDocument') {
+    const attributes = Array.isArray(m.document?.attributes) ? m.document.attributes : [];
+    if (attributes.some((a) => a?.className === 'DocumentAttributeSticker')) return false;
+  }
+  return true;
 }
 
 interface RawUpdateLike {
@@ -93,7 +114,12 @@ export function agentTelegramOver(client: InvokingClient, gram: GramModule): Age
       const head: HeadMessage[] = [];
       for (const m of list) {
         if (m.className === 'MessageEmpty' || typeof m.id !== 'number') continue;
-        head.push({ id: BigInt(m.id), out: m.out === true, text: typeof m.message === 'string' ? m.message : '' });
+        head.push({
+          id: BigInt(m.id),
+          out: m.out === true,
+          text: typeof m.message === 'string' ? m.message : '',
+          media: carriesContent(m.media),
+        });
       }
       return head;
     },

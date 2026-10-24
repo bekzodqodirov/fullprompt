@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
+import { tgChatRules } from '../../platform/db/schema';
 import { agentTablesReady } from './config';
 
 /**
@@ -49,4 +50,82 @@ export async function isNewestInbound(managerUserId: string, peerId: bigint, tgM
      ORDER BY m.tg_message_id DESC
      LIMIT 1`);
   return rows[0]?.tg_message_id === tgMessageId.toString();
+}
+
+/** What the gramjs user says about itself — read off the chat a stranger's message came from. */
+export interface StrangerUser {
+  /** In his contacts (or mutually so): a friend or a colleague, never a lead (review fit-7). */
+  contact: boolean;
+  /** A deleted account: nobody is left to answer. */
+  deleted: boolean;
+}
+
+/** Pure: the two flags off a raw `User`, or null for anything that is not one (a group, a channel, nothing). */
+export function strangerUserOf(chat: unknown): StrangerUser | null {
+  const user = chat as
+    | { className?: string; contact?: unknown; mutualContact?: unknown; deleted?: unknown }
+    | null
+    | undefined;
+  if (!user || user.className !== 'User') return null;
+  return { contact: user.contact === true || user.mutualContact === true, deleted: user.deleted === true };
+}
+
+/**
+ * A stranger wrote to the agent owner's account (spec §17.11, his Q18 ⭐,
+ * review fit-7) — the listener's half of the stranger card; the card itself
+ * is the app's sweep.
+ *
+ *   (a) `agent_conversations.peer_contact`, from the user Telegram handed
+ *       over with the message: the sweep sends no card for a contact. A
+ *       contact is somebody he saved — a friend, a colleague, family — and a
+ *       «yangi lid?» about them is the machine asking about his private life.
+ *   (b) A HIDDEN number ('no_phone' — the tray had nothing to ask with) from
+ *       a real person who is not a contact gets the pending rule a phone
+ *       would have given it, with no phone and the name Telegram shows, so
+ *       the «📵 raqam yashirin» card has a rule to act on. ON CONFLICT DO
+ *       NOTHING: a rule somebody already decided is never touched, and a
+ *       pending one stays as it was. A pending rule decides nothing
+ *       (`classifyWithRules`), so the next line is the same `no_phone`.
+ *
+ * Nothing about the message is stored — no text, no row in tg_messages: the
+ * chat stays unkept until he answers the card (round 79's promise). The
+ * caller asks this only on the agent owner's account and only for an inbound
+ * line; a deleted account gets nothing. One migration behind, nothing at all.
+ */
+export async function noteStranger(input: {
+  managerUserId: string;
+  peerId: bigint;
+  title: string;
+  verdict: 'ask' | 'no_phone';
+  user: StrangerUser;
+}): Promise<{ contactStamped: boolean; ruleAdded: boolean }> {
+  const none = { contactStamped: false, ruleAdded: false };
+  if (input.user.deleted || input.peerId <= 0n) return none;
+  if (!(await agentTablesReady())) return none;
+  const m = sql`${input.managerUserId}::uuid`;
+  const p = sql`${input.peerId.toString()}::bigint`;
+  const stamped = await db.execute<{ peer_id: string }>(sql`
+    INSERT INTO agent_conversations (manager_user_id, peer_id, peer_contact, updated_at)
+    VALUES (${m}, ${p}, ${input.user.contact}, now())
+    ON CONFLICT (manager_user_id, peer_id) DO UPDATE
+      SET peer_contact = EXCLUDED.peer_contact, updated_at = now()
+      WHERE agent_conversations.peer_contact IS DISTINCT FROM EXCLUDED.peer_contact
+    RETURNING peer_id`);
+  let ruleAdded = false;
+  if (input.verdict === 'no_phone' && !input.user.contact) {
+    // Through the builder, not raw SQL: the rule's id is minted in JS (uuidv7), as every other writer mints it.
+    const added = await db
+      .insert(tgChatRules)
+      .values({
+        managerUserId: input.managerUserId,
+        peerId: input.peerId,
+        decision: 'pending',
+        peerTitle: input.title.slice(0, 200),
+        peerPhone: null,
+      })
+      .onConflictDoNothing({ target: [tgChatRules.managerUserId, tgChatRules.peerId] })
+      .returning({ id: tgChatRules.id });
+    ruleAdded = added.length > 0;
+  }
+  return { contactStamped: stamped.length > 0, ruleAdded };
 }

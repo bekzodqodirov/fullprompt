@@ -143,10 +143,16 @@ export async function accountRestricted(
 
 /**
  * A flood wait on this account — slept through by gramjs ('sleep') or raised
- * to the pump ('raise'). Always a ledger row; a raised one moves the guard's
- * `flood_until`, uncapped (`recordFlood`). Then «two send-path floods in
- * 24 h» (`sendFloodsSince` counts the send methods only) switches the agent
- * off — the person's own replies keep going, obeying every wait.
+ * to the pump ('raise'). Always a ledger row; a raised one on a SEND method
+ * moves the guard's `flood_until`, uncapped (`recordFlood`) — a wait on a
+ * read or a cosmetic call holds the agent's own calls and never a person's
+ * reply (review S9). Then «two send-path floods in 24 h» (`sendFloodsSince`
+ * counts the send methods only) switches the agent off — the person's own
+ * replies keep going, obeying every wait.
+ *
+ * `now` is the wait's own instant and the ledger's key: a caller replaying a
+ * held outcome passes the instant it first saw, and the replay records
+ * nothing twice (S7).
  */
 export async function accountFlooded(
   account: AlarmAccount,

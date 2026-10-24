@@ -17,14 +17,15 @@ import {
 } from '../../platform/db/schema';
 import { logger } from '../../platform/logger';
 import { getSetting } from '../../platform/settings/service';
-import { readGuard } from '../crm/account-guard';
+import { listenerIsCurrent, readGuard } from '../crm/account-guard';
 import { cardDigest } from './card';
 import { agentRunning, readAgentConfig } from './config';
 import { chatIdentity } from './context';
 import { AGENT_LIMITS } from './limits';
 import { zoneForOrigin } from './origin';
 import { ownerPolicyFor, policyFor } from './policy-input';
-import { releaseAt } from './send-step';
+import { keptFileSql } from './outbox-store';
+import { asksAnew, releaseAt } from './send-step';
 import { sendsToday } from './today';
 import { isNudge } from './worthy';
 import type { ComposedAction, DraftPolicyJson } from './types';
@@ -87,6 +88,15 @@ export function mintRandomId(): bigint {
   return v === 0n ? 1n : v;
 }
 
+/**
+ * Has the chat moved past the draft since it was written? Re-asked at the ✅
+ * from the stored rows; the pump asks the live head again before every step.
+ * A newer inbound counts by `asksAnew` — the head's own rule — so a photo, a
+ * voice note or a file the customer sent after the question supersedes the
+ * reply exactly as a typed question does (review S4); in the stored record a
+ * medium is a file this system KEPT (`keptFileSql`), which is also what tells
+ * a photo from a sticker here.
+ */
 async function chatMoved(d: typeof agentDrafts.$inferSelect): Promise<'superseded' | 'taken_over' | 'anchor_edited' | null> {
   const [anchor] = await db
     .select({ sentAt: tgMessages.sentAt, editedAt: tgMessages.editedAt })
@@ -95,7 +105,15 @@ async function chatMoved(d: typeof agentDrafts.$inferSelect): Promise<'supersede
   if (!anchor) return 'superseded';
   if (anchor.editedAt && (!d.anchorEditedAt || anchor.editedAt.getTime() > d.anchorEditedAt.getTime())) return 'anchor_edited';
   const newer = await db
-    .select({ id: tgMessages.id, direction: tgMessages.direction, body: tgMessages.body, tgMessageId: tgMessages.tgMessageId, deletedAt: tgMessageFlags.deletedAt })
+    .select({
+      id: tgMessages.id,
+      direction: tgMessages.direction,
+      body: tgMessages.body,
+      tgMessageId: tgMessages.tgMessageId,
+      deletedAt: tgMessageFlags.deletedAt,
+      // `${table}.id`, never `${tgMessages.id}`: inside the subquery an unqualified column binds to ITS table (#128).
+      kept: keptFileSql(sql`${tgMessages}.id`).mapWith(Boolean),
+    })
     .from(tgMessages)
     .leftJoin(tgMessageFlags, eq(tgMessageFlags.messageId, tgMessages.id))
     .where(and(eq(tgMessages.managerUserId, d.managerUserId), eq(tgMessages.peerId, d.peerId), gt(tgMessages.tgMessageId, d.anchorTgMessageId)));
@@ -109,7 +127,7 @@ async function chatMoved(d: typeof agentDrafts.$inferSelect): Promise<'supersede
     : [];
   const oursSet = new Set(ours.map((r) => String(r.id)));
   if (live.some((m) => m.direction === 'out' && !oursSet.has(String(m.tgMessageId)))) return 'taken_over';
-  if (live.some((m) => m.direction === 'in' && !isNudge(m.body ?? ''))) return 'superseded';
+  if (live.some((m) => m.direction === 'in' && asksAnew({ text: m.body ?? '', media: m.kept }, isNudge))) return 'superseded';
   return null;
 }
 
@@ -266,7 +284,9 @@ export async function decideDraft(
   const [acc] = await db.select({ id: tgAccounts.id }).from(tgAccounts).where(eq(tgAccounts.managerUserId, d.managerUserId));
   const guard = acc ? await readGuard(acc.id) : null;
   const now = new Date();
-  if (!guard?.agentPumpAt || now.getTime() - guard.agentPumpAt.getTime() > AGENT_LIMITS.pumpFreshMs) {
+  // A fresh pump AND a finished catch-up (review S11): a listener whose start-up walk failed would hold the
+  // row on `not_caught_up` until the six-hour expiry — refused here, in words, instead.
+  if (!listenerIsCurrent(guard, now)) {
     return { ok: false, code: 'listener_behind' };
   }
 
@@ -349,6 +369,8 @@ export async function decideDraft(
       queuedBy: actor.id,
       queuedAt: now,
       nextStepAt: sendAt,
+      // The night held it (his Q14 ⭐): the approval's age counts from the morning it was promised for (S2).
+      releaseAt: sendAt.getTime() > now.getTime() ? sendAt : null,
     });
     if (requestId) {
       await tx

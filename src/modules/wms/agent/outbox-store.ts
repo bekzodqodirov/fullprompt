@@ -9,7 +9,7 @@ import { recordSent } from '../crm/outbox';
 import { floodEnds } from '../crm/telegram-guard';
 import { agentRunning, readAgentConfig } from './config';
 import { AGENT_LIMITS, dailySendCeiling, sendJitterMs } from './limits';
-import type { AgentOutboxRow, AgentStepStore, SendFacts, StepOutcome } from './send-step';
+import { asksAnew, type AgentOutboxRow, type AgentStepStore, type SendFacts, type StepOutcome } from './send-step';
 import { offerStandsFor, onAgentOutboxSettled } from './settle-hooks';
 import { isNudge } from './worthy';
 
@@ -45,6 +45,7 @@ function toRow(r: OutboxSelect): AgentOutboxRow {
     typingCount: r.typingCount,
     readDone: r.readDone,
     queuedAt: r.queuedAt,
+    releaseAt: r.releaseAt,
   };
 }
 
@@ -98,12 +99,28 @@ export async function dueAgentRow(managerUserId: string, now: Date): Promise<Age
 const msOf = (column: SQL) => sql`(extract(epoch FROM ${column}) * 1000)::float8`;
 const dateOf = (ms: number | null): Date | null => (ms === null ? null : new Date(ms));
 
+/**
+ * A file this system KEPT from the message — the stored record's «it carries a
+ * medium» for `asksAnew` (review S4), asked by the send's stored check and by
+ * the ✅'s own re-check (`chatMoved`). Not `has_media`: that is true of a
+ * sticker and of a link's preview too, neither of which the live head counts
+ * as media — and a stored check wider than the head would cancel what the
+ * head lets through. A photo whose bytes are still downloading reads as none
+ * for a moment; the live head, read again before the read and before the
+ * send, sees it.
+ */
+export function keptFileSql(messageId: SQL): SQL<boolean> {
+  return sql<boolean>`EXISTS (
+    SELECT 1 FROM attachments k WHERE k.entity_type = 'tg_message' AND k.entity_id = ${messageId})`;
+}
+
 type ChatFactsRow = {
   anchor_sent_ms: number | null;
   anchor_deleted: boolean;
   anchor_edited: boolean;
   human_replied: boolean;
   peer_has_written: boolean;
+  last_inbound_ms: number | null;
   muted: boolean;
   excluded: boolean;
   newest_client_id: string | null;
@@ -130,7 +147,13 @@ type ChatFactsRow = {
  *                   «any peer of the client» is null for a lead and too wide
  *                   for a client;
  *   newest        — the chat's newest stored row's owner (leak-4);
- *   caps          — AI sends only, the Tashkent day and the last hour.
+ *   last_inbound  — when the customer last wrote, for the night rule (S3);
+ *   caps          — AI sends only, the Tashkent day and the last hour —
+ *                   every row handed to Telegram: 'sent', and 'unknown'
+ *                   (S5: perhaps delivered, and a fuse that cannot see it
+ *                   lets the next reply go as if it were not), each on the
+ *                   moment it left (`sent_at`, else the claim before the
+ *                   send).
  */
 async function chatFacts(row: AgentOutboxRow, now: Date): Promise<ChatFactsRow> {
   const m = sql`${row.managerUserId}::uuid`;
@@ -156,6 +179,9 @@ async function chatFacts(row: AgentOutboxRow, now: Date): Promise<ChatFactsRow> 
         SELECT 1 FROM tg_messages i
          WHERE i.manager_user_id = ${m} AND i.peer_id = ${p} AND i.direction = 'in'
       ) AS peer_has_written,
+      ${msOf(sql`(
+        SELECT max(li.sent_at) FROM tg_messages li
+         WHERE li.manager_user_id = ${m} AND li.peer_id = ${p} AND li.direction = 'in')`)} AS last_inbound_ms,
       EXISTS (
         SELECT 1 FROM agent_conversations c
          WHERE c.manager_user_id = ${m} AND c.peer_id = ${p} AND c.muted_at IS NOT NULL
@@ -182,26 +208,29 @@ async function chatFacts(row: AgentOutboxRow, now: Date): Promise<ChatFactsRow> 
        LIMIT 1
     ) nw ON true
     CROSS JOIN LATERAL (
-      SELECT count(*) FILTER (WHERE s.peer_id = ${p} AND s.sent_at >= ${dayStart})::int AS chat_today,
-             count(*) FILTER (WHERE s.sent_at >= ${hourAgo})::int AS last_hour,
-             count(*) FILTER (WHERE s.sent_at >= ${dayStart})::int AS today,
-             max(s.sent_at) FILTER (WHERE s.peer_id = ${p}) AS last_chat,
-             max(s.sent_at) AS last_account
-        FROM agent_outbox s
-       WHERE s.manager_user_id = ${m} AND s.status = 'sent'
-         AND s.sent_at >= least(${dayStart}, ${hourAgo})
+      SELECT count(*) FILTER (WHERE s.peer_id = ${p} AND s.at >= ${dayStart})::int AS chat_today,
+             count(*) FILTER (WHERE s.at >= ${hourAgo})::int AS last_hour,
+             count(*) FILTER (WHERE s.at >= ${dayStart})::int AS today,
+             max(s.at) FILTER (WHERE s.peer_id = ${p}) AS last_chat,
+             max(s.at) AS last_account
+        FROM (
+          SELECT x.peer_id, coalesce(x.sent_at, x.step_claimed_at) AS at FROM agent_outbox x
+           WHERE x.manager_user_id = ${m} AND x.status IN ('sent', 'unknown')
+        ) s
+       WHERE s.at >= least(${dayStart}, ${hourAgo})
     ) caps`);
   return rows[0]!;
 }
 
 /**
  * Does the customer's newer line want its OWN answer? «??», «alo» and a
- * closing token do not (`isNudge`, the same predicate the live head asks), a
- * new question does — and a line the customer deleted asks nothing.
+ * closing token do not, a new question does, and so does a photo, a voice
+ * note or a file (`asksAnew`, the rule the live head asks — S4) — and a line
+ * the customer deleted asks nothing.
  */
 async function newerSubstantiveInbound(row: AgentOutboxRow): Promise<boolean> {
-  const rows = await db.execute<{ body: string | null }>(sql`
-    SELECT i.body FROM tg_messages i
+  const rows = await db.execute<{ body: string | null; kept: boolean }>(sql`
+    SELECT i.body, ${keptFileSql(sql`i.id`)} AS kept FROM tg_messages i
       LEFT JOIN tg_message_flags f ON f.message_id = i.id
      WHERE i.manager_user_id = ${row.managerUserId}::uuid
        AND i.peer_id = ${row.peerId.toString()}::bigint
@@ -210,7 +239,7 @@ async function newerSubstantiveInbound(row: AgentOutboxRow): Promise<boolean> {
        AND f.deleted_at IS NULL
      ORDER BY i.tg_message_id
      LIMIT 50`);
-  return rows.some((r) => !isNudge(r.body ?? ''));
+  return rows.some((r) => asksAnew({ text: r.body ?? '', media: r.kept === true }, isNudge));
 }
 
 /**
@@ -289,6 +318,7 @@ export async function sendFactsFor(row: AgentOutboxRow, now: Date, ctx: StoreCon
     humanReplied: chat.human_replied,
     newerSubstantiveInbound: substantive,
     peerHasWritten: chat.peer_has_written,
+    lastInboundAt: dateOf(chat.last_inbound_ms),
     conversationMuted: chat.muted,
     ruleExcluded: chat.excluded,
     identityChanged,
@@ -396,9 +426,11 @@ export async function applyAgentOutcome(
       return quiet;
     }
     case 'wait': {
+      // A night hold moves the approval's own clock with it (S2, S3): the reply waits for the morning it is
+      // now promised for, and its six hours count from there.
       await db
         .update(agentOutbox)
-        .set({ nextStepAt: outcome.nextStepAt })
+        .set({ nextStepAt: outcome.nextStepAt, ...(outcome.reason === 'night' ? { releaseAt: outcome.nextStepAt } : {}) })
         .where(and(eq(agentOutbox.id, row.id), eq(agentOutbox.status, 'agent')));
       return quiet;
     }

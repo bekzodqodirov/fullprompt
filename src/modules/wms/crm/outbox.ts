@@ -4,6 +4,7 @@ import { attachments, tgAccounts, tgMessages, tgOutbox, users } from '../../plat
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { getSetting } from '../../platform/settings/service';
 import { getStorage } from '../../platform/files/storage';
+import { readGuard } from './account-guard';
 import { bridgeState } from './telegram-live';
 import { readGuard } from './account-guard';
 import { storeIncoming } from './telegram-accounts';
@@ -14,6 +15,7 @@ import {
   captionTooLong,
   DEFAULT_LIMITS,
   type SendContext,
+  type SendRefusal,
   type SendVerdict,
 } from './telegram-send';
 
@@ -95,6 +97,62 @@ export async function conversationManagers(clientId: string): Promise<string[]> 
     .innerJoin(users, eq(tgMessages.managerUserId, users.id))
     .where(eq(tgMessages.clientId, clientId));
   return rows.map((r) => r.name);
+}
+
+/**
+ * Is this account HELD — paused by a restriction (`tg_account_guard`, review
+ * ban-1), or under a send-path wait Telegram ordered? The listener's pump
+ * reads the same row before every claim and claims nothing while either
+ * stands, so a reply queued now would sit «navbatda» until a person presses
+ * «Tekshirdim» — which is the reply the composer must refuse in words
+ * instead (review S1). A database one migration behind has no guard row, and
+ * the answer is today's: nothing held.
+ */
+export async function accountHold(
+  managerUserId: string,
+  now: Date = new Date(),
+): Promise<{ reason: 'account_paused' } | { reason: 'flood_wait'; until: Date } | null> {
+  const [account] = await db
+    .select({ id: tgAccounts.id })
+    .from(tgAccounts)
+    .where(eq(tgAccounts.managerUserId, managerUserId))
+    .limit(1);
+  if (!account) return null;
+  const guard = await readGuard(account.id);
+  if (guard.pausedAt) return { reason: 'account_paused' };
+  if (guard.floodUntil && guard.floodUntil.getTime() > now.getTime()) {
+    return { reason: 'flood_wait', until: guard.floodUntil };
+  }
+  return null;
+}
+
+/** Everything a reply may be refused for at queue time — `canQueue`'s, and the account's own pause. */
+export type ReplyRefusal = SendRefusal | 'account_paused';
+export type ReplyVerdict = { ok: true } | { ok: false; reason: ReplyRefusal };
+
+/**
+ * May a reply be QUEUED in this chat, now? `canQueue`, and then the
+ * account's own hold (S1) — one answer for the door (`queueReply`), the
+ * thread's ↩ (`canReplyNow`) and every composer that asks.
+ *
+ * The order is the reader's: an empty box, the company switch and «never
+ * wrote first» say what is wrong with THIS reply and come first; then the
+ * hold, because «your account is paused, check Telegram» is the sentence a
+ * manager can act on and «too fast, wait a minute» is not. The flood wait
+ * keeps `canQueue`'s own word, `flood_wait`, which every composer already
+ * puts into words.
+ */
+export async function replyVerdict(
+  input: { clientId: string; managerUserId: string; peerId: bigint | null; now?: Date },
+  body = 'x',
+  hasAttachment = false,
+): Promise<ReplyVerdict> {
+  const now = input.now ?? new Date();
+  const [ctx, hold] = await Promise.all([sendContextFor({ ...input, now }), accountHold(input.managerUserId, now)]);
+  const verdict = canQueue(body, ctx, DEFAULT_LIMITS, hasAttachment);
+  if (!verdict.ok && ['empty', 'sending_disabled', 'never_wrote_first'].includes(verdict.reason)) return verdict;
+  if (hold) return { ok: false, reason: hold.reason };
+  return verdict;
 }
 
 const minuteAgo = (now: Date) => new Date(now.getTime() - 60_000);
@@ -235,12 +293,13 @@ export async function queueReply(
   const peerId = await peerForClient(input.clientId, input.managerUserId);
   if (peerId === null) throw new OutboxError('never_wrote_first');
 
-  const sendCtx = await sendContextFor({
-    clientId: input.clientId,
-    managerUserId: input.managerUserId,
-    peerId,
-  });
-  const verdict = canQueue(body, sendCtx, DEFAULT_LIMITS, attachmentId !== null);
+  // The account's own pause and Telegram's wait as well as `canQueue` (S1): a
+  // reply the listener will not claim is refused here, never left «navbatda».
+  const verdict = await replyVerdict(
+    { clientId: input.clientId, managerUserId: input.managerUserId, peerId },
+    body,
+    attachmentId !== null,
+  );
   if (!verdict.ok) throw new OutboxError(verdict.reason);
 
   const [row] = await db
@@ -376,14 +435,11 @@ export async function cancelQueued(id: string, ctx: AuditContext): Promise<void>
 export async function canReplyNow(clientId: string, actorId: string): Promise<boolean> {
   const account = await replyAccountFor(clientId, actorId);
   if (!account) return false;
-  const verdict = canQueue(
-    'x',
-    await sendContextFor({
-      clientId,
-      managerUserId: account.managerUserId,
-      peerId: account.peerId,
-    }),
-  );
+  const verdict = await replyVerdict({
+    clientId,
+    managerUserId: account.managerUserId,
+    peerId: account.peerId,
+  });
   return verdict.ok;
 }
 

@@ -1,6 +1,6 @@
 import { Api, helpers } from 'telegram';
 import { describe, expect, it } from 'vitest';
-import { agentTelegramOver, sentMessageId } from '@/modules/wms/agent/gramjs-adapter';
+import { agentTelegramOver, carriesContent, sentMessageId } from '@/modules/wms/agent/gramjs-adapter';
 
 /**
  * The agent's Telegram calls, over a fake client that records every request
@@ -36,13 +36,53 @@ describe('the agent adapter', () => {
     const tg = agentTelegramOver(client, { Api, helpers });
     const head = await tg.history(PEER, 3);
     expect(head).toEqual([
-      { id: 52n, out: false, text: 'Narxi?' },
-      { id: 50n, out: true, text: 'Salom' },
+      { id: 52n, out: false, text: 'Narxi?', media: false },
+      { id: 50n, out: true, text: 'Salom', media: false },
     ]);
     const req = calls[0] as Api.messages.GetHistory;
     expect(req.className).toBe('messages.GetHistory');
     expect(req.limit).toBe(3);
     expect(String(req.peer)).toBe(PEER.toString());
+  });
+
+  it('marks a line that carries something the customer SENT — a photo, a voice note, a file — and not a sticker (S4)', async () => {
+    const user = new Api.PeerUser({ userId: helpers.returnBigInt(PEER.toString()) });
+    const doc = (attributes: Api.TypeDocumentAttribute[]) =>
+      new Api.MessageMediaDocument({
+        document: new Api.Document({
+          id: helpers.returnBigInt('1'),
+          accessHash: helpers.returnBigInt('1'),
+          fileReference: Buffer.from(''),
+          date: 1,
+          mimeType: 'audio/ogg',
+          size: helpers.returnBigInt('100'),
+          dcId: 2,
+          attributes,
+        }),
+      });
+    const photo = new Api.MessageMediaPhoto({});
+    const voice = doc([new Api.DocumentAttributeAudio({ duration: 3, voice: true })]);
+    const sticker = doc([
+      new Api.DocumentAttributeSticker({ alt: '👍', stickerset: new Api.InputStickerSetEmpty() }),
+    ]);
+    const { client } = recorder(() => ({
+      messages: [
+        new Api.Message({ id: 55, peerId: user, date: 1, message: '', media: sticker }),
+        new Api.Message({ id: 54, peerId: user, date: 1, message: '', media: voice }),
+        new Api.Message({ id: 53, peerId: user, date: 1, message: '', media: photo }),
+        new Api.Message({ id: 52, peerId: user, date: 1, message: 'https://x.uz', media: new Api.MessageMediaWebPage({ webpage: new Api.WebPageEmpty({ id: helpers.returnBigInt('1') }) }) }),
+      ],
+    }));
+    const head = await agentTelegramOver(client, { Api, helpers }).history(PEER, 4);
+    expect(head.map((m) => [m.id, m.media])).toEqual([
+      [55n, false],
+      [54n, true],
+      [53n, true],
+      [52n, false],
+    ]);
+    expect(carriesContent(undefined)).toBe(false);
+    expect(carriesContent(new Api.MessageMediaEmpty())).toBe(false);
+    expect(carriesContent(new Api.MessageMediaGeo({ geo: new Api.GeoPointEmpty() }))).toBe(true);
   });
 
   it('reads exactly up to the anchor with ReadHistory — not the whole dialog', async () => {

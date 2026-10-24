@@ -20,6 +20,7 @@ import {
   agentConversations,
   agentDrafts,
   agentOutbox,
+  attachments,
   clients,
   leads,
   leadStages,
@@ -46,7 +47,7 @@ import {
 } from '@/modules/wms/agent/outbox-store';
 import type { AgentOutboxRow, StepOutcome } from '@/modules/wms/agent/send-step';
 import type { AlarmAccount } from '@/modules/wms/crm/account-alarm';
-import { readGuard } from '@/modules/wms/crm/account-guard';
+import { readGuard, recordFlood } from '@/modules/wms/crm/account-guard';
 import { clientHasWritten, recordSent } from '@/modules/wms/crm/outbox';
 import { tgErrorKind } from '@/modules/wms/crm/telegram-guard';
 import { Api } from 'telegram';
@@ -72,6 +73,7 @@ const startedAt = new Date();
 
 const madeUsers: string[] = [];
 const madeAccounts: string[] = [];
+const madeFiles: string[] = [];
 let managerId: string;
 let account: AlarmAccount;
 let clientId: string;
@@ -118,6 +120,7 @@ async function message(input: {
   client?: string | null;
   lead?: string | null;
   sentAt?: Date;
+  hasMedia?: boolean;
 }): Promise<string> {
   const [row] = await db
     .insert(tgMessages)
@@ -128,11 +131,30 @@ async function message(input: {
       peerId: input.peer,
       tgMessageId: input.id,
       direction: input.direction,
-      body: input.body ?? 'Salom, yukim qayerda?',
+      body: input.body === undefined ? 'Salom, yukim qayerda?' : input.body,
+      hasMedia: input.hasMedia ?? false,
       sentAt: input.sentAt ?? new Date(),
     })
     .returning({ id: tgMessages.id });
   return row!.id;
+}
+
+/** The file the listener keeps from a photo, a voice note, a document — pinned to its message row. */
+async function keptFile(messageRowId: string): Promise<void> {
+  const [file] = await db
+    .insert(attachments)
+    .values({
+      entityType: 'tg_message',
+      entityId: messageRowId,
+      kind: 'photo',
+      storageKey: `agent-outbox-test/${STAMP}/${messageRowId}`,
+      fileName: 'photo.jpg',
+      contentType: 'image/jpeg',
+      sizeBytes: 10,
+      uploadedBy: managerId,
+    })
+    .returning({ id: attachments.id });
+  madeFiles.push(file!.id);
 }
 
 /** A chat with its anchor stored, a draft, and an approved reply waiting on the pump. */
@@ -143,10 +165,11 @@ async function approved(input: {
   client?: string | null;
   lead?: string | null;
   storeAnchor?: boolean;
-  status?: 'agent' | 'sending' | 'sent';
+  status?: 'agent' | 'sending' | 'sent' | 'unknown';
   step?: 'verify' | 'read' | 'typing' | 'send';
   nextStepAt?: Date;
   sentAt?: Date;
+  stepClaimedAt?: Date;
   readDone?: boolean;
 }): Promise<{ row: AgentOutboxRow; peer: bigint; anchor: bigint; anchorRowId: string | null; draftId: string }> {
   const manager = input.manager ?? managerId;
@@ -178,6 +201,7 @@ async function approved(input: {
       readDone: input.readDone ?? false,
       queuedBy: manager,
       sentAt: status === 'sent' ? (input.sentAt ?? new Date()) : null,
+      stepClaimedAt: input.stepClaimedAt ?? null,
     })
     .returning({ id: agentOutbox.id });
   return { row: (await agentRowById(out!.id))!, peer, anchor, anchorRowId, draftId: draft!.id };
@@ -234,6 +258,7 @@ afterAll(async () => {
         gte(notifications.createdAt, startedAt),
       ),
     );
+  if (madeFiles.length) await db.delete(attachments).where(inArray(attachments.id, madeFiles));
   if (madeUsers.length) {
     await db.delete(notifications).where(inArray(notifications.userId, madeUsers));
     await db.delete(agentOutbox).where(inArray(agentOutbox.managerUserId, madeUsers));
@@ -639,6 +664,90 @@ describe('which row the pump steps', () => {
     await claimAgentSend(row.id);
     expect(await recoverAgentInFlight(own.userId)).toEqual([row.id]);
     expect((await agentRowById(row.id))?.status).toBe('unknown');
+  });
+});
+
+describe('the send path’s review fixes', () => {
+  it('a kept photo after the question supersedes the reply; a sticker (no file kept) does not (S4)', async () => {
+    const { row, peer, anchor } = await approved({});
+    // A sticker: has_media, no text, and the listener keeps no file of it.
+    await message({ peer, id: anchor + 1n, direction: 'in', body: null, hasMedia: true });
+    expect((await sendFactsFor(row, new Date(), ctx(account.id))).newerSubstantiveInbound).toBe(false);
+    // A photo with no caption: its file is kept — it wants its own answer.
+    const photo = await message({ peer, id: anchor + 2n, direction: 'in', body: null, hasMedia: true });
+    await keptFile(photo);
+    expect((await sendFactsFor(row, new Date(), ctx(account.id))).newerSubstantiveInbound).toBe(true);
+  });
+
+  it('the caps and the gaps see a reply that may have been delivered — «unknown» on its claim (S5)', async () => {
+    const own = await makeManager('unknown-caps');
+    const now = new Date('2025-04-10T10:00:00Z'); // 15:00 Tashkent
+    const peer = next();
+    const { row } = await approved({ manager: own.userId, peer });
+    const claimed = new Date(now.getTime() - 8 * 60_000);
+    await approved({ manager: own.userId, peer, storeAnchor: false, status: 'unknown', stepClaimedAt: claimed });
+    const f = await sendFactsFor(row, now, ctx(own.account.id));
+    expect(f.sentToChatToday).toBe(1);
+    expect(f.sentLastHour).toBe(1);
+    expect(f.sentToday).toBe(1);
+    expect(f.lastChatSendAt?.getTime()).toBe(claimed.getTime());
+    expect(f.lastAccountSendAt?.getTime()).toBe(claimed.getTime());
+  });
+
+  it('the night rule reads when the customer last wrote (S3)', async () => {
+    const { row, peer, anchor } = await approved({});
+    // The anchor was stored a moment ago; the customer's «??» after it is the newest line, our reply is not his.
+    const later = new Date(Date.now() + 2_000);
+    await message({ peer, id: anchor + 1n, direction: 'in', body: '??', sentAt: later });
+    await message({ peer, id: anchor + 2n, direction: 'out', body: 'javob', sentAt: new Date(Date.now() + 4_000) });
+    expect((await sendFactsFor(row, new Date(), ctx(account.id))).lastInboundAt?.getTime()).toBe(later.getTime());
+  });
+
+  it('a night wait carries the approval’s clock to the morning; any other wait leaves it (S2, S3)', async () => {
+    const { row } = await approved({});
+    const morning = new Date(Date.now() + 9 * 3_600_000);
+    await applyAgentOutcome(row, { kind: 'wait', reason: 'chat_gap', nextStepAt: new Date(Date.now() + 20_000) }, account);
+    expect((await agentRowById(row.id))?.releaseAt).toBeNull();
+    await applyAgentOutcome(row, { kind: 'wait', reason: 'night', nextStepAt: morning }, account);
+    const after = await agentRowById(row.id);
+    expect(after?.releaseAt?.getTime()).toBe(morning.getTime());
+    expect(after?.nextStepAt.getTime()).toBe(morning.getTime());
+  });
+
+  it('a flood replayed after a database blip is one wait, never the two that switch the agent off (S7)', async () => {
+    const own = await makeManager('flood-replay');
+    await agentOn(own.userId);
+    try {
+      const { row } = await approved({ manager: own.userId, step: 'send' });
+      await claimAgentSend(row.id);
+      const at = new Date();
+      const outcome: StepOutcome = { kind: 'flooded', seconds: 40, method: 'messages.SendMessage' };
+      await applyAgentOutcome(row, outcome, own.account, at);
+      // The listener held the outcome (the db blinked after Telegram answered) and applies it again, same instant.
+      await applyAgentOutcome(row, outcome, own.account, at);
+      const floods = await db.select().from(tgAccountFloods).where(eq(tgAccountFloods.accountId, own.account.id));
+      expect(floods).toHaveLength(1);
+      expect((await readAgentConfig())?.mode, 'one wait is not two').toBe('shadow');
+    } finally {
+      await agentOff();
+    }
+  });
+
+  it('a wait on a READ holds the agent’s row, never a person’s reply: flood_until moves for a send method only (S9)', async () => {
+    const own = await makeManager('read-flood');
+    const { row } = await approved({ manager: own.userId, step: 'verify' });
+    const before = Date.now();
+    await applyAgentOutcome(row, { kind: 'flooded', seconds: 3600, method: 'messages.GetHistory' }, own.account);
+    // The row waits Telegram's full wait…
+    expect((await agentRowById(row.id))!.nextStepAt.getTime()).toBeGreaterThanOrEqual(before + 3600_000);
+    // …the ledger has it, and the account's clock — the one that stops CRM replies — does not move.
+    const floods = await db.select().from(tgAccountFloods).where(eq(tgAccountFloods.accountId, own.account.id));
+    expect(floods.map((f) => f.method)).toEqual(['messages.GetHistory']);
+    expect((await readGuard(own.account.id)).floodUntil).toBeNull();
+    await recordFlood({ accountId: own.account.id, method: 'messages.SetTyping', seconds: 600, source: 'raise' });
+    expect((await readGuard(own.account.id)).floodUntil).toBeNull();
+    await recordFlood({ accountId: own.account.id, method: 'messages.SendMessage', seconds: 600, source: 'raise' });
+    expect((await readGuard(own.account.id)).floodUntil!.getTime()).toBeGreaterThan(Date.now() + 590_000);
   });
 });
 

@@ -10,6 +10,7 @@ import {
   nextTashkentMorning,
   releaseAt,
   runAgentStep,
+  verdictOutcome,
   type AgentOutboxRow,
   type AgentTelegram,
   type SendFacts,
@@ -47,6 +48,7 @@ const facts: SendFacts = {
   humanReplied: false,
   newerSubstantiveInbound: false,
   peerHasWritten: true,
+  lastInboundAt: new Date(now.getTime() - 10 * 60_000),
   conversationMuted: false,
   ruleExcluded: false,
   identityChanged: false,
@@ -77,6 +79,7 @@ const row: AgentOutboxRow = {
   typingCount: 0,
   readDone: false,
   queuedAt: new Date(now.getTime() - 60_000),
+  releaseAt: null,
 };
 
 describe('the fuses (ban-11)', () => {
@@ -136,6 +139,62 @@ describe('agentSendVerdict', () => {
     });
   });
 
+  it('a night-held approval counts its six hours from the morning it was promised for (S2)', () => {
+    // Approved at 23:00 Tashkent, held to 08:30, stepped at 09:00: 10 h after the press, 30 min after the release.
+    const morning = new Date('2026-10-25T04:00:00Z'); // 09:00 Tashkent
+    const held = {
+      ...row,
+      queuedAt: new Date('2026-10-24T18:00:00Z'), // 23:00
+      releaseAt: new Date('2026-10-25T03:30:00Z'), // 08:30
+    };
+    const f = { ...facts, now: morning, anchorSentAt: new Date('2026-10-24T13:00:00Z'), lastInboundAt: null };
+    expect(agentSendVerdict(held, f)).toEqual({ ok: true });
+    // The same press with no hold recorded is the bug: cancelled at the 08:30 it was promised for.
+    expect(agentSendVerdict({ ...held, releaseAt: null }, f)).toMatchObject({ final: true, reason: 'approval_too_old' });
+    // Six hours past the morning is too old again.
+    expect(agentSendVerdict(held, { ...f, now: new Date('2026-10-25T09:31:00Z') })).toMatchObject({
+      final: true,
+      reason: 'approval_too_old',
+    });
+  });
+
+  it('the night rule holds a row a wait carried past 22:00 — unless the customer wrote within two hours (S3)', () => {
+    const night = new Date('2026-10-24T18:00:00Z'); // 23:00 Tashkent
+    const late = { ...row, queuedAt: new Date(night.getTime() - 60 * 60_000) }; // approved 22:00 by a flood's delay
+    const f = { ...facts, now: night, anchorSentAt: new Date(night.getTime() - 3 * 3_600_000) };
+    // He wrote three hours ago: a reply at 23:00 would wake him — 08:30 instead.
+    expect(agentSendVerdict(late, { ...f, lastInboundAt: new Date(night.getTime() - 3 * 3_600_000) })).toEqual({
+      ok: false,
+      final: false,
+      reason: 'night',
+      until: new Date('2026-10-25T03:30:00Z'),
+    });
+    expect(agentSendVerdict(late, { ...f, lastInboundAt: null })).toMatchObject({ final: false, reason: 'night' });
+    // Thirty minutes ago: he is awake and waiting.
+    expect(agentSendVerdict(late, { ...f, lastInboundAt: new Date(night.getTime() - 30 * 60_000) })).toEqual({ ok: true });
+    // Already read and typing on his phone: finishing is the less strange of the two.
+    expect(
+      agentSendVerdict({ ...late, readDone: true }, { ...f, lastInboundAt: new Date(night.getTime() - 3 * 3_600_000) }),
+    ).toEqual({ ok: true });
+    // By day the rule says nothing.
+    expect(agentSendVerdict(row, { ...facts, lastInboundAt: new Date(now.getTime() - 5 * 3_600_000) })).toEqual({ ok: true });
+  });
+
+  it('a verdict becomes the outcome the store writes', () => {
+    expect(verdictOutcome(row, { ok: true })).toBeNull();
+    expect(verdictOutcome({ readDone: true }, { ok: false, final: true, reason: 'account_paused' })).toEqual({
+      kind: 'cancel',
+      reason: 'account_paused',
+      markUnread: true,
+    });
+    const until = new Date(now.getTime() + 60_000);
+    expect(verdictOutcome(row, { ok: false, final: false, reason: 'night', until })).toEqual({
+      kind: 'wait',
+      nextStepAt: until,
+      reason: 'night',
+    });
+  });
+
   it('waits — never cancels — for a flood, the catch-up, the gaps and the caps', () => {
     const flood = new Date(now.getTime() + 30_000);
     expect(agentSendVerdict(row, { ...facts, floodUntil: flood })).toEqual({
@@ -163,7 +222,8 @@ describe('agentSendVerdict', () => {
 });
 
 describe('the live head (ban-3)', () => {
-  const head = (msgs: [bigint, boolean, string][]) => msgs.map(([id, out, text]) => ({ id, out, text }));
+  const head = (msgs: [bigint, boolean, string, boolean?][]) =>
+    msgs.map(([id, out, text, media]) => ({ id, out, text, media: media ?? false }));
 
   it('passes when nothing newer than the anchor, or only a nudge', () => {
     expect(liveHeadVerdict(head([[50n, false, 'yukim?']]), 50n, isNudge)).toEqual({ ok: true });
@@ -171,10 +231,43 @@ describe('the live head (ban-3)', () => {
   });
 
   it('stops when he answered himself, or the customer asked something new', () => {
-    expect(liveHeadVerdict(head([[51n, true, 'keldi']]), 50n, isNudge)).toEqual({ ok: false, reason: 'human_replied' });
-    expect(liveHeadVerdict(head([[51n, false, 'narxi qancha?']]), 50n, isNudge)).toEqual({
+    expect(liveHeadVerdict(head([[51n, true, 'keldi'], [50n, false, 'yukim?']]), 50n, isNudge)).toEqual({
+      ok: false,
+      reason: 'human_replied',
+    });
+    expect(liveHeadVerdict(head([[51n, false, 'narxi qancha?'], [50n, false, 'yukim?']]), 50n, isNudge)).toEqual({
       ok: false,
       reason: 'anchor_superseded',
+    });
+  });
+
+  it('a photo, a voice note or a file after the question asks anew — its text is empty, not a nudge (S4)', () => {
+    expect(liveHeadVerdict(head([[51n, false, '', true], [50n, false, 'yukim?']]), 50n, isNudge)).toEqual({
+      ok: false,
+      reason: 'anchor_superseded',
+    });
+    // «??» with a photo is still a photo.
+    expect(liveHeadVerdict(head([[51n, false, '??', true], [50n, false, 'yukim?']]), 50n, isNudge)).toMatchObject({
+      reason: 'anchor_superseded',
+    });
+    // A sticker reaches the head as no media (the adapter's rule): the «👍» it stands for.
+    expect(liveHeadVerdict(head([[51n, false, ''], [50n, false, 'yukim?']]), 50n, isNudge)).toEqual({ ok: true });
+  });
+
+  it('a deleted anchor is noticed when the head reaches back to its place (S6)', () => {
+    // Only older lines, or nothing at all: the question is gone.
+    expect(liveHeadVerdict(head([[49n, true, 'salom']]), 50n, isNudge)).toEqual({ ok: false, reason: 'anchor_gone' });
+    expect(liveHeadVerdict([], 50n, isNudge)).toEqual({ ok: false, reason: 'anchor_gone' });
+    // Gone behind a nudge: «??» newer, the older line present, the anchor between them missing.
+    expect(liveHeadVerdict(head([[52n, false, '??'], [49n, true, 'salom']]), 50n, isNudge)).toEqual({
+      ok: false,
+      reason: 'anchor_gone',
+    });
+    // A short head that holds it is fine.
+    expect(liveHeadVerdict(head([[51n, false, '??'], [50n, false, 'yukim?']]), 50n, isNudge)).toEqual({ ok: true });
+    // A FULL head of newer nudges cannot see that far back — the newer lines decide.
+    expect(liveHeadVerdict(head([[53n, false, '??'], [52n, false, '!!'], [51n, false, '??']]), 50n, isNudge, 3)).toEqual({
+      ok: true,
     });
   });
 });
@@ -201,7 +294,7 @@ describe('runAgentStep', () => {
       calls,
       history: async () => {
         calls.push('history');
-        return [{ id: 50n, out: false, text: 'yukim?' }];
+        return [{ id: 50n, out: false, text: 'yukim?', media: false }];
       },
       readHistory: async () => void calls.push('read'),
       setTyping: async () => void calls.push('typing'),
@@ -244,12 +337,18 @@ describe('runAgentStep', () => {
   });
 
   it('cancels before the send when he answered on his phone, and asks to mark the chat unread', async () => {
-    const tg = fakeTg({ history: async () => [{ id: 51n, out: true, text: 'keldi' }] });
+    const tg = fakeTg({ history: async () => [{ id: 51n, out: true, text: 'keldi', media: false }] });
     expect(await runAgentStep({ ...row, step: 'send', readDone: true }, deps(tg))).toEqual({
       kind: 'cancel',
       reason: 'human_replied',
       markUnread: true,
     });
+  });
+
+  it('cancels when the live head no longer holds the question (S6)', async () => {
+    const tg = fakeTg({ history: async () => [{ id: 49n, out: true, text: 'salom', media: false }] });
+    expect(await runAgentStep(row, deps(tg))).toEqual({ kind: 'cancel', reason: 'anchor_gone', markUnread: false });
+    expect(tg.calls).not.toContain('send');
   });
 
   it('never sends when the claim was lost (the agent went off between ticks)', async () => {

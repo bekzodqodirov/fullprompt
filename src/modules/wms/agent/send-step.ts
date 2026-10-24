@@ -35,6 +35,11 @@ export interface AgentOutboxRow {
   typingCount: number;
   readDone: boolean;
   queuedAt: Date;
+  /**
+   * When the night rule held this approval to the morning (0136), or null. The approval's age counts from
+   * here (review S2): a reply approved at 23:00 and promised for 08:30 is not «six hours old» at 08:30.
+   */
+  releaseAt: Date | null;
 }
 
 /** Facts the store reads for a verdict — every one from the database, at this tick. */
@@ -58,13 +63,15 @@ export interface SendFacts {
   newerSubstantiveInbound: boolean;
   /** This peer has written to this account (G7 per PEER, ban-8). */
   peerHasWritten: boolean;
+  /** The chat's newest inbound — how long the customer has been waiting, which is what the night asks (S3). */
+  lastInboundAt: Date | null;
   conversationMuted: boolean;
   ruleExcluded: boolean;
   /** Today's identity decision for the chat differs from the draft's (leak-4). */
   identityChanged: boolean;
   /** A price draft's offer: null when the draft carries none. */
   offerStands: boolean | null;
-  /** Caps, counted over agent_outbox 'sent' rows. */
+  /** Caps, counted over agent_outbox rows handed to Telegram — 'sent' AND 'unknown' (S5). */
   sentToChatToday: number;
   sentLastHour: number;
   sentToday: number;
@@ -92,7 +99,15 @@ export type FinalRefusal =
   | 'identity_changed'
   | 'offer_gone';
 
-export type WaitReason = 'flood_wait' | 'not_caught_up' | 'chat_gap' | 'account_gap' | 'hour_cap' | 'day_cap' | 'chat_day_cap';
+export type WaitReason =
+  | 'flood_wait'
+  | 'night'
+  | 'not_caught_up'
+  | 'chat_gap'
+  | 'account_gap'
+  | 'hour_cap'
+  | 'day_cap'
+  | 'chat_day_cap';
 
 export type SendVerdict =
   | { ok: true }
@@ -104,7 +119,10 @@ export type SendVerdict =
  * the card says why); a WAIT re-schedules it. Order matters: what makes the
  * reply WRONG is decided before what only makes it LATE.
  */
-export function agentSendVerdict(row: Pick<AgentOutboxRow, 'managerUserId' | 'queuedAt'>, f: SendFacts): SendVerdict {
+export function agentSendVerdict(
+  row: Pick<AgentOutboxRow, 'managerUserId' | 'queuedAt' | 'releaseAt' | 'readDone'>,
+  f: SendFacts,
+): SendVerdict {
   const fin = (reason: FinalRefusal): SendVerdict => ({ ok: false, final: true, reason });
   const wait = (reason: WaitReason, until: Date): SendVerdict => ({ ok: false, final: false, reason, until });
   const now = f.now.getTime();
@@ -118,7 +136,10 @@ export function agentSendVerdict(row: Pick<AgentOutboxRow, 'managerUserId' | 'qu
   if (f.humanReplied) return fin('human_replied');
   if (f.newerSubstantiveInbound) return fin('anchor_superseded');
   if (now - f.anchorSentAt.getTime() > AGENT_LIMITS.anchorMaxAgeMs) return fin('anchor_too_old');
-  if (now - row.queuedAt.getTime() > AGENT_LIMITS.approvalMaxAgeMs) return fin('approval_too_old');
+  // From the later of the press and the morning it was held to (S2) — or every night-held ✅ is cancelled
+  // at the 08:30 it was promised for.
+  const approvedAt = Math.max(row.queuedAt.getTime(), row.releaseAt?.getTime() ?? 0);
+  if (now - approvedAt > AGENT_LIMITS.approvalMaxAgeMs) return fin('approval_too_old');
   if (!f.peerHasWritten) return fin('never_wrote');
   if (f.conversationMuted) return fin('muted');
   if (f.ruleExcluded) return fin('excluded');
@@ -126,6 +147,14 @@ export function agentSendVerdict(row: Pick<AgentOutboxRow, 'managerUserId' | 'qu
   if (f.offerStands === false) return fin('offer_gone');
 
   if (f.floodUntil && f.floodUntil.getTime() > now) return wait('flood_wait', f.floodUntil);
+  // The night rule at the SEND, not only at the ✅ (his Q14 ⭐, review S3): a row a flood wait, the hour cap
+  // or the one-in-flight queue carried past 22:00 is held to 08:30 unless the customer wrote within two
+  // hours — the same `releaseAt` the ✅ asks, so the two cannot disagree. Only before the read: once his
+  // phone has shown the chat read and «typing…», finishing the reply is the less strange of the two.
+  if (!row.readDone) {
+    const release = releaseAt(f.now, f.lastInboundAt);
+    if (release.getTime() > now) return wait('night', release);
+  }
   if (!f.caughtUp) return wait('not_caught_up', new Date(now + 10_000));
   if (f.lastChatSendAt && now - f.lastChatSendAt.getTime() < AGENT_LIMITS.perChatGapMs) {
     return wait('chat_gap', new Date(f.lastChatSendAt.getTime() + AGENT_LIMITS.perChatGapMs));
@@ -144,28 +173,51 @@ export interface HeadMessage {
   id: bigint;
   out: boolean;
   text: string;
+  /** It carries a photo, a voice note, a file, a video, a place — anything but a sticker or a link preview (S4). */
+  media: boolean;
 }
 
-export type HeadVerdict = { ok: true } | { ok: false; reason: 'human_replied' | 'anchor_superseded' };
+/**
+ * Does this line of the customer's ask for its OWN answer? A photo, a voice
+ * note, a file or a video always does — the invoice with «mana», a question
+ * spoken instead of typed — so an approved reply would answer a question that
+ * is no longer the last one (review S4: a media line has text '' and read as
+ * a nudge). A text asks only when it is not a nudge (`isNudge`). One rule for
+ * the live head, the stored check and the ✅'s own re-check.
+ */
+export function asksAnew(m: { text: string; media: boolean }, isNudge: (text: string) => boolean): boolean {
+  return m.media || !isNudge(m.text);
+}
+
+export type HeadVerdict = { ok: true } | { ok: false; reason: 'human_replied' | 'anchor_superseded' | 'anchor_gone' };
 
 /**
  * The LIVE head of the chat, not the stored one (ban-3): gramjs never
  * recovers an update gap, so tg_messages can miss what the customer — or he,
  * on his phone — wrote while the connection blinked. Every message newer than
  * the anchor decides: one of OURS (not this row's own echo) means a person
- * already answered; one of THEIRS that is not a nudge means the reply answers
- * a question that is no longer the last one.
+ * already answered; one of THEIRS that asks anew (`asksAnew`) means the reply
+ * answers a question that is no longer the last one.
+ *
+ * And the anchor itself (S6): a customer who deleted the question leaves no
+ * line newer than it, so the loop above found nothing. When the head reaches
+ * back to the anchor's place — it holds an older line, or it is shorter than
+ * asked, i.e. the chat's whole history fit — the anchor's own id must be in
+ * it. A full head of newer lines cannot see that far, and has decided above.
  */
 export function liveHeadVerdict(
   head: readonly HeadMessage[],
   anchorId: bigint,
   isNudge: (text: string) => boolean,
+  limit: number = AGENT_LIMITS.headMessages,
 ): HeadVerdict {
   for (const m of head) {
     if (m.id <= anchorId) continue;
     if (m.out) return { ok: false, reason: 'human_replied' };
-    if (!isNudge(m.text)) return { ok: false, reason: 'anchor_superseded' };
+    if (asksAnew(m, isNudge)) return { ok: false, reason: 'anchor_superseded' };
   }
+  const reachesBack = head.length < limit || head.some((m) => m.id < anchorId);
+  if (reachesBack && !head.some((m) => m.id === anchorId)) return { ok: false, reason: 'anchor_gone' };
   return { ok: true };
 }
 
@@ -202,6 +254,21 @@ export type StepOutcome =
   /** Telegram ordered a wait before taking the send — the row goes back to 'agent'. */
   | { kind: 'flooded'; seconds: number; method: string };
 
+/**
+ * A verdict as the outcome the store writes: a final refusal cancels (and
+ * gives the badge back when the chat was already read), a wait re-schedules,
+ * and null lets the row take its step. The listener also asks this alone —
+ * with no step after it — while the account is paused or sending is off
+ * (review S8): what can no longer be sent is cancelled, and Telegram is not
+ * called at all.
+ */
+export function verdictOutcome(row: Pick<AgentOutboxRow, 'readDone'>, verdict: SendVerdict): StepOutcome | null {
+  if (verdict.ok) return null;
+  return verdict.final
+    ? { kind: 'cancel', reason: verdict.reason, markUnread: row.readDone }
+    : { kind: 'wait', nextStepAt: verdict.until, reason: verdict.reason };
+}
+
 /** The listener's Telegram, as the steps need it. */
 export interface AgentTelegram {
   history(peerId: bigint, limit: number): Promise<HeadMessage[]>;
@@ -237,12 +304,8 @@ export async function runAgentStep(
   const now = deps.now ?? (() => new Date());
   const t = now();
   const plan = choreographyPlan(row.body, deps.random);
-  const verdict = agentSendVerdict(row, await deps.store.facts(row, t));
-  if (!verdict.ok) {
-    return verdict.final
-      ? { kind: 'cancel', reason: verdict.reason, markUnread: row.readDone }
-      : { kind: 'wait', nextStepAt: verdict.until, reason: verdict.reason };
-  }
+  const refused = verdictOutcome(row, agentSendVerdict(row, await deps.store.facts(row, t)));
+  if (refused) return refused;
 
   const cosmetic = async (method: string, call: () => Promise<void>): Promise<StepOutcome | null> => {
     try {
@@ -262,7 +325,7 @@ export async function runAgentStep(
   const checkHead = async (): Promise<StepOutcome | null> => {
     let head: HeadMessage[];
     try {
-      head = await deps.tg.history(row.peerId, 3);
+      head = await deps.tg.history(row.peerId, AGENT_LIMITS.headMessages);
     } catch (err) {
       const kind = deps.classify(err);
       if (kind.kind === 'flood') return { kind: 'flooded', seconds: kind.seconds, method: 'messages.GetHistory' };
@@ -272,7 +335,7 @@ export async function runAgentStep(
       // Unknown live head: try again shortly rather than send blind.
       return { kind: 'wait', nextStepAt: new Date(t.getTime() + 15_000), reason: 'not_caught_up' };
     }
-    const v = liveHeadVerdict(head, row.answersTgMessageId, deps.isNudge);
+    const v = liveHeadVerdict(head, row.answersTgMessageId, deps.isNudge, AGENT_LIMITS.headMessages);
     return v.ok ? null : { kind: 'cancel', reason: v.reason, markUnread: row.readDone };
   };
 
@@ -351,7 +414,8 @@ export function isTashkentNight(now: Date): boolean {
  * immediately only when the customer wrote within the last two hours (he is
  * awake and waiting), else at 08:30 — in shadow every send is his own act,
  * and the hold exists so a 3 a.m. reply does not wake a customer who wrote
- * yesterday afternoon.
+ * yesterday afternoon. Asked at the press AND by the send verdict (S3), so a
+ * reply approved by day and carried into the night by a wait obeys it too.
  */
 export function releaseAt(now: Date, lastInboundAt: Date | null): Date {
   if (!isTashkentNight(now)) return now;

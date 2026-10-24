@@ -54,6 +54,12 @@ export const AGENT_LIMITS = {
   typingMaxMs: 12_000,
   /** SetTyping calls per message (each lasts ~6 s on Telegram's side). */
   typingCallsMax: 3,
+  /**
+   * How much of the chat's live head the verify and send steps read (ban-3). Enough to see the anchor itself
+   * behind a couple of newer lines — which is how a deleted anchor is noticed (review S6) — and no more:
+   * every GetHistory is a call on his account.
+   */
+  headMessages: 3,
   /** G4. */
   maxReplyChars: 700,
   /** G10: the same text fingerprint to more peers than this in 24 h blocks ✅ (ban-6). */

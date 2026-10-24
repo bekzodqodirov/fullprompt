@@ -97,6 +97,29 @@ export function pumpGate(input: {
   return { ok: true };
 }
 
+/**
+ * The methods that SEND — the names a flood on the send path is recorded
+ * under, by the human pump, the agent's send step and gramjs's own sleep line.
+ *
+ * Telegram's waits are per METHOD (review S9): a FLOOD_WAIT on GetHistory
+ * says nothing about SendMessage. So only these move the account's
+ * `flood_until`, the clock that stops a person's CRM reply; a wait on a read
+ * (the agent's verify step, a one-peer pull) or a cosmetic call (ReadHistory,
+ * SetTyping) is a ledger row and holds only the agent's own calls. The same
+ * list is what «two send floods in 24 h» counts, so the two cannot disagree.
+ */
+export const SEND_FLOOD_METHODS = [
+  'messages.SendMessage',
+  'SendMessage',
+  'messages.SendMedia',
+  'sendMessage',
+  'sendFile',
+] as const;
+
+export function isSendFloodMethod(method: string): boolean {
+  return (SEND_FLOOD_METHODS as readonly string[]).includes(method);
+}
+
 /** When a wait Telegram ordered ends — its own number plus a second, never shortened (ban-2). */
 export function floodEnds(seconds: number, now: Date): Date {
   return new Date(now.getTime() + (Math.max(0, Math.ceil(seconds)) + 1) * 1000);

@@ -2632,6 +2632,7 @@
     "replyNeverWrote": "客户尚未联系您 — 不能主动发起。",
     "replyBridgeDown": "Telegram 未连接 — 消息不会发出。",
     "replyRateLimited": "太频繁了。请等待一分钟。",
+    "replyAccountPaused": "Telegram 已限制此账号 — 发送已停止。请在 Telegram 应用中检查账号，然后在「对话」中解除暂停。",
     "replyNotYours": "该会话在其他经理的账号中 — 只有本人可以回复。",
     "replyTooLong": "消息过长。",
     "replyAttach": "附加照片",

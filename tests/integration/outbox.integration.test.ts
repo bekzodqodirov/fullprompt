@@ -6,6 +6,7 @@ import { db, pgClient } from '@/modules/platform/db/client';
 import {
   attachments,
   clients,
+  tgAccountGuard,
   tgAccounts,
   tgMessages,
   tgOutbox,
@@ -15,6 +16,8 @@ import { setSetting } from '@/modules/platform/settings/service';
 import { deleteAttachment, saveAttachment } from '@/modules/platform/files/service';
 import { disconnectAccount, listListenablePhones } from '@/modules/wms/crm/telegram-accounts';
 import {
+  accountHold,
+  canReplyNow,
   cancelQueued,
   claimNext,
   clientHasWritten,
@@ -30,6 +33,7 @@ import {
   recoverInFlight,
   releaseClaim,
   replyAccountFor,
+  replyVerdict,
   sendContextFor,
   wasSentWithPhoto,
 } from '@/modules/wms/crm/outbox';
@@ -170,6 +174,51 @@ describe('once the client has written', () => {
       queueReply({ clientId, managerUserId: managerId, body: 'x' }, ctx()),
     ).rejects.toThrow('bridge_down');
     await db.update(tgAccounts).set({ lastSeenAt: new Date() }).where(eq(tgAccounts.id, accountId));
+  });
+
+  it('refuses in words while the account is paused or under Telegram’s send wait — the pump would claim neither (S1)', async () => {
+    const reply = () => queueReply({ clientId, managerUserId: managerId, body: 'Ertaga' }, ctx());
+    await db
+      .insert(tgAccountGuard)
+      .values({ accountId, pausedAt: new Date(), pausedKind: 'peer_flood', pauseReason: 'PEER_FLOOD' })
+      .onConflictDoUpdate({
+        target: tgAccountGuard.accountId,
+        set: { pausedAt: new Date(), pausedKind: 'peer_flood', pauseReason: 'PEER_FLOOD', floodUntil: null },
+      });
+    try {
+      await expect(reply()).rejects.toThrow('account_paused');
+      expect(await accountHold(managerId)).toEqual({ reason: 'account_paused' });
+      // The thread draws no ↩ for a reply that cannot leave.
+      expect(await canReplyNow(clientId, managerId)).toBe(false);
+      // The company switch still says first what is wrong with sending at all.
+      await setSetting('tg_sending_enabled', false, managerId);
+      expect(await replyVerdict({ clientId, managerUserId: managerId, peerId: PEER })).toEqual({
+        ok: false,
+        reason: 'sending_disabled',
+      });
+      await setSetting('tg_sending_enabled', true, managerId);
+
+      // Telegram's own wait on SendMessage: the word every composer already says.
+      const until = new Date(Date.now() + 30 * 60_000);
+      await db
+        .update(tgAccountGuard)
+        .set({ pausedAt: null, pausedKind: null, floodUntil: until })
+        .where(eq(tgAccountGuard.accountId, accountId));
+      await expect(reply()).rejects.toThrow('flood_wait');
+      expect(await accountHold(managerId)).toEqual({ reason: 'flood_wait', until });
+
+      // A wait that has ended holds nothing: the reply queues, and the pump takes it.
+      await db
+        .update(tgAccountGuard)
+        .set({ floodUntil: new Date(Date.now() - 1000) })
+        .where(eq(tgAccountGuard.accountId, accountId));
+      expect(await accountHold(managerId)).toBeNull();
+      expect(await canReplyNow(clientId, managerId)).toBe(true);
+      await expect(reply()).resolves.toMatchObject({ id: expect.any(String) });
+    } finally {
+      await setSetting('tg_sending_enabled', true, managerId);
+      await db.delete(tgAccountGuard).where(eq(tgAccountGuard.accountId, accountId));
+    }
   });
 
   it('reports a live bridge and a client who wrote first', async () => {

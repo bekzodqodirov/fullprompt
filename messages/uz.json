@@ -2632,6 +2632,7 @@
     "replyNeverWrote": "Mijoz sizga hali yozmagan — birinchi bo‘lib yozib bo‘lmaydi.",
     "replyBridgeDown": "Telegram ulanmagan — xabar ketmaydi.",
     "replyRateLimited": "Juda tez-tez. Bir daqiqa kuting.",
+    "replyAccountPaused": "Telegram bu akkauntni chekladi — xabar yuborish to‘xtatilgan. Telegram ilovasida akkauntni tekshiring va «Suhbatlar»da «Tekshirdim» tugmasini bosing.",
     "replyNotYours": "Bu yozishma boshqa menejerning akkauntida — faqat o‘zi javob bera oladi.",
     "replyTooLong": "Xabar juda uzun.",
     "replyAttach": "Rasm biriktirish",
