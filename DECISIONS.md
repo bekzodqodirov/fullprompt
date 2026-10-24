@@ -4531,3 +4531,67 @@ new map code until it is classed as Chinese or Uzbek; the single arrived column)
 Red-proven by string edit four ways: arrivals at a Chinese warehouse sent to `inland`; the filter keeping
 `column === 'inland'`; `cn_transit` counted as Irkeshtam; a ninth map code. The third first stayed GREEN — the
 edit named the Chinese leg `cn`, which no segment is called — and was redone on the real key.
+
+## The client-finding agent's door and its two feeds (2026-10-24; NO migration, ledger 136; spec `docs/AGENT-FEED.md`, written from the agent's own spec `clientScrapper/docs/spec/05-erp-integration.md` Part A)
+
+The owner's split of 2026-10-23: a separate agent finds Uzbek importers of Chinese goods on the open internet,
+he approves them, and the ERP takes them as leads — the sellers write, the agent never does. The ERP's half is
+one door, one belt, one silent clock and two read-only feeds, all on the `agent` source's own webhook key.
+
+1455. **`agent` is a source key only its webhook may claim, and a stale copy lands as `dropped/suppressed`.**
+`'agent'` joined `INBOUND_SOURCE_KEYS` with a seeded `KEYED` row («Agent (qidiruv)», 90) — and a source-shape
+fence now demands a seeded row for EVERY key, because `sourceIdForKey` falls back to «Boshqa» silently and the
+door 404s with nothing anywhere saying why. `inboundSourceKey(raw, channel)` is the one coercion: unknown →
+`other`, and `agent` through any channel but `webhook` → `other`, because `/ariza?manba=agent` and `ad_agent` are
+PEOPLE and must not inherit the machine's belt, its unreminded clock or a row in its outcomes (the spec only hid
+the doors screen's links; the links were the cosmetic half). The belt runs after the replay fence and the caps,
+before step (0): a phone in the client book — active OR inactive, wider than step (0) on purpose, a former client
+is still ours — or on a lead lost with a listed reason is recorded `dropped/suppressed` and nobody is told, not
+the client's manager and not the office. Adverts and the form keep today's behaviour (the tiktok control test).
+`AGENT_SOURCE_KEY` lives in a zero-import module (`agent-source.ts`) re-exported by inbound.ts: the spec put it
+in inbound.ts, and `first-contact.ts` (which needs it) sits under inbound.ts through inbound-notify.ts — a
+constant read at load across that circle is a TDZ ReferenceError the day the order flips.
+
+1456. **An agent lead's clock starts with no due time — measured, never reminded.** The memo's «skip the clock»
+was wrong for this contract: `stampFirstContacts` only stamps clocked arrivals, so the outcomes feed could never
+report a contact. `startContactClock(intakeId, now, remind)`; `remind = !isReminderExempt(sourceKey)`, the exempt
+set being `{agent}`. `claimUntouched` already refuses a NULL `contact_due_at`, so no new predicate. Checked, the
+spec's UNVERIFIED (its open question 7): /crm/tahlil's «Birinchi aloqa» reads `contact_clock_at`/`contacted_at`
+and never the due time, so agent leads ARE in a seller's median and late counts — stated in AGENT-FEED.md.
+
+1457. **The feeds: hashes of tails, one derived table for the feed and the belt, a cursor at postgres's
+precision.** `suppressionTailsSql(labels)` is the ONE sentence `(tail, kind, at, id, n)` that both
+`suppressionPage` and the belt's `isSuppressedTail` read (#513). Two defects in the spec's own code, both
+red-proven: (a) its keyset `(at, id)` is not unique — one client with two phones is two rows with one instant
+and one id, so a page edge between them skipped the second phone (the twenty-phone fixture card proves it); the
+key is `(at, id, n)` with `n` = the phone's ordinal on the card; (b) its cursor went through `new Date()` and
+was cut to MILLISECONDS while postgres keeps microseconds, so the row the cursor names compared GREATER than its
+own cursor and was read again — at `limit=1` a walk that never ends. The cursor carries `to_char(… 'US')` text
+and is passed back verbatim; `decodeCursor` refuses a rolled date («02-30»). Two smaller ones: a lost lead's
+instant is `max(closed_at, updated_at)` (not `coalesce`, which hid a later edit from the delta), and reasons are
+normalised the same way on both sides (trim, collapse whitespace, lower — `'  Test   sabab '` matches). The
+setting `agent_no_contact_reasons` (`;`-list, default «Qayta qilinmasin») is parsed by
+`platform/settings/reason-list.ts` because the settings validator needs it and platform never imports wms; an
+empty list is refused at the save. The GET door is one function (`agent-feed-door.ts`) for both routes: 404
+off/wrong key (the `X-ERP-Key` name alone is not read), 400 `bad_cursor`/`bad_since`, 503 `unavailable` — also
+when the KEY LOOKUP itself fails, because a 404 there would trip the agent's breaker and tell the owner his key
+is wrong. Outcomes carry exactly 14 fields and no name, phone, note, owner or price; `lost_reason` is clipped at
+200 (free text before the dictionary). Stated, not fixed: the ETag can never match (the body carries
+`generated_at`), and a contact whose evidence is older than the agent's last read (a late calls-app upload) is
+not re-read by cursor alone — AGENT-FEED.md tells the agent to re-read 30 days weekly.
+
+1458. **The plain webhook's `company` / `firma` goes to `leads.company`, for every door.** Read by lower-cased
+name the way `known` skips it (`{Firma: …}` would otherwise vanish from the note AND be missed), `company` before
+`firma`, cut at `leadSchema`'s 200. A behaviour change beyond the agent, stated: a website or connector that
+already posts `company` now fills the card's own field instead of a note line and a mapping-screen pair — a
+mapping somebody made on that question would stop receiving it (the value is not lost; the card shows it). Also
+stated: every door collapses the note's line breaks and cuts at 1000 characters, so the agent's multi-line note
+reaches the lenta as one paragraph — documented for the agent, not changed here.
+
+Red proofs, all by string edit (sixteen, each restored and verified by hash): the lost branch, the phone
+position in the keyset, the millisecond cursor, the ORDER BY, the `since` predicate, the reason normalisation,
+the belt (deleted, and widened to every source), the webhook-only claim, the reminder forced on, the clock
+skipped, the fallback clause, the firm, the cursor check, the hash length, the seeded row. Two first stayed GREEN
+and were re-anchored: the ORDER BY (the fixtures' storage order matched the feed's — their instants now run
+against insertion order), and «never claimed» under a forced reminder (the test kept the landed due time in the
+future — it now puts any landed due time 45 minutes in the past and keeps NULL as NULL).

@@ -59,6 +59,10 @@ https://gsrwms.uz/ariza?manba=instagram
 Boshqa har qanday so'z «Boshqa» bo'lib tushadi (bu ataylab: manzil satridan
 turib CRM lug'atiga yangi qator qo'shib bo'lmasin).
 
+`agent` — **faqat mashina uchun, qo'lda ishlatmang**: mijoz topuvchi agent
+o'z webhook'i orqali yuboradi (`docs/AGENT-FEED.md`). Formada yoki botda
+`manba=agent` yozilsa ham ariza «Boshqa» bo'lib tushadi.
+
 Reklama kabineti qo'shadigan `utm_source` / `utm_campaign` kabi belgilar ham
 saqlanadi — kelgan arizalar ro'yxatida ko'rinadi.
 
@@ -272,10 +276,14 @@ kerak emas.
 tanasi:
 
 ```json
-{ "name": "Aziz Karimov", "phone": "+998901112233", "note": "Yiwudan 5 kub" }
+{ "name": "Aziz Karimov", "phone": "+998901112233", "note": "Yiwudan 5 kub", "external_id": "sayt-1042" }
 ```
 
-Boshqa maydonlar ham yuborilsa — izohga tushadi, yo'qolmaydi.
+Boshqa maydonlar ham yuborilsa — izohga tushadi, yo'qolmaydi. `company` yoki
+`firma` — lidning «Kompaniya» maydoniga yoziladi. `external_id` — yuboruvchining
+o'z raqami: bir xil `external_id` ikkinchi marta kelsa, ikkinchi lid ochilmaydi.
+Mijoz topuvchi agentning eshigi (`/api/leads/in/agent`) va u o'qiydigan ikki
+ro'yxat: `docs/AGENT-FEED.md`.
 
 **Muhim:** javob har doim bir xil — `{"ok":true}`. Lead ochildimi, eskisiga
 qo'shildimi, mijoz ekan deb tanildimi, chegaraga urildimi — yuboruvchiga farqi

@@ -1,5 +1,31 @@
 # CHANGELOG
 
+## 2026-10-24 — Mijoz topuvchi agent uchun eshik: lidlar CRMga tushadi, agent ikki ro'yxatni o'qiydi
+
+Sizning 23-oktabrdagi qaroringiz: alohida dastur (agent) internetdan Xitoydan yuk olib keladigan firmalarni topadi, siz tasdiqlaysiz, lid CRMga tushadi va sotuvchilar o'zlari yozadi. Agent hech kimga yozmaydi. **Migratsiya yo'q** — deploydan keyin `/api/version` dagi build vaqtini tekshiring, migratsiyalar soni o'zgarmaydi (**136**).
+
+### Nima qo'shildi
+- **Yangi manba «Agent (qidiruv)».** «Kelgan arizalar → Reklama havolalari» ro'yxatida chiqadi. Unda forma va bot havolasi yo'q — bu eshik faqat mashina uchun. Kimdir formada `manba=agent` yozsa ham, ariza «Boshqa» bo'lib tushadi.
+- **Mijozlarimizga agent yetib bormaydi.** Agent yuborgan raqam mijozlar kitobida bo'lsa (faol yoki faol bo'lmagan mijoz) yoki «Qayta qilinmasin» sababi bilan yopilgan lidda bo'lsa — lid ochilmaydi, hech kimga xabar bormaydi, «Kelgan arizalar» ro'yxatida «Olinmadi · suppressed» bo'lib yoziladi. Reklama va formadan kelgan arizalar avvalgidek ishlaydi.
+- **Agent lidlariga 15 daqiqalik «⏰ tegilmagan» eslatmasi bormaydi** (kuniga 25 tagacha bo'lishi mumkin). Sotuvchiga «🆕 Yangi lid · Agent (qidiruv)» xabari esa darhol boradi, va birinchi aloqa vaqti baribir o'lchanadi (/crm/tahlil).
+- **Agent o'qiydigan ikki ro'yxat** — faqat agentning kaliti bilan ochiladi:
+  1. «Taklif qilinmasin» ro'yxati: mijozlar va «Qayta qilinmasin» lidlarning raqamlari — raqamning o'zi emas, shifrlangan izi (agentga mijozlar kitobi berilmaydi).
+  2. Natijalar ro'yxati: agent yuborgan har bir lid nima bo'ldi — ochildimi, qaysi etapda, yutildimi yoki qaysi sabab bilan yo'qotildi, sotuvchi qachon bog'landi. Ism, telefon, izoh, sotuvchi ismi va narx bu ro'yxatga chiqmaydi.
+- **Yangi sozlama `agent_no_contact_reasons`** (Boshqaruv → Sozlamalar): qaysi yo'qotish sababi «bu raqamga boshqa hech qachon» degani. Standart: `Qayta qilinmasin`. Bir nechta bo'lsa `;` bilan yozasiz; katta-kichik harf farqi yo'q.
+- Agent yuborgan firma nomi lidning **«Kompaniya»** maydoniga yoziladi. Bu boshqa platformalar uchun ham ishlaydi: webhook orqali `company` yoki `firma` kelsa, u ham shu maydonga tushadi (avval izohga tushardi).
+
+### Siz qiladigan besh qadam (batafsil: `docs/AGENT-FEED.md` §0)
+1. **CRM → ⋯ → Kelgan arizalar → Reklama havolalari → «Agent (qidiruv)» → «Platformaning o'z formasi» → «Yoqish va kalit yaratish».** Kalitni agent serveridagi `.env` ga qo'ying, chatga yozmang.
+2. **CRM → ⋯ → CRM sozlamalari → «Yo'qotish sabablari»**: «Qayta qilinmasin» qo'shing. Ro'yxat hozir bo'sh bo'lsa, birinchi sabab qo'shilgan zahoti faqat ro'yxatdagi sabablarni tanlash mumkin bo'ladi — jamoa ishlatadigan boshqa sabablarni ham o'sha zahoti qo'shing.
+3. **Boshqaruv → Arizalar taqsimoti**: manba `agent` uchun ikki qoida — «Kub (dan)» = 1 bo'lgani yuk bo'yicha sotuvchilarga, kubsizi qolganlarga.
+4. Agent sinov arizasini yuborgach, **«Forma savollari»**da `kub` savolini **Kub (m³)** ga bog'lang.
+5. **Boshqaruv → Sozlamalar → `agent_no_contact_reasons`** 2-qadamdagi sabab bilan bir xil ekanini tekshiring.
+
+### Bilib qo'ying
+- Kalitni qayta yaratsangiz eskisi darhol ishlamay qoladi — agent `.env` dagi kalit yangilanmaguncha lid yubora olmaydi.
+- Ro'yxatdagi yo'qotish sababining nomini keyin o'zgartirmang: kerak bo'lsa eskisini o'chirib, yangisini qo'shing va sozlamaga ham yozing. Aks holda o'sha sabab bilan yopilgan lidlar agent ro'yxatidan chiqib ketadi.
+- Agent yozgan izoh lid lentasida bitta paragraf bo'lib ko'rinadi (qatorlar birlashadi) — barcha arizalardagidek.
+
 ## 2026-10-21 — Doska: «1 A / 2 a / 3 a» javoblaringiz — hammasi hozirgidek qoladi
 
 Uchala javob ham ⭐ variant, ya'ni hozir qanday qurilgan bo'lsa shunday. **Kodda o'zgarish yo'q, migratsiya yo'q, deploy shart emas.** Har birini kodda tekshirdim va testga mahkamladim: endi kimdir tasodifan o'zgartirsa, test qizaradi.
