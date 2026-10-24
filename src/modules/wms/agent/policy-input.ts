@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray } from 'drizzle-orm';
+import { and, eq, gte, inArray, ne } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { agentOutbox, clients, users } from '../../platform/db/schema';
 import { getSetting } from '../../platform/settings/service';
@@ -65,9 +65,14 @@ async function bookCodesIn(body: string): Promise<Set<string>> {
   return new Set(rows.map((r) => r.code));
 }
 
-async function staffNamesExcept(managerName: string | null): Promise<string[]> {
-  // A colleague NOW (`canLogInSql`, 0120) — the login rule every staff list asks.
-  const rows = await db.select({ name: users.fullName }).from(users).where(canLogInSql());
+async function staffNamesExcept(managerName: string | null, accountUserId: string): Promise<string[]> {
+  // A colleague NOW (`canLogInSql`, 0120) — the login rule every staff list asks. The account's own
+  // person is the persona and no colleague: «Hozir Bekzod akaga yetkazaman» is the spec's own
+  // escalation line (§6), and since one word of a colleague's name warns (P3) it would warn on every one.
+  const rows = await db
+    .select({ name: users.fullName })
+    .from(users)
+    .where(and(canLogInSql(), ne(users.id, accountUserId)));
   return rows.map((r) => r.name).filter((n) => n && n !== managerName);
 }
 
@@ -109,7 +114,7 @@ export async function policyFor(input: {
 }): Promise<PolicyResult> {
   const [bookCodes, staffNames, counts, codePrefix] = await Promise.all([
     bookCodesIn(input.body),
-    staffNamesExcept(input.memory.managerName),
+    staffNamesExcept(input.memory.managerName, input.managerUserId),
     sendCounts(input.managerUserId, input.peerId, input.body, input.strip),
     getSetting('client_code_prefix'),
   ]);

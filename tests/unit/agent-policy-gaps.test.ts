@@ -285,10 +285,10 @@ describe('P3: another customer’s code in another script, a colleague’s name'
     // A three-letter token is matched only as a whole word: «Ali» is not «Alisher».
     expect(check({ body: 'Alisher aka', staffNames: ['Ali Valiyev'] }).warnings).toEqual([]);
     expect(check({ body: 'Umriddin aka, yukingiz keldi', customerNames: ['Umriddin'] }).warnings).toEqual([]);
-    // Said twice, warned once.
-    expect(check({ body: 'Umriddin, Umriddin javob beradi' }).warnings).toEqual([
-      { rule: 'G6', code: 'staff_name', detail: 'Umriddin' },
-    ]);
+    // Two colleagues called Umriddin, one warning.
+    expect(
+      check({ body: 'Umriddin javob beradi', staffNames: ['Umriddin Karimov', 'Umriddin Aliyev'] }).warnings,
+    ).toEqual([{ rule: 'G6', code: 'staff_name', detail: 'Umriddin' }]);
   });
 
   it('a customer who shares a colleague’s whole name is greeted by it', () => {
@@ -308,5 +308,8 @@ describe('P3: another customer’s code in another script, a colleague’s name'
     const src = readFileSync(path.resolve(__dirname, '../../src/modules/wms/agent/policy-input.ts'), 'utf8');
     expect(src).toMatch(/async function bookCodesIn[\s\S]*?const candidates = codeCandidatesIn\(body\);/u);
     expect(src).toMatch(/customerNames: input\.strip\.filter\(/u);
+    // The account's own person is the persona, never a colleague to warn about.
+    expect(src).toMatch(/async function staffNamesExcept[\s\S]*?ne\(users\.id, accountUserId\)/u);
+    expect(src).toMatch(/staffNamesExcept\(input\.memory\.managerName, input\.managerUserId\)/u);
   });
 });
