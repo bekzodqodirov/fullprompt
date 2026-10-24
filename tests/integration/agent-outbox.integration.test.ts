@@ -211,6 +211,13 @@ async function approved(input: {
 
 const ctx = (accountId: string) => ({ accountId, caughtUp: () => true, random: () => 0 });
 
+/** «25.10 08:30» — a time as the card prints it (Tashkent, UTC+5), computed here, not by the card. */
+function tashkentStamp(d: Date): string {
+  const t = new Date(d.getTime() + 5 * 3_600_000);
+  const two = (n: number) => String(n).padStart(2, '0');
+  return `${two(t.getUTCDate())}.${two(t.getUTCMonth() + 1)} ${two(t.getUTCHours())}:${two(t.getUTCMinutes())}`;
+}
+
 async function agentOn(owner: string, started: Date = new Date(Date.now() - 30 * 86_400_000)): Promise<void> {
   await db
     .update(agentConfig)
@@ -734,15 +741,37 @@ describe('the send path’s review fixes', () => {
     await applyAgentOutcome({ ...row, typingCount: 2 }, { kind: 'wait', reason: 'night', nextStepAt: morning }, own.account);
     // verify → read → typing → send again at 08:30; the read on his phone still stands.
     expect(await agentRowById(row.id)).toMatchObject({ status: 'agent', step: 'verify', typingCount: 0, readDone: true });
-    // The card no longer says «yuborilmoqda…» all night.
+    // The card no longer says «yuborilmoqda…» all night — it says the morning it is held to, by its time.
     const [card] = await db
       .select()
       .from(notifications)
       .where(and(eq(notifications.userId, own.userId), eq(notifications.type, 'AgentDraft')));
-    expect(String((card!.payload as { text?: unknown }).text)).toContain('da ketadi');
+    expect(String((card!.payload as { text?: unknown }).text)).toContain(`✅ Tasdiqlandi · ${tashkentStamp(morning)} da ketadi.`);
     // Not the row in flight: another approved reply — a customer who wrote minutes ago — may go tonight.
     const fresh = await approved({ manager: own.userId, step: 'verify' });
     expect((await dueAgentRow(own.userId, new Date()))?.id).toBe(fresh.row.id);
+  });
+
+  it('a reply approved for one morning and held again by the night rule says the NEW time, not the old one (send review)', async () => {
+    const own = await makeManager('night-again');
+    const first = new Date(Date.now() + 2 * 3_600_000);
+    const { row, draftId } = await approved({ manager: own.userId, nextStepAt: first });
+    await db.insert(notifications).values({
+      userId: own.userId,
+      channel: 'telegram',
+      type: 'AgentDraft',
+      payload: { draftId, text: `✅ Tasdiqlandi · ${tashkentStamp(first)} da ketadi.` },
+      status: 'sent',
+    });
+    const morning = new Date(Date.now() + 20 * 3_600_000);
+    await applyAgentOutcome(row, { kind: 'wait', reason: 'night', nextStepAt: morning }, own.account);
+    const [card] = await db
+      .select()
+      .from(notifications)
+      .where(and(eq(notifications.userId, own.userId), eq(notifications.type, 'AgentDraft')));
+    const text = String((card!.payload as { text?: unknown }).text);
+    expect(text).toContain(`${tashkentStamp(morning)} da ketadi`);
+    expect(text).not.toContain(tashkentStamp(first));
   });
 
   it('every step stamps when it was taken — what the night asks of a reply past its read (S3’s follow-up)', async () => {
