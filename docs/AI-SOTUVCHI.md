@@ -808,3 +808,179 @@ no URL except an approved kb fact's (the Tashkent map link), no @mention, no den
   `tg_outbox.agent_draft_id`); the customer never sees it.
 - An AI send is NOT a person's contact for the advert first-contact clock; it IS «answered» for the
   waiting state (he approved it).
+
+---
+
+## 17. Phase 1 as it will be built — v2 (2026-10-24, after the review)
+
+`docs/AI-SOTUVCHI-REVIEW.md` judged §16 (78 objections: 48 confirmed, 30 partial, none refuted). This section is
+the design the build follows; where it and §16 disagree, THIS wins, and the review's per-objection fix is the
+detail behind each line (ids in brackets).
+
+### 17.0 The owner's second set of questions (sent 2026-10-24, built with ⭐ until answered)
+
+1 old server ⭐ delete it — the AI cannot leave 'off' until he confirms [ban-9]; 2 Telegram API §1.5 consent
+⭐ accept, AI off at once on any official notice; 3 fa/zh drafts ⭐ Uzbek gloss + numbers ledger, Pashto → no
+draft; 4 «botmisiz?» ⭐ no draft, a notice to him; 5 «javob keldi» ⭐ both the AI-VED estimate («rasmiy emas»)
+and the VED answer, labelled; 6 ✏️ price ⭐ recorded as the client price through `recordOffer`; 7 yo'lkira ⭐
+truck only, < 0.1 m³ / < $50 / > 100 m³ / > 20 t → hisoblatish, a list-price difference → no quote + «farq bor»;
+8 the site's extras ⭐ never stated by the AI; 9 certificate «bilmayman» ⭐ = no certificate; 10 the 20 open
+requests ⭐ unchanged, shown N/20; 11 ramp ⭐ first 14 days ≤ his own average daily sends, then 80; 12 map link
+⭐ only when asked, once per chat per 7 days; 13 PEER_FLOOD ⭐ pauses that account (any manager), cleared by that
+manager or him; 14 night ⭐ immediate if the customer wrote < 2 h ago, else 08:30; 15 his own Готово/seal ⭐
+still announced; 16 the agent mute group ⭐ not on /profile (off = `/agent off`); 17 census ⭐ yes; 18 hidden
+number first contact ⭐ a «📵» card; 19 a typed-code bind ⭐ no cargo/balance until the chat's phone is on the card.
+
+### 17.1 Shape
+
+- His personal account, through the listener; the model runs in the app's pg-boss worker. Shadow only; mode
+  `off|shadow` (`auto` is in the CHECK and refused by every writer). Only the configured owner account; only its
+  holder approves [leak-5]; the page and the commands for the owner or the super_admin role [fit-11].
+- **Agent replies live in a NEW table `agent_outbox`**, drained by the same listener after the human rows — never
+  in `tg_outbox` [regression-1/2/3/8, build-2].
+- **No new column on any existing table** [build-10]; new facts live in new tables; readers of new tables ask
+  `agentTablesReady()` (caches TRUE only) so a database one migration behind answers as today.
+
+### 17.2 Migration 0136 `ai_sotuvchi`
+
+New tables: `agent_config` (singleton: mode, owner_user_id, session_exclusive_at/by, human_pause_min 120,
+daily_draft_cap 150, daily_token_cap, started_at, style_guide/_proposed/approved_at/by, updated_by/at),
+`agent_conversations` (PK manager+peer: locale, human_until, muted_at/mute_reason, peer_typing_at,
+stranger_card_at, identity_*), `agent_runs` (trigger, anchor, attempt, source_key, model, four token counts,
+tool_calls, outcome, error; partial UNIQUEs per inbound anchor+attempt and per source_key), `agent_drafts`
+(identity, anchor + its edited_at, kind, proposed/final body, gloss_uz, language, category, confidence,
+next_step, policy, blocked, needs_owner, owner_question, actions, cited_message_ids, offer_id, status,
+action_status/error, decided_by/at; partial UNIQUE one live draft per chat), `agent_outbox` (draft_id UNIQUE,
+manager, peer, client|lead CHECK, body, random_id UNIQUE, reply_to, answers_tg_message_id, status
+agent|sending|sent|failed|cancelled|unknown|expired, step verify|read|typing|send, next_step_at, typing_count,
+read_done, queued_by, queued_at, sent_at, tg_message_id, last_error), `kb_facts` (scope general|client|lead
+with CHECKs, kind, question, answer, locale, source, source_ref, approved_at/by, uses, retired_at; trigram
+index), `agent_calc_links` (request_id PK, root_request_id, manager, peer, draft_id, last_notified_kind/at),
+`tg_account_guard` (account PK: paused_at, pause_reason, flood_until, agent_pump_at, caught_up_at),
+`tg_account_floods` (account, method, seconds, source sleep|raise, at), `tg_message_flags` (message PK →
+tg_messages ON DELETE CASCADE: deleted_at, auto_sent), `tg_peer_pulls` (manager, peer, requested_by/at,
+claimed_at, done_at, error; one open per chat). Widened: `telegram_chat_waits.kind` + agent_edit,
+agent_price, agent_code. New index: tg_messages (manager_user_id, tg_message_id) for the delete map.
+`gsr_ai_reader` grants nothing; every new table joins EXCLUDED_TABLES. Every FK states its ON DELETE.
+
+### 17.3 A run
+
+1. Listener `handleMessage` (origin 'live' only; the site sweep passes its own origin) after the media:
+   an inbound row on the agent owner's account → `enqueue('agent.inbound', …, {startAfter: 12, retryLimit: 0})`;
+   an OUT row with no agent_outbox row → `agent.human_reply` (retires the live draft) [fit-3]; an edit of the
+   newest inbound re-enqueues [regression-10]; a delete stamps tg_message_flags [leak-8]; `msg.offline` /
+   `viaBusinessBotId` stamp `auto_sent` [ban-4]; UpdateUserTyping stamps `peer_typing_at` [fit-9].
+2. Worker: stand down unless the anchor is still the chat's newest live inbound; wait while the peer types
+   (+8 s, cap 90 s), a greeting-only burst 60 s; `draftWorthy` [fit-1]; eligibility (§17.4); reserve under the
+   advisory lock: inbound runs ≤ daily_draft_cap, ≤ 12 per chat per Tashkent day, Σ tokens ≤ daily_token_cap,
+   failing CLOSED [money-11]; build the context; run the loop; policy; write the draft + the card in one short
+   tx (`queueStaffTelegram(tx)`), kick the drain after commit. A run that throws writes outcome 'error' and one
+   notice; the sweep retries it once [build-8, fit-15].
+3. Sweep (every minute): deploy-gap drafts (newest inbound ≤ 30 min, no run), expiry at anchor + 24 h, stuck
+   post-approval actions, human-reply retirement fallback, peer-pull follow-ups.
+
+### 17.4 Eligibility (pure)
+
+Private one-to-one with a real user; the chat names a client or a lead; the rule is not exclude; not a phone of
+an active user [leak-1]; not muted; not in a human pause (his own out row with no agent_outbox row, or a CRM
+tg_outbox row, within human_pause_min); the newest live inbound is the anchor, ≤ 24 h old, not auto_sent, not
+< 5 s after our out row, not a repeat of the peer's last 3 [ban-4]; account not paused; mode shadow; session
+exclusivity confirmed [ban-9]; the listener is current [regression-3].
+
+### 17.5 The brain
+
+- Model `STAFF_MODEL` (the style proposal: `ANALYST_MODEL`); the stable head (persona, rules, approved style
+  guide, kb general facts) behind the cache breakpoint; per-chat context after it. Context: THIS chat only
+  (last 30 live messages, each ≤ 1 000 chars, total ≤ 8 000), our last out message, the customer-safe card
+  (codes incl. phone siblings, the customer's own manager's name), open calc links, scoped kb top-8. No
+  cross-chat examples [leak-1].
+- Tools (closed literal list; the identity comes from the server): `cargo_status` (cabinet `cargoOverview` over
+  phone siblings; refused for a typed-code bind whose phone is not on the card) [fit-12, leak-4];
+  `own_balance` (one pure balance text shared with the bot's 💰) [money-10]; `kb_search`; `cargo_volume`;
+  `yolkira_estimate` (inputs are INDEXES into the measures `parseManualFacts` found in this chat's inbound rows;
+  guards; truck only; live `/admin/tarif` compare) [money-2/3]; `calc_checklist` (missingFields + section +
+  certificate, everything missing in ONE numbered question) [fit-4, money-6]. Proposed actions (run only on ✅):
+  `calc_submit` (section + facts by index + cited messages), `set_followup` (a date the customer stated),
+  `mute`. Terminal `compose_reply` (strict): reply_needed, reply_text, language, gloss_uz, category,
+  confidence, needs_owner, owner_question, next_step, actions, used_fact_ids, cited_message_ids.
+- Honesty: a «bot?» question, Pashto, a voice-only burst → no draft, an `AgentNotice` card [Q3/Q4].
+
+### 17.6 Policy (pure; every failure BLOCKS ✅)
+
+Digits normalised (Persian, Arabic-Indic, full-width; any other numeral beside money/measure = unverifiable)
+[leak-7]; G1 by kind and source [money-1]; G2 closed promise table × six locales [money-8]; G4 ≤ 700 chars,
+≤ 1 of [?؟？]; G5 the dominant script of the last 5 inbound [fit-6]; G6 other clients' codes, system shapes,
+foreign phones, staff names, a canary from the system prompt; no denial of being an AI; no URL except an
+approved kb fact's, no @mention; G10 the fingerprint (> 3 peers / 24 h) and URL caps [ban-6]; G11 a yo'lkira
+figure carries the approximation word and «boj, QQS alohida» in its locale. His own ✏️ text passes the owner
+subset (length, other-client codes as a warning) — his words are his.
+
+### 17.7 The card and the decision
+
+- `agentCardText()` (pure): action line, warnings, the FULL reply (+ gloss), «🔢 Raqamlar», our last message,
+  the customer's lines (the only clipped part) [leak-3]. Buttons `ag:s|e|r|h:<draft>[:<digest>]`; no ✅ when
+  blocked. A superseding draft edits the card in place; an editing draft is never superseded [fit-9].
+- `decideDraft` — holder only — ONE tx: lock, CAS, policy re-run, re-validation (newer substantive inbound →
+  superseded; his own reply → taken_over; edited anchor → superseded), the agent_outbox row (random_id,
+  not_before by the night rule), audit; then idempotent `runDraftActions` after commit (calc_submit FIRST:
+  the reply is queued only when the landing queued; noteId = uuidv5(draft)) [build-6, money-5, regression-4].
+- ✏️ → wait 'agent_edit' (or a swipe-reply to the card); his text → final_body, the card returns. 🙋 → the
+  chat is his for 24 h. ❌ → rejected. After an edit that answered a needs_owner question: [📌 Umumiy]
+  [👤 Faqat shu mijoz] [✖] → kb_facts with scope, the money refusal and the mask check [leak-2, money-9].
+- Web: the same decisions on `/suhbatlar/ai`, one function, other copies retired.
+
+### 17.8 Sending (listener, after the human rows)
+
+`pumpGate` before every claim, human rows included (pause, persisted flood_until) [ban-1]; one agent row past
+'read' per account; steps on the row's own clock: verify (pure `agentSendVerdict` + caughtUp + the live head
+via GetHistory(3)) → ReadHistory(maxId = anchor) → SetTyping ≤ 3, clamp(2 s + chars/30, 3, 12 s) → verify the
+live head again → CAS 'sending' → `invoke(SendMessage{randomId, noWebpage, message})` → markSent + recordSent
+(lead-aware). Abort after the read → MarkDialogUnread [regression-12]. Ambiguous failure → 'unknown', never
+re-sent. Caps in `AGENT_LIMITS` (fuses, not Telegram's numbers): ≥ 20 s per chat, 10-25 s jitter between agent
+sends, ≤ 20/hour, ≤ 80/day, the 14-day ramp, ≤ 12 per chat per day [ban-11].
+
+### 17.9 Ban protection (every account)
+
+`tgErrorKind` (restricted / flood / session / recipient_final / db / transient) for every call; restricted →
+the account's guard row paused (human sends too), agent off, queued agent rows cancelled, alarm to the manager
+and every super_admin [ban-10], a banner + «Tekshirdim» on the /suhbatlar bridge panel (that manager or the
+super_admin role) [regression-11]; gramjs's own ≤ 60 s flood sleeps recorded through a logger hook, waits above
+persisted UNCAPPED; two send-path floods in 24 h → agent off + alarm [ban-2]; per-recipient finals mute the
+conversation; two blocks within 7 days of an AI message → agent off; explicit device fields [ban-12].
+
+### 17.10 Calculation
+
+Yo'lkira alone → `yolkira_estimate` with the approximation and the customs sentence. Podklyuch / rastamojka →
+the checklist; `calc_submit` on ✅ through `landIntake` (the bot's door: the same queue, the same AI VED pre-pass)
+with the chat's lead or client, explicit certificate, cited material; `agent_calc_links`. The answer —
+Готово, seal, hand-back, recalc, and the AI-VED estimate labelled «rasmiy emas» — reaches him as
+`AgentCalcAnswered` (own group, no exceptUserId, chain root) [regression-5, money-7, fit-5]; a hand-back drafts
+the question for the customer. ✏️ Narx yozaman → `recordOffer` under his actor → a deterministic reply from
+`offerLines()` in the customer's language [money-4].
+
+### 17.11 Strangers (3a)
+
+On the agent owner's account: a visible-phone stranger (the tray's ask) and a hidden-number NON-contact on
+first contact get ONE card per peer — no message text; never for a close friend or a colleague's phone
+[fit-7]. [🆕 Yangi lid] → the tray's `openLeadForChat` (by name without a phone); [👤 Mijoz — kod] → wait
+'agent_code' → an echo card → the include rule (typed-code strength) [leak-4]; [🚫 Shaxsiy] → exclude. Lid/mijoz
+queue a one-peer pull (tg_peer_pulls; ≤ 50 messages, ≤ 24 h; one at a time, ≥ 10 s apart) and the newest
+inbound gets a run.
+
+### 17.12 Knowledge, style, screens, scripts
+
+- kb seed (vendored, reviewed; no prices, no extras): the three China receiving points, the Tashkent address he
+  gave (the map link only when asked), transit 15-25 days «va'da emas», payment basics, prohibited goods, how a
+  GS code is opened. `pnpm exec tsx scripts/agent-seed-kb.ts` through `migrate`.
+- `scripts/agent-style.ts` proposes the masked style guide; `scripts/agent-census.ts` counts (read-only).
+- `/suhbatlar/ai`: Kutilmoqda · Savollar · Bilimlar · Sozlamalar (mode, owner, session confirm, pause + clear,
+  budget left, ochiq hisoblar N/20, `agentStats`, style guide). 🤖 on AI-sent bubbles in the thread, the card
+  panel and the dock; an approved-but-waiting AI reply shown as «🤖 08:30 da ketadi» and cancellable by him.
+- purgeExcludedChat removes every agent row of that chat [leak-9]; fences: the agent toolset boundary
+  [leak-11], the platform→wms static-import count, the purge's derived table list.
+
+### 17.13 Not in phase 1 (stated)
+
+Auto mode; campaigns; WhatsApp, Gmail, calls; copying a customer's files onto the intake note (the note names
+them and links the chat) [fit-2]; random_id for HUMAN sends (agent rows only) [ban-5]; the relay of Telegram's
+777000 service notices; deletes learned while the listener is down.
