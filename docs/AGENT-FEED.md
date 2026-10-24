@@ -64,18 +64,19 @@ The ordinary webhook door (docs/ADS.md §5.3) on the `agent` source.
   minted on the doors screen (§0 step 1). The agent may also send
   `X-ERP-Key` with the same value; it is not read. With no `X-GSR-Key`
   header the door also takes the key from a body field `key` or `google_key`
-  (Google's lead form cannot set a header) — the agent sends the header,
-  and only a caller that sent it is told 503 below.
+  (Google's lead form cannot set a header) — the agent sends the header.
+  A failed key LOOKUP is told 503 only to a caller that sent the header; a
+  failed LANDING is told 503 whichever way the key came (the table below).
 - Body: JSON object, plain shape.
 
   | Key | Read as | Limit |
   |---|---|---|
-  | `name` (or `ism`) | the lead's name | 120 characters — counted in code points, so an emoji is one and is never cut in half (whitespace collapsed first) |
+  | `name` (or `ism`) | the lead's name | 120 UTF-16 units — what JavaScript's `.length` counts, so an emoji is two — whitespace collapsed first. A cut never halves an emoji: one that does not fit is left out whole. A sequence of several code points (a ZWJ family, a flag, a skin tone, a keycap, a letter + combining mark) can lose its tail at the cut |
   | `phone` (or `telefon`) | the phone; identity = its last 9 digits | 9+ digits, or the push is `dropped/no_phone` |
   | `note` (or `izoh`) | the first lenta note | see below |
   | `external_id` (or `id`) | the replay key | — |
   | `company` / `firma` | `leads.company` (the card's own column) on a CREATED lead — **and** a note line and a pair like any other key, so a joined push still shows it | 200 chars on the card |
-  | any other key | a `key: value` line appended to the note, AND a question pair for the mapping screen | 30 pairs, key 80, value 300 characters (code points) |
+  | any other key | a `key: value` line appended to the note, AND a question pair for the mapping screen | 30 pairs, key 80, value 300 UTF-16 units (the same rule) |
 
   `company`/`firma` reach the card's column through the agent's door only;
   every other webhook door keeps them as the note line and pair they always
@@ -89,8 +90,12 @@ The ordinary webhook door (docs/ADS.md §5.3) on the `agent` source.
   opening sentence self-sufficient; put keys the ERP must keep (e.g.
   `utm_source`) where a 1000-character cut cannot reach them, or rely on `ref`
   (below), which stores the whole body minus the key, uncut. A lone UTF-16
-  surrogate the body carries (`"\ud83d"` is valid JSON) is stored as U+FFFD
-  wherever it lands.
+  surrogate or a NUL (U+0000) the body carries (`"\ud83d"` and `"\u0000"`
+  are valid JSON) is stored as U+FFFD wherever it lands — the
+  `external_id` included, so the outcomes feed hands such an id back with
+  U+FFFD in its place. A body nested too deep to serialise (thousands of
+  levels) is kept in `ref` as `{"_truncated":true}`; the arrival still
+  lands.
 - `external_id = cs:<company_uuid>:<yyyymm>`. The outcomes feed only reports
   ids that start with `cs:`.
 - Answer:
@@ -98,8 +103,8 @@ The ordinary webhook door (docs/ADS.md §5.3) on the `agent` source.
   | Code | Means | Do |
   |---|---|---|
   | `200 {"ok":true}` | the arrival was RECORDED — whatever became of it: created, joined, suppressed, capped, no_phone … — or it is a replay of one that was | done; the outcomes feed says which |
-  | `503 {"error":"unavailable"}` | the landing failed (or, when `X-GSR-Key` was sent, the key lookup did): nothing was recorded | retry, same `external_id` |
-  | `5xx` HTML (Next's error page) | the database failed before the key could be checked and no `X-GSR-Key` header was sent | retry |
+  | `503 {"error":"unavailable"}` | the landing failed (or, when `X-GSR-Key` was sent, the key lookup did): no ledger row — but a lead, and on a retry a joined lenta note, may already stand (the replay fence below) | retry, same `external_id` |
+  | `500`, empty body | the database failed before the key could be checked and no `X-GSR-Key` header was sent | retry |
   | `404` | the door is off, the key is wrong or absent, or the body is not JSON | do not retry; tell the owner |
 
   The outcome itself never changes the answer: created and suppressed read
@@ -111,10 +116,13 @@ The ordinary webhook door (docs/ADS.md §5.3) on the `agent` source.
   earlier one of the same id is still running waits for it (the app is one
   process and chains them per id) and is then that replay: a re-send after a
   read timeout cannot make a second lead. A landing that failed AFTER its
-  lead was written (a database failure half-way — the landing's own cuts no
-  longer throw) leaves that lead standing; the retry then JOINS it, so the
+  lead was written leaves that lead standing; the retry then JOINS it, so the
   outcome reads `joined` and the seller hears «🔁 Qayta yozdi» about a lead
-  whose «🆕» never came (§5).
+  whose «🆕» never came (§5). Only a database failure half-way does that
+  now: no text the body carries — an emoji at a cut, a lone surrogate, a NUL,
+  a body nested too deep — makes a write refuse any more (#1467, #1473). A
+  cause that repeated on every attempt would answer 503 to every retry and
+  add one lenta note each; none is known.
 - Caps (counted over the arrivals ledger, dropped arrivals included):
   3 per phone per day, 200 per source per day → `dropped/capped`. The
   per-phone count is per FAMILY: an agent push through THIS door counts only
@@ -174,12 +182,14 @@ else.
 
 Adverts, the form and the bot are unchanged: a client's phone through an
 advert still lands on the client's card (`client`), only for ACTIVE clients.
-Three fixes of the second review reach every door, and none changes what a
-landing that worked did (#1467-#1469): text is cut by code points and a lone
-surrogate stored as U+FFFD (an emoji at an edge used to throw after the lead
-was written); a client card whose `phones` is not a list is read as no
-phones (one such card failed every arrival with a phone); and a delivery of
-an `external_id` already in flight waits for it.
+The fixes of the second and third reviews reach every door, and none
+changes what a landing that worked did (#1467-#1469, #1473): text is cut in
+the UTF-16 units it always was but never through an emoji, and a lone
+surrogate or a NUL is stored as U+FFFD (an emoji at an edge, or a NUL
+anywhere, used to throw after the lead was written — on the public form that
+was a lead the daily caps never counted); a client card whose `phones` is not
+a list is read as no phones (one such card failed every arrival with a
+phone); and a delivery of an `external_id` already in flight waits for it.
 
 ## 3. The feeds
 
@@ -380,11 +390,24 @@ suppression list; it never receives the client book.
   your own company uuid, which nobody else knows.
 - A landing that fails half-way (the database, after the lead's INSERT)
   leaves the lead; the agent's retry joins it (`joined`, «🔁 Qayta yozdi»
-  for a lead never announced). The landing's own text cuts no longer cause
-  one (code points, #1467).
-- The in-flight fence (§1) is per app process. Production runs one; across
-  processes the ledger's unique index still keeps one ledger row, not one
-  lead.
+  for a lead never announced). No text the body carries causes one any more
+  (#1467, #1473). A narrower case stays: the ledger row COMMITS and its
+  answer is lost on the way back (the connection dies in between). The agent
+  is told 503, its retry is a replay answered 200, and nothing announces that
+  arrival again: no «🆕», no contact clock, so the outcomes row reads
+  `created` and never `contacted_at`. Reasoned, not reproduced; the same
+  window has always existed on every door.
+- After a half-way failure, the retry can still make a SECOND lead: when the
+  seller moved the orphan to won or lost in between (the retry finds no open
+  lead), or when three other agent pushes on that phone the same day cap it
+  (`dropped/capped`, no lead id, the orphan stands). Reasoned, not probed.
+- The in-flight fence (§1) is per app process — per copy of the landing's
+  module, and every channel with an id lands through one caller, so each
+  channel's deliveries meet in one copy. Production runs one app process;
+  across processes the ledger's unique index still keeps one ledger row, not
+  one lead. A first delivery that never settles (a statement on a dead
+  connection) holds every later delivery of that id until a restart; each
+  waiter holds only its HTTP request.
 - The doors screen sends a door's key only to whoever holds
   `admin.settings.manage` — the page data of every other `crm.manage` holder
   carries none (it is the agent key that reads the feeds).

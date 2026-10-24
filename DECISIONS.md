@@ -4797,3 +4797,65 @@ red: the name's cut, a pair value's cut, the key's cut, the activity excerpt's c
 phone, the scalar guard, the in-flight chain, the agent door's 503 on a landing, its 503 on a key lookup, the
 short part, the 998 garbage, the person's instant, the belt's narrowing (wrong digits → the belt tests red), the
 median window, and the one-page full set (on a 17,000-entry copy: 6 red).
+
+### The third review — the fixes reviewed again (2026-10-24, same day; NO migration, ledger 136)
+
+Two lenses (the live doors, and the agent's door) over `23fe1736`; every finding and suspicion verified here
+before it was fixed or refuted, each fix red-proven by string edit with a hash-verified restore.
+
+1473. **A cut keeps the UTF-16 budget it always had, and a NUL is storable on every door.** #1467's code-point cut
+was a REGRESSION for the live doors: `normalizeKey` spelled a question longer than 80 units with an emoji in its
+first 80 one unit longer than the old `slice` had, and a `lead_field_map` row saved through the screen before the
+deploy holds the old spelling — so every later Meta, Google or webhook arrival with that question missed its
+mapping in silence: no kub on the card, a volume rule deaf to it, the question listed again as unmapped (the
+reviewer measured it: `quoted_volume_m3` NULL, the control without the emoji `25.000`). The same cut let a name grow
+past the ✏️ form's `max(200)` and a mapped answer past a text field's `maxLength`, both counted in units.
+`clipUnits` (platform/text/clip.ts) cuts `storableText(text).slice(0, max)` and only backs off a high half left at
+the edge, so every string the old cut could store comes out the same and only the case that used to throw changes
+(an emoji that does not fit is left out whole); `normalizeKey`, `capturePairs`, the landing's `trim` and
+`addActivity`'s excerpt use it. Second: **NUL** passed every helper, and postgres refuses it in a text column
+(22021) and as `\u0000` in jsonb (22P05) — after `createLead` had committed (the lenta note, or the ledger's `ref`
+/ `fields`). On the agent's door that was a 503 for ever, an orphan lead and one more note per retry, never in the
+outcomes; on **the public form, with no key and no external id, every such submission was a routed lead booked for
+today that the daily caps never saw** (they count the ledger; five phones → five leads, `inboundCount` 0). Older
+than this branch, like the lone half. `storableText` makes NUL U+FFFD beside the lone half — one unit for one, no
+cut moves — and covers the name, note, company, the card's phone, every pair and the stored body. Pinned through
+the agent's real route (NUL in the note, an extra key, a nested ref, a pair outside the note's cut, the name, the
+firm, the phone, a key; each 200, created, one note, its retry a replay, in the outcomes), on the tiktok door, and
+through `submitArizaAction` (a ledger row the caps count); the field-map regression maps the old 80-unit spelling
+and lands the whole question. The structural cure — claim the ledger row first — would close the class for any
+input postgres refuses next; it touches every door's caps and replay fence and was again not taken.
+
+1474. **The stored body never throws, and the replay key is spelled as postgres stores it.** `ref` is the whole
+body, and `wellFormedJson`'s replacer function cost the serialiser stack: a key nested 3,000-6,000 levels deep
+stored before #1467 and threw `RangeError` inside `record()` after the lead and its note (measured here: 4,162
+levels plain, 2,227 with the replacer). `storableJson` now runs `JSON.stringify` untouched and rewrites the two
+escapes jsonb refuses (`\u0000`, a lone `\udXXX` — since ES2019 a pair is never escaped) in its OUTPUT, counting
+the backslashes before each so a typed `\\u0000` stays text: byte for byte what `JSON.stringify` writes for any
+body that needs nothing, and as deep. What no serialiser writes is decided BEFORE the first write (`storedRef`)
+and kept as `{"_truncated":true}` — the ref is a trail, the arrival is the record. The external id is
+`storableText`-ed before the chain key and the fence: postgres.js already turns a lone half into U+FFFD on the
+wire (probed), so two ids differing only there were one stored id and two chain keys; and a NUL in it made the
+replay SELECT throw on every attempt. `inboundLanded` (the bot's fence) asks the same spelling.
+
+1475. **Verified, stated, deferred.** VERIFIED: the bundle may hold several copies of `inbound.ts`, and the chain is
+per copy — but every channel that carries an id has ONE lander (`webhook` the route, `meta` the Meta worker in the
+app process, `telegram` the cabinet bot; `site` lives in tg-listen with its own `serialised`), so each channel's
+deliveries meet in one map; the comment said «this process» and now says why that holds. With NUL and the lone half
+handled, `createLead`'s INSERT can no longer be refused by input (`leads.name/phone/company` are text), so
+`routeInboundOwner`'s counter bumped before it inflates only on a database failure. STATED, reasoned, not
+reproduced: a ledger INSERT that commits while its answer is lost is answered 503, its retry is a replay, and that
+arrival is never announced or clocked (the same window on every door since 0113); after a half-way failure a retry
+still makes a second lead when the orphan was moved to won/lost meanwhile or the phone hit the agent's cap.
+DEFERRED, the nit: the per-id chain has no bound on its wait, so a first landing that never settles holds every
+later delivery of that id until a restart (each waiter holds its request only). A timeout would reopen the
+two-leads race for a slow-but-alive first attempt and cannot be red-proven without a test-only knob or fake timers
+under a live database driver; left as designed and written into AGENT-FEED.md §5. NOT MEASURED: how many
+`lead_field_map` keys on the live server are affected — moot now, since every key the old cut stored is spelled the
+same again (`SELECT key FROM lead_field_map WHERE key ~ '[\U00010000-\U0010FFFF]'` lists the candidates). AGENT-FEED.md
+§1 fixed in four places: the no-header database failure is a `500` with an EMPTY body; a failed landing is 503
+whichever way the key came; the limits are UTF-16 units and a multi-code-point emoji can lose its tail; the 503 row
+says a lead may already stand. Red proofs (12), all by string edit and hash-verified restore, all red: the key cut
+by code points, the cut's back-off, NUL kept, the refused escapes kept, a replacer function, the ref's catch, the id
+as sent, the bot fence's id as sent, `trim` by `slice`, the phone as sent, the pair value by `slice`, the activity
+excerpt by `slice`.
