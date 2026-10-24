@@ -46,6 +46,7 @@ function toRow(r: OutboxSelect): AgentOutboxRow {
     readDone: r.readDone,
     queuedAt: r.queuedAt,
     releaseAt: r.releaseAt,
+    lastStepAt: r.stepClaimedAt,
   };
 }
 
@@ -414,11 +415,14 @@ export async function applyAgentOutcome(
   const quiet: OutcomeReport = { final: false, markUnread: false, sessionDead: null };
   switch (outcome.kind) {
     case 'advance': {
+      // `step_claimed_at` is when the row last took a step (the send's claim stamps it too): the night
+      // asks it whether a reply past its read is still in the middle of its choreography (S3's follow-up).
       await db
         .update(agentOutbox)
         .set({
           step: outcome.step,
           nextStepAt: outcome.nextStepAt,
+          stepClaimedAt: now,
           ...(outcome.readDone !== undefined ? { readDone: outcome.readDone } : {}),
           ...(outcome.typingCount !== undefined ? { typingCount: outcome.typingCount } : {}),
         })
@@ -426,12 +430,25 @@ export async function applyAgentOutcome(
       return quiet;
     }
     case 'wait': {
+      if (outcome.reason !== 'night') {
+        await db
+          .update(agentOutbox)
+          .set({ nextStepAt: outcome.nextStepAt })
+          .where(and(eq(agentOutbox.id, row.id), eq(agentOutbox.status, 'agent')));
+        return quiet;
+      }
       // A night hold moves the approval's own clock with it (S2, S3): the reply waits for the morning it is
-      // now promised for, and its six hours count from there.
-      await db
+      // now promised for, and its six hours count from there. And the morning starts the choreography
+      // afresh — verify, read, type, send — because hours have passed since any of it, and a row left at
+      // 'typing' or 'send' would be the one in flight that no other approved reply may start behind
+      // (`dueAgentRow`) for the whole night, the customer who wrote ten minutes ago included.
+      const held = await db
         .update(agentOutbox)
-        .set({ nextStepAt: outcome.nextStepAt, ...(outcome.reason === 'night' ? { releaseAt: outcome.nextStepAt } : {}) })
-        .where(and(eq(agentOutbox.id, row.id), eq(agentOutbox.status, 'agent')));
+        .set({ nextStepAt: outcome.nextStepAt, releaseAt: outcome.nextStepAt, step: 'verify', typingCount: 0 })
+        .where(and(eq(agentOutbox.id, row.id), eq(agentOutbox.status, 'agent')))
+        .returning({ id: agentOutbox.id });
+      // The card said «yuborilmoqda…»; it says «08:30 da ketadi» now.
+      if (held.length > 0) await settled(row);
       return quiet;
     }
     case 'cancel': {
@@ -527,6 +544,13 @@ export async function applyAgentOutcome(
  * «off» of an alarm, a draft retired elsewhere. An 'unknown' row is not one
  * of them — the message may well be in the chat. A day back and no further:
  * a badge given back tomorrow is noise, not a reminder.
+ *
+ * A day of what the listener could ACT in, though. While the account is
+ * paused nothing here calls Telegram (S8), so a badge owed then waits for
+ * «Tekshirdim» — and a pause longer than the day would otherwise drop it
+ * without a word, leaving the customer's question read on his phone with
+ * nothing sent. So the day counts from the latest of the approval, the
+ * morning it was held to, and the account's last pause clear.
  */
 export async function badgesToRestore(
   managerUserId: string,
@@ -540,7 +564,14 @@ export async function badgesToRestore(
         eq(agentOutbox.managerUserId, managerUserId),
         eq(agentOutbox.readDone, true),
         inArray(agentOutbox.status, ['cancelled', 'failed', 'expired']),
-        sql`${agentOutbox.queuedAt} >= ${new Date(now.getTime() - 86_400_000).toISOString()}::timestamptz`,
+        // `${agentOutbox}.manager_user_id`, never `${agentOutbox.managerUserId}`: inside the subquery an
+        // unqualified column binds to ITS table — tg_accounts has one of that name (#128).
+        sql`greatest(
+          ${agentOutbox.queuedAt},
+          coalesce(${agentOutbox.releaseAt}, ${agentOutbox.queuedAt}),
+          coalesce((SELECT g.cleared_at FROM tg_account_guard g JOIN tg_accounts a ON a.id = g.account_id
+                     WHERE a.manager_user_id = ${agentOutbox}.manager_user_id), ${agentOutbox.queuedAt})
+        ) >= ${new Date(now.getTime() - 86_400_000).toISOString()}::timestamptz`,
       ),
     )
     .orderBy(agentOutbox.queuedAt)

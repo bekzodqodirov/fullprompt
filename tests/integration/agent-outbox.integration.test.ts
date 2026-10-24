@@ -714,6 +714,71 @@ describe('the send path’s review fixes', () => {
     expect(after?.nextStepAt.getTime()).toBe(morning.getTime());
   });
 
+  it('a night hold starts the choreography afresh in the morning, says so on the card, and holds no other reply behind it', async () => {
+    const own = await makeManager('night-hold');
+    // Read and typing on his phone when a wait carried it into the night.
+    const { row, draftId } = await approved({ manager: own.userId, step: 'typing', readDone: true });
+    await db.update(agentOutbox).set({ typingCount: 2 }).where(eq(agentOutbox.id, row.id));
+    await db.insert(notifications).values({
+      userId: own.userId,
+      channel: 'telegram',
+      type: 'AgentDraft',
+      payload: { draftId, text: '✅ Tasdiqlandi · yuborilmoqda…' },
+      status: 'sent',
+    });
+    const morning = new Date(Date.now() + 9 * 3_600_000);
+    await applyAgentOutcome({ ...row, typingCount: 2 }, { kind: 'wait', reason: 'night', nextStepAt: morning }, own.account);
+    // verify → read → typing → send again at 08:30; the read on his phone still stands.
+    expect(await agentRowById(row.id)).toMatchObject({ status: 'agent', step: 'verify', typingCount: 0, readDone: true });
+    // The card no longer says «yuborilmoqda…» all night.
+    const [card] = await db
+      .select()
+      .from(notifications)
+      .where(and(eq(notifications.userId, own.userId), eq(notifications.type, 'AgentDraft')));
+    expect(String((card!.payload as { text?: unknown }).text)).toContain('da ketadi');
+    // Not the row in flight: another approved reply — a customer who wrote minutes ago — may go tonight.
+    const fresh = await approved({ manager: own.userId, step: 'verify' });
+    expect((await dueAgentRow(own.userId, new Date()))?.id).toBe(fresh.row.id);
+  });
+
+  it('every step stamps when it was taken — what the night asks of a reply past its read (S3’s follow-up)', async () => {
+    const { row } = await approved({ step: 'read' });
+    expect(row.lastStepAt).toBeNull();
+    const at = new Date(Date.now() - 5_000);
+    await applyAgentOutcome(row, { kind: 'advance', step: 'typing', nextStepAt: new Date(), readDone: true }, account, at);
+    expect((await agentRowById(row.id))?.lastStepAt?.getTime()).toBe(at.getTime());
+    // A wait moves the row's clock, never the stamp of its last step.
+    await applyAgentOutcome(row, { kind: 'wait', reason: 'chat_gap', nextStepAt: new Date(Date.now() + 20_000) }, account);
+    expect((await agentRowById(row.id))?.lastStepAt?.getTime()).toBe(at.getTime());
+    // The send's claim is a step too.
+    await db.update(agentOutbox).set({ step: 'send' }).where(eq(agentOutbox.id, row.id));
+    expect(await claimAgentSend(row.id)).toBe(true);
+    expect((await agentRowById(row.id))!.lastStepAt!.getTime()).toBeGreaterThan(at.getTime());
+  });
+
+  it('a badge owed while the account was paused comes back after «Tekshirdim», however long the pause (S8’s follow-up)', async () => {
+    const own = await makeManager('badge-pause');
+    const now = new Date();
+    const read = await approved({ manager: own.userId, step: 'typing', readDone: true });
+    // Read on his phone, then cancelled by the pause 30 hours ago — while it stood, nothing could call Telegram.
+    await db
+      .update(agentOutbox)
+      .set({ status: 'cancelled', lastError: 'account_paused', queuedAt: new Date(now.getTime() - 30 * 3_600_000) })
+      .where(eq(agentOutbox.id, read.row.id));
+    expect(await badgesToRestore(own.userId, now), 'a day from the approval has run out').toEqual([]);
+    // He presses «Tekshirdim» a minute ago: the day counts from there.
+    await db.insert(tgAccountGuard).values({ accountId: own.account.id, clearedAt: new Date(now.getTime() - 60_000) });
+    expect((await badgesToRestore(own.userId, now)).map((b) => b.id)).toEqual([read.row.id]);
+    // Another account's clear says nothing about this one's rows.
+    const other = await makeManager('badge-pause-other');
+    const theirs = await approved({ manager: other.userId, step: 'typing', readDone: true });
+    await db
+      .update(agentOutbox)
+      .set({ status: 'cancelled', queuedAt: new Date(now.getTime() - 30 * 3_600_000) })
+      .where(eq(agentOutbox.id, theirs.row.id));
+    expect(await badgesToRestore(other.userId, now)).toEqual([]);
+  });
+
   it('a flood replayed after a database blip is one wait, never the two that switch the agent off (S7)', async () => {
     const own = await makeManager('flood-replay');
     await agentOn(own.userId);

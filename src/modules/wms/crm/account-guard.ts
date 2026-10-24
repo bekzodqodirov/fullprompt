@@ -144,18 +144,30 @@ export async function stampAgentPump(accountId: string, caughtUp: boolean): Prom
 }
 
 /**
+ * Has a pump that knows agent_outbox stamped this account lately
+ * (regression-3)? The RUN's gate: a draft may be written while the listener
+ * is still walking its start-up gap — the ✅ and the live head decide over
+ * what the walk recovers — and refusing it then would write a refused run
+ * row that the deploy-gap pass skips for good, so a customer who wrote
+ * during a restart's catch-up would never get a card (review S11's
+ * follow-up).
+ */
+export function pumpIsFresh(guard: Pick<GuardState, 'agentPumpAt'> | null, now: Date): boolean {
+  if (!guard?.agentPumpAt) return false;
+  return now.getTime() - guard.agentPumpAt.getTime() <= AGENT_LIMITS.pumpFreshMs;
+}
+
+/**
  * Is a CURRENT listener running on this account — the one the app may hand an
  * approved reply to (regression-3)? Two stamps, both written by the process
- * holding the session: a fresh pump stamp («a pump that knows agent_outbox
- * runs here») AND the catch-up stamp (review S11). The second is NULLed by a
- * process's first stamp and set only when its start-up walk is done, so a
- * listener whose catch-up failed is not current: a ✅ into it would only wait
- * on `not_caught_up` until the six-hour expiry. One predicate for the ✅ and
- * the run's own gate, so the two cannot disagree.
+ * holding the session: a fresh pump stamp (`pumpIsFresh`) AND the catch-up
+ * stamp (review S11). The second is NULLed by a process's first stamp and set
+ * only when its start-up walk is done, so a listener whose catch-up failed is
+ * not current: a ✅ into it would only wait on `not_caught_up` until the
+ * six-hour expiry. The ✅'s predicate; the run asks the pump alone.
  */
 export function listenerIsCurrent(guard: Pick<GuardState, 'agentPumpAt' | 'caughtUpAt'> | null, now: Date): boolean {
-  if (!guard?.agentPumpAt || !guard.caughtUpAt) return false;
-  return now.getTime() - guard.agentPumpAt.getTime() <= AGENT_LIMITS.pumpFreshMs;
+  return pumpIsFresh(guard, now) && Boolean(guard?.caughtUpAt);
 }
 
 /** The guard of the account a USER holds — what the web and the bot read. */

@@ -76,6 +76,18 @@ export function strangerUserOf(chat: unknown): StrangerUser | null {
 }
 
 /**
+ * May a hidden number get the pending rule the «📵 raqam yashirin» card acts
+ * on? Not yet. The card's first button, «🆕 Yangi lid», opens the lead through
+ * `openLeadForChat`, which refuses a rule with no phone (`chat_no_phone`) —
+ * the card package's by-name lead door is what lets it — so a phone-less rule
+ * written today is a card whose 🆕 answers «Lid ochilmadi: chat_no_phone» the
+ * first time he presses it. The rule waits for the door, and is flipped in
+ * the same change that lands it: `agent-listener-hooks.integration.test.ts`
+ * presses the door with a phone-less rule and goes red the day it opens.
+ */
+export const HIDDEN_NUMBER_CARD_READY = false;
+
+/**
  * A stranger wrote to the agent owner's account (spec §17.11, his Q18 ⭐,
  * review fit-7) — the listener's half of the stranger card; the card itself
  * is the app's sweep.
@@ -91,6 +103,9 @@ export function strangerUserOf(chat: unknown): StrangerUser | null {
  *       NOTHING: a rule somebody already decided is never touched, and a
  *       pending one stays as it was. A pending rule decides nothing
  *       (`classifyWithRules`), so the next line is the same `no_phone`.
+ *       Only when the caller says the card can act on it
+ *       (`hiddenNumberRule`, the listener's `HIDDEN_NUMBER_CARD_READY`) —
+ *       required, because an optional one would fail open.
  *
  * Nothing about the message is stored — no text, no row in tg_messages: the
  * chat stays unkept until he answers the card (round 79's promise). The
@@ -103,6 +118,7 @@ export async function noteStranger(input: {
   title: string;
   verdict: 'ask' | 'no_phone';
   user: StrangerUser;
+  hiddenNumberRule: boolean;
 }): Promise<{ contactStamped: boolean; ruleAdded: boolean }> {
   const none = { contactStamped: false, ruleAdded: false };
   if (input.user.deleted || input.peerId <= 0n) return none;
@@ -117,7 +133,7 @@ export async function noteStranger(input: {
       WHERE agent_conversations.peer_contact IS DISTINCT FROM EXCLUDED.peer_contact
     RETURNING peer_id`);
   let ruleAdded = false;
-  if (input.verdict === 'no_phone' && !input.user.contact) {
+  if (input.verdict === 'no_phone' && !input.user.contact && input.hiddenNumberRule) {
     // Through the builder, not raw SQL: the rule's id is minted in JS (uuidv7), as every other writer mints it.
     const added = await db
       .insert(tgChatRules)

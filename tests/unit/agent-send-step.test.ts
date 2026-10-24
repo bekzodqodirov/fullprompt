@@ -10,10 +10,12 @@ import {
   nextTashkentMorning,
   releaseAt,
   runAgentStep,
+  slotHold,
   verdictOutcome,
   type AgentOutboxRow,
   type AgentTelegram,
   type SendFacts,
+  type SendTurn,
 } from '@/modules/wms/agent/send-step';
 import { draftWorthy, isNudge } from '@/modules/wms/agent/worthy';
 import { eligibleForRun, type EligibilityFacts } from '@/modules/wms/agent/eligibility';
@@ -80,6 +82,7 @@ const row: AgentOutboxRow = {
   readDone: false,
   queuedAt: new Date(now.getTime() - 60_000),
   releaseAt: null,
+  lastStepAt: null,
 };
 
 describe('the fuses (ban-11)', () => {
@@ -172,12 +175,46 @@ describe('agentSendVerdict', () => {
     expect(agentSendVerdict(late, { ...f, lastInboundAt: null })).toMatchObject({ final: false, reason: 'night' });
     // Thirty minutes ago: he is awake and waiting.
     expect(agentSendVerdict(late, { ...f, lastInboundAt: new Date(night.getTime() - 30 * 60_000) })).toEqual({ ok: true });
-    // Already read and typing on his phone: finishing is the less strange of the two.
-    expect(
-      agentSendVerdict({ ...late, readDone: true }, { ...f, lastInboundAt: new Date(night.getTime() - 3 * 3_600_000) }),
-    ).toEqual({ ok: true });
+    // Read and typing on his phone SECONDS ago: finishing is the less strange of the two.
+    const asleep = { ...f, lastInboundAt: new Date(night.getTime() - 3 * 3_600_000) };
+    expect(agentSendVerdict({ ...late, readDone: true, lastStepAt: new Date(night.getTime() - 20_000) }, asleep)).toEqual({
+      ok: true,
+    });
     // By day the rule says nothing.
     expect(agentSendVerdict(row, { ...facts, lastInboundAt: new Date(now.getTime() - 5 * 3_600_000) })).toEqual({ ok: true });
+  });
+
+  it('a reply whose read was before a wait of hours is a new message at night — held like any other', () => {
+    // Read and typed by 21:55 Tashkent, then a SendMessage FLOOD_WAIT of two and a half hours: back at 00:25.
+    const back = new Date('2026-10-24T19:25:00Z'); // 00:25 Tashkent
+    const flooded = {
+      ...row,
+      step: 'send' as const,
+      readDone: true,
+      queuedAt: new Date('2026-10-24T16:50:00Z'), // approved 21:50
+      lastStepAt: new Date('2026-10-24T16:55:20Z'), // the claim before the flooded send, 21:55
+    };
+    const f = {
+      ...facts,
+      now: back,
+      anchorSentAt: new Date('2026-10-24T12:30:00Z'),
+      lastInboundAt: new Date('2026-10-24T12:30:00Z'), // he wrote at 17:30, eleven hours ago
+    };
+    expect(agentSendVerdict(flooded, f)).toEqual({
+      ok: false,
+      final: false,
+      reason: 'night',
+      until: new Date('2026-10-25T03:30:00Z'),
+    });
+    // A restart's catch-up that kept a typing row waiting past 22:00: the same.
+    const typing: AgentOutboxRow = { ...flooded, step: 'typing', lastStepAt: new Date('2026-10-24T16:58:00Z') };
+    expect(
+      agentSendVerdict(typing, { ...f, now: new Date('2026-10-24T17:05:00Z') }), // 22:05, seven minutes after its last step
+    ).toMatchObject({ final: false, reason: 'night' });
+    // Two minutes is the choreography's own length: inside it, the reply finishes.
+    expect(
+      agentSendVerdict({ ...flooded, lastStepAt: new Date(back.getTime() - AGENT_LIMITS.nightFinishMs) }, f),
+    ).toEqual({ ok: true });
   });
 
   it('a verdict becomes the outcome the store writes', () => {
@@ -357,6 +394,50 @@ describe('runAgentStep', () => {
     expect(tg.calls).not.toContain('send');
   });
 
+  it('the claim and the send are ONE turn of the account’s send slot, taken after the live head (S12)', async () => {
+    const tg = fakeTg();
+    const order: string[] = [];
+    const turns: { peerId: bigint; headAt: Date }[] = [];
+    let clock = now.getTime();
+    const turn: SendTurn = async (t, send) => {
+      turns.push(t);
+      order.push(`turn after ${tg.calls.join(',')}`);
+      const out = await send();
+      order.push(`turn done after ${tg.calls.join(',')}`);
+      return out;
+    };
+    const d = {
+      ...deps(tg),
+      store: { facts: async () => facts, claimSend: async () => (order.push('claim'), true) },
+      sendTurn: turn,
+      now: () => new Date((clock += 1000)),
+    };
+    expect(await runAgentStep({ ...row, step: 'send', readDone: true }, d)).toEqual({ kind: 'sent', tgMessageId: 77n });
+    // The head outside the slot; the claim and the send inside it, in that order.
+    expect(order).toEqual(['turn after history', 'claim', 'turn done after history,send']);
+    // The head's instant is taken BEFORE the call: a send that left while it was on its way counts against it.
+    expect(turns).toEqual([{ peerId: row.peerId, headAt: new Date(now.getTime() + 2000) }]);
+  });
+
+  it('a turn the slot refuses makes no claim and no send — the row waits and reads its head again', async () => {
+    const tg = fakeTg();
+    let claimed = false;
+    const until = new Date(now.getTime() + 5_000);
+    const held: SendTurn = async () => ({ kind: 'wait', nextStepAt: until, reason: 'slot_held' });
+    const d = {
+      ...deps(tg),
+      store: { facts: async () => facts, claimSend: async () => (claimed = true) },
+      sendTurn: held,
+    };
+    expect(await runAgentStep({ ...row, step: 'send', readDone: true }, d)).toEqual({
+      kind: 'wait',
+      nextStepAt: until,
+      reason: 'slot_held',
+    });
+    expect(claimed).toBe(false);
+    expect(tg.calls).toEqual(['history']);
+  });
+
   it('classifies every Telegram answer to the send', async () => {
     const send = (err: Error) => runAgentStep({ ...row, step: 'send' }, deps(fakeTg({ send: async () => Promise.reject(err) })));
     expect(await send(tgError('RANDOM_ID_DUPLICATE'))).toEqual({ kind: 'sent', tgMessageId: null });
@@ -365,6 +446,43 @@ describe('runAgentStep', () => {
     const flood = new FloodWaitError({ request: new Api.messages.SendMessage({ peer: 'me', message: 'x' }), capture: 30 });
     expect(await send(flood)).toMatchObject({ kind: 'flooded', seconds: 30 });
     expect(await send(new Error('Request timed out'))).toMatchObject({ kind: 'unknown' });
+  });
+});
+
+describe('the send slot asks again when a send’s turn comes (S12’s follow-up)', () => {
+  const clear = { now, floodUntil: null, restrictedAt: null, peerSentAt: null };
+  const headAt = new Date(now.getTime() - 1_500);
+
+  it('lets a turn go when nothing ahead of it changed what it knows', () => {
+    expect(slotHold(clear, headAt)).toBeNull();
+    expect(slotHold(clear, null)).toBeNull();
+    // A send to this chat BEFORE the head was read is in the head.
+    expect(slotHold({ ...clear, peerSentAt: new Date(headAt.getTime() - 1) }, headAt)).toBeNull();
+  });
+
+  it('a wait the send ahead met holds every turn, a person’s and the agent’s, until it ends', () => {
+    const until = new Date(now.getTime() + 300_000);
+    expect(slotHold({ ...clear, floodUntil: until }, headAt)).toEqual({ reason: 'flood_wait', until });
+    expect(slotHold({ ...clear, floodUntil: until }, null)).toEqual({ reason: 'flood_wait', until });
+    expect(slotHold({ ...clear, floodUntil: new Date(now.getTime() - 1) }, null)).toBeNull();
+  });
+
+  it('a restriction the send ahead met holds every turn until the guard row has it — and not for ever', () => {
+    const restrictedAt = new Date(now.getTime() - 1_000);
+    expect(slotHold({ ...clear, restrictedAt }, null)).toMatchObject({ reason: 'slot_held' });
+    expect(slotHold({ ...clear, restrictedAt }, headAt)).toMatchObject({ reason: 'slot_held' });
+    const stale = new Date(now.getTime() - AGENT_LIMITS.slotRestrictedHoldMs - 1);
+    expect(slotHold({ ...clear, restrictedAt: stale }, null)).toBeNull();
+  });
+
+  it('a person’s reply to the same chat that left after the agent read its head holds the agent’s turn', () => {
+    const peerSentAt = new Date(headAt.getTime() + 1_200);
+    expect(slotHold({ ...clear, peerSentAt }, headAt)).toEqual({
+      reason: 'slot_held',
+      until: new Date(now.getTime() + AGENT_LIMITS.slotRetryMs),
+    });
+    // A person's own reply is never held for the chat's other sends.
+    expect(slotHold({ ...clear, peerSentAt }, null)).toBeNull();
   });
 });
 

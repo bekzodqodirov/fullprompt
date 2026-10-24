@@ -26,8 +26,7 @@ import { stampAgentPump } from '@/modules/wms/crm/account-guard';
  * His ✅ against the send path's review findings (S2, S4, S11), on a real
  * database: what the press writes for a night-held reply, what the chat must
  * not have done since the draft, and which listener a reply may be handed to.
- * The run's own gate (S11) is asked through `handleInbound` with a model that
- * must never be called — the refusal comes before it.
+ * The run's own gate is asked through `handleInbound` with a scripted model.
  *
  * agent_config and the CRM's send switch are CONFIGURATION every later file
  * reads (#183): snapshotted in beforeAll, put back in afterAll. The fixture
@@ -160,17 +159,49 @@ describe('which listener a ✅ may be handed to (S11)', () => {
     expect(await decideDraft(actor(), draftId, 'send', {}, ctx())).toMatchObject({ ok: true, status: 'approved' });
   });
 
-  it('the run asks the same: no draft is written for a listener still walking its gap', async () => {
+  it('the run does NOT ask the walk: a line written during a restart’s catch-up is drafted, and its ✅ waits (S11’s follow-up)', async () => {
+    // Every restart NULLs the catch-up stamp until the walk is done, and the walk can take minutes. A run
+    // refused then writes a refused ledger row, and the sweep's deploy-gap pass skips any anchor that has
+    // one — the line would never be drafted unless the customer wrote again.
     const { tgId } = await inbound();
     await stampAgentPump(accountId, false);
-    const never = (async () => {
-      throw new Error('the model must not be called');
-    }) as unknown as CallModel;
+    const compose = (async () => ({
+      stopReason: 'tool_use',
+      content: [
+        {
+          type: 'tool_use',
+          id: 't1',
+          name: 'compose_reply',
+          input: {
+            reply_needed: true,
+            reply_text: 'Tekshirib aytaman.',
+            language: 'uz',
+            gloss_uz: '',
+            category: 'status',
+            confidence: 0.8,
+            needs_owner: false,
+            owner_question: '',
+            next_step: 'wait',
+            actions: [],
+            used_fact_ids: [],
+            cited_message_refs: [],
+          },
+        },
+      ],
+      usage: { inputTokens: 1000, outputTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    })) as unknown as CallModel;
     const out = await handleInbound(
       { managerUserId: ownerId, peerId: String(PEER), anchorTgMessageId: String(tgId), origin: 'live' },
-      { callModel: never },
+      { callModel: compose },
     );
-    expect(out).toEqual({ outcome: 'refused', reason: 'listener_behind' });
+    expect(out).toMatchObject({ outcome: 'draft' });
+    const runs = await db.select().from(agentRuns).where(eq(agentRuns.peerId, PEER));
+    expect(runs.map((r) => r.outcome), 'never the refused row the deploy-gap pass skips for good').not.toContain('refused');
+    // The card's ✅ is what waits for the walk — refused in words until it is done, taken once it is.
+    const [d] = await db.select().from(agentDrafts).where(eq(agentDrafts.peerId, PEER));
+    expect(await decideDraft(actor(), d!.id, 'send', {}, ctx())).toEqual({ ok: false, code: 'listener_behind' });
+    await stampAgentPump(accountId, true);
+    expect(await decideDraft(actor(), d!.id, 'send', {}, ctx())).toMatchObject({ ok: true, status: 'approved' });
   });
 });
 

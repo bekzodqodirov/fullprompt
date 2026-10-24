@@ -22,7 +22,14 @@ import {
   users,
 } from '@/modules/platform/db/schema';
 import { Api, helpers } from 'telegram';
-import { isNewestInbound, noteStranger, stampPeerTyping, strangerUserOf } from '@/modules/wms/agent/listener-hooks';
+import {
+  HIDDEN_NUMBER_CARD_READY,
+  isNewestInbound,
+  noteStranger,
+  stampPeerTyping,
+  strangerUserOf,
+} from '@/modules/wms/agent/listener-hooks';
+import { openLeadForChat } from '@/modules/wms/crm/chat-rules';
 import {
   claimPeerPull,
   finishPeerPull,
@@ -230,10 +237,42 @@ describe('a stranger on the agent owner’s account (his Q18 ⭐, review fit-7)'
     expect(strangerUserOf(undefined)).toBeNull();
   });
 
-  it('a hidden number from a real non-contact gets a pending rule with no phone and no text — once', async () => {
+  it('until the «📵» card can open a lead without a phone, the listener’s call writes no phone-less rule', async () => {
+    const peer = next();
+    expect(
+      await noteStranger({
+        managerUserId: managerId,
+        peerId: peer,
+        title: 'Yashirin',
+        verdict: 'no_phone',
+        user: { contact: false, deleted: false },
+        // What the listener passes (tg-listen-agent-wire pins it).
+        hiddenNumberRule: HIDDEN_NUMBER_CARD_READY,
+      }),
+    ).toEqual({ contactStamped: true, ruleAdded: false });
+    expect(await rule(peer), 'no card is sent for a rule nobody can act on').toBeUndefined();
+  });
+
+  it('the gate opens with the door: «🆕 Yangi lid» still refuses a rule with no phone, so the gate stays shut', async () => {
+    const peer = next();
+    const [r] = await db
+      .insert(tgChatRules)
+      .values({ managerUserId: managerId, peerId: peer, decision: 'pending', peerTitle: 'Yashirin', peerPhone: null })
+      .returning({ id: tgChatRules.id });
+    const answer = await openLeadForChat(r!.id, { actorId: managerId }).then(
+      () => 'opened',
+      (err: unknown) => (err instanceof Error ? err.message : String(err)),
+    );
+    // The day the card package's by-name lead door opens this, HIDDEN_NUMBER_CARD_READY flips with it
+    // — and this test is rewritten to say the door works.
+    expect(answer).toBe('chat_no_phone');
+    expect(HIDDEN_NUMBER_CARD_READY).toBe(false);
+  });
+
+  it('once the card can act on it, a hidden number from a real non-contact gets a pending rule with no phone and no text — once', async () => {
     const peer = next();
     const user = { contact: false, deleted: false };
-    expect(await noteStranger({ managerUserId: managerId, peerId: peer, title: 'Anvar', verdict: 'no_phone', user })).toEqual({
+    expect(await noteStranger({ managerUserId: managerId, peerId: peer, title: 'Anvar', verdict: 'no_phone', user, hiddenNumberRule: true })).toEqual({
       contactStamped: true,
       ruleAdded: true,
     });
@@ -243,7 +282,7 @@ describe('a stranger on the agent owner’s account (his Q18 ⭐, review fit-7)'
     // Not a word of what he wrote.
     expect(await db.select().from(tgMessages).where(eq(tgMessages.peerId, peer))).toHaveLength(0);
     // The second line: nothing new, the rule as it was.
-    expect(await noteStranger({ managerUserId: managerId, peerId: peer, title: 'Anvar 2', verdict: 'no_phone', user })).toEqual({
+    expect(await noteStranger({ managerUserId: managerId, peerId: peer, title: 'Anvar 2', verdict: 'no_phone', user, hiddenNumberRule: true })).toEqual({
       contactStamped: false,
       ruleAdded: false,
     });
@@ -259,6 +298,7 @@ describe('a stranger on the agent owner’s account (his Q18 ⭐, review fit-7)'
       title: 'Boshqa ism',
       verdict: 'no_phone',
       user: { contact: false, deleted: false },
+      hiddenNumberRule: true,
     });
     expect(out.ruleAdded).toBe(false);
     expect(await rule(peer)).toMatchObject({ decision: 'exclude', peerTitle: 'Do‘stim' });
@@ -267,25 +307,25 @@ describe('a stranger on the agent owner’s account (his Q18 ⭐, review fit-7)'
   it('a contact is stamped as one and gets no rule; a visible-phone stranger is stamped and left to the tray', async () => {
     const friend = next();
     expect(
-      await noteStranger({ managerUserId: managerId, peerId: friend, title: 'Do‘st', verdict: 'no_phone', user: { contact: true, deleted: false } }),
+      await noteStranger({ managerUserId: managerId, peerId: friend, title: 'Do‘st', verdict: 'no_phone', user: { contact: true, deleted: false }, hiddenNumberRule: true }),
     ).toEqual({ contactStamped: true, ruleAdded: false });
     expect((await conv(friend))!.peerContact).toBe(true);
     expect(await rule(friend)).toBeUndefined();
 
     const asked = next();
     expect(
-      await noteStranger({ managerUserId: managerId, peerId: asked, title: 'Yangi', verdict: 'ask', user: { contact: false, deleted: false } }),
+      await noteStranger({ managerUserId: managerId, peerId: asked, title: 'Yangi', verdict: 'ask', user: { contact: false, deleted: false }, hiddenNumberRule: true }),
     ).toEqual({ contactStamped: true, ruleAdded: false });
     expect((await conv(asked))!.peerContact).toBe(false);
     // He saves the number later: the next line says so.
-    await noteStranger({ managerUserId: managerId, peerId: asked, title: 'Yangi', verdict: 'ask', user: { contact: true, deleted: false } });
+    await noteStranger({ managerUserId: managerId, peerId: asked, title: 'Yangi', verdict: 'ask', user: { contact: true, deleted: false }, hiddenNumberRule: true });
     expect((await conv(asked))!.peerContact).toBe(true);
   });
 
   it('a deleted account gets nothing at all', async () => {
     const gone = next();
     expect(
-      await noteStranger({ managerUserId: managerId, peerId: gone, title: 'Deleted Account', verdict: 'no_phone', user: { contact: false, deleted: true } }),
+      await noteStranger({ managerUserId: managerId, peerId: gone, title: 'Deleted Account', verdict: 'no_phone', user: { contact: false, deleted: true }, hiddenNumberRule: true }),
     ).toEqual({ contactStamped: false, ruleAdded: false });
     expect(await conv(gone)).toBeUndefined();
     expect(await rule(gone)).toBeUndefined();

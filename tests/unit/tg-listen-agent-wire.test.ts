@@ -126,14 +126,16 @@ describe('the send path’s review fixes, as wired', () => {
     expect(pull).toMatch(/accountFlooded\(\s*alarmAccount,[\s\S]*?\bat,\s*\)/);
   });
 
-  it('S8: while paused or switched off, the tick calls Telegram for nothing — no step, no pull, no badge', () => {
+  it('S8: while paused the tick calls Telegram for nothing; switched off, it takes no step', () => {
     const refused = pump.slice(pump.indexOf('if (!gate.ok) {'), pump.indexOf('claimNext('));
-    expect(refused).toContain('startAgentTick({ pulls: false, telegram: false })');
+    // Telegram is withheld for the PAUSE — whatever the gate's first reason — and a step for any refusal.
+    expect(refused).toContain('const paused = guard?.pausedAt != null;');
+    expect(refused).toContain('startAgentTick({ pulls: !paused, telegram: !paused, steps: false })');
     const tick = body('const agentTickBody = async', 'const crmReplied = async');
     // The badge only when Telegram may be called.
     expect(tick.slice(0, tick.indexOf('badgesToRestore('))).toContain('if (telegram) {');
-    // The offline branch asks the verdict alone and returns before any step.
-    const offline = tick.slice(tick.indexOf('if (!opts.telegram) {'), tick.indexOf('runAgentStep('));
+    // The verdict-only branch asks the verdict alone and returns before any step.
+    const offline = tick.slice(tick.indexOf('if (!opts.steps || !opts.telegram) {'), tick.indexOf('runAgentStep('));
     expect(offline).toContain('agentSendVerdict(');
     expect(offline).toContain('return;');
     expect(offline).not.toContain('restoreBadge(');
@@ -156,21 +158,58 @@ describe('the send path’s review fixes, as wired', () => {
   });
 
   it('S10: every send to a chat goes through one slot that keeps the gap from the last SEND', () => {
-    const slot = body('const sendSlot = <T>', 'const rawAgentTg =');
+    const slot = body('const sendSlot = <T>', 'const agentTg =');
     expect(slot).toContain('lastSendAt + MIN_SEND_GAP_MS - Date.now()');
     // Stamped after the call, thrown or not — a refused send was a call too.
     expect(slot.indexOf('finally {')).toBeLessThan(slot.indexOf('lastSendAt = Date.now()'));
     expect(slot).toContain('sendTail.then(run, run)');
-    // The agent's reply…
-    expect(source).toContain('send: (input) => sendSlot(() => rawAgentTg.send(input))');
-    // …and both of the human queue's sends.
-    expect(pump).toContain('sendSlot(() =>\n          client.sendFile(');
-    expect(pump).toContain('sendSlot(() => client.sendMessage(target');
-    expect(pump.match(/client\.send(?:Message|File)\(/g)).toHaveLength(2);
-    // The agent step machine never reaches the raw adapter.
+    // The agent's reply, through its turn of the slot…
+    const turn = body('const agentTurn: SendTurn = async', 'const restoreBadge = async');
+    expect(turn).toContain('await sendSlot(turn, async () => {');
     const tick = body('const agentTickBody = async', 'const crmReplied = async');
+    expect(tick).toContain('sendTurn: agentTurn');
+    // …and both of the human queue's sends, each naming its chat.
+    expect(pump).toContain('sendSlot({ peerId: job.peerId, headAt: null }, () =>\n          client.sendFile(');
+    expect(pump).toContain('sendSlot({ peerId: job.peerId, headAt: null }, () =>\n          client.sendMessage(target');
+    expect(pump.match(/client\.send(?:Message|File)\(/g)).toHaveLength(2);
     expect(tick).toContain('tg: agentTg');
-    expect(tick).not.toContain('rawAgentTg');
+  });
+
+  it('S12 follow-up: a send that queued for the slot is asked again when its turn comes, before the call', () => {
+    const slot = body('const sendSlot = <T>', 'const agentTg =');
+    // After the gap's sleep, before the work — a hold makes no call at all.
+    expect(slot.indexOf('setTimeout(resolve, wait)')).toBeLessThan(slot.indexOf('slotHold('));
+    expect(slot.indexOf('slotHold(')).toBeLessThan(slot.indexOf('if (hold) throw new SlotHeld('));
+    expect(slot.indexOf('if (hold) throw new SlotHeld(')).toBeLessThan(slot.indexOf('return await work()'));
+    // From what the sends ahead wrote: the send wait, the restriction, this chat's last send.
+    expect(slot).toContain('floodUntil: floodWaitUntil');
+    expect(slot).toContain('restrictedAt: slotRestrictedAt');
+    expect(slot).toContain('peerSentAt.get(turn.peerId.toString())');
+    // A failed send's meaning for the account is written INSIDE the slot, before the next turn is let through.
+    expect(slot).toMatch(/catch \(err\) \{\s*noteSlotFailure\(err\);\s*throw err;\s*\} finally \{/);
+    expect(slot.slice(slot.indexOf('finally {'))).toContain('peerSentAt.set(turn.peerId.toString(), lastSendAt)');
+    const note = body('const noteSlotFailure = (err: unknown) => {', 'const sendSlot = <T>');
+    expect(note).toContain("kind.kind === 'flood'");
+    expect(note).toContain("kind.kind === 'restricted'");
+  });
+
+  it('S12 follow-up: the agent’s turn notes its own send’s answer inside the slot, and a held turn is a wait', () => {
+    const turn = body('const agentTurn: SendTurn = async', 'const restoreBadge = async');
+    const inside = turn.slice(turn.indexOf('await sendSlot(turn,'), turn.indexOf('} catch (err) {'));
+    expect(inside).toContain("if (outcome.kind === 'flooded') noteSlotFlood(outcome.seconds)");
+    expect(inside).toContain("outcome.error.kind === 'restricted') slotRestrictedAt = new Date()");
+    expect(turn).toContain("if (err instanceof SlotHeld) return { kind: 'wait', nextStepAt: err.until, reason: err.reason }");
+  });
+
+  it('S12 follow-up: a person’s reply the slot held goes back to the queue — no attempt counted, nothing called', () => {
+    const failed = pump.slice(pump.indexOf('} catch (err) {', pump.indexOf('sent += 1;')));
+    const held = failed.slice(0, failed.indexOf('const message ='));
+    expect(held).toContain('if (err instanceof SlotHeld) {');
+    expect(held).toContain('releaseClaim(job.id)');
+    expect(held).not.toContain('markAttemptFailed');
+    // The guard row holding the pause retires the slot's own note of it, so «Tekshirdim» takes effect.
+    const before = pump.slice(0, pump.indexOf('pumpGate('));
+    expect(before).toContain('if (guard?.pausedAt) slotRestrictedAt = null;');
   });
 
   it('S11: a failed catch-up is tried again, a bounded number of times, and stop() cancels the retry', () => {
@@ -198,6 +237,8 @@ describe('the send path’s review fixes, as wired', () => {
     expect(seen).toContain('if (out || !peer.user) return;');
     expect(seen.indexOf('agentHere()')).toBeLessThan(seen.indexOf('noteStranger('));
     expect(seen).not.toMatch(/msg\.|message:|body:/);
+    // No phone-less rule until the «📵» card can act on it (listener-hooks' gate, fenced by the door).
+    expect(seen).toContain('hiddenNumberRule: HIDDEN_NUMBER_CARD_READY');
     const handle = body('const handleMessage = async', 'const rethinkOnEdit = async');
     expect(handle).toContain("strangerSeen(peer, msg.out === true, 'ask')");
     expect(handle).toContain("if (verdict.reason === 'no_phone') await strangerSeen(peer, msg.out === true, 'no_phone')");

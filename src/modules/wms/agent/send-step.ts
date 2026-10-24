@@ -40,6 +40,12 @@ export interface AgentOutboxRow {
    * here (review S2): a reply approved at 23:00 and promised for 08:30 is not «six hours old» at 08:30.
    */
   releaseAt: Date | null;
+  /**
+   * When the row last took a step — the column `step_claimed_at`, stamped by every advance and by the send's
+   * claim; null before the first. What tells «the read was seconds ago» from «the read was before a wait of
+   * hours» (the night rule after the read, review S3's follow-up).
+   */
+  lastStepAt: Date | null;
 }
 
 /** Facts the store reads for a verdict — every one from the database, at this tick. */
@@ -107,7 +113,9 @@ export type WaitReason =
   | 'account_gap'
   | 'hour_cap'
   | 'day_cap'
-  | 'chat_day_cap';
+  | 'chat_day_cap'
+  /** The account's send slot held the turn (`slotHold`): a send queued ahead of this one changed what it knows. */
+  | 'slot_held';
 
 export type SendVerdict =
   | { ok: true }
@@ -120,7 +128,7 @@ export type SendVerdict =
  * reply WRONG is decided before what only makes it LATE.
  */
 export function agentSendVerdict(
-  row: Pick<AgentOutboxRow, 'managerUserId' | 'queuedAt' | 'releaseAt' | 'readDone'>,
+  row: Pick<AgentOutboxRow, 'managerUserId' | 'queuedAt' | 'releaseAt' | 'readDone' | 'lastStepAt'>,
   f: SendFacts,
 ): SendVerdict {
   const fin = (reason: FinalRefusal): SendVerdict => ({ ok: false, final: true, reason });
@@ -149,9 +157,12 @@ export function agentSendVerdict(
   if (f.floodUntil && f.floodUntil.getTime() > now) return wait('flood_wait', f.floodUntil);
   // The night rule at the SEND, not only at the ✅ (his Q14 ⭐, review S3): a row a flood wait, the hour cap
   // or the one-in-flight queue carried past 22:00 is held to 08:30 unless the customer wrote within two
-  // hours — the same `releaseAt` the ✅ asks, so the two cannot disagree. Only before the read: once his
-  // phone has shown the chat read and «typing…», finishing the reply is the less strange of the two.
-  if (!row.readDone) {
+  // hours — the same `releaseAt` the ✅ asks, so the two cannot disagree. One exception: a reply in the
+  // middle of its choreography — read on his phone, «typing…» SECONDS ago — finishes, because stopping it
+  // there is the stranger of the two. Seconds, not «after the read»: a wait of hours after the read (a
+  // SendMessage flood, a restart's catch-up) leaves no «typing…» on anybody's screen, and the reply that
+  // comes out of it at 00:30 is a new message at night like any other.
+  if (!finishingChoreography(row, now)) {
     const release = releaseAt(f.now, f.lastInboundAt);
     if (release.getTime() > now) return wait('night', release);
   }
@@ -166,6 +177,64 @@ export function agentSendVerdict(
   if (f.sentLastHour >= AGENT_LIMITS.perHour) return wait('hour_cap', new Date(now + 5 * 60_000));
   if (f.sentToday >= Math.min(f.dailyCeiling, AGENT_LIMITS.perDay)) return wait('day_cap', nextTashkentMorning(f.now));
   return { ok: true };
+}
+
+/**
+ * Is this row in the middle of its choreography — past its read, and its last
+ * step (`lastStepAt`) no longer ago than the ordinary steps take
+ * (`AGENT_LIMITS.nightFinishMs`)? Then the night lets it finish.
+ */
+function finishingChoreography(row: Pick<AgentOutboxRow, 'readDone' | 'lastStepAt'>, now: number): boolean {
+  return row.readDone && row.lastStepAt !== null && now - row.lastStepAt.getTime() <= AGENT_LIMITS.nightFinishMs;
+}
+
+/**
+ * What the account's send slot knows the moment a send's turn comes — in the
+ * listener's memory, written INSIDE the slot by the sends before it, before
+ * the slot lets the next one go (review S12's follow-up).
+ */
+export interface SlotState {
+  now: Date;
+  /** A send-method wait a send through the slot met — the in-memory copy; the guard row's lands a moment later. */
+  floodUntil: Date | null;
+  /** A restriction (PEER_FLOOD, FROZEN_*) a send through the slot met that the guard row has not been seen to hold yet. */
+  restrictedAt: Date | null;
+  /** When a send to THIS chat last left the slot; null for none, or for a send that names no chat. */
+  peerSentAt: Date | null;
+}
+
+/**
+ * May a send take its turn of the slot now?
+ *
+ * The agent's tick runs beside the human pump (review S12), so a send can
+ * queue for the slot behind another and wait there: everything it checked
+ * before — the flood clock, the pause, the live head — can change while it
+ * waits, and Telegram's answer to the send ahead of it is exactly what
+ * changes it. So the slot asks again, from what the sends ahead of it wrote
+ * down, and refuses to make the call:
+ *
+ *   - a send-method wait one of them met — sending into it is the knocking
+ *     that loses the account (ban-2), and a second send flood in 24 h
+ *     switches the agent off;
+ *   - a restriction one of them met, until the guard row is seen to hold it
+ *     (bounded by `slotRestrictedHoldMs`, should the pause never be written);
+ *   - for the agent, a send to the SAME chat that left after its live head was
+ *     read (`headAt`): a person's CRM reply that went first. The head is read
+ *     again on the next step, and it says `human_replied`.
+ *
+ * A WAIT for the agent's row; for a person's reply the claim is released and
+ * the next tick takes it again. Pure: the listener holds the memory.
+ */
+export function slotHold(s: SlotState, headAt: Date | null): { reason: WaitReason; until: Date } | null {
+  const now = s.now.getTime();
+  if (s.floodUntil && s.floodUntil.getTime() > now) return { reason: 'flood_wait', until: s.floodUntil };
+  if (s.restrictedAt && now - s.restrictedAt.getTime() < AGENT_LIMITS.slotRestrictedHoldMs) {
+    return { reason: 'slot_held', until: new Date(now + AGENT_LIMITS.slotRetryMs) };
+  }
+  if (headAt && s.peerSentAt && s.peerSentAt.getTime() >= headAt.getTime()) {
+    return { reason: 'slot_held', until: new Date(now + AGENT_LIMITS.slotRetryMs) };
+  }
+  return null;
 }
 
 /** One message of the chat's live head, as Telegram returns it (`messages.GetHistory`, newest first). */
@@ -278,6 +347,18 @@ export interface AgentTelegram {
   send(input: { peerId: bigint; body: string; randomId: bigint; replyTo: bigint | null }): Promise<{ tgMessageId: bigint | null }>;
 }
 
+/**
+ * One turn of the account's send slot, as the send step takes it: the claim
+ * and the SendMessage run inside `send`, and nothing else on this account
+ * sends while they do (review S12's follow-up). The listener's turn asks
+ * `slotHold` first and answers its refusal as a wait — `headAt` is when this
+ * step's live head was read, so a send to the same chat that left after it
+ * holds the turn. Without a slot (the tests), the send simply runs.
+ */
+export type SendTurn = (turn: { peerId: bigint; headAt: Date }, send: () => Promise<StepOutcome>) => Promise<StepOutcome>;
+
+const noSlot: SendTurn = (_turn, send) => send();
+
 /** The database half: the facts for a verdict, and the one CAS before the send. */
 export interface AgentStepStore {
   facts(row: AgentOutboxRow, now: Date): Promise<SendFacts>;
@@ -297,6 +378,8 @@ export async function runAgentStep(
     store: AgentStepStore;
     classify: (err: unknown) => TgErrorKind;
     isNudge: (text: string) => boolean;
+    /** The account's send slot (the listener's); the claim and the send happen inside one turn of it. */
+    sendTurn?: SendTurn;
     now?: () => Date;
     random?: () => number;
   },
@@ -360,36 +443,44 @@ export async function runAgentStep(
         : { kind: 'advance', step: 'typing', nextStepAt, typingCount: count };
     }
     case 'send': {
+      // The head is read OUTSIDE the slot: a gramjs flood sleep inside this GetHistory must not hold a
+      // person's reply (S12). Its instant is taken before the call, so a send that left while the call was
+      // on its way is one the slot counts against it.
+      const headAt = now();
       const head = await checkHead();
       if (head) return head;
-      // A lost claim means somebody else moved the row first (off, withdrawn, superseded) — its own
-      // write already said why; this cancel matches no row and records nothing of its own.
-      if (!(await deps.store.claimSend(row.id))) return { kind: 'cancel', reason: 'claim_lost', markUnread: row.readDone };
-      try {
-        const sent = await deps.tg.send({
-          peerId: row.peerId,
-          body: row.body,
-          randomId: row.randomId,
-          replyTo: row.replyToTgMessageId,
-        });
-        return { kind: 'sent', tgMessageId: sent.tgMessageId };
-      } catch (err) {
-        const kind = deps.classify(err);
-        switch (kind.kind) {
-          case 'duplicate':
-            return { kind: 'sent', tgMessageId: null };
-          case 'flood':
-            return { kind: 'flooded', seconds: kind.seconds, method: 'messages.SendMessage' };
-          case 'restricted':
-          case 'session':
-          case 'recipient_final':
-          case 'message_final':
-            return { kind: 'failed', reason: kind.code, error: kind, markUnread: true };
-          case 'db':
-          case 'transient':
-            return { kind: 'unknown', reason: kind.code };
+      // The claim and the send are one turn of the slot: a CRM reply to this chat, a wait or a
+      // restriction met by the send queued ahead of this one is seen before the call (`slotHold`).
+      return (deps.sendTurn ?? noSlot)({ peerId: row.peerId, headAt }, async () => {
+        // A lost claim means somebody else moved the row first (off, withdrawn, superseded) — its own
+        // write already said why; this cancel matches no row and records nothing of its own.
+        if (!(await deps.store.claimSend(row.id))) return { kind: 'cancel', reason: 'claim_lost', markUnread: row.readDone };
+        try {
+          const sent = await deps.tg.send({
+            peerId: row.peerId,
+            body: row.body,
+            randomId: row.randomId,
+            replyTo: row.replyToTgMessageId,
+          });
+          return { kind: 'sent', tgMessageId: sent.tgMessageId };
+        } catch (err) {
+          const kind = deps.classify(err);
+          switch (kind.kind) {
+            case 'duplicate':
+              return { kind: 'sent', tgMessageId: null };
+            case 'flood':
+              return { kind: 'flooded', seconds: kind.seconds, method: 'messages.SendMessage' };
+            case 'restricted':
+            case 'session':
+            case 'recipient_final':
+            case 'message_final':
+              return { kind: 'failed', reason: kind.code, error: kind, markUnread: true };
+            case 'db':
+            case 'transient':
+              return { kind: 'unknown', reason: kind.code };
+          }
         }
-      }
+      });
     }
   }
 }

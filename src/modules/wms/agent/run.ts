@@ -7,7 +7,7 @@ import { enqueue } from '../../platform/jobs/boss';
 import { logger } from '../../platform/logger';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import { canLogInSql } from '../../platform/users/login';
-import { listenerIsCurrent, readGuard } from '../crm/account-guard';
+import { pumpIsFresh, readGuard } from '../crm/account-guard';
 import { agentRunning, agentTablesReady, readAgentConfig, type AgentConfig } from './config';
 import { loadContext, type AgentContext } from './context';
 import { eligibleForRun, type Ineligible } from './eligibility';
@@ -259,8 +259,9 @@ async function eligibilityFacts(ctx: AgentContext, config: AgentConfig, now: Dat
     now,
     agentOn: agentRunning(config),
     sessionConfirmed: config.sessionExclusiveAt !== null,
-    // The ✅'s own predicate: a fresh pump AND a finished catch-up (review S11).
-    listenerCurrent: listenerIsCurrent(guard, now),
+    // The pump alone, not the ✅'s `listenerIsCurrent`: a draft written while the catch-up still walks is
+    // decided at the ✅, and refusing it here would be a refused run the deploy-gap pass never asks again.
+    listenerCurrent: pumpIsFresh(guard, now),
     accountPaused: guard?.pausedAt != null,
     privateUser: ctx.peerId > 0n,
     hasOwner: ctx.identity.clientId !== null || ctx.identity.leadId !== null,

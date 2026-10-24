@@ -86,6 +86,19 @@ export const AGENT_LIMITS = {
   nightToHour: 8,
   nightReleaseAt: '08:30',
   nightFreshMs: 2 * 60 * 60_000,
+  /**
+   * A reply past its read may finish into the night only this soon after its last step: the read pause and
+   * the typing take seconds, so a longer gap means a wait (a flood, a restart) stood between them, and the
+   * send is a new message at night (review S3's follow-up).
+   */
+  nightFinishMs: 2 * 60_000,
+  /**
+   * The send slot's memory of a restriction a send met, until the guard row is seen to hold the pause — and
+   * no longer, should the pause never be written (a database that is not there).
+   */
+  slotRestrictedHoldMs: 2 * 60_000,
+  /** How soon an agent row the send slot held is stepped again (its head is read anew). */
+  slotRetryMs: 5_000,
 } as const;
 
 /** Compile-time anchor for the fence: the human queue's own numbers. */
