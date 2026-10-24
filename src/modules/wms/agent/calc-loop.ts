@@ -112,7 +112,15 @@ export async function announceAgentCalc(
   const [req] = await db.select({ section: calcRequests.section }).from(calcRequests).where(eq(calcRequests.id, requestId));
   const section = SECTION_WORDS[req?.section ?? ''] ?? req?.section ?? '';
   const who = labelOf(identity);
-  const held = event === 'recalc' ? await retirePricesOf(link, requestId) : [];
+  // A retirement that fails must not cost him the message itself — which
+  // already says the old price no longer stands.
+  const held =
+    event === 'recalc'
+      ? await retirePricesOf(link, requestId).catch((err: unknown) => {
+          logger.error({ err, requestId }, '[agent] price drafts not retired on recalc');
+          return [];
+        })
+      : [];
   const lines: Record<CalcEvent, string> = {
     done: `💵 Hisob javobi keldi — ${who}\n${section}: ${detail.amountText ?? '—'}\nNarx bersangiz bo'ladi.`,
     sealed: `💵 Hisob muhrlandi — ${who}\n${section}: ${detail.amountText ?? '—'}\nNarx bersangiz bo'ladi.`,
