@@ -58,6 +58,8 @@ interface DockThread {
   client: { id: string; code: string; name: string };
   canReply: boolean;
   reason: string | null;
+  /** When Telegram's send wait ends (ISO), beside a `flood_wait` reason — absent from a route one release behind. */
+  floodUntil?: string | null;
   managers: string[];
   /** Already filled for this client — `{ism}`/`{kod}` resolved server-side. */
   templates: ReplyTemplate[];
@@ -296,6 +298,9 @@ export function Dock({
       void refreshThread(target);
     } else {
       setSendError(result.error ?? 'error');
+      // An account hold the press met with none at load: the thread is read
+      // again, so the drawer says it in full — a wait WITH its end.
+      if (result.error === 'flood_wait' || result.error === 'account_paused') void refreshThread(target);
     }
   }
 
@@ -330,18 +335,28 @@ export function Dock({
     void loadTasks();
   }
 
+  // Telegram's send wait, said with its end (the card composer's words): the
+  // route carries it beside a `flood_wait` it refused on; one the press met
+  // with none at load has no end to say; one ending within the minute is the minute.
+  const floodAt = thread?.floodUntil ? new Date(thread.floodUntil) : null;
+  const floodWhen = floodAt ? agentSendAtLabel(floodAt) : null;
+  const floodWords = !floodAt
+    ? t('replyFloodWaitUnknown')
+    : floodWhen
+      ? t('replyFloodWait', { when: floodWhen })
+      : t('replyRateLimited');
   const reasons: Record<string, string> = {
     no_chat: t('replyNoChat'),
     not_your_conversation: t('replyNotYours'),
     sending_disabled: t('replyDisabled'),
     never_wrote_first: t('replyNeverWrote'),
     bridge_down: t('replyBridgeDown'),
-    // Telegram limited the account (0136); «Tekshirdim» is on the Suhbatlar bridge panel.
+    // Telegram limited the account (0136); the words name the bridge panel's «Tekshirdim» button.
     account_paused: t('replyAccountPaused'),
     rate_minute: t('replyRateLimited'),
     rate_day: t('replyRateLimited'),
     rate_chat: t('replyRateLimited'),
-    flood_wait: t('replyRateLimited'),
+    flood_wait: floodWords,
   };
 
   // The COUNT, not the listed rows: `myDay` caps each bucket at 40, so the

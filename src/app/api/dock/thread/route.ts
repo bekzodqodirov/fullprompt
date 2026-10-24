@@ -64,18 +64,23 @@ export async function GET(request: Request) {
   ]);
 
   let reason: string | null = null;
+  // When a send-path wait Telegram ordered ends — the guard row's, uncapped
+  // (ban-2), so it can be hours: the drawer says the end, the card composer's
+  // words exactly. Only beside the refusal it explains.
+  let floodUntil: string | null = null;
   if (!account) {
     reason = managers.length === 0 ? 'no_chat' : 'not_your_conversation';
   } else {
-    const verdict = canQueue(
-      'x',
-      await sendContextFor({
-        clientId,
-        managerUserId: account.managerUserId,
-        peerId: account.peerId,
-      }),
-    );
-    if (!verdict.ok) reason = verdict.reason;
+    const context = await sendContextFor({
+      clientId,
+      managerUserId: account.managerUserId,
+      peerId: account.peerId,
+    });
+    const verdict = canQueue('x', context);
+    if (!verdict.ok) {
+      reason = verdict.reason;
+      if (verdict.reason === 'flood_wait') floodUntil = context.floodWaitUntil?.toISOString() ?? null;
+    }
   }
 
   // Filled HERE, against the resolved client — the browser is never told a
@@ -93,6 +98,7 @@ export async function GET(request: Request) {
     templates,
     canReply: reason === null,
     reason,
+    floodUntil,
     managers,
     messages: messages.map((m) => ({
       id: m.id,

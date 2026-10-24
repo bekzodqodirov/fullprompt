@@ -2632,7 +2632,9 @@
     "replyNeverWrote": "Mijoz sizga hali yozmagan — birinchi bo‘lib yozib bo‘lmaydi.",
     "replyBridgeDown": "Telegram ulanmagan — xabar ketmaydi.",
     "replyRateLimited": "Juda tez-tez. Bir daqiqa kuting.",
-    "replyAccountPaused": "Telegram bu akkauntni chekladi — xabar yuborish to‘xtatilgan. Telegram ilovasida akkauntni tekshiring va «Suhbatlar»da «Tekshirdim» tugmasini bosing.",
+    "replyAccountPaused": "Telegram bu akkauntni chekladi — xabar yuborish to‘xtatilgan. Telegram ilovasida akkauntni tekshiring, so‘ng «Suhbatlar»da «Tekshirdim, qayta yoqish» tugmasini bosing.",
+    "replyFloodWait": "Telegram kutishni buyurdi — {when} gacha bu akkauntdan xabar yuborib bo‘lmaydi.",
+    "replyFloodWaitUnknown": "Telegram kutishni buyurdi — hozircha bu akkauntdan xabar yuborib bo‘lmaydi. Sahifani yangilang: qachongacha ekani ko‘rinadi.",
     "replyNotYours": "Bu yozishma boshqa menejerning akkauntida — faqat o‘zi javob bera oladi.",
     "replyTooLong": "Xabar juda uzun.",
     "replyAttach": "Rasm biriktirish",
@@ -2840,8 +2842,7 @@
     "pauseAlreadyCleared": "Pauza allaqachon olingan",
     "pauseClearRefused": "Pauzani akkaunt egasi yoki super admin oladi",
     "bridgePaused": "Yuborish to‘xtatilgan — Telegram akkauntni cheklagan",
-    "bridgePausedCount": "To‘xtatilgan: {n}",
-    "replyAccountPaused": "Telegram bu akkauntni cheklagan — yuborish to‘xtatilgan. «Suhbatlar»da tekshirib, pauzani oling."
+    "bridgePausedCount": "To‘xtatilgan: {n}"
   },
   "navShort": {
     "home": "Bosh",

@@ -2632,7 +2632,9 @@
     "replyNeverWrote": "This client has not written to you — you may not message first.",
     "replyBridgeDown": "Telegram is not connected — the message will not go.",
     "replyRateLimited": "Too fast. Wait a minute.",
-    "replyAccountPaused": "Telegram has restricted this account — sending is stopped. Check the account in the Telegram app, then clear the pause in Conversations.",
+    "replyAccountPaused": "Telegram has restricted this account — sending is stopped. Check the account in the Telegram app, then press «Checked — switch back on» in Conversations.",
+    "replyFloodWait": "Telegram ordered a wait — nothing can be sent from this account until {when}.",
+    "replyFloodWaitUnknown": "Telegram ordered a wait — nothing can be sent from this account right now. Reload the page to see until when.",
     "replyNotYours": "This conversation is on another manager’s account — only they can reply.",
     "replyTooLong": "Message is too long.",
     "replyAttach": "Attach a photo",
@@ -2840,8 +2842,7 @@
     "pauseAlreadyCleared": "The pause is already cleared",
     "pauseClearRefused": "The account holder or a super admin clears the pause",
     "bridgePaused": "Sending stopped — Telegram restricted the account",
-    "bridgePausedCount": "Paused: {n}",
-    "replyAccountPaused": "Telegram restricted this account — sending is stopped. Check it and clear the pause on «Chats»."
+    "bridgePausedCount": "Paused: {n}"
   },
   "navShort": {
     "home": "Home",
