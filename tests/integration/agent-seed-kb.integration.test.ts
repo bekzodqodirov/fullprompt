@@ -87,7 +87,7 @@ describe('the avia rule reads the receiving warehouses as the knowledge states t
       .insert(kbFacts)
       .values([
         { scope: 'general', question: null, answer: `Sinov qoʻshilgan ombor ${BASE}: 测试省 南城市 杭州路 77号，赵先生 13600007777.`, locale: 'uz', source: 'owner', sourceRef: { door: 'web' }, approvedAt: new Date(), approvedBy: who!.id },
-        { scope: 'general', question: null, answer: `Sinov avia manzili ${BASE}: 测试省 南城市 机场路 5号，13500006666.`, locale: 'uz', source: 'owner', sourceRef: { door: 'web' }, approvedAt: new Date(), approvedBy: who!.id },
+        { scope: 'general', question: null, answer: `Sinov avia qabul ombori ${BASE}: 测试省 南城市 机场路 5号，13500006666.`, locale: 'uz', source: 'owner', sourceRef: { door: 'web' }, approvedAt: new Date(), approvedBy: who!.id },
       ])
       .returning({ id: kbFacts.id });
     try {
@@ -95,7 +95,7 @@ describe('the avia rule reads the receiving warehouses as the knowledge states t
       expect(texts.filter((t) => t.startsWith('Sinov ombori'))).toEqual(['Sinov ombori: 测试省 新城市 上海路 66号，李先生 13700008888.']);
       expect(texts.some((t) => t.startsWith('Boshqa fakt'))).toBe(false);
       expect(texts.some((t) => t.startsWith(`Sinov qoʻshilgan ombor ${BASE}`))).toBe(true);
-      expect(texts.some((t) => t.startsWith(`Sinov avia manzili ${BASE}`))).toBe(false);
+      expect(texts.some((t) => t.startsWith(`Sinov avia qabul ombori ${BASE}`))).toBe(false);
     } finally {
       await db.delete(kbFacts).where(inArray(kbFacts.id, added.map((r) => r.id)));
     }

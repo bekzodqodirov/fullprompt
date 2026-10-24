@@ -456,6 +456,25 @@ export function customerScriptOf(messages: readonly ChatMessage[]): ScriptName |
 }
 
 /** The whole context for a run. */
+/** The newest draft he APPROVED this week that priced or asked a road (review R1) — a pending or rejected one quoted nobody. */
+export async function lastQuoteFor(managerUserId: string, peerId: bigint): Promise<LastQuote | null> {
+  const [quoted] = await db
+    .select({ memory: sql<unknown>`${agentDrafts.policy}->'memory'`, at: agentDrafts.createdAt })
+    .from(agentDrafts)
+    .where(
+      and(
+        eq(agentDrafts.managerUserId, managerUserId),
+        eq(agentDrafts.peerId, peerId),
+        eq(agentDrafts.status, 'approved'),
+        gte(agentDrafts.createdAt, new Date(Date.now() - 7 * 86_400_000)),
+        sql`${agentDrafts.policy}->'memory'->>'quotedRoad' IS NOT NULL`,
+      ),
+    )
+    .orderBy(desc(agentDrafts.createdAt))
+    .limit(1);
+  return quoted ? lastQuoteOf(quoted.memory, quoted.at) : null;
+}
+
 export async function loadContext(managerUserId: string, peerId: bigint, anchorTgMessageId: bigint | null): Promise<AgentContext> {
   const [identity, messages] = await Promise.all([chatIdentity(managerUserId, peerId), chatMessages(managerUserId, peerId)]);
   const lastOutIndex = messages.map((m) => m.direction).lastIndexOf('out');
@@ -482,21 +501,7 @@ export async function loadContext(managerUserId: string, peerId: bigint, anchorT
     .where(and(eq(agentCalcLinks.managerUserId, managerUserId), eq(agentCalcLinks.peerId, peerId)))
     .orderBy(desc(agentCalcLinks.createdAt))
     .limit(5);
-  // The newest approved draft of the week that priced or asked a road (review R1).
-  const [quoted] = await db
-    .select({ memory: sql<unknown>`${agentDrafts.policy}->'memory'`, at: agentDrafts.createdAt })
-    .from(agentDrafts)
-    .where(
-      and(
-        eq(agentDrafts.managerUserId, managerUserId),
-        eq(agentDrafts.peerId, peerId),
-        eq(agentDrafts.status, 'approved'),
-        gte(agentDrafts.createdAt, new Date(Date.now() - 7 * 86_400_000)),
-        sql`${agentDrafts.policy}->'memory'->>'quotedRoad' IS NOT NULL`,
-      ),
-    )
-    .orderBy(desc(agentDrafts.createdAt))
-    .limit(1);
+  const lastQuote = await lastQuoteFor(managerUserId, peerId);
   return {
     managerUserId,
     peerId,
@@ -517,7 +522,7 @@ export async function loadContext(managerUserId: string, peerId: bigint, anchorT
       status: c.completedAt ? (c.returnReason ? 'returned' : 'answered') : 'open',
     })),
     ruleDecision: identity.ruleDecision,
-    lastQuote: quoted ? lastQuoteOf(quoted.memory, quoted.at) : null,
+    lastQuote,
   };
 }
 

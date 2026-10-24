@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { AgentContext, ChatMessage } from '@/modules/wms/agent/context';
 import { normalizeDigits } from '@/modules/wms/agent/digits';
 import type { KbHit } from '@/modules/wms/agent/kb';
-import { PHONE_RE } from '@/modules/wms/agent/numbers';
+import { namesMode, PHONE_RE } from '@/modules/wms/agent/numbers';
 import {
   addressAnchorsOf,
   checkAgentReply,
@@ -344,6 +344,15 @@ describe('which chat is a flight\'s — the review of the follow-up (review R1-R
     expect(blocked(ctxOf('Куда отправлять?', 'cyrillic', [said('Автозапчасти 30 кг авиа сколько?', 1), said('Авиа примерно 510 $.', 2, 'out')], kg30, AIR_QUOTE))).toBe(true);
     // (d) the customer never said «avia» — the quote did.
     expect(blocked(ctxOf('Ok, manzilni yuboring', 'latin', [said('30 kg kiyim Shenzhendan, eng tez qanday?', 1), said("Avia bilan taxminan 510 $ bo'ladi.", 2, 'out')], kg30, AIR_QUOTE))).toBe(true);
+    // (f) the sent line named no road at all — the approved draft it came from did.
+    expect(blocked(ctxOf('Manzilni yuboring', 'latin', [said('30 kg kiyim, eng tez qanday?', 1), said("30 kg uchun taxminan 510 $ bo'ladi.", 2, 'out')], kg30, AIR_QUOTE))).toBe(true);
+  });
+
+  it('R1: a quote he approved AFTER our older priced line is the road — the newer of the two speaks', () => {
+    const later: AgentContext['lastQuote'] = { road: 'road', air: null, at: new Date(Date.now() + 60_000) };
+    const ctx = ctxOf('Manzilni bering', 'latin', [said('Avia 20 kg qancha?', 1), said('Avia 340 $.', 2, 'out')], [], later);
+    expect(blocked(ctx)).toBe(false);
+    expect(rule(compose('uz'), [], ctx)).toMatchObject({ needsOwner: false, ownerQuestion: '' });
   });
 
   it('R1: the customer\'s own choice in this burst decides — a road turned down is no choice', () => {
@@ -373,6 +382,13 @@ describe('which chat is a flight\'s — the review of the follow-up (review R1-R
     );
     expect(blocked(ctx)).toBe(false);
     expect(rule(compose('uz'), [], ctx)).toMatchObject({ needsOwner: false, ownerQuestion: '' });
+  });
+
+  it('R1: «air» is a road only as «air freight» / «by air»; «kargo» is the truck unless it is «avia kargo»', () => {
+    for (const t of ['by air', 'via air', 'air freight', 'air-cargo', 'aircargo', 'avia bilan', 'авиа', '空运']) expect(namesMode(t, 'air'), t).toBe(true);
+    for (const t of ['air fryer', 'Air Max krossovka', 'air conditioner']) expect(namesMode(t, 'air'), t).toBe(false);
+    for (const t of ['oddiy kargo bilan', 'обычным карго', 'kargoda']) expect(namesMode(t, 'road'), t).toBe(true);
+    for (const t of ['avia kargo bilan', 'авиа-карго']) expect(namesMode(t, 'road'), t).toBe(false);
   });
 
   it('R1: goods named after the air are no flight — «air fryer», «air conditioner»', () => {
@@ -473,7 +489,9 @@ describe('what reads as our warehouse — the review of the anchors (review R5-R
   it('R9: a warehouse he adds on the page is a receiving address by what it says — a flight\'s address he writes is not', () => {
     expect(isReceivingAddressFact('Qashqar qabul ombori: 新疆喀什市迎宾大道88号，王先生 13900001111.')).toBe(true);
     expect(isReceivingAddressFact('Shenzhen ombori qayerda? — 广东省深圳市宝安区福永街道 塘尾路 18号')).toBe(true);
-    expect(isReceivingAddressFact('Avia yuk manzili: 广东省深圳市宝安区机场路 5号，13700002222.')).toBe(false);
+    // His own flight's receiving point — a warehouse word and a street — is the flight's, and his to have quoted.
+    expect(isReceivingAddressFact('Avia yuk qabul ombori: 广东省深圳市宝安区机场路 5号，13700002222.')).toBe(false);
+    expect(isReceivingAddressFact('Авиа склад: 广东省深圳市宝安区机场路 5号.')).toBe(false);
     expect(isReceivingAddressFact(answer('china_points@4'))).toBe(false);
     expect(isReceivingAddressFact('Toʻlov: naqd yoki karta orqali.')).toBe(false);
     // Every seeded address is one by what it says, too.
@@ -526,8 +544,19 @@ describe('written down for the model', () => {
     expect(ANCHORS.pieces.length).toBeGreaterThanOrEqual(3);
     // The GS reminder every warehouse carries is nobody's address: no piece of it is an anchor.
     expect(ANCHORS.pieces.some((p) => '发货前请不要忘记标注编码唛头'.includes(p))).toBe(false);
+    // …left out twice over: as the text every address shares (no `ordinary` given), and as the ordinary text a lone address carries.
+    const reminderPiece = (a: AddressAnchors) => a.pieces.some((p) => '发货前请不要忘记标注编码唛头'.includes(p));
+    expect(reminderPiece(addressAnchorsOf(SEED_FACTS.filter((f) => f.key.startsWith(WAREHOUSE_ADDRESS_SEED)).map((f) => f.answer)))).toBe(false);
+    expect(reminderPiece(addressAnchorsOf([answer('china_address_yiwu@1')], [GS_REMINDER]))).toBe(false);
     // The house numbers a street address names — never a phone's digits.
     expect(ANCHORS.houseNumbers).toEqual(['2255', '168']);
+  });
+
+  it('both run paths — a customer\'s message and his hand-back — draft through the avia rule, judge THAT draft, then let the guard ask him', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync('src/modules/wms/agent/run.ts', 'utf8').replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/gu, '');
+    const path = /const drafted = withAviaRule\(withRailRule\(loop\.compose, ctx\), loop, ctx\);[\s\S]*?body: drafted\.replyText,[\s\S]*?const c = withAviaGuard\(drafted, policy, loop, ctx\);\s*const \{ actions, notes \} = validateActions\(c,/gu;
+    expect(src.match(path)?.length).toBe(2);
   });
 
   it('the stored memory reaches the policy at the write AND at ✅ — policyFor passes both new fields', async () => {
