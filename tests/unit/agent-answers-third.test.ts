@@ -208,8 +208,8 @@ describe('written down for the model and in the knowledge', () => {
     expect(head).toContain(WAREHOUSE_SENTENCES.uz.factory);
   });
 
-  it('a seed fact carries his rule, with no money in it', () => {
+  it('a seed fact carries his rule, with no money in it — the truck\'s, which is what he answered (review D6)', () => {
     const f = SEED_FACTS.find((x) => x.key === 'china_warehouse_price@1');
-    expect(f?.answer).toBe('Narx Xitoydagi omborlarimizdan hisoblanadi; zavoddan omborgacha olib kelish alohida hisoblanadi.');
+    expect(f?.answer).toBe('Avto (mashina) narxi Xitoydagi omborlarimizdan hisoblanadi; zavoddan omborgacha olib kelish alohida hisoblanadi.');
   });
 });

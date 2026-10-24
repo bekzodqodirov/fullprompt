@@ -1254,6 +1254,12 @@ export interface PolicyInput {
    * Absent = nothing is quoted, every character counts.
    */
   quotableHan?: string;
+  /**
+   * The receiving warehouses as the knowledge states them NOW (`addressAnchorsOf`
+   * over every live address fact) — what `avia_address` recognises. Absent =
+   * none read, and no reply states one.
+   */
+  warehouseAddress?: AddressAnchors;
 }
 
 export interface PolicyResult {
@@ -1428,6 +1434,14 @@ export function hanOnly(text: string): string {
 const HAN_RUN = /[\p{Script=Han}，。：；、！？（）「」『』【】《》〈〉·][\p{Script=Han}，。：；、！？（）「」『』【】《》〈〉·\s]*/gu;
 
 /**
+ * The shortest stretch that counts as a QUOTATION of a fact (review D2). A
+ * single «亿» is in the facts — Horgos's «金亿» — and taken out as «quoted»
+ * it would let «1亿 dollar» through G1; three characters are a piece of a
+ * name or a street, which no spelled-out figure in this business is.
+ */
+const QUOTED_MIN = 3;
+
+/**
  * The reply with every Chinese stretch a fact holds verbatim taken out (his
  * fourth set): «Ivu ombori: 浙江省 义乌市 …» is an Uzbek sentence carrying
  * the supplier's address, and measured whole it read as Chinese — every
@@ -1438,23 +1452,79 @@ export function withoutQuotedHan(text: string, quotable: string): string {
   if (!quotable) return text;
   return text.replace(HAN_RUN, (run) => {
     const h = hanOnly(run);
-    return h !== '' && quotable.includes(h) ? ' ' : run;
+    return [...h].length >= QUOTED_MIN && quotable.includes(h) ? ' ' : run;
   });
 }
 
-/** A Chinese mobile number (+86 1xx xxxx xxxx). */
-const CN_MOBILE = /^(?:86)?1[3-9]\d{9}$/u;
-/** A Chinese street address: a stretch naming a province, city, district, street, number or building. */
-const CN_ADDRESS = /\p{Script=Han}*[省市区县镇街路号栋]\p{Script=Han}*/u;
+/** The receiving warehouses as a reply would quote them: pieces of their street addresses, and their phones. */
+export interface AddressAnchors {
+  /** Each address stretch's Chinese characters (`hanOnly`). */
+  han: string[];
+  /** Each contact's last nine digits — the comparison `foreignPhones` makes. */
+  phones: string[];
+}
+
+/** A character only a street address carries here: province, city, district, county, town, street, road, number, building. */
+const ADDRESS_CHAR = /[省市区县镇街路号栋]/u;
 
 /**
- * Does the reply state a place in China to send to — a Chinese mobile (every
- * receiving contact is one) or a Chinese street address? Asked of an avia
- * quote only (his fourth set «2»): the flight's address is his.
+ * The anchors of the address facts (review D3): every stretch of four or more
+ * characters that names a street — the reminder's «发货前请不要忘记标注» and
+ * a receiver's name carry none — and every phone. Read from the facts, never
+ * from a list of its own: the warehouse he edits tomorrow is the one refused.
  */
-export function statesChinaAddress(text: string): boolean {
-  for (const m of text.matchAll(PHONE_RE)) if (CN_MOBILE.test(phoneDigits(m[0]))) return true;
-  return [...text.matchAll(HAN_RUN)].some((r) => hanOnly(r[0]).length >= 4 && CN_ADDRESS.test(r[0]));
+export function addressAnchorsOf(texts: readonly string[]): AddressAnchors {
+  const han = new Set<string>();
+  const phones = new Set<string>();
+  for (const raw of texts) {
+    const text = normalizeDigits(raw);
+    for (const r of text.matchAll(HAN_RUN)) {
+      const h = hanOnly(r[0]);
+      if ([...h].length >= 4 && ADDRESS_CHAR.test(h)) han.add(h);
+    }
+    for (const m of text.matchAll(PHONE_RE)) {
+      const d = phoneDigits(m[0]);
+      if (d.length >= 9) phones.add(d.slice(-9));
+    }
+  }
+  return { han: [...han], phones: [...phones] };
+}
+
+/**
+ * Does the reply state one of our receiving warehouses — its contact, or a
+ * piece of its street address? Asked of an avia quote only (his fourth set
+ * «2»): the flight's address is his. Anchored on the warehouses themselves
+ * (review D3): the first version refused every Chinese stretch carrying 市 or
+ * 路, which is «从哪个城市» and «空运路线» — an ordinary question to a Chinese
+ * customer, not an address. A Chinese mobile that is no warehouse's is
+ * `foreign_phone`'s already.
+ */
+export function statesChinaAddress(text: string, anchors: AddressAnchors): boolean {
+  const ours = new Set(anchors.phones);
+  for (const m of normalizeDigits(text).matchAll(PHONE_RE)) {
+    const d = phoneDigits(m[0]);
+    if (d.length >= 9 && ours.has(d.slice(-9))) return true;
+  }
+  const han = hanOnly(text);
+  return anchors.han.some((a) => addressPieces(a).some((piece) => han.includes(piece)));
+}
+
+/**
+ * The pieces of an anchor a quotation is recognised by: every stretch of five
+ * characters that carries a street character — «义乌市稠江», «稠江街道荷». Five,
+ * because the model wraps what it copies in its own words («地址：…»), so the
+ * reply's stretch is never the anchor whole; a street character, because
+ * «国际物流» sits in two warehouses' names and in every forwarder's.
+ */
+function addressPieces(anchor: string): string[] {
+  const chars = [...anchor];
+  const width = Math.min(5, chars.length);
+  const pieces: string[] = [];
+  for (let i = 0; i + width <= chars.length; i += 1) {
+    const piece = chars.slice(i, i + width).join('');
+    if (ADDRESS_CHAR.test(piece)) pieces.push(piece);
+  }
+  return pieces;
 }
 
 export function foreignPhones(text: string, allowed: readonly string[]): string[] {
@@ -1536,8 +1606,11 @@ export function checkAgentReply(input: PolicyInput): PolicyResult {
   if (questionCount(trimmed) > 1) blocks.push({ rule: 'G4', code: 'questions', detail: String(questionCount(trimmed)) });
 
   // G5 — the customer's script; Uzbek Cyrillic and Russian are one script here. A fact's Chinese
-  // address quoted in the reply is the fact's script, not the reply's (his fourth set).
-  const draftScript = dominantScript(withoutQuotedHan(trimmed, input.quotableHan ?? ''));
+  // address quoted in the reply is the fact's script, not the reply's (his fourth set) — except in a
+  // Chinese reply, where it IS the reply's: taken out, the fact's own Uzbek words and the reminder
+  // outweighed «您好» and a Chinese customer's address reply read as Latin (review D1).
+  const quotable = input.quotableHan ?? '';
+  const draftScript = dominantScript(scriptOf(input.language) === 'han' ? trimmed : withoutQuotedHan(trimmed, quotable));
   if (input.customerScript && draftScript !== 'none' && draftScript !== input.customerScript) {
     blocks.push({ rule: 'G5', code: 'wrong_script', detail: `${input.customerScript}→${draftScript}` });
   }
@@ -1550,8 +1623,9 @@ export function checkAgentReply(input: PolicyInput): PolicyResult {
     blocks.push({ rule: 'G5', code: 'gloss_missing' });
   }
 
-  // G1 — numbers.
-  const unverifiable = unverifiableNumeral(text);
+  // G1 — numbers. A numeral character inside a quoted address is the fact's spelling, not a figure:
+  // Horgos's «金亿» beside any «kub» read as a spelled-out number (review D2).
+  const unverifiable = unverifiableNumeral(withoutQuotedHan(text, quotable));
   if (unverifiable) blocks.push({ rule: 'G1', code: 'number_unverifiable', detail: unverifiable });
   const removeWhole = [...input.removeWhole, ...input.allowedUrls, ...input.mapUrls];
   // His «Temir yo'l mendan so'rasin» in the reply's OWN words (final review K18): a body that speaks of rail
@@ -1579,7 +1653,9 @@ export function checkAgentReply(input: PolicyInput): PolicyResult {
   }
   for (const p of foreignPhones(text, input.allowedPhones)) blocks.push({ rule: 'G6', code: 'foreign_phone', detail: p });
   // His fourth set «2»: avia cargo goes to the address HE gives — never to a receiving warehouse the facts name.
-  if (input.aviaOnly === true && statesChinaAddress(text)) blocks.push({ rule: 'G6', code: 'avia_address' });
+  if (input.aviaOnly === true && statesChinaAddress(text, input.warehouseAddress ?? { han: [], phones: [] })) {
+    blocks.push({ rule: 'G6', code: 'avia_address' });
+  }
   staffNameHits(text, input.staffNames, input.customerNames ?? [], input.factNameWords ?? [], blocks, warnings);
   if (input.canary && text.includes(input.canary)) blocks.push({ rule: 'G6', code: 'canary' });
   if (AI_DENIAL.some((re) => re.test(text))) blocks.push({ rule: 'G6', code: 'ai_denial' });

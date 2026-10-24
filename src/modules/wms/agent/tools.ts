@@ -220,7 +220,7 @@ function sourcesOf(text: string, label: string, money: boolean): NumberSource[] 
  * any reference that existed, so the model could price the first. A stated
  * volume beats one computed from carton sizes, as in the checklist.
  */
-function newestMeasure(ctx: AgentContext, kind: MeasureCandidate['kind']): MeasureCandidate | null {
+export function newestMeasure(ctx: Pick<AgentContext, 'measures'>, kind: MeasureCandidate['kind']): MeasureCandidate | null {
   const of = ctx.measures.filter((m) => m.kind === kind);
   const stated = of.filter((m) => !m.ref.startsWith('d'));
   return (stated.length > 0 ? stated : of).at(-1) ?? null;
@@ -531,16 +531,17 @@ async function avia(input: Record<string, unknown>, env: ToolEnv): Promise<ToolO
   }
   const total = Math.round(kg * rate * 100) / 100;
   // His fourth set «2» («yukini infosini menga bersang men adres beraman
-  // telegramda sorasin») replaces K32's condition for the flight: avia cargo
-  // does not go to the China receiving warehouses, so no warehouse sentence is
-  // said and no address is given — the run asks HIM, with the cargo (`air`).
+  // telegramda sorasin») replaces K32's condition for the flight: the flight's
+  // address is his to give, so no warehouse sentence is said and no address is
+  // given — the run asks HIM, with the cargo (`air`). He said nothing about
+  // where avia cargo is received, so nothing here claims it (review D7).
   const origin = namedOrigin(inboundText(ctx))?.place ?? null;
   return {
     ok: true,
     text:
       `Taxminiy avia yo'lkira: ${total} $ (${kg} kg × ${rate} $/kg). Yetib borishi taxminan ${daysMin}-${daysMax} kun, ` +
       `reys bo'lsa ${daysMin} kun — va'da emas. Boj va QQS bu narxga KIRMAYDI. ` +
-      `Avia yuk Xitoydagi qabul omborlariga YUBORILMAYDI — avia manzilini AYTMA, bilimdagi ombor manzilini ham: manzilni Bekzod beradi. ` +
+      `Avia uchun manzilni AI aytmaydi — avia manzilini AYTMA, bilimdagi ombor manzilini ham: manzilni Bekzod beradi. ` +
       `needs_owner=true, owner_question="Avia: <tovar>, ${kg} kg, <qayerdan> — manzilni bering" — tovar va qayerdanni mijoz xabaridan yoz.`,
     estimate: true,
     air: { kg, origin },

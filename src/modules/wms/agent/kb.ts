@@ -91,6 +91,24 @@ export async function generalFacts(limit = 60): Promise<KbHit[]> {
 }
 
 /**
+ * The seed key every receiving warehouse's address fact is filed under
+ * (`seed-kb.ts`, his fourth set): `china_address_yiwu@1` and its siblings. A
+ * fact he edits on the knowledge page keeps the key (`web-kb.ts` carries
+ * `source_ref` forward), so the policy recognises the address he wrote, not
+ * the one the seed shipped.
+ */
+export const WAREHOUSE_ADDRESS_SEED = 'china_address_';
+
+/** The live receiving-warehouse facts, as text — what `avia_address` is anchored on (review D3). */
+export async function warehouseAddressTexts(): Promise<string[]> {
+  const rows = await db
+    .select({ answer: kbFacts.answer })
+    .from(kbFacts)
+    .where(and(live, eq(kbFacts.scope, 'general'), sql`starts_with(${kbFacts.sourceRef}->>'seed', ${WAREHOUSE_ADDRESS_SEED})`));
+  return rows.map((r) => r.answer);
+}
+
+/**
  * The facts for THIS chat that match the query: general ones and the chat's
  * own (its client and siblings, or its lead) — never another customer's.
  * The table is the company's own short list (dozens of rows), so the

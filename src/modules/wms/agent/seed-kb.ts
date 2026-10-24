@@ -49,15 +49,16 @@ export const SEED_FACTS: readonly SeedFact[] = [
     // below — so @4 points at those facts. Qashqar is no longer named: his list
     // is Ivu, Guanchjou and Xorgos.
     // His «2 yukini infosini menga bersang men adres beraman telegramda
-    // sorasin»: avia cargo does NOT go to these addresses — the flight's address
-    // is his to give, so the fact says so where every run reads it.
+    // sorasin»: the flight's address is his to give, so the fact says so where
+    // every run reads it — and says no more than he did (review D7: «avia is
+    // not for these addresses» was a claim about his warehouses he never made).
     key: 'china_points@4',
     question: 'Xitoyda yukni qayerga yuboraman? Qabul omborlari qayerda?',
     answer:
       'Xitoyda uchta qabul ombori bor: Ivu (YW, 义乌), Guanchjou (GZ, 广州 — ombor Foshan shahrida, 佛山) va Xorgos (HRG, 霍尔果斯). ' +
       'Har birining aniq manzili, qabul qiluvchisi va telefoni alohida bilimda: mijoz qaysi omborga yuborishini aytsa — oʻshaning manzilini bilimdagidek bering; ' +
       'aytmasa — qaysi shahardan joʻnatishini soʻrang. ' +
-      'Avia yuk uchun bu manzillar EMAS: avia manzilini akkaunt egasi beradi — AI aytmaydi (needs_owner=true).',
+      "Avia uchun manzilni AI aytmaydi (bilimdagi ombor manzilini ham): yuk maʼlumotini (tovar, ogʻirlik, qayerdan) yigʻib, akkaunt egasidan soʻraydi (needs_owner=true) — manzilni u beradi.",
   },
   // His fourth set, verbatim (the Chinese text is the supplier's to read and is
   // never translated or re-spelled). One fact per warehouse, so a reply quotes
@@ -147,10 +148,13 @@ export const SEED_FACTS: readonly SeedFact[] = [
   // His third set «3» (the same evening): «agar skladimizga jo'natib bersangiz
   // skladlarimizdan narxi shuncha deb aytsin. Va zavotidan olib skladga olib
   // kelish alohida hisoblanadi». No money — the figure is still the tool's.
+  // His words answered the TRUCK question, so the fact says «avto» (review
+  // D6): served into an avia chat, «Narx omborlarimizdan» read as the flight's
+  // price too, and the flight is weight × rate from wherever it starts.
   {
     key: 'china_warehouse_price@1',
-    question: 'Narx qayerdan hisoblanadi? Zavoddan olib kelish narxga kiradimi?',
-    answer: 'Narx Xitoydagi omborlarimizdan hisoblanadi; zavoddan omborgacha olib kelish alohida hisoblanadi.',
+    question: 'Mashina (avto) narxi qayerdan hisoblanadi? Zavoddan olib kelish narxga kiradimi?',
+    answer: 'Avto (mashina) narxi Xitoydagi omborlarimizdan hisoblanadi; zavoddan omborgacha olib kelish alohida hisoblanadi.',
   },
 ];
 

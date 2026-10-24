@@ -18,10 +18,11 @@ import { askedLocation, customerNumberSources, policyFor, splitUrls, type Policy
 import { chatBlock, runTail, stableHead } from './prompt';
 import { JOB_AGENT_INBOUND, type AgentInboundJob } from './queues';
 import { dayRunCounts } from './today';
-import { belowTruckMinimumFacts, ourChinaPlaces, runTool, TOOL_SPECS, TRUCK_SECTIONS, type ChecklistState, type ToolOutcome } from './tools';
+import { belowTruckMinimumFacts, newestMeasure, ourChinaPlaces, runTool, TOOL_SPECS, TRUCK_SECTIONS, type ChecklistState, type ToolOutcome } from './tools';
+import { namedOrigin } from './origin';
 import { draftWorthy, mentionsRail, RAIL_OWNER_QUESTION } from './worthy';
 import { writeDraft, writeNotice, type ComposedAction } from './drafts';
-import { extractNumbers, factSources, namesMode, oneModeIn, type NumberSource } from './numbers';
+import { extractNumbers, factSources, namesMode, oneModeIn, type NumberSource, type TravelMode } from './numbers';
 import { hanOnly, nameWordsOf } from './policy';
 import { AGENT_LOCALES } from './locale';
 
@@ -498,9 +499,12 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
     // …and a truck figure priced FROM our China warehouses asks for the
     // condition and the factory leg too (his third set «3»).
     fromOurWarehouse: !rail && loop.outcomes.some((o) => o.estimate === true && o.fromOurWarehouse === true),
-    // The figure is a flight's and no truck's (his fourth set «2»): the reply
-    // may state no China address — the flight's is his to give.
-    aviaOnly: !rail && loop.outcomes.some((o) => o.air) && !loop.outcomes.some((o) => o.estimate === true && !o.air),
+    // The chat is about a flight and no truck (his fourth set «2»): the reply
+    // may state no China address — the flight's is his to give. The flight
+    // quoted this run, or the chat's one road one burst back (review D4: the
+    // follow-up «manzil?» ran no tool and got the Yiwu address unguarded); a
+    // truck asked this run makes it the truck's, refused or not (review D5).
+    aviaOnly: !rail && (loop.outcomes.some((o) => o.air) || askedModeOf(ctx) === 'air') && !truckAsked(loop),
     // The Chinese the facts this run read hold (his fourth set): a reply that
     // quotes a warehouse address verbatim is measured in its OWN script.
     quotableHan: hanOnly([...facts.map((f) => f.answer), ...loop.outcomes.flatMap((o) => o.factTexts ?? [])].join('')),
@@ -510,9 +514,7 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
     factNameWords: nameWordsOf([...facts.map((f) => f.answer), ...loop.outcomes.flatMap((o) => o.factTexts ?? [])]),
     // The road the customer asked about — his burst's, else the chat's — is the one a reply's day count
     // naming no road is the time of: «Mashinada 5 kunda kelsinmi?» is never answered on the flight's five.
-    askedMode:
-      oneModeIn(ctx.burst.map((m) => m.body).join('\n')) ??
-      oneModeIn(ctx.messages.filter((m) => m.direction === 'in').map((m) => m.body).join('\n')),
+    askedMode: askedModeOf(ctx),
     // His 13 + ⭐3 (K29): a Persian or Chinese reply comes with its Uzbek translation, or carries no ✅.
     hasGloss: glossReadable(loop.compose.glossUz),
     ownCodes: ctx.identity.codes.map((c) => c.clientCode),
@@ -521,32 +523,75 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
   };
 }
 
+/** The one road the customer asked about — his burst's, else the chat's inbound window's; null for none or more than one. */
+export function askedModeOf(ctx: Pick<AgentContext, 'burst' | 'messages'>): TravelMode | null {
+  return (
+    oneModeIn(ctx.burst.map((m) => m.body).join('\n')) ??
+    oneModeIn(ctx.messages.filter((m) => m.direction === 'in').map((m) => m.body).join('\n'))
+  );
+}
+
+/** This run asked the truck's price, whatever the tool answered (review D5): a refused estimate is still a truck being talked about. */
+function truckAsked(loop: Pick<LoopResult, 'tools' | 'outcomes'>): boolean {
+  return loop.tools.some((t) => t.name === 'yolkira_estimate') || loop.outcomes.some((o) => o.estimate === true && !o.air);
+}
+
+/** What the card tells him so he can give the flight's address. */
+export interface AviaCargo {
+  kg: number | null;
+  origin: string | null;
+}
+
 /**
  * His fourth set «2» (2026-10-24): «yukini infosini menga bersang men adres
- * beraman telegramda sorasin». An avia figure went into the reply, so the
- * flight's address is HIS question whatever the model composed — the card
- * asks it with the cargo the tool read (kilos, the place named). A question
- * the model already asked about the flight stands; one about something else
- * keeps its place and the avia line follows it. Never in a rail chat: there
- * no machine figure goes out (`memoryFor`), so no flight was quoted — the
- * question is the rail one.
+ * beraman telegramda sorasin». An avia figure went into the reply — or an
+ * avia chat asks where to send (review D4) — so the flight's address is HIS
+ * question whatever the model composed, and the card asks it with the cargo
+ * (kilos, the place named). A question the model already asked about the
+ * flight's address stands; anything else keeps its place and the avia line
+ * follows it. Never in a rail chat: there no machine figure goes out
+ * (`memoryFor`), so no flight was quoted — the question is the rail one.
  */
 export function withAviaRule(
   c: ComposeReply,
   outcomes: readonly Pick<ToolOutcome, 'air'>[],
-  ctx: Pick<AgentContext, 'burst' | 'messages'>,
+  ctx: Pick<AgentContext, 'burst' | 'messages' | 'measures'>,
 ): ComposeReply {
-  const air = outcomes.find((o) => o.air)?.air;
-  if (!air || railChat(ctx, c)) return c;
+  if (railChat(ctx, c)) return c;
+  const air: AviaCargo | null = outcomes.find((o) => o.air)?.air ?? aviaAddressAsked(ctx);
+  if (!air) return c;
   const asked = c.ownerQuestion.trim();
-  if (/avia|авиа|air/iu.test(asked)) return { ...c, needsOwner: true };
+  if (asksAviaAddress(asked)) return { ...c, needsOwner: true };
   const line = aviaOwnerQuestion(air);
   return { ...c, needsOwner: true, ownerQuestion: asked ? `${asked} · ${line}` : line };
 }
 
+/**
+ * The follow-up of an avia chat (review D4): the flight was quoted a burst
+ * back and now «manzil qayerga?» — no tool ran, and the address is still his.
+ * The kilos are the customer's newest, as the avia tool reads them.
+ */
+function aviaAddressAsked(ctx: Pick<AgentContext, 'burst' | 'messages' | 'measures'>): AviaCargo | null {
+  if (askedModeOf(ctx) !== 'air' || !askedLocation(ctx.burst.map((m) => m.body))) return null;
+  const inbound = ctx.messages.filter((m) => m.direction === 'in').map((m) => m.body).join('\n');
+  return { kg: newestMeasure(ctx, 'weight')?.value ?? null, origin: namedOrigin(inbound)?.place ?? null };
+}
+
+const ADDRESS_WORD = /manzil|адрес|address|地址|آدرس/iu;
+
+/**
+ * The model's own question already asks the flight's ADDRESS (review D8):
+ * both the flight and the address are named. A bare «air» matched «chair»
+ * and «Kairat», and «Avia narxini tasdiqlang» asked for no address at all.
+ */
+function asksAviaAddress(question: string): boolean {
+  return namesMode(question, 'air') && ADDRESS_WORD.test(question);
+}
+
 /** The card's avia line: what he needs to give the address. */
-export function aviaOwnerQuestion(air: { kg: number; origin: string | null }): string {
-  return `Avia: ${air.kg} kg, qayerdan: ${air.origin ?? 'aytilmagan'} — mijozga avia manzilini yozing (✏️).`;
+export function aviaOwnerQuestion(air: AviaCargo): string {
+  const kg = air.kg === null ? "og'irligi aytilmagan" : `${air.kg} kg`;
+  return `Avia: ${kg}, qayerdan: ${air.origin ?? 'aytilmagan'} — mijozga avia manzilini yozing (✏️).`;
 }
 
 /**

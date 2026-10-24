@@ -6,7 +6,8 @@ import { canLogInSql } from '../../platform/users/login';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import type { AgentLocale, ScriptName } from './locale';
 import { customerSources, urlsIn, type NumberSource, type TravelMode } from './numbers';
-import { checkAgentReply, checkOwnerReply, codeCandidatesIn, textFingerprint, type PolicyHit, type PolicyResult } from './policy';
+import { warehouseAddressTexts } from './kb';
+import { addressAnchorsOf, checkAgentReply, checkOwnerReply, codeCandidatesIn, textFingerprint, type PolicyHit, type PolicyResult } from './policy';
 import { AGENT_LIMITS } from './limits';
 
 /**
@@ -153,11 +154,13 @@ export async function policyFor(input: {
   /** Names and codes of THIS customer — stripped from the fingerprint. */
   strip: string[];
 }): Promise<PolicyResult> {
-  const [bookCodes, staffNames, counts, codePrefix] = await Promise.all([
+  const [bookCodes, staffNames, counts, codePrefix, addresses] = await Promise.all([
     bookCodesIn(input.body),
     staffNamesExcept(input.memory.managerName, input.managerUserId),
     sendCounts(input.managerUserId, input.peerId, input.body, input.strip),
     getSetting('client_code_prefix'),
+    // Read now, not remembered: the address he corrects this morning is the one an older draft's ✅ refuses.
+    input.memory.aviaOnly === true ? warehouseAddressTexts() : Promise.resolve([]),
   ]);
   return checkAgentReply({
     body: input.body,
@@ -184,6 +187,7 @@ export async function policyFor(input: {
     hasGloss: input.memory.hasGloss === true,
     aviaOnly: input.memory.aviaOnly === true,
     quotableHan: input.memory.quotableHan ?? '',
+    warehouseAddress: addressAnchorsOf(addresses),
   });
 }
 

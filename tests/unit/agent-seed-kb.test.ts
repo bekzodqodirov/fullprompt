@@ -66,9 +66,10 @@ describe('the seeded knowledge', () => {
     expect(answer).not.toMatch(/kelishuvdan keyin|menejer aytadi|keyin beriladi|bu bilimda yoʻq/iu);
   });
 
-  it('…and says, where every run reads it, that avia cargo does not go there — the flight\'s address is his (his «2 … telegramda sorasin»)', () => {
+  it('…and says, where every run reads it, that the flight\'s address is his (his «2 … telegramda sorasin»)', () => {
     const answer = normalizeDigits(SEED_FACTS.find((f) => f.key.startsWith('china_points@'))!.answer);
-    expect(answer).toMatch(/avia yuk uchun bu manzillar emas/iu);
+    expect(answer).toMatch(/avia uchun manzilni AI aytmaydi/iu);
+    expect(answer).toMatch(/akkaunt egasidan soʻraydi/iu);
     expect(answer).toContain('needs_owner=true');
   });
 
