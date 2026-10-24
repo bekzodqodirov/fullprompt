@@ -108,6 +108,8 @@ import { runAgentStep, type AgentOutboxRow, type StepOutcome } from '../src/modu
 import {
   agentStepStore,
   applyAgentOutcome,
+  badgeRestored,
+  badgesToRestore,
   dueAgentRow,
   recoverAgentInFlight,
   type OutcomeReport,
@@ -967,6 +969,22 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
    */
   let agentUnsettled: { row: AgentOutboxRow; outcome: StepOutcome } | null = null;
 
+  /**
+   * Give a chat its unread badge back (regression-12) and record that it
+   * was: the pump's own aborts call this at once, and `badgesToRestore`
+   * finds the replies somebody else ended after their read («off», a forced
+   * «off»). A dead session cannot mark anything — the row is only recorded.
+   * Cosmetic either way: a refusal here is logged, never retried.
+   */
+  const restoreBadge = async (rowId: string, peerId: bigint, lastError: string | null) => {
+    if (!isSessionDead(lastError ?? '')) {
+      await agentTg.markUnread(peerId).catch((err: unknown) => {
+        console.error("o'qilmagan belgisi qaytmadi:", err instanceof Error ? err.message : err);
+      });
+    }
+    await badgeRestored(rowId);
+  };
+
   const settleAgentOutcome = async (row: AgentOutboxRow, outcome: StepOutcome) => {
     let report: OutcomeReport;
     try {
@@ -995,11 +1013,7 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
     }
     // The question was read on his phone and nothing went (regression-12):
     // the badge comes back, so the chat still asks for him.
-    if (report.markUnread) {
-      await agentTg.markUnread(row.peerId).catch((err: unknown) => {
-        console.error("o'qilmagan belgisi qaytmadi:", err instanceof Error ? err.message : err);
-      });
-    }
+    if (report.markUnread) await restoreBadge(row.id, row.peerId, null);
     if (report.sessionDead) {
       console.error(`SESSION o‘lgan: ${report.sessionDead} — qayta ulanish kerak`);
       await announceSessionDead(report.sessionDead);
@@ -1073,9 +1087,26 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
    * sent without calling Telegram at all.
    */
   const agentTick = async (opts: { pulls: boolean }) => {
+    try {
+      await agentTickBody(opts);
+    } catch (err) {
+      // Only a database that is not there feeds the outage alarm; anything
+      // else the agent's half throws is a logged line, never «baza yo'q» in
+      // the manager's Saved Messages.
+      const message = err instanceof Error ? err.message : String(err);
+      if (isDbUnreachable(message)) await noteDbFailure(err);
+      else console.error('AI navbati:', message);
+    }
+  };
+  const agentTickBody = async (opts: { pulls: boolean }) => {
     if (!(await tablesReady())) return;
     if (agentUnsettled) {
       await settleAgentOutcome(agentUnsettled.row, agentUnsettled.outcome);
+      return;
+    }
+    const [badge] = await badgesToRestore(account.managerUserId, new Date());
+    if (badge) {
+      await restoreBadge(badge.id, badge.peerId, badge.lastError);
       return;
     }
     const row = await dueAgentRow(account.managerUserId, new Date());
@@ -1085,6 +1116,20 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       return;
     }
     if (opts.pulls) await pullTick();
+  };
+
+  /** A CRM reply on the agent's account retires the chat's live draft — the worker decides how. */
+  const crmReplied = async (peerId: bigint, tgMessageId: bigint) => {
+    try {
+      if (!(await agentHere())) return;
+      await enqueue<AgentHumanReplyJob>(
+        JOB_AGENT_HUMAN_REPLY,
+        { managerUserId: account.managerUserId, peerId: peerId.toString(), tgMessageId: tgMessageId.toString() },
+        { retryLimit: 0 },
+      );
+    } catch (err) {
+      console.error('AI navbatiga qo‘yilmadi:', err instanceof Error ? err.message : err);
+    }
   };
 
   /** «A current listener runs here» for the app's ✅ (regression-3) — throttled, and at once when catch-up ends. */
@@ -1266,6 +1311,11 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       }
       sent += 1;
       console.log(`  → ${job.clientId.slice(0, 8)} yuborildi`);
+      // A person answered from the CRM (fit-3) — the same «he replied
+      // himself» the live hook raises for his phone, which this echo never
+      // passes through. Off the send path entirely: the message has left,
+      // and nothing here may be mistaken for a failed send below.
+      if (echo) void crmReplied(echo.peerId, echo.tgMessageId);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       // Telegram's own instruction, and obeying it is not optional: carrying

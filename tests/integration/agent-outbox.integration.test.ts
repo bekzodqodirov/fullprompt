@@ -37,6 +37,8 @@ import {
   __forgetOwnAverage,
   agentRowById,
   applyAgentOutcome,
+  badgeRestored,
+  badgesToRestore,
   claimAgentSend,
   dueAgentRow,
   recoverAgentInFlight,
@@ -380,6 +382,21 @@ describe('the facts a send is decided from', () => {
     expect(f.lastAccountSendAt?.getTime()).toBe(now.getTime() - 10 * 60_000);
   });
 
+  it('just after Tashkent midnight the last hour is not today (#1063’s trap)', async () => {
+    const own = await makeManager('midnight');
+    const now = new Date('2025-03-10T19:30:00Z'); // 00:30 Tashkent on the 11th; the day began at 19:00Z
+    const peer = next();
+    const { row } = await approved({ manager: own.userId, peer });
+    // 23:45 yesterday in Tashkent: inside the last hour, outside the day.
+    await approved({ manager: own.userId, peer, storeAnchor: false, status: 'sent', sentAt: new Date('2025-03-10T18:45:00Z') });
+    await approved({ manager: own.userId, storeAnchor: false, status: 'sent', sentAt: new Date('2025-03-10T19:10:00Z') });
+    const f = await sendFactsFor(row, now, ctx(own.account.id));
+    expect(f.sentLastHour).toBe(2);
+    expect(f.sentToday).toBe(1);
+    expect(f.sentToChatToday, 'the chat’s only send was yesterday').toBe(0);
+    expect(f.lastChatSendAt?.toISOString(), 'but the per-chat gap still sees it').toBe('2025-03-10T18:45:00.000Z');
+  });
+
   it('the ramp is his own average from the 30 days before the start (his Q11 ⭐)', async () => {
     const own = await makeManager('ramp');
     const started = new Date('2025-06-01T06:00:00Z');
@@ -588,6 +605,32 @@ describe('which row the pump steps', () => {
     const early = await approved({ manager: own.userId, nextStepAt: new Date(now.getTime() - 120_000) });
     await approved({ manager: own.userId, nextStepAt: new Date(now.getTime() - 60_000) });
     expect((await dueAgentRow(own.userId, now))?.id).toBe(early.row.id);
+  });
+
+  it('a reply somebody else ended after its read gets its badge back once (regression-12)', async () => {
+    const own = await makeManager('badge');
+    const now = new Date();
+    // «off» on the screen cancels mid-typing: read on his phone, nothing sent.
+    const offed = await approved({ manager: own.userId, step: 'typing', readDone: true });
+    await db.update(agentOutbox).set({ status: 'cancelled', lastError: 'agent_off' }).where(eq(agentOutbox.id, offed.row.id));
+    // Never read, still waiting, or perhaps delivered: none of these is owed a badge.
+    const unread = await approved({ manager: own.userId, step: 'verify' });
+    await db.update(agentOutbox).set({ status: 'cancelled' }).where(eq(agentOutbox.id, unread.row.id));
+    await approved({ manager: own.userId, step: 'typing', readDone: true });
+    const maybeSent = await approved({ manager: own.userId, step: 'send', readDone: true });
+    await db.update(agentOutbox).set({ status: 'unknown' }).where(eq(agentOutbox.id, maybeSent.row.id));
+    // Yesterday's abort: a badge given back now would be noise.
+    const old = await approved({ manager: own.userId, step: 'typing', readDone: true });
+    await db
+      .update(agentOutbox)
+      .set({ status: 'cancelled', queuedAt: new Date(now.getTime() - 2 * 86_400_000) })
+      .where(eq(agentOutbox.id, old.row.id));
+
+    const owed = await badgesToRestore(own.userId, now);
+    expect(owed.map((b) => b.id)).toEqual([offed.row.id]);
+    expect(owed[0]!.peerId).toBe(offed.peer);
+    await badgeRestored(offed.row.id);
+    expect(await badgesToRestore(own.userId, now)).toEqual([]);
   });
 
   it('a reply being sent when the listener died is unknown, never re-sent', async () => {

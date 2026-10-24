@@ -10,13 +10,18 @@ import { wasAutoSent } from '@/modules/wms/crm/message-flags';
 
 describe('the customer’s own robot (ban-4)', () => {
   const base = { id: 9, peerId: new Api.PeerUser({ userId: helpers.returnBigInt('5') }), date: 1, message: 'Hozir band' };
+  // gramjs's TL constructor takes both fields (layer 198) though its typings name neither.
+  const withFlags = (extra: Record<string, unknown>) =>
+    new Api.Message({ ...base, ...extra } as ConstructorParameters<typeof Api.Message>[0]);
 
   it('a Business away / greeting message is flagged by `offline`', () => {
-    expect(wasAutoSent(new Api.Message({ ...base, offline: true }))).toBe(true);
+    const msg = withFlags({ offline: true });
+    expect((msg as unknown as { offline: unknown }).offline, 'the TL object keeps the field').toBe(true);
+    expect(wasAutoSent(msg)).toBe(true);
   });
 
   it('an answer from the customer’s business bot is flagged by `viaBusinessBotId`', () => {
-    expect(wasAutoSent(new Api.Message({ ...base, viaBusinessBotId: helpers.returnBigInt('77') }))).toBe(true);
+    expect(wasAutoSent(withFlags({ viaBusinessBotId: helpers.returnBigInt('77') }))).toBe(true);
   });
 
   it('a person’s ordinary message is not — gramjs fills the unset flag fields with null or false', () => {

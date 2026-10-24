@@ -488,6 +488,47 @@ export async function applyAgentOutcome(
 }
 
 /**
+ * Replies that ended after their read step with nothing sent — the
+ * customer's question shows as read on his phone and no answer went
+ * (regression-12). The pump's own aborts are restored as they happen; this
+ * also finds the ones somebody ELSE ended: «off» on the screen, the forced
+ * «off» of an alarm, a draft retired elsewhere. An 'unknown' row is not one
+ * of them — the message may well be in the chat. A day back and no further:
+ * a badge given back tomorrow is noise, not a reminder.
+ */
+export async function badgesToRestore(
+  managerUserId: string,
+  now: Date,
+): Promise<{ id: string; peerId: bigint; lastError: string | null }[]> {
+  const rows = await db
+    .select({ id: agentOutbox.id, peerId: agentOutbox.peerId, lastError: agentOutbox.lastError })
+    .from(agentOutbox)
+    .where(
+      and(
+        eq(agentOutbox.managerUserId, managerUserId),
+        eq(agentOutbox.readDone, true),
+        inArray(agentOutbox.status, ['cancelled', 'failed', 'expired']),
+        sql`${agentOutbox.queuedAt} >= ${new Date(now.getTime() - 86_400_000).toISOString()}::timestamptz`,
+      ),
+    )
+    .orderBy(agentOutbox.queuedAt)
+    .limit(5);
+  return rows;
+}
+
+/**
+ * The badge is back (or could not be, on a dead session): `read_done` on a
+ * FINAL row means «the read we did still stands on his phone», so it is
+ * cleared — and the row is never given back twice.
+ */
+export async function badgeRestored(id: string): Promise<void> {
+  await db
+    .update(agentOutbox)
+    .set({ readDone: false })
+    .where(and(eq(agentOutbox.id, id), inArray(agentOutbox.status, ['cancelled', 'failed', 'expired'])));
+}
+
+/**
  * A reply was being SENT when the listener died: nobody can tell from here
  * whether Telegram has it, so it is 'unknown' — never re-sent (ban-5), the
  * card asks him to look. The human queue's `recoverInFlight`, with the agent's

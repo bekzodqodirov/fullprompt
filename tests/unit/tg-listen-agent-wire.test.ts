@@ -67,6 +67,9 @@ describe('the agent pump runs after the human rows (§17.8)', () => {
     expect(tick).toContain('settleAgentOutcome(');
     // A held outcome is written before another row is touched.
     expect(tick.indexOf('agentUnsettled')).toBeLessThan(tick.indexOf('dueAgentRow('));
+    // A chat left read with nothing sent gets its badge back before the next reply starts (regression-12).
+    expect(tick.indexOf('badgesToRestore(')).toBeGreaterThan(0);
+    expect(tick.indexOf('badgesToRestore(')).toBeLessThan(tick.indexOf('dueAgentRow('));
   });
 
   it('stamps the pump so the app can refuse ✅ into a listener that will never send (regression-3)', () => {
