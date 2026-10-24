@@ -42,16 +42,15 @@ const count = (text: string, re: RegExp) => (text.match(re) ?? []).length;
 
 /** The script most of the letters are in; 'none' when there are no letters at all. */
 export function dominantScript(text: string): ScriptName {
+  // A Han character carries a word; a Latin letter carries a sound. Two
+  // characters of Chinese in a line of pinyin or of a product code is a
+  // Chinese sentence, so Han is weighted to compete with whole words.
   const counts: [ScriptName, number][] = [
-    ['han', count(text, HAN)],
+    ['han', count(text, HAN) * 3],
     ['arabic', count(text, ARABIC)],
     ['cyrillic', count(text, CYRILLIC)],
     ['latin', count(text, LATIN)],
   ];
-  // A Han character carries a word; a Latin letter carries a sound. Two
-  // characters of Chinese in a line of pinyin or of a product code is a
-  // Chinese sentence, so Han is weighted to compete with whole words.
-  counts[0][1] *= 3;
   const [best] = counts.sort((a, b) => b[1] - a[1]);
   return best && best[1] > 0 ? best[0] : 'none';
 }
