@@ -15,6 +15,13 @@ import { DEFAULT_LIMITS } from '../crm/telegram-send';
  * the account hits a ceiling the human bridge already respects.
  */
 export const AGENT_LIMITS = {
+  /**
+   * The truck's minimum shipment (his §17.14: «eng kamida 1 kub yuk yokida 100kg dan boshlab»): cargo below
+   * BOTH is not accepted, so no figure is quoted for it — the reply says the minimum instead. Avia has its own.
+   */
+  minShipment: { m3: 1, kg: 100 } as const,
+  /** Avia has its own minimum and time (his 2026-10-24 «avia uchun 1kg minimum», «2-5 kun … reysimiz bolsa 2 kun»). */
+  avia: { minKg: 1, daysMin: 2, daysMax: 5 } as const,
   /** ≥ this long between two AI messages to one chat. */
   perChatGapMs: 20_000,
   /** A random gap between any two AI sends on the account, drawn from this range. */

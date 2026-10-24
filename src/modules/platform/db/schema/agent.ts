@@ -53,6 +53,10 @@ export const agentConfig = pgTable(
     styleGuideProposed: text('style_guide_proposed'),
     styleApprovedAt: timestamp('style_approved_at', { withTimezone: true }),
     styleApprovedBy: uuid('style_approved_by').references(() => users.id),
+    /** His avia rate (§17.14, «kg uchun 17$»); NULL = avia is not quoted. */
+    aviaUsdPerKg: numeric('avia_usd_per_kg', { precision: 10, scale: 2 }).default('17'),
+    aviaRateSetAt: timestamp('avia_rate_set_at', { withTimezone: true }),
+    aviaRateSetBy: uuid('avia_rate_set_by').references(() => users.id),
     updatedBy: uuid('updated_by').references(() => users.id),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -61,6 +65,10 @@ export const agentConfig = pgTable(
     check('agent_config_mode_check', sql`${t.mode} IN ('off', 'shadow', 'auto')`),
     check('agent_config_pause_check', sql`${t.humanPauseMin} BETWEEN 1 AND 10080`),
     check('agent_config_caps_check', sql`${t.dailyDraftCap} >= 0 AND ${t.dailyTokenCap} >= 0`),
+    check(
+      'agent_config_avia_check',
+      sql`${t.aviaUsdPerKg} IS NULL OR (${t.aviaUsdPerKg} > 0 AND ${t.aviaUsdPerKg} < 1000 AND ${t.aviaUsdPerKg} <> 'NaN'::numeric)`,
+    ),
     check(
       'agent_config_session_check',
       sql`(${t.sessionExclusiveAt} IS NULL) = (${t.sessionExclusiveBy} IS NULL)`,
@@ -90,6 +98,8 @@ export const agentConversations = pgTable(
     identityClientId: uuid('identity_client_id').references(() => clients.id),
     identityLeadId: uuid('identity_lead_id').references(() => leads.id),
     identityStrength: text('identity_strength'),
+    /** In the account's own contacts, as the listener last read it — no stranger card for a contact (fit-7). */
+    peerContact: boolean('peer_contact'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -259,6 +269,8 @@ export const agentOutbox = pgTable(
       .notNull()
       .references(() => users.id),
     queuedAt: timestamp('queued_at', { withTimezone: true }).notNull().defaultNow(),
+    /** The night rule's hold (his Q14 ⭐): the approval's age counts from here. NULL = at once. */
+    releaseAt: timestamp('release_at', { withTimezone: true }),
     stepClaimedAt: timestamp('step_claimed_at', { withTimezone: true }),
     sentAt: timestamp('sent_at', { withTimezone: true }),
     tgMessageId: bigint('tg_message_id', { mode: 'bigint' }),
@@ -396,6 +408,7 @@ export const tgAccountFloods = pgTable(
     check('tg_account_floods_source_check', sql`${t.source} IN ('sleep', 'raise')`),
     check('tg_account_floods_seconds_check', sql`${t.seconds} >= 0`),
     index('tg_account_floods_recent_idx').on(t.accountId, t.at),
+    uniqueIndex('tg_account_floods_once').on(t.accountId, t.method, t.at),
   ],
 );
 

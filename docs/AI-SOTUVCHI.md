@@ -1001,6 +1001,8 @@ bor biz ozimiz olamiz muammo yoq undan / Qolgani sen aytgandek».
 | 9 | **The certificate exists — the company obtains it itself.** | The AI never asks for it; every agent calculation lands with `has_certificate = true`; the checklist drops the question. A seed fact says the company arranges it. |
 | rest | ⭐ as sent (§17.0). | Including **18 ⭐ the «📵 raqam yashirin» card** (a hidden-number non-contact's first message on his account → one card: [🆕 Yangi lid] by name, [🚫 Shaxsiy]) and fit-7's rule that no stranger card is sent for a peer in his contacts. |
 
-Asked back in the same reply (built with ⭐ until he answers): whether the 1 m³ / 100 kg minimum also holds for
-avia (⭐ yes, it is the company's minimum), and whether avia has a fixed delivery time the AI may state (⭐ no time
-is stated).
+Asked back in the same reply, and answered the same hour — «1 b avia uchun 1kg minimum / 2 ha avia 2-5 kun ichida
+keladi yuk yetib borishiga reysimiz bolsa 2 kun»: **avia's minimum is 1 kg** (the 1 m³ / 100 kg minimum is the
+truck's), and **the AI may say avia arrives in 2-5 days, 2 days when a flight is scheduled** — stated as an
+estimate, never as a promise (`AGENT_LIMITS.avia`, the avia tool's result is the source G1 checks the days
+against).

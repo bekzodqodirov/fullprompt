@@ -34,9 +34,17 @@ CREATE TABLE "agent_config" (
   "style_guide_proposed" text,
   "style_approved_at" timestamptz,
   "style_approved_by" uuid REFERENCES "users"("id"),
+  -- His avia rate (2026-10-24 §17.14: «Avia hozir kg uchun 17$ dan»), the one money figure the agent may
+  -- multiply that is not the website's table; NULL = avia is not quoted. Edited on /suhbatlar/ai.
+  "avia_usd_per_kg" numeric(10, 2) DEFAULT 17,
+  "avia_rate_set_at" timestamptz,
+  "avia_rate_set_by" uuid REFERENCES "users"("id"),
   "updated_by" uuid REFERENCES "users"("id"),
   "updated_at" timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT "agent_config_singleton_check" CHECK ("id" = 1),
+  CONSTRAINT "agent_config_avia_check" CHECK (
+    "avia_usd_per_kg" IS NULL OR ("avia_usd_per_kg" > 0 AND "avia_usd_per_kg" < 1000 AND "avia_usd_per_kg" <> 'NaN'::numeric)
+  ),
   CONSTRAINT "agent_config_mode_check" CHECK ("mode" IN ('off', 'shadow', 'auto')),
   CONSTRAINT "agent_config_pause_check" CHECK ("human_pause_min" BETWEEN 1 AND 10080),
   CONSTRAINT "agent_config_caps_check" CHECK ("daily_draft_cap" >= 0 AND "daily_token_cap" >= 0),
@@ -62,6 +70,9 @@ CREATE TABLE "agent_conversations" (
   "identity_client_id" uuid REFERENCES "clients"("id"),
   "identity_lead_id" uuid REFERENCES "leads"("id"),
   "identity_strength" text,
+  -- Is the peer in the account's own contacts (as the listener last read it)? A stranger card is never sent
+  -- for a contact — a friend or a colleague is not a lead (review fit-7). NULL = never read.
+  "peer_contact" boolean,
   "created_at" timestamptz NOT NULL DEFAULT now(),
   "updated_at" timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY ("manager_user_id", "peer_id"),
@@ -185,6 +196,9 @@ CREATE TABLE "agent_outbox" (
   "read_done" boolean NOT NULL DEFAULT false,
   "queued_by" uuid NOT NULL REFERENCES "users"("id"),
   "queued_at" timestamptz NOT NULL DEFAULT now(),
+  -- When the night rule held an approval to the morning (his Q14 ⭐): the approval's age is counted from
+  -- here, or a reply approved at 23:00 would be «too old» by the 08:30 it was promised for. NULL = at once.
+  "release_at" timestamptz,
   "step_claimed_at" timestamptz,
   "sent_at" timestamptz,
   "tg_message_id" bigint,
@@ -281,6 +295,10 @@ CREATE TABLE "tg_account_floods" (
 );
 --> statement-breakpoint
 CREATE INDEX "tg_account_floods_recent_idx" ON "tg_account_floods" ("account_id", "at");
+--> statement-breakpoint
+-- One ledger row per wait: a replay after a database blip carries the same instant (the listener holds the
+-- outcome), so it lands on this and inserts nothing — one FLOOD_WAIT never counts as two.
+CREATE UNIQUE INDEX "tg_account_floods_once" ON "tg_account_floods" ("account_id", "method", "at");
 --> statement-breakpoint
 CREATE TABLE "tg_message_flags" (
   "message_id" uuid PRIMARY KEY REFERENCES "tg_messages"("id") ON DELETE CASCADE,
