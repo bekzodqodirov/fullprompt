@@ -974,6 +974,8 @@ inbound gets a run.
   gave (the map link only when asked), transit 15-25 days «va'da emas», payment basics, prohibited goods, how a
   GS code is opened. `pnpm exec tsx scripts/agent-seed-kb.ts` through `migrate`.
 - `scripts/agent-style.ts` proposes the masked style guide; `scripts/agent-census.ts` counts (read-only).
+- `scripts/tg-service-chat-cleanup.ts` (through `migrate`, dry run then `--apply`, counts only): Telegram's own
+  777000 chat as kept BEFORE the doors refused it — «hech qachon» and its stored messages purged (DECISIONS #1482).
 - `/suhbatlar/ai`: Kutilmoqda · Savollar · Bilimlar · Sozlamalar (mode, owner, session confirm, pause + clear,
   budget left, ochiq hisoblar N/20, `agentStats`, style guide). 🤖 on AI-sent bubbles in the thread, the card
   panel and the dock; an approved-but-waiting AI reply shown as «🤖 08:30 da ketadi» and cancellable by him.

@@ -29,6 +29,7 @@ minimum qilsin». Yangi migratsiya bor (**0136**): deploydan keyin baza hisobi *
   - To'xtab turgan paytda CRM'dagi yozish oynasi buni ochiq aytadi, xabar «navbatda» deb osilib qolmaydi.
 - **«/agent off»** botda AI'ni darhol o'chiradi: navbatdagi javoblar bekor bo'ladi, qoralamalar yopiladi.
 - **Telegram'ning o'zidan rasmiy xabar kelsa** (777000 xizmat akkaunti — qoidalar, cheklov haqida ogohlantirish), AI o'sha zahoti o'zi o'chadi va sizga xabar keladi. Sizning kirish kodlaringiz (Telegram Desktop'ga, yangi telefonga kirganingizda) AI'ni o'chirmaydi. Bu xizmat chati hech qachon CRM'ga saqlanmaydi va AI uni o'qimaydi.
+  - Avvaldan saqlanib qolgan bo'lsa ham: «Qaysi chatlar» ro'yxatida ko'rinmaydi, uni mijozga yoki lidga qo'shib bo'lmaydi. Eskidan qolgan xabarlarni bir marta tozalash buyrug'i bor (pastda, deploy qadamlarida).
 - **AI sizdan keyin turadi:** AI'ning daqiqalik va kunlik chegaralari CRM'dan o'zingiz yuborgan xabarlarni ham sanaydi. Sizning CRM javoblaringiz uchun chegaralar avvalgidek.
 - **Kechasi** (22:00–08:00) AI kartochkalari telefoningizni ovoz bilan bezovta qilmaydi, jim keladi.
 - **AI sizga savol bersa** (❓ Sizdan savol) va 30 daqiqa javob bermasangiz, bot bir marta eslatadi. Kechasi eslatmaydi: ertalab 08:00 dan keyin hammasini bitta xabarda eslatadi.
@@ -91,12 +92,15 @@ minimum qilsin». Yangi migratsiya bor (**0136**): deploydan keyin baza hisobi *
 4. Bilimlarni kiritish (Xitoy omborlari manzillari ham shu yerda, qo'lda yozish shart emas):
    - avval sinov uchun: `docker compose run --rm migrate pnpm exec tsx scripts/agent-seed-kb.ts`;
    - so'ng shu buyruq oxiriga `--apply` qo'shib haqiqiy kiritish.
-5. **Suhbatlar → AI sotuvchi → Sozlamalar** da:
+5. Telegram xizmat chatidan (777000, kirish kodlari) eskidan saqlanib qolgan narsalarni tozalash:
+   - avval sinov uchun: `docker compose run --rm migrate pnpm exec tsx scripts/tg-service-chat-cleanup.ts` — har akkauntda nechta xabar borligini sanaydi, hech narsani o'zgartirmaydi, xabar matnini ko'rsatmaydi;
+   - nima chiqqanini menga yuboring; keyin shu buyruq oxiriga `--apply` qo'shib tozalaysiz. «Tozalash kerak emas» chiqsa, hech narsa qilish shart emas.
+6. **Suhbatlar → AI sotuvchi → Sozlamalar** da:
    - o'z akkauntingizni tanlang;
    - «Eski serverda Telegram sessiyasi yo'q qilindi» ni bosing;
    - avia narxi 17 ekanini tekshiring;
    - keyin AI'ni yoqing (yoki botda `/agent on`).
-6. CRM'dan Telegramga yuborish (Sozlamalar) yoqiq bo'lishi kerak. U o'chiq bo'lsa ✅ «yuborish o'chirilgan» deydi.
+7. CRM'dan Telegramga yuborish (Sozlamalar) yoqiq bo'lishi kerak. U o'chiq bo'lsa ✅ «yuborish o'chirilgan» deydi.
 
 ### Hali yo'q (keyingi bosqichlar)
 - Avtomatik rejim (tasdiqsiz yuborish).

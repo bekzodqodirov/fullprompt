@@ -4784,3 +4784,22 @@ Found while re-reading the fix: the follow-up first fired on `askedLocation`, wh
 qayerda?» — where the cargo IS — so an avia customer asking for status put an address question on his card. It asks
 for «where to SEND» now (`SEND_ASK`: an address word, «qayerga», «куда», «寄到哪» …). And the three-character
 minimum is the FIGURE check's alone: the script check takes out a quoted «义乌» as before.
+
+1482. **Telegram's service chat, the rows kept before the fix.** #1476 stopped every door from KEEPING 777000 (login
+codes, «new login», limitation notices); nothing went back for what an older scan or listener had already written —
+a `pending` tray rule, a decision, stored messages on a work account's own lead. Three doors could still make such a
+rule a card's in one press: `decideChat`'s include, «🆕 Yangi lid» (`openLeadForChat`) and «Chatni qo'shish»
+(`attachPeerToCard`'s upsert, which would turn a person's «never» into an include). Each refuses `service_chat`
+before writing anything; «hech qachon» stays open, because it is the right answer. `listCandidates` (and the badge
+through it) and the agent's `strangerCards` never list it. Built by a delegated package in a worktree, reviewed and
+merged here; six red proofs. The past is cleared by a one-off through `migrate`,
+`scripts/tg-service-chat-cleanup.ts` (dry run, then `--apply`), whose core lives in
+`wms/crm/service-chat-cleanup.ts` so the test calls the function the server runs: per account, a rule written where
+only messages stood (the purge deletes only behind a decision), «hech qachon» through `decideChat`, and the stored
+messages and files through the tray's own `purgeExcludedChat`; it prints COUNTS ONLY (a body may hold a login code),
+its audit rows carry no actor, and it names any lead the chat was put on without touching it — a lead is closed with a
+person's reason. STATED: today neither the tray nor the lookback can reach the refusal (the tray asks ownership through
+`listCandidates` first, the lookback offers only nine-digit fingerprints), so its words are wired for a path that may
+open; the bot's stranger-card press would print the bare code, but no stranger card is minted for 777000 any more and
+the cleanup turns any old one into «already decided»; every OTHER chat-rule refusal still prints as a code on both
+screens, as before.

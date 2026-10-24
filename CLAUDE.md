@@ -2963,7 +2963,7 @@ CN destination is inland (no hub test), ONE arrived column (`columnOf` splits on
 filter hides everything bound for China (`routeFilterOf` = a `kg`/`kz` leg; a map walk over every pair proves no
 road into China has one, and refuses an unclassed new map code).
 
-**Round — AI sotuvchi, phase 1 (2026-10-24; DECISIONS #1463-#1481 — numbered past the open
+**Round — AI sotuvchi, phase 1 (2026-10-24; DECISIONS #1463-#1482 — numbered past the open
 `telegram-customs-ai-issues` branch's #1455-#1462; migration 0136 `ai_sotuvchi` — ledger must reach 137; spec
 `docs/AI-SOTUVCHI.md` §17 + §17.14).** His «Telegram businessdagi bot emas mening shaxsiy account seansimdan
 ishlatsin ai va ban havfini minimum qilsin». SHADOW only: the listener (`scripts/tg-listen.ts`, the one process that
@@ -3004,6 +3004,9 @@ measured whole, and a numeral inside a quoted stretch of ≥3 characters is the 
 than he did: «avia cargo does not go to these warehouses» (he said only that he gives the address) and «Narx
 omborlarimizdan» served into avia chats (it is the truck's: «Avto (mashina) narxi»). And a client called «Aka» made
 every «aka» in his style a customer's name — `isAddressWord` (#1480), found by the full run on a fresh database.
+777000 rows written BEFORE the fix (#1482): the three tray doors that make a chat a card's refuse `service_chat`, the
+tray and the stranger cards never list it, and `scripts/tg-service-chat-cleanup.ts` (through `migrate`, dry run then
+`--apply`, counts only) excludes and purges what stands — a deploy step.
 
 **Latest migration: 0136** (`ai_sotuvchi`, `when` …115; ledger must reach **137**). Before
 it: 0135 (`load_mode`, `when` …114). Before
