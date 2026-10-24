@@ -5,6 +5,7 @@ import { AGENT_LOCALES, dominantScript, scriptOf, type AgentLocale, type ScriptN
 import {
   extractNumbers,
   ledgerLine,
+  namesMode,
   phoneDigits,
   PHONE_RE,
   placedLedger,
@@ -1256,8 +1257,8 @@ export interface PolicyInput {
   quotableHan?: string;
   /**
    * The receiving warehouses as the knowledge states them NOW (`addressAnchorsOf`
-   * over every live address fact) — what `avia_address` recognises. Absent =
-   * none read, and no reply states one.
+   * over every live receiving-address fact, `warehouseAddressTexts`) — what
+   * `avia_address` recognises. Absent = none read, and no reply states one.
    */
   warehouseAddress?: AddressAnchors;
 }
@@ -1434,100 +1435,168 @@ export function hanOnly(text: string): string {
 const HAN_RUN = /[\p{Script=Han}，。：；、！？（）「」『』【】《》〈〉·][\p{Script=Han}，。：；、！？（）「」『』【】《》〈〉·\s]*/gu;
 
 /**
- * The shortest stretch that counts as a QUOTATION of a fact when a FIGURE is
- * looked for (review D2). A single «亿» is in the facts — Horgos's «金亿» —
- * and taken out as «quoted» it would let «1亿 dollar» through G1; three
- * characters are a piece of a name or a street, which no spelled-out figure
- * in this business is. The script check takes out any length: a quoted «义乌»
- * cannot carry a number, and kept it weighs three letters a character.
+ * The shortest stretch that counts as a QUOTATION of a fact (review D2). A
+ * single «亿» is in the facts — Horgos's «金亿» — and taken out as «quoted»
+ * it would let «1亿 dollar» through G1, so the figure check asks three
+ * characters, a piece of a name or a street. The script check asks two: a
+ * quoted «义乌» cannot carry a number, and kept it weighs three letters a
+ * character.
  */
 const QUOTED_MIN_FIGURE = 3;
+const QUOTED_MIN_SCRIPT = 2;
 
 /**
  * The reply with every Chinese stretch a fact holds verbatim taken out (his
  * fourth set): «Ivu ombori: 浙江省 义乌市 …» is an Uzbek sentence carrying
  * the supplier's address, and measured whole it read as Chinese — every
- * address reply was refused `wrong_script`. A stretch the facts do NOT hold
- * — the model's own Chinese — still counts, and so does one shorter than
- * `min` characters.
+ * address reply was refused `wrong_script`. Inside each stretch the LONGEST
+ * quoted piece is taken out wherever it starts (review R8): the model glues
+ * its own words to what it copies («请发到霍尔果斯金亿…»), and asked of the
+ * stretch whole, the glued words kept the quote — and its «亿» — in. What the
+ * facts do NOT hold, the model's own Chinese, still counts.
  */
-export function withoutQuotedHan(text: string, quotable: string, min = 1): string {
+export function withoutQuotedHan(text: string, quotable: string, min = QUOTED_MIN_SCRIPT): string {
   if (!quotable) return text;
   return text.replace(HAN_RUN, (run) => {
-    const h = hanOnly(run);
-    return [...h].length >= min && quotable.includes(h) ? ' ' : run;
+    const chars = [...hanOnly(run)];
+    const kept: string[] = [];
+    let quoted = false;
+    for (let i = 0; i < chars.length; ) {
+      let len = 0;
+      for (let j = chars.length; j - i >= min; j -= 1) {
+        if (quotable.includes(chars.slice(i, j).join(''))) {
+          len = j - i;
+          break;
+        }
+      }
+      if (len > 0) {
+        quoted = true;
+        kept.push(' ');
+        i += len;
+      } else {
+        kept.push(chars[i]!);
+        i += 1;
+      }
+    }
+    if (!quoted) return run;
+    const rest = kept.join('');
+    return rest.trim() === '' ? ' ' : rest;
   });
 }
 
-/** The receiving warehouses as a reply would quote them: pieces of their street addresses, and their phones. */
+/** The receiving warehouses as a reply would quote them: pieces of their addresses and names, their phones, their house numbers. */
 export interface AddressAnchors {
-  /** Each address stretch's Chinese characters (`hanOnly`). */
-  han: string[];
+  /** Five-character pieces of what is OURS in each address — never its province or city, never what every address says. */
+  pieces: string[];
   /** Each contact's last nine digits — the comparison `foreignPhones` makes. */
   phones: string[];
+  /** The street's house numbers («2255», «168») — recognised beside a street word in any script. */
+  houseNumbers: string[];
 }
 
-/** A character only a street address carries here: province, city, district, county, town, street, road, number, building. */
-const ADDRESS_CHAR = /[省市区县镇街路号栋]/u;
+/** A street-level character: town, street, road, lane, house number, building, community, village. */
+const STREET_CHAR = /[镇街路道巷弄村号栋社]/u;
+/** An administrative-division character: province, city, district, county, prefecture. */
+const ADMIN_CHAR = /[省市区县州]/u;
+/**
+ * The province → city → district chain an address opens with — «浙江省义乌市»,
+ * «广东省佛山市南海区», «新疆维吾尔自治区伊犁哈萨克自治州霍尔果斯市». It is where a
+ * customer's cargo STARTS as often as where ours is received, so none of it
+ * anchors anything (review R7).
+ */
+const ADMIN_CHAIN = /(?:\p{Script=Han}{1,8}?(?:省|自治区|自治州|特别行政区|市|县|州|盟|旗))+(?:\p{Script=Han}{1,4}?区)?/gu;
+/** What every forwarder's name and every contact line is made of: a piece with fewer than two other characters names nobody. */
+const GENERIC_CHARS = new Set([...'国际物流中心有限公司仓库货运快递园先生女士电话']);
+/** A house number: three or four digits standing alone — «2255,» ends a clause, «2.255» and «1,255» are amounts. */
+const HOUSE_NUMBER = /(?<!\d)(?<!\d[.,])\d{3,4}(?!\d)(?![.,]\d)/gu;
+/** A street word in the scripts a transliterated address is written in — what makes a bare «2255» a house number. */
+const STREET_WORD = /ko['‘’ʻ`]?cha|кўча|street|avenue|road|улиц|ул\.|проспект|дорог|переул|[街路号]/iu;
 
 /**
- * The anchors of the address facts (review D3): every stretch of four or more
- * characters that names a street — the reminder's «发货前请不要忘记标注» and
- * a receiver's name carry none — and every phone. Read from the facts, never
- * from a list of its own: the warehouse he edits tomorrow is the one refused.
+ * The anchors of the address facts (review D3, R5-R7). Read from the facts,
+ * never from a list of its own — the warehouse he edits tomorrow is the one
+ * refused. A piece is five characters of one fact (its Chinese read whole, so
+ * the house number «2255» no longer cuts «荷花南街» from «号»), taken after the
+ * province/city chain is removed, and kept only when it is that warehouse's
+ * own: not in another address fact or in `ordinary` (the GS reminder all of
+ * them carry), not a bare administrative name, and either a piece of the
+ * street or of a name — «霍尔果斯金», «拓派国际物», «周先生小周» — rather than
+ * the «国际物流» every forwarder is called.
  */
-export function addressAnchorsOf(texts: readonly string[]): AddressAnchors {
-  const han = new Set<string>();
+export function addressAnchorsOf(texts: readonly string[], ordinary: readonly string[] = []): AddressAnchors {
+  const whole = texts.map((t) => hanOnly(normalizeDigits(t)));
+  const common = ordinary.map((t) => hanOnly(normalizeDigits(t)));
+  const pieces = new Set<string>();
   const phones = new Set<string>();
-  for (const raw of texts) {
+  const houseNumbers = new Set<string>();
+  texts.forEach((raw, i) => {
     const text = normalizeDigits(raw);
-    for (const r of text.matchAll(HAN_RUN)) {
-      const h = hanOnly(r[0]);
-      if ([...h].length >= 4 && ADDRESS_CHAR.test(h)) han.add(h);
+    const segments = text
+      .replace(ADMIN_CHAIN, '\u0000')
+      .replace(/[^\p{Script=Han}\u0000]/gu, '')
+      .split('\u0000')
+      .filter((seg) => [...seg].length >= 4);
+    for (const seg of segments) {
+      const chars = [...seg];
+      // Five characters of a name; four of a street («稠江街道», «荷花南街») — a street piece is ours at four.
+      for (const width of [5, 4]) {
+        for (let k = 0; k + width <= chars.length; k += 1) {
+          const piece = chars.slice(k, k + width).join('');
+          if (whole.some((w, j) => j !== i && w.includes(piece)) || common.some((c) => c.includes(piece))) continue;
+          const street = STREET_CHAR.test(piece);
+          if (ADMIN_CHAR.test(piece) && !street) continue;
+          if (street || (width === 5 && [...piece].filter((c) => !GENERIC_CHARS.has(c)).length >= 2)) pieces.add(piece);
+        }
+      }
     }
     for (const m of text.matchAll(PHONE_RE)) {
       const d = phoneDigits(m[0]);
       if (d.length >= 9) phones.add(d.slice(-9));
     }
-  }
-  return { han: [...han], phones: [...phones] };
+    for (const m of text.replace(PHONE_RE, ' ').matchAll(HOUSE_NUMBER)) houseNumbers.add(m[0]);
+  });
+  return { pieces: [...pieces], phones: [...phones], houseNumbers: [...houseNumbers] };
 }
 
 /**
- * Does the reply state one of our receiving warehouses — its contact, or a
- * piece of its street address? Asked of an avia quote only (his fourth set
- * «2»): the flight's address is his. Anchored on the warehouses themselves
- * (review D3): the first version refused every Chinese stretch carrying 市 or
- * 路, which is «从哪个城市» and «空运路线» — an ordinary question to a Chinese
- * customer, not an address. A Chinese mobile that is no warehouse's is
- * `foreign_phone`'s already.
+ * Does the reply state one of our receiving warehouses — its contact, a piece
+ * of its street or its name, or its house number beside a street word in any
+ * script («Hehua South Street 2255», «улица … 2255»)? Asked of an avia quote
+ * only (his fourth set «2»): the flight's address is his. Anchored on the
+ * warehouses themselves (review D3, R5-R7): neither «从哪个城市» nor the
+ * customer's own «浙江省义乌市» is an address of ours. A Chinese mobile that is
+ * no warehouse's is `foreign_phone`'s already.
  */
 export function statesChinaAddress(text: string, anchors: AddressAnchors): boolean {
+  const digits = normalizeDigits(text);
   const ours = new Set(anchors.phones);
-  for (const m of normalizeDigits(text).matchAll(PHONE_RE)) {
+  for (const m of digits.matchAll(PHONE_RE)) {
     const d = phoneDigits(m[0]);
     if (d.length >= 9 && ours.has(d.slice(-9))) return true;
   }
-  const han = hanOnly(text);
-  return anchors.han.some((a) => addressPieces(a).some((piece) => han.includes(piece)));
+  const han = hanOnly(digits);
+  if (anchors.pieces.some((piece) => han.includes(piece))) return true;
+  if (!STREET_WORD.test(digits)) return false;
+  const bare = digits.replace(PHONE_RE, ' ');
+  return [...bare.matchAll(HOUSE_NUMBER)].some((m) => anchors.houseNumbers.includes(m[0]));
 }
 
+const CN_MOBILE = /^(?:86)?1[3-9]\d{9}$/u;
+const WAREHOUSE_WORD = /ombor|sklad|склад|warehouse|仓库|qabul\s+qil|қабул/iu;
+
 /**
- * The pieces of an anchor a quotation is recognised by: every stretch of five
- * characters that carries a street character — «义乌市稠江», «稠江街道荷». Five,
- * because the model wraps what it copies in its own words («地址：…»), so the
- * reply's stretch is never the anchor whole; a street character, because
- * «国际物流» sits in two warehouses' names and in every forwarder's.
+ * Pure: is this fact a receiving warehouse's address (review R9)? The seed
+ * files its three under one key, and a warehouse he ADDS on the knowledge page
+ * — or re-types instead of ✎ — carries none: a fact that speaks of a warehouse
+ * and states a Chinese street or a Chinese mobile is one too. A fact that
+ * names the flight is not: an avia address he writes down himself is his to
+ * have quoted.
  */
-function addressPieces(anchor: string): string[] {
-  const chars = [...anchor];
-  const width = Math.min(5, chars.length);
-  const pieces: string[] = [];
-  for (let i = 0; i + width <= chars.length; i += 1) {
-    const piece = chars.slice(i, i + width).join('');
-    if (ADDRESS_CHAR.test(piece)) pieces.push(piece);
-  }
-  return pieces;
+export function isReceivingAddressFact(text: string): boolean {
+  if (namesMode(text, 'air') || !WAREHOUSE_WORD.test(text)) return false;
+  const digits = normalizeDigits(text);
+  if ([...digits.matchAll(PHONE_RE)].some((m) => CN_MOBILE.test(phoneDigits(m[0])))) return true;
+  return addressAnchorsOf([text]).pieces.some((piece) => STREET_CHAR.test(piece));
 }
 
 export function foreignPhones(text: string, allowed: readonly string[]): string[] {
@@ -1656,7 +1725,7 @@ export function checkAgentReply(input: PolicyInput): PolicyResult {
   }
   for (const p of foreignPhones(text, input.allowedPhones)) blocks.push({ rule: 'G6', code: 'foreign_phone', detail: p });
   // His fourth set «2»: avia cargo goes to the address HE gives — never to a receiving warehouse the facts name.
-  if (input.aviaOnly === true && statesChinaAddress(text, input.warehouseAddress ?? { han: [], phones: [] })) {
+  if (input.aviaOnly === true && statesChinaAddress(text, input.warehouseAddress ?? { pieces: [], phones: [], houseNumbers: [] })) {
     blocks.push({ rule: 'G6', code: 'avia_address' });
   }
   staffNameHits(text, input.staffNames, input.customerNames ?? [], input.factNameWords ?? [], blocks, warnings);

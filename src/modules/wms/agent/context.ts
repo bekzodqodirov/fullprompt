@@ -1,8 +1,9 @@
-import { and, asc, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import {
   agentCalcLinks,
   agentConversations,
+  agentDrafts,
   attachments,
   calcRequests,
   clients,
@@ -99,6 +100,40 @@ export interface AgentContext {
   openCalcs: { requestId: string; section: string | null; createdAt: Date; status: string }[];
   /** The chat's include rule names a lead or a client the screen decided. */
   ruleDecision: string | null;
+  /**
+   * What we last QUOTED this chat (review R1): the road of the newest draft
+   * he approved in the last week, and the flight's cargo when it was one.
+   * The flight's address is his (fourth set «2») for as long as the flight is
+   * the chat's road, and the customer's words cannot say so — «mashina» names
+   * the goods as often as the truck. Null = nothing quoted in the week.
+   */
+  lastQuote: LastQuote | null;
+}
+
+/** A road a run priced or asked: the flight, the truck, or both in one reply. */
+export type QuotedRoad = 'air' | 'road' | 'both';
+
+/** What the card tells him so he can give the flight's address. */
+export interface AviaCargo {
+  kg: number | null;
+  origin: string | null;
+}
+
+export interface LastQuote {
+  road: QuotedRoad;
+  air: AviaCargo | null;
+  at: Date;
+}
+
+/** Pure: a stored draft's memory as a quote, or null — a memory written before it, or one that quoted nothing. */
+export function lastQuoteOf(memory: unknown, at: Date): LastQuote | null {
+  const m = (memory ?? {}) as { quotedRoad?: unknown; quotedAir?: unknown };
+  if (m.quotedRoad !== 'air' && m.quotedRoad !== 'road' && m.quotedRoad !== 'both') return null;
+  const a = (m.quotedAir ?? null) as { kg?: unknown; origin?: unknown } | null;
+  const air = a && typeof a === 'object'
+    ? { kg: typeof a.kg === 'number' ? a.kg : null, origin: typeof a.origin === 'string' ? a.origin : null }
+    : null;
+  return { road: m.quotedRoad, air, at };
 }
 
 export function mediaOf(contentType: string | null, fileName: string | null): ChatMessage['media'] {
@@ -447,6 +482,21 @@ export async function loadContext(managerUserId: string, peerId: bigint, anchorT
     .where(and(eq(agentCalcLinks.managerUserId, managerUserId), eq(agentCalcLinks.peerId, peerId)))
     .orderBy(desc(agentCalcLinks.createdAt))
     .limit(5);
+  // The newest approved draft of the week that priced or asked a road (review R1).
+  const [quoted] = await db
+    .select({ memory: sql<unknown>`${agentDrafts.policy}->'memory'`, at: agentDrafts.createdAt })
+    .from(agentDrafts)
+    .where(
+      and(
+        eq(agentDrafts.managerUserId, managerUserId),
+        eq(agentDrafts.peerId, peerId),
+        eq(agentDrafts.status, 'approved'),
+        gte(agentDrafts.createdAt, new Date(Date.now() - 7 * 86_400_000)),
+        sql`${agentDrafts.policy}->'memory'->>'quotedRoad' IS NOT NULL`,
+      ),
+    )
+    .orderBy(desc(agentDrafts.createdAt))
+    .limit(1);
   return {
     managerUserId,
     peerId,
@@ -467,6 +517,7 @@ export async function loadContext(managerUserId: string, peerId: bigint, anchorT
       status: c.completedAt ? (c.returnReason ? 'returned' : 'answered') : 'open',
     })),
     ruleDecision: identity.ruleDecision,
+    lastQuote: quoted ? lastQuoteOf(quoted.memory, quoted.at) : null,
   };
 }
 

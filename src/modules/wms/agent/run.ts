@@ -9,7 +9,7 @@ import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import { canLogInSql } from '../../platform/users/login';
 import { pumpIsFresh, readGuard } from '../crm/account-guard';
 import { agentRunning, agentTablesReady, readAgentConfig, type AgentConfig } from './config';
-import { loadContext, type AgentContext } from './context';
+import { loadContext, type AgentContext, type AviaCargo, type ChatMessage, type QuotedRoad } from './context';
 import { eligibleForRun, type Ineligible } from './eligibility';
 import { generalFacts, kbSearch, type KbHit } from './kb';
 import { AGENT_LIMITS } from './limits';
@@ -23,7 +23,7 @@ import { namedOrigin } from './origin';
 import { draftWorthy, mentionsRail, RAIL_OWNER_QUESTION } from './worthy';
 import { writeDraft, writeNotice, type ComposedAction } from './drafts';
 import { extractNumbers, factSources, namesMode, oneModeIn, type NumberSource, type TravelMode } from './numbers';
-import { hanOnly, nameWordsOf } from './policy';
+import { hanOnly, nameWordsOf, type PolicyResult } from './policy';
 import { AGENT_LOCALES } from './locale';
 
 /**
@@ -408,8 +408,8 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
       cacheWriteTokens: loop.usage.cacheWriteTokens,
       toolCalls: loop.tools.map((x) => ({ name: x.name, ok: x.ok, text: x.text })),
     };
-    const c = withAviaRule(withRailRule(loop.compose, ctx), loop.outcomes, ctx);
-    if (!c.replyNeeded && !c.needsOwner) {
+    const drafted = withAviaRule(withRailRule(loop.compose, ctx), loop, ctx);
+    if (!drafted.replyNeeded && !drafted.needsOwner) {
       settle = { ...settle, outcome: 'no_reply', error: null };
       return { outcome: 'no_reply' };
     }
@@ -418,10 +418,12 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
     const policy = await policyFor({
       managerUserId: ctx.managerUserId,
       peerId: ctx.peerId,
-      body: c.replyText,
+      body: drafted.replyText,
       memory,
       strip: stripFor(ctx),
     });
+    // A draft the avia guard holds asks him for the address (review R2).
+    const c = withAviaGuard(drafted, policy, loop, ctx);
     const { actions, notes } = validateActions(c, ctx, loop.outcomes, t);
     const rail = railNote(ctx, c);
     if (rail) notes.push(rail);
@@ -499,12 +501,13 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
     // …and a truck figure priced FROM our China warehouses asks for the
     // condition and the factory leg too (his third set «3»).
     fromOurWarehouse: !rail && loop.outcomes.some((o) => o.estimate === true && o.fromOurWarehouse === true),
-    // The chat is about a flight and no truck (his fourth set «2»): the reply
-    // may state no China address — the flight's is his to give. The flight
-    // quoted this run, or the chat's one road one burst back (review D4: the
-    // follow-up «manzil?» ran no tool and got the Yiwu address unguarded); a
-    // truck asked this run makes it the truck's, refused or not (review D5).
-    aviaOnly: !rail && (loop.outcomes.some((o) => o.air) || askedModeOf(ctx) === 'air') && !truckAsked(loop),
+    // The chat is the flight's and no truck's (his fourth set «2»): the reply
+    // may state no China address — the flight's is his to give. The one road
+    // rule the card's question asks too (`chatRoadOf`, review D4, R1-R2).
+    aviaOnly: !rail && chatRoadOf(ctx, loop) === 'air',
+    // What this run quoted, for the next run's `lastQuote` (review R1).
+    quotedRoad: rail ? null : quotedRoadOf(loop),
+    quotedAir: rail ? null : (loop.outcomes.find((o) => o.air)?.air ?? null),
     // The Chinese the facts this run read hold (his fourth set): a reply that
     // quotes a warehouse address verbatim is measured in its OWN script.
     quotableHan: hanOnly([...facts.map((f) => f.answer), ...loop.outcomes.flatMap((o) => o.factTexts ?? [])].join('')),
@@ -531,60 +534,167 @@ export function askedModeOf(ctx: Pick<AgentContext, 'burst' | 'messages'>): Trav
   );
 }
 
-/** This run asked the truck's price, whatever the tool answered (review D5): a refused estimate is still a truck being talked about. */
+/**
+ * This run asked the truck's price, whatever the tool answered (review D5): a
+ * refused estimate is still a truck being talked about, and so is a podklyuch
+ * or yo'lkira checklist — the truck sections (review R1).
+ */
 function truckAsked(loop: Pick<LoopResult, 'tools' | 'outcomes'>): boolean {
-  return loop.tools.some((t) => t.name === 'yolkira_estimate') || loop.outcomes.some((o) => o.estimate === true && !o.air);
+  return (
+    loop.tools.some((t) => t.name === 'yolkira_estimate') ||
+    loop.outcomes.some((o) => (o.estimate === true && !o.air) || (o.checklist !== undefined && TRUCK_SECTIONS.includes(o.checklist.section)))
+  );
 }
 
-/** What the card tells him so he can give the flight's address. */
-export interface AviaCargo {
-  kg: number | null;
-  origin: string | null;
+/** Pure: the road THIS run priced or asked — stored on the draft, so the next run knows what was quoted (`lastQuote`). */
+export function quotedRoadOf(loop: Pick<LoopResult, 'tools' | 'outcomes'>): QuotedRoad | null {
+  const air = loop.outcomes.some((o) => o.air);
+  const truck = truckAsked(loop);
+  return air && truck ? 'both' : air ? 'air' : truck ? 'road' : null;
+}
+
+/** One statement of a message: a sentence, or the part of it a «but» or a comma begins. */
+const CLAUSE = /[,.;:!?\n،؛。，！？；：]+|(?<![\p{L}])(?:lekin|ammo|biroq|но|а|but|however)(?![\p{L}])/iu;
+/** A road turned down in the same breath — «Aviada emas», «avia qimmat ekan», «не авиа», «not by air», «不要空运». */
+const ROAD_REFUSED = /(?<![\p{L}])(?:emas|kerakmas|yo['‘’ʻ`]?q|qimmat|не|нет|дорого|not|don['’]?t|expensive|نه|گران)(?![\p{L}])|不要|不用|别|太贵/iu;
+
+/**
+ * Pure: the road the customer chose in these lines, the newest statement
+ * winning (the checklist's rule): 'air' or 'road' when a statement names one,
+ * 'both' when it compares them, 'not_air' when it turns the flight down
+ * («Avia qimmat ekan, kerak emas»). A statement read alone, so «Tikuv mashinasi
+ * 30 kg, avia bilan qancha?» is a flight and «Mashinada emas, avia bilan» is
+ * too. Null: no road said.
+ */
+export function roadChosenIn(texts: readonly string[]): QuotedRoad | 'not_air' | null {
+  const statements = texts.flatMap((t) => t.split(CLAUSE)).reverse();
+  for (const st of statements) {
+    const air = namesMode(st, 'air');
+    const road = namesMode(st, 'road');
+    if (!air && !road) continue;
+    if (ROAD_REFUSED.test(st)) {
+      if (air && !road) return 'not_air';
+      continue;
+    }
+    if (air && road) return 'both';
+    return air ? 'air' : 'road';
+  }
+  return null;
+}
+
+/**
+ * The road the chat is on — the one rule the avia guard and the card's
+ * question both ask (review R1-R2): what THIS run priced; else what the
+ * customer chose in his burst; else what we last quoted him — the draft he
+ * approved this week, or, newer than it, his own priced line in the chat
+ * that names its road. «Avia» said anywhere in the last thirty messages is
+ * no road: a customer who asked once and was quoted the truck after is the
+ * truck's.
+ */
+export function chatRoadOf(
+  ctx: Pick<AgentContext, 'burst' | 'messages' | 'lastQuote'>,
+  loop: Pick<LoopResult, 'tools' | 'outcomes'>,
+): QuotedRoad | null {
+  const quoted = quotedRoadOf(loop);
+  if (quoted) return quoted;
+  const chosen = roadChosenIn(ctx.burst.map((m) => m.body));
+  if (chosen) return chosen === 'not_air' ? 'road' : chosen;
+  const ours = [...ctx.messages]
+    .reverse()
+    .find((m) => m.direction === 'out' && extractNumbers(m.body).some((f) => f.kind === 'money'));
+  const oursRoad = ours ? roadChosenIn([ours.body]) : null;
+  if (ours && oursRoad && oursRoad !== 'not_air' && (!ctx.lastQuote || ours.sentAt > ctx.lastQuote.at)) return oursRoad;
+  return ctx.lastQuote?.road ?? null;
 }
 
 /**
  * His fourth set «2» (2026-10-24): «yukini infosini menga bersang men adres
- * beraman telegramda sorasin». An avia figure went into the reply — or an
- * avia chat asks where to send (review D4) — so the flight's address is HIS
- * question whatever the model composed, and the card asks it with the cargo
- * (kilos, the place named). A question the model already asked about the
- * flight's address stands; anything else keeps its place and the avia line
- * follows it. Never in a rail chat: there no machine figure goes out
- * (`memoryFor`), so no flight was quoted — the question is the rail one.
+ * beraman telegramda sorasin». An avia figure went into the reply — or the
+ * chat is the flight's and the customer asks where to send it, with a reply
+ * due (review D4, R2) — so the flight's address is HIS question whatever the
+ * model composed, and the card asks it with the cargo. Never in a rail chat:
+ * there no machine figure goes out (`memoryFor`), so no flight was quoted —
+ * the question is the rail one. A no-reply line («Rahmat, manzilni oldim»)
+ * never becomes a question card.
  */
 export function withAviaRule(
   c: ComposeReply,
-  outcomes: readonly Pick<ToolOutcome, 'air'>[],
-  ctx: Pick<AgentContext, 'burst' | 'messages' | 'measures'>,
+  loop: Pick<LoopResult, 'tools' | 'outcomes'>,
+  ctx: Pick<AgentContext, 'burst' | 'messages' | 'measures' | 'lastQuote'>,
 ): ComposeReply {
   if (railChat(ctx, c)) return c;
-  const air: AviaCargo | null = outcomes.find((o) => o.air)?.air ?? aviaAddressAsked(ctx);
-  if (!air) return c;
+  const quoted = loop.outcomes.find((o) => o.air)?.air;
+  if (quoted) return withAviaQuestion(c, quoted);
+  if (c.replyNeeded && chatRoadOf(ctx, loop) === 'air' && asksWhereToSend(ctx.burst)) return withAviaQuestion(c, aviaCargoOf(loop, ctx));
+  return c;
+}
+
+/**
+ * After the policy (review R2): a draft the avia guard holds always carries
+ * the question — the guard and the card's question are one rule, or a blocked
+ * draft sits in «pending» and he is never asked for the address.
+ */
+export function withAviaGuard(
+  c: ComposeReply,
+  policy: Pick<PolicyResult, 'blocks'>,
+  loop: Pick<LoopResult, 'tools' | 'outcomes'>,
+  ctx: Pick<AgentContext, 'burst' | 'messages' | 'measures' | 'lastQuote'>,
+): ComposeReply {
+  return policy.blocks.some((b) => b.code === 'avia_address') ? withAviaQuestion(c, aviaCargoOf(loop, ctx)) : c;
+}
+
+/** The model's own question about the flight's address stands; anything else keeps its place and the avia line follows it. */
+function withAviaQuestion(c: ComposeReply, air: AviaCargo): ComposeReply {
   const asked = c.ownerQuestion.trim();
-  if (asksAviaAddress(asked)) return { ...c, needsOwner: true };
   const line = aviaOwnerQuestion(air);
+  if (asksAviaAddress(asked) || asked.includes(line)) return { ...c, needsOwner: true };
   return { ...c, needsOwner: true, ownerQuestion: asked ? `${asked} · ${line}` : line };
 }
 
 /**
- * The follow-up of an avia chat (review D4): the flight was quoted a burst
- * back and now «manzil qayerga?» — no tool ran, and the address is still his.
- * The kilos are the customer's newest, as the avia tool reads them.
+ * The cargo the card names: what the tool quoted this run, else what the
+ * quote he approved said, else the customer's newest kilos and the place his
+ * cargo starts — read from the lines that do not ask where to send it, or the
+ * warehouse he asks about would be named as the origin (review R3).
  */
-function aviaAddressAsked(ctx: Pick<AgentContext, 'burst' | 'messages' | 'measures'>): AviaCargo | null {
-  if (askedModeOf(ctx) !== 'air' || !ctx.burst.some((m) => SEND_ASK.test(m.body))) return null;
-  const inbound = ctx.messages.filter((m) => m.direction === 'in').map((m) => m.body).join('\n');
-  return { kg: newestMeasure(ctx, 'weight')?.value ?? null, origin: namedOrigin(inbound)?.place ?? null };
+function aviaCargoOf(loop: Pick<LoopResult, 'outcomes'>, ctx: Pick<AgentContext, 'messages' | 'measures' | 'lastQuote'>): AviaCargo {
+  const quoted = loop.outcomes.find((o) => o.air)?.air ?? ctx.lastQuote?.air;
+  if (quoted) return quoted;
+  const told = ctx.messages
+    .filter((m) => m.direction === 'in')
+    .flatMap((m) => m.body.split(CLAUSE))
+    .filter((st) => !asksWhereToSend([{ body: st }]))
+    .join('\n');
+  return { kg: newestMeasure(ctx, 'weight')?.value ?? null, origin: namedOrigin(told)?.place ?? null };
 }
 
 const ADDRESS_WORD = /manzil|адрес|address|地址|آدرس/iu;
 
+/** «Where do I send it» in the six languages: an address word, «where to», or «where is your warehouse». */
+const SEND_ASK =
+  /manzil|манзил|adres|адрес|address|lokatsiya|локация|location|نشانی|آدرس|地址|(?<![\p{L}])(?:qayerga|қаерга|qayoqqa|қаёққа|куда)(?![\p{L}])|where\s+(?:do|should|can|to)\b|which\s+warehouse|qaysi\s+(?:omborga|skladga)|в\s+какой\s+склад|کجا\s*(?:ارسال|بفرستم|بفرستیم)|寄到哪|发到哪|送到哪|寄哪|发哪/iu;
+const WAREHOUSE_WORD = /ombor|sklad|склад|warehouse|仓库|انبار/iu;
+const WHERE_WORD = /qayerda|қаерда|где|where|在哪|کجا/iu;
 /**
- * The customer asks where to SEND the cargo — an address word, or «where to».
- * Not `askedLocation`'s wider «qayer»: «Yuk qayerda?» asks where the cargo IS,
- * and in an avia chat it would have put an address question on his card.
+ * What an address word says when nobody is asking where to send: the address
+ * is had or used («manzilni oldim», «shu manzilga yubordim»), it is his own
+ * («mening manzilim»), it is Tashkent's (the pickup), it is a pickup or an
+ * arrival («qayerga kelib olaman», «qayerga yetib keldi», «куда пришёл»).
  */
-const SEND_ASK = /manzil|адрес|address|地址|آدرس|qayerga|қаерга|куда|where\s+(?:do|should|can|to)\b|寄到哪|发到哪|送到哪|كجا بفرستم|کجا بفرستم/iu;
+const NOT_SEND_ASK =
+  /oldim|oldik|yubordim|jo['‘’ʻ`]?natdim|получил|отправил|got\s+it|received|i\s+sent|收到|发了|گرفتم|فرستادم|manzilim|манзилим|мой\s+адрес|my\s+address|آدرس\s+من|我的地址|toshkent|тошкент|ташкент|tashkent|塔什干|تاشکند|kelib\s+ol|olib\s+ket|забр|pick\s*-?\s*up|取货|提货|yetib\s+kel|keldi|приш[её]л|пришл|arrived|到了|رسید/iu;
+
+/**
+ * The customer asks where to SEND the cargo (review R2) — statement by
+ * statement, so «Rahmat, manzilni oldim» and «Toshkentda manzilingiz qayerda?»
+ * ask nothing, and neither do «откуда» or «qayergacha». Not `askedLocation`'s
+ * wider «qayer»: «Yuk qayerda?» asks where the cargo IS.
+ */
+export function asksWhereToSend(lines: readonly Pick<ChatMessage, 'body'>[]): boolean {
+  return lines
+    .flatMap((m) => m.body.split(CLAUSE))
+    .some((st) => (SEND_ASK.test(st) || (WAREHOUSE_WORD.test(st) && WHERE_WORD.test(st))) && !NOT_SEND_ASK.test(st));
+}
 
 /**
  * The model's own question already asks the flight's ADDRESS (review D8):
@@ -868,13 +978,14 @@ export async function runOwnerTriggered(
       cacheWriteTokens: loop.usage.cacheWriteTokens,
       toolCalls: loop.tools.map((x) => ({ name: x.name, ok: x.ok, text: x.text })),
     };
-    const c = withAviaRule(withRailRule(loop.compose, ctx), loop.outcomes, ctx);
-    if (!c.replyNeeded && !c.needsOwner) {
+    const drafted = withAviaRule(withRailRule(loop.compose, ctx), loop, ctx);
+    if (!drafted.replyNeeded && !drafted.needsOwner) {
       settle = { ...settle, outcome: 'no_reply', error: null };
       return { outcome: 'no_reply' };
     }
     const memory = memoryFor(ctx, loop, facts, canary);
-    const policy = await policyFor({ managerUserId: ctx.managerUserId, peerId: ctx.peerId, body: c.replyText, memory, strip: stripFor(ctx) });
+    const policy = await policyFor({ managerUserId: ctx.managerUserId, peerId: ctx.peerId, body: drafted.replyText, memory, strip: stripFor(ctx) });
+    const c = withAviaGuard(drafted, policy, loop, ctx);
     const { actions, notes } = validateActions(c, ctx, loop.outcomes, t);
     const rail = railNote(ctx, c);
     if (rail) notes.push(rail);

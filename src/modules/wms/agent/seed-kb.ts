@@ -36,7 +36,7 @@ export interface SeedFact {
  * and in the Chinese the supplier reads: every address fact carries it, so a
  * reply that quotes an address quotes the reminder with it.
  */
-const GS_REMINDER =
+export const GS_REMINDER =
   'Yuklaringizni joʻnatishdan oldin GS kodini (markirovka) yozishni unutmang. 发货前请不要忘记标注GS编码（唛头）。';
 
 export const SEED_FACTS: readonly SeedFact[] = [

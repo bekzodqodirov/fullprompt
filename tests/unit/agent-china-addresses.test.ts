@@ -3,10 +3,18 @@ import type { AgentContext, ChatMessage } from '@/modules/wms/agent/context';
 import { normalizeDigits } from '@/modules/wms/agent/digits';
 import type { KbHit } from '@/modules/wms/agent/kb';
 import { PHONE_RE } from '@/modules/wms/agent/numbers';
-import { addressAnchorsOf, checkAgentReply, statesChinaAddress, withoutQuotedHan, type AddressAnchors, type PolicyInput } from '@/modules/wms/agent/policy';
-import { aviaOwnerQuestion, memoryFor, withAviaRule, type ComposeReply } from '@/modules/wms/agent/run';
+import {
+  addressAnchorsOf,
+  checkAgentReply,
+  isReceivingAddressFact,
+  statesChinaAddress,
+  withoutQuotedHan,
+  type AddressAnchors,
+  type PolicyInput,
+} from '@/modules/wms/agent/policy';
+import { aviaOwnerQuestion, memoryFor, withAviaGuard, withAviaRule, type ComposeReply } from '@/modules/wms/agent/run';
 import { WAREHOUSE_ADDRESS_SEED } from '@/modules/wms/agent/kb';
-import { SEED_FACTS } from '@/modules/wms/agent/seed-kb';
+import { GS_REMINDER, SEED_FACTS } from '@/modules/wms/agent/seed-kb';
 import type { ToolOutcome } from '@/modules/wms/agent/tools';
 
 /**
@@ -30,15 +38,25 @@ const msg = (body: string): ChatMessage => ({
   body,
 });
 
-function ctxOf(body: string, customerScript: 'latin' | 'cyrillic' | 'han', earlier: ChatMessage[] = [], measures: AgentContext['measures'] = []): AgentContext {
+function ctxOf(
+  body: string,
+  customerScript: 'latin' | 'cyrillic' | 'han',
+  earlier: ChatMessage[] = [],
+  measures: AgentContext['measures'] = [],
+  lastQuote: AgentContext['lastQuote'] = null,
+): AgentContext {
   const m = { ...msg(body), ref: `#${earlier.length + 1}`, tgMessageId: BigInt(earlier.length + 1) };
+  const messages = [...earlier, m];
+  // The burst as `loadContext` cuts it: every inbound line since our last one.
+  const lastOutIndex = messages.map((x) => x.direction).lastIndexOf('out');
   return {
     managerUserId: 'u',
     peerId: 1n,
-    messages: [...earlier, m],
+    messages,
     anchor: m,
-    burst: [m],
-    lastOut: earlier.filter((e) => e.direction === 'out').at(-1) ?? null,
+    burst: messages.slice(lastOutIndex + 1).filter((x) => x.direction === 'in'),
+    lastOut: lastOutIndex >= 0 ? messages[lastOutIndex]! : null,
+    lastQuote,
     identity: { clientId: null, leadId: 'l', strength: 'lead', codes: [], customerName: null, managerName: null, cargoAllowed: false },
     storedLocale: null,
     customerScript,
@@ -75,13 +93,22 @@ const FACTS: KbHit[] = SEED_FACTS.map((f, i) => ({
 const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
 const answer = (key: string) => SEED_FACTS.find((f) => f.key === key)!.answer;
 /** The receiving warehouses as `policyFor` reads them: every live fact under the address seed key. */
-const ANCHORS: AddressAnchors = addressAnchorsOf(SEED_FACTS.filter((f) => f.key.startsWith(WAREHOUSE_ADDRESS_SEED)).map((f) => f.answer));
+const ANCHORS: AddressAnchors = addressAnchorsOf(
+  SEED_FACTS.filter((f) => f.key.startsWith(WAREHOUSE_ADDRESS_SEED)).map((f) => f.answer),
+  [GS_REMINDER],
+);
 const said = (body: string, n: number, direction: 'in' | 'out' = 'in'): ChatMessage => ({
   ...msg(body),
   ref: `#${n}`,
   tgMessageId: BigInt(n),
   direction,
 });
+type ToolCall = { name: string; ok: boolean; text: string };
+/** The avia rule over a run's tools and outcomes, as `runOnce` calls it. */
+const rule = (c: ComposeReply, outcomes: ToolOutcome[], ctx: AgentContext, tools: ToolCall[] = []) => withAviaRule(c, { outcomes, tools }, ctx);
+/** The flight he approved a draft for, as `loadContext` reads it back. */
+const AIR_QUOTE: AgentContext['lastQuote'] = { road: 'air', air: { kg: 30, origin: 'Shenzhen' }, at: new Date(0) };
+const ROAD_QUOTE: AgentContext['lastQuote'] = { road: 'road', air: null, at: new Date(0) };
 
 /** The policy over a reply, on the memory a real run stores — as `policyFor` maps it. */
 function judge(
@@ -222,7 +249,7 @@ describe('an avia quote: the address is his (his fourth set «2»)', () => {
     // …and a Chinese mobile that is no warehouse's is G6's `foreign_phone`, not this rule's.
     expect(statesChinaAddress('Telefon: 13900001111', ANCHORS)).toBe(false);
     // No warehouse facts read — nothing is anybody's address.
-    expect(statesChinaAddress(answer('china_address_yiwu@1'), { han: [], phones: [] })).toBe(false);
+    expect(statesChinaAddress(answer('china_address_yiwu@1'), { pieces: [], phones: [], houseNumbers: [] })).toBe(false);
   });
 
   it('a Chinese avia reply that asks where the cargo starts is no address (review D3)', () => {
@@ -235,25 +262,32 @@ describe('an avia quote: the address is his (his fourth set «2»)', () => {
       'latin',
       [said('Shenzhendan avia 30 kg qancha?', 1), said("Avia bilan taxminan 510 $ bo'ladi.", 2, 'out')],
       [{ ref: 'w1', kind: 'weight', value: 30, messageRef: '#1' }],
+      AIR_QUOTE,
     );
-    // No tool ran this time — the flight was quoted one burst back.
+    // No tool ran this time — the flight was quoted one burst back, on the draft he approved.
     expect(judge(chat, 'latin', 'uz', `Assalomu alaykum! ${answer('china_address_yiwu@1')}`)).toContain('avia_address');
-    const asked = withAviaRule(compose('uz'), [], chat);
+    const asked = rule(compose('uz'), [], chat);
     expect(asked.needsOwner).toBe(true);
     expect(asked.ownerQuestion).toBe(aviaOwnerQuestion({ kg: 30, origin: 'Shenzhen' }));
+    // He typed the avia price himself (no draft): our own last quote still says which road it was.
+    const typed = ctxOf('Manzil qayerga yuboraman?', 'latin', [
+      said('Shenzhendan 30 kg qancha?', 1),
+      said("Avia bilan 510 $ bo'ladi, 2-5 kunda.", 2, 'out'),
+    ]);
+    expect(judge(typed, 'latin', 'uz', `Assalomu alaykum! ${answer('china_address_yiwu@1')}`)).toContain('avia_address');
     // A truck chat asking the same question is answered from the knowledge, as before.
     const road = ctxOf('Manzil qayerga yuboraman?', 'latin', [said('Ivudan fura bilan 5 kub qancha?', 1)]);
     expect(judge(road, 'latin', 'uz', `Assalomu alaykum! ${answer('china_address_yiwu@1')}`)).not.toContain('avia_address');
-    expect(withAviaRule(compose('uz'), [], road)).toMatchObject({ needsOwner: false, ownerQuestion: '' });
+    expect(rule(compose('uz'), [], road)).toMatchObject({ needsOwner: false, ownerQuestion: '' });
     // An avia chat that asks something else is not his address question — «where IS my cargo» included.
     for (const body of ['Necha kunda keladi?', 'Yuk qayerda?', 'Где мой груз?']) {
-      const other = ctxOf(body, 'latin', [said('Shenzhendan avia 30 kg qancha?', 1)]);
-      expect(withAviaRule(compose('uz'), [], other), body).toMatchObject({ needsOwner: false, ownerQuestion: '' });
+      const other = ctxOf(body, 'latin', [said('Shenzhendan avia 30 kg qancha?', 1)], [], AIR_QUOTE);
+      expect(rule(compose('uz'), [], other), body).toMatchObject({ needsOwner: false, ownerQuestion: '' });
     }
     // «Where to» in the customer's own words is.
     for (const body of ['Qayerga yuboray?', 'Куда отправить?', '寄到哪里？']) {
       const ask = ctxOf(body, 'latin', [said('Shenzhendan avia 30 kg qancha?', 1)], [{ ref: 'w1', kind: 'weight', value: 30, messageRef: '#1' }]);
-      expect(withAviaRule(compose('uz'), [], ask).needsOwner, body).toBe(true);
+      expect(rule(compose('uz'), [], ask).needsOwner, body).toBe(true);
     }
     // The kilos are not known — the card says so instead of inventing them.
     expect(aviaOwnerQuestion({ kg: null, origin: null })).toContain("og'irligi aytilmagan");
@@ -269,33 +303,187 @@ describe('an avia quote: the address is his (his fourth set «2»)', () => {
   it('the model\'s own question stands only when it asks the flight\'s ADDRESS (review D8)', () => {
     const line = aviaOwnerQuestion({ kg: 30, origin: 'Shenzhen' });
     for (const asked of ['Kairat aka chair buyurtma qilyapti', 'Avia narxini tasdiqlang', 'Mijoz air max krossovka so\'rayapti']) {
-      expect(withAviaRule(compose('uz', { ownerQuestion: asked }), [air], aviaChat).ownerQuestion).toBe(`${asked} · ${line}`);
+      expect(rule(compose('uz', { ownerQuestion: asked }), [air], aviaChat).ownerQuestion).toBe(`${asked} · ${line}`);
     }
     for (const asked of ['Avia: kurtka, 30 kg, Shenzhen — manzilni bering', 'Авиа: куртка 30 кг, адрес?']) {
-      expect(withAviaRule(compose('uz', { ownerQuestion: asked }), [air], aviaChat).ownerQuestion).toBe(asked);
+      expect(rule(compose('uz', { ownerQuestion: asked }), [air], aviaChat).ownerQuestion).toBe(asked);
     }
   });
 
   it('the draft asks HIM with the cargo, whatever the model composed', () => {
-    const silent = withAviaRule(compose('uz'), [air], aviaChat);
+    const silent = rule(compose('uz'), [air], aviaChat);
     expect(silent).toMatchObject({ needsOwner: true, ownerQuestion: aviaOwnerQuestion({ kg: 30, origin: 'Shenzhen' }) });
     expect(silent.ownerQuestion).toContain('30 kg');
     expect(silent.ownerQuestion).toContain('Shenzhen');
     // The model's own avia question — with the goods it read — stands.
     const own = 'Avia: kurtka, 30 kg, Shenzhen — manzilni bering';
-    expect(withAviaRule(compose('uz', { ownerQuestion: own }), [air], aviaChat).ownerQuestion).toBe(own);
+    expect(rule(compose('uz', { ownerQuestion: own }), [air], aviaChat).ownerQuestion).toBe(own);
     // A question about something else keeps its place; the avia line follows it.
-    expect(withAviaRule(compose('uz', { ownerQuestion: 'kod ochib bering' }), [air], aviaChat).ownerQuestion).toBe(
+    expect(rule(compose('uz', { ownerQuestion: 'kod ochib bering' }), [air], aviaChat).ownerQuestion).toBe(
       `kod ochib bering · ${aviaOwnerQuestion({ kg: 30, origin: 'Shenzhen' })}`,
     );
     // No flight quoted: nothing is asked.
-    expect(withAviaRule(compose('uz'), [truck], aviaChat)).toMatchObject({ needsOwner: false, ownerQuestion: '' });
+    expect(rule(compose('uz'), [truck], aviaChat)).toMatchObject({ needsOwner: false, ownerQuestion: '' });
     expect(aviaOwnerQuestion({ kg: 12, origin: null })).toContain('aytilmagan');
   });
 
   it('…but never in a rail chat: no machine figure goes out there, so no flight was quoted — the question is the rail one', () => {
     const rail = ctxOf("Temir yo'l bilan 40 kg qancha?", 'latin');
-    expect(withAviaRule(compose('uz'), [air], rail)).toMatchObject({ needsOwner: false, ownerQuestion: '' });
+    expect(rule(compose('uz'), [air], rail)).toMatchObject({ needsOwner: false, ownerQuestion: '' });
+  });
+});
+
+describe('which chat is a flight\'s — the review of the follow-up (review R1-R4)', () => {
+  const yiwu = () => `Assalomu alaykum! ${answer('china_address_yiwu@1')}`;
+  const blocked = (ctx: AgentContext) => judge(ctx, 'latin', 'uz', yiwu()).includes('avia_address');
+  const kg30 = [{ ref: 'w1', kind: 'weight' as const, value: 30, messageRef: '#1' }];
+
+  it('R1: the flight he was quoted stays the chat\'s road, however the customer words the follow-up', () => {
+    // (a) the goods are called «…mashinasi»; (e) «автозапчасти» — a road word inside the goods' name.
+    expect(blocked(ctxOf('Manzil qayerga yuboraman?', 'latin', [said('Tikuv mashinasi 30 kg, avia bilan qancha?', 1), said("Avia bilan taxminan 510 $ bo'ladi.", 2, 'out')], kg30, AIR_QUOTE))).toBe(true);
+    expect(blocked(ctxOf('Куда отправлять?', 'cyrillic', [said('Автозапчасти 30 кг авиа сколько?', 1), said('Авиа примерно 510 $.', 2, 'out')], kg30, AIR_QUOTE))).toBe(true);
+    // (d) the customer never said «avia» — the quote did.
+    expect(blocked(ctxOf('Ok, manzilni yuboring', 'latin', [said('30 kg kiyim Shenzhendan, eng tez qanday?', 1), said("Avia bilan taxminan 510 $ bo'ladi.", 2, 'out')], kg30, AIR_QUOTE))).toBe(true);
+  });
+
+  it('R1: the customer\'s own choice in this burst decides — a road turned down is no choice', () => {
+    // (b) both roads compared, then «Unda avia bilan».
+    expect(blocked(ctxOf('Unda avia bilan. Manzil qayerga yuboraman?', 'latin', [said("Avia va mashinada qancha bo'ladi? 30 kg", 1), said('Mashinada 1 kubdan, avia 510 $.', 2, 'out')], kg30))).toBe(true);
+    // (c) «Mashinada emas, avia bilan» — the truck turned down, the flight chosen.
+    expect(blocked(ctxOf('Mashinada emas, avia bilan yuboraman. Manzil?', 'latin', [], kg30))).toBe(true);
+    // …and the flight turned down is the truck's address, in three languages.
+    for (const body of [
+      'Avia qimmat ekan, kerak emas. Ivu omboringiz manzilini tashlang',
+      'Aviada emas, oddiy kargo bilan yuboraman. Manzilni bering',
+      'Не авиа, обычным карго. Скиньте адрес склада в Иу',
+    ]) {
+      const ctx = ctxOf(body, 'latin', [said('Shenzhendan avia 30 kg qancha?', 1), said("Avia bilan taxminan 510 $ bo'ladi.", 2, 'out')], kg30, AIR_QUOTE);
+      expect(blocked(ctx), body).toBe(false);
+      expect(rule(compose('uz'), [], ctx), body).toMatchObject({ needsOwner: false, ownerQuestion: '' });
+    }
+  });
+
+  it('R1: an old avia question the truck quote came after is the truck\'s chat now', () => {
+    const ctx = ctxOf(
+      'Manzilni bering, Ivuga yuboraman',
+      'latin',
+      [said('Avia bilan 20 kg qancha?', 1), said('Avia 340 $.', 2, 'out'), said('Qimmat ekan', 3), said('3 kub kiyim bor, Ivudan Toshkentga qancha?', 4), said('Taxminan 640 $.', 5, 'out')],
+      [],
+      ROAD_QUOTE,
+    );
+    expect(blocked(ctx)).toBe(false);
+    expect(rule(compose('uz'), [], ctx)).toMatchObject({ needsOwner: false, ownerQuestion: '' });
+  });
+
+  it('R1: goods named after the air are no flight — «air fryer», «air conditioner»', () => {
+    for (const body of ['300 ta air fryer, 4 kub, Ivudan yuboraman. Manzilni bering', 'Air conditioner 5 kub, Ivu sklad adresi?']) {
+      const ctx = ctxOf(body, 'latin');
+      expect(blocked(ctx), body).toBe(false);
+      expect(rule(compose('uz'), [], ctx).needsOwner, body).toBe(false);
+    }
+  });
+
+  it('R1: a truck section asked this run (podklyuch) is the truck\'s chat, as a truck estimate is', () => {
+    const ctx = ctxOf('Unda podklyuch qilib Ivuga 3 kub yuboraman. Ivu manzili qanday?', 'latin', [said('Shenzhendan avia 30 kg qancha?', 1), said('Avia 510 $.', 2, 'out')], kg30, AIR_QUOTE);
+    const checklist: ToolOutcome = {
+      ok: true,
+      text: '',
+      sources: [],
+      checklist: { section: 'podklyuch', facts: {} as never, complete: false, fromOurWarehouse: false },
+    };
+    expect(judge(ctx, 'latin', 'uz', yiwu(), [checklist], [{ name: 'calc_checklist', ok: true, text: '' }])).not.toContain('avia_address');
+  });
+
+  it('R2: only «where do I send it» asks him — thanks, his own address, a pickup or an arrival never do', () => {
+    const avia = (body: string, replyNeeded = true) =>
+      rule(compose('uz', { replyNeeded, replyText: replyNeeded ? 'x' : '' }), [], ctxOf(body, 'latin', [said('Shenzhendan avia 30 kg qancha?', 1), said("Avia bilan taxminan 510 $ bo'ladi.", 2, 'out')], kg30, AIR_QUOTE)).needsOwner;
+    for (const body of [
+      'Rahmat, manzilni oldim',
+      'Shu manzilga yubordim, trek raqami 7788',
+      'Toshkentda manzilingiz qayerda? Qayerga kelib olaman?',
+      'Откуда вылетает самолёт?',
+      'Откуда считается цена?',
+      'Avia bilan qayergacha yetkazasiz?',
+      'Mening manzilim: Toshkent, Chilonzor 5-kvartal',
+      'Yukim qayerga yetib keldi?',
+      'Куда пришёл мой груз?',
+    ]) {
+      expect(avia(body), body).toBe(false);
+    }
+    // A line that needs no reply never becomes a question card.
+    expect(avia('Manzil qayerga yuboraman?', false)).toBe(false);
+    for (const body of [
+      'Adresni tashlang',
+      'Манзилни юборинг',
+      'Qaysi omborga yuboray?',
+      'Omboringiz qayerda?',
+      'Qayoqqa yuboray?',
+      'Манзил қаерда?',
+      'Lokatsiya tashlang',
+      'Where is your warehouse?',
+      'Please send the warehouse location',
+      'نشانی انبار را بفرستید',
+      'کجا ارسال کنم؟',
+      '寄哪里？',
+      '仓库在哪里？',
+    ]) {
+      expect(avia(body), body).toBe(true);
+    }
+  });
+
+  it('R2: whenever the guard holds the draft, the card asks him — the guard and the question are one rule', () => {
+    const ctx = ctxOf('Ivu omboringiz qayerda joylashgan?', 'latin', [said('Shenzhendan avia 30 kg qancha?', 1), said('Avia 510 $.', 2, 'out')], kg30, AIR_QUOTE);
+    const held = { ok: false, blocks: [{ rule: 'G6' as const, code: 'avia_address' as const }], warnings: [], ledger: [] };
+    const c = withAviaGuard(compose('uz', { replyText: yiwu() }), held, { outcomes: [], tools: [] }, ctx);
+    expect(c).toMatchObject({ needsOwner: true, ownerQuestion: aviaOwnerQuestion({ kg: 30, origin: 'Shenzhen' }) });
+    // Nothing held, nothing asked.
+    const clear = { ok: true, blocks: [], warnings: [], ledger: [] };
+    expect(withAviaGuard(compose('uz'), clear, { outcomes: [], tools: [] }, ctx)).toMatchObject({ needsOwner: false });
+  });
+
+  it('R3: the card names where the cargo STARTS — never the warehouse asked about', () => {
+    // No quote stored (the chat moved to avia in this burst): the kilos and the origin come from the chat.
+    const a = ctxOf('Avia bilan. Ivu omboringiz manzilini bering', 'latin', [said('Avia bilan 30 kg qancha?', 1)], kg30);
+    expect(rule(compose('uz'), [], a).ownerQuestion).toBe(aviaOwnerQuestion({ kg: 30, origin: null }));
+    const b = ctxOf('Avia bilan. Ivu omboringiz manzilini bering', 'latin', [said('Shenzhendan avia 30 kg qancha?', 1)], kg30);
+    expect(rule(compose('uz'), [], b).ownerQuestion).toBe(aviaOwnerQuestion({ kg: 30, origin: 'Shenzhen' }));
+  });
+});
+
+describe('what reads as our warehouse — the review of the anchors (review R5-R8)', () => {
+  it('R5: a piece of the street that the house number splits, and the house number beside a street word', () => {
+    expect(statesChinaAddress('Ivu omboriga yuboring: Yiwu, 荷花南街 2255号. GS kodni yozing.', ANCHORS)).toBe(true);
+    expect(statesChinaAddress("Manzil: Zhejiang, Yiwu, Choujiang ko'chasi, Hehua South Street 2255, Zhou xiansheng.", ANCHORS)).toBe(true);
+    expect(statesChinaAddress('Адрес: Иу, Чоуцзян, улица Хэхуа Наньцзе 2255, господин Чжоу.', ANCHORS)).toBe(true);
+    // The number alone is no address.
+    expect(statesChinaAddress('Trek raqami 2255.', ANCHORS)).toBe(false);
+  });
+
+  it('R6: the warehouse\'s own name and the receiving company are ours', () => {
+    expect(statesChinaAddress('霍尔果斯金亿国际物流中心, qabul qiluvchi ASQAR', ANCHORS)).toBe(true);
+    expect(statesChinaAddress('Guanchjou ombori: Foshan, 拓派国际物流有限公司, qabul qiluvchi 王红.', ANCHORS)).toBe(true);
+  });
+
+  it('R7: the province, city or district a customer\'s cargo starts from is nobody\'s address', () => {
+    for (const text of ['您好！从浙江省义乌市空运30公斤大约510美元。', '从广东省佛山市空运吗？', '佛山市南海区发货，空运多少？', '从霍尔果斯市空运吗？', '新疆维吾尔自治区也可以空运。']) {
+      expect(statesChinaAddress(text, ANCHORS), text).toBe(false);
+    }
+  });
+
+  it('R9: a warehouse he adds on the page is a receiving address by what it says — a flight\'s address he writes is not', () => {
+    expect(isReceivingAddressFact('Qashqar qabul ombori: 新疆喀什市迎宾大道88号，王先生 13900001111.')).toBe(true);
+    expect(isReceivingAddressFact('Shenzhen ombori qayerda? — 广东省深圳市宝安区福永街道 塘尾路 18号')).toBe(true);
+    expect(isReceivingAddressFact('Avia yuk manzili: 广东省深圳市宝安区机场路 5号，13700002222.')).toBe(false);
+    expect(isReceivingAddressFact(answer('china_points@4'))).toBe(false);
+    expect(isReceivingAddressFact('Toʻlov: naqd yoki karta orqali.')).toBe(false);
+    // Every seeded address is one by what it says, too.
+    for (const f of SEED_FACTS.filter((x) => x.key.startsWith(WAREHOUSE_ADDRESS_SEED))) expect(isReceivingAddressFact(f.answer), f.key).toBe(true);
+  });
+
+  it('R8: the verbatim Horgos address inside a Chinese sentence is the fact\'s spelling, not a figure', () => {
+    const reply =
+      '您好！5立方的货请发到霍尔果斯金亿国际物流中心 新疆维吾尔自治区伊犁哈萨克自治州霍尔果斯市南京路与宁波路交叉口正东方向168米左右。收货人：ASQAR 18309082036。发货前请不要忘记标注GS编码（唛头）。';
+    expect(judge('我有5立方的货，霍尔果斯仓库地址在哪里？', 'han', 'zh', reply)).not.toContain('number_unverifiable');
   });
 });
 
@@ -335,7 +523,11 @@ describe('written down for the model', () => {
     expect(keys).toEqual(['china_address_yiwu@1', 'china_address_guangzhou@1', 'china_address_horgos@1']);
     // Each one's phone is an anchor: the warehouse is named by its contact as well as its street.
     expect(ANCHORS.phones).toEqual(['429089596', '266376775', '309082036']);
-    expect(ANCHORS.han.length).toBeGreaterThanOrEqual(3);
+    expect(ANCHORS.pieces.length).toBeGreaterThanOrEqual(3);
+    // The GS reminder every warehouse carries is nobody's address: no piece of it is an anchor.
+    expect(ANCHORS.pieces.some((p) => '发货前请不要忘记标注编码唛头'.includes(p))).toBe(false);
+    // The house numbers a street address names — never a phone's digits.
+    expect(ANCHORS.houseNumbers).toEqual(['2255', '168']);
   });
 
   it('the stored memory reaches the policy at the write AND at ✅ — policyFor passes both new fields', async () => {

@@ -4,6 +4,7 @@ import { db } from '../../platform/db/client';
 import { clients, kbFacts } from '../../platform/db/schema';
 import { normalizeDigits } from './digits';
 import { extractNumbers, PHONE_RE, urlsIn } from './numbers';
+import { isReceivingAddressFact } from './policy';
 import { codeCandidates } from '../calc/channel-post';
 
 /**
@@ -99,13 +100,21 @@ export async function generalFacts(limit = 60): Promise<KbHit[]> {
  */
 export const WAREHOUSE_ADDRESS_SEED = 'china_address_';
 
-/** The live receiving-warehouse facts, as text — what `avia_address` is anchored on (review D3). */
+/**
+ * The live receiving-warehouse facts, as text — what `avia_address` is
+ * anchored on (review D3): the seed's own, by their key, and any warehouse he
+ * added or re-typed on the page, by what it says (`isReceivingAddressFact`,
+ * review R9). The company's general facts are a short list, so the reading is
+ * done here rather than in SQL.
+ */
 export async function warehouseAddressTexts(): Promise<string[]> {
   const rows = await db
-    .select({ answer: kbFacts.answer })
+    .select({ answer: kbFacts.answer, question: kbFacts.question, seed: sql<string | null>`${kbFacts.sourceRef}->>'seed'` })
     .from(kbFacts)
-    .where(and(live, eq(kbFacts.scope, 'general'), sql`starts_with(${kbFacts.sourceRef}->>'seed', ${WAREHOUSE_ADDRESS_SEED})`));
-  return rows.map((r) => r.answer);
+    .where(and(live, eq(kbFacts.scope, 'general')));
+  return rows
+    .filter((r) => (r.seed ?? '').startsWith(WAREHOUSE_ADDRESS_SEED) || isReceivingAddressFact(servedText(r.question, r.answer)))
+    .map((r) => r.answer);
 }
 
 /**

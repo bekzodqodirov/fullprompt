@@ -4,9 +4,11 @@ import { agentDrafts, agentOutbox, clients, users } from '../../platform/db/sche
 import { getSetting } from '../../platform/settings/service';
 import { canLogInSql } from '../../platform/users/login';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
+import type { AviaCargo, QuotedRoad } from './context';
 import type { AgentLocale, ScriptName } from './locale';
 import { customerSources, urlsIn, type NumberSource, type TravelMode } from './numbers';
 import { warehouseAddressTexts } from './kb';
+import { GS_REMINDER } from './seed-kb';
 import { addressAnchorsOf, checkAgentReply, checkOwnerReply, codeCandidatesIn, textFingerprint, type PolicyHit, type PolicyResult } from './policy';
 import { AGENT_LIMITS } from './limits';
 
@@ -48,6 +50,10 @@ export interface PolicyMemory {
   aviaOnly?: boolean;
   /** The Chinese characters of the facts the run read — a verbatim address is the fact's script (his fourth set). Absent = none. */
   quotableHan?: string;
+  /** The road this run priced or asked (`quotedRoadOf`) — the next run's `lastQuote` (review R1). Absent = none. */
+  quotedRoad?: QuotedRoad | null;
+  /** The flight's cargo as the avia tool read it, when this run quoted one — what the follow-up's card names. */
+  quotedAir?: AviaCargo | null;
   ownCodes: string[];
   /** The customer's own manager — the one staff name a reply may carry. */
   managerName: string | null;
@@ -187,7 +193,8 @@ export async function policyFor(input: {
     hasGloss: input.memory.hasGloss === true,
     aviaOnly: input.memory.aviaOnly === true,
     quotableHan: input.memory.quotableHan ?? '',
-    warehouseAddress: addressAnchorsOf(addresses),
+    // The GS reminder rides inside every warehouse's fact and is nobody's address.
+    warehouseAddress: addressAnchorsOf(addresses, [GS_REMINDER]),
   });
 }
 

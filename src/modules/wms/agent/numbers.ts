@@ -117,11 +117,16 @@ export type TravelMode = 'air' | 'road' | 'rail';
  * The words that name each road, in the six languages. «Avto» and «авто» are
  * the road's — but not «avtomat», «автор». A truck carries goods that are
  * machines too («kir yuvish mashinasi»); that reads as the road, which can
- * only make a flight's figure unusable, never the reverse.
+ * only make a flight's figure unusable, never the reverse. English «air» on
+ * its own is a PRODUCT here far more often than a road — «air fryer», «air
+ * conditioner», «Air Max» — and since the flight decides whose address a
+ * reply may give (`chatRoadOf`, review R1) it counts only as «air freight»,
+ * «air cargo», «by air». «Kargo» / «карго» is how a customer says the truck
+ * consolidation («oddiy kargo bilan»); «avia kargo» is the flight's.
  */
 const MODE_WORDS: Record<TravelMode, RegExp> = {
-  air: /(?<![\p{L}])(?:avia\p{L}*|samol[yi]?ot\p{L}*|авиа\p{L}*|самол[её]т\p{L}*|air(?:freight|cargo)?|by\s+air|flights?|plane)(?![\p{L}])|هوایی|هواپیما|空运|航空|飞机/iu,
-  road: /(?<![\p{L}])(?:mashina\p{L}*|avto(?![mr])\p{L}*|avtomobil\p{L}*|fura\p{L}*|машин\p{L}*|авто(?![мр])\p{L}*|автомобил\p{L}*|фур[аыуе]\p{L}*|trucks?|trucking|by\s+road|road\s+freight)(?![\p{L}])|کامیون|زمینی|汽运|陆运|卡车|汽车/iu,
+  air: /(?<![\p{L}])(?:avia\p{L}*|samol[yi]?ot\p{L}*|авиа\p{L}*|самол[её]т\p{L}*|air(?:freight|cargo)|air[\s-]+(?:freight|cargo|shipping|delivery|mail)|(?:by|via)\s+air|flights?|plane)(?![\p{L}])|هوایی|هواپیما|空运|航空|飞机/iu,
+  road: /(?<![\p{L}])(?:mashina\p{L}*|avto(?![mr])\p{L}*|avtomobil\p{L}*|fura\p{L}*|машин\p{L}*|авто(?![мр])\p{L}*|автомобил\p{L}*|фур[аыуе]\p{L}*|(?<!(?:avia|авиа)[\s-]{1,3})(?:kargo|карго)\p{L}*|trucks?|trucking|by\s+road|road\s+freight)(?![\p{L}])|کامیون|زمینی|汽运|陆运|卡车|汽车/iu,
   rail: /(?<![\p{L}])(?:temir\s*yo['‘’ʻ`]?l\p{L}*|poyezd\p{L}*|темир\s*йўл\p{L}*|поезд\p{L}*|железн\p{L}*\s+дорог\p{L}*|ж\/д|rail\p{L}*|trains?)(?![\p{L}])|قطار|راه\s*آهن|铁路|火车/iu,
 };
 

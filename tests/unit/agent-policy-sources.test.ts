@@ -77,6 +77,7 @@ function ctxWith(body: string): AgentContext {
     customerScript: 'latin',
     measures: [],
     openCalcs: [],
+    lastQuote: null,
     ruleDecision: null,
   };
 }

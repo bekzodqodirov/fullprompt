@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { eq, like, sql } from 'drizzle-orm';
+import { eq, inArray, like, sql } from 'drizzle-orm';
 import { afterAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import { kbFacts, users } from '@/modules/platform/db/schema';
@@ -82,9 +82,23 @@ describe('the avia rule reads the receiving warehouses as the knowledge states t
     // A fact of another key that happens to carry Chinese — never an anchor.
     expect(await seedKb([{ key: `${BASE}@9`, question: 'Sinov?', answer: 'Boshqa fakt: 测试省 旧城市 广州路 99号.' }])).toEqual([`${BASE}@9`]);
 
-    const texts = await warehouseAddressTexts();
-    expect(texts.filter((t) => t.startsWith('Sinov ombori'))).toEqual(['Sinov ombori: 测试省 新城市 上海路 66号，李先生 13700008888.']);
-    expect(texts.some((t) => t.startsWith('Boshqa fakt'))).toBe(false);
+    // A warehouse he ADDED on the page (no seed key) is one by what it says; his own flight's address is not (review R9).
+    const added = await db
+      .insert(kbFacts)
+      .values([
+        { scope: 'general', question: null, answer: `Sinov qoʻshilgan ombor ${BASE}: 测试省 南城市 杭州路 77号，赵先生 13600007777.`, locale: 'uz', source: 'owner', sourceRef: { door: 'web' }, approvedAt: new Date(), approvedBy: who!.id },
+        { scope: 'general', question: null, answer: `Sinov avia manzili ${BASE}: 测试省 南城市 机场路 5号，13500006666.`, locale: 'uz', source: 'owner', sourceRef: { door: 'web' }, approvedAt: new Date(), approvedBy: who!.id },
+      ])
+      .returning({ id: kbFacts.id });
+    try {
+      const texts = await warehouseAddressTexts();
+      expect(texts.filter((t) => t.startsWith('Sinov ombori'))).toEqual(['Sinov ombori: 测试省 新城市 上海路 66号，李先生 13700008888.']);
+      expect(texts.some((t) => t.startsWith('Boshqa fakt'))).toBe(false);
+      expect(texts.some((t) => t.startsWith(`Sinov qoʻshilgan ombor ${BASE}`))).toBe(true);
+      expect(texts.some((t) => t.startsWith(`Sinov avia manzili ${BASE}`))).toBe(false);
+    } finally {
+      await db.delete(kbFacts).where(inArray(kbFacts.id, added.map((r) => r.id)));
+    }
 
     const memory: PolicyMemory = {
       language: 'uz',

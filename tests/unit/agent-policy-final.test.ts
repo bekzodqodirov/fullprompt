@@ -342,6 +342,7 @@ function ctxOf(messages: ChatMessage[], measures: MeasureCandidate[]): AgentCont
     customerScript: null,
     measures,
     openCalcs: [],
+    lastQuote: null,
     ruleDecision: null,
   };
 }
