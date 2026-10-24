@@ -690,6 +690,7 @@ export async function returnCalcRequest(
       `📝 ${trimmed.slice(0, 300)}${linkLine(row.entityType, row.entityId)}`,
     exceptUserId: ctx.actorId,
   }).catch((err) => logger.error({ err, id }, '[calc] returned notify failed'));
+  await (await import('../agent/calc-loop')).announceAgentCalcSafe(id, 'returned', { reason: trimmed.slice(0, 500) });
 
   /**
    * …and the work lands back on the SELLER's day (owner's item 5, question
@@ -856,6 +857,9 @@ export async function finishCalcRequest(
       linkLine(row.entityType, row.entityId),
     exceptUserId: ctx.actorId,
   }).catch((err) => logger.error({ err, id }, '[calc] done notify failed'));
+  // The AI sotuvchi's own «javob keldi» (0136, regression-5): its own type, no
+  // exceptUserId — a no-op unless the agent sent this job. Never throws.
+  await (await import('../agent/calc-loop')).announceAgentCalcSafe(id, 'done', { amountText: `${amount} ${currency}` });
   // The CARD's row: the seller reads the card's History tab, so this one
   // carries the figure and nothing of the VED's reasoning.
   await writeAudit(db, ctx, {

@@ -57,86 +57,87 @@ async function cardRowFor(tx: Tx, draftId: string) {
 
 export type WriteDraftResult = { kind: 'written'; draftId: string; retargeted: boolean } | { kind: 'editing'; draftId: string };
 
-export async function writeDraft(input: {
-  runId: string;
-  ctx: AgentContext;
-  compose: ComposeReply;
-  policy: PolicyResult;
-  memory: PolicyMemory;
+/** Everything a new draft row carries — the machine's reply, a price, a hand-back question. */
+export interface NewDraft {
+  runId: string | null;
+  managerUserId: string;
+  peerId: bigint;
+  clientId: string | null;
+  leadId: string | null;
+  identityStrength: string | null;
+  anchorTgMessageId: bigint;
+  anchorEditedAt: Date | null;
+  kind: 'reply' | 'price' | 'hand_back';
+  body: string;
+  glossUz: string | null;
+  language: string | null;
+  category: string | null;
+  confidence: number | null;
+  nextStep: string | null;
+  policy: DraftPolicyJson;
+  blocked: boolean;
+  needsOwner: boolean;
+  ownerQuestion: string | null;
   actions: ComposedAction[];
-  notes: string[];
-}): Promise<WriteDraftResult> {
-  const { ctx, compose, policy } = input;
-  const card = cardMemory(ctx);
-  const policyJson: DraftPolicyJson = {
-    blocks: policy.blocks,
-    warnings: policy.warnings,
-    ledger: policy.ledger,
-    memory: input.memory,
-    card,
-    notes: input.notes,
-  };
-  const out = await db.transaction(async (tx): Promise<WriteDraftResult & { cardRowId?: string; text?: string; extra?: Record<string, unknown> }> => {
+  citedMessageIds: string[];
+  offerId: string | null;
+}
+
+const CATEGORIES = ['greeting', 'status', 'faq', 'qualification', 'price', 'complaint', 'other'];
+
+/**
+ * Write a draft and its card in ONE short transaction: the chat's live
+ * draft is superseded (unless he is editing it), the new row inserted, and
+ * the card either re-points the old card's row or is queued fresh. The drain
+ * is kicked — and a sent copy edited — only after the commit.
+ */
+export async function createDraft(n: NewDraft): Promise<WriteDraftResult> {
+  const out = await db.transaction(async (tx): Promise<WriteDraftResult> => {
     const [live] = await tx
       .select({ id: agentDrafts.id, status: agentDrafts.status })
       .from(agentDrafts)
       .where(
         and(
-          eq(agentDrafts.managerUserId, ctx.managerUserId),
-          eq(agentDrafts.peerId, ctx.peerId),
+          eq(agentDrafts.managerUserId, n.managerUserId),
+          eq(agentDrafts.peerId, n.peerId),
           inArray(agentDrafts.status, ['pending', 'editing']),
         ),
       )
       .for('update');
     if (live?.status === 'editing') return { kind: 'editing', draftId: live.id };
     if (live) {
-      await tx
-        .update(agentDrafts)
-        .set({ status: 'superseded', updatedAt: new Date() })
-        .where(eq(agentDrafts.id, live.id));
+      await tx.update(agentDrafts).set({ status: 'superseded', updatedAt: new Date() }).where(eq(agentDrafts.id, live.id));
     }
     const [draft] = await tx
       .insert(agentDrafts)
       .values({
-        runId: input.runId,
-        managerUserId: ctx.managerUserId,
-        peerId: ctx.peerId,
-        clientId: ctx.identity.clientId,
-        leadId: ctx.identity.leadId,
-        identityStrength: ctx.identity.strength,
-        anchorTgMessageId: ctx.anchor!.tgMessageId,
-        anchorEditedAt: ctx.anchor!.editedAt,
-        kind: 'reply',
-        proposedBody: compose.replyText,
-        glossUz: compose.glossUz || null,
-        language: compose.language,
-        category: (['greeting', 'status', 'faq', 'qualification', 'price', 'complaint', 'other'] as const).includes(
-          compose.category as 'other',
-        )
-          ? compose.category
-          : 'other',
-        confidence: compose.confidence.toFixed(2),
-        nextStep: compose.nextStep,
-        policy: policyJson,
-        blocked: !policy.ok,
-        needsOwner: compose.needsOwner,
-        ownerQuestion: compose.ownerQuestion || null,
-        actions: input.actions,
-        citedMessageIds: compose.citedMessageRefs
-          .map((r) => ctx.messages.find((m) => m.ref === r)?.id)
-          .filter((x): x is string => typeof x === 'string'),
+        runId: n.runId,
+        managerUserId: n.managerUserId,
+        peerId: n.peerId,
+        clientId: n.clientId,
+        leadId: n.clientId ? null : n.leadId,
+        identityStrength: n.identityStrength,
+        anchorTgMessageId: n.anchorTgMessageId,
+        anchorEditedAt: n.anchorEditedAt,
+        kind: n.kind,
+        proposedBody: n.body,
+        glossUz: n.glossUz,
+        language: n.language,
+        category: n.category && CATEGORIES.includes(n.category) ? n.category : 'other',
+        confidence: n.confidence === null ? null : n.confidence.toFixed(2),
+        nextStep: n.nextStep,
+        policy: n.policy,
+        blocked: n.blocked,
+        needsOwner: n.needsOwner,
+        ownerQuestion: n.ownerQuestion,
+        actions: n.actions,
+        citedMessageIds: n.citedMessageIds,
+        offerId: n.offerId,
       })
       .returning();
     const row = draft as DraftRow;
     const text = renderDraftCard(row, null);
-    const extra = cardExtra({
-      id: row.id,
-      body: row.proposedBody ?? '',
-      actions: input.actions,
-      blocked: row.blocked,
-      live: true,
-      kind: row.kind,
-    });
+    const extra = cardExtra({ id: row.id, body: row.proposedBody ?? '', actions: n.actions, blocked: row.blocked, live: true, kind: row.kind });
     const old = live ? await cardRowFor(tx, live.id) : null;
     if (old) {
       // The old card becomes the new one: its row now names the new draft,
@@ -147,7 +148,7 @@ export async function writeDraft(input: {
         .where(eq(notifications.id, old.id));
       return { kind: 'written', draftId: row.id, retargeted: true };
     }
-    await queueStaffTelegram(tx, { userIds: [ctx.managerUserId], type: 'AgentDraft', text, extra });
+    await queueStaffTelegram(tx, { userIds: [n.managerUserId], type: 'AgentDraft', text, extra });
     return { kind: 'written', draftId: row.id, retargeted: false };
   });
   if (out.kind === 'written') {
@@ -157,8 +158,57 @@ export async function writeDraft(input: {
       await refreshAgentCard(out.draftId).catch((err: unknown) => logger.warn({ err }, '[agent] card not edited'));
     }
   }
-  return out.kind === 'written' ? { kind: 'written', draftId: out.draftId, retargeted: out.retargeted } : out;
+  return out;
 }
+
+/** The machine's reply to the chat, from a run. */
+export async function writeDraft(input: {
+  runId: string;
+  ctx: AgentContext;
+  compose: ComposeReply;
+  policy: PolicyResult;
+  memory: PolicyMemory;
+  actions: ComposedAction[];
+  notes: string[];
+  kind?: 'reply' | 'hand_back';
+}): Promise<WriteDraftResult> {
+  const { ctx, compose, policy } = input;
+  return createDraft({
+    runId: input.runId,
+    managerUserId: ctx.managerUserId,
+    peerId: ctx.peerId,
+    clientId: ctx.identity.clientId,
+    leadId: ctx.identity.leadId,
+    identityStrength: ctx.identity.strength,
+    anchorTgMessageId: ctx.anchor!.tgMessageId,
+    anchorEditedAt: ctx.anchor!.editedAt,
+    kind: input.kind ?? 'reply',
+    body: compose.replyText,
+    glossUz: compose.glossUz || null,
+    language: compose.language,
+    category: compose.category,
+    confidence: compose.confidence,
+    nextStep: compose.nextStep,
+    policy: {
+      blocks: policy.blocks,
+      warnings: policy.warnings,
+      ledger: policy.ledger,
+      memory: input.memory,
+      card: cardMemory(ctx),
+      notes: input.notes,
+    },
+    blocked: !policy.ok,
+    needsOwner: compose.needsOwner,
+    ownerQuestion: compose.ownerQuestion || null,
+    actions: input.actions,
+    citedMessageIds: compose.citedMessageRefs
+      .map((r) => ctx.messages.find((m) => m.ref === r)?.id)
+      .filter((x): x is string => typeof x === 'string'),
+    offerId: null,
+  });
+}
+
+export { cardMemory };
 
 const NOTICE_WORDS: Record<string, string> = {
   voice_only: "🎤 Mijoz ovozli xabar yubordi — AI eshitmaydi, o'zingiz javob bering.",

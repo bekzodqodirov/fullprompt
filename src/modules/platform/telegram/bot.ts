@@ -18,6 +18,7 @@ import { h } from './format';
 import { cabinetInlineKeyboard } from './menu-button';
 import { linkStaffChat, staffForChat, startMenuFor } from './staff-bot';
 import { askStaffPhone, entryKeyboard, registerStaffBot } from './staff-handlers';
+import { registerAgentCommand } from './agent-bot';
 import { replyKeyboardFor } from './keyboards';
 import { ensureBotProfile, offerStaffCommands } from './commands';
 import { botCall, noteBotAnswer } from './send';
@@ -402,6 +403,10 @@ export function registerBotHandlers(bot: Bot): void {
     }
     await askStaffPhone(ctx, chatId);
   });
+
+  // «/agent» (0136): the AI sotuvchi's kill switch, beside /hodim and for the
+  // same reason — before registerStaffBot, so no collector or wait eats it.
+  registerAgentCommand(bot);
 
   // Staff first: its handlers only act for staff-linked chats (or explicit
   // «Hodim» intent) and call next() otherwise, so a customer's contact and

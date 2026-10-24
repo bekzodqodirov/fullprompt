@@ -280,7 +280,9 @@ export async function decideDraft(
   }
 
   const p = (d.policy ?? {}) as Partial<DraftPolicyJson>;
-  const policy = d.finalBody
+  // His own words — typed, or the offer text made from his typed price — pass
+  // the owner subset; the machine's pass the whole policy again.
+  const policy = d.finalBody || d.kind === 'price'
     ? await ownerPolicyFor(body, p.memory?.ownCodes ?? [])
     : p.memory
       ? await policyFor({

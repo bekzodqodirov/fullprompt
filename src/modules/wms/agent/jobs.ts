@@ -196,7 +196,11 @@ export async function agentSweep(now: Date = new Date()): Promise<{ expired: num
     }
   }
 
-  // 5. Actions stuck after their commit (build-6).
+  // 5. Strangers on the agent owner's account (§17.11, his 3a): ONE card per
+  //    peer, no message text, never for a colleague's phone (fit-7).
+  if (agentRunning(config)) await strangerCards(config.ownerUserId, now);
+
+  // 6. Actions stuck after their commit (build-6).
   const stuck = await db
     .select({ id: agentDrafts.id, decidedBy: agentDrafts.decidedBy })
     .from(agentDrafts)
@@ -210,4 +214,40 @@ export async function agentSweep(now: Date = new Date()): Promise<{ expired: num
     );
   }
   return { expired: expired.length, retired: retired.length, gap, retried, actions: stuck.length };
+}
+
+async function strangerCards(ownerUserId: string, now: Date): Promise<number> {
+  const rows = await db.execute<{ id: string; peer_id: string; peer_title: string | null; peer_phone: string | null }>(sql`
+    SELECT r.id, r.peer_id::text AS peer_id, r.peer_title, r.peer_phone
+      FROM tg_chat_rules r
+     WHERE r.manager_user_id = ${ownerUserId}
+       AND r.decision = 'pending'
+       AND r.created_at > ${new Date(now.getTime() - 24 * 3_600_000).toISOString()}::timestamptz
+       AND NOT EXISTS (SELECT 1 FROM agent_conversations c
+                        WHERE c.manager_user_id = r.manager_user_id AND c.peer_id = r.peer_id
+                          AND c.stranger_card_at IS NOT NULL)
+       AND NOT EXISTS (SELECT 1 FROM users u
+                        WHERE u.active AND u.phone IS NOT NULL AND r.peer_phone IS NOT NULL
+                          AND right(regexp_replace(u.phone, '\\D', '', 'g'), 9) = right(regexp_replace(r.peer_phone, '\\D', '', 'g'), 9))
+     ORDER BY r.created_at
+     LIMIT 10`);
+  const { notifyStaffTelegram } = await import('../../platform/notifications/staff');
+  for (const r of rows) {
+    // The claim first: one card per peer even when two sweeps overlap.
+    const claimed = await db.execute<{ peer_id: string }>(sql`
+      INSERT INTO agent_conversations (manager_user_id, peer_id, stranger_card_at)
+      VALUES (${ownerUserId}, ${r.peer_id}::bigint, now())
+      ON CONFLICT (manager_user_id, peer_id) DO UPDATE SET stranger_card_at = now(), updated_at = now()
+        WHERE agent_conversations.stranger_card_at IS NULL
+      RETURNING peer_id::text`);
+    if (claimed.length === 0) continue;
+    const who = r.peer_title?.trim() || 'Nomsiz';
+    await notifyStaffTelegram({
+      userIds: [ownerUserId],
+      type: 'AgentStranger',
+      text: `🆕 Yangi odam yozdi: ${who}\n${r.peer_phone ? `📞 ${r.peer_phone}` : '📵 raqam yashirin'}\n\nKim bu? Tanlang — AI faqat mijoz yoki lidga javob tayyorlaydi.`,
+      extra: { ruleId: r.id },
+    });
+  }
+  return rows.length;
 }

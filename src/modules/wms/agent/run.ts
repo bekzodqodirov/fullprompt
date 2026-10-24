@@ -142,10 +142,13 @@ export async function runLoop(input: {
   canary: string;
   callModel: CallModel;
   now: () => Date;
+  /** A run the OWNER's side started (a hand-back): what it is for, after the chat. */
+  instruction?: string;
 }): Promise<LoopResult> {
   const { ctx } = input;
   const started = input.now().getTime();
-  const messages: ModelMessage[] = [{ role: 'user', content: [{ type: 'text', text: chatBlock(ctx) }] }];
+  const opening = input.instruction ? `${chatBlock(ctx)}\n\nVAZIFA: ${input.instruction}` : chatBlock(ctx);
+  const messages: ModelMessage[] = [{ role: 'user', content: [{ type: 'text', text: opening }] }];
   const usage: ModelUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
   const tools: LoopResult['tools'] = [];
   const outcomes: ToolOutcome[] = [];
@@ -550,4 +553,94 @@ export async function __runsFor(managerUserId: string, peerId: bigint) {
     .from(agentRuns)
     .where(and(eq(agentRuns.managerUserId, managerUserId), eq(agentRuns.peerId, peerId), notInArray(agentRuns.outcome, ['__none__'])))
     .orderBy(desc(agentRuns.createdAt));
+}
+
+/**
+ * A run the OWNER's side starts — a VED hand-back's question for the customer
+ * (fit-5). Keyed by its own source (`agent_runs_source_unique`), so the same
+ * hand-back drafts once; the token cap holds, the inbound draft cap does not
+ * (money-11: his own work must not compete with the customers' day).
+ */
+export async function runOwnerTriggered(
+  input: {
+    trigger: 'hand_back' | 'calc_answer' | 'owner_edit';
+    managerUserId: string;
+    peerId: bigint;
+    sourceKey: string;
+    instruction: string;
+  },
+  deps: RunDeps = {},
+): Promise<RunResult> {
+  const now = deps.now ?? (() => new Date());
+  if (!(await agentTablesReady())) return { outcome: 'skipped', reason: 'not_ready' };
+  const config = await readAgentConfig();
+  if (!agentRunning(config) || config.ownerUserId !== input.managerUserId) return { outcome: 'skipped', reason: 'agent_off' };
+  const callModel = deps.callModel ?? (aiConfigured() ? realCallModel : null);
+  if (!callModel) return { outcome: 'skipped', reason: 'ai_not_configured' };
+  const ctx = await loadContext(input.managerUserId, input.peerId, null);
+  const t = now();
+  if (!ctx.anchor || t.getTime() - ctx.anchor.sentAt.getTime() > AGENT_LIMITS.anchorMaxAgeMs) {
+    return { outcome: 'skipped', reason: 'no_fresh_inbound' };
+  }
+  const dayStart = tashkentDayStart(tashkentDay(t)).toISOString();
+  const reserved = await db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${CAP_LOCK}))`);
+    const [row] = await tx.execute<{ tokens: number }>(sql`
+      SELECT coalesce(sum(input_tokens + output_tokens + cache_write_tokens), 0)::int AS tokens
+        FROM agent_runs WHERE created_at >= ${dayStart}::timestamptz`);
+    if (!(Number(row?.tokens ?? 0) < config.dailyTokenCap)) return 'capped';
+    const rows = await tx
+      .insert(agentRuns)
+      .values({
+        managerUserId: input.managerUserId,
+        peerId: input.peerId,
+        trigger: input.trigger,
+        anchorTgMessageId: ctx.anchor!.tgMessageId,
+        sourceKey: input.sourceKey,
+        model: STAFF_MODEL,
+      })
+      .onConflictDoNothing()
+      .returning({ id: agentRuns.id });
+    return rows[0]?.id ?? 'duplicate';
+  });
+  if (reserved === 'capped') return { outcome: 'capped', reason: 'daily_token_cap' };
+  if (reserved === 'duplicate') return { outcome: 'stood_down', reason: 'duplicate' };
+  const runId = reserved;
+  const started = Date.now();
+  let settle: Partial<typeof agentRuns.$inferInsert> = { outcome: 'error', error: 'unknown' };
+  try {
+    const facts = await generalFacts();
+    const canary = `gsr-${randomBytes(4).toString('hex')}`;
+    const loop = await runLoop({ ctx, config, facts, day: tashkentDay(t), canary, callModel, now, instruction: input.instruction });
+    settle = {
+      inputTokens: loop.usage.inputTokens,
+      outputTokens: loop.usage.outputTokens,
+      cacheReadTokens: loop.usage.cacheReadTokens,
+      cacheWriteTokens: loop.usage.cacheWriteTokens,
+      toolCalls: loop.tools.map((x) => ({ name: x.name, ok: x.ok, text: x.text })),
+    };
+    const c = loop.compose;
+    if (!c.replyNeeded && !c.needsOwner) {
+      settle = { ...settle, outcome: 'no_reply', error: null };
+      return { outcome: 'no_reply' };
+    }
+    const memory = memoryFor(ctx, loop, facts, canary);
+    const policy = await policyFor({ managerUserId: ctx.managerUserId, peerId: ctx.peerId, body: c.replyText, memory, strip: stripFor(ctx) });
+    const { actions, notes } = validateActions(c, ctx, loop.outcomes, t);
+    const written = await writeDraft({ runId, ctx, compose: c, policy, memory, actions, notes, kind: input.trigger === 'hand_back' ? 'hand_back' : 'reply' });
+    settle = { ...settle, outcome: written.kind === 'editing' ? 'stood_down' : 'draft', error: written.kind === 'editing' ? 'editing' : null };
+    return written.kind === 'editing'
+      ? { outcome: 'stood_down', reason: 'editing' }
+      : { outcome: 'draft', draftId: written.draftId, blocked: !policy.ok };
+  } catch (err) {
+    logger.error({ err, runId }, '[agent] owner-triggered run failed');
+    settle = { ...settle, outcome: 'error', error: err instanceof Error ? err.message.slice(0, 300) : 'error' };
+    return { outcome: 'error', reason: String(settle.error) };
+  } finally {
+    await db
+      .update(agentRuns)
+      .set({ ...settle, durationMs: Date.now() - started })
+      .where(eq(agentRuns.id, runId))
+      .catch((err: unknown) => logger.error({ err, runId }, '[agent] run not settled'));
+  }
 }

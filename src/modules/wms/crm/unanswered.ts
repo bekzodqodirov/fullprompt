@@ -176,7 +176,11 @@ export async function unansweredChats(
   for (const [seed, state] of states) {
     if (chatNeedsAnswer(state)) ringing.add(seed.candidate.row.message_id);
   }
-  const due = candidates.filter((c) => ringing.has(c.row.message_id));
+  const dueAll = candidates.filter((c) => ringing.has(c.row.message_id));
+  // A chat the AI sotuvchi already drafted is not silent: its card is on the
+  // holder's phone, and a second «javob kutmoqda» about it is noise (fit-3).
+  const drafted = await liveAgentDraftChats(dueAll.map((c) => ({ managerUserId: c.row.manager_user_id, peerId: c.row.peer_id })));
+  const due = dueAll.filter((c) => !drafted.has(`${c.row.manager_user_id}:${c.row.peer_id}`));
 
   // Whether each nudged manager may open the LEAD card the link would point
   // at — asked through the card's own predicate, fed the grants from the
@@ -267,4 +271,20 @@ export async function remindUnanswered(now = new Date()): Promise<number> {
     sent += 1;
   }
   return sent;
+}
+
+/** The (manager, peer) pairs that hold a live AI draft — empty on a database one migration behind. */
+async function liveAgentDraftChats(pairs: { managerUserId: string; peerId: string }[]): Promise<Set<string>> {
+  if (pairs.length === 0) return new Set();
+  const { agentTablesReady } = await import('../agent/config');
+  if (!(await agentTablesReady())) return new Set();
+  const rows = await db.execute<{ manager_user_id: string; peer_id: string }>(sql`
+    SELECT DISTINCT manager_user_id, peer_id::text AS peer_id
+      FROM agent_drafts
+     WHERE status IN ('pending', 'editing')
+       AND (manager_user_id, peer_id) IN (${sql.join(
+         pairs.map((p) => sql`(${p.managerUserId}::uuid, ${p.peerId}::bigint)`),
+         sql`, `,
+       )})`);
+  return new Set(rows.map((r) => `${r.manager_user_id}:${r.peer_id}`));
 }

@@ -145,7 +145,13 @@ export async function refreshAgentCard(draftId: string, extraNotes: string[] = [
   const text = renderDraftCard(d, o ?? null, extraNotes);
   const live = d.status === 'pending' || d.status === 'editing';
   const body = d.finalBody ?? d.proposedBody ?? '';
-  const extra = cardExtra({ id: d.id, body, actions: (d.actions ?? []) as unknown[], blocked: d.finalBody ? false : d.blocked, live, kind: d.kind });
+  const kb = ((d.policy ?? {}) as { kb?: string }).kb;
+  const extra = {
+    ...cardExtra({ id: d.id, body, actions: (d.actions ?? []) as unknown[], blocked: d.blocked, live, kind: d.kind }),
+    // After he answered the agent's question himself and it went out, the
+    // card offers to REMEMBER the answer (spec §7.1.4) — once.
+    kbAsk: d.status === 'approved' && d.needsOwner && d.finalBody !== null && kb !== 'saved' && kb !== 'skipped',
+  };
   const rows = await db
     .select({ id: notifications.id, payload: notifications.payload, locale: users.locale, status: notifications.status })
     .from(notifications)

@@ -2230,6 +2230,9 @@ async function announceSeal(
     text: `🧮 Hisob tayyor: $${totals.totalUsd.toFixed(2)}\n${link}`,
     exceptUserId: ctx.actorId ?? null,
   });
+  await (await import('../agent/calc-loop')).announceAgentCalcSafe(requestId, 'sealed', {
+    amountText: `$${totals.totalUsd.toFixed(2)}`,
+  });
 
   if (totals.discountUsd > 0 || input.bandOverrideMin !== null) {
     // WHO hears about a concession (round 112, his «4c»): the owner, the
@@ -2716,6 +2719,7 @@ export async function recalcFromSealed(
       linkLine(old.entityType, old.entityId),
     exceptUserId: ctx.actorId,
   }).catch((err) => logger.error({ err, newId }, '[calc] recalc notify failed'));
+  await (await import('../agent/calc-loop')).announceAgentCalcSafe(newId, 'recalc');
   // The old price's channel post gets its «qayta hisoblanmoqda» mark — derived
   // by the drain's reconcile from the graph this insert just changed; the
   // kick only makes it soon (his F).

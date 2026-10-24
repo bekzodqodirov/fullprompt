@@ -6,6 +6,7 @@ import { sendStaffMessage } from '../notifications/service';
 import { offerStaffCommands } from './commands';
 import { editMarkup, editText, sendText, sendTextBriefRetry, sendTyping } from './send';
 import { answerPress } from './press';
+import { agentTextSlot, handleAgentPress } from './agent-bot';
 import { isBacklog } from './lifecycle';
 import { HANDLED_SENTENCE, tellBacklogOnce } from './backlog';
 import { claimOnce, handledAlready, markOnce, messageKey, pressKey, type OnceKey } from './once';
@@ -340,6 +341,12 @@ export function registerStaffBot(bot: Bot): void {
     if (parsed.kind === 'calc') {
       await answerPress(ctx);
       await handleCalcCallback(ctx as unknown as CalcReplyCtx, chatId, parsed.step);
+      return;
+    }
+
+    // The AI sotuvchi's cards (0136) — every op answered by its own shell.
+    if (parsed.kind === 'agent') {
+      await handleAgentPress(ctx, chatId, parsed);
       return;
     }
 
@@ -964,6 +971,26 @@ export function registerStaffBot(bot: Bot): void {
       const staff = await staffForChat(chatId);
       if (!staff) return next();
       await draftText(ctx, chatId, draft);
+      return;
+    }
+
+    // The AI sotuvchi's ONE text slot (0136, regression-6): his edited reply,
+    // his price, a stranger's code — BELOW every live collector (one
+    // collector at a time) and ABOVE the reply door and `takeTaskPending`
+    // (which deletes on read). A swipe-reply to an agent card names its own
+    // draft; otherwise the one live agent wait does.
+    if (
+      !escapesIntake(ctx.message.text) &&
+      (await agentTextSlot(
+        ctx,
+        chatId,
+        ctx.message.text,
+        ctx.message.date,
+        ctx.message.reply_to_message && ctx.message.reply_to_message.from?.id === ctx.me.id
+          ? ctx.message.reply_to_message.message_id
+          : null,
+      ))
+    ) {
       return;
     }
 

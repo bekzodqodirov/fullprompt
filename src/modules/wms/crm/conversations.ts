@@ -1236,6 +1236,26 @@ export async function resolveChatStates<T extends ChatStateSeed>(
   );
 
   /**
+   * An approved AI sotuvchi reply on its way out (0136, review regression-7)
+   * — keyed by the DIALOG, which also covers a lead's chat. Asked only when
+   * the table exists, so a database one migration behind answers as today.
+   * `agent` (approved, held to its step clock), `sending` and `sent` count,
+   * like the human queue; a cancelled or failed one does not.
+   */
+  const { agentTablesReady } = await import('../agent/config');
+  const agentRows = (await agentTablesReady())
+    ? await db.execute<{ manager_user_id: string; peer_id: string; last_out: Date }>(sql`
+        SELECT manager_user_id, peer_id::text AS peer_id, max(queued_at) AS last_out
+        FROM agent_outbox
+        WHERE status IN ('agent', 'sending', 'sent')
+          AND manager_user_id IN (${sql.join(managers, sql`, `)})
+          AND peer_id IN (${sql.join(peers, sql`, `)})
+        GROUP BY manager_user_id, peer_id
+      `)
+    : [];
+  const agentPending = new Map(agentRows.map((r) => [`${r.manager_user_id}:${r.peer_id}`, new Date(r.last_out)]));
+
+  /**
    * A lead seed's extra door (`leadChatState`): when its lead CLOSED. Asked
    * here, by the resolver, rather than carried on every caller's seed —
    * four readers each remembering to select `closed_at` is four chances for
@@ -1252,7 +1272,9 @@ export async function resolveChatStates<T extends ChatStateSeed>(
   );
 
   for (const seed of seeds) {
-    const lastOut = seed.clientId ? pending.get(`${seed.clientId}:${seed.managerUserId}`) : undefined;
+    const human = seed.clientId ? pending.get(`${seed.clientId}:${seed.managerUserId}`) : undefined;
+    const agent = agentPending.get(`${seed.managerUserId}:${String(seed.peerId)}`);
+    const lastOut = human && agent ? (human > agent ? human : agent) : (human ?? agent);
     const state = chatState({
       lastDirection: seed.direction,
       lastInboundTgId: seed.direction === 'in' ? BigInt(seed.tgMessageId) : null,

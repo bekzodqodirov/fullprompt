@@ -375,7 +375,20 @@ export type BotCallback =
    * resolver a swipe-reply uses, so nothing can be forged and a deploy between
    * the send and the press loses nothing.
    */
-  | { kind: 'thread_reply' };
+  | { kind: 'thread_reply' }
+  /**
+   * The AI sotuvchi's buttons (0136, docs/AI-SOTUVCHI.md §17.7) — ONE grammar
+   * `ag:<op>:<uuid>[:<digest>]`. The id is a draft (s e r h g u z), a
+   * calculation request (p) or a tray rule (n k x c b); the digest rides only
+   * on ✅ and names what the card SHOWED, so a press on a card that has since
+   * changed is refused (leak-3). `ag:` collides with nothing: `a:` is
+   * anchored to `[01]:`.
+   */
+  | { kind: 'agent'; op: AgentOp; id: string; digest?: string };
+
+/** ✅ send · ✏️ edit · ❌ reject · 🙋 his · 💵 price · 🆕 lead · 👤 code · 🚫 personal · ✔ code confirmed · ↩ not that client · 📌 general · 👤 own · ✖ skip. */
+export const AGENT_OPS = ['s', 'e', 'r', 'h', 'p', 'n', 'k', 'x', 'c', 'b', 'g', 'u', 'z'] as const;
+export type AgentOp = (typeof AGENT_OPS)[number];
 
 /**
  * What a REPEAT of each press does (Q5 a, judge T14) — a Record over the
@@ -413,6 +426,9 @@ export const PRESS_REPEAT: Record<BotCallback['kind'], 'cas' | 'keyed' | 'prompt
   draft_pick: 'prompt',
   forward: 'keyed',
   thread_reply: 'prompt',
+  // Every agent press is decided by a CAS in its service: a draft that is no
+  // longer pending, a rule already decided, an offer already written.
+  agent: 'cas',
 };
 
 /** ⏰'s four answers. */
@@ -612,6 +628,15 @@ export function parseCallback(data: string): BotCallback | null {
       verdict: calcLink[1] === '1' ? 'confirm' : 'drop',
     };
   }
+  const agent = /^ag:([a-z]):([0-9a-f-]{36})(?::([0-9a-f]{8}))?$/.exec(data);
+  if (agent && (AGENT_OPS as readonly string[]).includes(agent[1]!)) {
+    return {
+      kind: 'agent',
+      op: agent[1] as AgentOp,
+      id: agent[2]!,
+      ...(agent[3] ? { digest: agent[3] } : {}),
+    };
+  }
   const approval = /^a:([01]):([0-9a-f-]{36})$/.exec(data);
   if (approval) {
     return {
@@ -654,6 +679,8 @@ export function buttonsFor(type: string, payload: Record<string, unknown>): BotB
   if (type === 'TaskReassigned' && taskId && payload.offerSources === true) {
     return [[{ text: '📤 Manbani yangi odamga yuborish', callback_data: `tf:${taskId}` }]];
   }
+  const agentRows = agentButtons(type, payload);
+  if (agentRows) return agentRows;
   if (type === 'DebtApprovalRequested' && typeof payload.approvalId === 'string') {
     return [
       [
@@ -698,6 +725,52 @@ export function buttonsFor(type: string, payload: Record<string, unknown>): BotB
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The AI sotuvchi's cards (0136). A draft card draws its four controls only
+ * while the draft is live, and ✅ only when the policy found nothing (leak-3)
+ * — with the digest of what the card shows. After he answered a question the
+ * agent asked him, the card offers to remember the answer. Every row drawn is
+ * one `parseCallback` accepts (#939: an unparsed press spins for 15 s).
+ */
+function agentButtons(type: string, payload: Record<string, unknown>): BotButton[][] | null {
+  const id = typeof payload.draftId === 'string' && UUID.test(payload.draftId) ? payload.draftId : null;
+  if (type === 'AgentDraft' && id) {
+    if (payload.kbAsk === true) {
+      return [
+        [
+          { text: '📌 Umumiy qoida', callback_data: `ag:g:${id}` },
+          { text: '👤 Faqat shu mijoz', callback_data: `ag:u:${id}` },
+        ],
+        [{ text: '✖ Saqlamaslik', callback_data: `ag:z:${id}` }],
+      ];
+    }
+    if (payload.live !== true) return null;
+    const digest = typeof payload.digest === 'string' && /^[0-9a-f]{8}$/.test(payload.digest) ? payload.digest : null;
+    const first: BotButton[] = [];
+    if (payload.blocked !== true && digest) first.push({ text: '✅ Yuborish', callback_data: `ag:s:${id}:${digest}` });
+    first.push({ text: '✏️ O‘zim yozaman', callback_data: `ag:e:${id}` });
+    return [first, [{ text: '❌ Kerak emas', callback_data: `ag:r:${id}` }, { text: '🙋 Suhbat meniki', callback_data: `ag:h:${id}` }]];
+  }
+  const requestId = typeof payload.requestId === 'string' && UUID.test(payload.requestId) ? payload.requestId : null;
+  if (type === 'AgentCalcAnswered' && requestId && payload.priceable === true) {
+    return [[{ text: '💵 Narx yozaman', callback_data: `ag:p:${requestId}` }]];
+  }
+  const ruleId = typeof payload.ruleId === 'string' && UUID.test(payload.ruleId) ? payload.ruleId : null;
+  if (type === 'AgentStranger' && ruleId) {
+    return [
+      [
+        { text: '🆕 Yangi lid', callback_data: `ag:n:${ruleId}` },
+        { text: '👤 Mijoz — kod', callback_data: `ag:k:${ruleId}` },
+      ],
+      [{ text: '🚫 Shaxsiy', callback_data: `ag:x:${ruleId}` }],
+    ];
+  }
+  if (type === 'AgentCodeEcho' && ruleId && typeof payload.clientId === 'string' && UUID.test(payload.clientId)) {
+    return [[{ text: '✅ Ha, shu mijoz', callback_data: `ag:c:${ruleId}` }, { text: '↩ Yo‘q', callback_data: `ag:b:${ruleId}` }]];
+  }
+  return null;
+}
 
 export type CallbackButton = { text: string; callback_data: string };
 export type UrlButton = { text: string; url: string };

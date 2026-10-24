@@ -147,6 +147,17 @@ export async function registerCalcPrefillWorker(boss: PgBoss): Promise<void> {
           type: 'CalcPrefilled',
           text: out.text,
         });
+        // The AI-VED's estimate, «rasmiy emas», to the AI sotuvchi's owner when
+        // the agent sent this job (his Q5 ⭐ c) — a no-op otherwise.
+        if (out.customsUsd !== null || out.freightUsd !== null) {
+          const parts = [
+            out.customsUsd !== null ? `rastamojka ≈ $${out.customsUsd.toFixed(2)}` : null,
+            out.freightUsd !== null ? `yo'lkira ≈ $${out.freightUsd.toFixed(2)}` : null,
+          ].filter(Boolean);
+          await (await import('../agent/calc-loop')).announceAgentCalcSafe(requestId, 'estimate', {
+            amountText: parts.join(', '),
+          });
+        }
         // His answer 2a: the SAME text onto the card's lenta. Two audiences
         // for one answer — the seller reads it on a phone and forgets it, the
         // VED opens the card tomorrow and needs to see what the machine told
