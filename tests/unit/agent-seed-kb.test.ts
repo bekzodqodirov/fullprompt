@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { SEED_FACTS } from '@/modules/wms/agent/seed-kb';
 import { extractNumbers, PHONE_RE, urlsIn } from '@/modules/wms/agent/numbers';
 import { normalizeDigits } from '@/modules/wms/agent/digits';
+import { AGENT_LIMITS } from '@/modules/wms/agent/limits';
 
 /**
  * The starting knowledge is a REVIEWED list, and these are the review's rules
@@ -34,6 +35,16 @@ describe('the seeded knowledge', () => {
     expect(phones.map(([key]) => key)).toEqual(['tashkent_warehouse@1']);
     const links = SEED_FACTS.flatMap((f) => urlsIn(text(f)).map((u) => [f.key, u] as const));
     expect(links).toEqual([['tashkent_map@1', 'https://yandex.uz/maps/-/CXQr78ni']]);
+  });
+
+  it('says what he asked to have written down (2026-10-24) — and with the numbers the agent itself obeys', () => {
+    const byKey = new Map(SEED_FACTS.map((f) => [f.key, normalizeDigits(f.answer)]));
+    const { m3, kg } = AGENT_LIMITS.minShipment;
+    expect(byKey.get('min_shipment@1')).toContain(`${m3} kub yoki ${kg} kg`);
+    const avia = byKey.get('avia@1')!;
+    expect(avia).toContain(`${AGENT_LIMITS.avia.minKg} kg`);
+    expect(avia).toContain(`${AGENT_LIMITS.avia.daysMin}–${AGENT_LIMITS.avia.daysMax} kun`);
+    expect(byKey.get('certificate@1')).toMatch(/kompaniyamiz oʻzi/u);
   });
 
   it('keys every fact once, with a version, inside the kb CHECK’s 2 000 characters', () => {
