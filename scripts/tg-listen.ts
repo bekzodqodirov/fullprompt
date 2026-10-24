@@ -127,7 +127,6 @@ import {
 import { agentTelegramOver } from '../src/modules/wms/agent/gramjs-adapter';
 import { isNudge } from '../src/modules/wms/agent/worthy';
 import {
-  HIDDEN_NUMBER_CARD_READY,
   isNewestInbound,
   noteStranger,
   stampPeerTyping,
@@ -606,8 +605,6 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
         title: peerTitle(peer),
         verdict,
         user: peer.user,
-        // No phone-less rule until the «📵» card's «🆕 Yangi lid» can open a lead without a phone.
-        hiddenNumberRule: HIDDEN_NUMBER_CARD_READY,
       });
     } catch (err) {
       console.error('notanish belgisi yozilmadi:', err instanceof Error ? err.message : err);

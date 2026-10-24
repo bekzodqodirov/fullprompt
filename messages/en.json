@@ -6205,7 +6205,7 @@
     "rulesHint": "Not knowledge — rules the AI follows. The numbers come from the system itself.",
     "ruleTruckMin": "Truck: from {m3} m³ or {kg} kg — below that the AI quotes no price, sends nothing to calculation and states this minimum.",
     "ruleAviaMin": "Air: from {kg} kg; arrives in about {min}–{max} days, {min} days when a flight is scheduled (not a promise).",
-    "ruleAviaVolume": "Air: when the volumetric weight (1 m³ = {perM3} kg) is above the actual weight, the AI quotes no price — it asks you.",
+    "ruleAviaActualKg": "Air: priced on the actual kilos only — the volume does not count, and there is no upper limit.",
     "ruleAviaRate": "Air rate",
     "ruleAviaRateValue": "{rate} $/kg",
     "ruleAviaRateNone": "not set — the AI quotes no air price and asks you",

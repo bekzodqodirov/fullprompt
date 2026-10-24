@@ -774,6 +774,58 @@ describe('the send path’s review fixes', () => {
     expect(text).not.toContain(tashkentStamp(first));
   });
 
+
+
+  it('a day cap or a flood wait that holds the reply past the minute says when it goes — never «yuborilmoqda…» all night (cards review)', async () => {
+    for (const [reason, kind] of [
+      ['day_cap', 'wait'],
+      ['chat_day_cap', 'wait'],
+      ['flood_wait', 'wait'],
+      ['flooded', 'flooded'],
+    ] as const) {
+      const own = await makeManager(`hold-${reason}`);
+      const { row, draftId } = await approved({ manager: own.userId });
+      await db.insert(notifications).values({
+        userId: own.userId,
+        channel: 'telegram',
+        type: 'AgentDraft',
+        payload: { draftId, text: '✅ Tasdiqlandi · yuborilmoqda…' },
+        status: 'sent',
+      });
+      const until = new Date(Date.now() + 16 * 3_600_000);
+      await applyAgentOutcome(
+        row,
+        kind === 'flooded'
+          ? { kind: 'flooded', seconds: 16 * 3_600, method: 'messages.SendMessage' }
+          : { kind: 'wait', reason, nextStepAt: until },
+        own.account,
+      );
+      const [card] = await db
+        .select()
+        .from(notifications)
+        .where(and(eq(notifications.userId, own.userId), eq(notifications.type, 'AgentDraft')));
+      const text = String((card!.payload as { text?: unknown }).text);
+      const held = (await agentRowById(row.id))!.nextStepAt;
+      expect(text, reason).toContain(`${tashkentStamp(held)} da ketadi`);
+      expect(text, reason).not.toContain('yuborilmoqda');
+    }
+    // A short wait stays «yuborilmoqda…»: the slot's retry is seconds, and no card is touched for it.
+    const own = await makeManager('hold-slot');
+    const { row, draftId } = await approved({ manager: own.userId });
+    await db.insert(notifications).values({
+      userId: own.userId,
+      channel: 'telegram',
+      type: 'AgentDraft',
+      payload: { draftId, text: `✅ Tasdiqlandi · yuborilmoqda… ${draftId}` },
+      status: 'sent',
+    });
+    await applyAgentOutcome(row, { kind: 'wait', reason: 'slot_held', nextStepAt: new Date(Date.now() + 5_000) }, own.account);
+    const [card] = await db
+      .select()
+      .from(notifications)
+      .where(and(eq(notifications.userId, own.userId), eq(notifications.type, 'AgentDraft')));
+    expect(String((card!.payload as { text?: unknown }).text)).toBe(`✅ Tasdiqlandi · yuborilmoqda… ${draftId}`);
+  });
   it('every step stamps when it was taken — what the night asks of a reply past its read (S3’s follow-up)', async () => {
     const { row } = await approved({ step: 'read' });
     expect(row.lastStepAt).toBeNull();

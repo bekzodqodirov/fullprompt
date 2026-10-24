@@ -21,7 +21,6 @@ import { agentTablesReady, type AgentConfig } from './config';
 import { AGENT_LIMITS } from './limits';
 import { agentStats, type AgentStats } from './stats';
 import { dayRunCounts, sendsToday } from './today';
-import { AVIA_KG_PER_M3 } from './tools';
 import type { ComposedAction } from './types';
 
 /**
@@ -249,7 +248,7 @@ export async function agentToday(config: AgentConfig, now = new Date()): Promise
  */
 export interface AgentRules {
   truckMin: { m3: number; kg: number };
-  avia: { minKg: number; daysMin: number; daysMax: number; kgPerM3: number; usdPerKg: number | null; setAt: Date | null };
+  avia: { minKg: number; daysMin: number; daysMax: number; usdPerKg: number | null; setAt: Date | null };
 }
 
 export function agentRules(config: Pick<AgentConfig, 'aviaUsdPerKg' | 'aviaRateSetAt'>): AgentRules {
@@ -259,7 +258,6 @@ export function agentRules(config: Pick<AgentConfig, 'aviaUsdPerKg' | 'aviaRateS
       minKg: AGENT_LIMITS.avia.minKg,
       daysMin: AGENT_LIMITS.avia.daysMin,
       daysMax: AGENT_LIMITS.avia.daysMax,
-      kgPerM3: AVIA_KG_PER_M3,
       usdPerKg: config.aviaUsdPerKg,
       setAt: config.aviaRateSetAt,
     },

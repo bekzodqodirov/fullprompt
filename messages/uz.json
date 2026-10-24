@@ -6205,7 +6205,7 @@
     "rulesHint": "Bu bilim emas — AI shularga amal qiladi. Sonlar tizimning o‘zidan olinadi.",
     "ruleTruckMin": "Avto: eng kamida {m3} kub yoki {kg} kg yuk qabul qilinadi — kamrog‘iga AI narx aytmaydi va hisoblatishga ham yubormaydi, shu minimumni aytadi.",
     "ruleAviaMin": "Avia: eng kamida {kg} kg; yetib borishi taxminan {min}–{max} kun, reys bo‘lsa {min} kun (va’da emas).",
-    "ruleAviaVolume": "Avia: hajmiy og‘irligi (1 kub = {perM3} kg) haqiqiy og‘irligidan ko‘p yukka AI narx aytmaydi — narxni sizdan so‘raydi.",
+    "ruleAviaActualKg": "Avia: narx faqat haqiqiy kg bo‘yicha — hajm (kub) hisobga olinmaydi, yuqori chegara yo‘q.",
     "ruleAviaRate": "Avia tarifi",
     "ruleAviaRateValue": "{rate} $/kg",
     "ruleAviaRateNone": "belgilanmagan — AI avia narxini aytmaydi, sizdan so‘raydi",

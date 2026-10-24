@@ -236,7 +236,7 @@ describe('the avia rate on «AI qoidalari» (§17.14) — the page’s door, cen
     expect(out).toMatchObject({ aviaUsdPerKg: 18.5, aviaRateSetBy: holderId });
     expect(out.aviaRateSetAt).not.toBeNull();
     expect((await readAgentConfig())!.aviaUsdPerKg).toBe(18.5);
-    expect(agentRules((await readAgentConfig())!).avia).toMatchObject({ usdPerKg: 18.5, minKg: 1, daysMin: 2, daysMax: 5, kgPerM3: 200 });
+    expect(agentRules((await readAgentConfig())!).avia).toMatchObject({ usdPerKg: 18.5, minKg: 1, daysMin: 2, daysMax: 5 });
     const [audit] = await db
       .select()
       .from(auditLog)

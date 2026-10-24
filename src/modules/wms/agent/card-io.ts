@@ -108,7 +108,9 @@ function statusLine(d: DraftRow, o: OutboxRow | null): string | null {
 function actionLines(actions: ComposedAction[]): string[] {
   return actions.map((a) => {
     if (a.type === 'calc_submit') {
-      return `🧮 Hisoblatishga: ${SECTION_WORDS[a.section] ?? a.section} · lentaga ${a.citedMessageIds.length} ta xabar · kelib chiqish sertifikati: kompaniya o‘zi oladi`;
+      // His third set «3»: a job priced from our Chinese warehouses says so on the card he approves.
+      const ours = a.fromOurWarehouse === true ? ' · narx Xitoydagi omborimizdan, zavoddan omborgacha alohida' : '';
+      return `🧮 Hisoblatishga: ${SECTION_WORDS[a.section] ?? a.section} · lentaga ${a.citedMessageIds.length} ta xabar · kelib chiqish sertifikati: kompaniya o‘zi oladi${ours}`;
     }
     if (a.type === 'set_followup') return `📅 Qayta aloqa: ${a.date}${a.note ? ` — ${a.note}` : ''}`;
     return '🔕 Bu chatda AI o‘chiriladi';

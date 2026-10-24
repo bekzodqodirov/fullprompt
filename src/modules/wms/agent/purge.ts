@@ -136,9 +136,9 @@ export async function purgeAgentChat(managerUserId: string, peerId: bigint): Pro
     // from, and a calculation answer's «💵 Narx yozaman» would arm a price
     // wait whose link this same transaction deletes. A copy not yet sent is
     // never sent (a blank card is noise, not news). A copy the drain has
-    // CLAIMED (`sending`) carries no `tg` yet: the edit below skips it, and it
-    // arrives with the text it was claimed with — the drain re-reads nothing
-    // after a send, and that after-send check is owed (stated).
+    // CLAIMED (`sending`) carries no `tg` yet: the edit below skips it, and the
+    // drain corrects that copy itself once its `tg` is written
+    // (`correctAgentCopyInFlight`, platform/notifications/service.ts).
     const blanked = await tx
       .update(notifications)
       .set({

@@ -15,7 +15,7 @@ import { AGENT_LOCALES } from './locale';
 import { namedOrigin, placesOf, quoteOrigin, type QuoteOrigin } from './origin';
 import { customerSources, extractNumbers, factSources, type NumberSource } from './numbers';
 import { warehouseSentencesText } from './policy';
-import { SITE_TARIFF, siteEstimate } from './site-estimate';
+import { siteEstimate } from './site-estimate';
 import type { AgentContext, MeasureCandidate } from './context';
 import type { KbHit } from './kb';
 
@@ -419,13 +419,6 @@ async function yolkira(input: Record<string, unknown>, env: ToolEnv): Promise<To
  * The review's volumetric refusal (the website's air calculator bills
  * max(kg, m³ × 200)) is gone with that answer.
  */
-/**
- * The air calculator's kilos per cubic metre (5 000 cm³/kg). The agent no
- * longer reads it (his «2b»): only the page's «AI qoidalari» line still
- * imports it, and that line is the web package's to retire.
- */
-export const AVIA_KG_PER_M3 = 1_000_000 / SITE_TARIFF.air.volumetricDivisor;
-
 function avia(input: Record<string, unknown>, env: ToolEnv): ToolOutcome {
   const { ctx } = env;
   const rate = env.aviaUsdPerKg;

@@ -82,6 +82,7 @@ export const ERROR_KEYS: Record<AgentErrorCode, string> = {
   ambiguous_number: 'errors.ambiguous_number',
   editing_open: 'errors.editing_open',
   no_anchor: 'errors.no_anchor',
+  recalculated: 'errors.recalculated',
   unknown: 'errors.unknown',
 };
 

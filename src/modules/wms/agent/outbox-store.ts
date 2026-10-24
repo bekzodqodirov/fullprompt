@@ -398,6 +398,9 @@ async function settled(row: AgentOutboxRow): Promise<void> {
 
 const LIVE = ['agent', 'sending'] as const;
 
+/** A hold the card names by its time — card-io's statusLine prints «yuborilmoqda…» for a minute or less ahead. */
+const heldPastCard = (until: Date, now: Date) => until.getTime() > now.getTime() + 60_000;
+
 /**
  * Write one step's outcome.
  *
@@ -431,10 +434,15 @@ export async function applyAgentOutcome(
     }
     case 'wait': {
       if (outcome.reason !== 'night') {
-        await db
+        const moved = await db
           .update(agentOutbox)
           .set({ nextStepAt: outcome.nextStepAt })
-          .where(and(eq(agentOutbox.id, row.id), eq(agentOutbox.status, 'agent')));
+          .where(and(eq(agentOutbox.id, row.id), eq(agentOutbox.status, 'agent')))
+          .returning({ id: agentOutbox.id });
+        // A day cap or a send wait holds it to the morning, or for hours: the
+        // card says when it goes instead of «yuborilmoqda…» all night. A
+        // seconds-long hold (the send slot's retry) touches no card.
+        if (moved.length > 0 && heldPastCard(outcome.nextStepAt, now)) await settled(row);
         return quiet;
       }
       // A night hold moves the approval's own clock with it (S2, S3): the reply waits for the morning it is
@@ -497,11 +505,14 @@ export async function applyAgentOutcome(
     case 'flooded': {
       // The row goes back to waiting FIRST, so a forced «off» below finds it
       // as an approved reply and cancels it with the rest.
-      await db
+      const until = floodEnds(outcome.seconds, now);
+      const back = await db
         .update(agentOutbox)
-        .set({ status: 'agent', nextStepAt: floodEnds(outcome.seconds, now) })
-        .where(and(eq(agentOutbox.id, row.id), inArray(agentOutbox.status, [...LIVE])));
+        .set({ status: 'agent', nextStepAt: until })
+        .where(and(eq(agentOutbox.id, row.id), inArray(agentOutbox.status, [...LIVE])))
+        .returning({ id: agentOutbox.id });
       await accountFlooded(account, { method: outcome.method, seconds: outcome.seconds, source: 'raise' }, now);
+      if (back.length > 0 && heldPastCard(until, now)) await settled(row);
       return quiet;
     }
     case 'failed': {

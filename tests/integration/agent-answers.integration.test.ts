@@ -44,6 +44,7 @@ import { getSetting, setSetting } from '@/modules/platform/settings/service';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { announceAgentCalc, handleHandBack, HAND_BACK_RETRY_S, priceDraftFromText } from '@/modules/wms/agent/calc-loop';
 import { readAgentConfig, __restoreAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
+import { priceRefusalText } from '@/modules/wms/agent/bot-door';
 import { decideDraft, noteIdFor } from '@/modules/wms/agent/decide';
 import { priceReplyText } from '@/modules/wms/agent/price-reply';
 import { AGENT_LOCALES } from '@/modules/wms/agent/locale';
@@ -301,7 +302,7 @@ describe('«💵 Narx yozaman» — the price goes to the customer ONLY (his 6 b
     expect(d!.proposedBody).toBe(priceReplyText('ru', 'podklyuch', 1250));
     expect(d!.proposedBody).toContain('1 250');
     const sources = (d!.policy as { memory: { sources: { value: number; kind: string; label: string }[] } }).memory.sources;
-    expect(sources).toEqual([{ value: 1250, kind: 'money', label: 'sizning narxingiz' }]);
+    expect(sources).toEqual([{ value: 1250, kind: 'money', label: 'sizning narxingiz', origin: 'tool' }]);
 
     // Nothing on the deal: no offer row, the card's price untouched.
     const [offersAfter] = await db.select({ n: sql<number>`count(*)::int` }).from(calcOffers).where(eq(calcOffers.entityId, deal.id));
@@ -327,8 +328,7 @@ describe('«💵 Narx yozaman» — the price goes to the customer ONLY (his 6 b
       .values({ managerUserId: ownerId, peerId: PEER, clientId, anchorTgMessageId: anchor, proposedBody: 'x', status: 'editing' })
       .returning({ id: agentDrafts.id });
     const r = await priceDraftFromText(ownerId, requestId, '1250');
-    expect(r).toMatchObject({ ok: false, code: 'refused' });
-    expect((r as { detail?: string }).detail).toContain('yozayotgan');
+    expect(r).toEqual({ ok: false, code: 'editing_open' });
     const rows = await db.select().from(agentDrafts).where(eq(agentDrafts.peerId, PEER));
     expect(rows.map((x) => x.id)).toEqual([editing!.id]);
     // A figure he did not type — more than cents — is not his price either.
@@ -481,8 +481,8 @@ describe('«💵 Narx yozaman» after the review — the language it answers, an
     const { requestId } = await linkedRequest();
     await inbound('Narxi qancha?');
     const r = await priceDraftFromText(ownerId, requestId, '1.250');
-    expect(r).toMatchObject({ ok: false, code: 'refused' });
-    expect((r as { detail?: string }).detail).toContain('1250 dollarmi yoki 1,25 dollarmi');
+    expect(r).toEqual({ ok: false, code: 'ambiguous_number', readings: { thousands: 1250, decimal: '1,25' } });
+    expect(priceRefusalText(r as never, '1.250')).toContain('1250 dollarmi yoki 1,25 dollarmi');
     expect(await liveDraft()).toBeNull();
   });
 });
@@ -695,6 +695,16 @@ describe('«from China» is priced from our China warehouses, and the reply says
     expect(req).toMatchObject({ freightZone: 'cn', fromCity: 'Xitoy' });
     const [note] = await db.select({ note: crmActivities.note }).from(crmActivities).where(eq(crmActivities.id, noteIdFor(d!.id)));
     expect(note!.note).toContain('Narx Xitoydagi omborimizdan; zavoddan omborgacha olib kelish alohida.');
+
+    // …and his 💵 on that job's answer tells the customer the same two things
+    // with his figure (a job sent from Yiwu, or with no draft behind it, does
+    // not — the «💵 Narx yozaman» tests above pin the bare sentence).
+    const priced = await priceDraftFromText(ownerId, req!.id, '1250');
+    expect(priced).toMatchObject({ ok: true });
+    const [pd] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, (priced as { draftId: string }).draftId));
+    expect(pd!.proposedBody).toContain(WAREHOUSE_SENTENCES.uz.condition);
+    expect(pd!.proposedBody).toContain(WAREHOUSE_SENTENCES.uz.factory);
+    expect(pd!.proposedBody!.startsWith(priceReplyText('uz', 'podklyuch', 1250))).toBe(true);
   });
 
   it('…and so does one from a Chinese city we have no warehouse in — Dongguan, which read as «not said» (fix round)', async () => {

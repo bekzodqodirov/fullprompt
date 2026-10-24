@@ -38,6 +38,7 @@ export const POLICY_WORDS: Record<PolicyCode, string> = {
   fingerprint: 'bir xil matn ko‘p mijozga ketgan',
   url_cap: 'havola juda tez-tez',
   estimate_unhedged: '«taxminan» yoki «boj va QQS alohida» yo‘q',
+  warehouse_condition: '«Xitoydagi omborimizdan» sharti yoki «zavoddan omborgacha alohida» yo‘q',
 };
 
 export const PROMISE_WORDS: Record<PromiseCategory, string> = {

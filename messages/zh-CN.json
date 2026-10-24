@@ -6205,7 +6205,7 @@
     "rulesHint": "这不是知识，而是 AI 遵守的规则。数字取自系统本身。",
     "ruleTruckMin": "汽运：最少 {m3} 立方或 {kg} 公斤——低于此量 AI 不报价，也不提交核算，只说明这个最低量。",
     "ruleAviaMin": "空运：最少 {kg} 公斤；约 {min}–{max} 天到达，有航班时 {min} 天（不是承诺）。",
-    "ruleAviaVolume": "空运：体积重（1 立方 = {perM3} 公斤）大于实际重量时，AI 不报价——向您询问。",
+    "ruleAviaActualKg": "空运：只按实际重量计价——不计体积，没有上限。",
     "ruleAviaRate": "空运运价",
     "ruleAviaRateValue": "{rate} $/公斤",
     "ruleAviaRateNone": "未设置——AI 不报空运价格，会问您",

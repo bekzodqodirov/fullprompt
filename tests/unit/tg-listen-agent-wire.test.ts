@@ -237,8 +237,6 @@ describe('the send path’s review fixes, as wired', () => {
     expect(seen).toContain('if (out || !peer.user) return;');
     expect(seen.indexOf('agentHere()')).toBeLessThan(seen.indexOf('noteStranger('));
     expect(seen).not.toMatch(/msg\.|message:|body:/);
-    // No phone-less rule until the «📵» card can act on it (listener-hooks' gate, fenced by the door).
-    expect(seen).toContain('hiddenNumberRule: HIDDEN_NUMBER_CARD_READY');
     const handle = body('const handleMessage = async', 'const rethinkOnEdit = async');
     expect(handle).toContain("strangerSeen(peer, msg.out === true, 'ask')");
     expect(handle).toContain("if (verdict.reason === 'no_phone') await strangerSeen(peer, msg.out === true, 'no_phone')");

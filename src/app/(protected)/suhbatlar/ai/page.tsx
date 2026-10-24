@@ -305,7 +305,7 @@ function RulesCard({ t, config }: { t: T; config: AgentConfig }) {
         <li data-testid="agent-rule-avia">
           ✈️ {t('ruleAviaMin', { kg: avia.minKg, min: avia.daysMin, max: avia.daysMax })}
         </li>
-        <li data-testid="agent-rule-avia-volume">📦 {t('ruleAviaVolume', { perM3: avia.kgPerM3 })}</li>
+        <li data-testid="agent-rule-avia-kg">📦 {t('ruleAviaActualKg')}</li>
         <li data-testid="agent-rule-avia-rate">
           💵 {t('ruleAviaRate')}:{' '}
           <span className="font-semibold">

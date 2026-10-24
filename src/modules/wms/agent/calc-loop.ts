@@ -17,10 +17,12 @@ import { agentRunning, readAgentConfig } from './config';
 import { chatIdentity } from './context';
 import { createDraft, requestRecalculated, type DraftPolicyJson } from './drafts';
 import { AGENT_LOCALES, detectLocale, type AgentLocale } from './locale';
+import { WAREHOUSE_SENTENCES } from './policy';
 import { ownerPolicyFor } from './policy-input';
 import { priceReplyText } from './price-reply';
 import { editAgentCopies } from './purge';
 import { JOB_AGENT_HAND_BACK, type AgentHandBackJob } from './queues';
+import { calcFromOurWarehouse } from './types';
 import type { Ineligible } from './eligibility';
 import type { RunDeps, RunResult } from './run';
 
@@ -376,13 +378,15 @@ export async function announceAgentCalcSafe(
  *                       `requestRecalculated`): the card he pressed 💵 on
  *                       answers a figure that no longer stands, and a draft
  *                       on it would be cancelled at its first send step.
- *
- * `recalculated` rides beside `PriceRefusal` and not in it: the page's
- * `ERROR_KEYS` is typed by `PriceRefusal`, and the page has no price door —
- * the code is met only through the bot, which words it (bot-door
- * `PRICE_WORDS`).
  */
-export type PriceRefusal = 'not_linked' | 'not_account_holder' | 'bad_number' | 'ambiguous_number' | 'editing_open' | 'no_anchor';
+export type PriceRefusal =
+  | 'not_linked'
+  | 'not_account_holder'
+  | 'bad_number'
+  | 'ambiguous_number'
+  | 'editing_open'
+  | 'no_anchor'
+  | 'recalculated';
 
 /** The two ways an ambiguous figure reads — `decimal` null when that reading is more than cents (no price). */
 export interface PriceReadings {
@@ -393,7 +397,7 @@ export interface PriceReadings {
 
 export type PriceDraftResult =
   | { ok: true; draftId: string }
-  | { ok: false; code: Exclude<PriceRefusal, 'ambiguous_number'> | 'recalculated' }
+  | { ok: false; code: Exclude<PriceRefusal, 'ambiguous_number'> }
   | { ok: false; code: 'ambiguous_number'; readings: PriceReadings };
 
 /** Above this a typed «price» is a slip, not a quote — and past it the grouping would print an exponent. */
@@ -506,7 +510,17 @@ export async function priceDraftFromText(staffId: string, requestId: string, tex
   const said = AGENT_LOCALES.find((l) => l === conv?.locale) ?? null;
   const locale: AgentLocale = detectLocale(anchor.body ?? '', said).locale ?? said ?? 'uz';
   const identity = await chatIdentity(link.managerUserId, link.peerId);
-  const body = priceReplyText(locale, req.section, amount);
+  // A job priced from our Chinese warehouses (his third set, «3») carries
+  // both of its sentences to the customer with his figure too — the job's
+  // own landing said so (calc_submit.fromOurWarehouse on the draft that sent
+  // it); the sentences carry no digit, so the one-figure rule holds.
+  const [sent] = link.draftId
+    ? await db.select({ actions: agentDrafts.actions }).from(agentDrafts).where(eq(agentDrafts.id, link.draftId))
+    : [];
+  const fromOurs = calcFromOurWarehouse(sent?.actions);
+  const body = fromOurs
+    ? `${priceReplyText(locale, req.section, amount)} ${WAREHOUSE_SENTENCES[locale].condition} ${WAREHOUSE_SENTENCES[locale].factory}`
+    : priceReplyText(locale, req.section, amount);
   const policy = await ownerPolicyFor(body, identity.codes.map((c) => c.clientCode));
   // The request his figure answers rides on the draft (review A1): a
   // recalculation of its chain retires the draft (`retirePricesOf`), and the
@@ -519,7 +533,7 @@ export async function priceDraftFromText(staffId: string, requestId: string, tex
     memory: {
       language: locale,
       customerScript: null,
-      sources: [{ value: amount, kind: 'money', label: 'sizning narxingiz' }],
+      sources: [{ value: amount, kind: 'money', label: 'sizning narxingiz', origin: 'tool' }],
       allowedPhones: [],
       allowedUrls: [],
       mapUrls: [],
