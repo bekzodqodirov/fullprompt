@@ -292,3 +292,13 @@ describe('a card his own words go out on counts the same text (final review K3)'
     expect(calls.length).toBe(3);
   });
 });
+
+describe('a form of address names nobody (the 📌 rule «Ha, bo‘ladi aka.» beside a client named «Aka»)', () => {
+  it('reads every spelling of the honorifics, and no real name', async () => {
+    const { isAddressWord } = await import('@/modules/wms/agent/style');
+    for (const w of ['aka', 'Aka', 'AKA', 'opa', 'uka', 'akajon', 'Ака', 'опа', 'брат', "tog'a", 'tog‘a', 'togʻa']) {
+      expect(isAddressWord(w), w).toBe(true);
+    }
+    for (const w of ['Jasur', 'Akmal', 'Akbar', 'Opahon', 'Umriddin', 'Bobur', 'akaxon']) expect(isAddressWord(w), w).toBe(false);
+  });
+});

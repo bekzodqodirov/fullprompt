@@ -110,10 +110,31 @@ export async function humanOutBodies(ownerUserId: string, limit = 1_500): Promis
 }
 
 /**
+ * Forms of address — every customer is called one, so a word from this list
+ * names nobody. The client book holds «Aka» and «Jasur aka» as names, and as
+ * names they refused every 📌 rule saying «Ha, bo'ladi aka.» and masked his
+ * «aka» out of the very style sample that should learn it.
+ */
+const ADDRESS_WORDS = new Set(
+  [
+    'aka', 'akajon', 'akam', 'opa', 'opajon', 'opam', 'uka', 'ukajon', 'ukam', 'singil', 'singlim',
+    'ota', 'ona', 'amaki', 'xola', "tog'a", 'buva', 'buvi', 'bobo', 'momo', 'brat', 'bratan',
+    'ака', 'акажон', 'опа', 'опажон', 'ука', 'укажон', 'сингил', 'брат', 'братан', 'сестра',
+  ].map((w) => w.normalize('NFC')),
+);
+
+/** Is this word only a form of address? The apostrophe in any of a phone keyboard's spellings. */
+export function isAddressWord(word: string): boolean {
+  return ADDRESS_WORDS.has(word.trim().toLowerCase().normalize('NFC').replace(/[ʻʼ‘’`]/gu, "'"));
+}
+
+/**
  * Every name the mask must hide: the client book and the staff. `parts` adds
  * each word of a name (he writes «Aziz aka», never «Aziz Karimov») — right for
  * the style sample, where over-masking costs nothing; a kb REFUSAL asks whole
  * names only, or «Sklad» in «Sklad Market» would refuse every warehouse fact.
+ * A form of address is never a name (`isAddressWord`): a whole name made of
+ * nothing else is left out, and so is such a part.
  */
 export async function knownNamesForMask(parts = true): Promise<string[]> {
   const rows = await db.execute<{ name: string }>(sql`
@@ -123,8 +144,9 @@ export async function knownNamesForMask(parts = true): Promise<string[]> {
   const names = new Set<string>();
   for (const r of rows) {
     const whole = r.name.trim();
-    names.add(whole);
-    if (parts) for (const part of whole.split(/\s+/u)) if ([...part].length >= 3) names.add(part);
+    const words = whole.split(/\s+/u);
+    if (!words.every(isAddressWord)) names.add(whole);
+    if (parts) for (const part of words) if ([...part].length >= 3 && !isAddressWord(part)) names.add(part);
   }
   return [...names];
 }

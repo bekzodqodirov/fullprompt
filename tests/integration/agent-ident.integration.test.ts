@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 // The re-queued calculation hands the AI VED pass to pg-boss; nothing here
 // asks the queue itself, so it is stood in for and records what was sent.
@@ -57,7 +57,7 @@ import { agentSweep, OWNER_QUESTION_WAIT_MS, remindOwnerQuestions } from '@/modu
 import { kbSearch, writeKbFact } from '@/modules/wms/agent/kb';
 import { purgeAgentChat } from '@/modules/wms/agent/purge';
 import { handleInbound } from '@/modules/wms/agent/run';
-import { humanOutBodies } from '@/modules/wms/agent/style';
+import { humanOutBodies, knownNamesForMask } from '@/modules/wms/agent/style';
 import { addGeneralFact, assertFactSeen, editKbFact } from '@/modules/wms/agent/web-kb';
 import { webDrafts, webKbFacts } from '@/modules/wms/agent/web-page';
 import { MAX_OPEN_PER_REQUESTER } from '@/modules/wms/calc/service';
@@ -883,6 +883,26 @@ describe('📌 keeps a clean question — a subject-less answer is never served 
   }
 
   it('a question with no figure, code, phone or name stays beside his «Ha, bo‘ladi»', async () => {
+    // The client book holds «Aka» and «Jasur aka» as NAMES (two other files mint one; a real book has
+    // them too). Minted here, so the answer does not hang on which file ran first: a form of address
+    // names nobody, and his «aka» is no customer's name.
+    const tag = `${Date.now().toString(36)}`.slice(-6).toUpperCase();
+    const book = await db
+      .insert(clients)
+      .values([
+        { clientCode: `AK${tag}`, name: 'Aka' },
+        { clientCode: `AJ${tag}`, name: 'Jasur aka' },
+      ])
+      .returning({ id: clients.id });
+    onTestFinished(async () => {
+      await db.delete(clients).where(inArray(clients.id, book.map((b) => b.id)));
+    });
+    const whole = await knownNamesForMask(false);
+    expect(whole).not.toContain('Aka');
+    expect(whole).toContain('Jasur aka');
+    const parts = await knownNamesForMask(true);
+    expect(parts).toContain('Jasur');
+    expect(parts.map((n) => n.toLowerCase())).not.toContain('aka');
     const p = PEERS[21]!;
     const d = await answered(p, 'Kartaga to‘lasa bo‘ladimi?', 'Ha, bo‘ladi aka.');
     const yes = await pin(d);
