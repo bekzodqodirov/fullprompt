@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { and, count, desc, eq, gt, inArray, ne, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { leadIntakes, leadSources, leadStages, leads, users } from '../../platform/db/schema';
@@ -259,15 +259,55 @@ async function openLeadById(id: string): Promise<{ id: string; ownerId: string |
 }
 
 /**
+ * An external id longer than this many UTF-8 bytes MAY be refused by the
+ * ledger's unique index (`lead_intakes_external_idx`, 0066): a btree row
+ * holds at most 2,704 bytes, and postgres compresses the id first, so a
+ * repetitive id of 50 KB fits while 2,685 random bytes do not (measured,
+ * 2026-10-24: 2,684 taken on every channel but `telegram`, 2,680 there). At
+ * or under it an id is always taken, so its own spelling is the only one it
+ * can be stored under. Google's lead ids, Meta's leadgen ids, the bot's
+ * `tg:<chat>:<message>`, the website's tags and the agent's
+ * `cs:<uuid>:<yyyymm>` are all under a hundred.
+ */
+export const INDEX_SAFE_ID_BYTES = 2048;
+
+/**
+ * The spelling an id is stored under when the index refused its own:
+ * `sha256:` and the hex digest of its UTF-8 bytes. Deterministic, so a
+ * retry meets the replay fence and two different ids stay two; null for an
+ * id the index always takes. The id as `storableText` already made it.
+ */
+export function oversizeIdSpelling(id: string): string | null {
+  if (Buffer.byteLength(id, 'utf8') <= INDEX_SAFE_ID_BYTES) return null;
+  return `sha256:${createHash('sha256').update(id, 'utf8').digest('hex')}`;
+}
+
+/** Every spelling an arrival with this id may stand in the ledger under — what the replay fences ask. */
+export function externalIdSpellings(id: string): string[] {
+  const hashed = oversizeIdSpelling(id);
+  return hashed ? [id, hashed] : [id];
+}
+
+/** Postgres's «program limit exceeded» — here, an index row bigger than a btree holds. */
+function isProgramLimit(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && 'code' in err && err.code === '54000';
+}
+
+/**
  * Has this exact arrival landed before? (Q5 a.) The bot's advert contact is
  * keyed by its Telegram message (`tg:<chat>:<message>`), and a redelivered
  * contact must be thanked again without landing a second enquiry. Served by
  * the partial unique index on (channel, external_id).
  */
 export async function inboundLanded(channel: InboundArrival['channel'], externalId: string): Promise<boolean> {
+  const spellings = externalIdSpellings(storableText(externalId));
   const rows = await db.execute<{ one: number }>(sql`
     SELECT 1 AS one FROM lead_intakes
-     WHERE channel = ${channel} AND external_id = ${storableText(externalId)} LIMIT 1`);
+     WHERE channel = ${channel}
+       AND external_id IN (${sql.join(
+         spellings.map((spelling) => sql`${spelling}`),
+         sql`, `,
+       )}) LIMIT 1`);
   return rows.length > 0;
 }
 
@@ -288,7 +328,9 @@ export async function landInboundLead(sent: InboundArrival): Promise<InboundResu
   // The id as postgres will store it (a text column turns a lone half into
   // U+FFFD on the wire and refuses NUL), so the chain below and the replay
   // fence agree with the ledger about which deliveries are one: a NUL in it
-  // used to make the fence's own SELECT throw on every retry, for ever.
+  // used to make the fence's own SELECT throw on every retry, for ever. An id
+  // too long for the ledger's index is stored under its hash instead
+  // (`record`), and the fence asks both spellings (`externalIdSpellings`).
   const arrival = sent.externalId ? { ...sent, externalId: storableText(sent.externalId) } : sent;
   if (!arrival.externalId) return landOnce(arrival);
   // One delivery of an id at a time. The replay fence below is a SELECT at the
@@ -330,27 +372,17 @@ async function landOnce(arrival: InboundArrival): Promise<InboundResult> {
   const pairs = capturePairs(arrival.fields);
   const refText = storedRef(arrival.ref);
 
-  /**
-   * The ledger row. Answers its id, or null when the database refused it as
-   * a second copy — and only a row that came back may be announced, so the
-   * replay race cannot push one lead twice.
-   *
-   * RAW SQL on today's columns only (0113, design judge 2): drizzle's insert
-   * names EVERY column its schema knows, so once the contact-clock columns
-   * are in the schema a drizzle insert refuses the whole arrival on a
-   * database one migration behind — deploy morning (#472) — and this row is
-   * the replay fence: without it Meta's retry passes the check below and a
-   * SECOND lead is created. The clock is a separate UPDATE that may fail.
-   */
-  const record = async (
+  /** One INSERT of the ledger row under one spelling of the id — `record` below decides which. */
+  const insertIntake = async (
     outcome: InboundOutcome,
     extra: { reason?: string; leadId?: string; clientId?: string; assignedUserId?: string },
+    externalId: string | null,
   ): Promise<string | null> => {
     const rows = await db.execute<{ id: string }>(sql`
       INSERT INTO lead_intakes
         (channel, external_id, source_key, ref, phone, name, outcome, reason,
          fields, lead_id, client_id, assigned_user_id)
-      VALUES (${arrival.channel}, ${arrival.externalId ?? null}, ${sourceKey},
+      VALUES (${arrival.channel}, ${externalId}, ${sourceKey},
               ${refText}::jsonb,
               ${phone}, ${name}, ${outcome}, ${extra.reason ?? null},
               ${pairs ? JSON.stringify(pairs) : null}::jsonb,
@@ -362,6 +394,41 @@ async function landOnce(arrival: InboundArrival): Promise<InboundResult> {
       ON CONFLICT DO NOTHING
       RETURNING id`);
     return rows[0]?.id ?? null;
+  };
+
+  /**
+   * The ledger row. Answers its id, or null when the database refused it as
+   * a second copy — and only a row that came back may be announced, so the
+   * replay race cannot push one lead twice.
+   *
+   * RAW SQL on today's columns only (0113, design judge 2): drizzle's insert
+   * names EVERY column its schema knows, so once the contact-clock columns
+   * are in the schema a drizzle insert refuses the whole arrival on a
+   * database one migration behind — deploy morning (#472) — and this row is
+   * the replay fence: without it Meta's retry passes the check below and a
+   * SECOND lead is created. The clock is a separate UPDATE that may fail.
+   *
+   * An id the unique index refuses for its size (54000, `INDEX_SAFE_ID_BYTES`)
+   * is written again under its hash — the fences ask both spellings. Every id
+   * the index takes keeps the spelling it always had; the refused one used to
+   * throw here, after the lead and its lenta note (fourth review, 2026-10-24).
+   */
+  const record = async (
+    outcome: InboundOutcome,
+    extra: { reason?: string; leadId?: string; clientId?: string; assignedUserId?: string },
+  ): Promise<string | null> => {
+    const own = arrival.externalId ?? null;
+    try {
+      return await insertIntake(outcome, extra, own);
+    } catch (err) {
+      const hashed = own ? oversizeIdSpelling(own) : null;
+      if (!hashed || !isProgramLimit(err)) throw err;
+      logger.warn(
+        { channel: arrival.channel, bytes: Buffer.byteLength(own!, 'utf8') },
+        '[inbound] external id too long for the ledger index; stored as its sha256',
+      );
+      return insertIntake(outcome, extra, hashed);
+    }
   };
 
   /**
@@ -403,7 +470,7 @@ async function landOnce(arrival: InboundArrival): Promise<InboundResult> {
       .where(
         and(
           eq(leadIntakes.channel, arrival.channel),
-          eq(leadIntakes.externalId, arrival.externalId),
+          inArray(leadIntakes.externalId, externalIdSpellings(arrival.externalId)),
         ),
       )
       .limit(1);

@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { createHash, randomBytes } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { and, eq, inArray, like, sql } from 'drizzle-orm';
@@ -32,6 +33,7 @@ import {
 } from '@/modules/wms/crm/agent-feed';
 import { normaliseReason } from '@/modules/platform/settings/reason-list';
 import {
+  INDEX_SAFE_ID_BYTES,
   inboundCount,
   inboundLanded,
   landInboundLead,
@@ -106,6 +108,12 @@ const ARRIVAL8 = `+998 9${CARD8}`;
 const ARRIVAL7_OLD = `+998 90 ${CARD7_OLD}`;
 /** Several numbers in ONE phones value, the three ways they reach a card. */
 const M = (n: number) => `${STAMP}${70 + n}`;
+/**
+ * Four phones of their own for the long-id tests, outside `phone()`'s run:
+ * that counter reaches 48 by the end of the file (measured), and 50-69 are
+ * the twenty-phone card's — four more phone() calls landed on a client.
+ */
+const LONG_ID_PHONES = ['84', '85', '86', '87'].map((n) => `+998${STAMP}${n}`) as [string, string, string, string];
 const MULTI_TYPED = `+998 ${M(1)} / +998 ${M(2)}`;
 const MULTI_SPACED = `+998${M(7)} +998${M(8)}`;
 const MULTI_IMPORTED_998 = `+998${M(3)}998${M(4)}`;
@@ -1031,6 +1039,70 @@ describe('a landing that used to throw half-way', () => {
     });
     expect(deep.outcome).toBe('created');
     expect((await landedWhole(deepId)).ref).toEqual({ _truncated: true });
+  });
+
+  it('an external id longer than the ledger’s unique index holds — the arrival lands whole, its retry is a replay, the caps count it', async () => {
+    // Postgres refused the ledger row (54000 «index row size … exceeds btree
+    // version 4 maximum 2704») AFTER `createLead`: on the agent's door a 503
+    // for ever and one more lenta note per retry, on every other door a 200
+    // with an orphan lead the caps never counted (fourth review). Random
+    // bytes, because the index compresses a repetitive id under its limit.
+    const post = (body: Record<string, unknown>) =>
+      leadsInPOST(
+        new Request('http://localhost:3000/api/leads/in/agent', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-gsr-key': secret },
+          body: JSON.stringify(body),
+        }),
+        { params: Promise.resolve({ source: 'agent' }) },
+      );
+    // The spelling it is stored under, computed here from its definition and
+    // not by the code under test: the hex SHA-256 of the id's UTF-8 bytes.
+    const sha = (id: string) => `sha256:${createHash('sha256').update(id, 'utf8').digest('hex')}`;
+    const longId = `${ext('long-id')}:${randomBytes(2200).toString('base64')}`;
+    const body = { name: NAME('long id agent'), phone: LONG_ID_PHONES[0], external_id: longId };
+    const statuses: number[] = [];
+    for (let attempt = 0; attempt < 3; attempt++) statuses.push((await post(body)).status);
+    expect(statuses).toEqual([200, 200, 200]);
+    const intake = await landedWhole(sha(longId));
+    const notes = await db
+      .select({ id: crmActivities.id })
+      .from(crmActivities)
+      .where(and(eq(crmActivities.entityType, 'lead'), eq(crmActivities.entityId, intake.leadId!)));
+    expect(notes, 'the retries landed nothing').toHaveLength(1);
+    const leadsLanded = await db.select({ id: leads.id }).from(leads).where(eq(leads.name, NAME('long id agent')));
+    expect(leadsLanded).toHaveLength(1);
+    expect(await inboundLanded('webhook', longId)).toBe(true);
+
+    // An advert door: a 200 before as after, and now a ledger row the
+    // per-phone cap counts, and a retry that is a replay.
+    const googleId = `wh-${PREFIX}-long:${randomBytes(2200).toString('base64')}`;
+    const googlePhone = LONG_ID_PHONES[1];
+    const arrival = { channel: 'webhook' as const, sourceKey: 'google', externalId: googleId, name: NAME('long id google'), phone: googlePhone };
+    expect((await landInboundLead(arrival)).outcome).toBe('created');
+    expect(await landInboundLead(arrival)).toEqual({ outcome: 'dropped', reason: 'replay' });
+    expect((await landedWhole(sha(googleId))).sourceKey).toBe('google');
+    expect(await inboundCount({ phone: tailOf(googlePhone), sinceMs: 86_400_000 })).toBe(1);
+  });
+
+  it('an id the index holds keeps the spelling it always had — a long one of random bytes, and a repetitive one many times longer', async () => {
+    // Both are over the length at which an id MAY be refused, so both are
+    // fenced by both spellings; neither is refused, so each is stored, and
+    // replayed, exactly as the code before this fix stored it. The longest
+    // channel name, so the index row is as big as it gets.
+    for (const [tag, tail, sentPhone] of [
+      ['random', randomBytes(2000).toString('base64').slice(0, 2550), LONG_ID_PHONES[2]],
+      ['repetitive', 'a'.repeat(20_000), LONG_ID_PHONES[3]],
+    ] as const) {
+      const id = `${ext(`as-sent-${tag}`)}:${tail}`;
+      expect(Buffer.byteLength(id, 'utf8'), tag).toBeGreaterThan(INDEX_SAFE_ID_BYTES);
+      const arrival = { channel: 'telegram' as const, sourceKey: 'telegram', externalId: id, name: NAME(`as sent ${tag}`), phone: sentPhone };
+      expect((await landInboundLead(arrival)).outcome, tag).toBe('created');
+      expect(await landInboundLead(arrival), tag).toEqual({ outcome: 'dropped', reason: 'replay' });
+      const rows = await db.select().from(leadIntakes).where(eq(leadIntakes.name, NAME(`as sent ${tag}`)));
+      expect(rows.map((row) => [row.externalId === id, row.outcome]), tag).toEqual([[true, 'created']]);
+      expect(await inboundLanded('telegram', id), tag).toBe(true);
+    }
   });
 
   it('a client card whose phones value is not a list is read as no phones — the landing’s client check does not throw', async () => {

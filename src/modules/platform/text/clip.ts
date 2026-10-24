@@ -19,10 +19,18 @@
  *
  * A cut counts UTF-16 units — the budget `slice` always counted — and only
  * backs off a high half left dangling at the edge. So every string the old
- * cut could store comes out spelled exactly as before (a field-map key saved
- * last month still matches next month's arrival), and only the case that used
- * to throw changes (third review, 2026-10-24: a cut by code points spelled a
- * long emoji question one unit longer than the map had stored it).
+ * cut could store in jsonb comes out spelled exactly as before, and so does
+ * every spelling the field map matches (a field-map key saved last month
+ * still matches next month's arrival) — only the case that used to throw
+ * changes (third review, 2026-10-24: a cut by code points spelled a long
+ * emoji question one unit longer than the map had stored it). One spelling
+ * moves: a cut that left a high half dangling, stored in a TEXT column,
+ * where postgres.js writes the lone half as U+FFFD — `lead_intakes.name` on
+ * an arrival that created no lead, a lenta note at its 1,000-unit edge, a
+ * field-map key saved through the screen (its audit row threw after the
+ * INSERT). It is one unit shorter now, without that trailing U+FFFD; none of
+ * them is a key an arrival ever matched, since the arrival's own `fields`
+ * (jsonb) threw on it (fourth review).
  *
  * Pure, no imports: the landing, the field map and the activity audit all ask
  * it, and none of them may pull a module graph in for a string rule.
@@ -36,7 +44,7 @@ export function storableText(text: string): string {
 /**
  * At most `max` UTF-16 units, `storableText`, and never a high half dangling
  * at the cut — an emoji that does not fit is left out whole. Equal to
- * `text.slice(0, max)` for every text that slice could store.
+ * `text.slice(0, max)` for every text that slice could store in jsonb.
  */
 export function clipUnits(text: string, max: number): string {
   const cut = storableText(text).slice(0, Math.max(0, max));
@@ -59,6 +67,11 @@ const REFUSED_ESCAPE = /(\\+)u(?:0000|d[89a-f][0-9a-f]{2})/gi;
  * out byte for byte as `JSON.stringify` writes it, and it nests exactly as
  * deep before it throws (a replacer function costs the serialiser stack —
  * measured, it overflowed at half the depth).
+ *
+ * Two keys of one object that differ only by a NUL or a lone half (or by
+ * which half) become one key, and postgres keeps the LAST value, as
+ * `JSON.parse` does — one value of the trail is lost, never the arrival
+ * (fourth review). Acceptable for a trail; nothing reads `ref` as a record.
  */
 export function storableJson(value: unknown): string {
   return JSON.stringify(value).replace(REFUSED_ESCAPE, (escape, slashes: string) =>
