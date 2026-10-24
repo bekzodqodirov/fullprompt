@@ -21,7 +21,7 @@ import { clearsFollowUp, closedAtFor, reasonAllowed, stageWrite } from './stage-
 import { orderForMove, topOfColumn, type BoardTable } from './board-place';
 import { isUniqueViolation } from '../../platform/db/errors';
 import { logger } from '../../platform/logger';
-import { clipCodePoints } from '../../platform/text/clip';
+import { clipUnits } from '../../platform/text/clip';
 import { isServerBehind } from '../../platform/db/errors';
 import { ftlReady, leadIsFtl, notifyFtlMarked, setLeadFtlTx } from '../ftl/service';
 import { leadDealMoveRefusal, type FtlDoor } from '../ftl/door';
@@ -1314,10 +1314,10 @@ export async function addActivity(
     entityType: `crm_${input.entityType}_activity`,
     entityId: input.entityId,
     action: 'create',
-    // The excerpt by CODE POINTS: a UTF-16 cut through an emoji is a lone half
-    // that the audit's jsonb refuses — after the note itself was written, so
-    // the landing that called this stood half-done (review, 2026-10-24).
-    after: { kind: input.kind, note: clipCodePoints(input.note, 200) },
+    // Never through an emoji: a UTF-16 cut through one is a lone half that
+    // the audit's jsonb refuses — after the note itself was written, so the
+    // landing that called this stood half-done (review, 2026-10-24).
+    after: { kind: input.kind, note: clipUnits(input.note, 200) },
   });
   return row!;
 }

@@ -220,6 +220,36 @@ describe('a mapped answer lands beside its note line', () => {
   });
 });
 
+describe('a mapping saved before this release', () => {
+  it('still reads a long question with an emoji in its first 80 units — the kub fills the quote', async () => {
+    // Meta names a custom question by its text. Saved through the screen
+    // before this release, its key is the old cut: the first 80 UTF-16
+    // units. A cut by code points spelled the same question one unit longer,
+    // so every later arrival missed the mapping in silence — no kub on the
+    // card, and the volume rule deaf to it (third review, 2026-10-24).
+    const question = `${STAMP} 📦 yukingiz taxminan necha kub bo‘ladi? (bilmasangiz «bilmayman» deb yozing, menejer hisoblab beradi)`;
+    const saved = question.trim().toLowerCase().slice(0, 80);
+    expect([...saved].length).toBeLessThan(saved.length); // an astral character inside the cut
+    await mapKey(saved, 'kub');
+
+    const landed = await landInboundLead(
+      arrival({
+        channel: 'meta' as const,
+        externalId: `fm_old_${STAMP}`,
+        phone: P('6'),
+        name: `Tarjimon eski kalit ${STAMP}`,
+        note: `${question}: 25`,
+        fields: [{ key: question, value: '25' }],
+      }),
+    );
+    expect(landed.outcome).toBe('created');
+    const [lead] = await db.select().from(leads).where(eq(leads.id, landed.leadId!));
+    expect(lead!.quotedVolumeM3).toBe('25.000');
+    const [intake] = await db.select().from(leadIntakes).where(eq(leadIntakes.leadId, landed.leadId!));
+    expect((intake!.fields as { key: string }[])[0]!.key).toBe(saved);
+  });
+});
+
 describe('the volume rule reads the mapped kub, and free text as the fallback', () => {
   it('routes a big mapped kub to the big-cargo pool', async () => {
     const routeId = await createRoute(

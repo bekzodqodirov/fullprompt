@@ -4,7 +4,7 @@ import { db } from '../../platform/db/client';
 import { leadIntakes, leadSources, leadStages, leads, users } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { logger } from '../../platform/logger';
-import { clipCodePoints, wellFormed, wellFormedJson } from '../../platform/text/clip';
+import { clipUnits, storableJson, storableText } from '../../platform/text/clip';
 import { listFields, setFieldValues } from '../../platform/fields/service';
 import { addActivity, createLead, CrmError } from './service';
 import { activeClientsByPhone } from '../client-cabinet/service';
@@ -173,15 +173,18 @@ export function inboundPhoneDigits(raw: string | null | undefined): string | nul
 }
 
 /**
- * Whitespace collapsed, then cut at `max` CODE POINTS. Every value cut here
- * reaches jsonb somewhere — the name in `createLead`'s audit row and the
- * seller's push, the note in the push — and a UTF-16 `slice` through an emoji
- * leaves a lone half jsonb refuses, AFTER the lead's own INSERT: an orphan
- * lead, no ledger row, an open replay fence (review, 2026-10-24; #1106's rule).
- * A lone half the sender put in the body itself goes the same way.
+ * Whitespace collapsed, then cut at `max` UTF-16 units — the budget it always
+ * had — never through an emoji, with NUL and lone halves made U+FFFD. Every
+ * value cut here reaches postgres somewhere — the name in `createLead`'s
+ * INSERT and audit row and the seller's push, the note in the lenta and the
+ * push — and a half emoji (jsonb) or a NUL (text and jsonb) was refused AFTER
+ * the lead's own INSERT: an orphan lead, no ledger row, an open replay fence,
+ * and on the public form a lead the daily caps never counted (reviews,
+ * 2026-10-24; #1106's rule). `clipUnits` keeps every spelling the old
+ * `slice` stored.
  */
 const trim = (value: string | null | undefined, max: number) =>
-  clipCodePoints((value ?? '').replace(/\s+/g, ' ').trim(), max) || null;
+  clipUnits((value ?? '').replace(/\s+/g, ' ').trim(), max) || null;
 
 /**
  * `lead_sources.key` → id. NEVER mints a row.
@@ -263,7 +266,8 @@ async function openLeadById(id: string): Promise<{ id: string; ownerId: string |
  */
 export async function inboundLanded(channel: InboundArrival['channel'], externalId: string): Promise<boolean> {
   const rows = await db.execute<{ one: number }>(sql`
-    SELECT 1 AS one FROM lead_intakes WHERE channel = ${channel} AND external_id = ${externalId} LIMIT 1`);
+    SELECT 1 AS one FROM lead_intakes
+     WHERE channel = ${channel} AND external_id = ${storableText(externalId)} LIMIT 1`);
   return rows.length > 0;
 }
 
@@ -280,7 +284,12 @@ const landing = new Map<string, Promise<unknown>>();
  * cannot record a lead that was deliberately not created, and «why did the
  * advert produce nothing today» has to be answerable.
  */
-export async function landInboundLead(arrival: InboundArrival): Promise<InboundResult> {
+export async function landInboundLead(sent: InboundArrival): Promise<InboundResult> {
+  // The id as postgres will store it (a text column turns a lone half into
+  // U+FFFD on the wire and refuses NUL), so the chain below and the replay
+  // fence agree with the ledger about which deliveries are one: a NUL in it
+  // used to make the fence's own SELECT throw on every retry, for ever.
+  const arrival = sent.externalId ? { ...sent, externalId: storableText(sent.externalId) } : sent;
   if (!arrival.externalId) return landOnce(arrival);
   // One delivery of an id at a time. The replay fence below is a SELECT at the
   // start and the ledger's ON CONFLICT at the end, so two deliveries of one id
@@ -289,9 +298,12 @@ export async function landInboundLead(arrival: InboundArrival): Promise<InboundR
   // nobody's outcomes (review, 2026-10-24: measured with the first delivery
   // held on a lock). A sender re-sends exactly when the first try is slow: the
   // agent after its read timeout, a platform that did not get its 200 in
-  // time. Chained in this process, the second waits and then meets the fence
-  // as a replay. Every door lands in the one app process — the webhook, the
-  // Meta worker (pg-boss runs there), the form, the bot; the site door in
+  // time. Chained here, the second waits and then meets the fence as a
+  // replay. «Here» is this module instance: a production bundle may hold more
+  // than one copy of this file, but every channel that carries an id lands
+  // through ONE caller — `webhook` the route, `meta` the Meta worker (pg-boss,
+  // in the app process), `telegram` the cabinet bot — so each channel's
+  // deliveries meet in one map (third review). The form carries no id; the site door in
   // tg-listen keeps its own `serialised`, and the unique index still stands
   // behind all of it across processes.
   const key = `${arrival.channel}\u0000${arrival.externalId}`;
@@ -316,6 +328,7 @@ async function landOnce(arrival: InboundArrival): Promise<InboundResult> {
   // Capped, normalized, secret-named keys dropped — what of the form's own
   // questions is worth keeping and worth showing the mapping screen.
   const pairs = capturePairs(arrival.fields);
+  const refText = storedRef(arrival.ref);
 
   /**
    * The ledger row. Answers its id, or null when the database refused it as
@@ -338,7 +351,7 @@ async function landOnce(arrival: InboundArrival): Promise<InboundResult> {
         (channel, external_id, source_key, ref, phone, name, outcome, reason,
          fields, lead_id, client_id, assigned_user_id)
       VALUES (${arrival.channel}, ${arrival.externalId ?? null}, ${sourceKey},
-              ${arrival.ref ? wellFormedJson(arrival.ref) : null}::jsonb,
+              ${refText}::jsonb,
               ${phone}, ${name}, ${outcome}, ${extra.reason ?? null},
               ${pairs ? JSON.stringify(pairs) : null}::jsonb,
               ${extra.leadId ?? null}::uuid, ${extra.clientId ?? null}::uuid,
@@ -531,9 +544,10 @@ async function landOnce(arrival: InboundArrival): Promise<InboundResult> {
     {
       // `leadSchema` wants two characters and an advert may send none.
       name: name ?? `${sourceKey} · ${phone ?? '—'}`,
-      // As sent — the card keeps the spelling — but well-formed: it rides
-      // into the create's audit row (jsonb).
-      phone: wellFormed(arrival.phone ?? ''),
+      // As sent — the card keeps the spelling — but storable: it is the
+      // INSERT's own column (text, refuses NUL) and rides into the create's
+      // audit row (jsonb, refuses a lone half too).
+      phone: storableText(arrival.phone ?? ''),
       // The agent's firm onto the card's own column, at `leadSchema`'s
       // ceiling. The agent's only: every other door keeps a posted `company`
       // as the note line and question pair it always was (review, regression
@@ -618,6 +632,24 @@ async function landOnce(arrival: InboundArrival): Promise<InboundResult> {
     });
   }
   return { outcome: 'created', leadId: lead.id };
+}
+
+/**
+ * The body as `lead_intakes.ref` stores it, decided BEFORE anything is
+ * written. `storableJson` makes every string storable; what it cannot write —
+ * a body nested thousands of levels deep overflows the serialiser's stack — is
+ * kept as a marker, because the ref is a trail and the arrival is the record:
+ * that throw came in `record()`, after the lead and its lenta note (third
+ * review, 2026-10-24).
+ */
+function storedRef(ref: InboundArrival['ref']): string | null {
+  if (!ref) return null;
+  try {
+    return storableJson(ref);
+  } catch (err) {
+    logger.warn({ err }, '[inbound] ref not storable; kept as a marker');
+    return JSON.stringify({ _truncated: true });
+  }
 }
 
 /** What the note says on the card. The source is the useful half. */

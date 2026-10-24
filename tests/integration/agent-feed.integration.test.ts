@@ -32,6 +32,8 @@ import {
 } from '@/modules/wms/crm/agent-feed';
 import { normaliseReason } from '@/modules/platform/settings/reason-list';
 import {
+  inboundCount,
+  inboundLanded,
   landInboundLead,
   setSourceWebhookSecret,
   sourceWebhookSecret,
@@ -45,6 +47,8 @@ import { firstContactBySeller } from '@/modules/wms/crm/analytics';
 import postgres from 'postgres';
 import { GET as suppressionGET } from '@/app/api/agent/suppression/route';
 import { GET as outcomesGET } from '@/app/api/agent/outcomes/route';
+import { POST as leadsInPOST } from '@/app/api/leads/in/[source]/route';
+import { submitArizaAction } from '@/app/(public)/ariza/actions';
 
 /**
  * The client-finding agent's half of the ERP (docs/AGENT-FEED.md), against a
@@ -840,7 +844,7 @@ describe('a landing that used to throw half-way', () => {
     return intake;
   }
 
-  it('an emoji at the name’s 120-character edge — the cut keeps it whole', async () => {
+  it('an emoji at the name’s 120-unit edge — the cut leaves it out whole, never half of it', async () => {
     const id = ext('emoji-name');
     const lead = NAME('emoji name ');
     const name = `${lead}${'x'.repeat(119 - lead.length)}😀 tail`;
@@ -848,7 +852,9 @@ describe('a landing that used to throw half-way', () => {
     const result = await landInboundLead({ channel: 'webhook', sourceKey: 'agent', externalId: id, name, phone: phone() });
     expect(result.outcome).toBe('created');
     const intake = await landedWhole(id);
-    expect(intake.name).toBe(`${lead}${'x'.repeat(119 - lead.length)}😀`);
+    // The old budget (UTF-16 units), so a name never outgrows what the ✏️
+    // form's schema accepts (third review).
+    expect(intake.name).toBe(`${lead}${'x'.repeat(119 - lead.length)}`);
   });
 
   it('an emoji at a question pair’s 300-character edge', async () => {
@@ -863,7 +869,7 @@ describe('a landing that used to throw half-way', () => {
     });
     expect(result.outcome).toBe('created');
     const intake = await landedWhole(id);
-    expect(intake.fields).toEqual([{ key: 'evidence', value: `${'y'.repeat(299)}🔥` }]);
+    expect(intake.fields).toEqual([{ key: 'evidence', value: 'y'.repeat(299) }]);
   });
 
   it('an emoji at the lenta note’s 200-character audit excerpt', async () => {
@@ -901,6 +907,130 @@ describe('a landing that used to throw half-way', () => {
       expect(intake.name).toBe(NAME(`lone \ufffd half ${source}`));
       expect(intake.ref).toEqual({ utm_campaign: 'x\ufffdy' });
     }
+  });
+
+  it('a NUL anywhere in the agent’s body — every arrival lands whole, answers 200, and its retry is a replay', async () => {
+    // Postgres refuses NUL in a text column (22021) and as \u0000 in jsonb
+    // (22P05), and both refusals came after `createLead` had committed: a
+    // 503 for ever, an orphan lead, one more lenta note per retry, nothing in
+    // the outcomes (third review, through this same route).
+    const post = (body: Record<string, unknown>) =>
+      leadsInPOST(
+        new Request('http://localhost:3000/api/leads/in/agent', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-gsr-key': secret },
+          body: JSON.stringify(body),
+        }),
+        { params: Promise.resolve({ source: 'agent' }) },
+      );
+    const cases: [string, Record<string, unknown>][] = [
+      ['nul-note', { note: 'Optom \u0000 kiyim' }],
+      ['nul-extra', { meta: { src: 'x\u0000y' } }],
+      // Outside the note's 1,000-character cut: only the pair and the ref hold it.
+      ['nul-evidence', { note: 'x'.repeat(1100), evidence: 'qo\u0000l' }],
+      ['nul-name', { name: NAME('nul \u0000 ism') }],
+      ['nul-company', { company: 'Namuna \u0000 MChJ' }],
+      ['nul-phone', { phone: `${phone()} \u0000` }],
+      ['nul-key', { 'savol\u0000': 'javob' }],
+    ];
+    for (const [tag, over] of cases) {
+      const id = ext(tag);
+      const body = { name: NAME(tag), phone: phone(), external_id: id, ...over };
+      for (const attempt of ['first', 'retry']) {
+        const res = await post(body);
+        expect(res.status, `${tag}: ${attempt}`).toBe(200);
+      }
+      const intake = await landedWhole(id);
+      const notes = await db
+        .select({ note: crmActivities.note })
+        .from(crmActivities)
+        .where(and(eq(crmActivities.entityType, 'lead'), eq(crmActivities.entityId, intake.leadId!)));
+      expect(notes, `${tag}: the retry landed nothing`).toHaveLength(1);
+      expect(JSON.stringify([intake, notes]), tag).not.toContain('\\u0000');
+      expect((await agentOutcome(id))?.outcome, tag).toBe('created');
+    }
+    expect(((await intakeByExt(ext('nul-extra'))).ref as { meta: unknown }).meta).toEqual({ src: 'x\ufffdy' });
+    const [card] = await db
+      .select({ company: leads.company })
+      .from(leads)
+      .where(eq(leads.id, (await intakeByExt(ext('nul-company'))).leadId!));
+    expect(card!.company).toBe('Namuna \ufffd MChJ');
+
+    // The id itself: stored as postgres stores text (U+FFFD), and a retry is
+    // a replay instead of a fence SELECT that throws on every attempt.
+    const nulId = `${ext('nul-id')}\u0000`;
+    for (const attempt of ['first', 'retry']) {
+      const res = await post({ name: NAME('nul-id'), phone: phone(), external_id: nulId });
+      expect(res.status, attempt).toBe(200);
+    }
+    const rows = await db.select().from(leadIntakes).where(eq(leadIntakes.externalId, `${ext('nul-id')}\ufffd`));
+    expect(rows.map((row) => row.outcome)).toEqual(['created']);
+    // …and the bot's own fence asks the same spelling.
+    expect(await inboundLanded('webhook', nulId)).toBe(true);
+  });
+
+  it('a NUL on an advert door and on the public form — the arrival is recorded, so the daily caps count it', async () => {
+    // The public form has no external id: each NUL submission was a lead
+    // routed and booked for today, no ledger row, and the caps — which count
+    // the ledger — never saw it (third review: five phones, five leads,
+    // `inboundCount` 0). No key needed.
+    const advert = await landInboundLead({
+      channel: 'webhook',
+      sourceKey: 'tiktok',
+      externalId: `wh-${PREFIX}-nul`,
+      name: NAME('nul tiktok'),
+      phone: phone(),
+      note: 'salom \u0000 dunyo',
+    });
+    expect(advert.outcome).toBe('created');
+    await landedWhole(`wh-${PREFIX}-nul`);
+
+    const formPhone = phone();
+    const form = new FormData();
+    form.set('ism', NAME('nul ariza'));
+    form.set('telefon', formPhone);
+    form.set('izoh', 'salom \u0000 dunyo');
+    expect(await submitArizaAction({}, form)).toEqual({ ok: true });
+    const [intake] = await db.select().from(leadIntakes).where(eq(leadIntakes.name, NAME('nul ariza')));
+    expect(intake?.outcome).toBe('created');
+    expect(await inboundCount({ phone: tailOf(formPhone), sinceMs: 86_400_000 })).toBe(1);
+  });
+
+  it('a body nested deeper than the serialiser can write keeps the arrival — and one it can write is stored whole, as before', async () => {
+    const nested = (depth: number) => {
+      let value: unknown = 'x';
+      for (let i = 0; i < depth; i++) value = [value];
+      return value;
+    };
+    // 3,000 levels: `JSON.stringify` writes it, and so must the landing —
+    // a replacer function overflowed at about half the depth (third review).
+    const shallow = nested(3000);
+    const okId = ext('deep-3000');
+    const ok = await landInboundLead({
+      channel: 'webhook',
+      sourceKey: 'agent',
+      externalId: okId,
+      name: NAME('deep 3000'),
+      phone: phone(),
+      ref: { meta: shallow },
+    });
+    expect(ok.outcome).toBe('created');
+    expect(JSON.stringify((await landedWhole(okId)).ref)).toBe(JSON.stringify({ meta: shallow }));
+
+    // Fifty thousand: no serialiser writes it; the trail is a marker, the
+    // arrival is whole (it used to throw inside the ledger row, after the
+    // lead and its note).
+    const deepId = ext('deep-50000');
+    const deep = await landInboundLead({
+      channel: 'webhook',
+      sourceKey: 'agent',
+      externalId: deepId,
+      name: NAME('deep 50000'),
+      phone: phone(),
+      ref: { meta: nested(50_000) },
+    });
+    expect(deep.outcome).toBe('created');
+    expect((await landedWhole(deepId)).ref).toEqual({ _truncated: true });
   });
 
   it('a client card whose phones value is not a list is read as no phones — the landing’s client check does not throw', async () => {
