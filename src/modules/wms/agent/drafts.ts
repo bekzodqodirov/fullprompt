@@ -216,7 +216,12 @@ const NOTICE_WORDS: Record<string, string> = {
   bot_question: "🤖 Mijoz «siz botmisiz?» deb so'radi — qoralama yozilmadi, o'zingiz javob bering.",
 };
 
-/** A message the agent refuses to draft for honesty's sake (Q3, Q4 ⭐) — he is told, once per anchor. */
+/**
+ * A message the agent refuses to draft for honesty's sake (Q3, Q4 ⭐) — he is
+ * told, once per anchor. The card quotes the customer's lines, so it names
+ * its chat (`peerId`, the key the purge's `chatCardsWhere` matches a notice
+ * by): without it a purged chat left its own words standing on this card.
+ */
 export async function writeNotice(ctx: AgentContext, reason: string): Promise<void> {
   const head = NOTICE_WORDS[reason] ?? `AI javob yozmadi: ${reason}`;
   const lines = ctx.burst.slice(-3).map((m) => `│ ${m.body || (m.media ? `[${m.media}]` : '—')}`);
@@ -224,6 +229,7 @@ export async function writeNotice(ctx: AgentContext, reason: string): Promise<vo
     userIds: [ctx.managerUserId],
     type: 'AgentNotice',
     text: [`${head}`, customerLabel(ctx), ...lines].join('\n'),
+    extra: { peerId: String(ctx.peerId) },
   });
 }
 

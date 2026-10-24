@@ -91,6 +91,26 @@ describe('a purged chat takes every agent copy with it (review leak-9)', () => {
     }
   });
 
+  it('every AgentNotice writer names the chat by the very key the purge matches a notice by (identity review)', () => {
+    const purge = strip(readFileSync('src/modules/wms/agent/purge.ts', 'utf8'));
+    const where = purge.slice(purge.indexOf('function chatCardsWhere'), purge.indexOf('export async function purgeAgentChat'));
+    const clause = where.slice(where.indexOf("'AgentNotice'"));
+    const key = /payload\}->>'([a-zA-Z]+)' = \$\{String\(input\.peerId\)\}/u.exec(clause)?.[1];
+    expect(key, 're-anchor: the purge’s AgentNotice clause').toBeTruthy();
+    const writers = filesUnder('src').filter((file) => /type:\s*'AgentNotice'/u.test(strip(readFileSync(file, 'utf8'))));
+    expect(writers.length, 're-anchor: an AgentNotice writer').toBeGreaterThan(0);
+    for (const file of writers) {
+      const src = strip(readFileSync(file, 'utf8'));
+      for (const at of [...src.matchAll(/type:\s*'AgentNotice'/gu)].map((m) => m.index!)) {
+        // The call's own object: from the type to the call's closing «})».
+        const call = src.slice(at, src.indexOf('})', at));
+        expect(call, `${file}: an AgentNotice without the chat the purge finds it by`).toMatch(
+          new RegExp(`extra:\\s*\\{[^}]*\\b${key}:\\s*String\\(`, 'u'),
+        );
+      }
+    }
+  });
+
   it('purgeExcludedChat calls the agent purge before it deletes the messages', () => {
     const src = strip(readFileSync('src/modules/wms/crm/chat-rules.ts', 'utf8'));
     const body = src.slice(src.indexOf('export async function purgeExcludedChat'));

@@ -36,7 +36,8 @@ import {
 } from '@/modules/wms/agent/bot-door';
 import { announceAgentCalc, priceDraftFromText } from '@/modules/wms/agent/calc-loop';
 import { readAgentConfig, __restoreAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
-import { chatIdentity } from '@/modules/wms/agent/context';
+import { chatIdentity, type AgentContext } from '@/modules/wms/agent/context';
+import { writeNotice } from '@/modules/wms/agent/drafts';
 import { strangerCards } from '@/modules/wms/agent/jobs';
 import { purgeAgentChat, PURGED_CARD_TEXT } from '@/modules/wms/agent/purge';
 import { decideChat, openLeadForChat } from '@/modules/wms/crm/chat-rules';
@@ -758,6 +759,31 @@ describe('the purge blanks EVERY agent card of the chat (review I5)', () => {
       expect(buttonsFor('AgentCalcAnswered', p), key).toBeNull();
     }
     expect(await agentCardFor(ownerId, 990001n, 4242)).toBeNull();
+  });
+});
+
+describe('a REAL notice is found by the purge — the writer names its chat (identity review)', () => {
+  it('writeNotice’s card quotes the customer and is blanked with the chat; another chat’s notice stays', async () => {
+    const notice = (peer: bigint, body: string) =>
+      writeNotice(
+        {
+          managerUserId: ownerId,
+          peerId: peer,
+          identity: { clientId, leadId: null, codes: [{ clientCode: `AL${SUFFIX}` }], customerName: 'Laylo' },
+          burst: [{ body, media: null, sentAt: new Date() }],
+        } as unknown as AgentContext,
+        'voice_only',
+      );
+    await notice(PEER, `yukim qayerda ${SUFFIX}`);
+    await notice(OTHER_PEER, `boshqa chat ${SUFFIX}`);
+    const before = await ownerCards('AgentNotice');
+    expect(before.map(textOf).join('\n')).toContain(`yukim qayerda ${SUFFIX}`);
+    await purgeAgentChat(ownerId, PEER);
+    const after = await ownerCards('AgentNotice');
+    const texts = after.map(textOf);
+    expect(texts).toContain(PURGED_CARD_TEXT);
+    expect(texts.join('\n')).not.toContain(`yukim qayerda ${SUFFIX}`);
+    expect(texts.join('\n')).toContain(`boshqa chat ${SUFFIX}`);
   });
 });
 
