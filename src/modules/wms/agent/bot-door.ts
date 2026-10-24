@@ -115,7 +115,7 @@ export async function agentPress(staffId: string, op: AgentOp, id: string, diges
     case 'x':
     case 'c':
     case 'b':
-      return strangerPress(staffId, op, id);
+      return strangerPress(staffId, op, id, digest);
   }
 }
 
@@ -175,6 +175,9 @@ export async function agentCardFor(
 async function kbPress(staffId: string, op: 'g' | 'u' | 'z', draftId: string): Promise<PressAnswer> {
   const [d] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, draftId));
   if (!d || d.managerUserId !== staffId) return { toast: 'Topilmadi' };
+  // The card offers this only under an APPROVED answer of his own to a question
+  // the machine asked (card-io `kbAsk`); a forged press on anything else is refused.
+  if (d.status !== 'approved' || !d.needsOwner || !d.finalBody) return { toast: 'Topilmadi' };
   const p = (d.policy ?? {}) as Partial<DraftPolicyJson> & { kb?: string };
   if (p.kb === 'saved' || p.kb === 'skipped') return { toast: 'Allaqachon hal qilingan' };
   const setKb = async (kb: string) => {
@@ -224,7 +227,12 @@ async function kbPress(staffId: string, op: 'g' | 'u' | 'z', draftId: string): P
 }
 
 /** The stranger card's buttons (§17.11): a lead, a client by its code (echoed first), or personal. */
-async function strangerPress(staffId: string, op: 'n' | 'k' | 'x' | 'c' | 'b', ruleId: string): Promise<PressAnswer> {
+async function strangerPress(
+  staffId: string,
+  op: 'n' | 'k' | 'x' | 'c' | 'b',
+  ruleId: string,
+  echoedTail: string | undefined,
+): Promise<PressAnswer> {
   const [rule] = await db.select().from(tgChatRules).where(eq(tgChatRules.id, ruleId));
   if (!rule || rule.managerUserId !== staffId) return { toast: 'Topilmadi' };
   const ctx = { actorId: staffId };
@@ -258,6 +266,8 @@ async function strangerPress(staffId: string, op: 'n' | 'k' | 'x' | 'c' | 'b', r
     .from(agentConversations)
     .where(and(eq(agentConversations.managerUserId, staffId), eq(agentConversations.peerId, rule.peerId)));
   if (!conv?.clientId) return { toast: 'Kod topilmadi — qaytadan yozing' };
+  // The card confirms the code IT showed (leak-4): a newer typed code needs its own card.
+  if (!echoedTail || conv.clientId.slice(-8).toLowerCase() !== echoedTail) return { toast: 'Kod o‘zgargan — oxirgi kartani tasdiqlang' };
   await decideChat({ id: ruleId, decision: 'include', clientId: conv.clientId }, ctx);
   await db
     .update(agentConversations)

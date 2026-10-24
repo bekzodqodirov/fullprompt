@@ -31,7 +31,8 @@ export interface KbScope {
   leadId: string | null;
 }
 
-export const kbRef = (id: string) => `F${id.replace(/-/gu, '').slice(0, 8)}`;
+// The id's random TAIL: a v7 id's head is its clock, shared by facts approved the same minute.
+export const kbRef = (id: string) => `F${id.replace(/-/gu, '').slice(-8)}`;
 
 function hitOf(row: { id: string; answer: string; question: string | null }): KbHit {
   const text = normalizeDigits(row.answer);

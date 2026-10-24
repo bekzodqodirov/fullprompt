@@ -115,3 +115,12 @@ describe('the ag: grammar', () => {
     expect(parseCallback(`a:1:${id}`)).toMatchObject({ kind: 'approval' });
   });
 });
+
+describe('a short reference is taken from the id’s random tail', () => {
+  it('two facts minted the same minute (one v7 clock head) get different refs', async () => {
+    const { kbRef } = await import('@/modules/wms/agent/kb');
+    const a = '019a2b3c-4d5e-7f00-8a1b-2c3d4e5f6071';
+    const b = '019a2b3c-4d5e-7f00-9b2c-3d4e5f607182';
+    expect(kbRef(a)).not.toBe(kbRef(b));
+  });
+});

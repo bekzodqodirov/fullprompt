@@ -767,7 +767,11 @@ function agentButtons(type: string, payload: Record<string, unknown>): BotButton
     ];
   }
   if (type === 'AgentCodeEcho' && ruleId && typeof payload.clientId === 'string' && UUID.test(payload.clientId)) {
-    return [[{ text: '✅ Ha, shu mijoz', callback_data: `ag:c:${ruleId}` }, { text: '↩ Yo‘q', callback_data: `ag:b:${ruleId}` }]];
+    // The ✅ carries the ECHOED client's id TAIL (the random end — a v7 id's head
+    // is its clock, shared by rows minted the same minute): a second code typed later
+    // re-points the chat, and this older card must not confirm the newer one.
+    const tail = payload.clientId.slice(-8).toLowerCase();
+    return [[{ text: '✅ Ha, shu mijoz', callback_data: `ag:c:${ruleId}:${tail}` }, { text: '↩ Yo‘q', callback_data: `ag:b:${ruleId}` }]];
   }
   return null;
 }
