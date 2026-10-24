@@ -757,7 +757,8 @@
     },
     "driverApp": "Driver app",
     "callsApp": "Calls app",
-    "badValue": "Invalid value — enter a date (YYYY-MM-DD) or an instant (YYYY-MM-DDTHH:MM+05:00); empty = off. Nothing was saved."
+    "badValue": "Invalid value — enter a date (YYYY-MM-DD) or an instant (YYYY-MM-DDTHH:MM+05:00); empty = off. Nothing was saved.",
+    "badValueReasons": "Invalid value — enter at least one reason («;»-separated, each at most 80 characters). Nothing was saved."
   },
   "audit": {
     "title": "Audit log",

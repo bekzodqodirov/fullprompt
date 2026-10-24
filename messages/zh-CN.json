@@ -757,7 +757,8 @@
     },
     "driverApp": "司机应用",
     "callsApp": "通话应用",
-    "badValue": "值无效——请输入日期（YYYY-MM-DD）或时间（YYYY-MM-DDTHH:MM+05:00）；留空 = 关闭。未保存任何内容。"
+    "badValue": "值无效——请输入日期（YYYY-MM-DD）或时间（YYYY-MM-DDTHH:MM+05:00）；留空 = 关闭。未保存任何内容。",
+    "badValueReasons": "值无效——请至少填写一个原因（用「;」分隔，每个不超过80个字符）。未保存任何内容。"
   },
   "audit": {
     "title": "审计日志",

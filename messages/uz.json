@@ -757,7 +757,8 @@
     },
     "driverApp": "Haydovchi ilovasi",
     "callsApp": "Qo'ng'iroq ilovasi",
-    "badValue": "Qiymat noto‘g‘ri — sana (YYYY-MM-DD) yoki vaqt (YYYY-MM-DDTHH:MM+05:00) yozing; bo‘sh = o‘chiq. Hech narsa saqlanmadi."
+    "badValue": "Qiymat noto‘g‘ri — sana (YYYY-MM-DD) yoki vaqt (YYYY-MM-DDTHH:MM+05:00) yozing; bo‘sh = o‘chiq. Hech narsa saqlanmadi.",
+    "badValueReasons": "Qiymat noto‘g‘ri — kamida bitta sabab yozing («;» bilan, har biri 80 belgidan oshmasin). Hech narsa saqlanmadi."
   },
   "audit": {
     "title": "Audit jurnali",
