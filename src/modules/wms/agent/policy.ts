@@ -98,7 +98,7 @@ export const PROMISE_TABLE: Record<PromiseCategory, readonly RegExp[]> = {
     /скидк|дешевле|уступ(лю|им|ка)/iu,
     /скин\p{L}*\s+(?:\p{L}+\s+){0,2}(?:\d+\s*%|цен|процент)|сбав(?:лю|им|ит|ить|ляем|ляю)|сниз\p{L}*\s+(?:\p{L}+\s+)?цен|цен\p{L}*\s+(?:\p{L}+\s+)?сниз/iu,
     /\bdiscount|\bcheaper\b|lower\s+(the\s+)?price|reduce\s+(the\s+)?price/iu,
-    /\boff\s+the\s+price|price\s+(?:cut|drop)|knock\s+(?:\p{L}+\s+){0,2}off\b/iu,
+    /\boff\s+the\s+price|price\s+(?:cut|drop)|knock\s+(?:\S+\s+){0,2}off\b/iu,
     // A percent taken off, in any language: «10% kamroq», «10 foiz arzonroq», «10% off», «10%优惠».
     /\d+(?:[.,]\d+)?\s*(?:%|٪|foiz\p{L}*|фоиз\p{L}*|процент\p{L}*|percent)\s*(?:\p{L}+\s+)?(?:kam|arzon|chegirma|skidka|кам|арзон|скид|дешевле|меньше|off\b|less\b|cheaper|تخفیف|کمتر|折|优惠|便宜|少)/iu,
     /تخفیف|ارزان‌تر|ارزانتر/u,

@@ -101,7 +101,10 @@ describe('P1: a figure is money whenever money is written near it', () => {
     const sources = customerSources([{ text: '90 AQSH dollari qilib bering', label: 'mijoz' }]);
     expect(sources.map((s) => s.kind)).toEqual(['customer_money']);
     expect(codes({ body: "Mayli, 90 AQSH dollari bo'ladi", numberSources: sources })).toContain('number_unsourced');
-    // …and the same request with the currency a line away, agreed to with a bare figure.
+    // …and the same request with only a price word, in every language, agreed to with a bare figure.
+    for (const text of ['Какая цена? 90', 'What is the price? 90', 'قیمت؟ 90', '价格 90']) {
+      expect(customerSources([{ text, label: 'mijoz' }]).map((s) => s.kind)).toEqual(['customer_money']);
+    }
     const asked = customerSources([{ text: "Narxi qancha?\n90 bo'lsin", label: 'mijoz' }]);
     expect(asked.map((s) => s.kind)).toEqual(['customer_money']);
     expect(codes({ body: "Mayli, 90 bo'ladi", numberSources: asked })).toContain('number_unsourced');
@@ -179,6 +182,8 @@ describe('P2: the promises the table missed', () => {
     ['Сбавлю цену', 'discount'],
     ['Снизим цену для вас', 'discount'],
     ['10% off for you', 'discount'],
+    ['A price cut for you', 'discount'],
+    ['We can knock 20 off', 'discount'],
     ['قیمت را کم می‌کنیم', 'discount'],
     ['给您便宜一点', 'discount'],
     ["Ertaga albatta jo'natamiz", 'dispatch_promise'],
@@ -191,6 +196,9 @@ describe('P2: the promises the table missed', () => {
     ['Ertaga jo‘natiladi', 'dispatch_promise'],
     ['Yuk ertaga Toshkentga yetib boradi', 'dispatch_promise'],
     ['Pulini keyin berasiz', 'credit_release'],
+    ['Keyinroq to‘laysiz', 'credit_release'],
+    ['Пулини кейин берасиз', 'credit_release'],
+    ['بعداً پرداخت کنید', 'credit_release'],
     ["To'lovni keyinroq qilasiz", 'credit_release'],
     ['Оплатите после получения', 'credit_release'],
     ['You can pay after delivery', 'credit_release'],
@@ -281,6 +289,12 @@ describe('P3: another customer’s code in another script, a colleague’s name'
     expect(check({ body: 'Umriddin, Umriddin javob beradi' }).warnings).toEqual([
       { rule: 'G6', code: 'staff_name', detail: 'Umriddin' },
     ]);
+  });
+
+  it('a customer who shares a colleague’s whole name is greeted by it', () => {
+    const r = check({ body: 'Siroj Aliyev, yukingiz keldi', customerNames: ['Siroj', 'Aliyev'] });
+    expect(r.blocks.map((b) => b.code)).not.toContain('staff_name');
+    expect(r.warnings).toEqual([]);
   });
 
   it('a name is one name in either script and with any apostrophe', () => {
