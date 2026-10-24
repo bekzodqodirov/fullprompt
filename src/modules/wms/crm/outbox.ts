@@ -578,9 +578,16 @@ export async function loadOutboxFile(
  * unique (manager, peer, tg_message_id) index refuses the duplicate, and for
  * a photo the attachment is already claimed onto the row, so the thread shows
  * the copy we uploaded rather than a second download.
+ *
+ * A LEAD's chat too (review regression-2): the agent answers leads, and an
+ * echo built from a client id alone stored a lead's reply with no owner at
+ * all — `storeIncoming` takes the lead and, for a lead since won, fills the
+ * client beside it. The human queue's rows always name a client and keep
+ * passing exactly what they passed.
  */
 export async function recordSent(input: {
-  clientId: string;
+  clientId: string | null;
+  leadId?: string | null;
   managerUserId: string;
   peerId: bigint;
   tgMessageId: bigint;
@@ -591,6 +598,7 @@ export async function recordSent(input: {
 }): Promise<void> {
   const echoId = await storeIncoming({
     clientId: input.clientId,
+    leadId: input.leadId ?? null,
     managerUserId: input.managerUserId,
     row: {
       peerId: input.peerId,
