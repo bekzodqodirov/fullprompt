@@ -27,7 +27,8 @@ import { setSourceWebhookAction } from './actions';
 export interface DoorView {
   key: string;
   name: string;
-  formUrl: string;
+  /** Null on the agent's door — no person is meant to fill it in. */
+  formUrl: string | null;
   botUrl: string | null;
   webhookUrl: string;
   secret: string | null;
@@ -65,7 +66,7 @@ export function InboundDoors({
       {doors.map((door) => (
         <li key={door.key} className="card space-y-1.5 p-3">
           <p className="font-semibold">{door.name}</p>
-          <Copyable label={t('doorForm')} value={door.formUrl} />
+          {door.formUrl && <Copyable label={t('doorForm')} value={door.formUrl} />}
           {door.botUrl && <Copyable label={t('doorBot')} value={door.botUrl} />}
           {door.assignUrl && <Copyable label={t('doorAssign')} value={door.assignUrl} />}
 

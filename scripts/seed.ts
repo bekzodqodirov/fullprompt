@@ -285,6 +285,9 @@ async function seedCrm() {
     { key: 'tiktok', name: 'TikTok', sortOrder: 45 },
     { key: 'google', name: 'Google', sortOrder: 55 },
     { key: 'sayt', name: 'Sayt', sortOrder: 80 },
+    // The client-finding agent's door (docs/AGENT-FEED.md): a machine posts
+    // here, never a person — its form and bot links are not offered.
+    { key: 'agent', name: 'Agent (qidiruv)', sortOrder: 90 },
     { key: 'other', name: 'Boshqa', sortOrder: 200 },
   ];
   for (const want of KEYED) {

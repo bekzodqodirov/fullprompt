@@ -18,6 +18,10 @@ import {
 } from './field-map';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { announceArrival, type LandedArrival } from './inbound-notify';
+import { isAgentSource } from './agent-source';
+import { isSuppressedTail, noContactReasons } from './agent-feed';
+
+export { AGENT_SOURCE_KEY, isAgentSource } from './agent-source';
 
 /**
  * A lead that arrived by itself — from an advert, the public form, or the bot.
@@ -44,9 +48,33 @@ export const INBOUND_SOURCE_KEYS = [
   'tiktok',
   'google',
   'sayt',
+  /**
+   * A lead a MACHINE found (the client-finding agent), not one a person sent.
+   * The only key whose arrivals are also read back (/api/agent/*), whose
+   * phone is checked against the client book and the «Qayta qilinmasin»
+   * leads before it may become a lead, whose owner reminder is off — and
+   * which only its own webhook may claim (`inboundSourceKey`).
+   * docs/AGENT-FEED.md.
+   */
+  'agent',
   'other',
 ] as const;
 export type InboundSourceKey = (typeof INBOUND_SOURCE_KEYS)[number];
+
+/**
+ * The source an arrival is recorded under: one of the allowlist, else
+ * `other` — and `agent` only through the WEBHOOK channel. `/ariza?manba=agent`
+ * or a bot link `ad_agent` is a person, and a person must not inherit the
+ * machine's belt (a client asking through the form would be dropped in
+ * silence), its unreminded clock, or a row in the agent's outcomes. Every door
+ * lands through `landInboundLead`, so this one line covers the form, the bot
+ * and anything added later.
+ */
+export function inboundSourceKey(raw: string | null | undefined, channel: InboundArrival['channel']): string {
+  if (!(INBOUND_SOURCE_KEYS as readonly string[]).includes(raw ?? '')) return 'other';
+  if (isAgentSource(raw) && channel !== 'webhook') return 'other';
+  return raw!;
+}
 
 /**
  * How long an open lead stays "the same enquiry".
@@ -94,6 +122,8 @@ export interface InboundArrival {
   name?: string | null;
   phone?: string | null;
   note?: string | null;
+  /** The sender's firm (`company` / `firma` on the plain webhook) — the lead card's own column. */
+  company?: string | null;
   /** The form's own questions as pairs — the tarjimon's raw material (0074). */
   fields?: { key: string; value: string }[] | null;
   /**
@@ -229,11 +259,7 @@ export async function landInboundLead(arrival: InboundArrival): Promise<InboundR
   const phone = inboundPhoneDigits(arrival.phone);
   const name = trim(arrival.name, 120);
   const note = trim(arrival.note, 1000);
-  const sourceKey: string = (INBOUND_SOURCE_KEYS as readonly string[]).includes(
-    arrival.sourceKey ?? '',
-  )
-    ? arrival.sourceKey!
-    : 'other';
+  const sourceKey = inboundSourceKey(arrival.sourceKey, arrival.channel);
 
   // Capped, normalized, secret-named keys dropped — what of the form's own
   // questions is worth keeping and worth showing the mapping screen.
@@ -331,6 +357,19 @@ export async function landInboundLead(arrival: InboundArrival): Promise<InboundR
     return { outcome: 'dropped', reason: 'capped' };
   }
 
+  // The agent's belt (docs/AGENT-FEED.md). The agent holds the suppression
+  // feed, so reaching this line means its copy was stale: the arrival is
+  // recorded as `suppressed` — the outcomes feed tells it to pull again — and
+  // NOBODY is told. A client's manager must not hear «a machine found your
+  // client on OLX», and a «Qayta qilinmasin» number must not reach a seller
+  // again by any road. Wider than step (0) below on purpose: an INACTIVE
+  // client is still ours. Adverts and the public form keep today's behaviour:
+  // a client's question still lands on the client's card.
+  if (isAgentSource(sourceKey) && phone && (await isSuppressedTail(phone, await noContactReasons()))) {
+    await record('dropped', { reason: 'suppressed' });
+    return { outcome: 'dropped', reason: 'suppressed' };
+  }
+
   const sourceId = await sourceIdForKey(sourceKey);
   const text = note ?? '';
 
@@ -424,6 +463,8 @@ export async function landInboundLead(arrival: InboundArrival): Promise<InboundR
       // `leadSchema` wants two characters and an advert may send none.
       name: name ?? `${sourceKey} · ${phone ?? '—'}`,
       phone: arrival.phone ?? '',
+      // `leadSchema`'s own ceiling for the card's firm.
+      company: trim(arrival.company, 200) ?? undefined,
       sourceId: sourceId ?? '',
       ownerId: ownerId ?? '',
       // `note` deliberately left empty. What the person WROTE goes on the

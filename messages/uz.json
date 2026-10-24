@@ -747,6 +747,7 @@
       "unpriced_gate_since": "Shu vaqtdan keyin mashinada O‘zbekistonga yetib kelgan, narxi yozilmagan yuk mijozga faqat ruxsat bilan beriladi (sana yoki vaqt; bo‘sh = taqiq o‘chiq)",
       "fx_residue_auto": "Hisob o‘z valyutasida 0 ga tushganda dollar qoldig‘ini tizim o‘zi «kurs farqi» bilan yopsinmi. «Yo‘q» — yangi yozuv qo‘shilmaydi, borlari yuritilaveradi.",
       "lead_assign_origins": "Saytdan «kimga yozsin?» deb so'rashga ruxsat berilgan sahifalar (bo'sh joy bilan, har biri https://…)",
+      "agent_no_contact_reasons": "Shu sabab bilan yopilgan lid raqamini mijoz topuvchi agent boshqa hech qachon taklif qilmaydi («;» bilan ajrating, katta-kichik harf farqsiz)",
       "kpi_expense_category_id": "Sotuvchilarga KPI to‘lovi yoziladigan xarajat turi (faqat kassa). «Hodimlar» sahifasida tanlanadi.",
       "salary_expense_category_id": "Oyliklar xarajat turi: «Hodimlar» sahifasi oylik va uning to‘lanishini shu turdagi shablonlardan ko‘rsatadi.",
       "price_history_min_sim": "«Oldingi narx» o‘tgan prixod mashinasini ko‘rsatishi uchun tovar nomi o‘xshashligi darajasi (0..1)",

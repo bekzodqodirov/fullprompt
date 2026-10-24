@@ -1,6 +1,7 @@
 import { sql, type SQL } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { addOfficeMinutes, officeClock } from '../../platform/time/office-hours';
+import { AGENT_SOURCE_KEY } from './agent-source';
 
 /**
  * «Has anybody contacted this advert lead yet?» — asked ONCE, here (0113, the
@@ -67,6 +68,20 @@ export const CONTACT_NOTE = '📞 Bog‘lanildi (Telegram tugmasi)';
  * reminder for ever.
  */
 export const DEVICE_GRACE_MINUTES = 30;
+
+/**
+ * Sources whose arrivals are MEASURED but never REMINDED (the owner,
+ * 2026-10-23: the client-finding agent may push 25 leads a day, and
+ * «⏰ tegilmagan» would be 25 lines of a list nobody asked to be chased on).
+ * The clock still starts, so `stampFirstContacts` still writes
+ * `contacted_at` — the agent's outcomes feed and /crm/tahlil read that, not
+ * the reminder; only `contact_due_at` stays NULL, which is the one column
+ * `claimUntouched` will not claim without.
+ */
+export const REMINDER_EXEMPT_SOURCES: ReadonlySet<string> = new Set([AGENT_SOURCE_KEY]);
+
+export const isReminderExempt = (sourceKey: string | null | undefined): boolean =>
+  REMINDER_EXEMPT_SOURCES.has(sourceKey ?? '');
 
 /** A joined re-enquiry inside a conversation this fresh gets no clock of its own. */
 export const JOINED_FRESH_CONTACT_HOURS = 24;

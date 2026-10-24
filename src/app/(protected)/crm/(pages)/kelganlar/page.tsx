@@ -2,7 +2,12 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { inboundDoors, intakesBySource, recentIntakes } from '@/modules/wms/crm/inbound';
+import {
+  inboundDoors,
+  intakesBySource,
+  isAgentSource,
+  recentIntakes,
+} from '@/modules/wms/crm/inbound';
 import { funnelReport } from '@/modules/wms/crm/service';
 import { PageHeader, Section } from '@/components/ui/page';
 import { Panel } from '@/components/panel';
@@ -50,9 +55,13 @@ export default async function ArrivalsPage() {
   const doors: DoorView[] = doorRows.map((door) => ({
     key: door.key,
     name: door.name,
-    formUrl: `${appUrl}/ariza?manba=${door.key}`,
+    // The agent's door is a machine's: a person reaching it through the form
+    // or the bot lands under «Boshqa» (`inboundSourceKey`), so a link that
+    // looks like a door to it would be one that does not go there.
+    formUrl: isAgentSource(door.key) ? null : `${appUrl}/ariza?manba=${door.key}`,
     // The bot's third door only exists once the bot has a name to link to.
-    botUrl: botName ? `https://t.me/${botName}?start=ad_${door.key}` : null,
+    botUrl:
+      botName && !isAgentSource(door.key) ? `https://t.me/${botName}?start=ad_${door.key}` : null,
     webhookUrl: `${appUrl}/api/leads/in/${door.key}`,
     secret: door.secret,
     assignUrl: door.key === 'sayt' ? `${appUrl}/api/lead/assign` : null,

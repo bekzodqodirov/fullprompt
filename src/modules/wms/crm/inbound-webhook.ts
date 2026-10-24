@@ -24,6 +24,12 @@ export interface InboundFields {
   name: string | null;
   phone: string | null;
   note: string | null;
+  /**
+   * The sender's firm, when it names one (`company` / `firma`) — the lead
+   * card's own column, so it needs no mapping and is not repeated as a note
+   * line. Google's form has no such field id we read; null there.
+   */
+  company: string | null;
   /** The sender's own id for this lead, when it has one — the retry fence. */
   externalId: string | null;
   /** The unrecognised questions as PAIRS — the tarjimon's raw material. */
@@ -85,6 +91,7 @@ function fromGoogle(columns: unknown[], body: unknown): InboundFields {
     name: full ?? (joined || null),
     phone,
     note: extras.length ? extras.join('\n') : null,
+    company: null,
     // Google's own lead id, so its retries land on one lead.
     externalId: str(pick(body, 'lead_id')),
     fields,
@@ -114,6 +121,10 @@ function fromPlain(body: unknown): InboundFields {
     'izoh',
     'id',
     'external_id',
+    // The card has a column for these (the client-finding agent sends
+    // `firma`, docs/AGENT-FEED.md), so they land there and not as a pair.
+    'company',
+    'firma',
     ...SECRET_BODY_KEYS,
   ]);
   if (body && typeof body === 'object' && !Array.isArray(body)) {
@@ -131,6 +142,9 @@ function fromPlain(body: unknown): InboundFields {
     name: str(pick(body, 'name')) ?? str(pick(body, 'ism')),
     phone: str(pick(body, 'phone')) ?? str(pick(body, 'telefon')),
     note: [note, extras.join('\n')].filter(Boolean).join('\n') || null,
+    // By lower-cased name, the way `known` skips it: `{Firma: …}` must land
+    // somewhere, not be dropped from the note and missed here.
+    company: firstCi(body, ['company', 'firma']),
     externalId: str(pick(body, 'external_id')) ?? str(pick(body, 'id')),
     fields,
   };
@@ -212,6 +226,18 @@ export function metaSourceKey(platform: unknown): 'instagram' | 'facebook' | 'me
 
 function pick(value: unknown, key: string): unknown {
   return value && typeof value === 'object' ? (value as Record<string, unknown>)[key] : undefined;
+}
+/** The first of `keys` (lower-case) the object carries as text, by lower-cased name. */
+function firstCi(value: unknown, keys: string[]): string | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const entries = Object.entries(value as Record<string, unknown>);
+  for (const want of keys) {
+    for (const [key, raw] of entries) {
+      const text = key.toLowerCase() === want ? str(raw) : null;
+      if (text) return text;
+    }
+  }
+  return null;
 }
 function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
