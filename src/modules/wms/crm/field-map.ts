@@ -2,6 +2,7 @@ import { and, desc, eq, gt, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { customFields, leadFieldMap, leadIntakes } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
+import { clipCodePoints } from '../../platform/text/clip';
 import { CrmError } from './service';
 
 /**
@@ -51,9 +52,13 @@ const MAX_VALUE = 300;
 /** The names a shared secret travels under — never stored, never mapped. */
 const SECRET_KEYS = new Set(['google_key', 'key', 'secret', 'token']);
 
-/** One spelling per question: the map and the arrivals must agree. */
+/**
+ * One spelling per question: the map and the arrivals must agree. Cut by CODE
+ * POINTS: the key is stored in `lead_intakes.fields` (jsonb), which refuses
+ * the half an emoji a UTF-16 `slice` leaves (review, 2026-10-24).
+ */
 export function normalizeKey(key: string): string {
-  return key.trim().toLowerCase().slice(0, MAX_KEY);
+  return clipCodePoints(key.trim().toLowerCase(), MAX_KEY);
 }
 
 /**
@@ -65,7 +70,10 @@ export function capturePairs(pairs: FieldPair[] | null | undefined): FieldPair[]
   const out: FieldPair[] = [];
   for (const pair of pairs) {
     const key = normalizeKey(String(pair.key ?? ''));
-    const value = String(pair.value ?? '').trim().slice(0, MAX_VALUE);
+    // Code points, for the same jsonb: a 300-character evidence line with an
+    // emoji at the edge made the arrival's ledger row throw — after its lead
+    // was written — on every door (review, 2026-10-24).
+    const value = clipCodePoints(String(pair.value ?? '').trim(), MAX_VALUE);
     if (!key || !value) continue;
     if (SECRET_KEYS.has(key)) continue;
     out.push({ key, value });

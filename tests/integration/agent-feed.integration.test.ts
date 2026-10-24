@@ -21,6 +21,8 @@ import {
   decodeCursor,
   hashTail,
   HASH_RULE,
+  isSuppressedTail,
+  noContactReasons,
   outcomesPage,
   reasonTextSql,
   saltIdFor,
@@ -37,6 +39,10 @@ import {
 import { claimUntouched, stampFirstContacts } from '@/modules/wms/crm/first-contact';
 import { CONTACT_NOTE } from '@/modules/wms/crm/inbound-notify';
 import { addActivity, moveLead } from '@/modules/wms/crm/service';
+import { attachClient } from '@/modules/wms/crm/people';
+import { activeClientsByPhone } from '@/modules/wms/client-cabinet/service';
+import { firstContactBySeller } from '@/modules/wms/crm/analytics';
+import postgres from 'postgres';
 import { GET as suppressionGET } from '@/app/api/agent/suppression/route';
 import { GET as outcomesGET } from '@/app/api/agent/outcomes/route';
 
@@ -139,10 +145,32 @@ async function insertLead(tag: string, p: string, stageId: string, lostReason: s
   return row!.id;
 }
 
-/** Every entry the full feed holds, one page. */
+/**
+ * Every entry the full feed holds — a FULL walk, following `next`. One page on
+ * a fresh database; a long-lived one (#653) holds more than a page, and the
+ * fixtures, being the newest rows, are on the LAST (review, 2026-10-24).
+ */
 async function fullSet(): Promise<SuppressionEntry[]> {
-  return (await suppressionPage({ secret, since: null, cursor: null, limit: 5000 })).entries;
+  return walkSuppression(null, 5000);
 }
+
+/**
+ * This run's own nine-digit tails, as hashes under the current key — what a
+ * paging test compares, so a row another file writes while it walks cannot
+ * make two reads of a shared table disagree.
+ */
+const ourHashes = () =>
+  new Set(
+    [
+      P1, P1b, P2, P6, P7, PN, PW, PW2, PP,
+      ...Array.from({ length: 20 }, (_, i) => `+998${STAMP}${50 + i}`),
+      ...Array.from({ length: 8 }, (_, i) => M(i + 1)),
+    ].map((p) => hashTail(secret, tailOf(p))),
+  );
+const ours = (entries: SuppressionEntry[]) => {
+  const mine = ourHashes();
+  return entries.filter((e) => mine.has(e.h));
+};
 
 async function walkSuppression(since: string | null, limit: number): Promise<SuppressionEntry[]> {
   const out: SuppressionEntry[] = [];
@@ -325,21 +353,28 @@ describe('the suppression feed', () => {
   it('pages one row at a time through the whole set: nothing skipped, nothing twice, and it ends', async () => {
     // Since the fixtures: the twenty-phone card's rows all share one instant
     // and one id, so only the phone's position keeps the page edge honest.
-    const mine = await suppressionPage({ secret, since: fixturesFrom, cursor: null, limit: 5000 });
-    const walked = await walkSuppression(fixturesFrom, 1);
+    const mine = ours((await suppressionPage({ secret, since: fixturesFrom, cursor: null, limit: 5000 })).entries);
+    const walked = ours(await walkSuppression(fixturesFrom, 1));
     // As MULTISETS: one phone on two records (a card and its person) is two
     // entries with one hash, by contract — the walk must carry both, once each.
-    expect(walked.length).toBe(mine.entries.length);
-    expect(walked.map(keyOf).sort()).toEqual(mine.entries.map(keyOf).sort());
+    expect(walked.length).toBe(mine.length);
+    expect(walked.map(keyOf).sort()).toEqual(mine.map(keyOf).sort());
     // 2 + 1 + 20 client phones, 2 listed lost leads — at the least.
     expect(walked.length).toBeGreaterThanOrEqual(25);
-  });
+    // Each one-row page recomputes the set: ~0.4 s apiece on a shaped copy
+    // (17,000 entries), where this walk takes ~12 s — the default 20 s is
+    // too close on a long-lived database.
+  }, 60_000);
 
-  it('the full walk in pages equals the one big page', async () => {
-    const walked = await walkSuppression(null, 7);
+  it('the full walk in small pages equals the full walk in big ones', async () => {
     const big = await fullSet();
-    expect(walked.map(keyOf).sort()).toEqual(big.map(keyOf).sort());
-  });
+    // Small enough to cross many page edges, big enough that a long-lived
+    // database still walks in a couple of dozen reads — every page
+    // recomputes the set.
+    const walked = await walkSuppression(null, Math.max(7, Math.ceil(big.length / 25)));
+    expect(ours(walked).map(keyOf).sort()).toEqual(ours(big).map(keyOf).sort());
+    expect(ours(big).length).toBeGreaterThanOrEqual(25);
+  }, 60_000);
 
   it('a delta carries only what moved after `since`', async () => {
     const future = (
@@ -377,6 +412,65 @@ describe('the suppression feed', () => {
     for (let n = 1; n <= 8; n += 1) {
       expect(hashes.has(hashTail(secret, M(n))), `number ${n}`).toBe(true);
     }
+  });
+
+  it('a run of 998 numbers is cut into those numbers only — never also into nine-digit garbage', async () => {
+    // Three 998 numbers are 36 digits, a multiple of nine as well: the 9-digit
+    // chunks («998XXXXXX», «XXX998XXX»…) are nobody's phone, yet each reads as
+    // a valid Uzbek mobile and would suppress a stranger.
+    const [A, B, C] = ['81', '82', '83'].map((n) => `${STAMP}${n}`) as [string, string, string];
+    const run = `998${A}998${B}998${C}`;
+    const [card] = await db
+      .insert(clients)
+      .values({ clientCode: `AGT${STAMP}R`, name: NAME('36 raqam'), phones: [`+${run}`] })
+      .returning({ id: clients.id });
+    clientsMade.push(card!.id);
+    const hashes = new Set((await walkSuppression(fixturesFrom, 5000)).map((e) => e.h));
+    for (const real of [A, B, C]) expect(hashes.has(hashTail(secret, real)), real).toBe(true);
+    const labels = await noContactReasons();
+    for (const garbage of [run.slice(0, 9), run.slice(9, 18), run.slice(18, 27)]) {
+      expect(hashes.has(hashTail(secret, garbage)), garbage).toBe(false);
+      expect(await isSuppressedTail(`+998 ${garbage}`, labels), garbage).toBe(false);
+    }
+    expect(await isSuppressedTail(`+998 ${B}`, labels)).toBe(true);
+  });
+
+  it('a part of one number is no number: «+998 90/283-65-94» answers its own phone, not every …2836594', async () => {
+    // The slash splits the value, and the part after it holds seven digits —
+    // a FRAGMENT. Matched by suffix it suppressed a hundred strangers' numbers
+    // the app's own phone rule (`phonesMatch`, over the whole value) never reads.
+    const value = `+998 90/${STAMP.slice(0, 3)}-${STAMP.slice(3, 5)}-${STAMP.slice(5)}`;
+    const [card] = await db
+      .insert(clients)
+      .values({ clientCode: `AGT${STAMP}Q`, name: NAME('bo‘lak raqam'), phones: [value] })
+      .returning({ id: clients.id });
+    clientsMade.push(card!.id);
+    const labels = await noContactReasons();
+    expect(await isSuppressedTail(`+998 90 ${STAMP}`, labels), 'the number itself').toBe(true);
+    expect(await isSuppressedTail(`+998 33 ${STAMP}`, labels), 'another operator, same seven').toBe(
+      false,
+    );
+  });
+
+  it('a person tied to a code brings its numbers into the delta at that moment, not at the person’s own', async () => {
+    const PX = phone();
+    const old = new Date(Date.now() - 3 * 86_400_000);
+    const [person] = await db
+      .insert(crmPeople)
+      .values({ name: NAME('eski odam'), phones: [PX], createdBy: adminId, createdAt: old, updatedAt: old })
+      .returning({ id: crmPeople.id });
+    peopleMade.push(person!.id);
+    const [card] = await db
+      .insert(clients)
+      .values({ clientCode: `AGT${STAMP}P`, name: NAME('odamga bog‘lanadi'), phones: [], createdAt: old, updatedAt: old })
+      .returning({ id: clients.id });
+    clientsMade.push(card!.id);
+    const h = hashTail(secret, tailOf(PX));
+    const before = new Date(Date.now() - 1000).toISOString();
+    expect((await walkSuppression(before, 5000)).map((e) => e.h), 'nobody holds the person yet').not.toContain(h);
+    // attachClient writes the CARD, never the person.
+    await attachClient(card!.id, person!.id, { actorId: adminId, ip: null, userAgent: null });
+    expect((await walkSuppression(before, 5000)).map((e) => e.h)).toContain(h);
   });
 
   it('the column normalises a reason exactly as the setting is normalised', async () => {
@@ -710,6 +804,159 @@ describe('a contact made after the first week', () => {
     expect((await agentOutcome(ext('late')))!.contacted_at).not.toBeNull();
     // Every other door's week is exactly what it was.
     expect((await intakeByExt(`wh-${PREFIX}-late`)).contactedAt).toBeNull();
+
+    // /crm/tahlil reads that day-9 call as LATE, as it would anybody's — in
+    // the late counts, never in the seller's median: the screen's number must
+    // not depend on which door the lead came through.
+    await db.update(leadIntakes).set({ assignedUserId: adminId }).where(eq(leadIntakes.id, a.id));
+    const [row] = await db
+      .select({ at: leadIntakes.createdAt })
+      .from(leadIntakes)
+      .where(eq(leadIntakes.id, a.id));
+    const stat = (
+      await firstContactBySeller(
+        { from: new Date(row!.at.getTime() - 1000), to: new Date(row!.at.getTime() + 1000) },
+        { owner: adminId },
+      )
+    ).get(adminId);
+    expect(stat, 'the late agent arrival is counted at all').toBeTruthy();
+    expect(stat!.measured, 'a contact after the week is no median sample').toBe(0);
+    expect(stat!.medianMinutes).toBeNull();
+    expect(stat!.lateDay).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('a landing that used to throw half-way', () => {
+  /** The arrival landed whole: its ledger row, its lead, and the lead's lenta note. */
+  async function landedWhole(id: string) {
+    const intake = await intakeByExt(id);
+    expect(intake, id).toBeTruthy();
+    expect(intake.outcome).toBe('created');
+    const notes = await db
+      .select({ id: crmActivities.id })
+      .from(crmActivities)
+      .where(and(eq(crmActivities.entityType, 'lead'), eq(crmActivities.entityId, intake.leadId!)));
+    expect(notes.length, `${id}: the lenta note`).toBeGreaterThanOrEqual(1);
+    return intake;
+  }
+
+  it('an emoji at the name’s 120-character edge — the cut keeps it whole', async () => {
+    const id = ext('emoji-name');
+    const lead = NAME('emoji name ');
+    const name = `${lead}${'x'.repeat(119 - lead.length)}😀 tail`;
+    expect(name.slice(0, 120)).toMatch(/[\uD800-\uDBFF]$/); // the old cut's lone half
+    const result = await landInboundLead({ channel: 'webhook', sourceKey: 'agent', externalId: id, name, phone: phone() });
+    expect(result.outcome).toBe('created');
+    const intake = await landedWhole(id);
+    expect(intake.name).toBe(`${lead}${'x'.repeat(119 - lead.length)}😀`);
+  });
+
+  it('an emoji at a question pair’s 300-character edge', async () => {
+    const id = ext('emoji-pair');
+    const result = await landInboundLead({
+      channel: 'webhook',
+      sourceKey: 'agent',
+      externalId: id,
+      name: NAME('emoji pair'),
+      phone: phone(),
+      fields: [{ key: 'evidence', value: `${'y'.repeat(299)}🔥🔥` }],
+    });
+    expect(result.outcome).toBe('created');
+    const intake = await landedWhole(id);
+    expect(intake.fields).toEqual([{ key: 'evidence', value: `${'y'.repeat(299)}🔥` }]);
+  });
+
+  it('an emoji at the lenta note’s 200-character audit excerpt', async () => {
+    // «📣 agent\n» is nine UTF-16 units: the emoji sits at 199-200.
+    const id = ext('emoji-note');
+    const result = await landInboundLead({
+      channel: 'webhook',
+      sourceKey: 'agent',
+      externalId: id,
+      name: NAME('emoji note'),
+      phone: phone(),
+      note: `${'x'.repeat(190)}😀 tail`,
+    });
+    expect(result.outcome).toBe('created');
+    await landedWhole(id);
+  });
+
+  it('a lone half the sender put in the body itself — and on an advert door too', async () => {
+    for (const [source, id] of [
+      ['agent', ext('lone-half')],
+      ['tiktok', `wh-${PREFIX}-lone-half`],
+    ] as const) {
+      const result = await landInboundLead({
+        channel: 'webhook',
+        sourceKey: source,
+        externalId: id,
+        name: NAME(`lone \ud83d half ${source}`),
+        // The card keeps the phone as sent, and the create's audit row holds it.
+        phone: `${phone()} \ud83d`,
+        ref: { utm_campaign: 'x\udc00y' },
+        fields: [{ key: 'k\ud83d', value: 'v\udc00' }],
+      });
+      expect(result.outcome, source).toBe('created');
+      const intake = await landedWhole(id);
+      expect(intake.name).toBe(NAME(`lone \ufffd half ${source}`));
+      expect(intake.ref).toEqual({ utm_campaign: 'x\ufffdy' });
+    }
+  });
+
+  it('a client card whose phones value is not a list is read as no phones — the landing’s client check does not throw', async () => {
+    // Every door's step (0) scans every active card; one card holding a jsonb
+    // STRING (a hand edit, an old import) made it throw «cannot extract
+    // elements from a scalar» for every arrival with a phone. The row stands
+    // only for the one call: three other readers of the client book still
+    // throw on it (stated, DECISIONS #1468).
+    const [bad] = await db
+      .insert(clients)
+      .values({ clientCode: `AGT${STAMP}S`, name: NAME('skalar telefon'), phones: '+998 90 000 00 00' as unknown as string[] })
+      .returning({ id: clients.id });
+    clientsMade.push(bad!.id);
+    let found: unknown;
+    try {
+      found = await activeClientsByPhone(phone()).catch((err: unknown) => err);
+    } finally {
+      await db.delete(clients).where(eq(clients.id, bad!.id));
+    }
+    expect(found).toEqual([]);
+  });
+
+  it('two deliveries of one id in flight land one lead — the second waits and is a replay', async () => {
+    // Deterministic: a third connection holds an UNCOMMITTED ledger row on the
+    // same id, so the first delivery creates its lead and then waits on the
+    // unique index. A second delivery that did not wait for it would pass the
+    // replay check too and create a SECOND lead before the index refused its
+    // row (review, 2026-10-24).
+    const id = ext('race');
+    const racePhone = phone();
+    const name = NAME('race');
+    const other = postgres(process.env.DATABASE_URL!, { max: 1 });
+    const held = await other.reserve();
+    await held`BEGIN`;
+    await held`INSERT INTO lead_intakes (channel, external_id, outcome, name) VALUES ('webhook', ${id}, 'dropped', ${NAME('race-held')})`;
+    const leadCount = () =>
+      db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM leads WHERE name = ${name}`).then((r) => Number(r[0]!.n));
+    const arrival = { channel: 'webhook' as const, sourceKey: 'agent', externalId: id, name, phone: racePhone };
+    const first = landInboundLead(arrival);
+    const second = landInboundLead(arrival);
+    try {
+      for (let i = 0; i < 200 && (await leadCount()) === 0; i++) await new Promise((r) => setTimeout(r, 25));
+      expect(await leadCount(), 'the first delivery wrote its lead and waits').toBe(1);
+      // Give a second delivery that did NOT wait every chance to write its own.
+      for (let i = 0; i < 40 && (await leadCount()) < 2; i++) await new Promise((r) => setTimeout(r, 50));
+    } finally {
+      await held`ROLLBACK`;
+      held.release();
+      await other.end();
+    }
+    const [a, b] = await Promise.all([first, second]);
+    expect(a.outcome).toBe('created');
+    expect(b).toEqual({ outcome: 'dropped', reason: 'replay' });
+    expect(await leadCount()).toBe(1);
+    const rows = await db.select().from(leadIntakes).where(eq(leadIntakes.externalId, id));
+    expect(rows.map((r) => r.outcome)).toEqual(['created']);
   });
 });
 
@@ -954,13 +1201,13 @@ describe('the two routes', () => {
       'rule',
       'salt_id',
     ]);
-    expect(body).toMatchObject({
-      mode: 'full',
-      rule: HASH_RULE,
-      salt_id: saltIdFor(secret),
-      next: null,
-    });
-    expect(body.entries.map((e: SuppressionEntry) => e.h)).toContain(hashTail(secret, tailOf(P1)));
+    expect(body).toMatchObject({ mode: 'full', rule: HASH_RULE, salt_id: saltIdFor(secret) });
+    // One page on a fresh database; a long-lived one holds more (#653).
+    expect(body.next === null || typeof body.next === 'string').toBe(true);
+    const mine = await (
+      await suppressionGET(ask(`suppression?since=${encodeURIComponent(fixturesFrom)}&limit=5000`))
+    ).json();
+    expect(mine.entries.map((e: SuppressionEntry) => e.h)).toContain(hashTail(secret, tailOf(P1)));
 
     const delta = await (
       await suppressionGET(ask(`suppression?since=${encodeURIComponent(fixturesFrom)}&limit=2`))

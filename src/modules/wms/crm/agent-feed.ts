@@ -178,14 +178,21 @@ const PHONE_SPLIT_PG = '[,;/|\\\\\\r\\n]+|[\\t ]{2,}|[\\t ]+(?=\\+)';
  *  - the WHOLE value's last nine digits (`o = 0`) — exactly what the app's
  *    own phone rule (`phonesMatch`) reads, so the belt is never narrower than
  *    the landing's client check;
- *  - each split part's last nine (above);
+ *  - each split part's last nine (above) — only a part of nine digits or
+ *    more: a shorter part («90/283-65-94» → «2836594») is a FRAGMENT of one
+ *    number, and matched by suffix it would answer a hundred strangers'
+ *    numbers that `phonesMatch` never reads (review, 2026-10-24);
  *  - a part of more than fifteen digits is no single phone (E.164 stops at
  *    15): the client import keeps a multi-number cell as ONE run of digits,
- *    so whole 12-digit «998…» numbers, or whole 9-digit ones, are cut out of
- *    it. A run that is neither is read by its last nine only.
+ *    so whole 12-digit «998…» numbers are cut out of it — or, when the run is
+ *    NOT made of those, whole 9-digit ones. Never both: three 998 numbers are
+ *    36 digits, a multiple of nine too, and their 9-digit chunks («998902836»)
+ *    are nobody's phone yet read as valid Uzbek mobiles (review, 2026-10-24).
+ *    A run that is neither is read by its last nine only.
  *
- * Tails shorter than nine digits are kept — the belt matches seven or eight
- * by suffix, the app's rule — and the feed drops them.
+ * So the only tails shorter than nine digits are WHOLE values — the card of
+ * seven or eight digits `phonesMatch` matches by suffix, which the belt does
+ * too; the feed drops them.
  *
  * Read with JIT OFF (`withoutJit`, #1039): postgres estimates a thousand rows
  * for each `regexp_split_to_table` / `generate_series`, so even a twenty-card
@@ -200,6 +207,7 @@ const tailsSql = (expr: SQL) => sql`(
     CROSS JOIN LATERAL (SELECT regexp_replace(pt.s, '[^0-9]', '', 'g') AS d) pd
     CROSS JOIN LATERAL (
       SELECT right(pd.d, 9) AS tail, 0 AS c
+       WHERE length(pd.d) >= 9
       UNION ALL
       SELECT substr(pd.d, g.i * 12 + 4, 9), 1 + g.i
         FROM generate_series(0, length(pd.d) / 12 - 1) AS g(i)
@@ -208,15 +216,42 @@ const tailsSql = (expr: SQL) => sql`(
       SELECT substr(pd.d, g.i * 9 + 1, 9), 500 + g.i
         FROM generate_series(0, length(pd.d) / 9 - 1) AS g(i)
        WHERE length(pd.d) > 15 AND length(pd.d) <= 120 AND length(pd.d) % 9 = 0
+         AND pd.d !~ '^(998[0-9]{9})+$'
     ) ch
    WHERE pd.d <> ''
 )`;
+
+/** The digits of a phone text, every separator gone. */
+const digitsSql = (expr: SQL) => sql`regexp_replace(${expr}, '[^0-9]', '', 'g')`;
+
+/**
+ * The belt's narrowing: only phone texts whose digits CONTAIN the arrival's
+ * last seven. Every tail a text yields is a run of its digits (a split drops
+ * only separators), and a tail the belt matches — the nine digits, or a
+ * seven- or eight-digit suffix of them — holds the last seven; so this drops
+ * nothing the belt could answer, and the split, the chunks, the DISTINCT and
+ * the numbering run over the handful of texts that can match instead of over
+ * the whole client book and lead history. MEASURED on a shaped copy (2,000
+ * clients, 1,000 people, 40,000 leads, JIT off): a miss ~240 ms → ~90 ms
+ * median (review, 2026-10-24). What is left is one digit pass over every
+ * lead's phone — linear in the lead history, and the only thing an index
+ * (a migration) could take away. The FEED passes none.
+ */
+const nearSql = (text: SQL, near7: string | null): SQL =>
+  near7 === null ? sql`` : sql`AND strpos(${digitsSql(text)}, ${near7}) > 0`;
 
 /**
  * A record with a `phones` jsonb list (a client card, a person) as `client`
  * rows: its DISTINCT tails, `n` numbering them in their order on the record.
  */
-function phoneCardTailsSql(o: { from: SQL; id: SQL; phones: SQL; at: SQL; where?: SQL }): SQL {
+function phoneCardTailsSql(o: {
+  from: SQL;
+  id: SQL;
+  phones: SQL;
+  at: SQL;
+  where?: SQL;
+  near7: string | null;
+}): SQL {
   return sql`
     SELECT x.tail, 'client'::text AS kind, x.at, x.id,
            (row_number() OVER (PARTITION BY x.id ORDER BY x.o))::int AS n
@@ -230,7 +265,7 @@ function phoneCardTailsSql(o: { from: SQL; id: SQL; phones: SQL; at: SQL; where?
             CASE WHEN jsonb_typeof(${o.phones}) = 'array' THEN ${o.phones} ELSE '[]'::jsonb END
           ) WITH ORDINALITY AS p(v, n)
           CROSS JOIN LATERAL ${tailsSql(sql`p.v`)} tl
-         WHERE tl.tail <> '' ${o.where ? sql`AND ${o.where}` : sql``}
+         WHERE tl.tail <> '' ${o.where ? sql`AND ${o.where}` : sql``} ${nearSql(sql`p.v`, o.near7)}
          ORDER BY ${o.id}, tl.tail, p.n * 1000000 + tl.o
       ) x`;
 }
@@ -248,17 +283,25 @@ function phoneCardTailsSql(o: { from: SQL; id: SQL; phones: SQL; at: SQL; where?
  *
  * `at` is the moment the row last moved, so a delta pull finds a client whose
  * card was edited or a lead re-decided: the client card's `updated_at`, the
- * lead's later of `closed_at` and `updated_at`. What a delta cannot carry is
- * a DELETION, and a label added to the setting (its leads keep their old
- * instant) — the nightly full pull is the truth, the delta an optimisation.
+ * lead's later of `closed_at` and `updated_at`, and a person's later of its
+ * own and of every card that holds it — tying a code to a person writes the
+ * CARD (`attachClient`), and the person's numbers join the set at that
+ * moment, not at the person's own old one (review, 2026-10-24). What a delta
+ * cannot carry is a DELETION, and a label added to the setting (its leads
+ * keep their old instant) — the nightly full pull is the truth, the delta an
+ * optimisation.
+ *
+ * `near7` (the belt) narrows every branch to the phone texts that can match
+ * those seven digits (`nearSql`); null — the feed — reads everything.
  */
-function suppressionTailsSql(labels: string[]): SQL {
+function suppressionTailsSql(labels: string[], near7: string | null = null): SQL {
   return sql`(
     ${phoneCardTailsSql({
       from: sql`clients c`,
       id: sql`c.id`,
       phones: sql`c.phones`,
       at: sql`greatest(c.created_at, c.updated_at)`,
+      near7,
     })}
     UNION ALL
     -- The PERSON behind several codes (crm/people.ts) keeps a phone list of
@@ -268,8 +311,10 @@ function suppressionTailsSql(labels: string[]): SQL {
       from: sql`crm_people pp`,
       id: sql`pp.id`,
       phones: sql`pp.phones`,
-      at: sql`greatest(pp.created_at, pp.updated_at)`,
+      at: sql`greatest(pp.created_at, pp.updated_at,
+                       (SELECT max(pc.updated_at) FROM clients pc WHERE pc.person_id = pp.id))`,
       where: sql`EXISTS (SELECT 1 FROM clients pc WHERE pc.person_id = pp.id)`,
+      near7,
     })}
     UNION ALL
     SELECT y.tail, y.kind, y.at, y.id,
@@ -283,6 +328,7 @@ function suppressionTailsSql(labels: string[]): SQL {
           CROSS JOIN LATERAL ${tailsSql(sql`coalesce(l.phone, '')`)} tl
          WHERE tl.tail <> ''
            AND (l.client_id IS NOT NULL OR s.kind = 'won' OR (s.kind = 'lost' AND ${listedSql(labels)}))
+           ${nearSql(sql`coalesce(l.phone, '')`, near7)}
          ORDER BY l.id, tl.tail, tl.o
       ) y
   )`;
@@ -351,7 +397,12 @@ function resumeAfter(last: Cursor | null, sent: Cursor | null): string | null {
 /**
  * The landing belt's question: is this phone in the suppression set? Over the
  * feed's own derived table, so the belt and the feed cannot disagree about a
- * number. `phone` as typed or already cut; the nine digits are taken here.
+ * number — narrowed to the phone texts holding the arrival's last seven
+ * digits (`nearSql`, which drops nothing the belt could match). `phone` as
+ * typed or already cut; the nine digits are taken here.
+ *
+ * Only a WHOLE phones value shorter than nine digits answers by suffix — the
+ * table yields no shorter tail (a fragment of one number is no number).
  *
  * Matched by `phonesMatch`'s rule, not by the feed's nine digits alone: a
  * card holding seven or eight digits (a truncated import, a number typed
@@ -368,7 +419,7 @@ export async function isSuppressedTail(phone: string, labels: string[]): Promise
   const rows = await withoutJit((exec) =>
     exec.execute<{ hit: boolean }>(sql`
       SELECT EXISTS (
-        SELECT 1 FROM ${suppressionTailsSql(labels)} t
+        SELECT 1 FROM ${suppressionTailsSql(labels, tail.slice(-7))} t
          WHERE t.tail = ${tail}
             OR (length(t.tail) IN (7, 8) AND right(${tail}, length(t.tail)) = t.tail)
       ) AS hit`),

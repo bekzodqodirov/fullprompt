@@ -84,6 +84,14 @@ export const isReminderExempt = (sourceKey: string | null | undefined): boolean 
   REMINDER_EXEMPT_SOURCES.has(sourceKey ?? '');
 
 /**
+ * How long an UNSTAMPED arrival is looked at (`stampFirstContacts`): «has
+ * anybody called» stops being worth a query after a week. Every door's first
+ * contact is therefore at most this long after its clock — which is what
+ * /crm/tahlil's median reads (`firstContactBySeller`), for every source alike.
+ */
+export const CONTACT_LOOKBACK_DAYS = 7;
+
+/**
  * How long an UNSTAMPED arrival from a reminder-exempt source is still looked
  * at (below). An advert lead's question «has anybody called» stops being worth
  * a query after a week, because by then the owner was reminded and the
@@ -240,7 +248,8 @@ export async function stampFirstContacts(now: Date = new Date(), leadId?: string
          AND (
            (i.contact_clock_at >= ${at}::timestamptz - interval '8 days'
             AND (i.created_at >= ${at}::timestamptz - interval '1 day'
-                 OR (i.contacted_at IS NULL AND i.created_at >= ${at}::timestamptz - interval '7 days')))
+                 OR (i.contacted_at IS NULL
+                     AND i.created_at >= ${at}::timestamptz - make_interval(days => ${CONTACT_LOOKBACK_DAYS}))))
            OR (i.contacted_at IS NULL
                AND i.source_key IN (${sql.join(
                  [...REMINDER_EXEMPT_SOURCES].map((key) => sql`${key}`),

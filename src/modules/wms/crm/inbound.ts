@@ -4,6 +4,7 @@ import { db } from '../../platform/db/client';
 import { leadIntakes, leadSources, leadStages, leads, users } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { logger } from '../../platform/logger';
+import { clipCodePoints, wellFormed, wellFormedJson } from '../../platform/text/clip';
 import { listFields, setFieldValues } from '../../platform/fields/service';
 import { addActivity, createLead, CrmError } from './service';
 import { activeClientsByPhone } from '../client-cabinet/service';
@@ -171,8 +172,16 @@ export function inboundPhoneDigits(raw: string | null | undefined): string | nul
   return digits.length >= 9 ? digits.slice(-9) : null;
 }
 
+/**
+ * Whitespace collapsed, then cut at `max` CODE POINTS. Every value cut here
+ * reaches jsonb somewhere — the name in `createLead`'s audit row and the
+ * seller's push, the note in the push — and a UTF-16 `slice` through an emoji
+ * leaves a lone half jsonb refuses, AFTER the lead's own INSERT: an orphan
+ * lead, no ledger row, an open replay fence (review, 2026-10-24; #1106's rule).
+ * A lone half the sender put in the body itself goes the same way.
+ */
 const trim = (value: string | null | undefined, max: number) =>
-  (value ?? '').replace(/\s+/g, ' ').trim().slice(0, max) || null;
+  clipCodePoints((value ?? '').replace(/\s+/g, ' ').trim(), max) || null;
 
 /**
  * `lead_sources.key` → id. NEVER mints a row.
@@ -258,6 +267,9 @@ export async function inboundLanded(channel: InboundArrival['channel'], external
   return rows.length > 0;
 }
 
+/** The deliveries of one `(channel, external id)` in flight, newest last — `landInboundLead`'s chain. */
+const landing = new Map<string, Promise<unknown>>();
+
 /**
  * Land an arrival.
  *
@@ -269,6 +281,33 @@ export async function inboundLanded(channel: InboundArrival['channel'], external
  * advert produce nothing today» has to be answerable.
  */
 export async function landInboundLead(arrival: InboundArrival): Promise<InboundResult> {
+  if (!arrival.externalId) return landOnce(arrival);
+  // One delivery of an id at a time. The replay fence below is a SELECT at the
+  // start and the ledger's ON CONFLICT at the end, so two deliveries of one id
+  // IN FLIGHT both passed the SELECT and both created a lead — the database
+  // kept one ledger row and the other lead stood unannounced, unclocked and in
+  // nobody's outcomes (review, 2026-10-24: measured with the first delivery
+  // held on a lock). A sender re-sends exactly when the first try is slow: the
+  // agent after its read timeout, a platform that did not get its 200 in
+  // time. Chained in this process, the second waits and then meets the fence
+  // as a replay. Every door lands in the one app process — the webhook, the
+  // Meta worker (pg-boss runs there), the form, the bot; the site door in
+  // tg-listen keeps its own `serialised`, and the unique index still stands
+  // behind all of it across processes.
+  const key = `${arrival.channel}\u0000${arrival.externalId}`;
+  const before = landing.get(key) ?? Promise.resolve();
+  const mine = before.catch(() => undefined).then(() => landOnce(arrival));
+  landing.set(key, mine);
+  try {
+    return await mine;
+  } finally {
+    // Only the last in the chain clears it, so a third delivery still queues.
+    if (landing.get(key) === mine) landing.delete(key);
+  }
+}
+
+/** `landInboundLead`'s body: one delivery, after any earlier one of the same id has settled. */
+async function landOnce(arrival: InboundArrival): Promise<InboundResult> {
   const phone = inboundPhoneDigits(arrival.phone);
   const name = trim(arrival.name, 120);
   const note = trim(arrival.note, 1000);
@@ -299,7 +338,7 @@ export async function landInboundLead(arrival: InboundArrival): Promise<InboundR
         (channel, external_id, source_key, ref, phone, name, outcome, reason,
          fields, lead_id, client_id, assigned_user_id)
       VALUES (${arrival.channel}, ${arrival.externalId ?? null}, ${sourceKey},
-              ${arrival.ref ? JSON.stringify(arrival.ref) : null}::jsonb,
+              ${arrival.ref ? wellFormedJson(arrival.ref) : null}::jsonb,
               ${phone}, ${name}, ${outcome}, ${extra.reason ?? null},
               ${pairs ? JSON.stringify(pairs) : null}::jsonb,
               ${extra.leadId ?? null}::uuid, ${extra.clientId ?? null}::uuid,
@@ -492,7 +531,9 @@ export async function landInboundLead(arrival: InboundArrival): Promise<InboundR
     {
       // `leadSchema` wants two characters and an advert may send none.
       name: name ?? `${sourceKey} · ${phone ?? '—'}`,
-      phone: arrival.phone ?? '',
+      // As sent — the card keeps the spelling — but well-formed: it rides
+      // into the create's audit row (jsonb).
+      phone: wellFormed(arrival.phone ?? ''),
       // The agent's firm onto the card's own column, at `leadSchema`'s
       // ceiling. The agent's only: every other door keeps a posted `company`
       // as the note line and question pair it always was (review, regression
