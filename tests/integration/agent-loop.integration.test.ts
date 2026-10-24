@@ -98,6 +98,8 @@ async function ownerCards(type: string) {
     .where(and(eq(notifications.userId, ownerId), eq(notifications.type, type)));
 }
 
+const textOf = (n: { payload: unknown }) => String((n.payload as Record<string, unknown>).text ?? '');
+
 async function strangerRule(phone: string | null = '+998901112233', title = 'Notanish'): Promise<string> {
   const [r] = await db
     .insert(tgChatRules)
@@ -487,9 +489,12 @@ describe('a hand-made bind serves no cargo until the chat proves it (his Q19 ⭐
     const [conv] = await db.select().from(agentConversations).where(and(eq(agentConversations.managerUserId, ownerId), eq(agentConversations.peerId, PEER)));
     expect(conv).toMatchObject({ identityClientId: otherClientId, identityStrength: null });
     expect(await chatIdentity(ownerId, PEER)).toMatchObject({ clientId, cargoAllowed: false });
-    // The first echo card lost its buttons; only the newest one is live.
-    const live = (await ownerCards('AgentCodeEcho')).filter((n) => (n.payload as { live?: boolean }).live !== false);
+    // The first echo card lost its buttons; only the newest one is live — and a
+    // closed copy the drain had not sent yet is never sent.
+    const echoes = await ownerCards('AgentCodeEcho');
+    const live = echoes.filter((n) => (n.payload as { live?: boolean }).live !== false);
     expect(live.map((n) => (n.payload as { clientId: string }).clientId)).toEqual([otherClientId]);
+    expect(echoes.find((n) => (n.payload as { clientId: string }).clientId === clientId)!.status).toBe('muted');
   });
 
   it('(C) the web tray’s «Bu mijoz» on a chat whose phone is not on the card serves nothing', async () => {
@@ -535,15 +540,15 @@ describe('a hand-made bind serves no cargo until the chat proves it (his Q19 ⭐
   it('the echo card says what the bind will allow, before he confirms', async () => {
     const hidden = await strangerRule(null);
     await agentText(ownerId, { kind: 'agent_code', payload: { ruleId: hidden } }, `AL${SUFFIX}`);
-    expect(String((await ownerCards('AgentCodeEcho'))[0]!.payload.text)).toContain('📵 Chat raqami yashirin');
+    expect(textOf((await ownerCards('AgentCodeEcho'))[0]!)).toContain('📵 Chat raqami yashirin');
     await clearChat();
     const onCard = await strangerRule(CARD_PHONE);
     await agentText(ownerId, { kind: 'agent_code', payload: { ruleId: onCard } }, `AL${SUFFIX}`);
-    expect(String((await ownerCards('AgentCodeEcho'))[0]!.payload.text)).toContain('✔ Chat raqami kartada');
+    expect(textOf((await ownerCards('AgentCodeEcho'))[0]!)).toContain('✔ Chat raqami kartada');
     await clearChat();
     const off = await strangerRule('+998901112233');
     await agentText(ownerId, { kind: 'agent_code', payload: { ruleId: off } }, `AL${SUFFIX}`);
-    expect(String((await ownerCards('AgentCodeEcho'))[0]!.payload.text)).toContain("kartada yo'q");
+    expect(textOf((await ownerCards('AgentCodeEcho'))[0]!)).toContain("kartada yo'q");
   });
 
   it('a ✅ from before a web-tray decision does not undo it', async () => {
@@ -571,7 +576,7 @@ describe('the «📵» card: a hidden-number first contact (his Q18 ⭐, review 
     expect(await strangerCards(ownerId, new Date())).toBeGreaterThanOrEqual(1);
     const cards = (await ownerCards('AgentStranger')).filter((n) => (n.payload as { ruleId: string }).ruleId === ruleId);
     expect(cards).toHaveLength(1);
-    expect(String(cards[0]!.payload.text)).toContain(`📵 Raqami yashirin yangi odam yozdi: Yashirin ${SUFFIX}`);
+    expect(textOf(cards[0]!)).toContain(`📵 Raqami yashirin yangi odam yozdi: Yashirin ${SUFFIX}`);
     const rows = buttonsFor('AgentStranger', cards[0]!.payload as Record<string, unknown>)!;
     expect(rows.flat().map((b) => ('callback_data' in b ? b.callback_data : ''))).toEqual([`ag:n:${ruleId}`, `ag:k:${ruleId}`, `ag:x:${ruleId}`]);
     await strangerCards(ownerId, new Date());

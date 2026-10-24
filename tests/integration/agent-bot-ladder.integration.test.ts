@@ -222,7 +222,7 @@ describe('the newest question on the screen is the one a text answers (I2 b)', (
     await h.handle(tg.callback(me.chat, nextMsg(), `t:${T}`));
     const m = h.mark();
     await h.handle(tg.callback(me.chat, nextMsg(), `ag:e:${draftId}`));
-    expect(h.textsTo(me.chat, m).some((t) => t.startsWith('Avval boshlangan ishni tugating'))).toBe(true);
+    expect(h.textsTo(me.chat, m).some((t) => t.startsWith("Avval topshiriq bo'yicha so'ralgan javobni yozing"))).toBe(true);
     expect(readWait(BigInt(me.chat), 'agent_edit')).toBeNull();
     expect((await draftOf(draftId)).status).toBe('pending');
   });

@@ -22,16 +22,18 @@ type AgentWait = (typeof AGENT_WAITS)[number];
 /** A one-text wait lasts half an hour — long enough to think, short enough not to swallow tomorrow's text. */
 export const AGENT_WAIT_TTL_MS = 30 * 60_000;
 
-const BUSY = 'Avval boshlangan ishni tugating (hisoblatish, zametka, topshiriq yoki kutilayotgan javob).';
+const BUSY = 'Avval boshlangan ishni tugating (hisoblatish, zametka yoki topshiriq).';
+const BUSY_TASK = "Avval topshiriq bo'yicha so'ralgan javobni yozing (natija, savol yoki sana) — keyin qayta bosing.";
 
 /**
  * A live collector — or a task's one-text wait (a «Bajarildi» result, «💬
  * Javob yozish», a ⏰ date, review I2 b): a press that ARMS an agent wait
  * while another question is on the screen would leave his next text to
- * whichever reads first.
+ * whichever reads first. Null = free; otherwise the words that say which.
  */
-function busy(chatId: bigint): boolean {
-  return Boolean(activeIntake(chatId) || activeCapture(chatId) || activeDraft(chatId) || peekTaskPending(chatId));
+function busy(chatId: bigint): string | null {
+  if (activeIntake(chatId) || activeCapture(chatId) || activeDraft(chatId)) return BUSY;
+  return peekTaskPending(chatId) ? BUSY_TASK : null;
 }
 
 /** One agent press: decided on the server, answered in words. */
@@ -47,9 +49,10 @@ export async function handleAgentPress(
   }
   // A press that ARMS a text wait must not compete with a live collector:
   // his next text would be filed by whichever reads first.
-  if ((parsed.op === 'e' || parsed.op === 'p' || parsed.op === 'k') && busy(chatId)) {
-    await answerPress(ctx, BUSY);
-    await ctx.reply(BUSY);
+  const occupied = parsed.op === 'e' || parsed.op === 'p' || parsed.op === 'k' ? busy(chatId) : null;
+  if (occupied) {
+    await answerPress(ctx, occupied);
+    await ctx.reply(occupied);
     return;
   }
   try {

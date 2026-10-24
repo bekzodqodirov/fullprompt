@@ -301,7 +301,9 @@ async function withdrawTypedBind(staffId: string, rule: RuleRow, conv: ConvIdent
  * and the buttons go (`live: false` — `agentButtons` draws none), on the row a
  * copy not yet sent goes out with, and on the copies already sent (review I1:
  * a ✅ / ↩ that stays pressable after the decision is a second decision).
- * `lineFor` may return null to leave a card as it is.
+ * A copy the drain has not sent yet is never sent — a closed card arriving
+ * after its own answer is noise (the approval copies' rule); one the drain
+ * has claimed is its to finish. `lineFor` may return null to leave a card.
  */
 async function closeRuleCards(
   staffId: string,
@@ -328,7 +330,11 @@ async function closeRuleCards(
     const patch = { live: false, text: `${typeof payload.text === 'string' ? payload.text : ''}\n\n${line}` };
     await db
       .update(notifications)
-      .set({ payload: sql`${notifications.payload} || ${JSON.stringify(patch)}::jsonb` })
+      .set({
+        payload: sql`${notifications.payload} || ${JSON.stringify(patch)}::jsonb`,
+        status: sql`CASE WHEN ${notifications.status} = 'pending' THEN 'muted' ELSE ${notifications.status} END`,
+        error: sql`CASE WHEN ${notifications.status} = 'pending' THEN 'answered before it was sent' ELSE ${notifications.error} END`,
+      })
       .where(eq(notifications.id, row.id));
     closed.push({ id: row.id, type, payload: { ...payload, ...patch }, userId: row.userId });
   }
