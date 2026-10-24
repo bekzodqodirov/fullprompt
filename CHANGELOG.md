@@ -1,5 +1,90 @@
 # CHANGELOG
 
+## 2026-10-24 — AI sotuvchi: mijozlarga javobni AI tayyorlaydi, siz tasdiqlaysiz, sizning akkauntingizdan ketadi
+
+Sizning so'zingiz: «Telegram businessdagi bot emas mening shaxsiy account seansimdan ishlatsin ai va ban havfini
+minimum qilsin». Yangi migratsiya bor (**0136**): deploydan keyin baza hisobi **137** bo'lishi kerak.
+
+### Qanday ishlaydi
+- Telegram akkauntingizga mijoz yoki lid yozganda, AI javobni o'zi yubormaydi, faqat **qoralama** tayyorlaydi. U staff botga kartochka bo'lib keladi:
+  - mijoz nima yozgani;
+  - AI nima javob bermoqchi (fors yoki xitoy tilida bo'lsa, ostida o'zbekcha tarjimasi);
+  - javobdagi har bir raqam qayerdan olingani.
+- Kartochkadagi tugmalar:
+  - **✅ Yuborish** — javobni yuboradi;
+  - **✏️ O'zim yozaman** — o'z matningizni yozasiz;
+  - **❌ Kerak emas** — qoralama tashlanadi;
+  - **🙋 Suhbat meniki** — bu chat 24 soat sizniki, AI aralashmaydi.
+- Shu kartochkalar sayt sahifasida ham bor: **Suhbatlar → AI sotuvchi**. Bo'limlar: Kutilmoqda · Savollar · Bilimlar · Sozlamalar.
+- Faqat **akkaunt egasi**, ya'ni siz tasdiqlaysiz. Boshqa admin ham tasdiqlay olmaydi.
+- Javob sizning shaxsiy akkauntingizdan, tirik odamdek ketadi: avval chatni o'qiydi, «yozmoqda…» chiqadi, keyin xabar boradi. Yuborilgan javob CRM chatida 🤖 belgisi bilan ko'rinadi.
+
+### Ban xavfidan himoya
+- **Chegaralar:** bitta chatga AI xabarlari orasida kamida 20 soniya, soatiga 20 tadan, kuniga 80 tadan ko'p emas.
+- **Birinchi 14 kun:** kuniga o'zingiz odatda yozadigan sondan ko'p yuborilmaydi.
+- **Kechasi** (22:00–08:00): mijoz oxirgi 2 soatda yozgan bo'lsa, javob darhol ketadi. Aks holda ertalab 08:30 da ketadi.
+- **Mijoz yangi xabar yuborsa**, tasdiqlangan javob yuborilmaydi va yangi qoralama tayyorlanadi. Bu ovozli xabar, rasm yoki fayl bo'lsa ham shunday. O'zingiz yozib qo'ysangiz ham yuborilmaydi.
+- **Telegram cheklov qo'ysa** (spam, flood), o'sha akkauntdan yuborish butunlay to'xtaydi, CRM javoblari ham. AI o'chadi, sizga va super adminlarga xabar keladi.
+  - Telegram'ni tekshirib bo'lgach, **Suhbatlar** sahifasidagi ko'prik panelida **«Tekshirdim»** ni bosasiz.
+  - To'xtab turgan paytda CRM'dagi yozish oynasi buni ochiq aytadi, xabar «navbatda» deb osilib qolmaydi.
+- **«/agent off»** botda AI'ni darhol o'chiradi: navbatdagi javoblar bekor bo'ladi, qoralamalar yopiladi.
+
+### AI nima qiladi va nima qilmaydi
+- **Narx, muddat yoki sana** faqat tizimdan olinadi:
+  - avto yo'lkira — saytdagi kalkulyator bo'yicha;
+  - avia — kg × 17 $;
+  - bilimlar sahifasidagi ma'lumotlar.
+  - Mijoz o'zi aytgan narx («90$ qilib bering») hech qachon qaytarib aytilmaydi.
+  - Manbasi yo'q raqam bo'lsa, ✅ tugmasi chiqmaydi.
+- **Va'dalar to'xtatiladi:** «chegirma qilamiz», «arzon qilamiz», «ertaga albatta jo'natamiz», «keyin to'laysiz» kabi gaplar bo'lsa ham ✅ chiqmaydi.
+- **Boshqa mijoz** haqida hech narsa aytilmaydi: kodi, yuki, telefoni, ismi.
+- **Hodimning to'liq ismi** javobda bo'lsa, javob to'xtatiladi. Faqat bitta so'z (masalan ism) bo'lsa, ogohlantirish chiqadi.
+- **Yuk va qarz** faqat chat raqami shu mijoz kartasida bo'lsa aytiladi (sizning 19a javobingiz).
+- **«Siz botmisiz?»** deb so'rashsa, qoralama yozilmaydi va sizga xabar keladi. Ovozli xabar va pushtu tilidagi xabarga ham shunday.
+- **Notanish odam yozsa**, bitta kartochka keladi:
+  - tugmalar: **🆕 Yangi lid / 👤 Mijoz — kod / 🚫 Shaxsiy**;
+  - raqami yashirin bo'lsa ham keladi, «📵» belgisi bilan;
+  - kontaktlaringizdagi odamlar uchun kelmaydi.
+
+### Sizning javoblaringiz bo'yicha
+- **Avto:** 1 kubdan VA 100 kg dan kam yukka narx aytilmaydi. Mijozga «1 kub yoki 100 kg dan boshlab tashiymiz» deyiladi.
+- **Avia:**
+  - narxi kg × 17 $, hisob 1 kg dan, yuqori chegara yo'q;
+  - faqat haqiqiy kg hisobga olinadi, hajm (kub) emas;
+  - muddati «taxminan 2–5 kun, reys bo'lsa 2 kun».
+  - Narxni **Bilimlar → AI qoidalari** da o'zingiz o'zgartirasiz.
+- **Temir yo'l:** narxni AI aytmaydi, sizdan so'raydi.
+- **«Xitoydan»** desa (yoki omborimiz yo'q xitoy shahrini aytsa), narx omborlarimizdan aytiladi. Javobda ikki jumla bo'lishi shart: «yukni omborimizga yuborsangiz…» va «zavoddan omborgacha olib kelish alohida hisoblanadi».
+- **Kelib chiqish sertifikati** so'ralmaydi: hisob «kompaniya o'zi oladi» deb yuboriladi.
+- **Podklyuch va rastamojka:**
+  1. AI mijozdan ma'lumotlarni to'liq yig'adi.
+  2. ✅ bosganingizda botdagi «Hisoblatish» navbatiga yuboradi.
+  3. VED javob berganda sizga «💵 Hisob javobi keldi — narx bersangiz bo'ladi» kartasi keladi.
+  4. **«💵 Narx yozaman»** ni bosib narxni yozasiz. U mijozga uning tilida bitta jumla bo'lib ketadi, bitim kartasiga hech narsa yozilmaydi (6b).
+  - «1.250» deb yozsangiz, bot «1250 dollarmi yoki 1,25 dollarmi?» deb so'raydi.
+- **Bilimlar sahifasi:** AI biladigan hamma ma'lumot shu yerda. Ularni qo'shasiz, tuzatasiz yoki o'chirasiz. Narx bilimga yozilmaydi.
+
+### Deploydan keyin (tartib bilan)
+1. Avval zaxira oling va hajmi noldan katta ekanini tekshiring.
+2. `docker compose build migrate`, keyin `docker compose up -d --build` va `docker compose --profile telegram up -d --build tg-listen`.
+   **Tinglovchi (tg-listen) albatta qayta qurilishi kerak.** Aks holda sahifada «tinglovchi yangilanmagan» chiqadi va ✅ ishlamaydi.
+3. Baza hisobi **137** ekanini va `curl -s https://gsrwms.uz/api/version` yangi vaqtni ko'rsatishini tekshiring.
+4. Bilimlarni kiritish:
+   - avval sinov uchun: `docker compose run --rm migrate pnpm exec tsx scripts/agent-seed-kb.ts`;
+   - so'ng shu buyruq oxiriga `--apply` qo'shib haqiqiy kiritish.
+5. **Suhbatlar → AI sotuvchi → Sozlamalar** da:
+   - o'z akkauntingizni tanlang;
+   - «Eski serverda Telegram sessiyasi yo'q qilindi» ni bosing;
+   - avia narxi 17 ekanini tekshiring;
+   - keyin AI'ni yoqing (yoki botda `/agent on`).
+6. CRM'dan Telegramga yuborish (Sozlamalar) yoqiq bo'lishi kerak. U o'chiq bo'lsa ✅ «yuborish o'chirilgan» deydi.
+
+### Hali yo'q (keyingi bosqichlar)
+- Avtomatik rejim (tasdiqsiz yuborish).
+- Kampaniyalar.
+- WhatsApp, Gmail va qo'ng'iroqlar.
+- Mijoz yuborgan fayllarni hisob eslatmasiga ko'chirish. Hozircha eslatma chatga havola beradi.
+
 ## 2026-10-21 — Doska: «1 A / 2 a / 3 a» javoblaringiz — hammasi hozirgidek qoladi
 
 Uchala javob ham ⭐ variant, ya'ni hozir qanday qurilgan bo'lsa shunday. **Kodda o'zgarish yo'q, migratsiya yo'q, deploy shart emas.** Har birini kodda tekshirdim va testga mahkamladim: endi kimdir tasodifan o'zgartirsa, test qizaradi.

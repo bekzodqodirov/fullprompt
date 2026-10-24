@@ -159,6 +159,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | The staff Telegram group — celebrations, the Saturday 18:00 rating, the month's champion, /reyting | `docs/JAMOA-GURUHI.md` — agreed 2026-10-20 (his «3. 2 3 gif … tabriklash ham / qolgani sen aytkandek»), SHIPPED |
 | Every truck in one place — the board by place, the % by distance, GPS, the gate | `docs/PARTIYA-DOSKASI.md` — agreed 2026-10-17 (his 1A 2a 3a 4a 5a 6c 7a 8b 9b 10b 11A 12A, then «1 hozirgidek qolsin»), SHIPPED; §2 is the placement as built; §3a = «Yo'lda» in two columns, inside / outside China (2026-10-21) |
 | LTL / FTL — which cargo the KPI and the rating count, who may mark it, the paid-month freeze, the logist's hint | `docs/LTL-FTL.md` — agreed 2026-10-20 (his «3 b / qolgani sen aytgandek» = 1a 2a 3b 4a 5a 6a 7a), SHIPPED |
+| **AI sotuvchi** — the shadow salesperson on HIS personal Telegram session: drafts, his ✅, the ban fuses, the calc loop, strangers, the knowledge page | `docs/AI-SOTUVCHI.md` (§17 = phase 1 as built, §17.14 = his three sets of answers 2026-10-24, binding) + `docs/AI-SOTUVCHI-REVIEW.md` (the pre-code review); phase 1 SHIPPED on the branch |
 
 ## State — 2026-08-23
 
@@ -2962,7 +2963,32 @@ CN destination is inland (no hub test), ONE arrived column (`columnOf` splits on
 filter hides everything bound for China (`routeFilterOf` = a `kg`/`kz` leg; a map walk over every pair proves no
 road into China has one, and refuses an unclassed new map code).
 
-**Latest migration: 0135** (`load_mode`, `when` …114; ledger must reach **136**). Before
+**Round — AI sotuvchi, phase 1 (2026-10-24; DECISIONS #1463-#1475 — numbered past the open
+`telegram-customs-ai-issues` branch's #1455-#1462; migration 0136 `ai_sotuvchi` — ledger must reach 137; spec
+`docs/AI-SOTUVCHI.md` §17 + §17.14).** His «Telegram businessdagi bot emas mening shaxsiy account seansimdan
+ishlatsin ai va ban havfini minimum qilsin». SHADOW only: the listener (`scripts/tg-listen.ts`, the one process that
+holds his session) enqueues `agent.inbound`; the app's worker drafts (`wms/agent/run.ts`, a closed toolset, THIS chat
+only); the card reaches the staff bot (`ag:` callbacks, digest on ✅) and `/suhbatlar/ai`; `decideDraft` (holder only)
+writes «approved» + an `agent_outbox` row in one tx; the listener's agent pump sends it verify → read → typing → send
+on the row's own clock (`send-step.ts` pure, `outbox-store.ts`, `gramjs-adapter.ts`). `tg_outbox` and the human path are
+untouched; no existing table gains a column; `agentTablesReady()` guards every new read. THE RULES WITH ONE HOME: the
+number policy (`numbers.ts`/`digits.ts`/`policy.ts` — figures by kind AND origin `tool|kb|customer`, money named
+anywhere, six locales, every block removes ✅); the account guard (`crm/account-guard.ts` — a restriction pauses the
+ACCOUNT, human sends too; only send methods move `flood_until`; «Tekshirdim» clears; `sendContextFor` carries the hold to
+every composer); the identity fence (`context.ts chatIdentity` — a hand-made bind serves no cargo/balance/client facts
+until the chat proves its phone); the fuses (`limits.ts AGENT_LIMITS`). His §17.14: truck minimum 1 m³ OR 100 kg; avia
+kg × `agent_config.avia_usd_per_kg` (17), 1 kg, no ceiling, 2-5 days; rail → him; certificate never asked; «from
+China» = priced from our warehouses + both sentences enforced; 💵 = his figure to the customer only, nothing on the card
+(6 b). Built as a kernel + packages in worktrees, reviewed as built five times (send/leak/regression lenses, two fix
+workflows with two skeptics per package, a final six-lens review). FOUND BY ITS OWN TESTS: a v7 id's HEAD is its clock
+(an echo card bound by `id.slice(0, 8)` confirmed a later code — use the tail); `jsonb` reorders keys (a digest over
+stored actions failed every first ✅ — canonical JSON). TRAPS AGAIN: an agent overwrote a shared scratchpad helper
+(name helpers by owner); `cmd ; git commit` committed a lint error. DEPLOY: rebuild tg-listen; seed the knowledge
+(`scripts/agent-seed-kb.ts` through `migrate`); on the page pick the owner, press the session confirm, then `/agent on`.
+NOT verifiable here: every gramjs call against a real account — watch the first day in the tg-listen logs.
+
+**Latest migration: 0136** (`ai_sotuvchi`, `when` …115; ledger must reach **137**). Before
+it: 0135 (`load_mode`, `when` …114). Before
 it: 0134 (`staff_group`, `when` …113). Before
 it: 0133 (`pickup_close`, `when` …112). Before
 it: 0132 (`cost_freight_basis`, `when` …111). Before
@@ -3102,7 +3128,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **136** since 0135 (135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **137** since 0136 (136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read

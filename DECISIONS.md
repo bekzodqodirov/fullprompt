@@ -4531,3 +4531,159 @@ new map code until it is classed as Chinese or Uzbek; the single arrived column)
 Red-proven by string edit four ways: arrivals at a Chinese warehouse sent to `inland`; the filter keeping
 `column === 'inland'`; `cn_transit` counted as Irkeshtam; a ninth map code. The third first stayed GREEN — the
 edit named the Chinese leg `cn`, which no segment is called — and was redone on the real key.
+
+## AI sotuvchi, phase 1 — the shadow salesperson on his own account (2026-10-24; migration 0136 `ai_sotuvchi`, ledger 137; spec `docs/AI-SOTUVCHI.md` §17 + his answers §17.14; pre-code review `docs/AI-SOTUVCHI-REVIEW.md`; numbered from #1463 because the open `telegram-customs-ai-issues` branch holds #1455-#1462)
+
+1463. **The agent speaks from HIS personal session, through the listener, and only in shadow.** His override of the
+spec's Telegram Business channel («Telegram businessdagi bot emas mening shaxsiy account seansimdan ishlatsin ai va
+ban havfini minimum qilsin») decides the whole shape: the one process that holds the session (`scripts/tg-listen.ts`)
+is the only one that calls Telegram, the model runs in the app's pg-boss worker (`agent.inbound`, enqueued by the
+listener with a 12-second start-after), and every reply is a DRAFT he approves — mode `off|shadow`, with `auto` in the
+CHECK and refused by every writer. The approved reply lives in a NEW table `agent_outbox`, never in `tg_outbox`, so the
+human CRM reply path and its tests stay byte-identical (review regression-1/2/3/8), and **no existing table gains a
+column** (build-10): 0136 is eleven new tables, one index on `tg_messages` and the widened `telegram_chat_waits` kind
+CHECK; every reader of a new table asks `agentTablesReady()`, which caches TRUE only, so a database one migration
+behind answers every existing read as today. The mode cannot leave `off` until the configured owner's account is
+connected and HIS press confirms the old server's copy of the session is gone (`session_exclusive_at`, ban-9) — he
+answered that it is (§17.14), and the press stays his and audited.
+
+1464. **Only the account holder decides, and the ✅ says which text it approves.** `decideDraft` is the one decision
+function for the bot and the web; anyone else, a super_admin included, is refused (leak-5). The ✅ button carries an
+8-hex FNV digest of the card's body and actions, re-computed at the press, so a card that changed under his thumb
+answers `stale_card` (leak-3). Found while merging: `jsonb` reorders object keys, so a digest over `JSON.stringify` of
+the stored actions failed EVERY action-carrying draft's first ✅ — `cardDigest` hashes canonical sorted-key JSON over the
+trimmed body, one home for drafts, card-io, the page and the decision. The approval re-runs the whole policy (the
+owner subset for his own words), re-reads the chat (a newer substantive inbound → superseded, his own reply →
+taken_over, an edited anchor → superseded, a photo/voice/file after the question → superseded), refuses while the
+listener is not current (`agent_pump_at` fresh AND `caught_up_at` for this process), while CRM sending is off (the
+pump would cancel the row as final a minute later — the refusal hands him the text to send himself), and over the
+day's send budget; then ONE transaction writes «approved» and the outbox row with a `random_id` minted once.
+
+1465. **The number policy reads every figure by kind and by where it came from.** G1 (`numbers.ts`, `digits.ts`,
+`policy.ts`): digits are NFKC-folded first (Persian, Arabic-Indic, full-width, superscripts, circled); any other
+numeral beside a money or measure word is unverifiable; a figure is money when a currency or price word is anywhere in
+its text, in six languages (uz Latin and Cyrillic, ru, en, fa, zh — «AQSH dollari», «1,5 mln so'm», «USD480», «480
+евро», 美元, تومان …); every source carries an ORIGIN (`tool | kb | customer`) and a reply's money, duration or date
+may rest only on a tool or a kb fact — the customer's own figure backs only a repeated measure, never a price («90$
+qilib bering» never passes) and never a day count («5 kunda kelsinmi?» does not back «odatda 5 kunda keladi»); a day
+count also names its road (`air | road | rail`). G2 is a closed promise table × six locales (discounts, dispatch dates,
+credit, guarantees), widened by the review (`tushirib beraman`, `arzon qilamiz`, `скинем`, `10% off`, `оплатите
+после`), with 0-2 words allowed between a dispatch phrase's words; a HEDGED estimate a tool sourced is not a promise
+(«taxminan 2-5 kun»), and a hedge in an earlier clause of the same sentence covers a later verbless clause only when
+that earlier clause itself stated a hedged figure. G6 refuses another client's code (Cyrillic look-alikes folded), a
+system shape, a foreign phone, the canary; **a colleague's FULL name blocks, a single word of it only warns** — a
+stated exception to leak-3's «every failure blocks», because a false block costs him a rewrite and he reads every card
+(asked of him); a name the run's own used facts carry (the seeded «Umriddin») is allowed. Every block removes the ✅.
+
+1466. **A run stands down more often than it drafts.** The worker drafts only if the anchor is still the chat's
+newest live inbound after the 12-second debounce (+8 s per peer typing, capped at 90 s, 60 s for a greeting-only
+burst); `draftWorthy` skips media-only, closings and nudges, and a voice-only burst, Pashto or «siz botmisiz?» gives no
+draft but an `AgentNotice` (his Q3/Q4 ⭐). Eligibility (pure): a private chat with a real user, naming a client or a
+lead, not excluded, not a staff phone, not muted, not inside his 120-minute pause after he wrote there himself, the
+anchor ≤ 24 h old and not auto-sent. The day's budget is reserved under an advisory lock that fails CLOSED (150 runs,
+12 per chat per Tashkent day, a token cap); one run per (anchor, attempt), an edit re-runs at attempt ≥ 100, the
+sweep retries an errored run once. A rail question forces the question to him («temir yo'l narxini siz aytasiz», his
+7), and in a rail burst no machine money source exists, so no figure can pass.
+
+1467. **The send path is a state machine on the row's own clock, built not to look like a machine.** Steps: verify
+(the pure `agentSendVerdict` + the live head via GetHistory) → ReadHistory → SetTyping ≤ 3 calls → verify the live
+head again → claim `sending` → `SendMessage{randomId, noWebpage}` → markSent + the thread's copy. An answer lost after
+the hand-off is `unknown` and is NEVER re-sent (ban-5); a process killed mid-send recovers its row as `unknown`. Fuses
+(not Telegram's numbers): ≥ 20 s between AI messages to one chat, 10-25 s jitter on the account, ≤ 20/h, ≤ 80/day,
+the first 14 days ≤ his own average daily sends, ≤ 12 per chat per day — counting `sent` AND `unknown` rows (a
+possibly-delivered reply is not free). His Q14 night rule (22:00-08:00 Tashkent: at once only if the customer wrote
+< 2 h ago, else 08:30) applies at the ✅ AND at the send step, and a held row's six-hour approval clock counts from its
+morning (`release_at`) — as first built, every approval between 22:00 and ~02:30 was cancelled at 08:30 as «too
+old» while its card promised 08:30 (send review). The agent's tick runs OUTSIDE the human pump's flight (a gramjs flood
+sleep in GetHistory must not delay a person's reply), and both pumps send through ONE slot measured from the last
+send's completion, re-checking the head and the guard inside it. Aborting after the read step gives the chat its
+unread badge back (MarkDialogUnread), whoever ended the reply.
+
+1468. **A restriction pauses the ACCOUNT — and a pause is a thing a person clears, and the composer says so.** Every
+Telegram error is classified (`tgErrorKind`): PEER_FLOOD / USER_RESTRICTED / FROZEN_* pause that account's guard row
+(human sends too, any manager's account), switch the agent off when it speaks from there, cancel queued agent rows and
+alarm the manager and every super_admin; two send-path floods in 24 h, or two customers blocking the account within 7
+days of an AI message, switch the agent off. Only the SEND methods move the account's persisted `flood_until`; a flood
+on a read or a cosmetic call holds only the agent (review S9 — before, a GetHistory flood stopped every human CRM reply
+for the whole uncapped wait). One ledger row per wait (a replay after a blip lands on a unique index). **The blocker
+three reviewers found independently: the pause had no door out** — `clearAccountPause` had zero callers while the
+alarm told him to press a «Tekshirdim» that did not exist, so one PEER_FLOOD would have held a manager's CRM replies at
+«navbatda» until somebody ran SQL. The door is on the bridge panel and the agent's page (the account's manager or a
+super_admin), and **one home tells the composer**: `sendContextFor` reads the guard and carries both the pause and
+the send wait, `canQueue` refuses both in words, and the queue door asks the same — the web and the send package had
+each built half of it in a different place, and the door's half never reached the composers.
+
+1469. **A hand-made bind serves nothing until the chat proves it (his Q19 a).** `chatIdentity` grants cargo, balance
+and the client's own knowledge facts only when the chat itself proves the client: the tray's phone on that client's
+card or a phone sibling's, the hashed peer index, or a linked cabinet chat. A bind someone picked — a typed code, the
+web tray's «Bu mijoz» — is the owner saying who it is, so the name and codes are used, but nothing private is read
+into the chat (the review's blocker: «↩ Yo'q», a second typed code and the web tray each left an include rule that
+the first build read as proof). The typed code is ECHOED before anything is written, and the echo card's ✅ carries
+the echoed client's id TAIL — found by this round's own test: the first build used the HEAD, and a v7 id's head is
+its clock, shared by every row minted in the same minute, so an older echo card confirmed a code typed after it. The
+knowledge base's fact references take the tail for the same reason. A withdrawn bind cancels the chat's approved sends
+still queued under that client and re-opens the stranger card.
+
+1470. **Strangers get one card, a hidden number too, a contact none.** On the agent owner's account only: a visible
+phone the tray would ask about, or a hidden number from a real person who is not in his contacts (the listener writes
+the phone-less pending rule; nothing about the message is stored), gets ONE card per peer — [🆕 Yangi lid] [👤 Mijoz —
+kod] [🚫 Shaxsiy] — never with the message text (his Q18 ⭐). A contact is a friend or a colleague, not a lead (fit-7).
+«🆕 Yangi lid» on a phone-less rule opens the lead by NAME through the agent's door only; the tray's own button keeps
+refusing `chat_no_phone`. Lid / mijoz queue a one-peer pull (≤ 50 messages, ≤ 24 h, one at a time) and the newest
+inbound gets a run. A press on a decided card decides nothing.
+
+1471. **The calculation loop goes through the bot's own door, and his price goes to the customer only.** A
+podklyuch / rastamojka job is collected in ONE numbered question (`calc_checklist`), landed on his ✅ through
+`landIntake` (the same queue and the same AI-VED pre-pass as the bot's «Hisoblatish»; the reply is queued only after
+the landing queued — regression-4), linked by `agent_calc_links` at the chain root. The answer (Готово, a seal, a
+hand-back, a recalculation, the AI-VED estimate labelled «rasmiy emas») reaches him as `AgentCalcAnswered` — its own
+unmutable type, no `exceptUserId`, so pressing Готово himself still gives him the door (his 8, Q5/Q15 ⭐). A hand-back
+drafts the customer's question as a pg-boss job (the first build awaited a full model run inside the VED's «Qaytarish»
+action, before the seller's task). **His 6 b**: «💵 Narx yozaman» writes NO offer, nothing on the deal card, no floor
+approval — his typed dollars become one deterministic sentence in the customer's language (`priceReplyText`, six
+locales, his figure the only money source); «1.250» is asked back («1250 dollarmi yoki 1,25 dollarmi?»); a
+recalculation retires the pending price drafts on the replaced request, cancels the approved ones still waiting, and
+the door refuses a figure typed on a replaced answer.
+
+1472. **His answers to the second and third sets, built (§17.14).** The truck's minimum is 1 m³ OR 100 kg — below
+both no figure is quoted, nor is the job sent to hisoblatish, and the reply says the minimum. Avia is $17 per ACTUAL
+kg (`agent_config.avia_usd_per_kg`, editable on the page, NULL = not quoted), from 1 kg, no upper limit, «taxminan 2-5
+kun, reys bo'lsa 2 kun», hedged like the truck (his «2b» retired the review's volumetric refusal the same evening).
+Rail goes to him. The origin certificate is never asked — the company obtains it, every agent job lands with
+`has_certificate = true`. A customer who names only China, or a Chinese place with no receiving warehouse of ours
+(read from the warehouses table, never a second list), is priced from our Chinese warehouses on the cn column and the
+reply MUST carry both of his sentences — the condition and «zavoddan omborgacha olib kelish alohida» — or the policy
+blocks it (`warehouse_condition`); the podklyuch landing gets the cn zone and says the same in its note; his 💵 on
+such a job appends both sentences after his figure. Every one of these is a seed fact he can read and edit on the
+page.
+
+1473. **The knowledge base learns only what he approved, and he can see it.** `kb_facts`: general / client / lead,
+written only by `writeKbFact` (a fence allows the insert nowhere else): money is refused, a general fact carrying a
+customer's name (tokens of the client, the lead and the peer's title), a code (book-checked even when written «GS 555»)
+or a phone is refused; a general fact needs a second press, keyed so one redelivered press cannot be two. The seed
+(`pnpm exec tsx scripts/agent-seed-kb.ts --apply` through `migrate`) carries the China receiving points, the Tashkent
+address he gave (the map link only when asked, once per chat per 7 days), transit «va'da emas», and his §17.14 facts
+— no prices. `/suhbatlar/ai` → «Bilimlar» lists, adds, edits (write-then-retire) and retires facts, and «AI
+qoidalari» shows the agent's fixed rules with the numbers read from `AGENT_LIMITS` / `agent_config`, never typed twice
+(his «gsrwmsda bilimlar turadigan page»).
+
+1474. **The agent's slot in the staff bot's text ladder takes only what is addressed to it.** One slot, below every
+live collector and above the reply door and `takeTaskPending` (which deletes on read). A swipe-reply names its own
+target — a reply to a non-agent message is never taken by an agent wait; a forwarded message goes to Door B; a task
+wait armed after the agent's is the newer one and wins; arming an agent wait while a collector or a task wait is live
+is refused in words. «/agent off» is the kill switch (holder or super_admin): every queued agent row is cancelled and
+every live draft expired in one transaction, and their cards say so. The agent's cards and the restriction alarm are
+UNMUTABLE (his Q16 ⭐ — the alarm's helper is typed by that list, so a new alarm cannot be mutable by accident).
+
+1475. **Process.** Designed, judged by six lenses before code (78 objections, none refuted), built as a kernel by the
+lead and packages in parallel worktrees, then reviewed as built three times: three reviewers over the merged core
+(send / leaks / regressions: 4 blockers-equivalent, 15 defects), a fix workflow of three packages each reviewed by two
+skeptics (38 findings, all confirmed and fixed or handed across with an exact patch), his answers package (16), a
+second round of two packages (23), and a final six-lens review over the whole build with two skeptics per finding.
+Each package owned a file list and left the edits it needed in another's file as exact patches the lead applied at the
+merge — which is where the duplicate «account paused» homes were folded into one. Traps met again: a red proof's
+shared helper overwritten by an agent (the lead's helper now carries its owner's name); `cmd ; git commit` reached a
+commit with a lint error a `&&` would have stopped (#803's trap, again). Not verifiable here, and to watch in
+`docker compose --profile telegram logs -f tg-listen` on the first real day: every gramjs call (GetHistory,
+ReadHistory, SetTyping, MarkDialogUnread, SendMessage with randomId), a real flood and a real restriction, deletes and
+typing updates, and the model's own drafting quality on his chats.

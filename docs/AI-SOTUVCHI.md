@@ -955,8 +955,9 @@ the checklist; `calc_submit` on ✅ through `landIntake` (the bot's door: the sa
 with the chat's lead or client, explicit certificate, cited material; `agent_calc_links`. The answer —
 Готово, seal, hand-back, recalc, and the AI-VED estimate labelled «rasmiy emas» — reaches him as
 `AgentCalcAnswered` (own group, no exceptUserId, chain root) [regression-5, money-7, fit-5]; a hand-back drafts
-the question for the customer. ✏️ Narx yozaman → `recordOffer` under his actor → a deterministic reply from
-`offerLines()` in the customer's language [money-4].
+the question for the customer (as a pg-boss job). 💵 Narx yozaman → his figure in ONE deterministic sentence in the
+customer's language (`priceReplyText`), nothing on the deal card — his §17.14 «6 b» replaced the `recordOffer` route
+this line first named [money-4].
 
 ### 17.11 Strangers (3a)
 
