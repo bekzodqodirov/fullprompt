@@ -3,8 +3,8 @@ import { db } from '../../platform/db/client';
 import {
   agentCalcLinks,
   agentConversations,
+  agentDrafts,
   calcRequests,
-  calcVersions,
   tgMessageFlags,
   tgMessages,
 } from '../../platform/db/schema';
@@ -14,7 +14,11 @@ import { parseTypedMoney } from '../calc/money-input';
 import { agentRunning, readAgentConfig } from './config';
 import { chatIdentity } from './context';
 import { createDraft } from './drafts';
+import { AGENT_LOCALES, type AgentLocale } from './locale';
 import { ownerPolicyFor } from './policy-input';
+import { priceReplyText } from './price-reply';
+import { JOB_AGENT_HAND_BACK, type AgentHandBackJob } from './queues';
+import type { RunDeps } from './run';
 
 /**
  * The calculation loop (his 8, regression-5, money-4, money-7).
@@ -29,9 +33,11 @@ import { ownerPolicyFor } from './policy-input';
  * to the chat that asked.
  *
  * The answer's figure is HIS to read (he is the owner) and is never a source
- * the machine may quote (leak-10): «✏️ Narx yozaman» records the client price
- * through `recordOffer` under his own actor, and the reply is the offer's own
- * deterministic text — no model call between his number and the customer.
+ * the machine may quote (leak-10): «💵 Narx yozaman» turns the dollars HE
+ * types into one deterministic sentence for the customer (`priceReplyText`)
+ * — no model call between his number and the customer, and, by his 6 b
+ * (2026-10-24), nothing written on the deal card: no offer row, no floor
+ * approval, no upsale. The price goes to the customer only.
  */
 
 export type CalcEvent = 'done' | 'sealed' | 'returned' | 'recalc' | 'estimate';
@@ -71,6 +77,11 @@ function labelOf(identity: Awaited<ReturnType<typeof chatIdentity>>): string {
   return `Lid: ${identity.customerName ?? '—'}`;
 }
 
+export interface AnnounceDeps {
+  /** Tests: the hand-back job's sender (pg-boss's `enqueue` otherwise). */
+  enqueue?: (name: string, data: AgentHandBackJob, options: { retryLimit: number }) => Promise<void>;
+}
+
 /**
  * Tell the agent owner a linked calculation moved. Best-effort: every caller
  * wraps this in its own catch, after its own push — the existing messages
@@ -80,6 +91,7 @@ export async function announceAgentCalc(
   requestId: string,
   event: CalcEvent,
   detail: { amountText?: string | null; reason?: string | null } = {},
+  deps: AnnounceDeps = {},
 ): Promise<boolean> {
   const config = await readAgentConfig();
   if (!config) return false;
@@ -110,16 +122,44 @@ export async function announceAgentCalc(
   if (event === 'returned' && agentRunning(config)) {
     // The hand-back's question goes to the CUSTOMER as a draft he approves —
     // the seller-facing reason is the model's instruction, never the reply.
-    const { runOwnerTriggered } = await import('./run');
-    await runOwnerTriggered({
-      trigger: 'hand_back',
+    // QUEUED, never run here (review regression-3): this is called from the
+    // VED's «Qaytarish», and a model run inline made the VED's button — and
+    // the seller's «↩️ Ma'lumot to'ldiring» task behind it — wait on the
+    // model for as long as the model took. The worker runs it; retryLimit 0
+    // because a re-delivered model call is a second bill, and the run's own
+    // source_key UNIQUE keeps one hand-back one draft.
+    const job: AgentHandBackJob = {
       managerUserId: link.managerUserId,
-      peerId: link.peerId,
-      sourceKey: `${requestId}:returned`,
-      instruction: `VED hisobni qaytardi, sababi (ichki, mijozga so'zma-so'z aytma): «${detail.reason ?? ''}». Mijozdan yetishmayotganini qisqa so'ra.`,
-    }).catch((err: unknown) => logger.error({ err, requestId }, '[agent] hand-back run failed'));
+      peerId: String(link.peerId),
+      requestId,
+      reason: (detail.reason ?? '').slice(0, 500),
+    };
+    const send = deps.enqueue ?? (async (name, data, options) => (await import('../../platform/jobs/boss')).enqueue(name, data, options));
+    await send(JOB_AGENT_HAND_BACK, job, { retryLimit: 0 }).catch((err: unknown) =>
+      logger.error({ err, requestId }, '[agent] hand-back not queued'),
+    );
   }
   return true;
+}
+
+/** The hand-back run's instruction — the VED's reason is for the model, never for the customer word for word. */
+export function handBackInstruction(reason: string): string {
+  return `VED hisobni qaytardi, sababi (ichki, mijozga so'zma-so'z aytma): «${reason}». Mijozdan yetishmayotganini qisqa so'ra.`;
+}
+
+/** The worker's side of `JOB_AGENT_HAND_BACK`: the owner-triggered run, keyed by the request. */
+export async function handleHandBack(job: AgentHandBackJob, deps: RunDeps = {}) {
+  const { runOwnerTriggered } = await import('./run');
+  return runOwnerTriggered(
+    {
+      trigger: 'hand_back',
+      managerUserId: job.managerUserId,
+      peerId: BigInt(job.peerId),
+      sourceKey: `${job.requestId}:returned`,
+      instruction: handBackInstruction(job.reason),
+    },
+    deps,
+  );
 }
 
 /** `announceAgentCalc`, never throwing — the shape every calc hook calls. */
@@ -135,19 +175,38 @@ export async function announceAgentCalcSafe(
   }
 }
 
+/**
+ * Why «💵 Narx yozaman» wrote nothing. `pending` is no longer returned — there
+ * is no floor approval now that nothing reaches the deal card (his 6 b) — and
+ * stays in the union only while the bot's `PRICE_WORDS` (bot-door.ts) still
+ * names it; `refused` carries its reason as WORDS in `detail`.
+ */
 export type PriceRefusal = 'not_linked' | 'not_account_holder' | 'bad_number' | 'pending' | 'no_anchor' | 'refused';
 
-/** The customer's language as `recordOffer` speaks it (fa/zh → en, money-4). */
-export function offerLocaleOf(locale: string | null): 'uz' | 'ru' | 'en' {
-  if (locale === 'ru') return 'ru';
-  if (locale === 'uz' || locale === 'uz_cyrl' || locale === null) return 'uz';
-  return 'en';
+/** Above this a typed «price» is a slip, not a quote — and past it the grouping would print an exponent. */
+const PRICE_MAX_USD = 1_000_000_000;
+
+/** His typed dollars, or null: positive, at most cents, below the cap. Never rounded — a figure he did not type is not his. */
+export function typedPriceUsd(text: string): number | null {
+  const amount = parseTypedMoney(text.replace(/\$|usd|dollar/giu, ''));
+  if (amount === null || !(amount > 0) || amount >= PRICE_MAX_USD) return null;
+  if (Math.abs(Math.round(amount * 100) - amount * 100) > 1e-6) return null;
+  return amount;
 }
 
+const EDITING_WORDS = "bu suhbatda siz yozayotgan javob bor — avval uni tugating yoki ❌ bilan yoping";
+
 /**
- * «✏️ Narx yozaman»: his typed dollars → `recordOffer` on the request's own
- * anchor (its newest seal, else its Готово answer) under HIS actor → a price
- * draft whose body is the offer's own text, in the customer's language.
+ * «💵 Narx yozaman»: his typed dollars → a price draft whose body is ONE
+ * deterministic sentence in the customer's language carrying exactly his
+ * figure (`priceReplyText`). Nothing else is written — no offer row, no deal
+ * card, no floor approval (his 6 b) — so it works the same on an AI-VED
+ * «taxmin» card, which has no seal and no Готово to anchor an offer on.
+ *
+ * Every refusal is decided BEFORE anything is written: not linked, not the
+ * account holder, a number that is not a price, no customer message to
+ * answer, his own reply to this chat being typed (an 'editing' draft is
+ * never superseded, drafts.ts).
  */
 export async function priceDraftFromText(
   staffId: string,
@@ -157,42 +216,31 @@ export async function priceDraftFromText(
   const link = await linkFor(requestId);
   if (!link) return { ok: false, code: 'not_linked' };
   if (link.managerUserId !== staffId) return { ok: false, code: 'not_account_holder' };
-  const amount = parseTypedMoney(text.replace(/\$|usd|dollar/giu, ''));
-  if (amount === null || !(amount > 0)) return { ok: false, code: 'bad_number' };
+  const amount = typedPriceUsd(text);
+  if (amount === null) return { ok: false, code: 'bad_number' };
   const [req] = await db
-    .select({ entityType: calcRequests.entityType, entityId: calcRequests.entityId })
+    .select({ section: calcRequests.section })
     .from(calcRequests)
     .where(eq(calcRequests.id, requestId));
   if (!req) return { ok: false, code: 'no_anchor' };
-  const [version] = await db
-    .select({ id: calcVersions.id })
-    .from(calcVersions)
-    .where(eq(calcVersions.requestId, requestId))
-    .orderBy(desc(calcVersions.versionNo))
-    .limit(1);
+  const [editing] = await db
+    .select({ id: agentDrafts.id })
+    .from(agentDrafts)
+    .where(
+      and(
+        eq(agentDrafts.managerUserId, link.managerUserId),
+        eq(agentDrafts.peerId, link.peerId),
+        eq(agentDrafts.status, 'editing'),
+      ),
+    );
+  if (editing) return { ok: false, code: 'refused', detail: EDITING_WORDS };
   const [conv] = await db
     .select({ locale: agentConversations.locale })
     .from(agentConversations)
     .where(and(eq(agentConversations.managerUserId, link.managerUserId), eq(agentConversations.peerId, link.peerId)));
+  const locale: AgentLocale = AGENT_LOCALES.find((l) => l === conv?.locale) ?? 'uz';
   const identity = await chatIdentity(link.managerUserId, link.peerId);
-  const { recordOffer } = await import('../calc/workspace');
-  let offer;
-  try {
-    offer = await recordOffer(
-      version ? { versionId: version.id } : { requestId },
-      {
-        clientPriceUsd: amount,
-        locale: offerLocaleOf(conv?.locale ?? null),
-        clientName: identity.customerName,
-        mayApprove: false,
-        expect: { entityType: req.entityType === 'lead' ? 'lead' : 'deal', entityId: req.entityId },
-      },
-      { actorId: staffId },
-    );
-  } catch (err) {
-    return { ok: false, code: 'refused', detail: (err as { code?: string }).code ?? (err instanceof Error ? err.message : 'error') };
-  }
-  if (offer.pending || !offer.text) return { ok: false, code: 'pending' };
+  const body = priceReplyText(locale, req.section, amount);
 
   // The draft answers the chat's newest live inbound.
   const [anchor] = await db
@@ -210,7 +258,7 @@ export async function priceDraftFromText(
     .orderBy(desc(tgMessages.sentAt))
     .limit(1);
   if (!anchor) return { ok: false, code: 'no_anchor' };
-  const policy = await ownerPolicyFor(offer.text, identity.codes.map((c) => c.clientCode));
+  const policy = await ownerPolicyFor(body, identity.codes.map((c) => c.clientCode));
   const written = await createDraft({
     runId: null,
     managerUserId: link.managerUserId,
@@ -221,9 +269,9 @@ export async function priceDraftFromText(
     anchorTgMessageId: anchor.tgMessageId,
     anchorEditedAt: anchor.editedAt,
     kind: 'price',
-    body: offer.text,
+    body,
     glossUz: null,
-    language: conv?.locale ?? null,
+    language: locale,
     category: 'price',
     confidence: null,
     nextStep: 'quote',
@@ -232,7 +280,7 @@ export async function priceDraftFromText(
       warnings: policy.warnings,
       ledger: [],
       memory: {
-        language: (conv?.locale as never) ?? 'uz',
+        language: locale,
         customerScript: null,
         sources: [{ value: amount, kind: 'money', label: 'sizning narxingiz' }],
         allowedPhones: [],
@@ -245,15 +293,17 @@ export async function priceDraftFromText(
         canary: '',
       },
       card: { customerLabel: labelOf(identity), lastOut: null, customerLines: [] },
-      notes: [`Narx: ${amount} $ — taklif sifatida yozildi (${offer.belowFloor ? 'poldan past' : 'pol ustida'}).`],
+      notes: ['Narx faqat mijozga ketadi — bitim kartasiga hech narsa yozilmaydi.'],
     },
     blocked: !policy.ok,
     needsOwner: false,
     ownerQuestion: null,
     actions: [],
     citedMessageIds: [],
-    offerId: offer.id,
+    offerId: null,
   });
-  if (written.kind === 'editing') return { ok: false, code: 'refused', detail: 'editing' };
+  // The check above ran before the write; a ✏️ pressed in between still lands
+  // here, and createDraft wrote nothing for it.
+  if (written.kind === 'editing') return { ok: false, code: 'refused', detail: EDITING_WORDS };
   return { ok: true, draftId: written.draftId };
 }

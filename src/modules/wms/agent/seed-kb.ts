@@ -80,6 +80,24 @@ export const SEED_FACTS: readonly SeedFact[] = [
       'Avia orqali litiy batareya, power bank, suyuqlik, atir va magnit yuborilmaydi — ular faqat avto yoki temir yoʻl bilan ketadi. ' +
       'Shubhangiz boʻlsa, tovar havolasini yuboring — tekshirib javob beramiz.',
   },
+  // His 2026-10-24 answers, «buni yozib qo'y»: what the company accepts and
+  // what it arranges itself — each a fact, none a price (the avia rate lives
+  // on agent_config, where the tool multiplies it, never in the kb).
+  {
+    key: 'min_shipment@1',
+    question: 'Eng kamida qancha yuk qabul qilasizlar?',
+    answer: 'Avto orqali eng kamida 1 kub yoki 100 kg dan yuk qabul qilamiz.',
+  },
+  {
+    key: 'avia@1',
+    question: 'Avia orqali yuborsa boʻladimi? Necha kunda keladi?',
+    answer: 'Avia orqali 1 kg dan qabul qilamiz; yetib borishi taxminan 2–5 kun, reys boʻlsa 2 kun — bu taxmin, vaʼda emas.',
+  },
+  {
+    key: 'certificate@1',
+    question: 'Kelib chiqish sertifikati kerakmi?',
+    answer: 'Kelib chiqish sertifikatini kompaniyamiz oʻzi rasmiylashtiradi — mijozdan talab qilinmaydi.',
+  },
 ];
 
 /** Which seed keys the table already holds — retired ones included (a retired fact stays retired). */

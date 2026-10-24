@@ -168,7 +168,11 @@ describe('the calculation answer reaches the chat that asked (his 8)', () => {
   it('a hand-back is news without a price door', async () => {
     const id = await request();
     await link(id);
-    expect(await announceAgentCalc(id, 'returned', { reason: 'Kod yetishmaydi' })).toBe(true);
+    // The hand-back's run is a queued job (regression-3) — stood in for here,
+    // so nothing is left on the shared queue for the e2e server to pick up.
+    const sent: string[] = [];
+    expect(await announceAgentCalc(id, 'returned', { reason: 'Kod yetishmaydi' }, { enqueue: async (name) => void sent.push(name) })).toBe(true);
+    expect(sent).toEqual(['agent.hand_back']);
     const [card] = await ownerCards('AgentCalcAnswered');
     expect(card!.payload).toMatchObject({ priceable: false });
     expect(buttonsFor('AgentCalcAnswered', card!.payload as Record<string, unknown>)).toBeNull();

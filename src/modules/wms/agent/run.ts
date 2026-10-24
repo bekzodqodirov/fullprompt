@@ -17,8 +17,9 @@ import { detectLocale, type AgentLocale } from './locale';
 import { askedLocation, customerNumberSources, policyFor, splitUrls, type PolicyMemory } from './policy-input';
 import { chatBlock, runTail, stableHead } from './prompt';
 import { JOB_AGENT_INBOUND, type AgentInboundJob } from './queues';
+import { dayRunCounts } from './today';
 import { runTool, TOOL_SPECS, type ChecklistState, type ToolOutcome } from './tools';
-import { draftWorthy } from './worthy';
+import { draftWorthy, mentionsRail, RAIL_OWNER_QUESTION } from './worthy';
 import { writeDraft, writeNotice, type ComposedAction } from './drafts';
 import type { NumberSource } from './numbers';
 import { AGENT_LOCALES } from './locale';
@@ -156,6 +157,7 @@ export async function runLoop(input: {
   const env = {
     ctx,
     day: input.day,
+    aviaUsdPerKg: input.config.aviaUsdPerKg,
     kb: (q: string) =>
       kbSearch({ clientIds: ctx.identity.codes.map((c) => c.id), leadId: ctx.identity.leadId }, q),
   };
@@ -283,16 +285,7 @@ async function reserve(job: AgentInboundJob, attempt: number, config: AgentConfi
   const dayStart = tashkentDayStart(tashkentDay(now)).toISOString();
   return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${CAP_LOCK}))`);
-    const [counts] = await tx.execute<{ runs: number; chat: number; tokens: number }>(sql`
-      SELECT
-        count(*) FILTER (WHERE trigger = 'inbound' AND outcome NOT IN ('refused', 'capped', 'notice'))::int AS runs,
-        count(*) FILTER (WHERE trigger = 'inbound' AND outcome NOT IN ('refused', 'capped', 'notice')
-                          AND manager_user_id = ${job.managerUserId} AND peer_id = ${job.peerId}::bigint)::int AS chat,
-        coalesce(sum(input_tokens + output_tokens + cache_write_tokens), 0)::int AS tokens
-      FROM agent_runs WHERE created_at >= ${dayStart}::timestamptz`);
-    const runs = Number(counts?.runs ?? 0);
-    const chat = Number(counts?.chat ?? 0);
-    const tokens = Number(counts?.tokens ?? 0);
+    const { runs, chat, tokens } = await dayRunCounts(dayStart, { managerUserId: job.managerUserId, peerId: BigInt(job.peerId) }, tx);
     if (!(runs < config.dailyDraftCap)) return 'capped:daily_draft_cap';
     if (!(chat < AGENT_LIMITS.runsPerChatPerDay)) return 'capped:chat_runs';
     if (!(tokens < config.dailyTokenCap)) return 'capped:daily_token_cap';
@@ -405,7 +398,7 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
       cacheWriteTokens: loop.usage.cacheWriteTokens,
       toolCalls: loop.tools.map((x) => ({ name: x.name, ok: x.ok, text: x.text })),
     };
-    const c = loop.compose;
+    const c = withRailRule(loop.compose, ctx);
     if (!c.replyNeeded && !c.needsOwner) {
       settle = { ...settle, outcome: 'no_reply', error: null };
       return { outcome: 'no_reply' };
@@ -476,11 +469,26 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
     allowedUrls,
     mapUrls,
     askedLocation: askedLocation(ctx.burst.map((m) => m.body)),
+    // Either estimate tool — the truck's website figure or the avia rate × kg
+    // (his 2026-10-24) — makes G11 apply: «taxminan» and «boj, QQS alohida».
     hasEstimate: loop.outcomes.some((o) => o.estimate === true),
     ownCodes: ctx.identity.codes.map((c) => c.clientCode),
     managerName: ctx.identity.managerName,
     canary,
   };
+}
+
+/**
+ * His «Temir yo'l mendan so'rasin» (2026-10-24): a burst that asks about rail
+ * is HIS question whatever the model composed — the draft is forced
+ * `needs_owner` and carries the question for him when the model asked none.
+ * The prompt tells the model never to quote rail; G1 already blocks a figure
+ * with no source. This is the part that does not depend on the model
+ * listening.
+ */
+export function withRailRule(c: ComposeReply, ctx: Pick<AgentContext, 'burst'>): ComposeReply {
+  if (!mentionsRail(ctx.burst.map((m) => m.body))) return c;
+  return { ...c, needsOwner: true, ownerQuestion: c.ownerQuestion || RAIL_OWNER_QUESTION };
 }
 
 export function stripFor(ctx: AgentContext): string[] {
@@ -518,7 +526,11 @@ export function validateActions(
         .map((r) => refs.get(r))
         .filter((m): m is NonNullable<typeof m> => m !== undefined && m.direction === 'in')
         .map((m) => m.id);
-      actions.push({ type: 'calc_submit', section: cl.section, facts: cl.facts, certificate: cl.certificate, citedMessageIds: [...new Set(cited)] });
+      // No certificate choice (his 9, 2026-10-24): «kelib chiqish sertifikati
+      // bor, biz o'zimiz olamiz» — the AI never asks, and every agent job lands
+      // with the company's own (decide.ts `landCalc`). The column of the action
+      // shape stays null until types.ts drops it.
+      actions.push({ type: 'calc_submit', section: cl.section, facts: cl.facts, certificate: null, citedMessageIds: [...new Set(cited)] });
     } else if (a.type === 'set_followup') {
       const day = /^\d{4}-\d{2}-\d{2}$/u.exec(a.date)?.[0];
       const today = tashkentDay(now);
@@ -583,13 +595,38 @@ export async function runOwnerTriggered(
   if (!ctx.anchor || t.getTime() - ctx.anchor.sentAt.getTime() > AGENT_LIMITS.anchorMaxAgeMs) {
     return { outcome: 'skipped', reason: 'no_fresh_inbound' };
   }
+  // The same chat rules an inbound run asks (review leak-nit): a chat he took
+  // with 🙋, a colleague's phone, a muted chat, a paused account get no
+  // hand-back draft either. Minus the clauses about the ANCHOR — this run was
+  // started by the VED, not by the customer's newest message, so «is it still
+  // the newest», «an auto-reply», «an echo of ours», «a repeat» do not apply.
+  const elig = eligibleForRun({
+    ...(await eligibilityFacts(ctx, config, t)),
+    anchorIsNewest: true,
+    anchorAutoSent: false,
+    lastOutAt: null,
+    anchorRepeats: false,
+  });
+  if (!elig.ok) {
+    await db
+      .insert(agentRuns)
+      .values({
+        managerUserId: input.managerUserId,
+        peerId: input.peerId,
+        trigger: input.trigger,
+        anchorTgMessageId: ctx.anchor.tgMessageId,
+        sourceKey: input.sourceKey,
+        outcome: 'refused',
+        error: elig.reason,
+      })
+      .onConflictDoNothing();
+    return { outcome: 'refused', reason: elig.reason };
+  }
   const dayStart = tashkentDayStart(tashkentDay(t)).toISOString();
   const reserved = await db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${CAP_LOCK}))`);
-    const [row] = await tx.execute<{ tokens: number }>(sql`
-      SELECT coalesce(sum(input_tokens + output_tokens + cache_write_tokens), 0)::int AS tokens
-        FROM agent_runs WHERE created_at >= ${dayStart}::timestamptz`);
-    if (!(Number(row?.tokens ?? 0) < config.dailyTokenCap)) return 'capped';
+    const today = await dayRunCounts(dayStart, null, tx);
+    if (!(today.tokens < config.dailyTokenCap)) return 'capped';
     const rows = await tx
       .insert(agentRuns)
       .values({
@@ -620,7 +657,7 @@ export async function runOwnerTriggered(
       cacheWriteTokens: loop.usage.cacheWriteTokens,
       toolCalls: loop.tools.map((x) => ({ name: x.name, ok: x.ok, text: x.text })),
     };
-    const c = loop.compose;
+    const c = withRailRule(loop.compose, ctx);
     if (!c.replyNeeded && !c.needsOwner) {
       settle = { ...settle, outcome: 'no_reply', error: null };
       return { outcome: 'no_reply' };

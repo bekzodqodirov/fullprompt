@@ -6,8 +6,9 @@ import { composeStaffMessage } from '../../platform/notifications/service';
 import { keyboardOf } from '../../platform/notifications/staff-html';
 import { editText } from '../../platform/telegram/send';
 import { buttonsFor } from '../../platform/telegram/staff-bot';
-import { agentCardText, cardExtra, CardTooLong } from './card';
+import { agentCardText, cardExtra, CardTooLong, digestBody } from './card';
 import type { ComposedAction, DraftPolicyJson } from './types';
+import { CANCELLED_BY_HOLDER } from './web-thread';
 
 /**
  * The card's IO: render a draft's card from its STORED row and put it where
@@ -47,6 +48,9 @@ const CANCEL_WORDS: Record<string, string> = {
   excluded: 'chat shaxsiy deb belgilangan',
   identity_changed: "chat boshqa mijozga o'tdi",
   offer_gone: 'narx amal qilmaydi',
+  // The web cancel's own lastError (web-thread.ts) — keyed by the constant, so
+  // a reworded value still has its word and never prints raw.
+  [CANCELLED_BY_HOLDER]: 'o‘zingiz qaytarib oldingiz',
 };
 
 function statusLine(d: DraftRow, o: OutboxRow | null): string | null {
@@ -91,7 +95,7 @@ function statusLine(d: DraftRow, o: OutboxRow | null): string | null {
 function actionLines(actions: ComposedAction[]): string[] {
   return actions.map((a) => {
     if (a.type === 'calc_submit') {
-      return `🧮 Hisoblatishga: ${SECTION_WORDS[a.section] ?? a.section} · lentaga ${a.citedMessageIds.length} ta xabar · sertifikat: ${a.certificate ?? '—'}`;
+      return `🧮 Hisoblatishga: ${SECTION_WORDS[a.section] ?? a.section} · lentaga ${a.citedMessageIds.length} ta xabar · kelib chiqish sertifikati: kompaniya o‘zi oladi`;
     }
     if (a.type === 'set_followup') return `📅 Qayta aloqa: ${a.date}${a.note ? ` — ${a.note}` : ''}`;
     return '🔕 Bu chatda AI o‘chiriladi';
@@ -144,7 +148,7 @@ export async function refreshAgentCard(draftId: string, extraNotes: string[] = [
   const [o] = await db.select().from(agentOutbox).where(eq(agentOutbox.draftId, draftId));
   const text = renderDraftCard(d, o ?? null, extraNotes);
   const live = d.status === 'pending' || d.status === 'editing';
-  const body = d.finalBody ?? d.proposedBody ?? '';
+  const body = digestBody(d);
   const kb = ((d.policy ?? {}) as { kb?: string }).kb;
   const extra = {
     ...cardExtra({ id: d.id, body, actions: (d.actions ?? []) as unknown[], blocked: d.blocked, live, kind: d.kind }),

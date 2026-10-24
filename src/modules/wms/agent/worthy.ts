@@ -62,6 +62,24 @@ export function isPashto(text: string): boolean {
 }
 
 /**
+ * Rail, in the agent's six languages (his 2026-10-24: «Temir yo'l mendan
+ * so'rasin narxini»). Whole words where a short form is a piece of another
+ * word: «жд» is the start of «жду» (I am waiting), «rail» sits inside
+ * «trailer». «железн…» also matches iron goods («железные изделия») — a false
+ * positive only puts the question to him, which is the safe direction.
+ */
+const RAIL =
+  /temir[\s-]?yo['‘’ʻ`]?l|poyezd|poezd|темир[\s-]?й[ўу]л|поезд|(?<!\p{L})ж\s?\/\s?д(?!\p{L})|(?<!\p{L})жд(?!\p{L})|железн|(?<!\p{L})rail(?:way|road)?s?(?!\p{L})|(?<!\p{L})trains?(?!\p{L})|قطار|راه[\s‌]?آهن|铁路|火车/iu;
+
+/** The question the draft carries for him when a burst asks about rail and the model asked none. */
+export const RAIL_OWNER_QUESTION = "Mijoz temir yo'l narxini so'rayapti — narxni siz ayting.";
+
+/** Does any message of the burst ask about rail? */
+export function mentionsRail(texts: readonly (string | null)[]): boolean {
+  return texts.some((t) => RAIL.test(clean(t)));
+}
+
+/**
  * The burst = the customer's messages since our last out row, oldest first.
  * `lastOutAsked` = our last message ended with a question — then «ok» is an
  * ANSWER and deserves a reply.

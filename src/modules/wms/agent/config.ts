@@ -32,6 +32,10 @@ export interface AgentConfig {
   styleGuide: string | null;
   styleGuideProposed: string | null;
   styleApprovedAt: Date | null;
+  /** His avia rate, $/kg (§17.14, «kg uchun 17$»); null = avia is not quoted. */
+  aviaUsdPerKg: number | null;
+  aviaRateSetAt: Date | null;
+  aviaRateSetBy: string | null;
   updatedAt: Date;
 }
 
@@ -75,6 +79,10 @@ function toConfig(row: typeof agentConfig.$inferSelect): AgentConfig {
     styleGuide: row.styleGuide,
     styleGuideProposed: row.styleGuideProposed,
     styleApprovedAt: row.styleApprovedAt,
+    // numeric comes back as text; the CHECK keeps it positive, finite, < 1 000.
+    aviaUsdPerKg: row.aviaUsdPerKg === null ? null : Number(row.aviaUsdPerKg),
+    aviaRateSetAt: row.aviaRateSetAt,
+    aviaRateSetBy: row.aviaRateSetBy,
     updatedAt: row.updatedAt,
   };
 }
@@ -311,6 +319,46 @@ export async function setAgentNumbers(
 }
 
 /**
+ * His avia rate on /suhbatlar/ai (§17.14: «Avia hozir kg uchun 17$ dan») — the
+ * one money figure the agent multiplies that is not the website's table. The
+ * same door as the numbers: the configured owner or the super_admin role.
+ * Null = avia is not quoted (the tool refuses and the model asks him). A rate
+ * with more than cents is refused, never rounded: numeric(10,2) would round
+ * it silently into a figure nobody typed. Stamped and audited.
+ */
+export async function setAviaRate(actor: AgentActor, value: number | null, ctx: AuditContext): Promise<AgentConfig> {
+  if (value !== null) {
+    if (!Number.isFinite(value) || !(value > 0) || !(value < 1000)) throw new AgentConfigError('bad_value');
+    if (Math.abs(Math.round(value * 100) - value * 100) > 1e-6) throw new AgentConfigError('bad_value');
+  }
+  if (!(await agentTablesReady())) throw new AgentConfigError('not_ready');
+  return db.transaction(async (tx) => {
+    const before = await lockConfig(tx);
+    if (!mayRunAgent(actor, before)) throw new AgentConfigError('forbidden');
+    const now = new Date();
+    const [row] = await tx
+      .update(agentConfig)
+      .set({
+        aviaUsdPerKg: value === null ? null : value.toFixed(2),
+        aviaRateSetAt: now,
+        aviaRateSetBy: actor.id,
+        updatedBy: actor.id,
+        updatedAt: now,
+      })
+      .where(eq(agentConfig.id, 1))
+      .returning();
+    await writeAudit(tx, ctx, {
+      entityType: 'agent_config',
+      entityId: '00000000-0000-0000-0000-000000000136',
+      action: 'update',
+      before: { aviaUsdPerKg: before.aviaUsdPerKg },
+      after: { aviaUsdPerKg: value },
+    });
+    return toConfig(row!);
+  });
+}
+
+/**
  * Tests: put the singleton back the way a file found it (#183 — a
  * configuration row is the next file's input on the one shared database).
  */
@@ -331,6 +379,9 @@ export async function __restoreAgentConfig(snapshot: AgentConfig | null): Promis
       styleGuideProposed: snapshot.styleGuideProposed,
       styleApprovedAt: snapshot.styleApprovedAt,
       styleApprovedBy: snapshot.styleApprovedAt ? snapshot.ownerUserId : null,
+      aviaUsdPerKg: snapshot.aviaUsdPerKg === null ? null : snapshot.aviaUsdPerKg.toFixed(2),
+      aviaRateSetAt: snapshot.aviaRateSetAt,
+      aviaRateSetBy: snapshot.aviaRateSetBy,
     })
     .where(eq(agentConfig.id, 1));
 }

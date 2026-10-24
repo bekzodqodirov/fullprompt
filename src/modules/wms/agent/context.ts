@@ -85,7 +85,7 @@ export interface AgentContext {
   ruleDecision: string | null;
 }
 
-function mediaOf(contentType: string | null, fileName: string | null): ChatMessage['media'] {
+export function mediaOf(contentType: string | null, fileName: string | null): ChatMessage['media'] {
   if (!contentType) return null;
   if (contentType.startsWith('image/')) return 'photo';
   if (contentType.startsWith('audio/')) return /voice/iu.test(fileName ?? '') || contentType.includes('ogg') ? 'voice' : 'audio';

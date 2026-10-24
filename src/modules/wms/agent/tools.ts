@@ -6,7 +6,9 @@ import { FIELD_LABEL, missingFields, type CalcFacts, type CalcGoodsFact, type Ca
 import { parseManualFacts } from '../calc/intake-manual';
 import { freightFor } from '../calc/pricing';
 import { tariffFor } from '../calc/tariff-read';
+import { AGENT_LIMITS } from './limits';
 import { AGENT_LOCALES } from './locale';
+import { namedOrigin } from './origin';
 import { customerSources, extractNumbers, type NumberSource } from './numbers';
 import { siteEstimate } from './site-estimate';
 import type { AgentContext, MeasureCandidate } from './context';
@@ -22,21 +24,27 @@ import type { KbHit } from './kb';
  * Every tool reads with the IDENTITY the server resolved for this chat
  * (`AgentContext.identity`) — the model passes no client id, no code and no
  * figure it could have invented. A money figure leaves a tool only as a
- * NumberSource of kind 'money' (G1), and only two tools make one: the
- * customer's own balance and the website's yo'lkira figure.
+ * NumberSource of kind 'money' (G1), and only three tools make one: the
+ * customer's own balance, the website's yo'lkira figure, and his avia rate
+ * times the customer's kilos.
  */
 
 export interface ToolEnv {
   ctx: AgentContext;
   /** Tashkent day, YYYY-MM-DD. */
   day: string;
+  /** His avia rate, $/kg (`agent_config.avia_usd_per_kg`); null = avia is not quoted. */
+  aviaUsdPerKg: number | null;
   kb: (query: string) => Promise<KbHit[]>;
 }
 
+/**
+ * What the checklist found. No certificate (his 9, 2026-10-24: «kelib chiqish
+ * sertifikati bor, biz o'zimiz olamiz»): the AI never asks about it.
+ */
 export interface ChecklistState {
   section: CalcSection;
   facts: CalcFacts;
-  certificate: 'bor' | 'yoq' | 'bilmaydi' | null;
   complete: boolean;
 }
 
@@ -101,13 +109,19 @@ export const TOOL_SPECS: ModelToolSpec[] = [
   {
     name: 'yolkira_estimate',
     description:
-      "Faqat yo'lkira (Xitoy → O'zbekiston, mashina) uchun saytdagi kalkulyator narxi. Raqam bermaysan: kontekstdagi o'lchov havolalarini (w1, v1, d1) berasan. Bojxona, QQS bu narxga kirmaydi. Rad etsa — hisoblatishga yuborish kerak.",
+      `Faqat yo'lkira (Xitoy → O'zbekiston, mashina) uchun saytdagi kalkulyator narxi. Raqam bermaysan: kontekstdagi o'lchov havolalarini (w1, v1, d1) berasan. Bojxona, QQS bu narxga kirmaydi. Mashina eng kamida ${AGENT_LIMITS.minShipment.m3} kub yoki ${AGENT_LIMITS.minShipment.kg} kg yuk oladi. Rad etsa — hisoblatishga yuborish kerak.`,
     input_schema: obj({ weight_ref: { type: 'string' }, volume_ref: { type: 'string' } }),
+  },
+  {
+    name: 'avia_estimate',
+    description:
+      `Faqat avia (samolyot, Xitoy → O'zbekiston) yo'lkirasi: og'irlik × avia tarifi ($/kg). Raqam bermaysan: og'irlik havolasini (w1) berasan. Eng kamida ${AGENT_LIMITS.avia.minKg} kg. Muddat taxminan ${AGENT_LIMITS.avia.daysMin}-${AGENT_LIMITS.avia.daysMax} kun, reys bo'lsa ${AGENT_LIMITS.avia.daysMin} kun — va'da emas. Bojxona, QQS bu narxga kirmaydi.`,
+    input_schema: obj({ weight_ref: { type: 'string' } }),
   },
   {
     name: 'calc_checklist',
     description:
-      "Rastamojka yoki podklyuch (yoki yo'lkira) hisoblatish uchun nima yetishmasligini aytadi. Bo'lim mijoz aytmagan bo'lsa — section bo'sh qoldiriladi va bo'limni so'raysan, o'zing tanlamaysan. Tovar qatorlaridagi har bir son mijoz xabarida bo'lishi shart.",
+      "Rastamojka yoki podklyuch (yoki yo'lkira) hisoblatish uchun nima yetishmasligini aytadi. Bo'lim mijoz aytmagan bo'lsa — section bo'sh qoldiriladi va bo'limni so'raysan, o'zing tanlamaysan. Tovar qatorlaridagi har bir son mijoz xabarida bo'lishi shart. Kelib chiqish sertifikatini kompaniya o'zi oladi — so'rama.",
     input_schema: obj({
       section: { type: 'string', enum: ['', ...SECTIONS] },
       goods: {
@@ -118,7 +132,6 @@ export const TOOL_SPECS: ModelToolSpec[] = [
           weight_kg: { type: ['number', 'null'] },
         }),
       },
-      certificate: { type: 'string', enum: ['', 'bor', 'yoq', 'bilmaydi'] },
     }),
   },
   {
@@ -246,6 +259,8 @@ export async function runTool(name: string, input: Record<string, unknown>, env:
     }
     case 'yolkira_estimate':
       return yolkira(input, env);
+    case 'avia_estimate':
+      return avia(input, env);
     case 'calc_checklist':
       return checklist(input, env);
     default:
@@ -253,8 +268,29 @@ export async function runTool(name: string, input: Record<string, unknown>, env:
   }
 }
 
-/** His Q7 ⭐: below these, or above, the website's per-m³ figure is not a quote — the job goes to hisoblatish. */
-export const YOLKIRA_GUARDS = { minM3: 0.1, maxM3: 100, maxKg: 20_000, minTotalUsd: 50, minDensity: 1 } as const;
+/**
+ * His Q7 ⭐: above these, or at an impossible density, the website's per-m³
+ * figure is not a quote — the job goes to hisoblatish. The SMALL end is not
+ * here any more: it is the company's own minimum (`AGENT_LIMITS.minShipment`,
+ * his 2026-10-24 «eng kamida 1 kub yoki 100 kg»), which is not a reason to
+ * calculate but a «we do not carry this».
+ */
+export const YOLKIRA_GUARDS = { maxM3: 100, maxKg: 20_000, minTotalUsd: 50, minDensity: 1 } as const;
+
+/** Below the truck's minimum: no figure — the minimum itself, as the reply's only numbers. */
+function belowTruckMinimum(): ToolOutcome {
+  const { m3, kg } = AGENT_LIMITS.minShipment;
+  return {
+    ok: true,
+    text:
+      `below_minimum: kompaniya mashina bilan eng kamida ${m3} kub yoki ${kg} kg yuk tashiydi — bu yuk ikkalasidan ham kam. ` +
+      `Narx AYTMA. Mijozga uning tilida, xushmuomala qilib, eng kamida ${m3} kub yoki ${kg} kg dan qabul qilishimizni ayt.`,
+    sources: [
+      { value: m3, kind: 'measure', label: `avto minimal yuk (${m3} kub)` },
+      { value: kg, kind: 'measure', label: `avto minimal yuk (${kg} kg)` },
+    ],
+  };
+}
 
 async function yolkira(input: Record<string, unknown>, env: ToolEnv): Promise<ToolOutcome> {
   const { ctx } = env;
@@ -269,13 +305,16 @@ async function yolkira(input: Record<string, unknown>, env: ToolEnv): Promise<To
   const volume = find(input.volume_ref, 'volume');
   if (!volume) return refuse("hajm havolasi yo'q");
   if (!weight) return refuse("og'irlik havolasi yo'q");
+  const kg = weight.value;
+  const m3 = volume.value;
+  // The company's floor comes before every other question: below BOTH halves
+  // nothing is accepted, whichever road it would take (his 2026-10-24).
+  if (m3 < AGENT_LIMITS.minShipment.m3 && kg < AGENT_LIMITS.minShipment.kg) return belowTruckMinimum();
   const zone = originZone(ctx);
   if (zone === 'other') return refuse("Qashqar/Urumchi/Xorgos yo'nalishi saytda narxlanmagan");
   if (zone === 'unknown') return refuse("qayerdan jo'natilishi aytilmagan — so'ra");
-  const kg = weight.value;
-  const m3 = volume.value;
   const g = YOLKIRA_GUARDS;
-  if (!(kg > 0) || m3 < g.minM3 || m3 > g.maxM3 || kg > g.maxKg || kg / m3 < g.minDensity) {
+  if (!(kg > 0) || !(m3 > 0) || m3 > g.maxM3 || kg > g.maxKg || kg / m3 < g.minDensity) {
     return refuse('juda kichik yoki juda katta yuk');
   }
   const site = siteEstimate({ mode: 'truck', kg, m3, day: env.day });
@@ -313,6 +352,52 @@ async function yolkira(input: Record<string, unknown>, env: ToolEnv): Promise<To
   };
 }
 
+/**
+ * Avia (his 2026-10-24: «Avia hozir kg uchun 17$ dan», «avia uchun 1kg
+ * minimum», «2-5 kun ichida … reysimiz bolsa 2 kun»): the customer's own
+ * kilos, by REFERENCE, times the rate on /suhbatlar/ai. The rate is a money
+ * source, the total is one, the days are duration sources — and an estimate,
+ * so G11 asks for «taxminan» and «boj, QQS alohida» exactly as on the truck.
+ * No rate set = avia is not quoted: refused, and the model asks him.
+ */
+function avia(input: Record<string, unknown>, env: ToolEnv): ToolOutcome {
+  const { ctx } = env;
+  const rate = env.aviaUsdPerKg;
+  if (rate === null || !(rate > 0)) {
+    return {
+      ok: false,
+      text: "Avia narxi hozir belgilanmagan — narx AYTMA: needs_owner=true, owner_question'da Bekzoddan avia narxini so'ra.",
+      sources: [],
+    };
+  }
+  const weight = ctx.measures.find((m) => m.ref === String(input.weight_ref ?? '').trim() && m.kind === 'weight') ?? null;
+  if (!weight) return { ok: false, text: "Og'irlik havolasi yo'q — mijozdan yukning og'irligini (kg) so'ra.", sources: [] };
+  const kg = weight.value;
+  const { minKg, daysMin, daysMax } = AGENT_LIMITS.avia;
+  if (!(kg >= minKg)) {
+    return {
+      ok: true,
+      text: `below_minimum: avia eng kamida ${minKg} kg dan qabul qilinadi. Narx AYTMA — mijozga uning tilida shuni ayt.`,
+      sources: [{ value: minKg, kind: 'measure', label: `avia minimal yuk (${minKg} kg)` }],
+    };
+  }
+  const total = Math.round(kg * rate * 100) / 100;
+  return {
+    ok: true,
+    text:
+      `Taxminiy avia yo'lkira: ${total} $ (${kg} kg × ${rate} $/kg). Yetib borishi taxminan ${daysMin}-${daysMax} kun, ` +
+      `reys bo'lsa ${daysMin} kun — va'da emas. Boj va QQS bu narxga KIRMAYDI.`,
+    estimate: true,
+    sources: [
+      { value: total, kind: 'money', label: 'avia (tarif × kg)' },
+      { value: rate, kind: 'money', label: 'avia tarifi' },
+      { value: daysMin, kind: 'duration', label: 'avia muddati' },
+      { value: daysMax, kind: 'duration', label: 'avia muddati' },
+      { value: kg, kind: 'measure', label: `mijoz ${weight.messageRef}` },
+    ],
+  };
+}
+
 async function checklist(input: Record<string, unknown>, env: ToolEnv): Promise<ToolOutcome> {
   const { ctx } = env;
   const section = String(input.section ?? '') as CalcSection | '';
@@ -336,6 +421,10 @@ async function checklist(input: Record<string, unknown>, env: ToolEnv): Promise<
   }
   const dims = ctx.measures.filter((m) => m.ref.startsWith('d'));
   if (!(Number(facts.volumeM3) > 0) && dims.length > 0) facts.volumeM3 = dims[dims.length - 1]!.value;
+  // The place the customer NAMED, when the route parser found none — so the
+  // landing can choose a podklyuch zone the way the bot's buttons do
+  // (`zoneForOrigin`); a bare «Xitoy» names no zone and the VED chooses.
+  if (!facts.fromCity) facts.fromCity = namedOrigin(inbound.map((m) => m.body).join('\n'))?.place ?? null;
   if (!facts.fromCity && originZone(ctx) === 'cn') facts.fromCity = 'Xitoy';
   const goodsIn = Array.isArray(input.goods) ? (input.goods as Record<string, unknown>[]) : [];
   const goods: CalcGoodsFact[] = [];
@@ -350,18 +439,16 @@ async function checklist(input: Record<string, unknown>, env: ToolEnv): Promise<
     goods.push({ name, quantity, weightKg });
   }
   facts.goods = goods;
-  const certificate = (['bor', 'yoq', 'bilmaydi'] as const).find((c) => c === input.certificate) ?? null;
+  // No certificate question (his 9): the company obtains it itself.
   const missing = missingFields(section, facts, new Map()).map((f) => FIELD_LABEL[f]);
-  const needsCert = section !== 'yolkira';
-  if (needsCert && certificate === null) missing.push("kelib chiqish sertifikati (bor / yo'q / bilmaydi)");
   const complete = missing.length === 0;
   const text = complete
-    ? `To'liq. ${section}: ${JSON.stringify({ ...facts, certificate })}. Endi actions ichida calc_submit taklif qil va mijozga «hisoblatishga yubordim, javob kelishi bilan aytaman» de.`
+    ? `To'liq. ${section}: ${JSON.stringify(facts)}. Endi actions ichida calc_submit taklif qil va mijozga «hisoblatishga yubordim, javob kelishi bilan aytaman» de.`
     : `Yetishmaydi (hammasini BITTA raqamlangan xabarda so'ra, savol belgisi faqat oxirida): ${missing.map((m, i) => `${i + 1}) ${m}`).join('; ')}`;
   return {
     ok: true,
     text,
     sources: [],
-    checklist: { section, facts, certificate, complete },
+    checklist: { section, facts, complete },
   };
 }

@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { and, desc, eq, gt, gte, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, sql } from 'drizzle-orm';
 import { v5 as uuidv5 } from 'uuid';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { db } from '../../platform/db/client';
@@ -17,14 +17,15 @@ import {
 } from '../../platform/db/schema';
 import { logger } from '../../platform/logger';
 import { getSetting } from '../../platform/settings/service';
-import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import { readGuard } from '../crm/account-guard';
 import { cardDigest } from './card';
 import { agentRunning, readAgentConfig } from './config';
 import { chatIdentity } from './context';
-import { AGENT_LIMITS, dailySendCeiling } from './limits';
+import { AGENT_LIMITS } from './limits';
+import { zoneForOrigin } from './origin';
 import { ownerPolicyFor, policyFor } from './policy-input';
 import { releaseAt } from './send-step';
+import { sendsToday } from './today';
 import { isNudge } from './worthy';
 import type { ComposedAction, DraftPolicyJson } from './types';
 
@@ -112,31 +113,10 @@ async function chatMoved(d: typeof agentDrafts.$inferSelect): Promise<'supersede
   return null;
 }
 
-/** Today's AI sends against the ceiling — a ✅ beyond it is refused with the text to copy (fit-8). */
+/** Today's AI sends against the ceiling — a ✅ beyond it is refused with the text to copy (fit-8). One home: today.ts. */
 async function budgetLeft(managerUserId: string, startedAt: Date | null, now: Date): Promise<number> {
-  const dayStart = tashkentDayStart(tashkentDay(now));
-  const [used] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(agentOutbox)
-    .where(
-      and(
-        eq(agentOutbox.managerUserId, managerUserId),
-        inArray(agentOutbox.status, ['agent', 'sending', 'sent', 'unknown']),
-        gte(agentOutbox.queuedAt, dayStart),
-      ),
-    );
-  // His own average daily sends over the 30 days before the agent started (his Q11 ⭐).
-  let ownAverage = AGENT_LIMITS.perDay;
-  if (startedAt) {
-    const from = new Date(startedAt.getTime() - 30 * 86_400_000);
-    const [own] = await db.execute<{ n: number }>(sql`
-      SELECT count(*)::int AS n FROM tg_messages m
-       WHERE m.manager_user_id = ${managerUserId} AND m.direction = 'out'
-         AND m.sent_at >= ${from.toISOString()}::timestamptz AND m.sent_at < ${startedAt.toISOString()}::timestamptz
-         AND NOT EXISTS (SELECT 1 FROM agent_outbox o WHERE o.manager_user_id = m.manager_user_id AND o.tg_message_id = m.tg_message_id)`);
-    ownAverage = Number(own?.n ?? 0) / 30;
-  }
-  return dailySendCeiling({ startedAt, ownAverage, now }) - Number(used?.n ?? 0);
+  const { used, ceiling } = await sendsToday(managerUserId, startedAt, now);
+  return ceiling - used;
 }
 
 async function lastInboundAt(d: typeof agentDrafts.$inferSelect): Promise<Date | null> {
@@ -201,7 +181,8 @@ async function landCalc(
     facts: action.facts,
     steps: [
       "AI sotuvchi mijozning Telegram suhbatidan yig'di, egasi tasdiqladi.",
-      `Kelib chiqish sertifikati: ${action.certificate ?? '—'} (mijoz xabaridan; «bilmaydi» = yo'q deb hisoblandi).`,
+      // His 9 (2026-10-24): «kelib chiqish sertifikati bor, biz o'zimiz olamiz».
+      "Kelib chiqish sertifikati: kompaniya o'zi oladi",
     ],
     fileCount: 0,
     material,
@@ -211,8 +192,13 @@ async function landCalc(
     lead,
     leadName: identity.customerName ?? 'Telegram',
     leadPhone: null,
-    hasCertificate: action.certificate === 'bor',
-    freightZone: action.section === 'podklyuch' && action.facts.fromCity ? 'cn' : null,
+    // Every agent job carries the company's certificate (his 9) — never the
+    // customer's answer, which the AI no longer asks for.
+    hasCertificate: true,
+    // The zone the bot's own buttons would choose for the place the customer
+    // named (Kashgar → kashgar, Horgos → horgos, Yiwu/Guangzhou → cn), or
+    // none — the VED chooses; never «cn» by default (review A11).
+    freightZone: action.section === 'podklyuch' ? zoneForOrigin(action.facts.fromCity ?? null) : null,
   });
   return { queued: target.queued === true && Boolean(target.requestId), requestId: target.requestId ?? null, queueError: target.queueError ?? null };
 }
@@ -343,7 +329,10 @@ export async function decideDraft(
         decidedBy: actor.id,
         decidedAt: now,
         updatedAt: now,
-        ...(calc ? { actionStatus: 'done', actionError: null } : actions.length ? { actionStatus: 'pending' } : {}),
+        // 'pending' while ANY action is on the draft — the calculation is
+        // landed above, the follow-up and the mute run after the commit, and
+        // only `runDraftActions` says 'done', when every one has (A10).
+        ...(actions.length ? { actionStatus: 'pending', actionError: null } : {}),
       })
       .where(and(eq(agentDrafts.id, draftId), eq(agentDrafts.status, 'pending')))
       .returning({ id: agentDrafts.id });
@@ -383,9 +372,13 @@ export async function decideDraft(
 }
 
 /**
- * The actions other than the calculation, after the commit and re-runnable
- * (build-6): a follow-up through the CRM's own door under the approver, a
- * mute on the conversation. The outcome is stored on the draft.
+ * EVERY action of an approved draft, after the commit and re-runnable
+ * (build-6, A10): the calculation (landed before the approval — asked again
+ * here, and `noteIdFor` makes that a read of the one already landed), a
+ * follow-up through the CRM's own door under the approver, a mute on the
+ * conversation. 'done' only when all of them have run; a replay — the
+ * sweep's, after a crash between the commit and this — writes nothing twice.
+ * The outcome is stored on the draft.
  */
 export async function runDraftActions(draftId: string, actor: DeciderActor): Promise<void> {
   const [d] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, draftId));
@@ -393,19 +386,29 @@ export async function runDraftActions(draftId: string, actor: DeciderActor): Pro
   const actions = (d.actions ?? []) as ComposedAction[];
   try {
     for (const a of actions) {
-      if (a.type === 'set_followup') {
+      if (a.type === 'calc_submit') {
+        const landed = await landCalc(d, a, actor);
+        if (!landed.queued) throw new Error(landed.queueError ?? 'calc_not_queued');
+      } else if (a.type === 'set_followup') {
         const kind = d.clientId ? 'client' : 'lead';
         const id = d.clientId ?? d.leadId;
         if (!id) continue;
         const { setFollowUp } = await import('../crm/service');
         await setFollowUp(kind, id, a.date, { actorId: actor.id, viewAll: actor.permissions.has('crm.leads.view_all') });
       } else if (a.type === 'mute') {
+        // A replay keeps the first mute's moment — the chat went quiet then.
         await db
           .insert(agentConversations)
           .values({ managerUserId: d.managerUserId, peerId: d.peerId, mutedAt: new Date(), muteReason: a.reason })
           .onConflictDoUpdate({
             target: [agentConversations.managerUserId, agentConversations.peerId],
-            set: { mutedAt: new Date(), muteReason: a.reason, updatedAt: new Date() },
+            // `${table}.column`: inside ON CONFLICT the bare name is the
+            // proposed row's as much as the existing one's (#128's cousin).
+            set: {
+              mutedAt: sql`coalesce(${agentConversations}.muted_at, now())`,
+              muteReason: sql`CASE WHEN ${agentConversations}.muted_at IS NULL THEN ${a.reason} ELSE ${agentConversations}.mute_reason END`,
+              updatedAt: new Date(),
+            },
           });
       }
     }

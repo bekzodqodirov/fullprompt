@@ -13,6 +13,8 @@
 export const JOB_AGENT_INBOUND = 'agent.inbound';
 export const JOB_AGENT_HUMAN_REPLY = 'agent.human_reply';
 export const JOB_AGENT_SWEEP = 'agent.sweep';
+/** The VED handed a linked calculation back — the customer's question is drafted off the VED's button (regression-3). */
+export const JOB_AGENT_HAND_BACK = 'agent.hand_back';
 
 /** A customer's message landed on the agent owner's account. */
 export interface AgentInboundJob {
@@ -31,6 +33,18 @@ export interface AgentHumanReplyJob {
   managerUserId: string;
   peerId: string;
   tgMessageId: string;
+}
+
+/**
+ * A hand-back to draft for the customer. The reason is the VED's own words —
+ * the model's instruction, never the reply; the request keys the run
+ * (`agent_runs_source_unique`), so a job delivered twice drafts once.
+ */
+export interface AgentHandBackJob {
+  managerUserId: string;
+  peerId: string;
+  requestId: string;
+  reason: string;
 }
 
 /** Seconds of quiet before the worker looks (AGENT_LIMITS.debounceMs). */

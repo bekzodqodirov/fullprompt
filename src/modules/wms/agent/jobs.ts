@@ -11,9 +11,11 @@ import { agentRunning, agentTablesReady, readAgentConfig } from './config';
 import { AGENT_LIMITS } from './limits';
 import {
   INBOUND_START_AFTER_S,
+  JOB_AGENT_HAND_BACK,
   JOB_AGENT_HUMAN_REPLY,
   JOB_AGENT_INBOUND,
   JOB_AGENT_SWEEP,
+  type AgentHandBackJob,
   type AgentHumanReplyJob,
   type AgentInboundJob,
 } from './queues';
@@ -47,6 +49,20 @@ export async function registerAgentWorkers(boss: PgBoss): Promise<void> {
         await retireOnHumanReply(job.data.managerUserId, BigInt(job.data.peerId), BigInt(job.data.tgMessageId));
       } catch (err) {
         logger.error({ err }, '[agent] human-reply job failed');
+      }
+    }
+  });
+  await boss.createQueue(JOB_AGENT_HAND_BACK);
+  await boss.work<AgentHandBackJob>(JOB_AGENT_HAND_BACK, async (jobs) => {
+    const { handleHandBack } = await import('./calc-loop');
+    for (const job of jobs) {
+      try {
+        const out = await handleHandBack(job.data);
+        logger.info({ peer: job.data.peerId, requestId: job.data.requestId, ...out }, '[agent] hand-back');
+      } catch (err) {
+        // Sent with retryLimit 0, like the inbound run: a second delivery is a
+        // second model bill, and the run's source_key keeps it once anyway.
+        logger.error({ err }, '[agent] hand-back job failed');
       }
     }
   });

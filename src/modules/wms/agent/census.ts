@@ -1,3 +1,4 @@
+import { mediaOf } from './context';
 import { draftWorthy, type BurstMessage } from './worthy';
 
 /**
@@ -86,11 +87,12 @@ export function censusDays(messages: readonly CensusMessage[]): CensusDay[] {
   return [...days.values()].sort((a, b) => a.day.localeCompare(b.day));
 }
 
-/** The context's own media words for an attachment (context.ts `mediaOf`, restated: that one is private). */
+/**
+ * The context's own media words for an attachment — `mediaOf` itself, with the
+ * same «stored media, unreadable type = other» the run's `chatMessages` applies
+ * (#513: a census that read a voice note differently from the run would count
+ * a different pilot).
+ */
 export function mediaWord(contentType: string | null, fileName: string | null, hasMedia: boolean): string | null {
-  if (!hasMedia) return null;
-  if (!contentType) return 'other';
-  if (contentType.startsWith('image/')) return 'photo';
-  if (contentType.startsWith('audio/')) return /voice/iu.test(fileName ?? '') || contentType.includes('ogg') ? 'voice' : 'audio';
-  return 'document';
+  return hasMedia ? (mediaOf(contentType, fileName) ?? 'other') : null;
 }

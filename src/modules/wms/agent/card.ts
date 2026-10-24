@@ -135,9 +135,45 @@ export function agentCardText(c: CardInput): string {
   return kept.length > 0 ? `${head}\n\n💬 Mijoz:\n${kept.join('\n')}` : head;
 }
 
-/** A short, stable digest of what ✅ approves — the button carries it, a changed card refuses the old press (leak-3). */
+/**
+ * The words ✅ sends — the TRIMMED body, his own when he wrote one. The one
+ * home for «the body the digest is over»: the card's button, the web page and
+ * `decideDraft` all digest this, so a body stored with a trailing newline can
+ * no longer draw a button whose digest the decision never matches (A12 — it
+ * answered `stale_card` for ever).
+ */
+export function digestBody(d: { finalBody: string | null; proposedBody: string | null }): string {
+  return (d.finalBody ?? d.proposedBody ?? '').trim();
+}
+
+/**
+ * JSON with every object's keys sorted — so the actions digest the same
+ * whether they come from the writer's object or back out of `jsonb`, which
+ * stores keys in ITS order (shortest first), not the insertion order. Without
+ * it the card written by `createDraft` carried a digest over
+ * `{type, section, facts, …}` and `decideDraft` recomputed it over the stored
+ * `{type, facts, section, …}`: every draft with an action answered
+ * `stale_card` to its own first ✅.
+ */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map((v) => (v === undefined ? 'null' : canonicalJson(v))).join(',')}]`;
+  if (value !== null && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, v]) => v !== undefined)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
+/**
+ * A short, stable digest of what ✅ approves — the button carries it, a
+ * changed card refuses the old press (leak-3). Over the trimmed body whatever
+ * the caller passed (whitespace at the ends is not part of what is sent), and
+ * over the actions' canonical JSON (key order is not part of what they say).
+ */
 export function cardDigest(body: string, actions: readonly unknown[]): string {
-  const s = `${body}\u0000${JSON.stringify(actions)}`;
+  const s = `${body.trim()}\u0000${canonicalJson(actions)}`;
   // FNV-1a, 32 bits, as eight hex characters — the callback grammar's `[0-9a-f]{8}`.
   let hash = 0x811c9dc5;
   for (let i = 0; i < s.length; i++) {

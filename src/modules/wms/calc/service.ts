@@ -690,7 +690,6 @@ export async function returnCalcRequest(
       `📝 ${trimmed.slice(0, 300)}${linkLine(row.entityType, row.entityId)}`,
     exceptUserId: ctx.actorId,
   }).catch((err) => logger.error({ err, id }, '[calc] returned notify failed'));
-  await (await import('../agent/calc-loop')).announceAgentCalcSafe(id, 'returned', { reason: trimmed.slice(0, 500) });
 
   /**
    * …and the work lands back on the SELLER's day (owner's item 5, question
@@ -740,6 +739,10 @@ export async function returnCalcRequest(
   } catch (err) {
     logger.error({ err, id }, '[calc] return task creation failed');
   }
+  // The AI sotuvchi hears it LAST (review regression-3): the seller's task
+  // above is the VED's own work and must not wait behind the agent's.
+  // Best-effort and queued, never a model run under the VED's button.
+  await (await import('../agent/calc-loop')).announceAgentCalcSafe(id, 'returned', { reason: trimmed.slice(0, 500) });
 }
 
 /** The currencies the fold offers — the answer is typed as the VED read it. */

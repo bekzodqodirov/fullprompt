@@ -15,11 +15,12 @@ import { canLogInSql } from '../../platform/users/login';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import { MAX_OPEN_PER_REQUESTER, openRequests } from '../calc/service';
 import { guardForUser } from '../crm/account-guard';
-import { cardDigest } from './card';
+import { cardDigest, digestBody } from './card';
 import { renderDraftCard } from './card-io';
 import { agentTablesReady, type AgentConfig } from './config';
-import { AGENT_LIMITS, dailySendCeiling } from './limits';
+import { AGENT_LIMITS } from './limits';
 import { agentStats, type AgentStats } from './stats';
+import { dayRunCounts, sendsToday } from './today';
 import type { ComposedAction } from './types';
 
 /**
@@ -57,9 +58,9 @@ export interface WebDraft {
 type DraftRow = typeof agentDrafts.$inferSelect;
 type OutboxRow = typeof agentOutbox.$inferSelect;
 
-/** The ✅'s digest, exactly as `decideDraft` recomputes it — trimmed body, stored actions. */
+/** The ✅'s digest, exactly as `decideDraft` recomputes it — `digestBody`, stored actions. */
 export function webDigest(d: Pick<DraftRow, 'finalBody' | 'proposedBody' | 'actions'>): string {
-  return cardDigest((d.finalBody ?? d.proposedBody ?? '').trim(), (d.actions ?? []) as ComposedAction[]);
+  return cardDigest(digestBody(d), (d.actions ?? []) as ComposedAction[]);
 }
 
 function chatHrefOf(d: Pick<DraftRow, 'clientId' | 'leadId'>): string | null {
@@ -78,7 +79,7 @@ function toWeb(d: DraftRow, o: OutboxRow | null, holderName: string): WebDraft {
     kind: d.kind,
     needsOwner: d.needsOwner,
     blocked: d.blocked,
-    body: (d.finalBody ?? d.proposedBody ?? '').trim(),
+    body: digestBody(d),
     digest: webDigest(d),
     cardText: renderDraftCard(d, o),
     chatHref: chatHrefOf(d),
@@ -220,48 +221,46 @@ export interface AgentToday {
 }
 
 /**
- * Today's usage, counted with the SAME predicates the reservation and the
- * ✅'s budget use — restated, because `reserve` and `budgetLeft` are private
- * to run.ts and decide.ts (stated in the report: one exported reader would
- * end the restatement).
+ * Today's usage — the reservation's own counts and the ✅'s own budget, read
+ * from the ONE module both caps ask (today.ts, #513): what the page prints is
+ * what the next run and the next ✅ are refused by.
  */
 export async function agentToday(config: AgentConfig, now = new Date()): Promise<AgentToday> {
   const dayStart = tashkentDayStart(tashkentDay(now)).toISOString();
-  const [counts] = await db.execute<{ runs: number; drafts: number; errors: number; tokens: string }>(sql`
-    SELECT
-      count(*) FILTER (WHERE trigger = 'inbound' AND outcome NOT IN ('refused', 'capped', 'notice'))::int AS runs,
-      count(*) FILTER (WHERE outcome = 'draft')::int AS drafts,
-      count(*) FILTER (WHERE outcome = 'error')::int AS errors,
-      coalesce(sum(input_tokens + output_tokens + cache_write_tokens), 0)::bigint::text AS tokens
-    FROM agent_runs WHERE created_at >= ${dayStart}::timestamptz`);
-  let sends = 0;
-  let ceiling = 0;
-  if (config.ownerUserId) {
-    const [used] = await db.execute<{ n: number }>(sql`
-      SELECT count(*)::int AS n FROM agent_outbox
-       WHERE manager_user_id = ${config.ownerUserId}
-         AND status IN ('agent', 'sending', 'sent', 'unknown')
-         AND queued_at >= ${dayStart}::timestamptz`);
-    sends = Number(used?.n ?? 0);
-    let ownAverage: number = AGENT_LIMITS.perDay;
-    if (config.startedAt) {
-      const from = new Date(config.startedAt.getTime() - 30 * 86_400_000);
-      const [own] = await db.execute<{ n: number }>(sql`
-        SELECT count(*)::int AS n FROM tg_messages m
-         WHERE m.manager_user_id = ${config.ownerUserId} AND m.direction = 'out'
-           AND m.sent_at >= ${from.toISOString()}::timestamptz AND m.sent_at < ${config.startedAt.toISOString()}::timestamptz
-           AND NOT EXISTS (SELECT 1 FROM agent_outbox o WHERE o.manager_user_id = m.manager_user_id AND o.tg_message_id = m.tg_message_id)`);
-      ownAverage = Number(own?.n ?? 0) / 30;
-    }
-    ceiling = dailySendCeiling({ startedAt: config.startedAt, ownAverage, now });
-  }
+  const [counts, budget] = await Promise.all([
+    dayRunCounts(dayStart, null),
+    config.ownerUserId ? sendsToday(config.ownerUserId, config.startedAt, now) : Promise.resolve({ used: 0, ceiling: 0 }),
+  ]);
   return {
-    runs: Number(counts?.runs ?? 0),
-    drafts: Number(counts?.drafts ?? 0),
-    errors: Number(counts?.errors ?? 0),
-    tokens: Number(counts?.tokens ?? 0),
-    sends,
-    sendCeiling: ceiling,
+    runs: counts.runs,
+    drafts: counts.drafts,
+    errors: counts.errors,
+    tokens: counts.tokens,
+    sends: budget.used,
+    sendCeiling: budget.ceiling,
+  };
+}
+
+/**
+ * «AI qoidalari» on the Bilimlar tab (§17.14 e): what the agent follows that
+ * is not a fact — each number read from where the agent reads it
+ * (`AGENT_LIMITS`, `agent_config`), never typed twice.
+ */
+export interface AgentRules {
+  truckMin: { m3: number; kg: number };
+  avia: { minKg: number; daysMin: number; daysMax: number; usdPerKg: number | null; setAt: Date | null };
+}
+
+export function agentRules(config: Pick<AgentConfig, 'aviaUsdPerKg' | 'aviaRateSetAt'>): AgentRules {
+  return {
+    truckMin: { m3: AGENT_LIMITS.minShipment.m3, kg: AGENT_LIMITS.minShipment.kg },
+    avia: {
+      minKg: AGENT_LIMITS.avia.minKg,
+      daysMin: AGENT_LIMITS.avia.daysMin,
+      daysMax: AGENT_LIMITS.avia.daysMax,
+      usdPerKg: config.aviaUsdPerKg,
+      setAt: config.aviaRateSetAt,
+    },
   };
 }
 

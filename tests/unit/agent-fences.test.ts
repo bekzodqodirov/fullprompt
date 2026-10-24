@@ -39,7 +39,8 @@ describe('the agent reads nothing wider than its own chat (review leak-11)', () 
 
   it('the toolset is the closed list the review agreed', () => {
     expect(TOOL_SPECS.map((t) => t.name).sort()).toEqual(
-      ['calc_checklist', 'cargo_status', 'cargo_volume', 'compose_reply', 'kb_search', 'own_balance', 'yolkira_estimate'].sort(),
+      // avia_estimate: his 2026-10-24 rate × the customer's kilos (§17.14).
+      ['avia_estimate', 'calc_checklist', 'cargo_status', 'cargo_volume', 'compose_reply', 'kb_search', 'own_balance', 'yolkira_estimate'].sort(),
     );
     // compose_reply is the strict terminal one; nothing takes a client id or a code.
     expect(TOOL_SPECS.find((t) => t.name === 'compose_reply')!.strict).toBe(true);
