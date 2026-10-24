@@ -1345,7 +1345,9 @@ async function taskCopyLive(
  * lines, a live «🆕 Yangi lid» on a decided chat, «💵 Narx yozaman» on an
  * answer whose link is gone. Asked once the copy's `tg` is written — the
  * order is the argument, as `retireIfClosedInFlight`'s: a writer that commits
- * after the merge finds the copy by `tg` and edits it itself, one that
+ * after the merge finds the copy by `tg` and edits it itself — by the payload
+ * its own UPDATE returned, which a merge landed before it is in (a payload it
+ * READ before the merge would not be, and neither side would edit) — one that
  * committed before this read is seen by it. The row as it stands is rendered
  * by the drain's own composer (the payload is the whole card — platform asks
  * no wms) and the copy just sent is edited only when that differs from what

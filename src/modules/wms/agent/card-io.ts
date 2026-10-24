@@ -170,17 +170,24 @@ export async function refreshAgentCard(draftId: string, extraNotes: string[] = [
     kbAsk: d.status === 'approved' && d.needsOwner && d.finalBody !== null && kb !== 'saved' && kb !== 'skipped',
   };
   const rows = await db
-    .select({ id: notifications.id, payload: notifications.payload, locale: users.locale, status: notifications.status })
+    .select({ id: notifications.id, locale: users.locale })
     .from(notifications)
     .innerJoin(users, eq(users.id, notifications.userId))
     .where(and(eq(notifications.type, 'AgentDraft'), sql`${notifications.payload}->>'draftId' = ${draftId}`))
     .orderBy(desc(notifications.createdAt));
   for (const row of rows) {
-    const payload: Record<string, unknown> = { ...(row.payload as Record<string, unknown>), ...extra, text };
-    await db
+    const [written] = await db
       .update(notifications)
       .set({ payload: sql`${notifications.payload} || ${JSON.stringify({ ...extra, text })}::jsonb` })
-      .where(eq(notifications.id, row.id));
+      .where(eq(notifications.id, row.id))
+      .returning({ payload: notifications.payload });
+    if (!written) continue;
+    // The payload as WRITTEN, never one read before it: a `tg` the drain
+    // merged after the rows were listed — once its own after-send re-read had
+    // found the card unchanged — is the copy this edit must reach, or neither
+    // side corrects it (cards review; notifications/service
+    // `correctAgentCopyInFlight`).
+    const payload = written.payload as Record<string, unknown>;
     const tg = payload.tg as { chatId?: unknown; messageId?: unknown } | undefined;
     const chatId = Number(tg?.chatId);
     const messageId = Number(tg?.messageId);

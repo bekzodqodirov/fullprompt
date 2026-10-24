@@ -448,15 +448,23 @@ async function closeRuleCards(
     const line = lineFor(cid);
     if (line === null) continue;
     const patch = { ...extraFor(cid), live: false, text: `${typeof payload.text === 'string' ? payload.text : ''}\n\n${line}` };
-    await db
+    const [written] = await db
       .update(notifications)
       .set({
         payload: sql`${notifications.payload} || ${JSON.stringify(patch)}::jsonb`,
         status: sql`CASE WHEN ${notifications.status} = 'pending' THEN 'muted' ELSE ${notifications.status} END`,
         error: sql`CASE WHEN ${notifications.status} = 'pending' THEN 'answered before it was sent' ELSE ${notifications.error} END`,
       })
-      .where(eq(notifications.id, row.id));
-    closed.push({ id: row.id, type, payload: { ...payload, ...patch }, userId: row.userId });
+      // Still live: a card another decision closed since the read carries that decision's verdict.
+      .where(and(eq(notifications.id, row.id), sql`(${notifications.payload}->>'live') IS DISTINCT FROM 'false'`))
+      .returning({ payload: notifications.payload });
+    if (!written) continue;
+    // The payload as WRITTEN, never the one read above: the drain may merge
+    // the copy's `tg` between the two — after its own re-read found the card
+    // still open — and an edit built from the read would skip that copy, so
+    // neither side would correct it (cards review). The UPDATE's own row is
+    // the one both writes have landed on.
+    closed.push({ id: row.id, type, payload: written.payload as Record<string, unknown>, userId: row.userId });
   }
   await editAgentCopies(closed).catch((err: unknown) => logger.warn({ err, ruleId }, '[agent] card copies not closed'));
 }
