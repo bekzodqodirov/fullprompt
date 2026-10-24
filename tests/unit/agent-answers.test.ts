@@ -62,6 +62,8 @@ const env = (ctx: AgentContext, aviaUsdPerKg: number | null = 17): ToolEnv => ({
   day: '2026-10-24',
   aviaUsdPerKg,
   kb: async () => [],
+  // The demo seed's China receiving points (YW, GZ, KA) — read from the warehouses table in a run.
+  chinaPlaces: async () => new Set(['Yiwu', 'Guangzhou', 'Qashqar']),
 });
 
 function compose(over: Partial<ComposeReply> = {}): ComposeReply {
@@ -144,10 +146,10 @@ describe('the truck’s minimum and avia (his 7, 2026-10-24)', () => {
     expect(out).toMatchObject({ ok: true, estimate: true });
     expect(out.sources).toEqual(
       expect.arrayContaining([
-        { value: 637.5, kind: 'money', label: 'avia (tarif × kg)' },
-        { value: 17, kind: 'money', label: 'avia tarifi' },
-        { value: AGENT_LIMITS.avia.daysMin, kind: 'duration', label: 'avia muddati' },
-        { value: AGENT_LIMITS.avia.daysMax, kind: 'duration', label: 'avia muddati' },
+        { value: 637.5, kind: 'money', label: 'avia (tarif × kg)', origin: 'tool' },
+        { value: 17, kind: 'money', label: 'avia tarifi', origin: 'tool' },
+        { value: AGENT_LIMITS.avia.daysMin, kind: 'duration', label: 'avia muddati', origin: 'tool' },
+        { value: AGENT_LIMITS.avia.daysMax, kind: 'duration', label: 'avia muddati', origin: 'tool' },
       ]),
     );
   });
@@ -159,7 +161,7 @@ describe('the truck’s minimum and avia (his 7, 2026-10-24)', () => {
     const tiny = ctxWith('Avia 0.4 kg', [{ ref: 'w1', kind: 'weight', value: 0.4, messageRef: '#1' }]);
     const out = await runTool('avia_estimate', { weight_ref: 'w1' }, env(tiny, 17));
     expect(out.text.startsWith('below_minimum')).toBe(true);
-    expect(out.sources).toEqual([{ value: AGENT_LIMITS.avia.minKg, kind: 'measure', label: 'avia minimal yuk (1 kg)' }]);
+    expect(out.sources).toEqual([{ value: AGENT_LIMITS.avia.minKg, kind: 'measure', label: 'avia minimal yuk (1 kg)', origin: 'tool' }]);
   });
 
   it('an avia figure makes G11 apply — unhedged is blocked, hedged passes', async () => {
@@ -187,6 +189,7 @@ describe('the truck’s minimum and avia (his 7, 2026-10-24)', () => {
         urlsToChat7d: 0,
         urlsToday: 0,
         hasEstimate: memory.hasEstimate,
+        fromOurWarehouse: memory.fromOurWarehouse === true,
       });
     expect(check('Avia 637.5 $.').blocks.map((b) => b.code)).toContain('estimate_unhedged');
     expect(check('Avia bilan taxminan 637.5 $, 2-5 kun. Boj va QQS alohida hisoblanadi.').ok).toBe(true);
@@ -247,13 +250,14 @@ describe('the certificate is the company’s (his 9)', () => {
     expect(Object.keys((spec.input_schema as { properties: object }).properties)).not.toContain('certificate');
   });
 
-  it('the calc_submit action carries no certificate choice, and the prompt forbids asking', async () => {
+  it('the calc_submit action carries no certificate field at all, and the prompt forbids asking', async () => {
     const ctx = ctxWith('Rastamojka kerak: kurtka 100 dona, 3 kub 500 kg', []);
     const out = await runTool('calc_checklist', { section: 'rastamojka', goods: [{ name: 'kurtka', quantity: 100, weight_kg: null }] }, env(ctx));
     const c = compose({ actions: [{ type: 'calc_submit', section: 'rastamojka', citedMessageRefs: ['#1'], date: '', note: '' }] });
     const { actions } = validateActions(c, ctx, [out], new Date());
     expect(actions).toHaveLength(1);
-    expect((actions[0] as { certificate: unknown }).certificate).toBeNull();
+    // Nothing reads it since his «9» — and a stored «certificate: null» would only say the AI asked.
+    expect(actions[0]).not.toHaveProperty('certificate');
     expect(stableHead({ styleGuide: null, facts: [] })).toMatch(/sertifikatini HECH QACHON so'rama/u);
   });
 });
@@ -286,9 +290,9 @@ describe('the card’s digest is over what ✅ sends (A12)', () => {
   });
 
   it('the actions digest the same written and read back from jsonb (key order is not meaning)', () => {
-    const written = [{ type: 'calc_submit', section: 'rastamojka', facts: { weightKg: 1, fromCity: 'Yiwu' }, certificate: null, citedMessageIds: [] }];
+    const written = [{ type: 'calc_submit', section: 'rastamojka', facts: { weightKg: 1, fromCity: 'Yiwu' }, fromOurWarehouse: false, citedMessageIds: [] }];
     // jsonb hands objects back with its own key order (shorter keys first).
-    const stored = [{ type: 'calc_submit', facts: { fromCity: 'Yiwu', weightKg: 1 }, section: 'rastamojka', certificate: null, citedMessageIds: [] }];
+    const stored = [{ type: 'calc_submit', facts: { fromCity: 'Yiwu', weightKg: 1 }, section: 'rastamojka', citedMessageIds: [], fromOurWarehouse: false }];
     expect(cardDigest('x', stored)).toBe(cardDigest('x', written));
     expect(cardDigest('x', [{ type: 'mute', reason: 'a' }])).not.toBe(cardDigest('x', [{ type: 'mute', reason: 'b' }]));
   });

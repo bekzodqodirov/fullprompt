@@ -32,6 +32,7 @@ const base: PolicyInput = {
   urlsToChat7d: 0,
   urlsToday: 0,
   hasEstimate: false,
+  fromOurWarehouse: false,
 };
 
 const check = (patch: Partial<PolicyInput>) => checkAgentReply({ ...base, ...patch });
@@ -76,7 +77,7 @@ describe('P1: a figure is money whenever money is written near it', () => {
   it('reads the currencies that are money only right after a figure, and a sign before a decimal', () => {
     expect(kinds('480元')).toEqual([['480', 'money']]);
     // «€12.10» is twelve euros ten, not the twelfth of October.
-    const money: NumberSource = { value: 12.1, kind: 'money', label: 'tarif' };
+    const money: NumberSource = { value: 12.1, kind: 'money', label: 'tarif', origin: 'tool' };
     expect(codes({ body: 'Narxi €12.10', numberSources: [money] })).not.toContain('number_unsourced');
   });
 
@@ -146,15 +147,15 @@ describe('P1: a figure is money whenever money is written near it', () => {
     expect(extractNumbers("1,5 mln so'm").map((f) => f.raw)).toEqual(['1,5 mln']);
     // «5 ming dona» is five thousand pieces: a count, scaled.
     expect(extractNumbers('5 ming dona').map((f) => [f.value, f.kind])).toEqual([[5_000, 'count']]);
-    const tool: NumberSource = { value: 1_500_000, kind: 'money', label: 'mijozning balansi' };
+    const tool: NumberSource = { value: 1_500_000, kind: 'money', label: 'mijozning balansi', origin: 'tool' };
     expect(codes({ body: "Balansingiz 1,5 mln so'm", numberSources: [tool] })).not.toContain('number_unsourced');
     // The unscaled value is a different number.
-    const rate: NumberSource = { value: 1.5, kind: 'money', label: 'tarif' };
+    const rate: NumberSource = { value: 1.5, kind: 'money', label: 'tarif', origin: 'tool' };
     expect(codes({ body: "Balansingiz 1,5 mln so'm", numberSources: [rate] })).toContain('number_unsourced');
   });
 
   it('a money source still lets the same money through', () => {
-    const money: NumberSource = { value: 480, kind: 'money', label: "yo'lkira hisobi" };
+    const money: NumberSource = { value: 480, kind: 'money', label: "yo'lkira hisobi", origin: 'tool' };
     expect(codes({ body: 'Narx (dollarda): 480', numberSources: [money] })).not.toContain('number_unsourced');
     expect(codes({ body: 'Narxi USD480', numberSources: [money] })).not.toContain('number_unsourced');
   });
@@ -235,8 +236,8 @@ describe('P2: the promises the table missed', () => {
 
   it('the avia estimate he allowed passes the whole policy, hedged and sourced', () => {
     const days: NumberSource[] = [
-      { value: 2, kind: 'duration', label: 'avia muddati' },
-      { value: 5, kind: 'duration', label: 'avia muddati' },
+      { value: 2, kind: 'duration', label: 'avia muddati', origin: 'tool' },
+      { value: 5, kind: 'duration', label: 'avia muddati', origin: 'tool' },
     ];
     expect(check({ body: 'Taxminan 2-5 kunda yetib boradi.', numberSources: days }).ok).toBe(true);
     expect(codes({ body: '2 kunda yetib keladi.', numberSources: days })).toContain('promise');

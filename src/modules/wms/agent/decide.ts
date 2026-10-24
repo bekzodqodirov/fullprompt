@@ -200,6 +200,9 @@ async function landCalc(
       "AI sotuvchi mijozning Telegram suhbatidan yig'di, egasi tasdiqladi.",
       // His 9 (2026-10-24): «kelib chiqish sertifikati bor, biz o'zimiz olamiz».
       "Kelib chiqish sertifikati: kompaniya o'zi oladi",
+      // His third set «3»: cargo from China or a place we have no warehouse in is priced from ours —
+      // the VED reads what the customer was told. `=== true`: an action stored before it carries none.
+      ...(action.fromOurWarehouse === true ? ['Narx Xitoydagi omborimizdan; zavoddan omborgacha olib kelish alohida.'] : []),
     ],
     fileCount: 0,
     material,
@@ -214,8 +217,10 @@ async function landCalc(
     hasCertificate: true,
     // The zone the bot's own buttons would choose for the place the customer
     // named (Kashgar → kashgar, Horgos → horgos, Yiwu/Guangzhou → cn), or
-    // none — the VED chooses; never «cn» by default (review A11).
-    freightZone: action.section === 'podklyuch' ? zoneForOrigin(action.facts.fromCity ?? null) : null,
+    // none — the VED chooses; never «cn» by default (review A11). Cargo
+    // priced from our China warehouses IS the China column (his third set «3»).
+    freightZone:
+      action.section === 'podklyuch' ? (action.fromOurWarehouse === true ? 'cn' : zoneForOrigin(action.facts.fromCity ?? null)) : null,
   });
   return { queued: target.queued === true && Boolean(target.requestId), requestId: target.requestId ?? null, queueError: target.queueError ?? null };
 }

@@ -1,5 +1,8 @@
+import { and, eq, inArray } from 'drizzle-orm';
 import { htmlToPlain } from '../../platform/telegram/format';
 import type { ModelToolSpec } from '../../platform/ai/model';
+import { db } from '../../platform/db/client';
+import { warehouses } from '../../platform/db/schema';
 import { balanceMessages, cargoMessages } from '../client-cabinet/bot-text';
 import { cargoOverview, debtSummary } from '../client-cabinet/service';
 import { FIELD_LABEL, missingFields, type CalcFacts, type CalcGoodsFact, type CalcSection } from '../calc/intake';
@@ -9,8 +12,9 @@ import { tariffFor } from '../calc/tariff-read';
 import { AVIA_RATE_LABEL } from './config';
 import { AGENT_LIMITS } from './limits';
 import { AGENT_LOCALES } from './locale';
-import { namedOrigin, namedOrigins, namesWesternOrigin } from './origin';
-import { customerSources, extractNumbers, type NumberSource } from './numbers';
+import { namedOrigin, placesOf, quoteOrigin, type QuoteOrigin } from './origin';
+import { customerSources, extractNumbers, factSources, type NumberSource } from './numbers';
+import { WAREHOUSE_SENTENCES } from './policy';
 import { SITE_TARIFF, siteEstimate } from './site-estimate';
 import type { AgentContext, MeasureCandidate } from './context';
 import type { KbHit } from './kb';
@@ -37,6 +41,8 @@ export interface ToolEnv {
   /** His avia rate, $/kg (`agent_config.avia_usd_per_kg`); null = avia is not quoted. */
   aviaUsdPerKg: number | null;
   kb: (query: string) => Promise<KbHit[]>;
+  /** The places our China warehouses stand in (`ourChinaPlaces`) — asked only by a tool that needs the origin. */
+  chinaPlaces: () => Promise<ReadonlySet<string>>;
 }
 
 /**
@@ -47,6 +53,8 @@ export interface ChecklistState {
   section: CalcSection;
   facts: CalcFacts;
   complete: boolean;
+  /** A truck job from China or a place we have no warehouse in: priced from our warehouses, the factory leg extra (his third set «3»). */
+  fromOurWarehouse: boolean;
 }
 
 export interface ToolOutcome {
@@ -60,6 +68,10 @@ export interface ToolOutcome {
   usedFactIds?: string[];
   /** A yo'lkira figure is now in the sources (G11 applies). */
   estimate?: boolean;
+  /** That figure is our China warehouses' price (his third set «3»): the reply says the condition and the factory leg. */
+  fromOurWarehouse?: boolean;
+  /** The answers of the kb facts the tool returned — their name words are the facts' (B9). */
+  factTexts?: string[];
   /** The website and /admin/tarif disagree for this load (money-3). */
   tariffMismatch?: boolean;
   checklist?: ChecklistState;
@@ -181,27 +193,40 @@ function stated(ctx: AgentContext, values: readonly (number | null | undefined)[
   return values.every((v) => v === null || v === undefined || figures.some((f) => close(f, v)));
 }
 
+/** A tool's own text read for its figures — every one of them the tool's word (B3). */
 function sourcesOf(text: string, label: string, money: boolean): NumberSource[] {
   return extractNumbers(text).map((f) => ({
     value: f.value,
     kind: f.kind === 'money' ? (money ? 'money' : 'customer_money') : f.kind,
     label,
+    origin: 'tool' as const,
   }));
 }
 
-const ORIGIN_CN =
-  /xitoy|хитой|китай|china|چین|中国|yiwu|иву|guangzhou|гуанчжоу|guanchjou|foshan|shenzhen|шэньчжэнь|shanghai|шанхай|beijing|пекин|ningbo|нинбо|义乌|广州|佛山|深圳|上海/iu;
+/**
+ * Where the cargo starts, from what the customer wrote (origin.ts
+ * `quoteOrigin`): one of our warehouses' cities, China or a place we do not
+ * stand in (priced from our warehouses), a western hub, or not said. One set
+ * of spellings for this tool, the checklist and the landing's zone.
+ */
+export function originZone(ctx: AgentContext, ours: ReadonlySet<string>): QuoteOrigin {
+  return quoteOrigin(ctx.messages.filter((m) => m.direction === 'in').map((m) => m.body).join('\n'), ours);
+}
 
 /**
- * Where the cargo starts, from what the customer wrote: China's coast, a
- * western hub, or not said. The western half is origin.ts's own list of
- * places — one set of spellings for this refusal and the landing's zone.
+ * The places our China warehouses stand in, from the warehouses table — the
+ * company's own list of receiving points (his third set «3»: «skladlarimizdan
+ * narxi»), never a second one typed here. Active rows only, and only the kinds
+ * a customer's cargo is received at (an origin point; a hub like Kashgar, which
+ * the seeded «qabul manzillari» fact names too): a closed point, or a customs
+ * or distribution yard, is no warehouse a customer can send to.
  */
-export function originZone(ctx: AgentContext): 'cn' | 'other' | 'unknown' {
-  const text = ctx.messages.filter((m) => m.direction === 'in').map((m) => m.body).join('\n');
-  if (namesWesternOrigin(text)) return 'other';
-  if (ORIGIN_CN.test(text) || namedOrigins(text).length > 0) return 'cn';
-  return 'unknown';
+export async function ourChinaPlaces(): Promise<Set<string>> {
+  const rows = await db
+    .select({ name: warehouses.name, code: warehouses.code, address: warehouses.address })
+    .from(warehouses)
+    .where(and(eq(warehouses.country, 'CN'), eq(warehouses.active, true), inArray(warehouses.type, ['origin', 'hub'])));
+  return placesOf(rows);
 }
 
 export async function runTool(name: string, input: Record<string, unknown>, env: ToolEnv): Promise<ToolOutcome> {
@@ -234,11 +259,12 @@ export async function runTool(name: string, input: Record<string, unknown>, env:
       return {
         ok: true,
         text,
-        // A kb fact is never a MONEY source (money-9): a price lives in recordOffer, not in the kb.
-        sources: hits.flatMap((h) => sourcesOf(h.answer, `bilim ${h.ref}`, false)),
+        // A kb fact is never a MONEY source (money-9), and each is read alone (B2).
+        sources: hits.flatMap((h) => factSources(h.answer, `bilim ${h.ref}`)),
         allowedPhones: hits.flatMap((h) => h.phones),
         allowedUrls: hits.flatMap((h) => h.urls),
         usedFactIds: hits.map((h) => h.id),
+        factTexts: hits.map((h) => h.answer),
       };
     }
     case 'cargo_volume': {
@@ -257,7 +283,7 @@ export async function runTool(name: string, input: Record<string, unknown>, env:
       return {
         ok: true,
         text: `${ref} = ${m3} kub (${n} quti × ${l}×${w}×${h} sm)`,
-        sources: [{ value: m3, kind: 'measure', label: "mijoz o'lchamlaridan hisoblandi" }],
+        sources: [{ value: m3, kind: 'measure', label: "mijoz o'lchamlaridan hisoblandi", origin: 'tool' }],
         volume,
       };
     }
@@ -306,8 +332,8 @@ function belowTruckMinimum(): ToolOutcome {
       `below_minimum: kompaniya mashina bilan eng kamida ${m3} kub yoki ${kg} kg yuk tashiydi — bu yuk ikkalasidan ham kam. ` +
       `Narx AYTMA. Mijozga uning tilida, xushmuomala qilib, eng kamida ${m3} kub yoki ${kg} kg dan qabul qilishimizni ayt.`,
     sources: [
-      { value: m3, kind: 'measure', label: `avto minimal yuk (${m3} kub)` },
-      { value: kg, kind: 'measure', label: `avto minimal yuk (${kg} kg)` },
+      { value: m3, kind: 'measure', label: `avto minimal yuk (${m3} kub)`, origin: 'tool' },
+      { value: kg, kind: 'measure', label: `avto minimal yuk (${kg} kg)`, origin: 'tool' },
     ],
   };
 }
@@ -330,9 +356,11 @@ async function yolkira(input: Record<string, unknown>, env: ToolEnv): Promise<To
   // The company's floor comes before every other question: below BOTH halves
   // nothing is accepted, whichever road it would take (his 2026-10-24).
   if (belowTruckMinimumFacts({ weightKg: kg, volumeM3: m3 })) return belowTruckMinimum();
-  const zone = originZone(ctx);
-  if (zone === 'other') return refuse("Qashqar/Urumchi/Xorgos yo'nalishi saytda narxlanmagan");
-  if (zone === 'unknown') return refuse("qayerdan jo'natilishi aytilmagan — so'ra");
+  const origin = originZone(ctx, await env.chinaPlaces());
+  if (origin === 'western') return refuse("Qashqar/Urumchi/Xorgos yo'nalishi saytda narxlanmagan");
+  if (origin === 'unknown') return refuse("qayerdan jo'natilishi aytilmagan — so'ra");
+  // China, or a Chinese place we do not stand in, is priced on the same column FROM our warehouses.
+  const fromOurWarehouse = origin === 'our_warehouse';
   const g = YOLKIRA_GUARDS;
   if (!(kg > 0) || !(m3 > 0) || m3 > g.maxM3 || kg > g.maxKg || kg / m3 < g.minDensity) {
     return refuse('juda kichik yoki juda katta yuk');
@@ -352,22 +380,29 @@ async function yolkira(input: Record<string, unknown>, env: ToolEnv): Promise<To
   if (!same) {
     return { ...refuse("sayt va /admin/tarif farq qiladi"), tariffMismatch: true };
   }
+  const w = WAREHOUSE_SENTENCES;
   const text =
     `Taxminiy yo'lkira (sayt kalkulyatori): ${e.total} $ — ${e.unit === 'kg' ? `${e.rate} $/kg` : `${e.rate} $/kub`}, ` +
     `zichlik ${e.densityKgM3 ?? '—'} kg/kub, ${m3} kub, ${kg} kg; muddat ${e.days[0]}-${e.days[1]} kun (va'da emas). ` +
-    `Boj va QQS bu narxga KIRMAYDI.`;
+    `Boj va QQS bu narxga KIRMAYDI.` +
+    (fromOurWarehouse
+      ? ` Mijoz faqat Xitoyni yoki omborimiz yo'q joyni aytdi — bu narx Xitoydagi OMBORIMIZDAN. Narxni aytsang, mijoz tilida ` +
+        `ikkala jumla ham bo'lsin: «${w.uz.condition}» va «${w.uz.factory}» (ru «${w.ru.condition}» «${w.ru.factory}», ` +
+        `en «${w.en.condition}» «${w.en.factory}»).`
+      : '');
   return {
     ok: true,
     text,
     estimate: true,
+    ...(fromOurWarehouse ? { fromOurWarehouse: true } : {}),
     sources: [
-      { value: e.total, kind: 'money', label: "yo'lkira (sayt kalkulyatori)" },
-      { value: e.rate, kind: 'money', label: "yo'lkira tarifi (sayt)" },
-      { value: e.days[0], kind: 'duration', label: 'sayt muddati' },
-      { value: e.days[1], kind: 'duration', label: 'sayt muddati' },
-      { value: m3, kind: 'measure', label: `mijoz ${volume.messageRef}` },
-      { value: kg, kind: 'measure', label: `mijoz ${weight.messageRef}` },
-      ...(e.densityKgM3 ? [{ value: e.densityKgM3, kind: 'measure' as const, label: 'zichlik (hisob)' }] : []),
+      { value: e.total, kind: 'money', label: "yo'lkira (sayt kalkulyatori)", origin: 'tool' },
+      { value: e.rate, kind: 'money', label: "yo'lkira tarifi (sayt)", origin: 'tool' },
+      { value: e.days[0], kind: 'duration', label: 'sayt muddati', origin: 'tool' },
+      { value: e.days[1], kind: 'duration', label: 'sayt muddati', origin: 'tool' },
+      { value: m3, kind: 'measure', label: `mijoz ${volume.messageRef}`, origin: 'tool' },
+      { value: kg, kind: 'measure', label: `mijoz ${weight.messageRef}`, origin: 'tool' },
+      ...(e.densityKgM3 ? [{ value: e.densityKgM3, kind: 'measure' as const, label: 'zichlik (hisob)', origin: 'tool' as const }] : []),
     ],
   };
 }
@@ -380,16 +415,16 @@ async function yolkira(input: Record<string, unknown>, env: ToolEnv): Promise<To
  * so G11 asks for «taxminan» and «boj, QQS alohida» exactly as on the truck.
  * No rate set = avia is not quoted: refused, and the model asks him.
  *
- * Light, bulky cargo flies by its VOLUME: the company's own air calculator
- * (site-estimate.ts `air`, gsrlogistics.uz) bills max(kg, m³ × 1 000 000 ÷
- * 5 000). His «kg uchun 17$» said nothing about that, so a load the customer
- * gave a volume for whose volumetric weight is above its kilos gets NO figure
- * — his question (needs_owner) — rather than kilos × rate, which on 2 m³ of
- * 50 kg is an eight-fold under-quote the card would label as correct. Every
- * volume the chat stated counts: a refusal costs him one answer, an
- * under-quote costs the company the difference.
+ * His third set, «1b / 2b» (2026-10-24): NO upper weight bound, and the price
+ * is the ACTUAL kilos × the rate — a volume the chat stated never enters it.
+ * The review's volumetric refusal (the website's air calculator bills
+ * max(kg, m³ × 200)) is gone with that answer.
  */
-/** Kilos one cubic metre weighs to an airline — the air calculator's divisor (5 000 cm³/kg), as the page states it. */
+/**
+ * The air calculator's kilos per cubic metre (5 000 cm³/kg). The agent no
+ * longer reads it (his «2b»): only the page's «AI qoidalari» line still
+ * imports it, and that line is the web package's to retire.
+ */
 export const AVIA_KG_PER_M3 = 1_000_000 / SITE_TARIFF.air.volumetricDivisor;
 
 function avia(input: Record<string, unknown>, env: ToolEnv): ToolOutcome {
@@ -410,20 +445,7 @@ function avia(input: Record<string, unknown>, env: ToolEnv): ToolOutcome {
     return {
       ok: true,
       text: `below_minimum: avia eng kamida ${minKg} kg dan qabul qilinadi. Narx AYTMA — mijozga uning tilida shuni ayt.`,
-      sources: [{ value: minKg, kind: 'measure', label: `avia minimal yuk (${minKg} kg)` }],
-    };
-  }
-  const volumetricKg = Math.max(
-    0,
-    ...ctx.measures.filter((m) => m.kind === 'volume').map((m) => m.value * AVIA_KG_PER_M3),
-  );
-  if (volumetricKg > kg) {
-    return {
-      ok: false,
-      text:
-        `Hajmli yuk: hajmiy og'irligi taxminan ${Math.round(volumetricKg)} kg, haqiqiy og'irligidan (${kg} kg) ko'p — ` +
-        "avia narxini Bekzod aytadi. Narx AYTMA: needs_owner=true, owner_question'da so'ra.",
-      sources: [],
+      sources: [{ value: minKg, kind: 'measure', label: `avia minimal yuk (${minKg} kg)`, origin: 'tool' }],
     };
   }
   const total = Math.round(kg * rate * 100) / 100;
@@ -434,11 +456,11 @@ function avia(input: Record<string, unknown>, env: ToolEnv): ToolOutcome {
       `reys bo'lsa ${daysMin} kun — va'da emas. Boj va QQS bu narxga KIRMAYDI.`,
     estimate: true,
     sources: [
-      { value: total, kind: 'money', label: 'avia (tarif × kg)' },
-      { value: rate, kind: 'money', label: AVIA_RATE_LABEL },
-      { value: daysMin, kind: 'duration', label: 'avia muddati' },
-      { value: daysMax, kind: 'duration', label: 'avia muddati' },
-      { value: kg, kind: 'measure', label: `mijoz ${weight.messageRef}` },
+      { value: total, kind: 'money', label: 'avia (tarif × kg)', origin: 'tool' },
+      { value: rate, kind: 'money', label: AVIA_RATE_LABEL, origin: 'tool' },
+      { value: daysMin, kind: 'duration', label: 'avia muddati', origin: 'tool' },
+      { value: daysMax, kind: 'duration', label: 'avia muddati', origin: 'tool' },
+      { value: kg, kind: 'measure', label: `mijoz ${weight.messageRef}`, origin: 'tool' },
     ],
   };
 }
@@ -468,13 +490,18 @@ async function checklist(input: Record<string, unknown>, env: ToolEnv): Promise<
   if (!(Number(facts.volumeM3) > 0) && dims.length > 0) facts.volumeM3 = dims[dims.length - 1]!.value;
   // The place the customer NAMED, when the route parser found none — so the
   // landing can choose a podklyuch zone the way the bot's buttons do
-  // (`zoneForOrigin`); a bare «Xitoy» names no zone and the VED chooses.
+  // (`zoneForOrigin`); a bare «Xitoy» names no zone of its own.
+  const origin = originZone(ctx, await env.chinaPlaces());
   if (!facts.fromCity) facts.fromCity = namedOrigin(inbound.map((m) => m.body).join('\n'))?.place ?? null;
-  if (!facts.fromCity && originZone(ctx) === 'cn') facts.fromCity = 'Xitoy';
+  if (!facts.fromCity && (origin === 'warehouse' || origin === 'our_warehouse')) facts.fromCity = 'Xitoy';
+  // A truck job that starts at none of our warehouses is priced FROM them (his
+  // third set «3»): the landing takes the China column and tells the VED the
+  // factory leg is extra.
+  const fromOurWarehouse = TRUCK_SECTIONS.includes(section) && origin === 'our_warehouse';
   // The company does not carry it by truck — so it is not collected for the
   // VED either: «hisoblatishga yubordim» would be accepting the cargo.
   if (TRUCK_SECTIONS.includes(section) && belowTruckMinimumFacts(facts)) {
-    return { ...belowTruckMinimum(), checklist: { section, facts, complete: false } };
+    return { ...belowTruckMinimum(), checklist: { section, facts, complete: false, fromOurWarehouse } };
   }
   const goodsIn = Array.isArray(input.goods) ? (input.goods as Record<string, unknown>[]) : [];
   const goods: CalcGoodsFact[] = [];
@@ -493,12 +520,13 @@ async function checklist(input: Record<string, unknown>, env: ToolEnv): Promise<
   const missing = missingFields(section, facts, new Map()).map((f) => FIELD_LABEL[f]);
   const complete = missing.length === 0;
   const text = complete
-    ? `To'liq. ${section}: ${JSON.stringify(facts)}. Endi actions ichida calc_submit taklif qil va mijozga «hisoblatishga yubordim, javob kelishi bilan aytaman» de.`
+    ? `To'liq. ${section}: ${JSON.stringify(facts)}. Endi actions ichida calc_submit taklif qil va mijozga «hisoblatishga yubordim, javob kelishi bilan aytaman» de.` +
+      (fromOurWarehouse ? " Yuk omborimiz yo'q joydan: narx Xitoydagi omborimizdan hisoblanadi, zavoddan omborgacha olib kelish alohida — VEDga shunday yoziladi." : '')
     : `Yetishmaydi (hammasini BITTA raqamlangan xabarda so'ra, savol belgisi faqat oxirida): ${missing.map((m, i) => `${i + 1}) ${m}`).join('; ')}`;
   return {
     ok: true,
     text,
     sources: [],
-    checklist: { section, facts, complete },
+    checklist: { section, facts, complete, fromOurWarehouse },
   };
 }

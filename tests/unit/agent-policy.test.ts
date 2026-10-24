@@ -37,6 +37,7 @@ const base: PolicyInput = {
   urlsToChat7d: 0,
   urlsToday: 0,
   hasEstimate: false,
+  fromOurWarehouse: false,
 };
 
 const check = (patch: Partial<PolicyInput>) => checkAgentReply({ ...base, ...patch });
@@ -93,7 +94,7 @@ describe('G1: a figure by its kind and its source (money-1)', () => {
   });
 
   it('lets a money figure through only from a MONEY source', () => {
-    const money: NumberSource = { value: 330, kind: 'money', label: 'yo‘lkira hisobi' };
+    const money: NumberSource = { value: 330, kind: 'money', label: 'yo‘lkira hisobi', origin: 'tool' };
     expect(codes({ body: 'Taxminan 330$', numberSources: [money] })).not.toContain('number_unsourced');
     // The same value from the customer's own measure, or from a phone, is no price.
     const measure: NumberSource = { value: 330, kind: 'measure', label: 'mijoz xabari' };
@@ -202,7 +203,7 @@ describe('G10, G11: the same text to many, an estimate said as one', () => {
   });
 
   it('an estimate must say «taxminan» and «boj va QQS alohida»', () => {
-    const money: NumberSource = { value: 330, kind: 'money', label: 'yo‘lkira hisobi' };
+    const money: NumberSource = { value: 330, kind: 'money', label: 'yo‘lkira hisobi', origin: 'tool' };
     const p = { numberSources: [money], hasEstimate: true };
     expect(codes({ ...p, body: 'Yo‘lkira 330$' })).toContain('estimate_unhedged');
     expect(codes({ ...p, body: `Yo‘lkira taxminan 330$. ${EXCLUSION_SENTENCE.uz}` })).not.toContain(

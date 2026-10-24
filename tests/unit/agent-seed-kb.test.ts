@@ -26,8 +26,12 @@ describe('the seeded knowledge', () => {
     for (const f of SEED_FACTS) expect(extras.test(text(f)), f.key).toBe(false);
   });
 
-  it('never calls a receiving point «ours»', () => {
-    for (const f of SEED_FACTS) expect(/omborimiz|omborimizga|bizning ombor/iu.test(text(f)), f.key).toBe(false);
+  it('never calls a receiving point «ours» — but for the price rule he dictated in his own words', () => {
+    // His third set «3» (2026-10-24): «skladlarimizdan narxi shuncha». The one fact that says «ours»,
+    // and it names no point: it says where a price is counted from.
+    const OWN_WORDS = new Set(['china_warehouse_price@1']);
+    const ours = /ombor(?:lar)?imiz|bizning ombor|склад(?:ы)?\s+наш|наш(?:его|ем|их|и)?\s+склад/iu;
+    for (const f of SEED_FACTS) expect(ours.test(text(f)), f.key).toBe(OWN_WORDS.has(f.key));
   });
 
   it('holds exactly one phone (the Tashkent contact) and one link (the map, in a fact of its own)', () => {

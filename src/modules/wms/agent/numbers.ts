@@ -39,12 +39,27 @@ export interface FoundNumber {
   index: number;
 }
 
+/**
+ * Who said a figure (policy review B3): a tool of this run, an approved kb
+ * fact, or the customer. Without it a customer's own «5 kunda kelsinmi?»
+ * backed the reply's «Odatda 5 kunda yetib keladi» — his wish, worded as our
+ * estimate, passed G1 — and a fact's «15–25 kun» could not be told from his.
+ */
+export type SourceOrigin = 'tool' | 'kb' | 'customer';
+
 export interface NumberSource {
   value: number;
   /** The kind this source vouches for. A customer's money figure is never a money source (`customer_money`). */
   kind: NumberKind | 'customer_money';
   /** Shown on the card's «🔢 Raqamlar» line. */
   label: string;
+  /**
+   * Absent reads as the CUSTOMER's — fails closed. Optional only because a
+   * memory stored before B3 carries none, and the 💵 draft (calc-loop.ts),
+   * whose words are his and never pass `checkAgentReply`, still writes one
+   * without it.
+   */
+  origin?: SourceOrigin;
 }
 
 export interface LedgerEntry {
@@ -82,8 +97,18 @@ const DURATION_AFTER =
 const COUNT_AFTER =
   /^\s*(?:ta\b|та\b|dona\w*|дона\w*|шт\w*|штук\w*|pcs\b|piece\w*|karobka\w*|коробк\w*|box\w*|carton\w*|件|个|箱|عدد|کارتن|جعبه|mesta\b|мест\w*|joy\b|quti\w*|қути\w*)/iu;
 const PERCENT_AFTER = /^\s*(?:%|٪|foiz\w*|фоиз\w*|процент\w*|percent\w*)/iu;
+/**
+ * A month after a day. Each stem ends where its month does (policy review B4):
+ * «2 marta» is TWICE, not the second of March, so «Mashina haftada 2 marta
+ * chiqadi» asked for a date source; «5 mayda» stays May but «5 maydon» is
+ * not, «5 майка» is five T-shirts, «2 separate boxes» no September, and the
+ * English stems are words of their own, never the head of «marta», «market»,
+ * «decimal». Russian «2 марта» is left a date — it is the Russian «of March»
+ * (the Uzbek Cyrillic «марта» is «times», and the two cannot be told apart
+ * here; a bare figure source backs either reading).
+ */
 const MONTH_AFTER =
-  /^\s*-?\s*(?:yanvar|fevral|mart|aprel|may|iyun|iyul|avgust|sentabr|oktabr|noyabr|dekabr|январ|феврал|март|апрел|ма[яй]|июн|июл|август|сентябр|октябр|ноябр|декабр|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec|月)/iu;
+  /^\s*-?\s*(?:(?:yanvar|fevral|mart(?!a)|aprel|may(?=da|dan|ga|gacha|ning|(?![\p{L}]))|iyun|iyul|avgust|sentabr|oktabr|noyabr|dekabr|январ|феврал|март|апрел|ма[яй](?=да|дан|га|гача|нинг|(?![\p{L}]))|июн|июл|август|сентябр|октябр|ноябр|декабр)|(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?![\p{L}])|月)/iu;
 /** A range: «15-25 kun», «15 dan 25 gacha», «15 до 25». The unit after the second number names both. */
 const RANGE_TAIL = /^\s*(?:[-–—~]|dan|до|to|تا|到|至)\s*\d+(?:[.,]\d+)?(?:\s*(?:gacha|гача))?/iu;
 
@@ -259,6 +284,17 @@ function sameValue(a: number, b: number): boolean {
 }
 
 /**
+ * A price, a day count or a day in a reply is the COMPANY's word (B3): only a
+ * tool of this run or an approved fact may vouch for it. The customer's own
+ * «5 kunda kelsinmi?» is his wish, and «Odatda 5 kunda yetib keladi» on it
+ * would be our estimate made of his number; a date is the same claim in
+ * another shape, and G2 reads no dates. His kilos, cubes and cartons are his
+ * to have repeated back.
+ */
+const COMPANY_KINDS: ReadonlySet<NumberKind> = new Set(['money', 'duration', 'date']);
+const companySaid = (s: NumberSource) => s.origin === 'tool' || s.origin === 'kb';
+
+/**
  * Which source lets a figure through, or null. A money figure needs a money
  * source and nothing else will do; every other kind takes a source of its
  * own kind, and a bare figure takes any source but the customer's money.
@@ -267,6 +303,7 @@ export function sourceFor(found: FoundNumber, sources: readonly NumberSource[]):
   const fits = (s: NumberSource) => {
     if (!sameValue(s.value, found.value)) return false;
     if (s.kind === 'customer_money') return false;
+    if (COMPANY_KINDS.has(found.kind) && !companySaid(s)) return false;
     if (found.kind === 'money') return s.kind === 'money';
     if (found.kind === 'plain') return true;
     // A measure can be stated as a bare count of the same thing and vice versa.
@@ -303,8 +340,24 @@ export function customerSources(texts: readonly { text: string; label: string }[
   const out: NumberSource[] = [];
   for (const { text, label } of texts) {
     for (const f of extractNumbers(text, [], { moneyContext })) {
-      out.push({ value: f.value, kind: f.kind === 'money' ? 'customer_money' : f.kind, label });
+      out.push({ value: f.value, kind: f.kind === 'money' ? 'customer_money' : f.kind, label, origin: 'customer' });
     }
   }
   return out;
+}
+
+/**
+ * Sources from ONE approved kb fact (B2). Each fact is read alone: the
+ * payment fact names money, and read joined with the rest it made every bare
+ * figure of every other fact — a street number, an hour — `customer_money`,
+ * so the reply could not repeat the address the owner approved. A money
+ * figure of a fact is still never a money source (money-9).
+ */
+export function factSources(text: string, label: string): NumberSource[] {
+  return extractNumbers(text).map((f) => ({
+    value: f.value,
+    kind: f.kind === 'money' ? 'customer_money' : f.kind,
+    label,
+    origin: 'kb' as const,
+  }));
 }

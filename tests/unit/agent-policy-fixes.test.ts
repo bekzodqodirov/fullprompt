@@ -31,11 +31,12 @@ const base: PolicyInput = {
   urlsToChat7d: 0,
   urlsToday: 0,
   hasEstimate: false,
+  fromOurWarehouse: false,
 };
 
 const check = (patch: Partial<PolicyInput>) => checkAgentReply({ ...base, ...patch });
 const codes = (patch: Partial<PolicyInput>) => check(patch).blocks.map((b) => b.code);
-const days = (...values: number[]): NumberSource[] => values.map((value) => ({ value, kind: 'duration', label: 'tool' }));
+const days = (...values: number[]): NumberSource[] => values.map((value) => ({ value, kind: 'duration', label: 'tool', origin: 'tool' }));
 
 describe('the day rule blocks every dispatch the shipped policy blocked', () => {
   it.each([
@@ -208,7 +209,7 @@ describe('money in the spellings people send', () => {
 
   it('a figure’s form says it is no price: an ordinal glued to its noun, an hour after «soat»', () => {
     expect(extractNumbers("To'lov naqd, ombor 3-ko'chada").map((f) => f.kind)).toEqual(['plain']);
-    const kb: NumberSource[] = [9, 18].map((value) => ({ value, kind: 'plain', label: 'kompaniya bilimi' }));
+    const kb: NumberSource[] = [9, 18].map((value) => ({ value, kind: 'plain', label: 'kompaniya bilimi', origin: 'kb' }));
     expect(codes({ body: "Ofis soat 9 dan 18 gacha ishlaydi, to'lovni ofisda qilasiz.", numberSources: kb })).not.toContain(
       'number_unsourced',
     );

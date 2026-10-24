@@ -54,6 +54,8 @@ const env = (ctx: AgentContext, aviaUsdPerKg: number | null = 17): ToolEnv => ({
   day: '2026-10-24',
   aviaUsdPerKg,
   kb: async () => [],
+  // The demo seed's China receiving points (YW, GZ, KA) — read from the warehouses table in a run.
+  chinaPlaces: async () => new Set(['Yiwu', 'Guangzhou', 'Qashqar']),
 });
 
 function compose(over: Partial<ComposeReply> = {}): ComposeReply {
@@ -75,6 +77,7 @@ function compose(over: Partial<ComposeReply> = {}): ComposeReply {
 }
 
 const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
+const OURS: ReadonlySet<string> = new Set(['Yiwu', 'Guangzhou', 'Qashqar']);
 
 describe('the truck’s minimum holds at the hisoblatish door too (his «1 kubdan kam yuk qabul qilmasin»)', () => {
   const small = 'Yiwudan Toshkentga podklyuch, 0.4 kub 60 kg, kurtka 50 dona';
@@ -109,6 +112,7 @@ describe('the truck’s minimum holds at the hisoblatish door too (his «1 kubda
         section: 'podklyuch',
         facts: { fromCity: 'Yiwu', toCity: 'Toshkent', weightKg: 60, volumeM3: 0.4, goods: [{ name: 'kurtka', quantity: 50, weightKg: null }] },
         complete: true,
+        fromOurWarehouse: false,
       },
     };
     const c = compose({ actions: [{ type: 'calc_submit', section: 'podklyuch', citedMessageRefs: ['#1'], date: '', note: '' }] });
@@ -118,27 +122,27 @@ describe('the truck’s minimum holds at the hisoblatish door too (his «1 kubda
   });
 });
 
-describe('avia bills light, bulky cargo by its volume — no figure the company’s own calculator would not give', () => {
-  it('2 m³ of 50 kg is his question, never 50 × 17', async () => {
-    const ctx = ctxWith('2 kub, 50 kg, avia qancha?', [
-      { ref: 'w1', kind: 'weight', value: 50, messageRef: '#1' },
-      { ref: 'v1', kind: 'volume', value: 2, messageRef: '#1' },
-    ]);
-    const out = await runTool('avia_estimate', { weight_ref: 'w1' }, env(ctx, 17));
-    expect(out.ok).toBe(false);
-    expect(out.sources).toEqual([]);
-    expect(out.estimate).toBeUndefined();
-    expect(out.text).toContain('needs_owner');
+describe('avia is the ACTUAL kilos × his rate — volume never changes the figure, and there is no ceiling (his «1b / 2b»)', () => {
+  const aviaFor = async (kg: number, m3: number | null) => {
+    const measures: AgentContext['measures'] = [{ ref: 'w1', kind: 'weight', value: kg, messageRef: '#1' }];
+    if (m3 !== null) measures.push({ ref: 'v1', kind: 'volume', value: m3, messageRef: '#1' });
+    return runTool('avia_estimate', { weight_ref: 'w1' }, env(ctxWith(`${m3 ?? ''} kub, ${kg} kg, avia qancha?`, measures), 17));
+  };
+  const total = (out: ToolOutcome) => out.sources.find((s) => s.label === 'avia (tarif × kg)')?.value;
+
+  it('50 kg is 850 $ whether the chat stated 2 m³, 0.1 m³ or no volume at all', async () => {
+    for (const m3 of [2, 0.1, null]) {
+      const out = await aviaFor(50, m3);
+      expect(out, String(m3)).toMatchObject({ ok: true, estimate: true });
+      expect(total(out), String(m3)).toBe(850);
+      expect(out.sources, String(m3)).toContainEqual({ value: 850, kind: 'money', label: 'avia (tarif × kg)', origin: 'tool' });
+    }
   });
 
-  it('a dense load is still kilos × rate (0.1 m³ of 50 kg flies as 50 kg)', async () => {
-    const ctx = ctxWith('0.1 kub 50 kg avia', [
-      { ref: 'w1', kind: 'weight', value: 50, messageRef: '#1' },
-      { ref: 'v1', kind: 'volume', value: 0.1, messageRef: '#1' },
-    ]);
-    const out = await runTool('avia_estimate', { weight_ref: 'w1' }, env(ctx, 17));
+  it('a heavy load is quoted too — no upper weight bound', async () => {
+    const out = await aviaFor(25_000, 3);
     expect(out).toMatchObject({ ok: true, estimate: true });
-    expect(out.sources).toContainEqual({ value: 850, kind: 'money', label: 'avia (tarif × kg)' });
+    expect(total(out)).toBe(425_000);
   });
 });
 
@@ -176,6 +180,7 @@ describe('rail: the spellings customers type, and no machine figure on a rail an
       urlsToChat7d: 0,
       urlsToday: 0,
       hasEstimate: memory.hasEstimate,
+      fromOurWarehouse: memory.fromOurWarehouse === true,
     });
     expect(result.blocks.map((b) => b.code)).toContain('number_unsourced');
   });
@@ -204,11 +209,11 @@ describe('Qashqadaryo is a destination, not Kashgar; «Иу» is Yiwu', () => {
     for (const t of ['Qashqadaryoga podklyuch kerak', 'Қашқадарёга юк', 'Qarshi, Qashqadaryo viloyati']) {
       expect(namedOrigin(t), t).toBeNull();
       expect(zoneForOrigin(t), t).toBeNull();
-      expect(originZone(ctxWith(t, [])), t).toBe('unknown');
+      expect(originZone(ctxWith(t, []), OURS), t).toBe('unknown');
     }
     expect(namedOrigin('Qashqardan yuk')).toEqual({ place: 'Qashqar', zone: 'kashgar' });
     expect(namedOrigin('Қашқардан юк')).toEqual({ place: 'Qashqar', zone: 'kashgar' });
-    expect(originZone(ctxWith('Yiwudan Qashqadaryoga 3 kub', []))).toBe('cn');
+    expect(originZone(ctxWith('Yiwudan Qashqadaryoga 3 kub', []), OURS)).toBe('warehouse');
   });
 
   it('reads the Russian Yiwu alone and with an Uzbek case ending, not inside a word', () => {

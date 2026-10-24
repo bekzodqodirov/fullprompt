@@ -15,7 +15,9 @@ import { agentTablesReady } from './config';
  *  - the site's extras (free storage days, insurance, the photo report,
  *    repacking, door delivery) — his answer 8 ⭐: the AI never states them;
  *  - «omborimiz» — the site writes «Ivu ombori» / «qabul punkti» because who
- *    owns each point is unverified, and so does this list.
+ *    owns each point is unverified, and so does this list; the ONE exception
+ *    is the price rule he dictated himself (his third set «3», 2026-10-24:
+ *    «skladlarimizdan narxi shuncha»), in his own words.
  *
  * Each fact is keyed (`source_ref.seed`, versioned): a re-run inserts only
  * what is missing, and a fact he RETIRED stays retired — the key still exists.
@@ -97,6 +99,14 @@ export const SEED_FACTS: readonly SeedFact[] = [
     key: 'certificate@1',
     question: 'Kelib chiqish sertifikati kerakmi?',
     answer: 'Kelib chiqish sertifikatini kompaniyamiz oʻzi rasmiylashtiradi — mijozdan talab qilinmaydi.',
+  },
+  // His third set «3» (the same evening): «agar skladimizga jo'natib bersangiz
+  // skladlarimizdan narxi shuncha deb aytsin. Va zavotidan olib skladga olib
+  // kelish alohida hisoblanadi». No money — the figure is still the tool's.
+  {
+    key: 'china_warehouse_price@1',
+    question: 'Narx qayerdan hisoblanadi? Zavoddan olib kelish narxga kiradimi?',
+    answer: 'Narx Xitoydagi omborlarimizdan hisoblanadi; zavoddan omborgacha olib kelish alohida hisoblanadi.',
   },
 ];
 

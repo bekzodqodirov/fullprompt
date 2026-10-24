@@ -385,9 +385,12 @@ describe('an agent calculation lands like a seller’s — every action, the com
     });
     expect(out).toMatchObject({ outcome: 'draft', blocked: false });
     const d = await liveDraft();
-    const actions = d!.actions as { type: string; certificate?: unknown }[];
+    const actions = d!.actions as { type: string; certificate?: unknown; fromOurWarehouse?: boolean }[];
     expect(actions.map((x) => x.type)).toEqual(['calc_submit', 'set_followup', 'mute']);
-    expect(actions[0]!.certificate).toBeNull();
+    // No certificate field at all (B8): the company obtains it, and nothing reads a choice.
+    expect(actions[0]).not.toHaveProperty('certificate');
+    // A named city with a warehouse of ours is priced as it always was (his third set «3»).
+    expect(actions[0]!.fromOurWarehouse).toBe(false);
 
     const r = await decideDraft(actor(), d!.id, 'send', { digest: await cardDigestOf(d!.id) }, ctx());
     expect(r).toMatchObject({ ok: true, status: 'approved' });
@@ -395,6 +398,7 @@ describe('an agent calculation lands like a seller’s — every action, the com
     expect(req).toMatchObject({ hasCertificate: true, freightZone: 'kashgar' });
     const [note] = await db.select({ note: crmActivities.note }).from(crmActivities).where(eq(crmActivities.id, noteIdFor(d!.id)));
     expect(note!.note).toContain("Kelib chiqish sertifikati: kompaniya o'zi oladi");
+    expect(note!.note).not.toContain('Xitoydagi omborimizdan');
 
     // Every action ran, and only then is it 'done' (A10).
     const [after] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, d!.id));
@@ -616,5 +620,70 @@ describe('a hand-back that cannot draft now is tried again, or said (review A9)'
     const d = await liveDraft();
     expect(d).toMatchObject({ needsOwner: true, ownerQuestion: RAIL_OWNER_QUESTION });
     expect((d!.policy as { blocks: { code: string }[] }).blocks.map((b) => b.code)).toContain('number_unsourced');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// His third set (2026-10-24, §17.14 «3»): a customer who names only China, or
+// a Chinese place we have no warehouse in, is quoted from OUR warehouses.
+
+describe('«from China» is priced from our China warehouses, and the reply says so (his third set «3»)', () => {
+  const condition = 'Bu narx yukni Xitoydagi omborimizga yuborsangiz, omborimizdan hisoblanadi.';
+  const factory = 'Zavoddan omborimizgacha olib kelish alohida hisoblanadi.';
+
+  it('the website figure on the China column, blocked until both sentences are in the reply', async () => {
+    const a = await inbound("Xitoydan Toshkentga 5 kub 1000 kg yuk bor, yo'lkira qancha bo'ladi?");
+    const bare = await handleInbound(job(a), {
+      callModel: scripted([
+        { name: 'yolkira_estimate', input: { weight_ref: 'w1', volume_ref: 'v1' } },
+        compose("Yo'lkira taxminan 800 $ bo'ladi. Boj va QQS alohida hisoblanadi."),
+      ]),
+    });
+    expect(bare).toMatchObject({ outcome: 'draft', blocked: true });
+    const d = await liveDraft();
+    expect((d!.policy as { blocks: { code: string }[] }).blocks.map((x) => x.code)).toEqual(['warehouse_condition']);
+    expect((d!.policy as { memory: { fromOurWarehouse?: boolean } }).memory.fromOurWarehouse).toBe(true);
+
+    const b = await inbound('Xitoydan 5 kub 1000 kg, narxi qancha?');
+    const said = await handleInbound(job(b), {
+      callModel: scripted([
+        { name: 'yolkira_estimate', input: { weight_ref: 'w1', volume_ref: 'v1' } },
+        compose(`Yo'lkira taxminan 800 $ bo'ladi. Boj va QQS alohida hisoblanadi. ${condition} ${factory}`),
+      ]),
+    });
+    expect(said).toMatchObject({ outcome: 'draft', blocked: false });
+  });
+
+  it('a city one of our warehouses stands in is quoted as it always was — no condition asked', async () => {
+    const a = await inbound("Yiwudan Toshkentga 5 kub 1000 kg yuk bor, yo'lkira qancha bo'ladi?");
+    const out = await handleInbound(job(a), {
+      callModel: scripted([
+        { name: 'yolkira_estimate', input: { weight_ref: 'w1', volume_ref: 'v1' } },
+        compose("Yo'lkira taxminan 800 $ bo'ladi. Boj va QQS alohida hisoblanadi."),
+      ]),
+    });
+    expect(out).toMatchObject({ outcome: 'draft', blocked: false });
+  });
+
+  it('a podklyuch job from China lands on the China column and its note says the factory leg is extra', async () => {
+    const a = await inbound('Xitoydan Toshkentga podklyuch kerak: 3 kub 500 kg, kurtka 100 dona');
+    const out = await handleInbound(job(a), {
+      callModel: scripted([
+        { name: 'calc_checklist', input: { section: 'podklyuch', goods: [{ name: 'kurtka', quantity: 100, weight_kg: null }] } },
+        compose('Hisoblatishga yubordim, javob kelishi bilan aytaman.', {
+          category: 'qualification',
+          next_step: 'calc',
+          actions: [{ type: 'calc_submit', section: 'podklyuch', cited_message_refs: ['#1'], date: '', note: '' }],
+        }),
+      ]),
+    });
+    expect(out).toMatchObject({ outcome: 'draft', blocked: false });
+    const d = await liveDraft();
+    expect((d!.actions as { fromOurWarehouse?: boolean }[])[0]!.fromOurWarehouse).toBe(true);
+    expect(await decideDraft(actor(), d!.id, 'send', { digest: await cardDigestOf(d!.id) }, ctx())).toMatchObject({ ok: true });
+    const [req] = await db.select().from(calcRequests).where(eq(calcRequests.noteId, noteIdFor(d!.id)));
+    expect(req).toMatchObject({ freightZone: 'cn', fromCity: 'Xitoy' });
+    const [note] = await db.select({ note: crmActivities.note }).from(crmActivities).where(eq(crmActivities.id, noteIdFor(d!.id)));
+    expect(note!.note).toContain('Narx Xitoydagi omborimizdan; zavoddan omborgacha olib kelish alohida.');
   });
 });

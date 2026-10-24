@@ -9,7 +9,14 @@ export type ComposedAction =
       type: 'calc_submit';
       section: CalcSection;
       facts: CalcFacts;
-      certificate: 'bor' | 'yoq' | 'bilmaydi' | null;
+      // No certificate: his 9 (2026-10-24) — the company obtains it itself, every agent job lands with it.
+      /**
+       * The cargo starts at none of our China warehouses (his third set «3»):
+       * the landing takes the China column and its note says the factory leg
+       * is extra. Decided by the run that wrote the reply which said so; an
+       * action stored before it has none, which reads as false.
+       */
+      fromOurWarehouse: boolean;
       /** tg_messages ids the model cited — the only messages that reach the lenta (leak-12). */
       citedMessageIds: string[];
     }

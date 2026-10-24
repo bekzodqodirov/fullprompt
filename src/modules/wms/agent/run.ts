@@ -18,10 +18,11 @@ import { askedLocation, customerNumberSources, policyFor, splitUrls, type Policy
 import { chatBlock, runTail, stableHead } from './prompt';
 import { JOB_AGENT_INBOUND, type AgentInboundJob } from './queues';
 import { dayRunCounts } from './today';
-import { belowTruckMinimumFacts, runTool, TOOL_SPECS, TRUCK_SECTIONS, type ChecklistState, type ToolOutcome } from './tools';
+import { belowTruckMinimumFacts, ourChinaPlaces, runTool, TOOL_SPECS, TRUCK_SECTIONS, type ChecklistState, type ToolOutcome } from './tools';
 import { draftWorthy, mentionsRail, RAIL_OWNER_QUESTION } from './worthy';
 import { writeDraft, writeNotice, type ComposedAction } from './drafts';
-import type { NumberSource } from './numbers';
+import { factSources, type NumberSource } from './numbers';
+import { nameWordsOf } from './policy';
 import { AGENT_LOCALES } from './locale';
 
 /**
@@ -154,12 +155,18 @@ export async function runLoop(input: {
   const usage: ModelUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
   const tools: LoopResult['tools'] = [];
   const outcomes: ToolOutcome[] = [];
+  let places: Promise<ReadonlySet<string>> | null = null;
   const env = {
     ctx,
     day: input.day,
     aviaUsdPerKg: input.config.aviaUsdPerKg,
+    // A client's own facts only for a chat that PROVES it is that client (identity review B7): a typed
+    // code or the web tray's «Bu mijoz» without the phone on the card names the client and serves none
+    // of his cargo or money — and none of his facts either. The general ones stand for everyone.
     kb: (q: string) =>
-      kbSearch({ clientIds: ctx.identity.codes.map((c) => c.id), leadId: ctx.identity.leadId }, q),
+      kbSearch({ clientIds: ctx.identity.cargoAllowed ? ctx.identity.codes.map((c) => c.id) : [], leadId: ctx.identity.leadId }, q),
+    // Read once per run, and only when a tool asks where the cargo starts.
+    chinaPlaces: () => (places ??= ourChinaPlaces()),
   };
   for (let round = 0; round < AGENT_LIMITS.maxToolRounds; round++) {
     if (input.now().getTime() - started > LOOP_WALL_MS) throw new Error('wall_clock');
@@ -464,10 +471,11 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
   const found = loop.outcomes.flatMap((o) => o.sources).filter((s) => !rail || s.kind !== 'money');
   const sources: NumberSource[] = [...customerNumberSources(ctx.messages), ...found];
   // General facts are in every prompt: their non-money figures, phones and
-  // links count as said by the company (a kb money figure never does — the
-  // customer-sources reading turns it into `customer_money`, money-9).
-  const factText = facts.map((f) => f.answer).join('\n');
-  sources.push(...customerNumberSources([{ direction: 'in', body: factText, ref: 'bilim' }]).map((s) => ({ ...s, label: 'kompaniya bilimi' })));
+  // links count as said by the company (a kb money figure never does — it
+  // reads as `customer_money`, money-9). Each fact is read ALONE (B2): the
+  // payment fact names money, and joined to the rest it made every street
+  // number and hour of every other fact a price nobody may repeat.
+  for (const f of facts) sources.push(...factSources(f.answer, 'kompaniya bilimi'));
   const urls = [...facts.flatMap((f) => f.urls), ...loop.outcomes.flatMap((o) => o.allowedUrls ?? [])];
   const { mapUrls, allowedUrls } = splitUrls(urls);
   return {
@@ -481,6 +489,13 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
     // Either estimate tool — the truck's website figure or the avia rate × kg
     // (his 2026-10-24) — makes G11 apply: «taxminan» and «boj, QQS alohida».
     hasEstimate: !rail && loop.outcomes.some((o) => o.estimate === true),
+    // …and a truck figure priced FROM our China warehouses asks for the
+    // condition and the factory leg too (his third set «3»).
+    fromOurWarehouse: !rail && loop.outcomes.some((o) => o.estimate === true && o.fromOurWarehouse === true),
+    // The facts this run read — the prompt's general ones and what kb_search
+    // returned — may name the colleague they point at (B9), as they may carry
+    // his phone.
+    factNameWords: nameWordsOf([...facts.map((f) => f.answer), ...loop.outcomes.flatMap((o) => o.factTexts ?? [])]),
     ownCodes: ctx.identity.codes.map((c) => c.clientCode),
     managerName: ctx.identity.managerName,
     canary,
@@ -546,9 +561,14 @@ export function validateActions(
         .map((m) => m.id);
       // No certificate choice (his 9, 2026-10-24): «kelib chiqish sertifikati
       // bor, biz o'zimiz olamiz» — the AI never asks, and every agent job lands
-      // with the company's own (decide.ts `landCalc`). The column of the action
-      // shape stays null until types.ts drops it.
-      actions.push({ type: 'calc_submit', section: cl.section, facts: cl.facts, certificate: null, citedMessageIds: [...new Set(cited)] });
+      // with the company's own (decide.ts `landCalc`).
+      actions.push({
+        type: 'calc_submit',
+        section: cl.section,
+        facts: cl.facts,
+        fromOurWarehouse: cl.fromOurWarehouse,
+        citedMessageIds: [...new Set(cited)],
+      });
     } else if (a.type === 'set_followup') {
       const day = /^\d{4}-\d{2}-\d{2}$/u.exec(a.date)?.[0];
       const today = tashkentDay(now);

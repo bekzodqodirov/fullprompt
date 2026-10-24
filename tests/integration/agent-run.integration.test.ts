@@ -10,10 +10,12 @@ import {
   agentOutbox,
   agentRuns,
   clients,
+  kbFacts,
   notifications,
   roles,
   tgAccountGuard,
   tgAccounts,
+  tgChatRules,
   tgMessages,
   userRoles,
   users,
@@ -414,5 +416,56 @@ describe('his decision (one function for the bot and the web)', () => {
     await agentSweep();
     const [after] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, d!.id));
     expect(after!.status).toBe('expired');
+  });
+});
+
+describe('a chat whose bind it does not prove reads none of the client’s own facts (identity review B7)', () => {
+  const marker = `Maxsus fakt ${SUFFIX}`;
+  let factId = '';
+
+  beforeAll(async () => {
+    const [f] = await db
+      .insert(kbFacts)
+      .values({
+        scope: 'client',
+        clientId,
+        question: marker,
+        answer: `${marker}: yukni Andijondagi omborda oladi.`,
+        source: 'owner',
+        approvedAt: new Date(),
+        approvedBy: ownerId,
+      })
+      .returning({ id: kbFacts.id });
+    factId = f!.id;
+  });
+
+  afterAll(async () => {
+    await db.delete(tgChatRules).where(and(eq(tgChatRules.managerUserId, ownerId), eq(tgChatRules.peerId, PEER)));
+    await db.delete(kbFacts).where(eq(kbFacts.id, factId));
+  });
+
+  async function kbResult(): Promise<string> {
+    const a = await inbound(`${marker} haqida ayting`);
+    const model = scripted([{ name: 'kb_search', input: { query: marker } }, compose('Tekshirib aytaman.')]);
+    expect(await handleInbound(job(a), { callModel: model })).toMatchObject({ outcome: 'draft' });
+    const result = model.requests[1]!.messages
+      .flatMap((m) => m.content)
+      .find((b): b is { type: 'tool_result'; tool_use_id: string; content: string } => b.type === 'tool_result');
+    return result!.content;
+  }
+
+  it('the listener’s own phone classification proves the chat: the client’s fact is served', async () => {
+    expect(await kbResult()).toContain(marker);
+  });
+
+  it('a hand-made «Bu mijoz» with no phone on the card names the client and serves none of his facts', async () => {
+    await db
+      .insert(tgChatRules)
+      .values({ managerUserId: ownerId, peerId: PEER, decision: 'include', clientId, decidedBy: ownerId, decidedAt: new Date() });
+    try {
+      expect(await kbResult()).not.toContain(marker);
+    } finally {
+      await db.delete(tgChatRules).where(and(eq(tgChatRules.managerUserId, ownerId), eq(tgChatRules.peerId, PEER)));
+    }
   });
 });

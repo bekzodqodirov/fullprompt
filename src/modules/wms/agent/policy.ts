@@ -37,7 +37,8 @@ export type PolicyCode =
   | 'map_unasked'
   | 'fingerprint'
   | 'url_cap'
-  | 'estimate_unhedged';
+  | 'estimate_unhedged'
+  | 'warehouse_condition';
 
 export interface PolicyHit {
   rule: PolicyRule;
@@ -391,6 +392,29 @@ function durationsIn(clause: string): [number, number][] {
   return out;
 }
 
+/** A figure's hedge, inside its own clause: an adverb before it, or a word right beside it. */
+function hedgedAt(clause: string, start: number, end: number): boolean {
+  const before = clause.slice(0, start).replace(RANGE_START, '');
+  return HEDGE_ADVERB.test(before) || HEDGE_BEFORE_FIGURE.test(before) || HEDGE_AFTER_FIGURE.test(clause.slice(end));
+}
+
+/**
+ * The clause states an ESTIMATE: a price or a day count with its hedge
+ * (B1). «Avia bilan taxminan 680 $ bo'ladi, yetib borishi 2-5 kun» is one
+ * estimate in two clauses — the hedge spoken first covers the days said
+ * after it. A hedge on something that is no figure — «odatda tez ishlaymiz»
+ * — covers nothing that follows: that is how a promise is softened.
+ */
+function statesEstimate(clause: string): boolean {
+  const figures: [number, number][] = [
+    ...extractNumbers(clause)
+      .filter((f) => f.kind === 'money' || f.kind === 'duration')
+      .map((f): [number, number] => [f.index, f.index + f.raw.length]),
+    ...durationsIn(clause),
+  ];
+  return figures.some(([start, end]) => hedgedAt(clause, start, end));
+}
+
 /**
  * G2 for a day count (P2, his §17.14 answer): «2 kunda yetib keladi» is a
  * promise; «taxminan 2-5 kunda yetib boradi» — the avia window he said the AI
@@ -399,8 +423,10 @@ function durationsIn(clause: string): [number, number][] {
  * a duration — in digits or in words, «bir haftada» — and no hedge on THAT
  * duration, or a certainty word anywhere, is a dispatch promise; a timetable
  * («mashina har 3 kunda chiqadi») is a fact about the company. The hedge must
- * be in the same sentence AND the same clause as the figure, before it or
- * right after it: «Taxminan shunday. 2 kunda yetib keladi.» still promises.
+ * be in the same sentence as the figure — in its clause, before it or right
+ * after it, or in an EARLIER clause that states an estimate itself (B1: «Avia
+ * bilan taxminan 680 $ bo'ladi, yetib borishi 2-5 kun» is one hedged
+ * estimate): «Taxminan shunday. 2 kunda yetib keladi.» still promises.
  */
 export function timePromise(text: string): boolean {
   for (const s of sentencesOf(normalizeDigits(text))) {
@@ -408,7 +434,11 @@ export function timePromise(text: string): boolean {
     if (!sending && !COMING_VERB.some((re) => re.test(s))) continue;
     const certain = CERTAINTY.test(s);
     if (!certain && DISCLAIMER.test(s)) continue;
+    // An estimate stated in an earlier clause of THIS sentence covers its later ones (B1).
+    let estimated = false;
     for (const { text: c, at } of clausesOf(s)) {
+      const covered = estimated;
+      estimated ||= statesEstimate(c);
       if (!sending && !aboutCargo(c, s)) continue;
       // A clause with its own verb is judged alone; one without — «…yetib boradi, reys bo'lsa 2 kunda» —
       // is the earlier clause's figure said again, and carries that clause's hedge.
@@ -416,8 +446,9 @@ export function timePromise(text: string): boolean {
       for (const [start, end] of durationsIn(c)) {
         const before = (ownVerb ? c.slice(0, start) : s.slice(0, at + start)).replace(RANGE_START, '');
         if (FREQUENCY.test(before)) continue;
+        // A certainty word anywhere in the sentence makes it a promise again, estimate or not.
         if (certain) return true;
-        const hedged = HEDGE_ADVERB.test(before) || HEDGE_BEFORE_FIGURE.test(before) || HEDGE_AFTER_FIGURE.test(c.slice(end));
+        const hedged = covered || HEDGE_ADVERB.test(before) || HEDGE_BEFORE_FIGURE.test(before) || HEDGE_AFTER_FIGURE.test(c.slice(end));
         if (!hedged) return true;
       }
     }
@@ -464,6 +495,89 @@ export const EXCLUSION_SENTENCE: Record<AgentLocale, string> = {
   fa: 'عوارض گمرکی و مالیات بر ارزش افزوده جداگانه محاسبه می‌شود.',
   zh: '关税和增值税另行计算。',
 };
+
+/**
+ * His third set «3» (2026-10-24): «agar skladimizga jo'natib bersangiz
+ * skladlarimizdan narxi shuncha deb aytsin. Va zavotidan olib skladga olib
+ * kelish alohida hisoblanadi». A truck price for cargo that starts nowhere we
+ * stand — «Xitoydan», «Shenzhendan» — is OUR warehouse's price, and the reply
+ * says both halves of that in the customer's language: the condition, and
+ * that the factory leg is extra. The model is told the sentences; G11 checks
+ * each one is said, like the hedge.
+ */
+export const WAREHOUSE_SENTENCES: Record<AgentLocale, { condition: string; factory: string }> = {
+  uz: {
+    condition: 'Bu narx yukni Xitoydagi omborimizga yuborsangiz, omborimizdan hisoblanadi.',
+    factory: 'Zavoddan omborimizgacha olib kelish alohida hisoblanadi.',
+  },
+  uz_cyrl: {
+    condition: 'Бу нарх юкни Хитойдаги омборимизга юборсангиз, омборимиздан ҳисобланади.',
+    factory: 'Заводдан омборимизгача олиб келиш алоҳида ҳисобланади.',
+  },
+  ru: {
+    condition: 'Это цена от нашего склада в Китае, если вы отправите груз на наш склад.',
+    factory: 'Доставка от завода до нашего склада считается отдельно.',
+  },
+  en: {
+    condition: 'This price is from our warehouse in China, if you send the cargo there.',
+    factory: 'Bringing the cargo from the factory to our warehouse is priced separately.',
+  },
+  fa: {
+    condition: 'این قیمت از انبار ما در چین است، اگر بار را به انبار ما بفرستید.',
+    factory: 'آوردن بار از کارخانه تا انبار ما جداگانه محاسبه می‌شود.',
+  },
+  zh: {
+    condition: '如果您把货发到我们在中国的仓库，这是从我们仓库起的价格。',
+    factory: '从工厂到我们仓库的运费另行计算。',
+  },
+};
+
+/**
+ * What each of the two sentences must hold, per language — every word of a
+ * list inside ONE sentence that does not deny it: «alohida» from «Boj va QQS
+ * alohida» must not stand in for the factory leg, and «Zavoddan olib kelish
+ * alohida hisoblanmaydi» says the opposite.
+ */
+const WAREHOUSE_TERMS: Record<AgentLocale, { condition: readonly RegExp[]; factory: readonly RegExp[]; denied: RegExp }> = {
+  uz: {
+    condition: [/narx|hisob/iu, /ombor|sklad/iu, /xitoy|hitoy/iu],
+    factory: [/zavod|fabrik|ishlab\s+chiqar/iu, /alohida/iu],
+    denied: /(?<![\p{L}])(?:emas|yo['‘’ʻ]?q)(?![\p{L}])|\p{L}ma(?:ydi|ymiz|ysiz)(?![\p{L}])/iu,
+  },
+  uz_cyrl: {
+    condition: [/нарх|ҳисоб/iu, /омбор|склад/iu, /хитой/iu],
+    factory: [/завод|фабрик/iu, /алоҳида/iu],
+    denied: /(?<![\p{L}])(?:эмас|йўқ)(?![\p{L}])|\p{L}ма(?:йди|ймиз|йсиз)(?![\p{L}])/iu,
+  },
+  ru: {
+    condition: [/цен|стоимост|расч[её]т/iu, /склад/iu, /кита[йяеюи]/iu],
+    factory: [/завод|фабрик|производ|поставщик/iu, /отдельно/iu],
+    denied: /(?<![\p{L}])(?:не|нет|без)(?![\p{L}])/iu,
+  },
+  en: {
+    condition: [/price|rate|quote|cost/iu, /warehouse/iu, /china/iu],
+    factory: [/factory|manufacturer|supplier/iu, /separate/iu],
+    denied: /(?<![\p{L}])(?:not|no|never)(?![\p{L}])|n['’]t(?![\p{L}])/iu,
+  },
+  fa: {
+    condition: [/قیمت|نرخ/u, /انبار/u, /چین/u],
+    factory: [/کارخانه|تولیدکننده/u, /جداگانه/u],
+    denied: /نمی|نیست|ندارد/u,
+  },
+  zh: {
+    condition: [/价格|价|运费|报价/u, /仓库|仓/u, /中国/u],
+    factory: [/工厂|厂家|供应商/u, /另/u],
+    denied: /不|没|未/u,
+  },
+};
+
+/** Both of the warehouse sentences are in the reply, each in a sentence of its own words. */
+function saysWarehouseCondition(text: string, language: AgentLocale): boolean {
+  const terms = WAREHOUSE_TERMS[language];
+  const sentences = sentencesOf(text).filter((s) => !terms.denied.test(s));
+  const said = (words: readonly RegExp[]) => sentences.some((s) => words.every((re) => re.test(s)));
+  return said(terms.condition) && said(terms.factory);
+}
 
 /** The system's own minted shapes (crate, box, receipt, pickup, deal) — never in a customer reply. */
 const SYSTEM_SHAPE_RES: readonly RegExp[] = [
@@ -513,6 +627,15 @@ export interface PolicyInput {
   urlsToday: number;
   /** A yo'lkira figure from the tool is in the reply's sources (G11 applies). */
   hasEstimate: boolean;
+  /** That figure is our China warehouses' price for cargo that starts elsewhere (his third set «3»): both sentences must be said. */
+  fromOurWarehouse: boolean;
+  /**
+   * The capitalised words of the approved facts this run read (B9) — a
+   * colleague a fact names («Yukni olish bo'yicha aloqa: Umriddin») is the
+   * fact's, said with the owner's approval, like the fact's phone. Absent =
+   * no name is the facts'.
+   */
+  factNameWords?: readonly string[];
 }
 
 export interface PolicyResult {
@@ -577,6 +700,25 @@ function nameShadow(s: string): string {
   return mapLetters(s, BY_SOUND).replace(APOSTROPHE, "'");
 }
 
+/**
+ * The words a set of approved facts could name a person by (B9): each word
+ * written with a capital, compared the way staff names are (by sound, one
+ * apostrophe). Only capitalised words — a name is written so — which keeps
+ * the draft's stored memory to a short list, and a name a fact writes in
+ * lower case is simply not exempt (the safe direction).
+ */
+export function nameWordsOf(texts: readonly string[]): string[] {
+  const out = new Set<string>();
+  for (const t of texts) {
+    for (const word of normalizeDigits(t).split(/[^\p{L}'‘’ʻʼ`´]+/u)) {
+      const w = word.replace(/^['‘’ʻʼ`´]+|['‘’ʻʼ`´]+$/gu, '');
+      if ([...w].length < 3 || !/^\p{Lu}/u.test(w)) continue;
+      out.add(nameShadow(w).toLowerCase());
+    }
+  }
+  return [...out].sort();
+}
+
 /** Words of a full name that name nobody — «o'g'li», «qizi», «aka». */
 const NAME_FILLER = new Set(["o'g'li", "og'li", 'ogli', 'ugli', 'qizi', 'kizi', 'aka', 'opa']);
 
@@ -627,15 +769,20 @@ function staffNameHits(
   text: string,
   staffNames: readonly string[],
   customerNames: readonly string[],
+  factWords: readonly string[],
   blocks: PolicyHit[],
   warnings: PolicyHit[],
 ): void {
   const seen = [text.replace(APOSTROPHE, "'"), nameShadow(text)];
   const customer = new Set(customerNames.flatMap((n) => nameShadow(n).toLowerCase().split(/\s+/u)).filter(Boolean));
+  // A name the run's approved facts carry is the owner's own words (B9): the seeded «aloqa: Umriddin»
+  // must not block the fact he seeded. A colleague the facts do not name still blocks.
+  const fact = new Set(factWords.map((w) => w.toLowerCase()));
   for (const name of staffNames) {
     const words = name.trim().split(/\s+/u).filter(Boolean);
     const shadowWords = words.map((w) => nameShadow(w));
-    if (shadowWords.length === 0 || shadowWords.every((w) => customer.has(w.toLowerCase()))) continue;
+    if (shadowWords.length === 0) continue;
+    if (shadowWords.every((w) => customer.has(w.toLowerCase())) || shadowWords.every((w) => fact.has(w.toLowerCase()))) continue;
     // Its naming words in any order, side by side — «o'g'li» and «aka» name nobody and may stay out.
     const naming = shadowWords.filter((w) => !NAME_FILLER.has(w.toLowerCase()));
     const whole = [shadowWords, ...(naming.length >= 2 && naming.length <= 4 ? orders(naming) : [])];
@@ -645,7 +792,7 @@ function staffNameHits(
     }
     shadowWords.forEach((w, i) => {
       const low = w.toLowerCase();
-      if (customer.has(low) || NAME_FILLER.has(low) || [...w].length < 3) return;
+      if (customer.has(low) || fact.has(low) || NAME_FILLER.has(low) || [...w].length < 3) return;
       if (seen.some((s) => wordIn(s, w, [...w].length >= 4 ? 5 : 0))) {
         warnings.push({ rule: 'G6', code: 'staff_name', detail: words[i]! });
       }
@@ -729,7 +876,7 @@ export function checkAgentReply(input: PolicyInput): PolicyResult {
     if (m) blocks.push({ rule: 'G6', code: 'system_code', detail: m[0] });
   }
   for (const p of foreignPhones(text, input.allowedPhones)) blocks.push({ rule: 'G6', code: 'foreign_phone', detail: p });
-  staffNameHits(text, input.staffNames, input.customerNames ?? [], blocks, warnings);
+  staffNameHits(text, input.staffNames, input.customerNames ?? [], input.factNameWords ?? [], blocks, warnings);
   if (input.canary && text.includes(input.canary)) blocks.push({ rule: 'G6', code: 'canary' });
   if (AI_DENIAL.some((re) => re.test(text))) blocks.push({ rule: 'G6', code: 'ai_denial' });
   if (MENTION.test(text)) blocks.push({ rule: 'G6', code: 'mention' });
@@ -752,10 +899,15 @@ export function checkAgentReply(input: PolicyInput): PolicyResult {
   }
 
   // G11 — a yo'lkira figure is an approximation and says what it leaves out.
-  if (input.hasEstimate && ledger.some((e) => e.kind === 'money' && e.source !== null)) {
+  const quoted = ledger.some((e) => e.kind === 'money' && e.source !== null);
+  if (input.hasEstimate && quoted) {
     const approx = APPROX[input.language].test(text);
     const exclusion = EXCLUSION[input.language].every((re) => re.test(text));
     if (!approx || !exclusion) blocks.push({ rule: 'G11', code: 'estimate_unhedged' });
+  }
+  // …and our warehouse's price says where it starts, and that the factory leg is extra (his third set «3»).
+  if (input.fromOurWarehouse && quoted && !saysWarehouseCondition(text, input.language)) {
+    blocks.push({ rule: 'G11', code: 'warehouse_condition' });
   }
 
   return { ok: blocks.length === 0, blocks: dedupe(blocks), warnings: dedupe(warnings), ledger };

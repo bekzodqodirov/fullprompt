@@ -26,6 +26,14 @@ export interface PolicyMemory {
   mapUrls: string[];
   askedLocation: boolean;
   hasEstimate: boolean;
+  /**
+   * The estimate is our China warehouses' price (his third set «3») — the
+   * reply must carry the condition and the factory leg. Optional: a memory
+   * stored before it, and the 💵 draft's, have none, and none means no.
+   */
+  fromOurWarehouse?: boolean;
+  /** The approved facts' name words (`nameWordsOf`, B9) — a colleague a fact names is the fact's. */
+  factNameWords?: string[];
   ownCodes: string[];
   /** The customer's own manager — the one staff name a reply may carry. */
   managerName: string | null;
@@ -137,6 +145,8 @@ export async function policyFor(input: {
     canary: input.memory.canary,
     ...counts,
     hasEstimate: input.memory.hasEstimate,
+    fromOurWarehouse: input.memory.fromOurWarehouse === true,
+    factNameWords: input.memory.factNameWords ?? [],
   });
 }
 
