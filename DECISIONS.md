@@ -4595,3 +4595,9 @@ skipped, the fallback clause, the firm, the cursor check, the hash length, the s
 and were re-anchored: the ORDER BY (the fixtures' storage order matched the feed's — their instants now run
 against insertion order), and «never claimed» under a forced reminder (the test kept the landed due time in the
 future — it now puts any landed due time 45 minutes in the past and keeps NULL as NULL).
+
+1459. **Found by LOOKING at the settings screen: the refusal asked for a date.** A blank
+`agent_no_contact_reasons` was refused with `settings.badValue`, written for the unpriced-cargo ban («enter a date
+(YYYY-MM-DD) or an instant»). The sentence is now chosen per setting (`BAD_VALUE_TEXT` in the settings page,
+`badValueReasons` ×4 for this key); every other key keeps its sentence. STATED, not fixed: `lead_assign_origins`
+(round 113) is refused with the same date sentence today.
