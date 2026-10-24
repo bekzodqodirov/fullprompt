@@ -175,10 +175,11 @@ const MONEY_BEFORE = new RegExp(`(?:${CURRENCY_BEFORE_SRC})\\s*:?\\s*$`, 'iu');
 const MONEY_GLUED_BEFORE = new RegExp(`(?:${CURRENCY_BEFORE_SRC}|(?<![\\p{L}])us)$`, 'iu');
 /**
  * `\b` is an ASCII word edge even under `u`, so «кг\b» never matched before a space: «за 1 кг 17 $» read the
- * one kilo as MONEY in any text that names money (final review, met while reading K21's per-unit prices).
+ * one kilo as MONEY in any text that names money (final review, met while reading K21's per-unit prices) —
+ * and «cbm», how an English customer writes a cube, was no measure at all.
  */
 const MEASURE_AFTER =
-  /^\s*(?:kg\b|кг(?![\p{L}\d])|kilo\w*|кило\w*|kub\w*|куб\w*|m3\b|м3(?![\p{L}\d])|m³|м³|m2\b|м2(?![\p{L}\d])|tonna\w*|тонн\w*|公斤|千克|吨|立方|کیلو\w*|متر\s*مکعب|کیلوگرم)/iu;
+  /^\s*(?:kg\b|кг(?![\p{L}\d])|kilo\w*|кило\w*|kub\w*|куб\w*|cbm\b|cubic\s+met\w*|m3\b|м3(?![\p{L}\d])|m³|м³|m2\b|м2(?![\p{L}\d])|tonna\w*|тонн\w*|公斤|千克|吨|立方|کیلو\w*|متر\s*مکعب|کیلوگرم)/iu;
 /**
  * The word a day count is written with. A working or a calendar day is a
  * day too (fix round): «5 ish kunida», «через 5 рабочих дней», «in 5
@@ -302,7 +303,7 @@ const PER_UNIT_BEFORE = new RegExp(
       'kilo(?:si)?ga|kub(?:i)?ga|tonna(?:si)?ga|кило(?:си)?га|куб(?:и)?га',
       '(?<![\\p{L}])(?<!\\d\\s{0,2})(?:kilosi|kubi)',
       `(?:kilo(?:si|sining)?|kub(?:i|ining)?)\\s+narxi`,
-      `(?<![\\p{L}\\d.,])(?:1|bir)\\s+${UNIT_WORD}\\s+(?:uchun|narxi|ga)`,
+      `(?<![\\p{L}\\d.,])(?:1|bir)\\s+${UNIT_WORD}(?:\\s+(?:uchun|narxi|ga))?`,
       `har\\s+(?:bir\\s+)?${UNIT_WORD}\\s*(?:uchun|ga)?`,
       `per\\s+${UNIT_WORD}`,
       `(?<![\\d.,])(?:a|one|1)\\s+${UNIT_WORD}\\s+(?:costs?|is)`,
@@ -311,7 +312,7 @@ const PER_UNIT_BEFORE = new RegExp(
       '每(?:公斤|千克|方|立方米?)',
       '(?:برای\\s+)?هر\\s+(?:کیلو\\p{L}*|متر\\s*مکعب)|کیلویی',
     ].join('|') +
-    ')\\s*[:\\-–—]?\\s*(?:(?:taxminan|тахминан|примерно|около|about|around|approximately|roughly|大约|约|حدود|تقریباً?)\\s*)?' +
+    ')\\s*[:\\-–—=]?\\s*(?:(?:taxminan|тахминан|примерно|около|about|around|approximately|roughly|大约|约|حدود|تقریباً?)\\s*)?' +
     `(?:(?:${CURRENCY_BEFORE_SRC})\\s*:?\\s*)?$`,
   'iu',
 );

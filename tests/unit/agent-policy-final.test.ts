@@ -291,7 +291,7 @@ describe('K21 — a rate vouches for a per-unit figure only, a total for the res
   });
 
   it('reads the per-unit spellings', () => {
-    for (const t of ['110 $/kub', '17 $ kilosiga', '17 долларов за кг', '$17 per kg', 'kubiga 110 $', 'за 1 кг 17 $', '17美元/公斤', '每公斤17美元']) {
+    for (const t of ['110 $/kub', '17 $ kilosiga', '17 долларов за кг', '$17 per kg', 'kubiga 110 $', 'за 1 кг 17 $', '17美元/公斤', '每公斤17美元', '1 kub 110 $', '1 kubi 110 dollar', '1 куб — 110 $', '1 cbm = $110']) {
       const money = extractNumbers(t).filter((f) => f.kind === 'money');
       expect(money.length, t).toBe(1);
       expect(money[0]!.perUnit, t).toBe(true);
@@ -565,8 +565,8 @@ describe('K1 — each stored reply is folded with ITS OWN customer’s names and
     const a = textFingerprint('Assalomu alaykum, Bobur aka! GS777 bo‘yicha manzil: Chuqursoy, 5-uy.', ['GS777', 'Bobur']);
     const b = textFingerprint('Assalomu alaykum, Aziz aka! GS555 bo‘yicha manzil: Chuqursoy, 5-uy.', ['GS555', 'Aziz']);
     expect(a).toBe(b);
-    // «Ali» out of «alohida» would fold one text and not the other.
-    expect(textFingerprint('Ali aka, narx alohida.', ['Ali'])).toBe(textFingerprint('Vali aka, narx alohida.', ['Vali']));
+    // «Ali» cut out of «hali» would fold one text and not the other.
+    expect(textFingerprint('Ali aka, yuk hali yo‘lda.', ['Ali'])).toBe(textFingerprint('Vali aka, yuk hali yo‘lda.', ['Vali']));
     expect(textFingerprint('Boburga salom', ['Bobur'])).toBe(textFingerprint('Azizga salom', ['Aziz']));
   });
 });
