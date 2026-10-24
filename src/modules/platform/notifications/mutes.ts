@@ -308,7 +308,7 @@ export const FOUNDERS: Readonly<Record<MuteGroup, readonly string[]>> = {
  * waiting with nothing on any screen saying why, so the way to stop them is
  * «/agent off», never a /profile tick. `TgAccountPaused` is the alarm that a
  * manager's Telegram was limited — the one message whose silence costs the
- * account. Delivered to their own people only (the agent owner; the account's
+ * account — and `AgentForcedOff` says the machine stopped itself. Delivered to their own people only (the agent owner; the account's
  * manager and the super_admins), so nobody else's chat fills with them.
  */
 export const UNMUTABLE_TYPES = [
@@ -319,7 +319,10 @@ export const UNMUTABLE_TYPES = [
   'AgentCodeEcho',
   'AgentStranger',
   'TgAccountPaused',
+  'AgentForcedOff',
 ] as const;
+
+export type UnmutableType = (typeof UNMUTABLE_TYPES)[number];
 
 /**
  * Is this person silencing this type? By name, or because the list holds its

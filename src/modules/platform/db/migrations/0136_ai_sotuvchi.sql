@@ -254,7 +254,7 @@ CREATE INDEX "agent_calc_links_root_idx" ON "agent_calc_links" ("root_request_id
 CREATE INDEX "agent_calc_links_chat_idx" ON "agent_calc_links" ("manager_user_id", "peer_id");
 --> statement-breakpoint
 CREATE TABLE "tg_account_guard" (
-  "account_id" uuid PRIMARY KEY REFERENCES "tg_accounts"("id"),
+  "account_id" uuid PRIMARY KEY REFERENCES "tg_accounts"("id") ON DELETE CASCADE,
   "paused_at" timestamptz,
   "pause_reason" text,
   "paused_kind" text,
@@ -271,7 +271,7 @@ CREATE TABLE "tg_account_guard" (
 --> statement-breakpoint
 CREATE TABLE "tg_account_floods" (
   "id" bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  "account_id" uuid NOT NULL REFERENCES "tg_accounts"("id"),
+  "account_id" uuid NOT NULL REFERENCES "tg_accounts"("id") ON DELETE CASCADE,
   "method" text NOT NULL,
   "seconds" integer NOT NULL,
   "source" text NOT NULL,

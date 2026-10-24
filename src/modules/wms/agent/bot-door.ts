@@ -38,6 +38,7 @@ const DECIDE_WORDS: Record<DecideRefusal, string> = {
   stale_card: "Karta o'zgargan — yangi kartadagi ✅ ni bosing.",
   policy_block: "Qoidaga to'g'ri kelmaydi — ✏️ bilan o'zingiz yozing.",
   listener_behind: "Telegram ko'prigi (tinglovchi) yangilanmagan — xabar ketmaydi. Serverda tg-listen'ni qayta quring.",
+  sending_disabled: "CRM'dan Telegramga yuborish o'chirilgan (Sozlamalar) — javob ketmaydi. Matnni nusxalab o'zingiz yuboring.",
   superseded: 'Mijoz yana yozdi — yangi qoralama tayyorlanadi.',
   taken_over: "Siz allaqachon o'zingiz javob bergansiz.",
   budget_spent: "Bugungi AI yuborish chegarasi tugadi — matnni nusxalab o'zingiz yuboring.",
@@ -72,9 +73,11 @@ export async function agentPress(staffId: string, op: AgentOp, id: string, diges
     case 's': {
       const r = await decideDraft(actor, id, 'send', { digest: digest ?? null }, ctx);
       if (!r.ok) {
-        if (r.code === 'budget_spent') {
+        // Both refusals leave him to send it himself — so the text comes with the words.
+        if (r.code === 'budget_spent' || r.code === 'sending_disabled') {
           const [d] = await db.select({ body: agentDrafts.finalBody, proposed: agentDrafts.proposedBody }).from(agentDrafts).where(eq(agentDrafts.id, id));
-          return { toast: '⛔ Chegara tugadi', reply: `${DECIDE_WORDS.budget_spent}\n\n${d?.body ?? d?.proposed ?? ''}` };
+          const toast = r.code === 'budget_spent' ? '⛔ Chegara tugadi' : '⛔ Yuborish o‘chirilgan';
+          return { toast, reply: `${DECIDE_WORDS[r.code]}\n\n${d?.body ?? d?.proposed ?? ''}` };
         }
         return { toast: DECIDE_WORDS[r.code].slice(0, 190), reply: r.code === 'listener_behind' ? DECIDE_WORDS.listener_behind : undefined };
       }

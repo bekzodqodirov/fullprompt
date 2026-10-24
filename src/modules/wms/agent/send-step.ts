@@ -194,7 +194,7 @@ export function choreographyPlan(body: string, random: () => number = Math.rando
 export type StepOutcome =
   | { kind: 'advance'; step: AgentStep; nextStepAt: Date; readDone?: boolean; typingCount?: number }
   | { kind: 'wait'; nextStepAt: Date; reason: WaitReason }
-  | { kind: 'cancel'; reason: FinalRefusal | 'human_replied' | 'anchor_superseded'; markUnread: boolean }
+  | { kind: 'cancel'; reason: FinalRefusal | 'human_replied' | 'anchor_superseded' | 'claim_lost'; markUnread: boolean }
   | { kind: 'sent'; tgMessageId: bigint | null }
   | { kind: 'failed'; reason: string; error: TgErrorKind; markUnread: boolean }
   /** The send was handed to Telegram and its answer was lost: never re-sent (ban-5). */
@@ -244,14 +244,14 @@ export async function runAgentStep(
       : { kind: 'wait', nextStepAt: verdict.until, reason: verdict.reason };
   }
 
-  const cosmetic = async (call: () => Promise<void>): Promise<StepOutcome | null> => {
+  const cosmetic = async (method: string, call: () => Promise<void>): Promise<StepOutcome | null> => {
     try {
       await call();
       return null;
     } catch (err) {
       const kind = deps.classify(err);
       // A read or typing error blocks the send only when it says the account is in trouble (ban-7).
-      if (kind.kind === 'flood') return { kind: 'flooded', seconds: kind.seconds, method: 'messages.SetTyping' };
+      if (kind.kind === 'flood') return { kind: 'flooded', seconds: kind.seconds, method };
       if (kind.kind === 'restricted' || kind.kind === 'session') {
         return { kind: 'failed', reason: kind.code, error: kind, markUnread: row.readDone };
       }
@@ -283,12 +283,12 @@ export async function runAgentStep(
       return { kind: 'advance', step: 'read', nextStepAt: t };
     }
     case 'read': {
-      const failed = await cosmetic(() => deps.tg.readHistory(row.peerId, row.answersTgMessageId));
+      const failed = await cosmetic('messages.ReadHistory', () => deps.tg.readHistory(row.peerId, row.answersTgMessageId));
       if (failed) return failed;
       return { kind: 'advance', step: 'typing', nextStepAt: new Date(t.getTime() + plan.readPauseMs), readDone: true };
     }
     case 'typing': {
-      const failed = await cosmetic(() => deps.tg.setTyping(row.peerId));
+      const failed = await cosmetic('messages.SetTyping', () => deps.tg.setTyping(row.peerId));
       if (failed) return failed;
       const count = row.typingCount + 1;
       const nextStepAt = new Date(t.getTime() + plan.typingGapMs);
@@ -299,7 +299,9 @@ export async function runAgentStep(
     case 'send': {
       const head = await checkHead();
       if (head) return head;
-      if (!(await deps.store.claimSend(row.id))) return { kind: 'cancel', reason: 'agent_off', markUnread: row.readDone };
+      // A lost claim means somebody else moved the row first (off, withdrawn, superseded) — its own
+      // write already said why; this cancel matches no row and records nothing of its own.
+      if (!(await deps.store.claimSend(row.id))) return { kind: 'cancel', reason: 'claim_lost', markUnread: row.readDone };
       try {
         const sent = await deps.tg.send({
           peerId: row.peerId,

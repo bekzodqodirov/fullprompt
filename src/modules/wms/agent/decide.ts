@@ -16,6 +16,7 @@ import {
   users,
 } from '../../platform/db/schema';
 import { logger } from '../../platform/logger';
+import { getSetting } from '../../platform/settings/service';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import { readGuard } from '../crm/account-guard';
 import { cardDigest } from './card';
@@ -56,6 +57,7 @@ export type DecideRefusal =
   | 'stale_card'
   | 'policy_block'
   | 'listener_behind'
+  | 'sending_disabled'
   | 'superseded'
   | 'taken_over'
   | 'budget_spent'
@@ -271,6 +273,10 @@ export async function decideDraft(
   const actions = (d.actions ?? []) as ComposedAction[];
   if (opts.digest !== undefined && opts.digest !== cardDigest(body, actions)) return { ok: false, code: 'stale_card' };
 
+  // The CRM's own send switch stops the pump too (send-step `sending_disabled`
+  // is FINAL), so an approval made while it is off would only be cancelled a
+  // minute later. Said here, before anything is queued.
+  if ((await getSetting('tg_sending_enabled')) !== true) return { ok: false, code: 'sending_disabled' };
   const [acc] = await db.select({ id: tgAccounts.id }).from(tgAccounts).where(eq(tgAccounts.managerUserId, d.managerUserId));
   const guard = acc ? await readGuard(acc.id) : null;
   const now = new Date();

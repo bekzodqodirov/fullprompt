@@ -1,8 +1,9 @@
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { usersWithRoles } from '../../platform/notifications/service';
+import type { UnmutableType } from '../../platform/notifications/mutes';
 import { agentRunning, forceAgentOff, readAgentConfig } from '../agent/config';
 import { AGENT_LIMITS } from '../agent/limits';
-import { onAgentOutboxSettled } from '../agent/settle-hooks';
+import { onAgentDraftsRetired, onAgentOutboxSettled } from '../agent/settle-hooks';
 import { pauseAccount, recordFlood, sendFloodsSince } from './account-guard';
 import type { PauseKind } from './telegram-guard';
 
@@ -74,7 +75,12 @@ export function sessionDeadOthersText(input: { managerName: string; reason: stri
 }
 
 /** The manager plus every live super_admin; `notifyStaffTelegram` drops the duplicates. */
-async function alarm(account: AlarmAccount, type: string, text: string): Promise<void> {
+// Typed by the unmutable list: an alarm about the account is never a /profile tick away from silence.
+async function alarm(
+  account: AlarmAccount,
+  type: Extract<UnmutableType, 'TgAccountPaused' | 'AgentForcedOff'>,
+  text: string,
+): Promise<void> {
   const supers = await usersWithRoles(['super_admin']);
   await notifyStaffTelegram({ userIds: [account.managerUserId, ...supers], type, text });
 }
@@ -108,6 +114,7 @@ async function agentOffFor(account: AlarmAccount, reason: string): Promise<boole
   for (const id of change.cancelledOutboxIds) {
     await onAgentOutboxSettled(id).catch(() => undefined);
   }
+  await onAgentDraftsRetired(change.expiredDraftIds).catch(() => undefined);
   return true;
 }
 

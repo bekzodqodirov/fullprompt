@@ -16,3 +16,10 @@ export async function offerStandsFor(draftId: string): Promise<boolean | null> {
   const { draftOfferStands } = await import('./drafts');
   return draftOfferStands(draftId);
 }
+
+/** Live drafts a forced off expired: each card loses its buttons and says why. */
+export async function onAgentDraftsRetired(draftIds: readonly string[]): Promise<void> {
+  if (draftIds.length === 0) return;
+  const { refreshAgentCard } = await import('./card-io');
+  for (const id of draftIds) await refreshAgentCard(id).catch(() => undefined);
+}

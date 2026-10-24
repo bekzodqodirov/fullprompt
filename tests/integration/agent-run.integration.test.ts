@@ -18,6 +18,7 @@ import {
   userRoles,
   users,
 } from '@/modules/platform/db/schema';
+import { getSetting, setSetting } from '@/modules/platform/settings/service';
 import { buttonsFor, parseCallback } from '@/modules/platform/telegram/staff-bot';
 import { readAgentConfig, __restoreAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
 import { decideDraft, submitOwnText } from '@/modules/wms/agent/decide';
@@ -44,6 +45,7 @@ let otherId = '';
 let accountId = '';
 let clientId = '';
 let snapshot: AgentConfig | null = null;
+let sendingBefore = false;
 let msgSeq = 1000n;
 
 async function makeUser(name: string, role: string, tail: string): Promise<string> {
@@ -160,6 +162,7 @@ async function clearChat() {
 
 beforeAll(async () => {
   snapshot = await readAgentConfig();
+  sendingBefore = (await getSetting('tg_sending_enabled')) === true;
   ownerId = await makeUser(`AI egasi ${SUFFIX}`, 'super_admin', '01');
   otherId = await makeUser(`Boshqa admin ${SUFFIX}`, 'super_admin', '02');
   const [acc] = await db
@@ -185,6 +188,8 @@ beforeAll(async () => {
       humanPauseMin: 120,
     })
     .where(eq(agentConfig.id, 1));
+  // The CRM's send switch is configuration too (outbox.integration's idiom).
+  await setSetting('tg_sending_enabled', true, ownerId);
 });
 
 beforeEach(async () => {
@@ -198,6 +203,7 @@ afterAll(async () => {
   await db.delete(tgAccounts).where(eq(tgAccounts.id, accountId));
   await db.delete(clients).where(eq(clients.id, clientId));
   await __restoreAgentConfig(snapshot);
+  await setSetting('tg_sending_enabled', sendingBefore, ownerId);
   await db.update(users).set({ active: false }).where(inArray(users.id, [ownerId, otherId]));
 });
 
@@ -340,6 +346,19 @@ describe('his decision (one function for the bot and the web)', () => {
     expect(o!.queuedBy).toBe(ownerId);
     const [after] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, d.id));
     expect(after!.status).toBe('approved');
+  });
+
+  it('with the CRM’s send switch off ✅ is refused in words and nothing is queued', async () => {
+    const { d, digest } = await drafted();
+    await setSetting('tg_sending_enabled', false, ownerId);
+    try {
+      expect(await decideDraft(actorOf(ownerId), d.id, 'send', { digest }, ctx())).toEqual({ ok: false, code: 'sending_disabled' });
+      expect(await db.select().from(agentOutbox).where(eq(agentOutbox.draftId, d.id))).toHaveLength(0);
+      const [after] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, d.id));
+      expect(after!.status).toBe('pending');
+    } finally {
+      await setSetting('tg_sending_enabled', true, ownerId);
+    }
   });
 
   it('only the account holder decides — a super_admin is refused (leak-5)', async () => {

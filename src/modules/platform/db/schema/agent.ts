@@ -358,7 +358,7 @@ export const tgAccountGuard = pgTable(
   {
     accountId: uuid('account_id')
       .primaryKey()
-      .references(() => tgAccounts.id),
+      .references(() => tgAccounts.id, { onDelete: 'cascade' }),
     pausedAt: timestamp('paused_at', { withTimezone: true }),
     pauseReason: text('pause_reason'),
     pausedKind: text('paused_kind'),
@@ -386,7 +386,7 @@ export const tgAccountFloods = pgTable(
     id: bigint('id', { mode: 'bigint' }).generatedAlwaysAsIdentity().primaryKey(),
     accountId: uuid('account_id')
       .notNull()
-      .references(() => tgAccounts.id),
+      .references(() => tgAccounts.id, { onDelete: 'cascade' }),
     method: text('method').notNull(),
     seconds: integer('seconds').notNull(),
     source: text('source').notNull(),
