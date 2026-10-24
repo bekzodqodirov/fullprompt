@@ -21,7 +21,6 @@ import { listenerIsCurrent, readGuard } from '../crm/account-guard';
 import { cardDigest } from './card';
 import { agentRunning, readAgentConfig } from './config';
 import { chatIdentity } from './context';
-import { AGENT_LIMITS } from './limits';
 import { zoneForOrigin } from './origin';
 import { ownerPolicyFor, policyFor } from './policy-input';
 import { keptFileSql } from './outbox-store';

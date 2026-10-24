@@ -14,7 +14,6 @@ import {
   captionTooLong,
   DEFAULT_LIMITS,
   type SendContext,
-  type SendRefusal,
   type SendVerdict,
 } from './telegram-send';
 
