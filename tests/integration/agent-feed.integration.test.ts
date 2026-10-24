@@ -178,11 +178,17 @@ beforeAll(async () => {
   fixturesFrom = now!.at;
 
   const code = `AGT${STAMP}`;
+  // Each card's instant runs AGAINST its insertion order (the first row
+  // written is the newest), so the table's own storage order is not the
+  // feed's order — a page read without its ORDER BY is visibly wrong here
+  // instead of right by luck.
+  const base = Date.parse(fixturesFrom) + 1000;
+  const at = (ms: number) => ({ createdAt: new Date(base - ms), updatedAt: new Date(base - ms) });
   const made = await db
     .insert(clients)
     .values([
-      { clientCode: `${code}A`, name: NAME('mijoz'), phones: [P1, P1b] },
-      { clientCode: `${code}B`, name: NAME('eski mijoz'), phones: [P6], active: false },
+      { clientCode: `${code}A`, name: NAME('mijoz'), phones: [P1, P1b], ...at(100) },
+      { clientCode: `${code}B`, name: NAME('eski mijoz'), phones: [P6], active: false, ...at(200) },
       // Twenty phones on one card: one client is twenty rows that share an
       // instant and an id — the page edge's hardest case, and enough bytes
       // for the route to gzip.
@@ -191,6 +197,7 @@ beforeAll(async () => {
         name: NAME('ko‘p raqam'),
         // seq 50-69: `phone()` stays far below, so no tail is shared.
         phones: Array.from({ length: 20 }, (_, i) => `+998${STAMP}${50 + i}`),
+        ...at(300),
       },
     ])
     .returning({ id: clients.id });
@@ -413,13 +420,15 @@ describe('the contact clock of an agent lead', () => {
     expect(advert.outcome).toBe('created');
     const a = await intakeByExt(ext('remind'));
     const t = await intakeByExt(`wh-${PREFIX}-remind`);
-    // Both put on the same fixed office morning, an hour old: the advert's is
-    // 45 minutes overdue, the agent's keeps the NULL due time it landed with.
+    // Both put on the same fixed office morning, an hour old, 45 minutes past
+    // whatever due time they LANDED with — the advert's 15-minute one, the
+    // agent's NULL, which stays NULL. Explicit times, never «now» (#1063).
     await db.execute(sql`
       UPDATE lead_intakes
          SET created_at = ${minutesFrom(F, -60)}::timestamptz,
              contact_clock_at = ${minutesFrom(F, -60)}::timestamptz,
-             contact_due_at = CASE WHEN id = ${t.id}::uuid THEN ${minutesFrom(F, -45)}::timestamptz ELSE contact_due_at END
+             contact_due_at = CASE WHEN contact_due_at IS NULL THEN NULL
+                                   ELSE ${minutesFrom(F, -45)}::timestamptz END
        WHERE id IN (${a.id}::uuid, ${t.id}::uuid)`);
     const claimed = (await claimUntouched(F)).map((row) => row.id);
     expect(claimed, 'the claim works at this moment').toContain(t.id);
