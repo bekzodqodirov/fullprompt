@@ -205,6 +205,13 @@ export async function landIntake(input: {
   collectedByName: string;
   /** Resolved client, when the typed code or phone named exactly one. */
   client: { id: string; clientCode: string; name: string } | null;
+  /**
+   * The lead this job already belongs to — the AI sotuvchi's door, where the
+   * chat itself names the lead (tg_messages.lead_id). Without it a hidden-
+   * number stranger's request would open a SECOND lead beside the one the
+   * conversation lives on.
+   */
+  lead?: { id: string; name: string; ownerId: string | null } | null;
   /** What staff typed as the customer's name when there is no code yet. */
   leadName: string;
   leadPhone: string | null;
@@ -224,7 +231,9 @@ export async function landIntake(input: {
         // two small pool reads are the price of ONE owner rule (G2 a).
         await calcDealOwnerFor(input.collectedBy, input.client.id),
       )
-    : await (async (): Promise<IntakeTarget> => {
+    : input.lead
+      ? { kind: 'lead' as const, id: input.lead.id, label: input.lead.name, leadOwnerId: input.lead.ownerId }
+      : await (async (): Promise<IntakeTarget> => {
         // A prospect who asked before already has a card; a second request
         // belongs on it rather than beside it.
         const existing = input.leadPhone ? await openLeadForPhone(input.leadPhone) : null;

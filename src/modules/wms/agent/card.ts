@@ -146,3 +146,15 @@ export function cardDigest(body: string, actions: readonly unknown[]): string {
   }
   return hash.toString(16).padStart(8, '0');
 }
+
+/** The payload a card's notification row carries — the bot draws buttons from it. */
+export function cardExtra(draft: { id: string; body: string; actions: unknown[]; blocked: boolean; live: boolean; kind: string }) {
+  return {
+    draftId: draft.id,
+    digest: cardDigest(draft.body, draft.actions),
+    blocked: draft.blocked,
+    live: draft.live,
+    kind: draft.kind,
+  };
+}
+
