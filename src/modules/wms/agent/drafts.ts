@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { db, type Tx } from '../../platform/db/client';
 import { agentDrafts, agentOutbox, calcOffers, calcRequests, notifications } from '../../platform/db/schema';
 import { logger } from '../../platform/logger';
@@ -295,6 +295,66 @@ export async function draftOfferStands(draftId: string): Promise<boolean | null>
     .from(calcOffers)
     .where(and(eq(calcOffers.id, draft.offerId), releasedOfferWhere(), offerStandsSql()));
   return row !== undefined;
+}
+
+/**
+ * The replies a chat's OLD owner was written for, taken back with the bind
+ * (final review K7; review I1's rule, now one home for both doors): every
+ * draft still waiting for his ✅ under that client — or that lead — expires,
+ * because approving it later would land its calculation on that card and send
+ * that customer's name and codes into a chat that is no longer theirs; and an
+ * approved reply still WAITING to go (the night hold, the human delay) is
+ * cancelled by `agent_off`'s compare-and-set on 'agent' — the send step
+ * claims a row by that same status, so a row already claimed is the one in
+ * flight and is let finish (its next step asks the chat again). The cards
+ * say so. Called by the bot's ↩ and by the web tray's own door
+ * (`decideChat`), whichever takes the bind back.
+ */
+export async function withdrawRepliesFor(input: {
+  managerUserId: string;
+  peerId: bigint;
+  /** The bind being taken back: its client, or — with no client — its lead. */
+  clientId: string | null;
+  leadId: string | null;
+  /** The outbox row's `last_error`: `identity_changed: …` (card-io's CANCEL_WORDS key). */
+  why: string;
+  /** The line every withdrawn card gains. */
+  note: string;
+}): Promise<{ expired: string[]; cancelled: string[] }> {
+  if (!input.clientId && !input.leadId) return { expired: [], cancelled: [] };
+  const ownedOutbox = input.clientId
+    ? eq(agentOutbox.clientId, input.clientId)
+    : and(isNull(agentOutbox.clientId), eq(agentOutbox.leadId, input.leadId!));
+  const ownedDraft = input.clientId
+    ? eq(agentDrafts.clientId, input.clientId)
+    : and(isNull(agentDrafts.clientId), eq(agentDrafts.leadId, input.leadId!));
+  const cancelled = await db
+    .update(agentOutbox)
+    .set({ status: 'cancelled', lastError: input.why })
+    .where(and(eq(agentOutbox.managerUserId, input.managerUserId), eq(agentOutbox.peerId, input.peerId), ownedOutbox, eq(agentOutbox.status, 'agent')))
+    .returning({ draftId: agentOutbox.draftId });
+  const expired = await db
+    .update(agentDrafts)
+    .set({ status: 'expired', updatedAt: new Date() })
+    .where(
+      and(
+        eq(agentDrafts.managerUserId, input.managerUserId),
+        eq(agentDrafts.peerId, input.peerId),
+        ownedDraft,
+        inArray(agentDrafts.status, ['pending', 'editing']),
+      ),
+    )
+    .returning({ id: agentDrafts.id });
+  const ids = [...expired.map((d) => d.id), ...cancelled.map((o) => o.draftId)];
+  if (ids.length > 0) {
+    const { refreshAgentCard } = await import('./card-io');
+    for (const id of ids) {
+      await refreshAgentCard(id, [input.note]).catch((err: unknown) =>
+        logger.warn({ err, draftId: id }, '[agent] withdrawn draft card not refreshed'),
+      );
+    }
+  }
+  return { expired: expired.map((d) => d.id), cancelled: cancelled.map((o) => o.draftId) };
 }
 
 /** The card of the draft this outbox row carries is re-rendered with the outcome. */

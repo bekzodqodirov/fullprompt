@@ -10,6 +10,7 @@ import {
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { getStorage } from '../../platform/files/storage';
+import { logger } from '../../platform/logger';
 import { leadForChat } from './chat-lead';
 import { createLead } from './service';
 import type { ChatRule } from './telegram-import';
@@ -226,6 +227,47 @@ export async function decideChat(
     before: { decision: rule.decision, clientId: rule.clientId, leadId: rule.leadId },
     after: { decision: input.decision, clientId, leadId: null },
   });
+
+  await withdrawAgentRepliesOf(rule, { decision: input.decision, clientId });
+}
+
+/**
+ * decideChat's one hook into the AI sotuvchi (final review K7): a decision
+ * that takes the chat away from the client — or the lead — it was bound to
+ * («↩» to pending, «Shaxsiy», another client) takes back the agent's replies
+ * written for that bind, exactly as the bot's own ↩ does (`withdrawRepliesFor`,
+ * one home). Without it the web tray's undo left an approval held for the
+ * morning to go out with the old client's name and codes into a chat bound to
+ * nobody. The same client named again keeps everything.
+ *
+ * After the rule is written, so a ✅ pressed in between asks the NEW rule
+ * (decide.ts re-asks the chat's identity) or is cancelled here. Best-effort:
+ * the decision stands whatever the agent's tables say — on a server one
+ * migration behind they are not there at all — and a row this misses is
+ * still refused by the send step's identity check.
+ */
+async function withdrawAgentRepliesOf(
+  rule: typeof tgChatRules.$inferSelect,
+  next: { decision: 'include' | 'exclude' | 'pending'; clientId: string | null },
+): Promise<void> {
+  if (rule.decision !== 'include') return;
+  const keepsClient = rule.clientId !== null && next.decision === 'include' && next.clientId === rule.clientId;
+  if (keepsClient || (!rule.clientId && !rule.leadId)) return;
+  try {
+    const { agentTablesReady } = await import('../agent/config');
+    if (!(await agentTablesReady())) return;
+    const { withdrawRepliesFor } = await import('../agent/drafts');
+    await withdrawRepliesFor({
+      managerUserId: rule.managerUserId,
+      peerId: rule.peerId,
+      clientId: rule.clientId,
+      leadId: rule.clientId ? null : rule.leadId,
+      why: 'identity_changed: the chat was decided again on the tray',
+      note: '↩ Chat qayta hal qilindi — bu javob ketmaydi.',
+    });
+  } catch (err) {
+    logger.warn({ err, ruleId: rule.id }, '[chat-rules] agent replies not withdrawn');
+  }
 }
 
 /**

@@ -17,6 +17,7 @@ import {
   webKbFacts,
   webStats,
   type WebDraft,
+  type WebViewer,
 } from '@/modules/wms/agent/web-page';
 import { PageHeader } from '@/components/ui/page';
 import { AgentCancelButton } from '@/components/agent-cancel-button';
@@ -56,7 +57,9 @@ import type { PauseKind } from '@/modules/wms/crm/telegram-guard';
  * account is «bir admin va sotuvchi», not necessarily a super_admin — or the
  * super_admin ROLE. Inside, a draft is decided by its ACCOUNT HOLDER alone
  * (leak-5): a super_admin reads every card and is told whose decision it is,
- * and no ✅ is drawn for him.
+ * and no ✅ is drawn for him. Reading another account's cards and customer
+ * facts is the Telegram supervision view's (`seesAllTg`, final review K10) —
+ * a configured owner without it reads his own account's only.
  *
  * A draft's card is the bot's card (`renderDraftCard` over the stored row),
  * so the two doors read the same words — in Uzbek, as the bot writes them.
@@ -159,7 +162,7 @@ export default async function AgentPage({ searchParams }: { searchParams: Promis
   }
 
   const running = agentRunning(config);
-  const [drafts, owner] = await Promise.all([webDrafts(), ownerAccountState(config.ownerUserId)]);
+  const [drafts, owner] = await Promise.all([webDrafts(actor), ownerAccountState(config.ownerUserId)]);
   const counts: Record<AgentSection, number> = {
     kutilmoqda: drafts.pending.length,
     savollar: drafts.questions.length + drafts.remember.length,
@@ -271,7 +274,7 @@ export default async function AgentPage({ searchParams }: { searchParams: Promis
         </>
       )}
 
-      {section === 'bilimlar' && <KnowledgeSection t={t} config={config} />}
+      {section === 'bilimlar' && <KnowledgeSection t={t} config={config} viewer={actor} />}
 
       {section === 'sozlamalar' && (
         <SettingsSection
@@ -323,8 +326,9 @@ function RulesCard({ t, config }: { t: T; config: AgentConfig }) {
   );
 }
 
-async function KnowledgeSection({ t, config }: { t: T; config: AgentConfig }) {
-  const { facts, retired } = await webKbFacts();
+async function KnowledgeSection({ t, config, viewer }: { t: T; config: AgentConfig; viewer: WebViewer }) {
+  // A customer's fact is seen by whoever may read that chat (K10, `factSeenBySql`).
+  const { facts, retired } = await webKbFacts(viewer);
   return (
     <>
       <RulesCard t={t} config={config} />

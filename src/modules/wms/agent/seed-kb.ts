@@ -32,11 +32,17 @@ export interface SeedFact {
 
 export const SEED_FACTS: readonly SeedFact[] = [
   {
-    key: 'china_points@1',
+    // His 10 b (2026-10-24): the AI GIVES the China receiving address. @1
+    // told the customer the exact address comes «kelishuvdan keyin» and that
+    // the manager says which point — a fact that answers, so the question
+    // never reached him and the customer was put off. The seed holds only the
+    // three cities; the exact addresses are his to type on «Bilimlar» (the
+    // deploy steps ask him), and until he has, a customer asking for one is a
+    // needs_owner question to him — never a deferral (final review K27).
+    key: 'china_points@2',
     question: 'Xitoyda yukni qayerga yuboraman? Qabul manzillari qayerda?',
     answer:
-      'Xitoyda uchta qabul manzili bor: Ivu (义乌), Guanchjou (广州) va Qashqar (喀什). Qaysi biriga joʻnatish kerakligini menejer aytadi. ' +
-      'Aniq xitoycha manzil, qabul qiluvchining telefoni va shaxsiy GS kodingiz kelishuvdan keyin beriladi. ' +
+      'Xitoyda uchta qabul manzili bor: Ivu (义乌), Guanchjou (广州) va Qashqar (喀什). ' +
       'Yukni faqat qabul manzili va GS kod tasdiqlangandan keyin joʻnating — tovar adashib ketmasligi uchun.',
   },
   {

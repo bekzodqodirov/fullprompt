@@ -23,7 +23,8 @@ import {
 /**
  * The agent's workers (spec §17.3): the inbound run, his own reply retiring
  * the live draft, and a one-minute sweep for what no event carries — the
- * 24-hour expiry, the deploy gap, an errored run's one retry, an action stuck
+ * 24-hour expiry, his unanswered question's one reminder, a run its process
+ * died inside, the deploy gap, an errored run's one retry, an action stuck
  * after its commit. Every job asks `agentTablesReady()` first.
  */
 
@@ -77,6 +78,65 @@ export async function registerAgentWorkers(boss: PgBoss): Promise<void> {
   });
 }
 
+/**
+ * A 'reserved' run older than this died with its process (K24): five times
+ * the model loop's own 90-second wall clock (run.ts `LOOP_WALL_MS`) and the
+ * writes after it — no live run is still that young-looking.
+ */
+export const INTERRUPTED_RUN_MS = 5 * 60_000;
+
+/**
+ * His 14 (2026-10-24, «escalation wait 30 min»): a question the agent put to
+ * HIM (`needs_owner`) and he has not answered gets one reminder after half an
+ * hour — the customer is waiting on his word, and the AI will not answer for
+ * him. One per question (`owner_reminded_at`), counts only: the card it
+ * points to already carries the customer's words, and a reminder that quoted
+ * them would be one more copy of a customer's text in his chat (leak-13).
+ */
+export const OWNER_QUESTION_WAIT_MS = 30 * 60_000;
+
+/** The reminder's words — a count, never a customer's text or name. */
+export function ownerQuestionReminderText(waiting: number): string {
+  return `🔔 AI sizdan so‘ragan savolga 30 daqiqadan beri javob yo‘q — mijoz javobingizni kutyapti, AI o‘zi javob bermaydi. Javobsiz savollar: ${waiting} ta. Kartani ko‘ring yoki «Suhbatlar → AI sotuvchi → Savollar».`;
+}
+
+/**
+ * One reminder for every question that crossed the half hour since the last
+ * sweep — claimed per draft by its own column, so two sweeps at once remind
+ * once. Each names the CHAT its question is about (`peerId`, the key the
+ * purge finds an AgentNotice by): a purged chat takes its reminder with it
+ * like every other card of it. The count is every question still waiting on
+ * him, the newly crossed and the ones already reminded alike.
+ */
+export async function remindOwnerQuestions(now: Date): Promise<number> {
+  const cutoff = new Date(now.getTime() - OWNER_QUESTION_WAIT_MS).toISOString();
+  const claimed = await db.execute<{ manager_user_id: string; peer_id: string }>(sql`
+    UPDATE agent_drafts SET owner_reminded_at = now()
+     WHERE status = 'pending' AND needs_owner AND owner_reminded_at IS NULL
+       AND created_at < ${cutoff}::timestamptz
+    RETURNING manager_user_id::text, peer_id::text`);
+  if (claimed.length === 0) return 0;
+  const { notifyStaffTelegram } = await import('../../platform/notifications/staff');
+  const waiting = new Map<string, number>();
+  for (const r of claimed) {
+    if (!waiting.has(r.manager_user_id)) {
+      const [row] = await db.execute<{ n: number }>(sql`
+        SELECT count(*)::int AS n FROM agent_drafts
+         WHERE manager_user_id = ${r.manager_user_id}::uuid AND status = 'pending' AND needs_owner
+           AND created_at < ${cutoff}::timestamptz`);
+      waiting.set(r.manager_user_id, Number(row?.n ?? 0));
+    }
+    // Night-silent like his other agent cards (night.ts).
+    await notifyStaffTelegram({
+      userIds: [r.manager_user_id],
+      type: 'AgentNotice',
+      text: ownerQuestionReminderText(waiting.get(r.manager_user_id)!),
+      extra: { peerId: String(r.peer_id) },
+    });
+  }
+  return claimed.length;
+}
+
 async function refreshCardOf(draftId: string): Promise<void> {
   const { refreshAgentCard } = await import('./card-io');
   await refreshAgentCard(draftId).catch((err: unknown) => logger.warn({ err, draftId }, '[agent] card not refreshed'));
@@ -110,8 +170,10 @@ export async function retireOnHumanReply(managerUserId: string, peerId: bigint, 
   return retired.length;
 }
 
-export async function agentSweep(now: Date = new Date()): Promise<{ expired: number; retired: number; gap: number; retried: number; actions: number }> {
-  if (!(await agentTablesReady())) return { expired: 0, retired: 0, gap: 0, retried: 0, actions: 0 };
+export async function agentSweep(
+  now: Date = new Date(),
+): Promise<{ expired: number; retired: number; gap: number; retried: number; actions: number; reminded: number; interrupted: number }> {
+  if (!(await agentTablesReady())) return { expired: 0, retired: 0, gap: 0, retried: 0, actions: 0, reminded: 0, interrupted: 0 };
 
   // 1. A draft lives as long as its anchor's reply window (fit-3).
   const expired = await db.execute<{ id: string }>(sql`
@@ -136,6 +198,24 @@ export async function agentSweep(now: Date = new Date()): Promise<{ expired: num
             AND NOT EXISTS (SELECT 1 FROM tg_message_flags f WHERE f.message_id = m.id AND f.deleted_at IS NOT NULL))
     RETURNING d.id`);
   for (const r of retired) await refreshCardOf(r.id);
+
+  // 2a. A question to him still unanswered after half an hour — reminded once (his 14, K30).
+  const reminded = await remindOwnerQuestions(now);
+
+  // 2b. A run the process died inside (final review K24): `reserve` writes the
+  //     row as 'reserved' and only the run's `finally` settles it — every
+  //     deploy's container restart, the watchdog's kill and an OOM skip that
+  //     `finally`, and pg-boss redelivers nothing (retryLimit 0). Left
+  //     'reserved', the deploy-gap pass below sees «a run exists» and the
+  //     retry pass looks only at 'error', so the customer's message was never
+  //     drafted and nothing said so. Long past any loop's wall clock it is an
+  //     error — the one retry below then takes it, as it takes a throw.
+  const interrupted = await db.execute<{ id: string }>(sql`
+    UPDATE agent_runs SET outcome = 'error', error = 'interrupted'
+     WHERE outcome = 'reserved'
+       AND created_at < ${new Date(now.getTime() - INTERRUPTED_RUN_MS).toISOString()}::timestamptz
+    RETURNING id`);
+  if (interrupted.length > 0) logger.warn({ runs: interrupted.length }, '[agent] interrupted runs marked as errors');
 
   const config = await readAgentConfig();
   let gap = 0;
@@ -230,7 +310,7 @@ export async function agentSweep(now: Date = new Date()): Promise<{ expired: num
       logger.warn({ err, draftId: s.id }, '[agent] stuck action still failing'),
     );
   }
-  return { expired: expired.length, retired: retired.length, gap, retried, actions: stuck.length };
+  return { expired: expired.length, retired: retired.length, gap, retried, actions: stuck.length, reminded, interrupted: interrupted.length };
 }
 
 /**

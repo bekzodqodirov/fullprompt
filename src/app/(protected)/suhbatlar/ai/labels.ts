@@ -56,6 +56,7 @@ export const ERROR_KEYS: Record<AgentErrorCode, string> = {
   taken_over: 'errors.taken_over',
   budget_spent: 'errors.budget_spent',
   calc_not_queued: 'errors.calc_not_queued',
+  identity_changed: 'errors.identity_changed',
   empty: 'errors.empty',
   // the config's writers
   not_ready: 'errors.not_ready',

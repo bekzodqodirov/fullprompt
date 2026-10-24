@@ -21,7 +21,7 @@ import { decideDraft, submitOwnText, type DraftDecision } from './decide';
 import { KbError } from './kb';
 import { approveStyleGuide } from './style';
 import { AgentCancelError, cancelAgentReply } from './web-thread';
-import { RetireError, addGeneralFact, editKbFact, retireKbFact } from './web-kb';
+import { RetireError, addGeneralFact, assertFactSeen, editKbFact, retireKbFact } from './web-kb';
 import { AGENT_PAGE } from './web-door';
 
 /**
@@ -138,7 +138,9 @@ export async function agentAddFactAction(question: string, answer: string): Prom
 
 /** A fact's words corrected — the old row retired, a new approved one written (web-kb `editKbFact`). */
 export async function agentEditFactAction(factId: string, question: string, answer: string): Promise<AgentActionResult> {
-  return run(async ({ ctx }) => {
+  return run(async ({ actor, ctx }) => {
+    // The fact must be one the page lists to him (K10) — a posted id is no wider than the list.
+    await assertFactSeen(actor, factId);
     await editKbFact(factId, { question: question.trim() || null, answer }, ctx);
   });
 }
@@ -157,7 +159,8 @@ export async function agentAviaRateAction(raw: string): Promise<AgentActionResul
 }
 
 export async function agentRetireFactAction(factId: string): Promise<AgentActionResult> {
-  return run(async ({ ctx }) => {
+  return run(async ({ actor, ctx }) => {
+    await assertFactSeen(actor, factId);
     await retireKbFact(factId, ctx);
   });
 }

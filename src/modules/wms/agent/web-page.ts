@@ -15,6 +15,7 @@ import { canLogInSql } from '../../platform/users/login';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import { MAX_OPEN_PER_REQUESTER, openRequests } from '../calc/service';
 import { guardForUser } from '../crm/account-guard';
+import { seesAllTg } from '../crm/conversations';
 import { cardDigest, digestBody } from './card';
 import { renderDraftCard } from './card-io';
 import { agentTablesReady, type AgentConfig } from './config';
@@ -93,17 +94,54 @@ function toWeb(d: DraftRow, o: OutboxRow | null, holderName: string): WebDraft {
 const LIST_CAP = 60;
 
 /**
+ * Who is reading the page — the drafts and the per-customer facts it may
+ * list are a property of the reader (final review K10).
+ */
+export interface WebViewer {
+  id: string;
+  roles?: readonly string[];
+  permissions?: ReadonlySet<string>;
+}
+
+/**
+ * Whose drafts a reader sees: every account's for the Telegram supervision
+ * view (`seesAllTg` — super_admin, admin, ved.docs: rounds 20/33), his own
+ * account's for anybody else. `mayRunAgent` admits a configured owner who is
+ * none of those — a seller the super_admin made the agent's account — and a
+ * draft card carries the customer's lines, the reply and our last message: a
+ * previous owner's personal chats are not his to read here (K10).
+ */
+function draftsSeenBy(viewer: WebViewer) {
+  return seesAllTg(viewer) ? undefined : eq(agentDrafts.managerUserId, viewer.id);
+}
+
+/**
+ * A per-customer fact is the chat it was learned in (`source_ref.draftId`,
+ * kept through every edit — web-kb `editKbFact`), so it is seen by whoever
+ * may read that chat's drafts. A general fact is the company's, seen by
+ * everybody the page admits. A per-customer fact with no draft to trace is
+ * seen by the supervision view only — fail closed.
+ */
+export function factSeenBySql(viewer: WebViewer) {
+  if (seesAllTg(viewer)) return sql`true`;
+  return sql`(${kbFacts}.scope = 'general' OR EXISTS (
+    SELECT 1 FROM agent_drafts fd
+     WHERE fd.id::text = ${kbFacts}.source_ref->>'draftId' AND fd.manager_user_id = ${viewer.id}::uuid))`;
+}
+
+/**
  * The page's three draft lists. «Kutilmoqda» = live drafts that are not a
  * question to him; «Savollar» = live drafts that ARE one (`needs_owner`), plus
  * answered ones whose «remember this?» is still open; the approved replies
  * still waiting to leave sit under «Kutilmoqda» with their cancel.
  */
-export async function webDrafts(now = new Date()): Promise<{
+export async function webDrafts(viewer: WebViewer, now = new Date()): Promise<{
   pending: WebDraft[];
   questions: WebDraft[];
   remember: WebDraft[];
   waiting: WebDraft[];
 }> {
+  const seen = draftsSeenBy(viewer);
   const draftsWithOutbox = () =>
     db
       .select({ d: agentDrafts, o: agentOutbox, holder: users.fullName })
@@ -112,16 +150,17 @@ export async function webDrafts(now = new Date()): Promise<{
       .leftJoin(agentOutbox, eq(agentOutbox.draftId, agentDrafts.id));
   const [liveRows, waitingRows, rememberRows] = await Promise.all([
     draftsWithOutbox()
-      .where(inArray(agentDrafts.status, ['pending', 'editing']))
+      .where(and(seen, inArray(agentDrafts.status, ['pending', 'editing'])))
       .orderBy(desc(agentDrafts.createdAt))
       .limit(LIST_CAP),
     draftsWithOutbox()
-      .where(and(eq(agentDrafts.status, 'approved'), inArray(agentOutbox.status, ['agent', 'sending'])))
+      .where(and(seen, eq(agentDrafts.status, 'approved'), inArray(agentOutbox.status, ['agent', 'sending'])))
       .orderBy(asc(agentOutbox.nextStepAt))
       .limit(LIST_CAP),
     draftsWithOutbox()
       .where(
         and(
+          seen,
           eq(agentDrafts.status, 'approved'),
           eq(agentDrafts.needsOwner, true),
           sql`${agentDrafts.finalBody} IS NOT NULL`,
@@ -153,8 +192,8 @@ export interface WebKbFact {
   createdAt: Date;
 }
 
-/** The knowledge the agent may state: every live fact, general first, then each customer's. */
-export async function webKbFacts(): Promise<{ facts: WebKbFact[]; retired: number }> {
+/** The knowledge the agent may state: every live fact the reader may see (`factSeenBySql`), general first, then each customer's. */
+export async function webKbFacts(viewer: WebViewer): Promise<{ facts: WebKbFact[]; retired: number }> {
   const [rows, [retired]] = await Promise.all([
     db
       .select({
@@ -172,10 +211,13 @@ export async function webKbFacts(): Promise<{ facts: WebKbFact[]; retired: numbe
       .from(kbFacts)
       .leftJoin(clients, eq(clients.id, kbFacts.clientId))
       .leftJoin(leads, eq(leads.id, kbFacts.leadId))
-      .where(isNull(kbFacts.retiredAt))
+      .where(and(isNull(kbFacts.retiredAt), factSeenBySql(viewer)))
       .orderBy(sql`CASE ${kbFacts.scope} WHEN 'general' THEN 0 ELSE 1 END`, asc(kbFacts.createdAt))
       .limit(300),
-    db.select({ n: sql<number>`count(*)::int` }).from(kbFacts).where(sql`${kbFacts.retiredAt} IS NOT NULL`),
+    db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(kbFacts)
+      .where(and(sql`${kbFacts.retiredAt} IS NOT NULL`, factSeenBySql(viewer))),
   ]);
   return {
     facts: rows.map((r) => ({

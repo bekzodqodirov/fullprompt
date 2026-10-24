@@ -9,6 +9,7 @@ import {
   agentDrafts,
   agentOutbox,
   calcRequests,
+  crmActivities,
   leads,
   tgAccounts,
   tgMessageFlags,
@@ -63,6 +64,7 @@ export type DecideRefusal =
   | 'taken_over'
   | 'budget_spent'
   | 'calc_not_queued'
+  | 'identity_changed'
   | 'empty';
 
 export type DecideResult =
@@ -130,6 +132,18 @@ async function chatMoved(d: typeof agentDrafts.$inferSelect): Promise<'supersede
   return null;
 }
 
+/**
+ * Is the chat no longer the customer this draft was written for? The client
+ * by any of the chat's phone-sibling codes; with no client on the draft, its
+ * lead. A draft that named nobody names nobody to change.
+ */
+async function identityMoved(d: typeof agentDrafts.$inferSelect): Promise<boolean> {
+  if (!d.clientId && !d.leadId) return false;
+  const now = await chatIdentity(d.managerUserId, d.peerId);
+  if (d.clientId) return !now.codes.some((c) => c.id === d.clientId);
+  return now.leadId !== d.leadId;
+}
+
 /** Today's AI sends against the ceiling — a ✅ beyond it is refused with the text to copy (fit-8). One home: today.ts. */
 async function budgetLeft(managerUserId: string, startedAt: Date | null, now: Date): Promise<number> {
   const { used, ceiling } = await sendsToday(managerUserId, startedAt, now);
@@ -160,7 +174,12 @@ async function landCalc(
   const { intakeNoteExists } = await import('./calc-note');
   if (await intakeNoteExists(noteId)) {
     const [req] = await db.select({ id: calcRequests.id }).from(calcRequests).where(eq(calcRequests.noteId, noteId));
-    return { queued: req !== undefined, requestId: req?.id ?? null, queueError: req ? null : 'already_landed' };
+    if (req) return { queued: true, requestId: req.id, queueError: null };
+    // The note landed and the QUEUE refused (final review K26): twenty open
+    // requests, or a server mid-deploy. `landIntake` writes the note and moves
+    // the stage before it asks the queue, so this ✅ is the job asked again —
+    // never «already landed» for ever over a job no VED will ever see.
+    return requeueLanded(noteId, action, actor);
   }
   const identity = await chatIdentity(d.managerUserId, d.peerId);
   const cited = action.citedMessageIds.length
@@ -215,14 +234,69 @@ async function landCalc(
     // Every agent job carries the company's certificate (his 9) — never the
     // customer's answer, which the AI no longer asks for.
     hasCertificate: true,
-    // The zone the bot's own buttons would choose for the place the customer
-    // named (Kashgar → kashgar, Horgos → horgos, Yiwu/Guangzhou → cn), or
-    // none — the VED chooses; never «cn» by default (review A11). Cargo
-    // priced from our China warehouses IS the China column (his third set «3»).
-    freightZone:
-      action.section === 'podklyuch' ? (action.fromOurWarehouse === true ? 'cn' : zoneForOrigin(action.facts.fromCity ?? null)) : null,
+    freightZone: freightZoneOf(action),
   });
   return { queued: target.queued === true && Boolean(target.requestId), requestId: target.requestId ?? null, queueError: target.queueError ?? null };
+}
+
+/**
+ * The zone the bot's own buttons would choose for the place the customer
+ * named (Kashgar → kashgar, Horgos → horgos, Yiwu/Guangzhou → cn), or none —
+ * the VED chooses; never «cn» by default (review A11). Cargo priced from our
+ * China warehouses IS the China column (his third set «3»). One home for the
+ * landing and its re-ask.
+ */
+function freightZoneOf(action: Extract<ComposedAction, { type: 'calc_submit' }>): string | null {
+  if (action.section !== 'podklyuch') return null;
+  return action.fromOurWarehouse === true ? 'cn' : zoneForOrigin(action.facts.fromCity ?? null);
+}
+
+/**
+ * The queue asked again for a landing whose note already stands (K26) — on
+ * the card that note sits on, with the request `landIntake` would have
+ * opened: the same facts through the same `landingItems`, the company's
+ * certificate, the same zone; and the AI VED hodimi handed the job the same
+ * way. The note and the stage move are not repeated: they happened. A
+ * refusal comes back as the queue's own code, for the card to say in words.
+ */
+async function requeueLanded(
+  noteId: string,
+  action: Extract<ComposedAction, { type: 'calc_submit' }>,
+  actor: DeciderActor,
+): Promise<{ queued: boolean; requestId: string | null; queueError: string | null }> {
+  const [note] = await db
+    .select({ entityType: crmActivities.entityType, entityId: crmActivities.entityId })
+    .from(crmActivities)
+    .where(eq(crmActivities.id, noteId));
+  if (!note || (note.entityType !== 'deal' && note.entityType !== 'lead')) return { queued: false, requestId: null, queueError: 'not_found' };
+  const { CalcError, openCalcRequest } = await import('../calc/service');
+  try {
+    const { landingItems } = await import('../calc/intake');
+    const opened = await openCalcRequest(
+      {
+        entityType: note.entityType,
+        entityId: note.entityId,
+        section: action.section,
+        fromCity: action.facts.fromCity ?? null,
+        toCity: action.facts.toCity ?? null,
+        weightKg: action.facts.weightKg ?? null,
+        volumeM3: action.facts.volumeM3 ?? null,
+        items: landingItems(action.facts),
+        noteId,
+        source: 'bot',
+        hasMaterials: false,
+        hasCertificate: true,
+        freightZone: freightZoneOf(action),
+      },
+      { actorId: actor.id },
+    );
+    const { queueCalcPrefill } = await import('../calc/prefill-queue');
+    await queueCalcPrefill({ requestId: opened.id, staffId: actor.id, section: action.section });
+    return { queued: true, requestId: opened.id, queueError: null };
+  } catch (err) {
+    logger.error({ err, noteId }, '[agent] calc re-queue failed');
+    return { queued: false, requestId: null, queueError: err instanceof CalcError ? err.code : 'server_behind' };
+  }
 }
 
 export async function decideDraft(
@@ -243,7 +317,7 @@ export async function decideDraft(
 
   if (decision === 'reject' || decision === 'human' || decision === 'edit') {
     const status = decision === 'reject' ? 'rejected' : decision === 'human' ? 'taken_over' : 'editing';
-    const changed = await db.transaction(async (tx) => {
+    const changed = await db.transaction(async (tx): Promise<{ held: string[] } | null> => {
       const [row] = await tx
         .update(agentDrafts)
         .set({
@@ -253,7 +327,8 @@ export async function decideDraft(
         })
         .where(and(eq(agentDrafts.id, draftId), inArray(agentDrafts.status, ['pending', 'editing'])))
         .returning({ id: agentDrafts.id });
-      if (!row) return false;
+      if (!row) return null;
+      let held: string[] = [];
       if (decision === 'human') {
         const until = new Date(Date.now() + 24 * 3_600_000);
         await tx
@@ -263,14 +338,35 @@ export async function decideDraft(
             target: [agentConversations.managerUserId, agentConversations.peerId],
             set: { humanUntil: until, updatedAt: new Date() },
           });
+        // 🙋 «the chat is mine for 24 h» covers the replies he approved BEFORE
+        // it and that are still waiting (final review K2) — night-held to
+        // 08:30, a flood, a cap: sent later, they would speak into the chat he
+        // has just taken over. In this same transaction, by `agent_off`'s
+        // compare-and-set on 'agent' (withdrawTypedBind's): the send step
+        // claims by that status, so a row already claimed is the one in flight
+        // — and its next step reads `human_until` and stands down.
+        const cancelled = await tx
+          .update(agentOutbox)
+          .set({ status: 'cancelled', lastError: 'taken_over: 🙋 he took the chat over for 24 hours' })
+          .where(and(eq(agentOutbox.managerUserId, d.managerUserId), eq(agentOutbox.peerId, d.peerId), eq(agentOutbox.status, 'agent')))
+          .returning({ draftId: agentOutbox.draftId });
+        held = cancelled.map((o) => o.draftId);
       }
       if (decision !== 'edit') {
-        await writeAudit(tx, ctx, { entityType: 'agent_draft', entityId: draftId, action: 'status_change', before: { status: d.status }, after: { status } });
+        await writeAudit(tx, ctx, {
+          entityType: 'agent_draft',
+          entityId: draftId,
+          action: 'status_change',
+          before: { status: d.status },
+          after: { status, ...(held.length > 0 ? { cancelledWaiting: held.length } : {}) },
+        });
       }
-      return true;
+      return { held };
     });
     if (!changed) return { ok: false, code: 'not_live' };
     await refreshDraftCard(draftId);
+    // Each cancelled reply's own card says it will not go (card-io's CANCEL_WORDS `taken_over`).
+    for (const held of changed.held) await refreshDraftCard(held);
     return { ok: true, status };
   }
 
@@ -326,6 +422,22 @@ export async function decideDraft(
     await refreshDraftCard(draftId);
     return { ok: false, code: moved === 'taken_over' ? 'taken_over' : 'superseded' };
   }
+
+  // Whose chat it is NOW (final review K7). The draft was written for a client
+  // or a lead, and the bind may have been taken back since — the web tray's
+  // ↩, «Shaxsiy», another code: approving it would queue that customer's name
+  // and codes, and land its calculation on that card, in a chat that is no
+  // longer theirs. Asked of the server's own identity, the run's: a phone
+  // sibling is the same person (fit-12), and a lead that was WON is still the
+  // lead its draft was written for (`chatIdentity` keeps it, K25).
+  if (await identityMoved(d)) {
+    await db
+      .update(agentDrafts)
+      .set({ status: 'expired', updatedAt: new Date() })
+      .where(and(eq(agentDrafts.id, draftId), inArray(agentDrafts.status, ['pending', 'editing'])));
+    await refreshDraftCard(draftId, ["↩ Chat endi boshqa mijozga bog'langan (yoki bog'lanmagan) — bu javob ketmaydi."]);
+    return { ok: false, code: 'identity_changed' };
+  }
   if ((await budgetLeft(d.managerUserId, config!.startedAt, now)) <= 0) return { ok: false, code: 'budget_spent' };
 
   // The calculation first — the reply promises it (regression-4).
@@ -338,7 +450,8 @@ export async function decideDraft(
         .update(agentDrafts)
         .set({ actionStatus: 'failed', actionError: landed.queueError ?? 'not_queued', updatedAt: new Date() })
         .where(eq(agentDrafts.id, draftId));
-      await refreshDraftCard(draftId, [`Hisoblatish navbatga tushmadi (${landed.queueError ?? '—'}) — javob yuborilmadi. Kartadan qo'lda yuboring yoki matnni o'zgartiring.`]);
+      // The card says why, in words, for as long as it stands (card-io `statusLine`, `calcQueueWords`).
+      await refreshDraftCard(draftId);
       return { ok: false, code: 'calc_not_queued', detail: landed.queueError ?? undefined };
     }
     requestId = landed.requestId;

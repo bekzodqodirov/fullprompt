@@ -15,8 +15,23 @@ import { quietHour } from '../telegram/send';
  * `payload.silent` is the queue-time half, for the one fact only the sender
  * knows: the same seller already had a lead pushed a moment ago, and a flood
  * from a public form must not become a phone that never stops ringing.
+ *
+ * The AI sotuvchi's cards are the second such stream (his first-set 6 ⭐a,
+ * §16.7 «night-silent»): a Chinese supplier writes at 05:00 Beijing time, and
+ * the draft, the stranger card, the calculation's answer and the notice that
+ * nothing was drafted all wait for the morning — every one of them is held
+ * for his ✅ anyway. Deliberately LOUD: `AgentForcedOff` (the machine stopped
+ * itself), `TgAccountPaused` (Telegram limited the account) and
+ * `AgentCapReached` (customers are going unanswered today) — alarms whose
+ * silence costs the account, which is why they ring at any hour.
  */
-export const NIGHT_SILENT_TYPES: ReadonlySet<string> = new Set(['InboundLeadArrived']);
+export const NIGHT_SILENT_TYPES: ReadonlySet<string> = new Set([
+  'InboundLeadArrived',
+  'AgentDraft',
+  'AgentStranger',
+  'AgentCalcAnswered',
+  'AgentNotice',
+]);
 
 export function sendsSilently(
   type: string,

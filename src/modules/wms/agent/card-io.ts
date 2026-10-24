@@ -9,6 +9,7 @@ import { buttonsFor } from '../../platform/telegram/staff-bot';
 import { agentCardText, cardExtra, CardTooLong, digestBody } from './card';
 import type { ComposedAction, DraftPolicyJson } from './types';
 import { CANCELLED_BY_HOLDER } from './web-thread';
+import { MAX_OPEN_PER_REQUESTER } from '../calc/service';
 
 /**
  * The card's IO: render a draft's card from its STORED row and put it where
@@ -47,6 +48,8 @@ const CANCEL_WORDS: Record<string, string> = {
   muted: "chatda AI o'chirilgan",
   excluded: 'chat shaxsiy deb belgilangan',
   identity_changed: "chat boshqa mijozga o'tdi",
+  // His 🙋 on another card of the same chat, pressed while this one waited (final review K2, decide.ts).
+  taken_over: "suhbatni o'zingizga oldingiz (🙋)",
   // Since his 6 b the one way a figure stops standing is a VED recalculation of its request (drafts `draftOfferStands`).
   offer_gone: 'VED qayta hisobladi — bu narx endi amal qilmaydi',
   // The web cancel's own lastError (web-thread.ts) — keyed by the constant, so
@@ -66,10 +69,63 @@ const STALE_WORDS: Record<string, string> = {
   avia_rate: '💱 Avia tarifi o‘zgardi — bu narx eskirdi. Mijozga o‘zingiz javob bering.',
 };
 
+/**
+ * Why the VED queue did not take a calculation, in words (final review K26)
+ * — the staff bot's own sentences for the same refusals (staff-handlers
+ * `QUEUE_REFUSAL`), told as what HE can do about them: a job is never «sent
+ * by hand from the card», there is no such door.
+ */
+const CALC_QUEUE_WORDS: Record<string, string> = {
+  too_many_open: `sizda ${MAX_OPEN_PER_REQUESTER} ta ochiq so‘rov bor — VED birortasiga javob bergach ✅ ni qayta bosing`,
+  too_many_items: 'tovarlar juda ko‘p (1000 dan ortiq) — ✏️ bilan o‘zingiz javob bering',
+  not_found: 'karta topilmadi — ✏️ bilan o‘zingiz javob bering',
+  note_taken: 'bu material allaqachon boshqa so‘rovda',
+  note_foreign: 'material boshqa kartaga tegishli',
+  unauthenticated: 'siz tizimda emassiz',
+  server_behind: 'server yangilanmoqda — biroz keyin ✅ ni qayta bosing',
+};
+
+/** A queue refusal code in words; an unknown one says so plainly, never as a code. */
+export function calcQueueWords(code: string | null | undefined): string {
+  return (code && CALC_QUEUE_WORDS[code]) ?? 'sababi noma’lum — biroz keyin ✅ ni qayta bosing';
+}
+
+/**
+ * Telegram's refusal of a send, in words (K34). The row keeps Telegram's own
+ * code (`last_error`) for the log; the card he reads never prints it.
+ */
+const SEND_FAIL_WORDS: readonly [RegExp, string][] = [
+  [/PEER_FLOOD/u, 'Telegram akkauntni vaqtincha cheklagan (spam deb)'],
+  [/USER_RESTRICTED/u, 'Telegram akkauntni cheklagan'],
+  [/FROZEN_/u, 'Telegram akkauntni muzlatgan'],
+  [/SESSION_REVOKED|AUTH_KEY_|SESSION_EXPIRED|USER_DEACTIVATED_BAN/u, 'Telegram sessiyasi tugagan — akkauntni qayta ulang'],
+  [/USER_IS_BLOCKED/u, 'mijoz akkauntni bloklagan'],
+  [/YOU_BLOCKED_USER/u, 'siz mijozni bloklagansiz'],
+  [/USER_PRIVACY_RESTRICTED/u, 'mijozning maxfiylik sozlamasi yozishga ruxsat bermaydi'],
+  [/INPUT_USER_DEACTIVATED|USER_DEACTIVATED/u, 'mijozning Telegram akkaunti o‘chirilgan'],
+  [/CHAT_WRITE_FORBIDDEN/u, 'bu chatga yozib bo‘lmaydi'],
+  [/PEER_ID_INVALID/u, 'chat topilmadi'],
+  [/MESSAGE_EMPTY|MESSAGE_TOO_LONG|ENTITY_BOUNDS_INVALID|ENTITIES_TOO_LONG/u, 'Telegram matnni qabul qilmadi'],
+];
+
+/** A failed send's `last_error` in words; an unknown one says so plainly. */
+export function sendFailWords(lastError: string | null | undefined): string {
+  const text = (lastError ?? '').toUpperCase();
+  for (const [re, words] of SEND_FAIL_WORDS) if (re.test(text)) return words;
+  return 'Telegram rad etdi — chatni tekshiring';
+}
+
+/** Why an approved draft's actions did not all run, in words (K34): the calc queue's codes, else plainly. */
+function actionFailWords(code: string | null | undefined): string {
+  if (code && CALC_QUEUE_WORDS[code]) return `hisoblatish navbatga tushmadi — ${CALC_QUEUE_WORDS[code]}`;
+  return 'amal bajarilmadi — kartani tekshiring';
+}
+
 function statusLine(d: DraftRow, o: OutboxRow | null): string | null {
   switch (d.status) {
     case 'pending':
-      return null;
+      // A ✅ whose calculation the queue refused (K26): the draft waits, and says why, for as long as it stands.
+      return d.actionStatus === 'failed' ? `⚠️ Hisoblatish navbatga tushmadi: ${calcQueueWords(d.actionError)}. Javob yuborilmadi.` : null;
     case 'editing':
       return "✏️ O'z matningizni yozing (shu kartaga javob qilib yoki oddiy xabar bilan).";
     case 'rejected':
@@ -81,7 +137,7 @@ function statusLine(d: DraftRow, o: OutboxRow | null): string | null {
     case 'taken_over':
       return "✋ O'zingiz javob berdingiz.";
     case 'approved': {
-      if (!o) return d.actionStatus === 'failed' ? `⚠️ Bajarilmadi: ${d.actionError ?? ''}` : '✅ Tasdiqlandi.';
+      if (!o) return d.actionStatus === 'failed' ? `⚠️ Bajarilmadi: ${actionFailWords(d.actionError)}.` : '✅ Tasdiqlandi.';
       switch (o.status) {
         case 'agent':
         case 'sending':
@@ -91,11 +147,11 @@ function statusLine(d: DraftRow, o: OutboxRow | null): string | null {
         case 'sent':
           return `✅ Yuborildi ${o.sentAt ? hhmm(o.sentAt) : ''}.`;
         case 'failed':
-          return `⚠️ Yuborilmadi: ${o.lastError ?? ''}`;
+          return `⚠️ Yuborilmadi: ${sendFailWords(o.lastError)}.`;
         case 'cancelled':
         case 'expired': {
           const why = (o.lastError ?? '').split(':')[0]!.trim();
-          return `✖ Yuborilmadi — ${CANCEL_WORDS[why] ?? o.lastError ?? ''}.`;
+          return `✖ Yuborilmadi — ${CANCEL_WORDS[why] ?? 'bekor qilindi'}.`;
         }
         case 'unknown':
           return '❓ Yuborildimi — noma’lum. Telegramda tekshiring, qayta yuborilmaydi.';

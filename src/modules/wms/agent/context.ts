@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import {
   agentCalcLinks,
@@ -38,6 +38,15 @@ export type IdentityStrength = 'phone' | 'cabinet' | 'rule' | 'typed_code' | 'le
 
 export interface ChatIdentity {
   clientId: string | null;
+  /**
+   * The chat's lead — or, beside a client, the WON lead that client came by
+   * (final review K25): the chat's rows stay filed under the lead after the
+   * win (`storeIncoming` stamps both, `rekeyLeadChats` adds the client), and
+   * what he told the agent about this customer while it was a lead («👤 Faqat
+   * shu mijoz», a scope-'lead' fact) must still be read here. Every writer
+   * that files a row prefers the client, so it is the knowledge search that
+   * reads the pair.
+   */
   leadId: string | null;
   strength: IdentityStrength | null;
   /** The chat's client and its phone siblings (fit-12), the chat's own first. */
@@ -172,7 +181,15 @@ export async function chatProof(
  * The chat's identity, decided by the server.
  *
  * A chat with NO rule row was given its client by the listener's own phone
- * classifier — that is proof. EVERY rule-derived bind is checked against the
+ * classifier — that is proof — unless the chat's rows came through a LEAD
+ * (final review K9): on a work account the listener opens a stranger's chat
+ * as a lead with no rule at all, and a seller who wins that lead by attaching
+ * an existing code (winLead's attach adds no phone) has `rekeyLeadChats` put
+ * the client on those rows. Such a client is a bind a person made, and the
+ * chat must prove it exactly like a rule's — the lead's phone (the number the
+ * listener opened it by) on the card, the peer index, or the cabinet.
+ *
+ * EVERY rule-derived bind is checked against the
  * chat (review I1), whoever made it: the echo flow's typed code, the web
  * tray's «Bu mijoz» (a stranger card exists only because the number was NOT
  * on any card, leak-4), a lookback attach, and messages a rule stored before
@@ -204,14 +221,36 @@ export async function chatIdentity(managerUserId: string, peerId: bigint): Promi
     .where(and(eq(agentConversations.managerUserId, managerUserId), eq(agentConversations.peerId, peerId)));
 
   let clientId = newest?.clientId ?? null;
-  let leadId = clientId ? null : (newest?.leadId ?? null);
+  // The lead the chat's rows came through: the newest row's for a lead chat;
+  // beside a client, the newest row that names ANY lead — our own reply is
+  // filed under the client alone, so «the newest row» would forget the lead
+  // the moment the agent answered once (K9, K25).
+  const [leadRow] = clientId
+    ? await db
+        .select({ leadId: tgMessages.leadId })
+        .from(tgMessages)
+        .where(and(eq(tgMessages.managerUserId, managerUserId), eq(tgMessages.peerId, peerId), isNotNull(tgMessages.leadId)))
+        .orderBy(desc(tgMessages.sentAt))
+        .limit(1)
+    : [{ leadId: newest?.leadId ?? null }];
+  const [lead] = leadRow?.leadId
+    ? await db
+        .select({ id: leads.id, name: leads.name, ownerId: leads.ownerId, phone: leads.phone, clientId: leads.clientId })
+        .from(leads)
+        .where(eq(leads.id, leadRow.leadId))
+    : [];
+  // Beside a client, only the lead that WAS this client — the win (K25).
+  let leadId = lead && (!clientId || lead.clientId === clientId) ? lead.id : null;
   let strength: IdentityStrength | null = null;
   let codes: { id: string; clientCode: string }[] = clientId ? await phoneSiblingClients(clientId) : [];
   let customerName: string | null = null;
   let managerId: string | null = null;
   let cargoAllowed = false;
-  // Only the chat's own proof is asked of a rule-derived client, once.
-  const proof = clientId && rule ? await chatProof(managerUserId, peerId, codes.map((x) => x.id), rule.peerPhone) : null;
+  // Only the chat's own proof is asked of a rule-derived client, once — and of
+  // a rule-less one whose rows came through a lead, by the number the lead was
+  // opened by (K9).
+  const proofPhone = rule ? rule.peerPhone : lead ? lead.phone : null;
+  const proof = clientId && (rule || lead) ? await chatProof(managerUserId, peerId, codes.map((x) => x.id), proofPhone) : null;
   if (rule && rule.decision !== 'include' && proof === null) {
     // Taken back: the stored messages name nobody this chat now is.
     clientId = null;
@@ -225,7 +264,11 @@ export async function chatIdentity(managerUserId: string, peerId: bigint): Promi
       .where(eq(clients.id, clientId));
     customerName = c?.name ?? null;
     managerId = c?.managerId ?? null;
-    if (!rule) {
+    if (!rule && lead) {
+      // A lead a person turned into this client: proven by the chat, or not at all (K9).
+      cargoAllowed = proof !== null;
+      strength = proof ?? 'lead';
+    } else if (!rule) {
       strength = 'phone';
       cargoAllowed = true;
     } else {
@@ -236,9 +279,8 @@ export async function chatIdentity(managerUserId: string, peerId: bigint): Promi
     }
   } else if (leadId) {
     strength = 'lead';
-    const [l] = await db.select({ name: leads.name, ownerId: leads.ownerId }).from(leads).where(eq(leads.id, leadId));
-    customerName = l?.name ?? null;
-    managerId = l?.ownerId ?? null;
+    customerName = lead?.name ?? null;
+    managerId = lead?.ownerId ?? null;
   }
   let managerName: string | null = null;
   if (managerId) {

@@ -88,7 +88,12 @@ export function maskedSample(
   return { text: kept.map((line) => `— ${line}`).join('\n'), used: kept.length };
 }
 
-/** His HUMAN out messages on his account, oldest first — an AI-sent row is never his style. */
+/**
+ * His HUMAN out messages on his account, oldest first — an AI-sent row is
+ * never his style, and a message he DELETED is no longer his words at all
+ * (leak-8's rule, the context's own: a reply sent to the wrong customer and
+ * taken back must not teach the next draft; final review K11).
+ */
 export async function humanOutBodies(ownerUserId: string, limit = 1_500): Promise<string[]> {
   const rows = await db.execute<{ body: string }>(sql`
     SELECT m.body FROM tg_messages m
@@ -97,6 +102,8 @@ export async function humanOutBodies(ownerUserId: string, limit = 1_500): Promis
        AND NOT EXISTS (
          SELECT 1 FROM agent_outbox o
           WHERE o.manager_user_id = m.manager_user_id AND o.tg_message_id = m.tg_message_id)
+       AND NOT EXISTS (
+         SELECT 1 FROM tg_message_flags f WHERE f.message_id = m.id AND f.deleted_at IS NOT NULL)
      ORDER BY m.sent_at DESC
      LIMIT ${limit}`);
   return rows.map((r) => r.body).reverse();

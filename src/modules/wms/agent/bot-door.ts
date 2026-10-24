@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
-import { agentConversations, agentDrafts, agentOutbox, clients, leads, notifications, tgChatRules, tgPeerPulls } from '../../platform/db/schema';
+import { agentConversations, agentDrafts, clients, leads, notifications, tgChatRules, tgPeerPulls } from '../../platform/db/schema';
 import { logger } from '../../platform/logger';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { actorGrants } from '../../platform/rbac/authorize';
@@ -9,8 +9,10 @@ import { phoneSiblingClients } from '../client-cabinet/service';
 import { agentRunning, readAgentConfig, setAgentMode, AgentConfigError } from './config';
 import { chatProof } from './context';
 import { decideDraft, submitOwnText, type DecideRefusal } from './decide';
-import { KbError, writeKbFact } from './kb';
+import { KbError, carriesMoney, writeKbFact } from './kb';
+import { knownNamesForMask } from './style';
 import { priceDraftFromText, type PriceDraftResult } from './calc-loop';
+import { withdrawRepliesFor } from './drafts';
 import { editAgentCopies, type AgentCopy } from './purge';
 import type { DraftPolicyJson } from './types';
 
@@ -48,7 +50,8 @@ const DECIDE_WORDS: Record<DecideRefusal, string> = {
   superseded: 'Mijoz yana yozdi — yangi qoralama tayyorlanadi.',
   taken_over: "Siz allaqachon o'zingiz javob bergansiz.",
   budget_spent: "Bugungi AI yuborish chegarasi tugadi — matnni nusxalab o'zingiz yuboring.",
-  calc_not_queued: 'Hisoblatish navbatga tushmadi — javob yuborilmadi.',
+  calc_not_queued: 'Hisoblatish navbatga tushmadi — javob yuborilmadi (sababi kartada).',
+  identity_changed: "Chat endi boshqa mijozga bog'langan (yoki hech kimga) — bu javob ketmaydi.",
   empty: "Javob bo'sh.",
 };
 
@@ -284,17 +287,32 @@ async function kbPress(staffId: string, op: 'g' | 'u' | 'z', draftId: string, di
     }
   }
   try {
-    const names = await knownNamesFor(d);
+    const answer = d.finalBody ?? '';
+    // A GENERAL fact is his ANSWER alone (final review K6): the question is the
+    // MODEL's account of this one customer — «Mijoz qarzi 1500$ …, 12 kub mebel
+    // ham bor» — and a general fact is read in every chat, where each of its
+    // figures would vouch for a reply to somebody else. He approved the answer
+    // for everybody («📌 Bu javob BARCHA mijozlarga»), never the model's words.
+    // And it is checked against EVERY name the client book and the staff hold,
+    // as the page's own add form checks (`addGeneralFact`): his answer to one
+    // customer can name another. A fact for THIS customer keeps the question
+    // that gives his answer its sense — unless it states money, which no fact
+    // may carry and which he could not take out of the model's words himself.
+    const question = op === 'g' || !d.ownerQuestion || carriesMoney(d.ownerQuestion) ? null : d.ownerQuestion;
+    const chatNames = await knownNamesFor(d);
+    const lowered = answer.toLowerCase();
+    const bookNames =
+      op === 'g' ? (await knownNamesForMask(false)).filter((n) => lowered.includes(n.toLowerCase())) : [];
     await writeKbFact(
       {
         scope: op === 'g' ? 'general' : d.clientId ? 'client' : 'lead',
         clientId: op === 'g' ? null : d.clientId,
         leadId: op === 'g' ? null : d.clientId ? null : d.leadId,
-        question: d.ownerQuestion,
-        answer: d.finalBody ?? '',
+        question,
+        answer,
         locale: d.language,
         sourceRef: { draftId },
-        knownNames: names,
+        knownNames: [...chatNames, ...bookNames],
       },
       { actorId: staffId },
     );
@@ -364,45 +382,23 @@ async function typedBindStands(staffId: string, rule: RuleRow, conv: ConvIdentit
  * approved reply still WAITING to go (the night hold, the human delay) is
  * cancelled, `agent_off`'s compare-and-set on 'agent' (config.ts): the send
  * step claims a row by that same status, so a row already claimed is the
- * one in flight and is let finish.
+ * one in flight and is let finish. One home for both doors since the final
+ * review's K7 (`withdrawRepliesFor`): the web tray's own undo (`decideChat`)
+ * takes back the same — and a ✅ pressed between the two writes here is
+ * cancelled by that hook once the rule is written.
  */
 async function withdrawTypedBind(staffId: string, rule: RuleRow, conv: ConvIdentity): Promise<boolean> {
   if (!(await typedBindStands(staffId, rule, conv))) return false;
+  await withdrawRepliesFor({
+    managerUserId: staffId,
+    peerId: rule.peerId,
+    clientId: conv!.clientId!,
+    leadId: null,
+    why: 'identity_changed: the typed code was taken back',
+    note: "↩ Chat bu mijozga bog'lanmadi — javob ketmaydi.",
+  });
   const { decideChat } = await import('../crm/chat-rules');
   await decideChat({ id: rule.id, decision: 'pending' }, { actorId: staffId });
-  const cancelled = await db
-    .update(agentOutbox)
-    .set({ status: 'cancelled', lastError: 'identity_changed: the typed code was taken back' })
-    .where(
-      and(
-        eq(agentOutbox.managerUserId, staffId),
-        eq(agentOutbox.peerId, rule.peerId),
-        eq(agentOutbox.clientId, conv!.clientId!),
-        eq(agentOutbox.status, 'agent'),
-      ),
-    )
-    .returning({ draftId: agentOutbox.draftId });
-  const expired = await db
-    .update(agentDrafts)
-    .set({ status: 'expired', updatedAt: new Date() })
-    .where(
-      and(
-        eq(agentDrafts.managerUserId, staffId),
-        eq(agentDrafts.peerId, rule.peerId),
-        eq(agentDrafts.clientId, conv!.clientId!),
-        inArray(agentDrafts.status, ['pending', 'editing']),
-      ),
-    )
-    .returning({ id: agentDrafts.id });
-  if (expired.length > 0 || cancelled.length > 0) {
-    const { refreshAgentCard } = await import('./card-io');
-    const ids = [...expired.map((d) => d.id), ...cancelled.map((o) => o.draftId)];
-    for (const id of ids) {
-      await refreshAgentCard(id, ["↩ Chat bu mijozga bog'lanmadi — javob ketmaydi."]).catch((err: unknown) =>
-        logger.warn({ err, draftId: id }, '[agent] withdrawn draft card not refreshed'),
-      );
-    }
-  }
   return true;
 }
 

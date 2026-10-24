@@ -51,6 +51,17 @@ describe('the seeded knowledge', () => {
     expect(byKey.get('certificate@1')).toMatch(/kompaniyamiz oʻzi/u);
   });
 
+  it('the China points fact defers the customer nowhere — an exact address it does not hold is HIS question (K27, his 10 b)', () => {
+    // His 10 b: the AI gives the receiving address. A fact that says «the
+    // address comes after the agreement» or «the manager will tell you»
+    // ANSWERS the question, so no needs_owner card ever asks him for it.
+    const points = SEED_FACTS.filter((f) => f.key.startsWith('china_points@'));
+    expect(points.map((f) => f.key)).toEqual(['china_points@2']);
+    const answer = normalizeDigits(points[0]!.answer);
+    for (const city of ['Ivu', 'Guanchjou', 'Qashqar']) expect(answer).toContain(city);
+    expect(answer).not.toMatch(/kelishuvdan keyin|menejer aytadi|keyin beriladi/iu);
+  });
+
   it('keys every fact once, with a version, inside the kb CHECK’s 2 000 characters', () => {
     const keys = SEED_FACTS.map((f) => f.key);
     expect(new Set(keys).size).toBe(keys.length);

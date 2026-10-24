@@ -5,6 +5,7 @@ import { kbFacts } from '../../platform/db/schema';
 import { AgentConfigError, agentTablesReady } from './config';
 import { writeKbFact } from './kb';
 import { knownNamesForMask } from './style';
+import { factSeenBySql, type WebViewer } from './web-page';
 
 /**
  * «Bilimlar» on `/suhbatlar/ai` (spec §17.12): the company's facts, added and
@@ -49,6 +50,20 @@ export class RetireError extends Error {
 }
 
 /**
+ * May this reader correct or retire this fact? Exactly when the page LISTS it
+ * to him (`factSeenBySql`, final review K10): a customer's fact belongs to the
+ * chat it was learned in, and an id posted from the form is no wider a door
+ * than the list. A fact he may not see reads «not found», like one that is not.
+ */
+export async function assertFactSeen(viewer: WebViewer, factId: string): Promise<void> {
+  const [row] = await db
+    .select({ id: kbFacts.id })
+    .from(kbFacts)
+    .where(and(eq(kbFacts.id, factId), factSeenBySql(viewer)));
+  if (!row) throw new RetireError('not_found');
+}
+
+/**
  * Correct a fact's words on the page (§17.14: «bilimlar turadigan page …
  * qo'shiladi, o'zgartiriladi, olib tashlanadi»). Never an UPDATE of the row:
  * what the agent said yesterday was said with yesterday's words, so the old
@@ -87,7 +102,12 @@ export async function editKbFact(
     question,
     answer,
     locale: old.locale ?? 'uz',
-    sourceRef: { door: 'web', replaces: old.id },
+    // The ORIGINAL provenance travels with the new words (final review K8): a
+    // 👤 fact remembers the draft — and so the chat — it was born in
+    // (`draftId`), and the purge finds a chat's facts by exactly that. An
+    // edit that dropped it left the corrected copy live, served to that
+    // client's chats and listed here, after the chat itself was purged.
+    sourceRef: { ...((old.sourceRef ?? {}) as Record<string, unknown>), door: 'web', replaces: old.id },
   };
   let newId: string;
   if (old.scope === 'general') {
@@ -105,11 +125,14 @@ export async function editKbFact(
       .where(and(eq(kbFacts.id, old.id), isNull(kbFacts.retiredAt)))
       .returning({ id: kbFacts.id });
     if (!row) return false;
+    // Lengths, never the words (K8): audit_log takes no DELETE, so a client
+    // fact's text written here would outlive the purge of its chat for good.
+    // The words themselves stay on the retired row, which the purge reaches.
     await writeAudit(tx, ctx, {
       entityType: 'kb_fact',
       entityId: old.id,
       action: 'update',
-      before: { answer: old.answer, question: old.question },
+      before: { answerChars: [...old.answer].length, questionChars: old.question ? [...old.question].length : 0 },
       after: { retired: true, replacedBy: newId },
     });
     return true;

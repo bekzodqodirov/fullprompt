@@ -151,6 +151,9 @@ CREATE TABLE "agent_drafts" (
   "action_error" text,
   "decided_by" uuid REFERENCES "users"("id"),
   "decided_at" timestamptz,
+  -- His 14 «escalation wait 30 min»: when a question the agent put to him (needs_owner) was reminded of
+  -- once, unanswered after 30 minutes (final review K30). NULL = never; the sweep's claim is this column.
+  "owner_reminded_at" timestamptz,
   "created_at" timestamptz NOT NULL DEFAULT now(),
   "updated_at" timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT "agent_drafts_kind_check" CHECK ("kind" IN ('reply', 'price', 'hand_back')),

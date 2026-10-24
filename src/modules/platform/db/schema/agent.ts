@@ -200,6 +200,8 @@ export const agentDrafts = pgTable(
     actionError: text('action_error'),
     decidedBy: uuid('decided_by').references(() => users.id),
     decidedAt: timestamp('decided_at', { withTimezone: true }),
+    /** The one 30-minute reminder of an unanswered needs_owner question (his 14, final review K30). */
+    ownerRemindedAt: timestamp('owner_reminded_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

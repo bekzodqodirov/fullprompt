@@ -5,6 +5,7 @@ import { activeCapture } from './note-capture';
 import { answerPress } from './press';
 import { peekTaskPending, staffForChat, type BotCallback } from './staff-bot';
 import { isBacklog } from './lifecycle';
+import { markOnce, messageKey } from './once';
 import { activeDraft } from './task-draft';
 import { armWait, dropWait, flushWaitWrites, nowSec, readWait, waitVerdict, type WaitKind } from './waits';
 
@@ -196,6 +197,12 @@ export async function agentTextSlot(ctx: Context, chatId: bigint, msg: AgentSlot
   await flushWaitWrites();
   try {
     const reply = await agentText(staff.id, target, msg.text);
+    // What this text did, so a crash redelivery of it hears «answered» and
+    // never «send it again» (final review K23 — the task wait's own rule,
+    // judge Q5H-2 a): with the wait already consumed, the redelivered text
+    // reaches the staff tail, which asks `handledAlready` first. Recorded
+    // before the reply, whose own failure must not leave the text unmarked.
+    await markOnce(await messageKey(ctx, 'wait'));
     if (reply) await ctx.reply(reply);
   } catch (err) {
     logger.error({ err, kind: target.kind }, '[agent] text failed');

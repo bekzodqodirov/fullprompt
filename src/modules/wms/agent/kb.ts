@@ -34,12 +34,27 @@ export interface KbScope {
 // The id's random TAIL: a v7 id's head is its clock, shared by facts approved the same minute.
 export const kbRef = (id: string) => `F${id.replace(/-/gu, '').slice(-8)}`;
 
+/**
+ * A fact as every run READS it — its question and its answer, one line. The
+ * money refusal asks this same text (final review K6): the question is served
+ * into the prompt beside the answer and each of its figures is a G1 source,
+ * so a price that sits in the QUESTION is a price in the knowledge.
+ */
+export function servedText(question: string | null, answer: string): string {
+  return question ? `${question} — ${answer}` : answer;
+}
+
+/** Does a fact's text state money — the write's one money question, asked of what is served (K6). */
+export function carriesMoney(text: string): boolean {
+  return extractNumbers(text).some((f) => f.kind === 'money');
+}
+
 function hitOf(row: { id: string; answer: string; question: string | null }): KbHit {
   const text = normalizeDigits(row.answer);
   return {
     id: row.id,
     ref: kbRef(row.id),
-    answer: row.question ? `${row.question} — ${row.answer}` : row.answer,
+    answer: servedText(row.question, row.answer),
     phones: [...text.matchAll(PHONE_RE)].map((m) => m[0]),
     urls: urlsIn(text),
   };
@@ -330,7 +345,9 @@ export async function writeKbFact(
   const answer = input.answer.trim();
   if (!answer) throw new KbError('empty');
   if ([...answer].length > 2000) throw new KbError('too_long');
-  if (extractNumbers(answer).some((f) => f.kind === 'money')) throw new KbError('money');
+  // The text as it is SERVED, question included (K6): a figure in the question
+  // reaches every prompt this fact reaches, exactly like one in the answer.
+  if (carriesMoney(servedText(input.question?.trim() || null, answer))) throw new KbError('money');
   if (input.scope === 'general') {
     const names = input.knownNames ?? [];
     const bits = await personalBitsWithBook(`${input.question ?? ''}\n${answer}`, names);
