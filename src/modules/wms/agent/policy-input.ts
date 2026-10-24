@@ -4,10 +4,9 @@ import { agentOutbox, clients, users } from '../../platform/db/schema';
 import { getSetting } from '../../platform/settings/service';
 import { canLogInSql } from '../../platform/users/login';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
-import { codeCandidates } from '../calc/channel-post';
 import type { AgentLocale, ScriptName } from './locale';
 import { customerSources, urlsIn, type NumberSource } from './numbers';
-import { checkAgentReply, checkOwnerReply, textFingerprint, type PolicyResult } from './policy';
+import { checkAgentReply, checkOwnerReply, codeCandidatesIn, textFingerprint, type PolicyResult } from './policy';
 
 /**
  * The policy's inputs that are FACTS ABOUT THE WORLD (who else got this text,
@@ -54,8 +53,13 @@ export function customerNumberSources(messages: readonly { direction: string; bo
   );
 }
 
+/**
+ * The book is asked about every spelling G6 judges — «ГС778» and «GS۷۷۸» as
+ * well as «GS778» (P3, leak-7): a code the lookup never saw cannot be found
+ * foreign by the policy, however it is written.
+ */
 async function bookCodesIn(body: string): Promise<Set<string>> {
-  const candidates = codeCandidates([body]);
+  const candidates = codeCandidatesIn(body);
   if (candidates.length === 0) return new Set();
   const rows = await db.select({ code: clients.clientCode }).from(clients).where(inArray(clients.clientCode, candidates));
   return new Set(rows.map((r) => r.code));
@@ -123,6 +127,8 @@ export async function policyFor(input: {
     mapUrls: input.memory.mapUrls,
     askedLocation: input.memory.askedLocation,
     staffNames,
+    // The words of the customer's own name (the codes in `strip` carry digits): greeting him is not naming a colleague.
+    customerNames: input.strip.filter((s) => /\p{L}/u.test(s) && !/\d/u.test(s)),
     canary: input.memory.canary,
     ...counts,
     hasEstimate: input.memory.hasEstimate,
