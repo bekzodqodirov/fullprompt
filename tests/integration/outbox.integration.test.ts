@@ -16,7 +16,6 @@ import { setSetting } from '@/modules/platform/settings/service';
 import { deleteAttachment, saveAttachment } from '@/modules/platform/files/service';
 import { disconnectAccount, listListenablePhones } from '@/modules/wms/crm/telegram-accounts';
 import {
-  accountHold,
   canReplyNow,
   cancelQueued,
   claimNext,
@@ -187,7 +186,8 @@ describe('once the client has written', () => {
       });
     try {
       await expect(reply()).rejects.toThrow('account_paused');
-      expect(await accountHold(managerId)).toEqual({ reason: 'account_paused' });
+      // The hold rides in the one SendContext every composer asks (canQueue(sendContextFor(…))).
+      expect(await sendContextFor({ clientId, managerUserId: managerId, peerId: PEER })).toMatchObject({ accountPaused: true });
       // The thread draws no ↩ for a reply that cannot leave.
       expect(await canReplyNow(clientId, managerId)).toBe(false);
       // The company switch still says first what is wrong with sending at all.
@@ -205,14 +205,14 @@ describe('once the client has written', () => {
         .set({ pausedAt: null, pausedKind: null, floodUntil: until })
         .where(eq(tgAccountGuard.accountId, accountId));
       await expect(reply()).rejects.toThrow('flood_wait');
-      expect(await accountHold(managerId)).toEqual({ reason: 'flood_wait', until });
+      expect(await sendContextFor({ clientId, managerUserId: managerId, peerId: PEER })).toMatchObject({ accountPaused: false, floodWaitUntil: until });
 
       // A wait that has ended holds nothing: the reply queues, and the pump takes it.
       await db
         .update(tgAccountGuard)
         .set({ floodUntil: new Date(Date.now() - 1000) })
         .where(eq(tgAccountGuard.accountId, accountId));
-      expect(await accountHold(managerId)).toBeNull();
+      expect(await sendContextFor({ clientId, managerUserId: managerId, peerId: PEER })).toMatchObject({ accountPaused: false, floodWaitUntil: null });
       expect(await canReplyNow(clientId, managerId)).toBe(true);
       await expect(reply()).resolves.toMatchObject({ id: expect.any(String) });
     } finally {

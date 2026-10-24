@@ -6,7 +6,6 @@ import { getSetting } from '../../platform/settings/service';
 import { getStorage } from '../../platform/files/storage';
 import { readGuard } from './account-guard';
 import { bridgeState } from './telegram-live';
-import { readGuard } from './account-guard';
 import { storeIncoming } from './telegram-accounts';
 import { MAX_TG_FILE_BYTES, MAX_TG_PHOTO_BYTES } from './telegram-import';
 import {
@@ -100,59 +99,19 @@ export async function conversationManagers(clientId: string): Promise<string[]> 
 }
 
 /**
- * Is this account HELD — paused by a restriction (`tg_account_guard`, review
- * ban-1), or under a send-path wait Telegram ordered? The listener's pump
- * reads the same row before every claim and claims nothing while either
- * stands, so a reply queued now would sit «navbatda» until a person presses
- * «Tekshirdim» — which is the reply the composer must refuse in words
- * instead (review S1). A database one migration behind has no guard row, and
- * the answer is today's: nothing held.
- */
-export async function accountHold(
-  managerUserId: string,
-  now: Date = new Date(),
-): Promise<{ reason: 'account_paused' } | { reason: 'flood_wait'; until: Date } | null> {
-  const [account] = await db
-    .select({ id: tgAccounts.id })
-    .from(tgAccounts)
-    .where(eq(tgAccounts.managerUserId, managerUserId))
-    .limit(1);
-  if (!account) return null;
-  const guard = await readGuard(account.id);
-  if (guard.pausedAt) return { reason: 'account_paused' };
-  if (guard.floodUntil && guard.floodUntil.getTime() > now.getTime()) {
-    return { reason: 'flood_wait', until: guard.floodUntil };
-  }
-  return null;
-}
-
-/** Everything a reply may be refused for at queue time — `canQueue`'s, and the account's own pause. */
-export type ReplyRefusal = SendRefusal | 'account_paused';
-export type ReplyVerdict = { ok: true } | { ok: false; reason: ReplyRefusal };
-
-/**
- * May a reply be QUEUED in this chat, now? `canQueue`, and then the
- * account's own hold (S1) — one answer for the door (`queueReply`), the
- * thread's ↩ (`canReplyNow`) and every composer that asks.
- *
- * The order is the reader's: an empty box, the company switch and «never
- * wrote first» say what is wrong with THIS reply and come first; then the
- * hold, because «your account is paused, check Telegram» is the sentence a
- * manager can act on and «too fast, wait a minute» is not. The flood wait
- * keeps `canQueue`'s own word, `flood_wait`, which every composer already
- * puts into words.
+ * May a reply be QUEUED in this chat, now? One answer for the door
+ * (`queueReply`), the thread's ↩ (`canReplyNow`) and every composer that asks
+ * `canQueue(sendContextFor(…))`: the account's own hold — a restriction's
+ * pause, or a send-path wait Telegram ordered (`tg_account_guard`, review
+ * ban-1 / S1) — rides in the SendContext, so a reply the pump would never
+ * claim is refused in words instead of sitting «navbatda».
  */
 export async function replyVerdict(
   input: { clientId: string; managerUserId: string; peerId: bigint | null; now?: Date },
   body = 'x',
   hasAttachment = false,
-): Promise<ReplyVerdict> {
-  const now = input.now ?? new Date();
-  const [ctx, hold] = await Promise.all([sendContextFor({ ...input, now }), accountHold(input.managerUserId, now)]);
-  const verdict = canQueue(body, ctx, DEFAULT_LIMITS, hasAttachment);
-  if (!verdict.ok && ['empty', 'sending_disabled', 'never_wrote_first'].includes(verdict.reason)) return verdict;
-  if (hold) return { ok: false, reason: hold.reason };
-  return verdict;
+): Promise<SendVerdict> {
+  return canQueue(body, await sendContextFor(input), DEFAULT_LIMITS, hasAttachment);
 }
 
 const minuteAgo = (now: Date) => new Date(now.getTime() - 60_000);
@@ -181,8 +140,10 @@ export async function sendContextFor(input: {
       .limit(1)
       .then((rows) => rows[0] ?? null),
   ]);
-  // The account's pause (0136) — `readGuard` answers «nothing wrong» on a
+  // The account's hold (0136) — `readGuard` answers «nothing wrong» on a
   // database one migration behind, so this costs today's behaviour nothing.
+  // The pump reads the same row before every claim (`pumpGate`), so what it
+  // would hold is what the composer refuses.
   const guard = account ? await readGuard(account.id) : null;
 
   const counted = async (since: Date, peerId?: bigint) => {
@@ -224,8 +185,9 @@ export async function sendContextFor(input: {
     // flag somebody could set: they must have written to US, on THIS account.
     clientHasWrittenFirst: inbound.length > 0,
     sendingEnabled: enabled === true,
-    // Held on the account row by the listener when Telegram tells it to wait.
-    floodWaitUntil: null,
+    // A send-path wait Telegram ordered, persisted by the listener (only the
+    // send methods move it, S9) — the pump claims nothing on the account until then.
+    floodWaitUntil: guard?.floodUntil && guard.floodUntil.getTime() > now.getTime() ? guard.floodUntil : null,
     bridgeLive: account !== null && bridgeState(account, now) === 'live',
     accountPaused: guard?.pausedAt != null,
   };

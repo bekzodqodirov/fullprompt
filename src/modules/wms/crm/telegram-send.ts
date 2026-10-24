@@ -107,6 +107,10 @@ export function canQueue(
   // the manager it is on its way when it is not, which is `bridge_down`'s
   // reasoning one step on: refuse, and say why.
   if (ctx.accountPaused) return { ok: false, reason: 'account_paused' };
+  // The same for a send-path wait Telegram ordered (the guard's flood_until,
+  // which only `sendContextFor` reads — the listener's own ctx asks
+  // `canSendNow`): the pump claims nothing on the account until it ends.
+  if (ctx.floodWaitUntil && ctx.floodWaitUntil.getTime() > Date.now()) return { ok: false, reason: 'flood_wait' };
   // The single most important rule. Unsolicited outbound to somebody who never
   // messaged you is what "report spam" is for, and a few reports is all it
   // takes. Replying inside a conversation the client started is the safe half
