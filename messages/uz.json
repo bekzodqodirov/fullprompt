@@ -6234,6 +6234,7 @@
     "ownerTurnOffFirst": "Avval AI sotuvchini o‘chiring — akkaunt faqat o‘chiq holatda almashtiriladi.",
     "ownerHint": "Faqat Telegrami ulangan hodimlar. Qoralamalar bo‘yicha akkaunt egasi qaror qiladi.",
     "ownerPick": "AI sotuvchi akkaunti",
+    "ownerDisconnected": "Telegram ulanmagan",
     "save": "Saqlash",
     "todayTitle": "Bugun",
     "todayRuns": "Ishga tushishlar (qoralama chegarasi)",

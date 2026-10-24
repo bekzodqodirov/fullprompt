@@ -359,7 +359,9 @@ async function SettingsSection({
           value={config.sessionExclusiveAt ? `✅ ${tashkentWhen(config.sessionExclusiveAt)}` : t('sessionNotYet')}
           tone={config.sessionExclusiveAt ? 'text-good' : 'text-warn'}
         />
-        {owner && running && owner.listenerBehind && (
+        {/* Said whenever an owner is set, not only while running: «is the
+            listener current» is a question to answer BEFORE switching on. */}
+        {owner && owner.listenerBehind && (
           <p className="text-sm font-semibold text-warn" data-testid="agent-listener-behind">
             ⚠ {t('listenerBehind')}
           </p>
@@ -392,7 +394,15 @@ async function SettingsSection({
           <p className="text-sm text-ink-500">{running ? t('ownerTurnOffFirst') : t('ownerHint')}</p>
           {!running && (
             <OwnerPicker
-              options={candidates.map((c) => ({ id: c.id, label: `${c.name} · ${c.tgPhone}` }))}
+              options={[
+                // The current owner whose Telegram has since disconnected is not a
+                // candidate any more — still drawn, or the select would show
+                // «not chosen» over an account that IS chosen.
+                ...(config.ownerUserId && !candidates.some((c) => c.id === config.ownerUserId)
+                  ? [{ id: config.ownerUserId, label: `${ownerName ?? '—'} · ${t('ownerDisconnected')}` }]
+                  : []),
+                ...candidates.map((c) => ({ id: c.id, label: `${c.name} · ${c.tgPhone}` })),
+              ]}
               current={config.ownerUserId}
             />
           )}
@@ -410,8 +420,9 @@ async function SettingsSection({
         />
         <Line
           label={t('todaySends')}
-          value={config.ownerUserId ? `${today.sends} / ${today.sendCeiling}` : '—'}
-          tone={config.ownerUserId && today.sends >= today.sendCeiling ? 'text-bad' : ''}
+          // No ceiling before the first switch-on (the ramp counts from it).
+          value={config.ownerUserId && config.startedAt ? `${today.sends} / ${today.sendCeiling}` : '—'}
+          tone={config.ownerUserId && config.startedAt && today.sends >= today.sendCeiling ? 'text-bad' : ''}
         />
         {today.errors > 0 && <Line label={t('todayErrors')} value={today.errors} tone="text-warn" />}
         <Line

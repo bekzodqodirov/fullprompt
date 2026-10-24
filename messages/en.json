@@ -6234,6 +6234,7 @@
     "ownerTurnOffFirst": "Switch the AI seller off first — the account changes only while it is off.",
     "ownerHint": "Only colleagues with a connected Telegram. The account holder decides on the drafts.",
     "ownerPick": "AI seller account",
+    "ownerDisconnected": "Telegram not connected",
     "save": "Save",
     "todayTitle": "Today",
     "todayRuns": "Runs (draft limit)",

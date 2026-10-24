@@ -6234,6 +6234,7 @@
     "ownerTurnOffFirst": "请先关闭 AI 销售 — 只有在关闭状态下才能更换账号。",
     "ownerHint": "仅限已连接 Telegram 的同事。草稿由账号持有人决定。",
     "ownerPick": "AI 销售账号",
+    "ownerDisconnected": "Telegram 未连接",
     "save": "保存",
     "todayTitle": "今天",
     "todayRuns": "运行次数（草稿上限）",

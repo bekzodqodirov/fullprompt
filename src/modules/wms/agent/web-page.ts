@@ -103,22 +103,22 @@ export async function webDrafts(now = new Date()): Promise<{
   remember: WebDraft[];
   waiting: WebDraft[];
 }> {
-  const select = () =>
+  const draftsWithOutbox = () =>
     db
       .select({ d: agentDrafts, o: agentOutbox, holder: users.fullName })
       .from(agentDrafts)
       .innerJoin(users, eq(users.id, agentDrafts.managerUserId))
       .leftJoin(agentOutbox, eq(agentOutbox.draftId, agentDrafts.id));
   const [liveRows, waitingRows, rememberRows] = await Promise.all([
-    select()
+    draftsWithOutbox()
       .where(inArray(agentDrafts.status, ['pending', 'editing']))
       .orderBy(desc(agentDrafts.createdAt))
       .limit(LIST_CAP),
-    select()
+    draftsWithOutbox()
       .where(and(eq(agentDrafts.status, 'approved'), inArray(agentOutbox.status, ['agent', 'sending'])))
       .orderBy(asc(agentOutbox.nextStepAt))
       .limit(LIST_CAP),
-    select()
+    draftsWithOutbox()
       .where(
         and(
           eq(agentDrafts.status, 'approved'),

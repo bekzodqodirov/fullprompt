@@ -151,7 +151,10 @@ export async function TelegramBridgeStatus({
                   className="mt-1 flex w-full flex-wrap items-center gap-x-2 gap-y-1 rounded-lg bg-bad/15 px-2 py-1.5 text-bad"
                   data-testid="tg-bridge-pause"
                 >
-                  <span className="min-w-0 flex-1 font-semibold [overflow-wrap:anywhere]">
+                  {/* Its own line, the button under it: as a `flex-1` beside the
+                      button the sentence had a basis of 0 and was squeezed to
+                      one word per line at 360 px (seen in the screenshot). */}
+                  <span className="w-full min-w-0 font-semibold [overflow-wrap:anywhere]">
                     ⛔ {t('bridgePaused')}
                     {pause.pauseReason ? `: ${pause.pauseReason}` : ''}
                   </span>

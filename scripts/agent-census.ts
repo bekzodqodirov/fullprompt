@@ -78,6 +78,7 @@ async function main(): Promise<number> {
      WHERE m.manager_user_id = ${owner}
        AND f.deleted_at IS NULL
        AND m.sent_at >= ${since.toISOString()}::timestamptz
+       AND m.sent_at <= now()
      ORDER BY m.peer_id, m.sent_at, m.tg_message_id`);
   const messages: CensusMessage[] = rows.map((r) => ({
     peerId: r.peer_id,
