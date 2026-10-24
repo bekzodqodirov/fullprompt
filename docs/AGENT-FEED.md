@@ -93,11 +93,19 @@ The ordinary webhook door (docs/ADS.md §5.3) on the `agent` source.
   surrogate or a NUL (U+0000) the body carries (`"\ud83d"` and `"\u0000"`
   are valid JSON) is stored as U+FFFD wherever it lands — the
   `external_id` included, so the outcomes feed hands such an id back with
-  U+FFFD in its place. A body nested too deep to serialise (thousands of
-  levels) is kept in `ref` as `{"_truncated":true}`; the arrival still
-  lands.
-- `external_id = cs:<company_uuid>:<yyyymm>`. The outcomes feed only reports
-  ids that start with `cs:`.
+  U+FFFD in its place, and two ids that differ only there (a NUL against a
+  U+FFFD, one lone half against another) are ONE id: the second is a
+  replay. In `ref`, two keys of one object that differ only there become one
+  key and the last value is kept. A body nested too deep to serialise
+  (thousands of levels) is kept in `ref` as `{"_truncated":true}`; the
+  arrival still lands.
+- `external_id = cs:<company_uuid>:<yyyymm>` (46 bytes). The outcomes feed
+  only reports ids that start with `cs:`. An id the ledger's unique index
+  cannot hold — only one over 2,048 UTF-8 bytes can be refused, and postgres
+  takes about 2,680 bytes it cannot compress — is stored as `sha256:` and the
+  hex SHA-256 of its UTF-8 bytes (after the U+FFFD rule): it lands, its retry
+  is a replay, and the outcomes feed never shows it. Every id the index holds
+  keeps its own spelling.
 - Answer:
 
   | Code | Means | Do |
@@ -120,9 +128,10 @@ The ordinary webhook door (docs/ADS.md §5.3) on the `agent` source.
   outcome reads `joined` and the seller hears «🔁 Qayta yozdi» about a lead
   whose «🆕» never came (§5). Only a database failure half-way does that
   now: no text the body carries — an emoji at a cut, a lone surrogate, a NUL,
-  a body nested too deep — makes a write refuse any more (#1467, #1473). A
-  cause that repeated on every attempt would answer 503 to every retry and
-  add one lenta note each; none is known.
+  a body nested too deep, an id too long for the index — makes a write refuse
+  any more (#1467, #1473, #1476). A cause that repeated on every attempt
+  would answer 503 to every retry and add one lenta note each; one is known,
+  and no real body reaches it: a body of tens of megabytes (§5).
 - Caps (counted over the arrivals ledger, dropped arrivals included):
   3 per phone per day, 200 per source per day → `dropped/capped`. The
   per-phone count is per FAMILY: an agent push through THIS door counts only
@@ -182,8 +191,10 @@ else.
 
 Adverts, the form and the bot are unchanged: a client's phone through an
 advert still lands on the client's card (`client`), only for ACTIVE clients.
-The fixes of the second and third reviews reach every door, and none
-changes what a landing that worked did (#1467-#1469, #1473): text is cut in
+The fixes of the second, third and fourth reviews reach every door, and
+none changes what a landing that worked did (#1467-#1469, #1473, #1476): an
+external id too long for the ledger's unique index is stored under its
+SHA-256 (it used to fail the ledger row after the lead), text is cut in
 the UTF-16 units it always was but never through an emoji, and a lone
 surrogate or a NUL is stored as U+FFFD (an emoji at an edge, or a NUL
 anywhere, used to throw after the lead was written — on the public form that
@@ -391,7 +402,14 @@ suppression list; it never receives the client book.
 - A landing that fails half-way (the database, after the lead's INSERT)
   leaves the lead; the agent's retry joins it (`joined`, «🔁 Qayta yozdi»
   for a lead never announced). No text the body carries causes one any more
-  (#1467, #1473). A narrower case stays: the ledger row COMMITS and its
+  (#1467, #1473, #1476), and one SIZE still does: `ref` is the whole body,
+  nothing caps a route handler's body, and postgres refuses a jsonb past its
+  limits (measured in postgres, not through the route: an array of twenty
+  million zeros, 40 MB of JSON, is refused; ten million is stored). Such a body lands its lead and then fails its ledger
+  row on every attempt — on this door a 503 each time, on every other a 200
+  with an orphan. Only a key holder can send it, and the agent's own bodies are
+  a few kilobytes; the cure is to write the ledger row first, deferred
+  (#1473, #1477). A narrower case stays: the ledger row COMMITS and its
   answer is lost on the way back (the connection dies in between). The agent
   is told 503, its retry is a replay answered 200, and nothing announces that
   arrival again: no «🆕», no contact clock, so the outcomes row reads

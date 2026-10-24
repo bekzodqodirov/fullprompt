@@ -4859,3 +4859,61 @@ says a lead may already stand. Red proofs (12), all by string edit and hash-veri
 by code points, the cut's back-off, NUL kept, the refused escapes kept, a replacer function, the ref's catch, the id
 as sent, the bot fence's id as sent, `trim` by `slice`, the phone as sent, the pair value by `slice`, the activity
 excerpt by `slice`.
+
+### The fourth review — one more half-written landing (2026-10-24, same day; NO migration, ledger 136)
+
+One reviewer over `a4f9f433`, probing the landing again; one defect, four nits, three suspicions — each verified
+here before it was fixed or refuted.
+
+1476. **An external id too long for the ledger's unique index lands whole.** #1475 said `createLead` can no longer be
+refused by input, and that holds — but the input that remained passes `createLead` and kills the ledger row:
+`lead_intakes_external_idx` (0066) is a btree on `(channel, external_id)`, a btree row holds 2,704 bytes, and
+nothing bounded the id (`fromGoogle`'s `lead_id` and `fromPlain`'s `external_id`/`id` only trim it). About 2.7 KB of
+incompressible bytes made the INSERT fail with 54000 AFTER the lead and its lenta note: on the agent's door a 503 on
+every attempt and one more note per retry, never in the outcomes; on every other webhook door a 200 with an
+unannounced lead the per-phone and per-source caps never counted (the reviewer: six Google posts, six leads routed
+and booked, `inboundCount` 0). Older than this branch (main's `record()` and parser are the same), and only a key
+holder can send it. The cure keeps every spelling main could store: `record()` writes the row under the id as sent
+and, only when postgres refuses it with 54000 AND the id is over `INDEX_SAFE_ID_BYTES` (2,048 UTF-8 bytes), writes it
+again as `sha256:` + the hex digest of the id's UTF-8 bytes (`oversizeIdSpelling`); both replay fences — the
+landing's and the bot's `inboundLanded` — ask both spellings for such an id (`externalIdSpellings`). A pure length
+threshold (the reviewer's suggestion) was not taken, because the index compresses before it measures: MEASURED here,
+it takes 2,684 random bytes on every channel but `telegram` (2,680) and a repetitive id of 50 KB, so any threshold
+would re-spell ids main stored fine — and the instruction for this branch is that every non-agent door behaves as on
+main except where main crashed. At or under 2,048 bytes an id is always taken, so its own spelling is its only one.
+A hashed id never starts with `cs:`, so the outcomes feed does not show it; the agent's ids are 46 bytes. Pinned
+through the agent's real route (three posts: 200 ×3, one lead, one note, the ledger row under the hash computed in
+the test from its definition, `inboundLanded` true), on the Google door (created, a replay, the per-phone cap counts
+it), and the control: a 2,6xx-byte random id and a 20,000-byte repetitive one on the `telegram` channel are stored
+as sent and replayed. Found on the way, a test-fixture trap: `phone()` reaches 48 by the end of the agent-feed file,
+and 50-69 are the twenty-phone card's, so four more calls turned two later arrivals into `client` and `capped` —
+the new tests take their own four tails.
+
+1477. **Verified, stated, deferred.** WORDING (nit, verified by reading): `clip.ts` and #1473 said every string the old
+cut could store comes out spelled as before; true for what the old cut could store in JSONB and for every spelling
+the field map matches, but a cut that left a high half dangling, stored in a TEXT column (postgres.js writes the lone
+half as U+FFFD; probed, `'a\ud800'` reads back `a�`), is now one unit shorter without that trailing U+FFFD:
+`lead_intakes.name` on an arrival that created no lead, a lenta note at its 1,000-unit edge, a field-map key saved
+through the screen (the INSERT ran, then its audit row threw). None is a key an arrival matched — the arrival's own
+`fields` threw on it. The comment says so now. STATED (nit, reasoned and accepted): because the id is
+`storableText`-ed, two ids that differ only by NUL against U+FFFD, or by which lone half, are one id — the second is
+a replay — and the outcomes feed hands back the stored U+FFFD spelling; main never stored a NUL id and already merged
+lone halves through the driver. And `storableJson` makes two keys of one object that differ only there one key;
+postgres keeps the last value, as `JSON.parse` does (probed: `{"\u0000":1,"\ud800":2}` stores `{"�": 2}`). Both are
+in AGENT-FEED.md §1 and the comment. DEFERRED (nit): `parseMeasure` (round 97) lets `0.0004` through as a positive
+volume that `toFixed(3)` stores as `0.000`, reads `-5` as 5 and `1e400` as 1, and stores `99999.9999` as
+`100000.000` — main's behaviour on every door, never a throw; changing it changes what every advert stores, so it
+is asked of the owner rather than built (CHANGELOG). CONFIRMED IN PRINCIPLE, DEFERRED: `ref` has no size bound, no
+route handler body is capped (no `request_body` in the Caddyfiles `docker-compose.yml` generates), and postgres refuses a jsonb past its limits —
+measured in postgres, an array of twenty million zeros (40 MB of JSON) fails `invalid memory alloc request size`,
+ten million is stored; such a body would land its lead and fail its ledger row on every attempt. Key holders only;
+the agent's bodies are a few KB. The cure is the one #1473 deferred (claim the ledger row first); a body cap would
+change what non-agent doors store below the refusal. REFUTED: Meta's `leadgen_id` lands through `landInboundLead`
+and is covered by #1476; the bot's `tg:<chat>:<message>` is ours; the website's tag matches `LEAD_TAG_RE`
+(`GSR-[A-Z0-9]{5,16}`) before it is ever an id. READ, NOT PROBED IN A BUNDLE: the per-copy chain (#1475) — the five
+callers of `landInboundLead` are the route (`webhook`), the Meta worker (`meta`), the cabinet bot (`telegram`), the
+site door in tg-listen (`site`) and the public form (no id), so each id-carrying channel still has one lander.
+Red proofs (5), all by string edit with a hash-verified restore, all red: no hashed retry (503 ×3), the landing's
+fence asking one spelling (a second lead), the bot's fence asking one spelling, every long id hashed up front (the
+control's raw spelling lost), the limit counted in UTF-16 units instead of UTF-8 bytes (the unit test's emoji and
+Cyrillic cases).
