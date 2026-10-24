@@ -49,6 +49,7 @@ let otherId = '';
 let clientId = '';
 const draftIds: string[] = [];
 const factIds: string[] = [];
+const madeClients: string[] = [];
 
 async function userWithRole(code: string, not: string[] = []): Promise<string> {
   const rows = await db
@@ -118,6 +119,10 @@ afterAll(async () => {
     await db.delete(agentDrafts).where(inArray(agentDrafts.id, draftIds));
   }
   if (factIds.length > 0) await db.delete(kbFacts).where(inArray(kbFacts.id, factIds));
+  // By the run's own words too (#523): a refusal a red proof turns into a
+  // write leaves a GENERAL fact that no id list collected, read in every chat.
+  await db.delete(kbFacts).where(sql`${kbFacts.question} LIKE ${`%(${SUFFIX})`}`);
+  if (madeClients.length > 0) await db.delete(clients).where(inArray(clients.id, madeClients));
   await __restoreAgentConfig(snapshot);
 });
 
@@ -359,6 +364,26 @@ describe('his own seeded facts can be edited (review A7) — only a NEW personal
     expect((err as KbError).detail).toBe('GS555');
     const [still] = await db.select({ retiredAt: kbFacts.retiredAt }).from(kbFacts).where(eq(kbFacts.id, id));
     expect(still!.retiredAt).toBeNull();
+  });
+
+  it('a code written with a space is refused when the client book holds it — and only then (cards review)', async () => {
+    const digits = SUFFIX.slice(-5);
+    const [c] = await db
+      .insert(clients)
+      .values({ clientCode: `KB${digits}`, name: `Bo‘shliqli kod ${SUFFIX}`, phones: [] })
+      .returning({ id: clients.id });
+    madeClients.push(c!.id);
+    const err = await addGeneralFact(
+      { question: `Qayerda turadi? (${SUFFIX})`, answer: `KB ${digits} mijozimizning yuki Qashqarda turadi.` },
+      ctx(holderId),
+    ).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(KbError);
+    expect((err as KbError).code).toBe('personal');
+    expect((err as KbError).detail).toBe(`KB${digits}`);
+    expect(await db.select({ id: kbFacts.id }).from(kbFacts).where(sql`${kbFacts.question} = ${`Qayerda turadi? (${SUFFIX})`}`)).toHaveLength(0);
+    // A word and a number a space apart that the book does NOT hold are two words.
+    const id = await addGeneralFact({ question: `Qachon keladi? (${SUFFIX})`, answer: 'Yuk 30 kunda yetib keladi.' }, ctx(holderId));
+    factIds.push(id);
   });
 
   it('a money figure is still refused on an inherited-bits fact', async () => {

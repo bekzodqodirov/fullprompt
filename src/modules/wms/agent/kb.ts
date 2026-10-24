@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { db } from '../../platform/db/client';
-import { kbFacts } from '../../platform/db/schema';
+import { clients, kbFacts } from '../../platform/db/schema';
 import { normalizeDigits } from './digits';
 import { extractNumbers, PHONE_RE, urlsIn } from './numbers';
 import { codeCandidates } from '../calc/channel-post';
@@ -215,12 +215,37 @@ function nameSpans(text: string, knownNames: readonly (string | null | undefined
  * read that way the company's own minimum, «1 kub yoki 100 kg», carried a
  * code YOKI100 (answers review). Nor is a piece of a link one: the Yandex
  * map's path «/-/CXQr78ni» is no customer, so every link `urlsIn` finds is
- * cut out first.
+ * cut out first. A pair a space apart that the client book DOES hold — «GS
+ * 555» — is the writer's question (`spacedBookCodes`): only the book can tell
+ * a customer from two words.
  */
 function codesIn(text: string): string[] {
+  return codeCandidates(withoutLinks(text).split(/\s+/u).filter((token) => token !== '')).filter(isCodeShaped);
+}
+
+const isCodeShaped = (c: string) => /^[A-Z]{1,4}\d{2,}/u.test(c);
+
+function withoutLinks(text: string): string {
   let t = text;
   for (const u of urlsIn(t)) t = t.split(u).join(' ');
-  return codeCandidates(t.split(/\s+/u).filter((token) => token !== '')).filter((c) => /^[A-Z]{1,4}\d{2,}/u.test(c));
+  return t;
+}
+
+/**
+ * A code written with a space, «GS 555», that IS a customer's: the client
+ * book holds it. `codesIn` never joins across a space (the company's «1 kub
+ * yoki 100 kg» is no YOKI100), so the joined spelling is asked of the book
+ * instead — the price channel's rule (`identitiesIn`: candidates →
+ * `clients_code_unique`) — and a pair the book does not hold is two words.
+ * Read on the pool: the writer below opens no transaction (#714).
+ */
+async function spacedBookCodes(text: string): Promise<string[]> {
+  const t = withoutLinks(text);
+  const tokens = new Set(codesIn(t));
+  const joined = codeCandidates([t]).filter((c) => isCodeShaped(c) && !tokens.has(c));
+  if (joined.length === 0) return [];
+  const rows = await db.select({ code: clients.clientCode }).from(clients).where(inArray(clients.clientCode, joined));
+  return rows.map((r) => r.code);
 }
 
 /**
@@ -237,6 +262,16 @@ export function personalBits(text: string, knownNames: readonly (string | null |
   const folded = foldedText(t);
   for (const n of foldedNeedles(knownNames)) if (nameRe(n.folded, 'u').test(folded)) out.push(n.name);
   return out;
+}
+
+/**
+ * `personalBits`, and a spaced code the client book holds (`spacedBookCodes`)
+ * — what a WRITE of a general fact refuses. The pure one stays for a caller
+ * with no book to ask: the style script checks a guide the model wrote from
+ * `maskForModel`'s text, where every «GS 555» was already «[kod]».
+ */
+export async function personalBitsWithBook(text: string, knownNames: readonly (string | null | undefined)[] = []): Promise<string[]> {
+  return [...personalBits(text, knownNames), ...(await spacedBookCodes(normalizeDigits(text)))];
 }
 
 /** The text with every personal bit masked — what the style proposal shows him (leak-1). */
@@ -298,8 +333,10 @@ export async function writeKbFact(
   if (extractNumbers(answer).some((f) => f.kind === 'money')) throw new KbError('money');
   if (input.scope === 'general') {
     const names = input.knownNames ?? [];
-    const bits = personalBits(`${input.question ?? ''}\n${answer}`, names);
-    const approved = input.kept ? new Set(personalBits(`${input.kept.question ?? ''}\n${input.kept.answer}`, names).map(bitKey)) : null;
+    const bits = await personalBitsWithBook(`${input.question ?? ''}\n${answer}`, names);
+    const approved = input.kept
+      ? new Set((await personalBitsWithBook(`${input.kept.question ?? ''}\n${input.kept.answer}`, names)).map(bitKey))
+      : null;
     const fresh = approved ? bits.filter((b) => !approved.has(bitKey(b))) : bits;
     if (fresh.length > 0) throw new KbError('personal', fresh[0]);
   }
