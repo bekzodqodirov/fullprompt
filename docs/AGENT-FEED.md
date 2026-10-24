@@ -10,7 +10,8 @@ every lead it pushed (outcomes).
 Code: `src/modules/wms/crm/agent-source.ts` (the key), `inbound.ts` (the
 landing and its belt), `agent-feed.ts` (the feeds), `agent-feed-door.ts` (the
 GET door), `first-contact.ts` / `inbound-notify.ts` (the clock),
-`platform/settings/reason-list.ts` (the setting's parser). Decisions #1455-#1459.
+`platform/settings/reason-list.ts` (the setting's parser). Decisions #1455-#1459,
+and the review's corrections #1460-#1466.
 
 ---
 
@@ -39,9 +40,10 @@ tekshiring):
 4. Agent bitta sinov arizasini yuboradi. Keyin shu ekranning **«Forma
    savollari» → «Reklamadan kelgan yangi savollar»** ro'yxatida `kub` →
    **Kub (m³)** qiling; xohlasangiz `stir`, `imports`, `score` ni lidning
-   maxsus maydonlariga (avval maydonni yarating) bog'lang; `telegram`,
-   `instagram`, `website`, `address`, `evidence`, `utm_source` →
-   **«Izohda qolsin»**. `kub` bog'lanmaguncha kelgan arizalar kubsiz qoida (B)
+   maxsus maydonlariga (avval maydonni yarating) bog'lang; `firma`,
+   `telegram`, `instagram`, `website`, `address`, `evidence`, `utm_source` →
+   **«Izohda qolsin»** (firma nomi lidning «Kompaniya» maydoniga baribir
+   yoziladi). `kub` bog'lanmaguncha kelgan arizalar kubsiz qoida (B)
    bo'yicha taqsimlanadi.
 5. **Boshqaruv → Sozlamalar → `agent_no_contact_reasons`**: 2-qadamdagi sabab
    nomi bilan bir xil ekanini tekshiring (standart: `Qayta qilinmasin`; bir
@@ -66,11 +68,15 @@ The ordinary webhook door (docs/ADS.md §5.3) on the `agent` source.
   | Key | Read as | Limit |
   |---|---|---|
   | `name` (or `ism`) | the lead's name | 120 chars (cut, whitespace collapsed) |
-  | `phone` (or `telefon`) | the phone; identity = its last 9 digits | 9+ digits or it is no phone |
+  | `phone` (or `telefon`) | the phone; identity = its last 9 digits | 9+ digits, or the push is `dropped/no_phone` |
   | `note` (or `izoh`) | the first lenta note | see below |
   | `external_id` (or `id`) | the replay key | — |
-  | `company` / `firma` | `leads.company` (the card's own column) | 200 chars |
+  | `company` / `firma` | `leads.company` (the card's own column) on a CREATED lead — **and** a note line and a pair like any other key, so a joined push still shows it | 200 chars on the card |
   | any other key | a `key: value` line appended to the note, AND a question pair for the mapping screen | 30 pairs, key 80, value 300 chars |
+
+  `company`/`firma` reach the card's column through the agent's door only;
+  every other webhook door keeps them as the note line and pair they always
+  were (docs/ADS.md §5.3).
 
   The note is the agent's note, then one `key: value` line per extra key in
   the body's own order, then **all whitespace — line breaks included — is
@@ -89,11 +95,16 @@ The ordinary webhook door (docs/ADS.md §5.3) on the `agent` source.
   answered 200 and lands NOTHING — no second lead, no second ledger row. A
   re-send after a timeout is therefore safe.
 - Caps (counted over the arrivals ledger, dropped arrivals included):
-  3 per phone per day, 200 per source per day → `dropped/capped`.
+  3 per phone per day, 200 per source per day → `dropped/capped`. The
+  per-phone count is per FAMILY: an agent push counts only the agent's
+  arrivals on that phone, and the agent's arrivals never count against a
+  person's form, advert or bot enquiry on the same number.
 - `agent` is accepted ONLY through this webhook: a person typing
-  `/ariza?manba=agent` or opening `t.me/<bot>?start=ad_agent` is recorded
-  under «Boshqa» like any unknown source, so a human never inherits the belt,
-  the silent clock or a row in the outcomes feed.
+  `/ariza?manba=agent` is recorded under «Sayt» (the form's answer to any
+  word it does not offer, as before the key existed), and one opening
+  `t.me/<bot>?start=ad_agent` — or posting the form by hand — under «Boshqa»,
+  so a human never inherits the belt, the silent clock or a row in the
+  outcomes feed.
 
 ## 2. What the ERP does with an `agent` arrival
 
@@ -101,14 +112,21 @@ In order (`landInboundLead`):
 
 1. no phone and no name → `dropped/no_contact`;
 2. replay → nothing (above);
-3. caps → `dropped/capped`;
-4. **the belt**: the phone's last 9 digits are in the suppression set (§3.1) →
-   `dropped/suppressed`. Nothing is created, nobody is told — not the client's
-   manager, not the office. Reaching this means the agent's copy of the feed
-   was stale; the outcomes feed tells it so;
-5. the one open lead on the same phone (≤ 30 days) → `joined` (a note on that
+3. no phone of nine digits or more → `dropped/no_phone` (the belt below could
+   not check it, so it must not reach a seller);
+4. caps (the agent's family, §1) → `dropped/capped`;
+5. **the belt** → `dropped/suppressed`. Nothing is created, nobody is told —
+   not the client's manager, not the office. Reaching this means the agent's
+   copy of the feed was stale; the outcomes feed tells it so. The belt reads
+   the suppression set (§3.1) by the app's OWN phone rule (`phonesMatch`):
+   the arrival's last nine digits against every tail, and against a card or
+   lead phone of only seven or eight digits by those last seven or eight —
+   over inactive clients too. So it is never narrower than the advert path's
+   «already a customer» step that follows it, and that step (`client`) cannot
+   fire for an agent push;
+6. the one open lead on the same phone (≤ 30 days) → `joined` (a note on that
    lead, its owner unchanged, the owner is pushed);
-6. otherwise a **new lead**: routed by the taqsimot rules (`manba = agent`,
+7. otherwise a **new lead**: routed by the taqsimot rules (`manba = agent`,
    the mapped `kub`, or a volume read from the text), booked for today, the
    seller pushed «🆕 Yangi lid · Agent (qidiruv)».
 
@@ -116,7 +134,11 @@ The **contact clock** starts for created and joined arrivals with
 `contact_due_at = NULL`: the owner's «⏰ tegilmagan» reminder never claims an
 agent arrival, while `stampFirstContacts` still writes `contacted_at` /
 `contact_kind` from the first call, Telegram message, the seller's note, a
-stage move, a cleared follow-up or the «📞 Bog'landim» button. /crm/tahlil's
+stage move, a cleared follow-up or the «📞 Bog'landim» button. An unstamped
+agent arrival is looked at for **90 days** (an advert's for 7 — after that
+nothing else ever asks about an agent lead). A `joined` push into a
+conversation already live in the last 24 hours gets **no clock**: its
+`contacted_at` stays null, and its `outcome` says what happened. /crm/tahlil's
 «Birinchi aloqa» reads `contact_clock_at`/`contacted_at`, never the due time,
 so agent leads ARE in a seller's median and late counts there.
 
@@ -132,15 +154,21 @@ Both: `GET`, header `X-GSR-Key` (the same key as the door), never in the URL.
 | 200 | the body below |
 | 304 | `If-None-Match` equals the ETag — in practice never, the body carries `generated_at` |
 | 400 | `{"error":"bad_cursor"}` or `{"error":"bad_since"}` — a bug on the caller's side, do not retry |
-| 404 | door off, key wrong or absent, unknown path |
-| 503 | `{"error":"unavailable"}` — the database is down; back off and retry |
+| 404 | door off, key wrong or absent, unknown path — and any failure while no key was sent |
+| 503 | `{"error":"unavailable"}` — the database is down; back off and retry. Only to a caller that sent `X-GSR-Key` |
 
 Bodies of 1 KB or more are gzipped when `Accept-Encoding: gzip` is sent.
 `Cache-Control: private, no-store`. Query parameters, all optional:
-`limit` (default 1000, max 5000, garbage → default), `since` (any ISO
-instant; rows that moved strictly after it), `cursor` (the previous page's
-`next`, **opaque** — hand it back verbatim). Follow `next` until it is `null`.
-Keep the same `since` while following one walk.
+`limit` (default 1000, max 5000, garbage → default), `since` (a FULL ISO
+8601 instant — date, time and `Z` or an offset, e.g. `2026-10-24T05:00:00Z`;
+microseconds kept; anything else, `0` or `2026-02-30…` included, is 400
+`bad_since`; rows that moved strictly after it), `cursor` (the previous page's
+`next` or `resume`, **opaque** — three `|`-separated parts inside base64url;
+hand it back verbatim). Follow `next` until it is `null`. Keep the same
+`since` while following one walk. Every body also carries **`resume`**: the
+cursor of this page's last row — on the last page too, where `next` is null —
+or, on an empty page, the cursor that was sent; store it to start the next
+walk there.
 
 ### 3.1 `GET /api/agent/suppression`
 
@@ -151,7 +179,8 @@ Keep the same `since` while following one walk.
   "salt_id": "8254c329",
   "rule": "hmac-sha256(secret, last9digits) hex[0:20]",
   "entries": [{ "h": "2ea6869e504cebca50f0", "kind": "client", "at": "2026-10-24T05:16:13.981Z" }],
-  "next": null
+  "next": null,
+  "resume": "MjAyNi0xMC0yNFQwNToxNjoxMy45ODEyMzRafDAxOTI4YzNlLTdiMWEtN2NjMC05ZDJlLTFmMGEyYjNjNGQ1ZXwx"
 }
 ```
 
@@ -163,9 +192,18 @@ Keep the same `since` while following one walk.
   when the owner re-mints the key: every stored hash is then stale — pull full.
 - `kind`: `client` — any phone on any client card, **active or inactive** (a
   former client is still ours; wider than the advert path's client check on
-  purpose); `lost` — a lead on a `lost` stage whose `lost_reason`, trimmed,
-  whitespace-collapsed and lower-cased, equals one of the labels in the setting
-  `agent_no_contact_reasons` (`;`-separated, compared the same way).
+  purpose), and the phone of any lead that BECAME a client (on a `won` stage,
+  or attached to a client code — attaching does not copy the lead's phone onto
+  the card); `lost` — a lead on a `lost` stage whose `lost_reason` equals one
+  of the labels in the setting `agent_no_contact_reasons` (`;`-separated).
+  Both are compared one way: every run of whitespace (as JavaScript's `\s`
+  counts it — the no-break space included) one space, trimmed, lower case.
+- What one phones value yields: its whole last nine digits; the last nine of
+  each part when it holds several numbers (split at `, ; / | \`, a line
+  break, two spaces, or a space before `+`); and, inside a part of more than
+  fifteen digits (no single phone is that long — the client import keeps a
+  multi-number cell as one run), every whole 12-digit `998…` number or every
+  whole 9-digit number. A run that is neither is read by its last nine only.
 - `at`: when the row last moved — a client card's `max(created_at,
   updated_at)`, a lead's `max(closed_at, updated_at)`.
 - Not deduplicated: two cards on one phone are two entries with one `h`;
@@ -174,7 +212,14 @@ Keep the same `since` while following one walk.
   its old leads in with their old `at` — the nightly full pull is the truth,
   the hourly delta an optimisation. A lead revived out of `lost`, a phone
   removed from a card or a label taken off the list simply stops appearing.
-- Tails shorter than nine digits never appear and never match.
+  Nor can a delta see a funnel stage whose KIND the owner changes
+  (open ↔ won ↔ lost, CRM sozlamalari): every lead on it joins or leaves the
+  set with no `at` moving. Only the full pull sees it.
+- Tails shorter than nine digits never appear in the feed. A card or lead
+  phone of seven or eight digits is still matched by the BELT (§2 step 5), so
+  a push on it comes back `dropped/suppressed` — the agent should then keep
+  the phone it pushed in its own suppression; the nightly feed will never
+  bring that number as a hash.
 
 ### 3.2 `GET /api/agent/outcomes`
 
@@ -185,25 +230,28 @@ Keep the same `since` while following one walk.
     {
       "external_id": "cs:0b9…:202610", "intake_id": "…", "outcome": "created", "reason": null,
       "lead_id": "…", "client_id": null, "stage_kind": "open", "stage_name": "Yangi",
-      "lost_reason": null, "closed_at": null, "contacted_at": "2026-10-24T06:02:00.000Z",
-      "contact_kind": "call", "quoted_volume_m3": 2, "at": "2026-10-24T06:02:00.000Z"
+      "lost_reason": null, "no_contact": false, "closed_at": null,
+      "contacted_at": "2026-10-24T06:02:00.000Z", "contact_kind": "call",
+      "quoted_volume_m3": 2, "at": "2026-10-24T06:02:00.000Z"
     }
   ],
-  "next": null
+  "next": null,
+  "resume": "…"
 }
 ```
 
-Exactly these 14 fields, nothing else:
+Exactly these 15 fields, nothing else:
 
 | Field | Meaning |
 |---|---|
 | `external_id`, `intake_id` | the push and its ledger row |
 | `outcome` | `created` / `joined` / `client` / `dropped` |
-| `reason` | for `dropped`: `suppressed` / `capped` / `no_contact` (null otherwise) |
+| `reason` | for `dropped`: `suppressed` / `capped` / `no_phone` / `no_contact` (null otherwise) |
 | `lead_id` | the lead it became or joined (null when dropped or `client`) |
 | `client_id` | the lead's client once won, or the client it was recognised as |
 | `stage_kind`, `stage_name` | the lead's stage now: `open` / `won` / `lost`, and the owner's name for it |
-| `lost_reason` | the TEXT chosen at the move (≤ 200 chars) — the dictionary label once the owner keeps one, a seller's free text before that |
+| `lost_reason` | the TEXT chosen at the move (≤ 200 chars) **only when it is a label**: one of the owner's lost-reason dictionary rows (active or retired) or a label of `agent_no_contact_reasons`, compared as in §3.1. A seller's free text — what a lost lead carries before the dictionary exists, and where a name or a number gets written down — is `null` |
+| `no_contact` | `true` when the lead is lost with a reason `agent_no_contact_reasons` lists — the ERP's own answer, so the agent needs no copy of the setting |
 | `closed_at` | when the lead was decided |
 | `contacted_at`, `contact_kind` | the FIRST contact after the arrival: `call` / `telegram` / `note` / `stage` / `followup` |
 | `quoted_volume_m3` | the lead's kub (number) |
@@ -212,21 +260,31 @@ Exactly these 14 fields, nothing else:
 - Rows: `channel = 'webhook'`, `external_id LIKE 'cs:%'`, arrived within the
   last **year**, from the `agent` source — **or** from «Boshqa» (`other`)
   with `ref.utm_source = 'clientscrapper'` (the fallback months, §6).
-- Order and cursor: `(at, intake_id)`. Once a cursor is held the agent may
-  read by cursor alone. One gap is known: `contacted_at` is the EVIDENCE's
-  time, and a calls-app log uploads up to ~30 minutes late, so a contact
-  stamped after a read can carry an `at` older than that read's last row.
-  A weekly re-read with `since = now − 30 days` (and no cursor) closes it.
+- Order and cursor: `(at, intake_id)`. A cursor read is NOT complete on its
+  own: `contacted_at` is the EVIDENCE's time, and evidence surfaces late — a
+  calls-app phone that was offline for a day, a Telegram account whose
+  history is pulled a week back when it connects — so a contact stamped after
+  a read can carry an `at` older than that read's last row; and a row whose
+  transaction committed after a read can carry an `at` the read already
+  passed. Read nightly **by cursor AND with `since = now − 8 days`** (no
+  cursor), and weekly with `since = now − 90 days` (the stamping horizon,
+  §2). Upsert by `external_id`; a re-read row is the same row.
 - `outcome = joined` reports the stage of a lead somebody else was already
-  working; `client` appears only through the fallback door (the agent's own
-  door suppresses client phones first).
+  working, even one that came from another source — its stage, its kub and its
+  decision become visible to the agent for that lead (stated, not hidden: the
+  agent proposed that same phone, and the join leaves a visible note on the
+  lead). `client` appears only through the fallback door: the agent's own
+  door suppresses every phone a client card answers to first (§2).
+- The feed reads a stage's KIND live: when the owner changes a stage from
+  open to lost (or back) every lead on it changes `stage_kind` with no `at`
+  moving — the weekly re-read is what catches it.
 - Never: a name, a phone, a note, an owner, a price.
 
 ## 4. Privacy
 
-What leaves the ERP is hashes of phone tails, ids, stage names, the lost
-reason's text, timestamps and a kub figure. No name, phone, note, owner or
-money. The agent compares its own candidates' hashed tails against the
+What leaves the ERP is hashes of phone tails, ids, stage names, a lost
+reason when it is a LABEL, timestamps and a kub figure. No name, phone, note,
+owner, money or a seller's free text. The agent compares its own candidates' hashed tails against the
 suppression list; it never receives the client book.
 
 ## 5. Honest limits
@@ -240,8 +298,30 @@ suppression list; it never receives the client book.
 - A lead revived out of `lost` leaves the suppression set — correct: somebody
   decided to work it again.
 - The same company on a new phone number is a new phone here.
-- A free-text lost reason (before the dictionary exists) may say anything a
-  seller typed; it is clipped, not scrubbed.
+- A free-text lost reason (before the dictionary exists) never leaves:
+  `lost_reason` is null and `no_contact` still answers.
+- Suppression entries carry their card's `at`, so the key holder can tell
+  which hashes share a card — one person's numbers, grouped. Combined with the
+  enumeration above, that is the client book's phone groupings, not only its
+  numbers.
+- The last nine digits of a Chinese mobile (`+86 1xx …`) on a client card
+  are a valid Uzbek mobile tail too, so they suppress the unrelated Uzbek
+  number that ends the same way — fail-closed, and the same last-nine rule the
+  whole app uses.
+- A first contact counts only where the ERP sees it: a call through the calls
+  app, a message from a CONNECTED Telegram account on a chat that belongs to
+  the lead, a note, a stage move, a cleared follow-up, the «📞 Bog'landim»
+  button. A seller writing from a personal account whose chat sits on the tray
+  undecided is a contact the feed does not report.
+- The fallback clause (§6) is permanent: anybody holding the «Boshqa» door's
+  key can post an arrival with `utm_source: clientscrapper` and a `cs:` id,
+  and it appears in the outcomes — ignore rows whose `external_id` you never
+  pushed. The replay fence is per channel across every source, so a `cs:` id
+  posted first through another door makes your push a replay; the ids carry
+  your own company uuid, which nobody else knows.
+- The doors screen sends a door's key only to whoever holds
+  `admin.settings.manage` — the page data of every other `crm.manage` holder
+  carries none (it is the agent key that reads the feeds).
 
 ## 6. Before this door existed — the «Boshqa» fallback
 

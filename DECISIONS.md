@@ -4580,7 +4580,7 @@ is wrong. Outcomes carry exactly 14 fields and no name, phone, note, owner or pr
 `generated_at`), and a contact whose evidence is older than the agent's last read (a late calls-app upload) is
 not re-read by cursor alone — AGENT-FEED.md tells the agent to re-read 30 days weekly.
 
-1458. **The plain webhook's `company` / `firma` goes to `leads.company`, for every door.** Read by lower-cased
+1458. **(SUPERSEDED by #1463 — every door but the agent's keeps the firm as it was.)** **The plain webhook's `company` / `firma` goes to `leads.company`, for every door.** Read by lower-cased
 name the way `known` skips it (`{Firma: …}` would otherwise vanish from the note AND be missed), `company` before
 `firma`, cut at `leadSchema`'s 200. A behaviour change beyond the agent, stated: a website or connector that
 already posts `company` now fills the card's own field instead of a note line and a mapping-screen pair — a
@@ -4601,3 +4601,103 @@ future — it now puts any landed due time 45 minutes in the past and keeps NULL
 (YYYY-MM-DD) or an instant»). The sentence is now chosen per setting (`BAD_VALUE_TEXT` in the settings page,
 `badValueReasons` ×4 for this key); every other key keeps its sentence. STATED, not fixed: `lead_assign_origins`
 (round 113) is refused with the same date sentence today.
+
+### The four-lens review of the branch (2026-10-24, same day; NO migration, ledger 136)
+
+Security, feed correctness, regression and contract lenses ran over the built branch; every confirmed finding was
+verified again here before it was fixed, each fix red-proven by string edit.
+
+1460. **The belt asks the app's own phone rule, so it is never narrower than the client check below it.** Three
+lenses found it independently: the belt and the feed matched nine-digit tails while the landing's step (0)
+(`activeClientsByPhone` → `phonesMatch`) matches a card of seven or eight digits by suffix — so an agent push on a
+truncated card number landed as `client`, wrote «📣 agent» on the card and pushed the client's manager, the exact
+thing the belt exists to stop (probed: «📣 Mijoz … reklamadan yozdi · Agent (qidiruv)»). `isSuppressedTail` now
+answers `t.tail = tail9 OR (length(t.tail) IN (7,8) AND right(tail9, length(t.tail)) = t.tail)` over the same
+derived table, every client active or not. The table grew three sources of tails: the WHOLE value's last nine
+(what `phonesMatch` reads, so belt ⊇ step 0 by construction); each part of a value that holds several numbers
+(«A / B», «A +B», two spaces — the client form splits on commas only, and the last nine of «A / B» is only B);
+and, inside a part of more than fifteen digits (E.164 stops at 15; the importer keeps a multi-number cell as one
+run), whole 12-digit `998…` or whole 9-digit numbers. And a lead that BECAME a client is the client book too:
+winLead's attach-by-code links the lead and copies no phone onto the card, so that person's number was in neither
+set (kind `client`; one kind per lead keeps `(at, id, n)` unique, `n` = the record's distinct tails in order).
+The FEED stays nine digits: the agent asserts `rule == "hmac-sha256(secret, last9digits) hex[0:20]"` (05 §B.2)
+and its gate hashes nine, so a short card is the belt's alone — the agent should keep a phone it pushed when the
+outcome is `dropped/suppressed`, said in AGENT-FEED.md §3.1 and owed to the agent side. MEASURED on the way: the
+new set-returning functions plan at a thousand rows each, so a twenty-card book passed `jit_above_cost` and every
+page and every agent arrival paid ~0.8 s of compilation (the one-row walk timed out at 20 s); both reads run under
+`withoutJit` (#1039), the setting read before it (#714).
+
+1461. **The per-phone cap is per family, and a push the belt cannot check lands nowhere.** `inboundCount` counted
+every source, so three agent pushes on one number (three firms sharing a phone) capped that person's own form
+enquiry for 24 hours, silently (probed: form → `dropped/capped`). The count now splits: an agent arrival counts
+only agent rows, everybody else's only non-agent rows — which is exactly what every non-agent door counted before
+the agent existed. An agent arrival with no phone of nine digits skipped the belt and step (0) and became a lead;
+it is `dropped/no_phone` now, after the replay fence (a re-send writes no second row). The belt stays after the
+caps, the spec's order: with the families split, a client writing through an advert no longer turns the agent's
+push into `capped`.
+
+1462. **A lost reason leaves only as a LABEL, and the ERP answers «no contact» itself.** The outcomes shipped
+`leads.lost_reason` verbatim; before the dictionary exists that is a seller's free text, and «Akmal aka
+(direktor) +998 90 111 22 33 …» reached the agent's database (probed), against «never a name, a phone». The text
+leaves only when it equals a dictionary row (active or retired — the owner's word either way) or a listed
+`agent_no_contact_reasons` label; otherwise null. The agent's spec classified lost rows by mirroring the setting
+by hand with its own normalisation (`strip().lower()`, no whitespace collapse), so a «Qayta  qilinmasin» lead was
+suppressed here and `lost_other` there: the row carries `no_contact`, computed by the feed's own `listedSql` — a
+fifteenth field, additive (the agent's `parse_outcome` ignores unknown keys). And the two sides normalised
+differently: JS `\s`/`trim()` collapse U+00A0 and the other Unicode spaces, postgres `\s`/`btrim` do not (C.UTF-8,
+measured), so a reason typed with a no-break space never suppressed. `normaliseReason` (reason-list.ts) is the one
+rule and `REASON_SPACE_RUN_PG` its postgres spelling (JS's class written out, collapse first, then trim); an
+integration test holds the two to one answer over awkward strings.
+
+1463. **Every door but the agent's keeps a posted firm exactly where it was (supersedes #1458).** Taking
+`company`/`firma` out of `fromPlain`'s note lines and pairs moved the firm of every website or connector arrival
+onto `leads.company` — and only on a CREATED lead: a joined or client arrival lost it everywhere but
+`lead_intakes.ref`, the seller's push and the keyword routes stopped seeing it, and an existing mapping keyed
+`company` went quiet (probed against origin/main's parser as the control). #1458 said «the value is not lost»; it
+was. The keys are back in the note and the pairs for every door, `fromPlain` still READS `company`, and only the
+agent's landing writes it onto the card; the agent's own firm is therefore in its note too, so a joined push
+shows it. Every non-agent door's note, pairs and card are origin/main's, pinned by a tiktok integration test.
+
+1464. **The outcomes feed reports a contact made after the first week, and tells the agent where to resume.** An
+agent arrival is never reminded, so «has anybody called» stopped being asked after `stampFirstContacts`' 7-day
+window and a day-9 contact stayed null for ever; for reminder-exempt sources the unstamped look-back is
+`EXEMPT_CONTACT_LOOKBACK_DAYS` (90), every other source's week unchanged (a tiktok control). A cursor read alone is
+not complete — `contacted_at` is the evidence's time and evidence surfaces late (an offline calls phone, a
+Telegram account's connect-time week), and a row whose transaction commits after a read can carry an `at` the read
+passed — so AGENT-FEED.md says: by cursor AND `since = now − 8 days` nightly, `since = now − 90 days` weekly. Both
+feeds answer `resume`: the last row's own cursor even on the last page (where `next` is null), the sent cursor on
+an empty page — a walk that ended used to hold only the previous page's `next`. `since` must be a full ISO
+instant: `Date.parse` read «0» and «1» as 2000/2001 and rolled «02-30» into March (round 99's trap, one parameter
+from the cursor that already refused it); microseconds are kept.
+
+1465. **The doors screen stops SENDING keys it only hid, and a keyless caller never learns the feed is down.**
+`InboundDoors` is a client component; `secret: door.secret` went into the page data for every `crm.manage` holder
+while only `admin.settings.manage` saw the fold. Pre-existing for the advert doors (write-only keys); the agent key
+also READS the feeds — HMACs of every client tail, and nine digits enumerate — so it was the client book in the
+page data of anybody the owner lets into funnel settings (seeded: only admin/super_admin hold `crm.manage`, so the
+leak needs a grant). `doorViews` (kelganlar/door-views.ts) decides on the server: `secret` only under `canManage`,
+`on` for everyone; the page is fenced to build through it. A change on a live screen for every door, stated:
+what any viewer SEES is unchanged, what a non-settings viewer's browser RECEIVES loses the keys. Confirmed by code
+and Next's prop serialisation, not rendered in a browser. The GET door answered 503 to a caller with no key when
+the key lookup failed; it is the same 404 as every refusal unless `X-GSR-Key` was sent.
+
+1466. **A person never meets the agent's source.** `/ariza?manba=agent` used to fall back to «Sayt» (the key was
+unknown) and became «Boshqa» once the key existed; `formSourceKey` gives the form «Sayt» again. The seeded
+«Agent (qidiruv)» was offered by the new-lead form and the lead card's ✏️ form, so a seller could tag a hand-made
+lead as the agent's and /crm/tahlil would count it: `personPickableSources` drops it, keeping the record's OWN
+source (a select that cannot render the stored value posts «—» and erases it, #171); the board filter, tahlil and
+settings keep it. Its seeded sort order is 190, off the first seed's «O‘zi keldi» (90).
+STATED, not changed: a `joined` push reports a non-agent lead's stage, kub and decision (the agent proposed that
+phone; the join leaves a visible note); a funnel stage whose kind the owner flips moves leads in and out of both
+feeds with no `at` (the weekly re-read and the nightly full pull catch it); the fallback clause and the cross-source
+replay fence trust whoever holds the «Boshqa» key (ids carry the agent's own company uuid); suppression entries
+group per card; a Chinese mobile's last nine can suppress an unrelated Uzbek number (fail-closed, the app's rule);
+no rate limit on bad-key GETs, as on the POST door; a contact from a personal Telegram account whose chat sits on
+the tray is not reported. ASKED of him: whether agent leads belong in /crm/tahlil's per-seller late counts, and
+whether they should be booked on «Bugun qo'ng'iroq» (25 a day on the call list and the 08:00 digest).
+Red proofs, all by string edit and restored by hash (21): the belt's suffix clause; the split parts; the chunks;
+the converted leads; the per-family cap; the no-phone drop; the verbatim reason; `no_contact`; postgres's own
+`\s`; the 90-day look-back; `resume`; `since` by `Date.parse` alone; the rolled date; the keyless 503; the keys sent
+to everybody; a page building a key itself; the firm on every door's card; the firm out of the note; the form
+offering `agent`; the pickers offering it. One first stayed GREEN: deleting the day check of `parseSince` left
+«02-30» refused, because the month check alone catches a rolled day — re-done by removing the whole round trip.

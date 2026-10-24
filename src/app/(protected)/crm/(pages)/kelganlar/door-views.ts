@@ -20,8 +20,9 @@ export function doorViews(
     key: door.key,
     name: door.name,
     // The agent's door is a machine's: a person reaching it through the form
-    // or the bot lands under «Boshqa» (`inboundSourceKey`), so a link that
-    // looks like a door to it would be one that does not go there.
+    // lands under «Sayt» (`formSourceKey`), through the bot under «Boshqa»
+    // (`inboundSourceKey`), so a link that looks like a door to it would be
+    // one that does not go there.
     formUrl: isAgentSource(door.key) ? null : `${o.appUrl}/ariza?manba=${door.key}`,
     // The bot's third door only exists once the bot has a name to link to.
     botUrl:
