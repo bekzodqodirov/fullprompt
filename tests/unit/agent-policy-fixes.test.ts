@@ -141,6 +141,7 @@ describe('a day count with no digit, a promise to receive, a hedge that is not o
     'Rastamojkaga 3 kun vaqt ketadi.',
     'Hisob-kitob 1 soatda chiqadi.',
     'Ответ придёт в течение 2 часов.',
+    "Hujjatlar 2 kunda tayyor bo'ladi.",
     'Taxminan, 2 kunda yetib keladi.',
     "Avia odatda 2-5 kunda yetib boradi, reys bo'lsa 2 kunda.",
     "Taxminiy yo'lkira 480 $. Yuk 15-20 kunda yetib keladi (va'da emas). Boj va QQS alohida.",
@@ -185,6 +186,8 @@ describe('money in the spellings people send', () => {
     ['Ваш груз стоит на складе 2, приезжайте.', 'ru', 2],
     ['Машина стоит на границе, в очереди 15.', 'ru', 15],
     ['Pulat aka, yukingiz 2-omborda turibdi.', 'uz', 2],
+    // No ordinal to save it: the bare 15 stays bare only because «Pulat» names no money.
+    ['Pulat aka, yukingiz omborda, 15 qatorda turibdi.', 'uz', 15],
     ['Ваши 300 пуловеров уже на складе.', 'ru', 300],
     ['20 chargers and 5 costumes arrived.', 'en', 20],
   ] as const)('«%s» names no money: its figure stays what it is', (body, language, value) => {
@@ -212,6 +215,8 @@ describe('money in the spellings people send', () => {
     // A case ending on a cardinal is no ordinal: «480-ga» is still the price, «500-dollarlik» still dollars.
     expect(extractNumbers('Narxi 480-ga tushadi').map((f) => f.kind)).toEqual(['money']);
     expect(extractNumbers('500-dollarlik tovar').map((f) => f.kind)).toEqual(['money']);
+    // …and Russian hangs a cardinal's case on the hyphen too: «до 480-ти» is a price in a text about dollars.
+    expect(extractNumbers('Цена до 480-ти долларов').map((f) => f.kind)).toEqual(['money']);
   });
 });
 
@@ -235,6 +240,8 @@ describe('bargaining spans messages', () => {
 describe('a spelled-out number counts beside money, not merely in a text about it', () => {
   it.each([
     ['قیمت را آقای بکزاد اعلام می‌کند، نه من.', 'fa'],
+    // «کیلویی» is a measure word anywhere in the text — the shipped rule — so «نه» («no») must not be «nine».
+    ['مسئول قیمت کیلویی آقای بکزاد است، نه من.', 'fa'],
     ['The price depends on two things: the volume and the goods.', 'en'],
     ['Narxni aytish uchun ikki narsa kerak: tovar nomi va hajmi.', 'uz'],
     ['Для расчёта цены нужно три вещи: название, объём и вес.', 'ru'],

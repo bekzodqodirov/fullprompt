@@ -41,7 +41,7 @@ describe('the spellings the package missed are prices too', () => {
     "To'lov naqd, ombor 3-ko'chada",
     "Ofis soat 9 dan 18 gacha ishlaydi, to'lov ofisda",
     'Рубашки и европаллеты: склад на 3-й линии, 2 этаж',
-    'Pulat aka bilan 2-omborda uchrashing',
+    'Pulat aka bilan omborda, 15 qatorda uchrashing',
     'Машина стоит на границе, очередь 15',
   ])('«%s» holds no price and is not refused as money', async (answer) => {
     expect(await refusal(answer)).toBe('scope');

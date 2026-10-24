@@ -187,9 +187,8 @@ export const PROMISE_TABLE: Record<PromiseCategory, readonly RegExp[]> = {
   ],
   credit_release: [
     /qarzga|nasiya|keyin\s+to['‘’ʻ]?laysiz|to['‘’ʻ]?lovsiz\s+(beramiz|beraman|olib\s+ketasiz)/iu,
-    // «Pulini keyin berasiz», «to'lovni keyinroq qilasiz» — the money, later, paid by you.
-    // «Pulini yuk kelgandan so'ng berasiz», «to'lovni yuk kelganda qilasiz», «yuk kelgach to'laysiz» — the
-    // money paid after the cargo comes is the same release on credit as «keyin» (fix round).
+    // «Pulini keyin berasiz», «to'lovni keyinroq qilasiz» — the money, later, paid by you; and «pulini yuk
+    // kelgandan so'ng berasiz», «yuk kelgach to'laysiz» — paid once the cargo comes, the same credit (fix round).
     /(?:pul|to['‘’ʻ]?lov|haq|summa)\p{L}*\s+(?:[\p{L}'‘’ʻ]+\s+){0,2}(?:keyin\p{L}*|so['‘’ʻ]?ng|\p{L}+(?:ganda|gach))\s+(?:berasiz|bersangiz|qilasiz|o['‘’ʻ]?tkazasiz|to['‘’ʻ]?laysiz|to['‘’ʻ]?lasangiz)/iu,
     /(?:keyin\p{L}*|so['‘’ʻ]?ng|\p{L}+(?:ganda|gach))\s+(?:to['‘’ʻ]?la(?:ysiz|sangiz)|o['‘’ʻ]?tkazasiz)/iu,
     /қарзга|насия/iu,
@@ -227,7 +226,7 @@ export const PROMISE_TABLE: Record<PromiseCategory, readonly RegExp[]> = {
   ],
   dispatch_promise: [
     // Up to two words between the day and the verb — «ertaga albatta jo'natamiz», «bugun kechqurun yuboramiz» —
-    // and the verb in the FUTURE: «yukingiz bugun Toshkentga yetib keldi» is the commonest status there is.
+    // and beside «bugun» never the past: «yukingiz bugun Toshkentga yetib keldi» is the commonest status there is.
     new RegExp(dayRule(UZ_DAY_ANY, uzGoing(`${UZ_YOURS}|${UZ_NEG}`)), 'iu'),
     new RegExp(dayRule(UZ_TODAY, uzGoing(`${UZ_YOURS}|${UZ_NEG}|${UZ_PAST}`)), 'iu'),
     /va['‘’ʻ]?da\s+(beraman|beramiz)|kafolatlay/iu,
@@ -335,7 +334,7 @@ const FREQUENCY = /(?:(?<![\p{L}])(?:har|ҳар|каждые|каждый|каж
 const CARGO_SUBJECT =
   /(?<![\p{L}])(?:yuk|mashina|fura|tovar|karobka|quti|posilka|partiya|юк|машина|фура|товар|коробк|қути|груз|машин|фур|посылк|парти|cargo|goods|shipment|parcel|truck|package|box|بار|محموله|کالا|کامیون)|货|车|包裹|箱/iu;
 const NOT_CARGO =
-  /(?<![\p{L}])(?:javob|hisob|narx|xabar|ma['‘’ʻ]?lumot|жавоб|ҳисоб|нарх|вақт|хабар|ответ|расч[её]т|цен[аыу]|стоимост|звонок|сообщени|информаци|answer|reply|quote|price|calculation|message|information|پاسخ|جواب|قیمت|محاسبه)|答复|回复|报价|价格|计算/iu;
+  /(?<![\p{L}])(?:javob|hisob|narx|xabar|ma['‘’ʻ]?lumot|hujjat|invoys|жавоб|ҳисоб|нарх|хабар|ҳужжат|ответ|расч[её]т|цен[аыу]|стоимост|звонок|сообщени|информаци|документ|инвойс|answer|reply|quote|price|calculation|message|information|document|invoice|پاسخ|جواب|قیمت|محاسبه)|答复|回复|报价|价格|计算|文件|发票/iu;
 
 function aboutCargo(clause: string, sentence: string): boolean {
   if (CARGO_SUBJECT.test(clause)) return true;

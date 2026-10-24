@@ -121,7 +121,8 @@ const PRICE_VERB_BEFORE =
  * cardinal, «480-ga»), and an hour of the day after «soat» («soat 9 dan 18 gacha»). Before this a fact
  * «To'lov naqd, ombor 3-ko'chada» read as a price and the kb refused it.
  */
-const ORDINAL_AFTER = /^-(?!(?:ga|da|dan|ni|ning|gacha|cha|lik|dek|ta|tadan|tasi|tagacha)(?![\p{L}]))\p{L}/u;
+// Latin only: a Russian «480-ти долларов» hangs a CARDINAL's case on the hyphen, and must stay money.
+const ORDINAL_AFTER = /^-(?!(?:ga|da|dan|ni|ning|gacha|cha|lik|dek|ta|tadan|tasi|tagacha)(?![\p{L}]))[a-z]/iu;
 const HOUR_BEFORE = /(?<![\p{L}])(?:soat|соат|ساعت)\s*(?:\d{1,2}(?:[.:]\d{2})?\s*(?:dan|дан|-|–|—|تا)\s*)?$/iu;
 
 /** A figure as written: thousands by space, comma or dot groups of three, decimals by dot or comma. */
