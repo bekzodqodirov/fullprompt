@@ -1006,3 +1006,12 @@ keladi yuk yetib borishiga reysimiz bolsa 2 kun»: **avia's minimum is 1 kg** (t
 truck's), and **the AI may say avia arrives in 2-5 days, 2 days when a flight is scheduled** — stated as an
 estimate, never as a promise (`AGENT_LIMITS.avia`, the avia tool's result is the source G1 checks the days
 against).
+
+**Third set (2026-10-24, the same evening), his answers verbatim: «1b / 2b / 3 agar skladimizga jonatib bersangiz
+skladlarimizdan narxi shuncha deb aytsin. Va zavotidan olib skladga olib kelish alohida hisoblanadi».**
+
+| # | Agreed | What it changes |
+|---|---|---|
+| 1 | **b** — avia has no upper weight bound. | No ceiling guard on `avia_estimate`. |
+| 2 | **b** — avia is $17 per ACTUAL kg. | Volume never enters the avia figure; the review's volumetric refusal goes. |
+| 3 | A customer who names only «China», or a Chinese place where we have no warehouse, is quoted FROM OUR CHINESE WAREHOUSES, on the condition that he sends the cargo there; **bringing it from the factory to the warehouse is priced separately**. | The origin resolves to our China warehouses' column (cn) and the reply must carry both sentences (the warehouse condition and «zavoddan omborgacha olib kelish alohida hisoblanadi») in the customer's language — enforced by the policy, like the hedge; the podklyuch landing gets the cn zone and the intake note says the same; a seed fact says it. |
