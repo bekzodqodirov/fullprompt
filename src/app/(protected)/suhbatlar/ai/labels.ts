@@ -49,6 +49,7 @@ export const ERROR_KEYS: Record<AgentErrorCode, string> = {
   stale_card: 'errors.stale_card',
   policy_block: 'errors.policy_block',
   listener_behind: 'errors.listener_behind',
+  sending_disabled: 'errors.sending_disabled',
   superseded: 'errors.superseded',
   taken_over: 'errors.taken_over',
   budget_spent: 'errors.budget_spent',

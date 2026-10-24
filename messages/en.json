@@ -6284,6 +6284,7 @@
       "stale_card": "The card changed — reload the page and press ✅ again.",
       "policy_block": "The reply breaks a rule — write your own text with ✏️.",
       "listener_behind": "The Telegram listener is not updated — the message would not go.",
+      "sending_disabled": "Sending from the CRM to Telegram is switched off (Settings) — the reply will not go. Copy the text and send it yourself.",
       "superseded": "The customer wrote again — a new draft is coming.",
       "taken_over": "You have already answered yourself.",
       "budget_spent": "Today’s AI sending ceiling is spent — send the text yourself.",

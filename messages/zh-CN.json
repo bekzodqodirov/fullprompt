@@ -6284,6 +6284,7 @@
       "stale_card": "卡片已变化 — 请刷新页面后再按 ✅。",
       "policy_block": "回复不符合规则 — 请用 ✏️ 自己写。",
       "listener_behind": "Telegram 监听程序未更新 — 消息不会发出。",
+      "sending_disabled": "已关闭从 CRM 发送到 Telegram（设置）——回复不会发出。请复制文本自行发送。",
       "superseded": "客户又发了消息 — 正在准备新草稿。",
       "taken_over": "您已经亲自回复了。",
       "budget_spent": "今天 AI 发送上限已用完 — 请自己发送这段文字。",

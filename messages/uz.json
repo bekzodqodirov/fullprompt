@@ -6284,6 +6284,7 @@
       "stale_card": "Karta o‘zgargan — sahifani yangilab, ✅ ni qayta bosing.",
       "policy_block": "Javob qoidaga to‘g‘ri kelmaydi — ✏️ bilan o‘zingiz yozing.",
       "listener_behind": "Telegram tinglovchisi yangilanmagan — xabar ketmaydi.",
+      "sending_disabled": "CRM’dan Telegramga yuborish o‘chirilgan (Sozlamalar) — javob ketmaydi. Matnni nusxalab o‘zingiz yuboring.",
       "superseded": "Mijoz yana yozdi — yangi qoralama tayyorlanadi.",
       "taken_over": "Siz allaqachon o‘zingiz javob bergansiz.",
       "budget_spent": "Bugungi AI yuborish chegarasi tugadi — matnni o‘zingiz yuboring.",
