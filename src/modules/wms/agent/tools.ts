@@ -389,6 +389,9 @@ async function yolkira(input: Record<string, unknown>, env: ToolEnv): Promise<To
  * volume the chat stated counts: a refusal costs him one answer, an
  * under-quote costs the company the difference.
  */
+/** Kilos one cubic metre weighs to an airline — the air calculator's divisor (5 000 cm³/kg), as the page states it. */
+export const AVIA_KG_PER_M3 = 1_000_000 / SITE_TARIFF.air.volumetricDivisor;
+
 function avia(input: Record<string, unknown>, env: ToolEnv): ToolOutcome {
   const { ctx } = env;
   const rate = env.aviaUsdPerKg;
@@ -412,7 +415,7 @@ function avia(input: Record<string, unknown>, env: ToolEnv): ToolOutcome {
   }
   const volumetricKg = Math.max(
     0,
-    ...ctx.measures.filter((m) => m.kind === 'volume').map((m) => (m.value * 1_000_000) / SITE_TARIFF.air.volumetricDivisor),
+    ...ctx.measures.filter((m) => m.kind === 'volume').map((m) => m.value * AVIA_KG_PER_M3),
   );
   if (volumetricKg > kg) {
     return {
