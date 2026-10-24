@@ -6,6 +6,7 @@ import { db, pgClient } from '@/modules/platform/db/client';
 import {
   clients,
   crmActivities,
+  crmPeople,
   leadIntakes,
   leadSources,
   leadStages,
@@ -78,6 +79,8 @@ const P7 = phone(); // a lead lost «  Test   sabab » (listed, untidy spacing)
 const PN = phone(); // a lead lost «Qayta qilinmasin» typed with a NO-BREAK space
 const PW = phone(); // a lead WON onto an existing client's code (the attach copies no phone)
 const PW2 = phone(); // a lead on a won stage with no client at all (before round 107)
+const PP = phone(); // a number only on the PERSON record of a client (crm/people.ts)
+const PP2 = phone(); // a number on a person record that holds no code
 
 /**
  * Card phones of SEVEN and EIGHT digits (a truncated import, a number typed
@@ -105,6 +108,7 @@ let openStage = '';
 let wonStage = '';
 let fixturesFrom = '';
 const clientsMade: string[] = [];
+const peopleMade: string[] = [];
 const leadsMade: string[] = [];
 let saved: Record<string, unknown> = {};
 
@@ -260,6 +264,16 @@ beforeAll(async () => {
   const attached = await insertLead('won-attached', PW, wonStage, null);
   await db.update(leads).set({ clientId: clientsMade[0]! }).where(eq(leads.id, attached));
   await insertLead('won-no-client', PW2, wonStage, null);
+
+  const people = await db
+    .insert(crmPeople)
+    .values([
+      { name: NAME('odam'), phones: [P1, PP], createdBy: adminId },
+      { name: NAME('kodsiz odam'), phones: [PP2], createdBy: adminId },
+    ])
+    .returning({ id: crmPeople.id });
+  peopleMade.push(...people.map((row) => row.id));
+  await db.update(clients).set({ personId: people[0]!.id }).where(eq(clients.id, clientsMade[0]!));
 });
 
 afterAll(async () => {
@@ -286,6 +300,7 @@ afterAll(async () => {
     await db.delete(crmActivities).where(inArray(crmActivities.entityId, clientsMade));
     await db.delete(clients).where(inArray(clients.id, clientsMade));
   }
+  if (peopleMade.length) await db.delete(crmPeople).where(inArray(crmPeople.id, peopleMade));
   await pgClient.end();
 });
 
@@ -312,8 +327,9 @@ describe('the suppression feed', () => {
     // and one id, so only the phone's position keeps the page edge honest.
     const mine = await suppressionPage({ secret, since: fixturesFrom, cursor: null, limit: 5000 });
     const walked = await walkSuppression(fixturesFrom, 1);
+    // As MULTISETS: one phone on two records (a card and its person) is two
+    // entries with one hash, by contract — the walk must carry both, once each.
     expect(walked.length).toBe(mine.entries.length);
-    expect(new Set(walked.map(keyOf)).size).toBe(walked.length);
     expect(walked.map(keyOf).sort()).toEqual(mine.entries.map(keyOf).sort());
     // 2 + 1 + 20 client phones, 2 listed lost leads — at the least.
     expect(walked.length).toBeGreaterThanOrEqual(25);
@@ -347,6 +363,12 @@ describe('the suppression feed', () => {
     expect(kinds.get(hashTail(secret, tailOf(PW2))), 'won with no client').toBe('client');
     expect(kinds.get(hashTail(secret, tailOf(PN))), 'U+00A0 is whitespace to both sides').toBe(
       'lost',
+    );
+    expect(kinds.get(hashTail(secret, tailOf(PP))), 'a client’s number kept on its person').toBe(
+      'client',
+    );
+    expect(kinds.has(hashTail(secret, tailOf(PP2))), 'a person with no code is nobody’s client').toBe(
+      false,
     );
   });
 
@@ -439,6 +461,7 @@ describe('the landing belt', () => {
       ['belt-multi', `+998${M(1)}`, 6],
       ['belt-imported', `+998 ${M(3)}`, 6],
       ['belt-won', PW, -1],
+      ['belt-person', PP, 0],
     ] as const) {
       const id = ext(tag);
       const result = await landInboundLead({

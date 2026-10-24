@@ -192,7 +192,9 @@ walk there.
   when the owner re-mints the key: every stored hash is then stale — pull full.
 - `kind`: `client` — any phone on any client card, **active or inactive** (a
   former client is still ours; wider than the advert path's client check on
-  purpose), and the phone of any lead that BECAME a client (on a `won` stage,
+  purpose), any phone on the PERSON record that ties a client's codes
+  together (CRM → Odamlar; its list is edited apart from the cards), and the
+  phone of any lead that BECAME a client (on a `won` stage,
   or attached to a client code — attaching does not copy the lead's phone onto
   the card); `lost` — a lead on a `lost` stage whose `lost_reason` equals one
   of the labels in the setting `agent_no_contact_reasons` (`;`-separated).

@@ -4620,6 +4620,11 @@ and, inside a part of more than fifteen digits (E.164 stops at 15; the importer 
 run), whole 12-digit `998…` or whole 9-digit numbers. And a lead that BECAME a client is the client book too:
 winLead's attach-by-code links the lead and copies no phone onto the card, so that person's number was in neither
 set (kind `client`; one kind per lead keeps `(at, id, n)` unique, `n` = the record's distinct tails in order).
+The contract lens's suspicion about `crm_people.phones` held on reading: the person behind several codes keeps a
+phone list seeded from the card and edited apart from it (`savePerson`), so a client's second number may live there
+alone — a person who holds a code is the client book too. `partners.phone` is NOT: a counterparty is a supplier
+of ours, not a buyer, and the agent screens out forwarders itself. The one-row walk's «nothing twice» became a
+MULTISET comparison: one phone on a card and on its person is two entries with one hash, by contract.
 The FEED stays nine digits: the agent asserts `rule == "hmac-sha256(secret, last9digits) hex[0:20]"` (05 §B.2)
 and its gate hashes nine, so a short card is the belt's alone — the agent should keep a phone it pushed when the
 outcome is `dropped/suppressed`, said in AGENT-FEED.md §3.1 and owed to the agent side. MEASURED on the way: the

@@ -213,10 +213,34 @@ const tailsSql = (expr: SQL) => sql`(
 )`;
 
 /**
+ * A record with a `phones` jsonb list (a client card, a person) as `client`
+ * rows: its DISTINCT tails, `n` numbering them in their order on the record.
+ */
+function phoneCardTailsSql(o: { from: SQL; id: SQL; phones: SQL; at: SQL; where?: SQL }): SQL {
+  return sql`
+    SELECT x.tail, 'client'::text AS kind, x.at, x.id,
+           (row_number() OVER (PARTITION BY x.id ORDER BY x.o))::int AS n
+      FROM (
+        SELECT DISTINCT ON (${o.id}, tl.tail) tl.tail, ${o.at} AS at, ${o.id} AS id,
+               p.n * 1000000 + tl.o AS o
+          FROM ${o.from}
+          -- A phones value that is not an array (by hand, by an old import) is
+          -- read as no phones rather than failing the whole page.
+          CROSS JOIN LATERAL jsonb_array_elements_text(
+            CASE WHEN jsonb_typeof(${o.phones}) = 'array' THEN ${o.phones} ELSE '[]'::jsonb END
+          ) WITH ORDINALITY AS p(v, n)
+          CROSS JOIN LATERAL ${tailsSql(sql`p.v`)} tl
+         WHERE tl.tail <> '' ${o.where ? sql`AND ${o.where}` : sql``}
+         ORDER BY ${o.id}, tl.tail, p.n * 1000000 + tl.o
+      ) x`;
+}
+
+/**
  * THE suppression set as a derived table `(tail, kind, at, id, n)` — the
  * feed's rows and the belt's question, one sentence (#513).
  *
- * Rows: every phone on every client card (active or not); every lead that
+ * Rows: every phone on every client card (active or not), and on the person
+ * record that ties several codes together; every lead that
  * became a client — won, or carrying a `client_id` (winLead's attach-by-code
  * links the lead and leaves its phone on the LEAD) — as `client`; every lead
  * lost with a listed reason as `lost`. One kind per lead, so `(at, id, n)`
@@ -230,21 +254,23 @@ const tailsSql = (expr: SQL) => sql`(
  */
 function suppressionTailsSql(labels: string[]): SQL {
   return sql`(
-    SELECT x.tail, 'client'::text AS kind, x.at, x.id,
-           (row_number() OVER (PARTITION BY x.id ORDER BY x.o))::int AS n
-      FROM (
-        SELECT DISTINCT ON (c.id, tl.tail) tl.tail, greatest(c.created_at, c.updated_at) AS at,
-               c.id, p.n * 1000000 + tl.o AS o
-          FROM clients c
-          -- A phones value that is not an array (by hand, by an old import) is
-          -- read as no phones rather than failing the whole page.
-          CROSS JOIN LATERAL jsonb_array_elements_text(
-            CASE WHEN jsonb_typeof(c.phones) = 'array' THEN c.phones ELSE '[]'::jsonb END
-          ) WITH ORDINALITY AS p(v, n)
-          CROSS JOIN LATERAL ${tailsSql(sql`p.v`)} tl
-         WHERE tl.tail <> ''
-         ORDER BY c.id, tl.tail, p.n * 1000000 + tl.o
-      ) x
+    ${phoneCardTailsSql({
+      from: sql`clients c`,
+      id: sql`c.id`,
+      phones: sql`c.phones`,
+      at: sql`greatest(c.created_at, c.updated_at)`,
+    })}
+    UNION ALL
+    -- The PERSON behind several codes (crm/people.ts) keeps a phone list of
+    -- its own, seeded from the card and edited apart from it: a client's
+    -- second number may live there alone. Only a person who holds a code.
+    ${phoneCardTailsSql({
+      from: sql`crm_people pp`,
+      id: sql`pp.id`,
+      phones: sql`pp.phones`,
+      at: sql`greatest(pp.created_at, pp.updated_at)`,
+      where: sql`EXISTS (SELECT 1 FROM clients pc WHERE pc.person_id = pp.id)`,
+    })}
     UNION ALL
     SELECT y.tail, y.kind, y.at, y.id,
            (row_number() OVER (PARTITION BY y.id ORDER BY y.o))::int
