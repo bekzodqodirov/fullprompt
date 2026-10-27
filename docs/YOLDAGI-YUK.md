@@ -207,3 +207,29 @@ cartons. The plan-line row orders them against an in-flight landing: a landing t
   tugadi».
 - A landing in the same instant as a plan's submit AND approval can miss the EXISTS pre-check (the window is a
   landing transaction; an approval is a person relaying an agent). The loading-time claim heals it.
+
+## 11. Reviewed as built — binding over §7 and §9 where they differ
+
+Four lenses read the BUILT round (DECISIONS #1491-#1497); what changed:
+
+- **A claim never takes the truck's own plan cargo** (§7). A carton the truck's plan reserved before —
+  the approval's shelf part, an earlier claim, the count door's re-reservation, all written `plan_approved`
+  with the truck's ref — and a removal gave back is that plan's cargo, not the road's: re-reserved by the
+  count door, the red confirm on the phone, never a second unit of owed. One sentence, `claimableForSql`,
+  for the claim (per line), the snapshot's shelf codes and the count panel's road term.
+- **A claim takes `min(owed, k)` under the line's own lock** (§7) — not «exactly k or nothing»: a claim
+  that lost a race to another took what was left.
+- **«Already landed here» is three facts** (§7): on the shelf here; landed by THIS truck through
+  `ARRIVED_ON_A_TRUCK` and not sent back to the origin since (`notSentBackSql`, shared with the count
+  ledger — over → undo → over must work); or standing here `planned`/`loading` onto a truck leaving here,
+  however it landed (another inbound truck's screen, the stocktake).
+- **The loading snapshot ships two kinds** (§9): `roadShelf: [{ code, lotId }]` (free here and claimable by
+  this truck) and `roadInbound: [{ code, truck }]`; the phone (`roadScanVerdict`) accepts a shelf carton
+  while it has taken fewer of its lot than the lot owes, and refuses an inbound one at once with the truck's
+  code. `roadCodes` is gone.
+- **The agent sheet** (§9): after the approval a line is up to THREE rows — what stands here under its
+  arrival, what is still owed under «В пути», what the loading ended without under «Не пришло / Did not
+  come».
+- **The editor** (§4): the untick clamps against the road-less ANSWER, never the list on screen; picks the
+  list cannot show (a road half that failed, a lot gone before a resubmit opened) are named — «Qayta
+  urinish» / «Olib tashlash» — and the submit waits.

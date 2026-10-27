@@ -36,6 +36,16 @@ Sizning so'zlaringiz: «horgos planda yoldagi yuklarni ham qoshish degan check b
 - Bir vaqtning o'zida «Tasdiqlash» ikki marta bosilsa (ikki marta tegish yoki internet uzilishi), ikkita mashina ochilmaydi. Bu xato ilgari ham bor edi, endi tuzatildi.
 - Telefon mashinadan tushirilgan karobkani keyinroq yana yuborsa (internetsiz navbatda qolgan skaner), u boshqa mashinaga band qilingan karobkani «hujjatsiz ko'chirish» deb skladga qaytarib qo'ymaydi. Bu ham umumiy xato edi, endi tuzatildi.
 
+### Tayyor bo'lgandan keyingi tekshiruvda topilgan va tuzatilgan xatolar
+- Yuklovchi rejadagi karobkani mashinadan **olib qo'yib**, keyin yana skanerlasa, tizim uni **yo'ldan kelgan** karobka deb ikkinchi marta hisoblab yuborardi. Natijada yo'ldan haqiqatan kelgan karobkalardan biri rejaga olinmay, skladda bo'sh qolib ketardi. Mashina esa bir karobka kam bilan jo'nardi va hech qayerda «kelmadi» deb yozilmasdi. Endi olib qo'yilgan karobka rejaning o'z yuki bo'lib qoladi. Telefon uni avvalgidek qizil oyna bilan so'raydi, ofis sanog'i esa rejaga qaytaradi.
+- Ikki odam bir vaqtda (masalan, telefon va ofis sanog'i) bir lotni olsa, biri ikkinchisiga yutqazib, **hech narsa olmay qolardi**: reja «kutilmoqda» deb turaverar, karobkalar esa skladda bo'sh turardi. Endi qolgan qismini oladi.
+- Horgosda ikki mashina bir vaqtda tushirilib, karobkalar aralashib ketsa: bir mashinadan tushib rejaga band qilingan karobkani boshqa mashinaning tushirish ekranida skanerlasangiz, u **keyingi mashinadan yechib olinib**, «hujjatsiz ko'chirish» deb skladga qaytarilardi. Inventarizatsiyada topilgan karobka bilan ham shunday bo'lardi. Endi tizim «allaqachon shu yerda» deb javob beradi va karobka joyida qoladi.
+- Ofis sanog'ida «ortiqcha → kamaytirish → yana ortiqcha» deb bosilsa, lot **hech qachon to'g'ri songa yetkazilmay qolardi** (har safar «count_conflict» chiqardi). Bu xato faqat yo'ldagi yukka emas, hamma skladga tegishli edi. Endi tuzatildi.
+- Agent Excel faylida «Yuklash tugadi»dan keyin **kelmagan** karobkalar «skladga kelgan» qatoriga tushib qolardi. Endi ular alohida **«Не пришло / Did not come»** blokida turadi.
+- Yuklovchining telefoni hali kelayotgan mashinadagi karobkani yashil qilib qabul qilib, keyinroq (internetsiz bo'lsa, ancha keyin) jimgina qaytarib olardi. Bunda karobka mashinaga yuklangan, lekin hisobda yo'q bo'lib qolardi. Endi telefon darhol «Bu karobka hali YW-123 mashinasida» deydi. Skladdagi karobkani esa reja kutayotgan sonchagina qabul qiladi.
+- Plan oynasida «🚚 Yo'ldagi yuklar ham» belgisini qo'yib, ro'yxat yuklanib ulgurmasdan olib tashlansangiz, **barcha tanlovlaringiz o'chib ketardi**, skladdagilari ham. Endi faqat yo'ldagi qism olinadi.
+- Yo'ldagi yuk ro'yxati yuklanmay qolsa, avval tanlangan yo'ldagi yuk ro'yxatda ham, jamida ham ko'rinmasdi, lekin agentga baribir yuborilardi. Endi tizim «N ta tanlangan yuk ro'yxatda ko'rinmayapti» deydi va «Qayta urinish» yoki «Olib tashlash» bosilmaguncha planni yubormaydi.
+
 ### Hali qilinmagan (aytib qo'yaman)
 - Yo'ldagi **yashiklar** (CR-…) rejaga taklif qilinmaydi, faqat alohida karobkalar.
 - Kelayotgan mashinaning yo'nalishi o'zgartirilsa, uning yuki bu skladga kelmaydi. Reja qatori «Yuklash tugadi»da «kelmadi» bo'ladi.

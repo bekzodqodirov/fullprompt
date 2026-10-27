@@ -4799,3 +4799,66 @@ edit.
 the road (`/arrivals`' rule, not the /stock strip's); an inbound truck rerouted away leaves the line missed
 at «yuklash tugadi»; a landing in the same instant as a submit AND an approval can miss the hook's unlocked
 pre-check (the loading-time claim heals it); factory trips are shown, never planned (2a).
+
+## Yo'ldagi yuk — the round reviewed as built (2026-10-27; NO migration of its own — ledger 138 with 0137)
+
+Four lenses read the BUILT round with refuters behind them: nine findings, seven verified real, two left
+unverified when their refuters hit a session limit and judged by hand here (both held — numbers#5 and
+deploy#8, the second reproduced by its reviewer on a throwaway database). All nine fixed, eight red-proven by
+string edit, the two editor ones by a browser.
+
+1491. **A truck never claims its own plan cargo as road cargo** (locks#0, numbers#3). `removeLoadedCode`
+gives a carton back to the shelf and touches neither road table — right, a removal is a person's act — but
+the claim then took that carton AGAIN: a road carton spent a second unit of owed (the claim row only upserts,
+so «keldi» stayed 1), a SHELF carton the approval had reserved was claimed as road, and the cartons still on
+the road found nothing owed when they landed — free on the shelf, the truck short, «kelmadi 0». One sentence,
+`claimableForSql(box, truck)` = the truck's plan never wrote `plan_approved` for it (the approval, every
+claim and the count door's re-reservation all write it with the truck's ref), asked by `claimInto` per LINE
+(another truck may still claim it), by the snapshot's shelf codes and by the count panel's road term. A
+removed carton is therefore what it was before the round: the phone's red confirm, the count door's
+re-reservation within the plan's number.
+
+1492. **A claim takes what the line owes at its lock** (locks#2). `takeOwed` was «exactly k or nothing»
+(`road_owed >= k`): a concurrent claim that took one first left the update matching no row, the loop broke
+with nothing moved, and the line owed while its cartons stood free — then the count door's own number was
+short by them. Now `SELECT … FOR UPDATE` and `min(owed, k)`, the design's «zero rows → re-read» done at the
+row. Proven deterministically: a held connection takes one unit, the press waits on the row
+(`pg_stat_activity`), the holder commits, the press claims the two that are left.
+
+1493. **An unload scan never lands a carton already HERE** (locks#1, deploy#8). The landed-before rule knew
+only THIS truck's three causes: a claimed carton scanned on ANOTHER inbound truck's screen at a mixed pile,
+or flushed after the stocktake landed it (`inventory_found`, ref `manual`), took the rogue branch and was
+pulled off the onward truck as an undocumented transfer. And it knew no reversal: an office over-count a
+later press sent back to the origin (`found_at_origin`) still read «landed by T», so over → undo → over
+picked the same carton, got `duplicate`, and threw `count_conflict` for ever — a regression on every server,
+road or not. `doneHere` is three facts now: on the shelf here; landed by this truck through
+`ARRIVED_ON_A_TRUCK` and `notSentBackSql` (one fragment, beside the causes in documents/arrivals.ts, shared
+with the count ledger it was copied from — #513); or standing here `planned`/`loading` onto a truck whose
+ORIGIN is here, however it landed. The rogue branch asks the same `doneHere`.
+
+1494. **The agent sheet files what never came under its own heading** (numbers#4). After «yuklash tugadi»
+the owed part is 0 and the missed part was filed with the shelf rows — under the arrival that brought the
+rest, or «Принято на складе» for a road-only lot: the false «received here» the split exists to prevent.
+`DOC.notCame` = «Не пришло / Did not come», a block of its own, no truck, no date.
+
+1495. **The phone never accepts green what the server will take back** (numbers#5, judged by hand). The
+snapshot shipped every carton of an owed lot as one list and the phone accepted them all: one still on the
+inbound truck, or a fourth when the lot owed three, flashed green and was rolled back at the flush — offline,
+only then, with a carton already physically on the truck (#221's shape). The snapshot ships two kinds
+(`roadShelf` with its lot, `roadInbound` with its truck); `roadScanVerdict` (src/offline, pure) accepts a
+shelf carton while the phone has taken fewer of its lot than the lot owes (past that the red confirm), and
+refuses an inbound one at once naming the truck. The server's own `road_not_landed` stays for the race.
+
+1496. **The editor's untick waits for the answer it asked for** (editor#6). It clamped the picks against the
+list on screen — EMPTY while a read is in flight (every road toggle re-reads) and shelf-only when the road
+half failed — so unticking a moment after ticking took every pick, shelf ones included, and the sentence
+blamed the road. The untick is a pending flag now; the road-less answer clamps (`pendingUntick`).
+**Picks the list cannot show are named and the submit waits** (editor#7): a road pick whose half of the
+answer failed, or a lot gone before a resubmit opened, was in no row, no Σ and no gauge while the submit sent
+it — the agent got a heavier truck than anyone saw. «N ta tanlangan yuk ro'yxatda ko'rinmayapti» with
+«Qayta urinish» and «Olib tashlash»; the submit is disabled until one of them.
+
+1497. **Process.** The review's two refuters that died on the session limit were judged by reading the code
+and, for deploy#8, by reproducing it in a test before the fix — an unverified finding is not a refuted one.
+The fence's `body()` helper learned generic functions (`claimableFor<C>`); a fence that cannot find its
+function fails loudly, which is how it was noticed.

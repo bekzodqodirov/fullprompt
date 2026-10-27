@@ -3022,7 +3022,13 @@ re-arms its arrival notice. The verdict is a claim (two presses = one truck). Re
 (`roadOn`, `roadStock` merged into one `lots`, ✓ = shelf, 🚚 = road, resubmit reopens ticked), the plan view,
 the loading snapshot (`roadOwed`, `roadCodes`), board/batch card, the agent sheet's «В пути» block, the annul
 refusal. `RoadOn` is a branded REQUIRED argument minted only by the probe. 13 integration + 13 unit + 5 e2e,
-14 red proofs.
+14 red proofs. **Reviewed as built** (#1491-#1497, four lenses, 9 findings, all fixed — spec §11 binds): a claim
+never takes the truck's own plan cargo (`claimableForSql` — a removed carton was claimed twice and the road's own
+cartons landed free), takes `min(owed, k)` at the line's lock, «already landed here» is three facts (shelf / this
+truck not sent back — `notSentBackSql`, shared with the count ledger, which fixed over → undo → over on EVERY
+server / reserved onto a truck leaving here), the agent sheet's «Не пришло» block, the snapshot's
+`roadShelf`/`roadInbound` judged on the phone by `roadScanVerdict`, the editor's untick clamping against the
+answer and naming picks it cannot show.
 
 **Latest migration: 0137** (`plan_road`, `when` …116; ledger must reach **138**). Before
 it: 0136 (`lead_client_many`, `when` …115). Before
