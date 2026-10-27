@@ -1,5 +1,44 @@
 # CHANGELOG
 
+## 2026-10-27 — Uch band: narxdan hisob-kitobga link, har so'rovga yangi bitim, bitta qatorli tarkib va «шт» ustuni
+
+Sizning so'zlaringiz (uchta band) va javobingiz: «3b / 4 a / 5 a / 6 a / 7 b» (1 va 2 savolga javob bo'lmadi — ⭐ variant qurildi). **Migratsiya 0136 — deploydan keyin migratsiyalar soni 137 bo'lishi kerak.** Bu deployda **tg-listen ham qayta qurilishi kerak** (sayt va reklama lidlari endi hamkasb mijozi haqidagi lidga qo'shilmaydi).
+
+### 1. Kartadagi narx — o'sha narxni hisoblagan oynaga link
+- Bitim va lid kartasida narx yonida **«🧮 Hisob-kitob»** linki chiqadi. U shu narxni bergan hisob-kitob oynasini (VED oynasini) ochadi. Qayta hisoblash kerak bo'lsa, endi qidirib o'tirmaysiz.
+- Link faqat kartadagi raqam haqiqatan o'sha hisobdan kelgan bo'lsa chiqadi. Narx qo'lda yozilgan bo'lsa, link chiqmaydi — noto'g'ri hisobga olib bormasligi uchun.
+- Link VED oynasini ocha oladiganlarga (`ved.docs`) ko'rinadi. Sotuvchi VED oynasini ocha olmaydi, shuning uchun unga link chiqmaydi.
+- Yutilgan lid kartasida u ochgan **hamma** bitimlar ro'yxati turadi (pastdagi 2-bandga qarang).
+
+### 2. Har so'rovga yangi bitim
+- **Telegram botdan yoki chatdan mijoz kodi bilan** yuborilgan har bir hisoblatish endi **yangi bitim** bo'lib ochiladi. Ilgari 2-3 ta so'rov bitta bitimga tushib qolardi.
+- Bitim nomi tovardan olinadi: «Rastamojka — Kafel 60x60». Tovar yozilmagan bo'lsa, kod va sana bilan: «Rastamojka — GS777 · 27.10». Shunda bir mijozning bir nechta bitimi bir-biridan ajralib turadi.
+- Mijoz kodi ochilganda o'zi ochiladigan **bo'sh bitim** birinchi so'rovga ishlatiladi. Yoniga yana bitta bo'sh bitim paydo bo'lmaydi. Keyingi so'rovlar yangi bitim ochadi.
+- Bot ✅ xabarida nima bo'lganini aytadi: «yangi bitim», «mijozning bo'sh bitimiga yozildi», «oldingi urinishda ochilgan bitim» va hokazo.
+- Internet uzilib «Saqlash» qayta bosilsa, ikkinchi bitim ochilmaydi. Avvalgi urinishdagi kartaga tushadi.
+- **Boshqa sotuvchining mijozi bo'lsa** — yuborgan odamning CRM'ida **yangi lid** ochiladi (bitim emas). Lidda kimning mijozi ekani yoziladi: «GS777 — Azizning mijozi». Shu mijoz uchun yana so'rov yuborsa, o'sha lidga qo'shiladi. Sizning 3b javobingiz bo'yicha bu qoida voronkasi bor **hammaga** (admin va logist ham) tegishli.
+- Bunday lid «Yutildi» qilinganda faqat **o'sha mijoz kodiga** yutiladi. Oyna kodni o'zi qo'yadi va kimning mijozi ekanini yozadi. Yangi kod ochib bo'lmaydi.
+- **CRM'da «Yutildi»:** bitta kodda lid bo'lsa ham, keyingi lidni o'sha kodga biriktirish mumkin. Endi «bu kodda lid bor» deb qaytarmaydi, **yangi bitim** ochadi. Tekshirish qatorida mijozning sotuvchisi yoziladi, chunki biriktirishni qaytarib bo'lmaydi.
+- **Lidda bir nechta hisob-kitob bo'lsa** (5a javobingiz): yutganda har bir alohida savdo o'z bitimini oladi. Lidning narxini yozgan hisob asosiy bitimga tushadi. Qolganlari yangi bitimlarga, har biri o'z narxi bilan. Oynada «yana N ta bitim ochildi: B-…» deb chiqadi. Lid FTL bo'lsa, hamma bitim FTL bo'ladi.
+- Pul qoidasi: «Готово» javobidan keyin shu lidda muhrlangan hisob bo'lsa, ikkalasi **bitta savdo** hisoblanadi va bitta bitimga tushadi. Aks holda eski «Готово» narxi yangi bitimda yana kuchga kirib, sotuvchiga ikki marta upsale to'lanishi mumkin edi. Test bilan isbotlandi.
+- «Yutildi» ikki marta bosilsa, bitta to'plam bitim ochiladi.
+- Upsale to'langan bitimdagi prixodni boshqa bitimga o'tkazib bo'lmaydi. Aks holda bitta savdo uchun ikki marta upsale to'lanardi.
+- Yutilgan yoki yo'qotilgan lidga yangi hisoblatish yuborib bo'lmaydi. Kartada forma o'rniga «Lid yopilgan — yutilgan bo'lsa, uning bitimidan yuboring» yozuvi chiqadi. «Qayta hisoblash» lid yutilayotgan paytda bosilsa ham, tuzatish lidga emas, yangi bitimga tushadi.
+
+### 3. Bitta qatorli tarkib va «шт» ustuni
+- Lot tarkibini **bitta qator** bilan saqlash mumkin (oldin kamida 2 ta majburiy edi). Endi 1 tadan 20 tagacha tovar.
+- «Bitta tovar» tugmasi qatorni lotning o'z tovari bilan to'ldiradi. Bitta prixod bitta hisobga ulangan va unda bitta dona-tovar bo'lsa, sonini (dona) ham qo'yadi.
+- Bitta qatorga lotdan **boshqa nom** yozilsa, lot «✅ hujjat bo'yicha» bo'lmaydi. ❓ qoladi va kartada «Tarkibda lotdan boshqa nom yozilgan» chiqadi.
+- Lotning TNVED kodi xotirada bo'lsa, uni olib tashlaydigan bitta qatorli tarkib saqlanmaydi. Ekran qaysi kod yo'qolishini aytadi.
+- **«Кол-во, шт» ustuni:** Packing (rasmlar), packing list va agent fayliga (7b) qo'shildi. Packing'da karobka sonidan oldin turadi, son noma'lum bo'lsa bo'sh qoladi. Agent faylida bitta tovarli lotda soni chiqadi, ko'p tovarlida bo'sh.
+- Xitoycha nom (6a) faqat qator lotning o'z tovari bo'lsa yoniga yoziladi. Boshqa tovar qatoriga lotning xitoycha nomi qo'shilmaydi.
+
+### Hali qilinmagan (aytib qo'yaman)
+- Mashina narxi bitta mijozning ikki bitimi bitta mashinada bo'lsa, hech qaysi bitimga yozilmaydi. Buni savol qilib alohida yubordim.
+- Bitim kartasidagi 🧮 formasi hali ham o'sha bitimga ikkinchi so'rov qo'shadi (botdagidek yangi bitim ochmaydi).
+- Botdan qayta yuborilgan so'rov yangi ish bo'ladi, qayta hisoblash emas.
+- Bitta qatorli tarkib uchun ham prixodda mijozning hujjati bo'lishi kerak.
+
 ## 2026-10-21 — Doska: «1 A / 2 a / 3 a» javoblaringiz — hammasi hozirgidek qoladi
 
 Uchala javob ham ⭐ variant, ya'ni hozir qanday qurilgan bo'lsa shunday. **Kodda o'zgarish yo'q, migratsiya yo'q, deploy shart emas.** Har birini kodda tekshirdim va testga mahkamladim: endi kimdir tasodifan o'zgartirsa, test qizaradi.

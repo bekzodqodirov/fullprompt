@@ -113,10 +113,23 @@ describe('the won dialog cannot freeze (round 112)', () => {
     expect(dialog).not.toContain('setChecked({ code: hit.clientCode');
   });
 
-  it('a second lead on one client is refused by the service AND named at the echo', () => {
+  it('since 0136 a second lead on one client is a new deal, and a 23505 is the one-behind morning', () => {
+    // His 2026-10-27 «crmdan bitimga yutildi deb otkazganda bitim bor deb
+    // qaytaryabti»: the refusal is gone from both doors. What is left of the
+    // old index is the deploy morning — the new code against 0135's schema —
+    // and that says so in words rather than freezing the dialog (deploy-1).
     const service = read('src/modules/wms/crm/service.ts');
-    expect(service).toContain("throw new CrmError('client_has_lead')");
+    expect(service).not.toContain("throw new CrmError('client_has_lead')");
+    expect(service).toContain("if (isUniqueViolation(err)) throw new CrmError('server_behind');");
     const actions = read('src/app/(protected)/crm/actions.ts');
-    expect(actions).toContain("return { error: 'client_has_lead', name: row.name, clientCode: row.clientCode, leadName: taken.name }");
+    expect(actions).not.toContain("error: 'client_has_lead'");
+    // The echo names whose client it is instead (an attach has no undo).
+    expect(actions).toContain('sellerName: seller?.fullName ?? null');
+    const dialog = read('src/components/won-dialog.tsx');
+    for (const code of ['server_behind', 'lead_about_client', 'changed']) {
+      expect(dialog, code).toMatch(new RegExp(`\\b${code}: t\\('won\\.errors\\.`));
+    }
+    // Each opening posts its token, so a double press converges (conc-6).
+    expect(dialog).toMatch(/winLeadAction\(lead\.id, \{\s*stageId: lead\.stageId,\s*token,/);
   });
 });

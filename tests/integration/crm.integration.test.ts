@@ -265,15 +265,17 @@ describe('leads', () => {
     const after = await db.query.leads.findFirst({ where: eq(leads.id, lead.id) });
     expect(after!.clientId).toBe(holder[0]!.id);
 
-    // One lead per client (0021 `leads_client_unique`): a SECOND lead cannot
-    // attach to the same code — refused with a word, not with the index's
-    // 23505 (round 112, found by the screenshot: the dialog froze on it).
+    // A SECOND lead attaches to the same code and opens a deal of its own
+    // (0136 dropped `leads_client_unique`; his 2026-10-27 «crmdan bitimga
+    // yutildi deb otkazganda bitim bor deb qaytaryabti»): a repeat customer's
+    // new enquiry is a new job on the code it belongs to.
     const repeat = await createLead({ name: `Takror ${SUFFIX}` }, ctx());
-    await expect(
-      winLead(repeat.id, { attachCode: holder[0]!.clientCode }, ctx()),
-    ).rejects.toThrow('client_has_lead');
-    const untouched = await db.query.leads.findFirst({ where: eq(leads.id, repeat.id) });
-    expect(untouched!.clientId).toBeNull();
+    const second = await winLead(repeat.id, { attachCode: holder[0]!.clientCode }, ctx());
+    wonDeals.push(second.dealId);
+    expect(second.clientId).toBe(holder[0]!.id);
+    expect(second.dealId).not.toBe(won.dealId);
+    const both = await db.query.leads.findMany({ where: eq(leads.clientId, holder[0]!.id) });
+    expect(both.map((row) => row.id).sort()).toEqual([lead.id, repeat.id].sort());
 
     // …and a retired code taking a new job is exactly the typo being caught.
     await db.update(clients).set({ active: false }).where(eq(clients.id, holder[0]!.id));

@@ -211,24 +211,40 @@ describe('the rules the shape can hold', () => {
 });
 
 /**
- * The owner's answers of 2026-10-01 — «1a 2a 3a», i.e. «keep it as it is».
- * What the round shipped is now what he chose, so the parts nothing else held
+ * The owner's answers of 2026-10-01 — «1a 2a 3a», i.e. «keep it as it is» —
+ * and his REVERSAL of 1a on 2026-10-27 («tarkib 1 qatorlik bolsa ham ruxsat
+ * berish hozir kamida 2 ta majburiy bolib qolgan», docs/UCH-BAND.md §4). What
+ * the rounds shipped is now what he chose, so the parts nothing else holds
  * are pinned here (the invoice's «шт»/«кг» rule is pinned in
  * composition-cells.test.ts and through the real builders in
  * lot-composition.integration.test.ts).
  */
-describe('the owner’s answers of 2026-10-01 (1a 2a 3a)', () => {
-  it('1a. a one-good lot is the logist’s rename: the refusal says so in all four bundles, and the panel prints that sentence', () => {
+describe('the owner’s answers of 2026-10-01 (1a 2a 3a) and the 1a reversal of 2026-10-27', () => {
+  it('1a reversed: ONE line is a tarkib, and no sentence sends the VED to the logist for a one-good lot', async () => {
+    const math = await import('@/modules/wms/receipts/composition-math');
+    expect(math.MIN_LINES).toBe(1);
+    // The readers' torn-header guard is its OWN constant and never 0: a
+    // header with no lines must still read as no composition, or the lot
+    // vanishes from a customs paper.
+    expect(math.MIN_STORED_LINES).toBeGreaterThanOrEqual(1);
+    expect(read('src/modules/wms/receipts/lot-composition.ts')).not.toMatch(/\bMIN_LINES\b/);
     const word: Record<string, RegExp> = { uz: /logist/, ru: /логист/, en: /logist/i, 'zh-CN': /物流员/ };
     for (const [locale, who] of Object.entries(word)) {
       const bundle = JSON.parse(readFileSync(`messages/${locale}.json`, 'utf8')) as {
         tarkib: { errors: { lines_count: string } };
+        lotCheck: { otherAnswersAskLogist: string };
       };
-      expect(bundle.tarkib.errors.lines_count, locale).toMatch(who);
+      expect(bundle.tarkib.errors.lines_count, locale).not.toMatch(who);
+      // «Other goods»: the VED writes a one-line 🧩 for the papers; the logist
+      // still renames for the warehouse screens (the lot keeps its body).
+      expect(bundle.lotCheck.otherAnswersAskLogist, locale).toMatch(/🧩/);
+      expect(bundle.lotCheck.otherAnswersAskLogist, locale).toMatch(who);
     }
     const panel = read('src/app/(protected)/receipts/[id]/composition-panel.tsx');
     expect(panel).toContain("useTranslations('tarkib')");
     expect(panel).toMatch(/case 'lines_count':\s*return t\('errors\.lines_count'\);/);
+    // The editor opens with ONE row (it opened with two).
+    expect(panel).toContain("lines: [{ ...EMPTY_LINE }], doc: null");
   });
 
   it('1a. the lot form’s door is `receipts.edit` AT the prixod’s warehouse, asked BEFORE editLot — the VED holds neither', () => {

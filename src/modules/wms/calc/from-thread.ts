@@ -1,11 +1,11 @@
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
-import { clients, deals, tgMessages, users } from '@/modules/platform/db/schema';
+import { clients, deals, leads, leadStages, tgMessages, users } from '@/modules/platform/db/schema';
 import type { Actor } from '@/modules/platform/rbac/authorize';
 import type { AuditContext } from '@/modules/platform/audit/service';
-import { tgViewerFor } from '../crm/conversations';
+import { conversationClientForLead, tgViewerFor } from '../crm/conversations';
 import { threadClientFor } from '../crm/conversations';
-import { CalcError, openCalcRequest } from './service';
+import { CalcError, leadTakesJobs, openCalcRequest } from './service';
 import {
   CALC_SECTIONS,
   intakeNoteText,
@@ -18,7 +18,7 @@ import { bookLawsFor } from './book-laws';
 import { parseManualFacts } from './intake-manual';
 import { routeAmount } from './units';
 import { analyzeIntake } from './intake-ai';
-import { calcDealOwnerFor, dealFor } from './intake-land';
+import { landCodedRequest, rootRequestOfNote } from './intake-land';
 import { queueCalcPrefill } from './prefill-queue';
 
 /**
@@ -41,7 +41,15 @@ import { queueCalcPrefill } from './prefill-queue';
 export type ThreadCalcEntity =
   | { kind: 'client'; id: string }
   | { kind: 'lead'; id: string }
-  | { kind: 'deal'; id: string };
+  | { kind: 'deal'; id: string }
+  /**
+   * The LEAD on screen, its chat read from the client its phone resolves to
+   * (the lead card draws that client's thread, `leadThreadSource`). The
+   * request lands on the lead while it is open — a seller on his own lead
+   * must not be handed a second card (judge product-5); a won lead's chat
+   * follows the per-request rule of its client.
+   */
+  | { kind: 'lead_client'; id: string };
 
 export interface ThreadMaterial {
   /** The seller's and the customer's words, labeled, in sent order. */
@@ -70,7 +78,11 @@ export async function threadMaterial(
   if (entity.kind === 'lead') {
     where = eq(tgMessages.leadId, entity.id);
   } else {
-    if (entity.kind === 'deal') {
+    if (entity.kind === 'lead_client') {
+      const lead = await db.query.leads.findFirst({ where: eq(leads.id, entity.id) });
+      clientId = lead ? await conversationClientForLead(lead) : null;
+      if (!clientId) throw new CalcError('not_found');
+    } else if (entity.kind === 'deal') {
       const deal = await db.query.deals.findFirst({ where: eq(deals.id, entity.id) });
       if (!deal?.clientId) throw new CalcError('not_found');
       clientId = deal.clientId;
@@ -151,6 +163,9 @@ export async function threadCalcAnalyze(
   actor: Actor,
   input: { entity: ThreadCalcEntity; section: CalcSection; messageIds: string[] },
 ): Promise<ThreadCalcPreview> {
+  // A closed lead's own chat takes no job: refused BEFORE the model is paid
+  // to read a selection whose confirm can only be refused (review).
+  if (input.entity.kind === 'lead' && !(await leadTakesJobs(input.entity.id))) throw new CalcError('lead_closed');
   const material = await threadMaterial(actor, input.entity, input.messageIds);
   const text = material.lines.join('\n');
   const manual = parseManualFacts(text);
@@ -235,8 +250,11 @@ function cleanFacts(raw: CalcFacts | null | undefined, material: string): CalcFa
  * Step two: land it. The material is REBUILT from the rows (the browser's
  * copy is never trusted); the posted facts are the requester's own claim —
  * the same standing a typed card form has — and are sanitized, never
- * believed about anyone else. `note_taken` on the pre-minted note id is the
- * double-press fence: a retried confirm refuses instead of minting twice.
+ * believed about anyone else. The pre-minted note id is the double-press fence:
+ * on a card the person stands on, a retried confirm refuses `note_taken`; on a
+ * CLIENT, whose card is minted per request, the retry finds the card its own
+ * note already sits on and finishes there (`landCodedRequest`) — never a
+ * second deal, and a foreign note is still `note_taken`.
  */
 export async function threadCalcSend(
   actor: Actor,
@@ -251,6 +269,7 @@ export async function threadCalcSend(
   ctx: AuditContext,
 ): Promise<{ kind: 'deal' | 'lead'; id: string; queued: boolean }> {
   if (!CALC_SECTIONS.includes(input.section)) throw new CalcError('bad_section');
+  if (input.entity.kind === 'lead' && !(await leadTakesJobs(input.entity.id))) throw new CalcError('lead_closed');
   const material = await threadMaterial(actor, input.entity, input.messageIds);
   const text = material.lines.join('\n');
   const facts = cleanFacts(input.facts, text);
@@ -258,31 +277,6 @@ export async function threadCalcSend(
     .filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
     .slice(0, 20)
     .map((s) => s.slice(0, 300));
-
-  let target: { kind: 'deal' | 'lead'; id: string };
-  if (input.entity.kind === 'lead') {
-    target = { kind: 'lead', id: input.entity.id };
-  } else if (input.entity.kind === 'deal') {
-    target = { kind: 'deal', id: input.entity.id };
-  } else {
-    // The client card names no job — the bot's own rule lands it: the
-    // newest OPEN deal, or a fresh one.
-    const client = await db.query.clients.findFirst({
-      where: eq(clients.id, input.entity.id),
-      columns: { id: true, clientCode: true, name: true, active: true },
-    });
-    if (!client || !client.active) throw new CalcError('not_found');
-    // The bot's own owner rule (G2 a). After 17a only a terms holder reaches
-    // this door (`threadCalcGate`), so it answers `actor.id` — today's
-    // behaviour — but from the SAME rule, so the two doors cannot disagree.
-    const landed = await dealFor(
-      client,
-      input.section,
-      actor.id,
-      await calcDealOwnerFor(actor.id, client.id),
-    );
-    target = { kind: landed.kind, id: landed.id };
-  }
 
   const laws = await bookLawsFor((facts.goods ?? []).map((g) => g.tnvedCode));
   const note = intakeNoteText({
@@ -295,6 +289,55 @@ export async function threadCalcSend(
     material: material.lines,
     via: 'suhbatdan',
   });
+  const items = landingItems(facts);
+
+  // Where it lands. A card the person stands on keeps the job (the deal
+  // card's own deal, the lead on screen while it is open); a CLIENT names no
+  // job, so it takes the per-request rule (his 2026-10-27, «har so'rovga
+  // yangi bitim») — the card AND its note written as one commit, found again
+  // through that note on a retried press (judge conc-1/conc-2).
+  let target: { kind: 'deal' | 'lead'; id: string } | null = null;
+  let noteOnCard = false;
+  if (input.entity.kind === 'lead') {
+    target = { kind: 'lead', id: input.entity.id };
+  } else if (input.entity.kind === 'deal') {
+    target = { kind: 'deal', id: input.entity.id };
+  } else {
+    let clientId: string | null = input.entity.kind === 'client' ? input.entity.id : null;
+    if (input.entity.kind === 'lead_client') {
+      const [lead] = await db
+        .select({ id: leads.id, kind: leadStages.kind, clientId: leads.clientId, phone: leads.phone })
+        .from(leads)
+        .innerJoin(leadStages, eq(leadStages.id, leads.stageId))
+        .where(eq(leads.id, input.entity.id))
+        .limit(1);
+      if (!lead) throw new CalcError('not_found');
+      if (lead.kind === 'open') target = { kind: 'lead', id: lead.id };
+      else clientId = await conversationClientForLead(lead);
+    }
+    if (!target) {
+      const client = clientId
+        ? await db.query.clients.findFirst({
+            where: eq(clients.id, clientId),
+            columns: { id: true, clientCode: true, name: true, active: true },
+          })
+        : null;
+      if (!client || !client.active) throw new CalcError('not_found');
+      const landed = await landCodedRequest({
+        noteId: input.noteId,
+        noteText: note,
+        section: input.section,
+        goodsNames: items.map((item) => item.name),
+        itemCount: items.length,
+        senderId: actor.id,
+        client,
+      });
+      target = { kind: landed.kind, id: landed.id };
+      noteOnCard = true;
+      // A retried press after the request opened: it is in the queue already.
+      if (await rootRequestOfNote(input.noteId)) return { ...target, queued: true };
+    }
+  }
 
   const opened = await openCalcRequest(
     {
@@ -308,8 +351,8 @@ export async function threadCalcSend(
       // Through `landingItems` — the same one home the bot door uses, so the
       // single-line weight derivation happens once and both doors land the
       // same row for the same job (#513).
-      items: landingItems(facts),
-      note: { id: input.noteId, text: note },
+      items,
+      ...(noteOnCard ? { noteId: input.noteId } : { note: { id: input.noteId, text: note } }),
       source: 'card',
       hasMaterials: material.fileCount > 0,
     },

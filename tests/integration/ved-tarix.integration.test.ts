@@ -34,7 +34,7 @@ import { creditTotals } from '@/modules/wms/calc/credit';
 import { calcRegistrySight, internalNoteSight } from '@/modules/wms/calc/control-scope';
 import { dealCalcSheets, requestGoodsSheet } from '@/modules/wms/calc/sheet';
 import { itemNameNorm } from '@/modules/wms/calc/memory';
-import { quoteLockedFor, updateLead } from '@/modules/wms/crm/service';
+import { quoteLockedFor, quoteWriterFor, writerWroteCard, updateLead } from '@/modules/wms/crm/service';
 
 /**
  * The owner's 7a 8a 9a 10a 12a 13c in the database (docs/VED-TARIX.md §2-§7):
@@ -448,6 +448,13 @@ describe('a correction from an answer (10a)', () => {
     const child = (await recalcFromSealed(sealed, ctx(sellerId))).id;
     madeRequests.push(child);
     expect(await quoteLockedFor('deal', deal2Id), 'nothing stands, nothing is locked').toBeNull();
+    // …and the card still NAMES the job that wrote its number, for the VED
+    // who is about to recalc it (his 2026-10-27): unlocked, never unlinked.
+    const writer = await quoteWriterFor('deal', deal2Id);
+    expect(writer).toMatchObject({ kind: 'seal', requestId: sealed, amount: totalUsd, stands: false });
+    const card = await db.query.deals.findFirst({ where: eq(deals.id, deal2Id) });
+    expect(writerWroteCard(writer, card!.quotedAmount)).toBe(true);
+    expect(writerWroteCard(writer, String(totalUsd + 1))).toBe(false);
   });
 });
 
@@ -528,8 +535,12 @@ describe('the quote lock follows the card’s LAST WRITER (ved-money-1)', () => 
     expect(Number(card!.quotedAmount)).toBe(650);
     expect(await quoteLockedFor('lead', lead)).toBe(650);
 
+    // The offer wrote the card, and its JOB is the answered request (0093's
+    // anchor), not the seal's.
+    expect(await quoteWriterFor('lead', lead)).toMatchObject({ kind: 'offer', requestId: answered, amount: 650, stands: true });
     madeRequests.push((await recalcFromSealed(answered, ctx(vedAId))).id);
     expect(await quoteLockedFor('lead', lead), `not A's ${a.totalUsd}: A is not on the card`).toBeNull();
+    expect(await quoteWriterFor('lead', lead)).toMatchObject({ kind: 'offer', requestId: answered, stands: false });
     const saved = await saveShownQuote(lead, '+998901114455');
     expect(saved!.phone).toBe('+998901114455');
     expect(Number(saved!.quotedAmount)).toBe(650);

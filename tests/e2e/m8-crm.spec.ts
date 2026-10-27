@@ -15,6 +15,8 @@ const runId = Date.now().toString().slice(-6);
 // The client the attach test mints; the refusal test needs its CODE, because
 // a name search also returns every other client carrying `mijoz` + the run id.
 let ulashCode = '';
+/** The deal the first attach opened — the second must open another. */
+let ulashDeal = '';
 
 async function login(page: import('@playwright/test').Page, phone: string) {
   await page.goto('/login');
@@ -268,9 +270,8 @@ test('a won lead is attached to an EXISTING client found by NAME, and the deal i
   // a name. The hit names the manager, the tap is the echo, and the primary
   // way out is the deal the ceremony opened.
   await login(page, OWNER);
-  // Its OWN client, minted through the app bar's «+» (round 111): a code may
-  // carry ONE lead (#882), so a seeded code attached here would be taken for
-  // good and the spec could not run twice on one database (#154).
+  // Its OWN client, minted through the app bar's «+» (round 111): what this
+  // spec attaches to it is its own, and the next spec reads none of it (#154).
   await page.goto('/crm');
   await page.getByTestId('quick-create').click();
   await page.getByTestId('quick-kind-client').click();
@@ -303,19 +304,22 @@ test('a won lead is attached to an EXISTING client found by NAME, and the deal i
   await page.getByTestId('won-confirm').click();
   await expect(page.getByTestId('won-client-code')).toHaveText(code, { timeout: 15_000 });
   await expect(page.getByTestId('won-deal-code')).toContainText('B-');
+  ulashDeal = (await page.getByTestId('won-deal-code').textContent())?.trim() ?? '';
   await page.getByTestId('won-to-deal').click();
   await expect(page).toHaveURL(/\/bitimlar\/[0-9a-f-]+$/);
   // The code is in the card's subtitle (round 79 put it under the title).
   await expect(page.locator('body')).toContainText(code);
 });
 
-test('a code that already carries a lead is refused at the echo, by name (#882)', async ({ page }) => {
-  // The round's own screenshot found the old shape: the index's 23505 threw
-  // out of the action and the dialog froze with a greyed button. Now the tap
-  // itself is refused, the sentence names the lead, and the press stays shut.
-  // A failed earlier test leaves this empty (round 62's lesson: assert the
+test('a code that already carries a lead takes the next one as a NEW deal, and the echo names its seller', async ({ page }) => {
+  // His 2026-10-27 «crmdan bitimga yutildi deb otkazganda bitim bor deb
+  // qaytaryabti»: 0136 dropped one-lead-per-client, so a repeat customer's
+  // new enquiry is won onto the code it belongs to — as a deal of its own.
+  // The echo names whose client this is, because the attach has no undo.
+  // A failed earlier test leaves these empty (round 62's lesson: assert the
   // carried value before using it, or every locator times out blaming itself).
   expect(ulashCode).toBeTruthy();
+  expect(ulashDeal).toBeTruthy();
   await login(page, OWNER);
   await page.goto('/crm/leads/new');
   await page.getByTestId('lead-name').fill(`Takror lid ${runId}`);
@@ -328,7 +332,12 @@ test('a code that already carries a lead is refused at the echo, by name (#882)'
   await page.getByTestId('won-mode-attach').click();
   await page.getByTestId('won-attach-code').fill(`Ulash mijoz ${runId}`);
   await page.getByTestId('won-hit').filter({ hasText: ulashCode }).click();
-  await expect(page.getByTestId('won-error')).toContainText(`Ulash lid ${runId}`);
-  await expect(page.getByTestId('won-checked')).toHaveCount(0);
-  await expect(page.getByTestId('won-confirm')).toBeDisabled();
+  await expect(page.getByTestId('won-checked')).toContainText(ulashCode);
+  // The quick «+» made the owner this client's seller (round 111's minter rule).
+  await expect(page.getByTestId('won-checked-seller')).not.toBeEmpty();
+  await expect(page.getByTestId('won-error')).toHaveCount(0);
+  await page.getByTestId('won-confirm').click();
+  await expect(page.getByTestId('won-client-code')).toHaveText(ulashCode, { timeout: 15_000 });
+  await expect(page.getByTestId('won-deal-code')).toContainText('B-');
+  await expect(page.getByTestId('won-deal-code')).not.toHaveText(ulashDeal);
 });

@@ -17,7 +17,7 @@ import {
   type ThreadKind,
   type ThreadRef,
 } from '../../platform/notifications/thread-ref';
-import { kartaHref, newestRequestOn } from '../calc/card-door';
+import { calcWorkspaceHref, kartaHref, newestRequestOn } from '../calc/card-door';
 import { canWriteDeal } from '../deals/door';
 import { codeIdentity } from '../labels/code-identity';
 import { mayOpenLead } from './lead-door';
@@ -580,7 +580,7 @@ export async function threadHrefsFor(
         break;
       case 'calc': {
         const request = requests.get(id);
-        if (viewer.permissions.has('ved.docs')) href = request ? `/hisoblash/${id}#savol` : null;
+        if (viewer.permissions.has('ved.docs')) href = request ? calcWorkspaceHref(viewer, id, '#savol') : null;
         else if (request?.entity_type === 'lead' && mayOpenLead(reader, { ownerId: request.owner_id })) {
           href = `/crm/leads/${request.entity_id}#calc-thread-${id}`;
         } else if (request?.entity_type === 'deal' && canWriteDeal(viewer.permissions)) {

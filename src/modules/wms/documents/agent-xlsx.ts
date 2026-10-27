@@ -16,7 +16,7 @@ import {
 import { getStorage } from '../../platform/files/storage';
 import { paperLines, planSegments, truckSegments, type PaperView, type StoredLine } from '../receipts/composition-math';
 import { compositionsFor, lotTrucksFor, paperCompositionsFor } from '../receipts/lot-composition';
-import { agentContentsText, ESTIMATE_FILL, estimateNote } from './composition-cells';
+import { agentContentsText, agentPiecesCell, ESTIMATE_FILL, estimateNote } from './composition-cells';
 
 /**
  * Agent approval Excel (W3, spec 6.3): one row per planned line with an
@@ -93,6 +93,8 @@ export async function buildAgentXlsx(planId: string, versionNo: number): Promise
   sheet.columns = [
     { header: DOC.code, key: 'code', width: 14 },
     { header: DOC.product, key: 'product', width: 40 },
+    // BEFORE the carton count, blank when unknown (his 8.5 and 7b, 2026-10-27).
+    { header: DOC.pieces, key: 'pieces', width: 10 },
     { header: DOC.boxes, key: 'boxCount', width: 10 },
     { header: DOC.kg, key: 'kg', width: 10 },
     { header: DOC.m3, key: 'm3', width: 10 },
@@ -142,7 +144,7 @@ export async function buildAgentXlsx(planId: string, versionNo: number): Promise
   const contents = await planContents(plan, lines, lotIds, origin?.country ?? '', dest?.country ?? '');
   const contentsDone = new Set<string>();
 
-  const PHOTO_START_COL = 8; // zero-based: right after the arrival columns
+  const PHOTO_START_COL = 9; // zero-based: right after the arrival columns
   // Every date on this sheet is the warehouse's own day, not the server's.
   const zone = origin?.timezone ?? 'UTC';
   let rowNo = 3;
@@ -181,6 +183,7 @@ export async function buildAgentXlsx(planId: string, versionNo: number): Promise
       sheet.getRow(rowNo).values = {
         code: `${clientCode ?? marking ?? '?'}-${lot.letter ?? ''}`,
         product: `${lot.productNameZh}${lot.productNameRu ? ` (${lot.productNameRu})` : ''}`,
+        pieces: '',
         boxCount: line.plannedBoxCount,
         kg: Number(line.plannedKg),
         m3: Number(line.plannedM3),
@@ -204,6 +207,7 @@ export async function buildAgentXlsx(planId: string, versionNo: number): Promise
         const { view, cartons } = lotContents;
         const cell = sheet.getRow(rowNo).getCell('product');
         cell.value = `${cell.value as string}\n${agentContentsText(view.lines, view.estimate)}`;
+        sheet.getRow(rowNo).getCell('pieces').value = agentPiecesCell(view.lines);
         cell.alignment = { wrapText: true, vertical: 'top' };
         if (view.estimate) {
           cell.note = estimateNote(view, cartons, lot.boxCount);

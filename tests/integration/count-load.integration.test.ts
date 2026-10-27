@@ -44,6 +44,7 @@ import {
 } from '@/modules/wms/scanning/count-load';
 import { createCrate } from '@/modules/wms/crates/service';
 import { buildPackingPhotosXlsx } from '@/modules/wms/documents/packing-photos-xlsx';
+import { DOC } from '@/modules/wms/documents/labels';
 import { batchRegister, staffActivity } from '@/modules/wms/reports/queries';
 import { GROW_LOT_MAX } from '@/modules/wms/receipts/grow-lot';
 
@@ -662,10 +663,14 @@ describe('the truck’s papers read what is ON it (decision 25)', () => {
     await wb.xlsx.load(buf! as never);
     const sheet = wb.worksheets[0]!;
     const byCode = new Map<string, number>();
+    // The carton column found by its HEADER, never by position: the «шт»
+    // column (his 8.5, 2026-10-27) moved it once already.
+    const boxesCol = (sheet.getRow(2).values as unknown[]).indexOf(DOC.boxes);
+    expect(boxesCol).toBeGreaterThan(0);
     sheet.eachRow((row, rowNo) => {
       if (rowNo <= 2) return; // the title and the header
       const code = String(row.getCell(1).value ?? '');
-      const n = Number(row.getCell(3).value ?? 0);
+      const n = Number(row.getCell(boxesCol).value ?? 0);
       if (code.includes('-')) byCode.set(code, n);
     });
     const counts = [...byCode.values()].sort();

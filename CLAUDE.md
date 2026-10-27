@@ -159,6 +159,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | The staff Telegram group — celebrations, the Saturday 18:00 rating, the month's champion, /reyting | `docs/JAMOA-GURUHI.md` — agreed 2026-10-20 (his «3. 2 3 gif … tabriklash ham / qolgani sen aytkandek»), SHIPPED |
 | Every truck in one place — the board by place, the % by distance, GPS, the gate | `docs/PARTIYA-DOSKASI.md` — agreed 2026-10-17 (his 1A 2a 3a 4a 5a 6c 7a 8b 9b 10b 11A 12A, then «1 hozirgidek qolsin»), SHIPPED; §2 is the placement as built; §3a = «Yo'lda» in two columns, inside / outside China (2026-10-21) |
 | LTL / FTL — which cargo the KPI and the rating count, who may mark it, the paid-month freeze, the logist's hint | `docs/LTL-FTL.md` — agreed 2026-10-20 (his «3 b / qolgani sen aytgandek» = 1a 2a 3b 4a 5a 6a 7a), SHIPPED |
+| The price's link to its calculation; a new deal per coded request; a lead for a colleague's client; a won lead split by SALE; the one-line tarkib and «шт» | `docs/UCH-BAND.md` — agreed 2026-10-27 (his «3b / 4 a / 5 a / 6 a / 7 b», Q1-Q2 ⭐), BUILT; §7 is the design as judged |
 
 ## State — 2026-08-23
 
@@ -2962,7 +2963,26 @@ CN destination is inland (no hub test), ONE arrived column (`columnOf` splits on
 filter hides everything bound for China (`routeFilterOf` = a `kg`/`kz` leg; a map walk over every pair proves no
 road into China has one, and refuses an unclassed new map code).
 
-**Latest migration: 0135** (`load_mode`, `when` …114; ledger must reach **136**). Before
+**Round — uch band (2026-10-27; DECISIONS #1469-#1478, numbered past PR #127's #1455-#1468; migration
+0136 `lead_client_many` — ledger must reach 137; spec `docs/UCH-BAND.md`).** His three items after the 136
+deploy, answers «3b / 4 a / 5 a / 6 a / 7 b» (Q1-Q2 ⭐). Judged by five lenses before code (83 objections, 0
+refuted). (1) The card's price links to its calculation through ONE home, `calcWorkspaceHref` (ved.docs only,
+fenced), and only when the card's number IS the writer's (`quoteWriterFor`/`writerWroteCard`). (2) A coded
+request from the bot or a chat is a NEW card written with its note in ONE commit (`landCodedRequest`;
+`cardOfNote` = the retry; the round-111 shell taken over once); a colleague's client (a sender with `crm.leads`,
+Q3 b) is a LEAD in the sender's funnel, unbound, the client in the side table `lead_about_client` (#1381);
+neither phone joiner joins it. 0136 drops `leads_client_unique`; «Yutildi» onto a code with a lead opens a new
+deal; a won lead's jobs split by SALE (`calc/win-split.ts`: chain + «outranked» edges in
+`answerFloorStandsSql`'s own terms — without the second a dead Готово answer STANDS again on its new deal,
+measured) in ONE transaction (requests → lead FOR UPDATE, re-read, `changed`; per-opening token → uuidv5 deal
+ids; `rekeyLeadCalcJobsTx` by anchor; the won stage inside). `upsale_paid` keeps a paid prixod on its deal;
+`lead_closed` refuses a job on a won lead. (3) One-line tarkib (`MIN_LINES` 1, readers' own `MIN_STORED_LINES`),
+the vouch term (`tarkibVouchesSql`), `tnved_would_vanish`, «шт» on Packing (rasmlar), the packing list and the
+agent file. Stated, not built: #1476 (Q8 — a truck price over two deals of one client — asked). Deploy MUST
+rebuild tg-listen (`inboundMatch` changed).
+
+**Latest migration: 0136** (`lead_client_many`, `when` …115; ledger must reach **137**). Before
+it: 0135 (`load_mode`, `when` …114). Before
 it: 0134 (`staff_group`, `when` …113). Before
 it: 0133 (`pickup_close`, `when` …112). Before
 it: 0132 (`cost_freight_basis`, `when` …111). Before
@@ -3102,7 +3122,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **136** since 0135 (135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **137** since 0136 (136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read
@@ -3118,6 +3138,9 @@ migration of its own, it rides with 0133) is checked by BOTH the count (134) and
 `/api/version`; a code-only round after it is checked by `/api/version` alone
 (anything short of the journal means
 a migration did not land — read the `migrate` container's own output).
+**Then he CONFIRMED 136** («deploy qildim 136 chiqdi», 2026-10-27), so everything through
+the LTL/FTL round and «Yo'lda» in two columns (#1454) is LIVE; the uch-band round (0136)
+must read **137**.
 Never carry this number over from a previous session: read it
 (`ls src/modules/platform/db/migrations/*.sql | wc -l`) before writing the
 owner a step list, because the count is the only check that separates «the

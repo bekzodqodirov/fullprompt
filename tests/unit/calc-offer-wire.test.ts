@@ -151,7 +151,21 @@ describe('the panel that hosts it', () => {
     expect(PANEL_CODE).toContain("const writes = !readOnly && (entityType === 'deal' || sellerOnLead);");
     // The send form is the seller's too — the VED must not open a request on
     // a seller's lead from the karta (14a, review access-money-2).
-    expect(PANEL_CODE).toMatch(/\{writes \? \(\s*<div className="border-t border-line pt-2">\s*<p className="text-2xs text-ink-500 sm:hidden">\{t\('sendOnPhone'\)\}/);
+    // A CLOSED lead takes no job (0136's round): the same switch first draws
+    // the refusal's words in place of the form.
+    expect(PANEL_CODE).toContain('{writes && !takesJobs ? (');
+    expect(PANEL_CODE).toMatch(/\) : writes \? \(\s*<div className="border-t border-line pt-2">\s*<p className="text-2xs text-ink-500 sm:hidden">\{t\('sendOnPhone'\)\}/);
+  });
+
+  it('the lead card asks the SERVER\'s question about a closed lead, for both of its calc doors', () => {
+    // `leadTakesJobs` is the stage KIND whatever its `active` flag; the
+    // page's active-only stage list read an open lead in a switched-off
+    // column as closed and hid the form the server would take (review).
+    const page = code(readFileSync('src/app/(protected)/crm/leads/[id]/page.tsx', 'utf8'));
+    expect(page).toContain('const takesJobs = await leadTakesJobs(lead.id);');
+    expect(page).toContain('takesJobs={takesJobs}');
+    expect(page).toContain('leadTakesJobs={takesJobs}');
+    expect(page).not.toMatch(/takesJobs=\{stages\./);
   });
 
   it('16a: the seller\'s full offer rows only for who may offer; a PROJECTION for who may only read', () => {
@@ -177,8 +191,13 @@ describe('the panel that hosts it', () => {
     expect(PANEL_CODE).toContain('anchors.seals.map((seal) => sealBlock(seal, true))');
     expect(PANEL_CODE).toContain('anchors.answers.map((answer) =>');
     const lock = code(read('src/modules/wms/crm/service.ts'));
+    // The lock is the WRITER's answer while it stands (his 2026-10-27: the
+    // writer also names the job the card's «Narx» links) — one body, read
+    // by both, so the lock and the link cannot pick different jobs.
     const fn = lock.slice(lock.indexOf('export async function quoteLockedFor'));
-    expect(fn.slice(0, fn.indexOf('\n}'))).toContain('standingAnchorsFor(entityType, entityId)');
+    expect(fn.slice(0, fn.indexOf('\n}'))).toContain('await quoteWriterFor(entityType, entityId)');
+    const writer = lock.slice(lock.indexOf('export async function quoteWriterFor'));
+    expect(writer.slice(0, writer.indexOf('\n}'))).toContain('standingAnchorsFor(entityType, entityId)');
   });
 });
 

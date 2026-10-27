@@ -1932,7 +1932,9 @@ async function handleCalcCallback(
 
   const state = activeIntake(chatId);
   if (!state) {
-    await ctx.reply('Bu so‘rov eskirgan. «🧮 Hisoblatish» tugmasidan qaytadan boshlang.');
+    // A «Saqlash» redelivered after a restart lands here too: never «type it
+    // by hand» about a job that may already be on its card (judge conc-13).
+    await ctx.reply('Bu so‘rov yopilgan — saqlangan bo‘lsa, kartada turibdi. Yangisini «🧮 Hisoblatish» tugmasidan boshlang.');
     return;
   }
 
@@ -2022,14 +2024,32 @@ async function handleCalcCallback(
     await ctx.reply('Ulanmagan.');
     return;
   }
+  // A coded client's card is refused BEFORE it is minted when the queue
+  // would refuse the job (`calcOpenRefusal`): the code travels back so the
+  // person reads WHY, and nothing was written.
+  let refused: string | null = null;
   const target = await landCollectedIntake(chatId, staff.id, staff.fullName).catch(
     (err: unknown) => {
+      const code = (err as { code?: unknown } | null)?.code;
+      if (typeof code === 'string' && code in QUEUE_REFUSAL) {
+        refused = code;
+        return null;
+      }
       logger.error({ err }, 'calc intake landing failed');
       return null;
     },
   );
   if (!target) {
-    await ctx.reply('Saqlab bo‘lmadi. Sistemadan qo‘lda kiriting.');
+    if (refused) {
+      // A job too big for the queue never fits; twenty open requests clear
+      // when the VED answers, so that collection waits for the next press.
+      if (refused === 'too_many_items' || refused === 'note_taken') endIntake(chatId);
+      await ctx.reply(`⚠️ Saqlanmadi: ${queueRefusal(refused)}`, { reply_markup: await replyKeyboardFor(chatId) });
+      return;
+    }
+    // The card and its note are one commit and a retry finds them through the
+    // note, so pressing again finishes the SAME card (judge conc-1).
+    await ctx.reply('Saqlab bo‘lmadi — «Saqlash»ni qayta bosing.');
     return;
   }
   endIntake(chatId);
@@ -2047,7 +2067,7 @@ async function handleCalcCallback(
   // everyone handed the VED a CRM card that bounces him.
   const link = await landingLinkFor(staff.id, target);
   await ctx.reply(
-    `✅ Saqlandi — ${target.kind === 'deal' ? 'bitim' : 'lead'}: ${target.label}\n` +
+    `✅ Saqlandi — ${landedWords(target)}\n` +
       (link ? `${link}\n` : '') +
       '\n' +
       // Honest about which half landed: the material is on the card either
@@ -2076,12 +2096,45 @@ const QUEUE_REFUSAL: Record<string, string> = {
   not_found: 'karta topilmadi.',
   note_taken: 'bu material allaqachon yozilgan.',
   note_foreign: 'material boshqa kartaga tegishli.',
+  lead_closed: 'lid yopilgan — unga yangi hisob-kitob qo‘shilmaydi; yutilgan bo‘lsa, uning bitimidan yuboring.',
   unauthenticated: 'siz tizimda emassiz.',
   server_behind: 'server yangilanmoqda — biroz keyinroq urinib ko‘ring.',
 };
 
 function queueRefusal(code: string | null | undefined): string {
   return (code && QUEUE_REFUSAL[code]) ?? 'kartadan qo‘lda yuboring.';
+}
+
+/**
+ * What the landing DID, in words (judge product-16): «yangi» only for a card
+ * that was minted — a joined lead, the client's empty deal taken over and a
+ * retried press's earlier card each say so. Exported for the unit test.
+ */
+export function landedWords(target: {
+  kind: 'deal' | 'lead';
+  label: string;
+  outcome?: string;
+  about?: { clientCode: string; sellerName: string | null } | null;
+}): string {
+  const card = target.kind === 'deal' ? 'bitim' : 'lid';
+  switch (target.outcome) {
+    case 'deal':
+      return `yangi bitim: ${target.label}`;
+    case 'adopted':
+      return `bitim: ${target.label} (mijozning bo‘sh bitimiga yozildi)`;
+    case 'about':
+      return `yangi lid: ${target.label} (${target.about?.clientCode ?? '—'} — ${target.about?.sellerName ? `${target.about.sellerName}ning mijozi` : 'sotuvchisi yo‘q'})`;
+    case 'about_joined':
+      return `lid: ${target.label} (shu mijoz haqidagi lidingizga qo‘shildi)`;
+    case 'lead':
+      return `yangi lid: ${target.label}`;
+    case 'lead_joined':
+      return `lid: ${target.label} (shu raqamdagi lidga qo‘shildi)`;
+    case 'retried':
+      return `oldingi urinishda ochilgan ${card}: ${target.label}`;
+    default:
+      return `${card}: ${target.label}`;
+  }
 }
 
 /**

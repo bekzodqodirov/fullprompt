@@ -59,6 +59,12 @@ export const DOC = {
    */
   partOfPlace: '(часть места) / (part of a place)',
   photo: 'Фото / Photo',
+  /**
+   * The packing lists' piece column (his 8.5, 2026-10-21: «karobka sonidan
+   * oldin shtuk donasi yozilsin yoqlari bosh qolsin») — blank wherever no
+   * count is stated, and never totalled: pieces of different goods do not add.
+   */
+  pieces: 'Кол-во, шт / Pieces',
   places: 'кол-во мест / Places',
   price: 'Цена за ед $ / Unit price $',
   product: 'Товар / Product',

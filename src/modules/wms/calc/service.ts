@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
-import { db } from '@/modules/platform/db/client';
+import { db, type Tx } from '@/modules/platform/db/client';
 import {
   calcGroups,
   calcOffers,
@@ -8,6 +8,7 @@ import {
   crmActivities,
   dealLines,
   deals,
+  leadStages,
   leads,
   tasks,
   users,
@@ -19,10 +20,11 @@ import { usersWithPermission, usersWithRoles } from '@/modules/platform/notifica
 import { canLogInSql } from '@/modules/platform/users/login';
 import { cardLink } from '@/modules/platform/notifications/links';
 import { logger } from '@/modules/platform/logger';
+import { violatedUnique } from '@/modules/platform/db/errors';
 import { retireTaskCopiesSoon } from '@/modules/platform/notifications/retire-tasks';
 import { clipText } from '@/modules/platform/telegram/format';
 import { kickPriceChannel, queuePriceChannelPost } from './channel-queue';
-import { addActivity } from '../crm/service';
+import { insertActivityTx } from '../crm/service';
 import { productKey, tnvedFor } from '../tnved/service';
 import { NO_REQUEST, itemNameNorm, sealedMemoryFor } from './memory';
 import {
@@ -235,6 +237,46 @@ const toNum = (value: string | number | null): number | null =>
   value === null ? null : Number(value);
 
 /**
+ * The two refusals a request meets before anything of it is written — ONE
+ * home (#513), asked by `openCalcRequest` and by the landing doors that mint a
+ * CARD first (calc/intake-land.ts): on main a refusal after the mint left an
+ * empty deal behind (the chat door) or a deal holding only the note (the
+ * bot), and with a new deal per request that is one more stranded card per
+ * press. A pooled count with no lock — a request landing between this and
+ * the insert can still refuse after the card exists; that window is a card
+ * with its note and no request, which a retry of the same note finishes.
+ */
+/**
+ * Does this lead still take a calculation? A lead's stage KIND decides,
+ * whatever its `active` flag — a column switched off on /crm/settings still
+ * holds open leads. `openCalcRequest` asks the same `kind = 'open'` (on the
+ * pool before anything is written, and again under the row lock); the card's
+ * send form and the chat's 🧮 ask THIS, so no door offers what the server
+ * refuses (review 2026-10-27).
+ */
+export async function leadTakesJobs(leadId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ kind: leadStages.kind })
+    .from(leads)
+    .innerJoin(leadStages, eq(leadStages.id, leads.stageId))
+    .where(eq(leads.id, leadId))
+    .limit(1);
+  return row?.kind === 'open';
+}
+
+export async function calcOpenRefusal(
+  requestedBy: string,
+  itemCount: number,
+): Promise<'too_many_items' | 'too_many_open' | null> {
+  if (itemCount > MAX_CALC_ITEMS) return 'too_many_items';
+  const mine = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(calcRequests)
+    .where(and(eq(calcRequests.requestedBy, requestedBy), openRequests));
+  return Number(mine[0]?.n ?? 0) >= MAX_OPEN_PER_REQUESTER ? 'too_many_open' : null;
+}
+
+/**
  * Open a calculation request and hand it to the queue.
  *
  * Everything pooled — the note, the TNVED memory, the rota — happens BEFORE
@@ -247,7 +289,8 @@ export async function openCalcRequest(
   ctx: AuditContext,
 ): Promise<{ id: string; assigneeId: string | null }> {
   if (!ctx.actorId) throw new CalcError('unauthenticated');
-  if (input.items.length > MAX_CALC_ITEMS) throw new CalcError('too_many_items');
+  const refused = await calcOpenRefusal(ctx.actorId, input.items.length);
+  if (refused) throw new CalcError(refused);
 
   // The card must exist, and its NAME goes in the task title so the VED
   // person knows what they are opening before they open it.
@@ -257,15 +300,22 @@ export async function openCalcRequest(
     if (!deal) throw new CalcError('not_found');
     label = deal.code;
   } else {
-    const lead = await db.query.leads.findFirst({ where: eq(leads.id, input.entityId) });
+    const [lead] = await db
+      .select({ name: leads.name, kind: leadStages.kind })
+      .from(leads)
+      .innerJoin(leadStages, eq(leadStages.id, leads.stageId))
+      .where(eq(leads.id, input.entityId))
+      .limit(1);
     if (!lead) throw new CalcError('not_found');
+    // A closed lead takes no job, refused BEFORE anything is written — the
+    // note and its pre-uploaded files would otherwise land on a card no job
+    // follows, and the next press would answer `note_taken` (review
+    // 2026-10-27). The transaction asks again under the row lock, for a win
+    // that commits between here and there.
+    if (lead.kind !== 'open') throw new CalcError('lead_closed');
     label = lead.name;
   }
 
-  const mine = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(calcRequests)
-    .where(and(eq(calcRequests.requestedBy, ctx.actorId), openRequests));
   // Pooled, so BEFORE the transaction (#714). Dynamic: dictionaries imports
   // this module for CalcError.
   let freightZone: string | null = null;
@@ -275,12 +325,12 @@ export async function openCalcRequest(
       ? input.freightZone
       : null;
   }
-  if (Number(mine[0]?.n ?? 0) >= MAX_OPEN_PER_REQUESTER) throw new CalcError('too_many_open');
 
-  // The materials. On the card path the note is written HERE, with the id the
-  // browser already uploaded files against — and an id that is already taken
-  // is refused rather than adopted, so a posted uuid cannot attach somebody
-  // else's note (and its files) to this request.
+  // The materials. On the card path the note is written in the REQUEST's
+  // transaction (below), with the id the browser already uploaded files
+  // against — so a refusal rolls it back and a retry starts clean — and an id
+  // that is already taken is refused rather than adopted, so a posted uuid
+  // cannot attach somebody else's note (and its files) to this request.
   let noteId: string | null = input.noteId ?? null;
   if (input.note) {
     const existing = await db.query.crmActivities.findFirst({
@@ -288,19 +338,8 @@ export async function openCalcRequest(
       columns: { id: true },
     });
     if (existing) throw new CalcError('note_taken');
-    await addActivity(
-      {
-        id: input.note.id,
-        entityType: input.entityType,
-        entityId: input.entityId,
-        kind: 'note',
-        note: input.note.text,
-      },
-      ctx,
-    );
     noteId = input.note.id;
-  }
-  if (noteId) {
+  } else if (noteId) {
     // Wherever it came from, the note must sit on the SAME card as the
     // request: the attachment gate widens for `ved.docs` on exactly this
     // link, so a note pointing somewhere else would widen it somewhere else.
@@ -363,6 +402,26 @@ export async function openCalcRequest(
   const dueAt = new Date(Date.now() + calcDueMinutes(items.length, hasMaterials) * 60_000);
 
   const requestId = await db.transaction(async (tx) => {
+    // A request lands on a lead only while it is OPEN, decided under the
+    // lead's row lock: a win takes the same row FOR UPDATE while it moves the
+    // lead's jobs onto their deals, so a job can no longer slip in between
+    // the move and the won stage and be stranded on a won lead whose seal
+    // would then write the lead (judge conc-8).
+    if (input.entityType === 'lead') {
+      const open = (await tx.execute(sql`
+        SELECT 1 AS ok FROM leads l JOIN lead_stages s ON s.id = l.stage_id
+         WHERE l.id = ${input.entityId}::uuid AND s.kind = 'open'
+           FOR SHARE OF l
+      `)) as unknown as { ok: number }[];
+      if (open.length === 0) throw new CalcError('lead_closed');
+    }
+    if (input.note) {
+      await insertActivityTx(
+        tx,
+        { id: input.note.id, entityType: input.entityType, entityId: input.entityId, kind: 'note', note: input.note.text },
+        ctx,
+      );
+    }
     const [row] = await tx
       .insert(calcRequests)
       .values({
@@ -400,6 +459,13 @@ export async function openCalcRequest(
       },
     });
     return id;
+  }).catch((err: unknown) => {
+    // Two presses of one form carry one pre-minted note id. The pooled check
+    // above answers the second once the first has COMMITTED; a second that
+    // arrives while the first's transaction is still open passes it and meets
+    // the note's key here instead — the same answer, not a white page.
+    if (input.note && violatedUnique(err) === 'crm_activities_pkey') throw new CalcError('note_taken');
+    throw err;
   });
 
   // The task is what puts the job on somebody's /bugun and their phone; it
@@ -974,44 +1040,81 @@ export async function releaseCalcForTask(taskId: string, actorId: string): Promi
 }
 
 /**
- * A won lead's open requests follow the cargo onto the new deal.
+ * A won lead's jobs follow their SALE onto its deal (his Q5 a, 2026-10-27 —
+ * «har so'rovga yangi bitim»; docs/UCH-BAND.md §7). `winLead` decides which
+ * request goes to which deal (`calc/win-split.ts`) and calls this inside the
+ * transaction that writes those deals, so the jobs and their deals commit as
+ * one fact.
  *
- * Without this the request stays keyed to the lead: the seller then saves the
- * deal's lines and `completeCalcForDeal` finds nothing, so that clock can
- * never stop. The same door `rekeyLeadCalls`/`rekeyLeadChats` already use.
+ * EVERY request moves, never only the open ones. It once filtered
+ * `openRequests` while a closed request was only history — but a SEALED
+ * request is closed and carries a PRICE, and `currentSealFor` finds a version
+ * by the card its request points at, so leaving sealed ones on the lead handed
+ * the new deal the number with none of the lock, at exactly the moment a quote
+ * becomes the invoice (#778). The won lead keeps its own copy as history; the
+ * deal is the live record, and it is the one that must stay locked.
+ *
+ * …and the OFFERS, which carry their own copy of the card. `recordOffer`
+ * denormalises entity_type/entity_id onto `calc_offers` so a card can read its
+ * own offers in one indexed query, and moving the request alone left
+ * `offersFor('deal', …)` EMPTY — what the seller promised the customer
+ * vanished from the only card that still exists (#789, measured, not argued).
+ * An offer moves with the job it is ANCHORED to — the request itself (a
+ * Готово answer) or one of its versions (a seal) — because with several deals
+ * there is no longer one place «every offer of the lead» could go.
+ */
+export async function rekeyLeadCalcJobsTx(
+  tx: Tx,
+  leadId: string,
+  routes: readonly { dealId: string; requestIds: readonly string[] }[],
+): Promise<number> {
+  let moved = 0;
+  for (const { dealId, requestIds } of routes) {
+    if (requestIds.length === 0) continue;
+    const ids = sql.join(
+      requestIds.map((rid) => sql`${rid}::uuid`),
+      sql`, `,
+    );
+    const rows = await tx
+      .update(calcRequests)
+      .set({ entityType: 'deal', entityId: dealId, updatedAt: new Date() })
+      .where(
+        and(
+          eq(calcRequests.entityType, 'lead'),
+          eq(calcRequests.entityId, leadId),
+          inArray(calcRequests.id, [...requestIds]),
+        ),
+      )
+      .returning({ id: calcRequests.id });
+    moved += rows.length;
+    await tx
+      .update(calcOffers)
+      .set({ entityType: 'deal', entityId: dealId })
+      .where(
+        and(
+          eq(calcOffers.entityType, 'lead'),
+          eq(calcOffers.entityId, leadId),
+          sql`(${calcOffers.requestId} IN (${ids})
+               OR ${calcOffers.versionId} IN (SELECT v.id FROM calc_versions v WHERE v.request_id IN (${ids})))`,
+        ),
+      );
+  }
+  return moved;
+}
+
+/**
+ * Every job of a lead onto ONE deal, in a transaction of its own — the
+ * shorthand a test uses to put a lead's calculations on a deal. Production
+ * never calls it: a won lead splits its jobs by sale (`winLead`).
  */
 export async function rekeyLeadCalcRequests(leadId: string, dealId: string): Promise<number> {
-  const rows = await db
-    .update(calcRequests)
-    .set({ entityType: 'deal', entityId: dealId, updatedAt: new Date() })
-    // EVERY request, not just the open ones.
-    //
-    // It filtered `openRequests` while a closed request was only history. A
-    // SEALED request is closed and carries a PRICE, and `currentSealFor` finds
-    // a version by the card its request points at — so leaving sealed ones on
-    // the lead handed the new deal the number with none of the lock, and the
-    // quote became freely editable at exactly the moment it becomes the
-    // invoice. The won lead keeps its own copy as history; the deal is the
-    // live record, and it is the one that must stay locked.
-    .where(and(eq(calcRequests.entityType, 'lead'), eq(calcRequests.entityId, leadId)))
-    .returning({ id: calcRequests.id });
-
-  // …and the OFFERS, which carry their own copy of the card.
-  //
-  // `recordOffer` denormalises entity_type/entity_id onto `calc_offers` so a
-  // card can read its own offers in one indexed query, and this function moved
-  // the request alone — so `offersFor('deal', …)` came back empty and what the
-  // seller actually promised the customer vanished from the only card that
-  // still exists. MEASURED, not argued. It is the same defect the paragraph
-  // above describes, one table over, which is the whole reason it was easy to
-  // miss: fixing the rule in one place is not fixing it in every place the
-  // rule was restated.
-  await db
-    .update(calcOffers)
-    .set({ entityType: 'deal', entityId: dealId })
-    .where(and(eq(calcOffers.entityType, 'lead'), eq(calcOffers.entityId, leadId)));
-
-  return rows.length;
+  return db.transaction(async (tx) => {
+    const rows = await tx
+      .select({ id: calcRequests.id })
+      .from(calcRequests)
+      .where(and(eq(calcRequests.entityType, 'lead'), eq(calcRequests.entityId, leadId)));
+    return rekeyLeadCalcJobsTx(tx, leadId, [{ dealId, requestIds: rows.map((row) => row.id) }]);
+  });
 }
 
 /**

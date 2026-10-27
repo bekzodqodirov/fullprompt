@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import type { CalcRegistrySight } from '@/modules/wms/calc/control-scope';
 import { SECTION_LABELS } from '@/modules/wms/calc/labels';
@@ -40,7 +41,13 @@ function bazaText(bazaUsd: number | null, basis: string | null, perUnit: string)
 const ddmmyyyy = (d: Date) =>
   d.toLocaleDateString('ru-RU', { timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit', year: 'numeric' });
 
-export async function CalcSheet({ data, sight: _sight }: { data: CalcSheetData; sight: CalcRegistrySight }) {
+// `calcHref` is the page's `calcWorkspaceHref` answer (his 2026-10-27): the
+// truck's «Narx» tab is read by the accountant too, who gets no link.
+export async function CalcSheet({
+  data,
+  calcHref = null,
+  sight: _sight,
+}: { data: CalcSheetData; calcHref?: string | null; sight: CalcRegistrySight }) {
   const t = await getTranslations('calcSheet');
   const tf = await getTranslations('finance');
   const tc = await getTranslations('calc');
@@ -72,6 +79,11 @@ export async function CalcSheet({ data, sight: _sight }: { data: CalcSheetData; 
           </span>
         ) : null}
         {data.expired ? <span className="chip chip-warn">{t('expired')}</span> : null}
+        {calcHref ? (
+          <Link href={calcHref} className="font-semibold text-brand-700" data-testid="calc-sheet-link">
+            {tc('openCalc')}
+          </Link>
+        ) : null}
       </p>
 
       {data.groups.map((g, index) => (
@@ -240,7 +252,13 @@ export async function CalcSheet({ data, sight: _sight }: { data: CalcSheetData; 
  * shown in its own currency and marked «muhrlanmagan» — it is a word, not a
  * locked document.
  */
-export async function CalcAnswers({ answers, sight: _sight }: { answers: CalcAnswer[]; sight: CalcRegistrySight }) {
+const NO_HREFS: ReadonlyMap<string, string> = new Map();
+
+export async function CalcAnswers({
+  answers,
+  calcHrefs = NO_HREFS,
+  sight: _sight,
+}: { answers: CalcAnswer[]; calcHrefs?: ReadonlyMap<string, string>; sight: CalcRegistrySight }) {
   if (answers.length === 0) return null;
   const tf = await getTranslations('finance');
   const tc = await getTranslations('calc');
@@ -269,6 +287,14 @@ export async function CalcAnswers({ answers, sight: _sight }: { answers: CalcAns
             {' · '}
             {ddmmyyyy(a.completedAt)} · {a.byName ?? '—'}
           </span>
+          {calcHrefs.get(a.requestId) ? (
+            <>
+              {' '}
+              <Link href={calcHrefs.get(a.requestId)!} className="font-semibold text-brand-700" data-testid="calc-answer-link">
+                {tc('openCalc')}
+              </Link>
+            </>
+          ) : null}
           {a.note ? <p className="mt-0.5 whitespace-pre-wrap text-ink-600">{a.note}</p> : null}
         </li>
       ))}

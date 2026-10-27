@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { randomUUID } from 'node:crypto';
 import { and, eq, inArray } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -21,6 +22,7 @@ import {
   calcCardExists,
   isCalcCardClient,
   kartaCardFor,
+  wonDealsOfLead,
   leadEverPriced,
   mayOpenCalcCard,
   noteLinksFor,
@@ -291,6 +293,10 @@ describe('after the lead is won (review tests-completeness-21)', () => {
     expect(await kartaCardFor(requestId)).toEqual({ kind: 'deal', dealId, requestId });
     // The request with no note now names no lead at all — stated, not built.
     expect(await kartaCardFor(noNote, leadId)).toEqual({ kind: 'deal', dealId, requestId: noNote });
+    // The LEAD card says where its jobs went (his 2026-10-27) — the same
+    // derivation for the whole lead, one line per deal.
+    expect(await wonDealsOfLead(leadId)).toEqual([{ id: dealId, code: `KD-${SUFFIX}` }]);
+    expect(await wonDealsOfLead(randomUUID())).toEqual([]);
 
     const att = { id: attachmentId, entityType: 'crm_activity', entityId: sellerNoteId, uploadedBy: sellerId };
     expect((await decideAttachmentRead(ved, att)).allow).toBe(true);
