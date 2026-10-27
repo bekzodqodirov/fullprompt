@@ -52,6 +52,20 @@ export interface PanelLine {
   tnvedCode: string | null;
 }
 
+/**
+ * What «Bitta tovar» fills the one row with (his 8.x A+, 2026-10-21): the
+ * lot's own name, the TNVED the memory holds for it — the invoice prints a
+ * line's OWN code only (fence 4), so a one-line tarkib typed to add pieces
+ * would otherwise erase the code from the paper — and the pieces of the
+ * prixod's confirmed job when it counts exactly one good in dona. Passed only
+ * to a composition writer; never a price.
+ */
+export interface PanelOneGood {
+  name: string;
+  tnved: string | null;
+  pieces: number | null;
+}
+
 export interface PanelComposition {
   rev: number;
   seenBoxCount: number;
@@ -177,6 +191,7 @@ export function CompositionPanel({
   openOnLoad,
   from,
   canClearOnly = false,
+  oneGood = null,
 }: {
   lot: { id: string; label: string; boxCount: number; kg: string; m3: string };
   receiptId: string;
@@ -192,6 +207,7 @@ export function CompositionPanel({
    * clearable — or the document it cites is undeletable for ever.
    */
   canClearOnly?: boolean;
+  oneGood?: PanelOneGood | null;
 }) {
   const t = useTranslations('tarkib');
   const errorText = useRefusalText();
@@ -324,6 +340,7 @@ export function CompositionPanel({
           totals={totals}
           composition={composition}
           documents={documents}
+          oneGood={oneGood}
           onDone={(result) => {
             setOpen(false);
             setSaved(result);
@@ -341,6 +358,7 @@ function CompositionEditor({
   totals,
   composition,
   documents,
+  oneGood,
   onDone,
   onCancel,
 }: {
@@ -349,6 +367,7 @@ function CompositionEditor({
   totals: LotTotals;
   composition: PanelComposition | null;
   documents: PanelDocument[];
+  oneGood: PanelOneGood | null;
   onDone: (result: { cleared: boolean; frozen: string[] }) => void;
   onCancel: () => void;
 }) {
@@ -360,7 +379,9 @@ function CompositionEditor({
 
   const fromComposition = (): { mode: Mode; lines: DraftLine[]; doc: string | null } => {
     if (!composition) {
-      return { mode: oneCarton ? 'mixed' : 'separate', lines: [{ ...EMPTY_LINE }, { ...EMPTY_LINE }], doc: null };
+      // ONE row: a tarkib of one good is the common case now (his
+      // 2026-10-27), and «+ qator» adds the rest.
+      return { mode: oneCarton ? 'mixed' : 'separate', lines: [{ ...EMPTY_LINE }], doc: null };
     }
     return {
       mode: composition.lines.every((l) => l.cartons !== null) ? 'separate' : 'mixed',
@@ -429,13 +450,22 @@ function CompositionEditor({
     return [...byId.values()];
   }, [documents, uploads, removed]);
 
+  // ONE line is the whole lot: its cartons ARE the lot's, so there is no
+  // alohida/aralash to choose (both print the same numbers on every paper) —
+  // the toggle and the cartons cell go, and the posted line carries the
+  // lot's own count (his 2026-10-27, docs/UCH-BAND.md §4).
+  const single = lines.length === 1;
+  const shownMode: Mode = single ? 'separate' : mode;
   // What is posted: aralash keeps the cartons in state but sends them empty.
   const posted = useMemo(
-    () => lines.map((l) => (mode === 'mixed' ? { ...l, cartons: '' } : l)),
-    [lines, mode],
+    () =>
+      single
+        ? lines.map((l) => ({ ...l, cartons: String(totals.boxCount) }))
+        : lines.map((l) => (mode === 'mixed' ? { ...l, cartons: '' } : l)),
+    [lines, mode, single, totals.boxCount],
   );
   const remainder = remainderOf(posted, totals);
-  const prefill = mode === 'separate' ? prefillByCartons(posted, totals) : null;
+  const prefill = shownMode === 'separate' ? prefillByCartons(posted, totals) : null;
   const scaleKg = scaleToLot(posted, totals, 'kg');
   const scaleM3 = scaleToLot(posted, totals, 'm3');
 
@@ -562,11 +592,11 @@ function CompositionEditor({
   const remainderParts = [
     measure('kg', remainder.kgUnits, KG_SCALE),
     measure('m³', remainder.m3Units, M3_SCALE),
-    mode === 'separate' ? measure(t('cartonsShort'), remainder.cartons ?? totals.boxCount, 0) : null,
+    shownMode === 'separate' && !single ? measure(t('cartonsShort'), remainder.cartons ?? totals.boxCount, 0) : null,
   ].filter((p): p is { text: string; tone: string } => p !== null);
 
   const perCarton = (l: DraftLine): string | null => {
-    if (mode !== 'separate') return null;
+    if (shownMode !== 'separate') return null;
     const pieces = toCount(l.pieces);
     const cartons = toCount(l.cartons);
     if (pieces === null || cartons === null) return null;
@@ -632,30 +662,32 @@ function CompositionEditor({
         <p className="text-xs text-ink-500">{t('docWhere')}</p>
       </div>
 
-      {/* 2. The mode. */}
-      <div className="flex flex-wrap gap-2">
-        {!oneCarton && (
+      {/* 2. The mode — only once there is more than one good to divide. */}
+      {!single && (
+        <div className="flex flex-wrap gap-2">
+          {!oneCarton && (
+            <button
+              type="button"
+              data-testid="tarkib-mode-separate"
+              aria-pressed={mode === 'separate'}
+              className={`chip !min-h-10 border ${mode === 'separate' ? 'border-brand-600 bg-brand-50 text-brand-800' : 'border-line'}`}
+              onClick={() => setMode('separate')}
+            >
+              {t('modeSeparate')}
+            </button>
+          )}
           <button
             type="button"
-            data-testid="tarkib-mode-separate"
-            aria-pressed={mode === 'separate'}
-            className={`chip !min-h-10 border ${mode === 'separate' ? 'border-brand-600 bg-brand-50 text-brand-800' : 'border-line'}`}
-            onClick={() => setMode('separate')}
+            data-testid="tarkib-mode-mixed"
+            aria-pressed={mode === 'mixed'}
+            className={`chip !min-h-10 border ${mode === 'mixed' ? 'border-brand-600 bg-brand-50 text-brand-800' : 'border-line'}`}
+            onClick={() => setMode('mixed')}
           >
-            {t('modeSeparate')}
+            {t('modeMixed')}
           </button>
-        )}
-        <button
-          type="button"
-          data-testid="tarkib-mode-mixed"
-          aria-pressed={mode === 'mixed'}
-          className={`chip !min-h-10 border ${mode === 'mixed' ? 'border-brand-600 bg-brand-50 text-brand-800' : 'border-line'}`}
-          onClick={() => setMode('mixed')}
-        >
-          {t('modeMixed')}
-        </button>
-      </div>
-      {mode === 'mixed' && (
+        </div>
+      )}
+      {shownMode === 'mixed' && (
         <p className="text-xs text-ink-500">{oneCarton ? t('oneCartonMixed') : t('modeMixedHint')}</p>
       )}
 
@@ -663,7 +695,7 @@ function CompositionEditor({
       <div className="hidden text-xs font-semibold text-ink-700 xl:grid xl:grid-cols-[minmax(9rem,1fr)_minmax(4.5rem,6rem)_minmax(4.5rem,6rem)_minmax(5.5rem,7rem)_minmax(5.5rem,7rem)_minmax(7rem,9rem)_2.75rem] xl:items-end xl:gap-2">
         <span>{t('name')}</span>
         <span>{t('pieces')}</span>
-        <span className={mode === 'mixed' ? 'invisible' : ''}>{t('cartons')}</span>
+        <span className={shownMode === 'mixed' || single ? 'invisible' : ''}>{t('cartons')}</span>
         <span>{t('kg')}</span>
         <span>{t('m3')}</span>
         <span>{t('tnved')}</span>
@@ -673,7 +705,7 @@ function CompositionEditor({
         {lines.map((l, i) => {
           const cell = (field: string) => `${lotId}-${i + 1}-${field}`;
           const removable = lines.length > MIN_LINES;
-          const per = perCarton(l);
+          const per = perCarton(posted[i]!);
           const restKg = fillRest(posted, i, 'kg', totals);
           const restM3 = fillRest(posted, i, 'm3', totals);
           return (
@@ -720,7 +752,7 @@ function CompositionEditor({
                     onChange={(e) => setCell(i, 'pieces', e.target.value)}
                   />
                 </label>
-                <label className={`block${mode === 'mixed' ? ' invisible' : ''}`}>
+                <label className={`block${shownMode === 'mixed' || single ? ' invisible' : ''}`}>
                   <span className="label xl:sr-only">{t('cartons')}</span>
                   <input
                     data-testid="tarkib-cartons"
@@ -729,7 +761,7 @@ function CompositionEditor({
                     inputMode="numeric"
                     className={`input !min-h-10${ringed(i, 'cartons')}`}
                     value={l.cartons}
-                    tabIndex={mode === 'mixed' ? -1 : undefined}
+                    tabIndex={shownMode === 'mixed' || single ? -1 : undefined}
                     onChange={(e) => setCell(i, 'cartons', e.target.value)}
                   />
                 </label>
@@ -813,16 +845,42 @@ function CompositionEditor({
           );
         })}
       </div>
-      {lines.length < MAX_LINES && (
-        <button
-          type="button"
-          data-testid="tarkib-add-line"
-          className="btn-secondary !min-h-10 px-3 text-sm"
-          onClick={() => setLines((prev) => [...prev, { ...EMPTY_LINE }])}
-        >
-          {t('addLine')}
-        </button>
-      )}
+      <div className="flex flex-wrap gap-2">
+        {lines.length < MAX_LINES && (
+          <button
+            type="button"
+            data-testid="tarkib-add-line"
+            className="btn-secondary !min-h-10 px-3 text-sm"
+            onClick={() => setLines((prev) => [...prev, { ...EMPTY_LINE }])}
+          >
+            {t('addLine')}
+          </button>
+        )}
+        {oneGood && lines.length === 1 && (
+          // Fills the one row with the WHOLE lot — a person pressed it and
+          // sees every value before saving; nothing is filled by itself.
+          <button
+            type="button"
+            data-testid="tarkib-one-good"
+            className="btn-secondary !min-h-10 whitespace-normal px-3 text-sm"
+            onClick={() => {
+              setLines([
+                {
+                  name: oneGood.name,
+                  pieces: oneGood.pieces !== null ? String(oneGood.pieces) : '',
+                  cartons: String(totals.boxCount),
+                  kg: totals.kg,
+                  m3: totals.m3,
+                  tnved: oneGood.tnved ?? '',
+                },
+              ]);
+              setRefusal(null);
+            }}
+          >
+            {t('oneGood')}
+          </button>
+        )}
+      </div>
 
       {/* 4. The person-pressed helpers. */}
       {(prefill || scaleKg || scaleM3) && (

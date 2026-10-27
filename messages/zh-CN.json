@@ -5554,6 +5554,7 @@
     "m3": "体积 (m³)",
     "tnved": "海关编码",
     "addLine": "+ 行",
+    "oneGood": "单一货物 — 从批次填写",
     "removeLine": "删除行",
     "line": "第 {n} 行",
     "prefill": "按箱数分配",
@@ -5575,7 +5576,7 @@
     "saved": "组成已保存",
     "savedFrozen": "{trucks} 已发送 — 其单据不变",
     "clear": "删除组成",
-    "clearConfirm": "组成将被删除 — 发票重新显示为一行。继续？",
+    "clearConfirm": "组成将被删除 — 发票和装箱单重新显示批次自己的名称。继续？",
     "cleared": "组成已删除",
     "stale": "组成填写后批次已变化：填写时 {stated}，现在 {current} — 请核对",
     "staleShort": "批次已变化 — 请核对组成",
@@ -5594,7 +5595,7 @@
     "errors": {
       "forbidden": "您无权填写此入库单的组成",
       "receipt_not_confirmed": "已作废的入库单不能填写组成",
-      "lines_count": "至少 2 种、最多 20 种货物。如只有一种，请物流员修改批次名称",
+      "lines_count": "1 至 20 种货物",
       "bad_line": "第 {seq} 行：请填写品名",
       "bad_number_kg": "第 {seq} 行，公斤：数字错误 — 小数最多 3 位",
       "bad_number_m3": "第 {seq} 行，体积：数字错误 — 小数最多 4 位",
@@ -5633,6 +5634,7 @@
     "stalePerson": "核对后已变更：{what} — 请再次询问",
     "staleWas": "之前确认：{by} · {day}",
     "staleDocument": "组成文件之后批次已变更 — 请再次询问",
+    "documentOtherName": "组成中写的是另一种货物 — 物流员更正批次名称后，即按文件 ✅",
     "none": "信息未核对",
     "unclaimed": "货主未确定 — 请先指定客户",
     "movedName": "货物名称",
@@ -5658,7 +5660,7 @@
     },
     "personOld": "之前客户已确认：{by} · {day} — 之后已变更：{what}",
     "documentOld": "组成文件已与批次不符 — 请检查组成",
-    "otherAnswersAskLogist": "客户说「其他货物」— 请告知物流员，由他修改名称；说「混装」— 用其文件填写 🧩 批次组成。",
+    "otherAnswersAskLogist": "客户说「其他货物」— 按其文件把 🧩 批次组成填为一行，单据显示该名称；仓库界面和标签上的名称由物流员修改。说「混装」— 每种货物一行。",
     "pruned": "{n} 个已选行已不在此仓库 — 已从计划中移除"
   },
   "qarzIzoh": {

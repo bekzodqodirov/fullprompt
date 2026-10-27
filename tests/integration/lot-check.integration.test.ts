@@ -440,6 +440,32 @@ describe('the document\'s check (his 3a: a lot tarkibi counts)', () => {
       .set({ boxCount: 10, totalWeightKg: '1000.000', totalVolumeM3: '2.5000' })
       .where(eq(receiptLots.id, lot.T));
   });
+
+  it('12b. a ONE-line tarkib vouches only for a lot of that name (his 8.6, 2026-10-27); another good leaves ❓ and names the rename', async () => {
+    const one = (name: string) => ({ name, pieces: '', cartons: '10', kg: '1000', m3: '2.5', tnved: '' });
+    const replace = async (lines: ReturnType<typeof composition>['lines']) => {
+      const rev = (await compositionsFor([lot.T])).get(lot.T)!.rev;
+      await saveComposition({ ...composition(), seenRev: rev, lines }, logist(), ctx(logistId));
+    };
+    // The lot's own name, spaced and cased otherwise — an ideographic space
+    // too, the one a Chinese name is typed with: the paper says what the lot says.
+    await replace([one(`\u3000混合${SFX.toLowerCase()}  `)]);
+    expect(await stateOf('T')).toMatchObject({ state: 'checked', byDocument: true, documentStale: false, documentOtherName: false });
+    // Another good: the papers are right, the warehouse screens are not.
+    await replace([one('Клавиатура')]);
+    expect(await stateOf('T')).toMatchObject({ state: 'none', byDocument: false, documentStale: false, documentOtherName: true });
+    // …and the lot outgrowing it is not «stale»: it never vouched.
+    await db.update(receiptLots).set({ boxCount: 11 }).where(eq(receiptLots.id, lot.T));
+    expect(await stateOf('T')).toMatchObject({ state: 'none', documentStale: false });
+    await db.update(receiptLots).set({ boxCount: 10 }).where(eq(receiptLots.id, lot.T));
+    // The logist's rename is the cure — the Russian name now IS the line's.
+    await db.update(receiptLots).set({ productNameRu: 'клавиатура' }).where(eq(receiptLots.id, lot.T));
+    expect(await stateOf('T')).toMatchObject({ state: 'checked', byDocument: true, documentOtherName: false });
+    await db.update(receiptLots).set({ productNameRu: null }).where(eq(receiptLots.id, lot.T));
+    // Two lines vouch whatever they are called, as they always did.
+    await replace(composition().lines);
+    expect(await stateOf('T')).toMatchObject({ state: 'checked', byDocument: true, documentOtherName: false });
+  });
 });
 
 describe('the worklist (his 4a: only cargo standing in China)', () => {

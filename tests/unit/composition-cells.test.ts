@@ -4,6 +4,7 @@ import {
   estimateNote,
   invoiceRowCells,
   packingBoxesCell,
+  packingPiecesCell,
   packingProductCell,
 } from '@/modules/wms/documents/composition-cells';
 import { DOC } from '@/modules/wms/documents/labels';
@@ -94,9 +95,19 @@ describe('the «шт» boundary through paperLines (owner 3a)', () => {
 });
 
 describe('the packing lists', () => {
-  it('the product cell names the pieces', () => {
-    expect(packingProductCell(pl({ name: 'Мышь', pieces: 1000 }))).toBe('Мышь — 1000 шт');
-    expect(packingProductCell(pl({ name: 'Мышь', pieces: null }))).toBe('Мышь');
+  it('the product cell is the line’s name plus the lot’s Chinese name (Q6 a) — the pieces have their own column now (8.5)', () => {
+    expect(packingProductCell(pl({ name: 'Мышь', pieces: 1000 }), '鼠标')).toBe('Мышь (鼠标)');
+    // No second copy of a name that IS the Chinese one, and none of an empty one.
+    expect(packingProductCell(pl({ name: '鼠标', pieces: null }), ' 鼠标 ')).toBe('鼠标');
+    expect(packingProductCell(pl({ name: 'Мышь', pieces: null }), '')).toBe('Мышь');
+    expect(packingProductCell(pl({ name: 'Мышь', pieces: 1000 }), '鼠标')).not.toMatch(/шт/);
+  });
+
+  it('the «шт» cell is the line’s pieces on this truck, or BLANK — never 0 (8.5)', () => {
+    expect(packingPiecesCell(pl({ pieces: 1000 }))).toBe(1000);
+    expect(packingPiecesCell(pl({ pieces: null }))).toBe('');
+    // A stated count that rounds to none on this truck reads «no goods» as 0.
+    expect(packingPiecesCell(pl({ pieces: 0 }))).toBe('');
   });
 
   it('«alohida» prints the line’s cartons; «aralash» the lot’s on the first line and «same cartons» after', () => {

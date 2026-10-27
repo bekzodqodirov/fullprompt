@@ -5554,6 +5554,7 @@
     "m3": "Volume (m³)",
     "tnved": "HS code",
     "addLine": "+ line",
+    "oneGood": "One good — fill from the lot",
     "removeLine": "Remove line",
     "line": "Line {n}",
     "prefill": "Split by cartons",
@@ -5575,7 +5576,7 @@
     "saved": "Contents saved",
     "savedFrozen": "{trucks} already sent — their papers do not change",
     "clear": "Remove contents",
-    "clearConfirm": "The contents go — the invoice prints one row again. Continue?",
+    "clearConfirm": "The contents go — the invoice and packing lists print the lot's own name again. Continue?",
     "cleared": "Contents removed",
     "stale": "The lot changed after the contents were stated: stated {stated}, now {current} — check it",
     "staleShort": "The lot changed — check the contents",
@@ -5594,7 +5595,7 @@
     "errors": {
       "forbidden": "You may not state the contents of this receipt",
       "receipt_not_confirmed": "A voided receipt takes no contents",
-      "lines_count": "At least 2 and at most 20 goods. If it is one good, the logist renames the lot",
+      "lines_count": "From 1 to 20 goods",
       "bad_line": "Line {seq}: write the goods name",
       "bad_number_kg": "Line {seq}, kg: not a number — at most 3 decimals",
       "bad_number_m3": "Line {seq}, m³: not a number — at most 4 decimals",
@@ -5633,6 +5634,7 @@
     "stalePerson": "Changed after the check: {what} — ask again",
     "staleWas": "Confirmed earlier by: {by} · {day}",
     "staleDocument": "The lot changed after the contents document — ask again",
+    "documentOtherName": "The contents name another good — once the logist renames the lot, it reads ✅ by document",
     "none": "Information not checked",
     "unclaimed": "Owner unknown — assign the client first",
     "movedName": "goods name",
@@ -5658,7 +5660,7 @@
     },
     "personOld": "Earlier confirmed by the client: {by} · {day} — changed since: {what}",
     "documentOld": "The contents document no longer matches the lot — check the contents",
-    "otherAnswersAskLogist": "If the client says «other goods» — tell the logist, who changes the name; if «mixed» — fill in the 🧩 lot contents with their document.",
+    "otherAnswersAskLogist": "If the client says «other goods» — fill in the 🧩 lot contents as one line from their document, and the papers print that name; on the warehouse screens and stickers the logist changes the name. If «mixed» — one line per good.",
     "pruned": "{n} selected rows are no longer at this warehouse — removed from the plan"
   },
   "qarzIzoh": {

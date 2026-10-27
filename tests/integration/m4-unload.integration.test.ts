@@ -21,6 +21,7 @@ import { recordVerdict, submitPlan } from '@/modules/wms/planning/service';
 import { departBatch, finishLoading, ingestLoadScans } from '@/modules/wms/scanning/service';
 import { buildManifestXlsx } from '@/modules/wms/documents/manifest-xlsx';
 import { buildPackingXlsx } from '@/modules/wms/documents/ved-xlsx';
+import { DOC } from '@/modules/wms/documents/labels';
 import {
   batchMemberFilter,
   closeBatch,
@@ -316,8 +317,15 @@ describe('customs documents after unload (audit defect)', () => {
     }
 
     const packing = (await open((await buildPackingXlsx(batch.id))!)).worksheets[0]!;
-    // Last row is the totals row; column 5 is the box count.
-    expect(Number(packing.getRow(packing.rowCount).getCell(5).value)).toBe(2);
+    // Last row is the totals row; the box count's column is found by its
+    // header — the «шт» column (his 8.5, 2026-10-27) moved it once already.
+    let boxesCol = -1;
+    packing.eachRow((row) => {
+      const at = (row.values as unknown[]).indexOf(DOC.boxes);
+      if (at > 0 && boxesCol < 0) boxesCol = at;
+    });
+    expect(boxesCol).toBeGreaterThan(0);
+    expect(Number(packing.getRow(packing.rowCount).getCell(boxesCol).value)).toBe(2);
   });
 });
 

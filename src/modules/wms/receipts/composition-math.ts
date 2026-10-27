@@ -230,8 +230,24 @@ export type DraftRefusal =
   | { code: 'kg_sum'; sum: string; lot: string }
   | { code: 'm3_sum'; sum: string; lot: string };
 
-export const MIN_LINES = 2;
+/**
+ * The WRITER's floor: one line is a tarkib (his 2026-10-27 «tarkib 1
+ * qatorlik bolsa ham ruxsat berish», reversing his own 1a of 2026-10-01,
+ * #1263 — a lot of ONE good still needs its pieces and its name on the
+ * client's paper, and two differently named lines of one good were the
+ * workaround the old floor taught).
+ */
+export const MIN_LINES = 1;
 export const MAX_LINES = 20;
+/**
+ * The READERS' torn-header guard, kept apart from the writer's floor on
+ * purpose: a header whose lines are gone (a clear torn between two
+ * statements) reads `compositionMode([])` as «mixed» and the invoice prints
+ * NO row — the lot vanishes from a customs paper. A composition with fewer
+ * stored lines than this is read as none. It must never follow MIN_LINES
+ * down to 0, which is why it is its own constant.
+ */
+export const MIN_STORED_LINES = 1;
 
 /**
  * The duplicate key of a line name: `tnved/service.ts productKey`, restated
@@ -675,7 +691,11 @@ export function paperLines(
     reasons.add('invalid');
     mode = 'mixed';
   }
-  if (n !== B) reasons.add('share');
+  // A truck carrying part of the lot prints a SHARE — but a one-line tarkib's
+  // kg, m³ and cartons ARE the truck's own figures (the line is the whole
+  // lot), so only its pieces are proportional: it is an estimate only when it
+  // states pieces (his 8.7, 2026-10-21).
+  if (n !== B && (lines.length > 1 || lines.some((l) => l.pieces !== null))) reasons.add('share');
   if (isStale(comp, lot)) reasons.add('stale');
 
   const kgUnits = lines.map((l) => BigInt(storedUnits(l.kg, KG_SCALE)));

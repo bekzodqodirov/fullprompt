@@ -32,6 +32,7 @@ import {
   isPaperDocument,
   lotTrucksFor,
   mayWriteComposition,
+  oneGoodPrefillFor,
 } from '@/modules/wms/receipts/lot-composition';
 import { isStale } from '@/modules/wms/receipts/composition-math';
 import { MarkLostForm, type LostBoxOption } from './mark-lost-form';
@@ -193,6 +194,9 @@ export default async function ReceiptDetailPage({
   const compositions = await compositionsFor(lotIds);
   const lotTrucks = await lotTrucksFor(db, lotIds);
   const mayCompose = mayWriteComposition(actor.permissions);
+  // «Bitta tovar» — read only for the writer: the receipt card is opened by
+  // warehouse staff too, and the prefill carries the memory's code.
+  const oneGood = mayCompose && receipt.status === 'confirmed' ? await oneGoodPrefillFor(receipt, lots) : new Map();
   const citedDocs = new Set([...compositions.values()].map((c) => c.attachment.id));
   const paperDocs = receiptFileRows
     .filter((f) => isPaperDocument(f, receipt))
@@ -596,6 +600,7 @@ export default async function ReceiptDetailPage({
                     askable: view.askable,
                     byDocument: view.byDocument,
                     documentStale: view.documentStale,
+                    documentOtherName: view.documentOtherName,
                     person: view.person
                       ? {
                           by: view.person.by,
@@ -700,6 +705,7 @@ export default async function ReceiptDetailPage({
               })()}
               canWrite={mayCompose && receipt.status === 'confirmed'}
               canClearOnly={mayCompose && receipt.status !== 'confirmed'}
+              oneGood={oneGood.get(lot.id) ?? null}
               documents={paperDocs}
               frozenTrucks={(lotTrucks.get(lot.id) ?? []).filter((truck) => truck.frozen).map((truck) => truck.code)}
               openOnLoad={tarkibLot === lot.id}

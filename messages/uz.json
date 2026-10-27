@@ -5554,6 +5554,7 @@
     "m3": "Kub (m³)",
     "tnved": "TNVED",
     "addLine": "+ qator",
+    "oneGood": "Bitta tovar — lotdan to'ldirish",
     "removeLine": "Qatorni o'chirish",
     "line": "{n}-qator",
     "prefill": "Karobka soniga qarab taqsimlash",
@@ -5575,7 +5576,7 @@
     "saved": "Tarkib saqlandi",
     "savedFrozen": "{trucks} yuborilgan — uning hujjatlari o'zgarmaydi",
     "clear": "Tarkibni o'chirish",
-    "clearConfirm": "Tarkib o'chiriladi — invoys yana bitta qator bo'ladi. Davom etasizmi?",
+    "clearConfirm": "Tarkib o'chiriladi — invoys va packing list yana lotning o'z nomini chiqaradi. Davom etasizmi?",
     "cleared": "Tarkib o'chirildi",
     "stale": "Lot tarkib yozilgandan keyin o'zgardi: tarkibda {stated}, hozir {current} — qayta tekshiring",
     "staleShort": "Lot o'zgardi — tarkibni tekshiring",
@@ -5594,7 +5595,7 @@
     "errors": {
       "forbidden": "Sizda bu prixodning tarkibini yozish huquqi yo'q",
       "receipt_not_confirmed": "Bekor qilingan prixodga tarkib yozilmaydi",
-      "lines_count": "Kamida 2 ta, ko'pi bilan 20 ta tovar. Bitta tovar bo'lsa — lot nomini logist o'zgartiradi",
+      "lines_count": "Kamida 1 ta, ko'pi bilan 20 ta tovar",
       "bad_line": "{seq}-qator: tovar nomini yozing",
       "bad_number_kg": "{seq}-qator, kg: son noto'g'ri — verguldan keyin ko'pi bilan 3 raqam",
       "bad_number_m3": "{seq}-qator, kub: son noto'g'ri — verguldan keyin ko'pi bilan 4 raqam",
@@ -5633,6 +5634,7 @@
     "stalePerson": "Tekshirilgandan keyin o'zgardi: {what} — qayta so'rang",
     "staleWas": "Avval tasdiqlagan: {by} · {day}",
     "staleDocument": "Tarkib hujjatidan keyin lot o'zgardi — qayta so'rang",
+    "documentOtherName": "Tarkibda lotdan boshqa nom yozilgan — logist lot nomini to'g'rilasa, hujjat bo'yicha ✅ bo'ladi",
     "none": "Ma'lumot tekshirilmagan",
     "unclaimed": "Egasi aniqlanmagan — avval mijozni biriktiring",
     "movedName": "tovar nomi",
@@ -5658,7 +5660,7 @@
     },
     "personOld": "Avval mijoz tasdiqlagan: {by} · {day} — keyin o'zgargan: {what}",
     "documentOld": "Tarkib hujjati endi lotga mos emas — tarkibni tekshiring",
-    "otherAnswersAskLogist": "Mijoz «boshqa tovar» desa — logistga ayting, nomini u o'zgartiradi; «aralash» desa — hujjati bilan 🧩 lot tarkibini yozing.",
+    "otherAnswersAskLogist": "Mijoz «boshqa tovar» desa — hujjati bilan 🧩 lot tarkibini bitta qator qilib yozing, hujjatlar shu nomni chiqaradi; sklad ekranlari va stikerlarda nomni logist o'zgartiradi. «Aralash» desa — har bir tovarni alohida qator qiling.",
     "pruned": "{n} ta tanlangan yuk endi bu skladda yo'q — rejadan olib tashlandi"
   },
   "qarzIzoh": {

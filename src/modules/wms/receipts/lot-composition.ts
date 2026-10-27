@@ -16,7 +16,7 @@ import {
   KG_SCALE,
   M3_SCALE,
   MAX_LINES,
-  MIN_LINES,
+  MIN_STORED_LINES,
   parseDraft,
   storedUnits,
   truckSegments,
@@ -494,11 +494,52 @@ const uuidList = (ids: string[]): SQL =>
  * ORDER BY seq) — two statements could tear (a clear between them gave a
  * header with no lines, which `compositionMode([])` reads as «mixed» and the
  * invoice prints as NO row: the lot vanishes from a customs paper). A view
- * with fewer than 2 lines is treated as no composition and logged. `exec`
+ * with no lines (fewer than `MIN_STORED_LINES`) is treated as no composition and logged. `exec`
  * DEFAULTS to `db` (`= db` in the signature, so the tx-pool fence classifies
  * it and flags an in-transaction call that forgets `tx`). A missing table
  * (the deploy morning, before `migrate`) answers an EMPTY map.
  */
+/**
+ * What «Bitta tovar» fills a one-row tarkib with, per lot of one prixod (his
+ * 8.x A+, 2026-10-21; docs/UCH-BAND.md §4): the lot's own name (Russian,
+ * else Chinese), the code the TNVED memory holds for its Chinese name, and
+ * the pieces of the prixod's job — only when a PERSON confirmed the link
+ * (an «auto» link is a suggestion that scores nobody, #804), the job counts
+ * exactly ONE good, and the prixod holds exactly one lot, so the count cannot
+ * belong to a neighbour. A prefill a person sees and keeps — never a value
+ * written by itself, and never the job's money. Read on the pool by the
+ * receipt card, only for a composition writer.
+ */
+export async function oneGoodPrefillFor(
+  receipt: { calcRequestId: string | null; calcLinkSource: string | null },
+  lots: readonly { id: string; productNameZh: string; productNameRu: string | null }[],
+): Promise<Map<string, { name: string; tnved: string | null; pieces: number | null }>> {
+  const out = new Map<string, { name: string; tnved: string | null; pieces: number | null }>();
+  if (lots.length === 0) return out;
+  const { productKey, tnvedFor } = await import('../tnved/service');
+  const memory = await tnvedFor(lots.map((lot) => lot.productNameZh));
+  let pieces: number | null = null;
+  if (lots.length === 1 && receipt.calcRequestId && receipt.calcLinkSource === 'person') {
+    const items = (await db.execute(sql`
+      SELECT quantity::text AS quantity, unit
+        FROM calc_request_items
+       WHERE request_id = ${receipt.calcRequestId}::uuid
+         AND quantity IS NOT NULL AND quantity > 0
+    `)) as unknown as { quantity: string; unit: string | null }[];
+    const only = items.length === 1 ? items[0]! : null;
+    const n = only && only.unit !== '1000_dona' ? Number(only.quantity) : NaN;
+    pieces = Number.isInteger(n) && n > 0 ? n : null;
+  }
+  for (const lot of lots) {
+    out.set(lot.id, {
+      name: (lot.productNameRu ?? '').trim() || lot.productNameZh.trim(),
+      tnved: memory.get(productKey(lot.productNameZh))?.tnvedCode ?? null,
+      pieces,
+    });
+  }
+  return out;
+}
+
 export async function compositionsFor(lotIds: string[], exec: Db | Tx = db): Promise<Map<string, CompositionView>> {
   const out = new Map<string, CompositionView>();
   const ids = [...new Set(lotIds)].filter((id) => UUID.test(id));
@@ -532,7 +573,7 @@ export async function compositionsFor(lotIds: string[], exec: Db | Tx = db): Pro
   }
   for (const row of rows) {
     const lines = jsonLines(row.lines);
-    if (lines.length < MIN_LINES) {
+    if (lines.length < MIN_STORED_LINES) {
       console.warn(`[lot-composition] lot ${row.lot_id}: ${lines.length} line(s) — read as no composition`);
       continue;
     }
@@ -606,7 +647,7 @@ export async function paperCompositionsFor(
     if (row.frozen) {
       if (row.s_lines === null || row.s_rev === null) continue;
       const lines = jsonLines(row.s_lines);
-      if (lines.length < MIN_LINES) continue;
+      if (lines.length < MIN_STORED_LINES) continue;
       out.set(row.lot_id, {
         seenBoxCount: Number(row.s_seen),
         lines,
@@ -617,7 +658,7 @@ export async function paperCompositionsFor(
     }
     if (row.rev === null) continue;
     const lines = jsonLines(row.lines);
-    if (lines.length < MIN_LINES) {
+    if (lines.length < MIN_STORED_LINES) {
       console.warn(`[lot-composition] lot ${row.lot_id}: ${lines.length} line(s) — read as no composition`);
       continue;
     }
@@ -784,7 +825,7 @@ export async function paperStampFor(batchId: string): Promise<string> {
       SELECT lc.lot_id, lc.rev
         FROM (SELECT DISTINCT boxes.lot_id FROM boxes WHERE ${batchMemberFilter(batchId)}) ml
         JOIN lot_compositions lc ON lc.lot_id = ml.lot_id
-       WHERE (SELECT count(*) FROM lot_composition_lines g WHERE g.lot_id = lc.lot_id) >= ${MIN_LINES}
+       WHERE (SELECT count(*) FROM lot_composition_lines g WHERE g.lot_id = lc.lot_id) >= ${MIN_STORED_LINES}
     `)) as unknown as { lot_id: string; rev: string | number }[];
     if (rows.length === 0) return '';
     const positions = await truckPositions(db, batchId, rows.map((r) => r.lot_id));
@@ -858,9 +899,9 @@ async function copyCompositionsInTx(
   const rows = (await tx.execute(sql`
     INSERT INTO batch_sent_compositions (batch_id, lot_id, rev, seen_box_count, lines, segments)
     SELECT ${batchId}::uuid, ml.lot_id,
-           CASE WHEN json_array_length(ln.lines) >= ${MIN_LINES} THEN lc.rev END,
-           CASE WHEN json_array_length(ln.lines) >= ${MIN_LINES} THEN lc.seen_box_count END,
-           CASE WHEN json_array_length(ln.lines) >= ${MIN_LINES} THEN ln.lines::jsonb END,
+           CASE WHEN json_array_length(ln.lines) >= ${MIN_STORED_LINES} THEN lc.rev END,
+           CASE WHEN json_array_length(ln.lines) >= ${MIN_STORED_LINES} THEN lc.seen_box_count END,
+           CASE WHEN json_array_length(ln.lines) >= ${MIN_STORED_LINES} THEN ln.lines::jsonb END,
            pos.segments
       FROM (SELECT DISTINCT boxes.lot_id FROM boxes WHERE ${batchMemberFilter(batchId)}) ml
       LEFT JOIN ${pos} ON pos.lot_id = ml.lot_id
