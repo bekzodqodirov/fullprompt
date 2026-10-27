@@ -4391,6 +4391,86 @@
    "realistic": "Form-style address «дом: 12, кв: 45» copied from the client's message.",
    "source": "r5-probe typed",
    "weight": "regression"
+  },
+  {
+   "id": "c2129",
+   "input": "Нужен Cargo из Гуанчжоу до Ташкента срочно, +998 90 123 45 67",
+   "opts": {
+    "prefix": "GS"
+   },
+   "expected": {
+    "null": true
+   },
+   "said": "f44a5a6: null (cargo talk refuses the long line; looksLikeMaterial true); 5756f84: {phone} and looksLikeMaterial false. `contactShaped` now takes any capitalised «Cargo» after the first word as a FIRM name, so a request for a cargo service is read as the customer's contact (R3-T6's shape).",
+   "why": "f44a5a6: null (cargo talk refuses the long line; looksLikeMaterial true); 5756f84: {phone} and looksLikeMaterial false. `contactShaped` now takes any capitalised «Cargo» after the first word as a FIRM name, so a request for a cargo service is read as the customer's contact (R3-T6's shape).",
+   "realistic": "A forwarded request in Russian with the Latin «Cargo», no greeting.",
+   "source": "r6-probe typed",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2131",
+   "input": "Владелец груза хочет узнать когда прибудет машина +998 90 123 45 67",
+   "opts": {
+    "prefix": "GS"
+   },
+   "expected": {
+    "null": true
+   },
+   "said": "f44a5a6: null; 5756f84: {phone}. «груза» beside «Владелец» is now a ROLE (CARGO_ROLE), so the cargo word no longer refuses a sentence that ASKS something about the truck.",
+   "why": "f44a5a6: null; 5756f84: {phone}. «груза» beside «Владелец» is now a ROLE (CARGO_ROLE), so the cargo word no longer refuses a sentence that ASKS something about the truck.",
+   "realistic": "A seller forwards the cargo owner's question with his number.",
+   "source": "r6-probe typed",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2132",
+   "input": "Yuk egasi Toshkentda, yukini Andijonga olib ketadi +998 90 123 45 67",
+   "opts": {
+    "prefix": "GS"
+   },
+   "expected": {
+    "null": true
+   },
+   "said": "f44a5a6: null; 5756f84: {phone}. «Yuk» beside «egasi» is a role now and «yukini» was never a YUK_WORD form, so the message about where the cargo goes passes as a contact.",
+   "why": "f44a5a6: null; 5756f84: {phone}. «Yuk» beside «egasi» is a role now and «yukini» was never a YUK_WORD form, so the message about where the cargo goes passes as a contact.",
+   "realistic": "Uzbek message about the owner and the cargo's destination, signed with a number.",
+   "source": "r6-probe typed",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2133",
+   "input": "Oldingi Cargo kompaniyasi kechikdi, endi sizlar bilan +998 90 123 45 67",
+   "opts": {
+    "prefix": "GS"
+   },
+   "expected": {
+    "null": true
+   },
+   "said": "f44a5a6: null; 5756f84: {phone}. Capitalised «Cargo» at word 2 is a firm (`firm` in contactShaped), so a complaint sentence becomes the customer contact.",
+   "why": "f44a5a6: null; 5756f84: {phone}. Capitalised «Cargo» at word 2 is a firm (`firm` in contactShaped), so a complaint sentence becomes the customer contact.",
+   "realistic": "A customer's chat line about the previous cargo company.",
+   "source": "r6-probe typed",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2134",
+   "input": "Kafel\nKv 45\n+998 90 123 45 67",
+   "opts": {
+    "prefix": "GS"
+   },
+   "expected": {
+    "null": true
+   },
+   "said": "f44a5a6: null, looksLikeMaterial true (ONE_WORD_COUNT «Kv 45» voided the hint); 5756f84: {phone}, looksLikeMaterial false. `nameDigits` now passes a one-word count whose word is an address word, and «kv»/«кв» are in ADDRESS_WORDS — so tile and its 45 m² over a phone become the customer.",
+   "why": "f44a5a6: null, looksLikeMaterial true (ONE_WORD_COUNT «Kv 45» voided the hint); 5756f84: {phone}, looksLikeMaterial false. `nameDigits` now passes a one-word count whose word is an address word, and «kv»/«кв» are in ADDRESS_WORDS — so tile and its 45 m² over a phone become the customer.",
+   "realistic": "Tile/laminate/wallpaper goods forwarded as name / «kv N» / phone.",
+   "source": "r6-probe typed",
+   "weight": "regression",
+   "severity": "rare"
   }
  ],
  "looksLikeMaterialCases": [
@@ -6361,6 +6441,34 @@
    "why": "base true; new false.",
    "source": "r4-probe typed",
    "weight": "regression"
+  },
+  {
+   "id": "c2130",
+   "input": "Нужен Cargo из Гуанчжоу до Ташкента срочно, +998 90 123 45 67",
+   "opts": {
+    "prefix": "GS"
+   },
+   "expected": true,
+   "said": "f44a5a6 true; 5756f84 false (the hint above now answers first).",
+   "why": "f44a5a6 true; 5756f84 false (the hint above now answers first).",
+   "realistic": "Same request.",
+   "source": "r6-probe typed",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2135",
+   "input": "Плитка\nКв 45\n+998 90 123 45 67",
+   "opts": {
+    "prefix": "GS"
+   },
+   "expected": true,
+   "said": "f44a5a6 true; 5756f84 false (parseClientHint now returns the phone). Same `nameDigits` address-word rule with «Кв».",
+   "why": "f44a5a6 true; 5756f84 false (parseClientHint now returns the phone). Same `nameDigits` address-word rule with «Кв».",
+   "realistic": "Russian twin of the line above.",
+   "source": "r6-probe typed",
+   "weight": "regression",
+   "severity": "rare"
   }
  ],
  "readGoodsLinesCases": [
@@ -14267,6 +14375,99 @@
    "realistic": "Mobile phones (8517130000) written hyphenated, as on many Uzbek price lists.",
    "source": "r5-probe typed",
    "weight": "regression"
+  },
+  {
+   "id": "c2123",
+   "input": "Tovar: ayollar kurtkasi. Karobka: 45",
+   "opts": {
+    "prefix": "GS"
+   },
+   "expected": {
+    "rows": [
+     {
+      "name": "ayollar kurtkasi"
+     }
+    ],
+    "count": 1
+   },
+   "said": "f44a5a6: [«ayollar kurtkasi»]; 5756f84: [«ayollar kurtkasi. Karobka: 45»] — the labelled body has no unit word left (`unitField`), so `bareGoods` keeps the whole body, the carton count and its colon, as the product NAME.",
+   "why": "f44a5a6: [«ayollar kurtkasi»]; 5756f84: [«ayollar kurtkasi. Karobka: 45»] — the labelled body has no unit word left (`unitField`), so `bareGoods` keeps the whole body, the carton count and its colon, as the product NAME.",
+   "realistic": "Label, product, then the carton count after a full stop on one Telegram line.",
+   "source": "r6-probe typed",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2124",
+   "input": "Товар: детская обувь. Коробка: 30",
+   "opts": {
+    "prefix": "GS"
+   },
+   "expected": {
+    "rows": [
+     {
+      "name": "детская обувь"
+     }
+    ],
+    "count": 1
+   },
+   "said": "f44a5a6: [«детская обувь»]; 5756f84: [«детская обувь. Коробка: 30»]. Same `unitField` sentence-break gap in Russian.",
+   "why": "f44a5a6: [«детская обувь»]; 5756f84: [«детская обувь. Коробка: 30»]. Same `unitField` sentence-break gap in Russian.",
+   "realistic": "Russian one-line description with the box count after a full stop.",
+   "source": "r6-probe typed",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2126",
+   "input": "Моб-тел 7011234567",
+   "opts": {
+    "prefix": "GS"
+   },
+   "expected": {
+    "rows": [],
+    "count": 0
+   },
+   "said": "f44a5a6: [] (any hyphen part «тел» made it a contact, `bareCodeOk` refused the ten digits); 5756f84: [«Моб-тел», tnvedCode «7011234567»] — `contactWord` now looks at the FIRST hyphen part only, so a phone label written «Моб-тел»/«Uy-tel»/«Ish-tel»/«Kontakt-telefon» lets a Kazakh/Russian mobile through as a TNVED-coded product.",
+   "why": "f44a5a6: [] (any hyphen part «тел» made it a contact, `bareCodeOk` refused the ten digits); 5756f84: [«Моб-тел», tnvedCode «7011234567»] — `contactWord` now looks at the FIRST hyphen part only, so a phone label written «Моб-тел»/«Uy-tel»/«Ish-tel»/«Kontakt-telefon» lets a Kazakh/Russian mobile through as a TNVED-coded product.",
+   "realistic": "A Kazakh transit contact (701…) written with its hyphenated label.",
+   "source": "r6-probe typed",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2127",
+   "input": "Kontakt-telefon 9161234567",
+   "opts": {
+    "prefix": "GS"
+   },
+   "expected": {
+    "rows": [],
+    "count": 0
+   },
+   "said": "f44a5a6: []; 5756f84: [«Kontakt-telefon», tnvedCode «9161234567»]. Same first-part-only hyphen rule.",
+   "why": "f44a5a6: []; 5756f84: [«Kontakt-telefon», tnvedCode «9161234567»]. Same first-part-only hyphen rule.",
+   "realistic": "Contact line forwarded with a Russian mobile.",
+   "source": "r6-probe typed",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2128",
+   "input": "Telefonga SMS 9161234567",
+   "opts": {
+    "prefix": "GS"
+   },
+   "expected": {
+    "rows": [],
+    "count": 0
+   },
+   "said": "f44a5a6: []; 5756f84: [«Telefonga SMS», tnvedCode «9161234567»]. `CONTACT_BARE_CASE` makes «telefonga» a contact only when nothing or a VERB follows; «SMS»/«Telegram»/«ham»/«zvonok» are no verbs, so the number becomes a product code.",
+   "why": "f44a5a6: []; 5756f84: [«Telefonga SMS», tnvedCode «9161234567»]. `CONTACT_BARE_CASE` makes «telefonga» a contact only when nothing or a VERB follows; «SMS»/«Telegram»/«ham»/«zvonok» are no verbs, so the number becomes a product code.",
+   "realistic": "«Send an SMS to this phone»: a contact instruction, not goods.",
+   "source": "r6-probe typed",
+   "weight": "regression",
+   "severity": "rare"
   }
  ],
  "parseGoodsCases": [
@@ -25821,6 +26022,1038 @@
    "realistic": "Sellers type a bare count after a dash («- 3000») on one line and units on the others; press-on nails are a common nail-salon cargo from China.",
    "source": "r5-probe sheets",
    "weight": "regression"
+  },
+  {
+   "id": "c2093",
+   "input": [
+    [
+     "Накладная N 15"
+    ],
+    [
+     "Стол офисный 5 шт 100 кг"
+    ],
+    [
+     "Стул 30 шт 150 кг"
+    ],
+    [
+     "Шкаф 2 шт 120 кг"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Стол офисный 5 шт 100 кг"
+      },
+      {
+       "name": "Стул 30 шт 150 кг"
+      },
+      {
+       "name": "Шкаф 2 шт 120 кг"
+      }
+     ],
+     "count": 3
+    },
+    "headerRow": null
+   },
+   "said": "TITLE_LINE now takes «Накладная» only before «№», a digit, «(», «от» or «на»; a Latin «N» for the number fails the lookahead, so the waybill title becomes the first product. f44a5a6: {\"headerRow\":null,\"goods\":[{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":null,\"goods\":[{\"name\":\"Накладная N 15\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}.",
+   "why": "f44a5a6: {\"headerRow\":null,\"goods\":[{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":null,\"goods\":[{\"name\":\"Накладная N 15\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}.",
+   "realistic": "Typing «N» (or «No») for «№» is how a number is written on any keyboard without the № key — Uzbek sellers switch layouts and type «Накладная N 15» as the title of the goods list.",
+   "source": "r6-probe sheets",
+   "weight": "regression",
+   "severity": "common"
+  },
+  {
+   "id": "c2094",
+   "input": [
+    [
+     "Накладная No 15"
+    ],
+    [
+     "Стол офисный 5 шт 100 кг"
+    ],
+    [
+     "Стул 30 шт 150 кг"
+    ],
+    [
+     "Шкаф 2 шт 120 кг"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Стол офисный 5 шт 100 кг"
+      },
+      {
+       "name": "Стул 30 шт 150 кг"
+      },
+      {
+       "name": "Шкаф 2 шт 120 кг"
+      }
+     ],
+     "count": 3
+    },
+    "headerRow": null
+   },
+   "said": "Same lookahead: «No» before the number is not in it, so «Накладная No 15» is kept as a product. f44a5a6: {\"headerRow\":null,\"goods\":[{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":null,\"goods\":[{\"name\":\"Накладная No 15\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}.",
+   "why": "f44a5a6: {\"headerRow\":null,\"goods\":[{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":null,\"goods\":[{\"name\":\"Накладная No 15\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}.",
+   "realistic": "The English «No» for the number on a list a seller types in Excel.",
+   "source": "r6-probe sheets",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2095",
+   "input": [
+    [
+     "Накладная GS777"
+    ],
+    [
+     "Стол офисный 5 шт 100 кг"
+    ],
+    [
+     "Стул 30 шт 150 кг"
+    ],
+    [
+     "Шкаф 2 шт 120 кг"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Стол офисный 5 шт 100 кг"
+      },
+      {
+       "name": "Стул 30 шт 150 кг"
+      },
+      {
+       "name": "Шкаф 2 шт 120 кг"
+      }
+     ],
+     "count": 3
+    },
+    "headerRow": null
+   },
+   "said": "A client code after «Накладная» fails the lookahead; the title is read as a product. f44a5a6: {\"headerRow\":null,\"goods\":[{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":null,\"goods\":[{\"name\":\"Накладная GS777\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}.",
+   "why": "f44a5a6: {\"headerRow\":null,\"goods\":[{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":null,\"goods\":[{\"name\":\"Накладная GS777\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}.",
+   "realistic": "Sellers title a client's goods list with the word «накладная» (Uzbek traders call any goods list «накладной») and the client's GS code.",
+   "source": "r6-probe sheets",
+   "weight": "regression",
+   "severity": "common"
+  },
+  {
+   "id": "c2096",
+   "input": [
+    [
+     "Накладная для клиента GS777"
+    ],
+    [
+     "Стол офисный 5 шт 100 кг"
+    ],
+    [
+     "Стул 30 шт 150 кг"
+    ],
+    [
+     "Шкаф 2 шт 120 кг"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Стол офисный 5 шт 100 кг"
+      },
+      {
+       "name": "Стул 30 шт 150 кг"
+      },
+      {
+       "name": "Шкаф 2 шт 120 кг"
+      }
+     ],
+     "count": 3
+    },
+    "headerRow": null
+   },
+   "said": "«для» is not in the lookahead; the title is read as a product. f44a5a6: {\"headerRow\":null,\"goods\":[{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":null,\"goods\":[{\"name\":\"Накладная для клиента GS777\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}.",
+   "why": "f44a5a6: {\"headerRow\":null,\"goods\":[{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":null,\"goods\":[{\"name\":\"Накладная для клиента GS777\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}.",
+   "realistic": "A seller marks whose list it is: «Накладная для клиента GS777».",
+   "source": "r6-probe sheets",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2097",
+   "input": [
+    [
+     "Накладная - GS777"
+    ],
+    [
+     "Стол офисный 5 шт 100 кг"
+    ],
+    [
+     "Стул 30 шт 150 кг"
+    ],
+    [
+     "Шкаф 2 шт 120 кг"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Стол офисный 5 шт 100 кг"
+      },
+      {
+       "name": "Стул 30 шт 150 кг"
+      },
+      {
+       "name": "Шкаф 2 шт 120 кг"
+      }
+     ],
+     "count": 3
+    },
+    "headerRow": null
+   },
+   "said": "A dash between the word and the code fails the lookahead; the title is read as a product. f44a5a6: {\"headerRow\":null,\"goods\":[{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":null,\"goods\":[{\"name\":\"Накладная - GS777\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}.",
+   "why": "f44a5a6: {\"headerRow\":null,\"goods\":[{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":null,\"goods\":[{\"name\":\"Накладная - GS777\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}.",
+   "realistic": "Title typed with a dash before the client code.",
+   "source": "r6-probe sheets",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2098",
+   "input": [
+    [
+     "Накладная поставщика"
+    ],
+    [
+     "Стол офисный 5 шт 100 кг"
+    ],
+    [
+     "Стул 30 шт 150 кг"
+    ],
+    [
+     "Шкаф 2 шт 120 кг"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Стол офисный 5 шт 100 кг"
+      },
+      {
+       "name": "Стул 30 шт 150 кг"
+      },
+      {
+       "name": "Шкаф 2 шт 120 кг"
+      }
+     ],
+     "count": 3
+    },
+    "headerRow": null
+   },
+   "said": "A genitive after «Накладная» fails the lookahead; the title is read as a product. f44a5a6: {\"headerRow\":null,\"goods\":[{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":null,\"goods\":[{\"name\":\"Накладная поставщика\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}.",
+   "why": "f44a5a6: {\"headerRow\":null,\"goods\":[{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":null,\"goods\":[{\"name\":\"Накладная поставщика\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}.",
+   "realistic": "A client forwards «the supplier's waybill» retyped as a one-column list.",
+   "source": "r6-probe sheets",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2099",
+   "input": [
+    [
+     "Накладная за октябрь"
+    ],
+    [
+     "Стол офисный 5 шт 100 кг"
+    ],
+    [
+     "Стул 30 шт 150 кг"
+    ],
+    [
+     "Шкаф 2 шт 120 кг"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Стол офисный 5 шт 100 кг"
+      },
+      {
+       "name": "Стул 30 шт 150 кг"
+      },
+      {
+       "name": "Шкаф 2 шт 120 кг"
+      }
+     ],
+     "count": 3
+    },
+    "headerRow": null
+   },
+   "said": "«за» is not in the lookahead; the title is read as a product. f44a5a6: {\"headerRow\":null,\"goods\":[{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":null,\"goods\":[{\"name\":\"Накладная за октябрь\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}.",
+   "why": "f44a5a6: {\"headerRow\":null,\"goods\":[{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":null,\"goods\":[{\"name\":\"Накладная за октябрь\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}.",
+   "realistic": "A monthly goods list titled by its month.",
+   "source": "r6-probe sheets",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2100",
+   "input": [
+    [
+     "Складская накладная"
+    ],
+    [
+     "Стол офисный 5 шт 100 кг"
+    ],
+    [
+     "Стул 30 шт 150 кг"
+    ],
+    [
+     "Шкаф 2 шт 120 кг"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Стол офисный 5 шт 100 кг"
+      },
+      {
+       "name": "Стул 30 шт 150 кг"
+      },
+      {
+       "name": "Шкаф 2 шт 120 кг"
+      }
+     ],
+     "count": 3
+    },
+    "headerRow": null
+   },
+   "said": "Only seven adjectives (товарн/транспортн/расходн/приходн/сопроводительн/отгрузочн/возвратн) may stand before «накладн» now; «Складская», «Внутренняя», «Электронная» are not among them, so the title is read as a product. f44a5a6: {\"headerRow\":null,\"goods\":[{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":null,\"goods\":[{\"name\":\"Складская накладная\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}.",
+   "why": "f44a5a6: {\"headerRow\":null,\"goods\":[{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":null,\"goods\":[{\"name\":\"Складская накладная\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}.",
+   "realistic": "A warehouse (склад) waybill retyped as a list — Yiwu/Guangzhou warehouse staff send «Складская накладная».",
+   "source": "r6-probe sheets",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2101",
+   "input": [
+    [
+     "Электронная накладная"
+    ],
+    [
+     "Стол офисный 5 шт 100 кг"
+    ],
+    [
+     "Стул 30 шт 150 кг"
+    ],
+    [
+     "Шкаф 2 шт 120 кг"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Стол офисный 5 шт 100 кг"
+      },
+      {
+       "name": "Стул 30 шт 150 кг"
+      },
+      {
+       "name": "Шкаф 2 шт 120 кг"
+      }
+     ],
+     "count": 3
+    },
+    "headerRow": null
+   },
+   "said": "Same adjective list: «Электронная накладная» is read as a product. f44a5a6: {\"headerRow\":null,\"goods\":[{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":null,\"goods\":[{\"name\":\"Электронная накладная\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}.",
+   "why": "f44a5a6: {\"headerRow\":null,\"goods\":[{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":null,\"goods\":[{\"name\":\"Электронная накладная\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}.",
+   "realistic": "An e-waybill exported to Excel in one column.",
+   "source": "r6-probe sheets",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2102",
+   "input": [
+    [
+     "ООО «Ромашка»"
+    ],
+    [
+     "Накладная N 15"
+    ],
+    [
+     "Стол офисный 5 шт 100 кг"
+    ],
+    [
+     "Стул 30 шт 150 кг"
+    ],
+    [
+     "Шкаф 2 шт 120 кг"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Стол офисный 5 шт 100 кг"
+      },
+      {
+       "name": "Стул 30 шт 150 кг"
+      },
+      {
+       "name": "Шкаф 2 шт 120 кг"
+      }
+     ],
+     "count": 3
+    },
+    "headerRow": null
+   },
+   "said": "With the title unrecognised the sender line above it is no longer taken with it: both become products (two junk lines). f44a5a6: {\"headerRow\":null,\"goods\":[{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":null,\"goods\":[{\"name\":\"ООО «Ромашка»\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Накладная N 15\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}.",
+   "why": "f44a5a6: {\"headerRow\":null,\"goods\":[{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":null,\"goods\":[{\"name\":\"ООО «Ромашка»\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Накладная N 15\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стол офисный 5 шт 100 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Стул 30 шт 150 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null},{\"name\":\"Шкаф 2 шт 120 кг\",\"quantity\":null,\"weightKg\":null,\"volumeM3\":null}]}.",
+   "realistic": "A company name over its waybill title, then the goods — the shape listOpening was built for.",
+   "source": "r6-probe sheets",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2103",
+   "input": [
+    [
+     "№",
+     "Описание товара",
+     "Код ТН ВЭД",
+     "Наименование по ТН ВЭД",
+     "Кол-во",
+     "Вес нетто, кг",
+     "Сумма, USD"
+    ],
+    [
+     1,
+     "Кресло офисное сетка чёрное",
+     "9401300000",
+     "Мебель для сидения вращающаяся с регулируемой высотой",
+     100,
+     1500,
+     2500
+    ],
+    [
+     2,
+     "Стол компьютерный 1.2 м",
+     "9403300000",
+     "Мебель деревянная для учреждений",
+     50,
+     2000,
+     2000
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Кресло офисное сетка чёрное",
+       "quantity": 100,
+       "tnvedCode": "9401300000"
+      },
+      {
+       "name": "Стол компьютерный 1.2 м",
+       "quantity": 50,
+       "tnvedCode": "9403300000"
+      }
+     ],
+     "count": 2
+    },
+    "headerRow": 0
+   },
+   "said": "NAME_IN cuts «Наименование по ТН ВЭД» after «по», so the header reads as a pure product name and outranks «Описание товара» on its left: every line is named by the TARIFF HEADING's text («Мебель для сидения вращающаяся…») instead of the product. f44a5a6: {\"headerRow\":0,\"goods\":[{\"name\":\"Кресло офисное сетка чёрное\",\"quantity\":100,\"weightKg\":1500,\"volumeM3\":null},{\"name\":\"Стол компьютерный 1.2 м\",\"quantity\":50,\"weightKg\":2000,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":0,\"goods\":[{\"name\":\"Мебель для сидения вращающаяся с регулируемой высотой\",\"quantity\":100,\"weightKg\":1500,\"volumeM3\":null},{\"name\":\"Мебель деревянная для учреждений\",\"quantity\":50,\"weightKg\":2000,\"volumeM3\":null}]}.",
+   "why": "f44a5a6: {\"headerRow\":0,\"goods\":[{\"name\":\"Кресло офисное сетка чёрное\",\"quantity\":100,\"weightKg\":1500,\"volumeM3\":null},{\"name\":\"Стол компьютерный 1.2 м\",\"quantity\":50,\"weightKg\":2000,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":0,\"goods\":[{\"name\":\"Мебель для сидения вращающаяся с регулируемой высотой\",\"quantity\":100,\"weightKg\":1500,\"volumeM3\":null},{\"name\":\"Мебель деревянная для учреждений\",\"quantity\":50,\"weightKg\":2000,\"volumeM3\":null}]}.",
+   "realistic": "A broker's working specification: the product description, the code, and the heading's official wording beside it.",
+   "source": "r6-probe sheets",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2104",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "HS Code",
+     "Наименование товара по ТН ВЭД",
+     "Qty",
+     "N.W. (kg)",
+     "Amount (USD)"
+    ],
+    [
+     1,
+     "Mesh office chair, black",
+     "9401300000",
+     "Мебель для сидения вращающаяся",
+     100,
+     1500,
+     2500
+    ],
+    [
+     2,
+     "LED panel light 600x600 48W",
+     "9405110009",
+     "Светильники потолочные электрические",
+     500,
+     600,
+     3500
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Mesh office chair, black",
+       "quantity": 100
+      },
+      {
+       "name": "LED panel light 600x600 48W",
+       "quantity": 500
+      }
+     ],
+     "count": 2
+    },
+    "headerRow": 0
+   },
+   "said": "Same cut: «Наименование товара по ТН ВЭД» becomes rung 1 and the heading text names both lines; the supplier's product description is lost. f44a5a6: {\"headerRow\":0,\"goods\":[{\"name\":\"Mesh office chair, black\",\"quantity\":100,\"weightKg\":1500,\"volumeM3\":null},{\"name\":\"LED panel light 600x600 48W\",\"quantity\":500,\"weightKg\":600,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":0,\"goods\":[{\"name\":\"Мебель для сидения вращающаяся\",\"quantity\":100,\"weightKg\":1500,\"volumeM3\":null},{\"name\":\"Светильники потолочные электрические\",\"quantity\":500,\"weightKg\":600,\"volumeM3\":null}]}.",
+   "why": "f44a5a6: {\"headerRow\":0,\"goods\":[{\"name\":\"Mesh office chair, black\",\"quantity\":100,\"weightKg\":1500,\"volumeM3\":null},{\"name\":\"LED panel light 600x600 48W\",\"quantity\":500,\"weightKg\":600,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":0,\"goods\":[{\"name\":\"Мебель для сидения вращающаяся\",\"quantity\":100,\"weightKg\":1500,\"volumeM3\":null},{\"name\":\"Светильники потолочные электрические\",\"quantity\":500,\"weightKg\":600,\"volumeM3\":null}]}.",
+   "realistic": "A Chinese supplier's English invoice to which the VED agent added the TN VED code and its Russian heading text.",
+   "source": "r6-probe sheets",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2105",
+   "input": [
+    [
+     "№",
+     "Описание",
+     "Наименование в соответствии с ТН ВЭД",
+     "Кол-во",
+     "Вес, кг"
+    ],
+    [
+     1,
+     "Кресло офисное сетка",
+     "Мебель для сидения вращающаяся",
+     100,
+     1500
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Кресло офисное сетка",
+       "quantity": 100,
+       "weightKg": 1500
+      }
+     ],
+     "count": 1
+    },
+    "headerRow": 0
+   },
+   "said": "«в» after «Наименование» cuts «соответствии с ТН ВЭД» away, so the classification column is taken as the product name. f44a5a6: {\"headerRow\":0,\"goods\":[{\"name\":\"Кресло офисное сетка\",\"quantity\":100,\"weightKg\":1500,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":0,\"goods\":[{\"name\":\"Мебель для сидения вращающаяся\",\"quantity\":100,\"weightKg\":1500,\"volumeM3\":null}]}.",
+   "why": "f44a5a6: {\"headerRow\":0,\"goods\":[{\"name\":\"Кресло офисное сетка\",\"quantity\":100,\"weightKg\":1500,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":0,\"goods\":[{\"name\":\"Мебель для сидения вращающаяся\",\"quantity\":100,\"weightKg\":1500,\"volumeM3\":null}]}.",
+   "realistic": "Customs specification wording «в соответствии с ТН ВЭД».",
+   "source": "r6-probe sheets",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2106",
+   "input": [
+    [
+     "№",
+     "Описание товара",
+     "Наименование по классификатору",
+     "Кол-во"
+    ],
+    [
+     1,
+     "Кресло офисное сетка",
+     "Мебель для сидения прочая",
+     100
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Кресло офисное сетка",
+       "quantity": 100
+      }
+     ],
+     "count": 1
+    },
+    "headerRow": 0
+   },
+   "said": "«по классификатору» is cut away and the classifier's generic name becomes the product. f44a5a6: {\"headerRow\":0,\"goods\":[{\"name\":\"Кресло офисное сетка\",\"quantity\":100,\"weightKg\":null,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":0,\"goods\":[{\"name\":\"Мебель для сидения прочая\",\"quantity\":100,\"weightKg\":null,\"volumeM3\":null}]}.",
+   "why": "f44a5a6: {\"headerRow\":0,\"goods\":[{\"name\":\"Кресло офисное сетка\",\"quantity\":100,\"weightKg\":null,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":0,\"goods\":[{\"name\":\"Мебель для сидения прочая\",\"quantity\":100,\"weightKg\":null,\"volumeM3\":null}]}.",
+   "realistic": "A spec carrying the classifier's name beside the product's.",
+   "source": "r6-probe sheets",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2107",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "Name as per HS code",
+     "Qty",
+     "G.W. (kg)"
+    ],
+    [
+     1,
+     "Mesh office chair, black",
+     "Swivel seats with variable height adjustment",
+     100,
+     1600
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Mesh office chair, black",
+       "quantity": 100
+      }
+     ],
+     "count": 1
+    },
+    "headerRow": 0
+   },
+   "said": "«as per HS code» is cut after «Name», so the HS heading text becomes the product name. f44a5a6: {\"headerRow\":0,\"goods\":[{\"name\":\"Mesh office chair, black\",\"quantity\":100,\"weightKg\":1600,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":0,\"goods\":[{\"name\":\"Swivel seats with variable height adjustment\",\"quantity\":100,\"weightKg\":1600,\"volumeM3\":null}]}.",
+   "why": "f44a5a6: {\"headerRow\":0,\"goods\":[{\"name\":\"Mesh office chair, black\",\"quantity\":100,\"weightKg\":1600,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":0,\"goods\":[{\"name\":\"Swivel seats with variable height adjustment\",\"quantity\":100,\"weightKg\":1600,\"volumeM3\":null}]}.",
+   "realistic": "An English export invoice with the HS heading's wording beside the description.",
+   "source": "r6-probe sheets",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2108",
+   "input": [
+    [
+     "序号",
+     "中文品名",
+     "Наименование",
+     "Кол-во",
+     "毛重(KG)"
+    ],
+    [
+     1,
+     "办公椅",
+     "Кресло офисное",
+     100,
+     1500
+    ],
+    [
+     2,
+     "电脑桌",
+     "Стол компьютерный",
+     50,
+     2000
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Кресло офисное",
+       "quantity": 100,
+       "weightKg": 1500
+      },
+      {
+       "name": "Стол компьютерный",
+       "quantity": 50,
+       "weightKg": 2000
+      }
+     ],
+     "count": 2
+    },
+    "headerRow": 0
+   },
+   "said": "WHICH_NAME_HAN lifts «中文品名» to rung 1, and as the leftmost rung-1 column it takes the line names from «Наименование»: the VED gets Chinese characters, which neither the TNVED memory nor the AI pass match against the sealed Russian names. f44a5a6: {\"headerRow\":0,\"goods\":[{\"name\":\"Кресло офисное\",\"quantity\":100,\"weightKg\":1500,\"volumeM3\":null},{\"name\":\"Стол компьютерный\",\"quantity\":50,\"weightKg\":2000,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":0,\"goods\":[{\"name\":\"办公椅\",\"quantity\":100,\"weightKg\":1500,\"volumeM3\":null},{\"name\":\"电脑桌\",\"quantity\":50,\"weightKg\":2000,\"volumeM3\":null}]}.",
+   "why": "f44a5a6: {\"headerRow\":0,\"goods\":[{\"name\":\"Кресло офисное\",\"quantity\":100,\"weightKg\":1500,\"volumeM3\":null},{\"name\":\"Стол компьютерный\",\"quantity\":50,\"weightKg\":2000,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":0,\"goods\":[{\"name\":\"办公椅\",\"quantity\":100,\"weightKg\":1500,\"volumeM3\":null},{\"name\":\"电脑桌\",\"quantity\":50,\"weightKg\":2000,\"volumeM3\":null}]}.",
+   "realistic": "A Yiwu agent's bilingual list for a CIS buyer: the Chinese name column, then the Russian «Наименование».",
+   "source": "r6-probe sheets",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2109",
+   "input": [
+    [
+     "序号",
+     "中文名称",
+     "英文名称",
+     "Наименование",
+     "数量",
+     "毛重(KG)",
+     "体积(CBM)"
+    ],
+    [
+     1,
+     "办公椅",
+     "Office chair",
+     "Кресло офисное",
+     100,
+     1600,
+     2.5
+    ],
+    [
+     2,
+     "电脑桌",
+     "Computer desk",
+     "Стол компьютерный",
+     50,
+     2100,
+     1.8
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Кресло офисное",
+       "quantity": 100,
+       "volumeM3": 2.5
+      },
+      {
+       "name": "Стол компьютерный",
+       "quantity": 50,
+       "volumeM3": 1.8
+      }
+     ],
+     "count": 2
+    },
+    "headerRow": 0
+   },
+   "said": "Same rule in the trilingual layout: «中文名称» is now rung 1 and leftmost, so the Chinese name wins over the Russian one. f44a5a6: {\"headerRow\":0,\"goods\":[{\"name\":\"Кресло офисное\",\"quantity\":100,\"weightKg\":1600,\"volumeM3\":2.5},{\"name\":\"Стол компьютерный\",\"quantity\":50,\"weightKg\":2100,\"volumeM3\":1.8}]}. Package 680a09d: {\"headerRow\":0,\"goods\":[{\"name\":\"办公椅\",\"quantity\":100,\"weightKg\":1600,\"volumeM3\":2.5},{\"name\":\"电脑桌\",\"quantity\":50,\"weightKg\":2100,\"volumeM3\":1.8}]}.",
+   "why": "f44a5a6: {\"headerRow\":0,\"goods\":[{\"name\":\"Кресло офисное\",\"quantity\":100,\"weightKg\":1600,\"volumeM3\":2.5},{\"name\":\"Стол компьютерный\",\"quantity\":50,\"weightKg\":2100,\"volumeM3\":1.8}]}. Package 680a09d: {\"headerRow\":0,\"goods\":[{\"name\":\"办公椅\",\"quantity\":100,\"weightKg\":1600,\"volumeM3\":2.5},{\"name\":\"电脑桌\",\"quantity\":50,\"weightKg\":2100,\"volumeM3\":1.8}]}.",
+   "realistic": "A Chinese supplier's trilingual PI (Chinese / English / Russian names) for an Uzbek importer.",
+   "source": "r6-probe sheets",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2110",
+   "input": [
+    [
+     "№",
+     "Chinese name",
+     "Наименование товара",
+     "Кол-во",
+     "Вес, кг"
+    ],
+    [
+     1,
+     "办公椅",
+     "Кресло офисное",
+     100,
+     1500
+    ],
+    [
+     2,
+     "电脑桌",
+     "Стол компьютерный",
+     50,
+     2000
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Кресло офисное",
+       "quantity": 100
+      },
+      {
+       "name": "Стол компьютерный",
+       "quantity": 50
+      }
+     ],
+     "count": 2
+    },
+    "headerRow": 0
+   },
+   "said": "«chinese» is a WHICH_NAME word, so «Chinese name» is now a pure product name and, leftmost, names the lines in Chinese characters instead of «Наименование товара». f44a5a6: {\"headerRow\":0,\"goods\":[{\"name\":\"Кресло офисное\",\"quantity\":100,\"weightKg\":1500,\"volumeM3\":null},{\"name\":\"Стол компьютерный\",\"quantity\":50,\"weightKg\":2000,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":0,\"goods\":[{\"name\":\"办公椅\",\"quantity\":100,\"weightKg\":1500,\"volumeM3\":null},{\"name\":\"电脑桌\",\"quantity\":50,\"weightKg\":2000,\"volumeM3\":null}]}.",
+   "why": "f44a5a6: {\"headerRow\":0,\"goods\":[{\"name\":\"Кресло офисное\",\"quantity\":100,\"weightKg\":1500,\"volumeM3\":null},{\"name\":\"Стол компьютерный\",\"quantity\":50,\"weightKg\":2000,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":0,\"goods\":[{\"name\":\"办公椅\",\"quantity\":100,\"weightKg\":1500,\"volumeM3\":null},{\"name\":\"电脑桌\",\"quantity\":50,\"weightKg\":2000,\"volumeM3\":null}]}.",
+   "realistic": "A forwarder's list keeping the supplier's Chinese name beside the Russian one.",
+   "source": "r6-probe sheets",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2111",
+   "input": [
+    [
+     "№",
+     "Xitoycha nomi",
+     "Tovar nomi",
+     "Soni",
+     "Og'irlik, kg"
+    ],
+    [
+     1,
+     "办公椅",
+     "Ofis kreslosi",
+     100,
+     1500
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ofis kreslosi",
+       "quantity": 100,
+       "weightKg": 1500
+      }
+     ],
+     "count": 1
+    },
+    "headerRow": 0
+   },
+   "said": "«xitoycha» is a WHICH_NAME word, so «Xitoycha nomi» (the Chinese name) outranks «Tovar nomi» on its right. f44a5a6: {\"headerRow\":0,\"goods\":[{\"name\":\"Ofis kreslosi\",\"quantity\":100,\"weightKg\":1500,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":0,\"goods\":[{\"name\":\"办公椅\",\"quantity\":100,\"weightKg\":1500,\"volumeM3\":null}]}.",
+   "why": "f44a5a6: {\"headerRow\":0,\"goods\":[{\"name\":\"Ofis kreslosi\",\"quantity\":100,\"weightKg\":1500,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":0,\"goods\":[{\"name\":\"办公椅\",\"quantity\":100,\"weightKg\":1500,\"volumeM3\":null}]}.",
+   "realistic": "An Uzbek trader's list carrying the Chinese name for the supplier beside the Uzbek one.",
+   "source": "r6-probe sheets",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2112",
+   "input": [
+    [
+     "No",
+     "Name in English",
+     "Наименование",
+     "Qty",
+     "Amount"
+    ],
+    [
+     1,
+     "Office chair",
+     "Кресло офисное",
+     100,
+     2500
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Кресло офисное",
+       "quantity": 100
+      }
+     ],
+     "count": 1
+    },
+    "headerRow": 0
+   },
+   "said": "«Name in English» is now rung 1 (the cut after «in») and, leftmost, takes the name from the Russian column the VED works in. f44a5a6: {\"headerRow\":0,\"goods\":[{\"name\":\"Кресло офисное\",\"quantity\":100,\"weightKg\":null,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":0,\"goods\":[{\"name\":\"Office chair\",\"quantity\":100,\"weightKg\":null,\"volumeM3\":null}]}.",
+   "why": "f44a5a6: {\"headerRow\":0,\"goods\":[{\"name\":\"Кресло офисное\",\"quantity\":100,\"weightKg\":null,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":0,\"goods\":[{\"name\":\"Office chair\",\"quantity\":100,\"weightKg\":null,\"volumeM3\":null}]}.",
+   "realistic": "A supplier PI with an English name column and the Russian name added for the CIS buyer.",
+   "source": "r6-probe sheets",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2113",
+   "input": [
+    [
+     "Код клиента",
+     "Наименование груза",
+     "Наименование товара",
+     "Мест",
+     "Вес, кг",
+     "Объём, м3"
+    ],
+    [
+     "GS777",
+     "Сборный груз",
+     "Куртки женские",
+     15,
+     160,
+     2.5
+    ],
+    [
+     "GS777",
+     "Сборный груз",
+     "Брюки мужские",
+     10,
+     85,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртки женские",
+       "weightKg": 160,
+       "volumeM3": 2.5
+      },
+      {
+       "name": "Брюки мужские",
+       "weightKg": 85,
+       "volumeM3": 1.2
+      }
+     ],
+     "count": 2
+    },
+    "headerRow": 0
+   },
+   "said": "«груза» is now a naming word, so «Наименование груза» is rung 1 and, leftmost, names every line «Сборный груз» instead of the product. f44a5a6: {\"headerRow\":0,\"goods\":[{\"name\":\"Куртки женские\",\"quantity\":null,\"weightKg\":160,\"volumeM3\":2.5},{\"name\":\"Брюки мужские\",\"quantity\":null,\"weightKg\":85,\"volumeM3\":1.2}]}. Package 680a09d: {\"headerRow\":0,\"goods\":[{\"name\":\"Сборный груз\",\"quantity\":null,\"weightKg\":160,\"volumeM3\":2.5},{\"name\":\"Сборный груз\",\"quantity\":null,\"weightKg\":85,\"volumeM3\":1.2}]}.",
+   "why": "f44a5a6: {\"headerRow\":0,\"goods\":[{\"name\":\"Куртки женские\",\"quantity\":null,\"weightKg\":160,\"volumeM3\":2.5},{\"name\":\"Брюки мужские\",\"quantity\":null,\"weightKg\":85,\"volumeM3\":1.2}]}. Package 680a09d: {\"headerRow\":0,\"goods\":[{\"name\":\"Сборный груз\",\"quantity\":null,\"weightKg\":160,\"volumeM3\":2.5},{\"name\":\"Сборный груз\",\"quantity\":null,\"weightKg\":85,\"volumeM3\":1.2}]}.",
+   "realistic": "A consolidator's manifest: the cargo's kind for the CMR, then each client's goods.",
+   "source": "r6-probe sheets",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2114",
+   "input": [
+    [
+     "Mijoz kodi",
+     "Yuk nomi",
+     "Tovar nomi",
+     "Joy",
+     "Vazn, kg"
+    ],
+    [
+     "GS777",
+     "Kiyim-kechak",
+     "Ayollar kurtkasi",
+     15,
+     160
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ayollar kurtkasi",
+       "weightKg": 160
+      }
+     ],
+     "count": 1
+    },
+    "headerRow": 0
+   },
+   "said": "«yuk» is now a naming word, so «Yuk nomi» (the cargo's kind) outranks «Tovar nomi». f44a5a6: {\"headerRow\":0,\"goods\":[{\"name\":\"Ayollar kurtkasi\",\"quantity\":null,\"weightKg\":160,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":0,\"goods\":[{\"name\":\"Kiyim-kechak\",\"quantity\":null,\"weightKg\":160,\"volumeM3\":null}]}.",
+   "why": "f44a5a6: {\"headerRow\":0,\"goods\":[{\"name\":\"Ayollar kurtkasi\",\"quantity\":null,\"weightKg\":160,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":0,\"goods\":[{\"name\":\"Kiyim-kechak\",\"quantity\":null,\"weightKg\":160,\"volumeM3\":null}]}.",
+   "realistic": "An Uzbek forwarder's sheet: cargo kind (Kiyim-kechak = clothing) beside the product name.",
+   "source": "r6-probe sheets",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2115",
+   "input": [
+    [
+     "ITEM",
+     "DESCRIPTION",
+     "QTY(PCS)",
+     "CTNS",
+     "N.W./CTN",
+     "G.W./CTN",
+     "MEAS./CTN(CU.M)",
+     "TOTAL N.W.",
+     "TOTAL G.W.",
+     "TOTAL MEAS.(CU.M)"
+    ],
+    [
+     1,
+     "Office chair",
+     100,
+     10,
+     15,
+     16,
+     0.25,
+     150,
+     160,
+     2.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Office chair",
+       "quantity": 100,
+       "weightKg": 150,
+       "volumeM3": 2.5
+      }
+     ],
+     "count": 1
+    },
+    "headerRow": 0
+   },
+   "said": "CUBIC_METRE now admits a bracketed «(CU.M)», and the volume path never refuses a per-package header as the weight path does (PER_PACKAGE): the leftmost «MEAS./CTN(CU.M)» — ONE carton's — becomes the line's m³, 10× short, silently, so the checklist stops asking. f44a5a6 read no volume (null — the line was asked, never a wrong figure); it did not read the total either. f44a5a6: {\"headerRow\":0,\"goods\":[{\"name\":\"Office chair\",\"quantity\":100,\"weightKg\":150,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":0,\"goods\":[{\"name\":\"Office chair\",\"quantity\":100,\"weightKg\":150,\"volumeM3\":0.25}]}.",
+   "why": "worse: f44a5a6 left the figure empty (asked); the package states a wrong one. f44a5a6 read no volume (null — the line was asked, never a wrong figure); it did not read the total either. f44a5a6: {\"headerRow\":0,\"goods\":[{\"name\":\"Office chair\",\"quantity\":100,\"weightKg\":150,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":0,\"goods\":[{\"name\":\"Office chair\",\"quantity\":100,\"weightKg\":150,\"volumeM3\":0.25}]}.",
+   "realistic": "Chinese export packing list with per-carton then total columns, both in «(CU.M)».",
+   "source": "r6-probe sheets",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2116",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "Ctns",
+     "G.W.(kg)",
+     "Measurement per ctn (cu.m)",
+     "Total Measurement (cu.m)"
+    ],
+    [
+     "Office chair",
+     100,
+     10,
+     160,
+     0.25,
+     2.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Office chair",
+       "quantity": 100,
+       "weightKg": 160,
+       "volumeM3": 2.5
+      }
+     ],
+     "count": 1
+    },
+    "headerRow": 0
+   },
+   "said": "Same: «Measurement per ctn (cu.m)» (per carton, said by «per ctn») is now the line's volume, 10× short. f44a5a6: null (asked), not the total either. f44a5a6: {\"headerRow\":0,\"goods\":[{\"name\":\"Office chair\",\"quantity\":100,\"weightKg\":160,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":0,\"goods\":[{\"name\":\"Office chair\",\"quantity\":100,\"weightKg\":160,\"volumeM3\":0.25}]}.",
+   "why": "worse: f44a5a6 left the figure empty (asked); the package states a wrong one. f44a5a6: null (asked), not the total either. f44a5a6: {\"headerRow\":0,\"goods\":[{\"name\":\"Office chair\",\"quantity\":100,\"weightKg\":160,\"volumeM3\":null}]}. Package 680a09d: {\"headerRow\":0,\"goods\":[{\"name\":\"Office chair\",\"quantity\":100,\"weightKg\":160,\"volumeM3\":0.25}]}.",
+   "realistic": "An English packing list stating the carton's volume and the total, both in cu.m.",
+   "source": "r6-probe sheets",
+   "weight": "regression",
+   "severity": "rare"
   }
  ],
  "parseGoodsLineCases": [
@@ -26457,6 +27690,105 @@
    "realistic": "Tool boxes from a hardware order.",
    "source": "r5-probe typed",
    "weight": "regression"
+  },
+  {
+   "id": "c2117",
+   "input": "Жами коробка: 45",
+   "expected": {
+    "quantity": null,
+    "unitWords": [
+     "коробка"
+    ]
+   },
+   "said": "f44a5a6: name «Жами», quantity null, cartons 45, unitWords [«коробка»]; 5756f84: name «Жами коробка», quantity 45, cartons null, unitWords []. units.ts `unitField`: a carton noun after a word is the product's own noun unless that word is a digit, a unit or a TOTAL_WORD — and TOTAL_WORD knows only Latin «jami/umumiy/hammasi» and Russian «итого/всего/общее», not the Cyrillic Uzbek «Жами». Through textRows/pasteItems the seller's send form gets a phantom product «Жами коробка» × 45 pieces (base: row «Жами» with the note «sotuvchi: 45 коробка»).",
+   "why": "f44a5a6: name «Жами», quantity null, cartons 45, unitWords [«коробка»]; 5756f84: name «Жами коробка», quantity 45, cartons null, unitWords []. units.ts `unitField`: a carton noun after a word is the product's own noun unless that word is a digit, a unit or a TOTAL_WORD — and TOTAL_WORD knows only Latin «jami/umumiy/hammasi» and Russian «итого/всего/общее», not the Cyrillic Uzbek «Жами». Through textRows/pasteItems the seller's send form gets a phantom product «Жами коробка» × 45 pieces (base: row «Жами» with the note «sotuvchi: 45 коробка»).",
+   "realistic": "The Cyrillic twin of «Jami karobka: 45», which the package itself keeps as the carton field; a seller writing Uzbek in Cyrillic closes a goods list with it.",
+   "source": "r6-probe typed",
+   "weight": "regression",
+   "severity": "common"
+  },
+  {
+   "id": "c2118",
+   "input": "Жами кути: 45",
+   "expected": {
+    "quantity": null,
+    "unitWords": [
+     "кути"
+    ]
+   },
+   "said": "f44a5a6: name «Жами», cartons 45, unitWords [«кути»]; 5756f84: name «Жами кути», quantity 45, unitWords []. Same TOTAL_WORD gap (`unitField`), «кути» spelled with к as the WORDS table has it.",
+   "why": "f44a5a6: name «Жами», cartons 45, unitWords [«кути»]; 5756f84: name «Жами кути», quantity 45, unitWords []. Same TOTAL_WORD gap (`unitField`), «кути» spelled with к as the WORDS table has it.",
+   "realistic": "Cyrillic Uzbek total of boxes, as typed without the қ.",
+   "source": "r6-probe typed",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2119",
+   "input": "Умумий коробка: 45",
+   "expected": {
+    "quantity": null,
+    "unitWords": [
+     "коробка"
+    ]
+   },
+   "said": "f44a5a6: name «Умумий», cartons 45; 5756f84: name «Умумий коробка», quantity 45. TOTAL_WORD has Latin «umumiy» only.",
+   "why": "f44a5a6: name «Умумий», cartons 45; 5756f84: name «Умумий коробка», quantity 45. TOTAL_WORD has Latin «umumiy» only.",
+   "realistic": "Cyrillic twin of «Umumiy karobka: 45».",
+   "source": "r6-probe typed",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2120",
+   "input": "Obshiy karobka: 45",
+   "expected": {
+    "quantity": null,
+    "unitWords": [
+     "karobka"
+    ]
+   },
+   "said": "f44a5a6: name «Obshiy», cartons 45; 5756f84: name «Obshiy karobka», quantity 45. «Obshiy» (Russian «общий» in Latin, everyday Uzbek business speech) is not a TOTAL_WORD.",
+   "why": "f44a5a6: name «Obshiy», cartons 45; 5756f84: name «Obshiy karobka», quantity 45. «Obshiy» (Russian «общий» in Latin, everyday Uzbek business speech) is not a TOTAL_WORD.",
+   "realistic": "Mixed Uzbek/Russian total line («obshiy kub», «obshiy karobka») in a Telegram goods message.",
+   "source": "r6-probe typed",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2121",
+   "input": "NO. OF CARTON: 45",
+   "expected": {
+    "quantity": null,
+    "unitWords": [
+     "CARTON"
+    ]
+   },
+   "said": "f44a5a6: name «NO. OF», cartons 45, unitWords [«CARTON»]; 5756f84: name «NO. OF CARTON», quantity 45. The word before «CARTON» is «OF», neither digit, unit nor total, so the carton noun joins the name; pasteItems then lands 45 PIECES of a product «NO. OF CARTON».",
+   "why": "f44a5a6: name «NO. OF», cartons 45, unitWords [«CARTON»]; 5756f84: name «NO. OF CARTON», quantity 45. The word before «CARTON» is «OF», neither digit, unit nor total, so the carton noun joins the name; pasteItems then lands 45 PIECES of a product «NO. OF CARTON».",
+   "realistic": "Chinese-made English packing lists print the singular «NO. OF CARTON:» / «Total no. of carton:» as the carton-count field.",
+   "source": "r6-probe typed",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2122",
+   "input": "Ayollar kurtkasi. Karobka: 45",
+   "expected": {
+    "quantity": null,
+    "unitWords": [
+     "Karobka"
+    ],
+    "nameExcludes": [
+     "Karobka"
+    ]
+   },
+   "said": "f44a5a6: name «Ayollar kurtkasi.», cartons 45; 5756f84: name «Ayollar kurtkasi. Karobka», quantity 45. `unitField`'s prior-word regex takes «kurtkasi.» (the class includes the dot) as a word of the name, so a sentence break does not set the field off the way a comma, dash or «;» does.",
+   "why": "f44a5a6: name «Ayollar kurtkasi.», cartons 45; 5756f84: name «Ayollar kurtkasi. Karobka», quantity 45. `unitField`'s prior-word regex takes «kurtkasi.» (the class includes the dot) as a word of the name, so a sentence break does not set the field off the way a comma, dash or «;» does.",
+   "realistic": "A seller types the goods and the carton count as two sentences on one line.",
+   "source": "r6-probe typed",
+   "weight": "regression",
+   "severity": "rare"
   }
  ],
  "parseManualFactsCases": [
@@ -27118,6 +28450,28 @@
    "realistic": "A seller who knows the truckload's size but not yet its contents: greeting, «goods: clear tomorrow», totals, route.",
    "source": "r5-probe typed",
    "weight": "regression"
+  },
+  {
+   "id": "c2125",
+   "input": "Tovar: kurtka. Karobka: 45\nVazni: 1200 kg\nHajmi: 12 kub",
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "kurtka"
+      }
+     ],
+     "count": 1
+    },
+    "weightKg": 1200,
+    "volumeM3": 12
+   },
+   "said": "f44a5a6: goods [«kurtka»], 1200 kg, 12 m³; 5756f84: goods [«kurtka. Karobka: 45»]. The manual fallback lands a product named with the carton field.",
+   "why": "f44a5a6: goods [«kurtka»], 1200 kg, 12 m³; 5756f84: goods [«kurtka. Karobka: 45»]. The manual fallback lands a product named with the carton field.",
+   "realistic": "Bot material when the model is unavailable: a three-line message whose first line ends with the carton count.",
+   "source": "r6-probe typed",
+   "weight": "regression",
+   "severity": "rare"
   }
  ],
  "intakeClientLabelCases": [
@@ -28269,6 +29623,134 @@
    "realistic": "Some sellers type with Caps Lock on («SARDOR TELEFON 90 …»), the label written without a colon.",
    "source": "r5-probe collector",
    "weight": "regression"
+  },
+  {
+   "id": "c2170",
+   "input": {
+    "raw": "MEGA MOBILE 90 123 45 67",
+    "hint": {
+     "phone": "90 123 45 67"
+    }
+   },
+   "expected": "MEGA MOBILE",
+   "said": "f44a5a6 \"MEGA MOBILE\"; cc82efa \"MEGA\". nameOwnWord now keeps a contact word only when written Capital+lower (or hyphened), so an all-caps shop name joined by a space loses its contact word — WITHIN the package's stated trade-off («SMART MOBILE 90 …» → «SMART»), a distinct shape of it.",
+   "why": "f44a5a6 \"MEGA MOBILE\"; cc82efa \"MEGA\". nameOwnWord now keeps a contact word only when written Capital+lower (or hyphened), so an all-caps shop name joined by a space loses its contact word — WITHIN the package's stated trade-off («SMART MOBILE 90 …» → «SMART»), a distinct shape of it.",
+   "realistic": "A phone shop's name in capitals.",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2171",
+   "input": {
+    "raw": "ARTEL MOBILE +998 93 555 12 34",
+    "hint": {
+     "phone": "+998 93 555 12 34"
+    }
+   },
+   "expected": "ARTEL MOBILE",
+   "said": "f44a5a6 \"ARTEL MOBILE\"; cc82efa \"ARTEL\". nameOwnWord now keeps a contact word only when written Capital+lower (or hyphened), so an all-caps shop name joined by a space loses its contact word — WITHIN the package's stated trade-off («SMART MOBILE 90 …» → «SMART»), a distinct shape of it.",
+   "why": "f44a5a6 \"ARTEL MOBILE\"; cc82efa \"ARTEL\". nameOwnWord now keeps a contact word only when written Capital+lower (or hyphened), so an all-caps shop name joined by a space loses its contact word — WITHIN the package's stated trade-off («SMART MOBILE 90 …» → «SMART»), a distinct shape of it.",
+   "realistic": "A brand dealer's shop name as written on its sign («ARTEL MOBILE»).",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2172",
+   "input": {
+    "raw": "Rustam SMART MOBILE +998 90 123 45 67",
+    "hint": {
+     "phone": "+998 90 123 45 67"
+    }
+   },
+   "expected": "Rustam SMART MOBILE",
+   "said": "f44a5a6 \"Rustam SMART MOBILE\"; cc82efa \"Rustam SMART\". nameOwnWord now keeps a contact word only when written Capital+lower (or hyphened), so an all-caps shop name joined by a space loses its contact word — WITHIN the package's stated trade-off («SMART MOBILE 90 …» → «SMART»), a distinct shape of it.",
+   "why": "f44a5a6 \"Rustam SMART MOBILE\"; cc82efa \"Rustam SMART\". nameOwnWord now keeps a contact word only when written Capital+lower (or hyphened), so an all-caps shop name joined by a space loses its contact word — WITHIN the package's stated trade-off («SMART MOBILE 90 …» → «SMART»), a distinct shape of it.",
+   "realistic": "The owner's name, then his shop's name in capitals as on the sign.",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2173",
+   "input": {
+    "raw": "SMART PHONE GS777",
+    "hint": {
+     "code": "GS777"
+    }
+   },
+   "expected": "SMART PHONE",
+   "said": "f44a5a6 \"SMART PHONE\"; cc82efa \"SMART\". nameOwnWord now keeps a contact word only when written Capital+lower (or hyphened), so an all-caps shop name joined by a space loses its contact word — WITHIN the package's stated trade-off («SMART MOBILE 90 …» → «SMART»), a distinct shape of it.",
+   "why": "f44a5a6 \"SMART PHONE\"; cc82efa \"SMART\". nameOwnWord now keeps a contact word only when written Capital+lower (or hyphened), so an all-caps shop name joined by a space loses its contact word — WITHIN the package's stated trade-off («SMART MOBILE 90 …» → «SMART»), a distinct shape of it.",
+   "realistic": "A seller names a known client's shop by its sign and its code; the code instead of the phone.",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2174",
+   "input": {
+    "raw": "MEDIAPARK MOBILE 90 123 45 67",
+    "hint": {
+     "phone": "90 123 45 67"
+    }
+   },
+   "expected": "MEDIAPARK MOBILE",
+   "said": "f44a5a6 \"MEDIAPARK MOBILE\"; cc82efa \"MEDIAPARK\". nameOwnWord now keeps a contact word only when written Capital+lower (or hyphened), so an all-caps shop name joined by a space loses its contact word — WITHIN the package's stated trade-off («SMART MOBILE 90 …» → «SMART»), a distinct shape of it.",
+   "why": "f44a5a6 \"MEDIAPARK MOBILE\"; cc82efa \"MEDIAPARK\". nameOwnWord now keeps a contact word only when written Capital+lower (or hyphened), so an all-caps shop name joined by a space loses its contact word — WITHIN the package's stated trade-off («SMART MOBILE 90 …» → «SMART»), a distinct shape of it.",
+   "realistic": "A retail chain's phone section, named in capitals.",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2175",
+   "input": {
+    "raw": "ТЕХНО КОНТАКТ +998 90 123 45 67",
+    "hint": {
+     "phone": "+998 90 123 45 67"
+    }
+   },
+   "expected": "ТЕХНО КОНТАКТ",
+   "said": "f44a5a6 \"ТЕХНО КОНТАКТ\"; cc82efa \"ТЕХНО\". nameOwnWord now keeps a contact word only when written Capital+lower (or hyphened), so an all-caps shop name joined by a space loses its contact word — WITHIN the package's stated trade-off («SMART MOBILE 90 …» → «SMART»), a distinct shape of it.",
+   "why": "f44a5a6 \"ТЕХНО КОНТАКТ\"; cc82efa \"ТЕХНО\". nameOwnWord now keeps a contact word only when written Capital+lower (or hyphened), so an all-caps shop name joined by a space loses its contact word — WITHIN the package's stated trade-off («SMART MOBILE 90 …» → «SMART»), a distinct shape of it.",
+   "realistic": "A Russian-named shop («Техно Контакт») typed in capitals.",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2176",
+   "input": {
+    "raw": "+998 90 123 45 67 MOBILE CENTER",
+    "hint": {
+     "phone": "+998 90 123 45 67"
+    }
+   },
+   "expected": "MOBILE CENTER",
+   "said": "f44a5a6 \"MOBILE CENTER\"; cc82efa \"CENTER\". nameOwnWord now keeps a contact word only when written Capital+lower (or hyphened), so an all-caps shop name joined by a space loses its contact word — WITHIN the package's stated trade-off («SMART MOBILE 90 …» → «SMART»), a distinct shape of it.",
+   "why": "f44a5a6 \"MOBILE CENTER\"; cc82efa \"CENTER\". nameOwnWord now keeps a contact word only when written Capital+lower (or hyphened), so an all-caps shop name joined by a space loses its contact word — WITHIN the package's stated trade-off («SMART MOBILE 90 …» → «SMART»), a distinct shape of it.",
+   "realistic": "Number first, then the shop's name in capitals — the lead is named «CENTER».",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2177",
+   "input": {
+    "raw": "GS777 MOBILE CENTER",
+    "hint": {
+     "code": "GS777"
+    }
+   },
+   "expected": "MOBILE CENTER",
+   "said": "f44a5a6 \"MOBILE CENTER\"; cc82efa \"CENTER\". nameOwnWord now keeps a contact word only when written Capital+lower (or hyphened), so an all-caps shop name joined by a space loses its contact word — WITHIN the package's stated trade-off («SMART MOBILE 90 …» → «SMART»), a distinct shape of it.",
+   "why": "f44a5a6 \"MOBILE CENTER\"; cc82efa \"CENTER\". nameOwnWord now keeps a contact word only when written Capital+lower (or hyphened), so an all-caps shop name joined by a space loses its contact word — WITHIN the package's stated trade-off («SMART MOBILE 90 …» → «SMART»), a distinct shape of it.",
+   "realistic": "Code first, then the shop's name from its sign — the right-side word is dropped and the lead is named «CENTER».",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "rare"
   }
  ],
  "resolveLineDoneCases": [
@@ -30025,6 +31507,46 @@
    "realistic": "A goods line with a dot decimal (pieces, cubes) pasted twice from the client's message.",
    "source": "r5-probe collector",
    "weight": "regression"
+  },
+  {
+   "id": "c2136",
+   "input": {
+    "text": "Oloy 120 5",
+    "prefix": "GS",
+    "sends": 2
+   },
+   "expected": {
+    "couldBeCustomer": true,
+    "first": "material",
+    "second": "customer",
+    "materialCopies": 0
+   },
+   "said": "figureRow: f44a5a6 false, 5756f84 true (TWO_FIGURE_ROW: first figure ≥ 100; «Oloy» — the Alay bazaar — is not in ADDRESS_WORDS, only Ippodrom/Chorsu/Abu Saxiy are). With the f44a5a6 staff-handlers gate (figures ≥ 3) nothing changes; with cc82efa's gate removed (row = hint === null && figureRow) the insisting repeat is refused with why 'goods' — the stall regression c2024 fixed, for every market the list does not name (also «Kuyluk 110 3», «Qo'yliq 110 3», «Jome 101 4», «Tezyakovka 120 5»).",
+   "why": "figureRow: f44a5a6 false, 5756f84 true (TWO_FIGURE_ROW: first figure ≥ 100; «Oloy» — the Alay bazaar — is not in ADDRESS_WORDS, only Ippodrom/Chorsu/Abu Saxiy are). With the f44a5a6 staff-handlers gate (figures ≥ 3) nothing changes; with cc82efa's gate removed (row = hint === null && figureRow) the insisting repeat is refused with why 'goods' — the stall regression c2024 fixed, for every market the list does not name (also «Kuyluk 110 3», «Qo'yliq 110 3», «Jome 101 4», «Tezyakovka 120 5»).",
+   "realistic": "A seller names the customer by Tashkent market, row and stall.",
+   "source": "r6-probe typed",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2137",
+   "input": {
+    "text": "Kuyluk 110 3",
+    "prefix": "GS",
+    "sends": 2
+   },
+   "expected": {
+    "couldBeCustomer": true,
+    "first": "material",
+    "second": "customer",
+    "materialCopies": 0
+   },
+   "said": "figureRow: f44a5a6 false, 5756f84 true; reachable only after cc82efa's gate removal. «Kuyluk» (Qo'yliq wholesale market) is not an address word.",
+   "why": "figureRow: f44a5a6 false, 5756f84 true; reachable only after cc82efa's gate removal. «Kuyluk» (Qo'yliq wholesale market) is not an address word.",
+   "realistic": "Wholesale-market stall as the customer.",
+   "source": "r6-probe typed",
+   "weight": "regression",
+   "severity": "rare"
   }
  ],
  "pickGoodsCases": [
@@ -40285,6 +41807,1424 @@
    "realistic": "A Chinese factory's Russian is often adjective-first («Кроссовки мужские» / «Мужские кроссовки») and the model writes whichever order it likes.",
    "source": "r5-probe collector",
    "weight": "regression"
+  },
+  {
+   "id": "c2138",
+   "input": {
+    "invoice": [
+     {
+      "name": "瓷砖 Ceramic tile 600*600",
+      "quantity": 500,
+      "weightKg": 12000
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Плитка керамическая 600×600 мм (瓷砖)",
+      "quantity": 500,
+      "weightKg": 12000
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "瓷砖 Ceramic tile 600*600",
+       "quantity": 500,
+       "weightKg": 12000
+      }
+     ],
+     "count": 1
+    },
+    "sameAsInvoice": [
+     "Плитка керамическая 600×600 мм (瓷砖)"
+    ]
+   },
+   "said": "f44a5a6: 1 line(s), sameAsInvoice [\"Плитка керамическая 600×600 мм (瓷砖)\"]; cc82efa: 2 lines [\"瓷砖 Ceramic tile 600*600\", \"Плитка керамическая 600×600 мм (瓷砖)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "why": "f44a5a6: 1 line(s), sameAsInvoice [\"Плитка керамическая 600×600 мм (瓷砖)\"]; cc82efa: 2 lines [\"瓷砖 Ceramic tile 600*600\", \"Плитка керамическая 600×600 мм (瓷砖)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "realistic": "A Foshan tile invoice writes the size «600*600» in its Chinese+English cell; the model's Russian re-reading writes it «600×600 мм», the Excel's Chinese verbatim in brackets.",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "common"
+  },
+  {
+   "id": "c2139",
+   "input": {
+    "invoice": [
+     {
+      "name": "瓷砖 Ceramic tile 600*600mm",
+      "quantity": 500,
+      "weightKg": 12000
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Плитка керамическая 600×600 мм (瓷砖)",
+      "quantity": 500,
+      "weightKg": 12000
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "瓷砖 Ceramic tile 600*600mm",
+       "quantity": 500,
+       "weightKg": 12000
+      }
+     ],
+     "count": 1
+    },
+    "sameAsInvoice": [
+     "Плитка керамическая 600×600 мм (瓷砖)"
+    ]
+   },
+   "said": "f44a5a6: 1 line(s), sameAsInvoice [\"Плитка керамическая 600×600 мм (瓷砖)\"]; cc82efa: 2 lines [\"瓷砖 Ceramic tile 600*600mm\", \"Плитка керамическая 600×600 мм (瓷砖)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "why": "f44a5a6: 1 line(s), sameAsInvoice [\"Плитка керамическая 600×600 мм (瓷砖)\"]; cc82efa: 2 lines [\"瓷砖 Ceramic tile 600*600mm\", \"Плитка керамическая 600×600 мм (瓷砖)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "realistic": "Tile invoice cell «600*600mm» (the commonest notation in Chinese building-material invoices); the model writes «600×600 мм».",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "common"
+  },
+  {
+   "id": "c2140",
+   "input": {
+    "invoice": [
+     {
+      "name": "地砖 Floor tile 60*60cm",
+      "quantity": 800,
+      "weightKg": 15000
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Плитка напольная 60×60 см (地砖)",
+      "quantity": 800,
+      "weightKg": 15000
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "地砖 Floor tile 60*60cm",
+       "quantity": 800,
+       "weightKg": 15000
+      }
+     ],
+     "count": 1
+    },
+    "sameAsInvoice": [
+     "Плитка напольная 60×60 см (地砖)"
+    ]
+   },
+   "said": "f44a5a6: 1 line(s), sameAsInvoice [\"Плитка напольная 60×60 см (地砖)\"]; cc82efa: 2 lines [\"地砖 Floor tile 60*60cm\", \"Плитка напольная 60×60 см (地砖)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "why": "f44a5a6: 1 line(s), sameAsInvoice [\"Плитка напольная 60×60 см (地砖)\"]; cc82efa: 2 lines [\"地砖 Floor tile 60*60cm\", \"Плитка напольная 60×60 см (地砖)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "realistic": "Floor tile in centimetres, «60*60cm» in the cell, «60×60 см» in the model's Russian.",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "common"
+  },
+  {
+   "id": "c2141",
+   "input": {
+    "invoice": [
+     {
+      "name": "玻璃 Glass 4mm 1220*2440",
+      "quantity": 200,
+      "weightKg": 6000
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Стекло 4 мм 1220х2440 (玻璃)",
+      "quantity": 200,
+      "weightKg": 6000
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "玻璃 Glass 4mm 1220*2440",
+       "quantity": 200,
+       "weightKg": 6000
+      }
+     ],
+     "count": 1
+    },
+    "sameAsInvoice": [
+     "Стекло 4 мм 1220х2440 (玻璃)"
+    ]
+   },
+   "said": "f44a5a6: 1 line(s), sameAsInvoice [\"Стекло 4 мм 1220х2440 (玻璃)\"]; cc82efa: 2 lines [\"玻璃 Glass 4mm 1220*2440\", \"Стекло 4 мм 1220х2440 (玻璃)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "why": "f44a5a6: 1 line(s), sameAsInvoice [\"Стекло 4 мм 1220х2440 (玻璃)\"]; cc82efa: 2 lines [\"玻璃 Glass 4mm 1220*2440\", \"Стекло 4 мм 1220х2440 (玻璃)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "realistic": "Sheet glass «4mm 1220*2440» in the cell; the model writes «4 мм 1220х2440» — Russian spaces the unit, so «4» is a bare figure the cell does not have.",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "common"
+  },
+  {
+   "id": "c2142",
+   "input": {
+    "invoice": [
+     {
+      "name": "窗帘 Curtain 2.8*2.5m",
+      "quantity": 300,
+      "weightKg": 450
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Штора 2,8×2,5 м (窗帘)",
+      "quantity": 300,
+      "weightKg": 450
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "窗帘 Curtain 2.8*2.5m",
+       "quantity": 300,
+       "weightKg": 450
+      }
+     ],
+     "count": 1
+    },
+    "sameAsInvoice": [
+     "Штора 2,8×2,5 м (窗帘)"
+    ]
+   },
+   "said": "f44a5a6: 1 line(s), sameAsInvoice [\"Штора 2,8×2,5 м (窗帘)\"]; cc82efa: 2 lines [\"窗帘 Curtain 2.8*2.5m\", \"Штора 2,8×2,5 м (窗帘)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "why": "f44a5a6: 1 line(s), sameAsInvoice [\"Штора 2,8×2,5 м (窗帘)\"]; cc82efa: 2 lines [\"窗帘 Curtain 2.8*2.5m\", \"Штора 2,8×2,5 м (窗帘)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "realistic": "Home-textile invoices state curtain size in metres with decimals («2.8*2.5m»); the model writes «2,8×2,5 м».",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "common"
+  },
+  {
+   "id": "c2143",
+   "input": {
+    "invoice": [
+     {
+      "name": "窗帘 Curtain 2.8*2.5m",
+      "quantity": 300,
+      "weightKg": 450
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Штора 2,8х2,5 м (窗帘)",
+      "quantity": 300,
+      "weightKg": 450
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "窗帘 Curtain 2.8*2.5m",
+       "quantity": 300,
+       "weightKg": 450
+      }
+     ],
+     "count": 1
+    },
+    "sameAsInvoice": [
+     "Штора 2,8х2,5 м (窗帘)"
+    ]
+   },
+   "said": "f44a5a6: 1 line(s), sameAsInvoice [\"Штора 2,8х2,5 м (窗帘)\"]; cc82efa: 2 lines [\"窗帘 Curtain 2.8*2.5m\", \"Штора 2,8х2,5 м (窗帘)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "why": "f44a5a6: 1 line(s), sameAsInvoice [\"Штора 2,8х2,5 м (窗帘)\"]; cc82efa: 2 lines [\"窗帘 Curtain 2.8*2.5m\", \"Штора 2,8х2,5 м (窗帘)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "realistic": "Same curtain line, the model writing the Russian letter «х» between the sizes, as Russian text does.",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "common"
+  },
+  {
+   "id": "c2144",
+   "input": {
+    "invoice": [
+     {
+      "name": "床垫 Mattress 180*200cm",
+      "quantity": 50,
+      "weightKg": 1500
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Матрас 180×200 см (床垫)",
+      "quantity": 50,
+      "weightKg": 1500
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "床垫 Mattress 180*200cm",
+       "quantity": 50,
+       "weightKg": 1500
+      }
+     ],
+     "count": 1
+    },
+    "sameAsInvoice": [
+     "Матрас 180×200 см (床垫)"
+    ]
+   },
+   "said": "f44a5a6: 1 line(s), sameAsInvoice [\"Матрас 180×200 см (床垫)\"]; cc82efa: 2 lines [\"床垫 Mattress 180*200cm\", \"Матрас 180×200 см (床垫)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "why": "f44a5a6: 1 line(s), sameAsInvoice [\"Матрас 180×200 см (床垫)\"]; cc82efa: 2 lines [\"床垫 Mattress 180*200cm\", \"Матрас 180×200 см (床垫)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "realistic": "Mattress/bedding sizes «180*200cm» in the cell, «180×200 см» in Russian.",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "common"
+  },
+  {
+   "id": "c2145",
+   "input": {
+    "invoice": [
+     {
+      "name": "地毯 Carpet 2*3m",
+      "quantity": 120,
+      "weightKg": 2400
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Ковёр 2×3 м (地毯)",
+      "quantity": 120,
+      "weightKg": 2400
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "地毯 Carpet 2*3m",
+       "quantity": 120,
+       "weightKg": 2400
+      }
+     ],
+     "count": 1
+    },
+    "sameAsInvoice": [
+     "Ковёр 2×3 м (地毯)"
+    ]
+   },
+   "said": "f44a5a6: 1 line(s), sameAsInvoice [\"Ковёр 2×3 м (地毯)\"]; cc82efa: 2 lines [\"地毯 Carpet 2*3m\", \"Ковёр 2×3 м (地毯)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "why": "f44a5a6: 1 line(s), sameAsInvoice [\"Ковёр 2×3 м (地毯)\"]; cc82efa: 2 lines [\"地毯 Carpet 2*3m\", \"Ковёр 2×3 м (地毯)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "realistic": "Carpet invoices (a staple of Yiwu cargo for Uzbekistan) write «2*3m»; Russian «2×3 м».",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "common"
+  },
+  {
+   "id": "c2146",
+   "input": {
+    "invoice": [
+     {
+      "name": "地毯 Carpet 200*300",
+      "quantity": 120,
+      "weightKg": 2400
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Ковёр 200×300 см (地毯)",
+      "quantity": 120,
+      "weightKg": 2400
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "地毯 Carpet 200*300",
+       "quantity": 120,
+       "weightKg": 2400
+      }
+     ],
+     "count": 1
+    },
+    "sameAsInvoice": [
+     "Ковёр 200×300 см (地毯)"
+    ]
+   },
+   "said": "f44a5a6: 1 line(s), sameAsInvoice [\"Ковёр 200×300 см (地毯)\"]; cc82efa: 2 lines [\"地毯 Carpet 200*300\", \"Ковёр 200×300 см (地毯)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "why": "f44a5a6: 1 line(s), sameAsInvoice [\"Ковёр 200×300 см (地毯)\"]; cc82efa: 2 lines [\"地毯 Carpet 200*300\", \"Ковёр 200×300 см (地毯)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "realistic": "Carpet size in cm with no unit in the cell, «200×300 см» in Russian.",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "common"
+  },
+  {
+   "id": "c2147",
+   "input": {
+    "invoice": [
+     {
+      "name": "电线 Electric wire 2*1.5mm 100m",
+      "quantity": 400,
+      "weightKg": 3000
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Провод электрический 2х1,5 мм 100 м (电线)",
+      "quantity": 400,
+      "weightKg": 3000
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "电线 Electric wire 2*1.5mm 100m",
+       "quantity": 400,
+       "weightKg": 3000
+      }
+     ],
+     "count": 1
+    },
+    "sameAsInvoice": [
+     "Провод электрический 2х1,5 мм 100 м (电线)"
+    ]
+   },
+   "said": "f44a5a6: 1 line(s), sameAsInvoice [\"Провод электрический 2х1,5 мм 100 м (电线)\"]; cc82efa: 2 lines [\"电线 Electric wire 2*1.5mm 100m\", \"Провод электрический 2х1,5 мм 100 м (电线)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "why": "f44a5a6: 1 line(s), sameAsInvoice [\"Провод электрический 2х1,5 мм 100 м (电线)\"]; cc82efa: 2 lines [\"电线 Electric wire 2*1.5mm 100m\", \"Провод электрический 2х1,5 мм 100 м (电线)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "realistic": "Electric wire «2*1.5mm 100m» in the cell; the model writes the Russian «2х1,5 мм 100 м» (Cyrillic х, units spaced as Russian spaces them). Even Cyrillic х clashes here: «100 м» is a bare figure the cell glues into «100m».",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "common"
+  },
+  {
+   "id": "c2148",
+   "input": {
+    "invoice": [
+     {
+      "name": "钢管 Steel pipe 20*2mm*6m",
+      "quantity": 300,
+      "weightKg": 5000
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Труба стальная 20×2 мм, 6 м (钢管)",
+      "quantity": 300,
+      "weightKg": 5000
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "钢管 Steel pipe 20*2mm*6m",
+       "quantity": 300,
+       "weightKg": 5000
+      }
+     ],
+     "count": 1
+    },
+    "sameAsInvoice": [
+     "Труба стальная 20×2 мм, 6 м (钢管)"
+    ]
+   },
+   "said": "f44a5a6: 1 line(s), sameAsInvoice [\"Труба стальная 20×2 мм, 6 м (钢管)\"]; cc82efa: 2 lines [\"钢管 Steel pipe 20*2mm*6m\", \"Труба стальная 20×2 мм, 6 м (钢管)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "why": "f44a5a6: 1 line(s), sameAsInvoice [\"Труба стальная 20×2 мм, 6 м (钢管)\"]; cc82efa: 2 lines [\"钢管 Steel pipe 20*2mm*6m\", \"Труба стальная 20×2 мм, 6 м (钢管)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "realistic": "Steel pipe «20*2mm*6m»; Russian «20×2 мм, 6 м».",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "common"
+  },
+  {
+   "id": "c2149",
+   "input": {
+    "invoice": [
+     {
+      "name": "胶合板 Plywood 1220*2440*18mm",
+      "quantity": 300,
+      "weightKg": 9000
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Фанера 1220×2440×18 мм (胶合板)",
+      "quantity": 300,
+      "weightKg": 9000
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "胶合板 Plywood 1220*2440*18mm",
+       "quantity": 300,
+       "weightKg": 9000
+      }
+     ],
+     "count": 1
+    },
+    "sameAsInvoice": [
+     "Фанера 1220×2440×18 мм (胶合板)"
+    ]
+   },
+   "said": "f44a5a6: 1 line(s), sameAsInvoice [\"Фанера 1220×2440×18 мм (胶合板)\"]; cc82efa: 2 lines [\"胶合板 Plywood 1220*2440*18mm\", \"Фанера 1220×2440×18 мм (胶合板)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "why": "f44a5a6: 1 line(s), sameAsInvoice [\"Фанера 1220×2440×18 мм (胶合板)\"]; cc82efa: 2 lines [\"胶合板 Plywood 1220*2440*18mm\", \"Фанера 1220×2440×18 мм (胶合板)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "realistic": "Plywood «1220*2440*18mm»; Russian «1220×2440×18 мм».",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "common"
+  },
+  {
+   "id": "c2150",
+   "input": {
+    "invoice": [
+     {
+      "name": "女鞋 Women shoes 36~40",
+      "quantity": 600,
+      "weightKg": 480
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Обувь женская 36-40 (女鞋)",
+      "quantity": 600,
+      "weightKg": 480
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "女鞋 Women shoes 36~40",
+       "quantity": 600,
+       "weightKg": 480
+      }
+     ],
+     "count": 1
+    },
+    "sameAsInvoice": [
+     "Обувь женская 36-40 (女鞋)"
+    ]
+   },
+   "said": "f44a5a6: 1 line(s), sameAsInvoice [\"Обувь женская 36-40 (女鞋)\"]; cc82efa: 2 lines [\"女鞋 Women shoes 36~40\", \"Обувь женская 36-40 (女鞋)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "why": "f44a5a6: 1 line(s), sameAsInvoice [\"Обувь женская 36-40 (女鞋)\"]; cc82efa: 2 lines [\"女鞋 Women shoes 36~40\", \"Обувь женская 36-40 (女鞋)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "realistic": "Chinese footwear invoices write a size run with «~» («36~40»); the model's Russian writes «36-40».",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "common"
+  },
+  {
+   "id": "c2151",
+   "input": {
+    "invoice": [
+     {
+      "name": "女鞋 Women shoes 36~40",
+      "quantity": 600,
+      "weightKg": 480
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Обувь женская, размеры 36–40 (女鞋)",
+      "quantity": 600,
+      "weightKg": 480
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "女鞋 Women shoes 36~40",
+       "quantity": 600,
+       "weightKg": 480
+      }
+     ],
+     "count": 1
+    },
+    "sameAsInvoice": [
+     "Обувь женская, размеры 36–40 (女鞋)"
+    ]
+   },
+   "said": "f44a5a6: 1 line(s), sameAsInvoice [\"Обувь женская, размеры 36–40 (女鞋)\"]; cc82efa: 2 lines [\"女鞋 Women shoes 36~40\", \"Обувь женская, размеры 36–40 (女鞋)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "why": "f44a5a6: 1 line(s), sameAsInvoice [\"Обувь женская, размеры 36–40 (女鞋)\"]; cc82efa: 2 lines [\"女鞋 Women shoes 36~40\", \"Обувь женская, размеры 36–40 (女鞋)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "realistic": "Same size run, the model writing «размеры 36–40» with an en dash.",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "common"
+  },
+  {
+   "id": "c2152",
+   "input": {
+    "invoice": [
+     {
+      "name": "童装 Kids clothes 100~140",
+      "quantity": 1000,
+      "weightKg": 500
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Детская одежда 100-140 (童装)",
+      "quantity": 1000,
+      "weightKg": 500
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "童装 Kids clothes 100~140",
+       "quantity": 1000,
+       "weightKg": 500
+      }
+     ],
+     "count": 1
+    },
+    "sameAsInvoice": [
+     "Детская одежда 100-140 (童装)"
+    ]
+   },
+   "said": "f44a5a6: 1 line(s), sameAsInvoice [\"Детская одежда 100-140 (童装)\"]; cc82efa: 2 lines [\"童装 Kids clothes 100~140\", \"Детская одежда 100-140 (童装)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "why": "f44a5a6: 1 line(s), sameAsInvoice [\"Детская одежда 100-140 (童装)\"]; cc82efa: 2 lines [\"童装 Kids clothes 100~140\", \"Детская одежда 100-140 (童装)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "realistic": "Children's clothing size run «100~140» in the cell, «100-140» in Russian.",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "common"
+  },
+  {
+   "id": "c2153",
+   "input": {
+    "invoice": [
+     {
+      "name": "运动鞋 Sneakers No.8823",
+      "quantity": 600,
+      "weightKg": 500
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Кроссовки №8823 (运动鞋)",
+      "quantity": 600,
+      "weightKg": 500
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "运动鞋 Sneakers No.8823",
+       "quantity": 600,
+       "weightKg": 500
+      }
+     ],
+     "count": 1
+    },
+    "sameAsInvoice": [
+     "Кроссовки №8823 (运动鞋)"
+    ]
+   },
+   "said": "f44a5a6: 1 line(s), sameAsInvoice [\"Кроссовки №8823 (运动鞋)\"]; cc82efa: 2 lines [\"运动鞋 Sneakers No.8823\", \"Кроссовки №8823 (运动鞋)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "why": "f44a5a6: 1 line(s), sameAsInvoice [\"Кроссовки №8823 (运动鞋)\"]; cc82efa: 2 lines [\"运动鞋 Sneakers No.8823\", \"Кроссовки №8823 (运动鞋)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "realistic": "Article number «No.8823» in the cell, the model writing the Russian «№8823».",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2154",
+   "input": {
+    "invoice": [
+     {
+      "name": "杯子 Cup 0.35L",
+      "quantity": 2000,
+      "weightKg": 600
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Кружка 350 мл (杯子)",
+      "quantity": 2000,
+      "weightKg": 600
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "杯子 Cup 0.35L",
+       "quantity": 2000,
+       "weightKg": 600
+      }
+     ],
+     "count": 1
+    },
+    "sameAsInvoice": [
+     "Кружка 350 мл (杯子)"
+    ]
+   },
+   "said": "f44a5a6: 1 line(s), sameAsInvoice [\"Кружка 350 мл (杯子)\"]; cc82efa: 2 lines [\"杯子 Cup 0.35L\", \"Кружка 350 мл (杯子)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "why": "f44a5a6: 1 line(s), sameAsInvoice [\"Кружка 350 мл (杯子)\"]; cc82efa: 2 lines [\"杯子 Cup 0.35L\", \"Кружка 350 мл (杯子)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "realistic": "The model converts the volume into the Russian habit (0.35L → 350 мл).",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2155",
+   "input": {
+    "invoice": [
+     {
+      "name": "床单 Bed sheet 1.5m",
+      "quantity": 500,
+      "weightKg": 400
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Простыня 150 см (床单)",
+      "quantity": 500,
+      "weightKg": 400
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "床单 Bed sheet 1.5m",
+       "quantity": 500,
+       "weightKg": 400
+      }
+     ],
+     "count": 1
+    },
+    "sameAsInvoice": [
+     "Простыня 150 см (床单)"
+    ]
+   },
+   "said": "f44a5a6: 1 line(s), sameAsInvoice [\"Простыня 150 см (床单)\"]; cc82efa: 2 lines [\"床单 Bed sheet 1.5m\", \"Простыня 150 см (床单)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "why": "f44a5a6: 1 line(s), sameAsInvoice [\"Простыня 150 см (床单)\"]; cc82efa: 2 lines [\"床单 Bed sheet 1.5m\", \"Простыня 150 см (床单)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "realistic": "The model converts metres to centimetres (1.5m → 150 см).",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2156",
+   "input": {
+    "invoice": [
+     {
+      "name": "毛巾 Bath towel 70*140",
+      "quantity": 1500,
+      "weightKg": 900
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Полотенце банное 70×140 (毛巾)",
+      "quantity": 1500,
+      "weightKg": 900
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "毛巾 Bath towel 70*140",
+       "quantity": 1500,
+       "weightKg": 900
+      }
+     ],
+     "count": 1
+    },
+    "sameAsInvoice": [
+     "Полотенце банное 70×140 (毛巾)"
+    ]
+   },
+   "said": "f44a5a6: 1 line(s), sameAsInvoice [\"Полотенце банное 70×140 (毛巾)\"]; cc82efa: 2 lines [\"毛巾 Bath towel 70*140\", \"Полотенце банное 70×140 (毛巾)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "why": "f44a5a6: 1 line(s), sameAsInvoice [\"Полотенце банное 70×140 (毛巾)\"]; cc82efa: 2 lines [\"毛巾 Bath towel 70*140\", \"Полотенце банное 70×140 (毛巾)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "realistic": "Bath towel «70*140»; Russian «70×140».",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "common"
+  },
+  {
+   "id": "c2157",
+   "input": {
+    "invoice": [
+     {
+      "name": "毛毯 Blanket 150*200",
+      "quantity": 600,
+      "weightKg": 900
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Плед 150×200 см (毛毯)",
+      "quantity": 600,
+      "weightKg": 900
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "毛毯 Blanket 150*200",
+       "quantity": 600,
+       "weightKg": 900
+      }
+     ],
+     "count": 1
+    },
+    "sameAsInvoice": [
+     "Плед 150×200 см (毛毯)"
+    ]
+   },
+   "said": "f44a5a6: 1 line(s), sameAsInvoice [\"Плед 150×200 см (毛毯)\"]; cc82efa: 2 lines [\"毛毯 Blanket 150*200\", \"Плед 150×200 см (毛毯)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "why": "f44a5a6: 1 line(s), sameAsInvoice [\"Плед 150×200 см (毛毯)\"]; cc82efa: 2 lines [\"毛毯 Blanket 150*200\", \"Плед 150×200 см (毛毯)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "realistic": "Blanket «150*200»; Russian «150×200 см».",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "common"
+  },
+  {
+   "id": "c2158",
+   "input": {
+    "invoice": [
+     {
+      "name": "瓷砖 Ceramic tile ６００＊６００",
+      "quantity": 500,
+      "weightKg": 12000
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Плитка керамическая 600*600 (瓷砖)",
+      "quantity": 500,
+      "weightKg": 12000
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "瓷砖 Ceramic tile ６００＊６００",
+       "quantity": 500,
+       "weightKg": 12000
+      }
+     ],
+     "count": 1
+    },
+    "sameAsInvoice": [
+     "Плитка керамическая 600*600 (瓷砖)"
+    ]
+   },
+   "said": "f44a5a6: 1 line(s), sameAsInvoice [\"Плитка керамическая 600*600 (瓷砖)\"]; cc82efa: 2 lines [\"瓷砖 Ceramic tile ６００＊６００\", \"Плитка керамическая 600*600 (瓷砖)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "why": "f44a5a6: 1 line(s), sameAsInvoice [\"Плитка керамическая 600*600 (瓷砖)\"]; cc82efa: 2 lines [\"瓷砖 Ceramic tile ６００＊６００\", \"Плитка керамическая 600*600 (瓷砖)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "realistic": "A cell typed with the Chinese IME keeps full-width digits «６００＊６００»; the model writes ASCII «600*600».",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "rare"
+  },
+  {
+   "id": "c2159",
+   "input": {
+    "invoice": [
+     {
+      "name": "门 Door 2000*800*40",
+      "quantity": 100,
+      "weightKg": 3000
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Дверь 2000×800×40 (门)",
+      "quantity": 100,
+      "weightKg": 3000
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "门 Door 2000*800*40",
+       "quantity": 100,
+       "weightKg": 3000
+      }
+     ],
+     "count": 1
+    },
+    "sameAsInvoice": [
+     "Дверь 2000×800×40 (门)"
+    ]
+   },
+   "said": "f44a5a6: 1 line(s), sameAsInvoice [\"Дверь 2000×800×40 (门)\"]; cc82efa: 2 lines [\"门 Door 2000*800*40\", \"Дверь 2000×800×40 (门)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "why": "f44a5a6: 1 line(s), sameAsInvoice [\"Дверь 2000×800×40 (门)\"]; cc82efa: 2 lines [\"门 Door 2000*800*40\", \"Дверь 2000×800×40 (门)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "realistic": "Interior door «2000*800*40»; Russian «2000×800×40».",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "common"
+  },
+  {
+   "id": "c2160",
+   "input": {
+    "invoice": [
+     {
+      "name": "地板 Laminate 1215*195*8mm",
+      "quantity": 2000,
+      "weightKg": 20000
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Ламинат 1215×195×8 мм (地板)",
+      "quantity": 2000,
+      "weightKg": 20000
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "地板 Laminate 1215*195*8mm",
+       "quantity": 2000,
+       "weightKg": 20000
+      }
+     ],
+     "count": 1
+    },
+    "sameAsInvoice": [
+     "Ламинат 1215×195×8 мм (地板)"
+    ]
+   },
+   "said": "f44a5a6: 1 line(s), sameAsInvoice [\"Ламинат 1215×195×8 мм (地板)\"]; cc82efa: 2 lines [\"地板 Laminate 1215*195*8mm\", \"Ламинат 1215×195×8 мм (地板)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "why": "f44a5a6: 1 line(s), sameAsInvoice [\"Ламинат 1215×195×8 мм (地板)\"]; cc82efa: 2 lines [\"地板 Laminate 1215*195*8mm\", \"Ламинат 1215×195×8 мм (地板)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "realistic": "Laminate «1215*195*8mm»; Russian «1215×195×8 мм».",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "common"
+  },
+  {
+   "id": "c2161",
+   "input": {
+    "invoice": [
+     {
+      "name": "瓷砖 Ceramic tile 600*600mm",
+      "quantity": 500,
+      "weightKg": 12000
+     },
+     {
+      "name": "瓷砖 Ceramic tile 600*1200mm",
+      "quantity": 200,
+      "weightKg": 9600
+     },
+     {
+      "name": "瓷砖 Ceramic tile 300*600mm",
+      "quantity": 300,
+      "weightKg": 4500
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Плитка керамическая 600×600 мм (瓷砖)",
+      "quantity": 500,
+      "weightKg": 12000
+     },
+     {
+      "name": "Плитка керамическая 600×1200 мм (瓷砖)",
+      "quantity": 200,
+      "weightKg": 9600
+     },
+     {
+      "name": "Плитка керамическая 300×600 мм (瓷砖)",
+      "quantity": 300,
+      "weightKg": 4500
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "瓷砖 Ceramic tile 600*600mm",
+       "quantity": 500,
+       "weightKg": 12000
+      },
+      {
+       "name": "瓷砖 Ceramic tile 600*1200mm",
+       "quantity": 200,
+       "weightKg": 9600
+      },
+      {
+       "name": "瓷砖 Ceramic tile 300*600mm",
+       "quantity": 300,
+       "weightKg": 4500
+      }
+     ],
+     "count": 3
+    },
+    "sameAsInvoice": [
+     "Плитка керамическая 600×600 мм (瓷砖)",
+     "Плитка керамическая 600×1200 мм (瓷砖)",
+     "Плитка керамическая 300×600 мм (瓷砖)"
+    ]
+   },
+   "said": "f44a5a6: 3 line(s), sameAsInvoice [\"Плитка керамическая 600×600 мм (瓷砖)\", \"Плитка керамическая 600×1200 мм (瓷砖)\", \"Плитка керамическая 300×600 мм (瓷砖)\"]; cc82efa: 6 lines [\"瓷砖 Ceramic tile 600*600mm\", \"瓷砖 Ceramic tile 600*1200mm\", \"瓷砖 Ceramic tile 300*600mm\", \"Плитка керамическая 600×600 мм (瓷砖)\", \"Плитка керамическая 600×1200 мм (瓷砖)\", \"Плитка керамическая 300×600 мм (瓷砖)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "why": "f44a5a6: 3 line(s), sameAsInvoice [\"Плитка керамическая 600×600 мм (瓷砖)\", \"Плитка керамическая 600×1200 мм (瓷砖)\", \"Плитка керамическая 300×600 мм (瓷砖)\"]; cc82efa: 6 lines [\"瓷砖 Ceramic tile 600*600mm\", \"瓷砖 Ceramic tile 600*1200mm\", \"瓷砖 Ceramic tile 300*600mm\", \"Плитка керамическая 600×600 мм (瓷砖)\", \"Плитка керамическая 600×1200 мм (瓷砖)\", \"Плитка керамическая 300×600 мм (瓷砖)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "realistic": "One tile invoice with three sizes; the model's Russian re-reading writes each with «×» — the whole order lands twice (3 lines → 6).",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "common"
+  },
+  {
+   "id": "c2162",
+   "input": {
+    "invoice": [
+     {
+      "name": "瓷砖\nCeramic tile\n600*600mm",
+      "quantity": 500,
+      "weightKg": 12000
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Плитка керамическая 600×600 мм (瓷砖)",
+      "quantity": 500,
+      "weightKg": 12000
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "瓷砖\nCeramic tile\n600*600mm",
+       "quantity": 500,
+       "weightKg": 12000
+      }
+     ],
+     "count": 1
+    },
+    "sameAsInvoice": [
+     "Плитка керамическая 600×600 мм (瓷砖)"
+    ]
+   },
+   "said": "f44a5a6: 1 line(s), sameAsInvoice [\"Плитка керамическая 600×600 мм (瓷砖)\"]; cc82efa: 2 lines [\"瓷砖\\nCeramic tile\\n600*600mm\", \"Плитка керамическая 600×600 мм (瓷砖)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "why": "f44a5a6: 1 line(s), sameAsInvoice [\"Плитка керамическая 600×600 мм (瓷砖)\"]; cc82efa: 2 lines [\"瓷砖\\nCeramic tile\\n600*600mm\", \"Плитка керамическая 600×600 мм (瓷砖)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "realistic": "The cell's Chinese, English and size on three lines (Alt+Enter), as c2084's cell is written.",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "common"
+  },
+  {
+   "id": "c2163",
+   "input": {
+    "invoice": [
+     {
+      "name": "瓷砖 Kafel 600*600",
+      "quantity": 500,
+      "weightKg": 12000
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Плитка 600×600 (瓷砖)",
+      "quantity": 500,
+      "weightKg": 12000
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "瓷砖 Kafel 600*600",
+       "quantity": 500,
+       "weightKg": 12000
+      }
+     ],
+     "count": 1
+    },
+    "sameAsInvoice": [
+     "Плитка 600×600 (瓷砖)"
+    ]
+   },
+   "said": "f44a5a6: 1 line(s), sameAsInvoice [\"Плитка 600×600 (瓷砖)\"]; cc82efa: 2 lines [\"瓷砖 Kafel 600*600\", \"Плитка 600×600 (瓷砖)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "why": "f44a5a6: 1 line(s), sameAsInvoice [\"Плитка 600×600 (瓷砖)\"]; cc82efa: 2 lines [\"瓷砖 Kafel 600*600\", \"Плитка 600×600 (瓷砖)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "realistic": "A cell in Chinese + Uzbek Latin («Kafel 600*600»), the model's Russian «Плитка 600×600».",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "common"
+  },
+  {
+   "id": "c2164",
+   "input": {
+    "invoice": [
+     {
+      "name": "女鞋 Women shoes 36~40",
+      "quantity": 600,
+      "weightKg": 480
+     },
+     {
+      "name": "男鞋 Men shoes 39~44",
+      "quantity": 400,
+      "weightKg": 400
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Обувь женская 36–40 (女鞋)",
+      "quantity": 600,
+      "weightKg": 480
+     },
+     {
+      "name": "Обувь мужская 39–44 (男鞋)",
+      "quantity": 400,
+      "weightKg": 400
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "女鞋 Women shoes 36~40",
+       "quantity": 600,
+       "weightKg": 480
+      },
+      {
+       "name": "男鞋 Men shoes 39~44",
+       "quantity": 400,
+       "weightKg": 400
+      }
+     ],
+     "count": 2
+    },
+    "sameAsInvoice": [
+     "Обувь женская 36–40 (女鞋)",
+     "Обувь мужская 39–44 (男鞋)"
+    ]
+   },
+   "said": "f44a5a6: 2 line(s), sameAsInvoice [\"Обувь женская 36–40 (女鞋)\", \"Обувь мужская 39–44 (男鞋)\"]; cc82efa: 4 lines [\"女鞋 Women shoes 36~40\", \"男鞋 Men shoes 39~44\", \"Обувь женская 36–40 (女鞋)\", \"Обувь мужская 39–44 (男鞋)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "why": "f44a5a6: 2 line(s), sameAsInvoice [\"Обувь женская 36–40 (女鞋)\", \"Обувь мужская 39–44 (男鞋)\"]; cc82efa: 4 lines [\"女鞋 Women shoes 36~40\", \"男鞋 Men shoes 39~44\", \"Обувь женская 36–40 (女鞋)\", \"Обувь мужская 39–44 (男鞋)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "realistic": "Women's and men's shoes, two rows with «~» size runs; both land twice.",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "common"
+  },
+  {
+   "id": "c2165",
+   "input": {
+    "invoice": [
+     {
+      "name": "瓷砖 Ceramic tile 600*600mm",
+      "weightKg": 12000
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Плитка керамическая 600×600 мм (瓷砖)",
+      "quantity": 500
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "瓷砖 Ceramic tile 600*600mm",
+       "weightKg": 12000
+      }
+     ],
+     "count": 1
+    },
+    "sameAsInvoice": [
+     "Плитка керамическая 600×600 мм (瓷砖)"
+    ]
+   },
+   "said": "f44a5a6: 1 line(s), sameAsInvoice [\"Плитка керамическая 600×600 мм (瓷砖)\"]; cc82efa: 2 lines [\"瓷砖 Ceramic tile 600*600mm\", \"Плитка керамическая 600×600 мм (瓷砖)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "why": "f44a5a6: 1 line(s), sameAsInvoice [\"Плитка керамическая 600×600 мм (瓷砖)\"]; cc82efa: 2 lines [\"瓷砖 Ceramic tile 600*600mm\", \"Плитка керамическая 600×600 мм (瓷砖)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "realistic": "The Excel states only the weight and the model only the count (the Invoice sheet beside the Packing list): no shared figure, so the NAME alone decides — and it now clashes.",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "common"
+  },
+  {
+   "id": "c2166",
+   "input": {
+    "invoice": [
+     {
+      "name": "窗帘 Curtain 2.8*2.5m",
+      "quantity": 300
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Шторы 2,8×2,5 м (窗帘)",
+      "quantity": 300
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "窗帘 Curtain 2.8*2.5m",
+       "quantity": 300
+      }
+     ],
+     "count": 1
+    },
+    "sameAsInvoice": [
+     "Шторы 2,8×2,5 м (窗帘)"
+    ]
+   },
+   "said": "f44a5a6: 1 line(s), sameAsInvoice [\"Шторы 2,8×2,5 м (窗帘)\"]; cc82efa: 2 lines [\"窗帘 Curtain 2.8*2.5m\", \"Шторы 2,8×2,5 м (窗帘)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "why": "f44a5a6: 1 line(s), sameAsInvoice [\"Шторы 2,8×2,5 м (窗帘)\"]; cc82efa: 2 lines [\"窗帘 Curtain 2.8*2.5m\", \"Шторы 2,8×2,5 м (窗帘)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "realistic": "Curtain line with only a count on both sides.",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "common"
+  },
+  {
+   "id": "c2167",
+   "input": {
+    "invoice": [
+     {
+      "name": "四件套 Bedding set 200*230cm",
+      "quantity": 400,
+      "weightKg": 1200
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Комплект постельного белья 200×230 см (四件套)",
+      "quantity": 400,
+      "weightKg": 1200
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "四件套 Bedding set 200*230cm",
+       "quantity": 400,
+       "weightKg": 1200
+      }
+     ],
+     "count": 1
+    },
+    "sameAsInvoice": [
+     "Комплект постельного белья 200×230 см (四件套)"
+    ]
+   },
+   "said": "f44a5a6: 1 line(s), sameAsInvoice [\"Комплект постельного белья 200×230 см (四件套)\"]; cc82efa: 2 lines [\"四件套 Bedding set 200*230cm\", \"Комплект постельного белья 200×230 см (四件套)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "why": "f44a5a6: 1 line(s), sameAsInvoice [\"Комплект постельного белья 200×230 см (四件套)\"]; cc82efa: 2 lines [\"四件套 Bedding set 200*230cm\", \"Комплект постельного белья 200×230 см (四件套)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "realistic": "Bedding set «200*230cm»; Russian «200×230 см».",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "common"
+  },
+  {
+   "id": "c2168",
+   "input": {
+    "invoice": [
+     {
+      "name": "玻璃膜 Window film 1.22*50m",
+      "quantity": 100,
+      "weightKg": 800
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Плёнка оконная 1,22×50 м (玻璃膜)",
+      "quantity": 100,
+      "weightKg": 800
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "玻璃膜 Window film 1.22*50m",
+       "quantity": 100,
+       "weightKg": 800
+      }
+     ],
+     "count": 1
+    },
+    "sameAsInvoice": [
+     "Плёнка оконная 1,22×50 м (玻璃膜)"
+    ]
+   },
+   "said": "f44a5a6: 1 line(s), sameAsInvoice [\"Плёнка оконная 1,22×50 м (玻璃膜)\"]; cc82efa: 2 lines [\"玻璃膜 Window film 1.22*50m\", \"Плёнка оконная 1,22×50 м (玻璃膜)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "why": "f44a5a6: 1 line(s), sameAsInvoice [\"Плёнка оконная 1,22×50 м (玻璃膜)\"]; cc82efa: 2 lines [\"玻璃膜 Window film 1.22*50m\", \"Плёнка оконная 1,22×50 м (玻璃膜)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "realistic": "Window film roll «1.22*50m»; Russian «1,22×50 м».",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "common"
+  },
+  {
+   "id": "c2169",
+   "input": {
+    "invoice": [
+     {
+      "name": "钉子 Nails 2.5*50mm",
+      "quantity": 200,
+      "weightKg": 5000
+     }
+    ],
+    "aiGoods": "add",
+    "model": [
+     {
+      "name": "Гвозди 2,5×50 мм (钉子)",
+      "quantity": 200,
+      "weightKg": 5000
+     }
+    ],
+    "typed": [],
+    "typedLabelled": []
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "钉子 Nails 2.5*50mm",
+       "quantity": 200,
+       "weightKg": 5000
+      }
+     ],
+     "count": 1
+    },
+    "sameAsInvoice": [
+     "Гвозди 2,5×50 мм (钉子)"
+    ]
+   },
+   "said": "f44a5a6: 1 line(s), sameAsInvoice [\"Гвозди 2,5×50 мм (钉子)\"]; cc82efa: 2 lines [\"钉子 Nails 2.5*50mm\", \"Гвозди 2,5×50 мм (钉子)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "why": "f44a5a6: 1 line(s), sameAsInvoice [\"Гвозди 2,5×50 мм (钉子)\"]; cc82efa: 2 lines [\"钉子 Nails 2.5*50mm\", \"Гвозди 2,5×50 мм (钉子)\"], sameAsInvoice []. otherName's new `figure` pseudo-script compares bare-number words: the cell's «*»/«~» split into separate figures while the model's «×» (U+00D7, a math symbol goodsNameKey keeps), «~»-less range or spaced unit gives a different set, so the model's line with the Excel's exact Chinese in brackets and every figure agreeing is a «clash» and the same order lands twice. f44a5a6 compared letter scripts only (Cyrillic outside vs Latin half = no clash).",
+   "realistic": "Nails «2.5*50mm»; Russian «2,5×50 мм».",
+   "source": "r6-probe collector",
+   "weight": "regression",
+   "severity": "common"
   }
  ],
  "readGoodsFileCases": [

@@ -14,6 +14,8 @@
  * sentence, `why` its base-vs-round-4 evidence. The round-5 probers'
  * (source «r5-probe …», c2028-c2092) followed the same way, `why` their
  * main-vs-round-5 evidence and `realistic` why a seller sends such an input.
+ * The round-6 final probers' (source «r6-probe …», c2093-c2177) were recorded
+ * the same way, `why` their f44a5a6-vs-package evidence, plus `severity`.
  *
  * An expectation names only what the reviewer named — a figure, a name, a
  * count — and every name a goods list states is asserted in order. A case
@@ -48,6 +50,8 @@ export interface CorpusCase<I, E, O = never> {
   note?: string;
   /** Why a real seller sends this input (the round-5 probers' own sentence). */
   realistic?: string;
+  /** How often a real seller sends it, by the round-6 probers' own judgement. */
+  severity?: 'common' | 'rare';
 }
 
 /**
