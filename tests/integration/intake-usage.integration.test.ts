@@ -97,8 +97,10 @@ async function collectAndLand(outcomes: unknown[]) {
   expect(target?.requestId, 'the landing opened a request').toBeTruthy();
   madeRequests.push(target!.requestId!);
   madeLeads.push(target!.id);
+  landed = target!;
   return target!.requestId!;
 }
+let landed: NonNullable<Awaited<ReturnType<typeof landCollectedIntake>>> | null = null;
 
 const intakeRows = (requestId: string) =>
   db
@@ -162,6 +164,14 @@ describe('every answered reading is billed against the request', () => {
       [40_000, 16_000],
     ]);
     expect(queue.spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('the landing says whether the machine’s reply was queued — the ✅ promises it only then (judge concurrency-8)', async () => {
+    await collectAndLand([read(U2)]);
+    expect(landed?.replyQueued).toBe(true);
+    queue.spy.mockResolvedValueOnce(false);
+    await collectAndLand([read(U2)]);
+    expect(landed?.replyQueued).toBe(false);
   });
 
   it('a reading the model never answered (the network) bills nothing', async () => {

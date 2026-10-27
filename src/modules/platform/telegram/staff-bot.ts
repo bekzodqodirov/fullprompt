@@ -1285,6 +1285,8 @@ export async function landCollectedIntake(
   requestId?: string | null;
   /** Why not, when it did not (audit A38) — the bot turns it into a sentence. */
   queueError?: string | null;
+  /** Whether the machine's reply was queued — the ✅'s wording (judge concurrency-8). */
+  replyQueued?: boolean;
 } | null> {
   const { activeIntake, intakeClientLabel } = await import('./calc-intake');
   const state = activeIntake(chatId);

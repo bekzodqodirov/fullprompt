@@ -57,6 +57,13 @@ export interface IntakeTarget {
    * requests). The code travels so the bot can say the sentence.
    */
   queueError?: string | null;
+  /**
+   * Was the machine's reply queued (`queueCalcPrefill`)? A yolkira job's
+   * tariff reply is a few queries on its own queue and can reach the chat
+   * BEFORE the bot's «Saqlandi» (judge concurrency-8), so the confirmation
+   * words it to read right in either order — but only when it IS coming.
+   */
+  replyQueued?: boolean;
 }
 
 /** The client a typed code or phone names — exactly one, or nobody. */
@@ -276,6 +283,7 @@ export async function landIntake(input: {
   let queued = false;
   let queueError: string | null = null;
   let requestId: string | null = null;
+  let replyQueued = false;
   try {
     const { openCalcRequest } = await import('./service');
     const opened = await openCalcRequest(
@@ -331,7 +339,7 @@ export async function landIntake(input: {
     // this landing would silently get no pass at all — the same asymmetry
     // that left the card form and the thread door unserved until this round.
     // Off the poller and out of this process, through pg-boss.
-    await queueCalcPrefill({
+    replyQueued = await queueCalcPrefill({
       requestId: opened.id,
       staffId: input.collectedBy,
       section: input.section,
@@ -352,7 +360,7 @@ export async function landIntake(input: {
     logger.error({ err, kind: target.kind, id: target.id }, '[calc-intake] stage move failed');
   }
 
-  return { ...target, queued, requestId, queueError };
+  return { ...target, queued, requestId, queueError, replyQueued };
 }
 
 async function moveToCalcStage(target: IntakeTarget, actorId: string): Promise<void> {

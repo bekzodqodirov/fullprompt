@@ -2821,6 +2821,12 @@ export async function handleCalcCallback(
   // screen for the VED, or no line at all (`landingLinkFor`): one literal for
   // everyone handed the VED a CRM card that bounces him.
   const link = await landingLinkFor(staff.id, target);
+  // A section with no customs half is answered from the tariff table on its
+  // own fast queue (judge concurrency-8): that reply can land ABOVE this
+  // message, so the sentence says it comes separately — true in either order
+  // — rather than «VED javob beradi» under a figure already in the chat.
+  const { sectionParts } = await import('../../wms/calc/pricing');
+  const tariffFollows = target.replyQueued === true && !sectionParts(state.section).customs;
   await ctx.reply(
     `✅ Saqlandi — ${target.kind === 'deal' ? 'bitim' : 'lead'}: ${target.label}\n` +
       (link ? `${link}\n` : '') +
@@ -2828,13 +2834,19 @@ export async function handleCalcCallback(
       // Honest about which half landed: the material is on the card either
       // way, but only a queued request will be calculated by anybody.
       (target.queued
-        ? '🧮 Hisoblash navbatiga tushdi — VED xodimi javob beradi.'
+        ? tariffFollows
+          ? TARIFF_FOLLOWS
+          : '🧮 Hisoblash navbatiga tushdi — VED xodimi javob beradi.'
         : `⚠️ Hisoblash navbatiga tushmadi: ${queueRefusal(target.queueError)}`),
     // Re-derived, not named (round 100, 13A): naming staffKeyboard() here
     // took the cabinet buttons off a both-chat's phone.
     { reply_markup: await replyKeyboardFor(chatId) },
   );
 }
+
+/** The ✅'s queue line when the tariff reply is on its way (judge concurrency-8). */
+export const TARIFF_FOLLOWS =
+  '🧮 Hisoblash navbatiga tushdi — tarif bo‘yicha javob alohida xabarda keladi, rasmiy narxni VED beradi.';
 
 /**
  * WHY the job did not reach the VED's queue (audit A38).
