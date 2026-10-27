@@ -34,6 +34,12 @@ export function DownloadLinks() {
       const url = new URL(anchor.href, window.location.href);
       if (url.origin !== window.location.origin) return null;
       if (!url.pathname.startsWith('/api/') || url.pathname.startsWith('/api/dl')) return null;
+      // A new-tab link under a MOUSE is a desktop browser's, where the cookie
+      // travels and the new tab is the point (a PDF beside the screen). Taken
+      // over, it would open a blank tab first and point it at the link — a
+      // tab some browsers leave standing when the answer is a download. The
+      // download manager's problem is a phone's.
+      if (anchor.target === '_blank' && window.matchMedia?.('(pointer: fine)').matches) return null;
       return anchor;
     }
 
