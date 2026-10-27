@@ -19,7 +19,7 @@ import {
 import { clientFeed, clientFeedHasAnything, machineReplyOf } from '@/modules/wms/crm/feed';
 import { conversationFor } from '@/modules/wms/crm/conversations';
 import { addActivity } from '@/modules/wms/crm/service';
-import { aiVedReplyText } from '@/modules/wms/calc/ai-reply';
+import { aiVedReplyText, type AiVedFreight, type AiVedReplyInput } from '@/modules/wms/calc/ai-reply';
 import { tariffReplyText } from '@/modules/wms/calc/prefill-reply';
 import {
   AI_REPLY_HEAD,
@@ -442,10 +442,13 @@ describe('the lenta’s money is the ledger’s audience', () => {
  *
  * The notes are written through the lenta's real door for a machine
  * (`addActivity` under `{ actorId: null }, { system: true }` — the writer the
- * prefill job uses), and the AI reply is the REAL renderer's text, so a
- * heading reworded in `ai-reply.ts` without `reply-heads.ts` turns this red.
- * The estimate fixture is built from the kernel's constants alone: it does
- * not wait on the package that renders the VED line.
+ * prefill job uses), and every reply that wears a chip is the REAL renderer's
+ * text — `aiVedReplyText` exact and estimated, `tariffReplyText` on a stored
+ * zone, a guessed one and a refusal — so a heading or a VED line reworded in
+ * a writer without `reply-heads.ts` turns this red (review P4-4: a hand-typed
+ * copy of P1's wording could only agree with itself). The one hand-built note
+ * is §2.6's bare shape, the mark on line 2 under the AI heading, kept beside
+ * the renderer's own.
  *
  * Its own lead, for the reason the cargo block has its own client: the shared
  * fixture above is read by exact kind sequences.
@@ -456,6 +459,7 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
     ai: '',
     tariff: '',
     estimate: '',
+    aiEstimate: '',
     tariffEstimate: '',
     tariffRefused: '',
     personAi: '',
@@ -469,7 +473,7 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
     plain: '',
   };
 
-  const aiText = aiVedReplyText({
+  const aiInput: AiVedReplyInput = {
     clientLabel: 'GS777',
     cardLabel: 'B-000067',
     lines: [
@@ -501,15 +505,68 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
     estimate: null,
     pickLeft: null,
     audience: 'lenta',
+  };
+  const aiText = aiVedReplyText(aiInput);
+  // The same job with no baza on its row: the 📊 median stands in, the
+  // Taxminiy is whole, and the lenta's copy carries the VED line (§2.6) —
+  // what `aiPrefill` writes when the file has the code and nobody priced it.
+  const aiEstimateText = aiVedReplyText({
+    ...aiInput,
+    lines: [
+      {
+        label: 'Kurtka',
+        code: '6201400000',
+        measureText: null,
+        bazaSource: null,
+        dutyText: '10%',
+        addDutyPct: 0,
+        exciseText: null,
+        vatPct: 12,
+        customsUsd: null,
+        refusal: 'baza yo‘q',
+        refusalTail: 'ved',
+        estimated: {
+          priced: true,
+          customsUsd: 264.48,
+          measureText: '300 kg × $3.80/kg',
+          declarations: [23],
+          oldFileEnd: null,
+        },
+        weightFromTotal: null,
+        staleBaza: false,
+      },
+    ],
+    fee: null,
+    totalUsd: null,
+    estimate: {
+      rows: 1,
+      exactRows: 0,
+      exactUsd: null,
+      taxminiyUsd: 429.28,
+      taxminiyFee: { bhm: 5, usd: 164.8 },
+      taxminiyBlock: null,
+    },
   });
-  // §2.4's yolkira reply, the stored-zone shape: no VED line.
-  const tariffText = [
-    `${TARIFF_REPLY_HEAD} (tarif bo‘yicha) · taxminiy · GS777 · B-000067`,
-    'Xitoy → O‘zbekiston',
-    '180 kg/m³ · $160/m³ × 12 m³',
-    'Yo‘lkira: ≈ $1920.00',
-    '⚠️ Rasmiy emas — VED xodimi tasdiqlaydi.',
-  ].join('\n');
+  // §2.4's yolkira reply, by the real renderer: on the zone the card stores
+  // (no VED line), and on one read off the city (his 2.6 b — the VED line).
+  const road = (zoneGuessed: boolean): AiVedFreight => ({
+    ok: true,
+    listUsd: 1920,
+    routeLabel: 'Xitoy → O‘zbekiston',
+    bandText: '180 kg/m³ · $160/m³ × 12 m³',
+    zoneGuessed,
+    zoneReadFrom: zoneGuessed ? 'Yiwu' : null,
+    volumeFromLines: false,
+    exact: !zoneGuessed,
+    small: false,
+  });
+  const tariffText = tariffReplyText({
+    clientLabel: 'GS777',
+    cardLabel: 'B-000067',
+    freight: road(false),
+    link: null,
+    audience: 'lenta',
+  });
   // §2.6: the VED line sits on line 2, directly under the heading.
   const estimateText = [
     `${AI_REPLY_HEAD} · taxminiy rastamojka · GS777 · B-000067`,
@@ -525,11 +582,13 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
     link: null,
     audience: 'lenta',
   });
-  const tariffEstimateText = [
-    `${TARIFF_REPLY_HEAD} (tarif bo‘yicha) · taxminiy · GS777`,
-    `${VED_ESTIMATE_MARK} zona «Yiwu»dan taxmin, rasmiy emas — zonani o‘zingiz tanlang.`,
-    'Xitoy → O‘zbekiston — zona «Yiwu»dan taxmin',
-  ].join('\n');
+  const tariffEstimateText = tariffReplyText({
+    clientLabel: 'GS777',
+    cardLabel: null,
+    freight: road(true),
+    link: null,
+    audience: 'lenta',
+  });
 
   const machine = async (note: string) =>
     (
@@ -558,6 +617,7 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
     ids.ai = await machine(aiText);
     ids.tariff = await machine(tariffText);
     ids.estimate = await machine(estimateText);
+    ids.aiEstimate = await machine(aiEstimateText);
     ids.tariffEstimate = await machine(tariffEstimateText);
     ids.tariffRefused = await machine(tariffRefusedText);
     // A person who pastes the machine's reply into a note has written a note.
@@ -614,7 +674,13 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
   });
 
   it('a reply carrying the VED line is «estimate» — under either heading', async () => {
+    // The renderers did write the line: without it the chip below could be
+    // asked about a note with no estimate in it.
+    expect(aiEstimateText).toContain(VED_ESTIMATE_MARK);
+    expect(tariffEstimateText).toContain(VED_ESTIMATE_MARK);
+    expect(tariffText).not.toContain(VED_ESTIMATE_MARK);
     expect(await chipOf(ids.estimate)).toEqual({ raw: 'estimate', chip: 'estimate' });
+    expect(await chipOf(ids.aiEstimate)).toEqual({ raw: 'estimate', chip: 'estimate' });
     expect(await chipOf(ids.tariffEstimate)).toEqual({ raw: 'estimate', chip: 'estimate' });
   });
 
