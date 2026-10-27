@@ -23,6 +23,7 @@ import { aiVedReplyText } from '@/modules/wms/calc/ai-reply';
 import { tariffReplyText } from '@/modules/wms/calc/prefill-reply';
 import {
   AI_REPLY_HEAD,
+  TARIFF_PRICED_HEAD,
   TARIFF_REPLY_HEAD,
   VED_ESTIMATE_MARK,
 } from '@/modules/wms/calc/reply-heads';
@@ -463,6 +464,7 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
     personTariffEstimate: '',
     advert: '',
     advertTariff: '',
+    advertTariffPriced: '',
     advertTariffEstimate: '',
     plain: '',
   };
@@ -575,6 +577,10 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
     // The tariff heading mid-text, with and without the mark: each branch that
     // names it is anchored on its own — 'tariff' and the estimate's second half.
     ids.advertTariff = await machine(`📣 sayt\nNarxi qancha? ${TARIFF_REPLY_HEAD} kerak`);
+    // …and the PRICED title mid-text, the very string the 'tariff' WHEN is
+    // anchored on since PF-9: the bare heading above no longer reaches it, so
+    // without this an anchor widened to «anywhere in the note» stays green.
+    ids.advertTariffPriced = await machine(`📣 sayt\nNarx? ${TARIFF_PRICED_HEAD} kerak`);
     ids.advertTariffEstimate = await machine(
       `📣 sayt\nNarx? ${TARIFF_REPLY_HEAD} ${VED_ESTIMATE_MARK} kerak`,
     );
@@ -622,6 +628,7 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
   it('an advert’s system note wears no chip, whatever its words contain', async () => {
     expect(await chipOf(ids.advert)).toEqual({ raw: null, chip: null });
     expect(await chipOf(ids.advertTariff)).toEqual({ raw: null, chip: null });
+    expect(await chipOf(ids.advertTariffPriced)).toEqual({ raw: null, chip: null });
     expect(await chipOf(ids.advertTariffEstimate)).toEqual({ raw: null, chip: null });
     expect(await chipOf(ids.plain)).toEqual({ raw: null, chip: null });
   });
