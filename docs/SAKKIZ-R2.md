@@ -7,6 +7,7 @@ His answers 2.1-2.9 (2026-10-21, §11) are binding.
 
 - Base: branch `claude/telegram-customs-ai-issues-1c336s`. The lead cuts K from the
   branch head when R2 starts and writes K's hash here. Every package branches from K.
+- **K = `4bf1e361246051faa44296fcf0b538350577aa4a`** («Sakkiz R2 K: the kernel — seams moved and added, behaviour unchanged»).
 - **No migration.** The ledger stays at **136** (§11 says why).
 - DECISIONS numbers are `#R2-1…`. The lead renumbers them at the merge, after fetching
   the tail; the R1 review rounds are writing #1463 onward.
