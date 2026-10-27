@@ -90,10 +90,23 @@ built. ⭐ = what is built if he does not answer. The Uzbek wording is in §13.
    taken on the estimated full value.
 4. **«Aniq» means "the number the VED's screen prints today"**, not "official". Its
    bazas stand on the rows (typed, 🧠, 📖, 📥) and the VED can see every one. «Taxminiy»
-   contains at least one 📊 median that is on no screen and is never written anywhere.
+   stands on at least one 📊 median, which is written onto no row, group, seal, offer or
+   price-channel post: it stands only in the chat reply and, as text, in the card's lenta
+   note (his 2.4 c). The median itself is the number the 📥 dialog prints as «50 %
+   (mediana)» for that row and unit, so the VED who opens the row sees it there.
 5. **The lenta chip is shown to every reader of the lenta**, not only the VED (§3). It
    says when the note carries an estimate. The «🔎 VED uchun:» line, directly under the
-   note's heading, speaks to the VED.
+   note's heading, speaks to the VED. The «🤖 AI taxmini · rasmiy emas» chip stands on
+   every customs reply the machine writes, one that priced nothing («Rastamojka jami:
+   hozircha hisoblab bo‘lmadi») included — accepted, not missed (late pass, review
+   P4-3). Such a note is still the machine's reading for the VED to check — the groups
+   and codes it found, each refusal and who fixes it — and its heading says «taxminiy
+   rastamojka» (PF-6), so the chip and the note agree. A refused yolkira reply wears no
+   chip (PF-9) because nothing in it is the machine's but the missing facts. Taking the
+   chip off the AI's non-answer needs a mark the writer prints only on a priced reply
+   (PF-9 used the title's «taxminiy»; the chip never reads refusal words, #513), i.e. a
+   change to the reply's own words in the seller's chat — the reply's to make, not the
+   lenta's.
 6. **The Σ m³ is stored at the INSERT, and labelled by derivation.** MR-9 keeps a request
    m³ for the upsale's denominator, and the checklist stops asking a total the lines
    already give. So the Σ is stored. Whether a stored m³ «came from the lines» is

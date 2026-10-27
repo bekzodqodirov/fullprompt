@@ -326,7 +326,11 @@ const SOURCE_LEGEND: Record<Exclude<BazaSource, null>, string> = {
 /** A row priced on an old baza, as the line says it — the screen's «eskirgan» chip. */
 export const STALE_BAZA_WORDS = '⚠ eski baza';
 
-/** The 📊 mark and its legend — the shadow is on no screen, so it says what it is. */
+/**
+ * The 📊 mark and its legend. The shadow is written onto no row, so the VED's
+ * table never prints it — it stands only in this text, the chat's copy and the
+ * lenta's (his 2.4 c) — and the legend says what it is.
+ */
 const MEDIAN_MARK = '📊';
 const MEDIAN_LEGEND = '📊 deklaratsiyalar medianasi (taxminiy)';
 
