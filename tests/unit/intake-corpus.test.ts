@@ -1099,8 +1099,10 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     prefill.standing.mockResolvedValue('touched');
     await handler([prefillJob(1)]);
     const texts = say.mock.calls.map((call) => (call[1] as { text: string }).text);
-    expect(texts).not.toContain(STOOD_DOWN.touched);
-    for (const t of texts) expect(t).toBe(PASS_FAILED);
+    // Exactly one message, and that one (R2 late pass, review P1-R8): the two
+    // old assertions held over an EMPTY list too, so a stand-down that fell
+    // silent on a retry stayed green.
+    expect(texts).toEqual([PASS_FAILED]);
   },
   c0221: async () => {
     say.mockReset();
