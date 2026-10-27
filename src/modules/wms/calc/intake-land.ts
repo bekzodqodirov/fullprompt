@@ -225,7 +225,7 @@ export async function landIntake(input: {
    * ok or not, a re-read included (his 2.9 c) — recorded once the request
    * exists, one `'intake'` row each.
    */
-  usages?: readonly AiUsage[];
+  usages?: readonly (AiUsage & { at?: number })[];
 }): Promise<IntakeTarget> {
   const target = input.client
     ? await dealFor(
@@ -329,6 +329,9 @@ export async function landIntake(input: {
           model: usage.model,
           inputTokens: usage.inputTokens,
           outputTokens: usage.outputTokens,
+          // Billed on the day it was SPENT (judge concurrency-11), not the
+          // day the collection landed.
+          createdAt: usage.at === undefined ? null : new Date(usage.at),
         });
       } catch (err) {
         logger.warn({ err, requestId: opened.id }, '[calc-intake] usage not recorded');

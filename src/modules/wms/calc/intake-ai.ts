@@ -148,7 +148,16 @@ export type AiIntakeRead =
  * answered attempt ends the reading. The collector APPENDS these across
  * re-reads and the landing bills each one.
  */
-export type AiIntakeOutcome = AiIntakeRead & { answered?: AiUsage[] };
+export type AiIntakeOutcome = AiIntakeRead & { answered?: AnsweredUsage[] };
+
+/**
+ * One answered attempt's bill, and WHEN the model answered it (judge
+ * concurrency-11): the collector bills its readings only at the landing, and
+ * the day's budget is counted by the ledger row's time — so a reading at 23:58
+ * that landed at 00:03 counted against the next day. The landing writes this
+ * instant as the row's own.
+ */
+export type AnsweredUsage = AiUsage & { at: number };
 
 /**
  * Room for the answer AND the thinking that precedes it.
@@ -545,7 +554,7 @@ export async function analyzeIntake(input: {
       // The model ANSWERED this attempt: it is billed whatever is made of
       // the answer — refused, cut, unreadable or read (2.9 c).
       const read = readIntakeResponse(response);
-      return read.usage ? { ...read, answered: [read.usage] } : read;
+      return read.usage ? { ...read, answered: [{ ...read.usage, at: Date.now() }] } : read;
     } catch (err) {
       failure = aiFailureOf(err);
       // Never fatal: the intake goes on with what the person typed, and the

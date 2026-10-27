@@ -265,7 +265,7 @@ export interface IntakeState {
    * after «➕ Yana ma'lumot» used to REPLACE the first reading's usage, so
    * the day's budget counted one call where the seller had caused two.
    */
-  usages: { model: string; inputTokens: number; outputTokens: number }[];
+  usages: { model: string; inputTokens: number; outputTokens: number; at?: number }[];
   /** Why the model's reading is missing (his 1.6 a) — null when it read. */
   aiFailure: import('../../wms/calc/intake').AiReadFailure | null;
   /**
@@ -1477,8 +1477,12 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
   // on this path (Opus, with photographs). Over the cap the manual parser
   // answers, which is exactly what a keyless server has always had, and the
   // summary says so rather than looking like a model that found nothing.
+  //
+  // This collection's OWN earlier readings are not in the ledger yet — they
+  // are billed at the landing (judge concurrency-11) — so they are counted
+  // here, or a collection re-read again and again passes the cap it spends.
   const { aiCalcBudgetLeft } = await import('../../wms/calc/ai-cost');
-  const budgetLeft = await aiCalcBudgetLeft().catch(() => Number.POSITIVE_INFINITY);
+  const budgetLeft = (await aiCalcBudgetLeft().catch(() => Number.POSITIVE_INFINITY)) - state.usages.length;
   type Outcome = Awaited<ReturnType<typeof analyzeIntake>>;
   const outcome: Outcome =
     budgetLeft <= 0

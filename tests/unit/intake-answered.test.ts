@@ -79,16 +79,21 @@ const read = () => analyzeIntake({ section: 'yolkira', text: 'Kurtka 300 dona', 
 describe('the reading names every attempt the model answered', () => {
   it('a reading that came back is billed', async () => {
     script.push({ status: 200, body: message('end_turn', READING, { input_tokens: 900, output_tokens: 120 }) });
+    const before = Date.now();
     const out = await read();
     expect(out.ok).toBe(true);
-    expect(out.answered).toEqual([{ model: expect.any(String), inputTokens: 900, outputTokens: 120 }]);
+    // Re-anchored (judge concurrency-11): each bill says WHEN the model
+    // answered, so the landing writes it on the day it was spent.
+    expect(out.answered).toEqual([{ model: expect.any(String), inputTokens: 900, outputTokens: 120, at: expect.any(Number) }]);
+    expect(out.answered![0]!.at).toBeGreaterThanOrEqual(before);
+    expect(out.answered![0]!.at).toBeLessThanOrEqual(Date.now());
   });
 
   it('a reading cut short is billed too — the model answered it', async () => {
     script.push({ status: 200, body: message('max_tokens', '{"goods":', { input_tokens: 40_000, output_tokens: 16_000 }) });
     const out = await read();
     expect(out).toMatchObject({ ok: false, failure: 'truncated' });
-    expect(out.answered).toEqual([{ model: expect.any(String), inputTokens: 40_000, outputTokens: 16_000 }]);
+    expect(out.answered).toEqual([{ model: expect.any(String), inputTokens: 40_000, outputTokens: 16_000, at: expect.any(Number) }]);
   });
 
   it('an attempt nobody answered is not billed — the retry that WAS answered is', async () => {
@@ -98,7 +103,7 @@ describe('the reading names every attempt the model answered', () => {
     );
     const out = await read();
     expect(calls).toBe(2);
-    expect(out.answered).toEqual([{ model: expect.any(String), inputTokens: 700, outputTokens: 90 }]);
+    expect(out.answered).toEqual([{ model: expect.any(String), inputTokens: 700, outputTokens: 90, at: expect.any(Number) }]);
   });
 
   it('a reading nobody answered bills nothing at all', async () => {

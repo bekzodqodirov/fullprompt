@@ -104,7 +104,7 @@ let landed: NonNullable<Awaited<ReturnType<typeof landCollectedIntake>>> | null 
 
 const intakeRows = (requestId: string) =>
   db
-    .select({ inputTokens: aiCalcPasses.inputTokens, outputTokens: aiCalcPasses.outputTokens })
+    .select({ inputTokens: aiCalcPasses.inputTokens, outputTokens: aiCalcPasses.outputTokens, createdAt: aiCalcPasses.createdAt })
     .from(aiCalcPasses)
     .where(and(eq(aiCalcPasses.requestId, requestId), eq(aiCalcPasses.kind, 'intake')));
 
@@ -172,6 +172,15 @@ describe('every answered reading is billed against the request', () => {
     queue.spy.mockResolvedValueOnce(false);
     await collectAndLand([read(U2)]);
     expect(landed?.replyQueued).toBe(false);
+  });
+
+  it('a reading is billed on the day the model ANSWERED it, not the day the collection landed (judge concurrency-11)', async () => {
+    // A day ago: a collection read then and landed now — the 23:58 reading
+    // that lands at 00:03, made unmistakable.
+    const spent = new Date(Date.now() - 24 * 3_600_000);
+    const requestId = await collectAndLand([{ ...read(U2), answered: [{ ...U2, at: spent.getTime() }] }]);
+    const rows = await intakeRows(requestId);
+    expect(rows.map((r) => r.createdAt.toISOString())).toEqual([spent.toISOString()]);
   });
 
   it('a reading the model never answered (the network) bills nothing', async () => {
