@@ -61,8 +61,8 @@ const SYSTEM = `Ты — помощник карго-компании GSR LOGIST
 - город отправления и город назначения (если названы);
 - общий вес ОТПРАВКИ — БРУТТО в килограммах (с упаковкой: G.W., gross, брутто,
   毛重) — и общий объём в кубометрах (если названы; пересчитай единицы при
-  необходимости). Если документ называет только НЕТТО всей отправки — общий
-  вес null: сотрудник спросит брутто. Нетто вместо брутто не подставляй;
+  необходимости). Если документ называет только НЕТТО всей отправки — как
+  поступить, сказано в строке «Только нетто:» под разделом заявки;
 - список товаров: название, количество ШТУК, ВЕС ЭТОЙ ПОЗИЦИИ в килограммах,
   объём ВСЕЙ позиции в м³ (все её коробки — TOTAL CBM, никогда не объём одной
   коробки CBM/CTN; если дан только объём одной коробки — null, не умножай),
@@ -603,7 +603,7 @@ const FACTS_JSON_SCHEMA = {
     to_city: { type: ['string', 'null'] },
     weight_kg: {
       type: ['number', 'null'],
-      description: 'Общий вес отправки БРУТТО (с упаковкой), кг. Только нетто в документе — null.',
+      description: 'Общий вес отправки БРУТТО (с упаковкой), кг. Только нетто в документе — см. строку «Только нетто:».',
     },
     volume_m3: { type: ['number', 'null'], description: 'Общий объём отправки, м³.' },
     goods: {
@@ -632,6 +632,24 @@ const FACTS_JSON_SCHEMA = {
   required: ['from_city', 'to_city', 'weight_kg', 'volume_m3', 'goods', 'steps'],
   additionalProperties: false,
 } as const;
+
+/**
+ * What a document stating only the NETTO of the whole shipment becomes —
+ * per section, because only the freight sections ASK the brutto
+ * (`totalsQuestion`, review P3-R3). There the netto must not pass for it: the
+ * truck is priced on what it carries with the packaging, so null, and the
+ * question comes. A customs job is never asked (customs prices the lines),
+ * so null there landed every netto-only invoice with no weight at all — a
+ * chip asking for ever, and a single line's derived weight with no source.
+ * There the netto stands as the total, and the reading SAYS it is netto,
+ * on the lenta the VED reads.
+ */
+const NETTO_ONLY: Record<CalcSection, string> = {
+  yolkira: 'Только нетто: общий вес null — сотрудник спросит брутто. Нетто вместо брутто не подставляй.',
+  podklyuch: 'Только нетто: общий вес null — сотрудник спросит брутто. Нетто вместо брутто не подставляй.',
+  rastamojka:
+    'Только нетто: возьми нетто как общий вес и напиши в steps: «Umumiy og‘irlik faqat netto — bruttosi hujjatda yo‘q».',
+};
 
 /** What the model is shown, in the order a person reads a forwarded pile. */
 function intakeContent(
@@ -665,6 +683,7 @@ function intakeContent(
       type: 'text',
       text:
         `Раздел: ${section}\n` +
+        `${NETTO_ONLY[section]}\n` +
         (fileCount ? `Прикреплено файлов: ${fileCount}\n` : '') +
         (images.length ? `Фотографий для чтения: ${images.length}\n` : '') +
         (pdfs.length ? `Приложены PDF: ${pdfs.map((p) => p.name).join(', ')}\n` : '') +

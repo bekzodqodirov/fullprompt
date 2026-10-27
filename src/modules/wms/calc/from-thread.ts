@@ -206,6 +206,9 @@ export async function threadCalcAnalyze(
     toCity: manual.toCity ?? ai?.facts.toCity ?? null,
     weightKg: manual.weightKg ?? (asked('weightKg') ? null : (ai?.facts.weightKg ?? null)),
     volumeM3: manual.volumeM3 ?? (asked('volumeM3') ? null : (ai?.facts.volumeM3 ?? null)),
+    // …and not by the lines' Σ either (review P3-R2): the preview's checklist
+    // names the cube missing, and the landing stores none.
+    ...(asked('volumeM3') ? { volumeAmbiguous: true } : {}),
     goods: ai?.facts.goods?.length ? ai.facts.goods : typedGoods,
   };
   // The book's law for the read codes — the preview asks what the LAW asks
@@ -244,6 +247,8 @@ function cleanFacts(raw: CalcFacts | null | undefined, material: string, bodies:
     toCity: str(raw.toCity, 80),
     weightKg: num(raw.weightKg),
     volumeM3: num(raw.volumeM3),
+    // The preview's own flag, carried: a forged one can only blank a Σ.
+    ...(raw.volumeAmbiguous === true ? { volumeAmbiguous: true } : {}),
     goods: (Array.isArray(raw.goods) ? raw.goods : []).slice(0, 1000).flatMap((g) => {
       const name = str(g?.name, 200);
       if (!name) return [];
@@ -344,6 +349,7 @@ export async function threadCalcSend(
       toCity: facts.toCity ?? null,
       weightKg: facts.weightKg ?? null,
       volumeM3: facts.volumeM3 ?? null,
+      volumeAmbiguous: facts.volumeAmbiguous === true,
       // Through `landingItems` — the same one home the bot door uses, so the
       // single-line weight derivation happens once and both doors land the
       // same row for the same job (#513).

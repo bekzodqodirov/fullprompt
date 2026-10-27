@@ -287,6 +287,9 @@ export async function landIntake(input: {
         toCity: input.facts.toCity ?? null,
         weightKg: input.facts.weightKg ?? null,
         volumeM3: input.facts.volumeM3 ?? null,
+        // A cube typed two ways and never answered is not summed under
+        // (review P3-R2): the summary the seller confirmed said it missing.
+        volumeAmbiguous: input.facts.volumeAmbiguous === true,
         // Through `landingItems`, so the weight a single-line job already
         // stated reaches the ITEM (labelled «umumiy (brutto)dan olindi») —
         // which is what lets the AI VED hodimi find a per-kg declaration for

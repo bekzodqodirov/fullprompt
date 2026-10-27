@@ -77,6 +77,7 @@ import {
   looksLikeTotalsAnswer,
   totalsQuestion,
   totalsQuestionText,
+  unansweredAmbiguity,
   MAX_INTAKE_IMAGES,
   MAX_INTAKE_PDF_BYTES,
   MAX_INTAKE_PDFS,
@@ -461,6 +462,7 @@ export function registerStaffBot(bot: Bot): void {
           backlog: false,
           messageId: null,
           once: searchKey,
+          waitDeclined: false,
         }),
       );
       return;
@@ -1039,6 +1041,7 @@ export function registerStaffBot(bot: Bot): void {
     // Step 2 of «Bajarildi»: this text IS the result — unless it is one of the
     // keyboard's own buttons, which is never anybody's result (every branch
     // above answers them; this is the fence for the next button to join).
+    let waitDeclined = false;
     if (!escapesIntake(ctx.message.text)) {
       const pendingTask = takeTaskPending(chatId, ctx.message.date);
       // Judged by the MESSAGE's date (Q5 a): a backlog text written before the
@@ -1054,6 +1057,9 @@ export function registerStaffBot(bot: Bot): void {
           await markOnce(await messageKey(ctx, 'wait'));
           return;
         }
+        // Not taken — and already answered by the wait itself («Bu sana
+        // emas»): the tail must not add a lost-collection sentence to it.
+        waitDeclined = true;
       } else if (pendingTask) {
         const result = ctx.message.text.trim() === '-' ? '' : ctx.message.text.trim();
         const outcome = await completeTaskFromBot(chatId, pendingTask.taskId, result, pendingTask.pressed);
@@ -1092,6 +1098,7 @@ export function registerStaffBot(bot: Bot): void {
       backlog: late,
       messageId: ctx.message.message_id,
       once: null,
+      waitDeclined,
     });
   });
 }
@@ -1127,8 +1134,9 @@ export async function answerStaffText(
   staffId: string,
   text: string,
   // REQUIRED (Q5 a): whether this is a backlog text, the incoming message
-  // (null for Door B's «🔍», which replays a forward), and Door B's key.
-  opts: { backlog: boolean; messageId: number | null; once: OnceKey | null },
+  // (null for Door B's «🔍», which replays a forward), and Door B's key —
+  // and whether a one-text wait was offered the text first and declined it.
+  opts: { backlog: boolean; messageId: number | null; once: OnceKey | null; waitDeclined: boolean },
 ): Promise<void> {
   // A crash redelivery of a text whose wait was already consumed: no wait is
   // left, so it lands here — and is told it was answered, never «send it
@@ -1174,7 +1182,13 @@ export async function answerStaffText(
   // between the brutto question and «3500» loses it — the answer is said
   // lost, in words, and never handed to the paid assistant, which can make
   // nothing of a bare figure. A live collection never reaches this tail.
-  if (looksLikeTotalsAnswer(text) && !activeIntake(chatId)) {
+  //
+  // Only a text the person TYPED here and nothing else claimed (review
+  // P3-R1): Door B's «🔍» (no message of its own) replays a forwarded
+  // customer message — «12 kub 3500 kg» is a customer's words there, never
+  // an answer to the bot — and a «date» the ⏰ wait declined has been
+  // answered by that wait already.
+  if (opts.messageId !== null && !opts.waitDeclined && looksLikeTotalsAnswer(text) && !activeIntake(chatId)) {
     await ctx.reply(LOST_TOTALS_ANSWER);
     return;
   }
@@ -1327,9 +1341,8 @@ async function askNextOrConfirm(
   chatId: bigint,
   state: IntakeState,
 ): Promise<void> {
-  const { factsVolumeM3, nextLineToAsk, lineQuestionText, intakeSummaryText } = await import(
-    '../../wms/calc/intake'
-  );
+  const { ambiguousTotalText, factsVolumeM3, nextLineToAsk, lineQuestionText, intakeSummaryText, volumeFromLines } =
+    await import('../../wms/calc/intake');
   const laws = await intakeLaws(state);
   // The lines dealt with, put onto the goods list as it stands NOW (round-3
   // review, R3-C5): a re-read after «➕ Yana ma'lumot» rebuilds the list, and
@@ -1382,11 +1395,11 @@ async function askNextOrConfirm(
       offers: [],
       lineDone,
     });
+    // A total the seller typed two ways is WHY it is asked — said beside the
+    // question, or «I typed it» is the seller's first thought (review P3-R2).
+    const why = state.ambiguousTotals.map((a) => `\n⚠️ ${ambiguousTotalText(a)}`).join('');
     await ctx.reply(
-      totalsQuestionText(ask, state.facts, {
-        m3: volume,
-        fromLines: volume !== null && !(Number(state.facts.volumeM3) > 0),
-      }),
+      totalsQuestionText(ask, state.facts, { m3: volume, fromLines: volumeFromLines(state.facts) }) + why,
       { reply_markup: skipKeyboard() },
     );
     return;
@@ -1569,6 +1582,9 @@ export async function applyLineAnswer(
       updateIntake(chatId, {
         facts: mergeTotalsAnswer(totalsAnswer, state.facts),
         totalsAnswer,
+        // …and its «1.2 mi yoki 1200 mi?» goes with it (review P3-3): the
+        // summary asked again about the figure just given, beside «to‘liq».
+        ambiguousTotals: unansweredAmbiguity(state.ambiguousTotals, totalsAnswer),
         answers: [...state.answers, `Umumiy: ${text}`],
       }) ?? state;
     if (read.ambiguous.length > 0 && !kept.reasked) {
@@ -1925,7 +1941,9 @@ export function settleAnalysis(
     // The reading's bills, appended to the snapshot's (2.9 c) — one analysis
     // runs at a time (the token), so the snapshot's are the live ones.
     usages: analysed.usages,
-    ambiguousTotals: analysed.ambiguousTotals,
+    // The reading's two-way totals, less what the seller answered while it
+    // ran — the live answer above is on the facts (review P3-3).
+    ambiguousTotals: unansweredAmbiguity(analysed.ambiguousTotals, live.totalsAnswer),
     analysing: null,
     stage: arrived > 0 ? 'material' : 'review',
   };

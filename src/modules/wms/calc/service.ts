@@ -30,6 +30,7 @@ import {
   isComplete,
   lineNeeds,
   missingFields,
+  typedFigure,
   type CalcFacts,
   type CalcGoodsFact,
   type CalcSection,
@@ -260,6 +261,13 @@ export interface CalcRequestInput {
    * seal's own `zone_required` then asks for one, in words.
    */
   freightZone?: string | null;
+  /**
+   * The seller typed the cube two ways and nobody said which
+   * (`CalcFacts.volumeAmbiguous`, review P3-R2): the lines' Σ does not
+   * stand in for a total the seller DID state — the column stays empty, so
+   * the VED's chip asks, as the summary and the lenta note already did.
+   */
+  volumeAmbiguous?: boolean;
 }
 
 const num = (value: number | null | undefined): string | null =>
@@ -405,10 +413,11 @@ export async function openCalcRequest(
   // Its provenance is never stored: «qatorlardan» is derived at read time
   // (`Workspace.volumeFromLines`, K13); the audit row below records the fact.
   // A typed 0 is a blank somebody typed over — the checklist's own reading
-  // (`factsVolumeM3` sums under it), so the INSERT sums under it too, or the
-  // chip and the stored column would disagree.
-  const typedVolume = Number(input.volumeM3) > 0 ? input.volumeM3! : null;
-  const linesVolume = typedVolume === null ? linesVolumeM3(rows) : null;
+  // (`factsVolumeM3` sums under it), so the INSERT sums under it too, by the
+  // checklist's own rule (`typedFigure`), or the chip and the stored column
+  // would disagree. An AMBIGUOUS typed cube is summed under by neither.
+  const typedVolume = typedFigure(input.volumeM3);
+  const linesVolume = typedVolume === null && !input.volumeAmbiguous ? linesVolumeM3(rows) : null;
   const volumeM3 = num(typedVolume ?? linesVolume ?? input.volumeM3);
 
   // Pooled, so BEFORE the transaction (#714); the pick itself is inside it.

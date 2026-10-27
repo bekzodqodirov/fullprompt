@@ -871,6 +871,7 @@
       "calcRecalc": "Qayta hisoblashga yuborildi",
       "calcSection": "Bo‘lim",
       "itemCount": "Tovar qatorlari",
+      "volumeFromLines": "Hajm qatorlardan qo‘shildi",
       "allocationBasis": "Bo‘lish usuli",
       "tariffZone": "Tarif ustuni",
       "tariffFrom": "Tarif sanasi",

@@ -12,6 +12,8 @@ import { analyzeIntake } from '@/modules/wms/calc/intake-ai';
  */
 type Scripted = { status: number; body?: unknown };
 const script: Scripted[] = [];
+/** What the SDK actually sent, request by request. */
+const sent: string[] = [];
 let calls = 0;
 let server: http.Server;
 const saved = { key: process.env.ANTHROPIC_API_KEY, url: process.env.ANTHROPIC_BASE_URL };
@@ -37,9 +39,13 @@ const READING = JSON.stringify({
 
 beforeAll(async () => {
   server = http.createServer((req, res) => {
-    req.on('data', () => {});
+    let body = '';
+    req.on('data', (chunk: Buffer) => {
+      body += chunk.toString('utf8');
+    });
     req.on('end', () => {
       calls += 1;
+      sent.push(body);
       const next = script.shift() ?? { status: 400 };
       res.writeHead(next.status, { 'content-type': 'application/json' });
       res.end(
@@ -64,6 +70,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   script.length = 0;
+  sent.length = 0;
   calls = 0;
 });
 
@@ -99,5 +106,35 @@ describe('the reading names every attempt the model answered', () => {
     const out = await read();
     expect(out).toMatchObject({ ok: false, failure: 'overloaded' });
     expect(out.answered ?? []).toEqual([]);
+  });
+});
+
+describe('what the reading is told about a netto-only total (review P3-R3)', () => {
+  /** The text the model is handed beside the material, for one section. */
+  async function told(section: 'yolkira' | 'rastamojka' | 'podklyuch') {
+    script.push({ status: 200, body: message('end_turn', READING, { input_tokens: 10, output_tokens: 10 }) });
+    await analyzeIntake({ section, text: 'Kurtka 300 dona, N.W. 450 kg', fileCount: 0, timeoutMs: 20_000 });
+    const request = JSON.parse(sent.at(-1)!) as {
+      system: unknown;
+      messages: { content: { type: string; text?: string }[] }[];
+    };
+    const text = request.messages[0]!.content.find((c) => c.type === 'text')!.text!;
+    return { system: JSON.stringify(request.system), text };
+  }
+
+  it('a freight section leaves it null — the bot asks the brutto there', async () => {
+    for (const section of ['yolkira', 'podklyuch'] as const) {
+      const { text } = await told(section);
+      expect(text, section).toContain('Только нетто: общий вес null — сотрудник спросит брутто.');
+    }
+  });
+
+  it('a customs job keeps the netto as its total, and says so — nobody will ask it there', async () => {
+    const { system, text } = await told('rastamojka');
+    expect(text).toContain('Только нетто: возьми нетто как общий вес');
+    expect(text).toContain('Umumiy og‘irlik faqat netto');
+    expect(text).not.toContain('сотрудник спросит брутто');
+    // …and the shared instruction promises no question to every section.
+    expect(system).not.toContain('сотрудник спросит брутто');
   });
 });

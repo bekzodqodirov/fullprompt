@@ -204,6 +204,18 @@ export interface CalcFacts {
    * facts, where the Σ is what the landing will store.
    */
   totalsStored?: boolean;
+  /**
+   * The seller TYPED the shipment's cube, and typed it two ways («2,500
+   * kub» — 2.5 or 2500?), and nobody has said which (review P3-R2). The
+   * figure is left blank so the model that read the same text cannot answer
+   * it — and the lines' Σ must not answer it either: it would stand in for
+   * a total the seller did state, the totals question would not ask, and
+   * the summary would print «which did you mean?» beside «to‘liq». So
+   * nothing is derived (`factsVolumeM3`), the question asks the cube, and
+   * the INSERT stores no Σ. Set by the doors that read typed text
+   * (`analyzeCollected`, the thread preview); an answer clears it.
+   */
+  volumeAmbiguous?: boolean;
 }
 
 /** One goods line as a door hands it over. */
@@ -300,7 +312,13 @@ export function weightFromTotalNote(note: string | null): boolean {
   return (note ?? '').includes(LONE_WEIGHT_NOTE);
 }
 
-const positive = (n: number | null | undefined): number | null =>
+/**
+ * A typed figure, or a blank: only a positive, finite number counts. «0 kg»
+ * is a blank somebody typed over. ONE rule for the checklist and the
+ * INSERT's «was a total typed» (service.ts, review P3-5), so the chip and the
+ * stored column cannot read the same box two ways.
+ */
+export const typedFigure = (n: number | null | undefined): number | null =>
   Number(n) > 0 && Number.isFinite(Number(n)) ? Number(n) : null;
 
 /**
@@ -321,19 +339,19 @@ export function itemFacts(facts: CalcFacts): CalcItemFact[] {
   const goods = facts.goods ?? [];
   const lone = facts.lineWeightsStated ? null : loneWeightKg(goods.length, facts.weightKg);
   return goods.map((g) => {
-    const own = positive(g.weightKg);
+    const own = typedFigure(g.weightKg);
     const fromTotal = own === null && lone !== null;
-    const measureQty = positive(g.measureQty);
+    const measureQty = typedFigure(g.measureQty);
     return {
       name: g.name,
-      quantity: positive(g.quantity),
+      quantity: typedFigure(g.quantity),
       weightKg: own ?? lone,
       weightFromTotal: fromTotal,
-      volumeM3: positive(g.volumeM3),
+      volumeM3: typedFigure(g.volumeM3),
       measureUnit: measureQty !== null ? (g.measureUnit ?? null) : null,
       measureQty,
       unit: g.unit?.trim() || null,
-      amount: positive(g.amount),
+      amount: typedFigure(g.amount),
       tnvedCode: g.tnvedCode?.trim() || null,
       note: [g.note?.trim() || null, fromTotal ? LONE_WEIGHT_NOTE : null].filter(Boolean).join(' · ') || null,
       bazaBasis: g.bazaBasis ?? null,
@@ -400,14 +418,18 @@ export function invoiceFacts(rows: readonly GoodsRow[]): CalcGoodsFact[] {
  * prices it.
  */
 export function factsVolumeM3(facts: CalcFacts): number | null {
-  return (
-    positive(facts.volumeM3) ?? (facts.totalsStored ? null : linesVolumeM3(landingItems(facts).map(doorRow)))
-  );
+  // Nor is an AMBIGUOUS typed cube answered by the lines (`volumeAmbiguous`).
+  if (facts.totalsStored || facts.volumeAmbiguous) return typedFigure(facts.volumeM3);
+  return typedFigure(facts.volumeM3) ?? linesVolumeM3(landingItems(facts).map(doorRow));
 }
 
-/** Was the volume SUMMED from the lines rather than stated (the label's one question)? */
-function volumeFromLines(facts: CalcFacts): boolean {
-  return positive(facts.volumeM3) === null && factsVolumeM3(facts) !== null;
+/**
+ * Was the volume SUMMED from the lines rather than stated — the label's one
+ * question, asked by the summary, the lenta note and the bot's totals
+ * question alike (review P3-5: the bot spelt it a second time).
+ */
+export function volumeFromLines(facts: CalcFacts): boolean {
+  return typedFigure(facts.volumeM3) === null && factsVolumeM3(facts) !== null;
 }
 
 /**

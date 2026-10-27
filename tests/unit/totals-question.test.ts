@@ -30,6 +30,12 @@ vi.mock('@/modules/platform/ai/model', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/modules/platform/ai/model')>()),
   aiConfigured: () => true,
 }));
+// Door B's «🔍» claims its one search before the assistant; the claim's
+// table is not what is under test.
+vi.mock('@/modules/platform/telegram/once', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/modules/platform/telegram/once')>()),
+  claimOnce: async () => true,
+}));
 vi.mock('@/modules/platform/telegram/send', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/modules/platform/telegram/send')>()),
   sendTyping: async () => ({ ok: true }),
@@ -37,7 +43,8 @@ vi.mock('@/modules/platform/telegram/send', async (importOriginal) => ({
   editText: async () => ({ ok: true }),
 }));
 
-import { factsVolumeM3 } from '@/modules/wms/calc/intake';
+import { factsVolumeM3, intakeSummaryText } from '@/modules/wms/calc/intake';
+import { parseManualFacts } from '@/modules/wms/calc/intake-manual';
 import {
   activeIntake,
   analyzeCollected,
@@ -54,7 +61,9 @@ import {
   answerStaffText,
   applyLineAnswer,
   handleCalcCallback,
+  settleAnalysis,
 } from '@/modules/platform/telegram/staff-handlers';
+import type { OnceKey } from '@/modules/platform/telegram/once';
 
 let seq = 0;
 const chats: bigint[] = [];
@@ -92,6 +101,18 @@ const reads = (facts: Partial<IntakeState['facts']>) => ({
 
 const ask = (state: Pick<IntakeState, 'section' | 'totalsAsked' | 'facts'>) =>
   totalsQuestion(state, factsVolumeM3(state.facts));
+
+/** «Bo‘ldi» pressed: the analysis runs off the poller, so wait for it to land. */
+async function pressDone(ctx: ReturnType<typeof fakeCtx>, chatId: bigint) {
+  await handleCalcCallback(ctx, chatId, 'done');
+  for (let i = 0; i < 200 && activeIntake(chatId)?.analysing; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  expect(activeIntake(chatId)?.analysing ?? null).toBeNull();
+}
+
+/** «1,200 kg» — the material's weight, written two ways. */
+const KG_1200 = { field: 'weightKg' as const, text: '1,200', decimal: 1.2, thousands: 1200 };
 
 beforeEach(() => {
   model.analyze.mockReset();
@@ -144,6 +165,7 @@ describe('whether and which totals are asked', () => {
     expect(ctx.replies.at(-1)).toBe('Yo‘lkira uchun umumiy hajm va brutto og‘irlik kerak. Masalan: «12 kub 3500 kg»');
     expect(activeIntake(chatId)).toMatchObject({ askingTotalsFor: 'both', totalsAsked: true });
   });
+
 });
 
 describe('the answer', () => {
@@ -192,12 +214,136 @@ describe('the answer', () => {
     expect(out.totalsAsked).toBe(true);
   });
 
+  it('through the door: «Bo‘ldi» after the answer keeps 3500 and the question stays answered (P3-1)', async () => {
+    const { chatId } = collection({
+      stage: 'review',
+      totalsAsked: true,
+      totalsAnswer: { weightKg: 3500, volumeM3: null },
+      material: ['Kurtka 300 dona 12 kub'],
+      facts: { volumeM3: 12, weightKg: 3500 },
+    });
+    // The re-read finds the cube and no kilos.
+    model.analyze.mockResolvedValueOnce(reads({ volumeM3: 12 }));
+    const ctx = fakeCtx();
+    await pressDone(ctx, chatId);
+    const live = activeIntake(chatId)!;
+    expect(live.facts.weightKg).toBe(3500);
+    expect(live.totalsAsked).toBe(true);
+    expect(ctx.replies.at(-1)).toContain('Og‘irlik: 3500 kg');
+  });
+
+  it('through the door: a re-read that still misses the kilos asks the brutto AGAIN (P3-1)', async () => {
+    const { chatId } = collection({
+      stage: 'review',
+      totalsAsked: true,
+      material: ['Kurtka 300 dona 12 kub'],
+      facts: { volumeM3: 12 },
+    });
+    model.analyze.mockResolvedValueOnce(reads({ volumeM3: 12 }));
+    const ctx = fakeCtx();
+    await pressDone(ctx, chatId);
+    expect(ctx.replies.at(-1)).toBe(
+      'Yo‘lkira uchun umumiy BRUTTO og‘irlik kerak (qadoq bilan), kg. Masalan: «3500» yoki «3500 kg»\n(hajm bor: 12 m³)',
+    );
+    expect(activeIntake(chatId)).toMatchObject({ askingTotalsFor: 'kg', totalsAsked: true });
+  });
+
+  it('an answer typed WHILE the reading ran is put back by settleAnalysis, its ambiguity with it (P3-1, P3-3)', () => {
+    const { chatId, state: snapshot } = collection({ analysing: 'tok', totalsAsked: true, ambiguousTotals: [KG_1200] });
+    // The seller answered «1200» to the brutto question while the model read.
+    const live = updateIntake(chatId, { totalsAnswer: { weightKg: 1200, volumeM3: null } })!;
+    const analysed: IntakeState = {
+      ...snapshot,
+      facts: { volumeM3: 12, weightKg: null, goods: [] },
+      totalsAsked: false,
+      ambiguousTotals: [KG_1200],
+    };
+    const out = settleAnalysis(live, snapshot, analysed, 'tok');
+    expect(out.kind).toBe('done');
+    if (out.kind === 'gone') return;
+    expect(out.state.facts.weightKg).toBe(1200);
+    expect(out.state.ambiguousTotals).toEqual([]);
+  });
+
   it('a re-read that still misses the asked figure clears «asked», so the question comes again', async () => {
     const { state } = collection({ stage: 'material', totalsAsked: true, material: ['Kurtka 300 dona'] });
     model.analyze.mockResolvedValueOnce(reads({ volumeM3: 12 }));
     const out = await analyzeCollected(state);
     expect(out.facts.weightKg ?? null).toBeNull();
     expect(out.totalsAsked).toBe(false);
+  });
+});
+
+describe('a total typed two ways (review P3-3, P3-R2)', () => {
+  const twoLines = [
+    { name: 'Kurtka', quantity: 300, volumeM3: 1.2 },
+    { name: 'Shim', quantity: 200, volumeM3: 1.6 },
+  ];
+
+  it('the answer to the brutto question retires its own «mi yoki» — the summary no longer asks about it', async () => {
+    const { chatId } = collection({ stage: 'review', material: ['Kurtka 300 dona 1.2 kub, 1,200 kg'] });
+    model.analyze.mockResolvedValueOnce(reads({ weightKg: 1200, goods: [{ name: 'Kurtka', quantity: 300, volumeM3: 1.2 }] }));
+    const ctx = fakeCtx();
+    await pressDone(ctx, chatId);
+    // Asked — and told WHY, since the seller typed a weight.
+    expect(activeIntake(chatId)!.askingTotalsFor).toBe('kg');
+    expect(ctx.replies.at(-1)).toContain('«1,200 kg» — 1.2 mi yoki 1200 mi?');
+    await applyLineAnswer(ctx, chatId, activeIntake(chatId)!, '1200');
+    const summary = ctx.replies.at(-1)!;
+    expect(summary).toContain('Og‘irlik: 1200 kg');
+    expect(summary).not.toContain('mi yoki');
+    expect(activeIntake(chatId)!.ambiguousTotals).toEqual([]);
+  });
+
+  it('…and a re-read of the same material does not bring it back', async () => {
+    const { state } = collection({
+      stage: 'material',
+      totalsAsked: true,
+      totalsAnswer: { weightKg: 1200, volumeM3: null },
+      material: ['Kurtka 300 dona 1.2 kub, 1,200 kg', 'Shim 200 dona'],
+    });
+    model.analyze.mockResolvedValueOnce(reads({ goods: [{ name: 'Kurtka', quantity: 300, volumeM3: 1.2 }] }));
+    const out = await analyzeCollected(state);
+    expect(out.facts.weightKg).toBe(1200);
+    expect(out.ambiguousTotals).toEqual([]);
+  });
+
+  it('a cube typed two ways is ASKED, never answered by the lines’ Σ, and the summary does not say «to‘liq»', async () => {
+    const { state } = collection({ stage: 'material', material: ['Yiwu - Toshkent, 3500 kg, 2,500 kub'] });
+    model.analyze.mockResolvedValueOnce(reads({ weightKg: 3500, volumeM3: 2500, goods: twoLines }));
+    const out = await analyzeCollected(state);
+    expect(out.facts.volumeM3 ?? null).toBeNull();
+    expect(out.facts.volumeAmbiguous).toBe(true);
+    expect(factsVolumeM3(out.facts)).toBeNull();
+    expect(ask(out)).toBe('m3');
+    const summary = intakeSummaryText({
+      section: 'yolkira',
+      facts: out.facts,
+      laws: new Map(),
+      clientLabel: null,
+      fileCount: 0,
+      ambiguous: out.ambiguousTotals,
+    });
+    expect(summary).not.toContain('to‘liq');
+    expect(summary).toContain('Hajm: —');
+  });
+
+  it('the answer «2.5» settles the cube: the flag and its «mi yoki» go, the typed figure stands', async () => {
+    const { chatId } = collection({
+      stage: 'question',
+      askingTotalsFor: 'm3',
+      totalsAsked: true,
+      ambiguousTotals: parseManualFacts('3500 kg, 2,500 kub').ambiguous,
+      facts: { fromCity: 'Yiwu', toCity: 'Toshkent', weightKg: 3500, volumeAmbiguous: true, goods: twoLines },
+    });
+    const ctx = fakeCtx();
+    await applyLineAnswer(ctx, chatId, activeIntake(chatId)!, '2.5');
+    const live = activeIntake(chatId)!;
+    expect(live.facts.volumeM3).toBe(2.5);
+    expect(live.facts.volumeAmbiguous).toBeUndefined();
+    expect(factsVolumeM3(live.facts)).toBe(2.5);
+    expect(ctx.replies.at(-1)).not.toContain('mi yoki');
+    expect(ctx.replies.at(-1)).toContain('✅ Ma’lumot to‘liq');
   });
 });
 
@@ -211,10 +357,59 @@ describe('an answer with no collection to answer (judge concurrency-5)', () => {
     }
   });
 
+  it('a phone number is not a totals answer — the assistant finds people by it (review P3-R1)', () => {
+    for (const text of ['+998 90 123 45 67', '+998901234567', '998901234567', '901234567', '90 123 45 67', '123 45 67']) {
+      expect(looksLikeTotalsAnswer(text), text).toBe(false);
+    }
+    // …while a figure grouped by thousands, beside a cube, still is one.
+    for (const text of ['12 kub 3 500 kg', '12.5 kub 3500 kg', '1,200 kg', '3500 kg.']) {
+      expect(looksLikeTotalsAnswer(text), text).toBe(true);
+    }
+  });
+
+  it('a typed phone number reaches the assistant, not the lost-collection sentence', async () => {
+    const ctx = fakeCtx();
+    await answerStaffText(ctx, BigInt(-9_700_000_003), 'staff-1', '+998 90 123 45 67', {
+      backlog: false,
+      messageId: 3,
+      once: null,
+      waitDeclined: false,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(ctx.replies).not.toContain(LOST_TOTALS_ANSWER);
+    expect(bot.assistant).toHaveBeenCalledTimes(1);
+  });
+
+  it('Door B’s «🔍» replays a FORWARDED customer message: «12 kub 3500 kg» is searched, never called a lost answer', async () => {
+    const ctx = fakeCtx();
+    await answerStaffText(ctx, BigInt(-9_700_000_004), 'staff-1', '12 kub 3500 kg', {
+      backlog: false,
+      messageId: null,
+      once: 'q:-9700000004:1:search' as unknown as OnceKey,
+      waitDeclined: false,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(ctx.replies).not.toContain(LOST_TOTALS_ANSWER);
+    expect(bot.assistant).toHaveBeenCalledTimes(1);
+  });
+
+  it('a figure the ⏰ wait declined («Bu sana emas» said already) is not told a collection was lost', async () => {
+    const ctx = fakeCtx();
+    await answerStaffText(ctx, BigInt(-9_700_000_005), 'staff-1', '3500', {
+      backlog: false,
+      messageId: 5,
+      once: null,
+      waitDeclined: true,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(ctx.replies).not.toContain(LOST_TOTALS_ANSWER);
+    expect(bot.assistant).toHaveBeenCalledTimes(1);
+  });
+
   it('is told the collection is gone, and the paid assistant is never asked', async () => {
     const chatId = BigInt(-9_700_000_001);
     const ctx = fakeCtx();
-    await answerStaffText(ctx, chatId, 'staff-1', '3500', { backlog: false, messageId: null, once: null });
+    await answerStaffText(ctx, chatId, 'staff-1', '3500', { backlog: false, messageId: 1, once: null, waitDeclined: false });
     // The assistant is dispatched off the poller; give it the tick it takes.
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(bot.assistant).not.toHaveBeenCalled();
@@ -224,7 +419,12 @@ describe('an answer with no collection to answer (judge concurrency-5)', () => {
   it('any other words still reach the assistant', async () => {
     const chatId = BigInt(-9_700_000_002);
     const ctx = fakeCtx();
-    await answerStaffText(ctx, chatId, 'staff-1', 'bu oy qancha kub keldi', { backlog: false, messageId: null, once: null });
+    await answerStaffText(ctx, chatId, 'staff-1', 'bu oy qancha kub keldi', {
+      backlog: false,
+      messageId: 2,
+      once: null,
+      waitDeclined: false,
+    });
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(bot.assistant).toHaveBeenCalledTimes(1);
   });

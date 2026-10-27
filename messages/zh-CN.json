@@ -871,6 +871,7 @@
       "calcRecalc": "已提交重新计算",
       "calcSection": "类别",
       "itemCount": "商品行数",
+      "volumeFromLines": "体积由各行合计",
       "allocationBasis": "分摊方式",
       "tariffZone": "价目表栏",
       "tariffFrom": "价目表日期",

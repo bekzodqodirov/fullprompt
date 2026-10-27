@@ -17,7 +17,7 @@ import {
   tgMessages,
   users,
 } from '@/modules/platform/db/schema';
-import { threadCalcSend, threadMaterial } from '@/modules/wms/calc/from-thread';
+import { threadCalcAnalyze, threadCalcSend, threadMaterial } from '@/modules/wms/calc/from-thread';
 import type { Actor } from '@/modules/platform/rbac/authorize';
 
 /**
@@ -37,6 +37,7 @@ let msgA2 = '';
 let msgB1 = '';
 let msgFile = '';
 let msgLead = '';
+let msgTwoWays = '';
 const madeRequests: string[] = [];
 const madeNotes: string[] = [];
 
@@ -128,6 +129,11 @@ beforeAll(async () => {
   msgB1 = await message({ manager: managerB, body: 'kolleganing xabari', sentAt: '2026-08-25T10:02:00Z' });
   msgFile = await message({ manager: managerA, body: null, hasMedia: true, sentAt: '2026-08-25T10:03:00Z' });
   msgLead = await message({ manager: managerA, body: 'lead savoli', leadId, sentAt: '2026-08-25T10:04:00Z' });
+  msgTwoWays = await message({
+    manager: managerA,
+    body: 'Kurtka 300 dona 1.2 kub\nShim 200 dona 1.6 kub\nJami 3500 kg, 2,500 kub',
+    sentAt: '2026-08-25T10:05:00Z',
+  });
 });
 
 afterAll(async () => {
@@ -145,7 +151,7 @@ afterAll(async () => {
     }
   }
   if (madeNotes.length > 0) await db.delete(crmActivities).where(inArray(crmActivities.id, madeNotes));
-  await db.delete(tgMessages).where(inArray(tgMessages.id, [msgA1, msgA2, msgB1, msgFile, msgLead]));
+  await db.delete(tgMessages).where(inArray(tgMessages.id, [msgA1, msgA2, msgB1, msgFile, msgLead, msgTwoWays]));
   await db.delete(crmActivities).where(eq(crmActivities.entityId, dealId));
   await db.delete(crmActivities).where(eq(crmActivities.entityId, leadId));
   await db.delete(leads).where(eq(leads.id, leadId));
@@ -228,6 +234,32 @@ describe('landing', () => {
   it('a client entity falls back to the bot’s landing rule — the open deal', async () => {
     const { res } = await send(seller(managerA), { kind: 'client', id: clientId }, [msgA1]);
     expect(res).toMatchObject({ kind: 'deal', id: dealId });
+  });
+
+  it('a cube typed two ways is named missing in the preview and NOT summed from the lines at the landing (P3-R2)', async () => {
+    const actor = seller(managerA);
+    const entity = { kind: 'deal' as const, id: dealId };
+    const preview = await threadCalcAnalyze(actor, { entity, section: 'yolkira', messageIds: [msgTwoWays] });
+    expect(preview.facts.volumeM3 ?? null).toBeNull();
+    expect(preview.facts.volumeAmbiguous).toBe(true);
+    expect(preview.missing).toContain('volumeM3');
+
+    const land = async (facts: typeof preview.facts) => {
+      const noteId = randomUUID();
+      madeNotes.push(noteId);
+      await threadCalcSend(
+        actor,
+        { entity, section: 'yolkira', messageIds: [msgTwoWays], noteId, facts },
+        { actorId: actor.id, ip: null, userAgent: null },
+      );
+      const request = await db.query.calcRequests.findFirst({ where: eq(calcRequests.noteId, noteId) });
+      madeRequests.push(request!.id);
+      return request!.volumeM3 === null ? null : Number(request!.volumeM3);
+    };
+    // The preview the browser posts back, as it was drawn: the column stays empty.
+    expect(await land(preview.facts)).toBeNull();
+    // The control: the same lines with no two-way cube ARE summed.
+    expect(await land({ ...preview.facts, volumeAmbiguous: undefined })).toBe(2.8);
   });
 
   it('a retried confirm refuses on the pre-minted note id', async () => {

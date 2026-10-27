@@ -871,6 +871,7 @@
       "calcRecalc": "Sent for recalculation",
       "calcSection": "Section",
       "itemCount": "Goods lines",
+      "volumeFromLines": "Volume summed from the lines",
       "allocationBasis": "Split basis",
       "tariffZone": "Tariff column",
       "tariffFrom": "Tariff date",

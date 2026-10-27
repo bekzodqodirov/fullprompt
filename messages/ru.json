@@ -871,6 +871,7 @@
       "calcRecalc": "Отправлено на перерасчёт",
       "calcSection": "Раздел",
       "itemCount": "Строк товара",
+      "volumeFromLines": "Объём сложен из строк",
       "allocationBasis": "Способ распределения",
       "tariffZone": "Колонка тарифа",
       "tariffFrom": "Дата тарифа",

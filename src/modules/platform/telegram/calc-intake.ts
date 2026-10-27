@@ -297,7 +297,9 @@ export type TotalsAsk = 'kg' | 'm3' | 'both';
  * door, AI or not: the road is priced on the totals (the tariff's density
  * band × m³), and the gate used to be the AI podklyuch door alone, so a
  * plain yolkira collection landed with no kg and the tariff answer refused.
- * Rastamojka never: customs prices the lines.
+ * Rastamojka never: customs prices the lines — which is why its READING
+ * keeps a netto-only total (`intake-ai.ts`, review P3-R3) rather than
+ * leaving it for a question this section does not ask.
  *
  * The weight is BRUTTO and only ever ASKED — line kilos are netto, and a Σ
  * of them is a different, smaller number. The volume is asked only when it
@@ -360,25 +362,49 @@ export function bareTotalsNumber(text: string): boolean {
   return /^\s*\d[\d\s.,]*\s*$/u.test(text);
 }
 
+/** One figure of a totals answer: «3 500» grouped by thousands, else «1,2» / «3500». */
+const TOTALS_NUMBER = /\d{1,3}(?:\s\d{3})+(?![\d.,])|\d+(?:[.,]\d+)?/gu;
+const TOTALS_UNIT = /^(?:kg|kgs|кг|kilo|kilogramm?|кило|килограмм?|kub|куб|kubometr|кубометр|m3|м3|m³|м³|cbm|brutto|брутто)$/u;
+
 /**
- * What an answer to the totals question can look like, and nothing else:
- * digits, and the kg / kub / m³ words — «3500», «3500 kg», «12 kub 3500 kg».
+ * What an answer to the totals question can look like, and nothing else: at
+ * most TWO figures, and the kg / kub / m³ words — «3500», «3 500 kg», «12 kub
+ * 3500 kg».
  *
  * Asked by the staff tail when NO collection is live (judge concurrency-5):
  * the collection lives in memory until round 3, so a restart or the TTL
  * between the question and the answer loses it, and the orphaned «3500»
  * would otherwise fall to the paid assistant, which can say nothing about it.
- * A goods line («Kurtka 300 kg») or a code («GS777») is not this shape. Pure.
+ * A goods line («Kurtka 300 kg») or a code («GS777») is not this shape.
+ *
+ * Nor is a PHONE NUMBER (review P3-R1): the assistant finds a client, a lead
+ * or a partner by its last nine digits, and the first version of this read
+ * «+998 90 123 45 67» as a lost totals answer. Nine digits or more in all
+ * (no shipment is 100 000 000 kg), or three figures that are not one
+ * thousands-grouped number («123 45 67») — and it is not a total. A «+» is
+ * no longer stripped as punctuation, so it is a word no unit matches. Pure.
  */
 export function looksLikeTotalsAnswer(text: string): boolean {
-  const words = text
-    .toLowerCase()
-    .replace(/[.,;:+]/gu, ' ')
-    .split(/\s+/u)
-    .filter(Boolean);
-  if (words.length === 0 || !words.some((w) => /\d/u.test(w))) return false;
-  const unit = /^(?:kg|kgs|кг|kilo|kilogramm?|кило|килограмм?|kub|куб|kubometr|кубометр|m3|м3|m³|м³|cbm|brutto|брутто)$/u;
-  return words.every((w) => /^\d+$/u.test(w) || unit.test(w) || /^\d+(?:kg|кг|kub|куб|m3|м3|m³|м³)$/u.test(w));
+  const t = text.trim().toLowerCase();
+  const digits = (t.match(/\d/gu) ?? []).length;
+  if (digits === 0 || digits >= 9) return false;
+  if ((t.match(TOTALS_NUMBER) ?? []).length > 2) return false;
+  const words = t.replace(TOTALS_NUMBER, ' ').replace(/[.,;:]/gu, ' ').split(/\s+/u).filter(Boolean);
+  return words.every((w) => TOTALS_UNIT.test(w));
+}
+
+/**
+ * The totals the material states two ways that the seller has NOT since
+ * answered (review P3-3) — an answer to the totals question retires its own
+ * «1.2 mi yoki 1200 mi?». The material is re-parsed on every reading and the
+ * answer is never material (`totalsAnswer`), so without this the summary
+ * asked again about the figure printed beside it, under «to‘liq». Pure.
+ */
+export function unansweredAmbiguity(
+  ambiguous: IntakeState['ambiguousTotals'],
+  answer: IntakeState['totalsAnswer'],
+): IntakeState['ambiguousTotals'] {
+  return ambiguous.filter((a) => (a.field === 'weightKg' ? answer.weightKg : answer.volumeM3) === null);
 }
 
 /**
@@ -391,10 +417,13 @@ export function mergeTotalsAnswer(
   answer: IntakeState['totalsAnswer'],
   facts: IntakeState['facts'],
 ): IntakeState['facts'] {
+  // An answered cube is no longer the ambiguous one (review P3-R2).
+  const { volumeAmbiguous, ...rest } = facts;
   return {
-    ...facts,
+    ...rest,
     weightKg: answer.weightKg ?? facts.weightKg ?? null,
     volumeM3: answer.volumeM3 ?? facts.volumeM3 ?? null,
+    ...(volumeAmbiguous && answer.volumeM3 === null ? { volumeAmbiguous } : {}),
   };
 }
 
@@ -1379,6 +1408,9 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
     toCity: manual.toCity ?? ai?.facts.toCity ?? state.route?.toCity ?? null,
     weightKg: manual.weightKg ?? (asked('weightKg') ? null : (ai?.facts.weightKg ?? null)),
     volumeM3: manual.volumeM3 ?? (asked('volumeM3') ? null : (ai?.facts.volumeM3 ?? null)),
+    // …nor the lines' Σ (review P3-R2): the seller stated a cube, only not
+    // which one — the totals question asks it, and the INSERT sums nothing.
+    ...(asked('volumeM3') ? { volumeAmbiguous: true } : {}),
     // The seller's per-line answers go back on top (P1.3): a re-read after
     // «➕ Yana ma'lumot» must not erase them.
     goods: mergeLineAnswers(picked.goods, state.lineAnswers),
@@ -1395,7 +1427,8 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
     // #21), and a re-read ADDED to the first, never in its place (2.9 c).
     usages: [...state.usages, ...(outcome.answered ?? [])],
     totalsAsked: totalsStillAsked(state, facts, factsVolumeM3(facts)),
-    ambiguousTotals: manual.ambiguous,
+    // What the seller has since answered is not asked again (review P3-3).
+    ambiguousTotals: unansweredAmbiguity(manual.ambiguous, state.totalsAnswer),
     stage: 'review',
   };
 }
