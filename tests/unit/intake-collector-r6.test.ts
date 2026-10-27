@@ -9,9 +9,9 @@ import { readCustomerText } from '@/modules/platform/telegram/staff-handlers';
  * fixed them reach PAST the corpus — every messenger's name is the phone's
  * label in whatever case it is typed and on whichever side of the number, a
  * capital counts only where the writer chose it but a word hyphened to the
- * name stays the name's, a size in a name decides nothing, and
- * which rows the customer question refuses on a repeat is the goods reader's
- * call alone.
+ * name stays the name's, the numbers in a name count however they are
+ * written, and which rows the customer question refuses on a repeat is the
+ * goods reader's call alone.
  */
 
 // The customer question asks `figureRow` through a dynamic import; the last
@@ -53,18 +53,27 @@ describe('the lead’s name: a capital counts only where the writer chose it', (
   });
 });
 
-describe('a bilingual Excel cell: two names each have a word the other lacks — a figure is no word', () => {
+describe('a bilingual Excel cell: two names each have a word — or a number — the other lacks', () => {
   const add = (invoice: Goods, extra: Goods) => pickGoods({ invoice, aiGoods: 'add', model: extra, typed: [], typedLabelled: [] });
 
-  it('a size in other glyphs is the cell read again; another count is another line', () => {
-    // The cell writes «*» and «~», the model «×», «х» and «–»: comparing the
-    // figures landed one order twice (round-6 probe, collector). The counts
-    // still decide.
+  it('a size in other glyphs is the cell read again; another size is another line', () => {
+    // The cell writes «*» and «~», the model «×», «х» and «–»: compared as
+    // words they were two names (round-6 probe, collector); left out, a 800×800
+    // tile met the 600*600 one (the lead's undo, probed). Read as numbers both
+    // hold.
     const tile = [line('瓷砖 Ceramic tile 600*600mm', { quantity: 500 })];
     expect(add(tile, [line('Плитка керамическая 600×600 мм (瓷砖)', { quantity: 500 })]).goods).toHaveLength(1);
+    expect(add(tile, [line('Плитка керамическая 800×800 мм (瓷砖)', { quantity: 500 })]).goods).toHaveLength(2);
     const shoes = [line('女鞋 Women shoes 36~40', { quantity: 120 })];
     expect(add(shoes, [line('Обувь женская 36–40 (女鞋)', { quantity: 120 })]).goods).toHaveLength(1);
-    expect(add(shoes, [line('Обувь женская 36–40 (女鞋)', { quantity: 80 })]).goods).toHaveLength(2);
+    expect(add(shoes, [line('Обувь женская 41–45 (女鞋)', { quantity: 120 })]).goods).toHaveLength(2);
+  });
+
+  it('a model number in a shared script, and «№» against «No.»', () => {
+    const cases = [line('手机壳 Phone case iPhone 14', { quantity: 1000 })];
+    expect(add(cases, [line('Phone case iPhone 15 (手机壳)', { quantity: 1000 })]).goods).toHaveLength(2);
+    const sneakers = [line('运动鞋 Sneakers No.8823', { quantity: 600 })];
+    expect(add(sneakers, [line('Кроссовки №8823 (运动鞋)', { quantity: 600 })]).goods).toHaveLength(1);
   });
 
   it('naming MORE of the same in the cell’s script is the cell; another word in its place is not', () => {

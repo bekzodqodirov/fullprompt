@@ -744,38 +744,51 @@ const SCRIPTS = [
 ] as const;
 
 /**
- * A key's words by the script of their first letter. A word with no letter is
- * left out: a size is written «600*600mm» in the cell and «600×600 мм» or
- * «36–40» in the model's reading of it, so the same size reads as different
- * figures, and comparing them landed one order twice (round-6 probe,
- * collector, 28 common cases). The counts beside the names (`figuresAgree`)
- * still have to agree; the cost is that «Sneakers 42» and «Кроссовки 43» with
- * the same count are one line.
+ * A key's words for comparing two names: each word's LETTERS under the script
+ * of its first one, and the NUMBERS the key states as their own bucket — every
+ * run of digits, counted (a multiset), however they are written. A size is
+ * «600*600mm» in the cell and «600×600 мм» in the model's reading of it, a
+ * range «36~40» and «36–40»: compared as words they were two names and one
+ * order landed twice (round-6 probe, collector, 28 common cases); left out,
+ * «iPhone 14» met «iPhone 15» and a 800×800 tile met the 600*600 one (the
+ * lead's undo, probed: 5 common). Read as numbers both hold. Not read: a unit
+ * conversion («0.35L» / «350 мл»), which stays another name.
  */
-function wordsByScript(key: string): Map<string, Set<string>> {
+function nameWords(key: string): Map<string, Set<string>> {
   const by = new Map<string, Set<string>>();
-  for (const word of key.split(' ').filter(Boolean)) {
-    const letter = /\p{L}/u.exec(word)?.[0];
-    if (letter === undefined) continue;
-    const script = SCRIPTS.find(([, re]) => re.test(letter))?.[0] ?? 'other';
-    by.set(script, (by.get(script) ?? new Set<string>()).add(word));
+  const add = (bucket: string, word: string) => by.set(bucket, (by.get(bucket) ?? new Set<string>()).add(word));
+  // NFKC writes full-width digits as digits and «№» as «No» — capitalised,
+  // so the case is folded after it.
+  const plain = key.normalize('NFKC').toLowerCase();
+  for (const word of plain.split(' ').filter(Boolean)) {
+    const letters = word.replace(/[^\p{L}]/gu, '');
+    if (letters === '') continue;
+    add(SCRIPTS.find(([, re]) => re.test(letters))?.[0] ?? 'other', letters);
+  }
+  const seen = new Map<string, number>();
+  for (const run of plain.match(/[0-9]+/g) ?? []) {
+    const n = run.replace(/^0+(?=\d)/, '');
+    const nth = (seen.get(n) ?? 0) + 1;
+    seen.set(n, nth);
+    add('number', `${n}#${nth}`);
   }
   return by;
 }
 
 /**
- * Are two keys two DIFFERENT names: in some script both write, each has a
- * word the other lacks — «Shirt» beside «Jacket», «Куртка M» beside «XL»,
- * «iPhone15» beside «iPhone14»? One naming MORE of the same is not another
- * name: «Наушники Bluetooth» shares the Latin of «Bluetooth earphones»,
- * «Куртка женская XL» the «XL» of «Ladies jacket XL», and «Мужские кроссовки»
- * is «Кроссовки мужские» (round-5 probe, collector: comparing SCRIPTS alone
- * made each of those a clash, and one order landed twice).
+ * Are two keys two DIFFERENT names: in some script both write — or in the
+ * numbers both state — each has a word the other lacks: «Shirt» beside
+ * «Jacket», «Куртка M» beside «XL», «iPhone 15» beside «iPhone 14», «600*600»
+ * beside «800×800». One naming MORE of the same is not another name:
+ * «Наушники Bluetooth» shares the Latin of «Bluetooth earphones», «Куртка
+ * женская XL» the «XL» of «Ladies jacket XL», and «Мужские кроссовки» is
+ * «Кроссовки мужские» (round-5 probe, collector: comparing SCRIPTS alone made
+ * each of those a clash, and one order landed twice).
  */
 function otherName(a: string, b: string): boolean {
-  const wordsB = wordsByScript(b);
-  for (const [script, ofA] of wordsByScript(a)) {
-    const ofB = wordsB.get(script);
+  const wordsB = nameWords(b);
+  for (const [bucket, ofA] of nameWords(a)) {
+    const ofB = wordsB.get(bucket);
     if (ofB && [...ofA].some((w) => !ofB.has(w)) && [...ofB].some((w) => !ofA.has(w))) return true;
   }
   return false;
