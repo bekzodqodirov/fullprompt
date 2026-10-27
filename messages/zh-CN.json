@@ -5705,6 +5705,9 @@
     "noAudience": "⚠ 目前没有人会收到此消息——计算尚未分配，接手的人会看到。",
     "feedCalcThread": "🧮 计算问答 · ↩️ 回复",
     "feedViaTelegram": "📱 来自 Telegram",
+    "feedAiReply": "🤖 AI 估算 · 非正式",
+    "feedTariffReply": "🧮 按运价估算 · 非正式",
+    "feedEstimateReply": "📊 含估算 · 非正式 — 由VED核对",
     "feedCalcHint": "此消息不会发给报关员——请在「❓ 问答」中回答计算问题。",
     "notifMuteChat": "内部沟通（卡片问答、@提及）",
     "unreachable": {

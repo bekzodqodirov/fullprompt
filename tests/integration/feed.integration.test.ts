@@ -16,8 +16,15 @@ import {
   tgMessages,
   users,
 } from '@/modules/platform/db/schema';
-import { clientFeed, clientFeedHasAnything } from '@/modules/wms/crm/feed';
+import { clientFeed, clientFeedHasAnything, machineReplyOf } from '@/modules/wms/crm/feed';
 import { conversationFor } from '@/modules/wms/crm/conversations';
+import { addActivity } from '@/modules/wms/crm/service';
+import { aiVedReplyText } from '@/modules/wms/calc/ai-reply';
+import {
+  AI_REPLY_HEAD,
+  TARIFF_REPLY_HEAD,
+  VED_ESTIMATE_MARK,
+} from '@/modules/wms/calc/reply-heads';
 
 /**
  * The «lenta» against a real database.
@@ -423,5 +430,160 @@ describe('the lenta’s money is the ledger’s audience', () => {
     expect(await clientFeedHasAnything(moneyOnlyClientId, { money: false })).toBe(false);
     // …and it still finds everything that is not money.
     expect(await clientFeedHasAnything(mixedClientId, { money: false })).toBe(true);
+  });
+});
+
+/**
+ * His 2.4 c (docs/SAKKIZ-R2.md §9): the machine's calculation answer goes onto
+ * the card's lenta in full, with a mark — and a reply carrying an estimate (a
+ * 📊 median or a guessed zone) must not wear the same mark as an exact one.
+ *
+ * The notes are written through the lenta's real door for a machine
+ * (`addActivity` under `{ actorId: null }, { system: true }` — the writer the
+ * prefill job uses), and the AI reply is the REAL renderer's text, so a
+ * heading reworded in `ai-reply.ts` without `reply-heads.ts` turns this red.
+ * The estimate fixture is built from the kernel's constants alone: it does
+ * not wait on the package that renders the VED line.
+ *
+ * Its own lead, for the reason the cargo block has its own client: the shared
+ * fixture above is read by exact kind sequences.
+ */
+describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
+  let machineLeadId = '';
+  const ids = {
+    ai: '',
+    tariff: '',
+    estimate: '',
+    tariffEstimate: '',
+    personAi: '',
+    personEstimate: '',
+    advert: '',
+    plain: '',
+  };
+
+  const aiText = aiVedReplyText({
+    clientLabel: 'GS777',
+    cardLabel: 'B-000067',
+    lines: [
+      {
+        label: 'Monitor 24"',
+        code: '8528520000',
+        measureText: '100 dona × $20/dona',
+        bazaSource: 'memory',
+        dutyText: '10%',
+        addDutyPct: 0,
+        exciseText: null,
+        vatPct: 12,
+        customsUsd: 496.96,
+        refusal: null,
+        estimated: null,
+        weightFromTotal: false,
+      },
+    ],
+    ungrouped: [],
+    fee: { bhm: 5, usd: 164.8 },
+    totalUsd: 661.76,
+    feeRefusal: null,
+    hasCertificate: true,
+    freight: null,
+    link: null,
+    aiConfigured: true,
+    estimate: null,
+    audience: 'lenta',
+  });
+  // §2.4's yolkira reply, the stored-zone shape: no VED line.
+  const tariffText = [
+    `${TARIFF_REPLY_HEAD} (tarif bo‘yicha) · taxminiy · GS777 · B-000067`,
+    'Xitoy → O‘zbekiston',
+    '180 kg/m³ · $160/m³ × 12 m³',
+    'Yo‘lkira: ≈ $1920.00',
+    '⚠️ Rasmiy emas — VED xodimi tasdiqlaydi.',
+  ].join('\n');
+  // §2.6: the VED line sits on line 2, directly under the heading.
+  const estimateText = [
+    `${AI_REPLY_HEAD} · tahminiy rastamojka · GS777 · B-000067`,
+    `${VED_ESTIMATE_MARK} bu AI taxmini, rasmiy emas — 📊 baza deklaratsiyalar medianasidan. Muhrlash yoki «Готово»dan oldin o‘zingiz tekshiring.`,
+    '1. Kurtka · 6201400000 · 300 kg × $3.80/kg 📊',
+  ].join('\n');
+  const tariffEstimateText = [
+    `${TARIFF_REPLY_HEAD} (tarif bo‘yicha) · taxminiy · GS777`,
+    `${VED_ESTIMATE_MARK} zona «Yiwu»dan taxmin, rasmiy emas — zonani o‘zingiz tanlang.`,
+    'Xitoy → O‘zbekiston — zona «Yiwu»dan taxmin',
+  ].join('\n');
+
+  const machine = async (note: string) =>
+    (
+      await addActivity(
+        { entityType: 'lead', entityId: machineLeadId, kind: 'note', note },
+        { actorId: null },
+        { system: true },
+      )
+    ).id;
+  const person = async (note: string) =>
+    (
+      await addActivity(
+        { entityType: 'lead', entityId: machineLeadId, kind: 'note', note },
+        { actorId: managerId },
+      )
+    ).id;
+
+  beforeAll(async () => {
+    const [stage] = await db.select().from(leadStages).limit(1);
+    const [l] = await db
+      .insert(leads)
+      .values({ name: `Machine ${STAMP}`, stageId: stage!.id, createdBy: managerId })
+      .returning({ id: leads.id });
+    machineLeadId = l!.id;
+
+    ids.ai = await machine(aiText);
+    ids.tariff = await machine(tariffText);
+    ids.estimate = await machine(estimateText);
+    ids.tariffEstimate = await machine(tariffEstimateText);
+    // A person who pastes the machine's reply into a note has written a note.
+    ids.personAi = await person(aiText);
+    ids.personEstimate = await person(estimateText);
+    // An advert's system note (crm/inbound.ts `inboundNote`): no author
+    // either, and the customer's own words may carry the heading and the mark
+    // — inside the note, never at its start.
+    ids.advert = await machine(
+      `📣 instagram\nNarxi qancha? ${AI_REPLY_HEAD} dedi: ${VED_ESTIMATE_MARK} kerak`,
+    );
+    ids.plain = await person('mijoz ertaga qo‘ng‘iroq qiladi');
+  });
+
+  afterAll(async () => {
+    await db.delete(crmActivities).where(eq(crmActivities.entityId, machineLeadId));
+    await db.delete(leads).where(eq(leads.id, machineLeadId));
+  });
+
+  const chipOf = async (id: string) => {
+    const items = await clientFeed(null, { money: false, leadId: machineLeadId });
+    const item = items.find((i) => i.id === `ac-${id}`);
+    expect(item, id).toBeTruthy();
+    return { raw: item!.meta.machineReply, chip: machineReplyOf(item!) };
+  };
+
+  it('the real AI reply, written by the machine, is «ai»', async () => {
+    expect(aiText.startsWith(AI_REPLY_HEAD)).toBe(true);
+    expect(await chipOf(ids.ai)).toEqual({ raw: 'ai', chip: 'ai' });
+  });
+
+  it('a tariff reply is «tariff»', async () => {
+    expect(await chipOf(ids.tariff)).toEqual({ raw: 'tariff', chip: 'tariff' });
+  });
+
+  it('a reply carrying the VED line is «estimate» — under either heading', async () => {
+    expect(await chipOf(ids.estimate)).toEqual({ raw: 'estimate', chip: 'estimate' });
+    expect(await chipOf(ids.tariffEstimate)).toEqual({ raw: 'estimate', chip: 'estimate' });
+  });
+
+  it('a PERSON’s note with the machine’s very text wears no chip', async () => {
+    expect(await chipOf(ids.personAi)).toEqual({ raw: null, chip: null });
+    expect(await chipOf(ids.personEstimate)).toEqual({ raw: null, chip: null });
+  });
+
+  it('an advert’s system note wears no chip, whatever its words contain', async () => {
+    expect(await chipOf(ids.advert)).toEqual({ raw: null, chip: null });
+    expect(await chipOf(ids.plain)).toEqual({ raw: null, chip: null });
   });
 });

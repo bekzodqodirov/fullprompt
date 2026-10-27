@@ -5705,6 +5705,9 @@
     "noAudience": "⚠ Bu xabarni hozir hech kim olmaydi — hisob hali hech kimga biriktirilmagan. Kim olsa, o‘sha ko‘radi.",
     "feedCalcThread": "🧮 Hisob savoli · ↩️ javob",
     "feedViaTelegram": "📱 Telegramdan",
+    "feedAiReply": "🤖 AI taxmini · rasmiy emas",
+    "feedTariffReply": "🧮 Tarif bo‘yicha taxmin · rasmiy emas",
+    "feedEstimateReply": "📊 Ichida taxmin bor · rasmiy emas — VED tekshiradi",
     "feedCalcHint": "Bu VED ga bormaydi — hisob savoliga «❓ Savol-javob»da javob bering.",
     "notifMuteChat": "Ichki yozishmalar (kartadagi savol-javob, @ bilan chaqirish)",
     "unreachable": {

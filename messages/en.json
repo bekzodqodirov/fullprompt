@@ -5705,6 +5705,9 @@
     "noAudience": "⚠ Nobody receives this right now — the calculation is not assigned yet. Whoever takes it will see it.",
     "feedCalcThread": "🧮 Calculation question · ↩️ reply",
     "feedViaTelegram": "📱 from Telegram",
+    "feedAiReply": "🤖 AI estimate · not official",
+    "feedTariffReply": "🧮 Tariff estimate · not official",
+    "feedEstimateReply": "📊 Contains an estimate · not official — the VED checks it",
     "feedCalcHint": "This does not reach the VED — answer the calculation question in «❓ Questions».",
     "notifMuteChat": "Internal threads (questions on cards, @-mentions)",
     "unreachable": {
