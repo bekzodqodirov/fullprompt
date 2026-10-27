@@ -84,10 +84,16 @@ export const FREIGHT_WORDS: Record<FreightRefusalCase, (f: RefusalFacts) => stri
  * write it on the card's lenta; what the VED decides (a tariff hole, a stored
  * figure that is not a number) stays the VED's. Today's single «— VED xodimi
  * hisoblaydi» sent the seller to wait for a person who was waiting on him.
+ *
+ * A city WRITTEN but placed by no vocabulary («Foshan», his Question 3 a) is
+ * the VED's: the customer has already said where the cargo leaves, and what
+ * is missing is the ZONE, which only the VED chooses (`setFreightZone` is
+ * `ved.docs`'s). Sent to the seller, the sentence had him ask the customer
+ * for a fact the customer gave — and nothing re-answers after (`sayOnce`).
  */
 export const FREIGHT_TAIL: Record<FreightRefusalCase, FreightTail> = {
   no_city: 'seller',
-  city_unplaced: 'seller',
+  city_unplaced: 'ved',
   zone_unpriced: 'ved',
   kg_missing: 'seller',
   m3_missing: 'seller',
@@ -104,6 +110,21 @@ const refusal = (c: FreightRefusalCase, facts: RefusalFacts): AiVedFreight => ({
 });
 
 /**
+ * Several of the SELLER's facts missing at once, said in one sentence.
+ *
+ * The reply goes out once per request (`sayOnce`) and nothing re-answers
+ * after the seller writes on the lenta, so naming only the first gap —
+ * «qaysi shahardan» — cost him a second trip to the customer for the kilos.
+ * Only cases that share the seller's tail are joined: one sentence, one
+ * fixer. A case the VED decides is said on its own, as before.
+ */
+const sellerRefusal = (cases: readonly FreightRefusalCase[], facts: RefusalFacts): AiVedFreight => ({
+  ok: false,
+  refusal: cases.map((c) => FREIGHT_WORDS[c](facts)).join('; '),
+  tail: 'seller',
+});
+
+/**
  * The road as the AI reply prints it (item 13): the LIST price with the band
  * that made it, so «$1,920» arrives with «180 kg/m³ · $160/m³ × 12 m³» and a
  * seller can check it against the tariff sheet on the wall.
@@ -115,7 +136,7 @@ const refusal = (c: FreightRefusalCase, facts: RefusalFacts): AiVedFreight => ({
 export function aiFreight(
   freight: FreightResult | null,
   measure: { weightKg: number | null; volumeM3: number | null },
-  opts: { fromLines?: boolean } = {},
+  opts: { fromLines?: boolean; exact?: boolean } = {},
 ): AiVedFreight {
   if (!freight) return { ok: false, refusal: freightRefusalText('zone_required'), tail: 'ved' };
   if (!freight.ok) return { ok: false, refusal: freightRefusalText(freight.reason), tail: 'ved' };
@@ -132,6 +153,9 @@ export function aiFreight(
     zoneGuessed: false,
     zoneReadFrom: null,
     volumeFromLines: opts.fromLines ?? false,
+    // Closed by default: a caller that does not say it priced the screen's
+    // own figure gets «JAMI taxminiy», never a plain «JAMI» it cannot vouch for.
+    exact: opts.exact ?? false,
     small: freight.small,
   };
 }
@@ -171,7 +195,16 @@ const positive = (v: number | null): v is number => v !== null && v > 0;
  * 3. The kilos are the request's BRUTTO and NEVER the lines': a line's kg is
  *    netto, and a truck carries the cartons too (judge MR-8). Missing, it is
  *    asked of the seller, never summed.
- * 4. Every refusal names who can fix it (`FREIGHT_TAIL`).
+ * 4. Every refusal names who can fix it (`FREIGHT_TAIL`); the seller's
+ *    missing facts are named together (`sellerRefusal`).
+ * 5. The answer is `exact` only when it IS the workspace's own road — the
+ *    stored zone over the request's stored totals, the figure the VED's
+ *    screen prints and the seal locks. A guessed zone, or the lines' Σ
+ *    standing in for a cube the request does not hold, prices the reply's
+ *    own estimate: the screen, the checklist chip and the seal all refuse
+ *    that cube (review law-money-R2-1), so a sum with it is «JAMI taxminiy».
+ *    The Σ fallback itself stays, labelled, for a request landed before
+ *    round 2 stored one (§6.4 step 3).
  */
 export function freightAnswerFor(
   input: FreightAnswerInput,
@@ -183,25 +216,40 @@ export function freightAnswerFor(
   const zoneGuessed = input.freightZone === null && input.guessedZone !== null;
   const city = (input.fromCity ?? '').trim();
   const facts = { city, zone: '' };
+  const m3 = input.volumeM3 ?? linesVolumeM3(input.lines);
+  // A stored figure that is not a number is the VED's to correct, and must
+  // not read as «missing» — that would send the seller to ask for it again.
+  const notANumber = [input.weightKg, m3].some((v) => v !== null && !Number.isFinite(v));
+  const kgOk = positive(input.weightKg);
+  const m3Ok = positive(m3);
+  // The measure's gap, as the seller is asked it — null when both are there.
+  const measureGap: FreightRefusalCase | null = notANumber
+    ? 'not_a_number'
+    : !kgOk && !m3Ok
+      ? 'both_missing'
+      : !kgOk
+        ? 'kg_missing'
+        : !m3Ok
+          ? 'm3_missing'
+          : null;
 
   // Zone → kg → m³: the order a seller is asked in.
   if (zone === null) {
-    if (!city) return refusal('no_city', facts);
+    if (!city) {
+      // No city AND a missing measure: both are the customer's facts, said
+      // in one sentence (`sellerRefusal`) — a stored figure that is not a
+      // number is the VED's and waits behind the seller's question.
+      return measureGap !== null && FREIGHT_TAIL[measureGap] === 'seller'
+        ? sellerRefusal(['no_city', measureGap], facts)
+        : refusal('no_city', facts);
+    }
     const read = guessZone(city);
     // Read, but not priced: `guessedZone` is the priced zones only, so a
     // known city reaching here is a tariff hole, not a misunderstanding.
     if (read !== null) return refusal('zone_unpriced', { city, zone: read });
     return refusal('city_unplaced', facts);
   }
-  const m3 = input.volumeM3 ?? linesVolumeM3(input.lines);
-  // A stored figure that is not a number is the VED's to correct, and must
-  // not read as «missing» — that would send the seller to ask for it again.
-  if ([input.weightKg, m3].some((v) => v !== null && !Number.isFinite(v))) return refusal('not_a_number', facts);
-  const kgOk = positive(input.weightKg);
-  const m3Ok = positive(m3);
-  if (!kgOk && !m3Ok) return refusal('both_missing', facts);
-  if (!kgOk) return refusal('kg_missing', facts);
-  if (!m3Ok) return refusal('m3_missing', facts);
+  if (measureGap !== null) return refusal(measureGap, facts);
 
   const fromLines = input.volumeFromLines || (input.volumeM3 === null && m3 !== null);
   // The kernel's figure when nothing was guessed or summed — it IS
@@ -217,7 +265,7 @@ export function freightAnswerFor(
       priced.reason === 'band_missing' || priced.reason === 'band_ambiguous' ? priced.reason : 'not_a_number';
     return refusal(c, facts);
   }
-  const out = aiFreight(priced, { weightKg: input.weightKg, volumeM3: m3 }, { fromLines });
+  const out = aiFreight(priced, { weightKg: input.weightKg, volumeM3: m3 }, { fromLines, exact: priced === input.stored });
   return out.ok
     ? { ...out, zoneGuessed, zoneReadFrom: zoneGuessed && city ? readCity(city) : null }
     : out;

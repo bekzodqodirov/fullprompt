@@ -81,6 +81,17 @@ export interface AiVedLine {
   /** A priced row's weight was copied from the shipment's BRUTTO total
    * (`weightFromTotalNote`) — the line says «og‘irlik bruttodan». */
   weightFromTotal: boolean;
+  /**
+   * A row's own baza is OLD — a 📥 declaration from a quarter that ended past
+   * BAZA_STALE_DAYS, a 🧠 seal or a 📖 book row as old: the workspace's own
+   * ⚠ chip (`bazaStale`) on the same row. The figure beside it is still exact
+   * — it is the number the VED's screen prints — so the line says the age
+   * rather than dropping the figure. Round 2's per-code chooser reaches back
+   * to an older quarter on purpose (§7.3 rule 1), so «the newest file» no
+   * longer vouches for the price's age. REQUIRED (#790): a builder that
+   * forgot would send an old price out undated.
+   */
+  staleBaza: boolean;
 }
 
 /** One group's 📊 shadow, already in the reply's vocabulary. */
@@ -178,6 +189,17 @@ export type AiVedFreight =
       zoneReadFrom: string | null;
       /** The m³ is the Σ of the lines (his 2.7 b) — said where it is printed. */
       volumeFromLines: boolean;
+      /**
+       * The road IS the workspace's own figure: the stored zone over the
+       * request's stored totals — what the VED's screen prints and the seal
+       * would lock (§0.1(4)). Only then may a sum with it wear the plain
+       * «JAMI». A road priced on a guessed zone, or on the lines' Σ standing in
+       * for a cube the request does not hold (a pre-round-2 request, or one
+       * whose typed cube was ambiguous, P3-R2), is the reply's own estimate —
+       * the screen, the chip and the seal all refuse that very cube.
+       * REQUIRED (#790): a builder that forgot would claim exactness.
+       */
+      exact: boolean;
       /** Under SMALL_FREIGHT_USD — priced honestly, flagged loudly. */
       small: boolean;
     }
@@ -233,6 +255,9 @@ const SOURCE_LEGEND: Record<Exclude<BazaSource, null>, string> = {
   dictionary: '📖 lug‘atdan',
   typed: '',
 };
+
+/** A row priced on an old baza, as the line says it — the screen's «eskirgan» chip. */
+export const STALE_BAZA_WORDS = '⚠ eski baza';
 
 /** The 📊 mark and its legend — the shadow is on no screen, so it says what it is. */
 const MEDIAN_MARK = '📊';
@@ -293,11 +318,14 @@ function lineText(line: AiVedLine, index: number): string {
     .concat(priced ? [MEDIAN_MARK] : [])
     .filter(Boolean)
     .join(' ');
+  // The age sits beside the baza it qualifies — in the head, which every
+  // shape of the line prints (exact, estimated, refused).
   const head =
     `${index + 1}. ${shortName(line.label)}` +
     (line.code ? ` · ${line.code}` : '') +
     (measure ? ` · ${measure}` : '') +
-    (marks ? ` ${marks}` : '');
+    (marks ? ` ${marks}` : '') +
+    (line.staleBaza ? ` · ${STALE_BAZA_WORDS}` : '');
 
   if (priced) {
     // His 2.1 b: «taxminiy, N ta deklaratsiyadan» — on the figure itself, so
@@ -332,16 +360,23 @@ function feeWords(fee: AiVedEstimate['taxminiyFee']): string {
  * The VED's line on the card's copy (his 2.4 c): directly under the heading,
  * because a note can run to 25 group lines and the VED skimming the lenta
  * reads its first lines. Only when something in the reply IS an estimate —
- * a 📊 figure or a guessed zone; a named partial «Aniq» says what it is on
- * its own face. P4's chip finds the note by `VED_ESTIMATE_MARK`.
+ * a 📊 figure, a guessed zone, or a road priced on the lines' Σ for a cube
+ * the request does not hold (`!exact`, the same condition that makes the
+ * JAMI «taxminiy», so a note carrying «JAMI taxminiy» always wears the
+ * estimate chip); a named partial «Aniq» says what it is on its own face.
+ * P4's chip finds the note by `VED_ESTIMATE_MARK`.
+ *
+ * The button is named as the Uzbek screen labels it, with the Russian beside
+ * it: the note is written once, in Uzbek, for a VED on either locale.
  */
-function vedLine(anyMedian: boolean, guessedFrom: string | null): string | null {
+function vedLine(anyMedian: boolean, guessedFrom: string | null, roadFromLines: boolean): string | null {
   const parts = [
     ...(anyMedian ? ['📊 baza deklaratsiyalar medianasidan'] : []),
     ...(guessedFrom !== null ? [`zona «${guessedFrom}»dan taxmin`] : []),
+    ...(roadFromLines ? ['yo‘lkira hajmi qatorlardan — so‘rovda umumiy hajm yo‘q'] : []),
   ];
   if (parts.length === 0) return null;
-  return `${VED_ESTIMATE_MARK} bu AI taxmini, rasmiy emas — ${parts.join(' · ')}. Muhrlash yoki «Готово»dan oldin o‘zingiz tekshiring.`;
+  return `${VED_ESTIMATE_MARK} bu AI taxmini, rasmiy emas — ${parts.join(' · ')}. Muhrlashdan yoki «Bajarildi» (Готово) bosishdan oldin o‘zingiz tekshiring.`;
 }
 
 /**
@@ -366,8 +401,8 @@ export function fitTelegram(head: string[], lines: string[], fixed: string[], ta
 export function aiVedReplyText(input: AiVedReplyInput): string {
   const title = [
     input.freight
-      ? `${AI_REPLY_HEAD} · tahminiy podklyuch (rastamojka + yo‘lkira)`
-      : `${AI_REPLY_HEAD} · tahminiy rastamojka`,
+      ? `${AI_REPLY_HEAD} · taxminiy podklyuch (rastamojka + yo‘lkira)`
+      : `${AI_REPLY_HEAD} · taxminiy rastamojka`,
   ]
     .concat(input.clientLabel ? [input.clientLabel] : [])
     .concat(input.cardLabel ? [input.cardLabel] : [])
@@ -375,10 +410,13 @@ export function aiVedReplyText(input: AiVedReplyInput): string {
 
   const f = input.freight;
   const guessedFrom = f && f.ok && f.zoneGuessed ? (f.zoneReadFrom ?? '') : null;
+  // A road that is not the screen's own figure, and not because of a guess:
+  // the lines' Σ priced a cube the request does not hold.
+  const roadFromLines = Boolean(f && f.ok && !f.exact && !f.zoneGuessed);
   const anyMedian = input.lines.some((l) => l.estimated?.priced === true);
   const head = [title];
   if (input.audience === 'lenta') {
-    const ved = vedLine(anyMedian, guessedFrom);
+    const ved = vedLine(anyMedian, guessedFrom, roadFromLines);
     if (ved) head.push(ved);
   }
 
@@ -437,9 +475,11 @@ export function aiVedReplyText(input: AiVedReplyInput): string {
     }
     // The sum only when BOTH halves are figures: half a price labelled
     // «jami» is the partial total law 6 forbids, one line lower. And when
-    // either half is an estimate — the 📊 Taxminiy, or a zone read off the
-    // city — the sum says «taxminiy» on its own face.
-    if (f.ok && total !== null && !f.zoneGuessed) {
+    // either half is an estimate — the 📊 Taxminiy, a zone read off the
+    // city, or a road on a cube the request does not hold — the sum says
+    // «taxminiy» on its own face. The plain «JAMI» is the two figures the
+    // VED's screen itself prints (§0.1(4)), so the road must be `exact`.
+    if (f.ok && total !== null && f.exact && !f.zoneGuessed) {
       tail.push(`JAMI (rastamojka + yo‘lkira): ≈ ${money(total + f.listUsd)}`);
     } else if (f.ok && (total ?? taxminiy) !== null) {
       tail.push(`JAMI taxminiy (rastamojka + yo‘lkira): ≈ ${money((total ?? taxminiy)! + f.listUsd)}`);

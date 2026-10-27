@@ -13,6 +13,16 @@
 export const AI_REPLY_HEAD = '🤖 AI-VED';
 /** The yolkira reply — answered from the tariff table, no model (his 2.5 b). */
 export const TARIFF_REPLY_HEAD = '🧮 Yo‘lkira';
+/**
+ * The yolkira reply's title — the head and what it was priced from.
+ * Followed by `TARIFF_ESTIMATE_WORD` only when the tariff PRICED the road: a
+ * refusal carries no figure, so it is no estimate, and the lenta chip that
+ * says «Tarif bo‘yicha taxmin» must not wear it (review PF-9).
+ */
+export const TARIFF_REPLY_TITLE = `${TARIFF_REPLY_HEAD} (tarif bo‘yicha)`;
+export const TARIFF_ESTIMATE_WORD = 'taxminiy';
+/** What a PRICED yolkira reply starts with — the chip's anchor. */
+export const TARIFF_PRICED_HEAD = `${TARIFF_REPLY_TITLE} · ${TARIFF_ESTIMATE_WORD}`;
 
 export type MachineReplyKind = 'ai' | 'tariff';
 

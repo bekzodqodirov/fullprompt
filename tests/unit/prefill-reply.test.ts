@@ -33,6 +33,7 @@ const priced = (over: Partial<Extract<AiVedFreight, { ok: true }>> = {}): AiVedF
   zoneGuessed: true,
   zoneReadFrom: 'Yiwu',
   volumeFromLines: true,
+  exact: false,
   small: false,
   ...over,
 });

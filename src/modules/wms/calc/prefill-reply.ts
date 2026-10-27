@@ -16,7 +16,7 @@ import {
   routeWords,
   type AiVedFreight,
 } from './ai-reply';
-import { TARIFF_REPLY_HEAD, VED_ESTIMATE_MARK } from './reply-heads';
+import { TARIFF_ESTIMATE_WORD, TARIFF_REPLY_TITLE, VED_ESTIMATE_MARK } from './reply-heads';
 
 /**
  * What the AI VED hodimi says back into the staff chat.
@@ -169,8 +169,10 @@ export interface TariffReplyInput {
 
 export function tariffReplyText(input: TariffReplyInput): string {
   const f = input.freight;
-  const title = [`${TARIFF_REPLY_HEAD} (tarif bo‘yicha)`]
-    .concat(f.ok ? ['taxminiy'] : [])
+  // The words of the title are reply-heads.ts's, so the lenta chip that
+  // anchors on the PRICED title cannot drift from what this writes (#513).
+  const title = [TARIFF_REPLY_TITLE]
+    .concat(f.ok ? [TARIFF_ESTIMATE_WORD] : [])
     .concat(input.clientLabel ? [input.clientLabel] : [])
     .concat(input.cardLabel ? [input.cardLabel] : [])
     .join(' · ');

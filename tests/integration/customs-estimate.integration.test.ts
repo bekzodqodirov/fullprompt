@@ -353,6 +353,83 @@ describe('(5)(6)(7) the road: the tariff at once, the guess said and never store
   });
 });
 
+describe('(7c) a road on a cube the request does NOT hold is never summed as the exact «JAMI» (review law-money-R2-1)', () => {
+  it('the typed cube was ambiguous: no Σ stored, the screen refuses the road, the reply says «JAMI taxminiy»', async () => {
+    // The P3-R2 landing: the seller typed the cube two ways, so the INSERT
+    // stores no Σ and the checklist keeps asking — while every line carries
+    // its own m³ and the zone is STORED (the AI podklyuch «qayerdan?» button).
+    const id = await open(
+      'podklyuch',
+      [{ name: `Profil ${SUFFIX} kub`, tnvedCode: CODE_A, weightKg: 100, volumeM3: 2.8 }],
+      { freightZone: 'cn', weightKg: 504, volumeM3: null, volumeAmbiguous: true },
+    );
+    await typeBaza(id, `Profil ${SUFFIX} kub`, 4);
+    const ws = await loadWorkspace(id);
+    // The premise: the request holds no cube, and the VED's own road refuses it.
+    expect(ws!.volumeM3).toBeNull();
+    expect(ws!.freight).toMatchObject({ ok: false, reason: 'measure_missing' });
+
+    const out = await aiPrefill(id, { actorId: null }, { configured: false });
+    // Customs exact: 92.80 + 1 BHM 32.96 = 125.76; the road 504 ÷ 2.8 = 180 →
+    // $160 × 2.8 = $448, priced on the lines' Σ and labelled so.
+    expect(out.text).toContain('Rastamojka jami: ≈ $125.76');
+    expect(out.text).toContain('180 kg/m³ · $160/m³ × 2.8 m³ (qatorlardan)): ≈ $448.00');
+    expect(out.text).toContain('JAMI taxminiy (rastamojka + yo‘lkira): ≈ $573.76');
+    expect(out.text).not.toContain('JAMI (');
+    // …and the VED reading the card is told why, under the heading.
+    expect(out.lentaText.split('\n')[1]).toContain('yo‘lkira hajmi qatorlardan — so‘rovda umumiy hajm yo‘q');
+  });
+});
+
+describe('(13) an exact line on an OLD 📥 baza says so (review law-money-R2-2)', () => {
+  it('a declaration from a quarter long ended: the figure stands, the head says «⚠ eski baza»', async () => {
+    // A quarter two years gone — past BAZA_STALE_DAYS by any clock — holding
+    // the one declaration the VED picks through the 📥 door (`saveTable`'s
+    // `importRowId`: the file answers the price, the browser only the row).
+    const year = Number(new Date().toISOString().slice(0, 4)) - 2;
+    const [old] = await db
+      .insert(customsImportBatches)
+      .values({
+        fileName: `estimate-old-${SUFFIX}.xlsx`,
+        uploadedBy: actorId,
+        status: 'ready',
+        periodFrom: `${year}-01-01`,
+        periodTo: `${year}-03-31`,
+        rowCount: 1,
+      })
+      .returning({ id: customsImportBatches.id });
+    try {
+      const [row] = await db
+        .insert(customsImportRows)
+        .values({
+          batchId: old!.id,
+          tnvedCode: CODE_A,
+          name: 'Профиль алюминиевый оконный',
+          nameNorm: 'профиль алюминиевый оконный',
+          unit: 'kg',
+          pricePerUnitUsd: '4',
+          originCountry: '156-КИТАЙ',
+        })
+        .returning({ id: customsImportRows.id });
+      const name = `Profil ${SUFFIX} eski`;
+      const id = await open('rastamojka', [{ name, tnvedCode: CODE_A, weightKg: 100 }]);
+      await saveTable(id, { items: [], adds: [] }, ctx());
+      const [item] = await db.select().from(calcRequestItems).where(eq(calcRequestItems.requestId, id));
+      await saveTable(id, { items: [{ id: item!.id, seq: item!.seq, importRowId: String(row!.id) }], adds: [] }, ctx());
+      const ws = await loadWorkspace(id);
+      // The premise: the screen wears its ⚠ on this very row.
+      expect(ws!.groups[0]!.items[0]).toMatchObject({ bazaSource: 'import', bazaStale: true });
+
+      const out = await aiPrefill(id, { actorId: null }, { configured: false });
+      // 100 kg × $4 = 400; duty 10 % = 40; VAT 12 % of 440 = 52.80 → 92.80.
+      expect(out.text).toContain(`1. ${name} · ${CODE_A} · 100 kg × $4/kg 📥 · ⚠ eski baza\n`);
+      expect(out.text).toContain('   boj 10% · QQS 12% → $92.80');
+    } finally {
+      await db.delete(customsImportBatches).where(eq(customsImportBatches.id, old!.id));
+    }
+  });
+});
+
 describe('(9) the pass deadline', () => {
   it('past it: no pick, every median «budget», and the reply says so in words', async () => {
     const id = await open('rastamojka', [

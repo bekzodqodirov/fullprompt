@@ -224,7 +224,7 @@ describe('the machine carries a job as far as it honestly can', () => {
     expect(out.aiUsed).toBe(true);
     // The reply is the AI-VED's per-line breakdown now (sub-round C): the
     // heading, the line's own figure and the caveat that travels with it.
-    expect(out.text).toContain('🤖 AI-VED · tahminiy rastamojka');
+    expect(out.text).toContain('🤖 AI-VED · taxminiy rastamojka');
     expect(out.text).toContain('📥');
     expect(out.text).toContain('Rastamojka jami');
     expect(out.text).toContain('Rasmiy emas');
@@ -248,7 +248,7 @@ describe('the machine carries a job as far as it honestly can', () => {
     const ws = await loadWorkspace(id);
     expect(ws!.freight?.ok).toBe(true);
     const list = ws!.freight!.ok ? ws!.freight!.listUsd : NaN;
-    expect(out.text).toContain('tahminiy podklyuch (rastamojka + yo‘lkira)');
+    expect(out.text).toContain('taxminiy podklyuch (rastamojka + yo‘lkira)');
     expect(out.text).toContain(`Yo‘lkira (Xitoy → O‘zbekiston, 50 kg/m³ · `);
     expect(out.text).toContain(`× 10 m³): ≈ $${list.toFixed(2)}`);
     // The list price, never a discount — and the sum of the two halves.
@@ -595,7 +595,7 @@ describe('the machine carries a job as far as it honestly can', () => {
     // answered its baza.
     const ws = await loadWorkspace(id);
     expect(ws!.groups).toHaveLength(1);
-    expect(out.text).toContain('🤖 AI-VED · tahminiy rastamojka');
+    expect(out.text).toContain('🤖 AI-VED · taxminiy rastamojka');
     expect(out.text).toContain('Rastamojka jami');
   });
 });

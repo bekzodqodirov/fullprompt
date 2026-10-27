@@ -667,6 +667,9 @@ function replyLines(ws: Workspace, estimate: CustomsEstimate | null): AiVedLine[
       weightFromTotal: g.items.some(
         (i) => weightFromTotalNote(i.note) && (i.bazaUsd !== null || ge?.kind === 'estimated'),
       ),
+      // The workspace's own age rule for the row's baza (`bazaStale`, law 5),
+      // asked of the rows that HAVE one — the VED's screen wears the same ⚠.
+      staleBaza: g.items.some((i) => i.bazaUsd !== null && i.bazaStale),
     };
   });
 }

@@ -20,6 +20,7 @@ import { clientFeed, clientFeedHasAnything, machineReplyOf } from '@/modules/wms
 import { conversationFor } from '@/modules/wms/crm/conversations';
 import { addActivity } from '@/modules/wms/crm/service';
 import { aiVedReplyText } from '@/modules/wms/calc/ai-reply';
+import { tariffReplyText } from '@/modules/wms/calc/prefill-reply';
 import {
   AI_REPLY_HEAD,
   TARIFF_REPLY_HEAD,
@@ -455,6 +456,7 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
     tariff: '',
     estimate: '',
     tariffEstimate: '',
+    tariffRefused: '',
     personAi: '',
     personEstimate: '',
     personTariff: '',
@@ -483,6 +485,7 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
         refusalTail: 'ved',
         estimated: null,
         weightFromTotal: false,
+        staleBaza: false,
       },
     ],
     ungrouped: [],
@@ -506,10 +509,19 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
   ].join('\n');
   // §2.6: the VED line sits on line 2, directly under the heading.
   const estimateText = [
-    `${AI_REPLY_HEAD} · tahminiy rastamojka · GS777 · B-000067`,
-    `${VED_ESTIMATE_MARK} bu AI taxmini, rasmiy emas — 📊 baza deklaratsiyalar medianasidan. Muhrlash yoki «Готово»dan oldin o‘zingiz tekshiring.`,
+    `${AI_REPLY_HEAD} · taxminiy rastamojka · GS777 · B-000067`,
+    `${VED_ESTIMATE_MARK} bu AI taxmini, rasmiy emas — 📊 baza deklaratsiyalar medianasidan. Muhrlashdan yoki «Bajarildi» (Готово) bosishdan oldin o‘zingiz tekshiring.`,
     '1. Kurtka · 6201400000 · 300 kg × $3.80/kg 📊',
   ].join('\n');
+  // A REFUSED yolkira reply, by the real renderer: no figure at all, so no
+  // «Tarif bo‘yicha taxmin» chip (review PF-9).
+  const tariffRefusedText = tariffReplyText({
+    clientLabel: 'GS777',
+    cardLabel: 'B-000067',
+    freight: { ok: false, refusal: 'umumiy brutto og‘irlik (kg) yo‘q', tail: 'seller' },
+    link: null,
+    audience: 'lenta',
+  });
   const tariffEstimateText = [
     `${TARIFF_REPLY_HEAD} (tarif bo‘yicha) · taxminiy · GS777`,
     `${VED_ESTIMATE_MARK} zona «Yiwu»dan taxmin, rasmiy emas — zonani o‘zingiz tanlang.`,
@@ -544,6 +556,7 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
     ids.tariff = await machine(tariffText);
     ids.estimate = await machine(estimateText);
     ids.tariffEstimate = await machine(tariffEstimateText);
+    ids.tariffRefused = await machine(tariffRefusedText);
     // A person who pastes the machine's reply into a note has written a note.
     ids.personAi = await person(aiText);
     ids.personEstimate = await person(estimateText);
@@ -586,6 +599,11 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
 
   it('a tariff reply is «tariff»', async () => {
     expect(await chipOf(ids.tariff)).toEqual({ raw: 'tariff', chip: 'tariff' });
+  });
+
+  it('a REFUSED tariff reply carries no figure, so no estimate chip (review PF-9)', async () => {
+    expect(tariffRefusedText.startsWith(TARIFF_REPLY_HEAD)).toBe(true);
+    expect(await chipOf(ids.tariffRefused)).toEqual({ raw: null, chip: null });
   });
 
   it('a reply carrying the VED line is «estimate» — under either heading', async () => {

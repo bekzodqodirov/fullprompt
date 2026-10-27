@@ -32,6 +32,7 @@ const line = (over: Partial<AiVedLine> = {}): AiVedLine => ({
   refusalTail: 'ved',
   estimated: null,
   weightFromTotal: false,
+  staleBaza: false,
   ...over,
 });
 
@@ -44,6 +45,8 @@ const road = (
   zoneGuessed: false,
   zoneReadFrom: null,
   volumeFromLines: false,
+  // The workspace's own road unless a case says otherwise (§0.1(4)).
+  exact: true,
   small: false,
   ...over,
 });
@@ -118,7 +121,7 @@ describe('the AI-VED reply', () => {
         bandText: '180 kg/m³ · $160/m³ × 12 m³',
       }),
     });
-    expect(text).toContain('tahminiy podklyuch (rastamojka + yo‘lkira)');
+    expect(text).toContain('taxminiy podklyuch (rastamojka + yo‘lkira)');
     expect(text).toContain('Rastamojka jami: ≈ $661.76');
     expect(text).toContain('Yo‘lkira (Xitoy → O‘zbekiston, 180 kg/m³ · $160/m³ × 12 m³): ≈ $1920.00');
     expect(text).toContain('JAMI (rastamojka + yo‘lkira): ≈ $2581.76');
@@ -139,7 +142,7 @@ describe('the AI-VED reply', () => {
 
   it('a customs-only job never mentions the road at all', () => {
     const text = aiVedReplyText(base);
-    expect(text).toContain('tahminiy rastamojka');
+    expect(text).toContain('taxminiy rastamojka');
     expect(text).not.toContain('Yo‘lkira');
     expect(text).not.toContain('JAMI');
   });
@@ -458,6 +461,22 @@ describe('two customs totals (his 2.2 b, docs/SAKKIZ-R2.md §2.2)', () => {
     expect(text).toContain('   ⚠️ Sumka: baza yo‘q — Sumka — VED xodimi qo‘yadi');
   });
 
+  it('a row priced on an OLD baza says so in the line’s head — exact, refused alike (review law-money-R2-2)', () => {
+    // The figure is the screen's own and stays; the age is what the screen's
+    // ⚠ chip says beside it, and the seller repeats the figure.
+    const exact = aiVedReplyText({ ...base, lines: [line({ bazaSource: 'import', staleBaza: true })] });
+    expect(exact).toContain('1. Monitor 24" · 8528520000 · 100 dona × $20/dona 📥 · ⚠ eski baza\n');
+    expect(exact).toContain('boj 10% · QQS 12% → $496.96');
+    const refused = aiVedReplyText({
+      ...base,
+      totalUsd: null,
+      lines: [line({ staleBaza: true, customsUsd: null, refusal: 'boj kamida $3/dona', refusalTail: 'seller' })],
+    });
+    expect(refused).toContain('🧠 · ⚠ eski baza\n   ⚠️ boj kamida $3/dona');
+    // A fresh baza wears nothing.
+    expect(aiVedReplyText(base)).not.toContain('eski baza');
+  });
+
   it('a weight copied from the shipment’s brutto total is said beside the measure (⭐ of his Question 4)', () => {
     const text = aiVedReplyText({
       ...base,
@@ -485,6 +504,26 @@ describe('the road: the guess said, who fixes a refusal, and the JAMI that knows
     // An exact customs total and a guessed zone: the sum is still an estimate.
     expect(text).toContain('JAMI taxminiy (rastamojka + yo‘lkira): ≈ $2581.76');
     expect(text).not.toContain('JAMI (');
+  });
+
+  it('a road on the lines’ Σ for a cube the request lacks → never the plain «JAMI» (review law-money-R2-1)', () => {
+    // An exact customs total, a STORED zone, and a cube the request does not
+    // hold: the VED's own freight refuses it, so «JAMI (…)» would print a sum
+    // that is on no screen. The estimate says so, and the lenta tells the VED.
+    const fromLines = road({
+      listUsd: 448,
+      routeLabel: 'Xitoy → O‘zbekiston',
+      bandText: '180 kg/m³ · $160/m³ × 2.8 m³ (qatorlardan)',
+      volumeFromLines: true,
+      exact: false,
+    });
+    const chat = aiVedReplyText({ ...base, freight: fromLines });
+    expect(chat).toContain('JAMI taxminiy (rastamojka + yo‘lkira): ≈ $1109.76');
+    expect(chat).not.toContain('JAMI (');
+    const lenta = aiVedReplyText({ ...base, link: null, audience: 'lenta', freight: fromLines }).split('\n');
+    expect(lenta[1]).toBe(
+      `${VED_ESTIMATE_MARK} bu AI taxmini, rasmiy emas — yo‘lkira hajmi qatorlardan — so‘rovda umumiy hajm yo‘q. Muhrlashdan yoki «Bajarildi» (Готово) bosishdan oldin o‘zingiz tekshiring.`,
+    );
   });
 
   it('Taxminiy plus a stored-zone road → JAMI taxminiy on the estimate', () => {
@@ -532,7 +571,7 @@ describe('the card’s copy: the VED’s line under its heading (his 2.4 c, §2.
   it('is LINE 2, directly under the heading — only on the lenta, only with an estimate', () => {
     const lenta = aiVedReplyText({ ...withEstimate, audience: 'lenta' }).split('\n');
     expect(lenta[1]).toBe(
-      `${VED_ESTIMATE_MARK} bu AI taxmini, rasmiy emas — 📊 baza deklaratsiyalar medianasidan. Muhrlash yoki «Готово»dan oldin o‘zingiz tekshiring.`,
+      `${VED_ESTIMATE_MARK} bu AI taxmini, rasmiy emas — 📊 baza deklaratsiyalar medianasidan. Muhrlashdan yoki «Bajarildi» (Готово) bosishdan oldin o‘zingiz tekshiring.`,
     );
     expect(lenta.filter((l) => l.startsWith(VED_ESTIMATE_MARK))).toHaveLength(1);
     // The chat never carries it…
@@ -554,7 +593,7 @@ describe('the card’s copy: the VED’s line under its heading (his 2.4 c, §2.
       }),
     }).split('\n');
     expect(lenta[1]).toBe(
-      `${VED_ESTIMATE_MARK} bu AI taxmini, rasmiy emas — 📊 baza deklaratsiyalar medianasidan · zona «Yiwu»dan taxmin. Muhrlash yoki «Готово»dan oldin o‘zingiz tekshiring.`,
+      `${VED_ESTIMATE_MARK} bu AI taxmini, rasmiy emas — 📊 baza deklaratsiyalar medianasidan · zona «Yiwu»dan taxmin. Muhrlashdan yoki «Bajarildi» (Готово) bosishdan oldin o‘zingiz tekshiring.`,
     );
   });
 

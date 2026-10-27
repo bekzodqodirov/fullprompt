@@ -5,6 +5,7 @@ import { kindList } from '../finance/ledger-sql';
 import { debtReleaseReasonSql, wentOutOnDebtSql } from '../debt/releases';
 import {
   AI_REPLY_HEAD,
+  TARIFF_PRICED_HEAD,
   TARIFF_REPLY_HEAD,
   VED_ESTIMATE_MARK,
   type MachineReplyKind,
@@ -232,12 +233,15 @@ export async function clientFeed(clientId: string | null, opts: FeedOptions): Pr
           -- The estimate branch comes first — a reply carrying the VED line
           -- (a 📊 median or a guessed zone) must not wear the same chip as a
           -- fully exact one; that is the whole of the mark he asked for.
+          -- «tariff» says «Tarif bo‘yicha taxmin», so it anchors on the PRICED
+          -- title: a refused yolkira reply carries no figure, and an estimate
+          -- chip on a non-answer would call it one (review PF-9).
           'machineReply', CASE
             WHEN a.created_by IS NULL
              AND (starts_with(a.note, ${AI_REPLY_HEAD}::text) OR starts_with(a.note, ${TARIFF_REPLY_HEAD}::text))
-             AND strpos(a.note, ${VED_ESTIMATE_MARK}::text) > 0                          THEN 'estimate'
-            WHEN a.created_by IS NULL AND starts_with(a.note, ${AI_REPLY_HEAD}::text)     THEN 'ai'
-            WHEN a.created_by IS NULL AND starts_with(a.note, ${TARIFF_REPLY_HEAD}::text) THEN 'tariff'
+             AND strpos(a.note, ${VED_ESTIMATE_MARK}::text) > 0                           THEN 'estimate'
+            WHEN a.created_by IS NULL AND starts_with(a.note, ${AI_REPLY_HEAD}::text)      THEN 'ai'
+            WHEN a.created_by IS NULL AND starts_with(a.note, ${TARIFF_PRICED_HEAD}::text) THEN 'tariff'
           END,
           'files', (
             SELECT coalesce(jsonb_agg(jsonb_build_object(
