@@ -188,6 +188,17 @@ export function candidateStatement(
   // knowable without a name, and every row still carries `nameSim` 0 so the
   // AUTO-fill's threshold can never be met by accident.
   const sim = needle === null ? sql`0::real` : sql`word_similarity(${needle}, r.name_norm)`;
+  // The similarity is the costly half of the scan, and the score needs it
+  // too — but postgres shares no common subexpression, so `${sim}` written
+  // into both the select list and the score is computed TWICE per row
+  // (review perf-1: ~1.8× on a heading, measured). Both branches therefore
+  // compute it ONCE in an inner select fenced by `OFFSET 0` (without the
+  // fence the planner pulls the subquery up and splices the expression back
+  // into every reference), and the score reads the column.
+  const simOnce = sql`SELECT r.id, r.tnved_code, r.name, r.unit, r.price_per_unit_usd,
+                r.weight_per_unit_kg, r.declared_at, r.sender, r.origin_country,
+                ${sim} AS name_sim
+           FROM customs_import_rows r`;
   // The row's accepted units, as a postgres list — a JS array bound into a
   // raw fragment is not one. An empty list matches nothing, honestly.
   const accepts =
@@ -199,10 +210,10 @@ export function candidateStatement(
         )})`;
   const score = sql`CASE
              WHEN ${wantWeight} AND r.unit = 'dona' AND r.weight_per_unit_kg IS NOT NULL
-               THEN 0.7 * ${sim}
+               THEN 0.7 * r.name_sim
                   + 0.3 * (1 - LEAST(1, abs(${w}::numeric - r.weight_per_unit_kg)
                                         / GREATEST(${w}::numeric, 0.01)))
-             ELSE ${sim}
+             ELSE r.name_sim
            END`;
 
   // The named series is a STATISTIC, read with `=` below: on a heading it
@@ -221,33 +232,33 @@ export function candidateStatement(
            r.declared_at::text AS declared_at,
            r.sender,
            r.origin_country,
-           ${sim} AS name_sim,
+           r.name_sim,
            ${score} AS score,
            -- The count rides the same scan: the screen must be able to say
            -- «200 declarations · the 50 closest» rather than imply that the
            -- page it shows is the whole file.
            count(*) OVER () ::int AS total
-      FROM customs_import_rows r
-     WHERE r.batch_id = ${batchId}::uuid
-       -- A full code exactly; a heading (round 2) by its btree range, each
-       -- row then carrying its own code for the list and the AI pick.
-       AND ${codeMatchSql(sql`r`, input.tnvedCode)}
+      FROM (${simOnce}
+             WHERE r.batch_id = ${batchId}::uuid
+               -- A full code exactly; a heading (round 2) by its btree
+               -- range, each row then carrying its own code for the list
+               -- and the AI pick.
+               AND ${codeMatchSql(sql`r`, input.tnvedCode)}
+            OFFSET 0) r
      ORDER BY (${accepts}) DESC, score DESC, r.declared_at DESC NULLS LAST
      LIMIT ${limit}`;
   }
 
   return sql`
     WITH scored AS MATERIALIZED (
-      SELECT r.id, r.tnved_code, r.name, r.unit, r.price_per_unit_usd, r.weight_per_unit_kg,
-             r.declared_at, r.sender, r.origin_country,
-             ${sim} AS name_sim,
-             ${score} AS score
-        FROM customs_import_rows r
-       WHERE r.batch_id = ${batchId}::uuid
-         -- EXACT, never a heading range: the name-matched series is a
-         -- statistic, and a heading-wide one mixes subheadings (§7.4). The
-         -- caller asks for it only on a full code.
-         AND r.tnved_code = ${input.tnvedCode}
+      SELECT r.*, ${score} AS score
+        FROM (${simOnce}
+               WHERE r.batch_id = ${batchId}::uuid
+                 -- EXACT, never a heading range: the name-matched series is
+                 -- a statistic, and a heading-wide one mixes subheadings
+                 -- (§7.4). The caller asks for it only on a full code.
+                 AND r.tnved_code = ${input.tnvedCode}
+              OFFSET 0) r
     ), nna AS (
       -- D3: the country filter applies only when the file names countries at
       -- all — decided over the whole code in this batch, never per unit.

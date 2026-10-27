@@ -206,6 +206,24 @@ describe('10. the auto-fill pays for no aggregate (rendered, not read)', () => {
     expect(text).toContain('named_q');
     expect(text).toContain('named_ex');
   });
+  it('every shape computes the similarity ONCE per row, behind an OFFSET 0 fence (review perf-1)', () => {
+    // Postgres shares no common subexpression: written into the select list
+    // AND both arms of the score, `word_similarity` ran up to three times per
+    // row — measured ~1.6× on a 30k-row heading. The fence keeps the planner
+    // from pulling the inner select up and splicing it back in.
+    const dona = { ...input, units: ['dona' as const], weightPerUnitKg: 0.5 };
+    const shapes = [
+      candidateStatement(id, input, 'abcd', 10),
+      candidateStatement(id, dona, 'abcd', 10),
+      candidateStatement(id, { ...dona, tnvedCode: '6702' }, 'abcd', 50),
+      candidateStatement(id, dona, 'abcd', 10, { minSim: 0.45 }),
+    ];
+    for (const shape of shapes) {
+      const text = dialect.sqlToQuery(shape).sql;
+      expect(text.match(/word_similarity\(/g), text).toHaveLength(1);
+      expect(text).toMatch(/OFFSET 0\)\s+r\b/);
+    }
+  });
 });
 
 describe('11. «Xitoy» names the territories that are NOT China', () => {
