@@ -3796,7 +3796,7 @@
     "makeOffer": "Предложение клиенту",
     "belowFloor": "Ниже себестоимости — расчёт дал {floor} $",
     "belowFloorChip": "ниже",
-    "offerSent": "Отправлено в Telegram",
+    "offerSent": "PDF и текст отправлены в Telegram",
     "offerNoTelegram": "Telegram не подключён — скопируйте текст",
     "offerMuted": "В вашем профиле эти сообщения в Telegram выключены — скопируйте текст",
     "offerText": "Текст предложения",

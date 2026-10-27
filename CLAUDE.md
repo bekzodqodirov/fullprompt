@@ -2981,6 +2981,17 @@ the vouch term (`tarkibVouchesSql`), `tnved_would_vanish`, «шт» on Packing (
 agent file. Stated, not built: #1476 (Q8 — a truck price over two deals of one client — asked). Deploy MUST
 rebuild tg-listen (`inboundMatch` changed).
 
+**Round — narx taklifi PDF bilan (2026-10-27; DECISIONS #1479-#1480; NO migration, ledger 137).** His
+«narx taklifi text bolib sotuvchi telegramiga kelyabti pdf ham birga kelsin … shu telegramni ozini jonatish
+imkoni uchun»: the seller's `CalcOffer` row carries `offerId` (`recordOffer` + `releaseOffer`), and the drain's
+`deliverWithSheet` builds the sheet at send time (dynamic import of `wms/calc/offer-sheet-file.ts`, the ONE
+assembler the by-id PDF route uses too) and sends `sendDocument` with the offer text as the CAPTION — one
+message, one forward. A 400 about the file sends the words alone; a 429 pauses; a caption over 1024 goes text
+first, sheet in reply. Pinned by `offer-sheet-telegram.integration.test.ts` (6 red proofs). His two other items
+of that message were ASKED, not built: plan cargo still on the road to the origin warehouse (questions on what
+counts as «yo'lda», approval before arrival, the short-load case), and «files do not download on the phone» —
+measured green in a phone-shaped Chromium with the service worker (#1480), so the device/browser is asked.
+
 **Latest migration: 0136** (`lead_client_many`, `when` …115; ledger must reach **137**). Before
 it: 0135 (`load_mode`, `when` …114). Before
 it: 0134 (`staff_group`, `when` …113). Before

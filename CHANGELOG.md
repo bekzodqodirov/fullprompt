@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## 2026-10-27 — Narx taklifi Telegramga PDF bilan keladi
+
+Sizning so'zlaringiz: «narx taklifi text bolib sotuvchi telegramiga kelyabti pdf ham birga kelsin telegramga shu telegramni ozini jonatish imkoni uchun». **Migratsiya yo'q** — deploydan keyin migratsiyalar soni o'zgarmaydi (137). Yangi kod ishlayotganini `curl -s https://gsrwms.uz/api/version` bilan tekshiring.
+
+- Sotuvchi narx taklifini yozganda Telegramga endi **bitta xabar** keladi: **PDF fayl, ostida taklif matni**. Shu xabarni mijozga «Forward» qilsa — PDF ham, matn ham birga ketadi.
+- PDF — kartadagi «📄 PDF» tugmasi beradigan varaqning o'zi (mijoz, tovarlar, narx, sotuvchi, imzo). Til — sotuvchi taklifda tanlagan til.
+- Fayl nomi: «GSR-taklif-B-00123.pdf» (ruscha taklifda «GSR-predlozhenie-…»). Mijozning telefonida shunday nom bilan saqlanadi.
+- Tannarxdan past narx (ruxsat kutayotgan) — ruxsat berilmaguncha na matn, na PDF ketadi. Ruxsat berilganda ikkalasi birga keladi.
+- Telegram faylni olmasa ham (kamdan-kam), matn baribir keladi — taklif hech qachon yo'qolmaydi.
+- Taklif yozilgan oynadagi yozuv: «PDF va matn Telegramga yuborildi».
+
 ## 2026-10-27 — Uch band: narxdan hisob-kitobga link, har so'rovga yangi bitim, bitta qatorli tarkib va «шт» ustuni
 
 Sizning so'zlaringiz (uchta band) va javobingiz: «3b / 4 a / 5 a / 6 a / 7 b» (1 va 2 savolga javob bo'lmadi — ⭐ variant qurildi). **Migratsiya 0136 — deploydan keyin migratsiyalar soni 137 bo'lishi kerak.** Bu deployda **tg-listen ham qayta qurilishi kerak** (sayt va reklama lidlari endi hamkasb mijozi haqidagi lidga qo'shilmaydi).

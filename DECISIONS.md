@@ -4647,3 +4647,32 @@ the chat's 🧮 and both thread actions; a closed lead's OWN chat still drew �
 refusal — not drawn, and refused before the model; and moving the note into the transaction widened the
 double-press window, so the second press met the note's key as a raw 23505 — mapped to `note_taken`
 (`violatedUnique`, beside `violatedCheck`), proven by two presses parked on a held lead lock.
+
+## Narx taklifi PDF bilan — the seller's offer arrives as one message (2026-10-27; NO migration, ledger 137; numbered past main's #1478 and PR #127's #1455-#1468)
+
+1479. **The seller's offer is ONE Telegram message: the sheet, with the offer text as its caption** (his
+2026-10-27 «narx taklifi text bolib sotuvchi telegramiga kelyabti pdf ham birga kelsin telegramga shu
+telegramni ozini jonatish imkoni uchun»). A caption travels with its file, so a forward carries both — two
+messages (text, then the sheet) would make the seller forward twice, which is the friction he named. The PDF
+is built in the DRAIN at send time, not stored: `recordOffer` and `releaseOffer` put only `offerId` on the
+row (`notifyStaffTelegram`'s `extra`), and `deliverWithSheet` (notifications/service.ts) reaches the builder
+by dynamic import, the boss.ts crossing — a PDF in the queue's jsonb is bytes in a table read every minute.
+ONE assembler, `wms/calc/offer-sheet-file.ts`, for the by-offer-id route and the drain (round 112's «one
+paper», one level up); the route keeps its door, the drain sends only to the seller who made the offer. The
+sheet is an addition, never the delivery (round C's photo rule): a 400 about the FILE sends the words alone;
+any other failure is returned as it is, so a 429 still pauses the drain and a 5xx retries the row WITH the
+sheet; a caption over 1024 (a long client name) goes as the text and then the sheet in reply to it. A row
+queued before this round has no `offerId` and goes as the text it always was. The released clause rides the
+assembler's own fetch, so a pending below-floor promise has no sheet by URL or by Telegram. The file name is
+ASCII, in the offer's language, with the deal code («GSR-taklif-B-00123.pdf») — a phone's Downloads and every
+Telegram client keep it whole. The route's sheet now carries the same name. Red-proven ×6 by string edit (the
+id dropped at each of the two doors, the drain branch, the 400 road, the 429 road, the released clause).
+
+1480. **«Filelar telefonda skachat bo'lmayabti» was MEASURED before anything changed, and the code was not the
+cause on the one phone this container can be.** A phone-shaped Chromium (Pixel 7, touch, the service worker
+installed and controlling the page) downloaded the Ostatka and the client book in under a second through the
+worker's NetworkFirst `/api/*` route. So the difference is the phone's: an iPhone home-screen app (standalone
+WebKit is known to drop attachment downloads and to open a PDF with no way back), Telegram's in-app browser
+(the ↗️ Ochish buttons open the system there), or a specific Android. Asked of him with options — which file,
+which phone, opened from where, what happens — rather than shipping a guess (#419's rule: ask for the
+screenshot first; #476's: the working case is the control group).

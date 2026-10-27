@@ -3796,7 +3796,7 @@
     "makeOffer": "Mijozga taklif",
     "belowFloor": "Tannarxdan past — hisob {floor} $ chiqqan",
     "belowFloorChip": "past",
-    "offerSent": "Telegramga yuborildi",
+    "offerSent": "PDF va matn Telegramga yuborildi",
     "offerNoTelegram": "Telegram ulanmagan — matnni nusxalab oling",
     "offerMuted": "Profilingizda bu Telegram xabarlari o'chirilgan — matnni nusxalab oling",
     "offerText": "Taklif matni",

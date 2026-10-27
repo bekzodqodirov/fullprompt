@@ -3796,7 +3796,7 @@
     "makeOffer": "向客户报价",
     "belowFloor": "低于成本 — 核算结果为 {floor} 美元",
     "belowFloorChip": "偏低",
-    "offerSent": "已发送到 Telegram",
+    "offerSent": "PDF 和文字已发送到 Telegram",
     "offerNoTelegram": "未连接 Telegram — 请复制文本",
     "offerMuted": "您的个人资料中已关闭这些 Telegram 消息 — 请复制文本",
     "offerText": "报价文本",
