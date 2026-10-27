@@ -120,9 +120,12 @@ describe('a prixod that gets a deal carries the deal’s FTL (1a)', () => {
     expect(link).not.toMatch(/DELETE FROM receipt_load_mode|setReceiptLoad\(/);
   });
 
-  it('winLead carries the lead’s mark into its deal', () => {
+  it('winLead carries the lead’s mark into EVERY deal it opens', () => {
+    // A won lead opens a deal per sale (his Q5 a): the main one and each
+    // other sale's — all of them the lead's FTL job (proved red in
+    // win-split.integration.test.ts; this pins both call sites).
     const crm = read('src/modules/wms/crm/service.ts');
-    expect(bodyOf(crm, 'export async function winLead(')).toContain('{ carryFtlFromLead: id }');
+    expect(bodyOf(crm, 'export async function winLead(').match(/carryFtlFromLead: id\b/g)?.length).toBe(2);
     // The carry lives in the transaction body both creators share (UCH-BAND §7).
     expect(bodyOf(read('src/modules/wms/deals/service.ts'), 'export async function createDealInTx(')).toContain(
       'carryLeadFtlTx(tx, pre.carryFtlFromLead',

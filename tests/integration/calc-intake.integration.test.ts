@@ -363,6 +363,50 @@ describe('where a confirmed intake lands', () => {
     expect(second.outcome).toBe('about_joined');
   });
 
+  it('a stranger’s request never joins a lead ABOUT a client, even on that client’s phone (deploy-4)', async () => {
+    const [seller] = await db
+      .insert(users)
+      .values({ phone: `+99896${STAMP}6`, fullName: `Hamkasb2 ${STAMP}`, passwordHash: 'x' })
+      .returning();
+    madeUsers.push(seller!.id);
+    const phone = `+99893${STAMP}7`;
+    const code = `HP${STAMP}`;
+    const [client] = await db
+      .insert(clients)
+      .values({ clientCode: code, name: 'Telefonli hamkasb mijozi', phones: [phone], salesManagerId: seller!.id })
+      .returning();
+    const about = await landIntake({
+      noteId: uuidv4(),
+      section: 'rastamojka',
+      facts: { weightKg: 20, volumeM3: 1, goods: [{ name: 'Lampa' }] },
+      steps: [],
+      fileCount: 0,
+      collectedBy: actorId,
+      collectedByName: 'Bot xodim',
+      client: { id: client!.id, clientCode: code, name: client!.name },
+      leadName: code,
+      leadPhone: null,
+    });
+    madeLeads.push(about.id);
+    const [aboutLead] = await db.select().from(leads).where(eq(leads.id, about.id));
+    expect(aboutLead!.phone).toBe(phone);
+    const stranger = await landIntake({
+      noteId: uuidv4(),
+      section: 'yolkira',
+      facts: { fromCity: 'Yiwu', toCity: 'Toshkent', weightKg: 80, volumeM3: 1, goods: [] },
+      steps: [],
+      fileCount: 0,
+      collectedBy: actorId,
+      collectedByName: 'Bot xodim',
+      client: null,
+      leadName: 'Notanish',
+      leadPhone: phone,
+    });
+    madeLeads.push(stranger.id);
+    expect(stranger.kind).toBe('lead');
+    expect(stranger.id).not.toBe(about.id);
+  });
+
   it('a stranger gets a LEAD, and their second request joins it', async () => {
     const phone = `+99894${STAMP}1`;
     const target = await landIntake({
