@@ -12,8 +12,11 @@
  * the fixture), and 67 once the lead undid the three round-6 sub-rules
  * behind the COMMON ones and the probe of that undo joined c2178-c2277
  * (DECISIONS #1466; c2154/c2155 came back by choice — the numbers in a name
- * are compared as written, a unit conversion is not), and 144 once the last
- * bounded probe's cases joined (c2278-c2381, after the model-tier rule):
+ * are compared as written, a unit conversion is not), 144 once the last
+ * bounded probe's cases joined (c2278-c2381, after the model-tier rule), and
+ * 142 once round 2's «Kiritish» gave the volume path the weight's PER_PACKAGE
+ * refusal (c2115, c2116 — one carton's m³ is no longer the line's,
+ * docs/SAKKIZ-R2.md §8.2.1):
  * each a reviewer's input the readers still get wrong. They run
  * as `it.fails`: a fix that makes one pass turns it RED here until its id
  * leaves this list, so the list can only shrink, and nothing on it is
@@ -42,11 +45,6 @@ export const KNOWN_FAILING: ReadonlySet<string> = new Set([
   // parseGoods: «груза» / «yuk» are naming words now, so «Наименование груза»
   // / «Yuk nomi» (the cargo's kind) outranks the product name column. Rare.
   'c2113', 'c2114',
-  // parseGoods: CUBIC_METRE admits a bracketed «(CU.M)» and the volume path
-  // has no PER_PACKAGE refusal, so one carton's m³ («MEAS./CTN(CU.M)»,
-  // «Measurement per ctn (cu.m)») becomes the line's volume, 10× short —
-  // f44a5a6 left it empty and asked. Rare.
-  'c2115', 'c2116',
 
   // ── r6-probe typed (recorded, not fixed) ─────────────────────────────────
   // parseGoodsLine: unitField keeps a carton noun as the product's own unless

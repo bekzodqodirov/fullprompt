@@ -37,6 +37,7 @@ import {
 } from './intake';
 import { bookLawsFor } from './book-laws';
 import { doorRow } from './door-row';
+import { linesVolumeM3 } from './line-totals';
 import type { NeedLaw } from './needs';
 import type { BazaBasis, MeasureUnit } from './pricing';
 import { parseTypedMoney } from './money-input';
@@ -392,6 +393,24 @@ export async function openCalcRequest(
     note: row.note,
   }));
 
+  // The shipment's m³: the seller's, else SUMMED from the door-routed lines
+  // (his 2.7 b; `linesVolumeM3`, all lines or none). Stored HERE, at the
+  // INSERT, and nowhere later (docs/SAKKIZ-R2.md §8.2.3):
+  //  - MR-9 keeps a request m³ so the upsale's payout scales on the QUOTED
+  //    cube, and the checklist now stops asking a total the lines already
+  //    give (`factsVolumeM3`) — a request landed with lines and no stored
+  //    total would pay the whole share on the first carton, MR-9's own
+  //    failure;
+  //  - a later write moves the revision, and the queued pass would stand down.
+  // Its provenance is never stored: «qatorlardan» is derived at read time
+  // (`Workspace.volumeFromLines`, K13); the audit row below records the fact.
+  // A typed 0 is a blank somebody typed over — the checklist's own reading
+  // (`factsVolumeM3` sums under it), so the INSERT sums under it too, or the
+  // chip and the stored column would disagree.
+  const typedVolume = Number(input.volumeM3) > 0 ? input.volumeM3! : null;
+  const linesVolume = typedVolume === null ? linesVolumeM3(rows) : null;
+  const volumeM3 = num(typedVolume ?? linesVolume ?? input.volumeM3);
+
   // Pooled, so BEFORE the transaction (#714); the pick itself is inside it.
   const pool = await vedRotaPool();
   const hasMaterials = Boolean(noteId) || Boolean(input.hasMaterials);
@@ -411,7 +430,7 @@ export async function openCalcRequest(
         fromCity: input.fromCity?.slice(0, 120) || null,
         toCity: input.toCity?.slice(0, 120) || null,
         weightKg: num(input.weightKg),
-        volumeM3: num(input.volumeM3),
+        volumeM3,
         source: input.source,
         hasCertificate: input.hasCertificate ?? true,
         freightZone,
@@ -433,6 +452,7 @@ export async function openCalcRequest(
         section: input.section,
         items: items.length,
         dueAt: dueAt.toISOString(),
+        ...(linesVolume !== null ? { volumeFromLines: true } : {}),
       },
     });
     return { requestId: id, assigneeId };
@@ -1424,7 +1444,10 @@ async function goodsByRequest(ids: string[]): Promise<Map<string, GoodsFact[]>> 
  *
  * The facts are STORED rows: nothing is derived from the shipment total
  * (`lineWeightsStated`) — a row the card form landed without a netto weight
- * has none, and a chip calling it complete would contradict the engine.
+ * has none, and a chip calling it complete would contradict the engine. Nor
+ * the other way (`totalsStored`, judge regression-3): a stored `volume_m3`
+ * of null is what the freight engine refuses `measure_missing` on, so the
+ * chip keeps asking it even when the lines would add up.
  */
 export function missingFor(
   section: string | null,
@@ -1432,7 +1455,7 @@ export function missingFor(
   laws: ReadonlyMap<string, NeedLaw>,
 ): string[] {
   if (!section) return [];
-  return missingFields(section as CalcSection, { ...facts, lineWeightsStated: true }, laws);
+  return missingFields(section as CalcSection, { ...facts, lineWeightsStated: true, totalsStored: true }, laws);
 }
 
 /** The lines behind `missingFor`'s `lineNeed` / `itemMeasure` — same facts. */
@@ -1442,7 +1465,7 @@ export function lineNeedsFor(
   laws: ReadonlyMap<string, NeedLaw>,
 ): LineNeed[] {
   if (!section) return [];
-  return lineNeeds(section as CalcSection, { ...facts, lineWeightsStated: true }, laws);
+  return lineNeeds(section as CalcSection, { ...facts, lineWeightsStated: true, totalsStored: true }, laws);
 }
 
 /**

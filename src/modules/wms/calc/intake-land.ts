@@ -10,6 +10,7 @@ import { logger } from '../../platform/logger';
 import { intakeNoteText, landingItems, type CalcFacts, type CalcSection } from './intake';
 import { bookLawsFor } from './book-laws';
 import { recordAiPass } from './ai-cost';
+import type { AiUsage } from '../tnved/service';
 import { queueCalcPrefill } from './prefill-queue';
 import { CalcError } from './service';
 
@@ -212,8 +213,12 @@ export async function landIntake(input: {
   hasCertificate?: boolean;
   /** The zone the seller chose on the AI podklyuch door («qayerdan?»). */
   freightZone?: string | null;
-  /** What the intake's model call cost — recorded once the request exists. */
-  usage?: { model: string; inputTokens: number; outputTokens: number } | null;
+  /**
+   * What the intake's model calls cost — EVERY reading the model answered,
+   * ok or not, a re-read included (his 2.9 c) — recorded once the request
+   * exists, one `'intake'` row each.
+   */
+  usages?: readonly AiUsage[];
 }): Promise<IntakeTarget> {
   const target = input.client
     ? await dealFor(
@@ -299,15 +304,24 @@ export async function landIntake(input: {
     );
     queued = true;
     requestId = opened.id;
-    if (input.usage) {
-      await recordAiPass({
-        requestId: opened.id,
-        staffId: input.collectedBy,
-        kind: 'intake',
-        model: input.usage.model,
-        inputTokens: input.usage.inputTokens,
-        outputTokens: input.usage.outputTokens,
-      });
+    // Each bill in its OWN try (judge concurrency-8): the records shared one
+    // `try` with the queue below, so a failed bookkeeping insert skipped the
+    // pass — the request landed with no reply — and every extra record is
+    // one more chance of that. Still BEFORE the queue, so the soft budget
+    // the pass reads already counts the intake's calls.
+    for (const usage of input.usages ?? []) {
+      try {
+        await recordAiPass({
+          requestId: opened.id,
+          staffId: input.collectedBy,
+          kind: 'intake',
+          model: usage.model,
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+        });
+      } catch (err) {
+        logger.warn({ err, requestId: opened.id }, '[calc-intake] usage not recorded');
+      }
     }
     // …and the AI VED hodimi is handed the job HERE rather than by the
     // caller. The bot did it from its own handler, so any second caller of

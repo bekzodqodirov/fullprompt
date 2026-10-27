@@ -71,7 +71,12 @@ import {
   intakeClientSummary,
   intakeFileKind,
   mergeLineAnswers,
+  mergeTotalsAnswer,
   resolveLineDone,
+  bareTotalsNumber,
+  looksLikeTotalsAnswer,
+  totalsQuestion,
+  totalsQuestionText,
   MAX_INTAKE_IMAGES,
   MAX_INTAKE_PDF_BYTES,
   MAX_INTAKE_PDFS,
@@ -1091,6 +1096,17 @@ export function registerStaffBot(bot: Bot): void {
   });
 }
 
+/** The orphaned totals answer's one sentence (judge concurrency-5). */
+export const LOST_TOTALS_ANSWER =
+  'Hisoblatish to‘plami topilmadi (bot qayta ishga tushgan bo‘lishi mumkin) — 🧮 ni qayta bosing.';
+
+/** «I could not read that» after the totals question — with ITS example. */
+const TOTALS_NOT_READ: Record<import('./calc-intake').TotalsAsk, string> = {
+  kg: 'Tushunmadim. Brutto og‘irlikni yozing: «3500» yoki «3500 kg».',
+  m3: 'Tushunmadim. Umumiy hajmni yozing: «12» yoki «12 kub».',
+  both: 'Tushunmadim. «12 kub 3500 kg» ko‘rinishida yozing.',
+};
+
 /** What the staff tail needs from grammy's context. */
 type StaffTailCtx = {
   reply: (text: string, extra?: Record<string, unknown>) => Promise<{ message_id: number }>;
@@ -1102,9 +1118,10 @@ type StaffTailCtx = {
  * claimed them: the free lookup, then any code-shaped word inside them, then
  * a typed zametka name, then (paid, last) the AI. ONE function, asked by the
  * ladder and by Door B's «🔍 Qidirish», so a forwarded text replays exactly
- * what it did before the topshiriq round.
+ * what it did before the topshiriq round. Exported for the test that proves
+ * an orphaned totals answer never reaches the paid assistant.
  */
-async function answerStaffText(
+export async function answerStaffText(
   ctx: StaffTailCtx,
   chatId: bigint,
   staffId: string,
@@ -1150,6 +1167,15 @@ async function answerStaffText(
   // «Topilmadi», which is the same lie in a cheaper voice. Once per chat.
   if (opts.backlog) {
     await tellBacklogOnce(ctx, chatId);
+    return;
+  }
+  // A totals answer with no collection to answer (judge concurrency-5): the
+  // collection lives in memory until round 3, and a restart or the TTL
+  // between the brutto question and «3500» loses it — the answer is said
+  // lost, in words, and never handed to the paid assistant, which can make
+  // nothing of a bare figure. A live collection never reaches this tail.
+  if (looksLikeTotalsAnswer(text) && !activeIntake(chatId)) {
+    await ctx.reply(LOST_TOTALS_ANSWER);
     return;
   }
   // Door B's «🔍 Qidirish» runs once per offer message: two taps, one model call.
@@ -1301,7 +1327,7 @@ async function askNextOrConfirm(
   chatId: bigint,
   state: IntakeState,
 ): Promise<void> {
-  const { nextLineToAsk, lineQuestionText, intakeSummaryText } = await import(
+  const { factsVolumeM3, nextLineToAsk, lineQuestionText, intakeSummaryText } = await import(
     '../../wms/calc/intake'
   );
   const laws = await intakeLaws(state);
@@ -1328,7 +1354,7 @@ async function askNextOrConfirm(
     updateIntake(chatId, {
       stage: 'question',
       askingIndex: line.index,
-      askingTotals: false,
+      askingTotalsFor: null,
       round: state.round + 1,
       reasked: false,
       offers: [],
@@ -1338,35 +1364,37 @@ async function askNextOrConfirm(
     return;
   }
 
-  // The road is priced on the shipment's TOTALS (the tariff's density band),
-  // so a podklyuch job missing either is asked ONCE, after the lines — one
-  // message, «12 kub 3500 kg», read by the same parser as the material.
-  if (
-    state.ai &&
-    state.section === 'podklyuch' &&
-    !state.totalsAsked &&
-    (state.facts.weightKg == null || state.facts.volumeM3 == null)
-  ) {
+  // The road is priced on the shipment's TOTALS (the tariff's density band ×
+  // m³), so every freight section is asked them ONCE, after the lines, on
+  // every door (his 2.7 b — it was the AI podklyuch door alone, and a plain
+  // yolkira landed with no kg). The kilos are BRUTTO and only ever asked;
+  // the cube is asked only when the lines cannot give it (`factsVolumeM3`),
+  // and the question names exactly what it asks (`totalsQuestion`).
+  const volume = factsVolumeM3(state.facts);
+  const ask = totalsQuestion(state, volume);
+  if (ask) {
     updateIntake(chatId, {
       stage: 'question',
       askingIndex: null,
-      askingTotals: true,
+      askingTotalsFor: ask,
       totalsAsked: true,
       reasked: false,
       offers: [],
       lineDone,
     });
     await ctx.reply(
-      'Yo‘lkira uchun umumiy hajm va og‘irlik kerak. Masalan: «12 kub 3500 kg»' +
-        (state.facts.volumeM3 != null ? `\n(hajm bor: ${state.facts.volumeM3} m³)` : '') +
-        (state.facts.weightKg != null ? `\n(og‘irlik bor: ${state.facts.weightKg} kg)` : ''),
+      totalsQuestionText(ask, state.facts, {
+        m3: volume,
+        fromLines: volume !== null && !(Number(state.facts.volumeM3) > 0),
+      }),
       { reply_markup: skipKeyboard() },
     );
     return;
   }
 
   const settled =
-    updateIntake(chatId, { stage: 'review', askingIndex: null, askingTotals: false, offers: [], lineDone }) ?? state;
+    updateIntake(chatId, { stage: 'review', askingIndex: null, askingTotalsFor: null, offers: [], lineDone }) ??
+    state;
   const { AI_READ_FAILURE } = await import('../../wms/calc/intake');
   const failure = settled.aiUsed ? null : (settled.aiFailure ?? 'not_configured');
   await ctx.reply(
@@ -1492,9 +1520,11 @@ const LINE_REFUSAL: Record<LineAnswerRefusal, (detail?: string) => string> = {
  * then kept as material — the VED reads everything the seller sent, so
  * nothing is lost by moving on, and a wrong reading would be a figure nobody
  * stated with a duty computed on it. A BARE number is never a default unit:
- * it is the law's one pinned unit, or buttons (P1.3, judge UX4).
+ * it is the law's one pinned unit, or buttons (P1.3, judge UX4) — and after
+ * the TOTALS question, the unit that question asked (§8.2.5). Exported for
+ * the test of that reading alone.
  */
-async function applyLineAnswer(
+export async function applyLineAnswer(
   ctx: CalcReplyCtx,
   chatId: bigint,
   state: IntakeState,
@@ -1512,15 +1542,34 @@ async function applyLineAnswer(
     numberText,
   } = await import('../../wms/calc/intake');
 
-  if (state.askingTotals) {
+  if (state.askingTotalsFor !== null) {
+    const ask = state.askingTotalsFor;
+    // A number that names no unit is what the QUESTION asked (his 2.7 b):
+    // «3500» after the brutto question is kilograms, «12» after the volume
+    // one is cubic metres — read by the house number reader with the unit
+    // word put after it, so its «1,200» rule decides and there is no second
+    // reader. After the question for BOTH it is neither, and is refused.
+    const bare = bareTotalsNumber(text);
+    if (bare && ask === 'both' && !state.reasked) {
+      // Refused, and still kept for the card (law 11): the VED reads it as typed.
+      updateIntake(chatId, { reasked: true, answers: [...state.answers, `Umumiy: ${text}`] });
+      await ctx.reply('Kub va kg ni birlik bilan yozing: «12 kub 3500 kg»');
+      return;
+    }
+    const read = parseManualFacts(bare && ask !== 'both' ? `${text.trim()} ${ask === 'kg' ? 'kg' : 'kub'}` : text);
     // Whatever of the two the answer states; the other keeps what it had.
-    const read = parseManualFacts(text);
-    const weightKg = read.weightKg ?? state.facts.weightKg ?? null;
-    const volumeM3 = read.volumeM3 ?? state.facts.volumeM3 ?? null;
+    // What was READ is kept apart (`totalsAnswer`) and put back on top of
+    // every re-read (judge concurrency-4) — the text goes to the card with
+    // the per-line answers, never into the material a re-read parses.
+    const totalsAnswer = {
+      weightKg: read.weightKg ?? state.totalsAnswer.weightKg,
+      volumeM3: read.volumeM3 ?? state.totalsAnswer.volumeM3,
+    };
     const kept =
       updateIntake(chatId, {
-        facts: { ...state.facts, weightKg, volumeM3 },
-        material: [...state.material, text],
+        facts: mergeTotalsAnswer(totalsAnswer, state.facts),
+        totalsAnswer,
+        answers: [...state.answers, `Umumiy: ${text}`],
       }) ?? state;
     if (read.ambiguous.length > 0 && !kept.reasked) {
       updateIntake(chatId, { reasked: true });
@@ -1529,10 +1578,10 @@ async function applyLineAnswer(
     }
     if (read.weightKg == null && read.volumeM3 == null && !kept.reasked) {
       updateIntake(chatId, { reasked: true });
-      await ctx.reply('Tushunmadim. «12 kub 3500 kg» ko‘rinishida yozing.');
+      await ctx.reply(TOTALS_NOT_READ[ask]);
       return;
     }
-    await askNextOrConfirm(ctx, chatId, { ...kept, askingTotals: false, reasked: false });
+    await askNextOrConfirm(ctx, chatId, { ...kept, askingTotalsFor: null, reasked: false });
     return;
   }
 
@@ -1861,12 +1910,21 @@ export function settleAnalysis(
     // into `answers`, not material, so nothing counts it as «arrived» —
     // landed without its figure. Re-applying an answer the snapshot already
     // had is idempotent, so both outcomes take the same merge.
-    facts: { ...analysed.facts, goods: mergeLineAnswers(analysed.facts.goods ?? [], live.lineAnswers) },
+    //
+    // The live totals answer too (judge concurrency-4), by the same rule and
+    // for the same reason; `totalsAsked` is the reading's own verdict over it.
+    facts: mergeTotalsAnswer(live.totalsAnswer, {
+      ...analysed.facts,
+      goods: mergeLineAnswers(analysed.facts.goods ?? [], live.lineAnswers),
+    }),
+    totalsAsked: analysed.totalsAsked,
     steps: analysed.steps,
     notes: analysed.notes,
     aiUsed: analysed.aiUsed,
     aiFailure: analysed.aiFailure,
-    usage: analysed.usage,
+    // The reading's bills, appended to the snapshot's (2.9 c) — one analysis
+    // runs at a time (the token), so the snapshot's are the live ones.
+    usages: analysed.usages,
     ambiguousTotals: analysed.ambiguousTotals,
     analysing: null,
     stage: arrived > 0 ? 'material' : 'review',
@@ -2566,7 +2624,7 @@ export async function handleCalcCallback(
     // The skipped line is DONE for this collection — never asked again, not
     // even after «➕ Yana ma'lumot» re-reads the material (P1.3).
     const skipped =
-      state.stage === 'question' && state.askingIndex !== null && !state.askingTotals
+      state.stage === 'question' && state.askingIndex !== null && state.askingTotalsFor === null
         ? doneLine(state.facts.goods, state.askingIndex)
         : null;
     const lineDone = skipped ? [...state.lineDone, skipped] : state.lineDone;
@@ -2579,7 +2637,7 @@ export async function handleCalcCallback(
     // pending question's own offers can be picked: a press from an older
     // message, or after the line moved on, finds nothing and says so.
     const offer = state.offers[Number(step.slice('pick_'.length))];
-    if (state.stage !== 'question' || state.askingIndex === null || state.askingTotals || !offer) {
+    if (state.stage !== 'question' || state.askingIndex === null || state.askingTotalsFor !== null || !offer) {
       await ctx.reply('Bu tugma eskirgan.');
       return;
     }

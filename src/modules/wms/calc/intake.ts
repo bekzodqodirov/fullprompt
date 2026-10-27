@@ -30,6 +30,8 @@ import {
   type RowNeed,
 } from './needs';
 import type { GoodsRow } from '../deals/goods-import';
+import { doorRow } from './door-row';
+import { linesVolumeM3 } from './line-totals';
 import type { BazaBasis, MeasureUnit } from './pricing';
 import { codeWrittenAsCode, parseGoodsLine, routeAmount, unitOf } from './units';
 
@@ -106,7 +108,11 @@ export type CalcField =
 export const FIELD_LABEL: Record<CalcField, string> = {
   fromCity: 'qaysi shahardan',
   toCity: 'qaysi shaharga',
-  weightKg: 'umumiy og‘irligi (kg)',
+  // BRUTTO, said where it is asked (his 2.7 b): the lines' kilos are netto
+  // — the baza and the per-kg floor are declared on them — and the truck is
+  // priced on what it carries with the packaging. A seller who read
+  // «og‘irligi» answered with the netto sum, which is the shorter number.
+  weightKg: 'umumiy brutto og‘irligi (kg, qadoq bilan)',
   volumeM3: 'umumiy hajmi (kub)',
   goods: 'tovar nomi',
   itemMeasure: 'tovarning soni yoki og‘irligi',
@@ -186,6 +192,18 @@ export interface CalcFacts {
    * weight, so the header chip and the engine's refusal would disagree.
    */
   lineWeightsStated?: boolean;
+  /**
+   * The totals were read back from a STORED request, and what the column
+   * holds is what the engine prices (docs/SAKKIZ-R2.md §8.2.2, judge
+   * regression-3). So nothing is derived from the lines: a stored request
+   * whose `volume_m3` is null (every pre-deploy request, or one the VED
+   * cleared) is refused by the workspace's freight with `measure_missing`,
+   * and a chip that called its volume present because the lines add up
+   * would disagree with that refusal — #649's shape. Set by `missingFor` /
+   * `lineNeedsFor` beside `lineWeightsStated`; unset on every door's READ
+   * facts, where the Σ is what the landing will store.
+   */
+  totalsStored?: boolean;
 }
 
 /** One goods line as a door hands it over. */
@@ -366,6 +384,43 @@ export function invoiceFacts(rows: readonly GoodsRow[]): CalcGoodsFact[] {
   }));
 }
 
+/**
+ * The shipment's cubic metres as a door's facts state them — typed or read,
+ * else SUMMED from the lines (his 2.7 b, docs/SAKKIZ-R2.md §8.2.2).
+ *
+ * The Σ is over the DOOR-ROUTED rows (`landingItems` → `doorRow`), never the
+ * read facts as they stand (probe P4): «Kafel 2 kub» arrives as a quantity of
+ * 2 with the unit word «kub», and only the door moves it into the volume
+ * column — so the checklist, the summary and the totals question see exactly
+ * the volume `openCalcRequest` will store at its INSERT, whichever door the
+ * job came through. ALL or nothing (`linesVolumeM3`): one line without a
+ * figure and there is no Σ to stand for the truck.
+ *
+ * A stored request derives nothing (`totalsStored`): its column is what
+ * prices it.
+ */
+export function factsVolumeM3(facts: CalcFacts): number | null {
+  return (
+    positive(facts.volumeM3) ?? (facts.totalsStored ? null : linesVolumeM3(landingItems(facts).map(doorRow)))
+  );
+}
+
+/** Was the volume SUMMED from the lines rather than stated (the label's one question)? */
+function volumeFromLines(facts: CalcFacts): boolean {
+  return positive(facts.volumeM3) === null && factsVolumeM3(facts) !== null;
+}
+
+/**
+ * The volume as the bot and the lenta print it — labelled «qatorlardan»
+ * when the lines gave it, so the seller reading the summary knows nobody
+ * typed it (§0.1(6): a Σ is data, but its provenance is said).
+ */
+function volumeText(facts: CalcFacts): string {
+  const volume = factsVolumeM3(facts);
+  if (volume !== null && volumeFromLines(facts)) return `${fmt(volume)} m³ (qatorlardan)`;
+  return num(facts.volumeM3, 'kub');
+}
+
 /** A line states SOME figure — a count, a net weight, a volume or a pair. */
 function statesAMeasure(i: CalcItemFact): boolean {
   return i.quantity !== null || i.weightKg !== null || i.volumeM3 !== null || i.measureQty !== null;
@@ -463,8 +518,10 @@ export function missingFields(
     // enough that a later `!items.length ||` would look like an improvement.
     if (field === 'itemMeasure') return lines.some((l) => l.anyMeasure);
     if (field === 'lineNeed') return lines.some((l) => l.pinned.length > 0);
+    // The weight is ASKED, never summed: line kilos are netto and the truck's
+    // are brutto (his 2.7 b) — a Σ would be a different, smaller number.
     if (field === 'weightKg') return !(Number(facts.weightKg) > 0);
-    if (field === 'volumeM3') return !(Number(facts.volumeM3) > 0);
+    if (field === 'volumeM3') return factsVolumeM3(facts) === null;
     return !String(facts[field] ?? '').trim();
   });
 }
@@ -582,7 +639,7 @@ export function intakeSummaryText(input: {
     (input.section === 'rastamojka'
       ? ''
       : `Yo‘nalish: ${input.facts.fromCity?.trim() || '—'} → ${input.facts.toCity?.trim() || '—'}\n`) +
-    `Og‘irlik: ${num(input.facts.weightKg, 'kg')} · Hajm: ${num(input.facts.volumeM3, 'kub')}\n` +
+    `Og‘irlik: ${num(input.facts.weightKg, 'kg')} · Hajm: ${volumeText(input.facts)}\n` +
     (goods.length
       ? `Tovarlar (${goods.length}):\n${goodsLines}${goods.length > 15 ? '\n…' : ''}\n`
       : 'Tovarlar: —\n') +
@@ -655,7 +712,7 @@ export function intakeNoteText(input: {
     (input.section === 'rastamojka'
       ? ''
       : `Yo‘nalish: ${input.facts.fromCity?.trim() || '—'} → ${input.facts.toCity?.trim() || '—'}\n`) +
-    `Og‘irlik: ${num(input.facts.weightKg, 'kg')} · Hajm: ${num(input.facts.volumeM3, 'kub')}\n` +
+    `Og‘irlik: ${num(input.facts.weightKg, 'kg')} · Hajm: ${volumeText(input.facts)}\n` +
     (input.fileCount ? `Fayllar: ${input.fileCount}\n` : '') +
     (goods.length ? `\nTovarlar:\n${goodsLines}\n` : '') +
     (input.steps.length ? `\nAI izohi:\n${input.steps.map((s) => `— ${s}`).join('\n')}\n` : '') +

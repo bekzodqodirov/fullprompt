@@ -664,3 +664,32 @@ describe('the fourth review of the header detective', () => {
     expect(first([['Item No.', 'Description', 'Qty'], ['YW-2301', 'Office chair', 10]]).description).toBe('Office chair');
   });
 });
+
+/**
+ * Round 2 of «Sakkiz band» (docs/SAKKIZ-R2.md §8.2.1, his 2.7 b, probe P1):
+ * the volume learned the weight's per-package refusal. Measured 14× short —
+ * a packing list's «CBM/CTN» stands before «TOTAL CBM», and the leftmost
+ * volume key named one carton's cube as the line's.
+ */
+describe('one carton’s volume is not the line’s (R2 §8.2.1)', () => {
+  const first = (rows: (string | number | null)[][]) => parseGoods(rows).goods[0]!;
+
+  it('«CBM/CTN» before «TOTAL CBM» — the line takes the TOTAL, and G.W. is never its weight', () => {
+    const line = first([
+      ['Description', 'Qty', 'CTNS', 'CBM/CTN', 'TOTAL CBM', 'N.W.', 'G.W.'],
+      ['LED panel', 240, 20, 0.12, 2.4, 240, 260],
+    ]);
+    expect(line).toMatchObject({ quantity: 240, volumeM3: 2.4, weightKg: 240 });
+  });
+
+  it('the abbreviated rung refuses a carton’s figure too («MEAS./CTN»)', () => {
+    expect(first([['Description', 'Qty', 'MEAS./CTN', 'TOTAL MEAS.'], ['LED', 240, 0.12, 2.4]])).toMatchObject({
+      volumeM3: 2.4,
+      amount: null,
+    });
+  });
+
+  it('a carton’s cube with no total beside it is no volume at all — asked, never a wrong figure', () => {
+    expect(first([['Description', 'Qty', 'CBM/CTN'], ['LED', 240, 0.12]]).volumeM3).toBeNull();
+  });
+});

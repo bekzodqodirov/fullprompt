@@ -1316,13 +1316,16 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     expect(typed).toBeGreaterThan(service.indexOf('await analyzeIntake('));
   },
   c0767: async () => {
-    // The day's budget is written from the collection's `usage` at the
+    // The day's budget is written from the collection's bills at the
     // landing; a paid read that failed must still carry what it cost.
+    // Re-anchored (docs/SAKKIZ-R2.md §8.2.7, his 2.9 c): the reading names
+    // every ANSWERED attempt in `answered`, and the collection APPENDS them
+    // into `usages` — one bill per reading, never the last one alone.
     const usage = { model: 'm', inputTokens: 40_000, outputTokens: 16_000 };
     const { state } = collection({ stage: 'material', material: ['Kurtka 300 dona 150 kg'] });
-    model.analyze.mockResolvedValueOnce({ ok: false, failure: 'truncated', usage });
+    model.analyze.mockResolvedValueOnce({ ok: false, failure: 'truncated', usage, answered: [usage] });
     const out = await analyzeCollected(state);
-    expect(out.usage).toEqual(usage);
+    expect(out.usages).toEqual([usage]);
   },
   // ---- the fixer's collector pins (#0-#7)
   c0768: async () => {
@@ -1560,7 +1563,9 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
   },
   c0803: async () => {
     const { chatId } = collection(
-      { stage: 'question', analysing: null, ai: true, askingIndex: null, askingTotals: true, totalsAsked: true, facts: { goods: [line('Kurtka', { quantity: 300 })] } as IntakeState['facts'] },
+      // Re-anchored (§8.2.5): «asking the totals» is `askingTotalsFor`
+      // naming WHICH totals, no longer a flag beside it.
+      { stage: 'question', analysing: null, ai: true, askingIndex: null, askingTotalsFor: 'both', totalsAsked: true, facts: { goods: [line('Kurtka', { quantity: 300 })] } as IntakeState['facts'] },
       'podklyuch',
     );
     const ctx = fakeCtx();

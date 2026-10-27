@@ -101,10 +101,29 @@ export interface IntakeState {
    * only where neither the seller's words nor the model named them.
    */
   route: { zone: string; fromCity: string; toCity: string } | null;
-  /** Has the «umumiy kub va kg?» question been asked (podklyuch, once)? */
+  /**
+   * Has the totals question been asked (`totalsQuestion`: every freight
+   * section, every door, once)? Cleared by a re-read that still leaves the
+   * asked figure missing, so new material asks again rather than skipping.
+   */
   totalsAsked: boolean;
-  /** Is the pending question about the TOTALS rather than a goods line? */
-  askingTotals: boolean;
+  /**
+   * WHICH totals the pending question asks — what a bare number answering it
+   * means (his 2.7 b): «3500» after the brutto question is kilograms, «12»
+   * after the volume one is cubic metres, and after the question for BOTH it
+   * is neither and is refused in words. Null = the pending question (if any)
+   * is about a goods line. One field, not a flag beside it: «are we asking
+   * the totals» is this being non-null.
+   */
+  askingTotalsFor: TotalsAsk | null;
+  /**
+   * What the seller ANSWERED to the totals question, as READ (judge
+   * concurrency-4) — put back on top of every re-read, the way `lineAnswers`
+   * is. A bare «3500» stored as raw material read null on the next «Bo‘ldi»
+   * (the house number reader needs a unit word), the job landed with no kg,
+   * and `totalsAsked` kept the question silent.
+   */
+  totalsAnswer: { weightKg: number | null; volumeM3: number | null };
   /** The line the bot is waiting for an answer about, by its index in
    * `facts.goods`. Null outside the question stage. */
   askingIndex: number | null;
@@ -232,8 +251,14 @@ export interface IntakeState {
    * on the question for ever (round-1 review, t23).
    */
   clientAskedWith: string | null;
-  /** What the analysis cost, carried to the landing — see `AiIntakeResult`. */
-  usage: { model: string; inputTokens: number; outputTokens: number } | null;
+  /**
+   * What every analysis of this collection cost — APPENDED, one entry per
+   * reading the model answered, ok or not (his 2.9 c: failed reads count).
+   * Carried to the landing, which bills each against the request. A re-read
+   * after «➕ Yana ma'lumot» used to REPLACE the first reading's usage, so
+   * the day's budget counted one call where the seller had caused two.
+   */
+  usages: { model: string; inputTokens: number; outputTokens: number }[];
   /** Why the model's reading is missing (his 1.6 a) — null when it read. */
   aiFailure: import('../../wms/calc/intake').AiReadFailure | null;
   /**
@@ -261,6 +286,132 @@ export interface IntakeState {
 
 /** After this many questions the bot stops asking and offers the confirm. */
 export const MAX_QUESTION_ROUNDS = 3;
+
+/** Which shipment totals the bot asks for (docs/SAKKIZ-R2.md §8.2.5). */
+export type TotalsAsk = 'kg' | 'm3' | 'both';
+
+/**
+ * Whether to ask the shipment's TOTALS, and which (his 2.7 b).
+ *
+ * Every section with a freight half — yolkira and podklyuch — on every bot
+ * door, AI or not: the road is priced on the totals (the tariff's density
+ * band × m³), and the gate used to be the AI podklyuch door alone, so a
+ * plain yolkira collection landed with no kg and the tariff answer refused.
+ * Rastamojka never: customs prices the lines.
+ *
+ * The weight is BRUTTO and only ever ASKED — line kilos are netto, and a Σ
+ * of them is a different, smaller number. The volume is asked only when it
+ * is neither stated nor summable from the lines: `volumeM3` is the caller's
+ * `factsVolumeM3(state.facts)` (wms's one rule; platform does not import wms
+ * statically, so the figure is handed in). A seller who typed 3500 kg is
+ * asked the cube alone (product-fit-7), never the kilos again. Pure.
+ */
+export function totalsQuestion(
+  state: Pick<IntakeState, 'section' | 'totalsAsked' | 'facts'>,
+  volumeM3: number | null,
+): TotalsAsk | null {
+  if (state.section !== 'yolkira' && state.section !== 'podklyuch') return null;
+  if (state.totalsAsked) return null;
+  const kgMissing = !(Number(state.facts.weightKg) > 0);
+  const m3Missing = volumeM3 === null;
+  if (kgMissing && m3Missing) return 'both';
+  if (kgMissing) return 'kg';
+  if (m3Missing) return 'm3';
+  return null;
+}
+
+const figure = (n: number) => String(Math.round(n * 1000) / 1000);
+
+/**
+ * The totals question in the bot's Uzbek. Each names only what it asks, and
+ * says what is already known — and where it came from, since a Σ of the
+ * lines is a figure nobody typed. Pure.
+ */
+export function totalsQuestionText(
+  ask: TotalsAsk,
+  facts: Pick<IntakeState['facts'], 'weightKg'>,
+  volume: { m3: number | null; fromLines: boolean },
+): string {
+  if (ask === 'kg') {
+    const known =
+      volume.m3 === null
+        ? ''
+        : volume.fromLines
+          ? `\n(hajm: ${figure(volume.m3)} m³ — qatorlardan qo‘shildi)`
+          : `\n(hajm bor: ${figure(volume.m3)} m³)`;
+    return `Yo‘lkira uchun umumiy BRUTTO og‘irlik kerak (qadoq bilan), kg. Masalan: «3500» yoki «3500 kg»${known}`;
+  }
+  if (ask === 'm3') {
+    const kg = Number(facts.weightKg);
+    return (
+      'Yo‘lkira uchun umumiy hajm (kub) kerak. Masalan: «12» yoki «12 kub»' +
+      (kg > 0 ? `\n(brutto og‘irlik bor: ${figure(kg)} kg)` : '')
+    );
+  }
+  return 'Yo‘lkira uchun umumiy hajm va brutto og‘irlik kerak. Masalan: «12 kub 3500 kg»';
+}
+
+/**
+ * A totals answer that names no unit — the shape only the question it
+ * answers can read («3500» after the brutto question). Digits with the
+ * house's separators, nothing else. Pure.
+ */
+export function bareTotalsNumber(text: string): boolean {
+  return /^\s*\d[\d\s.,]*\s*$/u.test(text);
+}
+
+/**
+ * What an answer to the totals question can look like, and nothing else:
+ * digits, and the kg / kub / m³ words — «3500», «3500 kg», «12 kub 3500 kg».
+ *
+ * Asked by the staff tail when NO collection is live (judge concurrency-5):
+ * the collection lives in memory until round 3, so a restart or the TTL
+ * between the question and the answer loses it, and the orphaned «3500»
+ * would otherwise fall to the paid assistant, which can say nothing about it.
+ * A goods line («Kurtka 300 kg») or a code («GS777») is not this shape. Pure.
+ */
+export function looksLikeTotalsAnswer(text: string): boolean {
+  const words = text
+    .toLowerCase()
+    .replace(/[.,;:+]/gu, ' ')
+    .split(/\s+/u)
+    .filter(Boolean);
+  if (words.length === 0 || !words.some((w) => /\d/u.test(w))) return false;
+  const unit = /^(?:kg|kgs|кг|kilo|kilogramm?|кило|килограмм?|kub|куб|kubometr|кубометр|m3|м3|m³|м³|cbm|brutto|брутто)$/u;
+  return words.every((w) => /^\d+$/u.test(w) || unit.test(w) || /^\d+(?:kg|кг|kub|куб|m3|м3|m³|м³)$/u.test(w));
+}
+
+/**
+ * The totals answer, put back on top of a (re-)read's facts (judge
+ * concurrency-4) — `mergeLineAnswers`' rule for the totals. What the seller
+ * answered wins over what a re-read found: it was said in reply to the
+ * bot's own question. Pure.
+ */
+export function mergeTotalsAnswer(
+  answer: IntakeState['totalsAnswer'],
+  facts: IntakeState['facts'],
+): IntakeState['facts'] {
+  return {
+    ...facts,
+    weightKg: answer.weightKg ?? facts.weightKg ?? null,
+    volumeM3: answer.volumeM3 ?? facts.volumeM3 ?? null,
+  };
+}
+
+/**
+ * Does the totals question stay asked over these (merged) facts? Cleared
+ * when they still miss a figure the question would ask, so a re-read after
+ * new material asks again rather than landing the job silent. `volumeM3` is
+ * `factsVolumeM3` over the MERGED facts (handed in, as for
+ * `totalsQuestion`). Pure.
+ */
+export function totalsStillAsked(
+  state: Pick<IntakeState, 'section' | 'totalsAsked'>,
+  facts: IntakeState['facts'],
+  volumeM3: number | null,
+): boolean {
+  return state.totalsAsked && totalsQuestion({ section: state.section, totalsAsked: false, facts }, volumeM3) === null;
+}
 
 /** At most this many buttons answer one question — two readings × three units. */
 export const MAX_OFFERS = 6;
@@ -1102,7 +1253,8 @@ export function startIntake(
     hasCertificate: true,
     route: null,
     totalsAsked: false,
-    askingTotals: false,
+    askingTotalsFor: null,
+    totalsAnswer: { weightKg: null, volumeM3: null },
     askingIndex: null,
     round: 0,
     reasked: false,
@@ -1117,7 +1269,7 @@ export function startIntake(
     pendingInvoice: null,
     aiGoods: null,
     clientAskedWith: null,
-    usage: null,
+    usages: [],
     aiFailure: null,
     analysing: null,
     answers: [],
@@ -1162,6 +1314,7 @@ export function endIntake(chatId: bigint): void {
 export async function analyzeCollected(state: IntakeState): Promise<IntakeState> {
   const { analyzeIntake } = await import('../../wms/calc/intake-ai');
   const { parseManualFacts, readGoodsLines } = await import('../../wms/calc/intake-manual');
+  const { factsVolumeM3 } = await import('../../wms/calc/intake');
   const text = state.material.join('\n');
   const manual = parseManualFacts(text);
   const invoice = state.invoiceGoods ?? [];
@@ -1218,7 +1371,10 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
   const notes = [sameAsInvoiceNote(picked.sameAsInvoice), typedLeftOutNote(picked.sameAsInvoice)].filter(
     (n): n is string => n !== null,
   );
-  const facts = {
+  // The seller's answer to the totals question goes back on top as well
+  // (judge concurrency-4): «3500» typed after the brutto question is no
+  // material, and only this keeps it across a re-read.
+  const facts = mergeTotalsAnswer(state.totalsAnswer, {
     fromCity: manual.fromCity ?? ai?.facts.fromCity ?? state.route?.fromCity ?? null,
     toCity: manual.toCity ?? ai?.facts.toCity ?? state.route?.toCity ?? null,
     weightKg: manual.weightKg ?? (asked('weightKg') ? null : (ai?.facts.weightKg ?? null)),
@@ -1226,7 +1382,7 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
     // The seller's per-line answers go back on top (P1.3): a re-read after
     // «➕ Yana ma'lumot» must not erase them.
     goods: mergeLineAnswers(picked.goods, state.lineAnswers),
-  };
+  });
   return {
     ...state,
     facts,
@@ -1234,10 +1390,11 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
     notes,
     aiUsed: Boolean(ai),
     aiFailure: outcome.ok ? null : outcome.failure,
-    // A paid read that failed (cut, refused, unreadable) still cost what it
-    // cost: the day's budget is written from this at the landing (r1-fix
-    // typed #21; the typed package's `usage` on a failed outcome).
-    usage: ai?.usage ?? (outcome.ok ? null : (outcome.usage ?? null)),
+    // Every reading the model answered is billed at the landing — a paid
+    // read that failed (cut, refused, unreadable) included (r1-fix typed
+    // #21), and a re-read ADDED to the first, never in its place (2.9 c).
+    usages: [...state.usages, ...(outcome.answered ?? [])],
+    totalsAsked: totalsStillAsked(state, facts, factsVolumeM3(facts)),
     ambiguousTotals: manual.ambiguous,
     stage: 'review',
   };

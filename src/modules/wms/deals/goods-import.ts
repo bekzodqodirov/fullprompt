@@ -646,10 +646,18 @@ function findHeader(rows: Cell[][]): { found: Detected | null; refused: number |
       if (idx !== null) taken.add(idx);
       return idx;
     };
+    // ONE carton's volume is not the line's (his 2.7 b, probe P1: a
+    // «CBM/CTN» standing before «TOTAL CBM» on a Chinese packing list was
+    // read as the line and landed 14× short — the weight's PER_PACKAGE rule,
+    // which the volume never learned). The same test on the abbreviation
+    // rung: «MEAS./CTN» is one carton's too.
     const volume =
       volumeFromQty ??
-      claim(VOLUME_KEYS) ??
-      claimWhere((text) => VOLUME_WORD.test(text) && (!OWN_UNIT.test(text) || CUBIC_METRE.test(text)));
+      claimWhere((text) => matchKey(text, VOLUME_KEYS) && !PER_PACKAGE.test(text)) ??
+      claimWhere(
+        (text) =>
+          VOLUME_WORD.test(text) && !PER_PACKAGE.test(text) && (!OWN_UNIT.test(text) || CUBIC_METRE.test(text)),
+      );
     const invoiced = invoiceHeader(header.map(cellText));
     const moneyTotal = (text: string) => invoiced && namesMoneyTotal(text);
     // The line's weight, never one package's and never a price.

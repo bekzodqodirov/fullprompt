@@ -3445,6 +3445,7 @@
       "fromDeal": "Fill from the deal lines",
       "totalWeight": "Total weight (gross), kg",
       "totalVolume": "Total volume, m³",
+      "volumeFromLines": "Left empty — the lines’ m³ are summed",
       "noName": "No product name",
       "badCell": "«{text}» is not a number",
       "fixFirst": "Fix the marked rows first",

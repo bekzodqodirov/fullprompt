@@ -3445,6 +3445,7 @@
       "fromDeal": "Bitim qatorlaridan to‘ldirish",
       "totalWeight": "Umumiy og‘irlik (brutto), kg",
       "totalVolume": "Umumiy hajm, m³",
+      "volumeFromLines": "Bo‘sh qolsa — qatorlardagi kub qo‘shiladi",
       "noName": "Tovar nomi yozilmagan",
       "badCell": "«{text}» — son emas",
       "fixFirst": "Avval belgilangan qatorlarni to‘g‘rilang",

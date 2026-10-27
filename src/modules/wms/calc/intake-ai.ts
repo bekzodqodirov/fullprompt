@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { logger } from '../../platform/logger';
 import { aiConfigured, ANALYST_MODEL } from '../../platform/ai/model';
 import { SHEET_TEXT_BUDGET } from '../deals/goods-file';
+import type { AiUsage } from '../tnved/service';
 import type { AiReadFailure, CalcFacts, CalcGoodsFact, CalcSection } from './intake';
 import { normalizeRowUnit, normalizeTnved, unitOf } from './units';
 
@@ -58,9 +59,14 @@ const SYSTEM = `Ты — помощник карго-компании GSR LOGIST
 
 Извлеки:
 - город отправления и город назначения (если названы);
-- общий вес в килограммах и объём в кубометрах (если названы; пересчитай единицы при необходимости);
+- общий вес ОТПРАВКИ — БРУТТО в килограммах (с упаковкой: G.W., gross, брутто,
+  毛重) — и общий объём в кубометрах (если названы; пересчитай единицы при
+  необходимости). Если документ называет только НЕТТО всей отправки — общий
+  вес null: сотрудник спросит брутто. Нетто вместо брутто не подставляй;
 - список товаров: название, количество ШТУК, ВЕС ЭТОЙ ПОЗИЦИИ в килограммах,
-  объём позиции в м³, и — если уверенно определяешь — код ТН ВЭД;
+  объём ВСЕЙ позиции в м³ (все её коробки — TOTAL CBM, никогда не объём одной
+  коробки CBM/CTN; если дан только объём одной коробки — null, не умножай),
+  и — если уверенно определяешь — код ТН ВЭД;
   вес позиции нужен для растаможки: база считается за кг или за штуку по
   КАЖДОЙ строке. Если в упаковочном листе вес указан по каждой позиции —
   бери его оттуда. Если веса по позиции нет — null, не дели общий вес.
@@ -115,16 +121,31 @@ export interface AiIntakeResult {
 }
 
 /**
- * The reading, or why there is none (his 1.6 a — never one sentence for all).
+ * ONE response, read: the reading, or why there is none (his 1.6 a — never
+ * one sentence for all).
  *
  * A failure the model was PAID for — cut short, refused, unreadable — carries
  * its `usage` too (round 1, c21; both typed reviewers on #21): dropped, a
  * failed read never reached the day's budget, and a material too long for the
  * answer is exactly the one that costs the most.
  */
-export type AiIntakeOutcome =
+export type AiIntakeRead =
   | ({ ok: true } & AiIntakeResult)
   | { ok: false; failure: AiReadFailure; usage?: AiIntakeResult['usage'] };
+
+/**
+ * The whole reading (every attempt), as its callers take it — and what it
+ * cost: `answered` is the usage of EVERY attempt the model answered, ok or
+ * not — refused, cut short, unreadable (his 2.9 c, docs/SAKKIZ-R2.md
+ * §8.2.7: a call counts when the model ANSWERED it, whatever was made of the
+ * answer). Absent when none was: an attempt with no answer — a timeout, the
+ * network, a 4xx/5xx — cost nothing knowable and is not billed, so a dead
+ * key never spends the day's cap as «budget». Today at most one per reading:
+ * a retry follows only a call that never ran (`retryAfterPause`), and an
+ * answered attempt ends the reading. The collector APPENDS these across
+ * re-reads and the landing bills each one.
+ */
+export type AiIntakeOutcome = AiIntakeRead & { answered?: AiUsage[] };
 
 /**
  * Room for the answer AND the thinking that precedes it.
@@ -518,7 +539,10 @@ export async function analyzeIntake(input: {
         { in: response.usage?.input_tokens, out: response.usage?.output_tokens, stop: response.stop_reason },
         '[calc intake] model tokens',
       );
-      return readIntakeResponse(response);
+      // The model ANSWERED this attempt: it is billed whatever is made of
+      // the answer — refused, cut, unreadable or read (2.9 c).
+      const read = readIntakeResponse(response);
+      return read.usage ? { ...read, answered: [read.usage] } : read;
     } catch (err) {
       failure = aiFailureOf(err);
       // Never fatal: the intake goes on with what the person typed, and the
@@ -539,7 +563,7 @@ export function readIntakeResponse(response: {
   stop_reason: string | null;
   content: { type: string; text?: string }[];
   usage?: { input_tokens?: number; output_tokens?: number } | null;
-}): AiIntakeOutcome {
+}): AiIntakeRead {
   const usage = {
     model: ANALYST_MODEL,
     inputTokens: response.usage?.input_tokens ?? 0,
@@ -577,8 +601,11 @@ const FACTS_JSON_SCHEMA = {
   properties: {
     from_city: { type: ['string', 'null'] },
     to_city: { type: ['string', 'null'] },
-    weight_kg: { type: ['number', 'null'] },
-    volume_m3: { type: ['number', 'null'] },
+    weight_kg: {
+      type: ['number', 'null'],
+      description: 'Общий вес отправки БРУТТО (с упаковкой), кг. Только нетто в документе — null.',
+    },
+    volume_m3: { type: ['number', 'null'], description: 'Общий объём отправки, м³.' },
     goods: {
       type: 'array',
       items: {
@@ -586,8 +613,11 @@ const FACTS_JSON_SCHEMA = {
         properties: {
           name: { type: 'string' },
           quantity: { type: ['number', 'null'] },
-          weight_kg: { type: ['number', 'null'] },
-          volume_m3: { type: ['number', 'null'] },
+          weight_kg: { type: ['number', 'null'], description: 'Вес ЭТОЙ позиции, кг (нетто, если назван).' },
+          volume_m3: {
+            type: ['number', 'null'],
+            description: 'Объём ВСЕЙ позиции (все коробки), м³. Дан только объём одной коробки — null.',
+          },
           unit: { type: ['string', 'null'], enum: [...AI_UNITS, null] },
           measure_qty: { type: ['number', 'null'] },
           tnved_code: { type: ['string', 'null'] },

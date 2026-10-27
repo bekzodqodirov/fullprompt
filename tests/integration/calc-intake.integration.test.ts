@@ -1,9 +1,10 @@
 import 'dotenv/config';
-import { and, asc, eq, gte, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
+  auditLog,
   calcRequestItems,
   calcRequests,
   clients,
@@ -26,6 +27,7 @@ import {
 } from '@/modules/wms/calc/intake';
 import { parseManualFacts } from '@/modules/wms/calc/intake-manual';
 import { landIntake, resolveIntakeClient } from '@/modules/wms/calc/intake-land';
+import { openCalcRequest } from '@/modules/wms/calc/service';
 
 /**
  * «Hisoblatish» — the owner's own design for the AI intake: staff send the
@@ -410,5 +412,65 @@ describe('where a confirmed intake lands', () => {
     ]);
     expect(await resolveIntakeClient({ phone: shared })).toBeNull();
     expect(await resolveIntakeClient({ code: `ZZ${STAMP}` })).toBeNull();
+  });
+});
+
+/**
+ * His 2.7 b (docs/SAKKIZ-R2.md §8.2.3): with no total typed, the INSERT
+ * stores the Σ of the door-routed lines — all of them or none — because the
+ * checklist no longer asks a total the lines give, and MR-9's upsale scales
+ * on the stored cube. Through the seller's card door, the one with an m³ box
+ * a person leaves empty.
+ */
+describe('the cube the landing stores', () => {
+  async function landOnLead(volumeM3: number | null, lines: (number | null)[]) {
+    const stage = await db.query.leadStages.findFirst({ where: eq(leadStages.kind, 'open') });
+    const [lead] = await db
+      .insert(leads)
+      .values({ name: `R2 kub ${STAMP}`, stageId: stage!.id, createdBy: actorId })
+      .returning();
+    madeLeads.push(lead!.id);
+    const opened = await openCalcRequest(
+      {
+        entityType: 'lead',
+        entityId: lead!.id,
+        section: 'rastamojka',
+        weightKg: 400,
+        volumeM3,
+        items: lines.map((m3, i) => ({ name: `Tovar ${STAMP}-${i + 1}`, quantity: 100, volumeM3: m3 })),
+        source: 'card',
+      },
+      { actorId },
+    );
+    const [row] = await db.select({ m3: calcRequests.volumeM3 }).from(calcRequests).where(eq(calcRequests.id, opened.id));
+    return { leadId: lead!.id, m3: row!.m3 === null ? null : Number(row!.m3) };
+  }
+
+  it('lines of 1.2 and 1.6 m³ and an empty box store 2.8 — and the audit row says where it came from', async () => {
+    const landed = await landOnLead(null, [1.2, 1.6]);
+    expect(landed.m3).toBe(2.8);
+    const [audit] = await db
+      .select({ after: auditLog.after })
+      .from(auditLog)
+      .where(eq(auditLog.entityId, landed.leadId))
+      .orderBy(desc(auditLog.id))
+      .limit(1);
+    expect(audit!.after).toMatchObject({ volumeFromLines: true });
+  });
+
+  it('a typed total wins over the lines, and says nothing of them', async () => {
+    const landed = await landOnLead(5, [1.2, 1.6]);
+    expect(landed.m3).toBe(5);
+    const [audit] = await db
+      .select({ after: auditLog.after })
+      .from(auditLog)
+      .where(eq(auditLog.entityId, landed.leadId))
+      .orderBy(desc(auditLog.id))
+      .limit(1);
+    expect(audit!.after).not.toHaveProperty('volumeFromLines');
+  });
+
+  it('one line without a cube stores none — a partial Σ is not the truck', async () => {
+    expect((await landOnLead(null, [1.2, null])).m3).toBeNull();
   });
 });

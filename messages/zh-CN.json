@@ -3445,6 +3445,7 @@
       "fromDeal": "从交易明细填写",
       "totalWeight": "总重量（毛重），公斤",
       "totalVolume": "总体积，立方米",
+      "volumeFromLines": "留空则合计各行体积",
       "noName": "未填写品名",
       "badCell": "「{text}」不是数字",
       "fixFirst": "请先修正标记的行",
