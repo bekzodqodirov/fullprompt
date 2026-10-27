@@ -1237,6 +1237,8 @@
     "roadHint": "Cargo on trucks heading to this warehouse. Once planned, it moves onto this truck by itself when it is unloaded here.",
     "roadDropped": "Cargo on the road taken out of the picks: {n}",
     "roadFailed": "The list of cargo on the road did not load — the warehouse stock is shown",
+    "unseenPicks": "{n} picked lots are not in the list and are not counted — reload the list or take them out",
+    "unseenDrop": "Take them out",
     "roadLine": "+{n} on the road ·",
     "roadAtGate": "at the gate",
     "factoryTrips": "Coming from factories ({n})",

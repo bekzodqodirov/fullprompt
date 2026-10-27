@@ -97,9 +97,10 @@ test('the plan carries the road part and reserves nothing yet', async () => {
   }
 });
 
+let planId = '';
+
 test('sent back, the plan’s ✏️ reopens with the box ticked and the road part picked', async ({ page }) => {
   const sql = database();
-  let planId = '';
   try {
     const [plan] = await sql<{ id: string }[]>`
       SELECT DISTINCT pv.plan_id AS id FROM load_plan_lines pl
@@ -119,6 +120,47 @@ test('sent back, the plan’s ✏️ reopens with the box ticked and the road pa
   await expect(page.getByTestId('plan-road')).toBeChecked();
   const row = page.locator('#plan-stock-table tr', { hasText: run.lotName });
   await expect(row.getByTestId('take-A')).toHaveValue('6');
+});
+
+test('the road half failing on a re-read names the pick it can no longer show, and the submit waits (review editor#7)', async ({
+  page,
+}) => {
+  await login(page);
+  await page.goto(`/plans/new?planId=${planId}`);
+  const row = page.locator('#plan-stock-table tr', { hasText: run.lotName });
+  await expect(row.getByTestId('take-A')).toHaveValue('6');
+  // From now on the road half fails: the shelf's answer, said as failed.
+  await page.route(/\/api\/plans\/stock\?.*road=1/, async (route) => {
+    const res = await route.fetch({ url: route.request().url().replace('&road=1', '') });
+    await route.fulfill({ json: { ...(await res.json()), roadOn: true, roadFailed: true } });
+  });
+  // The tab comes back into view: the quiet re-read.
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await expect(page.getByTestId('plan-road-failed')).toBeVisible();
+  // The six road cartons are in no row and no Σ — said, and not sent unseen.
+  await expect(page.getByTestId('plan-unseen')).toBeVisible();
+  await expect(page.getByTestId('submit-plan')).toBeDisabled();
+  await page.getByTestId('plan-unseen-drop').click();
+  await expect(page.getByTestId('plan-unseen')).toHaveCount(0);
+});
+
+test('unticked while the road list is still loading, a shelf pick stays (review editor#6)', async ({ page }) => {
+  await login(page);
+  await openEditorAtKashgar(page);
+  const shelfRow = page.locator('#plan-stock-table tr', { hasText: run.shelfName });
+  await shelfRow.getByTestId('take-B').fill('2');
+  // Hold the road answer, so the untick lands while it is in flight.
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route(/\/api\/plans\/stock\?.*road=1/, async (route) => {
+    await held;
+    await route.continue().catch(() => {});
+  });
+  await page.getByTestId('plan-road').check();
+  await page.getByTestId('plan-road').uncheck();
+  release();
+  await expect(shelfRow.getByTestId('take-B')).toHaveValue('2');
+  await expect(page.getByTestId('plan-road-dropped')).toHaveCount(0);
 });
 
 test('cleanup leaves nothing that carries the run', async () => {

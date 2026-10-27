@@ -8,7 +8,7 @@ import { batches, boxes, boxMovements, crates, receiptLots, users, warehouses } 
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { emitEvent } from '../../platform/events/service';
 import { isBusyError } from '../../platform/db/errors';
-import { ARRIVED_ON_A_TRUCK } from '../documents/arrivals';
+import { ARRIVED_ON_A_TRUCK, notSentBackSql } from '../documents/arrivals';
 import { codeIdentity } from '../labels/code-identity';
 import { qrlessJoinedSql } from '../labels/qrless-sql';
 import { landedStatusFor } from '../warehouses/landed';
@@ -249,11 +249,7 @@ async function readLedger(
          AND ab.crate_id IS NULL AND ab.status <> 'void' ${only(sql`ab.lot_id`)}
          -- An over-landing a press below «arrived» sent back to the origin's
          -- shelf did not arrive after all (review money-1).
-         AND NOT EXISTS (
-           SELECT 1 FROM box_movements back
-            WHERE back.box_id = ab.id AND back.ref_type = 'batch' AND back.ref_id = ${T}::uuid
-              AND back.cause = 'found_at_origin' AND (back.created_at, back.id) > (am.created_at, am.id)
-         )
+         AND ${notSentBackSql('am', sql`${T}::uuid`)}
        GROUP BY ab.lot_id
     ),
     phone AS (

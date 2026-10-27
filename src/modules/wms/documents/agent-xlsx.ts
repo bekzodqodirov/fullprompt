@@ -88,7 +88,8 @@ export async function buildAgentXlsx(planId: string, versionNo: number): Promise
   // share of the kilos. Filed whole under an arrival, the road part would be
   // a false «arrived here» on a customs document. Before the approval the
   // road part is the promise; after, what is still owed (what has landed
-  // stands here and files under its arrival like any carton).
+  // stands here and files under its arrival like any carton). What a loading
+  // ENDED without (`missed`) never came: its own block, never «received here».
   const road = await planRoadReady();
   const roadByLine = await roadOfVersion(db, road, version.id);
   const approved = version.agentVerdict === 'approved';
@@ -104,15 +105,19 @@ export async function buildAgentXlsx(planId: string, versionNo: number): Promise
   });
   const hereRows: SheetRow[] = [];
   const roadRows: SheetRow[] = [];
+  const missedRows: SheetRow[] = [];
   for (const row of lines) {
     const part = roadByLine.get(row.line.id);
     const onRoad = part ? (approved ? part.owed : part.part) : 0;
-    if (onRoad <= 0) {
+    const missed = part && approved ? part.missed : 0;
+    if (onRoad <= 0 && missed <= 0) {
       hereRows.push(row);
       continue;
     }
-    if (row.line.plannedBoxCount - onRoad > 0) hereRows.push(share(row, row.line.plannedBoxCount - onRoad));
-    roadRows.push(share(row, onRoad));
+    const here = row.line.plannedBoxCount - onRoad - missed;
+    if (here > 0) hereRows.push(share(row, here));
+    if (onRoad > 0) roadRows.push(share(row, onRoad));
+    if (missed > 0) missedRows.push(share(row, missed));
   }
   const roadTrucks = await roadTrucksByLot(db, road, plan.originWarehouseId, [
     ...new Set(roadRows.map((r) => r.lot.id)),
@@ -135,6 +140,20 @@ export async function buildAgentXlsx(planId: string, versionNo: number): Promise
             arrivedAt: null,
             rows: roadRows,
             onRoad: true,
+          },
+        ]
+      : []),
+    ...(missedRows.length
+      ? [
+          {
+            key: 'missed',
+            code: '',
+            source: null,
+            factories: [] as string[],
+            arrivedAt: null,
+            rows: missedRows,
+            onRoad: false,
+            notCame: true,
           },
         ]
       : []),
@@ -221,7 +240,9 @@ export async function buildAgentXlsx(planId: string, versionNo: number): Promise
     const dated = block.arrivedAt ? ` · ${docDate(block.arrivedAt, zone)}` : '';
     heading.value = block.onRoad
       ? `${DOC.onRoad}: ${block.code || '—'} · ${totalsText}`
-      : !block.source
+      : 'notCame' in block
+        ? `${DOC.notCame} · ${totalsText}`
+        : !block.source
         ? `${DOC.receivedHere} · ${totalsText}`
         : `${block.source.kind === 'pickup' ? DOC.factoryPickup : DOC.arrivalBatch}: ${arrivalBlockLabel(block)}${dated} · ${totalsText}`;
     heading.font = { bold: true };
@@ -251,8 +272,10 @@ export async function buildAgentXlsx(planId: string, versionNo: number): Promise
         // row's own stop — the heading lists every factory of the block.
         arrivalBatch: block.onRoad
           ? `🚚 ${(roadTrucks.get(lot.id) ?? []).join(', ') || '—'}`
-          : arrival?.labels.join(', ') || '—',
-        arrivedAt: !block.onRoad && arrival ? docDate(arrival.arrivedAt, zone) : '',
+          : 'notCame' in block
+            ? '—'
+            : arrival?.labels.join(', ') || '—',
+        arrivedAt: !block.onRoad && !('notCame' in block) && arrival ? docDate(arrival.arrivedAt, zone) : '',
       };
       sheet.getRow(rowNo).height = 60;
       const lotContents = contents.get(lot.id);

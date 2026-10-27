@@ -242,12 +242,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     .from(warehouses)
     .where(eq(warehouses.id, batch.destWarehouseId));
   // Yo'ldagi yuk (docs/YOLDAGI-YUK.md §9): what the plan still owes from the
-  // road, printed above the list, and the codes a scan of which is the plan's
-  // — so a road carton never opens the red «not on plan».
+  // road, printed above the list, and its lots' codes in two kinds — free here
+  // (accepted up to what the lot owes) and still on an inbound truck (refused
+  // at once with that truck's code) — so a road carton never opens the red
+  // «not on plan» and is never accepted green only to be taken back.
   const road =
     side === 'load' && hasPlan
       ? await roadOwedForTruck(db, await planRoadReady(), id, batch.originWarehouseId)
-      : { lots: [], codes: [], capped: false };
+      : { lots: [], shelf: [], inbound: [], capped: false };
   return json(request, {
     batch: {
       id: batch.id,
@@ -263,6 +265,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     countOnly,
     countOnlyCapped,
     roadOwed: road.lots,
-    roadCodes: road.codes,
+    roadShelf: road.shelf,
+    roadInbound: road.inbound,
   });
 }

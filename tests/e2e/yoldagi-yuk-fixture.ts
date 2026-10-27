@@ -6,9 +6,10 @@ import postgres from 'postgres';
  * (yuk-tekshiruv-fixture's shape).
  *
  * The owner's case (docs/YOLDAGI-YUK.md): a client `YY<digits>`, a prixod at
- * YW of ONE lot of six cartons, all six on a truck `YY<digits>-I` that left
- * Yiwu for Kashgar yesterday — on the road, not yet at the shelf the plan
- * loads from. Never the demo GS777: a plan on it is configuration every later
+ * YW whose lot A — six cartons — is all on a truck `YY<digits>-I` that left
+ * Yiwu for Kashgar yesterday (on the road, not yet at the shelf the plan
+ * loads from), and whose lot B — three cartons — already stands on Kashgar's
+ * shelf. Never the demo GS777: a plan on it is configuration every later
  * spec reads (#183).
  */
 
@@ -21,6 +22,8 @@ export function database() {
 export interface Run {
   marker: string;
   lotName: string;
+  /** The prixod's second lot, three cartons already on Kashgar's shelf. */
+  shelfName: string;
 }
 
 export interface Minted {
@@ -32,7 +35,7 @@ export interface Minted {
 
 export function newRun(): Run {
   const digits = String(Date.now()).slice(-6);
-  return { marker: `YY${digits}`, lotName: `路上YY${digits}` };
+  return { marker: `YY${digits}`, lotName: `路上YY${digits}`, shelfName: `架上YY${digits}` };
 }
 
 export async function mint(sql: postgres.Sql, run: Run): Promise<Minted> {
@@ -55,6 +58,17 @@ export async function mint(sql: postgres.Sql, run: Run): Promise<Minted> {
                                 total_weight_kg, total_volume_m3)
       VALUES (gen_random_uuid(), ${receipt!.id}, 1, 'A', 1, ${run.lotName}, 'Дорожный груз', 6, 'mixed', 60.000, 0.3000)
       RETURNING id`;
+    // Lot B stands on Kashgar's shelf already — a shelf pick beside the road
+    // one (the untick that wiped every pick, review editor#6).
+    const [shelfLot] = await tx<{ id: string }[]>`
+      INSERT INTO receipt_lots (id, receipt_id, seq, letter, cycle_no, product_name_zh, product_name_ru, box_count, dims_mode,
+                                total_weight_kg, total_volume_m3)
+      VALUES (gen_random_uuid(), ${receipt!.id}, 2, 'B', 1, ${run.shelfName}, 'Груз на полке', 3, 'mixed', 30.000, 0.1500)
+      RETURNING id`;
+    await tx`
+      INSERT INTO boxes (id, lot_id, short_code, seq_in_lot, status, current_warehouse_id)
+      SELECT gen_random_uuid(), ${shelfLot!.id}, ${run.marker} || '-B' || n, n, 'in_stock', ${ka.id}
+        FROM generate_series(1, 3) AS n`;
     const inboundCode = `${run.marker}-I`;
     const [inbound] = await tx<{ id: string }[]>`
       INSERT INTO batches (id, code, origin_warehouse_id, dest_warehouse_id, status, created_by, departed_at, created_at)

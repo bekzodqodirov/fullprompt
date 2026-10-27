@@ -41,6 +41,13 @@ export const DOC = {
    * a false sentence on a customs document.
    */
   onRoad: 'В пути / On the road',
+  /**
+   * The heading over the road part a loading ENDED without (4a, «yuklash
+   * tugadi» or the cancel): it never came and is not on this truck. Filed
+   * under an arrival, it was a false «received here» on a customs document
+   * (review numbers#4).
+   */
+  notCame: 'Не пришло / Did not come',
   barcode: 'Штрих-код / Barcode',
   boxes: 'Коробок / Boxes',
   code: 'Код / Code',

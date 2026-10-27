@@ -21,6 +21,7 @@ import { countOnlyLotOf, type CountOnlyLot } from '@/offline/count-only';
 import { isScanRefusal, type ScanRefusal } from '@/offline/scan-refusal';
 import { mergeLoaded } from '@/offline/loaded-merge';
 import { rerouteVerdict } from '@/offline/reroute-acks';
+import { roadScanVerdict } from '@/offline/road-scan';
 import { removeLoadedAction } from '../../batch-actions-server';
 import { isOwnCodeShape, looksLikeRetailBarcode } from '@/offline/code-shape';
 
@@ -53,12 +54,13 @@ interface Snapshot {
   countOnlyCapped?: boolean;
   /**
    * Yo'ldagi yuk (docs/YOLDAGI-YUK.md §9): what the plan still owes from the
-   * road, per lot, and the codes a scan of which is the plan's (free on the
-   * origin's shelf, or still on the inbound truck). Absent from an older
-   * snapshot — `?? []`.
+   * road, per lot, and its lots' codes — free on the origin's shelf (the
+   * server claims one at the scan), or still on an inbound truck. Absent from
+   * an older snapshot — `?? []`.
    */
   roadOwed?: { lotId: string; label: string; owed: number; trucks: string[] }[];
-  roadCodes?: string[];
+  roadShelf?: { code: string; lotId: string }[];
+  roadInbound?: { code: string; truck: string }[];
 }
 
 /**
@@ -542,11 +544,18 @@ export function LoadingScreen({
       void accept(memberCodes, { code, method, manualReason });
       return;
     }
-    // A carton the plan still owes from the road: the server claims it when it
-    // stands here, and names the truck it is still on when it does not —
-    // never the red «not on plan» for the plan's own cargo.
-    if ((snapshot.roadCodes ?? []).some((c) => c.toUpperCase() === code.toUpperCase())) {
+    // A carton of a lot the plan still owes from the road: claimed by the
+    // server while the lot owes it, refused at once while it is still on the
+    // inbound truck (`roadScanVerdict`) — never the red «not on plan» for the
+    // plan's own cargo, never green and taken back.
+    const roadScan = roadScanVerdict(code, snapshot, loaded);
+    if (roadScan?.kind === 'accept') {
       void accept([code], { code, method, manualReason });
+      return;
+    }
+    if (roadScan?.kind === 'inbound') {
+      feedback('bad');
+      setToast(`🚚 ${t('roadNotLanded', { truck: roadScan.truck })}`);
       return;
     }
     // Nothing on this batch's plan — red confirm flow.

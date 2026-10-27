@@ -15,7 +15,14 @@ import {
 } from './count-rules';
 import { doorOpens, type CountDoor } from './count-door';
 import { loadScanInTx } from './service';
-import { claimFromShelfTx, owedByLotOnTruck, planRoadReady, roadNotHereSql, type RoadOn } from '../planning/road';
+import {
+  claimableForSql,
+  claimFromShelfTx,
+  owedByLotOnTruck,
+  planRoadReady,
+  roadNotHereSql,
+  type RoadOn,
+} from '../planning/road';
 import { aboardFilter } from './unload';
 import { planCountMove, shelfStatus, type CountRow } from './count-plan';
 import { qrlessRowSql } from '../labels/qrless-sql';
@@ -798,6 +805,8 @@ export async function countLoadPanel(batch: {
            count(b.id) FILTER (WHERE b.current_batch_id = ${batchId}::uuid AND b.status = 'loading'
                                  AND NOT ${byCountSql('b', batchId)})::int AS phone,
            count(b.id) FILTER (WHERE b.current_batch_id IS NULL)::int AS spare,
+           count(b.id) FILTER (WHERE b.current_batch_id IS NULL
+                                 AND ${claimableForSql('b', sql`${batchId}::uuid`)})::int AS claimable,
            coalesce(bool_or(${qrlessRowSql(sql`b`, sql`l`)} AND b.current_batch_id IS NOT NULL), false) AS qrless_truck,
            coalesce(bool_or(${qrlessRowSql(sql`b`, sql`l`)} AND b.current_batch_id IS NULL), false) AS qrless_shelf
       FROM receipt_lots l
@@ -823,13 +832,16 @@ export async function countLoadPanel(batch: {
     over: number;
     phone: number;
     spare: number;
+    claimable: number;
     qrless_truck: boolean;
     qrless_shelf: boolean;
   }[];
 
   // The plan's number less what the road owes or never gave — `planNumber`'s
-  // sentence — plus what of the owed part stands free here, which the press
-  // claims before it computes: the panel's «Hammasi» is the number it accepts.
+  // sentence — plus what of the owed part stands free here AND the press may
+  // claim (never a carton this truck's plan reserved before, review numbers#3),
+  // which it claims before it computes: the panel's «Hammasi» is the number it
+  // accepts.
   const plans = quick
     ? new Map<string, number>()
     : new Map(
@@ -882,7 +894,7 @@ export async function countLoadPanel(batch: {
       product: l.product_name_ru || l.product_name_zh,
       plan: quick
         ? null
-        : (plans.get(l.lot_id) ?? 0) + Math.min(owedLots.get(l.lot_id) ?? 0, Number(l.spare)),
+        : (plans.get(l.lot_id) ?? 0) + Math.min(owedLots.get(l.lot_id) ?? 0, Number(l.claimable)),
       aboard: Number(l.aboard),
       phoneScanned: Number(l.phone),
       over: Number(l.over),

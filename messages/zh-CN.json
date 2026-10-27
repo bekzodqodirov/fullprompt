@@ -1237,6 +1237,8 @@
     "roadHint": "正在驶往本仓库的车上的货物。列入计划后，在这里卸车时会自动转到这辆车上。",
     "roadDropped": "已从选择中移除在途货物：{n}",
     "roadFailed": "在途货物列表未能加载——显示的是仓库内的货物",
+    "unseenPicks": "已选的 {n} 批货物不在列表中，未计入合计——请重新加载列表或将其移除",
+    "unseenDrop": "移除",
     "roadLine": "+{n} 在途 ·",
     "roadAtGate": "已到门口",
     "factoryTrips": "从工厂运来（{n}）",

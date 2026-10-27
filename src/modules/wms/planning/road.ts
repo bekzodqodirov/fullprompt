@@ -87,6 +87,23 @@ export function shelfCartonSql(box: string, w: SQL): SQL {
 }
 
 /**
+ * A carton truck `batch`'s plan has NOT reserved before — the only kind a road
+ * claim for that truck may take. One its plan reserved (the approval's shelf
+ * part, an earlier claim, the count door's re-reservation — every one writes
+ * `plan_approved` with the truck's ref) and a removal or a give-back put back
+ * on the shelf is the plan's own cargo: claimed again, it spent a second unit
+ * of the road's owed while the carton it stood for stayed on the shelf, and the
+ * truck left short with nothing reported (review locks#0, numbers#3).
+ */
+export function claimableForSql(box: string, batch: SQL): SQL {
+  const b = sql.raw(box);
+  return sql`NOT EXISTS (
+    SELECT 1 FROM box_movements rbm
+     WHERE rbm.box_id = ${b}.id AND rbm.ref_type = 'batch' AND rbm.ref_id = ${batch}
+       AND rbm.cause = 'plan_approved')`;
+}
+
+/**
  * The lines that still owe lot `lot` onto a truck at origin `w`: an approved,
  * current version of a plan that is approved or loading, its truck still
  * forming or loading. Aliases: `plr`, `pl`, `pv`, `p`, `ob` (the truck).
@@ -247,14 +264,38 @@ async function reserveClaimed(
   `);
 }
 
-/** One claim of `k` against a line: the row's lock IS the serialisation. Null = the line no longer owes `k`. */
-async function takeOwed(tx: Tx, lineId: string, k: number): Promise<boolean> {
+/**
+ * One claim of up to `k` against a line: the row's lock IS the serialisation.
+ * It takes what the line owes NOW, read under that lock — never «exactly `k`
+ * or nothing»: a concurrent claim that took one first left a `road_owed >= k`
+ * update matching no row, and the claimer gave up with the line still owing
+ * and the cartons free on the shelf (review locks#2). Returns how many it took.
+ */
+async function takeOwed(tx: Tx, lineId: string, k: number): Promise<number> {
   const rows = (await tx.execute(sql`
-    UPDATE plan_line_road SET road_owed = road_owed - ${k}
-     WHERE line_id = ${lineId}::uuid AND road_owed >= ${k}
-    RETURNING line_id
-  `)) as unknown as { line_id: string }[];
-  return rows.length > 0;
+    SELECT road_owed FROM plan_line_road WHERE line_id = ${lineId}::uuid FOR UPDATE
+  `)) as unknown as { road_owed: number }[];
+  const take = Math.min(k, Number(rows[0]?.road_owed ?? 0));
+  if (take <= 0) return 0;
+  await tx.execute(sql`
+    UPDATE plan_line_road SET road_owed = road_owed - ${take} WHERE line_id = ${lineId}::uuid
+  `);
+  return take;
+}
+
+/** Of `cartons`, the ones truck `batchId` may claim (`claimableForSql`), in their order. */
+async function claimableFor<C extends { id: string }>(tx: Tx, batchId: string, cartons: readonly C[]): Promise<C[]> {
+  if (cartons.length === 0) return [];
+  const rows = (await tx.execute(sql`
+    SELECT b.id FROM boxes b
+     WHERE b.id IN (${sql.join(
+       cartons.map((c) => sql`${c.id}::uuid`),
+       sql`, `,
+     )})
+       AND ${claimableForSql('b', sql`${batchId}::uuid`)}
+  `)) as unknown as { id: string }[];
+  const ok = new Set(rows.map((r) => r.id));
+  return cartons.filter((c) => ok.has(c.id));
 }
 
 interface OwingLine {
@@ -275,9 +316,9 @@ async function owingLines(tx: Tx, warehouseId: string, lotId: string, batchId?: 
 
 /**
  * Hand `cartons` (of one lot, held by the caller, free on `w`'s shelf) to the
- * lines that owe their lot — oldest approval first; a line that raced to zero
- * makes the next one be read again (objection locks#6). Returns how many were
- * claimed.
+ * lines that owe their lot — oldest approval first; each line takes what it
+ * owes at its own lock (`takeOwed`), and only cartons its truck never reserved
+ * (`claimableForSql`). Returns how many were claimed.
  */
 async function claimInto(
   tx: Tx,
@@ -298,10 +339,13 @@ async function claimInto(
     if (lines.length === 0) break;
     let moved = false;
     for (const line of lines) {
-      const k = Math.min(line.owed, left.length);
-      if (k <= 0) continue;
-      if (!(await takeOwed(tx, line.lineId, k))) continue;
-      const take = left.splice(0, k);
+      const eligible = await claimableFor(tx, line.batchId, left);
+      if (eligible.length === 0) continue;
+      const took = await takeOwed(tx, line.lineId, eligible.length);
+      if (took <= 0) continue;
+      const take = eligible.slice(0, took);
+      const taken = new Set(take.map((c) => c.id));
+      left.splice(0, left.length, ...left.filter((c) => !taken.has(c.id)));
       await reserveClaimed(tx, {
         lineId: line.lineId,
         batchId: line.batchId,
@@ -310,7 +354,7 @@ async function claimInto(
         inboundBatchId: a.inboundBatchId,
         actorId: a.actorId,
       });
-      claimed += k;
+      claimed += took;
       moved = true;
       if (left.length === 0) break;
     }
@@ -512,6 +556,16 @@ export async function claimedLandingsOf(
 /** Codes shipped for a truck's owed lots, over the whole snapshot (said when it bites). */
 export const ROAD_CODES_CAP = 2000;
 
+/** The loading snapshot's road half (`roadOwedForTruck`). */
+export interface RoadSnapshot {
+  lots: RoadOwedLot[];
+  /** Free on the origin's shelf and claimable by this truck. */
+  shelf: { code: string; lotId: string }[];
+  /** Still on an inbound truck, with that truck's code. */
+  inbound: { code: string; truck: string }[];
+  capped: boolean;
+}
+
 export interface RoadOwedLot {
   lotId: string;
   /** «GS777-A», the label every screen prints. */
@@ -523,18 +577,21 @@ export interface RoadOwedLot {
 
 /**
  * What truck `batchId`'s plan still owes from the road, per lot, and the codes
- * of the cartons a scan of which would be the plan's — free on the origin's
- * shelf (claimed at the scan) or still on an inbound truck (refused in words
- * until it lands). The loading screen prints the first and checks scans
- * against the second, so a road carton never opens the red «not on plan».
+ * of its lots' cartons in two kinds — free on the origin's shelf and claimable
+ * by this truck (the phone accepts one while it has taken fewer of that lot
+ * than the lot owes, and the server claims it), and still on an inbound truck
+ * (the phone refuses it at once, naming that truck: accepted green and taken
+ * back at the flush, a carton physically loaded went unrecorded — #221, review
+ * numbers#5). So a road carton never opens the red «not on plan».
  */
 export async function roadOwedForTruck(
   exec: Db | Tx,
   road: RoadOn,
   batchId: string,
   originId: string,
-): Promise<{ lots: RoadOwedLot[]; codes: string[]; capped: boolean }> {
-  if (!road.on) return { lots: [], codes: [], capped: false };
+): Promise<RoadSnapshot> {
+  const none: RoadSnapshot = { lots: [], shelf: [], inbound: [], capped: false };
+  if (!road.on) return none;
   const owed = (await exec.execute(sql`
     SELECT pl.lot_id, sum(plr.road_owed)::int AS owed, l.letter,
            r.unclaimed_marking AS marking, c.client_code
@@ -556,7 +613,7 @@ export async function roadOwedForTruck(
     marking: string | null;
     client_code: string | null;
   }[];
-  if (owed.length === 0) return { lots: [], codes: [], capped: false };
+  if (owed.length === 0) return none;
   const lotList = sql.join(
     owed.map((o) => sql`${o.lot_id}::uuid`),
     sql`, `,
@@ -567,10 +624,12 @@ export async function roadOwedForTruck(
       FROM boxes b
       LEFT JOIN batches rib ON rib.id = b.current_batch_id
      WHERE b.lot_id IN (${lotList})
-       AND (${shelfCartonSql('b', w)} OR ${roadCartonSql('b', w)})
+       AND ((${shelfCartonSql('b', w)} AND ${claimableForSql('b', sql`${batchId}::uuid`)})
+            OR ${roadCartonSql('b', w)})
      ORDER BY b.lot_id, b.seq_in_lot
      LIMIT ${ROAD_CODES_CAP + 1}
   `)) as unknown as { lot_id: string; short_code: string; truck: string | null }[];
+  const shipped = cartons.slice(0, ROAD_CODES_CAP);
   const trucks = new Map<string, Set<string>>();
   for (const c of cartons) {
     if (!c.truck) continue;
@@ -585,7 +644,8 @@ export async function roadOwedForTruck(
       owed: Number(o.owed),
       trucks: [...(trucks.get(o.lot_id) ?? [])].sort(),
     })),
-    codes: cartons.slice(0, ROAD_CODES_CAP).map((c) => c.short_code),
+    shelf: shipped.filter((c) => !c.truck).map((c) => ({ code: c.short_code, lotId: c.lot_id })),
+    inbound: shipped.filter((c) => c.truck).map((c) => ({ code: c.short_code, truck: c.truck! })),
     capped: cartons.length > ROAD_CODES_CAP,
   };
 }

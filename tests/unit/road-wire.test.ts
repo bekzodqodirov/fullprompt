@@ -16,7 +16,7 @@ const read = (path: string) => stripComments(readFileSync(path, 'utf8'));
 /** The body of a top-level function, up to the next top-level declaration. */
 function body(path: string, fn: string): string {
   const src = read(path);
-  const start = src.search(new RegExp(`(export\\s+)?async function ${fn}\\(`));
+  const start = src.search(new RegExp(`(export\\s+)?async function ${fn}[(<]`));
   expect(start, `${fn} in ${path}`).toBeGreaterThanOrEqual(0);
   const rest = src.slice(start + 1);
   const next = rest.search(/\n(export |async function |function |const )/);
@@ -68,17 +68,37 @@ describe('every door that lands a carton offers it to a plan owing its lot (§7)
     );
   });
 
-  it('a carton this truck already landed is never landed again by it', () => {
+  it('a carton already here is never landed again — by this truck, another, or after the stocktake', () => {
     const src = body(`${SCANNING}/unload.ts`, 'landUnloadInput');
     expect(src).toContain('const allDone = members.every(doneHere)');
     expect(src).toContain('const toMove = members.filter((b) => !doneHere(b))');
-    expect(src).toMatch(/!landedBefore\.has\(b\.id\)/);
+    // Three ways to know (review locks#1), and the rogue asks the same one.
+    expect(src).toContain('settledHere(b) || landedBefore.has(b.id) || heldOnward.has(b.id)');
+    expect(src).toMatch(/b\.status === 'in_transit'\) && !doneHere\(b\)/);
+    // «Landed by this truck» is the arrival causes' one list, less what a
+    // later press sent back (review deploy#8).
+    expect(src).toContain('ARRIVED_ON_A_TRUCK.map(');
+    expect(src).toContain("notSentBackSql('bm',");
+    expect(read('src/modules/wms/scanning/count-accept.ts')).toContain("notSentBackSql('am',");
   });
 
   it('the sync body lands before it loads', () => {
     const src = read(`${SCANNING}/sync.ts`);
     expect(src.indexOf('ingestUnloadScans(unloads')).toBeGreaterThan(-1);
     expect(src.indexOf('ingestUnloadScans(unloads')).toBeLessThan(src.indexOf('ingestLoadScans(loads'));
+  });
+});
+
+describe('a truck never claims its own plan cargo as road cargo (review locks#0, numbers#3)', () => {
+  it('the claim, the snapshot’s shelf codes and the count panel ask one sentence', () => {
+    const road = read(ROAD);
+    expect(body(ROAD, 'claimInto')).toContain('await claimableFor(tx, line.batchId, left)');
+    expect(body(ROAD, 'claimableFor')).toContain('claimableForSql(');
+    expect(body(ROAD, 'roadOwedForTruck')).toContain('claimableForSql(');
+    expect(body(`${SCANNING}/count-load.ts`, 'countLoadPanel')).toContain('claimableForSql(');
+    // A claim takes what the line owes at its lock — never «exactly k or nothing».
+    expect(body(ROAD, 'takeOwed')).toContain('FOR UPDATE');
+    expect(road).not.toMatch(/road_owed >= \$\{k\}/);
   });
 });
 

@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import postgres from 'postgres';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
@@ -22,7 +23,8 @@ import { PlanError, recordVerdict, submitPlan } from '@/modules/wms/planning/ser
 import { anyRoadOwedFor, lotSplitAt, planRoadReady, roadOwedForTruck } from '@/modules/wms/planning/road';
 import { plannableStock, roadStock, withRoad } from '@/modules/wms/planning/stock';
 import { batchRegister } from '@/modules/wms/reports/queries';
-import { departBatch, finishLoading, ingestLoadScans, ScanError } from '@/modules/wms/scanning/service';
+import { departBatch, finishLoading, ingestLoadScans, removeLoadedCode, ScanError } from '@/modules/wms/scanning/service';
+import { countAcceptLot } from '@/modules/wms/scanning/count-accept';
 import { ingestUnloadScans, unloadRemaining } from '@/modules/wms/scanning/unload';
 import { countDoorFor } from '@/modules/wms/scanning/count-door';
 import { countLoadLot, countLoadPanel } from '@/modules/wms/scanning/count-load';
@@ -330,6 +332,22 @@ describe('the loading ends without the road part (4a)', () => {
     // The register's ⤵️ counts the road part that never came (4a: short as today).
     const register = await batchRegister([W.hor]);
     expect(Number(register.find((r) => r.id === truck.id)?.short)).toBe(3);
+    // The agent sheet files the three that never came under their own heading
+    // — never under the truck that brought the two, never «received here»
+    // (review numbers#4).
+    const { buildAgentXlsx } = await import('@/modules/wms/documents/agent-xlsx');
+    const ExcelJS = (await import('exceljs')).default;
+    const book = new ExcelJS.Workbook();
+    await book.xlsx.load((await buildAgentXlsx(sub.plan.id, sub.version.versionNo))! as unknown as ArrayBuffer);
+    const cells: string[][] = [];
+    book.worksheets[0]!.eachRow((row) => cells.push((row.values as unknown[]).slice(1).map((v) => String(v ?? ''))));
+    const notCame = cells.findIndex((r) => r[0]!.startsWith('Не пришло / Did not come'));
+    expect(notCame).toBeGreaterThan(0);
+    expect(cells[notCame]![0]).toContain('3 Коробок');
+    expect(cells[notCame + 1]![3]).toBe('3');
+    const landed = cells.findIndex((r) => r[0]!.includes(first.code));
+    expect(cells[landed + 1]![3]).toBe('2');
+    expect(cells.some((r) => r[0]!.startsWith('Принято на складе'))).toBe(false);
 
     // After the finish the count door still asks for the two — never the five,
     // which would grow the lot by three cartons that later land as duplicates.
@@ -445,7 +463,20 @@ describe('the readers say the road part', () => {
     expect(snap.lots).toEqual([
       expect.objectContaining({ lotId: lot.lotId, owed: 3, trucks: [inbound.code] }),
     ]);
-    expect([...snap.codes].sort()).toEqual(lot.boxes.map((b) => b.code).sort());
+    // All three still on the inbound truck: refused at the phone with its code
+    // (review numbers#5), none offered as shelf cargo.
+    expect(snap.shelf).toEqual([]);
+    expect([...snap.inbound].sort((a, b) => a.code.localeCompare(b.code))).toEqual(
+      lot.boxes.map((b) => ({ code: b.code, truck: inbound.code })).sort((a, b) => a.code.localeCompare(b.code)),
+    );
+    // One stands free here by a door the hook never saw: it moves to the shelf kind.
+    await db
+      .update(boxes)
+      .set({ status: 'in_stock', currentBatchId: null, currentWarehouseId: W.hor })
+      .where(eq(boxes.id, lot.boxes[0]!.id));
+    const after = await roadOwedForTruck(db, await planRoadReady(), truck.id, W.hor);
+    expect(after.shelf).toEqual([{ code: lot.boxes[0]!.code, lotId: lot.lotId }]);
+    expect(after.inbound.map((c) => c.code).sort()).toEqual(lot.boxes.slice(1).map((b) => b.code).sort());
   });
 
   it('the agent sheet files the road part under «В пути» and the landed part under its truck', async () => {
@@ -473,6 +504,159 @@ describe('the readers say the road part', () => {
     const landed = cells.findIndex((r) => r[0]!.includes(first.code) && r[0]!.startsWith('Партия прихода'));
     expect(landed).toBeGreaterThan(0);
     expect(cells[landed + 1]![3]).toBe('4');
+  });
+});
+
+/*
+ * The review of the BUILT round (four lenses, 2026-10-27): each case is a
+ * defect a reviewer traced through the shipped code, red before its fix.
+ */
+describe('the plan’s own cargo is never claimed as road cargo (review locks#0, numbers#3)', () => {
+  it('a claimed carton taken off the truck and scanned again spends the owed once — the rest still lands onto it', async () => {
+    const lot = await mkLot(W.yw, 3);
+    const inbound = await roadTruck(W.yw, W.hor, lot);
+    const sub = await submit(W.hor, W.ka, [{ lot, take: 3 }], true);
+    const truck = await approve(sub.version.id);
+    const T = { I: inbound.id, O: truck.id };
+    // Carton 1 lands, is claimed, loaded, and taken off again.
+    expect((await ingestUnloadScans([qr(inbound.id, lot.boxes[0]!.code)], ctx()))[0]!.result).toBe('ok');
+    expect((await ingestLoadScans([qr(truck.id, lot.boxes[0]!.code)], ctx()))[0]!.result).toBe('ok');
+    await removeLoadedCode(truck.id, lot.boxes[0]!.code, ctx());
+    expect(await roadRow(sub.version.id, lot)).toEqual({ part: 3, owed: 2, missed: 0 });
+    // Scanned again: the plan's own carton given back — never a second claim.
+    const [again] = await ingestLoadScans([qr(truck.id, lot.boxes[0]!.code)], ctx());
+    expect(again!.result).toBe('not_on_plan');
+    expect(await roadRow(sub.version.id, lot)).toEqual({ part: 3, owed: 2, missed: 0 });
+    expect((await roadOwedForTruck(db, await planRoadReady(), truck.id, W.hor)).shelf).toEqual([]);
+    // The two still on the road land onto the truck — both of them.
+    await unloadRemaining(inbound.id, ctx());
+    expect(await statusOf(lot, T)).toEqual(['1:in_stock', '2:planned@O', '3:planned@O']);
+    expect(await roadRow(sub.version.id, lot)).toEqual({ part: 3, owed: 0, missed: 0 });
+    // And the count door's «Hammasi» is the plan's three, re-reserving carton 1.
+    const panel = await countLoadPanel({ id: truck.id, originWarehouseId: W.hor });
+    expect(panel.rows.find((r) => r.lotId === lot.lotId)?.plan).toBe(3);
+    const res = await countLoadLot(
+      { batchId: truck.id, lotId: lot.lotId, target: 3, seenAboard: 0, pressId: uuidv4() },
+      ctx(),
+      office(W.hor),
+    );
+    expect(res).toMatchObject({ aboard: 3, over: 0, grown: 0 });
+  });
+
+  it('a shelf carton the plan reserved, taken off the truck, is re-reserved by the count door — not claimed as road', async () => {
+    // Two of the lot here, three still on the road.
+    const lot = await mkLot(W.yw, 5);
+    const first = await roadTruck(W.yw, W.hor, lot, 2, 0);
+    await unloadRemaining(first.id, ctx());
+    await roadTruck(W.yw, W.hor, lot, 3, 2);
+    const sub = await submit(W.hor, W.ka, [{ lot, take: 5 }], true);
+    const truck = await approve(sub.version.id);
+    await ingestLoadScans(lot.boxes.slice(0, 2).map((b) => qr(truck.id, b.code)), ctx());
+    await removeLoadedCode(truck.id, lot.boxes[1]!.code, ctx());
+    // The panel's number is the shelf part, never shelf + the removed carton as road.
+    const panel = await countLoadPanel({ id: truck.id, originWarehouseId: W.hor });
+    expect(panel.rows.find((r) => r.lotId === lot.lotId)?.plan).toBe(2);
+    const res = await countLoadLot(
+      { batchId: truck.id, lotId: lot.lotId, target: 2, seenAboard: 1, pressId: uuidv4() },
+      ctx(),
+      office(W.hor),
+    );
+    expect(res).toMatchObject({ aboard: 2, over: 0, grown: 0 });
+    // The road still owes all three that are on the road.
+    expect(await roadRow(sub.version.id, lot)).toEqual({ part: 3, owed: 3, missed: 0 });
+  });
+});
+
+describe('a claim that loses a race takes what is left (review locks#2)', () => {
+  it('the count door claims the two a concurrent claim left, never nothing', async () => {
+    const lot = await mkLot(W.yw, 3);
+    await roadTruck(W.yw, W.hor, lot);
+    const sub = await submit(W.hor, W.ka, [{ lot, take: 3 }], true);
+    const truck = await approve(sub.version.id);
+    // All three stand free here (a door the hook never saw).
+    await db
+      .update(boxes)
+      .set({ status: 'in_stock', currentBatchId: null, currentWarehouseId: W.hor })
+      .where(inArray(boxes.id, lot.boxes.map((b) => b.id)));
+    const [line] = (await db.execute(sql`
+      SELECT pl.id FROM load_plan_lines pl WHERE pl.version_id = ${sub.version.id}::uuid AND pl.lot_id = ${lot.lotId}::uuid
+    `)) as unknown as { id: string }[];
+    const helper = postgres(process.env.DATABASE_URL!, { max: 1, onnotice: () => {} });
+    const held = await helper.reserve();
+    try {
+      // Another claimer takes one of the three, committing while the press waits.
+      await held`BEGIN`;
+      await held`UPDATE plan_line_road SET road_owed = road_owed - 1 WHERE line_id = ${line!.id}`;
+      const press = countLoadLot(
+        { batchId: truck.id, lotId: lot.lotId, target: 1, seenAboard: 0, pressId: uuidv4() },
+        ctx(),
+        office(W.hor),
+      );
+      let waiting = false;
+      for (let i = 0; i < 250 && !waiting; i += 1) {
+        const rows = (await db.execute(sql`
+          SELECT count(*)::int AS n FROM pg_stat_activity
+           WHERE datname = current_database() AND wait_event_type = 'Lock'
+             AND query ILIKE '%plan_line_road%' AND pid <> pg_backend_pid()`)) as unknown as { n: number }[];
+        waiting = Number(rows[0]?.n ?? 0) > 0;
+        if (!waiting) await new Promise((r) => setTimeout(r, 20));
+      }
+      expect(waiting, 'the press never reached the line’s lock').toBe(true);
+      await held`COMMIT`;
+      await press;
+    } finally {
+      held.release();
+      await helper.end();
+    }
+    // The two the race left are claimed; nothing is owed with cartons free.
+    expect(await roadRow(sub.version.id, lot)).toEqual({ part: 3, owed: 0, missed: 0 });
+    const claims = await db.select().from(planRoadClaims).where(eq(planRoadClaims.lineId, line!.id));
+    expect(claims).toHaveLength(2);
+  });
+});
+
+describe('a carton already here is never landed again by any unload screen (review locks#1, deploy#8)', () => {
+  it('a claimed carton scanned on ANOTHER inbound truck’s screen stays on the onward truck', async () => {
+    const lot = await mkLot(W.yw, 2);
+    const i1 = await roadTruck(W.yw, W.hor, lot, 1, 0);
+    const i2 = await roadTruck(W.yw, W.hor, lot, 1, 1);
+    const sub = await submit(W.hor, W.ka, [{ lot, take: 2 }], true);
+    const truck = await approve(sub.version.id);
+    const T = { I1: i1.id, I2: i2.id, O: truck.id };
+    expect((await ingestUnloadScans([qr(i1.id, lot.boxes[0]!.code)], ctx()))[0]!.result).toBe('ok');
+    expect((await statusOf(lot, T))[0]).toBe('1:planned@O');
+    // The mixed pile: a phone on I2's screen scans it.
+    const [mixed] = await ingestUnloadScans([qr(i2.id, lot.boxes[0]!.code)], ctx());
+    expect(mixed!.result).toBe('duplicate');
+    expect((await statusOf(lot, T))[0]).toBe('1:planned@O');
+    const [row] = await db.select({ flags: boxes.flags }).from(boxes).where(eq(boxes.id, lot.boxes[0]!.id));
+    expect(row!.flags).toEqual([]);
+    expect(await roadRow(sub.version.id, lot)).toEqual({ part: 2, owed: 1, missed: 0 });
+  });
+
+  it('over → undo → over lands the carton the undo sent back (no count_conflict for ever)', async () => {
+    const lot = await mkLot(W.yw, 5);
+    const sub = await submit(W.yw, W.hor, [{ lot, take: 3 }], false);
+    const t = await approve(sub.version.id);
+    await ingestLoadScans(lot.boxes.slice(0, 3).map((b) => qr(t.id, b.code)), ctx());
+    await finishLoading(t.id, ctx());
+    await departBatch(t.id, ctx());
+    expect((await ingestUnloadScans(lot.boxes.slice(0, 3).map((b) => qr(t.id, b.code)), ctx())).map((a) => a.result)).toEqual([
+      'ok',
+      'ok',
+      'ok',
+    ]);
+    const doors = { dest: office(W.hor), origin: office(W.yw) };
+    const press = (target: number, seenArrived: number, overReason: string) =>
+      countAcceptLot(
+        { batchId: t.id, lotId: lot.lotId, target, seenArrived, pressId: uuidv4(), overReason, confirmArrival: true },
+        ctx(),
+        doors,
+      );
+    await press(5, 3, 'ikkita ortiqcha keldi');
+    await press(4, 5, 'bittasi xato sanaldi');
+    const again = await press(5, 4, 'yana sanaldi, beshta');
+    expect(again).toMatchObject({ arrived: 5 });
   });
 });
 

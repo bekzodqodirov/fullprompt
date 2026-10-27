@@ -27,6 +27,7 @@ import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { usersWithPermission } from '../../platform/notifications/service';
 import { reannounceGivenBack, ScanError } from './service';
 import { landedStatusFor } from '../warehouses/landed';
+import { ARRIVED_ON_A_TRUCK, notSentBackSql } from '../documents/arrivals';
 import { byShelf, shelfBefore } from '../boxes/shelf';
 import { claimLandedForRoadTx, closeRoadOwedTx, planRoadReady, type RoadOn } from '../planning/road';
 import { codeIdentity } from '../labels/code-identity';
@@ -358,12 +359,19 @@ export async function landUnloadInput(
     }
   }
 
-  // A carton THIS truck already landed here is never landed again by it,
-  // whatever it has become since — reserved onto an onward truck by the road
-  // claim, loaded, handed over. A stale phone scan of it (an offline queue
-  // flushed after «Hammasini qabul qilish», a second phone) otherwise took the
-  // rogue branch below and pulled it off the onward truck back onto the shelf
-  // as an undocumented transfer (docs/YOLDAGI-YUK.md §7, objection locks#0).
+  // A carton that is already HERE is never landed again (docs/YOLDAGI-YUK.md
+  // §7). Three ways to know it, because the road claim reserves a carton onto
+  // an onward truck the moment it lands, and a stale scan of it (an offline
+  // queue flushed after «Hammasini qabul qilish», a second phone, another
+  // inbound truck's screen at a mixed pile) otherwise took the rogue branch
+  // below and pulled it off that truck back onto the shelf as an undocumented
+  // transfer (objection locks#0, review locks#1):
+  //  - it stands here on the shelf;
+  //  - THIS truck landed it here, and no later press sent it back to the
+  //    origin (`notSentBackSql` — without that clause over → undo → over was
+  //    refused for ever, review deploy#8);
+  //  - it stands here reserved or loading onto a truck LEAVING here, however
+  //    it landed — another inbound truck, the stocktake.
   const settledHere = (b: (typeof boxes.$inferSelect)) =>
     b.status === landedStatus && b.currentWarehouseId === batch.destWarehouseId;
   const offManifest = members.filter(
@@ -379,11 +387,36 @@ export async function landUnloadInput(
        )})
          AND bm.ref_type = 'batch' AND bm.ref_id = ${input.batchId}::uuid
          AND bm.to_warehouse_id = ${batch.destWarehouseId}::uuid
-         AND bm.cause IN ('unload_scan', 'undocumented_transfer', 'found_here')
+         AND bm.cause IN (${sql.join(
+           ARRIVED_ON_A_TRUCK.map((c) => sql`${c}`),
+           sql`, `,
+         )})
+         AND ${notSentBackSql('bm', sql`${input.batchId}::uuid`)}
     `)) as unknown as { box_id: string }[];
     for (const row of rows) landedBefore.add(row.box_id);
   }
-  const doneHere = (b: (typeof boxes.$inferSelect)) => settledHere(b) || landedBefore.has(b.id);
+  const reservedHere = offManifest.filter(
+    (b) =>
+      (b.status === 'planned' || b.status === 'loading') &&
+      b.currentWarehouseId === batch.destWarehouseId &&
+      b.currentBatchId !== null &&
+      b.currentBatchId !== input.batchId,
+  );
+  const heldOnward = new Set<string>();
+  if (reservedHere.length > 0) {
+    const leaving = (await tx.execute(sql`
+      SELECT id FROM batches
+       WHERE id IN (${sql.join(
+         [...new Set(reservedHere.map((b) => b.currentBatchId!))].map((id) => sql`${id}::uuid`),
+         sql`, `,
+       )})
+         AND origin_warehouse_id = ${batch.destWarehouseId}::uuid
+    `)) as unknown as { id: string }[];
+    const onward = new Set(leaving.map((r) => r.id));
+    for (const b of reservedHere) if (onward.has(b.currentBatchId!)) heldOnward.add(b.id);
+  }
+  const doneHere = (b: (typeof boxes.$inferSelect)) =>
+    settledHere(b) || landedBefore.has(b.id) || heldOnward.has(b.id);
 
   // Business duplicate: everything already landed at this destination.
   const allDone = members.every(doneHere);
@@ -434,7 +467,7 @@ export async function landUnloadInput(
     (b) => b.currentBatchId === input.batchId && b.status === 'in_transit',
   );
   const rogue = members.filter(
-    (b) => !(b.currentBatchId === input.batchId && b.status === 'in_transit') && !landedBefore.has(b.id),
+    (b) => !(b.currentBatchId === input.batchId && b.status === 'in_transit') && !doneHere(b),
   );
 
   const toMove = members.filter((b) => !doneHere(b));

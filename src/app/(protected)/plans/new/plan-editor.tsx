@@ -166,6 +166,15 @@ export function PlanEditor({
   const [factoryTrips, setFactoryTrips] = useState<FactoryTripView[]>([]);
   /** Road picks the person's own untick took back — said, never silent. */
   const [roadDropped, setRoadDropped] = useState(0);
+  /**
+   * An untick waiting for the road-less answer: the picks are clamped against
+   * THAT answer's shelf, never against the list on screen — which is empty
+   * while a read is in flight and shelf-only when the road half failed, so the
+   * untick used to take every pick with it (review editor#6).
+   */
+  const pendingUntick = useRef(false);
+  /** «Qayta yuklash»: a read again with nothing changed. */
+  const [reloadKey, setReloadKey] = useState(0);
   const [selection, setSelection] = useState<Map<string, number>>(
     () => new Map(resubmit?.lines.map((l) => [l.lotId, l.boxCount]) ?? []),
   );
@@ -236,6 +245,24 @@ export function PlanEditor({
           setRoadFailed(Boolean(data.roadFailed));
           setFactoryTrips(data.factoryTrips ?? []);
           setStockFailed(false);
+          if (!road && pendingUntick.current) {
+            // The person's untick, against the answer it asked for: every pick
+            // back to its shelf part, road-only picks out — said in one line.
+            pendingUntick.current = false;
+            const shelf = new Map(data.lots.map((lot) => [lot.lotId, lot.available]));
+            const kept = new Map<string, number>();
+            let dropped = 0;
+            for (const [lotId, count] of picksRef.current.selection) {
+              const max = shelf.get(lotId) ?? 0;
+              if (max <= 0) dropped += 1;
+              else {
+                if (count > max) dropped += 1;
+                kept.set(lotId, Math.min(count, max));
+              }
+            }
+            if (dropped > 0) setSelection(kept);
+            setRoadDropped(dropped);
+          }
           // A road half that did not come prunes nothing: a road pick is not
           // «gone» because its half of the answer failed.
           if (quiet && !data.roadFailed) {
@@ -290,31 +317,15 @@ export function PlanEditor({
       controller.abort();
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [originId, road]);
+  }, [originId, road, reloadKey]);
 
   /**
-   * The person's own untick (never the initial state of a resubmit): every
-   * pick back to its shelf part, road-only picks out — said in one line —
-   * then the list is read again without the road.
+   * The person's own untick (never the initial state of a resubmit): the list
+   * is read again without the road, and its answer clamps the picks (above).
    */
   function toggleRoad(next: boolean) {
-    if (!next) {
-      let dropped = 0;
-      const shelf = new Map(lots.map((lot) => [lot.lotId, lot.available]));
-      const kept = new Map<string, number>();
-      for (const [lotId, count] of selection) {
-        const max = shelf.get(lotId) ?? 0;
-        if (max <= 0) dropped += 1;
-        else {
-          if (count > max) dropped += 1;
-          kept.set(lotId, Math.min(count, max));
-        }
-      }
-      setSelection(kept);
-      setRoadDropped(dropped);
-    } else {
-      setRoadDropped(0);
-    }
+    pendingUntick.current = !next;
+    setRoadDropped(0);
     setRoad(next);
   }
 
@@ -331,6 +342,17 @@ export function PlanEditor({
       ? 0
       : lots.filter((lot) => (selection.get(lot.lotId) ?? 0) > 0 && !shownLots.includes(lot)).length +
         stockCrates.filter((crate) => selectedCrates.has(crate.crateId) && !shownCrates.includes(crate)).length;
+  /**
+   * Picks the list on screen does not hold — a road pick whose half of the
+   * answer failed, a lot that left the shelf before a resubmit opened. They
+   * are in no row, no Σ and no gauge, yet the submit would send them: the
+   * agent would get a heavier truck than anyone saw (review editor#7). Named,
+   * and the submit waits until they are reloaded or taken out.
+   */
+  const unseen =
+    loaded && !stockFailed
+      ? [...selection.keys()].filter((lotId) => !lots.some((lot) => lot.lotId === lotId))
+      : [];
   const totals = useMemo(() => {
     let boxes = 0;
     let kg = 0;
@@ -852,6 +874,31 @@ export function PlanEditor({
         </details>
       )}
 
+      {unseen.length > 0 && (
+        <div role="alert" className="space-y-2 rounded-lg bg-warn/10 p-3 text-sm" data-testid="plan-unseen">
+          <p className="font-semibold text-warn">⚠ {t('unseenPicks', { n: unseen.length })}</p>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className="btn-secondary" onClick={() => setReloadKey((k) => k + 1)}>
+              {tc('retry')}
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              data-testid="plan-unseen-drop"
+              onClick={() =>
+                setSelection((prev) => {
+                  const next = new Map(prev);
+                  for (const lotId of unseen) next.delete(lotId);
+                  return next;
+                })
+              }
+            >
+              {t('unseenDrop')}
+            </button>
+          </div>
+        </div>
+      )}
+
       {error && (
         <p role="alert" className="rounded-lg bg-bad/10 p-3 text-sm font-semibold text-bad">
           {t(`errors.${error}` as never) || tc('error')}
@@ -890,7 +937,7 @@ export function PlanEditor({
             type="button"
             data-testid="submit-plan"
             className="btn-primary w-full disabled:opacity-50"
-            disabled={submitting || totals.boxes === 0 || !destId}
+            disabled={submitting || totals.boxes === 0 || !destId || unseen.length > 0}
             onClick={submit}
           >
             {submitting ? tc('loading') : `📤 ${t('submitToAgent')}`}

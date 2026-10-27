@@ -1237,6 +1237,8 @@
     "roadHint": "Bu skladga kelayotgan mashinalardagi yuk. Rejaga olsangiz, shu yerda tushirilganda o‘zi shu mashinaga o‘tadi.",
     "roadDropped": "Yo‘ldagi yuk tanlovdan olindi: {n}",
     "roadFailed": "Yo‘ldagi yuk ro‘yxati yuklanmadi — skladdagi yuk ko‘rsatildi",
+    "unseenPicks": "{n} ta tanlangan yuk ro‘yxatda ko‘rinmayapti va hisobga kirmayapti — ro‘yxatni qayta yuklang yoki ularni olib tashlang",
+    "unseenDrop": "Olib tashlash",
     "roadLine": "+{n} yo‘lda ·",
     "roadAtGate": "darvozada",
     "factoryTrips": "Zavoddan kelyapti ({n})",
