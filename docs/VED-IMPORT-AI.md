@@ -221,10 +221,14 @@ suggestImportBaza(input: {
 }): Promise<{ auto: ImportBazaRow | null; candidates: ImportBazaRow[] }>
 ```
 
-- Reads the NEWEST 'ready' batch only (his 2b). EXACT code match only in v1
-  — a price is code-specific; the LAW's prefix fallback does not apply to
-  prices. No rows → both null/empty (the screen says «bu kod importda yo'q»,
-  the VED types by hand — his own sentence).
+- *Which batch and which code are round 2's rules, in the next bullet* —
+  v1 read the NEWEST 'ready' batch only (his 2b) by the EXACT code, and both
+  halves are superseded: the per-code chooser keeps the newest file wherever
+  it holds enough of the code, and a 4-6 digit heading reaches the 📥 list
+  and the AI pick by its range. What v1 said and still holds: a price is
+  code-specific, so the LAW's prefix fallback never applies to prices; no
+  rows → both null/empty (the screen says «Bu kod uchun importda mos qator
+  yo‘q», the VED types by hand — his own sentence).
 - **Round 2 (docs/SAKKIZ-R2.md §7.3-7.4) — two answers changed:**
   - *Which batch:* PER CODE (`batchesForCodes`, import-service.ts): a ready
     batch holding ≥ 5 rows of the code first, then the newer quarter of what
@@ -279,7 +283,13 @@ suggestImportBaza(input: {
       split export), and that rule would hide the first half. The lead's
       call.
 - Rank in SQL: `similarity(name_norm, ${normalize(name)})` via pg_trgm over
-  `WHERE batch_id = $newest AND tnved_code = $code`, LIMIT 10 by score.
+  `WHERE batch_id = $newest AND tnved_code = $code`, LIMIT 10 by score —
+  **v1, superseded on all three counts.** As built: `word_similarity(needle,
+  name_norm)` — not `similarity()`, which divides by both trigram sets, so a
+  short typed name inside a 500-character declaration scores near zero —
+  over the batch the per-code chooser picked and the code matched exactly or
+  by a heading's range (`codeMatchSql`), LIMIT 10 by score (50 in the 📥
+  dialog).
   UNIT FILTER: candidates whose `unit` differs from the request row's unit
   are kept in the list (visible, labeled) but NEVER auto-filled — a per-kg
   price must not silently land on a per-dona row.
