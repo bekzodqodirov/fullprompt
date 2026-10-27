@@ -1,6 +1,6 @@
 import { isQueryCanceled } from '../../platform/db/errors';
 import { logger } from '../../platform/logger';
-import { unitsForItem } from '../customs/import-baza';
+import { isFullCode, unitsForItem } from '../customs/import-baza';
 import type { ImportUnit } from '../customs/import-parse';
 import { batchesForCodes } from '../customs/import-service';
 import { readCodeMedians } from '../customs/import-median';
@@ -70,8 +70,9 @@ export async function rowMediansFor(ws: Workspace, opts: { deadline: number }): 
       }
       const code = (i.tnvedCode ?? g.tnvedCode ?? '').trim();
       // The median is per EXACT code (`codeScopeCtes`): a heading-wide series
-      // mixes subheadings priced nothing alike.
-      if (!/^\d{10}$/.test(code)) {
+      // mixes subheadings priced nothing alike. «Exact» is `isFullCode`, the
+      // statistics' and the auto-fill's own test — one home (#513).
+      if (!isFullCode(code)) {
         out.set(i.id, miss('short_code'));
         continue;
       }
