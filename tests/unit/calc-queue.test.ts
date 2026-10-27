@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { calcDueMinutes, missingFor } from '@/modules/wms/calc/service';
@@ -172,8 +173,14 @@ describe('the wire between the queue and the things that must agree with it', ()
     );
   });
 
-  it('a won lead’s open request follows the cargo onto the deal', () => {
+  it('a won lead’s requests follow their sale onto its deal, in the win’s own transaction', () => {
     const crm = readFileSync('src/modules/wms/crm/service.ts', 'utf8');
-    expect(crm).toContain('rekeyLeadCalcRequests');
+    expect(crm).toContain('await rekeyLeadCalcJobsTx(tx, id, [');
+    // The one-deal shorthand is the tests' and nobody else's: a production
+    // caller would put every sale back on one deal (his Q5 a).
+    const callers = execSync("grep -rln 'rekeyLeadCalcRequests(' src || true", { encoding: 'utf8' })
+      .split('\n')
+      .filter(Boolean);
+    expect(callers).toEqual(['src/modules/wms/calc/service.ts']);
   });
 });

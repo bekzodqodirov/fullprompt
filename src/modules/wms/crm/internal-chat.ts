@@ -1,7 +1,7 @@
 import { asc, eq, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { clients, deals, leads, users } from '../../platform/db/schema';
-import { noteLinksFor } from '../calc/card-door';
+import { calcWorkspaceHref, noteLinksFor } from '../calc/card-door';
 import { SECTION_LABEL, type CalcSection } from '../calc/intake';
 import { DEFAULT_LOCALE, LOCALES, type Locale } from '../../platform/i18n/locales';
 import { notificationLabels } from '../../platform/notifications/labels';
@@ -537,8 +537,9 @@ async function linksFor(
       continue;
     }
     const grants = audience.grants.get(id)?.permissions ?? (await actorGrants(id)).permissions;
-    if (grants.has('ved.docs')) {
-      out.set(id, `${appUrl}/hisoblash/${input.calcRequestId}#savol`);
+    const workspace = calcWorkspaceHref({ permissions: grants }, input.calcRequestId, '#savol');
+    if (workspace) {
+      out.set(id, `${appUrl}${workspace}`);
       continue;
     }
     const card = cardLinks.get(id) ?? null;

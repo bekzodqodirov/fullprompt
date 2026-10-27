@@ -18,7 +18,7 @@ import { SHEET_PHOTO_PX, fitInBox, sheetPhoto, sheetPhotoKey, type SheetPhoto } 
 import { aboardFilter } from '../scanning/unload';
 import { compositionMode, paperLines, truckSegments } from '../receipts/composition-math';
 import { lotTrucksFor, paperCompositionsFor } from '../receipts/lot-composition';
-import { ESTIMATE_FILL, estimateNote, packingBoxesCell, packingProductCell } from './composition-cells';
+import { ESTIMATE_FILL, estimateNote, packingBoxesCell, packingPiecesCell, packingProductCell } from './composition-cells';
 
 /**
  * Packing list WITH photos (owner's request, feedback round 8): after loading,
@@ -86,6 +86,8 @@ export async function buildPackingPhotosXlsx(batchId: string): Promise<Buffer | 
   sheet.columns = [
     { header: DOC.code, key: 'code', width: 14 },
     { header: DOC.product, key: 'product', width: 40 },
+    // His 8.5: the pieces BEFORE the carton count, blank when unknown.
+    { header: DOC.pieces, key: 'pieces', width: 10 },
     { header: DOC.boxes, key: 'boxCount', width: 10 },
     { header: DOC.kg, key: 'kg', width: 10 },
     { header: DOC.m3, key: 'm3', width: 10 },
@@ -134,7 +136,7 @@ export async function buildPackingPhotosXlsx(batchId: string): Promise<Buffer | 
     lotTrucksFor(db, lotIds),
   ]);
 
-  const PHOTO_START_COL = 7; // zero-based: right after the date column
+  const PHOTO_START_COL = 8; // zero-based: right after the date column (pinned by a test reading the anchors)
   let rowNo = 3;
   for (const { lot, clientCode, marking, receivedAt, loaded } of rows) {
     const kg = (Number(lot.totalWeightKg) / lot.boxCount) * Number(loaded);
@@ -164,7 +166,8 @@ export async function buildPackingPhotosXlsx(batchId: string): Promise<Buffer | 
         const row = sheet.getRow(rowNo);
         row.values = {
           code,
-          product: packingProductCell(line),
+          product: packingProductCell(line, { zh: lot.productNameZh, ru: lot.productNameRu }),
+          pieces: packingPiecesCell(line),
           boxCount: packingBoxesCell(line, mode, i === 0, Number(loaded)),
           kg: line.kg,
           m3: line.m3 ?? '',
@@ -182,6 +185,8 @@ export async function buildPackingPhotosXlsx(batchId: string): Promise<Buffer | 
       sheet.getRow(rowNo).values = {
         code,
         product: `${lot.productNameZh}${lot.productNameRu ? ` (${lot.productNameRu})` : ''}`,
+        // An uncomposed lot states no count anywhere — blank, his 8.5.
+        pieces: '',
         boxCount: Number(loaded),
         kg: Number(kg.toFixed(1)),
         m3: Number(m3.toFixed(3)),

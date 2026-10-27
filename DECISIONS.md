@@ -4818,3 +4818,119 @@ salvage as a restart, plus one trap — an agent killed between «copy the other
 package's file over mine to test the combination» and «restore it» left a
 foreign file uncommitted in its worktree, found by `git status` before the
 re-run. Read every worktree's status before resuming work in it.
+
+## Uch band — the price's link, a new deal per request, the one-line tarkib (2026-10-27; migration 0136 `lead_client_many`, ledger 137; spec `docs/UCH-BAND.md`; numbered past PR #127, which holds #1455-#1468 and renumbers nothing of this round if it lands first)
+
+1469. **A one-line tarkib is legal, and a REVERSAL of LOT-TARKIBI's 2-20 rule** (his «tarkib 1 qatorlik bolsa
+ham ruxsat berish»). `MIN_LINES` is 1 for what a person may save; the readers keep their own guard,
+`MIN_STORED_LINES` (1), a separate constant so a future write rule cannot quietly take the readers to 0. The
+danger the judge found (regression-1) is that a one-line tarkib is a CLAIM about the lot: «Мышь» on a lot
+received as «клавиатура» used to read «stale» on every screen. The ✅ derivation therefore has a third term,
+`tarkibVouchesSql` — two or more lines, or one line whose name IS the lot's good by `productKeySql` (the TNVED
+memory's own key, so «the same name» has one rule) — and a one-line tarkib of ANOTHER good falls through to
+the person's check and then to ❓, with «🧩 Tarkibda lotdan boshqa nom yozilgan» on the card
+(`documentOtherName`). A one-line tarkib of the lot's own good with no code, where the memory holds one, is
+refused `tnved_would_vanish` naming the code (the invoice prints a line's own code — fence 4 kept).
+«Bitta tovar» prefills pieces only when the link is a PERSON's, the job counts ONE dona good, the prixod has ONE
+lot and no other live prixod is linked to that job (product-1: otherwise a job's whole piece count landed on
+one lot of several). Red-proven seven ways.
+
+1470. **«шт» on the packing files, and the Chinese name only for the lot's own good** (8.5 + his Q6 a, Q7 b).
+Packing (rasmlar) and the draft packing list carry «Кол-во, шт / Pieces» BEFORE the carton count, blank when
+unknown and never totalled (a sum of pieces of different goods means nothing); the agent file carries it after
+the product for a ONE-good lot and leaves it blank for several (each good's pieces are in the contents text).
+A line prints «name (中文)» only when the line IS the lot's good by the vouch's key — «Мышь (键盘)» named the
+wrong good (product-8). Every positional reader of these files is re-anchored on its HEADER.
+
+1471. **The card's price links to the calculation that wrote it, through ONE home** (his item 1).
+`calcWorkspaceHref(reader, requestId)` answers a link only for `ved.docs` (the workspace's own door); a fence
+refuses any `/hisoblash/${…}` literal outside that home, the workspace tree and three named platform copies.
+The «Narx» row links only when the card's number IS the writer's (`quoteWriterFor → {kind, requestId, amount,
+stands}`, `writerWroteCard` by `sameMoney`) — a hand-typed figure links nothing, and `quoteLockedFor` is now
+that writer's amount while it stands (money-3). A won lead lists EVERY deal its jobs moved to
+(`wonDealsOfLead`, through each job's materials note), because one win can now open several.
+
+1472. **A coded request from Telegram or a chat is a NEW card, written with its note in one commit** (his «har
+so'rovga yangi bitim»). `landCodedRequest` = `cardOfNote` → `calcOpenRefusal` → `landCodedCard`: the card AND
+its note are one transaction (`createDealInTx`, `insertLeadTx`, `insertActivityTx`, every pooled read first,
+#714), so «the note exists» IS «its card exists» and a retried press finds its card through the note (conc-1);
+only the sender's own note on THIS client's card is adopted, anything else is `note_taken` (conc-2); an
+already-queued root request on the note is answered, not opened again or re-sent to the AI (conc-13). The cap
+is asked BEFORE a card is minted (conc-9 — main left an empty deal behind a refusal). The round-111 shell (the
+client's name as title, its first deal, within five minutes of the code, the same owner, nothing written on
+it) is TAKEN OVER by the title change inside the card transaction, re-checked there, so a second adopter
+mints. A job with no goods is titled «Rastamojka — GS777 · 27.10» (`calc/deal-title.ts`, product-18). The bot's
+✅ says what happened (`landedWords`, a `Record` over the outcome union in its test).
+
+1473. **A colleague's client lands as a LEAD in the sender's funnel — and a REVERSAL of deal-ved's case (v)**
+(his 6.8 b + Q3 b). `calcCardFor` asks PERMISSION, not role: a sender with a funnel (`crm.leads` — admins and
+logists included, Q3 b) whose client has another seller gets a lead, owned by him and UNBOUND (`client_id`
+NULL, so it stays on his call list); WHICH client it is about lives in 0136's side table `lead_about_client`
+(#1381: no new column on `leads`), read through `leadAboutReady()` and never joined into a list's own query (a
+42P01 there would take the board down one migration behind). A second request joins his open lead about that
+client under a (sender, client) advisory lock (conc-7). Neither phone joiner — the bot's stranger path and
+the adverts' `inboundMatch` — ever joins a lead ABOUT a client (deploy-4), red-proven. Such a lead is won
+onto THAT client only (`lead_about_client`, money-8); the won dialog opens on it and names whose client it is.
+deal-ved's «(v) the sender keeps it (as today; Q1)» and «(vii) an existing open deal is reused» were the old
+rule and are rewritten, not deleted.
+
+1474. **«Yutildi» on a lead opens a deal per SALE, in ONE transaction** (his Q5 a; judge money-1/4, conc-3/4/6/8).
+0136 drops `leads_client_unique`, so attaching to a code that already has a lead is a new deal on it; a 23505
+from that attach is now the one-migration-behind morning and says `server_behind`. The lead's jobs are grouped
+by SALE (`calc/win-split.ts`): the correction chain, plus an «outranked» edge from an answer that does not
+stand on the lead to every job that answered or sealed after it, in `answerFloorStandsSql`'s OWN terms (a USD
+answer of any amount, any version's seal — `outranksAt`). That edge is the money: MEASURED by a red proof, an
+answer outranked on the lead and moved without it onto a deal where nothing outranks it STANDS again (its
+floor, its offer, its lock, its payout). The sale that wrote the lead's number opens the main deal with that
+number; every other live sale opens its own, priced by its own writer and stamped with who gave that price and
+when (`quoteStamp`, never the presser); dead history stays with the main deal; every deal carries the lead's
+FTL. Requests are locked FOR UPDATE in id order, then the lead, then the jobs re-read and compared with the
+plan (`changed`); the deals, the by-anchor move (`rekeyLeadCalcJobsTx` — a request, and an offer by its request
+OR its version) and the won stage are one commit, announced after. The deals' ids derive from the dialog's
+per-OPENING token (uuidv5), so a double press converges and a later re-win is a new job. `openCalcRequest`
+takes the lead FOR SHARE and refuses `lead_closed` on a won lead, so no job can land between the plan and the
+move. Nine red proofs.
+
+1475. **A prixod whose deal paid an upsale stays on that deal** (judge money-2). A re-send on a new deal (Q4 a)
+plus a re-file of the prixod was a second commission on one sale; `linkReceipt` refuses `upsale_paid` while the
+receipt's deal has an offer with a payout.
+
+1476. **Stated, not built** (told to him): a truck price for a client with two deals aboard names no deal (asked
+as his Q8); on a colleague's-client deal only an OFFICE FTL mark reaches the cargo; the upsale is paid to whoever
+makes the newest offer on a job; unaccepted quotes stay in the open-deals sum; the deal card's own 🧮 form still
+adds a second job to the same deal; a VED's send in the client's seller's name tells that seller nothing; a
+one-line tarkib still needs the client's paper on the prixod; a bot re-send is a new job, not a recalc; each
+attach-win celebrates in the staff group; a retried win returns the main deal without naming its siblings
+(the lead card lists them).
+
+1477. **Process.** The split's first probe failed on `r.created_at` — `calc_requests` has `requested_at`; the
+same slip sat in `rootRequestOfNote`. Found by RUNNING the statement on a database before writing a test, not
+by the typecheck (raw SQL is invisible to it). `owner-summary`'s attention count failed on this container's
+long-lived database with main's own code too (#653 — a different oracle, not this round); the CI-order run on a
+fresh database is the arbiter. A money test's oracle is the money fragment itself (`answerFloorStandsSql`),
+never a restatement — the R1 red proof first failed on a card assertion BEFORE reaching the money, and the
+oracle was moved first so the proof lands on the thing it is about.
+
+1478. **Reviewed as built — three defects, all around the new «a closed lead takes no job» rule, all fixed**
+(four lenses, each finding given a refuter; 3 confirmed). (a) `recalcFromSealed` inserted the correction on the
+card it read ON THE POOL, so a «Qayta hisoblash» racing a «Yutildi» put the correction back on the won lead and
+superseded the deal's seal from a card no job follows — #531's shape, the fence having gone on one door
+(`openCalcRequest`) of the two that insert a request. The card is now read off the parent's LOCKED row, and a
+lead must still be open under its row lock in the win's order (request, then lead). Proven deterministically: a
+holder takes the parent's lock, the recalc queues behind it, the holder moves the parent as the win does and
+commits; red with the pooled card. (b+c) `openCalcRequest` wrote the card's NOTE (and so bound the files a form
+had already uploaded) before the in-transaction `lead_closed` refusal, so a send on a won lead stranded the
+material on the lead and the next press answered `note_taken`. The lead's stage is now asked on the pool before
+anything is written, and the note is written in the request's own transaction after the row-locked check (a
+race rolls it back); the panel draws no send form on a closed lead (`takesJobs`, a sentence instead), and the
+refusal's words no longer promise a deal a lost lead never had. Red-proven in main's order (note on the pool,
+refusal later); either layer alone keeps the deterministic case green, which is the design — the pooled check
+stops the common case, the transaction stops the race. The CI-order run also caught this round's own fixture
+reusing deal-ved's client code «T» (green alone, red in the file) — renamed.
+Then the FIXES were checked (two lenses) and three more found, all fixed and red-proven: the card's closed-lead
+switch read an active-only stage list, so an open lead in a switched-off column was told «closed» and lost a form
+the server takes — now one predicate, `leadTakesJobs` (the stage KIND, whatever `active`), asked by the panel,
+the chat's 🧮 and both thread actions; a closed lead's OWN chat still drew 🧮 and paid the model before the
+refusal — not drawn, and refused before the model; and moving the note into the transaction widened the
+double-press window, so the second press met the note's key as a raw 23505 — mapped to `note_taken`
+(`violatedUnique`, beside `violatedCheck`), proven by two presses parked on a held lead lock.

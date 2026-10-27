@@ -1079,6 +1079,7 @@
     "voidHasCompensation": "Bu prixod bo‘yicha mijozga kompensatsiya yozilgan. Avval buxgalter uni bekor qilsin.",
     "assignHasCompensation": "Bu prixod bo‘yicha mijozga kompensatsiya yozilgan — mijozni almashtirishdan oldin buxgalter uni bekor qilsin va to‘g‘ri mijozga qayta yozsin.",
     "dealLinkCompensation": "Bu prixod bo‘yicha kompensatsiya yozilgan — u ham yangi bitimga o‘tadi.",
+    "dealLinkUpsalePaid": "Bu bitim bo‘yicha sotuvchi ulushi to‘langan — prixodni boshqa bitimga o‘tkazishdan oldin hisobchi to‘lovni qaytarsin",
     "attachInUse": "Bu hujjat lot tarkibida ishlatilgan — VED yoki logist boshqa hujjatni tanlamaguncha o'chirib bo'lmaydi"
   },
   "stock": {
@@ -2811,10 +2812,17 @@
         "codeFormat": "Kod formati noto'g'ri",
         "stageGone": "Bosqich topilmadi — sahifani yangilang",
         "forbidden": "Huquq yo'q",
-        "failed": "Saqlab bo'lmadi"
+        "failed": "Saqlab bo'lmadi",
+        "leadAboutClient": "Bu lid hamkasbingiz mijozi haqida — faqat o‘sha mijoz kodiga yutiladi",
+        "serverBehind": "Server hali to‘liq yangilanmagan — bir ozdan keyin qayta urinib ko‘ring",
+        "changed": "Shu payt lidning hisob-kitoblari o‘zgardi — oynani yopib qayta oching"
       },
       "search": "Mijozni topish: kod, ism yoki telefon",
-      "toDeal": "Bitim →"
+      "toDeal": "Bitim →",
+      "sellerOf": "Sotuvchisi: {name}",
+      "noSeller": "Sotuvchisi yo‘q",
+      "aboutColleague": "shu mijozga yangi bitim ochiladi",
+      "otherDeals": "Lidning boshqa hisob-kitoblari uchun yana {count} ta bitim ochildi:"
     },
     "errors": {
       "quote_sealed": "Narx muhrlangan — o‘zgartirib bo‘lmaydi (qayta hisoblang)"
@@ -3563,6 +3571,7 @@
       "rate_range": "Stavka 0–100 oralig‘ida",
       "amount_range": "Summa noto‘g‘ri",
       "label_required": "Nomini yozing",
+      "lead_closed": "Lid yopilgan — unga yangi hisob-kitob qo‘shilmaydi. Yutilgan bo‘lsa, uning bitimidan yuboring",
       "product_required": "Tovar nomini yozing",
       "code_required": "TNVED kodini yozing",
       "zone_required": "Yo‘nalishni tanlang",
@@ -3900,6 +3909,10 @@
       "not_yours": "Ba’zi xabarlar bu suhbatdan emas",
       "bad_section": "Bo‘limni tanlang",
       "forbidden": "Ruxsat yo‘q",
+      "too_many_open": "Ochiq so‘rovlar juda ko‘p — VED javob bergach yuboring",
+      "too_many_items": "Tovarlar juda ko‘p",
+      "lead_closed": "Lid yopilgan — unga yangi hisob-kitob qo‘shilmaydi. Yutilgan bo‘lsa, uning bitimidan yuboring",
+      "note_foreign": "Material boshqa kartaga tegishli",
       "deal_terms_only": "Hisob so‘rash — sotuvchining ishi. Botdagi «🧮 Hisoblatish» hamma xodimga ochiq.",
       "not_found": "Karta topilmadi",
       "note_taken": "Allaqachon yuborilgan — sahifani yangilang",
@@ -4161,6 +4174,7 @@
     "kartaHint": "Sotuvchining kartasi — faqat o‘qish uchun. Savolni lentaga yozing, sotuvchi shu yerda javob beradi.",
     "kartaBack": "Hisob-kitobga qaytish",
     "kartaWonDeal": "Lid bitimga aylangan — hisob-kitob bitimda:",
+    "openCalc": "🧮 Hisob-kitob",
     "sellerGuess": "Sotuvchi yozgan taxmin",
     "importConflict": "{unit} bo‘lmaydi: qonun {law} bo‘yicha",
     "freightWatchTitle": "{column} — yo‘lkira hisoblari shu ustun narxlari nisbatida bo‘linadi, lekin ustun to‘liq emas: shu holatda hisoblar tarif bo‘yicha bo‘linmaydi.",
@@ -5568,6 +5582,8 @@
     "m3": "Kub (m³)",
     "tnved": "TNVED",
     "addLine": "+ qator",
+    "oneGood": "Bitta tovar — lotdan to'ldirish",
+    "oneLineNoVouch": "Nom lot nomidan farq qiladi — ✅ «hujjat bo'yicha» avtomatik qo'yilmaydi",
     "removeLine": "Qatorni o'chirish",
     "line": "{n}-qator",
     "prefill": "Karobka soniga qarab taqsimlash",
@@ -5589,7 +5605,7 @@
     "saved": "Tarkib saqlandi",
     "savedFrozen": "{trucks} yuborilgan — uning hujjatlari o'zgarmaydi",
     "clear": "Tarkibni o'chirish",
-    "clearConfirm": "Tarkib o'chiriladi — invoys yana bitta qator bo'ladi. Davom etasizmi?",
+    "clearConfirm": "Tarkib o'chiriladi — invoys va packing list yana lotning o'z nomini chiqaradi. Davom etasizmi?",
     "cleared": "Tarkib o'chirildi",
     "stale": "Lot tarkib yozilgandan keyin o'zgardi: tarkibda {stated}, hozir {current} — qayta tekshiring",
     "staleShort": "Lot o'zgardi — tarkibni tekshiring",
@@ -5608,7 +5624,7 @@
     "errors": {
       "forbidden": "Sizda bu prixodning tarkibini yozish huquqi yo'q",
       "receipt_not_confirmed": "Bekor qilingan prixodga tarkib yozilmaydi",
-      "lines_count": "Kamida 2 ta, ko'pi bilan 20 ta tovar. Bitta tovar bo'lsa — lot nomini logist o'zgartiradi",
+      "lines_count": "1 tadan 20 tagacha tovar yozing",
       "bad_line": "{seq}-qator: tovar nomini yozing",
       "bad_number_kg": "{seq}-qator, kg: son noto'g'ri — verguldan keyin ko'pi bilan 3 raqam",
       "bad_number_m3": "{seq}-qator, kub: son noto'g'ri — verguldan keyin ko'pi bilan 4 raqam",
@@ -5624,6 +5640,7 @@
       "document_not_on_receipt": "Hujjat shu prixodga yuklangan bo'lishi kerak (mashinaga emas)",
       "document_is_photo": "Bu karobka rasmi — mijozning hujjatini yuklang",
       "lot_changed": "Lot o'zgardi — yangilang, yozganlaringiz qoladi",
+      "tnved_would_vanish": "Lotning TNVED kodi {code} — qatorda kod bo'lmasa, invoysda kod chiqmaydi. Kodni yozing yoki «Bitta tovar»ni bosing",
       "composition_changed": "Tarkibni boshqa hodim o'zgartirdi — yangilang",
       "composition_changed_self": "Siz allaqachon saqladingiz — yangilang",
       "busy": "Band edi — qaytadan bosing",
@@ -5647,6 +5664,7 @@
     "stalePerson": "Tekshirilgandan keyin o'zgardi: {what} — qayta so'rang",
     "staleWas": "Avval tasdiqlagan: {by} · {day}",
     "staleDocument": "Tarkib hujjatidan keyin lot o'zgardi — qayta so'rang",
+    "documentOtherName": "Tarkibda lotdan boshqa nom yozilgan — logist lot nomini to'g'rilasa, hujjat bo'yicha ✅ bo'ladi",
     "none": "Ma'lumot tekshirilmagan",
     "unclaimed": "Egasi aniqlanmagan — avval mijozni biriktiring",
     "movedName": "tovar nomi",
@@ -5672,7 +5690,7 @@
     },
     "personOld": "Avval mijoz tasdiqlagan: {by} · {day} — keyin o'zgargan: {what}",
     "documentOld": "Tarkib hujjati endi lotga mos emas — tarkibni tekshiring",
-    "otherAnswersAskLogist": "Mijoz «boshqa tovar» desa — logistga ayting, nomini u o'zgartiradi; «aralash» desa — hujjati bilan 🧩 lot tarkibini yozing.",
+    "otherAnswersAskLogist": "Mijoz «boshqa tovar» desa — hujjati bilan 🧩 lot tarkibini bitta qator qilib yozing, hujjatlar shu nomni chiqaradi; sklad ekranlari va stikerlarda nomni logist o'zgartiradi. «Aralash» desa — har bir tovarni alohida qator qiling.",
     "pruned": "{n} ta tanlangan yuk endi bu skladda yo'q — rejadan olib tashlandi"
   },
   "qarzIzoh": {

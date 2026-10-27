@@ -2513,8 +2513,10 @@ export async function recalcFromSealed(
   // and the cargo link (`stampCalcLink`, «exactly one sealed request») can
   // no longer choose.
   let newId: string;
+  /** The card the correction lands on — the parent's as LOCKED, never the pooled copy. */
+  let card: { entityType: string; entityId: string };
   try {
-    newId = await db.transaction(async (tx) => {
+    ({ newId, card } = await db.transaction(async (tx) => {
       /**
        * ONE CORRECTION PER PARENT, decided under the PARENT'S LOCK (audit A11).
        *
@@ -2532,7 +2534,26 @@ export async function recalcFromSealed(
        * below maps it to the same word, because a fence nobody translates is a
        * white page.
        */
-      await tx.execute(sql`SELECT id FROM calc_requests WHERE id = ${requestId}::uuid FOR UPDATE`);
+      //
+      // The CARD is read off the locked row too (review 2026-10-27): a won
+      // lead moves this very request onto its deal under the same lock, and
+      // the pooled `old` would put the correction back on the won lead —
+      // superseding the deal's seal from a card no job follows. In the win's
+      // order (request, then lead), a lead must still be OPEN to take it.
+      const [locked] = (await tx.execute(sql`
+        SELECT entity_type, entity_id::text AS entity_id
+          FROM calc_requests WHERE id = ${requestId}::uuid FOR UPDATE`)) as unknown as {
+        entity_type: string;
+        entity_id: string;
+      }[];
+      if (!locked) throw new CalcError('not_found');
+      if (locked.entity_type === 'lead') {
+        const open = (await tx.execute(sql`
+          SELECT 1 AS ok FROM leads l JOIN lead_stages s ON s.id = l.stage_id
+           WHERE l.id = ${locked.entity_id}::uuid AND s.kind = 'open'
+             FOR SHARE OF l`)) as unknown as unknown[];
+        if ([...open].length === 0) throw new CalcError('lead_closed');
+      }
       const [child] = await tx.execute<{ state: string | null }>(sql`
         SELECT ${childStateSql(sql`${requestId}::uuid`)} AS state
       `);
@@ -2546,8 +2567,8 @@ export async function recalcFromSealed(
       const [fresh] = await tx
         .insert(calcRequests)
         .values({
-          entityType: old.entityType,
-          entityId: old.entityId,
+          entityType: locked.entity_type,
+          entityId: locked.entity_id,
           requestedBy: seller,
           assigneeId,
           itemCount: old.itemCount,
@@ -2701,8 +2722,8 @@ export async function recalcFromSealed(
         });
       }
 
-      return fresh!.id;
-    });
+      return { newId: fresh!.id, card: { entityType: locked.entity_type, entityId: locked.entity_id } };
+    }));
   } catch (err) {
     // 0096's partial UNIQUE index, said in the office's words. The lock above
     // decides it first; this is the answer when two callers reach the INSERT
@@ -2720,13 +2741,13 @@ export async function recalcFromSealed(
   // The CARD's own row too, in the same vocabulary as every other calc
   // ending, so the seller's History tab says the price was reopened.
   await writeAudit(db, ctx, {
-    entityType: old.entityType,
-    entityId: old.entityId,
+    entityType: card.entityType,
+    entityId: card.entityId,
     action: 'update',
     after: { calcRecalc: newId, calcRequest: requestId },
   });
 
-  const label = await requestLabel(old.entityType, old.entityId);
+  const label = await requestLabel(card.entityType, card.entityId);
   // The task: what puts the correction on the holder's /bugun and phone,
   // bound to the request so no task door can move its clock or close it
   // (docs/VED-TARIX.md §8). After the commit, never inside it (#714); a
@@ -2742,8 +2763,8 @@ export async function recalcFromSealed(
           assigneeId,
           dueAt: dueAt.toISOString(),
           priority: 1,
-          entityType: old.entityType,
-          entityId: old.entityId,
+          entityType: card.entityType,
+          entityId: card.entityId,
           repeatUnit: null,
           repeatEvery: 1,
         },
@@ -2763,7 +2784,7 @@ export async function recalcFromSealed(
     type: 'CalcRecalc',
     text:
       `🔄 ${label}: narx qayta hisoblanmoqda — eski narx endi amal qilmaydi` +
-      linkLine(old.entityType, old.entityId),
+      linkLine(card.entityType, card.entityId),
     exceptUserId: ctx.actorId,
   }).catch((err) => logger.error({ err, newId }, '[calc] recalc notify failed'));
   // The old price's channel post gets its «qayta hisoblanmoqda» mark — derived
@@ -5788,10 +5809,13 @@ export function offerStandsSql() {
 export async function lastReleasedOfferFor(
   entityType: 'deal' | 'lead',
   entityId: string,
-): Promise<{ id: string; price: number; at: Date; stands: boolean } | null> {
+): Promise<{ id: string; requestId: string | null; price: number; at: Date; stands: boolean } | null> {
   const [row] = await db
     .select({
       id: calcOffers.id,
+      // The offer's JOB, through whichever anchor it carries (0093): a seal's
+      // version, or the answered request. Table-qualified on purpose (#128).
+      requestId: sql<string | null>`coalesce(${calcOffers}.request_id, (SELECT v.request_id FROM calc_versions v WHERE v.id = ${calcOffers}.version_id))::text`,
       price: calcOffers.clientPriceUsd,
       offeredAt: calcOffers.offeredAt,
       approvedAt: calcOffers.approvedAt,
@@ -5808,7 +5832,7 @@ export async function lastReleasedOfferFor(
     .orderBy(desc(sql`coalesce(${calcOffers.approvedAt}, ${calcOffers.offeredAt})`))
     .limit(1);
   return row
-    ? { id: row.id, price: Number(row.price), at: row.approvedAt ?? row.offeredAt, stands: Boolean(row.stands) }
+    ? { id: row.id, requestId: row.requestId, price: Number(row.price), at: row.approvedAt ?? row.offeredAt, stands: Boolean(row.stands) }
     : null;
 }
 

@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   agentContentsText,
+  agentPiecesCell,
   estimateNote,
   invoiceRowCells,
   packingBoxesCell,
+  packingPiecesCell,
   packingProductCell,
 } from '@/modules/wms/documents/composition-cells';
 import { DOC } from '@/modules/wms/documents/labels';
@@ -94,9 +96,29 @@ describe('the «шт» boundary through paperLines (owner 3a)', () => {
 });
 
 describe('the packing lists', () => {
-  it('the product cell names the pieces', () => {
-    expect(packingProductCell(pl({ name: 'Мышь', pieces: 1000 }))).toBe('Мышь — 1000 шт');
-    expect(packingProductCell(pl({ name: 'Мышь', pieces: null }))).toBe('Мышь');
+  it('the product cell carries the lot’s Chinese name beside the line that IS the lot’s good (Q6 a, judge product-8)', () => {
+    const lot = { zh: '键盘', ru: 'Клавиатура' };
+    expect(packingProductCell(pl({ name: 'Клавиатура', pieces: 500 }), lot)).toBe('Клавиатура (键盘)');
+    // The other good of a two-good lot: «Мышь (键盘)» named the wrong good.
+    expect(packingProductCell(pl({ name: 'Мышь', pieces: 1000 }), lot)).toBe('Мышь');
+    // A line that IS the Chinese name is not printed twice; spacing and case fold.
+    expect(packingProductCell(pl({ name: '键盘', pieces: null }), lot)).toBe('键盘');
+    expect(packingProductCell(pl({ name: 'клавиатура', pieces: null }), lot)).toBe('клавиатура (键盘)');
+    // The pieces have their own column now (8.5): never a second time here.
+    expect(packingProductCell(pl({ name: 'Клавиатура', pieces: 500 }), lot)).not.toMatch(/шт/);
+  });
+
+  it('the «шт» cell is the line’s pieces on this truck, or BLANK — never 0 (8.5)', () => {
+    expect(packingPiecesCell(pl({ pieces: 1000 }))).toBe(1000);
+    expect(packingPiecesCell(pl({ pieces: null }))).toBe('');
+    // A stated count that rounds to none on this truck reads «no goods» as 0.
+    expect(packingPiecesCell(pl({ pieces: 0 }))).toBe('');
+  });
+
+  it('the agent file’s «шт» cell: ONE good’s pieces, BLANK for several (they do not add, the text lists each) — his 7b', () => {
+    expect(agentPiecesCell([pl({ pieces: 500 })])).toBe(500);
+    expect(agentPiecesCell([pl({ pieces: null })])).toBe('');
+    expect(agentPiecesCell([pl({ pieces: 500 }), pl({ pieces: 1000 })])).toBe('');
   });
 
   it('«alohida» prints the line’s cartons; «aralash» the lot’s on the first line and «same cartons» after', () => {

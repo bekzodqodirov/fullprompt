@@ -30,6 +30,7 @@ export type CompositionActionResult =
       seq?: number;
       field?: string;
       sums?: { sum: string; lot: string };
+      tnvedCode?: string;
     };
 
 function refusalOf(err: unknown): CompositionActionResult {
@@ -40,6 +41,7 @@ function refusalOf(err: unknown): CompositionActionResult {
       seq: err.seq,
       field: err.field,
       sums: err.sums,
+      tnvedCode: err.tnvedCode,
     };
   }
   if (err instanceof AuthError) return { ok: false, error: 'forbidden' };

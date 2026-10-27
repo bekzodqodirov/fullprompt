@@ -101,7 +101,9 @@ describe('every consumer of the ONE door asks it', () => {
   it('the thread omits ThreadCalc and the reply box when read-only', () => {
     const thread = src('src/components/telegram-thread.tsx');
     const calcs = thread.match(/<ThreadCalc\b/g) ?? [];
-    const guarded = thread.match(/!readOnly && <ThreadCalc\b/g) ?? [];
+    // A closed lead's own chat adds its own switch (`leadTakesJobs`) AFTER
+    // the read-only one — never instead of it.
+    const guarded = thread.match(/!readOnly && (?:leadTakesJobs && )?<ThreadCalc\b/g) ?? [];
     expect(calcs.length).toBeGreaterThan(0);
     expect(guarded.length).toBe(calcs.length);
     expect(thread).toContain('!readOnly && <TelegramReply');

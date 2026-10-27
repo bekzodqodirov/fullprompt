@@ -47,6 +47,17 @@ export function notSupersededSql(): SQL {
  * Deliberately NO expiry clause: like the version anchor, the clock gates the
  * DOOR (recordOffer refuses `answer_expired`), never a promise already made.
  */
+/**
+ * An answer that OUTRANKS an older one on the same card — a USD answer of any
+ * amount, $0 included (the «newer answer» half of `answerFloorStandsSql`).
+ * Its own fragment because the won lead's split (`win-split.ts`) groups jobs
+ * by the same edge, and two spellings of «what retires a floor» would drift.
+ */
+export function outrankingAnswerSql(alias: string): SQL {
+  if (!/^[a-z_][a-z0-9_]*$/i.test(alias)) throw new Error(`outrankingAnswerSql: bad alias ${alias}`);
+  return sql.raw(`(${alias}.answer_amount IS NOT NULL AND ${alias}.answer_currency = 'USD')`);
+}
+
 export function answerFloorStandsSql(): SQL {
   return sql`r.completed_at IS NOT NULL
     AND r.answer_amount IS NOT NULL
@@ -57,8 +68,7 @@ export function answerFloorStandsSql(): SQL {
       SELECT 1 FROM calc_requests rn
        WHERE rn.entity_type = r.entity_type
          AND rn.entity_id = r.entity_id
-         AND rn.answer_amount IS NOT NULL
-         AND rn.answer_currency = 'USD'
+         AND ${outrankingAnswerSql('rn')}
          AND rn.completed_at > r.completed_at
     )
     AND NOT EXISTS (

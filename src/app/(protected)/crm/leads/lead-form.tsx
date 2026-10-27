@@ -25,6 +25,7 @@ export function LeadForm({
   owners,
   initial,
   quoteLocked,
+  quoteCalcHref,
   load,
   children,
 }: {
@@ -62,6 +63,8 @@ export function LeadForm({
    * a changed quote anyway — the two agree, which is the point.
    */
   quoteLocked?: boolean;
+  /** The job that wrote the locked number, for the VED (null for everyone else). */
+  quoteCalcHref?: string | null;
   /** LTL / FTL (0135): the stored mode and whether the viewer is the office; null = server behind. */
   load?: { initial: 'ltl' | 'ftl'; office: boolean; creating?: boolean } | null;
   children?: React.ReactNode;
@@ -69,6 +72,7 @@ export function LeadForm({
   const t = useTranslations('crm');
   const tc = useTranslations('common');
   const tf = useTranslations('ftl');
+  const tcalc = useTranslations('calc');
   const [state, formAction, pending] = useActionState<CrmFormState, FormData>(action, {});
 
   return (
@@ -154,6 +158,11 @@ export function LeadForm({
             {initial?.quotedAmount} {initial?.quotedCurrency || 'USD'}
           </span>
           <span className="chip chip-neutral">🔒</span>
+          {quoteCalcHref ? (
+            <a href={quoteCalcHref} className="font-semibold text-brand-700" data-testid="lead-quote-locked-calc">
+              {tcalc('openCalc')}
+            </a>
+          ) : null}
           <input type="hidden" name="quotedAmount" value={initial?.quotedAmount ?? ''} />
           <input type="hidden" name="quotedCurrency" value={initial?.quotedCurrency || 'USD'} />
           <input type="hidden" name="quotedVolumeM3" value={initial?.quotedVolumeM3 ?? ''} />

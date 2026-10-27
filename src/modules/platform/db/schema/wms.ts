@@ -1829,7 +1829,9 @@ export const leads = pgTable(
     index('leads_person_idx').on(t.personId),
     index('leads_next_action_idx').on(t.nextActionAt),
     index('leads_closed_idx').on(t.closedAt),
-    uniqueIndex('leads_client_unique').on(t.clientId).where(sql`${t.clientId} IS NOT NULL`),
+    // 0136: a code may carry MANY leads (his 2026-10-27, «yutildi» into an
+    // existing code). The unique index of 0021 is gone, one-way.
+    index('leads_client_idx').on(t.clientId).where(sql`${t.clientId} IS NOT NULL`),
   ],
 );
 
@@ -2197,6 +2199,27 @@ export const leadFtl = pgTable('lead_ftl', {
   byOffice: boolean('by_office').notNull(),
   markedAt: timestamp('marked_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * Which client a lead is ABOUT when it is not the client's own (0136, 6.8 b):
+ * a request a seller sends for a COLLEAGUE's client lands as a lead in the
+ * sender's funnel, unbound (`leads.client_id` NULL, so it stays on his call
+ * list). A side table, never a column on `leads` (#1381). Read behind
+ * `leadAboutReady()` (crm/lead-about.ts) — one migration behind it is absent.
+ */
+export const leadAboutClient = pgTable(
+  'lead_about_client',
+  {
+    leadId: uuid('lead_id')
+      .primaryKey()
+      .references(() => leads.id, { onDelete: 'cascade' }),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('lead_about_client_client_idx').on(t.clientId)],
+);
 
 export const dealFtl = pgTable('deal_ftl', {
   dealId: uuid('deal_id')

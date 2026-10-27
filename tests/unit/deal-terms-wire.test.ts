@@ -89,7 +89,13 @@ describe('the calc doors on a deal are the seller’s (G4 a)', () => {
   it('threadCalcGate keeps the card door AND closes both non-lead kinds', () => {
     const gate = bodyOf(CALC_ACTIONS, 'threadCalcGate');
     expect(gate).toContain('canWriteDeal(actor.permissions)');
-    expect(gate).toContain("entity.kind !== 'lead' && !mayEditDealTerms(actor.permissions)");
+    // A lead's CLIENT thread is on the lead's side of the door (0136) — and
+    // still a terms door when the lead is won and it mints a deal, because
+    // the lead side demands `crm.leads`, which IS a terms permission.
+    expect(gate).toContain("const onLead = entity.kind === 'lead' || entity.kind === 'lead_client';");
+    expect(gate).toContain('!onLead && !mayEditDealTerms(actor.permissions)');
+    expect(gate).toContain("onLead && !actor.permissions.has('crm.leads')");
+    expect(read('src/modules/wms/deals/door.ts')).toContain("DEAL_TERMS_PERMISSIONS = ['crm.leads', 'clients.manage']");
   });
 });
 

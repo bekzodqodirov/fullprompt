@@ -1079,6 +1079,7 @@
     "voidHasCompensation": "A compensation to the client names this receipt. The accountant voids it first.",
     "assignHasCompensation": "A compensation names this receipt — before changing the client, the accountant voids it and records it on the right client.",
     "dealLinkCompensation": "A compensation names this receipt — it moves to the new deal too.",
+    "dealLinkUpsalePaid": "The seller's share on this deal is paid — the accountant reverses the payout before the prixod can move",
     "attachInUse": "This document backs a lot's contents — it cannot be deleted until the VED or the logist picks another"
   },
   "stock": {
@@ -2811,10 +2812,17 @@
         "codeFormat": "Bad code format",
         "stageGone": "Stage not found — refresh the page",
         "forbidden": "No permission",
-        "failed": "Could not save"
+        "failed": "Could not save",
+        "leadAboutClient": "This lead is about a colleague’s client — it can only be won onto that client’s code",
+        "serverBehind": "The server is still updating — try again shortly",
+        "changed": "The lead’s calculations just changed — close and reopen this window"
       },
       "search": "Find a client: code, name or phone",
-      "toDeal": "Deal →"
+      "toDeal": "Deal →",
+      "sellerOf": "Seller: {name}",
+      "noSeller": "No seller",
+      "aboutColleague": "a new deal opens for this client",
+      "otherDeals": "Opened {count} more deals for the lead’s other calculations:"
     },
     "errors": {
       "quote_sealed": "The price is sealed — it cannot be edited (recalculate instead)"
@@ -3563,6 +3571,7 @@
       "rate_range": "A rate is between 0 and 100",
       "amount_range": "Bad amount",
       "label_required": "Give it a label",
+      "lead_closed": "The lead is closed — it takes no new calculation. If it was won, send it from its deal",
       "product_required": "Give the product name",
       "code_required": "Give the TNVED code",
       "zone_required": "Choose a route",
@@ -3900,6 +3909,10 @@
       "not_yours": "Some messages are not from this conversation",
       "bad_section": "Pick a section",
       "forbidden": "No permission",
+      "too_many_open": "Too many open requests — send once the VED answers",
+      "too_many_items": "Too many goods",
+      "lead_closed": "The lead is closed — it takes no new calculation. If it was won, send it from its deal",
+      "note_foreign": "The material belongs to another card",
       "deal_terms_only": "Asking for a calculation is the seller’s move. «🧮 Hisoblatish» in the bot stays open to all staff.",
       "not_found": "Card not found",
       "note_taken": "Already sent — refresh the page",
@@ -4161,6 +4174,7 @@
     "kartaHint": "The seller's card — read only. Write your question on the timeline; the seller answers there.",
     "kartaBack": "Back to the calculation",
     "kartaWonDeal": "The lead became a deal — the calculation is on the deal:",
+    "openCalc": "🧮 Calculation",
     "sellerGuess": "Seller's own estimate",
     "importConflict": "{unit} not allowed: the law counts in {law}",
     "freightWatchTitle": "{column} — freight bills are split in proportion to this column’s prices, but it is incomplete: as it stands, no bill is split by the tariff.",
@@ -5568,6 +5582,8 @@
     "m3": "Volume (m³)",
     "tnved": "HS code",
     "addLine": "+ line",
+    "oneGood": "One good — fill from the lot",
+    "oneLineNoVouch": "The name differs from the lot's — ✅ «by document» is not set by itself",
     "removeLine": "Remove line",
     "line": "Line {n}",
     "prefill": "Split by cartons",
@@ -5589,7 +5605,7 @@
     "saved": "Contents saved",
     "savedFrozen": "{trucks} already sent — their papers do not change",
     "clear": "Remove contents",
-    "clearConfirm": "The contents go — the invoice prints one row again. Continue?",
+    "clearConfirm": "The contents go — the invoice and packing lists print the lot's own name again. Continue?",
     "cleared": "Contents removed",
     "stale": "The lot changed after the contents were stated: stated {stated}, now {current} — check it",
     "staleShort": "The lot changed — check the contents",
@@ -5608,7 +5624,7 @@
     "errors": {
       "forbidden": "You may not state the contents of this receipt",
       "receipt_not_confirmed": "A voided receipt takes no contents",
-      "lines_count": "At least 2 and at most 20 goods. If it is one good, the logist renames the lot",
+      "lines_count": "Write 1 to 20 goods",
       "bad_line": "Line {seq}: write the goods name",
       "bad_number_kg": "Line {seq}, kg: not a number — at most 3 decimals",
       "bad_number_m3": "Line {seq}, m³: not a number — at most 4 decimals",
@@ -5624,6 +5640,7 @@
       "document_not_on_receipt": "The document must be on this receipt (not on the truck)",
       "document_is_photo": "That is a carton photo — upload the client's document",
       "lot_changed": "The lot changed — reload; what you typed stays",
+      "tnved_would_vanish": "The lot has TNVED code {code} — with no code on the line the invoice prints none. Type the code or press «One good»",
       "composition_changed": "Someone else changed the contents — reload",
       "composition_changed_self": "You already saved — reload",
       "busy": "It was busy — press again",
@@ -5647,6 +5664,7 @@
     "stalePerson": "Changed after the check: {what} — ask again",
     "staleWas": "Confirmed earlier by: {by} · {day}",
     "staleDocument": "The lot changed after the contents document — ask again",
+    "documentOtherName": "The contents name another good — once the logist renames the lot, it reads ✅ by document",
     "none": "Information not checked",
     "unclaimed": "Owner unknown — assign the client first",
     "movedName": "goods name",
@@ -5672,7 +5690,7 @@
     },
     "personOld": "Earlier confirmed by the client: {by} · {day} — changed since: {what}",
     "documentOld": "The contents document no longer matches the lot — check the contents",
-    "otherAnswersAskLogist": "If the client says «other goods» — tell the logist, who changes the name; if «mixed» — fill in the 🧩 lot contents with their document.",
+    "otherAnswersAskLogist": "If the client says «other goods» — fill in the 🧩 lot contents as one line from their document, and the papers print that name; on the warehouse screens and stickers the logist changes the name. If «mixed» — one line per good.",
     "pruned": "{n} selected rows are no longer at this warehouse — removed from the plan"
   },
   "qarzIzoh": {

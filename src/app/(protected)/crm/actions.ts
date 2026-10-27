@@ -31,7 +31,7 @@ import {
   type WinLeadResult,
 } from '@/modules/wms/crm/service';
 import { db } from '@/modules/platform/db/client';
-import { clients, leads } from '@/modules/platform/db/schema';
+import { clients, users } from '@/modules/platform/db/schema';
 import { eq, sql } from 'drizzle-orm';
 import { setFieldValues, validateValues } from '@/modules/platform/fields/service';
 import { customValues } from '@/modules/platform/fields/actions';
@@ -40,6 +40,8 @@ import { attachClient, groupClients, personFromClient } from '@/modules/wms/crm/
 import { announceMentions } from '@/modules/wms/crm/internal-chat';
 import { mayWriteThread } from '@/modules/wms/crm/thread-door';
 import { logger } from '@/modules/platform/logger';
+import { isUuidShaped } from '@/modules/platform/audit/fields';
+import { aboutClientsOf } from '@/modules/wms/crm/lead-about';
 import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 
 export interface CrmFormState {
@@ -373,7 +375,7 @@ export interface WinLeadState {
  */
 export async function winLeadAction(
   id: string,
-  input: { stageId?: string; attachCode?: string; clientCode?: string; name?: string },
+  input: { stageId?: string; attachCode?: string; clientCode?: string; name?: string; token?: string },
 ): Promise<WinLeadState> {
   let result: WinLeadResult | undefined;
   const state = await run('crm.leads', async (ctx) => {
@@ -384,6 +386,9 @@ export async function winLeadAction(
         attachCode: String(input?.attachCode ?? '') || undefined,
         clientCode: String(input?.clientCode ?? '') || undefined,
         name: String(input?.name ?? '') || undefined,
+        // The dialog's own opening: two presses of one opening converge on
+        // the same deals (`winLead` checks its shape before using it).
+        token: String(input?.token ?? '') || undefined,
       },
       ctx,
     );
@@ -400,7 +405,7 @@ export async function winLeadAction(
  */
 export async function resolveClientCodeAction(
   code: string,
-): Promise<{ ok?: boolean; error?: string; name?: string; clientCode?: string; leadName?: string }> {
+): Promise<{ ok?: boolean; error?: string; name?: string; clientCode?: string; sellerName?: string | null }> {
   try {
     await authorize('crm.leads');
   } catch (err) {
@@ -414,14 +419,38 @@ export async function resolveClientCodeAction(
   });
   if (!row) return { error: 'client_not_found' };
   if (!row.active) return { error: 'client_inactive' };
-  // The service refuses this too (`winLead`, one lead per client); saying it
-  // at the echo names the lead the code already carries, before the press.
-  const taken = await db.query.leads.findFirst({
-    where: eq(leads.clientId, row.id),
-    columns: { name: true },
-  });
-  if (taken) return { error: 'client_has_lead', name: row.name, clientCode: row.clientCode, leadName: taken.name };
-  return { ok: true, name: row.name, clientCode: row.clientCode };
+  // Since 0136 a code may carry several leads — a repeat customer's new
+  // enquiry is won onto it as a new deal — so the echo no longer refuses a
+  // code with a lead. It names whose client this is instead: an attach onto a
+  // colleague's customer has no undo, and the seller's name is what makes the
+  // person stop (judge product, the echo).
+  const seller = row.salesManagerId
+    ? await db.query.users.findFirst({ where: eq(users.id, row.salesManagerId), columns: { fullName: true } })
+    : null;
+  return { ok: true, name: row.name, clientCode: row.clientCode, sellerName: seller?.fullName ?? null };
+}
+
+/**
+ * What the won dialog knows before the person types anything: a lead ABOUT a
+ * colleague's client (0136) can only be won onto THAT client, so the dialog
+ * opens on it, names whose client it is, and offers no fresh code.
+ */
+export async function winPrefillAction(
+  leadId: string,
+): Promise<{ about: { clientCode: string; clientName: string; sellerName: string | null } | null }> {
+  try {
+    await authorize('crm.leads');
+  } catch (err) {
+    if (err instanceof AuthError) return { about: null };
+    throw err;
+  }
+  if (!isUuidShaped(leadId)) return { about: null };
+  const about = (await aboutClientsOf([leadId])).get(leadId);
+  return {
+    about: about
+      ? { clientCode: about.clientCode, clientName: about.clientName, sellerName: about.sellerName }
+      : null,
+  };
 }
 
 export async function addActivityAction(

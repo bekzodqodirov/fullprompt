@@ -1287,6 +1287,10 @@ export async function landCollectedIntake(
   queueError?: string | null;
   /** Whether the machine's reply was queued — the ✅'s wording (judge concurrency-8). */
   replyQueued?: boolean;
+  /** What the landing did — the ✅'s words (docs/UCH-BAND.md §7). */
+  outcome?: string;
+  /** On a lead about a colleague's client: whose client it is. */
+  about?: { clientCode: string; sellerName: string | null } | null;
 } | null> {
   const { activeIntake, intakeClientLabel } = await import('./calc-intake');
   const state = activeIntake(chatId);

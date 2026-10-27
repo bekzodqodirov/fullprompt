@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { CardFacts } from '@/components/card-fact';
 
@@ -33,6 +34,7 @@ export async function LeadFacts({
   ownerName,
   quote,
   nextAction,
+  quoteCalcHref = null,
 }: {
   values: { phone: string; company: string; note: string };
   sourceName: string;
@@ -40,9 +42,12 @@ export async function LeadFacts({
   /** «1 500 USD · 12 m³ · 3 400 kg» — empty until hisoblatish has answered. */
   quote: string;
   nextAction: string;
+  /** The job that wrote the quote, for the VED — a link, never an editor. */
+  quoteCalcHref?: string | null;
 }) {
   const t = await getTranslations('crm');
   const tc = await getTranslations('common');
+  const tcalc = await getTranslations('calc');
 
   return (
     <div className="card" data-testid="lead-facts">
@@ -58,6 +63,13 @@ export async function LeadFacts({
           { label: t('nextAction'), value: nextAction, testId: 'fact-next' },
         ]}
       />
+      {quoteCalcHref ? (
+        <p className="mt-1 text-sm">
+          <Link href={quoteCalcHref} className="font-semibold text-brand-700" data-testid="lead-quote-calc-link">
+            {tcalc('openCalc')}
+          </Link>
+        </p>
+      ) : null}
     </div>
   );
 }

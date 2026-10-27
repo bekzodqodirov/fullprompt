@@ -52,8 +52,8 @@ export interface CalcCardEntity {
  * Does a calculation request stand on this card?
  *
  * A LEAD also counts when a request's materials NOTE sits on it (review
- * tests-completeness-21): winning a lead moves every request to the new deal
- * (`rekeyLeadCalcRequests`) while its lenta stays on the lead, so the VED's
+ * tests-completeness-21): winning a lead moves every request to a deal of its
+ * sale (`rekeyLeadCalcJobsTx`) while its lenta stays on the lead, so the VED's
  * question and the seller's answer would vanish from every card he can open.
  * The note is the one stored link a won lead keeps to its requests. A request
  * opened with no materials leaves no such link — STATED: a deal-side pointer
@@ -193,6 +193,27 @@ export function calcCardHref(
 }
 
 /**
+ * The calculation's own screen, `/hisoblash/<request>`, and ONE rule for who
+ * is shown the door to it (his 2026-10-27: «ved narx berdi shu narxni
+ * hisoblaydigan oynasiga link bolsin, chunki qayta hisoblash kerak bo'lganda
+ * qidirib qolinyabti»). That page IS the cost breakdown (law 10, his 2A of
+ * 2026-09-04) and redirects anyone without `ved.docs`, so the link is drawn
+ * for `ved.docs` alone and is null for everyone else — a seller keeps the
+ * price and is handed no dead door (#1281). Every card→calc link asks it
+ * (#513, fenced by calc-workspace-href.test.ts); `hash` keeps a section
+ * anchor such as `#savol`. The platform's copies (task view, the bot, the
+ * notification links) cannot import wms and say so where they stand.
+ */
+export function calcWorkspaceHref(
+  reader: { permissions: { has(code: string): boolean } },
+  requestId: string | null | undefined,
+  hash = '',
+): string | null {
+  if (!requestId || !reader.permissions.has('ved.docs')) return null;
+  return `/hisoblash/${requestId}${hash}`;
+}
+
+/**
  * The CARD arms of every calc link — one sentence, asked by `calcCardHref`
  * (the lists) and `calcJobHrefFor` (the bot's ✅) alike (#513): a deal for
  * whoever the deal card admits (`canWriteDeal`), a lead for whoever the CRM
@@ -234,8 +255,7 @@ export function calcJobHrefFor(
 ): string | null {
   const card = admittedCardHref(reader, job);
   if (card) return card;
-  if (job.requestId && reader.permissions.has('ved.docs')) return `/hisoblash/${job.requestId}`;
-  return null;
+  return calcWorkspaceHref(reader, job.requestId);
 }
 
 /**
@@ -289,6 +309,27 @@ export async function kartaCardFor(
   }
   if (row.entity_type === 'deal') return { kind: 'deal', dealId: row.entity_id, requestId };
   return null;
+}
+
+/**
+ * Every deal a WON lead's calculations moved to (`rekeyLeadCalcJobsTx`),
+ * found the karta's way — through each job's materials note, which stays on
+ * the lead (`kartaCardFor`'s derivation, said for a whole lead). A list and
+ * not one deal: one lead can hold several jobs, and each may be its own deal
+ * (his 2026-10-27, «har so'rovga yangi bitim»). A job with no note leaves no
+ * trace on the lead and is not listed.
+ */
+export async function wonDealsOfLead(leadId: string): Promise<{ id: string; code: string }[]> {
+  if (!UUID.test(leadId)) return [];
+  const rows = await db.execute<{ id: string; code: string }>(sql`
+    SELECT DISTINCT d.id::text AS id, d.code
+      FROM calc_requests r
+      JOIN crm_activities a ON a.id = r.note_id AND a.entity_type = 'lead' AND a.entity_id = ${leadId}::uuid
+      JOIN deals d ON d.id = r.entity_id
+     WHERE r.entity_type = 'deal'
+     ORDER BY d.code
+  `);
+  return rows.map((row) => ({ id: row.id, code: row.code }));
 }
 
 /** The karta's address — `lid` only for a lead the request was won away from. */
