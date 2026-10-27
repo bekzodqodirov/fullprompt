@@ -198,6 +198,30 @@ export interface PickLeft {
   skipped: boolean;
 }
 
+/**
+ * The pick's counts as the reply says them. A row the pass's deadline left
+ * unread MID-pick (`pickBazas`' `pastDeadline`, review perf-2) is said with
+ * the heading reads that ran out of time — «bojxona faylidan o‘qib
+ * ulgurilmadi» is exactly what happened to it; counted nowhere, it read like
+ * a row the file has no answer for (regression-10's own complaint, met again
+ * at the seam between the two late-pass fixes).
+ */
+export function pickLeftOf(out: {
+  capped: number;
+  refused: number;
+  overtaken: number;
+  timedOut: number;
+  pastDeadline: number;
+}): PickLeft {
+  return {
+    capped: out.capped,
+    refused: out.refused,
+    overtaken: out.overtaken,
+    timedOut: out.timedOut + out.pastDeadline,
+    skipped: false,
+  };
+}
+
 /** One line under the totals, or none when the pick left nothing unsaid. */
 export function pickLeftLine(left: PickLeft | null): string | null {
   if (!left) return null;

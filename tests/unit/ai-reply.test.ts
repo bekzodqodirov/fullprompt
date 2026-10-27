@@ -3,6 +3,7 @@ import {
   aiVedReplyText,
   MAX_REPLY_LINES,
   TELEGRAM_LIMIT,
+  pickLeftOf,
   type AiVedEstimate,
   type AiVedFreight,
   type AiVedLine,
@@ -685,6 +686,16 @@ describe('R2 late pass — the reply says what it is', () => {
     // Nothing left unsaid, or no pick at all: no line.
     expect(aiVedReplyText({ ...base, pickLeft: { ...left, capped: 0, refused: 0, timedOut: 0 } })).not.toContain('AI bazasini');
     expect(aiVedReplyText(base)).not.toContain('AI bazasini');
+  });
+
+  it('a row the deadline left unread mid-pick is said with the reads that ran out of time (the merge’s seam)', () => {
+    const left = pickLeftOf({ capped: 0, refused: 0, overtaken: 0, timedOut: 1, pastDeadline: 2 });
+    expect(aiVedReplyText({ ...base, pickLeft: left })).toContain(
+      '⚠️ AI bazasini qo‘ymadi: 3 tasini bojxona faylidan o‘qib ulgurilmadi — VED to‘ldiradi',
+    );
+    // The pick DID run: the «vaqt yetmadi — tanlamadi» words are the
+    // skipped pick's alone.
+    expect(left.skipped).toBe(false);
   });
 
   it('a VED zone refusal still names the seller’s own missing kilos, on its own line (review PF-5)', () => {

@@ -18,6 +18,7 @@ import { basisLabel } from './basis';
 import { loadWorkspace, proposeGroups, requestClock, saveTable, type Workspace } from './workspace';
 import {
   aiVedReplyText,
+  pickLeftOf,
   type AiVedEstimate,
   type AiVedFreight,
   type AiVedLine,
@@ -457,7 +458,7 @@ export async function aiPrefill(
     try {
       const out = await pickBazas(requestId, ctx, pick, rev, { deadline });
       picked = out.picked;
-      pickLeft = { capped: out.capped, refused: out.refused, overtaken: out.overtaken, timedOut: out.timedOut, skipped: false };
+      pickLeft = pickLeftOf(out);
       dictionaryFilled += out.dictionaryFilled;
       memoryFilled += out.memoryFilled;
       if (out.picked > 0) wrote = true;
