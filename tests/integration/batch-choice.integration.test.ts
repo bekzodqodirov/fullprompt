@@ -67,10 +67,15 @@ const madeBatches: string[] = [];
 const madeRequests: string[] = [];
 const ctx = () => ({ actorId });
 
-async function mintBatch(period: { from: string; to: string }, agoSec: number, label: string): Promise<string> {
+async function mintBatch(
+  period: { from: string; to: string },
+  agoSec: number,
+  label: string,
+  status: 'ready' | 'processing' = 'ready',
+): Promise<string> {
   const [row] = await db.execute<{ id: string }>(sql`
     INSERT INTO customs_import_batches (file_name, uploaded_by, status, period_from, period_to, uploaded_at)
-    VALUES (${`${label}-${SUFFIX}.xlsx`}, ${actorId}::uuid, 'ready', ${period.from}::date, ${period.to}::date,
+    VALUES (${`${label}-${SUFFIX}.xlsx`}, ${actorId}::uuid, ${status}, ${period.from}::date, ${period.to}::date,
             now() - make_interval(secs => ${agoSec}))
     RETURNING id::text AS id`);
   madeBatches.push(row!.id);
@@ -243,6 +248,25 @@ describe('the chooser answers per code', () => {
     expect(list.batchId).toBe(older);
     expect(stats.batchId).toBe(older);
     await drop([older, newer]);
+  });
+
+  it('(g) a batch still PARSING never answers, however many rows its flush has written (review REG-1)', async () => {
+    // «A batch still processing must never half-price a calculation» lost its
+    // pin when the suggestions moved off `newestReadyBatchId()`: the chooser's
+    // LATERAL is now the only fence, and (f) cannot see it — there EVERY batch
+    // is processing, so the empty `newest` CTE answers nothing whatever the
+    // LATERAL says. Here a READY file stands beside a half-parsed one that
+    // wins every other rule: enough rows, the newer quarter, more rows, the
+    // later upload. The chunked flush writes rows while the status says
+    // «processing», so this is the state a parse is in for minutes.
+    const c = code(11);
+    const ready = await mintBatch(Q2, 120, 'BC-g-ready');
+    const parsing = await mintBatch(Q3, 60, 'BC-g-parsing', 'processing');
+    await addRows(ready, c, 2);
+    await addRows(parsing, c, 50);
+    expect((await chosen(c))?.batchId).toBe(ready);
+    expect((await chosen(c))?.rows).toBe(2);
+    await drop([ready, parsing]);
   });
 
   it('(f) TOTAL: a code no file holds maps to the newest ready batch — «none», never «not uploaded»', async () => {
