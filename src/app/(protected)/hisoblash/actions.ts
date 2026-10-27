@@ -931,6 +931,9 @@ function threadCalcGate(
 ): CalcFormState | null {
   if (!canReadTg(actor)) return { error: 'forbidden' };
   if (!canWriteDeal(actor.permissions)) return { error: 'forbidden' };
+  // A lead's CLIENT thread (0136) is the lead's door while it is open; once
+  // won it mints the client a deal — still a terms door, because the lead
+  // side below demands `crm.leads`, which is one of the terms permissions.
   const onLead = entity.kind === 'lead' || entity.kind === 'lead_client';
   if (!onLead && !mayEditDealTerms(actor.permissions)) {
     return { error: 'deal_terms_only' };

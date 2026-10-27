@@ -2821,7 +2821,7 @@
       "sellerOf": "Seller: {name}",
       "noSeller": "No seller",
       "aboutColleague": "a new deal opens for this client",
-      "otherDeals": "{count, plural, one {# more deal} other {# more deals}} opened for the lead’s other calculations:"
+      "otherDeals": "Opened {count} more deals for the lead’s other calculations:"
     },
     "errors": {
       "quote_sealed": "The price is sealed — it cannot be edited (recalculate instead)"
