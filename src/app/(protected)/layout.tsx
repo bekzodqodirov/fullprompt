@@ -13,6 +13,7 @@ import { UpdateBanner } from '@/components/update-banner';
 import { SchemaBanner } from '@/components/schema-banner';
 import { isAnalyst } from '@/modules/platform/ai/tools';
 import { NavProgress } from '@/components/nav-progress';
+import { DownloadLinks } from '@/components/download-links';
 import {
   MobileNav,
   Sidebar,
@@ -185,6 +186,10 @@ export default async function ProtectedLayout({ children }: { children: React.Re
           navigation hook: a boundary here hydrates late, and a listener that
           attaches late misses the taps it exists for. */}
       <NavProgress />
+      {/* Every file link goes through a short-lived signed address, so a
+          download works where the login cookie does not travel — Telegram's
+          in-app browser hands files to the phone's download manager. */}
+      <DownloadLinks />
       <header className="sticky top-0 z-30 border-b border-line bg-surface-raised/95 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-6xl items-center gap-1 px-3">
           <Link href="/" className="flex items-center gap-2 font-extrabold tracking-tight">
