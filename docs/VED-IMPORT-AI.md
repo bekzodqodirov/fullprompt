@@ -244,9 +244,16 @@ suggestImportBaza(input: {
     «AI kodni o‘zgartirdi: 6403 → 6403991000 · …» into the row's reason and
     raises the `ai_recode` warning the ✅ records (law-money-4); a recode a
     PERSON makes in the 📥 dialog carries neither. Each heading candidate is
-    judged by ITS OWN code's law. A heading read runs under a statement
-    ceiling (1.5 s on the list → «10 xonali kodni yozing»; 5 s in the pick →
-    the row is skipped and counted).
+    judged by ITS OWN code's law — the list's chips and the model's
+    «единица не совпадает» are one judgement (`judgeCandidates`) — and a
+    heading is RANKED by the row's own figures plus whatever the heading pins
+    (`unitsForAsk`), never by the heading's law alone: on 6403 («kamida
+    $3/juft») that buried a kg declaration of 6403120000 below every juft
+    one. The mark follows the CODE: a person re-pricing, clearing or
+    refilling a recoded row keeps it (stripped to «6403 → 6403991000») until
+    a ✅ records it; a person changing the code takes it off. A heading read
+    runs under a statement ceiling (1.5 s on the list → «10 xonali kodni
+    yozing»; 5 s in the pick → the row is skipped and counted).
 - Rank in SQL: `similarity(name_norm, ${normalize(name)})` via pg_trgm over
   `WHERE batch_id = $newest AND tnved_code = $code`, LIMIT 10 by score.
   UNIT FILTER: candidates whose `unit` differs from the request row's unit

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { sql } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { describe, expect, it } from 'vitest';
-import { candidateStatement, chinaOriginSql, codeMatchSql } from '@/modules/wms/customs/import-stats-sql';
+import { candidateStatement, chinaOriginSql, codeBounds, codeMatchSql } from '@/modules/wms/customs/import-stats-sql';
 
 /**
  * The wiring of «Narxlar statistikasi» (his C1-C6), where a behaviour test
@@ -174,7 +174,12 @@ describe('9. «newest» has ONE order, clamped (his C6)', () => {
 
   it('the per-code chooser orders by «enough rows», quarter, rows, then the ONE order of newest', () => {
     const chooser = bodyOf(SERVICE, 'export async function batchesForCodes(');
-    expect(chooser).toContain('codeMatchSql(');
+    // The heading's range from its ONE home, bound per code into a VALUES
+    // list — one statement planned once (review P2-10).
+    expect(chooser).toContain('codeBounds(');
+    expect(chooser).toContain('VALUES ${values}');
+    expect(chooser).not.toContain('UNION ALL');
+    expect(chooser).toContain('r.tnved_code BETWEEN a.lo AND a.hi');
     expect(chooser).toContain('>= ${FEW}');
     expect(chooser).toContain("date_trunc('quarter'");
     expect(chooser).toContain('batchRecencySql(');
@@ -234,10 +239,19 @@ describe('13. a heading is a range, a full code is exact (round 2, §7.4)', () =
     // No LIKE and no COLLATE: either forfeits the btree on the default
     // collation, and two collations would be two oracles (#653).
     expect(`${full.sql} ${heading.sql}`).not.toMatch(/LIKE|COLLATE/i);
+    // The chooser's bounds come from the same home: a full code is both of
+    // its own, a heading runs to …9999.
+    expect(codeBounds('6403991000')).toEqual({ lo: '6403991000', hi: '6403991000' });
+    expect(codeBounds('6403')).toEqual({ lo: '6403', hi: '6403999999' });
   });
 
   it('the candidate list takes the range; the named series never runs on a heading', () => {
-    const shortList = dialect.sqlToQuery(candidateStatement(id, { ...input, tnvedCode: '6403' }, 'abcd', 50)).sql;
+    // ASKED for the named series (review P2-6): without the `minSim` the
+    // statement could never carry it, whatever the code, and the assertion
+    // below could not go red.
+    const shortList = dialect.sqlToQuery(
+      candidateStatement(id, { ...input, tnvedCode: '6403' }, 'abcd', 50, { minSim: 0.45 }),
+    ).sql;
     expect(shortList).toContain('BETWEEN');
     expect(shortList).not.toContain('percentile_disc');
     const fullList = dialect.sqlToQuery(candidateStatement(id, { ...input, tnvedCode: '6403991000' }, 'abcd', 50)).sql;

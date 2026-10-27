@@ -99,6 +99,7 @@ import { kickPriceChannel } from './channel-queue';
 import { forgetUpsaleLiability } from './liability-memo';
 import {
   aiRecoded,
+  keepRecodeMark,
   lawOffBook,
   sealCounters,
   unchangedFromProposal,
@@ -1271,6 +1272,12 @@ export async function setItemBaza(
         },
       );
     }
+    // The stored reason, under the request's lock: this door moves the price
+    // and never the code, so an AI recode mark stays (`keepRecodeMark`).
+    const [stood] = await tx
+      .select({ bazaReason: calcRequestItems.bazaReason })
+      .from(calcRequestItems)
+      .where(and(eq(calcRequestItems.requestId, requestId), eq(calcRequestItems.seq, itemSeq)));
     const [changed] = await tx
       .update(calcRequestItems)
       .set({
@@ -1280,10 +1287,11 @@ export async function setItemBaza(
         // The whole provenance moves together (0094, widened by 0096):
         // whatever this writes, the number is no longer the import's and no
         // longer a sealed calculation's — leaving either behind is #896's
-        // defect, a chip naming a source that did not supply the figure.
+        // defect, a chip naming a source that did not supply the figure. The
+        // ONE exception is the AI recode mark, a fact about the CODE.
         importRowId: null,
         memoryItemId: null,
-        bazaReason: null,
+        bazaReason: keepRecodeMark(stood?.bazaReason, null),
       })
       .where(and(eq(calcRequestItems.requestId, requestId), eq(calcRequestItems.seq, itemSeq)))
       .returning({ groupId: calcRequestItems.groupId });
@@ -1443,20 +1451,28 @@ export async function pullBazasFromDictionary(
   if (fills.length === 0) return { filled: 0, skipped };
 
   await mutateRequest(requestId, async (tx) => {
+    // The reasons as they stand under the lock — never the pool read above:
+    // a person who recoded a row meanwhile has already cleared its mark.
+    const stood = await tx
+      .select({ id: calcRequestItems.id, bazaReason: calcRequestItems.bazaReason })
+      .from(calcRequestItems)
+      .where(inArray(calcRequestItems.id, fills.map((f) => f.id)));
+    const reasonOf = new Map(stood.map((r) => [r.id, r.bazaReason]));
     for (const f of fills) {
       await tx
         .update(calcRequestItems)
         // The provenance goes with the price it explained (0094): a row the
         // dictionary just re-priced is no longer wearing the import's
         // number, and a stale `import_row_id` would keep the «📥 taxmin»
-        // chip on a baza the book supplied.
+        // chip on a baza the book supplied. The pull never moves a code, so
+        // an AI recode mark stays (`keepRecodeMark`).
         .set({
           bazaUsd: f.bazaUsd.toFixed(4),
           bazaBasis: f.basis,
           bazaSource: 'dictionary',
           importRowId: null,
           memoryItemId: null,
-          bazaReason: null,
+          bazaReason: keepRecodeMark(reasonOf.get(f.id), null),
         })
         .where(and(eq(calcRequestItems.id, f.id), isNull(calcRequestItems.bazaUsd)));
     }
@@ -3795,13 +3811,17 @@ async function suggestDictionaryFills(input: {
  * be used if a higher source's in-transaction re-check failed. A higher
  * source counts as answering only in a unit this row allows before the tx —
  * a book price «per dona» on a weight-only row answers nothing, and the file
- * is still asked. Stated: when the regroup or the measure pass changes the
- * row's units INSIDE the tx and the higher source's unit drops out, the row
- * stays empty for this save; the next save asks the import again. `unitsForRow` says which of the file's units may price
- * the row — the law when it pins one, the row's own figures when it does not
- * — so a per-m² declaration can never land on a per-kg row, and the
- * similarity threshold does the rest. His own rule: «agar to'g'ri bo'lmasa
- * baza yo'q deb VED hodimi o'zi qo'yadi.»
+ * is still asked — and «allows» is judged under EVERY law the row can end
+ * the save under, the blocks' as well as the book's (review P2-REG-3).
+ * Stated: when THIS save's own edits change the row's units inside the tx (a
+ * measure posted, a block re-lawed in the same press) and the higher
+ * source's unit drops out, the row stays empty for this save; the next save,
+ * judging by the laws then standing, asks the import again. `unitsForRow`
+ * says which of the file's units may price the row — the law when it pins
+ * one, the row's own figures when it does not — so a per-m² declaration can
+ * never land on a per-kg row, and the similarity threshold does the rest.
+ * His own rule: «agar to'g'ri bo'lmasa baza yo'q deb VED hodimi o'zi
+ * qo'yadi.»
  */
 async function suggestImportFills(input: {
   standing: {
@@ -3841,6 +3861,10 @@ async function suggestImportFills(input: {
   rates: Map<string, RatesRow>;
   /** Rows the memory or the book already answers, with the bases they offer. */
   answered: AnsweredAbove;
+  /** The duty unit of every block this request already holds, by its code —
+   * the law a row of that code joins in the tx, which a typed override or a
+   * block minted before the book moved makes differ from the book's. */
+  blockLaws: Map<string, (string | null)[]>;
 }): Promise<ImportFillPlan> {
   type Want = {
     key: { kind: 'item'; id: string } | { kind: 'add'; index: number };
@@ -3892,21 +3916,34 @@ async function suggestImportFills(input: {
   // What the import may price, before it is asked: a row the memory or the
   // book already answers IN A UNIT THIS ROW ALLOWS is the higher source's,
   // and the file's scan for it could only ever be thrown away.
-  const unitsOf = (w: Want) =>
+  const unitsOf = (w: Want, dutyUnit: string | null) =>
     unitsForRow({
-      dutyUnit: input.rates.get(w.code)?.dutyUnit ?? null,
+      dutyUnit,
       chosen: w.chosen,
       hasWeight: w.weightKg !== null && w.weightKg > 0,
       hasQuantity: w.quantity !== null && w.quantity > 0,
       hasVolume: w.volumeM3 !== null && w.volumeM3 > 0,
       statedPair: w.statedPair,
     });
+  /**
+   * EVERY law the row can end this save under (review P2-REG-3): the book's,
+   * for a block this save mints, and that of every block of this code it
+   * already holds — the one the tx's fill will actually judge by. A block
+   * whose law a person typed, or one minted before the book moved, differs
+   * from the book for good; judged by the book alone, a higher source the tx
+   * then refuses spared the import on EVERY save, and the row stayed empty
+   * for ever where the file would have filled it. So the import is spared
+   * only where the higher source wins under all of them.
+   */
+  const lawsOf = (w: Want) => [input.rates.get(w.code)?.dutyUnit ?? null, ...(input.blockLaws.get(w.code) ?? [])];
   const asking = wants
-    .map((w) => ({ w, units: unitsOf(w) }))
-    .filter(({ w, units }) => {
+    .map((w) => ({ w, units: unitsOf(w, input.rates.get(w.code)?.dutyUnit ?? null) }))
+    .filter(({ w }) => {
       const above =
         w.key.kind === 'item' ? input.answered.byItemId.get(w.key.id) : input.answered.byAddIndex.get(w.key.index);
-      return !above?.some((basis) => units.some((u) => BASIS_FOR_UNIT[u] === basis));
+      return !above?.some((basis) =>
+        lawsOf(w).every((law) => unitsOf(w, law).some((u) => BASIS_FOR_UNIT[u] === basis)),
+      );
     });
   if (asking.length === 0) return EMPTY_FILL_PLAN;
 
@@ -4129,7 +4166,18 @@ export async function saveTable(
     for (const [id, fill] of above[source].byItemId) offer(answered.byItemId, id, fill.basis);
     for (const [index, fill] of above[source].byAddIndex) offer(answered.byAddIndex, index, fill.basis);
   }
-  const importAuto = await suggestImportFills({ standing, itemEdits, withCodes, rates, answered });
+  // The laws of the blocks this request already holds, by code — on the pool
+  // with the rest of the pre-tx reads (#714), for the import's skip.
+  const blocks = await db
+    .select({ tnvedCode: calcGroups.tnvedCode, dutyUnit: calcGroups.dutyUnit })
+    .from(calcGroups)
+    .where(eq(calcGroups.requestId, requestId));
+  const blockLaws = new Map<string, (string | null)[]>();
+  for (const g of blocks) {
+    const code = (g.tnvedCode ?? '').trim();
+    if (code) blockLaws.set(code, [...(blockLaws.get(code) ?? []), g.dutyUnit]);
+  }
+  const importAuto = await suggestImportFills({ standing, itemEdits, withCodes, rates, answered, blockLaws });
 
   return db.transaction(async (tx): Promise<TableSaveResult> => {
     const locked = await lockRequestInTx(tx, requestId);
@@ -4303,10 +4351,19 @@ export async function saveTable(
       }
       // The code lands via the regroup pass, but the COLUMN updates here so
       // the item's own record and its group agree.
-      if (e.tnvedCode !== undefined && e.tnvedCode !== (item.tnvedCode ?? null)) {
+      const codeMoved = e.tnvedCode !== undefined && e.tnvedCode !== (item.tnvedCode ?? null);
+      /**
+       * The AI recode mark follows the CODE, not the price (review P2-LAW-2):
+       * a baza written over an unmoved code keeps it (`keepRecodeMark`); a
+       * code this edit moves takes it off — a person's recode is theirs, and
+       * the pick's own recode posts a fresh mark beside its price.
+       */
+      const reasonFor = (posted: string | null) => (codeMoved ? posted : keepRecodeMark(item.bazaReason, posted));
+      if (codeMoved) {
         put('tnvedCode', item.tnvedCode, e.tnvedCode);
         patch.tnvedCode = e.tnvedCode;
         relawed.add(item.id);
+        if (aiRecoded(item.bazaReason)) patch.bazaReason = null;
       }
       // The row's baza — the four states `TableItemEdit` documents (0125).
       // The schema has no pair CHECK, so this writer is the rule; an unchanged
@@ -4329,7 +4386,7 @@ export async function saveTable(
             // longer on it (the fence in baza-provenance.test.ts).
             patch.importRowId = null;
             patch.memoryItemId = null;
-            patch.bazaReason = null;
+            patch.bazaReason = reasonFor(null);
             measuresMoved = true;
           }
         } else if (
@@ -4350,8 +4407,9 @@ export async function saveTable(
           patch.importRowId = e.importRowId ? BigInt(e.importRowId) : null;
           patch.memoryItemId = null;
           // The model's words travel with the row it chose, and with nothing
-          // else: a person retyping the price clears them.
-          patch.bazaReason = e.importRowId ? (e.bazaReason ?? null) : null;
+          // else: a person retyping the price clears them — all but the AI
+          // recode mark, while the model's code stands (`reasonFor`).
+          patch.bazaReason = reasonFor(e.importRowId ? (e.bazaReason ?? null) : null);
           measuresMoved = true;
         }
       }
@@ -4532,6 +4590,9 @@ export async function saveTable(
         measureQty: calcRequestItems.measureQty,
         bazaUsd: calcRequestItems.bazaUsd,
         bazaBasis: calcRequestItems.bazaBasis,
+        // An AI recode mark a refill keeps (`keepRecodeMark`): the fills
+        // never move a code.
+        bazaReason: calcRequestItems.bazaReason,
         unit: calcRequestItems.unit,
         note: calcRequestItems.note,
       })
@@ -4829,7 +4890,7 @@ export async function saveTable(
               bazaSource: 'memory',
               memoryItemId: fill.memoryItemId,
               importRowId: null,
-              bazaReason: null,
+              bazaReason: keepRecodeMark(item.bazaReason, null),
             })
             .where(eq(calcRequestItems.id, item.id));
         } else if (source === 'dictionary') {
@@ -4845,7 +4906,7 @@ export async function saveTable(
               bazaSource: 'dictionary',
               importRowId: null,
               memoryItemId: null,
-              bazaReason: null,
+              bazaReason: keepRecodeMark(item.bazaReason, null),
             })
             .where(eq(calcRequestItems.id, item.id));
         } else {
@@ -4861,7 +4922,7 @@ export async function saveTable(
               bazaSource: 'import',
               importRowId: BigInt(fill.importRowId),
               memoryItemId: null,
-              bazaReason: null,
+              bazaReason: keepRecodeMark(item.bazaReason, null),
             })
             .where(eq(calcRequestItems.id, item.id));
         }

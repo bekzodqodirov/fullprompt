@@ -166,6 +166,19 @@ describe('the chooser answers per code', () => {
     await drop([older, newer]);
   });
 
+  it('(a2) a HEADING is chosen for by its subheadings’ rows — the range, not the heading’s own digits', async () => {
+    // Review P2-10's rewrite binds each code's two bounds (`codeBounds`) into
+    // one VALUES list; a heading's upper bound is what reaches its
+    // subheadings. No declaration carries the eight digits themselves.
+    const heading = `95${SUFFIX}`;
+    const older = await mintBatch(Q2, 120, 'BC-a2-older');
+    const newer = await mintBatch(Q3, 60, 'BC-a2-newer');
+    await addRows(older, code(10), 6);
+    expect((await chosen(heading))?.batchId).toBe(older);
+    expect((await chosen(heading))?.rows).toBe(6);
+    await drop([older, newer]);
+  });
+
   it('(b) a full Q2 uploaded BEFORE a June sample of the same end → the full quarter', async () => {
     const c = code(3);
     const full = await mintBatch(Q2, 120, 'BC-b-full');
@@ -194,6 +207,20 @@ describe('the chooser answers per code', () => {
     await addRows(newer, c, 3);
     expect((await chosen(c))?.batchId).toBe(older);
     await drop([older, newer]);
+  });
+
+  it('(d2) two files of the SAME quarter, both with enough → the one with MORE rows, though uploaded first', async () => {
+    // Rule 3 alone (review P2-4): both hold ≥ FEW (rule 1 ties), both end on
+    // the same day (rule 2 ties), and the newer upload — which rule 4 would
+    // choose — is the thinner one.
+    const c = code(9);
+    const thick = await mintBatch(Q2, 120, 'BC-d2-thick');
+    const thin = await mintBatch(Q2, 60, 'BC-d2-thin');
+    await addRows(thick, c, 50);
+    await addRows(thin, c, 6);
+    expect((await chosen(c))?.batchId).toBe(thick);
+    expect((await chosen(c))?.rows).toBe(50);
+    await drop([thick, thin]);
   });
 
   it('(e) the list route and the stats route answer from the chooser’s batch', async () => {

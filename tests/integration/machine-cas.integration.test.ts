@@ -8,18 +8,20 @@ import {
   calcGroups,
   calcRequestItems,
   calcRequests,
+  calcVersions,
   clients,
   customsImportBatches,
   deals,
   dealStages,
   events,
   tasks,
+  tnvedAssignments,
   users,
 } from '@/modules/platform/db/schema';
 import { onDate, saveBaza } from '@/modules/wms/calc/dictionaries';
 import { CalcError, openCalcRequest } from '@/modules/wms/calc/service';
-import { confirmGroup, saveTable } from '@/modules/wms/calc/workspace';
-import { pickBazas } from '@/modules/wms/calc/prefill-steps';
+import { confirmAllGroups, confirmGroup, saveTable, sealCalc } from '@/modules/wms/calc/workspace';
+import { applyMemory, pickBazas } from '@/modules/wms/calc/prefill-steps';
 import type { PickOutcome, PickRequest } from '@/modules/wms/calc/prefill-ai';
 import { normalizeName } from '@/modules/wms/customs/import-parse';
 import { productKey } from '@/modules/wms/tnved/service';
@@ -44,6 +46,7 @@ const SUFFIX = String(Date.now()).slice(-6);
 const CODE = '3924100000';
 const BOOKED = `Plastik idish CAS ${SUFFIX}`;
 const PICKED = `Qoshiq CAS ${SUFFIX}`;
+const REMEMBERED = `Choynak CAS ${SUFFIX}`;
 
 let actorId = '';
 let clientId = '';
@@ -85,6 +88,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (madeRequests.length > 0) {
+    await db.delete(calcVersions).where(inArray(calcVersions.requestId, madeRequests));
     await db.delete(calcRequestItems).where(inArray(calcRequestItems.requestId, madeRequests));
     await db.delete(calcGroups).where(inArray(calcGroups.requestId, madeRequests));
     const rows = await db
@@ -100,13 +104,20 @@ afterAll(async () => {
   }
   if (batchId) await db.delete(customsImportBatches).where(eq(customsImportBatches.id, batchId));
   await db.delete(calcBazas).where(eq(calcBazas.productKey, productKey(BOOKED)));
+  // The seal taught the code book (CONFIGURATION, #183).
+  await db.delete(tnvedAssignments).where(eq(tnvedAssignments.productKey, productKey(REMEMBERED)));
   await db.delete(deals).where(eq(deals.id, dealId));
   await db.update(clients).set({ active: false }).where(eq(clients.id, clientId));
   await db.update(users).set({ active: false }).where(eq(users.id, actorId));
   await pgClient.end();
 });
 
-async function open(): Promise<string> {
+async function open(
+  items: { name: string; tnvedCode: string | null; weightKg: number }[] = [
+    { name: PICKED, tnvedCode: CODE, weightKg: 20 },
+    { name: BOOKED, tnvedCode: CODE, weightKg: 30 },
+  ],
+): Promise<string> {
   const result = await openCalcRequest(
     {
       entityType: 'deal',
@@ -116,10 +127,7 @@ async function open(): Promise<string> {
       toCity: 'Toshkent',
       weightKg: 500,
       volumeM3: 10,
-      items: [
-        { name: PICKED, tnvedCode: CODE, weightKg: 20 },
-        { name: BOOKED, tnvedCode: CODE, weightKg: 30 },
-      ],
+      items,
       source: 'card',
     },
     ctx(),
@@ -216,5 +224,51 @@ describe('a person’s save between the machine’s question and its answer wins
     );
     expect(out.rev).toBe(await revOf(id));
     expect((await rowsOf(id))[0]).toMatchObject({ bazaUsd: '5.0000', bazaSource: 'typed' });
+  });
+
+  // LAST in the file: the seal TEACHES the memory and the code book.
+  it('the memory step lets a person’s save through as `conflict` — the pass must be able to stand down', async () => {
+    // Review P2-CAS-1. Swallowed into «nothing stamped», the pass's glue
+    // re-read the CURRENT revision — the person's — for its next step, and
+    // the sweep and the pick then passed the compare-and-set and wrote over
+    // them. So the step's refusal reaches the caller, and nothing is written.
+    const sealed = await open([{ name: REMEMBERED, tnvedCode: CODE, weightKg: 10 }]);
+    await saveTable(sealed, { items: [], adds: [] }, ctx());
+    const [priced] = await rowsOf(sealed);
+    await saveTable(sealed, { items: [{ id: priced!.id, seq: priced!.seq, bazaUsd: 4, bazaBasis: 'kg' }], adds: [] }, ctx());
+    await confirmAllGroups(sealed, ctx());
+    await sealCalc(sealed, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null }, ctx());
+
+    const id = await open([{ name: REMEMBERED, tnvedCode: null, weightKg: 10 }]);
+    // The door may already have coded it from the book the seal taught; the
+    // memory step asks only about UNCODED rows, so the fixture uncodes it.
+    await db.update(calcRequestItems).set({ tnvedCode: null }).where(eq(calcRequestItems.requestId, id));
+    const machineRev = await revOf(id);
+    // A person saves before the machine's step lands.
+    await saveTable(id, { items: [], adds: [] }, ctx());
+    await expect(applyMemory(id, { actorId: null }, machineRev)).rejects.toSatisfy(
+      (err: unknown) => err instanceof CalcError && err.code === 'conflict',
+    );
+    expect((await rowsOf(id))[0]!.tnvedCode).toBeNull();
+
+    // The control, on a fresh request and the revision it stands at: the
+    // memory DOES code the row — and the same save's book fill is COUNTED
+    // (review P2-9: every save fills from the book since round 2, step 0's
+    // included, and the pass's count used to miss it).
+    const fresh = await open([
+      { name: REMEMBERED, tnvedCode: null, weightKg: 10 },
+      { name: BOOKED, tnvedCode: CODE, weightKg: 30 },
+    ]);
+    await db
+      .update(calcRequestItems)
+      .set({ tnvedCode: null })
+      .where(and(eq(calcRequestItems.requestId, fresh), eq(calcRequestItems.name, REMEMBERED)));
+    const out = await applyMemory(fresh, { actorId: null }, await revOf(fresh));
+    expect(out.coded).toBe(1);
+    expect(out.filled).toBe(1);
+    expect(out.dictionaryFilled).toBe(1);
+    const [remembered, booked] = await rowsOf(fresh);
+    expect(remembered).toMatchObject({ tnvedCode: CODE, bazaSource: 'memory' });
+    expect(booked).toMatchObject({ bazaSource: 'dictionary' });
   });
 });

@@ -70,7 +70,20 @@ export function isFullCode(code: string): boolean {
  */
 export function codeMatchSql(r: SQL, code: string): SQL {
   if (isFullCode(code)) return sql`${r}.tnved_code = ${code}`;
-  return sql`${r}.tnved_code BETWEEN ${code} AND ${code.padEnd(10, '9')}`;
+  const { lo, hi } = codeBounds(code);
+  return sql`${r}.tnved_code BETWEEN ${lo} AND ${hi}`;
+}
+
+/**
+ * The two TEXT bounds of a code's rows — where «a heading is a range» is
+ * written down once: a full code is both of its own bounds, a heading runs
+ * from itself to itself padded with nines. `codeMatchSql` spells them into a
+ * predicate; the batch chooser binds them per code into ONE `VALUES` list, so
+ * a save asking fifty codes plans one statement rather than fifty
+ * (review P2-10).
+ */
+export function codeBounds(code: string): { lo: string; hi: string } {
+  return isFullCode(code) ? { lo: code, hi: code } : { lo: code, hi: code.padEnd(10, '9') };
 }
 
 /**
@@ -192,7 +205,12 @@ export function candidateStatement(
              ELSE ${sim}
            END`;
 
-  if (!named) {
+  // The named series is a STATISTIC, read with `=` below: on a heading it
+  // would be computed over nothing and, worse, take the LIST down with it —
+  // the materialized scan it rides is exact too. So a heading never gets the
+  // named branch, whoever asks (review P2-6; the dialog's own guard is
+  // `suggestImportBaza`'s `named`).
+  if (!named || !isFullCode(input.tnvedCode)) {
     return sql`
     SELECT r.id::text AS id,
            r.tnved_code,

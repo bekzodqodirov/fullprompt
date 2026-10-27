@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { calcGroups, calcRequestItems } from '../../platform/db/schema';
 import { isBazaBasis, type BazaBasis } from '../calc/pricing';
-import { unitsForItem } from './import-baza';
+import { unitsForAsk, unitsForItem } from './import-baza';
 import type { ImportUnit } from './import-parse';
 
 /**
@@ -23,6 +23,9 @@ export interface PickerItem {
   /** '' when the row has no code — no question to ask the file. */
   code: string;
   dutyUnit: string | null;
+  /** The units the row offers the file under its code (`unitsForAsk`): its
+   * law's for a full code; for a heading, its own figures' plus whatever the
+   * heading pins — each candidate is then judged by its OWN law. */
   units: ImportUnit[];
   /** kg per piece, only when `units` includes dona — what the list ranks by. */
   perPiece: number | null;
@@ -83,8 +86,9 @@ export async function readPickerItem(
   // (0125): ranking by `[0]` dropped the per-piece weight re-rank — his
   // «donada har bir tovarni og'irligiga qaraymiz» — on every advalor row
   // that states a weight, because kilograms come first there. Through the
-  // ONE row → units mapping (K10), the save's and the pick's own.
-  const units = unitsForItem(row, item.dutyUnit);
+  // ONE row → units mapping (K10), the save's and the pick's own — and for a
+  // HEADING, not by the heading's law alone (`unitsForAsk`, review P2-1).
+  const units = unitsForAsk(row, code, item.dutyUnit);
   const perPieceKg = qty !== null && qty > 0 && kg !== null && kg > 0 ? kg / qty : null;
   const perPiece = units.includes('dona') ? perPieceKg : null;
   return { name: item.name, code, dutyUnit: item.dutyUnit, units, perPiece, perPieceKg, row };

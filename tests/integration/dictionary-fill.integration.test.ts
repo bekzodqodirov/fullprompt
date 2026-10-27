@@ -47,6 +47,7 @@ import {
   loadWorkspace,
   saveTable,
   sealCalc,
+  setGroupRates,
   type TableItemEdit,
 } from '@/modules/wms/calc/workspace';
 
@@ -319,7 +320,103 @@ describe('the book fills a baza-less row on every save, second after the memory'
     spy.asked.length = 0;
     await save(id2);
     expect(spy.asked).toContain(other);
+    // …and the BOOK's half of the skip (review P2-7): a row only the book
+    // answers, in a unit the row allows, is not asked of a file that holds
+    // its very name and code either.
+    const booked = name('Plastik guldon');
+    await book(booked, 2, 'kg');
+    await importBatch(booked, [{ price: 7, unit: 'kg' }]);
+    const id3 = await open([{ name: booked, tnvedCode: CODE, weightKg: 20 }]);
+    spy.asked.length = 0;
+    const out3 = await save(id3);
+    expect(out3.dictionaryFilled).toEqual([1]);
+    expect(spy.asked, 'the file was scanned for a row the book already answered').not.toContain(booked);
     await db.delete(customsImportBatches).where(inArray(customsImportBatches.id, madeBatches));
     madeBatches.length = 0;
+  });
+
+  it('(j) a block whose law a person typed per kg refuses the book’s per-dona price — and the file is still asked', async () => {
+    // Review P2-REG-3. The skip used to judge the book's answer by the BOOK's
+    // law, the fill by the BLOCK's: under a typed per-kg law the per-dona
+    // book price is refused in the tx, and the import — skipped before it —
+    // was never asked, on this save or any later one.
+    const product = name('Keramik kuvsin');
+    const id = await open([{ name: product, tnvedCode: CODE, weightKg: 20, quantity: 10 }]);
+    await save(id);
+    const [row] = await rowsOf(id);
+    expect(row!.bazaUsd).toBeNull();
+    await setGroupRates(
+      row!.groupId!,
+      {
+        tnvedCode: CODE,
+        dutyPct: 20,
+        vatPct: 12,
+        dutyFree: false,
+        vatFree: false,
+        dutyMode: 'max',
+        dutySpecific: 1,
+        dutyUnit: 'kg',
+      },
+      ctx(),
+    );
+    await book(product, 3, 'unit');
+    await importBatch(product, [{ price: 2, unit: 'kg' }]);
+    const out = await save(id);
+    expect(out.dictionaryFilled).toEqual([]);
+    expect(out.importFilled).toEqual([1]);
+    expect((await rowsOf(id))[0]).toMatchObject({ bazaUsd: '2.0000', bazaBasis: 'kg', bazaSource: 'import' });
+    await db.delete(customsImportBatches).where(inArray(customsImportBatches.id, madeBatches));
+    madeBatches.length = 0;
+  });
+});
+
+/**
+ * «Qatorlardan» on the seal (docs/SAKKIZ-R2.md §7.2.8, law-money-3, review
+ * P2-3). On a request whose m³ IS the Σ of its lines `reconcile.mismatch`
+ * compares the Σ with itself, so the label is the only signal — and the seal
+ * must carry it beside the volume it froze, or a sealed calculation forgets
+ * where its m³ came from. LAST in the file: a seal teaches the memory.
+ */
+describe('the seal records whether its m³ is the lines’ Σ', () => {
+  async function sealWithVolume(volumeM3: number) {
+    const a = name('Shisha banka');
+    const b = name('Shisha flakon');
+    madeNames.push(a, b);
+    const result = await openCalcRequest(
+      {
+        entityType: 'deal',
+        entityId: dealId,
+        section: 'rastamojka',
+        fromCity: 'Yiwu',
+        toCity: 'Toshkent',
+        weightKg: 500,
+        volumeM3,
+        items: [
+          { name: a, tnvedCode: CODE, weightKg: 30, volumeM3: 1.2 },
+          { name: b, tnvedCode: CODE, weightKg: 20, volumeM3: 1.6 },
+        ],
+        source: 'card',
+      },
+      ctx(),
+    );
+    madeRequests.push(result.id);
+    await save(result.id);
+    await save(result.id, [
+      await editOf(result.id, 1, { bazaUsd: 3, bazaBasis: 'kg' }),
+      await editOf(result.id, 2, { bazaUsd: 4, bazaBasis: 'kg' }),
+    ]);
+    await confirmAllGroups(result.id, ctx());
+    await sealCalc(result.id, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null }, ctx());
+    const [row] = await db.execute<{ fromLines: string | null }>(sql`
+      SELECT breakdown->>'volumeFromLines' AS "fromLines" FROM calc_versions WHERE request_id = ${result.id}::uuid`);
+    return row?.fromLines ?? null;
+  }
+
+  it('an m³ equal to 1.2 + 1.6 seals «true»', async () => {
+    expect(await sealWithVolume(2.8)).toBe('true');
+  });
+
+  it('a typed m³ that is not the Σ seals «false»', async () => {
+    expect(await sealWithVolume(5)).toBe('false');
   });
 });

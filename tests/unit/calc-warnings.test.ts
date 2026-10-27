@@ -3,6 +3,7 @@ import {
   AI_RECODE_PREFIX,
   aiRateTaken,
   aiRecoded,
+  keepRecodeMark,
   lawPinnedBasis,
   sealCounters,
   unchangedFromProposal,
@@ -431,5 +432,27 @@ describe('round 2: the book moved under a 📖 row, and the pick chose a code', 
     ]);
     expect(aiRecoded(picked.bazaReason)).toBe(true);
     expect(aiRecoded(null)).toBe(false);
+  });
+
+  /**
+   * Review P2-LAW-2: the mark records the CODE the model chose, so a writer
+   * that re-prices the row over that code keeps it — stripped of the model's
+   * words about the declaration it no longer wears — and only a writer that
+   * posts its own mark replaces it.
+   */
+  it('a price written over the model’s code keeps the recode mark, stripped of the model’s words', () => {
+    const stood = `${AI_RECODE_PREFIX}6403 → 6403991000 · charm poyabzal`;
+    expect(keepRecodeMark(stood, null)).toBe(`${AI_RECODE_PREFIX}6403 → 6403991000`);
+    expect(aiRecoded(keepRecodeMark(stood, null))).toBe(true);
+    // The machine's same-code words ride after the mark…
+    expect(keepRecodeMark(stood, 'tufli')).toBe(`${AI_RECODE_PREFIX}6403 → 6403991000 · tufli`);
+    // …a fresh recode mark is its own…
+    const fresh = `${AI_RECODE_PREFIX}6403 → 6403120000 · kg`;
+    expect(keepRecodeMark(stood, fresh)).toBe(fresh);
+    // …and a row the model never recoded carries only what was posted.
+    expect(keepRecodeMark('charm poyabzal', null)).toBeNull();
+    expect(keepRecodeMark(null, 'tufli')).toBe('tufli');
+    // A mark already stripped stays itself.
+    expect(keepRecodeMark(`${AI_RECODE_PREFIX}6403 → 6403991000`, null)).toBe(`${AI_RECODE_PREFIX}6403 → 6403991000`);
   });
 });

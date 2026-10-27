@@ -6,7 +6,14 @@ import { logger } from '../../platform/logger';
 import type { AuditContext } from '../../platform/audit/service';
 import { recordAiPass } from './ai-cost';
 import { batchesForCodes } from '../customs/import-service';
-import { isFullCode, suggestImportBaza, unitsForItem, type ImportBazaRow } from '../customs/import-baza';
+import {
+  foreignCodes,
+  isFullCode,
+  judgeCandidates,
+  suggestImportBaza,
+  unitsForAsk,
+  type ImportBazaRow,
+} from '../customs/import-baza';
 import { onDate, ratesForCodes } from './dictionaries';
 import { CalcError } from './service';
 import { AI_RECODE_PREFIX } from './warnings';
@@ -48,7 +55,9 @@ const casOf = (expectRev: number | null) => (expectRev === null ? undefined : { 
  * written — not a cell, not an audit row — and the machine does not retry: a
  * person is working on this request, and putting the machine's answer back
  * would write over them, or take their ✅ off (`jobs.ts`'s own law: the
- * machine stands down rather than un-ticking a person's ✅).
+ * machine stands down rather than un-ticking a person's ✅). Only the PICK
+ * swallows it, because nothing writes after the pick; `applyMemory` lets it
+ * through, so the pass can stand down (review P2-CAS-1).
  */
 const overtakenByPerson = (err: unknown) => err instanceof CalcError && err.code === 'conflict';
 
@@ -65,7 +74,7 @@ export async function applyMemory(
   requestId: string,
   ctx: AuditContext,
   expectRev: number | null,
-): Promise<{ coded: number; filled: number; rev: number | null }> {
+): Promise<{ coded: number; filled: number; dictionaryFilled: number; rev: number | null }> {
   const rows = await db
     .select({
       id: calcRequestItems.id,
@@ -78,13 +87,13 @@ export async function applyMemory(
   const uncoded = rows.filter((r) => !(r.tnvedCode ?? '').trim());
   // A fully coded request still gets its save — that is what fills the bazas
   // and mints the groups — but there is nothing to look up.
-  if (uncoded.length === 0) return { coded: 0, filled: 0, rev: expectRev };
+  if (uncoded.length === 0) return { coded: 0, filled: 0, dictionaryFilled: 0, rev: expectRev };
 
   const hits = await sealedMemoryFor(
     uncoded.map((r) => r.name),
     { excludeRequestId: requestId },
   );
-  if (hits.size === 0) return { coded: 0, filled: 0, rev: expectRev };
+  if (hits.size === 0) return { coded: 0, filled: 0, dictionaryFilled: 0, rev: expectRev };
 
   // Named apart from the pick's `edits` on purpose: these carry a CODE and
   // nothing else, and `ai-advisory.test.ts` anchors its «the prefill writes
@@ -95,18 +104,22 @@ export async function applyMemory(
     if (!hit?.tnvedCode) continue;
     codeEdits.push({ id: r.id, seq: r.seq, tnvedCode: hit.tnvedCode });
   }
-  if (codeEdits.length === 0) return { coded: 0, filled: 0, rev: expectRev };
+  if (codeEdits.length === 0) return { coded: 0, filled: 0, dictionaryFilled: 0, rev: expectRev };
 
-  try {
-    const out = await saveTable(requestId, { items: codeEdits, adds: [] }, ctx, casOf(expectRev));
-    return { coded: codeEdits.length, filled: out.memoryFilled.length, rev: out.rev };
-  } catch (err) {
-    if (!overtakenByPerson(err)) throw err;
-    logger.info({ requestId }, '[calc-prefill] memory codes not stamped — a person saved meanwhile');
-    // The revision the machine last knew: every later machine save in this
-    // pass then refuses too, which is the point.
-    return { coded: 0, filled: 0, rev: expectRev };
-  }
+  // A `conflict` here is NOT swallowed (review P2-CAS-1). The pass's glue
+  // reads it as «a person saved meanwhile» and writes nothing more; answered
+  // as an ordinary «nothing to stamp», the glue re-reads the CURRENT revision
+  // for its next step — the person's own — and the sweep and the pick would
+  // pass the compare-and-set and refill a baza the person had just cleared,
+  // taking their ✅ off with it. The book fills in this save too (round 2),
+  // so its count rides beside the memory's.
+  const out = await saveTable(requestId, { items: codeEdits, adds: [] }, ctx, casOf(expectRev));
+  return {
+    coded: codeEdits.length,
+    filled: out.memoryFilled.length,
+    dictionaryFilled: out.dictionaryFilled.length,
+    rev: out.rev,
+  };
 }
 
 /**
@@ -139,9 +152,12 @@ export async function pickBazas(
   refused: number;
   overtaken: number;
   timedOut: number;
+  /** Rows the BOOK filled in the pick's own save (every save fills since
+   * round 2) — counted, or the pass under-reports the book (review P2-9). */
+  dictionaryFilled: number;
   rev: number | null;
 }> {
-  const none = { picked: 0, capped: 0, refused: 0, overtaken: 0, timedOut: 0, rev: expectRev };
+  const none = { picked: 0, capped: 0, refused: 0, overtaken: 0, timedOut: 0, dictionaryFilled: 0, rev: expectRev };
 
   const rows = await db
     .select({
@@ -186,6 +202,9 @@ export async function pickBazas(
   });
 
   const asking: PickRequest[] = [];
+  /** Each asked row's figures and own block law — what its candidates are
+   * judged against before the model sees them. */
+  const judgeBy = new Map<number, { facts: ReturnType<typeof factsOf>; code: string; law: string | null }>();
   let timedOut = 0;
   // One candidate read per DISTINCT row shape — the memo the auto-fill
   // already keeps (#432): ten identical heading rows cost one scan, not ten.
@@ -196,10 +215,13 @@ export async function pickBazas(
     const batchId = chosenBatch.get(code)?.batchId;
     if (!batchId) continue;
     const facts = factsOf(r);
+    const law = r.groupId ? (dutyUnitOf.get(r.groupId) ?? null) : null;
     // The row's whole accepted set — and a unit the VED already CHOSE on this
     // still-unpriced row narrows it to that one (0125): the model chooses a
-    // declaration, never a unit.
-    const units = unitsForItem(facts, r.groupId ? (dutyUnitOf.get(r.groupId) ?? null) : null);
+    // declaration, never a unit. A HEADING is not ranked by the heading's law
+    // alone (`unitsForAsk`, review P2-1): its candidates are judged by their
+    // own laws below.
+    const units = unitsForAsk(facts, code, law);
     if (units.length === 0) continue;
     const qty = facts.quantity;
     const kg = facts.weightKg;
@@ -228,6 +250,7 @@ export async function pickBazas(
     }
     if (candidates.length === 0) continue;
     asking.push({ seq: r.seq, name: r.name, tnvedCode: code, candidates });
+    judgeBy.set(r.seq, { facts, code, law });
   }
   if (empty.length > MAX_PICK_ROWS) {
     logger.info(
@@ -240,6 +263,22 @@ export async function pickBazas(
   }
   const capped = Math.max(0, empty.length - MAX_PICK_ROWS);
   if (asking.length === 0) return { ...none, capped, timedOut };
+
+  // Every candidate judged by the law IT would bring with it (regression-7's
+  // rule, the 📥 list's own — `judgeCandidates`), BEFORE the model is asked:
+  // the «единица не совпадает» mark the model reads and the refusal after its
+  // answer are then one judgement, and a declaration whose law counts in juft
+  // is never shown as fitting a row that states kilograms. The book is read
+  // ONCE, on the pool, for every code a pick could move a row to (#714). A
+  // row the pick leaves on its own code keeps its block's law, with any law a
+  // person typed. Per row, never on the memo's shared list: two rows of one
+  // shape can still differ in what another law lets them be priced in.
+  const foreign = [...new Set(asking.flatMap((a) => foreignCodes(a.tnvedCode, a.candidates)))];
+  const book = foreign.length > 0 ? await ratesForCodes(foreign, onDate()) : new Map();
+  for (const a of asking) {
+    const by = judgeBy.get(a.seq)!;
+    a.candidates = judgeCandidates(by.facts, by.code, by.law, a.candidates, book);
+  }
 
   const outcome = await pick(asking);
   // The pick hands its usage BACK (K5), and it is recorded HERE, awaited and
@@ -263,20 +302,6 @@ export async function pickBazas(
 
   const bySeq = new Map(rows.map((r) => [r.seq, r]));
   const askedBySeq = new Map(asking.map((a) => [a.seq, a]));
-  // The law each chosen declaration would bring with it — read on the POOL,
-  // before the save, for every code the pick moves a row to (#714). A row
-  // the pick leaves on its own code keeps its block, and with it any law a
-  // person typed.
-  const recodeTo = [
-    ...new Set(
-      answers.flatMap((a) => {
-        const asked = askedBySeq.get(a.seq);
-        const chosen = a.candidate === null || !asked ? undefined : asked.candidates[a.candidate];
-        return chosen && asked && chosen.tnvedCode !== asked.tnvedCode ? [chosen.tnvedCode] : [];
-      }),
-    ),
-  ];
-  const book = recodeTo.length > 0 ? await ratesForCodes(recodeTo, onDate()) : new Map();
 
   const edits: TableItemEdit[] = [];
   /** The code each edit was asked under — re-checked below. */
@@ -290,17 +315,12 @@ export async function pickBazas(
     const chosen = asked.candidates[a.candidate];
     if (!chosen) continue;
     const recode = chosen.tnvedCode !== asked.tnvedCode;
-    // The units the TARGET code's law allows this row (regression-7's rule,
-    // on the machine's side): a pick that recodes the row brings the
-    // declaration's law with it, and a per-kg price on a row that law counts
-    // in juft is a price in the wrong unit, whatever the heading allowed. A
-    // chosen unit (0125) still narrows it to that one.
-    const law = recode
-      ? (book.get(chosen.tnvedCode)?.dutyUnit ?? null)
-      : row.groupId
-        ? (dutyUnitOf.get(row.groupId) ?? null)
-        : null;
-    if (!unitsForItem(factsOf(row), law).includes(chosen.unit)) {
+    // The units the TARGET code's law allows this row — judged above, before
+    // the model was asked (`judgeCandidates`): a pick that recodes the row
+    // brings the declaration's law with it, and a per-kg price on a row that
+    // law counts in juft is a price in the wrong unit, whatever the heading
+    // allowed. A chosen unit (0125) still narrows it to that one.
+    if (!chosen.unitMatches) {
       refused += 1;
       continue;
     }
@@ -384,7 +404,15 @@ export async function pickBazas(
 
   try {
     const saved = await saveTable(requestId, { items: live, adds: [] }, ctx, casOf(expectRev));
-    return { picked: live.length, capped, refused, overtaken, timedOut, rev: saved.rev };
+    return {
+      picked: live.length,
+      capped,
+      refused,
+      overtaken,
+      timedOut,
+      dictionaryFilled: saved.dictionaryFilled.length,
+      rev: saved.rev,
+    };
   } catch (err) {
     if (!overtakenByPerson(err)) throw err;
     // A person saved while the model was thinking — the pick's call takes up
@@ -394,6 +422,6 @@ export async function pickBazas(
     // (concurrency-3).
     overtaken += live.length;
     logger.info({ requestId, overtaken }, '[calc-prefill] a person saved while the model was thinking — nothing written');
-    return { picked: 0, capped, refused, overtaken, timedOut, rev: expectRev };
+    return { picked: 0, capped, refused, overtaken, timedOut, dictionaryFilled: 0, rev: expectRev };
   }
 }

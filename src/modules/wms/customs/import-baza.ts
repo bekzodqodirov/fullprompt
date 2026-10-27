@@ -163,6 +163,80 @@ export function unitsForItem(
   });
 }
 
+/**
+ * The units a row OFFERS the file under `code` — what its candidate list
+ * ranks first. The 📥 list and the AI pick both ask it (review P2-1).
+ *
+ * A full code answers by its own law, exactly `unitsForItem`. A HEADING does
+ * not have one law to answer by: it lists the declarations of every
+ * subheading, and each brings ITS OWN law with it when chosen. Ranked by the
+ * heading's law alone, the right one was buried — MEASURED on the spec's own
+ * example: 6403 is «20 %, kamida $3/juft», so a row stating 40 kg was offered
+ * juft only, and the exact-name kg declaration under 6403120000 (plain 5 %
+ * advalor, where a kg row is at home) sank below 120 nameless juft rows, off
+ * the dialog's fifty and the pick's ten. So a heading offers what the row's
+ * own figures allow under no law, plus whatever the heading's law pins; every
+ * candidate is then JUDGED by its own law (`judgeCandidates`).
+ */
+export function unitsForAsk(
+  item: Parameters<typeof unitsForItem>[0],
+  code: string,
+  dutyUnit: string | null,
+): ImportUnit[] {
+  const own = unitsForItem(item, dutyUnit);
+  if (isFullCode(code)) return own;
+  const out = unitsForItem(item, null);
+  for (const unit of own) if (!out.includes(unit)) out.push(unit);
+  return out;
+}
+
+/** A candidate judged by the law a pick of it would land the row under. */
+export interface CandidateJudgement {
+  /** That law's duty unit — the row's own block law for a candidate of the
+   * row's own code, the BOOK's for any other (a pick recodes the row). */
+  lawUnit: string | null;
+  /** The candidate's unit is one the row may be priced in under that law —
+   * what the MACHINE's pick demands: it chooses a declaration, never a unit. */
+  unitMatches: boolean;
+  /** The candidate's unit is one that law can hold at all — what a PERSON may
+   * pick in the dialog: a person's pick chooses the unit too (0125), and only
+   * a second pair unit on a juft/litr/m² code is beyond any choice. */
+  pickable: boolean;
+}
+
+/**
+ * Every candidate judged by ITS OWN code's law — the ONE judgement the 📥
+ * list and the AI pick share (#513, regression-7). The model's «единица не
+ * совпадает» mark and the refusal after its answer are this same
+ * `unitMatches`, so the model is never shown a declaration as fitting that
+ * the save then refuses. Pure: the caller reads the book (`ratesForCodes`,
+ * longest prefix) on the POOL for every candidate code that is not the
+ * row's own (#714).
+ */
+export function judgeCandidates<T extends { tnvedCode: string; unit: ImportUnit }>(
+  row: Parameters<typeof unitsForItem>[0],
+  rowCode: string,
+  rowLaw: string | null,
+  candidates: readonly T[],
+  book: ReadonlyMap<string, { dutyUnit: string | null }>,
+): (T & CandidateJudgement)[] {
+  return candidates.map((c) => {
+    const lawUnit = c.tnvedCode === rowCode ? rowLaw : (book.get(c.tnvedCode)?.dutyUnit ?? null);
+    return {
+      ...c,
+      lawUnit,
+      unitMatches: unitsForItem(row, lawUnit).includes(c.unit),
+      pickable: !basisConflicts(lawUnit, BASIS_FOR_UNIT[c.unit]),
+    };
+  });
+}
+
+/** The candidate codes `judgeCandidates` asks the BOOK about — every one that
+ * is not the row's own. */
+export function foreignCodes(rowCode: string, candidates: readonly { tnvedCode: string }[]): string[] {
+  return [...new Set(candidates.map((c) => c.tnvedCode))].filter((c) => c !== rowCode);
+}
+
 export interface ImportBazaRow {
   id: string;
   /** The declaration's own code — exact today; round 2's heading search lists

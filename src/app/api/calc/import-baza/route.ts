@@ -3,11 +3,16 @@ import { db } from '@/modules/platform/db/client';
 import { authorize, AuthError } from '@/modules/platform/rbac/authorize';
 import { isQueryCanceled, isServerBehind } from '@/modules/platform/db/errors';
 import { logger } from '@/modules/platform/logger';
-import { basisConflicts } from '@/modules/wms/calc/basis';
 import { onDate, ratesForCodes } from '@/modules/wms/calc/dictionaries';
 import { isBazaBasis, type BazaBasis } from '@/modules/wms/calc/pricing';
 import { customsImportBatches } from '@/modules/platform/db/schema';
-import { BASIS_FOR_UNIT, isFullCode, suggestImportBaza, unitsForItem } from '@/modules/wms/customs/import-baza';
+import {
+  BASIS_FOR_UNIT,
+  foreignCodes,
+  isFullCode,
+  judgeCandidates,
+  suggestImportBaza,
+} from '@/modules/wms/customs/import-baza';
 import { readPickerItem } from '@/modules/wms/customs/picker-item';
 import { periodText } from '@/modules/wms/customs/import-stats';
 
@@ -107,27 +112,17 @@ export async function GET(request: Request) {
     // with any typed override) for a candidate of the row's own code, the
     // BOOK's for any other — read on the pool, one query for every distinct
     // code the list holds.
-    const otherCodes = [...new Set(sug.candidates.map((c) => c.tnvedCode))].filter((c) => c !== item.code);
-    const book = otherCodes.length > 0 ? await ratesForCodes(otherCodes, onDate()) : new Map();
-    const lawOf = (code: string): string | null =>
-      code === item.code ? item.dutyUnit : (book.get(code)?.dutyUnit ?? null);
+    const others = foreignCodes(item.code, sug.candidates);
+    const book = others.length > 0 ? await ratesForCodes(others, onDate()) : new Map();
     return Response.json(
       {
         state: 'ok',
         // A declaration in a unit its code's law cannot hold (a pair unit on
         // a juft/litr/m² code) is LISTED — the VED should see the file has it
         // — but cannot be picked: it would land the row in a conflict. By
-        // the CANDIDATE's law: the pick recodes the row to its code.
-        candidates: sug.candidates.map((c) => {
-          const law = lawOf(c.tnvedCode);
-          const units = c.tnvedCode === item.code ? item.units : unitsForItem(item.row, law);
-          return {
-            ...c,
-            lawUnit: law,
-            unitMatches: units.includes(c.unit),
-            pickable: !basisConflicts(law, BASIS_FOR_UNIT[c.unit]),
-          };
-        }),
+        // the CANDIDATE's law: the pick recodes the row to its code. ONE
+        // judgement with the AI pick's (`judgeCandidates`, review P2-1).
+        candidates: judgeCandidates(item.row, item.code, item.dutyUnit, sug.candidates, book),
         batchId: sug.batchId,
         total: sug.total,
         itemName: item.name,

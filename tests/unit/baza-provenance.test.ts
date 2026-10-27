@@ -62,6 +62,14 @@ describe('the baza carries its provenance', () => {
       expect(block, `a .set() writing bazaSource must write memoryItemId:\n${block}`).toContain(
         'memoryItemId',
       );
+      // THE ONE EXCEPTION to «the provenance moves with the price» (review
+      // P2-LAW-2): the AI recode mark rides in `baza_reason` but records a
+      // fact about the CODE, so a writer that moves only the price keeps it.
+      // None of these writers moves a code, so each asks `keepRecodeMark` —
+      // a bare `bazaReason: null` here erases an unconfirmed `ai_recode`.
+      expect(block, `a .set() writing bazaSource must keep the AI recode mark:\n${block}`).toMatch(
+        /bazaReason: keepRecodeMark\(/,
+      );
     }
   });
 
@@ -76,6 +84,14 @@ describe('the baza carries its provenance', () => {
     expect(sources.length).toBeGreaterThan(0);
     expect(rows.length).toBe(sources.length);
     expect(memories.length).toBe(sources.length);
+    // The reason beside each: kept over an unmoved code (`reasonFor`, which
+    // asks `keepRecodeMark`), and dropped in ONE place only — the code
+    // branch, when the edit moves the code the mark was about.
+    const reasons = source.match(/patch\.bazaReason = [^;]+;/g) ?? [];
+    expect(reasons.filter((r) => r.startsWith('patch.bazaReason = reasonFor(')).length).toBe(sources.length);
+    expect(reasons.filter((r) => !r.startsWith('patch.bazaReason = reasonFor('))).toEqual(['patch.bazaReason = null;']);
+    expect(source).toContain('if (aiRecoded(item.bazaReason)) patch.bazaReason = null;');
+    expect(source).toMatch(/const reasonFor = \(posted: string \| null\) => \(codeMoved \? posted : keepRecodeMark\(item\.bazaReason, posted\)\);/);
   });
 
   it('a correction inherits the provenance with the price', () => {

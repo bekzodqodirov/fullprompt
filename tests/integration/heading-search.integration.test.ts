@@ -77,7 +77,10 @@ import { GET as statsRoute } from '@/app/api/calc/import-baza/stats/route';
  *   H   — the heading, a plain 10 % advalor law;
  *   TK  — a subheading at 15 % advalor (a kg row is at home there);
  *   TJ  — a subheading at «20 %, kamida $3/juft» (its law counts in juft);
- *   H2… — the NEXT heading, which a range on H must never reach.
+ *   H2… — the NEXT heading, which a range on H must never reach;
+ *   HJ  — a second heading whose OWN law counts in juft («20 %, kamida
+ *         $3/juft», 6403's shape), with HJK under it at a plain 5 % advalor
+ *         (6403120000's) — the spec's own example, review P2-1.
  *
  * CONFIGURATION WARNING (#183): the laws and the ready batch answer every
  * later save of these codes; all of it is deleted in `afterAll`.
@@ -90,6 +93,9 @@ const TK = `${H}110000`;
 const TJ = `${H}991000`;
 const OTHER = `${H2}190000`;
 const NAME = `Charm poyabzal erkaklar uchun ${SUFFIX}`;
+const HJ = `98${String((Number(D2) + 50) % 100).padStart(2, '0')}`;
+const HJK = `${HJ}120000`;
+const NAME_J = `Bolalar rezina etigi ${SUFFIX}`;
 
 let actorId = '';
 let clientId = '';
@@ -99,7 +105,13 @@ const madeRates: string[] = [];
 const madeRequests: string[] = [];
 const ctx = () => ({ actorId });
 /** The main declarations' ids, by what they are. */
-const rowIds: Record<'tkKg' | 'tjKg' | 'tjM2' | 'other', string> = { tkKg: '', tjKg: '', tjM2: '', other: '' };
+const rowIds: Record<'tkKg' | 'tjKg' | 'tjM2' | 'other' | 'hjkKg', string> = {
+  tkKg: '',
+  tjKg: '',
+  tjM2: '',
+  other: '',
+  hjkKg: '',
+};
 
 beforeAll(async () => {
   const [actor] = await db
@@ -132,6 +144,17 @@ beforeAll(async () => {
         effectiveDate: onDate(),
         source: 'manual',
       },
+      {
+        tnvedCode: HJ,
+        dutyPct: '20.000',
+        vatPct: '12.000',
+        dutyMode: 'max',
+        dutySpecific: '3.0000',
+        dutyUnit: 'juft',
+        effectiveDate: onDate(),
+        source: 'manual',
+      },
+      { tnvedCode: HJK, dutyPct: '5.000', vatPct: '12.000', effectiveDate: onDate(), source: 'manual' },
     ])
     .returning({ id: calcRates.id });
   madeRates.push(...laws.map((l) => l.id));
@@ -141,10 +164,10 @@ beforeAll(async () => {
     VALUES (${`heading-${SUFFIX}.xlsx`}, ${actorId}::uuid, 'ready', ${onDate()}::date, ${onDate()}::date)
     RETURNING id::text AS id`);
   batchId = batch!.id;
-  const add = async (code: string, unit: string, price: number) => {
+  const add = async (code: string, unit: string, price: number, name = NAME) => {
     const [r] = await db.execute<{ id: string }>(sql`
       INSERT INTO customs_import_rows (batch_id, tnved_code, name, name_norm, unit, price_per_unit_usd, origin_country)
-      VALUES (${batchId}::uuid, ${code}, ${NAME}, ${normalizeName(NAME)}, ${unit}, ${String(price)}::numeric, '156-КИТАЙ')
+      VALUES (${batchId}::uuid, ${code}, ${name}, ${normalizeName(name)}, ${unit}, ${String(price)}::numeric, '156-КИТАЙ')
       RETURNING id::text AS id`);
     return r!.id;
   };
@@ -161,6 +184,17 @@ beforeAll(async () => {
            'Прочие изделия из пластмасс партия ' || g, 'прочие изделия из пластмасс партия ' || g,
            'dona', (1 + g % 7)::numeric, '156-КИТАЙ'
       FROM generate_series(1, 3000) g`);
+  // HJ: ONE exact-name kg declaration under HJK, and 120 per-pair ones under
+  // the heading's own law, named nothing like the row — more than the
+  // dialog's fifty and the pick's ten, so a ranking by the heading's law
+  // alone (juft first) puts the right one off both lists.
+  rowIds.hjkKg = await add(HJK, 'kg', 6, NAME_J);
+  await db.execute(sql`
+    INSERT INTO customs_import_rows (batch_id, tnved_code, name, name_norm, unit, price_per_unit_usd, origin_country)
+    SELECT ${batchId}::uuid, ${HJ} || '99' || lpad(g::text, 4, '0'),
+           'Обувь прочая партия ' || g, 'обувь прочая партия ' || g,
+           'juft', (2 + g % 5)::numeric, '156-КИТАЙ'
+      FROM generate_series(1, 120) g`);
 });
 
 afterAll(async () => {
@@ -223,7 +257,14 @@ const choose =
 
 type ListAnswer = {
   state: string;
-  candidates: { id: string; tnvedCode: string; unit: string; pickable: boolean; lawUnit: string | null }[];
+  candidates: {
+    id: string;
+    tnvedCode: string;
+    unit: string;
+    pickable: boolean;
+    unitMatches: boolean;
+    lawUnit: string | null;
+  }[];
   named: unknown;
   namedState: string | null;
 };
@@ -249,6 +290,42 @@ describe('a heading lists its own subheadings and nothing else', () => {
     const out = await saveTable(id, { items: [], adds: [] }, ctx());
     expect(out.importFilled).toEqual([]);
     expect((await rowsOf(id))[0]!.bazaUsd).toBeNull();
+  });
+});
+
+describe('a heading whose own law pins a unit ranks every candidate by ITS law (review P2-1)', () => {
+  it('the 📥 list carries the exact-name kg declaration of an advalor subheading — first, and pickable', async () => {
+    const id = await open([{ name: NAME_J, tnvedCode: HJ, weightKg: 40 }]);
+    const [row] = await rowsOf(id);
+    const answer = await list(row!.id);
+    expect(answer.state).toBe('ok');
+    const kg = answer.candidates.find((c) => c.id === rowIds.hjkKg);
+    expect(kg, 'ranked by the heading’s juft law, the kg declaration fell off the list').toBeDefined();
+    expect(kg).toMatchObject({ tnvedCode: HJK, lawUnit: null, unitMatches: true, pickable: true });
+    expect(answer.candidates[0]!.id).toBe(rowIds.hjkKg);
+    // A per-pair declaration under the heading's own law is listed as what it
+    // is: its law counts in juft, so juft is the unit it matches.
+    expect(answer.candidates.find((c) => c.unit === 'juft')).toMatchObject({ lawUnit: 'juft', unitMatches: true });
+  });
+
+  it('the AI pick is offered it, marked as fitting, and recodes the row to the subheading', async () => {
+    const id = await open([{ name: NAME_J, tnvedCode: HJ, weightKg: 40 }]);
+    let offered: PickRequest['candidates'][number] | undefined;
+    const out = await pickBazas(
+      id,
+      ctx(),
+      async (rows) => {
+        offered = rows[0]!.candidates.find((c) => c.id === rowIds.hjkKg);
+        return choose((c) => c.id === rowIds.hjkKg)(rows);
+      },
+      null,
+    );
+    expect(offered, 'the pick’s ten never held the kg declaration').toBeDefined();
+    expect(offered!.unitMatches).toBe(true);
+    expect(out.picked).toBe(1);
+    const [row] = await rowsOf(id);
+    expect(row).toMatchObject({ tnvedCode: HJK, bazaUsd: '6.0000', bazaBasis: 'kg', bazaSource: 'import' });
+    expect(row!.bazaReason).toContain(`${HJ} → ${HJK}`);
   });
 });
 
@@ -289,7 +366,19 @@ describe('the AI pick recodes the row, and says so', () => {
 
   it('(d) a declaration whose TARGET law counts in juft is refused on a row stating only kg', async () => {
     const id = await open([{ name: NAME, tnvedCode: H, weightKg: 40 }]);
-    const out = await pickBazas(id, ctx(), choose((c) => c.tnvedCode === TJ && c.unit === 'kg'), null);
+    // …and the model was TOLD so before it answered (review P2-1): the
+    // «единица не совпадает» it reads is the refusal's own judgement.
+    let shown: boolean | undefined;
+    const out = await pickBazas(
+      id,
+      ctx(),
+      async (rows) => {
+        shown = rows[0]!.candidates.find((c) => c.id === rowIds.tjKg)?.unitMatches;
+        return choose((c) => c.tnvedCode === TJ && c.unit === 'kg')(rows);
+      },
+      null,
+    );
+    expect(shown).toBe(false);
     expect(out.refused).toBe(1);
     expect(out.picked).toBe(0);
     const [row] = await rowsOf(id);
@@ -306,7 +395,12 @@ describe('the AI pick recodes the row, and says so', () => {
     // Per m² under a juft law: a second pair unit the law cannot hold.
     expect(m2).toMatchObject({ pickable: false, lawUnit: 'juft' });
     // Per kg under its own advalor law: a fine choice.
-    expect(kg).toMatchObject({ pickable: true, lawUnit: null });
+    expect(kg).toMatchObject({ pickable: true, lawUnit: null, unitMatches: true });
+    // Per kg under a juft law: a PERSON may choose the unit (pickable), the
+    // machine may not — the row states kilograms and the law counts pairs
+    // (review P2-8: the per-candidate `unitMatches`, not the heading's).
+    const tjKg = answer.candidates.find((c) => c.id === rowIds.tjKg)!;
+    expect(tjKg).toMatchObject({ lawUnit: 'juft', unitMatches: false });
   });
 
   it('(e) a heading gets no statistics and no named series — the list still answers', async () => {
@@ -345,10 +439,47 @@ describe('the AI pick recodes the row, and says so', () => {
     expect(spy.calls.filter((c) => c.name === twin)).toHaveLength(1);
   });
 
+  it('(c4) the recode mark follows the CODE: a person re-pricing keeps ai_recode for the ✅, recoding takes it off', async () => {
+    // Review P2-LAW-2. The mark rides in the price's column; a retype, a
+    // clear or a 📖 pull used to null it with the price, so the warning
+    // vanished with no ✅ while the model's code stayed.
+    const id = await open([{ name: NAME, tnvedCode: H, weightKg: 40 }]);
+    await pickBazas(id, ctx(), choose((c) => c.tnvedCode === TK && c.unit === 'kg'), null);
+    const [row] = await rowsOf(id);
+    const mark = `${AI_RECODE_PREFIX}${H} → ${TK}`;
+
+    await saveTable(id, { items: [{ id: row!.id, seq: row!.seq, bazaUsd: 9.5, bazaBasis: 'kg' }], adds: [] }, ctx());
+    const [repriced] = await rowsOf(id);
+    expect(repriced).toMatchObject({ tnvedCode: TK, bazaUsd: '9.5000', bazaSource: 'typed', bazaReason: mark });
+    expect((await loadWorkspace(id))!.groups[0]!.warnings).toContain('ai_recode');
+    await confirmAllGroups(id, ctx());
+    const [confirmed] = await db.select().from(calcGroups).where(eq(calcGroups.requestId, id));
+    expect(confirmed!.confirmedWarnings).toContain('ai_recode');
+
+    // A clear keeps it too — the model's code is still the row's.
+    await saveTable(id, { items: [{ id: row!.id, seq: row!.seq, bazaUsd: null, bazaBasis: null }], adds: [] }, ctx());
+    expect((await rowsOf(id))[0]!.bazaReason).toBe(mark);
+
+    // A PERSON recoding the row takes it off: the code is theirs now.
+    await saveTable(id, { items: [{ id: row!.id, seq: row!.seq, tnvedCode: TJ }], adds: [] }, ctx());
+    const [recoded] = await rowsOf(id);
+    expect(recoded!.tnvedCode).toBe(TJ);
+    expect(recoded!.bazaReason).toBeNull();
+    expect((await loadWorkspace(id))!.groups.flatMap((g) => g.warnings)).not.toContain('ai_recode');
+  });
+
   // LAST in the file on purpose: the seal TEACHES the memory, and every later
   // job named like this one would then be priced by it before the pick asks.
-  it('(c3) E1 counts a sealed group minted by a recode as the AI’s', async () => {
+  it('(c3) E1 counts a sealed group minted by a recode as the AI’s — after a person re-priced it, too', async () => {
     expect(recodedRequest).not.toBe('');
+    // A person's price over the model's code (review P2-LAW-2): the group is
+    // still the AI's, because the CODE is.
+    const [row] = await rowsOf(recodedRequest);
+    await saveTable(
+      recodedRequest,
+      { items: [{ id: row!.id, seq: row!.seq, bazaUsd: 8.5, bazaBasis: 'kg' }], adds: [] },
+      ctx(),
+    );
     await confirmAllGroups(recodedRequest, ctx());
     await sealCalc(
       recodedRequest,

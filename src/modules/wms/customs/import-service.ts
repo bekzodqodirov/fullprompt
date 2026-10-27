@@ -14,7 +14,7 @@ import {
   type SkipReason,
 } from './import-parse';
 import { FEW } from './import-stats-math';
-import { codeMatchSql } from './import-stats-sql';
+import { codeBounds } from './import-stats-sql';
 
 /**
  * The quarterly customs dump, ingested (docs/VED-IMPORT-AI.md sub-round A).
@@ -694,8 +694,8 @@ const CHOOSER_COUNT_CAP = 1000;
  * code» (no_declarations, calc.importNone) stay two different answers.
  *
  * The rule (docs/SAKKIZ-R2.md §7.3), per code, over the ready batches that
- * hold at least one of its rows (`codeMatchSql`, so a heading counts its
- * subheadings):
+ * hold at least one of its rows (between `codeBounds`, so a heading counts
+ * its subheadings):
  *   1. a batch with ≥ FEW rows of the code before one with fewer — a code
  *      the newest file is silent or nearly silent about is answered by the
  *      newest file that has enough to say;
@@ -710,52 +710,59 @@ const CHOOSER_COUNT_CAP = 1000;
  * (calc.importNone), never «yuklanmagan» (regression-6). An older file's baza
  * wears the existing stale chip, and the bot says «eski fayl».
  *
- * ONE statement for every code a save asks about: a LATERAL per code, glued
- * with `sql.join`, each counting through the `(batch_id, tnved_code)` index.
- * Read on the POOL, before any transaction (#714).
+ * ONE statement for every code a save asks about, over a `VALUES` list of
+ * each code and its two bounds (`codeBounds`, built with `sql.join`): one
+ * LATERAL, planned once however many codes a save asks — a lateral PER code
+ * glued with UNION ALL planned each one separately (measured on an empty
+ * table, ~0.5 ms a code: 35 ms for fifty, review P2-10). Each counts through
+ * the `(batch_id, tnved_code)` index; a full code's bounds are equal, which
+ * is the same range scan as `=`. Read on the POOL, before any transaction
+ * (#714).
  */
 export async function batchesForCodes(codes: readonly string[]): Promise<Map<string, ChosenBatch>> {
   const out = new Map<string, ChosenBatch>();
   // Keyed by the code exactly as asked, so a caller's lookup cannot miss.
   const asked = [...new Set(codes)].filter((c) => c !== '');
   if (asked.length === 0) return out;
-  const perCode = asked.map(
-    (code) => sql`
-      SELECT ${code}::text AS code, p.id, p.ended, p.n
-        FROM (SELECT 1) one
-        LEFT JOIN LATERAL (
-          SELECT b.id, ${batchEndSql(sql`b`)} AS ended, c.n
-            FROM customs_import_batches b
-            CROSS JOIN LATERAL (
-              SELECT count(*)::int AS n FROM (
-                SELECT 1 FROM customs_import_rows r
-                 WHERE r.batch_id = b.id AND ${codeMatchSql(sql`r`, code)}
-                 LIMIT ${CHOOSER_COUNT_CAP}
-              ) x
-            ) c
-           WHERE b.status = 'ready' AND c.n > 0
-           ORDER BY (c.n >= ${FEW}) DESC,
-                    date_trunc('quarter', (${batchEndSql(sql`b`)})::timestamp) DESC,
-                    c.n DESC,
-                    ${batchRecencySql(sql`b`)}
-           LIMIT 1
-        ) p ON true`,
+  const values = sql.join(
+    asked.map((code) => {
+      const { lo, hi } = codeBounds(code);
+      return sql`(${code}::text, ${lo}::text, ${hi}::text)`;
+    }),
+    sql`, `,
   );
   const rows = await db.execute<{ code: string; id: string; ended: string; rows: number | null }>(sql`
-    WITH newest AS (
+    WITH asked(code, lo, hi) AS (VALUES ${values}),
+    newest AS (
       SELECT b.id, ${batchEndSql(sql`b`)} AS ended
         FROM customs_import_batches b
        WHERE b.status = 'ready'
        ORDER BY ${batchRecencySql(sql`b`)}
        LIMIT 1
-    ), picked AS (
-      ${sql.join(perCode, sql` UNION ALL `)}
     )
-    SELECT p.code,
+    SELECT a.code,
            COALESCE(p.id, n.id)::text AS id,
            COALESCE(p.ended, n.ended)::text AS ended,
            p.n AS rows
-      FROM picked p CROSS JOIN newest n`);
+      FROM asked a
+      CROSS JOIN newest n
+      LEFT JOIN LATERAL (
+        SELECT b.id, ${batchEndSql(sql`b`)} AS ended, c.n
+          FROM customs_import_batches b
+          CROSS JOIN LATERAL (
+            SELECT count(*)::int AS n FROM (
+              SELECT 1 FROM customs_import_rows r
+               WHERE r.batch_id = b.id AND r.tnved_code BETWEEN a.lo AND a.hi
+               LIMIT ${CHOOSER_COUNT_CAP}
+            ) x
+          ) c
+         WHERE b.status = 'ready' AND c.n > 0
+         ORDER BY (c.n >= ${FEW}) DESC,
+                  date_trunc('quarter', (${batchEndSql(sql`b`)})::timestamp) DESC,
+                  c.n DESC,
+                  ${batchRecencySql(sql`b`)}
+         LIMIT 1
+      ) p ON true`);
   for (const r of rows) {
     out.set(r.code, {
       batchId: r.id,

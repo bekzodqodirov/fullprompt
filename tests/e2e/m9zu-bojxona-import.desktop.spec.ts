@@ -218,16 +218,26 @@ test('a heading row picks a declaration from the 📥 list, and the code lands w
     await page.getByTestId('calc-panel').click();
     await page.getByTestId('calc-section-rastamojka').click();
     await page.getByTestId('calc-goods').fill(`${declared}, 10`);
+    // The shipment's m³ — the one line's own, once the table says so below.
+    await page.getByTestId('calc-volume').fill('1.5');
     await page.getByTestId('calc-send').click();
     await expect(page.getByTestId('calc-open')).toBeVisible({ timeout: 15_000 });
     const url = (await page.getByTestId('calc-open-link').first().getAttribute('href'))!;
 
     await page.goto(url);
     await expect(page.getByTestId('calc-table')).toBeVisible({ timeout: 15_000 });
+    // The m³ cell every section prints (review P2-2/P2-3): typed, it is the
+    // seller's figure and wears no label…
+    await expect(page.getByTestId('calc-request-volume')).toBeVisible();
+    await expect(page.getByTestId('calc-volume-from-lines')).toHaveCount(0);
     await page.locator('[data-cell="weightKg"][data-row="0"]').fill('10');
+    await page.locator('[data-cell="volumeM3"][data-row="0"]').fill('1.5');
     await page.locator('[data-cell="tnvedCode"][data-row="0"]').fill(HEADING);
     await page.getByTestId('calc-save-table').click();
     await expect(page.getByTestId('calc-group-row').first()).toContainText(HEADING, { timeout: 15_000 });
+    // …and once it IS the Σ of the lines, on a rastamojka job where the
+    // reconcile is blind to it, the cell says so.
+    await expect(page.getByTestId('calc-request-volume').getByTestId('calc-volume-from-lines')).toBeVisible();
 
     // The heading's list: the declaration names ITS code, because picking it
     // picks the code.

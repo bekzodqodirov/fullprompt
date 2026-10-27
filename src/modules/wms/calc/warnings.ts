@@ -105,6 +105,29 @@ export function aiRecoded(bazaReason: string | null | undefined): boolean {
   return (bazaReason ?? '').startsWith(AI_RECODE_PREFIX);
 }
 
+/**
+ * The reason a writer leaves on a row whose CODE it does not move (review
+ * P2-LAW-2): `posted` — null for a person, the pick's own words for the
+ * machine — with the AI recode mark carried over.
+ *
+ * The mark rides in `baza_reason`, the PRICE's column, but the fact it
+ * records is about the CODE: the model chose the tariff line. A writer that
+ * nulled the reason with the price it re-typed, cleared or refilled erased
+ * the `ai_recode` warning without any ✅, dropped the group out of E1's AI
+ * count, and let the seal teach the model's code to the memory as a person's.
+ * So the mark stays as long as the code does — stripped to «6403 →
+ * 6403991000», because the model's words after it explained a declaration
+ * the row no longer wears. A writer that MOVES the code posts its own reason
+ * (a person's recode clears the mark: the code is theirs now).
+ */
+export function keepRecodeMark(stored: string | null | undefined, posted: string | null): string | null {
+  if (!aiRecoded(stored) || aiRecoded(posted)) return posted;
+  const rest = stored!.slice(AI_RECODE_PREFIX.length);
+  const words = rest.indexOf(' · ');
+  const mark = AI_RECODE_PREFIX + (words === -1 ? rest : rest.slice(0, words));
+  return posted ? `${mark} · ${posted}` : mark;
+}
+
 /** A law as the book or a group states it — the five columns that price a duty. */
 export interface LawFacts {
   dutyPct: number;
