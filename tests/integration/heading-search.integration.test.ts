@@ -439,6 +439,53 @@ describe('the AI pick recodes the row, and says so', () => {
     expect(spy.calls.filter((c) => c.name === twin)).toHaveLength(1);
   });
 
+  it('(g2) a heading over its ceiling is not read again for another NAME (review perf-2)', async () => {
+    // The heading read scores every row of the range whatever the name, so
+    // one timeout makes every later read of that heading a certain one —
+    // three names under one heading were three full ceilings.
+    const names = ['Charm botinka', 'Charm etik', 'Charm shippak'].map((n) => `${n} ${SUFFIX}`);
+    const id = await open(names.map((name) => ({ name, tnvedCode: H, weightKg: 12 })));
+    spy.calls.length = 0;
+    spy.ceilingMs = 1;
+    let asked = false;
+    try {
+      const out = await pickBazas(
+        id,
+        ctx(),
+        async () => {
+          asked = true;
+          return { answers: null, usage: null };
+        },
+        null,
+      );
+      expect(out.timedOut).toBe(3);
+    } finally {
+      spy.ceilingMs = undefined;
+    }
+    expect(spy.calls.filter((c) => c.code === H)).toHaveLength(1);
+    expect(asked, 'nothing was read, so nothing goes to the model').toBe(false);
+  });
+
+  it('(g3) past the pass deadline the pick issues no candidate read at all (review perf-2)', async () => {
+    const id = await open([{ name: `Charm sandal ${SUFFIX}`, tnvedCode: H, weightKg: 12 }]);
+    spy.calls.length = 0;
+    let asked = false;
+    const out = await pickBazas(
+      id,
+      ctx(),
+      async () => {
+        asked = true;
+        return { answers: null, usage: null };
+      },
+      null,
+      { deadline: Date.now() - 1 },
+    );
+    expect(out.pastDeadline).toBe(1);
+    expect(out.picked).toBe(0);
+    expect(spy.calls).toHaveLength(0);
+    expect(asked).toBe(false);
+  });
+
   it('(c4) the recode mark follows the CODE: a person re-pricing keeps ai_recode for the ✅, recoding takes it off', async () => {
     // Review P2-LAW-2. The mark rides in the price's column; a retype, a
     // clear or a 📖 pull used to null it with the price, so the warning

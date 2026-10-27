@@ -455,13 +455,14 @@ export async function aiPrefill(
     pickLeft = { capped: 0, refused: 0, overtaken: 0, timedOut: 0, skipped: true };
   } else if (configured && standing() && (await stillOurs('step 3'))) {
     try {
-      const out = await pickBazas(requestId, ctx, pick, rev);
+      const out = await pickBazas(requestId, ctx, pick, rev, { deadline });
       picked = out.picked;
       pickLeft = { capped: out.capped, refused: out.refused, overtaken: out.overtaken, timedOut: out.timedOut, skipped: false };
       dictionaryFilled += out.dictionaryFilled;
       memoryFilled += out.memoryFilled;
       if (out.picked > 0) wrote = true;
       rev = out.rev;
+      if (out.pastDeadline > 0) pastDeadline = true;
       if (out.capped || out.refused || out.overtaken || out.timedOut) {
         logger.info(
           { requestId, capped: out.capped, refused: out.refused, overtaken: out.overtaken, timedOut: out.timedOut },

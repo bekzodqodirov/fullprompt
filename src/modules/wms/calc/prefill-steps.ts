@@ -150,12 +150,22 @@ export async function pickBazas(
   ctx: AuditContext,
   pick: NonNullable<PrefillDeps['pick']>,
   expectRev: number | null,
+  /**
+   * The pass's deadline, epoch ms (review perf-2). The pass checks it once,
+   * before calling here — and the candidate reads that follow can each take
+   * a heading's whole ceiling, so it is checked again before every read:
+   * past it, no read is issued and the row is counted in `pastDeadline`.
+   * Omitted = no deadline (the tests' direct calls).
+   */
+  opts: { deadline?: number } = {},
 ): Promise<{
   picked: number;
   capped: number;
   refused: number;
   overtaken: number;
   timedOut: number;
+  /** Rows left unread because the pass's deadline had passed. */
+  pastDeadline: number;
   /** Rows the BOOK filled in the pick's own save (every save fills since
    * round 2) — counted, or the pass under-reports the book (review P2-9). */
   dictionaryFilled: number;
@@ -169,6 +179,7 @@ export async function pickBazas(
     refused: 0,
     overtaken: 0,
     timedOut: 0,
+    pastDeadline: 0,
     dictionaryFilled: 0,
     memoryFilled: 0,
     rev: expectRev,
@@ -221,10 +232,17 @@ export async function pickBazas(
    * judged against before the model sees them. */
   const judgeBy = new Map<number, { facts: ReturnType<typeof factsOf>; code: string; law: string | null }>();
   let timedOut = 0;
+  let pastDeadline = 0;
   // One candidate read per DISTINCT row shape — the memo the auto-fill
   // already keeps (#432): ten identical heading rows cost one scan, not ten.
   // Sequential awaits, never concurrent: one pool connection at a time.
   const askedShape = new Map<string, ImportBazaRow[] | 'timeout'>();
+  // …and a heading that timed out once is over its ceiling for EVERY name
+  // (review perf-2): the read scores every row of the range whatever the
+  // name, so its cost is the heading's row count. Keyed per shape alone,
+  // forty differently named rows under one wide heading paid forty certain
+  // timeouts — 200 s — each holding a pool connection.
+  const headingOver = new Set<string>();
   for (const r of sent) {
     const code = r.tnvedCode!.trim();
     const batchId = chosenBatch.get(code)?.batchId;
@@ -243,7 +261,14 @@ export async function pickBazas(
     const perPiece =
       units.includes('dona') && qty !== null && qty > 0 && kg !== null && kg > 0 ? kg / qty : null;
     const shape = `${code}|${units.join('+')}|${r.name}|${perPiece ?? ''}`;
-    let candidates = askedShape.get(shape);
+    const heading = `${code}|${batchId}`;
+    let candidates: ImportBazaRow[] | 'timeout' | undefined = headingOver.has(heading)
+      ? 'timeout'
+      : askedShape.get(shape);
+    if (candidates === undefined && opts.deadline !== undefined && Date.now() > opts.deadline) {
+      pastDeadline += 1;
+      continue;
+    }
     if (candidates === undefined) {
       try {
         const sug = await suggestImportBaza(
@@ -256,6 +281,7 @@ export async function pickBazas(
         // a dead pass. A full code has no ceiling, so anything else rethrows.
         if (!isQueryCanceled(err) || isFullCode(code)) throw err;
         candidates = 'timeout';
+        headingOver.add(heading);
       }
       askedShape.set(shape, candidates);
     }
@@ -276,8 +302,11 @@ export async function pickBazas(
   if (timedOut > 0) {
     logger.info({ requestId, timedOut }, '[calc-prefill] heading candidates over their ceiling — left for the VED');
   }
+  if (pastDeadline > 0) {
+    logger.warn({ requestId, pastDeadline }, '[calc-prefill] past the pass deadline — the rest of the pick is skipped');
+  }
   const capped = Math.max(0, empty.length - MAX_PICK_ROWS);
-  if (asking.length === 0) return { ...none, capped, timedOut };
+  if (asking.length === 0) return { ...none, capped, timedOut, pastDeadline };
 
   // Every candidate judged by the law IT would bring with it (regression-7's
   // rule, the 📥 list's own — `judgeCandidates`), BEFORE the model is asked:
@@ -313,7 +342,7 @@ export async function pickBazas(
     });
   }
   const answers = outcome.answers;
-  if (!answers) return { ...none, capped, timedOut };
+  if (!answers) return { ...none, capped, timedOut, pastDeadline };
 
   const bySeq = new Map(rows.map((r) => [r.seq, r]));
   const askedBySeq = new Map(asking.map((a) => [a.seq, a]));
@@ -371,7 +400,7 @@ export async function pickBazas(
     '[calc-prefill] the model chose',
   );
 
-  if (edits.length === 0) return { ...none, capped, refused, timedOut };
+  if (edits.length === 0) return { ...none, capped, refused, timedOut, pastDeadline };
 
   /**
    * STILL EMPTY? The rows were read before a model call that can take a
@@ -415,7 +444,7 @@ export async function pickBazas(
       '[calc-prefill] a person filled these while the model was thinking — left alone',
     );
   }
-  if (live.length === 0) return { ...none, capped, refused, overtaken, timedOut };
+  if (live.length === 0) return { ...none, capped, refused, overtaken, timedOut, pastDeadline };
 
   try {
     const saved = await saveTable(requestId, { items: live, adds: [] }, ctx, casOf(expectRev));
@@ -425,6 +454,7 @@ export async function pickBazas(
       refused,
       overtaken,
       timedOut,
+      pastDeadline,
       dictionaryFilled: saved.dictionaryFilled.length,
       memoryFilled: saved.memoryFilled.length,
       rev: saved.rev,
@@ -438,6 +468,6 @@ export async function pickBazas(
     // (concurrency-3).
     overtaken += live.length;
     logger.info({ requestId, overtaken }, '[calc-prefill] a person saved while the model was thinking — nothing written');
-    return { ...none, capped, refused, overtaken, timedOut };
+    return { ...none, capped, refused, overtaken, timedOut, pastDeadline };
   }
 }
