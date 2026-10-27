@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { signedDownloadUrl } from './download-url';
 
 /**
  * Every file link on every screen goes through a download link
@@ -43,21 +44,6 @@ export function DownloadLinks() {
       return anchor;
     }
 
-    async function signed(path: string): Promise<string> {
-      try {
-        const res = await fetch('/api/dl', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ path }),
-        });
-        if (!res.ok) return path;
-        const body = (await res.json()) as { url?: unknown };
-        return typeof body.url === 'string' ? body.url : path;
-      } catch {
-        return path;
-      }
-    }
-
     function follow(target: string, anchor: HTMLAnchorElement) {
       // A one-off anchor carries the original's `download` name; marked, so
       // this listener lets its own click through.
@@ -83,7 +69,7 @@ export function DownloadLinks() {
       // same address in place.
       const tab = anchor.target === '_blank' ? window.open('about:blank', '_blank') : null;
       if (tab) tab.opener = null;
-      void signed(`${url.pathname}${url.search}`).then((target) => {
+      void signedDownloadUrl(`${url.pathname}${url.search}`).then((target) => {
         if (tab && !tab.closed) tab.location.href = target;
         else follow(target, anchor);
       });

@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## 2026-10-27 — Telegramdan ochilgan tizimda fayllar yuklanadi
+
+Sizning so'zlaringiz: «filelar telefonda skachat bolmayabti» va javobingiz «1d / 2 download unsuccessful … / 3 c». **Migratsiya yo'q.** Yangi kod ishlayotganini `curl -s https://gsrwms.uz/api/version` bilan tekshiring.
+
+- **Sabab:** tizim Telegramdagi «↗️ Ochish» tugmasi bilan ochilganda, Telegramning ichki brauzerida ishlaydi. Bu brauzer faylni o'zi yuklamaydi. U fayl manzilini telefonning yuklab olish dasturiga beradi. O'sha dastur esa tizimga kirmagan (login yo'q) odam sifatida so'raydi, server rad etadi va telefon «Download unsuccessful» deydi.
+- **Endi:** faylni bosganingizda tizim o'sha fayl uchun **10 daqiqalik maxsus havola** yaratadi. Telefonning yuklab olish dasturi shu havola bilan login'siz ham faylni oladi. Bu hamma fayllarga tegishli: Excel'lar, PDF'lar, aktlar, rasmlar, prixod fayllari, yorliqlar.
+- Havola faqat **bitta faylni** ochadi va faqat **sizning huquqingiz** bilan. Sklad hodimi o'zi ocha olmaydigan faylni havola orqali ham ocha olmaydi. Hodim ishdan bo'shatilgan bo'lsa, uning eski havolasi ham ishlamaydi.
+- 10 daqiqadan keyin havola eskiradi va «Havola eskirgan. Sahifaga qaytib, faylni qayta bosing» degan sahifa chiqadi.
+- Kompyuterda hech narsa o'zgarmaydi: fayllar avvalgidek yuklanadi.
+- **Serverda tekshiring:** `.env` faylida `SESSION_SECRET` haqiqiy tasodifiy qiymat bo'lishi kerak. Tekshirish: `grep -c '^SESSION_SECRET=generate-a-long-random-string' .env` — **0** chiqishi kerak. 1 chiqsa yoki qator umuman bo'lmasa, havola yaratilmaydi va fayllar avvalgidek ochiladi (telefonda yuklanmaydi). Tuzatish: `openssl rand -base64 32` chiqargan qiymatni `SESSION_SECRET=` ga yozing, keyin `docker compose --profile telegram up -d app tg-listen`. Bu kirish (login) sessiyalarini buzmaydi.
+- **Deploydan oldin vaqtincha yo'l:** telefonda Telegram → Sozlamalar → Chat sozlamalari → «In-App Browser»ni o'chiring (Android). Shunda «↗️ Ochish» tizimni Chrome'da ochadi va fayllar yuklanadi.
+
 ## 2026-10-27 — Narx taklifi Telegramga PDF bilan keladi
 
 Sizning so'zlaringiz: «narx taklifi text bolib sotuvchi telegramiga kelyabti pdf ham birga kelsin telegramga shu telegramni ozini jonatish imkoni uchun». **Migratsiya yo'q** — deploydan keyin migratsiyalar soni o'zgarmaydi (137). Yangi kod ishlayotganini `curl -s https://gsrwms.uz/api/version` bilan tekshiring.

@@ -81,9 +81,9 @@ describe('a token', () => {
     expect(readDownloadToken(token, now)).toEqual({ ok: false, reason: 'bad_signature' });
   });
 
-  it('is never minted or honoured under a missing or guessable key', () => {
+  it('is never minted or honoured under a missing, guessable or published key', () => {
     const token = mintDownloadToken(USER, '/api/attachments/one')!;
-    for (const weak of [undefined, '', 'short']) {
+    for (const weak of [undefined, '', 'short', 'generate-a-long-random-string', 'dev-secret']) {
       if (weak === undefined) delete process.env.SESSION_SECRET;
       else process.env.SESSION_SECRET = weak;
       expect(mintDownloadToken(USER, '/api/attachments/one')).toBeNull();

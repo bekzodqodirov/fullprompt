@@ -4676,3 +4676,39 @@ WebKit is known to drop attachment downloads and to open a PDF with no way back)
 (the ↗️ Ochish buttons open the system there), or a specific Android. Asked of him with options — which file,
 which phone, opened from where, what happens — rather than shipping a guess (#419's rule: ask for the
 screenshot first; #476's: the working case is the control group).
+
+## Yuklab olish havolasi — a file opened from Telegram's in-app browser downloads (2026-10-27; NO migration, ledger 137)
+
+1481. **His answer named the cause: «download unsuccessful … 3 c» = the system opened from a Telegram «↗️ Ochish»
+button, i.e. Telegram's in-app browser, which does not download a file itself but hands its ADDRESS to the
+phone's download manager — and the manager fetches it as a stranger, with no `gsr_session` cookie.** Every
+file route answered 401/403 and the phone said «Download unsuccessful». #1480's measurement was right and could
+not see it: a Chromium tab downloads in-page with its cookie. So a file press now asks the server for a
+**download link** first (`POST /api/dl`, cookie required) and follows THAT: `platform/auth/download-link.ts`
+signs `{user, path, deadline}` with a key derived from `SESSION_SECRET` (10 minutes — Telegram's «Download
+file?» sheet and a slow tap, short enough not to matter if one leaks), and `GET /api/dl/<token>` serves it. A
+link is a bearer for ONE `/api/` path, never a page and never a session; it cannot name `/api/dl` itself, and
+`linkablePath` checks the path AFTER the URL parser has resolved `..`. No key — one under eight characters, or a value the
+repository itself publishes (`.env.example`'s line copied as it stands, the file driver's `dev-secret`), is a
+key anyone who read this code holds — no links: every function answers null and the page follows the plain address, which is
+what every press did before this — a deploy whose server has no `SESSION_SECRET` loses nothing it had.
+
+1482. **The link route asks the real file route, AS the link's person, instead of re-implementing ~40 doors.**
+`/api/dl/<token>` fetches `http://127.0.0.1:${PORT}<path>` with two headers: the delegated user and the
+process's own internal key (another HMAC of the same secret, never configured, never sent outside the
+process). `getSessionUser` honours the delegated user ONLY beside that key, re-reads the person and asks
+`canLogIn` — so a link minted before a deactivation opens nothing, and every file route keeps its own door
+exactly as for that person's browser (the act's warehouse check, the attachment's audience, the report's
+money sight). A world request carrying the user header without the key is a stranger's (tested). One
+listener, not a component per link (`components/download-links.tsx`, capture phase, the chat bubble's
+delegation reason — hundreds of links in server components); it leaves alone a modified click, another origin,
+a link already signed, and a desktop new-tab link under a mouse (a desktop browser carries its cookie, and a
+blank tab pointed at a download is a tab some browsers leave standing). A new tab on a phone is opened INSIDE
+the press and pointed at the link when it arrives, or the popup rule refuses it after the fetch. The print
+sheet's no-share fallback asks the same `signedDownloadUrl`. The service worker never caches `/api/dl/`
+(NetworkOnly, beside the version route). `POST /api/dl` refuses anything but a JSON body (415) — the session
+cookie is SameSite=Lax already; the header makes «only this app's page mints a link» a second fence. Red-proven
+×5 by string edit (the session's delegation, its key check, its login check, the deadline, the listener's
+mount). STATED: a link copied out of the phone works for its ten minutes for whoever holds it — the price of
+a download manager that sends no cookie; the immediate workaround on a phone that has not deployed yet is
+Telegram → Settings → Chat Settings → «In-App Browser» off (Android), so ↗️ opens the system browser.

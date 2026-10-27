@@ -18,6 +18,11 @@ export async function POST(request: Request) {
     if (err instanceof AuthError) return Response.json({ error: 'unauthorized' }, { status: 401 });
     throw err;
   }
+  // A cross-site form can post text/plain and nothing else; asking for JSON by
+  // its header keeps a minted link to a request only this app's page makes.
+  if (!(request.headers.get('content-type') ?? '').includes('application/json')) {
+    return Response.json({ error: 'bad_request' }, { status: 415 });
+  }
   let body: { path?: unknown };
   try {
     body = (await request.json()) as { path?: unknown };

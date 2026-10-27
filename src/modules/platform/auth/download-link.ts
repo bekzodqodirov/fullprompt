@@ -19,9 +19,10 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
  * bearer for ONE path for `DOWNLOAD_TTL_MS`, never a session: it cannot open
  * a page, and the person's grants are read afresh when it is used.
  *
- * No key, no links: without a real `SESSION_SECRET` (`MIN_SECRET`) every
- * function here answers null and the screens fall back to the plain address,
- * because a signature under a guessable key is an open door.
+ * No key, no links: without a real `SESSION_SECRET` (`MIN_SECRET`, not a
+ * `PUBLISHED` value) every function here answers null and the screens fall
+ * back to the plain address, because a signature under a guessable key is an
+ * open door.
  */
 
 /** Long enough for Telegram's «Download file?» sheet and a slow tap, short enough not to matter if it leaks. */
@@ -30,13 +31,20 @@ export const DOWNLOAD_TTL_MS = 10 * 60_000;
 const MIN_SECRET = 8;
 const MAX_PATH = 2048;
 
+/**
+ * Values that are in the repository and so are no secret: `.env.example`'s
+ * line copied as it stands, and the local file driver's fallback. A link
+ * signed under one is forgeable by anyone who has read this code.
+ */
+const PUBLISHED = new Set(['generate-a-long-random-string', 'dev-secret']);
+
 /** The header pair the link route sets on its own request to the file route. */
 export const INTERNAL_HEADER = 'x-gsr-internal';
 export const DELEGATED_USER_HEADER = 'x-gsr-dl-user';
 
 function secret(): string | null {
   const value = process.env.SESSION_SECRET ?? '';
-  return value.length >= MIN_SECRET ? value : null;
+  return value.length >= MIN_SECRET && !PUBLISHED.has(value) ? value : null;
 }
 
 function mac(purpose: string, value: string): string | null {
