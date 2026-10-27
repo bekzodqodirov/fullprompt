@@ -87,12 +87,23 @@ export interface FeedItem {
  * The chip a note the MACHINE wrote about a calculation wears (docs/SAKKIZ-R2.md
  * §9, his 2.4 c): the customs reply, the tariff reply, and either of them
  * carrying an estimate — a 📊 median or a guessed zone — which the VED line
- * under its heading announces. One union for the query's CASE and the
- * component's word map, so a fourth chip with no words is a compile error.
+ * under its heading announces. The component's word map is keyed on this
+ * union, so a chip with no words is a compile error.
  */
 export type MachineReplyChip = MachineReplyKind | 'estimate';
 
-const MACHINE_REPLY_CHIPS: readonly MachineReplyChip[] = ['ai', 'tariff', 'estimate'];
+/**
+ * Every chip, keyed — so a kind added to reply-heads.ts is a compile error
+ * HERE, and not a chip `machineReplyOf` drops in silence. The compiler stops
+ * at this line: the query's CASE below answers in SQL string literals it
+ * cannot see, so a new kind also needs its WHEN there, and the CASE's three
+ * answers are pinned by feed.integration's cases, not by the type.
+ */
+const MACHINE_REPLY_CHIPS = Object.keys({
+  ai: true,
+  tariff: true,
+  estimate: true,
+} satisfies Record<MachineReplyChip, true>) as readonly MachineReplyChip[];
 
 /**
  * The chip a feed row carries, or null — read off `meta.machineReply`, which

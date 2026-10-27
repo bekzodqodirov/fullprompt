@@ -251,7 +251,8 @@ export async function ClientFeed({
 /**
  * The words of a note's marks (the `threads` namespace): the two thread marks,
  * and one per machine-reply chip — a `Record` over the chip union, so a chip
- * the query can answer with no word here is a compile error, not a blank.
+ * in the union with no word here is a compile error, not a blank. Which chips
+ * the query actually answers is feed.ts's CASE, pinned by feed.integration.
  */
 export type FeedMarks = { calc: string; telegram: string } & Record<MachineReplyChip, string>;
 

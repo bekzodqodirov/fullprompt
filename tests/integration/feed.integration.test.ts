@@ -457,7 +457,11 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
     tariffEstimate: '',
     personAi: '',
     personEstimate: '',
+    personTariff: '',
+    personTariffEstimate: '',
     advert: '',
+    advertTariff: '',
+    advertTariffEstimate: '',
     plain: '',
   };
 
@@ -542,11 +546,22 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
     // A person who pastes the machine's reply into a note has written a note.
     ids.personAi = await person(aiText);
     ids.personEstimate = await person(estimateText);
+    // The likelier paste of the two: a refused yolkira reply ends «— mijozdan
+    // so‘rab, kartadagi lentaga yozing», which sends the seller to this very
+    // lenta with the reply in front of him.
+    ids.personTariff = await person(tariffText);
+    ids.personTariffEstimate = await person(tariffEstimateText);
     // An advert's system note (crm/inbound.ts `inboundNote`): no author
     // either, and the customer's own words may carry the heading and the mark
     // — inside the note, never at its start.
     ids.advert = await machine(
       `📣 instagram\nNarxi qancha? ${AI_REPLY_HEAD} dedi: ${VED_ESTIMATE_MARK} kerak`,
+    );
+    // The tariff heading mid-text, with and without the mark: each branch that
+    // names it is anchored on its own — 'tariff' and the estimate's second half.
+    ids.advertTariff = await machine(`📣 sayt\nNarxi qancha? ${TARIFF_REPLY_HEAD} kerak`);
+    ids.advertTariffEstimate = await machine(
+      `📣 sayt\nNarx? ${TARIFF_REPLY_HEAD} ${VED_ESTIMATE_MARK} kerak`,
     );
     ids.plain = await person('mijoz ertaga qo‘ng‘iroq qiladi');
   });
@@ -580,10 +595,14 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
   it('a PERSON’s note with the machine’s very text wears no chip', async () => {
     expect(await chipOf(ids.personAi)).toEqual({ raw: null, chip: null });
     expect(await chipOf(ids.personEstimate)).toEqual({ raw: null, chip: null });
+    expect(await chipOf(ids.personTariff)).toEqual({ raw: null, chip: null });
+    expect(await chipOf(ids.personTariffEstimate)).toEqual({ raw: null, chip: null });
   });
 
   it('an advert’s system note wears no chip, whatever its words contain', async () => {
     expect(await chipOf(ids.advert)).toEqual({ raw: null, chip: null });
+    expect(await chipOf(ids.advertTariff)).toEqual({ raw: null, chip: null });
+    expect(await chipOf(ids.advertTariffEstimate)).toEqual({ raw: null, chip: null });
     expect(await chipOf(ids.plain)).toEqual({ raw: null, chip: null });
   });
 });
