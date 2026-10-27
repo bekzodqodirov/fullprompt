@@ -17,6 +17,7 @@
  * (his answer 2). Everything in this file is a pure decision so the whole of
  * it can be tested without a Telegram or a model.
  */
+import { addressWord } from './address-words';
 import { autoBasisFor } from './basis';
 import {
   missingNeeds,
@@ -788,6 +789,11 @@ export function collectPromptText(section: CalcSection): string {
 export function statesGoods(line: string): boolean {
   const read = parseGoodsLine(line);
   if (read.unitWords.length > 0) return true;
+  // A count after a carton noun and its colon states goods whichever the noun
+  // is — the field «Мест: 45», or the product's own noun «Pitsa korobka:
+  // 5000», which the kernel reads as the name since round 6.
+  const boxed = /(\p{L}+)\s*[:：]\s*\d[\d\s.,]*$/u.exec(line.trim());
+  if (boxed && unitOf(boxed[1]!) === 'karobka') return true;
   // …and a code PRINTED as one («6201.93.0000», «2710 19 820 0») is goods
   // with no word beside it (T3): no phone is written 4-2-…
   return read.tnvedCode !== null && (/\p{L}/u.test(line) || codeWrittenAsCode(line));
@@ -1257,13 +1263,28 @@ const LONG_HINT_CAP = 120;
  * And a contact never speaks of the cargo or what it costs (round-4 probe:
  * twelve words let «У меня груз из Китая хочу узнать стоимость доставки мой
  * номер …» through as the customer, with none of the few request words in it).
+ * A cargo word still NAMES the customer beside the role it opens — «Yuk egasi»,
+ * «yuk qabul qiluvchi», «Получатель груза», «Грузополучатель» — and «Cargo»
+ * capitalised inside the line is a firm's name, «Asia Cargo Express» (round-5
+ * probe: the customer of a cargo company is often one itself), while a
+ * capitalised «Доставка» or «Груз» there still asks for the delivery. A price
+ * is never a contact's word.
  */
 const RELATIVE_WORDS = new Set([
   'akasi', 'ukasi', 'opasi', 'singlisi', 'otasi', 'onasi', 'xotini', 'qarindoshi', 'tanishi', 'dosti', 'брат',
   'брата', 'сестра', 'сестры', 'отец', 'мать', 'жена', 'муж', 'сын', 'дочь', 'друг', 'знакомый',
 ]);
 const CHILD_WORDS = new Set(['ogli', 'qizi', 'ўғли', 'угли', 'қизи', 'кизи']);
-const CARGO_TALK = /^(?:груз\p{L}*|cargo|доставк\p{L}*|стоимост\p{L}*|цен[аыуе]|price|narx\p{L}*|нарх\p{L}*)$/u;
+const CARGO_WORD = /^(?:груз\p{L}*|cargo|доставк\p{L}*)$/u;
+const PRICE_TALK = /^(?:стоимост\p{L}*|цен[аыуе]|price|narx\p{L}*|нарх\p{L}*)$/u;
+/** The role a cargo word opens: «Yuk egasi», «yuk qabul qiluvchi», «получатель груза», «cargo owner». */
+const CARGO_ROLE = new Set([
+  'egasi', 'egalari', 'oluvchi', 'oluvchisi', 'jonatuvchi', 'эгаси', 'олувчи', 'получатель', 'получателя',
+  'отправитель', 'отправителя', 'владелец', 'хозяин', 'owner', 'receiver', 'recipient', 'consignee',
+]);
+/** «Qabul qiluvchi» — the receiver — is two words; «qabul qilib oling» is a request. */
+const RECEIVER_AFTER = /^(?:qabul|қабул)\s+(?:qiluvchi|қилувчи)/u;
+const CARGO_ROLE_GLUED = /^груз(?:о)?(?:получател|отправител)/u;
 
 function contactShaped(rest: string): boolean {
   const words = rest.split(/[\s,;:()«»"]+/u).filter((w) => /[\p{L}\p{N}]/u.test(w));
@@ -1271,10 +1292,15 @@ function contactShaped(rest: string): boolean {
   if (/\p{L}[!?](?:\s|$)|\p{L}{4}\.(?:\s+\p{Lu}|\s*$)/u.test(rest)) return false;
   if (/(?<![\p{L}])olib\s+kel/iu.test(rest)) return false;
   const afterGenitive = (i: number) => /(?:ning|нинг)$/u.test(lowered(words[i - 1] ?? ''));
+  const role = (i: number) =>
+    [words[i - 1], words[i + 1]].some((n) => n !== undefined && CARGO_ROLE.has(lowered(n))) ||
+    RECEIVER_AFTER.test(lowered(words.slice(i + 1, i + 3).join(' ')));
   return !words.some((raw, i) => {
     const w = lowered(raw.replace(/[.!?]+$/u, ''));
     const relative = RELATIVE_WORDS.has(w) || (CHILD_WORDS.has(w) && afterGenitive(i));
-    return requestWord(w) || relative || CARGO_TALK.test(w) || YUK_WORD.test(w);
+    const firm = w === 'cargo' && i > 0 && /^\p{Lu}/u.test(raw);
+    const cargo = (CARGO_WORD.test(w) || YUK_WORD.test(w)) && !CARGO_ROLE_GLUED.test(w) && !role(i) && !firm;
+    return requestWord(w) || relative || PRICE_TALK.test(w) || cargo;
   });
 }
 
@@ -1387,9 +1413,17 @@ export function parseClientHint(raw: string, opts?: ClientHintOpts): { code?: st
   return { ...(codes[0] ? { code: codes[0] } : {}), ...(phones[0] ? { phone: phones[0] } : {}) };
 }
 
-/** A name line's digits: «2», «12», «5-rasta», «3-filial» — never three bare digits in a row, nor a goods line's «nomi, soni». */
+/**
+ * A name line's digits: «2», «12», «5-rasta», «3-filial» — never three bare
+ * digits in a row, nor a goods line's «nomi, soni». An ADDRESS line is one
+ * address word (`addressWord`) and its number of four digits at most —
+ * «Chilonzor 12», «Do'kon 45», «Офис 112» say where the customer is, while
+ * «Kurtka 50» is a count (round-5 probe).
+ */
 function nameDigits(line: string): boolean {
-  if (ONE_WORD_COUNT.test(line)) return false;
+  if (ONE_WORD_COUNT.test(line)) {
+    return addressWord(line.split(/\s+/u)[0]!) && /(?<!\d)\d{1,4}$/u.test(line);
+  }
   return !/\d{3}/u.test(line.replace(/(?<![\p{L}\d])\d{1,3}[-–]\p{L}+/gu, ''));
 }
 

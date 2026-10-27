@@ -19,6 +19,7 @@
  * every priced column. A number that could be read two ways is ASKED, never
  * guessed (his B4 a — `readNumberCell`).
  */
+import { addressWord } from './address-words';
 import { readNumberCell } from './number-cell';
 import type { MeasureUnit } from './pricing';
 
@@ -355,6 +356,36 @@ const COUNTER_THEN_UNIT = /^\s+([\p{L}²³][\p{L}\d²³.]*)/u;
 const UNIT_FIELD_BEFORE = /(?<![\p{L}\d])([\p{L}²³][\p{L}\d²³]+)\s*[:：]\s*$/u;
 
 /**
+ * Does a unit word before a colon name the number after it (`UNIT_FIELD_BEFORE`)?
+ * Not «kv» / «кв» right after the house number of an address — «Chilonzor 12,
+ * kv: 45», «ул. Навои 12, кв: 45», «дом: 12, кв: 45» — which is the FLAT,
+ * never square metres (round-5 probe); after a product's own figure it still
+ * is, «Kafel 12, kv: 45». And not a carton noun right after a word of the
+ * name, where it is the product's own noun — «Pitsa korobka: 5000», «Lunch
+ * box: 500» — while a word that only ever counts places («Мест», «CTN», «joy»)
+ * or a plural («Kurtka cartons: 45») is a field wherever it stands, as is a
+ * carton noun opening its clause («Karobka: 45», «Kurtka, Коробки: 45»), set
+ * off by a dash («Kurtka - karobka: 45») or after a total word («Jami karobka:
+ * 45»).
+ */
+function unitField(word: string, before: string): boolean {
+  const unit = unitOf(word);
+  if (unit === null) return false;
+  if (/^(?:kv|кв)$/iu.test(word)) {
+    // The house number and the one or two words that name its street or house.
+    const house = before.split(/[\s,;:]+/u).filter(Boolean).slice(-3);
+    return !(/\d\s*[,;]?\s*$/u.test(before) && house.slice(0, -1).some(addressWord));
+  }
+  if (unit !== 'karobka' || PLACES_ONLY.test(word)) return true;
+  const prior = /([\p{L}\d²³.]+)[\s'’‘ʻ`]*$/u.exec(before)?.[1];
+  return prior === undefined || /\d/u.test(prior) || unitOf(prior) !== null || TOTAL_WORD.test(prior);
+}
+/** The carton words that only ever count places, and the plurals — never one product's noun. */
+const PLACES_ONLY = /^(?:мест[оа]?|ctns?|joy|кор|boxes|cartons|коробки|коробок)$/iu;
+/** A total before a carton noun makes it the count: «Jami karobka», «Итого коробка», «Total box». */
+const TOTAL_WORD = /^(?:jami|umumiy|hammasi|итого|всего|общее|total)$/iu;
+
+/**
  * A TNVED code as stored: digits only, 4-10 of them.
  *
  * A NUMERIC spreadsheet cell of nine digits has lost its leading zero (Excel
@@ -474,7 +505,10 @@ export function parseGoodsLine(raw: string): GoodsLine {
       // «Мест: 45», «Kg: 150» — a unit word written as a FIELD before its
       // number names that number: a carton count is never 45 pieces (c0347).
       const field = word ? null : UNIT_FIELD_BEFORE.exec(cellText.slice(0, start));
-      if (field && unitOf(field[1]!) !== null) {
+      // What stands before the field word, the column before it included
+      // («Chilonzor 12, kv: 45» is two columns).
+      const lead = cellIndex > 0 ? `${kept[cellIndex - 1]}, ` : '';
+      if (field && unitField(field[1]!, lead + cellText.slice(0, field.index))) {
         word = field[1]!;
         start = field.index;
       }

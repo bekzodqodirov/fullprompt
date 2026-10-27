@@ -107,9 +107,14 @@ describe('the first message', () => {
     expect(looksLikeMaterial('Kurtka, shim, sharf', GS)).toBe(true);
   });
 
-  it('a word and TWO figures is material, but only three figures refuse a repeat as the customer', () => {
+  // Re-anchored in round 6: the round-5 probe (c2075/c2076) wrote that a word
+  // and two figures opening with a hundred or more is a goods row too
+  // («Kurtka 300 1200»); a stall's small pair still names a person.
+  it('a word and TWO figures is material, but only a row refuses a repeat as the customer', () => {
     expect(looksLikeMaterial('Kurtka 1200 50', GS)).toBe(true);
-    expect(figureRow('Kurtka 1200 50')).toBe(false);
+    expect(looksLikeMaterial('Ippodrom 4 115', GS)).toBe(true);
+    expect(figureRow('Ippodrom 4 115')).toBe(false);
+    expect(figureRow('Kurtka 1200 50')).toBe(true);
     expect(figureRow('Kurtka 1200 50 3000')).toBe(true);
   });
 });

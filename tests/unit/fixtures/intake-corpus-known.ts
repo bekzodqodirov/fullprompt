@@ -13,32 +13,11 @@
  */
 export const KNOWN_FAILING: ReadonlySet<string> = new Set([
   // ── r5-probe typed ───────────────────────────────────────────────────────
-  // readGoodsLines / parseManualFacts: statusBody's STATUS_ALONE refuses a
-  // status body only as ONE word or an Uzbek predicate, so «Товар: по
-  // инвойсу», «Tovar: kecha yubordim», «Goods: will send photo later» land as
-  // a product and the goods question is never asked.
-  'c2039', 'c2040', 'c2041', 'c2042', 'c2043', 'c2044', 'c2045', 'c2046', 'c2047',
-  'c2048', 'c2049', 'c2050', 'c2051',
-  // readGoodsLines: contactWord reads CONTACT_FORMS in their cases and hyphen
-  // parts, so «Telefonga chexol», «Mobil-telefon» lose their TNVED code as a
-  // phone number.
-  'c2052', 'c2053', 'c2054', 'c2055',
-  // parseClientHint: nameDigits' ONE_WORD_COUNT voids the hint on an address
-  // line («Chilonzor 12», «Do'kon 45», «Офис 12») beside the phone or code.
-  'c2056', 'c2057', 'c2058', 'c2059', 'c2060',
-  // parseClientHint: contactShaped refuses a long contact line holding a
-  // CARGO_TALK / YUK word — a «… Cargo» firm, «Грузополучатель», «Consignee»,
-  // «Yuk egasi», «yuk qabul qiluvchi» NAME the customer.
-  'c2061', 'c2062', 'c2063', 'c2064', 'c2065', 'c2066',
-  // parseClientHint: units.ts UNIT_FIELD_BEFORE with «kv»/«кв» as m² reads an
-  // address's apartment «kv: 45» as goods.
-  'c2067', 'c2068', 'c2069', 'c2070',
-  // parseGoodsLine: UNIT_FIELD_BEFORE reads a name ending in a box word before
-  // the colon («Pitsa korobka: 5000», «Lunch box: 500») as cartons only.
-  'c2071', 'c2072', 'c2073', 'c2074',
   // clientAnswer (the collector's group; readCustomerText via figureRow in
   // intake-manual.ts): a word and TWO figures is believed on the repeat, so a
-  // goods row («Kurtka 300 1200») becomes the customer.
+  // goods row («Kurtka 300 1200») becomes the customer. figureRow now names
+  // the pair a row (round 6); readCustomerText's own `figures >= 3` gate still
+  // stands in front of it — the collector's file (corpus-r6 typed proposals).
   'c2075', 'c2076',
 
   // ── r5-probe collector ───────────────────────────────────────────────────

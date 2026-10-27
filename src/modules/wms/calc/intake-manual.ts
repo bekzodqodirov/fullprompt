@@ -11,6 +11,7 @@ import {
   type CalcFacts,
   type ClientHintOpts,
 } from './intake';
+import { addressWord } from './address-words';
 import type { MeasureUnit } from './pricing';
 import { codeIn, normalizeTnved, parseGoodsLine, readAmountText, unitOf, type SellerUnit } from './units';
 
@@ -178,8 +179,9 @@ const LIST_MARKER = /^(?:\d{1,3}[.)]|[-•*·–—])\s+/u;
  * opens with its preposition («в пути», «на складе», «см. файл», «in
  * transit», «see attached», «as per invoice»). A body of one word that only
  * points — «shu», «ok» — names nothing, nor a time, a file or a photo alone
- * (`STATUS_ALONE`: «Tovar: ertaga», «Tovar: rasmlar»), nor one opening with the
- * customer's code («GS777 niki»).
+ * (`STATUS_ALONE`: «Tovar: ertaga», «Tovar: rasmlar»), nor a body made only of
+ * a status's words (`STATUS_COMPANIONS`: «Товар: фото ниже»), nor one opening
+ * with the customer's code («GS777 niki»).
  *
  * Narrowed where the round-3 list refused descriptions (T-r1 ND9): no «xil»
  * («har xil kiyimlar» — a variety COUNT opens with its digit, «3 xil»), «rasm»
@@ -211,16 +213,67 @@ const PLACE_CASES = ['da', 'ta', 'dagi', 'ga', 'ka', 'qa', 'га', 'да'];
 const STATUS_ALONE = new Set([
   'qachon', 'когда', 'hali', 'ertaga', 'keyin', 'kecha', 'hafta', 'завтра', 'сегодня', 'вчера', 'пока', 'скоро',
   'позже', 'потом', 'tomorrow', 'later', 'soon', 'фото', 'photo', 'photos', 'excel', 'pdf', 'invoice', 'инвойс',
+  'қачон', 'качон', 'ҳали', 'хали', 'эртага', 'кейин', 'кеча', 'ҳафта', 'хафта',
 ]);
 const STATUS_ALONE_STEMS =
-  /^(?:rasm(?:i|lar|lari|ni|larni)?|kun(?:i|da|dan|ga|lari|larda)?|fayl\p{L}*|файл\p{L}*|invoys\p{L}*|инвойс\p{L}*|приш\p{L}*|отправ\p{L}*|отгруж\p{L}*|загруж\p{L}*|доставл\p{L}*)$/u;
+  /^(?:(?:rasm|расм)(?:i|ini|lar|lari|ni|larni|da|и|ини|лар|лари|ни|ларни|да)?|kun(?:i|da|dan|ga|lari|larda)?|fayl\p{L}*|файл\p{L}*|invoys\p{L}*|инвойс\p{L}*|приш\p{L}*|отправ\p{L}*|отгруж\p{L}*|загруж\p{L}*|доставл\p{L}*)$/u;
 /** A Russian or English status opens with its preposition. */
 const STATUS_FIRST = new Set(['в', 'на', 'см', 'in', 'see', 'as', 'per']);
 const POINTER_BODY = new Set(['shu', 'bu', 'mana', 'ok', 'ок', 'okay']);
 
+/**
+ * The rest of what a status SENTENCE is built of (round-5 probe): a verb of
+ * sending, writing or clarifying, an adverb of when or where, a preposition,
+ * a pronoun — «завтра скину», «фото ниже», «по инвойсу», «invoys bo'yicha»,
+ * «keyin yozaman», «will send photo later». None of them names a product, so
+ * a body made of nothing else names none (`statusBody`); one noun among them
+ * is the product — «Фото рамка», «Rasm ramkalari», «Рамка для фото». The
+ * Russian verbs are spelled out whole, never as stems: «Скинали» are kitchen
+ * panels.
+ */
+const STATUS_COMPANIONS = new Set([
+  // Russian
+  'ниже', 'выше', 'далее', 'отдельно', 'сразу', 'по', 'согласно', 'как', 'во', 'с', 'со', 'к', 'я', 'мы', 'вы',
+  'вам', 'не', 'ещё', 'еще', 'уже', 'будут', 'буду', 'приложении', 'вложении', 'список', 'списку',
+  'списке', 'скину', 'скинем', 'скинет', 'скинут', 'скинул', 'скинула', 'кину', 'закину', 'уточню', 'уточним',
+  'уточнит', 'уточняется', 'уточнить', 'напишу', 'напишем', 'напишет', 'скажу', 'скажем', 'скажет', 'сообщу',
+  'сообщим', 'покажу', 'вышлю', 'вышлем', 'перешлю', 'перешлем', 'перешлём', 'смотрите', 'смотри', 'посмотрите',
+  'уточняю', 'уточняем', 'сейчас', 'вечером', 'утром', 'известно', 'личке', 'личку', 'накладной', 'накладная',
+  'накладную', 'спецификации', 'спецификация', 'спецификацию',
+  // Uzbek, Latin and Cyrillic
+  'boyicha', 'buyicha', 'asosida', 'kora', 'binoan', 'keyinroq', 'yuqorida', 'alohida', 'aniq', 'hozir', 'tez',
+  'orada', 'men', 'biz', 'sizga', 'boladi', 'бўйича', 'буйича', 'асосида', 'кўра', 'кейинроқ', 'алоҳида', 'аниқ',
+  'ҳозир', 'мен', 'биз', 'сизга', 'бўлади', 'булади', 'qarang', 'qaring', 'kechqurun', 'ertalab', 'hozircha',
+  'қаранг', 'кечқурун', 'эрталаб', 'ҳозирча',
+  // English
+  'will', 'shall', 'send', 'sending', 'be', 'to', 'the', 'i', 'we', 'you', 'by', 'below', 'above', 'follow',
+  'follows', 'following', 'separately', 'according', 'confirm', 'confirmed', 'advised', 'provided', 'list', 'tbd',
+  'tba', 'not', 'yet', 'known', 'unknown', 'pending',
+]);
+/**
+ * An Uzbek verb in its finite first person — «yozaman», «tashlayman»,
+ * «yubordim», «юбораман» (never «-adi»: «shokoladi» is a noun). It ENDS a
+ * sentence of two words or more, «kecha yubordim», «keyin yozaman»: alone the
+ * ending is also a noun's, «Бодик», «Sandik», «Медик».
+ */
+const UZ_FINITE_VERB = /^\p{L}{2,}(?:aman|ayman|amiz|dim|dik|аман|айман|амиз|дим|дик)$/u;
+/** A Chinese status — «见附件», «详见发票», «待定», «稍后发送» — written with no space to split it by. */
+const HAN_STATUS =
+  /^(?:(?:详|请|参)?见(?:附件|发票|清单|图片|照片|下图|下表|表格)|待定|后补|另附|(?:稍后|明天|随后)(?:发送?|提供|告知|补充))$/u;
+
+const statusWord = (w: string) =>
+  STATUS_ALONE.has(w) ||
+  STATUS_ALONE_STEMS.test(w) ||
+  STATUS_FIRST.has(w) ||
+  POINTER_BODY.has(w) ||
+  STATUS_LAST.has(w) ||
+  STATUS_ENDING.test(w) ||
+  STATUS_COMPANIONS.has(w);
+
 function statusBody(body: string, prefix: string | null): boolean {
   const raw = body.split(/[\s,;:!()]+/u).filter(Boolean);
   if (raw.length > 0 && prefixCode(raw[0]!.replace(/[.,]+$/u, ''), prefix)) return true;
+  if (HAN_STATUS.test(body.trim().replace(/[。.!！]+$/u, ''))) return true;
   const words = body
     .toLowerCase()
     .replace(/[’ʻʼ‘`´']/gu, '')
@@ -228,9 +281,9 @@ function statusBody(body: string, prefix: string | null): boolean {
     .filter(Boolean);
   if (words.length === 0) return false;
   const last = words.at(-1)!;
-  if (words.length === 1 && POINTER_BODY.has(last)) return true;
   if (STATUS_FIRST.has(words[0]!)) return true;
-  if (words.length === 1 && (STATUS_ALONE.has(last) || STATUS_ALONE_STEMS.test(last))) return true;
+  const verbLast = words.length > 1 && UZ_FINITE_VERB.test(last);
+  if ((verbLast ? words.slice(0, -1) : words).every(statusWord)) return true;
   if (STATUS_LAST.has(last) || STATUS_ENDING.test(last) || STORE_LOCATIVE.test(last)) return true;
   return PLACE_CASES.some((e) => last.length > e.length && last.endsWith(e) && placeWord(last.slice(0, -e.length)));
 }
@@ -287,20 +340,42 @@ const NUMBER_FIELD_WORDS = new Set([
  *
  * A contact field is read in its CASES too (round-4 probe): «по номеру»,
  * «raqamga», «telefoniga» say where a number goes, as no plural («-lar»,
- * «-чики») or adjective («-li») does. A hyphenated word is a contact word when
- * a part of it is («счёт-фактура»), and in English the field is a phrase —
- * «contact phone», «phone number», «my number» — since «phone» alone is the
- * product of «Phone case».
+ * «-чики») or adjective («-li») does. But a TELEFON with no owner, in the
+ * case that says what a product is for or whose part it is, BEFORE A NOUN is
+ * the product's phone — «Telefonga chexol», «Telefonning chexoli», «Telefonni
+ * ushlagich» (round-5 probe, `CONTACT_BARE_CASE`); at the end of the name or
+ * before a verb («Telefonga yozing») it is still where the number goes, and so
+ * is a raqam or a nomer, which has no parts and is for nothing («Raqamning
+ * egasi», «Номерга звонить»); the phone's OWNER is a person beside the number
+ * («Telefonning egasi Ali», `CONTACT_FIELD`). A hyphenated word is a contact
+ * word when its FIRST part is («счёт-фактура»); after the hyphen a contact
+ * field is the product the word names, «Mobil-telefon». In English the field
+ * is a phrase — «contact phone», «phone number», «my number» — since «phone»
+ * alone is the product of «Phone case».
  */
-const CONTACT_FIELD = new Set(['aka', 'akam', 'akasi', 'akamiz', 'opa', 'opam', 'opasi', 'uka', 'ukam', 'ukasi']);
+const CONTACT_FIELD = new Set([
+  'aka', 'akam', 'akasi', 'akamiz', 'opa', 'opam', 'opasi', 'uka', 'ukam', 'ukasi', 'egasi', 'эгаси',
+]);
 const CONTACT_FORMS =
   /^(?:tel|tlf|тел|schet|(?:telefon|raqam|nomer)(?:i|im|imiz|ingiz)?(?:ga|da|dan|ni|ning)?|(?:телефон|рақам|номер)(?:и|им|имиз|ингиз)?(?:га|да|дан|ни|нинг)?|(?:телефон|номер|сч[её]т)(?:а|у|ом|е)?)$/u;
+const CONTACT_BARE_CASE = /^(?:telefon(?:ga|ni|ning)|телефон(?:га|ни|нинг))$/u;
+/**
+ * A verb — Uzbek imperative, infinitive or finite, «yozing», «qiling»,
+ * «tashlang», «yozish», «юборинг», or the Russian one a mixed line borrows,
+ * «Телефонга звонить», «позвоните».
+ */
+const VERB =
+  /(?:ing|ng|ngiz|nglar|gin|sin|moq|ish|aman|ayman|adi|ydi|инг|нг|нгиз|син|моқ|иш|аман|ади|ить|ать|ять|еть|ите|йте)$/u;
 const CONTACT_STEM = /^(?:murojaat|shartnoma|buyurtma|договор|заказ|contract)/u;
 const CONTACT_PHRASE = /(?:^|\s)(?:(?:contact|my|our)\s+(?:phone|number|tel)|phone\s+(?:number|no))(?:\s|$)/u;
-function contactWord(word: string): boolean {
+/** Is the word at `at` of a name's words a contact word? */
+function contactWord(words: readonly string[], at: number): boolean {
+  const word = words[at]!;
+  const after = words.slice(at + 1);
+  if (CONTACT_BARE_CASE.test(word)) return after.length === 0 || after.some((w) => VERB.test(w));
   if (CONTACT_FIELD.has(word) || CONTACT_FORMS.test(word) || CONTACT_STEM.test(word)) return true;
   const parts = word.split(/[-–]/u).filter(Boolean);
-  return parts.length > 1 && parts.some(contactWord);
+  return parts.length > 1 && contactWord([parts[0]!], 0);
 }
 
 /**
@@ -333,7 +408,7 @@ function bareTenDigits(body: string): string | null {
 function bareCodeOk(code: string, words: string[]): boolean {
   if (code.startsWith('89') || !/^(?:0[1-9]|[1-8]\d|9[0-7])(?:0[1-9]|[1-9]\d)/u.test(code)) return false;
   const keys = words.map(fieldKey);
-  return !keys.some(contactWord) && !CONTACT_PHRASE.test(keys.join(' '));
+  return !keys.some((_, i) => contactWord(keys, i)) && !CONTACT_PHRASE.test(keys.join(' '));
 }
 
 /**
@@ -851,6 +926,10 @@ const NUMBER_ROW = /\p{L}\s+\d[\d.,]*(?:\s+\d[\d.,]*)+$/u;
 const PHONE_GROUPS = /\p{L}\s+\d{2,3}(?:\s+\d{2,3})*\s+\d{2}$/u;
 /** A word and THREE or more bare figures — a packing-list row («Kurtka 1200 50 3000»). */
 const THREE_FIGURES = /\p{L}\s+\d[\d.,]*(?:\s+\d[\d.,]*){2,}$/u;
+/** A word and TWO bare figures, one a decimal or the first a hundred or more — «Kafel 2400 36,5», «Kurtka 300 1200». */
+const TWO_FIGURE_ROW = /\p{L}\s+(?:\d+[.,]\d+\s+\d[\d.,]*|\d[\d.,]*\s+\d+[.,]\d+|\d{3,}\s+\d+)$/u;
+/** A phone written in two groups of four — «王先生 8512 3456». */
+const FOUR_AND_FOUR = /\p{L}\s+\d{4}\s+\d{4}$/u;
 /** The label words of a customer's code: «Mijoz 777» names a customer, never a product's count (R3-T7). */
 const CLIENT_WORD = /^(?:mijoz|мижоз|klient|клиент|client|kod|код)$/iu;
 
@@ -927,16 +1006,23 @@ function numberRow(text: string): boolean {
 }
 
 /**
- * A row of THREE bare figures or more — «Kurtka 1200 50 3000» — that no
- * repeat may insist is the customer. Exported for the customer question, as
- * `goodsEvidence` is. A word and TWO figures is material on the first send
- * (`numberRow`), but may name a person on the repeat: a market stall
- * «Ippodrom 4 115», «Чорсу бозори 5 12», a landline written 4-4 «王先生 8512
- * 3456» (round-4 probe: refusing those left the seller no way to name him).
+ * A row of bare figures — «Kurtka 1200 50 3000» — that no repeat may insist
+ * is the customer. Exported for the customer question, as `goodsEvidence` is.
+ * A word and TWO figures is material on the first send (`numberRow`), but may
+ * name a person on the repeat: a market stall «Ippodrom 4 115», «Чорсу бозори
+ * 5 12», a landline written 4-4 «王先生 8512 3456» (round-4 probe: refusing
+ * those left the seller no way to name him). Unless the pair has what neither
+ * has (`TWO_FIGURE_ROW`, round-5 probe): a decimal («Kafel 2400 36,5»), or a
+ * count of a hundred or more first («Kurtka 300 1200», «Oyinchoq 1500 25») —
+ * a phone in two groups is four and four, and a market's row may be large
+ * but the line then names the market («Ippodrom 112 15», `addressWord`).
  */
 export function figureRow(raw: string): boolean {
   const text = raw.trim();
-  return numberRow(text) && THREE_FIGURES.test(text);
+  if (!numberRow(text)) return false;
+  if (THREE_FIGURES.test(text)) return true;
+  const stall = text.split(/\s+/u).some(addressWord);
+  return TWO_FIGURE_ROW.test(text) && !FOUR_AND_FOUR.test(text) && !stall;
 }
 
 /**
