@@ -1,8 +1,8 @@
 # Uch band — his three items of 2026-10-27
 
-Status: **scouted (5 readers + 5 refuters, workflow `wf_b69e331d-290`), questions sent the
-same day (Q1-Q7 below, ⭐ = what is built if he does not answer), design judged before
-code (§6).** His message, verbatim:
+Status: **BUILT (§8).** Scouted (5 readers + 5 refuters, workflow `wf_b69e331d-290`), questions
+sent the same day (Q1-Q7 below, answered «3b / 4 a / 5 a / 6 a / 7 b»), design judged before code
+(§6), absorbed (§7). His message, verbatim:
 
 > 1 kartada narx aytilgan bolsa usha narx qanday xisoblanganini korish uchun link
 > qoldirish kerak yani ved narx berdi shu narxni hisoblaydigan oynasiga link bolsin
@@ -364,3 +364,30 @@ product-9 (a one-line tarkib still needs the client's paper on the prixod); prod
 bot re-send is a new job, not a recalc); product-21 (each attach-win celebrates); product-22
 (the photo quality half of 8.5 ships with PR #127); deploy-10 (merge surface with PR #127,
 §8).
+
+## 8. As built (2026-10-27) — where the code differs from §7, and what proves it
+
+- **Item 2B lives in `crm/service.ts` `winLead` + `calc/win-split.ts`.** The client part keeps main's order (own
+  statement, before the transaction — `createClient` opens its own); everything after it is ONE transaction:
+  requests `FOR UPDATE` in id order → the lead `FOR UPDATE` → the main deal's id checked (a second press that
+  waited on the lock finds the first one's deals) → the jobs re-read and compared with the pooled plan
+  (`jobsDigest` + the lead's quote; a difference is `changed`) → `createDealInTx` per deal (explicit `id`) →
+  `rekeyLeadCalcJobsTx` (requests by id, offers by request OR version) → `writeLeadStageTx` (moveLead's write,
+  extracted; announced after the commit). `rekeyLeadCalcRequests` survives only as the tests' one-deal shorthand
+  (fenced: no production caller).
+- **The outranked edge asks `answerFloorStandsSql`'s own terms**, now one fragment, `outrankingAnswerSql`
+  (version-set.ts), shared by the money rule and the split; a seal outranks by ANY of the request's versions.
+- **The result names the other deals** (`WinLeadResult.otherDeals`), drawn under the banner as links; a retried
+  press answers the main deal alone (the lead card lists every deal through `wonDealsOfLead`).
+- **The dialog**: a token per OPENING (not per lead); a lead about a colleague's client opens on that client
+  (`winPrefillAction`, lazy, no board query) and offers no fresh code; the echo names the client's seller
+  (`resolveClientCodeAction.sellerName`); new words `serverBehind`, `leadAboutClient`, `changed`, `sellerOf`,
+  `noSeller`, `aboutColleague`, `otherDeals` ×4. `client_has_lead` stays mapped for an old server's answer.
+- **Titles**: `calc/deal-title.ts` (moved out of intake-land so the split names a sale's deal the bot's way).
+- **Proofs**: `win-split.integration.test.ts` (money-1 on the real fragment, the seal-priced sibling, the FTL pair,
+  the token, `lead_closed`, money-8) + `win-split.test.ts` (pure); `calc-intake` (a new deal per request, the
+  retried note, the colleague lead, the stranger skip), `deal-ved` (v)/(vii) rewritten, (x) the shell taken over
+  once and a touched shell left alone; `thread-calc` (the client door per request, the lead's client thread);
+  `calc-landed-words`; fences re-anchored (won-law, ftl-wire, calc-queue, calc-rekey, deal-terms-wire,
+  thread-calc-wire, calc-credit-fence). 17 red proofs for item 2 by string edit, each restored by the reverse
+  edit.

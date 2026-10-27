@@ -3138,6 +3138,9 @@ migration of its own, it rides with 0133) is checked by BOTH the count (134) and
 `/api/version`; a code-only round after it is checked by `/api/version` alone
 (anything short of the journal means
 a migration did not land — read the `migrate` container's own output).
+**Then he CONFIRMED 136** («deploy qildim 136 chiqdi», 2026-10-27), so everything through
+the LTL/FTL round and «Yo'lda» in two columns (#1454) is LIVE; the uch-band round (0136)
+must read **137**.
 Never carry this number over from a previous session: read it
 (`ls src/modules/platform/db/migrations/*.sql | wc -l`) before writing the
 owner a step list, because the count is the only check that separates «the
