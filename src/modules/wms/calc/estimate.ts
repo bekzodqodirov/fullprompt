@@ -43,6 +43,7 @@ export type MedianMiss =
   | 'no_declarations'
   | 'unit_mismatch'
   | 'few'
+  | 'no_band'
   | 'no_piece_weight'
   | 'no_measure'
   | 'timeout'
@@ -85,6 +86,9 @@ export const MISS_WORDS: Record<MedianMiss, string> = {
   no_declarations: 'bu kodda Xitoy deklaratsiyasi yo‘q',
   unit_mismatch: 'deklaratsiyalar boshqa o‘lchovda',
   few: `faqat {n} ta deklaratsiya (kamida ${FEW} kerak)`,
+  // The code HAS per-piece declarations, none at this row's weight (review
+  // P1-R6): «faqat 0 ta» read as «the file has none».
+  no_band: 'bu og‘irlikdagi (±25 %) dona deklaratsiyasi yo‘q',
   no_piece_weight: 'bir donasining og‘irligi yo‘q — dona bo‘yicha solishtirib bo‘lmadi',
   no_measure: 'qatorda soni ham, og‘irligi ham yo‘q',
   // Names the file and who acts (review product-fit-12): «(fayl katta)»
@@ -149,6 +153,7 @@ export function medianForRow(input: {
 
   let seen: number | null = null;
   let skippedDona = false;
+  let noBand = false;
   for (const unit of input.allowed) {
     if (unit === 'dona' && input.bandKey === null) {
       skippedDona = true;
@@ -170,9 +175,16 @@ export function medianForRow(input: {
         series: unit === 'dona' ? `band:${input.bandKey}` : `all:${unit}`,
       };
     }
+    // A per-piece series the file HAS, with nothing in this row's ±25 % band:
+    // none at this weight, never «too few» (review P1-R6).
+    if (unit === 'dona' && series.n === 0) {
+      noBand = true;
+      continue;
+    }
     seen = Math.max(seen ?? 0, series.n);
   }
   if (seen !== null) return { ok: false, miss: 'few', n: seen };
+  if (noBand) return { ok: false, miss: 'no_band', n: null };
   if (skippedDona && input.rows.some((r) => r.unit === 'dona' && r.n > 0)) {
     return { ok: false, miss: 'no_piece_weight', n: null };
   }
@@ -187,6 +199,22 @@ export function medianForRow(input: {
  */
 export function declarationCounts(medians: readonly { series: string; n: number }[]): number[] {
   return [...new Map(medians.map((m) => [m.series, m.n])).values()];
+}
+
+/**
+ * Every baza-less row of these groups marked `timeout` — what a median read
+ * that failed OUTRIGHT says (review P1-R7). An empty map reads as «no baza,
+ * the VED fills it», a claim about a file the pass never got to read; this
+ * reads as «statistika o‘qilmadi» on each row, and Taxminiy's block says so.
+ */
+export function unreadMedians(
+  groups: readonly { items: readonly { id: string; bazaUsd: number | null }[] }[],
+): Map<string, RowMedian> {
+  return new Map(
+    groups.flatMap((g) =>
+      g.items.filter((i) => i.bazaUsd === null).map((i): [string, RowMedian] => [i.id, { ok: false, miss: 'timeout', n: null }]),
+    ),
+  );
 }
 
 /** A row as the engine prices it, plus the id the medians are keyed by. */

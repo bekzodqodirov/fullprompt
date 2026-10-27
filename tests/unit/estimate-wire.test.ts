@@ -240,3 +240,53 @@ describe('the import direction: nothing but the bot’s reply reads the estimate
     expect(strays).toEqual([]);
   });
 });
+
+describe('R2 late pass — the median read, fenced where tx-pool cannot look', () => {
+  /** Every call `underCeiling(…)` makes inside its callback, by callee name. */
+  const ceilingBodies = (path: string): ts.Node[] => {
+    const out: ts.Node[] = [];
+    walk(parse(path), (n) => {
+      if (ts.isCallExpression(n) && n.expression.getText() === 'underCeiling' && n.arguments[0]) out.push(n.arguments[0]);
+    });
+    return out;
+  };
+
+  it('the `underCeiling` callback in estimate-read.ts calls readCodeMedians and NOTHING else (review performance-10)', () => {
+    // tx-pool.test.ts does not scan `underCeiling` bodies, and §1 said this
+    // file pins it: a pool read added inside holds one of the ten
+    // connections while waiting for another (#714).
+    const bodies = ceilingBodies(READ);
+    expect(bodies.length, 'the read no longer goes through underCeiling — re-anchor').toBeGreaterThan(0);
+    for (const body of bodies) {
+      const printed = ts.createPrinter({ removeComments: true }).printNode(ts.EmitHint.Unspecified, body, parse(READ));
+      for (const banned of ['db.', 'getSetting', 'batchesForCodes', 'ratesForCodes', 'bazasFor', 'bazaStaleCutoff']) {
+        expect(printed, `the ceiling's body names ${banned}`).not.toContain(banned);
+      }
+      const calls: string[] = [];
+      walk(body, (n) => {
+        if (ts.isCallExpression(n)) calls.push(n.expression.getText());
+      });
+      expect(calls).toEqual(['readCodeMedians']);
+    }
+  });
+
+  it('the median read issues no write in raw SQL either (review P1-R9)', () => {
+    // The banned tokens above are drizzle's; `import-median.ts` speaks raw
+    // `tx.execute(sql…)`, and `underCeiling` opens an ordinary read-write
+    // transaction — so a raw INSERT/UPDATE/DELETE would pass them all.
+    for (const file of [MEDIAN, READ]) {
+      expect(code(file), file).not.toMatch(/\b(insert|update|delete|merge|truncate|upsert)\b/i);
+    }
+  });
+
+  it('a median read that fails outright is said on every row it would have answered (review P1-R7)', () => {
+    let caught = '';
+    walk(parse(PREFILL), (n) => {
+      if (ts.isTryStatement(n) && n.tryBlock.getText().includes('rowMediansFor(') && n.catchClause) {
+        caught = ts.createPrinter({ removeComments: true }).printNode(ts.EmitHint.Unspecified, n.catchClause, parse(PREFILL));
+      }
+    });
+    expect(caught, 'the pass no longer reads the medians in a try — re-anchor').not.toBe('');
+    expect(caught).toContain('unreadMedians(');
+  });
+});

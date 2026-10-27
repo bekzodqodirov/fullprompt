@@ -36,6 +36,7 @@ import {
   estimateCustoms,
   estimateInputOf,
   missWords,
+  unreadMedians,
   type CustomsEstimate,
   type GroupEstimate,
   type RowMedian,
@@ -525,6 +526,9 @@ export async function aiPrefill(
       medians = await rowMediansFor(ws, { deadline });
     } catch (err) {
       logger.warn({ err, requestId }, '[calc-prefill] medians not read — no estimate');
+      // Said on every row it would have answered (review P1-R7), never read
+      // as «no baza» about a file the pass never got to read.
+      medians = unreadMedians(ws.groups);
     }
     estimate = estimateCustoms({ ...estimateInputOf(ws), medians });
   }

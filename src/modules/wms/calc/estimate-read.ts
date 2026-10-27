@@ -48,10 +48,11 @@ const statesAny = (i: Row) =>
  * Medians for the workspace's baza-less, grouped rows, keyed by item id.
  *
  * Pool: `batchesForCodes`, before any transaction. Then ONE `underCeiling`
- * transaction per distinct (code, batch), in order. A cancelled statement
- * (57014) marks every row of ITS code `timeout` and the read goes on with the
- * next code; any other failure is thrown, and the pass reads that as «no
- * estimate» (prefill.ts) — it never costs the reply.
+ * transaction per distinct (code, batch), in order. A statement that fails —
+ * cancelled at its ceiling (57014) or anything else — marks every row of ITS
+ * code `timeout` and the read goes on with the next code (review P1-R7): one
+ * bad read used to throw away every median already read, and the reply then
+ * blamed missing bazas instead of saying the statistics were not read.
  */
 export async function rowMediansFor(ws: Workspace, opts: { deadline: number }): Promise<Map<string, RowMedian>> {
   const out = new Map<string, RowMedian>();
@@ -149,9 +150,13 @@ export async function rowMediansFor(ws: Workspace, opts: { deadline: number }): 
         );
       }
     } catch (err) {
-      if (!isQueryCanceled(err)) throw err;
-      // Never the goods' names in the log — they are a customer's.
-      logger.warn({ code: '57014', tnvedCode: code, batchId: batch.batchId }, '[calc-estimate] median read over its ceiling');
+      // Never the goods' names in the log — they are a customer's; the
+      // statement carries none, only the code, the batch and the bands.
+      if (isQueryCanceled(err)) {
+        logger.warn({ code: '57014', tnvedCode: code, batchId: batch.batchId }, '[calc-estimate] median read over its ceiling');
+      } else {
+        logger.warn({ err, tnvedCode: code, batchId: batch.batchId }, '[calc-estimate] median read failed');
+      }
       for (const w of mine) out.set(w.id, miss('timeout'));
     }
   }

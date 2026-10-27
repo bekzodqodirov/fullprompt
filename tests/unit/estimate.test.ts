@@ -9,6 +9,7 @@ import {
   estimateInputOf,
   medianForRow,
   missWords,
+  unreadMedians,
   type CodeMedianUnit,
   type EstimateGroup,
   type EstimateItem,
@@ -380,6 +381,7 @@ describe('the small rules', () => {
       no_declarations: 'bu kodda Xitoy deklaratsiyasi yo‘q',
       unit_mismatch: 'deklaratsiyalar boshqa o‘lchovda',
       few: 'faqat {n} ta deklaratsiya (kamida 5 kerak)',
+      no_band: 'bu og‘irlikdagi (±25 %) dona deklaratsiyasi yo‘q',
       no_piece_weight: 'bir donasining og‘irligi yo‘q — dona bo‘yicha solishtirib bo‘lmadi',
       no_measure: 'qatorda soni ham, og‘irligi ham yo‘q',
       timeout: 'bojxona faylidan o‘qib ulgurilmadi — VED ko‘radi',
@@ -420,5 +422,50 @@ describe('«N ta deklaratsiyadan» — one count per series (review P1-R8)', () 
     const kg = medianForRow({ ...base, allowed: ['kg'], bandKey: null, rows: [{ unit: 'kg', n: 23, p50: 4, bands: new Map() }] });
     if (!kg.ok) throw new Error('the premise: priced per kg');
     expect(declarationCounts([kg, kg])).toEqual([23]);
+  });
+});
+
+describe('R2 late pass — a miss says what the file has', () => {
+  const base = { batch: { endDate: '2026-09-30' }, staleCutoff: '2026-07-01' };
+  const dona = (bands: [string, number][]) => ({
+    unit: 'dona' as const,
+    n: 50,
+    p50: 3,
+    bands: new Map(bands.map(([k, n]) => [k, { n, p50: n > 0 ? 3 : null }])),
+  });
+
+  it('per-piece declarations exist, none at this row’s weight: «no_band», never «faqat 0 ta» (review P1-R6)', () => {
+    expect(medianForRow({ ...base, allowed: ['dona'], bandKey: 'k', rows: [dona([['k', 0]])] })).toEqual({
+      ok: false,
+      miss: 'no_band',
+      n: null,
+    });
+    expect(missWords('no_band', null)).toBe('bu og‘irlikdagi (±25 %) dona deklaratsiyasi yo‘q');
+    // A band with SOME declarations is still «too few», with its count.
+    expect(medianForRow({ ...base, allowed: ['dona'], bandKey: 'k', rows: [dona([['k', 3]])] })).toEqual({
+      ok: false,
+      miss: 'few',
+      n: 3,
+    });
+    // Another allowed unit that fell short still says its own count.
+    const kg = { unit: 'kg' as const, n: 2, p50: 4, bands: new Map() };
+    expect(medianForRow({ ...base, allowed: ['dona', 'kg'], bandKey: 'k', rows: [dona([['k', 0]]), kg] })).toEqual({
+      ok: false,
+      miss: 'few',
+      n: 2,
+    });
+  });
+
+  it('a median read that failed outright: every baza-less row says «not read», and Taxminiy says time, not bazas (review P1-R7)', () => {
+    const exact = group('A', law({ seq: 1 }), [item('a1', 1, { bazaUsd: 4, bazaBasis: 'kg' })]);
+    const open = group('B', law({ seq: 2 }), [item('b1', 2), item('b2', 3, { bazaUsd: 2, bazaBasis: 'kg' })]);
+    const medians = unreadMedians([exact, open]);
+    expect([...medians.keys()]).toEqual(['b1']);
+    const out = estimateCustoms({ groups: [exact, open], ungroupedCount: 0, ...FEE, medians });
+    const ge = out.groups.get('B');
+    expect(ge?.kind === 'refused' && ge.misses.map((m) => m.miss)).toEqual(['timeout']);
+    expect(out.taxminiyBlock).toBe('budget');
+    // An EMPTY map — what the pass used to hand in — blamed the bazas.
+    expect(estimateCustoms({ groups: [exact, open], ungroupedCount: 0, ...FEE, medians: new Map() }).taxminiyBlock).toBe('refused');
   });
 });
