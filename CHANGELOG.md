@@ -1,5 +1,45 @@
 # CHANGELOG
 
+## 2026-10-27 — Planga yo'ldagi yukni ham qo'shish
+
+Sizning so'zlaringiz: «horgos planda yoldagi yuklarni ham qoshish degan check bolsin shuni bosganda yoldagi yuklar ham tanlash imkoniyati bolsin». Javoblaringiz: **1a 2a 3a 4a 5a**. **Migratsiya 0137 — deploydan keyin migratsiyalar soni 138 bo'lishi kerak.**
+
+### Plan berishda
+- Yangi plan oynasida **«🚚 Yo'ldagi yuklar ham»** belgisi bor. U har bir skladda bor (5a), lekin odatda o'chiq turadi: bosilmasa plan oynasi avvalgidek ishlaydi.
+- Belgi bosilsa, ro'yxatga shu skladga **yo'lga chiqqan** mashinalardagi yuk ham qo'shiladi (1a). Bu yo'lda ketayotgan yoki skladga yetib kelib hali tushirilmagan mashinalar. Yiwu'da hali yuklanayotgan mashina hisoblanmaydi.
+- Har bir lot qatorida qaysi mashinada kelayotgani va qachon yetib kelishi yoziladi, masalan: «🚚 +12 yo'lda · YW-123 · 29.10 – 31.10». Mashina darvozada turgan bo'lsa «darvozada» deb yoziladi.
+- **✓** tugmasi avvalgidek faqat skladda turgan yukni oladi. Yo'ldagi qismni olish uchun alohida **🚚** tugmasi bor. Shunday qilib belgini bosganingiz uchun hech qaysi lotga yo'ldagi yuk o'zi qo'shilib qolmaydi.
+- Pastdagi jami qatorida rejaning qanchasi yo'ldan kelishi alohida ko'rsatiladi («🚚 10»).
+- Zavod reyslari (zavoddan kelayotgan yuk) ro'yxat ostida **faqat ko'rish uchun** turadi (2a). Ular skladga qabul qilingach, oddiy yuk bo'lib planga tushadi.
+- Agent plani qaytarsa, «✏️ Tahrirlash» oynasi belgi bosilgan holda ochiladi va yo'ldagi qism joyida qoladi.
+
+### Agent tasdiqlaganda va mashina kelganda (3a)
+- Agent plani yuk yetib kelmasdan ham tasdiqlashi mumkin. Tasdiqlanganda skladda turgan qism darhol shu mashinaga band qilinadi. Yo'ldagi qism esa **«kutilmoqda»** bo'lib turadi.
+- Kelayotgan mashina shu skladda tushirilganda, yo'ldagi karobkalar **o'sha zahoti avtomatik ravishda** shu planning mashinasiga band qilinadi va yuklovchining ro'yxatida paydo bo'ladi. Telefon bilan tushirsangiz ham, «Hammasini qabul qilish» yoki ofis sanog'i bilan bo'lsa ham shunday. Inventarizatsiyada topilgan karobka ham shu yo'l bilan rejaga o'tadi.
+- Rejadan ortiqcha kelgan karobkalar hech kimga band qilinmaydi va skladda bo'sh yuk bo'lib qoladi.
+- Yuklash ekranida va partiya kartasida tepada «🚚 Yo'ldan kutilmoqda: GS777-A · 10 karobka (YW-123)» degan qator turadi. Shunday qilib «Yuklash tugadi»ni hech kim bilmasdan bosib qo'ymaydi.
+- Yuklovchi hali kelayotgan mashinada turgan karobkani skanerlasa, telefon «Bu karobka hali YW-123 mashinasida — avval tushirishda qabul qiling» deydi. Qizil «rejada yo'q» oynasi chiqmaydi.
+- Yuk boshqa yo'l bilan skladga tushib qolgan bo'lsa ham, yuklovchi skanerlaganda yoki ofis sanog'ida u rejaning yuki sifatida olinadi. Ortiqcha sabab yozish so'ralmaydi.
+
+### Yuk yetib kelmasa (4a)
+- Mashina yo'ldagi qism kelmasdan yuklashni tugatsa, o'sha qism **«kelmadi»** deb yoziladi. Yuk keyin kelsa, skladda keyingi plan uchun qoladi.
+- «Yuklash tugadi»ni bosgan odamning o'ziga ham «🚚 N yo'ldan kelmadi» deb chiqadi. Telegram xulosasida lotlar nomi bilan aytiladi. Partiyalar reyestridagi «⤵️» ustuniga ham qo'shiladi.
+- Yo'ldagi qism hali kutilayotgan bo'lsa, «Jo'natish» tugmasi «Avval «Yuklash tugadi»ni bosing — rejadagi yuk hali yo'lda» deydi.
+- «Yuklash tugadi»dan keyin ofis sanog'i faqat skladdan olingan qismni so'raydi. Kelmagan karobkalarni qaytadan so'rab, yangi karobka yaratib yubormaydi.
+- Andijon kabi mijoz yukini olib ketadigan skladda: yo'ldagi yuk tushishi bilan rejaga band qilinadi, shuning uchun mijozga «yukingiz keldi» deyilmaydi (yuk keyingi skladga ketyapti). Mashina uni olmay ketsa, mijozga «yukingiz keldi» xabari endi yuboriladi.
+
+### Boshqa joylarda
+- **Plan sahifasida** har qatorda: «🚚 N yo'ldan · M kutilmoqda · K keldi · J kelmadi».
+- **Agent Excel faylida** yo'ldagi qism alohida **«В пути / On the road: YW-123»** blokida turadi. Skladdagi qismi esa uni olib kelgan mashina blokida. Ilgari bunday yuk «skladga kelgan» deb yozilib qolishi mumkin edi, bu bojxona hujjatida noto'g'ri gap bo'lardi.
+- **Partiyalar doskasida** yo'ldan kutayotgan mashina «rejasiz» yoki «hammasi yuklandi» deb chiqmaydi, «🚚 +N yo'ldan» deb chiqadi.
+- Reja yo'ldan kutayotgan lotning prixodini bekor qilib (annulirovka) bo'lmaydi.
+- Bir vaqtning o'zida «Tasdiqlash» ikki marta bosilsa (ikki marta tegish yoki internet uzilishi), ikkita mashina ochilmaydi. Bu xato ilgari ham bor edi, endi tuzatildi.
+- Telefon mashinadan tushirilgan karobkani keyinroq yana yuborsa (internetsiz navbatda qolgan skaner), u boshqa mashinaga band qilingan karobkani «hujjatsiz ko'chirish» deb skladga qaytarib qo'ymaydi. Bu ham umumiy xato edi, endi tuzatildi.
+
+### Hali qilinmagan (aytib qo'yaman)
+- Yo'ldagi **yashiklar** (CR-…) rejaga taklif qilinmaydi, faqat alohida karobkalar.
+- Kelayotgan mashinaning yo'nalishi o'zgartirilsa, uning yuki bu skladga kelmaydi. Reja qatori «Yuklash tugadi»da «kelmadi» bo'ladi.
+
 ## 2026-10-27 — Telegramdan ochilgan tizimda fayllar yuklanadi
 
 Sizning so'zlaringiz: «filelar telefonda skachat bolmayabti» va javobingiz «1d / 2 download unsuccessful … / 3 c». **Migratsiya yo'q.** Yangi kod ishlayotganini `curl -s https://gsrwms.uz/api/version` bilan tekshiring.

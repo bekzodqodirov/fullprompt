@@ -4712,3 +4712,90 @@ cookie is SameSite=Lax already; the header makes «only this app's page mints a 
 mount). STATED: a link copied out of the phone works for its ten minutes for whoever holds it — the price of
 a download manager that sends no cookie; the immediate workaround on a phone that has not deployed yet is
 Telegram → Settings → Chat Settings → «In-App Browser» off (Android), so ↗️ opens the system browser.
+
+## Yo'ldagi yuk — a plan takes cargo still on the road to its warehouse (2026-10-27; migration 0137 `plan_road`, ledger 138; spec `docs/YOLDAGI-YUK.md`)
+
+1483. **The road part is a side table of three numbers, and the one that matters most is the one a reader
+would have thrown away** (his «horgos planda yoldagi yuklarni ham qoshish degan check bolsin», answers 1a 2a
+3a 4a 5a). `plan_line_road` per line: `road_box_count` (the promise, frozen at submit), `road_owed` (still to
+be reserved onto the truck, 0 until the approval) and `road_missed` (what the truck's loading ended without);
+`plan_road_claims` names each carton a claim took and the truck it landed off. A side table and never a
+column (#1381). Owed is DURABLE and not «plan minus reserved»: that difference is also true after a person's
+give-back (`short_loaded`, a count dialled down), and a landing hook reading it would refill what somebody
+sent back. Missed is never erased: zeroed instead, the count door's plan number jumped back to the whole
+plan after «yuklash tugadi» — the truck is still `loading` — and «Hammasi» grew the lot by the cartons still
+on the road, which then landed as duplicates (the design judge's counts#0, locks#2). ONE writer
+(`wms/planning/road.ts`); every other file asks it — fenced by `road-wire.test.ts`, which refuses the tables'
+names anywhere else.
+
+1484. **A pending plan reserves nothing on the road, as it reserves nothing on the shelf; the approval is
+where the road is checked, under one lock per origin.** v1 netted pending plans' road parts out of the free
+road: an abandoned «o'zgartiring» held a lot's road cargo for ever, and a pending promise kept eating the
+road after its cartons landed (judge counts#6, editor#3/#4, deploy#7). Now `road.free` = road cartons −
+approved/loading plans' owed. The approval reserves the shelf part as today, owes the rest, and refuses
+`insufficient_stock` when the owed part exceeds what the road still holds. `roadLock(W)` serialises the
+approval with the landing hook ONLY: without it a landing that saw the plan pending claimed nothing while
+the approval, unable to see the uncommitted carton, owed it — a carton standing here with the line owing it
+for good (judge locks#1). The approval takes the lock before any carton read; the hook takes it last,
+holding only cartons whose committed version no shelf predicate matches — so neither waits on the other.
+The count door and the phone's claim do not take it: the plan line's row is their claim.
+
+1485. **The landing reserves in its own transaction, at every door that lands a carton, and a carton a truck
+already landed is never landed again by it.** 3a: the hook (`claimLandedForRoadTx`) runs in
+`landUnloadInput` (the phone, «Hammasini qabul qilish», the office count — never `count_over`, whose
+cartons came from the inbound origin or were minted and `undoOver` must find on the shelf), in
+`found_here`, and in both stocktake doors (a stocktake that landed a road carton unclaimed left owed over
+cargo in the yard — judge locks#3). The claim is the approval's exact shape (`planned`, the truck, one
+`plan_approved` movement from = to = the shelf), so `shelfBefore` and every give-back read it. THE
+BLOCKER the judge found was general, not the round's: a phone's offline scan of a carton the bulk accept
+had already landed came back with a new event id, missed the «already landed» check (the carton was no
+longer in the landed status) and took the ROGUE branch — pulled off the onward truck, flagged
+`undocumented_transfer`, alarm and re-split. `landUnloadInput` now treats a member with a landing movement
+off THIS truck into its destination as done, whatever it has become since (judge locks#0).
+
+1486. **Cargo already here is claimed when it is loaded; cargo still on the inbound truck is refused in
+words.** A free carton of a lot the truck still owes — landed by a door the hook never saw, or here all
+along — is reserved by the count door before it computes and by the phone's scan of it (no red confirm, no
+`added_on_spot`). A scan of a carton still `in_transit` to the origin answers `road_not_landed` with the
+inbound truck's code («Bu karobka hali YW-123 mashinasida — avval tushirishda qabul qiling»), never
+`not_on_plan`, whose «load anyway» ended in a raw `box_in_transit` (judge locks#4, deploy#6). The sync body
+lands before it loads (one phone works both doors at Horgos and Kashgar), and the loading snapshot ships
+`roadOwed` (printed above the list) and `roadCodes`, so the phone queues a road carton without its local
+confirm.
+
+1487. **«Yuklash tugadi» is the one door that ends a loading without the road part, and it says so to
+everybody, the presser included.** `finishLoading` and `cancelBatch` move owed into missed first thing
+after the truck's lock, before reading the cartons; `departBatch` refuses `road_owed_open` beside
+`finish_loading_first` (v1 let «Jo'natish» depart with nothing said — judge deploy#0). The finish sentence
+the presser sees carries «🚚 N yo'ldan kelmadi», the Telegram load summary names the lots, the audit row
+records it, and the batch register's ⤵️ adds Σ `road_missed` (4a: short «as a short-loaded carton is
+today»). A claimed carton given back `ready_for_pickup` re-claims (or re-arms) the arrival notice of the
+truck it landed off: reserved onward in the landing's own transaction it was never «ready» and never
+announced at a collection warehouse (judge counts#7).
+
+1488. **The agent's verdict is a claim.** Two presses of «Tasdiqlash» both read «no verdict» and the second
+update waited, then overwrote — two trucks for one plan. Only the shelf's `insufficient_stock` happened to
+stop it, and a road line reserves less than its count by design. `UPDATE … WHERE agent_verdict IS NULL
+RETURNING`, zero rows → `verdict_already_recorded` (judge locks#5), proven with two concurrent approvals.
+
+1489. **The readers.** The editor draws the box only where 0137 is (`roadOn`); its road half comes from
+`roadStock` in the shelf list's own row shape, merged into ONE `lots` (Σ, the gauge, the check filter and
+the prune walk one array — judge editor#1), in its own catch (`roadFailed` — the shelf list still arrives,
+and a road pick is never pruned against an answer whose road half failed). ✓ keeps meaning the SHELF; «🚚»
+adds the road part on purpose, so ticking the box never silently adds a road part to a lot taken whole as
+before (editor#2). Unticking clamps the picks, said in a line, and is the person's act only — a resubmit
+reopens TICKED when its version has a road part (editor#0: the sent-back plan lost its road part without a
+word). The plan view prints «N yo'ldan · M kutilmoqda · K keldi · J kelmadi»; the board and the batch card
+say «🚚 +N yo'ldan» and never «rejasiz» / «hammasi yuklandi» while anything is owed (counts#3); the agent
+sheet prints a line with a road part as two rows, the road part under «В пути / On the road: <trucks>»
+(counts#5 — filed whole under an arrival it was a false sentence on a customs document); an annul of a lot
+an approved plan still owes is refused. `gsr_ai_reader` is granted nothing on the new tables (the 0123/0135
+precedent); the AI card gained one trap line. The probe answers a branded `RoadOn` only `planRoadReady()`
+mints, asked on the pool before every transaction (#714) and REQUIRED by every body that touches the tables
+— a door that forgot would not compile. Proven: 13 integration + 13 unit + 5 e2e; red-proven ×14 by string
+edit.
+
+1490. **Stated, not built.** Crates on the road are not offered; a truck `arrived` at the gate counts as on
+the road (`/arrivals`' rule, not the /stock strip's); an inbound truck rerouted away leaves the line missed
+at «yuklash tugadi»; a landing in the same instant as a submit AND an approval can miss the hook's unlocked
+pre-check (the loading-time claim heals it); factory trips are shown, never planned (2a).

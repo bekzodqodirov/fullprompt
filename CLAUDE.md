@@ -160,6 +160,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | Every truck in one place — the board by place, the % by distance, GPS, the gate | `docs/PARTIYA-DOSKASI.md` — agreed 2026-10-17 (his 1A 2a 3a 4a 5a 6c 7a 8b 9b 10b 11A 12A, then «1 hozirgidek qolsin»), SHIPPED; §2 is the placement as built; §3a = «Yo'lda» in two columns, inside / outside China (2026-10-21) |
 | LTL / FTL — which cargo the KPI and the rating count, who may mark it, the paid-month freeze, the logist's hint | `docs/LTL-FTL.md` — agreed 2026-10-20 (his «3 b / qolgani sen aytgandek» = 1a 2a 3b 4a 5a 6a 7a), SHIPPED |
 | The price's link to its calculation; a new deal per coded request; a lead for a colleague's client; a won lead split by SALE; the one-line tarkib and «шт» | `docs/UCH-BAND.md` — agreed 2026-10-27 (his «3b / 4 a / 5 a / 6 a / 7 b», Q1-Q2 ⭐), BUILT; §7 is the design as judged |
+| A plan that takes cargo still on the road to its warehouse — the road part, owed, missed, the landing claim | `docs/YOLDAGI-YUK.md` — agreed 2026-10-27 (his 1a 2a 3a 4a 5a), BUILT; v2 is the design as judged |
 
 ## State — 2026-08-23
 
@@ -2992,7 +2993,39 @@ of that message were ASKED, not built: plan cargo still on the road to the origi
 counts as «yo'lda», approval before arrival, the short-load case), and «files do not download on the phone» —
 measured green in a phone-shaped Chromium with the service worker (#1480), so the device/browser is asked.
 
-**Latest migration: 0136** (`lead_client_many`, `when` …115; ledger must reach **137**). Before
+**Round — yuklab olish havolasi (2026-10-27; DECISIONS #1481-#1482; NO migration).** His answer «2 download
+unsuccessful … 3 c»: the system opened from a Telegram «↗️ Ochish» runs in Telegram's in-app browser, which
+hands a file's address to the phone's download manager — no cookie, every file route 401/403. A file press now
+asks `POST /api/dl` (cookie, JSON only) for a 10-minute signed link (`platform/auth/download-link.ts`, HMAC of
+a key derived from `SESSION_SECRET`; none, short, or a value the repo publishes = no links, plain address as
+before) and follows it; `GET /api/dl/<token>` asks the REAL file route on 127.0.0.1 as the link's person
+(delegated-user header + the process's internal key, honoured only together in `getSessionUser`, `canLogIn`
+re-asked) — no door re-implemented. One capture-phase listener (`components/download-links.tsx`) in the
+protected layout; desktop new-tab links under a mouse stay native; the print sheet's no-share fallback asks
+`signedDownloadUrl`; the SW never caches `/api/dl/`. Pinned by `download-link.test.ts`,
+`download-link-session.integration.test.ts`, e2e `m9zzzg-yuklab-olish` (5 red proofs). The server's
+`SESSION_SECRET` must be a real random value (CHANGELOG gives the check).
+
+**Round — yo'ldagi yuk (2026-10-27; DECISIONS #1483-#1490; migration 0137 `plan_road` — ledger must reach
+138; spec `docs/YOLDAGI-YUK.md`).** His «horgos planda yoldagi yuklarni ham qoshish degan check bolsin»,
+answers 1a 2a 3a 4a 5a. Designed, judged by four lenses BEFORE code (34 objections, 5 blockers — v2 absorbed
+them), built, reviewed as built. `plan_line_road` (part / owed / missed) + `plan_road_claims`, ONE writer
+`wms/planning/road.ts` (fenced by `road-wire.test.ts`). A pending plan reserves nothing on the road either;
+the approval owes what the shelf lacks, refuses an owed part the road cannot give, under `roadLock(W)` (the
+approval first, the landing hook last — #1484). The landing reserves owed cartons onto the truck in its own
+tx at every landing door (never `count_over`); a carton a truck already landed is never landed again by it
+(the stale-scan blocker, a general fix). The count door and the phone claim free cartons of an owed lot;
+`road_not_landed` names the inbound truck; the sync lands before it loads. «Yuklash tugadi»/cancel move owed
+into MISSED (never erased — the count door's number stays the shelf part); depart refuses `road_owed_open`;
+the presser, Telegram and the register's ⤵️ say what did not come; a claimed carton given back «tayyor»
+re-arms its arrival notice. The verdict is a claim (two presses = one truck). Readers: the editor's box
+(`roadOn`, `roadStock` merged into one `lots`, ✓ = shelf, 🚚 = road, resubmit reopens ticked), the plan view,
+the loading snapshot (`roadOwed`, `roadCodes`), board/batch card, the agent sheet's «В пути» block, the annul
+refusal. `RoadOn` is a branded REQUIRED argument minted only by the probe. 13 integration + 13 unit + 5 e2e,
+14 red proofs.
+
+**Latest migration: 0137** (`plan_road`, `when` …116; ledger must reach **138**). Before
+it: 0136 (`lead_client_many`, `when` …115). Before
 it: 0135 (`load_mode`, `when` …114). Before
 it: 0134 (`staff_group`, `when` …113). Before
 it: 0133 (`pickup_close`, `when` …112). Before
@@ -3133,7 +3166,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **137** since 0136 (136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **138** since 0137 (137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read
@@ -3151,7 +3184,7 @@ migration of its own, it rides with 0133) is checked by BOTH the count (134) and
 a migration did not land — read the `migrate` container's own output).
 **Then he CONFIRMED 136** («deploy qildim 136 chiqdi», 2026-10-27), so everything through
 the LTL/FTL round and «Yo'lda» in two columns (#1454) is LIVE; the uch-band round (0136)
-must read **137**.
+must read **137**, and the yo'ldagi-yuk round (0137) **138**.
 Never carry this number over from a previous session: read it
 (`ls src/modules/platform/db/migrations/*.sql | wc -l`) before writing the
 owner a step list, because the count is the only check that separates «the
