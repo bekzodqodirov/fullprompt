@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { clients, dealStages, deals, leadStages, leads, users } from '../../platform/db/schema';
 import { userPermissions } from '../../platform/rbac/authorize';
@@ -7,7 +7,6 @@ import { writeAudit } from '../../platform/audit/service';
 import { mayEditDealTerms } from '../deals/door';
 import { addActivity, createLead, defaultStageId, insertActivityTx, insertLeadTx } from '../crm/service';
 import {
-  aboutLeadIds,
   insertLeadAboutTx,
   leadAboutReady,
   lockLeadAboutTx,
@@ -632,22 +631,18 @@ async function moveToCalcStage(target: IntakeTarget, actorId: string): Promise<v
 
 /**
  * The lead this phone already has, so a prospect's second request joins the
- * card the first one made instead of minting a duplicate beside it. Matched
- * on the last nine digits, the same rule the client book uses — the number a
- * salesperson types is never formatted twice the same way.
+ * card the first one made instead of minting a duplicate beside it — asked of
+ * the advert landing's own rule (`inboundMatch`: last nine digits, an OPEN
+ * stage, touched within the join window, exactly one), plus «not yet won
+ * onto a code» (judge product-11 — it restated that rule and joined a LOST
+ * lead too). A lead about a colleague's client is never joined by phone.
  */
 export async function openLeadForPhone(
   phone: string,
 ): Promise<{ id: string; name: string; ownerId: string | null } | null> {
-  const digits = phone.replace(/\D/g, '').slice(-9);
-  if (digits.length < 7) return null;
-  const rows = await db
-    .select({ id: leads.id, name: leads.name, phone: leads.phone, clientId: leads.clientId, ownerId: leads.ownerId })
-    .from(leads)
-    .orderBy(desc(leads.createdAt))
-    .limit(500);
-  const hit = rows.find(
-    (r) => !r.clientId && (r.phone ?? '').replace(/\D/g, '').slice(-9) === digits,
-  );
-  return hit ? { id: hit.id, name: hit.name, ownerId: hit.ownerId } : null;
+  const { inboundMatch } = await import('../crm/inbound');
+  const hit = await inboundMatch(phone, { unboundOnly: true });
+  if (!hit) return null;
+  const [row] = await db.select({ name: leads.name }).from(leads).where(eq(leads.id, hit.id)).limit(1);
+  return row ? { id: hit.id, name: row.name, ownerId: hit.ownerId } : null;
 }

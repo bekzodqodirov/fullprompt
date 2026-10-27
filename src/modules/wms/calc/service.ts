@@ -381,6 +381,19 @@ export async function openCalcRequest(
   const dueAt = new Date(Date.now() + calcDueMinutes(items.length, hasMaterials) * 60_000);
 
   const requestId = await db.transaction(async (tx) => {
+    // A request lands on a lead only while it is OPEN, decided under the
+    // lead's row lock: a win takes the same row FOR UPDATE while it moves the
+    // lead's jobs onto their deals, so a job can no longer slip in between
+    // the move and the won stage and be stranded on a won lead whose seal
+    // would then write the lead (judge conc-8).
+    if (input.entityType === 'lead') {
+      const open = (await tx.execute(sql`
+        SELECT 1 AS ok FROM leads l JOIN lead_stages s ON s.id = l.stage_id
+         WHERE l.id = ${input.entityId}::uuid AND s.kind = 'open'
+           FOR SHARE OF l
+      `)) as unknown as { ok: number }[];
+      if (open.length === 0) throw new CalcError('lead_closed');
+    }
     const [row] = await tx
       .insert(calcRequests)
       .values({

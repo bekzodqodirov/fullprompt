@@ -1257,6 +1257,10 @@ export async function landCollectedIntake(
   requestId?: string | null;
   /** Why not, when it did not (audit A38) — the bot turns it into a sentence. */
   queueError?: string | null;
+  /** What the landing did — the ✅'s words (docs/UCH-BAND.md §7). */
+  outcome?: string;
+  /** On a lead about a colleague's client: whose client it is. */
+  about?: { clientCode: string; sellerName: string | null } | null;
 } | null> {
   const { activeIntake } = await import('./calc-intake');
   const state = activeIntake(chatId);

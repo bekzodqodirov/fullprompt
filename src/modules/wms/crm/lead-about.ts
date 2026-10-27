@@ -65,13 +65,6 @@ export async function aboutClientsOf(leadIds: readonly string[]): Promise<Map<st
   return out;
 }
 
-/** The leads that are ABOUT a client — the phone joiners must not take them for that person's own enquiry. */
-export async function aboutLeadIds(): Promise<Set<string>> {
-  if (!(await leadAboutReady())) return new Set();
-  const rows = (await db.execute(sql`SELECT lead_id::text AS id FROM lead_about_client`)) as unknown as { id: string }[];
-  return new Set(rows.map((row) => row.id));
-}
-
 /**
  * The sender's OPEN lead about this client, inside the landing's transaction
  * (a second request for the same client joins it rather than minting a
