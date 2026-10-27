@@ -2811,10 +2811,17 @@
         "codeFormat": "编号格式不正确",
         "stageGone": "阶段不存在——请刷新页面",
         "forbidden": "没有权限",
-        "failed": "保存失败"
+        "failed": "保存失败",
+        "leadAboutClient": "此线索属于同事的客户——只能赢单到该客户代码",
+        "serverBehind": "服务器仍在更新——请稍后再试",
+        "changed": "线索的计算刚刚发生变化——请关闭后重新打开此窗口"
       },
       "search": "查找客户：代码、姓名或电话",
-      "toDeal": "交易 →"
+      "toDeal": "交易 →",
+      "sellerOf": "销售：{name}",
+      "noSeller": "无销售",
+      "aboutColleague": "将为该客户新建一笔交易",
+      "otherDeals": "为线索的其他计算另外新建了 {count} 笔交易："
     },
     "errors": {
       "quote_sealed": "价格已封存，无法修改（请重新计算）"

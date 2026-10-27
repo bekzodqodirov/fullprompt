@@ -44,10 +44,10 @@ function calcTablesCarryingTheCard(): { constName: string; table: string }[] {
   return out;
 }
 
-/** The body of `rekeyLeadCalcRequests`, comments stripped (#725's lesson). */
+/** The body of `rekeyLeadCalcJobsTx`, comments stripped (#725's lesson). */
 function rekeyBody(): string {
-  const at = SERVICE.indexOf('export async function rekeyLeadCalcRequests');
-  expect(at, 'rekeyLeadCalcRequests must exist').toBeGreaterThan(-1);
+  const at = SERVICE.indexOf('export async function rekeyLeadCalcJobsTx');
+  expect(at, 'rekeyLeadCalcJobsTx must exist').toBeGreaterThan(-1);
   const next = SERVICE.indexOf('\nexport ', at + 10);
   const body = SERVICE.slice(at, next > 0 ? next : SERVICE.length);
   // A sentence in a comment must not satisfy a fence about code (#725).
@@ -62,7 +62,7 @@ describe('winning a lead moves every calc row that names the card', () => {
     expect(tables.map((t) => t.table).sort()).toEqual(['calc_offers', 'calc_requests']);
   });
 
-  it('rekeyLeadCalcRequests updates EVERY one of them', () => {
+  it('rekeyLeadCalcJobsTx updates EVERY one of them', () => {
     const body = rekeyBody();
     for (const { constName, table } of calcTablesCarryingTheCard()) {
       expect(body, `${table} is left on the dead lead`).toContain(`.update(${constName})`);

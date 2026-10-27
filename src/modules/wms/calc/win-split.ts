@@ -1,6 +1,8 @@
 import { sql } from 'drizzle-orm';
 import type { Db, Tx } from '../../platform/db/client';
 import { isAnswerSql } from './credit';
+import { dealTitleFor } from './deal-title';
+import { isCalcSection } from './labels';
 import { answerFloorStandsSql, currentVersionSql, notSupersededSql } from './version-set';
 import { offerStandsSql, releasedOfferWhere } from './workspace';
 
@@ -29,9 +31,16 @@ export interface LeadJob {
   section: string | null;
   createdAt: Date;
   open: boolean;
-  /** A completed USD answer above zero, and when. */
+  /** A completed USD answer above zero, and when — an answer that can be a floor. */
   answerAt: Date | null;
   answerStands: boolean;
+  /**
+   * What OUTRANKS an answer on the same card, in `answerFloorStandsSql`'s own
+   * terms: a USD answer of any amount, and the newest of ANY of this
+   * request's versions — the fragment asks «a newer answer» and «a later
+   * seal», not «a newer floor» or «the current version».
+   */
+  outranksAt: { answer: Date | null; seal: Date | null };
   /** The request's current version, standing or not. */
   seal: {
     at: Date;
@@ -53,6 +62,8 @@ type Row = {
   open: boolean;
   answer_at: string | null;
   answer_stands: boolean;
+  answer_usd_at: string | null;
+  last_seal_at: string | null;
   seal_at: string | null;
   seal_by: string | null;
   seal_stands: boolean | null;
@@ -79,6 +90,9 @@ export async function leadJobsFor(exec: Db | Tx, leadId: string): Promise<LeadJo
            CASE WHEN ${isAnswerSql('r')} AND r.answer_currency = 'USD' AND r.answer_amount > 0
                 THEN r.completed_at::text END AS answer_at,
            coalesce(${isAnswerSql('r')} AND ${answerFloorStandsSql()}, false) AS answer_stands,
+           CASE WHEN r.answer_amount IS NOT NULL AND r.answer_currency = 'USD'
+                THEN r.completed_at::text END AS answer_usd_at,
+           (SELECT max(lv.sealed_at)::text FROM calc_versions lv WHERE lv.request_id = r.id) AS last_seal_at,
            sv.sealed_at::text AS seal_at, sv.sealed_by::text AS seal_by, sv.stands AS seal_stands,
            sv.total_usd::text AS seal_total, sv.volume_m3::text AS seal_m3, sv.weight_kg::text AS seal_kg,
            ro.at::text AS offer_at, ro.offered_by::text AS offer_by, ro.stands AS offer_stands,
@@ -113,6 +127,10 @@ export async function leadJobsFor(exec: Db | Tx, leadId: string): Promise<LeadJo
     open: row.open === true,
     answerAt: row.answer_at ? new Date(row.answer_at) : null,
     answerStands: row.answer_stands === true,
+    outranksAt: {
+      answer: row.answer_usd_at ? new Date(row.answer_usd_at) : null,
+      seal: row.last_seal_at ? new Date(row.last_seal_at) : null,
+    },
     seal: row.seal_at
       ? {
           at: new Date(row.seal_at),
@@ -138,6 +156,8 @@ export function jobsDigest(jobs: readonly LeadJob[]): string {
       j.open,
       j.answerAt?.toISOString() ?? null,
       j.answerStands,
+      j.outranksAt.answer?.toISOString() ?? null,
+      j.outranksAt.seal?.toISOString() ?? null,
       j.seal ? [j.seal.at.toISOString(), j.seal.stands, j.seal.totalUsd] : null,
       j.offer ? [j.offer.at.toISOString(), j.offer.stands, j.offer.priceUsd] : null,
     ]),
@@ -167,8 +187,8 @@ export function groupBySale(jobs: readonly LeadJob[]): LeadJob[][] {
     if (jobs.some((j) => j.supersedes === answer.id)) continue;
     for (const later of jobs) {
       if (later.id === answer.id) continue;
-      const answeredLater = later.answerAt !== null && later.answerAt > answer.answerAt;
-      const sealedLater = later.seal !== null && later.seal.at > answer.answerAt;
+      const answeredLater = later.outranksAt.answer !== null && later.outranksAt.answer > answer.answerAt;
+      const sealedLater = later.outranksAt.seal !== null && later.outranksAt.seal > answer.answerAt;
       if (answeredLater || sealedLater) join(answer.id, later.id);
     }
   }
@@ -235,4 +255,15 @@ export function planWinSplit(
   const own = live.filter((sale) => sale !== mainSale);
   const main = sales.filter((sale) => !own.includes(sale)).flat();
   return { main, own };
+}
+
+/**
+ * A sale's own deal is named like a deal the bot opens for one request —
+ * section and goods, or the code and the day when no goods were typed — so
+ * the two or three deals one win opens read apart on every picker.
+ */
+export function saleTitle(sale: readonly LeadJob[], goods: ReadonlyMap<string, readonly string[]>, clientCode: string): string | null {
+  const root = [...sale].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || (a.id < b.id ? -1 : 1))[0];
+  if (!root || !isCalcSection(root.section)) return null;
+  return dealTitleFor(root.section, sale.flatMap((job) => goods.get(job.id) ?? []), { clientCode, at: root.createdAt });
 }

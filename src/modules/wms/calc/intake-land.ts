@@ -19,6 +19,7 @@ import { intakeNoteText, landingItems, type CalcFacts, type CalcSection } from '
 import { bookLawsFor } from './book-laws';
 import { recordAiPass } from './ai-cost';
 import { queueCalcPrefill } from './prefill-queue';
+import { dealTitleFor } from './deal-title';
 import { CalcError, calcOpenRefusal } from './service';
 
 /**
@@ -153,23 +154,6 @@ export async function calcCardFor(senderId: string, clientId: string): Promise<C
   const seller = await clientSellerFor(clientId);
   if (perms.has('crm.leads') && seller !== null && seller !== senderId) return { kind: 'about', sellerId: seller };
   return { kind: 'deal', ownerId: mayEditDealTerms(perms) ? senderId : seller };
-}
-
-/** A job's deal reads apart from its siblings on every picker: section and goods, never «Hisoblatish — rastamojka». */
-const SECTION_TITLE: Record<CalcSection, string> = {
-  yolkira: "Yo'lkira",
-  rastamojka: 'Rastamojka',
-  podklyuch: 'Podklyuch',
-};
-
-export function dealTitleFor(section: CalcSection, goodsNames: readonly string[]): string {
-  // A customs description is 300 characters with its own newlines: one line,
-  // cut, so the board and the receive picker keep a list a list.
-  const names = goodsNames.map((name) => name.replace(/\s+/g, ' ').trim()).filter(Boolean);
-  const head = SECTION_TITLE[section];
-  if (names.length === 0) return head;
-  const first = names[0]!.length > 60 ? `${names[0]!.slice(0, 59)}…` : names[0]!;
-  return `${head} — ${first}${names.length > 1 ? ` +${names.length - 1}` : ''}`;
 }
 
 /**
@@ -332,7 +316,7 @@ async function landCodedCard(input: {
     });
   }
 
-  const title = dealTitleFor(input.section, input.goodsNames);
+  const title = dealTitleFor(input.section, input.goodsNames, { clientCode: input.client.clientCode, at: new Date() });
   const [shell, ftlOn] = await Promise.all([shellCandidate(input.client.id, decision.ownerId), ftlReady()]);
   const { createDealInTx } = await import('../deals/service');
   return db.transaction(async (tx) => {

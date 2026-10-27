@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
-import { db } from '@/modules/platform/db/client';
+import { db, type Tx } from '@/modules/platform/db/client';
 import {
   calcGroups,
   calcOffers,
@@ -1005,44 +1005,81 @@ export async function releaseCalcForTask(taskId: string, actorId: string): Promi
 }
 
 /**
- * A won lead's open requests follow the cargo onto the new deal.
+ * A won lead's jobs follow their SALE onto its deal (his Q5 a, 2026-10-27 —
+ * «har so'rovga yangi bitim»; docs/UCH-BAND.md §7). `winLead` decides which
+ * request goes to which deal (`calc/win-split.ts`) and calls this inside the
+ * transaction that writes those deals, so the jobs and their deals commit as
+ * one fact.
  *
- * Without this the request stays keyed to the lead: the seller then saves the
- * deal's lines and `completeCalcForDeal` finds nothing, so that clock can
- * never stop. The same door `rekeyLeadCalls`/`rekeyLeadChats` already use.
+ * EVERY request moves, never only the open ones. It once filtered
+ * `openRequests` while a closed request was only history — but a SEALED
+ * request is closed and carries a PRICE, and `currentSealFor` finds a version
+ * by the card its request points at, so leaving sealed ones on the lead handed
+ * the new deal the number with none of the lock, at exactly the moment a quote
+ * becomes the invoice (#778). The won lead keeps its own copy as history; the
+ * deal is the live record, and it is the one that must stay locked.
+ *
+ * …and the OFFERS, which carry their own copy of the card. `recordOffer`
+ * denormalises entity_type/entity_id onto `calc_offers` so a card can read its
+ * own offers in one indexed query, and moving the request alone left
+ * `offersFor('deal', …)` EMPTY — what the seller promised the customer
+ * vanished from the only card that still exists (#789, measured, not argued).
+ * An offer moves with the job it is ANCHORED to — the request itself (a
+ * Готово answer) or one of its versions (a seal) — because with several deals
+ * there is no longer one place «every offer of the lead» could go.
+ */
+export async function rekeyLeadCalcJobsTx(
+  tx: Tx,
+  leadId: string,
+  routes: readonly { dealId: string; requestIds: readonly string[] }[],
+): Promise<number> {
+  let moved = 0;
+  for (const { dealId, requestIds } of routes) {
+    if (requestIds.length === 0) continue;
+    const ids = sql.join(
+      requestIds.map((rid) => sql`${rid}::uuid`),
+      sql`, `,
+    );
+    const rows = await tx
+      .update(calcRequests)
+      .set({ entityType: 'deal', entityId: dealId, updatedAt: new Date() })
+      .where(
+        and(
+          eq(calcRequests.entityType, 'lead'),
+          eq(calcRequests.entityId, leadId),
+          inArray(calcRequests.id, [...requestIds]),
+        ),
+      )
+      .returning({ id: calcRequests.id });
+    moved += rows.length;
+    await tx
+      .update(calcOffers)
+      .set({ entityType: 'deal', entityId: dealId })
+      .where(
+        and(
+          eq(calcOffers.entityType, 'lead'),
+          eq(calcOffers.entityId, leadId),
+          sql`(${calcOffers.requestId} IN (${ids})
+               OR ${calcOffers.versionId} IN (SELECT v.id FROM calc_versions v WHERE v.request_id IN (${ids})))`,
+        ),
+      );
+  }
+  return moved;
+}
+
+/**
+ * Every job of a lead onto ONE deal, in a transaction of its own — the
+ * shorthand a test uses to put a lead's calculations on a deal. Production
+ * never calls it: a won lead splits its jobs by sale (`winLead`).
  */
 export async function rekeyLeadCalcRequests(leadId: string, dealId: string): Promise<number> {
-  const rows = await db
-    .update(calcRequests)
-    .set({ entityType: 'deal', entityId: dealId, updatedAt: new Date() })
-    // EVERY request, not just the open ones.
-    //
-    // It filtered `openRequests` while a closed request was only history. A
-    // SEALED request is closed and carries a PRICE, and `currentSealFor` finds
-    // a version by the card its request points at — so leaving sealed ones on
-    // the lead handed the new deal the number with none of the lock, and the
-    // quote became freely editable at exactly the moment it becomes the
-    // invoice. The won lead keeps its own copy as history; the deal is the
-    // live record, and it is the one that must stay locked.
-    .where(and(eq(calcRequests.entityType, 'lead'), eq(calcRequests.entityId, leadId)))
-    .returning({ id: calcRequests.id });
-
-  // …and the OFFERS, which carry their own copy of the card.
-  //
-  // `recordOffer` denormalises entity_type/entity_id onto `calc_offers` so a
-  // card can read its own offers in one indexed query, and this function moved
-  // the request alone — so `offersFor('deal', …)` came back empty and what the
-  // seller actually promised the customer vanished from the only card that
-  // still exists. MEASURED, not argued. It is the same defect the paragraph
-  // above describes, one table over, which is the whole reason it was easy to
-  // miss: fixing the rule in one place is not fixing it in every place the
-  // rule was restated.
-  await db
-    .update(calcOffers)
-    .set({ entityType: 'deal', entityId: dealId })
-    .where(and(eq(calcOffers.entityType, 'lead'), eq(calcOffers.entityId, leadId)));
-
-  return rows.length;
+  return db.transaction(async (tx) => {
+    const rows = await tx
+      .select({ id: calcRequests.id })
+      .from(calcRequests)
+      .where(and(eq(calcRequests.entityType, 'lead'), eq(calcRequests.entityId, leadId)));
+    return rekeyLeadCalcJobsTx(tx, leadId, [{ dealId, requestIds: rows.map((row) => row.id) }]);
+  });
 }
 
 /**

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -8,6 +8,7 @@ import { Overlay } from './ui/overlay';
 import {
   resolveClientCodeAction,
   winLeadAction,
+  winPrefillAction,
   type WinLeadState,
 } from '@/app/(protected)/crm/actions';
 
@@ -27,6 +28,13 @@ import {
  * On success the dialog becomes the item-1 banner: the code big and
  * copyable, the deal's number beside it. Kept MOUNTED and toggled — the
  * LostReasonDialog's Overlay close-on-mount trap (round 98).
+ *
+ * Each OPENING carries a token (judge conc-6): the deals `winLead` opens are
+ * named from it, so a double press or a retry after a blink lands on the
+ * deals the first press wrote, while a re-win on a later opening is a new
+ * job. A lead ABOUT a colleague's client (0136) opens on that client — it is
+ * the only code such a lead may be won onto — and every echo names the
+ * client's seller, because an attach onto a colleague's customer has no undo.
  */
 export interface WonDialogLead {
   id: string;
@@ -68,7 +76,18 @@ export function WonDialog({
   // request may write (the ⌘K palette's guard, round 58).
   const searchSeq = useRef(0);
   const router = useRouter();
-  const [checked, setChecked] = useState<{ code: string; name: string } | null>(null);
+  const [checked, setChecked] = useState<{ code: string; name: string; seller: string | null } | null>(null);
+  const [about, setAbout] = useState<{ clientCode: string; clientName: string; sellerName: string | null } | null>(
+    null,
+  );
+  const [token, setToken] = useState('');
+  // A new token per OPENING, not per lead: closing and reopening the dialog
+  // on a revived lead is a second job and must not converge on the first.
+  const [openSeen, setOpenSeen] = useState(false);
+  if (open !== openSeen) {
+    setOpenSeen(open);
+    if (open) setToken(newToken());
+  }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState<NonNullable<WinLeadState['result']> | null>(null);
@@ -83,9 +102,33 @@ export function WonDialog({
     setCode('');
     setAttachCode('');
     setChecked(null);
+    setAbout(null);
     setError('');
     setResult(null);
   }
+
+  // The colleague's-client question is asked once per opening, before the
+  // person types: such a lead has one possible client and the dialog says so.
+  const leadId = lead?.id ?? null;
+  const needsClient = !!lead && !lead.clientCode;
+  useEffect(() => {
+    if (!open || !leadId || !needsClient) return;
+    let live = true;
+    winPrefillAction(leadId)
+      .then((res) => {
+        if (!live || !res.about) return;
+        setAbout(res.about);
+        setMode('attach');
+        setAttachCode(res.about.clientCode);
+        setChecked({ code: res.about.clientCode, name: res.about.clientName, seller: res.about.sellerName });
+      })
+      .catch(() => {
+        /* no prefill is the dialog as it always was; the service still refuses a wrong code */
+      });
+    return () => {
+      live = false;
+    };
+  }, [open, leadId, needsClient]);
 
   // A literal map, the useMoveErrors rule: the i18n tripwire cannot see a key
   // built at runtime.
@@ -93,6 +136,9 @@ export function WonDialog({
     client_not_found: t('won.errors.clientNotFound'),
     client_inactive: t('won.errors.clientInactive'),
     client_has_lead: t('won.errors.clientHasLead'),
+    lead_about_client: t('won.errors.leadAboutClient'),
+    server_behind: t('won.errors.serverBehind'),
+    changed: t('won.errors.changed'),
     code_exists: t('won.errors.codeExists'),
     code_format: t('won.errors.codeFormat'),
     stage_not_found: t('won.errors.stageGone'),
@@ -137,11 +183,10 @@ export function WonDialog({
     }
     if (!res.ok) {
       setChecked(null);
-      const word = errors[res.error ?? 'failed'] ?? res.error ?? '';
-      setError(res.leadName ? `${word} (${res.leadName})` : word);
+      setError(errors[res.error ?? 'failed'] ?? res.error ?? '');
       return;
     }
-    setChecked({ code: res.clientCode!, name: res.name! });
+    setChecked({ code: res.clientCode!, name: res.name!, seller: res.sellerName ?? null });
   }
 
   async function confirm() {
@@ -152,6 +197,7 @@ export function WonDialog({
     try {
       res = await winLeadAction(lead.id, {
         stageId: lead.stageId,
+        token,
         ...(lead.clientCode
           ? {}
           : mode === 'attach'
@@ -210,6 +256,21 @@ export function WonDialog({
               {t('won.deal')}: {result.dealCode}
             </p>
           </div>
+          {/* The lead's other calculations each opened a deal of their own
+              (his Q5 a): named here, so nobody hunts for them on the board. */}
+          {result.otherDeals.length > 0 && (
+            <p className="text-sm" data-testid="won-other-deals">
+              {t('won.otherDeals', { count: result.otherDeals.length })}{' '}
+              {result.otherDeals.map((deal, i) => (
+                <span key={deal.id}>
+                  {i > 0 ? ', ' : ''}
+                  <Link href={`/bitimlar/${deal.id}`} className="font-mono font-semibold underline">
+                    {deal.code}
+                  </Link>
+                </span>
+              ))}
+            </p>
+          )}
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -270,6 +331,17 @@ export function WonDialog({
               <span className="font-mono font-bold">{lead.clientCode}</span>
               <br />
               <span className="text-ink-500">{t('won.confirmExisting')}</span>
+            </p>
+          ) : about ? (
+            // A lead about a colleague's client has exactly one client: it is
+            // won onto it, and the sentence names whose client that is.
+            <p className="rounded-xl bg-surface-sunken p-3 text-sm" data-testid="won-about">
+              <span className="font-mono font-bold">{about.clientCode}</span> — {about.clientName}
+              <br />
+              <span className="text-ink-500">
+                {about.sellerName ? t('won.sellerOf', { name: about.sellerName }) : t('won.noSeller')} ·{' '}
+                {t('won.aboutColleague')}
+              </span>
             </p>
           ) : (
             <>
@@ -353,9 +425,8 @@ export function WonDialog({
                             onClick={() => {
                               // The tap is the ECHO round 107 demanded before an
                               // attach with no undo: the code goes through the SAME
-                              // check the typed code does, so a code that already
-                              // carries a lead is refused here, by name, and not at
-                              // the press (#882); «Confirm» wakes up only on the echo.
+                              // check the typed code does, which names the client's
+                              // seller; «Confirm» wakes up only on the echo.
                               setAttachCode(hit.clientCode);
                               setHits([]);
                               void checkCode(hit.clientCode);
@@ -378,6 +449,10 @@ export function WonDialog({
                   {checked && (
                     <p className="rounded-xl bg-good/10 p-2 text-sm" data-testid="won-checked">
                       <span className="font-mono font-bold">{checked.code}</span> — {checked.name}
+                      <br />
+                      <span className="text-xs text-ink-500" data-testid="won-checked-seller">
+                        {checked.seller ? t('won.sellerOf', { name: checked.seller }) : t('won.noSeller')}
+                      </span>
                     </p>
                   )}
                 </div>
@@ -411,4 +486,13 @@ export function WonDialog({
       )}
     </Overlay>
   );
+}
+
+/** One per opening; empty where the browser has no `randomUUID` (the server then draws its own). */
+function newToken(): string {
+  try {
+    return typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : '';
+  } catch {
+    return '';
+  }
 }

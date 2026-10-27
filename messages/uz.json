@@ -2811,10 +2811,17 @@
         "codeFormat": "Kod formati noto'g'ri",
         "stageGone": "Bosqich topilmadi — sahifani yangilang",
         "forbidden": "Huquq yo'q",
-        "failed": "Saqlab bo'lmadi"
+        "failed": "Saqlab bo'lmadi",
+        "leadAboutClient": "Bu lid hamkasbingiz mijozi haqida — faqat o‘sha mijoz kodiga yutiladi",
+        "serverBehind": "Server hali to‘liq yangilanmagan — bir ozdan keyin qayta urinib ko‘ring",
+        "changed": "Shu payt lidning hisob-kitoblari o‘zgardi — oynani yopib qayta oching"
       },
       "search": "Mijozni topish: kod, ism yoki telefon",
-      "toDeal": "Bitim →"
+      "toDeal": "Bitim →",
+      "sellerOf": "Sotuvchisi: {name}",
+      "noSeller": "Sotuvchisi yo‘q",
+      "aboutColleague": "shu mijozga yangi bitim ochiladi",
+      "otherDeals": "Lidning boshqa hisob-kitoblari uchun yana {count} ta bitim ochildi:"
     },
     "errors": {
       "quote_sealed": "Narx muhrlangan — o‘zgartirib bo‘lmaydi (qayta hisoblang)"

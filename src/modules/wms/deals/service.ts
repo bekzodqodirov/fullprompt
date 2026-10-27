@@ -213,6 +213,12 @@ export async function createDealInTx(
     atBottom?: boolean;
     carryFtlFromLead?: string;
     quoteStamp?: { at: Date; by: string | null };
+    /**
+     * The row's id when the caller derives it — the win's split names its
+     * deals from the dialog's token (uuidv5), so a double press or a retry
+     * converges on the deals the first attempt wrote (judge conc-6).
+     */
+    id?: string;
   },
 ): Promise<string> {
   const markFtl = input.load?.mode === 'ftl';
@@ -225,6 +231,7 @@ export async function createDealInTx(
   const [row] = await tx
     .insert(deals)
     .values({
+      ...(pre.id ? { id: pre.id } : {}),
       code,
       clientId: input.clientId,
       stageId,

@@ -1,6 +1,8 @@
 import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import { leadWonUsdSql } from './won-money';
 import { ledgerAlias, signedUsdSql } from '../finance/ledger-sql';
+import { randomUUID } from 'node:crypto';
+import { v5 as uuidv5 } from 'uuid';
 import { z } from 'zod';
 import { db, type Db, type Tx } from '../../platform/db/client';
 import {
@@ -14,6 +16,7 @@ import {
   users,
 } from '../../platform/db/schema';
 import { diffFields, writeAudit, type AuditContext } from '../../platform/audit/service';
+import { isUuidShaped } from '../../platform/audit/fields';
 import { emitEvent } from '../../platform/events/service';
 import { createClient } from '../../platform/clients/service';
 import { likeNeedle, parseQuery } from '../search/query';
@@ -25,6 +28,7 @@ import { isServerBehind } from '../../platform/db/errors';
 import { ftlReady, leadIsFtl, notifyFtlMarked, setLeadFtlTx } from '../ftl/service';
 import { leadDealMoveRefusal, type FtlDoor } from '../ftl/door';
 import type { LoadMode } from '../ftl/sql';
+import { aboutClientsOf } from './lead-about';
 
 /**
  * The funnel's own board-order table (0075).
@@ -840,12 +844,36 @@ export async function moveLead(
   if (law.lostReason !== null && !reasonAllowed(law.lostReason, await activeLostReasonLabels()))
     throw new CrmError('lost_reason_not_listed');
 
-  const boardOrder = await orderForMove(db, LEAD_BOARD, stageId, id, place);
-  await db
+  if (await writeLeadStageTx(db, lead, stage, law.lostReason, ctx, place)) {
+    await announceLeadStage(lead, stageId, ctx);
+  }
+}
+
+/**
+ * The stage write itself — the column, its board order, the close clock, the
+ * follow-up — and its audit row, on whichever handle the caller holds:
+ * `moveLead` on the pool, the win's split inside the transaction that writes
+ * its deals (docs/UCH-BAND.md §7: the won stage is written INSIDE, so a
+ * calculation cannot land on the lead between the split and the move). It
+ * never announces — the stage event is the caller's, after the commit.
+ * Answers whether it was a real move.
+ */
+async function writeLeadStageTx(
+  exec: Db | Tx,
+  lead: { id: string; stageId: string; nextActionAt: string | null },
+  stage: Pick<typeof leadStages.$inferSelect, 'id' | 'kind'>,
+  lostReason: string | null,
+  ctx: AuditContext,
+  place?: { beforeId: string | null },
+): Promise<boolean> {
+  const id = lead.id;
+  const stageId = stage.id;
+  const boardOrder = await orderForMove(exec, LEAD_BOARD, stageId, id, place);
+  await exec
     .update(leads)
     .set({
       stageId,
-      lostReason: law.lostReason,
+      lostReason,
       boardOrder,
       // Only a real move decides anything: a drag inside the won column is a
       // re-order, not a second win, and must not move the month it counts in.
@@ -875,16 +903,15 @@ export async function moveLead(
   // sidebar being collapsed, not the stage changing — and auditing it would
   // write a row whose before equals its after, which the history renders as a
   // change with no lines in it (#502).
-  if (stageId !== lead.stageId) {
-    await writeAudit(db, ctx, {
-      entityType: 'lead',
-      entityId: id,
-      action: 'update',
-      before: { stageId: lead.stageId },
-      after: { stageId, lostReason: law.lostReason },
-    });
-    await announceLeadStage(lead, stageId, ctx);
-  }
+  if (stageId === lead.stageId) return false;
+  await writeAudit(exec, ctx, {
+    entityType: 'lead',
+    entityId: id,
+    action: 'update',
+    before: { stageId: lead.stageId },
+    after: { stageId, lostReason },
+  });
+  return true;
 }
 
 /**
@@ -894,16 +921,33 @@ export async function moveLead(
  * the ⋯ sheet, the card's stage fold and the card's convert panel — because
  * `moveLead` refuses a won stage that did not come through here.
  *
- * The order of the writes is the recovery story, not tidiness: the client is
- * settled and written onto the lead FIRST, so a failure after that point
- * (a deleted stage, a network blink) leaves a lead whose retry lands in the
- * «already has a client» path and mints nothing twice. Deliberately NOT one
- * transaction — `createClient` and `createDeal` each open their own, and a
- * wrapper holding a connection across them is #714's freeze.
+ * The client is settled and written onto the lead FIRST, on its own, so a
+ * failure after that point leaves a lead whose retry lands in the «already
+ * has a client» path and mints nothing twice (`createClient` opens its own
+ * transaction; a wrapper holding a connection across it is #714's freeze).
+ *
+ * Then ONE transaction writes every deal the win opens (his Q5 a,
+ * 2026-10-27, «har so'rovga yangi bitim»; docs/UCH-BAND.md §7): the lead's
+ * calculations are grouped by SALE (`calc/win-split.ts`), the sale that wrote
+ * the lead's own number opens the MAIN deal with that number, every other
+ * sale still open or standing opens a deal of its own, priced by its own
+ * writer, and dead history goes with the main deal. Each job and each offer
+ * moves with its sale, and the won stage is written in the same commit — the
+ * requests and the lead are locked first and re-read, and a plan made on
+ * facts that moved meanwhile is refused `changed` rather than half-applied.
+ *
+ * The deals' ids derive from the dialog's TOKEN (uuidv5), so a double press
+ * or a retry converges on the deals the first attempt wrote (judge conc-6).
  *
  * A lead that already carries a client (born from the Telegram tray, or won
  * once and revived) skips the mint and STILL opens a deal: a re-won enquiry
  * is a new job, and pressing the dialog's confirm is what says so.
+ *
+ * Attaching to a code that already carries another lead is allowed since
+ * 0136 (his 2026-10-27 «crmdan bitimga yutildi deb otkazganda bitim bor deb
+ * qaytaryabti»): a repeat customer's new enquiry is won onto the code it
+ * belongs to, and that is a new deal on it. A lead ABOUT a colleague's client
+ * (`lead_about_client`) may only be won onto THAT client (judge money-8).
  */
 export interface WinLeadResult {
   clientId: string;
@@ -912,6 +956,13 @@ export interface WinLeadResult {
   dealCode: string;
   /** True when a brand-new client card was created (the banner leads with the code). */
   minted: boolean;
+  /** The deals the lead's OTHER sales opened, beside the main one. */
+  otherDeals: { id: string; code: string }[];
+}
+
+/** The win's deals, named by its token: the main deal, and one per other sale (by its oldest request). */
+function winDealId(token: string, leadId: string, sale: string): string {
+  return uuidv5(`win:${leadId}:${sale}`, token);
 }
 
 export async function winLead(
@@ -925,6 +976,8 @@ export async function winLead(
     clientCode?: string;
     name?: string;
     salesManagerId?: string;
+    /** One per opening of the dialog; absent = no convergence across presses. */
+    token?: string;
   },
   ctx: AuditContext,
 ): Promise<WinLeadResult> {
@@ -938,9 +991,17 @@ export async function winLead(
     : stages.find((stage) => stage.kind === 'won');
   if (!won) throw new CrmError('stage_not_found');
 
+  const token = input.token && isUuidShaped(input.token) ? input.token : randomUUID();
+  const mainDealId = winDealId(token, id, 'main');
+  // A press that already landed (a double tap, a retry after a blink): the
+  // main deal exists, so the win happened — answer it, write nothing.
+  const landed = await db.query.deals.findFirst({ where: eq(deals.id, mainDealId) });
+  if (landed) return wonAlready(landed);
+
   let clientId = lead.clientId;
   let clientCode: string;
   let minted = false;
+  const about = lead.clientId ? undefined : (await aboutClientsOf([id])).get(id);
   if (clientId) {
     const existing = await db.query.clients.findFirst({ where: eq(clients.id, clientId) });
     if (!existing) throw new CrmError('client_not_found');
@@ -955,22 +1016,14 @@ export async function winLead(
     });
     if (!existing) throw new CrmError('client_not_found');
     if (!existing.active) throw new CrmError('client_inactive');
-    // One lead per client is the schema's law (0021 `leads_client_unique`):
-    // a lead is the client's pre-history and a code can have only one. A
-    // repeat customer's new job is a DEAL on the code (round 111's «Bitim
-    // ochish»), or a fresh code — one person holding several is this
-    // company's ordinary practice (#407). Refused HERE with a word, because
-    // the UPDATE below would refuse it with a 23505 that no screen can read
-    // (found by the round-112 screenshot: the dialog froze with a greyed
-    // button and no sentence).
-    const taken = await db.query.leads.findFirst({
-      where: and(eq(leads.clientId, existing.id), ne(leads.id, id)),
-      columns: { id: true },
-    });
-    if (taken) throw new CrmError('client_has_lead');
+    if (about && about.clientId !== existing.id) throw new CrmError('lead_about_client');
     clientId = existing.id;
     clientCode = existing.clientCode;
   } else {
+    // A lead about a colleague's client is that client's job: a fresh code
+    // for it would be a second customer card for one person, owned by the
+    // wrong seller (judge money-8).
+    if (about) throw new CrmError('lead_about_client');
     const client = await createClient(
       {
         clientCode: input.clientCode?.trim() ?? '',
@@ -991,7 +1044,7 @@ export async function winLead(
   }
 
   if (!lead.clientId) {
-    // The client lands on the lead BEFORE the deal and the move, so a failure
+    // The client lands on the lead BEFORE the deals and the move, so a failure
     // in either leaves a retry that finds the client and mints nothing twice.
     try {
       await db
@@ -999,11 +1052,10 @@ export async function winLead(
         .set({ clientId, updatedAt: new Date() })
         .where(eq(leads.id, id));
     } catch (err) {
-      // Two sellers winning two leads onto one code in the same second: the
-      // check above cannot see the other transaction, the index can.
-      if (typeof err === 'object' && err !== null && 'code' in err && err.code === '23505') {
-        throw new CrmError('client_has_lead');
-      }
+      // 0136 dropped `leads_client_unique`, so after it nothing here is
+      // unique. A 23505 is the one-migration-behind morning — the new code
+      // against the old index — and says so in words (judge deploy-1).
+      if (isUniqueViolation(err)) throw new CrmError('server_behind');
       throw err;
     }
     await writeAudit(db, ctx, {
@@ -1023,44 +1075,176 @@ export async function winLead(
     await rekeyLeadChats(id, clientId);
   }
 
-  // ALWAYS a deal — that is the owner's sentence, and the lead's quote is the
-  // price it opens with. Per-column null mapping, because numeric comes back
-  // a string and `Number(null)` is 0: a lead with NO price must not become a
-  // deal «quoted $0 by <actor> today» (quotedAt/quotedBy stamp on priced).
-  const { createDeal } = await import('../deals/service');
-  const dealId = await createDeal(
-    {
-      clientId,
-      ownerId: lead.ownerId ?? undefined,
-      quotedAmount: lead.quotedAmount === null ? null : Number(lead.quotedAmount),
-      quotedCurrency: lead.quotedAmount === null ? null : (lead.quotedCurrency ?? 'USD'),
-      quotedVolumeM3: lead.quotedVolumeM3 === null ? null : Number(lead.quotedVolumeM3),
-      quotedWeightKg: lead.quotedWeightKg === null ? null : Number(lead.quotedWeightKg),
-    },
-    ctx,
-    // The lead's FTL travels with its quote (his 1a), marker and all — the
-    // lead's door was asked when it was set, so the presser of «Yutildi» is
-    // not asked again AFTER the client has already been written (#882).
-    { carryFtlFromLead: id },
-  );
-  const deal = await db.query.deals.findFirst({ where: eq(deals.id, dealId) });
+  // Everything pooled BEFORE the transaction (#714): the client's seller for
+  // the owner, the FTL probe, the lead's jobs and the plan made from them, and
+  // the goods that name a sale's own deal.
+  const [{ createDealInTx }, { rekeyLeadCalcJobsTx }, split] = await Promise.all([
+    import('../deals/service'),
+    import('../calc/service'),
+    import('../calc/win-split'),
+  ]);
+  const client = await db.query.clients.findFirst({ where: eq(clients.id, clientId) });
+  if (!client) throw new CrmError('client_not_found');
+  // `createDeal`'s own chain, resolved once for every deal of the win.
+  const ownerId = lead.ownerId ?? ctx.actorId ?? client.salesManagerId ?? null;
+  const [jobs, writer, ftlOn] = await Promise.all([
+    split.leadJobsFor(db, id),
+    quoteWriterFor('lead', id),
+    ftlReady(),
+  ]);
+  const plan = split.planWinSplit(jobs, writerWroteCard(writer, lead.quotedAmount) ? writer.requestId : null);
+  const digest = split.jobsDigest(jobs);
+  const goods = await saleGoods(plan.own.flat().map((job) => job.id));
+  const others = plan.own.map((sale) => ({
+    // Named by the sale's smallest request id: the same sale on a retry.
+    id: winDealId(token, id, `sale:${sale.map((job) => job.id).sort()[0]}`),
+    requestIds: sale.map((job) => job.id),
+    quote: split.saleQuote(sale),
+    title: split.saleTitle(sale, goods, client.clientCode),
+  }));
 
-  // An open calculation follows the cargo onto the deal — the same door the
-  // calls and the chat already use. Without it the request stays keyed to the
-  // lead, the seller saves the DEAL's lines, and `completeCalcForDeal` finds
-  // nothing: that clock could then never stop.
-  try {
-    const { rekeyLeadCalcRequests } = await import('../calc/service');
-    await rekeyLeadCalcRequests(id, dealId);
-  } catch (err) {
-    logger.error({ err, leadId: id, dealId }, '[calc] rekey on win failed');
+  const outcome = await db.transaction(async (tx) => {
+    // Requests first, in id order, then the lead: a calculation landing on
+    // this lead takes the lead FOR SHARE (`openCalcRequest`), so once the lead
+    // is ours no job can join it until the split commits (judge conc-8).
+    await tx.execute(sql`
+      SELECT id FROM calc_requests
+       WHERE entity_type = 'lead' AND entity_id = ${id}::uuid
+       ORDER BY id FOR UPDATE`);
+    const lockedRows = (await tx.execute(sql`
+      SELECT stage_id::text AS stage_id, quoted_amount::text AS quoted_amount,
+             next_action_at::text AS next_action_at
+        FROM leads WHERE id = ${id}::uuid FOR UPDATE`)) as unknown as {
+      stage_id: string;
+      quoted_amount: string | null;
+      next_action_at: string | null;
+    }[];
+    const locked = lockedRows[0];
+    if (!locked) throw new CrmError('not_found');
+    // Two presses that both passed the check above: the second waited on the
+    // lock and finds the first one's deal.
+    const already = (await tx.execute(sql`SELECT 1 FROM deals WHERE id = ${mainDealId}::uuid`)) as unknown as unknown[];
+    if ([...already].length > 0) return 'already' as const;
+    // The plan was made on the pool; it stands only if the facts did.
+    const again = await split.leadJobsFor(tx, id);
+    if (split.jobsDigest(again) !== digest || !sameMoneyOrBothNull(locked.quoted_amount, lead.quotedAmount)) {
+      throw new CrmError('changed');
+    }
+
+    // ALWAYS a deal — that is the owner's sentence, and the lead's quote is
+    // the price the main deal opens with. Per-column null mapping, because
+    // numeric comes back a string and `Number(null)` is 0: a lead with NO
+    // price must not become a deal «quoted $0 by <actor> today».
+    await createDealInTx(
+      tx,
+      {
+        clientId: clientId!,
+        quotedAmount: lead.quotedAmount === null ? null : Number(lead.quotedAmount),
+        quotedCurrency: lead.quotedAmount === null ? null : (lead.quotedCurrency ?? 'USD'),
+        quotedVolumeM3: lead.quotedVolumeM3 === null ? null : Number(lead.quotedVolumeM3),
+        quotedWeightKg: lead.quotedWeightKg === null ? null : Number(lead.quotedWeightKg),
+      },
+      ctx,
+      // The lead's FTL travels with its quote (his 1a), marker and all — the
+      // lead's door was asked when it was set, so the presser of «Yutildi» is
+      // not asked again AFTER the client has already been written (#882).
+      { id: mainDealId, clientCode: client.clientCode, ownerId, ftlOn, carryFtlFromLead: id },
+    );
+    for (const other of others) {
+      // Priced by the sale's own writer, stamped with who gave that price and
+      // when — never the presser of «Yutildi» today (judge money-4).
+      await createDealInTx(
+        tx,
+        {
+          clientId: clientId!,
+          title: other.title ?? undefined,
+          quotedAmount: other.quote?.amount ?? null,
+          quotedCurrency: other.quote ? 'USD' : null,
+          quotedVolumeM3: other.quote?.volumeM3 ?? null,
+          quotedWeightKg: other.quote?.weightKg ?? null,
+        },
+        ctx,
+        {
+          id: other.id,
+          clientCode: client.clientCode,
+          ownerId,
+          ftlOn,
+          carryFtlFromLead: id,
+          quoteStamp: other.quote ? { at: other.quote.at, by: other.quote.by } : undefined,
+        },
+      );
+    }
+    await rekeyLeadCalcJobsTx(tx, id, [
+      { dealId: mainDealId, requestIds: plan.main.map((job) => job.id) },
+      ...others.map((other) => ({ dealId: other.id, requestIds: other.requestIds })),
+    ]);
+    const moved = await writeLeadStageTx(
+      tx,
+      {
+        id,
+        stageId: locked.stage_id,
+        nextActionAt: locked.next_action_at,
+      },
+      won,
+      null,
+      ctx,
+    );
+    return moved ? ('moved' as const) : ('stayed' as const);
+  });
+
+  if (outcome === 'already') {
+    const deal = await db.query.deals.findFirst({ where: eq(deals.id, mainDealId) });
+    if (!deal) throw new CrmError('failed');
+    return wonAlready(deal);
   }
+  if (outcome === 'moved') await announceLeadStage(lead, won.id, ctx);
 
-  if (lead.stageId !== won.id) {
-    await moveLead(id, won.id, '', ctx, undefined, { viaConvert: true });
-  }
+  const codes = await db
+    .select({ id: deals.id, code: deals.code })
+    .from(deals)
+    .where(inArray(deals.id, [mainDealId, ...others.map((other) => other.id)]));
+  const codeOf = new Map(codes.map((row) => [row.id, row.code]));
+  return {
+    clientId: clientId!,
+    clientCode: client.clientCode,
+    dealId: mainDealId,
+    dealCode: codeOf.get(mainDealId) ?? '',
+    minted,
+    otherDeals: others.map((other) => ({ id: other.id, code: codeOf.get(other.id) ?? '' })),
+  };
+}
 
-  return { clientId, clientCode, dealId, dealCode: deal?.code ?? '', minted };
+/** A win that already landed, answered from its main deal. */
+async function wonAlready(deal: { id: string; code: string; clientId: string }): Promise<WinLeadResult> {
+  const client = await db.query.clients.findFirst({ where: eq(clients.id, deal.clientId) });
+  return {
+    clientId: deal.clientId,
+    clientCode: client?.clientCode ?? '',
+    dealId: deal.id,
+    dealCode: deal.code,
+    minted: false,
+    otherDeals: [],
+  };
+}
+
+/** Each request's goods names, in their order — what names a sale's own deal. */
+async function saleGoods(requestIds: readonly string[]): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>();
+  if (requestIds.length === 0) return out;
+  const rows = (await db.execute(sql`
+    SELECT request_id::text AS request_id, name FROM calc_request_items
+     WHERE request_id IN (${sql.join(
+       requestIds.map((rid) => sql`${rid}::uuid`),
+       sql`, `,
+     )})
+     ORDER BY request_id, seq`)) as unknown as { request_id: string; name: string }[];
+  for (const row of rows) out.set(row.request_id, [...(out.get(row.request_id) ?? []), row.name]);
+  return out;
+}
+
+function sameMoneyOrBothNull(a: string | null, b: string | null): boolean {
+  if (a === null || b === null) return a === b;
+  return sameMoney(Number(a), b);
 }
 
 /**
