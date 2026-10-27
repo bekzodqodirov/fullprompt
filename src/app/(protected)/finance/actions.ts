@@ -50,6 +50,11 @@ export async function addTransactionAction(
     // so a paid-off deferral went on excusing unrelated debt at the handover
     // gate, exactly what #251 was written to stop.
     dealId: formData.get('dealId') || undefined,
+    // The question a truck-price form was drawn with (Q8 «c») — never '' for
+    // cargo aboard (a deal-less client's is '|none'), so `|| undefined` loses
+    // nothing; without this line the door would never hear that the page went
+    // stale, and every service test would still pass (#531).
+    dealsSeen: formData.get('dealsSeen') || undefined,
     accountId: formData.get('accountId') || undefined,
     note: String(formData.get('note') ?? ''),
   });

@@ -24,6 +24,7 @@ import { rateFor } from '../costing/service';
 import { batchRoute } from '../batches/internal';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { cargoAboard } from '../batches/lots';
+import { truckDealDecision, type TruckDealChoice } from './truck-deal';
 import { tripCoverageOn } from './unpriced';
 import { deferredTotal } from '../debt/rules';
 
@@ -145,8 +146,19 @@ export const transactionSchema = z
     method: z.enum(['cash', 'card', 'transfer']).optional(),
     txDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     batchId: z.string().uuid().optional(),
-    /** The job this charge is for, when it was raised from a deal card. */
-    dealId: z.string().uuid().optional().or(z.literal('')),
+    /**
+     * The job this money is for. On a truck price it is the person's answer
+     * to «qaysi bitimga» (his Q8 «c»), checked against the cargo aboard —
+     * 'none' is that answer's «bitimsiz», read once at the top of
+     * `addTransaction` so it never reaches a uuid column or query.
+     */
+    dealId: z.string().uuid().optional().or(z.literal('')).or(z.literal('none')),
+    /**
+     * The question the truck-price form was drawn with (`DealCandidates.key`),
+     * echoed back: a prixod re-filed between the drawing and the press makes
+     * the door refuse (`deals_changed`) rather than answer for somebody.
+     */
+    dealsSeen: z.string().max(4000).optional(),
     /**
      * Which cash box the money landed in (Phase 2.4). Optional: rows entered
      * before accounts existed have none, and the cash-flow report treats an
@@ -161,12 +173,27 @@ export type TransactionInput = z.infer<typeof transactionSchema>;
 export async function addTransaction(input: TransactionInput, ctx: AuditContext) {
   if (!ctx.actorId) throw new FinanceError('unauthenticated');
   if (input.txDate > latestTxDate()) throw new FinanceError('future_date');
+  // The deal the form asked for, read ONCE (Q8 «c»): «bitimsiz» is the
+  // person's answer that a truck price names no job, and as a string it must
+  // never reach the uuid lookup below or the column — postgres refuses
+  // 'none'::uuid with an error page, not a sentence (review). It means
+  // something on a truck price only.
+  const choice: TruckDealChoice =
+    input.dealId === 'none'
+      ? { kind: 'none' }
+      : input.dealId
+        ? { kind: 'deal', dealId: input.dealId }
+        : { kind: 'derive' };
+  if (choice.kind === 'none' && !(input.type === 'charge' && input.batchId)) {
+    throw new FinanceError('deal_choice_invalid');
+  }
+  const postedDeal = choice.kind === 'deal' ? choice.dealId : null;
   // A named deal must be THIS client's. The deal id steers the deferral
   // netting (#251) — a payment parked on another client's deal would quietly
   // re-open their handover gate — and a select's value is a forged post until
   // the server has checked it (the inline-picker rule, #507).
-  if (input.dealId) {
-    const deal = await db.query.deals.findFirst({ where: eq(deals.id, input.dealId) });
+  if (postedDeal) {
+    const deal = await db.query.deals.findFirst({ where: eq(deals.id, postedDeal) });
     if (!deal || deal.clientId !== input.clientId) throw new FinanceError('deal_mismatch');
   }
   // A price on an INTERNAL truck is refused here, not merely left off the
@@ -174,7 +201,10 @@ export async function addTransaction(input: TransactionInput, ctx: AuditContext)
   // would otherwise bill a client for a leg the owner never bills (C1a,
   // 2026-09-24). A payment may still name any truck — money received is not
   // a price.
-  let dealId = input.dealId || null;
+  let dealId = postedDeal;
+  // How the deal got onto the row, for the history: typed by the person,
+  // implied by the cargo, or the person's explicit «bitimsiz».
+  let dealVia: 'chosen' | 'derived' | 'none' | null = postedDeal ? 'chosen' : null;
   if (input.type === 'charge' && input.batchId) {
     const route = await batchRoute(input.batchId);
     if (!route) throw new FinanceError('batch_not_found');
@@ -185,12 +215,17 @@ export async function addTransaction(input: TransactionInput, ctx: AuditContext)
     // check, so an internal truck still says why it is refused.
     const aboard = await cargoAboard(input.batchId, input.clientId);
     if (!aboard.aboard) throw new FinanceError('client_not_aboard');
-    // A price set on the truck is also the JOB's money when the client's
-    // cargo aboard is one deal's and nothing else (owner's R3a, 2026-09-24:
-    // «mashinada qo'yilgan narx bitimga ham yozilsin»). Derived here from the
-    // cargo, never taken from the form: the pricing screen only ANNOUNCES it,
-    // and a posted deal id would be a forged post until checked (#507).
-    if (!dealId) dealId = aboard.dealId;
+    // A price set on the truck is also the JOB's money (owner's R3a,
+    // 2026-09-24: «mashinada qo'yilgan narx bitimga ham yozilsin»): derived
+    // from the cargo when its deal is one, and — his Q8 «c», 2026-10-27,
+    // «logist o'zi tanlaydi» — CHOSEN by the person when two or more of the
+    // client's deals ride the truck, and refused without a choice at every
+    // door (the «Narx» tab, the client ledger, a script). A posted deal is a
+    // forged post until the cargo says it rides this truck (#507).
+    const decided = truckDealDecision(aboard.candidates, choice, input.dealsSeen);
+    if (!decided.ok) throw new FinanceError(decided.code);
+    dealId = decided.dealId;
+    dealVia = decided.via;
   }
   // A refund is money that LEFT a kassa for the client (R6a): it names the
   // box, never a truck (it is not a price) and never a partner (a partner-
@@ -262,6 +297,17 @@ export async function addTransaction(input: TransactionInput, ctx: AuditContext)
         sql`SELECT status FROM batches WHERE id = ${values.batchId}::uuid FOR SHARE`,
       )) as unknown as { status: string }[];
       if ([...truck][0]?.status === 'cancelled') throw new FinanceError('batch_cancelled');
+      // …and the deal is decided again on this transaction's own reads, after
+      // the lock, by the same statement and the same rule: a prixod re-filed
+      // onto another deal (or a carton unloaded) between the pool read and
+      // here would otherwise land the price on a deal its cargo has left.
+      // Not a closed window — `linkReceipt` shares no lock with this — but
+      // the answer written is the one the cargo gives at the write.
+      const now = await cargoAboard(values.batchId, input.clientId, tx);
+      if (!now.aboard) throw new FinanceError('client_not_aboard');
+      const again = truckDealDecision(now.candidates, choice, input.dealsSeen);
+      if (!again.ok) throw new FinanceError(again.code);
+      if (again.dealId !== values.dealId) throw new FinanceError('deals_changed');
     }
     if (input.type === 'refund') {
       const held = await clientMoneyByCurrency(tx, input.clientId);
@@ -282,8 +328,10 @@ export async function addTransaction(input: TransactionInput, ctx: AuditContext)
         currency: input.currency,
         amountUsd,
         // Named when set: a truck price can land on a deal nobody typed (R3a),
-        // and the history is where somebody will ask why.
+        // and the history is where somebody will ask why — and since Q8 «c»
+        // it also says whether the person CHOSE it, or chose «bitimsiz».
         ...(dealId ? { dealId } : {}),
+        ...(dealVia ? { dealVia } : {}),
       },
     });
     return inserted!;
@@ -719,6 +767,46 @@ export function liveDeferralWhere(today: string = tashkentDay()) {
 }
 
 /**
+ * What the truck-price question says about each deal it offers (Q8 «c») —
+ * one read for the «Narx» tab and the client ledger, no money in it, so both
+ * sights may see it:
+ *
+ * - `deferred` — a live «muddat», by the counter gate's own predicate
+ *   (`liveDeferralWhere`), never `listDeals`' «deferred and not ended» (a
+ *   passed date deferral still reads lit there). A price written to such a
+ *   deal is excused at the handover for as long as the deferral lives,
+ *   whatever cargo the price was for — the option says so.
+ * - `cardPriced` — the deal carries a live price of its own with NO truck (a
+ *   deal price from the ledger). The unpriced rule's deal clause already
+ *   covers its cartons on this truck, so «narx yo'q» there would invite a
+ *   second bill for the same job.
+ */
+export async function truckDealHeads(
+  dealIds: string[],
+): Promise<Map<string, { code: string; title: string | null; deferred: boolean; cardPriced: boolean }>> {
+  if (dealIds.length === 0) return new Map();
+  const rows = await db
+    .select({
+      id: deals.id,
+      code: deals.code,
+      title: deals.title,
+      deferred: sql<boolean>`coalesce((${liveDeferralWhere()}), false)`,
+      // `${deals}.id`, not `${deals.id}`: a single-table select renders its
+      // columns unqualified, which inside this subquery would bind to the
+      // ledger row's own id (#128).
+      cardPriced: sql<boolean>`EXISTS (
+        SELECT 1 FROM client_transactions ct
+         WHERE ct.deal_id = ${deals}.id AND ct.batch_id IS NULL AND ct.type = 'charge' AND ct.voided_at IS NULL
+      )`,
+    })
+    .from(deals)
+    .where(inArray(deals.id, dealIds));
+  return new Map(
+    rows.map((row) => [row.id, { code: row.code, title: row.title, deferred: Boolean(row.deferred), cardPriced: Boolean(row.cardPriced) }]),
+  );
+}
+
+/**
  * A row inside a CLOSED currency cycle owes nothing on any job (0103, money-1):
  * once a currency is back at zero natively, its kurs farqi row closes the
  * dollars — and a deferral that still counted the job's own rows of that
@@ -900,9 +988,13 @@ export const batchCharges = cache(async function batchCharges(batchId: string) {
       tx: clientTransactions,
       clientCode: clients.clientCode,
       clientName: clients.name,
+      // The job each price on the truck went to — «Bu mashinadagi narxlar»
+      // (Q8 «c») prints it, since a price's deal is now sometimes chosen.
+      dealCode: deals.code,
     })
     .from(clientTransactions)
     .innerJoin(clients, eq(clientTransactions.clientId, clients.id))
+    .leftJoin(deals, eq(clientTransactions.dealId, deals.id))
     .where(and(eq(clientTransactions.batchId, batchId), isNull(clientTransactions.voidedAt)))
     .orderBy(desc(clientTransactions.createdAt));
 });

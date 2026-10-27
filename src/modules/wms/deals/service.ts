@@ -2155,6 +2155,16 @@ export interface DealProfit {
    */
   unlinkedBatchUsd: number;
   /**
+   * The client's prices on this deal's trucks that went to ANOTHER of his
+   * deals, on a truck where this deal has no price of its own (his Q8 «c»:
+   * the person setting a two-deal truck's price chooses the deal). The price
+   * left this card's revenue and its «bog'lanmagan» line both, so without
+   * this the card read cost with no revenue and no sentence (review). Named,
+   * never folded into the profit — whose cargo the price was for is the
+   * person's statement, not the card's guess.
+   */
+  otherDealPrices: { batchId: string; batchCode: string; dealId: string; dealCode: string; usd: number }[];
+  /**
    * HELD yo'lkira bills (his rule 6) on the trucks this deal's cartons rode:
    * converted and on no box, so `costUsd` — summed from allocations — holds
    * none of them and the profit reads higher by this deal's share. Named per
@@ -2278,6 +2288,41 @@ export async function dealProfit(dealId: string): Promise<DealProfit> {
       );
     unlinkedBatchUsd = Math.round(Number(row?.total ?? 0) * 100) / 100;
   }
+  let otherDealPrices: DealProfit['otherDealPrices'] = [];
+  if (batchIds.length > 0) {
+    const list = sql.join(
+      batchIds.map((id) => sql`${id}::uuid`),
+      sql`, `,
+    );
+    const rows = (await db.execute(sql`
+      SELECT ct.batch_id, b.code AS batch_code, ct.deal_id, d.code AS deal_code, sum(ct.amount_usd) AS usd
+        FROM client_transactions ct
+        JOIN batches b ON b.id = ct.batch_id
+        JOIN deals d ON d.id = ct.deal_id
+       WHERE ct.client_id = ${deal.clientId}::uuid AND ct.batch_id IN (${list})
+         AND ct.deal_id IS NOT NULL AND ct.deal_id <> ${dealId}::uuid
+         AND ct.type = 'charge' AND ct.voided_at IS NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM client_transactions own
+            WHERE own.client_id = ct.client_id AND own.batch_id = ct.batch_id AND own.deal_id = ${dealId}::uuid
+              AND own.type = 'charge' AND own.voided_at IS NULL
+         )
+       GROUP BY ct.batch_id, b.code, ct.deal_id, d.code
+       ORDER BY b.code, d.code`)) as unknown as {
+      batch_id: string;
+      batch_code: string;
+      deal_id: string;
+      deal_code: string;
+      usd: string | null;
+    }[];
+    otherDealPrices = [...rows].map((row) => ({
+      batchId: row.batch_id,
+      batchCode: row.batch_code,
+      dealId: row.deal_id,
+      dealCode: row.deal_code,
+      usd: Math.round(Number(row.usd ?? 0) * 100) / 100,
+    }));
+  }
 
   const profitUsd = Math.round((revenueUsd - costUsd) * 100) / 100;
   return {
@@ -2287,6 +2332,7 @@ export async function dealProfit(dealId: string): Promise<DealProfit> {
     profitUsd,
     marginPct: marginPct(profitUsd, revenueUsd),
     unlinkedBatchUsd,
+    otherDealPrices,
     heldFreight,
   };
 }

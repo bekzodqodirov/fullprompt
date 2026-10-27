@@ -2070,7 +2070,30 @@
     "unsplit": "⚠ {n, plural, other {# 笔费用}}（{usd}）未分摊到本车货物——未计入成本。",
     "unsplitCarried": "⚠ 车辆 {code} 的 {usd} 费用未分摊到货物——「{leg}」成本中没有",
     "unsplitCarriedNoRate": "⚠ 车辆 {code} 有 {n, plural, other {# 笔费用}}没有汇率——「{leg}」成本中没有",
-    "carriedIncomplete": "⚠ 不完整"
+    "carriedIncomplete": "⚠ 不完整",
+    "truckDealLabel": "价格记入哪笔交易",
+    "truckDealPick": "选择交易",
+    "truckDealNone": "不记入交易——用于未关联交易的货物",
+    "truckDealHint": "该客户在此车上的货物属于多笔交易——请选择这是哪笔交易的价格",
+    "truckDealStale": "选择已过期——交易已变更，请重新选择",
+    "truckDealLine": "价格记入交易 {code}——占该客户本车货物的 {pct} %。另一笔交易的货物请单独定价",
+    "truckDealLineNoShare": "价格记入交易 {code}。另一笔交易的货物请单独定价",
+    "truckDealLineNone": "价格不记入任何交易",
+    "truckDealDeferred": "交易 {code} 已延期付款：在延期有效期内，交货时此价格不会作为欠款扣住货物",
+    "truckDealAsk": "此价格仅为交易 {code} 的部分吗（占该客户本车货物的 {pct} %）？若整笔价格记入一笔交易，该交易利润会虚高，另一笔交易显示为零。",
+    "truckDealAskNoShare": "此价格仅为交易 {code} 的部分吗？若整笔价格记入一笔交易，该交易利润会虚高，另一笔交易显示为零。",
+    "truckDealAskNone": "价格不记入任何交易——交易的利润和加价都看不到它。",
+    "pricedHereAsk": "该客户在此车上已有价格：{list}。此价格将是额外的账单。",
+    "pricedHereTitle": "本车上的价格",
+    "pricedHereNoDeal": "无交易",
+    "pricedHereMissing": "本车上无价格",
+    "pricedHereCardPrice": "该交易有自己的价格（无车次）",
+    "pricedHereGone": "该交易的货物已不在车上",
+    "truckDealChanged": "本车货物的交易已变更——页面已刷新，请重新选择交易",
+    "truckDealNotAboard": "该交易在此车上没有货物——价格应记入货物在本车上的交易",
+    "truckDealRequired": "该客户在此车上的货物属于多笔交易——请选择价格记入哪笔交易",
+    "truckDealInvalid": "此选择不适用于本车——请刷新页面后重新选择",
+    "truckDealMismatch": "该交易属于其他客户——价格不会记入"
   },
   "map": {
     "title": "地图",
@@ -3305,7 +3328,8 @@
     "weightKg": "重量（kg）",
     "profitCompensation": "− 赔偿（丢失货物）",
     "profitNetRevenue": "收入（扣除赔偿后）",
-    "profitFreightHeld": "装有本交易货物的 {count, plural, other {# 辆车}}上有 {usd} $ 运费尚未按运价分摊到货物——本交易应承担的部分不在上方成本中，因此利润可能显得偏高。修正批次或通过「分摊方式」后会分摊。"
+    "profitFreightHeld": "装有本交易货物的 {count, plural, other {# 辆车}}上有 {usd} $ 运费尚未按运价分摊到货物——本交易应承担的部分不在上方成本中，因此利润可能显得偏高。修正批次或通过「分摊方式」后会分摊。",
+    "profitOtherDeal": "{truck} 车上的价格（{amount} $）记入了交易 {code}——不在本交易的收入中。"
   },
   "automation": {
     "title": "自动化规则",

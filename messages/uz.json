@@ -2070,7 +2070,30 @@
     "unsplit": "⚠ {n, plural, other {# ta xarajat}} ({usd}) bu mashina yukiga bo‘linmagan — tannarxga kirmagan.",
     "unsplitCarried": "⚠ {code} mashinasining {usd} xarajati yukka bo‘linmagan — {leg} tannarxda yo‘q",
     "unsplitCarriedNoRate": "⚠ {code} mashinasining {n, plural, other {# ta xarajatida}} kurs yo‘q — {leg} tannarxda yo‘q",
-    "carriedIncomplete": "⚠ to‘liq emas"
+    "carriedIncomplete": "⚠ to‘liq emas",
+    "truckDealLabel": "Narx qaysi bitimga yoziladi",
+    "truckDealPick": "bitimni tanlang",
+    "truckDealNone": "Bitimsiz — bitimga ulanmagan yuk uchun",
+    "truckDealHint": "Bu mijozning yuki bu mashinada bir nechta bitimga tegishli — narx qaysi bitimniki ekanini tanlang",
+    "truckDealStale": "Tanlov eskirdi — bitimlar o‘zgardi, qaytadan tanlang",
+    "truckDealLine": "Narx {code} bitimiga yoziladi — mijozning bu mashinadagi yukining {pct} %. Boshqa bitim yukining narxini alohida qo‘ying",
+    "truckDealLineNoShare": "Narx {code} bitimiga yoziladi. Boshqa bitim yukining narxini alohida qo‘ying",
+    "truckDealLineNone": "Narx hech qaysi bitimga yozilmaydi",
+    "truckDealDeferred": "{code} bitimida to‘lov kechiktirilgan: muddat tugaguncha bu narx yuk topshirishda qarz deb to‘xtatilmaydi",
+    "truckDealAsk": "Bu narx faqat {code} bitimining ulushi uchunmi (mijozning bu mashinadagi yukining {pct} %)? Butun narx bitta bitimga yozilsa, o‘sha bitimning foydasi oshib, boshqa bitimniki nol bo‘lib ko‘rinadi.",
+    "truckDealAskNoShare": "Bu narx faqat {code} bitimining ulushi uchunmi? Butun narx bitta bitimga yozilsa, o‘sha bitimning foydasi oshib, boshqa bitimniki nol bo‘lib ko‘rinadi.",
+    "truckDealAskNone": "Narx hech qaysi bitimga yozilmaydi — bitimlarning foydasi va upsale’i bu narxni ko‘rmaydi.",
+    "pricedHereAsk": "Bu mijozga bu mashinada allaqachon narx bor: {list}. Bu narx qo‘shimcha hisob bo‘ladi.",
+    "pricedHereTitle": "Bu mashinadagi narxlar",
+    "pricedHereNoDeal": "bitimsiz",
+    "pricedHereMissing": "bu mashinada narx yo‘q",
+    "pricedHereCardPrice": "bitimning o‘z narxi bor (mashinasiz)",
+    "pricedHereGone": "bu bitimning yuki mashinada qolmagan",
+    "truckDealChanged": "Bu mashinadagi yuk bitimlari o‘zgardi — sahifa yangilandi, bitimni qaytadan tanlang",
+    "truckDealNotAboard": "Bu bitimning yuki bu mashinada yo‘q — narx yuki shu mashinada bo‘lgan bitimga yoziladi",
+    "truckDealRequired": "Bu mijozning yuki bu mashinada bir nechta bitimga tegishli — narx qaysi bitimga yozilishini tanlang",
+    "truckDealInvalid": "Bu tanlov bu mashina uchun to‘g‘ri emas — sahifani yangilab, qaytadan tanlang",
+    "truckDealMismatch": "Bu bitim boshqa mijozniki — narx unga yozilmaydi"
   },
   "map": {
     "title": "Xarita",
@@ -3305,7 +3328,8 @@
     "weightKg": "Og'irlik (kg)",
     "profitCompensation": "− kompensatsiya (yo‘qolgan yuk)",
     "profitNetRevenue": "Tushum (kompensatsiyadan keyin)",
-    "profitFreightHeld": "Bitim yuki ortilgan {count, plural, other {# ta mashinada}} {usd} $ yo‘lkira xarajati tarif bo‘yicha yukka bo‘linmagan — uning bu bitimga tegishli ulushi yuqoridagi tannarxda yo‘q, shuning uchun foyda haqiqiydan yuqori ko‘rinishi mumkin. Lot to‘g‘rilansa yoki «Bo‘lish usuli» bilan bo‘linadi."
+    "profitFreightHeld": "Bitim yuki ortilgan {count, plural, other {# ta mashinada}} {usd} $ yo‘lkira xarajati tarif bo‘yicha yukka bo‘linmagan — uning bu bitimga tegishli ulushi yuqoridagi tannarxda yo‘q, shuning uchun foyda haqiqiydan yuqori ko‘rinishi mumkin. Lot to‘g‘rilansa yoki «Bo‘lish usuli» bilan bo‘linadi.",
+    "profitOtherDeal": "{truck} mashinasidagi narx ({amount} $) {code} bitimiga yozilgan — bu bitimning daromadida yo‘q."
   },
   "automation": {
     "title": "Avtomatlashtirish qoidalari",
