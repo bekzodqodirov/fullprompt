@@ -1907,6 +1907,11 @@ rastamojka uchun:
    «VED xodimi».
 8. Faqat yo'lkira so'roviga javob alohida navbatda: rastamojka hisobini kutmaydi
    (taxminan 2-3 soniya).
+9. AI chaqiruvlari endi to'liq sanaladi: model javob bergan har bir chaqiruv — qayta
+   o'qish, rad etilgan yoki kesilgan guruhlash javobi, bazani tanlash ham. Shuning
+   uchun kunlik 200 talik limit avvalgidan tezroq to'lishi, «AI kunlik limiti tugadi»
+   ertaroq chiqishi mumkin. Sizning 2.9 c javobingiz bo'yicha avval o'lchaymiz: kunlik
+   chaqiruvlar soni turi bo'yicha (o'qish, guruhlash, tanlash) sizga aytiladi.
 
 ---
 
@@ -1980,6 +1985,15 @@ rastamojka uchun:
      often Taxminiy comes out whole, how often absent (by `taxminiyBlock`), and how
      often the zone was guessed. The «absent» count is reported to him beside
      Question 1.
+   - **AI calls per day, by kind** (late pass, review product-fit-15): his 2.9 c is
+     «avval o'lchaymiz», this round makes every answered call count against the cap,
+     and nothing in the app reads `ai_calc_passes` but the budget check itself. Read-only,
+     on the shaped copy and on his server once deployed — the calc budget's own count,
+     on its own Tashkent day:
+     `SELECT (created_at AT TIME ZONE 'Asia/Tashkent')::date AS day, kind, count(*)
+     FROM ai_calc_passes WHERE kind <> 'similar' GROUP BY 1, 2 ORDER BY 1, 2;`
+     Reported to him with §13.2 item 9: the busiest day's total against
+     `ai_calc_daily_limit` (200).
 7. **Pinned by name on the merge**: `calc-basis.integration.test.ts:657-675` green,
    `customs-estimate.integration` (7) green on the MERGED tree (the label through K13
    after P3's INSERT), and `intake-corpus.test.ts` green with both packages' hunks.
