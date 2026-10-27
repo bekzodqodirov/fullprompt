@@ -5,7 +5,7 @@ import type { Actor } from '@/modules/platform/rbac/authorize';
 import type { AuditContext } from '@/modules/platform/audit/service';
 import { conversationClientForLead, tgViewerFor } from '../crm/conversations';
 import { threadClientFor } from '../crm/conversations';
-import { CalcError, openCalcRequest } from './service';
+import { CalcError, leadTakesJobs, openCalcRequest } from './service';
 import {
   CALC_SECTIONS,
   intakeNoteText,
@@ -163,6 +163,9 @@ export async function threadCalcAnalyze(
   actor: Actor,
   input: { entity: ThreadCalcEntity; section: CalcSection; messageIds: string[] },
 ): Promise<ThreadCalcPreview> {
+  // A closed lead's own chat takes no job: refused BEFORE the model is paid
+  // to read a selection whose confirm can only be refused (review).
+  if (input.entity.kind === 'lead' && !(await leadTakesJobs(input.entity.id))) throw new CalcError('lead_closed');
   const material = await threadMaterial(actor, input.entity, input.messageIds);
   const text = material.lines.join('\n');
   const manual = parseManualFacts(text);
@@ -266,6 +269,7 @@ export async function threadCalcSend(
   ctx: AuditContext,
 ): Promise<{ kind: 'deal' | 'lead'; id: string; queued: boolean }> {
   if (!CALC_SECTIONS.includes(input.section)) throw new CalcError('bad_section');
+  if (input.entity.kind === 'lead' && !(await leadTakesJobs(input.entity.id))) throw new CalcError('lead_closed');
   const material = await threadMaterial(actor, input.entity, input.messageIds);
   const text = material.lines.join('\n');
   const facts = cleanFacts(input.facts, text);

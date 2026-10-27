@@ -17,7 +17,7 @@ import {
   tgMessages,
   users,
 } from '@/modules/platform/db/schema';
-import { threadCalcSend, threadMaterial } from '@/modules/wms/calc/from-thread';
+import { threadCalcAnalyze, threadCalcSend, threadMaterial } from '@/modules/wms/calc/from-thread';
 import type { Actor } from '@/modules/platform/rbac/authorize';
 
 /**
@@ -275,6 +275,21 @@ describe('landing', () => {
     expect(won.res.id).not.toBe(dealId);
     const deal = await db.query.deals.findFirst({ where: eq(deals.id, won.res.id) });
     expect(deal!.clientId).toBe(clientId);
+  });
+
+  it('a CLOSED lead’s own chat is refused before the model reads it', async () => {
+    // The card draws no 🧮 there (`leadTakesJobs`); a posted analyse is
+    // refused in words, before a paid model call on a job that cannot land.
+    const before = await db.query.leads.findFirst({ where: eq(leads.id, leadId) });
+    const lost = await db.query.leadStages.findFirst({ where: eq(leadStages.kind, 'lost') });
+    await db.update(leads).set({ stageId: lost!.id }).where(eq(leads.id, leadId));
+    try {
+      await expect(
+        threadCalcAnalyze(seller(managerA), { entity: { kind: 'lead', id: leadId }, section: 'rastamojka', messageIds: [msgLead] }),
+      ).rejects.toMatchObject({ code: 'lead_closed' });
+    } finally {
+      await db.update(leads).set({ stageId: before!.stageId }).where(eq(leads.id, leadId));
+    }
   });
 
   it('a retried confirm refuses on the pre-minted note id', async () => {

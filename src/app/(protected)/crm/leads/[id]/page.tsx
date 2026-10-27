@@ -5,6 +5,7 @@ import { getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import { quoteWriterFor, writerWroteCard } from '@/modules/wms/crm/service';
 import { calcWorkspaceHref, wonDealsOfLead } from '@/modules/wms/calc/card-door';
+import { leadTakesJobs } from '@/modules/wms/calc/service';
 import { canWriteDeal } from '@/modules/wms/deals/service';
 import { clients, leads } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
@@ -105,6 +106,11 @@ export default async function LeadPage({
     activeLostReasonLabels(),
   ]);
 
+  // The lead's own stage KIND, whatever its `active` flag — the question the
+  // server's refusal asks (`leadTakesJobs`), so the card never offers a form
+  // the server refuses, nor hides one it would take.
+  const takesJobs = await leadTakesJobs(lead.id);
+
   const update = updateLeadAction.bind(null, id);
   const convert = convertLeadAction.bind(null, id);
   // The conversation this lead belongs to, when there is one — shared by the
@@ -192,6 +198,7 @@ export default async function LeadPage({
               // on this lead while it is open (judge product-5), never on a
               // second card; the server decides by the lead's stage.
               calcTarget={threadSource.kind === 'client' ? { kind: 'lead_client', id: lead.id } : undefined}
+              leadTakesJobs={takesJobs}
               hodim={hodim}
               // `who` and not `id`: this page already has an `id` (the lead's).
               hrefFor={(who) => cardHref({ hodim: who })}
@@ -343,7 +350,7 @@ export default async function LeadPage({
         entityId={id}
         revalidate={`/crm/leads/${id}`}
         clientName={lead.company || lead.name}
-        takesJobs={stages.find((stage) => stage.id === lead.stageId)?.kind === 'open'}
+        takesJobs={takesJobs}
       />
       <TasksPanel
         entityType="lead"

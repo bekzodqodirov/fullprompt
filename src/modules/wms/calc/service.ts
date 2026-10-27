@@ -20,6 +20,7 @@ import { usersWithPermission, usersWithRoles } from '@/modules/platform/notifica
 import { canLogInSql } from '@/modules/platform/users/login';
 import { cardLink } from '@/modules/platform/notifications/links';
 import { logger } from '@/modules/platform/logger';
+import { violatedUnique } from '@/modules/platform/db/errors';
 import { retireTaskCopiesSoon } from '@/modules/platform/notifications/retire-tasks';
 import { clipText } from '@/modules/platform/telegram/format';
 import { kickPriceChannel, queuePriceChannelPost } from './channel-queue';
@@ -245,6 +246,24 @@ const toNum = (value: string | number | null): number | null =>
  * the insert can still refuse after the card exists; that window is a card
  * with its note and no request, which a retry of the same note finishes.
  */
+/**
+ * Does this lead still take a calculation? A lead's stage KIND decides,
+ * whatever its `active` flag — a column switched off on /crm/settings still
+ * holds open leads. `openCalcRequest` asks the same `kind = 'open'` (on the
+ * pool before anything is written, and again under the row lock); the card's
+ * send form and the chat's 🧮 ask THIS, so no door offers what the server
+ * refuses (review 2026-10-27).
+ */
+export async function leadTakesJobs(leadId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ kind: leadStages.kind })
+    .from(leads)
+    .innerJoin(leadStages, eq(leadStages.id, leads.stageId))
+    .where(eq(leads.id, leadId))
+    .limit(1);
+  return row?.kind === 'open';
+}
+
 export async function calcOpenRefusal(
   requestedBy: string,
   itemCount: number,
@@ -440,6 +459,13 @@ export async function openCalcRequest(
       },
     });
     return id;
+  }).catch((err: unknown) => {
+    // Two presses of one form carry one pre-minted note id. The pooled check
+    // above answers the second once the first has COMMITTED; a second that
+    // arrives while the first's transaction is still open passes it and meets
+    // the note's key here instead — the same answer, not a white page.
+    if (input.note && violatedUnique(err) === 'crm_activities_pkey') throw new CalcError('note_taken');
+    throw err;
   });
 
   // The task is what puts the job on somebody's /bugun and their phone; it

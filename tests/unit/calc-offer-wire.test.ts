@@ -157,6 +157,17 @@ describe('the panel that hosts it', () => {
     expect(PANEL_CODE).toMatch(/\) : writes \? \(\s*<div className="border-t border-line pt-2">\s*<p className="text-2xs text-ink-500 sm:hidden">\{t\('sendOnPhone'\)\}/);
   });
 
+  it('the lead card asks the SERVER\'s question about a closed lead, for both of its calc doors', () => {
+    // `leadTakesJobs` is the stage KIND whatever its `active` flag; the
+    // page's active-only stage list read an open lead in a switched-off
+    // column as closed and hid the form the server would take (review).
+    const page = code(readFileSync('src/app/(protected)/crm/leads/[id]/page.tsx', 'utf8'));
+    expect(page).toContain('const takesJobs = await leadTakesJobs(lead.id);');
+    expect(page).toContain('takesJobs={takesJobs}');
+    expect(page).toContain('leadTakesJobs={takesJobs}');
+    expect(page).not.toMatch(/takesJobs=\{stages\./);
+  });
+
   it('16a: the seller\'s full offer rows only for who may offer; a PROJECTION for who may only read', () => {
     // Rewritten deliberately (review access-1 / ved-money-2): this test used
     // to pin `else if (… seesOfferPrices)`, i.e. the both-hats defect as the

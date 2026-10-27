@@ -4640,3 +4640,10 @@ refusal's words no longer promise a deal a lost lead never had. Red-proven in ma
 refusal later); either layer alone keeps the deterministic case green, which is the design — the pooled check
 stops the common case, the transaction stops the race. The CI-order run also caught this round's own fixture
 reusing deal-ved's client code «T» (green alone, red in the file) — renamed.
+Then the FIXES were checked (two lenses) and three more found, all fixed and red-proven: the card's closed-lead
+switch read an active-only stage list, so an open lead in a switched-off column was told «closed» and lost a form
+the server takes — now one predicate, `leadTakesJobs` (the stage KIND, whatever `active`), asked by the panel,
+the chat's 🧮 and both thread actions; a closed lead's OWN chat still drew 🧮 and paid the model before the
+refusal — not drawn, and refused before the model; and moving the note into the transaction widened the
+double-press window, so the second press met the note's key as a raw 23505 — mapped to `note_taken`
+(`violatedUnique`, beside `violatedCheck`), proven by two presses parked on a held lead lock.

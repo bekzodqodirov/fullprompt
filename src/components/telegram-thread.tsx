@@ -65,6 +65,7 @@ export async function TelegramThread({
   hrefFor,
   calcTarget,
   readOnly = false,
+  leadTakesJobs = true,
 }: {
   clientId: string | null;
   /**
@@ -101,6 +102,11 @@ export async function TelegramThread({
    * the karta writes nothing but a text note on the lenta.
    */
   readOnly?: boolean;
+  /**
+   * False on a CLOSED lead: its own chat offers no 🧮 — the job would be
+   * refused, after the model had been paid to read the selection.
+   */
+  leadTakesJobs?: boolean;
 }) {
   const actor = await getActor();
   // The CRM grants, or the supervision view (round 33: vedchi and admin read
@@ -177,7 +183,7 @@ export async function TelegramThread({
         </div>
         {/* The third calc door (owner, 2026-08-25) — OUTSIDE the scroll box,
             or the bar scrolls away with the history. */}
-        {!readOnly && <ThreadCalc entity={{ kind: 'lead', id: leadId }} />}
+        {!readOnly && leadTakesJobs && <ThreadCalc entity={{ kind: 'lead', id: leadId }} />}
       </section>
     );
   }

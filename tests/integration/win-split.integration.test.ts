@@ -21,7 +21,7 @@ import {
   tasks,
   users,
 } from '@/modules/platform/db/schema';
-import { finishCalcRequest, openCalcRequest, takeCalcRequest } from '@/modules/wms/calc/service';
+import { finishCalcRequest, leadTakesJobs, openCalcRequest, takeCalcRequest } from '@/modules/wms/calc/service';
 import { recalcFromSealed, recordOffer, sealCalc, setFreightZone } from '@/modules/wms/calc/workspace';
 import { answerFloorStandsSql } from '@/modules/wms/calc/version-set';
 import { winLead } from '@/modules/wms/crm/service';
@@ -48,6 +48,8 @@ let otherId = '';
 let openStageId = '';
 const madeLeads: string[] = [];
 const madeRequests: string[] = [];
+/** Funnel columns this file mints — CONFIGURATION, removed after their leads (#183). */
+const madeStages: string[] = [];
 const ctx = () => ({ actorId });
 
 async function mintLead(name: string): Promise<string> {
@@ -210,6 +212,7 @@ afterAll(async () => {
     await db.delete(crmActivities).where(inArray(crmActivities.entityId, madeLeads));
     await db.delete(leads).where(inArray(leads.id, madeLeads));
   }
+  if (madeStages.length > 0) await db.delete(leadStages).where(inArray(leadStages.id, madeStages));
   await db.update(clients).set({ active: false }).where(inArray(clients.id, [clientId, otherId]));
   await db.update(users).set({ active: false }).where(eq(users.id, actorId));
   await pgClient.end();
@@ -330,6 +333,67 @@ describe('a won lead opens a deal per SALE', () => {
       ),
     ).rejects.toThrow('lead_closed');
     expect(await db.query.crmActivities.findFirst({ where: eq(crmActivities.id, noteId) })).toBeUndefined();
+  });
+
+  it('a lead in a SWITCHED-OFF open column still takes a job — the card and the server ask the stage KIND', async () => {
+    const [stage] = await db
+      .insert(leadStages)
+      .values({ name: `Ochiq, o‘chirilgan ${SUFFIX}`, kind: 'open', sortOrder: 990, active: false })
+      .returning({ id: leadStages.id });
+    madeStages.push(stage!.id);
+    const leadId = await mintLead('Ochirilgan ustun');
+    await db.update(leads).set({ stageId: stage!.id }).where(eq(leads.id, leadId));
+    expect(await leadTakesJobs(leadId)).toBe(true);
+    const job = await openOn(leadId);
+    expect(await cardOf(job)).toEqual({ type: 'lead', id: leadId });
+  });
+
+  it('two presses of one form with one note id: one job, and the second hears note_taken, not a 23505', async () => {
+    // Both pass the pooled «is the note taken» check while a third party holds
+    // the lead; released together, the first writes the note in its
+    // transaction and the second meets the note's KEY (review).
+    const leadId = await mintLead('Ikki bosish');
+    const noteId = randomUUID();
+    const press = () =>
+      openCalcRequest(
+        {
+          entityType: 'lead',
+          entityId: leadId,
+          section: 'rastamojka',
+          fromCity: 'Yiwu',
+          toCity: 'Toshkent',
+          weightKg: 10,
+          volumeM3: 1,
+          items: [{ name: `ikki ${tag()}`, quantity: 1 }],
+          note: { id: noteId, text: 'bir izoh' },
+          source: 'card',
+        },
+        ctx(),
+      ).then(
+        (r) => ({ ok: true as const, id: r.id }),
+        (e: unknown) => ({ ok: false as const, code: (e as { code?: string }).code }),
+      );
+    let both: Promise<[Awaited<ReturnType<typeof press>>, Awaited<ReturnType<typeof press>>]> | null = null;
+    await withHolder(async (held) => {
+      await held`BEGIN`;
+      await held`SELECT id FROM leads WHERE id = ${leadId}::uuid FOR UPDATE`;
+      both = Promise.all([press(), press()]);
+      // Both are parked on the lead's row lock, past the pooled check.
+      for (let i = 0; i < 250; i += 1) {
+        const rows = (await db.execute(sql`
+          SELECT count(*)::int AS n FROM pg_stat_activity
+           WHERE datname = current_database() AND wait_event_type = 'Lock' AND pid <> pg_backend_pid()`)) as unknown as {
+          n: number;
+        }[];
+        if (Number(rows[0]?.n ?? 0) >= 2) break;
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      await held`COMMIT`;
+    });
+    const results = await both!;
+    for (const r of results) if (r.ok) madeRequests.push(r.id);
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+    expect(results.filter((r) => !r.ok).map((r) => (r.ok ? '' : r.code))).toEqual(['note_taken']);
   });
 
   it('a «Qayta hisoblash» racing the win lands on the DEAL the win moved its parent to', async () => {
