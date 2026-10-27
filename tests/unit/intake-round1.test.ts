@@ -226,13 +226,22 @@ describe('a file is read by what its bytes are (the diagnosis’ cause 2)', () =
 
 describe('the queued AI pass is never silent when it does not answer', () => {
   const JOBS = readFileSync(path.join(__dirname, '..', '..', 'src', 'modules', 'wms', 'calc', 'jobs.ts'), 'utf8');
+  // Re-anchored for round 2 (docs/SAKKIZ-R2.md §6.8, regression-4): the
+  // worker speaks through `sayOnce` (one machine message per request), its
+  // loop body moved into `runPrefillJob` (so `continue` became `return`), and
+  // the words are chosen by the job's queue — the tariff reply has its own
+  // (§2.8). The pins keep their shape: a stand-down SPEAKS before it leaves,
+  // and a failure says PASS_FAILED.
   it('a stand-down and a failure both reach the seller', () => {
     const branch = JOBS.slice(JOBS.indexOf("if (standing !== 'ok') {"));
-    const told = branch.indexOf('const said = STOOD_DOWN[standing];');
+    const told = branch.indexOf('const said = (writes ? STOOD_DOWN : TARIFF_STOOD_DOWN)[standing];');
     expect(told, 'the stand-down no longer speaks — re-anchor').toBeGreaterThan(-1);
-    expect(told).toBeLessThan(branch.indexOf('continue;'));
+    const leaves = branch.indexOf('return;');
+    expect(told).toBeLessThan(leaves);
+    expect(branch.slice(told, leaves)).toContain('await sayOnce(requestId, {');
     const failed = JOBS.slice(JOBS.indexOf("'[calc-prefill] pass failed — the VED still has the job'"));
-    expect(failed.slice(0, 600)).toContain('text: PASS_FAILED');
+    expect(failed.slice(0, 600)).toContain('await sayOnce(requestId, {');
+    expect(failed.slice(0, 600)).toContain('text: writes ? PASS_FAILED : TARIFF_PASS_FAILED');
   });
 });
 

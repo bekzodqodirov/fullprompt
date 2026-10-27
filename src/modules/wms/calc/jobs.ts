@@ -1,5 +1,6 @@
 import type PgBoss from 'pg-boss';
 import { logger } from '@/modules/platform/logger';
+import { sectionParts, type CalcSectionName } from './pricing';
 import { notifyOverdueCalcs } from './service';
 import { notifyDictionaryReview } from './review';
 import { sendLinkAsks } from './link-ask';
@@ -8,6 +9,25 @@ export const JOB_CALC_OVERDUE = 'calc.overdue';
 export const JOB_CALC_REVIEW = 'calc.dict-review';
 export const JOB_CALC_PREFILL = 'calc.prefill';
 export const JOB_CALC_LINK_ASK = 'calc.link-ask';
+/**
+ * A yolkira job's tariff reply (his 2.5 b) — its OWN queue, because pg-boss
+ * 10.4.2's worker fetches one job and awaits its handler before the next
+ * (`batchSize` 1): on the customs queue a tariff lookup that takes
+ * milliseconds would wait behind every customs pass in flight, each up to
+ * 2 × 60 s per model call. Priority would not help — it cannot overtake the
+ * job already running.
+ */
+export const JOB_CALC_TARIFF_REPLY = 'calc.tariff-reply';
+
+/**
+ * How long a claimed customs pass may run before pg-boss re-delivers it:
+ * above `PASS_DEADLINE_MS` (10 minutes) plus one worst step past it — a
+ * grouping or a pick call, each up to 2 × 60 s — so the queue never starts a
+ * second pass beside one still running. The default 15 minutes would have.
+ */
+export const PASS_EXPIRE_S = 1800;
+/** A tariff reply is a few queries; five minutes is generous. */
+export const TARIFF_EXPIRE_S = 300;
 
 export interface CalcPrefillJob {
   requestId: string;
@@ -21,7 +41,7 @@ export interface CalcPrefillJob {
    * The request's section when it was queued (docs/SAKKIZ-R2.md K16), so the
    * worker can tell a customs pass from a tariff reply without a database
    * read. Absent on a job queued before this field existed — which was a
-   * customs job, the only kind there was. Unread in the kernel.
+   * customs job, the only kind there was.
    */
   section?: string | null;
 }
@@ -100,6 +120,8 @@ export async function registerCalcLinkAskWorker(boss: PgBoss): Promise<void> {
 
 /** The seller's sentence when the pass itself failed. */
 export const PASS_FAILED = '🤖 AI bu so‘rovni hisoblay olmadi — so‘rov VED navbatida, narxni VED beradi.';
+/** …and when a yolkira job's tariff reply failed (§2.8) — no AI was asked. */
+export const TARIFF_PASS_FAILED = '🧮 Yo‘lkira taxmini chiqmadi — so‘rov VED navbatida, narxni VED beradi.';
 
 /**
  * Why the machine stood down: `prefillStanding`'s answer, or `unfinished` — a
@@ -121,6 +143,17 @@ export const STOOD_DOWN: Record<StandDown, string | null> = {
 };
 
 /**
+ * The tariff queue's own words where they differ (§2.8). A request that has
+ * since gained a customs half («touched» by a section change) stands down in
+ * the customs sentence: the VED is on it either way.
+ */
+export const TARIFF_STOOD_DOWN: Record<StandDown, string | null> = {
+  ...STOOD_DOWN,
+  closed: '🧮 Yo‘lkira taxmini yuborilmadi: so‘rov allaqachon yopilgan.',
+  unfinished: TARIFF_PASS_FAILED,
+};
+
+/**
  * The standing, read with the attempt (round-1 review, a18).
  *
  * `touched` means «the revision moved since this was queued», and on a FIRST
@@ -132,11 +165,19 @@ export const STOOD_DOWN: Record<StandDown, string | null> = {
  * customer. A retry is `unfinished` — the AI did not finish, the VED has the
  * job. `confirmed` and `closed` only a person produces (the machine never
  * ticks ✅ and never seals), so they stand on any attempt.
+ *
+ * `writes`: does this queue's pass WRITE (a customs pass) or only answer (a
+ * tariff reply, §6.8)? A tariff reply writes nothing, so a moved revision is
+ * nothing it could overwrite — `touched` answers, and `unfinished` cannot
+ * arise. A request whose SECTION moved is the pass's own stand-down
+ * (`aiPrefill`'s `expectCustoms`).
  */
 export function attemptStanding(
   standing: import('./prefill').PrefillStand,
   retryCount: number,
+  writes: boolean,
 ): import('./prefill').PrefillStand | 'unfinished' {
+  if (!writes) return standing === 'touched' ? 'ok' : standing;
   return standing === 'touched' && retryCount > 0 ? 'unfinished' : standing;
 }
 
@@ -152,10 +193,18 @@ export function attemptStanding(
  * The precedent is one directory over and was written in this same
  * sub-round: the customs parse is a pg-boss job for exactly this reason.
  *
- * The answer is delivered through `notifyStaffTelegram` rather than the
+ * TWO queues, ONE handler (§6.8): customs passes on `JOB_CALC_PREFILL`, the
+ * yolkira tariff reply on `JOB_CALC_TARIFF_REPLY`, so a reply that takes
+ * milliseconds never waits behind a pass that takes minutes. Both are created
+ * and worked here, which is where `boss.ts` already looks.
+ *
+ * The answer is delivered through the notification drain rather than the
  * grammy context that no longer exists by then: the drain owns the claim
  * (0082) and round 101's transient-vs-permanent budget, so a Telegram 429
- * costs a retry instead of the message.
+ * costs a retry instead of the message. And it goes through `sayOnce`: ONE
+ * machine message per request, so a re-delivered job sends nothing at all
+ * once one is queued — no second reply, no second lenta note, no «hisoblay
+ * olmadi» after a real answer.
  *
  * A failure is NOT rethrown. The pass is best-effort by construction — the
  * request is in the VED's queue whatever happens here, and a person will
@@ -164,75 +213,87 @@ export function attemptStanding(
  * that is a job pg-boss re-delivers on its own.
  */
 export async function registerCalcPrefillWorker(boss: PgBoss): Promise<void> {
-  await boss.createQueue(JOB_CALC_PREFILL);
-  // `includeMetadata`: the stand-down sentence depends on whether this is a
-  // re-delivery (`attemptStanding`) — customs/jobs.ts asks for it the same way.
-  await boss.work<CalcPrefillJob>(JOB_CALC_PREFILL, { includeMetadata: true }, async (jobs) => {
-    for (const job of jobs) {
-      const { requestId, staffId } = job.data;
-      try {
-        const { aiPrefill, prefillStanding } = await import('./prefill');
-        const { notifyStaffTelegram } = await import('@/modules/platform/notifications/staff');
-        // A person may have reached the request first — the queue drains
-        // when it drains, and pg-boss re-delivers. The machine stands down
-        // rather than deleting their groups and un-ticking their ✅.
-        const standing = attemptStanding(await prefillStanding(requestId, job.data.rev ?? null), job.retryCount ?? 0);
-        if (standing !== 'ok') {
-          logger.info(
-            { requestId, standing, retryCount: job.retryCount },
-            '[calc-prefill] stood down — the request has moved',
-          );
-          // Said, not silent (2026-10-21): the seller was promised a figure in
-          // this chat, and a pass that stood down used to leave him waiting.
-          const said = STOOD_DOWN[standing];
-          if (said) await notifyStaffTelegram({ userIds: [staffId], type: 'CalcPrefilled', text: said });
-          continue;
-        }
-        // NOBODY typed this. The pass ran under the seller's id, so every
-        // TNVED code, every rate and every baza the machine wrote was
-        // recorded in `audit_log` under the name of a person who never saw
-        // them — and this company reads that log to answer «who put this
-        // number here». `actorId: null` is the module's own idiom for a
-        // machine acting (the stale-lead sweep writes the same way: nobody
-        // causes a silence). Who ASKED is not lost — `calc_requests.
-        // requested_by` records it, and the answer goes to them.
-        // `replyTo`: the answer's link is chosen for the person it is sent to
-        // (`calcJobHrefFor`) — a stranger's lead is the VED's own when the VED
-        // sent it, and the CRM card bounces him.
-        const out = await aiPrefill(requestId, { actorId: null }, { replyTo: staffId });
-        await notifyStaffTelegram({
-          userIds: [staffId],
-          type: 'CalcPrefilled',
-          text: out.text,
-        });
-        // His answer 2a: the SAME text onto the card's lenta. Two audiences
-        // for one answer — the seller reads it on a phone and forgets it, the
-        // VED opens the card tomorrow and needs to see what the machine told
-        // the customer's seller. Behind a setting because it is a matter of
-        // taste how noisy a lenta should be, and best-effort because a note
-        // that failed to write must not cost the message that was delivered.
-        // The LINKLESS rendering: on the card a link is a door to where the
-        // reader already stands, or one the seller reading it is bounced from.
-        await writeReplyToLenta(requestId, out.lentaText).catch((err) =>
-          logger.warn({ err, requestId }, '[calc-prefill] lenta note not written'),
-        );
-        logger.info(
-          { requestId, codesStamped: out.codesStamped, picked: out.picked, aiUsed: out.aiUsed },
-          '[calc-prefill] pass finished',
-        );
-      } catch (err) {
-        logger.error({ err, requestId }, '[calc-prefill] pass failed — the VED still has the job');
-        // …and the seller is told so, rather than waiting for a figure that
-        // will not come. Best-effort: the drain may be what failed.
-        try {
-          const { notifyStaffTelegram } = await import('@/modules/platform/notifications/staff');
-          await notifyStaffTelegram({ userIds: [staffId], type: 'CalcPrefilled', text: PASS_FAILED });
-        } catch {
-          /* the log line above is the record */
-        }
-      }
+  // The customs queue FIRST: its registration is the one every older pin reads.
+  for (const queue of [JOB_CALC_PREFILL, JOB_CALC_TARIFF_REPLY]) {
+    await boss.createQueue(queue);
+    // `includeMetadata`: the stand-down sentence depends on whether this is a
+    // re-delivery (`attemptStanding`) — customs/jobs.ts asks for it the same way.
+    await boss.work<CalcPrefillJob>(queue, { includeMetadata: true }, async (jobs) => {
+      for (const job of jobs) await runPrefillJob(job.data, job.retryCount ?? 0);
+    });
+  }
+}
+
+/** One job, on either queue — the payload's section says which pass it is. */
+async function runPrefillJob(data: CalcPrefillJob, retryCount: number): Promise<void> {
+  const { requestId, staffId } = data;
+  // K16: the section rides the payload, so this is no database read. A job
+  // queued before round 2 carries none — it was a customs job, the only kind.
+  const writes = sectionParts((data.section ?? 'rastamojka') as CalcSectionName).customs;
+  try {
+    const { aiPrefill, prefillStanding } = await import('./prefill');
+    const { sayOnce } = await import('./say-once');
+    // A person may have reached the request first — the queue drains
+    // when it drains, and pg-boss re-delivers. The machine stands down
+    // rather than deleting their groups and un-ticking their ✅.
+    const standing = attemptStanding(await prefillStanding(requestId, data.rev ?? null), retryCount, writes);
+    if (standing !== 'ok') {
+      logger.info({ requestId, standing, retryCount }, '[calc-prefill] stood down — the request has moved');
+      // Said, not silent (2026-10-21): the seller was promised a figure in
+      // this chat, and a pass that stood down used to leave him waiting.
+      const said = (writes ? STOOD_DOWN : TARIFF_STOOD_DOWN)[standing];
+      if (said) await sayOnce(requestId, { userIds: [staffId], type: 'CalcPrefilled', text: said });
+      return;
     }
-  });
+    // NOBODY typed this. The pass ran under the seller's id, so every
+    // TNVED code, every rate and every baza the machine wrote was
+    // recorded in `audit_log` under the name of a person who never saw
+    // them — and this company reads that log to answer «who put this
+    // number here». `actorId: null` is the module's own idiom for a
+    // machine acting (the stale-lead sweep writes the same way: nobody
+    // causes a silence). Who ASKED is not lost — `calc_requests.
+    // requested_by` records it, and the answer goes to them.
+    // `replyTo`: the answer's link is chosen for the person it is sent to
+    // (`calcJobHrefFor`) — a stranger's lead is the VED's own when the VED
+    // sent it, and the CRM card bounces him.
+    const out = await aiPrefill(requestId, { actorId: null }, { replyTo: staffId }, { expectCustoms: writes });
+    if (out.stood) {
+      // The section moved since queueing (§2.8): the customs sentence.
+      const said = STOOD_DOWN[out.stood];
+      if (said) await sayOnce(requestId, { userIds: [staffId], type: 'CalcPrefilled', text: said });
+      return;
+    }
+    const spoke = await sayOnce(requestId, { userIds: [staffId], type: 'CalcPrefilled', text: out.text });
+    // His answer 2a: the SAME text onto the card's lenta. Two audiences
+    // for one answer — the seller reads it on a phone and forgets it, the
+    // VED opens the card tomorrow and needs to see what the machine told
+    // the customer's seller. Behind a setting because it is a matter of
+    // taste how noisy a lenta should be, and best-effort because a note
+    // that failed to write must not cost the message that was delivered.
+    // The LINKLESS rendering: on the card a link is a door to where the
+    // reader already stands, or one the seller reading it is bounced from.
+    // Only when THIS run spoke: a re-delivery writes no second note.
+    if (spoke) {
+      await writeReplyToLenta(requestId, out.lentaText).catch((err) =>
+        logger.warn({ err, requestId }, '[calc-prefill] lenta note not written'),
+      );
+    }
+    logger.info(
+      { requestId, codesStamped: out.codesStamped, picked: out.picked, aiUsed: out.aiUsed, spoke, writes },
+      '[calc-prefill] pass finished',
+    );
+  } catch (err) {
+    logger.error({ err, requestId }, '[calc-prefill] pass failed — the VED still has the job');
+    // …and the seller is told so, rather than waiting for a figure that
+    // will not come — unless a message for this request already went out.
+    // Best-effort: the drain may be what failed.
+    try {
+      const { sayOnce } = await import('./say-once');
+      await sayOnce(requestId, { userIds: [staffId], type: 'CalcPrefilled', text: writes ? PASS_FAILED : TARIFF_PASS_FAILED });
+    } catch {
+      /* the log line above is the record */
+    }
+  }
 }
 
 /**

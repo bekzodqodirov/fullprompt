@@ -1,9 +1,10 @@
 import { dutyText } from './duty-text';
-import type { BazaSource } from './pricing';
-import { AI_REPLY_HEAD } from './reply-heads';
+import { SMALL_FREIGHT_USD, type BazaSource } from './pricing';
+import { AI_REPLY_HEAD, VED_ESTIMATE_MARK } from './reply-heads';
 
 /**
- * The AI-VED's answer in the seller's own chat — RASTAMOJKA and nothing else.
+ * The AI-VED's answer in the seller's own chat — RASTAMOJKA, and on a
+ * podklyuch job the road beside it.
  *
  * The owner, 2026-09-05: «telegramda AI ning o'zi tahminiy hisoblab bersin
  * rastamojka qancha bo'lishini. AI-VED faqat rastamojka hisoblaydi.»
@@ -13,24 +14,25 @@ import { AI_REPLY_HEAD } from './reply-heads';
  * come from here, so a wording change cannot move a figure and a pricing
  * change cannot quietly change what the seller is told.
  *
- * Three laws it exists to keep.
+ * The laws it exists to keep.
  *
  *  - **Law 6**: never a `$0`, never a silence. A line the engine refused
- *    prints WHY, in the office's words — and while ANY line is refused or
- *    uncoded there is no total at all (the kernel's «no partial sums»). The
- *    «N ta qatordan, M tasi hisoblanmadi» total this file used to print was
- *    a smaller number wearing the job's name (judge MR-23, overturning this
- *    module's own «a partial estimate beats silence»).
+ *    prints WHY, in the office's words, and every refusal says who can fix
+ *    it — the seller (a fact only the customer has) or the VED.
+ *  - **No partial sum wears the job's name** (MR-23). Round 2 (his 2.2 b)
+ *    gives the chat TWO customs totals when some rows have no baza: «Aniq»
+ *    is a NAMED partial — it states its own row count and that it carries no
+ *    fee — and «Taxminiy» is WHOLE or absent: the 📊 medians stand in for the
+ *    missing bazas, the engine prices every group, and one row nothing can
+ *    price leaves it absent with the reason in words. The screen and the seal
+ *    keep the kernel's single total.
  *  - **The road is the TARIFF's list price, labelled as such.** Decision 8
- *    («no freight, ever») stood until the owner overturned it on
- *    2026-09-26 (item 13: «podklyuch bolsa yolkira bilan birga hsoblab
- *    bersin»). A podklyuch job now carries its own yo'lkira line — the band
- *    and the price per unit printed beside it, never a discount nobody has
- *    given (phase D's line) — and a JAMI only when BOTH halves priced. A
- *    road the engine refused is a sentence, exactly like a customs line.
+ *    («no freight, ever») was overturned by the owner on 2026-09-26 (item
+ *    13); a zone read off the city is said as a guess (his 2.6 b), and a cube
+ *    summed from the lines says «qatorlardan» (2.7 b).
  *  - **The number is TAHMINIY.** The official price is the seal (or the typed
- *    «Готово»), and the caveat travels on its own line right under the total,
- *    because the seller reads this on a phone and repeats it to a customer.
+ *    «Готово»), and the caveat travels on its own line right under the
+ *    total, because the seller reads this on a phone and repeats it.
  */
 
 /** Telegram refuses a message past this; the caller never sends a longer one. */
@@ -48,7 +50,7 @@ export interface AiVedLine {
    * measures: the figure is still exact, the shorthand is not.
    */
   measureText: string | null;
-  /** Which of the machine's three sources answered the baza, if any. */
+  /** Which of the machine's sources answered the baza, if any. */
   bazaSource: BazaSource;
   /** The law's shape in words: «10%», «20% / min 3 $/juft». */
   dutyText: string;
@@ -66,7 +68,7 @@ export interface AiVedLine {
    * The group's 📊 shadow (round 2, his 2.1 b): a figure from the median of
    * real declarations for the rows nobody priced, or the words for why there
    * is none. Null when nothing was estimated. REQUIRED-nullable (#790), so
-   * every builder of a line has to say. The kernel (K) prints none of it.
+   * every builder of a line has to say.
    */
   estimated: AiVedLineEstimate | null;
   /** A priced row's weight was copied from the shipment's BRUTTO total
@@ -85,7 +87,8 @@ export type AiVedLineEstimate =
       /** The quarter's end when the file is older than BAZA_STALE_DAYS. */
       oldFileEnd: string | null;
     }
-  | { priced: false; misses: string[] }; // words, ≤ 3 rows
+  /** Every row's miss in words («2-qator — …»); the reply prints three. */
+  | { priced: false; misses: string[] };
 
 /**
  * The reply's two customs totals (his 2.2 b): «Aniq» over the rows that
@@ -142,8 +145,7 @@ export interface AiVedReplyInput {
    * one goes to the wrong person.
    */
   budgetSpent?: boolean;
-  /** Round 2's two totals; null when nothing was estimated. REQUIRED-nullable
-   * (#790). The kernel (K) prints none of it. */
+  /** Round 2's two totals; null when nothing was estimated (#790). */
   estimate: AiVedEstimate | null;
   /** Who reads THIS rendering — the seller's chat, or the card's lenta, which
    * carries the VED's own line under its heading (§2.6). */
@@ -160,7 +162,8 @@ export type AiVedFreight =
       listUsd: number;
       /** «Xitoy → O‘zbekiston» — which of his zones answered. */
       routeLabel: string;
-      /** «180 kg/m³ · $160/m³ × 12 m³» — the band, so the figure is checkable. */
+      /** «180 kg/m³ · $160/m³ × 12 m³» — the band, so the figure is checkable;
+       * «(qatorlardan)» already after the cube when it is the lines' Σ. */
       bandText: string;
       /** The zone was read off the city (his 2.6 b) and never stored. */
       zoneGuessed: boolean;
@@ -173,7 +176,30 @@ export type AiVedFreight =
     }
   | { ok: false; refusal: string; tail: FreightTail };
 
-const money = (n: number) => `$${n.toFixed(2)}`;
+/**
+ * The tail of a refused road — WHO fixes it (§0.1(7)). Until round 3's
+ * «➕ Shu so‘rovga qo‘shish» door, the card's lenta is the seller's one way to
+ * add a fact to a request that has already landed.
+ */
+export const FREIGHT_TAIL_WORDS: Record<FreightTail, string> = {
+  seller: '— mijozdan so‘rab, kartadagi lentaga yozing',
+  ved: '— VED xodimi hisoblaydi',
+};
+
+/** The tiny-invoice warning (law 8: priced honestly, flagged loudly). */
+export const SMALL_ROAD_LINE = `⚠️ Juda kichik yuk (yo‘lkira $${SMALL_FREIGHT_USD} dan kam) — VED ko‘rib chiqadi.`;
+
+export const money = (n: number) => `$${n.toFixed(2)}`;
+
+/** The road's route as printed — with the guess said, in what was read. */
+export function routeWords(f: Extract<AiVedFreight, { ok: true }>): string {
+  return f.zoneGuessed ? `${f.routeLabel} — zona «${f.zoneReadFrom ?? ''}»dan taxmin` : f.routeLabel;
+}
+
+/** A refused road, as one line — the words and who fixes them. */
+export function roadRefusalLine(f: Extract<AiVedFreight, { ok: false }>): string {
+  return `Yo‘lkira: ⚠️ ${f.refusal} ${FREIGHT_TAIL_WORDS[f.tail]}`;
+}
 
 /** The chip beside a baza — the legend below spells each one out. */
 const SOURCE_MARK: Record<Exclude<BazaSource, null>, string> = {
@@ -189,6 +215,10 @@ const SOURCE_LEGEND: Record<Exclude<BazaSource, null>, string> = {
   dictionary: '📖 lug‘atdan',
   typed: '',
 };
+
+/** The 📊 mark and its legend — the shadow is on no screen, so it says what it is. */
+const MEDIAN_MARK = '📊';
+const MEDIAN_LEGEND = '📊 deklaratsiyalar medianasi (taxminiy)';
 
 /**
  * A product name as a PHONE can read it.
@@ -206,33 +236,117 @@ function shortName(raw: string): string {
   return flat.length <= NAME_CAP ? flat : `${flat.slice(0, NAME_CAP - 1)}…`;
 }
 
-/** One priced group, as two lines: what it is, and what the law makes of it. */
+/** «23», «23 va 8», «23, 8 va 5», then «23, 8, 5 …» — at most three numbers. */
+function countList(ns: number[]): string {
+  if (ns.length <= 1) return String(ns[0] ?? 0);
+  if (ns.length > 3) return `${ns.slice(0, 3).join(', ')} …`;
+  return `${ns.slice(0, -1).join(', ')} va ${ns[ns.length - 1]}`;
+}
+
+/**
+ * The measure part, with the brutto mark (⭐ of his Question 4) where a
+ * priced row's weight was copied from the shipment's total: the row note
+ * says it to the VED, this says it to the seller, who reads the figure.
+ */
+function measureWithMark(measureText: string | null, fromTotal: boolean): string | null {
+  if (!fromTotal) return measureText;
+  if (!measureText) return '(og‘irlik bruttodan)';
+  const at = measureText.indexOf(' × ');
+  return at === -1
+    ? `${measureText} (og‘irlik bruttodan)`
+    : `${measureText.slice(0, at)} (og‘irlik bruttodan)${measureText.slice(at)}`;
+}
+
+/** The law's parts of a priced line: «boj 10% · QQS 12%». */
+function lawParts(line: AiVedLine): string {
+  const parts = [`boj ${line.dutyText}`];
+  if (line.addDutyPct > 0) parts.push(`qo‘shimcha boj ${line.addDutyPct}% (sertifikat yo‘q)`);
+  if (line.exciseText) parts.push(line.exciseText);
+  if (line.vatPct !== null) parts.push(`QQS ${line.vatPct}%`);
+  return parts.join(' · ');
+}
+
+/** One group, as two (or three) lines: what it is, and what the law makes of it. */
 function lineText(line: AiVedLine, index: number): string {
+  const est = line.estimated;
+  const priced = est?.priced ? est : null;
+  const measure = measureWithMark(priced ? priced.measureText : line.measureText, line.weightFromTotal);
+  const marks = [line.bazaSource && SOURCE_MARK[line.bazaSource] ? SOURCE_MARK[line.bazaSource] : '']
+    .concat(priced ? [MEDIAN_MARK] : [])
+    .filter(Boolean)
+    .join(' ');
   const head =
     `${index + 1}. ${shortName(line.label)}` +
     (line.code ? ` · ${line.code}` : '') +
-    (line.measureText ? ` · ${line.measureText}` : '') +
-    (line.bazaSource && SOURCE_MARK[line.bazaSource]
-      ? ` ${SOURCE_MARK[line.bazaSource]}`
-      : '');
+    (measure ? ` · ${measure}` : '') +
+    (marks ? ` ${marks}` : '');
 
+  if (priced) {
+    // His 2.1 b: «taxminiy, N ta deklaratsiyadan» — on the figure itself, so
+    // a forwarded line cannot lose it.
+    const from = priced.declarations.length > 1 ? 'taxminiy:' : 'taxminiy,';
+    const old = priced.oldFileEnd ? ` · eski fayl, ${priced.oldFileEnd} gacha` : '';
+    return (
+      `${head}\n   ${lawParts(line)} → ≈ ${money(priced.customsUsd)} ` +
+      `(${from} ${countList(priced.declarations)} ta deklaratsiyadan${old})`
+    );
+  }
   if (line.customsUsd === null) {
     // Law 6: a refusal is a sentence, and the line still exists — a seller
     // who cannot see the row cannot tell the customer what is missing.
-    return `${head}\n   ⚠️ ${line.refusal ?? 'hisoblanmadi'} — VED xodimi qo‘yadi`;
+    const refused = `${head}\n   ⚠️ ${line.refusal ?? 'hisoblanmadi'} — VED xodimi qo‘yadi`;
+    if (!est || est.priced || est.misses.length === 0) return refused;
+    const shown = est.misses.slice(0, 3).join('; ');
+    return `${refused}\n   ${MEDIAN_MARK} taxmin yo‘q: ${shown}${est.misses.length > 3 ? ' …' : ''}`;
   }
+  return `${head}\n   ${lawParts(line)} → ${money(line.customsUsd)}`;
+}
 
-  const parts = [`boj ${line.dutyText}`];
-  if (line.addDutyPct > 0) {
-    parts.push(`qo‘shimcha boj ${line.addDutyPct}% (sertifikat yo‘q)`);
+/** «(yig‘im 1.5 BHM ≈ $50.00 bilan)», or the override's own figure. */
+function feeWords(fee: AiVedEstimate['taxminiyFee']): string {
+  if (!fee) return '';
+  return fee.bhm === null
+    ? ` (yig‘im ≈ ${money(fee.usd)} bilan)`
+    : ` (yig‘im ${fee.bhm} BHM ≈ ${money(fee.usd)} bilan)`;
+}
+
+/**
+ * The VED's line on the card's copy (his 2.4 c): directly under the heading,
+ * because a note can run to 25 group lines and the VED skimming the lenta
+ * reads its first lines. Only when something in the reply IS an estimate —
+ * a 📊 figure or a guessed zone; a named partial «Aniq» says what it is on
+ * its own face. P4's chip finds the note by `VED_ESTIMATE_MARK`.
+ */
+function vedLine(anyMedian: boolean, guessedFrom: string | null): string | null {
+  const parts = [
+    ...(anyMedian ? ['📊 baza deklaratsiyalar medianasidan'] : []),
+    ...(guessedFrom !== null ? [`zona «${guessedFrom}»dan taxmin`] : []),
+  ];
+  if (parts.length === 0) return null;
+  return `${VED_ESTIMATE_MARK} bu AI taxmini, rasmiy emas — ${parts.join(' · ')}. Muhrlash yoki «Готово»dan oldin o‘zingiz tekshiring.`;
+}
+
+/**
+ * Within Telegram's cap WITHOUT losing the end (§2.9).
+ *
+ * The head and the tail — the totals, the road, the JAMI, the caveat, the
+ * legend, the link — are what the seller acts on and repeats; a trailing
+ * `slice` cut exactly those off a long invoice and kept the lines. So the
+ * LINE LIST shrinks, with «… va yana N ta qator», until the text fits, and a
+ * slice is the last resort for a single head line longer than the cap.
+ */
+export function fitTelegram(head: string[], lines: string[], fixed: string[], tail: string[]): string {
+  for (let k = Math.min(lines.length, MAX_REPLY_LINES); k >= 0; k -= 1) {
+    const more = lines.length > k ? [`… va yana ${lines.length - k} ta qator`] : [];
+    const text = [...head, ...lines.slice(0, k), ...more, ...fixed, ...tail].join('\n');
+    if (text.length <= TELEGRAM_LIMIT) return text;
   }
-  if (line.exciseText) parts.push(line.exciseText);
-  if (line.vatPct !== null) parts.push(`QQS ${line.vatPct}%`);
-  return `${head}\n   ${parts.join(' · ')} → ${money(line.customsUsd)}`;
+  const text = [...head, ...fixed, ...tail].join('\n');
+  return text.length <= TELEGRAM_LIMIT ? text : `${text.slice(0, TELEGRAM_LIMIT - 20)}\n… (qisqartirildi)`;
 }
 
 export function aiVedReplyText(input: AiVedReplyInput): string {
-  const head = [
+  const title = [
     input.freight
       ? `${AI_REPLY_HEAD} · tahminiy podklyuch (rastamojka + yo‘lkira)`
       : `${AI_REPLY_HEAD} · tahminiy rastamojka`,
@@ -240,64 +354,87 @@ export function aiVedReplyText(input: AiVedReplyInput): string {
     .concat(input.clientLabel ? [input.clientLabel] : [])
     .concat(input.cardLabel ? [input.cardLabel] : [])
     .join(' · ');
-  const out: string[] = [head];
 
-  const shown = input.lines.slice(0, MAX_REPLY_LINES);
-  for (const [i, line] of shown.entries()) out.push(lineText(line, i));
-  if (input.lines.length > shown.length) {
-    out.push(`… va yana ${input.lines.length - shown.length} ta qator`);
+  const f = input.freight;
+  const guessedFrom = f && f.ok && f.zoneGuessed ? (f.zoneReadFrom ?? '') : null;
+  const anyMedian = input.lines.some((l) => l.estimated?.priced === true);
+  const head = [title];
+  if (input.audience === 'lenta') {
+    const ved = vedLine(anyMedian, guessedFrom);
+    if (ved) head.push(ved);
   }
 
+  const lines = input.lines.map(lineText);
+
+  const fixed: string[] = [];
   if (input.ungrouped.length > 0) {
     // Named, not counted: the seller can often supply the missing code or
     // say which of the three «sumka» rows this is.
     const names = input.ungrouped.slice(0, 5).map(shortName).join(', ');
     const more = input.ungrouped.length > 5 ? ` … (+${input.ungrouped.length - 5})` : '';
-    out.push(`⚠️ Kod topilmadi: ${names}${more} — VED xodimi qo‘yadi`);
+    fixed.push(`⚠️ Kod topilmadi: ${names}${more} — VED xodimi qo‘yadi`);
   }
-
   if (input.fee) {
-    out.push(`Deklaratsiya yig‘imi (VMQ-55): ${input.fee.bhm} BHM ≈ ${money(input.fee.usd)}`);
+    fixed.push(`Deklaratsiya yig‘imi (VMQ-55): ${input.fee.bhm} BHM ≈ ${money(input.fee.usd)}`);
   }
 
-  out.push('━━━━━━━━━━━━');
-  // NO PARTIAL SUMS (the kernel's rule, restated as a belt here): a line the
-  // engine refused or a row nobody coded is part of the declaration, so a
-  // total over the rest is a smaller number wearing the job's name. The
-  // workspace already answers null in that state; a caller that handed one in
-  // anyway still prints no figure.
+  const tail: string[] = ['━━━━━━━━━━━━'];
+  // NO PARTIAL SUMS under the job's name (the kernel's rule, restated as a
+  // belt here): a line the engine refused or a row nobody coded is part of
+  // the declaration, so the single total is absent while either stands — a
+  // caller that handed one in anyway still prints no figure.
   const blocked = input.lines.some((l) => l.customsUsd === null) || input.ungrouped.length > 0;
   const total = blocked ? null : input.totalUsd;
-  if (total === null) {
+  const est = input.estimate;
+  if (total !== null) {
+    tail.push(`Rastamojka jami: ≈ ${money(total)}`);
+  } else if (!est || (est.exactRows === 0 && est.taxminiyUsd === null)) {
     // Never a $0 and never a silence: the total is absent BECAUSE something
     // is, and the lines above already say which — or, when only the fee
     // refused, this line does.
-    out.push('Rastamojka jami: hozircha hisoblab bo‘lmadi.');
-    if (!blocked && input.feeRefusal) out.push(`⚠️ Bojxona yig‘imi: ${input.feeRefusal}`);
+    tail.push('Rastamojka jami: hozircha hisoblab bo‘lmadi.');
+    if (!blocked && input.feeRefusal) tail.push(`⚠️ Bojxona yig‘imi: ${input.feeRefusal}`);
   } else {
-    out.push(`Rastamojka jami: ≈ ${money(total)}`);
-  }
-  if (input.freight) {
-    const f = input.freight;
-    out.push(
-      f.ok
-        ? `Yo‘lkira (${f.routeLabel}, ${f.bandText}): ≈ ${money(f.listUsd)}`
-        : `Yo‘lkira: ⚠️ ${f.refusal} — VED xodimi hisoblaydi`,
+    // His 2.2 b: two figures, each saying exactly what it is.
+    tail.push('Rastamojka jami:');
+    tail.push(
+      est.exactRows > 0 && est.exactUsd !== null
+        ? `  Aniq: ${money(est.exactUsd)} (${est.rows} tadan ${est.exactRows} qator, yig‘imsiz)`
+        : `  Aniq: hali yo‘q (${est.rows} tadan 0 qator)`,
     );
-    // The sum only when BOTH halves are figures: half a price labelled
-    // «jami» is the partial total law 6 forbids, one line lower.
-    if (f.ok && total !== null) {
-      out.push(`JAMI (rastamojka + yo‘lkira): ≈ ${money(total + f.listUsd)}`);
+    tail.push(
+      est.taxminiyUsd !== null
+        ? `  Taxminiy ≈ ${money(est.taxminiyUsd)}${feeWords(est.taxminiyFee)}`
+        : `  Taxminiy: hisoblab bo‘lmadi${est.taxminiyBlock ? ` — ${est.taxminiyBlock}` : '.'}`,
+    );
+  }
+  const taxminiy = total === null && est ? est.taxminiyUsd : null;
+
+  if (f) {
+    if (f.ok) {
+      tail.push(`Yo‘lkira (${routeWords(f)}, ${f.bandText}): ≈ ${money(f.listUsd)}`);
+      if (f.small) tail.push(SMALL_ROAD_LINE);
     } else {
-      out.push('JAMI: hozircha hisoblab bo‘lmadi — yuqoridagi ⚠️ ni to‘ldiring.');
+      tail.push(roadRefusalLine(f));
+    }
+    // The sum only when BOTH halves are figures: half a price labelled
+    // «jami» is the partial total law 6 forbids, one line lower. And when
+    // either half is an estimate — the 📊 Taxminiy, or a zone read off the
+    // city — the sum says «taxminiy» on its own face.
+    if (f.ok && total !== null && !f.zoneGuessed) {
+      tail.push(`JAMI (rastamojka + yo‘lkira): ≈ ${money(total + f.listUsd)}`);
+    } else if (f.ok && (total ?? taxminiy) !== null) {
+      tail.push(`JAMI taxminiy (rastamojka + yo‘lkira): ≈ ${money((total ?? taxminiy)! + f.listUsd)}`);
+    } else {
+      tail.push('JAMI: hozircha hisoblab bo‘lmadi — yuqoridagi ⚠️ ni to‘ldiring.');
     }
   }
-  out.push('⚠️ Rasmiy emas — VED xodimi tasdiqlaydi.');
+  tail.push('⚠️ Rasmiy emas — VED xodimi tasdiqlaydi.');
 
-  out.push(`📄 Sertifikat: ${input.hasCertificate ? 'bor' : 'yo‘q'} (deb hisoblandi)`);
-  if (!input.aiConfigured) out.push('AI sozlanmagan — faqat yozilganidan o‘qildi.');
+  tail.push(`📄 Sertifikat: ${input.hasCertificate ? 'bor' : 'yo‘q'} (deb hisoblandi)`);
+  if (!input.aiConfigured) tail.push('AI sozlanmagan — faqat yozilganidan o‘qildi.');
   else if (input.budgetSpent) {
-    out.push('AI kunlik limiti tugadi — muhrlangan xotira va bojxona faylidan hisoblandi.');
+    tail.push('AI kunlik limiti tugadi — muhrlangan xotira va bojxona faylidan hisoblandi.');
   }
 
   // The legend names only what was actually used — a key to marks nobody can
@@ -305,12 +442,12 @@ export function aiVedReplyText(input: AiVedReplyInput): string {
   const used = [...new Set(input.lines.map((l) => l.bazaSource))]
     .filter((s): s is Exclude<BazaSource, null> => s !== null && SOURCE_LEGEND[s] !== '')
     .map((s) => SOURCE_LEGEND[s]);
-  if (used.length > 0) out.push(used.join(' · '));
+  if (input.lines.some((l) => l.estimated !== null)) used.push(MEDIAN_LEGEND);
+  if (used.length > 0) tail.push(used.join(' · '));
 
-  if (input.link) out.push(`Karta: ${input.link}`);
+  if (input.link) tail.push(`Karta: ${input.link}`);
 
-  const text = out.join('\n');
-  return text.length <= TELEGRAM_LIMIT ? text : `${text.slice(0, TELEGRAM_LIMIT - 20)}\n… (qisqartirildi)`;
+  return fitTelegram(head, lines, fixed, tail);
 }
 
 /** Re-exported so a caller need not reach into the screen's own module. */

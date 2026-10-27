@@ -141,7 +141,7 @@ async function open(items: { name: string; tnvedCode?: string | null; quantity?:
 async function openSection(
   section: 'yolkira' | 'rastamojka' | 'podklyuch',
   items: { name: string; tnvedCode?: string | null; quantity?: number | null; weightKg?: number | null }[],
-  extra: { freightZone?: string | null } = {},
+  extra: { freightZone?: string | null; fromCity?: string | null } = {},
 ) {
   const r = await openCalcRequest(
     {
@@ -149,7 +149,7 @@ async function openSection(
       entityType: 'deal',
       entityId: dealId,
       section,
-      fromCity: 'Yiwu',
+      fromCity: extra.fromCity === undefined ? 'Yiwu' : extra.fromCity,
       toCity: 'Toshkent',
       weightKg: 500,
       volumeM3: 10,
@@ -259,11 +259,16 @@ describe('the machine carries a job as far as it honestly can', () => {
     );
   });
 
-  it('a podklyuch job with no zone refuses the road in words, and sums nothing', async () => {
+  // Re-anchored (docs/SAKKIZ-R2.md §6.9): «no zone» alone no longer refuses —
+  // his 2.5 b has the city guess it (customs-estimate's (6) is that case).
+  // The refusal stands where nothing CAN be guessed: no zone AND no city, and
+  // it is the SELLER's to fix — he asks the customer where the cargo leaves.
+  it('a podklyuch job with no zone and no city refuses the road in words, and sums nothing', async () => {
     const row = await importRow();
     const id = await openSection('podklyuch', [{ name: row.name, weightKg: 100 }], {
       // A zone the tariff does not have is dropped, never stored.
       freightZone: 'mars',
+      fromCity: null,
     });
     const [req] = await db.select().from(calcRequests).where(eq(calcRequests.id, id));
     expect(req!.freightZone).toBeNull();
@@ -272,7 +277,9 @@ describe('the machine carries a job as far as it honestly can', () => {
       pick: async () => ({ answers: [], usage: null }),
       configured: true,
     });
-    expect(out.text).toContain('Yo‘lkira: ⚠️ yo‘nalish (zona) tanlanmagan — VED xodimi hisoblaydi');
+    expect(out.text).toContain(
+      'Yo‘lkira: ⚠️ yo‘nalish (zona) tanlanmagan — qaysi shahardan yozilmagan — mijozdan so‘rab, kartadagi lentaga yozing',
+    );
     expect(out.text).toContain('JAMI: hozircha hisoblab bo‘lmadi');
     expect(out.text).not.toContain('$0.00');
   });

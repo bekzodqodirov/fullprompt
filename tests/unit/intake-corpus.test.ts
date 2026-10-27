@@ -44,6 +44,10 @@ vi.mock('@/modules/platform/notifications/staff', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/modules/platform/notifications/staff')>()),
   notifyStaffTelegram: notify,
 }));
+// Round 2 (docs/SAKKIZ-R2.md §6.8): every machine message for a request goes
+// through `sayOnce` — one per request — so the worker cases read it here.
+const say = vi.hoisted(() => vi.fn());
+vi.mock('@/modules/wms/calc/say-once', () => ({ sayOnce: say }));
 
 import {
   AI_READ_FAILURE,
@@ -388,7 +392,8 @@ describe('threadAiAdvice', () => {
 
 describe('attemptStanding', () => {
   each(attemptStandingCases)(title, (c) => {
-    expect(attemptStanding(c.input[0] as Parameters<typeof attemptStanding>[0], c.input[1])).toBe(c.expected);
+    // `writes: true` — these cases are customs passes, the only kind before round 2.
+    expect(attemptStanding(c.input[0] as Parameters<typeof attemptStanding>[0], c.input[1], true)).toBe(c.expected);
   });
 });
 
@@ -1089,18 +1094,20 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
   },
   // ---- the prefill worker's stand-down (a18)
   c0220: async () => {
+    say.mockReset();
     const { handler } = await prefillWorker();
     prefill.standing.mockResolvedValue('touched');
     await handler([prefillJob(1)]);
-    const texts = notify.mock.calls.map((call) => (call[0] as { text: string }).text);
+    const texts = say.mock.calls.map((call) => (call[1] as { text: string }).text);
     expect(texts).not.toContain(STOOD_DOWN.touched);
     for (const t of texts) expect(t).toBe(PASS_FAILED);
   },
   c0221: async () => {
+    say.mockReset();
     const { handler } = await prefillWorker();
     prefill.standing.mockResolvedValue('touched');
     await handler([prefillJob(0)]);
-    expect(notify).toHaveBeenCalledWith(expect.objectContaining({ text: STOOD_DOWN.touched }));
+    expect(say).toHaveBeenCalledWith('r1', expect.objectContaining({ text: STOOD_DOWN.touched }));
   },
   // ---- no pause after the last attempt, none past the leash (a19)
   c0222: async () => {
@@ -1500,7 +1507,9 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
   },
   c0789: async () => {
     expect(STOOD_DOWN.unfinished).toBe(PASS_FAILED);
-    expect(source('src/modules/wms/calc/jobs.ts')).toContain('const said = STOOD_DOWN[standing];');
+    // Round 2: the words are chosen by the job's queue (§2.8) — the customs
+    // map stays `STOOD_DOWN`, and the stand-down still SPEAKS.
+    expect(source('src/modules/wms/calc/jobs.ts')).toContain('const said = (writes ? STOOD_DOWN : TARIFF_STOOD_DOWN)[standing];');
     const { options } = await prefillWorker();
     expect(options).toMatchObject({ includeMetadata: true });
   },
@@ -1560,6 +1569,7 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     expect(activeIntake(chatId)!.stage).toBe('review');
   },
   c0804: async () => {
+    say.mockReset();
     const { handler } = await prefillWorker();
     prefill.standing.mockResolvedValue('ok');
     prefill.run.mockResolvedValue({ ok: false, reason: 'stand-in' });
