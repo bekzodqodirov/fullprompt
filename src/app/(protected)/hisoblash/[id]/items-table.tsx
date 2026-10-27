@@ -573,15 +573,20 @@ export function ItemsTable({
    * its own ten-digit code, drafted with the pick: the save prices the row
    * under the code the declaration was filed under, in one press. A recode
    * a PERSON chooses here carries no `bazaReason` and raises no `ai_recode`
-   * — the person chose it. */
+   * — the person chose it. The 📥 stays open over a code the pick drafted
+   * (`rowDirtyForPicker`), so a re-pick REPLACES that code: one under the
+   * stored code takes any drafted code back off, or the row would keep the
+   * first pick's code under the second pick's declaration. */
   const pickImport = useCallback(
     (itemId: string, row: { id: string; pricePerUnitUsd: number; basis: BazaBasis; tnvedCode: string }) => {
       setLastSave(null);
       setDraftState((prev) => {
         const item = itemById.get(itemId);
         if (!item) return prev;
+        const rest: ItemDraft = { ...prev.drafts[itemId] };
+        delete rest.tnvedCode;
         return withRowDraft(prev, item, {
-          ...prev.drafts[itemId],
+          ...rest,
           ...(row.tnvedCode !== (item.tnvedCode ?? '') ? { tnvedCode: row.tnvedCode } : {}),
           bazaValue: String(row.pricePerUnitUsd),
           bazaBasis: row.basis,

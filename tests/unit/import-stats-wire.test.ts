@@ -102,6 +102,12 @@ describe('6b. the 📥 waits on a row whose code, count, weight or volume is dra
     const ROW_DRAFT = read('src/modules/wms/calc/row-draft.ts');
     const rule = bodyOf(ROW_DRAFT, 'export function rowDirtyForPicker(');
     expect(rule).toContain("(['tnvedCode', 'quantity', 'weightKg', 'volumeM3'] as const).some(");
+    // The pick's own drafted code is exempt (review regression-18) — and the
+    // pick then REPLACES a drafted code rather than spreading it under the
+    // next declaration.
+    expect(rule).toContain("!(k === 'tnvedCode' && draft?.importRowId !== undefined)");
+    const pick = TABLE.slice(TABLE.indexOf('const pickImport = useCallback('));
+    expect(pick.slice(0, pick.indexOf('[itemById]'))).toContain('delete rest.tnvedCode;');
     expect(TABLE).toContain('rowDirty={rowDirtyForPicker(drafts)}');
     const at = TABLE.indexOf('data-testid="calc-import-pick"');
     expect(at).toBeGreaterThan(-1);
