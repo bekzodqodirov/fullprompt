@@ -463,9 +463,18 @@ describe('G2 — whose deal the bot mints', () => {
     expect((await ownerOf((await land(P.s, client)).id)).ownerId).toBe(P.s.id);
   });
 
-  it('(v) a seller sends for ANOTHER seller’s client → the sender keeps it (as today; Q1)', async () => {
+  it('(v) a seller sends for ANOTHER seller’s client → a LEAD in the sender’s own funnel (6.8 b, Q3 b)', async () => {
+    // His 2026-10-27 «boshqa sotuvchining mijozi bo'lsa, jo'natganning
+    // CRM'ida yangi lid ochiladi»: no deal is opened on the colleague's
+    // client; the lead says whose client it is about.
     const client = await mintClient('M', P.s3.id);
-    expect((await ownerOf((await land(P.s, client)).id)).ownerId).toBe(P.s.id);
+    const target = await land(P.s, client);
+    expect(target.kind).toBe('lead');
+    madeLeads.push(target.id);
+    const lead = await db.query.leads.findFirst({ where: eq(leads.id, target.id) });
+    expect(lead!.ownerId).toBe(P.s.id);
+    expect(lead!.clientId).toBeNull();
+    expect(await db.select().from(deals).where(eq(deals.clientId, client.id))).toHaveLength(0);
   });
 
   it('(vi) warehouse staff send → the client’s seller, or nobody', async () => {
@@ -537,12 +546,49 @@ describe('G2 — whose deal the bot mints', () => {
     expect(lead!.createdBy).toBe(P.ved.id);
   });
 
-  it('(vii) an existing open deal is reused with its owner untouched', async () => {
+  it('(vii) an existing open deal is a different job: a NEW deal opens, the old one untouched', async () => {
+    // «har so'rovga yangi bitim» (his 2026-10-27): requests used to pile into
+    // the client's newest open deal.
     const client = await mintClient('R', P.s.id);
     const existing = await mintDeal(client.id, `VR${S}-1`, openStageId, [], P.s2.id);
     const target = await land(P.ved, client);
-    expect(target.id).toBe(existing);
-    expect((await ownerOf(existing)).ownerId).toBe(P.s2.id);
+    expect(target.kind).toBe('deal');
+    expect(target.id).not.toBe(existing);
+    expect((await ownerOf(target.id)).ownerId).toBe(P.s.id);
+    const old = await ownerOf(existing);
+    expect(old.ownerId).toBe(P.s2.id);
+    expect(old.title).toBe(`VED bitim VR${S}-1`);
+  });
+
+  it('(x) the round-111 shell deal is TAKEN OVER once, and the next request mints', async () => {
+    // A client code opens an empty deal with it (round 111) — the client's
+    // name as its title, nobody's work. The first request takes it over
+    // instead of leaving an empty card beside a new one (judge conc-5).
+    const client = await mintClient('Z', P.s.id);
+    const [shell] = await db
+      .insert(deals)
+      .values({ code: `VZ${S}-1`, clientId: client.id, stageId: openStageId, ownerId: P.s.id, createdBy: P.s.id, title: client.name })
+      .returning({ id: deals.id });
+    const first = await land(P.ved, client);
+    expect(first.id).toBe(shell!.id);
+    expect(first.outcome).toBe('adopted');
+    expect((await ownerOf(shell!.id)).title).toMatch(new RegExp(`^Yo'lkira — ${client.clientCode} · \\d{2}\\.\\d{2}$`));
+    // The title moved, so it is no longer anybody's shell: the next mints.
+    const second = await land(P.ved, client);
+    expect(second.id).not.toBe(shell!.id);
+    expect(second.outcome).toBe('deal');
+
+    // A shell somebody already WROTE on is a deal, not a shell: a line typed
+    // on it keeps it out of reach (re-checked inside the card's transaction).
+    const touchedClient = await mintClient('T', P.s.id);
+    const [touched] = await db
+      .insert(deals)
+      .values({ code: `VT${S}-1`, clientId: touchedClient.id, stageId: openStageId, ownerId: P.s.id, createdBy: P.s.id, title: touchedClient.name })
+      .returning({ id: deals.id });
+    await db.insert(dealLines).values({ dealId: touched!.id, seq: 1, description: 'Yozilgan', tnvedCode: null });
+    const landed = await land(P.ved, touchedClient);
+    expect(landed.id).not.toBe(touched!.id);
+    expect((await ownerOf(touched!.id)).title).toBe(touchedClient.name);
   });
 });
 
