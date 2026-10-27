@@ -27,6 +27,7 @@ import {
   resolveMissingLot,
   unloadRemaining,
 } from '@/modules/wms/scanning/unload';
+import { planRoadReady } from '@/modules/wms/planning/road';
 import { countAcceptCrate, countAcceptLot, CountError } from '@/modules/wms/scanning/count-accept';
 import { countDoorFor } from '@/modules/wms/scanning/count-door';
 import { batchRegister } from '@/modules/wms/reports/queries';
@@ -261,12 +262,13 @@ describe('the office count and a phone on an ARRIVED truck (review lock-1)', () 
     let go!: () => void;
     const gate = new Promise<void>((r) => (go = r));
     // The PHONE: the real body, paused between its carton lock and the rest.
+    const road = await planRoadReady();
     const phone = db
       .transaction(async (tx) => {
         await tx.execute(sql`SELECT id FROM boxes WHERE id = ${X.id} FOR UPDATE`);
         lockedX();
         await gate;
-        return landUnloadInput(tx, qr(truck.id, X.code), actorId, new Set(), {});
+        return landUnloadInput(tx, qr(truck.id, X.code), actorId, new Set(), {}, {}, road);
       })
       .then(
         (ack) => ({ ok: true as const, result: ack.result }),

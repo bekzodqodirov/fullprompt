@@ -15,6 +15,7 @@ import {
 } from './count-rules';
 import { doorOpens, type CountDoor } from './count-door';
 import { loadScanInTx } from './service';
+import { claimFromShelfTx, planRoadReady, roadNotHereSql, type RoadOn } from '../planning/road';
 import { aboardFilter } from './unload';
 import { planCountMove, shelfStatus, type CountRow } from './count-plan';
 import { qrlessRowSql } from '../labels/qrless-sql';
@@ -158,10 +159,16 @@ function byCountSql(alias: string, batchId: string): SQL {
   ), false)`;
 }
 
-/** The approved plan's loose number for this lot on this truck (0 when the lot is not on it). */
-async function planNumber(exec: Db | Tx, batchId: string, lotId: string): Promise<number> {
+/**
+ * The approved plan's loose number for this lot on this truck (0 when the lot
+ * is not on it) — less what the road still owes or never gave
+ * (docs/YOLDAGI-YUK.md §9): the part of the plan that can be on the truck now.
+ * Counting the road part, «Hammasi» would ask for cartons still on another
+ * truck and grow the lot by them, and they would land later as duplicates.
+ */
+async function planNumber(exec: Db | Tx, batchId: string, lotId: string, road: RoadOn): Promise<number> {
   const rows = (await exec.execute(sql`
-    SELECT coalesce(sum(pl.planned_box_count), 0)::int AS n
+    SELECT coalesce(sum(pl.planned_box_count${road.on ? sql` - ${roadNotHereSql('pl')}` : sql``}), 0)::int AS n
       FROM load_plan_lines pl
       JOIN load_plan_versions pv ON pv.id = pl.version_id
       JOIN load_plans p ON p.id = pv.plan_id
@@ -281,6 +288,8 @@ export async function countLoadLot(
   if (!actorId) throw new CountError('forbidden');
   const batchId = input.batchId;
   const lotId = input.lotId;
+  // On the pool, before the transaction (#714).
+  const road = await planRoadReady();
 
   const result = await db.transaction(async (tx) => {
     await setCountLockTimeout(tx);
@@ -295,7 +304,6 @@ export async function countLoadLot(
     if (!lot) throw new CountError('lot_not_found');
     const originId = batch.originWarehouseId;
     const hasPlan = !!(await tx.query.loadPlans.findFirst({ where: eq(loadPlans.batchId, batchId) }));
-    const planN = hasPlan ? await planNumber(tx, batchId, lotId) : 0;
 
     // The lot row before its cartons — the order the receipt card's switch
     // and the lot form take them in; a growth locks it too, and taking it
@@ -311,6 +319,25 @@ export async function countLoadLot(
        ORDER BY b.id
        FOR UPDATE
     `);
+    // Yo'ldagi yuk (docs/YOLDAGI-YUK.md §7): cartons of this lot standing free
+    // on the origin's shelf while this truck's plan still owes the lot from
+    // the road — however they got here — are the plan's, reserved before the
+    // numbers are read. Held already (the shelf is among the candidates).
+    if (hasPlan && road.on) {
+      const free = (await tx.execute(sql`
+        SELECT b.id, b.status, b.seq_in_lot FROM boxes b
+         WHERE ${candidatesSql('b', batchId, lotId, originId)} AND b.current_batch_id IS NULL
+         ORDER BY b.seq_in_lot
+      `)) as unknown as { id: string; status: string; seq_in_lot: number }[];
+      await claimFromShelfTx(tx, road, {
+        batchId,
+        warehouseId: originId,
+        lotId,
+        cartons: free.map((c) => ({ id: c.id, status: c.status, seq: Number(c.seq_in_lot) })),
+        actorId,
+      });
+    }
+    const planN = hasPlan ? await planNumber(tx, batchId, lotId, road) : 0;
     const grownHere = await grownCodesOnTruck(tx, { receiptId: lot.receiptId, lotId, batchId });
     const rows = await countRows(tx, batchId, lotId, originId, grownHere);
     const before = rows.filter((r) => r.onTruck && r.status === 'loading').length;
@@ -367,6 +394,7 @@ export async function countLoadLot(
         },
         actorId,
         { door: COUNT_LOAD_REASON, boxId: box.id, quietSpot: true },
+        road,
       );
       if (ack.result !== 'ok' || ack.detail === 'replay') throw new CountError('count_conflict');
     };
@@ -619,6 +647,7 @@ export async function countLoadCrate(
 ): Promise<CountCrateResult> {
   const actorId = ctx.actorId;
   if (!actorId) throw new CountError('forbidden');
+  const road = await planRoadReady();
   return db.transaction(async (tx) => {
     await setCountLockTimeout(tx);
     await lockTruckLoading(tx, input.batchId);
@@ -642,6 +671,7 @@ export async function countLoadCrate(
       },
       actorId,
       { door: COUNT_LOAD_REASON, quietSpot: true },
+      road,
     );
     if (ack.result === 'duplicate') {
       return { code: crate.code, loaded: 0, unplanned: ack.unplanned ?? [], unchanged: true };
@@ -731,7 +761,25 @@ export async function countLoadPanel(batch: {
     SELECT DISTINCT lot_id FROM boxes
      WHERE current_batch_id = ${batchId}::uuid AND crate_id IS NULL AND status IN ('planned', 'loading')
   `)) as unknown as { lot_id: string }[];
-  const lotIds = [...new Set([...onTruck.map((r) => r.lot_id), ...counted.keys()])];
+  // A lot this truck's plan still owes from the road is the count's too, with
+  // nothing of it aboard yet (docs/YOLDAGI-YUK.md §9): what of it stands free
+  // here the press claims first, so the panel offers it.
+  const road = await planRoadReady();
+  const owedLots = new Map<string, number>();
+  if (road.on && !quick) {
+    const owed = (await db.execute(sql`
+      SELECT pl.lot_id, sum(plr.road_owed)::int AS owed
+        FROM plan_line_road plr
+        JOIN load_plan_lines pl ON pl.id = plr.line_id
+        JOIN load_plan_versions pv ON pv.id = pl.version_id
+        JOIN load_plans p ON p.id = pv.plan_id
+       WHERE p.batch_id = ${batchId}::uuid AND pv.agent_verdict = 'approved'
+         AND pv.version_no = p.current_version_no AND plr.road_owed > 0
+       GROUP BY pl.lot_id
+    `)) as unknown as { lot_id: string; owed: number }[];
+    for (const row of owed) owedLots.set(row.lot_id, Number(row.owed));
+  }
+  const lotIds = [...new Set([...onTruck.map((r) => r.lot_id), ...counted.keys(), ...owedLots.keys()])];
 
   const crateRows = (await db.execute(sql`
     SELECT cr.id, cr.code, count(*)::int AS boxes,
@@ -792,12 +840,15 @@ export async function countLoadPanel(batch: {
     qrless_shelf: boolean;
   }[];
 
+  // The plan's number less what the road owes or never gave — `planNumber`'s
+  // sentence — plus what of the owed part stands free here, which the press
+  // claims before it computes: the panel's «Hammasi» is the number it accepts.
   const plans = quick
     ? new Map<string, number>()
     : new Map(
         (
           (await db.execute(sql`
-            SELECT pl.lot_id, sum(pl.planned_box_count)::int AS n
+            SELECT pl.lot_id, sum(pl.planned_box_count${road.on ? sql` - ${roadNotHereSql('pl')}` : sql``})::int AS n
               FROM load_plan_lines pl
               JOIN load_plan_versions pv ON pv.id = pl.version_id
               JOIN load_plans p ON p.id = pv.plan_id
@@ -842,7 +893,9 @@ export async function countLoadPanel(batch: {
       label: `${identity.main}-${l.letter ?? '?'}`,
       sub: identity.sub,
       product: l.product_name_ru || l.product_name_zh,
-      plan: quick ? null : (plans.get(l.lot_id) ?? 0),
+      plan: quick
+        ? null
+        : (plans.get(l.lot_id) ?? 0) + Math.min(owedLots.get(l.lot_id) ?? 0, Number(l.spare)),
       aboard: Number(l.aboard),
       phoneScanned: Number(l.phone),
       over: Number(l.over),

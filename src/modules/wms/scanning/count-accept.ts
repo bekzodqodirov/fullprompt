@@ -34,6 +34,7 @@ import {
   setCountLockTimeout,
 } from './count-rules';
 import { doorOpens, type CountDoor } from './count-door';
+import { planRoadReady, type RoadOn } from '../planning/road';
 import { notifyPricedCargoGrew, notifyPricedCargoTakenBack } from '../finance/off-truck';
 import { formerDestinationsFor } from '../batches/reroute';
 
@@ -430,10 +431,13 @@ export async function countAcceptLot(
   };
   let grew = false;
   let done: CountAcceptResult | null = null;
+  // On the pool, before any chunk's transaction (#714): a counted carton lands
+  // as a scanned one does, a plan owing its lot included (docs/YOLDAGI-YUK.md §7).
+  const road = await planRoadReady();
   try {
     for (let chunk = 0; ; chunk += 1) {
       const step = await db.transaction((tx) =>
-        countChunk(tx, { input, ctx, actorId, doors, overReason, need, chunk, state, rogueTrucks }),
+        countChunk(tx, { input, ctx, actorId, doors, overReason, need, chunk, state, rogueTrucks, road }),
       );
       if (step.grew) grew = true;
       if (step.result) {
@@ -652,6 +656,7 @@ async function countChunk(
     chunk: number;
     state: PressState;
     rogueTrucks: Set<string>;
+    road: RoadOn;
   },
 ): Promise<{ result: CountAcceptResult | null; grew: boolean }> {
   const { input, actorId, state } = a;
@@ -827,6 +832,8 @@ async function countChunk(
         quietSpot: true,
         noticeWindowMinutes: OFFICE_NOTICE_WINDOW_MINUTES,
       },
+      {},
+      a.road,
     );
   for (const box of awaitPicks) {
     const ack = await land(box, COUNT_ACCEPT_REASON);
@@ -1065,6 +1072,7 @@ export async function countAcceptCrate(
   }
   if (!['in_transit', 'arrived'].includes(pre.status)) throw new CountError('batch_not_unloading');
   if (pre.status === 'in_transit' && !input.confirmArrival) throw new CountError('confirm_arrival_required');
+  const road = await planRoadReady();
   try {
     return await db.transaction(async (tx) => {
       await setCountLockTimeout(tx);
@@ -1095,6 +1103,8 @@ export async function countAcceptCrate(
         actorId,
         new Set(),
         { door: COUNT_ACCEPT_REASON, quietSpot: true, noticeWindowMinutes: OFFICE_NOTICE_WINDOW_MINUTES },
+        {},
+        road,
       );
       if (ack.result === 'duplicate' || ack.detail === 'replay') {
         return { code: crate.code, landed: 0, notArrived: ack.notArrived ?? [], replay: true };

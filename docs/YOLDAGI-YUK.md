@@ -16,148 +16,194 @@ imkoniyati bolsin». His answers to the five questions: **«1 a 2 a 3 a 4 a 5 a�
    («yuklanmadi»), as a short-loaded carton is today, and the cargo stays here for the next plan.
 5. **a** — the checkbox is on every warehouse's plan, not only Horgos.
 
+v1 of this design was judged by four lenses before code (34 objections, 5 blockers); this is v2, every
+surviving objection absorbed. The ones that changed the shape are named where they landed.
+
 ## 1. The words
 
 - **origin W** — the warehouse the plan's truck O leaves from.
-- **road carton** of lot L for W — a carton with `crate_id IS NULL`, `status = 'in_transit'`, riding
+- **road carton** of lot L for W — loose (`crate_id IS NULL`), `status = 'in_transit'`, riding
   `current_batch_id = I` where batch I has `dest_warehouse_id = W` and `status IN ('in_transit','arrived')`.
-  ONE sentence (`planning/road.ts` `roadCartonSql`), read by the editor's list, the submit check and the
-  approval. Crates on the road are NOT offered (a crate's row stays at its old warehouse until it lands, and a
-  crate line takes «exactly this crate's boxes» — stated, not built).
-- **road part** of a plan line — how many of its `planned_box_count` were promised from the road.
-- **owed** — how many of the road part are still to be reserved onto O when they land.
+  ONE sentence (`planning/road.ts` `roadCartonSql`) for the editor's list, the submit, the approval and the
+  loading screen. Crates on the road are not offered (a crate's row stays at its old warehouse until it lands,
+  and a crate line takes «exactly this crate's boxes» — stated).
+- **road part** of a plan line — how many of its `planned_box_count` the planner took from the road (frozen at
+  submit, the promise's ceiling).
+- **owed** — of an APPROVED line's road part, how many are still to be reserved onto O.
+- **missed** — owed that O's loading ended without (4a). Never erased: it is what keeps the count door from
+  asking for it again after «yuklash tugadi».
+- **claim** — reserving one carton onto O against an owed line: the carton becomes `planned` on O with a
+  `plan_approved` movement (`recordVerdict`'s exact shape, so `shelfBefore` and every give-back read it), owed
+  goes down by one, and a `plan_road_claims` row records it.
 
 ## 2. Data (migration 0137 `plan_road`, ledger 138)
 
-A SIDE table, never a column on `load_plan_lines` (#1381's rule: the plan's lines are read whole-row by the
-approval, the plan view and the agent sheet, and a column a server one migration behind does not have takes all
-three down with a 42703):
+SIDE tables, never a column on `load_plan_lines` (#1381: the plan's lines are read whole-row by the approval,
+the plan view and the agent sheet, and a column a server one migration behind lacks takes all three down):
 
-`plan_line_road (line_id uuid PK → load_plan_lines(id) ON DELETE CASCADE, road_box_count int, road_owed int,
-created_at)` — one row per line that HAS a road part, none otherwise (no row = «no road part», which is every
-existing line):
+- `plan_line_road (line_id PK → load_plan_lines ON DELETE CASCADE, road_box_count int > 0, road_owed int,
+  road_missed int, created_at)` — one row per line that HAS a road part; no row = none (every existing line).
+  CHECK `road_owed >= 0 AND road_missed >= 0 AND road_owed + road_missed <= road_box_count`. `road_owed` is 0
+  until approval (a pending promise reserves nothing, objection counts#6/editor#3). Partial index `WHERE
+  road_owed > 0`.
+- `plan_road_claims (line_id → load_plan_lines ON DELETE CASCADE, box_id → boxes, inbound_batch_id → batches
+  NULL, claimed_at, PK (line_id, box_id))` — which carton each claim took and off which truck (NULL = taken from
+  the shelf at loading). Read by the give-back's arrival notice (§7), the plan view and the agent sheet.
 
-- `road_box_count` — the road part, frozen at submit (a FACT about the promise, never rewritten), `> 0`;
-- `road_owed` — still to be reserved; set at approval, decremented by the landing reservation, zeroed by every
-  door that ends O's loading. CHECK `0 <= road_owed <= road_box_count`. Partial index `WHERE road_owed > 0`.
+`road_box_count <= planned_box_count` and «crate lines carry no road part» are the one writer's rules
+(`submitPlan`); a CHECK cannot span two tables. `gsr_ai_reader` (0080, allowlist default-deny) is granted
+NOTHING on either table (stated, the 0123/0135 precedent — the AI card's fence pins 0080's grant list).
 
-`road_box_count <= planned_box_count` and «crate lines carry no road part» are the writer's rules (one writer,
-`submitPlan`), since a CHECK cannot span the two tables.
+**The probe.** `planRoadReady()` (ftlReady's shape: try/catch, «yes» remembered, `forgetPlanRoadReady()` for
+the test) returns a branded `RoadOn` — `{ on: boolean }` minted only there. It is asked on the POOL by every
+door BEFORE it opens its transaction (#714, the tx-pool fence) and passed as a REQUIRED argument to every body
+that touches the tables: `landUnloadInput`, `resolveOneMissingInTx`, `loadScanInTx`, `planNumber`, the
+finish/depart/cancel helpers, `submitPlan`, `recordVerdict`. Off = today's shape exactly, and the editor draws
+no checkbox. A derived fence (`road-wire.test.ts`) asserts every caller of those bodies passes it.
 
-A durable `road_owed` and not «plan number minus reserved», because the latter is also true after a person's
-deliberate give-back (`short_loaded`, `load_removed`, a count dialled down) — a landing hook reading the
-difference would quietly refill what somebody sent back.
+## 3. One lock per origin
 
-`planRoadReady()` (the `lotChecksReady` probe shape): every reader and writer of the table asks it first, and on
-«no» (a deploy whose migration did not land, #472) runs today's shape — no road list, no hook, no road part. The
-unload path in particular never names the table on an old schema; its probe is asked on the pool BEFORE the
-landing transaction opens (#714) and handed in.
+`roadLock(tx, W)` = `pg_advisory_xact_lock(hashtext('plan-road'), hashtext(W))`. Taken by:
 
-## 3. The editor (`/plans/new`)
+- `recordVerdict`, once, BEFORE its first carton read, when the version has any road line;
+- the landing hook, LAST (after the carton and the truck rows it already holds), and only when a live plan at W
+  has a road line for the landed lot (a cheap unlocked EXISTS first — a landing of anything else takes no lock);
+- the count door and the phone's load claim, right after the truck's loading lock and before any carton lock.
 
-- A checkbox **«🚚 Yo'ldagi yuklar ham»** above the list, off by default (every e2e spec's first-row
-  selection and every warehouse's habit are unchanged). Its state rides the URL (`?yol=1`) so a refresh keeps it.
-- On: the stock request carries `road=1` and the route ALSO returns `road` (a separate function
-  `roadStock(W)` — `plannableStock` and its fences are untouched):
-  - per lot: `roadFree` (road cartons minus what other live plans already promised from the road — §5) and its
-    inbound trucks `[{ code, etaFrom, etaTo }]` (ETA from `trucksOnRoadRows`, printed as DAYS so the JSON's
-    ETag does not change every millisecond);
-  - `factoryTrips`: `incomingForWarehouses([W])` filtered to trips `on_road`/`arrived` — information only.
-- The table: a lot that has road cartons shows a second line «🚚 +M yo'lda · YW-123 · ~29-31.10»; a lot that is
-  ONLY on the road gets its own row marked 🚚. ONE row per lot (the selection stays `Map<lotId, count>`); the
-  row's maximum = shelf + roadFree when the box is ticked, shelf alone when not. Unticking clamps every pick to
-  its shelf count (and drops road-only picks) — said in a one-line note, never silently.
-- The quiet re-read on tab return reads the same `road` and prunes against shelf + road.
-- Below the table, folded: «🏭 Zavoddan kelyapti (N)» — trip code · client/marking · factory boxes · status.
-- The submit payload gains `road: boolean` (the box's state). The editor sends only `{lotId, boxCount}` per line;
-  the SERVER splits shelf first: `roadPart = max(0, boxCount − shelfFree)`.
+Why it cannot deadlock: the doors that take it first (approval, count door) then lock only SHELF cartons and
+truck O's cartons, and the hook holds only cartons it is landing, whose committed version is `in_transit` — no
+shelf predicate ever waits on them. Why it is needed (objection locks#1): without it an approval and a landing
+of the same lot can each miss the other — the landing sees a pending plan and claims nothing, the approval
+does not see the uncommitted carton on the shelf — and owed ends higher than the road holds, for good.
 
-## 4. Submit (`submitPlan`)
+## 4. The editor (`/plans/new`)
 
-- `road: false` (or the column not there): exactly today — a line over the shelf is `insufficient_stock`.
-- `road: true`: a line may take up to `shelfFree + roadFree(L)`; `road_box_count = max(0, boxCount − shelfFree)`.
-  Over that: `insufficient_stock` with the same `${lotId}:${free}` detail (free = shelf + road).
-- `roadFree(L)` = road cartons of L for W − Σ the road promises of OTHER live plans' current versions:
-  `pending_agent`/`changes_requested` → their `road_box_count`, `approved`/`loading` → their `road_owed`. The
-  plan being resubmitted is excluded (`ne(plans.id, input.planId)`), as the crate guard does.
-- Read on `tx` (#714, the tx-pool fence).
+- A checkbox **«🚚 Yo'ldagi yuklar ham»**, drawn only when `roadOn`, off by default (every spec's first-row
+  selection and every warehouse's habit unchanged). Its state rides `?yol=1`, and a resubmit opens with it ON
+  when the version has a road part (objection editor#0 — v1 silently lost the road part of a sent-back plan).
+- On: the stock request carries `road=1` and the route returns ONE `lots` list in which every lot carries
+  `available` (shelf, may be 0) and, when it has road cartons, `road: { free, trucks: [{ code, state, eta }] }`;
+  a lot only on the road comes back in the full row shape (names, client/marking, photo, per-box kg/m³, check,
+  receiptId) with `available: 0`, read from its receipt, not from cartons at W (editor#1). So Σ, the gauge,
+  the check filter and the prune walk one array (the lot-check fence's `for (const lot of lots)`).
+- `road.free` = road cartons of L for W − Σ `road_owed` of approved/loading plans at W (a pending plan reserves
+  nothing — on the shelf or on the road). Floored at 0. Shelf and road read in ONE statement.
+- The road half is computed in its own try/catch (`[plan-road]`): a failure returns `roadFailed: true` and the
+  shelf list still arrives; the quiet re-read prunes road picks only against an answer whose road half came.
+- Per row: ✓ keeps today's meaning (the SHELF); a separate «🚚 +M» tap adds the road part; the input clamps to
+  shelf + (ticked ? road.free : 0). 📦 prints «count / shelf» with «+M🚚» beside it; «days» prints «—» for a
+  road-only lot. Unticking clamps every pick to its shelf part and drops road-only picks, said in a one-line
+  note, and is the user's act only — never the initial state of a resubmit.
+- The truck line under a road lot: «🚚 +12 yo'lda · YW-123 · 29.10 – 31.10» (`formatEtaRange`), «darvozada»
+  for a truck at the gate, «kechikmoqda» for one past its window; a `block whitespace-normal` line like the
+  arrival line, so it never widens the code column at 360 px.
+- Σ bar: «Σ 50 📦 (🚚 10)» so the gauge is not read as cargo standing here.
+- Below the table, folded: «🏭 Zavoddan kelyapti (N)» — trip · client/marking · boxes · state (2a, read-only).
+- The submit payload gains `road: boolean`. The editor sends `{lotId, boxCount}`; the SERVER splits shelf first.
 
-## 5. Approval (`recordVerdict`)
+## 5. Submit (`submitPlan`)
 
-Per loose line: reserve from the shelf as today, but take `min(planned, available)` and require
-`reserved >= planned − road_box_count` (the shelf part) — short of that is today's `insufficient_stock`.
-`road_owed = planned − reserved` (≤ `road_box_count` by the line above). Road cartons that landed between submit
-and approval are on the shelf now and are simply reserved at approval — the owed part shrinks by itself.
+- `road: false` (or `roadOn` off): exactly today.
+- `road: true`: a loose line may take up to `shelfFree + road.free`; `road_box_count = max(0, boxCount −
+  shelfFree)`, written with `road_owed = 0`, `road_missed = 0`. Over that: `insufficient_stock` with the same
+  `${lotId}:${free}` detail (free = shelf + road), and the editor prints the lot's code from it.
+- No lock: a submit reserves nothing, exactly as the shelf part reserves nothing today.
 
-## 6. The landing reservation (the hook)
+## 6. Approval (`recordVerdict`)
 
-`reserveRoadPlannedInTx(tx, landed, W, actorId)` — inside the landing transaction, after the landing movement:
+- The verdict is a CLAIM: `UPDATE load_plan_versions … WHERE id = $1 AND agent_verdict IS NULL RETURNING`; zero
+  rows → `verdict_already_recorded` (objection locks#5: two approvals of one plan made two trucks — a road-only
+  line removed the accidental insufficient_stock backstop).
+- With any road line: `roadLock(W)` first. Per loose line: reserve `min(planned, shelf available)` (lowest
+  seq, as today); require `reserved >= planned − road_box_count` (the shelf part) — else today's
+  `insufficient_stock`; `owed = planned − reserved`; require `owed <= road.free(L)` computed under the lock
+  excluding nothing (this plan has no owed yet) — else `insufficient_stock` naming the lot with shelf + road.
+- Road cartons that landed between submit and approval are on the shelf now and are simply reserved — owed
+  shrinks by itself.
 
-- Candidates: cartons THIS landing moved from `in_transit` on the inbound truck (`toMove ∖ rogue`), loose
-  (`crate_id IS NULL`), now on W's shelf. Never `count_over` cartons (taken from the origin or minted — `undoOver`
-  must still find them on the shelf), never a rogue carton.
-- Per lot, the plan lines at origin W owing that lot, on a plan `approved`/`loading` whose truck is
-  `forming`/`loading`, oldest approval first. Each claim is ONE statement:
-  `UPDATE plan_line_road SET road_owed = road_owed − k WHERE line_id = $line AND road_owed >= k RETURNING …` —
-  the row lock IS the serialisation; no truck lock is taken (the count door holds the lot row and then the truck
-  lock; taking O's truck lock here, after the lot's cartons, would close that cycle).
-- Per claimed carton: `status = 'planned'`, `current_batch_id = O`, `current_warehouse_id = W` and ONE movement
-  `cause 'plan_approved'`, `ref = (batch, O)`, `from = to = W`, `from_status = the shelf status it landed with` —
-  exactly `recordVerdict`'s shape, so `shelfBefore`, the arrival ledger (`from IS DISTINCT FROM to`) and every
-  give-back read it as they read an approval.
-- Doors that call it: `landUnloadInput` (phone sync, «Hammasini qabul qilish», the office lot count except
-  `count_over`) and `resolveOneMissingInTx`'s `found_here`. NOT the stocktake (`reconcileInventory`) nor a
-  status restore — those land cartons with no truck and are stated.
+## 7. Claims — the landing hook and the loading-time claim
 
-## 7. The doors that end O's loading zero `road_owed` FIRST
+**The hook** `claimLandedForRoadTx(tx, road, W, landed, inboundBatchId, actorId)` — inside the landing
+transaction, after the landing movement:
 
-`finishLoading`, `departBatch` and `cancelBatch` (O's truck lock is already their first statement) run
-`UPDATE plan_line_road SET road_owed = 0 … RETURNING` on O's current approved version BEFORE reading O's
-cartons. The plan-line row lock orders them against an in-flight landing: a landing that committed first left a
-`planned` carton that `finishLoading` short-loads (4a: loading is over) and `departBatch` refuses as
-`finish_loading_first` (today's rule); a landing that comes second finds nothing owed.
+- Candidates: loose cartons THIS call put on W's shelf (whatever status they came from — a `found_here`
+  carton comes from `missing_in_transit`), never `count_over` (those were taken from the inbound origin or
+  minted, and `undoOver` must still find them on the shelf).
+- Unlocked EXISTS first: a live plan at origin W (status `pending_agent`/`approved`/`loading`, its current
+  version) with a road line for the lot. None → return, no lock.
+- `roadLock(W)`, then per lot the owing lines — `road_owed > 0`, approved version = current, plan
+  `approved`/`loading`, truck O `forming`/`loading` — oldest approval first. Each claim is `UPDATE
+  plan_line_road SET road_owed = road_owed − k WHERE line_id = $ AND road_owed >= k RETURNING`; zero rows →
+  re-read and try the next line (objection locks#6).
+- Doors: `landUnloadInput` (the phone's sync, «Hammasini qabul qilish», the office lot count except
+  `count_over`), `resolveOneMissingInTx`'s `found_here`, the stocktake's bulk «found» and the single found door
+  (objection locks#3: a stocktake that lands a road carton without claiming it left owed over cargo standing
+  here, and «yuklash tugadi» reporting «kelmadi» about cartons on the truck).
 
-- `finishLoading` reports the road part that did not come: «🚚 Yo'ldan kelmadi: N» in the load summary and the
-  audit row (`roadMissed`), per lot in the summary text.
-- `cancelPlan` (before approval) needs nothing: no owed is set before approval.
+**A carton this truck already landed is never landed again by it** (objection locks#0, the blocker): a stale
+phone scan of a carton the hook had reserved took the rogue branch and put it back on the shelf with
+`undocumented_transfer`. `landUnloadInput` treats a member that has a landing movement off THIS truck into its
+destination as already landed (`duplicate`), whatever it has become since.
 
-## 8. Readers
+**The loading-time claim** (self-healing, objection counts#1): a loose carton of an owed lot standing FREE on
+W's shelf — however it got there — is claimed when it is loaded:
 
-- **Count door** (`planNumber`, the panel's `plans`): the plan number EXCLUDES what is still owed —
-  `Σ planned_box_count − Σ road_owed` (a LEFT JOIN on the side table). Without it «Hammasi (50)» with 10 on the road asks for an over-reason and
-  `growLotInTx` mints 10 cartons that then land as duplicates.
-- **Loading snapshot** (`/api/batches/[id]/planned`): `roadOwed: [{ lotId, label, owed, trucks }]`; the loading
-  screen prints one line «🚚 Yo'ldan kutilmoqda: GS777-A · 10 karobka (YW-123)» above the list, so nobody
-  presses «yuklash tugadi» not knowing.
-- **Plan view** (`/plans/[id]`): a line with a road part shows «🚚 N yo'ldan» and, after approval,
-  «M kutilmoqda» while owed.
-- **Agent XLSX**: a lot with a road part and no arrival HERE is filed under «В пути / Yo'lda: <truck codes>», not
-  under «Принято на складе» (that would be a false sentence on a customs document). Lots without a road part
-  keep today's blocks — the m3 assertions on «Принято на складе» stay.
-- **Annul** (`receipts/annul.ts`): a lot owed on an approved/loading plan blocks the annul like a lot on a
-  pending plan (`box_on_active_plan`), or the line waits for cargo that no longer exists — and the annul's own
-  retirement of an emptied inbound truck never strands a line silently.
-- **Board card** (`batches/board-view.ts` `cargoLineOf`, via `batchLoadTotals`): a forming truck whose plan is
-  owed road cartons says «🚚 +N yo'ldan» and is never «rejasiz» / «hammasi yuklandi» while something is owed.
-- **AI reader**: the new table is added to the `gsr_ai_reader` grant list the way `load_plan_lines` is
-  (`ai-schema-card.test.ts` pins the list both ways).
+- the count door claims `min(owed, free)` of the lot before it computes (`claimFromShelfTx`), so its number is
+  the plan's and no over-reason is asked for plan cargo;
+- the phone's scan of such a carton claims it and loads it as plan cargo (no red confirm, no `added_on_spot`);
+- the phone's scan of a carton still `in_transit` to W on a truck whose lot O owes answers `rejected
+  road_not_landed` with the inbound truck's code — a sentence, «🚚 Bu karobka hali YW-123 da — avval tushirishda
+  qabul qiling» — never `not_on_plan` (objection locks#4/deploy#6: at Horgos cartons go from truck to truck).
+- the sync body lands before it loads (`syncScans` ingests unloads first): a landing never depends on a load,
+  and one phone working both doors sends both in one body.
 
-## 9. Stated, not built
+## 8. The doors that end O's loading move owed into missed FIRST
 
-- The road list counts a truck `arrived` at the gate as still on the road — `/arrivals`' and the warehouse
-  home's rule (`IN ('in_transit','arrived')`, cartons still `in_transit` on it). The /stock strip deliberately
-  shows `in_transit` only (#694); the two answer different questions.
-- At the destination of the road cargo, a carton reserved the moment it lands reads as the plan's cargo
-  everywhere a planned carton does today: not in the handover list (a collection warehouse), «eksportga
-  tayyorlanmoqda» in the cabinet at a hub, out of «yukingiz keldi». That is what approval does to shelf cargo
-  today; the hook does nothing approval does not.
-- The agent sheet re-downloaded after the road cargo lands files it under its real arrival truck instead of
-  «Yo'lda» — the claim changed because the cargo moved, not because a column was nulled (#643's case).
+`finishLoading` and `cancelBatch` run `UPDATE plan_line_road SET road_missed = road_missed + road_owed,
+road_owed = 0 … RETURNING` on O's current approved version, after O's truck lock and before reading O's
+cartons. The plan-line row orders them against an in-flight landing: a landing that committed first left a
+`planned` carton that `finishLoading` short-loads (4a); one that comes second finds nothing owed.
 
+- `departBatch` refuses `road_owed_open` while anything is owed (beside `finish_loading_first`): «yuklash
+  tugadi» is the one door that ends a loading, and the one that says what did not come (objection deploy#0).
+- `finishLoading` reports `roadMissed` per lot to the PRESSER (the finish sentence), in the Telegram load
+  summary («🚚 10 yo'ldan kelmadi»), and in its audit row.
+- A claimed carton given back to `ready_for_pickup` (a collection warehouse) re-claims the arrival notice of
+  the truck it landed off (`plan_road_claims.inbound_batch_id`, `claimArrivalNotice` — claim or re-arm):
+  reserved onward in the landing's own transaction it was never «ready» and was never announced; back on the
+  shelf it is (objection counts#7).
+
+## 9. Readers
+
+- **Count door** (`planNumber`, the panel's plans): `Σ planned − Σ (owed + missed)` — the part of the plan
+  that can be on the truck, for the truck's whole life. After a finish «Hammasi» stays the shelf part and grow
+  is 0 (counts#0, locks#2).
+- **Loading snapshot** (`/api/batches/[id]/planned`): `roadOwed: [{ lotId, label, owed, trucks }]` and
+  `roadCodes` — the codes of cartons a scan would claim (free on the shelf, or on an inbound truck), so the
+  phone does not draw the red confirm for them. The loading screen prints «🚚 Yo'ldan kutilmoqda: GS777-A · 10
+  karobka (YW-123)» above the list.
+- **Batch card + board**: `batchLoadTotals` carries `roadOwed`; `cargoLineOf` is «rejasiz» only when nothing is
+  planned AND nothing owed, «hammasi yuklandi» only when nothing is owed, and says «🚚 +N yo'ldan» (objection
+  counts#3). The batch card prints the owed line beside «yuklash tugadi».
+- **Plan view**: a line with a road part shows «🚚 N yo'ldan»; after approval «M kutilmoqda», «K keldi»,
+  «J kelmadi».
+- **Agent XLSX**: a line with a road part is TWO rows — the shelf part under its (standing) arrival block, the
+  road part under «В пути / Yo'lda: <truck codes>», each with its own count and pro-rated kg/m³, block totals
+  summing the split figures (objection counts#5). Before approval the road part is `road_box_count`; after,
+  `road_owed` (what has landed is on the shelf and files under its arrival).
+- **Batch register**: the short column adds Σ `road_missed`.
+- **Annul**: a lot owed on an approved/loading plan blocks the annul (`box_on_active_plan`'s words).
+- **AI card**: one TRAPS line — `planned_box_count` may include cartons promised from the road.
+
+## 10. Stated, not built
+
+- The road list counts a truck `arrived` at the gate as still on the road — `/arrivals`' rule. The /stock
+  strip shows `in_transit` only (#694); the two answer different questions.
+- At a hub (in_stock) the hook's reservation is invisible to the client (no hub notice exists). At a
+  collection warehouse a reserved landed carton is going onward and is not announced as ready; §8 announces
+  it if it comes back.
 - Crates on the road are not offered (§1).
-- A stocktake that lands an inbound carton does not reserve it; the count door's «Hammasi» reserves it later.
-- An inbound truck rerouted away from W: its cartons never land here, and the line ends short at «yuklash tugadi».
-- The batch card's and the board's load figures count reserved cartons (as today), so the road part is visible
-  on the plan view and the loading screen, not on the board.
-- At a collection warehouse (Andijan) a reserved landed carton is not «ready» there, so the client's «yukingiz
-  keldi» for that warehouse leaves it out — it is going on to the next warehouse, which says so when it lands.
+- An inbound truck rerouted away from W: its cartons never land here; O's line ends `missed` at «yuklash
+  tugadi».
+- A landing in the same instant as a plan's submit AND approval can miss the EXISTS pre-check (the window is a
+  landing transaction; an approval is a person relaying an agent). The loading-time claim heals it.

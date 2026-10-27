@@ -171,7 +171,12 @@ export async function syncScans(
   }
 
   const ctx = { actorId: actor.id, ...meta };
-  if (loads.length) acks.push(...(await ingestLoadScans(loads, ctx)));
+  // Landings before loads: a carton cannot be loaded before it lands, and one
+  // phone working both doors (Kashgar, Horgos) sends both in one body. Loads
+  // first answered a just-landed road carton «not on plan» and put the red
+  // confirm over the scanner (docs/YOLDAGI-YUK.md §7). The phone matches acks
+  // by event id, never by position.
   if (unloads.length) acks.push(...(await ingestUnloadScans(unloads, ctx, NO_DOOR, { expectDest })));
+  if (loads.length) acks.push(...(await ingestLoadScans(loads, ctx)));
   return { acks, withheld: [...withheld] };
 }

@@ -121,6 +121,8 @@ export async function finishLoadingAction(
   ok: boolean;
   loaded?: number;
   shortLoaded?: number;
+  /** Yo'ldagi yuk (4a): the road part that did not come before the loading ended. */
+  roadMissed?: number;
   error?: string;
   lots?: string[];
   canDrop?: boolean;
@@ -144,7 +146,7 @@ export async function finishLoadingAction(
       { dropQrless: opts.dropQrless === true },
     );
     revalidatePath(`/batches/${batchId}`);
-    return { ok: true, loaded: summary.loaded, shortLoaded: summary.shortLoaded };
+    return { ok: true, loaded: summary.loaded, shortLoaded: summary.shortLoaded, roadMissed: summary.roadMissed };
   } catch (err) {
     if (err instanceof ScanError) {
       return { ok: false, error: err.code, lots: err.detail?.lots, canDrop };
