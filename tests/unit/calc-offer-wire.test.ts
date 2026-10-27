@@ -151,7 +151,10 @@ describe('the panel that hosts it', () => {
     expect(PANEL_CODE).toContain("const writes = !readOnly && (entityType === 'deal' || sellerOnLead);");
     // The send form is the seller's too — the VED must not open a request on
     // a seller's lead from the karta (14a, review access-money-2).
-    expect(PANEL_CODE).toMatch(/\{writes \? \(\s*<div className="border-t border-line pt-2">\s*<p className="text-2xs text-ink-500 sm:hidden">\{t\('sendOnPhone'\)\}/);
+    // A CLOSED lead takes no job (0136's round): the same switch first draws
+    // the refusal's words in place of the form.
+    expect(PANEL_CODE).toContain('{writes && !takesJobs ? (');
+    expect(PANEL_CODE).toMatch(/\) : writes \? \(\s*<div className="border-t border-line pt-2">\s*<p className="text-2xs text-ink-500 sm:hidden">\{t\('sendOnPhone'\)\}/);
   });
 
   it('16a: the seller\'s full offer rows only for who may offer; a PROJECTION for who may only read', () => {
