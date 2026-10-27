@@ -23,18 +23,42 @@ vi.mock('@/modules/platform/rbac/authorize', async (original) => {
  * The candidate read is WATCHED and, when a test asks, given a 1 ms ceiling
  * — the real function always runs. The routes and the pick both import it
  * from this one module, so one wrapper sees every caller.
+ *
+ * `afterRead` runs once, right after a pre-transaction read of the save has
+ * answered (the fill's candidate read, or a pick's row check): the moment
+ * an admin's delete can land before the save's transaction opens (review
+ * concurrency-10).
  */
-const spy = vi.hoisted(() => ({ calls: [] as { name: string; code: string }[], ceilingMs: undefined as number | undefined }));
+const spy = vi.hoisted(() => ({
+  calls: [] as { name: string; code: string }[],
+  ceilingMs: undefined as number | undefined,
+  afterRead: undefined as (() => Promise<void>) | undefined,
+}));
 vi.mock('@/modules/wms/customs/import-baza', async (original) => {
   const real = await original<typeof import('@/modules/wms/customs/import-baza')>();
+  const after = async () => {
+    const hook = spy.afterRead;
+    spy.afterRead = undefined;
+    if (hook) await hook();
+  };
   return {
     ...real,
-    suggestImportBaza: (
+    suggestImportBaza: async (
       input: Parameters<typeof real.suggestImportBaza>[0],
       opts: Parameters<typeof real.suggestImportBaza>[1] = {},
     ) => {
       spy.calls.push({ name: input.name, code: input.tnvedCode });
-      return real.suggestImportBaza(input, spy.ceilingMs === undefined ? opts : { ...opts, ceilingMs: spy.ceilingMs });
+      const answer = await real.suggestImportBaza(
+        input,
+        spy.ceilingMs === undefined ? opts : { ...opts, ceilingMs: spy.ceilingMs },
+      );
+      await after();
+      return answer;
+    },
+    importRowForCode: async (...args: Parameters<typeof real.importRowForCode>) => {
+      const row = await real.importRowForCode(...args);
+      await after();
+      return row;
     },
   };
 });
@@ -61,6 +85,8 @@ import { pickBazas } from '@/modules/wms/calc/prefill-steps';
 import type { PickOutcome, PickRequest } from '@/modules/wms/calc/prefill-ai';
 import { AI_RECODE_PREFIX } from '@/modules/wms/calc/warnings';
 import { normalizeName } from '@/modules/wms/customs/import-parse';
+import { deleteImportBatch } from '@/modules/wms/customs/import-service';
+import { CalcError } from '@/modules/wms/calc/service';
 import { GET as listRoute } from '@/app/api/calc/import-baza/route';
 import { GET as statsRoute } from '@/app/api/calc/import-baza/stats/route';
 
@@ -282,6 +308,82 @@ describe('a heading lists its own subheadings and nothing else', () => {
     expect(codes).toContain(TJ);
     expect(codes.every((c) => c.startsWith(H) && c.length === 10), codes.join(',')).toBe(true);
     expect(answer.candidates.map((c) => c.id)).not.toContain(rowIds.other);
+  });
+
+  it('(b2) a full code the file cannot fill is scanned ONCE, not on every save (review perf-4)', async () => {
+    // A pass saves up to four times and a VED presses «Saqlash» again and
+    // again; a ready batch's rows never change, so the same row of the same
+    // batch has the same answer — asked once, remembered across saves.
+    const stranger = `Zzqx yorliq qog‘ozi ${SUFFIX}`;
+    spy.calls.length = 0;
+    const id = await open([{ name: stranger, tnvedCode: TK, weightKg: 40 }]);
+    expect(spy.calls.filter((c) => c.name === stranger).length).toBeGreaterThan(0);
+    expect((await rowsOf(id))[0]!.bazaUsd, 'nothing in the file is called that').toBeNull();
+    spy.calls.length = 0;
+    await saveTable(id, { items: [], adds: [] }, ctx());
+    await saveTable(id, { items: [], adds: [] }, ctx());
+    expect(spy.calls.filter((c) => c.name === stranger)).toHaveLength(0);
+  });
+
+  /** A ready file of its OWN holding one declaration of `code` named
+   * `name` — the chooser's only answer for that code. */
+  async function ownFile(code: string, name: string): Promise<{ batch: string; row: string }> {
+    const [batch] = await db.execute<{ id: string }>(sql`
+      INSERT INTO customs_import_batches (file_name, uploaded_by, status, period_from, period_to)
+      VALUES (${`heading-own-${code}.xlsx`}, ${actorId}::uuid, 'ready', ${onDate()}::date, ${onDate()}::date)
+      RETURNING id::text AS id`);
+    const [row] = await db.execute<{ id: string }>(sql`
+      INSERT INTO customs_import_rows (batch_id, tnved_code, name, name_norm, unit, price_per_unit_usd, origin_country)
+      VALUES (${batch!.id}::uuid, ${code}, ${name}, ${normalizeName(name)}, 'kg', 5::numeric, '156-КИТАЙ')
+      RETURNING id::text AS id`);
+    return { batch: batch!.id, row: row!.id };
+  }
+
+  it('(b3) a file deleted between the fill’s read and the write costs that fill, never the save (review concurrency-10)', async () => {
+    const code = `${H}770000`;
+    const name = `Charm kalish ${SUFFIX}`;
+    const own = await ownFile(code, name);
+    try {
+      const id = await open([{ name: `Boshqa narsa ${SUFFIX}`, tnvedCode: code, weightKg: 10 }]);
+      const [row] = await rowsOf(id);
+      expect(row!.bazaUsd).toBeNull();
+      // The rename makes the save ask the file again — and the admin deletes
+      // it right after the read answered, before the transaction opens.
+      spy.afterRead = () => deleteImportBatch(own.batch);
+      const out = await saveTable(id, { items: [{ id: row!.id, seq: row!.seq, name }], adds: [] }, ctx());
+      expect(spy.afterRead, 'the hook never ran — the save did not read the file').toBeUndefined();
+      expect(out.importFilled).toEqual([]);
+      const [after] = await rowsOf(id);
+      expect(after).toMatchObject({ name, bazaUsd: null, importRowId: null });
+    } finally {
+      spy.afterRead = undefined;
+      await db.delete(customsImportBatches).where(eq(customsImportBatches.id, own.batch));
+    }
+  });
+
+  it('(b4) a person’s pick whose file was deleted before the write is refused by its row, never a raw 23503', async () => {
+    const code = `${H}880000`;
+    const name = `Charm tapochka ${SUFFIX}`;
+    const own = await ownFile(code, name);
+    try {
+      const id = await open([{ name: `Yana boshqa ${SUFFIX}`, tnvedCode: code, weightKg: 10 }]);
+      const [row] = await rowsOf(id);
+      spy.afterRead = () => deleteImportBatch(own.batch);
+      const refused = await saveTable(
+        id,
+        { items: [{ id: row!.id, seq: row!.seq, bazaUsd: 5, bazaBasis: 'kg', importRowId: own.row }], adds: [] },
+        ctx(),
+      ).then(
+        () => null,
+        (err: unknown) => err,
+      );
+      expect(refused).toBeInstanceOf(CalcError);
+      expect(refused).toMatchObject({ code: 'import_row_missing', seq: row!.seq });
+      expect((await rowsOf(id))[0]!.bazaUsd).toBeNull();
+    } finally {
+      spy.afterRead = undefined;
+      await db.delete(customsImportBatches).where(eq(customsImportBatches.id, own.batch));
+    }
   });
 
   it('(b) the model-free auto-fill never fills a heading row', async () => {

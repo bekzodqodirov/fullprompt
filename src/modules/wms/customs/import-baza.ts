@@ -547,6 +547,41 @@ function namedSeriesOf(
 }
 
 /**
+ * The import rows a save is about to point `import_row_id` at, re-read
+ * INSIDE its transaction with their batch held `FOR KEY SHARE` until it
+ * commits (review concurrency-10). Answers the ids that still stand in a
+ * READY batch.
+ *
+ * The save resolves its picks and plans its fills on the pool, before the
+ * transaction (#714), and the per-code chooser deliberately answers from
+ * OLDER quarters — the very files an admin prunes. A delete landing between
+ * that read and the write made the UPDATE fail its foreign key with a raw
+ * 23503 that lost the whole save; one landing after the usage count but
+ * before the write's commit cascaded ON DELETE SET NULL under it and left
+ * `baza_source = 'import'` pointing at nothing — `in_use` defeated. Under
+ * this lock `deleteImportBatch` (whose batch row it takes FOR UPDATE) either
+ * finishes first, and the vanished row is simply not answered here, or
+ * waits for this save and then counts its pointer and refuses.
+ *
+ * On the transaction it is handed, never the pool: it runs inside one.
+ */
+export async function lockImportRowsInTx(tx: Tx, rowIds: readonly string[]): Promise<Set<string>> {
+  const ids = [...new Set(rowIds)];
+  if (ids.length === 0) return new Set();
+  const rows = await tx.execute<{ id: string }>(sql`
+    SELECT r.id::text AS id
+      FROM customs_import_rows r
+      JOIN customs_import_batches b ON b.id = r.batch_id
+     WHERE r.id IN (${sql.join(
+       ids.map((id) => sql`${id}::bigint`),
+       sql`, `,
+     )})
+       AND b.status = 'ready'
+       FOR KEY SHARE OF b`);
+  return new Set(rows.map((r) => r.id));
+}
+
+/**
  * One import row by id, verified against the code it claims to price.
  *
  * The picker posts an id, and an id from a form is a claim: it must exist,

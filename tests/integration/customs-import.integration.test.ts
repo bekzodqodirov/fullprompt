@@ -27,7 +27,7 @@ import {
   sweepStuckImports,
   BatchGoneError,
 } from '@/modules/wms/customs/import-service';
-import { importRowForCode, suggestImportBaza } from '@/modules/wms/customs/import-baza';
+import { importRowForCode, lockImportRowsInTx, suggestImportBaza } from '@/modules/wms/customs/import-baza';
 import type { ImportUnit } from '@/modules/wms/customs/import-parse';
 import { openCalcRequest, CalcError } from '@/modules/wms/calc/service';
 import { loadWorkspace, saveTable } from '@/modules/wms/calc/workspace';
@@ -130,6 +130,21 @@ afterAll(async () => {
   await db.update(users).set({ active: false }).where(eq(users.id, actorId));
   await pgClient.end();
 });
+
+/**
+ * Is anybody WAITING on a lock right now? Asked through the POOL — a snapshot
+ * of pg_stat_activity freezes inside an open transaction (#873).
+ */
+async function someoneWaitsOnALock(): Promise<boolean> {
+  for (let i = 0; i < 250; i += 1) {
+    const rows = await db.execute<{ n: number }>(sql`
+      SELECT count(*)::int AS n FROM pg_stat_activity
+       WHERE datname = current_database() AND wait_event_type = 'Lock' AND pid <> pg_backend_pid()`);
+    if (Number(rows[0]?.n ?? 0) > 0) return true;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  return false;
+}
 
 /** The request's item rows, as the database holds them. */
 const itemsOf = (requestId: string) =>
@@ -267,6 +282,38 @@ describe('the file becomes rows', () => {
       ctx(),
     );
     await expect(deleteImportBatch(used)).rejects.toBeInstanceOf(CustomsImportError);
+
+    // …and a delete that lands WHILE a save is pointing a row at the file
+    // waits for it, then counts its pointer and refuses (review
+    // concurrency-10). Counted on the pool and then deleted, it read 0
+    // through the save's open transaction, deleted on its commit, and the
+    // cascade's SET NULL left a price saying «import» about nothing.
+    const racy = await importFixture('customs-import-racy.xlsx');
+    const [declaration] = await db
+      .select()
+      .from(customsImportRows)
+      .where(eq(customsImportRows.batchId, racy))
+      .orderBy(customsImportRows.id)
+      .limit(1);
+    const racyRequest = await open([{ name: 'Racy fixture', tnvedCode: declaration!.tnvedCode, weightKg: 10 }]);
+    const [racyItem] = await itemsOf(racyRequest);
+    let deleting: Promise<unknown> | null = null;
+    await db.transaction(async (tx) => {
+      // What `saveTable`'s transaction does before it writes the pointer.
+      expect(await lockImportRowsInTx(tx, [String(declaration!.id)])).toEqual(new Set([String(declaration!.id)]));
+      await tx
+        .update(calcRequestItems)
+        .set({ bazaUsd: '3.0000', bazaBasis: 'kg', bazaSource: 'import', importRowId: declaration!.id })
+        .where(eq(calcRequestItems.id, racyItem!.id));
+      deleting = deleteImportBatch(racy).then(
+        () => 'deleted',
+        (err: unknown) => err,
+      );
+      expect(await someoneWaitsOnALock(), 'the delete did not wait for the save').toBe(true);
+    });
+    expect(await deleting).toBeInstanceOf(CustomsImportError);
+    const [kept] = await itemsOf(racyRequest);
+    expect(kept).toMatchObject({ bazaSource: 'import', importRowId: declaration!.id });
 
     // …and the newest ready batch is the fixture's again for the rest.
     await db

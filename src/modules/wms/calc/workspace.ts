@@ -44,6 +44,7 @@ import { normalizeRowUnit, pendingUnitOf } from './units';
 import {
   BASIS_FOR_UNIT,
   importRowForCode,
+  lockImportRowsInTx,
   isFullCode,
   suggestImportBaza,
   unitsForRow,
@@ -3731,6 +3732,48 @@ interface ImportFillPlan {
 
 const EMPTY_FILL_PLAN: ImportFillPlan = { byItemId: new Map(), byAddIndex: new Map() };
 
+/**
+ * The import fill's answers ACROSS saves (review perf-4), keyed by the batch
+ * that answered and everything the read depends on: the code, the units in
+ * their order, the name, the per-piece weight and the similarity threshold.
+ *
+ * One customs pass saves up to four times (the memory's codes, the
+ * grouping's pricing, the sweep straight after it, the pick), and a VED
+ * presses «Saqlash» again and again on a request whose empty rows the file
+ * cannot fill. Every one of those saves asked the same rows of the same
+ * batch the same unbounded trigram scan, on the pool, and got the same
+ * answer — the per-save memo spared only twins inside one save.
+ *
+ * Safe because a READY batch's rows never change: rows are written only
+ * while a batch is 'processing', the re-run's wipe comes after its claim
+ * (import-service.ts), and a ready batch is only ever deleted whole — after
+ * which the chooser stops naming it, so its key is never asked again (a
+ * fill planned just before the delete is dropped by the transaction's own
+ * re-check of the rows it points at). Bounded, oldest out first; per
+ * process, so a restart costs one scan per shape.
+ */
+const IMPORT_FILL_MEMO_CAP = 2000;
+const importFillMemo = new Map<string, ImportFill | null>();
+
+function recallImportFill(key: string): ImportFill | null | undefined {
+  const fill = importFillMemo.get(key);
+  if (fill === undefined) return undefined;
+  // Re-inserted, so the Map's own order is the order of last use.
+  importFillMemo.delete(key);
+  importFillMemo.set(key, fill);
+  return fill;
+}
+
+function rememberImportFill(key: string, fill: ImportFill | null): void {
+  importFillMemo.delete(key);
+  importFillMemo.set(key, fill);
+  while (importFillMemo.size > IMPORT_FILL_MEMO_CAP) {
+    const oldest = importFillMemo.keys().next().value;
+    if (oldest === undefined) break;
+    importFillMemo.delete(oldest);
+  }
+}
+
 /** One row's answer from the `calc_bazas` book (round 2), ready to be written. */
 interface DictionaryFill {
   bazaUsd: number;
@@ -4035,10 +4078,10 @@ async function suggestImportFills(input: {
   const minSim = Number(minSimRaw);
 
   const plan: ImportFillPlan = { byItemId: new Map(), byAddIndex: new Map() };
-  // One question per DISTINCT row shape: a fifty-line invoice repeats the
-  // same product under one code, and asking per line is fifty identical
-  // trigram scans (#432).
-  const asked = new Map<string, ImportFill | null>();
+  // One question per DISTINCT row shape and batch — within this save (a
+  // fifty-line invoice repeats the same product under one code, and asking
+  // per line is fifty identical trigram scans, #432) and across saves
+  // (`importFillMemo`, review perf-4).
   for (const { w, units } of asking) {
     const batchId = chosen.get(w.code)?.batchId;
     if (!batchId) continue;
@@ -4048,8 +4091,8 @@ async function suggestImportFills(input: {
       w.quantity !== null && w.quantity > 0 && w.weightKg !== null && w.weightKg > 0
         ? w.weightKg / w.quantity
         : null;
-    const memo = `${w.code}|${units.join('+')}|${w.name}|${perPiece ?? ''}`;
-    let fill = asked.get(memo);
+    const memo = `${batchId}|${minSimRaw ?? ''}|${w.code}|${units.join('+')}|${w.name}|${perPiece ?? ''}`;
+    let fill = recallImportFill(memo);
     if (fill === undefined) {
       fill = null;
       // First unit that answers wins; the order IS the preference.
@@ -4067,7 +4110,7 @@ async function suggestImportFills(input: {
         };
         break;
       }
-      asked.set(memo, fill);
+      rememberImportFill(memo, fill);
     }
     if (!fill) continue;
     if (w.key.kind === 'item') plan.byItemId.set(w.key.id, fill);
@@ -4259,6 +4302,21 @@ export async function saveTable(
     // `confirmGroup`'s idiom, under the same lock: a revision that moved since
     // the caller read it means a person has been here.
     if (opts?.expectRev !== undefined && locked.rev !== opts.expectRev) throw new CalcError('conflict');
+
+    // Every import row this save will point at, re-read with its batch held
+    // against a delete until we commit (review concurrency-10): the picks
+    // and the fill were resolved on the pool, and the file may have been
+    // deleted since. A person's pick that vanished is refused by its row,
+    // exactly as one that had vanished before the read; a FILL that vanished
+    // is simply not written — the next save asks the chooser again.
+    const importAlive = await lockImportRowsInTx(tx, [
+      ...[...pickedRows.values()].map((r) => r.id),
+      ...[...importAuto.byItemId.values(), ...importAuto.byAddIndex.values()].map((f) => f.importRowId),
+    ]);
+    for (const e of itemEdits) {
+      const picked = e.importRowId ? pickedRows.get(e.importRowId) : undefined;
+      if (picked && !importAlive.has(picked.id)) throw new CalcError('import_row_missing', e.seq);
+    }
 
     const items = await tx
       .select()
@@ -4987,8 +5045,16 @@ export async function saveTable(
         } else {
           const fill = fillByItem.get(item.id);
           // The suggestion was made for a CODE; a row recoded since is not
-          // the row the file was asked about.
-          if (!fill || (item.tnvedCode ?? null) !== fill.code || !allows(fill.basis)) continue;
+          // the row the file was asked about. A declaration whose file was
+          // deleted since the plan is not written (`importAlive`).
+          if (
+            !fill ||
+            !importAlive.has(fill.importRowId) ||
+            (item.tnvedCode ?? null) !== fill.code ||
+            !allows(fill.basis)
+          ) {
+            continue;
+          }
           await tx
             .update(calcRequestItems)
             .set({

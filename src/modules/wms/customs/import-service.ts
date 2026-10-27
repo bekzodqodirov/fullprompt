@@ -1,6 +1,6 @@
 import type { Readable } from 'node:stream';
 import { and, desc, eq, sql, type SQL } from 'drizzle-orm';
-import { db } from '../../platform/db/client';
+import { db, type Db, type Tx } from '../../platform/db/client';
 import { customsImportBatches, customsImportRows } from '../../platform/db/schema';
 import { getStorage } from '../../platform/files/storage';
 import { logger } from '../../platform/logger';
@@ -802,9 +802,10 @@ export async function previousReadyBatchId(batchId: string): Promise<string | nu
   return rows[0]?.id ?? null;
 }
 
-/** How many calculation rows are priced off this import's declarations. */
-export async function importBatchUsage(batchId: string): Promise<number> {
-  const rows = await db.execute<{ n: number }>(sql`
+/** How many calculation rows are priced off this import's declarations —
+ * on the transaction it is handed when it runs inside one. */
+export async function importBatchUsage(batchId: string, exec: Db | Tx = db): Promise<number> {
+  const rows = await exec.execute<{ n: number }>(sql`
     SELECT count(*)::int AS n
       FROM calc_request_items i
       JOIN customs_import_rows r ON r.id = i.import_row_id
@@ -828,16 +829,21 @@ export async function importBatchUsage(batchId: string): Promise<number> {
  * never passes a button.
  */
 export async function deleteImportBatch(batchId: string): Promise<void> {
-  const [batch] = await db
-    .select({ status: customsImportBatches.status })
-    .from(customsImportBatches)
-    .where(eq(customsImportBatches.id, batchId))
-    .limit(1);
-  if (!batch) return;
-  if (batch.status !== 'failed' && (await importBatchUsage(batchId)) > 0) {
-    throw new CustomsImportError('in_use');
-  }
-  await db.delete(customsImportBatches).where(eq(customsImportBatches.id, batchId));
+  // ONE transaction, the batch row taken FOR UPDATE before the usage is
+  // counted (review concurrency-10). A save pointing a row at this file holds
+  // the batch FOR KEY SHARE until it commits (`lockImportRowsInTx`), so the
+  // two exclude each other: counted on the pool and then deleted, a save
+  // committing in between was cascaded to `import_row_id = NULL` under a
+  // 'import' source — `in_use` defeated by its own timing.
+  await db.transaction(async (tx) => {
+    const [batch] = await tx.execute<{ status: string }>(sql`
+      SELECT b.status FROM customs_import_batches b WHERE b.id = ${batchId}::uuid FOR UPDATE`);
+    if (!batch) return;
+    if (batch.status !== 'failed' && (await importBatchUsage(batchId, tx)) > 0) {
+      throw new CustomsImportError('in_use');
+    }
+    await tx.delete(customsImportBatches).where(eq(customsImportBatches.id, batchId));
+  });
 }
 
 /** How many rows a ready batch holds per code — the screen's «bor» line. */
