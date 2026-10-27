@@ -275,7 +275,9 @@ Rastamojka jami:
   tail is right only for the cases the VED decides.
 - JAMI:
   - Exact customs total and stored-zone road both priced:
-    `JAMI (rastamojka + yo‘lkira): ≈ $X`. **Unchanged.**
+    `JAMI (rastamojka + yo‘lkira): ≈ $X`. **Unchanged** — and only when the road is the
+    workspace's own figure (`exact`, §16 law-money-R2-1): a road on the lines' Σ for a
+    cube the request does not hold is «JAMI taxminiy».
   - A road is priced AND a customs figure exists (exact total or Taxminiy), AND at least
     one of them is an estimate (Taxminiy used, or zone guessed):
     `JAMI taxminiy (rastamojka + yo‘lkira): ≈ $Y`.
@@ -320,7 +322,7 @@ case with no words or no tail is a compile error.
 | Case | Words | Tail |
 |---|---|---|
 | `no_city` — no zone, no from-city | `yo‘nalish (zona) tanlanmagan — qaysi shahardan yozilmagan` | seller |
-| `city_unplaced` — no zone, the city matches no vocabulary | `yo‘nalish (zona) tanlanmagan — «Foshan»dan zona aniqlanmadi` (city cut at 40 chars) | seller |
+| `city_unplaced` — no zone, the city matches no vocabulary | `yo‘nalish (zona) tanlanmagan — «Foshan»dan zona aniqlanmadi` (city cut at 40 chars) | ved (§16, PF-4; was seller) |
 | `zone_unpriced` — the city is known, the tariff has no price for its zone | `«Horgos» → O‘zbekiston narxi tarifda hali yo‘q` (the zone's `ZONE_ROUTE` label) | ved |
 | `kg_missing` | `umumiy brutto og‘irlik (kg) yo‘q` | seller |
 | `m3_missing` — request and Σ | `umumiy hajm (m³) yo‘q` | seller |
@@ -338,7 +340,7 @@ case with no words or no tail is a compile error.
   something in the reply is an estimate (any 📊 line, or a guessed zone). It begins with
   K's `VED_ESTIMATE_MARK` (`🔎 VED uchun:`):
   ```
-  🔎 VED uchun: bu AI taxmini, rasmiy emas — 📊 baza deklaratsiyalar medianasidan · zona «Yiwu»dan taxmin. Muhrlash yoki «Готово»dan oldin o‘zingiz tekshiring.
+  🔎 VED uchun: bu AI taxmini, rasmiy emas — 📊 baza deklaratsiyalar medianasidan · zona «Yiwu»dan taxmin. Muhrlashdan yoki «Bajarildi» (Готово) bosishdan oldin o‘zingiz tekshiring.
   ```
   - The two middle parts are joined with ` · ` and appear only when they apply.
   - Placed under the heading, not before the legend: a note can run to 25 group lines,
@@ -2007,3 +2009,29 @@ its verdict's reason and says so. An id after a cut, if any existed, was not see
 | concurrency-6 | confirmed | Same fix as regression-9 (`PickOutcome`, awaited record). |
 | concurrency-7 | confirmed | Same fix as performance-5/6: sequential, one statement per code, a budget. |
 | concurrency-8 | confirmed (nit) | Text cut after «landIntake enqueues the pass (intake-land…». Absorbed as the two races at that line this round touches: each intake usage record has its own `try`, so a failed insert never costs the pass (§8.2.7, intake-usage test); and the fast tariff reply arriving before the bot's «saqlandi» is stated as accepted (§2.4). |
+
+---
+
+## 16. The merged review (after the merge, before the push)
+
+The merged round was reviewed again by lenses with refuters; the relayed list was cut
+after REG-1 (its text stops mid-sentence), so an id after it, if any existed, was not
+seen. Each finding below was verified against the merged tree first; every behavioural
+fix carries a red proof made and undone by string edit.
+
+| Id | Verdict | What changed |
+|---|---|---|
+| law-money-R2-1 | confirmed, defect | `AiVedFreight.exact` (REQUIRED): true only when `freightAnswerFor` passed the workspace's own road through. The plain «JAMI (…)» needs it; otherwise «JAMI taxminiy», and the lenta's VED line says «yo‘lkira hajmi qatorlardan — so‘rovda umumiy hajm yo‘q». The Σ fallback stays, labelled, for pre-round-2 requests (§6.4 step 3) — it no longer claims exactness. Amends §2.3's first JAMI row and §2.6's condition. |
+| law-money-R2-2 | confirmed, defect | `AiVedLine.staleBaza` (REQUIRED) from the workspace's `bazaStale`; the line's head says «· ⚠ eski baza» on every shape. Keeps §7.3's «the reply says eski» for a filled baza, not only for a 📊 median. |
+| law-money-R2-3 | confirmed, nit | `calc.finishNotEstimate` names every bot figure — «Aniq», «Taxminiy», «JAMI», «Yo‘lkira ≈» — in all four bundles. |
+| law-money-R2-4 | confirmed, nit | `docs/VED-IMPORT-AI.md` §6 states the two-tier guess instead of «never guessed». |
+| PF-1 | confirmed, defect | A kilo figure labelled NETTO (netto, нетто, N.W., NW, net weight, 净重, sof og‘irlik) never fills the total on a freight section or when no section is named; on a customs job it stands as the total when nothing else is stated, flagged `weightNetto`. The model's half: `weight_netto` in the reading, and `totalWeightFrom` (one rule for the bot and the thread door) does not let a netto reading stand for a freight brutto. The summary and the lenta note say «Og‘irlik (brutto)» on a freight section. Corpus c2278-c2280. |
+| PF-2 | confirmed, defect | When two or more lines read as goods, a figure standing on one of them is that line's, not the shipment's (`typedGoods` returns which lines it read). A figure on any other line («Jami 700 kg 10 kub») still answers. Corpus c2281-c2282. |
+| PF-3 | confirmed, defect | `CalcFacts.weightNetto`; the lone copy writes `LONE_NETTO_NOTE`; `weightFromTotalNote` answers WHICH total; `AiVedLine.weightFromTotal` is `'brutto' | 'netto' | null` and the line says «og‘irlik nettodan». ⭐ Q4 a stands for the brutto case. |
+| PF-4 | partial | `city_unplaced` → tail `ved`: the customer already named the city; the zone is the VED's. Amends §2.5's table. The «two fixers» half was refuted (the VED-zone line appears only on a guessed zone). |
+| PF-5 | confirmed, nit | No city AND a missing measure, both the seller's, are said in one sentence; a VED gap is never joined to a seller sentence. |
+| PF-6 | confirmed, nit | The heading says «taxminiy», like every other line; the uz settings description too. |
+| PF-7 | partial | The VED line names the button as the Uzbek screen does: «Muhrlashdan yoki «Bajarildi» (Готово) bosishdan oldin…». Amends §2.6's sentence. |
+| PF-8 | partial | The reminder gives no section-specific instruction; it says to type the VED's own figure. |
+| PF-9 | confirmed, nit | The «tariff» chip anchors on the PRICED title (`TARIFF_PRICED_HEAD`, reply-heads.ts); a refused tariff reply wears none. |
+| REG-1 | confirmed, defect (fence) | batch-choice (g): a READY file beside a PROCESSING one that wins every other rule — the ready file answers. The clause was right and unfenced. |
