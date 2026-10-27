@@ -1,6 +1,6 @@
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
-import { notifications } from '../../platform/db/schema';
+import { notifications, users } from '../../platform/db/schema';
 import {
   kickTelegramDrain,
   queueStaffTelegram,
@@ -25,35 +25,88 @@ import {
  *
  * The claim and the rows go in ONE transaction, serialised on the request
  * by an advisory lock so two overlapping runs cannot both find «nothing
- * said yet»; the drain is kicked after the commit, never from inside it. A
- * muted recipient still gets a `muted` row, so the claim holds; a recipient
- * who can no longer log in gets no row and no message, which is right.
+ * said yet»; the drain is kicked after the commit, never from inside it.
+ *
+ * THE CLAIM IS A ROW, whoever reads it (review CONC-4/P1-R6). A muted
+ * recipient has always got a `muted` row; a recipient who can no longer log
+ * in got NO row at all — and with no row the next run found no claim, so
+ * every re-delivery of that request's job wrote another machine note on the
+ * card. Such a requester now gets a `muted` row too («cannot log in»), which
+ * the drain never sends and the problem counter never counts.
+ *
+ * Stated, not closed: the lenta note is written AFTER this commits
+ * (`writeReplyToLenta` reads a setting on the pool, which may not run inside
+ * this transaction, #714), so a process killed between the two loses the
+ * note — the re-delivery finds the claim and writes nothing. The message
+ * itself is never lost; the card's copy of it can be.
  *
  * Returns false when an earlier attempt already spoke — the caller then
- * writes no lenta note either.
+ * writes no lenta note either — and, under `whileOpen`, when the request has
+ * been closed (or is gone): the VED's answer is the official one and out,
+ * and the machine's reply must not follow it (review CONC-1).
  */
-export async function sayOnce(requestId: string, input: StaffTelegramInput): Promise<boolean> {
+export async function sayOnce(
+  requestId: string,
+  input: StaffTelegramInput,
+  opts: { whileOpen?: boolean } = {},
+): Promise<boolean> {
   const ids = [...new Set(input.userIds)].filter(Boolean);
   const queued = await db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`calc-prefill-reply:${requestId}`}))`);
-    // `user_id` first: it rides `notifications_user_idx`, so the claim reads
-    // the recipient's own rows and never the whole table.
-    const [said] =
-      ids.length === 0
-        ? []
-        : await tx
-            .select({ id: notifications.id })
-            .from(notifications)
-            .where(
-              and(
-                inArray(notifications.userId, ids),
-                eq(notifications.type, input.type),
-                sql`${notifications}.payload->>'requestId' = ${requestId}`,
-              ),
-            )
-            .limit(1);
+    // The request itself, read once: when it was asked — the floor of every
+    // message about it (review perf-5) — and, for the reply, whether it is
+    // still open, under FOR SHARE so a close in flight is waited for and
+    // never raced. Absent (an id that names no request): no floor, and
+    // nothing is open. Raw timestamps come back as TEXT (#923).
+    const [request] = await tx.execute<{ completed_at: string | null; requested_at: string }>(
+      sql`SELECT completed_at, requested_at FROM calc_requests WHERE id = ${requestId}::uuid ${
+        opts.whileOpen ? sql`FOR SHARE` : sql``
+      }`,
+    );
+    if (opts.whileOpen && (!request || request.completed_at !== null)) return null;
+    if (ids.length === 0) return null;
+    // `user_id` first, and a FLOOR on `created_at`: the claim reads the
+    // recipient's own rows from the day the request was asked, a short range
+    // on `notifications_user_idx` — unbounded, the first call (the common
+    // one, which matches nothing) read every message the seller ever got,
+    // holding this lock and a pool connection. A day of slack absorbs any
+    // clock between the app and the database; nothing about a request is
+    // written before it exists.
+    const claimed = () =>
+      tx
+        .select({ id: notifications.id })
+        .from(notifications)
+        .where(
+          and(
+            inArray(notifications.userId, ids),
+            eq(notifications.type, input.type),
+            sql`${notifications}.payload->>'requestId' = ${requestId}`,
+            request
+              ? gte(notifications.createdAt, sql`${request.requested_at}::timestamptz - interval '1 day'`)
+              : undefined,
+          ),
+        )
+        .limit(1);
+    const [said] = await claimed();
     if (said) return null;
-    return queueStaffTelegram(tx, { ...input, extra: { ...(input.extra ?? {}), requestId } });
+    const extra = { ...(input.extra ?? {}), requestId };
+    const sent = await queueStaffTelegram(tx, { ...input, extra });
+    // Nobody live to tell: the claim still needs a row, or the next run
+    // speaks again. The first recipient that EXISTS carries it, muted.
+    const [own] = await claimed();
+    if (!own) {
+      const [holder] = await tx.select({ id: users.id }).from(users).where(inArray(users.id, ids)).limit(1);
+      if (!holder) return null;
+      await tx.insert(notifications).values({
+        userId: holder.id,
+        channel: 'telegram',
+        type: input.type,
+        payload: { ...extra, text: input.text },
+        status: 'muted',
+        error: 'cannot log in',
+      });
+    }
+    return sent;
   });
   if (queued === null) return false;
   if (queued > 0) await kickTelegramDrain();

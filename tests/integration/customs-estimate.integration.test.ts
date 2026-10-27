@@ -438,16 +438,24 @@ describe('(9) the pass deadline', () => {
     ]);
     await typeBaza(id, `Profil ${SUFFIX} c`, 4);
     let picks = 0;
+    let groupings = 0;
     const out = await aiPrefill(id, { actorId: null }, {
       configured: true,
       deadline: Date.now() - 1,
-      propose: async () => ({ groups: 0, batches: 0, failed: 0, ratesPulled: 0, codesStamped: 0, importFilled: 0, memoryFilled: 0, dictionaryFilled: 0 }),
+      propose: async (_id, _c, o) => {
+        groupings += 1;
+        return { groups: 0, batches: 0, failed: 0, ratesPulled: 0, codesStamped: 0, importFilled: 0, memoryFilled: 0, dictionaryFilled: 0, rev: o?.expectRev ?? null };
+      },
       pick: async () => {
         picks += 1;
         return { answers: null, usage: null };
       },
     });
     expect(picks).toBe(0);
+    // The grouping is asked the clock too (R2 late pass, review perf-3): five
+    // calls of two minutes each, started past the deadline, outlive the
+    // job's expiry and are re-delivered beside themselves.
+    expect(groupings).toBe(0);
     expect(out.pastDeadline).toBe(true);
     expect(out.text).toContain('  Aniq: $92.80 (2 tadan 1 qator, yig‘imsiz)');
     expect(out.text).toContain('  Taxminiy: hisoblab bo‘lmadi — vaqt yetmadi, statistika o‘qilmadi');

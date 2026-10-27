@@ -59,7 +59,11 @@ const casOf = (expectRev: number | null) => (expectRev === null ? undefined : { 
  * swallows it, because nothing writes after the pick; `applyMemory` lets it
  * through, so the pass can stand down (review P2-CAS-1).
  */
-const overtakenByPerson = (err: unknown) => err instanceof CalcError && err.code === 'conflict';
+const overtakenByPerson = (err: unknown) =>
+  // A person's own ✨ holding the claim is the same answer said by another
+  // door (review CONC-3): somebody is working here, and the machine writes
+  // nothing — it was rethrown and logged «pick failed».
+  err instanceof CalcError && (err.code === 'conflict' || err.code === 'ai_running');
 
 /**
  * Step 0: stamp the codes the company's own seals already know.
@@ -155,9 +159,20 @@ export async function pickBazas(
   /** Rows the BOOK filled in the pick's own save (every save fills since
    * round 2) — counted, or the pass under-reports the book (review P2-9). */
   dictionaryFilled: number;
+  /** …and the sealed MEMORY, which the same save fills first (review REG-2). */
+  memoryFilled: number;
   rev: number | null;
 }> {
-  const none = { picked: 0, capped: 0, refused: 0, overtaken: 0, timedOut: 0, dictionaryFilled: 0, rev: expectRev };
+  const none = {
+    picked: 0,
+    capped: 0,
+    refused: 0,
+    overtaken: 0,
+    timedOut: 0,
+    dictionaryFilled: 0,
+    memoryFilled: 0,
+    rev: expectRev,
+  };
 
   const rows = await db
     .select({
@@ -411,6 +426,7 @@ export async function pickBazas(
       overtaken,
       timedOut,
       dictionaryFilled: saved.dictionaryFilled.length,
+      memoryFilled: saved.memoryFilled.length,
       rev: saved.rev,
     };
   } catch (err) {
@@ -422,6 +438,6 @@ export async function pickBazas(
     // (concurrency-3).
     overtaken += live.length;
     logger.info({ requestId, overtaken }, '[calc-prefill] a person saved while the model was thinking — nothing written');
-    return { picked: 0, capped, refused, overtaken, timedOut, dictionaryFilled: 0, rev: expectRev };
+    return { ...none, capped, refused, overtaken, timedOut };
   }
 }

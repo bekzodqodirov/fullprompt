@@ -20,10 +20,23 @@ export const JOB_CALC_LINK_ASK = 'calc.link-ask';
 export const JOB_CALC_TARIFF_REPLY = 'calc.tariff-reply';
 
 /**
- * How long a claimed customs pass may run before pg-boss re-delivers it:
- * above `PASS_DEADLINE_MS` (10 minutes) plus one worst step past it — a
- * grouping or a pick call, each up to 2 × 60 s — so the queue never starts a
- * second pass beside one still running. The default 15 minutes would have.
+ * How long a claimed customs pass may run before pg-boss re-delivers it.
+ *
+ * Every model step asks the pass's clock BEFORE it starts (review perf-3), so
+ * a pass overruns `PASS_DEADLINE_MS` (10 minutes) by one step at most, and
+ * the longest step there is is the grouping of a full request:
+ * MAX_CALC_ITEMS (1000) rows in AI_BATCH_SIZE (200) batches of up to 2 × 60 s
+ * each — another 10 minutes (`calc-prefill-wire.test.ts` derives it). 1800 s
+ * clears both, so the queue never starts a second pass beside one still
+ * running; the default 15 minutes would have. Not counted, stated: a save's
+ * own customs-file scans carry no ceiling of their own.
+ *
+ * THE COST, stated (review CONC-6): a pass KILLED mid-run — the container is
+ * rebuilt on every deploy, and nothing here stops pg-boss gracefully on
+ * SIGTERM — is re-delivered only when this expiry lapses: the seller waits up
+ * to 30 minutes, not 15, and is then told PASS_FAILED (`unfinished`), while
+ * the request sits in the VED's queue the whole time. The trade is the one
+ * above: a shorter expiry re-delivers a LIVE pass beside itself.
  */
 export const PASS_EXPIRE_S = 1800;
 /** A tariff reply is a few queries; five minutes is generous. */
@@ -147,11 +160,28 @@ export const STOOD_DOWN: Record<StandDown, string | null> = {
  * since gained a customs half («touched» by a section change) stands down in
  * the customs sentence: the VED is on it either way.
  */
-export const TARIFF_STOOD_DOWN: Record<StandDown, string | null> = {
-  ...STOOD_DOWN,
+export const TARIFF_STOOD_DOWN: Record<TariffStandDown, string | null> = {
   closed: '🧮 Yo‘lkira taxmini yuborilmadi: so‘rov allaqachon yopilgan.',
+  not_found: STOOD_DOWN.not_found,
   unfinished: TARIFF_PASS_FAILED,
 };
+
+/**
+ * What a tariff reply can stand down for (review concurrency-9). It writes
+ * nothing, so a person's work — a moved revision, a ✅ — is nothing it could
+ * overwrite and never a reason to withhold the tariff's figure: those keys
+ * are not in its map, so no sentence is invented for a state that answers.
+ */
+export type TariffStandDown = Exclude<StandDown, 'touched' | 'confirmed'>;
+
+/** The sentence for a stand-down, from its own queue's words. */
+export function standDownWords(standing: StandDown, writes: boolean): string | null {
+  if (writes) return STOOD_DOWN[standing];
+  // `attemptStanding` answers 'ok' for both on the tariff queue; nothing
+  // reaches here with them.
+  if (standing === 'touched' || standing === 'confirmed') return null;
+  return TARIFF_STOOD_DOWN[standing];
+}
 
 /**
  * The standing, read with the attempt (round-1 review, a18).
@@ -167,17 +197,19 @@ export const TARIFF_STOOD_DOWN: Record<StandDown, string | null> = {
  * ticks ✅ and never seals), so they stand on any attempt.
  *
  * `writes`: does this queue's pass WRITE (a customs pass) or only answer (a
- * tariff reply, §6.8)? A tariff reply writes nothing, so a moved revision is
- * nothing it could overwrite — `touched` answers, and `unfinished` cannot
- * arise. A request whose SECTION moved is the pass's own stand-down
- * (`aiPrefill`'s `expectCustoms`).
+ * tariff reply, §6.8)? A tariff reply writes nothing, so neither a moved
+ * revision nor a group a person has ✅ed is anything it could overwrite —
+ * both answer (review concurrency-9: a ✅ landing between the job's INSERT
+ * and its ticket used to withhold the tariff's figure with the customs
+ * sentence), and `unfinished` cannot arise. A request whose SECTION moved is
+ * the pass's own stand-down (`aiPrefill`'s `expectCustoms`).
  */
 export function attemptStanding(
   standing: import('./prefill').PrefillStand,
   retryCount: number,
   writes: boolean,
 ): import('./prefill').PrefillStand | 'unfinished' {
-  if (!writes) return standing === 'touched' ? 'ok' : standing;
+  if (!writes) return standing === 'touched' || standing === 'confirmed' ? 'ok' : standing;
   return standing === 'touched' && retryCount > 0 ? 'unfinished' : standing;
 }
 
@@ -241,7 +273,7 @@ async function runPrefillJob(data: CalcPrefillJob, retryCount: number): Promise<
       logger.info({ requestId, standing, retryCount }, '[calc-prefill] stood down — the request has moved');
       // Said, not silent (2026-10-21): the seller was promised a figure in
       // this chat, and a pass that stood down used to leave him waiting.
-      const said = (writes ? STOOD_DOWN : TARIFF_STOOD_DOWN)[standing];
+      const said = standDownWords(standing, writes);
       if (said) await sayOnce(requestId, { userIds: [staffId], type: 'CalcPrefilled', text: said });
       return;
     }
@@ -262,12 +294,26 @@ async function runPrefillJob(data: CalcPrefillJob, retryCount: number): Promise<
     const expected = { expectCustoms: writes, expectRev: data.rev ?? null };
     const out = await aiPrefill(requestId, { actorId: null }, { replyTo: staffId }, expected);
     if (out.stood) {
-      // The section moved since queueing (§2.8): the customs sentence.
+      // The section moved since queueing (§2.8) — the customs sentence — or
+      // the pass stood down mid-run: the VED closed the request (CONC-1), or
+      // a person overtook the machine before it wrote anything (CONC-5).
+      logger.info({ requestId, stood: out.stood, overtaken: out.overtaken }, '[calc-prefill] stood down mid-pass');
       const said = STOOD_DOWN[out.stood];
       if (said) await sayOnce(requestId, { userIds: [staffId], type: 'CalcPrefilled', text: said });
       return;
     }
-    const spoke = await sayOnce(requestId, { userIds: [staffId], type: 'CalcPrefilled', text: out.text });
+    // `whileOpen` (review CONC-1): the request is read under the claim's own
+    // lock, and a VED who closed it after the pass's last step — «Готово»,
+    // a hand-back — has sent the official answer; the machine's reply and its
+    // lenta note must not follow it.
+    const spoke = await sayOnce(requestId, { userIds: [staffId], type: 'CalcPrefilled', text: out.text }, { whileOpen: true });
+    if (!spoke) {
+      // Withheld because the request closed: the seller is told so, once. Or
+      // withheld because a message already went out (a re-delivery): the
+      // claim drops this one too.
+      const closed = (writes ? STOOD_DOWN : TARIFF_STOOD_DOWN).closed;
+      if (closed) await sayOnce(requestId, { userIds: [staffId], type: 'CalcPrefilled', text: closed });
+    }
     // His answer 2a: the SAME text onto the card's lenta. Two audiences
     // for one answer — the seller reads it on a phone and forgets it, the
     // VED opens the card tomorrow and needs to see what the machine told
@@ -283,7 +329,18 @@ async function runPrefillJob(data: CalcPrefillJob, retryCount: number): Promise<
       );
     }
     logger.info(
-      { requestId, codesStamped: out.codesStamped, picked: out.picked, aiUsed: out.aiUsed, spoke, writes },
+      {
+        requestId,
+        codesStamped: out.codesStamped,
+        picked: out.picked,
+        aiUsed: out.aiUsed,
+        // Which step a person's save stopped the machine at, if any (CONC-5):
+        // the reply alone cannot tell an overtaken pass from a clean one.
+        overtaken: out.overtaken,
+        pastDeadline: out.pastDeadline,
+        spoke,
+        writes,
+      },
       '[calc-prefill] pass finished',
     );
   } catch (err) {

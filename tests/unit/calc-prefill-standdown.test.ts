@@ -84,6 +84,11 @@ describe('a tariff reply writes nothing, so a moved revision is nothing it could
   it('the rule: on the tariff queue «touched» answers and «unfinished» cannot arise', () => {
     expect(attemptStanding('touched', 0, false)).toBe('ok');
     expect(attemptStanding('touched', 2, false)).toBe('ok');
+    // A ✅ is a person's work the tariff reply cannot overwrite either (review
+    // concurrency-9) — it used to withhold the figure with the customs sentence.
+    expect(attemptStanding('confirmed', 0, false)).toBe('ok');
+    expect(attemptStanding('confirmed', 3, false)).toBe('ok');
+    expect(Object.keys(TARIFF_STOOD_DOWN).sort()).toEqual(['closed', 'not_found', 'unfinished']);
     expect(attemptStanding('closed', 0, false)).toBe('closed');
     expect(TARIFF_STOOD_DOWN.closed).not.toBe(STOOD_DOWN.closed);
     expect(TARIFF_STOOD_DOWN.unfinished).toBe(TARIFF_PASS_FAILED);
@@ -96,7 +101,17 @@ describe('a tariff reply writes nothing, so a moved revision is nothing it could
     prefill.run.mockResolvedValue({ text: 'tariff reply', lentaText: 'tariff reply', stood: null });
     await handler([job(0, 'yolkira')]);
     expect(prefill.run).toHaveBeenCalledWith('r1', { actorId: null }, { replyTo: 's1' }, { expectCustoms: false, expectRev: 3 });
-    expect(say).toHaveBeenCalledWith('r1', expect.objectContaining({ text: 'tariff reply' }));
+    expect(say).toHaveBeenCalledWith('r1', expect.objectContaining({ text: 'tariff reply' }), { whileOpen: true });
+  });
+
+  it('a yolkira job a person ✅ed is answered too — the tariff reply writes nothing', async () => {
+    const { handler } = await worker(JOB_CALC_TARIFF_REPLY);
+    prefill.standing.mockResolvedValue('confirmed');
+    prefill.run.mockResolvedValue({ text: 'tariff reply', lentaText: 'tariff reply', stood: null });
+    await handler([job(0, 'yolkira')]);
+    expect(prefill.run).toHaveBeenCalled();
+    expect(say).toHaveBeenCalledTimes(1);
+    expect(say).toHaveBeenCalledWith('r1', expect.objectContaining({ text: 'tariff reply' }), { whileOpen: true });
   });
 
   it('a job queued as freight-only on a request that has since gained customs stands down — the section moved', async () => {
@@ -129,5 +144,29 @@ describe('a tariff reply writes nothing, so a moved revision is nothing it could
     prefill.run.mockResolvedValue({ text: 'customs reply', lentaText: 'customs reply', stood: null });
     await handler([job(0)]);
     expect(prefill.run).toHaveBeenCalledWith('r1', { actorId: null }, { replyTo: 's1' }, { expectCustoms: true, expectRev: 3 });
+  });
+});
+
+describe('a request the VED closed while the pass ran gets no machine reply (review CONC-1)', () => {
+  it('the reply is spoken only while the request is open; a closed one is told the closed sentence instead', async () => {
+    const { handler } = await worker();
+    prefill.standing.mockResolvedValue('ok');
+    prefill.run.mockResolvedValue({ text: 'customs reply', lentaText: 'customs reply', stood: null });
+    // The speaking door refuses: the request closed after the pass's last step.
+    say.mockImplementation(async (_id: string, _input: unknown, opts?: { whileOpen?: boolean }) => !opts?.whileOpen);
+    await handler([job(0)]);
+    const texts = say.mock.calls.map((call) => (call[1] as { text: string }).text);
+    expect(texts).toEqual(['customs reply', STOOD_DOWN.closed]);
+    expect(say.mock.calls[0]![2]).toEqual({ whileOpen: true });
+    expect(say.mock.calls[1]![2]).toBeUndefined();
+  });
+
+  it('a pass that stood down mid-run says its own sentence and no reply', async () => {
+    const { handler } = await worker();
+    prefill.standing.mockResolvedValue('ok');
+    prefill.run.mockResolvedValue({ text: '', lentaText: '', stood: 'closed', overtaken: null });
+    await handler([job(0)]);
+    expect(say).toHaveBeenCalledTimes(1);
+    expect(say).toHaveBeenCalledWith('r1', expect.objectContaining({ text: STOOD_DOWN.closed }));
   });
 });

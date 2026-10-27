@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, like } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
@@ -20,11 +20,14 @@ import {
 } from '@/modules/platform/db/schema';
 import { getStorage } from '@/modules/platform/files/storage';
 import { runCustomsImport } from '@/modules/wms/customs/import-service';
-import { openCalcRequest } from '@/modules/wms/calc/service';
+import { CalcError, openCalcRequest, returnCalcRequest } from '@/modules/wms/calc/service';
+import { pickBazas } from '@/modules/wms/calc/prefill-steps';
 import {
   applyProposal,
   confirmGroup,
   loadWorkspace,
+  priceProposedGroups,
+  proposeGroups,
   saveTable,
 } from '@/modules/wms/calc/workspace';
 import { aiPrefill, prefillStanding, prefillTicket } from '@/modules/wms/calc/prefill';
@@ -119,7 +122,10 @@ afterAll(async () => {
   await pgClient.end();
 });
 
-async function open(items: { name: string; tnvedCode?: string | null; quantity?: number | null; weightKg?: number | null }[]) {
+async function open(
+  items: { name: string; tnvedCode?: string | null; quantity?: number | null; weightKg?: number | null }[],
+  as: { actorId: string } = ctx(),
+) {
   const r = await openCalcRequest(
     {
       entityType: 'deal',
@@ -132,7 +138,7 @@ async function open(items: { name: string; tnvedCode?: string | null; quantity?:
       items,
       source: 'card',
     },
-    ctx(),
+    as,
   );
   madeRequests.push(r.id);
   return r.id;
@@ -171,13 +177,30 @@ const importRow = async () => {
   return rows.find((r) => r.unit === 'kg')!;
 };
 
-/** The model's grouping, scripted: it names ONE code for every item. */
-const proposeAs = (code: string) => async (requestId: string, c: { actorId: string | null }) => {
+/**
+ * A grouping that wrote nothing: the revision chain comes back as it went in
+ * (review P1-R2 — the pass carries the chain, it no longer re-reads it).
+ */
+const idle = async (_requestId: string, _c: unknown, opts: { expectRev?: number } = {}) => ({
+  groups: 0,
+  batches: 0,
+  failed: 0,
+  ratesPulled: 0,
+  codesStamped: 0,
+  importFilled: 0,
+  memoryFilled: 0,
+  dictionaryFilled: 0,
+  rev: opts.expectRev ?? null,
+});
+
+/** The model's grouping, scripted: it names ONE code for every item — and,
+ * like the real one, carries the pass's revision chain through its writes. */
+const proposeAs = (code: string) => async (requestId: string, c: { actorId: string | null }, opts: { expectRev?: number } = {}) => {
   const items = await db
     .select({ seq: calcRequestItems.seq })
     .from(calcRequestItems)
     .where(eq(calcRequestItems.requestId, requestId));
-  await applyProposal(
+  const applied = await applyProposal(
     requestId,
     [
       {
@@ -191,9 +214,10 @@ const proposeAs = (code: string) => async (requestId: string, c: { actorId: stri
       },
     ],
     c,
+    opts,
   );
   const { priceProposedGroups } = await import('@/modules/wms/calc/workspace');
-  const priced = await priceProposedGroups(requestId, c);
+  const priced = await priceProposedGroups(requestId, c, opts.expectRev === undefined ? {} : { expectRev: applied.rev });
   return { groups: 1, batches: 1, failed: 0, ...priced };
 };
 
@@ -330,7 +354,7 @@ describe('the machine carries a job as far as it honestly can', () => {
     let offered = 0;
     const out = await aiPrefill(id, ctx(), {
       configured: true,
-      propose: async () => ({ groups: 0, batches: 0, failed: 0, ratesPulled: 0, codesStamped: 0, importFilled: 0, memoryFilled: 0, dictionaryFilled: 0 }),
+      propose: idle,
       pick: async (asking) => {
         offered = asking.length;
         // The model answers with an INDEX, never a price.
@@ -387,7 +411,7 @@ describe('the machine carries a job as far as it honestly can', () => {
     const id = await open([{ name: 'Yana boshqa nom', tnvedCode: kg.tnvedCode, weightKg: 100 }]);
     const out = await aiPrefill(id, ctx(), {
       configured: true,
-      propose: async () => ({ groups: 0, batches: 0, failed: 0, ratesPulled: 0, codesStamped: 0, importFilled: 0, memoryFilled: 0, dictionaryFilled: 0 }),
+      propose: idle,
       pick: async (asking) => ({
         answers: asking.map((a) => ({ seq: a.seq, candidate: null, reason: 'mos emas' })),
         usage: null,
@@ -456,9 +480,9 @@ describe('the machine carries a job as far as it honestly can', () => {
       ctx(),
       {
         configured: true,
-        propose: async () => {
+        propose: async (requestId, c, o) => {
           proposed += 1;
-          return { groups: 0, batches: 0, failed: 0, ratesPulled: 0, codesStamped: 0, importFilled: 0, memoryFilled: 0, dictionaryFilled: 0 };
+          return idle(requestId, c, o);
         },
         pick: async () => ({ answers: null, usage: null }),
       },
@@ -466,8 +490,14 @@ describe('the machine carries a job as far as it honestly can', () => {
     );
     expect(proposed, 'the grouping must not run over a person’s save').toBe(0);
     expect(await prefillTicket(id), 'and the machine wrote nothing after it').toBe(afterPerson);
-    // The pass still answers — the request is in the VED's queue either way.
-    expect(out.text).toContain('Rastamojka jami');
+    // Re-anchored (R2 late pass, review CONC-5): the pass used to answer
+    // anyway — the reply rendered from the VED's half-typed state under the
+    // AI's heading — while a save one moment EARLIER got the worker's
+    // stand-down sentence. Overtaken before any machine write, it now stands
+    // down the same way, and says at which step.
+    expect(out.stood).toBe('touched');
+    expect(out.overtaken).toBe('step 1');
+    expect(out.text).toBe('');
   });
 
   it('a freight-only job is left ALONE — no groups, no model call, no $0', async () => {
@@ -521,7 +551,7 @@ describe('the machine carries a job as far as it honestly can', () => {
 
     const out = await aiPrefill(id, ctx(), {
       configured: true,
-      propose: async () => ({ groups: 0, batches: 0, failed: 0, ratesPulled: 0, codesStamped: 0, importFilled: 0, memoryFilled: 0, dictionaryFilled: 0 }),
+      propose: idle,
       pick: async (asking) => {
         // THE VED TYPES, right here — inside the model's own window.
         const [item] = await db
@@ -597,5 +627,299 @@ describe('the machine carries a job as far as it honestly can', () => {
     expect(ws!.groups).toHaveLength(1);
     expect(out.text).toContain('🤖 AI-VED · taxminiy rastamojka');
     expect(out.text).toContain('Rastamojka jami');
+  });
+});
+
+/**
+ * R2 late pass — the pass stands down when a person or a close says so.
+ *
+ * Every case here drives the REAL machinery under an injected model, and
+ * each states its premise first: a stand-down that never had anything to
+ * stand down from is evidence about the fixture (#166).
+ */
+describe('the pass stands down when a person or a close says so (R2 late pass)', () => {
+  // Its own requester: the file already holds this many open requests for
+  // `actorId`, and the door caps one person at MAX_OPEN_PER_REQUESTER.
+  let lateActorId = '';
+  beforeAll(async () => {
+    const [late] = await db
+      .insert(users)
+      .values({ phone: `+99894${String(Date.now()).slice(-7)}`, fullName: `Prefill late ${SUFFIX}`, passwordHash: 'x' })
+      .returning();
+    lateActorId = late!.id;
+  });
+  afterAll(async () => {
+    await db.update(users).set({ active: false }).where(eq(users.id, lateActorId));
+  });
+  const openLate = (items: Parameters<typeof open>[0]) => open(items, { actorId: lateActorId });
+  /** The hand-back's own seller task, which the door opens — swept so no
+   * later file reads a stranger's to-do (#154). */
+  const sweepHandBacks = async () => {
+    const made = await db
+      .select({ id: tasks.id })
+      .from(tasks)
+      .where(and(eq(tasks.entityId, dealId), like(tasks.title, '↩️%')));
+    const ids = made.map((t) => t.id);
+    if (ids.length > 0) {
+      await db.delete(events).where(inArray(events.entityId, ids));
+      await db.delete(tasks).where(inArray(tasks.id, ids));
+    }
+  };
+  // Handed back by the requester himself, so the door's «qaytarildi» ping
+  // excludes him and nothing wakes the drain in the test process.
+  const handBack = (id: string) => returnCalcRequest(id, 'VED qaytardi — test', { actorId: lateActorId });
+
+  it('a request the VED closes while the grouping runs gets no reply, no sweep and no pick (review CONC-1)', async () => {
+    const row = await importRow();
+    const id = await openLate([{ name: row.name, weightKg: 100 }]);
+    let picks = 0;
+    try {
+      const out = await aiPrefill(id, ctx(), {
+        configured: true,
+        propose: async () => {
+          // «Готово» or a hand-back lands while the model is thinking; the
+          // grouping's own next write is then refused the way the door refuses.
+          await handBack(id);
+          throw new CalcError('already_closed');
+        },
+        pick: async () => {
+          picks += 1;
+          return { answers: null, usage: null };
+        },
+      });
+      expect(out.stood).toBe('closed');
+      expect(out.text).toBe('');
+      expect(out.lentaText).toBe('');
+      expect(picks, 'no paid model call on a closed request').toBe(0);
+      const ws = await loadWorkspace(id);
+      expect(ws!.groups, 'the sweep wrote nothing after the close').toHaveLength(0);
+    } finally {
+      await sweepHandBacks();
+    }
+  });
+
+  it('a request closed before the grouping is asked makes no model call at all (review CONC-1)', async () => {
+    const row = await importRow();
+    const id = await openLate([{ name: row.name, weightKg: 100 }]);
+    // Closed in the gap after the worker's own check — the clock is asked
+    // before every model step, so nothing is billed for a closed request.
+    await handBack(id);
+    let calls = 0;
+    try {
+      const out = await aiPrefill(id, ctx(), {
+        configured: true,
+        propose: async (requestId, c, o) => {
+          calls += 1;
+          return idle(requestId, c, o);
+        },
+        pick: async () => {
+          calls += 1;
+          return { answers: null, usage: null };
+        },
+      });
+      expect(calls).toBe(0);
+      expect(out.stood).toBe('closed');
+    } finally {
+      await sweepHandBacks();
+    }
+  });
+
+  it('…and a close landing inside the pick’s own call stands the reply down too', async () => {
+    const kg = await importRow();
+    const id = await openLate([{ name: 'Yopilgan nom butunlay', tnvedCode: kg.tnvedCode, weightKg: 100 }]);
+    try {
+      const out = await aiPrefill(id, ctx(), {
+        configured: true,
+        propose: idle,
+        pick: async (asking) => {
+          expect(asking.length, 'the premise: the pick is reached').toBeGreaterThan(0);
+          await handBack(id);
+          return { answers: asking.map((a) => ({ seq: a.seq, candidate: 0, reason: 'shu' })), usage: null };
+        },
+      });
+      expect(out.stood).toBe('closed');
+      expect(out.text).toBe('');
+      const [item] = await db.select().from(calcRequestItems).where(eq(calcRequestItems.requestId, id));
+      expect(item!.bazaUsd, 'the pick’s save was refused').toBeNull();
+    } finally {
+      await sweepHandBacks();
+    }
+  });
+
+  it('the grouping’s CLAIM carries the revision: a stale one is `conflict`, writes nothing and leaves no claim (review P1-R2)', async () => {
+    const row = await importRow();
+    // Fully coded: `proposeGroups` makes no model call, so the real door runs here.
+    const id = await openLate([{ name: row.name, tnvedCode: row.tnvedCode, weightKg: 100 }]);
+    const stale = (await prefillTicket(id))!;
+    await saveTable(id, { items: [], adds: [] }, ctx());
+    const afterPerson = await prefillTicket(id);
+    expect(afterPerson, 'the premise: the person’s save moved the clock').not.toBe(stale);
+
+    await expect(proposeGroups(id, ctx(), { expectRev: stale })).rejects.toMatchObject({ code: 'conflict' });
+    expect(await prefillTicket(id)).toBe(afterPerson);
+    const [req] = await db.select().from(calcRequests).where(eq(calcRequests.id, id));
+    expect(req!.aiProposalStartedAt, 'a refused claim holds nothing').toBeNull();
+
+    // The control: at the revision it stands at, the door runs and hands the
+    // chain back — the revision its own last write left.
+    const out = await proposeGroups(id, ctx(), { expectRev: afterPerson! });
+    expect(out.rev).toBe(await prefillTicket(id));
+  });
+
+  it('…and its pricing tail compares at every write: a person’s save after the claim is released is `conflict`', async () => {
+    const row = await importRow();
+    const id = await openLate([{ name: row.name, weightKg: 100 }]);
+    const start = (await prefillTicket(id))!;
+    const items = await db
+      .select({ seq: calcRequestItems.seq })
+      .from(calcRequestItems)
+      .where(eq(calcRequestItems.requestId, id));
+    // The proposal lands under the chain — the group carries a code and no rates.
+    const applied = await applyProposal(
+      id,
+      [
+        {
+          label: 'AI guruh',
+          tnvedCode: row.tnvedCode,
+          itemSeqs: items.map((i) => i.seq),
+          aiProposed: true,
+          confidence: 'high',
+          aiDutyPct: null,
+          note: null,
+        },
+      ],
+      ctx(),
+      { expectRev: start },
+    );
+    expect(applied.rev).toBe(start + 1);
+    // A PERSON saves in the unclaimed seconds between the release and the tail.
+    await saveTable(id, { items: [], adds: [] }, ctx());
+    const afterPerson = await prefillTicket(id);
+
+    await expect(priceProposedGroups(id, ctx(), { expectRev: applied.rev })).rejects.toMatchObject({ code: 'conflict' });
+    const [group] = await db.select().from(calcGroups).where(eq(calcGroups.requestId, id));
+    expect(group!.dutyPct, 'no rate was pulled over the person').toBeNull();
+    expect(await prefillTicket(id)).toBe(afterPerson);
+  });
+
+  it('the pass: a person saving inside the grouping’s tail stops the sweep and the pick (review P1-R2)', async () => {
+    const row = await importRow();
+    const id = await openLate([{ name: row.name, weightKg: 100 }]);
+    let picks = 0;
+    let afterPerson: number | null = null;
+    const out = await aiPrefill(id, ctx(), {
+      configured: true,
+      propose: async (requestId, c, o = {}) => {
+        const items = await db
+          .select({ seq: calcRequestItems.seq })
+          .from(calcRequestItems)
+          .where(eq(calcRequestItems.requestId, requestId));
+        const applied = await applyProposal(
+          requestId,
+          [
+            {
+              label: 'AI guruh',
+              tnvedCode: row.tnvedCode,
+              itemSeqs: items.map((i) => i.seq),
+              aiProposed: true,
+              confidence: 'high',
+              aiDutyPct: null,
+              note: null,
+            },
+          ],
+          c,
+          o,
+        );
+        // The person, between the claim's release and the pricing tail.
+        await saveTable(requestId, { items: [], adds: [] }, ctx());
+        afterPerson = await prefillTicket(requestId);
+        const priced = await priceProposedGroups(requestId, c, o.expectRev === undefined ? {} : { expectRev: applied.rev });
+        return { groups: 1, batches: 1, failed: 0, ...priced };
+      },
+      pick: async () => {
+        picks += 1;
+        return { answers: null, usage: null };
+      },
+    });
+    expect(afterPerson, 'the premise: the person saved inside the tail').not.toBeNull();
+    expect(out.overtaken).toBe('step 1');
+    expect(picks).toBe(0);
+    expect(await prefillTicket(id), 'nothing written after the person').toBe(afterPerson);
+  });
+
+  it('a grouping that FAILS after a person saved keeps the chain’s revision — the sweep is refused, never adopted (review P1-R7)', async () => {
+    const row = await importRow();
+    const id = await openLate([{ name: row.name, tnvedCode: row.tnvedCode, weightKg: 100 }]);
+    let picks = 0;
+    let afterPerson: number | null = null;
+    const out = await aiPrefill(id, ctx(), {
+      configured: true,
+      propose: async (requestId) => {
+        // A person's save lands while the machine's call is failing.
+        await saveTable(requestId, { items: [], adds: [] }, ctx());
+        afterPerson = await prefillTicket(requestId);
+        throw new Error('model down after the person saved');
+      },
+      pick: async () => {
+        picks += 1;
+        return { answers: null, usage: null };
+      },
+    });
+    expect(afterPerson).not.toBeNull();
+    expect(out.overtaken).toBe('step 2');
+    // Nothing the machine wrote before the person: the stand-down sentence (CONC-5).
+    expect(out.stood).toBe('touched');
+    expect(picks).toBe(0);
+    expect(await prefillTicket(id), 'the sweep wrote nothing over the person').toBe(afterPerson);
+  });
+
+  it('a person’s own ✨ holding the claim is «a person is working», not a failure — no model call is paid (review CONC-3)', async () => {
+    const row = await importRow();
+    const id = await openLate([{ name: row.name, weightKg: 100 }]);
+    // The person's ✨, mid-call: the claim the screen's button takes.
+    await db.update(calcRequests).set({ aiProposalStartedAt: new Date() }).where(eq(calcRequests.id, id));
+    let calls = 0;
+    try {
+      const out = await aiPrefill(id, ctx(), {
+        configured: true,
+        propose: async () => {
+          calls += 1;
+          throw new CalcError('ai_running');
+        },
+        pick: async () => {
+          calls += 1;
+          return { answers: null, usage: null };
+        },
+      });
+      expect(calls, 'neither the grouping nor the pick is asked').toBe(0);
+      expect(out.overtaken).toBe('step 1');
+      expect(out.stood).toBe('touched');
+    } finally {
+      await db.update(calcRequests).set({ aiProposalStartedAt: null }).where(eq(calcRequests.id, id));
+    }
+  });
+
+  it('the pick’s save refused by a person’s ✨ is overtaken, never «pick failed» (review CONC-3)', async () => {
+    const kg = await importRow();
+    const id = await openLate([{ name: 'Klaim nomi butunlay', tnvedCode: kg.tnvedCode, weightKg: 100 }]);
+    await saveTable(id, { items: [], adds: [] }, ctx());
+    const rev = await prefillTicket(id);
+    try {
+      const out = await pickBazas(
+        id,
+        { actorId: null },
+        async (asking) => {
+          expect(asking.length, 'the premise: the pick is reached').toBeGreaterThan(0);
+          // A person presses ✨ while the model thinks.
+          await db.update(calcRequests).set({ aiProposalStartedAt: new Date() }).where(eq(calcRequests.id, id));
+          return { answers: asking.map((a) => ({ seq: a.seq, candidate: 0, reason: 'shu' })), usage: null };
+        },
+        rev,
+      );
+      expect(out.picked).toBe(0);
+      expect(out.overtaken).toBe(1);
+    } finally {
+      await db.update(calcRequests).set({ aiProposalStartedAt: null }).where(eq(calcRequests.id, id));
+    }
   });
 });

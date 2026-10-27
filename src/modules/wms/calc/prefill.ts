@@ -15,7 +15,7 @@ import {
   type PricedItem,
 } from './pricing';
 import { basisLabel } from './basis';
-import { loadWorkspace, proposeGroups, saveTable, type Workspace } from './workspace';
+import { loadWorkspace, proposeGroups, requestClock, saveTable, type Workspace } from './workspace';
 import { aiVedReplyText, type AiVedEstimate, type AiVedFreight, type AiVedLine, type AiVedLineEstimate } from './ai-reply';
 import { calcJobHrefFor } from './card-door';
 import { dutyText } from './duty-text';
@@ -65,11 +65,13 @@ import { CalcError } from './service';
  */
 
 /**
- * The whole pass's wall clock (§6.7). Past it the pick is skipped and the
- * median read issues nothing — both said in words — and a step already
- * running is never interrupted; the job's pg-boss expiry (`PASS_EXPIRE_S`)
- * sits above this plus one worst step, so the queue never re-delivers a pass
- * that is still running beside itself.
+ * The whole pass's wall clock (§6.7). Past it the grouping and the pick are
+ * skipped and the median read issues nothing — said in words — and a step
+ * already running is never interrupted. Every model step is asked BEFORE it
+ * starts (review perf-3: the pick alone used to be), so a pass can overrun
+ * this by one step at most; the job's pg-boss expiry (`PASS_EXPIRE_S`) is
+ * derived above that, so the queue never re-delivers a pass that is still
+ * running beside itself.
  */
 export const PASS_DEADLINE_MS = 10 * 60_000;
 
@@ -174,14 +176,28 @@ export interface PrefillOutcome {
   /** Bazas the `calc_bazas` book answered — round 2's fill. */
   dictionaryFilled: number;
   aiUsed: boolean;
-  /** The deadline passed before the pick or the median read — said in words. */
+  /** The deadline passed before the grouping, the pick or the median read —
+   * said in words. */
   pastDeadline: boolean;
   /**
-   * Non-null: the pass stood down BEFORE writing anything, and the texts are
-   * empty — the job's section moved since it was queued (§6.8). The worker
-   * says the stand-down sentence instead of a reply.
+   * The step at which a person's save (or their own ✨) overtook the machine,
+   * which then wrote nothing more — null when nobody did (review CONC-5). For
+   * the log of THIS pass: the reply alone cannot tell it apart.
    */
-  stood: 'touched' | null;
+  overtaken: string | null;
+  /**
+   * Non-null: the pass stood down, and the texts are empty — the worker says
+   * the stand-down sentence instead of a reply.
+   * - `touched`: the job's section moved since it was queued (§6.8), or a
+   *   person overtook the machine BEFORE any machine write landed (CONC-5) —
+   *   the reply would be their half-typed numbers under the AI's heading,
+   *   and a person who saved a moment before the job's check is told the
+   *   same sentence;
+   * - `closed`: the VED closed the request («Готово», a hand-back) while the
+   *   pass ran (CONC-1) — the official answer is out, and the machine's must
+   *   not follow it.
+   */
+  stood: 'touched' | 'closed' | null;
 }
 
 const NOTHING_DONE = {
@@ -197,11 +213,20 @@ const NOTHING_DONE = {
   dictionaryFilled: 0,
   aiUsed: false,
   pastDeadline: false,
+  overtaken: null,
   stood: null,
 } satisfies Omit<PrefillOutcome, 'text' | 'lentaText'>;
 
-/** A save refused because a person saved in between (K14's compare-and-set). */
-const isOvertaken = (err: unknown) => err instanceof CalcError && err.code === 'conflict';
+/**
+ * A write refused because a PERSON is working on the request: their save in
+ * between (K14's compare-and-set, `conflict`), or their own ✨ holding the
+ * claim (`ai_running`, review CONC-3) — the same answer, said by another
+ * door. Neither is a failure to log; both stand the machine down.
+ */
+const isOvertaken = (err: unknown) =>
+  err instanceof CalcError && (err.code === 'conflict' || err.code === 'ai_running');
+/** …and one refused because the VED closed the request meanwhile (CONC-1). */
+const isClosed = (err: unknown) => err instanceof CalcError && err.code === 'already_closed';
 
 export async function aiPrefill(
   requestId: string,
@@ -281,19 +306,54 @@ export async function aiPrefill(
    * between turns the machine's next save into `conflict`, which writes
    * nothing, and the machine writes nothing more — a person is working on
    * the request, and the pick's model call alone can take two minutes. The
-   * pass still goes on to the reply. Stated: the grouping's own seconds
-   * between `releaseAiClaim` and the end of `priceProposedGroups` are not
-   * under it (the claim covers the model call before them).
+   * grouping carries the chain too (review P1-R2): its claim is taken at the
+   * chain's revision and its pricing tail compares at every write, so the
+   * seconds after it releases its claim are no longer open.
    *
    * It STARTS at the revision the job was checked against (`expectRev`), so
    * a save in the gap after that check is a conflict too — a fresh read here
    * would adopt it as the machine's own.
    */
   let rev: number | null = opts.expectRev ?? (await prefillTicket(requestId));
-  let overtaken = false;
+  let overtaken: string | null = null;
+  let closed = false;
+  /** Has any machine write landed? A person overtaking BEFORE one did gets
+   * the stand-down sentence, never a reply over their half-typed numbers. */
+  let wrote = false;
   const overtakenAt = (step: string) => {
-    overtaken = true;
+    overtaken = step;
     logger.info({ requestId, step }, '[calc-prefill] a person saved meanwhile — the machine writes nothing more');
+  };
+  const closedAt = (step: string) => {
+    closed = true;
+    logger.info({ requestId, step }, '[calc-prefill] the request was closed meanwhile — the machine stands down');
+  };
+  /** Nothing more is written once a person or a close has said so. */
+  const standing = () => overtaken === null && !closed;
+  /**
+   * A model step is asked about the clock BEFORE it starts (review perf-3):
+   * a grouping of a thousand rows is five calls of up to two minutes each,
+   * and a pass that outlives its pg-boss expiry is re-delivered beside
+   * itself, where the retry's «hisoblay olmadi» takes the request's one
+   * message from the real answer.
+   */
+  const late = (step: string): boolean => {
+    if (Date.now() <= deadline) return false;
+    pastDeadline = true;
+    logger.warn({ requestId, step }, '[calc-prefill] past the pass deadline — the step is skipped');
+    return true;
+  };
+  /**
+   * Ask the request's clock before a model call: a close, a person's ✨, or
+   * a person's save since the chain's revision all stand the machine down
+   * here, before a token is billed — the call's own save would only be
+   * refused after it (CONC-1, CONC-3).
+   */
+  const stillOurs = async (step: string): Promise<boolean> => {
+    const clock = await requestClock(requestId);
+    if (!clock || clock.closed) closedAt(step);
+    else if (clock.aiRunning || (rev !== null && clock.rev !== rev)) overtakenAt(step);
+    return standing();
   };
 
   /**
@@ -308,29 +368,25 @@ export async function aiPrefill(
     const out = await applyMemory(requestId, ctx, rev);
     memoryCoded = out.coded;
     memoryFilled = out.filled;
+    // Step 0's save fills from the book too (round 2) — counted, or the
+    // outcome under-reports where the bazas came from (review REG-2/P2-9).
+    dictionaryFilled += out.dictionaryFilled;
+    if (out.coded > 0) wrote = true;
     rev = out.rev;
   } catch (err) {
     if (isOvertaken(err)) overtakenAt('step 0');
+    else if (isClosed(err)) closedAt('step 0');
     else logger.warn({ err, requestId }, '[calc-prefill] memory pass failed');
   }
 
   // 1. The model groups the goods and names their codes; `proposeGroups`
   //    then prices what it proposed (the book's rates, the code onto the
-  //    row) and 0094's import fill runs inside its save.
-  //
-  //    `applyProposal` DELETES and re-inserts the groups and its claim tests
-  //    no revision, so the chain is compared HERE, right before it: step 0
-  //    compare-and-sets only when it had codes to post, and a person's save
-  //    since the job's check would otherwise be grouped over and then
-  //    adopted below. Stated: this is a check, not the claim — the
-  //    milliseconds between it and `proposeGroups`'s claim are not under it
-  //    until that claim carries the revision itself (the kernel's).
-  if (configured && !overtaken && rev !== null && (await prefillTicket(requestId)) !== rev) {
-    overtakenAt('step 1');
-  }
-  if (configured && !overtaken) {
+  //    row) and 0094's import fill runs inside its save. The chain rides
+  //    in: the claim is taken only at its revision and every write after it
+  //    compares (review P1-R2), so nothing here is adopted.
+  if (configured && standing() && !late('step 1') && (await stillOurs('step 1'))) {
     try {
-      const out = await propose(requestId, ctx);
+      const out = await propose(requestId, ctx, rev === null ? {} : { expectRev: rev });
       codesStamped += out.codesStamped;
       ratesPulled += out.ratesPulled;
       importFilled += out.importFilled;
@@ -339,17 +395,21 @@ export async function aiPrefill(
       memoryFilled += out.memoryFilled;
       dictionaryFilled += out.dictionaryFilled;
       aiUsed = true;
+      if (out.rev !== null && out.rev !== rev) wrote = true;
+      // No chain went in (the request had no revision to start from): there
+      // is nothing to compare against, and the clock is all there is.
+      rev = out.rev ?? (rev === null ? await prefillTicket(requestId) : rev);
     } catch (err) {
-      // A model that refused, a key that expired, a request somebody closed
-      // between landing and here — none of it is fatal. What follows still
-      // runs, and the reply says what was and was not done.
-      logger.warn({ err, requestId }, '[calc-prefill] propose failed');
+      // A person working here, or a close, stands the machine down. Anything
+      // else — a model that refused, a key that expired — is not fatal, and
+      // the chain KEEPS the revision it held (review P1-R7): re-reading the
+      // clock here would adopt a person's save that landed while the call
+      // was failing. The cost, stated: a grouping that committed its groups
+      // and then failed in its tail now stops the sweep too (`conflict`).
+      if (isOvertaken(err)) overtakenAt('step 1');
+      else if (isClosed(err)) closedAt('step 1');
+      else logger.warn({ err, requestId }, '[calc-prefill] propose failed');
     }
-    // The grouping's own saves moved the clock; the chain picks up here.
-    // ADOPTED, not compared: `proposeGroups` does not say which revision its
-    // own last save left, so a save inside its unclaimed tail is taken as
-    // the machine's (the window stated above the chain).
-    rev = await prefillTicket(requestId);
   }
 
   // 2. …and with or without a model: the SWEEP. Intake prefills codes from
@@ -357,15 +417,20 @@ export async function aiPrefill(
   //    an empty save is what places those items in groups (with rates at
   //    mint) and fires the import fill. This is the whole model-free half of
   //    the feature, and it is why a server with no key still gets a figure.
-  if (!overtaken) {
+  //    Not skipped past the deadline: it is one save, and without it a row
+  //    the intake coded stays out of every group — the reply would then name
+  //    it «Kod topilmadi» although it carries a code.
+  if (standing()) {
     try {
       const swept = await saveTable(requestId, { items: [], adds: [] }, ctx, rev === null ? undefined : { expectRev: rev });
       importFilled += swept.importFilled.length;
       memoryFilled += swept.memoryFilled.length;
       dictionaryFilled += swept.dictionaryFilled.length;
+      wrote = true;
       rev = swept.rev;
     } catch (err) {
       if (isOvertaken(err)) overtakenAt('step 2');
+      else if (isClosed(err)) closedAt('step 2');
       else logger.warn({ err, requestId }, '[calc-prefill] sweep failed');
     }
   }
@@ -374,27 +439,49 @@ export async function aiPrefill(
   //    candidates and picks a DECLARATION, never a number — unless the
   //    pass's deadline has passed, which is said rather than overrun.
   let picked = 0;
-  if (configured && !overtaken) {
-    if (Date.now() > deadline) {
-      pastDeadline = true;
-      logger.warn({ requestId }, '[calc-prefill] past the pass deadline — the pick is skipped');
-    } else {
-      try {
-        const out = await pickBazas(requestId, ctx, pick, rev);
-        picked = out.picked;
-        rev = out.rev;
-        if (out.capped || out.refused || out.overtaken || out.timedOut) {
-          logger.info(
-            { requestId, capped: out.capped, refused: out.refused, overtaken: out.overtaken, timedOut: out.timedOut },
-            '[calc-prefill] the pick left rows for the VED',
-          );
-        }
-        if (picked > 0) aiUsed = true;
-      } catch (err) {
-        if (isOvertaken(err)) overtakenAt('step 3');
-        else logger.warn({ err, requestId }, '[calc-prefill] pick failed');
+  if (configured && standing() && !late('step 3') && (await stillOurs('step 3'))) {
+    try {
+      const out = await pickBazas(requestId, ctx, pick, rev);
+      picked = out.picked;
+      dictionaryFilled += out.dictionaryFilled;
+      memoryFilled += out.memoryFilled;
+      if (out.picked > 0) wrote = true;
+      rev = out.rev;
+      if (out.capped || out.refused || out.overtaken || out.timedOut) {
+        logger.info(
+          { requestId, capped: out.capped, refused: out.refused, overtaken: out.overtaken, timedOut: out.timedOut },
+          '[calc-prefill] the pick left rows for the VED',
+        );
       }
+      if (picked > 0) aiUsed = true;
+    } catch (err) {
+      if (isOvertaken(err)) overtakenAt('step 3');
+      else if (isClosed(err)) closedAt('step 3');
+      else logger.warn({ err, requestId }, '[calc-prefill] pick failed');
     }
+  }
+
+  // A close stands the reply down whatever was written (CONC-1): the VED's
+  // answer is official and out, and the machine's estimate must not follow
+  // it. A person who overtook the machine before any machine write landed
+  // is answered the way the job's own check answers them (CONC-5).
+  if (closed || (overtaken !== null && !wrote)) {
+    return {
+      ...NOTHING_DONE,
+      text: '',
+      lentaText: '',
+      codesStamped,
+      ratesPulled,
+      importFilled,
+      picked,
+      memoryCoded,
+      memoryFilled,
+      dictionaryFilled,
+      aiUsed,
+      pastDeadline,
+      overtaken,
+      stood: closed ? 'closed' : 'touched',
+    };
   }
 
   // 4. Read what the engine now says, and say it in words.
@@ -467,6 +554,10 @@ export async function aiPrefill(
     dictionaryFilled,
     aiUsed,
     pastDeadline,
+    // A person who overtook the machine AFTER it had written: the reply
+    // still goes out (§6.7) — the machine's own half is in it — and the log
+    // says which step stopped it.
+    overtaken,
   };
 }
 

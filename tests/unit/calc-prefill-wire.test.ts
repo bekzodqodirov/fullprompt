@@ -42,6 +42,8 @@ import {
   registerCalcPrefillWorker,
 } from '@/modules/wms/calc/jobs';
 import { PASS_DEADLINE_MS } from '@/modules/wms/calc/prefill';
+import { MAX_CALC_ITEMS } from '@/modules/wms/calc/service';
+import { AI_BATCH_SIZE } from '@/modules/wms/calc/grouping';
 
 describe('every door hands the job to the machine', () => {
   // DERIVED, not a list of today's three (#789's idiom): every file that
@@ -113,6 +115,19 @@ describe('the section picks the queue (§6.8)', () => {
     // pg-boss re-delivers a job past its expiry while the first run is still
     // going; the default 15 minutes would have run a second pass beside it.
     expect(PASS_EXPIRE_S * 1000).toBeGreaterThan(PASS_DEADLINE_MS + 2 * 60_000);
+  });
+
+  it('…and the worst step is the GROUPING of a full request, derived (R2 late pass, review perf-3)', () => {
+    // Every model step asks the clock before it starts, so a pass overruns
+    // the deadline by one step at most — and the longest is the grouping:
+    // MAX_CALC_ITEMS rows in AI_BATCH_SIZE batches, each one call of up to
+    // 60 s with one retry (tnved/service.ts). Derived from the constants, so
+    // a larger request cap or a smaller batch turns this red.
+    const worstGroupingMs = Math.ceil(MAX_CALC_ITEMS / AI_BATCH_SIZE) * 2 * 60_000;
+    expect(PASS_EXPIRE_S * 1000).toBeGreaterThan(PASS_DEADLINE_MS + worstGroupingMs);
+    // Comments stripped (#725): the glue explains this rule in prose.
+    const glue = read('src/modules/wms/calc/prefill.ts');
+    for (const step of ["late('step 1')", "late('step 3')"]) expect(glue).toContain(step);
   });
 
   it('registerCalcPrefillWorker creates and works BOTH queues, the customs one first', async () => {

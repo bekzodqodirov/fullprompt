@@ -22,6 +22,7 @@ import { onDate, saveBaza } from '@/modules/wms/calc/dictionaries';
 import { CalcError, openCalcRequest } from '@/modules/wms/calc/service';
 import { confirmAllGroups, confirmGroup, saveTable, sealCalc } from '@/modules/wms/calc/workspace';
 import { applyMemory, pickBazas } from '@/modules/wms/calc/prefill-steps';
+import { aiPrefill } from '@/modules/wms/calc/prefill';
 import type { PickOutcome, PickRequest } from '@/modules/wms/calc/prefill-ai';
 import { normalizeName } from '@/modules/wms/customs/import-parse';
 import { productKey } from '@/modules/wms/tnved/service';
@@ -270,5 +271,23 @@ describe('a person’s save between the machine’s question and its answer wins
     const [remembered, booked] = await rowsOf(fresh);
     expect(remembered).toMatchObject({ tnvedCode: CODE, bazaSource: 'memory' });
     expect(booked).toMatchObject({ bazaSource: 'dictionary' });
+  });
+
+  // After the seal above: it relies on the memory that seal taught.
+  it('the pass COUNTS the book step 0’s save filled — the outcome said 0 of it (review REG-2/P2-9)', async () => {
+    const id = await open([
+      { name: REMEMBERED, tnvedCode: null, weightKg: 10 },
+      { name: BOOKED, tnvedCode: CODE, weightKg: 30 },
+    ]);
+    await db
+      .update(calcRequestItems)
+      .set({ tnvedCode: null })
+      .where(and(eq(calcRequestItems.requestId, id), eq(calcRequestItems.name, REMEMBERED)));
+    // No model: step 0 (the memory's code, and the book's baza in the same
+    // save) and the sweep — which then has nothing left for the book to fill.
+    const out = await aiPrefill(id, { actorId: null }, { configured: false }, { expectRev: await revOf(id) });
+    expect(out.memoryCoded, 'the premise: step 0 saved').toBe(1);
+    expect(out.dictionaryFilled).toBe(1);
+    expect((await rowsOf(id))[1]).toMatchObject({ bazaSource: 'dictionary' });
   });
 });

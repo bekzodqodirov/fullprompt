@@ -70,7 +70,7 @@ import {
 import { parseGoodsLine } from '@/modules/wms/calc/units';
 import { pasteItems } from '@/modules/wms/calc/send-rows';
 import { threadAiAdvice } from '@/modules/wms/calc/from-thread';
-import { PASS_FAILED, STOOD_DOWN, attemptStanding, registerCalcPrefillWorker } from '@/modules/wms/calc/jobs';
+import { PASS_FAILED, STOOD_DOWN, attemptStanding, registerCalcPrefillWorker, standDownWords } from '@/modules/wms/calc/jobs';
 import { SHEET_TEXT_BUDGET, csvRows, readGoodsFile, workbookRows } from '@/modules/wms/deals/goods-file';
 import { isArticleNumber, parseGoods, type Cell } from '@/modules/wms/deals/goods-import';
 import { MAX_ROWS, MAX_SHEETS, htmlTableSheets, readXls, spreadsheetMlSheets } from '@/modules/wms/deals/xls';
@@ -1511,8 +1511,12 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
   c0789: async () => {
     expect(STOOD_DOWN.unfinished).toBe(PASS_FAILED);
     // Round 2: the words are chosen by the job's queue (§2.8) — the customs
-    // map stays `STOOD_DOWN`, and the stand-down still SPEAKS.
-    expect(source('src/modules/wms/calc/jobs.ts')).toContain('const said = (writes ? STOOD_DOWN : TARIFF_STOOD_DOWN)[standing];');
+    // map stays `STOOD_DOWN`, and the stand-down still SPEAKS. Re-anchored
+    // (R2 late pass, concurrency-9): the choice moved into `standDownWords`,
+    // which the worker asks, so the customs answer is asked of THAT.
+    expect(source('src/modules/wms/calc/jobs.ts')).toContain('const said = standDownWords(standing, writes);');
+    expect(standDownWords('unfinished', true)).toBe(PASS_FAILED);
+    expect(standDownWords('touched', true)).toBe(STOOD_DOWN.touched);
     const { options } = await prefillWorker();
     expect(options).toMatchObject({ includeMetadata: true });
   },

@@ -1100,6 +1100,8 @@ export async function setGroupRates(
     note?: string | null;
   },
   ctx: AuditContext,
+  /** The machine's compare-and-set (`mutateRequest`'s); a screen passes none. */
+  opts: { expectRev?: number } = {},
 ) {
   const found = await db.query.calcGroups.findFirst({
     where: eq(calcGroups.id, groupId),
@@ -1228,7 +1230,7 @@ export async function setGroupRates(
     },
     after: { ...input, rateSource: source },
   });
-  });
+  }, opts);
 }
 
 export async function setItemBaza(
@@ -1315,7 +1317,12 @@ export async function setItemBaza(
  * records where a rate came from, and an action that stamps 'dictionary' onto
  * whatever it was handed makes that column a lie.
  */
-export async function pullRatesFromDictionary(groupId: string, ctx: AuditContext): Promise<void> {
+export async function pullRatesFromDictionary(
+  groupId: string,
+  ctx: AuditContext,
+  /** The proposal tail's compare-and-set, handed on to `setGroupRates`. */
+  opts: { expectRev?: number } = {},
+): Promise<void> {
   const group = await db.query.calcGroups.findFirst({ where: eq(calcGroups.id, groupId) });
   if (!group) throw new CalcError('not_found');
   // The lock and the clock ride the delegate: setGroupRates opens the
@@ -1340,6 +1347,7 @@ export async function pullRatesFromDictionary(groupId: string, ctx: AuditContext
       source: 'dictionary',
     },
     ctx,
+    opts,
   );
 }
 
@@ -1651,13 +1659,25 @@ export async function deleteExtra(extraId: string, ctx: AuditContext) {
  * died with the block. A draft with no code places nothing: the row stays
  * ungrouped, where the sweep and the blocker can see it.
  */
-export async function applyProposal(requestId: string, drafts: DraftGroup[], ctx: AuditContext) {
-  await db.transaction(async (tx) => {
+export async function applyProposal(
+  requestId: string,
+  drafts: DraftGroup[],
+  ctx: AuditContext,
+  /**
+   * The machine's compare-and-set (K14): `proposeGroups` hands the revision
+   * its claim was taken at. A person's save inside a claim that went stale
+   * mid-call (`AI_CLAIM_STALE_MS`) is then `conflict`, never deleted and
+   * re-grouped under them. The screen's ✨ passes none.
+   */
+  opts: { expectRev?: number } = {},
+): Promise<{ rev: number }> {
+  const rev = await db.transaction(async (tx) => {
     // Its OWN flow holds the AI claim it would otherwise refuse on; the lock
     // still serializes it against saves (it deletes and recreates groups —
     // unlocked, a concurrent save's items UPDATE hits a deleted group's FK
     // and the whole save dies with a raw 23503).
-    await lockRequestInTx(tx, requestId, { ignoreAiClaim: true });
+    const locked = await lockRequestInTx(tx, requestId, { ignoreAiClaim: true });
+    if (opts.expectRev !== undefined && locked.rev !== opts.expectRev) throw new CalcError('conflict');
     const confirmed = await tx
       .select({ id: calcGroups.id })
       .from(calcGroups)
@@ -1741,6 +1761,8 @@ export async function applyProposal(requestId: string, drafts: DraftGroup[], ctx
       }
     }
     await bumpRevInTx(tx, requestId);
+    // The bump is `rev + 1` under this transaction's FOR UPDATE.
+    return locked.rev + 1;
   });
 
   await writeAudit(db, ctx, {
@@ -1749,6 +1771,7 @@ export async function applyProposal(requestId: string, drafts: DraftGroup[], ctx
     action: 'update',
     after: { aiGroups: drafts.length },
   });
+  return { rev };
 }
 
 // ---------------------------------------------------------------------------
@@ -2896,6 +2919,15 @@ export async function requestClock(
 export async function proposeGroups(
   requestId: string,
   ctx: AuditContext,
+  /**
+   * `expectRev` — the background pass's revision chain (docs/SAKKIZ-R2.md
+   * K14, review P1-R2). The claim is taken only at that revision, and every
+   * write after it — the proposal and the whole pricing tail — compares the
+   * revision the machine's own previous write left: a person's save in
+   * either gap is `conflict`, which writes nothing. The screen's ✨ passes
+   * none, and nothing about it changes.
+   */
+  opts: { expectRev?: number } = {},
 ): Promise<{
   groups: number;
   batches: number;
@@ -2905,6 +2937,10 @@ export async function proposeGroups(
   importFilled: number;
   memoryFilled: number;
   dictionaryFilled: number;
+  /** The revision the machine's own last write left — null when no chain
+   * was asked for. The pass carries it on instead of re-reading the clock,
+   * which would adopt a person's save as the machine's base. */
+  rev: number | null;
 }> {
   await assertOpen(requestId);
 
@@ -2914,6 +2950,9 @@ export async function proposeGroups(
     .where(
       and(
         eq(calcRequests.id, requestId),
+        // The chain's revision, in the claim itself: a check before the call
+        // leaves the milliseconds between it and this UPDATE open.
+        opts.expectRev === undefined ? undefined : eq(calcRequests.rev, opts.expectRev),
         or(
           isNull(calcRequests.aiProposalStartedAt),
           // …or the holder is GONE. The release lives in a `finally`, which
@@ -2929,9 +2968,20 @@ export async function proposeGroups(
       ),
     )
     .returning({ id: calcRequests.id });
-  if (claimed.length === 0) throw new CalcError('ai_running');
+  if (claimed.length === 0) {
+    // Which clause refused: a person's save since the chain's revision is
+    // `conflict` (they are working here), a live claim is `ai_running`.
+    if (opts.expectRev !== undefined) {
+      const [now] = await db.select({ rev: calcRequests.rev }).from(calcRequests).where(eq(calcRequests.id, requestId));
+      if (now && now.rev !== opts.expectRev) throw new CalcError('conflict');
+    }
+    throw new CalcError('ai_running');
+  }
 
   try {
+    /** The revision the machine's own writes stand on — the claim's, then
+     * each write's own. Undefined: no chain (the screen's ✨). */
+    let chain = opts.expectRev;
     const all = await db
       .select()
       .from(calcRequestItems)
@@ -3023,7 +3073,8 @@ export async function proposeGroups(
       if (failed === batches.length) throw new CalcError('ai_failed');
 
       drafts = mergeProposals(results, items.map((i) => i.seq));
-      await applyProposal(requestId, drafts, ctx);
+      const applied = await applyProposal(requestId, drafts, ctx, chain === undefined ? {} : { expectRev: chain });
+      if (chain !== undefined) chain = applied.rev;
     }
     // …and then the proposal is turned into a CALCULATION.
     //
@@ -3060,9 +3111,11 @@ export async function proposeGroups(
     // What guards the writes from here on is the rev clock and `FOR UPDATE`,
     // which is what guards every other writer. The `finally` still runs — the
     // release is an idempotent UPDATE — so a throw in the tail cannot strand
-    // the claim.
+    // the claim. With a chain (the background pass), the tail compares the
+    // revision at every write: a person's save in the unclaimed seconds after
+    // this line is `conflict`, never the machine's next base (review P1-R2).
     await releaseAiClaim(requestId);
-    const priced = await priceProposedGroups(requestId, ctx);
+    const priced = await priceProposedGroups(requestId, ctx, chain === undefined ? {} : { expectRev: chain });
     return { groups: drafts.length, batches: batchCount, failed, ...priced };
   } finally {
     await releaseAiClaim(requestId);
@@ -3098,13 +3151,20 @@ async function releaseAiClaim(requestId: string): Promise<void> {
 export async function priceProposedGroups(
   requestId: string,
   ctx: AuditContext,
+  /** The revision chain `proposeGroups` hands on (review P1-R2) — compared at
+   * every write here; absent, no write compares. */
+  opts: { expectRev?: number } = {},
 ): Promise<{
   ratesPulled: number;
   codesStamped: number;
   importFilled: number;
   memoryFilled: number;
   dictionaryFilled: number;
+  /** The revision this tail's own last write left — the chain's, untouched
+   * when it wrote nothing; null without a chain. */
+  rev: number | null;
 }> {
+  let chain = opts.expectRev;
   const groups = await db
     .select({
       id: calcGroups.id,
@@ -3120,8 +3180,13 @@ export async function priceProposedGroups(
     if (!(g.tnvedCode ?? '').trim()) continue;
     if (g.dutyPct !== null && g.vatPct !== null) continue;
     try {
-      await pullRatesFromDictionary(g.id, ctx);
+      await pullRatesFromDictionary(g.id, ctx, chain === undefined ? {} : { expectRev: chain });
       ratesPulled += 1;
+      // `setGroupRates` writes through `mutateRequest`, which moves the clock
+      // exactly once: the chain's next revision. A miscount here could only
+      // make the next write `conflict` — the machine standing down, never
+      // writing over a person.
+      if (chain !== undefined) chain += 1;
     } catch (err) {
       // Only the rate LOOKUP's own refusals belong here. Anything else — a
       // lock, a closed request, a bad number — is a fact about the request
@@ -3156,10 +3221,10 @@ export async function priceProposedGroups(
     })
     .map((i) => ({ id: i.id, seq: i.seq, tnvedCode: codeOfGroup.get(i.groupId!)! }));
   if (edits.length === 0) {
-    return { ratesPulled, codesStamped: 0, importFilled: 0, memoryFilled: 0, dictionaryFilled: 0 };
+    return { ratesPulled, codesStamped: 0, importFilled: 0, memoryFilled: 0, dictionaryFilled: 0, rev: chain ?? null };
   }
 
-  const saved = await saveTable(requestId, { items: edits, adds: [] }, ctx);
+  const saved = await saveTable(requestId, { items: edits, adds: [] }, ctx, chain === undefined ? undefined : { expectRev: chain });
   return {
     ratesPulled,
     codesStamped: edits.length,
@@ -3168,6 +3233,7 @@ export async function priceProposedGroups(
     // so the pass's outcome does not undercount where its bazas came from.
     memoryFilled: saved.memoryFilled.length,
     dictionaryFilled: saved.dictionaryFilled.length,
+    rev: chain === undefined ? null : saved.rev,
   };
 }
 
@@ -3500,9 +3566,18 @@ async function bumpRevInTx(tx: TxHandle, requestId: string) {
 async function mutateRequest<T>(
   requestId: string,
   fn: (tx: TxHandle, locked: { rev: number }) => Promise<T>,
+  /**
+   * `expectRev` — the machine's compare-and-set (K14), under the same lock
+   * `saveTable` takes it: the proposal's pricing tail threads it through
+   * `pullRatesFromDictionary`, so a person's save landing after the claim is
+   * released is `conflict` rather than the machine's next base (review
+   * P1-R2). Screens pass none.
+   */
+  opts: { expectRev?: number } = {},
 ): Promise<T> {
   return db.transaction(async (tx) => {
     const locked = await lockRequestInTx(tx, requestId);
+    if (opts.expectRev !== undefined && locked.rev !== opts.expectRev) throw new CalcError('conflict');
     const out = await fn(tx, locked);
     await bumpRevInTx(tx, requestId);
     return out;

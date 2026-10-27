@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { randomUUID } from 'node:crypto';
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, like, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 /**
@@ -35,7 +35,7 @@ import {
   users,
 } from '@/modules/platform/db/schema';
 import { getSetting } from '@/modules/platform/settings/service';
-import { openCalcRequest } from '@/modules/wms/calc/service';
+import { openCalcRequest, returnCalcRequest } from '@/modules/wms/calc/service';
 import { prefillTicket } from '@/modules/wms/calc/prefill';
 import { sayOnce } from '@/modules/wms/calc/say-once';
 import {
@@ -106,13 +106,13 @@ async function freshDeal(): Promise<string> {
 }
 
 /** The machine's messages for one request — the rows the drain would send. */
-const said = (requestId: string) =>
+const said = (requestId: string, userId = actorId) =>
   db
-    .select({ payload: notifications.payload, status: notifications.status })
+    .select({ payload: notifications.payload, status: notifications.status, error: notifications.error })
     .from(notifications)
     .where(
       and(
-        eq(notifications.userId, actorId),
+        eq(notifications.userId, userId),
         eq(notifications.type, 'CalcPrefilled'),
         sql`${notifications}.payload->>'requestId' = ${requestId}`,
       ),
@@ -190,5 +190,91 @@ describe('overlapping runs — the advisory lock, not the EXISTS alone', () => {
       expect(spoke.filter(Boolean), `burst ${burst}: one run speaks`).toHaveLength(1);
       expect(await said(requestId), `burst ${burst}: one row`).toHaveLength(1);
     }
+  });
+});
+
+describe('the speaking door and its claim (R2 late pass)', () => {
+  /** A hand-back opens the requester's own task — swept here, not left to the next file. */
+  const sweepHandBacks = async (dealId: string) => {
+    const made = await db
+      .select({ id: tasks.id })
+      .from(tasks)
+      .where(and(eq(tasks.entityId, dealId), like(tasks.title, '↩️%')));
+    const ids = made.map((t) => t.id);
+    if (ids.length > 0) {
+      await db.delete(events).where(inArray(events.entityId, ids));
+      await db.delete(tasks).where(inArray(tasks.id, ids));
+    }
+  };
+
+  it('a reply is not spoken on a request the VED has closed; a stand-down sentence still is (review CONC-1)', async () => {
+    const dealId = await freshDeal();
+    const r = await openCalcRequest(
+      { entityType: 'deal', entityId: dealId, section: 'rastamojka', items: [{ name: `Yopiq ${SUFFIX}` }], source: 'card' },
+      { actorId },
+    );
+    madeRequests.push(r.id);
+    try {
+      // «Готово» or a hand-back, after the pass's last step and before it speaks.
+      await returnCalcRequest(r.id, 'VED qaytardi — test', { actorId });
+      const reply = { userIds: [actorId], type: 'CalcPrefilled', text: `${AI_REPLY_HEAD} · yopiq so‘rov` };
+      expect(await sayOnce(r.id, reply, { whileOpen: true })).toBe(false);
+      expect(await said(r.id), 'the reply is not queued').toHaveLength(0);
+      // The door refuses the REPLY only: the closed sentence is the one message.
+      expect(await sayOnce(r.id, { userIds: [actorId], type: 'CalcPrefilled', text: 'yopilgan' })).toBe(true);
+      expect(await said(r.id)).toHaveLength(1);
+    } finally {
+      await sweepHandBacks(dealId);
+    }
+  });
+
+  it('a requester who can no longer log in still leaves the claim — one machine note however often the job runs (review CONC-4)', async () => {
+    const [leaver] = await db
+      .insert(users)
+      .values({ phone: `+99896${String(Date.now()).slice(-7)}`, fullName: `Once leaver ${SUFFIX}`, passwordHash: 'x' })
+      .returning();
+    try {
+      const dealId = await freshDeal();
+      const r = await openCalcRequest(
+        { entityType: 'deal', entityId: dealId, section: 'yolkira', freightZone: 'cn', weightKg: 500, volumeM3: 10, items: [{ name: `Ketgan ${SUFFIX}` }], source: 'card' },
+        { actorId: leaver!.id },
+      );
+      madeRequests.push(r.id);
+      // The seller leaves after asking; the job runs — and is re-delivered.
+      await db.update(users).set({ active: false }).where(eq(users.id, leaver!.id));
+      const data: CalcPrefillJob = { requestId: r.id, staffId: leaver!.id, rev: await prefillTicket(r.id), section: 'yolkira' };
+      const run = handlers.get(JOB_CALC_TARIFF_REPLY)!;
+      await run([{ id: 'j3', name: JOB_CALC_TARIFF_REPLY, data, retryCount: 0 }]);
+      await run([{ id: 'j3', name: JOB_CALC_TARIFF_REPLY, data, retryCount: 1 }]);
+
+      const rows = await said(r.id, leaver!.id);
+      expect(rows, 'ONE claim row, which the drain never sends').toHaveLength(1);
+      expect(rows[0]).toMatchObject({ status: 'muted', error: 'cannot log in' });
+      const notes = await machineNotes(dealId);
+      expect(notes.filter((n) => (n.note ?? '').startsWith(TARIFF_REPLY_HEAD)), 'one machine note on the card').toHaveLength(1);
+    } finally {
+      await db.delete(notifications).where(eq(notifications.userId, leaver!.id));
+      await db.update(users).set({ active: false }).where(eq(users.id, leaver!.id));
+    }
+  });
+
+  it('the claim reads from the day the request was asked, never the seller’s whole history (review perf-5)', async () => {
+    const dealId = await freshDeal();
+    const r = await openCalcRequest(
+      { entityType: 'deal', entityId: dealId, section: 'rastamojka', items: [{ name: `Tarix ${SUFFIX}` }], source: 'card' },
+      { actorId },
+    );
+    madeRequests.push(r.id);
+    // A row dated well before the request existed can only be outside the
+    // floor — planted to SEE the floor: unbounded, it would read as a claim.
+    await db.insert(notifications).values({
+      userId: actorId,
+      channel: 'telegram',
+      type: 'CalcPrefilled',
+      payload: { requestId: r.id, text: 'eski' },
+      status: 'sent',
+      createdAt: new Date(Date.now() - 3 * 86_400_000),
+    });
+    expect(await sayOnce(r.id, { userIds: [actorId], type: 'CalcPrefilled', text: 'yangi' })).toBe(true);
   });
 });
