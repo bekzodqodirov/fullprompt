@@ -1078,6 +1078,7 @@
     "voidHasCompensation": "此入库单有给客户的赔偿记录。请先由会计作废。",
     "assignHasCompensation": "此入库单有赔偿记录——更换客户前，请会计作废并记到正确的客户。",
     "dealLinkCompensation": "此入库单有赔偿——将一并转到新交易。",
+    "dealLinkUpsalePaid": "该交易的销售员提成已支付 — 移动入库前请会计撤销该笔支付",
     "attachInUse": "此单据被批次组成使用 — 在报关员或物流员选择其他单据前无法删除"
   },
   "stock": {

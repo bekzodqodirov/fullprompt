@@ -1078,6 +1078,7 @@
     "voidHasCompensation": "Bu prixod bo‘yicha mijozga kompensatsiya yozilgan. Avval buxgalter uni bekor qilsin.",
     "assignHasCompensation": "Bu prixod bo‘yicha mijozga kompensatsiya yozilgan — mijozni almashtirishdan oldin buxgalter uni bekor qilsin va to‘g‘ri mijozga qayta yozsin.",
     "dealLinkCompensation": "Bu prixod bo‘yicha kompensatsiya yozilgan — u ham yangi bitimga o‘tadi.",
+    "dealLinkUpsalePaid": "Bu bitim bo‘yicha sotuvchi ulushi to‘langan — prixodni boshqa bitimga o‘tkazishdan oldin hisobchi to‘lovni qaytarsin",
     "attachInUse": "Bu hujjat lot tarkibida ishlatilgan — VED yoki logist boshqa hujjatni tanlamaguncha o'chirib bo'lmaydi"
   },
   "stock": {

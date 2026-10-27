@@ -1078,6 +1078,7 @@
     "voidHasCompensation": "A compensation to the client names this receipt. The accountant voids it first.",
     "assignHasCompensation": "A compensation names this receipt — before changing the client, the accountant voids it and records it on the right client.",
     "dealLinkCompensation": "A compensation names this receipt — it moves to the new deal too.",
+    "dealLinkUpsalePaid": "The seller's share on this deal is paid — the accountant reverses the payout before the prixod can move",
     "attachInUse": "This document backs a lot's contents — it cannot be deleted until the VED or the logist picks another"
   },
   "stock": {

@@ -603,6 +603,20 @@ export async function linkReceipt(
       await tx.execute(sql`SELECT 1 FROM deals WHERE id = ${dealId}::uuid FOR SHARE`);
       if (await dealIsFtl(tx, dealId)) ftlLocked = await takeKpiSellerLocks(tx, [receipt.salesManagerId]);
     }
+    // Cargo that has PAID a seller's upsale stays on the deal that paid it
+    // (docs/UCH-BAND.md §7, judge money-2): with a new deal per request a
+    // re-sent job is a second deal, and moving the prixod there after the
+    // first payout would pay the same cargo twice. The accountant takes the
+    // payout back first (/upsale), then the prixod moves.
+    if (receipt.dealId) {
+      const paid = (await tx.execute(sql`
+        SELECT 1 AS ok FROM calc_offers o
+         WHERE o.entity_type = 'deal' AND o.entity_id = ${receipt.dealId}::uuid
+           AND o.payout_expense_id IS NOT NULL
+         LIMIT 1
+      `)) as unknown as { ok: number }[];
+      if (paid.length > 0) throw new DealError('upsale_paid');
+    }
     await tx
       .update(receipts)
       .set(
