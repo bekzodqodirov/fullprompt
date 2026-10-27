@@ -480,6 +480,7 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
         vatPct: 12,
         customsUsd: 496.96,
         refusal: null,
+        refusalTail: 'ved',
         estimated: null,
         weightFromTotal: false,
       },
