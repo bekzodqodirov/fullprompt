@@ -179,60 +179,89 @@ export async function createDeal(
     if (refusal) throw new DealError(refusal);
   }
 
-  const id = await db.transaction(async (tx) => {
-    const code = await nextDealCode(tx);
-    const stageId = input.stageId ?? (await firstStageId(tx));
-    // The quote is only "given" once a price exists; a deal opened to collect
-    // the request carries sizes and no amount, and quotedAt stays null so the
-    // "how long did we take to price this" clock is honest.
-    const priced = input.quotedAmount !== null && input.quotedAmount !== undefined;
-    const [row] = await tx
-      .insert(deals)
-      .values({
-        code,
-        clientId: input.clientId,
-        stageId,
-        ownerId,
-        title: input.title || null,
-        quotedVolumeM3: num(input.quotedVolumeM3),
-        quotedWeightKg: num(input.quotedWeightKg),
-        quotedAmount: num(input.quotedAmount),
-        quotedCurrency: input.quotedCurrency ?? (priced ? 'USD' : null),
-        quotedAt: priced ? new Date() : null,
-        quotedBy: priced ? ctx.actorId : null,
-        note: input.note || null,
-        createdBy: ctx.actorId!,
-        // Top of its column, which is where a newly raised job has always
-        // appeared — see the funnel's own create (0075).
-        boardOrder: options.atBottom
-          ? await bottomOfColumn(tx, DEAL_BOARD, stageId)
-          : await topOfColumn(tx, DEAL_BOARD, stageId),
-      })
-      .returning();
-
-    // A new job has no prixods yet, so marking it moves nothing but the mark.
-    let ftl = false;
-    if (markFtl) {
-      await setDealFtlTx(tx, row!.id, true, { actorId: input.load!.door.actorId, office: input.load!.door.office }, ctx);
-      ftl = true;
-    } else if (options.carryFtlFromLead && ftlOn) {
-      ftl = await carryLeadFtlTx(tx, options.carryFtlFromLead, row!.id);
-    }
-
-    await writeAudit(tx, ctx, {
-      entityType: 'deal',
-      entityId: row!.id,
-      action: 'create',
-      after: { code, client: client.clientCode, amount: input.quotedAmount ?? null, ...(ftl ? { freightMode: 'ftl' } : {}) },
-    });
-    return row!.id;
-  });
+  const id = await db.transaction((tx) =>
+    createDealInTx(tx, input, ctx, { ...options, clientCode: client.clientCode, ownerId, ftlOn }),
+  );
   if (markFtl && !input.load!.door.office) {
     await notifyFtlMarked({ kind: 'deal', id, actorId: input.load!.door.actorId }).catch((err) =>
       logger.error({ err, dealId: id }, '[ftl] FtlMarked notice failed'),
     );
   }
   return id;
+}
+
+/**
+ * `createDeal`'s transaction body, for a caller that must write MORE in the
+ * same commit — the calc landing writes the card AND its note as one fact
+ * (docs/UCH-BAND.md §7: «the note exists» iff «its card exists», so a
+ * retried save finds the card through the note and never mints twice), and
+ * the won lead's split writes every job's deal at once. Everything pooled —
+ * the client, the owner, the FTL probe — is resolved by the caller BEFORE
+ * the transaction and passed in (#714); the FTL door's refusal is the
+ * caller's to ask first (`createDeal` does). `quoteStamp` names who gave the
+ * price when it is not the presser — a sealed floor or a released offer
+ * moved onto a deal at a win (judge money-4).
+ */
+export async function createDealInTx(
+  tx: Tx,
+  input: DealInput,
+  ctx: AuditContext,
+  pre: {
+    clientCode: string;
+    ownerId: string | null;
+    ftlOn: boolean;
+    atBottom?: boolean;
+    carryFtlFromLead?: string;
+    quoteStamp?: { at: Date; by: string | null };
+  },
+): Promise<string> {
+  const markFtl = input.load?.mode === 'ftl';
+  const code = await nextDealCode(tx);
+  const stageId = input.stageId ?? (await firstStageId(tx));
+  // The quote is only "given" once a price exists; a deal opened to collect
+  // the request carries sizes and no amount, and quotedAt stays null so the
+  // "how long did we take to price this" clock is honest.
+  const priced = input.quotedAmount !== null && input.quotedAmount !== undefined;
+  const [row] = await tx
+    .insert(deals)
+    .values({
+      code,
+      clientId: input.clientId,
+      stageId,
+      ownerId: pre.ownerId,
+      title: input.title || null,
+      quotedVolumeM3: num(input.quotedVolumeM3),
+      quotedWeightKg: num(input.quotedWeightKg),
+      quotedAmount: num(input.quotedAmount),
+      quotedCurrency: input.quotedCurrency ?? (priced ? 'USD' : null),
+      quotedAt: priced ? (pre.quoteStamp?.at ?? new Date()) : null,
+      quotedBy: priced ? (pre.quoteStamp ? pre.quoteStamp.by : ctx.actorId) : null,
+      note: input.note || null,
+      createdBy: ctx.actorId!,
+      // Top of its column, which is where a newly raised job has always
+      // appeared — see the funnel's own create (0075).
+      boardOrder: pre.atBottom
+        ? await bottomOfColumn(tx, DEAL_BOARD, stageId)
+        : await topOfColumn(tx, DEAL_BOARD, stageId),
+    })
+    .returning();
+
+  // A new job has no prixods yet, so marking it moves nothing but the mark.
+  let ftl = false;
+  if (markFtl) {
+    await setDealFtlTx(tx, row!.id, true, { actorId: input.load!.door.actorId, office: input.load!.door.office }, ctx);
+    ftl = true;
+  } else if (pre.carryFtlFromLead && pre.ftlOn) {
+    ftl = await carryLeadFtlTx(tx, pre.carryFtlFromLead, row!.id);
+  }
+
+  await writeAudit(tx, ctx, {
+    entityType: 'deal',
+    entityId: row!.id,
+    action: 'create',
+    after: { code, client: pre.clientCode, amount: input.quotedAmount ?? null, ...(ftl ? { freightMode: 'ftl' } : {}) },
+  });
+  return row!.id;
 }
 
 export async function updateDeal(

@@ -114,7 +114,13 @@ covers three objects (a sequence and three tables), all denied to
 
 1. **The lot keeps its body.** No reader outside the list in §9 learns the
    composition. Pinned by a derived source fence (§11.1).
-2. **A composition is 2-20 lines.** name (required, what the invoice prints),
+2. **A composition is 1-20 lines** (was 2-20 until his 2026-10-27 — «tarkib 1
+   qatorlik bo'lsa ham ruxsat berish»; docs/UCH-BAND.md §4, the reversal of
+   1a). ONE line is a lot of one good the papers need said differently — its
+   pieces, its own code, or a good other than the lot's name. A one-line
+   tarkib vouches for the lot's ✅ «hujjat bo'yicha» only when its name IS
+   the lot's (8.6); naming another good it leaves ❓ and the card says the
+   logist's rename is what is left. name (required, what the invoice prints),
    total pieces «dona» (optional positive integer), cartons (optional), kg and
    m³ (required), TNVED (optional, 4-10 digits). Cartons are **all-or-none**:
    all given → «alohida karobkalar» and Σ cartons = the lot's `box_count`; none
@@ -908,7 +914,8 @@ SELECT mb.lot_id, t.id, t.code, t.departed_at, t.created_at,
 |---|---|---|
 | forbidden | door (incl. a lot that does not exist) | «Sizda bu prixodning tarkibini yozish huquqi yo'q» |
 | receipt_not_confirmed | draft/voided | «Bekor qilingan prixodga tarkib yozilmaydi» |
-| lines_count | <2 or >20 | «Kamida 2 ta, ko'pi bilan 20 ta tovar. Bitta tovar bo'lsa — lot nomini logist o'zgartiradi» |
+| lines_count | <1 or >20 | «Kamida 1 ta, ko'pi bilan 20 ta tovar» (2026-10-27; it named the logist while the floor was 2) |
+| tnved_would_vanish {code} | ONE line of the lot's own good, no code, the memory holds one | «Lotning TNVED kodi {code} — qatorda kod bo'lmasa, invoysda kod chiqmaydi. Kodni yozing yoki «Bitta tovar»ni bosing» |
 | bad_line {seq} | name <2 / >200 characters | «{seq}-qator: tovar nomini yozing» |
 | bad_number {seq} — one key per field | unreadable / ≤0 / too many decimals | `bad_number_kg` «{seq}-qator, kg: son noto'g'ri — verguldan keyin ko'pi bilan 3 raqam»; `bad_number_m3` «… 4 raqam»; `bad_number_pieces` / `bad_number_cartons` «{seq}-qator, …: butun musbat son» |
 | bad_tnved {seq} | not 4-10 digits | «{seq}-qator: TNVED kodi 4-10 raqam» |
@@ -1013,8 +1020,11 @@ export function estimateNote(view: PaperView, n: number, boxCount: number): stri
 
 A composed lot collapses ALL its `(lot, crate)` groups into one block of line
 rows (the same `paperLines`, with `m3`): code `GS777-A`, product
-`packingProductCell(line)`, packaging = the lot's packagings joined («короб
-×80; CR-12 ×20»), boxes `packingBoxesCell(…)`, kg, m³. The portion's kg/m³ =
+`packingProductCell(line, lotNameZh)` (the line's name plus the lot's Chinese
+name, Q6 a), packaging = the lot's packagings joined («короб ×80; CR-12 ×20»),
+«Кол-во, шт» `packingPiecesCell(line)` BEFORE the cartons (his 8.5,
+2026-10-27: blank when unknown or a share that rounds to none, never 0, never
+totalled in the footer), boxes `packingBoxesCell(…)`, kg, m³. The portion's kg/m³ =
 `round1` / `round3` of the lot's RAW Σ across its groups. **The footer's
 `totalKg` / `totalM3` keep accumulating the RAW per-group figures as today**
 (`ved-xlsx.ts:298-310`) and `totalBoxes` adds numbers only — the footer cannot
@@ -1027,12 +1037,19 @@ The packing list the office actually sends. Rows per lot over `aboardFilter`;
 a composed lot prints one row per printed line with portion `{ before, cartons:
 loaded, kg: Number(kg.toFixed(1)), m3: Number(m3.toFixed(3)) }` — the values
 the uncomposed row prints today; the lot's photographs are embedded on the
-FIRST line's row only. The title line's totals are computed from the lots as
+FIRST line's row only. Since 2026-10-27 a «Кол-во, шт» column stands before
+the cartons (blank on an uncomposed lot) and the photographs start one column
+later (`PHOTO_START_COL` 8, pinned by reading the image anchors under the
+«Фото» header). The title line's totals are computed from the lots as
 today, unchanged.
 
 ### Agent approval file — `buildAgentXlsx` (`documents/agent-xlsx.ts`)
 
-Rows stay one per plan line (the agent approves the plan's lines). The
+Rows stay one per plan line (the agent approves the plan's lines). His 7b
+(2026-10-27) adds «Кол-во, шт» before the cartons: a ONE-good lot's pieces on
+its first plan row (`agentPiecesCell`), BLANK for several goods — their pieces
+are per good, in the contents text — and the photographs move to
+`PHOTO_START_COL` 9. The
 composition is computed ONCE PER LOT, over the version's lines of that lot
 summed (finding Papers-3: `load_plan_lines_version_lot_unique` is (version,
 lot, crate), so a lot planned «81 loose + 19 in CR-12» has two lines, and a
@@ -1841,9 +1858,9 @@ deviations:
 ## 13. Open risks
 
 1. **A lot that is ENTIRELY another good** (100 mice, typed «klaviatura»)
-   cannot be fixed by the VED: a composition needs ≥ 2 lines and
-   `ved_manager` holds no `receipts.edit`. The refusal sentence sends him to
-   the logist. Ask the owner whether the VED should get a one-line «paper name».
+   — CLOSED 2026-10-27: the VED writes a one-line tarkib for the papers; the
+   lot's own name (warehouse screens, stickers) is still the logist's rename,
+   and the card says so (`lot-check-face-document-other`).
 2. **Line names are free text** with no zh key: a line meets the TNVED memory
    only through its Russian name, and the price history not at all.
 3. **A sent truck stays as it was sent.** The mix found after the first part

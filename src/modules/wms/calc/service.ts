@@ -235,6 +235,28 @@ const toNum = (value: string | number | null): number | null =>
   value === null ? null : Number(value);
 
 /**
+ * The two refusals a request meets before anything of it is written — ONE
+ * home (#513), asked by `openCalcRequest` and by the landing doors that mint a
+ * CARD first (calc/intake-land.ts): on main a refusal after the mint left an
+ * empty deal behind (the chat door) or a deal holding only the note (the
+ * bot), and with a new deal per request that is one more stranded card per
+ * press. A pooled count with no lock — a request landing between this and
+ * the insert can still refuse after the card exists; that window is a card
+ * with its note and no request, which a retry of the same note finishes.
+ */
+export async function calcOpenRefusal(
+  requestedBy: string,
+  itemCount: number,
+): Promise<'too_many_items' | 'too_many_open' | null> {
+  if (itemCount > MAX_CALC_ITEMS) return 'too_many_items';
+  const mine = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(calcRequests)
+    .where(and(eq(calcRequests.requestedBy, requestedBy), openRequests));
+  return Number(mine[0]?.n ?? 0) >= MAX_OPEN_PER_REQUESTER ? 'too_many_open' : null;
+}
+
+/**
  * Open a calculation request and hand it to the queue.
  *
  * Everything pooled — the note, the TNVED memory, the rota — happens BEFORE
@@ -247,7 +269,8 @@ export async function openCalcRequest(
   ctx: AuditContext,
 ): Promise<{ id: string; assigneeId: string | null }> {
   if (!ctx.actorId) throw new CalcError('unauthenticated');
-  if (input.items.length > MAX_CALC_ITEMS) throw new CalcError('too_many_items');
+  const refused = await calcOpenRefusal(ctx.actorId, input.items.length);
+  if (refused) throw new CalcError(refused);
 
   // The card must exist, and its NAME goes in the task title so the VED
   // person knows what they are opening before they open it.
@@ -262,10 +285,6 @@ export async function openCalcRequest(
     label = lead.name;
   }
 
-  const mine = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(calcRequests)
-    .where(and(eq(calcRequests.requestedBy, ctx.actorId), openRequests));
   // Pooled, so BEFORE the transaction (#714). Dynamic: dictionaries imports
   // this module for CalcError.
   let freightZone: string | null = null;
@@ -275,7 +294,6 @@ export async function openCalcRequest(
       ? input.freightZone
       : null;
   }
-  if (Number(mine[0]?.n ?? 0) >= MAX_OPEN_PER_REQUESTER) throw new CalcError('too_many_open');
 
   // The materials. On the card path the note is written HERE, with the id the
   // browser already uploaded files against — and an id that is already taken

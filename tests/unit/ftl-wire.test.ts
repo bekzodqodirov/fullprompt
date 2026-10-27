@@ -123,8 +123,12 @@ describe('a prixod that gets a deal carries the deal’s FTL (1a)', () => {
   it('winLead carries the lead’s mark into its deal', () => {
     const crm = read('src/modules/wms/crm/service.ts');
     expect(bodyOf(crm, 'export async function winLead(')).toContain('{ carryFtlFromLead: id }');
+    // The carry lives in the transaction body both creators share (UCH-BAND §7).
+    expect(bodyOf(read('src/modules/wms/deals/service.ts'), 'export async function createDealInTx(')).toContain(
+      'carryLeadFtlTx(tx, pre.carryFtlFromLead',
+    );
     expect(bodyOf(read('src/modules/wms/deals/service.ts'), 'export async function createDeal(')).toContain(
-      'carryLeadFtlTx(tx, options.carryFtlFromLead',
+      'createDealInTx(tx, input, ctx,',
     );
   });
 });
