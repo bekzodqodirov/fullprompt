@@ -640,9 +640,27 @@ export interface AmbiguousTotal {
   thousands: number;
 }
 
+/**
+ * A total the seller ANSWERED that material sent after the answer states
+ * differently (review CONC-2): «3500» typed to the brutto question, then a
+ * packing list saying G.W. 4200 kg. Neither wins in silence — the answer was
+ * given before the seller had sent the list, the list may be the wrong one.
+ */
+export interface ContradictedTotal {
+  field: 'weightKg' | 'volumeM3';
+  answered: number;
+  stated: number;
+}
+
+/** Why a total is asked rather than taken: written two ways, or contradicting its answer. */
+export type TotalDoubt = AmbiguousTotal | ContradictedTotal;
+
 /** «“1,200 kg” — 1.2 mi yoki 1200 mi?» — never a guess between the two. */
-export function ambiguousTotalText(a: AmbiguousTotal): string {
+export function ambiguousTotalText(a: TotalDoubt): string {
   const unit = a.field === 'weightKg' ? needShortUz('kg') : needShortUz('m3');
+  if ('answered' in a) {
+    return `Siz ${fmt(a.answered)} ${unit} deb javob bergansiz, keyin yuborilgan ma’lumotda ${fmt(a.stated)} ${unit} — qaysi biri? Aniq yozing: «${fmt(a.stated)} ${unit}» yoki «${fmt(a.answered)} ${unit}».`;
+  }
   return `«${a.text} ${unit}» — ${fmt(a.decimal)} mi yoki ${fmt(a.thousands)} mi? Aniq yozing: «${fmt(a.thousands)} ${unit}» yoki «${fmt(a.decimal)} ${unit}».`;
 }
 
@@ -665,8 +683,8 @@ export function intakeSummaryText(input: {
   laws: ReadonlyMap<string, NeedLaw>;
   clientLabel: string | null;
   fileCount: number;
-  /** Totals the typed material states two ways — asked, never guessed. */
-  ambiguous?: AmbiguousTotal[];
+  /** Totals the typed material states two ways, or against the answer — asked, never guessed. */
+  ambiguous?: TotalDoubt[];
 }): string {
   const missing = missingFields(input.section, input.facts, input.laws);
   const fields = missing.filter((f) => !LINE_FIELDS.includes(f));

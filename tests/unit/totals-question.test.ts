@@ -176,7 +176,7 @@ describe('the answer', () => {
     const live = activeIntake(chatId)!;
     expect(live.facts.weightKg).toBe(3500);
     expect(live.facts.volumeM3).toBe(12);
-    expect(live.totalsAnswer).toEqual({ weightKg: 3500, volumeM3: null });
+    expect(live.totalsAnswer).toEqual({ weightKg: 3500, volumeM3: null, at: { material: 0, files: 0 } });
     // The text goes to the card with the per-line answers, not into the
     // material a re-read parses.
     expect(live.answers).toEqual(['Umumiy: 3500']);
@@ -218,7 +218,7 @@ describe('the answer', () => {
     const { chatId } = collection({
       stage: 'review',
       totalsAsked: true,
-      totalsAnswer: { weightKg: 3500, volumeM3: null },
+      totalsAnswer: { weightKg: 3500, volumeM3: null, at: { material: 1, files: 0 } },
       material: ['Kurtka 300 dona 12 kub'],
       facts: { volumeM3: 12, weightKg: 3500 },
     });
@@ -253,7 +253,7 @@ describe('the answer', () => {
   it('an answer typed WHILE the reading ran is put back by settleAnalysis, its ambiguity with it (P3-1, P3-3)', () => {
     const { chatId, state: snapshot } = collection({ analysing: 'tok', totalsAsked: true, ambiguousTotals: [KG_1200] });
     // The seller answered «1200» to the brutto question while the model read.
-    const live = updateIntake(chatId, { totalsAnswer: { weightKg: 1200, volumeM3: null } })!;
+    const live = updateIntake(chatId, { totalsAnswer: { weightKg: 1200, volumeM3: null, at: { material: 0, files: 0 } } })!;
     const analysed: IntakeState = {
       ...snapshot,
       facts: { volumeM3: 12, weightKg: null, goods: [] },
@@ -301,7 +301,7 @@ describe('a total typed two ways (review P3-3, P3-R2)', () => {
     const { state } = collection({
       stage: 'material',
       totalsAsked: true,
-      totalsAnswer: { weightKg: 1200, volumeM3: null },
+      totalsAnswer: { weightKg: 1200, volumeM3: null, at: { material: 2, files: 0 } },
       material: ['Kurtka 300 dona 1.2 kub, 1,200 kg', 'Shim 200 dona'],
     });
     model.analyze.mockResolvedValueOnce(reads({ goods: [{ name: 'Kurtka', quantity: 300, volumeM3: 1.2 }] }));
@@ -346,6 +346,123 @@ describe('a total typed two ways (review P3-3, P3-R2)', () => {
     expect(factsVolumeM3(live.facts)).toBe(2.5);
     expect(ctx.replies.at(-1)).not.toContain('mi yoki');
     expect(ctx.replies.at(-1)).toContain('✅ Ma’lumot to‘liq');
+  });
+});
+
+describe('material sent AFTER the answer (review CONC-2)', () => {
+  const answered = (patch: Partial<IntakeState> = {}) =>
+    collection({ stage: 'question', askingTotalsFor: 'kg', totalsAsked: true, material: ['Kurtka 300 dona 12 kub'], facts: { volumeM3: 12 }, ...patch });
+
+  it('through the door: answer 3500, ➕ «brutto 4200 kg», Bo‘ldi — asked with both figures, never 3500 in silence', async () => {
+    const { chatId, state } = answered();
+    const ctx = fakeCtx();
+    await applyLineAnswer(ctx, chatId, state, '3500');
+    expect(activeIntake(chatId)!.facts.weightKg).toBe(3500);
+    await handleCalcCallback(ctx, chatId, 'more');
+    updateIntake(chatId, { material: [...activeIntake(chatId)!.material, 'brutto 4200 kg'] });
+    model.analyze.mockResolvedValueOnce(reads({ volumeM3: 12 }));
+    await pressDone(ctx, chatId);
+    const live = activeIntake(chatId)!;
+    expect(live.facts.weightKg ?? null).toBeNull();
+    expect(live).toMatchObject({ askingTotalsFor: 'kg', totalsAsked: true });
+    expect(ctx.replies.at(-1)).toContain(
+      '⚠️ Siz 3500 kg deb javob bergansiz, keyin yuborilgan ma’lumotda 4200 kg — qaysi biri?',
+    );
+    // His answer settles it, and the doubt goes with it.
+    await applyLineAnswer(ctx, chatId, live, '4200');
+    expect(activeIntake(chatId)!.facts.weightKg).toBe(4200);
+    expect(activeIntake(chatId)!.ambiguousTotals).toEqual([]);
+    expect(ctx.replies.at(-1)).toContain('Og‘irlik (brutto): 4200 kg');
+    expect(ctx.replies.at(-1)).not.toContain('qaysi biri');
+  });
+
+  it('a FILE sent after the answer whose reading says otherwise is asked about too', async () => {
+    const { chatId, state } = answered();
+    await applyLineAnswer(fakeCtx(), chatId, state, '3500');
+    updateIntake(chatId, { stage: 'material', fileCount: activeIntake(chatId)!.fileCount + 1 });
+    model.analyze.mockResolvedValueOnce(reads({ volumeM3: 12, weightKg: 4200 }));
+    const out = await analyzeCollected(activeIntake(chatId)!);
+    expect(out.facts.weightKg ?? null).toBeNull();
+    expect(out.totalsAsked).toBe(false);
+    expect(out.ambiguousTotals).toEqual([{ field: 'weightKg', answered: 3500, stated: 4200 }]);
+    expect(out.totalsAnswer).toMatchObject({ weightKg: null });
+  });
+
+  it('what the answer had already seen never overrules it; the same figure again does not doubt it', async () => {
+    // A re-read that now finds a figure in the OLD file: nothing came after the answer.
+    const old = collection({
+      stage: 'review',
+      totalsAsked: true,
+      fileCount: 1,
+      totalsAnswer: { weightKg: 3500, volumeM3: null, at: { material: 1, files: 1 } },
+      material: ['Kurtka 300 dona 12 kub'],
+      facts: { volumeM3: 12, weightKg: 3500 },
+    });
+    model.analyze.mockResolvedValueOnce(reads({ volumeM3: 12, weightKg: 4200 }));
+    const out = await analyzeCollected(old.state);
+    expect(out.facts.weightKg).toBe(3500);
+    expect(out.ambiguousTotals).toEqual([]);
+
+    const same = collection({
+      stage: 'material',
+      totalsAsked: true,
+      totalsAnswer: { weightKg: 3500, volumeM3: null, at: { material: 1, files: 0 } },
+      material: ['Kurtka 300 dona 12 kub', 'brutto 3500 kg'],
+    });
+    model.analyze.mockResolvedValueOnce(reads({ volumeM3: 12, weightKg: 3500 }));
+    const again = await analyzeCollected(same.state);
+    expect(again.facts.weightKg).toBe(3500);
+    expect(again.ambiguousTotals).toEqual([]);
+    expect(again.totalsAsked).toBe(true);
+  });
+
+  it('an old «1,200 kg» the answer settled does not hide a NEW figure typed after it', async () => {
+    const { state } = collection({
+      stage: 'material',
+      totalsAsked: true,
+      totalsAnswer: { weightKg: 1200, volumeM3: null, at: { material: 1, files: 0 } },
+      material: ['Kurtka 300 dona 1.2 kub, 1,200 kg', 'brutto 1300 kg'],
+    });
+    model.analyze.mockResolvedValueOnce(reads({ goods: [{ name: 'Kurtka', quantity: 300, volumeM3: 1.2 }] }));
+    const out = await analyzeCollected(state);
+    expect(out.facts.weightKg ?? null).toBeNull();
+    // The doubt names the NEW figure — never the «1.2 mi yoki 1200 mi?» he answered.
+    expect(out.ambiguousTotals).toEqual([{ field: 'weightKg', answered: 1200, stated: 1300 }]);
+  });
+
+  it('a cube answered, then «jami 14 kub»: asked again, and the lines’ Σ does not answer for it', async () => {
+    const lines = [{ name: 'Kurtka', quantity: 300, volumeM3: 1.2 }, { name: 'Shim', quantity: 200, volumeM3: 1.6 }];
+    const { state } = collection({
+      stage: 'material',
+      totalsAsked: true,
+      totalsAnswer: { weightKg: null, volumeM3: 12, at: { material: 1, files: 0 } },
+      material: ['3500 kg', 'jami 14 kub'],
+    });
+    model.analyze.mockResolvedValueOnce(reads({ weightKg: 3500, goods: lines }));
+    const out = await analyzeCollected(state);
+    expect(out.facts.volumeM3 ?? null).toBeNull();
+    expect(factsVolumeM3(out.facts)).toBeNull();
+    expect(ask(out)).toBe('m3');
+    expect(out.ambiguousTotals).toEqual([{ field: 'volumeM3', answered: 12, stated: 14 }]);
+  });
+
+  it('settleAnalysis keeps the reading’s verdict — the snapshot’s answer is not put back over a doubted field', () => {
+    const answer = { weightKg: 3500, volumeM3: null, at: { material: 1, files: 0 } };
+    const { chatId, state: snapshot } = collection({ analysing: 'tok', totalsAsked: true, totalsAnswer: answer, material: ['a', 'b'] });
+    const live = activeIntake(chatId)!;
+    const doubt = { field: 'weightKg' as const, answered: 3500, stated: 4200 };
+    const analysed: IntakeState = {
+      ...snapshot,
+      facts: { volumeM3: 12, weightKg: null, goods: [] },
+      totalsAnswer: { ...answer, weightKg: null },
+      totalsAsked: false,
+      ambiguousTotals: [doubt],
+    };
+    const out = settleAnalysis(live, snapshot, analysed, 'tok');
+    if (out.kind === 'gone') throw new Error('gone');
+    expect(out.state.facts.weightKg ?? null).toBeNull();
+    expect(out.state.totalsAnswer.weightKg).toBeNull();
+    expect(out.state.ambiguousTotals).toEqual([doubt]);
   });
 });
 

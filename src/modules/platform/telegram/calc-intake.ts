@@ -122,8 +122,12 @@ export interface IntakeState {
    * is. A bare «3500» stored as raw material read null on the next «Bo‘ldi»
    * (the house number reader needs a unit word), the job landed with no kg,
    * and `totalsAsked` kept the question silent.
+   *
+   * `at` is where the material and files stood when it was given (review
+   * CONC-2): what arrives AFTER it may state the figure differently, and is
+   * then asked about rather than outranked (`judgeTotalsAnswer`).
    */
-  totalsAnswer: { weightKg: number | null; volumeM3: number | null };
+  totalsAnswer: { weightKg: number | null; volumeM3: number | null; at: TotalsMark };
   /** The line the bot is waiting for an answer about, by its index in
    * `facts.goods`. Null outside the question stage. */
   askingIndex: number | null;
@@ -165,8 +169,11 @@ export interface IntakeState {
    * among what THIS question offered.
    */
   offers: { unit: import('../../wms/calc/needs').NeedUnit; value: number }[];
-  /** Totals the typed material states two ways — the summary asks them. */
-  ambiguousTotals: import('../../wms/calc/intake').AmbiguousTotal[];
+  /**
+   * Totals the typed material states two ways, or states against the
+   * seller's own answer (review CONC-2) — the summary asks them.
+   */
+  ambiguousTotals: import('../../wms/calc/intake').TotalDoubt[];
   /**
    * Goods read out of an invoice the seller attached (XLSX/CSV).
    *
@@ -290,6 +297,12 @@ export const MAX_QUESTION_ROUNDS = 3;
 /** Which shipment totals the bot asks for (docs/SAKKIZ-R2.md §8.2.5). */
 export type TotalsAsk = 'kg' | 'm3' | 'both';
 
+/** How much material and how many files a collection held at a moment. */
+export interface TotalsMark {
+  material: number;
+  files: number;
+}
+
 /**
  * Whether to ask the shipment's TOTALS, and which (his 2.7 b).
  *
@@ -402,9 +415,93 @@ export function looksLikeTotalsAnswer(text: string): boolean {
  */
 export function unansweredAmbiguity(
   ambiguous: IntakeState['ambiguousTotals'],
-  answer: IntakeState['totalsAnswer'],
+  answer: Pick<IntakeState['totalsAnswer'], 'weightKg' | 'volumeM3'>,
 ): IntakeState['ambiguousTotals'] {
   return ambiguous.filter((a) => (a.field === 'weightKg' ? answer.weightKg : answer.volumeM3) === null);
+}
+
+type Totals = Pick<import('../../wms/calc/intake').CalcFacts, 'weightKg' | 'volumeM3'>;
+
+/**
+ * The totals answer, judged against what came AFTER it (review CONC-2).
+ *
+ * The answer used to win over every later reading for good: a packing list
+ * sent after «➕ Yana ma’lumot» saying G.W. 4200 kg, or the seller typing
+ * «brutto 4200 kg», was outranked by the «3500» typed to the bot's question
+ * before he had the list — and the stale figure landed and priced the road.
+ *
+ * A figure for an answered field that the LATER material states — typed
+ * after the answer (`since`, read against the whole text's goods lines), or
+ * else what the reading of everything now finds — and that is not the answer
+ * RETIRES the answer for that field: the field is asked again with both
+ * figures named, never one picked in silence. A later figure written two
+ * ways retires it too, and its own «mi yoki» is the question. Nothing having
+ * arrived since, the answer stands: the seller answered looking at all of
+ * it. Pure.
+ */
+export function judgeTotalsAnswer(
+  answer: IntakeState['totalsAnswer'],
+  later: {
+    /** Material and files now. */
+    now: TotalsMark;
+    /** What the text typed after the answer states (`parseManualFacts(…, { from })`). */
+    since: Totals & { ambiguous: import('../../wms/calc/intake').AmbiguousTotal[] };
+    /** What the reading of the whole collection finds, before the answer is put back. */
+    reading: Totals;
+  },
+): { answer: IntakeState['totalsAnswer']; doubts: IntakeState['ambiguousTotals'] } {
+  const arrived = later.now.material > answer.at.material || later.now.files > answer.at.files;
+  if (!arrived) return { answer, doubts: [] };
+  const kept = { ...answer };
+  const doubts: IntakeState['ambiguousTotals'] = [];
+  for (const field of ['weightKg', 'volumeM3'] as const) {
+    const answered = answer[field];
+    if (answered === null) continue;
+    const twoWays = later.since.ambiguous.find((a) => a.field === field);
+    const said = Number(later.since[field] ?? later.reading[field]);
+    if (twoWays) {
+      doubts.push(twoWays);
+    } else if (said > 0 && figure(said) !== figure(answered)) {
+      doubts.push({ field, answered, stated: said });
+    } else {
+      continue;
+    }
+    kept[field] = null;
+  }
+  return { answer: kept, doubts };
+}
+
+/** Is this the same totals answer — the same figures, given at the same point? Pure. */
+export function sameTotalsAnswer(a: IntakeState['totalsAnswer'], b: IntakeState['totalsAnswer']): boolean {
+  return (
+    a.weightKg === b.weightKg &&
+    a.volumeM3 === b.volumeM3 &&
+    a.at.material === b.at.material &&
+    a.at.files === b.at.files
+  );
+}
+
+/**
+ * The facts once the answer is judged: the kept answer on top (`mergeTotalsAnswer`),
+ * and a RETIRED field emptied so the totals question asks it again — a cube
+ * flagged as stated-but-unsettled, as a cube typed two ways is, so the lines'
+ * Σ does not answer the question instead (`factsVolumeM3`). Pure.
+ */
+export function factsWithAnswer(
+  judged: ReturnType<typeof judgeTotalsAnswer>,
+  facts: IntakeState['facts'],
+): IntakeState['facts'] {
+  const merged = mergeTotalsAnswer(judged.answer, facts);
+  for (const doubt of judged.doubts) {
+    if (doubt.field === 'weightKg') {
+      merged.weightKg = null;
+      delete merged.weightNetto;
+    } else {
+      merged.volumeM3 = null;
+      merged.volumeAmbiguous = true;
+    }
+  }
+  return merged;
 }
 
 /**
@@ -1286,7 +1383,7 @@ export function startIntake(
     route: null,
     totalsAsked: false,
     askingTotalsFor: null,
-    totalsAnswer: { weightKg: null, volumeM3: null },
+    totalsAnswer: { weightKg: null, volumeM3: null, at: { material: 0, files: 0 } },
     askingIndex: null,
     round: 0,
     reasked: false,
@@ -1405,10 +1502,7 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
   const notes = [sameAsInvoiceNote(picked.sameAsInvoice), typedLeftOutNote(picked.sameAsInvoice)].filter(
     (n): n is string => n !== null,
   );
-  // The seller's answer to the totals question goes back on top as well
-  // (judge concurrency-4): «3500» typed after the brutto question is no
-  // material, and only this keeps it across a re-read.
-  const facts = mergeTotalsAnswer(state.totalsAnswer, {
+  const reading: IntakeState['facts'] = {
     fromCity: manual.fromCity ?? ai?.facts.fromCity ?? state.route?.fromCity ?? null,
     toCity: manual.toCity ?? ai?.facts.toCity ?? state.route?.toCity ?? null,
     ...totalWeightFrom(state.section, manual, ai?.facts ?? null, asked('weightKg')),
@@ -1419,7 +1513,26 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
     // The seller's per-line answers go back on top (P1.3): a re-read after
     // «➕ Yana ma'lumot» must not erase them.
     goods: mergeLineAnswers(picked.goods, state.lineAnswers),
+  };
+  // The seller's answer to the totals question goes back on top as well
+  // (judge concurrency-4): «3500» typed after the brutto question is no
+  // material, and only this keeps it across a re-read — unless what came
+  // AFTER the answer states the figure otherwise (review CONC-2), which is
+  // asked rather than outranked. The typed part after the answer is read on
+  // its own: an old «1,200 kg» the answer settled must not hide a new figure.
+  const at = state.totalsAnswer.at;
+  const since =
+    state.material.length > at.material
+      ? parseManualFacts(text, state.section, {
+          from: state.material.slice(0, at.material).reduce((n, m) => n + m.length + 1, 0),
+        })
+      : { weightKg: null, volumeM3: null, ambiguous: [] };
+  const judged = judgeTotalsAnswer(state.totalsAnswer, {
+    now: { material: state.material.length, files: state.fileCount },
+    since,
+    reading,
   });
+  const facts = factsWithAnswer(judged, reading);
   return {
     ...state,
     facts,
@@ -1431,9 +1544,11 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
     // read that failed (cut, refused, unreadable) included (r1-fix typed
     // #21), and a re-read ADDED to the first, never in its place (2.9 c).
     usages: [...state.usages, ...(outcome.answered ?? [])],
+    totalsAnswer: judged.answer,
     totalsAsked: totalsStillAsked(state, facts, factsVolumeM3(facts)),
-    // What the seller has since answered is not asked again (review P3-3).
-    ambiguousTotals: unansweredAmbiguity(manual.ambiguous, state.totalsAnswer),
+    // What the seller has answered is not asked again (review P3-3) — unless
+    // later material doubts the answer, and then THAT is what is asked.
+    ambiguousTotals: [...unansweredAmbiguity(manual.ambiguous, state.totalsAnswer), ...judged.doubts],
     stage: 'review',
   };
 }

@@ -73,6 +73,7 @@ import {
   mergeLineAnswers,
   mergeTotalsAnswer,
   resolveLineDone,
+  sameTotalsAnswer,
   bareTotalsNumber,
   looksLikeTotalsAnswer,
   totalsQuestion,
@@ -1574,9 +1575,13 @@ export async function applyLineAnswer(
     // What was READ is kept apart (`totalsAnswer`) and put back on top of
     // every re-read (judge concurrency-4) — the text goes to the card with
     // the per-line answers, never into the material a re-read parses.
+    // `at` is now (review CONC-2): an answer is only ever typed to a question
+    // asked after a reading of everything, so the answer has seen it all —
+    // and material sent after it may state the figure otherwise.
     const totalsAnswer = {
       weightKg: read.weightKg ?? state.totalsAnswer.weightKg,
       volumeM3: read.volumeM3 ?? state.totalsAnswer.volumeM3,
+      at: { material: state.material.length, files: state.fileCount },
     };
     const kept =
       updateIntake(chatId, {
@@ -1919,6 +1924,16 @@ export function settleAnalysis(
   if (!live || live.noteId !== snapshot.noteId || live.analysing !== token) return { kind: 'gone' };
   const arrived =
     live.material.length - snapshot.material.length + (live.fileCount - snapshot.fileCount);
+  // A totals answer typed WHILE the reading ran is newer than everything the
+  // reading saw, and goes on top (judge concurrency-4). Otherwise the
+  // reading's own verdict on the answer stands — re-merging the snapshot's
+  // answer here would undo a field the reading retired because later
+  // material doubts it (review CONC-2).
+  const answeredMeanwhile = !sameTotalsAnswer(live.totalsAnswer, snapshot.totalsAnswer);
+  const facts = {
+    ...analysed.facts,
+    goods: mergeLineAnswers(analysed.facts.goods ?? [], live.lineAnswers),
+  };
   const state: IntakeState = {
     ...live,
     // The LIVE answers go back on top (round-1 review, c2): the reading was
@@ -1927,12 +1942,10 @@ export function settleAnalysis(
     // landed without its figure. Re-applying an answer the snapshot already
     // had is idempotent, so both outcomes take the same merge.
     //
-    // The live totals answer too (judge concurrency-4), by the same rule and
-    // for the same reason; `totalsAsked` is the reading's own verdict over it.
-    facts: mergeTotalsAnswer(live.totalsAnswer, {
-      ...analysed.facts,
-      goods: mergeLineAnswers(analysed.facts.goods ?? [], live.lineAnswers),
-    }),
+    // The live totals answer too, when it is new (above); `totalsAsked` is
+    // the reading's own verdict over it.
+    facts: answeredMeanwhile ? mergeTotalsAnswer(live.totalsAnswer, facts) : facts,
+    totalsAnswer: answeredMeanwhile ? live.totalsAnswer : analysed.totalsAnswer,
     totalsAsked: analysed.totalsAsked,
     steps: analysed.steps,
     notes: analysed.notes,
@@ -1943,7 +1956,9 @@ export function settleAnalysis(
     usages: analysed.usages,
     // The reading's two-way totals, less what the seller answered while it
     // ran — the live answer above is on the facts (review P3-3).
-    ambiguousTotals: unansweredAmbiguity(analysed.ambiguousTotals, live.totalsAnswer),
+    ambiguousTotals: answeredMeanwhile
+      ? unansweredAmbiguity(analysed.ambiguousTotals, live.totalsAnswer)
+      : analysed.ambiguousTotals,
     analysing: null,
     stage: arrived > 0 ? 'material' : 'review',
   };

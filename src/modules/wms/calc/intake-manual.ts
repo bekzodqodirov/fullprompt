@@ -170,6 +170,14 @@ function lineSpans(text: string): [number, number][] {
 export function parseManualFacts(
   text: string,
   section?: CalcSection,
+  /**
+   * Read only the totals standing at or after this offset (review CONC-2):
+   * what the material that came AFTER the seller's totals answer states. The
+   * goods lines are still the WHOLE text's — «Shim 50 dona 120 kg» added to
+   * a typed list is that line's figure, exactly as in the full reading, and
+   * an old «1,200 kg» the answer settled no longer poisons a new «1300 kg».
+   */
+  opts: { from?: number } = {},
 ): CalcFacts & { ambiguous: AmbiguousTotal[] } {
   const route = readRoute(text);
   const typed = typedGoods(text);
@@ -179,16 +187,20 @@ export function parseManualFacts(
     const line = spans.findIndex(([a, b]) => start >= a && start <= b);
     return typed.lines.has(line);
   };
+  // A figure that is not the shipment's: a goods line's own, or one written
+  // before the part of the text being read.
+  const from = opts.from ?? 0;
+  const notTotal = (start: number) => start < from || onGoodsLine(start);
   const KG = ['kg', 'кг', 'kilo', 'килограмм'];
-  const plain = readNumber(text, KG, (a, b) => onGoodsLine(a) || nettoLabelled(text, a, b));
+  const plain = readNumber(text, KG, (a, b) => notTotal(a) || nettoLabelled(text, a, b));
   // Customs-only: the netto stands for the total when nothing else is stated.
   const nettoStands = section !== undefined && !sectionHasFreight(section);
   const netto =
     nettoStands && plain.value === null && !plain.ambiguous
-      ? readNumber(text, KG, (a, b) => onGoodsLine(a) || !nettoLabelled(text, a, b))
+      ? readNumber(text, KG, (a, b) => notTotal(a) || !nettoLabelled(text, a, b))
       : { value: null, ambiguous: null };
   const weight = netto.value !== null || netto.ambiguous ? netto : plain;
-  const volume = readNumber(text, ['kub', 'куб', 'm3', 'м3', 'м³', 'm³'], (a) => onGoodsLine(a));
+  const volume = readNumber(text, ['kub', 'куб', 'm3', 'м3', 'м³', 'm³'], (a) => notTotal(a));
   const ambiguous: AmbiguousTotal[] = [];
   if (weight.ambiguous) ambiguous.push({ field: 'weightKg', ...weight.ambiguous });
   if (volume.ambiguous) ambiguous.push({ field: 'volumeM3', ...volume.ambiguous });
