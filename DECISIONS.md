@@ -4934,3 +4934,100 @@ the chat's 🧮 and both thread actions; a closed lead's OWN chat still drew �
 refusal — not drawn, and refused before the model; and moving the note into the transaction widened the
 double-press window, so the second press met the note's key as a raw 23505 — mapped to `note_taken`
 (`violatedUnique`, beside `violatedCheck`), proven by two presses parked on a held lead lock.
+
+## Sakkiz band, round 2 — customs and freight answered more often, from deterministic sources (2026-10-27; NO migration of its own — it deploys with main's 0136, ledger 137; spec `docs/SAKKIZ-R2.md`, his answers 2.1-2.9 in `docs/SAKKIZ-BAND.md` §11 and «a a / b a / c a / d a» to the spec's four questions)
+
+**#1479 — The estimate is the CHAT's, never a row's.** His 2.1 b: a row with no baza
+gets the MEDIAN of real China declarations of its exact 10-digit code, counting only
+those in a unit the row allows (dona also inside the ±25 % per-piece band), at least
+`FEW` = 5, in the file the chooser picks for that code — `estimate.ts` (pure) over
+`estimate-read.ts` (one statement per (code, batch), strictly sequential, a ceiling per
+statement and `ESTIMATE_BUDGET_MS` per pass). It is written onto no row, group, seal,
+offer or price-channel post: it stands in the Telegram reply and, as text, in the
+card's lenta note (2.4 c), and `estimate-wire` fences who may import the three files,
+that the reader runs only `readCodeMedians` and that its raw SQL writes nothing. The
+reply prints two totals (2.2 b): «Aniq» = what the VED's screen prints today, over the
+rows with a stated baza, WITHOUT the declaration fee (its tier depends on the whole
+declaration); «Taxminiy» = whole or absent (Q1 a — MR-23's no-partial-sums rule applied
+to the estimate), fee included. The invoice price is never read (2.3 a).
+
+**#1480 — The zone is guessed for the reply and never stored.** His 2.6 b, applied to
+yolkira too (Q2 a): `guessZone` in two tiers — a known CITY decides (Yiwu/Guangzhou →
+cn wherever they stand, his 21a; Kashgar vs Horgos by the leftmost), the country word
+«Xitoy/Китай/China» only when no city matched; another Chinese city is not guessed
+(Q3 a) and the reply names what it read («zona «Foshan, Xitoy»dan taxmin»). A city
+whose zone has no tariff price says so («O‘zbekiston narxi tarifda hali yo‘q»), never
+«not understood». The seal still demands a chosen zone; a fence over the writers keeps
+the guess out of `freight_zone`.
+
+**#1481 — The shipment's m³ is SUMMED from the lines and stored at the INSERT; the
+brutto kilos are ASKED.** His 2.7 b. One all-or-nothing rule (`linesVolumeM3`); stored
+because MR-9's upsale denominator needs a request m³; LABELLED «qatorlardan» wherever
+printed by DERIVATION (`Workspace.volumeFromLines` — equal to the Σ at 3 decimals; a
+typed total that happens to equal it is labelled too, stated). The freight answer may
+still fall back on the Σ for a request landed before this round, but then it is no
+longer «exact» and prints «JAMI taxminiy» (law-money-R2-1). The collector asks brutto
+on every freight section; a kilo figure labelled NETTO never stands for a freight
+brutto, on the typed side or the model's (`totalWeightFrom`, PF-1); with two goods
+lines a figure on one is that line's (PF-2); the lone copy of the total onto a single
+line stays (Q4 a) and says which total it was («og‘irlik bruttodan/nettodan», PF-3).
+A per-carton CBM column is no longer read as the line's volume.
+
+**#1482 — One ordered fill inside `saveTable`: memory → dictionary → import.** The
+`calc_bazas` dictionary now answers SECOND, in the transaction; a person's clear of a
+stored baza is respected in that save; a machine save after a person's is refused by
+a revision compare-and-set (`saveTable(…, { expectRev })`, threaded through the sweep,
+the pick, and — in the late pass — `proposeGroups`' own claim). The import is asked by
+a 4-6-digit HEADING too (`codeMatchSql`: exact on ten digits, a btree RANGE on fewer,
+under a statement ceiling): the AI pick may recode the row, says so in `baza_reason`,
+and raises the derived `ai_recode` warning the ✅ records. A per-code batch chooser
+(`batchesForCodes`, total — a code no file holds answers from the newest ready file)
+lets an older full quarter answer when the newest holds fewer than `FEW` of that code.
+
+**#1483 — Yolkira on its own queue; one machine message per request; the pass stands
+down for a person or a close.** 2.5 b: a freight-only job goes to `calc.tariff-reply`,
+makes no model call and answers from the tariff (list price, band, route) in seconds;
+the bot's «✅ Saqlandi» says the answer comes separately, true in either order.
+`sayOnce` (advisory lock + EXISTS over the requester's notifications, a muted claim row
+when nobody can be told) makes one reply and one lenta note per request, re-deliveries
+included. The late pass (CONC-1) made a close a stand-down at ANY step — the clock is
+asked before every model call, and the claim reads `completed_at` — so no paid call
+runs and no reply follows a VED's «Готово».
+
+**#1484 — The VED is told, and the price box says what is not official.** 2.4 c: the
+lenta copy is the full reply with «🔎 VED uchun:» directly under its heading, and the
+note's chip says when an estimate is inside (P4). His 2.4 b reason is kept where it
+bites: the «Готово» price box prints that «Aniq», «Taxminiy», «JAMI» and «Yo‘lkira ≈»
+are not official, because the figure typed there becomes the upsale floor, the quote
+lock, the price-channel post and the seller's «✅ Hisoblash tayyor». Every refusal
+says who fixes it — «mijozdan so‘rab, kartadagi lentaga yozing» or «VED xodimi».
+
+**#1485 — Every answered model call counts (2.9 c).** Re-reads, refused or cut
+grouping answers and the pick count; the pick's usage is RETURNED and awaited; a
+reading is billed on the Tashkent day the model answered it and counted against the
+day while the collection is unlanded (concurrency-11). The 200-a-day cap therefore
+fills sooner, said to him with the read-only count by kind (§14.6) — «avval
+o'lchaymiz». The card-chat door's reading stays unbilled until round 5's anchor
+migration (P3-6, stated).
+
+**#1486 — Judged before code, reviewed as merged, and the lost tail reviewed again.**
+Five lenses before code: 37 objections, 32 confirmed, 4 partial, 1 refused, all
+absorbed (§15). Four packages in worktrees off a behaviour-unchanged kernel commit,
+picked P2 → P1 → P3 → P4 with two seams fixed (a fixture field, one `isFullCode`).
+The merged review's fixes (§16). Then the late pass (§17): three relayed lists had
+been cut in transit, so every item was re-read from its source and checked against the
+merged tree — 119 checked, 60 already fixed, 59 still there; 53 fixed, 6 refused in
+writing; one defect off every list (a re-delivered import job wiping a READY quarter
+before its claim); one seam between two fixers (`pickLeftOf`).
+
+**#1487 — PROCESS.** (1) **A list passed through a prompt is a list that can be cut.**
+Three workflows relayed findings inline and `.slice()`d them; the build ran on the
+first part of each. From the late pass on, every list travels as a FILE path and the
+receiving agent reads it whole. (2) **Rebasing onto a branch that minted corpus ids
+collides** — c2278-c2282 were taken twice; renumbered to c2382-c2386 and the spec says
+so. (3) **The trunk moved under the round** (the other session's Uch band, 0136): merged
+before the push, and the one ordered conflict — two transactions' lock order — was
+decided by the order the sibling door already used, not by which side was newer.
+(4) The weekly usage limit stopped the late pass's merge agent after it had picked all
+four branches and passed lint and typecheck; the run's full vitest was redone by hand
+on the merged tree.

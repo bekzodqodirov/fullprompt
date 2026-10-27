@@ -159,7 +159,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | The staff Telegram group — celebrations, the Saturday 18:00 rating, the month's champion, /reyting | `docs/JAMOA-GURUHI.md` — agreed 2026-10-20 (his «3. 2 3 gif … tabriklash ham / qolgani sen aytkandek»), SHIPPED |
 | Every truck in one place — the board by place, the % by distance, GPS, the gate | `docs/PARTIYA-DOSKASI.md` — agreed 2026-10-17 (his 1A 2a 3a 4a 5a 6c 7a 8b 9b 10b 11A 12A, then «1 hozirgidek qolsin»), SHIPPED; §2 is the placement as built; §3a = «Yo'lda» in two columns, inside / outside China (2026-10-21) |
 | LTL / FTL — which cargo the KPI and the rating count, who may mark it, the paid-month freeze, the logist's hint | `docs/LTL-FTL.md` — agreed 2026-10-20 (his «3 b / qolgani sen aytgandek» = 1a 2a 3b 4a 5a 6a 7a), SHIPPED |
-| His eight items of 2026-10-20 (AI reading, customs, models, odnarodka, VED rota, new deal, kontragent links, one-line tarkib) — verified diagnosis, round plan, the numbered questions | `docs/SAKKIZ-BAND.md` — his answers in §11 (2026-10-21, unnamed = ⭐); **round 1 SHIPPED** (DECISIONS #1455-#1462) and reviewed against a regression corpus (#1463-#1468); 4.5 c / 6.8 b answered; rounds 2-10 open |
+| His eight items of 2026-10-20 (AI reading, customs, models, odnarodka, VED rota, new deal, kontragent links, one-line tarkib) — verified diagnosis, round plan, the numbered questions | `docs/SAKKIZ-BAND.md` — his answers in §11 (2026-10-21, unnamed = ⭐); **round 1 SHIPPED** (DECISIONS #1455-#1462) and reviewed against a regression corpus (#1463-#1468); **round 2 SHIPPED** (`docs/SAKKIZ-R2.md`, #1479-#1487); 4.5 c / 6.8 b answered; R3 designed (`docs/SAKKIZ-R3.md`); R4, R5 (`docs/SAKKIZ-R5.md` handoff) and R8 are the OTHER session's — R4+R8 shipped as its Uch band |
 | The price's link to its calculation; a new deal per coded request; a lead for a colleague's client; a won lead split by SALE; the one-line tarkib and «шт» | `docs/UCH-BAND.md` — agreed 2026-10-27 (his «3b / 4 a / 5 a / 6 a / 7 b», Q1-Q2 ⭐), BUILT; §7 is the design as judged |
 
 ## State — 2026-08-23
@@ -3013,6 +3013,28 @@ a numbered title over a one-column list is passed over, R3-C1 keeps both lines
 when their figures disagree. `pnpm typecheck` runs tsc with a **4 GB heap** — the
 program needs ~2.6 GB (#1467). `figureRow` (intake-manual.ts) is the ONE home of
 «a word and figures is a packing-list row».
+
+**Round — Sakkiz band, round 2 (2026-10-27; DECISIONS #1479-#1487; NO migration of
+its own — it deploys with main's 0136, ledger 137; spec `docs/SAKKIZ-R2.md`, §15-§17
+are the reviews).** Item 2, his 2.1 b 2.2 b 2.3 a 2.4 c 2.5 b 2.6 b 2.7 b 2.9 c and
+«a a / b a / c a / d a». A baza-less row gets a 📊 MEDIAN of real China declarations of
+its exact code (`estimate.ts` pure, `estimate-read.ts` one sequential statement per
+(code, batch) under a budget) — **chat and lenta only, written onto no row** (fenced by
+`estimate-wire`); the reply prints «Aniq» (no fee) and a whole-or-absent «Taxminiy».
+The zone is guessed for the reply only (`guessZone`, two tiers, never stored, yolkira
+too); yolkira answers from the tariff on its own queue `calc.tariff-reply`; `sayOnce`
+= one machine message per request; the pass stands down at ANY step for a close or a
+person (clock before every model call). Σ m³ stored at the INSERT, labelled by
+derivation (`Workspace.volumeFromLines`); brutto ASKED, netto never a freight brutto
+(`totalWeightFrom`). `saveTable`'s fill = memory → dictionary → import, a machine save
+under `expectRev`; heading (4-6 digit) search with the AI recode + `ai_recode` warning;
+`batchesForCodes` per-code chooser; every answered model call counts. The «Готово» box
+says the bot's figures are not official. Built as kernel K + four worktree packages;
+three relayed finding lists had been CUT in transit, so a late pass re-read every
+item from its file: 119 checked, 59 still there, 53 fixed, 6 refused in writing (#1487:
+lists travel as FILES). Main's Uch band (0136) was merged in before the push — the VED
+rota pick is taken LAST in `openCalcRequest`'s tx, after the lead row lock (the order
+`recalcFromSealed` uses). Known: 142 corpus cases on the ratchet, one common (c2353).
 
 **Round — uch band (2026-10-27; DECISIONS #1469-#1478, numbered past PR #127's #1455-#1468; migration
 0136 `lead_client_many` — ledger must reach 137; spec `docs/UCH-BAND.md`).** His three items after the 136

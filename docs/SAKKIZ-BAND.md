@@ -2,8 +2,10 @@
 
 Status: **diagnosed and adversarially verified; his answers in §11 (2026-10-21);
 round 1 BUILT (DECISIONS #1455-#1462, CHANGELOG 2026-10-21) and reviewed against a
-regression corpus (#1463-#1468, CHANGELOG 2026-10-27); round 2 DESIGNED and judged
-(`docs/SAKKIZ-R2.md`, his four new questions at its top); rounds 3-10 open;
+regression corpus (#1463-#1468, CHANGELOG 2026-10-27); round 2 SHIPPED
+(`docs/SAKKIZ-R2.md`, #1479-#1487, his «a a / b a / c a / d a» to its four questions);
+R4 and R8 shipped by the other session as its Uch band (`docs/UCH-BAND.md`, 0136);
+round 3 designed (`docs/SAKKIZ-R3.md`); R5 handed to the other session; R6, R7, R9, R10 open;
 4.5 and 6.8 asked back and ANSWERED the same day («2 c / 3 b», §11).**
 Below, the diagnosis as written before any code. His message
 (verbatim, abridged): AI rastamojka in the bot cannot read goods from files,
@@ -327,9 +329,11 @@ qilaman» and, for R5, «boshqa sessiya ishlaydi buni ustida»: **R4, R5 and R8 
 by ANOTHER session.** R5's handoff is `docs/SAKKIZ-R5.md` + `docs/SAKKIZ-R5-MAP.md`
 (start gate: R2 and R3 merged). This session builds R2, R3, R6, R7, R9 and R10 (R10
 after R4 lands). R3's spec is `docs/SAKKIZ-R3.md` (its §14 names the seam R4 touches
-in `intake-land.ts`). Status: R2 BUILT on the branch (`docs/SAKKIZ-R2.md`, a late pass
-over the findings its build lost in transit still running when this was written); R3
-designed and judged.
+in `intake-land.ts`). Status: **R2 SHIPPED** (`docs/SAKKIZ-R2.md` §17 is the late pass
+over the findings its build lost in transit; DECISIONS #1479-#1487); R3 designed and
+judged (its migration must be renumbered past main's 0136); **R4 and R8 SHIPPED by the
+other session as «Uch band»** (`docs/UCH-BAND.md`, DECISIONS #1469-#1478, migration
+0136), merged into this branch before R2's push.
 
 ## 11. The questions sent to him (2026-10-20)
 

@@ -1,5 +1,47 @@
 # CHANGELOG
 
+## 2026-10-27 — 8 band, 2-raund: bot rastamojka va yo'lkirani ko'proq hollarda o'zi hisoblaydi
+
+**Bu raundning o'zida migratsiya yo'q.** Lekin asosiy shoxga boshqa sessiyaning «Uch band» ishi (migratsiya 0136) qo'shilgan va bu PR o'shani ham o'z ichiga oladi. Deploydan keyin **migratsiyalar soni 137** bo'lishi kerak va `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatsin. **tg-listen ham qayta qurilsin** (Uch band shuni talab qiladi).
+
+Javoblaringiz: 2.1 b · 2.2 b · 2.3 a · 2.4 c · 2.5 b · 2.6 b · 2.7 b · 2.9 c, va raund savollariga «a a / b a / c a / d a» — hammasi ⭐ variant.
+
+### Rastamojka (2.1, 2.2, 2.3)
+- **Bazasi topilmagan qator endi bo'sh qolmaydi.** Bot bojxona faylidan shu 10 xonali kod bo'yicha Xitoydan kelgan real deklaratsiyalarning **o'rtacha (mediana) narxini** oladi. Faqat birligi mos keladigan deklaratsiyalar sanaladi; dona bo'lsa, bitta donaning og'irligi ham yaqin bo'lishi kerak (±25 %). Kamida 5 ta deklaratsiya bo'lishi shart. Javobda «📊 taxminiy, N ta deklaratsiyadan» deb yoziladi.
+- **Bu taxminiy narx hech qayerga yozilmaydi.** U faqat Telegram javobida va kartaning lentasida turadi. VED ekrani, muhr, narx kanali va upsale unga tegmaydi. Invoys narxi hech qachon ishlatilmaydi (2.3 a).
+- **Ikki jami** (2.2 b): «Aniq: $X (10 tadan 7 qator, yig'imsiz)» — VED ekranida hozir chiqadigan raqam. «Taxminiy ≈ $Y» — medianalar bilan, bojxona yig'imi bilan. Taxminiy faqat hamma qator hisoblanganda chiqadi, aks holda sababi yoziladi (sizning 2.10 a javobingiz).
+- **Lug'at endi har «Saqlash»da avtomatik ishlatiladi**, tartib: xotira (muhrlanganlar) → lug'at → bojxona fayli.
+- **4-6 xonali kod bilan ham qidiriladi.** AI deklaratsiya tanlasa, qatorning kodi o'sha deklaratsiya kodiga o'zgaradi va VED uchun «kodni AI tanlagan» ogohlantirishi chiqadi — ✅ bosilmaguncha muhrlanmaydi.
+- Eng yangi faylda shu kod bo'yicha 5 tadan kam deklaratsiya bo'lsa, oldingi to'liq fayl javob beradi («eski fayl» belgisi bilan).
+
+### Yo'lkira (2.5, 2.6, 2.7)
+- **Faqat yo'lkira so'roviga javob darhol keladi** (2.5 b) — AI'siz, tarif jadvalidan: narx, zichlik oralig'i, yo'nalish. Bu javob rastamojka hisobini kutmaydi, alohida navbatda, 2-3 soniyada.
+- **Zona tanlanmagan bo'lsa shahardan taxmin qilinadi** (2.6 b, yo'lkirada ham — 2.11 a): Yiwu/Guangzhou → Xitoy zonasi, Qashg'ar → Qashg'ar, Horgos → Horgos. Javobda nimadan taxmin qilingani yoziladi: «zona «Yiwu»dan taxmin». Boshqa Xitoy shaharlari (Foshan, Shenzhen…) taxmin qilinmaydi (2.12 a). Taxmin faqat javob uchun, so'rovga yozilmaydi; muhrlash uchun VED zonani o'zi tanlaydi.
+- **Umumiy kub qatorlardan qo'shib chiqariladi** (2.7 b) va hamma joyda «qatorlardan» deb ko'rsatiladi. Sotuvchi upsale ulushi shu kub bo'yicha hisoblanadi.
+- **Brutto og'irlik so'raladi.** Qatordagi og'irlik netto deb olinadi va jamlanmaydi. «Netto» deb yozilgan og'irlik yo'lkira uchun brutto o'rniga ishlatilmaydi. Yuk bitta qatordan iborat bo'lsa, umumiy og'irlik qatorga yoziladi va javobda «og'irlik bruttodan» deyiladi (2.13 a).
+
+### Lenta va «Готово» (2.4 c)
+- Botning javobi kartaning lentasiga to'liq yoziladi, tepasida **«🔎 VED uchun:»** qatori va «taxminiy» belgisi bilan.
+- VED «Готово» oynasida eslatma turadi: Telegram/lentadagi «Aniq», «Taxminiy», «JAMI», «Yo'lkira ≈» **rasmiy narx emas**. Chunki «Готово»ga yozilgan raqam upsale chegarasi, kartadagi narx qulfi, narx kanali posti va sotuvchiga «✅ Hisoblash tayyor» bo'lib ketadi.
+- Javobdagi har bir to'siq kim tuzatishini aytadi: «mijozdan so'rab, kartadagi lentaga yozing» yoki «VED xodimi».
+
+### Ishonchlilik
+- Bitta so'rovga bot **faqat bitta javob** yozadi — qayta yetkazilganda ham.
+- **VED «Готово» bossa yoki so'rovni o'zi ochib ishlay boshlasa**, AI hisobni to'xtatadi: to'langan AI chaqiruvi bo'lmaydi va VED ishining ustiga javob yozilmaydi.
+- AI belgilay olmagan bazalar (vaqt tugadi, limit, VED ishlay boshladi) javobda bitta qatorda aytiladi: «⚠️ AI bazasini qo'ymadi: … — VED to'ldiradi».
+- Bojxona faylidagi qidiruv tezlashdi. Sinov bazasida (sizning fayl hajmidagi sun'iy ma'lumot) 30 qatorli so'rovda «Saqlash» birinchi marta ~4 soniya, keyingilari bir zumda. Sizning haqiqiy faylingizda o'lchanmagan. Bojxona faylini o'chirish va shu faylga tayangan «Saqlash» bir-biriga xalaqit bermaydi.
+
+### AI chaqiruvlari soni (2.9 c)
+- Endi **model javob bergan har bir chaqiruv** sanaladi: qayta o'qish, rad etilgan guruhlash, bazani tanlash ham. Shuning uchun kunlik 200 talik limit avvalgidan tezroq to'lishi mumkin. Avval o'lchaymiz: turi bo'yicha kunlik sonni ko'rsatadigan so'rov tayyor (`docs/SAKKIZ-R2.md` §14.6). Deploydan bir necha kun keyin uni serverda ishga tushirib, natijasini menga yuboring.
+
+### Qilinmadi (keyingi raundlar)
+- Kodlar ma'lum bo'lgandan keyin qonun birligini so'rash (2.8 b) — 3-raundda.
+- Karta chatidagi 🧮 dan kelgan AI o'qishi hali sanalmaydi — 5-raundda (boshqa sessiya).
+- Muhrlanmagan «Готово» javoblaridan xotira o'rganmaydi.
+
+### Tekshiruv
+Raund qurilishidan oldin 5 tomondan baholandi (37 e'tiroz, 36 tasi hisobga olindi). Qurilgandan keyin yana tekshirildi. Uzatishda kesilib qolgan ro'yxatlar tayyor kodga qarab qayta ko'rildi: **119 band tekshirildi, 59 tasi hali bor edi — 53 tasi tuzatildi, 6 tasi sababi yozilgan holda qoldirildi.**
+
 ## 2026-10-27 — Uch band: narxdan hisob-kitobga link, har so'rovga yangi bitim, bitta qatorli tarkib va «шт» ustuni
 
 Sizning so'zlaringiz (uchta band) va javobingiz: «3b / 4 a / 5 a / 6 a / 7 b» (1 va 2 savolga javob bo'lmadi — ⭐ variant qurildi). **Migratsiya 0136 — deploydan keyin migratsiyalar soni 137 bo'lishi kerak.** Bu deployda **tg-listen ham qayta qurilishi kerak** (sayt va reklama lidlari endi hamkasb mijozi haqidagi lidga qo'shilmaydi).

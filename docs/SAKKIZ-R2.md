@@ -2076,3 +2076,57 @@ fix carries a red proof made and undone by string edit.
 | PF-8 | partial | The reminder gives no section-specific instruction; it says to type the VED's own figure. |
 | PF-9 | confirmed, nit | The «tariff» chip anchors on the PRICED title (`TARIFF_PRICED_HEAD`, reply-heads.ts); a refused tariff reply wears none. |
 | REG-1 | confirmed, defect (fence) | batch-choice (g): a READY file beside a PROCESSING one that wins every other rule — the ready file answers. The clause was right and unfenced. |
+
+## 17. The late pass (what the relays had cut, judged against the merged code)
+
+Three lists reached the build cut in transit: the merged review after REG-1 (§16), the
+design judge's objections after the ids in §15, and the four packages' own reviews.
+Every one of them was re-read from its source file and checked against the merged tree
+at 52171ca by five verifiers: **119 items checked — 60 already fixed by the build, 59
+still there, 0 refuted.** The 59 went to four fixers by area (reply, baza, intake,
+lenta and the rest), each in its own worktree, each fix red-proven by string edit and
+restored by sha: **53 fixed, 6 refused with the reason written where the reader meets
+it.** One defect not on any list was found while checking a premise. The four branches
+were then picked onto one tree and the one seam between two of them fixed.
+
+The ones a person would meet:
+
+| Id | What changed |
+|---|---|
+| CONC-1 | The pass stands down when the request closes under it — at any step, not only before it starts. The request's clock is asked before every model step, so no paid call is made on a closed request, and `sayOnce(…, { whileOpen })` reads `completed_at` under the claim, so a VED's «Готово» landing mid-pass is never followed by the machine's reply. |
+| CONC-2 | The brutto answer no longer outranks everything after it for good: `totalsAnswer.at` marks where it was typed, and `totalsDoubts` (calc-intake.ts) keeps it only while no LATER material states another figure for that field; a doubted answer is kept and the doubt said, so it lasts across re-reads. |
+| CONC-3 / CONC-5 | A live ✨ claim or a person's save before the machine wrote anything is «a person is working» — the pass stands down instead of replying over half-typed numbers. |
+| CONC-4 | A requester who can no longer log in still leaves the once-claim (a muted row), so a re-delivery does not answer twice. |
+| perf-1 | The candidate scan computes `word_similarity` once per row (an inner select fenced by `OFFSET 0`): a 30k-row heading 3.4 → 2.2 s. |
+| perf-2 | One heading timeout stands for every row of that heading, and the pick reads under the pass's deadline; rows the deadline left unread are COUNTED (`pastDeadline`) and said in the reply (the seam below). |
+| perf-4 | A bounded per-process memo answers the import fill across saves (a READY batch's rows never change): the 30-row worst-case «Saqlash» 3.9 s once, then 26-43 ms (§14.6). |
+| concurrency-10 | Deleting an import batch and a save pointing at its rows exclude each other (batch FOR UPDATE vs FOR KEY SHARE); a vanished row is a refusal in words, never a raw 23503. |
+| extra (not listed) | A re-delivered import job wiped a READY quarter's rows before claiming the batch; the wipe now follows the claim. |
+| law-money-8 / regression-20 | Every row exact with only the declaration fee refusing prints the old two lines, not a «10 tadan 10 qator» Aniq beside an absent Taxminiy. |
+| regression-10 | What the AI pick did not do — capped, refused, overtaken by a person, timed out, past the deadline — is one line under the totals («⚠️ AI bazasini qo‘ymadi: … — VED to‘ldiradi»), no longer only a log line. |
+| product-fit-9/11/12/13 | The legend says a 📥 baza is a guess until the VED confirms; the VED line says the 📊 median is «(AI emas)»; three refusal words a seller could not act on were reworded; the road lines are one renderer for both replies. |
+| REG-3 / P3-R7 | A bare «777» with no collection gets its own sentence (not «your collection was lost»); «12 3500» answered to a one-unit question is asked again instead of dropping the 12. |
+| concurrency-11 | A reading is billed on the Tashkent day the model answered it, and counted against the day's budget while the collection is still unlanded. |
+| P4-1 | The tariff chip's priced anchor is pinned by a fixture that would show a widened match. |
+
+**Refused, each with its reason at the place a reader meets it:** law-money-9 (the
+country-word tier is his ⭐ 2.12 a in its own words — kept, the false positives it
+admitted are anchored away by P1-R5); P2-NIT-6 and P2-NIT-7 (the chooser's FEW count
+stays company-wide and a second file of one period is not «newer wins» — the
+consequence and what he should do are in `docs/VED-IMPORT-AI.md` §2.3);
+product-fit-16 (summing a per-line G.W. column would reverse his 2.7 b «brutto is
+ASKED»); P3-6 and P3-R8 (the card-chat door's reading is not billed — owed to round 5
+with the anchor migration, §12). CONC-6 is a statement, not a change: a pass killed by a
+deploy re-delivers after up to 30 minutes and the seller then reads `PASS_FAILED`.
+
+**The seam:** the baza fixer taught the pick to count `pastDeadline`, the reply fixer
+taught the reply to print the pick's counts; neither saw the other, so a row the
+deadline left unread mid-pick was said nowhere and looked like a row the file has no
+answer for. `pickLeftOf` (ai-reply.ts) is the one mapping; red by dropping
+`+ out.pastDeadline`.
+
+**Then main moved** (the other session's Uch band, PRs #128-#130, migration 0136): it
+was merged in before the push. Six conflicts, all two additions side by side; the one
+with an order in it is the VED rota pick, now taken LAST in `openCalcRequest`'s
+transaction, after Uch band's lead row lock and note insert — the order
+`recalcFromSealed` already takes them in. Ledger after the deploy: **137**.
