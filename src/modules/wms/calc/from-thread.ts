@@ -17,7 +17,7 @@ import {
   type CalcSection,
 } from './intake';
 import { bookLawsFor } from './book-laws';
-import { parseManualFacts, readGoodsLines } from './intake-manual';
+import { parseManualFacts, readGoodsLines, totalWeightFrom } from './intake-manual';
 import { routeAmount } from './units';
 import { analyzeIntake } from './intake-ai';
 import { calcDealOwnerFor, dealFor } from './intake-land';
@@ -183,7 +183,7 @@ export async function threadCalcAnalyze(
 ): Promise<ThreadCalcPreview> {
   const material = await threadMaterial(actor, input.entity, input.messageIds);
   const text = material.lines.join('\n');
-  const manual = parseManualFacts(text);
+  const manual = parseManualFacts(text, input.section);
   const outcome = await analyzeIntake({
     section: input.section,
     text,
@@ -204,7 +204,7 @@ export async function threadCalcAnalyze(
   const facts: CalcFacts = {
     fromCity: manual.fromCity ?? ai?.facts.fromCity ?? null,
     toCity: manual.toCity ?? ai?.facts.toCity ?? null,
-    weightKg: manual.weightKg ?? (asked('weightKg') ? null : (ai?.facts.weightKg ?? null)),
+    ...totalWeightFrom(input.section, manual, ai?.facts ?? null, asked('weightKg')),
     volumeM3: manual.volumeM3 ?? (asked('volumeM3') ? null : (ai?.facts.volumeM3 ?? null)),
     // …and not by the lines' Σ either (review P3-R2): the preview's checklist
     // names the cube missing, and the landing stores none.
@@ -236,8 +236,13 @@ function pairOf(qty: number | null, unit: unknown) {
 }
 
 /** What the browser may claim about the cargo — its own request, sanitized. */
-function cleanFacts(raw: CalcFacts | null | undefined, material: string, bodies: string): CalcFacts {
-  if (!raw) return { ...parseManualFacts(material), goods: readGoodsLines(bodies) };
+function cleanFacts(
+  raw: CalcFacts | null | undefined,
+  material: string,
+  bodies: string,
+  section: CalcSection,
+): CalcFacts {
+  if (!raw) return { ...parseManualFacts(material, section), goods: readGoodsLines(bodies) };
   const num = (v: unknown) =>
     typeof v === 'number' && Number.isFinite(v) && v >= 0 && v < 1_000_000 ? v : null;
   const str = (v: unknown, cap: number) =>
@@ -249,6 +254,9 @@ function cleanFacts(raw: CalcFacts | null | undefined, material: string, bodies:
     volumeM3: num(raw.volumeM3),
     // The preview's own flag, carried: a forged one can only blank a Σ.
     ...(raw.volumeAmbiguous === true ? { volumeAmbiguous: true } : {}),
+    // …and the netto flag the preview read (review PF-3): a forged one can
+    // only change a note's word, and only on a customs job.
+    ...(raw.weightNetto === true && section === 'rastamojka' ? { weightNetto: true } : {}),
     goods: (Array.isArray(raw.goods) ? raw.goods : []).slice(0, 1000).flatMap((g) => {
       const name = str(g?.name, 200);
       if (!name) return [];
@@ -297,7 +305,7 @@ export async function threadCalcSend(
   if (!CALC_SECTIONS.includes(input.section)) throw new CalcError('bad_section');
   const material = await threadMaterial(actor, input.entity, input.messageIds);
   const text = material.lines.join('\n');
-  const facts = cleanFacts(input.facts, text, material.bodies.join('\n'));
+  const facts = cleanFacts(input.facts, text, material.bodies.join('\n'), input.section);
   const steps = (Array.isArray(input.steps) ? input.steps : [])
     .filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
     .slice(0, 20)

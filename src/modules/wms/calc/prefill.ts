@@ -664,9 +664,13 @@ function replyLines(ws: Workspace, estimate: CustomsEstimate | null): AiVedLine[
       // prints in its head, and every row of an estimated group, whose shadow
       // measure is printed instead (§2.1). Gating on «the group priced» hid
       // the mark on exactly the line that asks the seller for a fact.
-      weightFromTotal: g.items.some(
-        (i) => weightFromTotalNote(i.note) && (i.bazaUsd !== null || ge?.kind === 'estimated'),
-      ),
+      // Which total it came from rides along (review PF-3): only a single-line
+      // job copies one, so a group carries at most one basis.
+      weightFromTotal:
+        g.items
+          .filter((i) => i.bazaUsd !== null || ge?.kind === 'estimated')
+          .map((i) => weightFromTotalNote(i.note))
+          .find((b) => b !== null) ?? null,
       // The workspace's own age rule for the row's baza (`bazaStale`, law 5),
       // asked of the rows that HAVE one — the VED's screen wears the same ⚠.
       staleBaza: g.items.some((i) => i.bazaUsd !== null && i.bazaStale),

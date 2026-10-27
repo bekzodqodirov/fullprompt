@@ -31,7 +31,7 @@ const line = (over: Partial<AiVedLine> = {}): AiVedLine => ({
   refusal: null,
   refusalTail: 'ved',
   estimated: null,
-  weightFromTotal: false,
+  weightFromTotal: null,
   staleBaza: false,
   ...over,
 });
@@ -480,9 +480,18 @@ describe('two customs totals (his 2.2 b, docs/SAKKIZ-R2.md §2.2)', () => {
   it('a weight copied from the shipment’s brutto total is said beside the measure (⭐ of his Question 4)', () => {
     const text = aiVedReplyText({
       ...base,
-      lines: [line({ label: 'Kurtka', code: '6201400000', measureText: '300 kg × $4.1/kg', weightFromTotal: true })],
+      lines: [line({ label: 'Kurtka', code: '6201400000', measureText: '300 kg × $4.1/kg', weightFromTotal: 'brutto' })],
     });
     expect(text).toContain('1. Kurtka · 6201400000 · 300 kg (og‘irlik bruttodan) × $4.1/kg 🧠');
+  });
+
+  it('…and «og‘irlik nettodan» where that total was itself netto (review PF-3)', () => {
+    const text = aiVedReplyText({
+      ...base,
+      lines: [line({ label: 'Kurtka', code: '6201400000', measureText: '300 kg × $4.1/kg', weightFromTotal: 'netto' })],
+    });
+    expect(text).toContain('1. Kurtka · 6201400000 · 300 kg (og‘irlik nettodan) × $4.1/kg 🧠');
+    expect(text).not.toContain('bruttodan');
   });
 });
 

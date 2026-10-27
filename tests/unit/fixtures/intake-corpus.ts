@@ -16,6 +16,9 @@
  * main-vs-round-5 evidence and `realistic` why a seller sends such an input.
  * The round-6 final probers' (source «r6-probe …», c2093-c2177) were recorded
  * the same way, `why` their f44a5a6-vs-package evidence, plus `severity`.
+ * Round 2's merged review added the typed reader's totals cases (source
+ * «r2-review typed», c2278-c2282): a NETTO label and a goods line's own
+ * figure are not the shipment's total (PF-1, PF-2).
  *
  * An expectation names only what the reviewer named — a figure, a name, a
  * count — and every name a goods list states is asserted in order. A case

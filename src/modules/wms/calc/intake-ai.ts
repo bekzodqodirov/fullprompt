@@ -34,6 +34,9 @@ const factsSchema = z.object({
   from_city: z.string().nullable(),
   to_city: z.string().nullable(),
   weight_kg: z.number().nullable(),
+  // Read leniently (absent = not said): an answer from before this field, or a
+  // stand-in that omits it, still parses — and «not said» is the brutto label.
+  weight_netto: z.boolean().nullish(),
   volume_m3: z.number().nullable(),
   goods: z.array(
     z.object({
@@ -589,6 +592,8 @@ export function readIntakeResponse(response: {
       toCity: parsed.to_city,
       weightKg: parsed.weight_kg,
       volumeM3: parsed.volume_m3,
+      // Only a figure that IS there can be netto (review PF-3).
+      ...(parsed.weight_netto === true && parsed.weight_kg !== null ? { weightNetto: true } : {}),
       goods: parsed.goods.map(aiGoodsLine),
     },
     steps: parsed.steps.slice(0, 20),
@@ -604,6 +609,10 @@ const FACTS_JSON_SCHEMA = {
     weight_kg: {
       type: ['number', 'null'],
       description: 'Общий вес отправки БРУТТО (с упаковкой), кг. Только нетто в документе — см. строку «Только нетто:».',
+    },
+    weight_netto: {
+      type: ['boolean', 'null'],
+      description: 'true — общий вес выше это НЕТТО (документ называет только нетто); иначе false.',
     },
     volume_m3: { type: ['number', 'null'], description: 'Общий объём отправки, м³.' },
     goods: {
@@ -629,7 +638,7 @@ const FACTS_JSON_SCHEMA = {
     },
     steps: { type: 'array', items: { type: 'string' } },
   },
-  required: ['from_city', 'to_city', 'weight_kg', 'volume_m3', 'goods', 'steps'],
+  required: ['from_city', 'to_city', 'weight_kg', 'weight_netto', 'volume_m3', 'goods', 'steps'],
   additionalProperties: false,
 } as const;
 
@@ -642,13 +651,15 @@ const FACTS_JSON_SCHEMA = {
  * so null there landed every netto-only invoice with no weight at all — a
  * chip asking for ever, and a single line's derived weight with no source.
  * There the netto stands as the total, and the reading SAYS it is netto,
- * on the lenta the VED reads.
+ * on the lenta the VED reads — and in `weight_netto` (review PF-3), so the
+ * single line's copied weight, the summary and the Telegram line call it
+ * netto too, never the «brutto» the lone copy's note used to claim.
  */
 const NETTO_ONLY: Record<CalcSection, string> = {
   yolkira: 'Только нетто: общий вес null — сотрудник спросит брутто. Нетто вместо брутто не подставляй.',
   podklyuch: 'Только нетто: общий вес null — сотрудник спросит брутто. Нетто вместо брутто не подставляй.',
   rastamojka:
-    'Только нетто: возьми нетто как общий вес и напиши в steps: «Umumiy og‘irlik faqat netto — bruttosi hujjatda yo‘q».',
+    'Только нетто: возьми нетто как общий вес, поставь weight_netto = true и напиши в steps: «Umumiy og‘irlik faqat netto — bruttosi hujjatda yo‘q».',
 };
 
 /** What the model is shown, in the order a person reads a forwarded pile. */

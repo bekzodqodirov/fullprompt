@@ -30678,6 +30678,123 @@
    "weight": "regression",
    "realistic": "The same message in Uzbek Cyrillic.",
    "severity": "rare"
+  },
+  {
+   "id": "c2278",
+   "input": "Kurtka 300 dona\nNetto 1200 kg\nYiwu → Toshkent",
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "quantity": 300
+      }
+     ],
+     "count": 1
+    },
+    "weightKg": null,
+    "missing": {
+     "section": "podklyuch",
+     "includes": [
+      "weightKg"
+     ]
+    }
+   },
+   "said": "weightKg null — a figure the text labels NETTO is not the shipment's brutto; the freight checklist still asks the weight.",
+   "why": "R2 merged review PF-1: 832a532 read weightKg 1200, so the brutto question was skipped and the seller told «brutto og‘irlik bor: 1200 kg»; the road was priced on the netto.",
+   "source": "r2-review typed",
+   "weight": "regression",
+   "realistic": "A packing list forwarded with only its netto line typed out.",
+   "severity": "common"
+  },
+  {
+   "id": "c2279",
+   "input": "Kurtka 300 dona\nN.W. 1200 kg\nYiwu → Toshkent",
+   "expected": {
+    "weightKg": null,
+    "missing": {
+     "section": "yolkira",
+     "includes": [
+      "weightKg"
+     ]
+    }
+   },
+   "said": "weightKg null — «N.W.» is the netto label of an English packing list.",
+   "why": "R2 merged review PF-1: 832a532 read weightKg 1200 off «N.W. 1200 kg».",
+   "source": "r2-review typed",
+   "weight": "regression",
+   "realistic": "A Chinese supplier's packing list totals line copied into the chat.",
+   "severity": "common"
+  },
+  {
+   "id": "c2280",
+   "input": "Brutto 1300 kg, Netto 1200 kg\nKurtka 300 dona\nYiwu → Toshkent",
+   "expected": {
+    "weightKg": 1300
+   },
+   "said": "weightKg 1300 — each figure is labelled by its own word; the brutto answers and the netto does not.",
+   "why": "R2 merged review PF-1: 832a532 saw two different weights and answered null; with the netto set apart the brutto is the one stated total.",
+   "source": "r2-review typed",
+   "weight": "regression",
+   "realistic": "A seller types both totals off the invoice footer.",
+   "severity": "common"
+  },
+  {
+   "id": "c2281",
+   "input": "Kurtka 300 dona 400 kg 5 kub\nShim 200 dona 400 kg 5 kub\nYiwu → Toshkent",
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "quantity": 300,
+       "weightKg": 400,
+       "volumeM3": 5
+      },
+      {
+       "name": "Shim",
+       "quantity": 200,
+       "weightKg": 400,
+       "volumeM3": 5
+      }
+     ],
+     "count": 2
+    },
+    "weightKg": null,
+    "volumeM3": null,
+    "missing": {
+     "section": "yolkira",
+     "includes": [
+      "weightKg"
+     ],
+     "excludes": [
+      "volumeM3"
+     ]
+    }
+   },
+   "said": "weightKg null, volumeM3 null — two goods lines stating the same figures state them for each line, not one total; the cube is the lines' Σ (10 m³), the brutto is asked.",
+   "why": "R2 merged review PF-2: 832a532's one-distinct-value rule read 400 kg / 5 m³ as the shipment's totals — the truck priced and stored on one line's cube, no brutto question, no «(qatorlardan)».",
+   "source": "r2-review typed",
+   "weight": "regression",
+   "realistic": "Two sizes of one order, packed alike, typed one per line.",
+   "severity": "common"
+  },
+  {
+   "id": "c2282",
+   "input": "Kurtka 300 dona 400 kg 4 kub\nShim 200 dona 300 kg 6 kub\nJami 700 kg 10 kub",
+   "expected": {
+    "goods": {
+     "count": 2
+    },
+    "weightKg": 700,
+    "volumeM3": 10
+   },
+   "said": "weightKg 700, volumeM3 10 — the «Jami» line states the shipment; the goods lines' own figures do not compete with it.",
+   "why": "R2 merged review PF-2 (its other half): 832a532 saw three different weights (400, 300, 700) and answered null, so the stated total reached nobody.",
+   "source": "r2-review typed",
+   "weight": "regression",
+   "realistic": "A seller lists the lines, then the total underneath.",
+   "severity": "common"
   }
  ],
  "intakeClientLabelCases": [

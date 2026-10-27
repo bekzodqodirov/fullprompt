@@ -9,6 +9,7 @@ import {
   statesGoods,
   type AmbiguousTotal,
   type CalcFacts,
+  type CalcSection,
   type ClientHintOpts,
 } from './intake';
 import { addressWord } from './address-words';
@@ -60,12 +61,15 @@ const AMOUNT = String.raw`(\d{1,3}(?:[  ]\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?)`;
 function readNumber(
   text: string,
   units: string[],
+  /** A hit this reading does not count — a line's own figure, a netto label. */
+  skip: (start: number, end: number) => boolean = () => false,
 ): { value: number | null; ambiguous: { text: string; decimal: number; thousands: number } | null } {
   const seen = new Set<number>();
   let ambiguous: { text: string; decimal: number; thousands: number } | null = null;
   for (const unit of units) {
     const re = new RegExp(`(?<![\\d.,])${AMOUNT}\\s*${unit}(?![\\p{L}\\d])`, 'giu');
     for (let hit = re.exec(text); hit; hit = re.exec(text)) {
+      if (skip(hit.index, hit.index + hit[0].length)) continue;
       const read = readAmountText(hit[1]!);
       if (read.state === 'ok') seen.add(read.value);
       else if (read.state === 'ambiguous' && !ambiguous) {
@@ -99,10 +103,92 @@ function readRoute(text: string): { fromCity: string | null; toCity: string | nu
   return { fromCity: null, toCity: null };
 }
 
-export function parseManualFacts(text: string): CalcFacts & { ambiguous: AmbiguousTotal[] } {
+/**
+ * The word a weight's own label uses for NETTO (review PF-1): «Netto», «нетто»,
+ * «N.W.», «NW», «net weight», «净重», «sof og‘irlik».
+ */
+const NETTO_WORD = String.raw`(?:netto|нетто|net(?:\s*weight|\s*wt\.?)?|n\.\s?w\.?|nw|净重|sof(?=\s+og))`;
+const NETTO_BEFORE = new RegExp(String.raw`(?:^|[^\p{L}])${NETTO_WORD}(?![\p{L}])`, 'iu');
+// After the unit, a netto word labels THIS figure only when no number follows
+// it — «1300 kg netto 1200 kg» is the next figure's label, not this one's.
+const NETTO_AFTER = new RegExp(String.raw`^\s*[(\[]?\s*${NETTO_WORD}(?![\p{L}])(?![\s:：=–—-]*\d)`, 'iu');
+
+/**
+ * Is the weight at [start, end) labelled NETTO?
+ *
+ * Read off the words right BEFORE the figure — back to the previous figure or
+ * line break, at most 40 characters — and the word right after its unit
+ * («1200 kg netto»). The window stops at the previous figure, so «Netto 1200
+ * kg, Brutto 1300 kg» labels each number by its own word.
+ */
+function nettoLabelled(text: string, start: number, end: number): boolean {
+  const from = Math.max(0, start - 40);
+  const before = text.slice(from, start);
+  const cut = Math.max(before.lastIndexOf('\n'), ...[...before.matchAll(/\d/g)].map((m) => m.index!));
+  return NETTO_BEFORE.test(before.slice(cut + 1)) || NETTO_AFTER.test(text.slice(end, end + 16));
+}
+
+/**
+ * The text's lines as [start, end) offsets, so a hit can be placed on its line.
+ */
+function lineSpans(text: string): [number, number][] {
+  const out: [number, number][] = [];
+  let at = 0;
+  for (const line of text.split('\n')) {
+    out.push([at, at + line.length]);
+    at += line.length + 1;
+  }
+  return out;
+}
+
+/**
+ * The shipment's totals and route, as TYPED.
+ *
+ * Two rules decide which typed figure may be the SHIPMENT's (round 2's merged
+ * review):
+ *
+ *  - **A goods line's figure is that line's, not the total** (PF-2). When two
+ *    or more lines read as goods (`typedGoods`), a kilo or a cube standing on
+ *    one of them belongs to it: «Kurtka 300 dona 400 kg 5 kub» and «Shim 200
+ *    dona 400 kg 5 kub» state 400 kg and 5 m³ TWICE, and the one-distinct-
+ *    value rule read that as one stated total — the truck priced and stored
+ *    on one line's cube, the brutto never asked, no «(qatorlardan)» anywhere.
+ *    A figure on any other line («Jami 10 kub 800 kg») still answers. One
+ *    goods line keeps its figure as the shipment's, as it always did: there
+ *    the line IS the shipment.
+ *  - **A NETTO weight is not the shipment's brutto** (PF-1). The bot asks the
+ *    total as BRUTTO on every freight section (his 2.7 b), and a figure the
+ *    text labels netto («Netto 1200 kg», «N.W. 1200 kg») answered that
+ *    question — the brutto was never asked and the seller was told «brutto
+ *    og‘irlik bor». So a netto figure never fills `weightKg` on a freight
+ *    section, nor when no section is named (the reading that asks); on a
+ *    customs-only job, where nobody asks a brutto and the reading model is
+ *    told to take the netto (`NETTO_ONLY`), it stands as the total when the
+ *    text states nothing else — and says so (`weightNetto`), so the row note
+ *    and the reply call it netto, never brutto (PF-3).
+ */
+export function parseManualFacts(
+  text: string,
+  section?: CalcSection,
+): CalcFacts & { ambiguous: AmbiguousTotal[] } {
   const route = readRoute(text);
-  const weight = readNumber(text, ['kg', 'кг', 'kilo', 'килограмм']);
-  const volume = readNumber(text, ['kub', 'куб', 'm3', 'м3', 'м³', 'm³']);
+  const typed = typedGoods(text);
+  const spans = lineSpans(text);
+  const onGoodsLine = (start: number) => {
+    if (typed.lines.size < 2) return false;
+    const line = spans.findIndex(([a, b]) => start >= a && start <= b);
+    return typed.lines.has(line);
+  };
+  const KG = ['kg', 'кг', 'kilo', 'килограмм'];
+  const plain = readNumber(text, KG, (a, b) => onGoodsLine(a) || nettoLabelled(text, a, b));
+  // Customs-only: the netto stands for the total when nothing else is stated.
+  const nettoStands = section !== undefined && !sectionHasFreight(section);
+  const netto =
+    nettoStands && plain.value === null && !plain.ambiguous
+      ? readNumber(text, KG, (a, b) => onGoodsLine(a) || !nettoLabelled(text, a, b))
+      : { value: null, ambiguous: null };
+  const weight = netto.value !== null || netto.ambiguous ? netto : plain;
+  const volume = readNumber(text, ['kub', 'куб', 'm3', 'м3', 'м³', 'm³'], (a) => onGoodsLine(a));
   const ambiguous: AmbiguousTotal[] = [];
   if (weight.ambiguous) ambiguous.push({ field: 'weightKg', ...weight.ambiguous });
   if (volume.ambiguous) ambiguous.push({ field: 'volumeM3', ...volume.ambiguous });
@@ -111,9 +197,41 @@ export function parseManualFacts(text: string): CalcFacts & { ambiguous: Ambiguo
     toCity: route.toCity,
     weightKg: weight.value,
     volumeM3: volume.value,
-    goods: readGoodsLines(text),
+    ...(netto.value !== null ? { weightNetto: true } : {}),
+    goods: typed.goods,
     ambiguous,
   };
+}
+
+/** Does the section price a truck — the totals the bot asks as BRUTTO? */
+const sectionHasFreight = (section: CalcSection) => section !== 'rastamojka';
+
+type TotalWeight = Pick<CalcFacts, 'weightKg' | 'weightNetto'>;
+
+/**
+ * The shipment's total weight from the two readers — ONE rule for the bot and
+ * the thread door (#513).
+ *
+ * The TYPED figure wins (the person is looking at the material) and carries
+ * its own netto flag (`parseManualFacts`). A total the text writes two ways
+ * is asked, and the model — which read the same text — does not answer it
+ * either. The model's figure answers otherwise, except that a NETTO figure
+ * never stands for the brutto a freight section asks (review PF-1, the
+ * model's half: `NETTO_ONLY` tells it null there, and a reading that says
+ * «netto» anyway is not believed); on a customs job it stands, labelled.
+ */
+export function totalWeightFrom(
+  section: CalcSection,
+  typed: TotalWeight,
+  read: TotalWeight | null,
+  ambiguous: boolean,
+): TotalWeight {
+  if (typed.weightKg != null) {
+    return typed.weightNetto ? { weightKg: typed.weightKg, weightNetto: true } : { weightKg: typed.weightKg };
+  }
+  if (ambiguous || read?.weightKg == null) return { weightKg: null };
+  if (!read.weightNetto) return { weightKg: read.weightKg };
+  return sectionHasFreight(section) ? { weightKg: null } : { weightKg: read.weightKg, weightNetto: true };
 }
 
 /**
@@ -684,9 +802,24 @@ export function readGoodsLines(
   text: string,
   opts?: { labelledOnly?: boolean } & ClientHintOpts,
 ): NonNullable<CalcFacts['goods']> {
+  return typedGoods(text, opts).goods;
+}
+
+/**
+ * `readGoodsLines`, with WHICH text lines (by index in `text.split('\n')`) it
+ * read a figured product from — so `parseManualFacts` can tell a line's own
+ * figure from a total (review PF-2). One reader, two answers: the goods and
+ * where they stood.
+ */
+function typedGoods(
+  text: string,
+  opts?: { labelledOnly?: boolean } & ClientHintOpts,
+): { goods: NonNullable<CalcFacts['goods']>; lines: Set<number> } {
   const prefix = clientCodePrefix(opts);
-  const out: { goods: TypedGoods; labelled: boolean }[] = [];
-  for (const raw of text.split(/\r?\n/)) {
+  const out: { goods: TypedGoods; labelled: boolean; line: number | null }[] = [];
+  const rawLines = text.split(/\r?\n/);
+  for (let at = 0; at < rawLines.length; at += 1) {
+    const raw = rawLines[at]!;
     if (out.length >= 50) break;
     const line = raw.trim().replace(LIST_MARKER, '');
     if (!line || !/\p{L}/u.test(line)) continue;
@@ -707,8 +840,9 @@ export function readGoodsLines(
     const listed = separated && !naming && PLURAL_LABEL.test(label![0]) && LIST_BODY.test(body);
     if (listed || (!figured && !coded)) {
       if (label && separated) {
+        // A bare name carries no figure of the line's own to set apart.
         for (const goods of bareGoods(body, label[0], naming, prefix)) {
-          if (out.length < 50) out.push({ goods, labelled: true });
+          if (out.length < 50) out.push({ goods, labelled: true, line: null });
         }
       }
       continue;
@@ -754,11 +888,16 @@ export function readGoodsLines(
       // A label with no separator is read as an unlabelled line (R3-T1), and
       // gives way as one too.
       labelled: separated,
+      line: at,
     });
   }
   const cartonOnly = (g: TypedGoods) => wordsOf(g.name).every((w) => CARTON_NOUNS.has(w));
   const another = out.some((o) => !cartonOnly(o.goods));
-  return out.filter((o) => !another || o.labelled || !cartonOnly(o.goods)).map((o) => o.goods);
+  const kept = out.filter((o) => !another || o.labelled || !cartonOnly(o.goods));
+  return {
+    goods: kept.map((o) => o.goods),
+    lines: new Set(kept.map((o) => o.line).filter((l): l is number => l !== null)),
+  };
 }
 
 /**

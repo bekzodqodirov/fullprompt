@@ -417,13 +417,16 @@ export function mergeTotalsAnswer(
   answer: IntakeState['totalsAnswer'],
   facts: IntakeState['facts'],
 ): IntakeState['facts'] {
-  // An answered cube is no longer the ambiguous one (review P3-R2).
-  const { volumeAmbiguous, ...rest } = facts;
+  // An answered cube is no longer the ambiguous one (review P3-R2), and an
+  // answered weight is the BRUTTO the question asked — no longer a netto
+  // standing in for it (review PF-3).
+  const { volumeAmbiguous, weightNetto, ...rest } = facts;
   return {
     ...rest,
     weightKg: answer.weightKg ?? facts.weightKg ?? null,
     volumeM3: answer.volumeM3 ?? facts.volumeM3 ?? null,
     ...(volumeAmbiguous && answer.volumeM3 === null ? { volumeAmbiguous } : {}),
+    ...(weightNetto && answer.weightKg === null ? { weightNetto } : {}),
   };
 }
 
@@ -1342,10 +1345,12 @@ export function endIntake(chatId: bigint): void {
  */
 export async function analyzeCollected(state: IntakeState): Promise<IntakeState> {
   const { analyzeIntake } = await import('../../wms/calc/intake-ai');
-  const { parseManualFacts, readGoodsLines } = await import('../../wms/calc/intake-manual');
+  const { parseManualFacts, readGoodsLines, totalWeightFrom } = await import('../../wms/calc/intake-manual');
   const { factsVolumeM3 } = await import('../../wms/calc/intake');
   const text = state.material.join('\n');
-  const manual = parseManualFacts(text);
+  // The section decides whether a NETTO figure may stand for the total
+  // (review PF-1): never where the bot asks the brutto.
+  const manual = parseManualFacts(text, state.section);
   const invoice = state.invoiceGoods ?? [];
 
   // The day's budget gates the READING too — it is the most expensive call
@@ -1406,7 +1411,7 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
   const facts = mergeTotalsAnswer(state.totalsAnswer, {
     fromCity: manual.fromCity ?? ai?.facts.fromCity ?? state.route?.fromCity ?? null,
     toCity: manual.toCity ?? ai?.facts.toCity ?? state.route?.toCity ?? null,
-    weightKg: manual.weightKg ?? (asked('weightKg') ? null : (ai?.facts.weightKg ?? null)),
+    ...totalWeightFrom(state.section, manual, ai?.facts ?? null, asked('weightKg')),
     volumeM3: manual.volumeM3 ?? (asked('volumeM3') ? null : (ai?.facts.volumeM3 ?? null)),
     // …nor the lines' Σ (review P3-R2): the seller stated a cube, only not
     // which one — the totals question asks it, and the INSERT sums nothing.

@@ -216,6 +216,17 @@ export interface CalcFacts {
    * (`analyzeCollected`, the thread preview); an answer clears it.
    */
   volumeAmbiguous?: boolean;
+  /**
+   * The shipment's total weight is NETTO — the material stated no brutto
+   * (review PF-3). Only a customs-only job ever lands one: there nobody asks
+   * a brutto, and both readers take the netto as the total (the typed one,
+   * `parseManualFacts`, and the model, told so by `NETTO_ONLY`). Said where
+   * the figure is printed: the summary («Og‘irlik (netto)»), a single line's
+   * copied weight («og‘irlik umumiy (netto)dan olindi») and the Telegram line
+   * («og‘irlik nettodan») — the old brutto label put the opposite of the AI
+   * izohi on the same card. An answer to the brutto question clears it.
+   */
+  weightNetto?: boolean;
 }
 
 /** One goods line as a door hands it over. */
@@ -300,16 +311,28 @@ export function loneWeightKg(
  * number alone cannot say.
  */
 export const LONE_WEIGHT_NOTE = 'og‘irlik umumiy (brutto)dan olindi';
+/**
+ * …and when the shipment's total was itself NETTO (`CalcFacts.weightNetto`,
+ * review PF-3): the copy is the netto, and calling it brutto would put the
+ * opposite of the AI izohi («faqat netto») on the same card.
+ */
+export const LONE_NETTO_NOTE = 'og‘irlik umumiy (netto)dan olindi';
+
+/** Which total a copied line weight came from. */
+export type TotalWeightBasis = 'brutto' | 'netto';
 
 /**
  * The row note says its weight was copied from the shipment total
- * (`itemFacts`' lone copy) — docs/SAKKIZ-R2.md K15. The note is the only
- * place that fact survives the landing, so every reader that has to say it
- * (the Telegram line's «og‘irlik bruttodan») asks it here rather than
- * re-spelling the sentence it looks for.
+ * (`itemFacts`' lone copy) — docs/SAKKIZ-R2.md K15 — and from WHICH total.
+ * The note is the only place that fact survives the landing, so every reader
+ * that has to say it (the Telegram line's «og‘irlik bruttodan» /
+ * «nettodan») asks it here rather than re-spelling the sentence it looks
+ * for. Null: the row's weight is its own.
  */
-export function weightFromTotalNote(note: string | null): boolean {
-  return (note ?? '').includes(LONE_WEIGHT_NOTE);
+export function weightFromTotalNote(note: string | null): TotalWeightBasis | null {
+  const n = note ?? '';
+  if (n.includes(LONE_NETTO_NOTE)) return 'netto';
+  return n.includes(LONE_WEIGHT_NOTE) ? 'brutto' : null;
 }
 
 /**
@@ -353,7 +376,10 @@ export function itemFacts(facts: CalcFacts): CalcItemFact[] {
       unit: g.unit?.trim() || null,
       amount: typedFigure(g.amount),
       tnvedCode: g.tnvedCode?.trim() || null,
-      note: [g.note?.trim() || null, fromTotal ? LONE_WEIGHT_NOTE : null].filter(Boolean).join(' · ') || null,
+      note:
+        [g.note?.trim() || null, fromTotal ? (facts.weightNetto ? LONE_NETTO_NOTE : LONE_WEIGHT_NOTE) : null]
+          .filter(Boolean)
+          .join(' · ') || null,
       bazaBasis: g.bazaBasis ?? null,
       law: g.law,
     };
@@ -661,7 +687,7 @@ export function intakeSummaryText(input: {
     (input.section === 'rastamojka'
       ? ''
       : `Yo‘nalish: ${input.facts.fromCity?.trim() || '—'} → ${input.facts.toCity?.trim() || '—'}\n`) +
-    `Og‘irlik: ${num(input.facts.weightKg, 'kg')} · Hajm: ${volumeText(input.facts)}\n` +
+    `${weightLabel(input.section, input.facts)}: ${num(input.facts.weightKg, 'kg')} · Hajm: ${volumeText(input.facts)}\n` +
     (goods.length
       ? `Tovarlar (${goods.length}):\n${goodsLines}${goods.length > 15 ? '\n…' : ''}\n`
       : 'Tovarlar: —\n') +
@@ -673,6 +699,18 @@ export function intakeSummaryText(input: {
         'Yetishmaganini yozib yuboring yoki shundayligicha tasdiqlang.'
       : '\n✅ Ma’lumot to‘liq. Tasdiqlaysizmi?')
   );
+}
+
+/**
+ * What the shipment's weight IS, on the line that prints it (review PF-1,
+ * PF-3). On a freight section the figure is the BRUTTO the bot asks for, and
+ * the seller confirming the summary must be able to see which he is
+ * confirming; a customs-only total that came from a netto says so. Otherwise
+ * plain — nobody said.
+ */
+export function weightLabel(section: CalcSection, facts: CalcFacts): string {
+  if (section !== 'rastamojka') return 'Og‘irlik (brutto)';
+  return facts.weightNetto ? 'Og‘irlik (netto)' : 'Og‘irlik';
 }
 
 /**
@@ -734,7 +772,7 @@ export function intakeNoteText(input: {
     (input.section === 'rastamojka'
       ? ''
       : `Yo‘nalish: ${input.facts.fromCity?.trim() || '—'} → ${input.facts.toCity?.trim() || '—'}\n`) +
-    `Og‘irlik: ${num(input.facts.weightKg, 'kg')} · Hajm: ${volumeText(input.facts)}\n` +
+    `${weightLabel(input.section, input.facts)}: ${num(input.facts.weightKg, 'kg')} · Hajm: ${volumeText(input.facts)}\n` +
     (input.fileCount ? `Fayllar: ${input.fileCount}\n` : '') +
     (goods.length ? `\nTovarlar:\n${goodsLines}\n` : '') +
     (input.steps.length ? `\nAI izohi:\n${input.steps.map((s) => `— ${s}`).join('\n')}\n` : '') +

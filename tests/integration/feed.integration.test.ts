@@ -484,7 +484,7 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
         refusal: null,
         refusalTail: 'ved',
         estimated: null,
-        weightFromTotal: false,
+        weightFromTotal: null,
         staleBaza: false,
       },
     ],

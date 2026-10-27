@@ -229,7 +229,9 @@ describe('the answer', () => {
     const live = activeIntake(chatId)!;
     expect(live.facts.weightKg).toBe(3500);
     expect(live.totalsAsked).toBe(true);
-    expect(ctx.replies.at(-1)).toContain('Og‘irlik: 3500 kg');
+    // Re-anchored (review PF-1): a freight section's summary says WHICH weight
+    // the seller confirms — the brutto he was asked for.
+    expect(ctx.replies.at(-1)).toContain('Og‘irlik (brutto): 3500 kg');
   });
 
   it('through the door: a re-read that still misses the kilos asks the brutto AGAIN (P3-1)', async () => {
@@ -290,7 +292,7 @@ describe('a total typed two ways (review P3-3, P3-R2)', () => {
     expect(ctx.replies.at(-1)).toContain('«1,200 kg» — 1.2 mi yoki 1200 mi?');
     await applyLineAnswer(ctx, chatId, activeIntake(chatId)!, '1200');
     const summary = ctx.replies.at(-1)!;
-    expect(summary).toContain('Og‘irlik: 1200 kg');
+    expect(summary).toContain('Og‘irlik (brutto): 1200 kg');
     expect(summary).not.toContain('mi yoki');
     expect(activeIntake(chatId)!.ambiguousTotals).toEqual([]);
   });

@@ -1,6 +1,7 @@
 import { dutyText } from './duty-text';
 import { SMALL_FREIGHT_USD, type BazaSource } from './pricing';
 import { AI_REPLY_HEAD, VED_ESTIMATE_MARK } from './reply-heads';
+import type { TotalWeightBasis } from './intake';
 
 /**
  * The AI-VED's answer in the seller's own chat — RASTAMOJKA, and on a
@@ -78,9 +79,14 @@ export interface AiVedLine {
    * every builder of a line has to say.
    */
   estimated: AiVedLineEstimate | null;
-  /** A priced row's weight was copied from the shipment's BRUTTO total
-   * (`weightFromTotalNote`) — the line says «og‘irlik bruttodan». */
-  weightFromTotal: boolean;
+  /**
+   * A priced row's weight was copied from the shipment's total
+   * (`weightFromTotalNote`), and WHICH total: the line says «og‘irlik
+   * bruttodan», or «og‘irlik nettodan» on a customs job whose document stated
+   * only the netto (review PF-3 — calling that copy brutto contradicted the
+   * AI izohi on the same card). Null: the rows' weights are their own.
+   */
+  weightFromTotal: TotalWeightBasis | null;
   /**
    * A row's own baza is OLD — a 📥 declaration from a quarter that ended past
    * BAZA_STALE_DAYS, a 🧠 seal or a 📖 book row as old: the workspace's own
@@ -288,16 +294,16 @@ function countList(ns: number[]): string {
 
 /**
  * The measure part, with the brutto mark (⭐ of his Question 4) where a
- * priced row's weight was copied from the shipment's total: the row note
- * says it to the VED, this says it to the seller, who reads the figure.
+ * priced row's weight was copied from the shipment's total — or the netto
+ * mark where that total was itself netto (PF-3): the row note says it to the
+ * VED, this says it to the seller, who reads the figure.
  */
-function measureWithMark(measureText: string | null, fromTotal: boolean): string | null {
-  if (!fromTotal) return measureText;
-  if (!measureText) return '(og‘irlik bruttodan)';
+function measureWithMark(measureText: string | null, fromTotal: TotalWeightBasis | null): string | null {
+  if (fromTotal === null) return measureText;
+  const mark = `(og‘irlik ${fromTotal}dan)`;
+  if (!measureText) return mark;
   const at = measureText.indexOf(' × ');
-  return at === -1
-    ? `${measureText} (og‘irlik bruttodan)`
-    : `${measureText.slice(0, at)} (og‘irlik bruttodan)${measureText.slice(at)}`;
+  return at === -1 ? `${measureText} ${mark}` : `${measureText.slice(0, at)} ${mark}${measureText.slice(at)}`;
 }
 
 /** The law's parts of a priced line: «boj 10% · QQS 12%». */
