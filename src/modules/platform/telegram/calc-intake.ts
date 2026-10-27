@@ -776,6 +776,29 @@ function nameWords(key: string): Map<string, Set<string>> {
 }
 
 /**
+ * The tier words of a model designation — «iPhone 15 Pro Max», «Galaxy S24
+ * Ultra», «Redmi Note 13 Pro» — in either script, each counted only right
+ * after a word with a digit or another tier word: before or apart from a model
+ * number the same words describe («Pro hair dryer», «Plus size»), and a
+ * translation drops them.
+ */
+const TIER_WORDS: Readonly<Record<string, string>> = {
+  pro: 'pro', max: 'max', plus: 'plus', ultra: 'ultra', lite: 'lite', se: 'se', fe: 'fe',
+  про: 'pro', макс: 'max', плюс: 'plus', ультра: 'ultra', лайт: 'lite',
+};
+
+function tierWords(key: string): Set<string> {
+  const tiers = new Set<string>();
+  let afterModel = false;
+  for (const word of key.normalize('NFKC').toLowerCase().split(' ').filter(Boolean)) {
+    const tier = TIER_WORDS[word.replace(/[^\p{L}]/gu, '')];
+    if (tier !== undefined && afterModel) tiers.add(tier);
+    else afterModel = /\d/u.test(word);
+  }
+  return tiers;
+}
+
+/**
  * Are two keys two DIFFERENT names: in some script both write — or in the
  * numbers both state — each has a word the other lacks: «Shirt» beside
  * «Jacket», «Куртка M» beside «XL», «iPhone 15» beside «iPhone 14», «600*600»
@@ -783,9 +806,15 @@ function nameWords(key: string): Map<string, Set<string>> {
  * «Наушники Bluetooth» shares the Latin of «Bluetooth earphones», «Куртка
  * женская XL» the «XL» of «Ladies jacket XL», and «Мужские кроссовки» is
  * «Кроссовки мужские» (round-5 probe, collector: comparing SCRIPTS alone made
- * each of those a clash, and one order landed twice).
+ * each of those a clash, and one order landed twice) — except a model's TIER
+ * (`tierWords`): «Чехол iPhone 15» is not «Phone case iPhone 15 Pro», and two
+ * stalls' phone cases had one line dropped as the other's (round-6 final
+ * probe, collector, 10 common cases).
  */
 function otherName(a: string, b: string): boolean {
+  const tiersA = tierWords(a);
+  const tiersB = tierWords(b);
+  if ([...tiersA].some((t) => !tiersB.has(t)) || [...tiersB].some((t) => !tiersA.has(t))) return true;
   const wordsB = nameWords(b);
   for (const [bucket, ofA] of nameWords(a)) {
     const ofB = wordsB.get(bucket);

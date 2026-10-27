@@ -76,6 +76,16 @@ describe('a bilingual Excel cell: two names each have a word — or a number —
     expect(add(sneakers, [line('Кроссовки №8823 (运动鞋)', { quantity: 600 })]).goods).toHaveLength(1);
   });
 
+  it('a model’s tier word after its number is another model, in either script; before it, a description', () => {
+    // Two stalls' phone cases: «Чехол iPhone 15» inside «Phone case iPhone 15
+    // Pro» was dropped as the same line (round-6 final probe, collector).
+    const pro = [line('手机壳 Phone case iPhone 15 Pro', { quantity: 500 })];
+    expect(add(pro, [line('Чехол iPhone 15 (手机壳)', { quantity: 500 })]).goods).toHaveLength(2);
+    expect(add(pro, [line('Чехол iPhone 15 Про (手机壳)', { quantity: 500 })]).goods).toHaveLength(1);
+    const dryer = [line('吹风机 Pro hair dryer 2000W', { quantity: 200 })];
+    expect(add(dryer, [line('Фен 2000 Вт (吹风机)', { quantity: 200 })]).goods).toHaveLength(1);
+  });
+
   it('naming MORE of the same in the cell’s script is the cell; another word in its place is not', () => {
     const cell = [line('Kurtka 黑色', { quantity: 100 })];
     expect(add(cell, [line('Kurtka qora (黑色)', { quantity: 100 })]).goods).toHaveLength(1);

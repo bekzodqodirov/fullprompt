@@ -3004,9 +3004,10 @@ in `staff-handlers.ts` runs the WHOLE corpus first.** Rounds 4-6 fixed against i
 (373 → 12 → 0; the probers found 134, then 65, then 85 regressions). The round-6
 probers' finds are RECORDED as known (the stopping rule) — except COMMON ones:
 the sub-rule behind a common regression is undone and the undo probed (#1466).
-67 known, all rare, each with its rule and severity. `otherName` compares a
-name's letters per script and its NUMBERS as a multiset however written
-(«600*600mm» = «600×600 мм»; «iPhone 14» ≠ «iPhone 15»). Lead calls (#1465): a lead is never named by a phone (code or nobody),
+144 known — all rare but «Redmi 13C» vs «Redmi 13» — each with its rule and
+severity. `otherName` compares a name's letters per script, its NUMBERS as a
+multiset however written («600*600mm» = «600×600 мм»; «iPhone 14» ≠ «iPhone
+15») and a model's TIER words after its number («iPhone 15» ≠ «iPhone 15 Pro»). Lead calls (#1465): a lead is never named by a phone (code or nobody),
 a numbered title over a one-column list is passed over, R3-C1 keeps both lines
 when their figures disagree. `pnpm typecheck` runs tsc with a **4 GB heap** — the
 program needs ~2.6 GB (#1467). `figureRow` (intake-manual.ts) is the ONE home of

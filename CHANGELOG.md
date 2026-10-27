@@ -22,7 +22,7 @@ Shuning uchun **namunalar to'plami** yig'dik: sotuvchilar Telegramda yozadigan, 
 - AI'ga beriladigan Excel matni qisqartirilsa, endi bu aytiladi. AI javobi kesilib qolsa, bot ayni o'sha so'rovni behuda qayta yubormaydi.
 
 ### Hali to'g'ri o'qilmaydiganlar
-Oxirgi tekshiruvlar tez-tez uchraydigan xatolarni ham topdi, ularning hammasi tuzatildi. Masalan, nomida o'lchami yozilgan tovar: Excel'da «600*600mm», AI o'qiganida «600×600 мм» — endi bitta tovar deb olinadi va buyurtma ikki marta qo'shilmaydi. «iPhone 14» va «iPhone 15» yoki 600 va 800 lik kafel esa ikki xil tovar bo'lib qoladi. Qolgan **67 ta holat kamdan-kam uchraydi** va ro'yxatga yozib qo'yildi, hozircha AI yoki VED ularni qo'lda to'g'rilaydi. Ro'yxat kod ichida turibdi va keyingi raundlarda kamayib boradi.
+Oxirgi tekshiruvlar tez-tez uchraydigan xatolarni ham topdi, ularning hammasi tuzatildi. Masalan, nomida o'lchami yozilgan tovar: Excel'da «600*600mm», AI o'qiganida «600×600 мм» — endi bitta tovar deb olinadi va buyurtma ikki marta qo'shilmaydi. «iPhone 14» va «iPhone 15», «iPhone 15» va «iPhone 15 Pro» yoki 600 va 800 lik kafel esa ikki xil tovar bo'lib qoladi. Ro'yxatga **144 ta holat** yozib qo'yildi, hozircha AI yoki VED ularni qo'lda to'g'rilaydi. Ulardan 143 tasi kamdan-kam uchraydi (masalan «1.2m» va «120 см» bir xil o'lcham ekanini bot bilmaydi). Bittasi tez-tez uchrashi mumkin: «Redmi 13» va «Redmi 13C» chexollari bitta tovar deb qolishi mumkin. Ro'yxat kod ichida turibdi va keyingi raundlarda kamayib boradi.
 
 ### Javoblaringiz yozib olindi («2 c / 3 b»)
 - **Odnarodka narxini VED ham, sotuvchi ham yozadi (4.5 c).** VED yozgan narx — bizning tannarx chegaramiz. Sotuvchi yozgani — mijozga aytiladigan narx. Bu 10-raundda quriladi, qurishdan oldin sizga yana bir bor aytaman.

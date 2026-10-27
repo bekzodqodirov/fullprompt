@@ -4773,10 +4773,18 @@ written, a code with or without a space, the spoken masculine before a number or
 a code only («Накладной замок» is a product), and «Складская/Электронная» only
 opening the line before the noun itself («Электронный накладной замок» is a
 product). The probes' 100 cases joined the corpus (c2178-c2277); the last
-bounded probe looked for COMMON regressions against f44a5a6 only. **67 stay
-known, all rare**, each with the rule it is owed to — 21 of them round 6's own
-two-word totals («Hammasi bo'lib karobka»), which the probe of the undo found
-and the undo did not cause.
+bounded probe looked for COMMON regressions against f44a5a6 only, and found one
+cause: «naming more of the same» read «Чехол iPhone 15» as «Phone case iPhone 15
+Pro», so a second stall's phone cases were dropped as the Excel's (10 common). A
+model's TIER words (pro, max, plus, ultra, lite, se, fe, and the Cyrillic про,
+макс, плюс, ультра, лайт) now part two names — but only right after a word with a
+digit or another tier word, since «Pro hair dryer» and «Plus size» describe and a
+translation drops them (`tierWords`). Nine of the ten pass; «Redmi 13C» against
+«Redmi 13» stays known and COMMON, stated: a glued-suffix rule would also part a
+Cyrillic «А4» from «A4» and «600mm» from «600 мм». **144 stay known** — 143 rare,
+each with the rule it is owed to (21 of them round 6's own two-word totals,
+«Hammasi bo'lib karobka»; 52 the last probe's unit conversions, Chinese numerals
+and translated qualifiers), and that one common.
 
 **#1467 — The corpus is data, and the typecheck needed a bigger heap.** The
 first corpus was a 900 KB TypeScript literal and `pnpm typecheck` died at the

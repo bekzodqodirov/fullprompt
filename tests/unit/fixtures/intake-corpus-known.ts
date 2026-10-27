@@ -12,8 +12,9 @@
  * the fixture), and 67 once the lead undid the three round-6 sub-rules
  * behind the COMMON ones and the probe of that undo joined c2178-c2277
  * (DECISIONS #1466; c2154/c2155 came back by choice — the numbers in a name
- * are compared as written, a unit conversion is not): each a reviewer's input
- * the readers still get wrong. They run
+ * are compared as written, a unit conversion is not), and 144 once the last
+ * bounded probe's cases joined (c2278-c2381, after the model-tier rule):
+ * each a reviewer's input the readers still get wrong. They run
  * as `it.fails`: a fix that makes one pass turns it RED here until its id
  * leaves this list, so the list can only shrink, and nothing on it is
  * forgotten. Never add an id to make a red case quiet — a case that newly
@@ -87,12 +88,37 @@ export const KNOWN_FAILING: ReadonlySet<string> = new Set([
   // written, never a unit conversion — «Cup 0.35L» and «Кружка 350 мл», «Bed
   // sheet 1.5m» and «Простыня 150 см» are two names. Rare.
   'c2154', 'c2155',
-  // pickGoods: one name's Latin words a subset of the other's is «naming more
-  // of the same» (round 6) — «iPhone 15 Pro Max» meets «iPhone 15 Pro». Rare.
-  'c2225',
   // intakeClientLabel: nameOwnWord keeps a contact word only written
   // Capital+lower (or hyphened), so an all-caps shop name joined by a space
   // («MEGA MOBILE», «SMART PHONE», «ТЕХНО КОНТАКТ», «MOBILE CENTER») loses its
   // contact word — a distinct shape of the package's stated trade-off. Rare.
   'c2170', 'c2171', 'c2172', 'c2173', 'c2174', 'c2175', 'c2176', 'c2177',
+
+  // ── r6 final probe (recorded, not fixed — the last bounded probe) ─────────
+  // parseGoods: TITLE_LINE reads «Накладная» as the waybill only before what
+  // a waybill states (a number, a code, a dash, «от/на/для/за») — any other
+  // word after it, a preposition not listed, a slash or full stop, an
+  // adjective not listed («Грузовая», «Сводная»), the noun not opening the
+  // line, or the bare spoken «Накладной» reads the title as a product. Rare.
+  'c2278', 'c2279', 'c2280', 'c2281', 'c2282', 'c2283', 'c2284', 'c2285',
+  'c2286', 'c2287', 'c2288', 'c2289', 'c2290', 'c2291', 'c2292', 'c2293',
+  'c2294', 'c2295', 'c2296', 'c2297', 'c2298', 'c2299', 'c2300', 'c2301',
+  'c2302', 'c2303',
+  // pickGoods: the numbers in a name compare as written, so a unit conversion
+  // («1.2m» / «120 см», «10 000 мАч» / «10000mAh»), a Chinese numeral, a
+  // translated qualifier (front / задние, black / прозрачный) or an
+  // equivalent description (24 pcs / 6 персон) reads as another name or the
+  // same one where the reader cannot tell. Rare.
+  'c2304', 'c2305', 'c2306', 'c2307', 'c2308', 'c2309', 'c2310', 'c2311',
+  'c2312', 'c2313', 'c2314', 'c2315', 'c2316', 'c2317', 'c2318', 'c2319',
+  'c2320', 'c2321', 'c2322', 'c2323', 'c2324', 'c2325', 'c2326', 'c2327',
+  'c2328', 'c2340', 'c2342', 'c2343', 'c2344', 'c2346', 'c2347', 'c2349',
+  'c2354', 'c2355', 'c2356', 'c2357', 'c2358', 'c2359', 'c2360', 'c2365',
+  'c2371', 'c2372', 'c2373', 'c2374', 'c2375', 'c2376', 'c2377', 'c2378',
+  'c2379', 'c2380', 'c2381',
+  // pickGoods: a model suffix glued to its number («Redmi 13C») is no tier
+  // word, so «Чехол Redmi 13» meets the 13C line. Common (one case) — a glued-
+  // suffix rule would also part «А4» in Cyrillic from «A4» and «600mm» from
+  // «600 мм»; stated, not fixed.
+  'c2353',
 ]);
