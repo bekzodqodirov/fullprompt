@@ -1949,6 +1949,20 @@ rastamojka uchun:
      confirm `PASS_EXPIRE_S` ≥ 2 × that figure;
    - time one VED «Saqlash» on a 30-row request before and after P2 (the dictionary read
      and the skipped import asks);
+     - *Measured in the R2 late pass (review regression-19), on a synthetic shaped copy,
+       not his file:* 4 ready quarters × 150k rows with ~250-character names, a 30-row
+       request whose every row carries a full code the file holds 3,000 declarations of in
+       each quarter, every row baza-less and named nothing like the file (the worst case:
+       the import is asked about every row), jit off. The chooser for the 30 codes:
+       **13-14 ms**, against **2-3 ms** for the pre-P2 `newestReadyBatchId` — about 10 ms,
+       0.3 % of the save. The save itself: **3.6-4.1 s on every press** with the import
+       scans asked afresh each time (the shipped behaviour; K's per-save memo spared only
+       twins inside one save), **3.9 s for the first press and 26-43 ms for every later
+       one** with the late pass's cross-save memo (perf-4). The «before P2» save on K's
+       code was not re-run: its cost is the same per-row import scans, which P2 did not
+       add, plus the chooser's 10 ms above. The candidate scan itself is ~1.6× cheaper
+       since perf-1 (30k-row heading 3.4 → 2.2 s; the chooser's two-step count, 12
+       quarters, 40 heavy codes 78.7 → 13.9 ms).
    - **count, on the last 200 rastamojka/podklyuch requests replayed read-only**: how
      often Taxminiy comes out whole, how often absent (by `taxminiyBlock`), and how
      often the zone was guessed. The «absent» count is reported to him beside

@@ -253,7 +253,31 @@ suggestImportBaza(input: {
     refilling a recoded row keeps it (stripped to «6403 → 6403991000») until
     a ✅ records it; a person changing the code takes it off. A heading read
     runs under a statement ceiling (1.5 s on the list → «10 xonali kodni
-    yozing»; 5 s in the pick → the row is skipped and counted).
+    yozing»; 5 s in the pick → the row is skipped and counted). One timeout
+    stands for the whole heading in that pass, whatever the next row's name
+    is called: the scan's cost is the heading's row count.
+  - *Stated, not changed (R2 late pass):*
+    - **The chooser counts every origin** (review P2-NIT-6). The statistics
+      and the bot's 📊 median it chooses for are China-scoped (D3), so a file
+      whose five-plus declarations of a code all come from elsewhere wins
+      the chooser, and its statistics then read no China row while an older
+      file holding China rows of the code sits beside it. Kept: the
+      auto-fill, the 📥 list and the AI pick are not China-scoped and ask
+      the SAME chooser (one chooser, five consumers), so a China-only count
+      would move which file the fill reads; and D3's «does this file name a
+      country at all» needs every row of the code, which the count's
+      `LIMIT` exists to avoid. A China-scoped chooser for the median alone
+      is the lead's call.
+    - **Inside one quarter, more rows beat the later upload** (rule 3,
+      review P2-NIT-7). A corrected re-upload of the SAME quarter that holds
+      fewer rows of a code keeps losing to the original for that code — and
+      the original cannot be deleted once anything is priced off it
+      (`in_use`). For him: upload a correction whole (at least as many rows
+      of every code), or delete the wrong file before anything is priced
+      off it. Not changed to «the newer upload of the same period wins»:
+      two files of one period may also be two halves of one quarter (a
+      split export), and that rule would hide the first half. The lead's
+      call.
 - Rank in SQL: `similarity(name_norm, ${normalize(name)})` via pg_trgm over
   `WHERE batch_id = $newest AND tnved_code = $code`, LIMIT 10 by score.
   UNIT FILTER: candidates whose `unit` differs from the request row's unit
