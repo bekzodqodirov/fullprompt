@@ -215,6 +215,26 @@ describe('the file becomes rows', () => {
     expect(after[0]!.n).toBe(before[0]!.n);
   });
 
+  it('a job re-delivered for a batch that already settled READY leaves its rows alone', async () => {
+    // The process can die between the settle and pg-boss recording the job
+    // as done; the re-delivery then finds a READY batch. It used to wipe the
+    // quarter's rows BEFORE the claim told it the batch was not its own —
+    // a ready batch with nothing in it, which every suggestion reads.
+    const count = async () =>
+      (
+        await db
+          .select({ n: sql<number>`count(*)::int` })
+          .from(customsImportRows)
+          .where(eq(customsImportRows.batchId, batchId))
+      )[0]!.n;
+    const before = await count();
+    expect(before).toBeGreaterThan(0);
+    await expect(
+      runCustomsImport({ batchId, storageKey: madeKeys[0]!, fileName: 'customs-import-sample.xlsx' }),
+    ).rejects.toThrow(BatchGoneError);
+    expect(await count()).toBe(before);
+  });
+
   it('a ready batch nobody has priced off may go; one that priced a job may not', async () => {
     // The wrong file DOES get uploaded — last quarter's, a colleague's, the
     // same one twice — and until it can be removed every suggestion in the

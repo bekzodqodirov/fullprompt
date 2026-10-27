@@ -346,8 +346,15 @@ async function beat(batchId: string, rowCount: number, skipped: number): Promise
  * Parse the stored file into `customs_import_rows` and settle the batch.
  *
  * Idempotent by wipe-and-redo: pg-boss retries a thrown job, so the batch's
- * own rows are deleted first — the batch id is the claim, and a half-written
- * quarter must never be added to a re-run's rows.
+ * own rows are deleted before any is written — the batch id is the claim,
+ * and a half-written quarter must never be added to a re-run's rows. The
+ * wipe comes AFTER the claim, never before it: a job re-delivered for a
+ * batch that already settled READY (the process died between the settle
+ * and pg-boss recording the job as done) used to delete the whole quarter's
+ * rows and only then find the batch was no longer its own — a ready batch
+ * with nothing in it, which every suggestion reads, and a dangling pointer
+ * under every price it had given. A ready batch's rows never change; the
+ * import fill's memo across saves stands on that (workspace.ts).
  */
 export async function runCustomsImport(input: {
   batchId: string;
@@ -355,7 +362,6 @@ export async function runCustomsImport(input: {
   fileName: string;
 }): Promise<ImportOutcome> {
   const { batchId, storageKey, fileName } = input;
-  await db.delete(customsImportRows).where(eq(customsImportRows.batchId, batchId));
   // The first beat is BEFORE a byte is read, and it matters most: opening
   // the stored file is itself something that can hang (a storage blip, a
   // network read of 80 MB). Without it a batch would look dead for the
@@ -370,6 +376,7 @@ export async function runCustomsImport(input: {
   if (!(await beat(batchId, 0, 0))) {
     throw new BatchGoneError(batchId);
   }
+  await db.delete(customsImportRows).where(eq(customsImportRows.batchId, batchId));
   // The ceiling of what this file's dates may claim: the Tashkent day it was
   // UPLOADED — the same `uploadDaySql` the «newest» clamp reads, so the two
   // can never disagree about which day that is (a retry hours later, past
