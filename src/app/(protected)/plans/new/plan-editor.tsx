@@ -732,7 +732,8 @@ export function PlanEditor({
                       {count > 0 ? (
                         <span className="text-brand-700">
                           {count}
-                          <span className="text-ink-500">/{lot.available}</span>
+                          {/* «6/0» about a lot only on the road reads as an error. */}
+                          {lot.available > 0 && <span className="text-ink-500">/{lot.available}</span>}
                         </span>
                       ) : (
                         lot.available
@@ -863,10 +864,11 @@ export function PlanEditor({
           <div className="flex items-center gap-4">
             <span className="whitespace-nowrap text-sm font-bold">
               Σ {totals.boxes} 📦
+              {/* On its own line: at 360 px a wider Σ squeezes both gauges
+                  until «60 kg / 24000 kg» breaks inside its number. */}
               {totals.fromRoad > 0 && (
-                <span className="text-brand-700" data-testid="plan-total-road">
-                  {' '}
-                  (🚚 {totals.fromRoad})
+                <span className="block text-2xs text-brand-700" data-testid="plan-total-road">
+                  🚚 {totals.fromRoad}
                 </span>
               )}
               {totals.places !== totals.boxes && (
