@@ -88,9 +88,10 @@ describe('every refusal names what is missing and who can fix it (§2.5)', () =>
   };
 
   it('no zone and no city → the seller is asked where from', () => {
+    // Re-worded (review product-fit-12): «…qaysi shahardan EKANI yozilmagan».
     expect(refusalOf({ freightZone: null, fromCity: null })).toEqual({
       ok: false,
-      refusal: 'yo‘nalish (zona) tanlanmagan — qaysi shahardan yozilmagan',
+      refusal: 'yo‘nalish (zona) tanlanmagan — qaysi shahardan ekani yozilmagan',
       tail: 'seller',
     });
   });
@@ -111,11 +112,36 @@ describe('every refusal names what is missing and who can fix it (§2.5)', () =>
     // seller a second trip to the customer for the kilos.
     expect(refusalOf({ freightZone: null, fromCity: null, weightKg: null })).toEqual({
       ok: false,
-      refusal: 'yo‘nalish (zona) tanlanmagan — qaysi shahardan yozilmagan; umumiy brutto og‘irlik (kg) yo‘q',
+      refusal: 'yo‘nalish (zona) tanlanmagan — qaysi shahardan ekani yozilmagan; umumiy brutto og‘irlik (kg) yo‘q',
       tail: 'seller',
     });
     // A VED-side gap is never joined to a seller sentence: one fixer per line.
     expect(refusalOf({ freightZone: null, fromCity: 'Foshan', weightKg: null })).toMatchObject({ tail: 'ved' });
+  });
+
+  it('a VED zone refusal still SAYS the seller’s missing measure, as its own sentence (review PF-5)', () => {
+    // The reply goes out once (`sayOnce`): «Foshan» with no kilos used to
+    // name only the zone, and the seller heard about the kilos after the VED
+    // had chosen it — the second trip PF-5 was about.
+    expect(refusalOf({ freightZone: null, fromCity: 'Foshan', weightKg: null })).toEqual({
+      ok: false,
+      refusal: 'yo‘nalish (zona) tanlanmagan — «Foshan»dan zona aniqlanmadi',
+      tail: 'ved',
+      also: { refusal: 'umumiy brutto og‘irlik (kg) yo‘q', tail: 'seller' },
+    });
+    // A read city whose zone has no price — the tariff hole — the same way.
+    expect(
+      refusalOf({ freightZone: null, guessedZone: guessedZoneFor('Horgos', priced), fromCity: 'Horgos', weightKg: null, volumeM3: null, lines: [{ volumeM3: null }] }),
+    ).toEqual({
+      ok: false,
+      refusal: '«Horgos» → O‘zbekiston narxi tarifda hali yo‘q',
+      tail: 'ved',
+      also: { refusal: 'umumiy hajm (m³) va brutto og‘irlik (kg) yo‘q', tail: 'seller' },
+    });
+    // Nothing missing on the seller's side: the VED's sentence alone.
+    expect(refusalOf({ freightZone: null, fromCity: 'Foshan' })).not.toHaveProperty('also');
+    // A stored figure that is not a number is the VED's too — never sent to the seller.
+    expect(refusalOf({ freightZone: null, fromCity: 'Foshan', weightKg: Number.NaN })).not.toHaveProperty('also');
   });
 
   it('a city we READ whose zone has no price is the VED’s hole, never «not understood»', () => {

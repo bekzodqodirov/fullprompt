@@ -171,9 +171,44 @@ export interface AiVedReplyInput {
   budgetSpent?: boolean;
   /** Round 2's two totals; null when nothing was estimated (#790). */
   estimate: AiVedEstimate | null;
+  /**
+   * What the model's baza pick did NOT do, and why (review regression-10) —
+   * the words `prefillReplyText` used to carry and the per-line reply lost:
+   * a row the pick never looked at reads exactly like one the file has no
+   * answer for. REQUIRED-nullable (#790): null when no pick ran at all (no
+   * key, the budget, a person or a close stood the machine down first).
+   */
+  pickLeft: PickLeft | null;
   /** Who reads THIS rendering — the seller's chat, or the card's lenta, which
    * carries the VED's own line under its heading (§2.6). */
   audience: 'chat' | 'lenta';
+}
+
+/** The pick's own counts of what it left for the VED (`pickBazas`). */
+export interface PickLeft {
+  /** Rows past MAX_PICK_ROWS, never shown to the model. */
+  capped: number;
+  /** Picks refused because the chosen declaration's unit does not fit the row. */
+  refused: number;
+  /** Rows a person filled, or a person's save, while the model thought. */
+  overtaken: number;
+  /** Heading reads over their statement ceiling. */
+  timedOut: number;
+  /** The pass's deadline had passed: the pick did not run. */
+  skipped: boolean;
+}
+
+/** One line under the totals, or none when the pick left nothing unsaid. */
+export function pickLeftLine(left: PickLeft | null): string | null {
+  if (!left) return null;
+  const parts = [
+    ...(left.skipped ? ['vaqt yetmadi — AI deklaratsiya tanlamadi'] : []),
+    ...(left.capped > 0 ? [`${left.capped} ta qator ko‘rilmadi (juda ko‘p)`] : []),
+    ...(left.refused > 0 ? [`${left.refused} tasida tanlangan deklaratsiya o‘lchovi mos kelmadi`] : []),
+    ...(left.timedOut > 0 ? [`${left.timedOut} tasini bojxona faylidan o‘qib ulgurilmadi`] : []),
+    ...(left.overtaken > 0 ? [`${left.overtaken} tasida VED o‘zi ishlayapti`] : []),
+  ];
+  return parts.length === 0 ? null : `⚠️ AI bazasini qo‘ymadi: ${parts.join(', ')} — VED to‘ldiradi`;
 }
 
 /** Who can fix a refused road: a fact only the seller or the customer has, or
@@ -209,7 +244,18 @@ export type AiVedFreight =
       /** Under SMALL_FREIGHT_USD — priced honestly, flagged loudly. */
       small: boolean;
     }
-  | { ok: false; refusal: string; tail: FreightTail };
+  | {
+      ok: false;
+      refusal: string;
+      tail: FreightTail;
+      /**
+       * The SELLER's own gap, said beside a refusal the VED owns (review
+       * PF-5): «Foshan» with no brutto kilos used to say only the zone — the
+       * reply goes out once (`sayOnce`), so the seller heard about the kilos
+       * only after the VED had chosen the zone. One fixer per sentence.
+       */
+      also?: { refusal: string; tail: 'seller' };
+    };
 
 /**
  * The tail of a refused road — WHO fixes it (§0.1(7)). Until round 3's
@@ -242,9 +288,21 @@ export function routeWords(f: Extract<AiVedFreight, { ok: true }>): string {
   return f.zoneGuessed ? `${f.routeLabel} — zona «${f.zoneReadFrom ?? ''}»dan taxmin` : f.routeLabel;
 }
 
-/** A refused road, as one line — the words and who fixes them. */
+/** A refused road — the words and who fixes them, and the seller's own gap
+ * on a line of its own when the refusal is the VED's (PF-5). */
 export function roadRefusalLine(f: Extract<AiVedFreight, { ok: false }>): string {
-  return `Yo‘lkira: ⚠️ ${f.refusal} ${FREIGHT_TAIL_WORDS[f.tail]}`;
+  const first = `Yo‘lkira: ⚠️ ${f.refusal} ${FREIGHT_TAIL_WORDS[f.tail]}`;
+  return f.also ? `${first}\n⚠️ ${f.also.refusal} ${FREIGHT_TAIL_WORDS[f.also.tail]}` : first;
+}
+
+/**
+ * A priced road as both machine replies print it (review product-fit-13): the
+ * route, the band, then the figure — one fact a line, the yolkira reply's own
+ * shape. The podklyuch reply nested all three inside one pair of brackets
+ * («…12 m³ (qatorlardan)): ≈ $1920.00»), three wrapped lines at 360 px.
+ */
+export function roadLines(f: Extract<AiVedFreight, { ok: true }>): string[] {
+  return [routeWords(f), f.bandText, `Yo‘lkira: ≈ ${money(f.listUsd)}`, ...(f.small ? [SMALL_ROAD_LINE] : [])];
 }
 
 /** The chip beside a baza — the legend below spells each one out. */
@@ -257,7 +315,10 @@ const SOURCE_MARK: Record<Exclude<BazaSource, null>, string> = {
 
 const SOURCE_LEGEND: Record<Exclude<BazaSource, null>, string> = {
   memory: '🧠 avvalgi muhrdan',
-  import: '📥 bojxona faylidan',
+  // The VED's screen calls the same baza «importdan (taxmin)»: a declaration
+  // the machine (or a person) chose from the file and nobody has ✅ed yet —
+  // while it sits under «Aniq» here (review product-fit-9).
+  import: '📥 bojxona faylidan tanlangan (VED tasdiqlaguncha taxmin)',
   dictionary: '📖 lug‘atdan',
   typed: '',
 };
@@ -303,7 +364,12 @@ function measureWithMark(measureText: string | null, fromTotal: TotalWeightBasis
   const mark = `(og‘irlik ${fromTotal}dan)`;
   if (!measureText) return mark;
   const at = measureText.indexOf(' × ');
-  return at === -1 ? `${measureText} ${mark}` : `${measureText.slice(0, at)} ${mark}${measureText.slice(at)}`;
+  // Beside the measure only when the measure IS kilos (review REG-4): a copy
+  // that priced through the LAW (a per-kg duty half) under a per-dona baza is
+  // said after the shorthand, never between the count and its price.
+  const quantity = at === -1 ? measureText : measureText.slice(0, at);
+  if (!/^[\d.]+ kg$/.test(quantity)) return `${measureText} · og‘irlik ${fromTotal}dan`;
+  return at === -1 ? `${measureText} ${mark}` : `${quantity} ${mark}${measureText.slice(at)}`;
 }
 
 /** The law's parts of a priced line: «boj 10% · QQS 12%». */
@@ -377,12 +443,15 @@ function feeWords(fee: AiVedEstimate['taxminiyFee']): string {
  */
 function vedLine(anyMedian: boolean, guessedFrom: string | null, roadFromLines: boolean): string | null {
   const parts = [
-    ...(anyMedian ? ['📊 baza deklaratsiyalar medianasidan'] : []),
+    ...(anyMedian ? ['📊 baza deklaratsiyalar medianasidan (AI emas)'] : []),
     ...(guessedFrom !== null ? [`zona «${guessedFrom}»dan taxmin`] : []),
     ...(roadFromLines ? ['yo‘lkira hajmi qatorlardan — so‘rovda umumiy hajm yo‘q'] : []),
   ];
   if (parts.length === 0) return null;
-  return `${VED_ESTIMATE_MARK} bu AI taxmini, rasmiy emas — ${parts.join(' · ')}. Muhrlashdan yoki «Bajarildi» (Готово) bosishdan oldin o‘zingiz tekshiring.`;
+  // Source-neutral (review product-fit-11): none of these three is the
+  // model's — a median of declarations (which his 2.1 b chose OVER «AI o‘zi
+  // taxmin qiladi»), a city read by a fixed rule, a Σ of the lines.
+  return `${VED_ESTIMATE_MARK} bu taxminiy javob, rasmiy emas — ${parts.join(' · ')}. Muhrlashdan yoki «Bajarildi» (Готово) bosishdan oldin o‘zingiz tekshiring.`;
 }
 
 /**
@@ -450,7 +519,10 @@ export function aiVedReplyText(input: AiVedReplyInput): string {
   const est = input.estimate;
   if (total !== null) {
     tail.push(`Rastamojka jami: ≈ ${money(total)}`);
-  } else if (!est || (est.exactRows === 0 && est.taxminiyUsd === null)) {
+  } else if (!est || (est.taxminiyUsd === null && (est.exactRows === 0 || est.exactRows === est.rows))) {
+    // `exactRows === rows` with no Taxminiy: every row priced and only the
+    // DECLARATION FEE refused (review law-money-8) — nothing was estimated,
+    // so «Taxminiy: hisoblab bo‘lmadi» would report an estimate that failed.
     // Never a $0 and never a silence: the total is absent BECAUSE something
     // is, and the lines above already say which — or, when only the fee
     // refused, this line does.
@@ -474,8 +546,7 @@ export function aiVedReplyText(input: AiVedReplyInput): string {
 
   if (f) {
     if (f.ok) {
-      tail.push(`Yo‘lkira (${routeWords(f)}, ${f.bandText}): ≈ ${money(f.listUsd)}`);
-      if (f.small) tail.push(SMALL_ROAD_LINE);
+      tail.push(...roadLines(f));
     } else {
       tail.push(roadRefusalLine(f));
     }
@@ -494,6 +565,8 @@ export function aiVedReplyText(input: AiVedReplyInput): string {
     }
   }
   tail.push('⚠️ Rasmiy emas — VED xodimi tasdiqlaydi.');
+  const left = pickLeftLine(input.pickLeft);
+  if (left) tail.push(left);
 
   tail.push(`📄 Sertifikat: ${input.hasCertificate ? 'bor' : 'yo‘q'} (deb hisoblandi)`);
   if (!input.aiConfigured) tail.push('AI sozlanmagan — faqat yozilganidan o‘qildi.');

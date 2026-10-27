@@ -65,7 +65,10 @@ interface RefusalFacts {
  * (#163's lesson for a code that reached the seller in Latin letters).
  */
 export const FREIGHT_WORDS: Record<FreightRefusalCase, (f: RefusalFacts) => string> = {
-  no_city: () => 'yo‘nalish (zona) tanlanmagan — qaysi shahardan yozilmagan',
+  // «…qaysi shahardan EKANI yozilmagan» — «it is not written which city
+  // (it comes) from»; without «ekani» the clause has no subject (review
+  // product-fit-12).
+  no_city: () => 'yo‘nalish (zona) tanlanmagan — qaysi shahardan ekani yozilmagan',
   city_unplaced: (f) => `yo‘nalish (zona) tanlanmagan — «${readCity(f.city)}»dan zona aniqlanmadi`,
   // A city we READ whose zone has no price is never «not understood»: the
   // seller would retype the city, and the price is the VED's to add.
@@ -246,8 +249,14 @@ export function freightAnswerFor(
     const read = guessZone(city);
     // Read, but not priced: `guessedZone` is the priced zones only, so a
     // known city reaching here is a tariff hole, not a misunderstanding.
-    if (read !== null) return refusal('zone_unpriced', { city, zone: read });
-    return refusal('city_unplaced', facts);
+    const zoneRefusal = read !== null ? refusal('zone_unpriced', { city, zone: read }) : refusal('city_unplaced', facts);
+    // Both are the VED's — and a missing brutto or cube is still the
+    // SELLER's, said beside it with its own fixer (review PF-5): the reply
+    // goes out once, so naming only the zone sent him back for the kilos
+    // after the VED had chosen it.
+    return measureGap !== null && FREIGHT_TAIL[measureGap] === 'seller' && !zoneRefusal.ok
+      ? { ...zoneRefusal, also: { refusal: FREIGHT_WORDS[measureGap](facts), tail: 'seller' } }
+      : zoneRefusal;
   }
   if (measureGap !== null) return refusal(measureGap, facts);
 

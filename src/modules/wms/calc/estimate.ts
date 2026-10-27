@@ -50,7 +50,21 @@ export type MedianMiss =
   | 'capped';
 
 export type RowMedian =
-  | { ok: true; bazaUsd: number; basis: BazaBasis; n: number; batchEnd: string; stale: boolean }
+  | {
+      ok: true;
+      bazaUsd: number;
+      basis: BazaBasis;
+      n: number;
+      batchEnd: string;
+      stale: boolean;
+      /**
+       * WHICH series the median stood on — `band:<key>` for a per-piece row,
+       * `all:<unit>` otherwise (review P1-R8). Two rows of one code in two
+       * bands stand on two series, and «N ta deklaratsiyadan» says one figure
+       * per series — a count alone cannot tell 7 and 7 from one 7.
+       */
+      series: string;
+    }
   | { ok: false; miss: MedianMiss; n: number | null };
 
 /** One unit's series for one code: the whole series, plus one series per per-piece band asked. */
@@ -66,14 +80,16 @@ export interface CodeMedianUnit {
  * `few` carries its count — «{n}» is filled by `missWords`.
  */
 export const MISS_WORDS: Record<MedianMiss, string> = {
-  short_code: 'kod to‘liq emas (10 xona kerak)',
+  short_code: 'kod to‘liq emas (10 xonali kod kerak)',
   no_batch: 'bojxona fayli yuklanmagan',
   no_declarations: 'bu kodda Xitoy deklaratsiyasi yo‘q',
   unit_mismatch: 'deklaratsiyalar boshqa o‘lchovda',
   few: `faqat {n} ta deklaratsiya (kamida ${FEW} kerak)`,
   no_piece_weight: 'bir donasining og‘irligi yo‘q — dona bo‘yicha solishtirib bo‘lmadi',
   no_measure: 'qatorda soni ham, og‘irligi ham yo‘q',
-  timeout: 'statistika o‘qilmadi (fayl katta)',
+  // Names the file and who acts (review product-fit-12): «(fayl katta)»
+  // misstated a 1.5 s statement ceiling, or a read that failed, as size.
+  timeout: 'bojxona faylidan o‘qib ulgurilmadi — VED ko‘radi',
   budget: 'vaqt yetmadi — statistika o‘qilmadi',
   capped: 'juda ko‘p qator — taxmin qilinmadi',
 };
@@ -151,6 +167,7 @@ export function medianForRow(input: {
         batchEnd: input.batch.endDate,
         // Inclusive at the boundary day, like the workspace's own `staleFor`.
         stale: input.batch.endDate <= input.staleCutoff,
+        series: unit === 'dona' ? `band:${input.bandKey}` : `all:${unit}`,
       };
     }
     seen = Math.max(seen ?? 0, series.n);
@@ -160,6 +177,16 @@ export function medianForRow(input: {
     return { ok: false, miss: 'no_piece_weight', n: null };
   }
   return { ok: false, miss: 'unit_mismatch', n: null };
+}
+
+/**
+ * How many declarations the medians of one group stood on, as «N ta
+ * deklaratsiyadan» prints them: one count per SERIES (review P1-R8). Rows of
+ * one code and unit share a series and are said once; two per-piece rows in
+ * two ±25 % bands stand on two series — «7 va 7» — whatever the counts.
+ */
+export function declarationCounts(medians: readonly { series: string; n: number }[]): number[] {
+  return [...new Map(medians.map((m) => [m.series, m.n])).values()];
 }
 
 /** A row as the engine prices it, plus the id the medians are keyed by. */
@@ -192,7 +219,7 @@ export type GroupEstimate =
       kind: 'estimated';
       customs: CustomsBreakdown;
       items: PricedItem[];
-      medians: { seq: number; n: number; stale: boolean; batchEnd: string }[];
+      medians: { seq: number; n: number; stale: boolean; batchEnd: string; series: string }[];
     }
   | {
       kind: 'refused';
@@ -331,13 +358,13 @@ export function estimateCustoms(
       continue;
     }
 
-    const used: { seq: number; n: number; stale: boolean; batchEnd: string }[] = [];
+    const used: { seq: number; n: number; stale: boolean; batchEnd: string; series: string }[] = [];
     const shadowItems = g.items.map((i) => {
       const plain = priceable(i);
       if (i.bazaUsd !== null) return plain;
       const m = input.medians.get(i.id);
       if (!m || !m.ok) return plain;
-      used.push({ seq: i.seq, n: m.n, stale: m.stale, batchEnd: m.batchEnd });
+      used.push({ seq: i.seq, n: m.n, stale: m.stale, batchEnd: m.batchEnd, series: m.series });
       return { ...plain, bazaUsd: m.bazaUsd, bazaBasis: m.basis };
     });
     const misses = g.items.flatMap((i) => {

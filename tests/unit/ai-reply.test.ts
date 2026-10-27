@@ -64,6 +64,7 @@ const base: AiVedReplyInput = {
   link: 'https://gsrwms.uz/bitimlar/x',
   aiConfigured: true,
   estimate: null,
+  pickLeft: null,
   audience: 'chat',
 };
 
@@ -123,7 +124,9 @@ describe('the AI-VED reply', () => {
     });
     expect(text).toContain('taxminiy podklyuch (rastamojka + yo‘lkira)');
     expect(text).toContain('Rastamojka jami: ≈ $661.76');
-    expect(text).toContain('Yo‘lkira (Xitoy → O‘zbekiston, 180 kg/m³ · $160/m³ × 12 m³): ≈ $1920.00');
+    // Re-anchored (R2 late pass, review product-fit-13): the road one fact a
+    // line — the yolkira reply's own shape — never nested in one bracket.
+    expect(text).toContain('Xitoy → O‘zbekiston\n180 kg/m³ · $160/m³ × 12 m³\nYo‘lkira: ≈ $1920.00');
     expect(text).toContain('JAMI (rastamojka + yo‘lkira): ≈ $2581.76');
     // The caveat still closes the money, under the jami.
     expect(text.indexOf('JAMI')).toBeLessThan(text.indexOf('Rasmiy emas'));
@@ -153,7 +156,7 @@ describe('the AI-VED reply', () => {
       totalUsd: null,
       freight: road({ listUsd: 500, routeLabel: 'Qashg‘ar → O‘zbekiston', bandText: '90 kg/m³ · $70/m³ × 7 m³' }),
     });
-    expect(text).toContain('Yo‘lkira (Qashg‘ar → O‘zbekiston');
+    expect(text).toContain('Qashg‘ar → O‘zbekiston\n90 kg/m³ · $70/m³ × 7 m³\nYo‘lkira: ≈ $500.00');
     expect(text).toContain('JAMI: hozircha hisoblab bo‘lmadi');
   });
 
@@ -278,7 +281,9 @@ describe('the AI-VED reply', () => {
     expect(aiVedReplyText(base)).toContain('🧠 avvalgi muhrdan');
     expect(aiVedReplyText(base)).not.toContain('📥 bojxona faylidan');
     const both = aiVedReplyText({ ...base, lines: [line(), line({ bazaSource: 'import' })] });
-    expect(both).toContain('🧠 avvalgi muhrdan · 📥 bojxona faylidan');
+    // Re-anchored (review product-fit-9): the screen calls a 📥 baza «importdan
+    // (taxmin)» — the legend says what that is while it stands under «Aniq».
+    expect(both).toContain('🧠 avvalgi muhrdan · 📥 bojxona faylidan tanlangan (VED tasdiqlaguncha taxmin)');
     // A price the VED typed wears no mark and needs no legend line.
     expect(aiVedReplyText({ ...base, lines: [line({ bazaSource: 'typed' })] })).not.toContain(
       'avvalgi muhrdan',
@@ -425,7 +430,7 @@ describe('two customs totals (his 2.2 b, docs/SAKKIZ-R2.md §2.2)', () => {
             misses: [
               '2-qator — faqat 3 ta deklaratsiya (kamida 5 kerak)',
               '3-qator — bu kodda Xitoy deklaratsiyasi yo‘q',
-              '4-qator — kod to‘liq emas (10 xona kerak)',
+              '4-qator — kod to‘liq emas (10 xonali kod kerak)',
               '5-qator — vaqt yetmadi — statistika o‘qilmadi',
             ],
           },
@@ -435,7 +440,7 @@ describe('two customs totals (his 2.2 b, docs/SAKKIZ-R2.md §2.2)', () => {
     });
     expect(text).toContain('   ⚠️ Kurtka: baza yo‘q — Kurtka qishki — VED xodimi qo‘yadi');
     expect(text).toContain(
-      '   📊 taxmin yo‘q: 2-qator — faqat 3 ta deklaratsiya (kamida 5 kerak); 3-qator — bu kodda Xitoy deklaratsiyasi yo‘q; 4-qator — kod to‘liq emas (10 xona kerak) …',
+      '   📊 taxmin yo‘q: 2-qator — faqat 3 ta deklaratsiya (kamida 5 kerak); 3-qator — bu kodda Xitoy deklaratsiyasi yo‘q; 4-qator — kod to‘liq emas (10 xonali kod kerak) …',
     );
   });
 
@@ -508,7 +513,7 @@ describe('the road: the guess said, who fixes a refusal, and the JAMI that knows
   it('a guessed route prints what was READ — and the JAMI says «taxminiy»', () => {
     const text = aiVedReplyText({ ...base, freight: guessed });
     expect(text).toContain(
-      'Yo‘lkira (Qashg‘ar → O‘zbekiston — zona «Китай, Кашгар»dan taxmin, 180 kg/m³ · $160/m³ × 12 m³ (qatorlardan)): ≈ $1920.00',
+      'Qashg‘ar → O‘zbekiston — zona «Китай, Кашгар»dan taxmin\n180 kg/m³ · $160/m³ × 12 m³ (qatorlardan)\nYo‘lkira: ≈ $1920.00',
     );
     // An exact customs total and a guessed zone: the sum is still an estimate.
     expect(text).toContain('JAMI taxminiy (rastamojka + yo‘lkira): ≈ $2581.76');
@@ -531,7 +536,7 @@ describe('the road: the guess said, who fixes a refusal, and the JAMI that knows
     expect(chat).not.toContain('JAMI (');
     const lenta = aiVedReplyText({ ...base, link: null, audience: 'lenta', freight: fromLines }).split('\n');
     expect(lenta[1]).toBe(
-      `${VED_ESTIMATE_MARK} bu AI taxmini, rasmiy emas — yo‘lkira hajmi qatorlardan — so‘rovda umumiy hajm yo‘q. Muhrlashdan yoki «Bajarildi» (Готово) bosishdan oldin o‘zingiz tekshiring.`,
+      `${VED_ESTIMATE_MARK} bu taxminiy javob, rasmiy emas — yo‘lkira hajmi qatorlardan — so‘rovda umumiy hajm yo‘q. Muhrlashdan yoki «Bajarildi» (Готово) bosishdan oldin o‘zingiz tekshiring.`,
     );
   });
 
@@ -580,7 +585,7 @@ describe('the card’s copy: the VED’s line under its heading (his 2.4 c, §2.
   it('is LINE 2, directly under the heading — only on the lenta, only with an estimate', () => {
     const lenta = aiVedReplyText({ ...withEstimate, audience: 'lenta' }).split('\n');
     expect(lenta[1]).toBe(
-      `${VED_ESTIMATE_MARK} bu AI taxmini, rasmiy emas — 📊 baza deklaratsiyalar medianasidan. Muhrlashdan yoki «Bajarildi» (Готово) bosishdan oldin o‘zingiz tekshiring.`,
+      `${VED_ESTIMATE_MARK} bu taxminiy javob, rasmiy emas — 📊 baza deklaratsiyalar medianasidan (AI emas). Muhrlashdan yoki «Bajarildi» (Готово) bosishdan oldin o‘zingiz tekshiring.`,
     );
     expect(lenta.filter((l) => l.startsWith(VED_ESTIMATE_MARK))).toHaveLength(1);
     // The chat never carries it…
@@ -602,7 +607,7 @@ describe('the card’s copy: the VED’s line under its heading (his 2.4 c, §2.
       }),
     }).split('\n');
     expect(lenta[1]).toBe(
-      `${VED_ESTIMATE_MARK} bu AI taxmini, rasmiy emas — 📊 baza deklaratsiyalar medianasidan · zona «Yiwu»dan taxmin. Muhrlashdan yoki «Bajarildi» (Готово) bosishdan oldin o‘zingiz tekshiring.`,
+      `${VED_ESTIMATE_MARK} bu taxminiy javob, rasmiy emas — 📊 baza deklaratsiyalar medianasidan (AI emas) · zona «Yiwu»dan taxmin. Muhrlashdan yoki «Bajarildi» (Готово) bosishdan oldin o‘zingiz tekshiring.`,
     );
   });
 
@@ -646,5 +651,64 @@ describe('Telegram’s 4096 characters never cost the end of the message (§2.9)
     expect(withTotals.length).toBeLessThanOrEqual(TELEGRAM_LIMIT);
     expect(withTotals).toContain('Taxminiy');
     expect(withTotals).toContain('Rasmiy emas');
+  });
+});
+
+describe('R2 late pass — the reply says what it is', () => {
+  it('every row exact and only the FEE refusing: the old two lines, never «Taxminiy: hisoblab bo‘lmadi» (review law-money-8)', () => {
+    // The estimate shape `estimateCustoms` really hands in for this state —
+    // every row exact, nothing estimated, the block the fee's reason — not
+    // the `estimate: null` the earlier fee-only case was built on.
+    const feeWords = 'bojxona yig‘imi: so‘m kursi yo‘q — buxgalter kiritadi yoki yig‘im qo‘lda yoziladi';
+    const text = aiVedReplyText({
+      ...base,
+      totalUsd: null,
+      fee: null,
+      feeRefusal: 'so‘m kursi yo‘q — buxgalter kiritadi yoki yig‘im qo‘lda yoziladi',
+      lines: [line(), line({ label: 'Sumka' })],
+      estimate: twoTotals({ rows: 2, exactRows: 2, exactUsd: 993.92, taxminiyUsd: null, taxminiyFee: null, taxminiyBlock: feeWords }),
+    });
+    expect(text).toContain('Rastamojka jami: hozircha hisoblab bo‘lmadi.\n⚠️ Bojxona yig‘imi: so‘m kursi yo‘q');
+    expect(text).not.toContain('Aniq:');
+    expect(text).not.toContain('Taxminiy');
+  });
+
+  it('the pick’s confessions are said under the totals, in one line (review regression-10)', () => {
+    const left = { capped: 12, refused: 2, overtaken: 0, timedOut: 1, skipped: false };
+    const text = aiVedReplyText({ ...base, pickLeft: left });
+    expect(text).toContain(
+      '⚠️ AI bazasini qo‘ymadi: 12 ta qator ko‘rilmadi (juda ko‘p), 2 tasida tanlangan deklaratsiya o‘lchovi mos kelmadi, 1 tasini bojxona faylidan o‘qib ulgurilmadi — VED to‘ldiradi',
+    );
+    expect(aiVedReplyText({ ...base, pickLeft: { ...left, capped: 0, refused: 0, timedOut: 0, skipped: true } })).toContain(
+      '⚠️ AI bazasini qo‘ymadi: vaqt yetmadi — AI deklaratsiya tanlamadi — VED to‘ldiradi',
+    );
+    // Nothing left unsaid, or no pick at all: no line.
+    expect(aiVedReplyText({ ...base, pickLeft: { ...left, capped: 0, refused: 0, timedOut: 0 } })).not.toContain('AI bazasini');
+    expect(aiVedReplyText(base)).not.toContain('AI bazasini');
+  });
+
+  it('a VED zone refusal still names the seller’s own missing kilos, on its own line (review PF-5)', () => {
+    const text = aiVedReplyText({
+      ...base,
+      freight: {
+        ok: false,
+        refusal: 'yo‘nalish (zona) tanlanmagan — «Foshan»dan zona aniqlanmadi',
+        tail: 'ved',
+        also: { refusal: 'umumiy brutto og‘irlik (kg) yo‘q', tail: 'seller' },
+      },
+    });
+    expect(text).toContain(
+      'Yo‘lkira: ⚠️ yo‘nalish (zona) tanlanmagan — «Foshan»dan zona aniqlanmadi — VED xodimi hisoblaydi\n' +
+        '⚠️ umumiy brutto og‘irlik (kg) yo‘q — mijozdan so‘rab, kartadagi lentaga yozing',
+    );
+  });
+
+  it('the brutto mark never sits between a COUNT and its price (review REG-4)', () => {
+    const text = aiVedReplyText({
+      ...base,
+      lines: [line({ measureText: '300 dona × $2/dona', weightFromTotal: 'brutto' })],
+    });
+    expect(text).not.toContain('300 dona (og‘irlik');
+    expect(text).toContain('300 dona × $2/dona · og‘irlik bruttodan');
   });
 });

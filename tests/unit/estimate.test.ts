@@ -4,6 +4,7 @@ import {
   TAXMINIY_BLOCK_WORDS,
   UNIT_BASIS,
   bandKeyOf,
+  declarationCounts,
   estimateCustoms,
   estimateInputOf,
   medianForRow,
@@ -77,6 +78,7 @@ const median = (bazaUsd: number, n = 6, over: Partial<Extract<RowMedian, { ok: t
   n,
   batchEnd: '2026-09-30',
   stale: false,
+  series: 'all:kg',
   ...over,
 });
 const missed = (miss: Extract<RowMedian, { ok: false }>['miss'], n: number | null = null): RowMedian => ({
@@ -290,7 +292,7 @@ describe('(h) which median a row takes', () => {
       bandKey: 'k1',
       rows: [series('kg', 6, 4.1), series('dona', 30, 2, [['k1', 9, 1.5]])],
     });
-    expect(out).toEqual({ ok: true, bazaUsd: 4.1, basis: 'kg', n: 6, batchEnd: '2026-09-30', stale: false });
+    expect(out).toEqual({ ok: true, bazaUsd: 4.1, basis: 'kg', n: 6, batchEnd: '2026-09-30', stale: false, series: 'all:kg' });
   });
 
   it('a dona row reads ITS OWN per-piece band — two rows, two bands, one statement’s answer', () => {
@@ -373,14 +375,14 @@ describe('the small rules', () => {
       refused: '⚠️ bazasi yo‘q qatorlarni VED to‘ldiradi',
     });
     expect(MISS_WORDS).toEqual({
-      short_code: 'kod to‘liq emas (10 xona kerak)',
+      short_code: 'kod to‘liq emas (10 xonali kod kerak)',
       no_batch: 'bojxona fayli yuklanmagan',
       no_declarations: 'bu kodda Xitoy deklaratsiyasi yo‘q',
       unit_mismatch: 'deklaratsiyalar boshqa o‘lchovda',
       few: 'faqat {n} ta deklaratsiya (kamida 5 kerak)',
       no_piece_weight: 'bir donasining og‘irligi yo‘q — dona bo‘yicha solishtirib bo‘lmadi',
       no_measure: 'qatorda soni ham, og‘irligi ham yo‘q',
-      timeout: 'statistika o‘qilmadi (fayl katta)',
+      timeout: 'bojxona faylidan o‘qib ulgurilmadi — VED ko‘radi',
       budget: 'vaqt yetmadi — statistika o‘qilmadi',
       capped: 'juda ko‘p qator — taxmin qilinmadi',
     });
@@ -391,5 +393,32 @@ describe('the small rules', () => {
       expect(words.length, miss).toBeGreaterThan(5);
       expect(words.includes('{n}'), miss).toBe(miss === 'few');
     }
+  });
+});
+
+describe('«N ta deklaratsiyadan» — one count per series (review P1-R8)', () => {
+  const base = { batch: { endDate: '2026-09-30' }, staleCutoff: '2026-07-01' };
+  it('two per-piece rows of one code in two bands, both n = 7: two series, «7 va 7»', () => {
+    const rows = [
+      {
+        unit: 'dona' as const,
+        n: 40,
+        p50: 2,
+        bands: new Map([
+          ['k1', { n: 7, p50: 1.5 }],
+          ['k2', { n: 7, p50: 3 }],
+        ]),
+      },
+    ];
+    const a = medianForRow({ ...base, allowed: ['dona'], bandKey: 'k1', rows });
+    const b = medianForRow({ ...base, allowed: ['dona'], bandKey: 'k2', rows });
+    if (!a.ok || !b.ok) throw new Error('the premise: both rows priced');
+    expect(a.series).not.toBe(b.series);
+    expect(declarationCounts([a, b])).toEqual([7, 7]);
+    // Rows of one series are said once.
+    expect(declarationCounts([a, a, b])).toEqual([7, 7]);
+    const kg = medianForRow({ ...base, allowed: ['kg'], bandKey: null, rows: [{ unit: 'kg', n: 23, p50: 4, bands: new Map() }] });
+    if (!kg.ok) throw new Error('the premise: priced per kg');
+    expect(declarationCounts([kg, kg])).toEqual([23]);
   });
 });

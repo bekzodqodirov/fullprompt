@@ -8,14 +8,7 @@ import type {
 } from './pricing';
 import { needPhraseUz, needUnitOf } from './needs';
 import type { SealBlocker } from './workspace';
-import {
-  SMALL_ROAD_LINE,
-  fitTelegram,
-  money,
-  roadRefusalLine,
-  routeWords,
-  type AiVedFreight,
-} from './ai-reply';
+import { fitTelegram, roadLines, roadRefusalLine, type AiVedFreight } from './ai-reply';
 import { TARIFF_ESTIMATE_WORD, TARIFF_REPLY_TITLE, VED_ESTIMATE_MARK } from './reply-heads';
 
 /**
@@ -183,10 +176,8 @@ export function tariffReplyText(input: TariffReplyInput): string {
     out.push(`${VED_ESTIMATE_MARK} zona «${f.zoneReadFrom ?? ''}»dan taxmin, rasmiy emas — zonani o‘zingiz tanlang.`);
   }
   if (f.ok) {
-    out.push(routeWords(f));
-    out.push(f.bandText);
-    out.push(`Yo‘lkira: ≈ ${money(f.listUsd)}`);
-    if (f.small) out.push(SMALL_ROAD_LINE);
+    // The road's own lines — ONE shape for this reply and the podklyuch one.
+    out.push(...roadLines(f));
     out.push('⚠️ Rasmiy emas — VED xodimi tasdiqlaydi.');
   } else {
     // Law 6: a refusal is a sentence, and it says who can fix it.

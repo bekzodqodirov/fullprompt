@@ -62,6 +62,9 @@ const CODE_C = '3926100000'; // per piece: six in the ±25 % band, six outside i
 // 20 % with a floor of $3 a piece (PP-3818's seeded row) — a row stating only
 // kilos is refused `measure_missing`, the customer's fact.
 const CODE_FLOOR = '4203100001';
+// 20 % with a floor of $0.30 a KILO (PP-3818's 0403 heading) — a per-kg
+// duty half, which a copied brutto total enters whatever the baza's unit.
+const CODE_KG_FLOOR = '0403100000';
 // The SEALED memory's product (0096): long words, so the six-digit suffix the
 // other rows share cannot carry a `similarity` of 0.6 on its own.
 const MEMORY_NAME = `Alyuminiy profil derazabop ${SUFFIX}`;
@@ -195,6 +198,15 @@ async function sealMemory(): Promise<void> {
 }
 
 /** A person types a baza on the row named so — the exact half of a reply. */
+/** A per-PIECE baza typed by hand on the named row — `typeBaza`'s twin. */
+async function perPiece(requestId: string, name: string, bazaUsd: number): Promise<void> {
+  await saveTable(requestId, { items: [], adds: [] }, ctx());
+  const all = await db.select().from(calcRequestItems).where(eq(calcRequestItems.requestId, requestId));
+  const row = all.find((r) => r.name === name);
+  if (!row) throw new Error(`no row named ${name}`);
+  await saveTable(requestId, { items: [{ id: row.id, seq: row.seq, bazaUsd, bazaBasis: 'unit' }], adds: [] }, ctx());
+}
+
 async function typeBaza(requestId: string, name: string, bazaUsd: number): Promise<void> {
   await saveTable(requestId, { items: [], adds: [] }, ctx());
   const all = await db.select().from(calcRequestItems).where(eq(calcRequestItems.requestId, requestId));
@@ -315,7 +327,7 @@ describe('(5)(6)(7) the road: the tariff at once, the guess said and never store
     await typeBaza(id, `Profil ${SUFFIX} b`, 4);
     const out = await aiPrefill(id, { actorId: null }, { configured: false });
     // Customs exact: 92.80 + the fee 32.96 = 125.76; the road $1100 on the guess.
-    expect(out.text).toContain('Yo‘lkira (Xitoy → O‘zbekiston — zona «Yiwu»dan taxmin, 50 kg/m³ · $110/m³ × 10 m³): ≈ $1100.00');
+    expect(out.text).toContain('Xitoy → O‘zbekiston — zona «Yiwu»dan taxmin\n50 kg/m³ · $110/m³ × 10 m³\nYo‘lkira: ≈ $1100.00');
     expect(out.text).toContain('JAMI taxminiy (rastamojka + yo‘lkira): ≈ $1225.76');
     const [req] = await db.select({ freightZone: calcRequests.freightZone }).from(calcRequests).where(eq(calcRequests.id, id));
     expect(req!.freightZone).toBeNull();
@@ -373,7 +385,7 @@ describe('(7c) a road on a cube the request does NOT hold is never summed as the
     // Customs exact: 92.80 + 1 BHM 32.96 = 125.76; the road 504 ÷ 2.8 = 180 →
     // $160 × 2.8 = $448, priced on the lines' Σ and labelled so.
     expect(out.text).toContain('Rastamojka jami: ≈ $125.76');
-    expect(out.text).toContain('180 kg/m³ · $160/m³ × 2.8 m³ (qatorlardan)): ≈ $448.00');
+    expect(out.text).toContain('180 kg/m³ · $160/m³ × 2.8 m³ (qatorlardan)\nYo‘lkira: ≈ $448.00');
     expect(out.text).toContain('JAMI taxminiy (rastamojka + yo‘lkira): ≈ $573.76');
     expect(out.text).not.toContain('JAMI (');
     // …and the VED reading the card is told why, under the heading.
@@ -483,6 +495,32 @@ describe('(10) «(og‘irlik bruttodan)» wherever the measure is printed (⭐ o
     // 300 kg × $4 = 1200; duty 10 % = 120; VAT 12 % of 1320 = 158.40 → 278.40.
     expect(out.text).toContain(`1. Profil ${SUFFIX} brutto · ${CODE_A} · 300 kg (og‘irlik bruttodan) × $4/kg\n`);
     expect(out.text).toContain('   boj 10% · QQS 12% → $278.40');
+  });
+
+  it('(c) a row priced per DONA prints no mark — the copied kilos priced nothing (review REG-4)', async () => {
+    // The commonest bot shape: one line, a count, the shipment's brutto total
+    // copied onto it. Priced per piece under an advalor law, the weight never
+    // entered the figure — «300 dona (og‘irlik bruttodan)» read as if the
+    // COUNT were brutto.
+    const name = `Profil ${SUFFIX} dona`;
+    const facts = { weightKg: 300, goods: [{ name, tnvedCode: CODE_A, quantity: 300 }] };
+    const id = await open('rastamojka', landingItems(facts), { weightKg: facts.weightKg });
+    await perPiece(id, name, 2);
+    const out = await aiPrefill(id, { actorId: null }, { configured: false });
+    // 300 × $2 = 600; duty 10 % = 60; VAT 12 % of 660 = 79.20 → 139.20.
+    expect(out.text).toContain(`1. ${name} · ${CODE_A} · 300 dona × $2/dona\n`);
+    expect(out.text).toContain('   boj 10% · QQS 12% → $139.20');
+    expect(out.text).not.toContain('bruttodan');
+  });
+
+  it('(d) …but a law whose duty half counts KILOS did price the copy — said after the shorthand', async () => {
+    // 0403…: 20 %, at least $0.30/kg (PP-3818's seeded max-per-kg row).
+    const name = `Qatiq ${SUFFIX} dona`;
+    const facts = { weightKg: 300, goods: [{ name, tnvedCode: CODE_KG_FLOOR, quantity: 300 }] };
+    const id = await open('rastamojka', landingItems(facts), { weightKg: facts.weightKg });
+    await perPiece(id, name, 2);
+    const out = await aiPrefill(id, { actorId: null }, { configured: false });
+    expect(out.text).toContain(`1. ${name} · ${CODE_KG_FLOOR} · 300 dona × $2/dona · og‘irlik bruttodan\n`);
   });
 
   it('(b) the same row REFUSED by a $/dona floor still prints its measure — and the mark — and sends the count to the seller', async () => {

@@ -16,7 +16,14 @@ import {
 } from './pricing';
 import { basisLabel } from './basis';
 import { loadWorkspace, proposeGroups, requestClock, saveTable, type Workspace } from './workspace';
-import { aiVedReplyText, type AiVedEstimate, type AiVedFreight, type AiVedLine, type AiVedLineEstimate } from './ai-reply';
+import {
+  aiVedReplyText,
+  type AiVedEstimate,
+  type AiVedFreight,
+  type AiVedLine,
+  type AiVedLineEstimate,
+  type PickLeft,
+} from './ai-reply';
 import { calcJobHrefFor } from './card-door';
 import { dutyText } from './duty-text';
 import { blockerText, feeRefusalText, tariffReplyText } from './prefill-reply';
@@ -25,6 +32,7 @@ import { freightAnswerFor } from './freight-answer';
 import { applyMemory, pickBazas } from './prefill-steps';
 import {
   TAXMINIY_BLOCK_WORDS,
+  declarationCounts,
   estimateCustoms,
   estimateInputOf,
   missWords,
@@ -439,10 +447,16 @@ export async function aiPrefill(
   //    candidates and picks a DECLARATION, never a number — unless the
   //    pass's deadline has passed, which is said rather than overrun.
   let picked = 0;
-  if (configured && standing() && !late('step 3') && (await stillOurs('step 3'))) {
+  /** What the pick left for the VED — said in the reply, never only logged
+   * (review regression-10). Null: no pick ran. */
+  let pickLeft: PickLeft | null = null;
+  if (configured && standing() && late('step 3')) {
+    pickLeft = { capped: 0, refused: 0, overtaken: 0, timedOut: 0, skipped: true };
+  } else if (configured && standing() && (await stillOurs('step 3'))) {
     try {
       const out = await pickBazas(requestId, ctx, pick, rev);
       picked = out.picked;
+      pickLeft = { capped: out.capped, refused: out.refused, overtaken: out.overtaken, timedOut: out.timedOut, skipped: false };
       dictionaryFilled += out.dictionaryFilled;
       memoryFilled += out.memoryFilled;
       if (out.picked > 0) wrote = true;
@@ -535,6 +549,9 @@ export async function aiPrefill(
       aiConfigured: hasKey,
       budgetSpent: hasKey && budgetLeft <= 0,
       estimate: estimate ? totalsWords(estimate) : null,
+      // A pick skipped past the deadline is news only while a row still
+      // waits for a baza; with none, there was nothing it could have chosen.
+      pickLeft: pickLeft?.skipped && !ws.groups.some((g) => g.items.some((i) => i.bazaUsd === null)) ? null : pickLeft,
       audience,
     });
 
@@ -757,16 +774,36 @@ function replyLines(ws: Workspace, estimate: CustomsEstimate | null): AiVedLine[
       // the mark on exactly the line that asks the seller for a fact.
       // Which total it came from rides along (review PF-3): only a single-line
       // job copies one, so a group carries at most one basis.
-      weightFromTotal:
-        g.items
-          .filter((i) => i.bazaUsd !== null || ge?.kind === 'estimated')
-          .map((i) => weightFromTotalNote(i.note))
-          .find((b) => b !== null) ?? null,
+      // …and only where the copied weight ENTERED the figure (review REG-4):
+      // a row priced per KILO — on its own baza or its 📊 shadow's — or a law
+      // whose specific half or excise counts kilos. A single-line job copies
+      // the total onto every row it lands, and a row priced per dona printed
+      // «300 dona (og‘irlik bruttodan) × $2/dona», as if the count were brutto.
+      weightFromTotal: weightMark(g, ge),
       // The workspace's own age rule for the row's baza (`bazaStale`, law 5),
       // asked of the rows that HAVE one — the VED's screen wears the same ⚠.
       staleBaza: g.items.some((i) => i.bazaUsd !== null && i.bazaStale),
     };
   });
+}
+
+/** The brutto/netto mark of a printed group, where the copied weight priced it. */
+function weightMark(g: Workspace['groups'][number], ge: GroupEstimate | null): AiVedLine['weightFromTotal'] {
+  const lawWeighs =
+    (g.dutyMode !== null && g.dutyMode !== 'advalor' && g.dutyUnit === 'kg') ||
+    (g.exciseSpecific !== null && g.exciseUnit === 'kg');
+  // An estimated group's shadow rows stand in the same order as its rows.
+  const shadow = ge?.kind === 'estimated' ? ge.items : null;
+  return (
+    g.items
+      .filter((i, k) => {
+        if (i.bazaUsd === null && shadow === null) return false;
+        const basis = i.bazaUsd !== null ? i.bazaBasis : (shadow?.[k]?.bazaBasis ?? null);
+        return basis === 'kg' || lawWeighs;
+      })
+      .map((i) => weightFromTotalNote(i.note))
+      .find((b) => b !== null) ?? null
+  );
 }
 
 /** A group's 📊 line, or the words for why its rows got none. */
@@ -776,8 +813,7 @@ function estimateLine(ge: GroupEstimate | null): AiVedLineEstimate | null {
       priced: true,
       customsUsd: ge.customs.customsUsd,
       measureText: measureTextOf(ge.items),
-      // Rows of one code share a series: the same count said once.
-      declarations: [...new Set(ge.medians.map((m) => m.n))],
+      declarations: declarationCounts(ge.medians),
       oldFileEnd: ge.medians.find((m) => m.stale)?.batchEnd ?? null,
     };
   }

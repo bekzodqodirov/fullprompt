@@ -273,8 +273,9 @@ describe('the machine carries a job as far as it honestly can', () => {
     expect(ws!.freight?.ok).toBe(true);
     const list = ws!.freight!.ok ? ws!.freight!.listUsd : NaN;
     expect(out.text).toContain('taxminiy podklyuch (rastamojka + yo‘lkira)');
-    expect(out.text).toContain(`Yo‘lkira (Xitoy → O‘zbekiston, 50 kg/m³ · `);
-    expect(out.text).toContain(`× 10 m³): ≈ $${list.toFixed(2)}`);
+    // One fact a line (review product-fit-13): route, band, figure.
+    expect(out.text).toContain('Xitoy → O‘zbekiston\n50 kg/m³ · ');
+    expect(out.text).toContain(`× 10 m³\nYo‘lkira: ≈ $${list.toFixed(2)}`);
     // The list price, never a discount — and the sum of the two halves.
     expect(out.freightUsd).toBe(list);
     expect(out.customsUsd).not.toBeNull();
@@ -302,7 +303,7 @@ describe('the machine carries a job as far as it honestly can', () => {
       configured: true,
     });
     expect(out.text).toContain(
-      'Yo‘lkira: ⚠️ yo‘nalish (zona) tanlanmagan — qaysi shahardan yozilmagan — mijozdan so‘rab, kartadagi lentaga yozing',
+      'Yo‘lkira: ⚠️ yo‘nalish (zona) tanlanmagan — qaysi shahardan ekani yozilmagan — mijozdan so‘rab, kartadagi lentaga yozing',
     );
     expect(out.text).toContain('JAMI: hozircha hisoblab bo‘lmadi');
     expect(out.text).not.toContain('$0.00');

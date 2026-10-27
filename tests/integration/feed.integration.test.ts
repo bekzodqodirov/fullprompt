@@ -497,6 +497,7 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
     link: null,
     aiConfigured: true,
     estimate: null,
+    pickLeft: null,
     audience: 'lenta',
   });
   // §2.4's yolkira reply, the stored-zone shape: no VED line.
@@ -510,7 +511,7 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
   // §2.6: the VED line sits on line 2, directly under the heading.
   const estimateText = [
     `${AI_REPLY_HEAD} · taxminiy rastamojka · GS777 · B-000067`,
-    `${VED_ESTIMATE_MARK} bu AI taxmini, rasmiy emas — 📊 baza deklaratsiyalar medianasidan. Muhrlashdan yoki «Bajarildi» (Готово) bosishdan oldin o‘zingiz tekshiring.`,
+    `${VED_ESTIMATE_MARK} bu taxminiy javob, rasmiy emas — 📊 baza deklaratsiyalar medianasidan (AI emas). Muhrlashdan yoki «Bajarildi» (Готово) bosishdan oldin o‘zingiz tekshiring.`,
     '1. Kurtka · 6201400000 · 300 kg × $3.80/kg 📊',
   ].join('\n');
   // A REFUSED yolkira reply, by the real renderer: no figure at all, so no
