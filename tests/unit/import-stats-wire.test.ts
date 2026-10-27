@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { sql } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { candidateStatement, chinaOriginSql, codeBounds, codeMatchSql } from '@/modules/wms/customs/import-stats-sql';
 
@@ -63,6 +64,57 @@ describe('3. the ceiling transaction body touches only its tx (#714)', () => {
     expect(body).toContain('tx.execute');
     expect(body).not.toMatch(/\bdb\./);
     expect(body).not.toContain('getSetting');
+  });
+
+  it('the heading read’s ceiling body calls nothing but its own tx (review P2-NIT-5)', () => {
+    // `queryCandidates` runs on the ceiling transaction for a heading, and
+    // tx-pool.test.ts does not scan `underCeiling` bodies: a `getSetting(` or
+    // a `db.` added there would hold two of the ten pool connections per 📥
+    // and per pick, unseen. So every CALL in it — and in the ceiling
+    // callback that reaches it — is on an allowlist of the tx and pure
+    // helpers; anything else must be read before the transaction opens.
+    const file = ts.createSourceFile(
+      'import-baza.ts',
+      readFileSync('src/modules/wms/customs/import-baza.ts', 'utf8'),
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    const callsIn = (node: ts.Node): string[] => {
+      const out: string[] = [];
+      const visit = (n: ts.Node) => {
+        if (ts.isCallExpression(n)) out.push(n.expression.getText(file));
+        ts.forEachChild(n, visit);
+      };
+      visit(node);
+      return out;
+    };
+    let query: ts.FunctionDeclaration | undefined;
+    let ceiling: ts.ArrowFunction | undefined;
+    const find = (n: ts.Node) => {
+      if (ts.isFunctionDeclaration(n) && n.name?.text === 'queryCandidates') query = n;
+      if (
+        ts.isCallExpression(n) &&
+        n.expression.getText(file) === 'underCeiling' &&
+        n.arguments[0] &&
+        ts.isArrowFunction(n.arguments[0])
+      ) {
+        ceiling = n.arguments[0];
+      }
+      ts.forEachChild(n, find);
+    };
+    find(file);
+    expect(query, 'queryCandidates moved — re-anchor this fence').toBeDefined();
+    expect(ceiling, 'the heading read left underCeiling — re-anchor this fence').toBeDefined();
+    const PURE = new Set(['candidateStatement', 'Number', 'rows.map', 'input.units.includes', 'namedSeriesOf', 'jsonRows']);
+    const queryCalls = callsIn(query!.body!);
+    expect(queryCalls).toContain('exec.execute');
+    for (const call of queryCalls) {
+      expect(call === 'exec.execute' || PURE.has(call), `queryCandidates calls ${call}`).toBe(true);
+    }
+    for (const call of callsIn(ceiling!.body)) {
+      expect(['tx.execute', 'String', 'ask'].includes(call), `the ceiling body calls ${call}`).toBe(true);
+    }
+    expect(query!.body!.getText(file)).not.toMatch(/\bdb\b/);
   });
 });
 
