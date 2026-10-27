@@ -30680,7 +30680,7 @@
    "severity": "rare"
   },
   {
-   "id": "c2278",
+   "id": "c2382",
    "input": "Kurtka 300 dona\nNetto 1200 kg\nYiwu → Toshkent",
    "expected": {
     "goods": {
@@ -30708,7 +30708,7 @@
    "severity": "common"
   },
   {
-   "id": "c2279",
+   "id": "c2383",
    "input": "Kurtka 300 dona\nN.W. 1200 kg\nYiwu → Toshkent",
    "expected": {
     "weightKg": null,
@@ -30727,7 +30727,7 @@
    "severity": "common"
   },
   {
-   "id": "c2280",
+   "id": "c2384",
    "input": "Brutto 1300 kg, Netto 1200 kg\nKurtka 300 dona\nYiwu → Toshkent",
    "expected": {
     "weightKg": 1300
@@ -30740,7 +30740,7 @@
    "severity": "common"
   },
   {
-   "id": "c2281",
+   "id": "c2385",
    "input": "Kurtka 300 dona 400 kg 5 kub\nShim 200 dona 400 kg 5 kub\nYiwu → Toshkent",
    "expected": {
     "goods": {
@@ -30780,7 +30780,7 @@
    "severity": "common"
   },
   {
-   "id": "c2282",
+   "id": "c2386",
    "input": "Kurtka 300 dona 400 kg 4 kub\nShim 200 dona 300 kg 6 kub\nJami 700 kg 10 kub",
    "expected": {
     "goods": {

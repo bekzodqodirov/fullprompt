@@ -29,7 +29,7 @@ import type { NeedLaw } from '@/modules/wms/calc/needs';
  *    line's copied weight was labelled «brutto» on the card and in Telegram,
  *    while the AI izohi on the same lenta said «faqat netto».
  *
- * The corpus pins the reader's freight-safe default (c2278-c2282); this file
+ * The corpus pins the reader's freight-safe default (c2382-c2386); this file
  * pins what depends on the SECTION, the model's half, and the labels.
  */
 const noLaws = new Map<string, NeedLaw>();
