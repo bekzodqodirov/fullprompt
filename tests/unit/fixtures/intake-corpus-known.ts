@@ -21,16 +21,9 @@ export const KNOWN_FAILING: ReadonlySet<string> = new Set([
   'c2075', 'c2076',
 
   // ── r5-probe collector ───────────────────────────────────────────────────
-  // intakeClientLabel: nameOwnWord keeps a capitalised contact word of four
-  // letters or more as the name's own word — a messenger's brand («WhatsApp»,
-  // «Telegram», «Viber») or an all-caps «TELEFON» joins the lead's name.
-  'c2077', 'c2078', 'c2079', 'c2080', 'c2081', 'c2082',
-  // pickGoods: halfMeets' clash compares SCRIPTS, so the model's «Russian
-  // (Chinese)» line whose outside shares a script with the cell's non-Han half
-  // (the cell's own Russian or English, a Latin «Bluetooth»/«XL», another word
-  // order) no longer meets the Excel's line and the order lands twice.
-  'c2083', 'c2084', 'c2085', 'c2086', 'c2087', 'c2088', 'c2089',
-  // clientAnswer: readCustomerText believes a word and two figures on the
-  // repeat even when one is a DECIMAL — no stall number or phone group has one.
+  // clientAnswer: a word and two figures is believed on the repeat even when
+  // one is a DECIMAL — no stall number or phone group has one. readCustomerText
+  // asks `figureRow` alone now (round 6), so the rule to change is that one
+  // (intake-manual.ts, the typed package's), which still wants three figures.
   'c2090', 'c2091', 'c2092',
 ]);

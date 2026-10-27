@@ -371,6 +371,13 @@ function hintLines(raw: string): string[] {
 const isBareLabel = (line: string) => /[:：]$/.test(line);
 
 /**
+ * The messengers a number is ON — «Sardor WhatsApp +998 …», «Jasur Viber …».
+ * The keyboard capitalises their names whatever they mean, so their capital
+ * says nothing of a shop (`nameOwnWord`, round-5 probe, collector). Lower case.
+ */
+const MESSENGERS = ['whatsapp', 'вотсап', 'ватсап', 'telegram', 'телеграм', 'tg', 'viber', 'wechat'];
+
+/**
  * The words a contact line carries beside its value, in the spellings a
  * seller writes them — «Tel», «Telefon raqami», «Номер телефона», «Phone
  * number», «WhatsApp», «Kontakt», «Aloqa», «T:», «ID», «Mijoz kodi» — and the
@@ -385,7 +392,7 @@ const CONTACT_WORDS = new Set([
   'тел', 'телефон', 'телефона', 'номер', 'номера', 'моб', 'мобильный', 'контакт', 'контакты', 'клиент',
   'клиента', 'код', 'т', 'и', 'или',
   'phone', 'number', 'no', 'mobile', 'contact', 'client', 'code', 'and', 'or',
-  'whatsapp', 'вотсап', 'ватсап', 'telegram', 'телеграм', 'tg', 'viber', 'wechat',
+  ...MESSENGERS,
 ]);
 
 /** Where a cut was made in a line: a character no seller types. */
@@ -508,11 +515,19 @@ const TAIL_WORD = new RegExp(String.raw`([^\p{L}\p{N}]*)(${WORD})([^\p{L}\p{N}]*
  * Market» — and never the phone's label (round-4 probe, collector: the name
  * lost its last word). A label is written as one: lower case («Ali aka tel»),
  * short («Ali Tel»), with its mark («Telefon:»), or apart from any name
- * («Mijoz GS777 …»).
+ * («Mijoz GS777 …»). The capital counts only where the WRITER chose it — a
+ * capital before lower case, never a messenger's name (`MESSENGERS`) nor a
+ * word of an all-caps line, which every word passes («SARDOR TELEFON …»,
+ * round-5 probe, collector) — bar a word HYPHENED to the name, which no label
+ * ever is: «UZ-MOBILE» is a shop in capitals. The cost, an all-caps shop name
+ * joined by a space: «SMART MOBILE 90 …» names the lead «SMART» (the summary
+ * still prints the whole line, `intakeClientSummary`).
  */
 function nameOwnWord(word: string, joint: string, neighbour: string | undefined, mark: string): boolean {
+  const hyphened = /[-–]/u.test(joint);
   return (
-    /^\p{Lu}/u.test(word) &&
+    (/^\p{Lu}\p{Ll}/u.test(word) || (hyphened && /^\p{Lu}/u.test(word))) &&
+    !MESSENGERS.includes(word.toLowerCase()) &&
     word.replace(/[^\p{L}]/gu, '').length >= 4 &&
     /^\s*[-–]?\s*$/u.test(joint) &&
     !/[:：.№#]/u.test(mark) &&
@@ -722,13 +737,46 @@ function namesMeet(a: NameKeys, b: NameKeys): boolean {
   return a.keys.includes(b.whole) || b.keys.includes(a.whole) || halfMeets(a, b) || halfMeets(b, a);
 }
 
-const SCRIPTS = [/\p{Script=Han}/u, /\p{Script=Cyrillic}/u, /\p{Script=Latin}/u];
+const SCRIPTS = [
+  ['han', /\p{Script=Han}/u],
+  ['cyrillic', /\p{Script=Cyrillic}/u],
+  ['latin', /\p{Script=Latin}/u],
+] as const;
+
+/** A key's words by what each is written in — its first letter's script, or `figure` with no letter («14»). */
+function wordsByScript(key: string): Map<string, Set<string>> {
+  const by = new Map<string, Set<string>>();
+  for (const word of key.split(' ').filter(Boolean)) {
+    const letter = /\p{L}/u.exec(word)?.[0];
+    const script = letter === undefined ? 'figure' : (SCRIPTS.find(([, re]) => re.test(letter))?.[0] ?? 'other');
+    by.set(script, (by.get(script) ?? new Set<string>()).add(word));
+  }
+  return by;
+}
+
+/**
+ * Are two keys two DIFFERENT names: in some script both write, each has a
+ * word the other lacks — «Shirt» beside «Jacket», «Куртка M» beside «XL»,
+ * «iPhone 15» beside «iPhone 14»? One naming MORE of the same is not another
+ * name: «Наушники Bluetooth» shares the Latin of «Bluetooth earphones»,
+ * «Куртка женская XL» the «XL» of «Ladies jacket XL», and «Мужские кроссовки»
+ * is «Кроссовки мужские» (round-5 probe, collector: comparing SCRIPTS alone
+ * made each of those a clash, and one order landed twice).
+ */
+function otherName(a: string, b: string): boolean {
+  const wordsB = wordsByScript(b);
+  for (const [script, ofA] of wordsByScript(a)) {
+    const ofB = wordsB.get(script);
+    if (ofB && [...ofA].some((w) => !ofB.has(w)) && [...ofB].some((w) => !ofA.has(w))) return true;
+  }
+  return false;
+}
 
 /**
  * A bilingual cell meets another line through a half only where a
  * translation stands: the other line's bracket — the model's «Куртка женская
- * (女士夹克)» — unless that line's outside is another name in the script of
- * the cell's other half («Shirt (黑色)» is not «Jacket 黑色»), or the other's
+ * (女士夹克)» — unless that line's outside and the cell's other half are two
+ * names (`otherName`: «Shirt (黑色)» is not «Jacket 黑色»), or the other's
  * whole bare name («Ladies jacket»). Half against half, or against an
  * outside, met «夹克 XL» with «衬衫 XL» and «Kurtka 黑色» with «Kurtka (oq)»
  * (round-4 probe, collector).
@@ -737,8 +785,7 @@ function halfMeets(cell: NameKeys, other: NameKeys): boolean {
   return cell.halves.some(({ key, rest }) => {
     if (other.inside.length === 0) return other.whole === key;
     if (!other.inside.includes(key)) return false;
-    const clash = other.outside !== '' && other.outside !== rest && SCRIPTS.some((s) => s.test(other.outside) && s.test(rest));
-    return !clash;
+    return other.outside === '' || !otherName(other.outside, rest);
   });
 }
 

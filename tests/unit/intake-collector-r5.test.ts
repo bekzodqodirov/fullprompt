@@ -66,8 +66,11 @@ describe('a bilingual Excel cell is met through a half only where a translation 
 });
 
 describe('the customer question: a word and two figures may be insisted on', () => {
-  it('two figures could be a customer; three are a packing-list row', async () => {
-    expect((await readCustomerText('Kurtka 1200 50', 'GS')).couldBeCustomer).toBe(true);
+  it('a stall’s two figures could be a customer; three are a packing-list row', async () => {
+    // «Kurtka 1200 50» stood here until the round-5 probe showed such a pair is
+    // a goods row («Kurtka 300 1200», c2075) — which pairs are rows is the
+    // reader's call (`figureRow`), so a stall stands for «could».
+    expect((await readCustomerText('Ippodrom 7 230', 'GS')).couldBeCustomer).toBe(true);
     expect((await readCustomerText('Kurtka 1200 50 30', 'GS')).couldBeCustomer).toBe(false);
   });
 });
