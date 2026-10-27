@@ -435,6 +435,41 @@ describe('the machine carries a job as far as it honestly can', () => {
     expect(await prefillStanding(fresh, await prefillTicket(fresh))).toBe('confirmed');
   });
 
+  it('a save landing AFTER the job was checked is never grouped over — the chain starts at the checked revision', async () => {
+    // The review's P1-R2. The worker checks the job's revision
+    // (`prefillStanding`) and the pass used to start its chain from a FRESH
+    // read — so a person's save in the gap became the machine's own base,
+    // `applyProposal` (whose claim tests no revision) deleted and re-made the
+    // groups under it, and the sweep and the pick then compared against a
+    // revision that already held the lost write.
+    const id = await open([{ name: `nomsiz tovar ${Date.now()}` }]);
+    const checked = await prefillTicket(id);
+    expect(checked).not.toBeNull();
+    // A person saves between the worker's check and the pass's first write.
+    await saveTable(id, { items: [], adds: [] }, ctx());
+    const afterPerson = await prefillTicket(id);
+    expect(afterPerson, 'the premise: the save moved the clock').not.toBe(checked);
+
+    let proposed = 0;
+    const out = await aiPrefill(
+      id,
+      ctx(),
+      {
+        configured: true,
+        propose: async () => {
+          proposed += 1;
+          return { groups: 0, batches: 0, failed: 0, ratesPulled: 0, codesStamped: 0, importFilled: 0, memoryFilled: 0, dictionaryFilled: 0 };
+        },
+        pick: async () => ({ answers: null, usage: null }),
+      },
+      { expectRev: checked },
+    );
+    expect(proposed, 'the grouping must not run over a person’s save').toBe(0);
+    expect(await prefillTicket(id), 'and the machine wrote nothing after it').toBe(afterPerson);
+    // The pass still answers — the request is in the VED's queue either way.
+    expect(out.text).toContain('Rastamojka jami');
+  });
+
   it('a freight-only job is left ALONE — no groups, no model call, no $0', async () => {
     // The pass never asked what section the job was. On a yolkira request —
     // the freight-only one, and the FIRST the bot offers — it ran the whole

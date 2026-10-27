@@ -15,7 +15,9 @@ import type { Workspace } from './workspace';
  * BOUNDED three ways, because it runs inside the customs pass and the pass
  * has a deadline and a pg-boss expiry above it (§6.8):
  *  - at most MAX_ESTIMATE_ROWS rows are asked about (the rest say `capped`);
- *  - at most MAX_BANDS_PER_CODE per-piece bands ride one code's statement;
+ *  - at most MAX_BANDS_PER_CODE per-piece bands ride one code's statement,
+ *    dona-first rows served first; a row whose band missed the cap answers
+ *    from a unit it prefers to dona, or says `capped`;
  *  - once ESTIMATE_BUDGET_MS has passed since the read began, or the pass's
  *    own deadline, no further statement is issued and every row not yet
  *    answered says `budget` — Taxminiy is then refused in words, never
@@ -113,8 +115,14 @@ export async function rowMediansFor(ws: Workspace, opts: { deadline: number }): 
       for (const w of mine) out.set(w.id, miss('budget'));
       continue;
     }
+    // The band slots go where a band DECIDES first: a row whose first unit is
+    // 'dona' is priced off its band or not at all, while a kg-first row
+    // reads its band only if the kg series falls short. Many sizes under one
+    // 10-digit code is the ordinary invoice, and first-come slots once left
+    // its ninth row with no Taxminiy although its kilos had a median.
     const bands: NonNullable<ReturnType<typeof bandKeyOf>>[] = [];
-    for (const w of mine) {
+    const donaFirst = (w: (typeof mine)[number]) => w.allowed[0] === 'dona';
+    for (const w of [...mine.filter(donaFirst), ...mine.filter((w) => !donaFirst(w))]) {
       if (w.band && !bands.some((b) => b.key === w.band!.key) && bands.length < MAX_BANDS_PER_CODE) {
         bands.push(w.band);
       }
@@ -125,7 +133,13 @@ export async function rowMediansFor(ws: Workspace, opts: { deadline: number }): 
       );
       for (const w of mine) {
         if (w.band && !bands.some((b) => b.key === w.band!.key)) {
-          out.set(w.id, miss('capped'));
+          // Its band missed the cap: answer from the units BEFORE 'dona' in
+          // its own order (the choice rule's), which need no band. A unit
+          // after 'dona' would skip one the row prefers unread, so a miss
+          // there is still `capped` — said, never priced around.
+          const before = w.allowed.slice(0, w.allowed.indexOf('dona'));
+          const ahead = medianForRow({ allowed: before, bandKey: null, rows, batch, staleCutoff });
+          out.set(w.id, ahead.ok ? ahead : miss('capped'));
           continue;
         }
         out.set(

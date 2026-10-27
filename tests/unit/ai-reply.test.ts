@@ -29,6 +29,7 @@ const line = (over: Partial<AiVedLine> = {}): AiVedLine => ({
   vatPct: 12,
   customsUsd: 496.96,
   refusal: null,
+  refusalTail: 'ved',
   estimated: null,
   weightFromTotal: false,
   ...over,
@@ -433,6 +434,28 @@ describe('two customs totals (his 2.2 b, docs/SAKKIZ-R2.md §2.2)', () => {
     expect(text).toContain(
       '   📊 taxmin yo‘q: 2-qator — faqat 3 ta deklaratsiya (kamida 5 kerak); 3-qator — bu kodda Xitoy deklaratsiyasi yo‘q; 4-qator — kod to‘liq emas (10 xona kerak) …',
     );
+  });
+
+  it('a refusal names WHO fixes it — the customer’s missing count goes to the seller, a baza to the VED', () => {
+    // §0.1(7), and the Taxminiy block's own split: one reply must not send
+    // the same missing count to the VED on the line and to the seller below.
+    const text = aiVedReplyText({
+      ...estimated,
+      lines: [
+        line({
+          label: 'Kurtka',
+          customsUsd: null,
+          refusal: 'Kurtka: 1-qator «Kurtka»: soni (dona) kiritilmagan — boj kamida $3/dona',
+          refusalTail: 'seller',
+        }),
+        line({ label: 'Sumka', customsUsd: null, refusal: 'Sumka: baza yo‘q — Sumka', refusalTail: 'ved' }),
+      ],
+      estimate: twoTotals({ exactRows: 0, exactUsd: null, taxminiyUsd: null, taxminiyFee: null, taxminiyBlock: 'x' }),
+    });
+    expect(text).toContain(
+      '   ⚠️ Kurtka: 1-qator «Kurtka»: soni (dona) kiritilmagan — boj kamida $3/dona — mijozdan so‘rab, kartadagi lentaga yozing',
+    );
+    expect(text).toContain('   ⚠️ Sumka: baza yo‘q — Sumka — VED xodimi qo‘yadi');
   });
 
   it('a weight copied from the shipment’s brutto total is said beside the measure (⭐ of his Question 4)', () => {

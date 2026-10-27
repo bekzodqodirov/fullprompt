@@ -95,7 +95,7 @@ describe('a tariff reply writes nothing, so a moved revision is nothing it could
     prefill.standing.mockResolvedValue('touched');
     prefill.run.mockResolvedValue({ text: 'tariff reply', lentaText: 'tariff reply', stood: null });
     await handler([job(0, 'yolkira')]);
-    expect(prefill.run).toHaveBeenCalledWith('r1', { actorId: null }, { replyTo: 's1' }, { expectCustoms: false });
+    expect(prefill.run).toHaveBeenCalledWith('r1', { actorId: null }, { replyTo: 's1' }, { expectCustoms: false, expectRev: 3 });
     expect(say).toHaveBeenCalledWith('r1', expect.objectContaining({ text: 'tariff reply' }));
   });
 
@@ -128,6 +128,6 @@ describe('a tariff reply writes nothing, so a moved revision is nothing it could
     prefill.standing.mockResolvedValue('ok');
     prefill.run.mockResolvedValue({ text: 'customs reply', lentaText: 'customs reply', stood: null });
     await handler([job(0)]);
-    expect(prefill.run).toHaveBeenCalledWith('r1', { actorId: null }, { replyTo: 's1' }, { expectCustoms: true });
+    expect(prefill.run).toHaveBeenCalledWith('r1', { actorId: null }, { replyTo: 's1' }, { expectCustoms: true, expectRev: 3 });
   });
 });

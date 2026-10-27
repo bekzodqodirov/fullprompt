@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { randomUUID } from 'node:crypto';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -36,6 +37,7 @@ import {
 import { getSetting } from '@/modules/platform/settings/service';
 import { openCalcRequest } from '@/modules/wms/calc/service';
 import { prefillTicket } from '@/modules/wms/calc/prefill';
+import { sayOnce } from '@/modules/wms/calc/say-once';
 import {
   JOB_CALC_PREFILL,
   JOB_CALC_TARIFF_REPLY,
@@ -166,5 +168,27 @@ describe('one machine message per request, however often the queue runs the job'
     const text = String((rows[0]!.payload as { text: string }).text);
     expect(text.startsWith(AI_REPLY_HEAD)).toBe(true);
     expect(text).not.toBe(PASS_FAILED);
+  });
+});
+
+describe('overlapping runs — the advisory lock, not the EXISTS alone', () => {
+  it('a burst of simultaneous sayOnce calls for one request queues exactly ONE row', async () => {
+    // The cases above run the handler one call AFTER another, which READ
+    // COMMITTED's «already said?» answers by itself — so deleting the lock
+    // left them green (the review's P1-R3). Overlap is what the lock is for:
+    // a job past its expiry runs beside the first, and two transactions that
+    // each read «nothing said yet» both insert. Measured without the lock:
+    // seven rows of eight on one burst in three. So the burst is repeated —
+    // each with its own request key, the drain's kick stood in above.
+    for (let burst = 0; burst < 20; burst += 1) {
+      const requestId = randomUUID();
+      const spoke = await Promise.all(
+        Array.from({ length: 8 }, (_, k) =>
+          sayOnce(requestId, { userIds: [actorId], type: 'CalcPrefilled', text: `burst ${burst} run ${k}` }),
+        ),
+      );
+      expect(spoke.filter(Boolean), `burst ${burst}: one run speaks`).toHaveLength(1);
+      expect(await said(requestId), `burst ${burst}: one row`).toHaveLength(1);
+    }
   });
 });

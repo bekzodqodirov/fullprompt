@@ -191,8 +191,12 @@ describe('the prefill survives a deploy', () => {
     const jobs = read('src/modules/wms/calc/jobs.ts');
     // The third argument names who READS the answer — its link is chosen for
     // them (`calcJobHrefFor`); it carries no authorship, the actor stays null.
-    // The fourth (round 2) names the queue, so a moved section stands down.
-    expect(jobs).toContain('aiPrefill(requestId, { actorId: null }, { replyTo: staffId }, { expectCustoms: writes })');
+    // The fourth (round 2) names the queue, so a moved section stands down,
+    // and the revision the standing was CHECKED against, where the pass's
+    // compare-and-set chain starts (the review's P1-R2: a fresh read there
+    // adopted a save landing after the check as the machine's own base).
+    expect(jobs).toContain('const expected = { expectCustoms: writes, expectRev: data.rev ?? null };');
+    expect(jobs).toContain('aiPrefill(requestId, { actorId: null }, { replyTo: staffId }, expected)');
     expect(jobs).not.toContain('actorId: staffId');
     // …and `staffId` still names who hears about it.
     expect(jobs).toContain('userIds: [staffId]');

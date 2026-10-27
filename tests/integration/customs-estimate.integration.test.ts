@@ -6,6 +6,7 @@ import {
   calcGroups,
   calcRequestItems,
   calcRequests,
+  calcVersions,
   clients,
   customsImportBatches,
   customsImportRows,
@@ -14,11 +15,21 @@ import {
   events,
   roles,
   tasks,
+  tnvedAssignments,
   userRoles,
   users,
 } from '@/modules/platform/db/schema';
 import { openCalcRequest } from '@/modules/wms/calc/service';
-import { loadWorkspace, saveTable } from '@/modules/wms/calc/workspace';
+import {
+  confirmAllGroups,
+  loadWorkspace,
+  saveTable,
+  sealCalc,
+  setFeeOverride,
+  setFreightZone,
+} from '@/modules/wms/calc/workspace';
+import { landingItems } from '@/modules/wms/calc/intake';
+import { itemNameNorm } from '@/modules/wms/calc/memory';
 import { aiPrefill } from '@/modules/wms/calc/prefill';
 import { rowMediansFor } from '@/modules/wms/calc/estimate-read';
 import { bandKeyOf } from '@/modules/wms/calc/estimate';
@@ -48,9 +59,16 @@ const SUFFIX = String(Date.now()).slice(-6);
 const CODE_A = '3916100000'; // exact, a typed baza
 const CODE_B = '3924100000'; // per kg: six Chinese declarations, six Turkish
 const CODE_C = '3926100000'; // per piece: six in the ±25 % band, six outside it
+// 20 % with a floor of $3 a piece (PP-3818's seeded row) — a row stating only
+// kilos is refused `measure_missing`, the customer's fact.
+const CODE_FLOOR = '4203100001';
+// The SEALED memory's product (0096): long words, so the six-digit suffix the
+// other rows share cannot carry a `similarity` of 0.6 on its own.
+const MEMORY_NAME = `Alyuminiy profil derazabop ${SUFFIX}`;
 let actorId = '';
 let clientId = '';
 let dealId = '';
+let memoryDealId = '';
 let batchId = '';
 const madeRequests: string[] = [];
 const ctx = () => ({ actorId });
@@ -75,6 +93,13 @@ beforeAll(async () => {
     .values({ code: `ES-${SUFFIX}`, clientId, stageId: stage!.id, title: 'Estimate fixture', createdBy: actorId })
     .returning();
   dealId = deal!.id;
+  // The memory's seal sits on a card of its own: a seal LOCKS its card's
+  // quote, and the shared card above is every other case's.
+  const [memoryDeal] = await db
+    .insert(deals)
+    .values({ code: `ES-${SUFFIX}-M`, clientId, stageId: stage!.id, title: 'Estimate memory fixture', createdBy: actorId })
+    .returning();
+  memoryDealId = memoryDeal!.id;
 
   const today = new Date().toISOString().slice(0, 10);
   const [batch] = await db
@@ -109,6 +134,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (madeRequests.length > 0) {
+    await db.delete(calcVersions).where(inArray(calcVersions.requestId, madeRequests));
     await db.delete(calcRequestItems).where(inArray(calcRequestItems.requestId, madeRequests));
     await db.delete(calcGroups).where(inArray(calcGroups.requestId, madeRequests));
     const rows = await db.select({ taskId: calcRequests.taskId }).from(calcRequests).where(inArray(calcRequests.id, madeRequests));
@@ -119,6 +145,9 @@ afterAll(async () => {
       await db.delete(tasks).where(inArray(tasks.id, ids));
     }
   }
+  // The seal TEACHES the exact-key code book, and a `tnved_assignments` row
+  // is CONFIGURATION for every later file (#183).
+  await db.delete(tnvedAssignments).where(eq(tnvedAssignments.productKey, itemNameNorm(MEMORY_NAME)));
   if (batchId) await db.delete(customsImportBatches).where(eq(customsImportBatches.id, batchId));
   await db.delete(userRoles).where(eq(userRoles.userId, actorId));
   await db.update(clients).set({ active: false }).where(eq(clients.id, clientId));
@@ -140,6 +169,31 @@ async function open(
   return r.id;
 }
 
+/**
+ * One priced, confirmed, SEALED job about `MEMORY_NAME` — what the memory
+ * (0096) answers a later row from, through the real seal (calc-memory's
+ * `sealOne`, per kg).
+ */
+async function sealMemory(): Promise<void> {
+  const r = await openCalcRequest(
+    {
+      entityType: 'deal',
+      entityId: memoryDealId,
+      section: 'rastamojka',
+      fromCity: 'Yiwu',
+      toCity: 'Toshkent',
+      items: [{ name: MEMORY_NAME, tnvedCode: CODE_A, weightKg: 100 }],
+      source: 'card',
+    },
+    ctx(),
+  );
+  madeRequests.push(r.id);
+  await typeBaza(r.id, MEMORY_NAME, 4);
+  await setFreightZone(r.id, 'cn', ctx());
+  await confirmAllGroups(r.id, ctx());
+  await sealCalc(r.id, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null }, ctx());
+}
+
 /** A person types a baza on the row named so — the exact half of a reply. */
 async function typeBaza(requestId: string, name: string, bazaUsd: number): Promise<void> {
   await saveTable(requestId, { items: [], adds: [] }, ctx());
@@ -153,13 +207,24 @@ describe('(1)(8) two totals in the chat, the estimate never written, the VED tol
   let requestId = '';
   let out: Awaited<ReturnType<typeof aiPrefill>>;
 
-  it('(1) Aniq over the typed row, Taxminiy with the median — and the row stays baza-less', async () => {
+  it('(1) Aniq over the 🧠 row, Taxminiy with the median — and the row stays baza-less', async () => {
+    // §6.9(1) as written: the exact group is priced by the SEALED MEMORY, so
+    // the 🧠 mark beside «Aniq» and the two-mark legend run end to end.
+    await sealMemory();
     requestId = await open('rastamojka', [
-      { name: `Profil ${SUFFIX}`, tnvedCode: CODE_A, weightKg: 100 },
+      { name: MEMORY_NAME, tnvedCode: CODE_A, weightKg: 100 },
       { name: `Idish ${SUFFIX}`, tnvedCode: CODE_B, weightKg: 50 },
     ]);
-    await typeBaza(requestId, `Profil ${SUFFIX}`, 4);
     out = await aiPrefill(requestId, { actorId: null }, { configured: false, replyTo: actorId });
+
+    // The premise: nobody typed it — the memory answered the row.
+    const [memo] = await db
+      .select({ bazaSource: calcRequestItems.bazaSource })
+      .from(calcRequestItems)
+      .where(sql`${calcRequestItems.requestId} = ${requestId} AND ${calcRequestItems.name} = ${MEMORY_NAME}`);
+    expect(memo!.bazaSource).toBe('memory');
+    expect(out.text).toContain(`1. ${MEMORY_NAME} · ${CODE_A} · 100 kg × $4/kg 🧠\n`);
+    expect(out.text).toContain('\n🧠 avvalgi muhrdan · 📊 deklaratsiyalar medianasi (taxminiy)\n');
 
     // A: 100 kg × $4 = 400; duty 10 % = 40; VAT 12 % of 440 = 52.80 → 92.80.
     expect(out.text).toContain('  Aniq: $92.80 (2 tadan 1 qator, yig‘imsiz)');
@@ -310,5 +375,104 @@ describe('(9) the pass deadline', () => {
     expect(out.text).toContain('  Aniq: $92.80 (2 tadan 1 qator, yig‘imsiz)');
     expect(out.text).toContain('  Taxminiy: hisoblab bo‘lmadi — vaqt yetmadi, statistika o‘qilmadi');
     expect(out.text).toContain('📊 taxmin yo‘q: 2-qator — vaqt yetmadi — statistika o‘qilmadi');
+  });
+});
+
+describe('(10) «(og‘irlik bruttodan)» wherever the measure is printed (⭐ of his Question 4)', () => {
+  /**
+   * A one-line job whose weight is the shipment's BRUTTO total, landed the
+   * way the bot and the thread land it: through `landingItems`, which copies
+   * the total onto the single line and says so in the row note
+   * (`LONE_WEIGHT_NOTE`). Never a hand-written note (#1116).
+   */
+  async function loneLine(name: string, code: string): Promise<string> {
+    const facts = { weightKg: 300, goods: [{ name, tnvedCode: code }] };
+    const id = await open('rastamojka', landingItems(facts), { weightKg: facts.weightKg });
+    await typeBaza(id, name, 4);
+    return id;
+  }
+
+  it('(a) an exact group: the mark sits between the measure and the baza', async () => {
+    const id = await loneLine(`Profil ${SUFFIX} brutto`, CODE_A);
+    const out = await aiPrefill(id, { actorId: null }, { configured: false });
+    // 300 kg × $4 = 1200; duty 10 % = 120; VAT 12 % of 1320 = 158.40 → 278.40.
+    expect(out.text).toContain(`1. Profil ${SUFFIX} brutto · ${CODE_A} · 300 kg (og‘irlik bruttodan) × $4/kg\n`);
+    expect(out.text).toContain('   boj 10% · QQS 12% → $278.40');
+  });
+
+  it('(b) the same row REFUSED by a $/dona floor still prints its measure — and the mark — and sends the count to the seller', async () => {
+    // The line that ASKS the seller for a fact is the one that most needs to
+    // say the kilos it priced are brutto; the first build hid the mark here.
+    const id = await loneLine(`Charm kurtka ${SUFFIX}`, CODE_FLOOR);
+    const out = await aiPrefill(id, { actorId: null }, { configured: false });
+    expect(out.text).toContain(`1. Charm kurtka ${SUFFIX} · ${CODE_FLOOR} · 300 kg (og‘irlik bruttodan) × $4/kg\n`);
+    const refusal = out.text.split('\n').find((l) => l.startsWith('   ⚠️ '));
+    expect(refusal, 'the refused line').toBeDefined();
+    // One fact, one fixer: the count is the customer's (§0.1(7)), on the line
+    // as in the Taxminiy sentence below it.
+    expect(refusal!.endsWith('— mijozdan so‘rab, kartadagi lentaga yozing')).toBe(true);
+    expect(refusal).not.toContain('VED xodimi');
+  });
+});
+
+describe('(11) the per-code band slots go where a band decides (MAX_BANDS_PER_CODE)', () => {
+  it('ten kg-first rows of one code at ten weights a piece all answer from the kilos; a dona-first row is never starved', async () => {
+    // CODE_B: ten sizes of one product, each stating kilos and a count — the
+    // ordinary invoice. Their kilos have a China median (2.40), so no band
+    // can change their answer; the first build gave rows 9-10 `capped` and
+    // took the whole Taxminiy with them.
+    const kgFirst = Array.from({ length: 10 }, (_, k) => ({
+      name: `Idish ${SUFFIX} o‘lcham ${k + 1}`,
+      tnvedCode: CODE_B,
+      quantity: 100,
+      weightKg: 50 + 20 * k,
+    }));
+    // CODE_C: nine kg-first rows at 1.0…1.8 kg a piece (the code has no kilo
+    // declarations, so their bands DO decide), and LAST a row whose unit the
+    // VED chose per piece, at 0.5 kg — the six declarations in its band.
+    const sizes = Array.from({ length: 9 }, (_, k) => ({
+      name: `Qopqoq ${SUFFIX} o‘lcham ${k + 1}`,
+      tnvedCode: CODE_C,
+      quantity: 100,
+      weightKg: 100 + 10 * k,
+    }));
+    const chosen = { name: `Qopqoq ${SUFFIX} dona`, tnvedCode: CODE_C, quantity: 100, weightKg: 50 };
+    const id = await open('rastamojka', [...kgFirst, ...sizes, chosen]);
+    await saveTable(id, { items: [], adds: [] }, ctx());
+    const [row] = await db
+      .select({ id: calcRequestItems.id, seq: calcRequestItems.seq })
+      .from(calcRequestItems)
+      .where(sql`${calcRequestItems.requestId} = ${id} AND ${calcRequestItems.name} = ${chosen.name}`);
+    // A unit CHOSEN with no price yet (0125's third state) — `unitsForItem`
+    // then answers ['dona'] alone.
+    await saveTable(id, { items: [{ id: row!.id, seq: row!.seq, bazaUsd: null, bazaBasis: 'unit' }], adds: [] }, ctx());
+
+    const ws = await loadWorkspace(id);
+    const medians = await rowMediansFor(ws!, { deadline: Date.now() + 60_000 });
+    const byName = new Map(ws!.groups.flatMap((g) => g.items).map((i) => [i.label, medians.get(i.id)]));
+    for (const r of kgFirst) {
+      expect(byName.get(r.name), r.name).toMatchObject({ ok: true, bazaUsd: 2.4, basis: 'kg', n: 6 });
+    }
+    expect(byName.get(chosen.name), 'the dona-first row takes a slot before any kg-first one').toMatchObject({
+      ok: true,
+      bazaUsd: 1.2,
+      basis: 'unit',
+      n: 6,
+    });
+  });
+});
+
+describe('(12) a typed fee override: the Taxminiy carries ITS figure, never a BHM tier', () => {
+  it('«(yig‘im ≈ $50.00 bilan)», and no «BHM» anywhere in the reply', async () => {
+    const id = await open('rastamojka', [
+      { name: `Profil ${SUFFIX} e`, tnvedCode: CODE_A, weightKg: 100 },
+      { name: `Idish ${SUFFIX} e`, tnvedCode: CODE_B, weightKg: 50 },
+    ]);
+    await typeBaza(id, `Profil ${SUFFIX} e`, 4);
+    await setFeeOverride(id, 50, ctx());
+    const out = await aiPrefill(id, { actorId: null }, { configured: false });
+    // 92.80 (exact) + 41.28 (the median's) + the typed $50 = 184.08.
+    expect(out.text).toContain('  Taxminiy ≈ $184.08 (yig‘im ≈ $50.00 bilan)\n');
+    expect(out.text).not.toContain('BHM');
   });
 });

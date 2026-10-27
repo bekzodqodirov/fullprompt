@@ -212,8 +212,14 @@ export async function aiPrefill(
    * reply. A section changed since queueing stands the pass down rather than
    * running a customs pass from the tariff queue or a tariff reply from the
    * customs one. Absent: no comparison (a direct caller, a test).
+   *
+   * `expectRev`: the revision the worker CHECKED the job against
+   * (`prefillStanding`) — the chain starts there, not from a fresh read, or a
+   * person's save landing between that check and the first machine write
+   * becomes the machine's own base and is overwritten by the grouping.
+   * Absent or null: a direct caller, and the chain starts from a fresh read.
    */
-  opts: { expectCustoms?: boolean } = {},
+  opts: { expectCustoms?: boolean; expectRev?: number | null } = {},
 ): Promise<PrefillOutcome> {
   const deadline = deps.deadline ?? Date.now() + PASS_DEADLINE_MS;
   const propose = deps.propose ?? proposeGroups;
@@ -278,8 +284,12 @@ export async function aiPrefill(
    * pass still goes on to the reply. Stated: the grouping's own seconds
    * between `releaseAiClaim` and the end of `priceProposedGroups` are not
    * under it (the claim covers the model call before them).
+   *
+   * It STARTS at the revision the job was checked against (`expectRev`), so
+   * a save in the gap after that check is a conflict too — a fresh read here
+   * would adopt it as the machine's own.
    */
-  let rev: number | null = await prefillTicket(requestId);
+  let rev: number | null = opts.expectRev ?? (await prefillTicket(requestId));
   let overtaken = false;
   const overtakenAt = (step: string) => {
     overtaken = true;
@@ -307,6 +317,17 @@ export async function aiPrefill(
   // 1. The model groups the goods and names their codes; `proposeGroups`
   //    then prices what it proposed (the book's rates, the code onto the
   //    row) and 0094's import fill runs inside its save.
+  //
+  //    `applyProposal` DELETES and re-inserts the groups and its claim tests
+  //    no revision, so the chain is compared HERE, right before it: step 0
+  //    compare-and-sets only when it had codes to post, and a person's save
+  //    since the job's check would otherwise be grouped over and then
+  //    adopted below. Stated: this is a check, not the claim — the
+  //    milliseconds between it and `proposeGroups`'s claim are not under it
+  //    until that claim carries the revision itself (the kernel's).
+  if (configured && !overtaken && rev !== null && (await prefillTicket(requestId)) !== rev) {
+    overtakenAt('step 1');
+  }
   if (configured && !overtaken) {
     try {
       const out = await propose(requestId, ctx);
@@ -325,6 +346,9 @@ export async function aiPrefill(
       logger.warn({ err, requestId }, '[calc-prefill] propose failed');
     }
     // The grouping's own saves moved the clock; the chain picks up here.
+    // ADOPTED, not compared: `proposeGroups` does not say which revision its
+    // own last save left, so a save inside its unclaimed tail is taken as
+    // the machine's (the window stated above the chain).
     rev = await prefillTicket(requestId);
   }
 
@@ -629,12 +653,20 @@ function replyLines(ws: Workspace, estimate: CustomsEstimate | null): AiVedLine[
             rate: refused.rate,
           })
         : null,
+      // Who can fix the refusal (§0.1(7)): a missing count or weight is a
+      // fact only the customer has — the same split the Taxminiy block makes
+      // (`refused_measure`), or one reply names two fixers for one fact.
+      refusalTail: refused?.reason === 'measure_missing' ? 'seller' : 'ved',
       estimated: estimateLine(ge),
       // ⭐ of his Question 4: a weight copied from the shipment's BRUTTO
-      // total is said beside the measure — on a group whose figure is
-      // printed (exact or 📊); a refused group prints no measure to mark.
-      weightFromTotal:
-        (g.customs.ok || ge?.kind === 'estimated') && g.items.some((i) => weightFromTotalNote(i.note)),
+      // total is said beside the measure, on every row whose measure is
+      // PRINTED — a row with its own baza (§6.7), which a REFUSED group still
+      // prints in its head, and every row of an estimated group, whose shadow
+      // measure is printed instead (§2.1). Gating on «the group priced» hid
+      // the mark on exactly the line that asks the seller for a fact.
+      weightFromTotal: g.items.some(
+        (i) => weightFromTotalNote(i.note) && (i.bazaUsd !== null || ge?.kind === 'estimated'),
+      ),
     };
   });
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   MISS_WORDS,
+  TAXMINIY_BLOCK_WORDS,
   UNIT_BASIS,
   bandKeyOf,
   estimateCustoms,
@@ -359,6 +360,30 @@ describe('the small rules', () => {
     expect(bandKeyOf(0.4)).toEqual({ key: '0.3-0.5', lo: 0.3, hi: 0.5 });
     expect(bandKeyOf(null)).toBeNull();
     expect(bandKeyOf(0)).toBeNull();
+  });
+
+  it('the words are the SPEC’s, typed from §2.2 and §2.7 — changing one changes the spec first', () => {
+    // Pinned at the source (#166): the reply's own test hands the renderer
+    // its sentences, so a word changed HERE would leave every other test
+    // green while the seller read something nobody agreed.
+    expect(TAXMINIY_BLOCK_WORDS).toEqual({
+      ungrouped: 'kodsiz qator bor (VED kod qo‘yadi)',
+      refused_measure: '⚠️ qatorda soni yoki og‘irligi yo‘q — mijozdan so‘rab, kartadagi lentaga yozing',
+      budget: 'vaqt yetmadi, statistika o‘qilmadi',
+      refused: '⚠️ bazasi yo‘q qatorlarni VED to‘ldiradi',
+    });
+    expect(MISS_WORDS).toEqual({
+      short_code: 'kod to‘liq emas (10 xona kerak)',
+      no_batch: 'bojxona fayli yuklanmagan',
+      no_declarations: 'bu kodda Xitoy deklaratsiyasi yo‘q',
+      unit_mismatch: 'deklaratsiyalar boshqa o‘lchovda',
+      few: 'faqat {n} ta deklaratsiya (kamida 5 kerak)',
+      no_piece_weight: 'bir donasining og‘irligi yo‘q — dona bo‘yicha solishtirib bo‘lmadi',
+      no_measure: 'qatorda soni ham, og‘irligi ham yo‘q',
+      timeout: 'statistika o‘qilmadi (fayl katta)',
+      budget: 'vaqt yetmadi — statistika o‘qilmadi',
+      capped: 'juda ko‘p qator — taxmin qilinmadi',
+    });
   });
 
   it('every miss has words, and only «few» carries a count', () => {

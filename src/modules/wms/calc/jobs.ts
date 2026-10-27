@@ -256,7 +256,11 @@ async function runPrefillJob(data: CalcPrefillJob, retryCount: number): Promise<
     // `replyTo`: the answer's link is chosen for the person it is sent to
     // (`calcJobHrefFor`) — a stranger's lead is the VED's own when the VED
     // sent it, and the CRM card bounces him.
-    const out = await aiPrefill(requestId, { actorId: null }, { replyTo: staffId }, { expectCustoms: writes });
+    // `expectRev`: the revision the standing above was CHECKED against —
+    // the pass's compare-and-set chain starts there, so a save landing after
+    // this check is a conflict and never the machine's base.
+    const expected = { expectCustoms: writes, expectRev: data.rev ?? null };
+    const out = await aiPrefill(requestId, { actorId: null }, { replyTo: staffId }, expected);
     if (out.stood) {
       // The section moved since queueing (§2.8): the customs sentence.
       const said = STOOD_DOWN[out.stood];

@@ -65,6 +65,13 @@ export interface AiVedLine {
   /** Already in words (`blockerText`'s vocabulary) — never a raw code. */
   refusal: string | null;
   /**
+   * Who can fix that refusal (§0.1(7)): a missing count or weight is the
+   * customer's fact, so the seller asks; a baza, a law, a stored number that
+   * is not a number is the VED's. REQUIRED (#790) — a builder that forgot it
+   * would quietly send every refusal to the VED, the shape this field ends.
+   */
+  refusalTail: FreightTail;
+  /**
    * The group's 📊 shadow (round 2, his 2.1 b): a figure from the median of
    * real declarations for the rows nobody priced, or the words for why there
    * is none. Null when nothing was estimated. REQUIRED-nullable (#790), so
@@ -186,6 +193,17 @@ export const FREIGHT_TAIL_WORDS: Record<FreightTail, string> = {
   ved: '— VED xodimi hisoblaydi',
 };
 
+/**
+ * The tail of a refused CUSTOMS line — the same two fixers as the road's,
+ * worded for a line (the VED «qo‘yadi» a baza; the road he «hisoblaydi»).
+ * The seller's words are the Taxminiy block's own (`refused_measure`), so a
+ * reply that says the count is missing says once who gets it.
+ */
+export const CUSTOMS_TAIL_WORDS: Record<FreightTail, string> = {
+  seller: FREIGHT_TAIL_WORDS.seller,
+  ved: '— VED xodimi qo‘yadi',
+};
+
 /** The tiny-invoice warning (law 8: priced honestly, flagged loudly). */
 export const SMALL_ROAD_LINE = `⚠️ Juda kichik yuk (yo‘lkira $${SMALL_FREIGHT_USD} dan kam) — VED ko‘rib chiqadi.`;
 
@@ -294,7 +312,7 @@ function lineText(line: AiVedLine, index: number): string {
   if (line.customsUsd === null) {
     // Law 6: a refusal is a sentence, and the line still exists — a seller
     // who cannot see the row cannot tell the customer what is missing.
-    const refused = `${head}\n   ⚠️ ${line.refusal ?? 'hisoblanmadi'} — VED xodimi qo‘yadi`;
+    const refused = `${head}\n   ⚠️ ${line.refusal ?? 'hisoblanmadi'} ${CUSTOMS_TAIL_WORDS[line.refusalTail]}`;
     if (!est || est.priced || est.misses.length === 0) return refused;
     const shown = est.misses.slice(0, 3).join('; ');
     return `${refused}\n   ${MEDIAN_MARK} taxmin yo‘q: ${shown}${est.misses.length > 3 ? ' …' : ''}`;
