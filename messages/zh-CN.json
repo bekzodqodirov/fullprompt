@@ -3493,7 +3493,7 @@
     "returnReasonLabel": "退回原因",
     "finish": "完成",
     "answerAmount": "价格",
-    "finishNotEstimate": "Telegram 和动态中的「Aniq」「Taxminiy」「JAMI taxminiy」不是正式价格——请勿抄到这里。请通过 📥 选择基价、设定区域并封存。",
+    "finishNotEstimate": "Telegram 和动态中机器人的数字——「Aniq」「Taxminiy」「JAMI」「Yo‘lkira ≈」——不是正式价格：请勿抄到这里，请填写您自己算出的价格。",
     "answerNote": "备注",
     "answered": "答复",
     "returned": "已退回",

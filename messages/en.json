@@ -3493,7 +3493,7 @@
     "returnReasonLabel": "Reason",
     "finish": "Done",
     "answerAmount": "Price",
-    "finishNotEstimate": "The «Aniq», «Taxminiy» and «JAMI taxminiy» figures in Telegram and the feed are not official prices — do not copy them here. Pick the baza from 📥, set the zone and seal.",
+    "finishNotEstimate": "The bot’s figures in Telegram and the feed — «Aniq», «Taxminiy», «JAMI», «Yo‘lkira ≈» — are not official prices: do not copy them here, enter the price you worked out yourself.",
     "answerNote": "Note",
     "answered": "Answer",
     "returned": "Sent back",

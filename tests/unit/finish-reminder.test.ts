@@ -43,7 +43,13 @@ describe('the «Готово» price box says the bot’s figures are not offici
     );
     expect(html).toContain('data-testid="calc-finish-not-estimate"');
     expect(html).toContain('rasmiy narx emas');
-    expect(html).toContain('«JAMI taxminiy»');
+    // EVERY figure the bot prints is named (review law-money-R2-3): the
+    // customs pair, the JAMI in either shape, and the yolkira tariff figure —
+    // the only machine figure on a yolkira job, where the box opens most.
+    for (const figure of ['«Aniq»', '«Taxminiy»', '«JAMI»', '«Yo‘lkira ≈»']) expect(html).toContain(figure);
+    // …and no instruction that is wrong for one section (review PF-8).
+    expect(html).not.toContain('zonani belgilang');
+    expect(html).not.toContain('📥');
     // The words are the bundle's, verbatim — no second copy in the component.
     expect(html).toContain(String(uz.calc.finishNotEstimate).slice(0, 40));
   });

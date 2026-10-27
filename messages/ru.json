@@ -3493,7 +3493,7 @@
     "returnReasonLabel": "Причина возврата",
     "finish": "Готово",
     "answerAmount": "Цена",
-    "finishNotEstimate": "«Aniq», «Taxminiy» и «JAMI taxminiy» из Telegram и ленты — не официальная цена, не копируйте их сюда. Выберите базу через 📥, укажите зону и запечатайте.",
+    "finishNotEstimate": "Цифры бота в Telegram и ленте — «Aniq», «Taxminiy», «JAMI», «Yo‘lkira ≈» — не официальная цена: не копируйте их сюда, впишите цену, которую посчитали сами.",
     "answerNote": "Комментарий",
     "answered": "Ответ",
     "returned": "Возвращено",

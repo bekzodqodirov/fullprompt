@@ -15,8 +15,14 @@ import {
  * «Bu taxmin rasmiy narx emas» — at the one box where it would become one
  * (round 2, law-money-1; his 2.4 b reason, kept under his 2.4 c).
  *
- * The bot now prints «Aniq», «Taxminiy» and «JAMI taxminiy» in Telegram and
- * on the card's lenta, and «Готово» is the ONE door through which a typed
+ * The bot now prints «Aniq», «Taxminiy», «JAMI» and, on a yolkira job, the
+ * tariff's «Yo‘lkira ≈» in Telegram and on the card's lenta — the sentence
+ * names every one (review law-money-R2-3: on a yolkira job with a guessed
+ * zone the tariff figure is the ONLY machine figure, and a reminder naming
+ * three others read as permission to copy it). It gives no instruction
+ * beyond «type your own»: «pick the baza» is meaningless on a yolkira job and
+ * «set the zone» on a customs one (review PF-8), and the fold is shared by
+ * every section. «Готово» is the ONE door through which a typed
  * figure becomes a price: it is written as `answer_amount`, which is then
  * the upsale's floor, the card's quote lock, a post on the price channel and
  * the seller's «✅ Hisoblash tayyor» push. It is printed exactly where the

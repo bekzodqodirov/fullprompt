@@ -389,6 +389,8 @@ collector. Staff bot ONLY (his 5a).
      line if the section has it and a zone is inferable — if not, say
      freight kutilmoqda); blockers remain → reply naming them in words
      (the engine's own refusal codes mapped to sentences).
+     (Round 2 replaced «a zone is inferable» with the two-tier guess — see
+     the FREIGHT bullet in §6.)
   4. The request STAYS in the VED queue exactly as today; the VED opens a
      PRE-FILLED workspace, reviews the 📥 marks, ✅ + seals. Official price
      = the seal (or Готово where unsealable), exactly as now (his 6).
@@ -467,8 +469,18 @@ collector. Staff bot ONLY (his 5a).
   filled row.
 - Auto-fill threshold 0.45 is a first guess — tune on the real file and
   record the measurement.
-- The AI hisobchi does not quote FREIGHT unless the zone is known — freight
-  needs his tariff zone; the reply says so rather than guessing.
+- FREIGHT needs his tariff zone, and **since round 2 (his 2.6 b) a zone that
+  is not stored is GUESSED** from the request's from-city, in two tiers
+  (`zone-guess.ts`: a known city first — Yiwu/Guangzhou → Xitoy wherever they
+  stand, Kashgar/Horgos by the leftmost; the country word alone only when no
+  city matched; any other city is not guessed and is named). The guess prices
+  the REPLY only and is printed as one: «zona «Yiwu»dan taxmin», and every sum
+  with it reads «JAMI taxminiy», never the plain «JAMI». It is NEVER stored —
+  `estimate-wire.test.ts` fences the three files that touch it against
+  `setFreightZone(`, a `freightZone:` key and `.update(` — and the seal still
+  demands a CHOSEN zone (`freight_zone_required`). A city that names a zone
+  the tariff has no price for says the price is missing, never that the city
+  was not understood.
 - Client-facing AI: refused (his standing decision).
 - Sub-round A's «bu kod avvalgi chorakda qancha edi» (the per-code history
   across quarters) was designed and is NOT built — owed to him as a «yo'q»
