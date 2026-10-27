@@ -391,3 +391,7 @@ bot re-send is a new job, not a recalc); product-21 (each attach-win celebrates)
   `calc-landed-words`; fences re-anchored (won-law, ftl-wire, calc-queue, calc-rekey, deal-terms-wire,
   thread-calc-wire, calc-credit-fence). 17 red proofs for item 2 by string edit, each restored by the reverse
   edit.
+- **Reviewed as built** (four lenses + refuters, 3 confirmed, DECISIONS #1478): `recalcFromSealed` reads its card
+  off the locked parent and asks the lead open in the win's order; `openCalcRequest` refuses a closed lead before
+  writing and writes the card's note inside its transaction; the panel takes `takesJobs`. Proven by a held-lock
+  race test and a red proof in main's order.

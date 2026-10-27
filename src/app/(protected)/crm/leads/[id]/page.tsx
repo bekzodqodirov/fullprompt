@@ -343,6 +343,7 @@ export default async function LeadPage({
         entityId={id}
         revalidate={`/crm/leads/${id}`}
         clientName={lead.company || lead.name}
+        takesJobs={stages.find((stage) => stage.id === lead.stageId)?.kind === 'open'}
       />
       <TasksPanel
         entityType="lead"

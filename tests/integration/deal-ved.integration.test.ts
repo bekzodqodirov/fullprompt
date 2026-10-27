@@ -580,10 +580,10 @@ describe('G2 — whose deal the bot mints', () => {
 
     // A shell somebody already WROTE on is a deal, not a shell: a line typed
     // on it keeps it out of reach (re-checked inside the card's transaction).
-    const touchedClient = await mintClient('T', P.s.id);
+    const touchedClient = await mintClient('G', P.s.id);
     const [touched] = await db
       .insert(deals)
-      .values({ code: `VT${S}-1`, clientId: touchedClient.id, stageId: openStageId, ownerId: P.s.id, createdBy: P.s.id, title: touchedClient.name })
+      .values({ code: `VG${S}-1`, clientId: touchedClient.id, stageId: openStageId, ownerId: P.s.id, createdBy: P.s.id, title: touchedClient.name })
       .returning({ id: deals.id });
     await db.insert(dealLines).values({ dealId: touched!.id, seq: 1, description: 'Yozilgan', tnvedCode: null });
     const landed = await land(P.ved, touchedClient);

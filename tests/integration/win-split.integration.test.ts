@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { randomUUID } from 'node:crypto';
+import postgres from 'postgres';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
@@ -11,6 +12,8 @@ import {
   calcRequests,
   calcVersions,
   clients,
+  crmActivities,
+  dealStages,
   deals,
   events,
   leads,
@@ -19,7 +22,7 @@ import {
   users,
 } from '@/modules/platform/db/schema';
 import { finishCalcRequest, openCalcRequest, takeCalcRequest } from '@/modules/wms/calc/service';
-import { recordOffer, sealCalc, setFreightZone } from '@/modules/wms/calc/workspace';
+import { recalcFromSealed, recordOffer, sealCalc, setFreightZone } from '@/modules/wms/calc/workspace';
 import { answerFloorStandsSql } from '@/modules/wms/calc/version-set';
 import { winLead } from '@/modules/wms/crm/service';
 
@@ -121,6 +124,35 @@ async function answerStands(requestId: string): Promise<boolean> {
   return rows[0]?.ok === true;
 }
 
+/** Somebody else's transaction, held open on its own connection (batch-rename's helper). */
+async function withHolder(run: (held: postgres.ReservedSql) => Promise<void>) {
+  const helper = postgres(process.env.DATABASE_URL ?? 'postgres://postgres@127.0.0.1:5432/gsr_dev', {
+    max: 1,
+    onnotice: () => {},
+  });
+  const held = await helper.reserve();
+  try {
+    await run(held);
+  } finally {
+    held.release();
+    await helper.end();
+  }
+}
+
+/** Is anybody WAITING on a lock right now? Through the POOL (#873). */
+async function someoneWaits(): Promise<boolean> {
+  for (let i = 0; i < 250; i += 1) {
+    const rows = (await db.execute(sql`
+      SELECT count(*)::int AS n FROM pg_stat_activity
+       WHERE datname = current_database() AND wait_event_type = 'Lock' AND pid <> pg_backend_pid()`)) as unknown as {
+      n: number;
+    }[];
+    if (Number(rows[0]?.n ?? 0) > 0) return true;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  return false;
+}
+
 async function dealsOfClient(): Promise<string[]> {
   const rows = await db.select({ id: deals.id }).from(deals).where(eq(deals.clientId, clientId));
   return rows.map((row) => row.id);
@@ -174,7 +206,10 @@ afterAll(async () => {
   }
   // Deals before their clients; leads take their FTL and «about» rows with them (CASCADE).
   await db.delete(deals).where(inArray(deals.clientId, [clientId, otherId]));
-  if (madeLeads.length > 0) await db.delete(leads).where(inArray(leads.id, madeLeads));
+  if (madeLeads.length > 0) {
+    await db.delete(crmActivities).where(inArray(crmActivities.entityId, madeLeads));
+    await db.delete(leads).where(inArray(leads.id, madeLeads));
+  }
   await db.update(clients).set({ active: false }).where(inArray(clients.id, [clientId, otherId]));
   await db.update(users).set({ active: false }).where(eq(users.id, actorId));
   await pgClient.end();
@@ -272,6 +307,58 @@ describe('a won lead opens a deal per SALE', () => {
         ctx(),
       ),
     ).rejects.toThrow('lead_closed');
+
+    // …and refuses it BEFORE writing the card's note: the files a form
+    // already uploaded against that id would otherwise sit on a card no job
+    // follows, and the next press would answer `note_taken` (review).
+    const noteId = randomUUID();
+    await expect(
+      openCalcRequest(
+        {
+          entityType: 'lead',
+          entityId: leadId,
+          section: 'rastamojka',
+          fromCity: 'Yiwu',
+          toCity: 'Toshkent',
+          weightKg: 100,
+          volumeM3: 1,
+          items: [{ name: `kech ${tag()}`, quantity: 1 }],
+          note: { id: noteId, text: 'yopilgan lidga izoh' },
+          source: 'card',
+        },
+        ctx(),
+      ),
+    ).rejects.toThrow('lead_closed');
+    expect(await db.query.crmActivities.findFirst({ where: eq(crmActivities.id, noteId) })).toBeUndefined();
+  });
+
+  it('a «Qayta hisoblash» racing the win lands on the DEAL the win moved its parent to', async () => {
+    // The review's race: the recalc reads its parent on the pool, the win
+    // moves that parent onto a deal and commits, and only then does the
+    // recalc get the parent's lock. Reproduced deterministically: a holder
+    // takes the parent's lock first, the recalc queues behind it, the holder
+    // moves the parent (what the win does) and commits.
+    const leadId = await mintLead('Poyga');
+    const r = await sealedOn(leadId);
+    const wonStage = await db.query.leadStages.findFirst({ where: eq(leadStages.kind, 'won') });
+    const dstage = await db.query.dealStages.findFirst({ where: eq(dealStages.kind, 'open') });
+    const [deal] = await db
+      .insert(deals)
+      .values({ code: `WSR-${SUFFIX}`, clientId, stageId: dstage!.id, createdBy: actorId })
+      .returning({ id: deals.id });
+    let correction: Promise<{ id: string }> | null = null;
+    await withHolder(async (held) => {
+      await held`BEGIN`;
+      await held`SELECT id FROM calc_requests WHERE id = ${r.requestId}::uuid FOR UPDATE`;
+      correction = recalcFromSealed(r.requestId, ctx());
+      expect(await someoneWaits()).toBe(true);
+      await held`UPDATE calc_requests SET entity_type = 'deal', entity_id = ${deal!.id}::uuid WHERE id = ${r.requestId}::uuid`;
+      await held`UPDATE leads SET stage_id = ${wonStage!.id}::uuid WHERE id = ${leadId}::uuid`;
+      await held`COMMIT`;
+    });
+    const made = await correction!;
+    madeRequests.push(made.id);
+    expect(await cardOf(made.id)).toEqual({ type: 'deal', id: deal!.id });
   });
 
   it('a lead about a colleague’s client is won onto THAT client only (money-8)', async () => {

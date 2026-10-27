@@ -62,6 +62,7 @@ export async function CalcPanel({
   clientLocale,
   forceOpen = false,
   readOnly = false,
+  takesJobs = true,
 }: {
   entityType: 'deal' | 'lead';
   entityId: string;
@@ -74,6 +75,12 @@ export async function CalcPanel({
   forceOpen?: boolean;
   /** The VED's karta (14a) and his deal card (17a): reads only — no send form, no offer form. */
   readOnly?: boolean;
+  /**
+   * False on a CLOSED lead: it takes no new job (`openCalcRequest` refuses
+   * `lead_closed`), so the send form is not drawn — a form that can only be
+   * refused would upload files onto a card no job follows.
+   */
+  takesJobs?: boolean;
 }) {
   const actor = await getActor();
   if (!actor || !canWriteDeal(actor.permissions)) return null;
@@ -480,7 +487,11 @@ export async function CalcPanel({
           bot is six taps, saving them out and re-uploading them is thirty.
           The form below is for the desk, so on a phone this panel is a status
           banner with a door to the bot instead. */}
-      {writes ? (
+      {writes && !takesJobs ? (
+        <p className="border-t border-line pt-2 text-2xs text-ink-500" data-testid="calc-send-closed">
+          {t('errors.lead_closed')}
+        </p>
+      ) : writes ? (
         <div className="border-t border-line pt-2">
           <p className="text-2xs text-ink-500 sm:hidden">{t('sendOnPhone')}</p>
           <div className="hidden sm:block">

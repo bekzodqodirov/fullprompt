@@ -8,6 +8,7 @@ import {
   crmActivities,
   dealLines,
   deals,
+  leadStages,
   leads,
   tasks,
   users,
@@ -22,7 +23,7 @@ import { logger } from '@/modules/platform/logger';
 import { retireTaskCopiesSoon } from '@/modules/platform/notifications/retire-tasks';
 import { clipText } from '@/modules/platform/telegram/format';
 import { kickPriceChannel, queuePriceChannelPost } from './channel-queue';
-import { addActivity } from '../crm/service';
+import { insertActivityTx } from '../crm/service';
 import { productKey, tnvedFor } from '../tnved/service';
 import { NO_REQUEST, itemNameNorm, sealedMemoryFor } from './memory';
 import {
@@ -280,8 +281,19 @@ export async function openCalcRequest(
     if (!deal) throw new CalcError('not_found');
     label = deal.code;
   } else {
-    const lead = await db.query.leads.findFirst({ where: eq(leads.id, input.entityId) });
+    const [lead] = await db
+      .select({ name: leads.name, kind: leadStages.kind })
+      .from(leads)
+      .innerJoin(leadStages, eq(leadStages.id, leads.stageId))
+      .where(eq(leads.id, input.entityId))
+      .limit(1);
     if (!lead) throw new CalcError('not_found');
+    // A closed lead takes no job, refused BEFORE anything is written — the
+    // note and its pre-uploaded files would otherwise land on a card no job
+    // follows, and the next press would answer `note_taken` (review
+    // 2026-10-27). The transaction asks again under the row lock, for a win
+    // that commits between here and there.
+    if (lead.kind !== 'open') throw new CalcError('lead_closed');
     label = lead.name;
   }
 
@@ -295,10 +307,11 @@ export async function openCalcRequest(
       : null;
   }
 
-  // The materials. On the card path the note is written HERE, with the id the
-  // browser already uploaded files against — and an id that is already taken
-  // is refused rather than adopted, so a posted uuid cannot attach somebody
-  // else's note (and its files) to this request.
+  // The materials. On the card path the note is written in the REQUEST's
+  // transaction (below), with the id the browser already uploaded files
+  // against — so a refusal rolls it back and a retry starts clean — and an id
+  // that is already taken is refused rather than adopted, so a posted uuid
+  // cannot attach somebody else's note (and its files) to this request.
   let noteId: string | null = input.noteId ?? null;
   if (input.note) {
     const existing = await db.query.crmActivities.findFirst({
@@ -306,19 +319,8 @@ export async function openCalcRequest(
       columns: { id: true },
     });
     if (existing) throw new CalcError('note_taken');
-    await addActivity(
-      {
-        id: input.note.id,
-        entityType: input.entityType,
-        entityId: input.entityId,
-        kind: 'note',
-        note: input.note.text,
-      },
-      ctx,
-    );
     noteId = input.note.id;
-  }
-  if (noteId) {
+  } else if (noteId) {
     // Wherever it came from, the note must sit on the SAME card as the
     // request: the attachment gate widens for `ved.docs` on exactly this
     // link, so a note pointing somewhere else would widen it somewhere else.
@@ -393,6 +395,13 @@ export async function openCalcRequest(
            FOR SHARE OF l
       `)) as unknown as { ok: number }[];
       if (open.length === 0) throw new CalcError('lead_closed');
+    }
+    if (input.note) {
+      await insertActivityTx(
+        tx,
+        { id: input.note.id, entityType: input.entityType, entityId: input.entityId, kind: 'note', note: input.note.text },
+        ctx,
+      );
     }
     const [row] = await tx
       .insert(calcRequests)

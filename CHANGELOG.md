@@ -23,6 +23,7 @@ Sizning so'zlaringiz (uchta band) va javobingiz: «3b / 4 a / 5 a / 6 a / 7 b» 
 - Pul qoidasi: «Готово» javobidan keyin shu lidda muhrlangan hisob bo'lsa, ikkalasi **bitta savdo** hisoblanadi va bitta bitimga tushadi. Aks holda eski «Готово» narxi yangi bitimda yana kuchga kirib, sotuvchiga ikki marta upsale to'lanishi mumkin edi. Test bilan isbotlandi.
 - «Yutildi» ikki marta bosilsa, bitta to'plam bitim ochiladi.
 - Upsale to'langan bitimdagi prixodni boshqa bitimga o'tkazib bo'lmaydi. Aks holda bitta savdo uchun ikki marta upsale to'lanardi.
+- Yutilgan yoki yo'qotilgan lidga yangi hisoblatish yuborib bo'lmaydi. Kartada forma o'rniga «Lid yopilgan — yutilgan bo'lsa, uning bitimidan yuboring» yozuvi chiqadi. «Qayta hisoblash» lid yutilayotgan paytda bosilsa ham, tuzatish lidga emas, yangi bitimga tushadi.
 
 ### 3. Bitta qatorli tarkib va «шт» ustuni
 - Lot tarkibini **bitta qator** bilan saqlash mumkin (oldin kamida 2 ta majburiy edi). Endi 1 tadan 20 tagacha tovar.

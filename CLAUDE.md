@@ -2963,7 +2963,7 @@ CN destination is inland (no hub test), ONE arrived column (`columnOf` splits on
 filter hides everything bound for China (`routeFilterOf` = a `kg`/`kz` leg; a map walk over every pair proves no
 road into China has one, and refuses an unclassed new map code).
 
-**Round — uch band (2026-10-27; DECISIONS #1469-#1477, numbered past PR #127's #1455-#1468; migration
+**Round — uch band (2026-10-27; DECISIONS #1469-#1478, numbered past PR #127's #1455-#1468; migration
 0136 `lead_client_many` — ledger must reach 137; spec `docs/UCH-BAND.md`).** His three items after the 136
 deploy, answers «3b / 4 a / 5 a / 6 a / 7 b» (Q1-Q2 ⭐). Judged by five lenses before code (83 objections, 0
 refuted). (1) The card's price links to its calculation through ONE home, `calcWorkspaceHref` (ved.docs only,

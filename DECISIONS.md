@@ -4623,3 +4623,20 @@ long-lived database with main's own code too (#653 — a different oracle, not t
 fresh database is the arbiter. A money test's oracle is the money fragment itself (`answerFloorStandsSql`),
 never a restatement — the R1 red proof first failed on a card assertion BEFORE reaching the money, and the
 oracle was moved first so the proof lands on the thing it is about.
+
+1478. **Reviewed as built — three defects, all around the new «a closed lead takes no job» rule, all fixed**
+(four lenses, each finding given a refuter; 3 confirmed). (a) `recalcFromSealed` inserted the correction on the
+card it read ON THE POOL, so a «Qayta hisoblash» racing a «Yutildi» put the correction back on the won lead and
+superseded the deal's seal from a card no job follows — #531's shape, the fence having gone on one door
+(`openCalcRequest`) of the two that insert a request. The card is now read off the parent's LOCKED row, and a
+lead must still be open under its row lock in the win's order (request, then lead). Proven deterministically: a
+holder takes the parent's lock, the recalc queues behind it, the holder moves the parent as the win does and
+commits; red with the pooled card. (b+c) `openCalcRequest` wrote the card's NOTE (and so bound the files a form
+had already uploaded) before the in-transaction `lead_closed` refusal, so a send on a won lead stranded the
+material on the lead and the next press answered `note_taken`. The lead's stage is now asked on the pool before
+anything is written, and the note is written in the request's own transaction after the row-locked check (a
+race rolls it back); the panel draws no send form on a closed lead (`takesJobs`, a sentence instead), and the
+refusal's words no longer promise a deal a lost lead never had. Red-proven in main's order (note on the pool,
+refusal later); either layer alone keeps the deterministic case green, which is the design — the pooled check
+stops the common case, the transaction stops the race. The CI-order run also caught this round's own fixture
+reusing deal-ved's client code «T» (green alone, red in the file) — renamed.

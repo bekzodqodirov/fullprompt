@@ -2096,7 +2096,7 @@ const QUEUE_REFUSAL: Record<string, string> = {
   not_found: 'karta topilmadi.',
   note_taken: 'bu material allaqachon yozilgan.',
   note_foreign: 'material boshqa kartaga tegishli.',
-  lead_closed: 'lid yopilgan — hisob-kitob uning bitimida.',
+  lead_closed: 'lid yopilgan — unga yangi hisob-kitob qo‘shilmaydi; yutilgan bo‘lsa, uning bitimidan yuboring.',
   unauthenticated: 'siz tizimda emassiz.',
   server_behind: 'server yangilanmoqda — biroz keyinroq urinib ko‘ring.',
 };
