@@ -51,12 +51,14 @@ import {
   endIntake,
   looksLikeTotalsAnswer,
   startIntake,
+  totalsAnswerShape,
   totalsQuestion,
   totalsQuestionText,
   updateIntake,
   type IntakeState,
 } from '@/modules/platform/telegram/calc-intake';
 import {
+  BARE_FIGURE_NOT_FOUND,
   LOST_TOTALS_ANSWER,
   answerStaffText,
   applyLineAnswer,
@@ -194,6 +196,25 @@ describe('the answer', () => {
     await applyLineAnswer(ctx, both.chatId, both.state, '3500');
     expect(ctx.replies).toEqual(['Kub va kg ni birlik bilan yozing: «12 kub 3500 kg»']);
     expect(activeIntake(both.chatId)!.facts.weightKg ?? null).toBeNull();
+  });
+
+  it('a bare answer holding TWO figures to the brutto question is refused, never read as one (review P3-R7)', async () => {
+    for (const text of ['12 3500', '12 3 500']) {
+      const { chatId, state } = collection({ stage: 'question', askingTotalsFor: 'kg', totalsAsked: true, facts: { goods: [] } });
+      const ctx = fakeCtx();
+      await applyLineAnswer(ctx, chatId, state, text);
+      expect(ctx.replies, text).toEqual(['Kub va kg ni birlik bilan yozing: «12 kub 3500 kg»']);
+      expect(activeIntake(chatId)!.facts.weightKg ?? null, text).toBeNull();
+      expect(activeIntake(chatId)!.answers).toEqual([`Umumiy: ${text}`]);
+      // Said again the same way: kept for the card, still never one weight.
+      await applyLineAnswer(ctx, chatId, activeIntake(chatId)!, text);
+      expect(activeIntake(chatId)!.facts.weightKg ?? null, text).toBeNull();
+      expect(activeIntake(chatId)!.totalsAnswer.weightKg, text).toBeNull();
+    }
+    // One figure grouped by thousands is still one.
+    const one = collection({ stage: 'question', askingTotalsFor: 'kg', totalsAsked: true, facts: { volumeM3: 12 } });
+    await applyLineAnswer(fakeCtx(), one.chatId, one.state, '3 500');
+    expect(activeIntake(one.chatId)!.facts.weightKg).toBe(3500);
   });
 
   it('the answer survives «➕ Yana ma’lumot» → «Bo‘ldi»: a re-read that finds no kilos keeps 3500', async () => {
@@ -528,11 +549,34 @@ describe('an answer with no collection to answer (judge concurrency-5)', () => {
   it('is told the collection is gone, and the paid assistant is never asked', async () => {
     const chatId = BigInt(-9_700_000_001);
     const ctx = fakeCtx();
-    await answerStaffText(ctx, chatId, 'staff-1', '3500', { backlog: false, messageId: 1, once: null, waitDeclined: false });
+    // Re-anchored (review REG-3): a WORDED figure is the lost answer's evidence.
+    await answerStaffText(ctx, chatId, 'staff-1', '3500 kg', { backlog: false, messageId: 1, once: null, waitDeclined: false });
     // The assistant is dispatched off the poller; give it the tick it takes.
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(bot.assistant).not.toHaveBeenCalled();
     expect(ctx.replies).toEqual([LOST_TOTALS_ANSWER]);
+  });
+
+  it('a BARE figure with no collection is told what a lookup that found nothing is told — never «to‘plam topilmadi» (review REG-3)', async () => {
+    for (const [n, text] of [[6, '777'], [7, '150'], [8, '12'], [9, '3500']] as const) {
+      const ctx = fakeCtx();
+      await answerStaffText(ctx, BigInt(-9_700_000_000 - n), 'staff-1', text, {
+        backlog: false,
+        messageId: n,
+        once: null,
+        waitDeclined: false,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(ctx.replies, text).toEqual([BARE_FIGURE_NOT_FOUND]);
+      expect(ctx.replies[0]).toMatch(/^Topilmadi\. Mijoz kodi \(GS777\)/u);
+    }
+    expect(bot.assistant).not.toHaveBeenCalled();
+  });
+
+  it('tells a worded figure from a bare one', () => {
+    for (const text of ['3500 kg', '12 kub', '12 kub 3500 kg', '3 500 кг', '12 m³']) expect(totalsAnswerShape(text), text).toBe('worded');
+    for (const text of ['777', '3 500', '12 3500', '1,5']) expect(totalsAnswerShape(text), text).toBe('bare');
+    for (const text of ['GS777', 'Kurtka 300 kg', '+998 90 123 45 67', '']) expect(totalsAnswerShape(text), text).toBeNull();
   });
 
   it('any other words still reach the assistant', async () => {

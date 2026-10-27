@@ -75,7 +75,8 @@ import {
   resolveLineDone,
   sameTotalsAnswer,
   bareTotalsNumber,
-  looksLikeTotalsAnswer,
+  totalsAnswerShape,
+  totalsFigureCount,
   totalsQuestion,
   totalsQuestionText,
   unansweredAmbiguity,
@@ -1108,6 +1109,18 @@ export function registerStaffBot(bot: Bot): void {
 export const LOST_TOTALS_ANSWER =
   'Hisoblatish to‘plami topilmadi (bot qayta ishga tushgan bo‘lishi mumkin) — 🧮 ni qayta bosing.';
 
+/** «Nothing by that» — what a lookup the free search could not answer is told. */
+const NOT_FOUND_HINT =
+  'Topilmadi. Mijoz kodi (GS777), karobka kodi (YW26-000123), yashik (CR-…) yoki partiya kodini yozing.';
+
+/**
+ * A bare figure with no collection to answer (review REG-3): «777» is as
+ * often a code typed without its letters as a lost «3500», so it is told what
+ * a lookup that found nothing is told — plus the one clause for the case it
+ * was a totals answer — and is never handed to the paid assistant.
+ */
+export const BARE_FIGURE_NOT_FOUND = `${NOT_FOUND_HINT}\n(Hisoblatish savoliga javob bo‘lsa — 🧮 ni qayta bosing.)`;
+
 /** «I could not read that» after the totals question — with ITS example. */
 const TOTALS_NOT_READ: Record<import('./calc-intake').TotalsAsk, string> = {
   kg: 'Tushunmadim. Brutto og‘irlikni yozing: «3500» yoki «3500 kg».',
@@ -1189,8 +1202,13 @@ export async function answerStaffText(
   // customer message — «12 kub 3500 kg» is a customer's words there, never
   // an answer to the bot — and a «date» the ⏰ wait declined has been
   // answered by that wait already.
-  if (opts.messageId !== null && !opts.waitDeclined && looksLikeTotalsAnswer(text) && !activeIntake(chatId)) {
-    await ctx.reply(LOST_TOTALS_ANSWER);
+  //
+  // Only a WORDED figure («3500 kg») says a collection was lost (review
+  // REG-3): a bare «777» has the lookup's own answer and the clause.
+  const orphan =
+    opts.messageId !== null && !opts.waitDeclined && !activeIntake(chatId) ? totalsAnswerShape(text) : null;
+  if (orphan !== null) {
+    await ctx.reply(orphan === 'worded' ? LOST_TOTALS_ANSWER : BARE_FIGURE_NOT_FOUND);
     return;
   }
   // Door B's «🔍 Qidirish» runs once per offer message: two taps, one model call.
@@ -1202,9 +1220,7 @@ export async function answerStaffText(
   }
   if (!aiConfigured()) {
     // No key = exactly the day before the AI shipped.
-    await ctx.reply(
-      'Topilmadi. Mijoz kodi (GS777), karobka kodi (YW26-000123), yashik (CR-…) yoki partiya kodini yozing.',
-    );
+    await ctx.reply(NOT_FOUND_HINT);
     return;
   }
   const thinking = await ctx.reply('🤖 O‘ylayapman…');
@@ -1562,15 +1578,19 @@ export async function applyLineAnswer(
     // «3500» after the brutto question is kilograms, «12» after the volume
     // one is cubic metres — read by the house number reader with the unit
     // word put after it, so its «1,200» rule decides and there is no second
-    // reader. After the question for BOTH it is neither, and is refused.
+    // reader. After the question for BOTH it is neither, and is refused —
+    // and so is a bare answer holding TWO figures to a one-unit question
+    // (review P3-R7): «12 3500» after the brutto question was read as
+    // 3500 kg and the 12, the cube as often as not, dropped in silence.
     const bare = bareTotalsNumber(text);
-    if (bare && ask === 'both' && !state.reasked) {
+    const unitless = bare && (ask === 'both' || totalsFigureCount(text) > 1);
+    if (unitless && !state.reasked) {
       // Refused, and still kept for the card (law 11): the VED reads it as typed.
       updateIntake(chatId, { reasked: true, answers: [...state.answers, `Umumiy: ${text}`] });
       await ctx.reply('Kub va kg ni birlik bilan yozing: «12 kub 3500 kg»');
       return;
     }
-    const read = parseManualFacts(bare && ask !== 'both' ? `${text.trim()} ${ask === 'kg' ? 'kg' : 'kub'}` : text);
+    const read = parseManualFacts(bare && !unitless ? `${text.trim()} ${ask === 'kg' ? 'kg' : 'kub'}` : text);
     // Whatever of the two the answer states; the other keeps what it had.
     // What was READ is kept apart (`totalsAnswer`) and put back on top of
     // every re-read (judge concurrency-4) — the text goes to the card with
@@ -1978,8 +1998,7 @@ async function answerWithAssistant(
   thinkingMessageId: number | null,
 ): Promise<void> {
   const replies: Record<string, string> = {
-    not_configured:
-      'Topilmadi. Mijoz kodi (GS777), karobka kodi (YW26-000123), yashik (CR-…) yoki partiya kodini yozing.',
+    not_configured: NOT_FOUND_HINT,
     limit: 'Bugungi AI savollar chegarasi tugadi — ertaga yana so‘rang.',
     error: 'AI javob berolmadi. Keyinroq urinib ko‘ring.',
   };
