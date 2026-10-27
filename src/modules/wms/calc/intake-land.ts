@@ -225,7 +225,7 @@ export async function rootRequestOfNote(noteId: string): Promise<string | null> 
   const rows = (await db.execute(sql`
     SELECT id::text AS id FROM calc_requests
      WHERE note_id = ${noteId}::uuid AND supersedes_request_id IS NULL
-     ORDER BY created_at
+     ORDER BY requested_at
      LIMIT 1
   `)) as unknown as { id: string }[];
   return rows[0]?.id ?? null;
