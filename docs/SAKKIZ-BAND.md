@@ -322,6 +322,15 @@ the lot name, yellow only when dona is written.
   tarkib (item 8), **R9** rota checkbox/weights/«Bugun» (item 5 rest);
   **R10** odnarodka after R4.
 
+**Who builds what (his messages of 2026-10-27).** «4 va 8 ni qilma boshqa sessionda
+qilaman» and, for R5, «boshqa sessiya ishlaydi buni ustida»: **R4, R5 and R8 are built
+by ANOTHER session.** R5's handoff is `docs/SAKKIZ-R5.md` + `docs/SAKKIZ-R5-MAP.md`
+(start gate: R2 and R3 merged). This session builds R2, R3, R6, R7, R9 and R10 (R10
+after R4 lands). R3's spec is `docs/SAKKIZ-R3.md` (its §14 names the seam R4 touches
+in `intake-land.ts`). Status: R2 BUILT on the branch (`docs/SAKKIZ-R2.md`, a late pass
+over the findings its build lost in transit still running when this was written); R3
+designed and judged.
+
 ## 11. The questions sent to him (2026-10-20)
 
 Numbered exactly as in the chat message; ⭐ = the default he can accept with
@@ -421,3 +430,15 @@ Taken as ⭐ (named here so a later round does not re-ask): 1.1 c, 1.2 b, 1.4 b
 3.5 b, 3.6 a, 3.7 a, 3.8 a; 4.1 a, 4.2 a, 4.3 a, 4.4 a, 4.7 a, 4.9 a, 4.12 b,
 4.13 b; 5.1 c, 5.2 b, 5.3 b, 5.5 b, 5.6 a, 5.8 a; 6.1 a-6.7 a, 6.9 a, 6.10 a;
 7.2 b-7.7 a, 7.8 b; 8.1 b-8.4 a, 8.6 b, 8.7 a, 8.8 a; 0.2 a, 0.3 a.
+
+**His answers of 2026-10-27:**
+
+- **Round 2's four questions** (top of `docs/SAKKIZ-R2.md`): «a a / b a / c a / d a» —
+  all four ⭐ (Taxminiy only whole; a yo'lkira-only zone guessed from the city; other
+  Chinese cities not guessed; a one-line total copied and marked «bruttodan»).
+- **Round 3's seven questions** 1.14-1.20 (top of `docs/SAKKIZ-R3.md`): «14 a, qolgani
+  seni taklifing» — **1.14 a** (after the AI answer the bot asks EVERY unit the law
+  pins: dona, juft, and kg / m² / litr when the law needs them), 1.15-1.20 the ⭐.
+- **Round 5's ten questions** 3.9-3.18 (`docs/SAKKIZ-R5.md` §19.1) were sent the same
+  day; record his answers here when they arrive.
+
