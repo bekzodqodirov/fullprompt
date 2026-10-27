@@ -754,12 +754,14 @@ function listOpening(rows: Cell[][]): number | null {
  * («Светильник накладной», «Накладные ресницы», «Розетка двойная накладная»
  * — the sixth review), so it is the waybill only in the waybill's own phrase:
  * after the adjective that says which waybill («Товарная», «Расходная»,
- * «Товарно-транспортная»), or opening the line with nothing after it but its
- * number, its date or what it is for («Накладная № 15», «Накладная от
- * 01.10», «Накладная на отпуск»).
+ * «Товарно-транспортная», «Складская»), or opening the line with nothing
+ * after it but its number however written, its date or what it is for
+ * («Накладная № 15», «Накладная N 15», «Накладная GS777», «Накладная от
+ * 01.10», «Накладная на отпуск», «Накладная для клиента» — the round-6 probe:
+ * the first narrowing read the commonest two as a product).
  */
 const TITLE_LINE =
-  /(?<!\p{L})(?:товарн|транспортн|расходн|приходн|сопроводительн|отгрузочн|возвратн)\p{L}*[\s-]+накладн|^накладная(?=\s*(?:$|№|\(|\d|от(?!\p{L})|на(?!\p{L})))|^накладные(?=\s*(?:$|№|\d|от(?!\p{L})))|(?<!\p{L})(?:invoice|proforma|packing\s*list|заявк|заказ|сч[её]т(?!\p{L})|спецификац|ariza|buyurtma|faktura|发票|订单|装箱单)|(?<!\d)(?:0?[1-9]|[12]\d|3[01])\.(?:0?[1-9]|1[0-2])\.(?:\d{4}|\d{2})(?!\d)|(?<!\d)\d{1,2}[/-]\d{1,2}[/-]\d{4}(?!\d)|(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)/iu;
+  /(?<!\p{L})(?:товарн|транспортн|расходн|приходн|сопроводительн|отгрузочн|возвратн|складск|электронн)\p{L}*[\s-]+накладн|^накладная(?=\s*(?:$|№|\(|\d|[-–—:]|n[or]?\.?\s*\d|\p{L}{1,4}\d|(?:от|на|для|за)(?!\p{L})))|^накладные(?=\s*(?:$|№|\d|от(?!\p{L})))|(?<!\p{L})(?:invoice|proforma|packing\s*list|заявк|заказ|сч[её]т(?!\p{L})|спецификац|ariza|buyurtma|faktura|发票|订单|装箱单)|(?<!\d)(?:0?[1-9]|[12]\d|3[01])\.(?:0?[1-9]|1[0-2])\.(?:\d{4}|\d{2})(?!\d)|(?<!\d)\d{1,2}[/-]\d{1,2}[/-]\d{4}(?!\d)|(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)/iu;
 
 /**
  * The words a goods list is headed with, as whole words — never a substring.

@@ -382,8 +382,13 @@ function unitField(word: string, before: string): boolean {
 }
 /** The carton words that only ever count places, and the plurals — never one product's noun. */
 const PLACES_ONLY = /^(?:мест[оа]?|ctns?|joy|кор|boxes|cartons|коробки|коробок)$/iu;
-/** A total before a carton noun makes it the count: «Jami karobka», «Итого коробка», «Total box». */
-const TOTAL_WORD = /^(?:jami|umumiy|hammasi|итого|всего|общее|total)$/iu;
+/**
+ * A total before a carton noun makes it the count: «Jami karobka», «Жами
+ * коробка», «Итого коробка», «Total box» — Uzbek in both scripts and the
+ * spoken «obshiy» (round-6 probe: the Cyrillic «Жами коробка: 45» became a
+ * product of 45 pieces).
+ */
+const TOTAL_WORD = /^(?:jami|umumiy|hammasi|obshiy|жами|умумий|ҳаммаси|хаммаси|итого|всего|общее|общий|total)$/iu;
 
 /**
  * A TNVED code as stored: digits only, 4-10 of them.

@@ -9,7 +9,9 @@
  * packages (sheets, typed, collector) were merged, and 85 once the round-6
  * final probers' 85 cases joined (c2093-c2177: the fix rounds were over, so
  * they are RECORDED, not fixed — each owed to a later round, its severity in
- * the fixture): each a reviewer's input the readers still get wrong. They run
+ * the fixture), and 40 after the lead undid the three round-6 sub-rules
+ * behind the COMMON ones (DECISIONS #1466): each a reviewer's input the
+ * readers still get wrong. They run
  * as `it.fails`: a fix that makes one pass turns it RED here until its id
  * leaves this list, so the list can only shrink, and nothing on it is
  * forgotten. Never add an id to make a red case quiet — a case that newly
@@ -17,14 +19,11 @@
  */
 export const KNOWN_FAILING: ReadonlySet<string> = new Set([
   // ── r6-probe sheets (recorded, not fixed) ────────────────────────────────
-  // parseGoods: TITLE_LINE takes «Накладная» only before «№», a digit, «(»,
-  // «от» or «на», and only seven adjectives before «накладн» — «Накладная
-  // N 15» / «No 15» / «GS777» / «для …» / «- GS777» / «поставщика» / «за
-  // октябрь», «Складская» / «Электронная накладная» become the first product,
-  // and the sender line above an unread title goes with it (c2102).
-  // Common: c2093, c2095; rare: the rest.
-  'c2093', 'c2094', 'c2095', 'c2096', 'c2097', 'c2098', 'c2099', 'c2100', 'c2101',
-  'c2102',
+  // parseGoods: TITLE_LINE reads «Накладная» as the waybill before its
+  // number, a code, a dash or «от / на / для / за»; any other word after it
+  // reads as the adjective's own use («Накладная петля»), so «Накладная
+  // поставщика» becomes the first product. Rare.
+  'c2098',
   // parseGoods: NAME_IN cuts a name header after «по» / «в» / «as per», so
   // «Наименование (товара) по ТН ВЭД», «… в соответствии с ТН ВЭД», «… по
   // классификатору», «Name as per HS code» rank as the product name and the
@@ -46,11 +45,9 @@ export const KNOWN_FAILING: ReadonlySet<string> = new Set([
 
   // ── r6-probe typed (recorded, not fixed) ─────────────────────────────────
   // parseGoodsLine: unitField keeps a carton noun as the product's own unless
-  // the word before it is a digit, a unit or a TOTAL_WORD — and TOTAL_WORD
-  // knows no Cyrillic Uzbek («Жами», «Умумий») nor «Obshiy», nor «NO. OF» —
-  // so the carton total reads as 45 pieces of a product. Common: c2117; rare:
-  // the rest.
-  'c2117', 'c2118', 'c2119', 'c2120', 'c2121',
+  // the word before it is a digit, a unit or a TOTAL_WORD — and «NO. OF
+  // CARTON: 45» has «OF» there, so the carton total reads as 45 pieces. Rare.
+  'c2121',
   // parseGoodsLine / readGoodsLines / parseManualFacts: unitField's prior-word
   // class takes «kurtkasi.» (the dot included) as a word of the name, so a
   // full stop does not set «Karobka: 45» off the way «,» «-» «;» do and the
@@ -77,16 +74,6 @@ export const KNOWN_FAILING: ReadonlySet<string> = new Set([
   'c2136', 'c2137',
 
   // ── r6-probe collector (recorded, not fixed) ─────────────────────────────
-  // pickGoods: otherName's `figure` pseudo-script compares bare-number words,
-  // so the Excel's «600*600», «36~40», «No.8823», «0.35L», «1.5m» or full-width
-  // digits against the model's «600×600», «2х1,5», «36-40», «№8823», «350 мл»,
-  // «150 см» is a clash: the model's «Russian (Chinese)» line with the Excel's
-  // exact Chinese and every figure agreeing no longer meets the cell and the
-  // order lands twice. Common, except c2153, c2154, c2155, c2158 (rare).
-  'c2138', 'c2139', 'c2140', 'c2141', 'c2142', 'c2143', 'c2144', 'c2145', 'c2146',
-  'c2147', 'c2148', 'c2149', 'c2150', 'c2151', 'c2152', 'c2153', 'c2154', 'c2155',
-  'c2156', 'c2157', 'c2158', 'c2159', 'c2160', 'c2161', 'c2162', 'c2163', 'c2164',
-  'c2165', 'c2166', 'c2167', 'c2168', 'c2169',
   // intakeClientLabel: nameOwnWord keeps a contact word only written
   // Capital+lower (or hyphened), so an all-caps shop name joined by a space
   // («MEGA MOBILE», «SMART PHONE», «ТЕХНО КОНТАКТ», «MOBILE CENTER») loses its

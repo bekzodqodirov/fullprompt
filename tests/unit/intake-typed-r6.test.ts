@@ -143,6 +143,10 @@ describe('a unit word written as a field', () => {
   it('a carton noun set off by a dash or after a total word is the count', () => {
     expect(parseGoodsLine('Kurtka - karobka: 45')).toMatchObject({ quantity: null, cartons: 45 });
     expect(parseGoodsLine('Jami karobka: 45')).toMatchObject({ quantity: null, cartons: 45 });
+    // The total in the other script and the spoken Russian (round-6 probe:
+    // «Жами коробка: 45» was a product of 45 pieces).
+    expect(parseGoodsLine('Ҳаммаси коробка: 45')).toMatchObject({ quantity: null, cartons: 45 });
+    expect(parseGoodsLine('Общий коробка: 45')).toMatchObject({ quantity: null, cartons: 45 });
   });
 
   it('states goods either way, so the product noun never becomes the customer', () => {

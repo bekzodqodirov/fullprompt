@@ -743,12 +743,21 @@ const SCRIPTS = [
   ['latin', /\p{Script=Latin}/u],
 ] as const;
 
-/** A key's words by what each is written in — its first letter's script, or `figure` with no letter («14»). */
+/**
+ * A key's words by the script of their first letter. A word with no letter is
+ * left out: a size is written «600*600mm» in the cell and «600×600 мм» or
+ * «36–40» in the model's reading of it, so the same size reads as different
+ * figures, and comparing them landed one order twice (round-6 probe,
+ * collector, 28 common cases). The counts beside the names (`figuresAgree`)
+ * still have to agree; the cost is that «Sneakers 42» and «Кроссовки 43» with
+ * the same count are one line.
+ */
 function wordsByScript(key: string): Map<string, Set<string>> {
   const by = new Map<string, Set<string>>();
   for (const word of key.split(' ').filter(Boolean)) {
     const letter = /\p{L}/u.exec(word)?.[0];
-    const script = letter === undefined ? 'figure' : (SCRIPTS.find(([, re]) => re.test(letter))?.[0] ?? 'other');
+    if (letter === undefined) continue;
+    const script = SCRIPTS.find(([, re]) => re.test(letter))?.[0] ?? 'other';
     by.set(script, (by.get(script) ?? new Set<string>()).add(word));
   }
   return by;
@@ -757,7 +766,7 @@ function wordsByScript(key: string): Map<string, Set<string>> {
 /**
  * Are two keys two DIFFERENT names: in some script both write, each has a
  * word the other lacks — «Shirt» beside «Jacket», «Куртка M» beside «XL»,
- * «iPhone 15» beside «iPhone 14»? One naming MORE of the same is not another
+ * «iPhone15» beside «iPhone14»? One naming MORE of the same is not another
  * name: «Наушники Bluetooth» shares the Latin of «Bluetooth earphones»,
  * «Куртка женская XL» the «XL» of «Ladies jacket XL», and «Мужские кроссовки»
  * is «Кроссовки мужские» (round-5 probe, collector: comparing SCRIPTS alone
