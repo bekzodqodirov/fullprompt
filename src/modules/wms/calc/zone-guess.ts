@@ -28,6 +28,13 @@ function normalise(fromCity: string | null): string {
 const whole = (word: string) => new RegExp(`(?<!\\p{L})${word}(?!\\p{L})`, 'u');
 /** A word that may run on («yiwuda», «Guangzhoudan») but must START a word. */
 const starts = (word: string) => new RegExp(`(?<!\\p{L})${word}`, 'u');
+/**
+ * A word that may carry only the Uzbek case endings a seller writes on a
+ * city («Ивудан», «Ивуга») and nothing else — for a stem that also begins
+ * ordinary words: «иву» starts «Ивушкина» (a street), and `starts` read that
+ * address as Yiwu (review P1-R5).
+ */
+const withCase = (word: string) => new RegExp(`(?<!\\p{L})${word}(?:дан|да|га|нинг|ни|даги)?(?!\\p{L})`, 'u');
 
 type City = 'kashgar' | 'cn' | 'horgos';
 
@@ -43,7 +50,7 @@ const CITY_WORDS: Record<City, RegExp[]> = {
     /yivu/,
     starts('iwu'),
     starts('ivu'),
-    starts('иву'),
+    withCase('иву'),
     whole('иу'),
     /义乌/,
     /guangzhou/,
@@ -55,11 +62,20 @@ const CITY_WORDS: Record<City, RegExp[]> = {
     whole('yw'),
     whole('gz'),
   ],
-  horgos: [/horgos/, /khorgos/, /xorgos/, /хоргос/, /коргас/, /қорғас/, /霍尔果斯/],
+  // «Khorgas», «Horgas», «Qorgas», «Хоргас» — the Kazakh side's own
+  // spellings and the Uzbek one with its apostrophes gone (review P1-R5).
+  horgos: [/horgos/, /khorgos/, /xorgos/, /horgas/, /khorgas/, /qorgas/, /хоргос/, /хоргас/, /коргас/, /қорғас/, /霍尔果斯/],
 };
 
-/** TIER 2, the country — read only when no city answered. */
-const COUNTRY_WORDS: RegExp[] = [/xitoy/, /хитой/, /кита[йяе]/, /china/, /中国/];
+/**
+ * TIER 2, the country — read only when no city answered. Anchored to the
+ * start of a word (review P1-R5): bare, «china» read «Machinaga», «Chinaz»
+ * (the town Chinoz) and «Indochina» as the China zone, and the guess prices
+ * the reply. «China» is a whole word — English carries no case ending — while
+ * the Uzbek and Russian stems run on («Xitoydan», «Китаю»). 中国 has no word
+ * edges to anchor to.
+ */
+const COUNTRY_WORDS: RegExp[] = [starts('xitoy'), starts('хитой'), starts('кита[йяюе]'), whole('china'), /中国/];
 
 /** Where the earliest of these patterns stands in the text, or -1. */
 function firstAt(text: string, patterns: RegExp[]): number {

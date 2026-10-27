@@ -72,6 +72,33 @@ describe('guessZone', () => {
   });
 });
 
+describe('the words stand where a word stands (R2 late pass, review P1-R5)', () => {
+  it('the country word is anchored: «china» inside another word is not China', () => {
+    for (const text of ['Chinaz', 'Machinaga', 'Indochina', 'ChinaTown', 'Mashinada']) {
+      expect(guessZone(text), text).toBeNull();
+    }
+    // …while the word itself, and its Uzbek and Russian forms, still read it.
+    for (const text of ['China', 'from China', 'Xitoydan', 'Хитойдан', 'Китаю', 'из Китая']) {
+      expect(zoneGuessOf(text), text).toEqual({ zone: 'cn', tier: 2 });
+    }
+  });
+
+  it('the Cyrillic Yiwu stem takes a case ending, never the rest of a street name', () => {
+    expect(guessZone('Ивушкина ул. 5')).toBeNull();
+    for (const city of ['Иву', 'Ивудан', 'Ивуга', 'Ивуда']) expect(guessZone(city), city).toBe('cn');
+  });
+
+  it('Horgos in the Kazakh side’s own spellings', () => {
+    for (const city of ['Khorgas', 'Horgas', 'Хоргас', 'Qorg‘as', 'Qorgas']) expect(guessZone(city), city).toBe('horgos');
+    // «Qo‘rg‘oshin» (lead, the metal) is not a city.
+    expect(guessZone('Qo‘rg‘oshin')).toBeNull();
+  });
+
+  it('«Xitoy» alone still means the Xitoy zone — the ⭐ of his Question 3 asked it in those words (review law-money-9)', () => {
+    expect(zoneGuessOf('Xitoy')).toEqual({ zone: 'cn', tier: 2 });
+  });
+});
+
 describe('guessedZoneFor — a hint only for a zone the tariff prices', () => {
   it('stays silent about Horgos until he has typed its prices', () => {
     expect(guessedZoneFor('Хоргос', ['cn', 'kashgar'])).toBeNull();
