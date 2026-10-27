@@ -1,5 +1,33 @@
 # CHANGELOG
 
+## 2026-10-27 — 8 band, 1-raund qayta tekshirildi: bot yuborilgan narsani to'g'riroq o'qiydi
+
+**Migratsiya yo'q.** Bu 1-raundning davomi, o'sha deployga qo'shilib chiqadi. Deploydan keyin `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatsin (migratsiyalar soni o'zgarmaydi: **136**).
+
+### Nima qilindi
+1-raundni yozib bo'lgach, uni 5 tomondan qayta tekshirdik: Excel o'qish, yozilgan matn, mijozni aniqlash, AI chaqiruvi va rasmlar. **31 ta gumondan 28 tasi haqiqiy xato chiqdi** va tuzatildi. Keyin tuzatishlarning o'zini yana ikki marta tekshirdik. Har safar bitta xatoni tuzatish boshqa, avval to'g'ri ishlagan holatni buzib qo'yayotgani ko'rindi.
+
+Shuning uchun **namunalar to'plami** yig'dik: sotuvchilar Telegramda yozadigan, invoys va packing list'larda keladigan **~2 100 ta real ko'rinishdagi misol**, har birining to'g'ri javobi bilan. Endi kodga har bir o'zgartirish kiritilganda bu misollarning hammasi avtomatik tekshiriladi: avval to'g'ri o'qilgan misol buzilsa, o'zgartirish o'tmaydi. Bu to'plam bilan yana uch marta tuzatildi. Har tuzatishdan keyin alohida tekshiruvchi atrofdagi o'xshash holatlarni sinab ko'rdi va topgan xatosi to'plamga qo'shildi.
+
+### Sizga ko'rinadigan farqlar
+- **Lid hech qachon telefon raqami bilan nomlanmaydi.** Mijoz ismi topilmasa, mijoz kodi qo'yiladi; kod ham bo'lmasa, nomsiz qoladi.
+- **«1,200KGS» endi 1,2 kg deb o'qilmaydi.** Bunday yozuvda vergul mingni ham, kasrni ham bildirishi mumkin. Shuning uchun bot taxmin qilmaydi, qatorga «aniq emas» deb yozadi. Bir karobkaning og'irligi («N.W./CTN») ham tovarning umumiy og'irligi deb olinmaydi.
+- **Juda katta yoki buzuq Excel/HTML fayl tizimni qotirib qo'ymaydi.** Avval kichkina, lekin ichi «shishiriladigan» fayl serverni band qilib qo'yishi mumkin edi.
+- Ro'yxat tepasidagi **«Заявка от 15.10.2026», «Накладная № 15», «Накладной GS777» kabi sarlavha tovar bo'lib qolmaydi.** «Накладная петля», «Накладной замок» esa tovar bo'lib qoladi.
+- **Ikkinchi va uchinchi Excel** bir-birini jimgina o'chirib yubormaydi. AI o'qiyotgan paytda qatorga bergan javobingiz yo'qolmaydi.
+- «Товар: по инвойсу», «Tovar: kecha yubordim» kabi gap **tovar nomi bo'lib qolmaydi** — bot tovarni so'raydi. «Жами коробка: 45» karobka soni, tovar emas.
+- Mijoz qatoridagi **manzil** («Chilonzor 12», «kv: 45») mijozni aniqlashni buzmaydi va kvadrat metr deb o'qilmaydi.
+- **«Kurtka 300 1200»** tovar qatori, mijoz ismi emas. **«WhatsApp», «Telegram»** so'zlari mijoz ismiga qo'shilmaydi.
+- AI o'qigan va Excel'dagi bir xil tovar **ikki marta qo'shilmaydi**; nomi bir xil, lekin raqamlari farq qiladigan qatorlar ikkalasi qoladi va bot buni aytadi.
+- AI'ga beriladigan Excel matni qisqartirilsa, endi bu aytiladi. AI javobi kesilib qolsa, bot ayni o'sha so'rovni behuda qayta yubormaydi.
+
+### Hali to'g'ri o'qilmaydiganlar
+Oxirgi tekshiruvlar tez-tez uchraydigan xatolarni ham topdi, ularning hammasi tuzatildi. Masalan, nomida o'lchami yozilgan tovar: Excel'da «600*600mm», AI o'qiganida «600×600 мм» — endi bitta tovar deb olinadi va buyurtma ikki marta qo'shilmaydi. «iPhone 14» va «iPhone 15» yoki 600 va 800 lik kafel esa ikki xil tovar bo'lib qoladi. Qolgan **67 ta holat kamdan-kam uchraydi** va ro'yxatga yozib qo'yildi, hozircha AI yoki VED ularni qo'lda to'g'rilaydi. Ro'yxat kod ichida turibdi va keyingi raundlarda kamayib boradi.
+
+### Javoblaringiz yozib olindi («2 c / 3 b»)
+- **Odnarodka narxini VED ham, sotuvchi ham yozadi (4.5 c).** VED yozgan narx — bizning tannarx chegaramiz. Sotuvchi yozgani — mijozga aytiladigan narx. Bu 10-raundda quriladi, qurishdan oldin sizga yana bir bor aytaman.
+- **Boshqa sotuvchining mijozi uchun so'rov jo'natilsa (6.8 b)**, jo'natgan sotuvchining CRM'ida **yangi lid** ochiladi. Bu 4-raundda quriladi.
+
 ## 2026-10-21 — 8 band, 1-raund: bot yuborilgan narsani yo'qotmaydi, VED navbati bitta odamga tushmaydi
 
 **Bu raundning o'zida migratsiya yo'q.** U pastdagi LTL/FTL yangilanishi (migratsiya 0135) bilan bir deployda chiqishi mumkin, agar u hali serverga qo'yilmagan bo'lsa. Deploydan keyin ikkalasini tekshiring: **migratsiyalar soni 136** va `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatsin.

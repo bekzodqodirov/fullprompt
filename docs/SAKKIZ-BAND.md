@@ -1,7 +1,9 @@
 # Sakkiz band — his eight items of 2026-10-20 (diagnosis, NOT yet agreed)
 
 Status: **diagnosed and adversarially verified; his answers in §11 (2026-10-21);
-round 1 BUILT (DECISIONS #1455-#1462, CHANGELOG 2026-10-21); rounds 2-10 open;
+round 1 BUILT (DECISIONS #1455-#1462, CHANGELOG 2026-10-21) and reviewed against a
+regression corpus (#1463-#1468, CHANGELOG 2026-10-27); round 2 DESIGNED and judged
+(`docs/SAKKIZ-R2.md`, his four new questions at its top); rounds 3-10 open;
 4.5 and 6.8 asked back and ANSWERED the same day («2 c / 3 b», §11).**
 Below, the diagnosis as written before any code. His message
 (verbatim, abridged): AI rastamojka in the bot cannot read goods from files,

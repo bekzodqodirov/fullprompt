@@ -4680,3 +4680,133 @@ twenty-odd commits, a migration (0135 `load_mode`, the other session's LTL/FTL)
 and #1429-#1454 while this was built — read the journal and the DECISIONS tail
 after a fetch, every time. The FTL flag on a deal is what round 10's odnarodka
 must set.
+
+**#1463 — Round 1 was reviewed AS BUILT, its fixes were reviewed twice
+more, and then the method changed.** Five lenses over the pushed round (collector, sheets, the AI
+call, the typed readers, the photos), every candidate given a refuter: 31 →
+**28 confirmed, 3 rejected**. The ones that would have reached him: «➕
+Qatorlari qo'shilsin» forced a second analysis the seller never pressed; a
+third spreadsheet overwrote the pending second one; `settleAnalysis` dropped a
+per-line answer given while the model ran; a stale ⏭ moved the collection
+back to review; a small XLSX could expand to gigabytes through `sheetAsText`,
+and the HTML table reader went quadratic on unclosed tags (both availability —
+the one Node process is every page's); «1,200KGS» read as 1.2 kg;
+`NET_WEIGHT_KEYS` took the per-carton «N.W./CTN»; the spreadsheet text the
+model sees was cut at 15 000 characters with nobody told; the own retry slept
+after its LAST attempt; «truncated» offered a retry that re-sends the identical
+request; and the typed reader invented a product from any «word + figure».
+Each fix round was then reviewed by three lenses again, and each found
+regressions in the PREVIOUS round's fixes: round 2 = 35 findings (sheets 11,
+typed 14, collector 10), round 3 = 41 reviewer items classified into R3-S1…S10,
+R3-T1…T11, R3-C1…C6 (`review3.md`, binding). That is the round's real
+finding: a reader of free text fixed one complaint at a time reopens the
+complaint before it, because nothing remembers the earlier inputs.
+
+**#1464 — The regression CORPUS: every input any reviewer ever ran, with the
+answer they said is right** (`tests/unit/fixtures/intake-corpus.json` +
+`intake-corpus.ts`, run by `tests/unit/intake-corpus.test.ts`). 1,895 cases
+harvested from the four review rounds, deduplicated, conflicts settled by the
+round-3 binding list, each carrying its source, the reviewer's sentence
+(`said`) and a weight. The readers it covers are the four this round touched:
+the typed goods reader and the customer hint (`intake.ts`,
+`intake-manual.ts`, `units.ts`), the spreadsheet door (`goods-import.ts`,
+`goods-file.ts`, `xls.ts`) and the collector (`calc-intake.ts`,
+`staff-handlers.ts`). **The ratchet** (`intake-corpus-known.ts`): a case that
+fails today runs as `it.fails`, so a known case that starts passing turns RED
+until its id leaves the list, and a live case that starts failing is red as a
+regression — the list can only shrink, and the corpus sits in CI while the
+code is fixed against it. From then on a fix round is measured against the
+WHOLE set: a package may not commit while any case that passed before fails.
+373 failed when it was written.
+
+**#1465 — The lead's calls on the corpus's disputed cases.** Decided, not
+voted: (a) **S-c over R3-C4** — a lead is never named by a bare label or a
+phone; with nothing name-like left the client CODE names it, or nobody
+(`intakeClientLabel`). R3-C4's collapsed text had put the phone back into the
+name, and a lead named «+998 90 123 45 67» is one nobody can find by name.
+(b) **ND1** — a numbered TITLE over a one-column list of names («Заявка от
+15.10.2026» over «Наименование») is passed over, not a refusal, and the VED
+paste stops landing the title and the header as items. (c) **R3-C1 stands**:
+when an invoice line and the model's line state figures that disagree, both
+lines are kept and the seller told — a net-beside-gross re-read that doubles a
+line is stated open, not guessed. (d) Re-anchored with the reason on each
+case: «8000 rows read» was the HARVEST script's template, not anybody's
+answer — the readers stop at `MAX_ROWS` since round 1 and say so, so the case
+asserts `Math.min(n, MAX_ROWS)` and `rowsLeftOut`; c1002 asserts the refused
+code, not the kernel's one-cell name.
+
+**#1466 — Rounds 4-6, fixed against the corpus, and when to stop.** Each
+round: three packages in parallel worktrees (sheets / typed / collector, each
+owning its files and its ids), then a SKEPTIC per package (may a case be
+called stale? default no) and a PROBER per package that ran realistic
+neighbours of every changed rule on BOTH the round's base and its HEAD and
+reported only what it ran where the base was right. Every prober regression
+became a case before the next round. The count is the convergence: round 4
+took 373 → 12 known (then 1 after the lead's calls) and its probers found
+**134** regressions; round 5 took those 134 → 0 and its probers found **65**;
+round 6 took those 65 → 0 and its final probers found **85** (sheets 24,
+typed 21, collector 40; 31 of them common).
+**The stopping rule, fixed before round 6 started:** the round-6 probers'
+findings are RECORDED as known-failing with the rule each is owed to and a
+severity, not fixed — a seventh round would trade them for a smaller set
+somewhere else, and the list in `intake-corpus-known.ts` is the honest
+statement of what the readers still get wrong. **The lead's exception, made
+when the numbers came in:** a sub-rule that makes a COMMON input worse than the
+commit before it is not shipped as «known», it is undone — three were (31
+common): `otherName` compared bare-number words as a script of their own, so a
+size the Excel writes «600*600mm» and the model «600×600 мм» made two names and
+one order landed twice (28); TITLE_LINE took «Накладная» as the waybill only
+before «№»/a digit/«от»/«на», so «Накладная N 15» and «Накладная GS777» became
+the first product (2); TOTAL_WORD knew the Latin «jami» only, so «Жами коробка:
+45» was a product of 45 pieces (1). **The undo was probed like everything
+else, and the first one was too wide**: leaving every number out of the name
+comparison let «iPhone 14» meet «iPhone 15» and an 800×800 tile meet the
+600*600 one (5 common, 56 rare), and the waybill still missed the spoken
+«Накладной GS777» and the spaced «GS 777» (3 common). The second edit is the
+one that stands: `nameWords` keeps each word's LETTERS under its script and the
+key's NUMBERS as their own bucket — every digit run, counted, NFKC-folded, case
+folded after it («№» becomes «No») — so a size is equal however it is written
+and different when it is different; the stated cost is that a unit conversion
+(«0.35L» / «350 мл») is not read, and two cases the first undo had passed
+(c2154, c2155) are known again by choice. The waybill reads its number however
+written, a code with or without a space, the spoken masculine before a number or
+a code only («Накладной замок» is a product), and «Складская/Электронная» only
+opening the line before the noun itself («Электронный накладной замок» is a
+product). The probes' 100 cases joined the corpus (c2178-c2277); the last
+bounded probe looked for COMMON regressions against f44a5a6 only. **67 stay
+known, all rare**, each with the rule it is owed to — 21 of them round 6's own
+two-word totals («Hammasi bo'lib karobka»), which the probe of the undo found
+and the undo did not cause.
+
+**#1467 — The corpus is data, and the typecheck needed a bigger heap.** The
+first corpus was a 900 KB TypeScript literal and `pnpm typecheck` died at the
+default ~2 GB heap; moving the data to JSON was not enough on its own — the
+whole program (4,693 files) needs ~2.6 GB. `pnpm typecheck` runs tsc under
+`--max-old-space-size=4096`, the way the build already runs next (#1223); the
+cases that need code to build a file stay in TypeScript as `{ id, "$ts": true }`
+placeholders that `corpusCases()` resolves, throwing on a missing or an extra
+one. CI's typecheck step is the same script, so it got the heap too.
+
+**#1468 — PROCESS.** (1) **A harvested expectation can be the harvester's
+own template.** The two 8 000-row cases (c0068/c0069)
+asked for «8000 rows read» because the harvest loop wrote its input size into
+the expectation, while the readers stop at `MAX_ROWS` on purpose — read where
+an expectation came from before fixing code to meet it, and a «stale» claim
+goes to a skeptic before the lead decides. (2) **The container
+restarted twice mid-workflow** and took running agents with it: a worktree's
+uncommitted work survives on disk, the workflow does not — the salvage was a
+WIP commit per worktree first, then a continuation script whose agents work IN
+the existing worktrees (a resumed run would have re-created them empty), and
+postgres had to be started again. (3) **Two halves of one rule in two
+packages' files** (figureRow in typed's, readCustomerText's three-figure gate
+in collector's) cannot pass in either package alone; the corpus said so
+(c2075/c2076/c2090-c2092 stayed known on both branches) and the integration is
+where they leave the list — `figureRow` is now the ONE home of «a word and
+figures is a packing-list row». (4) A worktree agent left `*-r4base.ts` /
+`*-r5base.ts` comparison copies inside `src/`; the base for a comparison goes
+in the scratchpad, never in the repo. (5) **The weekly usage limit stopped every
+agent of two running workflows at once** (2026-10-22, reset 10-27): the same
+salvage as a restart, plus one trap — an agent killed between «copy the other
+package's file over mine to test the combination» and «restore it» left a
+foreign file uncommitted in its worktree, found by `git status` before the
+re-run. Read every worktree's status before resuming work in it.

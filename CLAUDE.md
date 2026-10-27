@@ -159,7 +159,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | The staff Telegram group — celebrations, the Saturday 18:00 rating, the month's champion, /reyting | `docs/JAMOA-GURUHI.md` — agreed 2026-10-20 (his «3. 2 3 gif … tabriklash ham / qolgani sen aytkandek»), SHIPPED |
 | Every truck in one place — the board by place, the % by distance, GPS, the gate | `docs/PARTIYA-DOSKASI.md` — agreed 2026-10-17 (his 1A 2a 3a 4a 5a 6c 7a 8b 9b 10b 11A 12A, then «1 hozirgidek qolsin»), SHIPPED; §2 is the placement as built; §3a = «Yo'lda» in two columns, inside / outside China (2026-10-21) |
 | LTL / FTL — which cargo the KPI and the rating count, who may mark it, the paid-month freeze, the logist's hint | `docs/LTL-FTL.md` — agreed 2026-10-20 (his «3 b / qolgani sen aytgandek» = 1a 2a 3b 4a 5a 6a 7a), SHIPPED |
-| His eight items of 2026-10-20 (AI reading, customs, models, odnarodka, VED rota, new deal, kontragent links, one-line tarkib) — verified diagnosis, round plan, the numbered questions | `docs/SAKKIZ-BAND.md` — his answers in §11 (2026-10-21, unnamed = ⭐); **round 1 SHIPPED** (DECISIONS #1455-#1462); 4.5 and 6.8 asked back; rounds 2-10 open |
+| His eight items of 2026-10-20 (AI reading, customs, models, odnarodka, VED rota, new deal, kontragent links, one-line tarkib) — verified diagnosis, round plan, the numbered questions | `docs/SAKKIZ-BAND.md` — his answers in §11 (2026-10-21, unnamed = ⭐); **round 1 SHIPPED** (DECISIONS #1455-#1462) and reviewed against a regression corpus (#1463-#1468); 4.5 c / 6.8 b answered; rounds 2-10 open |
 
 ## State — 2026-08-23
 
@@ -2987,6 +2987,30 @@ Excel photos: `documents/sheet-photo.ts` — 800 px documents, 400 px stock, JPE
 88, fitted into the box. The queued AI pass says when it stands down. ORACLE:
 LibreOffice is installed here — make a file with exceljs, save it as «MS Excel
 97», read it back. «шт» in packing lists (8.5) waits for round 8.
+
+**Then reviewed as built, and the fixes reviewed five more times (#1463-#1468).**
+Five lenses found 28 real defects of 31; each fix round's review then found
+regressions in the PREVIOUS round's fixes (35, then 41 items), because a free-text
+reader fixed one complaint at a time reopens the one before. So the readers now
+have a **regression corpus**: `tests/unit/fixtures/intake-corpus.json` (+ `.ts`
+for the cases that need code to build a file), run by
+`tests/unit/intake-corpus.test.ts` — every input any reviewer or prober ever ran,
+with the answer they said is right (~2,100 cases). `intake-corpus-known.ts` is a
+RATCHET: a known-failing case runs as `it.fails`, so one that starts passing is
+red until its id leaves the list, and a live case that starts failing is red as a
+regression. **Any change to `intake.ts`, `intake-manual.ts`, `units.ts`,
+`goods-import.ts`, `goods-file.ts`, `xls.ts`, `calc-intake.ts` or the collector
+in `staff-handlers.ts` runs the WHOLE corpus first.** Rounds 4-6 fixed against it
+(373 → 12 → 0; the probers found 134, then 65, then 85 regressions). The round-6
+probers' finds are RECORDED as known (the stopping rule) — except COMMON ones:
+the sub-rule behind a common regression is undone and the undo probed (#1466).
+67 known, all rare, each with its rule and severity. `otherName` compares a
+name's letters per script and its NUMBERS as a multiset however written
+(«600*600mm» = «600×600 мм»; «iPhone 14» ≠ «iPhone 15»). Lead calls (#1465): a lead is never named by a phone (code or nobody),
+a numbered title over a one-column list is passed over, R3-C1 keeps both lines
+when their figures disagree. `pnpm typecheck` runs tsc with a **4 GB heap** — the
+program needs ~2.6 GB (#1467). `figureRow` (intake-manual.ts) is the ONE home of
+«a word and figures is a packing-list row».
 
 **Latest migration: 0135** (`load_mode`, `when` …114; ledger must reach **136**). Before
 it: 0134 (`staff_group`, `when` …113). Before
