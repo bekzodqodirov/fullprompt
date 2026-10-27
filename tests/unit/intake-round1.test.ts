@@ -234,7 +234,10 @@ describe('the queued AI pass is never silent when it does not answer', () => {
   // and a failure says PASS_FAILED.
   it('a stand-down and a failure both reach the seller', () => {
     const branch = JOBS.slice(JOBS.indexOf("if (standing !== 'ok') {"));
-    const told = branch.indexOf('const said = (writes ? STOOD_DOWN : TARIFF_STOOD_DOWN)[standing];');
+    // Re-anchored (R2 late pass, concurrency-9): the queue's choice of words
+    // moved into `standDownWords`, whose tariff map has no key for a person's
+    // work.
+    const told = branch.indexOf('const said = standDownWords(standing, writes);');
     expect(told, 'the stand-down no longer speaks — re-anchor').toBeGreaterThan(-1);
     const leaves = branch.indexOf('return;');
     expect(told).toBeLessThan(leaves);
