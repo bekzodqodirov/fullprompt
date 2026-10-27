@@ -52,8 +52,8 @@ export interface CalcCardEntity {
  * Does a calculation request stand on this card?
  *
  * A LEAD also counts when a request's materials NOTE sits on it (review
- * tests-completeness-21): winning a lead moves every request to the new deal
- * (`rekeyLeadCalcRequests`) while its lenta stays on the lead, so the VED's
+ * tests-completeness-21): winning a lead moves every request to a deal of its
+ * sale (`rekeyLeadCalcJobsTx`) while its lenta stays on the lead, so the VED's
  * question and the seller's answer would vanish from every card he can open.
  * The note is the one stored link a won lead keeps to its requests. A request
  * opened with no materials leaves no such link — STATED: a deal-side pointer
@@ -312,7 +312,7 @@ export async function kartaCardFor(
 }
 
 /**
- * Every deal a WON lead's calculations moved to (`rekeyLeadCalcRequests`),
+ * Every deal a WON lead's calculations moved to (`rekeyLeadCalcJobsTx`),
  * found the karta's way — through each job's materials note, which stays on
  * the lead (`kartaCardFor`'s derivation, said for a whole lead). A list and
  * not one deal: one lead can hold several jobs, and each may be its own deal

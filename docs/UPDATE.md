@@ -353,6 +353,22 @@ deploydan keyin to‘g‘ri son — repo’dagi fayllar soni
    xabarlar ro‘yxatidagi xatoni o‘qing va
    `docker compose logs --since 10m app | grep staff-group` ni yuboring.
 
+## Uch band (2026-10-27, 0136) — tekshiruv tartibi
+
+Bu raundda migratsiya bor: **0136** — deploydan keyin son **137** bo‘ladi
+(repo’dagi fayllar soni: `ls src/modules/platform/db/migrations/*.sql | wc -l`).
+
+1. Zaxira (§1) — hajmi 0 emasligini tekshiring.
+2. `git pull`, keyin avval `docker compose build migrate`, so‘ng
+   `docker compose --profile https --profile telegram up -d --build` —
+   **tg-listen ham qayta qurilsin**: sayt va reklama lidlarining «shu raqamdagi
+   lidga qo‘shish» qoidasi o‘zgardi.
+3. Sonni o‘qing — **137**. Kam chiqsa, `docker compose run --rm migrate` ning
+   o‘z chiqishini o‘qing.
+4. `curl -s https://gsrwms.uz/api/version` — bugungi vaqt.
+5. Sinov: CRM’da bitta lidni mavjud mijoz kodiga «Yutildi» qiling — «bu kodda lid
+   bor» demasligi va yangi bitim ochishi kerak.
+
 ## Agar biror narsa buzilsa
 
 Avvalgi ishlaydigan holatga qaytish (kod):
@@ -361,6 +377,22 @@ Avvalgi ishlaydigan holatga qaytish (kod):
 git log --oneline -5                 # ishlagan commit'ni toping
 git checkout <commit>
 docker compose --profile https up -d --build
+```
+
+**0136 dan (uch band) PASTGA qaytishdan oldin — o‘qing.** Migratsiya bir
+tomonlama: «bir mijozga bitta lid» indeksi olib tashlangan, va bir mijozda ikki
+lid bo‘lsa uni qayta qo‘yib bo‘lmaydi — eski kod indekssiz ham ishlaydi. Lekin
+eski kod **bitta qatorli tarkibni ko‘rmaydi** (lot butun holda hujjatga chiqadi)
+va «hamkasb mijozi haqidagi lid»ni oddiy lid deb biladi. Qaytishdan oldin
+sanang va soni nol bo‘lmasa, menga yuboring:
+
+```bash
+docker compose exec -T postgres psql -U gsr -d gsr -tAc \
+  "SELECT count(*) FROM (SELECT lot_id FROM lot_composition_lines GROUP BY lot_id HAVING count(*) = 1) x"
+docker compose exec -T postgres psql -U gsr -d gsr -tAc \
+  "SELECT count(*) FROM batch_sent_compositions WHERE jsonb_array_length(lines) = 1"
+docker compose exec -T postgres psql -U gsr -d gsr -tAc \
+  "SELECT count(*) FROM lead_about_client"
 ```
 
 **0132 dan (yo‘lkira tarifi bo‘yicha taqsimlash) PASTGA qaytishdan oldin —

@@ -43,6 +43,8 @@ const FILE_START = new Date();
 let actorId: string;
 const madeLeads: string[] = [];
 const madeUsers: string[] = [];
+/** Clients whose seller this file mints — retired with him, or the owner picker's own test reads a client it cannot render. */
+const madeOwnedClients: string[] = [];
 
 beforeAll(async () => {
   actorId = (await db.select().from(users).limit(1))[0]!.id;
@@ -78,6 +80,7 @@ afterAll(async () => {
     await db.delete(crmActivities).where(inArray(crmActivities.entityId, madeLeads));
     await db.delete(leads).where(inArray(leads.id, madeLeads));
   }
+  if (madeOwnedClients.length) await db.update(clients).set({ active: false }).where(inArray(clients.id, madeOwnedClients));
   if (madeUsers.length) await db.update(users).set({ active: false }).where(inArray(users.id, madeUsers));
   await pgClient.end();
 });
@@ -328,6 +331,7 @@ describe('where a confirmed intake lands', () => {
       .insert(clients)
       .values({ clientCode: code, name: 'Hamkasb mijozi', phones: [], salesManagerId: seller!.id })
       .returning();
+    madeOwnedClients.push(client!.id);
     const land = (noteId: string) =>
       landIntake({
         noteId,
@@ -375,6 +379,7 @@ describe('where a confirmed intake lands', () => {
       .insert(clients)
       .values({ clientCode: code, name: 'Telefonli hamkasb mijozi', phones: [phone], salesManagerId: seller!.id })
       .returning();
+    madeOwnedClients.push(client!.id);
     const about = await landIntake({
       noteId: uuidv4(),
       section: 'rastamojka',

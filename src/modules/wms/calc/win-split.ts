@@ -3,7 +3,7 @@ import type { Db, Tx } from '../../platform/db/client';
 import { isAnswerSql } from './credit';
 import { dealTitleFor } from './deal-title';
 import { isCalcSection } from './labels';
-import { answerFloorStandsSql, currentVersionSql, notSupersededSql } from './version-set';
+import { answerFloorStandsSql, currentVersionSql, notSupersededSql, outrankingAnswerSql } from './version-set';
 import { offerStandsSql, releasedOfferWhere } from './workspace';
 
 /**
@@ -87,11 +87,10 @@ export async function leadJobsFor(exec: Db | Tx, leadId: string): Promise<LeadJo
     SELECT r.id::text AS id, r.supersedes_request_id::text AS supersedes, r.section,
            r.requested_at::text AS created_at,
            (r.completed_at IS NULL) AS open,
-           CASE WHEN ${isAnswerSql('r')} AND r.answer_currency = 'USD' AND r.answer_amount > 0
+           CASE WHEN ${isAnswerSql('r')} AND r.answer_currency = 'USD'
                 THEN r.completed_at::text END AS answer_at,
            coalesce(${isAnswerSql('r')} AND ${answerFloorStandsSql()}, false) AS answer_stands,
-           CASE WHEN r.answer_amount IS NOT NULL AND r.answer_currency = 'USD'
-                THEN r.completed_at::text END AS answer_usd_at,
+           CASE WHEN ${outrankingAnswerSql('r')} THEN r.completed_at::text END AS answer_usd_at,
            (SELECT max(lv.sealed_at)::text FROM calc_versions lv WHERE lv.request_id = r.id) AS last_seal_at,
            sv.sealed_at::text AS seal_at, sv.sealed_by::text AS seal_by, sv.stands AS seal_stands,
            sv.total_usd::text AS seal_total, sv.volume_m3::text AS seal_m3, sv.weight_kg::text AS seal_kg,
