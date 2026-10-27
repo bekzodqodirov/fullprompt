@@ -125,7 +125,7 @@ export interface IntakeState {
    *
    * `at` is where the material and files stood when it was given (review
    * CONC-2): what arrives AFTER it may state the figure differently, and is
-   * then asked about rather than outranked (`judgeTotalsAnswer`).
+   * then asked about rather than outranked (`totalsDoubts`).
    */
   totalsAnswer: { weightKg: number | null; volumeM3: number | null; at: TotalsMark };
   /** The line the bot is waiting for an answer about, by its index in
@@ -446,7 +446,8 @@ export function unansweredAmbiguity(
 type Totals = Pick<import('../../wms/calc/intake').CalcFacts, 'weightKg' | 'volumeM3'>;
 
 /**
- * The totals answer, judged against what came AFTER it (review CONC-2).
+ * The totals answer, judged against what came AFTER it (review CONC-2) — the
+ * doubts it leaves, if any.
  *
  * The answer used to win over every later reading for good: a packing list
  * sent after «➕ Yana ma’lumot» saying G.W. 4200 kg, or the seller typing
@@ -456,13 +457,16 @@ type Totals = Pick<import('../../wms/calc/intake').CalcFacts, 'weightKg' | 'volu
  * A figure for an answered field that the LATER material states — typed
  * after the answer (`since`, read against the whole text's goods lines), or
  * else what the reading of everything now finds — and that is not the answer
- * RETIRES the answer for that field: the field is asked again with both
- * figures named, never one picked in silence. A later figure written two
- * ways retires it too, and its own «mi yoki» is the question. Nothing having
+ * DOUBTS it: the field is asked again with both figures named, never one
+ * picked in silence. A later figure written two ways doubts it too, and its
+ * own «mi yoki» is the question. The answer itself is KEPT, so the doubt is
+ * found again on every re-read until the seller answers again — an answer
+ * moves its mark past the material that doubted it — and is never lost to a
+ * reading that then takes the document's figure in silence. Nothing having
  * arrived since, the answer stands: the seller answered looking at all of
  * it. Pure.
  */
-export function judgeTotalsAnswer(
+export function totalsDoubts(
   answer: IntakeState['totalsAnswer'],
   later: {
     /** Material and files now. */
@@ -472,26 +476,19 @@ export function judgeTotalsAnswer(
     /** What the reading of the whole collection finds, before the answer is put back. */
     reading: Totals;
   },
-): { answer: IntakeState['totalsAnswer']; doubts: IntakeState['ambiguousTotals'] } {
+): IntakeState['ambiguousTotals'] {
   const arrived = later.now.material > answer.at.material || later.now.files > answer.at.files;
-  if (!arrived) return { answer, doubts: [] };
-  const kept = { ...answer };
+  if (!arrived) return [];
   const doubts: IntakeState['ambiguousTotals'] = [];
   for (const field of ['weightKg', 'volumeM3'] as const) {
     const answered = answer[field];
     if (answered === null) continue;
     const twoWays = later.since.ambiguous.find((a) => a.field === field);
     const said = Number(later.since[field] ?? later.reading[field]);
-    if (twoWays) {
-      doubts.push(twoWays);
-    } else if (said > 0 && figure(said) !== figure(answered)) {
-      doubts.push({ field, answered, stated: said });
-    } else {
-      continue;
-    }
-    kept[field] = null;
+    if (twoWays) doubts.push(twoWays);
+    else if (said > 0 && figure(said) !== figure(answered)) doubts.push({ field, answered, stated: said });
   }
-  return { answer: kept, doubts };
+  return doubts;
 }
 
 /** Is this the same totals answer — the same figures, given at the same point? Pure. */
@@ -505,17 +502,18 @@ export function sameTotalsAnswer(a: IntakeState['totalsAnswer'], b: IntakeState[
 }
 
 /**
- * The facts once the answer is judged: the kept answer on top (`mergeTotalsAnswer`),
- * and a RETIRED field emptied so the totals question asks it again — a cube
+ * The facts once the answer is judged: the answer on top (`mergeTotalsAnswer`),
+ * and a DOUBTED field emptied so the totals question asks it again — a cube
  * flagged as stated-but-unsettled, as a cube typed two ways is, so the lines'
  * Σ does not answer the question instead (`factsVolumeM3`). Pure.
  */
 export function factsWithAnswer(
-  judged: ReturnType<typeof judgeTotalsAnswer>,
+  answer: IntakeState['totalsAnswer'],
+  doubts: IntakeState['ambiguousTotals'],
   facts: IntakeState['facts'],
 ): IntakeState['facts'] {
-  const merged = mergeTotalsAnswer(judged.answer, facts);
-  for (const doubt of judged.doubts) {
+  const merged = mergeTotalsAnswer(answer, facts);
+  for (const doubt of doubts) {
     if (doubt.field === 'weightKg') {
       merged.weightKg = null;
       delete merged.weightNetto;
@@ -1554,12 +1552,12 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
           from: state.material.slice(0, at.material).reduce((n, m) => n + m.length + 1, 0),
         })
       : { weightKg: null, volumeM3: null, ambiguous: [] };
-  const judged = judgeTotalsAnswer(state.totalsAnswer, {
+  const doubts = totalsDoubts(state.totalsAnswer, {
     now: { material: state.material.length, files: state.fileCount },
     since,
     reading,
   });
-  const facts = factsWithAnswer(judged, reading);
+  const facts = factsWithAnswer(state.totalsAnswer, doubts, reading);
   return {
     ...state,
     facts,
@@ -1571,11 +1569,10 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
     // read that failed (cut, refused, unreadable) included (r1-fix typed
     // #21), and a re-read ADDED to the first, never in its place (2.9 c).
     usages: [...state.usages, ...(outcome.answered ?? [])],
-    totalsAnswer: judged.answer,
     totalsAsked: totalsStillAsked(state, facts, factsVolumeM3(facts)),
     // What the seller has answered is not asked again (review P3-3) — unless
     // later material doubts the answer, and then THAT is what is asked.
-    ambiguousTotals: [...unansweredAmbiguity(manual.ambiguous, state.totalsAnswer), ...judged.doubts],
+    ambiguousTotals: [...unansweredAmbiguity(manual.ambiguous, state.totalsAnswer), ...doubts],
     stage: 'review',
   };
 }

@@ -406,7 +406,34 @@ describe('material sent AFTER the answer (review CONC-2)', () => {
     expect(out.facts.weightKg ?? null).toBeNull();
     expect(out.totalsAsked).toBe(false);
     expect(out.ambiguousTotals).toEqual([{ field: 'weightKg', answered: 3500, stated: 4200 }]);
-    expect(out.totalsAnswer).toMatchObject({ weightKg: null });
+    // The answer is KEPT — the doubt is what holds the field open.
+    expect(out.totalsAnswer).toMatchObject({ weightKg: 3500 });
+  });
+
+  it('the doubt is found again on every re-read until he answers — the document never wins in silence', async () => {
+    const { chatId, state } = answered();
+    const ctx = fakeCtx();
+    await applyLineAnswer(ctx, chatId, state, '3500');
+    updateIntake(chatId, { stage: 'material', material: [...activeIntake(chatId)!.material, 'brutto 4200 kg'] });
+    model.analyze.mockResolvedValueOnce(reads({ volumeM3: 12 }));
+    await pressDone(ctx, chatId);
+    expect(activeIntake(chatId)!.askingTotalsFor).toBe('kg');
+    // ⏭ — and more material, and Bo‘ldi again: still neither figure taken.
+    await handleCalcCallback(ctx, chatId, 'skip');
+    await handleCalcCallback(ctx, chatId, 'more');
+    updateIntake(chatId, { material: [...activeIntake(chatId)!.material, 'Shim 50 dona'] });
+    model.analyze.mockResolvedValueOnce(reads({ volumeM3: 12, weightKg: 4200 }));
+    const again = await analyzeCollected(activeIntake(chatId)!);
+    expect(again.facts.weightKg ?? null).toBeNull();
+    expect(again.ambiguousTotals).toEqual([{ field: 'weightKg', answered: 3500, stated: 4200 }]);
+    // His answer moves the mark past what doubted it: the next re-read keeps it.
+    updateIntake(chatId, { ...again, stage: 'question', askingTotalsFor: 'kg' });
+    await applyLineAnswer(ctx, chatId, activeIntake(chatId)!, '4200');
+    updateIntake(chatId, { stage: 'material' });
+    model.analyze.mockResolvedValueOnce(reads({ volumeM3: 12, weightKg: 4200 }));
+    const settled = await analyzeCollected(activeIntake(chatId)!);
+    expect(settled.facts.weightKg).toBe(4200);
+    expect(settled.ambiguousTotals).toEqual([]);
   });
 
   it('what the answer had already seen never overrules it; the same figure again does not doubt it', async () => {
@@ -475,14 +502,13 @@ describe('material sent AFTER the answer (review CONC-2)', () => {
     const analysed: IntakeState = {
       ...snapshot,
       facts: { volumeM3: 12, weightKg: null, goods: [] },
-      totalsAnswer: { ...answer, weightKg: null },
       totalsAsked: false,
       ambiguousTotals: [doubt],
     };
     const out = settleAnalysis(live, snapshot, analysed, 'tok');
     if (out.kind === 'gone') throw new Error('gone');
     expect(out.state.facts.weightKg ?? null).toBeNull();
-    expect(out.state.totalsAnswer.weightKg).toBeNull();
+    expect(out.state.totalsAnswer.weightKg).toBe(3500);
     expect(out.state.ambiguousTotals).toEqual([doubt]);
   });
 });

@@ -1947,7 +1947,7 @@ export function settleAnalysis(
   // A totals answer typed WHILE the reading ran is newer than everything the
   // reading saw, and goes on top (judge concurrency-4). Otherwise the
   // reading's own verdict on the answer stands — re-merging the snapshot's
-  // answer here would undo a field the reading retired because later
+  // answer here would put back a figure the reading held open because later
   // material doubts it (review CONC-2).
   const answeredMeanwhile = !sameTotalsAnswer(live.totalsAnswer, snapshot.totalsAnswer);
   const facts = {
@@ -1965,7 +1965,6 @@ export function settleAnalysis(
     // The live totals answer too, when it is new (above); `totalsAsked` is
     // the reading's own verdict over it.
     facts: answeredMeanwhile ? mergeTotalsAnswer(live.totalsAnswer, facts) : facts,
-    totalsAnswer: answeredMeanwhile ? live.totalsAnswer : analysed.totalsAnswer,
     totalsAsked: analysed.totalsAsked,
     steps: analysed.steps,
     notes: analysed.notes,
