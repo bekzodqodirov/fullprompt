@@ -84,7 +84,7 @@ export interface PanelDocument {
 }
 
 type Mode = 'separate' | 'mixed';
-type Refusal = { error: string; seq?: number; field?: string; sums?: { sum: string; lot: string } };
+type Refusal = { error: string; seq?: number; field?: string; sums?: { sum: string; lot: string }; tnvedCode?: string };
 
 const EMPTY_LINE: DraftLine = { name: '', pieces: '', cartons: '', kg: '', m3: '', tnved: '' };
 
@@ -166,6 +166,8 @@ function useRefusalText(): (r: Refusal) => string {
         return t('errors.document_is_photo');
       case 'lot_changed':
         return t('errors.lot_changed');
+      case 'tnved_would_vanish':
+        return t('errors.tnved_would_vanish', { code: r.tnvedCode ?? '' });
       case 'composition_changed':
         return t('errors.composition_changed');
       case 'composition_changed_self':

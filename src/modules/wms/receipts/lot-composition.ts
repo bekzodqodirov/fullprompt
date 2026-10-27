@@ -59,7 +59,8 @@ export type CompositionRefusalCode =
   | 'document_not_on_receipt'
   | 'document_is_photo'
   | 'lot_changed'
-  | 'composition_changed';
+  | 'composition_changed'
+  | 'tnved_would_vanish';
 
 export class CompositionError extends Error {
   constructor(
@@ -69,6 +70,8 @@ export class CompositionError extends Error {
     public readonly sums?: { sum: string; lot: string },
     /** `composition_changed` because the SAME person saved a moment ago (a double tap). */
     public readonly bySelf?: boolean,
+    /** `tnved_would_vanish`: the code the lot's own name carries in the memory. */
+    public readonly tnvedCode?: string,
   ) {
     super(code);
   }
@@ -266,6 +269,8 @@ export async function saveComposition(
   if (!parsed.ok) throw refusalError(parsed.refusal);
   if (!parsedInput.attachmentId) throw new CompositionError('document_required');
   const attachmentId = parsedInput.attachmentId;
+  // ON THE POOL, before the transaction (#714).
+  await refuseVanishingCode(parsedInput.lotId, parsed.lines);
 
   return db.transaction(async (tx) => {
     await compositionLockTimeout(tx);
@@ -488,6 +493,28 @@ const uuidList = (ids: string[]): SQL =>
     ids.map((id) => sql`${id}::uuid`),
     sql`, `,
   );
+
+/**
+ * A ONE-line tarkib of the lot's OWN good (its name is the lot's, 8.6) with
+ * no code: the invoice prints a composed line's own code and never the
+ * memory's (fence 4), so the code the uncomposed lot printed would vanish
+ * from the paper — refused, naming that code (the judge's regression-5). A
+ * line naming another good is the VED's to code; several lines are coded on
+ * the Bojxona tab as before.
+ */
+async function refuseVanishingCode(lotId: string, lines: readonly { name: string; tnvedCode: string | null }[]): Promise<void> {
+  if (lines.length !== 1 || lines[0]!.tnvedCode !== null) return;
+  const lot = await db.query.receiptLots.findFirst({
+    where: eq(receiptLots.id, lotId),
+    columns: { productNameZh: true, productNameRu: true },
+  });
+  if (!lot) return;
+  const { productKey, tnvedFor } = await import('../tnved/service');
+  const line = productKey(lines[0]!.name);
+  if (line !== productKey(lot.productNameZh) && line !== productKey(lot.productNameRu ?? '')) return;
+  const code = (await tnvedFor([lot.productNameZh])).get(productKey(lot.productNameZh))?.tnvedCode;
+  if (code) throw new CompositionError('tnved_would_vanish', 1, undefined, undefined, undefined, code);
+}
 
 /**
  * The pieces a prixod's job states for its ONE good, or null: exactly one

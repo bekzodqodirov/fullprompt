@@ -5611,6 +5611,7 @@
       "document_not_on_receipt": "Hujjat shu prixodga yuklangan bo'lishi kerak (mashinaga emas)",
       "document_is_photo": "Bu karobka rasmi — mijozning hujjatini yuklang",
       "lot_changed": "Lot o'zgardi — yangilang, yozganlaringiz qoladi",
+      "tnved_would_vanish": "Lotning TNVED kodi {code} — qatorda kod bo'lmasa, invoysda kod chiqmaydi. Kodni yozing yoki «Bitta tovar»ni bosing",
       "composition_changed": "Tarkibni boshqa hodim o'zgartirdi — yangilang",
       "composition_changed_self": "Siz allaqachon saqladingiz — yangilang",
       "busy": "Band edi — qaytadan bosing",

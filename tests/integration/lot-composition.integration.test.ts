@@ -568,6 +568,29 @@ describe('lot tarkibi — the writer', () => {
     expect((second!.before as { lotComposition: { lines: string[] } }).lotComposition.lines).toEqual(after.lines);
   });
 
+  it('2b. a ONE-line tarkib of the lot’s own good keeps the lot’s TNVED code on the paper — refused without it (the judge’s regression-5)', async () => {
+    const NAME_B = `其他${SFX}`;
+    await db.insert(tnvedAssignments).values({ productKey: productKey(NAME_B), productNameZh: NAME_B, tnvedCode: '9503007000', source: 'manual' });
+    try {
+      // The lot's own name (spaced otherwise), no code: the invoice prints a
+      // composed line's OWN code (fence 4), so 9503007000 would vanish.
+      const refused = await refusal(save('B', [line(` ${NAME_B} `, '3', '30', '0.03', '12')]));
+      expect(refused).toMatchObject({ code: 'tnved_would_vanish', tnvedCode: '9503007000' });
+      expect((await compositionsFor([lot.B])).has(lot.B)).toBe(false);
+      // With the code it saves, and the pieces go on the paper.
+      await save('B', [line(NAME_B, '3', '30', '0.03', '12', '9503007000')]);
+      let view = (await compositionsFor([lot.B])).get(lot.B)!;
+      expect(view.lines.map((l) => [l.name, l.tnvedCode, l.pieces])).toEqual([[NAME_B, '9503007000', 12]]);
+      // ANOTHER good is the VED's to code — it saves blank.
+      await save('B', [line('Игрушка', '3', '30', '0.03')]);
+      view = (await compositionsFor([lot.B])).get(lot.B)!;
+      expect(view.lines.map((l) => [l.name, l.tnvedCode])).toEqual([['Игрушка', null]]);
+      await clearComposition({ lotId: lot.B, seenRev: view.rev }, ved(), ctx(vedId));
+    } finally {
+      await db.delete(tnvedAssignments).where(eq(tnvedAssignments.productKey, productKey(NAME_B)));
+    }
+  });
+
   it('2. every refusal, named by row, field and sums', async () => {
     const r = async (lines: ReturnType<typeof line>[], opts?: Parameters<typeof save>[2]) => refusal(save('A', lines, opts));
     // ONE line is a tarkib now (his 2026-10-27); none is not (21 never

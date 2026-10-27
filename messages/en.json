@@ -5611,6 +5611,7 @@
       "document_not_on_receipt": "The document must be on this receipt (not on the truck)",
       "document_is_photo": "That is a carton photo — upload the client's document",
       "lot_changed": "The lot changed — reload; what you typed stays",
+      "tnved_would_vanish": "The lot has TNVED code {code} — with no code on the line the invoice prints none. Type the code or press «One good»",
       "composition_changed": "Someone else changed the contents — reload",
       "composition_changed_self": "You already saved — reload",
       "busy": "It was busy — press again",

@@ -5611,6 +5611,7 @@
       "document_not_on_receipt": "单据必须上传到本入库单（不是车辆）",
       "document_is_photo": "这是纸箱照片 — 请上传客户单据",
       "lot_changed": "批次已变化 — 请刷新，已输入内容会保留",
+      "tnved_would_vanish": "该批次的 TNVED 编码为 {code} — 行中不填编码，发票上将没有编码。请填写编码或点击「单一货物」",
       "composition_changed": "其他员工已修改组成 — 请刷新",
       "composition_changed_self": "您已保存 — 请刷新",
       "busy": "系统繁忙 — 请再按一次",
