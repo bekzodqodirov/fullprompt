@@ -671,6 +671,46 @@ export async function newestReadyBatchId(): Promise<string | null> {
   return rows[0]?.id ?? null;
 }
 
+/** The batch that answers one code, and the last day it describes. */
+export interface ChosenBatch {
+  batchId: string;
+  /** `batchEndSql`'s day, as ISO text — what «eski fayl» is judged by. */
+  endDate: string;
+  /** How many rows of the code it holds; null = not counted. */
+  rows: number | null;
+}
+
+/**
+ * Which READY batch answers each code. TOTAL over the codes asked: every code
+ * gets an entry whenever ANY batch is ready, and the map is EMPTY only when
+ * none is. «No ready batch» (no_batch, «yuklanmagan») and «no file holds this
+ * code» (no_declarations, calc.importNone) stay two different answers.
+ *
+ * K: today's rule — the newest ready batch for every code, by the ONE order
+ * of «newest» (`batchRecencySql`, the same as `newestReadyBatchId`). Round 2's
+ * baza package replaces the body with the per-code chooser
+ * (docs/SAKKIZ-R2.md §7.3); the contract above is what its callers rely on.
+ */
+export async function batchesForCodes(codes: readonly string[]): Promise<Map<string, ChosenBatch>> {
+  const out = new Map<string, ChosenBatch>();
+  // Keyed by the code exactly as asked, so a caller's lookup cannot miss.
+  const asked = [...new Set(codes)];
+  if (asked.length === 0) return out;
+  const rows = await db.execute<{ id: string; ended: string }>(sql`
+    SELECT b.id::text AS id, ${batchEndSql(sql`b`)}::text AS ended
+      FROM customs_import_batches b
+     WHERE b.status = 'ready'
+     ORDER BY ${batchRecencySql(sql`b`)}
+     LIMIT 1
+  `);
+  const newest = rows[0];
+  if (!newest) return out;
+  for (const code of asked) {
+    out.set(code, { batchId: newest.id, endDate: String(newest.ended).slice(0, 10), rows: null });
+  }
+  return out;
+}
+
 /**
  * «Oldingi chorak» (D7): the newest READY batch that ENDS strictly before
  * the given batch STARTS — the same two builders, never a re-spelling. So a

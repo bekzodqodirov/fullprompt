@@ -161,6 +161,8 @@ interface LastSave {
   alreadySaved: number;
   importFilled: number[];
   memoryFilled: number[];
+  /** Round 2's book fill — carried now, drawn when it lands (K7). */
+  dictionaryFilled: number[];
   unitsMoved: { seq: number; to: string; note: string }[];
   sellerUnitUnresolved: { seq: number; word: string }[];
   basisStamped: { seq: number; basis: BazaBasis }[];
@@ -176,6 +178,7 @@ const EMPTY_SAVE: LastSave = {
   alreadySaved: 0,
   importFilled: [],
   memoryFilled: [],
+  dictionaryFilled: [],
   unitsMoved: [],
   sellerUnitUnresolved: [],
   basisStamped: [],
@@ -199,6 +202,7 @@ function lastSaveOf(result: TableSaveFields): LastSave {
     alreadySaved: result.alreadySaved ?? 0,
     importFilled: result.importFilled ?? [],
     memoryFilled: result.memoryFilled ?? [],
+    dictionaryFilled: result.dictionaryFilled ?? [],
     unitsMoved: result.unitsMoved ?? [],
     sellerUnitUnresolved: result.sellerUnitUnresolved ?? [],
     basisStamped: result.basisStamped ?? [],

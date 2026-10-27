@@ -8,6 +8,7 @@ import {
   lineNeeds,
   loneWeightKg,
   missingFields,
+  weightFromTotalNote,
 } from '@/modules/wms/calc/intake';
 import { needLawOf, type NeedLaw } from '@/modules/wms/calc/needs';
 
@@ -263,6 +264,20 @@ describe('a derived weight is SAID, and a stated one is never overwritten (judge
     expect(item!.weightKg).toBe(250);
     expect(item!.weightFromTotal).toBe(true);
     expect(item!.note).toBe(`qora · ${LONE_WEIGHT_NOTE}`);
+  });
+
+  it('weightFromTotalNote recognises the lone copy in the note itemFacts writes (K15)', () => {
+    // On the note's REAL output, beside a seller's own words — the reader
+    // round 2 adds («og‘irlik bruttodan» on the Telegram line) asks the stored
+    // note, never the sentence spelled a second time.
+    const [copied] = itemFacts({ weightKg: 250, goods: [{ name: 'Chexol', note: 'qora' }] });
+    expect(weightFromTotalNote(copied!.note)).toBe(true);
+    const [bare] = itemFacts({ weightKg: 250, goods: [{ name: 'Chexol' }] });
+    expect(weightFromTotalNote(bare!.note)).toBe(true);
+    // A line that stated its own weight carries no such note.
+    const [own] = itemFacts({ weightKg: 250, goods: [{ name: 'Chexol', weightKg: 200, note: 'qora' }] });
+    expect(weightFromTotalNote(own!.note)).toBe(false);
+    expect(weightFromTotalNote(null)).toBe(false);
   });
 
   it('facts whose line weights were STATED derive nothing from the total', () => {

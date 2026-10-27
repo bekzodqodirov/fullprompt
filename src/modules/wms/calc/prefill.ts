@@ -1,44 +1,21 @@
-import { and, eq, inArray, isNotNull } from 'drizzle-orm';
+import { and, eq, isNotNull } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
-import {
-  calcGroups,
-  calcRequestItems,
-  calcRequests,
-  clients,
-  deals,
-  leads,
-} from '../../platform/db/schema';
+import { calcGroups, calcRequests, clients, deals, leads } from '../../platform/db/schema';
 import { userPermissions } from '../../platform/rbac/authorize';
 import { aiConfigured } from '../../platform/ai/model';
-import { aiCalcBudgetLeft, recordAiPass } from './ai-cost';
+import { aiCalcBudgetLeft } from './ai-cost';
 import { logger } from '../../platform/logger';
 import type { AuditContext } from '../../platform/audit/service';
-import {
-  newestReadyBatchId,
-} from '../customs/import-service';
-import { suggestImportBaza, unitsForRow } from '../customs/import-baza';
-import {
-  isBazaBasis,
-  itemMeasure,
-  sectionParts,
-  type BazaBasis,
-  type CalcSectionName,
-  type FreightResult,
-} from './pricing';
-import { basisLabel, statedPairOf } from './basis';
-import {
-  loadWorkspace,
-  proposeGroups,
-  saveTable,
-  type TableItemEdit,
-  type Workspace,
-} from './workspace';
-import { itemNameNorm, sealedMemoryFor } from './memory';
-import { aiVedReplyText, type AiVedFreight, type AiVedLine } from './ai-reply';
+import { itemMeasure, sectionParts, type BazaBasis, type CalcSectionName } from './pricing';
+import { basisLabel } from './basis';
+import { loadWorkspace, proposeGroups, saveTable, type Workspace } from './workspace';
+import { aiVedReplyText, type AiVedLine } from './ai-reply';
 import { calcJobHrefFor } from './card-door';
 import { dutyText } from './duty-text';
-import { blockerText, feeRefusalText, freightRefusalText, prefillReplyText } from './prefill-reply';
-import { pickImportRows, type PickAnswer, type PickRequest, type PickUsage } from './prefill-ai';
+import { blockerText, feeRefusalText, prefillReplyText } from './prefill-reply';
+import { pickImportRows, type PickOutcome, type PickRequest } from './prefill-ai';
+import { freightAnswerFor } from './freight-answer';
+import { applyMemory, pickBazas } from './prefill-steps';
 
 /**
  * The AI VED hodimi (docs/VED-IMPORT-AI.md §3).
@@ -116,13 +93,10 @@ export async function prefillTicket(requestId: string): Promise<number | null> {
 export interface PrefillDeps {
   /** The grouping pass. Default: `proposeGroups` (the ✨ button's own door). */
   propose?: typeof proposeGroups;
-  /** The baza pick. Default: `pickImportRows`. Null answer = not available.
-   * The second argument carries the usage callback; an injected stand-in may
-   * ignore it. */
-  pick?: (
-    rows: PickRequest[],
-    opts?: { onUsage?: (usage: PickUsage) => void },
-  ) => Promise<PickAnswer[] | null>;
+  /** The baza pick. Default: `pickImportRows`. Null answers = not available;
+   * the usage rides beside them (`PickOutcome`, K5) and is null when the
+   * model never answered. */
+  pick?: (rows: PickRequest[]) => Promise<PickOutcome>;
   /** Overridable so a test can run without a customs import in the database. */
   configured?: boolean;
   /**
@@ -150,13 +124,13 @@ export interface PrefillOutcome {
   picked: number;
   /** Codes the SEALED memory supplied before the model was asked anything. */
   memoryCoded: number;
-  /** Bazas a sealed calculation of ours answered (0096). */
+  /** Bazas a sealed calculation of ours answered (0096) — every save of the
+   * pass counted (steps 0, 1 and 2), not only step 0's. */
   memoryFilled: number;
+  /** Bazas the `calc_bazas` book answered — round 2's fill; 0 until it lands. */
+  dictionaryFilled: number;
   aiUsed: boolean;
 }
-
-/** How many rows are ever sent to the pick — a wall, not a silent truncation. */
-const MAX_PICK_ROWS = 40;
 
 export async function aiPrefill(
   requestId: string,
@@ -184,6 +158,7 @@ export async function aiPrefill(
   let importFilled = 0;
   let memoryCoded = 0;
   let memoryFilled = 0;
+  let dictionaryFilled = 0;
   let aiUsed = false;
 
   /**
@@ -225,7 +200,8 @@ export async function aiPrefill(
    */
   if (parts.customs) {
     try {
-      const out = await applyMemory(requestId, ctx);
+      // No revision yet (K14): the kernel threads the seam and compares nothing.
+      const out = await applyMemory(requestId, ctx, null);
       memoryCoded = out.coded;
       memoryFilled = out.filled;
     } catch (err) {
@@ -242,6 +218,10 @@ export async function aiPrefill(
       codesStamped += out.codesStamped;
       ratesPulled += out.ratesPulled;
       importFilled += out.importFilled;
+      // The tail's save fills from the memory too — counted, or the outcome
+      // said «0 from the memory» about a pass whose bazas came from it.
+      memoryFilled += out.memoryFilled;
+      dictionaryFilled += out.dictionaryFilled;
       aiUsed = true;
     } catch (err) {
       // A model that refused, a key that expired, a request somebody closed
@@ -260,6 +240,8 @@ export async function aiPrefill(
     try {
       const swept = await saveTable(requestId, { items: [], adds: [] }, ctx);
       importFilled += swept.importFilled.length;
+      memoryFilled += swept.memoryFilled.length;
+      dictionaryFilled += swept.dictionaryFilled.length;
     } catch (err) {
       logger.warn({ err, requestId }, '[calc-prefill] sweep failed');
     }
@@ -273,7 +255,7 @@ export async function aiPrefill(
   let pickOvertaken = 0;
   if (configured && parts.customs) {
     try {
-      const out = await pickBazas(requestId, ctx, pick);
+      const out = await pickBazas(requestId, ctx, pick, null);
       picked = out.picked;
       pickCapped = out.capped;
       pickRefused = out.refused;
@@ -322,7 +304,7 @@ export async function aiPrefill(
   // seller with three open jobs can tell which one this is. One query, and
   // only on the shape that prints them.
   const about = ws && ws.parts.customs ? await requestAbout(requestId, deps.replyTo ?? null) : null;
-  const customsReply = (link: string | null) =>
+  const customsReply = (link: string | null, audience: 'chat' | 'lenta') =>
     ws && ws.parts.customs
       ? aiVedReplyText({
           clientLabel: about?.clientCode ?? null,
@@ -333,10 +315,27 @@ export async function aiPrefill(
           totalUsd: customsUsd,
           feeRefusal: ws.fee && !ws.fee.ok ? feeRefusalText(ws.fee.reason) : null,
           hasCertificate: ws.hasCertificate,
-          freight: ws.parts.freight ? aiFreight(freight, ws) : null,
+          // The kernel's seam (K4): the stored zone and the request's totals,
+          // exactly as before — no tariff, so nothing is guessed or summed.
+          freight: freightAnswerFor(
+            {
+              hasFreight: ws.parts.freight,
+              freightZone: ws.freightZone,
+              guessedZone: ws.guessedZone,
+              fromCity: ws.fromCity,
+              weightKg: ws.weightKg,
+              volumeM3: ws.volumeM3,
+              volumeFromLines: ws.volumeFromLines,
+              lines: [...ws.groups.flatMap((g) => g.items), ...ws.ungrouped],
+              stored: freight,
+            },
+            [],
+          ),
           link,
           aiConfigured: hasKey,
           budgetSpent: hasKey && budgetLeft <= 0,
+          estimate: null,
+          audience,
         })
       : null;
   // The freight-only summary has always carried no link.
@@ -356,8 +355,8 @@ export async function aiPrefill(
       pickRefused,
       pickOvertaken,
     });
-  const text = customsReply(about?.link ?? null) ?? summary();
-  const lentaText = customsReply(null) ?? summary();
+  const text = customsReply(about?.link ?? null, 'chat') ?? summary();
+  const lentaText = customsReply(null, 'lenta') ?? summary();
 
   return {
     text,
@@ -370,6 +369,7 @@ export async function aiPrefill(
     picked,
     memoryCoded,
     memoryFilled,
+    dictionaryFilled,
     aiUsed,
   };
 }
@@ -439,36 +439,6 @@ async function requestAbout(
  * VED typed wears no mark at all, because a 🧠 over a mixed row would claim
  * a provenance for a number that is half somebody's typing.
  */
-/** The owner's two zones, as a seller reads them — a new zone prints its code. */
-export const ZONE_ROUTE: Record<string, string> = {
-  cn: 'Xitoy → O‘zbekiston',
-  kashgar: 'Qashg‘ar → O‘zbekiston',
-  horgos: 'Horgos → O‘zbekiston',
-};
-
-/**
- * The road as the AI reply prints it (item 13): the LIST price with the band
- * that made it, so «$1,920» arrives with «180 kg/m³ · $160/m³ × 12 m³» and a
- * seller can check it against the tariff sheet on the wall.
- */
-export function aiFreight(
-  freight: FreightResult | null,
-  measure: { weightKg: number | null; volumeM3: number | null },
-): AiVedFreight {
-  if (!freight) return { ok: false, refusal: freightRefusalText('zone_required') };
-  if (!freight.ok) return { ok: false, refusal: freightRefusalText(freight.reason) };
-  const b = freight.band;
-  const qty = b.perKg ? measure.weightKg : measure.volumeM3;
-  const per = `$${b.priceUsd}/${b.perKg ? 'kg' : 'm³'}`;
-  const times = qty === null ? per : `${per} × ${Number(qty.toFixed(3))} ${b.perKg ? 'kg' : 'm³'}`;
-  return {
-    ok: true,
-    listUsd: freight.listUsd,
-    routeLabel: ZONE_ROUTE[b.zone] ?? b.zone,
-    bandText: `${freight.bandDensity} kg/m³ · ${times}`,
-  };
-}
-
 function replyLines(ws: Workspace): AiVedLine[] {
   return ws.groups.map((g) => {
     const sources = [...new Set(g.items.map((i) => i.bazaSource))];
@@ -512,6 +482,10 @@ function replyLines(ws: Workspace): AiVedLine[] {
             half: g.customs.half,
             rate: g.customs.rate,
           }),
+      // Round 2's 📊 shadow and the brutto mark — the kernel estimates nothing
+      // and marks nothing (K6).
+      estimated: null,
+      weightFromTotal: false,
     };
   });
 }
@@ -547,238 +521,3 @@ function measureOf(g: Workspace['groups'][number], basis: BazaBasis): string {
 }
 
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
-
-/**
- * Step 0: stamp the codes the company's own seals already know.
- *
- * Only UNCODED rows are asked about — a code the intake or a person has
- * already put on the row is never second-guessed — and only the CODE is
- * posted here. The baza arrives by itself: `saveTable`'s own memory fill
- * (0096) answers every row this save leaves coded and baza-less, from the
- * same sealed record, under the same three re-checks.
- */
-async function applyMemory(
-  requestId: string,
-  ctx: AuditContext,
-): Promise<{ coded: number; filled: number }> {
-  const rows = await db
-    .select({
-      id: calcRequestItems.id,
-      seq: calcRequestItems.seq,
-      name: calcRequestItems.name,
-      tnvedCode: calcRequestItems.tnvedCode,
-    })
-    .from(calcRequestItems)
-    .where(eq(calcRequestItems.requestId, requestId));
-  const uncoded = rows.filter((r) => !(r.tnvedCode ?? '').trim());
-  // A fully coded request still gets its save — that is what fills the bazas
-  // and mints the groups — but there is nothing to look up.
-  if (uncoded.length === 0) return { coded: 0, filled: 0 };
-
-  const hits = await sealedMemoryFor(
-    uncoded.map((r) => r.name),
-    { excludeRequestId: requestId },
-  );
-  if (hits.size === 0) return { coded: 0, filled: 0 };
-
-  // Named apart from the pick's `edits` on purpose: these carry a CODE and
-  // nothing else, and `ai-advisory.test.ts` anchors its «the prefill writes
-  // no provenance of its own» fence on the pick's own push.
-  const codeEdits: TableItemEdit[] = [];
-  for (const r of uncoded) {
-    const hit = hits.get(itemNameNorm(r.name));
-    if (!hit?.tnvedCode) continue;
-    codeEdits.push({ id: r.id, seq: r.seq, tnvedCode: hit.tnvedCode });
-  }
-  if (codeEdits.length === 0) return { coded: 0, filled: 0 };
-
-  const out = await saveTable(requestId, { items: codeEdits, adds: [] }, ctx);
-  return { coded: codeEdits.length, filled: out.memoryFilled.length };
-}
-
-/**
- * Offer the model every still-empty baza's candidates, and write back the
- * rows it chose — through `saveTable`'s `importRowId` path, so the PRICE
- * comes out of the file and the provenance lands on 'import' (#894).
- */
-async function pickBazas(
-  requestId: string,
-  ctx: AuditContext,
-  pick: NonNullable<PrefillDeps['pick']>,
-): Promise<{ picked: number; capped: number; refused: number; overtaken: number }> {
-  const none = { picked: 0, capped: 0, refused: 0, overtaken: 0 };
-  const batchId = await newestReadyBatchId();
-  // Nothing imported yet: there is nothing to choose between, and inventing
-  // a price is the one thing this module may never do.
-  if (!batchId) return none;
-
-  const rows = await db
-    .select({
-      id: calcRequestItems.id,
-      seq: calcRequestItems.seq,
-      name: calcRequestItems.name,
-      tnvedCode: calcRequestItems.tnvedCode,
-      quantity: calcRequestItems.quantity,
-      weightKg: calcRequestItems.weightKg,
-      volumeM3: calcRequestItems.volumeM3,
-      bazaUsd: calcRequestItems.bazaUsd,
-      bazaBasis: calcRequestItems.bazaBasis,
-      groupId: calcRequestItems.groupId,
-      measureUnit: calcRequestItems.measureUnit,
-      measureQty: calcRequestItems.measureQty,
-    })
-    .from(calcRequestItems)
-    .where(eq(calcRequestItems.requestId, requestId));
-  const empty = rows.filter((r) => r.bazaUsd === null && (r.tnvedCode ?? '').trim());
-  if (empty.length === 0) return none;
-
-  const groups = await db
-    .select({ id: calcGroups.id, dutyUnit: calcGroups.dutyUnit })
-    .from(calcGroups)
-    .where(eq(calcGroups.requestId, requestId));
-  const dutyUnitOf = new Map(groups.map((g) => [g.id, g.dutyUnit]));
-
-  const asking: PickRequest[] = [];
-  const unitsOfSeq = new Map<number, ReturnType<typeof unitsForRow>>();
-  for (const r of empty.slice(0, MAX_PICK_ROWS)) {
-    const qty = r.quantity === null ? null : Number(r.quantity);
-    const kg = r.weightKg === null ? null : Number(r.weightKg);
-    const m3 = r.volumeM3 === null ? null : Number(r.volumeM3);
-    // The row's whole accepted set — and a unit the VED already CHOSE on this
-    // still-unpriced row narrows it to that one (0125): the model chooses a
-    // declaration, never a unit.
-    const units = unitsForRow({
-      dutyUnit: r.groupId ? (dutyUnitOf.get(r.groupId) ?? null) : null,
-      chosen: isBazaBasis(r.bazaBasis) ? r.bazaBasis : null,
-      hasWeight: kg !== null && kg > 0,
-      hasQuantity: qty !== null && qty > 0,
-      hasVolume: m3 !== null && m3 > 0,
-      statedPair: statedPairOf(r.measureUnit, r.measureQty === null ? null : Number(r.measureQty)),
-    });
-    if (units.length === 0) continue;
-    const perPiece =
-      units.includes('dona') && qty !== null && qty > 0 && kg !== null && kg > 0 ? kg / qty : null;
-    const sug = await suggestImportBaza(
-      { tnvedCode: r.tnvedCode!.trim(), name: r.name, units, weightPerUnitKg: perPiece },
-      { batchId },
-    );
-    if (sug.candidates.length === 0) continue;
-    unitsOfSeq.set(r.seq, units);
-    asking.push({
-      seq: r.seq,
-      name: r.name,
-      tnvedCode: r.tnvedCode!.trim(),
-      candidates: sug.candidates,
-    });
-  }
-  if (empty.length > MAX_PICK_ROWS) {
-    logger.info(
-      { requestId, asked: MAX_PICK_ROWS, total: empty.length },
-      '[calc-prefill] pick capped — the rest stay for the VED',
-    );
-  }
-  if (asking.length === 0) return none;
-
-  const capped = Math.max(0, empty.length - MAX_PICK_ROWS);
-  const answers = await pick(asking, {
-    onUsage: (usage) => {
-      void recordAiPass({
-        requestId,
-        staffId: ctx.actorId ?? null,
-        kind: 'pick',
-        model: usage.model,
-        inputTokens: usage.inputTokens,
-        outputTokens: usage.outputTokens,
-      });
-    },
-  });
-  if (!answers) return { ...none, capped };
-
-  const bySeq = new Map(rows.map((r) => [r.seq, r]));
-  const askedBySeq = new Map(asking.map((a) => [a.seq, a]));
-  const edits: TableItemEdit[] = [];
-  let refused = 0;
-  for (const a of answers) {
-    if (a.candidate === null) continue;
-    const row = bySeq.get(a.seq);
-    const asked = askedBySeq.get(a.seq);
-    if (!row || !asked) continue;
-    const chosen = asked.candidates[a.candidate];
-    if (!chosen) continue;
-    const units = unitsOfSeq.get(a.seq);
-    // The units the row was ASKED about are the only ones it may be answered
-    // in: a per-kg declaration on a per-dona row is off by the weight of the
-    // goods, and the model is choosing a row, not a basis. A chosen unit
-    // narrowed this to one (0125).
-    if (!units || !units.includes(chosen.unit)) {
-      refused += 1;
-      continue;
-    }
-    edits.push({
-      id: row.id,
-      seq: row.seq,
-      // The amount is re-read from the FILE by `saveTable` — what is posted
-      // here is only which row (#894). The basis travels with it.
-      bazaUsd: chosen.pricePerUnitUsd,
-      bazaBasis: chosen.basis,
-      importRowId: chosen.id,
-      // WHY this declaration and not the one beside it — owed since #909,
-      // where a model's pick and the deterministic ≥0.45 auto-fill landed
-      // identically and the VED reviewing the number could not tell which
-      // had put it there. WORDS only: the price still comes from the file.
-      bazaReason: a.reason,
-    });
-  }
-  logger.info(
-    {
-      requestId,
-      picks: answers.map((a) => ({ seq: a.seq, candidate: a.candidate, reason: a.reason })),
-      capped,
-      refused,
-    },
-    '[calc-prefill] the model chose',
-  );
-
-  if (edits.length === 0) return { picked: 0, capped, refused, overtaken: 0 };
-
-  /**
-   * STILL EMPTY? The rows were read before a model call that can take a
-   * minute, and a VED opening the request meanwhile is not a race — it is
-   * the normal way this queue is worked.
-   *
-   * The deterministic auto-fill has carried this re-check since 0094
-   * (`if (item.bazaUsd !== null) continue`, inside the save's own
-   * transaction). The pick did not, because it writes through `saveTable`'s
-   * ORDINARY edit branch — which is right for a person, whose typing SHOULD
-   * overwrite, and wrong for a machine answering a question it asked a
-   * minute ago. So a baza the VED had just typed was replaced by the model's
-   * choice, and `baza_source` flipped to 'import': their number gone, and the
-   * chip claiming the file had supplied it.
-   *
-   * A row that filled in the meantime is DROPPED and counted, never written.
-   * The residual window is the milliseconds to `saveTable`'s own
-   * `FOR UPDATE`, which is the window every writer in this module has.
-   */
-  const fresh = await db
-    .select({ id: calcRequestItems.id, bazaUsd: calcRequestItems.bazaUsd })
-    .from(calcRequestItems)
-    .where(
-      inArray(
-        calcRequestItems.id,
-        edits.map((e) => e.id),
-      ),
-    );
-  const stillEmpty = new Set(fresh.filter((r) => r.bazaUsd === null).map((r) => r.id));
-  const live = edits.filter((e) => stillEmpty.has(e.id));
-  const overtaken = edits.length - live.length;
-  if (overtaken > 0) {
-    logger.info(
-      { requestId, overtaken },
-      '[calc-prefill] a person filled these while the model was thinking — left alone',
-    );
-  }
-  if (live.length === 0) return { picked: 0, capped, refused, overtaken };
-
-  await saveTable(requestId, { items: live, adds: [] }, ctx);
-  return { picked: live.length, capped, refused, overtaken };
-}

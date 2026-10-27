@@ -9,7 +9,7 @@ import {
 } from '@/modules/platform/telegram/staff-bot';
 import { zoneKeyboard } from '@/modules/platform/telegram/staff-handlers';
 import { KNOWN_TARIFF_ZONES, OWNER_TARIFF_ZONES, ownerTariffRows } from '@/modules/wms/calc/tariff-seed';
-import { ZONE_ROUTE } from '@/modules/wms/calc/prefill';
+import { ZONE_ROUTE } from '@/modules/wms/calc/freight-answer';
 
 /**
  * The «🤖 AI rastamojka» door (the owner's own words, 2026-09-05).

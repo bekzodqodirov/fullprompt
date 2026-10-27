@@ -17,6 +17,13 @@ export interface CalcPrefillJob {
    * `prefillStanding`. Absent on a job queued before this field existed,
    * which then falls back to the confirmed/closed checks alone. */
   rev?: number | null;
+  /**
+   * The request's section when it was queued (docs/SAKKIZ-R2.md K16), so the
+   * worker can tell a customs pass from a tariff reply without a database
+   * read. Absent on a job queued before this field existed — which was a
+   * customs job, the only kind there was. Unread in the kernel.
+   */
+  section?: string | null;
 }
 
 /**

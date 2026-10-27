@@ -85,6 +85,9 @@ export interface TableSaveFields {
    * authority: a person sealed one, a quarterly file merely contains the
    * other. */
   memoryFilled?: number[];
+  /** Rows the `calc_bazas` book filled — round 2's fill (the bar says «📖 N
+   * qator» once it lands); always empty in the kernel. */
+  dictionaryFilled?: number[];
   /** Old rows whose seller's unit word moved a number to its own column. */
   unitsMoved?: { seq: number; to: string; note: string }[];
   /** Rows whose seller's word is a carton count or unknown — the VED answers. */
@@ -399,6 +402,7 @@ async function runTable(
     alreadySaved: result.alreadySaved,
     importFilled: result.importFilled,
     memoryFilled: result.memoryFilled,
+    dictionaryFilled: result.dictionaryFilled,
     rev: result.rev,
   };
 }
@@ -427,6 +431,7 @@ export async function deleteItemAction(id: string, itemId: string): Promise<Tabl
       alreadySaved: 0,
       importFilled: [],
       memoryFilled: [],
+      dictionaryFilled: [],
       unitsMoved: [],
       sellerUnitUnresolved: [],
       basisStamped: [],

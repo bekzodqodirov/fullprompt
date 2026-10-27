@@ -32,7 +32,9 @@ export async function queueCalcPrefill(input: {
     const { enqueue } = await import('../../platform/jobs/boss');
     const { JOB_CALC_PREFILL } = await import('./jobs');
     const rev = await prefillTicket(input.requestId);
-    await enqueue(JOB_CALC_PREFILL, { requestId: input.requestId, staffId: input.staffId, rev });
+    // The section travels with the job (K16, `CalcPrefillJob.section`): round
+    // 2's worker routes a freight-only reply by it without a query.
+    await enqueue(JOB_CALC_PREFILL, { requestId: input.requestId, staffId: input.staffId, rev, section: input.section });
     return true;
   } catch (err) {
     // The queue being unreachable must not cost the seller the confirmation

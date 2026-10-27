@@ -42,6 +42,36 @@ export function chinaOriginSql(col: SQL): SQL {
 }
 
 /**
+ * The code's rows in ONE batch, scoped to China by D3 — the three CTEs
+ * statement 1 and statement 3 both stand on, so the previous quarter is
+ * measured by exactly the rule the current one is. The code is matched
+ * EXACTLY: a heading-wide series would mix subheadings (moved here out of
+ * import-stats.ts so round 2's median read stands on the same scope, K9).
+ *
+ * `named_any` is NULL — not false — when the batch holds no row of the code:
+ * «this file names no country» and «this file has nothing of this code» are
+ * different facts, and only the first is a reason to say the previous
+ * quarter's split differs.
+ */
+export function codeScopeCtes(batchId: string, code: string): SQL {
+  // `cn` is decided ONCE per row: both the origin counts and the scope ask
+  // the same question, and the country patterns are the costly part of the
+  // read — measured on a synthetic 130k-row code (jit off, work_mem 16MB),
+  // statement 1 took ~450 ms asking it three times per row, ~330 ms once.
+  return sql`base AS (
+      SELECT r.unit, r.price_per_unit_usd AS p, r.weight_per_unit_kg AS w, r.origin_country AS o,
+             (r.origin_country IS NOT NULL AND ${chinaOriginSql(sql`r.origin_country`)}) AS cn
+        FROM customs_import_rows r
+       WHERE r.batch_id = ${batchId}::uuid AND r.tnved_code = ${code}
+    ), na AS (
+      SELECT bool_or(o IS NOT NULL) AS named_any FROM base
+    ), scoped AS (
+      SELECT b.* FROM base b CROSS JOIN na
+       WHERE NOT na.named_any OR b.cn
+    )`;
+}
+
+/**
  * The select-list pieces of ONE series over the price column `price`:
  * the count, the extremes, the 99-step `percentile_disc` ladder (every step
  * a price some declaration carries — D1) and, for a small sample, every
@@ -133,6 +163,7 @@ export function candidateStatement(
   if (!named) {
     return sql`
     SELECT r.id::text AS id,
+           r.tnved_code,
            r.name,
            r.unit,
            r.price_per_unit_usd,
@@ -155,7 +186,7 @@ export function candidateStatement(
 
   return sql`
     WITH scored AS MATERIALIZED (
-      SELECT r.id, r.name, r.unit, r.price_per_unit_usd, r.weight_per_unit_kg,
+      SELECT r.id, r.tnved_code, r.name, r.unit, r.price_per_unit_usd, r.weight_per_unit_kg,
              r.declared_at, r.sender, r.origin_country,
              ${sim} AS name_sim,
              ${score} AS score
@@ -186,6 +217,7 @@ export function candidateStatement(
        ORDER BY q.unit, q.price, ${exemplarOrderSql(sql`s`)}
     )
     SELECT r.id::text AS id,
+           r.tnved_code,
            r.name,
            r.unit,
            r.price_per_unit_usd,

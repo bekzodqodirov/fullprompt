@@ -28,7 +28,7 @@ import { notifyStaffTelegram, userName } from '@/modules/platform/notifications/
 import { usersWithRoles } from '@/modules/platform/notifications/service';
 import { cardLink } from '@/modules/platform/notifications/links';
 import {
-  BAZA_STALE_DAYS,
+  bazaStaleCutoff as staleCutoffToday,
   bazasFor,
   deeperRatesFor,
   onDate,
@@ -88,6 +88,8 @@ import {
   vedRotaPool,
 } from './service';
 import { childStateSql } from './chain';
+import { guessedZoneFor } from './zone-guess';
+import { volumeIsLinesSum } from './line-totals';
 import { isAnswer, isAnswerSql } from './credit';
 import { createTask } from '@/modules/platform/tasks/service';
 import { retireTaskCopiesSoon } from '@/modules/platform/notifications/retire-tasks';
@@ -296,6 +298,14 @@ export interface Workspace {
   parts: { customs: boolean; freight: boolean; extras: boolean };
   weightKg: number | null;
   volumeM3: number | null;
+  /**
+   * The stored m³ IS the Σ of the lines (at 3 decimals, half-up,
+   * `linesVolumeM3`'s own rounding). Derived at read time and never stored;
+   * the one home for «did this m³ come from the lines» (docs/SAKKIZ-R2.md
+   * K13). A total the seller typed that equals the Σ reads true as well — the
+   * label then tells the truth about the numbers.
+   */
+  volumeFromLines: boolean;
   density: number | null;
   freightZone: string | null;
   zones: string[];
@@ -349,35 +359,10 @@ export type SealBlocker =
   | { kind: 'totals'; reason: string }
   | { kind: 'customs_on_yolkira' };
 
-/**
- * A pure pre-selection, never a decision.
- *
- * The zone is a 36-58 % difference in the freight price, and `from_city` is
- * free text a seller typed on a phone. So this offers an answer and the
- * picker demands one: the seal refuses `freight_zone_required` no matter what
- * the city says.
- */
-export function guessZone(fromCity: string | null): string | null {
-  const c = (fromCity ?? '').toLowerCase();
-  if (!c) return null;
-  if (/qashqar|кашгар|kashgar|喀什/.test(c)) return 'kashgar';
-  // AFTER «cn» on purpose: «Yiwu (Horgos orqali)» is Yiwu cargo, and his
-  // 21a keeps it on the China price whichever border the truck takes.
-  if (/yiwu|иу|义乌|guangzhou|гуанчжоу|广州|yw|gz/.test(c)) return 'cn';
-  if (/horgos|khorgos|xorgos|хоргос|коргас|қорғас|霍尔果斯/.test(c)) return 'horgos';
-  return null;
-}
-
-/**
- * The hint the workspace shows — a guessed zone only when the tariff PRICES
- * it. «horgos» is guessable from a city the day he opens the warehouse and
- * priceable only once he types its rows (answer 22); a hint naming an
- * unpriced zone points at a picker option that does not exist.
- */
-export function guessedZoneFor(fromCity: string | null, priced: readonly string[]): string | null {
-  const g = guessZone(fromCity);
-  return g !== null && priced.includes(g) ? g : null;
-}
+// The zone guess moved to its own leaf (docs/SAKKIZ-R2.md K1) so the bot's
+// reply and the tariff answer can ask it without the whole workspace; it is
+// re-exported here because the screen and its tests have always asked here.
+export { guessZone, guessedZoneFor } from './zone-guess';
 
 /**
  * The draft, as the screen sees it.
@@ -507,7 +492,8 @@ export async function loadWorkspace(
   );
   const bhmUzs = bhmSetting == null ? null : Number(bhmSetting);
 
-  const bazaStaleCutoff = onDate(new Date(Date.now() - BAZA_STALE_DAYS * 86_400_000));
+  // The cutoff's one home (K12) — dictionaries.ts; computed once per read.
+  const bazaStaleCutoff = staleCutoffToday();
   /** Law 5's age rule, asked of the source that supplied THIS row's number. */
   const staleFor = (i: (typeof itemRows)[number], dictStale: boolean): boolean => {
     if (i.bazaUsd === null) return false;
@@ -772,6 +758,9 @@ export async function loadWorkspace(
     parts,
     weightKg,
     volumeM3,
+    // Every item, grouped or not: a Σ over some of the lines is not the
+    // shipment's (linesVolumeM3 is all-or-nothing for exactly this reason).
+    volumeFromLines: volumeIsLinesSum(volumeM3, items),
     density: weightKg !== null && volumeM3 !== null && volumeM3 > 0 ? weightKg / volumeM3 : null,
     freightZone: request.freightZone,
     zones,
@@ -2882,6 +2871,8 @@ export async function proposeGroups(
   ratesPulled: number;
   codesStamped: number;
   importFilled: number;
+  memoryFilled: number;
+  dictionaryFilled: number;
 }> {
   await assertOpen(requestId);
 
@@ -3048,7 +3039,13 @@ async function releaseAiClaim(requestId: string): Promise<void> {
 export async function priceProposedGroups(
   requestId: string,
   ctx: AuditContext,
-): Promise<{ ratesPulled: number; codesStamped: number; importFilled: number }> {
+): Promise<{
+  ratesPulled: number;
+  codesStamped: number;
+  importFilled: number;
+  memoryFilled: number;
+  dictionaryFilled: number;
+}> {
   const groups = await db
     .select({
       id: calcGroups.id,
@@ -3099,13 +3096,19 @@ export async function priceProposedGroups(
       return code !== '' && (i.tnvedCode ?? '') !== code;
     })
     .map((i) => ({ id: i.id, seq: i.seq, tnvedCode: codeOfGroup.get(i.groupId!)! }));
-  if (edits.length === 0) return { ratesPulled, codesStamped: 0, importFilled: 0 };
+  if (edits.length === 0) {
+    return { ratesPulled, codesStamped: 0, importFilled: 0, memoryFilled: 0, dictionaryFilled: 0 };
+  }
 
   const saved = await saveTable(requestId, { items: edits, adds: [] }, ctx);
   return {
     ratesPulled,
     codesStamped: edits.length,
     importFilled: saved.importFilled.length,
+    // The same save fills from the memory and (round 2) the book — counted,
+    // so the pass's outcome does not undercount where its bazas came from.
+    memoryFilled: saved.memoryFilled.length,
+    dictionaryFilled: saved.dictionaryFilled.length,
   };
 }
 
@@ -3320,6 +3323,9 @@ export interface TableSaveResult {
    * confirmed price for this product, which outranks the file. Named the
    * same way, for the same reason. */
   memoryFilled: number[];
+  /** …and rows the `calc_bazas` book filled — round 2's fill, second after
+   * the memory (docs/SAKKIZ-R2.md §7.2). Always empty until it lands (K7). */
+  dictionaryFilled: number[];
   /**
    * Old rows whose seller's unit word put a number in the wrong column
    * («120» under «m2» in the piece column, stored before the doors learned
@@ -3817,6 +3823,15 @@ export async function saveTable(
   requestId: string,
   input: { items: TableItemEdit[]; adds: TableNewItem[] },
   ctx: AuditContext,
+  /**
+   * `expectRev` — the MACHINE's compare-and-set (docs/SAKKIZ-R2.md K14). A
+   * prefill step quotes the revision its own previous write left; a person
+   * who saved in between moved it, and the machine's save is then `conflict`
+   * and writes nothing. Screens post none: a person's save is never refused
+   * for being later than another person's (the phone round's per-cell
+   * `expect` is that rule's own door).
+   */
+  opts?: { expectRev?: number },
 ): Promise<TableSaveResult> {
   // Validate every cell BEFORE anything is written, naming the row. A ghost
   // (new) row is named by a NEGATIVE seq — the screen renders «yangi qator».
@@ -3960,7 +3975,10 @@ export async function saveTable(
   const memoryAuto = await suggestMemoryFills({ requestId, standing, itemEdits, withCodes });
 
   return db.transaction(async (tx): Promise<TableSaveResult> => {
-    await lockRequestInTx(tx, requestId);
+    const locked = await lockRequestInTx(tx, requestId);
+    // `confirmGroup`'s idiom, under the same lock: a revision that moved since
+    // the caller read it means a person has been here.
+    if (opts?.expectRev !== undefined && locked.rev !== opts.expectRev) throw new CalcError('conflict');
 
     const items = await tx
       .select()
@@ -4632,6 +4650,10 @@ export async function saveTable(
       if (item.groupId) touched.add(item.groupId);
     }
 
+    // The book's fill is round 2's (P2): the kernel names the seam and fills
+    // nothing, so every save answers an empty list exactly as before.
+    const dictionaryFilled: number[] = [];
+
     const importFilled: number[] = [];
     for (const item of itemsNow) {
       const fill = fillByItem.get(item.id);
@@ -4703,6 +4725,7 @@ export async function saveTable(
         alreadySaved,
         importFilled,
         memoryFilled,
+        dictionaryFilled,
         unitsMoved,
         sellerUnitUnresolved,
       },
@@ -4719,6 +4742,7 @@ export async function saveTable(
       alreadySaved,
       importFilled,
       memoryFilled,
+      dictionaryFilled,
       unitsMoved,
       sellerUnitUnresolved,
       basisStamped,

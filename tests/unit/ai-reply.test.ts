@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { aiVedReplyText, MAX_REPLY_LINES, TELEGRAM_LIMIT, type AiVedLine } from '@/modules/wms/calc/ai-reply';
+import {
+  aiVedReplyText,
+  MAX_REPLY_LINES,
+  TELEGRAM_LIMIT,
+  type AiVedFreight,
+  type AiVedLine,
+  type AiVedReplyInput,
+} from '@/modules/wms/calc/ai-reply';
 
 /**
  * What the seller reads in Telegram — the whole of the round's promise, and
@@ -20,10 +27,24 @@ const line = (over: Partial<AiVedLine> = {}): AiVedLine => ({
   vatPct: 12,
   customsUsd: 496.96,
   refusal: null,
+  // Round 2's fields (K6, required-nullable): nothing estimated, no brutto
+  // mark — the kernel's reply prints neither.
+  estimated: null,
+  weightFromTotal: false,
   ...over,
 });
 
-const base = {
+/** A priced road with round 2's labels all off — what the kernel builds. */
+const road = (over: Pick<Extract<AiVedFreight, { ok: true }>, 'listUsd' | 'routeLabel' | 'bandText'>): AiVedFreight => ({
+  ok: true,
+  zoneGuessed: false,
+  zoneReadFrom: null,
+  volumeFromLines: false,
+  small: false,
+  ...over,
+});
+
+const base: AiVedReplyInput = {
   clientLabel: 'GS323',
   cardLabel: 'B-000067',
   lines: [line()],
@@ -35,6 +56,8 @@ const base = {
   freight: null,
   link: 'https://gsrwms.uz/bitimlar/x',
   aiConfigured: true,
+  estimate: null,
+  audience: 'chat',
 };
 
 describe('the AI-VED reply', () => {
@@ -58,12 +81,11 @@ describe('the AI-VED reply', () => {
   it('a podklyuch job prints rastamojka, yo‘lkira and jami — three lines', () => {
     const text = aiVedReplyText({
       ...base,
-      freight: {
-        ok: true,
+      freight: road({
         listUsd: 1920,
         routeLabel: 'Xitoy → O‘zbekiston',
         bandText: '180 kg/m³ · $160/m³ × 12 m³',
-      },
+      }),
     });
     expect(text).toContain('tahminiy podklyuch (rastamojka + yo‘lkira)');
     expect(text).toContain('Rastamojka jami: ≈ $661.76');
@@ -76,7 +98,7 @@ describe('the AI-VED reply', () => {
   it('a refused road is a sentence, and no JAMI is summed over half a price', () => {
     const text = aiVedReplyText({
       ...base,
-      freight: { ok: false, refusal: 'og‘irlik yoki hajm yo‘q' },
+      freight: { ok: false, refusal: 'og‘irlik yoki hajm yo‘q', tail: 'ved' },
     });
     expect(text).toContain('Yo‘lkira: ⚠️ og‘irlik yoki hajm yo‘q — VED xodimi hisoblaydi');
     expect(text).toContain('JAMI: hozircha hisoblab bo‘lmadi');
@@ -95,7 +117,7 @@ describe('the AI-VED reply', () => {
     const text = aiVedReplyText({
       ...base,
       totalUsd: null,
-      freight: { ok: true, listUsd: 500, routeLabel: 'Qashg‘ar → O‘zbekiston', bandText: '90 kg/m³ · $70/m³ × 7 m³' },
+      freight: road({ listUsd: 500, routeLabel: 'Qashg‘ar → O‘zbekiston', bandText: '90 kg/m³ · $70/m³ × 7 m³' }),
     });
     expect(text).toContain('Yo‘lkira (Qashg‘ar → O‘zbekiston');
     expect(text).toContain('JAMI: hozircha hisoblab bo‘lmadi');
@@ -135,7 +157,7 @@ describe('the AI-VED reply', () => {
     const text = aiVedReplyText({
       ...base,
       ungrouped: ['Sumka'],
-      freight: { ok: true, listUsd: 500, routeLabel: 'Xitoy → O‘zbekiston', bandText: '90 kg/m³' },
+      freight: road({ listUsd: 500, routeLabel: 'Xitoy → O‘zbekiston', bandText: '90 kg/m³' }),
     });
     expect(text).not.toContain('$661.76');
     expect(text).toContain('Rastamojka jami: hozircha hisoblab bo‘lmadi.');

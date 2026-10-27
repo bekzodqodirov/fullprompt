@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { guessedZoneFor, guessZone } from '@/modules/wms/calc/workspace';
+import { guessedZoneFor, guessZone } from '@/modules/wms/calc/zone-guess';
 
 /**
  * The workspace's zone HINT (the Horgos round, 2026-09-29). A hint and never

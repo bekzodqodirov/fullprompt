@@ -271,6 +271,17 @@ export function loneWeightKg(
  */
 export const LONE_WEIGHT_NOTE = 'og‘irlik umumiy (brutto)dan olindi';
 
+/**
+ * The row note says its weight was copied from the shipment total
+ * (`itemFacts`' lone copy) — docs/SAKKIZ-R2.md K15. The note is the only
+ * place that fact survives the landing, so every reader that has to say it
+ * (the Telegram line's «og‘irlik bruttodan») asks it here rather than
+ * re-spelling the sentence it looks for.
+ */
+export function weightFromTotalNote(note: string | null): boolean {
+  return (note ?? '').includes(LONE_WEIGHT_NOTE);
+}
+
 const positive = (n: number | null | undefined): number | null =>
   Number(n) > 0 && Number.isFinite(Number(n)) ? Number(n) : null;
 

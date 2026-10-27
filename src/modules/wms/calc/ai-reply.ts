@@ -1,5 +1,6 @@
 import { dutyText } from './duty-text';
 import type { BazaSource } from './pricing';
+import { AI_REPLY_HEAD } from './reply-heads';
 
 /**
  * The AI-VED's answer in the seller's own chat — RASTAMOJKA and nothing else.
@@ -61,6 +62,48 @@ export interface AiVedLine {
   customsUsd: number | null;
   /** Already in words (`blockerText`'s vocabulary) — never a raw code. */
   refusal: string | null;
+  /**
+   * The group's 📊 shadow (round 2, his 2.1 b): a figure from the median of
+   * real declarations for the rows nobody priced, or the words for why there
+   * is none. Null when nothing was estimated. REQUIRED-nullable (#790), so
+   * every builder of a line has to say. The kernel (K) prints none of it.
+   */
+  estimated: AiVedLineEstimate | null;
+  /** A priced row's weight was copied from the shipment's BRUTTO total
+   * (`weightFromTotalNote`) — the line says «og‘irlik bruttodan». */
+  weightFromTotal: boolean;
+}
+
+/** One group's 📊 shadow, already in the reply's vocabulary. */
+export type AiVedLineEstimate =
+  | {
+      priced: true;
+      customsUsd: number;
+      measureText: string | null;
+      /** How many declarations each median stood on — «23 va 8 ta». */
+      declarations: number[];
+      /** The quarter's end when the file is older than BAZA_STALE_DAYS. */
+      oldFileEnd: string | null;
+    }
+  | { priced: false; misses: string[] }; // words, ≤ 3 rows
+
+/**
+ * The reply's two customs totals (his 2.2 b): «Aniq» over the rows that
+ * priced, and «Taxminiy» — whole or absent — once the 📊 medians stand in for
+ * the rest.
+ */
+export interface AiVedEstimate {
+  /** Every goods row of the request, grouped or not. */
+  rows: number;
+  /** Rows inside groups whose customs is exact. */
+  exactRows: number;
+  /** Σ of those groups' customs, WITHOUT the declaration fee. */
+  exactUsd: number | null;
+  taxminiyUsd: number | null;
+  /** bhm null = the typed fee override answered. */
+  taxminiyFee: { bhm: number | null; usd: number } | null;
+  /** Words, when taxminiyUsd is null. */
+  taxminiyBlock: string | null;
 }
 
 export interface AiVedReplyInput {
@@ -99,7 +142,17 @@ export interface AiVedReplyInput {
    * one goes to the wrong person.
    */
   budgetSpent?: boolean;
+  /** Round 2's two totals; null when nothing was estimated. REQUIRED-nullable
+   * (#790). The kernel (K) prints none of it. */
+  estimate: AiVedEstimate | null;
+  /** Who reads THIS rendering — the seller's chat, or the card's lenta, which
+   * carries the VED's own line under its heading (§2.6). */
+  audience: 'chat' | 'lenta';
 }
+
+/** Who can fix a refused road: a fact only the seller or the customer has, or
+ * one the VED decides (docs/SAKKIZ-R2.md §2.5). */
+export type FreightTail = 'seller' | 'ved';
 
 export type AiVedFreight =
   | {
@@ -109,8 +162,16 @@ export type AiVedFreight =
       routeLabel: string;
       /** «180 kg/m³ · $160/m³ × 12 m³» — the band, so the figure is checkable. */
       bandText: string;
+      /** The zone was read off the city (his 2.6 b) and never stored. */
+      zoneGuessed: boolean;
+      /** What the guess read — the stored `from_city`, cut at 40 characters. */
+      zoneReadFrom: string | null;
+      /** The m³ is the Σ of the lines (his 2.7 b) — said where it is printed. */
+      volumeFromLines: boolean;
+      /** Under SMALL_FREIGHT_USD — priced honestly, flagged loudly. */
+      small: boolean;
     }
-  | { ok: false; refusal: string };
+  | { ok: false; refusal: string; tail: FreightTail };
 
 const money = (n: number) => `$${n.toFixed(2)}`;
 
@@ -172,7 +233,9 @@ function lineText(line: AiVedLine, index: number): string {
 
 export function aiVedReplyText(input: AiVedReplyInput): string {
   const head = [
-    input.freight ? '🤖 AI-VED · tahminiy podklyuch (rastamojka + yo‘lkira)' : '🤖 AI-VED · tahminiy rastamojka',
+    input.freight
+      ? `${AI_REPLY_HEAD} · tahminiy podklyuch (rastamojka + yo‘lkira)`
+      : `${AI_REPLY_HEAD} · tahminiy rastamojka`,
   ]
     .concat(input.clientLabel ? [input.clientLabel] : [])
     .concat(input.cardLabel ? [input.cardLabel] : [])

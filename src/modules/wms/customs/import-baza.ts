@@ -1,8 +1,8 @@
 import { sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { getSetting } from '../../platform/settings/service';
-import type { BazaBasis } from '../calc/pricing';
-import { basisConflicts } from '../calc/basis';
+import { isBazaBasis, type BazaBasis } from '../calc/pricing';
+import { basisConflicts, statedPairOf } from '../calc/basis';
 import { normalizeName, type ImportUnit } from './import-parse';
 import { newestReadyBatchId } from './import-service';
 import { candidateStatement } from './import-stats-sql';
@@ -120,8 +120,42 @@ export function unitsForRow(input: {
     : [...kg, ...dona, ...m3];
 }
 
+/**
+ * One calculation row → the file's units that may price it — the ONE mapping
+ * from a row's stored columns onto `unitsForRow` (docs/SAKKIZ-R2.md K10).
+ *
+ * The prefill's pick spelled it inline, and round 2 asks it again for the
+ * median read and the heading pick: three spellings of «which of the row's
+ * figures count» would be #513. A chosen basis is read only when it IS a
+ * basis, a figure counts only when it is positive, and a stated pair goes
+ * through `statedPairOf` — the save's own rules.
+ */
+export function unitsForItem(
+  item: {
+    quantity: number | null;
+    weightKg: number | null;
+    volumeM3: number | null;
+    bazaBasis: string | null;
+    measureUnit: string | null;
+    measureQty: number | null;
+  },
+  dutyUnit: string | null,
+): ImportUnit[] {
+  return unitsForRow({
+    dutyUnit,
+    chosen: isBazaBasis(item.bazaBasis) ? item.bazaBasis : null,
+    hasWeight: item.weightKg !== null && item.weightKg > 0,
+    hasQuantity: item.quantity !== null && item.quantity > 0,
+    hasVolume: item.volumeM3 !== null && item.volumeM3 > 0,
+    statedPair: statedPairOf(item.measureUnit, item.measureQty),
+  });
+}
+
 export interface ImportBazaRow {
   id: string;
+  /** The declaration's own code — exact today; round 2's heading search lists
+   * candidates from a whole heading, each carrying its own code (§7.4). */
+  tnvedCode: string;
   name: string;
   unit: ImportUnit;
   basis: BazaBasis;
@@ -293,6 +327,7 @@ async function queryCandidates(
   // carry no aggregate at all.
   const rows = await db.execute<{
     id: string;
+    tnved_code: string;
     name: string;
     unit: ImportUnit;
     price_per_unit_usd: string;
@@ -310,6 +345,7 @@ async function queryCandidates(
   const total = Number(rows[0]?.total ?? 0);
   const mapped = rows.map((r) => ({
     id: r.id,
+    tnvedCode: r.tnved_code,
     name: r.name,
     unit: r.unit,
     basis: BASIS_FOR_UNIT[r.unit],
@@ -390,6 +426,7 @@ export async function importRowForCode(
 ): Promise<ImportBazaRow | null> {
   const rows = await db.execute<{
     id: string;
+    tnved_code: string;
     name: string;
     unit: ImportUnit;
     price_per_unit_usd: string;
@@ -398,7 +435,7 @@ export async function importRowForCode(
     sender: string | null;
     origin_country: string | null;
   }>(sql`
-    SELECT r.id::text AS id, r.name, r.unit, r.price_per_unit_usd,
+    SELECT r.id::text AS id, r.tnved_code, r.name, r.unit, r.price_per_unit_usd,
            r.weight_per_unit_kg, r.declared_at::text AS declared_at, r.sender,
            r.origin_country
       FROM customs_import_rows r
@@ -412,6 +449,7 @@ export async function importRowForCode(
   if (!r) return null;
   return {
     id: r.id,
+    tnvedCode: r.tnved_code,
     name: r.name,
     unit: r.unit,
     basis: BASIS_FOR_UNIT[r.unit],

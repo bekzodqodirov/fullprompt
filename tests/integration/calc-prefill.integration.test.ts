@@ -204,7 +204,7 @@ describe('the machine carries a job as far as it honestly can', () => {
 
     const out = await aiPrefill(id, ctx(), {
       propose: proposeAs(row.tnvedCode),
-      pick: async () => [],
+      pick: async () => ({ answers: [], usage: null }),
       configured: true,
     });
 
@@ -242,7 +242,7 @@ describe('the machine carries a job as far as it honestly can', () => {
 
     const out = await aiPrefill(id, ctx(), {
       propose: proposeAs(row.tnvedCode),
-      pick: async () => [],
+      pick: async () => ({ answers: [], usage: null }),
       configured: true,
     });
     const ws = await loadWorkspace(id);
@@ -269,7 +269,7 @@ describe('the machine carries a job as far as it honestly can', () => {
     expect(req!.freightZone).toBeNull();
     const out = await aiPrefill(id, ctx(), {
       propose: proposeAs(row.tnvedCode),
-      pick: async () => [],
+      pick: async () => ({ answers: [], usage: null }),
       configured: true,
     });
     expect(out.text).toContain('Yo‘lkira: ⚠️ yo‘nalish (zona) tanlanmagan — VED xodimi hisoblaydi');
@@ -280,7 +280,7 @@ describe('the machine carries a job as far as it honestly can', () => {
   it('the request STAYS in the queue — nothing is confirmed or sealed', async () => {
     const row = await importRow();
     const id = await open([{ name: row.name, weightKg: 100 }]);
-    await aiPrefill(id, ctx(), { propose: proposeAs(row.tnvedCode), pick: async () => [], configured: true });
+    await aiPrefill(id, ctx(), { propose: proposeAs(row.tnvedCode), pick: async () => ({ answers: [], usage: null }), configured: true });
 
     const ws = await loadWorkspace(id);
     expect(ws!.groups.every((g) => g.confirmedAt === null)).toBe(true);
@@ -323,11 +323,11 @@ describe('the machine carries a job as far as it honestly can', () => {
     let offered = 0;
     const out = await aiPrefill(id, ctx(), {
       configured: true,
-      propose: async () => ({ groups: 0, batches: 0, failed: 0, ratesPulled: 0, codesStamped: 0, importFilled: 0 }),
+      propose: async () => ({ groups: 0, batches: 0, failed: 0, ratesPulled: 0, codesStamped: 0, importFilled: 0, memoryFilled: 0, dictionaryFilled: 0 }),
       pick: async (asking) => {
         offered = asking.length;
         // The model answers with an INDEX, never a price.
-        return asking.map((a) => ({ seq: a.seq, candidate: 0, reason: 'shu tovar' }));
+        return { answers: asking.map((a) => ({ seq: a.seq, candidate: 0, reason: 'shu tovar' })), usage: null };
       },
     });
 
@@ -357,7 +357,7 @@ describe('the machine carries a job as far as it honestly can', () => {
       propose: proposeAs(row.tnvedCode),
       pick: async (rows) => {
         asked = rows[0]?.candidates ?? [];
-        return rows.map((a) => ({ seq: a.seq, candidate: 0, reason: 'shu' }));
+        return { answers: rows.map((a) => ({ seq: a.seq, candidate: 0, reason: 'shu' })), usage: null };
       },
     });
 
@@ -380,8 +380,11 @@ describe('the machine carries a job as far as it honestly can', () => {
     const id = await open([{ name: 'Yana boshqa nom', tnvedCode: kg.tnvedCode, weightKg: 100 }]);
     const out = await aiPrefill(id, ctx(), {
       configured: true,
-      propose: async () => ({ groups: 0, batches: 0, failed: 0, ratesPulled: 0, codesStamped: 0, importFilled: 0 }),
-      pick: async (asking) => asking.map((a) => ({ seq: a.seq, candidate: null, reason: 'mos emas' })),
+      propose: async () => ({ groups: 0, batches: 0, failed: 0, ratesPulled: 0, codesStamped: 0, importFilled: 0, memoryFilled: 0, dictionaryFilled: 0 }),
+      pick: async (asking) => ({
+        answers: asking.map((a) => ({ seq: a.seq, candidate: null, reason: 'mos emas' })),
+        usage: null,
+      }),
     });
     expect(out.picked).toBe(0);
     const [item] = await db
@@ -445,7 +448,7 @@ describe('the machine carries a job as far as it honestly can', () => {
       },
       pick: async () => {
         asked += 1;
-        return null;
+        return { answers: null, usage: null };
       },
     });
 
@@ -476,7 +479,7 @@ describe('the machine carries a job as far as it honestly can', () => {
 
     const out = await aiPrefill(id, ctx(), {
       configured: true,
-      propose: async () => ({ groups: 0, batches: 0, failed: 0, ratesPulled: 0, codesStamped: 0, importFilled: 0 }),
+      propose: async () => ({ groups: 0, batches: 0, failed: 0, ratesPulled: 0, codesStamped: 0, importFilled: 0, memoryFilled: 0, dictionaryFilled: 0 }),
       pick: async (asking) => {
         // THE VED TYPES, right here — inside the model's own window.
         const [item] = await db
@@ -491,7 +494,7 @@ describe('the machine carries a job as far as it honestly can', () => {
           },
           ctx(),
         );
-        return asking.map((a) => ({ seq: a.seq, candidate: 0, reason: 'shu' }));
+        return { answers: asking.map((a) => ({ seq: a.seq, candidate: 0, reason: 'shu' })), usage: null };
       },
     });
 
@@ -544,7 +547,7 @@ describe('the machine carries a job as far as it honestly can', () => {
       propose: async () => {
         throw new Error('model down');
       },
-      pick: async () => null,
+      pick: async () => ({ answers: null, usage: null }),
     });
     // The sweep still ran: the memory's code found its group and the file
     // answered its baza.
