@@ -45,9 +45,13 @@ function setBlocks(text: string): string[] {
 describe('the baza carries its provenance', () => {
   it('every UPDATE that writes a baza source also writes the import row', () => {
     const writing = setBlocks(source).filter((b) => b.includes('bazaSource'));
-    // Today: setItemBaza, pullBazasFromDictionary, and saveTable's memory
-    // and import fills. If this number moves, the new writer belongs below.
-    expect(writing.length).toBeGreaterThanOrEqual(4);
+    // Today: setItemBaza, pullBazasFromDictionary, and saveTable's ONE fill
+    // loop, which writes one `.set({…})` per source — the memory, the book
+    // (round 2's, docs/SAKKIZ-R2.md §7.2) and the import. Re-anchored from
+    // four: the book's fill is the fifth writer. If this number moves, the
+    // new writer belongs below.
+    expect(writing.length).toBeGreaterThanOrEqual(5);
+    expect(writing.some((b) => b.includes("bazaSource: 'dictionary'"))).toBe(true);
     for (const block of writing) {
       expect(block, `a .set() writing bazaSource must write importRowId:\n${block}`).toContain(
         'importRowId',
@@ -87,5 +91,20 @@ describe('the baza carries its provenance', () => {
     // …and the name the NEXT job's memory searches on, or a correction seals
     // a row invisible to the very feature this column exists for.
     expect(body).toContain('nameNorm:');
+  });
+});
+
+describe('the fill order has ONE home (round 2, §7.2)', () => {
+  it('SOURCES is declared once, and the one fill loop walks it', () => {
+    const declared = source.match(/const SOURCES = \['memory', 'dictionary', 'import'\] as const;/g) ?? [];
+    expect(declared).toHaveLength(1);
+    const at = source.indexOf('export async function saveTable(');
+    const body = source.slice(at, source.indexOf('\nexport ', at + 40));
+    // One loop over the list, inside the save…
+    expect(body.match(/for \(const source of SOURCES\)/g) ?? []).toHaveLength(2);
+    // …and no second, hand-ordered fill loop beside it: a `memoryFilled`
+    // list built by a loop of its own is the shape round 2 replaced.
+    expect(body).not.toMatch(/memoryFilled\.push\(/);
+    expect(body).not.toMatch(/importFilled\.push\(/);
   });
 });

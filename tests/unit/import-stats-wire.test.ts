@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { sql } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { describe, expect, it } from 'vitest';
-import { candidateStatement, chinaOriginSql } from '@/modules/wms/customs/import-stats-sql';
+import { candidateStatement, chinaOriginSql, codeMatchSql } from '@/modules/wms/customs/import-stats-sql';
 
 /**
  * The wiring of «Narxlar statistikasi» (his C1-C6), where a behaviour test
@@ -157,11 +157,30 @@ describe('9. «newest» has ONE order, clamped (his C6)', () => {
     // A fence on the chooser's body says nothing about whether the routes
     // call it; integration test 12 makes the two disagree under any other
     // order, and this names the two calls it depends on.
-    expect(STATS_ROUTE).toContain('batchId = await newestReadyBatchId();');
+    //
+    // Re-anchored for round 2 (docs/SAKKIZ-R2.md §7.3): the chooser is PER
+    // CODE now — `batchesForCodes` — and the stats route asks it for the
+    // row's own code; `suggestImportBaza` asks the same chooser when no batch
+    // is passed, which is what the list route relies on.
+    expect(STATS_ROUTE).toContain('batchId = (await batchesForCodes([item.code])).get(item.code)?.batchId ?? null;');
+    expect(STATS_ROUTE).not.toContain('newestReadyBatchId');
     const call = LIST_ROUTE.slice(LIST_ROUTE.indexOf('suggestImportBaza('));
     const opts = call.slice(0, call.indexOf(');'));
     expect(opts).toContain('picker: true');
     expect(opts).not.toContain('batchId');
+    const BAZA = read('src/modules/wms/customs/import-baza.ts');
+    expect(bodyOf(BAZA, 'export async function suggestImportBaza(')).toContain('batchesForCodes([input.tnvedCode])');
+  });
+
+  it('the per-code chooser orders by «enough rows», quarter, rows, then the ONE order of newest', () => {
+    const chooser = bodyOf(SERVICE, 'export async function batchesForCodes(');
+    expect(chooser).toContain('codeMatchSql(');
+    expect(chooser).toContain('>= ${FEW}');
+    expect(chooser).toContain("date_trunc('quarter'");
+    expect(chooser).toContain('batchRecencySql(');
+    // TOTAL: a code no batch holds still maps — onto the newest ready batch.
+    expect(chooser).toContain('LEFT JOIN LATERAL');
+    expect(chooser).toContain('COALESCE(p.id, n.id)');
   });
 });
 
@@ -199,5 +218,40 @@ describe('12. the weight label and the previous-quarter line each have one rule'
     expect(BAZA_STATS).toContain('prevLine(unit.prev, answer.filtered)');
     // The table's «oldingi chorak» cell follows the same decision.
     expect(BAZA_STATS).toContain("prev === 'median' ? cell(");
+  });
+});
+
+describe('13. a heading is a range, a full code is exact (round 2, §7.4)', () => {
+  const input = { name: 'x', units: ['kg' as const], weightPerUnitKg: null };
+  const id = '00000000-0000-0000-0000-000000000000';
+  it('codeMatchSql: = for ten digits, BETWEEN … AND …9999 for a heading, both bounds TEXT', () => {
+    const full = dialect.sqlToQuery(codeMatchSql(sql`r`, '6403991000'));
+    expect(full.sql).toBe('r.tnved_code = $1');
+    expect(full.params).toEqual(['6403991000']);
+    const heading = dialect.sqlToQuery(codeMatchSql(sql`r`, '6403'));
+    expect(heading.sql).toBe('r.tnved_code BETWEEN $1 AND $2');
+    expect(heading.params).toEqual(['6403', '6403999999']);
+    // No LIKE and no COLLATE: either forfeits the btree on the default
+    // collation, and two collations would be two oracles (#653).
+    expect(`${full.sql} ${heading.sql}`).not.toMatch(/LIKE|COLLATE/i);
+  });
+
+  it('the candidate list takes the range; the named series never runs on a heading', () => {
+    const shortList = dialect.sqlToQuery(candidateStatement(id, { ...input, tnvedCode: '6403' }, 'abcd', 50)).sql;
+    expect(shortList).toContain('BETWEEN');
+    expect(shortList).not.toContain('percentile_disc');
+    const fullList = dialect.sqlToQuery(candidateStatement(id, { ...input, tnvedCode: '6403991000' }, 'abcd', 50)).sql;
+    expect(fullList).not.toContain('BETWEEN');
+    expect(fullList).toContain('r.tnved_code = $');
+    // The dialog asks for the named series only on a full code.
+    const BAZA = read('src/modules/wms/customs/import-baza.ts');
+    expect(bodyOf(BAZA, 'export async function suggestImportBaza(')).toContain('const named = dialog && usable && !heading;');
+  });
+
+  it('the exact readers stay exact: the statistics scope and the picked-row check name the code with =', () => {
+    expect(bodyOf(STATS_SQL, 'export function codeScopeCtes(')).toContain('r.tnved_code = ${code}');
+    expect(bodyOf(STATS_SQL, 'export function codeScopeCtes(')).not.toContain('codeMatchSql');
+    const BAZA = read('src/modules/wms/customs/import-baza.ts');
+    expect(bodyOf(BAZA, 'export async function importRowForCode(')).toContain('AND r.tnved_code = ${tnvedCode}');
   });
 });

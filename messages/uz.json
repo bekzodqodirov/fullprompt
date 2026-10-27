@@ -3491,6 +3491,7 @@
     "returnReasonLabel": "Qaytarish sababi",
     "finish": "Bajarildi",
     "answerAmount": "Narx",
+    "finishNotEstimate": "Telegram va lentadagi «Aniq», «Taxminiy» va «JAMI taxminiy» rasmiy narx emas — ularni bu yerga ko‘chirmang. Bazani 📥 dan tanlang, zonani belgilang va muhrlang.",
     "answerNote": "Izoh",
     "answered": "Javob",
     "returned": "Qaytarildi",
@@ -3852,6 +3853,8 @@
       "rateNoted": "lug'at stavkasi izoh bilan",
       "bazaFromImport": "Baza importdan (taxmin)",
       "bazaFromMemory": "Baza muhrlangan hisobdan",
+      "bazaDictionaryMoved": "Lug‘atdagi baza o‘zgargan",
+      "aiRecode": "Kodni AI deklaratsiyaga qarab tanlagan — kod va bojni tekshiring",
       "basisNotLaw": "Baza qonun birligida emas"
     },
     "refusal": {
@@ -3935,11 +3938,13 @@
       "basisSuspect": "birligini tekshiring (qonun boshqa birlikda o‘lchaydi) — qator",
       "importFilled": "importdan to‘ldirilgan baza: {count} ta, qator",
       "memoryFilled": "muhrlangan hisobdan to‘ldirilgan baza: {count} ta, qator",
+      "dictionaryFilled": "lug‘atdan to‘ldirilgan baza: {count} ta, qator",
       "basisAuto": "avto",
       "basisConflict": "birlik qonunga mos emas (qatorda bitta o‘lchov bo‘ladi) — qator",
       "alreadySaved": "avval saqlangan edi: {count} qator",
       "basisNotLaw": "qonun {unit} bo‘yicha o‘lchaydi — baza boshqa birlikda"
     },
+    "volumeFromLinesShort": "qatorlardan",
     "grid": {
       "qty": "Dona",
       "kg": "Netto, kg",
@@ -4060,7 +4065,10 @@
     "statsWeightNoRow": "Qatorda soni yoki og'irligi yo'q — og'irlik bo'yicha qator chiqmaydi",
     "statsWeightNone": "±25 % og'irlikda deklaratsiya yo'q",
     "statsPick": "Tanlash",
+    "importOtherCode": "kod: {code}",
     "statsTimeout": "Statistika hozir hisoblanmadi (fayl katta) — ro'yxatdan tanlang",
+    "statsShortCode": "Statistika 10 xonali kod bo'yicha — ro'yxatdan deklaratsiya tanlang, kodi o'zi qo'yiladi",
+    "importListTimeout": "Bu sarlavha juda keng — ro'yxat o'qilmadi. 10 xonali kodni yozing.",
     "statsFailed": "Statistika yuklanmadi",
     "statsTable": "Jadval ko'rinishida",
     "statsColN": "Soni",

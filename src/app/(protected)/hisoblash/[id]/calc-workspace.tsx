@@ -226,6 +226,19 @@ function FreightPanel({
         </label>
 
         <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-sm">
+          {/* The m³ the band is read at — and, when it IS the Σ of the lines,
+              said so (round 2, §7.2.8): `reconcile.mismatch` cannot see a
+              wrong line volume on such a request (the two sides are equal by
+              construction), so the label is the only signal there is. */}
+          <dt className="text-ink-500">{t('fields.volumeM3')}</dt>
+          <dd className="font-mono tabular-nums" data-testid="calc-volume">
+            {workspace.volumeM3 === null ? '—' : `${workspace.volumeM3} m³`}
+            {workspace.volumeFromLines ? (
+              <span className="ml-1 text-2xs text-ink-500" data-testid="calc-volume-from-lines">
+                · {t('volumeFromLinesShort')}
+              </span>
+            ) : null}
+          </dd>
           <dt className="text-ink-500">{t('density')}</dt>
           <dd className="font-mono tabular-nums" data-testid="calc-density">
             {workspace.density === null ? '—' : `${Math.round(workspace.density)} kg/m³`}

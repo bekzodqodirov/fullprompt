@@ -71,8 +71,9 @@ export interface PickOutcome {
 const SYSTEM = `Ты — помощник декларанта карго-компании GSR LOGISTICS.
 
 Тебе дают товар из заявки клиента и НЕСКОЛЬКО реальных строк из базы
-таможенных деклараций с ТЕМ ЖЕ кодом ТН ВЭД. Твоя задача — выбрать ОДНУ
-строку, которая описывает тот же товар, или не выбрать ни одной.
+таможенных деклараций с тем же кодом или из той же товарной позиции; у каждой
+строки свой код — выбирай строку, чей код подходит товару. Твоя задача —
+выбрать ОДНУ строку, которая описывает тот же товар, или не выбрать ни одной.
 
 Ты НЕ называешь цену и НЕ придумываешь её. Ты выбираешь НОМЕР строки.
 Цену возьмёт система из выбранной строки.
@@ -110,7 +111,11 @@ export async function pickImportRows(
           (c, i) =>
             `   [${i}] ${c.name.slice(0, 200)} — $${c.pricePerUnitUsd}/${c.basis}` +
             (c.weightPerUnitKg !== null ? ` · ${c.weightPerUnitKg} kg/dona` : '') +
-            (c.unitMatches ? '' : ' (единица не совпадает)'),
+            (c.unitMatches ? '' : ' (единица не совпадает)') +
+            // A heading's list (round 2): each declaration names its OWN code
+            // where it differs from the row's, because choosing it chooses
+            // that code — and with it the duty law.
+            (c.tnvedCode !== r.tnvedCode ? ` (код ${c.tnvedCode})` : ''),
         )
         .join('\n');
       return `Строка ${r.seq}: «${r.name}» (код ${r.tnvedCode})\n${lines}`;

@@ -42,6 +42,38 @@ export function chinaOriginSql(col: SQL): SQL {
 }
 
 /**
+ * A declaration's own code — the ten digits the file writes. Anything shorter
+ * is a HEADING (4-6 digits, or 7-9 half-typed), and a heading answers only
+ * the questions that can stand a range: the AI pick's candidates and the
+ * VED's 📥 list. The statistics, the 📊 median and the model-free auto-fill
+ * stay exact, because a heading-wide series mixes subheadings priced
+ * nothing alike (docs/SAKKIZ-R2.md §7.4). Here and not in import-baza.ts so
+ * this file can ask it without importing the service; import-baza re-exports
+ * it, one home.
+ */
+export function isFullCode(code: string): boolean {
+  return /^\d{10}$/.test(code);
+}
+
+/**
+ * «Which of the file's rows are this code's» — ONE rule for the candidate
+ * list and the batch chooser (#513).
+ *
+ * A full code is matched exactly. A heading is a btree RANGE, both bounds
+ * bound as TEXT: «6403» → `BETWEEN '6403' AND '6403999999'`, which is every
+ * ten-digit code that starts with it and nothing else, and which the
+ * `(batch_id, tnved_code)` index reads as one range scan. Deliberately NOT
+ * `LIKE '6403%'` and NOT `COLLATE "C"`: either forfeits the index on the
+ * database's default collation, and `C.UTF-8` here against `en_US.utf8` on
+ * another server would be two oracles for one statement (#653). Digits sort
+ * the same under both, so the range itself is collation-proof.
+ */
+export function codeMatchSql(r: SQL, code: string): SQL {
+  if (isFullCode(code)) return sql`${r}.tnved_code = ${code}`;
+  return sql`${r}.tnved_code BETWEEN ${code} AND ${code.padEnd(10, '9')}`;
+}
+
+/**
  * The code's rows in ONE batch, scoped to China by D3 — the three CTEs
  * statement 1 and statement 3 both stand on, so the previous quarter is
  * measured by exactly the rule the current one is. The code is matched
@@ -179,7 +211,9 @@ export function candidateStatement(
            count(*) OVER () ::int AS total
       FROM customs_import_rows r
      WHERE r.batch_id = ${batchId}::uuid
-       AND r.tnved_code = ${input.tnvedCode}
+       -- A full code exactly; a heading (round 2) by its btree range, each
+       -- row then carrying its own code for the list and the AI pick.
+       AND ${codeMatchSql(sql`r`, input.tnvedCode)}
      ORDER BY (${accepts}) DESC, score DESC, r.declared_at DESC NULLS LAST
      LIMIT ${limit}`;
   }
@@ -192,6 +226,9 @@ export function candidateStatement(
              ${score} AS score
         FROM customs_import_rows r
        WHERE r.batch_id = ${batchId}::uuid
+         -- EXACT, never a heading range: the name-matched series is a
+         -- statistic, and a heading-wide one mixes subheadings (§7.4). The
+         -- caller asks for it only on a full code.
          AND r.tnved_code = ${input.tnvedCode}
     ), nna AS (
       -- D3: the country filter applies only when the file names countries at

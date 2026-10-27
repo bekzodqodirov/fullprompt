@@ -3491,6 +3491,7 @@
     "returnReasonLabel": "退回原因",
     "finish": "完成",
     "answerAmount": "价格",
+    "finishNotEstimate": "Telegram 和动态中的「Aniq」「Taxminiy」「JAMI taxminiy」不是正式价格——请勿抄到这里。请通过 📥 选择基价、设定区域并封存。",
     "answerNote": "备注",
     "answered": "答复",
     "returned": "已退回",
@@ -3852,6 +3853,8 @@
       "rateNoted": "词典税率附有说明",
       "bazaFromImport": "基价来自海关导入（估算）",
       "bazaFromMemory": "基价来自已封存的核算",
+      "bazaDictionaryMoved": "词典基价已变更",
+      "aiRecode": "编码由AI依据申报选择——请核对编码和关税",
       "basisNotLaw": "基价单位与法规不同"
     },
     "refusal": {
@@ -3935,11 +3938,13 @@
       "basisSuspect": "请检查基价单位（法律按其他单位计价）— 行",
       "importFilled": "已从导入填充 {count} 行基价（估算），行号",
       "memoryFilled": "来自已封存核算的基价：{count} 项，行",
+      "dictionaryFilled": "从词典填入的基价：{count} 条，行",
       "basisAuto": "自动",
       "basisConflict": "单位与法规冲突（每行只有一个计量）— 行",
       "alreadySaved": "此前已保存：{count} 行",
       "basisNotLaw": "法规按 {unit} 计 — 基价为其他单位"
     },
+    "volumeFromLinesShort": "由各行合计",
     "grid": {
       "qty": "件数",
       "kg": "净重，公斤",
@@ -4060,7 +4065,10 @@
     "statsWeightNoRow": "该行没有数量或重量——无重量行",
     "statsWeightNone": "没有重量在 ±25 % 内的申报",
     "statsPick": "选择",
+    "importOtherCode": "编码：{code}",
     "statsTimeout": "统计超时（文件较大）——请从列表选择",
+    "statsShortCode": "统计需10位编码——从列表选一条申报，编码自动填入",
+    "importListTimeout": "该品目范围过大——未能读取列表。请输入10位编码。",
     "statsFailed": "统计未加载",
     "statsTable": "表格形式",
     "statsColN": "数量",

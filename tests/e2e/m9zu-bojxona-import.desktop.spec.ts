@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { normalizeName } from '@/modules/wms/customs/import-parse';
 import { cleanupEarlier, database } from './baza-stats-fixture';
 
 /**
@@ -172,4 +173,117 @@ test('cleanup: the price becomes the VED’s and the import is removed', async (
   await bar.getByTestId('bulk-reason').fill('e2e tozalash');
   await bar.getByTestId('bulk-move').click();
   await expect(bar.getByTestId('bulk-result')).toContainText('1', { timeout: 15_000 });
+});
+
+/**
+ * Round 2 (docs/SAKKIZ-R2.md §7.4): a row coded only by its HEADING opens the
+ * 📥 list on the heading's declarations, each wearing its own code, and a
+ * «Tanlash» drafts that code WITH the price — what only a browser can prove
+ * is the client draft carrying both to the save.
+ *
+ * Its OWN batch (minted, never uploaded — the upload is the first test's
+ * subject) and its OWN cleanup, in a `finally`: a ready batch is CONFIGURATION
+ * (#183), and this one is named `HD<digits>` so nothing else claims it.
+ */
+test('a heading row picks a declaration from the 📥 list, and the code lands with the price', async ({ page }) => {
+  const sql = database();
+  const marker = `HD${String(Date.now()).slice(-7)}`;
+  const HEADING = '6702';
+  const FULL = '6702100000';
+  const declared = `Искусственные цветы из пластмассы ${marker}`;
+  const lead = `VED heading e2e ${marker}`;
+  let batchId = '';
+  try {
+    const [owner] = await sql<{ id: string }[]>`SELECT id FROM users WHERE phone = ${ADMIN}`;
+    const [today] = await sql<{ d: string }[]>`SELECT (now() AT TIME ZONE 'Asia/Tashkent')::date::text AS d`;
+    const [batch] = await sql<{ id: string }[]>`
+      INSERT INTO customs_import_batches (file_name, uploaded_by, status, period_from, period_to, uploaded_at, row_count)
+      VALUES (${`${marker}.xlsx`}, ${owner!.id}, 'ready', ${today!.d}::date - 30, ${today!.d}::date, now(), 1)
+      RETURNING id`;
+    batchId = batch!.id;
+    await sql`
+      INSERT INTO customs_import_rows (batch_id, tnved_code, name, name_norm, unit, price_per_unit_usd, origin_country)
+      VALUES (${batchId}, ${FULL}, ${declared}, ${normalizeName(declared)}, 'kg', 2.35::numeric, '156-КИТАЙ')`;
+
+    await login(page);
+    await page.goto('/crm');
+    await page.getByTestId('quick-create').click();
+    const pickLead = page.getByTestId('quick-kind-lead');
+    if (await pickLead.count()) await pickLead.click();
+    await page.getByTestId('quick-name').fill(lead);
+    await page.getByTestId('quick-save').click();
+    const made = page.getByTestId('quick-made');
+    await expect(made).toBeVisible({ timeout: 15_000 });
+    await page.goto((await made.getByRole('link').first().getAttribute('href'))!);
+    await page.getByTestId('calc-panel').click();
+    await page.getByTestId('calc-section-rastamojka').click();
+    await page.getByTestId('calc-goods').fill(`${declared}, 10`);
+    await page.getByTestId('calc-send').click();
+    await expect(page.getByTestId('calc-open')).toBeVisible({ timeout: 15_000 });
+    const url = (await page.getByTestId('calc-open-link').first().getAttribute('href'))!;
+
+    await page.goto(url);
+    await expect(page.getByTestId('calc-table')).toBeVisible({ timeout: 15_000 });
+    await page.locator('[data-cell="weightKg"][data-row="0"]').fill('10');
+    await page.locator('[data-cell="tnvedCode"][data-row="0"]').fill(HEADING);
+    await page.getByTestId('calc-save-table').click();
+    await expect(page.getByTestId('calc-group-row').first()).toContainText(HEADING, { timeout: 15_000 });
+
+    // The heading's list: the declaration names ITS code, because picking it
+    // picks the code.
+    await page.getByTestId('calc-item-menu').last().click();
+    await page.getByTestId('calc-import-pick').click();
+    const candidate = page.getByTestId('calc-import-candidate').first();
+    await expect(candidate).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('calc-import-code').first()).toContainText(FULL);
+    await candidate.click();
+    await expect(page.getByTestId('calc-unsaved')).toBeVisible();
+    await page.getByTestId('calc-save-table').click();
+    await expect(page.getByTestId('calc-group-row').first()).toContainText(FULL, { timeout: 15_000 });
+
+    // The database is the oracle: the ten digits and the FILE's price, the
+    // file's provenance — and no machine's reason: a person chose this code.
+    const rows = await sql<{ tnved_code: string; baza_usd: string; baza_source: string; baza_reason: string | null }[]>`
+      SELECT i.tnved_code, i.baza_usd::text AS baza_usd, i.baza_source, i.baza_reason
+        FROM calc_request_items i
+        JOIN calc_requests r ON r.id = i.request_id
+        JOIN leads l ON l.id = r.entity_id AND r.entity_type = 'lead'
+       WHERE l.name = ${lead}`;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.tnved_code).toBe(FULL);
+    expect(Number(rows[0]!.baza_usd)).toBe(2.35);
+    expect(rows[0]!.baza_source).toBe('import');
+    expect(rows[0]!.baza_reason).toBeNull();
+
+    // The job is answered, like the walk above it (an open request and its
+    // timed task would outlive this spec on whichever VED the rota picked).
+    const take = page.getByTestId('calc-take');
+    if (await take.count()) await take.click();
+    await page.getByTestId('calc-finish-open').click();
+    await page.getByTestId('calc-answer-amount').fill('100');
+    await page.getByTestId('calc-answer-internal').fill('e2e tozalash');
+    await page.getByTestId('calc-finish').click();
+    await expect(page.getByTestId('calc-answer')).toBeVisible({ timeout: 15_000 });
+
+    await page.goto('/crm?scope=all');
+    const card = page.getByTestId('funnel-desktop').getByTestId('lead-card').filter({ hasText: lead }).first();
+    if ((await card.count()) > 0) {
+      await card.getByTestId('card-select').click();
+      const bar = page.getByTestId('bulk-bar');
+      const lost = await bar.getByTestId('bulk-stage').locator('option[data-kind="lost"]').first().getAttribute('value');
+      await bar.getByTestId('bulk-stage').selectOption(lost!);
+      await bar.getByTestId('bulk-reason').fill('e2e tozalash');
+      await bar.getByTestId('bulk-move').click();
+      await expect(bar.getByTestId('bulk-result')).toContainText('1', { timeout: 15_000 });
+    }
+  } finally {
+    // The provenance this walk took lets go, then the batch goes (raw: the
+    // service refuses a batch something is priced off, on purpose).
+    if (batchId) {
+      await sql`UPDATE calc_request_items SET import_row_id = NULL
+                 WHERE import_row_id IN (SELECT id FROM customs_import_rows WHERE batch_id = ${batchId})`;
+      await sql`DELETE FROM customs_import_batches WHERE id = ${batchId}`;
+    }
+    await sql.end();
+  }
 });

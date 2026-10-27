@@ -3491,6 +3491,7 @@
     "returnReasonLabel": "Reason",
     "finish": "Done",
     "answerAmount": "Price",
+    "finishNotEstimate": "The «Aniq», «Taxminiy» and «JAMI taxminiy» figures in Telegram and the feed are not official prices — do not copy them here. Pick the baza from 📥, set the zone and seal.",
     "answerNote": "Note",
     "answered": "Answer",
     "returned": "Sent back",
@@ -3852,6 +3853,8 @@
       "rateNoted": "dictionary rate carries a note",
       "bazaFromImport": "baza filled from the customs import",
       "bazaFromMemory": "baza taken from a sealed calculation",
+      "bazaDictionaryMoved": "The dictionary baza has changed",
+      "aiRecode": "The AI chose the code from a declaration — check the code and the duty",
       "basisNotLaw": "baza not in the law’s unit"
     },
     "refusal": {
@@ -3935,11 +3938,13 @@
       "basisSuspect": "check the baza unit (the law prices in another) — row",
       "importFilled": "{count} baza(s) filled from the import (estimate), rows",
       "memoryFilled": "baza filled from a sealed calculation: {count}, rows",
+      "dictionaryFilled": "baza from the dictionary: {count}, rows",
       "basisAuto": "auto",
       "basisConflict": "a unit the law cannot hold (one measure per row) — row",
       "alreadySaved": "already saved earlier: {count}",
       "basisNotLaw": "the law counts in {unit} — the baza is per another unit"
     },
+    "volumeFromLinesShort": "from the lines",
     "grid": {
       "qty": "Pcs",
       "kg": "Net, kg",
@@ -4060,7 +4065,10 @@
     "statsWeightNoRow": "The row has no count or weight — no weight row",
     "statsWeightNone": "No declarations within ±25 % weight",
     "statsPick": "Choose",
+    "importOtherCode": "code: {code}",
     "statsTimeout": "Statistics timed out (large file) — pick from the list",
+    "statsShortCode": "Statistics need a 10-digit code — pick a declaration from the list and its code is set",
+    "importListTimeout": "This heading is too wide — the list was not read. Type the 10-digit code.",
     "statsFailed": "Statistics did not load",
     "statsTable": "As a table",
     "statsColN": "Count",

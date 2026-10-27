@@ -1,11 +1,12 @@
 import { sql } from 'drizzle-orm';
-import { db } from '../../platform/db/client';
+import { db, type Db, type Tx } from '../../platform/db/client';
 import { getSetting } from '../../platform/settings/service';
+import { HINT_STATEMENT_MS, underCeiling } from '../finance/price-history';
 import { isBazaBasis, type BazaBasis } from '../calc/pricing';
 import { basisConflicts, statedPairOf } from '../calc/basis';
 import { normalizeName, type ImportUnit } from './import-parse';
-import { newestReadyBatchId } from './import-service';
-import { candidateStatement } from './import-stats-sql';
+import { batchesForCodes } from './import-service';
+import { candidateStatement, isFullCode } from './import-stats-sql';
 import {
   FEW,
   QUARTILE_INDEX,
@@ -30,7 +31,18 @@ import {
  * code's price), the NAME ranks, the WEIGHT re-ranks piece goods, and below
  * the threshold nothing is filled at all. A guess that silently prices cargo
  * is worse than an empty cell the VED fills themselves.
+ *
+ * Round 2 (docs/SAKKIZ-R2.md §7.4) opens ONE door wider: a row coded only by
+ * its HEADING (4-6 digits) lists the heading's declarations — each carrying
+ * its own ten-digit code — for the VED's 📥 list and the AI pick, both of
+ * which RECODE the row to the declaration they choose. The auto-fill and the
+ * statistics never see a heading: a neighbouring subheading's price is still
+ * not this code's price.
  */
+
+/** «Is this a declaration's full code, or a heading?» — one home, in
+ * import-stats-sql.ts so the SQL builders can ask it without this file. */
+export { isFullCode };
 
 /** The baza basis each file unit fills. sm³ cannot appear — see #868. */
 export const BASIS_FOR_UNIT: Record<ImportUnit, BazaBasis> = {
@@ -194,8 +206,10 @@ export interface ImportBazaSuggestion {
   named?: Partial<Record<ImportUnit, SeriesStats>>;
   /** 'short_name': the typed name is under MIN_NEEDLE, so «what this name
    * finds» is not a question the file can answer (its list is just the
-   * newest rows). */
-  namedState?: 'ok' | 'short_name';
+   * newest rows). 'short_code': the row is coded by a HEADING — a
+   * heading-wide quartile mixes subheadings, so none is computed (round 2,
+   * regression-8); the statistics panel already says why. */
+  namedState?: 'ok' | 'short_name' | 'short_code';
   /** The threshold the named series and the auto-fill both used — ONE read. */
   minSim?: number;
 }
@@ -236,14 +250,36 @@ export interface SuggestInput {
 
 /**
  * Candidates for ONE row. The batch id is passed in by the batched caller so
- * a hundred-row save does not ask «which import is newest» a hundred times.
+ * a hundred-row save does not ask «which import answers» a hundred times;
+ * with none passed, the per-code chooser answers (`batchesForCodes`, round
+ * 2 — one chooser for the list, the statistics, the fill and the pick).
+ *
+ * A HEADING read is bounded (performance-1): it scores `word_similarity` on
+ * every row of every subheading the range admits, and both `count(*) OVER ()`
+ * and the ORDER BY need all of them — so it runs under a statement ceiling
+ * (`ceilingMs`, default the hint's own 1500 ms; the background pick passes
+ * its longer one) and a cancel reaches the caller as postgres's 57014, which
+ * the list route turns into a sentence and the pick into a counted skip. A
+ * FULL code reads as it always has, with no new ceiling: today's giant codes
+ * must keep answering the VED.
  */
 export async function suggestImportBaza(
   input: SuggestInput,
-  opts: { batchId?: string | null; minSim?: number; picker?: boolean; named?: true } = {},
+  opts: {
+    batchId?: string | null;
+    minSim?: number;
+    picker?: boolean;
+    named?: true;
+    /** The heading read's statement ceiling, ms — a test passes 1. */
+    ceilingMs?: number;
+  } = {},
 ): Promise<ImportBazaSuggestion> {
-  const batchId = opts.batchId !== undefined ? opts.batchId : await newestReadyBatchId();
+  const batchId =
+    opts.batchId !== undefined
+      ? opts.batchId
+      : ((await batchesForCodes([input.tnvedCode])).get(input.tnvedCode)?.batchId ?? null);
   if (!batchId) return { auto: null, candidates: [], batchId: null, total: 0 };
+  const heading = !isFullCode(input.tnvedCode);
 
   const needle = normalizeName(input.name);
   // A needle this short matches inside almost any declaration text: at three
@@ -264,27 +300,48 @@ export async function suggestImportBaza(
   const limit = opts.picker ? PICKER_LIMIT : CANDIDATE_LIMIT;
   // The named series exists only in the dialog, and only for a name that
   // can score (D4) — a short name's fifty «candidates» are the newest rows,
-  // and plotting them as «what this name finds» would lie.
+  // and plotting them as «what this name finds» would lie — and only on a
+  // FULL code: a heading-wide quartile would be computed and thrown away
+  // beside a statistics panel that refuses a heading (regression-8).
   const dialog = opts.picker === true && opts.named === true;
-  const named = dialog && usable;
+  const named = dialog && usable && !heading;
   const readMinSim = async () =>
     opts.minSim ?? Number((await getSetting('import_baza_min_sim')) ?? MIN_SIM_DEFAULT);
   // Read BEFORE the query in that mode — on the pool, never inside a tx
-  // (#714) — so the series and the auto threshold are ONE number.
+  // (#714) — so the series and the auto threshold are ONE number. The
+  // heading's ceiling transaction below therefore touches only its own tx.
   const earlyMinSim = named ? await readMinSim() : undefined;
-  const { rows, total, namedSeries } = await queryCandidates(
-    batchId,
-    input,
-    usable ? needle : null,
-    limit,
-    earlyMinSim !== undefined ? { minSim: earlyMinSim } : undefined,
-  );
+  const ask = (exec: Db | Tx) =>
+    queryCandidates(
+      exec,
+      batchId,
+      input,
+      usable ? needle : null,
+      limit,
+      earlyMinSim !== undefined ? { minSim: earlyMinSim } : undefined,
+    );
+  const ceiling = opts.ceilingMs ?? HINT_STATEMENT_MS;
+  const { rows, total, namedSeries } = heading
+    ? await underCeiling(async (tx) => {
+        // `underCeiling` sets the hint's own ceiling; a caller asking for
+        // another (the background pick's, or a test's 1 ms) restates it for
+        // this same transaction.
+        if (ceiling !== HINT_STATEMENT_MS) {
+          await tx.execute(sql`SELECT set_config('statement_timeout', ${String(ceiling)}, true)`);
+        }
+        return ask(tx);
+      })
+    : await ask(db);
   const candidates = rows.slice(0, limit);
   const namedPart: Pick<ImportBazaSuggestion, 'named' | 'namedState'> = dialog
-    ? usable
-      ? { named: namedSeries ?? {}, namedState: 'ok' }
-      : { namedState: 'short_name' }
+    ? heading
+      ? { namedState: 'short_code' }
+      : usable
+        ? { named: namedSeries ?? {}, namedState: 'ok' }
+        : { namedState: 'short_name' }
     : {};
+  // A heading is never AUTO-filled — but that is the FILL's rule, and it has
+  // one home: `saveTable`'s import fill asks only full codes (§7.4).
   if (!usable) return { auto: null, candidates, batchId, total, ...namedPart };
 
   const minSim = earlyMinSim ?? (await readMinSim());
@@ -308,12 +365,15 @@ export async function suggestImportBaza(
  * being asked: does the typed name appear, as a run, inside the declaration?
  * (Its `<%` operator is the one gin_trgm_ops indexes.)
  *
- * Filtered to the exact code inside one batch — the composite index carries
+ * Filtered to the code inside one batch (exactly, or a heading's range —
+ * `codeMatchSql`) — the composite index carries
  * both halves. For DONA goods with a known per-piece weight the score blends
  * in weight closeness, his own rule: two rows under one code called the same
  * thing are told apart by what one piece weighs.
  */
 async function queryCandidates(
+  /** The pool for a full code; the ceiling transaction for a heading. */
+  exec: Db | Tx,
   batchId: string,
   input: SuggestInput,
   /** null when the typed name is too short to score — see the caller. */
@@ -325,7 +385,7 @@ async function queryCandidates(
   // The statement is built by a PURE function (import-stats-sql.ts) so a
   // unit test can read what each mode pays — the auto-fill's statement must
   // carry no aggregate at all.
-  const rows = await db.execute<{
+  const rows = await exec.execute<{
     id: string;
     tnved_code: string;
     name: string;

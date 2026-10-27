@@ -44,11 +44,13 @@ import { normalizeRowUnit, pendingUnitOf } from './units';
 import {
   BASIS_FOR_UNIT,
   importRowForCode,
+  isFullCode,
   suggestImportBaza,
   unitsForRow,
   type ImportBazaRow,
 } from '../customs/import-baza';
-import { batchEndSql, newestReadyBatchId } from '../customs/import-service';
+import { batchEndSql, batchesForCodes } from '../customs/import-service';
+import { productKey } from '../tnved/service';
 import {
   groupMeasure,
   groupQuantity,
@@ -96,6 +98,7 @@ import { retireTaskCopiesSoon } from '@/modules/platform/notifications/retire-ta
 import { kickPriceChannel } from './channel-queue';
 import { forgetUpsaleLiability } from './liability-memo';
 import {
+  aiRecoded,
   lawOffBook,
   sealCounters,
   unchangedFromProposal,
@@ -646,6 +649,7 @@ export async function loadWorkspace(
           dictionaryBaza: i.dictionaryBaza
             ? { bazaUsd: i.dictionaryBaza.bazaUsd, basis: i.dictionaryBaza.basis }
             : null,
+          bazaReason: i.bazaReason,
         })),
       }),
       note: g.note,
@@ -1906,6 +1910,11 @@ export async function sealCalc(
     extras: workspace.extras,
     tariffRow: freight?.ok ? freight.band : null,
     density: workspace.density,
+    // Round 2 (§7.2.8): the stored m³ IS the Σ of the lines — derived at
+    // read time (K13) and recorded here beside the volume the version row
+    // carries, because a seal outlives the lines it was read from. Absent
+    // on every older breakdown = unknown.
+    volumeFromLines: workspace.volumeFromLines,
     // VED 2.0: what the declaration paid VMQ-55, and under which certificate
     // answer. `fee` is inside `customsUsd` already — this is its receipt.
     hasCertificate: workspace.hasCertificate,
@@ -1923,7 +1932,14 @@ export async function sealCalc(
       : null,
   };
 
-  const aiGroupsSealed = workspace.groups.filter((g) => g.aiProposed).length;
+  // A group is the AI's when the model PROPOSED it — or when the pick RECODED
+  // one of its rows (round 2, law-money-4): the declaration's code chose the
+  // duty law, and a group minted by that recode's regroup carries
+  // `ai_proposed` false, so without the second half it counted as nobody's
+  // model. The recode is read off `baza_reason` (`aiRecoded`, one home).
+  const aiGroupsSealed = workspace.groups.filter(
+    (g) => g.aiProposed || g.items.some((i) => aiRecoded(i.bazaReason)),
+  ).length;
   // `aiProposed` and not `aiConfidence` alone: `mergeProposals` mints the
   // orphan group — the cargo the model did not place — with confidence 'low'
   // and `aiProposed: false`, so counting confidence by itself inflates «how
@@ -2927,8 +2943,20 @@ export async function proposeGroups(
       for (const batch of batches) {
         const slice = items.slice(batch.offset, batch.offset + batch.count);
         try {
+          // Round 2 (§7.5): the weight, the volume, the measure pair and the
+          // note travel with the name — a hint about material and purpose
+          // («100% полиэстер», «150 кг на 300 шт»), never a price.
           const answer = await proposeGoodsGrouping(
-            slice.map((i) => ({ name: i.name, quantity: toNum(i.quantity), unit: i.unit })),
+            slice.map((i) => ({
+              name: i.name,
+              quantity: toNum(i.quantity),
+              unit: i.unit,
+              weightKg: toNum(i.weightKg),
+              volumeM3: toNum(i.volumeM3),
+              measure:
+                i.measureUnit !== null && i.measureQty !== null ? `${Number(i.measureQty)} ${i.measureUnit}` : null,
+              note: i.note,
+            })),
           );
           results.push({ offset: batch.offset, groups: answer.groups });
           // One ledger row per model call (0096), so a real week of this can
@@ -2953,6 +2981,21 @@ export async function proposeGroups(
           // `workspace.aiConfigured` is false.
           if (err instanceof TnvedError && err.code === 'ai_not_configured') {
             throw new CalcError('ai_not_configured');
+          }
+          // A call the model ANSWERED counts, whatever was made of the answer
+          // (2.9 c): a refusal, a cut-off answer, an unreadable one and «no
+          // valid group» all carry the usage the response reported. A call
+          // with no answer (a timeout, the network) carries none and is not
+          // counted — a dead key must not spend the day's cap as «budget».
+          if (err instanceof TnvedError && err.usage) {
+            await recordAiPass({
+              requestId,
+              staffId: ctx.actorId ?? null,
+              kind: 'grouping',
+              model: err.usage.model,
+              inputTokens: err.usage.inputTokens,
+              outputTokens: err.usage.outputTokens,
+            });
           }
           // A batch that failed costs its own goods, not the whole file: eight
           // hundred classified beats a thousand left for the manager.
@@ -3597,6 +3640,33 @@ interface ImportFillPlan {
 
 const EMPTY_FILL_PLAN: ImportFillPlan = { byItemId: new Map(), byAddIndex: new Map() };
 
+/** One row's answer from the `calc_bazas` book (round 2), ready to be written. */
+interface DictionaryFill {
+  bazaUsd: number;
+  basis: BazaBasis;
+  /** The `productKey` the book answered for — re-checked inside the tx, so a
+   * name this same save renamed is never filled with the old name's price. */
+  key: string;
+}
+
+/**
+ * THE ORDER of the auto-fill — the owner's, in one home (docs/SAKKIZ-R2.md
+ * §7.2): what this company SEALED for this product, then what the VED wrote
+ * into the BOOK for it, then what somebody else DECLARED for its code. The
+ * one fill loop inside `saveTable` walks exactly this list, and
+ * `tests/integration/dictionary-fill.integration.test.ts` reorders it to
+ * prove the order is load-bearing.
+ */
+const SOURCES = ['memory', 'dictionary', 'import'] as const;
+type FillSource = (typeof SOURCES)[number];
+
+/** The bases a higher source offers a row before the transaction — what lets
+ * the import skip a row it could not win anyway (performance-7). */
+interface AnsweredAbove {
+  byItemId: Map<string, BazaBasis[]>;
+  byAddIndex: Map<number, BazaBasis[]>;
+}
+
 /**
  * The sealed memory's auto-fill, computed on the POOL before the transaction.
  *
@@ -3667,11 +3737,67 @@ async function suggestMemoryFills(input: {
 }
 
 /**
+ * The BOOK's auto-fill (round 2, §7.2), computed on the POOL before the
+ * transaction — the memory's discipline exactly: every row that will end this
+ * save BAZA-LESS is asked, NO code is required (the book is keyed by the
+ * product NAME, through the same `productKey` the book itself writes with —
+ * never a fourth copy of the name rule), and the answer is applied inside the
+ * tx only where the state still agrees. One indexed read for every name, so
+ * it is asked for ALL the wants; which source wins is decided in the tx.
+ */
+async function suggestDictionaryFills(input: {
+  standing: { id: string; name: string; bazaUsd: string | null }[];
+  itemEdits: { id: string; name?: string; bazaUsd?: number | null }[];
+  withCodes: { name: string; bazaUsd: number | null }[];
+}): Promise<{ byItemId: Map<string, DictionaryFill>; byAddIndex: Map<number, DictionaryFill> }> {
+  const plan = { byItemId: new Map<string, DictionaryFill>(), byAddIndex: new Map<number, DictionaryFill>() };
+  const wants: { key: { kind: 'item'; id: string } | { kind: 'add'; index: number }; name: string }[] = [];
+  const editById = new Map(input.itemEdits.map((e) => [e.id, e]));
+  for (const row of input.standing) {
+    const e = editById.get(row.id);
+    const baza = e && e.bazaUsd !== undefined ? e.bazaUsd : row.bazaUsd === null ? null : Number(row.bazaUsd);
+    if (baza !== null) continue;
+    wants.push({ key: { kind: 'item', id: row.id }, name: e && e.name !== undefined ? e.name : row.name });
+  }
+  input.withCodes.forEach((r, index) => {
+    if (r.bazaUsd !== null) return;
+    wants.push({ key: { kind: 'add', index }, name: r.name });
+  });
+  if (wants.length === 0) return plan;
+
+  const book = await bazasFor(
+    wants.map((w) => w.name),
+    onDate(),
+  );
+  if (book.size === 0) return plan;
+  for (const w of wants) {
+    const key = productKey(w.name);
+    const hit = book.get(key);
+    if (!hit) continue;
+    const fill: DictionaryFill = { bazaUsd: hit.bazaUsd, basis: hit.basis, key };
+    if (w.key.kind === 'item') plan.byItemId.set(w.key.id, fill);
+    else plan.byAddIndex.set(w.key.index, fill);
+  }
+  return plan;
+}
+
+/**
  * The import's auto-fill, computed on the POOL before the transaction.
  *
- * Only rows that will end this save CODED and BAZA-LESS are asked about: a
- * price the VED typed is never second-guessed, and a code-less row has
- * nothing to look up. `unitsForRow` says which of the file's units may price
+ * Only rows that will end this save CODED — with a FULL ten-digit code — and
+ * BAZA-LESS are asked about: a price the VED typed is never second-guessed, a
+ * code-less row has nothing to look up, and a HEADING is never auto-filled
+ * (round 2, §7.4: its best row is some subheading's, and only a choice that
+ * recodes the row may land one).
+ *
+ * …and only what the memory and the book LEAVE (performance-7): the import's
+ * trigram scan is the costly read of a save, and its answer could only ever
+ * be used if a higher source's in-transaction re-check failed. A higher
+ * source counts as answering only in a unit this row allows before the tx —
+ * a book price «per dona» on a weight-only row answers nothing, and the file
+ * is still asked. Stated: when the regroup or the measure pass changes the
+ * row's units INSIDE the tx and the higher source's unit drops out, the row
+ * stays empty for this save; the next save asks the import again. `unitsForRow` says which of the file's units may price
  * the row — the law when it pins one, the row's own figures when it does not
  * — so a per-m² declaration can never land on a per-kg row, and the
  * similarity threshold does the rest. His own rule: «agar to'g'ri bo'lmasa
@@ -3713,6 +3839,8 @@ async function suggestImportFills(input: {
     measureQty?: number | null;
   }[];
   rates: Map<string, RatesRow>;
+  /** Rows the memory or the book already answers, with the bases they offer. */
+  answered: AnsweredAbove;
 }): Promise<ImportFillPlan> {
   type Want = {
     key: { kind: 'item'; id: string } | { kind: 'add'; index: number };
@@ -3735,7 +3863,7 @@ async function suggestImportFills(input: {
     const e = editById.get(s.id);
     const code = e && e.tnvedCode !== undefined ? e.tnvedCode : s.tnvedCode;
     const baza = e && e.bazaUsd !== undefined ? e.bazaUsd : num(s.bazaUsd);
-    if (!code || baza !== null) continue;
+    if (!code || baza !== null || !isFullCode(code)) continue;
     const storedBasis = isBazaBasis(s.bazaBasis) ? s.bazaBasis : null;
     wants.push({
       key: { kind: 'item', id: s.id },
@@ -3749,7 +3877,7 @@ async function suggestImportFills(input: {
     });
   }
   input.withCodes.forEach((r, index) => {
-    if (!r.tnvedCode || r.bazaUsd !== null) return;
+    if (!r.tnvedCode || r.bazaUsd !== null || !isFullCode(r.tnvedCode)) return;
     wants.push({
       key: { kind: 'add', index },
       code: r.tnvedCode,
@@ -3761,12 +3889,35 @@ async function suggestImportFills(input: {
       statedPair: statedPairOf(r.measureUnit ?? null, r.measureQty ?? null),
     });
   });
-  if (wants.length === 0) return EMPTY_FILL_PLAN;
+  // What the import may price, before it is asked: a row the memory or the
+  // book already answers IN A UNIT THIS ROW ALLOWS is the higher source's,
+  // and the file's scan for it could only ever be thrown away.
+  const unitsOf = (w: Want) =>
+    unitsForRow({
+      dutyUnit: input.rates.get(w.code)?.dutyUnit ?? null,
+      chosen: w.chosen,
+      hasWeight: w.weightKg !== null && w.weightKg > 0,
+      hasQuantity: w.quantity !== null && w.quantity > 0,
+      hasVolume: w.volumeM3 !== null && w.volumeM3 > 0,
+      statedPair: w.statedPair,
+    });
+  const asking = wants
+    .map((w) => ({ w, units: unitsOf(w) }))
+    .filter(({ w, units }) => {
+      const above =
+        w.key.kind === 'item' ? input.answered.byItemId.get(w.key.id) : input.answered.byAddIndex.get(w.key.index);
+      return !above?.some((basis) => units.some((u) => BASIS_FOR_UNIT[u] === basis));
+    });
+  if (asking.length === 0) return EMPTY_FILL_PLAN;
 
-  const batchId = await newestReadyBatchId();
-  // No import yet — the module ships with an empty table, exactly as the four
-  // dictionaries do, and a request saved today must behave as it did before.
-  if (!batchId) return EMPTY_FILL_PLAN;
+  // Which quarter answers is a question PER CODE (round 2, §7.3): the newest
+  // file still answers every code it holds five declarations of, and a code
+  // it is silent about is answered by the newest file that has enough. An
+  // EMPTY map is «nothing imported yet» — the module ships with an empty
+  // table, exactly as the four dictionaries do, and a request saved today
+  // must behave as it did before.
+  const chosen = await batchesForCodes(asking.map(({ w }) => w.code));
+  if (chosen.size === 0) return EMPTY_FILL_PLAN;
 
   const minSimRaw = await getSetting('import_baza_min_sim');
   const minSim = Number(minSimRaw);
@@ -3776,15 +3927,9 @@ async function suggestImportFills(input: {
   // same product under one code, and asking per line is fifty identical
   // trigram scans (#432).
   const asked = new Map<string, ImportFill | null>();
-  for (const w of wants) {
-    const units = unitsForRow({
-      dutyUnit: input.rates.get(w.code)?.dutyUnit ?? null,
-      chosen: w.chosen,
-      hasWeight: w.weightKg !== null && w.weightKg > 0,
-      hasQuantity: w.quantity !== null && w.quantity > 0,
-      hasVolume: w.volumeM3 !== null && w.volumeM3 > 0,
-      statedPair: w.statedPair,
-    });
+  for (const { w, units } of asking) {
+    const batchId = chosen.get(w.code)?.batchId;
+    if (!batchId) continue;
     // His rule for piece goods: «har bir tovarni ogirligiga qaraymiz». Only
     // meaningful when the row states BOTH a count and a weight.
     const perPiece =
@@ -3959,20 +4104,32 @@ export async function saveTable(
     e.bazaBasis = row.basis;
   }
 
-  // The auto-fill (spec §2.4). Every row that will stand CODED with an EMPTY
-  // baza after this save is offered the newest ready import's best match —
-  // above the threshold and on the right unit, or nothing at all. Pooled, so
-  // it happens HERE and is applied inside the tx only where the state still
-  // agrees (#714).
-  const importAuto = await suggestImportFills({ standing, itemEdits, withCodes, rates });
   /**
-   * …and the SEALED memory, computed the same way and applied FIRST (0096).
+   * The auto-fill, in the owner's order (`SOURCES`): the SEALED memory
+   * (0096), then the BOOK (round 2), then the customs import (spec §2.4).
    *
-   * The order is the owner's: what this company sealed for this product beats
-   * what somebody else declared for the code. Both are suggestions the VED
-   * can retype, both are marked on the row, and both are recorded by the ✅.
+   * What this company sealed for this product beats what the VED wrote into
+   * the book for it, and both beat what somebody else declared for the code.
+   * All three are suggestions the VED can retype, each is marked on the row,
+   * and each is recorded by the ✅. Every plan is computed HERE, on the pool,
+   * and applied inside the tx only where the state still agrees (#714) — the
+   * import last of the three because it is the costly read, and it is not
+   * even asked about a row a higher source already answers.
    */
   const memoryAuto = await suggestMemoryFills({ requestId, standing, itemEdits, withCodes });
+  const dictionaryAuto = await suggestDictionaryFills({ standing, itemEdits, withCodes });
+  // What may spare the import its read is whatever `SOURCES` puts BEFORE it
+  // — read off the one list, so the order has one home here too.
+  const answered: AnsweredAbove = { byItemId: new Map(), byAddIndex: new Map() };
+  const offer = <K>(into: Map<K, BazaBasis[]>, key: K, basis: BazaBasis) =>
+    into.set(key, [...(into.get(key) ?? []), basis]);
+  const above = { memory: memoryAuto, dictionary: dictionaryAuto } as const;
+  for (const source of SOURCES) {
+    if (source === 'import') break;
+    for (const [id, fill] of above[source].byItemId) offer(answered.byItemId, id, fill.basis);
+    for (const [index, fill] of above[source].byAddIndex) offer(answered.byAddIndex, index, fill.basis);
+  }
+  const importAuto = await suggestImportFills({ standing, itemEdits, withCodes, rates, answered });
 
   return db.transaction(async (tx): Promise<TableSaveResult> => {
     const locked = await lockRequestInTx(tx, requestId);
@@ -4219,6 +4376,7 @@ export async function saveTable(
     /** The fill plans re-keyed onto item ids — a ghost row gets its id here. */
     const fillByItem = new Map(importAuto.byItemId);
     const memoryByItem = new Map(memoryAuto.byItemId);
+    const dictionaryByItem = new Map(dictionaryAuto.byItemId);
     // A row already saved under its client id is not inserted again; the fill
     // plans stay keyed by the ORIGINAL add index, so each kept row carries it.
     const toInsert = withCodes
@@ -4264,6 +4422,9 @@ export async function saveTable(
         if (fill) fillByItem.set(row.id, fill);
         const remembered = memoryAuto.byAddIndex.get(add.index);
         if (remembered) memoryByItem.set(row.id, remembered);
+        // A new row typed with a book name is filled on its FIRST save.
+        const booked = dictionaryAuto.byAddIndex.get(add.index);
+        if (booked) dictionaryByItem.set(row.id, booked);
       }
     }
 
@@ -4360,6 +4521,8 @@ export async function saveTable(
       .select({
         id: calcRequestItems.id,
         seq: calcRequestItems.seq,
+        // The book's fill re-checks the NAME it answered for (round 2).
+        name: calcRequestItems.name,
         groupId: calcRequestItems.groupId,
         tnvedCode: calcRequestItems.tnvedCode,
         quantity: calcRequestItems.quantity,
@@ -4373,7 +4536,11 @@ export async function saveTable(
         note: calcRequestItems.note,
       })
       .from(calcRequestItems)
-      .where(eq(calcRequestItems.requestId, requestId));
+      .where(eq(calcRequestItems.requestId, requestId))
+      // In row order, so every list this pass and the fills name («📖 …: 2,
+      // 5») reads in the order the table does — an unordered read hands rows
+      // back in whatever order the heap holds them (67b).
+      .orderBy(asc(calcRequestItems.seq));
     const measuresCleared: number[] = [];
     const measuresDropped: number[] = [];
     const basisConflict: number[] = [];
@@ -4595,20 +4762,24 @@ export async function saveTable(
       }
     }
 
-    // 7. The import's auto-fill (0094), AFTER the regroup — the group is what
-    //    says which unit the law prices in, and the suggestion was made for
-    //    that unit. Applied only where the pre-tx state still holds: the code
-    //    is still the one asked about, the baza is still empty, and the
-    //    group's own law still wants this basis (a typed dutyUnit override on
-    //    a legacy group can disagree with today's dictionary). Anything else
-    //    is left EMPTY for the VED, which is his own rule.
+    // 7. The auto-fill — ONE loop, the owner's order (`SOURCES`): the sealed
+    //    memory, then the book, then the customs import. AFTER the regroup,
+    //    because the group is what says which unit the law prices in, and
+    //    every suggestion was made for a unit. Applied only where the pre-tx
+    //    state still holds: the baza is still empty, no earlier source filled
+    //    the row in this loop, THIS save did not clear it, and the group's
+    //    own law still wants this basis (a typed dutyUnit override on a
+    //    legacy group can disagree with today's dictionary) — plus each
+    //    source's own key: the book's NAME, the file's CODE. Anything else is
+    //    left EMPTY for the VED, which is his own rule.
     //
     //    The fills run AFTER the measure pass, which is safe only because
     //    `unitsForRow` never offers an extended unit the pass did not already
     //    ask the row for (one the law pins, or one the VED chose) — pinned by
     //    tests/unit/customs-import-parse.test.ts.
     /** What may price this still-unpriced row: its law, its CHOSEN unit (a
-     * baza-less row's stored basis is always a choice), its own figures. */
+     * baza-less row's stored basis is always a choice), its own figures —
+     * `unitsForRow`, deliberately NOT the 📖 button's broader rule. */
     const allowedFor = (item: (typeof itemsNow)[number]) =>
       unitsForRow({
         dutyUnit: lawOf(item.groupId),
@@ -4619,67 +4790,89 @@ export async function saveTable(
         statedPair: statedPairOf(item.measureUnit, item.measureQty === null ? null : Number(item.measureQty)),
       });
     /**
-     * THE SEALED MEMORY GOES FIRST (0096, the owner's own order).
+     * A person CLEARED this baza in this very save — a null posted over a
+     * price that stood when the save began (judged against the rows read
+     * under the lock, never the browser's word). The machine does not put it
+     * back in the same press: the VED took it off on purpose.
      *
-     * What this company confirmed and sealed for this product outranks what
-     * somebody else declared for the code — so a row the memory can answer
-     * never reaches the import fill below. Applied under the SAME three
-     * re-checks: the baza is still empty, the row's law still allows the
-     * basis, and the group is the one the suggestion was made against.
+     * A null posted over a row that was ALREADY baza-less is not a clear: it
+     * is the screen choosing a UNIT on an unpriced row (`items-table.tsx`
+     * posts exactly that when only the unit select moved), and since 0125
+     * such a row is filled in the chosen unit in the same save
+     * (`calc-basis.integration.test.ts`, «every fill answers a CHOSEN unit»).
+     * A persistent «cleared by a person» flag needs a column, and is not this
+     * round's: a LATER save by the VED may refill the row, and a later
+     * MACHINE save cannot — its revision compare-and-set refuses it.
      */
-    const memoryFilled: number[] = [];
-    for (const item of itemsNow) {
-      const fill = memoryByItem.get(item.id);
-      if (!fill) continue;
-      if (item.bazaUsd !== null) continue;
-      if (!allowedFor(item).some((u) => BASIS_FOR_UNIT[u] === fill.basis)) continue;
-      await tx
-        .update(calcRequestItems)
-        .set({
-          bazaUsd: fill.bazaUsd.toFixed(4),
-          bazaBasis: fill.basis,
-          bazaSource: 'memory',
-          memoryItemId: fill.memoryItemId,
-          // The provenance is one fact in four columns: a memory price is not
-          // the file's and carries no model reason.
-          importRowId: null,
-          bazaReason: null,
-        })
-        .where(eq(calcRequestItems.id, item.id));
-      memoryFilled.push(item.seq);
-      if (item.groupId) touched.add(item.groupId);
+    const clearedNow = new Set(
+      itemEdits
+        .filter((e) => e.bazaUsd === null && (byId.get(e.id)?.bazaUsd ?? null) !== null)
+        .map((e) => e.id),
+    );
+    const filledBy: Record<FillSource, number[]> = { memory: [], dictionary: [], import: [] };
+    const filledNow = new Set<string>();
+    for (const source of SOURCES) {
+      for (const item of itemsNow) {
+        if (item.bazaUsd !== null || filledNow.has(item.id) || clearedNow.has(item.id)) continue;
+        const allows = (basis: BazaBasis) => allowedFor(item).some((u) => BASIS_FOR_UNIT[u] === basis);
+        // Each source writes the whole provenance in ONE statement — the
+        // price, its unit, who supplied it and the two pointers (the fence in
+        // baza-provenance.test.ts reads each `.set({…})` below).
+        if (source === 'memory') {
+          const fill = memoryByItem.get(item.id);
+          if (!fill || !allows(fill.basis)) continue;
+          await tx
+            .update(calcRequestItems)
+            .set({
+              bazaUsd: fill.bazaUsd.toFixed(4),
+              bazaBasis: fill.basis,
+              bazaSource: 'memory',
+              memoryItemId: fill.memoryItemId,
+              importRowId: null,
+              bazaReason: null,
+            })
+            .where(eq(calcRequestItems.id, item.id));
+        } else if (source === 'dictionary') {
+          const fill = dictionaryByItem.get(item.id);
+          // The book answered for a NAME; a row this save renamed is another
+          // product until the next save asks the book about it.
+          if (!fill || productKey(item.name) !== fill.key || !allows(fill.basis)) continue;
+          await tx
+            .update(calcRequestItems)
+            .set({
+              bazaUsd: fill.bazaUsd.toFixed(4),
+              bazaBasis: fill.basis,
+              bazaSource: 'dictionary',
+              importRowId: null,
+              memoryItemId: null,
+              bazaReason: null,
+            })
+            .where(eq(calcRequestItems.id, item.id));
+        } else {
+          const fill = fillByItem.get(item.id);
+          // The suggestion was made for a CODE; a row recoded since is not
+          // the row the file was asked about.
+          if (!fill || (item.tnvedCode ?? null) !== fill.code || !allows(fill.basis)) continue;
+          await tx
+            .update(calcRequestItems)
+            .set({
+              bazaUsd: fill.bazaUsd.toFixed(4),
+              bazaBasis: fill.basis,
+              bazaSource: 'import',
+              importRowId: BigInt(fill.importRowId),
+              memoryItemId: null,
+              bazaReason: null,
+            })
+            .where(eq(calcRequestItems.id, item.id));
+        }
+        filledNow.add(item.id);
+        filledBy[source].push(item.seq);
+        if (item.groupId) touched.add(item.groupId);
+      }
     }
-
-    // The book's fill is round 2's (P2): the kernel names the seam and fills
-    // nothing, so every save answers an empty list exactly as before.
-    const dictionaryFilled: number[] = [];
-
-    const importFilled: number[] = [];
-    for (const item of itemsNow) {
-      const fill = fillByItem.get(item.id);
-      if (!fill) continue;
-      if (item.bazaUsd !== null) continue;
-      // …and not a row the memory has just answered.
-      if (memoryFilled.includes(item.seq)) continue;
-      if ((item.tnvedCode ?? null) !== fill.code) continue;
-      // The suggestion was made against the dictionary's law; the GROUP is
-      // what actually prices, and a legacy group can carry a typed dutyUnit
-      // the dictionary no longer agrees with.
-      if (!allowedFor(item).some((u) => BASIS_FOR_UNIT[u] === fill.basis)) continue;
-      await tx
-        .update(calcRequestItems)
-        .set({
-          bazaUsd: fill.bazaUsd.toFixed(4),
-          bazaBasis: fill.basis,
-          bazaSource: 'import',
-          importRowId: BigInt(fill.importRowId),
-          memoryItemId: null,
-          bazaReason: null,
-        })
-        .where(eq(calcRequestItems.id, item.id));
-      importFilled.push(item.seq);
-      if (item.groupId) touched.add(item.groupId);
-    }
+    const memoryFilled = filledBy.memory;
+    const dictionaryFilled = filledBy.dictionary;
+    const importFilled = filledBy.import;
 
     // A2 (0125): a PRICED row whose law this save changed keeps the unit its
     // price was typed in — never silently rewritten (#171 inverted), NAMED,

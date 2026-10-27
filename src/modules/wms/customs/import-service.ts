@@ -13,6 +13,8 @@ import {
   type ParsedImportRow,
   type SkipReason,
 } from './import-parse';
+import { FEW } from './import-stats-math';
+import { codeMatchSql } from './import-stats-sql';
 
 /**
  * The quarterly customs dump, ingested (docs/VED-IMPORT-AI.md sub-round A).
@@ -651,14 +653,15 @@ export function batchRecencySql(t: SQL): SQL {
 }
 
 /**
- * The batch every suggestion reads: the newest one that finished — newest
- * by the dates inside, clamped to the upload day, his C6.
+ * The newest READY batch — newest by the dates inside, clamped to the upload
+ * day, his C6.
  *
  * His answer 2b — imports accumulate and the newest READY one is the truth;
- * a batch still processing must never half-price a calculation. ONE home for
- * its three readers: the 📥 picker (and its statistics), `saveTable`'s
- * auto-fill and the AI prefill — two answers to «which quarter» would be
- * #513.
+ * a batch still processing must never half-price a calculation. Since round
+ * 2 the SUGGESTIONS read `batchesForCodes` instead, which asks this same
+ * order per code and falls back to exactly this batch for a code no file
+ * holds; what still reads this one is the admin page's «answering» chip,
+ * which is about the file, not about a code (docs/SAKKIZ-R2.md §7.3).
  */
 export async function newestReadyBatchId(): Promise<string | null> {
   const rows = await db.execute<{ id: string }>(sql`
@@ -680,33 +683,86 @@ export interface ChosenBatch {
   rows: number | null;
 }
 
+/** How far the chooser counts a code's rows in one batch — enough to tell
+ * «a few» from «many», and an index-only range scan however big the file. */
+const CHOOSER_COUNT_CAP = 1000;
+
 /**
  * Which READY batch answers each code. TOTAL over the codes asked: every code
  * gets an entry whenever ANY batch is ready, and the map is EMPTY only when
  * none is. «No ready batch» (no_batch, «yuklanmagan») and «no file holds this
  * code» (no_declarations, calc.importNone) stay two different answers.
  *
- * K: today's rule — the newest ready batch for every code, by the ONE order
- * of «newest» (`batchRecencySql`, the same as `newestReadyBatchId`). Round 2's
- * baza package replaces the body with the per-code chooser
- * (docs/SAKKIZ-R2.md §7.3); the contract above is what its callers rely on.
+ * The rule (docs/SAKKIZ-R2.md §7.3), per code, over the ready batches that
+ * hold at least one of its rows (`codeMatchSql`, so a heading counts its
+ * subheadings):
+ *   1. a batch with ≥ FEW rows of the code before one with fewer — a code
+ *      the newest file is silent or nearly silent about is answered by the
+ *      newest file that has enough to say;
+ *   2. then the newer QUARTER of what the file describes (`batchEndSql`) —
+ *      his 2b where it speaks: the newest file answers every code it holds
+ *      five declarations of, and a full Q2 beats a same-quarter sample
+ *      whichever was uploaded last;
+ *   3. then more rows (a count capped at CHOOSER_COUNT_CAP is a tie);
+ *   4. then the ONE order of «newest» (`batchRecencySql`).
+ * A code no ready batch holds is answered by the newest ready batch, exactly
+ * as before this round — its callers then say «importda mos qator yo‘q»
+ * (calc.importNone), never «yuklanmagan» (regression-6). An older file's baza
+ * wears the existing stale chip, and the bot says «eski fayl».
+ *
+ * ONE statement for every code a save asks about: a LATERAL per code, glued
+ * with `sql.join`, each counting through the `(batch_id, tnved_code)` index.
+ * Read on the POOL, before any transaction (#714).
  */
 export async function batchesForCodes(codes: readonly string[]): Promise<Map<string, ChosenBatch>> {
   const out = new Map<string, ChosenBatch>();
   // Keyed by the code exactly as asked, so a caller's lookup cannot miss.
-  const asked = [...new Set(codes)];
+  const asked = [...new Set(codes)].filter((c) => c !== '');
   if (asked.length === 0) return out;
-  const rows = await db.execute<{ id: string; ended: string }>(sql`
-    SELECT b.id::text AS id, ${batchEndSql(sql`b`)}::text AS ended
-      FROM customs_import_batches b
-     WHERE b.status = 'ready'
-     ORDER BY ${batchRecencySql(sql`b`)}
-     LIMIT 1
-  `);
-  const newest = rows[0];
-  if (!newest) return out;
-  for (const code of asked) {
-    out.set(code, { batchId: newest.id, endDate: String(newest.ended).slice(0, 10), rows: null });
+  const perCode = asked.map(
+    (code) => sql`
+      SELECT ${code}::text AS code, p.id, p.ended, p.n
+        FROM (SELECT 1) one
+        LEFT JOIN LATERAL (
+          SELECT b.id, ${batchEndSql(sql`b`)} AS ended, c.n
+            FROM customs_import_batches b
+            CROSS JOIN LATERAL (
+              SELECT count(*)::int AS n FROM (
+                SELECT 1 FROM customs_import_rows r
+                 WHERE r.batch_id = b.id AND ${codeMatchSql(sql`r`, code)}
+                 LIMIT ${CHOOSER_COUNT_CAP}
+              ) x
+            ) c
+           WHERE b.status = 'ready' AND c.n > 0
+           ORDER BY (c.n >= ${FEW}) DESC,
+                    date_trunc('quarter', (${batchEndSql(sql`b`)})::timestamp) DESC,
+                    c.n DESC,
+                    ${batchRecencySql(sql`b`)}
+           LIMIT 1
+        ) p ON true`,
+  );
+  const rows = await db.execute<{ code: string; id: string; ended: string; rows: number | null }>(sql`
+    WITH newest AS (
+      SELECT b.id, ${batchEndSql(sql`b`)} AS ended
+        FROM customs_import_batches b
+       WHERE b.status = 'ready'
+       ORDER BY ${batchRecencySql(sql`b`)}
+       LIMIT 1
+    ), picked AS (
+      ${sql.join(perCode, sql` UNION ALL `)}
+    )
+    SELECT p.code,
+           COALESCE(p.id, n.id)::text AS id,
+           COALESCE(p.ended, n.ended)::text AS ended,
+           p.n AS rows
+      FROM picked p CROSS JOIN newest n`);
+  for (const r of rows) {
+    out.set(r.code, {
+      batchId: r.id,
+      endDate: String(r.ended).slice(0, 10),
+      // A code no batch holds was COUNTED — none, in every ready file.
+      rows: r.rows === null ? 0 : Number(r.rows),
+    });
   }
   return out;
 }

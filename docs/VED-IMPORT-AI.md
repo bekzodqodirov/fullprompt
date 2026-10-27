@@ -225,6 +225,28 @@ suggestImportBaza(input: {
   — a price is code-specific; the LAW's prefix fallback does not apply to
   prices. No rows → both null/empty (the screen says «bu kod importda yo'q»,
   the VED types by hand — his own sentence).
+- **Round 2 (docs/SAKKIZ-R2.md §7.3-7.4) — two answers changed:**
+  - *Which batch:* PER CODE (`batchesForCodes`, import-service.ts): a ready
+    batch holding ≥ 5 rows of the code first, then the newer quarter of what
+    the file describes, then more rows, then `batchRecencySql`. The newest
+    file still answers every code it holds five declarations of (his 2b where
+    it speaks); a code it is silent about is answered by the newest file that
+    has enough. Total: a code no file holds maps to the newest ready batch, so
+    the screen still says «importda mos qator yo'q», never «yuklanmagan». One
+    chooser for the 📥 list, the statistics, the auto-fill, the AI pick and
+    the bot's median. The admin page's «answering» chip stays global.
+  - *Which code:* **a 10-digit code exact; a shorter one (a 4-6 digit HEADING)
+    by its btree range (`codeMatchSql`), for the AI pick and the 📥 list
+    only — and the pick RECODES the row** to the declaration's own code. The
+    statistics, the bot's 📊 median and the model-free auto-fill stay EXACT: a
+    heading-wide series mixes subheadings, and a neighbouring subheading's
+    price is still not this code's price. A pick that recodes writes
+    «AI kodni o‘zgartirdi: 6403 → 6403991000 · …» into the row's reason and
+    raises the `ai_recode` warning the ✅ records (law-money-4); a recode a
+    PERSON makes in the 📥 dialog carries neither. Each heading candidate is
+    judged by ITS OWN code's law. A heading read runs under a statement
+    ceiling (1.5 s on the list → «10 xonali kodni yozing»; 5 s in the pick →
+    the row is skipped and counted).
 - Rank in SQL: `similarity(name_norm, ${normalize(name)})` via pg_trgm over
   `WHERE batch_id = $newest AND tnved_code = $code`, LIMIT 10 by score.
   UNIT FILTER: candidates whose `unit` differs from the request row's unit
@@ -427,7 +449,15 @@ collector. Staff bot ONLY (his 5a).
   accepted) when sub-round A's import screen exists. First real import:
   watch duration and the За.ед.из.$≈value/netto self-check drift in logs.
 - Prefix fallback for prices: CUT in v1 (exact code only) — a neighboring
-  code's price is not this code's price; revisit only if he asks.
+  code's price is not this code's price; revisit only if he asks. **Round 2
+  (§2.3 above) opened it for two CHOOSERS only** — the AI pick and the VED's
+  📥 list may offer a heading's declarations, and choosing one recodes the
+  row to the declaration's own code. Nothing fills a price from a heading
+  without that choice, and the statistics and the bot's median stay exact.
+- The calc_bazas BOOK fills too, since round 2: second, inside every
+  Saqlash's one ordered fill (memory → book → import), named in the save
+  note («📖 …»); `baza_dictionary_moved` says when the book moved under a
+  filled row.
 - Auto-fill threshold 0.45 is a first guess — tune on the real file and
   record the measurement.
 - The AI hisobchi does not quote FREIGHT unless the zone is known — freight

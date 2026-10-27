@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AI_RECODE_PREFIX,
   aiRateTaken,
+  aiRecoded,
   lawPinnedBasis,
   sealCounters,
   unchangedFromProposal,
@@ -68,6 +70,7 @@ describe('a warning means the dictionary had an answer and a person typed anothe
           bazaUsd: 2,
           bazaBasis: 'kg' as const,
           dictionaryBaza: null,
+          bazaReason: null,
         },
       ],
     };
@@ -98,6 +101,7 @@ describe('a warning means the dictionary had an answer and a person typed anothe
           bazaUsd: 2,
           bazaBasis: 'kg' as const,
           dictionaryBaza: { bazaUsd: 5, basis: 'kg' as const },
+          bazaReason: null,
         },
       ],
     };
@@ -179,6 +183,7 @@ describe('a warning means the dictionary had an answer and a person typed anothe
       bazaUsd: 12,
       bazaBasis: 'unit' as const,
       dictionaryBaza: dict,
+      bazaReason: null,
       ...over,
     });
 
@@ -334,6 +339,7 @@ describe('0125 A1: basis_not_law — a priced row per another unit than the law 
     bazaUsd,
     bazaBasis,
     dictionaryBaza: null,
+    bazaReason: null,
   });
 
   it('fires when the law PINS a unit and a priced row is per another', () => {
@@ -367,5 +373,63 @@ describe('0125 A1: basis_not_law — a priced row per another unit than the law 
       const law = defaultBasisFor({ dutyUnit });
       expect(lawPinnedBasis(dutyUnit), String(dutyUnit)).toBe(law === 'unit' ? null : law);
     }
+  });
+});
+
+describe('round 2: the book moved under a 📖 row, and the pick chose a code', () => {
+  const row = (over: Partial<WarningGroupFacts['items'][number]>): WarningGroupFacts['items'][number] => ({
+    hasDictionaryBaza: true,
+    bazaSource: 'dictionary',
+    bazaUsd: 2,
+    bazaBasis: 'kg',
+    dictionaryBaza: { bazaUsd: 2, basis: 'kg' },
+    bazaReason: null,
+    ...over,
+  });
+
+  /**
+   * `bazaStale` reads the CURRENT book row's date, so a 📖 row filled at $2
+   * whose book row now says $3 would read fresh while holding the old price
+   * (docs/SAKKIZ-R2.md §7.2.6). Price AND unit, as `baza_off_dictionary`
+   * compares them — but only on the BOOK's own rows: a typed row off the
+   * book is that warning's sentence, never this one (one fact, one warning).
+   */
+  it('a 📖 row whose book row moved says so — by price or by unit', () => {
+    expect(warningsForGroup({ ...base, items: [row({})] })).toEqual([]);
+    expect(warningsForGroup({ ...base, items: [row({ dictionaryBaza: { bazaUsd: 3, basis: 'kg' } })] })).toEqual([
+      'baza_dictionary_moved',
+    ]);
+    expect(
+      warningsForGroup({ ...base, items: [row({ dictionaryBaza: { bazaUsd: 2, basis: 'unit' } })] }),
+    ).toContain('baza_dictionary_moved');
+    // Not the book's row, not this warning.
+    expect(
+      warningsForGroup({ ...base, items: [row({ bazaSource: 'typed', dictionaryBaza: { bazaUsd: 3, basis: 'kg' } })] }),
+    ).not.toContain('baza_dictionary_moved');
+    // No book row today: nothing to have moved from.
+    expect(warningsForGroup({ ...base, items: [row({ hasDictionaryBaza: false, dictionaryBaza: null })] })).toEqual(
+      [],
+    );
+  });
+
+  /**
+   * law-money-4: a pick from a heading's list chooses the declaration's CODE,
+   * and with it the duty law — the ✅ must record that a person looked. Read
+   * off the reason's prefix (its one home); a same-code pick is the import's
+   * own `baza_from_import` and nothing more.
+   */
+  it('a row the pick recoded raises ai_recode; a same-code pick does not', () => {
+    const picked = row({
+      bazaSource: 'import',
+      hasDictionaryBaza: false,
+      dictionaryBaza: null,
+      bazaReason: `${AI_RECODE_PREFIX}6403 → 6403991000 · charm poyabzal`,
+    });
+    expect(warningsForGroup({ ...base, items: [picked] })).toEqual(['baza_from_import', 'ai_recode']);
+    expect(warningsForGroup({ ...base, items: [{ ...picked, bazaReason: 'charm poyabzal' }] })).toEqual([
+      'baza_from_import',
+    ]);
+    expect(aiRecoded(picked.bazaReason)).toBe(true);
+    expect(aiRecoded(null)).toBe(false);
   });
 });

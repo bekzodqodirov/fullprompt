@@ -63,8 +63,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   let groups: TnvedGrouping['groups'] | null = null;
   let aiError: string | null = null;
   try {
+    // The parsed weight and volume ride along (round 2, §7.5) — a hint about
+    // material and purpose for the model, never a price. A sheet has no
+    // measure pair and its note is the reader's own, so both are null.
     groups = (await proposeGoodsGrouping(
-      goods.map((g) => ({ name: g.description, quantity: g.quantity, unit: g.unit })),
+      goods.map((g) => ({
+        name: g.description,
+        quantity: g.quantity,
+        unit: g.unit,
+        weightKg: g.weightKg,
+        volumeM3: g.volumeM3,
+        measure: null,
+        note: null,
+      })),
     )).groups;
   } catch (err) {
     // DEALS.md answer 6c: without the key (or on any AI failure) the file

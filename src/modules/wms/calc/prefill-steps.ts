@@ -1,12 +1,15 @@
 import { eq, inArray } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { calcGroups, calcRequestItems } from '../../platform/db/schema';
+import { isQueryCanceled } from '../../platform/db/errors';
 import { logger } from '../../platform/logger';
 import type { AuditContext } from '../../platform/audit/service';
 import { recordAiPass } from './ai-cost';
-import { newestReadyBatchId } from '../customs/import-service';
-import { suggestImportBaza, unitsForItem } from '../customs/import-baza';
-import type { ImportUnit } from '../customs/import-parse';
+import { batchesForCodes } from '../customs/import-service';
+import { isFullCode, suggestImportBaza, unitsForItem, type ImportBazaRow } from '../customs/import-baza';
+import { onDate, ratesForCodes } from './dictionaries';
+import { CalcError } from './service';
+import { AI_RECODE_PREFIX } from './warnings';
 import { saveTable, type TableItemEdit } from './workspace';
 import { itemNameNorm, sealedMemoryFor } from './memory';
 import type { PickRequest } from './prefill-ai';
@@ -29,8 +32,25 @@ import type { PrefillDeps } from './prefill';
 /** How many rows are ever sent to the pick — a wall, not a silent truncation. */
 export const MAX_PICK_ROWS = 40;
 
+/**
+ * The statement ceiling of a HEADING's candidate read in the background pick
+ * (round 2, performance-1). Longer than the 📥 list's 1.5 s — nobody is
+ * waiting on a screen here — and still a ceiling: a heading admits every
+ * subheading of the file, and the scan scores every one of them.
+ */
+export const PICK_HEADING_MS = 5000;
+
 /** `saveTable`'s options for a revision the caller carries — none for null. */
 const casOf = (expectRev: number | null) => (expectRev === null ? undefined : { expectRev });
+
+/**
+ * A machine save refused because a PERSON saved in between (K14). Nothing was
+ * written — not a cell, not an audit row — and the machine does not retry: a
+ * person is working on this request, and putting the machine's answer back
+ * would write over them, or take their ✅ off (`jobs.ts`'s own law: the
+ * machine stands down rather than un-ticking a person's ✅).
+ */
+const overtakenByPerson = (err: unknown) => err instanceof CalcError && err.code === 'conflict';
 
 /**
  * Step 0: stamp the codes the company's own seals already know.
@@ -77,14 +97,36 @@ export async function applyMemory(
   }
   if (codeEdits.length === 0) return { coded: 0, filled: 0, rev: expectRev };
 
-  const out = await saveTable(requestId, { items: codeEdits, adds: [] }, ctx, casOf(expectRev));
-  return { coded: codeEdits.length, filled: out.memoryFilled.length, rev: out.rev };
+  try {
+    const out = await saveTable(requestId, { items: codeEdits, adds: [] }, ctx, casOf(expectRev));
+    return { coded: codeEdits.length, filled: out.memoryFilled.length, rev: out.rev };
+  } catch (err) {
+    if (!overtakenByPerson(err)) throw err;
+    logger.info({ requestId }, '[calc-prefill] memory codes not stamped — a person saved meanwhile');
+    // The revision the machine last knew: every later machine save in this
+    // pass then refuses too, which is the point.
+    return { coded: 0, filled: 0, rev: expectRev };
+  }
 }
 
 /**
  * Offer the model every still-empty baza's candidates, and write back the
  * rows it chose — through `saveTable`'s `importRowId` path, so the PRICE
  * comes out of the file and the provenance lands on 'import' (#894).
+ *
+ * Round 2 (docs/SAKKIZ-R2.md §7.4-7.5):
+ * - the quarter is chosen PER CODE (`batchesForCodes`), the list's and the
+ *   fill's own chooser;
+ * - a row coded only by a HEADING is offered the heading's declarations, each
+ *   with its own code, under a statement ceiling (`PICK_HEADING_MS`); a pick
+ *   among them RECODES the row to the declaration's code — which chooses the
+ *   duty law — so the reason says so (`AI_RECODE_PREFIX`) and the ✅ records
+ *   it (`ai_recode`);
+ * - the unit is checked against the TARGET code's law, never the heading's;
+ * - one candidate read per row SHAPE, as the auto-fill already keeps;
+ * - the call's usage is recorded with `await`, before any save;
+ * - the save carries the revision the machine last wrote (K14): a person's
+ *   save in between makes it `conflict`, which writes nothing.
  */
 export async function pickBazas(
   requestId: string,
@@ -100,10 +142,6 @@ export async function pickBazas(
   rev: number | null;
 }> {
   const none = { picked: 0, capped: 0, refused: 0, overtaken: 0, timedOut: 0, rev: expectRev };
-  const batchId = await newestReadyBatchId();
-  // Nothing imported yet: there is nothing to choose between, and inventing
-  // a price is the one thing this module may never do.
-  if (!batchId) return none;
 
   const rows = await db
     .select({
@@ -125,48 +163,71 @@ export async function pickBazas(
   const empty = rows.filter((r) => r.bazaUsd === null && (r.tnvedCode ?? '').trim());
   if (empty.length === 0) return none;
 
+  const sent = empty.slice(0, MAX_PICK_ROWS);
+  const chosenBatch = await batchesForCodes(sent.map((r) => r.tnvedCode!.trim()));
+  // Nothing imported yet: there is nothing to choose between, and inventing
+  // a price is the one thing this module may never do.
+  if (chosenBatch.size === 0) return none;
+
   const groups = await db
     .select({ id: calcGroups.id, dutyUnit: calcGroups.dutyUnit })
     .from(calcGroups)
     .where(eq(calcGroups.requestId, requestId));
   const dutyUnitOf = new Map(groups.map((g) => [g.id, g.dutyUnit]));
 
+  /** The row's figures, as the ONE row → units mapping reads them (K10). */
+  const factsOf = (r: (typeof rows)[number]) => ({
+    quantity: r.quantity === null ? null : Number(r.quantity),
+    weightKg: r.weightKg === null ? null : Number(r.weightKg),
+    volumeM3: r.volumeM3 === null ? null : Number(r.volumeM3),
+    bazaBasis: r.bazaBasis,
+    measureUnit: r.measureUnit,
+    measureQty: r.measureQty === null ? null : Number(r.measureQty),
+  });
+
   const asking: PickRequest[] = [];
-  const unitsOfSeq = new Map<number, ImportUnit[]>();
-  for (const r of empty.slice(0, MAX_PICK_ROWS)) {
-    const qty = r.quantity === null ? null : Number(r.quantity);
-    const kg = r.weightKg === null ? null : Number(r.weightKg);
-    const m3 = r.volumeM3 === null ? null : Number(r.volumeM3);
+  let timedOut = 0;
+  // One candidate read per DISTINCT row shape — the memo the auto-fill
+  // already keeps (#432): ten identical heading rows cost one scan, not ten.
+  // Sequential awaits, never concurrent: one pool connection at a time.
+  const askedShape = new Map<string, ImportBazaRow[] | 'timeout'>();
+  for (const r of sent) {
+    const code = r.tnvedCode!.trim();
+    const batchId = chosenBatch.get(code)?.batchId;
+    if (!batchId) continue;
+    const facts = factsOf(r);
     // The row's whole accepted set — and a unit the VED already CHOSE on this
     // still-unpriced row narrows it to that one (0125): the model chooses a
-    // declaration, never a unit. ONE row → units mapping (`unitsForItem`),
-    // shared with round 2's median read.
-    const units = unitsForItem(
-      {
-        quantity: qty,
-        weightKg: kg,
-        volumeM3: m3,
-        bazaBasis: r.bazaBasis,
-        measureUnit: r.measureUnit,
-        measureQty: r.measureQty === null ? null : Number(r.measureQty),
-      },
-      r.groupId ? (dutyUnitOf.get(r.groupId) ?? null) : null,
-    );
+    // declaration, never a unit.
+    const units = unitsForItem(facts, r.groupId ? (dutyUnitOf.get(r.groupId) ?? null) : null);
     if (units.length === 0) continue;
+    const qty = facts.quantity;
+    const kg = facts.weightKg;
     const perPiece =
       units.includes('dona') && qty !== null && qty > 0 && kg !== null && kg > 0 ? kg / qty : null;
-    const sug = await suggestImportBaza(
-      { tnvedCode: r.tnvedCode!.trim(), name: r.name, units, weightPerUnitKg: perPiece },
-      { batchId },
-    );
-    if (sug.candidates.length === 0) continue;
-    unitsOfSeq.set(r.seq, units);
-    asking.push({
-      seq: r.seq,
-      name: r.name,
-      tnvedCode: r.tnvedCode!.trim(),
-      candidates: sug.candidates,
-    });
+    const shape = `${code}|${units.join('+')}|${r.name}|${perPiece ?? ''}`;
+    let candidates = askedShape.get(shape);
+    if (candidates === undefined) {
+      try {
+        const sug = await suggestImportBaza(
+          { tnvedCode: code, name: r.name, units, weightPerUnitKg: perPiece },
+          { batchId, ceilingMs: PICK_HEADING_MS },
+        );
+        candidates = sug.candidates;
+      } catch (err) {
+        // A HEADING over its ceiling: the row is skipped and counted, never
+        // a dead pass. A full code has no ceiling, so anything else rethrows.
+        if (!isQueryCanceled(err) || isFullCode(code)) throw err;
+        candidates = 'timeout';
+      }
+      askedShape.set(shape, candidates);
+    }
+    if (candidates === 'timeout') {
+      timedOut += 1;
+      continue;
+    }
+    if (candidates.length === 0) continue;
+    asking.push({ seq: r.seq, name: r.name, tnvedCode: code, candidates });
   }
   if (empty.length > MAX_PICK_ROWS) {
     logger.info(
@@ -174,17 +235,21 @@ export async function pickBazas(
       '[calc-prefill] pick capped — the rest stay for the VED',
     );
   }
-  if (asking.length === 0) return none;
-
+  if (timedOut > 0) {
+    logger.info({ requestId, timedOut }, '[calc-prefill] heading candidates over their ceiling — left for the VED');
+  }
   const capped = Math.max(0, empty.length - MAX_PICK_ROWS);
+  if (asking.length === 0) return { ...none, capped, timedOut };
+
   const outcome = await pick(asking);
-  // The pick hands its usage BACK rather than through a callback (K5): a
-  // callback's `void` could never be made to finish before the pass returns.
-  // Still fire-and-forget here, as it was inside the callback — round 2's P2
-  // turns it into an `await`.
+  // The pick hands its usage BACK (K5), and it is recorded HERE, awaited and
+  // before any save: the ledger row exists when this function returns, so the
+  // soft budget the next pass reads already counts it. A call the model
+  // answered counts whatever was made of the answer; one with no answer
+  // (usage null — a timeout, the network) is not counted (2.9 c).
   if (outcome.usage) {
     const usage = outcome.usage;
-    void recordAiPass({
+    await recordAiPass({
       requestId,
       staffId: ctx.actorId ?? null,
       kind: 'pick',
@@ -194,11 +259,28 @@ export async function pickBazas(
     });
   }
   const answers = outcome.answers;
-  if (!answers) return { ...none, capped };
+  if (!answers) return { ...none, capped, timedOut };
 
   const bySeq = new Map(rows.map((r) => [r.seq, r]));
   const askedBySeq = new Map(asking.map((a) => [a.seq, a]));
+  // The law each chosen declaration would bring with it — read on the POOL,
+  // before the save, for every code the pick moves a row to (#714). A row
+  // the pick leaves on its own code keeps its block, and with it any law a
+  // person typed.
+  const recodeTo = [
+    ...new Set(
+      answers.flatMap((a) => {
+        const asked = askedBySeq.get(a.seq);
+        const chosen = a.candidate === null || !asked ? undefined : asked.candidates[a.candidate];
+        return chosen && asked && chosen.tnvedCode !== asked.tnvedCode ? [chosen.tnvedCode] : [];
+      }),
+    ),
+  ];
+  const book = recodeTo.length > 0 ? await ratesForCodes(recodeTo, onDate()) : new Map();
+
   const edits: TableItemEdit[] = [];
+  /** The code each edit was asked under — re-checked below. */
+  const askedCode = new Map<string, string>();
   let refused = 0;
   for (const a of answers) {
     if (a.candidate === null) continue;
@@ -207,18 +289,29 @@ export async function pickBazas(
     if (!row || !asked) continue;
     const chosen = asked.candidates[a.candidate];
     if (!chosen) continue;
-    const units = unitsOfSeq.get(a.seq);
-    // The units the row was ASKED about are the only ones it may be answered
-    // in: a per-kg declaration on a per-dona row is off by the weight of the
-    // goods, and the model is choosing a row, not a basis. A chosen unit
-    // narrowed this to one (0125).
-    if (!units || !units.includes(chosen.unit)) {
+    const recode = chosen.tnvedCode !== asked.tnvedCode;
+    // The units the TARGET code's law allows this row (regression-7's rule,
+    // on the machine's side): a pick that recodes the row brings the
+    // declaration's law with it, and a per-kg price on a row that law counts
+    // in juft is a price in the wrong unit, whatever the heading allowed. A
+    // chosen unit (0125) still narrows it to that one.
+    const law = recode
+      ? (book.get(chosen.tnvedCode)?.dutyUnit ?? null)
+      : row.groupId
+        ? (dutyUnitOf.get(row.groupId) ?? null)
+        : null;
+    if (!unitsForItem(factsOf(row), law).includes(chosen.unit)) {
       refused += 1;
       continue;
     }
+    askedCode.set(row.id, asked.tnvedCode);
     edits.push({
       id: row.id,
       seq: row.seq,
+      // A recode lands the declaration's own code beside its price, in ONE
+      // press — `saveTable` re-reads the row by `importRowId` against the
+      // code the row will carry after this save.
+      ...(recode ? { tnvedCode: chosen.tnvedCode } : {}),
       // The amount is re-read from the FILE by `saveTable` — what is posted
       // here is only which row (#894). The basis travels with it.
       bazaUsd: chosen.pricePerUnitUsd,
@@ -228,7 +321,9 @@ export async function pickBazas(
       // where a model's pick and the deterministic ≥0.45 auto-fill landed
       // identically and the VED reviewing the number could not tell which
       // had put it there. WORDS only: the price still comes from the file.
-      bazaReason: a.reason,
+      // A recode SAYS so first (law-money-4): the model chose the tariff
+      // line too, and the prefix at the start survives the 300-char cut.
+      bazaReason: recode ? `${AI_RECODE_PREFIX}${asked.tnvedCode} → ${chosen.tnvedCode} · ${a.reason}` : a.reason,
     });
   }
   logger.info(
@@ -241,7 +336,7 @@ export async function pickBazas(
     '[calc-prefill] the model chose',
   );
 
-  if (edits.length === 0) return { ...none, capped, refused };
+  if (edits.length === 0) return { ...none, capped, refused, timedOut };
 
   /**
    * STILL EMPTY? The rows were read before a model call that can take a
@@ -255,14 +350,16 @@ export async function pickBazas(
    * overwrite, and wrong for a machine answering a question it asked a
    * minute ago. So a baza the VED had just typed was replaced by the model's
    * choice, and `baza_source` flipped to 'import': their number gone, and the
-   * chip claiming the file had supplied it.
+   * chip claiming the file had supplied it. Round 2 re-checks the CODE as
+   * well: a row a person recoded meanwhile is not the row the model was
+   * asked about.
    *
    * A row that filled in the meantime is DROPPED and counted, never written.
-   * The residual window is the milliseconds to `saveTable`'s own
-   * `FOR UPDATE`, which is the window every writer in this module has.
+   * The window between this read and `saveTable`'s own `FOR UPDATE` is closed
+   * by the revision compare-and-set below.
    */
   const fresh = await db
-    .select({ id: calcRequestItems.id, bazaUsd: calcRequestItems.bazaUsd })
+    .select({ id: calcRequestItems.id, bazaUsd: calcRequestItems.bazaUsd, tnvedCode: calcRequestItems.tnvedCode })
     .from(calcRequestItems)
     .where(
       inArray(
@@ -270,17 +367,33 @@ export async function pickBazas(
         edits.map((e) => e.id),
       ),
     );
-  const stillEmpty = new Set(fresh.filter((r) => r.bazaUsd === null).map((r) => r.id));
+  const stillEmpty = new Set(
+    fresh
+      .filter((r) => r.bazaUsd === null && (r.tnvedCode ?? '').trim() === askedCode.get(r.id))
+      .map((r) => r.id),
+  );
   const live = edits.filter((e) => stillEmpty.has(e.id));
-  const overtaken = edits.length - live.length;
+  let overtaken = edits.length - live.length;
   if (overtaken > 0) {
     logger.info(
       { requestId, overtaken },
       '[calc-prefill] a person filled these while the model was thinking — left alone',
     );
   }
-  if (live.length === 0) return { ...none, capped, refused, overtaken };
+  if (live.length === 0) return { ...none, capped, refused, overtaken, timedOut };
 
-  const saved = await saveTable(requestId, { items: live, adds: [] }, ctx, casOf(expectRev));
-  return { picked: live.length, capped, refused, overtaken, timedOut: 0, rev: saved.rev };
+  try {
+    const saved = await saveTable(requestId, { items: live, adds: [] }, ctx, casOf(expectRev));
+    return { picked: live.length, capped, refused, overtaken, timedOut, rev: saved.rev };
+  } catch (err) {
+    if (!overtakenByPerson(err)) throw err;
+    // A person saved while the model was thinking — the pick's call takes up
+    // to 2 × 60 s with no claim held. Without this refusal the save's own
+    // fill (which runs on EVERY save since round 2) would refill a baza they
+    // had just cleared, and its unconfirm would take their ✅ off
+    // (concurrency-3).
+    overtaken += live.length;
+    logger.info({ requestId, overtaken }, '[calc-prefill] a person saved while the model was thinking — nothing written');
+    return { picked: 0, capped, refused, overtaken, timedOut, rev: expectRev };
+  }
 }

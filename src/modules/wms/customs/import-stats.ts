@@ -65,7 +65,8 @@ export interface UnitStats {
 
 export interface ImportStatsAnswer {
   /** 'short_code': the row's code is not a full 10 digits, and a heading-wide
-   * series would mix its subheadings — round 2's producer (§7.4); none yet. */
+   * series would mix its subheadings — the stats route answers it before any
+   * read (round 2, §7.4); the list beside it still answers the heading. */
   state: 'ok' | 'no_code' | 'no_batch' | 'behind' | 'timeout' | 'short_code';
   batchId: string | null;
   /** «2026-04-01 … 2026-06-29», or the file name when the file had no dates. */
