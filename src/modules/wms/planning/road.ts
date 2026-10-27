@@ -663,3 +663,50 @@ export async function roadOwedByTruck(exec: Db | Tx, road: RoadOn, batchIds: rea
   `)) as unknown as { batch_id: string; owed: number }[];
   return new Map(rows.map((r) => [r.batch_id, Number(r.owed)]));
 }
+
+/** What truck `batchId`'s plan still owes from the road, per lot (the count panel's rows). */
+export async function owedByLotOnTruck(exec: Db | Tx, road: RoadOn, batchId: string): Promise<Map<string, number>> {
+  if (!road.on) return new Map();
+  const rows = (await exec.execute(sql`
+    SELECT pl.lot_id, sum(plr.road_owed)::int AS owed
+      FROM plan_line_road plr
+      JOIN load_plan_lines pl ON pl.id = plr.line_id
+      JOIN load_plan_versions pv ON pv.id = pl.version_id
+      JOIN load_plans p ON p.id = pv.plan_id
+     WHERE p.batch_id = ${batchId}::uuid AND pv.agent_verdict = 'approved'
+       AND pv.version_no = p.current_version_no AND plr.road_owed > 0
+     GROUP BY pl.lot_id
+  `)) as unknown as { lot_id: string; owed: number }[];
+  return new Map(rows.map((r) => [r.lot_id, Number(r.owed)]));
+}
+
+/** Does any plan still owe one of `lotIds` from the road? (The annul's refusal.) */
+export async function anyRoadOwedFor(exec: Db | Tx, road: RoadOn, lotIds: readonly string[]): Promise<boolean> {
+  if (!road.on || lotIds.length === 0) return false;
+  const rows = (await exec.execute(sql`
+    SELECT 1 FROM plan_line_road plr
+      JOIN load_plan_lines pl ON pl.id = plr.line_id
+     WHERE plr.road_owed > 0 AND pl.lot_id IN (${sql.join(
+       lotIds.map((id) => sql`${id}::uuid`),
+       sql`, `,
+     )})
+     LIMIT 1
+  `)) as unknown as unknown[];
+  return rows.length > 0;
+}
+
+/**
+ * The road part a truck's loading ended without, for a truck column `batch`
+ * (the register's ⤵️ — short «as a short-loaded carton is today», 4a). `0`
+ * on a server without 0137.
+ */
+export function roadMissedSql(road: RoadOn, batch: SQL): SQL {
+  if (!road.on) return sql`0`;
+  return sql`coalesce((
+    SELECT sum(plr.road_missed) FROM plan_line_road plr
+      JOIN load_plan_lines pl ON pl.id = plr.line_id
+      JOIN load_plan_versions pv ON pv.id = pl.version_id
+      JOIN load_plans p ON p.id = pv.plan_id
+     WHERE p.batch_id = ${batch} AND pv.version_no = p.current_version_no
+  ), 0)`;
+}

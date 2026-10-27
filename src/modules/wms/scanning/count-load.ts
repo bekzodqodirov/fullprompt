@@ -15,7 +15,7 @@ import {
 } from './count-rules';
 import { doorOpens, type CountDoor } from './count-door';
 import { loadScanInTx } from './service';
-import { claimFromShelfTx, planRoadReady, roadNotHereSql, type RoadOn } from '../planning/road';
+import { claimFromShelfTx, owedByLotOnTruck, planRoadReady, roadNotHereSql, type RoadOn } from '../planning/road';
 import { aboardFilter } from './unload';
 import { planCountMove, shelfStatus, type CountRow } from './count-plan';
 import { qrlessRowSql } from '../labels/qrless-sql';
@@ -765,20 +765,7 @@ export async function countLoadPanel(batch: {
   // nothing of it aboard yet (docs/YOLDAGI-YUK.md §9): what of it stands free
   // here the press claims first, so the panel offers it.
   const road = await planRoadReady();
-  const owedLots = new Map<string, number>();
-  if (road.on && !quick) {
-    const owed = (await db.execute(sql`
-      SELECT pl.lot_id, sum(plr.road_owed)::int AS owed
-        FROM plan_line_road plr
-        JOIN load_plan_lines pl ON pl.id = plr.line_id
-        JOIN load_plan_versions pv ON pv.id = pl.version_id
-        JOIN load_plans p ON p.id = pv.plan_id
-       WHERE p.batch_id = ${batchId}::uuid AND pv.agent_verdict = 'approved'
-         AND pv.version_no = p.current_version_no AND plr.road_owed > 0
-       GROUP BY pl.lot_id
-    `)) as unknown as { lot_id: string; owed: number }[];
-    for (const row of owed) owedLots.set(row.lot_id, Number(row.owed));
-  }
+  const owedLots = quick ? new Map<string, number>() : await owedByLotOnTruck(db, road, batchId);
   const lotIds = [...new Set([...onTruck.map((r) => r.lot_id), ...counted.keys(), ...owedLots.keys()])];
 
   const crateRows = (await db.execute(sql`

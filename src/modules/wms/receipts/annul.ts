@@ -20,7 +20,7 @@ import { retireTaskCopiesSoon } from '../../platform/notifications/retire-tasks'
 import { CostError, recomputeAll, recomputeEntry, scopeBoxIds, voidCostEntryInTx } from '../costing/service';
 import { voidBoxRows } from './void-box';
 import { receiptHasCompensation } from '../finance/compensation-follow';
-import { planRoadReady } from '../planning/road';
+import { anyRoadOwedFor, planRoadReady } from '../planning/road';
 
 /**
  * Anulirovka — the super-admin cascade void of a receipt (owner, 2026-08-26:
@@ -227,18 +227,7 @@ export async function annulReceipt(
       // Yo'ldagi yuk: an approved plan that still OWES this lot from the road
       // holds none of its cartons yet — and would wait for ever for cargo
       // this annul is about to retire (docs/YOLDAGI-YUK.md §9).
-      if (road.on) {
-        const owing = (await tx.execute(sql`
-          SELECT 1 FROM plan_line_road plr
-            JOIN load_plan_lines pl ON pl.id = plr.line_id
-           WHERE plr.road_owed > 0 AND pl.lot_id IN (${sql.join(
-             lotIds.map((id) => sql`${id}::uuid`),
-             sql`, `,
-           )})
-           LIMIT 1
-        `)) as unknown as unknown[];
-        if (owing.length) throw new AnnulError('box_on_active_plan');
-      }
+      if (await anyRoadOwedFor(tx, road, lotIds)) throw new AnnulError('box_on_active_plan');
     }
 
     // Money, in the SAME transaction: every live receipt-scope entry goes,

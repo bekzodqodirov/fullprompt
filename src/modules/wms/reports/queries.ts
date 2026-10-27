@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { aliasedTable } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
-import { planRoadReady } from '../planning/road';
+import { planRoadReady, roadMissedSql } from '../planning/road';
 import { resolvePeriod } from '../accounting/period';
 import { riderLoad } from '../batches/riders';
 import { intakeRuleSql, receiptScopeSql, receivedInRangeSql } from './business';
@@ -568,16 +568,7 @@ export async function batchRegister(warehouseIds?: string[]) {
   // Yo'ldagi yuk (4a): the road part a truck's loading ended without is short
   // «as a short-loaded carton is today» — counted in ⤵️ beside the cartons
   // given back, from the line's durable `road_missed` (docs/YOLDAGI-YUK.md §9).
-  const road = await planRoadReady();
-  const roadMissed = road.on
-    ? sql`coalesce((
-        SELECT sum(plr.road_missed) FROM plan_line_road plr
-          JOIN load_plan_lines pl ON pl.id = plr.line_id
-          JOIN load_plan_versions pv ON pv.id = pl.version_id
-          JOIN load_plans p ON p.id = pv.plan_id
-         WHERE p.batch_id = ${batches.id} AND pv.version_no = p.current_version_no
-      ), 0)`
-    : sql`0`;
+  const roadMissed = roadMissedSql(await planRoadReady(), sql`${batches.id}`);
   const rows = await db
     .select({
       id: batches.id,

@@ -19,7 +19,9 @@ import {
 } from '@/modules/platform/db/schema';
 import { confirmReceipt } from '@/modules/wms/receipts/service';
 import { PlanError, recordVerdict, submitPlan } from '@/modules/wms/planning/service';
-import { lotSplitAt } from '@/modules/wms/planning/road';
+import { anyRoadOwedFor, lotSplitAt, planRoadReady, roadOwedForTruck } from '@/modules/wms/planning/road';
+import { plannableStock, roadStock, withRoad } from '@/modules/wms/planning/stock';
+import { batchRegister } from '@/modules/wms/reports/queries';
 import { departBatch, finishLoading, ingestLoadScans, ScanError } from '@/modules/wms/scanning/service';
 import { ingestUnloadScans, unloadRemaining } from '@/modules/wms/scanning/unload';
 import { countDoorFor } from '@/modules/wms/scanning/count-door';
@@ -63,6 +65,7 @@ async function mkLot(warehouseId: string, boxCount: number) {
     .returning({ id: clients.id });
   madeClients.push(client!.id);
   const lotId = uuidv4();
+  const receiptId = uuidv4();
   await db.insert(attachments).values({
     entityType: 'receipt_lot',
     entityId: lotId,
@@ -75,7 +78,7 @@ async function mkLot(warehouseId: string, boxCount: number) {
   });
   await confirmReceipt(
     {
-      receiptId: uuidv4(),
+      receiptId,
       warehouseId,
       clientId: client!.id,
       dealId: null,
@@ -97,7 +100,7 @@ async function mkLot(warehouseId: string, boxCount: number) {
     ctx(),
   );
   const rows = await db.select().from(boxes).where(eq(boxes.lotId, lotId)).orderBy(asc(boxes.seqInLot));
-  return { lotId, clientId: client!.id, boxes: rows.map((b) => ({ id: b.id, code: b.shortCode })) };
+  return { lotId, receiptId, clientId: client!.id, boxes: rows.map((b) => ({ id: b.id, code: b.shortCode })) };
 }
 type Lot = Awaited<ReturnType<typeof mkLot>>;
 
@@ -128,11 +131,15 @@ async function approve(versionId: string) {
   return batch!;
 }
 
-/** A truck from `origin` to `dest` carrying all of `lot`, loaded and departed — the road. */
-async function roadTruck(origin: string, dest: string, lot: Lot) {
-  const sub = await submit(origin, dest, [{ lot, take: lot.boxes.length }], false);
+/**
+ * A truck from `origin` to `dest` carrying `take` of `lot` (all by default),
+ * loaded and departed — the road. The approval reserves the lowest numbers
+ * first, so the cartons it carries are the next `take` still on the shelf.
+ */
+async function roadTruck(origin: string, dest: string, lot: Lot, take = lot.boxes.length, skip = 0) {
+  const sub = await submit(origin, dest, [{ lot, take }], false);
   const truck = await approve(sub.version.id);
-  const acks = await ingestLoadScans(lot.boxes.map((b) => qr(truck.id, b.code)), ctx());
+  const acks = await ingestLoadScans(lot.boxes.slice(skip, skip + take).map((b) => qr(truck.id, b.code)), ctx());
   expect(acks.every((a) => a.result === 'ok')).toBe(true);
   await finishLoading(truck.id, ctx());
   await departBatch(truck.id, ctx());
@@ -299,27 +306,40 @@ describe('the approval reserves the shelf and owes the road; the landing reserve
 
 describe('the loading ends without the road part (4a)', () => {
   it('«yuklash tugadi» keeps it as missed, a later landing claims nothing, and the count door asks only for the shelf', async () => {
-    const lot = await mkLot(W.yw, 3);
-    const inbound = await roadTruck(W.yw, W.hor, lot);
-    const shelf = await mkLot(W.hor, 2);
-    const sub = await submit(W.hor, W.ka, [{ lot, take: 3 }, { lot: shelf, take: 2 }], true);
+    // Two of the lot already landed here, three still on the road.
+    const lot = await mkLot(W.yw, 5);
+    const first = await roadTruck(W.yw, W.hor, lot, 2, 0);
+    await unloadRemaining(first.id, ctx());
+    const inbound = await roadTruck(W.yw, W.hor, lot, 3, 2);
+    const sub = await submit(W.hor, W.ka, [{ lot, take: 5 }], true);
     const truck = await approve(sub.version.id);
+    expect(await roadRow(sub.version.id, lot)).toEqual({ part: 3, owed: 3, missed: 0 });
+    // The count door's number is what can be on the truck: the two here.
+    const before = await countLoadPanel({ id: truck.id, originWarehouseId: W.hor });
+    expect(before.rows.find((r) => r.lotId === lot.lotId)?.plan).toBe(2);
     // Departing with the road part still owed is refused — «yuklash tugadi» first.
-    await ingestLoadScans(shelf.boxes.map((b) => qr(truck.id, b.code)), ctx());
+    await ingestLoadScans(lot.boxes.slice(0, 2).map((b) => qr(truck.id, b.code)), ctx());
     await expect(departBatch(truck.id, ctx())).rejects.toMatchObject({ code: 'road_owed_open' });
 
+    expect(await anyRoadOwedFor(db, await planRoadReady(), [lot.lotId])).toBe(true);
     const done = await finishLoading(truck.id, ctx());
     expect(done.roadMissed).toBe(3);
     expect(await roadRow(sub.version.id, lot)).toEqual({ part: 3, owed: 0, missed: 3 });
+    // Nothing owed any more: the annul's refusal lifts.
+    expect(await anyRoadOwedFor(db, await planRoadReady(), [lot.lotId])).toBe(false);
+    // The register's ⤵️ counts the road part that never came (4a: short as today).
+    const register = await batchRegister([W.hor]);
+    expect(Number(register.find((r) => r.id === truck.id)?.short)).toBe(3);
 
-    // The count door's number is the shelf part for the truck's whole life.
-    const panel = await countLoadPanel({ id: truck.id, originWarehouseId: W.hor });
-    expect(panel.rows.find((r) => r.lotId === lot.lotId)?.plan ?? 0).toBe(0);
+    // After the finish the count door still asks for the two — never the five,
+    // which would grow the lot by three cartons that later land as duplicates.
+    const after = await countLoadPanel({ id: truck.id, originWarehouseId: W.hor });
+    expect(after.rows.find((r) => r.lotId === lot.lotId)?.plan).toBe(2);
 
     // The road cargo lands after the finish: nobody owes it, it stays free.
     await unloadRemaining(inbound.id, ctx());
     const T = { I: inbound.id, O: truck.id };
-    expect(await statusOf(lot, T)).toEqual(['1:in_stock', '2:in_stock', '3:in_stock']);
+    expect((await statusOf(lot, T)).slice(2)).toEqual(['3:in_stock', '4:in_stock', '5:in_stock']);
     await departBatch(truck.id, ctx());
   });
 });
@@ -394,6 +414,65 @@ describe('a collection warehouse re-announces what it gives back', () => {
       .from(clientNotices)
       .where(and(eq(clientNotices.clientId, lot.clientId), eq(clientNotices.refId, inbound.id)));
     expect(notice).toEqual({ status: 'pending', staff: null });
+  });
+});
+
+describe('the readers say the road part', () => {
+  it('the editor’s road half lists a road-only lot in the shelf list’s own shape, with its truck', async () => {
+    const lot = await mkLot(W.yw, 5);
+    const inbound = await roadTruck(W.yw, W.hor, lot);
+    const road = await roadStock(W.hor);
+    const row = road.lots.find((l) => l.lotId === lot.lotId)!;
+    expect(row).toMatchObject({ available: 0, productNameZh: '路上的货', daysInStock: null });
+    expect(row.road.free).toBe(5);
+    expect(row.road.trucks.map((t) => t.code)).toEqual([inbound.code]);
+    expect(row.perBoxKg).toBe(10);
+    // ONE list: the road-only lot joins the shelf's.
+    const merged = withRoad((await plannableStock(W.hor)).lots, road.lots);
+    expect(merged.filter((l) => l.lotId === lot.lotId)).toHaveLength(1);
+    // An approved plan owing three leaves two free on the road for the next.
+    const sub = await submit(W.hor, W.ka, [{ lot, take: 3 }], true);
+    await approve(sub.version.id);
+    expect((await roadStock(W.hor)).lots.find((l) => l.lotId === lot.lotId)!.road.free).toBe(2);
+  });
+
+  it('the loading snapshot names what is owed, on which truck, and ships the codes a scan would claim', async () => {
+    const lot = await mkLot(W.yw, 3);
+    const inbound = await roadTruck(W.yw, W.hor, lot);
+    const sub = await submit(W.hor, W.ka, [{ lot, take: 3 }], true);
+    const truck = await approve(sub.version.id);
+    const snap = await roadOwedForTruck(db, await planRoadReady(), truck.id, W.hor);
+    expect(snap.lots).toEqual([
+      expect.objectContaining({ lotId: lot.lotId, owed: 3, trucks: [inbound.code] }),
+    ]);
+    expect([...snap.codes].sort()).toEqual(lot.boxes.map((b) => b.code).sort());
+  });
+
+  it('the agent sheet files the road part under «В пути» and the landed part under its truck', async () => {
+    const lot = await mkLot(W.yw, 6);
+    const first = await roadTruck(W.yw, W.hor, lot, 4, 0);
+    await unloadRemaining(first.id, ctx());
+    const second = await roadTruck(W.yw, W.hor, lot, 2, 4);
+    const sub = await submit(W.hor, W.ka, [{ lot, take: 6 }], true);
+    expect(await roadRow(sub.version.id, lot)).toEqual({ part: 2, owed: 0, missed: 0 });
+    const { buildAgentXlsx } = await import('@/modules/wms/documents/agent-xlsx');
+    const ExcelJS = (await import('exceljs')).default;
+    const book = new ExcelJS.Workbook();
+    await book.xlsx.load((await buildAgentXlsx(sub.plan.id, sub.version.versionNo))! as unknown as ArrayBuffer);
+    const sheet = book.worksheets[0]!;
+    const cells: string[][] = [];
+    sheet.eachRow((row) => cells.push((row.values as unknown[]).slice(1).map((v) => String(v ?? ''))));
+    const roadHeading = cells.findIndex((r) => r[0]!.startsWith('В пути / On the road'));
+    expect(roadHeading).toBeGreaterThan(0);
+    expect(cells[roadHeading]![0]).toContain(second.code);
+    expect(cells[roadHeading]![0]).toContain('2 Коробок');
+    // Under it, the lot's road part alone — two cartons, the truck named in the row.
+    expect(cells[roadHeading + 1]![3]).toBe('2');
+    expect(cells[roadHeading + 1]![7]).toContain(second.code);
+    // And the landed four under the truck that brought them, never «received here».
+    const landed = cells.findIndex((r) => r[0]!.includes(first.code) && r[0]!.startsWith('Партия прихода'));
+    expect(landed).toBeGreaterThan(0);
+    expect(cells[landed + 1]![3]).toBe('4');
   });
 });
 
