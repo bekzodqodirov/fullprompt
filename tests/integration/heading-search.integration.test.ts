@@ -85,6 +85,7 @@ import { pickBazas } from '@/modules/wms/calc/prefill-steps';
 import type { PickOutcome, PickRequest } from '@/modules/wms/calc/prefill-ai';
 import { AI_RECODE_PREFIX } from '@/modules/wms/calc/warnings';
 import { normalizeName } from '@/modules/wms/customs/import-parse';
+import { candidateStatement } from '@/modules/wms/customs/import-stats-sql';
 import { deleteImportBatch } from '@/modules/wms/customs/import-service';
 import { CalcError } from '@/modules/wms/calc/service';
 import { GET as listRoute } from '@/app/api/calc/import-baza/route';
@@ -270,6 +271,24 @@ async function open(items: { name: string; tnvedCode: string; weightKg?: number 
   return result.id;
 }
 
+/**
+ * Every read of `customs_import_rows` in an EXPLAIN is a (batch, code)
+ * RANGE on the composite btree: no sequential scan, no batch-only index with
+ * the code left to a filter, and each scan of the composite index carrying
+ * BOTH bounds in its Index Cond (review performance-9).
+ */
+function expectRangeReads(plan: string): void {
+  expect(plan, plan).not.toContain('Seq Scan on customs_import_rows');
+  expect(plan, plan).not.toContain('customs_import_rows_batch_idx');
+  const lines = plan.split('\n');
+  const scans = lines.flatMap((l, i) => (l.includes('customs_import_rows_code_idx') ? [i] : []));
+  expect(scans.length, plan).toBeGreaterThan(0);
+  for (const i of scans) {
+    const cond = lines.slice(i + 1).find((l) => l.includes('Index Cond'));
+    expect(cond, plan).toMatch(/tnved_code >= .*tnved_code <= /);
+  }
+}
+
 const rowsOf = (requestId: string) =>
   db.select().from(calcRequestItems).where(eq(calcRequestItems.requestId, requestId)).orderBy(calcRequestItems.seq);
 
@@ -308,6 +327,27 @@ describe('a heading lists its own subheadings and nothing else', () => {
     expect(codes).toContain(TJ);
     expect(codes.every((c) => c.startsWith(H) && c.length === 10), codes.join(',')).toBe(true);
     expect(answer.candidates.map((c) => c.id)).not.toContain(rowIds.other);
+  });
+
+  it('(a3) a heading’s candidate read is ONE range on the (batch, code) btree (review performance-9)', async () => {
+    // The wire test renders the predicate's text; a cast, a COLLATE or a
+    // function on a bound would render the same and scan the whole batch.
+    // Only the plan of the very statement `suggestImportBaza` runs can say.
+    // HJ's range is ~4 % of this batch, so with fresh statistics the range
+    // is the cheaper door — and the only one that can carry both bounds.
+    const plan = await db.transaction(async (tx) => {
+      await tx.execute(sql`ANALYZE customs_import_rows`);
+      await tx.execute(sql`SET LOCAL enable_seqscan = off`);
+      const statement = candidateStatement(
+        batchId,
+        { tnvedCode: HJ, name: NAME_J, units: ['kg'], weightPerUnitKg: null },
+        normalizeName(NAME_J),
+        50,
+      );
+      const rows = await tx.execute<{ 'QUERY PLAN': string }>(sql`EXPLAIN ${statement}`);
+      return rows.map((r) => r['QUERY PLAN']).join('\n');
+    });
+    expectRangeReads(plan);
   });
 
   it('(b2) a full code the file cannot fill is scanned ONCE, not on every save (review perf-4)', async () => {

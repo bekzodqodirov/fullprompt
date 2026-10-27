@@ -731,14 +731,46 @@ export async function batchesForCodes(codes: readonly string[]): Promise<Map<str
   // Keyed by the code exactly as asked, so a caller's lookup cannot miss.
   const asked = [...new Set(codes)].filter((c) => c !== '');
   if (asked.length === 0) return out;
+  const rows = await db.execute<{ code: string; id: string; ended: string; rows: number | null }>(
+    batchChooserStatement(asked),
+  );
+  for (const r of rows) {
+    out.set(r.code, {
+      batchId: r.id,
+      endDate: String(r.ended).slice(0, 10),
+      // A code no batch holds was COUNTED — none, in every ready file.
+      rows: r.rows === null ? 0 : Number(r.rows),
+    });
+  }
+  return out;
+}
+
+/**
+ * The chooser's ONE statement, built apart so a test can EXPLAIN exactly
+ * what `batchesForCodes` runs (review performance-9).
+ *
+ * The rule needs a full count only to break a tie INSIDE one quarter (rule
+ * 3), so it counts in two steps (review performance-8): every ready batch is
+ * counted only as far as FEW — enough for rules 1 and 2, and exact below FEW
+ * — and only the batches of the newest quarter that has FEW are counted on
+ * to CHOOSER_COUNT_CAP, by a scalar subquery postgres runs for those rows
+ * alone. Imports accumulate and are never retired (his 2b), so counting a
+ * thousand index entries of every asked code in every quarter ever uploaded
+ * grew the cost of every save each quarter. The winner and its `rows` are
+ * the same as one count to the cap: a batch below FEW is counted exactly,
+ * and the winner of a code some batch holds FEW of is in the newest such
+ * quarter, whose batches are counted in full.
+ */
+export function batchChooserStatement(codes: readonly string[]): SQL {
   const values = sql.join(
-    asked.map((code) => {
+    codes.map((code) => {
       const { lo, hi } = codeBounds(code);
       return sql`(${code}::text, ${lo}::text, ${hi}::text)`;
     }),
     sql`, `,
   );
-  const rows = await db.execute<{ code: string; id: string; ended: string; rows: number | null }>(sql`
+  const quarter = (t: SQL) => sql`date_trunc('quarter', (${batchEndSql(t)})::timestamp)`;
+  return sql`
     WITH asked(code, lo, hi) AS (VALUES ${values}),
     newest AS (
       SELECT b.id, ${batchEndSql(sql`b`)} AS ended
@@ -754,31 +786,38 @@ export async function batchesForCodes(codes: readonly string[]): Promise<Map<str
       FROM asked a
       CROSS JOIN newest n
       LEFT JOIN LATERAL (
-        SELECT b.id, ${batchEndSql(sql`b`)} AS ended, c.n
-          FROM customs_import_batches b
-          CROSS JOIN LATERAL (
-            SELECT count(*)::int AS n FROM (
-              SELECT 1 FROM customs_import_rows r
-               WHERE r.batch_id = b.id AND r.tnved_code BETWEEN a.lo AND a.hi
-               LIMIT ${CHOOSER_COUNT_CAP}
-            ) x
-          ) c
-         WHERE b.status = 'ready' AND c.n > 0
-         ORDER BY (c.n >= ${FEW}) DESC,
-                  date_trunc('quarter', (${batchEndSql(sql`b`)})::timestamp) DESC,
-                  c.n DESC,
-                  ${batchRecencySql(sql`b`)}
+        SELECT s.id,
+               ${batchEndSql(sql`s`)} AS ended,
+               CASE WHEN s.few >= ${FEW} AND ${quarter(sql`s`)} = s.best
+                    THEN (SELECT count(*)::int FROM (
+                            SELECT 1 FROM customs_import_rows r
+                             WHERE r.batch_id = s.id AND r.tnved_code BETWEEN a.lo AND a.hi
+                             LIMIT ${CHOOSER_COUNT_CAP}
+                          ) x)
+                    ELSE s.few
+               END AS n,
+               s.few,
+               s.period_to,
+               s.uploaded_at
+          FROM (
+            SELECT b.id, b.period_to, b.uploaded_at, c.few,
+                   max(${quarter(sql`b`)}) FILTER (WHERE c.few >= ${FEW}) OVER () AS best
+              FROM customs_import_batches b
+              CROSS JOIN LATERAL (
+                SELECT count(*)::int AS few FROM (
+                  SELECT 1 FROM customs_import_rows r
+                   WHERE r.batch_id = b.id AND r.tnved_code BETWEEN a.lo AND a.hi
+                   LIMIT ${FEW}
+                ) x
+              ) c
+             WHERE b.status = 'ready' AND c.few > 0
+          ) s
+         ORDER BY (s.few >= ${FEW}) DESC,
+                  ${quarter(sql`s`)} DESC,
+                  n DESC,
+                  ${batchRecencySql(sql`s`)}
          LIMIT 1
-      ) p ON true`);
-  for (const r of rows) {
-    out.set(r.code, {
-      batchId: r.id,
-      endDate: String(r.ended).slice(0, 10),
-      // A code no batch holds was COUNTED — none, in every ready file.
-      rows: r.rows === null ? 0 : Number(r.rows),
-    });
-  }
-  return out;
+      ) p ON true`;
 }
 
 /**

@@ -231,7 +231,10 @@ describe('9. «newest» has ONE order, clamped (his C6)', () => {
   });
 
   it('the per-code chooser orders by «enough rows», quarter, rows, then the ONE order of newest', () => {
-    const chooser = bodyOf(SERVICE, 'export async function batchesForCodes(');
+    // `batchesForCodes` runs the statement its builder makes, and nothing
+    // else — the builder is what batch-choice (h) EXPLAINs.
+    expect(bodyOf(SERVICE, 'export async function batchesForCodes(')).toContain('batchChooserStatement(asked)');
+    const chooser = bodyOf(SERVICE, 'export function batchChooserStatement(');
     // The heading's range from its ONE home, bound per code into a VALUES
     // list — one statement planned once (review P2-10).
     expect(chooser).toContain('codeBounds(');
@@ -244,6 +247,11 @@ describe('9. «newest» has ONE order, clamped (his C6)', () => {
     // TOTAL: a code no batch holds still maps — onto the newest ready batch.
     expect(chooser).toContain('LEFT JOIN LATERAL');
     expect(chooser).toContain('COALESCE(p.id, n.id)');
+    // Two steps (review performance-8): every batch is counted to FEW, and
+    // only the newest quarter that has FEW is counted on to the cap.
+    expect(chooser).toContain('LIMIT ${FEW}');
+    expect(chooser).toContain('LIMIT ${CHOOSER_COUNT_CAP}');
+    expect(chooser).toContain('= s.best');
   });
 });
 

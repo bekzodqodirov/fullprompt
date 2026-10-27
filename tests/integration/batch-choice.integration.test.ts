@@ -28,7 +28,7 @@ import {
   tasks,
   users,
 } from '@/modules/platform/db/schema';
-import { batchesForCodes, newestReadyBatchId } from '@/modules/wms/customs/import-service';
+import { batchChooserStatement, batchesForCodes, newestReadyBatchId } from '@/modules/wms/customs/import-service';
 import { normalizeName } from '@/modules/wms/customs/import-parse';
 import { openCalcRequest } from '@/modules/wms/calc/service';
 import { saveTable } from '@/modules/wms/calc/workspace';
@@ -158,6 +158,24 @@ async function rowCoded(tnved: string): Promise<string> {
 
 const chosen = async (tnved: string) => (await batchesForCodes([tnved])).get(tnved);
 
+/**
+ * Every read of `customs_import_rows` in an EXPLAIN is a (batch, code)
+ * RANGE on the composite btree: no sequential scan, no batch-only index with
+ * the code left to a filter, and each scan of the composite index carrying
+ * BOTH bounds in its Index Cond (review performance-9).
+ */
+function expectRangeReads(plan: string): void {
+  expect(plan, plan).not.toContain('Seq Scan on customs_import_rows');
+  expect(plan, plan).not.toContain('customs_import_rows_batch_idx');
+  const lines = plan.split('\n');
+  const scans = lines.flatMap((l, i) => (l.includes('customs_import_rows_code_idx') ? [i] : []));
+  expect(scans.length, plan).toBeGreaterThan(0);
+  for (const i of scans) {
+    const cond = lines.slice(i + 1).find((l) => l.includes('Index Cond'));
+    expect(cond, plan).toMatch(/tnved_code >= .*tnved_code <= /);
+  }
+}
+
 describe('the chooser answers per code', () => {
   it('(a) the newest batch lacks the code → an older batch that holds it answers', async () => {
     const c = code(1);
@@ -226,6 +244,43 @@ describe('the chooser answers per code', () => {
     expect((await chosen(c))?.batchId).toBe(thick);
     expect((await chosen(c))?.rows).toBe(50);
     await drop([thick, thin]);
+  });
+
+  it('(d3) three quarters — newest has 3, middle 6, oldest 50 → the newest quarter that has enough', async () => {
+    // The two-step count (review performance-8): every quarter is counted
+    // only to FEW, and only the winning quarter on to the cap.
+    const c = code(12);
+    const oldest = await mintBatch({ from: `${lastYear}-01-01`, to: `${lastYear}-03-31` }, 180, 'BC-d3-oldest');
+    const middle = await mintBatch(Q2, 120, 'BC-d3-middle');
+    const newest = await mintBatch(Q3, 60, 'BC-d3-newest');
+    await addRows(oldest, c, 50);
+    await addRows(middle, c, 6);
+    await addRows(newest, c, 3);
+    expect((await chosen(c))?.batchId).toBe(middle);
+    expect((await chosen(c))?.rows).toBe(6);
+    await drop([oldest, middle, newest]);
+  });
+
+  it('(h) the chooser reads each code’s rows through the (batch, code) btree (review performance-9)', async () => {
+    // A cast, a COLLATE or a function on a bound renders the same text and
+    // quietly scans every row of every batch; only the plan can see it. The
+    // statement EXPLAINed is the one `batchesForCodes` runs.
+    const c = code(13);
+    const batch = await mintBatch(Q3, 60, 'BC-h');
+    await addRows(batch, c, 6);
+    // …in a file mostly about something else, so that with fresh statistics
+    // the code's range is the cheap door and the plan can tell the two apart.
+    await addRows(batch, `97${SUFFIX}01`, 3000);
+    for (const asked of [c, `95${SUFFIX}`]) {
+      const plan = await db.transaction(async (tx) => {
+        await tx.execute(sql`ANALYZE customs_import_rows`);
+        await tx.execute(sql`SET LOCAL enable_seqscan = off`);
+        const rows = await tx.execute<{ 'QUERY PLAN': string }>(sql`EXPLAIN ${batchChooserStatement([asked])}`);
+        return rows.map((r) => r['QUERY PLAN']).join('\n');
+      });
+      expectRangeReads(plan);
+    }
+    await drop([batch]);
   });
 
   it('(e) the list route and the stats route answer from the chooser’s batch', async () => {
