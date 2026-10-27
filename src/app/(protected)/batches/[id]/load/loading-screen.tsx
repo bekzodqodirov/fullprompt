@@ -51,6 +51,14 @@ interface Snapshot {
    */
   countOnly?: CountOnlyLot[];
   countOnlyCapped?: boolean;
+  /**
+   * Yo'ldagi yuk (docs/YOLDAGI-YUK.md §9): what the plan still owes from the
+   * road, per lot, and the codes a scan of which is the plan's (free on the
+   * origin's shelf, or still on the inbound truck). Absent from an older
+   * snapshot — `?? []`.
+   */
+  roadOwed?: { lotId: string; label: string; owed: number; trucks: string[] }[];
+  roadCodes?: string[];
 }
 
 /**
@@ -264,6 +272,9 @@ export function LoadingScreen({
         // `rerouteVerdict`, once per truck, and nothing of this truck is
         // rolled back (`codes` is empty for a row this screen never marked).
         continue;
+      } else if (ack.detail === 'road_not_landed') {
+        // Still on the inbound truck: the landing is what makes it the plan's.
+        setToast(`🚚 ${t('roadNotLanded', { truck: ack.inboundCode ?? '—' })}`);
       } else if (ack.detail === 'batch_not_found') {
         setToast(`❌ ${tu('errors.not_found')}`);
       } else {
@@ -531,6 +542,13 @@ export function LoadingScreen({
       void accept(memberCodes, { code, method, manualReason });
       return;
     }
+    // A carton the plan still owes from the road: the server claims it when it
+    // stands here, and names the truck it is still on when it does not —
+    // never the red «not on plan» for the plan's own cargo.
+    if ((snapshot.roadCodes ?? []).some((c) => c.toUpperCase() === code.toUpperCase())) {
+      void accept([code], { code, method, manualReason });
+      return;
+    }
     // Nothing on this batch's plan — red confirm flow.
     feedback('bad');
     setConfirmCode(code);
@@ -772,6 +790,18 @@ export function LoadingScreen({
         <p className="text-center text-xs text-ink-500" data-testid="count-only-capped">
           {tcount('countOnlyCapped')}
         </p>
+      )}
+
+      {/* Yo'ldagi yuk: the plan's cargo still on its way here, so nobody
+          presses «yuklash tugadi» not knowing (docs/YOLDAGI-YUK.md §9). */}
+      {(snapshot.roadOwed ?? []).length > 0 && (
+        <div className="rounded-lg border border-warn/40 bg-warn/10 p-2 text-sm" data-testid="road-owed">
+          {(snapshot.roadOwed ?? []).map((lot) => (
+            <p key={lot.lotId}>
+              🚚 {t('roadOwedLine', { lot: lot.label, n: lot.owed, trucks: lot.trucks.join(', ') || '—' })}
+            </p>
+          ))}
+        </div>
       )}
 
       {/* The office's count panel, one tap away for the admin or the logist

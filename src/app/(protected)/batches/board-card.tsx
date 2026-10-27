@@ -79,8 +79,10 @@ export async function TruckCard({ card }: { card: BoardTruck }) {
         return tb('planNone');
       case 'loadedNoPlan':
         return tb('loadedNoPlan', { boxes: line.loaded.boxes, cargo: measureLine(line.loaded.m3, line.loaded.kg) });
-      case 'plan':
-        return tb('plan', { boxes: line.planned.boxes, cargo: measureLine(line.planned.m3, line.planned.kg) });
+      case 'plan': {
+        const text = tb('plan', { boxes: line.planned.boxes, cargo: measureLine(line.planned.m3, line.planned.kg) });
+        return line.road > 0 ? `${text} · 🚚 ${tb('roadOwed', { n: line.road })}` : text;
+      }
       case 'loaded': {
         const text = tb('loaded', {
           a: line.loaded.boxes,
@@ -90,6 +92,7 @@ export async function TruckCard({ card }: { card: BoardTruck }) {
           kga: Math.round(line.loaded.kg),
           kgb: Math.round(line.planned.kg),
         });
+        if (line.road > 0) return `${text} · 🚚 ${tb('roadOwed', { n: line.road })}`;
         return line.all ? `${text} · ${tb('loadedAll')}` : text;
       }
       case 'rode':

@@ -35,6 +35,12 @@ export const DOC = {
    * a batch word over a ZR- code would send him looking for a batch.
    */
   factoryPickup: 'Заводской рейс / Factory pickup',
+  /**
+   * The heading over a plan's ROAD part (docs/YOLDAGI-YUK.md §9): cartons still
+   * on a truck bound for this warehouse. Never «received here» — that would be
+   * a false sentence on a customs document.
+   */
+  onRoad: 'В пути / On the road',
   barcode: 'Штрих-код / Barcode',
   boxes: 'Коробок / Boxes',
   code: 'Код / Code',

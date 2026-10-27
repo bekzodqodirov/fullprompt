@@ -31,7 +31,8 @@ interface StockLot {
   available: number;
   perBoxKg: number;
   perBoxM3: number;
-  daysInStock: number;
+  /** Null for a lot only on the road: it has stood here no days at all. */
+  daysInStock: number | null;
   photoId: string | null;
   /** Which truck(s) brought it here, as printed (`arrivalLabel`: a batch's code, a factory trip's «ZR-… · factory · plate») — '' for a walk-in. */
   arrival: string;
@@ -43,6 +44,27 @@ interface StockLot {
    */
   check?: LotCheckState;
   receiptId?: string;
+  /**
+   * Yo'ldagi yuk (docs/YOLDAGI-YUK.md §4): cartons of this lot on a truck bound
+   * here, less what approved plans already owe — present only when the box is
+   * ticked and the lot has any. A lot ONLY on the road has `available: 0`.
+   */
+  road?: { free: number; trucks: RoadTruckView[] };
+}
+interface RoadTruckView {
+  code: string;
+  state: 'gate' | 'road' | 'unknown';
+  eta: string | null;
+}
+interface FactoryTripView {
+  code: string;
+  status: string;
+  lines: { owner: string; goods: string; boxes: number }[];
+}
+
+/** What a row may take: the shelf, and the road's free part while the box is ticked. */
+export function takeMax(lot: Pick<StockLot, 'available' | 'road'>, road: boolean): number {
+  return lot.available + (road ? (lot.road?.free ?? 0) : 0);
 }
 interface StockCrate {
   crateId: string;
@@ -79,6 +101,7 @@ export function PlanEditor({
   presets,
   densityThresholds,
   resubmit,
+  initialRoad = false,
 }: {
   /** Where this planner may load FROM — their own warehouses. */
   warehouses: WarehouseOption[];
@@ -94,7 +117,11 @@ export function PlanEditor({
     truckPresetId: string | null;
     lines: { lotId: string; boxCount: number }[];
     crateIds: string[];
+    /** The version has a road part — it reopens with the box ticked. */
+    road?: boolean;
   };
+  /** «🚚 Yo'ldagi yuklar ham» on at first: `?yol=1`, or a resubmit with a road part. */
+  initialRoad?: boolean;
 }) {
   const t = useTranslations('plans');
   const tc = useTranslations('common');
@@ -128,6 +155,17 @@ export function PlanEditor({
   const [checksOn, setChecksOn] = useState(false);
   /** Picks a re-read found gone from the warehouse and took out — said once. */
   const [pruned, setPruned] = useState(0);
+  /**
+   * «🚚 Yo'ldagi yuklar ham» (docs/YOLDAGI-YUK.md §4): the road half is asked
+   * for, merged into `lots`, and a row may take its free road part. `roadOn`
+   * = this server has the road at all; the box is drawn only then.
+   */
+  const [road, setRoad] = useState(initialRoad);
+  const [roadOn, setRoadOn] = useState(initialRoad);
+  const [roadFailed, setRoadFailed] = useState(false);
+  const [factoryTrips, setFactoryTrips] = useState<FactoryTripView[]>([]);
+  /** Road picks the person's own untick took back — said, never silent. */
+  const [roadDropped, setRoadDropped] = useState(0);
   const [selection, setSelection] = useState<Map<string, number>>(
     () => new Map(resubmit?.lines.map((l) => [l.lotId, l.boxCount]) ?? []),
   );
@@ -142,6 +180,7 @@ export function PlanEditor({
   }, [selection, selectedCrates]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorLot, setErrorLot] = useState<string | null>(null);
 
   useEffect(() => {
     // Origin changed: empty the table immediately (leaving the old origin's
@@ -154,6 +193,8 @@ export function PlanEditor({
     setStockFailed(false);
     setLoaded(false);
     setPruned(0);
+    setRoadFailed(false);
+    setFactoryTrips([]);
     const controller = new AbortController();
     /**
      * One read of this origin's list. `quiet` is the re-read when the tab
@@ -172,7 +213,7 @@ export function PlanEditor({
       controller.signal.addEventListener('abort', follow);
       const timer = quiet ? null : setTimeout(() => call.abort(), 20_000);
       try {
-        const res = await fetch(`/api/plans/stock?warehouseId=${originId}`, {
+        const res = await fetch(`/api/plans/stock?warehouseId=${originId}${road ? '&road=1' : ''}`, {
           signal: call.signal,
           // The re-read on return must not answer from before the tick.
           ...(quiet ? { cache: 'no-store' as const } : {}),
@@ -183,17 +224,25 @@ export function PlanEditor({
             crates?: StockCrate[];
             askable?: boolean;
             checks?: boolean;
+            roadOn?: boolean;
+            roadFailed?: boolean;
+            factoryTrips?: FactoryTripView[];
           };
           setLots(data.lots);
           setStockCrates(data.crates ?? []);
           setAskable(Boolean(data.askable));
           setChecksOn(Boolean(data.checks));
+          setRoadOn(Boolean(data.roadOn));
+          setRoadFailed(Boolean(data.roadFailed));
+          setFactoryTrips(data.factoryTrips ?? []);
           setStockFailed(false);
-          if (quiet) {
+          // A road half that did not come prunes nothing: a road pick is not
+          // «gone» because its half of the answer failed.
+          if (quiet && !data.roadFailed) {
             // A pick the warehouse no longer has (another plan reserved it,
             // it went into a crate) would be invisible, uncountable and
             // refused at submit — take it out and say so.
-            const available = new Map(data.lots.map((lot) => [lot.lotId, lot.available]));
+            const available = new Map(data.lots.map((lot) => [lot.lotId, takeMax(lot, road)]));
             const crateIds = new Set((data.crates ?? []).map((crate) => crate.crateId));
             const picks = picksRef.current;
             let gone = 0;
@@ -214,7 +263,9 @@ export function PlanEditor({
             }
             if (gone > 0 || clamped) setSelection(nextSelection);
             if (nextCrates.size !== picks.selectedCrates.size) setSelectedCrates(nextCrates);
-            if (gone > 0) setPruned((n) => n + gone);
+            // A clamp is said like a prune (objection editor#0): a pick that
+            // shrank by itself is a plan the person did not send.
+            if (gone > 0 || clamped) setPruned((n) => n + gone + (clamped ? 1 : 0));
           }
         } else if (!quiet) {
           setStockFailed(true);
@@ -239,7 +290,33 @@ export function PlanEditor({
       controller.abort();
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [originId]);
+  }, [originId, road]);
+
+  /**
+   * The person's own untick (never the initial state of a resubmit): every
+   * pick back to its shelf part, road-only picks out — said in one line —
+   * then the list is read again without the road.
+   */
+  function toggleRoad(next: boolean) {
+    if (!next) {
+      let dropped = 0;
+      const shelf = new Map(lots.map((lot) => [lot.lotId, lot.available]));
+      const kept = new Map<string, number>();
+      for (const [lotId, count] of selection) {
+        const max = shelf.get(lotId) ?? 0;
+        if (max <= 0) dropped += 1;
+        else {
+          if (count > max) dropped += 1;
+          kept.set(lotId, Math.min(count, max));
+        }
+      }
+      setSelection(kept);
+      setRoadDropped(dropped);
+    } else {
+      setRoadDropped(0);
+    }
+    setRoad(next);
+  }
 
   const preset = presets.find((p) => p.id === presetId);
   const shownLots = tek === 'all' ? lots : lots.filter((lot) => inCheckFilter(tek, lot.check, askable));
@@ -258,11 +335,13 @@ export function PlanEditor({
     let boxes = 0;
     let kg = 0;
     let m3 = 0;
+    let fromRoad = 0;
     for (const lot of lots) {
       const count = selection.get(lot.lotId) ?? 0;
       boxes += count;
       kg += count * lot.perBoxKg;
       m3 += count * lot.perBoxM3;
+      fromRoad += Math.max(0, count - lot.available);
     }
     // A crate is ONE place: its boxes ride inside, so places = loose boxes
     // + selected crates while boxes/kg/m³ still count everything.
@@ -277,6 +356,7 @@ export function PlanEditor({
     return {
       boxes,
       places,
+      fromRoad,
       kg: Math.round(kg * 10) / 10,
       m3: Math.round(m3 * 1000) / 1000,
       density: m3 > 0 ? Math.round(kg / m3) : null,
@@ -304,9 +384,20 @@ export function PlanEditor({
         truckPresetId: presetId || undefined,
         lines: [...selection.entries()].map(([lotId, boxCount]) => ({ lotId, boxCount })),
         crateIds: [...selectedCrates],
+        road,
       });
       if (res.ok) router.push(`/plans/${res.planId}`);
-      else setError(res.error ?? 'error');
+      else {
+        setError(res.error ?? 'error');
+        // «Not enough» names the lot and what IS there (`lotId:free`).
+        const [lotId, free] = (res.detail ?? '').split(':');
+        const lot = lots.find((l) => l.lotId === lotId);
+        setErrorLot(
+          lot && free !== undefined
+            ? `${codeIdentity(lot.marking, lot.clientCode).main}-${lot.letter} · ${free}`
+            : null,
+        );
+      }
     } finally {
       setSubmitting(false);
     }
@@ -402,6 +493,32 @@ export function PlanEditor({
         <p role="status" className="text-xs font-semibold text-warn" data-testid="plan-picks-pruned">
           ⚠ {tlc('pruned', { n: pruned })}
         </p>
+      )}
+
+      {roadOn && (
+        <div className="space-y-1">
+          <label className="flex items-center gap-2 text-sm font-semibold" data-testid="plan-road-toggle">
+            <input
+              type="checkbox"
+              data-testid="plan-road"
+              className="h-5 w-5"
+              checked={road}
+              onChange={(e) => toggleRoad(e.target.checked)}
+            />
+            🚚 {t('roadToggle')}
+          </label>
+          {road && <p className="text-xs text-ink-500">{t('roadHint')}</p>}
+          {roadDropped > 0 && (
+            <p role="status" className="text-xs font-semibold text-warn" data-testid="plan-road-dropped">
+              ⚠ {t('roadDropped', { n: roadDropped })}
+            </p>
+          )}
+          {road && roadFailed && (
+            <p role="alert" className="text-xs font-semibold text-bad" data-testid="plan-road-failed">
+              {t('roadFailed')}
+            </p>
+          )}
+        </div>
       )}
 
       {checksOn && lots.length + stockCrates.length > 0 && (
@@ -521,10 +638,14 @@ export function PlanEditor({
             <tbody>
               {shownLots.map((lot) => {
                 const count = selection.get(lot.lotId) ?? 0;
+                // Yo'ldagi yuk: the road's free part, while the box is ticked.
+                const roadFree = road ? (lot.road?.free ?? 0) : 0;
+                const max = takeMax(lot, road);
                 // Once boxes are ticked the row shows what you are TAKING,
                 // not what is on the shelf: on a partial take the shelf
-                // figure answers a question nobody asked.
-                const shown = count > 0 ? count : lot.available;
+                // figure answers a question nobody asked. A lot only on the
+                // road shows what the road holds, not «0».
+                const shown = count > 0 ? count : lot.available > 0 ? lot.available : roadFree;
                 const kg = lot.perBoxKg * shown;
                 const m3 = lot.perBoxM3 * shown;
                 const density = lot.perBoxM3 > 0 ? lot.perBoxKg / lot.perBoxM3 : null;
@@ -557,6 +678,25 @@ export function PlanEditor({
                           data-testid="lot-arrival"
                         >
                           🚚 {lot.arrival}
+                        </span>
+                      )}
+                      {/* The road part, worded so it is never read as the
+                          arrival line above: how many, on which truck, when. */}
+                      {road && lot.road && lot.road.trucks.length > 0 && (
+                        <span
+                          className="block whitespace-normal font-sans text-2xs font-semibold text-brand-700"
+                          data-testid="lot-road"
+                        >
+                          🚚 {t('roadLine', { n: lot.road.free })}{' '}
+                          {lot.road.trucks
+                            .map((truck) =>
+                              truck.state === 'gate'
+                                ? `${truck.code} · ${t('roadAtGate')}`
+                                : truck.eta
+                                  ? `${truck.code} · ${truck.eta}`
+                                  : truck.code,
+                            )
+                            .join('; ')}
                         </span>
                       )}
                       {(lot.qrless ?? 0) > 0 && (
@@ -597,6 +737,11 @@ export function PlanEditor({
                       ) : (
                         lot.available
                       )}
+                      {roadFree > 0 && (
+                        <span className="block whitespace-nowrap text-2xs text-brand-700" data-testid="lot-road-free">
+                          +{roadFree}🚚
+                        </span>
+                      )}
                     </td>
                     <td className="p-2 text-right">{Math.round(lot.perBoxKg * 10) / 10}</td>
                     <td
@@ -610,23 +755,41 @@ export function PlanEditor({
                     <td className="p-2 text-right">
                       <DensityBadge density={density} thresholds={densityThresholds} />
                     </td>
-                    <td className="p-2 text-right text-ink-500">{lot.daysInStock}</td>
+                    <td className="p-2 text-right text-ink-500">{lot.daysInStock ?? '—'}</td>
                     <td className="p-1.5 text-center">
                       <div className="inline-flex items-center gap-1">
-                        <button
-                          type="button"
-                          aria-label={`all-${lot.letter}`}
-                          className={`rounded-md px-2 py-1.5 text-xs font-bold ${
-                            count === lot.available
-                              ? 'bg-brand-600 text-white'
-                              : 'bg-surface-sunken text-ink-700'
-                          }`}
-                          onClick={() =>
-                            setCount(lot.lotId, count === lot.available ? '0' : String(lot.available), lot.available)
-                          }
-                        >
-                          ✓
-                        </button>
+                        {/* ✓ keeps its meaning — the SHELF — so ticking the
+                            box never quietly adds a road part to a lot taken
+                            whole as before; «🚚» adds the road on purpose. */}
+                        {lot.available > 0 && (
+                          <button
+                            type="button"
+                            aria-label={`all-${lot.letter}`}
+                            className={`rounded-md px-2 py-1.5 text-xs font-bold ${
+                              count === lot.available
+                                ? 'bg-brand-600 text-white'
+                                : 'bg-surface-sunken text-ink-700'
+                            }`}
+                            onClick={() =>
+                              setCount(lot.lotId, count === lot.available ? '0' : String(lot.available), max)
+                            }
+                          >
+                            ✓
+                          </button>
+                        )}
+                        {roadFree > 0 && (
+                          <button
+                            type="button"
+                            aria-label={`road-${lot.letter}`}
+                            data-testid={`take-road-${lot.letter}`}
+                            className={`rounded-md px-2 py-1.5 text-xs font-bold ${
+                              count === max ? 'bg-brand-600 text-white' : 'bg-surface-sunken text-ink-700'
+                            }`}
+                            onClick={() => setCount(lot.lotId, count === max ? String(lot.available) : String(max), max)}
+                          >
+                            🚚
+                          </button>
+                        )}
                         <input
                           data-testid={`take-${lot.letter}`}
                           aria-label={`take-${lot.letter}`}
@@ -634,7 +797,7 @@ export function PlanEditor({
                           inputMode="numeric"
                           value={count || ''}
                           placeholder="0"
-                          onChange={(e) => setCount(lot.lotId, e.target.value, lot.available)}
+                          onChange={(e) => setCount(lot.lotId, e.target.value, max)}
                         />
                       </div>
                     </td>
@@ -665,9 +828,33 @@ export function PlanEditor({
         )}
       </div>
 
+      {/* Factory trips heading here (his 2a): shown, never planned — their
+          cargo has no prixod and no carton until it is received here. */}
+      {road && factoryTrips.length > 0 && (
+        <details className="card !p-3 text-sm" data-testid="plan-factory-trips">
+          <summary className="cursor-pointer font-semibold">
+            🏭 {t('factoryTrips', { n: factoryTrips.length })}
+          </summary>
+          <ul className="mt-2 space-y-2">
+            {factoryTrips.map((trip) => (
+              <li key={trip.code}>
+                <p className="font-mono font-bold">{trip.code}</p>
+                {trip.lines.map((line, i) => (
+                  <p key={i} className="text-xs text-ink-700">
+                    {line.owner} · {line.goods} · {line.boxes} 📦
+                  </p>
+                ))}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-ink-500">{t('factoryTripsHint')}</p>
+        </details>
+      )}
+
       {error && (
         <p role="alert" className="rounded-lg bg-bad/10 p-3 text-sm font-semibold text-bad">
           {t(`errors.${error}` as never) || tc('error')}
+          {errorLot && <span className="block font-mono text-xs">{errorLot}</span>}
         </p>
       )}
 
@@ -676,6 +863,12 @@ export function PlanEditor({
           <div className="flex items-center gap-4">
             <span className="whitespace-nowrap text-sm font-bold">
               Σ {totals.boxes} 📦
+              {totals.fromRoad > 0 && (
+                <span className="text-brand-700" data-testid="plan-total-road">
+                  {' '}
+                  (🚚 {totals.fromRoad})
+                </span>
+              )}
               {totals.places !== totals.boxes && (
                 <span className="text-ink-700"> · {totals.places} {t('place')}</span>
               )}

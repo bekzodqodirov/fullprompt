@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { aliasedTable } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
+import { planRoadReady } from '../planning/road';
 import { resolvePeriod } from '../accounting/period';
 import { riderLoad } from '../batches/riders';
 import { intakeRuleSql, receiptScopeSql, receivedInRangeSql } from './business';
@@ -564,6 +565,19 @@ export async function stockAging(warehouseIds?: string[], asOf: Date = new Date(
  */
 export async function batchRegister(warehouseIds?: string[]) {
   const dest = aliasedTable(warehouses, 'dest');
+  // Yo'ldagi yuk (4a): the road part a truck's loading ended without is short
+  // «as a short-loaded carton is today» — counted in ⤵️ beside the cartons
+  // given back, from the line's durable `road_missed` (docs/YOLDAGI-YUK.md §9).
+  const road = await planRoadReady();
+  const roadMissed = road.on
+    ? sql`coalesce((
+        SELECT sum(plr.road_missed) FROM plan_line_road plr
+          JOIN load_plan_lines pl ON pl.id = plr.line_id
+          JOIN load_plan_versions pv ON pv.id = pl.version_id
+          JOIN load_plans p ON p.id = pv.plan_id
+         WHERE p.batch_id = ${batches.id} AND pv.version_no = p.current_version_no
+      ), 0)`
+    : sql`0`;
   const rows = await db
     .select({
       id: batches.id,
@@ -576,7 +590,7 @@ export async function batchRegister(warehouseIds?: string[]) {
       short: sql<number>`(
         SELECT count(DISTINCT bm.box_id) FROM box_movements bm
         WHERE bm.ref_type = 'batch' AND bm.ref_id = ${batches.id} AND bm.cause = 'short_loaded'
-      )`,
+      ) + ${roadMissed}`,
       // Cartons that went on beyond the plan AND ride it — distinct, over the
       // truck's real cargo (0112, decision 25): an office count dialled down
       // keeps its scan events, so the history alone counts cartons that came

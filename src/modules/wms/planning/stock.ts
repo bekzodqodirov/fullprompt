@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
-import { boxes, clients, crates, lotChecks, receiptLots, receipts, warehouses } from '../../platform/db/schema';
+import { batches, boxes, clients, crates, lotChecks, receiptLots, receipts, warehouses } from '../../platform/db/schema';
 import { PLANNABLE_STATUSES } from '../boxes/shelf';
 import { arrivalsForLots } from '../documents/arrivals';
 import { qrlessJoinedSql } from '../labels/qrless-sql';
@@ -11,6 +11,10 @@ import {
   type LotCheckState,
 } from '../receipts/lot-check-sql';
 import { lotChecksReady } from '../receipts/lot-check-ready';
+import { lotSplitAt, roadCartonSql } from './road';
+import { trucksOnRoadRows } from '../tracking/on-road';
+import { incomingForWarehouses } from '../pickups/service';
+import { formatEtaRange } from '../../platform/telegram/client-labels';
 
 /**
  * Plannable stock at a warehouse — what the plan editor offers: LOOSE lots
@@ -162,4 +166,163 @@ export async function plannableStock(warehouseId: string) {
         : {}),
     })),
   };
+}
+
+/** One inbound truck as the plan editor prints it under a road lot. */
+export interface RoadTruck {
+  code: string;
+  /** «at the gate» (arrived, or the phone puts it there), «on the road», or no word. */
+  state: 'gate' | 'road' | 'unknown';
+  /** `formatEtaRange` — «29.10 – 31.10» — on a moving rung with a schedule; else null. */
+  eta: string | null;
+}
+
+/** A factory trip heading to this warehouse — shown, never planned (his 2a). */
+export interface RoadFactoryTrip {
+  code: string;
+  status: string;
+  lines: { owner: string; goods: string; boxes: number }[];
+}
+
+/**
+ * The editor's road half (docs/YOLDAGI-YUK.md §4): every lot with cartons on a
+ * truck bound for `warehouseId`, in the shelf list's own row shape — names,
+ * client or marking, photo, per-box kg/m³, the check — read from its receipt,
+ * since none of it stands here; `available` is 0 here and the route merges
+ * the shelf's figure in. `road.free` is the road less what approved plans at
+ * this warehouse already owe (a pending plan reserves nothing). Plus the
+ * factory trips heading here, read-only.
+ */
+export async function roadStock(warehouseId: string) {
+  const checksOn = await lotChecksReady();
+  const checkState = lotCheckStateOrNullSql(checksOn, {
+    lot: sql`${receiptLots}`,
+    receipt: sql`${receipts}`,
+    check: sql`${lotChecks}`,
+  });
+  const w = sql`${warehouseId}::uuid`;
+  const select = db
+    .select({
+      lotId: receiptLots.id,
+      letter: receiptLots.letter,
+      productNameZh: receiptLots.productNameZh,
+      productNameRu: receiptLots.productNameRu,
+      boxCount: receiptLots.boxCount,
+      totalWeightKg: receiptLots.totalWeightKg,
+      totalVolumeM3: receiptLots.totalVolumeM3,
+      clientCode: clients.clientCode,
+      marking: receipts.unclaimedMarking,
+      receivedAt: receipts.receivedAt,
+      road: sql<number>`count(*)`,
+      qrless: sql<number>`count(*) FILTER (WHERE ${qrlessJoinedSql()})`,
+      check: sql<LotCheckState>`min(${checkState})`,
+      receiptId: sql<string>`min(${receipts.id}::text)`,
+      trucks: sql<string[]>`array_agg(DISTINCT ${boxes.currentBatchId}::text)`,
+      photoId: sql<string | null>`(
+        SELECT a.id FROM attachments a
+        WHERE a.entity_type = 'receipt_lot' AND a.entity_id = ${receiptLots.id} AND a.kind = 'photo'
+        ORDER BY a.created_at LIMIT 1
+      )`,
+    })
+    .from(boxes)
+    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+    .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+    .leftJoin(clients, eq(receipts.clientId, clients.id))
+    .$dynamic();
+  const rows = await withLotCheckJoins(select, checksOn)
+    .where(roadCartonSql('boxes', w))
+    .groupBy(receiptLots.id, clients.clientCode, receipts.unclaimedMarking, receipts.receivedAt)
+    .orderBy(asc(receipts.receivedAt), asc(receiptLots.letter));
+
+  const split = await lotSplitAt(
+    db,
+    warehouseId,
+    rows.map((r) => r.lotId),
+  );
+  const truckIds = [...new Set(rows.flatMap((r) => r.trucks ?? []))].filter(Boolean);
+  const [onRoad, codes] = await Promise.all([
+    trucksOnRoadRows(truckIds),
+    truckIds.length
+      ? db
+          .select({ id: batches.id, code: batches.code })
+          .from(batches)
+          .where(inArray(batches.id, truckIds))
+      : Promise.resolve([] as { id: string; code: string }[]),
+  ]);
+  const codeOf = new Map(codes.map((b) => [b.id, b.code]));
+  const truckView = (id: string): RoadTruck => {
+    const row = onRoad.get(id);
+    if (!row) return { code: codeOf.get(id) ?? '—', state: 'unknown', eta: null };
+    if (row.status === 'arrived' || row.atGate) return { code: row.code, state: 'gate', eta: null };
+    return {
+      code: row.code,
+      state: 'road',
+      eta: row.eta ? formatEtaRange(row.eta.fromIso, row.eta.toIso) : null,
+    };
+  };
+
+  const trips = await incomingForWarehouses([warehouseId]);
+  const factoryTrips: RoadFactoryTrip[] = trips
+    .filter((t) => t.status === 'on_road' || t.status === 'arrived')
+    .map((t) => ({
+      code: t.code,
+      status: t.status,
+      lines: t.stops.flatMap((stop) =>
+        stop.owners.flatMap((owner) =>
+          owner.lines.map((line) => ({
+            owner: owner.clientCode ?? owner.marking ?? '—',
+            goods: line.goods,
+            boxes: line.driverBoxes ?? line.factoryBoxes,
+          })),
+        ),
+      ),
+    }));
+
+  return {
+    lots: rows.map((r) => ({
+      lotId: r.lotId,
+      letter: r.letter,
+      productNameZh: r.productNameZh,
+      productNameRu: r.productNameRu,
+      boxCount: r.boxCount,
+      totalWeightKg: r.totalWeightKg,
+      totalVolumeM3: r.totalVolumeM3,
+      clientCode: r.clientCode,
+      marking: r.marking,
+      receivedAt: r.receivedAt,
+      receiptId: r.receiptId,
+      photoId: r.photoId,
+      check: r.check,
+      available: 0,
+      qrless: Number(r.qrless),
+      perBoxKg: Number(r.totalWeightKg) / r.boxCount,
+      perBoxM3: Number(r.totalVolumeM3) / r.boxCount,
+      daysInStock: null as number | null,
+      arrival: '',
+      road: {
+        free: split.get(r.lotId)?.roadFree ?? 0,
+        trucks: (r.trucks ?? []).filter(Boolean).map(truckView).sort((a, b) => a.code.localeCompare(b.code)),
+      },
+    })),
+    factoryTrips,
+  };
+}
+
+type ShelfLot = Awaited<ReturnType<typeof plannableStock>>['lots'][number];
+type RoadLot = Awaited<ReturnType<typeof roadStock>>['lots'][number];
+
+/**
+ * ONE list for the editor (objection editor#1): a shelf lot that also has road
+ * cartons carries `road`; a lot only on the road joins with `available: 0`.
+ * Σ, the gauge, the check filter and the prune then walk one array.
+ */
+export function withRoad(shelf: readonly ShelfLot[], road: readonly RoadLot[]) {
+  const byLot = new Map(road.map((r) => [r.lotId, r]));
+  const merged: (ShelfLot | RoadLot | (ShelfLot & { road: RoadLot['road'] }))[] = shelf.map((lot) => {
+    const extra = byLot.get(lot.lotId);
+    return extra ? { ...lot, road: extra.road } : lot;
+  });
+  const onShelf = new Set(shelf.map((l) => l.lotId));
+  for (const lot of road) if (!onShelf.has(lot.lotId)) merged.push(lot);
+  return merged;
 }

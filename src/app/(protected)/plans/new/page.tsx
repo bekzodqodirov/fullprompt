@@ -11,18 +11,20 @@ import {
 } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { getSetting } from '@/modules/platform/settings/service';
+import { planRoadReady, roadPartsOfVersion } from '@/modules/wms/planning/road';
 import { PlanEditor } from './plan-editor';
 
 export default async function NewPlanPage({
   searchParams,
 }: {
-  searchParams: Promise<{ planId?: string }>;
+  searchParams: Promise<{ planId?: string; yol?: string }>;
 }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
   if (!actor.permissions.has('plans.manage')) redirect('/');
   const t = await getTranslations('plans');
-  const { planId } = await searchParams;
+  const { planId, yol } = await searchParams;
+  const road = await planRoadReady();
 
   // A plan is built FROM the warehouse you work at, TO anywhere (owner:
   // "faqat o'zinikini belgilasin"). Scoping both lists left a scoped planner
@@ -54,6 +56,10 @@ export default async function NewPlanPage({
       const lines = version
         ? await db.select().from(loadPlanLines).where(eq(loadPlanLines.versionId, version.id))
         : [];
+      // A version with a road part reopens with the box ticked (objection
+      // editor#0): the URL alone said nothing, and the road part of a plan the
+      // agent sent back was dropped from the resubmit without a word.
+      const roadParts = version && road.on ? await roadPartsOfVersion(db, version.id) : new Map<string, number>();
       resubmit = {
         planId: plan.id,
         originWarehouseId: plan.originWarehouseId,
@@ -63,6 +69,7 @@ export default async function NewPlanPage({
           .filter((l) => !l.crateId)
           .map((l) => ({ lotId: l.lotId, boxCount: l.plannedBoxCount })),
         crateIds: [...new Set(lines.map((l) => l.crateId).filter((id): id is string => !!id))],
+        road: roadParts.size > 0,
       };
     }
   }
@@ -81,6 +88,7 @@ export default async function NewPlanPage({
         }))}
         densityThresholds={await getSetting('density_thresholds')}
         resubmit={resubmit}
+        initialRoad={road.on && (yol === '1' || resubmit?.road === true)}
       />
     </div>
   );

@@ -2,6 +2,7 @@ import { sql, type SQL } from 'drizzle-orm';
 import { db, type Db, type Tx } from '../../platform/db/client';
 import { logger } from '../../platform/logger';
 import { PLANNABLE_STATUSES } from '../boxes/shelf';
+import { codeIdentity } from '../labels/code-identity';
 
 /**
  * Yo'ldagi yuk — a plan line may promise cartons still on a truck bound for the
@@ -502,4 +503,163 @@ export async function claimedLandingsOf(
        )})
   `)) as unknown as { box_id: string; client_id: string | null; inbound_batch_id: string }[];
   return rows.map((r) => ({ boxId: r.box_id, clientId: r.client_id, inboundBatchId: r.inbound_batch_id }));
+}
+
+// ---------------------------------------------------------------------------
+// Readers
+// ---------------------------------------------------------------------------
+
+/** Codes shipped for a truck's owed lots, over the whole snapshot (said when it bites). */
+export const ROAD_CODES_CAP = 2000;
+
+export interface RoadOwedLot {
+  lotId: string;
+  /** «GS777-A», the label every screen prints. */
+  label: string;
+  owed: number;
+  /** The inbound trucks its road cartons are on, by code. */
+  trucks: string[];
+}
+
+/**
+ * What truck `batchId`'s plan still owes from the road, per lot, and the codes
+ * of the cartons a scan of which would be the plan's — free on the origin's
+ * shelf (claimed at the scan) or still on an inbound truck (refused in words
+ * until it lands). The loading screen prints the first and checks scans
+ * against the second, so a road carton never opens the red «not on plan».
+ */
+export async function roadOwedForTruck(
+  exec: Db | Tx,
+  road: RoadOn,
+  batchId: string,
+  originId: string,
+): Promise<{ lots: RoadOwedLot[]; codes: string[]; capped: boolean }> {
+  if (!road.on) return { lots: [], codes: [], capped: false };
+  const owed = (await exec.execute(sql`
+    SELECT pl.lot_id, sum(plr.road_owed)::int AS owed, l.letter,
+           r.unclaimed_marking AS marking, c.client_code
+      FROM plan_line_road plr
+      JOIN load_plan_lines pl ON pl.id = plr.line_id
+      JOIN load_plan_versions pv ON pv.id = pl.version_id
+      JOIN load_plans p ON p.id = pv.plan_id
+      JOIN receipt_lots l ON l.id = pl.lot_id
+      JOIN receipts r ON r.id = l.receipt_id
+      LEFT JOIN clients c ON c.id = r.client_id
+     WHERE p.batch_id = ${batchId}::uuid AND pv.agent_verdict = 'approved'
+       AND pv.version_no = p.current_version_no AND plr.road_owed > 0
+     GROUP BY pl.lot_id, l.letter, r.unclaimed_marking, c.client_code
+     ORDER BY l.letter
+  `)) as unknown as {
+    lot_id: string;
+    owed: number;
+    letter: string | null;
+    marking: string | null;
+    client_code: string | null;
+  }[];
+  if (owed.length === 0) return { lots: [], codes: [], capped: false };
+  const lotList = sql.join(
+    owed.map((o) => sql`${o.lot_id}::uuid`),
+    sql`, `,
+  );
+  const w = sql`${originId}::uuid`;
+  const cartons = (await exec.execute(sql`
+    SELECT b.lot_id, b.short_code, rib.code AS truck
+      FROM boxes b
+      LEFT JOIN batches rib ON rib.id = b.current_batch_id
+     WHERE b.lot_id IN (${lotList})
+       AND (${shelfCartonSql('b', w)} OR ${roadCartonSql('b', w)})
+     ORDER BY b.lot_id, b.seq_in_lot
+     LIMIT ${ROAD_CODES_CAP + 1}
+  `)) as unknown as { lot_id: string; short_code: string; truck: string | null }[];
+  const trucks = new Map<string, Set<string>>();
+  for (const c of cartons) {
+    if (!c.truck) continue;
+    const set = trucks.get(c.lot_id) ?? new Set<string>();
+    set.add(c.truck);
+    trucks.set(c.lot_id, set);
+  }
+  return {
+    lots: owed.map((o) => ({
+      lotId: o.lot_id,
+      label: `${codeIdentity(o.marking, o.client_code).main}-${o.letter ?? '?'}`,
+      owed: Number(o.owed),
+      trucks: [...(trucks.get(o.lot_id) ?? [])].sort(),
+    })),
+    codes: cartons.slice(0, ROAD_CODES_CAP).map((c) => c.short_code),
+    capped: cartons.length > ROAD_CODES_CAP,
+  };
+}
+
+export interface LineRoad {
+  /** The road part as promised. */
+  part: number;
+  owed: number;
+  missed: number;
+  /** Cartons claimed onto the truck for it (landed, or taken from the shelf at loading). */
+  came: number;
+}
+
+/** A version's lines' road parts, line id → the four figures the plan view prints. */
+export async function roadOfVersion(exec: Db | Tx, road: RoadOn, versionId: string): Promise<Map<string, LineRoad>> {
+  if (!road.on) return new Map();
+  const rows = (await exec.execute(sql`
+    SELECT plr.line_id, plr.road_box_count, plr.road_owed, plr.road_missed,
+           (SELECT count(*) FROM plan_road_claims c WHERE c.line_id = plr.line_id)::int AS came
+      FROM plan_line_road plr
+      JOIN load_plan_lines pl ON pl.id = plr.line_id
+     WHERE pl.version_id = ${versionId}::uuid
+  `)) as unknown as { line_id: string; road_box_count: number; road_owed: number; road_missed: number; came: number }[];
+  return new Map(
+    rows.map((r) => [
+      r.line_id,
+      {
+        part: Number(r.road_box_count),
+        owed: Number(r.road_owed),
+        missed: Number(r.road_missed),
+        came: Number(r.came),
+      },
+    ]),
+  );
+}
+
+/** The inbound trucks (by code) carrying each lot's road cartons for `warehouseId` — the agent sheet's «on the road» block. */
+export async function roadTrucksByLot(
+  exec: Db | Tx,
+  road: RoadOn,
+  warehouseId: string,
+  lotIds: readonly string[],
+): Promise<Map<string, string[]>> {
+  if (!road.on || lotIds.length === 0) return new Map();
+  const rows = (await exec.execute(sql`
+    SELECT DISTINCT b.lot_id, rib.code FROM boxes b
+      JOIN batches rib ON rib.id = b.current_batch_id
+     WHERE b.lot_id IN (${sql.join(
+       lotIds.map((id) => sql`${id}::uuid`),
+       sql`, `,
+     )})
+       AND ${roadCartonSql('b', sql`${warehouseId}::uuid`)}
+     ORDER BY rib.code
+  `)) as unknown as { lot_id: string; code: string }[];
+  const out = new Map<string, string[]>();
+  for (const r of rows) out.set(r.lot_id, [...(out.get(r.lot_id) ?? []), r.code]);
+  return out;
+}
+
+/** What each truck's plan still owes from the road, in ONE grouped statement for a board of trucks (#432). */
+export async function roadOwedByTruck(exec: Db | Tx, road: RoadOn, batchIds: readonly string[]): Promise<Map<string, number>> {
+  if (!road.on || batchIds.length === 0) return new Map();
+  const rows = (await exec.execute(sql`
+    SELECT p.batch_id, sum(plr.road_owed)::int AS owed
+      FROM plan_line_road plr
+      JOIN load_plan_lines pl ON pl.id = plr.line_id
+      JOIN load_plan_versions pv ON pv.id = pl.version_id
+      JOIN load_plans p ON p.id = pv.plan_id
+     WHERE p.batch_id IN (${sql.join(
+       batchIds.map((id) => sql`${id}::uuid`),
+       sql`, `,
+     )})
+       AND pv.agent_verdict = 'approved' AND pv.version_no = p.current_version_no AND plr.road_owed > 0
+     GROUP BY p.batch_id
+  `)) as unknown as { batch_id: string; owed: number }[];
+  return new Map(rows.map((r) => [r.batch_id, Number(r.owed)]));
 }

@@ -16,6 +16,7 @@ import { reroutedAwayFor } from '@/modules/wms/batches/reroute';
 import { batchMemberFilter } from '@/modules/wms/scanning/unload';
 import { countOnlyLotsOnTruck } from '@/modules/wms/scanning/count-rules';
 import { codeIdentity } from '@/modules/wms/labels/code-identity';
+import { planRoadReady, roadOwedForTruck } from '@/modules/wms/planning/road';
 
 /** Siblings shipped for count-only lots, over the whole snapshot (said when it bites). */
 const COUNT_ONLY_SIBLING_CAP = 2000;
@@ -240,6 +241,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     .select({ code: warehouses.code })
     .from(warehouses)
     .where(eq(warehouses.id, batch.destWarehouseId));
+  // Yo'ldagi yuk (docs/YOLDAGI-YUK.md §9): what the plan still owes from the
+  // road, printed above the list, and the codes a scan of which is the plan's
+  // — so a road carton never opens the red «not on plan».
+  const road =
+    side === 'load' && hasPlan
+      ? await roadOwedForTruck(db, await planRoadReady(), id, batch.originWarehouseId)
+      : { lots: [], codes: [], capped: false };
   return json(request, {
     batch: {
       id: batch.id,
@@ -254,5 +262,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     crates: originCrates.map((c) => ({ code: c.code, boxShortCodes: byCrate.get(c.id) ?? [] })),
     countOnly,
     countOnlyCapped,
+    roadOwed: road.lots,
+    roadCodes: road.codes,
   });
 }

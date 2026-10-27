@@ -1232,7 +1232,19 @@
       "reason_required": "Sababni yozing"
     },
     "cancelPlan": "Planni bekor qilish",
-    "stockFailed": "Yuk ro'yxati yuklanmadi — sahifani yangilang; takrorlansa administratorga ayting"
+    "stockFailed": "Yuk ro'yxati yuklanmadi — sahifani yangilang; takrorlansa administratorga ayting",
+    "roadToggle": "Yo‘ldagi yuklar ham",
+    "roadHint": "Bu skladga kelayotgan mashinalardagi yuk. Rejaga olsangiz, shu yerda tushirilganda o‘zi shu mashinaga o‘tadi.",
+    "roadDropped": "Yo‘ldagi yuk tanlovdan olindi: {n}",
+    "roadFailed": "Yo‘ldagi yuk ro‘yxati yuklanmadi — skladdagi yuk ko‘rsatildi",
+    "roadLine": "+{n} yo‘lda ·",
+    "roadAtGate": "darvozada",
+    "factoryTrips": "Zavoddan kelyapti ({n})",
+    "factoryTripsHint": "Zavod reysi yuki shu skladga qabul qilinganidan keyin rejaga olinadi.",
+    "roadPart": "{n} yo‘ldan",
+    "roadAwaited": "{n} kutilmoqda",
+    "roadCame": "{n} keldi",
+    "roadMissed": "{n} kelmadi"
   },
   "costing": {
     "fxTitle": "Valyuta kurslari",
@@ -1485,7 +1497,8 @@
       "batch_has_costs": "Partiyaga xarajat kiritilgan",
       "batch_has_charges": "Bu partiya bo‘yicha mijozga hisob qo‘yilgan",
       "batch_has_moved_boxes": "Qutilar allaqachon oldinga ketgan",
-      "reason_required": "Sababni yozing"
+      "reason_required": "Sababni yozing",
+      "road_owed_open": "Avval «Yuklash tugadi»ni bosing — rejadagi yuk hali yo‘lda"
     },
     "startUnloading": "Razgruzka (skan)",
     "transitReport": "Yo‘lda",
@@ -1664,8 +1677,11 @@
       "emptyBoard": "Ochiq mashina yo‘q.",
       "capped": "Eng eski {n} ta mashina ko‘rsatilmoqda.",
       "filters": "Filtr",
-      "loadedNoPlan": "Yuklandi {boxes} karobka · {cargo}"
-    }
+      "loadedNoPlan": "Yuklandi {boxes} karobka · {cargo}",
+      "roadOwed": "+{n} yo‘ldan"
+    },
+    "finishSummaryRoad": "{n} yo‘ldan kelmadi",
+    "roadOwedLine": "Yo‘ldan kutilmoqda: {lot} · {n} karobka ({trucks})"
   },
   "loading": {
     "title": "Pogruzka",
@@ -1697,7 +1713,9 @@
       "unknown_code": "Kod topilmadi.",
       "not_loaded_here": "Bu karobka bu mashinada yozilmagan.",
       "forbidden": "Ruxsat yo'q."
-    }
+    },
+    "roadNotLanded": "Bu karobka hali {truck} mashinasida — avval tushirishda qabul qiling",
+    "roadOwedLine": "Yo‘ldan kutilmoqda: {lot} · {n} karobka ({trucks})"
   },
   "unloading": {
     "title": "Razgruzka",
