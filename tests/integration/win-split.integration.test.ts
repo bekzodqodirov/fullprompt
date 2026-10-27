@@ -146,6 +146,15 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // Whatever a red proof let land on these leads goes too, not only what the
+  // helpers recorded — a request that should have been refused leaks otherwise.
+  if (madeLeads.length > 0) {
+    const stray = await db
+      .select({ id: calcRequests.id })
+      .from(calcRequests)
+      .where(and(eq(calcRequests.entityType, 'lead'), inArray(calcRequests.entityId, madeLeads)));
+    for (const row of stray) if (!madeRequests.includes(row.id)) madeRequests.push(row.id);
+  }
   if (madeRequests.length > 0) {
     await db.delete(calcOffers).where(inArray(calcOffers.requestId, madeRequests));
     const vs = await db.select({ id: calcVersions.id }).from(calcVersions).where(inArray(calcVersions.requestId, madeRequests));
@@ -189,6 +198,10 @@ describe('a won lead opens a deal per SALE', () => {
     expect(opened.sort()).toEqual([won.dealId, ...won.otherDeals.map((x) => x.id)].sort());
     expect(won.otherDeals).toHaveLength(1);
 
+    // THE oracle first: the answer is still outranked where it landed. Moved
+    // alone (or with D) it would stand again and become a payable floor.
+    expect(await answerStands(a)).toBe(false);
+
     // D on the main deal with its offer; A and B together on the other one.
     expect(await cardOf(d.requestId)).toEqual({ type: 'deal', id: won.dealId });
     const other = won.otherDeals[0]!.id;
@@ -196,9 +209,6 @@ describe('a won lead opens a deal per SALE', () => {
     expect(await cardOf(a)).toEqual({ type: 'deal', id: other });
     const [movedOffer] = await db.select().from(calcOffers).where(eq(calcOffers.id, offer.id));
     expect(movedOffer!.entityId).toBe(won.dealId);
-
-    // THE oracle: the answer is still outranked where it landed.
-    expect(await answerStands(a)).toBe(false);
 
     // Each deal is priced by its own sale's writer, stamped with who gave the
     // price and when — the main deal with the lead's number (D's offer), the
