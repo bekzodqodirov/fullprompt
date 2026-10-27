@@ -12,7 +12,7 @@ import {
 } from '@/modules/wms/calc/workspace';
 import { chainVersionsFor, type ChainVersion } from '@/modules/wms/calc/chain';
 import { mayReadCalcRegistry } from '@/modules/wms/calc/control-scope';
-import { mayOpenCalcCard } from '@/modules/wms/calc/card-door';
+import { calcWorkspaceHref, mayOpenCalcCard } from '@/modules/wms/calc/card-door';
 import { ChainStateChip } from './calc-chain-chip';
 import { offerLocaleFor } from '@/modules/wms/calc/offer';
 import {
@@ -162,6 +162,9 @@ export async function CalcPanel({
   // link is named beside it, as a version and a date for everybody who reads
   // the card, and as MONEY only for the registry's audience (2A).
   const sealBlock = (seal: SealedVersion, standing: boolean) => {
+    // The calculation that made THIS price, standing or dead (his
+    // 2026-10-27): the VED looking for it to recalc starts from the card.
+    const workspace = calcWorkspaceHref(actor, seal.requestId);
     const chain = chains.get(seal.requestId) ?? [];
     const mine = chain.find((v) => v.versionId === seal.id);
     const quoteNo = mine?.quoteNo ?? seal.versionNo;
@@ -186,6 +189,15 @@ export async function CalcPanel({
           </span>
           {mine ? <ChainStateChip version={mine} alone={chain.length < 2 && standing} /> : null}
           <span className="chip chip-brand">{t(SECTION_LABELS[seal.section] as 'sections.podklyuch')}</span>
+          {workspace ? (
+            <Link
+              href={workspace}
+              className="text-sm font-semibold text-brand-700"
+              data-testid={standing ? 'calc-seal-link' : 'calc-seal-dead-link'}
+            >
+              {t('openCalc')}
+            </Link>
+          ) : null}
           {!standing ? null : seal.expired ? (
             <span className="chip chip-warn" data-testid="calc-seal-expired">
               {t('sealExpired')}
@@ -206,11 +218,11 @@ export async function CalcPanel({
             {readsHistory ? ` · $${previous.totalUsd.toFixed(2)}` : ''}
             {' · '}
             {format.dateTime(previous.sealedAt, { dateStyle: 'short' })}
-            {vedDoor ? (
+            {calcWorkspaceHref(actor, previous.requestId) ? (
               <>
                 {' '}
-                <Link href={`/hisoblash/${previous.requestId}`} className="font-semibold text-brand-700">
-                  #
+                <Link href={calcWorkspaceHref(actor, previous.requestId)!} className="font-semibold text-brand-700">
+                  {t('openCalc')}
                 </Link>
               </>
             ) : null}
@@ -257,13 +269,13 @@ export async function CalcPanel({
             <li key={row.id} className="flex flex-wrap items-center gap-2 text-sm">
               {/* The VED person reads the request from the card too — and the
                   seller, who may not, sees the same line without a door. */}
-              {vedDoor ? (
+              {calcWorkspaceHref(actor, row.id) ? (
                 <Link
-                  href={`/hisoblash/${row.id}`}
+                  href={calcWorkspaceHref(actor, row.id)!}
                   data-testid="calc-open-link"
                   className="font-semibold text-brand-700"
                 >
-                  #
+                  {t('openCalc')}
                 </Link>
               ) : null}
               {row.section ? (
@@ -366,13 +378,13 @@ export async function CalcPanel({
                 }}
               />
             ) : null}
-            {vedDoor ? (
+            {calcWorkspaceHref(actor, last.requestId) ? (
               <Link
-                href={`/hisoblash/${last.requestId}`}
+                href={calcWorkspaceHref(actor, last.requestId)!}
                 className="font-semibold text-brand-700"
                 data-testid="calc-last-answer-link"
               >
-                #
+                {t('openCalc')}
               </Link>
             ) : null}
           </p>

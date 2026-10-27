@@ -20,11 +20,18 @@ import { SECTION_LABELS } from '@/modules/wms/calc/labels';
 export function CalcLink({
   receiptId,
   currentId,
+  currentHref,
   confirmed,
   options,
 }: {
   receiptId: string;
   currentId: string | null;
+  /**
+   * The linked job's own screen, for `ved.docs` only (`calcWorkspaceHref`).
+   * The PICKER is the accountant's too (the E1 confirm door, his 'all'
+   * scope); the workspace link bounced him home, so it is drawn apart.
+   */
+  currentHref: string | null;
   confirmed: boolean;
   options: {
     requestId: string;
@@ -47,12 +54,11 @@ export function CalcLink({
         <span className="font-semibold">{t('linkPick')}:</span>
         {currentId ? (
           <>
-            <Link
-              href={`/hisoblash/${currentId}`}
-              className="font-mono text-brand-700 underline"
-            >
-              {t('openCard')}
-            </Link>
+            {currentHref ? (
+              <Link href={currentHref} className="font-mono text-brand-700 underline" data-testid="receipt-calc-open">
+                {t('openCard')}
+              </Link>
+            ) : null}
             {confirmed ? <span className="chip chip-good">✓</span> : null}
           </>
         ) : (

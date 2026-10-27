@@ -4147,6 +4147,7 @@
     "kartaHint": "销售的卡片——只读。请把问题写在动态里，销售会在那里回复。",
     "kartaBack": "返回计算",
     "kartaWonDeal": "线索已转为交易——计算在交易中：",
+    "openCalc": "🧮 计算",
     "sellerGuess": "销售填写的估价",
     "importConflict": "不可用 {unit}：法规按 {law} 计",
     "freightWatchTitle": "{column}——运费按此列价目的比例分摊，但此列不完整：目前任何费用都不会按价目表分摊。",

@@ -77,6 +77,7 @@ import { ThreadSeen } from '@/components/thread-seen';
 import { receiptLoadView } from '@/modules/wms/ftl/read';
 import { mayRevertFtl } from '@/modules/wms/ftl/door';
 import { LoadModeBlock } from './load-mode-block';
+import { calcWorkspaceHref } from '@/modules/wms/calc/card-door';
 
 export default async function ReceiptDetailPage({
   params,
@@ -553,6 +554,7 @@ export default async function ReceiptDetailPage({
         <CalcLink
           receiptId={id}
           currentId={receipt.calcRequestId}
+          currentHref={calcWorkspaceHref(actor, receipt.calcRequestId)}
           confirmed={receipt.calcLinkConfirmedAt !== null}
           options={calcOptions.map((o) => ({
             requestId: o.requestId,

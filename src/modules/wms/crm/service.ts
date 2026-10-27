@@ -363,6 +363,32 @@ export async function quoteLockedFor(
   entityType: 'lead' | 'deal',
   entityId: string,
 ): Promise<number | null> {
+  // Locked only while the writer stands (below); a writer that no longer
+  // stands still NAMES its job — the card's «Narx» links it (his 2026-10-27,
+  // «qayta hisoblash kerak bo'lganda qidirib qolinyabti»).
+  const writer = await quoteWriterFor(entityType, entityId);
+  return writer?.stands ? writer.amount : null;
+}
+
+/** Which job wrote the price on a card, and whether it still stands. */
+export interface QuoteWriter {
+  kind: 'seal' | 'offer';
+  /** The job — a seal's request, or an offer's (through its anchor). */
+  requestId: string | null;
+  amount: number;
+  stands: boolean;
+}
+
+/**
+ * The writer of the number on a card — `quoteLockedFor`'s rule, said once:
+ * the lock is this answer while it stands, the «Narx» link is its job
+ * whether it stands or not. A card's number someone typed by hand has no
+ * writer the link may claim: the caller compares the amounts.
+ */
+export async function quoteWriterFor(
+  entityType: 'lead' | 'deal',
+  entityId: string,
+): Promise<QuoteWriter | null> {
   try {
     const { standingAnchorsFor, lastReleasedOfferFor } = await import('../calc/workspace');
     // What is LOCKED is the number on the CARD, and only while whatever wrote
@@ -392,10 +418,10 @@ export async function quoteLockedFor(
     const seal = anchors.deadSeal ?? anchors.seals[0] ?? null;
     const offered = await lastReleasedOfferFor(entityType, entityId);
     if (offered && (!seal || offered.at >= seal.sealedAt)) {
-      return offered.stands ? offered.price : null;
+      return { kind: 'offer', requestId: offered.requestId, amount: offered.price, stands: offered.stands };
     }
     if (!seal) return null;
-    return anchors.deadSeal ? null : seal.totalUsd;
+    return { kind: 'seal', requestId: seal.requestId, amount: seal.totalUsd, stands: !anchors.deadSeal };
   } catch (err) {
     // Deploy morning: this module works without 0086, and the lock is a
     // safeguard rather than a gate — its absence must not take the card down.
@@ -407,6 +433,16 @@ export async function quoteLockedFor(
 
 const sameMoney = (a: number | null, b: string | null) =>
   a === null ? b === null : b !== null && Math.abs(a - Number(b)) < 0.005;
+
+/**
+ * The number on the card IS its writer's — and so the «Narx» row may link
+ * that job. A figure typed by hand since (or never written by a job) is
+ * nobody's calculation and gets no link: a link to a calc whose number is
+ * not on the card would send the VED to the wrong job.
+ */
+export function writerWroteCard(writer: QuoteWriter | null, quotedAmount: string | null): writer is QuoteWriter {
+  return writer !== null && quotedAmount !== null && sameMoney(writer.amount, quotedAmount);
+}
 
 function quoteValues(input: LeadInput) {
   const money = (n: number | null | undefined) => (n == null ? null : n.toFixed(2));

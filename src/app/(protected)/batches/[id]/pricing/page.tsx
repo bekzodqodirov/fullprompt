@@ -57,6 +57,7 @@ import { logger } from '@/modules/platform/logger';
 import { dealCalcSheets, type CalcAnswer, type CalcSheet as CalcSheetData } from '@/modules/wms/calc/sheet';
 import { CalcAnswers, CalcSheet } from '@/components/calc-sheet';
 import { PriceHistoryBody } from '@/components/price-history';
+import { calcWorkspaceHref } from '@/modules/wms/calc/card-door';
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   return batchTabMetadata((await params).id, 'narx');
@@ -541,9 +542,25 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                   {firstOfDeal ? (
                     <>
                       {dealCalc.sheets.map((sheet) => (
-                        <CalcSheet key={sheet.requestId} data={sheet} sight={sheetSight} />
+                        <CalcSheet
+                          key={sheet.requestId}
+                          data={sheet}
+                          calcHref={calcWorkspaceHref(actor, sheet.requestId)}
+                          sight={sheetSight}
+                        />
                       ))}
-                      <CalcAnswers answers={dealCalc.answers} sight={sheetSight} />
+                      <CalcAnswers
+                        answers={dealCalc.answers}
+                        calcHrefs={
+                          new Map(
+                            dealCalc.answers.flatMap((a) => {
+                              const href = calcWorkspaceHref(actor, a.requestId);
+                              return href ? [[a.requestId, href] as const] : [];
+                            }),
+                          )
+                        }
+                        sight={sheetSight}
+                      />
                       {dealCalc.more > 0 ? (
                         <p className="text-ink-500">{t('calcMore', { n: dealCalc.more })}</p>
                       ) : null}

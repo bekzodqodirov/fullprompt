@@ -177,8 +177,13 @@ describe('the panel that hosts it', () => {
     expect(PANEL_CODE).toContain('anchors.seals.map((seal) => sealBlock(seal, true))');
     expect(PANEL_CODE).toContain('anchors.answers.map((answer) =>');
     const lock = code(read('src/modules/wms/crm/service.ts'));
+    // The lock is the WRITER's answer while it stands (his 2026-10-27: the
+    // writer also names the job the card's «Narx» links) — one body, read
+    // by both, so the lock and the link cannot pick different jobs.
     const fn = lock.slice(lock.indexOf('export async function quoteLockedFor'));
-    expect(fn.slice(0, fn.indexOf('\n}'))).toContain('standingAnchorsFor(entityType, entityId)');
+    expect(fn.slice(0, fn.indexOf('\n}'))).toContain('await quoteWriterFor(entityType, entityId)');
+    const writer = lock.slice(lock.indexOf('export async function quoteWriterFor'));
+    expect(writer.slice(0, writer.indexOf('\n}'))).toContain('standingAnchorsFor(entityType, entityId)');
   });
 });
 

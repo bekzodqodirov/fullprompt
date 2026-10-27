@@ -4147,6 +4147,7 @@
     "kartaHint": "The seller's card — read only. Write your question on the timeline; the seller answers there.",
     "kartaBack": "Back to the calculation",
     "kartaWonDeal": "The lead became a deal — the calculation is on the deal:",
+    "openCalc": "🧮 Calculation",
     "sellerGuess": "Seller's own estimate",
     "importConflict": "{unit} not allowed: the law counts in {law}",
     "freightWatchTitle": "{column} — freight bills are split in proportion to this column’s prices, but it is incomplete: as it stands, no bill is split by the tariff.",

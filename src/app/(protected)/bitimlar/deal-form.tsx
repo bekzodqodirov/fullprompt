@@ -40,6 +40,7 @@ export function DealForm({
   managers,
   initial,
   quoteLocked,
+  quoteCalcHref,
   load,
 }: {
   dealId?: string;
@@ -48,6 +49,8 @@ export function DealForm({
   initial: DealInitial;
   /** A sealed VED calculation stands on this deal — the quote is not editable. */
   quoteLocked?: boolean;
+  /** The job that wrote the locked number, for the VED (null for everyone else). */
+  quoteCalcHref?: string | null;
   /** LTL / FTL (0135): the stored mode and whether the viewer is the office; null = server behind. */
   load?: { initial: 'ltl' | 'ftl'; office: boolean; creating?: boolean } | null;
   /**
@@ -59,6 +62,7 @@ export function DealForm({
   const t = useTranslations('deals');
   const tc = useTranslations('common');
   const tf = useTranslations('ftl');
+  const tcalc = useTranslations('calc');
   const action = dealId ? updateDealAction.bind(null, dealId) : createDealAction;
   const [state, formAction, pending] = useActionState<DealFormState, FormData>(action, {});
 
@@ -89,6 +93,11 @@ export function DealForm({
             {initial.quotedAmount} {initial.quotedCurrency ?? 'USD'}
           </span>
           <span className="chip chip-neutral">🔒</span>
+          {quoteCalcHref ? (
+            <a href={quoteCalcHref} className="font-semibold text-brand-700" data-testid="deal-quote-locked-calc">
+              {tcalc('openCalc')}
+            </a>
+          ) : null}
           <input type="hidden" name="quotedAmount" value={initial.quotedAmount ?? ''} />
           <input type="hidden" name="quotedCurrency" value={initial.quotedCurrency ?? 'USD'} />
           <input type="hidden" name="quotedVolumeM3" value={initial.quotedVolumeM3 ?? ''} />

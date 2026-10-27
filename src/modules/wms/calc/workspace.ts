@@ -5364,10 +5364,13 @@ export function offerStandsSql() {
 export async function lastReleasedOfferFor(
   entityType: 'deal' | 'lead',
   entityId: string,
-): Promise<{ id: string; price: number; at: Date; stands: boolean } | null> {
+): Promise<{ id: string; requestId: string | null; price: number; at: Date; stands: boolean } | null> {
   const [row] = await db
     .select({
       id: calcOffers.id,
+      // The offer's JOB, through whichever anchor it carries (0093): a seal's
+      // version, or the answered request. Table-qualified on purpose (#128).
+      requestId: sql<string | null>`coalesce(${calcOffers}.request_id, (SELECT v.request_id FROM calc_versions v WHERE v.id = ${calcOffers}.version_id))::text`,
       price: calcOffers.clientPriceUsd,
       offeredAt: calcOffers.offeredAt,
       approvedAt: calcOffers.approvedAt,
@@ -5384,7 +5387,7 @@ export async function lastReleasedOfferFor(
     .orderBy(desc(sql`coalesce(${calcOffers.approvedAt}, ${calcOffers.offeredAt})`))
     .limit(1);
   return row
-    ? { id: row.id, price: Number(row.price), at: row.approvedAt ?? row.offeredAt, stands: Boolean(row.stands) }
+    ? { id: row.id, requestId: row.requestId, price: Number(row.price), at: row.approvedAt ?? row.offeredAt, stands: Boolean(row.stands) }
     : null;
 }
 
