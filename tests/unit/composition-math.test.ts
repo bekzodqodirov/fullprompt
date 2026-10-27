@@ -683,3 +683,19 @@ describe('paperLines — the worked example of §2', () => {
     }
   });
 });
+
+describe('«Bitta tovar» — the job’s pieces (his 8.8)', () => {
+  it('one counted good in a word that says pieces, a whole number — anything else is no prefill', async () => {
+    const { jobPiecesOf } = await import('@/modules/wms/receipts/lot-composition');
+    const { routeAmount } = await import('@/modules/wms/calc/units');
+    expect(jobPiecesOf([{ quantity: '1000.000', unit: null }], routeAmount)).toBe(1000);
+    expect(jobPiecesOf([{ quantity: '1000.000', unit: 'шт' }], routeAmount)).toBe(1000);
+    // The old way: «120 m2» kept in the piece column is not 120 pieces.
+    expect(jobPiecesOf([{ quantity: '120.000', unit: 'm2' }], routeAmount)).toBeNull();
+    expect(jobPiecesOf([{ quantity: '12.000', unit: 'karobka' }], routeAmount)).toBeNull();
+    expect(jobPiecesOf([{ quantity: '2.500', unit: null }], routeAmount)).toBeNull();
+    // Two goods: whose count would it be?
+    expect(jobPiecesOf([{ quantity: '10', unit: null }, { quantity: '20', unit: null }], routeAmount)).toBeNull();
+    expect(jobPiecesOf([], routeAmount)).toBeNull();
+  });
+});

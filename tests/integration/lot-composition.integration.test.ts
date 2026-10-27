@@ -111,6 +111,7 @@ import {
   compositionsFor,
   CompositionError,
   lotTrucksFor,
+  paperCompositionsFor,
   paperStampFor,
   saveComposition,
   setLineCodes,
@@ -1245,6 +1246,22 @@ describe('lot tarkibi — the price history and the stale lot', () => {
     // (b) the count clause ALONE (R9's anchor): an aralash lot, kg/m³ untouched.
     await db.update(receiptLots).set({ boxCount: sql`${receiptLots.boxCount} + 1` }).where(eq(receiptLots.id, lot.H));
     expect(isStale((await compositionsFor([lot.H])).get(lot.H)!, await totalsOf('H'))).toBe(true);
+  });
+});
+
+describe('lot tarkibi — a header with no lines (the readers’ own guard)', () => {
+  it('reads as NO composition everywhere, now that the writer’s floor is one line (his 2026-10-27)', async () => {
+    // The writer never leaves a header without lines; a crash between the
+    // two inserts, or a hand-run DELETE, can. `MIN_STORED_LINES` is that
+    // guard, kept apart from the writer's `MIN_LINES` — at 1 the two now
+    // agree, and at 0 a torn header would print an EMPTY lot on the papers.
+    await db.insert(lotCompositions).values({ lotId: lot.L, attachmentId: doc.DOC!, seenBoxCount: 1, savedBy: vedId });
+    try {
+      expect((await compositionsFor([lot.L])).has(lot.L)).toBe(false);
+      expect((await paperCompositionsFor(truck.CROSS!, [lot.L])).has(lot.L)).toBe(false);
+    } finally {
+      await db.delete(lotCompositions).where(eq(lotCompositions.lotId, lot.L));
+    }
   });
 });
 

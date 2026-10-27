@@ -490,15 +490,22 @@ const uuidList = (ids: string[]): SQL =>
   );
 
 /**
- * ONE statement: headers ⋈ attachments ⋈ users ⋈ LATERAL json_agg(lines
- * ORDER BY seq) — two statements could tear (a clear between them gave a
- * header with no lines, which `compositionMode([])` reads as «mixed» and the
- * invoice prints as NO row: the lot vanishes from a customs paper). A view
- * with no lines (fewer than `MIN_STORED_LINES`) is treated as no composition and logged. `exec`
- * DEFAULTS to `db` (`= db` in the signature, so the tx-pool fence classifies
- * it and flags an in-transaction call that forgets `tx`). A missing table
- * (the deploy morning, before `migrate`) answers an EMPTY map.
+ * The pieces a prixod's job states for its ONE good, or null: exactly one
+ * counted item, a whole number, and a row whose own word says pieces (or says
+ * nothing — the doors' «nomi, soni» convention). An old row keeps «120» under
+ * «m2» in this very column, and that is not 120 of anything countable
+ * (`routeAmount`, RASTAMOJKA-TUZATISH's one rule — passed in so this stays a
+ * plain function the unit test calls).
  */
+export function jobPiecesOf(
+  items: readonly { quantity: string; unit: string | null }[],
+  route: (value: number, unit: string | null) => object,
+): number | null {
+  if (items.length !== 1) return null;
+  const n = Number(items[0]!.quantity);
+  return Number.isInteger(n) && n > 0 && 'quantity' in route(n, items[0]!.unit) ? n : null;
+}
+
 /**
  * What «Bitta tovar» fills a one-row tarkib with, per lot of one prixod (his
  * 8.x A+, 2026-10-21; docs/UCH-BAND.md §4): the lot's own name (Russian,
@@ -526,9 +533,8 @@ export async function oneGoodPrefillFor(
        WHERE request_id = ${receipt.calcRequestId}::uuid
          AND quantity IS NOT NULL AND quantity > 0
     `)) as unknown as { quantity: string; unit: string | null }[];
-    const only = items.length === 1 ? items[0]! : null;
-    const n = only && only.unit !== '1000_dona' ? Number(only.quantity) : NaN;
-    pieces = Number.isInteger(n) && n > 0 ? n : null;
+    const { routeAmount } = await import('../calc/units');
+    pieces = jobPiecesOf(items, routeAmount);
   }
   for (const lot of lots) {
     out.set(lot.id, {
@@ -540,6 +546,16 @@ export async function oneGoodPrefillFor(
   return out;
 }
 
+/**
+ * ONE statement: headers ⋈ attachments ⋈ users ⋈ LATERAL json_agg(lines
+ * ORDER BY seq) — two statements could tear (a clear between them gave a
+ * header with no lines, which `compositionMode([])` reads as «mixed» and the
+ * invoice prints as NO row: the lot vanishes from a customs paper). A view
+ * with no lines (fewer than `MIN_STORED_LINES`) is treated as no composition and logged. `exec`
+ * DEFAULTS to `db` (`= db` in the signature, so the tx-pool fence classifies
+ * it and flags an in-transaction call that forgets `tx`). A missing table
+ * (the deploy morning, before `migrate`) answers an EMPTY map.
+ */
 export async function compositionsFor(lotIds: string[], exec: Db | Tx = db): Promise<Map<string, CompositionView>> {
   const out = new Map<string, CompositionView>();
   const ids = [...new Set(lotIds)].filter((id) => UUID.test(id));

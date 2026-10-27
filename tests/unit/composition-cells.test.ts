@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   agentContentsText,
+  agentPiecesCell,
   estimateNote,
   invoiceRowCells,
   packingBoxesCell,
@@ -108,6 +109,12 @@ describe('the packing lists', () => {
     expect(packingPiecesCell(pl({ pieces: null }))).toBe('');
     // A stated count that rounds to none on this truck reads «no goods» as 0.
     expect(packingPiecesCell(pl({ pieces: 0 }))).toBe('');
+  });
+
+  it('the agent file’s «шт» cell: ONE good’s pieces, BLANK for several (they do not add, the text lists each) — his 7b', () => {
+    expect(agentPiecesCell([pl({ pieces: 500 })])).toBe(500);
+    expect(agentPiecesCell([pl({ pieces: null })])).toBe('');
+    expect(agentPiecesCell([pl({ pieces: 500 }), pl({ pieces: 1000 })])).toBe('');
   });
 
   it('«alohida» prints the line’s cartons; «aralash» the lot’s on the first line and «same cartons» after', () => {
