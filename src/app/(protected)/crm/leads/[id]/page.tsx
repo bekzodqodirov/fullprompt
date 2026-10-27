@@ -188,6 +188,10 @@ export default async function LeadPage({
               clientId={threadSource.kind === 'client' ? threadSource.clientId : null}
               // A lead the chat itself opened (round 82) shows that chat here.
               leadId={lead.id}
+              // «Hisoblatishga yuborish» from the client's chat drawn HERE lands
+              // on this lead while it is open (judge product-5), never on a
+              // second card; the server decides by the lead's stage.
+              calcTarget={threadSource.kind === 'client' ? { kind: 'lead_client', id: lead.id } : undefined}
               hodim={hodim}
               // `who` and not `id`: this page already has an `id` (the lead's).
               hrefFor={(who) => cardHref({ hodim: who })}

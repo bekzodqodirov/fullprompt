@@ -5556,6 +5556,7 @@
     "tnved": "TNVED",
     "addLine": "+ qator",
     "oneGood": "Bitta tovar — lotdan to'ldirish",
+    "oneLineNoVouch": "Nom lot nomidan farq qiladi — ✅ «hujjat bo'yicha» avtomatik qo'yilmaydi",
     "removeLine": "Qatorni o'chirish",
     "line": "{n}-qator",
     "prefill": "Karobka soniga qarab taqsimlash",
@@ -5596,7 +5597,7 @@
     "errors": {
       "forbidden": "Sizda bu prixodning tarkibini yozish huquqi yo'q",
       "receipt_not_confirmed": "Bekor qilingan prixodga tarkib yozilmaydi",
-      "lines_count": "Kamida 1 ta, ko'pi bilan 20 ta tovar",
+      "lines_count": "1 tadan 20 tagacha tovar yozing",
       "bad_line": "{seq}-qator: tovar nomini yozing",
       "bad_number_kg": "{seq}-qator, kg: son noto'g'ri — verguldan keyin ko'pi bilan 3 raqam",
       "bad_number_m3": "{seq}-qator, kub: son noto'g'ri — verguldan keyin ko'pi bilan 4 raqam",

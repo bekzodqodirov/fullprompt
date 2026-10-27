@@ -931,11 +931,12 @@ function threadCalcGate(
 ): CalcFormState | null {
   if (!canReadTg(actor)) return { error: 'forbidden' };
   if (!canWriteDeal(actor.permissions)) return { error: 'forbidden' };
-  if (entity.kind !== 'lead' && !mayEditDealTerms(actor.permissions)) {
+  const onLead = entity.kind === 'lead' || entity.kind === 'lead_client';
+  if (!onLead && !mayEditDealTerms(actor.permissions)) {
     return { error: 'deal_terms_only' };
   }
   if (!isCalcSection(section)) return { error: 'bad_section' };
-  if (entity.kind === 'lead' && !actor.permissions.has('crm.leads')) return { error: 'forbidden' };
+  if (onLead && !actor.permissions.has('crm.leads')) return { error: 'forbidden' };
   return null;
 }
 

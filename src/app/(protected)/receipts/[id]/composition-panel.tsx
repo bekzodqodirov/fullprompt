@@ -12,6 +12,7 @@ import {
   M3_SCALE,
   MAX_LINES,
   MIN_LINES,
+  lineIsLotGood,
   parseDraft,
   prefillByCartons,
   remainderOf,
@@ -64,6 +65,9 @@ export interface PanelOneGood {
   name: string;
   tnved: string | null;
   pieces: number | null;
+  /** The lot's own names — a ONE-line tarkib vouches only for its own good (8.6). */
+  zh: string;
+  ru: string | null;
 }
 
 export interface PanelComposition {
@@ -740,6 +744,14 @@ function CompositionEditor({
                   placeholder={i === 0 ? t('nameHint') : undefined}
                   onChange={(e) => setCell(i, 'name', e.target.value)}
                 />
+                {/* The VED is told to write the INVOICE name, and a one-line
+                    tarkib that names another good earns no ✅ (8.6) — said
+                    here, by the very key the ✅ asks (judge product-20). */}
+                {single && oneGood && l.name.trim() !== '' && !lineIsLotGood(l.name, oneGood) ? (
+                  <span className="mt-1 block text-xs text-ink-500" data-testid="tarkib-no-vouch">
+                    {t('oneLineNoVouch')}
+                  </span>
+                ) : null}
               </label>
               <div className="mt-1.5 grid grid-cols-2 gap-1.5 xl:contents">
                 <label className="block">

@@ -914,7 +914,7 @@ SELECT mb.lot_id, t.id, t.code, t.departed_at, t.created_at,
 |---|---|---|
 | forbidden | door (incl. a lot that does not exist) | «Sizda bu prixodning tarkibini yozish huquqi yo'q» |
 | receipt_not_confirmed | draft/voided | «Bekor qilingan prixodga tarkib yozilmaydi» |
-| lines_count | <1 or >20 | «Kamida 1 ta, ko'pi bilan 20 ta tovar» (2026-10-27; it named the logist while the floor was 2) |
+| lines_count | <1 or >20 | «1 tadan 20 tagacha tovar yozing» (2026-10-27; it named the logist while the floor was 2, and «ko'pi bilan 20» alone misled an empty save — judge product-17) |
 | tnved_would_vanish {code} | ONE line of the lot's own good, no code, the memory holds one | «Lotning TNVED kodi {code} — qatorda kod bo'lmasa, invoysda kod chiqmaydi. Kodni yozing yoki «Bitta tovar»ni bosing» |
 | bad_line {seq} | name <2 / >200 characters | «{seq}-qator: tovar nomini yozing» |
 | bad_number {seq} — one key per field | unreadable / ≤0 / too many decimals | `bad_number_kg` «{seq}-qator, kg: son noto'g'ri — verguldan keyin ko'pi bilan 3 raqam»; `bad_number_m3` «… 4 raqam»; `bad_number_pieces` / `bad_number_cartons` «{seq}-qator, …: butun musbat son» |

@@ -5556,6 +5556,7 @@
     "tnved": "HS code",
     "addLine": "+ line",
     "oneGood": "One good — fill from the lot",
+    "oneLineNoVouch": "The name differs from the lot's — ✅ «by document» is not set by itself",
     "removeLine": "Remove line",
     "line": "Line {n}",
     "prefill": "Split by cartons",
@@ -5596,7 +5597,7 @@
     "errors": {
       "forbidden": "You may not state the contents of this receipt",
       "receipt_not_confirmed": "A voided receipt takes no contents",
-      "lines_count": "From 1 to 20 goods",
+      "lines_count": "Write 1 to 20 goods",
       "bad_line": "Line {seq}: write the goods name",
       "bad_number_kg": "Line {seq}, kg: not a number — at most 3 decimals",
       "bad_number_m3": "Line {seq}, m³: not a number — at most 4 decimals",

@@ -812,9 +812,11 @@ describe('lot tarkibi — the papers', () => {
   it('8. both packing lists: line rows summing to what the same builder printed before, the draft footer unchanged', async () => {
     const photos = await packingPhotoRows('CROSS');
     const lines = photos.filter((r) => r.code.endsWith('-A'));
-    // Q6 a: the line's name with the lot's Chinese name; 8.5: the pieces in
-    // their own column, never a second time in the product cell.
-    expect(lines.map((r) => r.product)).toEqual([`Клавиатура (${NAME_A})`, `Мышь (${NAME_A})`]);
+    // Q6 a: the lot's Chinese name stays — beside the line that IS the lot's
+    // good only (judge product-8). Lot A is «键盘…» with no Russian name, so
+    // neither line is it; the lot-level name is on the code column's lot.
+    // 8.5: the pieces in their own column, never in the product cell.
+    expect(lines.map((r) => r.product)).toEqual(['Клавиатура', 'Мышь']);
     expect(lines.map((r) => r.pieces)).toEqual([170, 320]);
     expect(lines.map((r) => r.boxes)).toEqual([17, 16]);
     // An uncomposed lot states no pieces: the cell is BLANK, never 0.

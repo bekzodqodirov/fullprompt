@@ -1,4 +1,4 @@
-import type { PaperLine, PaperReason, PaperView } from '../receipts/composition-math';
+import { lineIsLotGood, nameKey, type PaperLine, type PaperReason, type PaperView } from '../receipts/composition-math';
 import { DOC } from './labels';
 
 /**
@@ -41,9 +41,13 @@ export function invoiceRowCells(line: PaperLine): {
  * The pieces left this cell for their own column (`packingPiecesCell`); one
  * count printed twice is a count read twice.
  */
-export function packingProductCell(line: PaperLine, lotNameZh: string): string {
-  const zh = lotNameZh.trim();
-  return zh && zh !== line.name.trim() ? `${line.name} (${zh})` : line.name;
+export function packingProductCell(line: PaperLine, lot: { zh: string; ru: string | null }): string {
+  // The lot's Chinese name (his Q6 a) only beside the line that IS the lot's
+  // good: in a two-good lot it named one good on both lines, «Мышь (键盘)»,
+  // and on a lot that is wholly another good it named the wrong one (judge
+  // product-8). The vouch's own key decides (`lineIsLotGood`).
+  const zh = lot.zh.trim();
+  return zh && nameKey(zh) !== nameKey(line.name) && lineIsLotGood(line.name, lot) ? `${line.name} (${zh})` : line.name;
 }
 
 /**

@@ -56,7 +56,7 @@ export function CalcLink({
           <>
             {currentHref ? (
               <Link href={currentHref} className="font-mono text-brand-700 underline" data-testid="receipt-calc-open">
-                {t('openCard')}
+                {t('openCalc')}
               </Link>
             ) : null}
             {confirmed ? <span className="chip chip-good">✓</span> : null}

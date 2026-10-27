@@ -93,7 +93,7 @@ export async function TelegramThread({
    * one; without it the service falls back to the bot's own landing rule.
    * Re-proved server-side — a posted entity is a forged post (#514).
    */
-  calcTarget?: { kind: 'deal'; id: string };
+  calcTarget?: { kind: 'deal' | 'lead_client'; id: string };
   /**
    * The VED's karta (docs/VED-TARIX.md §10, review access-money-2): the
    * thread is READ there. No «Hisoblatishga yuborish» (`ThreadCalc` on a

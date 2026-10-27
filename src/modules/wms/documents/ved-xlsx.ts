@@ -419,7 +419,7 @@ export async function buildPackingXlsx(batchId: string): Promise<Buffer | null> 
       view.lines.forEach((line, i) => {
         n += 1;
         const row = sheet.addRow([
-          n, agg.code, packingProductCell(line, lot.productNameZh), pack, packingPiecesCell(line),
+          n, agg.code, packingProductCell(line, { zh: lot.productNameZh, ru: lot.productNameRu }), pack, packingPiecesCell(line),
           packingBoxesCell(line, mode, i === 0, cartons), line.kg, line.m3 ?? '',
         ]);
         if (view.estimate) {

@@ -166,7 +166,7 @@ export async function buildPackingPhotosXlsx(batchId: string): Promise<Buffer | 
         const row = sheet.getRow(rowNo);
         row.values = {
           code,
-          product: packingProductCell(line, lot.productNameZh),
+          product: packingProductCell(line, { zh: lot.productNameZh, ru: lot.productNameRu }),
           pieces: packingPiecesCell(line),
           boxCount: packingBoxesCell(line, mode, i === 0, Number(loaded)),
           kg: line.kg,

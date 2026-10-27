@@ -533,6 +533,15 @@ export function jobPiecesOf(
   return Number.isInteger(n) && n > 0 && 'quantity' in route(n, items[0]!.unit) ? n : null;
 }
 
+export interface OneGoodPrefill {
+  name: string;
+  tnved: string | null;
+  pieces: number | null;
+  /** The lot's own names — the editor says when one line will not vouch (8.6). */
+  zh: string;
+  ru: string | null;
+}
+
 /**
  * What «Bitta tovar» fills a one-row tarkib with, per lot of one prixod (his
  * 8.x A+, 2026-10-21; docs/UCH-BAND.md §4): the lot's own name (Russian,
@@ -545,20 +554,26 @@ export function jobPiecesOf(
  * receipt card, only for a composition writer.
  */
 export async function oneGoodPrefillFor(
-  receipt: { calcRequestId: string | null; calcLinkSource: string | null },
+  receipt: { id: string; calcRequestId: string | null; calcLinkSource: string | null },
   lots: readonly { id: string; productNameZh: string; productNameRu: string | null }[],
-): Promise<Map<string, { name: string; tnved: string | null; pieces: number | null }>> {
-  const out = new Map<string, { name: string; tnved: string | null; pieces: number | null }>();
+): Promise<Map<string, OneGoodPrefill>> {
+  const out = new Map<string, OneGoodPrefill>();
   if (lots.length === 0) return out;
   const { productKey, tnvedFor } = await import('../tnved/service');
   const memory = await tnvedFor(lots.map((lot) => lot.productNameZh));
   let pieces: number | null = null;
   if (lots.length === 1 && receipt.calcRequestId && receipt.calcLinkSource === 'person') {
+    // …and only when THIS prixod is the job's only live one: a job whose
+    // cargo arrived in three prixods would otherwise put its whole count
+    // into one lot (judge product-1) — the invoice multiplies by it.
     const items = (await db.execute(sql`
-      SELECT quantity::text AS quantity, unit
-        FROM calc_request_items
-       WHERE request_id = ${receipt.calcRequestId}::uuid
-         AND quantity IS NOT NULL AND quantity > 0
+      SELECT i.quantity::text AS quantity, i.unit
+        FROM calc_request_items i
+       WHERE i.request_id = ${receipt.calcRequestId}::uuid
+         AND i.quantity IS NOT NULL AND i.quantity > 0
+         AND NOT EXISTS (
+           SELECT 1 FROM receipts o
+            WHERE o.calc_request_id = i.request_id AND o.id <> ${receipt.id}::uuid AND o.status <> 'voided')
     `)) as unknown as { quantity: string; unit: string | null }[];
     const { routeAmount } = await import('../calc/units');
     pieces = jobPiecesOf(items, routeAmount);
@@ -566,6 +581,8 @@ export async function oneGoodPrefillFor(
   for (const lot of lots) {
     out.set(lot.id, {
       name: (lot.productNameRu ?? '').trim() || lot.productNameZh.trim(),
+      zh: lot.productNameZh,
+      ru: lot.productNameRu,
       tnved: memory.get(productKey(lot.productNameZh))?.tnvedCode ?? null,
       pieces,
     });

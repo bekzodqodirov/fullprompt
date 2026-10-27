@@ -2,7 +2,7 @@ import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from
 import { leadWonUsdSql } from './won-money';
 import { ledgerAlias, signedUsdSql } from '../finance/ledger-sql';
 import { z } from 'zod';
-import { db } from '../../platform/db/client';
+import { db, type Db, type Tx } from '../../platform/db/client';
 import {
   clients,
   crmActivities,
@@ -331,7 +331,7 @@ export const leadSchema = z.object({
 export type LeadInput = z.infer<typeof leadSchema> & { load?: { mode: LoadMode; door: FtlDoor } };
 
 /** The first open stage, used when a lead is created without one. */
-async function defaultStageId() {
+export async function defaultStageId() {
   const stages = await listStages();
   const first = stages.find((stage) => stage.kind === 'open') ?? stages[0];
   if (!first) throw new CrmError('no_stages');
@@ -548,7 +548,35 @@ export async function createLead(input: LeadInput, ctx: AuditContext, opts?: Sys
     const refusal = leadDealMoveRefusal(input.load!.door, { before: false, after: true, ownerBefore: owner, ownerAfter: owner });
     if (refusal) throw new CrmError(refusal);
   }
-  const [row] = await db
+  const row = await insertLeadTx(db, input, ctx, stageId);
+  if (markFtl) {
+    await setLeadFtlTx(db, row.id, true, { actorId: input.load!.door.actorId, office: input.load!.door.office });
+  }
+  await writeAudit(db, ctx, {
+    entityType: 'lead',
+    entityId: row.id,
+    action: 'create',
+    after: { name: input.name, phone: input.phone, stageId, ...(markFtl ? { freightMode: 'ftl' } : {}) },
+  });
+  if (markFtl && !input.load!.door.office) {
+    await notifyFtlMarked({ kind: 'lead', id: row.id, actorId: input.load!.door.actorId }).catch((err) =>
+      logger.error({ err, leadId: row.id }, '[ftl] FtlMarked notice failed'),
+    );
+  }
+  return row;
+}
+
+/**
+ * The lead row itself, on whichever handle the caller holds — `createLead` on
+ * the pool, the calc landing inside the transaction that writes the lead,
+ * its «about» row and its note as one fact (docs/UCH-BAND.md §7, judge
+ * conc-7: three separate commits left a lead with no side row, and the next
+ * request minted a second one). The stage is resolved by the caller, BEFORE
+ * any transaction (#714); the audit row is the caller's (it knows the FTL
+ * half). Every column a person's create writes, written the same way.
+ */
+export async function insertLeadTx(exec: Db | Tx, input: LeadInput, ctx: AuditContext, stageId: string) {
+  const [row] = await exec
     .insert(leads)
     .values({
       name: input.name,
@@ -571,23 +599,9 @@ export async function createLead(input: LeadInput, ctx: AuditContext, opts?: Sys
       // Numbering it here rather than leaving it NULL keeps the whole column
       // comparable, so the first card somebody drags past it lands where they
       // dropped it instead of under everything unplaced.
-      boardOrder: await topOfColumn(db, LEAD_BOARD, stageId),
+      boardOrder: await topOfColumn(exec, LEAD_BOARD, stageId),
     })
     .returning();
-  if (markFtl) {
-    await setLeadFtlTx(db, row!.id, true, { actorId: input.load!.door.actorId, office: input.load!.door.office });
-  }
-  await writeAudit(db, ctx, {
-    entityType: 'lead',
-    entityId: row!.id,
-    action: 'create',
-    after: { name: input.name, phone: input.phone, stageId, ...(markFtl ? { freightMode: 'ftl' } : {}) },
-  });
-  if (markFtl && !input.load!.door.office) {
-    await notifyFtlMarked({ kind: 'lead', id: row!.id, actorId: input.load!.door.actorId }).catch((err) =>
-      logger.error({ err, leadId: row!.id }, '[ftl] FtlMarked notice failed'),
-    );
-  }
   return row!;
 }
 
@@ -1317,18 +1331,7 @@ export async function addActivity(
   opts?: SystemOpts,
 ) {
   if (!ctx.actorId && !opts?.system) throw new CrmError('unauthenticated');
-  const [row] = await db
-    .insert(crmActivities)
-    .values({
-      ...(input.id ? { id: input.id } : {}),
-      entityType: input.entityType,
-      entityId: input.entityId,
-      kind: input.kind,
-      note: input.note,
-      happenedAt: input.happenedAt ? new Date(`${input.happenedAt}T12:00:00Z`) : new Date(),
-      createdBy: ctx.actorId,
-    })
-    .returning();
+  const row = await insertActivityTx(db, input, ctx);
 
   // The follow-up date lives on the lead/client, not on the log line: there
   // must be exactly one answer to "when are we calling them next".
@@ -1345,7 +1348,34 @@ export async function addActivity(
     }
   }
 
-  await writeAudit(db, ctx, {
+  return row;
+}
+
+/**
+ * The log line and its audit row, on whichever handle the caller holds —
+ * `addActivity` on the pool, the calc landing inside the transaction that
+ * writes the CARD and its note as one fact (docs/UCH-BAND.md §7, judge
+ * conc-1: «the note exists» iff «its card exists», so a retried save finds
+ * its card through the note).
+ */
+export async function insertActivityTx(
+  exec: Db | Tx,
+  input: Pick<z.infer<typeof activitySchema>, 'id' | 'entityType' | 'entityId' | 'kind' | 'note' | 'happenedAt'>,
+  ctx: AuditContext,
+) {
+  const [row] = await exec
+    .insert(crmActivities)
+    .values({
+      ...(input.id ? { id: input.id } : {}),
+      entityType: input.entityType,
+      entityId: input.entityId,
+      kind: input.kind,
+      note: input.note,
+      happenedAt: input.happenedAt ? new Date(`${input.happenedAt}T12:00:00Z`) : new Date(),
+      createdBy: ctx.actorId,
+    })
+    .returning();
+  await writeAudit(exec, ctx, {
     entityType: `crm_${input.entityType}_activity`,
     entityId: input.entityId,
     action: 'create',

@@ -96,12 +96,16 @@ describe('the «шт» boundary through paperLines (owner 3a)', () => {
 });
 
 describe('the packing lists', () => {
-  it('the product cell is the line’s name plus the lot’s Chinese name (Q6 a) — the pieces have their own column now (8.5)', () => {
-    expect(packingProductCell(pl({ name: 'Мышь', pieces: 1000 }), '鼠标')).toBe('Мышь (鼠标)');
-    // No second copy of a name that IS the Chinese one, and none of an empty one.
-    expect(packingProductCell(pl({ name: '鼠标', pieces: null }), ' 鼠标 ')).toBe('鼠标');
-    expect(packingProductCell(pl({ name: 'Мышь', pieces: null }), '')).toBe('Мышь');
-    expect(packingProductCell(pl({ name: 'Мышь', pieces: 1000 }), '鼠标')).not.toMatch(/шт/);
+  it('the product cell carries the lot’s Chinese name beside the line that IS the lot’s good (Q6 a, judge product-8)', () => {
+    const lot = { zh: '键盘', ru: 'Клавиатура' };
+    expect(packingProductCell(pl({ name: 'Клавиатура', pieces: 500 }), lot)).toBe('Клавиатура (键盘)');
+    // The other good of a two-good lot: «Мышь (键盘)» named the wrong good.
+    expect(packingProductCell(pl({ name: 'Мышь', pieces: 1000 }), lot)).toBe('Мышь');
+    // A line that IS the Chinese name is not printed twice; spacing and case fold.
+    expect(packingProductCell(pl({ name: '键盘', pieces: null }), lot)).toBe('键盘');
+    expect(packingProductCell(pl({ name: 'клавиатура', pieces: null }), lot)).toBe('клавиатура (键盘)');
+    // The pieces have their own column now (8.5): never a second time here.
+    expect(packingProductCell(pl({ name: 'Клавиатура', pieces: 500 }), lot)).not.toMatch(/шт/);
   });
 
   it('the «шт» cell is the line’s pieces on this truck, or BLANK — never 0 (8.5)', () => {

@@ -258,6 +258,24 @@ export function nameKey(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+/**
+ * Does this line name the lot's OWN good — Chinese or Russian, by `nameKey`
+ * (the TNVED memory's `productKey`, character for character)? The pure twin
+ * of the equality inside `tarkibVouchesSql` (lot-check-sql.ts), pinned
+ * against it by lot-check.integration.test.ts (#1267): the editor's hint, the
+ * packing lists' Chinese name and the ✅ cannot disagree about it.
+ */
+export function lineIsLotGood(lineName: string, lot: { zh: string; ru: string | null }): boolean {
+  const key = nameKey(lineName);
+  return key !== '' && (key === nameKey(lot.zh) || key === nameKey(lot.ru ?? ''));
+}
+
+/** A tarkib vouches for its lot's ✅ «hujjat bo'yicha»: several lines always, ONE line only when it names the lot's own good (8.6). */
+export function linesVouchForLot(lines: readonly { name: string }[], lot: { zh: string; ru: string | null }): boolean {
+  if (lines.length >= 2) return true;
+  return lines.length === 1 && lineIsLotGood(lines[0]!.name, lot);
+}
+
 /** A TNVED code as typed («8471 60 7000») → its digits, or the refusal. */
 function tnvedOf(raw: string): { ok: true; code: string | null } | { ok: false } {
   const s = String(raw ?? '').replace(/[\s  .-]/g, '');

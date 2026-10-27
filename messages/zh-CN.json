@@ -5556,6 +5556,7 @@
     "tnved": "海关编码",
     "addLine": "+ 行",
     "oneGood": "单一货物 — 从批次填写",
+    "oneLineNoVouch": "名称与批次名称不同 — 不会自动标记 ✅「按文件」",
     "removeLine": "删除行",
     "line": "第 {n} 行",
     "prefill": "按箱数分配",
@@ -5596,7 +5597,7 @@
     "errors": {
       "forbidden": "您无权填写此入库单的组成",
       "receipt_not_confirmed": "已作废的入库单不能填写组成",
-      "lines_count": "1 至 20 种货物",
+      "lines_count": "请填写 1 至 20 种货物",
       "bad_line": "第 {seq} 行：请填写品名",
       "bad_number_kg": "第 {seq} 行，公斤：数字错误 — 小数最多 3 位",
       "bad_number_m3": "第 {seq} 行，体积：数字错误 — 小数最多 4 位",
