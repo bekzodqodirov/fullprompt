@@ -18,8 +18,10 @@ in §1, the plan in §10 «R3») plus his 2.8 b. His answers are binding (§0).
   r3-work — 1133ecc (K1, K2, K13-K15), dbcb221 (K3-K10) and e0f9b61 (K11, K12, K16) — then
   two lenses reviewed it and «Sakkiz R3 K: the review's fixes — …» (the commit that wrote
   this line, the next code commit after 6754530) fixed what they confirmed; the spec lines
-  marked (K-review …) are what changed. Every package branches from THAT commit, not from
-  e0f9b61. Gates at e0f9b61 on a database of its own: typecheck, lint, the full vitest
+  marked (K-review …) are what changed (0ea2e1d). main `e669e7d` was then merged in
+  (b6c4ce2, the migration renamed 0138) and the lead's ruling L1 written (§6.2.2: the store is
+  flushed before grammy confirms a batch, not after every message); every package branches
+  from the commit that wrote THIS sentence, not from e0f9b61. Gates at e0f9b61 on a database of its own: typecheck, lint, the full vitest
   (726 files, 10717 tests).
 - **Migration `calc_intake_durable` is 0138** (K-review spec-5; renamed at the merge of main
   `e669e7d`, 2026-10-28). main had moved past 0136: it holds the other session's `0137_plan_road`
@@ -283,10 +285,10 @@ gets built. ⭐ = what is built if he does not answer. The Uzbek wording is in �
   - the stop: an update whose collection change is not yet written is NOT confirmed, so it
     is redelivered and applied once (durability-10, regression-25). This holds only while
     grammy is still inside that update's batch: once a batch ends, grammy's next
-    `getUpdates` confirms every update of it, and nothing can un-confirm one. So the
-    collector WRITES a message's change before its handler returns (P1, §6.2.2), and an
-    unwritten change of an update already confirmed is logged lost by the stop, never
-    claimed (K-review spec-2);
+    `getUpdates` confirms every update of it, and nothing can un-confirm one. So every
+    dirty chat is WRITTEN before grammy confirms a batch — `getUpdates` waits for the store's
+    flush (P1, §6.2.2, the lead's ruling L1) — and an unwritten change of an update already
+    confirmed (the flush failed) is logged lost by the stop, never claimed (K-review spec-2);
   - an undo: the echo's `undone` flag;
   - a machine message: `sayOnce(requestId, pass, input, opts)`, per pass — `pass` positional
     (`'landing'` for the landing's pass; every row written before this round coalesces to
@@ -946,7 +948,7 @@ staff-handlers.ts:1109) only: after this round a restart does not lose the colle
 
 | Moment | What survives | What the seller sees |
 |---|---|---|
-| **Mid-collection, graceful deploy** (stage section, client, material or review) | Everything. Each change is in memory at once, and is written to `telegram_calc_intakes` after one second of quiet (at most five seconds while changes keep coming). The graceful stop (`stopTelegramBot`) awaits `flushIntakeWrites()` with whatever is left of its 5 s budget before the confirm (not a fixed 1 s: a collection is the whole state, up to megabytes), then SEALS the store (`sealIntakeWrites`): from then on this process writes no row, so a late effect of an update still in flight can never overwrite what the new process hydrates. **A change still unwritten when the flush ends (too slow, or a write that failed) keeps its update UNCONFIRMED** — while that update is still in the batch grammy is handling (in flight, or the batch's next update held): the stop confirms only through the update before `oldestUnwrittenUpdate()` (durability-10, regression-25). The first draft confirmed anyway and lost the seller's last minutes. An update whose batch has ENDED is already confirmed by grammy's own next `getUpdates`, so the collector awaits its chat's write before a collection-changing message's handler returns (§6.2.2): its change is in the row before Telegram can drop the update. A write that fails even then (the database down) is retried by the timer, and if the stop comes first it is logged lost — the new process could not have hydrated it either (K-review spec-2). A failed write keeps its chat dirty and is retried, never dropped. The new process hydrates every row before its first `getUpdates`. An update that was still in flight past the 3 s budget, or held back by an unwritten change, is unconfirmed, so it is redelivered. If its effect reached the flushed row, `takenUpTo` drops it as `seen`. Otherwise it is applied once. | Messages written DURING the outage come as the backlog. A text or file dated after the collection opened, while it was holding, is that collection's (`intakeTakes`). A press on its buttons works. The 2 h / 24 h clocks are the seller's own actions, so the downtime counts as idle. |
+| **Mid-collection, graceful deploy** (stage section, client, material or review) | Everything. Each change is in memory at once, and is written to `telegram_calc_intakes` after one second of quiet (at most five seconds while changes keep coming). The graceful stop (`stopTelegramBot`) awaits `flushIntakeWrites()` with whatever is left of its 5 s budget before the confirm (not a fixed 1 s: a collection is the whole state, up to megabytes), then SEALS the store (`sealIntakeWrites`): from then on this process writes no row, so a late effect of an update still in flight can never overwrite what the new process hydrates. **A change still unwritten when the flush ends (too slow, or a write that failed) keeps its update UNCONFIRMED** — while that update is still in the batch grammy is handling (in flight, or the batch's next update held): the stop confirms only through the update before `oldestUnwrittenUpdate()` (durability-10, regression-25). The first draft confirmed anyway and lost the seller's last minutes. An update whose batch has ENDED is confirmed by grammy's own next `getUpdates`, so that call first awaits the store's flush (§6.2.2, the lead's ruling L1): every change of the batch is in the row before Telegram can drop its update. A write that fails even then (the database down) is retried by the timer, and if the stop comes first it is logged lost — the new process could not have hydrated it either (K-review spec-2). A failed write keeps its chat dirty and is retried, never dropped. The new process hydrates every row before its first `getUpdates`. An update that was still in flight past the 3 s budget, or held back by an unwritten change, is unconfirmed, so it is redelivered. If its effect reached the flushed row, `takenUpTo` drops it as `seen`. Otherwise it is applied once. | Messages written DURING the outage come as the backlog. A text or file dated after the collection opened, while it was holding, is that collection's (`intakeTakes`). A press on its buttons works. The 2 h / 24 h clocks are the seller's own actions, so the downtime counts as idle. |
 | **Mid-collection, crash** (not a deploy) | Everything except the changes of the last second or so (the write's quiet window). Telegram redelivers up to 20 handled updates (grammy confirms a batch only on the next `getUpdates`). An update whose effect is in the row is `seen` and dropped. An update whose effect was lost is applied once. A file is saved under `uuidv5(noteId:messageId)`, so its re-run finds the attachment and mints no second one (durability-1, regression-6). | Nothing doubled: no text twice in the material, no file counted twice, no «ikkinchi invoys» question about the same file. A press redelivered acts only on its own collection: a cancel cannot end a newer collection, and a restart that would open the collection already live resumes it (durability-2). |
 | **Mid-reading** (after «Bo‘ldi», before the table) | The job is on `calc.intake-read`. Its handler runs under ONE wall clock that ends before pg-boss's 300 s expiry: files ≤ 30 s, model ≤ 150 s, delivery ≤ 70 s (performance-1). A killed process leaves the job `active` until the expiry, and pg-boss maintenance (every 120 s) fails it and re-delivers. The new process finds the collection (the job waits for this process's hydrate first, and reads memory only — durability-9), the token still matches, and the model is called AGAIN. That is a second paid call: Anthropic charges both, but the killed call wrote no `ai_calc_passes` row (the bill is recorded only after the model answers), so the ledger and the day's soft budget count ONE (durability-20). | «⏳ AI o‘qiyapti…» lasts longer: up to ~7 minutes after a deploy (expiry + one maintenance + the read), and then the table arrives. A second «Bo‘ldi» in that window says «Tahlil davom etmoqda». If the job dies for good, the sweep sees its pg-boss state, releases the token and says «Tahlil qilib bo‘lmadi …» (the 2 h reminder is the backstop). |
 | **Mid-reading, after the reply was stored** | The job stores the reply DURABLY (a flush of THIS chat that must succeed) before it sends. If the store is sealed or the write failed, it does not send: it throws, and the redelivery sends. A redelivery re-sends the stored reply and never calls the model or re-decides. A Telegram flood wait longer than the brief retry is not a failure: the job enqueues a delivery-only follow-up at `retry_after + 1 s` and returns, so no retry is spent inside one flood wait (durability-16). | The table arrives once, possibly late. Never «Tahlil qilib bo‘lmadi» about a reading that worked. The one exception: a kill in the milliseconds between Telegram's 200 and the clearing of `pendingReply` sends it twice. Telegram offers no idempotent send; stated. |
@@ -1818,8 +1820,8 @@ Also in K13, stubs that one package fills and another calls (K: inert bodies):
     («an unwritten change belongs to an update already confirmed — lost») and returned as
     `StopOutcome.unwrittenLost`, never claimed as a confirm: an explicit lower offset cannot
     un-confirm anything, and sent while grammy's poll is open it only ends that poll with a
-    409 and skips the stop (K-review spec-2). That is why P1's collector writes a message's
-    change before its handler returns (§6.2.2). K passes nothing, so the stop's confirm is the
+    409 and skips the stop (K-review spec-2). That is why P1 makes grammy's `getUpdates` await the
+    store's flush (§6.2.2, the lead's ruling L1). K passes nothing, so the stop's confirm is the
     one that shipped and bot-lifecycle.test.ts's six calls (and bot.ts:131's) compile
     unchanged. P1's call: `stopTelegramBot({ bot, flush: async () => { await
     Promise.allSettled([flushWaitWrites(), flushIntakeWrites()]); }, drain: membershipSettled,
@@ -2041,16 +2043,24 @@ Also in K13, stubs that one package fills and another calls (K: inert bodies):
      boolean speaks for that chat only (performance-10). `pressAnalyse`, `saveAmendment` and
      both jobs pass their chat. `flushIntakeWrites()` with no chat (the stop, tests) writes
      every dirty chat. Either returns `false` when the store is sealed or a write failed.
-   - **A collection-changing MESSAGE is written before its handler returns** (K-review
-     spec-2): the collector's text, file, contact and reply paths end with `await
-     flushIntakeWrites(chatId)` whenever they changed the collection. grammy confirms a batch
-     with the `getUpdates` that follows it, at once, so a change left to the 1 s timer belongs
-     to an update Telegram has already dropped, and the stop's `unwritten` can no longer hold
-     it back (K15). The cost is THIS chat's one UPSERT per such message, awaited where the
-     handler already awaits its Telegram reply (#706 allows a chat's own write, as for
-     presses); the debounce still coalesces everything off the poller (the jobs, the sweep)
-     and repeated changes inside one handler. A `false` (the database down) is logged once and
-     the timer retries; the message is answered as before.
+   - **Every dirty chat is written before grammy confirms its batch** (K-review spec-2, the
+     lead's ruling L1, 2026-10-28). grammy confirms a batch with the `getUpdates` that follows
+     it, at once, so a change left to the 1 s timer would belong to an update Telegram has
+     already dropped, and the stop's `unwritten` could no longer hold it back (K15). P1
+     installs ONE grammy API transformer in `startTelegramBot`, beside `setDurableIntakes(true)`
+     (`bot.api.config.use`): for `method === 'getUpdates'` it first awaits
+     `flushIntakeWrites()` (every dirty chat), bounded by `INTAKE_CONFIRM_FLUSH_MS = 2_000`,
+     then calls `prev`. A flush that answers `false` or runs out of time is logged once per
+     process and the call goes ahead: memory keeps the chat dirty, the timer retries, and a
+     stop that comes first logs the change `unwrittenLost` — blocking the poll would stop the
+     whole bot (the cabinet, the staff side) for a database blip. Every other method passes
+     straight through. The K-fix agent's draft («the collector's message paths end with `await
+     flushIntakeWrites(chatId)`») is REFUSED: it is one UPSERT per message beside every reply
+     (twenty for a 20-message forward, against performance-2's three), it holds only on the
+     paths that remember to call it, and the transformer covers every writer of the batch —
+     the collector, a press, a contact, a reply — with one write per batch. The stop's own
+     confirm `getUpdates` goes through the same transformer (lifecycle.ts), which is harmless:
+     the stop has already flushed and sealed, so the flush answers at once.
    - **A failed write keeps the chat DIRTY** and is retried by the next timer (5 s), never
      dropped (durability-10). It logs once per process (the waits idiom); memory still
      answers. The first draft copied the waits idiom's «log once and forget», under which a
@@ -2073,8 +2083,8 @@ Also in K13, stubs that one package fills and another calls (K: inert bodies):
    ```
    - `state` = `JSON.stringify(state)` minus `expires`.
    - A state over 2 MB logs `[calc-intake] large collection` with its size and is written
-     anyway. §17 measures the worst case; it is written once per collection-changing message
-     (§6.2.2) and otherwise, with the debounce, at most once a second.
+     anyway. §17 measures the worst case; it is written once per batch Telegram hands
+     over (§6.2.2, ruling L1) and otherwise, with the debounce, at most once a second.
 5. **Readiness** (#472): `intakeTableReady()` is `to_regclass('public.telegram_calc_intakes')`,
    caching TRUE only (`redelivery-ready.ts`'s shape). Code ahead of the migration is today's
    memory-only store.
@@ -2193,7 +2203,7 @@ Also in K13, stubs that one package fills and another calls (K: inert bodies):
     with what was confirmed. K15's lifecycle seam then confirms only through the
     update before `n` (durability-10, regression-25) while `n`'s batch is still being handled;
     an `n` of an ended batch is already confirmed and comes back as `unwrittenLost`, logged
-    (K-review spec-2) — rule 2's write-before-return is what keeps that rare. The flush's
+    (K-review spec-2) — rule 2's flush-before-confirm is what keeps that rare. The flush's
     budget is the rest of the 5 s (K15).
 12. **`loadIntake(chatId)`**: `await intakesHydrated(INTAKE_HYDRATE_WAIT_MS)` (10 s); not ready
     → throw `IntakesNotReady`; ready → memory, else null. NEVER the table (performance-7: a
@@ -2326,8 +2336,8 @@ Also in K13, stubs that one package fills and another calls (K: inert bodies):
   **Red proof:** store K's pre-K4 shape → the assertion finds the Buffer.
 - (c) twenty updates, each followed by an AWAITED fake Telegram call of ~50 ms (the poller's
   real cadence, not one tick) → at most 3 statements (`__intakeWriteCount`). This is the
-  STORE's debounce, which still coalesces every change off the poller; the collector's
-  message paths flush their own chat per message (§6.2.2, K-review spec-2).
+  STORE's debounce; the flush-before-confirm adds one write per BATCH (§6.2.2, the lead's
+  ruling L1), and a test that drives twenty updates through one fake batch counts 1.
   **Red proof:** schedule a write per update (the first draft's chain) → 20.
 - (d) `endIntake` → the row is gone after the flush.
 - (e) the readiness probe answering false → memory works, no write, no throw.
@@ -2427,10 +2437,13 @@ blocks:
   (idle) proves nothing here — grammy has confirmed that update already — and K pins the idle
   branch as `unwrittenLost` instead (calc-r3-kernel.test.ts, K-review spec-2).
   **Red proof:** pass `unwritten: () => null` → the update is confirmed and the text is lost.
-- «a collection-changing message is written before its handler returns» (§6.2.2): a text into
-  a collection, the handler awaited → the row holds it with no timer having fired.
-  **Red proof:** drop the `await flushIntakeWrites(chatId)` → the row is still the old one
-  when the handler returns.
+- «every dirty chat is written before grammy confirms its batch» (§6.2.2, ruling L1): a text
+  into a collection, then the bot's next `getUpdates` through the installed transformer (a fake
+  `prev`) → the row holds the text BEFORE `prev` is called, with no timer having fired; a flush
+  made to hang → `prev` is called after `INTAKE_CONFIRM_FLUSH_MS` and the chat stays dirty; a
+  flush that fails → `prev` is still called and the failure is logged once.
+  **Red proof:** call `prev` before the flush in the transformer → the row is still the old one
+  when `prev` runs.
 - «a failed hydrate never starts polling early» (regression-20, durability-11):
   `hydrateWaits` rejects, `hydrateIntakes` resolves 200 ms later → polling starts after BOTH,
   and the rejection is logged, not unhandled.
@@ -5103,8 +5116,9 @@ says what was built for each. (re-check laws-print-23)
      (the rest of the 5 s, K15); a worst case over 2 s is reported to the owner with the
      number, and the unwritten-update rule is what keeps it safe (durability-10);
    - the write count over a real 20-message forward burst with the bot's own awaited replies
-     (one per collection-changing message since the write-before-return rule, §6.2.2 —
-     K-review spec-2; measured: each write's time, set against the reply it sits beside);
+     (one per BATCH since the flush-before-confirm rule, §6.2.2 ruling L1 — measured: the
+     batches Telegram handed over, the writes, and each write's time, set against the poll it
+     delays);
    - hydrate time with 50 rows;
    - `SELECT note_id, count(*) FROM calc_requests WHERE note_id IS NOT NULL AND supersedes_request_id IS NULL GROUP BY 1 HAVING count(*) > 1`
      on the shaped copy — ROOT duplicates only (a correction shares its parent's note id by
