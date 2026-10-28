@@ -42,7 +42,10 @@ the map is where to look. **Both travel together**: they are committed at handof
   index and the next `when` (#1040). The text below calls it **`0137_ai_spend`** for
   readability; the real number is what the tail says. It must run AFTER R3's
   `calc_intake_durable` migration (it re-creates a CHECK that migration made). The ledger
-  must then read the journal's length.
+  must then read the journal's length. *(2026-10-28: round 4/8 shipped as the other
+  session's Uch band and took **0136** `lead_client_many`; round 3 is now **0137**
+  `calc_intake_durable` (`when` …116, `docs/SAKKIZ-R3.md` §13) — so R5's migration is
+  **0138** at the earliest, `when` …117 or later.)*
 - DECISIONS numbers are `#R5-1…`; the lead renumbers them at the merge after fetching the
   tail.
 - **Naming in this file.** «R1»…«R10» and «round N» are the Sakkiz band rounds (R1 =
