@@ -29,6 +29,16 @@ import {
 import { qrlessRowSql } from '../labels/qrless-sql';
 import { codeIdentity } from '../labels/code-identity';
 import { aboardFilter } from './unload';
+import { claimArrivalNotice } from '../notices/arrival';
+import {
+  claimedLandingsOf,
+  claimFromShelfTx,
+  closeRoadOwedTx,
+  owedOnTruck,
+  planRoadReady,
+  type RoadMissed,
+  type RoadOn,
+} from '../planning/road';
 
 export class ScanError extends Error {
   /**
@@ -71,6 +81,11 @@ export interface ScanAck {
    * of a box riding to Tashkent that the manifest never heard of (#221).
    */
   unplanned?: string[];
+  /**
+   * `road_not_landed` only: the truck the carton is still on (docs/YOLDAGI-YUK.md
+   * §7) — the loader is told to land it on that truck's unload screen first.
+   */
+  inboundCode?: string;
 }
 
 /**
@@ -87,9 +102,11 @@ export async function ingestLoadScans(
   if (!ctx.actorId) throw new ScanError('unauthenticated');
   const actorId = ctx.actorId;
   const acks: ScanAck[] = [];
+  // On the pool, before any input's transaction (#714).
+  const road = await planRoadReady();
 
   for (const input of inputs) {
-    const ack = await db.transaction((tx) => loadScanInTx(tx, input, actorId, {}));
+    const ack = await db.transaction((tx) => loadScanInTx(tx, input, actorId, {}, road));
     acks.push(ack);
   }
   return acks;
@@ -99,13 +116,16 @@ export async function ingestLoadScans(
  * One load input, inside the caller's transaction — the body the phone's
  * sync and the office's count door (0112) share, so a counted carton gets
  * exactly the movement, scan event, costing trail and alarms a scanned one
- * does. `opts` is the door's; the phone passes `{}`.
+ * does. `opts` is the door's; the phone passes `{}`. `road` is the probe's
+ * answer, asked before the transaction: a phone scan of a carton the plan
+ * still owes from the road is claimed, not «not on plan» (docs/YOLDAGI-YUK.md §7).
  */
 export async function loadScanInTx(
   tx: Tx,
   input: LoadScanInput,
   actorId: string,
   opts: DoorOpts,
+  road: RoadOn,
 ): Promise<ScanAck> {
   // A server door's reason on a scan that did not come through a server
   // door is a forgery (0112): a `count_load` from a phone's outbox would
@@ -220,6 +240,48 @@ export async function loadScanInTx(
    */
   const onThisBatch = (b: (typeof members)[number]) =>
     b.currentBatchId === input.batchId && (b.status === 'planned' || b.status === 'loading');
+
+  // Yo'ldagi yuk (docs/YOLDAGI-YUK.md §7). The phone's scan of ONE loose
+  // carton of a lot this truck's plan still owes from the road:
+  //  - free on the origin's shelf (landed by any door, or here all along) —
+  //    claimed onto this truck and loaded as plan cargo, no red confirm;
+  //  - still on the inbound truck — refused in words with that truck's code:
+  //    at Horgos cartons go from truck to truck, and the landing is what
+  //    reserves (3a). «Not on plan» there would invite «load anyway» and a
+  //    raw `box_in_transit`.
+  // The count door claims for itself before it computes; never here.
+  if (hasPlan && road.on && !crateId && !opts.door && members.length === 1 && members[0]!.crateId === null) {
+    const box = members[0]!;
+    if (!onThisBatch(box) && looseAtOrigin(box)) {
+      const claimed = await claimFromShelfTx(tx, road, {
+        batchId: input.batchId,
+        warehouseId: batch.originWarehouseId,
+        lotId: box.lotId,
+        cartons: [{ id: box.id, status: box.status, seq: box.seqInLot }],
+        actorId,
+      });
+      if (claimed > 0) {
+        box.status = 'planned';
+        box.currentBatchId = input.batchId;
+      }
+    } else if (box.status === 'in_transit' && box.currentBatchId) {
+      const inbound = await tx.query.batches.findFirst({ where: eq(batches.id, box.currentBatchId) });
+      if (
+        inbound &&
+        inbound.destWarehouseId === batch.originWarehouseId &&
+        ['in_transit', 'arrived'].includes(inbound.status) &&
+        (await owedOnTruck(tx, road, input.batchId, box.lotId)) > 0
+      ) {
+        return {
+          clientEventUuid: input.clientEventUuid,
+          result: 'rejected',
+          detail: 'road_not_landed',
+          scannedCode: input.code,
+          inboundCode: inbound.code,
+        };
+      }
+    }
+  }
 
   /**
    * A crate is judged on the boxes of it that belong to this truck.
@@ -516,6 +578,8 @@ export async function finishLoading(
 ) {
   if (!ctx.actorId) throw new ScanError('unauthenticated');
   const actorId = ctx.actorId;
+  // On the pool, before the transaction (#714).
+  const road = await planRoadReady();
   return db.transaction(async (tx) => {
     // One loading change at a time per truck (0112): a count press must
     // never read a truck this call is half-way through changing.
@@ -529,6 +593,11 @@ export async function finishLoading(
         throw new ScanError('qrless_uncounted', { lots: uncounted.map((lot) => lot.label) });
       }
     }
+    // Yo'ldagi yuk (4a): the road part that has not come is short — moved
+    // into «missed» BEFORE the cartons are read, so a landing that commits
+    // after this finds nothing owed, and one that committed before left a
+    // planned carton that is short-loaded below like any other.
+    const roadMissed = await closeRoadOwedTx(tx, road, batchId);
 
     const memberBoxes = await tx
       .select()
@@ -559,6 +628,7 @@ export async function finishLoading(
           actorId,
         })),
       );
+      if (status === 'ready_for_pickup') await reannounceGivenBack(tx, road, batchId, home, actorId);
     }
     // Cartons that went on beyond the plan AND are still on — distinct, and
     // off the truck's real cargo rather than its scan history (decision 25):
@@ -590,6 +660,7 @@ export async function finishLoading(
         shortLoaded: shortLoaded.length,
         addedOnSpot,
         ...(opts.dropQrless ? { droppedQrless: true } : {}),
+        ...(roadMissed.length ? { roadMissed: missedTotal(roadMissed) } : {}),
       },
     });
     const summary = {
@@ -597,6 +668,7 @@ export async function finishLoading(
       shortLoaded: shortLoaded.length,
       shortLoadedCodes: shortLoaded.map((b) => b.shortCode),
       addedOnSpot,
+      roadMissed,
     };
     return { ...summary, batchCode: batch.code, shortLoadedIds: shortLoaded.map((b) => b.id) };
   }).then(async (result) => {
@@ -612,8 +684,41 @@ export async function finishLoading(
       loaded: result.loaded,
       shortLoaded: result.shortLoaded,
       shortLoadedCodes: result.shortLoadedCodes,
+      roadMissed: missedTotal(result.roadMissed),
     };
   });
+}
+
+const missedTotal = (rows: readonly RoadMissed[]) => rows.reduce((sum, row) => sum + row.missed, 0);
+
+/**
+ * A road claim reserved its carton onward in the landing's own transaction,
+ * so at a collection warehouse it was never «ready» and the client was never
+ * told (the arrival notice counts ready cartons). Given back to the shelf it
+ * IS ready here — the notice of the truck it landed off is claimed or
+ * re-armed (docs/YOLDAGI-YUK.md §8, objection counts#7).
+ */
+export async function reannounceGivenBack(
+  tx: Tx,
+  road: RoadOn,
+  batchId: string,
+  given: readonly { id: string }[],
+  actorId: string,
+): Promise<void> {
+  const landings = await claimedLandingsOf(
+    tx,
+    road,
+    batchId,
+    given.map((b) => b.id),
+  );
+  const seen = new Set<string>();
+  for (const landing of landings) {
+    if (!landing.clientId) continue;
+    const key = `${landing.clientId}:${landing.inboundBatchId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    await claimArrivalNotice(tx, landing.clientId, landing.inboundBatchId, { actorId });
+  }
 }
 
 /**
@@ -690,6 +795,7 @@ async function notifyLoadSummary(
     shortLoadedCodes: string[];
     shortLoadedIds: string[];
     addedOnSpot: number;
+    roadMissed: RoadMissed[];
   },
   actorId: string | null | undefined,
 ): Promise<void> {
@@ -699,6 +805,7 @@ async function notifyLoadSummary(
   const left = result.shortLoaded
     ? await shortLoadedLine(batchId, result.shortLoadedIds, result.shortLoadedCodes)
     : '';
+  const roadLeft = result.roadMissed.length ? await roadMissedLine(result.roadMissed) : '';
   await notifyStaffTelegram({
     userIds,
     type: 'LoadFinished',
@@ -707,9 +814,29 @@ async function notifyLoadSummary(
       `🚚 ${result.batchCode} — yuklash tugadi\n` +
       `Yuklandi: ${result.loaded} karobka` +
       (result.shortLoaded ? `\n↩️ Qolib ketdi: ${result.shortLoaded} — ${left}` : '') +
+      (roadLeft ? `\n🚚 Yo‘ldan kelmadi: ${missedTotal(result.roadMissed)} — ${roadLeft}` : '') +
       (result.addedOnSpot ? `\n⚠️ Qo‘shib yuklandi: ${result.addedOnSpot}` : '') +
       `\n${appUrl}/batches/${batchId}`,
   });
+}
+
+/** «Yo'ldan kelmadi» as one line: each lot's label and how many of it did not come. After the commit, on the pool. */
+async function roadMissedLine(rows: readonly RoadMissed[]): Promise<string> {
+  const labels = await db
+    .select({
+      lotId: receiptLots.id,
+      letter: receiptLots.letter,
+      marking: receipts.unclaimedMarking,
+      clientCode: clients.clientCode,
+    })
+    .from(receiptLots)
+    .innerJoin(receipts, eq(receipts.id, receiptLots.receiptId))
+    .leftJoin(clients, eq(clients.id, receipts.clientId))
+    .where(inArray(receiptLots.id, rows.map((row) => row.lotId)));
+  const byLot = new Map(
+    labels.map((l) => [l.lotId, `${codeIdentity(l.marking, l.clientCode).main}-${l.letter ?? '?'}`]),
+  );
+  return rows.map((row) => `${byLot.get(row.lotId) ?? '?'} ×${row.missed}`).join(', ');
 }
 
 /**
@@ -757,6 +884,7 @@ export async function shortLoadedLine(batchId: string, ids: string[], codes: str
 export async function departBatch(batchId: string, ctx: AuditContext) {
   if (!ctx.actorId) throw new ScanError('unauthenticated');
   const actorId = ctx.actorId;
+  const road = await planRoadReady();
   return db.transaction(async (tx) => {
     // One loading change at a time per truck (0112): a count press must
     // never read a truck this call is half-way through changing.
@@ -765,6 +893,10 @@ export async function departBatch(batchId: string, ctx: AuditContext) {
     if (!batch) throw new ScanError('batch_not_found');
     if (!['forming', 'loading'].includes(batch.status)) throw new ScanError('batch_not_loading');
 
+    // «Yuklash tugadi» is the one door that ends a loading and says what did
+    // not come from the road (4a): a truck still owed road cartons is
+    // finished first, exactly as one holding planned cartons is.
+    if ((await owedOnTruck(tx, road, batchId)) > 0) throw new ScanError('road_owed_open');
     const memberBoxes = await tx
       .select()
       .from(boxes)

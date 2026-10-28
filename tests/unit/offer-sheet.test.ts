@@ -17,6 +17,8 @@ import type { UnitWords } from '@/modules/wms/calc/units';
  */
 const BUILDER = readFileSync('src/modules/wms/calc/offer-pdf.ts', 'utf8');
 const ROUTE = readFileSync('src/app/api/calc/[versionId]/offer.pdf/route.ts', 'utf8');
+// The by-offer-id route and the seller's Telegram copy share one assembler.
+const SHEET_FILE = readFileSync('src/modules/wms/calc/offer-sheet-file.ts', 'utf8');
 const code = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
 
 describe('the goods table carries no money', () => {
@@ -54,8 +56,11 @@ describe('the goods table carries no money', () => {
     expect(offerQtyText({ quantity: null, unit: null, measure: null }, words)).toBe('');
   });
 
-  it('the route feeds the sheet from the request items, never from the sealed breakdown', () => {
-    const route = code(ROUTE);
+  it.each([
+    ['the versionId route', ROUTE],
+    ['the shared assembler (by-id route + Telegram copy)', SHEET_FILE],
+  ])('%s feeds the sheet from the request items, never from the sealed breakdown', (_name, source) => {
+    const route = code(source);
     expect(route).toContain('calcRequestItems');
     expect(route).not.toContain('breakdown');
     expect(route).not.toMatch(/bazaUsd|dutyPct|customsUsd/);

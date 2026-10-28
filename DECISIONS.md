@@ -4647,3 +4647,264 @@ the chat's 🧮 and both thread actions; a closed lead's OWN chat still drew �
 refusal — not drawn, and refused before the model; and moving the note into the transaction widened the
 double-press window, so the second press met the note's key as a raw 23505 — mapped to `note_taken`
 (`violatedUnique`, beside `violatedCheck`), proven by two presses parked on a held lead lock.
+
+## Narx taklifi PDF bilan — the seller's offer arrives as one message (2026-10-27; NO migration, ledger 137; numbered past main's #1478 and PR #127's #1455-#1468)
+
+1479. **The seller's offer is ONE Telegram message: the sheet, with the offer text as its caption** (his
+2026-10-27 «narx taklifi text bolib sotuvchi telegramiga kelyabti pdf ham birga kelsin telegramga shu
+telegramni ozini jonatish imkoni uchun»). A caption travels with its file, so a forward carries both — two
+messages (text, then the sheet) would make the seller forward twice, which is the friction he named. The PDF
+is built in the DRAIN at send time, not stored: `recordOffer` and `releaseOffer` put only `offerId` on the
+row (`notifyStaffTelegram`'s `extra`), and `deliverWithSheet` (notifications/service.ts) reaches the builder
+by dynamic import, the boss.ts crossing — a PDF in the queue's jsonb is bytes in a table read every minute.
+ONE assembler, `wms/calc/offer-sheet-file.ts`, for the by-offer-id route and the drain (round 112's «one
+paper», one level up); the route keeps its door, the drain sends only to the seller who made the offer. The
+sheet is an addition, never the delivery (round C's photo rule): a 400 about the FILE sends the words alone;
+any other failure is returned as it is, so a 429 still pauses the drain and a 5xx retries the row WITH the
+sheet; a caption over 1024 (a long client name) goes as the text and then the sheet in reply to it. A row
+queued before this round has no `offerId` and goes as the text it always was. The released clause rides the
+assembler's own fetch, so a pending below-floor promise has no sheet by URL or by Telegram. The file name is
+ASCII, in the offer's language, with the deal code («GSR-taklif-B-00123.pdf») — a phone's Downloads and every
+Telegram client keep it whole. The route's sheet now carries the same name. Red-proven ×6 by string edit (the
+id dropped at each of the two doors, the drain branch, the 400 road, the 429 road, the released clause).
+
+1480. **«Filelar telefonda skachat bo'lmayabti» was MEASURED before anything changed, and the code was not the
+cause on the one phone this container can be.** A phone-shaped Chromium (Pixel 7, touch, the service worker
+installed and controlling the page) downloaded the Ostatka and the client book in under a second through the
+worker's NetworkFirst `/api/*` route. So the difference is the phone's: an iPhone home-screen app (standalone
+WebKit is known to drop attachment downloads and to open a PDF with no way back), Telegram's in-app browser
+(the ↗️ Ochish buttons open the system there), or a specific Android. Asked of him with options — which file,
+which phone, opened from where, what happens — rather than shipping a guess (#419's rule: ask for the
+screenshot first; #476's: the working case is the control group).
+
+## Yuklab olish havolasi — a file opened from Telegram's in-app browser downloads (2026-10-27; NO migration, ledger 137)
+
+1481. **His answer named the cause: «download unsuccessful … 3 c» = the system opened from a Telegram «↗️ Ochish»
+button, i.e. Telegram's in-app browser, which does not download a file itself but hands its ADDRESS to the
+phone's download manager — and the manager fetches it as a stranger, with no `gsr_session` cookie.** Every
+file route answered 401/403 and the phone said «Download unsuccessful». #1480's measurement was right and could
+not see it: a Chromium tab downloads in-page with its cookie. So a file press now asks the server for a
+**download link** first (`POST /api/dl`, cookie required) and follows THAT: `platform/auth/download-link.ts`
+signs `{user, path, deadline}` with a key derived from `SESSION_SECRET` (10 minutes — Telegram's «Download
+file?» sheet and a slow tap, short enough not to matter if one leaks), and `GET /api/dl/<token>` serves it. A
+link is a bearer for ONE `/api/` path, never a page and never a session; it cannot name `/api/dl` itself, and
+`linkablePath` checks the path AFTER the URL parser has resolved `..`. No key — one under eight characters, or a value the
+repository itself publishes (`.env.example`'s line copied as it stands, the file driver's `dev-secret`), is a
+key anyone who read this code holds — no links: every function answers null and the page follows the plain address, which is
+what every press did before this — a deploy whose server has no `SESSION_SECRET` loses nothing it had.
+
+1482. **The link route asks the real file route, AS the link's person, instead of re-implementing ~40 doors.**
+`/api/dl/<token>` fetches `http://127.0.0.1:${PORT}<path>` with two headers: the delegated user and the
+process's own internal key (another HMAC of the same secret, never configured, never sent outside the
+process). `getSessionUser` honours the delegated user ONLY beside that key, re-reads the person and asks
+`canLogIn` — so a link minted before a deactivation opens nothing, and every file route keeps its own door
+exactly as for that person's browser (the act's warehouse check, the attachment's audience, the report's
+money sight). A world request carrying the user header without the key is a stranger's (tested). One
+listener, not a component per link (`components/download-links.tsx`, capture phase, the chat bubble's
+delegation reason — hundreds of links in server components); it leaves alone a modified click, another origin,
+a link already signed, and a desktop new-tab link under a mouse (a desktop browser carries its cookie, and a
+blank tab pointed at a download is a tab some browsers leave standing). A new tab on a phone is opened INSIDE
+the press and pointed at the link when it arrives, or the popup rule refuses it after the fetch. The print
+sheet's no-share fallback asks the same `signedDownloadUrl`. The service worker never caches `/api/dl/`
+(NetworkOnly, beside the version route). `POST /api/dl` refuses anything but a JSON body (415) — the session
+cookie is SameSite=Lax already; the header makes «only this app's page mints a link» a second fence. Red-proven
+×5 by string edit (the session's delegation, its key check, its login check, the deadline, the listener's
+mount). STATED: a link copied out of the phone works for its ten minutes for whoever holds it — the price of
+a download manager that sends no cookie; the immediate workaround on a phone that has not deployed yet is
+Telegram → Settings → Chat Settings → «In-App Browser» off (Android), so ↗️ opens the system browser.
+
+## Yo'ldagi yuk — a plan takes cargo still on the road to its warehouse (2026-10-27; migration 0137 `plan_road`, ledger 138; spec `docs/YOLDAGI-YUK.md`)
+
+1483. **The road part is a side table of three numbers, and the one that matters most is the one a reader
+would have thrown away** (his «horgos planda yoldagi yuklarni ham qoshish degan check bolsin», answers 1a 2a
+3a 4a 5a). `plan_line_road` per line: `road_box_count` (the promise, frozen at submit), `road_owed` (still to
+be reserved onto the truck, 0 until the approval) and `road_missed` (what the truck's loading ended without);
+`plan_road_claims` names each carton a claim took and the truck it landed off. A side table and never a
+column (#1381). Owed is DURABLE and not «plan minus reserved»: that difference is also true after a person's
+give-back (`short_loaded`, a count dialled down), and a landing hook reading it would refill what somebody
+sent back. Missed is never erased: zeroed instead, the count door's plan number jumped back to the whole
+plan after «yuklash tugadi» — the truck is still `loading` — and «Hammasi» grew the lot by the cartons still
+on the road, which then landed as duplicates (the design judge's counts#0, locks#2). ONE writer
+(`wms/planning/road.ts`); every other file asks it — fenced by `road-wire.test.ts`, which refuses the tables'
+names anywhere else.
+
+1484. **A pending plan reserves nothing on the road, as it reserves nothing on the shelf; the approval is
+where the road is checked, under one lock per origin.** v1 netted pending plans' road parts out of the free
+road: an abandoned «o'zgartiring» held a lot's road cargo for ever, and a pending promise kept eating the
+road after its cartons landed (judge counts#6, editor#3/#4, deploy#7). Now `road.free` = road cartons −
+approved/loading plans' owed. The approval reserves the shelf part as today, owes the rest, and refuses
+`insufficient_stock` when the owed part exceeds what the road still holds. `roadLock(W)` serialises the
+approval with the landing hook ONLY: without it a landing that saw the plan pending claimed nothing while
+the approval, unable to see the uncommitted carton, owed it — a carton standing here with the line owing it
+for good (judge locks#1). The approval takes the lock before any carton read; the hook takes it last,
+holding only cartons whose committed version no shelf predicate matches — so neither waits on the other.
+The count door and the phone's claim do not take it: the plan line's row is their claim.
+
+1485. **The landing reserves in its own transaction, at every door that lands a carton, and a carton a truck
+already landed is never landed again by it.** 3a: the hook (`claimLandedForRoadTx`) runs in
+`landUnloadInput` (the phone, «Hammasini qabul qilish», the office count — never `count_over`, whose
+cartons came from the inbound origin or were minted and `undoOver` must find on the shelf), in
+`found_here`, and in both stocktake doors (a stocktake that landed a road carton unclaimed left owed over
+cargo in the yard — judge locks#3). The claim is the approval's exact shape (`planned`, the truck, one
+`plan_approved` movement from = to = the shelf), so `shelfBefore` and every give-back read it. THE
+BLOCKER the judge found was general, not the round's: a phone's offline scan of a carton the bulk accept
+had already landed came back with a new event id, missed the «already landed» check (the carton was no
+longer in the landed status) and took the ROGUE branch — pulled off the onward truck, flagged
+`undocumented_transfer`, alarm and re-split. `landUnloadInput` now treats a member with a landing movement
+off THIS truck into its destination as done, whatever it has become since (judge locks#0).
+
+1486. **Cargo already here is claimed when it is loaded; cargo still on the inbound truck is refused in
+words.** A free carton of a lot the truck still owes — landed by a door the hook never saw, or here all
+along — is reserved by the count door before it computes and by the phone's scan of it (no red confirm, no
+`added_on_spot`). A scan of a carton still `in_transit` to the origin answers `road_not_landed` with the
+inbound truck's code («Bu karobka hali YW-123 mashinasida — avval tushirishda qabul qiling»), never
+`not_on_plan`, whose «load anyway» ended in a raw `box_in_transit` (judge locks#4, deploy#6). The sync body
+lands before it loads (one phone works both doors at Horgos and Kashgar), and the loading snapshot ships
+`roadOwed` (printed above the list) and `roadCodes`, so the phone queues a road carton without its local
+confirm.
+
+1487. **«Yuklash tugadi» is the one door that ends a loading without the road part, and it says so to
+everybody, the presser included.** `finishLoading` and `cancelBatch` move owed into missed first thing
+after the truck's lock, before reading the cartons; `departBatch` refuses `road_owed_open` beside
+`finish_loading_first` (v1 let «Jo'natish» depart with nothing said — judge deploy#0). The finish sentence
+the presser sees carries «🚚 N yo'ldan kelmadi», the Telegram load summary names the lots, the audit row
+records it, and the batch register's ⤵️ adds Σ `road_missed` (4a: short «as a short-loaded carton is
+today»). A claimed carton given back `ready_for_pickup` re-claims (or re-arms) the arrival notice of the
+truck it landed off: reserved onward in the landing's own transaction it was never «ready» and never
+announced at a collection warehouse (judge counts#7).
+
+1488. **The agent's verdict is a claim.** Two presses of «Tasdiqlash» both read «no verdict» and the second
+update waited, then overwrote — two trucks for one plan. Only the shelf's `insufficient_stock` happened to
+stop it, and a road line reserves less than its count by design. `UPDATE … WHERE agent_verdict IS NULL
+RETURNING`, zero rows → `verdict_already_recorded` (judge locks#5), proven with two concurrent approvals.
+
+1489. **The readers.** The editor draws the box only where 0137 is (`roadOn`); its road half comes from
+`roadStock` in the shelf list's own row shape, merged into ONE `lots` (Σ, the gauge, the check filter and
+the prune walk one array — judge editor#1), in its own catch (`roadFailed` — the shelf list still arrives,
+and a road pick is never pruned against an answer whose road half failed). ✓ keeps meaning the SHELF; «🚚»
+adds the road part on purpose, so ticking the box never silently adds a road part to a lot taken whole as
+before (editor#2). Unticking clamps the picks, said in a line, and is the person's act only — a resubmit
+reopens TICKED when its version has a road part (editor#0: the sent-back plan lost its road part without a
+word). The plan view prints «N yo'ldan · M kutilmoqda · K keldi · J kelmadi»; the board and the batch card
+say «🚚 +N yo'ldan» and never «rejasiz» / «hammasi yuklandi» while anything is owed (counts#3); the agent
+sheet prints a line with a road part as two rows, the road part under «В пути / On the road: <trucks>»
+(counts#5 — filed whole under an arrival it was a false sentence on a customs document); an annul of a lot
+an approved plan still owes is refused. `gsr_ai_reader` is granted nothing on the new tables (the 0123/0135
+precedent); the AI card gained one trap line. The probe answers a branded `RoadOn` only `planRoadReady()`
+mints, asked on the pool before every transaction (#714) and REQUIRED by every body that touches the tables
+— a door that forgot would not compile. Proven: 13 integration + 13 unit + 5 e2e; red-proven ×14 by string
+edit.
+
+1490. **Stated, not built.** Crates on the road are not offered; a truck `arrived` at the gate counts as on
+the road (`/arrivals`' rule, not the /stock strip's); an inbound truck rerouted away leaves the line missed
+at «yuklash tugadi»; a landing in the same instant as a submit AND an approval can miss the hook's unlocked
+pre-check (the loading-time claim heals it); factory trips are shown, never planned (2a).
+
+## Yo'ldagi yuk — the round reviewed as built (2026-10-27; NO migration of its own — ledger 138 with 0137)
+
+Four lenses read the BUILT round with refuters behind them: nine findings, seven verified real, two left
+unverified when their refuters hit a session limit and judged by hand here (both held — numbers#5 and
+deploy#8, the second reproduced by its reviewer on a throwaway database). All nine fixed, eight red-proven by
+string edit, the two editor ones by a browser.
+
+1491. **A truck never claims its own plan cargo as road cargo** (locks#0, numbers#3). `removeLoadedCode`
+gives a carton back to the shelf and touches neither road table — right, a removal is a person's act — but
+the claim then took that carton AGAIN: a road carton spent a second unit of owed (the claim row only upserts,
+so «keldi» stayed 1), a SHELF carton the approval had reserved was claimed as road, and the cartons still on
+the road found nothing owed when they landed — free on the shelf, the truck short, «kelmadi 0». One sentence,
+`claimableForSql(box, truck)` = the truck's plan never wrote `plan_approved` for it (the approval, every
+claim and the count door's re-reservation all write it with the truck's ref), asked by `claimInto` per LINE
+(another truck may still claim it), by the snapshot's shelf codes and by the count panel's road term. A
+removed carton is therefore what it was before the round: the phone's red confirm, the count door's
+re-reservation within the plan's number.
+
+1492. **A claim takes what the line owes at its lock** (locks#2). `takeOwed` was «exactly k or nothing»
+(`road_owed >= k`): a concurrent claim that took one first left the update matching no row, the loop broke
+with nothing moved, and the line owed while its cartons stood free — then the count door's own number was
+short by them. Now `SELECT … FOR UPDATE` and `min(owed, k)`, the design's «zero rows → re-read» done at the
+row. Proven deterministically: a held connection takes one unit, the press waits on the row
+(`pg_stat_activity`), the holder commits, the press claims the two that are left.
+
+1493. **An unload scan never lands a carton already HERE** (locks#1, deploy#8). The landed-before rule knew
+only THIS truck's three causes: a claimed carton scanned on ANOTHER inbound truck's screen at a mixed pile,
+or flushed after the stocktake landed it (`inventory_found`, ref `manual`), took the rogue branch and was
+pulled off the onward truck as an undocumented transfer. And it knew no reversal: an office over-count a
+later press sent back to the origin (`found_at_origin`) still read «landed by T», so over → undo → over
+picked the same carton, got `duplicate`, and threw `count_conflict` for ever — a regression on every server,
+road or not. `doneHere` is three facts now: on the shelf here; landed by this truck through
+`ARRIVED_ON_A_TRUCK` and `notSentBackSql` (one fragment, beside the causes in documents/arrivals.ts, shared
+with the count ledger it was copied from — #513); or standing here `planned`/`loading` onto a truck whose
+ORIGIN is here, however it landed. The rogue branch asks the same `doneHere`.
+
+1494. **The agent sheet files what never came under its own heading** (numbers#4). After «yuklash tugadi»
+the owed part is 0 and the missed part was filed with the shelf rows — under the arrival that brought the
+rest, or «Принято на складе» for a road-only lot: the false «received here» the split exists to prevent.
+`DOC.notCame` = «Не пришло / Did not come», a block of its own, no truck, no date.
+
+1495. **The phone never accepts green what the server will take back** (numbers#5, judged by hand). The
+snapshot shipped every carton of an owed lot as one list and the phone accepted them all: one still on the
+inbound truck, or a fourth when the lot owed three, flashed green and was rolled back at the flush — offline,
+only then, with a carton already physically on the truck (#221's shape). The snapshot ships two kinds
+(`roadShelf` with its lot, `roadInbound` with its truck); `roadScanVerdict` (src/offline, pure) accepts a
+shelf carton while the phone has taken fewer of its lot than the lot owes (past that the red confirm), and
+refuses an inbound one at once naming the truck. The server's own `road_not_landed` stays for the race.
+
+1496. **The editor's untick waits for the answer it asked for** (editor#6). It clamped the picks against the
+list on screen — EMPTY while a read is in flight (every road toggle re-reads) and shelf-only when the road
+half failed — so unticking a moment after ticking took every pick, shelf ones included, and the sentence
+blamed the road. The untick is a pending flag now; the road-less answer clamps (`untickFor`, #1501).
+**Picks the list cannot show are named and the submit waits** (editor#7): a road pick whose half of the
+answer failed, or a lot gone before a resubmit opened, was in no row, no Σ and no gauge while the submit sent
+it — the agent got a heavier truck than anyone saw. «N ta tanlangan yuk ro'yxatda ko'rinmayapti» with
+«Qayta urinish» and «Olib tashlash»; the submit is disabled until one of them.
+
+1497. **Process.** The review's two refuters that died on the session limit were judged by reading the code
+and, for deploy#8, by reproducing it in a test before the fix — an unverified finding is not a refuted one.
+The fence's `body()` helper learned generic functions (`claimableFor<C>`); a fence that cannot find its
+function fails loudly, which is how it was noticed.
+
+## Yo'ldagi yuk — the FIXES reviewed (2026-10-28; NO migration, ledger 138)
+
+The seven fixes above were reviewed in their turn: three lenses, one refuter per finding, 11 findings, 10
+upheld. Two of them said the same thing, and it is the one that mattered: a fix of mine had made a NEW
+defect in the round's own designed flow.
+
+1498. **The phone may not refuse what the server would take** (locks#0 = readers#4, a defect introduced by
+#1495). The snapshot is up to fifteen seconds old — and none at all offline — while at Horgos a carton goes
+from the inbound truck to the onward one in seconds, and the landing reserves it onto the onward truck in its
+own transaction. #1495 refused every code the snapshot listed on an inbound truck, so the cross-dock's own
+cartons were refused with «avval tushirishda qabul qiling» while the server held them as plan cargo. Now
+`roadScanVerdict(code, snap, loaded, {online, queuedUnloads})`: online, the scan goes to the server, which
+answers in a second (claimed, or `road_not_landed` with the truck — the mark comes back while the carton is
+still in the loader's hands); offline, a carton THIS phone has queued an unload row for goes in (the sync body
+lands before it loads); only an offline phone with no landing of its own refuses, naming the truck. The
+screen keeps `queuedUnloads` beside its pending count, from the one outbox both scan screens share. STATED:
+two rows of one carton more than `MAX_PER_SYNC` apart in a backed-up outbox can still reach the server in the
+wrong order.
+
+1499. **#1495's other half is best-effort, and said so** (locks#2). The shelf-carton gate counts this phone's
+own marks against the snapshot's owed: a second phone on the same truck, or a claim since the snapshot, is not
+seen, and the server's `not_on_plan` takes such a mark back at the flush. A shared reservation for that was
+judged not worth its machinery; road-scan.ts states it.
+
+1500. **«Already here» covers the onward truck on the ROAD** (locks#1). #1493's third fact stopped at the
+departure: a stale scan on another inbound truck's screen, flushed after the onward truck left, still landed
+the carton as a rogue and pulled it off a truck the customs papers carry. A carton `in_transit` on a truck
+whose ORIGIN is this destination is done here too; one that really stayed behind is that truck's missing
+carton, which its unload resolves (`found_at_origin`).
+
+1501. **Line order, and the untick's origin** (locks#3, editor#8). The landing hook locked owing lines lot by
+lot while «yuklash tugadi» locks one truck's lines in line order — a multi-lot stocktake save against a finish
+could deadlock (it predates #1491). The hook now locks every line its lots owe here in LINE order before it
+claims. The editor's pending untick named no origin: a change of warehouse while it waited clamped the picks
+against ANOTHER warehouse's list and called them road cargo, and a quiet re-read that cleared it also pruned
+the pre-clamp picks a second time. `untickFor` holds the origin, a change of origin forgets it, and the answer
+that clamps does not prune.
+
+1502. **Three tests that proved less than they said** (editor#7, #9, #10). The «submit waits» assertion held
+with the gate deleted — the only pick was the unseen one, so Σ was 0 and `totals.boxes === 0` disabled the
+button by itself; a visible shelf pick now stands beside the road one. The untick test proved the old wipe was
+gone, not that the clamp runs — a case of its own now takes the road part out and keeps the shelf part. And
+the editor's routes were held with `page.route`, which does not see a request the service worker answers
+(`/api/*` is NetworkFirst) — they are held at the context, as m9zzz-hisoblash-telefon does. The ROAD_CODES_CAP
+finding was refuted (it predates the fixes and the slice is consistent).

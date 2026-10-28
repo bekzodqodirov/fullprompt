@@ -17,6 +17,7 @@ import { getStorage } from '../../platform/files/storage';
 import { paperLines, planSegments, truckSegments, type PaperView, type StoredLine } from '../receipts/composition-math';
 import { compositionsFor, lotTrucksFor, paperCompositionsFor } from '../receipts/lot-composition';
 import { agentContentsText, agentPiecesCell, ESTIMATE_FILL, estimateNote } from './composition-cells';
+import { planRoadReady, roadOfVersion, roadTrucksByLot } from '../planning/road';
 
 /**
  * Agent approval Excel (W3, spec 6.3): one row per planned line with an
@@ -81,12 +82,82 @@ export async function buildAgentXlsx(planId: string, versionNo: number): Promise
   }
   const maxPhotos = Math.max(1, ...[...photosByLot.values()].map((ids) => ids.length));
 
+  // Yo'ldagi yuk (docs/YOLDAGI-YUK.md §9): a line with a road part is TWO
+  // rows — what stands here under the truck that brought it, and what is
+  // still on the road under its own block — each with its own count and its
+  // share of the kilos. Filed whole under an arrival, the road part would be
+  // a false «arrived here» on a customs document. Before the approval the
+  // road part is the promise; after, what is still owed (what has landed
+  // stands here and files under its arrival like any carton). What a loading
+  // ENDED without (`missed`) never came: its own block, never «received here».
+  const road = await planRoadReady();
+  const roadByLine = await roadOfVersion(db, road, version.id);
+  const approved = version.agentVerdict === 'approved';
+  type SheetRow = (typeof lines)[number];
+  const share = (row: SheetRow, n: number): SheetRow => ({
+    ...row,
+    line: {
+      ...row.line,
+      plannedBoxCount: n,
+      plannedKg: String(Math.round((Number(row.line.plannedKg) * n * 1000) / row.line.plannedBoxCount) / 1000),
+      plannedM3: String(Math.round((Number(row.line.plannedM3) * n * 10_000) / row.line.plannedBoxCount) / 10_000),
+    },
+  });
+  const hereRows: SheetRow[] = [];
+  const roadRows: SheetRow[] = [];
+  const missedRows: SheetRow[] = [];
+  for (const row of lines) {
+    const part = roadByLine.get(row.line.id);
+    const onRoad = part ? (approved ? part.owed : part.part) : 0;
+    const missed = part && approved ? part.missed : 0;
+    if (onRoad <= 0 && missed <= 0) {
+      hereRows.push(row);
+      continue;
+    }
+    const here = row.line.plannedBoxCount - onRoad - missed;
+    if (here > 0) hereRows.push(share(row, here));
+    if (onRoad > 0) roadRows.push(share(row, onRoad));
+    if (missed > 0) missedRows.push(share(row, missed));
+  }
+  const roadTrucks = await roadTrucksByLot(db, road, plan.originWarehouseId, [
+    ...new Set(roadRows.map((r) => r.lot.id)),
+  ]);
+
   // Which truck brought each lot to the warehouse this plan loads FROM.
   const arrivals = await arrivalsForLots(lotIds, plan.originWarehouseId);
-  const blocks = groupByArrival(lines, ({ lot, clientCode, marking }) => ({
-    arrival: arrivals.get(lot.id),
-    within: `${clientCode ?? marking ?? '?'}-${lot.letter ?? ''}`,
-  }));
+  const blocks = [
+    ...groupByArrival(hereRows, ({ lot, clientCode, marking }) => ({
+      arrival: arrivals.get(lot.id),
+      within: `${clientCode ?? marking ?? '?'}-${lot.letter ?? ''}`,
+    })).map((block) => ({ ...block, onRoad: false })),
+    ...(roadRows.length
+      ? [
+          {
+            key: 'road',
+            code: [...new Set(roadRows.flatMap((r) => roadTrucks.get(r.lot.id) ?? []))].sort().join(', '),
+            source: null,
+            factories: [] as string[],
+            arrivedAt: null,
+            rows: roadRows,
+            onRoad: true,
+          },
+        ]
+      : []),
+    ...(missedRows.length
+      ? [
+          {
+            key: 'missed',
+            code: '',
+            source: null,
+            factories: [] as string[],
+            arrivedAt: null,
+            rows: missedRows,
+            onRoad: false,
+            notCame: true,
+          },
+        ]
+      : []),
+  ];
 
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet(`План v${versionNo}`);
@@ -167,9 +238,13 @@ export async function buildAgentXlsx(planId: string, versionNo: number): Promise
     // words and names its factories (every stop the block's cargo came
     // from) and plate. «Received here» stays for what came on no truck.
     const dated = block.arrivedAt ? ` · ${docDate(block.arrivedAt, zone)}` : '';
-    heading.value = !block.source
-      ? `${DOC.receivedHere} · ${totalsText}`
-      : `${block.source.kind === 'pickup' ? DOC.factoryPickup : DOC.arrivalBatch}: ${arrivalBlockLabel(block)}${dated} · ${totalsText}`;
+    heading.value = block.onRoad
+      ? `${DOC.onRoad}: ${block.code || '—'} · ${totalsText}`
+      : 'notCame' in block
+        ? `${DOC.notCame} · ${totalsText}`
+        : !block.source
+        ? `${DOC.receivedHere} · ${totalsText}`
+        : `${block.source.kind === 'pickup' ? DOC.factoryPickup : DOC.arrivalBatch}: ${arrivalBlockLabel(block)}${dated} · ${totalsText}`;
     heading.font = { bold: true };
     heading.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEFEFEF' } };
     rowNo += 1;
@@ -195,8 +270,12 @@ export async function buildAgentXlsx(planId: string, versionNo: number): Promise
         // what the owner asked to be ADDED; the blocks are the order he asked
         // for, not a substitute for it. A factory trip's cell names THIS
         // row's own stop — the heading lists every factory of the block.
-        arrivalBatch: arrival?.labels.join(', ') || '—',
-        arrivedAt: arrival ? docDate(arrival.arrivedAt, zone) : '',
+        arrivalBatch: block.onRoad
+          ? `🚚 ${(roadTrucks.get(lot.id) ?? []).join(', ') || '—'}`
+          : 'notCame' in block
+            ? '—'
+            : arrival?.labels.join(', ') || '—',
+        arrivedAt: !block.onRoad && !('notCame' in block) && arrival ? docDate(arrival.arrivedAt, zone) : '',
       };
       sheet.getRow(rowNo).height = 60;
       const lotContents = contents.get(lot.id);

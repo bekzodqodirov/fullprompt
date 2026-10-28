@@ -1232,7 +1232,21 @@
       "reason_required": "Give a reason"
     },
     "cancelPlan": "Cancel plan",
-    "stockFailed": "The cargo list did not load — refresh the page; if it repeats, tell the administrator"
+    "stockFailed": "The cargo list did not load — refresh the page; if it repeats, tell the administrator",
+    "roadToggle": "Cargo on the road too",
+    "roadHint": "Cargo on trucks heading to this warehouse. Once planned, it moves onto this truck by itself when it is unloaded here.",
+    "roadDropped": "Cargo on the road taken out of the picks: {n}",
+    "roadFailed": "The list of cargo on the road did not load — the warehouse stock is shown",
+    "unseenPicks": "{n} picked lots are not in the list and are not counted — reload the list or take them out",
+    "unseenDrop": "Take them out",
+    "roadLine": "+{n} on the road ·",
+    "roadAtGate": "at the gate",
+    "factoryTrips": "Coming from factories ({n})",
+    "factoryTripsHint": "A factory trip’s cargo is planned once it is received at this warehouse.",
+    "roadPart": "{n} from the road",
+    "roadAwaited": "{n} awaited",
+    "roadCame": "{n} came",
+    "roadMissed": "{n} did not come"
   },
   "costing": {
     "fxTitle": "Exchange rates",
@@ -1485,7 +1499,8 @@
       "batch_has_costs": "Costs are attached to this batch",
       "batch_has_charges": "A client has already been charged for this batch",
       "batch_has_moved_boxes": "Its boxes have already moved on",
-      "reason_required": "Give a reason"
+      "reason_required": "Give a reason",
+      "road_owed_open": "Press «Loading finished» first — the plan’s cargo is still on the road"
     },
     "startUnloading": "Unloading (scan)",
     "transitReport": "In transit",
@@ -1664,8 +1679,11 @@
       "emptyBoard": "No open trucks.",
       "capped": "Showing the {n} oldest trucks.",
       "filters": "Filter",
-      "loadedNoPlan": "Loaded {boxes} boxes · {cargo}"
-    }
+      "loadedNoPlan": "Loaded {boxes} boxes · {cargo}",
+      "roadOwed": "+{n} from the road"
+    },
+    "finishSummaryRoad": "{n} did not come from the road",
+    "roadOwedLine": "Awaited from the road: {lot} · {n} cartons ({trucks})"
   },
   "loading": {
     "title": "Loading",
@@ -1697,7 +1715,9 @@
       "unknown_code": "Code not found.",
       "not_loaded_here": "This box is not recorded on this truck.",
       "forbidden": "No access."
-    }
+    },
+    "roadNotLanded": "This carton is still on truck {truck} — receive it at the unloading first",
+    "roadOwedLine": "Awaited from the road: {lot} · {n} cartons ({trucks})"
   },
   "unloading": {
     "title": "Unloading",
@@ -3796,7 +3816,7 @@
     "makeOffer": "Offer to client",
     "belowFloor": "Below cost — the calculation came to ${floor}",
     "belowFloorChip": "below",
-    "offerSent": "Sent to Telegram",
+    "offerSent": "PDF and text sent to Telegram",
     "offerNoTelegram": "Telegram not linked — copy the text",
     "offerMuted": "These Telegram messages are muted in your profile — copy the text",
     "offerText": "Offer text",

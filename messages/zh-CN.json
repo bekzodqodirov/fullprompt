@@ -1232,7 +1232,21 @@
       "reason_required": "请填写原因"
     },
     "cancelPlan": "取消计划",
-    "stockFailed": "货物列表未加载 — 请刷新页面；如果重复出现，请告知管理员"
+    "stockFailed": "货物列表未加载 — 请刷新页面；如果重复出现，请告知管理员",
+    "roadToggle": "包括在途货物",
+    "roadHint": "正在驶往本仓库的车上的货物。列入计划后，在这里卸车时会自动转到这辆车上。",
+    "roadDropped": "已从选择中移除在途货物：{n}",
+    "roadFailed": "在途货物列表未能加载——显示的是仓库内的货物",
+    "unseenPicks": "已选的 {n} 批货物不在列表中，未计入合计——请重新加载列表或将其移除",
+    "unseenDrop": "移除",
+    "roadLine": "+{n} 在途 ·",
+    "roadAtGate": "已到门口",
+    "factoryTrips": "从工厂运来（{n}）",
+    "factoryTripsHint": "工厂车的货物在本仓库收货后才能列入计划。",
+    "roadPart": "{n} 在途",
+    "roadAwaited": "待到 {n}",
+    "roadCame": "已到 {n}",
+    "roadMissed": "未到 {n}"
   },
   "costing": {
     "fxTitle": "汇率",
@@ -1485,7 +1499,8 @@
       "batch_has_costs": "该批次已录入费用",
       "batch_has_charges": "该批次已向客户计费",
       "batch_has_moved_boxes": "箱子已进入下一环节",
-      "reason_required": "请填写原因"
+      "reason_required": "请填写原因",
+      "road_owed_open": "请先点“装车完成”——计划中的货物还在途中"
     },
     "startUnloading": "卸货（扫码）",
     "transitReport": "在途",
@@ -1664,8 +1679,11 @@
       "emptyBoard": "没有未结束的车辆。",
       "capped": "仅显示最早的 {n} 辆车。",
       "filters": "筛选",
-      "loadedNoPlan": "已装 {boxes}箱 · {cargo}"
-    }
+      "loadedNoPlan": "已装 {boxes}箱 · {cargo}",
+      "roadOwed": "+{n} 在途"
+    },
+    "finishSummaryRoad": "{n} 箱在途未到",
+    "roadOwedLine": "在途待到：{lot} · {n} 箱（{trucks}）"
   },
   "loading": {
     "title": "装车",
@@ -1697,7 +1715,9 @@
       "unknown_code": "未找到编号。",
       "not_loaded_here": "此箱未记录在本车上。",
       "forbidden": "无权限。"
-    }
+    },
+    "roadNotLanded": "这箱还在 {truck} 车上——请先在卸车时收货",
+    "roadOwedLine": "在途待到：{lot} · {n} 箱（{trucks}）"
   },
   "unloading": {
     "title": "卸货",
@@ -3796,7 +3816,7 @@
     "makeOffer": "向客户报价",
     "belowFloor": "低于成本 — 核算结果为 {floor} 美元",
     "belowFloorChip": "偏低",
-    "offerSent": "已发送到 Telegram",
+    "offerSent": "PDF 和文字已发送到 Telegram",
     "offerNoTelegram": "未连接 Telegram — 请复制文本",
     "offerMuted": "您的个人资料中已关闭这些 Telegram 消息 — 请复制文本",
     "offerText": "报价文本",

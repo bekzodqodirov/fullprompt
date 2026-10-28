@@ -21,12 +21,13 @@ import { buttonsFor, type BotButton } from '../telegram/staff-bot';
 import { approvalVerdictLine, fillCount, notificationLabels, textLocaleOf } from './labels';
 import { isTelegramMuted } from './mutes';
 import { sendsSilently } from './night';
-import { groupDigits, h } from '../telegram/format';
+import { groupDigits, h, visibleLength } from '../telegram/format';
 import {
   botCall,
   editText,
   isBotFailure,
   isPermanentFailure,
+  sendDocument,
   sendText,
   type SendResult,
 } from '../telegram/send';
@@ -1164,6 +1165,65 @@ async function deliverStaffMessage(
   return sendText({ chatId, html: message.html, replyMarkup: keyboardOf(rows), silent });
 }
 
+/** Telegram's ceiling on a caption, counted as it counts (`visibleLength`). */
+const CAPTION_MAX = 1024;
+
+/**
+ * The seller's offer WITH its sheet (his 2026-10-27: «narx taklifi text bolib
+ * sotuvchi telegramiga kelyabti pdf ham birga kelsin telegramga shu
+ * telegramni ozini jonatish imkoni uchun»): the PDF, with the offer text as
+ * its caption — ONE message, so a forward carries both to the customer.
+ *
+ * Null means «not this kind, or no sheet to print» and the text goes as it
+ * always did: the sheet is an addition, never the delivery (round C's photo
+ * rule). The sheet is built HERE, at send time, through a dynamic import
+ * (platform never imports wms statically — the boss.ts crossing), because a
+ * PDF in the queue's jsonb is bytes in a table read every minute.
+ *
+ * A refusal that is about the FILE (a 400 — too big, a shape Telegram will
+ * not take) sends the text alone; any other failure is returned as it is, so
+ * the drain pauses on a 429 and retries the row on a 5xx with the sheet again.
+ * A caption over Telegram's 1024 (a very long client name) goes as the text
+ * and then the sheet in reply to it — two messages, but nothing cut.
+ */
+async function deliverWithSheet(
+  type: string,
+  chatId: bigint,
+  message: StaffMessage,
+  payload: Record<string, unknown>,
+  silent: boolean,
+): Promise<SendResult | null> {
+  if (type !== 'CalcOffer' || typeof payload.offerId !== 'string') return null;
+  let file: { bytes: Uint8Array; fileName: string } | null = null;
+  try {
+    const { offerSheetFile } = await import('../../wms/calc/offer-sheet-file');
+    file = await offerSheetFile(payload.offerId);
+  } catch (err) {
+    logger.warn({ err, offerId: payload.offerId }, 'offer sheet not built — the text goes alone');
+    return null;
+  }
+  if (!file) return null;
+  const document = { bytes: file.bytes, filename: file.fileName, contentType: 'application/pdf' };
+  const keyboard = keyboardOf(message.urlRow ? [message.urlRow] : null);
+
+  if (visibleLength(message.html) <= CAPTION_MAX) {
+    const res = await sendDocument({ chatId, document, captionHtml: message.html, replyMarkup: keyboard, silent });
+    if (res.ok || res.status !== 400) return res;
+    logger.warn({ description: res.description, offerId: payload.offerId }, 'telegram refused the offer sheet — the text goes alone');
+    return null;
+  }
+  const text = await deliverStaffMessage(chatId, message, null, silent);
+  if (!text.ok) return text;
+  const sheet = await sendDocument({
+    chatId,
+    document,
+    silent,
+    ...(text.messageId !== null ? { replyToMessageId: text.messageId } : {}),
+  });
+  if (!sheet.ok) logger.warn({ description: sheet.description, offerId: payload.offerId }, 'offer sheet after a long text not sent');
+  return text;
+}
+
 /**
  * Show a colleague the customer's OWN message before our sentence about it
  * (round C, contract 2): a photo of a damaged carton or a voice note is not
@@ -1499,6 +1559,13 @@ export async function sendPendingTelegram(now: Date = new Date()): Promise<void>
       res =
         (await forwardOriginal(notification.id, link.telegramChatId, payload)) ??
         (await forwardSources(notification.id, link.telegramChatId, payload)) ??
+        (await deliverWithSheet(
+          notification.type,
+          link.telegramChatId,
+          message,
+          payload,
+          sendsSilently(notification.type, payload, now),
+        )) ??
         (await deliverStaffMessage(
           link.telegramChatId,
           message,
