@@ -3,7 +3,9 @@ import { CURRENCY_AFTER_SRC, CURRENCY_BEFORE_SRC, normalizeDigits, SPELLED_DURAT
 import { AGENT_LIMITS } from './limits';
 import { AGENT_LOCALES, dominantScript, scriptOf, type AgentLocale, type ScriptName } from './locale';
 import {
+  airMentionIn,
   extractNumbers,
+  namesMode,
   ledgerLine,
   phoneDigits,
   PHONE_RE,
@@ -1617,13 +1619,16 @@ export function statesChinaAddress(text: string, anchors: AddressAnchors): boole
 const CN_MOBILE = /^(?:86)?1[3-9]\d{9}$/u;
 const WAREHOUSE_WORD = /ombor|sklad|склад|warehouse|仓库|qabul\s+qil|қабул/iu;
 /**
- * A fact that IS the flight's (#1485) — a warehouse FOR avia, an airport as a
- * place: «Avia yuk qabul ombori», «склад для авиа», «空运仓», «机场» standing
- * alone. Not a road named after one («机场路», «Airport Road», «aeroport
- * yonida»), and not a word that only mentions the flight.
+ * A fact that DECLARES itself the flight's receiving point (#1485, #1486):
+ * «Avia yuk qabul ombori», «Avia ombori», «Склад для авиа», «air cargo
+ * warehouse», «空运仓», «机场货运站». Never a fact that only speaks of the flight
+ * («Avia uchun manzilni men o'zim beraman» is a TRUCK warehouse writing down
+ * his rule), stands near an airport («aeroportga yaqin», «рядом с
+ * аэропортом», «机场北路»), or names a truck beside it («avto va avia yuklar
+ * uchun») — in doubt, a fact is the truck's, and the flight's guard counts it.
  */
 const FLIGHT_FACT =
-  /(?:avia|авиа)[\s-]*(?:yuk\p{L}*\s+)?(?:qabul\s+)?(?:ombor|sklad|склад)\p{L}*|(?:avia|авиа)\s*(?:yuk\p{L}*\s+)?uchun|(?:склад|адрес)\s+(?:для\s+)?авиа|для\s+авиа|air\s*(?:cargo|freight)\s+(?:warehouse|address)|for\s+air\s+(?:cargo|freight)|空运(?:仓|仓库|地址|收货)|航空仓|机场(?![路道大街])|(?:aeroport|аэропорт)(?!\s*(?:yaqin|yon|ko['‘’ʻ`]?ch|yo['‘’ʻ`]?l|рядом|возле|улиц|дорог|шоссе|проспект))|airport(?!\s+(?:road|rd|street|st|ave|avenue|area))|فرودگاه/iu;
+  /(?:avia|авиа)[\s-]*(?:yuk\p{L}*\s+)?(?:qabul\s+)?(?:ombor|sklad|склад)\p{L}*|(?:склад|пункт\s+при[её]ма)\s+(?:для\s+)?авиа|air\s*(?:cargo|freight)\s+warehouse|空运(?:仓|收货点)|航空仓|机场(?:货运站|货站|仓)|(?:aeroport|airport)\s+(?:ombor|sklad|warehouse)\p{L}*|аэропорт\p{L}*\s+склад/iu;
 /** …turned down in the fact: «avia yuk qabul qilinmaydi», «авиа не принимаем», «不收空运». */
 const FLIGHT_REFUSED =
   /(?:avia|авиа|air)[^.!?\n。！？]{0,40}?(?:qabul\s+qilinmaydi|qabul\s+qilmaymiz|olinmaydi|olmaymiz|emas|не\s+принима\p{L}*|не\s+бер\p{L}*|нельзя|not\s+accept\p{L}*|no\s+(?:air|avia))|(?:不收|不接|不做)空运/iu;
@@ -1640,7 +1645,7 @@ const FLIGHT_REFUSED =
  * the truck's, and the flight's guard counts it.
  */
 export function isReceivingAddressFact(text: string): boolean {
-  if ((FLIGHT_FACT.test(text) && !FLIGHT_REFUSED.test(text)) || !WAREHOUSE_WORD.test(text)) return false;
+  if ((FLIGHT_FACT.test(text) && !FLIGHT_REFUSED.test(text) && !namesMode(text, 'road')) || !WAREHOUSE_WORD.test(text)) return false;
   const digits = normalizeDigits(text);
   if ([...digits.matchAll(PHONE_RE)].some((m) => CN_MOBILE.test(phoneDigits(m[0])))) return true;
   return addressAnchorsOf([text]).pieces.some((piece) => STREET_CHAR.test(piece));
@@ -1774,8 +1779,11 @@ export function checkAgentReply(input: PolicyInput): PolicyResult {
   // His fourth set «2»: avia cargo goes to the address HE gives — never to a receiving warehouse the facts name.
   const anchors = input.warehouseAddress ?? { pieces: [], phones: [], houseNumbers: [] };
   if (input.aviaOnly === true && statesChinaAddress(text, anchors)) blocks.push({ rule: 'G6', code: 'avia_address' });
-  // The words did not decide the flight is the chat's road, yet it was spoken of (#1485): he looks before ✅.
-  else if (input.aviaMentioned === true && statesChinaAddress(text, anchors)) warnings.push({ rule: 'G6', code: 'avia_maybe' });
+  // The words did not decide the flight is the chat's road, yet it was spoken of — in the chat, or in this
+  // very reply (#1485, #1486: «30 kg mashinaga kam, avia bilan yuborishingiz mumkin. Guanchjou ombori: …»).
+  else if ((input.aviaMentioned === true || airMentionIn(text)) && statesChinaAddress(text, anchors)) {
+    warnings.push({ rule: 'G6', code: 'avia_maybe' });
+  }
   staffNameHits(text, input.staffNames, input.customerNames ?? [], input.factNameWords ?? [], blocks, warnings);
   if (input.canary && text.includes(input.canary)) blocks.push({ rule: 'G6', code: 'canary' });
   if (AI_DENIAL.some((re) => re.test(text))) blocks.push({ rule: 'G6', code: 'ai_denial' });

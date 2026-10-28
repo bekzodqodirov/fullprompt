@@ -19,10 +19,22 @@ import { chatBlock, runTail, stableHead } from './prompt';
 import { JOB_AGENT_INBOUND, type AgentInboundJob } from './queues';
 import { dayRunCounts } from './today';
 import { addsALoadIn, belowTruckMinimumFacts, ourChinaPlaces, runTool, TOOL_SPECS, TRUCK_SECTIONS, type ChecklistState, type ToolOutcome } from './tools';
-import { namedOrigin } from './origin';
+import { namedOrigins } from './origin';
 import { draftWorthy, mentionsRail, RAIL_OWNER_QUESTION } from './worthy';
 import { writeDraft, writeNotice, type ComposedAction } from './drafts';
-import { airMentionIn, extractNumbers, factSources, namesMode, oneModeIn, pricedRoadOf, roadChoiceIn, type NumberSource, type TravelMode } from './numbers';
+import {
+  airMentionIn,
+  extractNumbers,
+  factSources,
+  namesMode,
+  oneModeIn,
+  pricedRoadOf,
+  railRefusedIn,
+  roadChoiceIn,
+  statementsOf,
+  type NumberSource,
+  type TravelMode,
+} from './numbers';
 import { hanOnly, nameWordsOf, type PolicyResult } from './policy';
 import { AGENT_LOCALES } from './locale';
 
@@ -505,12 +517,14 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
     // The chat is the flight's and no truck's (his fourth set «2»): the reply
     // may state no China address — the flight's is his to give. The one road
     // rule the card's question asks too (`chatRoadOf`, review D4, R1-R2).
-    aviaOnly: !rail && road === 'air',
+    // Not gated on rail (#1486): rail takes the machine's money out of the reply, and the
+    // flight's address is a rule of its own — «Poyezd kerak emas, avia bilan» is the flight's.
+    aviaOnly: road === 'air',
     // The flight was spoken of and the rule did not decide it is the chat's
     // road (#1485): a reply giving our warehouse's address keeps its ✅ and the
     // card says so — a chat the words misread costs him one look, never a
     // flight sent to a truck's warehouse in silence.
-    aviaMentioned: !rail && road !== 'air' && aviaSpokenOf(ctx, road),
+    aviaMentioned: road !== 'air' && aviaSpokenOf(ctx, road),
     // What this run quoted, for the next run's `lastQuote` (review R1).
     quotedRoad: rail ? null : quotedRoadOf(loop),
     quotedAir: rail ? null : (loop.outcomes.find((o) => o.air)?.air ?? null),
@@ -535,39 +549,64 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
 /**
  * The one road the customer asked about — his burst's, else the chat's
  * inbound window's; null for none or more than one. Statement by statement,
- * the newest that names a road decides (#1485): the road it chooses or names
- * («Avia qimmat ekan, kargo bilan necha kunda?» asks the truck's days, and
- * «Temir yo'l bilan qancha, avia qimmat» the rail's), and a road only turned
- * down points at the other one when nothing earlier names any.
+ * the newest that CHOOSES a road decides (#1485, #1486): «Avia qimmat ekan,
+ * kargo bilan necha kunda?» asks the truck's days, «Fura emas temir yo'l
+ * kerak» the rail's, and the goods after it («Tovar: tikuv mashinalari») choose
+ * nothing. A road only turned down points at the other one when nothing
+ * earlier chooses; then the one road the lines name, as before.
  */
 export function askedModeOf(ctx: Pick<AgentContext, 'burst' | 'messages'>): TravelMode | null {
   const burst = ctx.burst.map((m) => m.body);
   const window = ctx.messages.filter((m) => m.direction === 'in').map((m) => m.body);
   for (const texts of [burst, window]) {
     let turnedDown: TravelMode | null = null;
-    for (const st of texts.flatMap((t) => t.split(CLAUSE)).reverse()) {
-      const named = oneModeIn(st);
+    for (const st of texts.flatMap((t) => statementsOf(t, CLAUSE)).reverse()) {
       const c = roadChoiceIn(st);
-      // Rail named and no other road chosen beside it: «Fura emas, temir yo'l kerak» asks the rail's days.
-      if (namesMode(st, 'rail') && c !== 'air' && c !== 'road' && c !== 'both') return 'rail';
+      // Rail named, not turned down, and no other road chosen beside it.
+      if (namesMode(st, 'rail') && !railRefusedIn(st) && c !== 'air' && c !== 'road' && c !== 'both') return 'rail';
       if (c === 'both') return null;
       if (c === 'air' || c === 'road') return c;
-      if (c === 'not_air' || c === 'not_road') {
-        turnedDown ??= c === 'not_air' ? 'road' : 'air';
-        continue;
-      }
-      if (named) return named;
-      if (namesMode(st, 'air') && namesMode(st, 'road')) return null;
+      if (c === 'not_air' || c === 'not_road') turnedDown ??= c === 'not_air' ? 'road' : 'air';
     }
     if (turnedDown) return turnedDown;
+    const named = oneModeIn(texts.join('\n'));
+    if (named) return named;
   }
   return null;
 }
 
-/** Avia was spoken of in the chat or in the quote he approved this week (#1485) — by anybody, in any statement. */
+/**
+ * The flight was put on the table (#1485, #1486): by the customer in any line
+ * — chosen, asked about or turned down — by a priced line of ours, by the
+ * quote he approved, or by a run that priced both roads. Our own lines count
+ * only where they PRICE the flight: the seeded «… power bank avia bilan
+ * ketmaydi» in a truck chat puts no flight on the table. A truck the customer
+ * CHOSE after the last of it settles the chat: the warning is for a chat the
+ * words could not decide, not for one he decided.
+ */
 function aviaSpokenOf(ctx: Pick<AgentContext, 'messages' | 'lastQuote'>, road: QuotedRoad | null): boolean {
-  const quoted = ctx.lastQuote?.road;
-  return road === 'both' || quoted === 'air' || quoted === 'both' || ctx.messages.some((m) => airMentionIn(m.body));
+  if (road === 'both') return true;
+  let lastAir = -1;
+  let lastTruck = -1;
+  const q = ctx.lastQuote;
+  if (q && (q.road === 'air' || q.road === 'both')) lastAir = q.at.getTime() * 1000;
+  ctx.messages.forEach((m, i) => {
+    const t = m.sentAt.getTime() * 1000 + Math.min(i, 999);
+    if (m.direction === 'out') {
+      const priced = pricedRoadOf(m.body);
+      if (priced === 'air' || priced === 'both') lastAir = Math.max(lastAir, t);
+      return;
+    }
+    // Statement by statement: «Avia qimmat ekan, mashinada yuboraman» ends on the truck.
+    let at = 0;
+    for (const st of statementsOf(m.body, CLAUSE)) {
+      at += 1;
+      const stamp = t + at / 1000;
+      if (airMentionIn(st)) lastAir = Math.max(lastAir, stamp);
+      if (roadChoiceIn(st) === 'road') lastTruck = Math.max(lastTruck, stamp);
+    }
+  });
+  return lastAir >= 0 && lastAir >= lastTruck;
 }
 
 /**
@@ -601,7 +640,8 @@ const CLAUSE = /[,.;:!?\n،؛。，！？；：]+|(?<![\p{L}])(?:lekin|ammo|biro
  * road chosen.
  */
 export function roadChosenIn(texts: readonly string[]): QuotedRoad | null {
-  const statements = texts.flatMap((t) => t.split(CLAUSE)).reverse();
+  // Each statement with its own end: a question about a road asks for it (#1486).
+  const statements = texts.flatMap((t) => statementsOf(t, CLAUSE)).reverse();
   for (const st of statements) {
     const c = roadChoiceIn(st);
     if (c === 'not_air') return 'road';
@@ -674,7 +714,9 @@ export function withAviaRule(
   loop: Pick<LoopResult, 'tools' | 'outcomes'>,
   ctx: Pick<AgentContext, 'burst' | 'messages' | 'measures' | 'lastQuote'>,
 ): ComposeReply {
-  if (railChat(ctx, c)) return c;
+  // A rail chat's question is the rail one — unless the CHAT chose the flight (#1486: «Poyezd kerak emas,
+  // avia bilan»). Not this run's own avia figure: in a rail chat it never goes out (`memoryFor`).
+  if (railChat(ctx, c) && chatRoadOf(ctx, { tools: [], outcomes: [] }) !== 'air') return c;
   const quoted = loop.outcomes.find((o) => o.air)?.air;
   if (quoted) return withAviaQuestion(c, quoted);
   if (c.replyNeeded && chatRoadOf(ctx, loop) === 'air' && asksWhereToSend(ctx.burst)) return withAviaQuestion(c, aviaCargoOf(loop, ctx));
@@ -728,7 +770,7 @@ function aviaCargoOf(loop: Pick<LoopResult, 'outcomes'>, ctx: Pick<AgentContext,
       .filter((w) => w.kind === 'weight' && !w.ref.startsWith('d'))
       .filter((w) => {
         const m = bodyOf.get(w.messageRef);
-        return m !== undefined && (since === null || m.sentAt.getTime() > since) && shipmentWeightIn(m.body, { askedCounts: !quoted });
+        return m !== undefined && (since === null || m.sentAt.getTime() > since) && shipmentWeightIn(m.body, { whatIfCounts: !quoted });
       })
       .at(-1) ?? null;
   if (quoted && weight === null) return quoted;
@@ -736,33 +778,50 @@ function aviaCargoOf(loop: Pick<LoopResult, 'outcomes'>, ctx: Pick<AgentContext,
   const told = ctx.messages
     .filter((m) => m.direction === 'in' && (since === null || m.sentAt.getTime() > since))
     .flatMap((m) => m.body.split(CLAUSE))
-    .filter((st) => !asksWhereToSend([{ body: st }]) && !WAREHOUSE_WORD.test(st) && !TURNED_DOWN.test(st))
+    .filter((st) => !asksWhereToSend([{ body: st }]) && !WAREHOUSE_WORD.test(st))
     .reverse();
-  const origin = told.map((st) => namedOrigin(st)).find((o) => o !== null) ?? null;
+  const origin = told.map((st) => startsFrom(st)).find((o) => o !== null) ?? null;
   // A corrected weight is the same shipment, which starts where it did; a load ADDED starts where it is said to.
   const sameLoad = weight !== null && !addsALoadIn(bodyOf.get(weight.messageRef)?.body ?? '');
   return { kg: weight?.value ?? null, origin: origin?.place ?? (sameLoad ? (quoted?.origin ?? null) : null) };
 }
 
 /** A weight figure: digits, then a weight unit, in the six languages. */
-const WEIGHT_FIGURE = /\d[\d\s.,]*\s*(?:kg|кг|kilo\p{L}*|кило\p{L}*|килограмм\p{L}*|公斤|千克|كيلو|کیلو)/giu;
-/** One piece's weight, not the shipment's: «har biri», «each», «каждая», «по 2 кг», «每件». */
+const WEIGHT_FIGURE = /\d[\d\s.,]*\s*(?:kg|кг|kilo\p{L}*|кило\p{L}*|килограмм\p{L}*|公斤|千克|كيلو|کیلو)/iu;
+/** One piece's weight, not the shipment's: «har biri», «each», «каждая», «по 2 кг», «每件» — as words, never «Beach». */
 const PER_PIECE =
-  /har\s+bir(?:i|ida|ining)?|bittasi|donasi|dona\s+(?:boshiga|uchun)|ҳар\s+бир\p{L}*|each|per\s+(?:piece|box|unit|carton|item|pc)|каждая|каждый|каждой|каждое|за\s+(?:штук|шт|короб)\p{L}*|(?<![\p{L}])по\s+\d|每件|每箱|每个|单件|单个|هر\s+کدام|هر\s+عدد/iu;
-/** A statement turned down: «Shenzhendan emas», «не из Шэньчжэня», «not from…», «不是». */
-const TURNED_DOWN = /(?<![\p{L}])(?:emas|эмас|не|нет|not|no)(?![\p{L}])|不是|不在|نه|نیست/iu;
+  /(?<![\p{L}])(?:har\s+bir(?:i|ida|ining)?|bittasi|donasi|dona\s+(?:boshiga|uchun)|ҳар\s+бир\p{L}*|each|per\s+(?:piece|box|unit|carton|item|pc)|каждая|каждый|каждой|каждое|за\s+(?:штук|шт|короб)\p{L}*|по\s+\d)(?![\p{L}])|每件|每箱|每个|单件|单个|هر\s+کدام|هر\s+عدد/iu;
+/** A what-if: «50 kg bo'lsa qancha?», «agar 40 kg», «если 50 кг», «if it is 50 kg», «如果». */
+const WHAT_IF = /(?<![\p{L}])(?:agar|bo['‘’ʻ`]?lsa|oshsa|ortsa|если|if|如果|假如|اگر)(?![\p{L}])/iu;
+/** The clauses a weight is told in: a comma, a stop that is no decimal point («2.5 kg»), a question mark. */
+const WEIGHT_CLAUSE = /(?<!\d)[,;]|[,;](?!\d)|[!?؟。！？\n]+|\.(?=\s|$)/u;
 
 /**
- * The message tells a SHIPMENT's weight (#1485): a weight figure in a
- * sentence that names no single piece — and, when `askedCounts` is false,
- * that asks nothing: «Avia bilan 30 kg qancha?» states the cargo of a chat
- * with no quote yet, and after one «50 kg bo'lsa qancha?» is a what-if.
+ * The message tells a SHIPMENT's weight (#1485, #1486): a weight figure in a
+ * clause that names no single piece — and, when `whatIfCounts` is false, that
+ * is no what-if. «Avia bilan 30 kg qancha?» states the cargo, and so does
+ * «Kechirasiz, 35 kg ekan, qayerga yuboray?» after a quote; «50 kg bo'lsa
+ * qancha?» after one does not.
  */
-export function shipmentWeightIn(body: string, opts: { askedCounts: boolean }): boolean {
-  return (body.match(/[^.!?\n。！？؟]*[.!?\n。！？؟]*/gu) ?? []).some((sentence) => {
-    WEIGHT_FIGURE.lastIndex = 0;
-    return WEIGHT_FIGURE.test(sentence) && (opts.askedCounts || !/[?？؟]/u.test(sentence)) && !PER_PIECE.test(sentence);
-  });
+export function shipmentWeightIn(body: string, opts: { whatIfCounts: boolean }): boolean {
+  return statementsOf(body, WEIGHT_CLAUSE).some(
+    (clause) => WEIGHT_FIGURE.test(clause) && !PER_PIECE.test(clause) && (opts.whatIfCounts || !WHAT_IF.test(clause)),
+  );
+}
+
+/**
+ * The place a statement says the cargo STARTS from (#1486): the one place it
+ * names that is not turned down — «Guanchjoudan, Shenzhendan emas», «не из
+ * Шэньчжэня, а из Гуанчжоу», «not from Shenzhen». The negation is the place's
+ * own, never any «emas» in the statement («yuk hali tayyor emas»).
+ */
+function startsFrom(statement: string): { place: string } | null {
+  const refused = new Set<string>();
+  for (const m of statement.matchAll(/(\p{L}+)\s+(?:emas|эмас)(?![\p{L}])/giu)) for (const o of namedOrigins(m[1]!)) refused.add(o.place);
+  for (const m of statement.matchAll(/(?<![\p{L}])(?:не|not|нет)\s+(?:из\s+|from\s+|с\s+)?(\p{L}+)/giu)) for (const o of namedOrigins(m[1]!)) refused.add(o.place);
+  for (const m of statement.matchAll(/(?<![\p{L}])نه\s+(?:از\s+)?(\S+)|不是(?:从)?(\p{Script=Han}{2,4})/gu)) for (const o of namedOrigins(m[1] ?? m[2] ?? '')) refused.add(o.place);
+  const left = namedOrigins(statement).filter((o) => !refused.has(o.place));
+  return left.length === 1 ? left[0]! : null;
 }
 
 const ADDRESS_WORD = /manzil|адрес|address|地址|آدرس/iu;
@@ -855,9 +914,15 @@ export function withRailRule(c: ComposeReply, ctx: Pick<AgentContext, 'burst'>):
  * aytaman» is no other road.
  */
 function railAsked(messages: readonly { body: string }[]): boolean {
+  // Statement by statement, newest first (#1486): «Poyezd kerak emas, avia bilan» turns rail down for the
+  // flight, «Temir yo'l uzoq ekan, avia bilan yuboraman» chooses the flight after it — neither is his rail
+  // question. A statement naming rail and another road together («Avia yoki poyezdda?») asks rail too.
   for (const m of [...messages].reverse()) {
-    if (mentionsRail([m.body])) return true;
-    if (namesMode(m.body, 'road') || namesMode(m.body, 'air')) return false;
+    for (const st of statementsOf(m.body, CLAUSE).reverse()) {
+      if (mentionsRail([st])) return !railRefusedIn(st);
+      const c = roadChoiceIn(st);
+      if (c === 'air' || c === 'road' || c === 'both') return false;
+    }
   }
   return false;
 }
@@ -869,9 +934,13 @@ function railAsked(messages: readonly { body: string }[]): boolean {
  * temir yo'l narxini so'rayapti» about it (fix round).
  */
 function railQuoted(replyText: string): boolean {
-  if (!mentionsRail([replyText])) return false;
-  return extractNumbers(replyText).some((f) => f.kind === 'money' || (f.kind === 'plain' && f.fixed !== true));
+  // In the rail word's own sentence (#1486): the address after «… faqat avto yoki temir yo'l bilan ketadi.»
+  // carries «2255号», a house number, and it made the avia chat a rail chat that switched the address guard off.
+  return statementsOf(replyText, RAIL_SENTENCE).some(
+    (st) => mentionsRail([st]) && extractNumbers(st).some((f) => f.kind === 'money' || (f.kind === 'plain' && f.fixed !== true)),
+  );
 }
+const RAIL_SENTENCE = /[!?؟。！？\n]+|\.(?=\s|$)/u;
 
 /** His question: the burst asks about rail, or the model is answering one with a figure. */
 function railQuestion(ctx: Pick<AgentContext, 'burst'>, c: Pick<ComposeReply, 'replyText'>): boolean {

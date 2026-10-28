@@ -6,7 +6,7 @@ import { canLogInSql } from '../../platform/users/login';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import type { AviaCargo, QuotedRoad } from './context';
 import type { AgentLocale, ScriptName } from './locale';
-import { customerSources, urlsIn, type NumberSource, type TravelMode } from './numbers';
+import { airMentionIn, customerSources, urlsIn, type NumberSource, type TravelMode } from './numbers';
 import { warehouseAddressTexts } from './kb';
 import { GS_REMINDER } from './seed-kb';
 import { addressAnchorsOf, checkAgentReply, checkOwnerReply, codeCandidatesIn, textFingerprint, type PolicyHit, type PolicyResult } from './policy';
@@ -168,7 +168,10 @@ export async function policyFor(input: {
     sendCounts(input.managerUserId, input.peerId, input.body, input.strip),
     getSetting('client_code_prefix'),
     // Read now, not remembered: the address he corrects this morning is the one an older draft's ✅ refuses.
-    input.memory.aviaOnly === true || input.memory.aviaMentioned === true ? warehouseAddressTexts() : Promise.resolve([]),
+    // …and whenever the reply itself speaks of the flight (#1486): the warning reads the reply too.
+    input.memory.aviaOnly === true || input.memory.aviaMentioned === true || airMentionIn(input.body)
+      ? warehouseAddressTexts()
+      : Promise.resolve([]),
   ]);
   return checkAgentReply({
     body: input.body,

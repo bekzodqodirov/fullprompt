@@ -67,11 +67,13 @@ export function isPashto(text: string): boolean {
  * «poyzd», «ж.д.», «вагоном», «по железке», «班列». Whole words where a short
  * form is a piece of another word: «жд» is the start of «жду» (I am
  * waiting), «rail» sits inside «trailer», «temir yul» starts «temir yulduz»
- * (a star). «железн…»/«железк…» also match iron goods («железные изделия») —
- * a false positive only puts the question to him, which is the safe direction.
+ * (a star). «железн…» also matches iron goods («железные изделия») — a false
+ * positive only puts the question to him, which is the safe direction; but
+ * «железки» alone is the hardware a customer sends, so the slang counts only
+ * as «по / на железке» (#1486).
  */
 const RAIL =
-  /temir[\s-]?y[ou]['‘’ʻ`]?l(?!duz)|po(?:ye|e|y)zd|темир[\s-]?й[ўу]л|поезд(?!к)|(?<!\p{L})ж\s?[./]?\s?д\.?(?!\p{L})|железнодорож|железн\p{L}*\s+дорог|железк|вагон|vagon|(?<!\p{L})rail(?:way|road)?s?(?!\p{L})|(?<!\p{L})trains?(?!\p{L})|قطار|راه[\s‌]?آهن|铁路|火车|班列/iu;
+  /temir[\s-]?y[ou]['‘’ʻ`]?l(?!duz)|po(?:ye|e|y)zd|темир[\s-]?й[ўу]л|поезд(?!к)|(?<!\p{L})ж\s?[./]?\s?д\.?(?!\p{L})|железнодорож|железн\p{L}*\s+дорог|(?:по|на)\s+железк|вагон|vagon|(?<!\p{L})rail(?:way|road)?s?(?!\p{L})|(?<!\p{L})trains?(?!\p{L})|قطار|راه[\s‌]?آهن|铁路|火车|班列/iu;
 
 /** The question the draft carries for him when a burst asks about rail and the model asked none. */
 export const RAIL_OWNER_QUESTION = "Mijoz temir yo'l narxini so'rayapti — narxni siz ayting.";
