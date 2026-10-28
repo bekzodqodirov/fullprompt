@@ -3,6 +3,7 @@ import { logger } from '../logger';
 import { tashkentDay, tashkentMinute } from '../time/tashkent';
 import {
   activeIntake,
+  BOOT_GRACE_MS,
   durableIntakes,
   endIntake,
   expireIntake,
@@ -12,6 +13,8 @@ import {
   noteOwnMessage,
   peekIntake,
   REMIND_AFTER_MS,
+  retryUnsaid,
+  sayOrRetry,
   updateIntake,
 } from './calc-store';
 import { totalsQuestionText, type IntakeState } from './calc-intake';
@@ -19,6 +22,8 @@ import {
   deliverNextStep,
   intakeLaws,
   landingReplyText,
+  QUEUE_REFUSAL,
+  queueRefusal,
   showIntakePrompt,
   skipKeyboard,
   type CalcPressCtx,
@@ -51,9 +56,17 @@ export const JOB_CALC_INTAKE_SWEEP = 'calc.intake-sweep';
 /**
  * The sweep ends nothing in its first two minutes after boot, so the backlog
  * — answers written before the 24 hours ran out — is applied before an expiry
- * is judged (durability-12 c).
+ * is judged (durability-12 c). One constant with the store's own reads.
  */
-export const BOOT_GRACE_MS = 2 * 60_000;
+export { BOOT_GRACE_MS };
+/**
+ * Failed resumes a cut-off landing gets once its collection is past its 24
+ * hours; then it is let go, so a refusal that never clears cannot keep it —
+ * and the chat it holds — for ever.
+ */
+export const RESUME_TRIES = 3;
+/** How long a resume keeps a collection past its 24 hours alive for the landing — parked, never holding. */
+const RESUME_ALIVE_MS = 5 * 60_000;
 /** A press that started a landing this recently is left to finish it (the press says the ✅). */
 export const LANDING_PRESS_QUIET_MS = 60_000;
 /** A stored reply this old with no delivery alive is sent by the sweep (durability-16). */
@@ -152,18 +165,31 @@ export function sweepAction(state: IntakeState, now: number, facts: SweepFacts):
   return 'none';
 }
 
+/** A cut-off landing's failed resumes: how many, and whether the queue's refusal was said. */
+interface ResumeFailures {
+  count: number;
+  refusalSaid: boolean;
+}
+
 /**
- * The press and the sweep share two facts about a landing, in this process
- * (on `globalThis`, like the store): which chat the sweep is landing right
- * now, and when a press last started one.
+ * The press and the sweep share what they know about a landing, in this
+ * process (on `globalThis`, like the store): which chat the sweep is landing
+ * right now, when a press last started one, which chat's press the sweep's
+ * ✅ was to answer, and how a note's resumes have failed.
  */
 const globalForSweep = globalThis as unknown as {
-  calcIntakeSweep?: { resuming: Set<string>; landingPressAt: Map<string, number>; resumeWarned: Set<string> };
+  calcIntakeSweep?: {
+    resuming: Set<string>;
+    landingPressAt: Map<string, number>;
+    silenced: Set<string>;
+    resumeFailures: Map<string, ResumeFailures>;
+  };
 };
 const sweepMemory = (globalForSweep.calcIntakeSweep ??= {
   resuming: new Set(),
   landingPressAt: new Map(),
-  resumeWarned: new Set(),
+  silenced: new Set(),
+  resumeFailures: new Map(),
 });
 
 /** Has the collection reached a reading the seller was shown — the only stage a landing starts from. */
@@ -171,8 +197,13 @@ function reviewed(state: IntakeState): boolean {
   return state.stage !== 'section' && state.stage !== 'client' && state.stage !== 'material';
 }
 
-async function factsFor(chatId: bigint, state: IntakeState, now: number, sinceBootMs: number): Promise<SweepFacts> {
-  const pressedAt = sweepMemory.landingPressAt.get(String(chatId));
+/**
+ * The facts that need a read, about the collection as the tick SAW it. The
+ * press's landing stamp is not among them: it is read after these awaits,
+ * beside the re-read of the collection, so a press that starts its landing
+ * meanwhile keeps the tick away.
+ */
+async function factsFor(state: IntakeState, sinceBootMs: number): Promise<Omit<SweepFacts, 'pressLandingMs'>> {
   let landing: SweepFacts['landing'] = 'none';
   if (state.amend === null && reviewed(state)) {
     const { landingState } = await import('../../wms/calc/intake-ended');
@@ -183,16 +214,32 @@ async function factsFor(chatId: bigint, state: IntakeState, now: number, sinceBo
     landing,
     pendingDeliveryAlive: state.pendingReply !== null ? await pendingDeliveryAlive(state) : false,
     savingAlive: state.saving !== null ? await savingAlive(state) : true,
-    pressLandingMs: pressedAt === undefined ? null : now - pressedAt,
     sinceBootMs,
   };
 }
 
 /**
- * One tick. Every collection in memory is decided on what it is NOW (re-read
- * after the facts' awaits — the seller may have written meanwhile) and acted
- * on in its own try, so one chat's failure never stops the rest. Then the
- * additions that waited for a machine pass are handed back (P4).
+ * Is the collection still the one whose facts were read — the same note AND
+ * the same reading, save and stored reply? A fact is about one token: «this
+ * reading's job is dead» said of the reading the seller's «Bo‘ldi» started
+ * during the awaits would release a LIVE one.
+ */
+function sameWork(live: IntakeState, seen: IntakeState): boolean {
+  return (
+    live.noteId === seen.noteId &&
+    live.analysing === seen.analysing &&
+    (live.saving?.jobId ?? null) === (seen.saving?.jobId ?? null) &&
+    (live.pendingReply?.token ?? null) === (seen.pendingReply?.token ?? null)
+  );
+}
+
+/**
+ * One tick. First the goodbyes a failed send left unsaid. Then every
+ * collection in memory is decided on what it is NOW (re-read after the facts'
+ * awaits — the seller may have written meanwhile; one whose reading, save or
+ * stored reply changed under them waits for the next tick) and acted on in its
+ * own try, so one chat's failure never stops the rest. Then the additions that
+ * waited for a machine pass are handed back (P4).
  */
 export async function runIntakeSweep(now: number = Date.now()): Promise<Record<SweepAction, number>> {
   const done: Record<SweepAction, number> = {
@@ -209,16 +256,23 @@ export async function runIntakeSweep(now: number = Date.now()): Promise<Record<S
   for (const [chat, at] of sweepMemory.landingPressAt) {
     if (now - at >= LANDING_PRESS_QUIET_MS) sweepMemory.landingPressAt.delete(chat);
   }
+  try {
+    await retryUnsaid();
+  } catch (err) {
+    logger.warn({ err }, '[calc-intake] unsaid goodbyes not retried');
+  }
   const boot = bootedAtSec();
   const sinceBootMs = boot > 0 ? now - boot * 1000 : Number.POSITIVE_INFINITY;
   for (const [chatId, seen] of liveIntakes()) {
     try {
-      const facts = await factsFor(chatId, seen, now, sinceBootMs);
+      const read = await factsFor(seen, sinceBootMs);
       const state = peekIntake(chatId);
-      if (!state || state.noteId !== seen.noteId) continue;
+      if (!state || !sameWork(state, seen)) continue;
+      const pressedAt = sweepMemory.landingPressAt.get(String(chatId));
+      const facts: SweepFacts = { ...read, pressLandingMs: pressedAt === undefined ? null : now - pressedAt };
       const action = sweepAction(state, now, facts);
       done[action] += 1;
-      await act(chatId, state, action, now);
+      await act(chatId, state, action, now, facts);
     } catch (err) {
       logger.warn({ err, chatId: String(chatId) }, '[calc-intake] sweep failed for a chat');
     }
@@ -232,7 +286,7 @@ export async function runIntakeSweep(now: number = Date.now()): Promise<Record<S
   return done;
 }
 
-async function act(chatId: bigint, state: IntakeState, action: SweepAction, now: number): Promise<void> {
+async function act(chatId: bigint, state: IntakeState, action: SweepAction, now: number, facts: SweepFacts): Promise<void> {
   switch (action) {
     case 'none':
       return;
@@ -254,7 +308,7 @@ async function act(chatId: bigint, state: IntakeState, action: SweepAction, now:
       await deliverStoredReply(chatId, state);
       return;
     case 'resume_landing':
-      await resumeLanding(chatId, state);
+      if (facts.landing !== 'none') await resumeLanding(chatId, state, facts.landing, now);
       return;
   }
 }
@@ -336,17 +390,43 @@ async function remind(chatId: bigint, state: IntakeState, now: number): Promise<
  * `rootRequestOfNote` its request when one exists, K2's note lock keeps a
  * concurrent twin to one request — and the ✅ is the save branch's own, with
  * Uch band's retried words. `resuming` keeps a press in the same moment
- * silent (`landedAlreadyReply`): this ✅ answers it.
+ * silent (`landedAlreadyReply`): this ✅ answers it, sent BEFORE the
+ * collection ends, so a press in the ✅'s own round trip still finds
+ * `resuming` and says nothing (§2.7).
+ *
+ * The clock is not moved for the landing — the sweep is not the seller's
+ * action, and a resume that failed and slid it would never expire and would
+ * hold the chat for good. Only a collection already past its 24 hours (a long
+ * outage) is kept alive for it, set just inside the window so it stays PARKED,
+ * and put back when the landing fails. A failure is tried again at the next
+ * ticks; past the 24 hours, after RESUME_TRIES failures, the collection is let
+ * go. The queue's refusals are the press path's own (staff-handlers.ts, the
+ * save branch): said once, in its words, and a job too big for the queue or
+ * a note already written ends the collection there.
  */
-async function resumeLanding(chatId: bigint, state: IntakeState): Promise<void> {
+async function resumeLanding(
+  chatId: bigint,
+  state: IntakeState,
+  landing: 'landed' | 'note_only',
+  now: number,
+): Promise<void> {
   const k = String(chatId);
   if (sweepMemory.resuming.has(k)) return;
+  const failed = sweepMemory.resumeFailures.get(state.noteId) ?? { count: 0, refusalSaid: false };
+  if (now >= state.touchedAt + INTAKE_TTL_MS && failed.count >= RESUME_TRIES) {
+    // Let go. A note that never got its request ends as any collection ends,
+    // with the line; a job that LANDED stands on its card — only its ✅ could
+    // not be made — and ends in silence rather than with «o‘chirildi».
+    sweepMemory.resumeFailures.delete(state.noteId);
+    if (landing === 'landed') endIntake(chatId);
+    else expireIntake(chatId, state);
+    return;
+  }
   sweepMemory.resuming.add(k);
+  const real = Date.now();
+  const revivedAt = real >= state.touchedAt + INTAKE_TTL_MS ? real - INTAKE_TTL_MS + RESUME_ALIVE_MS : null;
+  if (revivedAt !== null) updateIntake(chatId, { touchedAt: revivedAt }, { quiet: true });
   try {
-    // A note already on a card is finished, never expired: the landing reads
-    // the live collection, and a kept one may be past its 24 hours after a
-    // long outage. Quiet — the sweep is not the seller's action.
-    updateIntake(chatId, { touchedAt: Date.now() }, { quiet: true });
     const staff = await staffForChat(chatId);
     const target = await landCollectedIntake(chatId, state.staffId, staff?.fullName ?? '');
     if (!target) return;
@@ -355,22 +435,36 @@ async function resumeLanding(chatId: bigint, state: IntakeState): Promise<void> 
     const tariffFollows = target.replyQueued === true && !sectionParts(state.section).customs;
     const { replyKeyboardFor } = await import('./keyboards');
     const markup = landedReplyMarkup(target) ?? (await replyKeyboardFor(chatId));
+    await sayOrRetry({ chatId, text: landingReplyText(target, { link, tariffFollows }), replyMarkup: markup });
     endIntake(chatId);
-    const sent = await sendText({
-      chatId,
-      text: landingReplyText(target, { link, tariffFollows }),
-      replyMarkup: markup,
-      silent: quietHour(),
-    });
-    if (!sent.ok) logger.warn({ chatId: k, status: sent.status }, '[calc-intake] resumed landing ✅ not sent');
+    sweepMemory.resumeFailures.delete(state.noteId);
   } catch (err) {
-    // Kept: the next tick, or the seller's own «Tasdiqlash», tries again.
-    if (!sweepMemory.resumeWarned.has(state.noteId)) {
-      sweepMemory.resumeWarned.add(state.noteId);
-      logger.warn({ err, chatId: k }, '[calc-intake] a cut-off landing could not be finished — kept');
+    // Put the clock back, unless the seller acted meanwhile.
+    const live = peekIntake(chatId);
+    if (revivedAt !== null && live && live.noteId === state.noteId && live.touchedAt === revivedAt) {
+      updateIntake(chatId, { touchedAt: state.touchedAt }, { quiet: true });
+    }
+    failed.count += 1;
+    sweepMemory.resumeFailures.set(state.noteId, failed);
+    if (failed.count === 1) logger.warn({ err, chatId: k }, '[calc-intake] a cut-off landing could not be finished — kept');
+    const code = (err as { code?: unknown } | null)?.code;
+    const refused = typeof code === 'string' && code in QUEUE_REFUSAL ? code : null;
+    if (refused) {
+      const ends = refused === 'too_many_items' || refused === 'note_taken';
+      if (ends) endIntake(chatId);
+      if (ends || !failed.refusalSaid) {
+        failed.refusalSaid = true;
+        const { replyKeyboardFor } = await import('./keyboards');
+        await sayOrRetry({ chatId, text: `⚠️ Saqlanmadi: ${queueRefusal(refused)}`, replyMarkup: await replyKeyboardFor(chatId) });
+      }
+    } else if (sweepMemory.silenced.has(k)) {
+      // A «Tasdiqlash» this resume kept silent is owed an answer: the press
+      // path's own words for a landing that failed.
+      await sayOrRetry({ chatId, text: 'Saqlab bo‘lmadi — «Saqlash»ni qayta bosing.' });
     }
   } finally {
     sweepMemory.resuming.delete(k);
+    sweepMemory.silenced.delete(k);
   }
 }
 
@@ -473,7 +567,10 @@ export async function landedAlreadyReply(
   _state: IntakeState,
 ): Promise<boolean> {
   const k = String(chatId);
-  if (sweepMemory.resuming.has(k)) return true;
+  if (sweepMemory.resuming.has(k)) {
+    sweepMemory.silenced.add(k);
+    return true;
+  }
   sweepMemory.landingPressAt.set(k, Date.now());
   return false;
 }
@@ -482,5 +579,6 @@ export async function landedAlreadyReply(
 export function __resetIntakeSweep(): void {
   sweepMemory.resuming.clear();
   sweepMemory.landingPressAt.clear();
-  sweepMemory.resumeWarned.clear();
+  sweepMemory.silenced.clear();
+  sweepMemory.resumeFailures.clear();
 }

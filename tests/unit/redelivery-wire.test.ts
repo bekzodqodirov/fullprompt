@@ -192,7 +192,9 @@ describe('(6) the start', () => {
     const at = found(start, 'void Promise.allSettled([');
     const open = start.indexOf('(', at + 'void Promise.allSettled'.length);
     const members = argsOf(callAt(start, open).replace(/^\s*\[|\]\s*$/g, ''));
-    expect(members.map((m) => /^hydrate(?:Waits|Intakes)\(\)\s*\.catch\(/.test(m))).toEqual([true, true]);
+    // The collections' restore is retried before it is let go (the P1
+    // review's ADV-7) — still one member, still its own catch.
+    expect(members.map((m) => /^(?:hydrateWaits\(\)|hydrateWithRetry\(hydrateIntakes\))\s*\.catch\(/.test(m))).toEqual([true, true]);
     const tail = start.slice(open + callAt(start, open).length + 2);
     const fin = found(tail, '.finally(');
     const body = callAt(tail, tail.indexOf('(', fin));

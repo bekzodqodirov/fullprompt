@@ -8,8 +8,8 @@ import { logger } from '../logger';
 import type { AmendBase } from '../../wms/calc/amend-types';
 import type { CalcSection } from '../../wms/calc/intake';
 import type { IntakeState } from './calc-intake';
-import { bootedAtSec, currentUpdateId, isBacklog } from './lifecycle';
-import { quietHour, sendText } from './send';
+import { bootedAtSec, currentUpdateId, isBacklog, lastDoneUpdateId } from './lifecycle';
+import { quietHour, sendText, type SendResult } from './send';
 
 /**
  * The «Hisoblatish» collections, as the bot holds them — MOVED out of
@@ -53,6 +53,21 @@ export const INTAKE_HYDRATE_WAIT_MS = 10_000;
 const LARGE_STATE_BYTES = 2 * 1024 * 1024;
 /** `ownMessageIds` keeps the newest this many. */
 const OWN_KEPT = 40;
+/**
+ * The first minutes after boot, while the backlog is still being applied:
+ * the sweep ends nothing (calc-intake-sweep.ts), and a read with no moment of
+ * its own ends nothing either — an answer written before the 24 hours ran out
+ * may still be on its way (durability-12 c).
+ */
+export const BOOT_GRACE_MS = 2 * 60_000;
+/** How many sweep ticks a goodbye whose send may yet succeed is tried again. */
+export const UNSAID_TRIES = 12;
+/**
+ * Postgres refusing the ROW itself, not the moment: a malformed value (22P02,
+ * 22P05), a CHECK (23514), a UNIQUE (23505). The same statement is refused
+ * every time, so it is never retried.
+ */
+const REFUSED_FOR_GOOD = new Set(['22P02', '22P05', '23514', '23505']);
 
 /**
  * A job asked for the store before this process restored it (durability-9) —
@@ -86,8 +101,17 @@ interface IntakeStore {
   hydrated: boolean;
   waiters: (() => void)[];
   writeCount: number;
-  warned: boolean;
+  /** Chats whose failed write was logged — once per chat, so one bad chat never hides another. */
+  warnedChats: Set<string>;
   confirmWarned: boolean;
+  /**
+   * Every update below this was confirmed by a `getUpdates` grammy sent
+   * through `flushBeforeConfirm` — a change of one of them, still unwritten,
+   * can no longer be held back by the stop (P1 review ADV-1).
+   */
+  confirmedBelow: number;
+  /** Goodbyes whose send may yet succeed — the sweep's next ticks try them (`retryUnsaid`). */
+  unsaid: Unsaid[];
   ready: boolean;
   /** Tests: a stand-in for the readiness probe, and a hook run before each statement. */
   probe: (() => Promise<boolean>) | null;
@@ -108,8 +132,10 @@ const store: IntakeStore = (globalForIntakes.calcIntakes ??= {
   hydrated: false,
   waiters: [],
   writeCount: 0,
-  warned: false,
+  warnedChats: new Set(),
   confirmWarned: false,
+  confirmedBelow: 0,
+  unsaid: [],
   ready: false,
   probe: null,
   hook: null,
@@ -290,18 +316,32 @@ export function intakeMomentOf(messageDateSec: number): number {
   return isBacklog(messageDateSec) ? messageDateSec * 1000 : Date.now();
 }
 
+/** Is this process still inside the boot's grace — the backlog possibly not yet applied? */
+function inBootGrace(): boolean {
+  const boot = bootedAtSec();
+  return boot > 0 && Date.now() - boot * 1000 < BOOT_GRACE_MS;
+}
+
 /**
  * The live collection for a chat, or nothing — expiry is checked on read.
  *
  * `atMs`: the moment the question is asked FOR (`intakeMomentOf`). An entry
  * found expired is handed to `expireIntake`, the one end path the sweep
  * shares, which says «⌛ … o‘chirildi» once (durability-12 a).
+ *
+ * A read with no moment of its own (a door, a press, the backlog's presence
+ * question) in the boot's grace answers «none» and leaves the end to the
+ * sweep: the backlog is still being applied, and a later message of it
+ * written before the 24 hours ran out still belongs to the collection — an
+ * end said at NOW would have taken it away first. A message's own moment
+ * ends it at once: Telegram hands the backlog over in order, so nothing
+ * written earlier is still to come.
  */
-export function activeIntake(chatId: bigint, atMs: number = Date.now()): IntakeState | null {
+export function activeIntake(chatId: bigint, atMs?: number): IntakeState | null {
   const state = store.collections.get(key(chatId));
   if (!state) return null;
-  if (expiredAt(state, atMs)) {
-    expireIntake(chatId, state);
+  if (expiredAt(state, atMs ?? Date.now())) {
+    if (atMs !== undefined || !inBootGrace()) expireIntake(chatId, state);
     return null;
   }
   return state;
@@ -337,12 +377,55 @@ export function expireIntake(chatId: bigint, state: IntakeState): void {
   void sayEnded(chatId, live).catch((err: unknown) => logger.warn({ err }, '[calc-intake] end line not sent'));
 }
 
+/**
+ * The row's DELETE is written BEFORE the line: a process killed between the
+ * two would otherwise hydrate the row again on its next boot and say the end
+ * a second time. A flush that fails still sends — memory has already let the
+ * collection go, and a line never said is worse than one said twice.
+ */
 async function sayEnded(chatId: bigint, state: IntakeState): Promise<void> {
   const { SECTION_LABEL } = await import('../../wms/calc/intake');
   const { intakeClientSummary } = await import('./calc-intake');
   const text = intakeEndedText(state, SECTION_LABEL, intakeClientSummary(state.clientHintRaw));
-  const sent = await sendText({ chatId, text, silent: quietHour() });
-  if (!sent.ok) logger.warn({ chatId: String(chatId), status: sent.status }, '[calc-intake] end line refused');
+  await flushIntakeWrites(chatId);
+  await sayOrRetry({ chatId, text });
+}
+
+interface Unsaid {
+  chatId: bigint;
+  text: string;
+  replyMarkup?: unknown;
+  tries: number;
+}
+
+/**
+ * Say a message nothing else remembers — the ⌛ end line, a resumed landing's
+ * ✅ — its collection gone or about to go. A failure that may pass (a 429,
+ * the token down, no answer) keeps it for the sweep's next ticks
+ * (`retryUnsaid`, at most UNSAID_TRIES); a refusal for good (400/403: the bot
+ * blocked, no such chat) is logged and dropped. `silent` is the hour of the
+ * attempt, the bot's one night.
+ */
+export async function sayOrRetry(msg: { chatId: bigint; text: string; replyMarkup?: unknown }): Promise<SendResult> {
+  const sent = await sendText({ ...msg, silent: quietHour() });
+  if (!sent.ok) {
+    if (!sent.permanent) store.unsaid.push({ ...msg, tries: 1 });
+    logger.warn({ chatId: String(msg.chatId), status: sent.status, kept: !sent.permanent }, '[calc-intake] goodbye not sent');
+  }
+  return sent;
+}
+
+/** One sweep tick's second try of every goodbye still unsaid; answers how many went out. */
+export async function retryUnsaid(): Promise<number> {
+  const due = store.unsaid.splice(0);
+  let said = 0;
+  for (const msg of due) {
+    const sent = await sendText({ chatId: msg.chatId, text: msg.text, replyMarkup: msg.replyMarkup, silent: quietHour() });
+    if (sent.ok) said += 1;
+    else if (!sent.permanent && msg.tries + 1 < UNSAID_TRIES) store.unsaid.push({ ...msg, tries: msg.tries + 1 });
+    else logger.warn({ chatId: String(msg.chatId), status: sent.status }, '[calc-intake] goodbye given up');
+  }
+  return said;
 }
 
 /** §2.7's goodbye, pure. `client` = `intakeClientSummary(clientHintRaw)`. */
@@ -494,9 +577,12 @@ export function liveIntakes(): ReadonlyArray<readonly [bigint, IntakeState]> {
  * the hydrate, so what the person typed into the outage has somewhere to go
  * (backlog.ts's sentence loses «Hisoblatish» for that chat alone). One opened
  * by a late press after boot is not a survivor.
+ *
+ * `atMs`: the backlog message's own moment (`intakeMomentOf`) — alive when it
+ * was WRITTEN is what decides, never alive now (durability-12 c).
  */
-export function collectionSurvived(chatId: bigint | number): boolean {
-  const state = activeIntake(BigInt(chatId));
+export function collectionSurvived(chatId: bigint | number, atMs?: number): boolean {
+  const state = activeIntake(BigInt(chatId), atMs);
   return state !== null && state.openedAt < bootedAtSec() * 1000;
 }
 
@@ -531,9 +617,13 @@ export function intakeTakes(state: IntakeState, msg: IntakeMessage): 'take' | 's
 
 /**
  * Pure: is the pressed message one of this collection's own — the one that
- * opened it, or one it drew since (`ownMessageIds`)? A press from an older
- * collection's message, a crash-redelivered «✖️ Bekor qilish» included,
- * changes nothing (durability-2).
+ * opened it, one of the three it keeps live for its whole life (the table,
+ * the prompt, the offers, edited in place), or one it drew since
+ * (`ownMessageIds`)? A press from an older collection's message, a
+ * crash-redelivered «✖️ Bekor qilish» included, changes nothing
+ * (durability-2). The three are asked by name because `ownMessageIds` keeps
+ * only the newest forty: on a long invoice the echoes the table draws would
+ * push the table itself out, and its «✅ Tasdiqlash» would read «eskirgan».
  *
  * A press that names no message cannot be judged and acts on what is live,
  * as before: Telegram always sends the message a bot's inline button sat on,
@@ -541,7 +631,13 @@ export function intakeTakes(state: IntakeState, msg: IntakeMessage): 'take' | 's
  */
 export function ownsPress(state: IntakeState, pressedMessageId: number | null): boolean {
   if (pressedMessageId === null) return true;
-  return pressedMessageId === state.openedBy || state.ownMessageIds.includes(pressedMessageId);
+  return (
+    pressedMessageId === state.openedBy ||
+    pressedMessageId === state.tableMessageId ||
+    pressedMessageId === state.promptMessageId ||
+    pressedMessageId === state.offersMessageId ||
+    state.ownMessageIds.includes(pressedMessageId)
+  );
 }
 
 /** Join a message this collection sent to its own (`ownMessageIds`, last 40), quietly. */
@@ -599,7 +695,13 @@ function markDirty(k: string): void {
   if (!store.durable) return;
   const p = pendingOf(k);
   p.dirty = true;
-  p.from = minOf(p.from, currentUpdateId());
+  // Only an update still being handled can be held back: a `void`
+  // continuation that outlived its update (the reading started by a press)
+  // runs under that update's id long after grammy confirmed it, and naming
+  // it would make the stop hold back a whole batch already handled (P1 review ADV-1).
+  // Such a change is a job's — it names no update.
+  const update = currentUpdateId();
+  if (update !== null && update > lastDoneUpdateId()) p.from = minOf(p.from, update);
   const now = Date.now();
   p.firstAt ??= now;
   arm(k, p, Math.min(INTAKE_WRITE_QUIET_MS, p.firstAt + INTAKE_WRITE_MAX_MS - now));
@@ -620,8 +722,15 @@ async function writeChat(k: string): Promise<boolean> {
   }
   for (;;) {
     if (p.inFlight) {
-      const ok = await p.inFlight;
-      if (!p.dirty) return ok;
+      // Another caller's write. Its answer is this caller's only when nothing
+      // newer is pending: the caller that started it may already have begun
+      // the NEXT write (for a change this caller saw) the moment it settled —
+      // `dirty` is false again then, and answering here would say «written»
+      // about a row that does not hold that change yet.
+      const awaited = p.inFlight;
+      const ok = await awaited;
+      if (!ok) return false;
+      if (!p.dirty && (p.inFlight === null || p.inFlight === awaited)) return true;
       continue;
     }
     if (!p.dirty) return true;
@@ -637,16 +746,30 @@ async function writeChat(k: string): Promise<boolean> {
         return true;
       },
       (err: unknown) => {
+        const code = pgCodeOf(err);
+        if (code !== null && REFUSED_FOR_GOOD.has(code)) {
+          // The table refuses the ROW, and would refuse it at every retry —
+          // re-sent every five seconds and before every getUpdates for a day.
+          // Let it go: memory stays the reader, the update holds nothing
+          // back, and the next change of this chat is tried afresh.
+          p.writingFrom = null;
+          if (!p.dirty && !p.timer && store.pending.get(k) === p) store.pending.delete(k);
+          if (!store.warnedChats.has(`refused:${k}`)) {
+            logger.warn({ err, chatId: k, code }, '[calc-intake] collection refused by the table — not retried');
+          }
+          store.warnedChats.add(`refused:${k}`);
+          return false;
+        }
         // Kept DIRTY and retried by the next timer, never dropped
         // (durability-10): «log once and forget» lost a seller's change at the
-        // next deploy with its update already confirmed. One line per process.
+        // next deploy with its update already confirmed. One line per chat.
         p.dirty = true;
         p.from = minOf(p.from, p.writingFrom);
         p.writingFrom = null;
         p.firstAt ??= Date.now();
         if (!store.sealed) arm(k, p, INTAKE_WRITE_MAX_MS);
-        if (!store.warned) logger.warn({ err, chatId: k }, '[calc-intake] collection not written to the table');
-        store.warned = true;
+        if (!store.warnedChats.has(k)) logger.warn({ err, chatId: k }, '[calc-intake] collection not written to the table');
+        store.warnedChats.add(k);
         return false;
       },
     );
@@ -656,6 +779,35 @@ async function writeChat(k: string): Promise<boolean> {
     // A failure is the timer's to retry, never this loop's.
     if (!ok || !p.dirty) return ok;
   }
+}
+
+/** Postgres's SQLSTATE of a failed statement — drizzle may wrap the driver's error (db/errors.ts's idiom). */
+function pgCodeOf(err: unknown): string | null {
+  const pg = err as { code?: unknown; cause?: { code?: unknown } } | null;
+  const code = pg?.code ?? pg?.cause?.code;
+  return typeof code === 'string' ? code : null;
+}
+
+/** A NUL, or half of a surrogate pair: what `jsonb` refuses in a string (22P02). */
+const UNSTORABLE = /\\u0000|\\ud[89a-f][0-9a-f]{2}/i;
+
+/**
+ * The state as jsonb will take it. A sheet's text is cut at 300 characters
+ * (goods-file.ts), which can halve an emoji, and a UTF-16 file read without
+ * its BOM carries NULs; `JSON.stringify` writes both as escapes the jsonb
+ * input refuses, and one such string would keep the whole collection out of
+ * the table. Only then is the state written again with each string mended —
+ * the NUL dropped, a lone half replaced — so the stored text is the same
+ * words. Paired surrogates are written as characters, never as escapes, so
+ * the test finds only what needs mending (or a literal backslash text, which
+ * merely takes the slower path).
+ */
+function storableJson(state: Partial<IntakeState>): string {
+  const json = JSON.stringify(state);
+  if (!UNSTORABLE.test(json)) return json;
+  return JSON.stringify(state, (_key, value: unknown) =>
+    typeof value === 'string' ? value.replace(/\u0000/g, '').toWellFormed() : value,
+  );
 }
 
 /** The row for whatever memory holds NOW — an UPSERT, or a DELETE when the chat has none. */
@@ -671,9 +823,10 @@ async function writeRow(k: string): Promise<void> {
   // `expires` is derived (touchedAt + 24 h), never stored.
   const rest: Partial<IntakeState> = { ...state };
   delete rest.expires;
-  const json = JSON.stringify(rest);
-  if (json.length > LARGE_STATE_BYTES) {
-    logger.warn({ chatId: k, bytes: json.length }, '[calc-intake] large collection');
+  const json = storableJson(rest);
+  const bytes = Buffer.byteLength(json, 'utf8');
+  if (bytes > LARGE_STATE_BYTES) {
+    logger.warn({ chatId: k, bytes }, '[calc-intake] large collection');
   }
   const iso = (ms: number) => new Date(ms).toISOString();
   await db.execute(sql`
@@ -701,28 +854,50 @@ export async function flushIntakeWrites(chatId?: bigint): Promise<boolean> {
   return results.every(Boolean);
 }
 
+/** The lowest update naming an unwritten change, among those `confirmed` (below the offset grammy sent) or not. */
+function unwrittenUpdate(confirmed: boolean): number | null {
+  let oldest: number | null = null;
+  const take = (n: number | null) => {
+    if (n !== null && (n < store.confirmedBelow) === confirmed) oldest = minOf(oldest, n);
+  };
+  for (const p of store.pending.values()) {
+    if (p.dirty) take(p.from);
+    take(p.writingFrom);
+  }
+  return oldest;
+}
+
 /**
  * The lowest update id whose collection change is not yet written, or null.
  * The stop asks it after the flush and, while that update's batch is still
  * being handled, confirms only through the update before it (durability-10);
  * an update of an ended batch is already confirmed and is logged lost (K15).
+ *
+ * Never one grammy has ALREADY confirmed through `flushBeforeConfirm` (a
+ * write that failed or outran the bound before the next `getUpdates`): the
+ * stop's own confirm cannot take it back, and holding back «the update before
+ * it» would only hand the next process a whole batch handled here — every
+ * reply and forward of it a second time. Such a change is lost and is said so
+ * when the store is sealed.
  */
 export function oldestUnwrittenUpdate(): number | null {
-  let oldest: number | null = null;
-  for (const p of store.pending.values()) {
-    if (p.dirty) oldest = minOf(oldest, p.from);
-    oldest = minOf(oldest, p.writingFrom);
-  }
-  return oldest;
+  return unwrittenUpdate(false);
 }
 
 /**
  * After the stop's flush: this process writes no more rows (durability-1). An
  * update still running here past the stop's budget is unconfirmed and goes to
  * the new process; its late effect must never overwrite the row that process
- * hydrated.
+ * hydrated. A change whose update Telegram had already confirmed is lost here
+ * — the next process could not have hydrated it either — and is logged.
  */
 export function sealIntakeWrites(): void {
+  if (!store.sealed) {
+    const lost = unwrittenUpdate(true);
+    if (lost !== null) {
+      logger.warn({ update: lost }, '[calc-intake] a change whose update Telegram already confirmed was never written — lost');
+    }
+  }
   store.sealed = true;
   for (const p of store.pending.values()) {
     if (p.timer) clearTimeout(p.timer);
@@ -761,7 +936,14 @@ export function flushBeforeConfirm(): Transformer {
         logger.warn({ outcome }, '[calc-intake] a batch confirmed before its collection was written — the timer retries');
       }
     }
-    return prev(method, payload, signal);
+    const res = await prev(method, payload, signal);
+    // Telegram has dropped every update below the offset this call carried:
+    // an unwritten change of one of them can no longer be held back.
+    const offset = (payload as { offset?: unknown } | undefined)?.offset;
+    if (method === 'getUpdates' && res.ok && typeof offset === 'number') {
+      store.confirmedBelow = Math.max(store.confirmedBelow, offset);
+    }
+    return res;
   };
 }
 
@@ -785,7 +967,11 @@ export async function hydrateIntakes(): Promise<number> {
     note_id: string;
     state: IntakeState;
   }[];
-  const candidates = rows.filter((r) => !store.collections.has(r.chat_id) && r.state && typeof r.state === 'object');
+  // Memory wins: a chat it holds, or one with a write still pending (an end
+  // whose DELETE has not landed — a late hydrate must never raise it again).
+  const candidates = rows.filter(
+    (r) => !store.collections.has(r.chat_id) && !store.pending.has(r.chat_id) && r.state && typeof r.state === 'object',
+  );
   let ended = new Set<string>();
   let untold: UntoldAmendment[] = [];
   try {
@@ -798,11 +984,6 @@ export async function hydrateIntakes(): Promise<number> {
     // the sweep (its landing converges by note), a kept one dropped is lost.
     logger.warn({ err }, '[calc-intake] ended collections not checked — every row is kept');
   }
-  if (ended.size > 0) {
-    await db.execute(sql`
-      DELETE FROM telegram_calc_intakes
-       WHERE note_id IN (${sql.join([...ended].map((id) => sql`${id}::uuid`), sql`, `)})`);
-  }
   let loaded = 0;
   for (const row of candidates) {
     if (ended.has(row.note_id) || store.collections.has(row.chat_id)) continue;
@@ -810,8 +991,60 @@ export async function hydrateIntakes(): Promise<number> {
     store.collections.set(row.chat_id, state);
     loaded += 1;
   }
+  // The ended rows go AFTER the kept ones are in memory, in their own try: a
+  // cleanup that fails costs a row left over (the next hydrate drops it, a
+  // landed one the sweep ends with its ✅), never the restore itself.
+  if (ended.size > 0) {
+    try {
+      await db.execute(sql`
+        DELETE FROM telegram_calc_intakes
+         WHERE note_id IN (${sql.join([...ended].map((id) => sql`${id}::uuid`), sql`, `)})`);
+    } catch (err) {
+      logger.warn({ err, ended: ended.size }, '[calc-intake] ended collections not deleted — the next hydrate drops them');
+    }
+  }
   for (const add of untold) await resendSave(add);
   return loaded;
+}
+
+/**
+ * The boot's hydrate, patient with a database that is a moment late (its own
+ * container recreated in the same deploy): tried again after `retryMs`, and
+ * only then handed back as a failure — after which polling starts on memory
+ * alone, as before, while it is tried every `lateMs` in the background until
+ * it answers (or the store is sealed). A late load is the same load: memory
+ * and a pending write win, so a collection the seller started or ended since
+ * boot is never raised over; every one his chat left untouched comes back,
+ * instead of lying in the table until the NEXT deploy raises it, a day old.
+ * `run` is the hydrate itself (bot.ts passes `hydrateIntakes`).
+ */
+export async function hydrateWithRetry(
+  run: () => Promise<number>,
+  opts: { retryMs?: readonly number[]; lateMs?: number } = {},
+): Promise<number> {
+  const retryMs = opts.retryMs ?? [500, 1_500];
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await run();
+    } catch (err) {
+      if (attempt >= retryMs.length) {
+        lateHydrate(run, opts.lateMs ?? 30_000);
+        throw err;
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, retryMs[attempt]));
+  }
+}
+
+function lateHydrate(run: () => Promise<number>, lateMs: number): void {
+  const timer = setTimeout(() => {
+    if (store.sealed) return;
+    run().then(
+      (n) => logger.info({ loaded: n }, '[calc-intake] collections restored late'),
+      () => lateHydrate(run, lateMs),
+    );
+  }, lateMs);
+  timer.unref?.();
 }
 
 /** What the hydrate hears about an addition saved but never told (wms, intake-ended.ts). */
@@ -868,8 +1101,15 @@ export function __forgetIntakeMemory(): void {
   store.sealed = false;
   store.hydrated = false;
   store.waiters.splice(0);
-  store.warned = false;
+  store.warnedChats.clear();
   store.confirmWarned = false;
+  store.confirmedBelow = 0;
+  store.unsaid.splice(0);
+}
+
+/** Tests: the goodbyes waiting for the sweep's next tick. */
+export function __unsaidCount(): number {
+  return store.unsaid.length;
 }
 
 /** Tests: how many statements were SENT to the table (0 while durable is off or not ready). */

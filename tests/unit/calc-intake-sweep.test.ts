@@ -58,14 +58,21 @@ vi.mock('@/modules/platform/telegram/keyboards', () => ({
 }));
 
 import { sendText } from '@/modules/platform/telegram/send';
-import { releaseDeadReading, deliverStoredReply } from '@/modules/platform/telegram/calc-read';
+import { releaseDeadReading, deliverStoredReply, readingAlive } from '@/modules/platform/telegram/calc-read';
 import { releaseDeadSave } from '@/modules/platform/telegram/calc-amend';
+import { landCollectedIntake } from '@/modules/platform/telegram/staff-bot';
+import { landingState } from '@/modules/wms/calc/intake-ended';
 import {
   __forgetIntakeMemory,
   __setIntakeTableProbe,
+  __unsaidCount,
   activeIntake,
+  collectionSurvived,
   endIntake,
+  holdingIntake,
   INTAKE_TTL_MS,
+  intakeEndedText,
+  intakeHolds,
   intakeMomentOf,
   intakeTakes,
   peekIntake,
@@ -79,12 +86,17 @@ import {
   __resetIntakeSweep,
   BOOT_GRACE_MS,
   landedAlreadyReply,
+  pressResume,
   reminderText,
+  RESUME_TRIES,
   runIntakeSweep,
   sweepAction,
   type SweepFacts,
 } from '@/modules/platform/telegram/calc-intake-sweep';
-import { __resetLifecycle, markBoot } from '@/modules/platform/telegram/lifecycle';
+import { __resetLifecycle, bootedAtSec, markBoot } from '@/modules/platform/telegram/lifecycle';
+import { __resetBacklog, backlogSentence, tellBacklogOnce } from '@/modules/platform/telegram/backlog';
+import { __resetDrafts, startDraft } from '@/modules/platform/telegram/task-draft';
+import { CLIENT_QUESTION } from '@/modules/platform/telegram/calc-keyboards';
 import { SECTION_LABEL } from '@/modules/wms/calc/intake';
 import type { AmendBase } from '@/modules/wms/calc/amend-types';
 
@@ -137,6 +149,7 @@ beforeEach(() => {
   vi.mocked(releaseDeadReading).mockClear();
   vi.mocked(deliverStoredReply).mockClear();
   vi.mocked(releaseDeadSave).mockClear();
+  vi.mocked(landCollectedIntake).mockClear();
   Object.assign(stub, { readingAlive: true, savingAlive: true, deliveryAlive: false, landing: 'none', landed: null });
 });
 afterEach(() => {
@@ -144,6 +157,8 @@ afterEach(() => {
   __forgetIntakeMemory();
   __resetIntakeSweep();
   __resetLifecycle();
+  __resetBacklog();
+  __resetDrafts();
 });
 
 describe('the reminder (2 h, once per idle stretch)', () => {
@@ -355,12 +370,13 @@ describe('a landing cut off halfway (durability-3)', () => {
       release = resolve;
     });
     const tick = runIntakeSweep(now);
-    await vi.waitFor(async () => {
-      const replies: string[] = [];
-      const said = await landedAlreadyReply({ reply: async (t) => (replies.push(t), { message_id: 1 }) }, id, peekIntake(id)!);
-      expect(said).toBe(true);
-      expect(replies).toEqual([]);
-    });
+    // The press comes once the sweep is landing (a press during the facts'
+    // own reads keeps the tick away — the next test).
+    await vi.waitFor(() => expect(landCollectedIntake).toHaveBeenCalled());
+    const replies: string[] = [];
+    const said = await landedAlreadyReply({ reply: async (t) => (replies.push(t), { message_id: 1 }) }, id, peekIntake(id)!);
+    expect(said).toBe(true);
+    expect(replies).toEqual([]);
     release();
     await tick;
     const ticks = textsTo(id).filter((t) => t.startsWith('✅'));
@@ -409,5 +425,227 @@ describe('sweepAction, the order of its answers (pure)', () => {
   it('a press landing it this minute leaves it to the press', () => {
     expect(sweepAction(base(), now, facts({ landing: 'note_only', pressLandingMs: 10_000 }))).toBe('remind');
     expect(sweepAction(base(), now, facts({ landing: 'note_only', pressLandingMs: 60_000 }))).toBe('resume_landing');
+  });
+});
+
+describe('a cut-off landing that keeps failing (the P1 review: SPEC-2, ADV-4)', () => {
+  const boom = () => vi.mocked(landCollectedIntake).mockImplementation(async () => {
+    throw new Error('database blip');
+  });
+  afterEach(() => {
+    vi.mocked(landCollectedIntake).mockReset();
+    vi.mocked(landCollectedIntake).mockImplementation(async () => {
+      await stub.landed;
+      return { kind: 'deal', id: 'd-1', label: 'B-000067', leadOwnerId: null, outcome: 'retried', queued: true, requestId: 'r-1', queueError: null, replyQueued: false };
+    });
+  });
+
+  it('within its 24 hours a failed resume moves no clock: a parked collection stays parked', async () => {
+    const now = Date.now();
+    const id = open(now, 31 * MIN, { stage: 'review' });
+    const touched = peekIntake(id)!.touchedAt;
+    stub.landing = 'note_only';
+    boom();
+    await runIntakeSweep(now);
+    await runIntakeSweep(now + 5 * MIN);
+    expect(landCollectedIntake).toHaveBeenCalledTimes(2);
+    expect(peekIntake(id)!.touchedAt).toBe(touched);
+    expect(holdingIntake(id)).toBeNull();
+  });
+
+  it(`past its 24 hours it is tried ${RESUME_TRIES} times, parked in between, then let go with the line`, async () => {
+    const now = Date.now();
+    const id = open(now, INTAKE_TTL_MS + H, { stage: 'review' });
+    const touched = peekIntake(id)!.touchedAt;
+    stub.landing = 'note_only';
+    boom();
+    for (let i = 0; i < RESUME_TRIES; i += 1) {
+      await runIntakeSweep(now + i * 5 * MIN);
+      expect(peekIntake(id)?.touchedAt, `after try ${i + 1}`).toBe(touched);
+    }
+    expect(landCollectedIntake).toHaveBeenCalledTimes(RESUME_TRIES);
+    await runIntakeSweep(now + RESUME_TRIES * 5 * MIN);
+    expect(landCollectedIntake).toHaveBeenCalledTimes(RESUME_TRIES);
+    expect(peekIntake(id)).toBeNull();
+    await vi.waitFor(() => expect(textsTo(id)).toHaveLength(1));
+    expect(textsTo(id)[0]).toMatch(/^⌛ Hisoblatish 24 soat ichida tugatilmadi va o‘chirildi/);
+  });
+
+  it('a job that LANDED and whose ✅ never could be made is let go in silence — never «o‘chirildi»', async () => {
+    const now = Date.now();
+    const id = open(now, INTAKE_TTL_MS + H, { stage: 'review' });
+    stub.landing = 'landed';
+    boom();
+    for (let i = 0; i <= RESUME_TRIES; i += 1) await runIntakeSweep(now + i * 5 * MIN);
+    expect(peekIntake(id)).toBeNull();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(textsTo(id)).toEqual([]);
+  });
+
+  it('the queue’s refusal is the press path’s: a note already written ends it, said once in its words', async () => {
+    const now = Date.now();
+    const id = open(now, 5 * MIN, { stage: 'review' });
+    stub.landing = 'note_only';
+    vi.mocked(landCollectedIntake).mockImplementation(async () => {
+      throw Object.assign(new Error('note_taken'), { code: 'note_taken' });
+    });
+    await runIntakeSweep(now);
+    expect(peekIntake(id)).toBeNull();
+    expect(textsTo(id)).toEqual(['⚠️ Saqlanmadi: bu material allaqachon yozilgan.']);
+  });
+
+  it('a refusal that may clear (twenty open requests) keeps it, and is said once over many ticks', async () => {
+    const now = Date.now();
+    const id = open(now, 5 * MIN, { stage: 'review' });
+    stub.landing = 'note_only';
+    vi.mocked(landCollectedIntake).mockImplementation(async () => {
+      throw Object.assign(new Error('too_many_open'), { code: 'too_many_open' });
+    });
+    await runIntakeSweep(now);
+    await runIntakeSweep(now + 5 * MIN);
+    expect(peekIntake(id)).not.toBeNull();
+    expect(textsTo(id)).toEqual(['⚠️ Saqlanmadi: sizda 20 ta ochiq so‘rov bor — VED javob bergach qayta yuboring.']);
+  });
+
+  it('a «Tasdiqlash» the resume kept silent is answered when the resume fails', async () => {
+    const now = Date.now();
+    const id = open(now, 5 * MIN, { stage: 'review' });
+    stub.landing = 'note_only';
+    let fail: (err: Error) => void = () => {};
+    vi.mocked(landCollectedIntake).mockImplementation(
+      () => new Promise((_resolve, reject) => {
+        fail = reject;
+      }),
+    );
+    const tick = runIntakeSweep(now);
+    await vi.waitFor(() => expect(landCollectedIntake).toHaveBeenCalled());
+    expect(await landedAlreadyReply({ reply: async () => ({ message_id: 1 }) }, id, peekIntake(id)!)).toBe(true);
+    fail(new Error('database blip'));
+    await tick;
+    expect(textsTo(id)).toEqual(['Saqlab bo‘lmadi — «Saqlash»ni qayta bosing.']);
+  });
+});
+
+describe('the ✅ and the end line are said, and said again after a failure that may pass (SPEC-3, ADV-6)', () => {
+  it('the resumed landing’s ✅ goes out while the collection still lives — a press in its round trip finds `resuming`', async () => {
+    const now = Date.now();
+    const id = open(now, 5 * MIN, { stage: 'review' });
+    stub.landing = 'note_only';
+    let liveAtSend: boolean | null = null;
+    send.mockImplementation(async (msg) => {
+      if (String(msg.text).startsWith('✅')) liveAtSend = peekIntake(id) !== null;
+      return OK;
+    });
+    await runIntakeSweep(now);
+    expect(liveAtSend).toBe(true);
+    expect(peekIntake(id)).toBeNull();
+  });
+
+  it('an end line answered 429 is sent at the next tick; one answered 403 is not tried again', async () => {
+    const now = Date.now();
+    const flaky = open(now, INTAKE_TTL_MS);
+    const blocked = open(now, INTAKE_TTL_MS);
+    send.mockImplementation(async (msg) =>
+      String(msg.chatId) === String(flaky)
+        ? { ...OK, ok: false, status: 429, messageId: null, retryAfter: 30 }
+        : { ...OK, ok: false, status: 403, messageId: null, permanent: true },
+    );
+    await runIntakeSweep(now);
+    await vi.waitFor(() => expect(__unsaidCount()).toBe(1));
+    send.mockImplementation(async () => OK);
+    await runIntakeSweep(now + 5 * MIN);
+    expect(textsTo(flaky)).toHaveLength(2);
+    expect(textsTo(flaky)[1]).toMatch(/^⌛ Hisoblatish 24 soat ichida tugatilmadi/);
+    expect(textsTo(blocked)).toHaveLength(1);
+    expect(__unsaidCount()).toBe(0);
+  });
+});
+
+describe('a fact is about the work it was read for (ADV-5)', () => {
+  it('a reading that changed during the facts’ reads is not released by the dead one’s verdict', async () => {
+    const now = Date.now();
+    const id = open(now, 5 * MIN, { analysing: 'tok-1' });
+    vi.mocked(readingAlive).mockImplementationOnce(async () => {
+      // The dead job's verdict arrives after the seller's «Bo‘ldi» started another reading.
+      updateIntake(id, { analysing: 'tok-2' }, { quiet: true });
+      return false;
+    });
+    await runIntakeSweep(now);
+    expect(releaseDeadReading).not.toHaveBeenCalled();
+    expect(peekIntake(id)?.analysing).toBe('tok-2');
+  });
+
+  it('a «Tasdiqlash» that starts its landing during the facts’ reads keeps the tick away', async () => {
+    const now = Date.now();
+    const id = open(now, 5 * MIN, { stage: 'review' });
+    vi.mocked(landingState).mockImplementationOnce(async () => {
+      expect(await landedAlreadyReply({ reply: async () => ({ message_id: 1 }) }, id, peekIntake(id)!)).toBe(false);
+      return 'note_only';
+    });
+    await runIntakeSweep(now);
+    expect(landCollectedIntake).not.toHaveBeenCalled();
+    expect(textsTo(id)).toEqual([]);
+  });
+});
+
+describe('«▶️ Davom etamiz» and §2.7’s fixed words (SPEC-7)', () => {
+  const ctx = () => {
+    const replies: string[] = [];
+    return { replies, reply: async (text: string) => (replies.push(text), { message_id: 1 }) };
+  };
+
+  it('with a task draft live it says so and touches nothing', async () => {
+    const id = open(Date.now(), 31 * MIN);
+    const touched = peekIntake(id)!.touchedAt;
+    startDraft(id);
+    const c = ctx();
+    await pressResume(c as never, id);
+    expect(c.replies).toEqual(['Avval topshiriqni (zametkani) tugating yoki bekor qiling — keyin «▶️ Davom etamiz».']);
+    expect(peekIntake(id)!.touchedAt).toBe(touched);
+  });
+
+  it('on a parked collection it asks the stage again and un-parks it', async () => {
+    const id = open(Date.now(), 31 * MIN);
+    expect(holdingIntake(id)).toBeNull();
+    const c = ctx();
+    await pressResume(c as never, id);
+    expect(c.replies).toEqual([CLIENT_QUESTION]);
+    expect(holdingIntake(id)).not.toBeNull();
+    expect(intakeHolds(peekIntake(id)!, Date.now())).toBe(true);
+  });
+
+  it('the add collection’s end line and the survivor’s backlog sentence, as §2.7 prints them', () => {
+    expect(intakeEndedText({ section: 'rastamojka', amend: { cardLabel: 'B-000067' } as AmendBase }, SECTION_LABEL, null)).toBe(
+      '⌛ Qo‘shimcha 24 soat ichida yuborilmadi va o‘chirildi: ➕ B-000067. Kerak bo‘lsa ✅ yoki AI javobi ostidagi «➕ Shu so‘rovga qo‘shish» ni qayta bosing.',
+    );
+    expect(backlogSentence(true)).toBe(
+      '⏸ Bu xabar bot yangilanayotgan paytda yozilgan — u nimaga javob ekanini bot bilmaydi. Zametka yoki topshiriq yozayotgan bo‘lsangiz, qaytadan boshlang; savol bo‘lsa, qaytadan yuboring.',
+    );
+  });
+});
+
+describe('the backlog is judged before an end said at NOW (SPEC-6, durability-12 c)', () => {
+  it('in the boot’s grace a read at now ends nothing; the backlog written before the 24 hours ran out still reaches it', async () => {
+    markBoot(new Date());
+    const touched = Date.now() - INTAKE_TTL_MS - 20 * MIN;
+    const id = open(Date.now(), 0, { ownMessageIds: [5005] });
+    updateIntake(id, { touchedAt: touched, openedAt: touched - H }, { quiet: true });
+    // A door's presence read, and the backlog's own question — both at now.
+    expect(holdingIntake(id)).toBeNull();
+    expect(activeIntake(id)).toBeNull();
+    expect(peekIntake(id)).not.toBeNull();
+    // The backlog text written ten minutes before the end: the survivor's sentence…
+    const written = Math.floor((touched + INTAKE_TTL_MS - 10 * MIN) / 1000);
+    expect(written).toBeLessThan(bootedAtSec());
+    const replies: string[] = [];
+    await tellBacklogOnce({ reply: async (t: string) => replies.push(t), message: { date: written } }, id);
+    expect(replies).toEqual([backlogSentence(true)]);
+    expect(collectionSurvived(id, intakeMomentOf(written))).toBe(true);
+    // …and its reply to the collection's own message is still taken.
+    const state = activeIntake(id, intakeMomentOf(written + 60));
+    expect(state).not.toBeNull();
+    expect(intakeTakes(state!, { date: written + 60, messageId: 6006, replyTo: 5005 })).toBe('take');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(textsTo(id)).toEqual([]);
   });
 });

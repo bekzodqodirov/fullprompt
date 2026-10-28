@@ -98,6 +98,16 @@ describe('a press acts only on its own collection (durability-2, §6.2.9)', () =
     expect(ownsPress(state, 80)).toBe(false);
   });
 
+  it('the table, the prompt and the offers own a press for the collection’s whole life — never pushed out by the newest forty', () => {
+    // A long invoice answered line by line: forty echoes after the table.
+    const echoes = Array.from({ length: 40 }, (_, i) => 1_000 + i);
+    const state = collection({ openedBy: 70, tableMessageId: 90, promptMessageId: 91, offersMessageId: 92, ownMessageIds: echoes });
+    expect(ownsPress(state, 90)).toBe(true);
+    expect(ownsPress(state, 91)).toBe(true);
+    expect(ownsPress(state, 92)).toBe(true);
+    expect(ownsPress(state, 93)).toBe(false);
+  });
+
   it('a press that names no message cannot be judged and acts on what is live (a test’s stand-in ctx)', () => {
     expect(ownsPress(collection({ openedBy: 1 }), null)).toBe(true);
   });

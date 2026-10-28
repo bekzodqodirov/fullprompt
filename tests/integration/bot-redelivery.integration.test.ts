@@ -49,7 +49,14 @@ import {
 } from '@/modules/platform/db/schema';
 import { getStorage } from '@/modules/platform/files/storage';
 import { createTask } from '@/modules/platform/tasks/service';
-import { __resetLifecycle, bootedAtSec, markBoot, stoppingGuard, stopTelegramBot } from '@/modules/platform/telegram/lifecycle';
+import {
+  __resetLifecycle,
+  bootedAtSec,
+  lastDoneUpdateId,
+  markBoot,
+  stoppingGuard,
+  stopTelegramBot,
+} from '@/modules/platform/telegram/lifecycle';
 import {
   __forgetWaitMemory,
   __holdWaitWrites,
@@ -1261,21 +1268,67 @@ describe('the durable «Hisoblatish» collection (docs/SAKKIZ-R3.md §6, his 1.8
       __forgetIntakeMemory();
       await hydrateIntakes();
       __setIntakeWriteHook(async () => new Promise(() => {}));
-      await stoppingGuard()({ update: { update_id: 515_151 } } as never, async () => {
+      // An update still being handled (above every one this process finished).
+      const u = lastDoneUpdateId() + 10;
+      await stoppingGuard()({ update: { update_id: u } } as never, async () => {
         updateIntake(chat, { material: ['c'] });
       });
+      expect(oldestUnwrittenUpdate()).toBe(u);
       const hung = vi.fn(async () => ({ ok: true, result: [] }));
       const started = Date.now();
-      await confirm(hung as never, 'getUpdates', {} as never);
+      // grammy's next call carries the offset past it, as it always does.
+      await confirm(hung as never, 'getUpdates', { offset: u + 1 } as never);
       expect(hung).toHaveBeenCalledTimes(1);
       expect(Date.now() - started).toBeGreaterThanOrEqual(INTAKE_CONFIRM_FLUSH_MS - 50);
-      expect(oldestUnwrittenUpdate()).toBe(515_151);
+      // Re-anchored (the P1 review's ADV-1): Telegram has dropped that update,
+      // so the store no longer names it for the stop to hold back — the change
+      // is still unwritten, memory keeps it, and the seal says it was lost.
+      expect(oldestUnwrittenUpdate()).toBeNull();
       // Every other method passes straight through, at once.
       const other = vi.fn(async () => ({ ok: true, result: true }));
       await confirm(other as never, 'sendMessage', { chat_id: 1, text: 'x' } as never);
       expect(other).toHaveBeenCalledTimes(1);
     } finally {
       warn.mockRestore();
+    }
+  }, 15_000);
+
+  it('a stop mid-batch after a failed confirm-flush confirms through lastDone — the batch handled here is never handed over again (ADV-1)', async () => {
+    const { chat, s } = await collecting();
+    await h.settle();
+    // Batch 1: U's change cannot be written…
+    __setIntakeWriteHook(async (k) => {
+      if (k === String(chat)) throw new Error('database blip');
+    });
+    const U = tg.text(s.chat, `Shim 200 dona ${STAMP}`);
+    await h.handle(U);
+    const u = (U as { update_id: number }).update_id;
+    expect(oldestUnwrittenUpdate()).toBe(u);
+    // …and grammy's next getUpdates goes ahead all the same (the flush failed), dropping U at Telegram.
+    await flushBeforeConfirm()((async () => ({ ok: true, result: [] })) as never, 'getUpdates', { offset: u + 1 } as never);
+    // Batch 2: one update handled, the next still in flight when the signal comes.
+    const guard = stoppingGuard();
+    await guard({ update: { update_id: u + 5 } } as never, async () => {});
+    let release: () => void = () => {};
+    void guard({ update: { update_id: u + 6 } } as never, () => new Promise<void>((resolve) => (release = resolve)));
+    const warn = vi.spyOn(logger, 'warn');
+    try {
+      const getUpdates = vi.fn(async () => []);
+      const outcome = await stopTelegramBot({
+        ...botStopDeps({ isRunning: () => true, stop: vi.fn(async () => {}), api: { getUpdates } } as never),
+        deadlineMs: 2_000,
+      });
+      expect(outcome.via).toBe('confirm');
+      // Through the update handled — not «the one before U», which Telegram no
+      // longer holds and which would hand u+5 to the next process a second time.
+      expect(outcome.confirmedThrough).toBe(u + 5);
+      expect(getUpdates).toHaveBeenCalledWith(expect.objectContaining({ offset: u + 6 }), expect.anything());
+      expect(warn.mock.calls.some((c) => String(c[1]).includes('already confirmed was never written') && (c[0] as { update?: number }).update === u)).toBe(true);
+    } finally {
+      warn.mockRestore();
+      release();
+      await new Promise((resolve) => setImmediate(resolve));
+      __resetLifecycle();
     }
   }, 15_000);
 

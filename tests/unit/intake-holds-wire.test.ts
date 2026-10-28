@@ -19,6 +19,13 @@ import { srcFiles } from '../fixtures/source-shape';
  * An unlisted call fails, and so does a «holds» call that asks `activeIntake`
  * alone. A package adding a call adds it to a list with its reason (a press is
  * «presence»).
+ *
+ * «Beside it» is the call's OWN statement — the ternary that asks
+ * `holdingIntake` first — or, for a call that binds its answer
+ * (`const state = activeIntake(…)`), that binding handed to `intakeTakes(`.
+ * A fixed window of text around the call passed a new door written two lines
+ * from the ladder's `intakeTakes` (the P1 review's ADV-9). And `peekIntake`,
+ * memory with NO expiry and no hold, is asked only by the sweep.
  */
 
 const PRESENCE: Record<string, string> = {
@@ -64,20 +71,58 @@ function functionBody(text: string, name: string): string {
   return next < 0 ? text.slice(decl.index) : text.slice(decl.index, from + next);
 }
 
+/** The sweep's own reads of memory as it stands — the only callers of `peekIntake(`. */
+const PEEK: Record<string, string> = {
+  'calc-intake-sweep.ts:runIntakeSweep': 'the re-read after the facts’ awaits',
+  'calc-intake-sweep.ts:remind': 'the reminder’s release, only of its own claim',
+  'calc-intake-sweep.ts:resumeLanding': 'the clock put back, only if the seller did not act meanwhile',
+};
+
 interface Site {
   key: string;
-  window: string;
+  /** The statement the call sits in. */
+  statement: string;
+  /** What follows that statement — where a bound answer is handed on. */
+  after: string;
 }
 
-const SITES: Site[] = FILES.flatMap(({ path, text }) => {
-  const file = path.split('/').at(-1)!;
-  const out: Site[] = [];
-  for (let at = text.indexOf('activeIntake('); at >= 0; at = text.indexOf('activeIntake(', at + 1)) {
-    if (/function\s+$/.test(text.slice(Math.max(0, at - 20), at))) continue; // the definition
-    out.push({ key: `${file}:${functionAt(text, at)}`, window: text.slice(Math.max(0, at - 200), at + 300) });
+/** The statement around `at`: from the last `;`, `{` or `}` before it to the next `;` at its own depth. */
+function statementAt(text: string, at: number): { statement: string; end: number } {
+  const from = Math.max(text.lastIndexOf(';', at), text.lastIndexOf('{', at), text.lastIndexOf('}', at)) + 1;
+  let depth = 0;
+  for (let i = from; i < text.length; i += 1) {
+    const c = text[i]!;
+    if (c === '(' || c === '[' || c === '{') depth += 1;
+    else if (c === ')' || c === ']' || c === '}') depth -= 1;
+    else if (c === ';' && depth === 0) return { statement: text.slice(from, i), end: i };
+    if (depth < 0) return { statement: text.slice(from, i), end: i };
   }
-  return out;
-});
+  return { statement: text.slice(from), end: text.length };
+}
+
+function sitesOf(needle: string): Site[] {
+  return FILES.flatMap(({ path, text }) => {
+    const file = path.split('/').at(-1)!;
+    const out: Site[] = [];
+    for (let at = text.indexOf(needle); at >= 0; at = text.indexOf(needle, at + 1)) {
+      if (/\w$/.test(text.slice(Math.max(0, at - 1), at))) continue; // another name ending in it
+      if (/function\s+$/.test(text.slice(Math.max(0, at - 20), at))) continue; // the definition
+      const { statement, end } = statementAt(text, at);
+      out.push({ key: `${file}:${functionAt(text, at)}`, statement, after: text.slice(end, end + 400) });
+    }
+    return out;
+  });
+}
+
+const SITES: Site[] = sitesOf('activeIntake(');
+const PEEKS: Site[] = sitesOf('peekIntake(');
+
+/** Does a «holds» call ask its question — in its own statement, or by handing its bound answer to `intakeTakes(`? */
+function asksHolds(site: Site): boolean {
+  if (/\b(?:holdingIntake|intakeTakes)\(/.test(site.statement)) return true;
+  const bound = /^\s*(?:const|let)\s+(\w+)\s*=\s*activeIntake\(/.exec(site.statement);
+  return bound !== null && new RegExp(`\\bintakeTakes\\(${bound[1]}\\b`).test(site.after);
+}
 
 describe('every `activeIntake(` asks the question it means (§6.2.7)', () => {
   it('the call sites were found at all (a fence that finds nothing proves nothing, #720)', () => {
@@ -91,8 +136,14 @@ describe('every `activeIntake(` asks the question it means (§6.2.7)', () => {
   });
 
   it('a «holds» call asks `holdingIntake(` or `intakeTakes(` beside it — never `activeIntake` alone', () => {
-    const alone = SITES.filter((s) => s.key in HOLDS && !/\b(?:holdingIntake|intakeTakes)\(/.test(s.window)).map((s) => s.key);
-    expect(alone).toEqual([]);
+    const holds = SITES.filter((s) => s.key in HOLDS);
+    expect(holds.length, 'the ladders and the orphan guard were found').toBeGreaterThanOrEqual(4);
+    expect(holds.filter((s) => !asksHolds(s)).map((s) => `${s.key}: ${s.statement.trim()}`)).toEqual([]);
+  });
+
+  it('`peekIntake(` — no expiry, no hold — is the sweep’s alone', () => {
+    expect(PEEKS.length, 'the sweep’s reads were found').toBeGreaterThanOrEqual(3);
+    expect([...new Set(PEEKS.map((s) => s.key))].filter((k) => !(k in PEEK))).toEqual([]);
   });
 
   it('the four doors ask `holdingIntake`', () => {

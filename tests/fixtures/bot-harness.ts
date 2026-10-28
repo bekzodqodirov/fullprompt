@@ -68,15 +68,24 @@ export function botHarness(): BotHarness {
   const sent: SentCall[] = [];
   const failures = new Map<string, FakeError[]>();
   const files = new Map<string, Buffer>();
+  // The file endpoint is grammy's own `fetch`, not the transport: a file a
+  // test serves is answered there. Installed by the first `serveFile` and
+  // taken out by `restore()`, so a file that serves none leaves the
+  // process's fetch alone.
   const realFetch = globalThis.fetch;
-  globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
-    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-    const served = /^https:\/\/api\.telegram\.org\/file\/bot[^/]+\/served\/(.+)$/.exec(url);
-    if (served && files.has(decodeURIComponent(served[1]!))) {
-      return new Response(new Uint8Array(files.get(decodeURIComponent(served[1]!))!), { status: 200 });
-    }
-    return realFetch(input, init);
-  }) as typeof fetch;
+  let fetchServed = false;
+  const serveFetch = () => {
+    if (fetchServed) return;
+    fetchServed = true;
+    globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const served = /^https:\/\/api\.telegram\.org\/file\/bot[^/]+\/served\/(.+)$/.exec(url);
+      if (served && files.has(decodeURIComponent(served[1]!))) {
+        return new Response(new Uint8Array(files.get(decodeURIComponent(served[1]!))!), { status: 200 });
+      }
+      return realFetch(input, init);
+    }) as typeof fetch;
+  };
   let clock: number | null = null;
   let messageSeq = 900_000;
   const date = () => clock ?? nowSec();
@@ -182,6 +191,7 @@ export function botHarness(): BotHarness {
     },
     serveFile(fileId, body) {
       files.set(fileId, body);
+      serveFetch();
     },
     textsTo(chatId, m = { api: 0, sent: 0 }) {
       const out: string[] = [];
@@ -195,7 +205,8 @@ export function botHarness(): BotHarness {
     },
     restore() {
       __setTelegramTransport(null);
-      globalThis.fetch = realFetch;
+      if (fetchServed) globalThis.fetch = realFetch;
+      fetchServed = false;
       if (savedToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
       else process.env.TELEGRAM_BOT_TOKEN = savedToken;
     },

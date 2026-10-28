@@ -33,6 +33,7 @@ vi.mock('@/modules/platform/telegram/send', async (original) => ({
 }));
 
 import { db, pgClient } from '@/modules/platform/db/client';
+import { logger } from '@/modules/platform/logger';
 import { users } from '@/modules/platform/db/schema';
 import { enqueue } from '@/modules/platform/jobs/boss';
 import { sendText } from '@/modules/platform/telegram/send';
@@ -41,10 +42,13 @@ import {
   __intakeWriteCount,
   __setIntakeTableProbe,
   __setIntakeWriteHook,
+  activeIntake,
   endIntake,
   flushIntakeWrites,
   hydrateIntakes,
+  hydrateWithRetry,
   INTAKE_TTL_MS,
+  INTAKE_WRITE_MAX_MS,
   intakesHydrated,
   IntakesNotReady,
   loadIntake,
@@ -76,6 +80,17 @@ const madeRequests: string[] = [];
 const madeLeads: string[] = [];
 let staffId = '';
 let savedToken: string | undefined;
+const SENT = {
+  ok: true,
+  status: 200,
+  description: '',
+  messageId: 77_001,
+  retryAfter: null,
+  permanent: false,
+  botDown: false,
+  usedFallback: false,
+};
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function rowOf(chat: bigint): Promise<{ state: IntakeState; expires_at: string } | null> {
   const rows = (await db.execute(sql`
@@ -449,5 +464,189 @@ describe('the end after an outage (durability-12 b)', () => {
     expect(await rowOf(recent)).toBeNull();
     await pruneTelegramRedelivery();
     expect(await rowOf(old)).toBeNull();
+  });
+});
+
+describe('the P1 review’s fixes', () => {
+  it('a chat’s flush answers only once the newest change it saw is in the row — never on the write before it (SPEC-1)', async () => {
+    const chat = nextChat();
+    collection(chat, { material: ['one'] });
+    expect(await flushIntakeWrites(chat)).toBe(true);
+    // A second connection holds the row: the next UPSERT waits INSIDE its
+    // statement, after it read the state.
+    let unlock: () => void = () => {};
+    let locked = false;
+    const held = pgClient.begin(async (tx) => {
+      await tx`SELECT 1 FROM telegram_calc_intakes WHERE chat_id = ${String(chat)}::bigint FOR UPDATE`;
+      locked = true;
+      await new Promise<void>((resolve) => (unlock = resolve));
+    });
+    await vi.waitFor(() => expect(locked).toBe(true));
+    updateIntake(chat, { material: ['one', 'X'] });
+    const a = flushIntakeWrites(chat);
+    await sleep(200);
+    // The newest change lands while that write waits; the write that will
+    // carry it is held by the hook.
+    updateIntake(chat, { material: ['one', 'X', 'Y'] });
+    let started = 0;
+    let release: () => void = () => {};
+    __setIntakeWriteHook(async (k) => {
+      if (k !== String(chat)) return;
+      started += 1;
+      if (started === 1) await new Promise<void>((resolve) => (release = resolve));
+    });
+    let answered = false;
+    const b = flushIntakeWrites(chat).then((ok) => {
+      answered = true;
+      return ok;
+    });
+    await sleep(100);
+    unlock();
+    await held;
+    await vi.waitFor(() => expect(started).toBe(1));
+    await sleep(200);
+    expect(answered).toBe(false);
+    release();
+    expect(await b).toBe(true);
+    expect(await a).toBe(true);
+    expect((await rowOf(chat))!.state.material).toEqual(['one', 'X', 'Y']);
+  });
+
+  it('a change a FINISHED update’s continuation makes names no update; one made while it is handled does (ADV-1)', async () => {
+    const chat = nextChat();
+    collection(chat);
+    await flushIntakeWrites();
+    __setIntakeWriteHook(async (k) => {
+      if (k === String(chat)) throw new Error('database blip');
+    });
+    // The press's update returns at once; the reading it started settles later,
+    // still carrying that update's id (AsyncLocalStorage follows the timer).
+    let later: Promise<void> = Promise.resolve();
+    await stoppingGuard()({ update: { update_id: 828_282 } } as never, async () => {
+      later = new Promise<void>((resolve) =>
+        setTimeout(() => {
+          updateIntake(chat, { material: ['the reading’s settle'] });
+          resolve();
+        }, 30),
+      );
+    });
+    await later;
+    expect(peekIntake(chat)!.material).toEqual(['the reading’s settle']);
+    expect(oldestUnwrittenUpdate()).toBeNull();
+    await stoppingGuard()({ update: { update_id: 828_290 } } as never, async () => {
+      updateIntake(chat, { material: ['typed'] });
+      expect(oldestUnwrittenUpdate()).toBe(828_290);
+    });
+  });
+
+  it('a sheet text holding half an emoji or a NUL is written all the same — mended, the same words (ADV-2)', async () => {
+    const chat = nextChat();
+    collection(chat, {
+      sheetTexts: [
+        { text: `Kurtka 300 dona ${'\ud83d'}`, cut: true, cellsCut: true },
+        { text: 'K\u0000u\u0000r', cut: false, cellsCut: false },
+      ],
+      fileCount: 2,
+    });
+    expect(await flushIntakeWrites(chat)).toBe(true);
+    expect((await rowOf(chat))!.state.sheetTexts.map((t) => t.text)).toEqual(['Kurtka 300 dona \ufffd', 'Kur']);
+    // Memory keeps what was read; only the row is mended.
+    expect(peekIntake(chat)!.sheetTexts[1]!.text).toBe('K\u0000u\u0000r');
+  });
+
+  it('a row the table refuses for good is not sent again every five seconds, and holds no update back (ADV-2)', async () => {
+    const chat = nextChat();
+    collection(chat);
+    await flushIntakeWrites(chat);
+    const before = __intakeWriteCount();
+    await stoppingGuard()({ update: { update_id: 727_272 } } as never, async () => {
+      // Opened «after» it was touched: the window CHECK refuses the row (23514).
+      updateIntake(chat, { openedAt: Date.now() + 3_600_000 });
+    });
+    expect(await flushIntakeWrites(chat)).toBe(false);
+    expect(oldestUnwrittenUpdate()).toBeNull();
+    await sleep(INTAKE_WRITE_MAX_MS + 700);
+    expect(__intakeWriteCount() - before).toBe(1);
+  }, 12_000);
+
+  it('the end’s DELETE is in the table before its line is sent — a kill between them cannot say it twice (ADV-6)', async () => {
+    const chat = nextChat();
+    collection(chat);
+    const past = Date.now() - INTAKE_TTL_MS - 60_000;
+    updateIntake(chat, { openedAt: past - 60_000, touchedAt: past }, { quiet: true });
+    await flushIntakeWrites(chat);
+    expect(await rowOf(chat)).not.toBeNull();
+    let rowAtSend: unknown = 'not sent';
+    vi.mocked(sendText).mockImplementationOnce(async () => {
+      rowAtSend = await rowOf(chat);
+      return SENT;
+    });
+    expect(activeIntake(chat)).toBeNull();
+    await vi.waitFor(() => expect(rowAtSend).not.toBe('not sent'));
+    expect(rowAtSend).toBeNull();
+  });
+
+  it('«large» is counted in BYTES: a Cyrillic collection over 2 MB is said, though its characters are fewer (SPEC-9)', async () => {
+    const chat = nextChat();
+    // 1.1 million two-byte letters: 2.2 MB of jsonb, 1.1 million UTF-16 units.
+    collection(chat, { material: ['Ж'.repeat(1_100_000)] });
+    const warn = vi.spyOn(logger, 'warn');
+    try {
+      expect(await flushIntakeWrites(chat)).toBe(true);
+      const said = warn.mock.calls.find((c) => c[1] === '[calc-intake] large collection');
+      expect(said).toBeDefined();
+      expect((said![0] as { bytes: number }).bytes).toBeGreaterThan(2 * 1024 * 1024);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('a cleanup that fails costs the cleanup, never the restore (SPEC-8)', async () => {
+    const landed = nextChat();
+    const kept = nextChat();
+    const a = await writeRow(landed, 60_000);
+    const b = await writeRow(kept, 60_000);
+    await noteOnCard(a.noteId, true);
+    // The hydrate's DELETE of the landed row is refused (a trigger on this test's one row).
+    await db.execute(
+      sql.raw(`CREATE OR REPLACE FUNCTION p1_refuse_intake_delete() RETURNS trigger LANGUAGE plpgsql AS $f$
+        BEGIN IF OLD.chat_id = ${String(landed)} THEN RAISE EXCEPTION 'cleanup refused'; END IF; RETURN OLD; END $f$`),
+    );
+    await db.execute(
+      sql.raw(`CREATE TRIGGER p1_refuse_intake_delete BEFORE DELETE ON telegram_calc_intakes
+        FOR EACH ROW EXECUTE FUNCTION p1_refuse_intake_delete()`),
+    );
+    try {
+      __forgetIntakeMemory();
+      expect(await hydrateIntakes()).toBeGreaterThanOrEqual(1);
+      expect(peekIntake(kept)?.noteId).toBe(b.noteId);
+      expect(peekIntake(landed)).toBeNull();
+      expect(await rowOf(landed)).not.toBeNull();
+    } finally {
+      await db.execute(sql.raw('DROP TRIGGER IF EXISTS p1_refuse_intake_delete ON telegram_calc_intakes'));
+      await db.execute(sql.raw('DROP FUNCTION IF EXISTS p1_refuse_intake_delete()'));
+    }
+  });
+
+  it('the boot’s hydrate waits out a database a moment late, and restores late when it never answered in time (ADV-7)', async () => {
+    const chat = nextChat();
+    const row = await writeRow(chat, 60_000);
+    __forgetIntakeMemory();
+    let fails = 2;
+    __setIntakeTableProbe(async () => {
+      if (fails > 0) {
+        fails -= 1;
+        throw new Error('database starting');
+      }
+      return true;
+    });
+    expect(await hydrateWithRetry(hydrateIntakes, { retryMs: [30, 30] })).toBeGreaterThanOrEqual(1);
+    expect(peekIntake(chat)?.noteId).toBe(row.noteId);
+    // Never in time: handed back as a failure (polling goes on), then restored in the background.
+    __forgetIntakeMemory();
+    fails = 3;
+    await expect(hydrateWithRetry(hydrateIntakes, { retryMs: [30, 30], lateMs: 50 })).rejects.toThrow('database starting');
+    expect(peekIntake(chat)).toBeNull();
+    await vi.waitFor(() => expect(peekIntake(chat)?.noteId).toBe(row.noteId), { timeout: 3_000 });
   });
 });

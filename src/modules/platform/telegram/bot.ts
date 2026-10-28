@@ -33,6 +33,7 @@ import {
   flushBeforeConfirm,
   flushIntakeWrites,
   hydrateIntakes,
+  hydrateWithRetry,
   markIntakesHydrated,
   oldestUnwrittenUpdate,
   sealIntakeWrites,
@@ -191,7 +192,10 @@ export function startTelegramBot(): void {
   // log line, never an unhandled rejection, and polling waits for BOTH, so the
   // backlog never meets half-restored memory (regression-20, durability-11).
   // A hydrate that failed still marks the store hydrated: memory is then the
-  // only truth this process has, and the jobs waiting on it go on.
+  // only truth this process has, and the jobs waiting on it go on. The
+  // collections' restore is tried again for a couple of seconds first (a
+  // database a moment late after its own container was recreated), and in
+  // the background after that.
   setDurableWaits(true);
   setDurableIntakes(true);
   // The lead's ruling L1: grammy confirms a batch with its next getUpdates,
@@ -199,7 +203,7 @@ export function startTelegramBot(): void {
   bot.api.config.use(flushBeforeConfirm());
   void Promise.allSettled([
     hydrateWaits().catch((err: unknown) => logger.warn({ err }, 'telegram waits not restored')),
-    hydrateIntakes().catch((err: unknown) => logger.warn({ err }, 'telegram calc intakes not restored')),
+    hydrateWithRetry(hydrateIntakes).catch((err: unknown) => logger.warn({ err }, 'telegram calc intakes not restored')),
   ]).finally(() => {
     markIntakesHydrated();
     startPolling(30_000);

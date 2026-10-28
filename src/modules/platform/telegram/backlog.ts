@@ -1,6 +1,6 @@
 import type { Context, MiddlewareFn } from 'grammy';
 import { bootedAtSec, isBacklog } from './lifecycle';
-import { collectionSurvived } from './calc-store';
+import { collectionSurvived, intakeMomentOf } from './calc-store';
 import { escapesIntake } from './staff-bot';
 
 /**
@@ -48,7 +48,7 @@ const told = new Set<string>();
 
 /** Once per chat per boot — one sentence speaks for everything the person typed into the outage. */
 export async function tellBacklogOnce(
-  ctx: { reply: (text: string) => Promise<unknown> },
+  ctx: { reply: (text: string) => Promise<unknown>; message?: { date?: number } },
   chatId: bigint | number,
 ): Promise<void> {
   const key = `${bootedAtSec()}:${String(chatId)}`;
@@ -57,8 +57,13 @@ export async function tellBacklogOnce(
   told.add(key);
   // Decided here, so none of the five callers changes: only a collection
   // opened before this boot (hydrated) — one a late press opened is no
-  // survivor, and its chat keeps today's sentence (I20b).
-  await ctx.reply(backlogSentence(collectionSurvived(BigInt(chatId))));
+  // survivor, and its chat keeps today's sentence (I20b). Asked at the
+  // moment the message was WRITTEN: asked at now, a collection the 24 hours
+  // ran out on during the outage would be ended here, before a later
+  // backlog answer written while it was alive could reach it.
+  const written = ctx.message?.date;
+  const at = typeof written === 'number' ? intakeMomentOf(written) : undefined;
+  await ctx.reply(backlogSentence(collectionSurvived(BigInt(chatId), at)));
 }
 
 const seenLabels = new Set<string>();
