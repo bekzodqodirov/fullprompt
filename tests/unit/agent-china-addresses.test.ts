@@ -527,6 +527,14 @@ describe('the road is what we quoted, whatever the words name — the third revi
     expect(judge(c, 'cyrillic', 'ru', `Здравствуйте! ${answer('china_address_yiwu@1')}`)).toContain('avia_address');
   });
 
+  it('an echo whose words price one road while the draft quoted two is the draft\'s — the stored road, not the words', () => {
+    const sent = 'Avia: 30 kg — taxminan 510 $, 2–5 kun. Mashina bilan arzonroq, 1 kubdan.';
+    const ctx = ctxOf('Yaxshi, manzilni yuboring', 'latin', [said('30 kg kiyim, avia va mashinada qancha?', 1), said(sent, 2, 'out')], kg30, { road: 'both', air: null, at: new Date(0), text: sent });
+    expect(pricedRoadOf(sent)).toBe('air');
+    expect(blocked(ctx)).toBe(false);
+    expect(asked(ctx)).toBe(false);
+  });
+
   it('the goods and the company are no road chosen — «Tikuv mashinalarini …», «Kargongizga …», «kargo manzili»', () => {
     for (const body of ['Tikuv mashinalarini qayerga yuboray?', 'Kargongizga qayerga yuboraman?', 'Yaxshi, kargo manzilini tashlang', 'Хорошо, скиньте адрес карго']) {
       const ctx = ctxOf(body, 'latin', [said('Avia bilan Guanchjoudan 30 kg qancha?', 1), said('Avia: 30 kg × 17 $ ≈ 510 $ (taxminan), 2–5 kun.', 2, 'out')], kg30, AIR_QUOTE);
@@ -643,6 +651,8 @@ describe('the road is what we quoted, whatever the words name — the third revi
       'Air: 168 kg — 2856 $. By road it is cheaper, 15–25 days.',
       '空运168公斤，10月28号发货',
       'Авиа доставка 2255 кг обойдётся примерно в 38 335 $. Это дорого, зато быстро.',
+      // A house number counts only BESIDE its street word, not anywhere in the reply.
+      "Avia 2255 kg uchun taxminan 38 335 $ bo'ladi, Toshkentda yetkazib beramiz: Navoiy ko'chasi.",
     ]) {
       expect(statesChinaAddress(text, ANCHORS), text).toBe(false);
     }
