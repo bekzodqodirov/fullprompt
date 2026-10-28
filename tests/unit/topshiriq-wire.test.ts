@@ -97,7 +97,12 @@ describe('the media handlers sit before the cabinet (telegram-mechanics-19)', ()
 
   it('a photo or a file reaches the draft and Door B only after the intake and the note capture', () => {
     const photos = handlers.slice(handlers.indexOf("bot.on(['message:photo', 'message:document']"));
-    expect(photos.indexOf('const state = activeIntake(chatId);')).toBeLessThan(photos.indexOf('activeCapture(chatId)'));
+    // Re-anchored (docs/SAKKIZ-R3.md §6.2.6, P1): the ladder asks for the
+    // collection at the message's own moment — a backlog file is judged by
+    // when it was WRITTEN. The order this pins is unchanged.
+    const intake = photos.indexOf('const state = activeIntake(chatId, intakeMomentOf(ctx.message.date));');
+    expect(intake, 're-anchor: the intake read').toBeGreaterThan(-1);
+    expect(intake).toBeLessThan(photos.indexOf('activeCapture(chatId)'));
     expect(photos.indexOf('activeCapture(chatId)')).toBeLessThan(photos.indexOf('draftMedia(ctx, chatId)'));
   });
 

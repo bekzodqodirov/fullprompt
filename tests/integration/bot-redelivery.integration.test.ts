@@ -49,7 +49,7 @@ import {
 } from '@/modules/platform/db/schema';
 import { getStorage } from '@/modules/platform/files/storage';
 import { createTask } from '@/modules/platform/tasks/service';
-import { __resetLifecycle, markBoot } from '@/modules/platform/telegram/lifecycle';
+import { __resetLifecycle, bootedAtSec, markBoot, stoppingGuard, stopTelegramBot } from '@/modules/platform/telegram/lifecycle';
 import {
   __forgetWaitMemory,
   __holdWaitWrites,
@@ -60,11 +60,31 @@ import {
   setDurableWaits,
 } from '@/modules/platform/telegram/waits';
 import { __resetPresses } from '@/modules/platform/telegram/press';
-import { __resetBacklog, BACKLOG_SENTENCE, HANDLED_SENTENCE } from '@/modules/platform/telegram/backlog';
+import {
+  __resetBacklog,
+  BACKLOG_SENTENCE,
+  BACKLOG_SENTENCE_KEPT,
+  HANDLED_SENTENCE,
+} from '@/modules/platform/telegram/backlog';
 import { BUGUN, peekTaskPending, TASK_ANSWERS, TOPSHIRIQ } from '@/modules/platform/telegram/staff-bot';
 import { pruneTelegramRedelivery } from '@/modules/platform/telegram/once';
 import { activeIntake, endIntake } from '@/modules/platform/telegram/calc-intake';
-import { __resetDrafts } from '@/modules/platform/telegram/task-draft';
+import {
+  __forgetIntakeMemory,
+  __intakeWriteCount,
+  __setIntakeWriteHook,
+  flushBeforeConfirm,
+  hydrateIntakes,
+  INTAKE_CONFIRM_FLUSH_MS,
+  markIntakesHydrated,
+  oldestUnwrittenUpdate,
+  setDurableIntakes,
+  updateIntake,
+} from '@/modules/platform/telegram/calc-store';
+import { orphanAnswerSentence } from '@/modules/platform/telegram/calc-dialog';
+import { botStopDeps } from '@/modules/platform/telegram/bot';
+import { logger } from '@/modules/platform/logger';
+import { __resetDrafts, activeDraft } from '@/modules/platform/telegram/task-draft';
 import { __setCabinetPhotoReadMs, beginClientLink } from '@/modules/platform/telegram/client-cabinet';
 import { clientLabels } from '@/modules/platform/telegram/client-labels';
 import { botHarness, tg, type BotHarness } from '../fixtures/bot-harness';
@@ -1003,5 +1023,280 @@ describe('the prune', () => {
     expect(keys.map((k) => k.key)).toEqual([young]);
     expect(await waitRows(fresh)).toHaveLength(1);
     expect(await waitRows(stale)).toHaveLength(0);
+  });
+});
+
+describe('the durable «Hisoblatish» collection (docs/SAKKIZ-R3.md §6, his 1.8 c)', () => {
+  /** The collection's note ids this block made — their attachments go in cleanup. */
+  const notesMade: string[] = [];
+  /** Hangs every grammy send into one chat while `on` — an update kept IN FLIGHT. */
+  const hang = { on: false, chat: 0, gate: new Promise<void>(() => {}) };
+
+  beforeAll(() => {
+    setDurableIntakes(true);
+    h.bot.api.config.use(async (prev, method, payload, signal) => {
+      const chat = Number((payload as { chat_id?: unknown } | undefined)?.chat_id ?? 0);
+      if (hang.on && chat === hang.chat && (method === 'editMessageText' || method === 'sendMessage')) {
+        hang.on = false;
+        await hang.gate;
+      }
+      return prev(method, payload, signal);
+    });
+  });
+  afterEach(async () => {
+    __setIntakeWriteHook(null);
+    hang.on = false;
+    for (const id of [...(await db.execute<{ chat_id: string }>(sql`
+      SELECT chat_id::text AS chat_id FROM telegram_calc_intakes WHERE chat_id::text LIKE ${`${PREFIX}%`}`))]) {
+      endIntake(BigInt(id.chat_id));
+    }
+    __forgetIntakeMemory();
+    await db.execute(sql`DELETE FROM telegram_calc_intakes WHERE chat_id::text LIKE ${`${PREFIX}%`}`);
+  });
+  afterAll(async () => {
+    setDurableIntakes(false);
+    if (notesMade.length) await db.delete(attachments).where(inArray(attachments.entityId, notesMade));
+  });
+
+  /** A colleague's collection, opened by the press and past the customer question: stage material. */
+  async function collecting(): Promise<{ s: Person; chat: bigint; prompt: number }> {
+    const s = await person();
+    await h.handle(tg.callback(s.chat, nextMsg(), 'c:rastamojka'));
+    const m = h.mark();
+    await h.handle(tg.text(s.chat, `Ali ${STAMP} +99890${STAMP}`));
+    const chat = BigInt(s.chat);
+    const state = activeIntake(chat)!;
+    expect(state.stage).toBe('material');
+    notesMade.push(state.noteId);
+    const prompt = h
+      .since(m)
+      .api.filter((c) => c.method === 'sendMessage' && JSON.stringify(c.payload.reply_markup ?? '').includes('c:done'))
+      .at(-1)!.messageId!;
+    return { s, chat, prompt };
+  }
+
+  /** A restart, as far as the collections are concerned: memory gone, a later boot, the table restored. */
+  async function restart(bootAt = new Date(Date.now() + 2_000)): Promise<number> {
+    await h.settle();
+    __forgetIntakeMemory();
+    __resetLifecycle();
+    __resetPresses();
+    __resetBacklog();
+    markBoot(bootAt);
+    await hydrateIntakes();
+    markIntakesHydrated();
+    return bootedAtSec();
+  }
+
+  const attachmentsOf = async (noteId: string) =>
+    (await db.select({ id: attachments.id }).from(attachments).where(eq(attachments.entityId, noteId))).length;
+  const asksSecondInvoice = (m: ReturnType<BotHarness['mark']>) =>
+    h.since(m).api.some((c) => JSON.stringify(c.payload.reply_markup ?? '').includes('c:inv_add'));
+
+  it('a collection survives a restart: a backlog text written into it is its material, never the backlog sentence', async () => {
+    const { chat, s } = await collecting();
+    await h.handle(tg.text(s.chat, `Kurtka 300 dona ${STAMP}`));
+    const boot = await restart();
+    expect(activeIntake(chat)?.material).toContain(`Kurtka 300 dona ${STAMP}`);
+    const m = h.mark();
+    await h.handle(tg.text(s.chat, `Shim 200 dona ${STAMP}`, { date: boot - 1 }));
+    expect(activeIntake(chat)?.material).toEqual([`Kurtka 300 dona ${STAMP}`, `Shim 200 dona ${STAMP}`]);
+    expect(h.textsTo(s.chat, m)).not.toContain(BACKLOG_SENTENCE);
+    expect(h.textsTo(s.chat, m)).not.toContain(BACKLOG_SENTENCE_KEPT);
+  });
+
+  it('a redelivered update is applied once — one line, one file, one attachment, no «second invoice» (durability-1, regression-6)', async () => {
+    const { chat, s } = await collecting();
+    const fileId = `doc-${STAMP}-a`;
+    h.serveFile(fileId, Buffer.from('Tovar,Soni,Vazni kg\nKurtka,300,150\n'));
+    const text = tg.text(s.chat, `Shim 200 dona ${STAMP}`);
+    const doc = tg.document(s.chat, fileId, { fileName: 'invoice.csv', mime: 'text/csv' });
+    await h.handle(text);
+    await h.handle(doc);
+    const noteId = activeIntake(chat)!.noteId;
+    expect(activeIntake(chat)!.fileCount).toBe(1);
+    await restart();
+    const m = h.mark();
+    await h.handle(tg.again(text));
+    await h.handle(tg.again(doc));
+    const state = activeIntake(chat)!;
+    expect(state.material.filter((t) => t === `Shim 200 dona ${STAMP}`)).toHaveLength(1);
+    expect(state.fileCount).toBe(1);
+    expect(await attachmentsOf(noteId)).toBe(1);
+    expect(asksSecondInvoice(m)).toBe(false);
+  });
+
+  it('a crash-lost write is redone, and the redone file finds its attachment — no second row', async () => {
+    const { chat, s } = await collecting();
+    await h.settle();
+    const fileId = `doc-${STAMP}-b`;
+    h.serveFile(fileId, Buffer.from('Tovar,Soni\nKurtka,300\n'));
+    const doc = tg.document(s.chat, fileId, { fileName: 'invoice.csv', mime: 'text/csv' });
+    await h.handle(doc);
+    const noteId = activeIntake(chat)!.noteId;
+    // The crash comes before the write's second of quiet: the row is the state before the file.
+    __forgetIntakeMemory();
+    __resetLifecycle();
+    markBoot(new Date(Date.now() + 2_000));
+    await hydrateIntakes();
+    markIntakesHydrated();
+    expect(activeIntake(chat)!.fileCount).toBe(0);
+    await h.handle(tg.again(doc));
+    expect(activeIntake(chat)!.fileCount).toBe(1);
+    expect(await attachmentsOf(noteId)).toBe(1);
+  });
+
+  it('a parked collection does not swallow the chat; a reply to its own message brings it back (regression-1)', async () => {
+    const { chat, s, prompt } = await collecting();
+    const park = () => updateIntake(chat, { touchedAt: Date.now() - 31 * 60_000 }, { quiet: true });
+    park();
+    const touched = activeIntake(chat)!.touchedAt;
+    const material = activeIntake(chat)!.material;
+    let m = h.mark();
+    await h.handle(tg.text(s.chat, 'GS777'));
+    expect(h.textsTo(s.chat, m).length).toBeGreaterThan(0);
+    expect(activeIntake(chat)!.material).toEqual(material);
+    expect(activeIntake(chat)!.touchedAt).toBe(touched);
+    // «➕ Topshiriq» opens its draft: a parked collection refuses no door.
+    await h.handle(tg.text(s.chat, TOPSHIRIQ));
+    expect(activeDraft(chat)).not.toBeNull();
+    __resetDrafts();
+    // A reply to the collection's own prompt is the collection's, parked or not.
+    await h.handle(tg.text(s.chat, `Kurtka 300 dona ${STAMP}`, { replyTo: prompt }));
+    expect(activeIntake(chat)!.material).toContain(`Kurtka 300 dona ${STAMP}`);
+    // A table-shaped figure typed into a parked chat: one sentence, never the paid assistant.
+    park();
+    const expected = await orphanAnswerSentence('3500 kg', activeIntake(chat));
+    m = h.mark();
+    await h.handle(tg.text(s.chat, '3500 kg'));
+    expect(expected).not.toBeNull();
+    expect(h.textsTo(s.chat, m)).toEqual([expected!.text]);
+    expect(await aiQuestions(s)).toBe(0);
+    expect(activeIntake(chat)!.material).not.toContain('3500 kg');
+  });
+
+  it('a redelivered «✖️» of an older collection ends nothing it does not own (durability-2)', async () => {
+    const { chat, s, prompt } = await collecting();
+    // «🔄 Ha, boshqatdan»: B replaces A.
+    await h.handle(tg.callback(s.chat, nextMsg(), 'c:rastamojka'));
+    const question = h.api.filter((c) => c.method === 'sendMessage' && JSON.stringify(c.payload.reply_markup ?? '').includes('c:go_rastamojka')).at(-1)!.messageId!;
+    await h.handle(tg.callback(s.chat, question, 'c:go_rastamojka'));
+    const b = activeIntake(chat)!.noteId;
+    notesMade.push(b);
+    const m = h.mark();
+    await h.handle(tg.callback(s.chat, prompt, 'c:cancel'));
+    expect(h.textsTo(s.chat, m)).toEqual(['Bu tugma eskirgan.']);
+    expect(activeIntake(chat)?.noteId).toBe(b);
+  });
+
+  it('an unwritten change keeps its update unconfirmed while its batch is handled; the next process applies it once (durability-10)', async () => {
+    const { chat, s } = await collecting();
+    await h.settle();
+    // U is applied and finished, but its change cannot be written…
+    __setIntakeWriteHook(async (k) => {
+      if (k === String(chat)) throw new Error('database blip');
+    });
+    const U = tg.text(s.chat, `Shim 200 dona ${STAMP}`);
+    await h.handle(U);
+    // …and the batch's next update V is still in flight when the signal comes.
+    hang.chat = s.chat;
+    hang.on = true;
+    const V = tg.text(s.chat, `Kepka 50 dona ${STAMP}`);
+    void h.handle(V).catch(() => {});
+    await vi.waitFor(() => expect(hang.on).toBe(false));
+    const getUpdates = vi.fn(async () => []);
+    const outcome = await stopTelegramBot(
+      botStopDeps({ isRunning: () => true, stop: vi.fn(async () => {}), api: { getUpdates } } as never),
+    );
+    const u = (U as { update_id: number }).update_id;
+    expect(outcome.via).toBe('confirm');
+    expect(outcome.confirmedThrough).toBe(u - 1);
+    expect(getUpdates).toHaveBeenCalledWith(expect.objectContaining({ offset: u }), expect.anything());
+    // The next process: the row as last written, then U and V delivered again.
+    __setIntakeWriteHook(null);
+    await restart();
+    expect(activeIntake(chat)!.material).toEqual([]);
+    await h.handle(tg.again(U));
+    await h.handle(tg.again(V));
+    expect(activeIntake(chat)!.material).toEqual([`Shim 200 dona ${STAMP}`, `Kepka 50 dona ${STAMP}`]);
+  }, 20_000);
+
+  it('every dirty chat is written before grammy confirms its batch — bounded, and never a stopped poll (the lead’s ruling L1)', async () => {
+    const { chat, s } = await collecting();
+    await h.settle();
+    const writes = __intakeWriteCount();
+    await h.handle(tg.text(s.chat, `Shim 200 dona ${STAMP}`));
+    const rowMaterial = async () =>
+      ((await db.execute<{ m: unknown }>(sql`
+        SELECT state -> 'material' AS m FROM telegram_calc_intakes WHERE chat_id = ${String(chat)}::bigint`))[0]?.m ?? null) as
+        | string[]
+        | null;
+    expect(await rowMaterial()).toEqual([]);
+    expect(__intakeWriteCount()).toBe(writes);
+    const confirm = flushBeforeConfirm();
+    let seenAtPrev: string[] | null = null;
+    await confirm(
+      (async () => {
+        seenAtPrev = await rowMaterial();
+        return { ok: true, result: [] };
+      }) as never,
+      'getUpdates',
+      { offset: 1 } as never,
+    );
+    expect(seenAtPrev).toEqual([`Shim 200 dona ${STAMP}`]);
+    // A write that fails: the poll goes on, the failure is said once.
+    const warn = vi.spyOn(logger, 'warn');
+    try {
+      __setIntakeWriteHook(async () => {
+        throw new Error('database blip');
+      });
+      updateIntake(chat, { material: ['a'] });
+      const prev = vi.fn(async () => ({ ok: true, result: [] }));
+      await confirm(prev as never, 'getUpdates', {} as never);
+      updateIntake(chat, { material: ['b'] });
+      await confirm(prev as never, 'getUpdates', {} as never);
+      expect(prev).toHaveBeenCalledTimes(2);
+      expect(warn.mock.calls.filter((c) => String(c[1]).includes('confirmed before its collection was written'))).toHaveLength(1);
+      // A write that hangs: the poll goes on after the bound, the chat still dirty.
+      __forgetIntakeMemory();
+      await hydrateIntakes();
+      __setIntakeWriteHook(async () => new Promise(() => {}));
+      await stoppingGuard()({ update: { update_id: 515_151 } } as never, async () => {
+        updateIntake(chat, { material: ['c'] });
+      });
+      const hung = vi.fn(async () => ({ ok: true, result: [] }));
+      const started = Date.now();
+      await confirm(hung as never, 'getUpdates', {} as never);
+      expect(hung).toHaveBeenCalledTimes(1);
+      expect(Date.now() - started).toBeGreaterThanOrEqual(INTAKE_CONFIRM_FLUSH_MS - 50);
+      expect(oldestUnwrittenUpdate()).toBe(515_151);
+      // Every other method passes straight through, at once.
+      const other = vi.fn(async () => ({ ok: true, result: true }));
+      await confirm(other as never, 'sendMessage', { chat_id: 1, text: 'x' } as never);
+      expect(other).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+    }
+  }, 15_000);
+
+  it('the backlog sentence keeps «Hisoblatish» only where nothing survived (regression-24)', async () => {
+    // A collection opened before this boot, holding: its chat is told the shorter sentence.
+    const kept = await collecting();
+    updateIntake(kept.chat, { openedAt: Date.now() - 10 * 60_000 }, { quiet: true });
+    const boot = await restart(new Date());
+    let m = h.mark();
+    await h.handle(tg.text(kept.s.chat, `qwe ${STAMP}`, { date: boot - 20 * 60 }));
+    expect(h.textsTo(kept.s.chat, m)).toEqual([BACKLOG_SENTENCE_KEPT]);
+    // A chat with none keeps today's sentence.
+    const none = await person();
+    m = h.mark();
+    await h.handle(tg.text(none.chat, `qwe ${STAMP}`, { date: boot - 60 }));
+    expect(h.textsTo(none.chat, m)).toEqual([BACKLOG_SENTENCE]);
+    // …and so does a chat whose collection a LATE press opened after boot (I20b).
+    const late = await person();
+    await h.handle(tg.callback(late.chat, nextMsg(), 'c:rastamojka'));
+    m = h.mark();
+    await h.handle(tg.text(late.chat, `mijoz qwe ${STAMP}`, { date: boot - 60 }));
+    expect(h.textsTo(late.chat, m)).toEqual([BACKLOG_SENTENCE]);
   });
 });

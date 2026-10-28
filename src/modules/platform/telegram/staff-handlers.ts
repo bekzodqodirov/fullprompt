@@ -65,6 +65,7 @@ import {
   activeIntake,
   endIntake,
   holdingIntake,
+  intakeMomentOf,
   intakeTakes,
   noteOwnMessage,
   ownsPress,
@@ -684,7 +685,7 @@ export function registerStaffBot(bot: Bot): void {
     // No collector opened by THIS process takes a backlog file (Q5 a): every
     // one of them was opened after boot, and the file was sent before it.
     const late = isBacklog(ctx.message.date);
-    const state = activeIntake(chatId);
+    const state = activeIntake(chatId, intakeMomentOf(ctx.message.date));
     // Whether the live collection takes THIS file is one verdict for every
     // collector door (`intakeTakes`, K3): 'seen' = applied before, dropped in
     // silence; 'pass' = not this collection's, the rest of the ladder asks.
@@ -778,7 +779,7 @@ export function registerStaffBot(bot: Bot): void {
       // note into a collection used to reach the cabinet, which answers a
       // staff chat with nothing — the seller believed it was part of the job.
       // Only the collection that TAKES the message (`intakeTakes`, K3).
-      const intake = activeIntake(chatId);
+      const intake = activeIntake(chatId, intakeMomentOf(ctx.message.date));
       const takes = intake ? intakeTakes(intake, intakeMessageOf(ctx)) : 'pass';
       if (takes === 'seen') return;
       if (takes === 'take') {
@@ -829,7 +830,7 @@ export function registerStaffBot(bot: Bot): void {
     // Whether the collection takes THIS text is one verdict, `intakeTakes`
     // (K3), shared with the file and voice doors: 'seen' = it applied this
     // message before, dropped in silence; 'pass' = the ladder goes on.
-    const intake = activeIntake(chatId);
+    const intake = activeIntake(chatId, intakeMomentOf(ctx.message.date));
     const incoming = intakeMessageOf(ctx);
     const takes = intake && !escapesIntake(ctx.message.text) ? intakeTakes(intake, incoming) : 'pass';
     if (takes === 'seen') return;

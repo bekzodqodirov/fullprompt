@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm';
 import { db, type Db, type Tx } from '../db/client';
 import { logger } from '../logger';
 import { redeliveryReady } from './redelivery-ready';
+import { intakeTableReady } from './calc-store';
 
 /**
  * One claim per Telegram identity (0130, Q5 a).
@@ -141,13 +142,21 @@ export async function handledAlready(chatId: bigint | number, messageId: number)
  * expired more than 24 h ago can be answered by no message Telegram still
  * holds.
  */
-export async function pruneTelegramRedelivery(): Promise<{ once: number; waits: number }> {
-  if (!(await redeliveryReady())) return { once: 0, waits: 0 };
+export async function pruneTelegramRedelivery(): Promise<{ once: number; waits: number; intakes: number }> {
+  if (!(await redeliveryReady())) return { once: 0, waits: 0, intakes: 0 };
   const once = await db.execute<{ key: string }>(sql`
     DELETE FROM telegram_once WHERE created_at < now() - interval '3 days' RETURNING key`);
   const waits = await db.execute<{ chat_id: string }>(sql`
     DELETE FROM telegram_chat_waits WHERE expires_at < now() - interval '24 hours' RETURNING chat_id::text AS chat_id`);
-  return { once: once.length, waits: waits.length };
+  // A «Hisoblatish» collection a day past its end is one no process will ever
+  // end with its line (the hydrate reaches back 24 hours), and it holds a
+  // customer's name and phone (docs/SAKKIZ-R3.md §6.2.17). Its own probe: one
+  // migration behind, 0138's table is not there while 0130's are.
+  const intakes = (await intakeTableReady())
+    ? await db.execute<{ chat_id: string }>(sql`
+        DELETE FROM telegram_calc_intakes WHERE expires_at < now() - interval '1 day' RETURNING chat_id::text AS chat_id`)
+    : [];
+  return { once: once.length, waits: waits.length, intakes: intakes.length };
 }
 
 export const JOB_TELEGRAM_PRUNE = 'telegram.redelivery-prune';
@@ -159,7 +168,7 @@ export async function registerTelegramPruneWorker(boss: PgBoss): Promise<void> {
   await boss.work(JOB_TELEGRAM_PRUNE, async () => {
     try {
       const removed = await pruneTelegramRedelivery();
-      if (removed.once + removed.waits > 0) logger.info(removed, 'telegram redelivery records pruned');
+      if (removed.once + removed.waits + removed.intakes > 0) logger.info(removed, 'telegram redelivery records pruned');
     } catch (err) {
       logger.error({ err }, 'telegram redelivery prune failed');
       throw err;

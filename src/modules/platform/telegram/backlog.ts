@@ -1,5 +1,6 @@
 import type { Context, MiddlewareFn } from 'grammy';
 import { bootedAtSec, isBacklog } from './lifecycle';
+import { collectionSurvived } from './calc-store';
 import { escapesIntake } from './staff-bot';
 
 /**
@@ -22,6 +23,23 @@ export const BACKLOG_SENTENCE =
   '⏸ Bu xabar bot yangilanayotgan paytda yozilgan — u nimaga javob ekanini bot bilmaydi. ' +
   'Hisoblatish, zametka yoki topshiriq yozayotgan bo‘lsangiz, qaytadan boshlang; savol bo‘lsa, qaytadan yuboring.';
 
+/**
+ * The sentence for a chat whose «Hisoblatish» collection SURVIVED the restart
+ * (docs/SAKKIZ-R3.md §2.7, regression-24): that collection is still here and
+ * takes what was written for it, so «Hisoblatish» leaves the list of things to
+ * start again. Every other chat keeps `BACKLOG_SENTENCE` — a collection CAN
+ * still be lost (the deploy that introduces durability, a readiness probe
+ * answering no, a write that failed), and the old words stay true there.
+ */
+export const BACKLOG_SENTENCE_KEPT =
+  '⏸ Bu xabar bot yangilanayotgan paytda yozilgan — u nimaga javob ekanini bot bilmaydi. ' +
+  'Zametka yoki topshiriq yozayotgan bo‘lsangiz, qaytadan boshlang; savol bo‘lsa, qaytadan yuboring.';
+
+/** The one choice between the two (pure): `hasCollection` = a collection opened before this boot is live. */
+export function backlogSentence(hasCollection: boolean): string {
+  return hasCollection ? BACKLOG_SENTENCE_KEPT : BACKLOG_SENTENCE;
+}
+
 /** A crash redelivery of a message that already did its work (handledAlready). */
 export const HANDLED_SENTENCE = 'Bu xabarga javob berilgan — yuqoriga qarang.';
 
@@ -37,7 +55,10 @@ export async function tellBacklogOnce(
   if (told.has(key)) return;
   if (told.size > 10_000) told.clear();
   told.add(key);
-  await ctx.reply(BACKLOG_SENTENCE);
+  // Decided here, so none of the five callers changes: only a collection
+  // opened before this boot (hydrated) — one a late press opened is no
+  // survivor, and its chat keeps today's sentence (I20b).
+  await ctx.reply(backlogSentence(collectionSurvived(BigInt(chatId))));
 }
 
 const seenLabels = new Set<string>();

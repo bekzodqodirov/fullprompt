@@ -170,21 +170,40 @@ describe('(5) the lifecycle guard is the first registration of any kind', () => 
 
 describe('(6) the start', () => {
   const start = bodyOf(BOT, 'export function startTelegramBot(');
-  it('boot, retry, handlers, shutdown, durable waits, hydration — in that order', () => {
+  // Re-anchored (docs/SAKKIZ-R3.md §6.2.10, P1): TWO tables restore now — the
+  // waits and the «Hisoblatish» collections — and neither may start polling
+  // early, so the hydrate is one `Promise.allSettled` over both.
+  it('boot, retry, handlers, shutdown, durable waits and intakes, hydration — in that order', () => {
     const order = [
       'markBoot();',
       'bot.api.config.use(briefRetry);',
       'registerBotHandlers(bot);',
       'installBotShutdown(',
       'setDurableWaits(true);',
-      'void hydrateWaits()',
+      'setDurableIntakes(true);',
+      'bot.api.config.use(flushBeforeConfirm());',
+      'void Promise.allSettled([',
     ].map((needle) => found(start, needle));
     for (let i = 1; i < order.length; i += 1) expect(order[i - 1]!, `step ${i}`).toBeLessThan(order[i]!);
   });
 
-  it('the first getUpdates waits for the restored waits', () => {
-    const hydrate = start.slice(found(start, 'void hydrateWaits()'));
-    expect(hydrate.slice(0, hydrate.indexOf(';'))).toMatch(/\.finally\(\(\) => startPolling\(/);
+  it('the first getUpdates waits for BOTH restores, each with its own catch, and marks the store hydrated', () => {
+    // Read to the statement's END — the `.finally` body now holds a `;`.
+    const at = found(start, 'void Promise.allSettled([');
+    const open = start.indexOf('(', at + 'void Promise.allSettled'.length);
+    const members = argsOf(callAt(start, open).replace(/^\s*\[|\]\s*$/g, ''));
+    expect(members.map((m) => /^hydrate(?:Waits|Intakes)\(\)\s*\.catch\(/.test(m))).toEqual([true, true]);
+    const tail = start.slice(open + callAt(start, open).length + 2);
+    const fin = found(tail, '.finally(');
+    const body = callAt(tail, tail.indexOf('(', fin));
+    expect(body.replace(/\s+/g, ' ')).toMatch(/^\(\) => \{ markIntakesHydrated\(\); startPolling\(/);
+  });
+
+  it('the stop flushes both stores and seals the collections as it names the oldest unwritten update', () => {
+    found(start, 'stopTelegramBot(botStopDeps(bot))');
+    const deps = bodyOf(BOT, 'export function botStopDeps(');
+    expect(deps.replace(/\s+/g, ' ')).toContain('Promise.allSettled([flushWaitWrites(), flushIntakeWrites()])');
+    expect(deps.replace(/\s+/g, ' ')).toMatch(/unwritten: \(\) => \{ const n = oldestUnwrittenUpdate\(\); sealIntakeWrites\(\); return n; \}/);
   });
 
   it('nothing restarts the poll after the signal: before .start(, in the retry timer, first in .catch(', () => {
