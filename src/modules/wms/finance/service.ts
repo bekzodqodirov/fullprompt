@@ -728,9 +728,13 @@ export async function clientBalanceUsd(clientId: string): Promise<number> {
  *
  * Only movements ON a deferred deal count, so an old unrelated debt keeps
  * blocking exactly as it should: the deferral was granted for one job, not for
- * the client. A charge posted from batch pricing carries a deal only when the
- * client's cargo on that truck is one deal's and nothing else (R3a) — then it
- * IS that job's price and the deferral covers it; otherwise it carries none.
+ * the client. A charge posted from batch pricing carries a deal when the
+ * client's cargo on that truck is one deal's and nothing else (R3a), or when
+ * the person setting a two-deal truck's price chose it (Q8 «c») — then it IS
+ * that job's price and the deferral covers it AT THE COUNTER, whatever cargo
+ * the price was for (the select says so); otherwise it carries none. What it
+ * never does is make another deal's cartons PAID: `paidCargo` lets a deferral
+ * settle its own deal's cartons only.
  *
  * What is deferred is what is still OWED on that job — charges MINUS payments
  * against it. Summing the charges alone was a hole in the direction that

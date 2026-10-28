@@ -1,5 +1,36 @@
 # CHANGELOG
 
+## 2026-10-28 — Mashina narxi qaysi bitimga yoziladi: narx qo'yuvchi tanlaydi (Q8 «c»)
+
+Savol: «bitta mijozning yuki bitta mashinada ikki xil bitim bo'yicha kelsa, mashinaga qo'yilgan narx qaysi bitimga yoziladi?» Sizning javobingiz: **«C — logist o'zi tanlaydi»**. Migratsiya yo'q, migratsiyalar soni o'zgarmaydi.
+
+### Endi qanday ishlaydi
+- Mijozning yuki bitta mashinada **ikki yoki undan ko'p bitimga** tegishli bo'lsa, «Narx» oynasida narx qatorining tepasida **«Narx qaysi bitimga yoziladi»** degan tanlov chiqadi. Bitim tanlanmaguncha narxni saqlab bo'lmaydi.
+- Ro'yxatda har bir bitim shu mashinadagi ulushi bilan turadi: kod, tovar, foiz, kub, kg. Masalan: «B-00124 · Klaviatura · 33 % · 2.00 m³ · 200.0 kg». Muddatli bitim oldida ⏳ belgisi turadi.
+- Mashinada bitimga ulanmagan yuk ham bo'lsa, ro'yxatda **«Bitimsiz»** varianti ham chiqadi. Faqat bitimli yuk bo'lsa, «Bitimsiz» chiqmaydi, chunki siz «a» variantini tanlamadingiz.
+- **Har saqlashda bitta ogohlantirish chiqadi:**
+  - «Bu narx faqat B-00124 bitimining ulushi uchunmi (33 %)?»;
+  - bitim muddatli bo'lsa: «yuk topshirishda qarz deb to'xtatilmaydi»;
+  - mashinada shu mijozga avval narx qo'yilgan bo'lsa: «allaqachon narx bor: $500 → B-00124 · bu narx qo'shimcha hisob bo'ladi».
+- Har bir bitimga o'z narxi alohida qo'yiladi: avval biri, keyin ikkinchisi. Saqlangandan keyin tanlov bo'shaydi, narxi hali qo'yilmagan bitim ro'yxatda birinchi turadi.
+- Mijoz kartasida **«Bu mashinadagi narxlar»** ro'yxati chiqadi. Unda qaysi narx qaysi bitimga yozilgani va qaysi bitimning bu mashinada hali narxi yo'qligi ko'rinadi.
+- Mashinada mijozning faqat **bitta bitimi** bo'lsa, hammasi avvalgidek: narx o'sha bitimga o'zi yoziladi, hech narsa so'ralmaydi.
+- **Bitta bitim bilan bitimsiz yuk** birga bo'lsa ham avvalgidek: narx bitimga yozilmaydi, hech narsa so'ralmaydi. Savolingiz ikki bitim haqida edi.
+- Mijoz kartasidagi **«Pul»** oynasida narx mashinaga yozilsa, xuddi shu tanlov chiqadi va xuddi shu qoida ishlaydi. Bitimning yuki shu mashinada bo'lmasa, narxni unga yozib bo'lmaydi.
+- **Bitim kartasida**, foyda bo'limida, shu bitimning mashinasidagi narx boshqa bitimga yozilgan bo'lsa, shunday yoziladi: «YW-001 mashinasidagi narx ($500) B-00124 bitimiga yozilgan — bu bitimning daromadida yo'q».
+- Sahifa ochiq turganda prixod boshqa bitimga o'tkazilsa, saqlash rad etiladi: «bitimlar o'zgardi». Sahifa yangilanadi, tanlovni qaytadan qilasiz. Tizim siz tanlamagan bitimga narx yozmaydi.
+
+### Pul bo'yicha tuzatish
+- Narx **muddatli** bitimga yozilsa, muddat endi faqat **o'sha bitimning** yukini «to'langan» qiladi. Avval, tekshiruvda topildi: shu mashinadagi boshqa bitimning yuki ham «to'langan» bo'lib qolardi va uning sotuvchisiga to'lanmagan yuk uchun KPI haqi yozilardi.
+
+### Bilib qo'ying (qilinmagan)
+- **«🚚 Ko'chirish»** narxni o'z bitimi bilan ko'chiradi (avvalgi qoida), bitimni qayta so'ramaydi.
+- Prixod keyin boshqa bitimga o'tkazilsa, qo'yilgan narxning bitimi o'zgarmaydi.
+- Bitta mijozning bitta mashinadagi bir nechta narxi KPI va upsale uchun birga to'langan hisoblanadi. A ulushi to'lansa ham, B ulushi to'lanmaguncha A yuki «to'langan» bo'lmaydi. Bu avval ham shunday edi.
+- Muddatli bitimga yozilgan narx yuk topshirishda (kassada) qarz deb to'xtatilmaydi, qaysi yuk uchun yozilgan bo'lishidan qat'i nazar. Tanlov va ogohlantirish buni aytadi.
+- Avvalgi bitimsiz narxlar o'zgarmaydi. Ular ro'yxatda «bitimsiz narx bu mijozning butun yukini qoplaydi» deb ko'rsatiladi. Bitimga yozish kerak bo'lsa, narxni bekor qilib, qaytadan bitim bo'yicha kiritasiz.
+- **Kim tanlaydi:** «Narx» oynasini moliya huquqi (`finance.manage`) borlar ochadi: VED, buxgalter va admin. Logist bu oynani hozir ochmaydi. Shuning uchun alohida savol berdim.
+
 ## 2026-10-27 — Uch band: narxdan hisob-kitobga link, har so'rovga yangi bitim, bitta qatorli tarkib va «шт» ustuni
 
 Sizning so'zlaringiz (uchta band) va javobingiz: «3b / 4 a / 5 a / 6 a / 7 b» (1 va 2 savolga javob bo'lmadi — ⭐ variant qurildi). **Migratsiya 0136 — deploydan keyin migratsiyalar soni 137 bo'lishi kerak.** Bu deployda **tg-listen ham qayta qurilishi kerak** (sayt va reklama lidlari endi hamkasb mijozi haqidagi lidga qo'shilmaydi).

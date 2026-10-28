@@ -2978,8 +2978,23 @@ measured) in ONE transaction (requests → lead FOR UPDATE, re-read, `changed`; 
 ids; `rekeyLeadCalcJobsTx` by anchor; the won stage inside). `upsale_paid` keeps a paid prixod on its deal;
 `lead_closed` refuses a job on a won lead. (3) One-line tarkib (`MIN_LINES` 1, readers' own `MIN_STORED_LINES`),
 the vouch term (`tarkibVouchesSql`), `tnved_would_vanish`, «шт» on Packing (rasmlar), the packing list and the
-agent file. Stated, not built: #1476 (Q8 — a truck price over two deals of one client — asked). Deploy MUST
-rebuild tg-listen (`inboundMatch` changed).
+agent file. Stated, not built: #1476 (Q8 — a truck price over two deals of one client — asked; answered «c»,
+built in the next round). Deploy MUST rebuild tg-listen (`inboundMatch` changed).
+
+**Round — Q8 «c», a two-deal truck's price (2026-10-28; DECISIONS #1491-#1495, numbered past PR #131's
+#1479-#1490; NO migration).** His «javobim C» («logist o'zi tanlaydi»). When two or more of a client's OWN deals
+ride one truck, the person setting the truck price CHOOSES the deal; one deal is derived (R3a), one deal beside
+deal-less cargo stays null, «bitimsiz» only for a deal-less part. ONE pure rule `finance/truck-deal.ts`
+(`dealCandidatesOf` / `truckDealDecision` / `shownDealChoice` / `unpricedDealsOf`, `ownDealOf` for every pricing
+reader) over ONE query `dealCandidateRows` (batches/lots.ts, the money riders) read by the price door on the pool
+AND inside its transaction (`cargoAboard(…, tx)`), the «Narx» tab and the client ledger; the choice is required at
+every door (`deal_choice_required`), the form posts the key it drew (`dealsSeen` → `deals_changed`), «bitimsiz» is
+read before any uuid lookup, audit `dealVia`. One confirmation per press on such a truck, and on any further price
+for a client priced here; «Bu mashinadagi narxlar»; the deal card's `otherDealPrices` (trucks from the riders).
+Review found a deferral paying the OTHER deal's cartons (KPI on unpaid cargo) — `settleChargesFully` +
+`paidCargo` now let a deferral pay its own deal's cartons only. Stated: moveCharge keeps its own deal, a re-file
+never moves a price's deal, one client's prices on one truck are paid together, the logist lacks `finance.manage`
+(asked). e2e `m9zzzg-narx-bitim`.
 
 **Latest migration: 0136** (`lead_client_many`, `when` …115; ledger must reach **137**). Before
 it: 0135 (`load_mode`, `when` …114). Before
