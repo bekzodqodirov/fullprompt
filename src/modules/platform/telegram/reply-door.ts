@@ -227,7 +227,10 @@ export async function threadReplyFromBot(
     /** True when called from the 'reply' wait (the person pressed «💬 Javob yozish»): never fall through. */
     fromWait?: boolean;
   },
-): Promise<{ text: string } | null> {
+  // A non-null answer means HANDLED, and the caller says `text` only when it
+  // is non-null (regression-2): the add door (P4) handles a reply by sending
+  // everything itself, by chat id. Null still means «not handled, go on».
+): Promise<{ text: string | null } | null> {
   try {
     const staff = await staffForChat(chatId);
     if (!staff) return null;

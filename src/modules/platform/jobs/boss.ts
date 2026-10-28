@@ -91,6 +91,12 @@ export const WORKER_REGISTRATIONS: [string, (boss: PgBoss) => Promise<void>][] =
     'calc-prefill',
     async (b) => (await import('../../wms/calc/jobs')).registerCalcPrefillWorker(b),
   ],
+  // The «Hisoblatish» collection's three jobs (docs/SAKKIZ-R3.md K15): the
+  // reading, the collection's clock, and the add door's save — registered in
+  // K so P1, P2 and P4 never touch this list.
+  ['calc-intake-read', async (b) => (await import('../telegram/calc-read')).registerCalcIntakeReadWorker(b)],
+  ['calc-intake-sweep', async (b) => (await import('../telegram/calc-intake-sweep')).registerCalcIntakeSweep(b)],
+  ['calc-amend-save', async (b) => (await import('../telegram/calc-amend')).registerCalcAmendSaveWorker(b)],
   [
     'customs-import',
     async (b) => (await import('../../wms/customs/jobs')).registerCustomsImportWorker(b),

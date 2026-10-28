@@ -3,7 +3,7 @@ import { logger } from '../logger';
 import { reachLine } from '../notifications/staff';
 import { appendLine, keyboardOf, staffTextHtml, urlRowsOf, withoutButton } from '../notifications/staff-html';
 import { parseDue } from '../tasks/service';
-import { activeIntake } from './calc-intake';
+import { holdingIntake } from './calc-store';
 import { activeCapture } from './note-capture';
 import { editMarkup, editText, sendText } from './send';
 import { REPLY_SENTENCES, threadReplyFromBot } from './reply-door';
@@ -124,7 +124,7 @@ export async function startTaskDraft(
   chatId: bigint,
   seed: Parameters<typeof startDraft>[1] = {},
 ): Promise<boolean> {
-  if (activeIntake(chatId)) {
+  if (holdingIntake(chatId)) {
     await ctx.reply('Hozir hisoblatish davom etyapti. Avval uni tugating yoki bekor qiling.');
     return false;
   }
@@ -927,7 +927,8 @@ export async function answerPendingText(
         messageDate: ctx.message?.date ?? nowSec(),
         fromWait: true,
       });
-      await ctx.reply(out?.text ?? REPLY_SENTENCES.waitNoTarget);
+      if (!out) await ctx.reply(REPLY_SENTENCES.waitNoTarget);
+      else if (out.text !== null) await ctx.reply(out.text);
       return true;
     }
     case 'reschedule':

@@ -142,6 +142,13 @@ export async function saveAttachment(
      * it. Default: a fresh uuid, as every upload has always had.
      */
     keyName?: string;
+    /**
+     * The row's id, when the CALLER must find it again before it re-downloads
+     * — the bot's intake file keyed by its Telegram message (docs/SAKKIZ-R3.md
+     * K5), so a redone message reads the attachment it already made and never
+     * mints a second one. Default: the column's own uuid.
+     */
+    id?: string;
   } = {},
 ): Promise<{ id: string }> {
   if (opts.keyName !== undefined && !/^[A-Za-z0-9_-]{1,80}$/.test(opts.keyName)) {
@@ -174,6 +181,7 @@ export async function saveAttachment(
   const [row] = await db
     .insert(attachments)
     .values({
+      ...(opts.id !== undefined ? { id: opts.id } : {}),
       entityType: input.entityType,
       entityId: input.entityId,
       kind: isPhoto ? 'photo' : 'file',

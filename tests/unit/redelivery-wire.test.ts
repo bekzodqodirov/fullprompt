@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PRESS_REPEAT } from '@/modules/platform/telegram/staff-bot';
+import { intakeTakes, startIntake, endIntake } from '@/modules/platform/telegram/calc-store';
+import { __resetLifecycle, markBoot } from '@/modules/platform/telegram/lifecycle';
 import { bodyOf, read, srcFiles } from '../fixtures/source-shape';
 
 /**
@@ -202,22 +204,43 @@ describe('(7) the join decline is said BEFORE the decline, inside Telegram’s f
 
 describe('(8) no collector this process opened takes a backlog message', () => {
   const text = HANDLERS.slice(found(HANDLERS, "bot.on('message:text'"), HANDLERS.indexOf('type StaffTailCtx'));
+  // Re-anchored (docs/SAKKIZ-R3.md K3, the subject moved): the calc
+  // collector's own three `!late` checks became ONE verdict, `intakeTakes`,
+  // asked by the text, file and voice doors; the rule itself is proven on the
+  // verdict below. The zametka and the draft keep their `late`.
   it('the text ladder declares `late` before the first collector and every collector asks it', () => {
     expect(found(text, 'const late = isBacklog(ctx.message.date);')).toBeLessThan(found(text, 'activeIntake('));
-    found(text, 'if (intake && !escapesIntake(ctx.message.text) && !late) {');
+    found(text, "intake && !escapesIntake(ctx.message.text) ? intakeTakes(intake, incoming) : 'pass'");
+    expect(found(text, "if (takes === 'seen') return;")).toBeLessThan(found(text, "if (intake && takes === 'take') {"));
     found(text, 'if (capture && !late) {');
     found(text, 'if (draft && !late) {');
   });
   it('the photo/document and voice handlers carry it', () => {
     const photos = HANDLERS.slice(found(HANDLERS, "bot.on(['message:photo', 'message:document']"));
     expect(photos.slice(0, 600)).toContain('const late = isBacklog(ctx.message.date);');
-    expect(photos.slice(0, 900)).toContain('if (!state || late) {');
+    expect(photos.slice(0, 900)).toContain("const takes = state ? intakeTakes(state, intakeMessageOf(ctx)) : 'pass';");
+    expect(photos.slice(0, 900)).toContain("if (!state || takes === 'pass') {");
     expect(photos.slice(0, 1400)).toContain('if (!capture || late) {');
     const voice = HANDLERS.slice(found(HANDLERS, "['message:voice', 'message:audio'"));
     // A live collection answers a voice note in words (his 1.12 a) and a live
     // zametka capture keeps it — both only when it is NOT from the backlog.
-    expect(voice.slice(0, 900)).toContain('if (!late && activeIntake(chatId)) {');
+    expect(voice.slice(0, 900)).toContain("const takes = intake ? intakeTakes(intake, intakeMessageOf(ctx)) : 'pass';");
+    expect(voice.slice(0, 900)).toContain("if (takes === 'take') {");
     expect(voice.slice(0, 1500)).toContain('if (!late && activeCapture(chatId)) return next();');
+  });
+  it('the verdict: a collection opened after boot never takes a message written before it', () => {
+    const boot = new Date();
+    markBoot(boot);
+    const chat = BigInt(-7_300_000_001);
+    try {
+      const state = startIntake(chat, 'rastamojka', { staffId: 'staff-test' });
+      const bootSec = Math.floor(boot.getTime() / 1000);
+      expect(intakeTakes(state, { date: bootSec - 60, messageId: 10, replyTo: null })).toBe('pass');
+      expect(intakeTakes(state, { date: bootSec + 1, messageId: 11, replyTo: null })).toBe('take');
+    } finally {
+      endIntake(chat);
+      __resetLifecycle();
+    }
   });
   it('a backlog forward is the sentence before any «📌» offer — in the ladder and in draftMedia', () => {
     const doorB = text.slice(found(text, 'if (ctx.message.forward_origin) {'));

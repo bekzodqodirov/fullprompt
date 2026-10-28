@@ -250,7 +250,7 @@ describe('«➕ Yana ma’lumot» keeps the per-line answers (P1.3)', () => {
     // lines were answered. No model here (no key in the suite): the invoice
     // is the goods list, and the answers go back on top of it.
     const chat = BigInt(`9${SUFFIX}`);
-    const state = startIntake(chat, 'rastamojka');
+    const state = startIntake(chat, 'rastamojka', { staffId: 'staff-test' });
     const analysed = await analyzeCollected({
       ...state,
       stage: 'material',
@@ -273,7 +273,7 @@ describe('«➕ Yana ma’lumot» keeps the per-line answers (P1.3)', () => {
     ]);
     // …and the lines dealt with stay dealt with — found again BY NAME on the
     // re-read's order (R3-C5), never by the old index.
-    expect(resolveLineDone(analysed.facts.goods ?? [], analysed.lineDone)).toEqual([
+    expect(resolveLineDone(analysed.facts.goods ?? [], analysed.lineDone ?? [])).toEqual([
       { index: 1, name: 'Plitka' },
       { index: 0, name: 'Kurtka' },
     ]);
@@ -281,7 +281,7 @@ describe('«➕ Yana ma’lumot» keeps the per-line answers (P1.3)', () => {
 
   it('a total written two ways is asked — the model does not get to answer it either', async () => {
     const chat = BigInt(`8${SUFFIX}`);
-    const state = startIntake(chat, 'podklyuch');
+    const state = startIntake(chat, 'podklyuch', { staffId: 'staff-test' });
     const analysed = await analyzeCollected({ ...state, stage: 'material', material: ['Yiwu → Toshkent, 1,200 kg, 4 kub'] });
     expect(analysed.facts.weightKg).toBeNull();
     expect(analysed.facts.volumeM3).toBe(4);

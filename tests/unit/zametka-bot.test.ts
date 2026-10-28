@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { collectorCode } from '../fixtures/calc-collector-source';
 import {
   BUGUN,
   ZAMETKALAR,
@@ -23,7 +24,9 @@ const read = (p: string) =>
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/^\s*\/\/.*$/gm, '');
 
-const handlers = read('src/modules/platform/telegram/staff-handlers.ts');
+// The collector's files (docs/SAKKIZ-R3.md K16): the bot-file download moved
+// into calc-files.ts, its one home the capture shares.
+const handlers = collectorCode();
 
 describe('the callback vocabulary', () => {
   const uuid = '123e4567-e89b-12d3-a456-426614174000';
@@ -165,7 +168,9 @@ describe('the rules a shell cannot exercise', () => {
     // the calc doors refuse while a capture is live, or the capture ages out
     // silently taking whatever was typed with it.
     expect(handlers).toContain('if (await refuseWhileCapturing(ctx, chatId)) return;');
-    expect(handlers).toContain("if (activeIntake(chatId)) {");
+    // K3: the doors that refuse beside a collection ask whether it HOLDS the
+    // chat (`holdingIntake`; in K the same answer as `activeIntake`).
+    expect(handlers).toContain("if (holdingIntake(chatId)) {");
   });
 
   it('a media group caches its ids POSITIONALLY, and only when the lengths agree', () => {

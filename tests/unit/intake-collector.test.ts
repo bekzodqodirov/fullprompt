@@ -54,7 +54,7 @@ function collection(patch: Partial<IntakeState> = {}, section: IntakeState['sect
   state: IntakeState;
 } {
   const chatId = freshChat();
-  startIntake(chatId, section);
+  startIntake(chatId, section, { staffId: 'staff-test' });
   const state = updateIntake(chatId, patch)!;
   return { chatId, state };
 }
@@ -167,7 +167,7 @@ describe('a refused «⏳» notice cannot strand the lock (review c3)', () => {
 });
 
 describe('a PDF or a header-less sheet beside an Excel list is ASKED about (review c4)', () => {
-  const pdf = { data: Buffer.from('%PDF-1.4 x'), name: 'B.pdf' };
+  const pdf = { attachmentId: 'a-pdf-b', name: 'B.pdf', bytes: 10 };
 
   it('a PDF after the Excel: the question, two buttons the parser takes, and «Bo‘ldi» waits', async () => {
     const { chatId, state } = collection({ stage: 'material', invoiceGoods: [line('Kurtka')], fileCount: 2 });
@@ -428,7 +428,7 @@ describe('a file the READER stopped short is said, and carries its cut (round-2 
       (_, i) => `${i + 1};Куртка женская модель YW-${i} (女士夹克);${300 + i};PCS;${i}.5;${i}.9;0.${i}`,
     ).join('\n');
     const state = collection().state;
-    const answer = await readIntakeFile({ isPhoto: false, body: Buffer.from(csv) }, 'PL.csv', 'text/csv', state);
+    const answer = await readIntakeFile({ isPhoto: false, body: Buffer.from(csv), attachmentId: 'a-file' }, 'PL.csv', 'text/csv', state);
     expect(answer.say).toContain('⚠️ Jadval katta');
     expect(answer.patch.sheetTexts?.[0]?.cut).toBe(true);
   });

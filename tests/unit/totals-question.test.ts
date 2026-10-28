@@ -76,7 +76,7 @@ function collection(
   seq += 1;
   const chatId = BigInt(-9_600_000_000) - BigInt(seq);
   chats.push(chatId);
-  startIntake(chatId, section);
+  startIntake(chatId, section, { staffId: 'staff-test' });
   return { chatId, state: updateIntake(chatId, patch)! };
 }
 

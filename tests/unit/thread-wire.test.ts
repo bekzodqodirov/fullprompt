@@ -69,7 +69,11 @@ describe('the Telegram ladder', () => {
     const body = between(HANDLERS, "bot.on('message:text'", 'type StaffTailCtx');
     const draft = body.indexOf('const draft = activeDraft(chatId)');
     const reply = body.indexOf('threadReplyFromBot(chatId, {');
-    const doorB = body.indexOf('ctx.message.forward_origin');
+    // The Door B STATEMENT (re-anchored in Sakkiz R3 K: the collector's own
+    // `forwarded: Boolean(ctx.message.forward_origin)` flag, handed to
+    // `routeCollectorText`, sits above the reply block and matched the bare
+    // expression).
+    const doorB = body.indexOf('if (ctx.message.forward_origin) {');
     const wait = body.indexOf('takeTaskPending(chatId, ctx.message.date)');
     expect(draft).toBeGreaterThan(0);
     expect(reply, 'reply block after the draft').toBeGreaterThan(draft);

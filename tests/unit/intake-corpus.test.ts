@@ -213,7 +213,7 @@ function collection(
   seq += 1;
   const chatId = BigInt(-9_500_000_000) - BigInt(seq);
   chats.push(chatId);
-  startIntake(chatId, section);
+  startIntake(chatId, section, { staffId: 'staff-test' });
   return { chatId, state: updateIntake(chatId, patch)! };
 }
 
@@ -548,7 +548,7 @@ async function fileProblems(
   if (want.lastLineEnds !== undefined && !last.endsWith(want.lastLineEnds)) out.push(`last line ${JSON.stringify(last)} does not end ${want.lastLineEnds}`);
   if (want.replyIncludes || want.replyExcludes) {
     const answer = await readIntakeFile(
-      { isPhoto: false, body: run.built.body },
+      { isPhoto: false, body: run.built.body, attachmentId: 'a-file' },
       run.built.fileName,
       run.built.contentType,
       collection({ stage: 'material' }).state,
@@ -589,7 +589,7 @@ const source = (p: string) => code(readFileSync(p, 'utf8'));
 /** A file the seller forwards, read by the bot's own door onto a live collection. */
 async function forward(chatId: bigint, spec: FileSpec, fileName?: string) {
   const built = await buildFile(spec);
-  const answer = await readIntakeFile({ isPhoto: false, body: built.body }, fileName ?? built.fileName, built.contentType, activeIntake(chatId)!);
+  const answer = await readIntakeFile({ isPhoto: false, body: built.body, attachmentId: 'a-file' }, fileName ?? built.fileName, built.contentType, activeIntake(chatId)!);
   updateIntake(chatId, answer.patch);
   return answer;
 }
@@ -922,7 +922,7 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
   // ---- «boshqa zavodning tovarlarimi?» in either order (c4)
   c0016: async () => {
     const base = { stage: 'material' as const, material: ['x'], invoiceGoods: [line('Factory A chair'), line('Factory A table')], aiGoods: null };
-    const pdf = receivePdf(collection(base).state, { data: Buffer.from('%PDF-1.4 B'), name: 'B.pdf' }, '«B.pdf»');
+    const pdf = receivePdf(collection(base).state, { attachmentId: 'a-pdf-b', name: 'B.pdf', bytes: 10 }, '«B.pdf»');
     const sheet = receiveSheetText(collection(base).state, '«B.csv»', { text: '[CSV]\nB blender | 5', cut: false, cellsCut: false }, fitRows);
     for (const answer of [pdf, sheet]) {
       expect(answer.patch.aiGoods).toBe('ask');
@@ -936,7 +936,7 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     }
   },
   c0017: async () => {
-    const { state } = collection({ stage: 'material', invoiceGoods: [], pdfs: [{ data: Buffer.from('%PDF-1.4 B'), name: 'B.pdf' }], aiGoods: null });
+    const { state } = collection({ stage: 'material', invoiceGoods: [], pdfs: [{ attachmentId: 'a-pdf-b', name: 'B.pdf', bytes: 10 }], aiGoods: null });
     const answer = receiveGoodsSheet(state, mapped('«A.xlsx»', [line('Kurtka')]));
     expect(answer.patch.aiGoods).toBe('ask');
     expect(buttonsOf(answer)).toContain('c:other_add');
@@ -1430,7 +1430,7 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
   c0775: async () => {
     const { chatId } = collection({ stage: 'material', material: ['x'] });
     await forward(chatId, xlsx({ name: 'Invoice', rows: [['Description', 'Qty'], ['Kurtka', 10]] }), 'A.xlsx');
-    const pdf = receivePdf(activeIntake(chatId)!, { data: Buffer.from('%PDF-1.4 B'), name: 'B.pdf' }, '«B.pdf»');
+    const pdf = receivePdf(activeIntake(chatId)!, { attachmentId: 'a-pdf-b', name: 'B.pdf', bytes: 10 }, '«B.pdf»');
     updateIntake(chatId, pdf.patch);
     expect(activeIntake(chatId)!.aiGoods).toBe('ask');
     expect(pdf.say).toContain('boshqa zavodning tovarlarimi?');
@@ -1588,7 +1588,8 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     expect(prefill.run).toHaveBeenCalled();
   },
   c0805: async () => {
-    const handlers = source('src/modules/platform/telegram/staff-handlers.ts');
+    // The file reader moved to calc-files.ts (docs/SAKKIZ-R3.md K5).
+    const handlers = source('src/modules/platform/telegram/calc-files.ts');
     expect(handlers).toContain("type SheetRefusalReason = Extract<import('../../wms/deals/goods-file').GoodsFileRead, { kind: 'refused' }>['reason'];");
     expect(handlers).toContain('const SHEET_REFUSAL: Record<SheetRefusalReason, (label: string) => string> = {');
     expect(source('src/modules/wms/deals/goods-file.ts')).toContain("| { kind: 'refused'; reason: 'old_format' | 'encrypted' | 'broken' | 'empty' };");
@@ -1624,7 +1625,7 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
   c1336: async () => {
     const { chatId } = collection({ stage: 'material', material: ['x'] });
     await forward(chatId, ladiesWorkbook(150, 'lines'), 'A.xlsx');
-    updateIntake(chatId, receivePdf(activeIntake(chatId)!, { data: Buffer.from('%PDF-1.4 B'), name: 'B.pdf' }, '«B.pdf»').patch);
+    updateIntake(chatId, receivePdf(activeIntake(chatId)!, { attachmentId: 'a-pdf-b', name: 'B.pdf', bytes: 10 }, '«B.pdf»').patch);
     updateIntake(chatId, otherFilesChoice(activeIntake(chatId)!, 'other_add')!.patch);
     model.analyze.mockResolvedValueOnce(reads([]));
     await analyzeCollected(activeIntake(chatId)!);
@@ -1638,7 +1639,7 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
   c1337: async () => {
     const { chatId } = collection({ stage: 'material', material: ['x'] });
     await forward(chatId, ladiesWorkbook(400, 'lines'), 'A.xlsx');
-    updateIntake(chatId, receivePdf(activeIntake(chatId)!, { data: Buffer.from('%PDF-1.4 B'), name: 'B.pdf' }, '«B.pdf»').patch);
+    updateIntake(chatId, receivePdf(activeIntake(chatId)!, { attachmentId: 'a-pdf-b', name: 'B.pdf', bytes: 10 }, '«B.pdf»').patch);
     updateIntake(chatId, otherFilesChoice(activeIntake(chatId)!, 'other_add')!.patch);
     model.analyze.mockResolvedValueOnce(reads([]));
     await analyzeCollected(activeIntake(chatId)!);
@@ -1865,7 +1866,7 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
       material: ['Kurtka'],
       aiGoods: 'add',
       invoiceGoods: [line('Kurtka', { quantity: 300, weightKg: 150 })],
-      pdfs: [{ data: Buffer.from('%PDF-1.4 B'), name: 'B.pdf' }],
+      pdfs: [{ attachmentId: 'a-pdf-b', name: 'B.pdf', bytes: 10 }],
     });
     model.analyze.mockResolvedValueOnce({ ok: false, failure: 'not_configured' });
     const ctx = fakeCtx();
@@ -1879,7 +1880,7 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
       material: ['x'],
       aiGoods: 'add',
       invoiceGoods: [line('Ladies jacket', { quantity: 300, weightKg: 150 }), line('Kurtka', { quantity: 100, weightKg: 50 })],
-      pdfs: [{ data: Buffer.from('%PDF-1.4 B'), name: 'B.pdf' }],
+      pdfs: [{ attachmentId: 'a-pdf-b', name: 'B.pdf', bytes: 10 }],
     });
     model.analyze.mockResolvedValueOnce(
       reads(

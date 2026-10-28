@@ -1,6 +1,9 @@
-import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../logger';
 import { staffForChat } from './staff-bot';
+import type { AmendBase } from '../../wms/calc/amend-types';
+import type { CalcGoodsFact, CalcFacts, TotalDoubt } from '../../wms/calc/intake';
+import type { TableTarget } from '../../wms/calc/line-address';
+import type { IntakeFiles } from './calc-files';
 
 /**
  * The «Hisoblatish» collection, as the bot holds it.
@@ -17,6 +20,9 @@ import { staffForChat } from './staff-bot';
  * status column and a cleanup job for abandoned rows — is more machinery
  * than a five-minute conversation deserves, and the confirmed result is
  * persisted the moment it matters.
+ *
+ * The store itself is calc-store.ts (docs/SAKKIZ-R3.md K3); its four calls are
+ * re-exported here, so every importer keeps its import.
  */
 
 export type IntakeStage = 'section' | 'client' | 'material' | 'review' | 'question';
@@ -30,11 +36,106 @@ export type IntakeStage = 'section' | 'client' | 'material' | 'review' | 'questi
  */
 export type SheetText = import('../../wms/calc/intake-ai').IntakeSheetText & { label?: string };
 
+/** An inline keyboard as Telegram takes it — what a stored reply carries. */
+export type InlineKeyboard = { inline_keyboard: { text: string; callback_data: string }[][] };
+
+/**
+ * One table answer as the seller was told it (P3, docs/SAKKIZ-R3.md §2.2), so
+ * «↩️ Bekor qilish» can put back exactly what it changed. K: nothing writes one.
+ */
+export interface IntakeEcho {
+  /** 8 hex, random — `cu:<tag>`. */
+  tag: string;
+  /** The echo's own message (joins `ownMessageIds`). */
+  messageId: number | null;
+  lines: {
+    index: number;
+    no: number;
+    itemId: string | null;
+    name: string;
+    before: Partial<CalcGoodsFact>;
+    patch: Partial<CalcGoodsFact>;
+  }[];
+  /** The undo restores the previous answer WHOLE (figures and `at`) and the doubts it retired. */
+  totals: {
+    before: Partial<CalcFacts>;
+    patch: Partial<CalcFacts>;
+    answerBefore: IntakeState['totalsAnswer'];
+    doubtsBefore: TotalDoubt[];
+  } | null;
+  undone: boolean;
+}
+
 export interface IntakeState {
   section: import('../../wms/calc/intake').CalcSection;
   stage: IntakeStage;
   /** Minted up front so photos can be stored against it while they arrive. */
   noteId: string;
+  /**
+   * The member of staff collecting, and the clocks the durable store keeps
+   * (docs/SAKKIZ-R3.md K4, P1). `touchedAt` is the seller's last action;
+   * `remindedAt` the reminder's mark. Inert in K: `expires` still decides.
+   */
+  staffId: string;
+  openedAt: number;
+  touchedAt: number;
+  remindedAt: number | null;
+  /** The highest Telegram message id this collection applied (durability-1, regression-6). */
+  takenUpTo: number;
+  /** The message whose press (or reply) opened it — a restart pressed from it again resumes. */
+  openedBy: number | null;
+  /** This collection's own bot messages: prompt, table, echoes, reminder, pause notice (last 40). */
+  ownMessageIds: number[];
+  /** Non-null = an add collection: «➕ Shu so‘rovga qo‘shish» (P4). */
+  amend: AmendBase | null;
+  /**
+   * Question 6 a: a returned request's rows, kept through every reading like an
+   * add collection's stored rows, but landed as a NEW request through
+   * `landIntake` — Uch band decides its card (P4).
+   */
+  seed: CalcGoodsFact[] | null;
+  /** Seqs the law asks a count for (P5's `lawAsksOf`), when an add collection opens (P4). */
+  askedSeqs: number[] | null;
+  /**
+   * A stored row the new material restates with another figure, or with a
+   * figure in a field the row has empty (`stored: null`) (P4). `choice` is the
+   * seller's answer; null = unanswered, which is 'ved' at the save.
+   */
+  conflicts: {
+    itemId: string;
+    seq: number;
+    field: 'quantity' | 'weightKg' | 'volumeM3' | 'measureQty';
+    unit: string;
+    stored: number | null;
+    read: number;
+    choice: 'add' | 'rep' | 'ved' | null;
+  }[];
+  /** «✅ Qo‘shish» pressed: the save job owns the collection until it answers (P4). */
+  saving: { token: string; at: number; jobId: string | null } | null;
+  /** The add door's standing when it opened (P4): 'started' makes the echo say «VED ga yuboriladi». */
+  standingAtOpen: 'open' | 'started' | 'busy' | null;
+  /** The message that drew the LIVE `offers` (P3): a pick from any other message is stale. */
+  offersMessageId: number | null;
+  /** Messages taken through a `cf:` offer press (P4): older than `takenUpTo` by nature (last 20). */
+  repliedTaken: number[];
+  /** The table, for edit-in-place (P3). */
+  tableMessageId: number | null;
+  /** The last table text drawn (P3, performance-5). */
+  tableHash: string | null;
+  /** When the reading's token was minted (P2's staleness). */
+  analysingAt: number | null;
+  /** The reading's pg-boss job id (P2, performance-1). */
+  analysingJob: string | null;
+  /** «Tahlil qilib bo‘lmadi» already said for this token (P2). */
+  readingSaidDead: boolean;
+  /**
+   * A reading's reply stored before it was sent (P2): `at` = when it was
+   * stored; `jobId` = the delivery-only follow-up's job, when a flood wait sent
+   * the delivery there (durability-16).
+   */
+  pendingReply: { token: string; text: string; keyboard: InlineKeyboard | null; at: number; jobId: string | null } | null;
+  /** The table answers the seller was told, for the undo (P3). */
+  echoes: IntakeEcho[];
   /** What staff typed to name the customer — a code, a phone, or a name. */
   clientHintRaw: string;
   /** Everything typed or captioned, in the order it came. */
@@ -61,12 +162,14 @@ export interface IntakeState {
    * office photographs the packing list; the numbers on it were stored on
    * the card and read by nobody.
    *
-   * Held in memory beside the rest of the collection (the FILES themselves
-   * are already in storage against the note id — these are the reduced
-   * copies the call sends). Capped in both directions: a handful of images,
-   * downscaled, or a forwarded album is a request body nobody budgeted for.
+   * The FILES are in storage against the note id from the moment they
+   * arrive; the collection keeps their attachment ids and never the bytes
+   * (docs/SAKKIZ-R3.md K4 — a Buffer never reaches the durable row). The
+   * reading loads them (`loadIntakeFiles`). Capped in both directions: a
+   * handful of images, downscaled, or a forwarded album is a request body
+   * nobody budgeted for.
    */
-  images: { data: Buffer; mediaType: 'image/jpeg' }[];
+  images: { attachmentId: string; mediaType: 'image/jpeg' }[];
   /** How many photos arrived but were NOT reduced — counted, never silent. */
   imagesSkipped: number;
   /**
@@ -105,8 +208,13 @@ export interface IntakeState {
    * Has the totals question been asked (`totalsQuestion`: every freight
    * section, every door, once)? Cleared by a re-read that still leaves the
    * asked figure missing, so new material asks again rather than skipping.
+   *
+   * This and the question stage's other fields (`askingTotalsFor`,
+   * `askingIndex`, `round`, `reasked`, `lineDone`) retire with the table (P3,
+   * docs/SAKKIZ-R3.md §8.2.1), so they are optional from K on; `startIntake`
+   * still writes every one and every reader defaults it.
    */
-  totalsAsked: boolean;
+  totalsAsked?: boolean;
   /**
    * WHICH totals the pending question asks — what a bare number answering it
    * means (his 2.7 b): «3500» after the brutto question is kilograms, «12»
@@ -115,7 +223,7 @@ export interface IntakeState {
    * is about a goods line. One field, not a flag beside it: «are we asking
    * the totals» is this being non-null.
    */
-  askingTotalsFor: TotalsAsk | null;
+  askingTotalsFor?: TotalsAsk | null;
   /**
    * What the seller ANSWERED to the totals question, as READ (judge
    * concurrency-4) — put back on top of every re-read, the way `lineAnswers`
@@ -133,17 +241,17 @@ export interface IntakeState {
    * beside `totalsAnswer` so a re-read cannot erase it — a typed «Yiwu →
    * Toshkent» lived only in `facts`, and the next reading rebuilt `facts`
    * from the material. Marked like it (`at`) so later material can doubt it.
-   * Present keys only. Optional while nothing writes it.
+   * Present keys only. Inert in K: nothing writes it.
    */
-  routeAnswer?: { fromCity?: string; toCity?: string; at: TotalsMark } | null;
+  routeAnswer: { fromCity?: string; toCity?: string; at: TotalsMark } | null;
   /** The line the bot is waiting for an answer about, by its index in
    * `facts.goods`. Null outside the question stage. */
-  askingIndex: number | null;
+  askingIndex?: number | null;
   /** How many questions have been asked. Capped — a bot that keeps asking is
    * a bot people stop answering. */
-  round: number;
+  round?: number;
   /** Was the LAST answer unreadable? One re-ask per line, then move on. */
-  reasked: boolean;
+  reasked?: boolean;
   /**
    * The lines dealt with this collection — answered, or passed with «⏭» —
    * by index AND name. Kept across «➕ Yana ma'lumot»: an answered line is
@@ -156,7 +264,7 @@ export interface IntakeState {
    * goods list the question is about (`resolveLineDone`) by the same rule as
    * `lineAnswers`.
    */
-  lineDone: { index: number; name: string }[];
+  lineDone?: { index: number; name: string }[];
   /**
    * What the seller ANSWERED per line, kept so a re-analysis after «➕ Yana
    * ma'lumot» can put it back. The audit's finding: the re-read rebuilt the
@@ -164,19 +272,25 @@ export interface IntakeState {
    * while the seller believed those lines were answered. Matched back by
    * index AND name — a re-read that reorders the lines must not hand one
    * line's answer to another.
+   *
+   * `index` is the line the answer was PLACED on by the last reading; a stored
+   * row's answer also carries its item id (P3/P4, K4). -1 = not placed this
+   * reading, kept by name for a later one.
    */
   lineAnswers: {
     index: number;
     name: string;
     patch: Partial<import('../../wms/calc/intake').CalcGoodsFact>;
+    itemId?: string | null;
   }[];
   /**
    * The figures the pending question's buttons stand for («[50 dona] [50
    * kg]», judge UX4). A button carries only its position (`c:pick_N`); the
    * figure is read back from here, so a stale or forged press can only pick
-   * among what THIS question offered.
+   * among what THIS question offered. `target` = which table row the figure
+   * answers (P3 makes it required).
    */
-  offers: { unit: import('../../wms/calc/needs').NeedUnit; value: number }[];
+  offers: { unit: import('../../wms/calc/needs').NeedUnit; value: number; target?: TableTarget }[];
   /**
    * Totals the typed material states two ways, or states against the
    * seller's own answer (review CONC-2) — the summary asks them.
@@ -200,8 +314,10 @@ export interface IntakeState {
    * first wins» — so the second factory's invoice of a two-factory order was
    * stored on the card and read by nobody (his 1.13). Up to
    * `MAX_INTAKE_PDFS`, read TOGETHER; past the cap the seller is told.
+   *
+   * By attachment id, like the images (K4); `bytes` keeps the cap arithmetic.
    */
-  pdfs: { data: Buffer; name: string }[];
+  pdfs: { attachmentId: string; name: string; bytes: number }[];
   /**
    * Spreadsheets the reader could not map onto columns (no header it knows),
    * as text — the model reads them (his 1.2 b). A sheet the reader DID map is
@@ -374,68 +490,10 @@ export function totalsQuestionText(
   return 'Yo‘lkira uchun umumiy hajm va brutto og‘irlik kerak. Masalan: «12 kub 3500 kg»';
 }
 
-/**
- * A totals answer that names no unit — the shape only the question it
- * answers can read («3500» after the brutto question). Digits with the
- * house's separators, nothing else. Pure.
- */
-export function bareTotalsNumber(text: string): boolean {
-  return /^\s*\d[\d\s.,]*\s*$/u.test(text);
-}
-
-/** One figure of a totals answer: «3 500» grouped by thousands, else «1,2» / «3500». */
-const TOTALS_NUMBER = /\d{1,3}(?:\s\d{3})+(?![\d.,])|\d+(?:[.,]\d+)?/gu;
-const TOTALS_UNIT = /^(?:kg|kgs|кг|kilo|kilogramm?|кило|килограмм?|kub|куб|kubometr|кубометр|m3|м3|m³|м³|cbm|brutto|брутто)$/u;
-
-/**
- * How many figures a totals answer holds — «3 500» and «1 200 000» are ONE
- * (grouped by thousands), «12 3500» is two (review P3-R7). A bare answer to
- * the kilos question that holds two is not one weight: the house reader kept
- * the last and the first (the cube, as often as not) was dropped in silence.
- * Pure.
- */
-export function totalsFigureCount(text: string): number {
-  return (text.match(TOTALS_NUMBER) ?? []).length;
-}
-
-/**
- * What an answer to the totals question can look like, and nothing else: at
- * most TWO figures, and the kg / kub / m³ words — «3500», «3 500 kg», «12 kub
- * 3500 kg».
- *
- * Asked by the staff tail when NO collection is live (judge concurrency-5):
- * the collection lives in memory until round 3, so a restart or the TTL
- * between the question and the answer loses it, and the orphaned «3500»
- * would otherwise fall to the paid assistant, which can say nothing about it.
- * A goods line («Kurtka 300 kg») or a code («GS777») is not this shape.
- *
- * Nor is a PHONE NUMBER (review P3-R1): the assistant finds a client, a lead
- * or a partner by its last nine digits, and the first version of this read
- * «+998 90 123 45 67» as a lost totals answer. Nine digits or more in all
- * (no shipment is 100 000 000 kg), or three figures that are not one
- * thousands-grouped number («123 45 67») — and it is not a total. A «+» is
- * no longer stripped as punctuation, so it is a word no unit matches. Pure.
- */
-export function looksLikeTotalsAnswer(text: string): boolean {
-  return totalsAnswerShape(text) !== null;
-}
-
-/**
- * …and WHICH totals answer it looks like (review REG-3): `worded` names a
- * unit («3500 kg», «12 kub»), `bare` is figures alone («777», «150»). Only a
- * worded one is evidence of a lost collection — a bare figure is as often a
- * code typed without its letters, and was told «to‘plam topilmadi» about a
- * collection that never existed (`[].every()` is true). Pure.
- */
-export function totalsAnswerShape(text: string): 'worded' | 'bare' | null {
-  const t = text.trim().toLowerCase();
-  const digits = (t.match(/\d/gu) ?? []).length;
-  if (digits === 0 || digits >= 9) return null;
-  if (totalsFigureCount(t) > 2) return null;
-  const words = t.replace(TOTALS_NUMBER, ' ').replace(/[.,;:]/gu, ' ').split(/\s+/u).filter(Boolean);
-  if (!words.every((w) => TOTALS_UNIT.test(w))) return null;
-  return words.length > 0 ? 'worded' : 'bare';
-}
+// R2's totals-shape helpers live in a zero-import module now (docs/SAKKIZ-R3.md
+// K6), so the pure wms table parser can read them without this file's
+// staff-bot import; re-exported, so no importer moved.
+export { bareTotalsNumber, looksLikeTotalsAnswer, totalsAnswerShape, totalsFigureCount } from './totals-shape';
 
 /**
  * The totals the material states two ways that the seller has NOT since
@@ -607,7 +665,7 @@ export function totalsStillAsked(
   facts: IntakeState['facts'],
   volumeM3: number | null,
 ): boolean {
-  return state.totalsAsked && totalsQuestion({ section: state.section, totalsAsked: false, facts }, volumeM3) === null;
+  return (state.totalsAsked ?? false) && totalsQuestion({ section: state.section, totalsAsked: false, facts }, volumeM3) === null;
 }
 
 /** At most this many buttons answer one question — two readings × three units. */
@@ -637,6 +695,9 @@ export function mergeLineAnswers(
   return out;
 }
 
+/** The lines dealt with — `lineDone`'s shape, required (the field retires with P3). */
+type LineDone = NonNullable<IntakeState['lineDone']>;
+
 /**
  * The goods line `index` names, as `lineDone` records it — null when the list
  * has no such line (a stale index records nothing). Pure.
@@ -644,7 +705,7 @@ export function mergeLineAnswers(
 export function doneLine(
   goods: import('../../wms/calc/intake').CalcFacts['goods'],
   index: number,
-): IntakeState['lineDone'][number] | null {
+): LineDone[number] | null {
   const row = goods?.[index];
   return row ? { index, name: row.name } : null;
 }
@@ -659,8 +720,8 @@ export function doneLine(
  */
 function placeLineDone(
   goods: import('../../wms/calc/intake').CalcFacts['goods'],
-  done: IntakeState['lineDone'],
-): { entry: IntakeState['lineDone'][number]; at: number }[] {
+  done: LineDone,
+): { entry: LineDone[number]; at: number }[] {
   const list = goods ?? [];
   const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
   const taken = new Set<number>();
@@ -682,8 +743,8 @@ function placeLineDone(
  */
 export function resolveLineDone(
   goods: import('../../wms/calc/intake').CalcFacts['goods'],
-  done: IntakeState['lineDone'],
-): IntakeState['lineDone'] {
+  done: LineDone,
+): LineDone {
   const list = goods ?? [];
   return placeLineDone(goods, done)
     .filter((p) => p.at >= 0)
@@ -701,8 +762,8 @@ export function resolveLineDone(
  */
 export function carryLineDone(
   goods: import('../../wms/calc/intake').CalcFacts['goods'],
-  done: IntakeState['lineDone'],
-): IntakeState['lineDone'] {
+  done: LineDone,
+): LineDone {
   const list = goods ?? [];
   return placeLineDone(goods, done).map((p) => (p.at >= 0 ? { index: p.at, name: list[p.at]!.name } : p.entry));
 }
@@ -1422,84 +1483,12 @@ export function intakeFileKind(
   return 'sheet';
 }
 
-const TTL_MS = 30 * 60_000;
-const collections = new Map<string, IntakeState>();
+// The store moved to calc-store.ts (docs/SAKKIZ-R3.md K3); these four keep
+// every importer's import.
+export { activeIntake, endIntake, startIntake, updateIntake } from './calc-store';
 
-const key = (chatId: bigint) => String(chatId);
-
-export function startIntake(
-  chatId: bigint,
-  section: import('../../wms/calc/intake').CalcSection,
-  opts: { ai?: boolean } = {},
-): IntakeState {
-  const state: IntakeState = {
-    section,
-    stage: 'client',
-    noteId: uuidv4(),
-    clientHintRaw: '',
-    material: [],
-    fileCount: 0,
-    facts: {},
-    steps: [],
-    notes: [],
-    aiUsed: false,
-    images: [],
-    imagesSkipped: 0,
-    promptMessageId: null,
-    ai: opts.ai ?? false,
-    hasCertificate: true,
-    route: null,
-    totalsAsked: false,
-    askingTotalsFor: null,
-    totalsAnswer: { weightKg: null, volumeM3: null, at: { material: 0, files: 0 } },
-    routeAnswer: null,
-    askingIndex: null,
-    round: 0,
-    reasked: false,
-    lineDone: [],
-    lineAnswers: [],
-    offers: [],
-    ambiguousTotals: [],
-    invoiceGoods: [],
-    pdfs: [],
-    sheetTexts: [],
-    invoiceTexts: [],
-    pendingInvoice: null,
-    aiGoods: null,
-    clientAskedWith: null,
-    usages: [],
-    aiFailure: null,
-    analysing: null,
-    answers: [],
-    reaskedGroup: null,
-    expires: Date.now() + TTL_MS,
-  };
-  collections.set(key(chatId), state);
-  return state;
-}
-
-/** The live collection for a chat, or nothing — expiry is checked on read. */
-export function activeIntake(chatId: bigint): IntakeState | null {
-  const state = collections.get(key(chatId));
-  if (!state) return null;
-  if (state.expires <= Date.now()) {
-    collections.delete(key(chatId));
-    return null;
-  }
-  return state;
-}
-
-export function updateIntake(chatId: bigint, patch: Partial<IntakeState>): IntakeState | null {
-  const state = activeIntake(chatId);
-  if (!state) return null;
-  const next = { ...state, ...patch, expires: Date.now() + TTL_MS };
-  collections.set(key(chatId), next);
-  return next;
-}
-
-export function endIntake(chatId: bigint): void {
-  collections.delete(key(chatId));
-}
+/** No bytes to read — a collection of text alone, or a caller that loads none. */
+const NO_FILES: IntakeFiles = { images: [], pdfs: [], missing: 0 };
 
 /**
  * Read the collected material with the model, then keep whatever the person
@@ -1508,8 +1497,17 @@ export function endIntake(chatId: bigint): void {
  * The manual layer is not a fallback for a broken key — it is the truth
  * beside the model's reading: a staff member who typed «5 kub» meant it,
  * and a model that missed it must not erase it.
+ *
+ * The bytes the model reads come from storage (`files`, `loadIntakeFiles`):
+ * the collection keeps attachment ids, never a Buffer (docs/SAKKIZ-R3.md
+ * K4/K5). `answered` is what this reading cost, beside the appended `usages`
+ * (P2 bills it at the answer and drops the append).
  */
-export async function analyzeCollected(state: IntakeState): Promise<IntakeState> {
+export async function analyzeCollected(
+  state: IntakeState,
+  files: IntakeFiles = NO_FILES,
+  opts: { timeoutMs?: number } = {},
+): Promise<IntakeState & { answered: import('../../wms/calc/intake-ai').AnsweredUsage[] }> {
   const { analyzeIntake } = await import('../../wms/calc/intake-ai');
   const { parseManualFacts, readGoodsLines, totalWeightFrom } = await import('../../wms/calc/intake-manual');
   const { factsVolumeM3 } = await import('../../wms/calc/intake');
@@ -1537,9 +1535,9 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
           section: state.section,
           text,
           fileCount: state.fileCount,
-          images: state.images,
-          pdf: state.pdfs[0] ?? null,
-          morePdfs: state.pdfs.slice(1),
+          images: files.images,
+          pdf: files.pdfs[0] ?? null,
+          morePdfs: files.pdfs.slice(1),
           // The separate files are goods material; a mapped workbook's other
           // sheets are TOTALS only, under their own heading — in one block
           // with the files, an «add» answer had the model re-list the
@@ -1551,6 +1549,8 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
           // Every name: `analyzeIntake` shows what fits its character budget
           // and counts the rest.
           knownGoods: state.aiGoods === 'add' ? invoice.map((g) => g.name) : undefined,
+          // Absent: the reader's own leash (`INTAKE_TIMEOUT_MS`).
+          ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
         }).catch((err: unknown): Outcome => {
           logger.warn({ err }, 'intake analyze failed');
           return { ok: false, failure: 'network' };
@@ -1632,6 +1632,7 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
     // later material doubts the answer, and then THAT is what is asked.
     ambiguousTotals: [...unansweredAmbiguity(manual.ambiguous, state.totalsAnswer), ...doubts],
     stage: 'review',
+    answered: outcome.answered ?? [],
   };
 }
 
