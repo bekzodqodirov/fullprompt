@@ -214,8 +214,18 @@ export function LoadingScreen({
     })();
   }, [batchId, cacheKey, applySnapshot]);
 
+  /**
+   * Codes this phone has queued UNLOAD rows for — a carton it landed itself
+   * while offline is the plan's on the server as soon as the sync lands it,
+   * and the sync lands before it loads (`roadScanVerdict`).
+   */
+  const queuedUnloads = useRef<Set<string>>(new Set());
   const refreshPending = useCallback(async () => {
-    setPending((await pendingScans()).length);
+    const rows = await pendingScans();
+    setPending(rows.length);
+    queuedUnloads.current = new Set(
+      rows.filter((r) => r.scanType === 'unload').map((r) => r.code.toUpperCase()),
+    );
   }, []);
 
   /**
@@ -544,11 +554,15 @@ export function LoadingScreen({
       void accept(memberCodes, { code, method, manualReason });
       return;
     }
-    // A carton of a lot the plan still owes from the road: claimed by the
-    // server while the lot owes it, refused at once while it is still on the
-    // inbound truck (`roadScanVerdict`) — never the red «not on plan» for the
-    // plan's own cargo, never green and taken back.
-    const roadScan = roadScanVerdict(code, snapshot, loaded);
+    // A carton of a lot the plan still owes from the road: sent to the server
+    // to claim while the lot owes it — and, while the snapshot still lists it
+    // on an inbound truck, whenever the server can answer at once or this phone
+    // landed it itself; refused in words only offline (`roadScanVerdict`).
+    // Never the red «not on plan» for the plan's own cargo.
+    const roadScan = roadScanVerdict(code, snapshot, loaded, {
+      online,
+      queuedUnloads: queuedUnloads.current,
+    });
     if (roadScan?.kind === 'accept') {
       void accept([code], { code, method, manualReason });
       return;

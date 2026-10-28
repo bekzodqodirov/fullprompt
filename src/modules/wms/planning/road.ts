@@ -403,6 +403,20 @@ export async function claimLandedForRoadTx(
   `)) as unknown as unknown[];
   if (live.length === 0) return 0;
   await roadLock(tx, a.warehouseId);
+  // Every line these lots owe here, locked in LINE order before any is
+  // claimed: a stocktake lands several lots in one save, and «yuklash
+  // tugadi» locks one truck's lines in line order — taken lot by lot, the
+  // two deadlocked (review of the fixes, locks#3).
+  await tx.execute(sql`
+    SELECT plr.line_id FROM plan_line_road plr
+      JOIN load_plan_lines pl ON pl.id = plr.line_id
+      JOIN load_plan_versions pv ON pv.id = pl.version_id
+      JOIN load_plans p ON p.id = pv.plan_id
+     WHERE p.origin_warehouse_id = ${a.warehouseId}::uuid AND pl.lot_id IN (${lotList})
+       AND plr.road_owed > 0
+     ORDER BY plr.line_id
+       FOR UPDATE OF plr
+  `);
   // Read the cartons as they stand now — still free on this shelf, still loose.
   const ids = sql.join(
     loose.map((b) => sql`${b.id}::uuid`),

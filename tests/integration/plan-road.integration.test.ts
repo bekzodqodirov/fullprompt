@@ -634,6 +634,24 @@ describe('a carton already here is never landed again by any unload screen (revi
     expect(await roadRow(sub.version.id, lot)).toEqual({ part: 2, owed: 1, missed: 0 });
   });
 
+  it('a stale scan on another inbound truck’s screen never pulls a carton off its onward truck once it is on the road (review of the fixes, locks#1)', async () => {
+    const lot = await mkLot(W.yw, 2);
+    const i1 = await roadTruck(W.yw, W.hor, lot, 1, 0);
+    const i2 = await roadTruck(W.yw, W.hor, lot, 1, 1);
+    const sub = await submit(W.hor, W.ka, [{ lot, take: 1 }], true);
+    const truck = await approve(sub.version.id);
+    const T = { I1: i1.id, I2: i2.id, O: truck.id };
+    expect((await ingestUnloadScans([qr(i1.id, lot.boxes[0]!.code)], ctx()))[0]!.result).toBe('ok');
+    expect((await ingestLoadScans([qr(truck.id, lot.boxes[0]!.code)], ctx()))[0]!.result).toBe('ok');
+    await finishLoading(truck.id, ctx());
+    await departBatch(truck.id, ctx());
+    expect((await statusOf(lot, T))[0]).toBe('1:in_transit@O');
+    // A phone at the mixed pile scanned it on I2's screen offline; it flushes now.
+    const [stale] = await ingestUnloadScans([qr(i2.id, lot.boxes[0]!.code)], ctx());
+    expect(stale!.result).toBe('duplicate');
+    expect((await statusOf(lot, T))[0]).toBe('1:in_transit@O');
+  });
+
   it('over → undo → over lands the carton the undo sent back (no count_conflict for ever)', async () => {
     const lot = await mkLot(W.yw, 5);
     const sub = await submit(W.yw, W.hor, [{ lot, take: 3 }], false);

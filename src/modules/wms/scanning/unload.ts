@@ -371,7 +371,12 @@ export async function landUnloadInput(
   //    origin (`notSentBackSql` — without that clause over → undo → over was
   //    refused for ever, review deploy#8);
   //  - it stands here reserved or loading onto a truck LEAVING here, however
-  //    it landed — another inbound truck, the stocktake.
+  //    it landed — another inbound truck, the stocktake — or it is already on
+  //    the road on such a truck: a stale scan flushed after the onward truck
+  //    departed must not pull a carton off a truck the customs papers carry
+  //    (review of the fixes, locks#1). A carton that really stayed behind is
+  //    that truck's missing carton, and its unload resolves it
+  //    (`found_at_origin`).
   const settledHere = (b: (typeof boxes.$inferSelect)) =>
     b.status === landedStatus && b.currentWarehouseId === batch.destWarehouseId;
   const offManifest = members.filter(
@@ -397,10 +402,10 @@ export async function landUnloadInput(
   }
   const reservedHere = offManifest.filter(
     (b) =>
-      (b.status === 'planned' || b.status === 'loading') &&
-      b.currentWarehouseId === batch.destWarehouseId &&
       b.currentBatchId !== null &&
-      b.currentBatchId !== input.batchId,
+      b.currentBatchId !== input.batchId &&
+      (((b.status === 'planned' || b.status === 'loading') && b.currentWarehouseId === batch.destWarehouseId) ||
+        b.status === 'in_transit'),
   );
   const heldOnward = new Set<string>();
   if (reservedHere.length > 0) {

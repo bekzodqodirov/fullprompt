@@ -62,6 +62,14 @@ describe('every door that lands a carton offers it to a plan owing its lot (§7)
     expect(body(inventory, 'acceptFoundBox')).toContain('claimLandedForRoadTx(tx, road,');
   });
 
+  it('the landing hook locks every owing line in LINE order before it claims (the finish’s own order)', () => {
+    const hook = body(ROAD, 'claimLandedForRoadTx');
+    const lock = hook.search(/ORDER BY plr\.line_id\s+FOR UPDATE OF plr/);
+    expect(lock).toBeGreaterThan(-1);
+    expect(lock).toBeLessThan(hook.indexOf('claimInto(tx,'));
+    expect(body(ROAD, 'closeRoadOwedTx')).toMatch(/ORDER BY plr\.line_id\s+FOR UPDATE OF plr/);
+  });
+
   it('never an office over-count’s cartons — `undoOver` must find them on the shelf', () => {
     expect(body(`${SCANNING}/unload.ts`, 'landUnloadInput')).toMatch(
       /if \(opts\.door !== COUNT_OVER_REASON\) \{\s*await claimLandedForRoadTx/,

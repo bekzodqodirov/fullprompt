@@ -170,9 +170,12 @@ export function PlanEditor({
    * An untick waiting for the road-less answer: the picks are clamped against
    * THAT answer's shelf, never against the list on screen — which is empty
    * while a read is in flight and shelf-only when the road half failed, so the
-   * untick used to take every pick with it (review editor#6).
+   * untick used to take every pick with it (review editor#6). It names the
+   * ORIGIN it was asked at: another warehouse's answer must not clamp these
+   * picks, and a change of origin forgets it (review of the fixes, editor#8).
    */
-  const pendingUntick = useRef(false);
+  const untickFor = useRef<string | null>(null);
+  const effectOrigin = useRef(originId);
   /** «Qayta yuklash»: a read again with nothing changed. */
   const [reloadKey, setReloadKey] = useState(0);
   const [selection, setSelection] = useState<Map<string, number>>(
@@ -204,6 +207,11 @@ export function PlanEditor({
     setPruned(0);
     setRoadFailed(false);
     setFactoryTrips([]);
+    if (effectOrigin.current !== originId) {
+      effectOrigin.current = originId;
+      untickFor.current = null;
+      setRoadDropped(0);
+    }
     const controller = new AbortController();
     /**
      * One read of this origin's list. `quiet` is the re-read when the tab
@@ -245,10 +253,11 @@ export function PlanEditor({
           setRoadFailed(Boolean(data.roadFailed));
           setFactoryTrips(data.factoryTrips ?? []);
           setStockFailed(false);
-          if (!road && pendingUntick.current) {
+          const clamping = !road && untickFor.current === originId;
+          if (clamping) {
             // The person's untick, against the answer it asked for: every pick
             // back to its shelf part, road-only picks out — said in one line.
-            pendingUntick.current = false;
+            untickFor.current = null;
             const shelf = new Map(data.lots.map((lot) => [lot.lotId, lot.available]));
             const kept = new Map<string, number>();
             let dropped = 0;
@@ -264,8 +273,10 @@ export function PlanEditor({
             setRoadDropped(dropped);
           }
           // A road half that did not come prunes nothing: a road pick is not
-          // «gone» because its half of the answer failed.
-          if (quiet && !data.roadFailed) {
+          // «gone» because its half of the answer failed. Nor does the answer
+          // that just clamped an untick — it has said what it took, and the
+          // picks it read are the ones before the clamp.
+          if (quiet && !data.roadFailed && !clamping) {
             // A pick the warehouse no longer has (another plan reserved it,
             // it went into a crate) would be invisible, uncountable and
             // refused at submit — take it out and say so.
@@ -324,7 +335,7 @@ export function PlanEditor({
    * is read again without the road, and its answer clamps the picks (above).
    */
   function toggleRoad(next: boolean) {
-    pendingUntick.current = !next;
+    untickFor.current = next ? null : originId;
     setRoadDropped(0);
     setRoad(next);
   }

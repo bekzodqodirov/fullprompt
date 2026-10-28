@@ -122,6 +122,12 @@ test('sent back, the plan’s ✏️ reopens with the box ticked and the road pa
   await expect(row.getByTestId('take-A')).toHaveValue('6');
 });
 
+/*
+ * The editor's road answers are held or rewritten at the CONTEXT: the app's
+ * service worker answers `/api/*` itself (NetworkFirst), and `page.route`
+ * does not see a request the worker took (m9zzz-hisoblash-telefon's rule;
+ * review of the fixes, editor#7).
+ */
 test('the road half failing on a re-read names the pick it can no longer show, and the submit waits (review editor#7)', async ({
   page,
 }) => {
@@ -129,8 +135,13 @@ test('the road half failing on a re-read names the pick it can no longer show, a
   await page.goto(`/plans/new?planId=${planId}`);
   const row = page.locator('#plan-stock-table tr', { hasText: run.lotName });
   await expect(row.getByTestId('take-A')).toHaveValue('6');
+  // A visible pick beside the road one: the Σ is not zero, so only the
+  // unseen gate can hold the submit (review of the fixes, editor#7).
+  const shelfRow = page.locator('#plan-stock-table tr', { hasText: run.shelfName });
+  await shelfRow.getByTestId('take-B').fill('1');
+  await expect(page.getByTestId('submit-plan')).toBeEnabled();
   // From now on the road half fails: the shelf's answer, said as failed.
-  await page.route(/\/api\/plans\/stock\?.*road=1/, async (route) => {
+  await page.context().route(/\/api\/plans\/stock\?.*road=1/, async (route) => {
     const res = await route.fetch({ url: route.request().url().replace('&road=1', '') });
     await route.fulfill({ json: { ...(await res.json()), roadOn: true, roadFailed: true } });
   });
@@ -142,6 +153,8 @@ test('the road half failing on a re-read names the pick it can no longer show, a
   await expect(page.getByTestId('submit-plan')).toBeDisabled();
   await page.getByTestId('plan-unseen-drop').click();
   await expect(page.getByTestId('plan-unseen')).toHaveCount(0);
+  await expect(page.getByTestId('submit-plan')).toBeEnabled();
+  await page.context().unrouteAll({ behavior: 'ignoreErrors' });
 });
 
 test('unticked while the road list is still loading, a shelf pick stays (review editor#6)', async ({ page }) => {
@@ -152,15 +165,69 @@ test('unticked while the road list is still loading, a shelf pick stays (review 
   // Hold the road answer, so the untick lands while it is in flight.
   let release = () => {};
   const held = new Promise<void>((resolve) => (release = resolve));
-  await page.route(/\/api\/plans\/stock\?.*road=1/, async (route) => {
+  let reached = () => {};
+  const inFlight = new Promise<void>((resolve) => (reached = resolve));
+  await page.context().route(/\/api\/plans\/stock\?.*road=1/, async (route) => {
+    reached();
     await held;
     await route.continue().catch(() => {});
   });
   await page.getByTestId('plan-road').check();
+  await inFlight;
   await page.getByTestId('plan-road').uncheck();
   release();
   await expect(shelfRow.getByTestId('take-B')).toHaveValue('2');
   await expect(page.getByTestId('plan-road-dropped')).toHaveCount(0);
+  await page.context().unrouteAll({ behavior: 'ignoreErrors' });
+});
+
+test('the untick takes the road part out and keeps the shelf part, said in one line (review of the fixes, editor#10)', async ({
+  page,
+}) => {
+  await login(page);
+  await openEditorAtKashgar(page);
+  await page.getByTestId('plan-road').check();
+  const roadRow = page.locator('#plan-stock-table tr', { hasText: run.lotName });
+  await roadRow.getByTestId('take-road-A').click();
+  await expect(roadRow.getByTestId('take-A')).toHaveValue('6');
+  const shelfRow = page.locator('#plan-stock-table tr', { hasText: run.shelfName });
+  await shelfRow.getByTestId('take-B').fill('2');
+  await page.getByTestId('plan-road').uncheck();
+  await expect(page.getByTestId('plan-road-dropped')).toContainText('1');
+  await expect(roadRow).toHaveCount(0);
+  await expect(shelfRow.getByTestId('take-B')).toHaveValue('2');
+  // Nothing left unseen: the road pick went with the untick, not into limbo.
+  await expect(page.getByTestId('plan-unseen')).toHaveCount(0);
+});
+
+test('an untick waiting at one warehouse never clamps the picks against another’s list (review of the fixes, editor#8)', async ({
+  page,
+}) => {
+  await login(page);
+  await openEditorAtKashgar(page);
+  const origin = page.getByTestId('plan-origin');
+  const ka = await origin.inputValue();
+  const shelfRow = page.locator('#plan-stock-table tr', { hasText: run.shelfName });
+  await shelfRow.getByTestId('take-B').fill('2');
+  await page.getByTestId('plan-road').check();
+  await expect(page.locator('#plan-stock-table tr', { hasText: run.lotName })).toBeVisible();
+  // Kashgar's road-less answer is held: the untick waits for it…
+  let reached = () => {};
+  const inFlight = new Promise<void>((resolve) => (reached = resolve));
+  await page.context().route(new RegExp(`/api/plans/stock\\?warehouseId=${ka}$`), async () => {
+    // Never answered: the origin switch aborts it.
+    reached();
+    await new Promise(() => {});
+  });
+  await page.getByTestId('plan-road').uncheck();
+  await inFlight;
+  // …and the planner switches to Yiwu, whose list never held lot B.
+  const yw = await origin.locator('option', { hasText: /^YW$/ }).getAttribute('value');
+  await origin.selectOption(yw!);
+  // Not «taken out as road cargo»: the pick is kept and named as unseen here.
+  await expect(page.getByTestId('plan-unseen')).toBeVisible();
+  await expect(page.getByTestId('plan-road-dropped')).toHaveCount(0);
+  await page.context().unrouteAll({ behavior: 'ignoreErrors' });
 });
 
 test('cleanup leaves nothing that carries the run', async () => {
