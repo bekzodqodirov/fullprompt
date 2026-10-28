@@ -88,7 +88,7 @@ import {
   setDurableIntakes,
   updateIntake,
 } from '@/modules/platform/telegram/calc-store';
-import { orphanAnswerSentence } from '@/modules/platform/telegram/calc-dialog';
+import { PAUSE_LINE, orphanAnswerSentence } from '@/modules/platform/telegram/calc-dialog';
 import { botStopDeps } from '@/modules/platform/telegram/bot';
 import { logger } from '@/modules/platform/logger';
 import { __resetDrafts, activeDraft } from '@/modules/platform/telegram/task-draft';
@@ -1178,6 +1178,13 @@ describe('the durable «Hisoblatish» collection (docs/SAKKIZ-R3.md §6, his 1.8
     await h.handle(tg.text(s.chat, '3500 kg'));
     expect(expected).not.toBeNull();
     expect(h.textsTo(s.chat, m)).toEqual([expected!.text]);
+    // …and that sentence is P3's pause line with «▶️» / «✖️» under it (§2.8,
+    // the parked half of the orphan guard — asserted here, on the real handler
+    // chain, at the merge: P3's tree could not reach this file).
+    expect(expected!.text).toBe(PAUSE_LINE);
+    const paused = h.api.filter((c) => c.method === 'sendMessage').at(-1)!;
+    expect(JSON.stringify(paused.payload.reply_markup ?? '')).toContain('c:resume');
+    expect(JSON.stringify(paused.payload.reply_markup ?? '')).toContain('c:cancel');
     expect(await aiQuestions(s)).toBe(0);
     expect(activeIntake(chat)!.material).not.toContain('3500 kg');
   });
