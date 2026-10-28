@@ -4803,3 +4803,44 @@ person's reason. STATED: today neither the tray nor the lookback can reach the r
 open; the bot's stranger-card press would print the bare code, but no stranger card is minted for 777000 any more and
 the cleanup turns any old one into «already decided»; every OTHER chat-rule refusal still prints as a code on both
 screens, as before.
+
+1483. **The flight's road is what we QUOTED, reviewed again (R1-R9).** #1481's fix was reviewed as built and the
+chat-level guess of the road was wrong both ways. It read «the newest message that names a road», and a customer's
+words do not say which road the chat is on: «Tikuv mashinasi 30 kg, avia bilan qancha?» names the truck in the
+GOODS, «Автозапчасти» does too, a customer who asked «eng tez qanday?» and was quoted the flight by us never said
+«avia» at all — each left the guard off on an avia follow-up and the Yiwu address could go out. The other way:
+«Avia qimmat ekan, kerak emas», «300 ta air fryer» and an avia question asked last week before a truck quote each
+turned it on and put an address question on a truck chat's card. **`chatRoadOf` is the one rule** the guard and the
+card's question ask (`memoryFor`'s `aviaOnly`, `withAviaRule`), in this order: what THIS run priced or asked
+(`quotedRoadOf` — a podklyuch or yo'lkira checklist is a truck asked, review R1); else the customer's own choice in
+this burst, statement by statement, newest first, where a road turned down in the same statement («emas»,
+«qimmat», «не», «not», «不要») is no choice and a flight turned down is the truck (`roadChosenIn`); else the newer of
+our newest PRICED outbound line that names its road and the quote he last approved. That last one is new memory:
+`memoryFor` stores `quotedRoad`/`quotedAir` on the draft, and `lastQuoteFor` (context.ts, its own integration test)
+reads back the newest draft he APPROVED in the last seven days whose memory names a road — a pending, rejected or
+road-less draft quoted nobody, and a week-old flight is no road. **The guard and the question are one rule** (R2):
+`withAviaGuard` runs after the policy on both run paths, so whenever `avia_address` holds a draft the card asks him
+for the address with the cargo (`aviaCargoOf`: what was quoted, else the customer's newest kilos and the place the
+cargo STARTS, read only from lines that do not ask where to send it — R3, or «Ivu omboringiz manzili» named Yiwu as
+the origin); before, a blocked draft could sit in «pending» with no question at all. A source-shape fence pins both
+paths (draft through the rule → judge THAT draft → guard). «Where do I send it» (`SEND_ASK`) is asked per statement
+and refused when the statement says the address is had or used, is his own, is Tashkent's, or is a pickup or an
+arrival (`NOT_SEND_ASK`); a line that needs no reply never becomes a card. **The anchors are the warehouses' own
+pieces** (R5-R7, R9): the province → city → district chain is cut first (it is where a customer's cargo STARTS as
+often as where ours is received — «从浙江省义乌市空运» named nobody's address and was refused), every five-character
+piece another address fact or the GS reminder shares is dropped, a piece needs a street character or two characters
+that are not what every forwarder is called («国际物流中心», «先生», «电话»), and a street piece counts at four
+(«稠江街道»). Beside the Chinese, a contact's last nine digits and the street's house numbers («2255», «168»), which
+count beside a street word in any script — «Hehua South Street 2255», «улица … 2255» — and never alone («Trek raqami
+2255»). `warehouseAddressTexts` reads the seed's facts by their key AND any live general fact that speaks of a
+warehouse and states a Chinese street or mobile (`isReceivingAddressFact`), so a warehouse he adds on the page is
+guarded too; a fact that names the flight is not — an avia address he writes down is his to have quoted. **Two
+words changed their road** (numbers.ts): bare English «air» is a PRODUCT here far more often than a road («air
+fryer», «Air Max»), so it counts only as «air freight / cargo», «by / via air»; and «kargo» / «карго» — how a customer
+says the truck consolidation — is the road's unless it is «avia kargo». A quoted Chinese stretch is now taken out at
+its LONGEST quoted piece wherever it starts (R8): the model glues its own words to what it copies
+(«请发到霍尔果斯金亿…»), and the stretch asked whole kept Horgos's «亿» in as a spelled-out figure. 24 red proofs by
+string edit; two stayed GREEN first, both fixtures: the avia fact under test carried no warehouse word, so the avia
+clause was never asked, and the week-old quote was always outranked by a newer one. STATED: an answer he types
+straight into Telegram with no road word leaves no quote behind (only an approved draft does); reading a refusal is
+a word list, not a parse; a customer whose name is a form of address is not masked (#1480).

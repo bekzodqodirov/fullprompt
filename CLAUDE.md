@@ -2963,7 +2963,7 @@ CN destination is inland (no hub test), ONE arrived column (`columnOf` splits on
 filter hides everything bound for China (`routeFilterOf` = a `kg`/`kz` leg; a map walk over every pair proves no
 road into China has one, and refuses an unclassed new map code).
 
-**Round — AI sotuvchi, phase 1 (2026-10-24; DECISIONS #1463-#1482 — numbered past the open
+**Round — AI sotuvchi, phase 1 (2026-10-24; DECISIONS #1463-#1483 — numbered past the open
 `telegram-customs-ai-issues` branch's #1455-#1462; migration 0136 `ai_sotuvchi` — ledger must reach 137; spec
 `docs/AI-SOTUVCHI.md` §17 + §17.14).** His «Telegram businessdagi bot emas mening shaxsiy account seansimdan
 ishlatsin ai va ban havfini minimum qilsin». SHADOW only: the listener (`scripts/tg-listen.ts`, the one process that
@@ -3007,6 +3007,16 @@ every «aka» in his style a customer's name — `isAddressWord` (#1480), found 
 777000 rows written BEFORE the fix (#1482): the three tray doors that make a chat a card's refuse `service_chat`, the
 tray and the stranger cards never list it, and `scripts/tg-service-chat-cleanup.ts` (through `migrate`, dry run then
 `--apply`, counts only) excludes and purges what stands — a deploy step.
+**Reviewed again (#1483, R1-R9)**: the chat's road is what WE quoted, never the customer's words («Tikuv mashinasi»
+named the truck in the goods, a flight quoted by us left the guard off, «air fryer» and a refused avia turned it on):
+`chatRoadOf` = this run's tools → the burst's own choice, refusals read per statement → our newest priced line or
+`lastQuoteFor` (the newest APPROVED draft of the week whose stored memory names a road; `memoryFor` writes
+`quotedRoad`/`quotedAir`). `withAviaGuard` runs after the policy on both run paths (fenced), so a held draft always
+asks him; the card names where the cargo STARTS. Anchors are the facts' own Chinese pieces with the admin chain cut,
+pieces two facts or the GS reminder share dropped, generic forwarder words filtered, plus phones and house numbers
+beside a street word in any script; an owner-added warehouse fact counts by what it says (`isReceivingAddressFact`),
+a fact naming the flight does not. Bare «air» is no road any more; «kargo» is the truck's unless «avia kargo». 24 red
+proofs; two fixtures stayed green first.
 
 **Latest migration: 0136** (`ai_sotuvchi`, `when` …115; ledger must reach **137**). Before
 it: 0135 (`load_mode`, `when` …114). Before

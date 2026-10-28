@@ -60,8 +60,15 @@ minimum qilsin». Yangi migratsiya bor (**0136**): deploydan keyin baza hisobi *
   - Narxni **Bilimlar → AI qoidalari** da o'zingiz o'zgartirasiz.
   - **Avia manzilini AI aytmaydi** (sizning «yukini infosini menga bersang men adres beraman» javobingiz). Avia narxini aytganda kartochkada sizdan so'raydi, masalan: «❓ Avia: 30 kg, qayerdan: Shenzhen — mijozga avia manzilini yozing (✏️)». ✏️ bilan manzilni o'zingiz yozasiz.
   - Mijoz avia narxini eshitgandan keyin keyingi xabarda «manzil qayerga?» deb so'rasa ham shunday: AI ombor manzilini bermaydi, kartochkada sizdan so'raydi. Mijoz kg aytmagan bo'lsa, kartochkada «og'irligi aytilmagan» deb yoziladi. «Yuk qayerda?» (yuk holati) degan savol uchun manzil so'ralmaydi.
-  - Avia javobida bizning uchta qabul omborimizdan birining manzili yoki telefoni bo'lsa, ✅ chiqmaydi. Bu Bilimlardagi manzillar bo'yicha tekshiriladi. Manzilni Bilimlarda tuzatsangiz, tekshiruv yangisini taniydi.
-  - Oddiy xitoycha so'zlar to'xtatilmaydi. Masalan, AI xitoylik mijozdan «qaysi shahardan jo'natasiz?» (从哪个城市发货) deb so'rasa, bu manzil hisoblanmaydi.
+  - **Suhbat qaysi yo'lda ekanini endi biz aytgan narx belgilaydi**, mijozning so'zlari emas. Avval tizim suhbatdagi so'zlardan taxmin qilardi va ikki tomonga xato qilardi:
+    - mijoz tovarni «Tikuv **mashina**si» deb yozsa yoki biz avia narxini aytganimizda mijoz «avia» so'zini hech yozmagan bo'lsa, avia suhbati mashinaniki deb o'qilardi va ombor manzili ketib qolishi mumkin edi;
+    - «Avia qimmat ekan, kerak emas», «300 ta **air fryer**» yoki o'tgan haftadagi avia savoli esa mashina suhbatida ham avia savolini chiqarardi.
+    - Endi tartib shunday: shu safar AI hisoblagan narx; bo'lmasa mijozning shu xabarlardagi o'z tanlovi (rad etilgan yo'l tanlov hisoblanmaydi); bo'lmasa biz mijozga oxirgi aytgan narx — siz ✅ bilan tasdiqlagan qoralama (7 kun ichida) yoki undan keyin yozilgan narxli xabar.
+  - **To'xtatish va savol endi bitta qoida**: avia javob ombor manzili sabab to'xtatilsa, kartochka albatta sizdan manzilni so'raydi. Avval to'xtatilgan qoralama savolsiz qolishi mumkin edi. Kartochkada yuk qayerdan **chiqishi** yoziladi, mijoz so'ragan ombor emas.
+  - «Rahmat, manzilni oldim», «mening manzilim: …», «Toshkentda qayerga kelib olaman?», «yukim qayerga keldi?» degan xabarlar manzil so'rovi hisoblanmaydi.
+  - Avia javobida bizning uchta qabul omborimizdan birining manzili yoki telefoni bo'lsa, ✅ chiqmaydi. Bu Bilimlardagi manzillar bo'yicha tekshiriladi. Manzilni Bilimlarda tuzatsangiz, tekshiruv yangisini taniydi. **Bilimlarga o'zingiz yangi qabul omborini qo'shsangiz** (ombor so'zi va xitoycha ko'cha yoki xitoy telefoni bo'lsa), u ham hisobga olinadi. Bilimga o'zingiz yozgan **avia** manzil esa to'xtatilmaydi, uni AI aytishi mumkin.
+  - Manzil bo'lagi bo'linib yozilsa ham («荷花南街 2255号»), lotinchada yozilsa ham («Hehua South Street 2255»), omborning nomi yoki qabul qiluvchi firma yozilsa ham («霍尔果斯金亿国际物流中心») taniladi.
+  - Viloyat, shahar yoki tuman nomining o'zi esa manzil emas: «从浙江省义乌市空运» (Chjeszyan, Ivudan avia), «佛山市南海区发货» kabi mijoz yuki chiqadigan joy to'xtatilmaydi. Oddiy xitoycha so'zlar ham to'xtatilmaydi. Masalan, AI xitoylik mijozdan «qaysi shahardan jo'natasiz?» (从哪个城市发货) deb so'rasa, bu manzil hisoblanmaydi.
   - Mijoz bir xabarda ham avia, ham mashina narxini so'rasa, mashina uchun ombor manzilini berish mumkin.
   - Avia'da «omborimizga yuborsangiz…» jumlasi endi talab qilinmaydi.
 - **Temir yo'l:** narxni AI aytmaydi, sizdan so'raydi.

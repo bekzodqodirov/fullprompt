@@ -1051,3 +1051,15 @@ truck asked in the same run, refused or not, makes it the truck's. The model's o
 the flight AND the address. A Chinese reply is measured whole for its script; a numeral inside a quoted stretch of
 three or more characters is the fact's spelling (Horgos's «金亿»). `china_warehouse_price@1` is the truck's («Avto
 (mashina) narxi …»), and nothing claims where avia cargo is received — he said only that its address is his.
+
+**Reviewed again (DECISIONS #1483).** The road is what WE quoted, not what the customer's words name — `chatRoadOf`
+asks, in order, what this run priced or asked (a podklyuch or yo'lkira checklist is a truck asked), the customer's own
+choice in this burst (newest statement first; a road turned down in the same statement is no choice, a flight turned
+down is the truck), and the newer of our newest priced line that names its road and the last quote he approved
+(`lastQuoteFor`: approved, within seven days, a stored memory naming `quotedRoad`). The guard and the question are one
+rule (`withAviaGuard` after the policy): a draft `avia_address` holds always asks him, with the kilos and the place
+the cargo starts. The anchors are each address fact's own Chinese pieces — the province/city/district chain cut,
+pieces another fact or the GS reminder shares dropped, generic forwarder words filtered, a street piece kept at four
+characters — plus its phones and its house numbers, which count beside a street word in any script. A warehouse he
+adds on the page is anchored by what it says (`isReceivingAddressFact`); a fact that names the flight is not. Bare
+English «air» is no road («air fryer»), and «kargo» is the truck's unless it is «avia kargo».
