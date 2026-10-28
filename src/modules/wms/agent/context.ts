@@ -123,17 +123,24 @@ export interface LastQuote {
   road: QuotedRoad;
   air: AviaCargo | null;
   at: Date;
+  /**
+   * What went to the customer — the outbox row's body, else the draft's own
+   * (review #1484): the chat's copy of it is that quote's ECHO, and its road
+   * is the one stored here, not the one its words happen to name («Tikuv
+   * mashinasi 30 kg avia orqali …»).
+   */
+  text: string | null;
 }
 
 /** Pure: a stored draft's memory as a quote, or null — a memory written before it, or one that quoted nothing. */
-export function lastQuoteOf(memory: unknown, at: Date): LastQuote | null {
+export function lastQuoteOf(memory: unknown, at: Date, text: string | null = null): LastQuote | null {
   const m = (memory ?? {}) as { quotedRoad?: unknown; quotedAir?: unknown };
   if (m.quotedRoad !== 'air' && m.quotedRoad !== 'road' && m.quotedRoad !== 'both') return null;
   const a = (m.quotedAir ?? null) as { kg?: unknown; origin?: unknown } | null;
   const air = a && typeof a === 'object'
     ? { kg: typeof a.kg === 'number' ? a.kg : null, origin: typeof a.origin === 'string' ? a.origin : null }
     : null;
-  return { road: m.quotedRoad, air, at };
+  return { road: m.quotedRoad, air, at, text };
 }
 
 export function mediaOf(contentType: string | null, fileName: string | null): ChatMessage['media'] {
@@ -459,7 +466,11 @@ export function customerScriptOf(messages: readonly ChatMessage[]): ScriptName |
 /** The newest draft he APPROVED this week that priced or asked a road (review R1) — a pending or rejected one quoted nobody. */
 export async function lastQuoteFor(managerUserId: string, peerId: bigint): Promise<LastQuote | null> {
   const [quoted] = await db
-    .select({ memory: sql<unknown>`${agentDrafts.policy}->'memory'`, at: agentDrafts.createdAt })
+    .select({
+      memory: sql<unknown>`${agentDrafts.policy}->'memory'`,
+      at: agentDrafts.createdAt,
+      text: sql<string | null>`coalesce((SELECT o.body FROM agent_outbox o WHERE o.draft_id = ${agentDrafts}.id ORDER BY o.queued_at DESC LIMIT 1), ${agentDrafts.finalBody}, ${agentDrafts.proposedBody})`,
+    })
     .from(agentDrafts)
     .where(
       and(
@@ -472,7 +483,7 @@ export async function lastQuoteFor(managerUserId: string, peerId: bigint): Promi
     )
     .orderBy(desc(agentDrafts.createdAt))
     .limit(1);
-  return quoted ? lastQuoteOf(quoted.memory, quoted.at) : null;
+  return quoted ? lastQuoteOf(quoted.memory, quoted.at, quoted.text) : null;
 }
 
 export async function loadContext(managerUserId: string, peerId: bigint, anchorTgMessageId: bigint | null): Promise<AgentContext> {

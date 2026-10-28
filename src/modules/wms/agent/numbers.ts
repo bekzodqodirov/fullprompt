@@ -119,14 +119,15 @@ export type TravelMode = 'air' | 'road' | 'rail';
  * machines too («kir yuvish mashinasi»); that reads as the road, which can
  * only make a flight's figure unusable, never the reverse. English «air» on
  * its own is a PRODUCT here far more often than a road — «air fryer», «air
- * conditioner», «Air Max» — and since the flight decides whose address a
- * reply may give (`chatRoadOf`, review R1) it counts only as «air freight»,
- * «air cargo», «by air». «Kargo» / «карго» is how a customer says the truck
- * consolidation («oddiy kargo bilan»); «avia kargo» is the flight's.
+ * conditioner», «Air Max» — and it counts only as «air freight», «air
+ * cargo», «by air»; «aviator» is sunglasses. A bare «kargo» / «карго» is the
+ * COMPANY («kargongiz», «kargo manzili», «Kargo narxini ayting»), never a road
+ * — it once turned an avia follow-up into the truck's and ended the rail rule
+ * (review #1484) — so only «oddiy / yig'ma / avto kargo», «обычным карго» are.
  */
 const MODE_WORDS: Record<TravelMode, RegExp> = {
-  air: /(?<![\p{L}])(?:avia\p{L}*|samol[yi]?ot\p{L}*|авиа\p{L}*|самол[её]т\p{L}*|air(?:freight|cargo)|air[\s-]+(?:freight|cargo|shipping|delivery|mail)|(?:by|via)\s+air|flights?|plane)(?![\p{L}])|هوایی|هواپیما|空运|航空|飞机/iu,
-  road: /(?<![\p{L}])(?:mashina\p{L}*|avto(?![mr])\p{L}*|avtomobil\p{L}*|fura\p{L}*|машин\p{L}*|авто(?![мр])\p{L}*|автомобил\p{L}*|фур[аыуе]\p{L}*|(?<!(?:avia|авиа)[\s-]{1,3})(?:kargo|карго)\p{L}*|trucks?|trucking|by\s+road|road\s+freight)(?![\p{L}])|کامیون|زمینی|汽运|陆运|卡车|汽车/iu,
+  air: /(?<![\p{L}])(?:avia(?!tor)\p{L}*|samol[yi]?ot\p{L}*|авиа(?!тор)\p{L}*|самол[её]т\p{L}*|air(?:freight|cargo)|air[\s-]+(?:freight|cargo|shipping|delivery|mail)|(?:by|via)\s+air|flights?|plane)(?![\p{L}])|هوایی|هواپیما|空运|航空|飞机/iu,
+  road: /(?<![\p{L}])(?:mashina\p{L}*|avto(?![mr])\p{L}*|avtomobil\p{L}*|fura\p{L}*|машин\p{L}*|авто(?![мр])\p{L}*|автомобил\p{L}*|фур[аыуе]\p{L}*|(?:oddiy|yig['‘’ʻ`]?ma|sborniy|umumiy)\s+kargo\p{L}*|(?:обычн|сборн)\p{L}*\s+карго\p{L}*|trucks?|trucking|by\s+road|road\s+freight)(?![\p{L}])|کامیون|زمینی|汽运|陆运|卡车|汽车/iu,
   rail: /(?<![\p{L}])(?:temir\s*yo['‘’ʻ`]?l\p{L}*|poyezd\p{L}*|темир\s*йўл\p{L}*|поезд\p{L}*|железн\p{L}*\s+дорог\p{L}*|ж\/д|rail\p{L}*|trains?)(?![\p{L}])|قطار|راه\s*آهن|铁路|火车/iu,
 };
 
@@ -141,23 +142,116 @@ export function oneModeIn(text: string): TravelMode | null {
   return named.length === 1 ? named[0]! : null;
 }
 
+/** The stretch of `text` around `index` that `boundary` closes on both sides. */
+function spanAt(text: string, index: number, boundary: RegExp): string {
+  let start = 0;
+  let end = text.length;
+  for (const m of text.matchAll(boundary)) {
+    if (m.index + m[0].length <= index) start = m.index + m[0].length;
+    else if (m.index >= index) {
+      end = m.index;
+      break;
+    }
+  }
+  return text.slice(start, end);
+}
+
+// A comma or a dash between two digits is inside a figure («1,5», «15–25»), not between clauses.
+const FIGURE_CLAUSE = /(?<!\d)[,—–]|[,—–](?!\d)|[;:!?؟。！？\n]+|\.(?=\s|$)|\s-\s/gu;
+const FIGURE_SENTENCE = /[!?؟。！？\n]+|\.(?=\s|$)/gu;
+
 /** A figure's road: the one its clause names, else its sentence's, else the whole text's — or null. */
 function modeAt(text: string, index: number): TravelMode | null {
-  const span = (boundary: RegExp): string => {
-    let start = 0;
-    let end = text.length;
-    for (const m of text.matchAll(boundary)) {
-      if (m.index + m[0].length <= index) start = m.index + m[0].length;
-      else if (m.index >= index) {
-        end = m.index;
-        break;
-      }
+  return oneModeIn(spanAt(text, index, FIGURE_CLAUSE)) ?? oneModeIn(spanAt(text, index, FIGURE_SENTENCE)) ?? oneModeIn(text);
+}
+
+/** The two roads a person can CHOOSE between in a chat about price; rail is his, never the machine's. */
+export type ChosenRoad = 'air' | 'road';
+
+/**
+ * A road CHOSEN in a statement (review #1484) — its word in a form that picks
+ * the road: «avia bilan», «aviada», «mashinada», «fura», «avto bilan», «oddiy
+ * kargo», «машиной», «by truck», «空运». Never the goods («tikuv mashinasi»,
+ * «avtozapchast», «samolyot o'yinchoq», «aviator ko'zoynak», «air fryer»), and
+ * never the company («kargongiz»). It answers only the question «which road
+ * is this chat on» (`chatRoadOf`, the receiving-fact test); a figure's road
+ * keeps the wider `MODE_WORDS`, where a machine read as the road can only make
+ * a flight's figure unusable.
+ */
+const CHOICE_WORDS: Record<ChosenRoad, RegExp> = {
+  air: /(?<![\p{L}])(?:avia(?!tor)\p{L}*|авиа(?!тор)\p{L}*|samol[yi]?ot(?:da|ga)|samol[yi]?ot\s+(?:bilan|orqali)|самол[её]том|air(?:freight|cargo)|air[\s-]+(?:freight|cargo|shipping|delivery|mail)|(?:by|via)\s+air|flights?)(?![\p{L}])|هوایی|空运|航空/giu,
+  road: /(?<![\p{L}])(?:(?:mashina|fura|avto|avtomobil)(?:da|ga)|(?:mashina|fura|avto|avtomobil)\s+(?:bilan|orqali)|fura|furalar|avto|(?:avto|oddiy|yig['‘’ʻ`]?ma|sborniy|umumiy)\s+kargo\p{L}*|машиной|на\s+машине|фур[аоеуы]\p{L}*|на\s+авто|автомобилем|(?:обычн|сборн)\p{L}*\s+карго\p{L}*|by\s+(?:truck|road)|trucks?(?!\s+(?:parts?|tyres?|tires?|toys?))|trucking|road\s+freight)(?![\p{L}])|کامیون|زمینی|汽运|陆运|卡车运/giu,
+};
+
+/** The road words a refusal attaches to (the goods' «mashinasi» included: «mashinasi kerak emas» refuses nothing a person chose, and is read as nothing). */
+const REFUSABLE: Record<ChosenRoad, string> = {
+  air: String.raw`avia(?!tor)\p{L}*|авиа(?!тор)\p{L}*|samol[yi]?ot\p{L}*|самол[её]т\p{L}*|air(?:\s+(?:freight|cargo))?|by\s+air|flights?`,
+  road: String.raw`mashina(?:da|ga)?|fura\p{L}*|avto(?:da|ga)?|avtomobil\p{L}*|машин\p{L}*|фур[аоеуы]\p{L}*|авто|trucks?|by\s+road`,
+};
+/** «Aviada emas», «avia kerak emas», «avia qimmat ekan» (not «… qimmat emas»), «mashinada uzoq ekan», «авиа не надо», «too expensive». */
+const REFUSE_AFTER = String.raw`(?:\s+(?:narxi|ham|esa|bilan|orqali))?\s*,?\s*(?:kerak\s+emas|kerakmas|emas|shart\s+emas|yo['‘’ʻ\u0060]?q(?![\p{L}])|qimmat(?:\s+ekan)?(?!\s+emas)|uzoq(?:\s+ekan)?(?!\s+emas)|sekin|to['‘’ʻ\u0060]?g['‘’ʻ\u0060]?ri\s+kelmaydi|bo['‘’ʻ\u0060]?lmaydi|не\s+(?:надо|нужн\p{L}*|подходит)|дорог\p{L}*|долго|(?:is\s+)?too\s+(?:expensive|slow)|太贵|太慢)`;
+/** «Не авиа», «без авиа», «no air freight», «not by air». */
+const REFUSE_BEFORE = String.raw`(?<![\p{L}])(?:не|без|нет|no|not|without)\s+(?:by\s+|на\s+|через\s+)?`;
+const refusalOf = (road: ChosenRoad, zh: string): RegExp =>
+  new RegExp(
+    `${REFUSE_BEFORE}(?:${REFUSABLE[road]})(?![\\p{L}])|(?<![\\p{L}])(?:${REFUSABLE[road]})${REFUSE_AFTER}|(?<![\\p{L}])(?:${road === 'air' ? 'avia|samolyot' : 'mashina|fura|avto'})siz(?![\\p{L}])|(?:不要|不用|别)(?:${zh})|(?:${zh})太贵`,
+    'iu',
+  );
+const REFUSES: Record<ChosenRoad, RegExp> = { air: refusalOf('air', '空运|航空'), road: refusalOf('road', '汽运|陆运|卡车') };
+/** A sending verb — in «… ekan, avia bilan yuboraman» the road it follows is the one chosen. */
+const SEND_VERB = /yubor|jo['‘’ʻ`]?nat|отправ|вышл|пошл|send|ship|寄|发/iu;
+
+/**
+ * The road one statement CHOOSES (review #1484): 'air' or 'road' when it picks
+ * one; 'not_air' / 'not_road' when it only turns one down («Avia qimmat ekan»
+ * — the flight refused, so the truck); 'both' when it compares them («avia va
+ * mashinada qancha?»), unless one of the two is followed by the sending verb
+ * («Fura 20 kun ekan, avia bilan yuboramiz»); null when no road is chosen.
+ */
+export function roadChoiceIn(statement: string): ChosenRoad | 'both' | 'not_air' | 'not_road' | null {
+  const refused = { air: REFUSES.air.test(statement), road: REFUSES.road.test(statement) };
+  const at = (road: ChosenRoad): number[] => (refused[road] ? [] : [...statement.matchAll(CHOICE_WORDS[road])].map((m) => m.index + m[0].length));
+  const air = at('air');
+  const road = at('road');
+  if (air.length && road.length) {
+    const sends = (ends: number[]) => ends.some((e) => SEND_VERB.test(statement.slice(e, e + 25)));
+    const a = sends(air);
+    const r = sends(road);
+    return a && !r ? 'air' : r && !a ? 'road' : 'both';
+  }
+  if (air.length) return 'air';
+  if (road.length) return 'road';
+  if (refused.air && !refused.road) return 'not_air';
+  if (refused.road && !refused.air) return 'not_road';
+  return null;
+}
+
+/**
+ * The road OUR priced line quoted (review #1484), read at its money figures —
+ * the clause that holds each price, else its sentence — and never its last
+ * statement: «Avia bilan 30 kg taxminan 510 $ … power bank faqat avto bilan
+ * ketadi» quoted the flight. A line that prices by the cube with no road word
+ * is the truck's (the flight is never priced by volume). Null: no price, or a
+ * price that names no road.
+ */
+export function pricedRoadOf(text: string): ChosenRoad | 'both' | null {
+  const roads = new Set<ChosenRoad>();
+  for (const f of extractNumbers(text)) {
+    if (f.kind !== 'money') continue;
+    const chosen = [spanAt(text, f.index, FIGURE_CLAUSE), spanAt(text, f.index, FIGURE_SENTENCE)]
+      .map(roadChoiceIn)
+      .find((c) => c !== null);
+    if (chosen === 'air' || chosen === 'not_road') roads.add('air');
+    else if (chosen === 'road' || chosen === 'not_air') roads.add('road');
+    else if (chosen === 'both') {
+      roads.add('air');
+      roads.add('road');
     }
-    return text.slice(start, end);
-  };
-  // A comma or a dash between two digits is inside a figure («1,5», «15–25»), not between clauses.
-  const clause = /(?<!\d)[,—–]|[,—–](?!\d)|[;:!?؟。！？\n]+|\.(?=\s|$)|\s-\s/gu;
-  return oneModeIn(span(clause)) ?? oneModeIn(span(/[!?؟。！？\n]+|\.(?=\s|$)/gu)) ?? oneModeIn(text);
+  }
+  if (roads.size === 2) return 'both';
+  if (roads.size === 1) return [...roads][0]!;
+  const priced = extractNumbers(text).some((f) => f.kind === 'money');
+  return priced && /\d\s*(?:kub|куб|m³|m3|м³|cbm|立方)/iu.test(text) ? 'road' : null;
 }
 
 export interface LedgerEntry {

@@ -22,7 +22,7 @@ import { belowTruckMinimumFacts, newestMeasure, ourChinaPlaces, runTool, TOOL_SP
 import { namedOrigin } from './origin';
 import { draftWorthy, mentionsRail, RAIL_OWNER_QUESTION } from './worthy';
 import { writeDraft, writeNotice, type ComposedAction } from './drafts';
-import { extractNumbers, factSources, namesMode, oneModeIn, type NumberSource, type TravelMode } from './numbers';
+import { extractNumbers, factSources, namesMode, oneModeIn, pricedRoadOf, roadChoiceIn, type NumberSource, type TravelMode } from './numbers';
 import { hanOnly, nameWordsOf, type PolicyResult } from './policy';
 import { AGENT_LOCALES } from './locale';
 
@@ -555,56 +555,62 @@ export function quotedRoadOf(loop: Pick<LoopResult, 'tools' | 'outcomes'>): Quot
 
 /** One statement of a message: a sentence, or the part of it a «but» or a comma begins. */
 const CLAUSE = /[,.;:!?\n،؛。，！？；：]+|(?<![\p{L}])(?:lekin|ammo|biroq|но|а|but|however)(?![\p{L}])/iu;
-/** A road turned down in the same breath — «Aviada emas», «avia qimmat ekan», «не авиа», «not by air», «不要空运». */
-const ROAD_REFUSED = /(?<![\p{L}])(?:emas|kerakmas|yo['‘’ʻ`]?q|qimmat|не|нет|дорого|not|don['’]?t|expensive|نه|گران)(?![\p{L}])|不要|不用|别|太贵/iu;
 
 /**
- * Pure: the road the customer chose in these lines, the newest statement
- * winning (the checklist's rule): 'air' or 'road' when a statement names one,
- * 'both' when it compares them, 'not_air' when it turns the flight down
- * («Avia qimmat ekan, kerak emas»). A statement read alone, so «Tikuv mashinasi
- * 30 kg, avia bilan qancha?» is a flight and «Mashinada emas, avia bilan» is
- * too. Null: no road said.
+ * Pure: the road the customer CHOSE in these lines, the newest statement that
+ * chooses one winning (the checklist's rule), read by `roadChoiceIn` — a road
+ * word in a form that picks the road, never the goods («Tikuv mashinasi») or
+ * the company («kargongiz»), and a road turned down in the same breath («Avia
+ * qimmat ekan», «Mashinada emas») is the other one (review #1484). Null: no
+ * road chosen.
  */
-export function roadChosenIn(texts: readonly string[]): QuotedRoad | 'not_air' | null {
+export function roadChosenIn(texts: readonly string[]): QuotedRoad | null {
   const statements = texts.flatMap((t) => t.split(CLAUSE)).reverse();
   for (const st of statements) {
-    const air = namesMode(st, 'air');
-    const road = namesMode(st, 'road');
-    if (!air && !road) continue;
-    if (ROAD_REFUSED.test(st)) {
-      if (air && !road) return 'not_air';
-      continue;
-    }
-    if (air && road) return 'both';
-    return air ? 'air' : 'road';
+    const c = roadChoiceIn(st);
+    if (c === 'not_air') return 'road';
+    if (c === 'not_road') return 'air';
+    if (c) return c;
   }
   return null;
 }
 
+/** One message's text as it is compared with what was sent: case and spacing set aside. */
+const sentForm = (text: string): string => text.normalize('NFC').replace(/\s+/gu, ' ').trim().toLowerCase();
+
 /**
  * The road the chat is on — the one rule the avia guard and the card's
- * question both ask (review R1-R2): what THIS run priced; else what the
- * customer chose in his burst; else what we last quoted him — the draft he
- * approved this week, or, newer than it, his own priced line in the chat
- * that names its road. «Avia» said anywhere in the last thirty messages is
- * no road: a customer who asked once and was quoted the truck after is the
- * truck's.
+ * question both ask (review R1-R2, #1484). What THIS run priced or asked comes
+ * first; after it the NEWEST piece of evidence wins: a road the customer
+ * chose in any of his lines, the road one of OUR priced lines quoted (read at
+ * its price — and the echo of the quote he approved is that draft's own
+ * stored road, since its text names goods as often as roads), or the quote
+ * he approved this week when its message is not in sight. A priced line
+ * that names no road is no evidence: what was said before it stands, which
+ * keeps the flight's address his when in doubt.
  */
 export function chatRoadOf(
-  ctx: Pick<AgentContext, 'burst' | 'messages' | 'lastQuote'>,
+  ctx: Pick<AgentContext, 'messages' | 'lastQuote'>,
   loop: Pick<LoopResult, 'tools' | 'outcomes'>,
 ): QuotedRoad | null {
   const quoted = quotedRoadOf(loop);
   if (quoted) return quoted;
-  const chosen = roadChosenIn(ctx.burst.map((m) => m.body));
-  if (chosen) return chosen === 'not_air' ? 'road' : chosen;
-  const ours = [...ctx.messages]
-    .reverse()
-    .find((m) => m.direction === 'out' && extractNumbers(m.body).some((f) => f.kind === 'money'));
-  const oursRoad = ours ? roadChosenIn([ours.body]) : null;
-  if (ours && oursRoad && oursRoad !== 'not_air' && (!ctx.lastQuote || ours.sentAt > ctx.lastQuote.at)) return oursRoad;
-  return ctx.lastQuote?.road ?? null;
+  const q = ctx.lastQuote;
+  const echo = q?.text ? sentForm(q.text) : null;
+  let echoSeen = false;
+  const evidence: { road: QuotedRoad; at: number; i: number }[] = [];
+  ctx.messages.forEach((m, i) => {
+    let road: QuotedRoad | null = null;
+    if (m.direction === 'in') road = roadChosenIn([m.body]);
+    else if (q && echo !== null && sentForm(m.body) === echo) {
+      echoSeen = true;
+      road = q.road;
+    } else road = pricedRoadOf(m.body);
+    if (road) evidence.push({ road, at: m.sentAt.getTime(), i });
+  });
+  if (q && !echoSeen) evidence.push({ road: q.road, at: q.at.getTime(), i: -1 });
+  evidence.sort((a, b) => a.at - b.at || a.i - b.i);
+  return evidence.at(-1)?.road ?? null;
 }
 
 /**
@@ -652,20 +658,29 @@ function withAviaQuestion(c: ComposeReply, air: AviaCargo): ComposeReply {
 }
 
 /**
- * The cargo the card names: what the tool quoted this run, else what the
- * quote he approved said, else the customer's newest kilos and the place his
- * cargo starts — read from the lines that do not ask where to send it, or the
- * warehouse he asks about would be named as the origin (review R3).
+ * The cargo the card names: what the tool quoted this run; else the quote he
+ * approved — unless the customer has told a weight since (review #1484: «Yana
+ * yuk bor: 80 kg, endi Guanchjoudan» is a new shipment, and the card must not
+ * ask for the address of the old one); else the customer's newest kilos and
+ * the place his cargo STARTS, read from the lines that neither ask where to
+ * send it nor speak of a warehouse — or «Ivu omboringizga yuborsam bo'ladimi?»
+ * would name the warehouse he sends TO as the origin (review R3).
  */
 function aviaCargoOf(loop: Pick<LoopResult, 'outcomes'>, ctx: Pick<AgentContext, 'messages' | 'measures' | 'lastQuote'>): AviaCargo {
-  const quoted = loop.outcomes.find((o) => o.air)?.air ?? ctx.lastQuote?.air;
-  if (quoted) return quoted;
+  const now = loop.outcomes.find((o) => o.air)?.air;
+  if (now) return now;
+  const since = ctx.lastQuote?.air ? ctx.lastQuote.at.getTime() : null;
+  const weight = newestMeasure(ctx, 'weight');
+  const toldAt = ctx.messages.find((m) => m.ref === weight?.messageRef)?.sentAt.getTime() ?? null;
+  if (ctx.lastQuote?.air && (since === null || toldAt === null || toldAt <= since)) return ctx.lastQuote.air;
+  // The NEWEST place told is the shipment's: «… Shenzhendan» last week, «endi Guanchjoudan» today.
   const told = ctx.messages
-    .filter((m) => m.direction === 'in')
+    .filter((m) => m.direction === 'in' && (since === null || m.sentAt.getTime() > since))
     .flatMap((m) => m.body.split(CLAUSE))
-    .filter((st) => !asksWhereToSend([{ body: st }]))
-    .join('\n');
-  return { kg: newestMeasure(ctx, 'weight')?.value ?? null, origin: namedOrigin(told)?.place ?? null };
+    .filter((st) => !asksWhereToSend([{ body: st }]) && !WAREHOUSE_WORD.test(st))
+    .reverse();
+  const origin = told.map((st) => namedOrigin(st)).find((o) => o !== null) ?? null;
+  return { kg: weight?.value ?? null, origin: origin?.place ?? null };
 }
 
 const ADDRESS_WORD = /manzil|адрес|address|地址|آدرس/iu;
@@ -678,22 +693,38 @@ const WHERE_WORD = /qayerda|қаерда|где|where|在哪|کجا/iu;
 /**
  * What an address word says when nobody is asking where to send: the address
  * is had or used («manzilni oldim», «shu manzilga yubordim»), it is his own
- * («mening manzilim»), it is Tashkent's (the pickup), it is a pickup or an
- * arrival («qayerga kelib olaman», «qayerga yetib keldi», «куда пришёл»).
+ * («mening manzilim»), it is Tashkent's (the pickup), it is a pickup.
  */
 const NOT_SEND_ASK =
-  /oldim|oldik|yubordim|jo['‘’ʻ`]?natdim|получил|отправил|got\s+it|received|i\s+sent|收到|发了|گرفتم|فرستادم|manzilim|манзилим|мой\s+адрес|my\s+address|آدرس\s+من|我的地址|toshkent|тошкент|ташкент|tashkent|塔什干|تاشکند|kelib\s+ol|olib\s+ket|забр|pick\s*-?\s*up|取货|提货|yetib\s+kel|keldi|приш[её]л|пришл|arrived|到了|رسید/iu;
+  /oldim|oldik|yubordim|jo['‘’ʻ`]?natdim|получил|отправил|got\s+it|received|i\s+sent|收到|发了|گرفتم|فرستادم|manzilim|манзилим|мой\s+адрес|my\s+address|آدرس\s+من|我的地址|toshkent|тошкент|ташкент|tashkent|塔什干|تاشکند|kelib\s+ol|olib\s+ket|забр|pick\s*-?\s*up|取货|提货/iu;
+/**
+ * Where the cargo ARRIVES (review #1484): «Yuk qayerga keladi?», «Куда придёт
+ * груз?», «Куда доставите?», a city of Uzbekistan — asked without a sending
+ * verb, that is the delivery end, not the Chinese one.
+ */
+const ARRIVAL =
+  /yetib\s+kel|kel(?:di|adi|yapti|ishi)|yetkaz|приш[её]л|пришл|прид[её]т|приед|доставит|доставк|arriv|deliver|到了|到达|送到乌|رسید|samarqand|самарканд|andijon|андижан|namangan|наманган|farg['‘’ʻ`]?ona|фергана|buxoro|бухар|qo['‘’ʻ`]?qon|коканд|urganch|ургенч|qarshi|карши|termiz|термез|nukus|нукус|jizzax|джизак|guliston|гулистан/iu;
+const SEND_VERB = /yubor|jo['‘’ʻ`]?nat|отправ|вышл|пошл|send|ship|寄|发|ارسال|بفرست/iu;
+/** «Manzil: Andijon, Navoiy ko'chasi 12» — an address GIVEN, not asked for. */
+const GIVEN_ADDRESS = /(?:manzil|манзил|adres|адрес|address)\p{L}*\s*:\s*[^\s?？][^\n]*/giu;
 
 /**
  * The customer asks where to SEND the cargo (review R2) — statement by
  * statement, so «Rahmat, manzilni oldim» and «Toshkentda manzilingiz qayerda?»
  * ask nothing, and neither do «откуда» or «qayergacha». Not `askedLocation`'s
- * wider «qayer»: «Yuk qayerda?» asks where the cargo IS.
+ * wider «qayer»: «Yuk qayerda?» asks where the cargo IS. An address he GIVES
+ * is not asked for, and where the cargo arrives is asked only with a sending
+ * verb beside it (review #1484).
  */
 export function asksWhereToSend(lines: readonly Pick<ChatMessage, 'body'>[]): boolean {
   return lines
-    .flatMap((m) => m.body.split(CLAUSE))
-    .some((st) => (SEND_ASK.test(st) || (WAREHOUSE_WORD.test(st) && WHERE_WORD.test(st))) && !NOT_SEND_ASK.test(st));
+    .flatMap((m) => m.body.replace(GIVEN_ADDRESS, ' ').split(CLAUSE))
+    .some(
+      (st) =>
+        (SEND_ASK.test(st) || (WAREHOUSE_WORD.test(st) && WHERE_WORD.test(st))) &&
+        !NOT_SEND_ASK.test(st) &&
+        (SEND_VERB.test(st) || !ARRIVAL.test(st)),
+    );
 }
 
 /**

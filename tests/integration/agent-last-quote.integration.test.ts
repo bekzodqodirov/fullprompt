@@ -1,8 +1,8 @@
 import 'dotenv/config';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { afterAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
-import { agentDrafts, users } from '@/modules/platform/db/schema';
+import { agentDrafts, agentOutbox, clients, users } from '@/modules/platform/db/schema';
 import { lastQuoteFor } from '@/modules/wms/agent/context';
 
 /**
@@ -17,6 +17,7 @@ const PEER = 9_700_000_000n + BigInt(Date.now() % 1_000_000);
 const DAY = 86_400_000;
 
 afterAll(async () => {
+  await db.delete(agentOutbox).where(eq(agentOutbox.peerId, PEER));
   await db.delete(agentDrafts).where(eq(agentDrafts.peerId, PEER));
   await pgClient.end();
 });
@@ -42,15 +43,31 @@ describe('lastQuoteFor — the newest approved quote of the week', () => {
     await db.insert(agentDrafts).values([
       // An older approved truck quote, then the newer approved flight — the flight speaks.
       draft('approved', 3, { quotedRoad: 'road', quotedAir: null }),
-      draft('approved', 1, { quotedRoad: 'air', quotedAir: { kg: 30, origin: 'Shenzhen' } }),
+      { ...draft('approved', 1, { quotedRoad: 'air', quotedAir: { kg: 30, origin: 'Shenzhen' } }), proposedBody: 'Avia 30 kg — 510 $.', finalBody: 'Avia: 30 kg — taxminan 510 $.' },
       // Newer, but quoted nobody: rejected, or still waiting on him, or approved with no road in its memory.
       draft('rejected', 0.5, { quotedRoad: 'road', quotedAir: null }),
       draft('pending', 0.4, { quotedRoad: 'road', quotedAir: null }),
       draft('approved', 0.3, { aviaOnly: false }),
     ]);
 
-    const q = await lastQuoteFor(who!.id, PEER);
-    expect(q).toMatchObject({ road: 'air', air: { kg: 30, origin: 'Shenzhen' } });
+    let q = await lastQuoteFor(who!.id, PEER);
+    // Its text is what he approved (review #1484) — the chat's copy of it is that quote's echo…
+    expect(q).toMatchObject({ road: 'air', air: { kg: 30, origin: 'Shenzhen' }, text: 'Avia: 30 kg — taxminan 510 $.' });
+    // …and once queued, what the outbox row carries is what went to the customer.
+    const [quoted] = await db.select({ id: agentDrafts.id }).from(agentDrafts).where(sql`${agentDrafts.peerId} = ${PEER.toString()}::bigint AND ${agentDrafts.finalBody} IS NOT NULL`);
+    const [someone] = await db.select({ id: clients.id }).from(clients).limit(1);
+    await db.insert(agentOutbox).values({
+      draftId: quoted!.id,
+      clientId: someone!.id,
+      managerUserId: who!.id,
+      peerId: PEER,
+      body: 'Avia: 30 kg — taxminan 510 $. ',
+      randomId: PEER * 1000n + 7n,
+      answersTgMessageId: 100n,
+      queuedBy: who!.id,
+    });
+    q = await lastQuoteFor(who!.id, PEER);
+    expect(q?.text).toBe('Avia: 30 kg — taxminan 510 $. ');
     expect(Math.abs(q!.at.getTime() - at(1).getTime())).toBeLessThan(1000);
     // Another manager's account holds another conversation with the same peer.
     const [other] = await db.select({ id: users.id }).from(users).where(eq(users.active, true)).offset(1).limit(1);

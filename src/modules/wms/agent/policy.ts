@@ -5,10 +5,10 @@ import { AGENT_LOCALES, dominantScript, scriptOf, type AgentLocale, type ScriptN
 import {
   extractNumbers,
   ledgerLine,
-  namesMode,
   phoneDigits,
   PHONE_RE,
   placedLedger,
+  roadChoiceIn,
   urlsIn,
   type LedgerEntry,
   type NumberSource,
@@ -1505,23 +1505,39 @@ const ADMIN_CHAR = /[省市区县州]/u;
  * anchors anything (review R7).
  */
 const ADMIN_CHAIN = /(?:\p{Script=Han}{1,8}?(?:省|自治区|自治州|特别行政区|市|县|州|盟|旗))+(?:\p{Script=Han}{1,4}?区)?/gu;
-/** What every forwarder's name and every contact line is made of: a piece with fewer than two other characters names nobody. */
-const GENERIC_CHARS = new Set([...'国际物流中心有限公司仓库货运快递园先生女士电话']);
-/** A house number: three or four digits standing alone — «2255,» ends a clause, «2.255» and «1,255» are amounts. */
+/**
+ * What every forwarder's name, every contact line and every Chinese address is
+ * made of (review #1484) — «国际物流中心», «先生», «电话», «街道», «社区», «路»,
+ * «交叉口正东方向…米左右» — so a piece needs other characters to name
+ * anybody: «稠江街道» is the whole Choujiang subdistrict and «胜利社区» a
+ * community every city has; «荷花南街» is our street.
+ */
+const GENERIC_CHARS = new Set([...'国际物流中心有限公司仓库货运快递园先生女士电话街道社区镇村路号栋楼巷弄区县市省交叉口方向米左右正与和工业提调车联系人收件']);
+/** A house number in a FACT: three or four digits the street gives with 号 / 栋 — never «168米», a distance. */
+const FACT_HOUSE_NUMBER = /(?<!\d)(\d{3,4})\s*(?:号|栋|幢|弄)/gu;
+/** A house number in a REPLY: three or four digits standing alone — «2255,» ends a clause, «2.255» and «1,255» are amounts. */
 const HOUSE_NUMBER = /(?<!\d)(?<!\d[.,])\d{3,4}(?!\d)(?![.,]\d)/gu;
-/** A street word in the scripts a transliterated address is written in — what makes a bare «2255» a house number. */
-const STREET_WORD = /ko['‘’ʻ`]?cha|кўча|street|avenue|road|улиц|ул\.|проспект|дорог|переул|[街路号]/iu;
+/**
+ * A street word in the scripts a transliterated address is written in — what
+ * makes a bare «2255» a house number when it stands BESIDE it (review #1484:
+ * not «дорого», not «by road», not a «28号» date).
+ */
+const STREET_WORD =
+  /(?<![\p{L}])(?:ko['‘’ʻ`]?cha\p{L}*|кўча\p{L}*|yo['‘’ʻ`]?l(?:i|ida)?|йўл(?:и|ида)?|street|str\.?|avenue|ave\.?|(?<!by\s)road|улиц\p{L}*|ул\.|проспект\p{L}*|переул\p{L}*|дом|jiedao|jie|nanjie|beijie|dongjie|xijie|lu|hao|-?uy)(?![\p{L}])/iu;
+/** How far a house number may stand from its street word, in characters. */
+const STREET_REACH = 30;
 
 /**
- * The anchors of the address facts (review D3, R5-R7). Read from the facts,
- * never from a list of its own — the warehouse he edits tomorrow is the one
- * refused. A piece is five characters of one fact (its Chinese read whole, so
- * the house number «2255» no longer cuts «荷花南街» from «号»), taken after the
- * province/city chain is removed, and kept only when it is that warehouse's
- * own: not in another address fact or in `ordinary` (the GS reminder all of
- * them carry), not a bare administrative name, and either a piece of the
- * street or of a name — «霍尔果斯金», «拓派国际物», «周先生小周» — rather than
- * the «国际物流» every forwarder is called.
+ * The anchors of the address facts (review D3, R5-R7, #1484). Read from the
+ * facts, never from a list of its own — the warehouse he edits tomorrow is the
+ * one refused. A piece is five characters of one fact (its Chinese read whole,
+ * so the house number «2255» no longer cuts «荷花南街» from «号»), or four of a
+ * street («荷花南街» — never four of a name, «霍尔果斯» is a city), taken after the province/city chain is removed and kept only when
+ * enough of it is not what every address is made of (`GENERIC_CHARS`): two
+ * characters in five, three in four. A piece carrying no street character that
+ * another address fact or `ordinary` (the GS reminder) also holds is
+ * boilerplate; a STREET piece two facts share stays ours — two facts are then
+ * one warehouse typed twice, and they must not cancel each other out.
  */
 export function addressAnchorsOf(texts: readonly string[], ordinary: readonly string[] = []): AddressAnchors {
   const whole = texts.map((t) => hanOnly(normalizeDigits(t)));
@@ -1538,14 +1554,16 @@ export function addressAnchorsOf(texts: readonly string[], ordinary: readonly st
       .filter((seg) => [...seg].length >= 4);
     for (const seg of segments) {
       const chars = [...seg];
-      // Five characters of a name; four of a street («稠江街道», «荷花南街») — a street piece is ours at four.
       for (const width of [5, 4]) {
         for (let k = 0; k + width <= chars.length; k += 1) {
           const piece = chars.slice(k, k + width).join('');
-          if (whole.some((w, j) => j !== i && w.includes(piece)) || common.some((c) => c.includes(piece))) continue;
           const street = STREET_CHAR.test(piece);
+          if (common.some((c) => c.includes(piece))) continue;
+          if (!street && whole.some((w, j) => j !== i && w.includes(piece))) continue;
           if (ADMIN_CHAR.test(piece) && !street) continue;
-          if (street || (width === 5 && [...piece].filter((c) => !GENERIC_CHARS.has(c)).length >= 2)) pieces.add(piece);
+          const own = [...piece].filter((c) => !GENERIC_CHARS.has(c)).length;
+          // Four characters only of a STREET: «霍尔果斯» is the city a customer flies from.
+          if (width === 5 ? own >= 2 : street && own >= 3) pieces.add(piece);
         }
       }
     }
@@ -1553,7 +1571,7 @@ export function addressAnchorsOf(texts: readonly string[], ordinary: readonly st
       const d = phoneDigits(m[0]);
       if (d.length >= 9) phones.add(d.slice(-9));
     }
-    for (const m of text.replace(PHONE_RE, ' ').matchAll(HOUSE_NUMBER)) houseNumbers.add(m[0]);
+    for (const m of text.replace(PHONE_RE, ' ').matchAll(FACT_HOUSE_NUMBER)) houseNumbers.add(m[1]!);
   });
   return { pieces: [...pieces], phones: [...phones], houseNumbers: [...houseNumbers] };
 }
@@ -1576,24 +1594,29 @@ export function statesChinaAddress(text: string, anchors: AddressAnchors): boole
   }
   const han = hanOnly(digits);
   if (anchors.pieces.some((piece) => han.includes(piece))) return true;
-  if (!STREET_WORD.test(digits)) return false;
   const bare = digits.replace(PHONE_RE, ' ');
-  return [...bare.matchAll(HOUSE_NUMBER)].some((m) => anchors.houseNumbers.includes(m[0]));
+  return [...bare.matchAll(HOUSE_NUMBER)].some(
+    (m) =>
+      anchors.houseNumbers.includes(m[0]) &&
+      STREET_WORD.test(bare.slice(Math.max(0, m.index - STREET_REACH), m.index + m[0].length + 12)),
+  );
 }
 
 const CN_MOBILE = /^(?:86)?1[3-9]\d{9}$/u;
 const WAREHOUSE_WORD = /ombor|sklad|склад|warehouse|仓库|qabul\s+qil|қабул/iu;
+const AIRPORT = /aeroport|аэропорт|airport|机场|فرودگاه/iu;
 
 /**
- * Pure: is this fact a receiving warehouse's address (review R9)? The seed
- * files its three under one key, and a warehouse he ADDS on the knowledge page
- * — or re-types instead of ✎ — carries none: a fact that speaks of a warehouse
- * and states a Chinese street or a Chinese mobile is one too. A fact that
- * names the flight is not: an avia address he writes down himself is his to
- * have quoted.
+ * Pure: is this fact a receiving warehouse's address (review R9, #1484)? The
+ * seed files its three under one key, and a warehouse he ADDS on the knowledge
+ * page — or re-types instead of ✎ — carries none: a fact that speaks of a
+ * warehouse and states a Chinese street or a Chinese mobile is one too. A
+ * fact for the FLIGHT is not — it chooses the flight alone, or names an
+ * airport: an avia address he writes down himself is his to have quoted. A
+ * truck warehouse that says «avia emas» or «faqat avto kargo uchun» stays ours.
  */
 export function isReceivingAddressFact(text: string): boolean {
-  if (namesMode(text, 'air') || !WAREHOUSE_WORD.test(text)) return false;
+  if (roadChoiceIn(text) === 'air' || AIRPORT.test(text) || !WAREHOUSE_WORD.test(text)) return false;
   const digits = normalizeDigits(text);
   if ([...digits.matchAll(PHONE_RE)].some((m) => CN_MOBILE.test(phoneDigits(m[0])))) return true;
   return addressAnchorsOf([text]).pieces.some((piece) => STREET_CHAR.test(piece));

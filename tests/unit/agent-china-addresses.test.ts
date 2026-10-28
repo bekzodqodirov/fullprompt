@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { AgentContext, ChatMessage } from '@/modules/wms/agent/context';
 import { normalizeDigits } from '@/modules/wms/agent/digits';
 import type { KbHit } from '@/modules/wms/agent/kb';
-import { namesMode, PHONE_RE } from '@/modules/wms/agent/numbers';
+import { namesMode, PHONE_RE, pricedRoadOf, roadChoiceIn } from '@/modules/wms/agent/numbers';
 import {
   addressAnchorsOf,
   checkAgentReply,
@@ -12,7 +12,7 @@ import {
   type AddressAnchors,
   type PolicyInput,
 } from '@/modules/wms/agent/policy';
-import { aviaOwnerQuestion, memoryFor, withAviaGuard, withAviaRule, type ComposeReply } from '@/modules/wms/agent/run';
+import { asksWhereToSend, aviaOwnerQuestion, chatRoadOf, memoryFor, railChat, withAviaGuard, withAviaRule, type ComposeReply } from '@/modules/wms/agent/run';
 import { WAREHOUSE_ADDRESS_SEED } from '@/modules/wms/agent/kb';
 import { GS_REMINDER, SEED_FACTS } from '@/modules/wms/agent/seed-kb';
 import type { ToolOutcome } from '@/modules/wms/agent/tools';
@@ -107,8 +107,8 @@ type ToolCall = { name: string; ok: boolean; text: string };
 /** The avia rule over a run's tools and outcomes, as `runOnce` calls it. */
 const rule = (c: ComposeReply, outcomes: ToolOutcome[], ctx: AgentContext, tools: ToolCall[] = []) => withAviaRule(c, { outcomes, tools }, ctx);
 /** The flight he approved a draft for, as `loadContext` reads it back. */
-const AIR_QUOTE: AgentContext['lastQuote'] = { road: 'air', air: { kg: 30, origin: 'Shenzhen' }, at: new Date(0) };
-const ROAD_QUOTE: AgentContext['lastQuote'] = { road: 'road', air: null, at: new Date(0) };
+const AIR_QUOTE: AgentContext['lastQuote'] = { road: 'air', air: { kg: 30, origin: 'Shenzhen' }, at: new Date(0), text: null };
+const ROAD_QUOTE: AgentContext['lastQuote'] = { road: 'road', air: null, at: new Date(0), text: null };
 
 /** The policy over a reply, on the memory a real run stores — as `policyFor` maps it. */
 function judge(
@@ -235,8 +235,11 @@ describe('an avia quote: the address is his (his fourth set «2»)', () => {
     expect(statesChinaAddress('Telefon: +86 134 2908 9596', ANCHORS)).toBe(true);
     expect(statesChinaAddress('ASQAR 18309082036', ANCHORS)).toBe(true);
     // A piece of a warehouse's street address, copied without its spaces.
-    expect(statesChinaAddress('浙江省 义乌市 稠江街道', ANCHORS)).toBe(true);
+    expect(statesChinaAddress('浙江省 义乌市 稠江街道 荷花南街', ANCHORS)).toBe(true);
     expect(statesChinaAddress('地址：义乌市稠江街道荷花南街', ANCHORS)).toBe(true);
+    // The subdistrict alone is every supplier's in it (review #1484) — «稠江街道贝村路88号» is not ours.
+    expect(statesChinaAddress('浙江省 义乌市 稠江街道', ANCHORS)).toBe(false);
+    expect(statesChinaAddress('义乌市稠江街道贝村路88号', ANCHORS)).toBe(false);
     expect(statesChinaAddress('Umriddin, +998 95 018 30 33', ANCHORS)).toBe(false);
     expect(statesChinaAddress('Ivu (义乌) va Guanchjou (广州)', ANCHORS)).toBe(false);
     expect(statesChinaAddress("Avia bilan taxminan 510 $ bo'ladi.", ANCHORS)).toBe(false);
@@ -349,7 +352,7 @@ describe('which chat is a flight\'s — the review of the follow-up (review R1-R
   });
 
   it('R1: a quote he approved AFTER our older priced line is the road — the newer of the two speaks', () => {
-    const later: AgentContext['lastQuote'] = { road: 'road', air: null, at: new Date(Date.now() + 60_000) };
+    const later: AgentContext['lastQuote'] = { road: 'road', air: null, at: new Date(Date.now() + 60_000), text: null };
     const ctx = ctxOf('Manzilni bering', 'latin', [said('Avia 20 kg qancha?', 1), said('Avia 340 $.', 2, 'out')], [], later);
     expect(blocked(ctx)).toBe(false);
     expect(rule(compose('uz'), [], ctx)).toMatchObject({ needsOwner: false, ownerQuestion: '' });
@@ -378,17 +381,19 @@ describe('which chat is a flight\'s — the review of the follow-up (review R1-R
       'latin',
       [said('Avia bilan 20 kg qancha?', 1), said('Avia 340 $.', 2, 'out'), said('Qimmat ekan', 3), said('3 kub kiyim bor, Ivudan Toshkentga qancha?', 4), said('Taxminan 640 $.', 5, 'out')],
       [],
-      ROAD_QUOTE,
+      // The truck draft he approved, whose text went out as «Taxminan 640 $.» — its echo is that quote's road.
+      { ...ROAD_QUOTE!, text: 'Taxminan 640 $.' },
     );
     expect(blocked(ctx)).toBe(false);
     expect(rule(compose('uz'), [], ctx)).toMatchObject({ needsOwner: false, ownerQuestion: '' });
   });
 
-  it('R1: «air» is a road only as «air freight» / «by air»; «kargo» is the truck unless it is «avia kargo»', () => {
+  it('R1: «air» is a road only as «air freight» / «by air»; «kargo» is the truck only as «oddiy / yig\'ma kargo»', () => {
     for (const t of ['by air', 'via air', 'air freight', 'air-cargo', 'aircargo', 'avia bilan', 'авиа', '空运']) expect(namesMode(t, 'air'), t).toBe(true);
     for (const t of ['air fryer', 'Air Max krossovka', 'air conditioner']) expect(namesMode(t, 'air'), t).toBe(false);
-    for (const t of ['oddiy kargo bilan', 'обычным карго', 'kargoda']) expect(namesMode(t, 'road'), t).toBe(true);
-    for (const t of ['avia kargo bilan', 'авиа-карго']) expect(namesMode(t, 'road'), t).toBe(false);
+    for (const t of ['oddiy kargo bilan', 'обычным карго', "yig'ma kargo"]) expect(namesMode(t, 'road'), t).toBe(true);
+    // A bare «kargo» is the COMPANY (review #1484): «kargongiz», «kargo manzili», «Kargo narxini ayting».
+    for (const t of ['avia kargo bilan', 'авиа-карго', 'kargoda', 'Kargongizga qayerga yuboraman?', 'Kargo narxini ayting']) expect(namesMode(t, 'road'), t).toBe(false);
   });
 
   it('R1: goods named after the air are no flight — «air fryer», «air conditioner»', () => {
@@ -505,6 +510,147 @@ describe('what reads as our warehouse — the review of the anchors (review R5-R
   });
 });
 
+describe('the road is what we quoted, whatever the words name — the third review (#1484)', () => {
+  const yiwu = () => `Assalomu alaykum! ${answer('china_address_yiwu@1')}`;
+  const blocked = (ctx: AgentContext) => judge(ctx, 'latin', 'uz', yiwu()).includes('avia_address');
+  const asked = (ctx: AgentContext) => rule(compose('uz'), [], ctx).needsOwner;
+  const kg30 = [{ ref: 'w1', kind: 'weight' as const, value: 30, messageRef: '#1' }];
+  const echoOf = (text: string): AgentContext['lastQuote'] => ({ ...AIR_QUOTE!, text });
+
+  it('the approved quote\'s own echo is its stored road, though its words name the goods', () => {
+    const sent = "Tikuv mashinasi 30 kg avia orqali taxminan 510 $ bo'ladi.";
+    const a = ctxOf('Manzil qayerga yuboraman?', 'latin', [said('Tikuv mashinasi 30 kg, avia bilan qancha?', 1), said(sent, 2, 'out')], kg30, echoOf(sent));
+    expect(blocked(a)).toBe(true);
+    expect(asked(a)).toBe(true);
+    // A hand-typed line is read at its PRICE, never by the goods: «Автозапчасти 30 кг авиа примерно 510 $» quoted the flight.
+    const c = ctxOf('Куда отправлять?', 'cyrillic', [said('Автозапчасти 30 кг авиа сколько?', 1), said('Автозапчасти 30 кг авиа примерно 510 $.', 2, 'out')], kg30);
+    expect(judge(c, 'cyrillic', 'ru', `Здравствуйте! ${answer('china_address_yiwu@1')}`)).toContain('avia_address');
+  });
+
+  it('the goods and the company are no road chosen — «Tikuv mashinalarini …», «Kargongizga …», «kargo manzili»', () => {
+    for (const body of ['Tikuv mashinalarini qayerga yuboray?', 'Kargongizga qayerga yuboraman?', 'Yaxshi, kargo manzilini tashlang', 'Хорошо, скиньте адрес карго']) {
+      const ctx = ctxOf(body, 'latin', [said('Avia bilan Guanchjoudan 30 kg qancha?', 1), said('Avia: 30 kg × 17 $ ≈ 510 $ (taxminan), 2–5 kun.', 2, 'out')], kg30, AIR_QUOTE);
+      expect(blocked(ctx), body).toBe(true);
+      expect(asked(ctx), body).toBe(true);
+    }
+  });
+
+  it('a customer accepting the flight is no refusal — «qimmat emas», «muammo yo\'q», «boshqasi kerakmas», «не знаю куда»', () => {
+    for (const body of [
+      'Avia narxi qimmat emas ekan, shu bilan yuboraman. Manzilni tashlang',
+      'Avia qimmat emas, yuboraman. Manzil?',
+      "avia bilan yuboraman muammo yo'q manzil qayerga",
+      'Avia bilan kerak boshqasi kerakmas manzil?',
+      'Хорошо авиа отправлю не знаю куда отправлять',
+      'Mashinada uzoq ekan avia bilan yuboraman manzil qayerga',
+      'Fura 20 kun ekan avia bilan yuboramiz manzilni tashlang',
+    ]) {
+      const ctx = ctxOf(body, 'latin', [said('Shenzhendan avia 30 kg qancha?', 1), said("Avia bilan taxminan 510 $ bo'ladi.", 2, 'out')], kg30, AIR_QUOTE);
+      expect(blocked(ctx), body).toBe(true);
+      expect(asked(ctx), body).toBe(true);
+    }
+  });
+
+  it('a truck chosen in words is the truck\'s, whatever the goods are called — and a refusal it does not name is still one', () => {
+    for (const body of [
+      "Mashinada yuboraman. Tovar: bolalar samolyot o'yinchoqlari, 2 kub. Manzil qayerga?",
+      'Отправлю машиной. Товар: игрушки самолёты, 2 куба. Куда отправлять?',
+      "Fura bilan yuboraman, tovar aviator ko'zoynaklar 3 kub. Ivu manzilini bering",
+      "Mashinada yuboramiz, avia to'g'ri kelmaydi. Manzilni bering",
+      'By truck please, no air freight. Send the Yiwu warehouse address',
+      'Mashinada, aviasiz. Ivu manzilini tashlang',
+    ]) {
+      const ctx = ctxOf(body, 'latin');
+      expect(blocked(ctx), body).toBe(false);
+      expect(asked(ctx), body).toBe(false);
+    }
+  });
+
+  it('our priced line is read at its price, and an echo of a truck or two-road quote is no flight', () => {
+    expect(pricedRoadOf("Avia bilan 30 kg taxminan 510 $ boʻladi, 2–5 kun. Eslatma: power bank va litiy batareya avia bilan ketmaydi, ular faqat avto yoki temir yoʻl bilan ketadi.")).toBe('air');
+    expect(pricedRoadOf('Avto (mashina) narxi: 3 kub — taxminan 640 $, 15–25 kun. Avia: 300 kg — taxminan 5100 $, 2–5 kun.')).toBe('both');
+    expect(pricedRoadOf('3 kub uchun taxminan 640 $.')).toBe('road');
+    expect(pricedRoadOf('Taxminan 640 $, 15–25 kunda keladi.')).toBeNull();
+    const battery = "Avia bilan 30 kg taxminan 510 $ boʻladi, 2–5 kun. Eslatma: power bank faqat avto bilan ketadi.";
+    expect(blocked(ctxOf('Tushunarli, batareya yoʻq. Manzil qayerga?', 'latin', [said('Guanchjoudan avia bilan yuk yubormoqchiman', 1), said(battery, 2, 'out')], kg30))).toBe(true);
+    const both = 'Avto (mashina) narxi: 3 kub — taxminan 640 $, 15–25 kun. Avia: 300 kg — taxminan 5100 $, 2–5 kun.';
+    expect(blocked(ctxOf('Yaxshi, manzilni yuboring', 'latin', [said('3 kub, 300 kg — avia va mashinada qancha?', 1), said(both, 2, 'out')], [], { road: 'both', air: null, at: new Date(0), text: both }))).toBe(false);
+    const truck = "Avto (mashina) bilan 3 kub — taxminan 640 $, 15–25 kun. Tezroq kerak bo'lsa avia ham bor.";
+    expect(blocked(ctxOf('Yaxshi, manzilni yuboring', 'latin', [said('3 kub kiyim, qancha?', 1), said(truck, 2, 'out')], [], { road: 'road', air: null, at: new Date(0), text: truck }))).toBe(false);
+  });
+
+  it('an avia chat with nothing quoted yet is still the flight\'s — the customer chose it', () => {
+    const ctx = ctxOf('30 kg. Manzil qayerga?', 'latin', [said('Assalomu alaykum, Guanchjoudan avia bilan yuk yubormoqchiman', 1), said('Vaalaykum assalom! Yuk necha kg?', 2, 'out')], [
+      { ref: 'w1', kind: 'weight', value: 30, messageRef: '#3' },
+    ]);
+    expect(chatRoadOf(ctx, { tools: [], outcomes: [] })).toBe('air');
+    expect(blocked(ctx)).toBe(true);
+    expect(rule(compose('uz'), [], ctx).ownerQuestion).toBe(aviaOwnerQuestion({ kg: 30, origin: 'Guangzhou' }));
+  });
+
+  it('«kargo» no longer ends the rail rule', () => {
+    const ctx = ctxOf('5 kub, 800 kg. Kargo narxini ayting', 'latin', [said("Temir yo'l bilan Urumchidan Toshkentga qancha bo'ladi?", 1), said('Aniqlab aytaman.', 2, 'out')]);
+    expect(railChat(ctx, compose('uz', { replyText: '5 kub, 800 kg yuk uchun taxminan 480 $ boʻladi.' }))).toBe(true);
+  });
+
+  it('the card names the customer\'s NEW shipment, and never the warehouse he sends to as the origin', () => {
+    const a = ctxOf('Yana yuk bor: 80 kg, endi Guanchjoudan avia bilan. Qayerga yuboray?', 'latin', [said('Shenzhendan avia 30 kg qancha?', 1), said('Avia 510 $.', 2, 'out')], [
+      { ref: 'w1', kind: 'weight', value: 30, messageRef: '#1' },
+      { ref: 'w2', kind: 'weight', value: 80, messageRef: '#3' },
+    ], AIR_QUOTE);
+    expect(rule(compose('uz'), [], a).ownerQuestion).toBe(aviaOwnerQuestion({ kg: 80, origin: 'Guangzhou' }));
+    const b = ctxOf("Ivu omboringizga yuborsam bo'ladimi?", 'latin', [said('Avia bilan 15 kg kiyim qancha bo\'ladi?', 1)], [{ ref: 'w1', kind: 'weight', value: 15, messageRef: '#1' }]);
+    const held = { ok: false, blocks: [{ rule: 'G6' as const, code: 'avia_address' as const }], warnings: [], ledger: [] };
+    expect(withAviaGuard(compose('uz', { replyText: yiwu() }), held, { outcomes: [], tools: [] }, b).ownerQuestion).toBe(aviaOwnerQuestion({ kg: 15, origin: null }));
+  });
+
+  it('where the cargo ARRIVES, or an address he gives, is no «where do I send it»', () => {
+    for (const body of ['Yuk qayerga keladi?', 'Куда придёт груз?', 'Куда доставите груз?', 'Yetkazib berish manzili: Samarqand shahri', "Manzil: Andijon, Navoiy ko'chasi 12"]) {
+      expect(asksWhereToSend([{ body }]), body).toBe(false);
+    }
+    for (const body of ['Qayerga yuborsam tez keladi?', 'Manzil?', 'Manzil: ?', 'Куда отправлять, чтобы быстрее пришло?']) expect(asksWhereToSend([{ body }]), body).toBe(true);
+  });
+
+  it('a warehouse typed twice is still ours — the two facts do not cancel each other\'s street', () => {
+    const seed = SEED_FACTS.filter((f) => f.key.startsWith(WAREHOUSE_ADDRESS_SEED)).map((f) => f.answer);
+    const twice = addressAnchorsOf(
+      [
+        ...seed,
+        'Foshan (Guanchjou) ombori, yangi: 广东省佛山市南海区里水镇胜利社区胜利工业区29号3栋 拓派国际物流有限公司. Telefon: 王红 13266376775.',
+        'Ivu ombori (yangi qabul qiluvchi): 浙江省 义乌市 稠江街道 荷花南街 2255号，李先生 13800001111',
+      ],
+      [GS_REMINDER],
+    );
+    expect(statesChinaAddress('Guanchjou ombori: 广东省佛山市南海区里水镇胜利社区胜利工业区29号3栋 拓派国际物流有限公司.', twice)).toBe(true);
+    expect(statesChinaAddress('Yukni shu manzilga yuboring: 义乌市稠江街道荷花南街，周先生。', twice)).toBe(true);
+  });
+
+  it('a truck warehouse that says «avia emas» is still a receiving address; an airport\'s is the flight\'s', () => {
+    expect(isReceivingAddressFact('Ivu ombori (faqat avto kargo uchun, avia yuklar bu yerga emas): 浙江省 义乌市 稠江街道 荷花南街 2255号，周先生，小周 13429089596.')).toBe(true);
+    for (const t of ['Shenzhen aeroport ombori: 广东省深圳市宝安区机场路 5号, Li 13700002222.', 'Аэропорт склад: 广东省深圳市宝安区机场路 5号.', '机场仓库：广东省深圳市宝安区机场路5号']) {
+      expect(isReceivingAddressFact(t), t).toBe(false);
+    }
+    expect(roadChoiceIn('Ivu ombori (faqat avto kargo uchun, avia yuklar bu yerga emas)')).toBe('both');
+  });
+
+  it('what every Chinese address is made of names nobody — crossings, «…米», districts, a date «28号»', () => {
+    for (const text of [
+      'Yukni 义乌市福田路与城北路交叉口 dagi zavoddan olib kelasizmi?',
+      '供应商地址：金华市人民路与解放路交叉口正东方向200米',
+      '广州市白云区胜利社区',
+      "Yetkazish manzili: Navoiy ko'chasi 168, Toshkent",
+      'Авиа дороговато: 168 кг — 2 856 $',
+      'Air: 168 kg — 2856 $. By road it is cheaper, 15–25 days.',
+      '空运168公斤，10月28号发货',
+      'Авиа доставка 2255 кг обойдётся примерно в 38 335 $. Это дорого, зато быстро.',
+    ]) {
+      expect(statesChinaAddress(text, ANCHORS), text).toBe(false);
+    }
+    // The transliterated street still counts, its number beside its street word.
+    expect(statesChinaAddress('Ivu ombori: Yiwu, Choujiang jiedao, Hehua Nanjie 2255-hao, Zhou xiansheng.', ANCHORS)).toBe(true);
+  });
+});
+
 describe('written down for the model', () => {
   it('the prompt gives the warehouse address as the fact has it, and never a flight\'s', async () => {
     const { stableHead } = await import('@/modules/wms/agent/prompt');
@@ -549,7 +695,8 @@ describe('written down for the model', () => {
     expect(reminderPiece(addressAnchorsOf(SEED_FACTS.filter((f) => f.key.startsWith(WAREHOUSE_ADDRESS_SEED)).map((f) => f.answer)))).toBe(false);
     expect(reminderPiece(addressAnchorsOf([answer('china_address_yiwu@1')], [GS_REMINDER]))).toBe(false);
     // The house numbers a street address names — never a phone's digits.
-    expect(ANCHORS.houseNumbers).toEqual(['2255', '168']);
+    // «168米» is a distance, not a house number (review #1484).
+    expect(ANCHORS.houseNumbers).toEqual(['2255']);
   });
 
   it('both run paths — a customer\'s message and his hand-back — draft through the avia rule, judge THAT draft, then let the guard ask him', async () => {
