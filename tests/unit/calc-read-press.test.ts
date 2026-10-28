@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
  * «✅ Bo‘ldi» since the reading is a pg-boss job (docs/SAKKIZ-R3.md §7.2.3):
@@ -77,8 +77,20 @@ function fakeCtx(hold?: { notice: Promise<void> }) {
   };
 }
 
-/** Whatever the press set going without awaiting it gets its turn before an assertion about it. */
-const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
+/**
+ * Whatever the press set going without awaiting it gets its turn before an
+ * assertion about it. The reading's modules are loaded first (`beforeAll`),
+ * so a reading set going reaches the model within a few ticks: on a cold
+ * module the first dynamic import alone outlasts the wait, and a red proof
+ * would stay green on the import's time, not on the code.
+ */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 200));
+
+beforeAll(async () => {
+  await import('@/modules/wms/calc/intake-manual');
+  await import('@/modules/wms/calc/intake');
+  await import('@/modules/wms/calc/ai-cost');
+});
 
 beforeEach(() => {
   resetReadingDrive();

@@ -445,7 +445,14 @@ describe('Telegram refusing the reply for good', () => {
 
 describe('a process that is stopping hands the attempt on (review adv-3)', () => {
   const clock = { offset: 0 };
-  beforeEach(() => {
+  beforeEach(async () => {
+    // The reading's modules loaded first: on a cold one the job's first
+    // dynamic import outlasts the 300 ms the attempt is watched for, the moved
+    // clock then eats the model's leash, and a model call the code should
+    // never make goes unmade for the wrong reason.
+    await import('@/modules/wms/calc/intake-ai');
+    await import('@/modules/wms/calc/intake-manual');
+    await import('@/modules/wms/calc/intake');
     clock.offset = 0;
     vi.spyOn(Date, 'now').mockImplementation(() => realNow() + clock.offset);
   });
@@ -460,9 +467,12 @@ describe('a process that is stopping hands the attempt on (review adv-3)', () =>
     expect(model.analyze).not.toHaveBeenCalled();
     expect(activeIntake(chatId)!.pendingReply).toBeNull();
     expect(tg.sent).toEqual([]);
-    // The process outlived its deadline after all: an ordinary failure.
+    // The process outlived its deadline after all: an ordinary failure — and
+    // in all that time the model was never asked.
     clock.offset = INTAKE_READ_EXPIRE_S * 1000;
     await expect(run.p).rejects.toThrow('handed on');
+    expect(model.analyze).not.toHaveBeenCalled();
+    expect(activeIntake(chatId)!.pendingReply).toBeNull();
   });
 
   it('the stop comes while the model reads: its reply kept, nothing sent — even the LAST attempt held open, never spent here', async () => {
