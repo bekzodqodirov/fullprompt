@@ -190,7 +190,7 @@ export async function intakeLaws(state: IntakeState, extraCodes: readonly (strin
 }
 
 /** What a table needs beyond the state: the wms module, the laws, and an addition's stale totals. */
-interface TableContext {
+export interface TableContext {
   intake: Intake;
   laws: ReadonlyMap<string, NeedLaw>;
   stale: readonly ('weightKg' | 'volumeM3')[];
@@ -215,7 +215,15 @@ async function staleTotalsOf(state: IntakeState): Promise<('weightKg' | 'volumeM
   }
 }
 
-async function tableContext(state: IntakeState, extraCodes: readonly (string | null)[] = []): Promise<TableContext> {
+/**
+ * The table's context over a state — also the reading job's (calc-read.ts), so
+ * a table the job stores and sends is drawn from the same laws and the same
+ * stale totals as every later edit of it.
+ */
+export async function tableContext(
+  state: IntakeState,
+  extraCodes: readonly (string | null)[] = [],
+): Promise<TableContext> {
   const intake = await import('../../wms/calc/intake');
   const [laws, stale] = await Promise.all([intakeLaws(state, extraCodes), staleTotalsOf(state)]);
   return { intake, laws, stale };
@@ -333,8 +341,12 @@ function tableWords(state: IntakeState, tc: TableContext): Pick<NextStep, 'text'
   };
 }
 
-/** What a drawn table is compared by — its text AND its keyboard (a certificate press changes only the button). */
-function tableHashOf(words: Pick<NextStep, 'text' | 'keyboard'>): string {
+/**
+ * What a drawn table is compared by — its text AND its keyboard (a certificate
+ * press changes only the button). One home (#513): the reading job records
+ * the hash of the table it delivered by this same rule.
+ */
+export function tableHashOf(words: Pick<NextStep, 'text' | 'keyboard'>): string {
   return createHash('sha1').update(words.text).update(JSON.stringify(words.keyboard)).digest('base64');
 }
 
@@ -1294,7 +1306,9 @@ export async function showIntakePrompt(
     }
   }
   const sent = await ctx.reply(text, { reply_markup: doneKeyboard });
-  updateIntake(chatId, { promptMessageId: sent.message_id });
+  // Bookkeeping, so quiet (docs/SAKKIZ-R3.md §6.2.6): the seller's own action
+  // before it already touched the clocks.
+  updateIntake(chatId, { promptMessageId: sent.message_id }, { quiet: true });
 }
 
 /**

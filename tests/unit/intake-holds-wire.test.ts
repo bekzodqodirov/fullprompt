@@ -42,6 +42,11 @@ const PRESENCE: Record<string, string> = {
   'calc-read.ts:lastAttemptFailed': 'the last attempt releases only its own token (§7.2.4.8)',
   'calc-read.ts:releaseDeadReading': 'the sweep’s release of a dead job’s token, only that token',
   'calc-read.ts:deliverStoredReply': 'the sweep’s late delivery of a stored reply',
+  // The table stage (P3, §8.2): the collection an answer, a press or the
+  // table's edit is FOR, re-read after their awaits by its note id.
+  'calc-dialog.ts:commitWrites': 'an answer’s write and its echo’s id, on the collection it answered',
+  'calc-dialog.ts:drawTable': 'the in-place edit of the collection’s own table',
+  'calc-dialog.ts:pressUndo': 'a press — «↩️» on its own echo’s collection',
   'calc-store.ts:holdingIntake': 'the holds predicate itself',
   'calc-store.ts:loadIntake': 'a job’s read, after this process hydrated',
   'calc-store.ts:collectionSurvived': 'the backlog sentence: did a collection survive the restart',

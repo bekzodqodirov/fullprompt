@@ -1,5 +1,5 @@
 import type PgBoss from 'pg-boss';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { logger } from '../logger';
 import { enqueue, jobState, type JobState } from '../jobs/boss';
 import {
@@ -22,7 +22,7 @@ import {
   updateIntake,
 } from './calc-store';
 import { loadIntakeFiles, invoiceChoiceKeyboard, otherFilesKeyboard } from './calc-files';
-import { intakeLaws, intakeNextStep, type CollectorReply } from './calc-dialog';
+import { intakeNextStep, tableContext, tableHashOf, type CollectorReply } from './calc-dialog';
 import { CLIENT_QUESTION, doneKeyboard, pricedZonesNow, zoneKeyboard } from './calc-keyboards';
 import { isStopping } from './lifecycle';
 import { editText, sendText, sendTextBriefRetry, type SendResult } from './send';
@@ -470,8 +470,9 @@ async function readOnce(data: IntakeReadJob): Promise<void> {
     // The laws on the pool BEFORE the live collection is taken: from here to
     // the store's write nothing is awaited, so no press can land in between
     // and the words stored are the words of the state stored (K's review, U4).
-    const laws = await intakeLaws(analysed);
-    const intake = await import('../../wms/calc/intake');
+    // The table's own context (laws, the wms module, an addition's stale
+    // totals): the table this job sends is the one every later edit redraws.
+    const tc = await tableContext(analysed);
     const outcome = settleAnalysis(activeIntake(chatId), state, analysed, data.token);
     if (outcome.kind === 'gone') return;
     let patch: Partial<IntakeState>;
@@ -484,7 +485,7 @@ async function readOnce(data: IntakeReadJob): Promise<void> {
     } else {
       // No keyboard is built here: the step's own (the derived `c:` fence reads
       // every button where it is built).
-      const step = intakeNextStep(outcome.state, laws, intake);
+      const step = intakeNextStep(outcome.state, tc.laws, tc.intake, { stale: tc.stale });
       patch = { ...outcome.state, ...step.patch };
       text = step.text;
       keyboard = step.keyboard;
@@ -617,21 +618,11 @@ function settleDelivered(chatId: bigint, reply: NonNullable<IntakeState['pending
     {
       ...(ours ? { pendingReply: null } : {}),
       ...(ours && live.analysing === reply.token ? { analysing: null } : {}),
-      ...(table ? { tableMessageId: messageId, tableHash: replyHash(reply) } : {}),
+      ...(table ? { tableMessageId: messageId, tableHash: tableHashOf(reply) } : {}),
     },
     { quiet: true },
   );
   if (messageId !== null) noteOwnMessage(chatId, messageId);
-}
-
-/**
- * What a drawn table is compared by — its text AND its keyboard (a certificate
- * press changes only the button), the table edit's own rule (P3's
- * `tableHashOf`, calc-dialog.ts), so an answer that leaves the table as it was
- * edits nothing.
- */
-function replyHash(reply: { text: string; keyboard: InlineKeyboard | null }): string {
-  return createHash('sha1').update(reply.text).update(JSON.stringify(reply.keyboard)).digest('base64');
 }
 
 /** A reply nothing will ever send: dropped, and the token it held released. */
