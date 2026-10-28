@@ -225,11 +225,17 @@ Four lenses read the BUILT round (DECISIONS #1491-#1497); what changed:
   however it landed (another inbound truck's screen, the stocktake).
 - **The loading snapshot ships two kinds** (§9): `roadShelf: [{ code, lotId }]` (free here and claimable by
   this truck) and `roadInbound: [{ code, truck }]`; the phone (`roadScanVerdict`) accepts a shelf carton
-  while it has taken fewer of its lot than the lot owes, and refuses an inbound one at once with the truck's
-  code. `roadCodes` is gone.
+  while it has taken fewer of its lot than the lot owes (best-effort: a second phone or a claim since the
+  snapshot is the server's to refuse). An inbound code goes to the server whenever it can answer at once
+  (online), or when THIS phone queued its unload; only an offline phone with no landing of its own refuses it,
+  naming the truck — the snapshot is older than a Horgos cross-dock (DECISIONS #1498). `roadCodes` is gone.
+- **The landing hook locks every owing line in line order** before it claims — the order «yuklash tugadi»
+  takes them in (#1501). «Already here» also covers a carton already on the road on a truck leaving here
+  (#1500).
 - **The agent sheet** (§9): after the approval a line is up to THREE rows — what stands here under its
   arrival, what is still owed under «В пути», what the loading ended without under «Не пришло / Did not
   come».
-- **The editor** (§4): the untick clamps against the road-less ANSWER, never the list on screen; picks the
-  list cannot show (a road half that failed, a lot gone before a resubmit opened) are named — «Qayta
-  urinish» / «Olib tashlash» — and the submit waits.
+- **The editor** (§4): the untick clamps against the road-less ANSWER of the warehouse it was asked at, never
+  the list on screen and never another warehouse's; picks the list cannot show (a road half that failed, a lot
+  gone before a resubmit opened, a warehouse switched) are named — «Qayta urinish» / «Olib tashlash» — and the
+  submit waits.

@@ -3028,7 +3028,12 @@ cartons landed free), takes `min(owed, k)` at the line's lock, «already landed 
 truck not sent back — `notSentBackSql`, shared with the count ledger, which fixed over → undo → over on EVERY
 server / reserved onto a truck leaving here), the agent sheet's «Не пришло» block, the snapshot's
 `roadShelf`/`roadInbound` judged on the phone by `roadScanVerdict`, the editor's untick clamping against the
-answer and naming picks it cannot show.
+answer and naming picks it cannot show. **Then the FIXES were reviewed** (#1498-#1502, 10 of 11 upheld): my
+#1495 refused the Horgos cross-dock's own cartons from a snapshot older than the landing — online the server
+decides, offline only this phone's own landing goes in (`roadScanVerdict(…, {online, queuedUnloads})`); the
+onward truck on the ROAD is «already here» too; the hook locks lines in line order; the untick names its
+origin (`untickFor`); three tests that held with their gate deleted were re-anchored, and the editor's routes
+are held at the CONTEXT (the service worker answers `/api/*`, `page.route` never sees it).
 
 **Latest migration: 0137** (`plan_road`, `when` …116; ledger must reach **138**). Before
 it: 0136 (`lead_client_many`, `when` …115). Before

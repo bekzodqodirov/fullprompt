@@ -4852,7 +4852,7 @@ refuses an inbound one at once naming the truck. The server's own `road_not_land
 1496. **The editor's untick waits for the answer it asked for** (editor#6). It clamped the picks against the
 list on screen — EMPTY while a read is in flight (every road toggle re-reads) and shelf-only when the road
 half failed — so unticking a moment after ticking took every pick, shelf ones included, and the sentence
-blamed the road. The untick is a pending flag now; the road-less answer clamps (`pendingUntick`).
+blamed the road. The untick is a pending flag now; the road-less answer clamps (`untickFor`, #1501).
 **Picks the list cannot show are named and the submit waits** (editor#7): a road pick whose half of the
 answer failed, or a lot gone before a resubmit opened, was in no row, no Σ and no gauge while the submit sent
 it — the agent got a heavier truck than anyone saw. «N ta tanlangan yuk ro'yxatda ko'rinmayapti» with
@@ -4862,3 +4862,49 @@ it — the agent got a heavier truck than anyone saw. «N ta tanlangan yuk ro'yx
 and, for deploy#8, by reproducing it in a test before the fix — an unverified finding is not a refuted one.
 The fence's `body()` helper learned generic functions (`claimableFor<C>`); a fence that cannot find its
 function fails loudly, which is how it was noticed.
+
+## Yo'ldagi yuk — the FIXES reviewed (2026-10-28; NO migration, ledger 138)
+
+The seven fixes above were reviewed in their turn: three lenses, one refuter per finding, 11 findings, 10
+upheld. Two of them said the same thing, and it is the one that mattered: a fix of mine had made a NEW
+defect in the round's own designed flow.
+
+1498. **The phone may not refuse what the server would take** (locks#0 = readers#4, a defect introduced by
+#1495). The snapshot is up to fifteen seconds old — and none at all offline — while at Horgos a carton goes
+from the inbound truck to the onward one in seconds, and the landing reserves it onto the onward truck in its
+own transaction. #1495 refused every code the snapshot listed on an inbound truck, so the cross-dock's own
+cartons were refused with «avval tushirishda qabul qiling» while the server held them as plan cargo. Now
+`roadScanVerdict(code, snap, loaded, {online, queuedUnloads})`: online, the scan goes to the server, which
+answers in a second (claimed, or `road_not_landed` with the truck — the mark comes back while the carton is
+still in the loader's hands); offline, a carton THIS phone has queued an unload row for goes in (the sync body
+lands before it loads); only an offline phone with no landing of its own refuses, naming the truck. The
+screen keeps `queuedUnloads` beside its pending count, from the one outbox both scan screens share. STATED:
+two rows of one carton more than `MAX_PER_SYNC` apart in a backed-up outbox can still reach the server in the
+wrong order.
+
+1499. **#1495's other half is best-effort, and said so** (locks#2). The shelf-carton gate counts this phone's
+own marks against the snapshot's owed: a second phone on the same truck, or a claim since the snapshot, is not
+seen, and the server's `not_on_plan` takes such a mark back at the flush. A shared reservation for that was
+judged not worth its machinery; road-scan.ts states it.
+
+1500. **«Already here» covers the onward truck on the ROAD** (locks#1). #1493's third fact stopped at the
+departure: a stale scan on another inbound truck's screen, flushed after the onward truck left, still landed
+the carton as a rogue and pulled it off a truck the customs papers carry. A carton `in_transit` on a truck
+whose ORIGIN is this destination is done here too; one that really stayed behind is that truck's missing
+carton, which its unload resolves (`found_at_origin`).
+
+1501. **Line order, and the untick's origin** (locks#3, editor#8). The landing hook locked owing lines lot by
+lot while «yuklash tugadi» locks one truck's lines in line order — a multi-lot stocktake save against a finish
+could deadlock (it predates #1491). The hook now locks every line its lots owe here in LINE order before it
+claims. The editor's pending untick named no origin: a change of warehouse while it waited clamped the picks
+against ANOTHER warehouse's list and called them road cargo, and a quiet re-read that cleared it also pruned
+the pre-clamp picks a second time. `untickFor` holds the origin, a change of origin forgets it, and the answer
+that clamps does not prune.
+
+1502. **Three tests that proved less than they said** (editor#7, #9, #10). The «submit waits» assertion held
+with the gate deleted — the only pick was the unseen one, so Σ was 0 and `totals.boxes === 0` disabled the
+button by itself; a visible shelf pick now stands beside the road one. The untick test proved the old wipe was
+gone, not that the clamp runs — a case of its own now takes the road part out and keeps the shelf part. And
+the editor's routes were held with `page.route`, which does not see a request the service worker answers
+(`/api/*` is NetworkFirst) — they are held at the context, as m9zzz-hisoblash-telefon does. The ROAD_CODES_CAP
+finding was refuted (it predates the fixes and the slice is consistent).
