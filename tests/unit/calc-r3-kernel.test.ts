@@ -253,12 +253,29 @@ describe('a twin of one note runs nothing after the transaction (K2, K’s revie
       const code = read(file);
       const open = code.indexOf('const opened = await openCalcRequest(');
       expect(open, 're-anchor: the open moved').toBeGreaterThan(-1);
-      const exit = code.indexOf('if (opened.existing) return', open);
+      // Re-anchored for P5 (docs/SAKKIZ-R3.md §10.2.1, p5-p6-6): the thread
+      // door's twin exit takes the SAME queue before it returns — through
+      // the ticket, `atRev: 0`, a no-op beside the twin's own pass (the
+      // ticket refuses a second one) — so its exit is a BLOCK, and the
+      // pin is that the block queues only so and returns, and that the
+      // door's own queue comes after it.
+      let exit = code.indexOf('if (opened.existing) return', open);
+      let exitEnd = exit;
+      const block = code.indexOf('if (opened.existing) {', open);
+      if (exit === -1 && block > -1) {
+        exit = block;
+        exitEnd = code.indexOf('\n  }', block);
+        const body = code.slice(block, exitEnd);
+        expect(body).toContain('return');
+        for (const q of body.split('queueCalcPrefill(').slice(1)) {
+          expect(q.slice(0, q.indexOf('})')), 'the twin queues only through the ticket').toContain('atRev: 0');
+        }
+      }
       expect(exit, 'the twin exit is gone').toBeGreaterThan(open);
       for (const call of after) {
-        const at = code.indexOf(call, open);
+        const at = code.indexOf(call, exitEnd + 1);
         expect(at, `re-anchor: ${call} moved`).toBeGreaterThan(-1);
-        expect(exit, `${call} runs before the twin returns`).toBeLessThan(at);
+        expect(exitEnd, `${call} runs before the twin returns`).toBeLessThan(at);
       }
     });
   }

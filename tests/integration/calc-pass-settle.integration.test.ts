@@ -76,7 +76,6 @@ import {
   applyProposal,
   loadWorkspace,
   priceProposedGroups,
-  proposeGroups,
   saveTable,
   setGroupRates,
 } from '@/modules/wms/calc/workspace';
@@ -406,37 +405,44 @@ describe('every machine save stamps itself; the settle only clears (§10.2.2-3)'
   });
 
   it('a person’s save mid-pass → overtaken, and the stamp stays behind `rev` for good', async () => {
-    const id = await open('rastamojka', [{ name: `Ortda ${SUFFIX}`, tnvedCode: '3916100000', weightKg: 100 }]);
+    const id = await open('rastamojka', [{ name: `Ortda ${SUFFIX}`, weightKg: 100 }]);
     const ticket = (await prefillTicket(id))!;
+    let machineWrote: number | null = null;
     let afterPerson: number | null = null;
     const out = await aiPrefill(
       id,
       { actorId: null },
       {
         configured: true,
-        propose: async (requestId, c, o) => {
-          const groups = await proposeGroups(requestId, c, o);
-          // A person saves after the machine's grouping wrote.
+        propose: async (requestId, c, o = {}) => {
+          const items = await db.select({ seq: calcRequestItems.seq }).from(calcRequestItems).where(eq(calcRequestItems.requestId, requestId));
+          const draft = { label: 'AI guruh', tnvedCode: '3916100000', itemSeqs: items.map((i) => i.seq), aiProposed: true, confidence: 'high' as const, aiDutyPct: null, note: null };
+          // The machine's proposal lands under the chain and stamps…
+          const applied = await applyProposal(requestId, [draft], c, o);
+          machineWrote = applied.rev;
+          // …then a PERSON saves, before the pricing tail.
           await saveTable(requestId, { items: [], adds: [] }, ctx());
           afterPerson = await prefillTicket(requestId);
-          return groups;
+          const priced = await priceProposedGroups(requestId, c, { expectRev: applied.rev, handsOff: o.handsOff });
+          return { groups: 1, batches: 1, failed: 0, ...priced };
         },
         pick: async () => ({ answers: null, usage: null }),
       },
       { expectRev: ticket },
     );
-    expect(out.overtaken).toBe('step 2');
+    expect(out.overtaken).toBe('step 1');
     const p = await passOf(id);
     expect(p.rev).toBe(afterPerson);
-    expect(p.handsoffRev, 'the machine’s own last write').toBe(afterPerson! - 1);
+    expect(machineWrote, 'the premise: the machine wrote before the person').toBe(ticket + 1);
+    expect(p.handsoffRev, 'the stamp is the machine’s own last write').toBe(machineWrote);
+    expect(await prefillStanding(id, p.handsoffRev)).toBe('touched');
     // A later machine save whose chain STARTS at the person's revision (a
     // pass queued after the person) passes its compare-and-set — and still
-    // never pulls the stamp up to the person's write (law-money-2).
+    // never pulls the stamp up over the person's write (law-money-2).
     await saveTable(id, { items: [], adds: [] }, { actorId: null }, { expectRev: afterPerson!, handsOff: true });
     const later = await passOf(id);
     expect(later.rev).toBe(afterPerson! + 1);
-    expect(later.handsoffRev).toBe(afterPerson! - 1);
-    expect(await prefillStanding(id, later.handsoffRev)).toBe('touched');
+    expect(later.handsoffRev).toBe(machineWrote);
   });
 
   it('a pass KILLED after its save (no settle ran, its job then fails): the stamp is the save’s, the dead ticket clears, the request reads open', async () => {
