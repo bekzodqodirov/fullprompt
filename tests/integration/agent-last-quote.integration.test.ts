@@ -51,8 +51,9 @@ describe('lastQuoteFor — the newest approved quote of the week', () => {
     ]);
 
     let q = await lastQuoteFor(who!.id, PEER);
-    // Its text is what he approved (review #1484) — the chat's copy of it is that quote's echo…
-    expect(q).toMatchObject({ road: 'air', air: { kg: 30, origin: 'Shenzhen' }, text: 'Avia: 30 kg — taxminan 510 $.' });
+    // Its text is what he approved (review #1484) — the chat's copy of it is that quote's echo; he
+    // rewrote it, so its words are his (#1485); nothing went out yet, so it has no Telegram id.
+    expect(q).toMatchObject({ road: 'air', air: { kg: 30, origin: 'Shenzhen' }, text: 'Avia: 30 kg — taxminan 510 $.', edited: true, tgMessageId: null });
     // …and once queued, what the outbox row carries is what went to the customer.
     const [quoted] = await db.select({ id: agentDrafts.id }).from(agentDrafts).where(sql`${agentDrafts.peerId} = ${PEER.toString()}::bigint AND ${agentDrafts.finalBody} IS NOT NULL`);
     const [someone] = await db.select({ id: clients.id }).from(clients).limit(1);
@@ -65,11 +66,17 @@ describe('lastQuoteFor — the newest approved quote of the week', () => {
       randomId: PEER * 1000n + 7n,
       answersTgMessageId: 100n,
       queuedBy: who!.id,
+      tgMessageId: PEER * 1000n + 9n,
     });
     q = await lastQuoteFor(who!.id, PEER);
     expect(q?.text).toBe('Avia: 30 kg — taxminan 510 $. ');
+    // …and the message it went out as, by identity.
+    expect(q?.tgMessageId).toBe(PEER * 1000n + 9n);
     expect(Math.abs(q!.at.getTime() - at(1).getTime())).toBeLessThan(1000);
     // Another manager's account holds another conversation with the same peer.
+    // Approved as the model wrote it: not his words.
+    await db.insert(agentDrafts).values({ ...draft('approved', 0.2, { quotedRoad: 'road', quotedAir: null }), proposedBody: 'Mashina 3 kub — 640 $.', finalBody: 'Mashina 3 kub — 640 $.' });
+    expect(await lastQuoteFor(who!.id, PEER)).toMatchObject({ road: 'road', edited: false, tgMessageId: null });
     const [other] = await db.select({ id: users.id }).from(users).where(eq(users.active, true)).offset(1).limit(1);
     if (other && other.id !== who!.id) expect(await lastQuoteFor(other.id, PEER)).toBeNull();
   });

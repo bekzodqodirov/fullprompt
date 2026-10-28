@@ -48,6 +48,8 @@ export interface PolicyMemory {
   hasGloss?: boolean;
   /** An avia quote and no truck's (his fourth set «2»): no China address in the reply. Absent = not one. */
   aviaOnly?: boolean;
+  /** Avia was spoken of, the road not decided to be it (#1485): a China address in the reply warns. Absent = not spoken of. */
+  aviaMentioned?: boolean;
   /** The Chinese characters of the facts the run read — a verbatim address is the fact's script (his fourth set). Absent = none. */
   quotableHan?: string;
   /** The road this run priced or asked (`quotedRoadOf`) — the next run's `lastQuote` (review R1). Absent = none. */
@@ -166,7 +168,7 @@ export async function policyFor(input: {
     sendCounts(input.managerUserId, input.peerId, input.body, input.strip),
     getSetting('client_code_prefix'),
     // Read now, not remembered: the address he corrects this morning is the one an older draft's ✅ refuses.
-    input.memory.aviaOnly === true ? warehouseAddressTexts() : Promise.resolve([]),
+    input.memory.aviaOnly === true || input.memory.aviaMentioned === true ? warehouseAddressTexts() : Promise.resolve([]),
   ]);
   return checkAgentReply({
     body: input.body,
@@ -192,6 +194,7 @@ export async function policyFor(input: {
     askedMode: input.memory.askedMode ?? null,
     hasGloss: input.memory.hasGloss === true,
     aviaOnly: input.memory.aviaOnly === true,
+    aviaMentioned: input.memory.aviaMentioned === true,
     quotableHan: input.memory.quotableHan ?? '',
     // The GS reminder rides inside every warehouse's fact and is nobody's address.
     warehouseAddress: addressAnchorsOf(addresses, [GS_REMINDER]),

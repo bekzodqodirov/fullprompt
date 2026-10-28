@@ -130,17 +130,28 @@ export interface LastQuote {
    * mashinasi 30 kg avia orqali …»).
    */
   text: string | null;
+  /** The Telegram id the quote's outbox row went out as — its echo in the chat, by identity (#1485). Null until sent. */
+  tgMessageId: bigint | null;
+  /**
+   * He rewrote it with ✏️ (#1485): what went out is HIS text, whose road the
+   * stored memory — the model's — does not know. Its echo is read by its words.
+   */
+  edited: boolean;
 }
 
 /** Pure: a stored draft's memory as a quote, or null — a memory written before it, or one that quoted nothing. */
-export function lastQuoteOf(memory: unknown, at: Date, text: string | null = null): LastQuote | null {
+export function lastQuoteOf(
+  memory: unknown,
+  at: Date,
+  sent: { text?: string | null; tgMessageId?: bigint | null; edited?: boolean } = {},
+): LastQuote | null {
   const m = (memory ?? {}) as { quotedRoad?: unknown; quotedAir?: unknown };
   if (m.quotedRoad !== 'air' && m.quotedRoad !== 'road' && m.quotedRoad !== 'both') return null;
   const a = (m.quotedAir ?? null) as { kg?: unknown; origin?: unknown } | null;
   const air = a && typeof a === 'object'
     ? { kg: typeof a.kg === 'number' ? a.kg : null, origin: typeof a.origin === 'string' ? a.origin : null }
     : null;
-  return { road: m.quotedRoad, air, at, text };
+  return { road: m.quotedRoad, air, at, text: sent.text ?? null, tgMessageId: sent.tgMessageId ?? null, edited: sent.edited === true };
 }
 
 export function mediaOf(contentType: string | null, fileName: string | null): ChatMessage['media'] {
@@ -148,6 +159,11 @@ export function mediaOf(contentType: string | null, fileName: string | null): Ch
   if (contentType.startsWith('image/')) return 'photo';
   if (contentType.startsWith('audio/')) return /voice/iu.test(fileName ?? '') || contentType.includes('ogg') ? 'voice' : 'audio';
   return 'document';
+}
+
+/** A message as the chat context holds it — digits read, clipped (money-11): what a sent text must be compared in (#1485). */
+export function chatForm(body: string): string {
+  return clip(normalizeDigits(body), AGENT_LIMITS.contextMessageChars);
 }
 
 function clip(text: string, max: number): string {
@@ -416,7 +432,7 @@ export async function chatMessages(managerUserId: string, peerId: bigint, limit:
   // Newest kept when the history is longer than the budget (money-11).
   for (let i = rows.length - 1; i >= 0; i--) {
     const r = rows[i]!;
-    const body = clip(normalizeDigits(r.body ?? ''), AGENT_LIMITS.contextMessageChars);
+    const body = chatForm(r.body ?? '');
     if (total + body.length > AGENT_LIMITS.contextTotalChars && out.length > 0) break;
     total += body.length;
     const f = fileOf.get(r.id);
@@ -470,6 +486,8 @@ export async function lastQuoteFor(managerUserId: string, peerId: bigint): Promi
       memory: sql<unknown>`${agentDrafts.policy}->'memory'`,
       at: agentDrafts.createdAt,
       text: sql<string | null>`coalesce((SELECT o.body FROM agent_outbox o WHERE o.draft_id = ${agentDrafts}.id ORDER BY o.queued_at DESC LIMIT 1), ${agentDrafts.finalBody}, ${agentDrafts.proposedBody})`,
+      tgMessageId: sql<string | null>`(SELECT o.tg_message_id::text FROM agent_outbox o WHERE o.draft_id = ${agentDrafts}.id AND o.tg_message_id IS NOT NULL ORDER BY o.queued_at DESC LIMIT 1)`,
+      edited: sql<boolean>`(${agentDrafts.finalBody} IS NOT NULL AND ${agentDrafts.finalBody} IS DISTINCT FROM ${agentDrafts.proposedBody})`,
     })
     .from(agentDrafts)
     .where(
@@ -483,7 +501,13 @@ export async function lastQuoteFor(managerUserId: string, peerId: bigint): Promi
     )
     .orderBy(desc(agentDrafts.createdAt))
     .limit(1);
-  return quoted ? lastQuoteOf(quoted.memory, quoted.at, quoted.text) : null;
+  return quoted
+    ? lastQuoteOf(quoted.memory, quoted.at, {
+        text: quoted.text,
+        tgMessageId: quoted.tgMessageId === null ? null : BigInt(quoted.tgMessageId),
+        edited: quoted.edited === true,
+      })
+    : null;
 }
 
 export async function loadContext(managerUserId: string, peerId: bigint, anchorTgMessageId: bigint | null): Promise<AgentContext> {

@@ -41,6 +41,7 @@ export const POLICY_WORDS: Record<PolicyCode, string> = {
   warehouse_condition: '«Xitoydagi omborimizdan» sharti yoki «zavoddan omborgacha alohida» yo‘q',
   gloss_missing: 'o‘zbekcha tarjimasi yo‘q — ✏️ bilan o‘zingiz yozing yoki ❌',
   avia_address: 'avia yukka Xitoy omborining manzili yozilgan — avia manzilini siz berasiz (✏️)',
+  avia_maybe: 'avia ham gapirilgan va javobda Xitoy omborimizning manzili bor — yuk avia bo‘lsa, manzilni o‘zingiz yozing (✏️)',
 };
 
 export const PROMISE_WORDS: Record<PromiseCategory, string> = {

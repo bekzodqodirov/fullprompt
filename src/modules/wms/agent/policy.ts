@@ -8,7 +8,6 @@ import {
   phoneDigits,
   PHONE_RE,
   placedLedger,
-  roadChoiceIn,
   urlsIn,
   type LedgerEntry,
   type NumberSource,
@@ -52,7 +51,8 @@ export type PolicyCode =
   | 'estimate_unhedged'
   | 'warehouse_condition'
   | 'gloss_missing'
-  | 'avia_address';
+  | 'avia_address'
+  | 'avia_maybe';
 
 export interface PolicyHit {
   rule: PolicyRule;
@@ -1250,6 +1250,12 @@ export interface PolicyInput {
    */
   aviaOnly?: boolean;
   /**
+   * The flight was spoken of and the chat's road was not decided to be it
+   * (#1485): a China address in the reply WARNS — the ✅ stays, the card asks
+   * him to look. Absent = not spoken of.
+   */
+  aviaMentioned?: boolean;
+  /**
    * The Chinese characters of the facts this run read (`hanOnly`): a run of
    * them the reply quotes — a warehouse address — is not the reply's script.
    * Absent = nothing is quoted, every character counts.
@@ -1494,8 +1500,12 @@ export interface AddressAnchors {
   houseNumbers: string[];
 }
 
-/** A street-level character: town, street, road, lane, house number, building, community, village. */
-const STREET_CHAR = /[镇街路道巷弄村号栋社]/u;
+/**
+ * A street-level character: town, street, road, lane, house number, building,
+ * community, village — or a zone inside a city («胜利工业区» is the Foshan
+ * warehouse's own, not a district: #1485).
+ */
+const STREET_CHAR = /[镇街路道巷弄村号栋社]|工业区|开发区|园区|物流园/u;
 /** An administrative-division character: province, city, district, county, prefecture. */
 const ADMIN_CHAR = /[省市区县州]/u;
 /**
@@ -1523,15 +1533,16 @@ const HOUSE_NUMBER = /(?<!\d)(?<!\d[.,])\d{3,4}(?!\d)(?![.,]\d)/gu;
  * not «дорого», not «by road», not a «28号» date).
  */
 const STREET_WORD =
-  /(?<![\p{L}])(?:ko['‘’ʻ`]?cha\p{L}*|кўча\p{L}*|yo['‘’ʻ`]?l(?:i|ida)?|йўл(?:и|ида)?|street|str\.?|avenue|ave\.?|(?<!by\s)road|улиц\p{L}*|ул\.|проспект\p{L}*|переул\p{L}*|дом|jiedao|jie|nanjie|beijie|dongjie|xijie|lu|hao|-?uy)(?![\p{L}])/iu;
+  /(?<![\p{L}])(?:ko['‘’ʻ`]?cha\p{L}*|кўча\p{L}*|yo['‘’ʻ`]?l(?:i|ida)?|йўл(?:и|ида)?|street|str\.?|avenue|ave\.?|(?<!by\s)road|no\.|улиц\p{L}*|ул\.|проспект\p{L}*|переул\p{L}*|дом|jiedao|jie|nanjie|beijie|dongjie|xijie|lu|hao|-?uy)(?![\p{L}])/iu;
 /** How far a house number may stand from its street word, in characters. */
 const STREET_REACH = 30;
 
 /**
- * The anchors of the address facts (review D3, R5-R7, #1484). Read from the
- * facts, never from a list of its own — the warehouse he edits tomorrow is the
- * one refused. A piece is five characters of one fact (its Chinese read whole,
- * so the house number «2255» no longer cuts «荷花南街» from «号»), or four of a
+ * The anchors of the address facts (review D3, R5-R7, #1484, #1485). Read
+ * from the facts, never from a list of its own — the warehouse he edits
+ * tomorrow is the one refused. A piece is five characters of one run of a
+ * fact's Chinese (a digit, a letter or a stop ends the run, so «工业区29号3栋» cannot
+ * mint «区号栋», nor the reminder after a street «左右发货前»), or four of a
  * street («荷花南街» — never four of a name, «霍尔果斯» is a city), taken after the province/city chain is removed and kept only when
  * enough of it is not what every address is made of (`GENERIC_CHARS`): two
  * characters in five, three in four. A piece carrying no street character that
@@ -1547,10 +1558,11 @@ export function addressAnchorsOf(texts: readonly string[], ordinary: readonly st
   const houseNumbers = new Set<string>();
   texts.forEach((raw, i) => {
     const text = normalizeDigits(raw);
-    const segments = text
-      .replace(ADMIN_CHAIN, '\u0000')
-      .replace(/[^\p{Script=Han}\u0000]/gu, '')
-      .split('\u0000')
+    // Han RUNS (#1485): a digit, a letter or a stop ends one, a space does not
+    // («福永街道 塘尾路» is one street line) — «胜利工业区29号3栋» is «胜利工业区», and
+    // the GS reminder after «…168米左右.» glues nothing to it.
+    const segments = (text.replace(ADMIN_CHAIN, '\u0000').match(/[\p{Script=Han}\s]+/gu) ?? [])
+      .map((run) => run.replace(/\s+/gu, ''))
       .filter((seg) => [...seg].length >= 4);
     for (const seg of segments) {
       const chars = [...seg];
@@ -1604,19 +1616,31 @@ export function statesChinaAddress(text: string, anchors: AddressAnchors): boole
 
 const CN_MOBILE = /^(?:86)?1[3-9]\d{9}$/u;
 const WAREHOUSE_WORD = /ombor|sklad|склад|warehouse|仓库|qabul\s+qil|қабул/iu;
-const AIRPORT = /aeroport|аэропорт|airport|机场|فرودگاه/iu;
+/**
+ * A fact that IS the flight's (#1485) — a warehouse FOR avia, an airport as a
+ * place: «Avia yuk qabul ombori», «склад для авиа», «空运仓», «机场» standing
+ * alone. Not a road named after one («机场路», «Airport Road», «aeroport
+ * yonida»), and not a word that only mentions the flight.
+ */
+const FLIGHT_FACT =
+  /(?:avia|авиа)[\s-]*(?:yuk\p{L}*\s+)?(?:qabul\s+)?(?:ombor|sklad|склад)\p{L}*|(?:avia|авиа)\s*(?:yuk\p{L}*\s+)?uchun|(?:склад|адрес)\s+(?:для\s+)?авиа|для\s+авиа|air\s*(?:cargo|freight)\s+(?:warehouse|address)|for\s+air\s+(?:cargo|freight)|空运(?:仓|仓库|地址|收货)|航空仓|机场(?![路道大街])|(?:aeroport|аэропорт)(?!\s*(?:yaqin|yon|ko['‘’ʻ`]?ch|yo['‘’ʻ`]?l|рядом|возле|улиц|дорог|шоссе|проспект))|airport(?!\s+(?:road|rd|street|st|ave|avenue|area))|فرودگاه/iu;
+/** …turned down in the fact: «avia yuk qabul qilinmaydi», «авиа не принимаем», «不收空运». */
+const FLIGHT_REFUSED =
+  /(?:avia|авиа|air)[^.!?\n。！？]{0,40}?(?:qabul\s+qilinmaydi|qabul\s+qilmaymiz|olinmaydi|olmaymiz|emas|не\s+принима\p{L}*|не\s+бер\p{L}*|нельзя|not\s+accept\p{L}*|no\s+(?:air|avia))|(?:不收|不接|不做)空运/iu;
 
 /**
  * Pure: is this fact a receiving warehouse's address (review R9, #1484)? The
  * seed files its three under one key, and a warehouse he ADDS on the knowledge
  * page — or re-types instead of ✎ — carries none: a fact that speaks of a
  * warehouse and states a Chinese street or a Chinese mobile is one too. A
- * fact for the FLIGHT is not — it chooses the flight alone, or names an
- * airport: an avia address he writes down himself is his to have quoted. A
- * truck warehouse that says «avia emas» or «faqat avto kargo uchun» stays ours.
+ * fact for the FLIGHT is not — it says it is one (`FLIGHT_FACT`), and does
+ * not turn the flight down: an avia address he writes down himself is his to
+ * have quoted. A truck warehouse that says «avia emas», «avia qabul
+ * qilinmaydi» or stands on «机场路» stays ours (#1485) — in doubt, a fact is
+ * the truck's, and the flight's guard counts it.
  */
 export function isReceivingAddressFact(text: string): boolean {
-  if (roadChoiceIn(text) === 'air' || AIRPORT.test(text) || !WAREHOUSE_WORD.test(text)) return false;
+  if ((FLIGHT_FACT.test(text) && !FLIGHT_REFUSED.test(text)) || !WAREHOUSE_WORD.test(text)) return false;
   const digits = normalizeDigits(text);
   if ([...digits.matchAll(PHONE_RE)].some((m) => CN_MOBILE.test(phoneDigits(m[0])))) return true;
   return addressAnchorsOf([text]).pieces.some((piece) => STREET_CHAR.test(piece));
@@ -1748,9 +1772,10 @@ export function checkAgentReply(input: PolicyInput): PolicyResult {
   }
   for (const p of foreignPhones(text, input.allowedPhones)) blocks.push({ rule: 'G6', code: 'foreign_phone', detail: p });
   // His fourth set «2»: avia cargo goes to the address HE gives — never to a receiving warehouse the facts name.
-  if (input.aviaOnly === true && statesChinaAddress(text, input.warehouseAddress ?? { pieces: [], phones: [], houseNumbers: [] })) {
-    blocks.push({ rule: 'G6', code: 'avia_address' });
-  }
+  const anchors = input.warehouseAddress ?? { pieces: [], phones: [], houseNumbers: [] };
+  if (input.aviaOnly === true && statesChinaAddress(text, anchors)) blocks.push({ rule: 'G6', code: 'avia_address' });
+  // The words did not decide the flight is the chat's road, yet it was spoken of (#1485): he looks before ✅.
+  else if (input.aviaMentioned === true && statesChinaAddress(text, anchors)) warnings.push({ rule: 'G6', code: 'avia_maybe' });
   staffNameHits(text, input.staffNames, input.customerNames ?? [], input.factNameWords ?? [], blocks, warnings);
   if (input.canary && text.includes(input.canary)) blocks.push({ rule: 'G6', code: 'canary' });
   if (AI_DENIAL.some((re) => re.test(text))) blocks.push({ rule: 'G6', code: 'ai_denial' });

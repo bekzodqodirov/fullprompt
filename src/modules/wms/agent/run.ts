@@ -9,7 +9,7 @@ import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import { canLogInSql } from '../../platform/users/login';
 import { pumpIsFresh, readGuard } from '../crm/account-guard';
 import { agentRunning, agentTablesReady, readAgentConfig, type AgentConfig } from './config';
-import { loadContext, type AgentContext, type AviaCargo, type ChatMessage, type QuotedRoad } from './context';
+import { chatForm, loadContext, type AgentContext, type AviaCargo, type ChatMessage, type QuotedRoad } from './context';
 import { eligibleForRun, type Ineligible } from './eligibility';
 import { generalFacts, kbSearch, type KbHit } from './kb';
 import { AGENT_LIMITS } from './limits';
@@ -18,11 +18,11 @@ import { askedLocation, customerNumberSources, policyFor, splitUrls, type Policy
 import { chatBlock, runTail, stableHead } from './prompt';
 import { JOB_AGENT_INBOUND, type AgentInboundJob } from './queues';
 import { dayRunCounts } from './today';
-import { belowTruckMinimumFacts, newestMeasure, ourChinaPlaces, runTool, TOOL_SPECS, TRUCK_SECTIONS, type ChecklistState, type ToolOutcome } from './tools';
+import { addsALoadIn, belowTruckMinimumFacts, ourChinaPlaces, runTool, TOOL_SPECS, TRUCK_SECTIONS, type ChecklistState, type ToolOutcome } from './tools';
 import { namedOrigin } from './origin';
 import { draftWorthy, mentionsRail, RAIL_OWNER_QUESTION } from './worthy';
 import { writeDraft, writeNotice, type ComposedAction } from './drafts';
-import { extractNumbers, factSources, namesMode, oneModeIn, pricedRoadOf, roadChoiceIn, type NumberSource, type TravelMode } from './numbers';
+import { airMentionIn, extractNumbers, factSources, namesMode, oneModeIn, pricedRoadOf, roadChoiceIn, type NumberSource, type TravelMode } from './numbers';
 import { hanOnly, nameWordsOf, type PolicyResult } from './policy';
 import { AGENT_LOCALES } from './locale';
 
@@ -477,6 +477,7 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
   // then «5 kub, 800 kg» left the rail question one burst back and «Temir
   // yo'l bilan taxminan 960 $» passed on the truck's figure.
   const rail = railChat(ctx, loop.compose);
+  const road = chatRoadOf(ctx, loop);
   const found = loop.outcomes.flatMap((o) => o.sources).filter((s) => !rail || s.kind !== 'money');
   const sources: NumberSource[] = [...customerNumberSources(ctx.messages), ...found];
   // General facts are in every prompt: their non-money figures, phones and
@@ -504,7 +505,12 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
     // The chat is the flight's and no truck's (his fourth set «2»): the reply
     // may state no China address — the flight's is his to give. The one road
     // rule the card's question asks too (`chatRoadOf`, review D4, R1-R2).
-    aviaOnly: !rail && chatRoadOf(ctx, loop) === 'air',
+    aviaOnly: !rail && road === 'air',
+    // The flight was spoken of and the rule did not decide it is the chat's
+    // road (#1485): a reply giving our warehouse's address keeps its ✅ and the
+    // card says so — a chat the words misread costs him one look, never a
+    // flight sent to a truck's warehouse in silence.
+    aviaMentioned: !rail && road !== 'air' && aviaSpokenOf(ctx, road),
     // What this run quoted, for the next run's `lastQuote` (review R1).
     quotedRoad: rail ? null : quotedRoadOf(loop),
     quotedAir: rail ? null : (loop.outcomes.find((o) => o.air)?.air ?? null),
@@ -526,12 +532,41 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
   };
 }
 
-/** The one road the customer asked about — his burst's, else the chat's inbound window's; null for none or more than one. */
+/**
+ * The one road the customer asked about — his burst's, else the chat's
+ * inbound window's; null for none or more than one. Statement by statement,
+ * the newest that names a road decides (#1485): the road it chooses or names
+ * («Avia qimmat ekan, kargo bilan necha kunda?» asks the truck's days, and
+ * «Temir yo'l bilan qancha, avia qimmat» the rail's), and a road only turned
+ * down points at the other one when nothing earlier names any.
+ */
 export function askedModeOf(ctx: Pick<AgentContext, 'burst' | 'messages'>): TravelMode | null {
-  return (
-    oneModeIn(ctx.burst.map((m) => m.body).join('\n')) ??
-    oneModeIn(ctx.messages.filter((m) => m.direction === 'in').map((m) => m.body).join('\n'))
-  );
+  const burst = ctx.burst.map((m) => m.body);
+  const window = ctx.messages.filter((m) => m.direction === 'in').map((m) => m.body);
+  for (const texts of [burst, window]) {
+    let turnedDown: TravelMode | null = null;
+    for (const st of texts.flatMap((t) => t.split(CLAUSE)).reverse()) {
+      const named = oneModeIn(st);
+      if (named === 'rail') return named;
+      const c = roadChoiceIn(st);
+      if (c === 'both') return null;
+      if (c === 'air' || c === 'road') return c;
+      if (c === 'not_air' || c === 'not_road') {
+        turnedDown ??= c === 'not_air' ? 'road' : 'air';
+        continue;
+      }
+      if (named) return named;
+      if (namesMode(st, 'air') && namesMode(st, 'road')) return null;
+    }
+    if (turnedDown) return turnedDown;
+  }
+  return null;
+}
+
+/** Avia was spoken of in the chat or in the quote he approved this week (#1485) — by anybody, in any statement. */
+function aviaSpokenOf(ctx: Pick<AgentContext, 'messages' | 'lastQuote'>, road: QuotedRoad | null): boolean {
+  const quoted = ctx.lastQuote?.road;
+  return road === 'both' || quoted === 'air' || quoted === 'both' || ctx.messages.some((m) => airMentionIn(m.body));
 }
 
 /**
@@ -575,16 +610,22 @@ export function roadChosenIn(texts: readonly string[]): QuotedRoad | null {
   return null;
 }
 
-/** One message's text as it is compared with what was sent: case and spacing set aside. */
-const sentForm = (text: string): string => text.normalize('NFC').replace(/\s+/gu, ' ').trim().toLowerCase();
+/**
+ * One message's text as it is compared with what was sent: compatibility
+ * forms folded («m³», full-width «，»), case, spacing and a trailing «…» set
+ * aside — the stored copy of a sent text is not always its byte (#1485).
+ */
+const sentForm = (text: string): string =>
+  text.normalize('NFKC').replace(/\s+/gu, ' ').replace(/(?:…|\.\.\.)$/u, '').trim().toLowerCase();
 
 /**
  * The road the chat is on — the one rule the avia guard and the card's
  * question both ask (review R1-R2, #1484). What THIS run priced or asked comes
  * first; after it the NEWEST piece of evidence wins: a road the customer
  * chose in any of his lines, the road one of OUR priced lines quoted (read at
- * its price — and the echo of the quote he approved is that draft's own
- * stored road, since its text names goods as often as roads), or the quote
+ * its price — and the echo of the quote he approved, known by its Telegram id
+ * or its words, is that draft's own stored road, since its text names goods
+ * as often as roads; unless he rewrote it, #1485), or the quote
  * he approved this week when its message is not in sight. A priced line
  * that names no road is no evidence: what was said before it stands, which
  * keeps the flight's address his when in doubt.
@@ -596,15 +637,19 @@ export function chatRoadOf(
   const quoted = quotedRoadOf(loop);
   if (quoted) return quoted;
   const q = ctx.lastQuote;
-  const echo = q?.text ? sentForm(q.text) : null;
+  // The chat holds a message in its context form (digits read, clipped), so
+  // the quote's text is compared in the same form (#1485).
+  const echo = q?.text ? sentForm(chatForm(q.text)) : null;
   let echoSeen = false;
   const evidence: { road: QuotedRoad; at: number; i: number }[] = [];
   ctx.messages.forEach((m, i) => {
     let road: QuotedRoad | null = null;
     if (m.direction === 'in') road = roadChosenIn([m.body]);
-    else if (q && echo !== null && sentForm(m.body) === echo) {
+    else if (q && ((q.tgMessageId !== null && m.tgMessageId === q.tgMessageId) || (echo !== null && sentForm(m.body) === echo))) {
       echoSeen = true;
-      road = q.road;
+      // His ✏️ words are his, and the stored road is the model's (#1485): an
+      // edited quote is read at its price, the stored road when it names none.
+      road = q.edited ? (pricedRoadOf(m.body) ?? q.road) : q.road;
     } else road = pricedRoadOf(m.body);
     if (road) evidence.push({ road, at: m.sentAt.getTime(), i });
   });
@@ -664,23 +709,59 @@ function withAviaQuestion(c: ComposeReply, air: AviaCargo): ComposeReply {
  * ask for the address of the old one); else the customer's newest kilos and
  * the place his cargo STARTS, read from the lines that neither ask where to
  * send it nor speak of a warehouse — or «Ivu omboringizga yuborsam bo'ladimi?»
- * would name the warehouse he sends TO as the origin (review R3).
+ * would name the warehouse he sends TO as the origin (review R3). A weight
+ * that is one piece's («har biri 2 kg») or asked about («30 kg dan oshsa
+ * qancha?») is no shipment's, and a place turned down («Shenzhendan emas») is
+ * not where it starts; a weight corrected («Kechirasiz, 35 kg ekan») keeps the
+ * quote's origin, a load added («Yana yuk bor») does not (#1485).
  */
 function aviaCargoOf(loop: Pick<LoopResult, 'outcomes'>, ctx: Pick<AgentContext, 'messages' | 'measures' | 'lastQuote'>): AviaCargo {
   const now = loop.outcomes.find((o) => o.air)?.air;
   if (now) return now;
-  const since = ctx.lastQuote?.air ? ctx.lastQuote.at.getTime() : null;
-  const weight = newestMeasure(ctx, 'weight');
-  const toldAt = ctx.messages.find((m) => m.ref === weight?.messageRef)?.sentAt.getTime() ?? null;
-  if (ctx.lastQuote?.air && (since === null || toldAt === null || toldAt <= since)) return ctx.lastQuote.air;
+  const quoted = ctx.lastQuote?.air ?? null;
+  const since = quoted ? ctx.lastQuote!.at.getTime() : null;
+  const bodyOf = new Map(ctx.messages.map((m) => [m.ref, m] as const));
+  // A weight asked about after the quote («50 kg bo'lsa qancha?») is a what-if, not the next shipment.
+  const weight =
+    ctx.measures
+      .filter((w) => w.kind === 'weight' && !w.ref.startsWith('d'))
+      .filter((w) => {
+        const m = bodyOf.get(w.messageRef);
+        return m !== undefined && (since === null || m.sentAt.getTime() > since) && shipmentWeightIn(m.body, { askedCounts: !quoted });
+      })
+      .at(-1) ?? null;
+  if (quoted && weight === null) return quoted;
   // The NEWEST place told is the shipment's: «… Shenzhendan» last week, «endi Guanchjoudan» today.
   const told = ctx.messages
     .filter((m) => m.direction === 'in' && (since === null || m.sentAt.getTime() > since))
     .flatMap((m) => m.body.split(CLAUSE))
-    .filter((st) => !asksWhereToSend([{ body: st }]) && !WAREHOUSE_WORD.test(st))
+    .filter((st) => !asksWhereToSend([{ body: st }]) && !WAREHOUSE_WORD.test(st) && !TURNED_DOWN.test(st))
     .reverse();
   const origin = told.map((st) => namedOrigin(st)).find((o) => o !== null) ?? null;
-  return { kg: weight?.value ?? null, origin: origin?.place ?? null };
+  // A corrected weight is the same shipment, which starts where it did; a load ADDED starts where it is said to.
+  const sameLoad = weight !== null && !addsALoadIn(bodyOf.get(weight.messageRef)?.body ?? '');
+  return { kg: weight?.value ?? null, origin: origin?.place ?? (sameLoad ? (quoted?.origin ?? null) : null) };
+}
+
+/** A weight figure: digits, then a weight unit, in the six languages. */
+const WEIGHT_FIGURE = /\d[\d\s.,]*\s*(?:kg|кг|kilo\p{L}*|кило\p{L}*|килограмм\p{L}*|公斤|千克|كيلو|کیلو)/giu;
+/** One piece's weight, not the shipment's: «har biri», «each», «каждая», «по 2 кг», «每件». */
+const PER_PIECE =
+  /har\s+bir(?:i|ida|ining)?|bittasi|donasi|dona\s+(?:boshiga|uchun)|ҳар\s+бир\p{L}*|each|per\s+(?:piece|box|unit|carton|item|pc)|каждая|каждый|каждой|каждое|за\s+(?:штук|шт|короб)\p{L}*|(?<![\p{L}])по\s+\d|每件|每箱|每个|单件|单个|هر\s+کدام|هر\s+عدد/iu;
+/** A statement turned down: «Shenzhendan emas», «не из Шэньчжэня», «not from…», «不是». */
+const TURNED_DOWN = /(?<![\p{L}])(?:emas|эмас|не|нет|not|no)(?![\p{L}])|不是|不在|نه|نیست/iu;
+
+/**
+ * The message tells a SHIPMENT's weight (#1485): a weight figure in a
+ * sentence that names no single piece — and, when `askedCounts` is false,
+ * that asks nothing: «Avia bilan 30 kg qancha?» states the cargo of a chat
+ * with no quote yet, and after one «50 kg bo'lsa qancha?» is a what-if.
+ */
+export function shipmentWeightIn(body: string, opts: { askedCounts: boolean }): boolean {
+  return (body.match(/[^.!?\n。！？؟]*[.!?\n。！？؟]*/gu) ?? []).some((sentence) => {
+    WEIGHT_FIGURE.lastIndex = 0;
+    return WEIGHT_FIGURE.test(sentence) && (opts.askedCounts || !/[?？؟]/u.test(sentence)) && !PER_PIECE.test(sentence);
+  });
 }
 
 const ADDRESS_WORD = /manzil|адрес|address|地址|آدرس/iu;
@@ -700,11 +781,19 @@ const NOT_SEND_ASK =
 /**
  * Where the cargo ARRIVES (review #1484): «Yuk qayerga keladi?», «Куда придёт
  * груз?», «Куда доставите?», a city of Uzbekistan — asked without a sending
- * verb, that is the delivery end, not the Chinese one.
+ * verb, that is the delivery end, not the Chinese one. OUR delivering only
+ * («yetkazasiz», «доставите», «will you deliver»): the factory delivering to
+ * us is the China end (#1485).
  */
 const ARRIVAL =
-  /yetib\s+kel|kel(?:di|adi|yapti|ishi)|yetkaz|приш[её]л|пришл|прид[её]т|приед|доставит|доставк|arriv|deliver|到了|到达|送到乌|رسید|samarqand|самарканд|andijon|андижан|namangan|наманган|farg['‘’ʻ`]?ona|фергана|buxoro|бухар|qo['‘’ʻ`]?qon|коканд|urganch|ургенч|qarshi|карши|termiz|термез|nukus|нукус|jizzax|джизак|guliston|гулистан/iu;
-const SEND_VERB = /yubor|jo['‘’ʻ`]?nat|отправ|вышл|пошл|send|ship|寄|发|ارسال|بفرست/iu;
+  /yetib\s+kel|kel(?:di|adi|yapti|ishi)|yetkaz(?:asiz|ib\s+berasiz|iladi|ilad)|приш[её]л|пришл|прид[её]т|приед|доставит(?:е|ся)|доставят|доставк|arriv|(?:will|do|can)\s+you\s+deliver|delivered|到了|到达|送到乌|رسید|samarqand|самарканд|andijon|андижан|namangan|наманган|farg['‘’ʻ`]?ona|фергана|buxoro|бухар|qo['‘’ʻ`]?qon|коканд|urganch|ургенч|qarshi|карши|termiz|термез|nukus|нукус|jizzax|джизак|guliston|гулистан/iu;
+/**
+ * Sending or bringing the cargo TO us — the China end: «yuboray», «jo'nataman»,
+ * «Zavod qayerga yetkazsin?», «olib kelaymi», «Куда доставить груз в Китае?»,
+ * «deliver it to», or the question naming China itself (#1485).
+ */
+const SEND_VERB =
+  /yubor|jo['‘’ʻ`]?nat|yetkaz(?:sin|ay|sam|ib\s+ber(?:ay|sin|sam))|olib\s+kel(?:ay|sin|sam|aman|ishim)|отправ|вышл|пошл|доставить|привез|send|ship|deliver\s+(?:it|them|the|our|my|cargo|goods)|寄|发|ارسال|بفرست|xitoy(?:da(?!n)|dagi)|хитой(?:да(?!н)|даги)|в\s+кита[ей]|in\s+china|在中国|中国(?:哪|的)/iu;
 /** «Manzil: Andijon, Navoiy ko'chasi 12» — an address GIVEN, not asked for. */
 const GIVEN_ADDRESS = /(?:manzil|манзил|adres|адрес|address)\p{L}*\s*:\s*[^\s?？][^\n]*/giu;
 

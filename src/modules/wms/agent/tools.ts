@@ -240,7 +240,11 @@ const CORRECTS =
   /(?<![\p{L}])(?:kechirasiz|uzr|ekan|aslida|to['‘’ʻ]?g['‘’ʻ]?risi|xato|кечирасиз|экан|асли|извините|ошиб\p{L}*|точнее|sorry|actually|correction|mistake|ببخشید|اشتباه)(?![\p{L}])|на\s+самом\s+деле|抱歉|不好意思|其实|更正/iu;
 
 function addsALoad(ctx: AgentContext, m: MeasureCandidate): boolean {
-  const body = ctx.messages.find((x) => x.ref === m.messageRef)?.body ?? '';
+  return addsALoadIn(ctx.messages.find((x) => x.ref === m.messageRef)?.body ?? '');
+}
+
+/** Pure: the message adds a load of its own — and does not say it corrects one. */
+export function addsALoadIn(body: string): boolean {
   return ADDS_A_LOAD.test(body) && !CORRECTS.test(body);
 }
 
