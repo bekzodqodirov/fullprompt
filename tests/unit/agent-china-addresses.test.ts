@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { AgentContext, ChatMessage } from '@/modules/wms/agent/context';
 import { normalizeDigits } from '@/modules/wms/agent/digits';
 import type { KbHit } from '@/modules/wms/agent/kb';
+import type { AgentLocale, ScriptName } from '@/modules/wms/agent/locale';
 import { airMentionIn, namesMode, PHONE_RE, pricedRoadOf, roadChoiceIn } from '@/modules/wms/agent/numbers';
 import {
   addressAnchorsOf,
@@ -52,7 +53,7 @@ const msg = (body: string): ChatMessage => ({
 
 function ctxOf(
   body: string,
-  customerScript: 'latin' | 'cyrillic' | 'han',
+  customerScript: ScriptName,
   earlier: ChatMessage[] = [],
   measures: AgentContext['measures'] = [],
   lastQuote: AgentContext['lastQuote'] = null,
@@ -78,7 +79,7 @@ function ctxOf(
   };
 }
 
-const compose = (language: 'uz' | 'ru' | 'zh', patch: Partial<ComposeReply> = {}): ComposeReply => ({
+const compose = (language: AgentLocale, patch: Partial<ComposeReply> = {}): ComposeReply => ({
   replyNeeded: true,
   replyText: 'x',
   language,
@@ -125,8 +126,8 @@ const ROAD_QUOTE: AgentContext['lastQuote'] = { road: 'road', air: null, at: new
 /** The policy over a reply, on the memory a real run stores — as `policyFor` maps it. */
 function judge(
   customer: string | AgentContext,
-  script: 'latin' | 'cyrillic' | 'han',
-  language: 'uz' | 'ru' | 'zh',
+  script: ScriptName,
+  language: AgentLocale,
   reply: string,
   outcomes: ToolOutcome[] = [],
   tools: { name: string; ok: boolean; text: string }[] = [],
@@ -136,8 +137,8 @@ function judge(
 
 function verdict(
   customer: string | AgentContext,
-  script: 'latin' | 'cyrillic' | 'han',
-  language: 'uz' | 'ru' | 'zh',
+  script: ScriptName,
+  language: AgentLocale,
   reply: string,
   outcomes: ToolOutcome[] = [],
   tools: { name: string; ok: boolean; text: string }[] = [],
@@ -899,8 +900,9 @@ describe('the fourth review (#1485): the words that pick a road, our quote by it
     const quotedOnly = ctxOf('Ivu manzilini bering', 'latin', [said('30 kg yoki 1 kub, qancha?', 1), said('Mashina 1 kub 250$.', 2, 'out')], kg30, AIR_QUOTE);
     expect(blocked(quotedOnly)).toBe(false);
     expect(warned(quotedOnly)).toBe(true);
-    // A truck the customer CHOSE after the quote settles the chat: nothing to look at (#1486).
-    expect(warned(ctxOf('Mashinada yuboraman. Ivu manzilini bering', 'latin', [said('30 kg kiyim, qancha?', 1), said('Taxminan 510 $.', 2, 'out')], kg30, AIR_QUOTE))).toBe(false);
+    // A truck the customer chose after the quote does not take the flight off the table (#1487): the
+    // later «truck» is as often another leg, a past shipment or a refusal the words missed — he looks once.
+    expect(warned(ctxOf('Mashinada yuboraman. Ivu manzilini bering', 'latin', [said('30 kg kiyim, qancha?', 1), said('Taxminan 510 $.', 2, 'out')], kg30, AIR_QUOTE))).toBe(true);
     // Avia asked about, alongside: «Avia bilan ham bormi?».
     expect(airMentionIn('Avia bilan ham bormi?')).toBe(true);
     // A truck chat that never spoke of the flight: no warning.
@@ -1093,5 +1095,95 @@ describe('the fifth review (#1486): a question asks for the road, a concession c
     }
     const ours = ctxOf('Ivu manzilini bering', 'latin', [said('2 kub kiyim, ichida power bank bor', 1), said(answer('prohibited@1'), 2, 'out')]);
     expect(warned(ours)).toBe(false);
+  });
+});
+
+describe('the sixth review (#1487): no chat where the flight is clearly the road passes our address in silence', () => {
+  const ADDR = {
+    uz: () => `Assalomu alaykum! ${answer('china_address_yiwu@1')}`,
+    uz_cyrl: () => 'Ассалому алайкум! Иву (YW) қабул омбори: 浙江省 义乌市 稠江街道 荷花南街 2255号，周先生，小周 13429089596.',
+    ru: () => 'Здравствуйте! Адрес склада в Иу: 浙江省义乌市稠江街道荷花南街2255号，周先生，小周 13429089596.',
+    en: () => 'Hello! Our Yiwu receiving warehouse: 浙江省 义乌市 稠江街道 荷花南街 2255号，周先生，小周 13429089596.',
+    zh: () => '您好！义乌仓库地址：浙江省 义乌市 稠江街道 荷花南街 2255号，周先生，小周 13429089596。',
+    fa: () => 'سلام! آدرس انبار ییوو: 浙江省 义乌市 稠江街道 荷花南街 2255号，周先生，小周 13429089596.',
+  } as const;
+  const SCRIPT = { uz: 'latin', uz_cyrl: 'cyrillic', ru: 'cyrillic', en: 'latin', zh: 'han', fa: 'arabic' } as const;
+  type Lang = keyof typeof ADDR;
+  /** The two outcomes his rule allows for an avia chat whose reply states our address: the block, or the look. */
+  const guarded = (lang: Lang, lines: string[], earlier: ChatMessage[] = [], lastQuote: AgentContext['lastQuote'] = null) => {
+    const ins = lines.slice(0, -1).map((b, k) => said(b, earlier.length + k + 1));
+    const ctx = ctxOf(lines.at(-1)!, SCRIPT[lang], [...earlier, ...ins], [], lastQuote);
+    const v = verdict(ctx, SCRIPT[lang], lang, ADDR[lang]());
+    return v.blocks.some((b) => b.code === 'avia_address') || v.warnings.some((w) => w.code === 'avia_maybe');
+  };
+  const quoted = (lang: Lang, ask: string, ours: string) => [said(ask, 1), said(ours, 2, 'out')];
+
+  it('the flight in the words each language uses', () => {
+    for (const [lang, line] of [
+      ['uz_cyrl', 'Самолёт билан юбормоқчиман 20 кг, манзил?'],
+      ['uz_cyrl', 'Самолёт орқали 15 кг юбораман, Иву манзилини ташланг'],
+      ['uz_cyrl', 'хаво йули билан юбораман 10 кг манзил?'],
+      ['ru', 'Отправлю на самолёте 15 кг, какой адрес?'],
+      ['ru', 'Хочу отправить авиой 20 кг, скиньте адрес'],
+      ['ru', 'Авио доставка 20 кг, адрес склада?'],
+      ['ru', 'Отправлю воздухом 10 кг, адрес?'],
+      ['uz', 'Aviya bilan 20 kg yubormoqchiman, manzilni tashlang'],
+      ['uz', 'aviyada yuboraman 15 kg manzil qayerga'],
+      ['uz', 'samolet bilan yuboraman 10 kg manzil?'],
+      ['uz', "xavo yo'li bilan yuboraman 12 kg, manzil?"],
+      ['zh', '你好，我有30公斤衣服要从义乌走飞机到塔什干，义乌仓库地址发我一下'],
+      ['zh', '30公斤样品很急，想坐航班过去，义乌仓库地址发我'],
+      ['zh', '我想用飞机寄30公斤衣服，仓库地址在哪里？'],
+      ['fa', 'سلام، ۳۰ کیلو لباس دارم، می‌خواهم با هواپیما بفرستم. آدرس انبار ییوو را بفرستید'],
+      ['fa', 'سلام، ۲۰ کیلو جنس دارم با طیاره روان کنم، آدرس انبار ییوو را بفرستید'],
+      ['en', 'Hi, I want to send 30 kg clothes with plane from Yiwu. Send me the warehouse address'],
+      ['en', '30 kg, air please, its urgent. Where do I send it?'],
+    ] as [Lang, string][]) {
+      expect(guarded(lang, [line]), line).toBe(true);
+    }
+  });
+
+  it('a later word for another leg, another shipment or a refusal the words miss never takes the flight off the table', () => {
+    const q = { ...AIR_QUOTE!, at: new Date(0) };
+    expect(guarded('uz', ['Avia bilan yuboraman 15 kg', "Yukni omborga o'zim mashinada olib boraman", 'Manzilni tashlang'])).toBe(true);
+    expect(guarded('ru', ['Авиа 15 кг', 'Сам привезу на склад на машине', 'Скиньте адрес'])).toBe(true);
+    expect(guarded('uz', ['Avia bilan 30 kg yuboraman', "Aeroportdan o'zim mashinada olib ketaman", 'Manzil qayerga?'])).toBe(true);
+    expect(guarded('uz', ['Yaxshi, yuboraman', 'Andijonga mashinada yetkazib berasizlarmi?', 'Manzil qayer?'], quoted('uz', 'Shenzhendan avia 30 kg qancha?', "Avia bilan taxminan 510 $ bo'ladi."), q)).toBe(true);
+    expect(guarded('ru', ['Только авиа', 'фура не успеет', 'Куда отправлять?'])).toBe(true);
+    expect(guarded('ru', ['Давайте авиа', 'на машине очень долго', 'Адрес?'])).toBe(true);
+    expect(guarded('uz', ['Faqat avia', 'mashinada ulgurmaymiz', 'Manzil bering'])).toBe(true);
+    expect(guarded('uz', ['Avia bilan yuboraman 20 kg', 'mashinada juda kop vaqt ketadi', 'manzil bering'])).toBe(true);
+    expect(guarded('ru', ['Авиа 25 кг, срочно', 'Груз: запчасти для фуры', 'Адрес склада?'])).toBe(true);
+    expect(guarded('uz', ['Avia bilan yuboraman, tez kerak', 'Tovar: fura ehtiyot qismlari, 30 kg', 'Manzil?'])).toBe(true);
+    expect(guarded('uz', ['Bu safar avia bilan yuboraman 20 kg', 'oldingi safar mashinada yuborgandim', 'manzilni tashlang'])).toBe(true);
+    expect(guarded('ru', ['В этот раз авиа, 20 кг', 'Прошлый раз отправлял машиной', 'Адрес скиньте'])).toBe(true);
+    expect(guarded('zh', ['30公斤衣服', '走空运', '陆运太慢了', '义乌仓库地址发我'])).toBe(true);
+    expect(guarded('en', ['OK, our driver will bring it to you by truck. Send the warehouse address'], quoted('en', 'Hi, 30 kg clothes from Yiwu, air freight price?', 'Air freight 30 kg: about $510, 2-5 days.'), q)).toBe(true);
+    expect(guarded('fa', ['باشه، قطعات کامیون رو از ییوو می‌فرستم. آدرس انبار رو بفرستید'], quoted('fa', '۳۰ کیلو قطعات یدکی دارم، هوایی چقدر میشه؟', 'هوایی ۳۰ کیلو حدود ۵۱۰ دلار، ۲ تا ۵ روز.'), q)).toBe(true);    // …and those words choose no road of THIS shipment at all, so the flight keeps its block.
+    for (const t of ["Yukni omborga o'zim mashinada olib boraman", 'Сам привезу на склад на машине', "Aeroportdan o'zim mashinada olib ketaman", 'Andijonga mashinada yetkazib berasizlarmi?', 'oldingi safar mashinada yuborgandim', 'Прошлый раз отправлял машиной', 'Tovar: fura ehtiyot qismlari, 30 kg', 'Груз: запчасти для фуры', 'قطعات کامیون رو از ییوو می‌فرستم']) {
+      expect(roadChoiceIn(t), t).toBeNull();
+    }
+    expect(roadChoiceIn('фура не успеет')).toBe('not_road');
+    expect(roadChoiceIn('mashinada ulgurmaymiz')).toBe('not_road');
+    expect(roadChoiceIn('陆运太慢了')).toBe('not_road');
+  });
+
+  it('the flight in our own line: a price whose road is the next sentence, an offer, an «Air:» label', () => {
+    expect(pricedRoadOf('1 kg uchun 17 $. Avia bilan 2-5 kunda keladi.')).toBe('air');
+    expect(pricedRoadOf('Air: 17 $/kg, 2-5 days.')).toBe('air');
+    // A line that names no road but the cube is the truck's — unless it speaks of the flight.
+    expect(pricedRoadOf('Narxi 510 $, 0.2 kub. Avia orqali power bank yuborilmaydi.')).toBeNull();
+    expect(guarded('uz', ['Ok, manzilni tashlang'], quoted('uz', '30 kg kiyim Ivudan, eng tez qanday? narxi?', '1 kg uchun 17 $. Avia bilan 2-5 kunda keladi.'))).toBe(true);
+    expect(guarded('uz', ['Ok, manzilni tashlang'], quoted('uz', '30 kg kiyim Ivudan, eng tez qanday?', 'Avia bilan yuborsangiz 2-5 kunda keladi.'))).toBe(true);
+    expect(guarded('zh', ['好的，地址发我'], quoted('zh', '30公斤衣服，最快的方式多少钱？', '每公斤17美元。空运2-5天到。'))).toBe(true);
+    // …while the seeded sentence about what the flight does NOT carry puts no flight on the table.
+    expect(guarded('uz', ['Ivu manzilini bering'], quoted('uz', '2 kub kiyim, ichida power bank bor', answer('prohibited@1')))).toBe(false);
+  });
+
+  it('a truck chat that never spoke of the flight is still answered with our address, no look asked', () => {
+    for (const line of ['Fura bilan 5 kub mebel, Ivu manzil?', "Yig'ma kargo bilan yuboraman, Ivu manzilini bering", "Ivuda o'yinchoq samolyotlar va mashinalar, 2 kub. Manzil?"]) {
+      expect(guarded('uz', [line]), line).toBe(false);
+    }
+    expect(guarded('ru', ['Сборным карго, 3 куба, адрес склада в Иу?'])).toBe(false);
   });
 });

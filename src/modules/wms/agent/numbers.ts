@@ -129,7 +129,7 @@ export type TravelMode = 'air' | 'road' | 'rail';
  * company the flight goes through (#1486). «Aviamodel» is a toy.
  */
 const MODE_WORDS: Record<TravelMode, RegExp> = {
-  air: /(?<![\p{L}])(?:avia(?!tor|model)\p{L}*|sam[ao]l[yi]?ot\p{L}*|авиа(?!тор|модел)\p{L}*|сам[оа]л[её]т\p{L}*|air(?:freight|cargo)|air[\s-]+(?:freight|cargo|shipping|delivery|mail|transport|shipment|express|parcel)|(?:by|via)\s+(?:air|(?:air)?plane)|flights?|plane|по\s+воздуху|воздушн\p{L}*\s+(?:пут\p{L}*|транспорт\p{L}*|доставк\p{L}*)|havo\s+(?:yo['‘’ʻ`]?l\p{L}*|orqali|transport\p{L}*)|ҳаво\s+(?:йўл\p{L}*|орқали))(?![\p{L}])|هوایی|هواپیما|空运|空派|航空|飞机/iu,
+  air: /(?<![\p{L}])(?:avi(?:y)?a(?!tor|model)\p{L}*|avya\p{L}*|ави[ао](?!тор|модел)\p{L}*|sam[ao]l[yi]?[oe]t\p{L}*|сам[оа]л[её]т\p{L}*|sam[ao]l[yi]?[oe]t(?:da|ga)|sam[ao]l[yi]?[oe]t\s+(?:bilan|orqali)|сам[оа]л[её]т(?:ом|да|га|е)|сам[оа]л[её]т\s+(?:билан|орқали|оркали)|на\s+сам[оа]л[её]те|воздухом|air(?:freight|cargo)|air[\s-]+(?:freight\p{L}*|cargo|ship\p{L}*|deliver\p{L}*|mail|transport\p{L}*|express|parcel\p{L}*)|air[\s-]?(?:freighted|shipped)|(?:by|via)\s+air|(?:by|via|with|on)\s+(?:an?\s+)?(?:air)?plane|air(?=\s*(?:please|pls|plz)(?![\p{L}]))|flights?|по\s+воздуху|воздушн\p{L}*\s+(?:пут\p{L}*|транспорт\p{L}*|доставк\p{L}*)|[hx]avo\s+(?:yo['‘’ʻ`]?l\p{L}*|orqali|transport\p{L}*)|[ҳх]аво\s+(?:й[ўу]л\p{L}*|орқали|оркали)|plane)(?![\p{L}])|هوایی|هواپیما|با\s+(?:هواپیما|طیاره|طياره)|هوا[یي]ی|هوائی|ایر\s*کارگو|空运|空運|空派|空快|空邮|航空|航班|(?:走|坐|用)飞机|飞机(?:运|发|寄)|飞机/iu,
   road: /(?<![\p{L}])(?:mashina\p{L}*|avto(?![mr])\p{L}*|avtomobil\p{L}*|fura\p{L}*|машин\p{L}*|авто(?![мр])\p{L}*|автомобил\p{L}*|фур[аыуе]\p{L}*|(?:oddiy|yig['‘’ʻ`]?ma|sborniy|umumiy)\s+kargo\p{L}*|(?<!(?:avia|авиа)[\s-]{1,3})kargo(?:da|\s+(?:bilan|orqali))|(?:обычн|сборн)\p{L}*\s+карго\p{L}*|trucks?|trucking|by\s+road|road\s+freight)(?![\p{L}])|کامیون|زمینی|汽运|陆运|卡车|汽车/iu,
   rail: /(?<![\p{L}])(?:temir\s*yo['‘’ʻ`]?l\p{L}*|poyezd\p{L}*|темир\s*йўл\p{L}*|поезд\p{L}*|железн\p{L}*\s+дорог\p{L}*|ж\/д|rail\p{L}*|trains?)(?![\p{L}])|قطار|راه\s*آهن|铁路|火车/iu,
 };
@@ -183,14 +183,14 @@ export type ChosenRoad = 'air' | 'road';
  * a flight's figure unusable.
  */
 const CHOICE_WORDS: Record<ChosenRoad, RegExp> = {
-  air: /(?<![\p{L}])(?:avia(?!tor|model)\p{L}*|авиа(?!тор|модел)\p{L}*|sam[ao]l[yi]?ot(?:da|ga)|sam[ao]l[yi]?ot\s+(?:bilan|orqali)|сам[оа]л[её]т(?:ом|да|га)|air(?:freight|cargo)|air[\s-]+(?:freight|cargo|shipping|delivery|mail|transport|shipment|express|parcel)|(?:by|via)\s+(?:air|(?:air)?plane)|flights?|по\s+воздуху|воздушн\p{L}*\s+(?:пут\p{L}*|транспорт\p{L}*|доставк\p{L}*)|havo\s+(?:yo['‘’ʻ`]?l\p{L}*|orqali|transport\p{L}*)|ҳаво\s+(?:йўл\p{L}*|орқали))(?![\p{L}])|هوایی|空运|空派|航空/giu,
-  road: /(?<![\p{L}])(?:(?:mashina|fura|avto|avtomobil)(?:da|ga)|(?:mashina|fura|avto|avtomobil)\s+(?:bilan|orqali)|fura|furalar|(?:avto|oddiy|yig['‘’ʻ`]?ma|sborniy|umumiy)\s+kargo\p{L}*|(?:mashina|avto|fura)(?:ni)?\s+(?:bo['‘’ʻ`]?lsin|tanla\p{L}*)|(?<!\p{L}\s+)(?:mashina|avto)(?=\s*[.,!?]|\s*$)|машиной|на\s+машине|(?:давайте|лучше)\s+машин\p{L}*|(?<!\p{L}\s+)машин[уа](?=\s*[.,!?]|\s*$)|фур[аоеуы]\p{L}*|на\s+авто|автомобилем|(?:обычн|сборн)\p{L}*\s+карго\p{L}*|by\s+(?:truck|road)|truck(?:ing)?\s+(?:freight|delivery|shipping)|trucking|road\s+freight)(?![\p{L}])|کامیون|زمینی|汽运|陆运|卡车运/giu,
+  air: /(?<![\p{L}])(?:avi(?:y)?a(?!tor|model)\p{L}*|avya\p{L}*|ави[ао](?!тор|модел)\p{L}*|sam[ao]l[yi]?[oe]t(?:da|ga)|sam[ao]l[yi]?[oe]t\s+(?:bilan|orqali)|сам[оа]л[её]т(?:ом|да|га|е)|сам[оа]л[её]т\s+(?:билан|орқали|оркали)|на\s+сам[оа]л[её]те|воздухом|air(?:freight|cargo)|air[\s-]+(?:freight\p{L}*|cargo|ship\p{L}*|deliver\p{L}*|mail|transport\p{L}*|express|parcel\p{L}*)|air[\s-]?(?:freighted|shipped)|(?:by|via)\s+air|(?:by|via|with|on)\s+(?:an?\s+)?(?:air)?plane|air(?=\s*(?:please|pls|plz)(?![\p{L}]))|flights?|по\s+воздуху|воздушн\p{L}*\s+(?:пут\p{L}*|транспорт\p{L}*|доставк\p{L}*)|[hx]avo\s+(?:yo['‘’ʻ`]?l\p{L}*|orqali|transport\p{L}*)|[ҳх]аво\s+(?:й[ўу]л\p{L}*|орқали|оркали))(?![\p{L}])|با\s+(?:هواپیما|طیاره|طياره)|هوا[یي]ی|هوائی|ایر\s*کارگو|空运|空運|空派|空快|空邮|航空|航班|(?:走|坐|用)飞机|飞机(?:运|发|寄)/giu,
+  road: /(?<![\p{L}])(?:(?:mashina|fura|avto|avtomobil)(?:da|ga)|(?:mashina|fura|avto|avtomobil)\s+(?:bilan|orqali)|(?<!\p{L}\s+)fura(?=\s*[.,!?]|\s*$)|furalar\s+bilan|(?:avto|oddiy|yig['‘’ʻ`]?ma|sborniy|umumiy)\s+kargo\p{L}*|(?:mashina|avto|fura)(?:ni)?\s+(?:bo['‘’ʻ`]?lsin|tanla\p{L}*)|(?<!\p{L}\s+)(?:mashina|avto)(?=\s*[.,!?]|\s*$)|машиной|на\s+машине|(?:давайте|лучше)\s+машин\p{L}*|(?<!\p{L}\s+)машин[уа](?=\s*[.,!?]|\s*$)|фурой|фурами|на\s+фуре|(?:давайте|лучше)\s+фур\p{L}*|(?<!\p{L}\s+)фур[ау](?=\s*[.,!?]|\s*$)|на\s+авто|автомобилем|(?:обычн|сборн)\p{L}*\s+карго\p{L}*|by\s+(?:truck|road)|truck(?:ing)?\s+(?:freight|delivery|shipping)|trucking|road\s+freight)(?![\p{L}])|با\s+کامیون|(?:ارسال|حمل|بار)\s+زمینی|زمینی\s+(?:بفرست\p{L}*|ارسال)|汽运|陆运|卡车运/giu,
 };
 
 /** The road words a refusal attaches to (the goods' «mashinasi» included: «mashinasi kerak emas» refuses nothing a person chose, and is read as nothing). */
 const REFUSABLE: Record<ChosenRoad, string> = {
-  air: String.raw`avia(?!tor|model)\p{L}*|авиа(?!тор|модел)\p{L}*|sam[ao]l[yi]?ot\p{L}*|сам[оа]л[её]т\p{L}*|air(?:\s+(?:freight|cargo))?|by\s+air|flights?|по\s+воздуху|havo\s+yo['‘’ʻ\u0060]?l\p{L}*`,
-  road: String.raw`mashina(?:da|ga)?|fura\p{L}*|avto(?:da|ga)?|avtomobil\p{L}*|машин\p{L}*|фур[аоеуы]\p{L}*|авто|trucks?|by\s+road`,
+  air: String.raw`avi(?:y)?a(?!tor|model)\p{L}*|avya\p{L}*|ави[ао](?!тор|модел)\p{L}*|sam[ao]l[yi]?[oe]t\p{L}*|сам[оа]л[её]т\p{L}*|air(?:\s+(?:freight|cargo))?|by\s+air|flights?|по\s+воздуху|воздухом|[hx]avo\s+yo['‘’ʻ\u0060]?l\p{L}*|[ҳх]аво\s+й[ўу]л\p{L}*|هوا[یي]ی|هواپیما`,
+  road: String.raw`mashina(?:da|ga)?|fura\p{L}*|avto(?:da|ga)?|avtomobil\p{L}*|машин\p{L}*|фур[аоеуы]\p{L}*|авто|trucks?|by\s+road|کامیون|زمینی`,
 };
 /**
  * «Aviada emas», «avia kerak emas», «avia qimmat ekan» (not «… qimmat emas»),
@@ -200,12 +200,12 @@ const REFUSABLE: Record<ChosenRoad, string> = {
  * a whole word (#1486): «qimmatmi», «bo'lmaydimi», «ketmaydimi», «emasmi» ASK
  * about the road — and so does «qimmat ekanmi».
  */
-const REFUSE_AFTER = String.raw`(?:\s+(?:narxi|ham|esa|bilan|orqali|juda|ancha|biz|bizga|menga|uchun|нам|мне|для|нас|is|are|for|us)){0,3}\s*,?\s*(?:kerak\s+emas|kerakmas|emas|shart\s+emas|(?<!muammo\s)yo['‘’ʻ\u0060]?q|qimmat(?:\s+ekan)?(?!\s+emas)|baland(?!\s+emas)|uzoq(?:\s+ekan)?(?!\s+emas)|sekin|to['‘’ʻ\u0060]?g['‘’ʻ\u0060]?ri\s+kelmaydi|bo['‘’ʻ\u0060]?lmaydi|ketmaydi|не\s+(?:надо|нужн\p{L}*|подходит|устраивает|интересует)|дорог\p{L}*|долго|(?:too\s+)?(?:expensive|slow)|太贵|太慢)(?![\p{L}])(?!\s+\p{L}*mi(?![\p{L}]))`;
+const REFUSE_AFTER = String.raw`(?:\s+(?:narxi|ham|esa|bilan|orqali|juda|ancha|biz|bizga|menga|uchun|нам|мне|для|нас|is|are|for|us|очень|слишком|sal|ko['‘’ʻ\u0060]?p|it|takes?)){0,3}\s*,?\s*(?:kerak\s+emas|kerakmas|emas|shart\s+emas|(?<!muammo\s)yo['‘’ʻ\u0060]?q|qimmat(?:\s+ekan)?(?!\s+emas)|baland(?!\s+emas)|uzoq(?:\s+ekan)?(?!\s+emas)|sekin|to['‘’ʻ\u0060]?g['‘’ʻ\u0060]?ri\s+kelmaydi|bo['‘’ʻ\u0060]?lmaydi|ketmaydi|не\s+(?:надо|нужн\p{L}*|подходит|устраивает|интересует)|дорог\p{L}*|долго|не\s+успе\p{L}*|ulgurmay\p{L}*|kech\s+qol\p{L}*|ko['‘’ʻ\u0060]?p\s+vaqt(?:\s+ketadi)?|(?:too\s+)?(?:expensive|slow|long)|太贵|太慢|太久|来不及|不行|دیر|گرون\p{L}*)(?![\p{L}])(?!\s+\p{L}*mi(?![\p{L}]))`;
 /** «Не авиа», «без авиа», «no air freight», «not by air». */
-const REFUSE_BEFORE = String.raw`(?<![\p{L}])(?:не|без|нет|no|not|without)\s+(?:by\s+|на\s+|через\s+)?`;
+const REFUSE_BEFORE = String.raw`(?<![\p{L}])(?:не|без|нет|no|not|without|نه)\s+(?:by\s+|на\s+|через\s+)?`;
 const refusalOf = (road: ChosenRoad, zh: string): RegExp =>
   new RegExp(
-    `${REFUSE_BEFORE}(?:${REFUSABLE[road]})(?![\\p{L}])|(?<![\\p{L}])(?:${REFUSABLE[road]})${REFUSE_AFTER}|(?<![\\p{L}])(?:${road === 'air' ? 'avia|samolyot' : 'mashina|fura|avto'})siz(?![\\p{L}])|(?:不要|不用|别)(?:${zh})|(?:${zh})太贵`,
+    `${REFUSE_BEFORE}(?:${REFUSABLE[road]})(?![\\p{L}])|(?<![\\p{L}])(?:${REFUSABLE[road]})${REFUSE_AFTER}|(?<![\\p{L}])(?:${road === 'air' ? 'avia|samolyot' : 'mashina|fura|avto'})siz(?![\\p{L}])|(?:不要|不用|别)(?:${zh})|(?:${zh})(?:太贵|太慢|太久|来不及|不行)`,
     'iu',
   );
 const REFUSES: Record<ChosenRoad, RegExp> = { air: refusalOf('air', '空运|航空'), road: refusalOf('road', '汽运|陆运|卡车') };
@@ -241,9 +241,13 @@ const CHOSEN_ANYWAY =
  * is not the road of this shipment; a flight never is a local leg, so the
  * flight is still read. Tashkent REACHED — «Toshkentga mashinada», «до
  * Ташкента» — is where this shipment goes, and its truck is chosen (#1486).
+ * So is the leg to our warehouse or from the airport («Yukni omborga o'zim
+ * mashinada olib boraman», «Сам привезу на склад на машине»), the delivery
+ * inside Uzbekistan («Andijonga mashinada yetkazib berasizlarmi?») and a PAST
+ * shipment («oldingi safar mashinada yuborgandim») (#1487).
  */
 const OTHER_LEG =
-  /zavod|fabrik|завод|фабрик|поставщик|postavshik|ta['‘’ʻ`]?minotchi|supplier|factory|vendor|工厂|厂家|供应商|(?:toshkent|тошкент)(?:da|dan|да|дан)(?![\p{L}])|в\s+ташкенте|из\s+ташкента|in\s+tashkent|from\s+tashkent/iu;
+  /zavod|fabrik|завод|фабрик|поставщик|postavshik|ta['‘’ʻ`]?minotchi|supplier|factory|vendor|工厂|厂家|供应商|(?:toshkent|тошкент)(?:da|dan|да|дан)(?![\p{L}])|в\s+ташкенте|из\s+ташкента|in\s+tashkent|from\s+tashkent|aeroport\p{L}*|аэропорт\p{L}*|airport|机场|omborga|omboringizga|skladga|skladingizga|на\s+склад|to\s+(?:your|the)\s+warehouse|你们仓库|到仓库|bozor\p{L}*|рын(?:ок|к\p{L}*)|market|olib\s+bor\p{L}*|привез\p{L}*|bring\s+it|yetkazib\s+ber\p{L}*|доставк\p{L}*\s+по|до\s+дома|uyga\p{L}*|oldingi|avvalgi|o['‘’ʻ`]?tgan\s+safar|прошл\p{L}*\s+раз|в\s+прошлый|раньше|last\s+time|previous|上次|以前/iu;
 /** A sending verb — in «… ekan, avia bilan yuboraman» the road it follows is the one chosen. */
 const SEND_VERB = /yubor|jo['‘’ʻ`]?nat|отправ|вышл|пошл|send|ship|寄|发/iu;
 
@@ -304,9 +308,9 @@ const LABEL = /^[\s(«"'*•\-–—]*(avto|mashina|fura|avia|авто|маши�
 function clauseRoad(clause: string): ChosenRoad | 'both' | null {
   const c = roadChoiceIn(clause);
   if (c) return c === 'not_air' ? 'road' : c === 'not_road' ? 'air' : c;
-  const label = LABEL.exec(clause)?.[1];
-  const m = label ? oneModeIn(label) : null;
-  return m === 'air' || m === 'road' ? m : null;
+  const label = LABEL.exec(clause)?.[1]?.toLowerCase();
+  if (!label) return null;
+  return /^(?:avia|авиа|air)$/u.test(label) ? 'air' : 'road';
 }
 
 /** A price by the cube: the truck's (the flight is never priced by volume). */
@@ -342,14 +346,48 @@ export function pricedRoadOf(text: string): ChosenRoad | 'both' | null {
     };
     const order = [...walk(clauses.slice(0, at).reverse()), ...walk(clauses.slice(at + 1))];
     const road =
-      clauseRoad(own.text) ?? (BY_THE_CUBE.test(own.text) ? 'road' : null) ?? order.map((c) => clauseRoad(c.text)).find((r) => r !== null) ?? null;
+      clauseRoad(own.text) ??
+      (BY_THE_CUBE.test(own.text) ? 'road' : null) ??
+      order.map((c) => clauseRoad(c.text)).find((r) => r !== null) ??
+      neighbourSentenceRoad(text, f.index) ??
+      null;
     if (road === 'air' || road === 'both') roads.add('air');
     if (road === 'road' || road === 'both') roads.add('road');
   }
   if (roads.size === 2) return 'both';
   if (roads.size === 1) return [...roads][0]!;
-  return money.length > 0 && BY_THE_CUBE.test(text) ? 'road' : null;
+  return money.length > 0 && BY_THE_CUBE.test(text) && !airMentionIn(text) ? 'road' : null;
 }
+
+/**
+ * The road of the nearest OTHER sentence of our line that names one — «1 kg
+ * uchun 17 $. Avia bilan 2–5 kunda keladi.» priced the flight (#1487). A
+ * sentence that only says what a road does not carry («Avia orqali … yuborilmaydi»)
+ * is no road named.
+ */
+function neighbourSentenceRoad(text: string, index: number): ChosenRoad | 'both' | null {
+  const sentences: { text: string; start: number }[] = [];
+  let last = 0;
+  for (const m of text.matchAll(FIGURE_SENTENCE)) {
+    sentences.push({ text: text.slice(last, m.index), start: last });
+    last = m.index + m[0].length;
+  }
+  sentences.push({ text: text.slice(last), start: last });
+  const at = Math.max(0, sentences.findLastIndex((x) => x.start <= index));
+  const others = sentences
+    .map((x, k) => ({ ...x, d: Math.abs(k - at) }))
+    .filter((x) => x.d > 0 && !PROHIBITS.test(x.text))
+    .sort((a, b) => a.d - b.d);
+  for (const x of others) {
+    const r = statementsOf(x.text, FIGURE_CLAUSE).map(clauseRoad).find((y) => y !== null);
+    if (r) return r;
+  }
+  return null;
+}
+
+/** A sentence that says what a road does NOT carry — the seeded «Avia orqali litiy batareya … yuborilmaydi». */
+export const PROHIBITS =
+  /yuborilmaydi|olib\s+kelinmaydi|ketmaydi|mumkin\s+emas|taqiqlan\p{L}*|нельзя|не\s+принима\p{L}*|не\s+перевоз\p{L}*|запрещ\p{L}*|not\s+allowed|prohibited|cannot\s+(?:be\s+)?(?:sent|shipped)|不能|禁止/iu;
 
 /**
  * The flight is SPOKEN of in this text — chosen, asked about, or turned down

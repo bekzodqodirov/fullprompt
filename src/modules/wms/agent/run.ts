@@ -29,6 +29,7 @@ import {
   namesMode,
   oneModeIn,
   pricedRoadOf,
+  PROHIBITS,
   railRefusedIn,
   roadChoiceIn,
   statementsOf,
@@ -576,37 +577,32 @@ export function askedModeOf(ctx: Pick<AgentContext, 'burst' | 'messages'>): Trav
 }
 
 /**
- * The flight was put on the table (#1485, #1486): by the customer in any line
- * — chosen, asked about or turned down — by a priced line of ours, by the
- * quote he approved, or by a run that priced both roads. Our own lines count
- * only where they PRICE the flight: the seeded «… power bank avia bilan
- * ketmaydi» in a truck chat puts no flight on the table. A truck the customer
- * CHOSE after the last of it settles the chat: the warning is for a chat the
- * words could not decide, not for one he decided.
+ * The flight was put on the table (#1485, #1486, #1487): by the customer in
+ * any line — chosen, asked about or turned down — by a line of ours that
+ * prices or offers it («Avia bilan yuborsangiz 2–5 kunda keladi»), by the
+ * quote he approved, or by a run that priced both roads. A line of ours that
+ * only says what the flight does not carry (the seeded «Avia orqali litiy
+ * batareya … yuborilmaydi») puts no flight on the table. NOTHING said later
+ * takes it off: #1486 let a later truck word settle the chat, and the leg to
+ * our warehouse, the delivery in Andijan, a past shipment or a refusal the
+ * words missed («фура не успеет») each read as that truck — the warning went
+ * silent on exactly the chats it exists for. A look on a chat the customer
+ * really moved to the truck costs one glance.
  */
 function aviaSpokenOf(ctx: Pick<AgentContext, 'messages' | 'lastQuote'>, road: QuotedRoad | null): boolean {
   if (road === 'both') return true;
-  let lastAir = -1;
-  let lastTruck = -1;
   const q = ctx.lastQuote;
-  if (q && (q.road === 'air' || q.road === 'both')) lastAir = q.at.getTime() * 1000;
-  ctx.messages.forEach((m, i) => {
-    const t = m.sentAt.getTime() * 1000 + Math.min(i, 999);
-    if (m.direction === 'out') {
-      const priced = pricedRoadOf(m.body);
-      if (priced === 'air' || priced === 'both') lastAir = Math.max(lastAir, t);
-      return;
-    }
-    // Statement by statement: «Avia qimmat ekan, mashinada yuboraman» ends on the truck.
-    let at = 0;
-    for (const st of statementsOf(m.body, CLAUSE)) {
-      at += 1;
-      const stamp = t + at / 1000;
-      if (airMentionIn(st)) lastAir = Math.max(lastAir, stamp);
-      if (roadChoiceIn(st) === 'road') lastTruck = Math.max(lastTruck, stamp);
-    }
-  });
-  return lastAir >= 0 && lastAir >= lastTruck;
+  if (q && (q.road === 'air' || q.road === 'both')) return true;
+  return ctx.messages.some((m) => (m.direction === 'in' ? airMentionIn(m.body) : ourLineOffersAir(m.body)));
+}
+
+/** A line of ours that prices the flight or offers it — never one that only says what it does not carry. */
+function ourLineOffersAir(body: string): boolean {
+  const priced = pricedRoadOf(body);
+  if (priced === 'air' || priced === 'both') return true;
+  return statementsOf(body, RAIL_SENTENCE)
+    .filter((sentence) => !PROHIBITS.test(sentence))
+    .some((sentence) => statementsOf(sentence, CLAUSE).some((st) => ['air', 'both'].includes(roadChoiceIn(st) ?? '')));
 }
 
 /**
