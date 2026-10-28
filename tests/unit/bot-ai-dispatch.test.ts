@@ -123,8 +123,13 @@ describe('the hisoblatish analysis never holds the poller either', () => {
   it('cannot leave the person on «⏳» with no answer', () => {
     // An enqueue that throws releases the token and says so; a job that fails
     // for the last time says so too (calc-read-press / calc-read-job tests).
+    // Re-anchored (P2's review fixes): the words moved into `refuseStart`,
+    // which the press calls for BOTH of its refusals — the enqueue that threw
+    // and the flush that did not write the collection (review adv-10).
     expect(press, 'the press catches its enqueue').toContain('catch');
-    expect(press).toContain('READING.queueRefused');
+    expect([...press.matchAll(/await refuseStart\(ctx, chatId, token\)/g)], 'both refusals are said').toHaveLength(2);
+    expect(bodyOf('async function refuseStart('), 'and released').toContain('analysing: null');
+    expect(bodyOf('async function refuseStart(')).toContain('READING.queueRefused');
     expect(bodyOf('export async function runIntakeRead('), 'the last attempt answers').toContain('lastAttemptFailed(');
   });
 });

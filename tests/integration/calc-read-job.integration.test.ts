@@ -29,6 +29,8 @@ vi.mock('@/modules/platform/jobs/boss', async (importOriginal) =>
 const store = vi.hoisted(() => ({
   /** A sealed store, or a write that failed, answers false (P1). */
   flushAnswer: true,
+  /** Runs inside the next flush — a press landing while the job writes. */
+  onFlush: null as null | (() => void),
   /** P1's `loadIntake`, played: wait for the hydrate, or throw `IntakesNotReady`. */
   load: null as null | ((chatId: bigint) => Promise<unknown>),
 }));
@@ -36,8 +38,28 @@ vi.mock('@/modules/platform/telegram/calc-store', async (importOriginal) => {
   const real = await importOriginal<typeof import('@/modules/platform/telegram/calc-store')>();
   return {
     ...real,
-    flushIntakeWrites: async (chatId?: bigint) => (store.flushAnswer ? real.flushIntakeWrites(chatId) : false),
+    flushIntakeWrites: async (chatId?: bigint) => {
+      const hook = store.onFlush;
+      store.onFlush = null;
+      hook?.();
+      return store.flushAnswer ? real.flushIntakeWrites(chatId) : false;
+    },
     loadIntake: async (chatId: bigint) => (store.load ? store.load(chatId) : real.loadIntake(chatId)),
+  };
+});
+/** The step after a reading, made to throw once — a renderer that broke after the model answered. */
+const dialog = vi.hoisted(() => ({ throwNext: false }));
+vi.mock('@/modules/platform/telegram/calc-dialog', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/modules/platform/telegram/calc-dialog')>();
+  return {
+    ...real,
+    intakeNextStep: (...args: Parameters<typeof real.intakeNextStep>) => {
+      if (dialog.throwNext) {
+        dialog.throwNext = false;
+        throw new Error('the next step broke (test)');
+      }
+      return real.intakeNextStep(...args);
+    },
   };
 });
 const files = vi.hoisted(() => ({ before: null as null | (() => void), throwNext: false }));
@@ -77,8 +99,10 @@ import { getStorage } from '@/modules/platform/files/storage';
 import { __setTelegramTransport } from '@/modules/platform/telegram/send';
 import { activeIntake, endIntake, startIntake, updateIntake, type IntakeState } from '@/modules/platform/telegram/calc-intake';
 import { IntakesNotReady, setDurableIntakes } from '@/modules/platform/telegram/calc-store';
+import { __resetLifecycle, stopTelegramBot } from '@/modules/platform/telegram/lifecycle';
 import { modelCopyKey, readIntakeFile, reduceForModel, storeModelCopy } from '@/modules/platform/telegram/calc-files';
 import {
+  INTAKE_READ_EXPIRE_S,
   INTAKE_READ_RETRY,
   deliverStoredReply,
   pendingDeliveryAlive,
@@ -110,13 +134,36 @@ const MISSING = '⚠️ 1 ta fayl o‘qilmadi — saqlangan joydan olib bo‘lma
 const tg = {
   sent: [] as { text: string; markup: unknown }[],
   edits: [] as { messageId: number; text: string }[],
-  script: [] as ((method: string) => Response | null)[],
+  script: [] as ((method: string) => Response | null | Promise<Response>)[],
   id: 500,
 };
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
 const ctx = { reply: async () => ({ message_id: 41 }) };
+
+/** A press's ctx that keeps what it was told. */
+function hearing() {
+  const said: string[] = [];
+  return { said, reply: async (text: string) => (said.push(text), { message_id: 42 }) };
+}
+
+/** The bot's stop begins in this process (P1 seals the store at its end). */
+async function beginStop(): Promise<void> {
+  await stopTelegramBot({
+    bot: { stop: async () => {}, isRunning: () => false, api: { getUpdates: async () => [] } } as never,
+    flush: async () => {},
+    drain: async () => {},
+  });
+}
+
+/** Settles `p` into a flag, so a test can ask whether it is still running. */
+function watch<T>(p: Promise<T>): { done: () => boolean; p: Promise<T> } {
+  let done = false;
+  const watched = p.finally(() => (done = true));
+  return { done: () => done, p: watched };
+}
+const LIVE = '⏳ Tahlil davom etmoqda — natijani kuting.';
 
 /** A collection pressed «Bo‘ldi» on: the job's payload, as the press enqueued it. */
 async function pressed(patch: Partial<IntakeState> = {}): Promise<{ chatId: bigint; job: IntakeReadJob }> {
@@ -160,7 +207,9 @@ beforeEach(() => {
   model.analyze.mockReset();
   model.analyze.mockResolvedValue(READ());
   store.flushAnswer = true;
+  store.onFlush = null;
   store.load = null;
+  dialog.throwNext = false;
   files.before = null;
   files.throwNext = false;
   sharpCalls.n = 0;
@@ -170,7 +219,7 @@ beforeEach(() => {
   tg.id = 500;
   __setTelegramTransport(async (url, init) => {
     const method = url.slice(url.lastIndexOf('/') + 1);
-    const scripted = tg.script.shift()?.(method) ?? null;
+    const scripted = (await tg.script.shift()?.(method)) ?? null;
     if (scripted) return scripted;
     const body = JSON.parse(String(init.body ?? '{}')) as Record<string, unknown>;
     if (method === 'sendMessage') {
@@ -184,6 +233,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  __resetLifecycle();
   setDurableIntakes(false);
   for (const id of chats.splice(0)) endIntake(id);
 });
@@ -233,12 +283,67 @@ describe('the job reads, stores, then sends — once', () => {
     tg.script.push((m) => (m === 'sendMessage' ? json(502, { ok: false, description: 'Bad Gateway' }) : null));
     await expect(runIntakeRead(job, 0)).rejects.toThrow();
     const stored = activeIntake(chatId)!;
-    expect(stored.analysing).toBeNull();
+    // Held until the reply is out (review adv-2): read, not yet delivered.
+    expect(stored.analysing).toBe(job.token);
     expect(stored.pendingReply?.token).toBe(job.token);
     await runIntakeRead(job, 1);
     expect(model.analyze).toHaveBeenCalledTimes(1);
     expect(tg.sent.map((s) => s.text)).toEqual([stored.pendingReply!.text]);
-    expect(activeIntake(chatId)!.pendingReply).toBeNull();
+    expect(activeIntake(chatId)!).toMatchObject({ pendingReply: null, analysing: null });
+  });
+
+  it('a stored reply not yet delivered holds the reading: an older table’s «Tasdiqlash» waits for it', async () => {
+    const { chatId, job } = await pressed();
+    tg.script.push((m) =>
+      m === 'sendMessage' ? json(429, { ok: false, description: 'Too Many Requests', parameters: { retry_after: 30 } }) : null,
+    );
+    await runIntakeRead(job, 0);
+    const waiting = activeIntake(chatId)!;
+    // Review adv-2: settled to 'review', but the seller has seen none of it —
+    // a press of the table before this one would land facts never shown.
+    expect(waiting).toMatchObject({ stage: 'review', analysing: job.token });
+    const press = hearing();
+    await handleCalcCallback(press, chatId, 'save');
+    expect(press.said).toEqual([LIVE]);
+    // Not a dead reading for the sweep: done, only its delivery waits.
+    setReadJobState(waiting.analysingJob!, 'completed');
+    expect(await readingAlive(waiting)).toBe(true);
+    const follow = readingsEnqueued(chatId).find((j) => j.data.deliverOnly)!;
+    await runIntakeRead(follow.data, 0);
+    expect(activeIntake(chatId)).toMatchObject({ analysing: null, pendingReply: null, tableMessageId: 501 });
+  });
+
+  it('the table is decided by what was stored: the seller typing while it is on its way changes nothing', async () => {
+    const { chatId, job } = await pressed();
+    tg.script.push((m) => {
+      if (m === 'sendMessage') updateIntake(chatId, { stage: 'material', material: [...activeIntake(chatId)!.material, 'Shim 20 dona'] });
+      return null;
+    });
+    await runIntakeRead(job, 0);
+    // A table went out; the answers that follow edit it (reviews spec-4, adv-6).
+    expect(tg.sent).toHaveLength(1);
+    expect(activeIntake(chatId)!.tableMessageId).toBe(501);
+  });
+
+  it('a reply a newer press replaced while it was being written is not sent', async () => {
+    const { chatId, job } = await pressed();
+    setDurableIntakes(true);
+    store.onFlush = () =>
+      updateIntake(chatId, { pendingReply: null, analysing: 'a-newer-press', analysingAt: Date.now(), analysingJob: null });
+    await runIntakeRead(job, 0);
+    // Review adv-6: sent, it would land after the reading that replaced it.
+    expect(tg.sent).toEqual([]);
+    expect(activeIntake(chatId)!).toMatchObject({ analysing: 'a-newer-press', tableMessageId: null });
+  });
+
+  it('a throw after the model answered is the reading’s end — said once, never a second paid call', async () => {
+    const { chatId, job } = await pressed();
+    dialog.throwNext = true;
+    // Review adv-12: rethrown, every retry would ask (and pay) the model again.
+    await expect(runIntakeRead(job, 0)).resolves.toBeUndefined();
+    expect(model.analyze).toHaveBeenCalledTimes(1);
+    expect(tg.sent.map((s) => s.text)).toEqual([FAILED]);
+    expect(activeIntake(chatId)).toMatchObject({ analysing: null, stage: 'material', pendingReply: null });
   });
 
   it('two runs of one token in one process (pg-boss’s expiry race): one model call, one table', async () => {
@@ -314,6 +419,73 @@ describe('the wall clock (§7.2.1)', () => {
   });
 });
 
+describe('Telegram refusing the reply for good', () => {
+  it('the MESSAGE (too long): the reading said to have failed, the collection back at its material', async () => {
+    const { chatId, job } = await pressed();
+    tg.script.push((m) =>
+      m === 'sendMessage' ? json(400, { ok: false, description: 'Bad Request: message is too long' }) : null,
+    );
+    // Review adv-8: dropped in silence, the seller pressed «Bo‘ldi» again into
+    // the same silence, and paid for it.
+    await expect(runIntakeRead(job, 0)).resolves.toBeUndefined();
+    expect(tg.sent.map((s) => s.text)).toEqual([FAILED]);
+    expect(activeIntake(chatId)).toMatchObject({ analysing: null, stage: 'material', pendingReply: null });
+  });
+
+  it('the CHAT (the bot blocked): dropped in silence, and the reading released', async () => {
+    const { chatId, job } = await pressed();
+    tg.script.push((m) =>
+      m === 'sendMessage' ? json(403, { ok: false, description: 'Forbidden: bot was blocked by the user' }) : null,
+    );
+    await expect(runIntakeRead(job, 0)).resolves.toBeUndefined();
+    expect(tg.sent).toEqual([]);
+    expect(activeIntake(chatId)).toMatchObject({ analysing: null, pendingReply: null });
+  });
+});
+
+describe('a process that is stopping hands the attempt on (review adv-3)', () => {
+  const clock = { offset: 0 };
+  beforeEach(() => {
+    clock.offset = 0;
+    vi.spyOn(Date, 'now').mockImplementation(() => realNow() + clock.offset);
+  });
+
+  it('stopping before the model: no model call, nothing stored or sent — the attempt held open, not spent', async () => {
+    const { chatId, job } = await pressed();
+    setDurableIntakes(true);
+    await beginStop();
+    const run = watch(runIntakeRead(job, 0));
+    await new Promise((r) => setTimeout(r, 300));
+    expect(run.done()).toBe(false);
+    expect(model.analyze).not.toHaveBeenCalled();
+    expect(activeIntake(chatId)!.pendingReply).toBeNull();
+    expect(tg.sent).toEqual([]);
+    // The process outlived its deadline after all: an ordinary failure.
+    clock.offset = INTAKE_READ_EXPIRE_S * 1000;
+    await expect(run.p).rejects.toThrow('handed on');
+  });
+
+  it('the stop comes while the model reads: its reply kept, nothing sent — even the LAST attempt held open, never spent here', async () => {
+    const { chatId, job } = await pressed();
+    setDurableIntakes(true);
+    model.analyze.mockImplementationOnce(async () => {
+      await beginStop();
+      store.flushAnswer = false;
+      return READ();
+    });
+    const run = watch(runIntakeRead(job, INTAKE_READ_RETRY));
+    await new Promise((r) => setTimeout(r, 300));
+    // Spent here, the last attempt completed the job in silence, and the next
+    // process's sweep said «bo‘lmadi» about a reading that had worked.
+    expect(run.done()).toBe(false);
+    expect(tg.sent).toEqual([]);
+    expect(activeIntake(chatId)!.pendingReply?.token).toBe(job.token);
+    clock.offset = INTAKE_READ_EXPIRE_S * 1000;
+    await expect(run.p).resolves.toBeUndefined();
+    expect(tg.sent).toEqual([]);
+  });
+});
+
 describe('a reply is sent only from a durable store (durability-1’s sibling)', () => {
   it('a sealed store: the job throws before sending, and nothing is sent', async () => {
     const { chatId, job } = await pressed();
@@ -356,6 +528,28 @@ describe('the last attempt (§7.2.4 step 8)', () => {
     await expect(runIntakeRead(job, INTAKE_READ_RETRY)).resolves.toBeUndefined();
     expect(tg.sent).toEqual([]);
     expect(activeIntake(chatId)!.pendingReply?.token).toBe(job.token);
+  });
+
+  it('a «bo‘lmadi» Telegram will not take turns the seller’s «⏳» notice into it', async () => {
+    const { chatId, job } = await pressed();
+    files.throwNext = true;
+    tg.script.push((m) => (m === 'sendMessage' ? json(502, { ok: false, description: 'Bad Gateway' }) : null));
+    await runIntakeRead(job, INTAKE_READ_RETRY);
+    // Review adv-7: the token is released, so nothing would ever say it again.
+    expect(tg.sent).toEqual([]);
+    expect(tg.edits).toEqual([{ messageId: 41, text: FAILED }]);
+    expect(activeIntake(chatId)!.analysing).toBeNull();
+  });
+
+  it('…and a short flood wait is waited out, as the job may sleep', async () => {
+    const { job } = await pressed();
+    files.throwNext = true;
+    tg.script.push((m) =>
+      m === 'sendMessage' ? json(429, { ok: false, description: 'Too Many Requests', parameters: { retry_after: 1 } }) : null,
+    );
+    await runIntakeRead(job, INTAKE_READ_RETRY);
+    expect(tg.sent.map((s) => s.text)).toEqual([FAILED]);
+    expect(tg.edits).toEqual([]);
   });
 });
 
@@ -426,6 +620,55 @@ describe('a job fetched before this process hydrated (durability-9)', () => {
 });
 
 describe('the sweep’s questions (§7.2.2, §6.2.13)', () => {
+  it('a reading running in this process is alive whatever pg-boss says of its job — and is never released', async () => {
+    const { chatId, job } = await pressed();
+    let release: () => void = () => {};
+    model.analyze.mockImplementationOnce(() => new Promise((resolve) => (release = () => resolve(READ()))));
+    const first = runIntakeRead(job, 0);
+    await vi.waitFor(() => expect(model.analyze).toHaveBeenCalledTimes(1));
+    // Review adv-4: pg-boss failed the attempt at its expiry, and the retry
+    // the in-process fence turned away completed the job at once.
+    const live = activeIntake(chatId)!;
+    setReadJobState(live.analysingJob!, 'completed');
+    expect(await readingAlive(live)).toBe(true);
+    await releaseDeadReading(chatId, live);
+    expect(activeIntake(chatId)!.analysing).toBe(job.token);
+    expect(tg.sent).toEqual([]);
+    release();
+    await first;
+    expect(tg.sent).toHaveLength(1);
+    expect(tg.sent[0]!.text).not.toBe(FAILED);
+  });
+
+  it('a stored reply its own reading’s job will still send (a retry after a failed send) is not the sweep’s', async () => {
+    const { chatId, job } = await pressed();
+    tg.script.push((m) => (m === 'sendMessage' ? json(502, { ok: false, description: 'Bad Gateway' }) : null));
+    await expect(runIntakeRead(job, 0)).rejects.toThrow();
+    const waiting = activeIntake(chatId)!;
+    expect(waiting.pendingReply?.jobId).toBeNull();
+    // Reviews spec-6, adv-5: only the follow-up was asked, so the sweep sent
+    // the table while pg-boss's retry was about to send it too.
+    setReadJobState(waiting.analysingJob!, 'retry');
+    expect(await pendingDeliveryAlive(waiting)).toBe(true);
+    setReadJobState(waiting.analysingJob!, 'completed');
+    expect(await pendingDeliveryAlive(waiting)).toBe(false);
+  });
+
+  it('the sweep never sends a reply this process is sending right now', async () => {
+    const { chatId, job } = await pressed();
+    let answer: (r: Response) => void = () => {};
+    tg.script.push((m) => (m === 'sendMessage' ? new Promise<Response>((r) => (answer = r)) : null));
+    const first = runIntakeRead(job, 0);
+    await vi.waitFor(() => expect(activeIntake(chatId)!.pendingReply?.token).toBe(job.token));
+    const live = activeIntake(chatId)!;
+    expect(await pendingDeliveryAlive(live)).toBe(true);
+    await deliverStoredReply(chatId, live);
+    expect(tg.sent).toEqual([]);
+    answer(json(200, { ok: true, result: { message_id: 777 } }));
+    await first;
+    expect(activeIntake(chatId)).toMatchObject({ pendingReply: null, tableMessageId: 777 });
+  });
+
   it('a dead job: its token released and «bo‘lmadi» said ONCE — a second sweep says nothing', async () => {
     const { chatId } = await pressed();
     const live = activeIntake(chatId)!;

@@ -1342,7 +1342,10 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     // every ANSWERED attempt in `answered`. Re-anchored again (SAKKIZ-R3
     // §7.2.10, P2): the reading JOB bills `answered` the moment the model
     // answered, so the collection no longer appends to `usages` — the claim
-    // (a failed paid read still carries what it cost) is on `answered`.
+    // (a failed paid read still carries what it cost) is on `answered`, and
+    // that it is COUNTED against the day's budget is proven where the job
+    // writes the row: intake-billing.integration.test.ts, «a reading that
+    // answered (cut, with usage)…» (review spec-7).
     const usage = { model: 'm', inputTokens: 40_000, outputTokens: 16_000 };
     const { state } = collection({ stage: 'material', material: ['Kurtka 300 dona 150 kg'] });
     model.analyze.mockResolvedValueOnce({ ok: false, failure: 'truncated', usage, answered: [usage] });

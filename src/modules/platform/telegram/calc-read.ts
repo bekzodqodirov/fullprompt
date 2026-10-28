@@ -24,6 +24,7 @@ import {
 import { loadIntakeFiles, invoiceChoiceKeyboard, otherFilesKeyboard } from './calc-files';
 import { intakeLaws, intakeNextStep, type CollectorReply } from './calc-dialog';
 import { CLIENT_QUESTION, doneKeyboard, pricedZonesNow, zoneKeyboard } from './calc-keyboards';
+import { isStopping } from './lifecycle';
 import { editText, sendText, sendTextBriefRetry, type SendResult } from './send';
 
 /**
@@ -72,7 +73,8 @@ export const INTAKE_HYDRATE_WAIT_MS = 10_000;
 /**
  * A token older than this is taken over by the next press. Only a backstop:
  * the sweep releases a dead job's token by its pg-boss state long before. The
- * last 300 s are the queue's wait, because `analysingAt` is the PRESS's time.
+ * last 300 s are the queue's wait, because `analysingAt` is the press's time
+ * (re-stamped once its notice is out, a few seconds later at most).
  */
 export const ANALYSIS_STALE_MS = (INTAKE_READ_EXPIRE_S * (INTAKE_READ_RETRY + 1) + 120 + 300) * 1000;
 /** Under this much model time left the model is not called at all: the reading settles as «timeout». */
@@ -83,6 +85,8 @@ const DEADLINE_MARGIN_MS = 10_000;
 const DELIVERY_SEND_MS = 10_000;
 /** A press's job may not have reached pg-boss yet: «no such job» this young is not «dead». */
 const ENQUEUE_GRACE_MS = 60_000;
+/** How often an attempt a stopping process holds open looks at the clock. */
+const HAND_ON_TICK_MS = 1_000;
 
 /** The pg-boss states in which a job will still run. */
 const ALIVE: ReadonlySet<JobState> = new Set<JobState>(['created', 'retry', 'active']);
@@ -96,9 +100,22 @@ const READING = {
   delivered: '✅ O‘qildi — natija pastda ⬇️',
 } as const;
 
+const ARRIVED_LEAD = 'Tahlil paytida yana ';
 const arrivedWords = (n: number) =>
-  `Tahlil paytida yana ${n} ta xabar/fayl keldi — ular hali o‘qilmagan.\n` +
+  `${ARRIVED_LEAD}${n} ta xabar/fayl keldi — ular hali o‘qilmagan.\n` +
   'Hammasini birga o‘qish uchun «Bo‘ldi» ni yana bosing.';
+
+/**
+ * Is this stored reply the «arrived» words rather than a reading's table?
+ * Decided by what was STORED (reviews spec-4, adv-6), never by the stage at
+ * delivery: the seller may type between the settle and the send.
+ */
+function isArrivedReply(reply: { text: string }): boolean {
+  return reply.text.startsWith(ARRIVED_LEAD);
+}
+
+/** Telegram refusing the CHAT, not our message: the bot blocked, the chat gone. */
+const CHAT_GONE = /chat not found|bot was blocked|bot was kicked|user is deactivated|have no rights|not enough rights|CHAT_WRITE_FORBIDDEN|PEER_ID_INVALID/i;
 
 /** Is the collection's reading still running (or about to), by the press's own clock? */
 function readingLive(state: IntakeState, now: number): boolean {
@@ -126,11 +143,11 @@ export async function pressAnalyse(ctx: CollectorReply, chatId: bigint, state: I
     return;
   }
   if (state.pendingInvoice) {
-    await ctx.reply('Avval ikkinchi fayl haqida javob bering:', { reply_markup: invoiceChoiceKeyboard() });
+    await sayOwn(ctx, chatId, 'Avval ikkinchi fayl haqida javob bering:', { reply_markup: invoiceChoiceKeyboard() });
     return;
   }
   if (state.aiGoods === 'ask') {
-    await ctx.reply('Avval javob bering: AI o‘qiydigan fayl — boshqa zavodning tovarlarimi?', {
+    await sayOwn(ctx, chatId, 'Avval javob bering: AI o‘qiydigan fayl — boshqa zavodning tovarlarimi?', {
       reply_markup: otherFilesKeyboard(),
     });
     return;
@@ -143,11 +160,12 @@ export async function pressAnalyse(ctx: CollectorReply, chatId: bigint, state: I
   const jobId = randomUUID();
   // A seller's press (it slides the clock). A reply an earlier reading stored
   // and never got out is dropped: this reading answers for the same material
-  // and more, and the stale one must not land after it.
+  // and more, and the stale one must not land after it. No job id yet — and
+  // never the previous reading's, which the sweep would find finished.
   updateIntake(chatId, {
     analysing: token,
     analysingAt: Date.now(),
-    analysingJob: jobId,
+    analysingJob: null,
     readingSaidDead: false,
     pendingReply: null,
   });
@@ -159,9 +177,24 @@ export async function pressAnalyse(ctx: CollectorReply, chatId: bigint, state: I
     return null;
   });
   if (notice) noteOwnMessage(chatId, notice.message_id);
-  // This chat's write only (performance-10): the token is in the row BEFORE
-  // the job can exist, so a job redelivered to a new process finds it.
-  await flushIntakeWrites(chatId);
+  // Cancelled, or ended, while the notice went out: nothing left to read.
+  if (activeIntake(chatId)?.analysing !== token) return;
+  // The job's id — and the clock its minute of grace runs on — only now
+  // (review adv-14): grammy's send has no short deadline, and a notice that
+  // hung past that minute with the id already stored read to the sweep as «no
+  // such job, a minute old», i.e. dead, and released a press whose job was
+  // never enqueued. Until here the token is judged by its staleness alone.
+  updateIntake(chatId, { analysingAt: Date.now(), analysingJob: jobId }, { quiet: true });
+  // This chat's write only (performance-10), and its answer is OBEYED (review
+  // adv-10): the token must be in the row before the job can exist, or a job
+  // redelivered to a new process finds no token and returns in silence under
+  // a «⏳» nobody will ever answer. Sealed by a stop, or a write that failed:
+  // refused here, in words, and the seller presses again.
+  if (!(await flushIntakeWrites(chatId))) {
+    logger.warn({ chatId: String(chatId) }, '[calc-intake] reading not started — the collection is not written');
+    await refuseStart(ctx, chatId, token);
+    return;
+  }
   try {
     await enqueue<IntakeReadJob>(
       JOB_CALC_INTAKE_READ,
@@ -169,15 +202,35 @@ export async function pressAnalyse(ctx: CollectorReply, chatId: bigint, state: I
       { id: jobId, expireInSeconds: INTAKE_READ_EXPIRE_S, retryLimit: INTAKE_READ_RETRY },
     );
   } catch (err) {
-    // Released, or every later press says «Tahlil davom etmoqda» about a
-    // reading that never started (round-1 review c3's stranded lock).
     logger.error({ err }, '[calc-intake] reading not enqueued');
-    const live = activeIntake(chatId);
-    if (live?.analysing === token) {
-      updateIntake(chatId, { analysing: null, analysingAt: null, analysingJob: null }, { quiet: true });
-    }
-    await ctx.reply(READING.queueRefused, { reply_markup: doneKeyboard }).catch(() => {});
+    await refuseStart(ctx, chatId, token);
   }
+}
+
+/**
+ * The reading could not be started: the token released — or every later press
+ * says «Tahlil davom etmoqda» about a reading that never started (round-1
+ * review c3's stranded lock) — and the seller told, under a «Bo‘ldi» of his own.
+ */
+async function refuseStart(ctx: CollectorReply, chatId: bigint, token: string): Promise<void> {
+  if (activeIntake(chatId)?.analysing === token) {
+    updateIntake(chatId, { analysing: null, analysingAt: null, analysingJob: null }, { quiet: true });
+  }
+  await sayOwn(ctx, chatId, READING.queueRefused, { reply_markup: doneKeyboard });
+}
+
+/**
+ * A message whose buttons the dispatcher judges by `ownsPress` («Bo‘ldi»,
+ * the invoice and other-files choices): it joins `ownMessageIds`, or every
+ * button on it answers «Bu tugma eskirgan.» under the very sentence that asked
+ * for the press (review adv-1). A refused send is logged, never thrown.
+ */
+async function sayOwn(ctx: CollectorReply, chatId: bigint, text: string, extra: Record<string, unknown>): Promise<void> {
+  const sent = await ctx.reply(text, extra).catch((err: unknown) => {
+    logger.warn({ err, chatId: String(chatId) }, '[calc-intake] reading answer not sent');
+    return null;
+  });
+  if (sent) noteOwnMessage(chatId, sent.message_id);
 }
 
 /**
@@ -273,6 +326,14 @@ export interface IntakeReadJob {
 const globalForRead = globalThis as unknown as { calcIntakeReads?: Set<string> };
 const inFlight = (globalForRead.calcIntakeReads ??= new Set<string>());
 
+/** A delivery-only follow-up's own fence: a second, smaller job about the same reply. */
+const deliverFence = (token: string) => `${token}:deliver`;
+
+/** Is a reading or a delivery of this token running in THIS process right now? */
+function runningHere(token: string): boolean {
+  return inFlight.has(token) || inFlight.has(deliverFence(token));
+}
+
 /** Thrown when this process may not send what it stored: the store did not take it. */
 class ReplyNotStored extends Error {
   constructor() {
@@ -289,6 +350,32 @@ class DeliveryFailed extends Error {
   }
 }
 
+/** Thrown at the handler's deadline by an attempt a stopping process held open, and outlived. */
+class HandedOn extends Error {
+  constructor() {
+    super('calc intake reading handed on — this process is stopping');
+    this.name = 'HandedOn';
+  }
+}
+
+/**
+ * A process that is stopping neither pays for a reading nor sends one (review
+ * adv-3): the attempt is held OPEN until the handler's own deadline. Thrown at
+ * once, it was retried within seconds by this same dying process — its four
+ * workers poll every two — and the retries were spent where nothing could be
+ * stored; the last one then completed the job in silence, and the next
+ * process's sweep said «bo‘lmadi» about a reading that had worked. Held, it
+ * dies with the process, and pg-boss's expiry hands it to the next one, which
+ * reads the collection from the durable row. The clock is looked at every
+ * second, so a test's moved clock ends it.
+ */
+async function handOn(deadline: number): Promise<never> {
+  while (Date.now() < deadline) {
+    await new Promise<void>((resolve) => setTimeout(resolve, Math.min(HAND_ON_TICK_MS, deadline - Date.now())));
+  }
+  throw new HandedOn();
+}
+
 /**
  * One reading job (§7.2.4). `retryCount` is pg-boss's (`includeMetadata`):
  * the last attempt answers the seller itself and never rethrows, the earlier
@@ -297,7 +384,7 @@ class DeliveryFailed extends Error {
 export async function runIntakeRead(data: IntakeReadJob, retryCount: number): Promise<void> {
   // A delivery-only follow-up shares the token with its reading, and must not
   // be turned away by it: it is a second, smaller job about the same reply.
-  const fence = data.deliverOnly ? `${data.token}:deliver` : data.token;
+  const fence = data.deliverOnly ? deliverFence(data.token) : data.token;
   if (inFlight.has(fence)) return;
   inFlight.add(fence);
   try {
@@ -322,18 +409,23 @@ async function readOnce(data: IntakeReadJob): Promise<void> {
   // not come: pg-boss re-delivers rather than completing on an empty memory.
   const state = await loadIntake(chatId);
   if (!state || state.noteId !== data.noteId) return;
-  if (data.deliverOnly || state.analysing !== data.token) {
-    // An earlier attempt settled and stored its reply: send THAT, and never
-    // ask the model again for it. Anything else — a newer press, a cancel —
-    // is not this job's any more.
-    if (state.pendingReply?.token === data.token) await deliver(chatId, state.pendingReply, data);
+  // An earlier attempt settled and stored its reply: send THAT, and never ask
+  // the model again for it.
+  if (state.pendingReply?.token === data.token) {
+    await deliver(chatId, state.pendingReply, data, deadline);
     return;
   }
+  // Anything else — a newer press, a cancel, a reply already out — is not
+  // this job's any more.
+  if (data.deliverOnly || state.analysing !== data.token) return;
 
   // Each storage read is bounded and the whole set capped (#915: a dead
   // stream is a hang); what does not come in time is counted and SAID by
   // the reading's notes (`filesMissingNote`).
   const files = await loadIntakeFiles(state, { deadline: Date.now() + INTAKE_FILES_BUDGET_MS });
+  // Never a model call by a process that is going away (review adv-3): its
+  // answer could not be stored, and the next process reads again anyway.
+  if (isStopping()) return handOn(deadline);
   const { INTAKE_TIMEOUT_MS } = await import('../../wms/calc/intake-ai');
   const leash = Math.min(INTAKE_TIMEOUT_MS, deadline - Date.now() - INTAKE_DELIVERY_RESERVE_MS);
   // Too little left to read well: the model is not called (a leash of nothing
@@ -364,54 +456,86 @@ async function readOnce(data: IntakeReadJob): Promise<void> {
     }
   }
 
-  // The laws on the pool BEFORE the live collection is taken: from here to the
-  // store's write nothing is awaited, so no press can land in between and the
-  // words stored are the words of the state stored (K's review, U4).
-  const laws = await intakeLaws(analysed);
-  const intake = await import('../../wms/calc/intake');
-  const outcome = settleAnalysis(activeIntake(chatId), state, analysed, data.token);
-  if (outcome.kind === 'gone') return;
-  let patch: Partial<IntakeState>;
-  let text: string;
-  let keyboard: InlineKeyboard | null;
-  if (outcome.kind === 'arrived') {
-    patch = outcome.state;
-    text = arrivedWords(outcome.arrived);
-    keyboard = doneKeyboard;
-  } else {
-    // No keyboard is built here: the step's own (the derived `c:` fence reads
-    // every button where it is built).
-    const step = intakeNextStep(outcome.state, laws, intake);
-    patch = { ...outcome.state, ...step.patch };
-    text = step.text;
-    keyboard = step.keyboard;
+  // From the answer to the stored reply every step is deterministic — the
+  // laws read catches its own errors, the rest is pure or memory — so a throw
+  // here would throw the same way on every retry, and each retry would pay for
+  // the same answer again (review adv-12). It is the reading's end, said once.
+  let pendingReply: NonNullable<IntakeState['pendingReply']>;
+  try {
+    // The laws on the pool BEFORE the live collection is taken: from here to
+    // the store's write nothing is awaited, so no press can land in between
+    // and the words stored are the words of the state stored (K's review, U4).
+    const laws = await intakeLaws(analysed);
+    const intake = await import('../../wms/calc/intake');
+    const outcome = settleAnalysis(activeIntake(chatId), state, analysed, data.token);
+    if (outcome.kind === 'gone') return;
+    let patch: Partial<IntakeState>;
+    let text: string;
+    let keyboard: InlineKeyboard | null;
+    if (outcome.kind === 'arrived') {
+      patch = outcome.state;
+      text = arrivedWords(outcome.arrived);
+      keyboard = doneKeyboard;
+    } else {
+      // No keyboard is built here: the step's own (the derived `c:` fence reads
+      // every button where it is built).
+      const step = intakeNextStep(outcome.state, laws, intake);
+      patch = { ...outcome.state, ...step.patch };
+      text = step.text;
+      keyboard = step.keyboard;
+    }
+    pendingReply = { token: data.token, text, keyboard, at: Date.now(), jobId: null };
+    // The token is HELD until the reply is out (review adv-2): every door that
+    // asks «is a reading running?» — «Tasdiqlash», ⏭, the certificate, a line
+    // answer, the table's edit — asks `analysing`, and a reading stored but
+    // not yet delivered (a flood wait, a retry, the sweep's late send) used to
+    // read as finished: an older table's «Tasdiqlash» landed facts the seller
+    // had never seen, and a certificate press drew a table the late send then
+    // buried. It is released by the delivery, or by whatever ends the reply.
+    updateIntake(chatId, { ...patch, analysing: data.token, pendingReply }, { quiet: true });
+  } catch (err) {
+    logger.error({ err, chatId: data.chatId }, '[calc-intake] reading answered but not settled');
+    const live = activeIntake(chatId);
+    if (live && live.noteId === data.noteId && live.analysing === data.token && live.pendingReply?.token !== data.token) {
+      await saidDead(chatId, live, { notice: data.noticeMessageId, brief: true });
+    }
+    return;
   }
-  const pendingReply = { token: data.token, text, keyboard, at: Date.now(), jobId: null };
-  updateIntake(chatId, { ...patch, pendingReply }, { quiet: true });
   if (Date.now() > deadline) logger.warn({ chatId: data.chatId }, '[calc-intake] reading past its own deadline');
-  await deliver(chatId, pendingReply, data);
+  await deliver(chatId, pendingReply, data, deadline);
 }
 
 /**
- * Send a stored reply (§7.2.4 step 7), bounded. Sent → it leaves the store and
- * the notice points down; refused for good → dropped; a long flood wait → one
- * delivery-only follow-up at Telegram's own `retry_after` (no retry is spent
- * inside one flood wait — pg-boss's doubling backoff would have spent all of
- * them in ten seconds and the last would say «bo‘lmadi» about a reading that
- * worked); anything else → thrown, and the retry sends the STORED text without
- * a model call.
+ * Send a stored reply (§7.2.4 step 7), bounded. Sent → it leaves the store,
+ * the token is released and the notice points down; the chat refused it for
+ * good → dropped; Telegram refused the MESSAGE → the reading is said to have
+ * failed; a long flood wait → one delivery-only follow-up at Telegram's own
+ * `retry_after` (no retry is spent inside one flood wait — pg-boss's doubling
+ * backoff would have spent all of them in ten seconds and the last would say
+ * «bo‘lmadi» about a reading that worked); anything else → thrown, and the
+ * retry sends the STORED text without a model call.
  */
 async function deliver(
   chatId: bigint,
   reply: NonNullable<IntakeState['pendingReply']>,
   data: IntakeReadJob,
+  deadline: number,
 ): Promise<void> {
   // Sent only from a DURABLE reply: a stop that sealed the store, or a write
   // that failed, would otherwise send the table now and the redelivery in the
   // next process — which hydrated the row from before the settle — would read
   // and send it a second time. The one flush, so the settle and every later
   // delivery of the same reply ask the same question.
-  if (durableIntakes() && !(await flushIntakeWrites(chatId))) throw new ReplyNotStored();
+  const durable = durableIntakes();
+  const stored = !durable || (await flushIntakeWrites(chatId));
+  // Stopping: written or not, nothing is sent from here — a reply sent after
+  // the store is sealed would keep its `pendingReply` in the row, and the next
+  // process would send it again. The attempt is handed on (review adv-3).
+  if (durable && isStopping()) return handOn(deadline);
+  if (!stored) throw new ReplyNotStored();
+  // Still this collection's reply? A newer press dropped it during the flush
+  // (review adv-6): sent now, it would land after the reading that replaced it.
+  if (activeIntake(chatId)?.pendingReply?.token !== reply.token) return;
   const sent = await sendTextBriefRetry({
     chatId,
     text: reply.text,
@@ -426,11 +550,23 @@ async function deliver(
     }
     return;
   }
-  if (sent.status === 400 || sent.status === 403) {
+  if (sent.status === 403 || (sent.status === 400 && CHAT_GONE.test(sent.description))) {
     // The chat refused it for good (the bot blocked, the chat gone): nothing
     // will ever send it, and the collection must not keep a reply for ever.
     logger.warn({ chatId: String(chatId), status: sent.status, description: sent.description }, '[calc-intake] reading reply refused');
     clearPending(chatId, reply.token);
+    return;
+  }
+  if (sent.status === 400) {
+    // Telegram refused THIS message (too long, a shape it will not take), not
+    // the chat: it will never go out as it is, and a seller left under «⏳»
+    // would press «Bo‘ldi» into the same silence (review adv-8). The reading
+    // is said to have failed, and the collection is back at its material.
+    logger.warn({ chatId: String(chatId), description: sent.description }, '[calc-intake] reading reply refused as a message');
+    const live = activeIntake(chatId);
+    if (live?.pendingReply?.token === reply.token) {
+      await saidDead(chatId, live, { notice: data.noticeMessageId, brief: true });
+    }
     return;
   }
   if (sent.status === 429 && sent.retryAfter !== null) {
@@ -459,19 +595,23 @@ async function deliver(
   throw new DeliveryFailed(sent);
 }
 
-/** The reply went out: off the store, and the table remembered for every later edit. */
+/** The reply went out: off the store, the token released, and a table remembered for every later edit. */
 function settleDelivered(chatId: bigint, reply: NonNullable<IntakeState['pendingReply']>, messageId: number | null): void {
   const live = activeIntake(chatId);
   if (!live) return;
   const ours = live.pendingReply?.token === reply.token;
-  // Only a TABLE is edited in place by the answers that follow: the «arrived»
-  // words leave the collection in `material`, and must never become the
-  // message an answer rewrites.
-  const table = messageId !== null && live.stage === 'review';
+  // Only a TABLE is edited in place by the answers that follow, and only the
+  // collection's current one (reviews spec-4, adv-6): the «arrived» words
+  // leave the collection in `material` and must never become the message an
+  // answer rewrites, and a reply a newer press replaced is no table at all.
+  // Decided by the reply as stored, not by the stage now — the seller may have
+  // typed since, and a table did go out.
+  const table = ours && messageId !== null && !isArrivedReply(reply);
   updateIntake(
     chatId,
     {
       ...(ours ? { pendingReply: null } : {}),
+      ...(ours && live.analysing === reply.token ? { analysing: null } : {}),
       ...(table ? { tableMessageId: messageId, tableHash: replyHash(reply) } : {}),
     },
     { quiet: true },
@@ -489,9 +629,11 @@ function replyHash(reply: { text: string; keyboard: InlineKeyboard | null }): st
   return createHash('sha1').update(reply.text).update(JSON.stringify(reply.keyboard)).digest('base64');
 }
 
+/** A reply nothing will ever send: dropped, and the token it held released. */
 function clearPending(chatId: bigint, token: string): void {
   const live = activeIntake(chatId);
-  if (live?.pendingReply?.token === token) updateIntake(chatId, { pendingReply: null }, { quiet: true });
+  if (live?.pendingReply?.token !== token) return;
+  updateIntake(chatId, { pendingReply: null, ...(live.analysing === token ? { analysing: null } : {}) }, { quiet: true });
 }
 
 /**
@@ -509,20 +651,46 @@ async function lastAttemptFailed(data: IntakeReadJob): Promise<void> {
   if (!live || live.noteId !== data.noteId) return;
   if (live.pendingReply?.token === data.token) return;
   if (data.deliverOnly || live.analysing !== data.token) return;
-  await saidDead(chatId, live);
+  await saidDead(chatId, live, { notice: data.noticeMessageId, brief: true });
 }
 
-/** Release a reading's token and say «Tahlil qilib bo‘lmadi …» — once per token. */
-async function saidDead(chatId: bigint, state: IntakeState): Promise<void> {
+/**
+ * Release a reading's token and say «Tahlil qilib bo‘lmadi …» (§2.6).
+ *
+ * Said once because the patch clears the token BEFORE the send is awaited:
+ * every caller — the last attempt, the settle that threw, a refused message,
+ * the sweep — asks first whether the token is still the collection's, so none
+ * reaches here twice for one token (review spec-3). `readingSaidDead` is a belt
+ * for a row hydrated mid-way, not what makes it once.
+ *
+ * From a job (`brief`) the send waits out one short flood wait — the job may
+ * sleep, the sweep may not — and a send that still fails turns the seller's
+ * «⏳» notice into the sentence instead (review adv-7): the token is already
+ * released, so nothing would ever say it again.
+ */
+async function saidDead(
+  chatId: bigint,
+  state: IntakeState,
+  how: { notice: number | null; brief: boolean },
+): Promise<void> {
   updateIntake(
     chatId,
-    { analysing: null, analysingAt: null, analysingJob: null, stage: 'material', readingSaidDead: true },
+    { analysing: null, analysingAt: null, analysingJob: null, stage: 'material', readingSaidDead: true, pendingReply: null },
     { quiet: true },
   );
   if (state.readingSaidDead) return;
-  const said = await sendText({ chatId, text: READING.failed, replyMarkup: doneKeyboard });
-  if (said.ok && said.messageId !== null) noteOwnMessage(chatId, said.messageId);
-  else logger.warn({ chatId: String(chatId), status: said.status }, '[calc-intake] «bo‘lmadi» not sent');
+  const msg = { chatId, text: READING.failed, replyMarkup: doneKeyboard };
+  const said = how.brief ? await sendTextBriefRetry(msg) : await sendText(msg);
+  if (said.ok) {
+    if (said.messageId !== null) noteOwnMessage(chatId, said.messageId);
+    return;
+  }
+  logger.warn({ chatId: String(chatId), status: said.status }, '[calc-intake] «bo‘lmadi» not sent');
+  if (how.notice !== null) {
+    // HTML-only (send.ts); the sentence holds no markup character. The notice
+    // is the collection's own message already, so its new «Bo‘ldi» is owned.
+    await editText({ chatId, messageId: how.notice, html: READING.failed, replyMarkup: doneKeyboard }).catch(() => null);
+  }
 }
 
 /**
@@ -557,12 +725,20 @@ async function jobLife(id: string): Promise<'alive' | 'dead' | 'missing'> {
 
 /**
  * For the sweep: is this collection's reading alive — its pg-boss job not
- * terminal? A press younger than a minute counts as alive even with no job
- * yet (its enqueue may still be on the way); a token with no job id at all is
- * judged by the press's own staleness.
+ * terminal? A reading whose reply is STORED is not dead: it is done, and only
+ * its delivery waits (`pendingDeliveryAlive` is that question). One running in
+ * this process is alive whatever pg-boss says (review adv-4): an attempt that
+ * outran its expiry is failed and retried by pg-boss, the in-process fence
+ * turns the retry away at once, and the job then reads «completed» while the
+ * first run is still reading. A press younger than a minute counts as alive
+ * even with no job yet (its enqueue may still be on the way); a token with no
+ * job id at all — its notice still going out — is judged by the press's own
+ * staleness.
  */
 export async function readingAlive(state: IntakeState): Promise<boolean> {
   if (state.analysing === null) return false;
+  if (state.pendingReply?.token === state.analysing) return true;
+  if (inFlight.has(state.analysing)) return true;
   const age = state.analysingAt === null ? Number.POSITIVE_INFINITY : Date.now() - state.analysingAt;
   if (state.analysingJob === null) return age <= ANALYSIS_STALE_MS;
   const life = await jobLife(state.analysingJob);
@@ -571,31 +747,53 @@ export async function readingAlive(state: IntakeState): Promise<boolean> {
 
 /**
  * For the sweep: release a dead reading's token and say «Tahlil qilib
- * bo‘lmadi…» once (`readingSaidDead`). Only the token it was handed: a newer
- * press's reading is not this one's to end.
+ * bo‘lmadi…» once. Only the token it was handed: a newer press's reading is
+ * not this one's to end.
  */
 export async function releaseDeadReading(chatId: bigint, state: IntakeState): Promise<void> {
   const live = activeIntake(chatId);
   if (!live || live.noteId !== state.noteId || live.analysing === null || live.analysing !== state.analysing) return;
   // A reading that succeeded and only waits for its delivery is never «dead».
   if (live.pendingReply?.token === live.analysing) return;
-  await saidDead(chatId, live);
+  // Nor one still running here, whatever its job says (review adv-4).
+  if (inFlight.has(live.analysing)) return;
+  // The sweep never sleeps, and knows no notice to edit.
+  await saidDead(chatId, live, { notice: null, brief: false });
 }
 
 /**
  * For the sweep: send a stored `pendingReply` whose delivery never happened (a
- * flood wait outlived the job's retries, durability-16), bounded like the
- * job's own delivery — the reading itself is never re-run for it.
+ * flood wait outlived the job's retries, durability-16; the last attempt's
+ * send failed), bounded like the job's own delivery — the reading itself is
+ * never re-run for it. Never while this process is delivering it already (a
+ * retry, a follow-up): the table would arrive twice (reviews spec-6, adv-5).
+ *
+ * The notice above it is NOT pointed down on this path: its id travels in the
+ * job's payload only, and K4's `pendingReply` carries none (reviews spec-5,
+ * adv-11 — handed to the lead), so «⏳ AI o‘qiyapti…» stays above a table that
+ * came late. Stated, not hidden.
  */
 export async function deliverStoredReply(chatId: bigint, state: IntakeState): Promise<void> {
   const live = activeIntake(chatId);
   const reply = live?.pendingReply;
   if (!live || !reply || live.noteId !== state.noteId) return;
-  await deliver(chatId, reply, { chatId: String(chatId), noteId: live.noteId, token: reply.token, noticeMessageId: null });
+  if (runningHere(reply.token)) return;
+  const job = { chatId: String(chatId), noteId: live.noteId, token: reply.token, noticeMessageId: null };
+  // No job, so no deadline to wait for: a stopping process hands nothing on.
+  await deliver(chatId, reply, job, Date.now());
 }
 
-/** For the sweep: is a delivery-only follow-up of this stored reply alive? */
+/**
+ * For the sweep: will something else still deliver this stored reply — a run
+ * in this process, its delivery-only follow-up, or, when there is none, the
+ * reading's own job (a retry after a failed send, or a job a dead process left
+ * `active` until pg-boss's expiry hands it over)? The sweep sends it only when
+ * nothing will (reviews spec-6, adv-5).
+ */
 export async function pendingDeliveryAlive(state: IntakeState): Promise<boolean> {
-  const jobId = state.pendingReply?.jobId ?? null;
+  const reply = state.pendingReply;
+  if (!reply) return false;
+  if (runningHere(reply.token)) return true;
+  const jobId = reply.jobId ?? state.analysingJob;
   return jobId !== null && (await jobLife(jobId)) === 'alive';
 }

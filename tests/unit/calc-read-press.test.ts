@@ -19,6 +19,15 @@ vi.mock('@/modules/wms/calc/ai-cost', () => ({ aiCalcBudgetLeft: async () => 100
 vi.mock('@/modules/platform/jobs/boss', async (importOriginal) =>
   (await import('../fixtures/calc-read-drive')).bossForReading(await importOriginal()),
 );
+/** P1's answer to the press's flush, played: false = a sealed store or a write that failed. */
+const store = vi.hoisted(() => ({ flushAnswer: true }));
+vi.mock('@/modules/platform/telegram/calc-store', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/modules/platform/telegram/calc-store')>();
+  return {
+    ...real,
+    flushIntakeWrites: async (chatId?: bigint) => (store.flushAnswer ? real.flushIntakeWrites(chatId) : false),
+  };
+});
 
 import { INTAKE_TIMEOUT_MS } from '@/modules/wms/calc/intake-ai';
 import { activeIntake, endIntake, startIntake, updateIntake } from '@/modules/platform/telegram/calc-intake';
@@ -32,7 +41,9 @@ import {
   INTAKE_READ_WORKERS,
   INTAKE_STEP_SLACK_MS,
   JOB_CALC_INTAKE_READ,
+  readingAlive,
   registerCalcIntakeReadWorker,
+  type IntakeReadJob,
 } from '@/modules/platform/telegram/calc-read';
 import { handleCalcCallback } from '@/modules/platform/telegram/staff-handlers';
 import { readingsEnqueued, refuseNextEnqueue, resetReadingDrive } from '../fixtures/calc-read-drive';
@@ -52,26 +63,33 @@ function collection(patch: Partial<Parameters<typeof updateIntake>[1]> = {}): bi
   return chatId;
 }
 
-function fakeCtx() {
+function fakeCtx(hold?: { notice: Promise<void> }) {
   const replies: { text: string; extra?: Record<string, unknown> }[] = [];
   return {
     replies,
     texts: () => replies.map((r) => r.text),
     async reply(text: string, extra?: Record<string, unknown>) {
       replies.push({ text, extra });
-      return { message_id: 100 + replies.length };
+      const id = 100 + replies.length;
+      if (hold && text === NOTICE) await hold.notice;
+      return { message_id: id };
     },
   };
 }
 
+/** Whatever the press set going without awaiting it gets its turn before an assertion about it. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
+
 beforeEach(() => {
   resetReadingDrive();
+  store.flushAnswer = true;
   model.analyze.mockReset();
   // An answer, so a reading that ran here would be SEEN running (the spy),
   // not merely crash on an undefined answer.
   model.analyze.mockResolvedValue({ ok: false, failure: 'network' });
 });
 afterEach(() => {
+  vi.restoreAllMocks();
   for (const id of chats.splice(0)) endIntake(id);
 });
 
@@ -97,7 +115,11 @@ describe('the press enqueues the reading and calls no model (§7.2.3)', () => {
     });
     expect(live.analysing).toEqual(expect.any(String));
     expect(live.analysingAt).toEqual(expect.any(Number));
-    // The model is the JOB's: nothing on the poller ever reaches it.
+    // The model is the JOB's: nothing on the poller ever reaches it — not even
+    // a reading the press set going without awaiting it (review spec-2: the
+    // `void` dispatch this replaces reached the model only after the press
+    // returned, so the spy is asked once that work has had its turn).
+    await settle();
     expect(model.analyze).not.toHaveBeenCalled();
     expect(ctx.texts()).toEqual([NOTICE]);
     // The notice is the collection's own message (its buttons are owned).
@@ -122,10 +144,71 @@ describe('the press enqueues the reading and calls no model (§7.2.3)', () => {
     expect(JSON.stringify(ctx.replies.at(-1)?.extra?.reply_markup)).toContain('c:done');
     expect(activeIntake(chatId)).toMatchObject({ analysing: null, analysingAt: null, analysingJob: null });
     expect(readingsEnqueued(chatId)).toHaveLength(0);
+    // Its «Bo‘ldi» is the collection's own: pressed, it is a «Bo‘ldi», never
+    // «Bu tugma eskirgan.» under the sentence that asked for it (review adv-1).
+    const refused = 100 + ctx.replies.length;
+    expect(activeIntake(chatId)!.ownMessageIds).toContain(refused);
 
-    await handleCalcCallback(ctx, chatId, 'done');
+    await handleCalcCallback(
+      Object.assign(ctx, { callbackQuery: { message: { message_id: refused } } }),
+      chatId,
+      'done',
+    );
     expect(ctx.texts()).not.toContain(LIVE);
     expect(readingsEnqueued(chatId)).toHaveLength(1);
+  });
+
+  it('a collection the store did not take (sealed by a stop, or a failed write): refused in words, the token released, no job', async () => {
+    const chatId = collection();
+    const ctx = fakeCtx();
+    store.flushAnswer = false;
+    await handleCalcCallback(ctx, chatId, 'done');
+    // A job enqueued here would reach a new process with no token in the row
+    // and return in silence under a «⏳» nobody answers (review adv-10).
+    expect(readingsEnqueued(chatId)).toHaveLength(0);
+    expect(ctx.texts().at(-1)).toBe(REFUSED);
+    expect(activeIntake(chatId)).toMatchObject({ analysing: null, analysingAt: null, analysingJob: null });
+    expect(activeIntake(chatId)!.ownMessageIds).toContain(100 + ctx.replies.length);
+
+    store.flushAnswer = true;
+    await handleCalcCallback(ctx, chatId, 'done');
+    expect(readingsEnqueued(chatId)).toHaveLength(1);
+  });
+
+  it('the questions a press is answered with first carry buttons of the collection’s own', async () => {
+    const invoice = collection({ pendingInvoice: { goods: [], label: '«B.xlsx»', texts: [] } });
+    const a = fakeCtx();
+    await handleCalcCallback(a, invoice, 'done');
+    expect(JSON.stringify(a.replies.at(-1)?.extra?.reply_markup)).toContain('c:inv_add');
+    expect(activeIntake(invoice)!.ownMessageIds).toContain(100 + a.replies.length);
+
+    const other = collection({ aiGoods: 'ask' });
+    const b = fakeCtx();
+    await handleCalcCallback(b, other, 'done');
+    expect(JSON.stringify(b.replies.at(-1)?.extra?.reply_markup)).toContain('c:other_add');
+    expect(activeIntake(other)!.ownMessageIds).toContain(100 + b.replies.length);
+    expect(readingsEnqueued()).toHaveLength(0);
+  });
+
+  it('a notice that hangs past the sweep’s minute of grace: the press stays alive, and its job id is stored only once the notice is out', async () => {
+    const chatId = collection({ analysingJob: 'an-older-reading' });
+    let out: () => void = () => {};
+    const ctx = fakeCtx({ notice: new Promise<void>((resolve) => (out = resolve)) });
+    const pressing = handleCalcCallback(ctx, chatId, 'done');
+    await vi.waitFor(() => expect(ctx.texts()).toContain(NOTICE));
+    const hung = activeIntake(chatId)!;
+    // Two minutes on, the job not yet enqueued: still alive (review adv-14).
+    const realNow = Date.now.bind(Date);
+    vi.spyOn(Date, 'now').mockImplementation(() => realNow() + 120_000);
+    expect(await readingAlive(hung)).toBe(true);
+    // …because no job id stands yet — never the previous reading's, which
+    // the sweep would find finished.
+    expect(hung.analysingJob).toBeNull();
+    out();
+    await pressing;
+    const live = activeIntake(chatId)!;
+    expect(readingsEnqueued(chatId).map((j) => j.options.id)).toEqual([live.analysingJob]);
+    expect(await readingAlive(live)).toBe(true);
   });
 
   it('a token minted 23 minutes ago is taken over by the next press', async () => {
@@ -165,6 +248,36 @@ describe('the one wall clock and its workers (§7.2.1, §7.2.2)', () => {
     for (const call of boss.work.mock.calls as unknown[][]) {
       expect(call[0]).toBe(JOB_CALC_INTAKE_READ);
       expect(call[1]).toEqual({ includeMetadata: true });
+    }
+  });
+
+  it('…and each hands the job’s own `retryCount` on: only the LAST attempt keeps a failed delivery quiet', async () => {
+    // Review spec-1: the pin above holds `includeMetadata`, which is worthless
+    // if the handler then drops the count — every attempt would think it is
+    // the first, and the last would rethrow instead of answering.
+    type Handler = (jobs: { data: IntakeReadJob; retryCount?: number }[]) => Promise<void>;
+    const handlers: Handler[] = [];
+    const boss = {
+      createQueue: async () => {},
+      work: async (_name: string, _opts: unknown, handler: Handler) => {
+        handlers.push(handler);
+        return 'w';
+      },
+    };
+    await registerCalcIntakeReadWorker(boss as never);
+    // No bot token: every send answers status 0 — a delivery worth retrying.
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    delete process.env.TELEGRAM_BOT_TOKEN;
+    try {
+      const pressedOnce = async () => {
+        const chatId = collection();
+        await handleCalcCallback(fakeCtx(), chatId, 'done');
+        return readingsEnqueued(chatId).at(-1)!.data;
+      };
+      await expect(handlers[0]!([{ data: await pressedOnce(), retryCount: 0 }])).rejects.toThrow('not delivered');
+      await expect(handlers[1]!([{ data: await pressedOnce(), retryCount: INTAKE_READ_RETRY }])).resolves.toBeUndefined();
+    } finally {
+      if (token !== undefined) process.env.TELEGRAM_BOT_TOKEN = token;
     }
   });
 });
