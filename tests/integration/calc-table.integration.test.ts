@@ -26,6 +26,7 @@ import {
   type TableItemEdit,
   type TableNewItem,
 } from '@/modules/wms/calc/workspace';
+import { sawRevOfGroup } from '../fixtures/calc-saw-rev';
 
 /**
  * VED 2.0 phase 3 — the table's ONE write door, against a real database.
@@ -211,7 +212,7 @@ describe('auto-grouping by typed code', () => {
     });
     const before = await groupRows(id);
     expect(before).toHaveLength(2);
-    for (const g of before) await confirmGroup(g.id, ctx());
+    for (const g of before) await confirmGroup(g.id, ctx(), 'single', await sawRevOfGroup(g.id));
 
     // Item 1 re-codes 6102 → 6103: BOTH groups' numbers moved, so BOTH lose
     // their ✅ — and all four columns clear, because the pair CHECK sees only
@@ -255,7 +256,7 @@ describe('auto-grouping by typed code', () => {
     const id = await open([{ name: `stol ${tag()}`, quantity: 5, tnvedCode: '9403' }]);
     await save(id, {});
     const [group] = await groupRows(id);
-    await confirmGroup(group!.id, ctx());
+    await confirmGroup(group!.id, ctx(), 'single', await sawRevOfGroup(group!.id));
 
     await save(id, { items: [await editOf(id, 1, { name: `stol yangi ${tag()}` })] });
     let [g] = await groupRows(id);
@@ -462,7 +463,7 @@ describe('the per-row baza', () => {
     const id = await open([{ name: `krujka ${tag()}`, quantity: 100, tnvedCode: '3924' }]);
     await save(id, {});
     const [group] = await groupRows(id);
-    await confirmGroup(group!.id, ctx());
+    await confirmGroup(group!.id, ctx(), 'single', await sawRevOfGroup(group!.id));
 
     await save(id, { items: [await editOf(id, 1, { bazaUsd: 2.5, bazaBasis: 'unit' })] });
     let [item] = await itemRows(id);
@@ -482,7 +483,7 @@ describe('the per-row baza', () => {
     const id = await open([{ name: `chashka ${tag()}`, quantity: 10, tnvedCode: '3924' }]);
     await save(id, { items: [await editOf(id, 1, { bazaUsd: 4, bazaBasis: 'unit' })] });
     const [group] = await groupRows(id);
-    await confirmGroup(group!.id, ctx());
+    await confirmGroup(group!.id, ctx(), 'single', await sawRevOfGroup(group!.id));
     // Re-posting the identical pair (what a full-row save does) must not
     // clear the ✅ — a no-op edit is not an edit.
     await save(id, { items: [await editOf(id, 1, { bazaUsd: 4, bazaBasis: 'unit' })] });
@@ -675,7 +676,7 @@ describe('the revision clock', () => {
     const id = await open([{ name: `qulf ${tag()}`, tnvedCode: '9403' }]);
     await save(id, {});
     const [group] = await groupRows(id);
-    await confirmGroup(group!.id, ctx());
+    await confirmGroup(group!.id, ctx(), 'single', await sawRevOfGroup(group!.id));
     const [first] = await groupRows(id);
 
     // A SECOND user re-presses: identity is the oracle (a timestamp can
@@ -688,7 +689,7 @@ describe('the revision clock', () => {
         passwordHash: 'x',
       })
       .returning();
-    await confirmGroup(group!.id, { actorId: other!.id });
+    await confirmGroup(group!.id, { actorId: other!.id }, 'single', await sawRevOfGroup(group!.id));
     const [second] = await groupRows(id);
     expect(second!.confirmedBy).toBe(first!.confirmedBy);
     expect(second!.confirmedBy).toBe(actorId);

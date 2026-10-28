@@ -1897,7 +1897,9 @@ export function ItemsTable({
                 className="btn-secondary !min-h-8"
                 disabled={busy}
                 data-testid="calc-confirm-all"
-                onClick={() => act(() => confirmAllAction(id))}
+                // The revision this screen was drawn at (P6): a seller's
+                // addition written after it refuses the bulk ✅ in words.
+                onClick={() => act(() => confirmAllAction(id, workspace.rev))}
               >
                 {t('confirmAll')} ({unconfirmed})
               </button>
@@ -2112,6 +2114,7 @@ export function ItemsTable({
                     groupsByCode={groupsByCode}
                     busy={busy}
                     dirty={gateCount > 0}
+                    sawRev={workspace.rev}
                     act={act}
                     setDraft={setDraft}
                     clearDraft={clearDraft}
@@ -2312,6 +2315,7 @@ const ItemRowBlock = memo(function ItemRowBlock({
   groupsByCode,
   busy,
   dirty,
+  sawRev,
   act,
   setDraft,
   clearDraft,
@@ -2336,6 +2340,9 @@ const ItemRowBlock = memo(function ItemRowBlock({
   groupsByCode: Map<string, WorkspaceGroup>;
   busy: boolean;
   dirty: boolean;
+  /** The revision the screen was drawn at — the block ✅'s `sawRev` (P6). A
+   * number, so the memo still holds while nothing is saved. */
+  sawRev: number;
   act: (work: () => Promise<CalcFormState>) => void;
   setDraft: (itemId: string, field: keyof ItemDraft, raw: string) => void;
   clearDraft: (itemId: string) => void;
@@ -2640,6 +2647,7 @@ const ItemRowBlock = memo(function ItemRowBlock({
           liveBasisNotLaw={liveBasisNotLaw}
           busy={busy}
           dirty={dirty}
+          sawRev={sawRev}
           act={act}
           liveState={liveMoved ? 'unsaved_code' : 'ok'}
         />
@@ -2671,6 +2679,7 @@ function BlockFooter({
   liveBasisNotLaw,
   busy,
   dirty,
+  sawRev,
   act,
   liveState,
 }: {
@@ -2681,6 +2690,8 @@ function BlockFooter({
   liveBasisNotLaw: boolean;
   busy: boolean;
   dirty: boolean;
+  /** The revision the screen was drawn at (P6, §10A). */
+  sawRev: number;
   act: (work: () => Promise<CalcFormState>) => void;
   /**
    * The live figure's standing (judge S11, written by P3): 'unsaved_code' =
@@ -2920,7 +2931,7 @@ function BlockFooter({
               className="ml-2 text-2xs underline text-good"
               disabled={busy}
               data-testid="calc-confirm-group"
-              onClick={() => act(() => confirmGroupAction(id, group.id))}
+              onClick={() => act(() => confirmGroupAction(id, group.id, 'single', sawRev))}
             >
               {t('confirm')}
             </button>

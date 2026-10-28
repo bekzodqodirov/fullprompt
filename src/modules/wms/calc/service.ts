@@ -777,6 +777,15 @@ async function endRequest(
     answerCurrency?: string | null;
     answerNote?: string | null;
     answerInternalNote?: string | null;
+    /**
+     * «Готово»'s P6 refusal (docs/SAKKIZ-R3.md §10A): the revision the VED's
+     * screen was drawn at. Set, the close happens only while no seller's
+     * APPLIED addition is newer than it, and a null answer then means EITHER
+     * closed meanwhile OR amended — the caller re-reads to say which. Only
+     * `finishCalcRequest` passes it: a hand-back and the task/lines closes
+     * write no price.
+     */
+    notAmendedSince?: number;
   },
 ): Promise<{
   entityType: string;
@@ -785,26 +794,61 @@ async function endRequest(
   taskId: string | null;
 } | null> {
   const now = new Date();
-  const rows = await db
-    .update(calcRequests)
-    .set({
-      completedAt: now,
-      completedBy: patch.actorId,
-      completedVia: patch.via,
-      returnReason: patch.returnReason ?? null,
-      answerAmount: num(patch.answerAmount ?? null),
-      answerCurrency: patch.answerCurrency ?? null,
-      answerNote: patch.answerNote ?? null,
-      answerInternalNote: patch.answerInternalNote ?? null,
-      updatedAt: now,
-    })
-    .where(and(eq(calcRequests.id, id), openRequests))
-    .returning({
-      entityType: calcRequests.entityType,
-      entityId: calcRequests.entityId,
-      requestedBy: calcRequests.requestedBy,
-      taskId: calcRequests.taskId,
+  const set = {
+    completedAt: now,
+    completedBy: patch.actorId,
+    completedVia: patch.via,
+    returnReason: patch.returnReason ?? null,
+    answerAmount: num(patch.answerAmount ?? null),
+    answerCurrency: patch.answerCurrency ?? null,
+    answerNote: patch.answerNote ?? null,
+    answerInternalNote: patch.answerInternalNote ?? null,
+    updatedAt: now,
+  };
+  const returning = {
+    entityType: calcRequests.entityType,
+    entityId: calcRequests.entityId,
+    requestedBy: calcRequests.requestedBy,
+    taskId: calcRequests.taskId,
+  };
+  let rows: { entityType: string; entityId: string; requestedBy: string; taskId: string | null }[];
+  if (patch.notAmendedSince === undefined) {
+    rows = await db
+      .update(calcRequests)
+      .set(set)
+      .where(and(eq(calcRequests.id, id), openRequests))
+      .returning(returning);
+  } else {
+    // Dynamic: amended-since.ts throws this file's CalcError (the workspace
+    // import's reason, below). Read before the transaction opens.
+    const { amendedSinceSql } = await import('./amended-since');
+    const unamended = sql`NOT ${amendedSinceSql(id, patch.notAmendedSince)}`;
+    /**
+     * THE ROW LOCK FIRST, THEN THE UPDATE — two statements, not one.
+     *
+     * The predicate inside the bare UPDATE is not enough, and it was the
+     * first draft (P6, measured on a throwaway pair of tables): the add
+     * door's applied write holds this row `FOR UPDATE` while it inserts its
+     * amendment, so an UPDATE started meanwhile WAITS for the row — and when
+     * the writer commits, READ COMMITTED re-checks the WHERE against the new
+     * row version only. The `NOT EXISTS` over `calc_amendments` is evaluated
+     * in the statement's ORIGINAL snapshot and cannot see the amendment that
+     * committed while it waited: the bare UPDATE closed the job (1 row), the
+     * locked shape refused it (0 rows). After `FOR UPDATE` is granted, the
+     * UPDATE is a new statement with a new snapshot, and it sees it — the
+     * same order the three locked doors keep (`refuseIfAmendedSinceInTx`
+     * right after the lock). The task close and every ping stay after the
+     * commit, on the pool (#714).
+     */
+    rows = await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT id FROM calc_requests WHERE id = ${id}::uuid FOR UPDATE`);
+      return tx
+        .update(calcRequests)
+        .set(set)
+        .where(and(eq(calcRequests.id, id), openRequests, unamended))
+        .returning(returning);
     });
+  }
   const row = rows[0];
   if (!row) return null;
   // A request nobody took has no task, and `eq(tasks.id, null)` would match
@@ -950,6 +994,11 @@ export async function finishCalcRequest(
     internalNote: string;
   },
   ctx: AuditContext,
+  /**
+   * The revision the VED's SCREEN was drawn at (docs/SAKKIZ-R3.md §10A, P6).
+   * REQUIRED, never optional — an optional one fails open (#790).
+   */
+  sawRev: number,
 ): Promise<void> {
   if (!ctx.actorId) throw new CalcError('unauthenticated');
   const current = await db.query.calcRequests.findFirst({
@@ -1007,8 +1056,22 @@ export async function finishCalcRequest(
     answerCurrency: currency,
     answerNote: sellerNote,
     answerInternalNote: internalNote,
+    // P6 (docs/SAKKIZ-R3.md §10A): «Готово» is the only close on exactly the
+    // jobs 2.8 b asks a count for (no customs total, so no seal), and the
+    // answer becomes the upsale floor, the card's lock, the channel's post
+    // and the CalcDone push. A check up here would race exactly the addition
+    // it exists for; the close itself carries it.
+    notAmendedSince: sawRev,
   });
-  if (!row) throw new CalcError('already_closed');
+  if (!row) {
+    // Zero rows is two different facts, and the VED must read the right one.
+    const stood = await db.query.calcRequests.findFirst({
+      where: eq(calcRequests.id, id),
+      columns: { completedAt: true },
+    });
+    if (!stood || stood.completedAt) throw new CalcError('already_closed');
+    throw new CalcError('amended_since');
+  }
   // The price channel's claim (his F6 a: «Готово» answers too) — right after
   // the job closed, before anything that can throw; its own catch, and the
   // drain's net picks up a row this misses.
@@ -1822,6 +1885,9 @@ export async function storedRequestFacts(requestId: string): Promise<{
 }
 
 export interface CalcRequestDetail extends CalcQueueRow {
+  /** The revision clock as this read found it — the «Готово» fold's `sawRev`
+   * on a page with no workspace (server behind), P6. */
+  rev: number;
   noteId: string | null;
   source: string | null;
   completedAt: Date | null;
@@ -1948,6 +2014,7 @@ export async function calcRequestDetail(
     lineNeeds: lineNeedsFor(row.section, facts, laws),
     goodsFacts,
     late: !row.completedAt && row.dueAt.getTime() < now.getTime(),
+    rev: row.rev,
     noteId: row.noteId,
     source: row.source,
     completedAt: row.completedAt,

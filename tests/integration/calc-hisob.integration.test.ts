@@ -30,6 +30,7 @@ import {
   setGroupRates,
   type TableItemEdit,
 } from '@/modules/wms/calc/workspace';
+import { sawRev } from '../fixtures/calc-saw-rev';
 
 /**
  * Package P2 «Hisob» (docs/RASTAMOJKA-TUZATISH.md §2, §7.2) against a real
@@ -204,13 +205,13 @@ describe('the lgota memory offers the LAST decision, not the last exemption (P2.
       { tnvedCode: code, dutyPct: 10, vatPct: 12, dutyFree: true, vatFree: false },
       ctx(),
     );
-    await confirmAllGroups(first, ctx());
-    await sealCalc(first, SEAL, ctx());
+    await confirmAllGroups(first, ctx(), await sawRev(first));
+    await sealCalc(first, { ...SEAL, sawRev: await sawRev(first) }, ctx());
 
     // Sealed again, later, as an ordinary job: the last decision is «no lgota».
     const second = await priced(code);
-    await confirmAllGroups(second, ctx());
-    await sealCalc(second, SEAL, ctx());
+    await confirmAllGroups(second, ctx(), await sawRev(second));
+    await sealCalc(second, { ...SEAL, sawRev: await sawRev(second) }, ctx());
 
     const third = await priced(code);
     const ws = await loadWorkspace(third);
@@ -226,8 +227,8 @@ describe('the lgota memory offers the LAST decision, not the last exemption (P2.
       { tnvedCode: code, dutyPct: 10, vatPct: 12, dutyFree: false, vatFree: true },
       ctx(),
     );
-    await confirmAllGroups(first, ctx());
-    await sealCalc(first, SEAL, ctx());
+    await confirmAllGroups(first, ctx(), await sawRev(first));
+    await sealCalc(first, { ...SEAL, sawRev: await sawRev(first) }, ctx());
 
     const next = await priced(code);
     const ws = await loadWorkspace(next);
@@ -239,9 +240,9 @@ describe('the lgota memory offers the LAST decision, not the last exemption (P2.
 describe('the seal refuses what the section does not have (P2.8)', () => {
   it('a band override on a rastamojka-only job is refused — it moves no money', async () => {
     const id = await priced('9618000000');
-    await confirmAllGroups(id, ctx());
+    await confirmAllGroups(id, ctx(), await sawRev(id));
     await expect(
-      sealCalc(id, { ...SEAL, bandOverrideMin: 300, bandOverrideReason: 'zich yuk' }, ctx()),
+      sealCalc(id, { ...SEAL, bandOverrideMin: 300, bandOverrideReason: 'zich yuk', sawRev: await sawRev(id) }, ctx()),
     ).rejects.toMatchObject({ code: 'band_no_freight' });
   });
 });
@@ -313,8 +314,8 @@ describe('a group says when the book moved, and the correction re-reads it (P2.2
     expect(moved.warnings).not.toContain('rate_off_dictionary');
 
     // Sealed as it stood — then corrected: the dictionary group is re-read.
-    await confirmAllGroups(id, ctx());
-    await sealCalc(id, SEAL, ctx());
+    await confirmAllGroups(id, ctx(), await sawRev(id));
+    await sealCalc(id, { ...SEAL, sawRev: await sawRev(id) }, ctx());
     const fresh = await recalcFromSealed(id, ctx());
     madeRequests.push(fresh.id);
     expect(fresh.relawed).toEqual([code]);
@@ -333,8 +334,8 @@ describe('a group says when the book moved, and the correction re-reads it (P2.2
       { tnvedCode: code, dutyPct: 7, vatPct: 12, dutyFree: false, vatFree: false },
       ctx(),
     );
-    await confirmAllGroups(id, ctx());
-    await sealCalc(id, SEAL, ctx());
+    await confirmAllGroups(id, ctx(), await sawRev(id));
+    await sealCalc(id, { ...SEAL, sawRev: await sawRev(id) }, ctx());
     await teach({ tnvedCode: code, dutyPct: 15, vatPct: 12, effectiveDate: onDate() });
     const fresh = await recalcFromSealed(id, ctx());
     madeRequests.push(fresh.id);
@@ -347,8 +348,8 @@ describe('a re-pulled law that moves the unit names its rows (MR-15, TT-8)', () 
   it('advalor → «kamida $3/juft» on the correction: the row is named, its pair waits for Saqlash', async () => {
     const code = codeUnder('9618');
     const id = await priced(code);
-    await confirmAllGroups(id, ctx());
-    await sealCalc(id, SEAL, ctx());
+    await confirmAllGroups(id, ctx(), await sawRev(id));
+    await sealCalc(id, { ...SEAL, sawRev: await sawRev(id) }, ctx());
     await teach({
       tnvedCode: code,
       dutyPct: 10,
@@ -406,8 +407,8 @@ describe('the excise can be entered, in one shape (P2.4)', () => {
     expect(ws).toMatchObject({ excisePct: null, exciseSpecific: 0.5, exciseUnit: 'dona' });
     expect(ws.customs).toMatchObject({ ok: true, exciseUsd: 50, vatUsd: 270, customsUsd: 520 });
 
-    await confirmAllGroups(id, ctx());
-    await sealCalc(id, SEAL, ctx());
+    await confirmAllGroups(id, ctx(), await sawRev(id));
+    await sealCalc(id, { ...SEAL, sawRev: await sawRev(id) }, ctx());
     const fresh = await recalcFromSealed(id, ctx());
     madeRequests.push(fresh.id);
     expect((await groupRows(fresh.id))[0]).toMatchObject({ exciseSpecific: '0.5000', exciseUnit: 'dona' });
@@ -460,15 +461,15 @@ describe('the excise can be entered, in one shape (P2.4)', () => {
 describe('the seal locks the fee the screen showed (P2.6)', () => {
   it('a moved fee is a conflict, null against a figure too; the receipt keeps the inputs', async () => {
     const id = await priced(codeUnder('9618'));
-    await confirmAllGroups(id, ctx());
+    await confirmAllGroups(id, ctx(), await sawRev(id));
     const ws = await loadWorkspace(id);
     expect(ws!.fee).toMatchObject({ ok: true });
     const fee = ws!.fee!.ok ? ws!.fee!.feeUsd : 0;
-    await expect(sealCalc(id, { ...SEAL, sawFeeUsd: fee + 1 }, ctx())).rejects.toMatchObject({
+    await expect(sealCalc(id, { ...SEAL, sawFeeUsd: fee + 1, sawRev: await sawRev(id) }, ctx())).rejects.toMatchObject({
       code: 'conflict',
     });
-    await expect(sealCalc(id, { ...SEAL, sawFeeUsd: null }, ctx())).rejects.toMatchObject({ code: 'conflict' });
-    await sealCalc(id, { ...SEAL, sawFeeUsd: fee }, ctx());
+    await expect(sealCalc(id, { ...SEAL, sawFeeUsd: null, sawRev: await sawRev(id) }, ctx())).rejects.toMatchObject({ code: 'conflict' });
+    await sealCalc(id, { ...SEAL, sawFeeUsd: fee, sawRev: await sawRev(id) }, ctx());
     const [v] = await db.select().from(calcVersions).where(eq(calcVersions.requestId, id));
     const receipt = (v!.breakdown as { fee?: Record<string, unknown> }).fee!;
     expect(receipt).toMatchObject({ ok: true, feeUsd: fee, bhmUzs: ws!.bhmUzs, fxUzsPerUsd: ws!.fxUzsPerUsd });
@@ -493,8 +494,8 @@ describe('a baza says when its source is old, whatever the source (TT-19)', () =
     const name = `memory etik ${tag()} ${Math.random().toString(36).slice(2, 8)}`;
     const code = codeUnder('9618');
     const first = await priced(code, { name, bazaUsd: 33 });
-    await confirmAllGroups(first, ctx());
-    await sealCalc(first, SEAL, ctx());
+    await confirmAllGroups(first, ctx(), await sawRev(first));
+    await sealCalc(first, { ...SEAL, sawRev: await sawRev(first) }, ctx());
 
     const next = await open([{ name, quantity: 10, weightKg: 5 }]);
     await save(next, []);
@@ -519,11 +520,11 @@ describe('the fee door is the declaration fee, and it unblocks the seal (P2.6)',
     // whose rate is missing is rescued by this one box — which is why the
     // box must render while the fee is blocked (calc-workspace, unit-pinned).
     const id = await priced(codeUnder('9618'));
-    await confirmAllGroups(id, ctx());
+    await confirmAllGroups(id, ctx(), await sawRev(id));
     await setFeeOverride(id, 50, ctx());
     const ws = (await loadWorkspace(id))!;
     expect(ws.fee).toMatchObject({ ok: true, feeUsd: 50, overridden: true });
     expect(canSeal(ws)).toBe(true);
-    await sealCalc(id, { ...SEAL, sawFeeUsd: 50 }, ctx());
+    await sealCalc(id, { ...SEAL, sawFeeUsd: 50, sawRev: await sawRev(id) }, ctx());
   });
 });

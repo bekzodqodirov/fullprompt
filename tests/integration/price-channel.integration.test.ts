@@ -53,6 +53,7 @@ import { queueMissedPrices, queuePriceChannelPost } from '@/modules/wms/calc/cha
 import { drainPriceChannel, reconcilePriceChannelMarks, retryPriceChannelPost } from '@/modules/wms/calc/channel-send';
 import { channelPanel } from '@/modules/wms/calc/channel-panel';
 import { recheckChannelAction } from '@/app/(protected)/admin/narx-kanali/actions';
+import { sawRev } from '../fixtures/calc-saw-rev';
 
 /**
  * The panel's «Qayta tekshirish» is pressed as a SERVER ACTION (I14): its
@@ -476,7 +477,7 @@ async function priceAll(requestId: string, section: 'rastamojka' | 'podklyuch' =
     );
   }
   if (section === 'podklyuch') await setFreightZone(requestId, 'cn', ctx());
-  await confirmAllGroups(requestId, ctx());
+  await confirmAllGroups(requestId, ctx(), await sawRev(requestId));
 }
 
 async function seal(requestId: string, opts: { discountUsd?: number; band?: number | null } = {}) {
@@ -487,6 +488,7 @@ async function seal(requestId: string, opts: { discountUsd?: number; band?: numb
       discountReason: opts.discountUsd ? 'doimiy mijoz' : null,
       bandOverrideMin: opts.band ?? null,
       bandOverrideReason: opts.band ? 'zichlik' : null,
+      sawRev: await sawRev(requestId),
     },
     ctx(),
   );
@@ -632,7 +634,7 @@ describe('I4 — a «Готово» answer', () => {
     await finishCalcRequest(
       requestId,
       { amountText: '1200', currency: 'USD', note: `SELLER-NOTE-${SUFFIX}`, internalNote: `INTERNAL-${SUFFIX}` },
-      { actorId: adminId },
+      { actorId: adminId }, await sawRev(requestId),
     );
     const row = await postFor(requestId);
     expect(row).toMatchObject({ kind: 'answer', status: 'pending', dedupeKey: `answer:${requestId}` });
@@ -990,13 +992,13 @@ describe('I10 — the net under the hooks', () => {
 
   it('a «Готово» answer whose hook never ran is queued by the net too; one from before the connection is not', async () => {
     const lost = await openRequest();
-    await finishCalcRequest(lost, { amountText: '1200', currency: 'USD', note: '', internalNote: 'x' }, { actorId: adminId });
+    await finishCalcRequest(lost, { amountText: '1200', currency: 'USD', note: '', internalNote: 'x' }, { actorId: adminId }, await sawRev(lost));
     await db.delete(priceChannelPosts).where(eq(priceChannelPosts.dedupeKey, `answer:${lost}`));
     await drain();
     expect(await postFor(lost)).toMatchObject({ kind: 'answer', status: 'sent' });
 
     const old = await openRequest();
-    await finishCalcRequest(old, { amountText: '900', currency: 'USD', note: '', internalNote: 'x' }, { actorId: adminId });
+    await finishCalcRequest(old, { amountText: '900', currency: 'USD', note: '', internalNote: 'x' }, { actorId: adminId }, await sawRev(old));
     await db.delete(priceChannelPosts).where(eq(priceChannelPosts.dedupeKey, `answer:${old}`));
     await db
       .update(calcRequests)

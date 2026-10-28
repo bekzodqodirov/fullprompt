@@ -55,6 +55,7 @@ import {
   type TableNewItem,
 } from '@/modules/wms/calc/workspace';
 import { deleteItemAction, saveTableAction } from '@/app/(protected)/hisoblash/actions';
+import { sawRev } from '../fixtures/calc-saw-rev';
 
 const SUFFIX = String(Date.now()).slice(-6);
 let seq = 0;
@@ -264,7 +265,7 @@ describe('a one-row post writes that row and no other (B2 a)', () => {
       { name: `monitor ${tag()}`, quantity: 2, tnvedCode: '8528520000' },
     ]);
     await save(id, {});
-    await confirmAllGroups(id, ctx());
+    await confirmAllGroups(id, ctx(), await sawRev(id));
     const before = await itemRows(id);
     const b = before.find((i) => i.seq === 2)!;
 

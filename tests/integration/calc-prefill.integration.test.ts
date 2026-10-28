@@ -31,6 +31,7 @@ import {
   saveTable,
 } from '@/modules/wms/calc/workspace';
 import { aiPrefill, prefillStanding, prefillTicket } from '@/modules/wms/calc/prefill';
+import { sawRevOfGroup } from '../fixtures/calc-saw-rev';
 
 /**
  * The AI VED hodimi, end to end, with the MODEL INJECTED.
@@ -465,7 +466,7 @@ describe('the machine carries a job as far as it honestly can', () => {
     // Through the real door: a hand-written confirm invents a `confirm_via`
     // the 0089 CHECK refuses, and a fixture that cannot reach the state is
     // evidence about the fixture (#166).
-    await confirmGroup(group!.id, ctx());
+    await confirmGroup(group!.id, ctx(), 'single', await sawRevOfGroup(group!.id));
     expect(await prefillStanding(fresh, await prefillTicket(fresh))).toBe('confirmed');
   });
 

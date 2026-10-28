@@ -25,6 +25,7 @@ import { finishCalcRequest, leadTakesJobs, openCalcRequest, takeCalcRequest } fr
 import { recalcFromSealed, recordOffer, sealCalc, setFreightZone } from '@/modules/wms/calc/workspace';
 import { answerFloorStandsSql } from '@/modules/wms/calc/version-set';
 import { winLead } from '@/modules/wms/crm/service';
+import { sawRev } from '../fixtures/calc-saw-rev';
 
 /**
  * «Yutildi» on a lead that collected several calculations (his Q5 a,
@@ -79,7 +80,7 @@ async function sealedOn(leadId: string) {
   );
   madeRequests.push(request.id);
   await setFreightZone(request.id, 'cn', ctx());
-  await sealCalc(request.id, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null }, ctx());
+  await sealCalc(request.id, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(request.id) }, ctx());
   const version = await db.query.calcVersions.findFirst({ where: eq(calcVersions.requestId, request.id) });
   return { requestId: request.id, versionId: version!.id, floor: Number(version!.totalUsd), sealedAt: version!.sealedAt };
 }
@@ -108,7 +109,7 @@ async function openOn(leadId: string, goods = `monitor ${tag()}`): Promise<strin
 async function answeredOn(leadId: string, amount: number): Promise<string> {
   const id = await openOn(leadId);
   await takeCalcRequest(id, ctx());
-  await finishCalcRequest(id, { amountText: String(amount), currency: 'USD', note: 'gotovo', internalNote: 'ichki' }, ctx());
+  await finishCalcRequest(id, { amountText: String(amount), currency: 'USD', note: 'gotovo', internalNote: 'ichki' }, ctx(), await sawRev(id));
   return id;
 }
 

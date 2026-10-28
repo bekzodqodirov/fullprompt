@@ -94,6 +94,7 @@ import { childStateSql } from './chain';
 import { guessedZoneFor } from './zone-guess';
 import { volumeIsLinesSum } from './line-totals';
 import { advanceHandsOffInTx } from './hands-off';
+import { refuseIfAmendedSinceInTx } from './amended-since';
 import { isAnswer, isAnswerSql } from './credit';
 import { createTask } from '@/modules/platform/tasks/service';
 import { retireTaskCopiesSoon } from '@/modules/platform/notifications/retire-tasks';
@@ -1535,8 +1536,16 @@ export async function confirmGroup(
    * the VAT and the ✨ chips and a ✅ pressed on a card that shows none of
    * them read identically to phase E1. They are different facts about how
    * carefully a rate was blessed, and E1 exists to measure exactly that.
+   * Required since P6: a default ahead of `sawRev` would make every caller
+   * spell it anyway.
    */
-  via: 'single' | 'phone' = 'single',
+  via: 'single' | 'phone',
+  /**
+   * The revision the VED's SCREEN was drawn at (docs/SAKKIZ-R3.md §10A, P6).
+   * REQUIRED, never optional: an optional one fails open (#790), and a
+   * required one made every caller a compile error that named itself.
+   */
+  sawRev: number,
 ) {
   const group = await db.query.calcGroups.findFirst({ where: eq(calcGroups.id, groupId) });
   if (!group) throw new CalcError('not_found');
@@ -1545,6 +1554,10 @@ export async function confirmGroup(
   // month from now asks a different question about a different world.
   const warnings = await warningsNow(group.requestId);
   await mutateRequest(group.requestId, async (tx, locked) => {
+    // A seller's addition written after the screen was drawn (P6): the ✅
+    // would bless figures the VED never saw as «what stood on the screen».
+    // First, under the lock, before anything is written.
+    await refuseIfAmendedSinceInTx(tx, group.requestId, sawRev);
     // The clock: a save committing after the warnings were computed makes
     // that list a description of numbers that no longer stand — refuse, the
     // screen re-renders, the person presses again over the truth.
@@ -1572,13 +1585,21 @@ export async function confirmGroup(
   });
 }
 
-export async function confirmAllGroups(requestId: string, ctx: AuditContext): Promise<number> {
+export async function confirmAllGroups(
+  requestId: string,
+  ctx: AuditContext,
+  /** The revision the VED's screen was drawn at — required (P6, §10A). */
+  sawRev: number,
+): Promise<number> {
   const warnings = await warningsNow(requestId);
   // ONE transaction under the request lock, with the SAME clock check as the
   // single door — bulk is the COMMON press, and a save landing between the
   // warnings compute and the stamps would otherwise record lists describing
   // numbers that no longer stand (the drift E1's record exists to prevent).
   const rows = await mutateRequest(requestId, async (tx, locked) => {
+    // The single door's P6 refusal, at the same place: a bulk ✅ over a
+    // seller's addition the screen never showed blesses all of it at once.
+    await refuseIfAmendedSinceInTx(tx, requestId, sawRev);
     if (locked.rev !== warnings.rev) throw new CalcError('conflict');
     const pending = await tx
       .select({ id: calcGroups.id })
@@ -1850,6 +1871,15 @@ export interface SealInput {
    * from an open tab during the deploy window.
    */
   sawFeeUsd?: number | null;
+  /**
+   * The revision the VED's SCREEN was drawn at (docs/SAKKIZ-R3.md §10A, P6).
+   * REQUIRED, unlike `sawFeeUsd`: the clock CAS below compares the seal's own
+   * press-time compute, which already includes a seller's addition that
+   * landed after the page loaded — only the screen's revision can tell. A
+   * page from an older build cannot call this build's action at all (action
+   * ids are per build), so there is no «posted none» case to tolerate.
+   */
+  sawRev: number;
 }
 
 /**
@@ -2048,6 +2078,11 @@ export async function sealCalc(
     // saved between the compute and this line, and sealing the pre-save
     // snapshot would lock a price nobody is looking at onto a client card.
     const locked = await lockRequestInTx(tx, requestId);
+    // P6: a seller's addition written after the VED's screen was drawn. The
+    // CAS on the next line cannot see it — `workspace` was computed at the
+    // PRESS, over the seller's figures — so the seal would lock a price for
+    // goods nobody on the screen looked at.
+    await refuseIfAmendedSinceInTx(tx, requestId, input.sawRev);
     if (locked.rev !== workspace.rev) throw new CalcError('conflict');
     const closed = await tx
       .update(calcRequests)

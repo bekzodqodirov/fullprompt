@@ -41,6 +41,7 @@ import {
 import { lastQuotesByCode, quoteHistoryFor } from '@/modules/wms/calc/history';
 import { offerMoney } from '@/modules/wms/calc/offer';
 import { claimReviewMonth, reviewMonth } from '@/modules/wms/calc/review';
+import { sawRev } from '../fixtures/calc-saw-rev';
 
 /**
  * VED phase C — the offer, the price book and the history, against a real db.
@@ -205,10 +206,10 @@ async function sealed(
     ctx(),
   );
   await setFreightZone(request.id, 'cn', ctx());
-  await confirmAllGroups(request.id, ctx());
+  await confirmAllGroups(request.id, ctx(), await sawRev(request.id));
   const versionNo = await sealCalc(
     request.id,
-    { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null },
+    { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(request.id) },
     ctx(),
   );
   const version = await db.query.calcVersions.findFirst({

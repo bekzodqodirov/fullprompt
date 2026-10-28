@@ -181,6 +181,12 @@ export async function finishCalcAction(
   id: string,
   answer: { amountText: string; currency: string; note: string; internalNote: string },
   revalidate: string,
+  /**
+   * The revision the page was drawn at (docs/SAKKIZ-R3.md §10A, P6): an
+   * ARGUMENT, because none of the VED's four doors is a form post. Required
+   * here and in the service, so no caller can forget it.
+   */
+  sawRev: number,
 ): Promise<CalcFormState> {
   return run(
     'ved.docs',
@@ -194,6 +200,7 @@ export async function finishCalcAction(
           internalNote: String(answer.internalNote ?? ''),
         },
         ctx,
+        sawRev,
       ),
     revalidate,
   );
@@ -564,13 +571,15 @@ export async function confirmGroupAction(
   id: string,
   groupId: string,
   /** Which card the ✅ was pressed on — the phone's is its own record (A18). */
-  via: 'single' | 'phone' = 'single',
+  via: 'single' | 'phone',
+  /** The revision the screen was drawn at (P6, §10A) — required. */
+  sawRev: number,
 ): Promise<CalcFormState> {
-  return run('ved.docs', (ctx) => confirmGroup(groupId, ctx, via), ws(id));
+  return run('ved.docs', (ctx) => confirmGroup(groupId, ctx, via, sawRev), ws(id));
 }
 
-export async function confirmAllAction(id: string): Promise<CalcFormState> {
-  return run('ved.docs', (ctx) => confirmAllGroups(id, ctx), ws(id));
+export async function confirmAllAction(id: string, sawRev: number): Promise<CalcFormState> {
+  return run('ved.docs', (ctx) => confirmAllGroups(id, ctx, sawRev), ws(id));
 }
 
 export async function saveExtraAction(
@@ -609,6 +618,9 @@ export async function sealAction(
     /** The fee the screen showed (P2.6) — absent from a tab opened on the
      * build before this one, and then never compared (judge MR-24). */
     sawFeeUsd?: number | null;
+    /** The revision the screen was drawn at (P6, §10A) — required, unlike
+     * the fee: an action id is per build, so no older page can post here. */
+    sawRev: number;
   },
 ): Promise<CalcFormState> {
   return run(
@@ -622,6 +634,7 @@ export async function sealAction(
           bandOverrideMin: input.bandOverrideMin,
           bandOverrideReason: input.bandOverrideReason.trim() || null,
           ...(input.sawFeeUsd !== undefined ? { sawFeeUsd: input.sawFeeUsd } : {}),
+          sawRev: input.sawRev,
         },
         ctx,
       ),

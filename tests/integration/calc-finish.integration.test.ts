@@ -18,6 +18,7 @@ import {
 import { finishCalcRequest, openCalcRequest } from '@/modules/wms/calc/service';
 import { saveLines } from '@/modules/wms/deals/service';
 import { setFreightZone } from '@/modules/wms/calc/workspace';
+import { sawRev } from '../fixtures/calc-saw-rev';
 
 /**
  * «Готово» on a job the VED could have SEALED (round 112, item 6).
@@ -106,7 +107,7 @@ describe('a typed «Готово» on a job that could be sealed', () => {
     const id = await request('yolkira');
     await setFreightZone(id, 'cn', ctx());
     await expect(
-      finishCalcRequest(id, { amountText: '480', currency: 'USD', note: 'typed', internalNote: 'ichki: qo‘lda' }, ctx()),
+      finishCalcRequest(id, { amountText: '480', currency: 'USD', note: 'typed', internalNote: 'ichki: qo‘lda' }, ctx(), await sawRev(id)),
     ).rejects.toMatchObject({ code: 'seal_instead' });
     const row = await db.query.calcRequests.findFirst({ where: eq(calcRequests.id, id) });
     expect(row!.completedAt).toBeNull();
@@ -117,7 +118,7 @@ describe('a typed «Готово» on a job that could be sealed', () => {
     // A rastamojka job with no group and no baza has blockers: nothing can be
     // sealed, so the phase-A answer is the only door and must stay open.
     const id = await request('rastamojka');
-    await finishCalcRequest(id, { amountText: '480', currency: 'USD', note: 'typed', internalNote: 'ichki: qo‘lda' }, ctx());
+    await finishCalcRequest(id, { amountText: '480', currency: 'USD', note: 'typed', internalNote: 'ichki: qo‘lda' }, ctx(), await sawRev(id));
     const row = await db.query.calcRequests.findFirst({ where: eq(calcRequests.id, id) });
     expect(row!.completedAt).not.toBeNull();
     expect(Number(row!.answerAmount)).toBe(480);

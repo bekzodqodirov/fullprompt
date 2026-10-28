@@ -25,6 +25,7 @@ import {
   sealCalc,
 } from '@/modules/wms/calc/workspace';
 import { payableOffersSql } from '@/modules/wms/calc/upsale';
+import { sawRev } from '../fixtures/calc-saw-rev';
 
 /**
  * Phase 4, item 5 — the offer's ANSWER anchor, end to end.
@@ -91,7 +92,7 @@ async function answeredRequest(
 ): Promise<string> {
   const id = await openRequest(dealId);
   await takeCalcRequest(id, ctx());
-  await finishCalcRequest(id, { amountText: String(amount), currency, note: 'gotovo', internalNote: 'ichki: gotovo' }, ctx());
+  await finishCalcRequest(id, { amountText: String(amount), currency, note: 'gotovo', internalNote: 'ichki: gotovo' }, ctx(), await sawRev(id));
   return id;
 }
 
@@ -298,10 +299,10 @@ describe('the Готово answer as an offer floor', () => {
       },
       ctx(),
     );
-    await confirmAllGroups(sealableId, ctx());
+    await confirmAllGroups(sealableId, ctx(), await sawRev(sealableId));
     await sealCalc(
       sealableId,
-      { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null },
+      { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(sealableId) },
       ctx(),
     );
 

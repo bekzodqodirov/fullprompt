@@ -35,6 +35,7 @@ import { calcRegistrySight, internalNoteSight } from '@/modules/wms/calc/control
 import { dealCalcSheets, requestGoodsSheet } from '@/modules/wms/calc/sheet';
 import { itemNameNorm } from '@/modules/wms/calc/memory';
 import { quoteLockedFor, quoteWriterFor, writerWroteCard, updateLead } from '@/modules/wms/crm/service';
+import { sawRev } from '../fixtures/calc-saw-rev';
 
 /**
  * The owner's 7a 8a 9a 10a 12a 13c in the database (docs/VED-TARIX.md §2-§7):
@@ -214,14 +215,14 @@ afterAll(async () => {
 describe('«Готово» refuses in words, in the agreed order (9a)', () => {
   it('reads the amount as typed and names what is wrong', async () => {
     const id = await job({ section: 'rastamojka', holder: vedAId, goods: `refusal ${TOKEN}` });
-    const answer = (amountText: string, internalNote = 'ichki') =>
-      finishCalcRequest(id, { amountText, currency: 'USD', note: '', internalNote }, ctx(vedAId));
+    const answer = async (amountText: string, internalNote = 'ichki') =>
+      finishCalcRequest(id, { amountText, currency: 'USD', note: '', internalNote }, ctx(vedAId), await sawRev(id));
     await expect(answer('')).rejects.toMatchObject({ code: 'answer_amount_required' });
     await expect(answer('1200$')).rejects.toMatchObject({ code: 'answer_amount_unreadable' });
     await expect(answer('0')).rejects.toMatchObject({ code: 'answer_positive' });
     await expect(answer('480', '   ')).rejects.toMatchObject({ code: 'internal_note_required' });
     await expect(
-      finishCalcRequest(id, { amountText: '480', currency: 'EUR', note: '', internalNote: 'x' }, ctx(vedAId)),
+      finishCalcRequest(id, { amountText: '480', currency: 'EUR', note: '', internalNote: 'x' }, ctx(vedAId), await sawRev(id)),
     ).rejects.toMatchObject({ code: 'validation' });
     const still = await db.query.calcRequests.findFirst({ where: eq(calcRequests.id, id) });
     expect(still!.completedAt, 'a refusal closes nothing').toBeNull();
@@ -236,8 +237,8 @@ describe('«Готово» refuses in words, in the agreed order (9a)', () => {
   it('guards the STORED figure, numeric(14,2), and says it in words (ved-money-3)', async () => {
     // Held and answered by the admin: the credit totals below count A and B.
     const id = await job({ section: 'rastamojka', holder: adminVedId, goods: `scale ${TOKEN}` });
-    const answer = (amountText: string) =>
-      finishCalcRequest(id, { amountText, currency: 'USD', note: '', internalNote: 'x' }, ctx(adminVedId));
+    const answer = async (amountText: string) =>
+      finishCalcRequest(id, { amountText, currency: 'USD', note: '', internalNote: 'x' }, ctx(adminVedId), await sawRev(id));
     // 0.004 is > 0 in JS and 0.00 in the column — 0093's CHECK would answer
     // with a raw 23514; and .995 on twelve nines rounds past the column.
     await expect(answer('0,004')).rejects.toMatchObject({ code: 'answer_positive' });
@@ -260,7 +261,7 @@ describe('«Готово» refuses in words, in the agreed order (9a)', () => {
     // 1999 letters and an emoji: `slice(0, 2000)` keeps the emoji's first
     // UTF-16 half alone, and jsonb refuses that in the audit row.
     const internalNote = `${'a'.repeat(1999)}😀 qolgani ${TOKEN}`;
-    await finishCalcRequest(id, { amountText: '321', currency: 'USD', note: '', internalNote }, ctx(adminVedId));
+    await finishCalcRequest(id, { amountText: '321', currency: 'USD', note: '', internalNote }, ctx(adminVedId), await sawRev(id));
     const done = await db.query.calcRequests.findFirst({ where: eq(calcRequests.id, id) });
     expect(done!.completedAt).not.toBeNull();
     expect(Array.from(done!.answerInternalNote ?? '')).toHaveLength(2000);
@@ -276,7 +277,7 @@ describe('«Готово» refuses in words, in the agreed order (9a)', () => {
     const id = await job({ section: 'yolkira', holder: vedAId, goods: `sealable ${TOKEN}`, entityId: deal2Id });
     await setFreightZone(id, 'cn', ctx(vedAId));
     await expect(
-      finishCalcRequest(id, { amountText: '480', currency: 'USD', note: '', internalNote: '' }, ctx(vedAId)),
+      finishCalcRequest(id, { amountText: '480', currency: 'USD', note: '', internalNote: '' }, ctx(vedAId), await sawRev(id)),
     ).rejects.toMatchObject({ code: 'seal_instead' });
     // Leave nothing open on deal2 for the lock test below.
     await db.delete(calcRequestItems).where(eq(calcRequestItems.requestId, id));
@@ -294,12 +295,12 @@ describe('the history holds answers beside seals (7a 8a 12a)', () => {
     await finishCalcRequest(
       answeredId,
       { amountText: '900', currency: 'USD', note: 'sotuvchiga', internalNote: `ichki sir ${TOKEN}` },
-      ctx(vedAId),
+      ctx(vedAId), await sawRev(answeredId),
     );
     // Held by A, SEALED by B.
     sealedId = await job({ section: 'yolkira', holder: vedAId, goods: `Monitor ${TOKEN}` });
     await setFreightZone(sealedId, 'cn', ctx(vedBId));
-    await sealCalc(sealedId, NO_DISCOUNT, ctx(vedBId));
+    await sealCalc(sealedId, { ...NO_DISCOUNT, sawRev: await sawRev(sealedId) }, ctx(vedBId));
   });
 
   it('both kinds come back, and an answer carries no V number and no customs sum', async () => {
@@ -385,7 +386,7 @@ describe('the history holds answers beside seals (7a 8a 12a)', () => {
 describe('a lead’s name on the history (§10, access-money-14)', () => {
   it('is searchable and printed for the VED, «Lid» and unsearchable for the accountant', async () => {
     const id = await job({ section: 'rastamojka', entityType: 'lead', entityId: leadId, holder: vedAId, goods: `lid tovar ${SUFFIX}` });
-    await finishCalcRequest(id, { amountText: '100', currency: 'USD', note: '', internalNote: 'x' }, ctx(vedAId));
+    await finishCalcRequest(id, { amountText: '100', currency: 'USD', note: '', internalNote: 'x' }, ctx(vedAId), await sawRev(id));
     const ved = await registryRows({ q: leadName, leadNamesReadable: true }, { noteSight: null });
     const row = ved.find((r) => r.requestId === id);
     expect(row?.cardLabel).toBe(leadName);
@@ -399,7 +400,7 @@ describe('a lead’s name on the history (§10, access-money-14)', () => {
 describe('a correction from an answer (10a)', () => {
   it('keeps the root seller, goes to the VED who priced it, and stops the old price standing', async () => {
     const answered = await job({ section: 'rastamojka', holder: vedBId, goods: `recalc ${TOKEN}` });
-    await finishCalcRequest(answered, { amountText: '700', currency: 'USD', note: '', internalNote: 'x' }, ctx(vedAId));
+    await finishCalcRequest(answered, { amountText: '700', currency: 'USD', note: '', internalNote: 'x' }, ctx(vedAId), await sawRev(answered));
     expect((await standingAnchorsFor('deal', dealId)).answers.map((a) => a.requestId)).toContain(answered);
 
     // The VED re-opens it (the presser is never told what they just did).
@@ -443,7 +444,7 @@ describe('a correction from an answer (10a)', () => {
   it('the quote lock follows what STANDS: a seal locks, its correction releases', async () => {
     const sealed = await job({ section: 'yolkira', entityId: deal2Id, holder: vedBId, goods: `lock ${TOKEN}` });
     await setFreightZone(sealed, 'cn', ctx(vedBId));
-    const { totalUsd } = await sealCalc(sealed, NO_DISCOUNT, ctx(vedBId));
+    const { totalUsd } = await sealCalc(sealed, { ...NO_DISCOUNT, sawRev: await sawRev(sealed) }, ctx(vedBId));
     expect(await quoteLockedFor('deal', deal2Id)).toBe(totalUsd);
     const child = (await recalcFromSealed(sealed, ctx(sellerId))).id;
     madeRequests.push(child);
@@ -504,7 +505,7 @@ describe('the quote lock follows the card’s LAST WRITER (ved-money-1)', () => 
   async function sealedYolkira(entityId: string, volumeM3: string, goods: string) {
     const id = await job({ section: 'yolkira', entityType: 'lead', entityId, holder: vedAId, goods, volumeM3 });
     await setFreightZone(id, 'cn', ctx(vedAId));
-    const { totalUsd } = await sealCalc(id, NO_DISCOUNT, ctx(vedAId));
+    const { totalUsd } = await sealCalc(id, { ...NO_DISCOUNT, sawRev: await sawRev(id) }, ctx(vedAId));
     return { id, totalUsd };
   }
 
@@ -529,7 +530,7 @@ describe('the quote lock follows the card’s LAST WRITER (ved-money-1)', () => 
     const lead = await freshLead('javob');
     const a = await sealedYolkira(lead, '30', `qulf C ${TOKEN}`);
     const answered = await job({ section: 'rastamojka', entityType: 'lead', entityId: lead, holder: vedAId, goods: `qulf D ${TOKEN}` });
-    await finishCalcRequest(answered, { amountText: '500', currency: 'USD', note: '', internalNote: 'x' }, ctx(vedAId));
+    await finishCalcRequest(answered, { amountText: '500', currency: 'USD', note: '', internalNote: 'x' }, ctx(vedAId), await sawRev(answered));
     await recordOffer({ requestId: answered }, { clientPriceUsd: 650, locale: 'uz' }, ctx(sellerId));
     const card = await db.query.leads.findFirst({ where: eq(leads.id, lead) });
     expect(Number(card!.quotedAmount)).toBe(650);
@@ -596,7 +597,7 @@ describe('the seal retires its task’s Telegram copies (integration-5)', () => 
     madeLeads.push(l!.id);
     const first = await job({ section: 'yolkira', entityType: 'lead', entityId: l!.id, holder: vedAId, goods: `muhr ${TOKEN}` });
     await setFreightZone(first, 'cn', ctx(vedAId));
-    await sealCalc(first, NO_DISCOUNT, ctx(vedAId));
+    await sealCalc(first, { ...NO_DISCOUNT, sawRev: await sawRev(first) }, ctx(vedAId));
     // A correction is the cheap way to a request with a real task bound to it.
     const child = (await recalcFromSealed(first, ctx(vedAId))).id;
     madeRequests.push(child);
@@ -615,7 +616,7 @@ describe('the seal retires its task’s Telegram copies (integration-5)', () => 
       .returning({ id: notifications.id });
 
     await setFreightZone(child, 'cn', ctx(vedAId));
-    await sealCalc(child, NO_DISCOUNT, ctx(vedAId));
+    await sealCalc(child, { ...NO_DISCOUNT, sawRev: await sawRev(child) }, ctx(vedAId));
     expect((await db.query.tasks.findFirst({ where: eq(tasks.id, task!.id) }))?.status).toBe('done');
     // The retire is the void form, off the request: wait for it, briefly.
     let status = 'pending';

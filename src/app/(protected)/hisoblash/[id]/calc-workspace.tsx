@@ -645,6 +645,9 @@ function SealPanel({
               // The fee THIS screen showed (P2.6): the seal refuses `conflict`
               // when the rate or the setting moved between render and press.
               sawFeeUsd: workspace.parts.customs ? (workspace.fee?.ok ? workspace.fee.feeUsd : null) : undefined,
+              // …and the revision it was drawn at (P6): a seller's addition
+              // written since refuses the seal in words.
+              sawRev: workspace.rev,
             }),
           )
         }

@@ -575,6 +575,9 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
                 mine={row.assigneeId === actor.id}
                 assigned={Boolean(row.assigneeId)}
                 canSeal={workspace ? canSeal(workspace) : false}
+                // The revision this page was drawn at (P6). A server-behind
+                // page has no workspace, so the row's own clock.
+                sawRev={workspace?.rev ?? row.rev}
               />
             </section>
           )}

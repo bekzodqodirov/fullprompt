@@ -54,6 +54,7 @@ export function CalcActions({
   mine,
   assigned,
   canSeal,
+  sawRev,
 }: {
   id: string;
   /** The request is already this person's. */
@@ -67,6 +68,12 @@ export function CalcActions({
    * it too (`seal_instead`) — this only stops asking for what it will refuse.
    */
   canSeal: boolean;
+  /**
+   * The revision the page was drawn at (docs/SAKKIZ-R3.md §10A, P6). «Готово»
+   * is refused in words when a seller's addition was written after it — the
+   * answer would price goods the VED never saw.
+   */
+  sawRev: number;
 }) {
   const t = useTranslations('calc');
   const tc = useTranslations('common');
@@ -256,6 +263,7 @@ export function CalcActions({
                       internalNote,
                     },
                     revalidate,
+                    sawRev,
                   ),
                 ),
               )
