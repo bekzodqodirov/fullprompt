@@ -547,8 +547,9 @@ export function askedModeOf(ctx: Pick<AgentContext, 'burst' | 'messages'>): Trav
     let turnedDown: TravelMode | null = null;
     for (const st of texts.flatMap((t) => t.split(CLAUSE)).reverse()) {
       const named = oneModeIn(st);
-      if (named === 'rail') return named;
       const c = roadChoiceIn(st);
+      // Rail named and no other road chosen beside it: «Fura emas, temir yo'l kerak» asks the rail's days.
+      if (namesMode(st, 'rail') && c !== 'air' && c !== 'road' && c !== 'both') return 'rail';
       if (c === 'both') return null;
       if (c === 'air' || c === 'road') return c;
       if (c === 'not_air' || c === 'not_road') {

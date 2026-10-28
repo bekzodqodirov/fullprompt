@@ -854,6 +854,8 @@ describe('the fourth review (#1485): the words that pick a road, our quote by it
     expect(askedModeOf(ctxOf('Avia qimmat ekan, kargo bilan necha kunda?', 'latin'))).toBe('road');
     expect(askedModeOf(ctxOf('Kargo bilan necha kunda?', 'latin', [said('Avia bilan 30 kg qancha?', 1), said('Avia 510 $.', 2, 'out')]))).toBe('road');
     expect(askedModeOf(ctxOf("Temir yo'l bilan qancha, avia qimmat", 'latin'))).toBe('rail');
+    // One statement that turns the truck down and names rail is rail's — not the flight's by elimination.
+    expect(askedModeOf(ctxOf("Fura emas temir yo'l kerak", 'latin'))).toBe('rail');
     expect(askedModeOf(ctxOf('Necha kunda keladi?', 'latin', [said('Avia bilan 30 kg qancha?', 1), said('Avia 510 $.', 2, 'out')]))).toBe('air');
     // Both asked in one breath, or turned down with nothing chosen: what each statement says.
     expect(askedModeOf(ctxOf('Avia va mashinada qancha, necha kunda?', 'latin'))).toBeNull();
@@ -876,6 +878,8 @@ describe('the fourth review (#1485): the words that pick a road, our quote by it
     expect(isReceivingAddressFact(fact)).toBe(true);
     expect(isReceivingAddressFact('Ivu ombori (avia yuk qabul qilinmaydi): 浙江省义乌市稠江街道荷花南街2255号')).toBe(true);
     expect(isReceivingAddressFact('Ombor aeroport yonida: 广东省深圳市宝安区福永街道 塘尾路 18号')).toBe(true);
+    // It names the flight's own words — and turns them down.
+    expect(isReceivingAddressFact('Avia yuklar uchun emas, faqat mashina: Ivu ombori 浙江省义乌市稠江街道荷花南街2255号')).toBe(true);
     // Counted, its phone is an anchor: an avia reply giving it is held.
     expect(statesChinaAddress('Manzil: 13700002222', addressAnchorsOf([fact]))).toBe(true);
     // A fact that says it is the flight's is his to have quoted.
@@ -891,6 +895,10 @@ describe('the fourth review (#1485): the words that pick a road, our quote by it
     // The customer turned the flight down after our avia quote: the truck's, and still a look.
     const turned = ctxOf('Mashinada qancha? Avia juda qimmat ekan. Ivu manzilini tashlang', 'latin', flight, kg30, AIR_QUOTE);
     expect(warned(turned)).toBe(true);
+    // The flight lives only in the quote he approved; the chat's words never name it.
+    const quotedOnly = ctxOf('Mashinada yuboraman. Ivu manzilini bering', 'latin', [said('30 kg kiyim, qancha?', 1), said('Taxminan 510 $.', 2, 'out')], kg30, AIR_QUOTE);
+    expect(blocked(quotedOnly)).toBe(false);
+    expect(warned(quotedOnly)).toBe(true);
     // Avia asked about, alongside: «Avia bilan ham bormi?».
     expect(airMentionIn('Avia bilan ham bormi?')).toBe(true);
     // A truck chat that never spoke of the flight: no warning.
