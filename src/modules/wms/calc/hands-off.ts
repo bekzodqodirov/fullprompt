@@ -12,7 +12,7 @@ import type { Tx } from '../../platform/db/client';
  * write and never behind it. The compare-and-set on `from` is the whole rule:
  * a person's save in between moved `rev` without moving the stamp, and from
  * then on no machine write can catch it up — the request reads «started» for
- * good. A request with no stamp (before 0137, a correction) never moves.
+ * good. A request with no stamp (before 0138, a correction) never moves.
  */
 export async function advanceHandsOffInTx(tx: Tx, id: string, from: number, to: number): Promise<void> {
   await tx.execute(sql`

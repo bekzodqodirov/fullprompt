@@ -21,15 +21,22 @@ in §1, the plan in §10 «R3») plus his 2.8 b. His answers are binding (§0).
   marked (K-review …) are what changed. Every package branches from THAT commit, not from
   e0f9b61. Gates at e0f9b61 on a database of its own: typecheck, lint, the full vitest
   (726 files, 10717 tests).
-- **Migration `calc_intake_durable` — 0137 on this branch, 0138 after the merge** (K-review
-  spec-5). main HAS moved past 0136: origin/main holds the other session's `0137_plan_road`
-  (`when` 1785190000116, journal idx 137). K therefore took `when` 1785190000117 and kept the
-  file name `0137_calc_intake_durable.sql` / idx 137, because the branch has no 0137 of main's
-  and the journal fence refuses a hole; THE MERGE renames it **0138** (idx 138, `when` …117
-  unchanged), and the ledger must then reach **139**. Every «0137» below names this round's
-  file on the branch; every count a person reads after the deploy is **139**. 0136 is Uch
-  band's `lead_client_many` (`when` …115, DECISIONS #1469-#1478), one-way. R2 adds none (R2
+- **Migration `calc_intake_durable` is 0138** (K-review spec-5; renamed at the merge of main
+  `e669e7d`, 2026-10-28). main had moved past 0136: it holds the other session's `0137_plan_road`
+  (`when` 1785190000116, journal idx 137). K took `when` 1785190000117 under the name
+  `0137_calc_intake_durable.sql` / idx 137, because the branch had no 0137 of main's and the
+  journal fence refuses a hole; the merge of main into r3-work renamed it
+  `0138_calc_intake_durable.sql` (idx 138, `when` …117 unchanged). The ledger must reach
+  **139**. A «0137» below that names this round's migration means 0138 (the spec's older lines
+  are kept as they were judged); every count a person reads after the deploy is **139**. 0136 is
+  Uch band's `lead_client_many` (`when` …115, DECISIONS #1469-#1478), one-way. R2 adds none (R2
   §11). (re-check kernel-1)
+- **Base after the merge:** main `e669e7d` (PR #127, rounds 1-2 of «Sakkiz band», merged
+  2026-10-28) carries R2's late fixes after 0373bd2 — the second merge with main (`69a4330`:
+  the other session's offer PDF, download links and road plan, 0137, DECISIONS #1479-#1502,
+  which moved R2's decisions to #1503-#1511) and the corpus case c0425's time bound
+  (`c2869d4`, 3,000 → 10,000 ms). The code the packages touch is unchanged by it apart from
+  `wms.ts`, `workspace.ts` and the journal, which merged cleanly.
 - DECISIONS numbers are `#R3-1…`. On 0373bd2 the tail is #1487; main's tail on 2026-10-28 is
   #1511, so round 3 starts at #1512 unless main moves again; the lead renumbers at the merge
   after fetching the tail. (re-check laws-print-3, K-review spec-5)
@@ -4599,7 +4606,7 @@ corpus-mig-seam-20)
 ## 13. Migration 0137 `calc_intake_durable` (additive) (re-check kernel-1) — 0138 after the merge, ledger 139 (K-review spec-5)
 
 ```sql
--- Sakkiz band round 3 (docs/SAKKIZ-R3.md), migration 0137 — after Uch band's 0136.
+-- Sakkiz band round 3 (docs/SAKKIZ-R3.md), migration 0138 — after main's 0137_plan_road.
 -- His 1.8 c: an unfinished «Hisoblatish» waits 24 hours and survives a deploy. His 1.9 a:
 -- what arrives after the job landed joins THAT job while the VED has not started. His 2.8 b: the law's missing count is asked after the AI
 -- answer. Nothing is backfilled. gsr_ai_reader (0080, allowlist default-deny) is granted

@@ -1,4 +1,4 @@
--- Sakkiz band round 3 (docs/SAKKIZ-R3.md), migration 0137 — after Uch band's 0136.
+-- Sakkiz band round 3 (docs/SAKKIZ-R3.md), migration 0138 — after main's 0137_plan_road.
 -- His 1.8 c: an unfinished «Hisoblatish» waits 24 hours and survives a deploy. His 1.9 a:
 -- what arrives after the job landed joins THAT job while the VED has not started. His 2.8 b: the law's missing count is asked after the AI
 -- answer. Nothing is backfilled. gsr_ai_reader (0080, allowlist default-deny) is granted

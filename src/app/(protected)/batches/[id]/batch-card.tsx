@@ -52,6 +52,7 @@ import { BackLink } from '@/components/back-link';
 import { compactUsd, num } from '@/components/charts/format';
 import { truckRoadWords } from '@/components/truck-road';
 import { BatchActions } from './batch-actions';
+import { planRoadReady, roadOwedForTruck } from '@/modules/wms/planning/road';
 import { BatchCodeForm } from './batch-code-form';
 import { ProfitTracked } from './profit-tracked';
 
@@ -199,6 +200,9 @@ export async function BatchCard({
       )
   )[0]!.n;
   const loadingNow = ['forming', 'loading'].includes(batch.status);
+  const roadOwed = loadingNow
+    ? await roadOwedForTruck(db, await planRoadReady(), batch.id, batch.originWarehouseId)
+    : { lots: [], codes: [], capped: false };
   const unloadingNow = ['in_transit', 'arrived'].includes(batch.status);
   const departed = batch.departedAt !== null;
   const cancelled = batch.status === 'cancelled';
@@ -560,6 +564,17 @@ export async function BatchCard({
                 📤 {t('startUnloading')}
               </Link>
             )}
+          </div>
+        )}
+        {/* Yo'ldagi yuk: the plan's cargo still on its way here, beside the
+            button that ends the loading without it (docs/YOLDAGI-YUK.md §8). */}
+        {loadingNow && roadOwed.lots.length > 0 && (
+          <div className="rounded-lg border border-warn/40 bg-warn/10 p-2 text-sm" data-testid="batch-road-owed">
+            {roadOwed.lots.map((lot) => (
+              <p key={lot.lotId}>
+                🚚 {t('roadOwedLine', { lot: lot.label, n: lot.owed, trucks: lot.trucks.join(', ') || '—' })}
+              </p>
+            ))}
           </div>
         )}
         {loadingNow && (canFinish || canDepart || canCancel) && (

@@ -52541,13 +52541,13 @@
       "textMaxLength": 15000
      }
     ],
-    "maxMs": 3000
+    "maxMs": 10000
    },
    "said": "bounded: the READ returns in about a second (reviewer: 1.1 s) and never yields more than 500 goods (MAX_GOODS_ROWS) — kind 'goods' capped at 500 (what round 1 measured), or kind 'text' inside the 15,000-char budget once a header row equal to its data is not a header",
    "why": "Reviewer 0 measured the fixed reader at 1.1 s stopping at 500 goods on a 2000×100 sheet whose one shared string carries the header keys (#8 bounds).",
    "source": "r1-fix sheets #8 reviewer 0",
    "weight": "pinned",
-   "vague": "«returns in about a second (reviewer: 1.1 s)»: under 3,000 ms",
+   "vague": "«returns in about a second (reviewer: 1.1 s)»: under 10,000 ms — the time is the exceljs load of 200,000 cells, not our reader: 2.4-3.2 s in the lead's container on HEAD AND on the corpus's own first commit de7ecb7, 3.3 s inside the full suite under load (red at 3,000), and stripping any of the three #8 guards (the 300-char figure head, the cell window, the header length test) moves it by nothing, so 3,000 measured the machine and 10,000 still catches a reader that blows up",
    "note": "rowsJs «2000×100, one shared string that CONTAINS the header keys», written by the streaming writer with useSharedStrings"
   },
   {

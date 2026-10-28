@@ -281,9 +281,9 @@ export interface Workspace {
    */
   rev: number;
   /**
-   * The revision the machine's pass or the seller's own addition left (0137).
+   * The revision the machine's pass or the seller's own addition left (0138).
    * Equal to `rev` = no person has written since; null = not known (a request
-   * before 0137, a correction). Read off the same first query as `rev`.
+   * before 0138, a correction). Read off the same first query as `rev`.
    */
   handsoffRev: number | null;
   /** Is there an ANTHROPIC key on this server at all? The ✨ button is not
@@ -5654,7 +5654,9 @@ export async function recordOffer(
 
   // The offer goes to the seller's OWN chat as its own message, deliberately
   // carrying no staff URL: the internal notification does that, and this is
-  // the string they forward to a customer.
+  // the string they forward to a customer. The offer's id rides along so the
+  // drain sends the SHEET with it — the PDF with the text as its caption, one
+  // message the seller forwards whole (his 2026-10-27).
   const linked = await hasLinkedChat(ctx.actorId);
   // `notifyStaffTelegram` answers how many rows it queued — zero when the
   // seller's mutes wrote the row `muted`.
@@ -5663,6 +5665,7 @@ export async function recordOffer(
         userIds: [ctx.actorId],
         type: 'CalcOffer',
         text,
+        extra: { offerId: saved!.id },
       }).catch((err) => {
         logger.error({ err, versionId, requestId }, '[calc] offer push failed');
         return 1;
@@ -5826,6 +5829,7 @@ export async function releaseOffer(offerId: string, ctx: AuditContext): Promise<
         userIds: [claimed.offeredBy],
         type: 'CalcOffer',
         text: claimed.text,
+        extra: { offerId: claimed.id },
       }).catch((err) => {
         logger.error({ err, offerId }, '[calc] released offer push failed');
         return 1;

@@ -1106,6 +1106,51 @@ export const loadPlanLines = pgTable(
 );
 
 /**
+ * A plan line's ROAD part (0137, docs/YOLDAGI-YUK.md): cartons promised from a
+ * truck still on its way to the plan's origin. A side table, never a column on
+ * `load_plan_lines` (#1381). No row = no road part. Written only by
+ * `wms/planning/road.ts`; read behind `planRoadReady()`.
+ */
+export const planLineRoad = pgTable(
+  'plan_line_road',
+  {
+    lineId: uuid('line_id')
+      .primaryKey()
+      .references(() => loadPlanLines.id, { onDelete: 'cascade' }),
+    /** The road part as promised at submit — the ceiling, never rewritten. */
+    roadBoxCount: integer('road_box_count').notNull(),
+    /** Still to be reserved onto the truck; 0 until the approval. */
+    roadOwed: integer('road_owed').notNull().default(0),
+    /** What the truck's loading ended without (4a) — kept, never erased. */
+    roadMissed: integer('road_missed').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check(
+      'plan_line_road_count_check',
+      sql`${t.roadBoxCount} > 0 AND ${t.roadOwed} >= 0 AND ${t.roadMissed} >= 0 AND ${t.roadOwed} + ${t.roadMissed} <= ${t.roadBoxCount}`,
+    ),
+    index('plan_line_road_owed_idx').on(t.lineId).where(sql`${t.roadOwed} > 0`),
+  ],
+);
+
+/** Which carton each road claim reserved, and off which truck it landed (NULL = from the shelf at loading). */
+export const planRoadClaims = pgTable(
+  'plan_road_claims',
+  {
+    lineId: uuid('line_id')
+      .notNull()
+      .references(() => loadPlanLines.id, { onDelete: 'cascade' }),
+    boxId: uuid('box_id')
+      .notNull()
+      .references(() => boxes.id),
+    inboundBatchId: uuid('inbound_batch_id').references(() => batches.id),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.lineId, t.boxId] }), index('plan_road_claims_box_idx').on(t.boxId)],
+);
+
+/**
  * Scan facts (W4/W5/W8) — append-only. `clientEventUuid` is the offline
  * idempotency key; crate-scan fan-out rows get derived UUIDs (uuid5).
  */
@@ -2790,16 +2835,16 @@ export const calcRequests = pgTable(
      */
     rev: integer('rev').notNull().default(0),
     /**
-     * The revision the machine's pass or the seller's own addition left (0137,
+     * The revision the machine's pass or the seller's own addition left (0138,
      * his 1.9 a). Equal to `rev` = no person has written since, which is «VED
      * hali boshlamagan»; behind it for good once a person saves. NULL = not
-     * known (requests before 0137, corrections — a correction is the VED's
+     * known (requests before 0138, corrections — a correction is the VED's
      * job). The landing writes 0, rev's own default. One mover:
      * `advanceHandsOffInTx`, inside the save that earns it.
      */
     handsoffRev: integer('handsoff_rev'),
     /**
-     * A machine pass owed or running (0137): the revision it was queued at,
+     * A machine pass owed or running (0138): the revision it was queued at,
      * when, and its own pg-boss job — «busy» is «that job is alive», never a
      * time window. Set by `queueCalcPrefill` on whichever queue the section
      * names and cleared by that queue's settle. Neither moves `rev`.
@@ -3876,7 +3921,7 @@ export const aiCalcPasses = pgTable(
     kind: text('kind').notNull(),
     /**
      * A collection's model reading is billed when the model answers, before
-     * any request exists (0137): the collection's note anchors it, and the
+     * any request exists (0138): the collection's note anchors it, and the
      * landing fills `request_id` (`attachIntakePasses`). 'intake' only.
      */
     intakeNoteId: uuid('intake_note_id'),
@@ -3894,7 +3939,7 @@ export const aiCalcPasses = pgTable(
       'ai_calc_passes_kind_check',
       sql`${t.kind} IN ('intake', 'grouping', 'pick', 'invoice', 'similar')`,
     ),
-    // One anchor per kind (0119's two rules, 0137's third: an intake reading
+    // One anchor per kind (0119's two rules, 0138's third: an intake reading
     // may stand on its note alone until the landing). Safe beside the FK:
     // CASCADE, not SET NULL (#809).
     check(
@@ -3913,7 +3958,7 @@ export const aiCalcPasses = pgTable(
 );
 
 /**
- * What a seller added to a landed request, and what became of it (0137, his
+ * What a seller added to a landed request, and what became of it (0138, his
  * 1.9 a): written into the rows ('applied'), handed to the VED ('to_ved'),
  * stored until the running machine pass ends ('waiting'), or only filed on the
  * card ('noted'). The note id is the once-key, inserted in the save's own

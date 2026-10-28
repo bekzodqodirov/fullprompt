@@ -35,7 +35,7 @@ type AiPassAnchor =
   | { kind: 'similar'; requestId: null }
   | { kind: 'intake'; requestId: string; intakeNoteId?: string | null }
   // A collection's reading is billed when the model answers, before any
-  // request exists (0137): the collection's note anchors it, and the landing
+  // request exists (0138): the collection's note anchors it, and the landing
   // fills the request (`attachIntakePasses`). `string | null`, so the reading
   // job passes an add collection's request or none without a branch.
   | { kind: 'intake'; requestId: string | null; intakeNoteId: string }
@@ -77,7 +77,7 @@ export async function recordAiPass(
 
 /**
  * A collection's readings, billed on its note before it landed, now belong to
- * the request the landing opened (0137). Only rows still standing on the note
+ * the request the landing opened (0138). Only rows still standing on the note
  * alone are moved, so a repeat is a no-op. Never throws, like the bill: a
  * ledger row left on the note still counts in the day's budget.
  */

@@ -1,24 +1,9 @@
-import { and, asc, eq } from 'drizzle-orm';
-import { db } from '@/modules/platform/db/client';
-import {
-  calcOffers,
-  calcRequestItems,
-  calcRequests,
-  calcVersions,
-  clients,
-  deals,
-  leads,
-  users,
-} from '@/modules/platform/db/schema';
 import { AuthError, requireActor } from '@/modules/platform/rbac/authorize';
 import { upsaleScopeFor } from '@/modules/wms/calc/upsale-scope';
-import { getSetting } from '@/modules/platform/settings/service';
 import { isServerBehind } from '@/modules/platform/db/errors';
 import { logger } from '@/modules/platform/logger';
-import { buildOfferPdf } from '@/modules/wms/calc/offer-pdf';
-import { releasedOfferWhere } from '@/modules/wms/calc/workspace';
+import { offerSheetPdf, offerSheetSource, type OfferSheetSource } from '@/modules/wms/calc/offer-sheet-file';
 import { offerLocaleFor } from '@/modules/wms/calc/offer';
-import type { CalcSectionName } from '@/modules/wms/calc/pricing';
 
 /**
  * The offer sheet, fetched by the OFFER's own id — phase 4's one route for
@@ -53,35 +38,16 @@ export async function GET(request: Request, { params }: { params: Promise<{ offe
 
   const { offerId } = await params;
 
-  let offer;
-  let req: typeof calcRequests.$inferSelect | undefined;
-  let version: typeof calcVersions.$inferSelect | undefined;
+  let source: OfferSheetSource | null;
   try {
-    [offer] = await db
-      .select()
-      .from(calcOffers)
-      .where(and(eq(calcOffers.id, offerId), releasedOfferWhere()))
-      .limit(1);
-    if (!offer) return new Response('Not found', { status: 404 });
-
-    if (offer.versionId) {
-      const [row] = await db
-        .select({ version: calcVersions, request: calcRequests })
-        .from(calcVersions)
-        .innerJoin(calcRequests, eq(calcRequests.id, calcVersions.requestId))
-        .where(eq(calcVersions.id, offer.versionId))
-        .limit(1);
-      version = row?.version;
-      req = row?.request;
-    } else if (offer.requestId) {
-      req = await db.query.calcRequests.findFirst({ where: eq(calcRequests.id, offer.requestId) });
-    }
+    source = await offerSheetSource(offerId);
   } catch (err) {
     if (!isServerBehind(err)) throw err;
     logger.error({ err, offerId }, '[calc] offer pdf by id: server behind');
     return new Response('Not ready', { status: 503 });
   }
-  if (!req) return new Response('Not found', { status: 404 });
+  if (!source) return new Response('Not found', { status: 404 });
+  const { offer, request: req } = source;
 
   if (req.entityType === 'lead' && scope === 'own' && !actor.permissions.has('crm.leads')) {
     return new Response('Forbidden', { status: 403 });
@@ -92,116 +58,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ offe
 
   const url = new URL(request.url);
   const locale = offerLocaleFor(url.searchParams.get('til') ?? offer.locale);
+  // The sheet itself is `offerSheetPdf`'s — the same paper the seller's
+  // Telegram copy carries (his 2026-10-27).
+  const { bytes, fileName } = await offerSheetPdf(source, locale);
 
-  // The sheet's furniture (round 112, inherited whole): the customer, the
-  // deal's code, the goods from the request's OWN items, and the seller —
-  // this route and the versionId sibling must print the same paper.
-  let clientName: string | null = null;
-  let clientCode: string | null = null;
-  let clientPhone: string | null = null;
-  let docNo: string | null = null;
-  if (req.entityType === 'deal') {
-    const [d] = await db
-      .select({
-        name: clients.name,
-        code: clients.clientCode,
-        phones: clients.phones,
-        dealCode: deals.code,
-      })
-      .from(deals)
-      .innerJoin(clients, eq(deals.clientId, clients.id))
-      .where(eq(deals.id, req.entityId))
-      .limit(1);
-    clientName = d?.name ?? null;
-    clientCode = d?.code ?? null;
-    clientPhone = Array.isArray(d?.phones) && typeof d.phones[0] === 'string' ? d.phones[0] : null;
-    docNo = d?.dealCode ?? null;
-  } else {
-    const lead = await db.query.leads.findFirst({
-      where: eq(leads.id, req.entityId),
-      columns: { name: true, company: true, phone: true },
-    });
-    clientName = lead ? lead.company || lead.name : null;
-    clientPhone = lead?.phone ?? null;
-  }
-  const itemRows = await db
-    .select({
-      seq: calcRequestItems.seq,
-      name: calcRequestItems.name,
-      quantity: calcRequestItems.quantity,
-      unit: calcRequestItems.unit,
-      weightKg: calcRequestItems.weightKg,
-      volumeM3: calcRequestItems.volumeM3,
-      // The pair the job was priced on (0092) — «120 m²», never «120» (P1.7).
-      measureUnit: calcRequestItems.measureUnit,
-      measureQty: calcRequestItems.measureQty,
-    })
-    .from(calcRequestItems)
-    .where(eq(calcRequestItems.requestId, req.id))
-    .orderBy(asc(calcRequestItems.seq));
-  const seller = await db.query.users.findFirst({
-    where: eq(users.id, offer.offeredBy),
-    columns: { fullName: true, phone: true },
-  });
-  const cellNum = (v: string | null) => (v === null ? null : Number(v));
-
-  // The answer anchor has no stored valid_until — the sheet recomputes it the
-  // way recordOffer did (completed_at + the setting's days).
-  let validUntil: Date;
-  if (version) {
-    validUntil = version.validUntil;
-  } else {
-    const validDays = Number((await getSetting('quote_valid_days')) ?? 30);
-    validUntil = new Date((req.completedAt ?? new Date()).getTime() + validDays * 86_400_000);
-  }
-
-  const pdf = await buildOfferPdf(
-    {
-      clientPriceUsd: Number(offer.clientPriceUsd),
-      volumeM3:
-        version?.volumeM3 != null
-          ? Number(version.volumeM3)
-          : req.volumeM3 === null
-            ? null
-            : Number(req.volumeM3),
-      weightKg:
-        version?.weightKg != null
-          ? Number(version.weightKg)
-          : req.weightKg === null
-            ? null
-            : Number(req.weightKg),
-      section: (version?.section ?? req.section ?? 'podklyuch') as CalcSectionName,
-      fromCity: req.fromCity,
-      toCity: req.toCity,
-      validUntil,
-      clientName,
-      clientCode,
-      clientPhone,
-      docNo,
-      offeredAt: offer.offeredAt,
-      managerName: seller?.fullName ?? null,
-      managerPhone: seller?.phone ?? null,
-      // Descriptors only — never a breakdown or a money column (#781).
-      items: itemRows.map((i) => ({
-        seq: i.seq,
-        label: i.name,
-        quantity: cellNum(i.quantity),
-        unit: i.unit,
-        weightKg: cellNum(i.weightKg),
-        volumeM3: cellNum(i.volumeM3),
-        measure:
-          i.measureUnit && cellNum(i.measureQty) !== null
-            ? { qty: cellNum(i.measureQty)!, unit: i.measureUnit }
-            : null,
-      })),
-    },
-    locale,
-  );
-
-  return new Response(new Uint8Array(pdf), {
+  return new Response(new Uint8Array(bytes), {
     headers: {
       'Content-Type': 'application/pdf',
-      'Content-Disposition': 'inline; filename="taklif.pdf"',
+      'Content-Disposition': `inline; filename="${fileName}"`,
       'Cache-Control': 'private, no-store',
     },
   });
