@@ -68,6 +68,11 @@ export default defineConfig({
       // B9's error list is proven by a page that throws on purpose; it is a
       // 404 everywhere this switch is not set (app/(protected)/sinov-xato).
       ERROR_PROBE: 'on',
+      // Download links are signed with a key derived from this; a server with
+      // none mints none and every file link falls back to its plain address,
+      // which is the very thing m9zzzg proves is broken on a phone. CI sets
+      // its own; a developer's shell without one gets this.
+      SESSION_SECRET: process.env.SESSION_SECRET ?? 'e2e-download-link-secret',
     },
     url: 'http://localhost:3000/api/health',
     reuseExistingServer: !process.env.CI,

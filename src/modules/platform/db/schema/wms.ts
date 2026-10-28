@@ -1106,6 +1106,51 @@ export const loadPlanLines = pgTable(
 );
 
 /**
+ * A plan line's ROAD part (0137, docs/YOLDAGI-YUK.md): cartons promised from a
+ * truck still on its way to the plan's origin. A side table, never a column on
+ * `load_plan_lines` (#1381). No row = no road part. Written only by
+ * `wms/planning/road.ts`; read behind `planRoadReady()`.
+ */
+export const planLineRoad = pgTable(
+  'plan_line_road',
+  {
+    lineId: uuid('line_id')
+      .primaryKey()
+      .references(() => loadPlanLines.id, { onDelete: 'cascade' }),
+    /** The road part as promised at submit — the ceiling, never rewritten. */
+    roadBoxCount: integer('road_box_count').notNull(),
+    /** Still to be reserved onto the truck; 0 until the approval. */
+    roadOwed: integer('road_owed').notNull().default(0),
+    /** What the truck's loading ended without (4a) — kept, never erased. */
+    roadMissed: integer('road_missed').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check(
+      'plan_line_road_count_check',
+      sql`${t.roadBoxCount} > 0 AND ${t.roadOwed} >= 0 AND ${t.roadMissed} >= 0 AND ${t.roadOwed} + ${t.roadMissed} <= ${t.roadBoxCount}`,
+    ),
+    index('plan_line_road_owed_idx').on(t.lineId).where(sql`${t.roadOwed} > 0`),
+  ],
+);
+
+/** Which carton each road claim reserved, and off which truck it landed (NULL = from the shelf at loading). */
+export const planRoadClaims = pgTable(
+  'plan_road_claims',
+  {
+    lineId: uuid('line_id')
+      .notNull()
+      .references(() => loadPlanLines.id, { onDelete: 'cascade' }),
+    boxId: uuid('box_id')
+      .notNull()
+      .references(() => boxes.id),
+    inboundBatchId: uuid('inbound_batch_id').references(() => batches.id),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.lineId, t.boxId] }), index('plan_road_claims_box_idx').on(t.boxId)],
+);
+
+/**
  * Scan facts (W4/W5/W8) — append-only. `clientEventUuid` is the offline
  * idempotency key; crate-scan fan-out rows get derived UUIDs (uuid5).
  */

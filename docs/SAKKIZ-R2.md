@@ -2129,4 +2129,4 @@ answer for. `pickLeftOf` (ai-reply.ts) is the one mapping; red by dropping
 was merged in before the push. Six conflicts, all two additions side by side; the one
 with an order in it is the VED rota pick, now taken LAST in `openCalcRequest`'s
 transaction, after Uch band's lead row lock and note insert — the order
-`recalcFromSealed` already takes them in. Ledger after the deploy: **137**.
+`recalcFromSealed` already takes them in. Ledger after the deploy: **137** — then **138**, because main took the other session's «Yo'ldagi yuk» (0137 `plan_road`) before this PR merged; its DECISIONS #1479-#1502 also moved this round's to #1503-#1511.

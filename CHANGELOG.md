@@ -2,7 +2,7 @@
 
 ## 2026-10-27 — 8 band, 2-raund: bot rastamojka va yo'lkirani ko'proq hollarda o'zi hisoblaydi
 
-**Bu raundning o'zida migratsiya yo'q.** Lekin asosiy shoxga boshqa sessiyaning «Uch band» ishi (migratsiya 0136) qo'shilgan va bu PR o'shani ham o'z ichiga oladi. Deploydan keyin **migratsiyalar soni 137** bo'lishi kerak va `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatsin. **tg-listen ham qayta qurilsin** (Uch band shuni talab qiladi).
+**Bu raundning o'zida migratsiya yo'q.** U asosiy shoxga boshqa sessiyaning «Uch band» (migratsiya 0136) va «Yo'ldagi yuk» (migratsiya 0137) ishlaridan keyin qo'shildi. Shuning uchun deploydan keyin **migratsiyalar soni 138** bo'lishi kerak va `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatsin. **tg-listen ham qayta qurilsin** (Uch band shuni talab qiladi).
 
 Javoblaringiz: 2.1 b · 2.2 b · 2.3 a · 2.4 c · 2.5 b · 2.6 b · 2.7 b · 2.9 c, va raund savollariga «a a / b a / c a / d a» — hammasi ⭐ variant.
 
@@ -41,6 +41,81 @@ Javoblaringiz: 2.1 b · 2.2 b · 2.3 a · 2.4 c · 2.5 b · 2.6 b · 2.7 b · 2.
 
 ### Tekshiruv
 Raund qurilishidan oldin 5 tomondan baholandi (37 e'tiroz, 36 tasi hisobga olindi). Qurilgandan keyin yana tekshirildi. Uzatishda kesilib qolgan ro'yxatlar tayyor kodga qarab qayta ko'rildi: **119 band tekshirildi, 59 tasi hali bor edi — 53 tasi tuzatildi, 6 tasi sababi yozilgan holda qoldirildi.**
+
+## 2026-10-27 — Planga yo'ldagi yukni ham qo'shish
+
+Sizning so'zlaringiz: «horgos planda yoldagi yuklarni ham qoshish degan check bolsin shuni bosganda yoldagi yuklar ham tanlash imkoniyati bolsin». Javoblaringiz: **1a 2a 3a 4a 5a**. **Migratsiya 0137 — deploydan keyin migratsiyalar soni 138 bo'lishi kerak.**
+
+### Plan berishda
+- Yangi plan oynasida **«🚚 Yo'ldagi yuklar ham»** belgisi bor. U har bir skladda bor (5a), lekin odatda o'chiq turadi: bosilmasa plan oynasi avvalgidek ishlaydi.
+- Belgi bosilsa, ro'yxatga shu skladga **yo'lga chiqqan** mashinalardagi yuk ham qo'shiladi (1a). Bu yo'lda ketayotgan yoki skladga yetib kelib hali tushirilmagan mashinalar. Yiwu'da hali yuklanayotgan mashina hisoblanmaydi.
+- Har bir lot qatorida qaysi mashinada kelayotgani va qachon yetib kelishi yoziladi, masalan: «🚚 +12 yo'lda · YW-123 · 29.10 – 31.10». Mashina darvozada turgan bo'lsa «darvozada» deb yoziladi.
+- **✓** tugmasi avvalgidek faqat skladda turgan yukni oladi. Yo'ldagi qismni olish uchun alohida **🚚** tugmasi bor. Shunday qilib belgini bosganingiz uchun hech qaysi lotga yo'ldagi yuk o'zi qo'shilib qolmaydi.
+- Pastdagi jami qatorida rejaning qanchasi yo'ldan kelishi alohida ko'rsatiladi («🚚 10»).
+- Zavod reyslari (zavoddan kelayotgan yuk) ro'yxat ostida **faqat ko'rish uchun** turadi (2a). Ular skladga qabul qilingach, oddiy yuk bo'lib planga tushadi.
+- Agent plani qaytarsa, «✏️ Tahrirlash» oynasi belgi bosilgan holda ochiladi va yo'ldagi qism joyida qoladi.
+
+### Agent tasdiqlaganda va mashina kelganda (3a)
+- Agent plani yuk yetib kelmasdan ham tasdiqlashi mumkin. Tasdiqlanganda skladda turgan qism darhol shu mashinaga band qilinadi. Yo'ldagi qism esa **«kutilmoqda»** bo'lib turadi.
+- Kelayotgan mashina shu skladda tushirilganda, yo'ldagi karobkalar **o'sha zahoti avtomatik ravishda** shu planning mashinasiga band qilinadi va yuklovchining ro'yxatida paydo bo'ladi. Telefon bilan tushirsangiz ham, «Hammasini qabul qilish» yoki ofis sanog'i bilan bo'lsa ham shunday. Inventarizatsiyada topilgan karobka ham shu yo'l bilan rejaga o'tadi.
+- Rejadan ortiqcha kelgan karobkalar hech kimga band qilinmaydi va skladda bo'sh yuk bo'lib qoladi.
+- Yuklash ekranida va partiya kartasida tepada «🚚 Yo'ldan kutilmoqda: GS777-A · 10 karobka (YW-123)» degan qator turadi. Shunday qilib «Yuklash tugadi»ni hech kim bilmasdan bosib qo'ymaydi.
+- Yuklovchi hali kelayotgan mashinada turgan karobkani skanerlasa, telefon «Bu karobka hali YW-123 mashinasida — avval tushirishda qabul qiling» deydi. Qizil «rejada yo'q» oynasi chiqmaydi.
+- Yuk boshqa yo'l bilan skladga tushib qolgan bo'lsa ham, yuklovchi skanerlaganda yoki ofis sanog'ida u rejaning yuki sifatida olinadi. Ortiqcha sabab yozish so'ralmaydi.
+
+### Yuk yetib kelmasa (4a)
+- Mashina yo'ldagi qism kelmasdan yuklashni tugatsa, o'sha qism **«kelmadi»** deb yoziladi. Yuk keyin kelsa, skladda keyingi plan uchun qoladi.
+- «Yuklash tugadi»ni bosgan odamning o'ziga ham «🚚 N yo'ldan kelmadi» deb chiqadi. Telegram xulosasida lotlar nomi bilan aytiladi. Partiyalar reyestridagi «⤵️» ustuniga ham qo'shiladi.
+- Yo'ldagi qism hali kutilayotgan bo'lsa, «Jo'natish» tugmasi «Avval «Yuklash tugadi»ni bosing — rejadagi yuk hali yo'lda» deydi.
+- «Yuklash tugadi»dan keyin ofis sanog'i faqat skladdan olingan qismni so'raydi. Kelmagan karobkalarni qaytadan so'rab, yangi karobka yaratib yubormaydi.
+- Andijon kabi mijoz yukini olib ketadigan skladda: yo'ldagi yuk tushishi bilan rejaga band qilinadi, shuning uchun mijozga «yukingiz keldi» deyilmaydi (yuk keyingi skladga ketyapti). Mashina uni olmay ketsa, mijozga «yukingiz keldi» xabari endi yuboriladi.
+
+### Boshqa joylarda
+- **Plan sahifasida** har qatorda: «🚚 N yo'ldan · M kutilmoqda · K keldi · J kelmadi».
+- **Agent Excel faylida** yo'ldagi qism alohida **«В пути / On the road: YW-123»** blokida turadi. Skladdagi qismi esa uni olib kelgan mashina blokida. Ilgari bunday yuk «skladga kelgan» deb yozilib qolishi mumkin edi, bu bojxona hujjatida noto'g'ri gap bo'lardi.
+- **Partiyalar doskasida** yo'ldan kutayotgan mashina «rejasiz» yoki «hammasi yuklandi» deb chiqmaydi, «🚚 +N yo'ldan» deb chiqadi.
+- Reja yo'ldan kutayotgan lotning prixodini bekor qilib (annulirovka) bo'lmaydi.
+- Bir vaqtning o'zida «Tasdiqlash» ikki marta bosilsa (ikki marta tegish yoki internet uzilishi), ikkita mashina ochilmaydi. Bu xato ilgari ham bor edi, endi tuzatildi.
+- Telefon mashinadan tushirilgan karobkani keyinroq yana yuborsa (internetsiz navbatda qolgan skaner), u boshqa mashinaga band qilingan karobkani «hujjatsiz ko'chirish» deb skladga qaytarib qo'ymaydi. Bu ham umumiy xato edi, endi tuzatildi.
+
+### Tayyor bo'lgandan keyingi tekshiruvda topilgan va tuzatilgan xatolar
+- Yuklovchi rejadagi karobkani mashinadan **olib qo'yib**, keyin yana skanerlasa, tizim uni **yo'ldan kelgan** karobka deb ikkinchi marta hisoblab yuborardi. Natijada yo'ldan haqiqatan kelgan karobkalardan biri rejaga olinmay, skladda bo'sh qolib ketardi. Mashina esa bir karobka kam bilan jo'nardi va hech qayerda «kelmadi» deb yozilmasdi. Endi olib qo'yilgan karobka rejaning o'z yuki bo'lib qoladi. Telefon uni avvalgidek qizil oyna bilan so'raydi, ofis sanog'i esa rejaga qaytaradi.
+- Ikki odam bir vaqtda (masalan, telefon va ofis sanog'i) bir lotni olsa, biri ikkinchisiga yutqazib, **hech narsa olmay qolardi**: reja «kutilmoqda» deb turaverar, karobkalar esa skladda bo'sh turardi. Endi qolgan qismini oladi.
+- Horgosda ikki mashina bir vaqtda tushirilib, karobkalar aralashib ketsa: bir mashinadan tushib rejaga band qilingan karobkani boshqa mashinaning tushirish ekranida skanerlasangiz, u **keyingi mashinadan yechib olinib**, «hujjatsiz ko'chirish» deb skladga qaytarilardi. Inventarizatsiyada topilgan karobka bilan ham shunday bo'lardi. Endi tizim «allaqachon shu yerda» deb javob beradi va karobka joyida qoladi.
+- Ofis sanog'ida «ortiqcha → kamaytirish → yana ortiqcha» deb bosilsa, lot **hech qachon to'g'ri songa yetkazilmay qolardi** (har safar «count_conflict» chiqardi). Bu xato faqat yo'ldagi yukka emas, hamma skladga tegishli edi. Endi tuzatildi.
+- Agent Excel faylida «Yuklash tugadi»dan keyin **kelmagan** karobkalar «skladga kelgan» qatoriga tushib qolardi. Endi ular alohida **«Не пришло / Did not come»** blokida turadi.
+- Yuklovchining telefoni hali kelayotgan mashinadagi karobkani yashil qilib qabul qilib, keyinroq (internetsiz bo'lsa, ancha keyin) jimgina qaytarib olardi. Bunda karobka mashinaga yuklangan, lekin hisobda yo'q bo'lib qolardi. Endi internet bor bo'lsa, telefon serverdan so'raydi va javob bir soniyada keladi: karobka tushgan bo'lsa qabul qilinadi, hali mashinada bo'lsa «Bu karobka hali YW-123 mashinasida» deydi. Bu Horgosdagi «mashinadan mashinaga» ish uchun muhim: telefondagi ro'yxat 15 soniyada bir yangilanadi, karobka esa undan tezroq bir mashinadan ikkinchisiga o'tadi. Internet yo'q bo'lsa, faqat shu telefon o'zi tushirishda skanerlagan karobka qabul qilinadi, qolganiga telefon o'sha gapni aytadi. Skladdagi karobkani reja kutayotgan sonchagina qabul qiladi.
+- Bir mashinadan tushib, keyingi mashinaga yuklanib, yo'lga chiqib ketgan karobkani boshqa mashinaning tushirish ekranidagi eski skan endi skladga qaytarib qo'ymaydi.
+- Inventarizatsiyada bir nechta lot bir vaqtda topilsa va shu payt «Yuklash tugadi» bosilsa, ikkalasi bir-birini kutib qolib, xato bilan tugashi mumkin edi. Tuzatildi.
+- Plan oynasida «🚚 Yo'ldagi yuklar ham» belgisini qo'yib, ro'yxat yuklanib ulgurmasdan olib tashlansangiz, **barcha tanlovlaringiz o'chib ketardi**, skladdagilari ham. Endi faqat yo'ldagi qism olinadi. Shu payt boshqa sklad tanlansa, tanlovlar o'sha skladning ro'yxati bo'yicha qisqartirilmaydi.
+- Yo'ldagi yuk ro'yxati yuklanmay qolsa, avval tanlangan yo'ldagi yuk ro'yxatda ham, jamida ham ko'rinmasdi, lekin agentga baribir yuborilardi. Endi tizim «N ta tanlangan yuk ro'yxatda ko'rinmayapti» deydi va «Qayta urinish» yoki «Olib tashlash» bosilmaguncha planni yubormaydi.
+
+### Hali qilinmagan (aytib qo'yaman)
+- Yo'ldagi **yashiklar** (CR-…) rejaga taklif qilinmaydi, faqat alohida karobkalar.
+- Kelayotgan mashinaning yo'nalishi o'zgartirilsa, uning yuki bu skladga kelmaydi. Reja qatori «Yuklash tugadi»da «kelmadi» bo'ladi.
+
+## 2026-10-27 — Telegramdan ochilgan tizimda fayllar yuklanadi
+
+Sizning so'zlaringiz: «filelar telefonda skachat bolmayabti» va javobingiz «1d / 2 download unsuccessful … / 3 c». **Migratsiya yo'q.** Yangi kod ishlayotganini `curl -s https://gsrwms.uz/api/version` bilan tekshiring.
+
+- **Sabab:** tizim Telegramdagi «↗️ Ochish» tugmasi bilan ochilganda, Telegramning ichki brauzerida ishlaydi. Bu brauzer faylni o'zi yuklamaydi. U fayl manzilini telefonning yuklab olish dasturiga beradi. O'sha dastur esa tizimga kirmagan (login yo'q) odam sifatida so'raydi, server rad etadi va telefon «Download unsuccessful» deydi.
+- **Endi:** faylni bosganingizda tizim o'sha fayl uchun **10 daqiqalik maxsus havola** yaratadi. Telefonning yuklab olish dasturi shu havola bilan login'siz ham faylni oladi. Bu hamma fayllarga tegishli: Excel'lar, PDF'lar, aktlar, rasmlar, prixod fayllari, yorliqlar.
+- Havola faqat **bitta faylni** ochadi va faqat **sizning huquqingiz** bilan. Sklad hodimi o'zi ocha olmaydigan faylni havola orqali ham ocha olmaydi. Hodim ishdan bo'shatilgan bo'lsa, uning eski havolasi ham ishlamaydi.
+- 10 daqiqadan keyin havola eskiradi va «Havola eskirgan. Sahifaga qaytib, faylni qayta bosing» degan sahifa chiqadi.
+- Kompyuterda hech narsa o'zgarmaydi: fayllar avvalgidek yuklanadi.
+- **Serverda tekshiring:** `.env` faylida `SESSION_SECRET` haqiqiy tasodifiy qiymat bo'lishi kerak. Tekshirish: `grep -c '^SESSION_SECRET=generate-a-long-random-string' .env` — **0** chiqishi kerak. 1 chiqsa yoki qator umuman bo'lmasa, havola yaratilmaydi va fayllar avvalgidek ochiladi (telefonda yuklanmaydi). Tuzatish: `openssl rand -base64 32` chiqargan qiymatni `SESSION_SECRET=` ga yozing, keyin `docker compose --profile telegram up -d app tg-listen`. Bu kirish (login) sessiyalarini buzmaydi.
+- **Deploydan oldin vaqtincha yo'l:** telefonda Telegram → Sozlamalar → Chat sozlamalari → «In-App Browser»ni o'chiring (Android). Shunda «↗️ Ochish» tizimni Chrome'da ochadi va fayllar yuklanadi.
+
+## 2026-10-27 — Narx taklifi Telegramga PDF bilan keladi
+
+Sizning so'zlaringiz: «narx taklifi text bolib sotuvchi telegramiga kelyabti pdf ham birga kelsin telegramga shu telegramni ozini jonatish imkoni uchun». **Migratsiya yo'q** — deploydan keyin migratsiyalar soni o'zgarmaydi (137). Yangi kod ishlayotganini `curl -s https://gsrwms.uz/api/version` bilan tekshiring.
+
+- Sotuvchi narx taklifini yozganda Telegramga endi **bitta xabar** keladi: **PDF fayl, ostida taklif matni**. Shu xabarni mijozga «Forward» qilsa — PDF ham, matn ham birga ketadi.
+- PDF — kartadagi «📄 PDF» tugmasi beradigan varaqning o'zi (mijoz, tovarlar, narx, sotuvchi, imzo). Til — sotuvchi taklifda tanlagan til.
+- Fayl nomi: «GSR-taklif-B-00123.pdf» (ruscha taklifda «GSR-predlozhenie-…»). Mijozning telefonida shunday nom bilan saqlanadi.
+- Tannarxdan past narx (ruxsat kutayotgan) — ruxsat berilmaguncha na matn, na PDF ketadi. Ruxsat berilganda ikkalasi birga keladi.
+- Telegram faylni olmasa ham (kamdan-kam), matn baribir keladi — taklif hech qachon yo'qolmaydi.
+- Taklif yozilgan oynadagi yozuv: «PDF va matn Telegramga yuborildi».
 
 ## 2026-10-27 — Uch band: narxdan hisob-kitobga link, har so'rovga yangi bitim, bitta qatorli tarkib va «шт» ustuni
 

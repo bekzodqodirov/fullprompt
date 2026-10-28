@@ -21,6 +21,7 @@ import { countOnlyLotOf, type CountOnlyLot } from '@/offline/count-only';
 import { isScanRefusal, type ScanRefusal } from '@/offline/scan-refusal';
 import { mergeLoaded } from '@/offline/loaded-merge';
 import { rerouteVerdict } from '@/offline/reroute-acks';
+import { roadScanVerdict } from '@/offline/road-scan';
 import { removeLoadedAction } from '../../batch-actions-server';
 import { isOwnCodeShape, looksLikeRetailBarcode } from '@/offline/code-shape';
 
@@ -51,6 +52,15 @@ interface Snapshot {
    */
   countOnly?: CountOnlyLot[];
   countOnlyCapped?: boolean;
+  /**
+   * Yo'ldagi yuk (docs/YOLDAGI-YUK.md §9): what the plan still owes from the
+   * road, per lot, and its lots' codes — free on the origin's shelf (the
+   * server claims one at the scan), or still on an inbound truck. Absent from
+   * an older snapshot — `?? []`.
+   */
+  roadOwed?: { lotId: string; label: string; owed: number; trucks: string[] }[];
+  roadShelf?: { code: string; lotId: string }[];
+  roadInbound?: { code: string; truck: string }[];
 }
 
 /**
@@ -204,8 +214,18 @@ export function LoadingScreen({
     })();
   }, [batchId, cacheKey, applySnapshot]);
 
+  /**
+   * Codes this phone has queued UNLOAD rows for — a carton it landed itself
+   * while offline is the plan's on the server as soon as the sync lands it,
+   * and the sync lands before it loads (`roadScanVerdict`).
+   */
+  const queuedUnloads = useRef<Set<string>>(new Set());
   const refreshPending = useCallback(async () => {
-    setPending((await pendingScans()).length);
+    const rows = await pendingScans();
+    setPending(rows.length);
+    queuedUnloads.current = new Set(
+      rows.filter((r) => r.scanType === 'unload').map((r) => r.code.toUpperCase()),
+    );
   }, []);
 
   /**
@@ -264,6 +284,9 @@ export function LoadingScreen({
         // `rerouteVerdict`, once per truck, and nothing of this truck is
         // rolled back (`codes` is empty for a row this screen never marked).
         continue;
+      } else if (ack.detail === 'road_not_landed') {
+        // Still on the inbound truck: the landing is what makes it the plan's.
+        setToast(`🚚 ${t('roadNotLanded', { truck: ack.inboundCode ?? '—' })}`);
       } else if (ack.detail === 'batch_not_found') {
         setToast(`❌ ${tu('errors.not_found')}`);
       } else {
@@ -531,6 +554,24 @@ export function LoadingScreen({
       void accept(memberCodes, { code, method, manualReason });
       return;
     }
+    // A carton of a lot the plan still owes from the road: sent to the server
+    // to claim while the lot owes it — and, while the snapshot still lists it
+    // on an inbound truck, whenever the server can answer at once or this phone
+    // landed it itself; refused in words only offline (`roadScanVerdict`).
+    // Never the red «not on plan» for the plan's own cargo.
+    const roadScan = roadScanVerdict(code, snapshot, loaded, {
+      online,
+      queuedUnloads: queuedUnloads.current,
+    });
+    if (roadScan?.kind === 'accept') {
+      void accept([code], { code, method, manualReason });
+      return;
+    }
+    if (roadScan?.kind === 'inbound') {
+      feedback('bad');
+      setToast(`🚚 ${t('roadNotLanded', { truck: roadScan.truck })}`);
+      return;
+    }
     // Nothing on this batch's plan — red confirm flow.
     feedback('bad');
     setConfirmCode(code);
@@ -772,6 +813,18 @@ export function LoadingScreen({
         <p className="text-center text-xs text-ink-500" data-testid="count-only-capped">
           {tcount('countOnlyCapped')}
         </p>
+      )}
+
+      {/* Yo'ldagi yuk: the plan's cargo still on its way here, so nobody
+          presses «yuklash tugadi» not knowing (docs/YOLDAGI-YUK.md §9). */}
+      {(snapshot.roadOwed ?? []).length > 0 && (
+        <div className="rounded-lg border border-warn/40 bg-warn/10 p-2 text-sm" data-testid="road-owed">
+          {(snapshot.roadOwed ?? []).map((lot) => (
+            <p key={lot.lotId}>
+              🚚 {t('roadOwedLine', { lot: lot.label, n: lot.owed, trucks: lot.trucks.join(', ') || '—' })}
+            </p>
+          ))}
+        </div>
       )}
 
       {/* The office's count panel, one tap away for the admin or the logist

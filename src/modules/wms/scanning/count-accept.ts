@@ -8,7 +8,7 @@ import { batches, boxes, boxMovements, crates, receiptLots, users, warehouses } 
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { emitEvent } from '../../platform/events/service';
 import { isBusyError } from '../../platform/db/errors';
-import { ARRIVED_ON_A_TRUCK } from '../documents/arrivals';
+import { ARRIVED_ON_A_TRUCK, notSentBackSql } from '../documents/arrivals';
 import { codeIdentity } from '../labels/code-identity';
 import { qrlessJoinedSql } from '../labels/qrless-sql';
 import { landedStatusFor } from '../warehouses/landed';
@@ -34,6 +34,7 @@ import {
   setCountLockTimeout,
 } from './count-rules';
 import { doorOpens, type CountDoor } from './count-door';
+import { planRoadReady, type RoadOn } from '../planning/road';
 import { notifyPricedCargoGrew, notifyPricedCargoTakenBack } from '../finance/off-truck';
 import { formerDestinationsFor } from '../batches/reroute';
 
@@ -248,11 +249,7 @@ async function readLedger(
          AND ab.crate_id IS NULL AND ab.status <> 'void' ${only(sql`ab.lot_id`)}
          -- An over-landing a press below «arrived» sent back to the origin's
          -- shelf did not arrive after all (review money-1).
-         AND NOT EXISTS (
-           SELECT 1 FROM box_movements back
-            WHERE back.box_id = ab.id AND back.ref_type = 'batch' AND back.ref_id = ${T}::uuid
-              AND back.cause = 'found_at_origin' AND (back.created_at, back.id) > (am.created_at, am.id)
-         )
+         AND ${notSentBackSql('am', sql`${T}::uuid`)}
        GROUP BY ab.lot_id
     ),
     phone AS (
@@ -430,10 +427,13 @@ export async function countAcceptLot(
   };
   let grew = false;
   let done: CountAcceptResult | null = null;
+  // On the pool, before any chunk's transaction (#714): a counted carton lands
+  // as a scanned one does, a plan owing its lot included (docs/YOLDAGI-YUK.md §7).
+  const road = await planRoadReady();
   try {
     for (let chunk = 0; ; chunk += 1) {
       const step = await db.transaction((tx) =>
-        countChunk(tx, { input, ctx, actorId, doors, overReason, need, chunk, state, rogueTrucks }),
+        countChunk(tx, { input, ctx, actorId, doors, overReason, need, chunk, state, rogueTrucks, road }),
       );
       if (step.grew) grew = true;
       if (step.result) {
@@ -652,6 +652,7 @@ async function countChunk(
     chunk: number;
     state: PressState;
     rogueTrucks: Set<string>;
+    road: RoadOn;
   },
 ): Promise<{ result: CountAcceptResult | null; grew: boolean }> {
   const { input, actorId, state } = a;
@@ -827,6 +828,8 @@ async function countChunk(
         quietSpot: true,
         noticeWindowMinutes: OFFICE_NOTICE_WINDOW_MINUTES,
       },
+      {},
+      a.road,
     );
   for (const box of awaitPicks) {
     const ack = await land(box, COUNT_ACCEPT_REASON);
@@ -1065,6 +1068,7 @@ export async function countAcceptCrate(
   }
   if (!['in_transit', 'arrived'].includes(pre.status)) throw new CountError('batch_not_unloading');
   if (pre.status === 'in_transit' && !input.confirmArrival) throw new CountError('confirm_arrival_required');
+  const road = await planRoadReady();
   try {
     return await db.transaction(async (tx) => {
       await setCountLockTimeout(tx);
@@ -1095,6 +1099,8 @@ export async function countAcceptCrate(
         actorId,
         new Set(),
         { door: COUNT_ACCEPT_REASON, quietSpot: true, noticeWindowMinutes: OFFICE_NOTICE_WINDOW_MINUTES },
+        {},
+        road,
       );
       if (ack.result === 'duplicate' || ack.detail === 'replay') {
         return { code: crate.code, landed: 0, notArrived: ack.notArrived ?? [], replay: true };

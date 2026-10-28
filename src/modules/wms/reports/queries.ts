@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { aliasedTable } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
+import { planRoadReady, roadMissedSql } from '../planning/road';
 import { resolvePeriod } from '../accounting/period';
 import { riderLoad } from '../batches/riders';
 import { intakeRuleSql, receiptScopeSql, receivedInRangeSql } from './business';
@@ -564,6 +565,10 @@ export async function stockAging(warehouseIds?: string[], asOf: Date = new Date(
  */
 export async function batchRegister(warehouseIds?: string[]) {
   const dest = aliasedTable(warehouses, 'dest');
+  // Yo'ldagi yuk (4a): the road part a truck's loading ended without is short
+  // «as a short-loaded carton is today» — counted in ⤵️ beside the cartons
+  // given back, from the line's durable `road_missed` (docs/YOLDAGI-YUK.md §9).
+  const roadMissed = roadMissedSql(await planRoadReady(), sql`${batches.id}`);
   const rows = await db
     .select({
       id: batches.id,
@@ -576,7 +581,7 @@ export async function batchRegister(warehouseIds?: string[]) {
       short: sql<number>`(
         SELECT count(DISTINCT bm.box_id) FROM box_movements bm
         WHERE bm.ref_type = 'batch' AND bm.ref_id = ${batches.id} AND bm.cause = 'short_loaded'
-      )`,
+      ) + ${roadMissed}`,
       // Cartons that went on beyond the plan AND ride it — distinct, over the
       // truck's real cargo (0112, decision 25): an office count dialled down
       // keeps its scan events, so the history alone counts cartons that came

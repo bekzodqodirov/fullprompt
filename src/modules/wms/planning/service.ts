@@ -20,6 +20,14 @@ import { emitEvent } from '../../platform/events/service';
 import { PLANNABLE_STATUSES } from '../boxes/shelf';
 import { nextBatchCode } from '../codes';
 import { mintBatchPairCode } from '../tracking/devices';
+import {
+  lotSplitAt,
+  planRoadReady,
+  roadLock,
+  roadPartsOfVersion,
+  setRoadOwed,
+  writeRoadParts,
+} from './road';
 
 export class PlanError extends Error {
   constructor(
@@ -48,6 +56,12 @@ export const submitPlanSchema = z.object({
   lines: z.array(planLineSchema).max(500),
   /** Whole crates — each counts as one place; boxes come from the crate. */
   crateIds: z.array(z.string().uuid()).max(200).optional(),
+  /**
+   * «🚚 Yo'ldagi yuklar ham» (docs/YOLDAGI-YUK.md §5): a loose line may also
+   * take cartons still on a truck bound for the origin. The editor sends counts
+   * only; the server splits each line shelf first.
+   */
+  road: z.boolean().optional(),
 });
 export type SubmitPlanInput = z.infer<typeof submitPlanSchema>;
 
@@ -103,6 +117,9 @@ export async function submitPlan(input: SubmitPlanInput, ctx: AuditContext) {
 
   const crateIds = [...new Set(input.crateIds ?? [])];
   if (input.lines.length === 0 && crateIds.length === 0) throw new PlanError('validation');
+  // On the pool, before the transaction (#714): is the road part on this server?
+  const road = await planRoadReady();
+  const withRoad = road.on && input.road === true;
 
   return db.transaction(async (tx) => {
     // Whole crates → per-lot lines carrying the crate id, so approval can
@@ -174,15 +191,37 @@ export async function submitPlan(input: SubmitPlanInput, ctx: AuditContext) {
     if (lots.length !== lotIds.length) throw new PlanError('lot_not_found');
     const lotById = new Map(lots.map((l) => [l.id, l]));
 
-    const available = await availableByLot(
-      input.originWarehouseId,
-      input.lines.map((l) => l.lotId),
-      tx,
-    );
-    for (const line of input.lines) {
-      const free = available.get(line.lotId) ?? 0;
-      if (line.boxCount > free) {
-        throw new PlanError('insufficient_stock', `${line.lotId}:${free}`);
+    // The road part of each loose line, shelf first. With the box off (or 0137
+    // not here) a line takes the shelf alone, exactly as before. Shelf and road
+    // come from ONE statement, so a landing between two reads is never counted
+    // on both sides. Nothing is locked: a submit reserves nothing.
+    const roadPart = new Map<string, number>();
+    if (withRoad) {
+      const split = await lotSplitAt(
+        tx,
+        input.originWarehouseId,
+        input.lines.map((l) => l.lotId),
+      );
+      for (const line of input.lines) {
+        const at = split.get(line.lotId);
+        const shelf = at?.shelf ?? 0;
+        const free = shelf + (at?.roadFree ?? 0);
+        if (line.boxCount > free) {
+          throw new PlanError('insufficient_stock', `${line.lotId}:${free}`);
+        }
+        if (line.boxCount > shelf) roadPart.set(line.lotId, line.boxCount - shelf);
+      }
+    } else {
+      const available = await availableByLot(
+        input.originWarehouseId,
+        input.lines.map((l) => l.lotId),
+        tx,
+      );
+      for (const line of input.lines) {
+        const free = available.get(line.lotId) ?? 0;
+        if (line.boxCount > free) {
+          throw new PlanError('insufficient_stock', `${line.lotId}:${free}`);
+        }
       }
     }
 
@@ -261,22 +300,39 @@ export async function submitPlan(input: SubmitPlanInput, ctx: AuditContext) {
         totalM3: String(totalM3),
       })
       .returning();
-    await tx.insert(loadPlanLines).values(
-      computed.map((line) => ({
-        versionId: version!.id,
-        lotId: line.lotId,
-        crateId: line.crateId ?? null,
-        plannedBoxCount: line.boxCount,
-        plannedKg: String(line.kg),
-        plannedM3: String(line.m3),
-      })),
+    const lineRows = await tx
+      .insert(loadPlanLines)
+      .values(
+        computed.map((line) => ({
+          versionId: version!.id,
+          lotId: line.lotId,
+          crateId: line.crateId ?? null,
+          plannedBoxCount: line.boxCount,
+          plannedKg: String(line.kg),
+          plannedM3: String(line.m3),
+        })),
+      )
+      .returning({ id: loadPlanLines.id, lotId: loadPlanLines.lotId, crateId: loadPlanLines.crateId });
+    // A crate line never has a road part (§1); only loose lines are in the map.
+    await writeRoadParts(
+      tx,
+      lineRows
+        .filter((row) => row.crateId === null)
+        .map((row) => ({ lineId: row.id, roadBoxCount: roadPart.get(row.lotId) ?? 0 })),
     );
+    const roadBoxes = [...roadPart.values()].reduce((a, n) => a + n, 0);
 
     await writeAudit(tx, { ...ctx, warehouseId: input.originWarehouseId }, {
       entityType: 'load_plan',
       entityId: plan!.id,
       action: input.planId ? 'update' : 'create',
-      after: { versionNo: plan!.currentVersionNo, totalBoxes, totalKg, totalM3 },
+      after: {
+        versionNo: plan!.currentVersionNo,
+        totalBoxes,
+        totalKg,
+        totalM3,
+        ...(roadBoxes > 0 ? { roadBoxes } : {}),
+      },
     });
     return { plan: plan!, version: version! };
   });
@@ -297,6 +353,8 @@ export type VerdictInput = z.infer<typeof verdictSchema>;
 export async function recordVerdict(input: VerdictInput, ctx: AuditContext) {
   if (!ctx.actorId) throw new PlanError('unauthenticated');
   const actorId = ctx.actorId;
+  // On the pool, before the transaction (#714): is the road part on this server?
+  const road = await planRoadReady();
   return db.transaction(async (tx) => {
     const version = await tx.query.loadPlanVersions.findFirst({
       where: eq(loadPlanVersions.id, input.versionId),
@@ -310,7 +368,12 @@ export async function recordVerdict(input: VerdictInput, ctx: AuditContext) {
       throw new PlanError('version_not_current');
     }
 
-    await tx
+    // The verdict is a CLAIM: two presses of «Tasdiqlash» (a double tap, a
+    // retried action) both read «no verdict yet» above, and the second one's
+    // update used to wait, then overwrite — two trucks for one plan. Only
+    // the shelf's insufficient_stock happened to stop it, and a road line
+    // reserves less than its count by design (docs/YOLDAGI-YUK.md §6).
+    const claimed = await tx
       .update(loadPlanVersions)
       .set({
         agentVerdict: input.verdict,
@@ -318,7 +381,9 @@ export async function recordVerdict(input: VerdictInput, ctx: AuditContext) {
         verdictRecordedBy: actorId,
         verdictRecordedAt: new Date(),
       })
-      .where(eq(loadPlanVersions.id, version.id));
+      .where(and(eq(loadPlanVersions.id, version.id), isNull(loadPlanVersions.agentVerdict)))
+      .returning({ id: loadPlanVersions.id });
+    if (claimed.length === 0) throw new PlanError('verdict_already_recorded');
 
     if (input.verdict === 'changes_requested') {
       await tx.update(loadPlans).set({ status: 'changes_requested' }).where(eq(loadPlans.id, plan.id));
@@ -365,7 +430,16 @@ export async function recordVerdict(input: VerdictInput, ctx: AuditContext) {
       .select()
       .from(loadPlanLines)
       .where(eq(loadPlanLines.versionId, version.id));
+    // A line with a road part reserves what stands on the shelf now and owes
+    // the rest, reserved onto this truck when its cartons land (3a). The
+    // origin's road lock first, before any carton is read: a landing of the
+    // same lot in flight would otherwise be missed by both sides — it sees
+    // this plan still pending, this approval cannot see its uncommitted
+    // carton on the shelf — and the line would owe a carton standing here.
+    const roadParts = road.on ? await roadPartsOfVersion(tx, version.id) : new Map<string, number>();
+    if (roadParts.size > 0) await roadLock(tx, plan.originWarehouseId);
     for (const line of lines) {
+      const roadPart = roadParts.get(line.id) ?? 0;
       // Crate lines take the crate's exact boxes (the crate is one place);
       // loose lines take the lowest sequence numbers among un-crated stock.
       // Either shelf status: the movement below records which one it was, and
@@ -384,9 +458,21 @@ export async function recordVerdict(input: VerdictInput, ctx: AuditContext) {
         .orderBy(asc(boxes.seqInLot))
         .limit(line.plannedBoxCount)
         .for('update');
-      if (candidates.length < line.plannedBoxCount) {
+      if (candidates.length < line.plannedBoxCount - roadPart) {
         throw new PlanError('insufficient_stock', line.lotId);
       }
+      if (roadPart > 0) {
+        // What the road still has to give this line — never more than the
+        // road holds once the other approved plans' promises are taken off
+        // (a road part promised twice would owe for ever on one of them).
+        const owed = line.plannedBoxCount - candidates.length;
+        if (owed > 0) {
+          const roadFree = (await lotSplitAt(tx, plan.originWarehouseId, [line.lotId])).get(line.lotId)?.roadFree ?? 0;
+          if (owed > roadFree) throw new PlanError('insufficient_stock', line.lotId);
+        }
+        await setRoadOwed(tx, line.id, owed);
+      }
+      if (candidates.length === 0) continue;
       const ids = candidates.map((b) => b.id);
       await tx
         .update(boxes)

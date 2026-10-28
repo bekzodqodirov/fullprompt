@@ -49,6 +49,23 @@ export { arrivalKey, arrivalLabel, type ArrivalSource, type LabelSource } from '
 export const ARRIVED_ON_A_TRUCK = ['unload_scan', 'undocumented_transfer', 'found_here'];
 
 /**
+ * The landing movement `am` (one of `ARRIVED_ON_A_TRUCK`, ref truck `batch`)
+ * was not taken back: an office over-count that a later press below «arrived»
+ * sent back to the origin's shelf (`found_at_origin` on the same truck, newer)
+ * did not arrive after all (review money-1). One fragment for the count's
+ * ledger and the unload's «already landed by this truck» — the second reader
+ * that restated the causes without it refused over → undo → over for ever
+ * (review deploy#8).
+ */
+export function notSentBackSql(am: string, batch: SQL): SQL {
+  const m = sql.raw(am);
+  return sql`NOT EXISTS (
+    SELECT 1 FROM box_movements back
+     WHERE back.box_id = ${m}.box_id AND back.ref_type = 'batch' AND back.ref_id = ${batch}
+       AND back.cause = 'found_at_origin' AND (back.created_at, back.id) > (${m}.created_at, ${m}.id))`;
+}
+
+/**
  * «This movement landed the box in THIS warehouse» — the three clauses above,
  * as one fragment, so the second reader of the rule cannot restate two of
  * them (#513).
