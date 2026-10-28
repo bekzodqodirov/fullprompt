@@ -14,6 +14,10 @@ in §1, the plan in §10 «R3») plus his 2.8 b. His answers are binding (§0).
   docs/UCH-BAND.md; migration 0136; DECISIONS #1469-#1478). Every «today» below is read off
   0373bd2; where this spec and the code disagree, the code wins. Where both rounds touch one
   function, the section names the version on 0373bd2. (re-check laws-print-2)
+- **K = e0f9b61** (2026-10-28, §17.1): the kernel, three commits on r3-work — 1133ecc
+  (K1, K2, K13-K15), dbcb221 (K3-K10) and e0f9b61 (K11, K12, K16). Every package branches
+  from e0f9b61. Gates there on a database of its own: typecheck, lint, the full vitest
+  (726 files, 10717 tests).
 - **Migration 0137 `calc_intake_durable`** (`when` 1785190000116, journal idx 137, ledger
   must reach **138**). 0136 is Uch band's `lead_client_many` (`when` …115, DECISIONS
   #1469-#1478), one-way. R2 adds none (R2 §11). Before K is cut: `git fetch origin main` and
