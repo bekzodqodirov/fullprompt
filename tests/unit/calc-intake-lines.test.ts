@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { MAX_OFFERS, mergeLineAnswers } from '@/modules/platform/telegram/calc-intake';
 import { parseCallback } from '@/modules/platform/telegram/staff-bot';
 import { lineOfferKeyboard } from '@/modules/platform/telegram/staff-handlers';
+import { collectorCode } from '../fixtures/calc-collector-source';
 
 /**
  * The bot's per-line follow-up (P1.3, judge UX4) — the parts a shell can
@@ -13,7 +14,10 @@ const code = (p: string) =>
   readFileSync(p, 'utf8')
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/^\s*\/\/.*$/gm, '');
-const HANDLERS = code('src/modules/platform/telegram/staff-handlers.ts');
+// Every collector file, comments stripped — K moved the calc keyboards out of
+// staff-handlers.ts (docs/SAKKIZ-R3.md K16, the subject moved), and a ninth
+// file joins this fence by joining the list.
+const HANDLERS = collectorCode();
 
 describe('a bare number is answered by a tap (UX4)', () => {
   it('each button carries only its POSITION, and the parser answers every one', () => {

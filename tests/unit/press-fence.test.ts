@@ -19,7 +19,10 @@ describe('the one answer to a press', () => {
   });
 
   it('the scan finds the wrapper where the presses are (#720)', () => {
-    for (const file of ['staff-handlers.ts', 'task-handlers.ts', 'client-cabinet.ts']) {
+    // calc-dialog.ts / calc-amend.ts: round 3's two press kinds that are NOT
+    // pre-answered by the dispatcher (the echo's «↩️», «➕») answer their own
+    // press there (docs/SAKKIZ-R3.md K11).
+    for (const file of ['staff-handlers.ts', 'task-handlers.ts', 'client-cabinet.ts', 'calc-dialog.ts', 'calc-amend.ts']) {
       const f = SRC.find((s) => s.path.endsWith(`telegram/${file}`));
       expect(f, `re-anchor: ${file}`).toBeDefined();
       expect([...f!.text.matchAll(/answerPress\(/g)].length, file).toBeGreaterThan(0);

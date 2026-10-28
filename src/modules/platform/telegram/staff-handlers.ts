@@ -52,6 +52,7 @@ import {
   refusalFor,
   taskPressCheck,
   type CalcStep,
+  CALC_STEP_REPEAT,
   type NoteStep,
   isZoneStep,
   zonePressAnswer,
@@ -66,6 +67,7 @@ import {
   holdingIntake,
   intakeTakes,
   noteOwnMessage,
+  ownsPress,
   startIntake,
   updateIntake,
   type IntakeMessage,
@@ -80,15 +82,16 @@ import {
 import {
   NOT_FOUND_HINT,
   orphanAnswerSentence,
+  landingReplyText,
   pressCancel,
+  pressConflict,
   pressPick,
   pressSkip,
+  pressUndo,
   QUEUE_REFUSAL,
   queueRefusal,
-  landedWords,
   routeCollectorText,
   showIntakePrompt,
-  TARIFF_FOLLOWS,
   type CalcPressCtx,
 } from './calc-dialog';
 import {
@@ -100,6 +103,14 @@ import {
   zoneKeyboard,
 } from './calc-keyboards';
 import { pressAnalyse } from './calc-read';
+import { landedAlreadyReply, pressResume } from './calc-intake-sweep';
+import {
+  foreignAddReply,
+  landedReplyMarkup,
+  offerAddForMedia,
+  pressAdd,
+  saveAmendment,
+} from './calc-amend';
 import { phoneKeyboard } from './client-cabinet';
 import { replyKeyboardFor } from './keyboards';
 import {
@@ -317,7 +328,26 @@ export function registerStaffBot(bot: Bot): void {
 
     if (parsed.kind === 'calc') {
       await answerPress(ctx);
-      await handleCalcCallback(ctx as unknown as CalcPressCtx, chatId, parsed.step);
+      // The restart's claim (docs/SAKKIZ-R3.md K11) is minted HERE, on
+      // grammy's own ctx — `pressKey` reads `callbackQuery.from`, which the
+      // collector's narrow ctx does not carry — for every step the vocabulary
+      // classes 'keyed', and handed down for the handler to spend.
+      const restartKey = CALC_STEP_REPEAT[parsed.step] === 'keyed' ? await pressKey(ctx, 'restart') : null;
+      await handleCalcCallback(ctx as unknown as CalcPressCtx, chatId, parsed.step, restartKey);
+      return;
+    }
+
+    // «➕ Shu so‘rovga qo‘shish» and the echo's «↩️» (K11, his 1.9 a). NOT
+    // pre-answered: each answers its own press in words through `answerPress`.
+    // BEFORE the approval guard below, which returns on every kind it does not
+    // name (#939).
+    if (parsed.kind === 'calc_add') {
+      const restartKey = parsed.mode === 'restart' ? await pressKey(ctx, 'restart') : null;
+      await pressAdd(ctx, chatId, parsed.requestId, parsed.mode, restartKey);
+      return;
+    }
+    if (parsed.kind === 'calc_undo') {
+      await pressUndo(ctx, chatId, parsed.tag);
       return;
     }
 
@@ -679,6 +709,9 @@ export function registerStaffBot(bot: Bot): void {
           await tellBacklogOnce(ctx, chatId);
           return;
         }
+        // A plain file with nothing to take it: the add door's one offer, as
+        // a reply to it, when the sender has a request it could join (P4).
+        if (await offerAddForMedia(ctx, chatId)) return;
         return next();
       }
       const owner = await staffForChat(chatId);
@@ -801,6 +834,14 @@ export function registerStaffBot(bot: Bot): void {
     const takes = intake && !escapesIntake(ctx.message.text) ? intakeTakes(intake, incoming) : 'pass';
     if (takes === 'seen') return;
     if (intake && takes === 'take') {
+      // An add collection frozen while its save runs (P4) takes nothing more.
+      if (intake.saving) {
+        await ctx.reply('⏳ Qo‘shimcha yozilmoqda — natija kelgach yozing.');
+        return;
+      }
+      // A text replying to ANOTHER request's ➕-bearing message: words naming
+      // both, nothing written (P4).
+      if (await foreignAddReply(ctx, chatId, intake, incoming.replyTo)) return;
       await routeCollectorText(ctx, chatId, intake, ctx.message.text, {
         date: ctx.message.date,
         messageId: ctx.message.message_id,
@@ -1333,10 +1374,47 @@ async function answerWithAssistant(
  * Section → who the customer is → send everything → analyse → confirm. Each
  * step reads the live collection rather than trusting the button: a stale
  * keyboard from yesterday's message must not resurrect a finished intake.
+ *
+ * Every press the vocabulary classes 'own' (`CALC_STEP_REPEAT`) acts only on
+ * the collection whose message carries it (`ownsPress`): the bot keeps the
+ * backlog, so a «✖️» or «Tasdiqlash» of an older collection can arrive after
+ * a newer one opened. `restartKey`: the dispatcher's claim for a 'keyed' step
+ * (a `go_*`), spent here before the restart wipes anything; null in a test
+ * and on a server one migration behind.
  */
-export async function handleCalcCallback(ctx: CalcPressCtx, chatId: bigint, step: CalcStep): Promise<void> {
-  if (step === 'cancel') {
-    await pressCancel(ctx, chatId, activeIntake(chatId), false);
+export async function handleCalcCallback(
+  ctx: CalcPressCtx,
+  chatId: bigint,
+  step: CalcStep,
+  restartKey: OnceKey | null = null,
+): Promise<void> {
+  const pressed = ctx.callbackQuery?.message?.message_id ?? null;
+
+  if (step === 'cancel' || step === 'cancel_y') {
+    // A cancel with NO live collection still says «Bekor qilindi.», as it
+    // always has; one pressed under another collection's message ends nothing.
+    const live = activeIntake(chatId);
+    if (live && !ownsPress(live, pressed)) {
+      await ctx.reply('Bu tugma eskirgan.');
+      return;
+    }
+    await pressCancel(ctx, chatId, live, step === 'cancel_y');
+    return;
+  }
+
+  // «▶️ Yo‘q, davom etaman»: the live stage asked again, exactly where it
+  // stands (it was `more`, which threw a reviewed collection back to
+  // material, product-fit-8).
+  if (step === 'resume') {
+    await pressResume(ctx, chatId);
+    return;
+  }
+
+  // The legacy toggle: an old message's «📄 Sertifikat» still parses (#939 —
+  // an unparsed press spins), but a flip is not an answer a redelivery can
+  // repeat safely, so it is retired in words.
+  if (step === 'cert') {
+    await ctx.reply('Bu tugma eskirgan.');
     return;
   }
 
@@ -1358,8 +1436,18 @@ export async function handleCalcCallback(ctx: CalcPressCtx, chatId: bigint, step
       return;
     }
     // The message whose press opened it: a restart pressed from it again
-    // resumes rather than wipes (K11 reads it).
-    const openedBy = ctx.callbackQuery?.message?.message_id ?? null;
+    // resumes rather than wipes.
+    const openedBy = pressed;
+    if (step.startsWith('go_')) {
+      // A «🔄 Ha» that would open the collection already live — the same
+      // message pressed twice, or its redelivery after the seller has sent
+      // half the material — re-prompts it instead of emptying it (durability-2).
+      const live = activeIntake(chatId);
+      if (live && pressed !== null && live.openedBy === pressed) {
+        await pressResume(ctx, chatId);
+        return;
+      }
+    }
     // One collector at a time: a task draft is somebody's half-written task.
     if (draftLive(chatId)) {
       await ctx.reply(`Hozir topshiriq yozilyapti. ${BUSY_DRAFT}`);
@@ -1373,6 +1461,13 @@ export async function handleCalcCallback(ctx: CalcPressCtx, chatId: bigint, step
         'Sizda tugallanmagan yig‘ish bor. Boshqatdan boshlaymizmi? Yuborilgan hamma narsa o‘chadi.',
         { reply_markup: restartKeyboard(opening) },
       );
+      return;
+    }
+    // One «🔄 Ha» restarts once: its claim already held means this press
+    // already wiped and reopened, and whatever is live now is that
+    // collection or a newer one — resumed, never wiped again.
+    if (restartKey && !(await claimOnce(db, restartKey))) {
+      await pressResume(ctx, chatId);
       return;
     }
     if (opening === 'aipk') {
@@ -1427,8 +1522,15 @@ export async function handleCalcCallback(ctx: CalcPressCtx, chatId: bigint, step
     return;
   }
 
-  if (step === 'cert') {
-    const next = updateIntake(chatId, { hasCertificate: !state.hasCertificate });
+  if (CALC_STEP_REPEAT[step] === 'own' && !ownsPress(state, pressed)) {
+    await ctx.reply('Bu tugma eskirgan.');
+    return;
+  }
+
+  if (step === 'cert_y' || step === 'cert_n') {
+    // SET from the button, never flipped (durability-2): a press delivered
+    // twice is the same answer twice.
+    const next = updateIntake(chatId, { hasCertificate: step === 'cert_y' });
     await ctx.reply(
       next?.hasCertificate
         ? '📄 Sertifikat BOR deb hisoblanadi — qo‘shimcha boj qo‘shilmaydi.'
@@ -1445,6 +1547,14 @@ export async function handleCalcCallback(ctx: CalcPressCtx, chatId: bigint, step
 
   if (step.startsWith('pick_')) {
     await pressPick(ctx, chatId, state, Number(step.slice('pick_'.length)));
+    return;
+  }
+
+  // A stored row a re-read file disagrees with (P4): add, replace, or leave
+  // it to the VED — by POSITION among the live conflicts.
+  const conflict = /^conf_(\d)_(add|rep|ved)$/.exec(step);
+  if (conflict) {
+    await pressConflict(ctx, chatId, state, Number(conflict[1]), conflict[2] as 'add' | 'rep' | 'ved');
     return;
   }
 
@@ -1499,6 +1609,18 @@ export async function handleCalcCallback(ctx: CalcPressCtx, chatId: bigint, step
     await ctx.reply('Yangi ma’lumot hali o‘qilmagan — avval «Bo‘ldi» ni bosing.', { reply_markup: doneKeyboard });
     return;
   }
+  // An add collection's save is already on its way (P4).
+  if (state.saving) {
+    await ctx.reply('⏳ Qo‘shimcha yozilmoqda — natijani kuting.');
+    return;
+  }
+  if (state.amend) {
+    await saveAmendment(ctx, chatId, state);
+    return;
+  }
+  // After the cheap guards, so a press they refuse costs no database read: a
+  // landing the sweep is resuming right now answers through the sweep's ✅.
+  if (await landedAlreadyReply(ctx, chatId, state)) return;
   const staff = await staffForChat(chatId);
   if (!staff) {
     await ctx.reply('Ulanmagan.');
@@ -1552,21 +1674,11 @@ export async function handleCalcCallback(ctx: CalcPressCtx, chatId: bigint, step
   // — rather than «VED javob beradi» under a figure already in the chat.
   const { sectionParts } = await import('../../wms/calc/pricing');
   const tariffFollows = target.replyQueued === true && !sectionParts(state.section).customs;
-  await ctx.reply(
-    `✅ Saqlandi — ${landedWords(target)}\n` +
-      (link ? `${link}\n` : '') +
-      '\n' +
-      // Honest about which half landed: the material is on the card either
-      // way, but only a queued request will be calculated by anybody.
-      (target.queued
-        ? tariffFollows
-          ? TARIFF_FOLLOWS
-          : '🧮 Hisoblash navbatiga tushdi — VED xodimi javob beradi.'
-        : `⚠️ Hisoblash navbatiga tushmadi: ${queueRefusal(target.queueError)}`),
+  await ctx.reply(landingReplyText(target, { link, tariffFollows }), {
     // Re-derived, not named (round 100, 13A): naming staffKeyboard() here
     // took the cabinet buttons off a both-chat's phone.
-    { reply_markup: await replyKeyboardFor(chatId) },
-  );
+    reply_markup: landedReplyMarkup(target) ?? (await replyKeyboardFor(chatId)),
+  });
 }
 
 /**

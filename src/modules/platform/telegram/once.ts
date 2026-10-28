@@ -38,7 +38,13 @@ export type OnceEffect =
   /** «this message answered a wait» — recorded after the effect (markOnce). */
   | 'wait'
   /** «this contact linked a colleague» — recorded after linkStaffChat. */
-  | 'staff_link';
+  | 'staff_link'
+  /**
+   * «🔄 Ha, boshqatdan» / «🗑 Ha, uni o‘chirib …» (docs/SAKKIZ-R3.md K12): a
+   * press key — one message restarts a collection once, and a repeat of it
+   * resumes whatever is live instead of wiping it again.
+   */
+  | 'restart';
 
 export type OnceKey = string & { readonly __once: unique symbol };
 

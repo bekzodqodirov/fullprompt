@@ -869,6 +869,33 @@ export function queueRefusal(code: string | null | undefined): string {
   return (code && QUEUE_REFUSAL[code]) ?? 'kartadan qo‘lda yuboring.';
 }
 
+/** What a landing hands the ✅: the card's words and whether the queue took it. */
+export type LandedTarget = Parameters<typeof landedWords>[0] & { queued?: boolean; queueError?: string | null };
+
+/**
+ * The ✅ after «Tasdiqlash» — the save branch's own string, MOVED here pure
+ * (docs/SAKKIZ-R3.md K11) so P1's resumed landing says the same words. Uch
+ * band's and R2's, not reworded. The link is the SENDER's (`landingLinkFor`:
+ * a card they can open, the calculation's own screen for the VED, or no line
+ * at all), and `tariffFollows` = a section with no customs half, answered from
+ * the tariff on its own queue — a reply that can land ABOVE this message, so
+ * the sentence says it comes separately, true in either order.
+ */
+export function landingReplyText(target: LandedTarget, opts: { link: string | null; tariffFollows: boolean }): string {
+  return (
+    `✅ Saqlandi — ${landedWords(target)}\n` +
+    (opts.link ? `${opts.link}\n` : '') +
+    '\n' +
+    // Honest about which half landed: the material is on the card either
+    // way, but only a queued request will be calculated by anybody.
+    (target.queued
+      ? opts.tariffFollows
+        ? TARIFF_FOLLOWS
+        : '🧮 Hisoblash navbatiga tushdi — VED xodimi javob beradi.'
+      : `⚠️ Hisoblash navbatiga tushmadi: ${queueRefusal(target.queueError)}`)
+  );
+}
+
 /**
  * What the landing DID, in words (judge product-16): «yangi» only for a card
  * that was minted — a joined lead, the client's empty deal taken over and a

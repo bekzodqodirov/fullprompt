@@ -4,6 +4,7 @@ import { reachLine } from '../notifications/staff';
 import { appendLine, keyboardOf, staffTextHtml, urlRowsOf, withoutButton } from '../notifications/staff-html';
 import { parseDue } from '../tasks/service';
 import { holdingIntake } from './calc-store';
+import { addOfferRows } from './calc-amend';
 import { activeCapture } from './note-capture';
 import { editMarkup, editText, sendText } from './send';
 import { REPLY_SENTENCES, threadReplyFromBot } from './reply-door';
@@ -549,8 +550,11 @@ export async function offerForwardTask(ctx: Context, chatId: bigint, mediaGroupI
       return;
     }
   }
+  // The add door's rows ride under Door B's own two — a request the sender
+  // sent recently that this forward could join (P4) — and never touch Door
+  // B's buttons or the `reply_to_message` those read.
   await ctx.reply('📌 Topshiriq qilamizmi?', {
-    reply_markup: { inline_keyboard: forwardKeyboard() },
+    reply_markup: { inline_keyboard: [...forwardKeyboard(), ...(await addOfferRows(chatId))] },
     reply_parameters: { message_id: message.message_id, allow_sending_without_reply: true },
   });
 }
