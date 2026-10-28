@@ -5,8 +5,8 @@ import { enqueue, jobState, type JobState } from '../jobs/boss';
 import {
   analyzeCollected,
   answeredRoute,
-  mergeLineAnswers,
   mergeTotalsAnswer,
+  placeByName,
   sameRouteAnswer,
   sameTotalsAnswer,
   unansweredAmbiguity,
@@ -270,10 +270,15 @@ export function settleAnalysis(
   // answered WHILE the reading ran goes on top; otherwise the reading's own
   // verdict on the answer stands.
   const routeMeanwhile = !sameRouteAnswer(live.routeAnswer, snapshot.routeAnswer);
+  // The LIVE answers are placed on the reading, and where each landed is what
+  // the collection keeps (`placeByName`'s write-back, docs/SAKKIZ-R3.md
+  // §8.2.8): stored at the snapshot's old index, an answer re-read onto
+  // another line was overwritten by the next answer to the line now there.
+  const placed = placeByName(analysed.facts.goods ?? [], live.lineAnswers);
   const facts = {
     ...analysed.facts,
     ...(routeMeanwhile ? answeredRoute(live.routeAnswer, null) : {}),
-    goods: mergeLineAnswers(analysed.facts.goods ?? [], live.lineAnswers),
+    goods: placed.goods,
   };
   const state: IntakeState = {
     ...live,
@@ -283,10 +288,9 @@ export function settleAnalysis(
     // landed without its figure. Re-applying an answer the snapshot already
     // had is idempotent, so both outcomes take the same merge.
     //
-    // The live totals answer too, when it is new (above); `totalsAsked` is
-    // the reading's own verdict over it.
+    // The live totals answer too, when it is new (above).
     facts: answeredMeanwhile ? mergeTotalsAnswer(live.totalsAnswer, facts) : facts,
-    totalsAsked: analysed.totalsAsked,
+    lineAnswers: placed.entries,
     steps: analysed.steps,
     notes: analysed.notes,
     aiUsed: analysed.aiUsed,

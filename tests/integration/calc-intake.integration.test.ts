@@ -20,7 +20,7 @@ import { getSetting, setSetting } from '@/modules/platform/settings/service';
 import { AUDIT_FIELD_LABELS } from '@/modules/platform/audit/fields';
 import {
   intakeNoteText,
-  intakeSummaryText,
+  intakeTableText,
   isComplete,
   missingFields,
   parseClientHint,
@@ -128,29 +128,21 @@ describe('what a quote cannot be made without', () => {
   });
 
   it('the review message shows what is there AND what is missing', () => {
-    const text = intakeSummaryText({
-      section: 'yolkira',
-      facts: { ...full, toCity: null },
-      laws: noLaws,
-      clientLabel: 'GS777',
-      fileCount: 2,
-    });
-    expect(text).toContain('GS777');
-    expect(text).toContain('Yiwu');
-    expect(text).toContain('250 kg');
+    // The table replaced the summary (docs/SAKKIZ-R3.md §2.1): a missing end
+    // is its own ⚠️ row, the ends that ARE there print on the ✅ route row.
+    const table = (facts: CalcFacts, clientLabel: string | null, fileCount: number) =>
+      intakeTableText({ section: 'yolkira', facts, laws: noLaws, clientLabel, fileCount, ambiguous: [], amend: null, tail: '' });
+    const text = table({ ...full, toCity: null }, 'GS777', 2);
+    expect(text).toContain('Mijoz: GS777');
+    expect(text).toContain('✅ Og‘irlik (brutto): 250 kg');
     expect(text).toContain('Fayllar: 2');
-    expect(text).toContain('Yetishmayapti');
-    expect(text).toContain('qaysi shaharga');
+    expect(text).toContain('⚠️ qaysi shaharga — yozilmagan');
+    expect(text).toContain('⚠️ Umumiyda ma’lumot yetishmayapti.');
 
-    const complete = intakeSummaryText({
-      section: 'yolkira',
-      facts: full,
-      laws: noLaws,
-      clientLabel: null,
-      fileCount: 0,
-    });
-    expect(complete).toContain('to‘liq');
-    expect(complete).not.toContain('Yetishmayapti');
+    const complete = table(full, null, 0);
+    expect(complete).toContain('✅ Yo‘nalish: Yiwu → Toshkent');
+    expect(complete).toContain('✅ Ma’lumot to‘liq. Tasdiqlaysizmi?');
+    expect(complete).not.toContain('yetishmayapti');
   });
 
   it("the card's note carries the AI's working, which is the point of it", () => {

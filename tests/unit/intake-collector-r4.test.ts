@@ -26,11 +26,10 @@ vi.mock('@/modules/platform/jobs/boss', async (importOriginal) =>
 import {
   activeIntake,
   analyzeCollected,
-  carryLineDone,
   endIntake,
   intakeClientLabel,
   pickGoods,
-  resolveLineDone,
+  placeByName,
   sameAsInvoiceNote,
   startIntake,
   typedLeftOutNote,
@@ -109,22 +108,24 @@ describe('the lead’s name: the hint cut out of one line, contact lines dropped
   });
 });
 
-describe('a ⏭ survives a reading without the goods (round 4, C-r2)', () => {
-  it('stored: placed where the reading has the line, kept as it was where it has not', () => {
-    expect(carryLineDone([], [{ index: 0, name: 'Kurtka' }])).toEqual([{ index: 0, name: 'Kurtka' }]);
-    expect(
-      carryLineDone([line('Shim'), line('Kurtka')], [
-        { index: 0, name: 'Kurtka' },
-        { index: 3, name: 'Sharf' },
-      ]),
-    ).toEqual([
-      { index: 1, name: 'Kurtka' },
-      { index: 3, name: 'Sharf' },
+describe('an answer survives a reading without the goods (round 4, C-r2; R3 regression-7)', () => {
+  // ⏭ is retired (his 1.10 c); the rule `carryLineDone` held is carried by
+  // `placeByName`'s WRITE-BACK: the same fixtures, the placed index asserted.
+  const at = (index: number, name: string) => ({ index, name, patch: {} });
+  it('stored: placed where the reading has the line, kept (unplaced, -1) where it has not', () => {
+    expect(placeByName([], [at(0, 'Kurtka')]).entries).toEqual([at(-1, 'Kurtka')]);
+    expect(placeByName([line('Shim'), line('Kurtka')], [at(0, 'Kurtka'), at(3, 'Sharf')]).entries).toEqual([
+      at(1, 'Kurtka'),
+      at(-1, 'Sharf'),
     ]);
   });
 
-  it('the question is still chosen by the placed ones only', () => {
-    expect(resolveLineDone([line('Shim'), line('Kurtka')], [{ index: 3, name: 'Sharf' }])).toEqual([]);
+  it('an unplaced answer writes nothing, and comes back with its line on the next reading', () => {
+    const once = placeByName([line('Shim'), line('Kurtka')], [{ index: 3, name: 'Sharf', patch: { quantity: 5 } }]);
+    expect(once.goods).toEqual([line('Shim'), line('Kurtka')]);
+    const again = placeByName([line('Sharf'), line('Shim')], once.entries);
+    expect(again.goods[0]).toEqual(line('Sharf', { quantity: 5 }));
+    expect(again.entries.map((e) => e.index)).toEqual([0]);
   });
 });
 

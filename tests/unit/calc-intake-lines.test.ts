@@ -26,7 +26,12 @@ describe('a bare number is answered by a tap (UX4)', () => {
     // on the phone for fifteen seconds with no error anywhere (#937).
     const kb = lineOfferKeyboard(['50 dona', '50 kg', '50 m²']);
     const offered = kb.inline_keyboard.flat().map((b) => b.callback_data);
-    expect(offered).toEqual(['c:pick_0', 'c:pick_1', 'c:pick_2', 'c:skip']);
+    // No ⏭ (docs/SAKKIZ-R3.md §2.2, product-fit-9): a fresh offer would carry
+    // a button that always answers «eskirgan» — while `skip` still PARSES,
+    // because the old messages in people's chats carry it.
+    expect(offered).toEqual(['c:pick_0', 'c:pick_1', 'c:pick_2']);
+    expect(offered).not.toContain('c:skip');
+    expect(parseCallback('c:skip')).toEqual({ kind: 'calc', step: 'skip' });
     for (const data of offered) expect(parseCallback(data), data).not.toBeNull();
   });
 
@@ -83,10 +88,12 @@ describe('«➕ Yana ma’lumot» keeps the per-line answers (P1.3)', () => {
     expect(mergeLineAnswers([{ name: 'Choynak' }], answers)).toEqual([{ name: 'Choynak' }]);
   });
 
-  it('the re-analysis puts them back — the merge is on the analysis path', () => {
+  it('the re-analysis puts them back — the placement is on the analysis path, and written back', () => {
+    // `placeByName` (docs/SAKKIZ-R3.md §8.2.8): the merge AND where each
+    // answer landed, stored, so the next re-read starts from there (regression-7).
     const intake = code('src/modules/platform/telegram/calc-intake.ts');
     const analyse = intake.slice(intake.indexOf('export async function analyzeCollected'));
-    expect(analyse).toContain('mergeLineAnswers(');
-    expect(analyse).toContain('state.lineAnswers');
+    expect(analyse).toContain('placeByName(picked.goods, state.lineAnswers)');
+    expect(analyse).toContain('lineAnswers: placed.entries');
   });
 });

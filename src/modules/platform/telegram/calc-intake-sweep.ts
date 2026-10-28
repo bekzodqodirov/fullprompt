@@ -17,15 +17,13 @@ import {
   sayOrRetry,
   updateIntake,
 } from './calc-store';
-import { totalsQuestionText, type IntakeState } from './calc-intake';
+import type { IntakeState } from './calc-intake';
 import {
   deliverNextStep,
-  intakeLaws,
   landingReplyText,
   QUEUE_REFUSAL,
   queueRefusal,
   showIntakePrompt,
-  skipKeyboard,
   type CalcPressCtx,
   type CollectorReply,
   type EditApi,
@@ -475,15 +473,13 @@ const NO_COLLECTION =
 /**
  * «▶️ Davom etamiz» and the restart question's «Yo‘q, davom etaman»: the live
  * stage is asked again, exactly where it stands — the zone keyboard, the
- * customer question, the «Bo‘ldi» prompt, or the next step after a reading.
+ * customer question, the «Bo‘ldi» prompt, or the table, sent fresh (the
+ * table stage has no question to re-send — docs/SAKKIZ-R3.md §8.1, the
+ * one-question loop is retired).
  *
  * A press is the seller's action, so it un-parks the collection (a touch).
  * Not while a task draft or a zametka capture is live: those work while the
  * collection is parked, and the person finishes one thing first.
- *
- * An open question is RE-SENT and nothing is written: routing a resume through
- * the next-step decision bumps `round` (capped at MAX_QUESTION_ROUNDS), so a
- * resume would skip lines (re-check kernel-23).
  */
 export async function pressResume(ctx: CalcPressCtx, chatId: bigint): Promise<void> {
   const state = activeIntake(chatId);
@@ -518,40 +514,7 @@ export async function pressResume(ctx: CalcPressCtx, chatId: bigint): Promise<vo
     await showIntakePrompt(ctx as CalcPressCtx & { api: EditApi }, chatId, state);
     return;
   }
-  if (state.stage === 'question') {
-    const text = await pendingQuestionText(state);
-    if (text !== null) {
-      await ctx.reply(text, { reply_markup: skipKeyboard() });
-      return;
-    }
-  }
   await deliverNextStep(ctx, chatId, state);
-}
-
-/**
- * The open question's own words, as they were asked — null when the state
- * names none (then the next step is asked instead).
- */
-async function pendingQuestionText(state: IntakeState): Promise<string | null> {
-  const intake = await import('../../wms/calc/intake');
-  const ask = state.askingTotalsFor ?? null;
-  if (ask !== null) {
-    const why = state.ambiguousTotals.map((a) => `\n⚠️ ${intake.ambiguousTotalText(a)}`).join('');
-    return (
-      totalsQuestionText(ask, state.facts, {
-        m3: intake.factsVolumeM3(state.facts),
-        fromLines: intake.volumeFromLines(state.facts),
-      }) + why
-    );
-  }
-  const index = state.askingIndex ?? null;
-  const row = index === null ? undefined : state.facts.goods?.[index];
-  if (index === null || !row) return null;
-  const laws = await intakeLaws(state);
-  const need =
-    intake.lineNeeds(state.section, state.facts, laws).find((l) => l.index === index) ??
-    intake.anyMeasureLine(index, row.name);
-  return intake.lineQuestionText(need);
 }
 
 /**

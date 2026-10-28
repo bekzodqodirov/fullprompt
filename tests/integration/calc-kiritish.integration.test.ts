@@ -15,7 +15,7 @@ import {
   tasks,
   users,
 } from '@/modules/platform/db/schema';
-import { analyzeCollected, resolveLineDone, startIntake } from '@/modules/platform/telegram/calc-intake';
+import { analyzeCollected, placeByName, startIntake } from '@/modules/platform/telegram/calc-intake';
 import { invoiceFacts } from '@/modules/wms/calc/intake';
 import { landIntake } from '@/modules/wms/calc/intake-land';
 import { openCalcRequest, requestAsks } from '@/modules/wms/calc/service';
@@ -262,21 +262,19 @@ describe('«➕ Yana ma’lumot» keeps the per-line answers (P1.3)', () => {
         { index: 0, name: 'Plitka', patch: { measureUnit: 'm2', measureQty: 120 } },
         { index: 1, name: 'Kurtka', patch: { quantity: 300 } },
       ],
-      lineDone: [
-        { index: 0, name: 'Plitka' },
-        { index: 1, name: 'Kurtka' },
-      ],
     });
     expect(analysed.facts.goods).toEqual([
       { name: 'Kurtka', weightKg: 150, quantity: 300 },
       { name: 'Plitka', measureUnit: 'm2', measureQty: 120 },
     ]);
-    // …and the lines dealt with stay dealt with — found again BY NAME on the
-    // re-read's order (R3-C5), never by the old index.
-    expect(resolveLineDone(analysed.facts.goods ?? [], analysed.lineDone ?? [])).toEqual([
-      { index: 1, name: 'Plitka' },
-      { index: 0, name: 'Kurtka' },
+    // …and each answer is stored where it LANDED — found again BY NAME on the
+    // re-read's order (R3-C5), never by the old index (placeByName's
+    // write-back, docs/SAKKIZ-R3.md §8.2.8; ⏭'s `lineDone` is retired).
+    expect(analysed.lineAnswers.map((a) => [a.index, a.name])).toEqual([
+      [1, 'Plitka'],
+      [0, 'Kurtka'],
     ]);
+    expect(placeByName(analysed.facts.goods ?? [], analysed.lineAnswers).entries.map((a) => a.index)).toEqual([1, 0]);
   });
 
   it('a total written two ways is asked — the model does not get to answer it either', async () => {

@@ -201,7 +201,8 @@ describe('an analysis lands only where it still belongs (the diagnosis’ cause 
 
   it('the confirm lands only what the seller was shown', () => {
     const save = HANDLERS.slice(HANDLERS.indexOf('  // save — only what the seller was SHOWN.'));
-    expect(save.slice(0, 1100)).toContain("if (state.stage !== 'review' && state.stage !== 'question') {");
+    // R3 narrows it to the table stage: 'question' is retired (his 1.10 c).
+    expect(save.slice(0, 1100)).toContain("if (state.stage !== 'review') {");
     expect(save.slice(0, 1100)).toContain('if (state.analysing) {');
   });
 });

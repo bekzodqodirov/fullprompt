@@ -30,6 +30,7 @@ import {
 import { parseCallback } from '@/modules/platform/telegram/staff-bot';
 import { INTAKE_READ_RETRY } from '@/modules/platform/telegram/calc-read';
 import { driveReading, readingsEnqueued, resetReadingDrive } from '../fixtures/calc-read-drive';
+import { applyTableAnswer, deliverNextStep } from '@/modules/platform/telegram/calc-dialog';
 import {
   clientAnswer,
   handleCalcCallback,
@@ -147,7 +148,7 @@ describe('a third goods file folds into the open question (review c1)', () => {
 
 describe('an answer given while the analysis ran is kept (review c2)', () => {
   it('the live per-line answer goes back onto the new reading', () => {
-    const snapshot = { ...collection({ stage: 'question', analysing: 'T1', material: ['Kurtka'] }).state };
+    const snapshot = { ...collection({ stage: 'material', analysing: 'T1', material: ['Kurtka'] }).state };
     const live: IntakeState = {
       ...snapshot,
       answers: ['1-qator: 150 kg'],
@@ -242,12 +243,14 @@ describe('a stale ⏭ moves nothing (review c5)', () => {
     expect(activeIntake(chatId)?.stage).toBe('material');
   });
 
-  it('nor while an analysis runs', async () => {
-    const { chatId } = collection({ stage: 'question', askingIndex: 0, analysing: 'T9' });
+  it('nor while an analysis runs — the stage is unchanged', async () => {
+    // R3: the per-line question stage is retired (his 1.10 c), so the claim
+    // this pinned is held on the table stage: a stale ⏭ moves nothing.
+    const { chatId } = collection({ stage: 'review', analysing: 'T9' });
     const ctx = fakeCtx();
     await handleCalcCallback(ctx, chatId, 'skip');
     expect(ctx.texts()).toEqual(['Bu tugma eskirgan.']);
-    expect(activeIntake(chatId)?.stage).toBe('question');
+    expect(activeIntake(chatId)?.stage).toBe('review');
   });
 });
 
@@ -364,54 +367,57 @@ describe('a goods list sent twice stays goods (round-2 review, C3/C7)', () => {
   });
 });
 
-describe('a line passed with ⏭ is never asked again (round-2 review, C10)', () => {
-  it('⏭ on line 1, then ⏭ on line 2: line 3 is asked — the stored collection remembers both', async () => {
-    const { chatId } = collection({
-      stage: 'question',
-      askingIndex: 0,
-      round: 1,
+describe('a line answered in the table stays answered across «➕ Yana ma’lumot» (round-2 review, C10; R3 1.10 c)', () => {
+  // ⏭ is retired with the per-line question (docs/SAKKIZ-R3.md §11): the
+  // defect C10 pinned — a record of a line carried by index onto another line
+  // after a re-read — is held on ANSWERS, which `placeByName` places by name.
+  it('row 1 answered, ➕, a re-read that moves it: the answer lands on its own line', async () => {
+    const { chatId, state } = collection({
+      stage: 'review',
+      material: ['Kurtka, Shim, Sharf'],
       facts: { goods: [line('Kurtka'), line('Shim'), line('Sharf')] },
     });
     const ctx = fakeCtx();
-    await handleCalcCallback(ctx, chatId, 'skip');
-    expect(activeIntake(chatId)).toMatchObject({ stage: 'question', askingIndex: 1, lineDone: [{ index: 0, name: 'Kurtka' }] });
-    await handleCalcCallback(ctx, chatId, 'skip');
-    expect(activeIntake(chatId)).toMatchObject({
-      stage: 'question',
-      askingIndex: 2,
-      lineDone: [
-        { index: 0, name: 'Kurtka' },
-        { index: 1, name: 'Shim' },
-      ],
-    });
-    expect(ctx.texts().map((t) => t.split(' — ')[0])).toEqual(['❓ 2-qator «Shim»', '❓ 3-qator «Sharf»']);
-  });
-
-  it('the summary keeps the list too, so «➕ Yana ma’lumot» cannot bring a passed line back', async () => {
-    const { chatId } = collection({
-      stage: 'question',
-      askingIndex: 0,
-      round: 1,
-      facts: { goods: [line('Kurtka')] },
-    });
-    await handleCalcCallback(fakeCtx(), chatId, 'skip');
-    expect(activeIntake(chatId)).toMatchObject({ stage: 'review', lineDone: [{ index: 0, name: 'Kurtka' }] });
+    await applyTableAnswer(ctx, chatId, state, '1: 150 kg', { date: 0, messageId: 50, forwarded: false, replyTo: null });
+    expect(activeIntake(chatId)?.facts.goods?.[0]).toMatchObject({ name: 'Kurtka', weightKg: 150 });
+    await handleCalcCallback(ctx, chatId, 'more');
+    expect(activeIntake(chatId)?.stage).toBe('material');
+    analyse.fn.mockImplementationOnce(async (s: IntakeState) => ({
+      ...s,
+      facts: { goods: [line('Shim'), line('Kurtka'), line('Sharf')] },
+      stage: 'review',
+      // analyzeCollected's own shape: the job bills what it answered (§7.2.10).
+      answered: [],
+    }));
+    // The re-read runs as the job (docs/SAKKIZ-R3.md §11, P2): «Bo‘ldi» only enqueues.
+    await handleCalcCallback(ctx, chatId, 'done');
+    await driveReading(chatId, ctx);
+    expect(activeIntake(chatId)?.analysing).toBeNull();
+    const after = activeIntake(chatId)!;
+    expect(after.facts.goods?.map((g) => [g.name, g.weightKg ?? null])).toEqual([
+      ['Shim', null],
+      ['Kurtka', 150],
+      ['Sharf', null],
+    ]);
+    // …and the stored answer says where it now is, so the next re-read starts there.
+    expect(after.lineAnswers).toMatchObject([{ index: 1, name: 'Kurtka', patch: { weightKg: 150 } }]);
   });
 });
 
-describe('the summary names the customer on ONE line (round-2 review, C9; round-3, R3-C3)', () => {
+describe('the table names the customer on ONE line (round-2 review, C9; round-3, R3-C3)', () => {
   it('«Ali aka» over the phone reads «Mijoz: Ali aka · +998 …» — one line, and the phone the landing reads', async () => {
-    const { chatId } = collection({
-      stage: 'question',
-      askingIndex: 0,
-      round: 1,
+    // The summary reached through ⏭ is retired; the table is what the reading
+    // delivers (`deliverNextStep`), with the same `Mijoz:` line.
+    const { chatId, state } = collection({
+      stage: 'material',
       clientHintRaw: 'Ali aka\n+998 90 123 45 67',
       facts: { goods: [line('Kurtka', { weightKg: 150 })] },
     });
     const ctx = fakeCtx();
-    await handleCalcCallback(ctx, chatId, 'skip');
-    const summary = ctx.texts().at(-1)!;
-    expect(summary).toContain('Mijoz: Ali aka · +998 90 123 45 67\n');
+    await deliverNextStep(ctx, chatId, state);
+    const table = ctx.texts().at(-1)!;
+    expect(table).toContain('Mijoz: Ali aka · +998 90 123 45 67\n');
+    expect(activeIntake(chatId)?.stage).toBe('review');
   });
 });
 

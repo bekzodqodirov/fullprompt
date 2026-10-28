@@ -85,6 +85,7 @@ import {
   orphanAnswerSentence,
   landingReplyText,
   pressCancel,
+  pressCertificate,
   pressConflict,
   pressPick,
   pressSkip,
@@ -96,7 +97,6 @@ import {
   type CalcPressCtx,
 } from './calc-dialog';
 import {
-  aiConfirmKeyboard,
   CLIENT_QUESTION,
   doneKeyboard,
   pricedZonesNow,
@@ -192,12 +192,10 @@ export {
 } from './calc-files';
 export {
   aiStepsText,
-  applyLineAnswer,
   BARE_FIGURE_NOT_FOUND,
   clientAnswer,
   landedWords,
   lineOfferKeyboard,
-  LOST_TOTALS_ANSWER,
   readCustomerText,
   TARIFF_FOLLOWS,
   type CustomerTextRead,
@@ -1530,14 +1528,9 @@ export async function handleCalcCallback(
 
   if (step === 'cert_y' || step === 'cert_n') {
     // SET from the button, never flipped (durability-2): a press delivered
-    // twice is the same answer twice.
-    const next = updateIntake(chatId, { hasCertificate: step === 'cert_y' });
-    await ctx.reply(
-      next?.hasCertificate
-        ? '📄 Sertifikat BOR deb hisoblanadi — qo‘shimcha boj qo‘shilmaydi.'
-        : '📄 Sertifikat YO‘Q deb hisoblanadi — qonun bo‘yicha qo‘shimcha boj qo‘shiladi.',
-      { reply_markup: aiConfirmKeyboard(next?.hasCertificate ?? true) },
-    );
+    // twice is the same answer twice — and shown where it was pressed
+    // (P3, product-fit-20).
+    await pressCertificate(ctx, chatId, step === 'cert_y');
     return;
   }
 
@@ -1604,9 +1597,9 @@ export async function handleCalcCallback(
     await ctx.reply('⏳ Tahlil davom etmoqda — natijani kuting.');
     return;
   }
-  // A reading the seller was shown is 'review', or 'question' while a line is
-  // asked about; anything else holds material nobody has read yet.
-  if (state.stage !== 'review' && state.stage !== 'question') {
+  // A reading the seller was shown is the table ('review'); anything else
+  // holds material nobody has read yet.
+  if (state.stage !== 'review') {
     await ctx.reply('Yangi ma’lumot hali o‘qilmagan — avval «Bo‘ldi» ni bosing.', { reply_markup: doneKeyboard });
     return;
   }

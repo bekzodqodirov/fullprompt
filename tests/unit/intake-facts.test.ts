@@ -3,7 +3,7 @@ import { parseManualFacts } from '@/modules/wms/calc/intake-manual';
 import {
   LONE_NETTO_NOTE,
   LONE_WEIGHT_NOTE,
-  intakeSummaryText,
+  intakeTableText,
   itemFacts,
   landingItems,
   lineNeeds,
@@ -67,14 +67,19 @@ describe('the checklist still names what a quote cannot be made without', () => 
   it('a refused weight leaves the ⚠ standing — and now the VED can answer it', () => {
     const facts = parseManualFacts('12 kg, 30 kg, plitka');
     expect(missingFields('rastamojka', facts, noLaws)).toContain('weightKg');
-    const text = intakeSummaryText({
+    // The table replaced the summary (docs/SAKKIZ-R3.md §2.1): the brutto row
+    // stays ⚠️, the same «not there yet» the summary's «Yetishmayapti» said.
+    const text = intakeTableText({
       section: 'rastamojka',
       facts,
       laws: noLaws,
       clientLabel: 'GS777',
       fileCount: 2,
+      ambiguous: [],
+      amend: null,
+      tail: '',
     });
-    expect(text).toContain('Yetishmayapti');
+    expect(text).toContain('⚠️ umumiy brutto og‘irligi (kg, qadoq bilan) — yozilmagan');
   });
 });
 
@@ -160,13 +165,16 @@ describe('what a line weighs is derived once, or asked for', () => {
     expect(missingFields('rastamojka', facts, noLaws)).toEqual([]);
   });
 
-  it('the summary prints the line’s own figures, derived weight included', () => {
-    const text = intakeSummaryText({
+  it('the table prints the line’s own figures, derived weight included', () => {
+    const text = intakeTableText({
       section: 'rastamojka',
       facts: { weightKg: 250, volumeM3: 3, goods: [{ name: 'Chexol', quantity: 100 }] },
       laws: noLaws,
       clientLabel: 'GS777',
       fileCount: 0,
+      ambiguous: [],
+      amend: null,
+      tail: '',
     });
     expect(text).toContain('100 dona');
     expect(text).toContain('250 kg');
@@ -183,13 +191,15 @@ describe('a total written with a separator is read, or asked — never guessed (
     const facts = parseManualFacts('1,200 kg');
     expect(facts.weightKg).toBeNull();
     expect(facts.ambiguous).toEqual([{ field: 'weightKg', text: '1,200', decimal: 1.2, thousands: 1200 }]);
-    const text = intakeSummaryText({
+    const text = intakeTableText({
       section: 'rastamojka',
       facts,
       laws: noLaws,
       clientLabel: null,
       fileCount: 0,
       ambiguous: facts.ambiguous,
+      amend: null,
+      tail: '',
     });
     // Both readings in the seller's face, and the way to answer each.
     expect(text).toContain('1.2 mi yoki 1200 mi');

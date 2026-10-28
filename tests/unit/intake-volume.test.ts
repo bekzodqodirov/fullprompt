@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { factsVolumeM3, intakeNoteText, intakeSummaryText, missingFields, type CalcFacts } from '@/modules/wms/calc/intake';
+import { factsVolumeM3, intakeNoteText, intakeTableText, missingFields, type CalcFacts } from '@/modules/wms/calc/intake';
 
 /**
  * The shipment's cubic metres SUMMED from its lines (his 2.7 b,
@@ -99,34 +99,26 @@ describe('a summed volume is SAID where it is printed', () => {
     ],
   };
 
-  it('the summary and the lenta note print «(qatorlardan)» beside the Σ', () => {
-    const summary = intakeSummaryText({ section: 'yolkira', facts, laws: noLaws, clientLabel: null, fileCount: 0 });
-    expect(summary).toContain('Hajm: 2.8 m³ (qatorlardan)');
-    expect(summary).toContain('✅');
+  // The table replaced the summary (docs/SAKKIZ-R3.md §2.1); its volume row
+  // is `volumeText`'s own words (re-check p3-18).
+  const table = (f: CalcFacts) =>
+    intakeTableText({ section: 'yolkira', facts: f, laws: noLaws, clientLabel: null, fileCount: 0, ambiguous: [], amend: null, tail: '' });
+
+  it('the table and the lenta note print «(qatorlardan)» beside the Σ', () => {
+    const summary = table(facts);
+    expect(summary).toContain('✅ Hajm: 2.8 m³ (qatorlardan)');
     const note = intakeNoteText({ section: 'yolkira', facts, laws: noLaws, steps: [], collectedBy: 'Sotuvchi', fileCount: 0 });
     expect(note).toContain('Hajm: 2.8 m³ (qatorlardan)');
   });
 
   it('a typed total prints as before, with no label', () => {
-    const summary = intakeSummaryText({
-      section: 'yolkira',
-      facts: { ...facts, volumeM3: 3 },
-      laws: noLaws,
-      clientLabel: null,
-      fileCount: 0,
-    });
-    expect(summary).toContain('Hajm: 3 kub');
+    const summary = table({ ...facts, volumeM3: 3 });
+    expect(summary).toContain('✅ Hajm: 3 kub');
     expect(summary).not.toContain('qatorlardan');
   });
 
   it('the weight is asked as BRUTTO, in the words the checklist prints', () => {
-    const summary = intakeSummaryText({
-      section: 'yolkira',
-      facts: { ...facts, weightKg: null },
-      laws: noLaws,
-      clientLabel: null,
-      fileCount: 0,
-    });
-    expect(summary).toContain('umumiy brutto og‘irligi (kg, qadoq bilan)');
+    const summary = table({ ...facts, weightKg: null });
+    expect(summary).toContain('⚠️ umumiy brutto og‘irligi (kg, qadoq bilan) — yozilmagan');
   });
 });

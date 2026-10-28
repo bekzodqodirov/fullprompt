@@ -38,7 +38,7 @@ import {
   intakeClientLabel,
   intakeClientSummary,
   pickGoods,
-  resolveLineDone,
+  placeByName,
   sameAsInvoiceNote,
   startIntake,
   updateIntake,
@@ -53,6 +53,7 @@ import {
   receiveGoodsSheet,
   receiveSheetText,
 } from '@/modules/platform/telegram/staff-handlers';
+import { applyTableAnswer, deliverNextStep } from '@/modules/platform/telegram/calc-dialog';
 import { fitSheetRows, sheetRowCount, sheetsPromptText } from '@/modules/wms/calc/intake-ai';
 
 type Goods = NonNullable<CalcFacts['goods']>;
@@ -265,16 +266,15 @@ describe('the summary prints the whole hint; the lead is named without its phone
     expect(intakeClientSummary(' \n ')).toBeNull();
   });
 
-  it('the summary the seller reads before «Tasdiqlash» carries the code', async () => {
-    const { chatId } = collection({
-      stage: 'question',
-      askingIndex: 0,
-      round: 1,
+  it('the table the seller reads before «Tasdiqlash» carries the code', async () => {
+    // Reached through ⏭ before R3; the table is what a reading delivers.
+    const { chatId, state } = collection({
+      stage: 'material',
       clientHintRaw: 'Ali aka\nGS771',
       facts: { goods: [line('Kurtka', { weightKg: 150 })] },
     });
     const ctx = fakeCtx();
-    await handleCalcCallback(ctx, chatId, 'skip');
+    await deliverNextStep(ctx, chatId, state);
     expect(ctx.replies.at(-1)).toContain('Mijoz: Ali aka · GS771\n');
   });
 
@@ -305,46 +305,44 @@ describe('the summary prints the whole hint; the lead is named without its phone
   });
 });
 
-describe('a line passed with ⏭ stays passed across a re-read (R3-C5)', () => {
-  it('the resolver: same index while the name holds, else the first unclaimed line of that name, else dropped', () => {
+describe('an answered line stays answered across a re-read (R3-C5, re-anchored onto answers)', () => {
+  // ⏭ is retired (his 1.10 c); the resolver's rule now places ANSWERS
+  // (`placeByName`, docs/SAKKIZ-R3.md §8.2.8) — the same cases.
+  const at = (index: number, name: string) => ({ index, name, patch: {} });
+  it('the rule: same index while the name holds, else the first unclaimed line of that name, else unplaced', () => {
     const goods = [line('Shim'), line('Kurtka'), line('Kurtka')];
-    expect(resolveLineDone(goods, [{ index: 0, name: 'Kurtka' }])).toEqual([{ index: 1, name: 'Kurtka' }]);
-    expect(resolveLineDone(goods, [{ index: 2, name: 'kurtka ' }])).toEqual([{ index: 2, name: 'Kurtka' }]);
-    expect(
-      resolveLineDone(goods, [
-        { index: 0, name: 'Kurtka' },
-        { index: 1, name: 'Kurtka' },
-      ]),
-    ).toEqual([
-      { index: 1, name: 'Kurtka' },
-      { index: 2, name: 'Kurtka' },
-    ]);
-    expect(resolveLineDone(goods, [{ index: 0, name: 'Sharf' }])).toEqual([]);
-    expect(resolveLineDone(undefined, [{ index: 0, name: 'Kurtka' }])).toEqual([]);
+    expect(placeByName(goods, [at(0, 'Kurtka')]).entries.map((e) => e.index)).toEqual([1]);
+    expect(placeByName(goods, [at(2, 'kurtka ')]).entries.map((e) => e.index)).toEqual([2]);
+    expect(placeByName(goods, [at(0, 'Kurtka'), at(1, 'Kurtka')]).entries.map((e) => e.index)).toEqual([1, 2]);
+    // A line the reading dropped is kept UNPLACED (-1), never thrown away: it
+    // comes back with its line on the next reading.
+    expect(placeByName(goods, [at(0, 'Sharf')]).entries.map((e) => e.index)).toEqual([-1]);
+    expect(placeByName([], [at(0, 'Kurtka')]).entries.map((e) => e.index)).toEqual([-1]);
   });
 
-  it('skip Kurtka, «Bo‘ldi» re-reads into [Shim, Kurtka]: Shim is asked, Kurtka never', async () => {
-    const { chatId } = collection({
-      stage: 'question',
-      askingIndex: 0,
-      round: 1,
+  it('answer Kurtka, «Bo‘ldi» re-reads into [Shim, Kurtka]: Kurtka keeps its figure, only Shim is ⚠️', async () => {
+    const { chatId, state } = collection({
+      stage: 'review',
       clientHintRaw: 'GS777',
-      facts: { goods: [line('Kurtka')] },
+      material: ['Kurtka'],
+      facts: { goods: [line('Kurtka'), line('Sharf', { quantity: 5 })] },
     });
     const ctx = fakeCtx();
-    await handleCalcCallback(ctx, chatId, 'skip');
-    expect(activeIntake(chatId)).toMatchObject({ stage: 'review', lineDone: [{ index: 0, name: 'Kurtka' }] });
+    await applyTableAnswer(ctx, chatId, state, '1: 150 kg', { date: 0, messageId: 40, forwarded: false, replyTo: null });
 
     // «➕ Yana ma’lumot»: more material, then «Bo‘ldi» — the model now lists Shim first.
-    updateIntake(chatId, { stage: 'material', round: 0, material: ['Shim ham bor'] });
+    updateIntake(chatId, { stage: 'material', material: ['Kurtka', 'Shim ham bor'] });
     model.analyze.mockResolvedValueOnce(reads([line('Shim'), line('Kurtka')]));
     // The re-read runs as the job (docs/SAKKIZ-R3.md §11, P2): «Bo‘ldi» only enqueues.
     await handleCalcCallback(ctx, chatId, 'done');
     await driveReading(chatId, ctx);
-    expect(activeIntake(chatId)?.stage).toBe('question');
-    const asked = ctx.replies.filter((r) => r.startsWith('❓')).map((r) => r.split(' — ')[0]);
-    expect(asked).toEqual(['❓ 1-qator «Shim»']);
-    expect(activeIntake(chatId)).toMatchObject({ askingIndex: 0, lineDone: [{ index: 1, name: 'Kurtka' }] });
+    expect(activeIntake(chatId)?.stage).toBe('review');
+    const live = activeIntake(chatId)!;
+    expect(live.facts.goods).toEqual([line('Shim'), line('Kurtka', { weightKg: 150 })]);
+    expect(live.lineAnswers).toMatchObject([{ index: 1, name: 'Kurtka' }]);
+    const table = ctx.replies.at(-1)!;
+    expect(table).toContain('⚠️ 1. Shim');
+    expect(table).toContain('✅ 2. Kurtka — 150 kg');
   });
 });
 
