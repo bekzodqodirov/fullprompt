@@ -83,6 +83,10 @@ export interface NextStep {
 }
 
 const STALE = 'Bu tugma eskirgan.';
+/** §2.4: the addition is being written — the collection takes nothing more. */
+const SAVING = '⏳ Qo‘shimcha yozilmoqda — natija kelgach yozing.';
+/** A reading in flight — the save guard's own words. */
+const ANALYSING = '⏳ Tahlil davom etmoqda — natijani kuting.';
 
 /** «Nothing by that» — what a lookup the free search could not answer is told. */
 export const NOT_FOUND_HINT =
@@ -287,10 +291,15 @@ function tableRefOf(state: IntakeState, tc: TableContext, stage: TableRef['stage
   return { rows, open, preferred: preferred.length > 0 ? preferred : open, stage };
 }
 
-/** A conflict's buttons on the add table (§2.1): at most three, each one row — the rest are answered by typing. */
+/**
+ * A conflict's buttons on the add table (§2.1): at most three at a time, each
+ * one row — the first three still OPEN, so once those are answered the next
+ * ones get theirs (review spec-9); `N` stays the index in `state.conflicts`.
+ */
 function conflictRows(state: IntakeState, intake: Intake): InlineKeyboard['inline_keyboard'] {
+  const shown = state.conflicts.flatMap((c, n) => (c.choice === null ? [n] : [])).slice(0, 3);
   return state.conflicts.flatMap((c, n) => {
-    if (n > 2 || c.choice !== null) return [];
+    if (!shown.includes(n)) return [];
     const at = `${c.seq}-qator`;
     const unit = c.unit as NeedUnit;
     const ved = { text: `📨 ${at}: VED`, callback_data: `c:conf_${n}_ved` };
@@ -435,6 +444,10 @@ const rowLabel = (name: string) => {
   return chars.length > 40 ? `${chars.slice(0, 39).join('')}…` : name;
 };
 
+/** «3-qator», «umumiy brutto», «umumiy hajm», «yo‘nalish» — a target as the echo names it. */
+const whereOf = (t: TableTarget) =>
+  'line' in t ? `${t.line}-qator` : 'totals' in t ? (t.totals === 'weightKg' ? 'umumiy brutto' : 'umumiy hajm') : 'yo‘nalish';
+
 /** The figure an answer stated, as the words show it back («50 dona», «20 kg»). */
 function exampleOf(answer: LineAnswer | null, intake: Intake): string {
   if (answer?.kind === 'figures') {
@@ -543,12 +556,18 @@ function planWrites(state: IntakeState, writes: readonly Write[], ref: TableRef,
   const goods = () => work.facts.goods!;
   const mark = { material: work.material.length, files: work.fileCount };
 
-  const writeLine = (row: TableRow, patch: Partial<GoodsFact>, item?: string) => {
+  /**
+   * `kept`: a code typed over a stored row's own (an add collection) — NOT
+   * drawn on the row («yangi kod yozilmadi»), but carried in the answer, so
+   * the addition can name it to the VED (`codesKept`, §9.5; review adv-11).
+   */
+  const writeLine = (row: TableRow, patch: Partial<GoodsFact>, opts: { item?: string; kept?: string } = {}) => {
     const g = goods()[row.index]!;
     const before: Partial<GoodsFact> = {};
     for (const key of Object.keys(patch) as (keyof GoodsFact)[]) {
       (before as Record<string, unknown>)[key] = g[key] ?? null;
     }
+    if (opts.kept) before.tnvedCode = g.tnvedCode ?? null;
     goods()[row.index] = { ...g, ...patch };
     // Keyed by the stored row's id when it has one, else by where the line
     // is placed NOW — an entry placed nowhere this reading (-1) is never
@@ -556,20 +575,27 @@ function planWrites(state: IntakeState, writes: readonly Write[], ref: TableRef,
     // answer (regression-7).
     const itemId = g.itemId ?? null;
     const same = (e: IntakeState['lineAnswers'][number]) => (itemId ? e.itemId === itemId : e.index === row.index && e.index >= 0);
-    const earlier = work.lineAnswers.find(same);
-    work.lineAnswers = [
-      ...work.lineAnswers.filter((e) => !same(e)),
-      { index: row.index, name: g.name, patch: { ...(earlier?.patch ?? {}), ...patch }, itemId },
-    ];
-    // Any answer to a row with an open conflict resolves it (§8.2.6).
+    const at = work.lineAnswers.findIndex(same);
+    const answer = { ...(at >= 0 ? work.lineAnswers[at]!.patch : {}), ...patch, ...(opts.kept ? { tnvedCode: opts.kept } : {}) };
+    const entry = { index: row.index, name: g.name, patch: answer, itemId };
+    // The entry keeps its place in the list: appended after a correction, it
+    // came after an orphan of the same name, which then claimed its line on
+    // the next reading (review adv-6).
+    const kept = work.lineAnswers.filter((e, i) => i === at || !same(e));
+    work.lineAnswers = at >= 0 ? kept.map((e) => (same(e) ? entry : e)) : [...kept, entry];
+    // An answer to the conflicted FIGURE resolves the conflict (§8.2.6), a
+    // «📨 VED» choice included — he answered after all. A weight typed on a
+    // row whose COUNT conflicts leaves that question open: marked «o‘rniga»,
+    // the file's figure was neither written nor named to the VED (review
+    // spec-1, adv-9).
     for (const c of work.conflicts) {
-      if (c.itemId === itemId && c.choice === null) {
-        const value = patch[c.field];
-        c.choice = typeof value === 'number' && c.stored !== null && value === c.stored + c.read ? 'add' : 'rep';
-      }
+      const value = patch[c.field];
+      if (c.itemId !== itemId || typeof value !== 'number' || c.choice === 'add' || c.choice === 'rep') continue;
+      c.choice = c.stored !== null && value === c.stored + c.read ? 'add' : 'rep';
     }
-    plan.lines.push({ index: row.index, no: row.no, itemId, name: g.name, before, patch });
-    plan.items.push(item ?? `${row.no}-qator «${rowLabel(g.name)}»: ${figuresText(before, patch, intake)}`);
+    plan.lines.push({ index: row.index, no: row.no, itemId, name: g.name, before, patch: { ...patch, ...(opts.kept ? { tnvedCode: opts.kept } : {}) } });
+    const shown = figuresText(before, patch, intake);
+    if (opts.item || shown) plan.items.push(opts.item ?? `${row.no}-qator «${rowLabel(g.name)}»: ${shown}`);
   };
 
   const echoTotals = () =>
@@ -626,9 +652,16 @@ function planWrites(state: IntakeState, writes: readonly Write[], ref: TableRef,
   };
 
   const offer = (target: TableTarget, values: { unit: NeedUnit; value: number }[], question: string) => {
-    const room = MAX_OFFERS - plan.offers.length;
-    if (room <= 0) return;
-    plan.offers.push(...values.slice(0, room).map((v) => ({ ...v, target })));
+    // A row is offered whole or asked in words: one whose buttons do not fit
+    // under R2's cap used to vanish with no sentence at all (review adv-8).
+    if (values.length > MAX_OFFERS - plan.offers.length) {
+      const last = values.at(-1)!;
+      const figure = intake.figureLabel(last.value, last.unit);
+      const example = 'line' in target ? `${target.line}: ${figure}` : `jami ${figure}`;
+      plan.refusals.push(`${whereOf(target)}: ${question} Yozib javob bering, masalan «${example}».`);
+      return;
+    }
+    plan.offers.push(...values.map((v) => ({ ...v, target })));
     plan.questions.push({ target, text: question });
   };
 
@@ -675,7 +708,8 @@ function planWrites(state: IntakeState, writes: readonly Write[], ref: TableRef,
       return;
     }
     const code = codeFor(row, answer.code);
-    if (code === 'kept') {
+    const kept = code === 'kept' && answer.code ? answer.code : undefined;
+    if (kept) {
       plan.refusals.push(`${row.no}-qatorda kod bor (${g.tnvedCode}) — yangi kod yozilmadi, VED ga aytiladi.`);
     }
     const coded = code && code !== 'kept' ? { tnvedCode: code } : {};
@@ -686,10 +720,10 @@ function planWrites(state: IntakeState, writes: readonly Write[], ref: TableRef,
       goods()[row.index] = g;
       const unit = intake.bareUnitFor(need);
       if (unit) {
-        writeLine(row, { ...coded, ...intake.needFigure(unit, answer.value) });
+        writeLine(row, { ...coded, ...intake.needFigure(unit, answer.value) }, { kept });
         return;
       }
-      if (code && code !== 'kept') writeLine(row, coded);
+      if ((code && code !== 'kept') || kept) writeLine(row, coded, { kept });
       offer(
         { line: row.no },
         intake.bareChoices(need, g.unit).map((u) => ({ unit: u, value: answer.value })),
@@ -701,11 +735,11 @@ function planWrites(state: IntakeState, writes: readonly Write[], ref: TableRef,
     for (const [key, value] of Object.entries(answer.figures)) {
       if (value !== null) Object.assign(patch, { [key]: value });
     }
-    if (Object.keys(patch).length === 0) {
+    if (Object.keys(patch).length === 0 && !kept) {
       if (code !== 'kept') plan.refusals.push(`${row.no}-qator: ${LINE_REFUSAL.nothing()}`);
       return;
     }
-    writeLine(row, patch);
+    writeLine(row, patch, { kept });
   };
 
   for (const write of writes) {
@@ -724,13 +758,12 @@ function planWrites(state: IntakeState, writes: readonly Write[], ref: TableRef,
       const patch: Partial<GoodsFact> =
         c.field === 'measureQty' ? { measureUnit: c.unit as GoodsFact['measureUnit'], measureQty: value } : { [c.field]: value };
       const label = intake.figureLabel(value, c.unit as NeedUnit);
-      writeLine(
-        row,
-        patch,
-        write.choice === 'add' && c.stored !== null
-          ? `${row.no}-qator «${rowLabel(name)}»: ${intake.numberText(c.stored)} + ${intake.numberText(c.read)} = ${label}`
-          : undefined,
-      );
+      writeLine(row, patch, {
+        item:
+          write.choice === 'add' && c.stored !== null
+            ? `${row.no}-qator «${rowLabel(name)}»: ${intake.numberText(c.stored)} + ${intake.numberText(c.read)} = ${label}`
+            : undefined,
+      });
       c.choice = write.choice;
       continue;
     }
@@ -801,6 +834,10 @@ const confirmName = (state: IntakeState) =>
  * something, so the seller never scrolls up to learn whether he is done.
  */
 function missingLines(state: IntakeState, tc: TableContext): string[] {
+  // Collecting again after «➕ Yana ma’lumot»: the confirm waits for «Bo‘ldi»
+  // (the save guard's own words), so the echo never points at a press that
+  // would be refused (review adv-18).
+  if (state.stage !== 'review') return ['Yangi ma’lumot hali o‘qilmagan — avval «Bo‘ldi» ni bosing.'];
   const input = tableInputOf(state, tc);
   const rows = tc.intake.tableRowsOf(input);
   const open = tc.intake.tableOpenOf(input);
@@ -813,9 +850,7 @@ function missingLines(state: IntakeState, tc: TableContext): string[] {
     out.push(`✅ Hamma qator to‘liq — ${confirmName(state)} ni bosing.`);
     return out;
   }
-  const names = open.map((t) =>
-    'line' in t ? `${t.line}-qator` : 'totals' in t ? (t.totals === 'weightKg' ? 'umumiy brutto' : 'umumiy hajm') : 'yo‘nalish',
-  );
+  const names = open.map(whereOf);
   const list = names.slice(0, 6).join(', ') + (names.length > 6 ? ` va yana ${names.length - 6} ta` : '');
   out.push(`⚠️ Yana ${open.length} ta: ${list}. Bilmasangiz — ${confirmName(state)}, qolganini VED to‘ldiradi.`);
   if (state.amend && state.standingAtOpen !== 'started') out.push('Qayta hisoblash uchun «✅ Qo‘shish» ni bosing.');
@@ -831,39 +866,71 @@ function echoWords(
 ): { text: string; keyboard: InlineKeyboard | null } {
   const started = Boolean(next.amend) && next.standingAtOpen === 'started';
   const head = started ? '📝 VED ga yuboriladi:' : '✅ Yozildi:';
+  const heading: string[] = [];
   const lines: string[] = [];
   if (plan.items.length === 1) lines.push(started ? `${head} ${plan.items[0]}` : `✅ ${plan.items[0]} yozildi`);
-  else if (plan.items.length > 1) lines.push(head, ...plan.items.map((i) => `· ${i}`));
+  else if (plan.items.length > 1) {
+    heading.push(head);
+    lines.push(...plan.items.map((i) => `· ${i}`));
+  }
   lines.push(...plan.ved);
   lines.push(...plan.refusals.map((r) => `⚠️ ${r}`));
   // A bare or ambiguous number keeps R1's words; when one message's offers
   // span several rows, each question and button names its row (§2.2).
   const targets = new Set(plan.offers.map((o) => JSON.stringify(o.target)));
-  const where = (t: TableTarget) =>
-    'line' in t ? `${t.line}-qator` : 'totals' in t ? (t.totals === 'weightKg' ? 'umumiy brutto' : 'umumiy hajm') : 'yo‘nalish';
-  for (const q of plan.questions) lines.push(targets.size > 1 ? `${where(q.target)}: ${q.text}` : q.text);
+  for (const q of plan.questions) lines.push(targets.size > 1 ? `${whereOf(q.target)}: ${q.text}` : q.text);
+  const collecting = next.stage !== 'review';
+  const fixed: string[] = [];
   if (echo) {
-    lines.push(...missingLines(next, tc));
-    if (next.ai && !next.amend) lines.push(`📄 Sertifikat: ${next.hasCertificate ? 'bor' : 'yo‘q'}`);
+    fixed.push(...missingLines(next, tc));
+    if (next.ai && !next.amend && !collecting) fixed.push(`📄 Sertifikat: ${next.hasCertificate ? 'bor' : 'yo‘q'}`);
   }
   const offerLabels = plan.offers.map((o) => {
     const label = tc.intake.figureLabel(o.value, o.unit);
-    return targets.size > 1 ? `${where(o.target)}: ${label}` : label;
+    return targets.size > 1 ? `${whereOf(o.target)}: ${label}` : label;
   });
   const keyboard = [
     ...lineOfferKeyboard(offerLabels).inline_keyboard,
-    ...(echo ? [[{ text: '↩️ Shu javobni bekor qilish', callback_data: `cu:${echo.tag}` }], ...confirmRows(next)] : []),
+    ...(echo
+      ? [[{ text: '↩️ Shu javobni bekor qilish', callback_data: `cu:${echo.tag}` }], ...(collecting ? [] : confirmRows(next))]
+      : []),
   ];
-  return { text: lines.join('\n'), keyboard: keyboard.length > 0 ? { inline_keyboard: keyboard } : null };
+  // Fitted like the table (review adv-3): seventy rows answered in one
+  // message made a 4,850-character echo Telegram refuses — after every
+  // answer was written, so nothing said what happened and nothing could
+  // take it back. What is still missing (and the certificate) never goes.
+  const text = tc.intake.fitTelegram(heading, lines, fixed, [], { maxLines: Number.POSITIVE_INFINITY });
+  return { text, keyboard: keyboard.length > 0 ? { inline_keyboard: keyboard } : null };
 }
 
 /** How many echoes a collection keeps for the undo. */
 const ECHOES_KEPT = 30;
 
+/** The table the seller answered is no longer the one on screen — a reading landed while the answer was read. */
+const TABLE_MOVED = '⚠️ Jadval yangilandi — javobni yangi jadvalga qarab qayta yozing.';
+
+/**
+ * Is the collection still the one an answer was read against? The parse and
+ * the laws were awaited (a dynamic import, the pool), and a reading settles
+ * off the poller: written over its result, the answer's pre-reading goods,
+ * doubts and placements replaced the reading's in silence (review adv-12).
+ * Compared by value — the durable store need not hand back one object.
+ */
+function sameTable(live: IntakeState, state: IntakeState): boolean {
+  return live.noteId === state.noteId && JSON.stringify(live.facts) === JSON.stringify(state.facts);
+}
+
 /**
  * Write a plan, say its echo, edit the table. The state is written FIRST and
  * whole (one `updateIntake`), so a crash after it loses words, never figures;
- * the echo's own id is written back quietly, for the undo to edit it.
+ * the echo's own id is written back quietly, for the undo to edit it. The
+ * table edit is dispatched BEFORE the echo is awaited, so an echo Telegram
+ * refuses still leaves a truthful table (review adv-3).
+ *
+ * `offers`: what the live buttons become. A typed answer REPLACES them
+ * (regression-23 — an older offer message is «eskirgan» from here on); a
+ * press passes the live ones on (a pick marks only its own row's `taken`), so
+ * one message's buttons for several rows each still write (review adv-7).
  */
 async function commitWrites(
   ctx: CollectorReply & { api?: EditApi },
@@ -872,8 +939,24 @@ async function commitWrites(
   writes: readonly Write[],
   ref: TableRef,
   tc: TableContext,
+  offers: { offers: IntakeState['offers']; messageId: number | null } | null = null,
 ): Promise<void> {
-  const plan = planWrites(state, writes, ref, tc);
+  const live = activeIntake(chatId);
+  if (!live || live.noteId !== state.noteId) {
+    await ctx.reply(STALE);
+    return;
+  }
+  if (!sameTable(live, state)) {
+    // Not written — but the words are kept for the card (law 11).
+    if (state.answers.length > live.answers.length) {
+      updateIntake(chatId, { answers: [...live.answers, ...state.answers.slice(live.answers.length)] });
+    }
+    await ctx.reply(TABLE_MOVED);
+    return;
+  }
+  // Planned over the live collection (its echoes and answers as they stand),
+  // with the answer's own text — the table it was read against is the same.
+  const plan = planWrites({ ...live, answers: state.answers }, writes, ref, tc);
   const wrote = plan.lines.length > 0 || plan.totals !== null;
   const echo: IntakeEcho | null = wrote
     ? { tag: randomBytes(4).toString('hex'), messageId: null, lines: plan.lines, totals: plan.totals, undone: false }
@@ -887,31 +970,35 @@ async function commitWrites(
     routeAnswer: w.routeAnswer,
     conflicts: w.conflicts,
     answers: w.answers,
-    // A newer answer replaces the live offers (regression-23): an older
-    // offer message's buttons are «eskirgan» from here on.
-    offers: plan.offers,
-    offersMessageId: null,
+    offers: offers ? offers.offers : plan.offers,
+    offersMessageId: offers ? offers.messageId : null,
     ...(echo ? { echoes: [...w.echoes, echo].slice(-ECHOES_KEPT) } : {}),
   });
   if (!next) return;
+  if (wrote) editTableSoon(ctx, chatId);
   const words = echoWords(next, plan, echo, tc);
+  if (!words.text) {
+    // Nothing read and nothing written («;» alone): asked, never an empty
+    // message Telegram refuses (review adv-17).
+    await ctx.reply(`⚠️ ${NO_ADDRESS}`);
+    return;
+  }
   const sent = await ctx.reply(words.text, words.keyboard ? { reply_markup: words.keyboard } : undefined);
   const id = messageIdOf(sent);
   if (id !== null) {
-    const live = activeIntake(chatId);
-    if (live && live.noteId === next.noteId) {
+    const after = activeIntake(chatId);
+    if (after && after.noteId === next.noteId) {
       updateIntake(
         chatId,
         {
-          ...(echo ? { echoes: live.echoes.map((e) => (e.tag === echo.tag ? { ...e, messageId: id } : e)) } : {}),
-          ...(plan.offers.length > 0 ? { offersMessageId: id } : {}),
+          ...(echo ? { echoes: after.echoes.map((e) => (e.tag === echo.tag ? { ...e, messageId: id } : e)) } : {}),
+          ...(!offers && plan.offers.length > 0 ? { offersMessageId: id } : {}),
         },
         { quiet: true },
       );
       noteOwnMessage(chatId, id);
     }
   }
-  if (wrote) editTableSoon(ctx, chatId);
 }
 
 /** File a text as material — the stage goes back to collecting, and the «Bo‘ldi» prompt says so. */
@@ -968,10 +1055,25 @@ export async function applyTableAnswer(
 /** A table edit in flight per chat — latest wins, an identical one is never sent (performance-5). */
 const tableEdits = new Map<string, { again: boolean; ctx: CollectorReply & { api?: EditApi }; running: Promise<void> }>();
 
+/** What Telegram said about a refused call. */
+function saidOf(err: unknown): string {
+  const said = (err as { description?: unknown } | null)?.description;
+  return typeof said === 'string' ? said : String(err);
+}
+
 /** Telegram's 400 «message is not modified» — success, never a reason to send again. */
 function notModified(err: unknown): boolean {
-  const said = (err as { description?: unknown } | null)?.description;
-  return /message is not modified/iu.test(typeof said === 'string' ? said : String(err));
+  return /message is not modified/iu.test(saidOf(err));
+}
+
+/**
+ * The table message itself is gone or past editing (too old, deleted) — the
+ * one refusal a fresh table answers. A 429 past the brief retry, a timeout or
+ * a reset is NOT: the edit may even have landed, and a second table would move
+ * `tableMessageId` off the one the seller is reading (review adv-16).
+ */
+function editGone(err: unknown): boolean {
+  return /message to edit not found|message can'?t be edited|MESSAGE_ID_INVALID/iu.test(saidOf(err));
 }
 
 /**
@@ -1025,13 +1127,17 @@ async function drawTable(ctx: CollectorReply & { api?: EditApi }, chatId: bigint
   try {
     await ctx.api.editMessageText(String(chatId), live.tableMessageId, words.text, { reply_markup: words.keyboard });
   } catch (err) {
-    if (!notModified(err)) {
+    if (editGone(err)) {
       const sent = await ctx.reply(words.text, words.keyboard ? { reply_markup: words.keyboard } : undefined);
       const id = messageIdOf(sent);
       if (id !== null) {
         updateIntake(chatId, { tableMessageId: id }, { quiet: true });
         noteOwnMessage(chatId, id);
       }
+    } else if (!notModified(err)) {
+      // Not drawn: the hash stays the old one, so the next answer tries again.
+      logger.warn({ err }, '[calc-intake] table edit refused — the next answer redraws it');
+      return;
     }
   }
   updateIntake(chatId, { tableHash: hash }, { quiet: true });
@@ -1339,13 +1445,22 @@ export async function pressConflict(
 ): Promise<void> {
   const c = state.conflicts[n];
   const pressed = pressedId(ctx);
+  if (state.saving) {
+    // The collection is frozen for the save job (§2.4): an echo here would
+    // promise a write the job may never read (review adv-13).
+    await ctx.reply(SAVING);
+    return;
+  }
   if (!c || c.choice !== null || state.analysing || pressed === null || pressed !== state.tableMessageId) {
     await ctx.reply(STALE);
     return;
   }
   const tc = await tableContext(state);
   const ref = tableRefOf(state, tc, state.stage === 'review' ? 'review' : 'material');
-  await commitWrites(ctx as CalcPressCtx & { api?: EditApi }, chatId, state, [{ kind: 'conflict', n, choice }], ref, tc);
+  await commitWrites(ctx as CalcPressCtx & { api?: EditApi }, chatId, state, [{ kind: 'conflict', n, choice }], ref, tc, {
+    offers: state.offers,
+    messageId: state.offersMessageId,
+  });
 }
 
 /**
@@ -1358,7 +1473,11 @@ export async function pressConflict(
 export async function pressPick(ctx: CalcPressCtx, chatId: bigint, state: IntakeState, n: number): Promise<void> {
   const offer = state.offers[n];
   const pressed = pressedId(ctx);
-  if (!offer || state.analysing || pressed === null || pressed !== state.offersMessageId) {
+  if (state.saving) {
+    await ctx.reply(SAVING);
+    return;
+  }
+  if (!offer || offer.taken || state.analysing || pressed === null || pressed !== state.offersMessageId) {
     await ctx.reply(STALE);
     return;
   }
@@ -1385,7 +1504,13 @@ export async function pressPick(ctx: CalcPressCtx, chatId: bigint, state: Intake
       },
     };
   }
-  await commitWrites(ctx as CalcPressCtx & { api?: EditApi }, chatId, state, [{ kind: 'segment', segment }], ref, tc);
+  // The message's buttons for OTHER rows stay live (§2.2 draws one message
+  // for several rows); this row's are spent (review adv-7).
+  const same = JSON.stringify(offer.target);
+  await commitWrites(ctx as CalcPressCtx & { api?: EditApi }, chatId, state, [{ kind: 'segment', segment }], ref, tc, {
+    offers: state.offers.map((o) => (JSON.stringify(o.target) === same ? { ...o, taken: true } : o)),
+    messageId: state.offersMessageId,
+  });
 }
 
 const sameValue = (a: unknown, b: unknown) => (a ?? null) === (b ?? null);
@@ -1396,10 +1521,16 @@ const sameValue = (a: unknown, b: unknown) => (a ?? null) === (b ?? null);
  * entry the echo wrote, at the index the last reading WROTE BACK
  * (`placeByName`) — never the echo's stored `index`, which a re-read after «➕
  * Yana ma’lumot» may have moved onto other goods. A row a LATER answer has
- * changed again is not reverted, and is named. A totals answer is restored
- * WHOLE — the previous answer (figures and its mark) and the doubts it
- * retired: nulling a figure alone would keep the newer mark and silence a
- * standing CONC-2 doubt (re-check p3-3).
+ * changed again is not reverted, and is named. A field an older answer still
+ * stands for gets that answer's figure back, on the row and in the answers
+ * alike — an answer the last reading placed nowhere included (review
+ * spec-4: that branch deleted the older figure too).
+ *
+ * A totals answer is restored per field (review adv-4): its fields get the
+ * previous answer back, and the doubts it retired; a LATER answer to the
+ * other total stands. When nothing later stands, that is the previous answer
+ * WHOLE, its mark included — nulling a figure alone would keep the newer mark
+ * and silence a standing CONC-2 doubt (re-check p3-3).
  */
 function undoEcho(
   state: IntakeState,
@@ -1414,11 +1545,64 @@ function undoEcho(
   const notes: string[] = [];
   const older = state.echoes.slice(0, state.echoes.findIndex((e) => e.tag === echo.tag)).filter((e) => !e.undone);
   const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+  type Line = IntakeEcho['lines'][number];
+  type Entry = IntakeState['lineAnswers'][number];
+  const sameRow = (a: Line, b: { itemId: string | null; name: string }) => (b.itemId ? a.itemId === b.itemId : sameName(a.name, b.name));
+  /** A code typed over a stored row's own: carried in the answer for the VED, never drawn on the row (adv-11). */
+  const keptCode = (line: Line, key: string, value: unknown) =>
+    key === 'tnvedCode' && line.itemId !== null && typeof line.before.tnvedCode === 'string' && line.before.tnvedCode !== value;
+  /**
+   * The figure an older answer still stands for, on this field of this row:
+   * what the row held before THIS answer (`before`) — or, for a kept code,
+   * which never reached the row, the older answer's own. Null = no older
+   * answer wrote it, and the field leaves the answers.
+   */
+  const olderValue = (line: Line, key: string): { value: unknown } | null => {
+    for (const e of [...older].reverse()) {
+      const l = e.lines.find((x) => sameRow(x, line) && key in x.patch);
+      if (!l) continue;
+      const kept = keptCode(l, key, (l.patch as Record<string, unknown>)[key]);
+      const value = kept ? (l.patch as Record<string, unknown>)[key] : (line.before as Record<string, unknown>)[key];
+      return value === null || value === undefined ? null : { value };
+    }
+    return null;
+  };
+  /** A «📨 VED» line: it wrote no figure — its `before` names the conflict's field. */
+  const vedLine = (l: Line) => Object.keys(l.patch).length === 0;
+  /** The choice a conflict goes back to: «📨 VED», when an older answer still says so. */
+  const priorChoice = (c: (typeof conflicts)[number]) =>
+    older.some((e) => e.lines.some((l) => vedLine(l) && l.itemId === c.itemId && c.field in l.before)) ? ('ved' as const) : null;
+  /** Take this answer's `keys` out of the entry, an older answer's figure back where one stands. */
+  const revert = (entry: Entry, line: Line, keys: readonly string[]) => {
+    const patch = { ...entry.patch } as Record<string, unknown>;
+    for (const k of keys) {
+      const was = olderValue(line, k);
+      if (was) patch[k] = was.value;
+      else delete patch[k];
+    }
+    lineAnswers = lineAnswers
+      .map((e) => (e === entry ? { ...e, patch: patch as typeof e.patch } : e))
+      .filter((e) => Object.keys(e.patch).length > 0);
+  };
 
   for (const line of echo.lines) {
-    const ours = (e: IntakeState['lineAnswers'][number]) => (line.itemId ? e.itemId === line.itemId : sameName(e.name, line.name));
-    const holds = (e: IntakeState['lineAnswers'][number]) =>
-      Object.entries(line.patch).every(([k, v]) => sameValue((e.patch as Record<string, unknown>)[k], v));
+    const fields = Object.keys(line.patch);
+    const rowNo = () => rows.find((r) => (line.itemId ? goods[r.index]?.itemId === line.itemId : false))?.no ?? line.no;
+    if (vedLine(line)) {
+      // «📨 VED» wrote no figure, so its undo restores none (review spec-2,
+      // adv-10): written back, its `before` landed over a figure the seller
+      // typed AFTER it. Only the choice goes back — while it is still the VED's.
+      const c = conflicts.find((x) => x.itemId === line.itemId && x.field in line.before);
+      if (c && c.choice === 'ved') {
+        c.choice = null;
+        done.push(`${rowNo()}-qator «${rowLabel(line.name)}» — VED hal qiladi`);
+      } else {
+        notes.push(`⚠️ ${rowNo()}-qator keyin o‘zgartirilgan — u bekor qilinmadi.`);
+      }
+      continue;
+    }
+    const ours = (e: Entry) => (line.itemId ? e.itemId === line.itemId : sameName(e.name, line.name));
+    const holds = (e: Entry) => Object.entries(line.patch).every(([k, v]) => sameValue((e.patch as Record<string, unknown>)[k], v));
     const candidates = lineAnswers.filter(ours);
     const entry =
       candidates.filter(holds).find((e) => e.index === line.index) ??
@@ -1426,14 +1610,18 @@ function undoEcho(
       candidates.find((e) => e.index === line.index) ??
       candidates[0];
     const at = line.itemId ? goods.findIndex((g) => g.itemId === line.itemId) : (entry?.index ?? -1);
-    const fields = Object.keys(line.patch);
-    const figures = figuresText({}, line.patch, tc.intake) || 'VED hal qiladi';
+    const figures = figuresText({}, line.patch, tc.intake);
     if (at < 0) {
-      // Placed nowhere by the last reading: reverted in the answers alone.
+      // Placed nowhere by the last reading: reverted in the answers alone, by
+      // the same per-field rule as a placed row — and said with its ↩️ head.
+      const held = entry ? fields.filter((k) => sameValue((entry.patch as Record<string, unknown>)[k], (line.patch as Record<string, unknown>)[k])) : [];
+      if (entry && held.length === 0) {
+        notes.push(`⚠️ «${rowLabel(line.name)}» keyin o‘zgartirilgan — u bekor qilinmadi.`);
+        continue;
+      }
       if (entry) {
-        lineAnswers = lineAnswers
-          .map((e) => (e === entry ? { ...e, patch: Object.fromEntries(Object.entries(e.patch).filter(([k]) => !fields.includes(k))) } : e))
-          .filter((e) => Object.keys(e.patch).length > 0);
+        revert(entry, line, held);
+        done.push(`«${rowLabel(line.name)}» — ${figures}`);
       }
       notes.push(`⚠️ «${rowLabel(line.name)}» oxirgi o‘qishda topilmadi — javobi o‘chirildi.`);
       continue;
@@ -1441,28 +1629,18 @@ function undoEcho(
     const no = rows.find((r) => r.index === at)?.no ?? line.no;
     const row = goods[at]!;
     // Only while the row still holds what THIS answer wrote.
-    if (!Object.entries(line.patch).every(([k, v]) => sameValue((row as Record<string, unknown>)[k], v))) {
+    if (!Object.entries(line.patch).every(([k, v]) => keptCode(line, k, v) || sameValue((row as Record<string, unknown>)[k], v))) {
       notes.push(`⚠️ ${no}-qator keyin o‘zgartirilgan — u bekor qilinmadi.`);
       continue;
     }
-    goods[at] = { ...row, ...line.before };
-    if (entry) {
-      // A field an OLDER answer had written keeps that answer's figure; one
-      // only this answer wrote leaves the answers with it.
-      const earlier = (k: string) =>
-        older.some((e) => e.lines.some((l) => (line.itemId ? l.itemId === line.itemId : sameName(l.name, line.name)) && k in l.patch));
-      const patch = { ...entry.patch } as Record<string, unknown>;
-      for (const k of fields) {
-        if (earlier(k)) patch[k] = (line.before as Record<string, unknown>)[k];
-        else delete patch[k];
-      }
-      lineAnswers = lineAnswers
-        .map((e) => (e === entry ? { ...e, patch: patch as typeof e.patch } : e))
-        .filter((e) => Object.keys(e.patch).length > 0);
+    const restore = { ...row } as Record<string, unknown>;
+    for (const k of fields) {
+      if (!keptCode(line, k, (line.patch as Record<string, unknown>)[k])) restore[k] = (line.before as Record<string, unknown>)[k];
     }
+    goods[at] = restore as typeof row;
+    if (entry) revert(entry, line, fields);
     for (const c of conflicts) {
-      const touched = [...fields, ...Object.keys(line.before)];
-      if (c.itemId === line.itemId && c.choice !== null && touched.includes(c.field)) c.choice = null;
+      if (c.itemId === line.itemId && c.choice !== null && fields.includes(c.field)) c.choice = priorChoice(c);
     }
     done.push(`${no}-qator «${rowLabel(line.name)}» — ${figures}`);
   }
@@ -1478,11 +1656,19 @@ function undoEcho(
       notes.push('⚠️ Umumiy keyin o‘zgartirilgan — u bekor qilinmadi.');
     } else {
       facts = { ...facts, ...t.before };
-      if ('weightKg' in t.patch || 'volumeM3' in t.patch) {
-        totalsAnswer = t.answerBefore;
-        ambiguousTotals = t.doubtsBefore;
+      const mine = (['weightKg', 'volumeM3'] as const).filter((f) => f in t.patch);
+      if (mine.length > 0) {
+        const restored = { ...state.totalsAnswer };
+        for (const f of mine) restored[f] = t.answerBefore[f];
+        // Nothing later stands: the previous answer whole, its mark included.
+        const whole = restored.weightKg === t.answerBefore.weightKg && restored.volumeM3 === t.answerBefore.volumeM3;
+        totalsAnswer = whole ? t.answerBefore : restored;
+        ambiguousTotals = [
+          ...state.ambiguousTotals.filter((d) => !mine.includes(d.field)),
+          ...t.doubtsBefore.filter((d) => mine.includes(d.field)),
+        ];
       }
-      for (const field of ['weightKg', 'volumeM3'] as const) {
+      for (const field of mine) {
         const value = t.patch[field];
         if (typeof value === 'number') {
           done.push(field === 'weightKg' ? `umumiy brutto — ${tc.intake.figureLabel(value, 'kg')}` : `umumiy hajm — ${tc.intake.figureLabel(value, 'm3')}`);
@@ -1533,29 +1719,44 @@ export async function pressUndo(ctx: PressCtx & { api?: EditApi }, chatId: bigin
     await answerPress(ctx, 'Allaqachon bekor qilingan');
     return;
   }
+  if (state.analysing) {
+    // A reading in flight carries the answers it was started with: an undo
+    // now was told «Bekor qilindi» and then put back by its result (review
+    // adv-5). The other two presses refuse it the same way.
+    await answerPress(ctx, ANALYSING);
+    await ctx.reply(ANALYSING);
+    return;
+  }
   await answerPress(ctx);
   const tc = await tableContext(state);
-  const undone = undoEcho(state, echo, tc);
+  // Computed over the collection as it stands AFTER the awaits (review adv-12).
+  const live = activeIntake(chatId);
+  const liveEcho = live && live.noteId === state.noteId ? live.echoes.find((e) => e.tag === tag) : undefined;
+  if (!live || !liveEcho || liveEcho.undone || live.saving) {
+    await ctx.reply(STALE);
+    return;
+  }
+  const undone = undoEcho(live, liveEcho, tc);
   updateIntake(chatId, undone.patch);
-  const text = [
-    ...(undone.done.length === 1
-      ? [`↩️ Bekor qilindi: ${undone.done[0]}`]
-      : undone.done.length > 1
-        ? ['↩️ Bekor qilindi:', ...undone.done.map((d) => `· ${d}`)]
-        : []),
-    ...undone.notes,
-  ].join('\n');
+  editTableSoon(ctx, chatId);
+  // Fitted like the echo it edits (review adv-3).
+  const text = tc.intake.fitTelegram(
+    undone.done.length > 1 ? ['↩️ Bekor qilindi:'] : [],
+    [...(undone.done.length === 1 ? [`↩️ Bekor qilindi: ${undone.done[0]}`] : undone.done.map((d) => `· ${d}`)), ...undone.notes],
+    [],
+    [],
+    { maxLines: Number.POSITIVE_INFINITY },
+  );
   let edited = false;
-  if (echo.messageId !== null && ctx.api) {
+  if (liveEcho.messageId !== null && ctx.api) {
     try {
-      await ctx.api.editMessageText(String(chatId), echo.messageId, text, { reply_markup: { inline_keyboard: [] } });
+      await ctx.api.editMessageText(String(chatId), liveEcho.messageId, text, { reply_markup: { inline_keyboard: [] } });
       edited = true;
     } catch (err) {
       edited = notModified(err);
     }
   }
   if (!edited) await ctx.reply(text);
-  editTableSoon(ctx, chatId);
 }
 
 /**

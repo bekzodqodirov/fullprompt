@@ -130,6 +130,15 @@ describe('the §2.1 table', () => {
     expect(text).toContain('✍️ Bir xabarda istalgan qatorni to‘ldiring: «2: 30 dona», «Kafel 30 dona» yoki «jami 12 kub».');
   });
 
+  it('a name that opens with a figure lends the example its first WORD — «100 30 dona» reads as row 100 (review adv-20)', () => {
+    const text = table({ facts: { weightKg: 3500, volumeM3: 12, goods: [{ name: 'Sumka', quantity: 2 }, { name: '100% paxta futbolka' }] } });
+    expect(text).toContain('✍️ Bir xabarda istalgan qatorni to‘ldiring: «2: 30 dona» yoki «paxta 30 dona».');
+    // …and the example, typed back, is that row's answer.
+    const input = { section: 'rastamojka' as const, facts: { weightKg: 3500, volumeM3: 12, goods: [{ name: 'Sumka', quantity: 2 }, { name: '100% paxta futbolka' }] }, laws: noLaws, amend: null };
+    const ref = { rows: tableRowsOf(input), open: tableOpenOf(input), preferred: tableOpenOf(input), stage: 'review' as const };
+    expect(parseTableAnswer('paxta 30 dona', ref).segments[0]!.at).toEqual({ line: 2 });
+  });
+
   it('a row that states nothing reads «soni (dona) yoki sof og‘irligi (kg)» — lineNeedText’s own words (product-fit-19 c)', () => {
     const text = table({ facts: { goods: [{ name: 'Shapka' }, { name: 'Sumka', quantity: 2 }] } });
     expect(text).toContain('⚠️ 1. Shapka\n   ↳ soni (dona) yoki sof og‘irligi (kg)');
@@ -259,6 +268,15 @@ describe('an add collection’s table (§2.1, §2.4)', () => {
 
   it('a started job confirms «📨 VED ga yuborish»', () => {
     expect(table({ facts, amend: amend({ started: true, totalsStale: ['weightKg'] }) })).toContain('«📨 VED ga yuborish» ni hozir ham');
+  });
+
+  it('only a conflict open, the brutto ✅: the example is that conflict’s answer, never «jami 3500 kg» (review adv-20)', () => {
+    const text = table({
+      facts,
+      amend: amend({ conflicts: [{ itemId: 'i4', seq: 4, field: 'quantity', unit: 'dona', stored: 300, read: 200, choice: null }] }),
+    });
+    expect(text).toContain('✍️ Yetishmaganini yozing: «4: 200 dona». Yangi tovar yoki fayl — «➕ Yana ma’lumot».');
+    expect(text).not.toContain('jami 3500 kg');
   });
 });
 

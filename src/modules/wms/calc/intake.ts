@@ -38,6 +38,9 @@ import { codeWrittenAsCode, parseGoodsLine, routeAmount, unitOf } from './units'
 import { fitTelegram, TELEGRAM_LIMIT } from './fit-telegram';
 import { clipText } from '../../platform/telegram/format';
 
+/** The bot's echo fits by the table's own 4096 rule — reached through this module, which the dialogue already imports. */
+export { fitTelegram };
+
 export type CalcSection = 'yolkira' | 'rastamojka' | 'podklyuch';
 
 export const CALC_SECTIONS: CalcSection[] = ['yolkira', 'rastamojka', 'podklyuch'];
@@ -1017,9 +1020,26 @@ function answerHow(
       const named = asked.map((r) => `${r.no}-qator ${needWhatUz(r.needs[0]!)}`).join(', ');
       return [`✍️ So‘ralgan: ${named}. Yozing: «${asked[0]!.no}: ${exampleFigure(asked[0]!.needs[0]!)}».`];
     }
-    return [`✍️ Yetishmaganini yozing: «${numbered ?? 'jami 3500 kg'}». Yangi tovar yoki fayl — «➕ Yana ma’lumot».`];
+    // The example is the first thing still OPEN (review adv-20): a ⚠️ row,
+    // else an open conflict as its typed answer, else the total the table
+    // owes — «jami 3500 kg» under a ✅ brutto taught a figure nobody asked for.
+    const conflict = input.amend.conflicts.find((c) => c.choice === null);
+    const conflictExample = conflict
+      ? `${rows.find((r) => r.seq === conflict.seq)?.no ?? conflict.seq}: ${figureLabel(conflict.read, conflict.unit as NeedUnit)}`
+      : null;
+    const totalExample =
+      missing.includes('weightKg') || stale.has('weightKg')
+        ? 'jami 3500 kg'
+        : missing.includes('volumeM3') || stale.has('volumeM3')
+          ? 'jami 12 kub'
+          : null;
+    const example = numbered ?? conflictExample ?? totalExample ?? 'Yiwu → Toshkent';
+    return [`✍️ Yetishmaganini yozing: «${example}». Yangi tovar yoki fayl — «➕ Yana ma’lumot».`];
   }
-  const word = second?.name.match(/[\p{L}\p{N}][\p{L}\p{N}'’‘ʻ`-]*/u)?.[0];
+  // A word the parser reads as a NAME: it starts with a letter and has three
+  // of them — «100% paxta futbolka» gave «100 30 dona», which reads as row 100
+  // (review adv-20).
+  const word = second?.name.match(/(?<![\p{L}\p{N}])\p{L}[\p{L}\p{N}'’‘ʻ`-]{2,}/u)?.[0];
   const examples = [
     ...(numbered ? [numbered] : []),
     ...(second && word ? [`${word} ${exampleFigure(second.needs[0]!)}`] : []),

@@ -222,8 +222,32 @@ function addressOf(segment: string, stage: TableRef['stage']): { n: number; rest
  */
 const FIELD_WORDS = new Set([
   'soni', 'son', 'sof', 'maydoni', 'miqdori', 'kod', 'kodi', 'tnved', 'netto', 'nett', 'qator', 'stroka', 'str',
-  'uchun', 'dlya', 'for', 'yoki', 'ham', 'dvigatel',
+  'uchun', 'dlya', 'for', 'yoki', 'ham',
 ]);
+
+/**
+ * «dvigatel hajmi» — the sm³ need's own words (`needWhatUz('sm3')`), read as a
+ * PHRASE: «dvigatel» alone is a goods noun («Dvigatel 1.5L»), and as a lone
+ * field word it hid that row's name (review spec-11).
+ */
+const ENGINE_FIELD = /(?:dvigatel|двигател)\p{L}*\s+(?:hajm|ҳажм|хажм|объ[её]м)\p{L}*/giu;
+
+/**
+ * A figure grouped by thousands — «1 200», «3 500», «12 000» — is ONE figure,
+ * the house rule `TOTALS_NUMBER` and `parseLineAnswer` both read (R2's P3-R7).
+ * Read as two numbers, «3 500 kg» was asked «3-qatorgami yoki 3 tami?» and
+ * «Sumka 1 200 dona» took «1» for a model number (review spec-3, adv-1/-2).
+ */
+const GROUPED = /(?<![\d.,])(\d{1,3})((?:\s\d{3})+)(?![\d.,])/gu;
+const GROUPED_FIRST = /^\s*\d{1,3}(?:\s\d{3})+(?![\d.,])/u;
+
+/**
+ * The text a segment's figures are read from: a spaced dash between the goods
+ * words and the first figure is a separator («Shapka - 30 dona», the easy key
+ * on a phone), never a minus — `parseLineAnswer`'s minus guard refused it
+ * (review spec-5, adv-15). The number address strips its own dash already.
+ */
+const figureText = (text: string) => text.replace(/(\p{L}[\p{L}\p{N}]*)\s+[-–—]\s+(?=\d)/gu, '$1 ');
 
 /** What a segment says about WHICH goods, once its figures, units, codes and field words are set aside. */
 interface NameParts {
@@ -243,7 +267,15 @@ interface NameParts {
 
 const digitKey = (run: string) => run.replace(/^0+(?=\d)/u, '');
 
-function nameParts(text: string): NameParts {
+function nameParts(raw: string): NameParts {
+  const text = raw
+    .replace(ENGINE_FIELD, ' ')
+    .replace(GROUPED, (_m, head: string, groups: string) => head + groups.replace(/\s/gu, ''))
+    // A figure glued to a name by a dash («Sumka-50 dona») is the figure, as
+    // `parseLineAnswer` reads it — never a model number of «Sumka».
+    .replace(/(\p{L})[-–—](\d[\d.,]*)(?=\s*([\p{L}²³]+))/gu, (m, letter: string, digits: string, unit: string) =>
+      unitOf(unit) !== null ? `${letter} ${digits}` : m,
+    );
   const tokens = text.split(/[\s,;:()«»"]+/u).filter(Boolean);
   const words: string[] = [];
   const han: string[] = [];
@@ -370,7 +402,9 @@ function targetFor(answer: LineAnswer, table: TableRef, netto: boolean): TableTa
       const needs = rowOf(t)?.needs ?? [];
       return needs.some((u) => units.includes(u) || (u === '1000_dona' && units.includes('dona')));
     }
-    if ('totals' in t) return !netto && units.includes(t.totals === 'weightKg' ? 'kg' : 'm3');
+    // A total takes only kilos and cubes: «300 dona 150 kg» is a row's
+    // figures, never a brutto (review adv-14).
+    if ('totals' in t) return !netto && units.every((u) => u === 'kg' || u === 'm3') && units.includes(t.totals === 'weightKg' ? 'kg' : 'm3');
     return false;
   };
   const pool = table.preferred.filter((t) => !('route' in t) && (!netto || isLine(t)));
@@ -426,7 +460,7 @@ function readSegment(raw: string, table: TableRef): ReadSegment {
   if (address) {
     const row = table.rows.find((r) => r.no === address.n);
     if (!row) return { ...refused(raw, 'no_line', String(address.n)), explicit: true, namedNone: false };
-    const answer = parseLineAnswer(address.rest);
+    const answer = parseLineAnswer(figureText(address.rest));
     const parts = nameParts(address.rest);
     // The words after the number must not name ANOTHER row (regression-3):
     // «1. Kurtka 300 dona» on row 1 Krossovka is a list of other goods, asked.
@@ -461,12 +495,12 @@ function readSegment(raw: string, table: TableRef): ReadSegment {
     }
   }
 
-  const unclear = UNCLEAR.exec(raw);
+  const unclear = GROUPED_FIRST.test(raw) ? null : UNCLEAR.exec(raw);
   if (unclear && Number(unclear[1]) <= table.rows.length && unitOf(unclear[3]) !== null) {
     return { ...refused(raw, 'address_unclear', unclear[1]!), ...plain };
   }
 
-  const answer = parseLineAnswer(raw);
+  const answer = parseLineAnswer(figureText(raw));
   const parts = nameParts(raw);
   if (parts.carton) return { ...refused(raw, 'no_address', raw), ...plain };
   // No goods word left over: an ANSWER, to the target its unit fits.

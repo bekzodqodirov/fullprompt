@@ -563,3 +563,286 @@ describe('a text with no collection to answer (§2.8, re-check p3-2)', () => {
     expect(await orphanAnswerSentence('bu oy qancha kub keldi', null)).toBeNull();
   });
 });
+
+/** The review’s findings on the shipped table (p3-review-spec, p3-review-adversary), each a probe made a test. */
+describe('the review’s fixes', () => {
+  const TABLE_MOVED = '⚠️ Jadval yangilandi — javobni yangi jadvalga qarab qayta yozing.';
+  const item = (itemId: string, seq: number, name: string, extra: Partial<AmendBase['items'][number]> = {}): AmendBase['items'][number] => ({
+    itemId,
+    seq,
+    name,
+    quantity: null,
+    weightKg: null,
+    volumeM3: null,
+    measureUnit: null,
+    measureQty: null,
+    tnvedCode: null,
+    law: null,
+    confirmed: false,
+    ...extra,
+  });
+  const base = (items: AmendBase['items']): AmendBase => ({
+    requestId: 'r-9',
+    cardLabel: 'B-00999',
+    entityType: 'deal',
+    entityId: 'd-9',
+    leadOpen: null,
+    section: 'rastamojka',
+    clientLabel: null,
+    openedRev: 1,
+    items,
+    weightKg: 3500,
+    volumeM3: 12,
+    fromCity: null,
+    toCity: null,
+  });
+  /** An add collection over one stored «Kurtka» 300 dona, the file saying 200. */
+  const conflicted = (code: string | null = null) =>
+    collection(
+      {
+        stage: 'review',
+        standingAtOpen: 'open',
+        facts: { weightKg: 3500, volumeM3: 12, goods: [line('Kurtka', { quantity: 300, seq: 1, itemId: 'i1', ...(code ? { tnvedCode: code } : {}) })] },
+        conflicts: [{ itemId: 'i1', seq: 1, field: 'quantity', unit: 'dona', stored: 300, read: 200, choice: null }],
+      },
+      'rastamojka',
+      base([item('i1', 1, 'Kurtka', { quantity: 300, tnvedCode: code })]),
+    );
+
+  it('a figure in ANOTHER field leaves the conflict open — the file’s 200 dona is neither written nor dropped (spec-1, adv-9)', async () => {
+    const { chatId } = conflicted();
+    const ctx = fakeCtx();
+    await drawn(ctx, chatId);
+    await say(ctx, chatId, '1: 150 kg');
+    const live = activeIntake(chatId)!;
+    expect(live.conflicts[0]!.choice).toBeNull();
+    expect(live.lineAnswers).toEqual([{ index: 0, name: 'Kurtka', patch: { weightKg: 150 }, itemId: 'i1' }]);
+    expect(ctx.edits.at(-1)!.text).toContain('↳ faylda 200 dona, so‘rovda 300 — qo‘shilsinmi (500), o‘rniga (200) yoki VED hal qilsinmi?');
+    expect(ctx.texts().at(-1)).not.toContain('Hamma qator to‘liq');
+    // The count itself answers it.
+    await say(ctx, chatId, '1: 400 dona');
+    expect(activeIntake(chatId)!.conflicts[0]!.choice).toBe('rep');
+  });
+
+  it('«📨 VED», then a typed 400, then ↩️ under the VED echo: the 400 stands and the row is named (spec-2, adv-10)', async () => {
+    const { chatId } = conflicted();
+    const ctx = fakeCtx();
+    const table = await drawn(ctx, chatId);
+    await pressConflict(from(ctx, table.id), chatId, activeIntake(chatId)!, 0, 'ved');
+    await tableEditsSettled();
+    const ved = ctx.replies.at(-1)!;
+    const vedTag = activeIntake(chatId)!.echoes.at(-1)!.tag;
+    await say(ctx, chatId, '1: 400 dona');
+    // A typed answer to the figure overrides the VED choice — he answered after all.
+    expect(activeIntake(chatId)!.conflicts[0]!.choice).toBe('rep');
+    await pressUndo(from(ctx, ved.id), chatId, vedTag);
+    await tableEditsSettled();
+    const live = activeIntake(chatId)!;
+    expect(live.facts.goods?.[0]?.quantity).toBe(400);
+    expect(live.lineAnswers).toEqual([{ index: 0, name: 'Kurtka', patch: { quantity: 400 }, itemId: 'i1' }]);
+    expect(live.conflicts[0]!.choice).toBe('rep');
+    expect(ctx.edits.find((e) => e.id === ved.id)!.text).toBe('⚠️ 1-qator keyin o‘zgartirilgan — u bekor qilinmadi.');
+  });
+
+  it('↩️ under a VED echo nothing later changed: the conflict is open again, no figure moves', async () => {
+    const { chatId } = conflicted();
+    const ctx = fakeCtx();
+    const table = await drawn(ctx, chatId);
+    await pressConflict(from(ctx, table.id), chatId, activeIntake(chatId)!, 0, 'ved');
+    await tableEditsSettled();
+    const ved = ctx.replies.at(-1)!;
+    await pressUndo(from(ctx, ved.id), chatId, activeIntake(chatId)!.echoes.at(-1)!.tag);
+    await tableEditsSettled();
+    expect(activeIntake(chatId)!.conflicts[0]!.choice).toBeNull();
+    expect(activeIntake(chatId)!.facts.goods?.[0]?.quantity).toBe(300);
+    expect(ctx.edits.find((e) => e.id === ved.id)!.text).toBe('↩️ Bekor qilindi: 1-qator «Kurtka» — VED hal qiladi');
+  });
+
+  it('five conflicts: once the first three are answered, the next two get their buttons (spec-9)', async () => {
+    const names = ['Kurtka', 'Shim', 'Sumka', 'Shapka', 'Futbolka'];
+    const items = names.map((name, i) => item(`i${i + 1}`, i + 1, name, { quantity: 100 }));
+    const { chatId } = collection(
+      {
+        stage: 'review',
+        standingAtOpen: 'open',
+        facts: { weightKg: 3500, volumeM3: 12, goods: names.map((name, i) => line(name, { quantity: 100, seq: i + 1, itemId: `i${i + 1}` })) },
+        conflicts: names.map((_n, i) => ({ itemId: `i${i + 1}`, seq: i + 1, field: 'quantity' as const, unit: 'dona', stored: 100, read: 50, choice: null })),
+      },
+      'rastamojka',
+      base(items),
+    );
+    const ctx = fakeCtx();
+    const table = await drawn(ctx, chatId);
+    const conf = (sent: Sent | undefined) => buttons(sent).map((b) => b.callback_data).filter((d) => d.startsWith('c:conf_'));
+    expect(conf(table).filter((d) => d.endsWith('_ved'))).toEqual(['c:conf_0_ved', 'c:conf_1_ved', 'c:conf_2_ved']);
+    for (const n of [0, 1, 2]) {
+      await pressConflict(from(ctx, table.id), chatId, activeIntake(chatId)!, n, 'ved');
+      await tableEditsSettled();
+    }
+    expect(conf(ctx.edits.at(-1)).filter((d) => d.endsWith('_ved'))).toEqual(['c:conf_3_ved', 'c:conf_4_ved']);
+  });
+
+  it('a code typed over a stored row’s own is kept for the VED, never drawn on the row; ↩️ takes it back (adv-11)', async () => {
+    const { chatId } = conflicted('6201400000');
+    updateIntake(chatId, { conflicts: [] });
+    const ctx = fakeCtx();
+    await drawn(ctx, chatId);
+    await say(ctx, chatId, '1: kod 6201930000 50 dona');
+    const echo = ctx.replies.at(-1)!;
+    expect(echo.text).toContain('⚠️ 1-qatorda kod bor (6201400000) — yangi kod yozilmadi, VED ga aytiladi.');
+    expect(echo.text).not.toContain('kod 6201930000');
+    const live = activeIntake(chatId)!;
+    expect(live.facts.goods?.[0]).toMatchObject({ tnvedCode: '6201400000', quantity: 50 });
+    expect(live.lineAnswers).toEqual([{ index: 0, name: 'Kurtka', patch: { quantity: 50, tnvedCode: '6201930000' }, itemId: 'i1' }]);
+    // A re-read puts the answer back without drawing the kept code.
+    expect(placeByName([line('Kurtka', { itemId: 'i1', tnvedCode: '6201400000' })], live.lineAnswers).goods[0]).toEqual(
+      line('Kurtka', { itemId: 'i1', tnvedCode: '6201400000', quantity: 50 }),
+    );
+    await pressUndo(from(ctx, echo.id), chatId, live.echoes.at(-1)!.tag);
+    await tableEditsSettled();
+    expect(activeIntake(chatId)!.lineAnswers).toEqual([]);
+    expect(activeIntake(chatId)!.facts.goods?.[0]).toMatchObject({ tnvedCode: '6201400000', quantity: 300 });
+  });
+
+  it('an orphan answer never takes the line a later correction holds (spec-10, adv-6)', () => {
+    const placed = placeByName(
+      [line('Kurtka'), line('Kurtka')],
+      [
+        { index: -1, name: 'Kurtka', patch: { quantity: 200 } },
+        { index: 0, name: 'Kurtka', patch: { quantity: 100, weightKg: 150 } },
+      ],
+    );
+    expect(placed.goods).toEqual([line('Kurtka', { quantity: 100, weightKg: 150 }), line('Kurtka', { quantity: 200 })]);
+    expect(placed.entries.map((e) => e.index)).toEqual([1, 0]);
+  });
+
+  it('a correction keeps its answer’s place in the list', async () => {
+    const { chatId } = collection({ stage: 'review', facts: { weightKg: 3500, volumeM3: 12, goods: [line('Kurtka'), line('Kurtka')] } });
+    const ctx = fakeCtx();
+    await say(ctx, chatId, '1: 100 dona');
+    await say(ctx, chatId, '2: 200 dona');
+    await say(ctx, chatId, '1: 150 kg');
+    expect(activeIntake(chatId)!.lineAnswers.map((e) => [e.index, e.patch])).toEqual([
+      [0, { quantity: 100, weightKg: 150 }],
+      [1, { quantity: 200 }],
+    ]);
+  });
+
+  it('seventy-five rows answered in one message: the echo fits in 4096, and the table is edited (adv-3)', async () => {
+    const names = Array.from({ length: 75 }, (_v, i) => `Tovar ${String(i + 1).padStart(2, '0')} uzun nomli mahsulot qatori`);
+    const { chatId } = collection({ stage: 'review', facts: { weightKg: 3500, volumeM3: 12, goods: names.map((n) => line(n)) } });
+    const ctx = fakeCtx();
+    await drawn(ctx, chatId);
+    await say(ctx, chatId, names.map((_n, i) => `${i + 1}: 5 dona`).join('\n'));
+    const echo = ctx.replies.at(-1)!;
+    expect(echo.text.length).toBeLessThanOrEqual(4096);
+    expect(echo.text).toMatch(/… va yana \d+ ta qator/u);
+    expect(echo.text).toContain('✅ Hamma qator to‘liq — «✅ Tasdiqlash» ni bosing.');
+    expect(activeIntake(chatId)!.lineAnswers).toHaveLength(75);
+    expect(ctx.edits.at(-1)!.text).toContain('✅ Ma’lumot to‘liq. Tasdiqlaysizmi?');
+  });
+
+  it('an echo Telegram refuses still leaves a truthful table — its edit went out first (adv-3)', async () => {
+    const { chatId } = collection({ stage: 'review', facts: { weightKg: 3500, volumeM3: 12, goods: [line('Kurtka', { quantity: 3 }), line('Sumka')] } });
+    const ctx = fakeCtx();
+    const table = await drawn(ctx, chatId);
+    const refusing = Object.assign(Object.create(ctx) as Ctx, {
+      reply: async () => {
+        throw Object.assign(new Error('400'), { description: 'Bad Request: message is too long' });
+      },
+    });
+    await expect(routeCollectorText(refusing, chatId, activeIntake(chatId)!, '2: 50 dona', typed())).rejects.toThrow('400');
+    await tableEditsSettled();
+    expect(activeIntake(chatId)!.facts.goods?.[1]).toEqual(line('Sumka', { quantity: 50 }));
+    expect(ctx.edits.at(-1)).toMatchObject({ id: table.id });
+    expect(ctx.edits.at(-1)!.text).toContain('✅ 2. Sumka — 50 dona');
+  });
+
+  it('one message’s buttons for two rows: both picks write, and a row’s second button is spent (adv-7)', async () => {
+    const { chatId } = collection({ stage: 'review', facts: { weightKg: 3500, volumeM3: 12, goods: [line('Kurtka'), line('Sumka')] } });
+    const ctx = fakeCtx();
+    await say(ctx, chatId, '1: 50\n2: 70');
+    const asked = ctx.replies.at(-1)!;
+    expect(buttons(asked).map((b) => b.text)).toEqual(['1-qator: 50 dona', '1-qator: 50 kg', '2-qator: 70 dona', '2-qator: 70 kg']);
+    await pressPick(from(ctx, asked.id), chatId, activeIntake(chatId)!, 0);
+    await tableEditsSettled();
+    await pressPick(from(ctx, asked.id), chatId, activeIntake(chatId)!, 3);
+    await tableEditsSettled();
+    expect(activeIntake(chatId)!.facts.goods).toEqual([line('Kurtka', { quantity: 50 }), line('Sumka', { weightKg: 70 })]);
+    await pressPick(from(ctx, asked.id), chatId, activeIntake(chatId)!, 1);
+    expect(ctx.texts().at(-1)).toBe('Bu tugma eskirgan.');
+    expect(activeIntake(chatId)!.facts.goods?.[0]).toEqual(line('Kurtka', { quantity: 50 }));
+  });
+
+  it('a row whose buttons do not fit is asked in words, never dropped (adv-8)', async () => {
+    const { chatId } = collection({ stage: 'review', facts: { weightKg: 3500, volumeM3: 12, goods: [line('Kurtka'), line('Sumka'), line('Shim')] } });
+    const ctx = fakeCtx();
+    await say(ctx, chatId, '1: 1,200\n2: 50\n3: 70');
+    const echo = ctx.replies.at(-1)!;
+    expect(echo.text).toContain('1-qator: 1.2 mi yoki 1200 mi?');
+    expect(echo.text).toContain('2-qator: 50 — qaysi birlikda?');
+    expect(echo.text).toContain('⚠️ 3-qator: 70 — qaysi birlikda? Yozib javob bering, masalan «3: 70 kg».');
+    expect(buttons(echo)).toHaveLength(6);
+  });
+
+  it('the reading landed between the parse and the write: nothing written over it, the words kept (adv-12)', async () => {
+    const { chatId } = collection({ stage: 'review', facts: { weightKg: 3500, volumeM3: 12, goods: [line('Kurtka', { quantity: 3 }), line('Sumka')] } });
+    const ctx = fakeCtx();
+    await drawn(ctx, chatId);
+    const read = activeIntake(chatId)!;
+    const reading = [line('Shim'), line('Kurtka', { quantity: 3 }), line('Sumka')];
+    updateIntake(chatId, { facts: { weightKg: 3500, volumeM3: 12, goods: reading } });
+    await routeCollectorText(ctx, chatId, read, '2: 50 dona', typed());
+    await tableEditsSettled();
+    expect(ctx.texts().at(-1)).toBe(TABLE_MOVED);
+    const live = activeIntake(chatId)!;
+    expect(live.facts.goods).toEqual(reading);
+    expect(live.lineAnswers).toEqual([]);
+    expect(live.answers).toEqual(['2-qator: 2: 50 dona']);
+  });
+
+  it('while the addition is being written, a pick and a conflict button write nothing (adv-13)', async () => {
+    const { chatId } = conflicted();
+    const ctx = fakeCtx();
+    const table = await drawn(ctx, chatId);
+    updateIntake(chatId, { stage: 'review' });
+    await say(ctx, chatId, '1: 50');
+    const asked = ctx.replies.at(-1)!;
+    updateIntake(chatId, { saving: { token: 't', at: Date.now(), jobId: null } });
+    await pressPick(from(ctx, asked.id), chatId, activeIntake(chatId)!, 0);
+    expect(ctx.texts().at(-1)).toBe('⏳ Qo‘shimcha yozilmoqda — natija kelgach yozing.');
+    await pressConflict(from(ctx, table.id), chatId, activeIntake(chatId)!, 0, 'add');
+    expect(ctx.texts().at(-1)).toBe('⏳ Qo‘shimcha yozilmoqda — natija kelgach yozing.');
+    const live = activeIntake(chatId)!;
+    expect(live.facts.goods?.[0]?.quantity).toBe(300);
+    expect(live.conflicts[0]!.choice).toBeNull();
+    updateIntake(chatId, { saving: null });
+  });
+
+  it('a 429 on the table edit sends no second table, and the next answer draws it again (adv-16)', async () => {
+    const { chatId } = collection({ stage: 'review', facts: { weightKg: 3500, volumeM3: 12, goods: [line('Kurtka', { quantity: 3 })] } });
+    const ctx = fakeCtx({ editError: Object.assign(new Error('429'), { description: 'Too Many Requests: retry after 30' }) });
+    await drawn(ctx, chatId);
+    updateIntake(chatId, { tableHash: null }, { quiet: true });
+    editTableSoon(ctx, chatId);
+    await tableEditsSettled();
+    expect(ctx.replies).toHaveLength(1);
+    expect(activeIntake(chatId)!.tableHash).toBeNull();
+  });
+
+  it('«;» alone is asked, never an empty message (adv-17)', async () => {
+    const { chatId } = collection({ stage: 'review', facts: { weightKg: 3500, volumeM3: 12, goods: [line('Kurtka')] } });
+    const ctx = fakeCtx();
+    await say(ctx, chatId, ';');
+    expect(ctx.texts().at(-1)).toBe('⚠️ Qaysi qatorga? Raqami bilan yozing: «3: 50 dona». Umumiy og‘irlik bo‘lsa: «jami 3500 kg».');
+  });
+
+  it('an answer while collecting again points at «Bo‘ldi», never at a «Tasdiqlash» the guard refuses (adv-18)', async () => {
+    const { chatId } = collection({ stage: 'material', material: ['x'], facts: { weightKg: 3500, volumeM3: 12, goods: [line('Kurtka'), line('Shim')] } });
+    const ctx = fakeCtx();
+    await say(ctx, chatId, '1: 50 dona');
+    const echo = ctx.replies.at(-1)!;
+    expect(echo.text).toBe('✅ 1-qator «Kurtka»: 50 dona yozildi\nYangi ma’lumot hali o‘qilmagan — avval «Bo‘ldi» ni bosing.');
+    expect(buttons(echo).map((b) => b.callback_data)).toEqual([`cu:${activeIntake(chatId)!.echoes[0]!.tag}`]);
+  });
+});

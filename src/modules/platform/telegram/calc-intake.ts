@@ -256,8 +256,10 @@ export interface IntakeState {
    * and the row it answers (`target`) are read back from here, and only from
    * the message that drew them (`offersMessageId`), so a stale or forged
    * press can only pick among what THAT answer offered (regression-23).
+   * `taken`: its row was answered by a pick — the same message's buttons for
+   * OTHER rows stay live (review adv-7), its own are «eskirgan».
    */
-  offers: { unit: import('../../wms/calc/needs').NeedUnit; value: number; target: TableTarget }[];
+  offers: { unit: import('../../wms/calc/needs').NeedUnit; value: number; target: TableTarget; taken?: boolean }[];
   /**
    * Totals the typed material states two ways, or states against the
    * seller's own answer (review CONC-2) — the summary asks them.
@@ -582,18 +584,38 @@ export function placeByName(
   const out = goods.map((g) => ({ ...g }));
   const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
   const taken = new Set<number>();
-  const placed = entries.map((entry) => {
+  const placed: IntakeState['lineAnswers'] = [...entries];
+  // An answer the last reading placed somewhere claims before one it placed
+  // nowhere (-1): an orphan's name fallback took the line a later correction
+  // held by its index, and the seller's fresh figure moved to the other
+  // «Kurtka» (review spec-10, adv-6). Within each, the list's order.
+  const order = entries.map((_e, i) => i).sort((a, b) => Number(entries[a]!.index < 0) - Number(entries[b]!.index < 0));
+  for (const n of order) {
+    const entry = entries[n]!;
     const free = (i: number) => i >= 0 && i < out.length && !taken.has(i);
     let at = entry.itemId ? out.findIndex((g, i) => free(i) && g.itemId === entry.itemId) : -1;
     if (at < 0 && free(entry.index) && sameName(out[entry.index]!.name, entry.name)) at = entry.index;
     if (at < 0) at = out.findIndex((g, i) => free(i) && sameName(g.name, entry.name));
     if (at >= 0) {
       taken.add(at);
-      out[at] = { ...out[at]!, ...entry.patch };
+      out[at] = { ...out[at]!, ...rowPatchOf(out[at]!, entry.patch) };
     }
-    return { ...entry, index: at };
-  });
+    placed[n] = { ...entry, index: at };
+  }
   return { goods: out, entries: placed };
+}
+
+/**
+ * What an answer puts on its row. A stored row's code is the VED's: a
+ * different code the seller typed rides in the answer, for the VED to be told
+ * (`codesKept`, §9.5), and is never drawn over the stored one — the echo said
+ * «yangi kod yozilmadi» (review adv-11). Pure.
+ */
+export function rowPatchOf(row: CalcGoodsFact, patch: Partial<CalcGoodsFact>): Partial<CalcGoodsFact> {
+  if (!row.itemId || !row.tnvedCode || !patch.tnvedCode || patch.tnvedCode === row.tnvedCode) return patch;
+  const rest = { ...patch };
+  delete rest.tnvedCode;
+  return rest;
 }
 
 /**

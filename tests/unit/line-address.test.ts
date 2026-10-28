@@ -302,3 +302,67 @@ describe('the table the parser reads is the table the seller reads', () => {
     expect(one('3500', ref).totals?.weightKg).toBe(3500);
   });
 });
+
+describe('the review’s answers the parser refused (spec-3, -5, -11, adv-1, -2, -14)', () => {
+  it('a figure grouped by thousands is ONE figure — «3 500 kg» is the brutto, never «3-qatorgami yoki 3 tami?»', () => {
+    const brutto = table(FIVE, [{ line: 2 }, { totals: 'weightKg' }]);
+    const seg = one('3 500 kg', brutto);
+    expect(seg.refused).toBeNull();
+    expect(seg.totals?.weightKg).toBe(3500);
+    // A row's count the same way: the only open dona row takes it whole.
+    const sumka = table(FIVE, [{ line: 3 }]);
+    expect(figures(one('1 200 dona', sumka))?.quantity).toBe(1200);
+    // «12 000» on a fifteen-row table: 12 is a row number there, and still one figure.
+    const fifteen = table(Array.from({ length: 15 }, (_v, i) => row(i + 1, `Tovar${i + 1}`, i === 2 ? ['dona'] : [])));
+    const big = one('12 000 dona', fifteen);
+    expect(big.at).toEqual({ line: 3 });
+    expect(figures(big)?.quantity).toBe(12000);
+    // Two separate numbers are still asked.
+    expect(one('3 50 dona').refused?.reason).toBe('address_unclear');
+  });
+
+  it('«Sumka 1 200 dona» and «3: Sumka 1 200 dona» name Sumka — the «1» is the figure’s, not a model number', () => {
+    for (const text of ['Sumka 1 200 dona', '3: Sumka 1 200 dona']) {
+      const seg = one(text);
+      expect(seg.refused, text).toBeNull();
+      expect(seg.at, text).toEqual({ line: 3 });
+      expect(figures(seg)?.quantity, text).toBe(1200);
+    }
+    // The model rule stays: a two-digit run after a name is the model's.
+    const phones = table([row(1, 'iPhone 15', ['dona']), row(2, 'iPhone 14', ['dona'])]);
+    expect(one('iPhone 15 40 dona', phones).at).toEqual({ line: 1 });
+  });
+
+  it('a dash between the name and the figure is a separator, never a minus or a model number', () => {
+    for (const [text, line, q] of [
+      ['Shapka - 30 dona', 4, 30],
+      ['Sumka-50 dona', 3, 50],
+      ['3: Sumka - 50 dona', 3, 50],
+    ] as const) {
+      const seg = one(text);
+      expect(seg.refused, text).toBeNull();
+      expect(seg.at, text).toEqual({ line });
+      expect(figures(seg)?.quantity, text).toBe(q);
+    }
+  });
+
+  it('«300 dona 150 kg» is a row’s figures — a total takes only kilos and cubes', () => {
+    const ref = table(FIVE, [{ line: 3 }, { totals: 'weightKg' }]);
+    const seg = one('300 dona 150 kg', ref);
+    expect(seg.at).toEqual({ line: 3 });
+    expect(figures(seg)).toMatchObject({ quantity: 300, weightKg: 150 });
+    // Kilos and cubes together are still the totals.
+    const totals = table(FIVE, [{ totals: 'weightKg' }, { totals: 'volumeM3' }]);
+    expect(one('12 kub 3500 kg', totals).totals).toMatchObject({ weightKg: 3500, volumeM3: 12 });
+  });
+
+  it('«dvigatel» alone is a goods noun; «dvigatel hajmi» is the sm³ field', () => {
+    const rows = [row(1, 'Kurtka', ['dona']), row(2, 'Dvigatel 1.5L', ['dona']), row(3, 'Avtomobil Chevrolet', ['sm3'])];
+    const ref = table(rows);
+    expect(one('dvigatel 5 dona', ref).at).toEqual({ line: 2 });
+    expect(one('1: dvigatel 5 dona', ref).refused?.reason).toBe('name_mismatch');
+    const engine = one('3: dvigatel hajmi 1500 sm3', ref);
+    expect(engine.refused).toBeNull();
+    expect(figures(engine)).toMatchObject({ measureUnit: 'sm3', measureQty: 1500 });
+  });
+});

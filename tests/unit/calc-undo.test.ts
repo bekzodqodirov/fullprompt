@@ -21,7 +21,7 @@ vi.mock('@/modules/platform/jobs/boss', async (importOriginal) =>
   (await import('../fixtures/calc-read-drive')).bossForReading(await importOriginal()),
 );
 
-import { activeIntake, endIntake, startIntake, updateIntake, type IntakeState } from '@/modules/platform/telegram/calc-intake';
+import { activeIntake, endIntake, placeByName, startIntake, updateIntake, type IntakeState } from '@/modules/platform/telegram/calc-intake';
 import {
   deliverNextStep,
   pressPick,
@@ -225,5 +225,58 @@ describe('↩️', () => {
     expect(ctx.edits.find((e) => e.id === echo.id)!.text).toBe('↩️ Bekor qilindi: umumiy brutto — 4200 kg');
     // The table asks it again, with both figures.
     expect(ctx.edits.at(-1)!.text).toContain('⚠️ Siz 3500 kg deb javob bergansiz, keyin yuborilgan ma’lumotda 4200 kg — qaysi biri?');
+  });
+});
+
+describe('↩️ — the review’s fixes', () => {
+  it('an answer the last reading placed nowhere goes back to the OLDER answer’s figure, and the echo keeps its ↩️ head (spec-4)', async () => {
+    const { chatId } = collection({ stage: 'review', facts: { weightKg: 3500, volumeM3: 12, goods: [line('Sumka'), line('Kurtka')] } });
+    const ctx = fakeCtx();
+    await deliverNextStep(ctx, chatId, activeIntake(chatId)!);
+    await say(ctx, chatId, '1: 50 dona');
+    const second = await say(ctx, chatId, '1: 60 dona');
+    // A re-read that drops Sumka: placeByName's write-back puts its answer at -1.
+    const s0 = activeIntake(chatId)!;
+    const placed = placeByName([line('Kurtka')], s0.lineAnswers);
+    updateIntake(chatId, { facts: { ...s0.facts, goods: placed.goods }, lineAnswers: placed.entries });
+    await undo(ctx, chatId, second, tagOf(chatId, 1));
+    expect(activeIntake(chatId)!.lineAnswers).toEqual([{ index: -1, name: 'Sumka', patch: { quantity: 50 }, itemId: null }]);
+    expect(ctx.edits.find((e) => e.id === second.id)!.text).toBe(
+      '↩️ Bekor qilindi: «Sumka» — 60 dona\n⚠️ «Sumka» oxirgi o‘qishda topilmadi — javobi o‘chirildi.',
+    );
+    // Sumka back on the next reading carries the 50 nobody took back.
+    expect(placeByName([line('Sumka'), line('Kurtka')], activeIntake(chatId)!.lineAnswers).goods[0]).toEqual(line('Sumka', { quantity: 50 }));
+  });
+
+  it('undoing «jami 12 kub» keeps a LATER «jami 3500 kg» — in the answer, and through the next reading (adv-4)', async () => {
+    const { chatId } = collection({ stage: 'review', material: ['Kurtka 3 dona'], facts: { goods: [line('Kurtka', { quantity: 3 })] } });
+    const ctx = fakeCtx();
+    const cube = await say(ctx, chatId, 'jami 12 kub');
+    await say(ctx, chatId, 'jami 3500 kg');
+    await undo(ctx, chatId, cube, tagOf(chatId, 0));
+    const live = activeIntake(chatId)!;
+    expect(live.totalsAnswer).toMatchObject({ weightKg: 3500, volumeM3: null });
+    expect(live.facts.weightKg).toBe(3500);
+    expect(live.facts.volumeM3 ?? null).toBeNull();
+    expect(ctx.edits.find((e) => e.id === cube.id)!.text).toBe('↩️ Bekor qilindi: umumiy hajm — 12 m³');
+    await handleCalcCallback(ctx, chatId, 'more');
+    model.analyze.mockResolvedValueOnce(reads({ goods: [line('Kurtka', { quantity: 3 })] }));
+    await pressDone(ctx, chatId);
+    expect(activeIntake(chatId)!.facts.weightKg).toBe(3500);
+  });
+
+  it('↩️ while a reading runs is refused in words — the reading carries the answer it started with (adv-5)', async () => {
+    const { chatId } = collection({ stage: 'review', facts: { weightKg: 3500, volumeM3: 12, goods: [line('Kurtka', { quantity: 3 }), line('Sumka')] } });
+    const ctx = fakeCtx();
+    const echo = await say(ctx, chatId, '2: 50 dona');
+    updateIntake(chatId, { analysing: 'reading-token' });
+    await pressUndo(from(ctx, echo.id), chatId, tagOf(chatId, 0));
+    await tableEditsSettled();
+    expect(ctx.toasts.at(-1)).toBe('⏳ Tahlil davom etmoqda — natijani kuting.');
+    expect(ctx.texts().at(-1)).toBe('⏳ Tahlil davom etmoqda — natijani kuting.');
+    const live = activeIntake(chatId)!;
+    expect(live.echoes[0]!.undone).toBe(false);
+    expect(live.lineAnswers).toEqual([{ index: 1, name: 'Sumka', patch: { quantity: 50 }, itemId: null }]);
+    updateIntake(chatId, { analysing: null });
   });
 });
