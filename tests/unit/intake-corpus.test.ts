@@ -97,6 +97,7 @@ import {
   intakeClientSummary,
   pickGoods,
   placeByName,
+  sameGoodsLine,
   startIntake,
   updateIntake,
   type IntakeState,
@@ -131,6 +132,7 @@ import {
   readGoodsFileCases,
   readGoodsLinesCases,
   resolveLineDoneCases,
+  sameGoodsLineCases,
   scenarioCases,
   sourceRows,
   statesGoodsCases,
@@ -426,6 +428,12 @@ describe('pickGoods', () => {
         `${JSON.stringify(want)} kept or named: ${JSON.stringify(picked)}`,
       ).toBe(true);
     }
+  });
+});
+
+describe('sameGoodsLine (the add door’s top-up — a stored row, or a new line)', () => {
+  each(sameGoodsLineCases)(title, (c) => {
+    expect(sameGoodsLine(c.input.kept as never, c.input.read as never)).toBe(c.expected);
   });
 });
 

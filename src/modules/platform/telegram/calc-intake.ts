@@ -1154,6 +1154,28 @@ export interface PickedGoods {
 }
 
 /**
+ * Is the line READ the line KEPT, read again — `pickGoods`' «already
+ * carries» rule, one home for it (docs/SAKKIZ-R3.md §9.4): the same WHOLE
+ * name, or a name one answers to that is the other's (`namesMeet`) with
+ * figures that agree (`figuresAgree`). The wide match alone threw factory B's
+ * «Kurtka (qora)» 200 away against factory A's «Kurtka» 300 — two factories,
+ * one generic name, two lines. The add door asks it of a stored row and a
+ * top-up's line: «Куртка женская (Ladies jacket)» against a stored «Ladies
+ * jacket» is that row, never a second one priced twice. Pure.
+ */
+export function sameGoodsLine(kept: GoodsList[number], read: GoodsList[number]): boolean {
+  const keptNames = goodsNameKeys(kept.name);
+  const readNames = goodsNameKeys(read.name);
+  if (!keptNames.whole || !readNames.whole) return false;
+  return sameLine(kept, keptNames, read, readNames);
+}
+
+/** `sameGoodsLine` over names already keyed — `pickGoods` keys its invoice once. */
+function sameLine(kept: GoodsList[number], keptNames: NameKeys, read: GoodsList[number], readNames: NameKeys): boolean {
+  return keptNames.whole === readNames.whole || (namesMeet(readNames, keptNames) && figuresAgree(read, kept));
+}
+
+/**
  * Which goods list a collection lands, in the order of how EXACT each source
  * is about the lines. Pure, so the order is a test and not a reading of
  * `analyzeCollected`.
@@ -1206,7 +1228,7 @@ export function pickGoods(input: {
   if (input.invoice.length > 0) {
     const invoice = input.invoice.map((row) => ({ row, names: goodsNameKeys(row.name) }));
     const carried = (g: GoodsList[number], names: NameKeys) =>
-      invoice.some((inv) => inv.names.whole === names.whole || (namesMeet(names, inv.names) && figuresAgree(g, inv.row)));
+      invoice.some((inv) => sameLine(inv.row, inv.names, g, names));
     if (input.aiGoods !== 'add') {
       if (input.aiGoods !== null || !input.model?.length) return { goods: input.invoice, sameAsInvoice: [] };
       const read = input.model.map((g) => goodsNameKeys(g.name));
@@ -1371,6 +1393,9 @@ export async function analyzeCollected(
   // (review PF-1): never where the bot asks the brutto.
   const manual = parseManualFacts(text, state.section);
   const invoice = state.invoiceGoods ?? [];
+  // The add door's kept rows (docs/SAKKIZ-R3.md §9.4): a stored request's
+  // (`amend`), or a returned one carried into a new collection (`seed`).
+  const kept: readonly GoodsList[number][] | null = state.amend?.items ?? state.seed ?? null;
 
   // The day's budget gates the READING too — it is the most expensive call
   // on this path (Opus, with photographs). Over the cap the manual parser
@@ -1406,6 +1431,8 @@ export async function analyzeCollected(
           // Every name: `analyzeIntake` shows what fits its character budget
           // and counts the rest.
           knownGoods: state.aiGoods === 'add' ? invoice.map((g) => g.name) : undefined,
+          // …and the rows already on the request, so the model lists only NEW goods.
+          ...(kept ? { requestGoods: kept.map((g) => g.name) } : {}),
           // Absent: the reader's own leash (`INTAKE_TIMEOUT_MS`).
           ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
         }).catch((err: unknown): Outcome => {
@@ -1436,6 +1463,15 @@ export async function analyzeCollected(
     typedLeftOutNote(picked.sameAsInvoice),
     filesMissingNote(files.missing),
   ].filter((n): n is string => n !== null);
+  if (kept) {
+    const { conflictOf } = await import('../../wms/calc/amend');
+    const { volumeIsLinesSum } = await import('../../wms/calc/line-totals');
+    return addReading(
+      state,
+      { kept, picked, manual, ai, outcome, notes, text },
+      { conflictOf, volumeIsLinesSum, parseManualFacts, totalWeightFrom },
+    );
+  }
   // A route the seller answered in the table goes above everything a reading
   // finds — unless the material AFTER the answer names another city, read
   // from that SLICE alone (`readRoute` has no offset form), so the very city
@@ -1496,6 +1532,137 @@ export async function analyzeCollected(
     // (2.9 c) — for the job's bill.
     answered: outcome.answered ?? [],
   };
+}
+
+/**
+ * The add door's reading (docs/SAKKIZ-R3.md §9.4) — an add collection's, and a
+ * returned request's seeded one. The rows already on the request are KEPT;
+ * the reading only adds:
+ *  - a line the reading finds that IS a kept row read again (`sameGoodsLine`:
+ *    the same whole name, or a name it answers to with figures that agree) is
+ *    that row, never a second one priced twice — and when it states a figure
+ *    the stored row has otherwise or not at all, it is the row's CONFLICT
+ *    (law-money-5): asked «qo‘shilsin / o‘rniga / VED hal qilsin», never
+ *    written on its own, and the VED's when unanswered. A wide match whose
+ *    figures disagree is no match: another factory's line, a NEW line;
+ *  - totals and cities are NOT read from new material (§0.1(2)): a top-up's
+ *    packing list may state its own totals or the whole truck's, and nobody
+ *    can tell which. The stored ones stand, a table answer goes on top, and an
+ *    answer is still judged against what the NEW material states (CONC-2).
+ */
+function addReading(
+  state: IntakeState,
+  r: {
+    kept: readonly GoodsList[number][];
+    picked: PickedGoods;
+    manual: ReturnType<typeof import('../../wms/calc/intake-manual').parseManualFacts>;
+    ai: { facts: import('../../wms/calc/intake').CalcFacts; steps: string[] } | null;
+    outcome: { ok: boolean; failure?: import('../../wms/calc/intake').AiReadFailure; answered?: import('../../wms/calc/intake-ai').AnsweredUsage[] };
+    notes: string[];
+    text: string;
+  },
+  deps: AddReadingDeps,
+): IntakeState & { answered: import('../../wms/calc/intake-ai').AnsweredUsage[] } {
+  const { kept, picked, manual, ai, outcome, notes, text } = r;
+  const fresh: GoodsList = [];
+  const conflicts: IntakeState['conflicts'] = [];
+  for (const read of picked.goods) {
+    const match = kept.find((k) => sameGoodsLine(k, read));
+    if (!match) {
+      fresh.push(read);
+      continue;
+    }
+    // Only a STORED row can disagree with a re-read (a seeded collection's
+    // rows are plain lines, `pickGoods`' to judge).
+    if (!state.amend || !match.itemId) continue;
+    for (const c of deps.conflictOf(match, read)) {
+      if (conflicts.some((x) => x.itemId === match.itemId && x.field === c.field)) continue;
+      const before = state.conflicts.find((x) => x.itemId === match.itemId && x.field === c.field);
+      // A re-read REPLACES a conflict; an answer stands only while the read figure does.
+      conflicts.push({
+        itemId: match.itemId,
+        seq: match.seq ?? 0,
+        field: c.field,
+        unit: c.unit,
+        stored: c.stored,
+        read: c.read,
+        choice: before && before.read === c.read ? before.choice : null,
+      });
+    }
+  }
+  const amend = state.amend;
+  const sum = amend ? deps.volumeIsLinesSum(amend.volumeM3, amend.items) : false;
+  const stored = amend
+    ? { fromCity: amend.fromCity, toCity: amend.toCity, weightKg: amend.weightKg, volumeM3: sum ? null : amend.volumeM3 }
+    : {
+        fromCity: state.facts.fromCity ?? null,
+        toCity: state.facts.toCity ?? null,
+        weightKg: state.facts.weightKg ?? null,
+        volumeM3: state.facts.volumeM3 ?? null,
+      };
+  const routeAnswer = state.routeAnswer ?? null;
+  const routeSince =
+    routeAnswer && state.material.length > routeAnswer.at.material
+      ? deps.parseManualFacts(state.material.slice(routeAnswer.at.material).join('\n'), state.section)
+      : null;
+  const route = answeredRoute(routeAnswer, routeSince);
+  // A stored row's ✅ is the VED's word about its group, not a goods fact.
+  const keptRows: GoodsList = kept.map((k) => {
+    const row: GoodsList[number] & { confirmed?: boolean } = { ...k };
+    delete row.confirmed;
+    return row;
+  });
+  // The table's answers back on top by the ONE placement rule (§8.2.8,
+  // §9.4): a stored row's answer finds its row by item id first, never by
+  // position — and where each landed is what the collection keeps.
+  const placed = placeByName([...keptRows, ...fresh], state.lineAnswers);
+  const reading: IntakeState['facts'] = {
+    fromCity: route.fromCity ?? stored.fromCity,
+    toCity: route.toCity ?? stored.toCity,
+    weightKg: stored.weightKg,
+    volumeM3: stored.volumeM3,
+    // A stored row's weight is its own — never one copied from the brutto.
+    lineWeightsStated: true,
+    ...(amend ? { totalsStored: !sum } : {}),
+    goods: placed.goods,
+  };
+  // What the NEW material states, never the stored totals (they are no
+  // statement made after the answer): only it can doubt a table answer.
+  const said = deps.totalWeightFrom(state.section, manual, ai?.facts ?? null, false);
+  const at = state.totalsAnswer.at;
+  const since =
+    state.material.length > at.material
+      ? deps.parseManualFacts(text, state.section, {
+          from: state.material.slice(0, at.material).reduce((n, m) => n + m.length + 1, 0),
+        })
+      : { weightKg: null, volumeM3: null, ambiguous: [] };
+  const doubts = totalsDoubts(state.totalsAnswer, {
+    now: { material: state.material.length, files: state.fileCount },
+    since,
+    reading: { weightKg: said.weightKg ?? null, volumeM3: manual.volumeM3 ?? ai?.facts.volumeM3 ?? null },
+  });
+  const facts = factsWithAnswer(state.totalsAnswer, doubts, reading);
+  return {
+    ...state,
+    facts,
+    conflicts,
+    steps: ai?.steps ?? [],
+    notes,
+    aiUsed: Boolean(ai),
+    aiFailure: outcome.ok ? null : (outcome.failure ?? 'network'),
+    lineAnswers: placed.entries,
+    ambiguousTotals: doubts,
+    stage: 'review',
+    answered: outcome.answered ?? [],
+  };
+}
+
+/** What the add reading needs of wms — handed in, platform never imports wms statically. */
+interface AddReadingDeps {
+  conflictOf: typeof import('../../wms/calc/amend').conflictOf;
+  volumeIsLinesSum: typeof import('../../wms/calc/line-totals').volumeIsLinesSum;
+  parseManualFacts: typeof import('../../wms/calc/intake-manual').parseManualFacts;
+  totalWeightFrom: typeof import('../../wms/calc/intake-manual').totalWeightFrom;
 }
 
 /** Is this chat a member of staff who may use «Hisoblatish»? Everyone is

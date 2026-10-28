@@ -61117,5 +61117,168 @@
    "source": "C-r1 ND nit",
    "weight": "defect"
   }
+ ],
+ "sameGoodsLineCases": [
+  {
+   "id": "c2440",
+   "input": {
+    "kept": {
+     "name": "Ladies jacket",
+     "quantity": 300
+    },
+    "read": {
+     "name": "Куртка женская (Ladies jacket)",
+     "quantity": 300
+    }
+   },
+   "expected": true,
+   "said": "the stored row, not a new one",
+   "why": "The add branch keeps a stored row as that row: new material restating it is a top-up of the row (a conflict when its figure differs), never a second line priced twice; a different product of the same generic name is a NEW line (R3-C1, two factories).",
+   "source": "r3 P4 add door — re-check p4-10 (docs/SAKKIZ-R3.md §9.4)",
+   "weight": "defect"
+  },
+  {
+   "id": "c2441",
+   "input": {
+    "kept": {
+     "name": "Ladies jacket",
+     "quantity": 300
+    },
+    "read": {
+     "name": "Куртка женская (Ladies jacket)"
+    }
+   },
+   "expected": true,
+   "said": "the stored row — a reading with no figure does not disagree with one",
+   "why": "The add branch keeps a stored row as that row: new material restating it is a top-up of the row (a conflict when its figure differs), never a second line priced twice; a different product of the same generic name is a NEW line (R3-C1, two factories).",
+   "source": "r3 P4 add door — re-check p4-10 (docs/SAKKIZ-R3.md §9.4)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c2442",
+   "input": {
+    "kept": {
+     "name": "Kurtka",
+     "quantity": 300
+    },
+    "read": {
+     "name": "Kurtka (qora)",
+     "quantity": 200
+    }
+   },
+   "expected": false,
+   "said": "a NEW line (another factory's «Kurtka (qora)» is not the stored «Kurtka»)",
+   "why": "The add branch keeps a stored row as that row: new material restating it is a top-up of the row (a conflict when its figure differs), never a second line priced twice; a different product of the same generic name is a NEW line (R3-C1, two factories).",
+   "source": "r3 P4 add door — re-check p4-10 (docs/SAKKIZ-R3.md §9.4)",
+   "weight": "defect"
+  },
+  {
+   "id": "c2443",
+   "input": {
+    "kept": {
+     "name": "女士夹克",
+     "quantity": 300
+    },
+    "read": {
+     "name": "Куртка женская 女士夹克",
+     "quantity": 300
+    }
+   },
+   "expected": true,
+   "said": "the stored row — the Han half names it",
+   "why": "The add branch keeps a stored row as that row: new material restating it is a top-up of the row (a conflict when its figure differs), never a second line priced twice; a different product of the same generic name is a NEW line (R3-C1, two factories).",
+   "source": "r3 P4 add door — re-check p4-10 (docs/SAKKIZ-R3.md §9.4)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c2444",
+   "input": {
+    "kept": {
+     "name": "女士夹克 Ladies jacket",
+     "quantity": 300
+    },
+    "read": {
+     "name": "Ladies jacket",
+     "quantity": 300
+    }
+   },
+   "expected": true,
+   "said": "the stored row — one half of a bilingual stored name",
+   "why": "The add branch keeps a stored row as that row: new material restating it is a top-up of the row (a conflict when its figure differs), never a second line priced twice; a different product of the same generic name is a NEW line (R3-C1, two factories).",
+   "source": "r3 P4 add door — re-check p4-10 (docs/SAKKIZ-R3.md §9.4)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c2445",
+   "input": {
+    "kept": {
+     "name": "Куртка женская 女士夹克",
+     "quantity": 300
+    },
+    "read": {
+     "name": "女士夹克",
+     "quantity": 300
+    }
+   },
+   "expected": true,
+   "said": "the stored row — the Han half alone",
+   "why": "The add branch keeps a stored row as that row: new material restating it is a top-up of the row (a conflict when its figure differs), never a second line priced twice; a different product of the same generic name is a NEW line (R3-C1, two factories).",
+   "source": "r3 P4 add door — re-check p4-10 (docs/SAKKIZ-R3.md §9.4)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c2446",
+   "input": {
+    "kept": {
+     "name": "Kurtka",
+     "quantity": 300
+    },
+    "read": {
+     "name": "kurtka",
+     "quantity": 200
+    }
+   },
+   "expected": true,
+   "said": "the stored row (the same whole name) — the figure that differs is a conflict, asked",
+   "why": "The add branch keeps a stored row as that row: new material restating it is a top-up of the row (a conflict when its figure differs), never a second line priced twice; a different product of the same generic name is a NEW line (R3-C1, two factories).",
+   "source": "r3 P4 add door — re-check p4-10 (docs/SAKKIZ-R3.md §9.4)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c2447",
+   "input": {
+    "kept": {
+     "name": "Ladies jacket",
+     "quantity": 300
+    },
+    "read": {
+     "name": "Куртка женская (Ladies jacket)",
+     "quantity": 200
+    }
+   },
+   "expected": false,
+   "said": "not the stored row — a wide name match counts only when the figures agree (R3-C1)",
+   "why": "The add branch keeps a stored row as that row: new material restating it is a top-up of the row (a conflict when its figure differs), never a second line priced twice; a different product of the same generic name is a NEW line (R3-C1, two factories).",
+   "source": "r3 P4 add door — re-check p4-10 (docs/SAKKIZ-R3.md §9.4)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c2448",
+   "input": {
+    "kept": {
+     "name": "Sumka",
+     "quantity": 10
+    },
+    "read": {
+     "name": "Krossovka",
+     "quantity": 10
+    }
+   },
+   "expected": false,
+   "said": "a NEW line — the same figure does not make another product the same",
+   "why": "The add branch keeps a stored row as that row: new material restating it is a top-up of the row (a conflict when its figure differs), never a second line priced twice; a different product of the same generic name is a NEW line (R3-C1, two factories).",
+   "source": "r3 P4 add door — re-check p4-10 (docs/SAKKIZ-R3.md §9.4)",
+   "weight": "pinned"
+  }
  ]
 }
