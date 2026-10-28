@@ -1062,4 +1062,15 @@ the cargo starts. The anchors are each address fact's own Chinese pieces — the
 pieces another fact or the GS reminder shares dropped, generic forwarder words filtered, a street piece kept at four
 characters — plus its phones and its house numbers, which count beside a street word in any script. A warehouse he
 adds on the page is anchored by what it says (`isReceivingAddressFact`); a fact that names the flight is not. Bare
-English «air» is no road («air fryer»), and «kargo» is the truck's unless it is «avia kargo».
+English «air» is no road («air fryer»).
+
+**Reviewed a third time (DECISIONS #1484).** The road is a road CHOSEN, never one named: `roadChoiceIn` reads a road
+word only in a form that picks it («avia bilan», «mashinada», «fura», «oddiy kargo», «машиной», «by truck»), never the
+goods («tikuv mashinasi», «avtozapchast», «aviator») or the company (a bare «kargo»), and a refusal only when it is
+attached to its road word («aviada emas», «avia qimmat ekan», not «… qimmat emas»). Our priced line is read at its
+price (`pricedRoadOf`). `chatRoadOf` takes this run's tools, then the newest evidence — a customer's choice, our
+priced line, the approved quote — and the chat's copy of the approved quote (its outbox text) is that quote, with its
+stored road. The card names the customer's new shipment and never the warehouse he sends to; «where is it arriving»
+and an address he gives ask nothing. The anchors carry no generic address words, four-character pieces only of a
+street, house numbers only before 号/栋 and beside a street word; two facts for one warehouse keep their street; a
+fact is the flight's when it chooses the flight alone or names an airport.

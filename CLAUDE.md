@@ -2963,7 +2963,7 @@ CN destination is inland (no hub test), ONE arrived column (`columnOf` splits on
 filter hides everything bound for China (`routeFilterOf` = a `kg`/`kz` leg; a map walk over every pair proves no
 road into China has one, and refuses an unclassed new map code).
 
-**Round — AI sotuvchi, phase 1 (2026-10-24; DECISIONS #1463-#1483 — numbered past the open
+**Round — AI sotuvchi, phase 1 (2026-10-24; DECISIONS #1463-#1484 — numbered past the open
 `telegram-customs-ai-issues` branch's #1455-#1462; migration 0136 `ai_sotuvchi` — ledger must reach 137; spec
 `docs/AI-SOTUVCHI.md` §17 + §17.14).** His «Telegram businessdagi bot emas mening shaxsiy account seansimdan
 ishlatsin ai va ban havfini minimum qilsin». SHADOW only: the listener (`scripts/tg-listen.ts`, the one process that
@@ -3015,8 +3015,16 @@ named the truck in the goods, a flight quoted by us left the guard off, «air fr
 asks him; the card names where the cargo STARTS. Anchors are the facts' own Chinese pieces with the admin chain cut,
 pieces two facts or the GS reminder share dropped, generic forwarder words filtered, plus phones and house numbers
 beside a street word in any script; an owner-added warehouse fact counts by what it says (`isReceivingAddressFact`),
-a fact naming the flight does not. Bare «air» is no road any more; «kargo» is the truck's unless «avia kargo». 24 red
-proofs; two fixtures stayed green first.
+a fact naming the flight does not. Bare «air» is no road any more. 24 red proofs; two fixtures stayed green first.
+**And reviewed a third time (#1484)**: road-shaped WORDS still decided — the goods («Tikuv mashinalari»), a bare
+«kargo» (the company — it also ended the rail rule), negations anywhere in the clause, our quote's last statement —
+and the approved quote's own echo always outranked its stored road (`at` = createdAt, the send is later). Now
+`roadChoiceIn` (numbers.ts) reads only a road CHOSEN, refusals attached to the road word; `pricedRoadOf` reads our
+priced line at its money figures; `chatRoadOf` = tools, then the NEWEST evidence, the echo recognised by
+`LastQuote.text` (the outbox body). The card's cargo is the new shipment; arrival questions and given addresses ask
+nothing. Anchors: `GENERIC_CHARS` = what every Chinese address is made of, 4-char pieces only of a street, shared
+street pieces kept (a warehouse typed twice no longer cancels itself), house numbers only before 号/栋 and only beside a
+street word, a flight fact = chooses the flight alone or names an airport. 22 red proofs.
 
 **Latest migration: 0136** (`ai_sotuvchi`, `when` …115; ledger must reach **137**). Before
 it: 0135 (`load_mode`, `when` …114). Before

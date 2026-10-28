@@ -4844,3 +4844,40 @@ string edit; two stayed GREEN first, both fixtures: the avia fact under test car
 clause was never asked, and the week-old quote was always outranked by a newer one. STATED: an answer he types
 straight into Telegram with no road word leaves no quote behind (only an approved draft does); reading a refusal is
 a word list, not a parse; a customer whose name is a form of address is not masked (#1480).
+
+1484. **The road a person CHOSE and the price we gave — the third review.** #1483 was reviewed as built and all
+fifteen findings survived both refuters. #1483 still read the road from road-shaped WORDS: «Tikuv mashinalarini
+qayerga yuboray?» chose the truck by naming the goods, a bare «kargo» — the COMPANY («kargongiz», «kargo manzilini
+tashlang», «Kargo narxini ayting») — was a road word, a negation anywhere in the clause refused the road («Avia qimmat
+emas, yuboraman» read as turning the flight down), and our own priced line was read by its LAST statement, so an avia
+quote ending with the seed's battery sentence («… faqat avto bilan ketadi») read as the truck. The deepest one was
+in the ordering: `lastQuote.at` is the draft's createdAt and its own message is always sent after it, so the approved
+quote's ECHO always outranked the very road it stored. And with no quote yet, «Guanchjoudan avia bilan yuk
+yubormoqchiman» → «30 kg. Manzil qayerga?» lost the guard that D4 had given it — a regression. **Now the road is
+chosen, not named** (numbers.ts): `roadChoiceIn` reads a road only in a form that picks it («avia bilan», «aviada»,
+«mashinada», «fura», «avto bilan», «oddiy kargo», «машиной», «by truck», «空运»), never the goods («tikuv mashinasi»,
+«avtozapchast», «samolyot o'yinchoq», «aviator», «air fryer»); a refusal must be attached to its road word («aviada
+emas», «avia kerak emas», «avia qimmat ekan» but not «… qimmat emas», «mashinada uzoq ekan», «не авиа», «aviasiz»,
+«no air freight»); and a statement naming both follows the one the sending verb comes after («Fura 20 kun ekan, avia
+bilan yuboramiz»). `pricedRoadOf` reads OUR priced line at each money figure's clause, then its sentence, and a line
+priced by the cube with no road word is the truck's. `chatRoadOf` = this run's tools first, then the NEWEST piece of
+evidence: a road the customer chose in any line, a road our priced line quoted, or the approved quote — and a chat
+line whose text is the quote's sent text (`LastQuote.text`, the outbox row's body, else the draft's) IS that quote,
+with its stored road. A priced line naming no road is no evidence, so what came before it stands: the flight's
+address stays his when in doubt (stated: a hand-typed truck price with no road word after a week-old avia quote is
+held as the flight's, a false block he answers himself). `MODE_WORDS` lost the bare «kargo» (it had also ended the
+rail rule, so a rail chat's truck price passed) and «aviator». **The card names the new shipment**: the approved
+quote's cargo only while the customer has told no weight since, the newest place told, never a statement about our
+warehouse («Ivu omboringizga yuborsam bo'ladimi?» named Yiwu as the origin). **«Where do I send it»** is refused for
+an address he GIVES («Manzil: Andijon, …») and for where the cargo arrives («Yuk qayerga keladi?», «Куда
+доставите?», an Uzbek city) unless a sending verb stands beside it. **The anchors** (policy.ts): `GENERIC_CHARS`
+carries what every Chinese address is made of (街道, 社区, 路, 号, 交叉口, 方向, 米左右, 工业, 提货调车…), so a piece
+needs two characters of its own in five, and a four-character piece must be a street with three («荷花南街», never
+«稠江街道» — the whole subdistrict — nor «霍尔果斯», the city); a street piece two facts share stays ours, because two
+facts for one warehouse cancelled each other's street and the re-typed Guangzhou passed; a fact's house number is
+three or four digits before 号/栋 (Horgos's «168米» is a distance) and counts in a reply only within thirty characters
+of a street word (no more «дорого», «by road» or a date's «28号»); and a fact is the FLIGHT's only when it chooses the
+flight alone or names an airport, so a truck warehouse he annotates «avia yuklar bu yerga emas» stays guarded. 22 red
+proofs by string edit; one fixture (the old truck quote) had to become the echo it is in life. STATED, not built: the
+Latin and Cyrillic spellings of Guangzhou and Horgos (no three-digit number, and the pinyin names are in no fact)
+pass; reading a choice is a word list, not a parse.
