@@ -423,9 +423,11 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
       const label = [
         code,
         names.length > 0 ? `${names[0]}${names.length > 1 ? ` +${names.length - 1}` : ''}` : null,
-        pct !== null ? `${pct} %` : null,
-        share && share.m3 > 0 ? `${share.m3.toFixed(2)} m³` : null,
-        share && share.kg > 0 ? `${share.kg.toFixed(1)} kg` : null,
+        // Spelled like the lot rows above it («1 m³ · 100 kg»), and the
+        // share kept whole with its sign (a no-break space) at 360 px.
+        pct !== null ? `${pct}\u00a0%` : null,
+        share && share.m3 > 0 ? `${Number(share.m3.toFixed(2))} m³` : null,
+        share && share.kg > 0 ? `${Number(share.kg.toFixed(1))} kg` : null,
       ]
         .filter(Boolean)
         .join(' · ');
@@ -465,17 +467,20 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
             )}
           </p>
         ))}
-        {missing.map(({ dealId, why, loud }) => (
-          <p
-            key={dealId}
-            className={loud ? 'font-semibold text-warn' : 'text-ink-500'}
-            data-testid="pricing-priced-here-missing"
-            data-why={why}
-          >
-            <span className="font-mono">{dealHeads.get(dealId)?.code ?? '—'}</span> —{' '}
-            {why === 'card' ? t('pricedHereCardPrice') : why === 'whole' ? t('pricedHereWhole') : t('pricedHereMissing')}
-          </p>
-        ))}
+        {/* In the order the deals are listed above, by code — not by id. */}
+        {[...missing]
+          .sort((a, b) => (dealHeads.get(a.dealId)?.code ?? '').localeCompare(dealHeads.get(b.dealId)?.code ?? ''))
+          .map(({ dealId, why, loud }) => (
+            <p
+              key={dealId}
+              className={loud ? 'font-semibold text-warn' : 'text-ink-500'}
+              data-testid="pricing-priced-here-missing"
+              data-why={why}
+            >
+              <span className="font-mono">{dealHeads.get(dealId)?.code ?? '—'}</span> —{' '}
+              {why === 'card' ? t('pricedHereCardPrice') : why === 'whole' ? t('pricedHereWhole') : t('pricedHereMissing')}
+            </p>
+          ))}
       </div>
     );
   };

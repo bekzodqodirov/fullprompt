@@ -87,8 +87,11 @@ test('the price waits for a choice: the deals only (no «bitimsiz» — every ca
   await expect(select.locator('option[value="none"]')).toHaveCount(0);
   for (const deal of seeded!.deals) await expect(select.locator(`option[value="${deal.id}"]`)).toContainText(deal.code);
   // The goods and the share come right after the code — what a closed select
-  // at 360 px still shows.
-  await expect(select.locator(`option[value="${seeded!.deals[2]!.id}"]`)).toContainText(`${seeded!.deals[2]!.code} · Monitor · 50 %`);
+  // at 360 px still shows — then the cargo, spelled like the lot rows above
+  // it («3 m³ · 300 kg», never «3.00 m³ · 300.0 kg»).
+  await expect(select.locator(`option[value="${seeded!.deals[2]!.id}"]`)).toContainText(
+    `${seeded!.deals[2]!.code} · Monitor · 50 % · 3 m³ · 300 kg`,
+  );
 
   await card.locator('input[name="amount"]').fill('500');
   await submit(card).click();
@@ -142,6 +145,8 @@ test('choosing the second deal writes the price to it, after one question that n
   await expect(here.getByTestId('pricing-priced-here-row')).toContainText(second!.code);
   const missing = here.getByTestId('pricing-priced-here-missing');
   await expect(missing).toHaveCount(2);
+  // In the order the deals are listed above it (by code), not by deal id.
+  await expect(missing.first()).toContainText(first!.code);
   await expect(missing.filter({ hasText: first!.code })).toHaveAttribute('data-why', 'missing');
   await expect(missing.filter({ hasText: third!.code })).toHaveAttribute('data-why', 'missing');
   // The next price is chosen again, never carried over — and the deals still
