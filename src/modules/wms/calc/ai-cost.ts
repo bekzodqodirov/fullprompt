@@ -45,6 +45,12 @@ export async function recordAiPass(
     model: string;
     inputTokens?: number | null;
     outputTokens?: number | null;
+    /**
+     * When the call was MADE, for a bill written later than it was spent (the
+     * intake bills at the landing, judge concurrency-11) — the day's count
+     * reads this column. Absent = now, the column's own default.
+     */
+    createdAt?: Date | null;
   },
 ): Promise<void> {
   try {
@@ -55,6 +61,7 @@ export async function recordAiPass(
       model: input.model,
       inputTokens: Math.max(0, Math.round(Number(input.inputTokens ?? 0)) || 0),
       outputTokens: Math.max(0, Math.round(Number(input.outputTokens ?? 0)) || 0),
+      ...(input.createdAt ? { createdAt: input.createdAt } : {}),
     });
   } catch (err) {
     logger.warn({ err, requestId: input.requestId }, '[ai-cost] pass not recorded');

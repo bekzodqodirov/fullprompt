@@ -3,6 +3,13 @@ import { db } from '../../platform/db/client';
 import { FEED_KINDS } from '../finance/ledger-kinds';
 import { kindList } from '../finance/ledger-sql';
 import { debtReleaseReasonSql, wentOutOnDebtSql } from '../debt/releases';
+import {
+  AI_REPLY_HEAD,
+  TARIFF_PRICED_HEAD,
+  TARIFF_REPLY_HEAD,
+  VED_ESTIMATE_MARK,
+  type MachineReplyKind,
+} from '../calc/reply-heads';
 
 /**
  * One client, everything that happened, in order — the «lenta».
@@ -75,6 +82,38 @@ export interface FeedItem {
   body: string | null;
   /** Whatever that kind needs to render: amounts, codes, counts. */
   meta: Record<string, unknown>;
+}
+
+/**
+ * The chip a note the MACHINE wrote about a calculation wears (docs/SAKKIZ-R2.md
+ * §9, his 2.4 c): the customs reply, the tariff reply, and either of them
+ * carrying an estimate — a 📊 median or a guessed zone — which the VED line
+ * under its heading announces. The component's word map is keyed on this
+ * union, so a chip with no words is a compile error.
+ */
+export type MachineReplyChip = MachineReplyKind | 'estimate';
+
+/**
+ * Every chip, keyed — so a kind added to reply-heads.ts is a compile error
+ * HERE, and not a chip `machineReplyOf` drops in silence. The compiler stops
+ * at this line: the query's CASE below answers in SQL string literals it
+ * cannot see, so a new kind also needs its WHEN there, and the CASE's three
+ * answers are pinned by feed.integration's cases, not by the type.
+ */
+const MACHINE_REPLY_CHIPS = Object.keys({
+  ai: true,
+  tariff: true,
+  estimate: true,
+} satisfies Record<MachineReplyChip, true>) as readonly MachineReplyChip[];
+
+/**
+ * The chip a feed row carries, or null — read off `meta.machineReply`, which
+ * comes back from jsonb as plain JSON: the narrowing is a check, never a cast.
+ */
+export function machineReplyOf(item: Pick<FeedItem, 'kind' | 'meta'>): MachineReplyChip | null {
+  if (item.kind !== 'note') return null;
+  const value = item.meta.machineReply;
+  return MACHINE_REPLY_CHIPS.find((chip) => chip === value) ?? null;
 }
 
 interface Row extends Record<string, unknown> {
@@ -185,6 +224,25 @@ export async function clientFeed(clientId: string | null, opts: FeedOptions): Pr
           -- NULL where a bare name would take down the lenta of every card.
           'calcRequestId', to_jsonb(a) ->> 'calc_request_id',
           'viaTelegram', (to_jsonb(a) ->> 'tg_message_id') IS NOT NULL,
+          -- A calculation answer the MACHINE wrote (his 2.4 c): the AI-VED's
+          -- customs reply or the tariff's yolkira reply, recognised by the
+          -- heading its writer builds from the same constants (reply-heads.ts
+          -- — a heading spelled twice drifts, #513). Only a note with NO
+          -- author: a person who pastes the reply into a note has written a
+          -- note, and an advert's system note starts with neither heading.
+          -- The estimate branch comes first — a reply carrying the VED line
+          -- (a 📊 median or a guessed zone) must not wear the same chip as a
+          -- fully exact one; that is the whole of the mark he asked for.
+          -- «tariff» says «Tarif bo‘yicha taxmin», so it anchors on the PRICED
+          -- title: a refused yolkira reply carries no figure, and an estimate
+          -- chip on a non-answer would call it one (review PF-9).
+          'machineReply', CASE
+            WHEN a.created_by IS NULL
+             AND (starts_with(a.note, ${AI_REPLY_HEAD}::text) OR starts_with(a.note, ${TARIFF_REPLY_HEAD}::text))
+             AND strpos(a.note, ${VED_ESTIMATE_MARK}::text) > 0                           THEN 'estimate'
+            WHEN a.created_by IS NULL AND starts_with(a.note, ${AI_REPLY_HEAD}::text)      THEN 'ai'
+            WHEN a.created_by IS NULL AND starts_with(a.note, ${TARIFF_PRICED_HEAD}::text) THEN 'tariff'
+          END,
           'files', (
             SELECT coalesce(jsonb_agg(jsonb_build_object(
               'id', att.id, 'name', att.file_name, 'image', att.content_type LIKE 'image/%'

@@ -29,8 +29,11 @@ describe('the analysis actually looks at the photographs', () => {
     expect(AI).toContain('images?:');
     expect(AI).toMatch(/type: 'image'/);
     expect(AI).toContain("type: 'base64'");
-    // The text block travels WITH them — a content array, not a bare string.
-    expect(AI).toMatch(/content: \[/);
+    // The text block travels WITH them — a content array, not a bare string
+    // (built by `intakeContent` since 2026-10-21, one place for its order;
+    // the spreadsheet's fit is measured first since the round-1 review).
+    expect(AI).toContain('content: intakeContent(');
+    expect(AI).toMatch(/\): Anthropic\.ContentBlockParam\[\] \{\n(?: {2}.*\n)*? {2}return \[/);
   });
 
   it('a collection of photographs alone is still analysed', () => {
@@ -38,8 +41,13 @@ describe('the analysis actually looks at the photographs', () => {
     // case he reported: a forwarded packing-list photo with no caption. The
     // AI-rastamojka round widened it once more, for a collection that is
     // nothing but an invoice PDF — same rule, one more way of having sent
-    // something.
-    expect(AI).toContain('if (!material && images.length === 0 && !pdf) return null;');
+    // something. 2026-10-21: and a spreadsheet the reader handed over as
+    // text, and several PDFs — and an empty one is now SAID, not null.
+    // Since the round-2 review the sheets are two inputs (goods files and a
+    // workbook's other sheets), either of which is something to read.
+    expect(AI).toContain('if (!material && images.length === 0 && pdfs.length === 0 && !hasSheets) {');
+    expect(AI).toContain("const hasSheets = [...sheets, ...contextSheets].some((s) => s.text.trim() !== '');");
+    expect(AI).toContain("return { ok: false, failure: 'nothing_to_read' };");
   });
 
   it('the system prompt tells it where the numbers are', () => {

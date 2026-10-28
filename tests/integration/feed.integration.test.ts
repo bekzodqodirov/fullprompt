@@ -16,8 +16,17 @@ import {
   tgMessages,
   users,
 } from '@/modules/platform/db/schema';
-import { clientFeed, clientFeedHasAnything } from '@/modules/wms/crm/feed';
+import { clientFeed, clientFeedHasAnything, machineReplyOf } from '@/modules/wms/crm/feed';
 import { conversationFor } from '@/modules/wms/crm/conversations';
+import { addActivity } from '@/modules/wms/crm/service';
+import { aiVedReplyText, type AiVedFreight, type AiVedReplyInput } from '@/modules/wms/calc/ai-reply';
+import { tariffReplyText } from '@/modules/wms/calc/prefill-reply';
+import {
+  AI_REPLY_HEAD,
+  TARIFF_PRICED_HEAD,
+  TARIFF_REPLY_HEAD,
+  VED_ESTIMATE_MARK,
+} from '@/modules/wms/calc/reply-heads';
 
 /**
  * The «lenta» against a real database.
@@ -423,5 +432,270 @@ describe('the lenta’s money is the ledger’s audience', () => {
     expect(await clientFeedHasAnything(moneyOnlyClientId, { money: false })).toBe(false);
     // …and it still finds everything that is not money.
     expect(await clientFeedHasAnything(mixedClientId, { money: false })).toBe(true);
+  });
+});
+
+/**
+ * His 2.4 c (docs/SAKKIZ-R2.md §9): the machine's calculation answer goes onto
+ * the card's lenta in full, with a mark — and a reply carrying an estimate (a
+ * 📊 median or a guessed zone) must not wear the same mark as an exact one.
+ *
+ * The notes are written through the lenta's real door for a machine
+ * (`addActivity` under `{ actorId: null }, { system: true }` — the writer the
+ * prefill job uses), and every reply that wears a chip is the REAL renderer's
+ * text — `aiVedReplyText` exact and estimated, `tariffReplyText` on a stored
+ * zone, a guessed one and a refusal — so a heading or a VED line reworded in
+ * a writer without `reply-heads.ts` turns this red (review P4-4: a hand-typed
+ * copy of P1's wording could only agree with itself). The one hand-built note
+ * is §2.6's bare shape, the mark on line 2 under the AI heading, kept beside
+ * the renderer's own.
+ *
+ * Its own lead, for the reason the cargo block has its own client: the shared
+ * fixture above is read by exact kind sequences.
+ */
+describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
+  let machineLeadId = '';
+  const ids = {
+    ai: '',
+    tariff: '',
+    estimate: '',
+    aiEstimate: '',
+    tariffEstimate: '',
+    tariffRefused: '',
+    personAi: '',
+    personEstimate: '',
+    personTariff: '',
+    personTariffEstimate: '',
+    advert: '',
+    advertTariff: '',
+    advertTariffPriced: '',
+    advertTariffEstimate: '',
+    plain: '',
+  };
+
+  const aiInput: AiVedReplyInput = {
+    clientLabel: 'GS777',
+    cardLabel: 'B-000067',
+    lines: [
+      {
+        label: 'Monitor 24"',
+        code: '8528520000',
+        measureText: '100 dona × $20/dona',
+        bazaSource: 'memory',
+        dutyText: '10%',
+        addDutyPct: 0,
+        exciseText: null,
+        vatPct: 12,
+        customsUsd: 496.96,
+        refusal: null,
+        refusalTail: 'ved',
+        estimated: null,
+        weightFromTotal: null,
+        staleBaza: false,
+      },
+    ],
+    ungrouped: [],
+    fee: { bhm: 5, usd: 164.8 },
+    totalUsd: 661.76,
+    feeRefusal: null,
+    hasCertificate: true,
+    freight: null,
+    link: null,
+    aiConfigured: true,
+    estimate: null,
+    pickLeft: null,
+    audience: 'lenta',
+  };
+  const aiText = aiVedReplyText(aiInput);
+  // The same job with no baza on its row: the 📊 median stands in, the
+  // Taxminiy is whole, and the lenta's copy carries the VED line (§2.6) —
+  // what `aiPrefill` writes when the file has the code and nobody priced it.
+  const aiEstimateText = aiVedReplyText({
+    ...aiInput,
+    lines: [
+      {
+        label: 'Kurtka',
+        code: '6201400000',
+        measureText: null,
+        bazaSource: null,
+        dutyText: '10%',
+        addDutyPct: 0,
+        exciseText: null,
+        vatPct: 12,
+        customsUsd: null,
+        refusal: 'baza yo‘q',
+        refusalTail: 'ved',
+        estimated: {
+          priced: true,
+          customsUsd: 264.48,
+          measureText: '300 kg × $3.80/kg',
+          declarations: [23],
+          oldFileEnd: null,
+        },
+        weightFromTotal: null,
+        staleBaza: false,
+      },
+    ],
+    fee: null,
+    totalUsd: null,
+    estimate: {
+      rows: 1,
+      exactRows: 0,
+      exactUsd: null,
+      taxminiyUsd: 429.28,
+      taxminiyFee: { bhm: 5, usd: 164.8 },
+      taxminiyBlock: null,
+    },
+  });
+  // §2.4's yolkira reply, by the real renderer: on the zone the card stores
+  // (no VED line), and on one read off the city (his 2.6 b — the VED line).
+  const road = (zoneGuessed: boolean): AiVedFreight => ({
+    ok: true,
+    listUsd: 1920,
+    routeLabel: 'Xitoy → O‘zbekiston',
+    bandText: '180 kg/m³ · $160/m³ × 12 m³',
+    zoneGuessed,
+    zoneReadFrom: zoneGuessed ? 'Yiwu' : null,
+    volumeFromLines: false,
+    exact: !zoneGuessed,
+    small: false,
+  });
+  const tariffText = tariffReplyText({
+    clientLabel: 'GS777',
+    cardLabel: 'B-000067',
+    freight: road(false),
+    link: null,
+    audience: 'lenta',
+  });
+  // §2.6: the VED line sits on line 2, directly under the heading.
+  const estimateText = [
+    `${AI_REPLY_HEAD} · taxminiy rastamojka · GS777 · B-000067`,
+    `${VED_ESTIMATE_MARK} bu taxminiy javob, rasmiy emas — 📊 baza deklaratsiyalar medianasidan (AI emas). Muhrlashdan yoki «Bajarildi» (Готово) bosishdan oldin o‘zingiz tekshiring.`,
+    '1. Kurtka · 6201400000 · 300 kg × $3.80/kg 📊',
+  ].join('\n');
+  // A REFUSED yolkira reply, by the real renderer: no figure at all, so no
+  // «Tarif bo‘yicha taxmin» chip (review PF-9).
+  const tariffRefusedText = tariffReplyText({
+    clientLabel: 'GS777',
+    cardLabel: 'B-000067',
+    freight: { ok: false, refusal: 'umumiy brutto og‘irlik (kg) yo‘q', tail: 'seller' },
+    link: null,
+    audience: 'lenta',
+  });
+  const tariffEstimateText = tariffReplyText({
+    clientLabel: 'GS777',
+    cardLabel: null,
+    freight: road(true),
+    link: null,
+    audience: 'lenta',
+  });
+
+  const machine = async (note: string) =>
+    (
+      await addActivity(
+        { entityType: 'lead', entityId: machineLeadId, kind: 'note', note },
+        { actorId: null },
+        { system: true },
+      )
+    ).id;
+  const person = async (note: string) =>
+    (
+      await addActivity(
+        { entityType: 'lead', entityId: machineLeadId, kind: 'note', note },
+        { actorId: managerId },
+      )
+    ).id;
+
+  beforeAll(async () => {
+    const [stage] = await db.select().from(leadStages).limit(1);
+    const [l] = await db
+      .insert(leads)
+      .values({ name: `Machine ${STAMP}`, stageId: stage!.id, createdBy: managerId })
+      .returning({ id: leads.id });
+    machineLeadId = l!.id;
+
+    ids.ai = await machine(aiText);
+    ids.tariff = await machine(tariffText);
+    ids.estimate = await machine(estimateText);
+    ids.aiEstimate = await machine(aiEstimateText);
+    ids.tariffEstimate = await machine(tariffEstimateText);
+    ids.tariffRefused = await machine(tariffRefusedText);
+    // A person who pastes the machine's reply into a note has written a note.
+    ids.personAi = await person(aiText);
+    ids.personEstimate = await person(estimateText);
+    // The likelier paste of the two: a refused yolkira reply ends «— mijozdan
+    // so‘rab, kartadagi lentaga yozing», which sends the seller to this very
+    // lenta with the reply in front of him.
+    ids.personTariff = await person(tariffText);
+    ids.personTariffEstimate = await person(tariffEstimateText);
+    // An advert's system note (crm/inbound.ts `inboundNote`): no author
+    // either, and the customer's own words may carry the heading and the mark
+    // — inside the note, never at its start.
+    ids.advert = await machine(
+      `📣 instagram\nNarxi qancha? ${AI_REPLY_HEAD} dedi: ${VED_ESTIMATE_MARK} kerak`,
+    );
+    // The tariff heading mid-text, with and without the mark: each branch that
+    // names it is anchored on its own — 'tariff' and the estimate's second half.
+    ids.advertTariff = await machine(`📣 sayt\nNarxi qancha? ${TARIFF_REPLY_HEAD} kerak`);
+    // …and the PRICED title mid-text, the very string the 'tariff' WHEN is
+    // anchored on since PF-9: the bare heading above no longer reaches it, so
+    // without this an anchor widened to «anywhere in the note» stays green.
+    ids.advertTariffPriced = await machine(`📣 sayt\nNarx? ${TARIFF_PRICED_HEAD} kerak`);
+    ids.advertTariffEstimate = await machine(
+      `📣 sayt\nNarx? ${TARIFF_REPLY_HEAD} ${VED_ESTIMATE_MARK} kerak`,
+    );
+    ids.plain = await person('mijoz ertaga qo‘ng‘iroq qiladi');
+  });
+
+  afterAll(async () => {
+    await db.delete(crmActivities).where(eq(crmActivities.entityId, machineLeadId));
+    await db.delete(leads).where(eq(leads.id, machineLeadId));
+  });
+
+  const chipOf = async (id: string) => {
+    const items = await clientFeed(null, { money: false, leadId: machineLeadId });
+    const item = items.find((i) => i.id === `ac-${id}`);
+    expect(item, id).toBeTruthy();
+    return { raw: item!.meta.machineReply, chip: machineReplyOf(item!) };
+  };
+
+  it('the real AI reply, written by the machine, is «ai»', async () => {
+    expect(aiText.startsWith(AI_REPLY_HEAD)).toBe(true);
+    expect(await chipOf(ids.ai)).toEqual({ raw: 'ai', chip: 'ai' });
+  });
+
+  it('a tariff reply is «tariff»', async () => {
+    expect(await chipOf(ids.tariff)).toEqual({ raw: 'tariff', chip: 'tariff' });
+  });
+
+  it('a REFUSED tariff reply carries no figure, so no estimate chip (review PF-9)', async () => {
+    expect(tariffRefusedText.startsWith(TARIFF_REPLY_HEAD)).toBe(true);
+    expect(await chipOf(ids.tariffRefused)).toEqual({ raw: null, chip: null });
+  });
+
+  it('a reply carrying the VED line is «estimate» — under either heading', async () => {
+    // The renderers did write the line: without it the chip below could be
+    // asked about a note with no estimate in it.
+    expect(aiEstimateText).toContain(VED_ESTIMATE_MARK);
+    expect(tariffEstimateText).toContain(VED_ESTIMATE_MARK);
+    expect(tariffText).not.toContain(VED_ESTIMATE_MARK);
+    expect(await chipOf(ids.estimate)).toEqual({ raw: 'estimate', chip: 'estimate' });
+    expect(await chipOf(ids.aiEstimate)).toEqual({ raw: 'estimate', chip: 'estimate' });
+    expect(await chipOf(ids.tariffEstimate)).toEqual({ raw: 'estimate', chip: 'estimate' });
+  });
+
+  it('a PERSON’s note with the machine’s very text wears no chip', async () => {
+    expect(await chipOf(ids.personAi)).toEqual({ raw: null, chip: null });
+    expect(await chipOf(ids.personEstimate)).toEqual({ raw: null, chip: null });
+    expect(await chipOf(ids.personTariff)).toEqual({ raw: null, chip: null });
+    expect(await chipOf(ids.personTariffEstimate)).toEqual({ raw: null, chip: null });
+  });
+
+  it('an advert’s system note wears no chip, whatever its words contain', async () => {
+    expect(await chipOf(ids.advert)).toEqual({ raw: null, chip: null });
+    expect(await chipOf(ids.advertTariff)).toEqual({ raw: null, chip: null });
+    expect(await chipOf(ids.advertTariffPriced)).toEqual({ raw: null, chip: null });
+    expect(await chipOf(ids.advertTariffEstimate)).toEqual({ raw: null, chip: null });
+    expect(await chipOf(ids.plain)).toEqual({ raw: null, chip: null });
   });
 });

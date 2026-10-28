@@ -132,6 +132,16 @@ export function BazaStats({
       </p>,
     );
   }
+  // A row coded by a HEADING (round 2): no statistics — a heading-wide
+  // quartile mixes subheadings priced nothing alike — and the sentence says
+  // how to get them: pick a declaration below, and its code is set.
+  if (stats.answer.state === 'short_code') {
+    return shell(
+      <p className="mt-1 text-2xs text-ink-500" data-testid="calc-import-stats-short-code">
+        {t('statsShortCode')}
+      </p>,
+    );
+  }
   if (!answer || !unit) return null;
 
   const perUnit = t('perUnit');

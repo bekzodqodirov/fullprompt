@@ -7,15 +7,17 @@ import { conversationClientForLead, tgViewerFor } from '../crm/conversations';
 import { threadClientFor } from '../crm/conversations';
 import { CalcError, leadTakesJobs, openCalcRequest } from './service';
 import {
+  AI_READ_FAILURE,
   CALC_SECTIONS,
   intakeNoteText,
   landingItems,
   missingFields,
+  type AiReadFailure,
   type CalcFacts,
   type CalcSection,
 } from './intake';
 import { bookLawsFor } from './book-laws';
-import { parseManualFacts } from './intake-manual';
+import { parseManualFacts, readGoodsLines, totalWeightFrom } from './intake-manual';
 import { routeAmount } from './units';
 import { analyzeIntake } from './intake-ai';
 import { landCodedRequest, rootRequestOfNote } from './intake-land';
@@ -54,6 +56,8 @@ export type ThreadCalcEntity =
 export interface ThreadMaterial {
   /** The seller's and the customer's words, labeled, in sent order. */
   lines: string[];
+  /** The same words without the speaker's label — what typed goods are read from. */
+  bodies: string[];
   fileCount: number;
   clientId: string | null;
 }
@@ -134,24 +138,50 @@ export async function threadMaterial(
   }
 
   const lines: string[] = [];
+  const bodies: string[] = [];
   let fileCount = 0;
   for (const row of rows) {
     if (row.hasMedia) fileCount += 1;
     const body = (row.body ?? '').trim();
     if (!body) continue;
+    bodies.push(body);
     const who = row.direction === 'in' ? 'Mijoz' : (names.get(row.managerUserId) ?? 'Biz');
     lines.push(`${who}: ${body}`);
   }
   if (fileCount > 0) lines.push(`(${fileCount} ta fayl suhbatda — kartadagi chat panelida)`);
-  return { lines, fileCount, clientId };
+  return { lines, bodies, fileCount, clientId };
 }
 
 export interface ThreadCalcPreview {
   facts: CalcFacts;
   steps: string[];
+  /** Why the model's reading is missing, when it is (his 1.6 a). */
+  aiFailure: AiReadFailure | null;
+  /**
+   * What the person can DO about a missing reading (review #20, T13) —
+   * decided HERE so the island imports none of the intake's rules.
+   */
+  aiAdvice: ThreadAiAdvice | null;
   missing: string[];
   lines: number;
   fileCount: number;
+}
+
+/**
+ * The three remedies a failed reading has: press again later (`retry`),
+ * select fewer messages or send the file another way (`smaller` — the input
+ * itself was too big or unreadable, and re-reading the same selection is cut
+ * the same way), or tell the admin (`admin` — a keyless server, a dead key, a
+ * refusal or the day's budget, which no press changes). One sentence for all
+ * of them was review #20; «tell the admin» about a selection that is merely
+ * too long was T13, its second half.
+ */
+export type ThreadAiAdvice = 'retry' | 'smaller' | 'admin';
+
+export function threadAiAdvice(failure: AiReadFailure | null): ThreadAiAdvice | null {
+  if (failure === null || failure === 'nothing_to_read') return null;
+  if (AI_READ_FAILURE[failure].retry) return 'retry';
+  return failure === 'truncated' || failure === 'rejected' ? 'smaller' : 'admin';
 }
 
 /**
@@ -168,13 +198,20 @@ export async function threadCalcAnalyze(
   if (input.entity.kind === 'lead' && !(await leadTakesJobs(input.entity.id))) throw new CalcError('lead_closed');
   const material = await threadMaterial(actor, input.entity, input.messageIds);
   const text = material.lines.join('\n');
-  const manual = parseManualFacts(text);
-  const ai = await analyzeIntake({
+  const manual = parseManualFacts(text, input.section);
+  const outcome = await analyzeIntake({
     section: input.section,
     text,
     fileCount: material.fileCount,
     timeoutMs: 20_000,
   });
+  const ai = outcome.ok ? outcome : null;
+  // Typed goods lines are read from the messages THEMSELVES: the material's
+  // «Mijoz: » / «Ali: » prefix would otherwise become part of a goods name.
+  // A model that READ the chat and found no goods is not overruled by a
+  // regex reading «Salom» or a route as a product (review #22): then only a
+  // line that names itself goods answers; when it did not read, every one.
+  const typedGoods = readGoodsLines(material.bodies.join('\n'), { labelledOnly: ai !== null });
   // Typed/manual facts win over read ones, the bot's own rule — and a total
   // the text writes two ways («1,200 kg») is left for the person to type in
   // the preview, never taken from the model that read the same text.
@@ -182,9 +219,12 @@ export async function threadCalcAnalyze(
   const facts: CalcFacts = {
     fromCity: manual.fromCity ?? ai?.facts.fromCity ?? null,
     toCity: manual.toCity ?? ai?.facts.toCity ?? null,
-    weightKg: manual.weightKg ?? (asked('weightKg') ? null : (ai?.facts.weightKg ?? null)),
+    ...totalWeightFrom(input.section, manual, ai?.facts ?? null, asked('weightKg')),
     volumeM3: manual.volumeM3 ?? (asked('volumeM3') ? null : (ai?.facts.volumeM3 ?? null)),
-    goods: (ai?.facts.goods?.length ? ai.facts.goods : manual.goods) ?? [],
+    // …and not by the lines' Σ either (review P3-R2): the preview's checklist
+    // names the cube missing, and the landing stores none.
+    ...(asked('volumeM3') ? { volumeAmbiguous: true } : {}),
+    goods: ai?.facts.goods?.length ? ai.facts.goods : typedGoods,
   };
   // The book's law for the read codes — the preview asks what the LAW asks
   // (judge TT-5), on the pool, before anything lands.
@@ -192,6 +232,8 @@ export async function threadCalcAnalyze(
   return {
     facts,
     steps: ai?.steps ?? [],
+    aiFailure: outcome.ok ? null : outcome.failure,
+    aiAdvice: threadAiAdvice(outcome.ok ? null : outcome.failure),
     missing: missingFields(input.section, facts, laws),
     lines: material.lines.length,
     fileCount: material.fileCount,
@@ -209,8 +251,13 @@ function pairOf(qty: number | null, unit: unknown) {
 }
 
 /** What the browser may claim about the cargo — its own request, sanitized. */
-function cleanFacts(raw: CalcFacts | null | undefined, material: string): CalcFacts {
-  if (!raw) return parseManualFacts(material);
+function cleanFacts(
+  raw: CalcFacts | null | undefined,
+  material: string,
+  bodies: string,
+  section: CalcSection,
+): CalcFacts {
+  if (!raw) return { ...parseManualFacts(material, section), goods: readGoodsLines(bodies) };
   const num = (v: unknown) =>
     typeof v === 'number' && Number.isFinite(v) && v >= 0 && v < 1_000_000 ? v : null;
   const str = (v: unknown, cap: number) =>
@@ -220,6 +267,11 @@ function cleanFacts(raw: CalcFacts | null | undefined, material: string): CalcFa
     toCity: str(raw.toCity, 80),
     weightKg: num(raw.weightKg),
     volumeM3: num(raw.volumeM3),
+    // The preview's own flag, carried: a forged one can only blank a Σ.
+    ...(raw.volumeAmbiguous === true ? { volumeAmbiguous: true } : {}),
+    // …and the netto flag the preview read (review PF-3): a forged one can
+    // only change a note's word, and only on a customs job.
+    ...(raw.weightNetto === true && section === 'rastamojka' ? { weightNetto: true } : {}),
     goods: (Array.isArray(raw.goods) ? raw.goods : []).slice(0, 1000).flatMap((g) => {
       const name = str(g?.name, 200);
       if (!name) return [];
@@ -272,7 +324,7 @@ export async function threadCalcSend(
   if (input.entity.kind === 'lead' && !(await leadTakesJobs(input.entity.id))) throw new CalcError('lead_closed');
   const material = await threadMaterial(actor, input.entity, input.messageIds);
   const text = material.lines.join('\n');
-  const facts = cleanFacts(input.facts, text);
+  const facts = cleanFacts(input.facts, text, material.bodies.join('\n'), input.section);
   const steps = (Array.isArray(input.steps) ? input.steps : [])
     .filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
     .slice(0, 20)
@@ -348,6 +400,7 @@ export async function threadCalcSend(
       toCity: facts.toCity ?? null,
       weightKg: facts.weightKg ?? null,
       volumeM3: facts.volumeM3 ?? null,
+      volumeAmbiguous: facts.volumeAmbiguous === true,
       // Through `landingItems` — the same one home the bot door uses, so the
       // single-line weight derivation happens once and both doors land the
       // same row for the same job (#513).

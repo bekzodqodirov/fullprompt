@@ -1,4 +1,5 @@
 import type { Bot } from 'grammy';
+import { randomUUID } from 'node:crypto';
 import { bugunReply } from '../tasks/digest';
 import { logger } from '../logger';
 import { keyboardOf, staffTextHtml } from '../notifications/staff-html';
@@ -28,6 +29,7 @@ import {
   assistantFromBot,
   closeLeadMessage,
   closeTaskMessage,
+  clientCodePrefix,
   completeTaskFromBot,
   dayButtons,
   decideApprovalFromBot,
@@ -64,8 +66,25 @@ import { clientLabels } from './client-labels';
 import {
   activeIntake,
   analyzeCollected,
+  carryLineDone,
+  doneLine,
+  intakeClientSummary,
+  intakeFileKind,
+  mergeLineAnswers,
+  mergeTotalsAnswer,
+  resolveLineDone,
+  sameTotalsAnswer,
+  bareTotalsNumber,
+  totalsAnswerShape,
+  totalsFigureCount,
+  totalsQuestion,
+  totalsQuestionText,
+  unansweredAmbiguity,
   MAX_INTAKE_IMAGES,
+  MAX_INTAKE_PDF_BYTES,
+  MAX_INTAKE_PDFS,
   type IntakeState,
+  type SheetText,
   endIntake,
   mayCollect,
   startIntake,
@@ -445,6 +464,7 @@ export function registerStaffBot(bot: Bot): void {
           backlog: false,
           messageId: null,
           once: searchKey,
+          waitDeclined: false,
         }),
       );
       return;
@@ -704,61 +724,44 @@ export function registerStaffBot(bot: Bot): void {
     }
     const staff = await staffForChat(chatId);
     if (!staff) return next();
-    // A photo sent BEFORE the customer is named used to fall through to the
-    // cabinet, which answers a staff chat with nothing at all — so the first
-    // thing a seller does after pressing the button vanished. Say what is
-    // wanted; the photo is not stored, because the note it would be bound to
-    // is only meaningful once the collection is under way.
-    if (state.stage === 'client') {
-      await ctx.reply('Avval mijozni yozing: kodi (GS777), telefon raqami yoki ismi.');
-      return;
-    }
-
     const saved = await saveIntakeFile(ctx, state.noteId, staff.id).catch((err: unknown) => {
       logger.warn({ err }, 'intake file save failed');
       return null;
-    });
-    const caption = ctx.message.caption?.trim();
-    // The reduced copy the model will LOOK at (his third report: the cube and
-    // the kilos are written on the packing list, and the analysis only ever
-    // read text). Capped: a forwarded album is a request body nobody
-    // budgeted for, and what does not fit is COUNTED, never dropped in
-    // silence — the summary says how many were read.
-    let images = state.images;
-    let imagesSkipped = state.imagesSkipped;
-    if (saved && saved.isPhoto) {
-      if (images.length < MAX_INTAKE_IMAGES) {
-        const reduced = await reduceForModel(saved.body).catch(() => null);
-        if (reduced) images = [...images, { data: reduced, mediaType: 'image/jpeg' as const }];
-        else imagesSkipped += 1;
-      } else {
-        imagesSkipped += 1;
-      }
-    }
-    // The invoice, READ rather than merely stored (sub-round C). Until now
-    // an attached document was saved to the card and never opened by
-    // anything — a fifty-row packing list the seller had already been sent
-    // by the supplier, retyped by hand or lost.
-    const read = saved && !saved.isPhoto ? await readInvoice(ctx, saved.body) : null;
-
-    const updated = updateIntake(chatId, {
-      stage: 'material',
-      fileCount: state.fileCount + (saved ? 1 : 0),
-      material: caption ? [...state.material, caption] : state.material,
-      images,
-      imagesSkipped,
-      invoiceGoods: read?.goods?.length ? read.goods : state.invoiceGoods,
-      // First one wins: a second PDF about the same shipment is a
-      // contradiction nobody can resolve from a chat.
-      pdf: state.pdf ?? read?.pdf ?? null,
     });
     if (!saved) {
       await ctx.reply('Faylni saqlab bo‘lmadi — matn bilan yozib yuboring.');
       return;
     }
-    if (read?.refusal) await ctx.reply(read.refusal);
-    else if (read?.goods?.length) {
-      await ctx.reply(`📄 Fayldan ${read.goods.length} ta tovar o‘qildi.`);
+    const caption = ctx.message.caption?.trim();
+    const fileName = ctx.message.document?.file_name ?? '';
+    const read = await readIntakeFile(saved, fileName, ctx.message.document?.mime_type ?? null, state);
+    // A file sent BEFORE the customer is named — or before the podklyuch
+    // door's «qayerdan?» — is material like any other (his 1.7 b). It used to
+    // be refused before the client was named, and in the zone stage it
+    // skipped both questions. The question stays open and is asked again.
+    const waiting = state.stage === 'client' || state.stage === 'section';
+    // An album is ten messages: the open question is asked again once per
+    // album, not once per photograph.
+    const group = ctx.message.media_group_id ?? null;
+    const asked = waiting && group !== null && group === state.reaskedGroup;
+    const updated = updateIntake(chatId, {
+      ...read.patch,
+      stage: waiting ? state.stage : 'material',
+      fileCount: state.fileCount + 1,
+      material: caption ? [...state.material, caption] : state.material,
+      reaskedGroup: group,
+    });
+    if (read.say) await ctx.reply(read.say, read.keyboard ? { reply_markup: read.keyboard } : undefined);
+    if (asked) return;
+    if (state.stage === 'section') {
+      await ctx.reply('Qabul qilindi. Avval yuk qayerdan chiqishini tanlang:', {
+        reply_markup: zoneKeyboard(await pricedZonesNow()),
+      });
+      return;
+    }
+    if (state.stage === 'client') {
+      await ctx.reply(`Qabul qilindi.\n\n${CLIENT_QUESTION}`, { parse_mode: 'Markdown' });
+      return;
     }
     await showIntakePrompt(ctx, chatId, updated ?? state);
   });
@@ -774,7 +777,22 @@ export function registerStaffBot(bot: Bot): void {
     async (ctx, next) => {
       const chatId = BigInt(ctx.chat.id);
       const late = isBacklog(ctx.message.date);
-      if (!late && (activeIntake(chatId) || activeCapture(chatId))) return next();
+      // A live calc collection answers these in WORDS (his 1.12 a): a voice
+      // note into a collection used to reach the cabinet, which answers a
+      // staff chat with nothing — the seller believed it was part of the job.
+      if (!late && activeIntake(chatId)) {
+        const m = ctx.message;
+        const said = m.voice || m.audio || m.video_note
+          ? '🎤 Ovozli xabar o‘qilmaydi — yozib yuboring.'
+          : m.video
+            ? '🎬 Video o‘qilmaydi — rasm yoki matn yuboring.'
+            : m.location
+              ? '📍 Joylashuv hisoblashda o‘qilmaydi — shahar nomini yozing.'
+              : null;
+        if (said) await ctx.reply(said);
+        return;
+      }
+      if (!late && activeCapture(chatId)) return next();
       if (await draftMedia(ctx, chatId)) return;
       // A voice note as a REPLY to a thread or task ping (E10 a, text first) —
       // after the draft declined it, so a live draft's part still joins it.
@@ -822,7 +840,17 @@ export function registerStaffBot(bot: Bot): void {
         return;
       }
       if (intake.stage === 'client') {
-        updateIntake(chatId, { clientHintRaw: ctx.message.text.trim(), stage: 'material' });
+        // The goods list forwarded where the customer was asked for (his
+        // 1.7 b): it is MATERIAL, and the question is asked again. It used to
+        // become the lead's name and was never shown to the model. The
+        // company's code prefix is read once, here, off any transaction.
+        const read = await readCustomerText(ctx.message.text, await clientCodePrefix());
+        const answer = clientAnswer(intake, ctx.message.text, read);
+        updateIntake(chatId, answer.patch);
+        if (answer.kind === 'material') {
+          await ctx.reply(answer.say, { parse_mode: 'Markdown' });
+          return;
+        }
         // Per section (judge UX14): a customs job is asked for the LINES —
         // «300 dona, 150 kg, 120 m², 40 juft» and the code if known — which
         // the old «kub/kg» prompt never said could be sent.
@@ -1015,6 +1043,7 @@ export function registerStaffBot(bot: Bot): void {
     // Step 2 of «Bajarildi»: this text IS the result — unless it is one of the
     // keyboard's own buttons, which is never anybody's result (every branch
     // above answers them; this is the fence for the next button to join).
+    let waitDeclined = false;
     if (!escapesIntake(ctx.message.text)) {
       const pendingTask = takeTaskPending(chatId, ctx.message.date);
       // Judged by the MESSAGE's date (Q5 a): a backlog text written before the
@@ -1030,6 +1059,9 @@ export function registerStaffBot(bot: Bot): void {
           await markOnce(await messageKey(ctx, 'wait'));
           return;
         }
+        // Not taken — and already answered by the wait itself («Bu sana
+        // emas»): the tail must not add a lost-collection sentence to it.
+        waitDeclined = true;
       } else if (pendingTask) {
         const result = ctx.message.text.trim() === '-' ? '' : ctx.message.text.trim();
         const outcome = await completeTaskFromBot(chatId, pendingTask.taskId, result, pendingTask.pressed);
@@ -1068,9 +1100,33 @@ export function registerStaffBot(bot: Bot): void {
       backlog: late,
       messageId: ctx.message.message_id,
       once: null,
+      waitDeclined,
     });
   });
 }
+
+/** The orphaned totals answer's one sentence (judge concurrency-5). */
+export const LOST_TOTALS_ANSWER =
+  'Hisoblatish to‘plami topilmadi (bot qayta ishga tushgan bo‘lishi mumkin) — 🧮 ni qayta bosing.';
+
+/** «Nothing by that» — what a lookup the free search could not answer is told. */
+const NOT_FOUND_HINT =
+  'Topilmadi. Mijoz kodi (GS777), karobka kodi (YW26-000123), yashik (CR-…) yoki partiya kodini yozing.';
+
+/**
+ * A bare figure with no collection to answer (review REG-3): «777» is as
+ * often a code typed without its letters as a lost «3500», so it is told what
+ * a lookup that found nothing is told — plus the one clause for the case it
+ * was a totals answer — and is never handed to the paid assistant.
+ */
+export const BARE_FIGURE_NOT_FOUND = `${NOT_FOUND_HINT}\n(Hisoblatish savoliga javob bo‘lsa — 🧮 ni qayta bosing.)`;
+
+/** «I could not read that» after the totals question — with ITS example. */
+const TOTALS_NOT_READ: Record<import('./calc-intake').TotalsAsk, string> = {
+  kg: 'Tushunmadim. Brutto og‘irlikni yozing: «3500» yoki «3500 kg».',
+  m3: 'Tushunmadim. Umumiy hajmni yozing: «12» yoki «12 kub».',
+  both: 'Tushunmadim. «12 kub 3500 kg» ko‘rinishida yozing.',
+};
 
 /** What the staff tail needs from grammy's context. */
 type StaffTailCtx = {
@@ -1083,16 +1139,18 @@ type StaffTailCtx = {
  * claimed them: the free lookup, then any code-shaped word inside them, then
  * a typed zametka name, then (paid, last) the AI. ONE function, asked by the
  * ladder and by Door B's «🔍 Qidirish», so a forwarded text replays exactly
- * what it did before the topshiriq round.
+ * what it did before the topshiriq round. Exported for the test that proves
+ * an orphaned totals answer never reaches the paid assistant.
  */
-async function answerStaffText(
+export async function answerStaffText(
   ctx: StaffTailCtx,
   chatId: bigint,
   staffId: string,
   text: string,
   // REQUIRED (Q5 a): whether this is a backlog text, the incoming message
-  // (null for Door B's «🔍», which replays a forward), and Door B's key.
-  opts: { backlog: boolean; messageId: number | null; once: OnceKey | null },
+  // (null for Door B's «🔍», which replays a forward), and Door B's key —
+  // and whether a one-text wait was offered the text first and declined it.
+  opts: { backlog: boolean; messageId: number | null; once: OnceKey | null; waitDeclined: boolean },
 ): Promise<void> {
   // A crash redelivery of a text whose wait was already consumed: no wait is
   // left, so it lands here — and is told it was answered, never «send it
@@ -1133,6 +1191,26 @@ async function answerStaffText(
     await tellBacklogOnce(ctx, chatId);
     return;
   }
+  // A totals answer with no collection to answer (judge concurrency-5): the
+  // collection lives in memory until round 3, and a restart or the TTL
+  // between the brutto question and «3500» loses it — the answer is said
+  // lost, in words, and never handed to the paid assistant, which can make
+  // nothing of a bare figure. A live collection never reaches this tail.
+  //
+  // Only a text the person TYPED here and nothing else claimed (review
+  // P3-R1): Door B's «🔍» (no message of its own) replays a forwarded
+  // customer message — «12 kub 3500 kg» is a customer's words there, never
+  // an answer to the bot — and a «date» the ⏰ wait declined has been
+  // answered by that wait already.
+  //
+  // Only a WORDED figure («3500 kg») says a collection was lost (review
+  // REG-3): a bare «777» has the lookup's own answer and the clause.
+  const orphan =
+    opts.messageId !== null && !opts.waitDeclined && !activeIntake(chatId) ? totalsAnswerShape(text) : null;
+  if (orphan !== null) {
+    await ctx.reply(orphan === 'worded' ? LOST_TOTALS_ANSWER : BARE_FIGURE_NOT_FOUND);
+    return;
+  }
   // Door B's «🔍 Qidirish» runs once per offer message: two taps, one model call.
   if (opts.once) {
     if (!(await claimOnce(db, opts.once))) {
@@ -1142,9 +1220,7 @@ async function answerStaffText(
   }
   if (!aiConfigured()) {
     // No key = exactly the day before the AI shipped.
-    await ctx.reply(
-      'Topilmadi. Mijoz kodi (GS777), karobka kodi (YW26-000123), yashik (CR-…) yoki partiya kodini yozing.',
-    );
+    await ctx.reply(NOT_FOUND_HINT);
     return;
   }
   const thinking = await ctx.reply('🤖 O‘ylayapman…');
@@ -1282,78 +1358,136 @@ async function askNextOrConfirm(
   chatId: bigint,
   state: IntakeState,
 ): Promise<void> {
-  const { nextLineToAsk, lineQuestionText, intakeSummaryText } = await import(
-    '../../wms/calc/intake'
-  );
+  const { ambiguousTotalText, factsVolumeM3, nextLineToAsk, lineQuestionText, intakeSummaryText, volumeFromLines } =
+    await import('../../wms/calc/intake');
   const laws = await intakeLaws(state);
+  // The lines dealt with, put onto the goods list as it stands NOW (round-3
+  // review, R3-C5): a re-read after «➕ Yana ma'lumot» rebuilds the list, and
+  // an index carried over from the old one marked some other line done while
+  // the skipped one was asked again. By name, like the per-line answers.
+  const skip = resolveLineDone(state.facts.goods, state.lineDone).map((d) => d.index);
   // BOTH doors ask now (P1.3): the plain «🧮 Hisoblatish» used to land a
   // ten-line rastamojka job with seven lines nobody had a figure for, and a
   // summary that named none of them. The same cap holds.
-  const line =
-    state.round < MAX_QUESTION_ROUNDS
-      ? nextLineToAsk(state.section, state.facts, laws, { skip: state.lineDone })
-      : null;
+  const line = state.round < MAX_QUESTION_ROUNDS ? nextLineToAsk(state.section, state.facts, laws, { skip }) : null;
 
+  // The lines dealt with are WRITTEN BACK on every way out (round-2 review,
+  // C10): every caller hands this function a `lineDone` with the line it just
+  // answered or skipped, and it used to be read for the choice below and then
+  // dropped — the stored collection kept the old list, so the next answer or
+  // ⏭ rebuilt it from that, and a line skipped with ⏭ was asked again. What
+  // is written is every entry, placed where this reading has it and kept as
+  // it was where it has not (`carryLineDone`, round-4 review C-r2): writing
+  // back only the placed ones let one empty reading erase every ⏭.
+  const lineDone = carryLineDone(state.facts.goods, state.lineDone);
   if (line) {
     updateIntake(chatId, {
       stage: 'question',
       askingIndex: line.index,
-      askingTotals: false,
+      askingTotalsFor: null,
       round: state.round + 1,
       reasked: false,
       offers: [],
+      lineDone,
     });
     await ctx.reply(lineQuestionText(line), { reply_markup: skipKeyboard() });
     return;
   }
 
-  // The road is priced on the shipment's TOTALS (the tariff's density band),
-  // so a podklyuch job missing either is asked ONCE, after the lines — one
-  // message, «12 kub 3500 kg», read by the same parser as the material.
-  if (
-    state.ai &&
-    state.section === 'podklyuch' &&
-    !state.totalsAsked &&
-    (state.facts.weightKg == null || state.facts.volumeM3 == null)
-  ) {
+  // The road is priced on the shipment's TOTALS (the tariff's density band ×
+  // m³), so every freight section is asked them ONCE, after the lines, on
+  // every door (his 2.7 b — it was the AI podklyuch door alone, and a plain
+  // yolkira landed with no kg). The kilos are BRUTTO and only ever asked;
+  // the cube is asked only when the lines cannot give it (`factsVolumeM3`),
+  // and the question names exactly what it asks (`totalsQuestion`).
+  const volume = factsVolumeM3(state.facts);
+  const ask = totalsQuestion(state, volume);
+  if (ask) {
     updateIntake(chatId, {
       stage: 'question',
       askingIndex: null,
-      askingTotals: true,
+      askingTotalsFor: ask,
       totalsAsked: true,
       reasked: false,
       offers: [],
+      lineDone,
     });
+    // A total the seller typed two ways is WHY it is asked — said beside the
+    // question, or «I typed it» is the seller's first thought (review P3-R2).
+    const why = state.ambiguousTotals.map((a) => `\n⚠️ ${ambiguousTotalText(a)}`).join('');
     await ctx.reply(
-      'Yo‘lkira uchun umumiy hajm va og‘irlik kerak. Masalan: «12 kub 3500 kg»' +
-        (state.facts.volumeM3 != null ? `\n(hajm bor: ${state.facts.volumeM3} m³)` : '') +
-        (state.facts.weightKg != null ? `\n(og‘irlik bor: ${state.facts.weightKg} kg)` : ''),
+      totalsQuestionText(ask, state.facts, { m3: volume, fromLines: volumeFromLines(state.facts) }) + why,
       { reply_markup: skipKeyboard() },
     );
     return;
   }
 
   const settled =
-    updateIntake(chatId, { stage: 'review', askingIndex: null, askingTotals: false, offers: [] }) ?? state;
+    updateIntake(chatId, { stage: 'review', askingIndex: null, askingTotalsFor: null, offers: [], lineDone }) ??
+    state;
+  const { AI_READ_FAILURE } = await import('../../wms/calc/intake');
+  const failure = settled.aiUsed ? null : (settled.aiFailure ?? 'not_configured');
   await ctx.reply(
     intakeSummaryText({
       section: settled.section,
       facts: settled.facts,
       laws,
-      clientLabel: settled.clientHintRaw || null,
+      // Everything the seller typed for the customer, on one line (round-3
+      // review, R3-C3): the code or phone the landing finds the customer by
+      // is on the one screen checked before «Tasdiqlash» — printed as the
+      // lead's name alone, «Ali aka / GS771» could not be caught here.
+      clientLabel: intakeClientSummary(settled.clientHintRaw),
       fileCount: settled.fileCount,
       ambiguous: settled.ambiguousTotals,
     }) +
-      (settled.aiUsed
-        ? ''
-        : settled.budgetSpent
-          ? '\n\n(AI kunlik limiti tugadi — faqat yozilganidan o‘qildi)'
-          : '\n\n(AI mavjud emas — faqat yozilganidan o‘qildi)') +
+      // The bot's own word on the lines an Excel kept out, each on its own
+      // line and never one of the model's three notes (round-4 review, C-r1
+      // nit: put first among them, it pushed the third out).
+      settled.notes.map((n) => `\n\n${n}`).join('') +
+      // Why the model's reading is missing, in words (his 1.6 a) — never one
+      // sentence for a dead key, a cut answer and a five-second outage. And
+      // what WAS read instead: with an Excel, its lines are the goods, so
+      // «faqat yozilganidan» was false (round-4 integration S-a).
+      (failure
+        ? `\n\n⚠️ ${AI_READ_FAILURE[failure].text}\n` +
+          ((settled.invoiceGoods ?? []).length > 0
+            ? 'Faqat Excel va yozilganidan o‘qildi.'
+            : 'Faqat yozilganidan o‘qildi.')
+        : aiStepsText(settled.steps)) +
       (settled.ai
         ? `\n\n📄 Sertifikat: ${settled.hasCertificate ? 'bor' : 'yo‘q'} (o‘zgartirish uchun tugmani bosing)`
         : ''),
-    { reply_markup: settled.ai ? aiConfirmKeyboard(settled.hasCertificate) : confirmKeyboard },
+    {
+      reply_markup: reviewKeyboard(
+        settled.ai ? aiConfirmKeyboard(settled.hasCertificate) : confirmKeyboard,
+        failure !== null && AI_READ_FAILURE[failure].retry,
+      ),
+    },
   );
+}
+
+/**
+ * Two or three of the model's own notes on what it did (his 1.6 a: «AI ning
+ * 2-3 izohi»). They used to reach only the card's lenta, so the seller saw a
+ * list with no word on where it came from.
+ */
+export function aiStepsText(steps: readonly string[]): string {
+  const shown = steps
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .slice(0, 3)
+    .map((s) => `· ${s.length > 200 ? `${s.slice(0, 199)}…` : s}`);
+  return shown.length ? `\n\n🤖 AI:\n${shown.join('\n')}` : '';
+}
+
+/** The confirm keyboard, with «🔄 Qayta o‘qish» on top when a retry can help. */
+function reviewKeyboard(
+  base: { inline_keyboard: { text: string; callback_data: string }[][] },
+  retry: boolean,
+): { inline_keyboard: { text: string; callback_data: string }[][] } {
+  return retry
+    ? { inline_keyboard: [[{ text: '🔄 AI qayta o‘qisin', callback_data: 'c:reread' }], ...base.inline_keyboard] }
+    : base;
 }
 
 /** «⏭ Bilmayman, o‘tkazib yubor» — under every question, the way out. */
@@ -1416,9 +1550,11 @@ const LINE_REFUSAL: Record<LineAnswerRefusal, (detail?: string) => string> = {
  * then kept as material — the VED reads everything the seller sent, so
  * nothing is lost by moving on, and a wrong reading would be a figure nobody
  * stated with a duty computed on it. A BARE number is never a default unit:
- * it is the law's one pinned unit, or buttons (P1.3, judge UX4).
+ * it is the law's one pinned unit, or buttons (P1.3, judge UX4) — and after
+ * the TOTALS question, the unit that question asked (§8.2.5). Exported for
+ * the test of that reading alone.
  */
-async function applyLineAnswer(
+export async function applyLineAnswer(
   ctx: CalcReplyCtx,
   chatId: bigint,
   state: IntakeState,
@@ -1436,15 +1572,45 @@ async function applyLineAnswer(
     numberText,
   } = await import('../../wms/calc/intake');
 
-  if (state.askingTotals) {
+  if (state.askingTotalsFor !== null) {
+    const ask = state.askingTotalsFor;
+    // A number that names no unit is what the QUESTION asked (his 2.7 b):
+    // «3500» after the brutto question is kilograms, «12» after the volume
+    // one is cubic metres — read by the house number reader with the unit
+    // word put after it, so its «1,200» rule decides and there is no second
+    // reader. After the question for BOTH it is neither, and is refused —
+    // and so is a bare answer holding TWO figures to a one-unit question
+    // (review P3-R7): «12 3500» after the brutto question was read as
+    // 3500 kg and the 12, the cube as often as not, dropped in silence.
+    const bare = bareTotalsNumber(text);
+    const unitless = bare && (ask === 'both' || totalsFigureCount(text) > 1);
+    if (unitless && !state.reasked) {
+      // Refused, and still kept for the card (law 11): the VED reads it as typed.
+      updateIntake(chatId, { reasked: true, answers: [...state.answers, `Umumiy: ${text}`] });
+      await ctx.reply('Kub va kg ni birlik bilan yozing: «12 kub 3500 kg»');
+      return;
+    }
+    const read = parseManualFacts(bare && !unitless ? `${text.trim()} ${ask === 'kg' ? 'kg' : 'kub'}` : text);
     // Whatever of the two the answer states; the other keeps what it had.
-    const read = parseManualFacts(text);
-    const weightKg = read.weightKg ?? state.facts.weightKg ?? null;
-    const volumeM3 = read.volumeM3 ?? state.facts.volumeM3 ?? null;
+    // What was READ is kept apart (`totalsAnswer`) and put back on top of
+    // every re-read (judge concurrency-4) — the text goes to the card with
+    // the per-line answers, never into the material a re-read parses.
+    // `at` is now (review CONC-2): an answer is only ever typed to a question
+    // asked after a reading of everything, so the answer has seen it all —
+    // and material sent after it may state the figure otherwise.
+    const totalsAnswer = {
+      weightKg: read.weightKg ?? state.totalsAnswer.weightKg,
+      volumeM3: read.volumeM3 ?? state.totalsAnswer.volumeM3,
+      at: { material: state.material.length, files: state.fileCount },
+    };
     const kept =
       updateIntake(chatId, {
-        facts: { ...state.facts, weightKg, volumeM3 },
-        material: [...state.material, text],
+        facts: mergeTotalsAnswer(totalsAnswer, state.facts),
+        totalsAnswer,
+        // …and its «1.2 mi yoki 1200 mi?» goes with it (review P3-3): the
+        // summary asked again about the figure just given, beside «to‘liq».
+        ambiguousTotals: unansweredAmbiguity(state.ambiguousTotals, totalsAnswer),
+        answers: [...state.answers, `Umumiy: ${text}`],
       }) ?? state;
     if (read.ambiguous.length > 0 && !kept.reasked) {
       updateIntake(chatId, { reasked: true });
@@ -1453,10 +1619,10 @@ async function applyLineAnswer(
     }
     if (read.weightKg == null && read.volumeM3 == null && !kept.reasked) {
       updateIntake(chatId, { reasked: true });
-      await ctx.reply('Tushunmadim. «12 kub 3500 kg» ko‘rinishida yozing.');
+      await ctx.reply(TOTALS_NOT_READ[ask]);
       return;
     }
-    await askNextOrConfirm(ctx, chatId, { ...kept, askingTotals: false, reasked: false });
+    await askNextOrConfirm(ctx, chatId, { ...kept, askingTotalsFor: null, reasked: false });
     return;
   }
 
@@ -1464,7 +1630,10 @@ async function applyLineAnswer(
   const goods = state.facts.goods ?? [];
   const row = goods[index];
   const answer = row ? parseLineAnswer(text) : parseLineAnswer('');
-  const withText = updateIntake(chatId, { material: [...state.material, text] }) ?? state;
+  // Kept for the card, NOT as material: a re-read takes the shipment's totals
+  // from the material, and one line's «150 kg» became the whole truck's
+  // weight there (the diagnosis' cause 5).
+  const withText = updateIntake(chatId, { answers: [...state.answers, `${index + 1}-qator: ${text}`] }) ?? state;
 
   if (answer.kind === 'figures') {
     const patch: Partial<NonNullable<IntakeState['facts']['goods']>[number]> = {};
@@ -1548,7 +1717,8 @@ async function refuseLine(
     await ctx.reply(LINE_REFUSAL[reason](detail), { reply_markup: skipKeyboard() });
     return;
   }
-  const done = state.askingIndex === null ? state.lineDone : [...state.lineDone, state.askingIndex];
+  const asked = state.askingIndex === null ? null : doneLine(state.facts.goods, state.askingIndex);
+  const done = asked ? [...state.lineDone, asked] : state.lineDone;
   await askNextOrConfirm(ctx, chatId, { ...state, lineDone: done, reasked: false, offers: [] });
 }
 
@@ -1594,7 +1764,7 @@ async function applyLinePatch(
     await ctx.reply(`Yozildi. ${lineQuestionText(still)}`, { reply_markup: skipKeyboard() });
     return;
   }
-  await askNextOrConfirm(ctx, chatId, { ...next, lineDone: [...next.lineDone, index] });
+  await askNextOrConfirm(ctx, chatId, { ...next, lineDone: [...next.lineDone, { index, name: row.name }] });
 }
 
 /**
@@ -1607,17 +1777,211 @@ async function analyseIntakeAndReply(
   ctx: { reply: (text: string, extra?: Record<string, unknown>) => Promise<unknown> },
   chatId: bigint,
   state: Parameters<typeof analyzeCollected>[0],
+  token: string,
 ): Promise<void> {
   try {
     const analysed = await analyzeCollected(state);
-    updateIntake(chatId, analysed);
+    const outcome = settleAnalysis(activeIntake(chatId), state, analysed, token);
+    if (outcome.kind === 'gone') return;
+    updateIntake(chatId, outcome.state);
+    if (outcome.kind === 'arrived') {
+      await ctx.reply(
+        `Tahlil paytida yana ${outcome.arrived} ta xabar/fayl keldi — ular hali o‘qilmagan.\n` +
+          'Hammasini birga o‘qish uchun «Bo‘ldi» ni yana bosing.',
+        { reply_markup: doneKeyboard },
+      );
+      return;
+    }
     // ONE exit from the analysis: ask about the first line that cannot be
     // priced, else offer the confirm. Both shapes are the same function, so
     // the summary the seller reads is identical whichever way they arrive.
-    await askNextOrConfirm(ctx, chatId, analysed);
-  } catch {
-    await ctx.reply('Tahlil qilib bo‘lmadi. Qaytadan urinib ko‘ring.').catch(() => {});
+    await askNextOrConfirm(ctx, chatId, outcome.state);
+  } catch (err) {
+    logger.warn({ err }, '[calc-intake] analysis failed');
+    const live = activeIntake(chatId);
+    if (live?.analysing === token) updateIntake(chatId, { analysing: null, stage: 'material' });
+    await ctx.reply('Tahlil qilib bo‘lmadi. «Bo‘ldi» ni qayta bosing.', { reply_markup: doneKeyboard }).catch(() => {});
   }
+}
+
+/**
+ * What an answer to the customer question looks like, by wms's own readers
+ * (a dynamic import: platform never imports wms statically) and the company's
+ * code prefix. Two facts, kept apart because they answer different things:
+ *  - `material` — `looksLikeMaterial`: is it goods rather than a customer?
+ *  - `couldBeCustomer` — could it NAME one at all: no goods evidence
+ *    (`goodsEvidence` — the material reader's own first test, round-4
+ *    integration defect 1) and either a hint `parseClientHint` finds or one
+ *    short line that is not a row of bare figures (`figureRow`). Only such a
+ *    text may be insisted on as the customer (round-2 review, C3/C7).
+ *  - `why` — when it cannot, which of the two it fails (round-3 review,
+ *    R3-C6): `goods` = it states goods; `shape` = no goods in it, but several
+ *    lines (or one long one) that no hint reads. The refusal of a repeat says
+ *    the one that is TRUE: «Rustam / Andijon» sent twice was told it was a
+ *    goods list. Null when it could.
+ */
+export interface CustomerTextRead {
+  material: boolean;
+  couldBeCustomer: boolean;
+  why: 'goods' | 'shape' | null;
+}
+
+export async function readCustomerText(raw: string, prefix: string): Promise<CustomerTextRead> {
+  const { figureRow, goodsEvidence, looksLikeMaterial } = await import('../../wms/calc/intake-manual');
+  const { parseClientHint } = await import('../../wms/calc/intake');
+  const text = raw.trim();
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  // ONE goods test with the material reader's own first test (round-4
+  // integration, defect 1): this side kept the old two-part check, so «Tovar:
+  // tayyor» was material on the first send AND a believable customer on the
+  // repeat — the lead was named «Tovar: tayyor».
+  const goods = goodsEvidence(text, { prefix });
+  // A word and a row of bare figures («Kurtka 1200 50 3000») is a packing-list
+  // row, never a name — asked AFTER the hint, which reads a phone in the same
+  // shape («Ali 90 123 45 67»). Which rows refuse the repeat is `figureRow`'s
+  // alone: a count of three kept here as well would believe a pair the reader
+  // calls a row («Kafel 2400 36,5», «Kurtka 300 1200» — round-5 probe,
+  // collector).
+  const hint = parseClientHint(text, { prefix });
+  const row = hint === null && figureRow(text);
+  const couldBeCustomer = text !== '' && !goods && (hint !== null || (!row && lines.length === 1 && text.length <= 60));
+  return {
+    material: looksLikeMaterial(raw, { prefix }),
+    couldBeCustomer,
+    why: couldBeCustomer ? null : goods || row ? 'goods' : 'shape',
+  };
+}
+
+/**
+ * The answer to the customer question — pure, so the rule is a test.
+ *
+ * Text that looks like goods is MATERIAL and the question is asked again (his
+ * 1.7 b). But the goods reader is a guess, and a customer it mistook for a
+ * line («Ali aka 2», «OOO Asia Trade 2020») used to loop on the question with
+ * no way forward (round-1 review, t23). So the re-ask says WHY, and the SAME
+ * text sent again is the seller insisting: it is the customer, and it leaves
+ * the material it was filed into — a name read as a goods line is an
+ * invented product on the card.
+ *
+ * Insisting is believed only of a text that COULD be a customer (round-2
+ * review, C3/C7): a goods list sent twice — a double forward, or re-sent after
+ * the re-ask — became the customer, the lead was named with the goods and the
+ * only copy of them left what the model reads. Such a repeat is kept ONCE as
+ * material, and the question is asked again without the promise it cannot
+ * keep.
+ */
+export function clientAnswer(
+  state: IntakeState,
+  raw: string,
+  read: CustomerTextRead,
+):
+  | { kind: 'material'; patch: Partial<IntakeState>; say: string }
+  | { kind: 'customer'; patch: Partial<IntakeState> } {
+  const text = raw.trim();
+  const again = state.clientAskedWith !== null && state.clientAskedWith === text;
+  if (read.material && !(again && read.couldBeCustomer)) {
+    if (again) {
+      // Worded by the reason that is true (R3-C6): a goods list, or a text no
+      // hint reads — «Rustam / Andijon» has no goods in it.
+      return {
+        kind: 'material',
+        patch: {},
+        say:
+          '✍️ Bu matn allaqachon olingan — ikkinchi marta qo‘shilmadi. ' +
+          (read.why === 'shape'
+            ? 'Bir necha qatorli (yoki uzun) matn mijoz bo‘la olmaydi.\nIsm, kod yoki telefonni bitta qatorda yozing.\n\n'
+            : 'Tovar ro‘yxati mijoz bo‘la olmaydi.\nMijozni bitta qatorda yozing: kod yoki telefon.\n\n') +
+          CLIENT_QUESTION,
+      };
+    }
+    return {
+      kind: 'material',
+      patch: { material: [...state.material, raw], clientAskedWith: text },
+      say:
+        (read.why === 'shape'
+          ? '✍️ Ma’lumot sifatida olindi — bu matndan mijozni o‘qib bo‘lmadi.\n'
+          : '✍️ Ma’lumot sifatida olindi — tovar ro‘yxatiga o‘xshaydi.\n') +
+        'Mijozni bitta qatorda yozing: kod yoki telefon.' +
+        (read.couldBeCustomer ? ' (Shu matnni yana yuborsangiz — mijoz deb olinadi.)' : '') +
+        '\n\n' +
+        CLIENT_QUESTION,
+    };
+  }
+  let material = state.material;
+  if (again) {
+    const at = material.map((m) => m.trim()).lastIndexOf(text);
+    if (at >= 0) material = [...material.slice(0, at), ...material.slice(at + 1)];
+  }
+  return { kind: 'customer', patch: { clientHintRaw: text, stage: 'material', material, clientAskedWith: null } };
+}
+
+/**
+ * Where an analysis lands (the diagnosis' cause 7). Pure, so the race is
+ * tested without a bot.
+ *
+ *  - `gone`: the collection was cancelled, restarted (a new note id), or a
+ *    newer analysis owns it — the result is thrown away, never written back
+ *    over somebody's fresh start;
+ *  - `arrived`: messages or files came in while it ran — the reading is kept
+ *    for its facts, but the LIVE material stays and the seller is asked to
+ *    press «Bo'ldi» again, so nothing the bot answered «Qabul qilindi» to is
+ *    erased or left unread;
+ *  - `done`: the result replaces the facts, and everything else is the live
+ *    collection's own.
+ */
+export function settleAnalysis(
+  live: IntakeState | null,
+  snapshot: IntakeState,
+  analysed: IntakeState,
+  token: string,
+):
+  | { kind: 'gone' }
+  | { kind: 'arrived'; state: IntakeState; arrived: number }
+  | { kind: 'done'; state: IntakeState } {
+  if (!live || live.noteId !== snapshot.noteId || live.analysing !== token) return { kind: 'gone' };
+  const arrived =
+    live.material.length - snapshot.material.length + (live.fileCount - snapshot.fileCount);
+  // A totals answer typed WHILE the reading ran is newer than everything the
+  // reading saw, and goes on top (judge concurrency-4). Otherwise the
+  // reading's own verdict on the answer stands — re-merging the snapshot's
+  // answer here would put back a figure the reading held open because later
+  // material doubts it (review CONC-2).
+  const answeredMeanwhile = !sameTotalsAnswer(live.totalsAnswer, snapshot.totalsAnswer);
+  const facts = {
+    ...analysed.facts,
+    goods: mergeLineAnswers(analysed.facts.goods ?? [], live.lineAnswers),
+  };
+  const state: IntakeState = {
+    ...live,
+    // The LIVE answers go back on top (round-1 review, c2): the reading was
+    // merged with the SNAPSHOT's answers, and a line answered while it ran —
+    // into `answers`, not material, so nothing counts it as «arrived» —
+    // landed without its figure. Re-applying an answer the snapshot already
+    // had is idempotent, so both outcomes take the same merge.
+    //
+    // The live totals answer too, when it is new (above); `totalsAsked` is
+    // the reading's own verdict over it.
+    facts: answeredMeanwhile ? mergeTotalsAnswer(live.totalsAnswer, facts) : facts,
+    totalsAsked: analysed.totalsAsked,
+    steps: analysed.steps,
+    notes: analysed.notes,
+    aiUsed: analysed.aiUsed,
+    aiFailure: analysed.aiFailure,
+    // The reading's bills, appended to the snapshot's (2.9 c) — one analysis
+    // runs at a time (the token), so the snapshot's are the live ones.
+    usages: analysed.usages,
+    // The reading's two-way totals, less what the seller answered while it
+    // ran — the live answer above is on the facts (review P3-3).
+    ambiguousTotals: answeredMeanwhile
+      ? unansweredAmbiguity(analysed.ambiguousTotals, live.totalsAnswer)
+      : analysed.ambiguousTotals,
+    analysing: null,
+    stage: arrived > 0 ? 'material' : 'review',
+  };
+  return arrived > 0 ? { kind: 'arrived', state, arrived } : { kind: 'done', state };
 }
 
 /**
@@ -1633,8 +1997,7 @@ async function answerWithAssistant(
   thinkingMessageId: number | null,
 ): Promise<void> {
   const replies: Record<string, string> = {
-    not_configured:
-      'Topilmadi. Mijoz kodi (GS777), karobka kodi (YW26-000123), yashik (CR-…) yoki partiya kodini yozing.',
+    not_configured: NOT_FOUND_HINT,
     limit: 'Bugungi AI savollar chegarasi tugadi — ertaga yana so‘rang.',
     error: 'AI javob berolmadi. Keyinroq urinib ko‘ring.',
   };
@@ -1690,44 +2053,371 @@ const FILE_DOWNLOAD_MS = 30_000;
 const MAX_PDF_BYTES = 10 * 1024 * 1024;
 
 /**
- * What an attached document is worth to the calculation.
- *
- * Three answers and they are different in kind:
- *  - a WORKBOOK or a CSV is READ, exactly, by the same parser the deal's
- *    «Позиции» import uses — no model, no tokens, no guessing;
- *  - a PDF cannot be read here, so it is carried to the model as a document
- *    block, which is the one thing that can look at it;
- *  - a DOCX is refused IN WORDS. It is a zip like an xlsx, so the sniff would
- *    call it a workbook and the parser would answer «no goods» — a silent
- *    nothing where the seller is waiting for a figure.
+ * A spreadsheet that cannot be read, said per reason (his 1.6 a). Keyed by the
+ * reader's OWN union, so a reason it learns tomorrow is a compile error here
+ * rather than a seller reading «undefined».
  */
-async function readInvoice(
-  ctx: { message: { document?: { file_name?: string; mime_type?: string } } },
-  body: Buffer,
-): Promise<{
-  goods?: import('../../wms/calc/intake').CalcFacts['goods'];
-  pdf?: { data: Buffer; name: string } | null;
-  refusal?: string;
-} | null> {
-  const name = ctx.message.document?.file_name ?? '';
-  const mime = ctx.message.document?.mime_type ?? null;
-  const isPdf = body.subarray(0, 5).toString('latin1') === '%PDF-';
-  if (isPdf) {
-    if (body.length > MAX_PDF_BYTES) {
-      return { refusal: '📄 PDF juda katta (10 MB dan ortiq) — Excel yoki matn bilan yuboring.' };
+type SheetRefusalReason = Extract<import('../../wms/deals/goods-file').GoodsFileRead, { kind: 'refused' }>['reason'];
+const SHEET_REFUSAL: Record<SheetRefusalReason, (label: string) => string> = {
+  old_format: (label) => `📄 ${label} — Excel 95 yoki undan eski format, o‘qilmaydi. .xlsx qilib saqlab yuboring.`,
+  encrypted: (label) => `📄 ${label} — parol bilan himoyalangan, o‘qilmaydi. Parolsiz yuboring.`,
+  broken: (label) => `📄 ${label} — Excel fayl buzilgan yoki o‘qib bo‘lmadi. Qayta saqlab yuboring.`,
+  empty: (label) => `📄 ${label} — jadval bo‘sh.`,
+};
+
+/** The two answers to «a second invoice arrived» (his 1.13 c). */
+function invoiceChoiceKeyboard() {
+  return {
+    inline_keyboard: [
+      [{ text: '➕ Qatorlari qo‘shilsin', callback_data: 'c:inv_add' }],
+      [{ text: '🔁 Oldingisining o‘rniga', callback_data: 'c:inv_replace' }],
+    ],
+  };
+}
+
+/** The two answers to «a PDF or a sheet the AI reads, beside an Excel list» (round-1 review, c4). */
+function otherFilesKeyboard() {
+  return {
+    inline_keyboard: [
+      [{ text: '➕ Ha, boshqa zavod — tovarlari qo‘shilsin', callback_data: 'c:other_add' }],
+      [{ text: '📄 Yo‘q, o‘sha tovarlar — faqat jami o‘qilsin', callback_data: 'c:other_same' }],
+    ],
+  };
+}
+
+/** What a file is worth to the collection, and what the seller is told — pure. */
+export interface FileAnswer {
+  patch: Partial<IntakeState>;
+  say: string | null;
+  keyboard?: { inline_keyboard: { text: string; callback_data: string }[][] };
+}
+
+/**
+ * «Boshqa zavodning tovarlarimi?» — asked when a file the MODEL reads (a PDF,
+ * a header-less sheet) meets an Excel list the reader mapped, in either order
+ * (round-1 review, c4). The Excel list answers for the goods, so the model's
+ * lines were thrown away whatever the file was — after the bot had said «AI
+ * o'qiydi». A second factory's invoice is the commonest reason to send two
+ * documents (his 1.13), and the same invoice twice is the second commonest:
+ * only the seller knows which, and merging blind would double the order.
+ * Asked again for each new such file, because one answer about the first PDF
+ * says nothing about the next — and the LAST answer then stands for all of
+ * them: the model reads the files together and its list names no file per
+ * line, so «A's own PDF beside B's» has no right answer (round-2 review, C2;
+ * stated, not built — see `IntakeState.aiGoods`). The question says so.
+ */
+function otherFilesQuestion(invoiceLines: number): string {
+  return (
+    `\nExcel ro‘yxatida ${invoiceLines} ta tovar bor. AI o‘qiydigan fayl — boshqa zavodning tovarlarimi?` +
+    '\n(Javob AI o‘qiydigan hamma fayllarga tegishli; javobgacha tahlil boshlanmaydi.)'
+  );
+}
+
+/**
+ * How spreadsheet texts fit what the model reads, in ROWS — `fitSheetRows` at
+ * the reader's cap (round-3 review, R3-C2: counted in lines, a sheet's
+ * «[name]» heading was a row, and a 20-row file read «birinchi 21 qator»).
+ */
+export type SheetFit = (texts: readonly string[]) => { kept: number[]; total: number[] };
+
+/**
+ * A PDF: shown to the model, within the count and byte caps — and asked about
+ * when an Excel list already answers for the goods.
+ */
+export function receivePdf(state: IntakeState, pdf: { data: Buffer; name: string }, label: string): FileAnswer {
+  if (pdf.data.length > MAX_PDF_BYTES) {
+    return { patch: {}, say: `📄 ${label} — PDF juda katta (10 MB dan ortiq), AI o‘qimaydi. Kartada saqlandi.` };
+  }
+  const bytes = state.pdfs.reduce((n, p) => n + p.data.length, 0);
+  if (state.pdfs.length >= MAX_INTAKE_PDFS || bytes + pdf.data.length > MAX_INTAKE_PDF_BYTES) {
+    return {
+      patch: {},
+      say: `📄 ${label} — bitta so‘rovga ${MAX_INTAKE_PDFS} tadan ortiq PDF o‘qilmaydi. Kartada saqlandi.`,
+    };
+  }
+  const invoice = (state.invoiceGoods ?? []).length;
+  return {
+    patch: { pdfs: [...state.pdfs, pdf], ...(invoice > 0 ? { aiGoods: 'ask' as const } : {}) },
+    say: `📄 ${label} — AI o‘qiydi.` + (invoice > 0 ? otherFilesQuestion(invoice) : ''),
+    ...(invoice > 0 ? { keyboard: otherFilesKeyboard() } : {}),
+  };
+}
+
+/**
+ * A spreadsheet with no header the reader knows: its text goes to the model
+ * (his 1.2 b) — and the seller is told NOW when the model will not read all
+ * of it (round-1 review, a17), rather than the job landing short.
+ *
+ * Two cuts, both said: the READER's (`sheet.cut` — it stops every file at its
+ * own budget, so one oversized file reached this fit already short and passed
+ * it whole: «AI o‘qiydi» and nothing more, round-2 review C1/C4/C5), and this
+ * fit's, when the files together outgrow what the model reads. Both are ROWS
+ * missing. A file whose rows are all there and only some long cells were
+ * shortened (`sheet.cellsCut`) is told nothing: «faqat boshini o‘qiydi» about
+ * a table the model reads in full was false, and the seller cannot act on it
+ * (round-3 review, R3-C2 — the model is told, `sheetsPromptText`).
+ */
+export function receiveSheetText(state: IntakeState, label: string, sheet: SheetText, fit: SheetFit): FileAnswer {
+  const sheetTexts = [...state.sheetTexts, { ...sheet, label }];
+  // The new file's place in what the model is shown (`analyzeCollected`):
+  // after the separate files before it, ahead of any workbook's other sheets.
+  const at = sheetTexts.length - 1;
+  const texts = (list: readonly SheetText[]) => list.map((s) => s.text.trim());
+  const fitted = fit(texts([...sheetTexts, ...state.invoiceTexts]));
+  const kept = fitted.kept[at] ?? 0;
+  const total = fitted.total[at] ?? 0;
+  const cut =
+    kept === 0
+      ? '\n⚠️ Bu jadval AI ga sig‘madi (oldingi jadvallar bilan birga juda katta) — VED faylni kartadan o‘qiydi.'
+      : sheet.cut
+        ? `\n⚠️ Jadval katta: AI faqat boshini o‘qiydi (birinchi ${kept} qator) — qolganini VED fayldan ko‘radi.`
+        : kept < total
+          ? `\n⚠️ Jadval katta: AI faqat birinchi ${kept} / ${total} qatorini o‘qiydi — qolganini VED fayldan ko‘radi.`
+          : '';
+  // The budget is SHARED and this file stands ahead of the workbooks' other
+  // sheets, so it can push THEIR rows out — the packing list the shipment's
+  // totals are read from. The model is told under the sheet; the seller was
+  // told nothing (round-4 integration S-d: 192 rows of «A.xlsx» fell to 49).
+  const before = fit(texts([...state.sheetTexts, ...state.invoiceTexts]));
+  const squeezed = state.invoiceTexts.flatMap((t, j) => {
+    const was = before.kept[state.sheetTexts.length + j] ?? 0;
+    const now = fitted.kept[sheetTexts.length + j] ?? 0;
+    const of = fitted.total[sheetTexts.length + j] ?? 0;
+    if (now >= was) return [];
+    const whose = t.label ? `${t.label} ning` : 'oldingi Excel faylning';
+    return [
+      now === 0
+        ? `\n⚠️ Shu jadval tufayli ${whose} boshqa varaqlari AI ga sig‘madi — u yerdagi jami (kub/kg) o‘qilmaydi.`
+        : `\n⚠️ Shu jadval tufayli AI ${whose} boshqa varaqlaridan endi faqat ${now} / ${of} qatorini o‘qiydi.`,
+    ];
+  });
+  const invoice = (state.invoiceGoods ?? []).length;
+  return {
+    patch: { sheetTexts, ...(invoice > 0 ? { aiGoods: 'ask' as const } : {}) },
+    say:
+      `📄 ${label} — jadval sarlavhasini topa olmadim, AI o‘qiydi.` +
+      cut +
+      squeezed.join('') +
+      (invoice > 0 ? otherFilesQuestion(invoice) : ''),
+    ...(invoice > 0 ? { keyboard: otherFilesKeyboard() } : {}),
+  };
+}
+
+/**
+ * A spreadsheet the reader MAPPED: its lines are exact (P1.6).
+ *
+ *  - the first one IS the goods list, and its other sheets ride with it as
+ *    `invoiceTexts`; when the model already holds a separate PDF or sheet,
+ *    the «boshqa zavod?» question is asked here — the same pair in the
+ *    other order (round-1 review, c4);
+ *  - a further one is ASKED about (his 1.13 c), and while that question is
+ *    open every further file FOLDS into it — a third used to overwrite the
+ *    second, whose lines then reached nobody (round-1 review, c1). Its other
+ *    sheets wait with it, so a replace can drop them (c7).
+ *
+ * The goods rows are exact whatever the size; the OTHER sheets' text is what
+ * the reader cuts (`textCut`), and that is said too — those sheets are where
+ * the shipment's totals are read from (round-2 review, C1). Only when ROWS are
+ * missing: shortened cells (`cellsCut`) travel to the model and say nothing
+ * here (round-3 review, R3-C2).
+ */
+export function receiveGoodsSheet(
+  state: IntakeState,
+  sheet: {
+    goods: NonNullable<IntakeState['invoiceGoods']>;
+    label: string;
+    text: string;
+    textCut: boolean;
+    cellsCut: boolean;
+    where: string;
+    /**
+     * The reader's ceiling on goods rows, when this file reached it
+     * (`MAX_GOODS_ROWS`): a 6,000-line list answered «500 ta tovar o‘qildi»
+     * and nothing about the rest (round-4 integration S-b).
+     */
+    capped?: number;
+  },
+): FileAnswer {
+  const { goods, label, where } = sheet;
+  const texts: SheetText[] = sheet.text
+    ? [{ text: sheet.text, cut: sheet.textCut, cellsCut: sheet.cellsCut, label }]
+    : [];
+  const cut =
+    (sheet.capped
+      ? `\n⚠️ Bitta fayldan ko‘pi bilan ${sheet.capped} ta tovar qatori o‘qiladi — fayl uzunroq bo‘lsa, qolganini VED fayldan ko‘radi.`
+      : '') +
+    (sheet.text && sheet.textCut
+      ? '\n⚠️ Jadval katta: AI boshqa varaqlarning faqat boshini o‘qiydi' +
+        // «the goods list was read in full» is false of a capped one.
+        (sheet.capped ? '.' : ' (tovarlar ro‘yxati to‘liq olindi).')
+      : '');
+  const invoice = state.invoiceGoods ?? [];
+  if (invoice.length > 0) {
+    const waiting = state.pendingInvoice;
+    const pending = waiting
+      ? {
+          goods: [...(waiting.goods ?? []), ...goods],
+          label: `${waiting.label}, ${label}`,
+          texts: [...waiting.texts, ...texts],
+        }
+      : { goods, label, texts };
+    return {
+      patch: { pendingInvoice: pending },
+      say:
+        `📄 ${label} — ${goods.length} ta tovar${where}.${cut}\n` +
+        (waiting ? `Javob kutayotgan fayllar: ${pending.label} — jami ${pending.goods.length} ta tovar.\n` : '') +
+        `Oldingi faylda ${invoice.length} ta tovar bor. Nima qilamiz?`,
+      keyboard: invoiceChoiceKeyboard(),
+    };
+  }
+  const ask = state.aiGoods === null && (state.pdfs.length > 0 || state.sheetTexts.length > 0);
+  return {
+    patch: { invoiceGoods: goods, invoiceTexts: texts, ...(ask ? { aiGoods: 'ask' as const } : {}) },
+    say: `📄 ${label} — ${goods.length} ta tovar o‘qildi${where}.` + cut + (ask ? otherFilesQuestion(goods.length) : ''),
+    ...(ask ? { keyboard: otherFilesKeyboard() } : {}),
+  };
+}
+
+/**
+ * The answer to «a second invoice arrived» (his 1.13 c), as a patch — pure.
+ *
+ * A collection still waiting for the customer (or the podklyuch door's
+ * «qayerdan?») KEEPS waiting: the answer used to move it to 'material', so the
+ * open question was never asked again, a code typed next was filed as
+ * material, and the job landed as a nameless lead with no road (round-1
+ * review, c0). `reask` names the question to ask again. Null = nothing waits:
+ * the button is stale.
+ */
+export function invoiceChoice(
+  state: IntakeState,
+  step: 'inv_add' | 'inv_replace',
+): { patch: Partial<IntakeState>; said: string; reask: 'client' | 'section' | null } | null {
+  const pending = state.pendingInvoice;
+  if (!pending) return null;
+  const add = step === 'inv_add';
+  const goods = add ? [...(state.invoiceGoods ?? []), ...(pending.goods ?? [])] : (pending.goods ?? []);
+  const reask = state.stage === 'client' || state.stage === 'section' ? state.stage : null;
+  return {
+    patch: {
+      invoiceGoods: goods,
+      // The replaced workbook's other sheets leave with its goods (c7).
+      invoiceTexts: add ? [...state.invoiceTexts, ...pending.texts] : pending.texts,
+      pendingInvoice: null,
+      stage: reask ?? 'material',
+    },
+    said: add
+      ? `➕ ${pending.label} qo‘shildi: endi fayllarda ${goods.length} ta tovar.`
+      : `🔁 ${pending.label} oldingisining o‘rniga olindi: ${goods.length} ta tovar.`,
+    reask,
+  };
+}
+
+/** The answer to «boshqa zavodning tovarlarimi?» (round-1 review, c4) — pure, like `invoiceChoice`. */
+export function otherFilesChoice(
+  state: IntakeState,
+  step: 'other_add' | 'other_same',
+): { patch: Partial<IntakeState>; said: string; reask: 'client' | 'section' | null } | null {
+  if (state.aiGoods !== 'ask') return null;
+  const reask = state.stage === 'client' || state.stage === 'section' ? state.stage : null;
+  return {
+    patch: { aiGoods: step === 'other_add' ? 'add' : 'context', stage: reask ?? 'material' },
+    said:
+      step === 'other_add'
+        ? '➕ Boshqa zavod: AI o‘qigan tovarlar Excel ro‘yxatiga qo‘shiladi.'
+        : '📄 O‘sha tovarlar: ro‘yxat Excel fayldan olinadi, qolgan fayllardan faqat jami (kub/kg) o‘qiladi.',
+    reask,
+  };
+}
+
+/**
+ * What a forwarded file is worth to the calculation, and the one sentence the
+ * seller is told about it — every file is ANSWERED (the diagnosis' cause 3:
+ * an .xls, a second PDF, a seventh photo, a photo sent as a file were all
+ * dropped in silence).
+ *
+ *  - a PHOTO, or a picture sent as a FILE, is downscaled and shown to the
+ *    model — up to `MAX_INTAKE_IMAGES` (his 1.4 b: twelve); a HEIC this
+ *    server cannot decode is refused in words;
+ *  - a PDF is shown to the model as a document — up to `MAX_INTAKE_PDFS`,
+ *    read together;
+ *  - a SPREADSHEET is read by `readGoodsFile`: the reader's rows when it finds
+ *    the header, the model when it does not (his 1.2 b); a second goods file
+ *    is ASKED about (his 1.13 c);
+ *  - a DOCX is refused in words — it is a zip like an xlsx and would read as
+ *    «no goods».
+ *
+ * Exported for the test: the reader's `textCut` reaching the collection is a
+ * wire through THIS function, and a test of the two pure halves beside it
+ * cannot see a wire that drops it (round-2 review, C1 — #531's shape).
+ */
+export async function readIntakeFile(
+  saved: { isPhoto: boolean; body: Buffer },
+  fileName: string,
+  mime: string | null,
+  state: IntakeState,
+): Promise<FileAnswer> {
+  const label = fileName ? `«${fileName}»` : 'Fayl';
+  const kind = intakeFileKind(saved.body, saved.isPhoto, fileName, mime);
+  if (kind === 'image' || kind === 'isomedia') {
+    // Counted, never silent: the prompt says how many will not be read.
+    if (state.images.length >= MAX_INTAKE_IMAGES) return { patch: { imagesSkipped: state.imagesSkipped + 1 }, say: null };
+    const reduced = await reduceForModel(saved.body).catch(() => null);
+    if (!reduced) {
+      return {
+        patch: { imagesSkipped: state.imagesSkipped + 1 },
+        say:
+          kind === 'isomedia'
+            ? `📷 ${label} — HEIC rasm, o‘qib bo‘lmaydi. JPG yoki skrinshot qilib yuboring.`
+            : `📷 ${label} — rasmni o‘qib bo‘lmadi (buzilgan yoki juda katta).`,
+      };
     }
-    return { pdf: { data: body, name: name || 'invoice.pdf' } };
+    return {
+      patch: { images: [...state.images, { data: reduced, mediaType: 'image/jpeg' }] },
+      say: saved.isPhoto ? null : `🖼 ${label} — rasm sifatida o‘qiladi.`,
+    };
   }
-  if (/\.docx?$/i.test(name) || (mime ?? '').includes('wordprocessingml')) {
-    return { refusal: '📄 DOCX o‘qilmaydi — PDF yoki Excel qilib yuboring.' };
+  if (kind === 'pdf') return receivePdf(state, { data: saved.body, name: fileName || 'invoice.pdf' }, label);
+  if (kind === 'docx') return { patch: {}, say: `📄 ${label} — Word fayl o‘qilmaydi. PDF yoki Excel qilib yuboring.` };
+  if (kind === 'video') return { patch: {}, say: `🎬 ${label} — video o‘qilmaydi. Rasm yoki matn yuboring.` };
+  if (kind === 'archive') {
+    return { patch: {}, say: `🗜 ${label} — arxiv o‘qilmaydi. Ichidagi fayllarni alohida yuboring.` };
   }
-  const { goodsFromFile } = await import('../../wms/deals/goods-file');
-  const goods = await goodsFromFile(body, mime).catch(() => null);
-  if (!goods) return null;
+
+  const { readGoodsFile, SHEET_TEXT_BUDGET } = await import('../../wms/deals/goods-file');
+  const sheet = await readGoodsFile(saved.body, mime).catch((err: unknown) => {
+    logger.warn({ err }, '[calc-intake] spreadsheet unreadable');
+    return { kind: 'refused', reason: 'broken' } as const;
+  });
+  if (!sheet) {
+    return { patch: {}, say: `📎 ${label} kartada saqlandi, lekin o‘qilmaydi: faqat rasm, PDF va Excel/CSV o‘qiladi.` };
+  }
+  if (sheet.kind === 'refused') return { patch: {}, say: SHEET_REFUSAL[sheet.reason](label) };
+  // The reader's own two words travel with the text (round-2 review,
+  // C1/C4/C5; round-3, R3-C2): `textCut` = rows are missing — the seller and
+  // the model are told; `cellsCut` = every row is there, some cells shortened
+  // — the model is told, the seller nothing.
+  if (sheet.kind === 'text') {
+    const { fitSheetRows } = await import('../../wms/calc/intake-ai');
+    return receiveSheetText(state, label, { text: sheet.text, cut: sheet.textCut, cellsCut: sheet.cellsCut }, (texts) =>
+      fitSheetRows(texts, SHEET_TEXT_BUDGET),
+    );
+  }
   // Everything the file states reaches the landing (2026-10-09, P1.6) —
   // through the one mapping the landing's own test reads.
   const { invoiceFacts } = await import('../../wms/calc/intake');
-  return { goods: invoiceFacts(goods) };
+  const { MAX_GOODS_ROWS } = await import('../../wms/deals/goods-import');
+  const where = sheet.sheets > 1 ? ` («${sheet.sheet}» varag‘idan; boshqa varaqlarni AI o‘qiydi)` : '';
+  return receiveGoodsSheet(state, {
+    goods: invoiceFacts(sheet.goods),
+    label,
+    text: sheet.text,
+    textCut: sheet.textCut,
+    cellsCut: sheet.cellsCut,
+    where,
+    // The reader stops at its ceiling and says nothing; reaching it is the
+    // one sign the file may hold more (round-4 integration S-b).
+    ...(sheet.goods.length >= MAX_GOODS_ROWS ? { capped: MAX_GOODS_ROWS } : {}),
+  });
 }
 
 type BotFileCtx = {
@@ -1846,7 +2536,11 @@ async function showIntakePrompt(
     state.material.length ? `✍️ ${state.material.length} ta xabar` : '',
     state.fileCount ? `📎 ${state.fileCount} ta fayl` : '',
     state.images.length ? `🖼 ${state.images.length} ta rasm o‘qiladi` : '',
-    state.imagesSkipped ? `⚠️ ${state.imagesSkipped} ta rasm o‘qilmaydi` : '',
+    state.pdfs.length ? `📄 ${state.pdfs.length} ta PDF o‘qiladi` : '',
+    (state.invoiceGoods ?? []).length ? `📊 fayldan ${(state.invoiceGoods ?? []).length} ta tovar` : '',
+    state.imagesSkipped
+      ? `⚠️ ${state.imagesSkipped} ta rasm o‘qilmaydi${state.images.length >= MAX_INTAKE_IMAGES ? ` (${MAX_INTAKE_IMAGES} tadan ortig‘i)` : ''}`
+      : '',
   ].filter(Boolean);
   const text = `Qabul qilindi: ${parts.join(' · ')}\nYana yuboring yoki «Bo‘ldi» ni bosing.`;
 
@@ -1871,7 +2565,7 @@ async function showIntakePrompt(
  * step reads the live collection rather than trusting the button: a stale
  * keyboard from yesterday's message must not resurrect a finished intake.
  */
-async function handleCalcCallback(
+export async function handleCalcCallback(
   ctx: { reply: (text: string, extra?: Record<string, unknown>) => Promise<unknown> },
   chatId: bigint,
   step: CalcStep,
@@ -1971,12 +2665,22 @@ async function handleCalcCallback(
   }
 
   if (step === 'skip') {
+    // Only the question that is OPEN, like `pick_N` (round-1 review, c5): a ⏭
+    // under an old question used to run the next-or-confirm step from the
+    // facts as they stood — so material sent since, or a collection not yet
+    // read at all, reached 'review' with no analysis, and the confirm guard
+    // below («only what the seller was SHOWN») trusted that stage.
+    if (state.stage !== 'question' || state.analysing) {
+      await ctx.reply('Bu tugma eskirgan.');
+      return;
+    }
     // The skipped line is DONE for this collection — never asked again, not
     // even after «➕ Yana ma'lumot» re-reads the material (P1.3).
-    const lineDone =
-      state.stage === 'question' && state.askingIndex !== null && !state.askingTotals
-        ? [...state.lineDone, state.askingIndex]
-        : state.lineDone;
+    const skipped =
+      state.stage === 'question' && state.askingIndex !== null && state.askingTotalsFor === null
+        ? doneLine(state.facts.goods, state.askingIndex)
+        : null;
+    const lineDone = skipped ? [...state.lineDone, skipped] : state.lineDone;
     await askNextOrConfirm(ctx, chatId, { ...state, lineDone, reasked: false, offers: [] });
     return;
   }
@@ -1986,12 +2690,37 @@ async function handleCalcCallback(
     // pending question's own offers can be picked: a press from an older
     // message, or after the line moved on, finds nothing and says so.
     const offer = state.offers[Number(step.slice('pick_'.length))];
-    if (state.stage !== 'question' || state.askingIndex === null || state.askingTotals || !offer) {
+    if (state.stage !== 'question' || state.askingIndex === null || state.askingTotalsFor !== null || !offer) {
       await ctx.reply('Bu tugma eskirgan.');
       return;
     }
     const { needFigure } = await import('../../wms/calc/intake');
     await applyLinePatch(ctx, chatId, state, state.askingIndex, needFigure(offer.unit, offer.value));
+    return;
+  }
+
+  if (step === 'inv_add' || step === 'inv_replace' || step === 'other_add' || step === 'other_same') {
+    // His 1.13 c: the second invoice waits for this answer — and, beside an
+    // Excel list, a file the AI reads waits for «boshqa zavodmi?» (c4).
+    const choice =
+      step === 'inv_add' || step === 'inv_replace' ? invoiceChoice(state, step) : otherFilesChoice(state, step);
+    if (!choice) {
+      await ctx.reply('Bu tugma eskirgan.');
+      return;
+    }
+    const next = updateIntake(chatId, choice.patch);
+    await ctx.reply(choice.said);
+    // The question the collection is still waiting on is asked again — the
+    // file handler's own words (round-1 review, c0).
+    if (choice.reask === 'section') {
+      await ctx.reply('Avval yuk qayerdan chiqishini tanlang:', { reply_markup: zoneKeyboard(await pricedZonesNow()) });
+      return;
+    }
+    if (choice.reask === 'client') {
+      await ctx.reply(CLIENT_QUESTION, { parse_mode: 'Markdown' });
+      return;
+    }
+    if (next) await showIntakePrompt(ctx as Parameters<typeof showIntakePrompt>[0], chatId, next);
     return;
   }
 
@@ -2003,22 +2732,67 @@ async function handleCalcCallback(
     return;
   }
 
-  if (step === 'done') {
+  if (step === 'done' || step === 'reread') {
+    // One analysis at a time: a second press used to start a second paid
+    // call whose result overwrote the first (cause 7).
+    if (state.analysing) {
+      await ctx.reply('⏳ Tahlil davom etmoqda — natijani kuting.');
+      return;
+    }
+    if (state.stage === 'client' || state.stage === 'section') {
+      await ctx.reply(
+        state.stage === 'client' ? CLIENT_QUESTION : 'Avval yuk qayerdan chiqishini tanlang.',
+        state.stage === 'client' ? { parse_mode: 'Markdown' } : { reply_markup: zoneKeyboard(await pricedZonesNow()) },
+      );
+      return;
+    }
+    if (state.pendingInvoice) {
+      await ctx.reply('Avval ikkinchi fayl haqida javob bering:', { reply_markup: invoiceChoiceKeyboard() });
+      return;
+    }
+    if (state.aiGoods === 'ask') {
+      await ctx.reply('Avval javob bering: AI o‘qiydigan fayl — boshqa zavodning tovarlarimi?', {
+        reply_markup: otherFilesKeyboard(),
+      });
+      return;
+    }
     if (state.material.length === 0 && state.fileCount === 0) {
       await ctx.reply('Hali hech narsa yuborilmadi.');
       return;
     }
-    await ctx.reply('⏳ Tahlil qilinmoqda…');
+    const token = randomUUID();
+    const owned = updateIntake(chatId, { analysing: token }) ?? state;
+    // The notice must not decide whether the analysis runs (round-1 review,
+    // c3): the token is already written, only the analysis releases it, and
+    // a refused notice — a 429 past `briefRetry`'s five seconds, a blip to
+    // api.telegram.org — used to throw before the dispatch, leaving every
+    // later «Bo'ldi» and «Tasdiqlash» answering «Tahlil davom etmoqda» for an
+    // analysis that never started, until the seller threw the collection away.
+    await ctx.reply('⏳ AI o‘qiyapti… (3 daqiqagacha)').catch((err: unknown) =>
+      logger.warn({ err }, '[calc-intake] analysing notice not sent'),
+    );
     // OFF the middleware chain, exactly like the assistant's answer (#706):
     // grammy's poller is sequential and the same bot serves every customer,
     // so awaiting an Opus call over twenty thousand characters here freezes
     // every cabinet tap, every /start and every «yukingiz keldi» until it
     // returns.
-    void analyseIntakeAndReply(ctx, chatId, state);
+    void analyseIntakeAndReply(ctx, chatId, owned, token);
     return;
   }
 
-  // save
+  // save — only what the seller was SHOWN. An old «Tasdiqlash» pressed
+  // after «➕ Yana ma'lumot», or while the analysis runs, used to land facts
+  // that never included the newest material.
+  if (state.analysing) {
+    await ctx.reply('⏳ Tahlil davom etmoqda — natijani kuting.');
+    return;
+  }
+  // A reading the seller was shown is 'review', or 'question' while a line is
+  // asked about; anything else holds material nobody has read yet.
+  if (state.stage !== 'review' && state.stage !== 'question') {
+    await ctx.reply('Yangi ma’lumot hali o‘qilmagan — avval «Bo‘ldi» ni bosing.', { reply_markup: doneKeyboard });
+    return;
+  }
   const staff = await staffForChat(chatId);
   if (!staff) {
     await ctx.reply('Ulanmagan.');
@@ -2066,6 +2840,12 @@ async function handleCalcCallback(
   // screen for the VED, or no line at all (`landingLinkFor`): one literal for
   // everyone handed the VED a CRM card that bounces him.
   const link = await landingLinkFor(staff.id, target);
+  // A section with no customs half is answered from the tariff table on its
+  // own fast queue (judge concurrency-8): that reply can land ABOVE this
+  // message, so the sentence says it comes separately — true in either order
+  // — rather than «VED javob beradi» under a figure already in the chat.
+  const { sectionParts } = await import('../../wms/calc/pricing');
+  const tariffFollows = target.replyQueued === true && !sectionParts(state.section).customs;
   await ctx.reply(
     `✅ Saqlandi — ${landedWords(target)}\n` +
       (link ? `${link}\n` : '') +
@@ -2073,13 +2853,19 @@ async function handleCalcCallback(
       // Honest about which half landed: the material is on the card either
       // way, but only a queued request will be calculated by anybody.
       (target.queued
-        ? '🧮 Hisoblash navbatiga tushdi — VED xodimi javob beradi.'
+        ? tariffFollows
+          ? TARIFF_FOLLOWS
+          : '🧮 Hisoblash navbatiga tushdi — VED xodimi javob beradi.'
         : `⚠️ Hisoblash navbatiga tushmadi: ${queueRefusal(target.queueError)}`),
     // Re-derived, not named (round 100, 13A): naming staffKeyboard() here
     // took the cabinet buttons off a both-chat's phone.
     { reply_markup: await replyKeyboardFor(chatId) },
   );
 }
+
+/** The ✅'s queue line when the tariff reply is on its way (judge concurrency-8). */
+export const TARIFF_FOLLOWS =
+  '🧮 Hisoblash navbatiga tushdi — tarif bo‘yicha javob alohida xabarda keladi, rasmiy narxni VED beradi.';
 
 /**
  * WHY the job did not reach the VED's queue (audit A38).

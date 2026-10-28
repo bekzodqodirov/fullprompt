@@ -18,6 +18,7 @@ import { createTask } from '@/modules/platform/tasks/service';
 import { notifyStaffTelegram, userName } from '@/modules/platform/notifications/staff';
 import { usersWithPermission, usersWithRoles } from '@/modules/platform/notifications/service';
 import { canLogInSql } from '@/modules/platform/users/login';
+import { tashkentDay, tashkentDayStart } from '@/modules/platform/time/tashkent';
 import { cardLink } from '@/modules/platform/notifications/links';
 import { logger } from '@/modules/platform/logger';
 import { violatedUnique } from '@/modules/platform/db/errors';
@@ -31,6 +32,7 @@ import {
   isComplete,
   lineNeeds,
   missingFields,
+  typedFigure,
   type CalcFacts,
   type CalcGoodsFact,
   type CalcSection,
@@ -38,6 +40,7 @@ import {
 } from './intake';
 import { bookLawsFor } from './book-laws';
 import { doorRow } from './door-row';
+import { linesVolumeM3 } from './line-totals';
 import type { NeedLaw } from './needs';
 import type { BazaBasis, MeasureUnit } from './pricing';
 import { parseTypedMoney } from './money-input';
@@ -129,10 +132,22 @@ export const openRequests = isNull(calcRequests.completedAt);
  * Measured on his own data. A correction routed «to whoever priced the
  * parent» would bring that back for every job he sealed himself, so it asks
  * the same subtraction. They keep the manual «Olaman» door.
+ *
+ * …unless the admin also holds the VED ROLE (his 5.7, 2026-10-21: «adminga
+ * ham tushsin agar ved roli ochiq bolsa»). The admin role alone carries
+ * `ved.docs` as one grant among all of them and says nothing about who
+ * calculates; the `ved_manager` role on the same person is the owner saying
+ * that this one does.
  */
 export async function vedRotaPool(): Promise<string[]> {
-  const adminIds = new Set(await usersWithRoles(['super_admin', 'admin']));
-  const pool = (await usersWithPermission('ved.docs')).filter((id) => !adminIds.has(id));
+  const [admins, vedRole, holders] = await Promise.all([
+    usersWithRoles(['super_admin', 'admin']),
+    usersWithRoles(['ved_manager']),
+    usersWithPermission('ved.docs'),
+  ]);
+  const adminIds = new Set(admins);
+  const calculators = new Set(vedRole);
+  const pool = holders.filter((id) => !adminIds.has(id) || calculators.has(id));
   if (pool.length === 0) return [];
   const rows = await db
     .select({ id: users.id })
@@ -142,34 +157,55 @@ export async function vedRotaPool(): Promise<string[]> {
 }
 
 /**
- * Whose turn it is to calculate: fewest OPEN requests, longest-since breaks a
- * tie, never-had-one sorts FIRST — over `vedRotaPool`.
+ * Whose turn it is to calculate, over `vedRotaPool` (his 5.1 c):
  *
- * The counting rule is the taqsimot rota's (`crm/routing.ts` — round 96) and
- * the comment there explains why it is worth restating rather than sharing:
- * that one answers «whose lead is this», this one «whose calculation is
- * this», and a shared query would have to take a table name as an argument.
- * When the pool is empty — a company whose only `ved.docs` holders are
- * admins — the request is stored UNASSIGNED, which is an honest state the
- * queue already draws and the overdue sweep already announces to the pool.
+ *  1. whoever has the fewest OPEN requests — a free person first;
+ *  2. then whoever was handed the fewest TODAY (the Tashkent day);
+ *  3. then whoever has waited longest since they were last handed one,
+ *     never-had-one first;
+ *  4. then the id, so a tie is decided by something that cannot move.
+ *
+ * Rules 2-4 are the fix for his «faqat Murodga tushgan» (2026-10-21, ~90 % on
+ * one person). The old order stopped at rule 1 and then `max(requested_at)`
+ * over OPEN requests — and when everybody has nothing open, which is the
+ * normal state of a VED team that keeps up, that maximum is NULL for all of
+ * them: every candidate tied, and postgres handed back the same first row of
+ * the aggregate every time. «Handed» is `coalesce(taken_at, requested_at)`
+ * of a request the person HOLDS, so a job taken with «Olaman» counts for its
+ * taker and one released with «Bo'shatish» counts for nobody.
+ *
+ * Inside the caller's transaction, under ONE advisory lock: two requests
+ * landing in the same second read the same counts and both went to the same
+ * person. The lock makes the second wait for the first's commit, and the
+ * count then sees it (a new statement, a new snapshot in READ COMMITTED). The
+ * pool is computed BEFORE the transaction by the caller — it reads through
+ * the pool (#714).
+ *
+ * The counting rule is the taqsimot rota's in spirit (`crm/routing.ts` —
+ * round 96) and is restated rather than shared: that one answers «whose lead
+ * is this», this one «whose calculation is this». When the pool is empty — a
+ * company whose only `ved.docs` holders are admins — the request is stored
+ * UNASSIGNED, which is an honest state the queue already draws and the
+ * overdue sweep already announces to the pool.
  */
-export async function nextVedAssignee(): Promise<string | null> {
-  const pool = await vedRotaPool();
+export async function nextVedAssigneeInTx(tx: Tx, pool: readonly string[]): Promise<string | null> {
   if (pool.length === 0) return null;
-  const rows = await db
-    .select({
-      id: users.id,
-      n: sql<number>`count(${calcRequests.id})`,
-      last: sql<Date | null>`max(${calcRequests.requestedAt})`,
-    })
-    .from(users)
-    .leftJoin(calcRequests, and(eq(calcRequests.assigneeId, users.id), openRequests))
-    .where(inArray(users.id, pool))
-    .groupBy(users.id)
-    .orderBy(
-      sql`count(${calcRequests.id}) asc, max(${calcRequests.requestedAt}) asc nulls first`,
-    )
-    .limit(1);
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('ved-rota'))`);
+  const dayStart = tashkentDayStart(tashkentDay()).toISOString();
+  const rows = await tx.execute<{ id: string }>(sql`
+    SELECT u.id::text AS id
+      FROM users u
+      LEFT JOIN calc_requests r ON r.assignee_id = u.id
+     WHERE u.id IN (${sql.join(pool.map((id) => sql`${id}::uuid`), sql`, `)})
+     GROUP BY u.id
+     ORDER BY count(r.id) FILTER (WHERE r.completed_at IS NULL) ASC,
+              count(r.id) FILTER (
+                WHERE coalesce(r.taken_at, r.requested_at) >= ${dayStart}::timestamptz
+              ) ASC,
+              max(coalesce(r.taken_at, r.requested_at)) ASC NULLS FIRST,
+              u.id ASC
+     LIMIT 1
+  `);
   return rows[0]?.id ?? null;
 }
 
@@ -227,6 +263,13 @@ export interface CalcRequestInput {
    * seal's own `zone_required` then asks for one, in words.
    */
   freightZone?: string | null;
+  /**
+   * The seller typed the cube two ways and nobody said which
+   * (`CalcFacts.volumeAmbiguous`, review P3-R2): the lines' Σ does not
+   * stand in for a total the seller DID state — the column stays empty, so
+   * the VED's chip asks, as the summary and the lenta note already did.
+   */
+  volumeAmbiguous?: boolean;
 }
 
 const num = (value: number | null | undefined): string | null =>
@@ -397,11 +440,31 @@ export async function openCalcRequest(
     note: row.note,
   }));
 
-  const assigneeId = await nextVedAssignee();
+  // The shipment's m³: the seller's, else SUMMED from the door-routed lines
+  // (his 2.7 b; `linesVolumeM3`, all lines or none). Stored HERE, at the
+  // INSERT, and nowhere later (docs/SAKKIZ-R2.md §8.2.3):
+  //  - MR-9 keeps a request m³ so the upsale's payout scales on the QUOTED
+  //    cube, and the checklist now stops asking a total the lines already
+  //    give (`factsVolumeM3`) — a request landed with lines and no stored
+  //    total would pay the whole share on the first carton, MR-9's own
+  //    failure;
+  //  - a later write moves the revision, and the queued pass would stand down.
+  // Its provenance is never stored: «qatorlardan» is derived at read time
+  // (`Workspace.volumeFromLines`, K13); the audit row below records the fact.
+  // A typed 0 is a blank somebody typed over — the checklist's own reading
+  // (`factsVolumeM3` sums under it), so the INSERT sums under it too, by the
+  // checklist's own rule (`typedFigure`), or the chip and the stored column
+  // would disagree. An AMBIGUOUS typed cube is summed under by neither.
+  const typedVolume = typedFigure(input.volumeM3);
+  const linesVolume = typedVolume === null && !input.volumeAmbiguous ? linesVolumeM3(rows) : null;
+  const volumeM3 = num(typedVolume ?? linesVolume ?? input.volumeM3);
+
+  // Pooled, so BEFORE the transaction (#714); the pick itself is inside it.
+  const pool = await vedRotaPool();
   const hasMaterials = Boolean(noteId) || Boolean(input.hasMaterials);
   const dueAt = new Date(Date.now() + calcDueMinutes(items.length, hasMaterials) * 60_000);
 
-  const requestId = await db.transaction(async (tx) => {
+  const { requestId, assigneeId } = await db.transaction(async (tx) => {
     // A request lands on a lead only while it is OPEN, decided under the
     // lead's row lock: a win takes the same row FOR UPDATE while it moves the
     // lead's jobs onto their deals, so a job can no longer slip in between
@@ -422,6 +485,10 @@ export async function openCalcRequest(
         ctx,
       );
     }
+    // The turn is taken LAST, after the lead's row lock — the order
+    // `recalcFromSealed` takes them in — so the rota's lock is never held
+    // while a win waits on the lead.
+    const assigneeId = await nextVedAssigneeInTx(tx, pool);
     const [row] = await tx
       .insert(calcRequests)
       .values({
@@ -434,7 +501,7 @@ export async function openCalcRequest(
         fromCity: input.fromCity?.slice(0, 120) || null,
         toCity: input.toCity?.slice(0, 120) || null,
         weightKg: num(input.weightKg),
-        volumeM3: num(input.volumeM3),
+        volumeM3,
         source: input.source,
         hasCertificate: input.hasCertificate ?? true,
         freightZone,
@@ -456,9 +523,10 @@ export async function openCalcRequest(
         section: input.section,
         items: items.length,
         dueAt: dueAt.toISOString(),
+        ...(linesVolume !== null ? { volumeFromLines: true } : {}),
       },
     });
-    return id;
+    return { requestId: id, assigneeId };
   }).catch((err: unknown) => {
     // Two presses of one form carry one pre-minted note id. The pooled check
     // above answers the second once the first has COMMITTED; a second that
@@ -1491,7 +1559,10 @@ async function goodsByRequest(ids: string[]): Promise<Map<string, GoodsFact[]>> 
  *
  * The facts are STORED rows: nothing is derived from the shipment total
  * (`lineWeightsStated`) — a row the card form landed without a netto weight
- * has none, and a chip calling it complete would contradict the engine.
+ * has none, and a chip calling it complete would contradict the engine. Nor
+ * the other way (`totalsStored`, judge regression-3): a stored `volume_m3`
+ * of null is what the freight engine refuses `measure_missing` on, so the
+ * chip keeps asking it even when the lines would add up.
  */
 export function missingFor(
   section: string | null,
@@ -1499,7 +1570,7 @@ export function missingFor(
   laws: ReadonlyMap<string, NeedLaw>,
 ): string[] {
   if (!section) return [];
-  return missingFields(section as CalcSection, { ...facts, lineWeightsStated: true }, laws);
+  return missingFields(section as CalcSection, { ...facts, lineWeightsStated: true, totalsStored: true }, laws);
 }
 
 /** The lines behind `missingFor`'s `lineNeed` / `itemMeasure` — same facts. */
@@ -1509,7 +1580,7 @@ export function lineNeedsFor(
   laws: ReadonlyMap<string, NeedLaw>,
 ): LineNeed[] {
   if (!section) return [];
-  return lineNeeds(section as CalcSection, { ...facts, lineWeightsStated: true }, laws);
+  return lineNeeds(section as CalcSection, { ...facts, lineWeightsStated: true, totalsStored: true }, laws);
 }
 
 /**

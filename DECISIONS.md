@@ -4532,6 +4532,293 @@ Red-proven by string edit four ways: arrivals at a Chinese warehouse sent to `in
 `column === 'inland'`; `cn_transit` counted as Irkeshtam; a ninth map code. The third first stayed GREEN — the
 edit named the Chinese leg `cn`, which no segment is called — and was redone on the real key.
 
+## Sakkiz band, round 1 — the bot stops losing what it is sent; the VED rota stops picking one person (2026-10-21; NO migration; spec `docs/SAKKIZ-BAND.md`, his answers §11)
+
+His eight items of 2026-10-20, diagnosed and answered («1 chi band 3 b / 2chi
+bolim 4 c / … / umumiy savollar 0 1 a», every unnamed question = ⭐). Round 1 is
+the part his answers fully cover: item 1's losses, item 5's tie, and the blurry
+photos he added to item 8. Numbered #1455 — `main` had reached #1454 (the other
+session's board rounds) while this was built.
+
+**#1455 — The VED rota: a free person first, then the fewest handed TODAY, then
+the longest wait, then the id — inside the landing's transaction, under one
+advisory lock.** His «faqat Murodga tushgan, 10 foizcha boshqa hodimga» is the
+tie: the old order stopped at «fewest OPEN» and then `max(requested_at)` over
+OPEN requests, which is NULL for everybody when nobody holds anything — the
+normal state of a team that keeps up — so postgres handed back the same first
+aggregate row every time. Reproduced exactly: nine requests over three free
+people went `[9, 0, 0]`; now `[3, 3, 3]`. «Handed» = `coalesce(taken_at,
+requested_at)` of a request the person HOLDS («Olaman» counts for the taker,
+«Bo'shatish» for nobody); «today» is the Tashkent day (`tashkentDayStart`). The
+pick moved INTO both writers' transactions (`openCalcRequest`,
+`recalcFromSealed`) as `nextVedAssigneeInTx(tx, pool)` with the pool read on the
+pool before (#714); `pg_advisory_xact_lock(hashtext('ved-rota'))` makes a second
+landing wait for the first's commit, proven deterministically with a held-open
+transaction (without the lock both went to the same person). His 5.7: an admin
+who ALSO holds the `ved_manager` ROLE is in the pool — the admin role alone
+carries `ved.docs` as one grant among all and says nothing about who calculates.
+His 5.4 a: a correction still goes back to its pricer, busy or not. Weights by
+line count (5.2 b), the rota checkbox (5.3 b) and the «Bugun» line (5.6 a) are
+round 9. 3 red proofs.
+
+**#1456 — The model's reading fails in WORDS, never «AI mavjud emas».** His
+screenshot was that sentence over a typed goods line. `analyzeIntake` now
+answers `{ok} | {ok:false, failure}` over twelve named failures
+(`AiReadFailure`, `AI_READ_FAILURE` — not_configured, nothing_to_read, budget,
+refused, truncated, timeout, rate_limited, overloaded, auth, rejected,
+unreadable, network), each a sentence and a «can a retry help» flag that draws
+«🔄 AI qayta o'qisin». The likeliest cause of his case is named and fixed:
+the heavy model thinks by default and thinking counts INSIDE `max_tokens`, so
+4096 left a forty-line packing list no room — the JSON stopped mid-object, the
+parse threw, and the catch reported «no AI». `INTAKE_MAX_TOKENS = 16_000`
+(under the SDK's non-streaming ceiling), `stop_reason === 'max_tokens'` →
+`truncated`, the leash 150 s for the bot (his 3.4 b, «⏳ AI o'qiyapti… (3
+daqiqagacha)») and the SDK's own retry OFF — it restarted the whole leash and
+re-sent every image; one retry of ours, only for a failure where the call never
+ran and only while half the leash is left. `aiFailureOf` is tested against the
+SDK's OWN error classes (#1209). The model's notes reach the seller (two or
+three, his 1.6 a); the system prompt asks it to merge one order's pieces into
+one list and to write names in Russian with the original in brackets (1.5 b).
+The model itself is unchanged — round 5 (his 3.x) picks it from a settings
+screen. The chat door shows a one-line `threadAiFailed` in four locales.
+
+**#1457 — What a person TYPED as goods is read without the model**
+(`readGoodsLines`). It returned `[]` by design («splitting a list is the model's
+job»), so a failed model left «Tovarlar: —» over «Tovar синтетическое
+компрессорное масло 1.1 kub 240 kg». Narrow on purpose: a line counts only when
+it says it is one («Tovar: …») or is a name followed by nothing but figures
+(«Kurtka 300 dona 150 kg»); a route, a line of totals words («vazni 120 kg»),
+a sentence with a number in it («yana 250 kg deb yozishdi»), a code, or an
+ambiguous figure («1,200») is not. These lines sit LAST — the invoice's rows and
+the model's reading win. The chat door reads them from the messages' bodies,
+not from the «Mijoz: » labelled material, or the speaker would join the name.
+
+**#1458 — Spreadsheets: every sheet, every shape, and a sheet the reader cannot
+map goes to the MODEL, never becomes invented goods** (`readGoodsFile`). Content
+decides the shape (#284): `PK` = XLSX, the OLE signature = Excel 97, text = an
+HTML table, an Excel 2003 XML sheet or a CSV decoded by BOM → strict UTF-8 →
+strict GBK → cp1251. **.xls (his 1.3 b) is read by our own BIFF8 value reader
+(`deals/xls.ts`) over SheetJS's official `cfb`**: the full SheetJS reader is on
+npm only in the version with the crafted-file CVEs, the fixed one lives on a
+host this build cannot reach (403 here), and a third-party republish could not
+be verified against the original. The reader takes shared strings (with the
+CONTINUE width flag), inline strings, numbers, RK/MULRK, formula results and
+booleans, bounded 5 000 × 100; Excel 95 / a password / a broken stream are
+refused in words. Proven against a REAL file: LibreOffice in this container
+saves an exceljs workbook as «MS Excel 97» (`tests/fixtures/invoice-97.xls`,
+150 lines of Cyrillic and Chinese, decimals, formulas, a CONTINUE) and every
+cell comes back exactly. The goods come from the ONE sheet with the most lines —
+an «Invoice» and a «Packing list» sheet list the same goods, and adding them
+would double the order — and the other sheets go to the model as text. The
+header detector (shared with the deal import and the VED paste) learned two
+things: a header has at least two cells (a one-cell title row naming «товар»
+was the header), and the name column prefers the keys that mean a NAME and data
+that READ as words over an article number — «Item No.» took the name from
+«Description» and every product was «YW-2301». A cell with its unit glued on
+(«120KGS», «12.5 CBM», «300PCS») reads in the column whose OWN unit it carries
+(`parseMeasure`) — «5 CTNS» in a quantity column is cartons and stays unread
+rather than become a wrong count — and a sheet with both «N.W.» and «G.W.» is
+read by its NET column (`NET_WEIGHT_KEYS` claimed first), the row's weight
+being netto by definition. A sheet with no header the reader
+knows used to make every row's first text cell a product (the seller's company,
+its address, «Invoice No») and those overruled the model (his 1.2 b).
+
+**#1459 — The collector keeps everything it was sent, and lands only what it
+showed.** A picture sent as a FILE (WeChat originals, office scans — the
+sharpest copy) is shown to the model (`intakeFileKind` sniffs bytes); HEIC,
+which this server's image library cannot decode, is refused in words; voice,
+video and location get a sentence instead of the cabinet's silence (1.12 a).
+Twelve photos (1.4 b) and three PDFs read TOGETHER instead of the first;
+a second goods file is ASKED about — add or replace (1.13 c, `c:inv_add` /
+`c:inv_replace`) — instead of silently replacing the first. The first message
+can be MATERIAL (1.7 b, `looksLikeMaterial`): several lines, a long text, a
+goods line or a figure with a unit is filed and the customer asked again; and a
+PHONE is one short line of 9-15 digits, never «any text with seven digits» (a
+goods list with a TNVED code named the lead and became its phone; ten bare
+digits after a word are a code). Files before the customer or the zone are kept
+and the question re-asked (they used to be refused, or to skip both
+questions). The analysis runs under a TOKEN (`analysing`): a second «Bo'ldi»
+waits, a cancel or a restart throws the late result away, and a message that
+arrived while it ran is KEPT — the seller is asked to press «Bo'ldi» again
+(`settleAnalysis`, pure). The confirm lands only a reading the seller was
+shown (`review`, or `question` while a line is asked). Found by re-reading the
+diff before the push: a phone VIDEO sent as a file is ISO media like a HEIC
+(`ftyp`), so the brand decides (a picture brand is tried, anything else is «video
+o'qilmaydi»); a .zip is named an archive, not «a broken Excel»; and an album
+before the customer is named re-asks the question once, not once per photo
+(`reaskedGroup`). Per-line
+answers are kept apart from the material (`answers`, landed on the card) — a
+line's «150 kg» re-read as the whole truck's weight is what made a re-analysis
+overrule the documents.
+
+**#1460 — Photos in the spreadsheets at their real sharpness** (his «packing
+list sklad excellarida rasimlar … hira korinyabti»). Three causes, one rule
+(`documents/sheet-photo.ts`, used by the packing list, the agent's file and the
+stock sheet): the 200-px LIST thumbnail was embedded (now the 800-px copy, the
+original when it is missing), it was compressed twice (WebP 75 then JPEG 70; now
+JPEG 88), and every picture was squeezed into a fixed 78×72 box (now fitted,
+proportions kept). The stock «Ostatka» takes 400 px, not 800: it carries up to
+three thousand pictures of a whole warehouse in one file built in memory by the
+one Node process, and at 800 px that is hundreds of megabytes — double the old
+resolution, stated as the trade.
+
+**#1461 — The queued AI pass is never silent when it does not answer.** A pass
+that stands down because a VED reached the request first (`touched`,
+`confirmed`) or it was closed tells the seller so (`STOOD_DOWN`), and a pass that
+failed says the job is in the VED's queue (`PASS_FAILED`) — the seller had been
+promised a figure in the chat and waited for one that never came.
+
+**#1462 — PROCESS.** (1) A red proof stayed GREEN: ignoring the CONTINUE width
+flag left LibreOffice's file reading perfectly, because its one split did not
+change width. Evidence about the fixture (#166) — a hand-built stream that
+switches from one byte to two at the boundary now goes red. (2) LibreOffice is
+installed here and is the oracle for any old Office format: make the file with
+the app's own library, let LibreOffice save it, read it back. (3) The «шт»
+column he asked for in the packing lists (8.5) waits for round 8: pieces live on
+tarkib lines, which round 8 opens to a single line. (4) `main` had moved by
+twenty-odd commits, a migration (0135 `load_mode`, the other session's LTL/FTL)
+and #1429-#1454 while this was built — read the journal and the DECISIONS tail
+after a fetch, every time. The FTL flag on a deal is what round 10's odnarodka
+must set.
+
+**#1463 — Round 1 was reviewed AS BUILT, its fixes were reviewed twice
+more, and then the method changed.** Five lenses over the pushed round (collector, sheets, the AI
+call, the typed readers, the photos), every candidate given a refuter: 31 →
+**28 confirmed, 3 rejected**. The ones that would have reached him: «➕
+Qatorlari qo'shilsin» forced a second analysis the seller never pressed; a
+third spreadsheet overwrote the pending second one; `settleAnalysis` dropped a
+per-line answer given while the model ran; a stale ⏭ moved the collection
+back to review; a small XLSX could expand to gigabytes through `sheetAsText`,
+and the HTML table reader went quadratic on unclosed tags (both availability —
+the one Node process is every page's); «1,200KGS» read as 1.2 kg;
+`NET_WEIGHT_KEYS` took the per-carton «N.W./CTN»; the spreadsheet text the
+model sees was cut at 15 000 characters with nobody told; the own retry slept
+after its LAST attempt; «truncated» offered a retry that re-sends the identical
+request; and the typed reader invented a product from any «word + figure».
+Each fix round was then reviewed by three lenses again, and each found
+regressions in the PREVIOUS round's fixes: round 2 = 35 findings (sheets 11,
+typed 14, collector 10), round 3 = 41 reviewer items classified into R3-S1…S10,
+R3-T1…T11, R3-C1…C6 (`review3.md`, binding). That is the round's real
+finding: a reader of free text fixed one complaint at a time reopens the
+complaint before it, because nothing remembers the earlier inputs.
+
+**#1464 — The regression CORPUS: every input any reviewer ever ran, with the
+answer they said is right** (`tests/unit/fixtures/intake-corpus.json` +
+`intake-corpus.ts`, run by `tests/unit/intake-corpus.test.ts`). 1,895 cases
+harvested from the four review rounds, deduplicated, conflicts settled by the
+round-3 binding list, each carrying its source, the reviewer's sentence
+(`said`) and a weight. The readers it covers are the four this round touched:
+the typed goods reader and the customer hint (`intake.ts`,
+`intake-manual.ts`, `units.ts`), the spreadsheet door (`goods-import.ts`,
+`goods-file.ts`, `xls.ts`) and the collector (`calc-intake.ts`,
+`staff-handlers.ts`). **The ratchet** (`intake-corpus-known.ts`): a case that
+fails today runs as `it.fails`, so a known case that starts passing turns RED
+until its id leaves the list, and a live case that starts failing is red as a
+regression — the list can only shrink, and the corpus sits in CI while the
+code is fixed against it. From then on a fix round is measured against the
+WHOLE set: a package may not commit while any case that passed before fails.
+373 failed when it was written.
+
+**#1465 — The lead's calls on the corpus's disputed cases.** Decided, not
+voted: (a) **S-c over R3-C4** — a lead is never named by a bare label or a
+phone; with nothing name-like left the client CODE names it, or nobody
+(`intakeClientLabel`). R3-C4's collapsed text had put the phone back into the
+name, and a lead named «+998 90 123 45 67» is one nobody can find by name.
+(b) **ND1** — a numbered TITLE over a one-column list of names («Заявка от
+15.10.2026» over «Наименование») is passed over, not a refusal, and the VED
+paste stops landing the title and the header as items. (c) **R3-C1 stands**:
+when an invoice line and the model's line state figures that disagree, both
+lines are kept and the seller told — a net-beside-gross re-read that doubles a
+line is stated open, not guessed. (d) Re-anchored with the reason on each
+case: «8000 rows read» was the HARVEST script's template, not anybody's
+answer — the readers stop at `MAX_ROWS` since round 1 and say so, so the case
+asserts `Math.min(n, MAX_ROWS)` and `rowsLeftOut`; c1002 asserts the refused
+code, not the kernel's one-cell name.
+
+**#1466 — Rounds 4-6, fixed against the corpus, and when to stop.** Each
+round: three packages in parallel worktrees (sheets / typed / collector, each
+owning its files and its ids), then a SKEPTIC per package (may a case be
+called stale? default no) and a PROBER per package that ran realistic
+neighbours of every changed rule on BOTH the round's base and its HEAD and
+reported only what it ran where the base was right. Every prober regression
+became a case before the next round. The count is the convergence: round 4
+took 373 → 12 known (then 1 after the lead's calls) and its probers found
+**134** regressions; round 5 took those 134 → 0 and its probers found **65**;
+round 6 took those 65 → 0 and its final probers found **85** (sheets 24,
+typed 21, collector 40; 31 of them common).
+**The stopping rule, fixed before round 6 started:** the round-6 probers'
+findings are RECORDED as known-failing with the rule each is owed to and a
+severity, not fixed — a seventh round would trade them for a smaller set
+somewhere else, and the list in `intake-corpus-known.ts` is the honest
+statement of what the readers still get wrong. **The lead's exception, made
+when the numbers came in:** a sub-rule that makes a COMMON input worse than the
+commit before it is not shipped as «known», it is undone — three were (31
+common): `otherName` compared bare-number words as a script of their own, so a
+size the Excel writes «600*600mm» and the model «600×600 мм» made two names and
+one order landed twice (28); TITLE_LINE took «Накладная» as the waybill only
+before «№»/a digit/«от»/«на», so «Накладная N 15» and «Накладная GS777» became
+the first product (2); TOTAL_WORD knew the Latin «jami» only, so «Жами коробка:
+45» was a product of 45 pieces (1). **The undo was probed like everything
+else, and the first one was too wide**: leaving every number out of the name
+comparison let «iPhone 14» meet «iPhone 15» and an 800×800 tile meet the
+600*600 one (5 common, 56 rare), and the waybill still missed the spoken
+«Накладной GS777» and the spaced «GS 777» (3 common). The second edit is the
+one that stands: `nameWords` keeps each word's LETTERS under its script and the
+key's NUMBERS as their own bucket — every digit run, counted, NFKC-folded, case
+folded after it («№» becomes «No») — so a size is equal however it is written
+and different when it is different; the stated cost is that a unit conversion
+(«0.35L» / «350 мл») is not read, and two cases the first undo had passed
+(c2154, c2155) are known again by choice. The waybill reads its number however
+written, a code with or without a space, the spoken masculine before a number or
+a code only («Накладной замок» is a product), and «Складская/Электронная» only
+opening the line before the noun itself («Электронный накладной замок» is a
+product). The probes' 100 cases joined the corpus (c2178-c2277); the last
+bounded probe looked for COMMON regressions against f44a5a6 only, and found one
+cause: «naming more of the same» read «Чехол iPhone 15» as «Phone case iPhone 15
+Pro», so a second stall's phone cases were dropped as the Excel's (10 common). A
+model's TIER words (pro, max, plus, ultra, lite, se, fe, and the Cyrillic про,
+макс, плюс, ультра, лайт) now part two names — but only right after a word with a
+digit or another tier word, since «Pro hair dryer» and «Plus size» describe and a
+translation drops them (`tierWords`). Nine of the ten pass; «Redmi 13C» against
+«Redmi 13» stays known and COMMON, stated: a glued-suffix rule would also part a
+Cyrillic «А4» from «A4» and «600mm» from «600 мм». **144 stay known** — 143 rare,
+each with the rule it is owed to (21 of them round 6's own two-word totals,
+«Hammasi bo'lib karobka»; 52 the last probe's unit conversions, Chinese numerals
+and translated qualifiers), and that one common.
+
+**#1467 — The corpus is data, and the typecheck needed a bigger heap.** The
+first corpus was a 900 KB TypeScript literal and `pnpm typecheck` died at the
+default ~2 GB heap; moving the data to JSON was not enough on its own — the
+whole program (4,693 files) needs ~2.6 GB. `pnpm typecheck` runs tsc under
+`--max-old-space-size=4096`, the way the build already runs next (#1223); the
+cases that need code to build a file stay in TypeScript as `{ id, "$ts": true }`
+placeholders that `corpusCases()` resolves, throwing on a missing or an extra
+one. CI's typecheck step is the same script, so it got the heap too.
+
+**#1468 — PROCESS.** (1) **A harvested expectation can be the harvester's
+own template.** The two 8 000-row cases (c0068/c0069)
+asked for «8000 rows read» because the harvest loop wrote its input size into
+the expectation, while the readers stop at `MAX_ROWS` on purpose — read where
+an expectation came from before fixing code to meet it, and a «stale» claim
+goes to a skeptic before the lead decides. (2) **The container
+restarted twice mid-workflow** and took running agents with it: a worktree's
+uncommitted work survives on disk, the workflow does not — the salvage was a
+WIP commit per worktree first, then a continuation script whose agents work IN
+the existing worktrees (a resumed run would have re-created them empty), and
+postgres had to be started again. (3) **Two halves of one rule in two
+packages' files** (figureRow in typed's, readCustomerText's three-figure gate
+in collector's) cannot pass in either package alone; the corpus said so
+(c2075/c2076/c2090-c2092 stayed known on both branches) and the integration is
+where they leave the list — `figureRow` is now the ONE home of «a word and
+figures is a packing-list row». (4) A worktree agent left `*-r4base.ts` /
+`*-r5base.ts` comparison copies inside `src/`; the base for a comparison goes
+in the scratchpad, never in the repo. (5) **The weekly usage limit stopped every
+agent of two running workflows at once** (2026-10-22, reset 10-27): the same
+salvage as a restart, plus one trap — an agent killed between «copy the other
+package's file over mine to test the combination» and «restore it» left a
+foreign file uncommitted in its worktree, found by `git status` before the
+re-run. Read every worktree's status before resuming work in it.
+
 ## Uch band — the price's link, a new deal per request, the one-line tarkib (2026-10-27; migration 0136 `lead_client_many`, ledger 137; spec `docs/UCH-BAND.md`; numbered past PR #127, which holds #1455-#1468 and renumbers nothing of this round if it lands first)
 
 1469. **A one-line tarkib is legal, and a REVERSAL of LOT-TARKIBI's 2-20 rule** (his «tarkib 1 qatorlik bolsa
@@ -4908,3 +5195,100 @@ gone, not that the clamp runs — a case of its own now takes the road part out 
 the editor's routes were held with `page.route`, which does not see a request the service worker answers
 (`/api/*` is NetworkFirst) — they are held at the context, as m9zzz-hisoblash-telefon does. The ROAD_CODES_CAP
 finding was refuted (it predates the fixes and the slice is consistent).
+
+## Sakkiz band, round 2 — customs and freight answered more often, from deterministic sources (2026-10-27; renumbered from #1479-#1487 on the merge, the TWENTY-FOURTH collision: the other session's offer, download and road rounds took #1479-#1502 first; NO migration of its own — it deploys with main's 0136, ledger 137; spec `docs/SAKKIZ-R2.md`, his answers 2.1-2.9 in `docs/SAKKIZ-BAND.md` §11 and «a a / b a / c a / d a» to the spec's four questions)
+
+**#1503 — The estimate is the CHAT's, never a row's.** His 2.1 b: a row with no baza
+gets the MEDIAN of real China declarations of its exact 10-digit code, counting only
+those in a unit the row allows (dona also inside the ±25 % per-piece band), at least
+`FEW` = 5, in the file the chooser picks for that code — `estimate.ts` (pure) over
+`estimate-read.ts` (one statement per (code, batch), strictly sequential, a ceiling per
+statement and `ESTIMATE_BUDGET_MS` per pass). It is written onto no row, group, seal,
+offer or price-channel post: it stands in the Telegram reply and, as text, in the
+card's lenta note (2.4 c), and `estimate-wire` fences who may import the three files,
+that the reader runs only `readCodeMedians` and that its raw SQL writes nothing. The
+reply prints two totals (2.2 b): «Aniq» = what the VED's screen prints today, over the
+rows with a stated baza, WITHOUT the declaration fee (its tier depends on the whole
+declaration); «Taxminiy» = whole or absent (Q1 a — MR-23's no-partial-sums rule applied
+to the estimate), fee included. The invoice price is never read (2.3 a).
+
+**#1504 — The zone is guessed for the reply and never stored.** His 2.6 b, applied to
+yolkira too (Q2 a): `guessZone` in two tiers — a known CITY decides (Yiwu/Guangzhou →
+cn wherever they stand, his 21a; Kashgar vs Horgos by the leftmost), the country word
+«Xitoy/Китай/China» only when no city matched; another Chinese city is not guessed
+(Q3 a) and the reply names what it read («zona «Foshan, Xitoy»dan taxmin»). A city
+whose zone has no tariff price says so («O‘zbekiston narxi tarifda hali yo‘q»), never
+«not understood». The seal still demands a chosen zone; a fence over the writers keeps
+the guess out of `freight_zone`.
+
+**#1505 — The shipment's m³ is SUMMED from the lines and stored at the INSERT; the
+brutto kilos are ASKED.** His 2.7 b. One all-or-nothing rule (`linesVolumeM3`); stored
+because MR-9's upsale denominator needs a request m³; LABELLED «qatorlardan» wherever
+printed by DERIVATION (`Workspace.volumeFromLines` — equal to the Σ at 3 decimals; a
+typed total that happens to equal it is labelled too, stated). The freight answer may
+still fall back on the Σ for a request landed before this round, but then it is no
+longer «exact» and prints «JAMI taxminiy» (law-money-R2-1). The collector asks brutto
+on every freight section; a kilo figure labelled NETTO never stands for a freight
+brutto, on the typed side or the model's (`totalWeightFrom`, PF-1); with two goods
+lines a figure on one is that line's (PF-2); the lone copy of the total onto a single
+line stays (Q4 a) and says which total it was («og‘irlik bruttodan/nettodan», PF-3).
+A per-carton CBM column is no longer read as the line's volume.
+
+**#1506 — One ordered fill inside `saveTable`: memory → dictionary → import.** The
+`calc_bazas` dictionary now answers SECOND, in the transaction; a person's clear of a
+stored baza is respected in that save; a machine save after a person's is refused by
+a revision compare-and-set (`saveTable(…, { expectRev })`, threaded through the sweep,
+the pick, and — in the late pass — `proposeGroups`' own claim). The import is asked by
+a 4-6-digit HEADING too (`codeMatchSql`: exact on ten digits, a btree RANGE on fewer,
+under a statement ceiling): the AI pick may recode the row, says so in `baza_reason`,
+and raises the derived `ai_recode` warning the ✅ records. A per-code batch chooser
+(`batchesForCodes`, total — a code no file holds answers from the newest ready file)
+lets an older full quarter answer when the newest holds fewer than `FEW` of that code.
+
+**#1507 — Yolkira on its own queue; one machine message per request; the pass stands
+down for a person or a close.** 2.5 b: a freight-only job goes to `calc.tariff-reply`,
+makes no model call and answers from the tariff (list price, band, route) in seconds;
+the bot's «✅ Saqlandi» says the answer comes separately, true in either order.
+`sayOnce` (advisory lock + EXISTS over the requester's notifications, a muted claim row
+when nobody can be told) makes one reply and one lenta note per request, re-deliveries
+included. The late pass (CONC-1) made a close a stand-down at ANY step — the clock is
+asked before every model call, and the claim reads `completed_at` — so no paid call
+runs and no reply follows a VED's «Готово».
+
+**#1508 — The VED is told, and the price box says what is not official.** 2.4 c: the
+lenta copy is the full reply with «🔎 VED uchun:» directly under its heading, and the
+note's chip says when an estimate is inside (P4). His 2.4 b reason is kept where it
+bites: the «Готово» price box prints that «Aniq», «Taxminiy», «JAMI» and «Yo‘lkira ≈»
+are not official, because the figure typed there becomes the upsale floor, the quote
+lock, the price-channel post and the seller's «✅ Hisoblash tayyor». Every refusal
+says who fixes it — «mijozdan so‘rab, kartadagi lentaga yozing» or «VED xodimi».
+
+**#1509 — Every answered model call counts (2.9 c).** Re-reads, refused or cut
+grouping answers and the pick count; the pick's usage is RETURNED and awaited; a
+reading is billed on the Tashkent day the model answered it and counted against the
+day while the collection is unlanded (concurrency-11). The 200-a-day cap therefore
+fills sooner, said to him with the read-only count by kind (§14.6) — «avval
+o'lchaymiz». The card-chat door's reading stays unbilled until round 5's anchor
+migration (P3-6, stated).
+
+**#1510 — Judged before code, reviewed as merged, and the lost tail reviewed again.**
+Five lenses before code: 37 objections, 32 confirmed, 4 partial, 1 refused, all
+absorbed (§15). Four packages in worktrees off a behaviour-unchanged kernel commit,
+picked P2 → P1 → P3 → P4 with two seams fixed (a fixture field, one `isFullCode`).
+The merged review's fixes (§16). Then the late pass (§17): three relayed lists had
+been cut in transit, so every item was re-read from its source and checked against the
+merged tree — 119 checked, 60 already fixed, 59 still there; 53 fixed, 6 refused in
+writing; one defect off every list (a re-delivered import job wiping a READY quarter
+before its claim); one seam between two fixers (`pickLeftOf`).
+
+**#1511 — PROCESS.** (1) **A list passed through a prompt is a list that can be cut.**
+Three workflows relayed findings inline and `.slice()`d them; the build ran on the
+first part of each. From the late pass on, every list travels as a FILE path and the
+receiving agent reads it whole. (2) **Rebasing onto a branch that minted corpus ids
+collides** — c2278-c2282 were taken twice; renumbered to c2382-c2386 and the spec says
+so. (3) **The trunk moved under the round** (the other session's Uch band, 0136): merged
+before the push, and the one ordered conflict — two transactions' lock order — was
+decided by the order the sibling door already used, not by which side was newer.
+(4) The weekly usage limit stopped the late pass's merge agent after it had picked all
+four branches and passed lint and typecheck; the run's full vitest was redone by hand
+on the merged tree.

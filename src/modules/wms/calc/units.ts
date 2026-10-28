@@ -19,6 +19,7 @@
  * every priced column. A number that could be read two ways is ASKED, never
  * guessed (his B4 a — `readNumberCell`).
  */
+import { addressWord } from './address-words';
 import { readNumberCell } from './number-cell';
 import type { MeasureUnit } from './pricing';
 
@@ -137,30 +138,159 @@ export function readAmountText(raw: string): Amount {
 }
 
 /**
- * A TNVED code as people write it in a line of text: ten digits, or the dotted
- * or spaced form «6907.21.00.00» / «6907 21 00 00», or a shorter code that is
- * LABELLED («kod 6907», «ТН ВЭД 640399»). A bare short number is never taken
- * as a code — «Stol 1000» is a thousand tables.
+ * The book's LAST heading of every chapter, two digits each for chapters
+ * 01-97 («00»: chapter 77 is reserved and has none). Derived from the PP-3818
+ * book every code here is priced by (`pp3818-rates.json`, all 1,228 of its
+ * headings) and fenced against it by a test (`tnved-notation.test.ts`) — a
+ * table and not the book, because this module ships to the browser and the
+ * book is half a megabyte.
+ */
+const LAST_HEADING =
+  '0610091011041414100809140204220504060509' +
+  '0609090430211653420605150707070607272617' +
+  '1506042104020723110713121108160905111106' +
+  '1717100607030415142018292619081600060707' +
+  '1315118749091607083314090706082006';
+
+/**
+ * Do the first four digits open a REAL heading — chapter 01-97 and a heading
+ * from 01 up to that chapter's last (R3-T5)? «xx00» is no heading, and nor is
+ * «1250»: chapter 12 ends at 1214. The round-3 rule (any heading 01-99) let
+ * «Ayollar kurtkasi 1250 50 3000» — price, count, sum — read as the code
+ * 1250503000, and the comment called the two texts one «without the tariff's
+ * own list of headings»; the list is the book, and this is its shape.
+ */
+export function opensRealHeading(code: string): boolean {
+  if (!/^\d{4}/.test(code)) return false;
+  const chapter = Number(code.slice(0, 2));
+  const heading = Number(code.slice(2, 4));
+  if (chapter < 1 || chapter > 97 || heading < 1) return false;
+  return heading <= Number(LAST_HEADING.slice((chapter - 1) * 2, chapter * 2));
+}
+
+/**
+ * A TNVED code as people write it in a line of text: ten digits, or the dotted,
+ * spaced or hyphenated form «6907.21.00.00» / «6907 21 00 00» / «6907-21-00-00»,
+ * or a shorter code that is LABELLED («kod 6907», «ТН ВЭД 640399»). A bare
+ * short number is never taken as a code — «Stol 1000» is a thousand tables.
+ * The written forms open with a real heading (`opensRealHeading`, R3-T5):
+ * «Kurtka 1200 50 30» is three numbers, not the code 12005030.
  */
 const CODE_LABEL = /(?:^|[\s,;(])(?:tnved|тнвэд|тн\s?вэд|tn\s?ved|hs|kod|код|code)\s*[:=№#-]?\s*(\d{4,10})(?!\d)/iu;
-const CODE_DOTTED = /(?<![\d.])(\d{4})[. ](\d{2})(?:[. ](\d{2}))?(?:[. ](\d{2}))?(?![\d.,])/u;
+const CODE_DOTTED = /(?<![\d.])(?<!\d-)(\d{4})[. -](\d{2})(?:[. -](\d{2}))?(?:[. -](\d{2}))?(?![\d.,])(?!-\d)/gu;
 const CODE_TEN = /(?<![\d.,])(\d{10})(?![\d.,])/u;
+/**
+ * The two forms a customs declaration and the PP-3818 book PRINT a ten-digit
+ * code in — 4-2-4 «6201 93 0000» and 4-2-3-1 «2710 19 820 0», with spaces,
+ * dots or hyphens (round-1 review 2, T3; «Kurtka 6201-93-0000» was read as a
+ * PHONE, round-3 note). Only 4-2-2-2 was known, so «Kurtka 6201 93 000 0»
+ * stated no goods and the bot filed it as the customer's phone.
+ *
+ * The first group must open a real heading (`opensRealHeading`, R3-T5). A
+ * chapter alone let a row of plain numbers through: «Kurtka 1200 50 3000»,
+ * «Futbolka 2000 10 5000» (price, count, sum, copied from a PDF) were read as
+ * the codes 1200503000 and 2000105000, grouping the row and pulling a law by
+ * its prefix.
+ */
+const CODE_PRINTED =
+  /(?<![\d.])(?<!\d-)(\d{4})[. -](\d{2})[. -](?:(\d{4})|(\d{3})[. -](\d))(?![\d.,])(?!-\d)/gu;
+
+/**
+ * Is everything after a SPACED code on the line a row of bare unit-less
+ * numbers — «Kurtka 1500 30 2400 12.5», «Kurtka 6201 93 00 00 300» (round-4
+ * T-r1 ND8, T-r2 ND6)? Then the run is a row of figures copied without its
+ * units and nothing in it is a code. Only a PURE row: a size, a count in a
+ * unit, a price with its «$», «№1» or a bracket after the code are what a
+ * goods line carries beside its code — the round-3 rule refused the code
+ * when ANY bare number followed it anywhere, and «Kurtka 6201 93 0000 300
+ * dona 12.5$» lost its code into the name. A dotted or hyphenated code is
+ * never a row: nobody prints figures so.
+ */
+function pureRowAfter(text: string, end: number): boolean {
+  return /^(?:\s+\d[\d.,]*)+\s*$/u.test(text.slice(end));
+}
+
+/**
+ * The first match of a written-code form that IS a code: a real heading, and
+ * — for the spaced form — not the head of a row of figures. `accept` says
+ * what else the caller needs of it.
+ */
+function writtenCode(
+  re: RegExp,
+  text: string,
+  accept: (hit: RegExpExecArray, end: number) => boolean,
+): RegExpExecArray | null {
+  const scan = new RegExp(re.source, re.flags);
+  for (let hit = scan.exec(text); hit; hit = scan.exec(text)) {
+    const end = hit.index + hit[0].length;
+    const spaced = !/[.-]/.test(hit[0]);
+    if (opensRealHeading(hit[1]!) && !(spaced && pureRowAfter(text, end)) && accept(hit, end)) return hit;
+    scan.lastIndex = hit.index + 1;
+  }
+  return null;
+}
+
+/** The word written right after `end`, when it names a unit — «6201 93 3000 dona» is a
+ * subheading and three thousand pieces, never a ten-digit code. */
+function unitWordAfter(text: string, end: number): boolean {
+  const word = /^\s*([\p{L}²³][\p{L}\d²³.]*)/u.exec(text.slice(end));
+  return word !== null && unitOf(word[1]) !== null;
+}
+
+/** A printed or dotted code that starts exactly at `at` — what a label points at. */
+function writtenCodeAt(text: string, at: number): { code: string; end: number } | null {
+  for (const re of [CODE_PRINTED, CODE_DOTTED]) {
+    const sticky = new RegExp(re.source, 'uy');
+    sticky.lastIndex = at;
+    const hit = sticky.exec(text);
+    if (!hit || !opensRealHeading(hit[1]!)) continue;
+    const groups = hit.slice(1).filter((g): g is string => g !== undefined);
+    const end = at + hit[0].length;
+    // Three groups at least for the dotted form (below), and never a code
+    // whose last group is a count in a unit.
+    if (groups.length < 3 || (re === CODE_PRINTED && unitWordAfter(text, end))) continue;
+    return { code: groups.join(''), end };
+  }
+  return null;
+}
 
 export function codeIn(text: string): { code: string; start: number; end: number } | null {
   const labelled = CODE_LABEL.exec(text);
   if (labelled) {
     const start = labelled.index + labelled[0].indexOf(labelled[1]!);
+    // «tnved 6201.93.0000»: the label points at the WHOLE printed code, not at
+    // its first four digits with «.93.0000» left behind as figures (T3).
+    const whole = writtenCodeAt(text, start);
+    if (whole) return { code: whole.code, start: labelled.index, end: whole.end };
     return { code: labelled[1]!, start: labelled.index, end: start + labelled[1]!.length };
   }
   const ten = CODE_TEN.exec(text);
   if (ten) return { code: ten[1]!, start: ten.index, end: ten.index + ten[0].length };
-  const dotted = CODE_DOTTED.exec(text);
+  const printed = writtenCode(CODE_PRINTED, text, (_, end) => !unitWordAfter(text, end));
+  if (printed) {
+    const code = printed.slice(1).filter(Boolean).join('');
+    return { code, start: printed.index, end: printed.index + printed[0].length };
+  }
   // At least three groups («6907.21.00»): «1200 50» is two numbers, not a code.
-  if (dotted && dotted[3] !== undefined) {
+  const dotted = writtenCode(CODE_DOTTED, text, (hit) => hit[3] !== undefined);
+  if (dotted) {
     const code = [dotted[1], dotted[2], dotted[3], dotted[4]].filter(Boolean).join('');
     return { code, start: dotted.index, end: dotted.index + dotted[0].length };
   }
   return null;
+}
+
+/**
+ * Is `code` (as `codeIn` found it in `text`) WRITTEN as a code — dotted, spaced
+ * or printed — rather than ten digits that could be anybody's number? A phone
+ * is never written 4-2-…, so such a line names goods even with no word beside
+ * it (T3: «6201.93.0000», «2710 19 820 0» typed alone).
+ */
+export function codeWrittenAsCode(text: string): boolean {
+  const found = codeIn(text);
+  if (!found) return false;
+  const digitsAt = text.slice(found.start, found.end).search(/\d/);
+  return /[. -]/.test(text.slice(found.start + digitsAt, found.end));
 }
 
 /**
@@ -217,6 +347,48 @@ const AMOUNT =
 /** A counter word directly before a unit: «120 ta juft», «40 шт пар» — the
  * second word is the unit. */
 const COUNTER_THEN_UNIT = /^\s+([\p{L}²³][\p{L}\d²³.]*)/u;
+
+/**
+ * A word and a colon just before a bare number — «Мест: 45», «Kg：150» — the
+ * field form of a unit. Two letters at least: a lone «L:» is a SIZE on a
+ * clothing line («Futbolka L: 50»), never fifty litres.
+ */
+const UNIT_FIELD_BEFORE = /(?<![\p{L}\d])([\p{L}²³][\p{L}\d²³]+)\s*[:：]\s*$/u;
+
+/**
+ * Does a unit word before a colon name the number after it (`UNIT_FIELD_BEFORE`)?
+ * Not «kv» / «кв» right after the house number of an address — «Chilonzor 12,
+ * kv: 45», «ул. Навои 12, кв: 45», «дом: 12, кв: 45» — which is the FLAT,
+ * never square metres (round-5 probe); after a product's own figure it still
+ * is, «Kafel 12, kv: 45». And not a carton noun right after a word of the
+ * name, where it is the product's own noun — «Pitsa korobka: 5000», «Lunch
+ * box: 500» — while a word that only ever counts places («Мест», «CTN», «joy»)
+ * or a plural («Kurtka cartons: 45») is a field wherever it stands, as is a
+ * carton noun opening its clause («Karobka: 45», «Kurtka, Коробки: 45»), set
+ * off by a dash («Kurtka - karobka: 45») or after a total word («Jami karobka:
+ * 45»).
+ */
+function unitField(word: string, before: string): boolean {
+  const unit = unitOf(word);
+  if (unit === null) return false;
+  if (/^(?:kv|кв)$/iu.test(word)) {
+    // The house number and the one or two words that name its street or house.
+    const house = before.split(/[\s,;:]+/u).filter(Boolean).slice(-3);
+    return !(/\d\s*[,;]?\s*$/u.test(before) && house.slice(0, -1).some(addressWord));
+  }
+  if (unit !== 'karobka' || PLACES_ONLY.test(word)) return true;
+  const prior = /([\p{L}\d²³.]+)[\s'’‘ʻ`]*$/u.exec(before)?.[1];
+  return prior === undefined || /\d/u.test(prior) || unitOf(prior) !== null || TOTAL_WORD.test(prior);
+}
+/** The carton words that only ever count places, and the plurals — never one product's noun. */
+const PLACES_ONLY = /^(?:мест[оа]?|ctns?|joy|кор|boxes|cartons|коробки|коробок)$/iu;
+/**
+ * A total before a carton noun makes it the count: «Jami karobka», «Жами
+ * коробка», «Итого коробка», «Total box» — Uzbek in both scripts and the
+ * spoken «obshiy» (round-6 probe: the Cyrillic «Жами коробка: 45» became a
+ * product of 45 pieces).
+ */
+const TOTAL_WORD = /^(?:jami|umumiy|hammasi|obshiy|жами|умумий|ҳаммаси|хаммаси|итого|всего|общее|общий|total)$/iu;
 
 /**
  * A TNVED code as stored: digits only, 4-10 of them.
@@ -333,8 +505,18 @@ export function parseGoodsLine(raw: string): GoodsLine {
     for (const hit of cellText.matchAll(AMOUNT)) {
       const number = hit[1]!;
       let word = hit[2] ?? null;
-      const start = hit.index!;
+      let start = hit.index!;
       let end = start + hit[0].length;
+      // «Мест: 45», «Kg: 150» — a unit word written as a FIELD before its
+      // number names that number: a carton count is never 45 pieces (c0347).
+      const field = word ? null : UNIT_FIELD_BEFORE.exec(cellText.slice(0, start));
+      // What stands before the field word, the column before it included
+      // («Chilonzor 12, kv: 45» is two columns).
+      const lead = cellIndex > 0 ? `${kept[cellIndex - 1]}, ` : '';
+      if (field && unitField(field[1]!, lead + cellText.slice(0, field.index))) {
+        word = field[1]!;
+        start = field.index;
+      }
       // «120 ta juft» — a counter word followed by a unit word: the unit wins.
       if (word && unitOf(word) === 'dona') {
         const next = COUNTER_THEN_UNIT.exec(cellText.slice(end));

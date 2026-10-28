@@ -45,9 +45,13 @@ function setBlocks(text: string): string[] {
 describe('the baza carries its provenance', () => {
   it('every UPDATE that writes a baza source also writes the import row', () => {
     const writing = setBlocks(source).filter((b) => b.includes('bazaSource'));
-    // Today: setItemBaza, pullBazasFromDictionary, and saveTable's memory
-    // and import fills. If this number moves, the new writer belongs below.
-    expect(writing.length).toBeGreaterThanOrEqual(4);
+    // Today: setItemBaza, pullBazasFromDictionary, and saveTable's ONE fill
+    // loop, which writes one `.set({…})` per source — the memory, the book
+    // (round 2's, docs/SAKKIZ-R2.md §7.2) and the import. Re-anchored from
+    // four: the book's fill is the fifth writer. If this number moves, the
+    // new writer belongs below.
+    expect(writing.length).toBeGreaterThanOrEqual(5);
+    expect(writing.some((b) => b.includes("bazaSource: 'dictionary'"))).toBe(true);
     for (const block of writing) {
       expect(block, `a .set() writing bazaSource must write importRowId:\n${block}`).toContain(
         'importRowId',
@@ -57,6 +61,14 @@ describe('the baza carries its provenance', () => {
       // retyped price keeps a 🧠 chip pointing at somebody else's answer.
       expect(block, `a .set() writing bazaSource must write memoryItemId:\n${block}`).toContain(
         'memoryItemId',
+      );
+      // THE ONE EXCEPTION to «the provenance moves with the price» (review
+      // P2-LAW-2): the AI recode mark rides in `baza_reason` but records a
+      // fact about the CODE, so a writer that moves only the price keeps it.
+      // None of these writers moves a code, so each asks `keepRecodeMark` —
+      // a bare `bazaReason: null` here erases an unconfirmed `ai_recode`.
+      expect(block, `a .set() writing bazaSource must keep the AI recode mark:\n${block}`).toMatch(
+        /bazaReason: keepRecodeMark\(/,
       );
     }
   });
@@ -72,6 +84,14 @@ describe('the baza carries its provenance', () => {
     expect(sources.length).toBeGreaterThan(0);
     expect(rows.length).toBe(sources.length);
     expect(memories.length).toBe(sources.length);
+    // The reason beside each: kept over an unmoved code (`reasonFor`, which
+    // asks `keepRecodeMark`), and dropped in ONE place only — the code
+    // branch, when the edit moves the code the mark was about.
+    const reasons = source.match(/patch\.bazaReason = [^;]+;/g) ?? [];
+    expect(reasons.filter((r) => r.startsWith('patch.bazaReason = reasonFor(')).length).toBe(sources.length);
+    expect(reasons.filter((r) => !r.startsWith('patch.bazaReason = reasonFor('))).toEqual(['patch.bazaReason = null;']);
+    expect(source).toContain('if (aiRecoded(item.bazaReason)) patch.bazaReason = null;');
+    expect(source).toMatch(/const reasonFor = \(posted: string \| null\) => \(codeMoved \? posted : keepRecodeMark\(item\.bazaReason, posted\)\);/);
   });
 
   it('a correction inherits the provenance with the price', () => {
@@ -87,5 +107,20 @@ describe('the baza carries its provenance', () => {
     // …and the name the NEXT job's memory searches on, or a correction seals
     // a row invisible to the very feature this column exists for.
     expect(body).toContain('nameNorm:');
+  });
+});
+
+describe('the fill order has ONE home (round 2, §7.2)', () => {
+  it('SOURCES is declared once, and the one fill loop walks it', () => {
+    const declared = source.match(/const SOURCES = \['memory', 'dictionary', 'import'\] as const;/g) ?? [];
+    expect(declared).toHaveLength(1);
+    const at = source.indexOf('export async function saveTable(');
+    const body = source.slice(at, source.indexOf('\nexport ', at + 40));
+    // One loop over the list, inside the save…
+    expect(body.match(/for \(const source of SOURCES\)/g) ?? []).toHaveLength(2);
+    // …and no second, hand-ordered fill loop beside it: a `memoryFilled`
+    // list built by a loop of its own is the shape round 2 replaced.
+    expect(body).not.toMatch(/memoryFilled\.push\(/);
+    expect(body).not.toMatch(/importFilled\.push\(/);
   });
 });

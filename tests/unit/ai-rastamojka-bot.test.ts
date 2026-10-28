@@ -9,7 +9,7 @@ import {
 } from '@/modules/platform/telegram/staff-bot';
 import { zoneKeyboard } from '@/modules/platform/telegram/staff-handlers';
 import { KNOWN_TARIFF_ZONES, OWNER_TARIFF_ZONES, ownerTariffRows } from '@/modules/wms/calc/tariff-seed';
-import { ZONE_ROUTE } from '@/modules/wms/calc/prefill';
+import { ZONE_ROUTE } from '@/modules/wms/calc/freight-answer';
 
 /**
  * The «🤖 AI rastamojka» door (the owner's own words, 2026-09-05).
@@ -117,7 +117,11 @@ describe('the rules a shell cannot exercise', () => {
   it('both zone questions ask the tariff NOW, and a press is judged before it is written', () => {
     // The keyboard is pure, so the two sites that draw it are where «only
     // priced zones» lives — a site that forgot would draw a stale list.
-    expect(handlers.match(/zoneKeyboard\(await pricedZonesNow\(\)\)/g)).toHaveLength(2);
+    // EVERY site that draws it — four since 2026-10-21, when a file or a
+    // «Bo'ldi» arriving before the zone answer re-asks the zone (his 1.7 b).
+    const sites = (handlers.match(/zoneKeyboard\(/g) ?? []).length - (handlers.match(/function zoneKeyboard\(/g) ?? []).length;
+    expect(sites).toBeGreaterThanOrEqual(2);
+    expect(handlers.match(/zoneKeyboard\(await pricedZonesNow\(\)\)/g)).toHaveLength(sites);
     expect(handlers).not.toMatch(/zoneKeyboard\(\)/);
     const judged = handlers.indexOf('zonePressAnswer(step, await pricedZonesNow())');
     const written = handlers.indexOf("updateIntake(chatId, { route, stage: 'client' })");
@@ -173,9 +177,10 @@ describe('the rules a shell cannot exercise', () => {
   it('a photo sent before the customer is named gets an answer', () => {
     // It used to fall through to the cabinet, which answers a staff chat
     // with nothing at all — the first thing a seller does after pressing the
-    // button vanished.
+    // button vanished. Since 2026-10-21 (his 1.7 b) the file is KEPT as
+    // material and the customer question is asked again — an answer still.
     expect(handlers).toContain("if (state.stage === 'client') {");
-    expect(handlers).toContain('Avval mijozni yozing');
+    expect(handlers).toContain('`Qabul qilindi.\\n\\n${CLIENT_QUESTION}`');
   });
 
   it('the Telegram file download has a deadline', () => {
@@ -188,6 +193,6 @@ describe('the rules a shell cannot exercise', () => {
     // A DOCX is a zip like an xlsx, so the sniff would call it a workbook and
     // the parser would answer nothing at all — silence where the seller is
     // waiting for a figure.
-    expect(handlers).toContain('DOCX o‘qilmaydi');
+    expect(handlers).toContain('Word fayl o‘qilmaydi');
   });
 });

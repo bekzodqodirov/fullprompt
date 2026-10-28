@@ -134,6 +134,9 @@ export const AUDIT_FIELD_LABELS: Record<string, string> = {
   calcRecalc: 'calcRecalc',
   section: 'calcSection',
   items: 'itemCount',
+  // The request's m³ was SUMMED from its lines at the INSERT, nobody typed it
+  // (docs/SAKKIZ-R2.md §8.2.3) — the one fact of provenance ever recorded.
+  volumeFromLines: 'volumeFromLines',
   // Yo'lkira tarifi bo'yicha taqsimlash (0132): how a bill is split, and the
   // tariff column it froze. The column prints its CODE («cn → kashgar») —
   // short lowercase words, honest as they stand. Warehouse history rows of

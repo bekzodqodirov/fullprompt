@@ -1,44 +1,52 @@
-import { and, eq, inArray, isNotNull } from 'drizzle-orm';
+import { and, eq, isNotNull } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
-import {
-  calcGroups,
-  calcRequestItems,
-  calcRequests,
-  clients,
-  deals,
-  leads,
-} from '../../platform/db/schema';
+import { calcGroups, calcRequests, clients, deals, leads } from '../../platform/db/schema';
 import { userPermissions } from '../../platform/rbac/authorize';
 import { aiConfigured } from '../../platform/ai/model';
-import { aiCalcBudgetLeft, recordAiPass } from './ai-cost';
+import { aiCalcBudgetLeft } from './ai-cost';
 import { logger } from '../../platform/logger';
 import type { AuditContext } from '../../platform/audit/service';
 import {
-  newestReadyBatchId,
-} from '../customs/import-service';
-import { suggestImportBaza, unitsForRow } from '../customs/import-baza';
-import {
-  isBazaBasis,
   itemMeasure,
   sectionParts,
   type BazaBasis,
   type CalcSectionName,
-  type FreightResult,
+  type FeeRefusal,
+  type PricedItem,
 } from './pricing';
-import { basisLabel, statedPairOf } from './basis';
+import { basisLabel } from './basis';
+import { loadWorkspace, proposeGroups, requestClock, saveTable, type Workspace } from './workspace';
 import {
-  loadWorkspace,
-  proposeGroups,
-  saveTable,
-  type TableItemEdit,
-  type Workspace,
-} from './workspace';
-import { itemNameNorm, sealedMemoryFor } from './memory';
-import { aiVedReplyText, type AiVedFreight, type AiVedLine } from './ai-reply';
+  aiVedReplyText,
+  pickLeftOf,
+  type AiVedEstimate,
+  type AiVedFreight,
+  type AiVedLine,
+  type AiVedLineEstimate,
+  type PickLeft,
+} from './ai-reply';
 import { calcJobHrefFor } from './card-door';
 import { dutyText } from './duty-text';
-import { blockerText, feeRefusalText, freightRefusalText, prefillReplyText } from './prefill-reply';
-import { pickImportRows, type PickAnswer, type PickRequest, type PickUsage } from './prefill-ai';
+import { blockerText, feeRefusalText, tariffReplyText } from './prefill-reply';
+import { pickImportRows, type PickOutcome, type PickRequest } from './prefill-ai';
+import { freightAnswerFor } from './freight-answer';
+import { applyMemory, pickBazas } from './prefill-steps';
+import {
+  TAXMINIY_BLOCK_WORDS,
+  declarationCounts,
+  estimateCustoms,
+  estimateInputOf,
+  missWords,
+  unreadMedians,
+  type CustomsEstimate,
+  type GroupEstimate,
+  type RowMedian,
+} from './estimate';
+import { rowMediansFor } from './estimate-read';
+import { tariffFor } from './tariff-read';
+import { onDate } from './dictionaries';
+import { weightFromTotalNote } from './intake';
+import { CalcError } from './service';
 
 /**
  * The AI VED hodimi (docs/VED-IMPORT-AI.md §3).
@@ -56,9 +64,26 @@ import { pickImportRows, type PickAnswer, type PickRequest, type PickUsage } fro
  * and 0094's import fill all happen exactly as they do when a person works
  * the screen. There is no second writer.
  *
+ * Round 2 (docs/SAKKIZ-R2.md §6) adds what the reply SAYS and nothing it
+ * writes: the 📊 medians behind «Taxminiy» (his 2.1 b, 2.2 b), the road on a
+ * guessed zone and a summed cube (2.6 b, 2.7 b), and a yolkira job answered
+ * from the tariff at once (2.5 b). The estimate and the guess are never
+ * stored — `estimate-wire.test.ts` fences both.
+ *
  * The model is INJECTABLE at both points, which is how any of this is
  * provable in a container with no key.
  */
+
+/**
+ * The whole pass's wall clock (§6.7). Past it the grouping and the pick are
+ * skipped and the median read issues nothing — said in words — and a step
+ * already running is never interrupted. Every model step is asked BEFORE it
+ * starts (review perf-3: the pick alone used to be), so a pass can overrun
+ * this by one step at most; the job's pg-boss expiry (`PASS_EXPIRE_S`) is
+ * derived above that, so the queue never re-delivers a pass that is still
+ * running beside itself.
+ */
+export const PASS_DEADLINE_MS = 10 * 60_000;
 
 /**
  * May the machine still touch this request?
@@ -116,13 +141,10 @@ export async function prefillTicket(requestId: string): Promise<number | null> {
 export interface PrefillDeps {
   /** The grouping pass. Default: `proposeGroups` (the ✨ button's own door). */
   propose?: typeof proposeGroups;
-  /** The baza pick. Default: `pickImportRows`. Null answer = not available.
-   * The second argument carries the usage callback; an injected stand-in may
-   * ignore it. */
-  pick?: (
-    rows: PickRequest[],
-    opts?: { onUsage?: (usage: PickUsage) => void },
-  ) => Promise<PickAnswer[] | null>;
+  /** The baza pick. Default: `pickImportRows`. Null answers = not available;
+   * the usage rides beside them (`PickOutcome`, K5) and is null when the
+   * model never answered. */
+  pick?: (rows: PickRequest[]) => Promise<PickOutcome>;
   /** Overridable so a test can run without a customs import in the database. */
   configured?: boolean;
   /**
@@ -130,6 +152,9 @@ export interface PrefillDeps {
    * chosen for them (`calcJobHrefFor`); absent, the reply carries none.
    */
   replyTo?: string;
+  /** The pass's deadline (epoch ms) — `start + PASS_DEADLINE_MS` unless a
+   * test hands one in already spent. */
+  deadline?: number;
 }
 
 export interface PrefillOutcome {
@@ -138,11 +163,16 @@ export interface PrefillOutcome {
   /**
    * The same reply with NO link, for the card's lenta: a `/hisoblash` link
    * there bounces the seller reading it, and a card link points at the page
-   * the reader is already on.
+   * the reader is already on. When the reply carries an estimate, the VED's
+   * own «🔎 VED uchun:» line stands under its heading (§2.6).
    */
   lentaText: string;
+  /** The workspace's EXACT customs total — never the estimate. */
   customsUsd: number | null;
   freightUsd: number | null;
+  /** The chat's «Taxminiy» (his 2.2 b) — for the log of THIS pass, and read
+   * nowhere else: no default, hint, seal or post may take it (§3). */
+  taxminiyUsd: number | null;
   codesStamped: number;
   ratesPulled: number;
   importFilled: number;
@@ -150,21 +180,113 @@ export interface PrefillOutcome {
   picked: number;
   /** Codes the SEALED memory supplied before the model was asked anything. */
   memoryCoded: number;
-  /** Bazas a sealed calculation of ours answered (0096). */
+  /** Bazas a sealed calculation of ours answered (0096) — every save of the
+   * pass counted (steps 0, 1 and 2), not only step 0's. */
   memoryFilled: number;
+  /** Bazas the `calc_bazas` book answered — round 2's fill. */
+  dictionaryFilled: number;
   aiUsed: boolean;
+  /** The deadline passed before the grouping, the pick or the median read —
+   * said in words. */
+  pastDeadline: boolean;
+  /**
+   * The step at which a person's save (or their own ✨) overtook the machine,
+   * which then wrote nothing more — null when nobody did (review CONC-5). For
+   * the log of THIS pass: the reply alone cannot tell it apart.
+   */
+  overtaken: string | null;
+  /**
+   * Non-null: the pass stood down, and the texts are empty — the worker says
+   * the stand-down sentence instead of a reply.
+   * - `touched`: the job's section moved since it was queued (§6.8), or a
+   *   person overtook the machine BEFORE any machine write landed (CONC-5) —
+   *   the reply would be their half-typed numbers under the AI's heading,
+   *   and a person who saved a moment before the job's check is told the
+   *   same sentence;
+   * - `closed`: the VED closed the request («Готово», a hand-back) while the
+   *   pass ran (CONC-1) — the official answer is out, and the machine's must
+   *   not follow it.
+   */
+  stood: 'touched' | 'closed' | null;
 }
 
-/** How many rows are ever sent to the pick — a wall, not a silent truncation. */
-const MAX_PICK_ROWS = 40;
+const NOTHING_DONE = {
+  customsUsd: null,
+  freightUsd: null,
+  taxminiyUsd: null,
+  codesStamped: 0,
+  ratesPulled: 0,
+  importFilled: 0,
+  picked: 0,
+  memoryCoded: 0,
+  memoryFilled: 0,
+  dictionaryFilled: 0,
+  aiUsed: false,
+  pastDeadline: false,
+  overtaken: null,
+  stood: null,
+} satisfies Omit<PrefillOutcome, 'text' | 'lentaText'>;
+
+/**
+ * A write refused because a PERSON is working on the request: their save in
+ * between (K14's compare-and-set, `conflict`), or their own ✨ holding the
+ * claim (`ai_running`, review CONC-3) — the same answer, said by another
+ * door. Neither is a failure to log; both stand the machine down.
+ */
+const isOvertaken = (err: unknown) =>
+  err instanceof CalcError && (err.code === 'conflict' || err.code === 'ai_running');
+/** …and one refused because the VED closed the request meanwhile (CONC-1). */
+const isClosed = (err: unknown) => err instanceof CalcError && err.code === 'already_closed';
 
 export async function aiPrefill(
   requestId: string,
   ctx: AuditContext,
   deps: PrefillDeps = {},
+  /**
+   * `expectCustoms`: the job's queue (§6.8) — a customs pass, or a tariff
+   * reply. A section changed since queueing stands the pass down rather than
+   * running a customs pass from the tariff queue or a tariff reply from the
+   * customs one. Absent: no comparison (a direct caller, a test).
+   *
+   * `expectRev`: the revision the worker CHECKED the job against
+   * (`prefillStanding`) — the chain starts there, not from a fresh read, or a
+   * person's save landing between that check and the first machine write
+   * becomes the machine's own base and is overwritten by the grouping.
+   * Absent or null: a direct caller, and the chain starts from a fresh read.
+   */
+  opts: { expectCustoms?: boolean; expectRev?: number | null } = {},
 ): Promise<PrefillOutcome> {
+  const deadline = deps.deadline ?? Date.now() + PASS_DEADLINE_MS;
   const propose = deps.propose ?? proposeGroups;
   const pick = deps.pick ?? pickImportRows;
+
+  /**
+   * DOES THIS JOB HAVE A CUSTOMS SIDE AT ALL?
+   *
+   * The pass once ran the whole customs half on a **yolkira** request: the
+   * model grouped the goods, `applyProposal` COMMITTED customs groups onto a
+   * quote that has no customs, and `blockersFor` then raised
+   * `customs_on_yolkira` — a blocker no screen can clear. A freight quote is
+   * priced on the TOTALS, so a yolkira job makes no model call and no save:
+   * it is answered from the tariff table (his 2.5 b).
+   */
+  const [row] = await db
+    .select({ section: calcRequests.section })
+    .from(calcRequests)
+    .where(eq(calcRequests.id, requestId));
+  const parts = row?.section
+    ? sectionParts(row.section as CalcSectionName)
+    : { customs: true, freight: true, extras: true };
+
+  if (opts.expectCustoms !== undefined && parts.customs !== opts.expectCustoms) {
+    logger.info(
+      { requestId, expectCustoms: opts.expectCustoms },
+      '[calc-prefill] the section moved since the job was queued — stood down',
+    );
+    return { ...NOTHING_DONE, text: '', lentaText: '', stood: 'touched' };
+  }
+  if (!parts.customs) return tariffOnly(requestId, deps);
+
   /**
    * Configured AND within the day's budget — one flag, because to everything
    * downstream they mean the same thing: no model on this pass.
@@ -184,30 +306,65 @@ export async function aiPrefill(
   let importFilled = 0;
   let memoryCoded = 0;
   let memoryFilled = 0;
+  let dictionaryFilled = 0;
   let aiUsed = false;
+  let pastDeadline = false;
 
   /**
-   * DOES THIS JOB HAVE A CUSTOMS SIDE AT ALL?
+   * THE REVISION CHAIN (K14, concurrency-3). Every machine save carries the
+   * revision the machine's own previous write left; a person's save in
+   * between turns the machine's next save into `conflict`, which writes
+   * nothing, and the machine writes nothing more — a person is working on
+   * the request, and the pick's model call alone can take two minutes. The
+   * grouping carries the chain too (review P1-R2): its claim is taken at the
+   * chain's revision and its pricing tail compares at every write, so the
+   * seconds after it releases its claim are no longer open.
    *
-   * The pass never asked, and on a **yolkira** request — the freight-only
-   * section, the first one the bot offers — it ran the whole customs half
-   * anyway: the model grouped the goods, `applyProposal` COMMITTED customs
-   * groups onto a quote that has no customs, and `blockersFor` then raised
-   * `customs_on_yolkira` («bu bo'limda rastamojka hisoblanmaydi») — a blocker
-   * no screen can clear, because nothing offers to delete those groups. So
-   * the machine could make a freight quote permanently unsealable, and then
-   * bill an Opus grouping call for doing it.
-   *
-   * A freight quote is priced on the TOTALS. There is nothing here for the
-   * model to do, and the honest pass is the one that does nothing.
+   * It STARTS at the revision the job was checked against (`expectRev`), so
+   * a save in the gap after that check is a conflict too — a fresh read here
+   * would adopt it as the machine's own.
    */
-  const [row] = await db
-    .select({ section: calcRequests.section })
-    .from(calcRequests)
-    .where(eq(calcRequests.id, requestId));
-  const parts = row?.section
-    ? sectionParts(row.section as CalcSectionName)
-    : { customs: true, freight: true, extras: true };
+  let rev: number | null = opts.expectRev ?? (await prefillTicket(requestId));
+  let overtaken: string | null = null;
+  let closed = false;
+  /** Has any machine write landed? A person overtaking BEFORE one did gets
+   * the stand-down sentence, never a reply over their half-typed numbers. */
+  let wrote = false;
+  const overtakenAt = (step: string) => {
+    overtaken = step;
+    logger.info({ requestId, step }, '[calc-prefill] a person saved meanwhile — the machine writes nothing more');
+  };
+  const closedAt = (step: string) => {
+    closed = true;
+    logger.info({ requestId, step }, '[calc-prefill] the request was closed meanwhile — the machine stands down');
+  };
+  /** Nothing more is written once a person or a close has said so. */
+  const standing = () => overtaken === null && !closed;
+  /**
+   * A model step is asked about the clock BEFORE it starts (review perf-3):
+   * a grouping of a thousand rows is five calls of up to two minutes each,
+   * and a pass that outlives its pg-boss expiry is re-delivered beside
+   * itself, where the retry's «hisoblay olmadi» takes the request's one
+   * message from the real answer.
+   */
+  const late = (step: string): boolean => {
+    if (Date.now() <= deadline) return false;
+    pastDeadline = true;
+    logger.warn({ requestId, step }, '[calc-prefill] past the pass deadline — the step is skipped');
+    return true;
+  };
+  /**
+   * Ask the request's clock before a model call: a close, a person's ✨, or
+   * a person's save since the chain's revision all stand the machine down
+   * here, before a token is billed — the call's own save would only be
+   * refused after it (CONC-1, CONC-3).
+   */
+  const stillOurs = async (step: string): Promise<boolean> => {
+    const clock = await requestClock(requestId);
+    if (!clock || clock.closed) closedAt(step);
+    else if (clock.aiRunning || (rev !== null && clock.rev !== rev)) overtakenAt(step);
+    return standing();
+  };
 
   /**
    * 0. THE SEALED MEMORY GOES FIRST (0096), before a token is spent.
@@ -215,39 +372,53 @@ export async function aiPrefill(
    * The owner's own order: «shu muhrlangan datani AI xotirasiga qo'yish
    * kerak». What a VED person confirmed and sealed for this product is this
    * company's answer about it — so the machine reads it before the model,
-   * before the quarterly file, and before anything is billed. A product we
-   * have priced before comes back coded and with its baza in one save, and
-   * the model is then asked only about the names nobody here has ever seen.
-   *
-   * It writes through `saveTable` like every other door: the same rev clock,
-   * the same regroup, the same rate pull at group mint, and the same memory
-   * fill that gives those rows their bazas (there is no second writer).
+   * before the quarterly file, and before anything is billed.
    */
-  if (parts.customs) {
-    try {
-      const out = await applyMemory(requestId, ctx);
-      memoryCoded = out.coded;
-      memoryFilled = out.filled;
-    } catch (err) {
-      logger.warn({ err, requestId }, '[calc-prefill] memory pass failed');
-    }
+  try {
+    const out = await applyMemory(requestId, ctx, rev);
+    memoryCoded = out.coded;
+    memoryFilled = out.filled;
+    // Step 0's save fills from the book too (round 2) — counted, or the
+    // outcome under-reports where the bazas came from (review REG-2/P2-9).
+    dictionaryFilled += out.dictionaryFilled;
+    if (out.coded > 0) wrote = true;
+    rev = out.rev;
+  } catch (err) {
+    if (isOvertaken(err)) overtakenAt('step 0');
+    else if (isClosed(err)) closedAt('step 0');
+    else logger.warn({ err, requestId }, '[calc-prefill] memory pass failed');
   }
 
   // 1. The model groups the goods and names their codes; `proposeGroups`
   //    then prices what it proposed (the book's rates, the code onto the
-  //    row) and 0094's import fill runs inside its save.
-  if (configured && parts.customs) {
+  //    row) and 0094's import fill runs inside its save. The chain rides
+  //    in: the claim is taken only at its revision and every write after it
+  //    compares (review P1-R2), so nothing here is adopted.
+  if (configured && standing() && !late('step 1') && (await stillOurs('step 1'))) {
     try {
-      const out = await propose(requestId, ctx);
+      const out = await propose(requestId, ctx, rev === null ? {} : { expectRev: rev });
       codesStamped += out.codesStamped;
       ratesPulled += out.ratesPulled;
       importFilled += out.importFilled;
+      // The tail's save fills from the memory too — counted, or the outcome
+      // said «0 from the memory» about a pass whose bazas came from it.
+      memoryFilled += out.memoryFilled;
+      dictionaryFilled += out.dictionaryFilled;
       aiUsed = true;
+      if (out.rev !== null && out.rev !== rev) wrote = true;
+      // No chain went in (the request had no revision to start from): there
+      // is nothing to compare against, and the clock is all there is.
+      rev = out.rev ?? (rev === null ? await prefillTicket(requestId) : rev);
     } catch (err) {
-      // A model that refused, a key that expired, a request somebody closed
-      // between landing and here — none of it is fatal. What follows still
-      // runs, and the reply says what was and was not done.
-      logger.warn({ err, requestId }, '[calc-prefill] propose failed');
+      // A person working here, or a close, stands the machine down. Anything
+      // else — a model that refused, a key that expired — is not fatal, and
+      // the chain KEEPS the revision it held (review P1-R7): re-reading the
+      // clock here would adopt a person's save that landed while the call
+      // was failing. The cost, stated: a grouping that committed its groups
+      // and then failed in its tail now stops the sweep too (`conflict`).
+      if (isOvertaken(err)) overtakenAt('step 1');
+      else if (isClosed(err)) closedAt('step 1');
+      else logger.warn({ err, requestId }, '[calc-prefill] propose failed');
     }
   }
 
@@ -256,121 +427,239 @@ export async function aiPrefill(
   //    an empty save is what places those items in groups (with rates at
   //    mint) and fires the import fill. This is the whole model-free half of
   //    the feature, and it is why a server with no key still gets a figure.
-  if (parts.customs) {
+  //    Not skipped past the deadline: it is one save, and without it a row
+  //    the intake coded stays out of every group — the reply would then name
+  //    it «Kod topilmadi» although it carries a code.
+  if (standing()) {
     try {
-      const swept = await saveTable(requestId, { items: [], adds: [] }, ctx);
+      const swept = await saveTable(requestId, { items: [], adds: [] }, ctx, rev === null ? undefined : { expectRev: rev });
       importFilled += swept.importFilled.length;
+      memoryFilled += swept.memoryFilled.length;
+      dictionaryFilled += swept.dictionaryFilled.length;
+      wrote = true;
+      rev = swept.rev;
     } catch (err) {
-      logger.warn({ err, requestId }, '[calc-prefill] sweep failed');
+      if (isOvertaken(err)) overtakenAt('step 2');
+      else if (isClosed(err)) closedAt('step 2');
+      else logger.warn({ err, requestId }, '[calc-prefill] sweep failed');
     }
   }
 
   // 3. The bazas the file could not fill by itself: the model is shown the
-  //    candidates and picks a DECLARATION, never a number.
+  //    candidates and picks a DECLARATION, never a number — unless the
+  //    pass's deadline has passed, which is said rather than overrun.
   let picked = 0;
-  let pickCapped = 0;
-  let pickRefused = 0;
-  let pickOvertaken = 0;
-  if (configured && parts.customs) {
+  /** What the pick left for the VED — said in the reply, never only logged
+   * (review regression-10). Null: no pick ran. */
+  let pickLeft: PickLeft | null = null;
+  if (configured && standing() && late('step 3')) {
+    pickLeft = { capped: 0, refused: 0, overtaken: 0, timedOut: 0, skipped: true };
+  } else if (configured && standing() && (await stillOurs('step 3'))) {
     try {
-      const out = await pickBazas(requestId, ctx, pick);
+      const out = await pickBazas(requestId, ctx, pick, rev, { deadline });
       picked = out.picked;
-      pickCapped = out.capped;
-      pickRefused = out.refused;
-      pickOvertaken = out.overtaken;
+      pickLeft = pickLeftOf(out);
+      dictionaryFilled += out.dictionaryFilled;
+      memoryFilled += out.memoryFilled;
+      if (out.picked > 0) wrote = true;
+      rev = out.rev;
+      if (out.pastDeadline > 0) pastDeadline = true;
+      if (out.capped || out.refused || out.overtaken || out.timedOut) {
+        logger.info(
+          { requestId, capped: out.capped, refused: out.refused, overtaken: out.overtaken, timedOut: out.timedOut },
+          '[calc-prefill] the pick left rows for the VED',
+        );
+      }
       if (picked > 0) aiUsed = true;
     } catch (err) {
-      logger.warn({ err, requestId }, '[calc-prefill] pick failed');
+      if (isOvertaken(err)) overtakenAt('step 3');
+      else if (isClosed(err)) closedAt('step 3');
+      else logger.warn({ err, requestId }, '[calc-prefill] pick failed');
     }
+  }
+
+  // A close stands the reply down whatever was written (CONC-1): the VED's
+  // answer is official and out, and the machine's estimate must not follow
+  // it. A person who overtook the machine before any machine write landed
+  // is answered the way the job's own check answers them (CONC-5).
+  if (closed || (overtaken !== null && !wrote)) {
+    return {
+      ...NOTHING_DONE,
+      text: '',
+      lentaText: '',
+      codesStamped,
+      ratesPulled,
+      importFilled,
+      picked,
+      memoryCoded,
+      memoryFilled,
+      dictionaryFilled,
+      aiUsed,
+      pastDeadline,
+      overtaken,
+      stood: closed ? 'closed' : 'touched',
+    };
   }
 
   // 4. Read what the engine now says, and say it in words.
   const ws = await loadWorkspace(requestId);
+  if (!ws) throw new Error(`calc request ${requestId} vanished during the pass`);
   /**
-   * «NOTHING TO PRICE» IS NOT «PRICED AT ZERO».
-   *
-   * Two sources spelled both as 0 and the section gate above closes only the
-   * first: (1) a section with no customs half is hard-coded 0 by
-   * `loadWorkspace`; (2) a section that HAS one but carries no groups yet used
-   * to come back 0 from `requestCustomsFor([])` — `[].every(ok)` is vacuously
-   * TRUE. MEASURED then: the seller read «Tahminiy: rastamojka ~$0.00».
-   *
-   * The second half is now the ENGINE's answer (audit A17, 0096's round): an
-   * empty customs list is `null`, so the screen, the seal gate and this reply
-   * all refuse in the same place. The `groups.length` clause stays as the
-   * belt — a workspace read by an older server would still spell it 0.
+   * «NOTHING TO PRICE» IS NOT «PRICED AT ZERO» (audit A17): an empty customs
+   * list is the engine's `null`, so the screen, the seal gate and this reply
+   * refuse in the same place. The `groups.length` clause stays as the belt —
+   * a workspace read by an older server would still spell it 0.
    */
-  const customsUsd =
-    ws && ws.parts.customs && ws.groups.length > 0 ? ws.customsUsd : null;
-  const freight = ws?.freight ?? null;
-  // `listUsd` is the road's LIST price — what the tariff says before any
-  // concession. A prefill states the tariff, never a discount somebody has
-  // not given yet (phase D's line).
-  const freightUsd = freight && freight.ok ? freight.listUsd : null;
+  const customsUsd = ws.parts.customs && ws.groups.length > 0 ? ws.customsUsd : null;
+  // `listUsd` is the road's LIST price on the STORED zone — what the tariff
+  // says before any concession, and never a guessed zone's figure.
+  const freightUsd = ws.freight && ws.freight.ok ? ws.freight.listUsd : null;
 
   /**
-   * TWO shapes, one pass, and which one the seller reads is decided by the
-   * SECTION and nothing else.
-   *
-   * A customs job gets the per-line breakdown the owner asked for — that is
-   * the whole round. A yolkira job has no customs half at all, so the
-   * breakdown would be a heading over an empty list; it keeps the summary
-   * this pass has always sent, which says honestly that the road is the
-   * VED's to price.
+   * The 📊 estimate (his 2.1 b), only where there is no exact total: an exact
+   * total needs no estimate. The medians are a READ — a failure there is
+   * logged and leaves the rows unestimated; it never costs the reply.
    */
+  let estimate: CustomsEstimate | null = null;
+  if (ws.parts.customs && ws.customsUsd === null) {
+    let medians = new Map<string, RowMedian>();
+    if (Date.now() > deadline) pastDeadline = true;
+    try {
+      medians = await rowMediansFor(ws, { deadline });
+    } catch (err) {
+      logger.warn({ err, requestId }, '[calc-prefill] medians not read — no estimate');
+      // Said on every row it would have answered (review P1-R7), never read
+      // as «no baza» about a file the pass never got to read.
+      medians = unreadMedians(ws.groups);
+    }
+    estimate = estimateCustoms({ ...estimateInputOf(ws), medians });
+  }
+
+  const road = await roadOf(ws);
   // Who the answer is ABOUT — the card's own code, and the customer's, so a
-  // seller with three open jobs can tell which one this is. One query, and
-  // only on the shape that prints them.
-  const about = ws && ws.parts.customs ? await requestAbout(requestId, deps.replyTo ?? null) : null;
-  const customsReply = (link: string | null) =>
-    ws && ws.parts.customs
-      ? aiVedReplyText({
-          clientLabel: about?.clientCode ?? null,
-          cardLabel: about?.cardLabel ?? null,
-          lines: replyLines(ws),
-          ungrouped: ws.ungrouped.map((i) => i.label),
-          fee: ws.fee && ws.fee.ok ? { bhm: ws.fee.bhmCoefficient, usd: ws.fee.feeUsd } : null,
-          totalUsd: customsUsd,
-          feeRefusal: ws.fee && !ws.fee.ok ? feeRefusalText(ws.fee.reason) : null,
-          hasCertificate: ws.hasCertificate,
-          freight: ws.parts.freight ? aiFreight(freight, ws) : null,
-          link,
-          aiConfigured: hasKey,
-          budgetSpent: hasKey && budgetLeft <= 0,
-        })
-      : null;
-  // The freight-only summary has always carried no link.
-  const summary = () =>
-    prefillReplyText({
-      customsUsd,
-      freightUsd,
-      hasFreight: ws?.parts.freight ?? false,
-      hasCustoms: ws?.parts.customs ?? parts.customs,
-      blockers: ws?.blockers ?? [],
-      codesStamped,
-      ratesPulled,
-      importFilled: importFilled + picked,
-      link: null,
+  // seller with three open jobs can tell which one this is.
+  const about = await requestAbout(requestId, deps.replyTo ?? null);
+  const lines = replyLines(ws, estimate);
+  const reply = (link: string | null, audience: 'chat' | 'lenta') =>
+    aiVedReplyText({
+      clientLabel: about?.clientCode ?? null,
+      cardLabel: about?.cardLabel ?? null,
+      lines,
+      ungrouped: ws.ungrouped.map((i) => i.label),
+      fee: ws.fee && ws.fee.ok ? { bhm: ws.fee.bhmCoefficient, usd: ws.fee.feeUsd } : null,
+      totalUsd: customsUsd,
+      feeRefusal: ws.fee && !ws.fee.ok ? feeRefusalText(ws.fee.reason) : null,
+      hasCertificate: ws.hasCertificate,
+      freight: road,
+      link,
       aiConfigured: hasKey,
-      pickCapped,
-      pickRefused,
-      pickOvertaken,
+      budgetSpent: hasKey && budgetLeft <= 0,
+      estimate: estimate ? totalsWords(estimate) : null,
+      // A pick skipped past the deadline is news only while a row still
+      // waits for a baza; with none, there was nothing it could have chosen.
+      pickLeft: pickLeft?.skipped && !ws.groups.some((g) => g.items.some((i) => i.bazaUsd === null)) ? null : pickLeft,
+      audience,
     });
-  const text = customsReply(about?.link ?? null) ?? summary();
-  const lentaText = customsReply(null) ?? summary();
 
   return {
-    text,
-    lentaText,
+    ...NOTHING_DONE,
+    text: reply(about?.link ?? null, 'chat'),
+    lentaText: reply(null, 'lenta'),
     customsUsd,
     freightUsd,
+    taxminiyUsd: estimate?.taxminiy?.customsUsd ?? null,
     codesStamped,
     ratesPulled,
     importFilled,
     picked,
     memoryCoded,
     memoryFilled,
+    dictionaryFilled,
     aiUsed,
+    pastDeadline,
+    // A person who overtook the machine AFTER it had written: the reply
+    // still goes out (§6.7) — the machine's own half is in it — and the log
+    // says which step stopped it.
+    overtaken,
+  };
+}
+
+/**
+ * A yolkira job (his 2.5 b): answered from the tariff table — no budget, no
+ * memory, no model, no save — with the card's labels and the road through
+ * the ONE freight answer the podklyuch reply prints too.
+ */
+async function tariffOnly(requestId: string, deps: PrefillDeps): Promise<PrefillOutcome> {
+  const ws = await loadWorkspace(requestId);
+  if (!ws) throw new Error(`calc request ${requestId} vanished during the pass`);
+  const road: AiVedFreight = (await roadOf(ws)) ?? {
+    // A freight-only section always has a road; a section without one has
+    // nothing to answer, and says so rather than a silence.
+    ok: false,
+    refusal: 'bu bo‘limda yo‘lkira yo‘q',
+    tail: 'ved',
+  };
+  const about = await requestAbout(requestId, deps.replyTo ?? null);
+  const said = (link: string | null, audience: 'chat' | 'lenta') =>
+    tariffReplyText({
+      clientLabel: about?.clientCode ?? null,
+      cardLabel: about?.cardLabel ?? null,
+      freight: road,
+      link,
+      audience,
+    });
+  return {
+    ...NOTHING_DONE,
+    text: said(about?.link ?? null, 'chat'),
+    lentaText: said(null, 'lenta'),
+    freightUsd: ws.freight && ws.freight.ok ? ws.freight.listUsd : null,
+  };
+}
+
+/**
+ * The road this reply prints (§6.4): the stored zone or the city's guess,
+ * the request's cube or the lines' Σ, the brutto kilos ASKED — one function,
+ * `freightAnswerFor`, for the podklyuch reply and the tariff reply alike.
+ */
+async function roadOf(ws: Workspace): Promise<AiVedFreight | null> {
+  const tariff = ws.parts.freight ? await tariffFor(onDate()) : [];
+  return freightAnswerFor(
+    {
+      hasFreight: ws.parts.freight,
+      freightZone: ws.freightZone,
+      guessedZone: ws.guessedZone,
+      fromCity: ws.fromCity,
+      weightKg: ws.weightKg,
+      volumeM3: ws.volumeM3,
+      volumeFromLines: ws.volumeFromLines,
+      lines: [...ws.groups.flatMap((g) => g.items), ...ws.ungrouped],
+      stored: ws.freight,
+    },
+    tariff,
+  );
+}
+
+/** Why Taxminiy is absent, as the sentence §2.2 prints after the dash. */
+function blockWords(block: CustomsEstimate['taxminiyBlock']): string | null {
+  if (block === null) return null;
+  if (block === 'ungrouped' || block === 'refused_measure' || block === 'budget' || block === 'refused') {
+    return TAXMINIY_BLOCK_WORDS[block];
+  }
+  const fee: FeeRefusal = block;
+  return `bojxona yig‘imi: ${feeRefusalText(fee)}`;
+}
+
+/** The estimate's two totals, in the reply's vocabulary. */
+function totalsWords(e: CustomsEstimate): AiVedEstimate {
+  return {
+    rows: e.rows,
+    exactRows: e.exactRows,
+    exactUsd: e.exactUsd,
+    taxminiyUsd: e.taxminiy?.customsUsd ?? null,
+    taxminiyFee: e.taxminiy
+      ? { bhm: e.taxminiy.fee.overridden ? null : e.taxminiy.fee.bhmCoefficient, usd: e.taxminiy.fee.feeUsd }
+      : null,
+    taxminiyBlock: blockWords(e.taxminiyBlock),
   };
 }
 
@@ -437,83 +726,120 @@ async function requestAbout(
  * The baza mark is the group's own answer only when its members AGREE about
  * where the price came from: a group carrying one remembered baza and one the
  * VED typed wears no mark at all, because a 🧠 over a mixed row would claim
- * a provenance for a number that is half somebody's typing.
+ * a provenance for a number that is half somebody's typing. On an estimated
+ * group the agreement is asked of the rows that HAVE a baza; the rest wear
+ * the 📊 beside it.
  */
-/** The owner's two zones, as a seller reads them — a new zone prints its code. */
-export const ZONE_ROUTE: Record<string, string> = {
-  cn: 'Xitoy → O‘zbekiston',
-  kashgar: 'Qashg‘ar → O‘zbekiston',
-  horgos: 'Horgos → O‘zbekiston',
-};
-
-/**
- * The road as the AI reply prints it (item 13): the LIST price with the band
- * that made it, so «$1,920» arrives with «180 kg/m³ · $160/m³ × 12 m³» and a
- * seller can check it against the tariff sheet on the wall.
- */
-export function aiFreight(
-  freight: FreightResult | null,
-  measure: { weightKg: number | null; volumeM3: number | null },
-): AiVedFreight {
-  if (!freight) return { ok: false, refusal: freightRefusalText('zone_required') };
-  if (!freight.ok) return { ok: false, refusal: freightRefusalText(freight.reason) };
-  const b = freight.band;
-  const qty = b.perKg ? measure.weightKg : measure.volumeM3;
-  const per = `$${b.priceUsd}/${b.perKg ? 'kg' : 'm³'}`;
-  const times = qty === null ? per : `${per} × ${Number(qty.toFixed(3))} ${b.perKg ? 'kg' : 'm³'}`;
-  return {
-    ok: true,
-    listUsd: freight.listUsd,
-    routeLabel: ZONE_ROUTE[b.zone] ?? b.zone,
-    bandText: `${freight.bandDensity} kg/m³ · ${times}`,
-  };
-}
-
-function replyLines(ws: Workspace): AiVedLine[] {
+function replyLines(ws: Workspace, estimate: CustomsEstimate | null): AiVedLine[] {
   return ws.groups.map((g) => {
-    const sources = [...new Set(g.items.map((i) => i.bazaSource))];
+    const ge = estimate?.groups.get(g.id) ?? null;
+    const sourceRows = ge?.kind === 'estimated' ? g.items.filter((i) => i.bazaUsd !== null) : g.items;
+    const sources = [...new Set(sourceRows.map((i) => i.bazaSource))];
     const bazaSource = sources.length === 1 ? sources[0]! : null;
-    const bazas = [...new Set(g.items.map((i) => `${i.bazaUsd}|${i.bazaBasis}`))];
-    const first = g.items[0];
-    // The shorthand «100 dona × $20/dona» is printed only where it is TRUE
-    // of the whole group; the figure beside it is exact either way. The
-    // measure is the one the BASIS reads (0125) — «12 m³ × $40/m³», never
-    // the dona count beside a per-kg price.
-    const measureText =
-      bazas.length === 1 && first && first.bazaUsd !== null && first.bazaBasis !== null
-        ? `${measureOf(g, first.bazaBasis)} × $${first.bazaUsd}/${basisLabel(first.bazaBasis, 'dona')}`
-        : null;
+    // The refusal the reply prints is the SHADOW's whenever an estimate was
+    // attempted for the group (§2.1): what still blocks even the estimate.
+    const refused = g.customs.ok ? null : ge?.kind === 'refused' ? ge.customs : g.customs;
     return {
       label: g.items.map((i) => i.label).join(', ') || g.label,
       code: g.tnvedCode,
-      measureText,
+      // The shorthand «100 dona × $20/dona» is printed only where it is TRUE
+      // of the whole group; the figure beside it is exact either way.
+      measureText: measureTextOf(g.items),
       bazaSource,
       dutyText: g.dutyFree ? 'yo‘q (lgota)' : dutyText(g),
-      addDutyPct: g.customs.ok ? g.customs.addDutyPct : 0,
+      addDutyPct: g.customs.ok ? g.customs.addDutyPct : ge?.kind === 'estimated' ? ge.customs.addDutyPct : 0,
       exciseText: exciseWords(g),
       vatPct: g.vatFree ? 0 : g.vatPct,
       customsUsd: g.customs.ok ? g.customs.customsUsd : null,
       // Already words — `blockerText` owns the engine's whole vocabulary and
       // a second map here would drift from it (#513). The WHOLE detail rides
-      // along (P2.9): without the row, the unit and the half, a missing
-      // figure read «o‘lchov yo‘q» on exactly the kg-and-dona rows the owner
-      // asked about, instead of «Kurtka: soni (dona) kiritilmagan — boj
-      // kamida $3/dona».
-      refusal: g.customs.ok
-        ? null
-        : blockerText({
+      // along (P2.9): the row, the unit and the half.
+      refusal: refused
+        ? blockerText({
             kind: 'customs',
             groupSeq: g.seq,
             groupLabel: g.label,
-            reason: g.customs.reason,
-            itemLabel: g.customs.itemLabel,
-            itemSeq: g.customs.itemSeq,
-            unit: g.customs.unit,
-            half: g.customs.half,
-            rate: g.customs.rate,
-          }),
+            reason: refused.reason,
+            itemLabel: refused.itemLabel,
+            itemSeq: refused.itemSeq,
+            unit: refused.unit,
+            half: refused.half,
+            rate: refused.rate,
+          })
+        : null,
+      // Who can fix the refusal (§0.1(7)): a missing count or weight is a
+      // fact only the customer has — the same split the Taxminiy block makes
+      // (`refused_measure`), or one reply names two fixers for one fact.
+      refusalTail: refused?.reason === 'measure_missing' ? 'seller' : 'ved',
+      estimated: estimateLine(ge),
+      // ⭐ of his Question 4: a weight copied from the shipment's BRUTTO
+      // total is said beside the measure, on every row whose measure is
+      // PRINTED — a row with its own baza (§6.7), which a REFUSED group still
+      // prints in its head, and every row of an estimated group, whose shadow
+      // measure is printed instead (§2.1). Gating on «the group priced» hid
+      // the mark on exactly the line that asks the seller for a fact.
+      // Which total it came from rides along (review PF-3): only a single-line
+      // job copies one, so a group carries at most one basis.
+      // …and only where the copied weight ENTERED the figure (review REG-4):
+      // a row priced per KILO — on its own baza or its 📊 shadow's — or a law
+      // whose specific half or excise counts kilos. A single-line job copies
+      // the total onto every row it lands, and a row priced per dona printed
+      // «300 dona (og‘irlik bruttodan) × $2/dona», as if the count were brutto.
+      weightFromTotal: weightMark(g, ge),
+      // The workspace's own age rule for the row's baza (`bazaStale`, law 5),
+      // asked of the rows that HAVE one — the VED's screen wears the same ⚠.
+      staleBaza: g.items.some((i) => i.bazaUsd !== null && i.bazaStale),
     };
   });
+}
+
+/** The brutto/netto mark of a printed group, where the copied weight priced it. */
+function weightMark(g: Workspace['groups'][number], ge: GroupEstimate | null): AiVedLine['weightFromTotal'] {
+  const lawWeighs =
+    (g.dutyMode !== null && g.dutyMode !== 'advalor' && g.dutyUnit === 'kg') ||
+    (g.exciseSpecific !== null && g.exciseUnit === 'kg');
+  // An estimated group's shadow rows stand in the same order as its rows.
+  const shadow = ge?.kind === 'estimated' ? ge.items : null;
+  return (
+    g.items
+      .filter((i, k) => {
+        if (i.bazaUsd === null && shadow === null) return false;
+        const basis = i.bazaUsd !== null ? i.bazaBasis : (shadow?.[k]?.bazaBasis ?? null);
+        return basis === 'kg' || lawWeighs;
+      })
+      .map((i) => weightFromTotalNote(i.note))
+      .find((b) => b !== null) ?? null
+  );
+}
+
+/** A group's 📊 line, or the words for why its rows got none. */
+function estimateLine(ge: GroupEstimate | null): AiVedLineEstimate | null {
+  if (ge?.kind === 'estimated') {
+    return {
+      priced: true,
+      customsUsd: ge.customs.customsUsd,
+      measureText: measureTextOf(ge.items),
+      declarations: declarationCounts(ge.medians),
+      oldFileEnd: ge.medians.find((m) => m.stale)?.batchEnd ?? null,
+    };
+  }
+  if (ge?.kind === 'refused' && ge.misses.length > 0) {
+    return { priced: false, misses: ge.misses.map((m) => `${m.seq}-qator — ${missWords(m.miss, m.n)}`) };
+  }
+  return null;
+}
+
+/**
+ * «300 kg × $4.10/kg» — when every member carries the same baza and basis.
+ * The measure is the one the BASIS reads (0125) — «12 m³ × $40/m³», never
+ * the dona count beside a per-kg price.
+ */
+function measureTextOf(items: readonly PricedItem[]): string | null {
+  const bazas = [...new Set(items.map((i) => `${i.bazaUsd}|${i.bazaBasis}`))];
+  const first = items[0];
+  return bazas.length === 1 && first && first.bazaUsd !== null && first.bazaBasis !== null
+    ? `${measureOf(items, first.bazaBasis)} × $${first.bazaUsd}/${basisLabel(first.bazaBasis, 'dona')}`
+    : null;
 }
 
 /**
@@ -536,9 +862,9 @@ function exciseWords(g: Workspace['groups'][number]): string | null {
  * «100 dona × $2/kg». A member that cannot answer in that unit is the
  * engine's own refusal, so the shorthand gives up rather than summing a part.
  */
-function measureOf(g: Workspace['groups'][number], basis: BazaBasis): string {
+function measureOf(items: readonly PricedItem[], basis: BazaBasis): string {
   let sum = 0;
-  for (const item of g.items) {
+  for (const item of items) {
     const m = itemMeasure(item, basis);
     if (m === null || !(m > 0)) return '—';
     sum += m;
@@ -547,238 +873,3 @@ function measureOf(g: Workspace['groups'][number], basis: BazaBasis): string {
 }
 
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
-
-/**
- * Step 0: stamp the codes the company's own seals already know.
- *
- * Only UNCODED rows are asked about — a code the intake or a person has
- * already put on the row is never second-guessed — and only the CODE is
- * posted here. The baza arrives by itself: `saveTable`'s own memory fill
- * (0096) answers every row this save leaves coded and baza-less, from the
- * same sealed record, under the same three re-checks.
- */
-async function applyMemory(
-  requestId: string,
-  ctx: AuditContext,
-): Promise<{ coded: number; filled: number }> {
-  const rows = await db
-    .select({
-      id: calcRequestItems.id,
-      seq: calcRequestItems.seq,
-      name: calcRequestItems.name,
-      tnvedCode: calcRequestItems.tnvedCode,
-    })
-    .from(calcRequestItems)
-    .where(eq(calcRequestItems.requestId, requestId));
-  const uncoded = rows.filter((r) => !(r.tnvedCode ?? '').trim());
-  // A fully coded request still gets its save — that is what fills the bazas
-  // and mints the groups — but there is nothing to look up.
-  if (uncoded.length === 0) return { coded: 0, filled: 0 };
-
-  const hits = await sealedMemoryFor(
-    uncoded.map((r) => r.name),
-    { excludeRequestId: requestId },
-  );
-  if (hits.size === 0) return { coded: 0, filled: 0 };
-
-  // Named apart from the pick's `edits` on purpose: these carry a CODE and
-  // nothing else, and `ai-advisory.test.ts` anchors its «the prefill writes
-  // no provenance of its own» fence on the pick's own push.
-  const codeEdits: TableItemEdit[] = [];
-  for (const r of uncoded) {
-    const hit = hits.get(itemNameNorm(r.name));
-    if (!hit?.tnvedCode) continue;
-    codeEdits.push({ id: r.id, seq: r.seq, tnvedCode: hit.tnvedCode });
-  }
-  if (codeEdits.length === 0) return { coded: 0, filled: 0 };
-
-  const out = await saveTable(requestId, { items: codeEdits, adds: [] }, ctx);
-  return { coded: codeEdits.length, filled: out.memoryFilled.length };
-}
-
-/**
- * Offer the model every still-empty baza's candidates, and write back the
- * rows it chose — through `saveTable`'s `importRowId` path, so the PRICE
- * comes out of the file and the provenance lands on 'import' (#894).
- */
-async function pickBazas(
-  requestId: string,
-  ctx: AuditContext,
-  pick: NonNullable<PrefillDeps['pick']>,
-): Promise<{ picked: number; capped: number; refused: number; overtaken: number }> {
-  const none = { picked: 0, capped: 0, refused: 0, overtaken: 0 };
-  const batchId = await newestReadyBatchId();
-  // Nothing imported yet: there is nothing to choose between, and inventing
-  // a price is the one thing this module may never do.
-  if (!batchId) return none;
-
-  const rows = await db
-    .select({
-      id: calcRequestItems.id,
-      seq: calcRequestItems.seq,
-      name: calcRequestItems.name,
-      tnvedCode: calcRequestItems.tnvedCode,
-      quantity: calcRequestItems.quantity,
-      weightKg: calcRequestItems.weightKg,
-      volumeM3: calcRequestItems.volumeM3,
-      bazaUsd: calcRequestItems.bazaUsd,
-      bazaBasis: calcRequestItems.bazaBasis,
-      groupId: calcRequestItems.groupId,
-      measureUnit: calcRequestItems.measureUnit,
-      measureQty: calcRequestItems.measureQty,
-    })
-    .from(calcRequestItems)
-    .where(eq(calcRequestItems.requestId, requestId));
-  const empty = rows.filter((r) => r.bazaUsd === null && (r.tnvedCode ?? '').trim());
-  if (empty.length === 0) return none;
-
-  const groups = await db
-    .select({ id: calcGroups.id, dutyUnit: calcGroups.dutyUnit })
-    .from(calcGroups)
-    .where(eq(calcGroups.requestId, requestId));
-  const dutyUnitOf = new Map(groups.map((g) => [g.id, g.dutyUnit]));
-
-  const asking: PickRequest[] = [];
-  const unitsOfSeq = new Map<number, ReturnType<typeof unitsForRow>>();
-  for (const r of empty.slice(0, MAX_PICK_ROWS)) {
-    const qty = r.quantity === null ? null : Number(r.quantity);
-    const kg = r.weightKg === null ? null : Number(r.weightKg);
-    const m3 = r.volumeM3 === null ? null : Number(r.volumeM3);
-    // The row's whole accepted set — and a unit the VED already CHOSE on this
-    // still-unpriced row narrows it to that one (0125): the model chooses a
-    // declaration, never a unit.
-    const units = unitsForRow({
-      dutyUnit: r.groupId ? (dutyUnitOf.get(r.groupId) ?? null) : null,
-      chosen: isBazaBasis(r.bazaBasis) ? r.bazaBasis : null,
-      hasWeight: kg !== null && kg > 0,
-      hasQuantity: qty !== null && qty > 0,
-      hasVolume: m3 !== null && m3 > 0,
-      statedPair: statedPairOf(r.measureUnit, r.measureQty === null ? null : Number(r.measureQty)),
-    });
-    if (units.length === 0) continue;
-    const perPiece =
-      units.includes('dona') && qty !== null && qty > 0 && kg !== null && kg > 0 ? kg / qty : null;
-    const sug = await suggestImportBaza(
-      { tnvedCode: r.tnvedCode!.trim(), name: r.name, units, weightPerUnitKg: perPiece },
-      { batchId },
-    );
-    if (sug.candidates.length === 0) continue;
-    unitsOfSeq.set(r.seq, units);
-    asking.push({
-      seq: r.seq,
-      name: r.name,
-      tnvedCode: r.tnvedCode!.trim(),
-      candidates: sug.candidates,
-    });
-  }
-  if (empty.length > MAX_PICK_ROWS) {
-    logger.info(
-      { requestId, asked: MAX_PICK_ROWS, total: empty.length },
-      '[calc-prefill] pick capped — the rest stay for the VED',
-    );
-  }
-  if (asking.length === 0) return none;
-
-  const capped = Math.max(0, empty.length - MAX_PICK_ROWS);
-  const answers = await pick(asking, {
-    onUsage: (usage) => {
-      void recordAiPass({
-        requestId,
-        staffId: ctx.actorId ?? null,
-        kind: 'pick',
-        model: usage.model,
-        inputTokens: usage.inputTokens,
-        outputTokens: usage.outputTokens,
-      });
-    },
-  });
-  if (!answers) return { ...none, capped };
-
-  const bySeq = new Map(rows.map((r) => [r.seq, r]));
-  const askedBySeq = new Map(asking.map((a) => [a.seq, a]));
-  const edits: TableItemEdit[] = [];
-  let refused = 0;
-  for (const a of answers) {
-    if (a.candidate === null) continue;
-    const row = bySeq.get(a.seq);
-    const asked = askedBySeq.get(a.seq);
-    if (!row || !asked) continue;
-    const chosen = asked.candidates[a.candidate];
-    if (!chosen) continue;
-    const units = unitsOfSeq.get(a.seq);
-    // The units the row was ASKED about are the only ones it may be answered
-    // in: a per-kg declaration on a per-dona row is off by the weight of the
-    // goods, and the model is choosing a row, not a basis. A chosen unit
-    // narrowed this to one (0125).
-    if (!units || !units.includes(chosen.unit)) {
-      refused += 1;
-      continue;
-    }
-    edits.push({
-      id: row.id,
-      seq: row.seq,
-      // The amount is re-read from the FILE by `saveTable` — what is posted
-      // here is only which row (#894). The basis travels with it.
-      bazaUsd: chosen.pricePerUnitUsd,
-      bazaBasis: chosen.basis,
-      importRowId: chosen.id,
-      // WHY this declaration and not the one beside it — owed since #909,
-      // where a model's pick and the deterministic ≥0.45 auto-fill landed
-      // identically and the VED reviewing the number could not tell which
-      // had put it there. WORDS only: the price still comes from the file.
-      bazaReason: a.reason,
-    });
-  }
-  logger.info(
-    {
-      requestId,
-      picks: answers.map((a) => ({ seq: a.seq, candidate: a.candidate, reason: a.reason })),
-      capped,
-      refused,
-    },
-    '[calc-prefill] the model chose',
-  );
-
-  if (edits.length === 0) return { picked: 0, capped, refused, overtaken: 0 };
-
-  /**
-   * STILL EMPTY? The rows were read before a model call that can take a
-   * minute, and a VED opening the request meanwhile is not a race — it is
-   * the normal way this queue is worked.
-   *
-   * The deterministic auto-fill has carried this re-check since 0094
-   * (`if (item.bazaUsd !== null) continue`, inside the save's own
-   * transaction). The pick did not, because it writes through `saveTable`'s
-   * ORDINARY edit branch — which is right for a person, whose typing SHOULD
-   * overwrite, and wrong for a machine answering a question it asked a
-   * minute ago. So a baza the VED had just typed was replaced by the model's
-   * choice, and `baza_source` flipped to 'import': their number gone, and the
-   * chip claiming the file had supplied it.
-   *
-   * A row that filled in the meantime is DROPPED and counted, never written.
-   * The residual window is the milliseconds to `saveTable`'s own
-   * `FOR UPDATE`, which is the window every writer in this module has.
-   */
-  const fresh = await db
-    .select({ id: calcRequestItems.id, bazaUsd: calcRequestItems.bazaUsd })
-    .from(calcRequestItems)
-    .where(
-      inArray(
-        calcRequestItems.id,
-        edits.map((e) => e.id),
-      ),
-    );
-  const stillEmpty = new Set(fresh.filter((r) => r.bazaUsd === null).map((r) => r.id));
-  const live = edits.filter((e) => stillEmpty.has(e.id));
-  const overtaken = edits.length - live.length;
-  if (overtaken > 0) {
-    logger.info(
-      { requestId, overtaken },
-      '[calc-prefill] a person filled these while the model was thinking — left alone',
-    );
-  }
-  if (live.length === 0) return { picked: 0, capped, refused, overtaken };
-
-  await saveTable(requestId, { items: live, adds: [] }, ctx);
-  return { picked: live.length, capped, refused, overtaken };
-}

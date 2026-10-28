@@ -78,4 +78,18 @@ describe('a proposal is turned into a calculation', () => {
     const fn = body('priceProposedGroups');
     expect(fn.indexOf('pullRatesFromDictionary(')).toBeLessThan(fn.indexOf('saveTable('));
   });
+
+  it('round 2 (docs/SAKKIZ-R2.md §7.5): the grouping is asked about the LINE, not only its name', () => {
+    // `groupingListing` is pure and unit-tested on its own; what only the
+    // source can show is that `proposeGroups` HANDS it the line — a call that
+    // passed the names alone would leave every listing test green (#531).
+    const fn = body('proposeGroups');
+    const call = fn.slice(fn.indexOf('proposeGoodsGrouping('));
+    const args = call.slice(0, call.indexOf('\n          );'));
+    for (const field of ['weightKg:', 'volumeM3:', 'measure:', 'note:']) expect(args).toContain(field);
+    // …and the prompt is built from that listing, not from a second one.
+    const tnved = readFileSync('src/modules/wms/tnved/service.ts', 'utf8');
+    const propose = tnved.slice(tnved.indexOf('export async function proposeGoodsGrouping('));
+    expect(propose.slice(0, propose.indexOf('\nexport '))).toContain('groupingListing(goods)');
+  });
 });
