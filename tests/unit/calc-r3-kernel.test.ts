@@ -237,8 +237,14 @@ describe('a twin of one note runs nothing after the transaction (K2, K’s revie
   // what makes «nothing after it runs» true is each CALLER's own early exit,
   // and only `openCalcRequest` itself was pinned. Deleting one of these three
   // exits would bill the reading again, queue a second AI pass, or answer ok.
+  //
+  // Re-anchored (docs/SAKKIZ-R3.md §7.2.9, P2): the landing bills nothing any
+  // more — the reading job billed each reading the moment the model answered —
+  // so its post-open step is the ATTACH (`attachIntakePasses(`), which the
+  // twin makes through `retried` instead (idempotent). The exit still comes
+  // before both.
   const callers: [string, string[]][] = [
-    ['src/modules/wms/calc/intake-land.ts', ['recordAiPass(', 'queueCalcPrefill(']],
+    ['src/modules/wms/calc/intake-land.ts', ['attachIntakePasses(', 'queueCalcPrefill(']],
     ['src/modules/wms/calc/from-thread.ts', ['queueCalcPrefill(']],
     ['src/app/(protected)/hisoblash/actions.ts', ['queueCalcPrefill(', 'requestAsks(']],
   ];

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CalcFacts } from '@/modules/wms/calc/intake';
+import { driveReading, resetReadingDrive } from '../fixtures/calc-read-drive';
 
 /**
  * The «Hisoblatish» collector after the round-3 review of docs/SAKKIZ-BAND.md
@@ -13,7 +14,12 @@ vi.mock('@/modules/wms/calc/intake-ai', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/modules/wms/calc/intake-ai')>()),
   analyzeIntake: model.analyze,
 }));
-vi.mock('@/modules/wms/calc/ai-cost', () => ({ aiCalcBudgetLeft: async () => 100 }));
+// The reading job bills each answered reading itself (docs/SAKKIZ-R3.md §7.2.10).
+vi.mock('@/modules/wms/calc/ai-cost', () => ({ aiCalcBudgetLeft: async () => 100, recordAiPass: async () => {} }));
+// «Bo‘ldi» only enqueues since the reading is a pg-boss job (§7.1).
+vi.mock('@/modules/platform/jobs/boss', async (importOriginal) =>
+  (await import('../fixtures/calc-read-drive')).bossForReading(await importOriginal()),
+);
 
 const reader = vi.hoisted(() => ({ answer: null as unknown }));
 vi.mock('@/modules/wms/deals/goods-file', async (importOriginal) => {
@@ -88,6 +94,7 @@ const reads = (goods: Goods, steps: string[] = []) => ({
 beforeEach(() => {
   model.analyze.mockReset();
   reader.answer = null;
+  resetReadingDrive();
 });
 afterEach(() => {
   for (const id of chats.splice(0)) endIntake(id);
@@ -331,8 +338,10 @@ describe('a line passed with ⏭ stays passed across a re-read (R3-C5)', () => {
     // «➕ Yana ma’lumot»: more material, then «Bo‘ldi» — the model now lists Shim first.
     updateIntake(chatId, { stage: 'material', round: 0, material: ['Shim ham bor'] });
     model.analyze.mockResolvedValueOnce(reads([line('Shim'), line('Kurtka')]));
+    // The re-read runs as the job (docs/SAKKIZ-R3.md §11, P2): «Bo‘ldi» only enqueues.
     await handleCalcCallback(ctx, chatId, 'done');
-    await vi.waitFor(() => expect(activeIntake(chatId)?.stage).toBe('question'));
+    await driveReading(chatId, ctx);
+    expect(activeIntake(chatId)?.stage).toBe('question');
     const asked = ctx.replies.filter((r) => r.startsWith('❓')).map((r) => r.split(' — ')[0]);
     expect(asked).toEqual(['❓ 1-qator «Shim»']);
     expect(activeIntake(chatId)).toMatchObject({ askingIndex: 0, lineDone: [{ index: 1, name: 'Kurtka' }] });

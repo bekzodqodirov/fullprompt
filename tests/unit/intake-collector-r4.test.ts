@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CalcFacts } from '@/modules/wms/calc/intake';
+import { driveReading, resetReadingDrive } from '../fixtures/calc-read-drive';
 
 /**
  * The «Hisoblatish» collector after the round-4 review (the regression
@@ -15,7 +16,12 @@ vi.mock('@/modules/wms/calc/intake-ai', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/modules/wms/calc/intake-ai')>()),
   analyzeIntake: model.analyze,
 }));
-vi.mock('@/modules/wms/calc/ai-cost', () => ({ aiCalcBudgetLeft: async () => 100 }));
+// The reading job bills each answered reading itself (docs/SAKKIZ-R3.md §7.2.10).
+vi.mock('@/modules/wms/calc/ai-cost', () => ({ aiCalcBudgetLeft: async () => 100, recordAiPass: async () => {} }));
+// «Bo‘ldi» only enqueues since the reading is a pg-boss job (§7.1).
+vi.mock('@/modules/platform/jobs/boss', async (importOriginal) =>
+  (await import('../fixtures/calc-read-drive')).bossForReading(await importOriginal()),
+);
 
 import {
   activeIntake,
@@ -68,7 +74,10 @@ function fakeCtx() {
   };
 }
 
-beforeEach(() => model.analyze.mockReset());
+beforeEach(() => {
+  model.analyze.mockReset();
+  resetReadingDrive();
+});
 afterEach(() => {
   for (const id of chats.splice(0)) endIntake(id);
 });
@@ -206,8 +215,10 @@ describe('the summary beside an Excel (round 4)', () => {
     });
     model.analyze.mockResolvedValueOnce({ ok: false, failure: 'not_configured' });
     const ctx = fakeCtx();
+    // Reached through the job (docs/SAKKIZ-R3.md §11, P2): «Bo‘ldi» only enqueues.
     await handleCalcCallback(ctx, chatId, 'done');
-    await vi.waitFor(() => expect(activeIntake(chatId)?.stage).toBe('review'));
+    await driveReading(chatId, ctx);
+    expect(activeIntake(chatId)?.stage).toBe('review');
     const summary = ctx.replies.at(-1)!;
     expect(summary).toContain('Faqat Excel va yozilganidan o‘qildi.');
     expect(summary).toContain('\n\n⚠️ 1 ta qator Excel’dagi bilan bir xil deb qo‘shilmadi: «Kurtka».');

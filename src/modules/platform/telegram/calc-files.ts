@@ -355,6 +355,11 @@ export async function readIntakeFile(
     // Counted, never silent: the prompt says how many will not be read.
     if (state.images.length >= MAX_INTAKE_IMAGES) return { patch: { imagesSkipped: state.imagesSkipped + 1 }, say: null };
     const reduced = await reduceForModel(saved.body).catch(() => null);
+    // The reduction this needs anyway is KEPT, beside the original, for the
+    // reading to send (docs/SAKKIZ-R3.md §7.2.4): a dozen 3-5 MB photos read
+    // back and run through sharp again inside the reading's wall clock was
+    // seconds of it. Off the handler — a missing copy is re-reduced there.
+    if (reduced) void storeModelCopy(saved.attachmentId, reduced);
     if (!reduced) {
       return {
         patch: { imagesSkipped: state.imagesSkipped + 1 },
@@ -632,6 +637,35 @@ export async function reduceForModel(original: Buffer): Promise<Buffer | null> {
   return out.length > 4_500_000 ? null : out;
 }
 
+/**
+ * Where a photo's model-sized copy lives: beside its original, keyed off the
+ * original's storage key (one home for the writer and the reader). A derived
+ * storage object, not an `attachments` row — it needs no authz and no backup
+ * change; purging the attachment leaves it behind, like the orphan files of
+ * an abandoned collection (docs/SAKKIZ-R3.md §7.2.8).
+ */
+export function modelCopyKey(storageKey: string): string {
+  return `${storageKey}.model.jpg`;
+}
+
+/**
+ * Store the model-sized copy of a collection's photo. Never throws: a copy
+ * that did not make it is re-reduced by the reading, which is all it costs.
+ */
+export async function storeModelCopy(attachmentId: string, reduced: Buffer): Promise<void> {
+  try {
+    if (!isUuidShaped(attachmentId)) return;
+    const [row] = await db
+      .select({ storageKey: attachments.storageKey })
+      .from(attachments)
+      .where(eq(attachments.id, attachmentId))
+      .limit(1);
+    if (row) await getStorage().put(modelCopyKey(row.storageKey), reduced, 'image/jpeg');
+  } catch (err) {
+    logger.warn({ err, attachmentId }, '[calc-intake] model-sized copy not stored — the reading reduces it');
+  }
+}
+
 /** The bytes a reading sends the model, loaded from storage (K5). */
 export interface IntakeFiles {
   images: { data: Buffer; mediaType: 'image/jpeg' }[];
@@ -641,19 +675,19 @@ export interface IntakeFiles {
 
 /**
  * The bytes the model reads, from storage. Every get goes through `readWithin`
- * (no read may outlive `deadline`); a photo prefers its model-sized copy (P2).
- * An object storage no longer has, or does not hand over in time, is counted,
- * never thrown — and the count is SAID: the reading puts it in its notes
- * (`filesMissingNote`), or a storage blip would have the model read text only
- * under a prompt that promised it the photos.
+ * (no read may outlive `deadline`); a photo prefers its model-sized copy,
+ * written at arrival (`storeModelCopy`), and only without one is its ORIGINAL
+ * read and reduced again (the stored attachment is the 3-5 MB photo, and the
+ * model refuses past ~5 MB). An object storage no longer has, or does not
+ * hand over in time, is counted, never thrown — and the count is SAID: the
+ * reading puts it in its notes (`filesMissingNote`), or a storage blip would
+ * have the model read text only under a prompt that promised it the photos.
  *
  * The deadline is the WHOLE load's: each read gets what is left of it (at
  * most PHOTO_READ_MS), and a file whose turn comes after it is counted, not
  * read — fifteen slow reads in a row must not hold the model call for
- * minutes. K: no derived copy, so every image read runs `reduceForModel`
- * again (the stored attachment is the ORIGINAL 3-5 MB photo, and the model
- * refuses past ~5 MB) and a null is `missing`. A collection with no image and
- * no PDF reads nothing.
+ * minutes (#915: a dead stream is a hang). A collection with no image and no
+ * PDF reads nothing.
  */
 export async function loadIntakeFiles(state: IntakeState, opts: { deadline: number }): Promise<IntakeFiles> {
   const out: IntakeFiles = { images: [], pdfs: [], missing: 0 };
@@ -671,21 +705,27 @@ export async function loadIntakeFiles(state: IntakeState, opts: { deadline: numb
           .from(attachments)
           .where(inArray(attachments.id, ids));
   const keyOf = new Map(rows.map((r) => [r.id, r.storageKey]));
-  const bytesOf = async (attachmentId: string): Promise<Buffer | null> => {
-    const key = keyOf.get(attachmentId);
-    if (!key) return null;
+  const read = async (key: string, attachmentId: string, quiet: boolean): Promise<Buffer | null> => {
     const left = Math.min(PHOTO_READ_MS, opts.deadline - Date.now());
     if (left <= 0) return null;
     try {
       return await readWithin(getStorage().get(key), left);
     } catch (err) {
-      logger.warn({ err, attachmentId }, '[calc-intake] stored file unreadable — counted, not read');
+      if (!quiet) logger.warn({ err, attachmentId }, '[calc-intake] stored file unreadable — counted, not read');
       return null;
     }
   };
+  const bytesOf = async (attachmentId: string): Promise<Buffer | null> => {
+    const key = keyOf.get(attachmentId);
+    return key ? read(key, attachmentId, false) : null;
+  };
   for (const image of state.images) {
-    const original = await bytesOf(image.attachmentId);
-    const reduced = original ? await reduceForModel(original).catch(() => null) : null;
+    const key = keyOf.get(image.attachmentId);
+    // The copy is already the model's size: no sharp, no 5 MB read. Its
+    // absence is ordinary (an arrival that could not store it) and quiet.
+    const copy = key ? await read(modelCopyKey(key), image.attachmentId, true) : null;
+    const original = copy ? null : await bytesOf(image.attachmentId);
+    const reduced = copy ?? (original ? await reduceForModel(original).catch(() => null) : null);
     if (reduced) out.images.push({ data: reduced, mediaType: image.mediaType });
     else out.missing += 1;
   }

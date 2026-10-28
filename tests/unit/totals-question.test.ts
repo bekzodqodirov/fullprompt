@@ -15,7 +15,12 @@ vi.mock('@/modules/wms/calc/intake-ai', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/modules/wms/calc/intake-ai')>()),
   analyzeIntake: model.analyze,
 }));
-vi.mock('@/modules/wms/calc/ai-cost', () => ({ aiCalcBudgetLeft: async () => 100 }));
+// The reading job bills each answered reading itself (docs/SAKKIZ-R3.md §7.2.10).
+vi.mock('@/modules/wms/calc/ai-cost', () => ({ aiCalcBudgetLeft: async () => 100, recordAiPass: async () => {} }));
+// «Bo‘ldi» only enqueues since the reading is a pg-boss job (§7.1).
+vi.mock('@/modules/platform/jobs/boss', async (importOriginal) =>
+  (await import('../fixtures/calc-read-drive')).bossForReading(await importOriginal()),
+);
 const bot = vi.hoisted(() => ({ assistant: vi.fn(async () => null), lookup: vi.fn(async () => null) }));
 vi.mock('@/modules/platform/telegram/staff-bot', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/modules/platform/telegram/staff-bot')>()),
@@ -36,10 +41,13 @@ vi.mock('@/modules/platform/telegram/once', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/modules/platform/telegram/once')>()),
   claimOnce: async () => true,
 }));
+// `sendTextBriefRetry` is the real one (P2): the reading job delivers its
+// table through it, and the drive stands in for Telegram underneath it, so
+// the table reaches the fake ctx. The assistant stand-in answers nothing, so
+// nothing else here reaches it.
 vi.mock('@/modules/platform/telegram/send', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/modules/platform/telegram/send')>()),
   sendTyping: async () => ({ ok: true }),
-  sendTextBriefRetry: async () => ({ ok: true }),
   editText: async () => ({ ok: true }),
 }));
 
@@ -66,6 +74,7 @@ import {
   settleAnalysis,
 } from '@/modules/platform/telegram/staff-handlers';
 import type { OnceKey } from '@/modules/platform/telegram/once';
+import { driveReading, resetReadingDrive } from '../fixtures/calc-read-drive';
 
 let seq = 0;
 const chats: bigint[] = [];
@@ -104,12 +113,14 @@ const reads = (facts: Partial<IntakeState['facts']>) => ({
 const ask = (state: Pick<IntakeState, 'section' | 'totalsAsked' | 'facts'>) =>
   totalsQuestion(state, factsVolumeM3(state.facts));
 
-/** «Bo‘ldi» pressed: the analysis runs off the poller, so wait for it to land. */
+/**
+ * «Bo‘ldi» pressed. Re-anchored (docs/SAKKIZ-R3.md §11, P2): the press only
+ * enqueues — the reading is the job, run here through the one drive helper,
+ * which hands what it sends to `ctx`.
+ */
 async function pressDone(ctx: ReturnType<typeof fakeCtx>, chatId: bigint) {
   await handleCalcCallback(ctx, chatId, 'done');
-  for (let i = 0; i < 200 && activeIntake(chatId)?.analysing; i++) {
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  }
+  await driveReading(chatId, ctx);
   expect(activeIntake(chatId)?.analysing ?? null).toBeNull();
 }
 
@@ -119,6 +130,7 @@ const KG_1200 = { field: 'weightKg' as const, text: '1,200', decimal: 1.2, thous
 beforeEach(() => {
   model.analyze.mockReset();
   bot.assistant.mockClear();
+  resetReadingDrive();
 });
 afterEach(() => {
   for (const id of chats.splice(0)) endIntake(id);

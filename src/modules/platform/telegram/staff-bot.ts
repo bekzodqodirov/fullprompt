@@ -1438,10 +1438,9 @@ export async function landCollectedIntake(
     hasCertificate: state.hasCertificate,
     // The AI podklyuch door's «qayerdan?» answer; every other door has none.
     freightZone: state.route?.zone ?? null,
-    // What every reading cost, so the day's AI budget counts the most
-    // expensive call on this path rather than the two cheap ones — every
-    // answered one, a re-read after «➕ Yana ma'lumot» included (2.9 c).
-    usages: state.usages,
+    // No usages: every reading was billed by its job the moment the model
+    // answered, on this collection's note, and the landing ATTACHES those
+    // rows to the request it opens (docs/SAKKIZ-R3.md §7.2.9).
   });
 }
 

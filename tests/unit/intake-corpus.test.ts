@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import ExcelJS from 'exceljs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { KNOWN_FAILING } from './fixtures/intake-corpus-known';
+import { driveReading, resetReadingDrive } from '../fixtures/calc-read-drive';
 
 /**
  * The intake regression corpus (tests/unit/fixtures/intake-corpus.ts), run
@@ -32,7 +33,14 @@ vi.mock('@/modules/wms/calc/intake-ai', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/modules/wms/calc/intake-ai')>()),
   analyzeIntake: model.analyze,
 }));
-vi.mock('@/modules/wms/calc/ai-cost', () => ({ aiCalcBudgetLeft: async () => 100 }));
+// The reading job bills each answered reading itself (docs/SAKKIZ-R3.md
+// §7.2.10); the ledger is not what these cases are about.
+vi.mock('@/modules/wms/calc/ai-cost', () => ({ aiCalcBudgetLeft: async () => 100, recordAiPass: async () => {} }));
+// «Bo‘ldi» only ENQUEUES since the reading is a pg-boss job (§7.1): the
+// collector cases run the captured job through the one drive helper.
+vi.mock('@/modules/platform/jobs/boss', async (importOriginal) =>
+  (await import('../fixtures/calc-read-drive')).bossForReading(await importOriginal()),
+);
 const prefill = vi.hoisted(() => ({ standing: vi.fn(), run: vi.fn() }));
 vi.mock('@/modules/wms/calc/prefill', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/modules/wms/calc/prefill')>()),
@@ -246,6 +254,7 @@ const reads = (goods: Goods, steps: string[] = []) => ({
 });
 
 beforeEach(() => {
+  resetReadingDrive();
   model.analyze.mockReset();
   prefill.standing.mockReset();
   prefill.run.mockReset();
@@ -773,8 +782,9 @@ async function skipThenReread(): Promise<{ chatId: bigint; asked: string[] }> {
   await handleCalcCallback(ctx, chatId, 'more');
   updateIntake(chatId, { material: ['Kurtka', 'Shim 2 karobka'] });
   model.analyze.mockResolvedValueOnce(reads([line('Shim'), line('Kurtka')]));
+  // The re-read half runs as the job (P2, §11): «Bo‘ldi» only enqueues.
   await handleCalcCallback(ctx, chatId, 'done');
-  await vi.waitFor(() => expect(activeIntake(chatId)?.analysing).toBeNull());
+  await driveReading(chatId, ctx);
   return { chatId, asked: ctx.texts().filter((t) => t.startsWith('❓')).map((t) => t.split(' — ')[0]!.split(':')[0]!) };
 }
 
@@ -911,11 +921,15 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
       }
       return false;
     });
+    // Re-anchored (P2, §11): the press enqueues and the job settles the
+    // token — the claim («never «Tahlil davom etmoqda» for ever») holds.
     await handleCalcCallback(ctx, chatId, 'done');
-    await vi.waitFor(() => expect(activeIntake(chatId)?.analysing).toBeNull());
+    await driveReading(chatId, ctx);
+    expect(activeIntake(chatId)?.analysing).toBeNull();
     await handleCalcCallback(ctx, chatId, 'more');
     await handleCalcCallback(ctx, chatId, 'done');
-    await vi.waitFor(() => expect(activeIntake(chatId)?.analysing).toBeNull());
+    await driveReading(chatId, ctx);
+    expect(activeIntake(chatId)?.analysing).toBeNull();
     expect(ctx.texts()).not.toContain('⏳ Tahlil davom etmoqda — natijani kuting.');
     expect(model.analyze).toHaveBeenCalledTimes(2);
   },
@@ -1179,8 +1193,10 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     const { chatId } = collection({ stage: 'material', material: ['Kurtka 300 dona 150 kg'] });
     model.analyze.mockResolvedValueOnce({ ok: false, failure: 'truncated' });
     const ctx = fakeCtx();
+    // The reading is a job (P2, §11); the keyboard read is the one it sent.
     await handleCalcCallback(ctx, chatId, 'done');
-    await vi.waitFor(() => expect(activeIntake(chatId)?.stage).toBe('review'));
+    await driveReading(chatId, ctx);
+    expect(activeIntake(chatId)?.stage).toBe('review');
     expect(buttonsOf(ctx.replies.at(-1))).not.toContain('c:reread');
   },
   c0235: async () => {
@@ -1293,8 +1309,10 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     const { chatId } = collection({ stage: 'material', material: ['Kurtka 300 dona 150 kg'] });
     model.analyze.mockResolvedValueOnce({ ok: false, failure: 'truncated' });
     const ctx = fakeCtx();
+    // The reading is a job (P2, §11).
     await handleCalcCallback(ctx, chatId, 'done');
-    await vi.waitFor(() => expect(activeIntake(chatId)?.stage).toBe('review'));
+    await driveReading(chatId, ctx);
+    expect(activeIntake(chatId)?.stage).toBe('review');
     expect(buttonsOf(ctx.replies.at(-1))).not.toContain('🔄 AI qayta o‘qisin');
   },
   c0600: async () => {
@@ -1321,13 +1339,15 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     // The day's budget is written from the collection's bills at the
     // landing; a paid read that failed must still carry what it cost.
     // Re-anchored (docs/SAKKIZ-R2.md §8.2.7, his 2.9 c): the reading names
-    // every ANSWERED attempt in `answered`, and the collection APPENDS them
-    // into `usages` — one bill per reading, never the last one alone.
+    // every ANSWERED attempt in `answered`. Re-anchored again (SAKKIZ-R3
+    // §7.2.10, P2): the reading JOB bills `answered` the moment the model
+    // answered, so the collection no longer appends to `usages` — the claim
+    // (a failed paid read still carries what it cost) is on `answered`.
     const usage = { model: 'm', inputTokens: 40_000, outputTokens: 16_000 };
     const { state } = collection({ stage: 'material', material: ['Kurtka 300 dona 150 kg'] });
     model.analyze.mockResolvedValueOnce({ ok: false, failure: 'truncated', usage, answered: [usage] });
     const out = await analyzeCollected(state);
-    expect(out.usages).toEqual([usage]);
+    expect(out.answered).toEqual([usage]);
   },
   // ---- the fixer's collector pins (#0-#7)
   c0768: async () => {
@@ -1422,7 +1442,9 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     model.analyze.mockResolvedValueOnce(reads([line('Kurtka', { quantity: 300, weightKg: 150 })]));
     const ctx = fakeCtx((t) => t.startsWith('⏳'));
     await expect(handleCalcCallback(ctx, chatId, 'done')).resolves.toBeUndefined();
-    await vi.waitFor(() => expect(activeIntake(chatId)?.stage).toBe('review'));
+    // The job settles it (P2, §11): the same three facts.
+    await driveReading(chatId, ctx);
+    expect(activeIntake(chatId)?.stage).toBe('review');
     expect(model.analyze).toHaveBeenCalledTimes(1);
     expect(activeIntake(chatId)!.analysing).toBeNull();
     expect(buttonsOf(ctx.replies.at(-1))).toContain('c:save');
@@ -1741,11 +1763,13 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     await handleCalcCallback(ctx, chatId, 'skip');
     await handleCalcCallback(ctx, chatId, 'more');
     model.analyze.mockResolvedValueOnce({ ok: false, failure: 'timeout' });
+    // Both readings run as the job (P2, §11).
     await handleCalcCallback(ctx, chatId, 'done');
-    await vi.waitFor(() => expect(activeIntake(chatId)?.analysing).toBeNull());
+    await driveReading(chatId, ctx);
     model.analyze.mockResolvedValueOnce(reads(three));
     await handleCalcCallback(ctx, chatId, 'reread');
-    await vi.waitFor(() => expect(activeIntake(chatId)?.analysing).toBeNull());
+    await driveReading(chatId, ctx);
+    expect(activeIntake(chatId)?.analysing).toBeNull();
     expect(ctx.texts().filter((t) => t.startsWith('❓')).at(-1)).toMatch(/^❓ 2-qator «Shim»/);
   },
   c1743: async () => {
@@ -1870,8 +1894,10 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     });
     model.analyze.mockResolvedValueOnce({ ok: false, failure: 'not_configured' });
     const ctx = fakeCtx();
+    // Reached through the job (P2, §11): the tail read is the one it sent.
     await handleCalcCallback(ctx, chatId, 'done');
-    await vi.waitFor(() => expect(activeIntake(chatId)?.stage).toBe('review'));
+    await driveReading(chatId, ctx);
+    expect(activeIntake(chatId)?.stage).toBe('review');
     expect(ctx.texts().at(-1)).not.toContain('Faqat yozilganidan o‘qildi.');
   },
   c1893: async () => {
@@ -1893,8 +1919,10 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
       ),
     );
     const ctx = fakeCtx();
+    // Reached through the job (P2, §11).
     await handleCalcCallback(ctx, chatId, 'done');
-    await vi.waitFor(() => expect(activeIntake(chatId)?.analysing).toBeNull());
+    await driveReading(chatId, ctx);
+    expect(activeIntake(chatId)?.analysing).toBeNull();
     const summary = ctx.texts().find((t) => t.includes('Excel’dagi bilan bir xil')) ?? ctx.texts().at(-1)!;
     expect(summary.split('\n').some((l) => l.startsWith('⚠️') && l.includes('Excel’dagi bilan bir xil'))).toBe(true);
     for (const step of ['step one', 'step two', 'step three']) expect(summary).toContain(step);

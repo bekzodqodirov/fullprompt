@@ -14,6 +14,11 @@ vi.mock('@/modules/platform/telegram/calc-intake', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/modules/platform/telegram/calc-intake')>()),
   analyzeCollected: analyse.fn,
 }));
+// «Bo‘ldi» only enqueues since the reading is a pg-boss job (docs/SAKKIZ-R3.md
+// §7.1); the one drive helper runs the captured job.
+vi.mock('@/modules/platform/jobs/boss', async (importOriginal) =>
+  (await import('../fixtures/calc-read-drive')).bossForReading(await importOriginal()),
+);
 
 import {
   activeIntake,
@@ -23,6 +28,8 @@ import {
   type IntakeState,
 } from '@/modules/platform/telegram/calc-intake';
 import { parseCallback } from '@/modules/platform/telegram/staff-bot';
+import { INTAKE_READ_RETRY } from '@/modules/platform/telegram/calc-read';
+import { driveReading, readingsEnqueued, resetReadingDrive } from '../fixtures/calc-read-drive';
 import {
   clientAnswer,
   handleCalcCallback,
@@ -82,7 +89,10 @@ function fakeCtx(opts: { refuse?: RegExp } = {}) {
 const callbacksOf = (kb: { inline_keyboard: { callback_data: string }[][] } | undefined) =>
   (kb?.inline_keyboard ?? []).flat().map((b) => b.callback_data);
 
-beforeEach(() => analyse.fn.mockReset());
+beforeEach(() => {
+  analyse.fn.mockReset();
+  resetReadingDrive();
+});
 afterEach(() => {
   for (const id of chats.splice(0)) endIntake(id);
 });
@@ -154,14 +164,22 @@ describe('an answer given while the analysis ran is kept (review c2)', () => {
 });
 
 describe('a refused «⏳» notice cannot strand the lock (review c3)', () => {
-  it('the analysis is dispatched anyway, and its own exit releases the token', async () => {
+  it('the reading is enqueued anyway, and its own exit releases the token', async () => {
+    // Re-anchored (docs/SAKKIZ-R3.md §11, P2): the press ENQUEUES the reading
+    // — the notice's failure is caught as before — and the job is the
+    // reading's exit; its last attempt releases the token and says so.
     analyse.fn.mockRejectedValueOnce(new Error('model down'));
     const { chatId } = collection({ stage: 'material', material: ['Kurtka 300 dona'] });
     const ctx = fakeCtx({ refuse: /^⏳/ });
     await expect(handleCalcCallback(ctx, chatId, 'done')).resolves.toBeUndefined();
-    await vi.waitFor(() => expect(activeIntake(chatId)?.analysing).toBeNull());
+    expect(readingsEnqueued(chatId)).toHaveLength(1);
+    await driveReading(chatId, ctx, { retryCount: INTAKE_READ_RETRY });
+    expect(activeIntake(chatId)?.analysing).toBeNull();
     expect(analyse.fn).toHaveBeenCalledTimes(1);
+    expect(ctx.texts().at(-1)).toBe('Tahlil qilib bo‘lmadi. «Bo‘ldi» ni qayta bosing.');
     // …and the next «Bo'ldi» is a «Bo'ldi», not «Tahlil davom etmoqda».
+    await handleCalcCallback(ctx, chatId, 'done');
+    expect(readingsEnqueued(chatId)).toHaveLength(2);
     expect(ctx.texts().some((t) => t.includes('Tahlil davom etmoqda'))).toBe(false);
   });
 });

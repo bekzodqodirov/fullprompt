@@ -383,13 +383,13 @@ export interface IntakeState {
    */
   clientAskedWith: string | null;
   /**
-   * What every analysis of this collection cost — APPENDED, one entry per
-   * reading the model answered, ok or not (his 2.9 c: failed reads count).
-   * Carried to the landing, which bills each against the request. A re-read
-   * after «➕ Yana ma'lumot» used to REPLACE the first reading's usage, so
-   * the day's budget counted one call where the seller had caused two.
+   * RETIRED (docs/SAKKIZ-R3.md §7.2.10): what the readings cost used to be
+   * appended here and billed at the landing. The reading job now writes the
+   * ledger the moment the model answered, on the collection's note, so
+   * nothing reads this any more; optional for one release, for a collection
+   * hydrated with it, then removed.
    */
-  usages: { model: string; inputTokens: number; outputTokens: number; at?: number }[];
+  usages?: { model: string; inputTokens: number; outputTokens: number; at?: number }[];
   /** Why the model's reading is missing (his 1.6 a) — null when it read. */
   aiFailure: import('../../wms/calc/intake').AiReadFailure | null;
   /**
@@ -1513,8 +1513,10 @@ const NO_FILES: IntakeFiles = { images: [], pdfs: [], missing: 0 };
  *
  * The bytes the model reads come from storage (`files`, `loadIntakeFiles`):
  * the collection keeps attachment ids, never a Buffer (docs/SAKKIZ-R3.md
- * K4/K5). `answered` is what this reading cost, beside the appended `usages`
- * (P2 bills it at the answer and drops the append).
+ * K4/K5). `answered` is what this reading cost: the reading job bills it
+ * the moment the model answered (docs/SAKKIZ-R3.md §7.2.10). A leash
+ * (`timeoutMs`) of nothing is no call at all — the job's wall clock had no
+ * room left — and reads as the «timeout» failure, in words.
  */
 export async function analyzeCollected(
   state: IntakeState,
@@ -1535,14 +1537,16 @@ export async function analyzeCollected(
   // answers, which is exactly what a keyless server has always had, and the
   // summary says so rather than looking like a model that found nothing.
   //
-  // This collection's OWN earlier readings are not in the ledger yet — they
-  // are billed at the landing (judge concurrency-11) — so they are counted
-  // here, or a collection re-read again and again passes the cap it spends.
+  // This collection's own earlier readings are IN the ledger: the reading job
+  // bills each the moment the model answered (§7.2.10), so the ledger alone
+  // counts them — subtracting them here as well counted each one twice.
   const { aiCalcBudgetLeft } = await import('../../wms/calc/ai-cost');
-  const budgetLeft = (await aiCalcBudgetLeft().catch(() => Number.POSITIVE_INFINITY)) - state.usages.length;
+  const budgetLeft = await aiCalcBudgetLeft().catch(() => Number.POSITIVE_INFINITY);
   type Outcome = Awaited<ReturnType<typeof analyzeIntake>>;
   const outcome: Outcome =
-    budgetLeft <= 0
+    opts.timeoutMs !== undefined && opts.timeoutMs <= 0
+      ? { ok: false, failure: 'timeout' }
+      : budgetLeft <= 0
       ? { ok: false, failure: 'budget' }
       : await analyzeIntake({
           section: state.section,
@@ -1640,15 +1644,14 @@ export async function analyzeCollected(
     notes,
     aiUsed: Boolean(ai),
     aiFailure: outcome.ok ? null : outcome.failure,
-    // Every reading the model answered is billed at the landing — a paid
-    // read that failed (cut, refused, unreadable) included (r1-fix typed
-    // #21), and a re-read ADDED to the first, never in its place (2.9 c).
-    usages: [...state.usages, ...(outcome.answered ?? [])],
     totalsAsked: totalsStillAsked(state, facts, factsVolumeM3(facts)),
     // What the seller has answered is not asked again (review P3-3) — unless
     // later material doubts the answer, and then THAT is what is asked.
     ambiguousTotals: [...unansweredAmbiguity(manual.ambiguous, state.totalsAnswer), ...doubts],
     stage: 'review',
+    // Every reading the model answered — a paid read that failed (cut,
+    // refused, unreadable) included (r1-fix typed #21), each re-read its own
+    // (2.9 c) — for the job's bill.
     answered: outcome.answered ?? [],
   };
 }
