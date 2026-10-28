@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, lt, sql, type SQL } from 'drizzle-orm';
 import { db, type Tx } from '@/modules/platform/db/client';
 import {
   calcGroups,
@@ -6,6 +6,7 @@ import {
   calcRequestItems,
   calcRequests,
   crmActivities,
+  clients,
   dealLines,
   deals,
   leadStages,
@@ -41,8 +42,10 @@ import {
 import { bookLawsFor } from './book-laws';
 import { doorRow } from './door-row';
 import { linesVolumeM3 } from './line-totals';
-import type { NeedLaw } from './needs';
-import type { BazaBasis, MeasureUnit } from './pricing';
+import { groupLawsOf, type NeedLaw } from './needs';
+import type { AmendBase } from './amend-types';
+import { isCalcSection } from './labels';
+import type { BazaBasis, DutyMode, DutyUnit, MeasureUnit } from './pricing';
 import { parseTypedMoney } from './money-input';
 import { childStateSql, type ChildState } from './chain';
 import { creditsSql, isAnswer, isAnswerSql } from './credit';
@@ -320,17 +323,39 @@ export async function calcOpenRefusal(
 }
 
 /**
+ * The ROOT request of a note — the one a landing opened on it, never a
+ * correction (a correction copies its parent's `note_id` by design,
+ * `recalcFromSealed`). A WHERE fragment that carries its own ORDER BY and
+ * LIMIT, so `openCalcRequest`'s in-transaction re-read and the landing's
+ * pooled `rootRequestOfNote` cannot disagree about which row is the root
+ * (#513).
+ */
+export function rootOfNoteSql(noteId: string): SQL {
+  return sql`note_id = ${noteId}::uuid AND supersedes_request_id IS NULL ORDER BY requested_at LIMIT 1`;
+}
+
+/**
  * Open a calculation request and hand it to the queue.
  *
  * Everything pooled — the note, the TNVED memory, the rota — happens BEFORE
  * the transaction, and the task and its Telegram after it: a second
  * connection asked for from inside a transaction is what freezes the whole
  * app (`tests/unit/tx-pool.test.ts`).
+ *
+ * Idempotent per NOTE (docs/SAKKIZ-R3.md K2): every caller asks
+ * `rootRequestOfNote` on the pool first, so only a CONCURRENT twin of one
+ * note — two finishers of a landing cut off halfway, two presses of one
+ * form — reaches the transaction together. The note's advisory lock is its
+ * first statement and the root re-read its second, so the twin waits for the
+ * first to commit and then answers `existing` with the request it opened:
+ * nothing is inserted and nothing after the transaction runs (the first call
+ * made the bound task and said the unassigned ping). A lock and not a unique
+ * index, because corrections share their parent's note on purpose.
  */
 export async function openCalcRequest(
   input: CalcRequestInput,
   ctx: AuditContext,
-): Promise<{ id: string; assigneeId: string | null }> {
+): Promise<{ id: string; assigneeId: string | null; existing: boolean }> {
   if (!ctx.actorId) throw new CalcError('unauthenticated');
   const refused = await calcOpenRefusal(ctx.actorId, input.items.length);
   if (refused) throw new CalcError(refused);
@@ -464,7 +489,15 @@ export async function openCalcRequest(
   const hasMaterials = Boolean(noteId) || Boolean(input.hasMaterials);
   const dueAt = new Date(Date.now() + calcDueMinutes(items.length, hasMaterials) * 60_000);
 
-  const { requestId, assigneeId } = await db.transaction(async (tx) => {
+  const opened = await db.transaction(async (tx) => {
+    if (noteId) {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('calc-note:' || ${noteId}::text))`);
+      const [root] = (await tx.execute(sql`
+        SELECT id::text AS id, assignee_id::text AS assignee_id FROM calc_requests
+         WHERE ${rootOfNoteSql(noteId)}
+      `)) as unknown as { id: string; assignee_id: string | null }[];
+      if (root) return { requestId: root.id, assigneeId: root.assignee_id, existing: true };
+    }
     // A request lands on a lead only while it is OPEN, decided under the
     // lead's row lock: a win takes the same row FOR UPDATE while it moves the
     // lead's jobs onto their deals, so a job can no longer slip in between
@@ -508,6 +541,10 @@ export async function openCalcRequest(
         noteId,
         takenAt: assigneeId ? new Date() : null,
         dueAt,
+        // Hands-off from birth (his 1.9 a): `rev` is 0 at insert, so a request
+        // nobody has touched reads «VED hali boshlamagan». A correction does
+        // NOT write it (`recalcFromSealed`): that is the VED's own job.
+        handsoffRev: 0,
       })
       .returning({ id: calcRequests.id });
     const id = row!.id;
@@ -526,7 +563,7 @@ export async function openCalcRequest(
         ...(linesVolume !== null ? { volumeFromLines: true } : {}),
       },
     });
-    return { requestId: id, assigneeId };
+    return { requestId: id, assigneeId, existing: false };
   }).catch((err: unknown) => {
     // Two presses of one form carry one pre-minted note id. The pooled check
     // above answers the second once the first has COMMITTED; a second that
@@ -535,6 +572,8 @@ export async function openCalcRequest(
     if (input.note && violatedUnique(err) === 'crm_activities_pkey') throw new CalcError('note_taken');
     throw err;
   });
+  const { requestId, assigneeId } = opened;
+  if (opened.existing) return { id: requestId, assigneeId, existing: true };
 
   // The task is what puts the job on somebody's /bugun and their phone; it
   // carries the request's own deadline, so the two clocks cannot drift.
@@ -581,7 +620,7 @@ export async function openCalcRequest(
     }).catch((err) => logger.error({ err, requestId }, '[calc] unassigned notify failed'));
   }
 
-  return { id: requestId, assigneeId };
+  return { id: requestId, assigneeId, existing: false };
 }
 
 /**
@@ -1523,6 +1562,7 @@ type GoodsFact = CalcGoodsFact & { seq: number };
 
 const storedGoodsFact = (row: typeof calcRequestItems.$inferSelect): GoodsFact => ({
   seq: row.seq,
+  itemId: row.id,
   name: row.name,
   quantity: toNum(row.quantity),
   weightKg: toNum(row.weightKg),
@@ -1620,6 +1660,174 @@ export async function requestAsks(
 }
 
 export { isComplete };
+
+/**
+ * One stored request as the bot reads it (docs/SAKKIZ-R3.md K14) — the add
+ * door's base, its table and its asks all read THIS, so what the seller is
+ * shown and what the writer compares are one reading (#513).
+ *
+ * Built on the stored-request reader above (`storedGoodsFact`, `bookLawsFor`,
+ * the regression-3 flags `missingFor` forces), never beside it. Each row
+ * carries its law: a grouped row its GROUP's (`groupLawsOf`, exactly as the
+ * VED page's checklist reads it), an ungrouped one the book's — so a caller
+ * needs no laws map of its own. At most four statements on the pool and
+ * never `loadWorkspace` (~15, the bazas over every name, the tariff, fx):
+ * the press and the reply door await this on the poller (performance-9).
+ * Pool reads only (#714).
+ *
+ * Null: no such request — or one with no section (written before 0085),
+ * which has no checklist and nothing a table could ask.
+ */
+export async function storedRequestFacts(requestId: string): Promise<{
+  base: AmendBase;
+  facts: CalcFacts;
+  rev: number;
+  handsoffRev: number | null;
+  aiPassRev: number | null;
+  aiPassAt: Date | null;
+  aiPassJob: string | null;
+  requestedBy: string;
+  completedAt: Date | null;
+  completedVia: string | null;
+  returnReason: string | null;
+  ending: CalcEnding | null;
+} | null> {
+  const [[row], itemRows, groupRows] = await Promise.all([
+    db
+      .select({
+        entityType: calcRequests.entityType,
+        entityId: calcRequests.entityId,
+        section: calcRequests.section,
+        fromCity: calcRequests.fromCity,
+        toCity: calcRequests.toCity,
+        weightKg: calcRequests.weightKg,
+        volumeM3: calcRequests.volumeM3,
+        rev: calcRequests.rev,
+        handsoffRev: calcRequests.handsoffRev,
+        aiPassRev: calcRequests.aiPassRev,
+        aiPassAt: calcRequests.aiPassAt,
+        aiPassJob: calcRequests.aiPassJob,
+        requestedBy: calcRequests.requestedBy,
+        completedAt: calcRequests.completedAt,
+        completedVia: calcRequests.completedVia,
+        returnReason: calcRequests.returnReason,
+        answerAmount: calcRequests.answerAmount,
+        dealCode: deals.code,
+        clientCode: clients.clientCode,
+        clientName: clients.name,
+        leadName: leads.name,
+        leadPhone: leads.phone,
+        leadKind: leadStages.kind,
+      })
+      .from(calcRequests)
+      .leftJoin(deals, and(eq(calcRequests.entityType, 'deal'), eq(deals.id, calcRequests.entityId)))
+      .leftJoin(clients, eq(clients.id, deals.clientId))
+      .leftJoin(leads, and(eq(calcRequests.entityType, 'lead'), eq(leads.id, calcRequests.entityId)))
+      .leftJoin(leadStages, eq(leadStages.id, leads.stageId))
+      .where(eq(calcRequests.id, requestId))
+      .limit(1),
+    db
+      .select()
+      .from(calcRequestItems)
+      .where(eq(calcRequestItems.requestId, requestId))
+      .orderBy(asc(calcRequestItems.seq)),
+    db
+      .select({
+        id: calcGroups.id,
+        dutyMode: calcGroups.dutyMode,
+        dutyUnit: calcGroups.dutyUnit,
+        dutySpecific: calcGroups.dutySpecific,
+        dutyFree: calcGroups.dutyFree,
+        excisePct: calcGroups.excisePct,
+        exciseSpecific: calcGroups.exciseSpecific,
+        exciseUnit: calcGroups.exciseUnit,
+        confirmedAt: calcGroups.confirmedAt,
+      })
+      .from(calcGroups)
+      .where(eq(calcGroups.requestId, requestId)),
+  ]);
+  if (!row || !isCalcSection(row.section)) return null;
+  // The rows through the checklist's own projection (`storedGoodsFact`), in
+  // seq order; the group link beside them, which that projection does not
+  // carry.
+  const stored = itemRows.map(storedGoodsFact);
+  const groupOf = new Map(itemRows.map((i) => [i.id, i.groupId]));
+  const groups = groupRows.map((g) => ({
+    // Stored NULL reads as 'advalor' — the workspace's own reading.
+    dutyMode: (g.dutyMode as DutyMode | null) ?? 'advalor',
+    dutyUnit: (g.dutyUnit as DutyUnit | null) ?? null,
+    dutySpecific: toNum(g.dutySpecific),
+    dutyFree: g.dutyFree,
+    excisePct: toNum(g.excisePct),
+    exciseSpecific: toNum(g.exciseSpecific),
+    exciseUnit: (g.exciseUnit as DutyUnit | null) ?? null,
+    items: itemRows.filter((i) => i.groupId === g.id).map((i) => ({ seq: i.seq })),
+  }));
+  const groupLaw = groupLawsOf(groups);
+  const confirmedGroups = new Set(groupRows.filter((g) => g.confirmedAt !== null).map((g) => g.id));
+  const bookLaws = await bookLawsFor(stored.filter((g) => !groupLaw.has(g.seq)).map((g) => g.tnvedCode));
+  const goods = stored.map((g) => ({
+    ...g,
+    law: groupLaw.get(g.seq) ?? (g.tnvedCode ? (bookLaws.get(g.tnvedCode) ?? null) : null),
+  }));
+
+  const facts: CalcFacts = {
+    fromCity: row.fromCity,
+    toCity: row.toCity,
+    weightKg: toNum(row.weightKg),
+    volumeM3: toNum(row.volumeM3),
+    goods,
+    // R2's regression-3: a stored row's weight is its own and a stored total
+    // is what the engine prices — nothing derived (`missingFor`'s flags).
+    lineWeightsStated: true,
+    totalsStored: true,
+  };
+  const deal = row.entityType === 'deal';
+  const clientLabel = deal
+    ? [row.clientCode, row.clientName].filter((v): v is string => !!v?.trim()).join(' ') || null
+    : [row.leadName, row.leadPhone].filter((v): v is string => !!v?.trim()).join(' ') || null;
+  const base: AmendBase = {
+    requestId,
+    cardLabel: (deal ? row.dealCode : row.leadName) ?? '—',
+    entityType: deal ? 'deal' : 'lead',
+    entityId: row.entityId,
+    leadOpen: deal ? null : row.leadKind === 'open',
+    section: row.section,
+    clientLabel,
+    openedRev: row.rev,
+    items: goods.map((g) => ({
+      itemId: g.itemId!,
+      seq: g.seq,
+      name: g.name,
+      quantity: g.quantity ?? null,
+      weightKg: g.weightKg ?? null,
+      volumeM3: g.volumeM3 ?? null,
+      measureUnit: g.measureUnit ?? null,
+      measureQty: g.measureQty ?? null,
+      tnvedCode: g.tnvedCode ?? null,
+      law: g.law,
+      confirmed: confirmedGroups.has(groupOf.get(g.itemId!) ?? ''),
+    })),
+    weightKg: facts.weightKg ?? null,
+    volumeM3: facts.volumeM3 ?? null,
+    fromCity: row.fromCity,
+    toCity: row.toCity,
+  };
+  return {
+    base,
+    facts,
+    rev: row.rev,
+    handsoffRev: row.handsoffRev,
+    aiPassRev: row.aiPassRev,
+    aiPassAt: row.aiPassAt,
+    aiPassJob: row.aiPassJob,
+    requestedBy: row.requestedBy,
+    completedAt: row.completedAt,
+    completedVia: row.completedVia,
+    returnReason: row.returnReason,
+    ending: endingOf(row),
+  };
+}
 
 export interface CalcRequestDetail extends CalcQueueRow {
   noteId: string | null;

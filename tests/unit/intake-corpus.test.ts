@@ -1098,7 +1098,7 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     const { handler } = await prefillWorker();
     prefill.standing.mockResolvedValue('touched');
     await handler([prefillJob(1)]);
-    const texts = say.mock.calls.map((call) => (call[1] as { text: string }).text);
+    const texts = say.mock.calls.map((call) => (call[2] as { text: string }).text);
     // Exactly one message, and that one (R2 late pass, review P1-R8): the two
     // old assertions held over an EMPTY list too, so a stand-down that fell
     // silent on a retry stayed green.
@@ -1109,7 +1109,7 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     const { handler } = await prefillWorker();
     prefill.standing.mockResolvedValue('touched');
     await handler([prefillJob(0)]);
-    expect(say).toHaveBeenCalledWith('r1', expect.objectContaining({ text: STOOD_DOWN.touched }));
+    expect(say).toHaveBeenCalledWith('r1', 'landing', expect.objectContaining({ text: STOOD_DOWN.touched }));
   },
   // ---- no pause after the last attempt, none past the leash (a19)
   c0222: async () => {

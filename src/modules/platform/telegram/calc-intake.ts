@@ -128,6 +128,14 @@ export interface IntakeState {
    * then asked about rather than outranked (`totalsDoubts`).
    */
   totalsAnswer: { weightKg: number | null; volumeM3: number | null; at: TotalsMark };
+  /**
+   * A route answered in the table (docs/SAKKIZ-R3.md K15; P3 writes it), kept
+   * beside `totalsAnswer` so a re-read cannot erase it — a typed «Yiwu →
+   * Toshkent» lived only in `facts`, and the next reading rebuilt `facts`
+   * from the material. Marked like it (`at`) so later material can doubt it.
+   * Present keys only. Optional while nothing writes it.
+   */
+  routeAnswer?: { fromCity?: string; toCity?: string; at: TotalsMark } | null;
   /** The line the bot is waiting for an answer about, by its index in
    * `facts.goods`. Null outside the question stage. */
   askingIndex: number | null;
@@ -489,6 +497,45 @@ export function totalsDoubts(
     else if (said > 0 && figure(said) !== figure(answered)) doubts.push({ field, answered, stated: said });
   }
   return doubts;
+}
+
+/** The same route answer — the same cities, given at the same point? Pure. */
+export function sameRouteAnswer(
+  a: IntakeState['routeAnswer'] | undefined,
+  b: IntakeState['routeAnswer'] | undefined,
+): boolean {
+  if (!a || !b) return !a && !b;
+  return (
+    a.fromCity === b.fromCity &&
+    a.toCity === b.toCity &&
+    a.at.material === b.at.material &&
+    a.at.files === b.at.files
+  );
+}
+
+/**
+ * The route answer's cities that still stand over a (re-)read — `totalsAnswer`'s
+ * rule for the route (R2's CONC-2): a key is applied while no material written
+ * AFTER the answer names a different city for it, and then the reading's city
+ * stands. `since` is that later material's own reading, or null when nothing
+ * came after (an answer typed while a reading ran is newer than all of it).
+ * Pure.
+ */
+export function answeredRoute(
+  answer: IntakeState['routeAnswer'] | undefined,
+  since: { fromCity?: string | null; toCity?: string | null } | null,
+): { fromCity?: string; toCity?: string } {
+  if (!answer) return {};
+  const same = (x: string, y: string) => x.trim().toLowerCase() === y.trim().toLowerCase();
+  const out: { fromCity?: string; toCity?: string } = {};
+  for (const key of ['fromCity', 'toCity'] as const) {
+    const said = answer[key];
+    if (!said) continue;
+    const later = since?.[key];
+    if (later && !same(later, said)) continue;
+    out[key] = said;
+  }
+  return out;
 }
 
 /** Is this the same totals answer — the same figures, given at the same point? Pure. */
@@ -1405,6 +1452,7 @@ export function startIntake(
     totalsAsked: false,
     askingTotalsFor: null,
     totalsAnswer: { weightKg: null, volumeM3: null, at: { material: 0, files: 0 } },
+    routeAnswer: null,
     askingIndex: null,
     round: 0,
     reasked: false,
@@ -1527,9 +1575,19 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
   const notes = [sameAsInvoiceNote(picked.sameAsInvoice), typedLeftOutNote(picked.sameAsInvoice)].filter(
     (n): n is string => n !== null,
   );
+  // A route the seller answered in the table goes above everything a reading
+  // finds — unless the material AFTER the answer names another city, read
+  // from that SLICE alone (`readRoute` has no offset form), so the very city
+  // text the answer corrected cannot doubt it (docs/SAKKIZ-R3.md K15).
+  const routeAnswer = state.routeAnswer ?? null;
+  const routeSince =
+    routeAnswer && state.material.length > routeAnswer.at.material
+      ? parseManualFacts(state.material.slice(routeAnswer.at.material).join('\n'), state.section)
+      : null;
+  const route = answeredRoute(routeAnswer, routeSince);
   const reading: IntakeState['facts'] = {
-    fromCity: manual.fromCity ?? ai?.facts.fromCity ?? state.route?.fromCity ?? null,
-    toCity: manual.toCity ?? ai?.facts.toCity ?? state.route?.toCity ?? null,
+    fromCity: route.fromCity ?? manual.fromCity ?? ai?.facts.fromCity ?? state.route?.fromCity ?? null,
+    toCity: route.toCity ?? manual.toCity ?? ai?.facts.toCity ?? state.route?.toCity ?? null,
     ...totalWeightFrom(state.section, manual, ai?.facts ?? null, asked('weightKg')),
     volumeM3: manual.volumeM3 ?? (asked('volumeM3') ? null : (ai?.facts.volumeM3 ?? null)),
     // …nor the lines' Σ (review P3-R2): the seller stated a cube, only not

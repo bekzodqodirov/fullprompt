@@ -1,4 +1,5 @@
 import { dutyText } from './duty-text';
+import { fitTelegram, MAX_REPLY_LINES, TELEGRAM_LIMIT } from './fit-telegram';
 import { SMALL_FREIGHT_USD, type BazaSource } from './pricing';
 import { AI_REPLY_HEAD, VED_ESTIMATE_MARK } from './reply-heads';
 import type { TotalWeightBasis } from './intake';
@@ -36,10 +37,9 @@ import type { TotalWeightBasis } from './intake';
  *    total, because the seller reads this on a phone and repeats it.
  */
 
-/** Telegram refuses a message past this; the caller never sends a longer one. */
-export const TELEGRAM_LIMIT = 4096;
-/** Past this many lines the list collapses — with a count, never in silence. */
-export const MAX_REPLY_LINES = 25;
+// The cap's one home is fit-telegram.ts (K15); re-exported, so every reader
+// of this module keeps its import.
+export { fitTelegram, MAX_REPLY_LINES, TELEGRAM_LIMIT };
 
 export interface AiVedLine {
   /** What the group is, in the seller's words — its items, joined. */
@@ -480,25 +480,6 @@ function vedLine(anyMedian: boolean, guessedFrom: string | null, roadFromLines: 
   // model's — a median of declarations (which his 2.1 b chose OVER «AI o‘zi
   // taxmin qiladi»), a city read by a fixed rule, a Σ of the lines.
   return `${VED_ESTIMATE_MARK} bu taxminiy javob, rasmiy emas — ${parts.join(' · ')}. Muhrlashdan yoki «Bajarildi» (Готово) bosishdan oldin o‘zingiz tekshiring.`;
-}
-
-/**
- * Within Telegram's cap WITHOUT losing the end (§2.9).
- *
- * The head and the tail — the totals, the road, the JAMI, the caveat, the
- * legend, the link — are what the seller acts on and repeats; a trailing
- * `slice` cut exactly those off a long invoice and kept the lines. So the
- * LINE LIST shrinks, with «… va yana N ta qator», until the text fits, and a
- * slice is the last resort for a single head line longer than the cap.
- */
-export function fitTelegram(head: string[], lines: string[], fixed: string[], tail: string[]): string {
-  for (let k = Math.min(lines.length, MAX_REPLY_LINES); k >= 0; k -= 1) {
-    const more = lines.length > k ? [`… va yana ${lines.length - k} ta qator`] : [];
-    const text = [...head, ...lines.slice(0, k), ...more, ...fixed, ...tail].join('\n');
-    if (text.length <= TELEGRAM_LIMIT) return text;
-  }
-  const text = [...head, ...fixed, ...tail].join('\n');
-  return text.length <= TELEGRAM_LIMIT ? text : `${text.slice(0, TELEGRAM_LIMIT - 20)}\n… (qisqartirildi)`;
 }
 
 export function aiVedReplyText(input: AiVedReplyInput): string {

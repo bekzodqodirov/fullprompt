@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
-import { db } from '../../platform/db/client';
+import { db, type Tx } from '../../platform/db/client';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { logger } from '../../platform/logger';
 import { isServerBehind, violatedCheck } from '../../platform/db/errors';
@@ -212,49 +212,8 @@ export async function addThreadMessage(
   calcRequestId: string | null;
   duplicate: boolean;
 }> {
-  const body = input.body.trim();
-  if (!body) throw new ThreadError('empty');
-  if (body.length > THREAD_TEXT_MAX) throw new ThreadError('too_long');
-  const tgChat = input.tg ? input.tg.chatId.toString() : null;
-  const tgMessage = input.tg ? String(input.tg.messageId) : null;
-
-  const out = await db.transaction(async (tx) => {
-    const target = await targetOf(tx, input.ref);
-    if (!target) throw new ThreadError('not_found');
-    // The id is the schema's own (`id()` mints a uuidv7 in the application —
-    // the column has NO database default, so a raw INSERT must bring one).
-    const inserted = await tx.execute<{ id: string; created_at: string }>(sql`
-      INSERT INTO crm_activities
-        (id, entity_type, entity_id, kind, note, happened_at, created_by, calc_request_id, tg_chat_id, tg_message_id)
-      VALUES
-        (${uuidv7()}::uuid, ${target.entityType}, ${target.entityId}::uuid, 'note', ${body},
-         LEAST(COALESCE(${input.writtenAt ?? null}::timestamptz, now()), now()), ${ctx.actorId}::uuid,
-         ${target.calcRequestId}::uuid, ${tgChat}::bigint, ${tgMessage}::bigint)
-      ON CONFLICT (tg_chat_id, tg_message_id) WHERE tg_message_id IS NOT NULL DO NOTHING
-      RETURNING id::text AS id, ${instantSql(sql`created_at`)} AS created_at
-    `);
-    const id = inserted[0]?.id;
-    if (!id) {
-      // The same Telegram message landed before: point at THAT note, write nothing.
-      const existing = await tx.execute<{ id: string }>(sql`
-        SELECT id::text AS id FROM crm_activities
-         WHERE tg_chat_id = ${tgChat}::bigint AND tg_message_id = ${tgMessage}::bigint
-      `);
-      return { ...target, activityId: existing[0]?.id ?? '', duplicate: true, createdAt: null };
-    }
-    await writeAudit(tx, ctx, {
-      entityType: `crm_${target.entityType}_activity`,
-      entityId: target.entityId,
-      action: 'create',
-      after: {
-        kind: 'note',
-        note: body.slice(0, 200),
-        ...(target.calcRequestId ? { calcRequestId: target.calcRequestId } : {}),
-        ...(input.tg ? { viaTelegram: true } : {}),
-      },
-    });
-    return { ...target, activityId: id, duplicate: false, createdAt: inserted[0]!.created_at };
-  });
+  const { actorId, ...meta } = ctx;
+  const out = await db.transaction((tx) => insertThreadMessageInTx(tx, { ...input, actorId }, meta));
 
   // Your own message is read — up to ITSELF, after the commit, and never
   // failing the write.
@@ -265,6 +224,76 @@ export async function addThreadMessage(
     );
   }
   return result;
+}
+
+/**
+ * `addThreadMessage`'s transaction body, on a transaction the CALLER holds —
+ * so a writer that records something else in the same commit (the add door's
+ * amendment row, docs/SAKKIZ-R3.md K15) writes its thread message with it.
+ * Reads nothing from the pool (#714). `meta` is the audit row's request
+ * facts beside the actor; the read mark and the ping stay the caller's.
+ */
+export async function insertThreadMessageInTx(
+  tx: Tx,
+  input: {
+    id?: string;
+    ref: ThreadRef;
+    body: string;
+    actorId: string | null;
+    tg?: { chatId: bigint; messageId: number };
+    writtenAt?: string | null;
+  },
+  meta: Omit<AuditContext, 'actorId'> = {},
+): Promise<{
+  activityId: string;
+  entityType: CardKind;
+  entityId: string;
+  calcRequestId: string | null;
+  createdAt: string | null;
+  duplicate: boolean;
+}> {
+  const body = input.body.trim();
+  if (!body) throw new ThreadError('empty');
+  if (body.length > THREAD_TEXT_MAX) throw new ThreadError('too_long');
+  const tgChat = input.tg ? input.tg.chatId.toString() : null;
+  const tgMessage = input.tg ? String(input.tg.messageId) : null;
+  const ctx: AuditContext = { ...meta, actorId: input.actorId };
+
+  const target = await targetOf(tx, input.ref);
+  if (!target) throw new ThreadError('not_found');
+  // The id is the schema's own (`id()` mints a uuidv7 in the application —
+  // the column has NO database default, so a raw INSERT must bring one).
+  const inserted = await tx.execute<{ id: string; created_at: string }>(sql`
+    INSERT INTO crm_activities
+      (id, entity_type, entity_id, kind, note, happened_at, created_by, calc_request_id, tg_chat_id, tg_message_id)
+    VALUES
+      (${input.id ?? uuidv7()}::uuid, ${target.entityType}, ${target.entityId}::uuid, 'note', ${body},
+       LEAST(COALESCE(${input.writtenAt ?? null}::timestamptz, now()), now()), ${ctx.actorId}::uuid,
+       ${target.calcRequestId}::uuid, ${tgChat}::bigint, ${tgMessage}::bigint)
+    ON CONFLICT (tg_chat_id, tg_message_id) WHERE tg_message_id IS NOT NULL DO NOTHING
+    RETURNING id::text AS id, ${instantSql(sql`created_at`)} AS created_at
+  `);
+  const id = inserted[0]?.id;
+  if (!id) {
+    // The same Telegram message landed before: point at THAT note, write nothing.
+    const existing = await tx.execute<{ id: string }>(sql`
+      SELECT id::text AS id FROM crm_activities
+       WHERE tg_chat_id = ${tgChat}::bigint AND tg_message_id = ${tgMessage}::bigint
+    `);
+    return { ...target, activityId: existing[0]?.id ?? '', duplicate: true, createdAt: null };
+  }
+  await writeAudit(tx, ctx, {
+    entityType: `crm_${target.entityType}_activity`,
+    entityId: target.entityId,
+    action: 'create',
+    after: {
+      kind: 'note',
+      note: body.slice(0, 200),
+      ...(target.calcRequestId ? { calcRequestId: target.calcRequestId } : {}),
+      ...(input.tg ? { viaTelegram: true } : {}),
+    },
+  });
+  return { ...target, activityId: id, duplicate: false, createdAt: inserted[0]!.created_at };
 }
 
 /**

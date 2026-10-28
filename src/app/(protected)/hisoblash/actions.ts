@@ -280,6 +280,10 @@ export async function submitCalcAction(input: SubmitCalcInput): Promise<SubmitCa
       },
       { actorId: actor.id, ...meta },
     );
+    // A twin of this very form (two presses, one pre-minted note) opened it
+    // first: what it got from the note's key until the note lock (K2), and
+    // no second pass.
+    if (opened.existing) return { error: 'note_taken' };
     // The AI VED hodimi looks at it — same sender, same queue, same rev
     // ticket as the bot's door. Only the bot had this until now, so which of
     // three buttons a seller pressed decided whether the machine ever saw

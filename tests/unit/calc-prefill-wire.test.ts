@@ -169,7 +169,7 @@ describe('the prefill survives a deploy', () => {
     // (§6.8), which queues on the drain's own rows (`queueStaffTelegram`)
     // and kicks it after the commit.
     const jobs = read('src/modules/wms/calc/jobs.ts');
-    expect(jobs).toContain('sayOnce(requestId, {');
+    expect(jobs).toContain("sayOnce(requestId, 'landing', {");
     expect(jobs).not.toContain('notifyStaffTelegram(');
     const once = read('src/modules/wms/calc/say-once.ts');
     expect(once).toContain('queueStaffTelegram(tx,');

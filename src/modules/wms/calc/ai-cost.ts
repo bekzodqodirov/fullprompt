@@ -33,7 +33,13 @@ export type AiPassKind = 'intake' | 'grouping' | 'pick' | 'invoice' | 'similar';
  */
 type AiPassAnchor =
   | { kind: 'similar'; requestId: null }
-  | { kind: Exclude<AiPassKind, 'similar'>; requestId: string };
+  | { kind: 'intake'; requestId: string; intakeNoteId?: string | null }
+  // A collection's reading is billed when the model answers, before any
+  // request exists (0137): the collection's note anchors it, and the landing
+  // fills the request (`attachIntakePasses`). `string | null`, so the reading
+  // job passes an add collection's request or none without a branch.
+  | { kind: 'intake'; requestId: string | null; intakeNoteId: string }
+  | { kind: Exclude<AiPassKind, 'similar' | 'intake'>; requestId: string };
 
 /**
  * Record one model call. Never throws: a ledger that cannot be written must
@@ -56,6 +62,7 @@ export async function recordAiPass(
   try {
     await db.insert(aiCalcPasses).values({
       requestId: input.requestId,
+      intakeNoteId: 'intakeNoteId' in input ? (input.intakeNoteId ?? null) : null,
       staffId: input.staffId ?? null,
       kind: input.kind,
       model: input.model,
@@ -65,6 +72,26 @@ export async function recordAiPass(
     });
   } catch (err) {
     logger.warn({ err, requestId: input.requestId }, '[ai-cost] pass not recorded');
+  }
+}
+
+/**
+ * A collection's readings, billed on its note before it landed, now belong to
+ * the request the landing opened (0137). Only rows still standing on the note
+ * alone are moved, so a repeat is a no-op. Never throws, like the bill: a
+ * ledger row left on the note still counts in the day's budget.
+ */
+export async function attachIntakePasses(noteId: string, requestId: string): Promise<number> {
+  try {
+    const rows = await db.execute<{ id: string }>(sql`
+      UPDATE ai_calc_passes SET request_id = ${requestId}::uuid
+       WHERE intake_note_id = ${noteId}::uuid AND request_id IS NULL
+      RETURNING id::text AS id
+    `);
+    return rows.length;
+  } catch (err) {
+    logger.warn({ err, noteId, requestId }, '[ai-cost] intake passes not attached');
+    return 0;
   }
 }
 

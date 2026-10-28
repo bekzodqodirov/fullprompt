@@ -1,6 +1,27 @@
 import { logger } from '../../platform/logger';
 import { sectionParts, type CalcSectionName } from './pricing';
 import { prefillTicket } from './prefill';
+import type { JOB_CALC_PREFILL, JOB_CALC_TARIFF_REPLY } from './jobs';
+
+/**
+ * Which queue a section's pass runs on — the routing `queueCalcPrefill` has
+ * always done, given one home (docs/SAKKIZ-R3.md K15) because the ticket's
+ * reader must ask the SAME queue for the job's state. A request with no
+ * section was a customs job, the only kind there was. Literal strings, typed
+ * against jobs.ts's constants: jobs.ts is reached dynamically from here.
+ */
+export function passQueueOf(section: string | null): typeof JOB_CALC_PREFILL | typeof JOB_CALC_TARIFF_REPLY {
+  const customs = section ? sectionParts(section as CalcSectionName).customs : true;
+  return customs ? 'calc.prefill' : 'calc.tariff-reply';
+}
+
+/**
+ * Does a machine pass stand on this request (P5 fills it: the ticket's job,
+ * asked of pg-boss)? K: `'none'`.
+ */
+export async function ticketStanding(_requestId: string): Promise<'live' | 'none'> {
+  return 'none';
+}
 
 /**
  * Hand a just-landed job to the machine — from ANY of the three doors.
@@ -26,23 +47,27 @@ export async function queueCalcPrefill(input: {
   requestId: string;
   staffId: string;
   section: string | null;
+  /** Which pass this is (`sayOnce`'s key); absent = the landing's. */
+  pass?: string;
+  /** Queue only while the request still stands at this revision — a person
+   * who moved it since the commit that asked for the pass wins. */
+  atRev?: number;
 }): Promise<boolean> {
-  const parts = input.section
-    ? sectionParts(input.section as CalcSectionName)
-    : { customs: true, freight: true, extras: true };
   try {
     const { enqueue } = await import('../../platform/jobs/boss');
     const { JOB_CALC_PREFILL, JOB_CALC_TARIFF_REPLY, PASS_EXPIRE_S, TARIFF_EXPIRE_S } = await import('./jobs');
     const rev = await prefillTicket(input.requestId);
+    if (input.atRev !== undefined && rev !== input.atRev) return false;
     // The section travels with the job (K16, `CalcPrefillJob.section`): the
     // worker routes and words its answer by it without a query.
     const { requestId, staffId, section } = input;
-    if (parts.customs) {
+    const named = input.pass !== undefined ? { pass: input.pass } : {};
+    if (passQueueOf(section) === JOB_CALC_PREFILL) {
       // Expiry above the pass's own deadline plus one worst step, so pg-boss
       // never re-delivers a pass that is still running.
-      await enqueue(JOB_CALC_PREFILL, { requestId, staffId, rev, section }, { expireInSeconds: PASS_EXPIRE_S });
+      await enqueue(JOB_CALC_PREFILL, { requestId, staffId, rev, section, ...named }, { expireInSeconds: PASS_EXPIRE_S });
     } else {
-      await enqueue(JOB_CALC_TARIFF_REPLY, { requestId, staffId, rev, section }, { expireInSeconds: TARIFF_EXPIRE_S });
+      await enqueue(JOB_CALC_TARIFF_REPLY, { requestId, staffId, rev, section, ...named }, { expireInSeconds: TARIFF_EXPIRE_S });
     }
     return true;
   } catch (err) {

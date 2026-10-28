@@ -74,6 +74,8 @@ import {
   mergeTotalsAnswer,
   resolveLineDone,
   sameTotalsAnswer,
+  sameRouteAnswer,
+  answeredRoute,
   bareTotalsNumber,
   totalsAnswerShape,
   totalsFigureCount,
@@ -1950,8 +1952,13 @@ export function settleAnalysis(
   // answer here would put back a figure the reading held open because later
   // material doubts it (review CONC-2).
   const answeredMeanwhile = !sameTotalsAnswer(live.totalsAnswer, snapshot.totalsAnswer);
+  // The route answer by the same rule (docs/SAKKIZ-R3.md K15): only a route
+  // answered WHILE the reading ran goes on top; otherwise the reading's own
+  // verdict on the answer stands.
+  const routeMeanwhile = !sameRouteAnswer(live.routeAnswer, snapshot.routeAnswer);
   const facts = {
     ...analysed.facts,
+    ...(routeMeanwhile ? answeredRoute(live.routeAnswer, null) : {}),
     goods: mergeLineAnswers(analysed.facts.goods ?? [], live.lineAnswers),
   };
   const state: IntakeState = {

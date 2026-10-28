@@ -510,6 +510,40 @@ export const telegramChatWaits = pgTable(
 );
 
 /**
+ * An unfinished «🧮 Hisoblatish» collection, written behind memory (0137,
+ * his 1.8 c: it waits 24 hours and a deploy loses nothing). One per chat;
+ * memory stays the reader and this row only has to survive the process
+ * (telegram/calc-store.ts is the one writer). The note id is the collection's
+ * identity — its files are pre-bound to it, and a landed or added collection
+ * is recognised by it. No FK to `calc_requests`: platform names no wms table,
+ * so an add collection's request lives in the state. No index on
+ * `expires_at`: every write rewrites it, and the hydrate and the nightly prune
+ * read the few dozen rows whole.
+ */
+export const telegramCalcIntakes = pgTable(
+  'telegram_calc_intakes',
+  {
+    chatId: bigint('chat_id', { mode: 'bigint' }).primaryKey(),
+    staffId: uuid('staff_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    noteId: uuid('note_id').notNull(),
+    state: jsonb('state').notNull(),
+    openedAt: timestamp('opened_at', { withTimezone: true }).notNull(),
+    touchedAt: timestamp('touched_at', { withTimezone: true }).notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    unique('telegram_calc_intakes_note_unique').on(t.noteId),
+    check('telegram_calc_intakes_state_check', sql`jsonb_typeof(${t.state}) = 'object'`),
+    check(
+      'telegram_calc_intakes_window_check',
+      sql`${t.openedAt} <= ${t.touchedAt} AND ${t.touchedAt} < ${t.expiresAt}`,
+    ),
+  ],
+);
+
+/**
  * «This Telegram message (or this press, by the message pressed) already did
  * its effect» (0130, Q5 a) — one claim per Telegram identity, written in the
  * SAME transaction as the effect (telegram/once.ts, the one writer, raw).

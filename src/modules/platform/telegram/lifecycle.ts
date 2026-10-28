@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Bot, Context, MiddlewareFn } from 'grammy';
 import type { Update } from 'grammy/types';
 import { logger } from '../logger';
@@ -85,6 +86,18 @@ export function lastDoneUpdateId(): number {
 }
 
 /**
+ * The update a handler is running under, carried through every await of it
+ * (docs/SAKKIZ-R3.md K15): a store that writes behind memory names the update
+ * whose change is not yet written, and the stop then confirms only before it.
+ */
+const updateScope = new AsyncLocalStorage<number>();
+
+/** The update being handled here, or null outside a handler (a job, a sweep). */
+export function currentUpdateId(): number | null {
+  return updateScope.getStore() ?? null;
+}
+
+/**
  * The ONE first middleware (fenced: the first registration in
  * `registerBotHandlers`). Holds every update that arrives once stopping
  * began; tracks the one in flight.
@@ -103,9 +116,9 @@ export function stoppingGuard(): MiddlewareFn<Context> {
       await NEVER;
       return;
     }
-    const run = (async () => {
+    const run = updateScope.run(ctx.update.update_id, async () => {
       await next();
-    })();
+    });
     state.inFlight = run.then(noop, noop);
     try {
       await run;
@@ -128,8 +141,6 @@ export const BOT_STOP_DEADLINE_MS = 5_000;
 
 /** How long the update in flight (and the membership chain) may take to finish. */
 const IN_FLIGHT_MS = 3_000;
-/** How long the durable waits may take to reach the table. */
-const FLUSH_MS = 1_000;
 /** How long the confirm itself may take. */
 const CONFIRM_MS = 1_000;
 
@@ -139,6 +150,14 @@ export async function stopTelegramBot(deps: {
   flush: () => Promise<void>;
   /** membershipSettled (price-channel-handlers.ts). */
   drain: () => Promise<void>;
+  /**
+   * The lowest update whose change the flush did NOT write, or null —
+   * asked after the flush settles or times out. A number sends the stop down
+   * the explicit confirm, through the update before it, so that update and
+   * every later one reach the next process (docs/SAKKIZ-R3.md K15). Absent =
+   * every change is written.
+   */
+  unwritten?: () => number | null;
   deadlineMs?: number;
 }): Promise<StopOutcome> {
   const started = Date.now();
@@ -147,9 +166,12 @@ export async function stopTelegramBot(deps: {
   state.stopping = true;
   const budget = deps.deadlineMs ?? BOT_STOP_DEADLINE_MS;
   const left = (ms: number) => Math.max(0, Math.min(ms, budget - (Date.now() - started)));
+  // The flush takes whatever the budget has left but the confirm's share,
+  // not a fixed second: a wait row is bytes, a collection is the whole state.
+  const flushLeft = () => Math.max(0, budget - (Date.now() - started) - CONFIRM_MS);
 
   if (!deps.bot.isRunning()) {
-    await settleWithin(Promise.resolve().then(deps.flush), left(FLUSH_MS));
+    await settleWithin(Promise.resolve().then(deps.flush), flushLeft());
     const outcome: StopOutcome = { via: 'not_running', confirmedThrough: null, inFlightFinished: true, ms: Date.now() - started };
     logger.info({ ...outcome }, 'telegram bot stopped');
     return outcome;
@@ -162,10 +184,11 @@ export async function stopTelegramBot(deps: {
   );
   // Durability before confirmation: a wait armed by a handled update is
   // written before that update is confirmed.
-  await settleWithin(Promise.resolve().then(deps.flush), left(FLUSH_MS));
+  await settleWithin(Promise.resolve().then(deps.flush), flushLeft());
+  const unwritten = deps.unwritten?.() ?? null;
 
   let outcome: StopOutcome;
-  if (state.inFlight === null && state.held === null) {
+  if (state.inFlight === null && state.held === null && unwritten === null) {
     // Idle in the long poll: grammy's offset is then exactly lastDone + 1,
     // and its stop aborts the poll.
     await settleWithin(
@@ -179,8 +202,9 @@ export async function stopTelegramBot(deps: {
     // Still inside handleUpdates (an update running past the budget, or one
     // held): no long poll is open, so confirm through lastDone ourselves. The
     // unfinished and the held updates stay unconfirmed and reach the next
-    // process.
-    const through = state.lastDone;
+    // process. An update whose change the flush left unwritten is held back
+    // the same way, with everything after it.
+    const through = unwritten === null ? state.lastDone : Math.min(state.lastDone, unwritten - 1);
     await settleWithin(
       Promise.resolve()
         .then(() =>

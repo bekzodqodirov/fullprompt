@@ -71,12 +71,12 @@ describe('a re-delivered pass never says a person moved the request (review a18)
 
     prefill.standing.mockResolvedValue('touched');
     await handler([job(1)]);
-    expect(say).toHaveBeenCalledWith('r1', expect.objectContaining({ userIds: ['s1'], text: PASS_FAILED }));
+    expect(say).toHaveBeenCalledWith('r1', 'landing', expect.objectContaining({ userIds: ['s1'], text: PASS_FAILED }));
     expect(prefill.run).not.toHaveBeenCalled();
 
     say.mockReset();
     await handler([job(0)]);
-    expect(say).toHaveBeenCalledWith('r1', expect.objectContaining({ text: STOOD_DOWN.touched }));
+    expect(say).toHaveBeenCalledWith('r1', 'landing', expect.objectContaining({ text: STOOD_DOWN.touched }));
   });
 });
 
@@ -101,7 +101,7 @@ describe('a tariff reply writes nothing, so a moved revision is nothing it could
     prefill.run.mockResolvedValue({ text: 'tariff reply', lentaText: 'tariff reply', stood: null });
     await handler([job(0, 'yolkira')]);
     expect(prefill.run).toHaveBeenCalledWith('r1', { actorId: null }, { replyTo: 's1' }, { expectCustoms: false, expectRev: 3 });
-    expect(say).toHaveBeenCalledWith('r1', expect.objectContaining({ text: 'tariff reply' }), { whileOpen: true });
+    expect(say).toHaveBeenCalledWith('r1', 'landing', expect.objectContaining({ text: 'tariff reply' }), { whileOpen: true });
   });
 
   it('a yolkira job a person ✅ed is answered too — the tariff reply writes nothing', async () => {
@@ -111,7 +111,7 @@ describe('a tariff reply writes nothing, so a moved revision is nothing it could
     await handler([job(0, 'yolkira')]);
     expect(prefill.run).toHaveBeenCalled();
     expect(say).toHaveBeenCalledTimes(1);
-    expect(say).toHaveBeenCalledWith('r1', expect.objectContaining({ text: 'tariff reply' }), { whileOpen: true });
+    expect(say).toHaveBeenCalledWith('r1', 'landing', expect.objectContaining({ text: 'tariff reply' }), { whileOpen: true });
   });
 
   it('a job queued as freight-only on a request that has since gained customs stands down — the section moved', async () => {
@@ -122,20 +122,20 @@ describe('a tariff reply writes nothing, so a moved revision is nothing it could
     prefill.run.mockResolvedValue({ text: '', lentaText: '', stood: 'touched' });
     await handler([job(0, 'yolkira')]);
     expect(say).toHaveBeenCalledTimes(1);
-    expect(say).toHaveBeenCalledWith('r1', expect.objectContaining({ text: STOOD_DOWN.touched }));
+    expect(say).toHaveBeenCalledWith('r1', 'landing', expect.objectContaining({ text: STOOD_DOWN.touched }));
   });
 
   it('a closed request is told in the tariff words, and a failure too', async () => {
     const { handler } = await worker(JOB_CALC_TARIFF_REPLY);
     prefill.standing.mockResolvedValue('closed');
     await handler([job(0, 'yolkira')]);
-    expect(say).toHaveBeenCalledWith('r1', expect.objectContaining({ text: TARIFF_STOOD_DOWN.closed }));
+    expect(say).toHaveBeenCalledWith('r1', 'landing', expect.objectContaining({ text: TARIFF_STOOD_DOWN.closed }));
 
     say.mockReset();
     prefill.standing.mockResolvedValue('ok');
     prefill.run.mockRejectedValue(new Error('tariff read failed'));
     await handler([job(0, 'yolkira')]);
-    expect(say).toHaveBeenCalledWith('r1', expect.objectContaining({ text: TARIFF_PASS_FAILED }));
+    expect(say).toHaveBeenCalledWith('r1', 'landing', expect.objectContaining({ text: TARIFF_PASS_FAILED }));
   });
 
   it('a payload with no section is a customs job — the only kind queued before round 2', async () => {
@@ -153,12 +153,12 @@ describe('a request the VED closed while the pass ran gets no machine reply (rev
     prefill.standing.mockResolvedValue('ok');
     prefill.run.mockResolvedValue({ text: 'customs reply', lentaText: 'customs reply', stood: null });
     // The speaking door refuses: the request closed after the pass's last step.
-    say.mockImplementation(async (_id: string, _input: unknown, opts?: { whileOpen?: boolean }) => !opts?.whileOpen);
+    say.mockImplementation(async (_id: string, _pass: string, _input: unknown, opts?: { whileOpen?: boolean }) => !opts?.whileOpen);
     await handler([job(0)]);
-    const texts = say.mock.calls.map((call) => (call[1] as { text: string }).text);
+    const texts = say.mock.calls.map((call) => (call[2] as { text: string }).text);
     expect(texts).toEqual(['customs reply', STOOD_DOWN.closed]);
-    expect(say.mock.calls[0]![2]).toEqual({ whileOpen: true });
-    expect(say.mock.calls[1]![2]).toBeUndefined();
+    expect(say.mock.calls[0]![3]).toEqual({ whileOpen: true });
+    expect(say.mock.calls[1]![3]).toBeUndefined();
   });
 
   it('a pass that stood down mid-run says its own sentence and no reply', async () => {
@@ -167,6 +167,6 @@ describe('a request the VED closed while the pass ran gets no machine reply (rev
     prefill.run.mockResolvedValue({ text: '', lentaText: '', stood: 'closed', overtaken: null });
     await handler([job(0)]);
     expect(say).toHaveBeenCalledTimes(1);
-    expect(say).toHaveBeenCalledWith('r1', expect.objectContaining({ text: STOOD_DOWN.closed }));
+    expect(say).toHaveBeenCalledWith('r1', 'landing', expect.objectContaining({ text: STOOD_DOWN.closed }));
   });
 });

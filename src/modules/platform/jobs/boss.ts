@@ -193,13 +193,26 @@ export interface EnqueueOptions {
   expireInSeconds?: number;
   /** Retries after the first attempt. */
   retryLimit?: number;
+  /**
+   * The job's own id, minted by the caller (docs/SAKKIZ-R3.md K15): a row
+   * that names its job can later ask whether that job is still alive
+   * (`jobState`) — «busy» is then a fact about a job, never a time window.
+   */
+  id?: string;
+  /** Seconds before the job may be fetched — a delivery that waits out
+   * Telegram's `retry_after` instead of spending a retry inside it. */
+  startAfter?: number;
 }
 
+/** A job's state as pg-boss keeps it; null = no such job (never sent, or pruned). */
+export type JobState = 'created' | 'retry' | 'active' | 'completed' | 'failed' | 'expired' | 'cancelled';
+
+/** The id `enqueue` was given or minted — what a caller that names its job keeps. */
 export async function enqueue<T extends object>(
   name: string,
   data: T,
   options: EnqueueOptions = {},
-): Promise<void> {
+): Promise<string | null> {
   const boss = await ensureListening();
   globalForBoss.bossQueues ??= new Set();
   if (!globalForBoss.bossQueues.has(name)) {
@@ -209,5 +222,16 @@ export async function enqueue<T extends object>(
     await boss.createQueue(name);
     globalForBoss.bossQueues.add(name);
   }
-  await boss.send(name, data, { retryLimit: 5, retryBackoff: true, ...options });
+  return boss.send(name, data, { retryLimit: 5, retryBackoff: true, ...options });
+}
+
+/**
+ * Where a named job stands — the archive included, so a job that finished
+ * days ago reads `completed` rather than «no such job». Read-only: it starts
+ * no worker (`ensureListening`, like a sender).
+ */
+export async function jobState(queue: string, id: string): Promise<JobState | null> {
+  const boss = await ensureListening();
+  const job = await boss.getJobById(queue, id, { includeArchive: true });
+  return job ? (job.state as JobState) : null;
 }

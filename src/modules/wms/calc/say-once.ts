@@ -44,11 +44,19 @@ import {
  * writes no lenta note either — and, under `whileOpen`, when the request has
  * been closed (or is gone): the VED's answer is the official one and out,
  * and the machine's reply must not follow it (review CONC-1).
+ *
+ * ONE message per PASS, not per request (docs/SAKKIZ-R3.md K15): a seller's
+ * addition queues the pass again, and its answer is a new thing to say. The
+ * landing's pass is `'landing'`, and every row written before passes had a
+ * name has none and reads as `'landing'` — so a request landed yesterday
+ * keeps the claim it already holds. `direct` is the re-run's answer to a
+ * seller who muted it (his ⭐ of Question 7): P5 wires it.
  */
 export async function sayOnce(
   requestId: string,
+  pass: string,
   input: StaffTelegramInput,
-  opts: { whileOpen?: boolean } = {},
+  opts: { whileOpen?: boolean; direct?: boolean } = {},
 ): Promise<boolean> {
   const ids = [...new Set(input.userIds)].filter(Boolean);
   const queued = await db.transaction(async (tx) => {
@@ -81,6 +89,7 @@ export async function sayOnce(
             inArray(notifications.userId, ids),
             eq(notifications.type, input.type),
             sql`${notifications}.payload->>'requestId' = ${requestId}`,
+            sql`coalesce(${notifications}.payload->>'pass', 'landing') = ${pass}`,
             request
               ? gte(notifications.createdAt, sql`${request.requested_at}::timestamptz - interval '1 day'`)
               : undefined,
@@ -89,7 +98,7 @@ export async function sayOnce(
         .limit(1);
     const [said] = await claimed();
     if (said) return null;
-    const extra = { ...(input.extra ?? {}), requestId };
+    const extra = { ...(input.extra ?? {}), requestId, pass };
     const sent = await queueStaffTelegram(tx, { ...input, extra });
     // Nobody live to tell: the claim still needs a row, or the next run
     // speaks again. The first recipient that EXISTS carries it, muted.
