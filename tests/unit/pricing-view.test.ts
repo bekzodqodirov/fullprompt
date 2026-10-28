@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { BatchLot } from '@/modules/wms/batches/lots';
-import { pricingView, soleDealOf, tripPriced, tripPricedCount } from '@/modules/wms/finance/pricing-view';
+import { pricingView, tripPriced, tripPricedCount } from '@/modules/wms/finance/pricing-view';
+import { dealCandidatesOf, shownDealChoice, truckDealDecision, unpricedDealsOf } from '@/modules/wms/finance/truck-deal';
 
 /**
  * «Partiya moliyasi» by goods (owner, 2026-09-24, answer 1c: the price stays
@@ -22,6 +23,8 @@ const lot = (over: Partial<BatchLot>): BatchLot => ({
   dealId: null,
   dealCode: null,
   dealTitle: null,
+  // A deal is the lot's own client's unless a case says otherwise.
+  dealClientId: over.dealId ? (over.clientId ?? 'C1') : null,
   calcRequestId: null,
   calcLinkConfirmed: false,
   onBatch: 1,
@@ -124,28 +127,60 @@ describe('tripPriced — the header and the page count one way', () => {
 });
 
 /**
- * R3a (owner, 2026-09-24: «mashinada qo'yilgan narx bitimga ham yozilsin»):
- * a truck price is also the deal's money only when the client's cargo aboard
- * is ONE deal's and nothing else. The server writes it through the same
- * function, so the screen's announcement and the ledger cannot disagree.
+ * R3a (owner, 2026-09-24: «mashinada qo'yilgan narx bitimga ham yozilsin»)
+ * and his Q8 «c» (2026-10-27: «logist o'zi tanlaydi»): a truck price is the
+ * deal's money by itself when the client's cargo aboard is ONE deal's and
+ * nothing else, and the person's CHOICE when two or more of his deals ride
+ * the truck. The page, the ledger and the price door fold the same rows
+ * through the same function, so the question drawn and the answer written
+ * cannot disagree.
  */
-describe('soleDealOf', () => {
-  it('names the deal when every lot aboard is that one deal', () => {
-    expect(soleDealOf([{ dealId: 'D1' }, { dealId: 'D1' }])).toBe('D1');
+describe('dealCandidatesOf', () => {
+  const own = (dealId: string | null) => ({ dealId, dealClientId: dealId ? 'C1' : null });
+
+  it('names the deal when every lot aboard is that one deal — derived, nobody is asked', () => {
+    expect(dealCandidatesOf([own('D1'), own('D1')], 'C1')).toEqual({
+      deals: ['D1'],
+      none: false,
+      sole: 'D1',
+      ambiguous: false,
+      key: 'D1',
+    });
   });
 
-  it('names nothing for two deals — one price split between them is an allocation nobody made', () => {
-    expect(soleDealOf([{ dealId: 'D1' }, { dealId: 'D2' }])).toBeNull();
+  it('asks for two deals — the person chooses (his «c»); nothing is derived', () => {
+    const got = dealCandidatesOf([own('D2'), own('D1')], 'C1');
+    expect(got).toMatchObject({ deals: ['D1', 'D2'], none: false, sole: null, ambiguous: true });
+    // Sorted, so the page and the door spell the question alike.
+    expect(got.key).toBe('D1,D2');
   });
 
-  it('names nothing for deal cargo beside deal-less cargo — that price would ride onto the deal', () => {
-    expect(soleDealOf([{ dealId: 'D1' }, { dealId: null }])).toBeNull();
-    expect(soleDealOf([{ dealId: null }, { dealId: 'D1' }])).toBeNull();
+  it('names nothing for deal cargo beside deal-less cargo, and does not ask — that price would ride onto the deal', () => {
+    for (const rows of [[own('D1'), own(null)], [own(null), own('D1')]]) {
+      expect(dealCandidatesOf(rows, 'C1')).toMatchObject({ sole: null, ambiguous: false, none: true, key: 'D1|none' });
+    }
   });
 
-  it('names nothing with no cargo, or no deal at all', () => {
-    expect(soleDealOf([])).toBeNull();
-    expect(soleDealOf([{ dealId: null }])).toBeNull();
+  it('offers «bitimsiz» beside two deals when part of the cargo has none', () => {
+    expect(dealCandidatesOf([own('D1'), own('D2'), own(null)], 'C1')).toMatchObject({
+      ambiguous: true,
+      none: true,
+      key: 'D1,D2|none',
+    });
+  });
+
+  it('reads another client’s deal as no deal — no price may reach somebody else’s job', () => {
+    const foreign = { dealId: 'F', dealClientId: 'C9' };
+    expect(dealCandidatesOf([foreign], 'C1')).toMatchObject({ deals: [], sole: null, none: true, ambiguous: false });
+    expect(dealCandidatesOf([own('D1'), foreign], 'C1')).toMatchObject({ deals: ['D1'], sole: null, ambiguous: false });
+    expect(dealCandidatesOf([own('D1'), own('D2'), foreign], 'C1').key).toBe('D1,D2|none');
+  });
+
+  it('names nothing with no cargo, or no deal at all — and the key is never empty for cargo aboard', () => {
+    expect(dealCandidatesOf([], 'C1')).toMatchObject({ sole: null, ambiguous: false });
+    // The action reads `dealsSeen || undefined`: an empty key for cargo
+    // aboard would read as «not posted» and switch the stale check off.
+    expect(dealCandidatesOf([own(null)], 'C1').key).toBe('|none');
   });
 
   it('puts the deal on the client group, so the screen says where the price goes', () => {
@@ -167,5 +202,130 @@ describe('soleDealOf', () => {
       dealId: null,
       dealCode: null,
     });
+  });
+});
+
+describe('truckDealDecision — the one rule every door writes a truck price through', () => {
+  const two = dealCandidatesOf(
+    [
+      { dealId: 'D1', dealClientId: 'C1' },
+      { dealId: 'D2', dealClientId: 'C1' },
+    ],
+    'C1',
+  );
+  const twoAndNone = dealCandidatesOf(
+    [
+      { dealId: 'D1', dealClientId: 'C1' },
+      { dealId: 'D2', dealClientId: 'C1' },
+      { dealId: null, dealClientId: null },
+    ],
+    'C1',
+  );
+  const sole = dealCandidatesOf([{ dealId: 'D1', dealClientId: 'C1' }], 'C1');
+  const mixed = dealCandidatesOf(
+    [
+      { dealId: 'D1', dealClientId: 'C1' },
+      { dealId: null, dealClientId: null },
+    ],
+    'C1',
+  );
+  const derive = { kind: 'derive' } as const;
+  const none = { kind: 'none' } as const;
+  const deal = (dealId: string) => ({ kind: 'deal', dealId }) as const;
+
+  it('writes the chosen deal on a two-deal truck', () => {
+    expect(truckDealDecision(two, deal('D2'), two.key)).toEqual({ ok: true, dealId: 'D2', via: 'chosen' });
+  });
+
+  it('refuses a two-deal price with no choice — at every door, with or without the form’s key', () => {
+    expect(truckDealDecision(two, derive, two.key)).toEqual({ ok: false, code: 'deal_choice_required' });
+    expect(truckDealDecision(two, derive, undefined)).toEqual({ ok: false, code: 'deal_choice_required' });
+  });
+
+  it('refuses a page drawn before the cargo moved — never answers the old question', () => {
+    expect(truckDealDecision(two, deal('D1'), 'D1')).toEqual({ ok: false, code: 'deals_changed' });
+    expect(truckDealDecision(sole, derive, 'D1,D2')).toEqual({ ok: false, code: 'deals_changed' });
+  });
+
+  it('refuses a deal whose cargo is not aboard', () => {
+    expect(truckDealDecision(two, deal('D9'), undefined)).toEqual({ ok: false, code: 'deal_not_aboard' });
+  });
+
+  it('«bitimsiz» only for the deal-less part of a two-deal client — never as option (a) on a deals-only truck', () => {
+    expect(truckDealDecision(twoAndNone, none, twoAndNone.key)).toEqual({ ok: true, dealId: null, via: 'none' });
+    expect(truckDealDecision(two, none, two.key)).toEqual({ ok: false, code: 'deal_choice_invalid' });
+    expect(truckDealDecision(sole, none, sole.key)).toEqual({ ok: false, code: 'deal_choice_invalid' });
+  });
+
+  it('derives R3a exactly as before when nobody has to choose', () => {
+    expect(truckDealDecision(sole, derive, sole.key)).toEqual({ ok: true, dealId: 'D1', via: 'derived' });
+    expect(truckDealDecision(mixed, derive, undefined)).toEqual({ ok: true, dealId: null, via: 'derived' });
+    // The one deal named by hand on that same truck: its own deal is fine…
+    expect(truckDealDecision(sole, deal('D1'), undefined)).toEqual({ ok: true, dealId: 'D1', via: 'chosen' });
+    // …but deal cargo beside deal-less cargo names no deal, typed or not.
+    expect(truckDealDecision(mixed, deal('D1'), undefined)).toEqual({ ok: false, code: 'deal_choice_invalid' });
+  });
+});
+
+describe('shownDealChoice — a stale choice is shown blank, never as the first deal', () => {
+  it('shows the choice only under the question it was made for, and only while it is an option', () => {
+    const options = ['D1', 'D2', 'none'];
+    expect(shownDealChoice({ deal: 'D2', seen: 'D1,D2|none' }, 'D1,D2|none', options)).toBe('D2');
+    // The page redrew a different question: asked again.
+    expect(shownDealChoice({ deal: 'D2', seen: 'D1,D2' }, 'D1,D2|none', options)).toBe('');
+    // The option is gone.
+    expect(shownDealChoice({ deal: 'D3', seen: 'D1,D2|none' }, 'D1,D2|none', options)).toBe('');
+    expect(shownDealChoice(null, 'D1,D2', options)).toBe('');
+  });
+});
+
+describe('unpricedDealsOf — what «Bu mashinadagi narxlar» says about a deal with no price here', () => {
+  const ab = dealCandidatesOf(
+    [
+      { dealId: 'A', dealClientId: 'C1' },
+      { dealId: 'B', dealClientId: 'C1' },
+    ],
+    'C1',
+  );
+  const abLoose = dealCandidatesOf(
+    [
+      { dealId: 'A', dealClientId: 'C1' },
+      { dealId: 'B', dealClientId: 'C1' },
+      { dealId: null, dealClientId: null },
+    ],
+    'C1',
+  );
+  const noCard = () => false;
+
+  it('quiet before any price, loud once the client has one here and this deal does not', () => {
+    expect(unpricedDealsOf(ab, [], noCard)).toEqual([
+      { dealId: 'A', why: 'missing', loud: false },
+      { dealId: 'B', why: 'missing', loud: false },
+    ]);
+    expect(unpricedDealsOf(ab, [{ dealId: 'B' }], noCard)).toEqual([{ dealId: 'A', why: 'missing', loud: true }]);
+  });
+
+  it('a no-deal price on a deals-only truck is a WHOLE-cargo price: both deals are covered, said muted (review)', () => {
+    expect(unpricedDealsOf(ab, [{ dealId: null }], noCard)).toEqual([
+      { dealId: 'A', why: 'whole', loud: false },
+      { dealId: 'B', why: 'whole', loud: false },
+    ]);
+  });
+
+  it('a chosen «bitimsiz» part beside deal-less cargo covers no deal’s part', () => {
+    expect(unpricedDealsOf(abLoose, [{ dealId: null }], noCard)).toEqual([
+      { dealId: 'A', why: 'missing', loud: true },
+      { dealId: 'B', why: 'missing', loud: true },
+    ]);
+  });
+
+  it('a deal with its own price off any truck is covered by it — never «narx yo’q»', () => {
+    expect(unpricedDealsOf(ab, [{ dealId: 'B' }], (dealId) => dealId === 'A')).toEqual([
+      { dealId: 'A', why: 'card', loud: false },
+    ]);
+  });
+
+  it('asks nothing of a client nobody asks', () => {
+    expect(unpricedDealsOf(dealCandidatesOf([{ dealId: 'A', dealClientId: 'C1' }], 'C1'), [], noCard)).toEqual([]);
   });
 });

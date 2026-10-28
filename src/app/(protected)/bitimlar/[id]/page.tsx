@@ -484,6 +484,18 @@ export default async function DealPage({
               {t('profitUnlinked', { amount: profit.unlinkedBatchUsd.toFixed(2) })}
             </p>
           )}
+          {/* A two-deal truck's price the person wrote to the OTHER deal (Q8
+              «c») — named here, or this card reads cost with no revenue and
+              no word about where the price went. Never folded in. */}
+          {profit.otherDealPrices.map((row) => (
+            <p
+              key={`${row.batchId}:${row.dealId}`}
+              className="rounded-xl border border-warn/30 bg-warn/10 p-2 text-xs"
+              data-testid="deal-profit-other-deal"
+            >
+              {t('profitOtherDeal', { truck: row.batchCode, amount: row.usd.toFixed(2), code: row.dealCode })}
+            </p>
+          ))}
           {/* A held yo'lkira bill on a truck these cartons rode is in no
               allocation, so the cost above lacks this deal's share of it and
               the profit reads high. Said, never folded in: the money sits on

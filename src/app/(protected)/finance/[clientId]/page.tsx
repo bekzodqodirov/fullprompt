@@ -6,7 +6,10 @@ import { mayOpenClientCard } from '@/modules/platform/clients/card-door';
 import { clients, currencies, deals } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { mayGrantDebt, mayReadLedgers, ownsLedger } from '@/modules/wms/finance/scope';
-import { clientLedger, clientNativeBalances } from '@/modules/wms/finance/service';
+import { clientLedger, clientNativeBalances, truckDealHeads } from '@/modules/wms/finance/service';
+import { dealCandidateRows } from '@/modules/wms/batches/lots';
+import { dealCandidatesOf } from '@/modules/wms/finance/truck-deal';
+import { dealCargoLabel, dealOptionLabel } from '@/modules/wms/deals/cargo-label';
 import Link from 'next/link';
 import type { ClientKind } from '@/modules/wms/finance/ledger-kinds';
 import { mayClassifyFx } from '@/modules/wms/finance/fx-door';
@@ -14,7 +17,7 @@ import { fxPnlEffect } from '@/modules/wms/finance/fx-sign';
 import { hasLegacyFx } from '@/modules/wms/finance/fx-legacy';
 import { crossCloseOffer } from '@/modules/wms/finance/fx-close';
 import { listAccounts } from '@/modules/wms/accounting/service';
-import { ledgerDealsForClient } from '@/modules/wms/deals/service';
+import { dealCargoFor, ledgerDealsForClient } from '@/modules/wms/deals/service';
 import { bothFiguresForDeals } from '@/modules/wms/calc/upsale-service';
 import { upsaleScopeFor } from '@/modules/wms/calc/upsale-scope';
 import { ClientCard, clientBalanceOnce } from '@/components/client-card';
@@ -130,6 +133,52 @@ export default async function ClientLedgerPage({
         Number(b.crossesBorder) - Number(a.crossesBorder) || Number(b.unpriced) - Number(a.unpriced) || b.at - a.at,
     )
     .map(({ at: _at, ...truck }) => truck);
+  // Which deal a CHARGE naming one of those trucks is written to (Q8 «c»):
+  // the price door's own read over the same trucks, so this form asks exactly
+  // the question the door will answer — the one deal derived and said, or a
+  // choice between several, required. Never the 40-row ledger list: a deal
+  // decided 70 days ago whose cargo still rides is a candidate (review).
+  const truckRows = canManage ? await dealCandidateRows(chargeTrucks.map((truck) => truck.batchId), clientId) : [];
+  const truckCandidates = new Map(
+    chargeTrucks.map((truck) => [
+      truck.batchId,
+      dealCandidatesOf(
+        truckRows.filter((row) => row.batchId === truck.batchId),
+        clientId,
+      ),
+    ]),
+  );
+  const namedDealIds = [...new Set([...truckCandidates.values()].flatMap((c) => (c.ambiguous || c.sole ? c.deals : [])))];
+  const [truckHeads, truckCargo] = await Promise.all([truckDealHeads(namedDealIds), dealCargoFor(namedDealIds)]);
+  const tripsWithDeals = chargeTrucks.map((truck) => {
+    const candidates = truckCandidates.get(truck.batchId)!;
+    const named = (dealId: string) => {
+      const head = truckHeads.get(dealId);
+      const cargo = truckCargo.get(dealId);
+      const code = head?.code ?? '—';
+      return {
+        id: dealId,
+        code,
+        label: dealOptionLabel({
+          code,
+          title: head?.title ?? null,
+          cargo: cargo ? dealCargoLabel({ ...cargo, quotedVolumeM3: null, quotedWeightKg: null }) : '',
+        }),
+        // The ledger does not read the truck's lots; the share is the «Narx»
+        // tab's to print.
+        pct: null,
+        deferred: head?.deferred ?? false,
+      };
+    };
+    return {
+      ...truck,
+      deal: {
+        key: candidates.key,
+        sole: candidates.sole ? { id: candidates.sole, code: truckHeads.get(candidates.sole)?.code ?? '—' } : null,
+        question: candidates.ambiguous ? { none: candidates.none, options: candidates.deals.map(named) } : null,
+      },
+    };
+  });
   // A price moved off the card or off a truck its cargo never rode (0104).
   const noCargoTrucks = new Set(cargo.offTrip.filter((off) => off.reason === 'no_cargo').map((off) => off.batchId));
   // The account in its OWN money (0103, Q14): «12 500 000 UZS · 150 USD». A
@@ -231,7 +280,7 @@ export default async function ClientLedgerPage({
           accounts={accounts.map((a) => ({ id: a.id, name: a.name, currency: a.currency }))}
           deals={openDeals.map((d) => ({ id: d.id, code: d.code, title: d.title, cargo: d.cargo }))}
           today={tashkentDay()}
-          trips={chargeTrucks}
+          trips={tripsWithDeals}
           lost={
             lostReceipts
               ? {

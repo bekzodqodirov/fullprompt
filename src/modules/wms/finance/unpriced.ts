@@ -36,7 +36,8 @@ import { loadFilterSql, type LoadFilter } from '../ftl/sql';
  *
  *   1. Deal: the charge is on R's deal AND names no truck. A truck price
  *      names its cargo through clause 2 alone: R3a stamps the deal onto a
- *      truck price whose aboard cargo is one deal, and «same deal» with no
+ *      truck price whose aboard cargo is one deal (and Q8 «c» the deal the
+ *      person chose on a two-deal truck), and «same deal» with no
  *      truck made pricing a deal's FIRST truck cover its second shipment on
  *      a truck nobody priced — out of the counter unpriced (review of the
  *      gate, 2026-09-26).

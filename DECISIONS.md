@@ -5292,3 +5292,115 @@ decided by the order the sibling door already used, not by which side was newer.
 (4) The weekly usage limit stopped the late pass's merge agent after it had picked all
 four branches and passed lint and typecheck; the run's full vitest was redone by hand
 on the merged tree.
+
+## Mashina narxi qaysi bitimga — a two-deal truck's price, the person setting it chooses (Q8 «c») (2026-10-28;
+NO migration — it deploys with main's 0137, ledger 138; renumbered from #1491-#1495 on the merge, the
+TWENTY-FIFTH collision: the other session's road plan took #1491-#1502 and Sakkiz round 2 #1503-#1511 first)
+
+1512. **A two-deal truck's price is written to the deal the person setting it CHOOSES (owner's Q8 «c»,
+2026-10-27: «logist o'zi tanlaydi»).** This reverses #1011's «never taken from the form» for one case only. When
+two or more of the client's OWN deals ride the truck (`dealCandidatesOf`: the receipts' deals whose client is the
+client, by `ownDealOf`), the price door refuses a price with no choice (`deal_choice_required`) at EVERY door: the
+«Narx» tab, the client ledger and a script. R3a is otherwise untouched. One deal and nothing else is derived and
+announced as before. One deal beside deal-less cargo names no deal (his question was about two deals, and the
+deal-less goods' price would ride onto the deal); that deal's own id typed there is `deal_choice_invalid`.
+«Bitimsiz» is a choice only for the deal-less PART of a two-deal client. On a truck carrying only his deals it
+would be option (a), which he turned down.
+- **One rule.** The rule is pure in `finance/truck-deal.ts` (`truckDealDecision`), asked on the pool and again
+  inside the transaction after the truck lock, by the same statement: `cargoAboard(…, tx)` over
+  `dealCandidateRows`, the one query behind the door, the «Narx» tab and the ledger.
+- **The sentinel.** «Bitimsiz» is read once, before any uuid lookup (`'none'::uuid` is an error page).
+- **The stale page.** The form posts the question it drew (`dealsSeen`). A prixod re-filed between the drawing
+  and the press is `deals_changed`, refreshed, never answered. A choice is shown only under the question it was
+  made for (`shownDealChoice`), because a controlled select whose value matches no option posts its first
+  enabled option. The placeholder is therefore enabled.
+- **The audit row** records `dealVia` (chosen / derived / none).
+- **The «Narx» tab.**
+  - Its options read code · goods · this truck's share first; «⏳» marks a live muddat (`truckDealHeads`, the
+    gate's own `liveDeferralWhere`).
+  - Every press on such a truck asks once («faqat {code} ulushi»). Any further price for a client already
+    priced here asks too (a second bill is a question). The 5 % check compares the chosen deal's own part,
+    shown for law 4's sight only.
+  - «Bu mashinadagi narxlar» shows where each price went and which deal still has none (`unpricedDealsOf`).
+- **Other money readers.** A receipt left on another client's deal reaches no pricing reader (`dealSharesOf`
+  takes the client, required). The deal card names a price written to another deal on its truck
+  (`otherDealPrices`). No migration.
+
+1513. **Judged by five lenses before code: 43 objections, 41 upheld.** These changed the design:
+- ambiguity means two OWN deals (UX-1), and «bitimsiz» is only for a deal-less part (UX-2);
+- the choice is required at every door, not only behind a hidden field (R8);
+- one query instead of three statements of the rider rule (S3/S5/R10), and an in-transaction re-check through
+  the same function rather than a raw-SQL twin (S3/R5);
+- the sentinel is read before the uuid lookup (R1/M6);
+- the stale choice and React's first-option fallback (S1/R2);
+- the confirmation snapshots what it asked (M7/UX-5/R12);
+- foreign deals are out of the shares, the quotes and the 5 % sums (M8/S4/R6);
+- the price list per candidate (UX-6/S7) and the extra-bill question (M5);
+- the ledger door asks the same question from the same query (UX-8/R10), never the 40-row ledger list;
+- the deferred deal is WARNED, not refused (S8). Refusing it would block the correct own-part press and,
+  on a deals-only truck, force A's part onto B.
+
+1514. **Reviewed as built: five lenses, each finding given two refuters. Five confirmed, all fixed and
+red-proven.**
+- **(a) A deferred deal paid the other deal's cartons.** A truck price covers every carton of the client aboard
+  whatever their deal, and FIFO step 2 settles a deal's charges out of its deferral. So a price written to a
+  deferred A made B's cartons PAID, and B's seller would have been paid KPI on cargo nobody paid. This is the
+  owner's own rule broken: «a deferral … must never settle another job». `settleChargesFully` now reports what a
+  deferral settled, and `paidCargo` lets that pay only the deferral's own deal's cartons. The counter gate is
+  unchanged by design: the deferral excuses the price written to it.
+- **(b) The deal card took its trucks from departures plus the live pointer.** A carton landed with no load
+  scan was a candidate on the «Narx» tab and invisible on its deal's card. The trucks now come from the money
+  riders, which feed `unlinkedBatchUsd` too.
+- **(c) A «baribir saqlash» the browser refused left the confirm flag armed.** The next press would have saved
+  with no question. It is armed only after `reportValidity()`, every edit of the question disarms it, and the
+  alert keeps the key it was asked under.
+- **(d) An old whole-cargo price drew «narx yo'q» in bold.** A price with no deal on a deals-only truck (every
+  such truck priced before this round, or re-filed after) drew «narx yo'q» under each deal, inviting two more
+  bills. It is said, muted («bitimsiz narx … butun yukini qoplaydi»).
+- **(e) The e2e never asked the Q8 question on its own.** Every press also failed the 5 % check, so
+  `choiceAsks = false` stayed green. A press inside 5 % now stops on the Q8 question alone (red-proven in a
+  browser).
+
+Nits taken:
+- the option order and text;
+- one share basis for all of a client's deals;
+- a compensated-to-zero deal price still counts as the deal's own;
+- the ledger reads many trucks of one client from his own cartons;
+- tighter fences;
+- the e2e cleans up in `afterAll`, and its stale walk keeps the select.
+
+Refuted: «🚚 Ko'chirish» bypassing the choice (by design, #1515), the ledger confirmation, the mirror line,
+deferral state in the key.
+
+1515. **Stated, not built (told to him).**
+- `moveCharge` keeps the price's own deal, even onto a truck where that deal has no cargo (12b's rule).
+- A re-filed prixod never moves a truck price's deal. A chosen deal is frozen at the write even if its cartons
+  were only planned and are then short-loaded (pinned).
+- One client's prices on one truck are paid together for the KPI and the upsale (the truck clause is
+  deal-blind). Paying A's part leaves A's cartons unpaid while B's part is owed. This was already true of any
+  two prices on one truck.
+- A price written to a deferred deal is excused at the counter whatever cargo it was for. The option and the
+  question say so.
+- Old deal-less prices on two-deal trucks are not backfilled. They are named muted, and a correction is void +
+  re-enter.
+- Who presses: the «Narx» tab is `finance.manage`'s (VED, accountant, admins). The seeded logist cannot open
+  it, and whether to give him that grant (it opens client payments, prices and partner money) is asked of him.
+- The /upsale «no_invoice» hint does not name a price chosen for the other deal.
+
+1516. **Process.**
+- The worker restarted mid-round and the container restarted mid-review. The work was committed before the red
+  proofs (#430), and the review resumed from its journal: twelve finished agents replayed, none re-ran.
+- Numbered past the other session's open PR #131 at first (#1479-#1490 and its 0137), then renumbered from
+  #1491-#1495 on the merge (see the heading). This round has no migration.
+- Seventeen red proofs by string edit, two of them in a real browser. One red-proof run left its seed behind in serial
+  mode, which is why the spec's cleanup moved into `afterAll`.
+- **CI found what the local runs had not reached.** The money fix moved `paidCargo` onto `settleChargesFully`, and
+  `upsale-fifo-wire` names the FIFO walk's only two readers by the OTHER name — red in CI, while every file this
+  round touched was green. The fence now counts both names (fifo.ts calling its own twin is the home), and
+  asks that paid-cartons use the Fully form; red-proven. A fence about a function's callers has to be re-read
+  when a caller moves to that function's twin.
+- **Three things found by LOOKING at the round's own screenshots** (360×800 and 1280×900, the question open), none
+  by a test: «Bu mashinadagi narxlar» listed the unpriced deals by deal ID — random — under a summary listing
+  them by code; the option spelled the cargo «2.00 m³ · 200.0 kg» under lot rows saying «2 m³ · 200 kg»; «33 %»
+  broke at the space at 360 px (a no-break space now, four bundles). The e2e pins the order and the spelling,
+  both red-proven in a browser. Twenty red proofs in all.

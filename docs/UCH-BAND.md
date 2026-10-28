@@ -354,7 +354,8 @@ lead's FTL, and its requests and offers move BY ANCHOR, all in ONE transaction (
 FOR UPDATE → lead FOR UPDATE → re-read, the won stage written inside, announced after).
 
 **Stated, not built** (told to him in the reply): money-5 (a truck price for a client with
-two deals aboard names no deal — deferral and deal profit then see none; asked as Q8);
+two deals aboard names no deal — deferral and deal profit then see none; asked as Q8, answered «c» on
+2026-10-28 and built: DECISIONS #1512-#1516);
 money-6 (on a colleague's-client deal only an OFFICE FTL mark reaches the cargo); money-7
 (the upsale is paid to whoever makes the newest offer on the job — Q2's sentence corrected);
 money-9 (unaccepted quotes stay in the open-deals sum until somebody closes them);

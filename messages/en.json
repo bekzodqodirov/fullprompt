@@ -2091,7 +2091,31 @@
     "unsplit": "⚠ {n, plural, one {# cost} other {# costs}} ({usd}) not split over the cargo of this truck — missing from the cost.",
     "unsplitCarried": "⚠ {usd} of costs on truck {code} is not split over the cargo — missing from «{leg}» in the cost",
     "unsplitCarriedNoRate": "⚠ Truck {code} has {n, plural, one {# cost} other {# costs}} with no FX rate — missing from «{leg}» in the cost",
-    "carriedIncomplete": "⚠ incomplete"
+    "carriedIncomplete": "⚠ incomplete",
+    "truckDealLabel": "Which deal the price is written to",
+    "truckDealPick": "choose a deal",
+    "truckDealNone": "No deal — for the cargo with no deal",
+    "truckDealHint": "This client’s cargo on this truck belongs to several deals — choose whose price this is",
+    "truckDealStale": "The choice is out of date — the deals changed, choose again",
+    "truckDealLine": "The price is written to deal {code} — {pct} % of the client’s cargo on this truck. Price the other deal’s cargo separately",
+    "truckDealLineNoShare": "The price is written to deal {code}. Price the other deal’s cargo separately",
+    "truckDealLineNone": "The price is written to no deal",
+    "truckDealDeferred": "Deal {code} has a payment deferral: while it lasts, this price does not hold the cargo at handover as debt",
+    "truckDealAsk": "Is this price only deal {code}’s part ({pct} % of the client’s cargo on this truck)? Written whole onto one deal, that deal’s profit grows and the other deal reads zero.",
+    "truckDealAskNoShare": "Is this price only deal {code}’s part? Written whole onto one deal, that deal’s profit grows and the other deal reads zero.",
+    "truckDealAskNone": "The price is written to no deal — the deals’ profit and upsale will not see it.",
+    "pricedHereAsk": "This client already has a price on this truck: {list}. This price will be an extra bill.",
+    "pricedHereTitle": "Prices on this truck",
+    "pricedHereNoDeal": "no deal",
+    "pricedHereMissing": "no price on this truck",
+    "pricedHereCardPrice": "the deal has its own price (no truck)",
+    "pricedHereGone": "this deal’s cargo is no longer on the truck",
+    "truckDealChanged": "The deals of the cargo on this truck changed — the page was refreshed, check the price and save again",
+    "truckDealNotAboard": "This deal has no cargo on this truck — the price goes to a deal whose cargo is aboard",
+    "truckDealRequired": "This client’s cargo on this truck belongs to several deals — choose which one the price is written to",
+    "truckDealInvalid": "This choice does not fit this truck — refresh the page and choose again",
+    "truckDealMismatch": "This deal belongs to another client — the price is not written to it",
+    "pricedHereWhole": "the no-deal price covers all this client’s cargo on this truck — to put it on a deal, void it and enter it again per deal"
   },
   "map": {
     "title": "Map",
@@ -3326,7 +3350,8 @@
     "weightKg": "Weight (kg)",
     "profitCompensation": "− compensation (lost cargo)",
     "profitNetRevenue": "Revenue (after compensation)",
-    "profitFreightHeld": "On {count, plural, one {# truck} other {# trucks}} that carried this deal's cargo, {usd} $ of freight was not split over the cargo by the tariff — this deal's share of it is not in the cost above, so the profit may read higher than it is. It splits once the lot is fixed or through «Split method»."
+    "profitFreightHeld": "On {count, plural, one {# truck} other {# trucks}} that carried this deal's cargo, {usd} $ of freight was not split over the cargo by the tariff — this deal's share of it is not in the cost above, so the profit may read higher than it is. It splits once the lot is fixed or through «Split method».",
+    "profitOtherDeal": "The price on truck {truck} ({amount} $) is written to deal {code} — it is not in this deal’s revenue."
   },
   "automation": {
     "title": "Automation rules",
