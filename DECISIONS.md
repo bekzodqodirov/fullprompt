@@ -4881,3 +4881,58 @@ flight alone or names an airport, so a truck warehouse he annotates «avia yukla
 proofs by string edit; one fixture (the old truck quote) had to become the echo it is in life. STATED, not built: the
 Latin and Cyrillic spellings of Guangzhou and Horgos (no three-digit number, and the pinyin names are in no fact)
 pass; reading a choice is a word list, not a parse.
+
+1485. **The fourth review — the words people use, our quote by its identity, and a look when avia was spoken of.**
+#1484 was reviewed as built (four lenses, verify-to-refute) and fourteen findings held. The road still came from
+words that pick nothing: the goods («avto chexol»), the factory's leg («Zavoddan mashinada olib kelasizmi?»), the
+Tashkent end, a toy («toy trucks»); a refusal with a word between («Avia juda qimmat ekan», «Авиа нам не подходит»)
+read as CHOOSING the flight; a bare «Mashina bo'lsin» chose nothing. Our quote's echo was matched by its text alone,
+and the chat holds a message digit-read and clipped (`chatForm`), so a long or Persian-digit quote was never
+recognised; a quote he rewrote with ✏️ kept the model's road. The avia card took one piece's weight («har biri 2
+kg») or a place turned down («Shenzhendan emas») as the shipment's. «Куда доставить груз в Китае?» and «Zavod qayerga
+yetkazsin?» read as the Uzbek end. And the anchors cut a street at a space and glued the GS reminder to Horgos's
+«…168米左右» («左右发货前»), while a truck warehouse standing on «机场路» or that turned the flight down was dropped as
+the flight's. **The design decision of this round**: a word list cannot read every chat, so a misread must cost a
+glance, never a flight sent to a truck's warehouse in silence — the warning **`avia_maybe`**: the flight was spoken
+of, the rule did not decide it is the chat's road, and the reply gives our China address → the ✅ stays and the card
+says «avia ham gapirilgan … yuk avia bo'lsa, manzilni o'zingiz yozing (✏️)». `LastQuote` gained `tgMessageId` (the
+outbox row's) and `edited` (`finalBody` differs from `proposedBody`); `askedModeOf` reads statement by statement;
+`aviaCargoOf` keeps a corrected weight's origin and drops a load-added one's. 31 red proofs; one (the rail rule)
+stayed green until its test asked one statement that names rail and turns the truck down.
+
+1486. **The fifth review — a question asks for the road, a concession chooses it, rail turned down is the flight's.**
+#1485's own delta was reviewed (three lenses, two refuters each), and most of what held came from #1485 itself.
+**A refusal was a prefix, not a word**: «qimmat» matched «qimmatmi», «bo'lmaydi» «bo'lmaydimi», so a customer ASKING
+for the flight («Aviada bo'lmaydimi?», «Avia bilan ketmaydimi?», «Avia narxi balandmi?») read as turning it down,
+and the new warning, which read refusals as «not spoken of», was blind to the same misread. A refusal is a whole word
+now, «… ekanmi» included; a question («Авиа дорого выйдет?» — each statement keeps its own end, `statementsOf`), a
+concession («Avia qimmat bo'lsa ham mayli», «Пусть авиа дорого») and a double negation («Без авиа никак», «Aviasiz
+bo'lmaydi») choose the road; and a refusal drops only the choice words inside it («Avia qimmat ekan lekin avia
+bilan»). **Rail switched the flight's guard off**: `aviaOnly`/`aviaMentioned` carried `!rail`, and `railAsked` called
+any message naming rail a rail chat — «Poyezd kerak emas, avia bilan», «Не поездом, а самолётом», «Temir yo'l uzoq
+ekan, avia bilan yuboraman» passed our Yiwu address with neither block nor warning, and a reply's own «… faqat avto
+yoki temir yo'l bilan ketadi» made the address's house number «2255» a rail price. The address rule is no longer
+gated on rail (rail still drops the machine's money); `railAsked` reads statements, newest first, and a rail
+statement turned down (`railRefusedIn`) or a later road chosen ends it; `railQuoted` asks for a figure in the rail
+word's own sentence; «железки» alone is hardware («по железке» is the rail). **Words**: everyday «by air» joined the
+flight («по воздуху», «havo yo'li bilan», «samalyot», «by airplane», «air shipment», «空派»); «kargo bilan / orqali /
+-da» chooses no road again — #1485 had made it the truck, and «kargo orqali avia yuboraman» lost its block — though it
+still names the truck for a days question; «Avto», «Avto bo'lsin» choose the truck, and only Tashkent as the pickup
+(«Toshkentda», «Toshkentdan») is another leg, never Tashkent reached. **Our priced line** is read by the road its
+clause CHOOSES, then the road word it opens with (`LABEL`), never a road word inside the goods — #1485 had read
+«o'yinchoq samolyotlar 3 kub — 640 $» as a flight and «Avia: avtozapchast 30 kg — 510 $» as a truck — a clause priced
+by the cube is the truck's, and the walk to a neighbouring clause stops at another price. `askedModeOf` decides by
+choices, the one road named only as the last resort, so «Tovar: tikuv mashinalari» after «Avia bilan necha kunda?»
+no longer asks the truck's days. **The card**: a corrected weight inside a question («Kechirasiz, 35 kg ekan, qayerga
+yuboray?») is the shipment's — only a what-if («bo'lsa», «agar», «если») is set aside, clause by clause and never at a
+decimal point; per-piece words are words («Beach» is no «each»); only a place itself turned down is skipped. **The
+anchors**: a fact is the flight's only when it DECLARES itself its receiving point («Avia ombori», «Склад для авиа»,
+«机场货运站») and names no truck; «Avia uchun manzilni men o'zim beraman», «aeroportga yaqin», «机场北路» and «avto va
+avia yuklar uchun» are truck warehouses and stay counted. **The warning**: it reads the reply too («30 kg mashinaga kam,
+avia bilan yuborishingiz mumkin. Guanchjou ombori: …»), our own lines count only where they PRICE the flight (the
+seeded batteries sentence is no flight), the flight's own words only (a choice or a refusal — never «o'yinchoq
+samolyotlar», «aviamodel», «toy plane»), and a truck the customer chose after the last of it settles the chat. 32 red
+proofs by string edit; four stayed green first, and each was a test that never isolated its own clause — every «-mi»
+case ended in «?» (so the question mark hid the word end), the rail refusal never stood in the newest statement, the
+price walk never had a road past another price, and the what-if always carried «?». STATED, not built: reading a choice is a word list; the Latin and Cyrillic spellings of Horgos and Guangzhou pass; a chat
+whose words name no road leaves the flight's guard to the quote he approved.

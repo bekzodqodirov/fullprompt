@@ -1074,3 +1074,15 @@ stored road. The card names the customer's new shipment and never the warehouse 
 and an address he gives ask nothing. The anchors carry no generic address words, four-character pieces only of a
 street, house numbers only before 号/栋 and beside a street word; two facts for one warehouse keep their street; a
 fact is the flight's when it chooses the flight alone or names an airport.
+
+**The fourth and fifth reviews (DECISIONS #1485, #1486).** A word list will always miss a phrasing, so a misread must
+cost him a glance and never a flight sent to a truck's warehouse in silence: the WARNING `avia_maybe` — the flight
+was spoken of (by the customer, by a priced line of ours, by the quote he approved, or by the reply itself), the chat
+was not decided to be the flight's, and the reply gives one of our China addresses — keeps the ✅ and asks him to look;
+a truck the customer chose after the last word of the flight settles it. The approved quote's echo is known by the
+Telegram id it went out as; a quote he rewrote is read by his words. A refusal is a whole word and never a question
+(«Avia bilan ketmaydimi?» asks for the flight), a concession or a double negation chooses («Avia qimmat bo'lsa ham
+mayli», «Без авиа никак»), and rail turned down for the flight is the flight's: the address rule does not depend on
+the rail rule. Our priced line is read by the road its clause chooses or opens with, never the goods. The card's
+kilos are the shipment's (a correction counts, a single piece or a what-if does not), its origin a place not turned
+down. A knowledge fact is the flight's only when it declares itself the flight's receiving point and names no truck.

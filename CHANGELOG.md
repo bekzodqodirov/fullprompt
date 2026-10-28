@@ -84,6 +84,22 @@ minimum qilsin». Yangi migratsiya bor (**0136**): deploydan keyin baza hisobi *
     - «168 kg» yoki «2255 kg» kabi og'irlik: raqam faqat ko'cha so'zi yonida bo'lsa uy raqami hisoblanadi.
   - Mijoz bir xabarda ham avia, ham mashina narxini so'rasa, mashina uchun ombor manzilini berish mumkin.
   - Avia'da «omborimizga yuborsangiz…» jumlasi endi talab qilinmaydi.
+  - **Yangi: «avia ham gapirilgan» ogohlantirishi.** Tizim so'zlardan yo'lni har doim to'g'ri o'qiy olmaydi. Shuning uchun suhbatda avia gapirilgan bo'lsa-yu, tizim uni avia suhbati deb aniq bilolmasa va javobda Xitoy omborimizning manzili bo'lsa, ✅ qoladi, lekin kartochkada shunday yoziladi: «avia ham gapirilgan va javobda Xitoy omborimizning manzili bor — yuk avia bo'lsa, manzilni o'zingiz yozing (✏️)». Xato o'qilgan suhbat sizga bir qarashga tushadi, manzil esa jimgina ketib qolmaydi.
+    - Bu ogohlantirish javobning o'zini ham o'qiydi: «30 kg mashinaga kam, avia bilan yuborishingiz mumkin» + ombor manzili.
+    - Mijoz oxirida mashinani o'zi aniq tanlagan bo'lsa («Mashinada yuboraman»), ogohlantirish chiqmaydi.
+    - «O'yinchoq samolyotlar», «aviamodel» kabi tovar nomlari va bizning «power bank avia bilan ketmaydi» jumlamiz avia gapirildi deb hisoblanmaydi.
+  - **Mijoz so'zlarini o'qish yanada aniqlashdi:**
+    - Savol aviadan voz kechish emas: «Aviada bo'lmaydimi?», «Avia bilan ketmaydimi?», «Avia qimmatmi?», «Авиа дорого выйдет?» — bu avia so'rovi, manzil to'xtatiladi.
+    - Narxiga qaramay tanlash ham tanlov: «Avia qimmat bo'lsa ham mayli», «Пусть авиа дорого», «Без авиа никак», «Aviasiz bo'lmaydi».
+    - Temir yo'ldan voz kechib avia tanlansa («Poyezd kerak emas, avia bilan», «Не поездом, а самолётом»), endi bu avia suhbati: manzil to'xtatiladi va kartochka sizdan avia manzilini so'raydi. Avval temir yo'l so'zi avia himoyasini butunlay o'chirib qo'yardi.
+    - «Железки» (temir buyumlar) endi temir yo'l hisoblanmaydi, «по железке» esa hisoblanadi.
+    - Avia so'zlari kengaydi: «по воздуху», «havo yo'li bilan», «samalyot», «by airplane», «air shipment», «空派».
+    - «Kargo orqali», «kargo bilan» — bu kompaniya, yo'l emas: «kargo orqali avia yuboraman» avia suhbati.
+    - «Avto», «Avto bo'lsin», «Toshkentga mashinada yuboraman» — mashina tanlovi. Toshkentda yukni olib ketish esa boshqa bosqich.
+    - Biz aytgan narxli xabar tovar nomiga qarab emas, yo'l so'ziga qarab o'qiladi: «Mashinada: o'yinchoq samolyotlar 3 kub — 640 $» mashina narxi, «Avia: avtozapchast 30 kg — 510 $» avia narxi.
+    - Siz ✏️ bilan qayta yozgan narx sizning so'zlaringiz bo'yicha o'qiladi.
+  - **Kartochkadagi avia yuki aniqroq:** mijoz og'irlikni tuzatsa («Kechirasiz, 35 kg ekan, qayerga yuboray?»), yangi og'irlik yoziladi va jo'nash joyi saqlanadi. «Har biri 2.5 kg» (bitta dona) yoki «50 kg bo'lsa qancha?» (taxmin) yuk og'irligi hisoblanmaydi. «Shenzhendan emas» degan joy jo'nash joyi deb yozilmaydi.
+  - **Ombor bilimlari:** «Avia uchun manzilni men o'zim beraman», «aeroportga yaqin», «机场北路» yoki «avto va avia yuklar uchun» deb yozilgan ombor mashina ombori sifatida qo'riqlanadi. Faqat o'zini avia qabul joyi deb e'lon qilgan bilim («Avia ombori: …», «Склад для авиа: …») AI tomonidan aytilishi mumkin.
 - **Temir yo'l:** narxni AI aytmaydi, sizdan so'raydi.
 - **Avtoda «Xitoydan»** desa (yoki omborimiz yo'q xitoy shahrini aytsa), narx omborlarimizdan aytiladi. Javobda ikki jumla bo'lishi shart: «yukni omborimizga yuborsangiz…» va «zavoddan omborgacha olib kelish alohida hisoblanadi».
   - Bilimdagi shu qoida endi «**Avto (mashina) narxi** Xitoydagi omborlarimizdan hisoblanadi» deb yozilgan, chunki siz uni mashina haqida aytgansiz. Avval «Narx» deb yozilgani uchun avia suhbatida ham ishlatilib qolishi mumkin edi.

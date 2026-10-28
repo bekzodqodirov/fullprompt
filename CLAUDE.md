@@ -2963,7 +2963,7 @@ CN destination is inland (no hub test), ONE arrived column (`columnOf` splits on
 filter hides everything bound for China (`routeFilterOf` = a `kg`/`kz` leg; a map walk over every pair proves no
 road into China has one, and refuses an unclassed new map code).
 
-**Round — AI sotuvchi, phase 1 (2026-10-24; DECISIONS #1463-#1484 — numbered past the open
+**Round — AI sotuvchi, phase 1 (2026-10-24; DECISIONS #1463-#1486 — numbered past the open
 `telegram-customs-ai-issues` branch's #1455-#1462; migration 0136 `ai_sotuvchi` — ledger must reach 137; spec
 `docs/AI-SOTUVCHI.md` §17 + §17.14).** His «Telegram businessdagi bot emas mening shaxsiy account seansimdan
 ishlatsin ai va ban havfini minimum qilsin». SHADOW only: the listener (`scripts/tg-listen.ts`, the one process that
@@ -3025,6 +3025,17 @@ priced line at its money figures; `chatRoadOf` = tools, then the NEWEST evidence
 nothing. Anchors: `GENERIC_CHARS` = what every Chinese address is made of, 4-char pieces only of a street, shared
 street pieces kept (a warehouse typed twice no longer cancels itself), house numbers only before 号/栋 and only beside a
 street word, a flight fact = chooses the flight alone or names an airport. 22 red proofs.
+**A fourth look (#1485)** and **a fifth (#1486)** — each reviewed the previous one's own fixes, and each found most of
+its defects IN them. The design answer to a word list that will always miss a phrasing is the WARNING `avia_maybe`
+(policy.ts): the flight was spoken of (`aviaSpokenOf` in run.ts — the customer's lines, our PRICED lines, the quote he
+approved, this reply), the rule did not decide it is the chat's road, and the reply states our China address → ✅
+stays, the card asks him to look; a truck the customer chose after the last of it settles the chat. Echo by identity
+(`LastQuote.tgMessageId`, `edited`; compared in `chatForm`). The rules that cost a review each: a refusal is a WHOLE
+word and never a question («Avia bilan ketmaydimi?» asks for the flight — `statementsOf` keeps each statement's «?»),
+a concession or double negation chooses (`CHOSEN_ANYWAY`); the address rule is NOT gated on rail, and `railAsked`
+reads statements with `railRefusedIn`; our priced line is read by its clause's choice, then its opening road word
+(`LABEL`), never a goods word; «kargo orqali» is the company; Tashkent is another leg only as the pickup; a flight
+fact must DECLARE itself one and name no truck. 31 + 32 red proofs.
 
 **Latest migration: 0136** (`ai_sotuvchi`, `when` …115; ledger must reach **137**). Before
 it: 0135 (`load_mode`, `when` …114). Before
