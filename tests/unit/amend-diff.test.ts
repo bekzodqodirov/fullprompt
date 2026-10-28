@@ -79,6 +79,17 @@ describe('amendDiff — over a FRESH base', () => {
     ]);
   });
 
+  it('a «qo‘shilsin» sum is compared against the figure it was MADE of — a row moved since is the VED’s (spec-9)', () => {
+    // The reading saw 300; the machine's pass wrote 320 since.
+    const fresh = base([item(3, { name: 'Sumka', quantity: 320 })]);
+    const change = amendDiff(
+      fresh,
+      sub({ rowAnswers: [{ itemId: id(3), patch: { quantity: 500 }, sum: { field: 'quantity', unit: 'dona', stored: 300, read: 200 } } as never] }),
+      NOTE,
+    );
+    expect(change.edits[0]!.expect).toEqual({ quantity: 300 });
+  });
+
   it('an answer that equals the stored figure writes nothing', () => {
     const fresh = base([item(3, { quantity: 50 })]);
     expect(amendDiff(fresh, sub({ rowAnswers: [{ itemId: id(3), patch: { quantity: 50 } }] }), NOTE).edits).toEqual([]);
@@ -219,7 +230,19 @@ describe('conflictOf — a stored row the new material restates (law-money-5)', 
       { field: 'quantity', unit: 'dona', stored: 300, read: 200 },
       { field: 'weightKg', unit: 'kg', stored: null, read: 120 },
     ]);
-    expect(conflictOf({ quantity: 300, weightKg: 150 }, { quantity: 300, weightKg: 150.4 })).toEqual([]);
+    // «Differs» at the column's own scale (3 places), never a tolerance: the
+    // first draft's 0.5 % hid 49 kg on a 10-tonne row (spec-8).
+    expect(conflictOf({ weightKg: 10000 }, { weightKg: 10049 })).toEqual([
+      { field: 'weightKg', unit: 'kg', stored: 10000, read: 10049 },
+    ]);
+    expect(conflictOf({ quantity: 300, weightKg: 150 }, { quantity: 300, weightKg: 150.0004 })).toEqual([]);
+  });
+  it('the read line goes through the door FIRST: «CTN 50» is no piece count, «120 m2» is the pair (spec-3)', () => {
+    expect(conflictOf({ quantity: 300 }, { name: 'Sumka', quantity: 50, unit: 'karobka' })).toEqual([]);
+    expect(conflictOf({ quantity: null, measureUnit: 'm2', measureQty: 120 }, { name: 'Kafel', quantity: 120, unit: 'm2' })).toEqual([]);
+    expect(conflictOf({ quantity: null, measureUnit: 'm2', measureQty: 120 }, { name: 'Kafel', quantity: 140, unit: 'm2' })).toEqual([
+      { field: 'measureQty', unit: 'm2', stored: 120, read: 140 },
+    ]);
   });
   it('a pair counts only in the row’s own pair unit', () => {
     expect(conflictOf({ measureUnit: 'm2', measureQty: 120 }, { measureUnit: 'juft', measureQty: 40 })).toEqual([]);
@@ -235,6 +258,9 @@ describe('sameGoodsLine — the stored row read again (re-check p4-10)', () => {
     expect(sameGoodsLine({ name: 'Kurtka', quantity: 300 }, { name: 'Kurtka (qora)', quantity: 200 })).toBe(false);
     // The same whole name is the row whatever its figures — a conflict, not a line.
     expect(sameGoodsLine({ name: 'Sumka', quantity: 300 }, { name: 'sumka', quantity: 200 })).toBe(true);
+    // ONE rule with `pickGoods` (spec-7): a name of only signs keys to nothing
+    // and is nobody's twin — two such lines are two lines.
+    expect(sameGoodsLine({ name: '—', quantity: 1 }, { name: '…', quantity: 1 })).toBe(false);
   });
 });
 
@@ -308,6 +334,36 @@ describe('amendSubmissionOf — what an add collection hands the writer', () => 
     ]);
   });
 
+  it('a typed answer to a conflicted field wins: no «300 + 200» arithmetic, no «VED hal qiladi» line (spec-4)', () => {
+    const out = amendSubmissionOf(
+      state({
+        conflicts: [
+          { itemId: id(1), seq: 1, field: 'quantity', unit: 'dona', stored: 300, read: 200, choice: 'add' },
+          { itemId: id(2), seq: 2, field: 'weightKg', unit: 'kg', stored: 12.5, read: 14, choice: null },
+        ],
+        lineAnswers: [
+          { index: 0, name: 'Kurtka', patch: { quantity: 450 }, itemId: id(1) },
+          { index: 1, name: 'Krossovka', patch: { weightKg: 13 }, itemId: id(2) },
+        ],
+      }),
+    );
+    expect(out.rowAnswers).toEqual([
+      { itemId: id(1), patch: { quantity: 450 } },
+      { itemId: id(2), patch: { weightKg: 13 } },
+    ]);
+    expect(out.conflicts).toEqual([]);
+    const change = amendDiff(base([item(1, { name: 'Kurtka', quantity: 300 }), item(2, { name: 'Krossovka', weightKg: 12.5 })]), out, NOTE);
+    expect(amendChangeText(change, 0)).toEqual(['· 1-qator «Kurtka»: 450 dona', '· 2-qator «Krossovka»: 13 kg']);
+    // A typed figure that IS the sum keeps the arithmetic.
+    const same = amendSubmissionOf(
+      state({
+        conflicts: [{ itemId: id(1), seq: 1, field: 'quantity', unit: 'dona', stored: 300, read: 200, choice: 'add' }],
+        lineAnswers: [{ index: 0, name: 'Kurtka', patch: { quantity: 500 }, itemId: id(1) }],
+      }),
+    );
+    expect(same.rowAnswers[0]).toMatchObject({ sum: { stored: 300, read: 200 } });
+  });
+
   it('the route only from a table answer, present keys only', () => {
     const out = amendSubmissionOf(state({ routeAnswer: { toCity: 'Toshkent', at: { material: 0, files: 0 } } }));
     expect(out.route).toEqual({ toCity: 'Toshkent' });
@@ -374,6 +430,25 @@ describe('the change lines (§2.4) — one home for the seller, the thread and t
     expect(amendChangeText(summed, 0)).toEqual(['· 3-qator «Sumka»: 300 + 200 = 500 dona (ikkinchi fayl qo‘shildi)']);
   });
 
+  it('a summed pair the save dropped is said once, «yozilmadi» — never also «qo‘shildi» (adv-12)', () => {
+    const summed = amendDiff(
+      base([item(2, { name: 'Krossovka', measureUnit: 'juft', measureQty: 300 })]),
+      sub({
+        rowAnswers: [
+          {
+            itemId: id(2),
+            patch: { measureUnit: 'juft', measureQty: 500 },
+            sum: { field: 'measureQty', unit: 'juft', stored: 300, read: 200 },
+          } as never,
+        ],
+      }),
+      NOTE,
+    );
+    expect(amendChangeText(summed, 0, { measuresDropped: [2], measuresCleared: [], basisConflict: [] })).toEqual([
+      '· 2-qator «Krossovka»: 500 juft — yozilmadi (kod juft so‘ramaydi)',
+    ]);
+  });
+
   it('at most 20 lines, then «· … yana {n} ta o‘zgarish»', () => {
     const many = amendDiff(
       base(Array.from({ length: 25 }, (_, i) => item(i + 1, { quantity: 1 }))),
@@ -403,8 +478,14 @@ describe('the words', () => {
 
   it('the request’s own names lead the model’s «already there» block, in the request’s words (re-check p4-16)', () => {
     const text = knownGoodsText(['Kurtka', 'Sumka'], 6000, 'request');
-    expect(text.startsWith('Эти товары уже есть в заявке — НЕ повторяй их в goods, перечисли только новые:\n- Kurtka\n- Sumka')).toBe(true);
-    expect(knownGoodsText(['A'.repeat(50), 'B'.repeat(50)], 60, 'request')).toContain('…и ещё 1 строк этой заявки');
+    // Re-anchored (adv-2): the block now asks for a restated good WITH its own
+    // figures — the add door's conflict path reads exactly those lines.
+    expect(
+      text.startsWith(
+        'Эти товары уже есть в заявке — НЕ повторяй их в goods, перечисли только новые. Исключение: если в материале у такого товара СВОИ цифры (количество, вес или объём), укажи его в goods с этими цифрами из материала — не придумывай их:\n- Kurtka\n- Sumka',
+      ),
+    ).toBe(true);
+    expect(knownGoodsText(['A'.repeat(50), 'B'.repeat(50)], 60, 'request')).toContain('…и ещё 1 строк этой заявки — для них то же правило.');
     // The invoice's block is unchanged.
     expect(knownGoodsText(['Kurtka'], 6000)).toContain('из таблицы Excel');
   });

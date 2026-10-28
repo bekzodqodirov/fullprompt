@@ -440,11 +440,17 @@ export function knownGoodsText(
   const request = source === 'request';
   return (
     (request
-      ? 'Эти товары уже есть в заявке — НЕ повторяй их в goods, перечисли только новые:\n'
+      ? // The exception is the add door's conflict path (law-money-5): a
+        // top-up restating a stored good with ITS OWN figures («Kurtka 200»
+        // against a stored 300) must come back with them, or the bot never
+        // asks «qo‘shilsin / o‘rniga / VED hal qilsin» and factory B's 200
+        // vanishes; `sameGoodsLine` then matches it to its row, so it is never
+        // priced as a second line. Without figures it is the same row — left out.
+        'Эти товары уже есть в заявке — НЕ повторяй их в goods, перечисли только новые. Исключение: если в материале у такого товара СВОИ цифры (количество, вес или объём), укажи его в goods с этими цифрами из материала — не придумывай их:\n'
       : 'Эти товары уже взяты из таблицы Excel — НЕ повторяй их в goods, перечисли только другие:\n') +
     shown.join('\n') +
     (rest > 0
-      ? `${shown.length > 0 ? '\n' : ''}…и ещё ${rest} строк ${request ? 'этой заявки' : 'этой таблицы'} — их тоже не повторяй.`
+      ? `${shown.length > 0 ? '\n' : ''}…и ещё ${rest} строк ${request ? 'этой заявки — для них то же правило.' : 'этой таблицы — их тоже не повторяй.'}`
       : '') +
     '\n\n'
   );

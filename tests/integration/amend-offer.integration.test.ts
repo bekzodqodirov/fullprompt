@@ -29,6 +29,10 @@ vi.mock('@/modules/platform/telegram/calc-files', async (original) => ({
   saveIntakeFile: vi.fn(async () => ({ isPhoto: false, body: Buffer.from(''), attachmentId: randomUUID() })),
   readIntakeFile: vi.fn(async () => ({ patch: {}, say: null })),
 }));
+vi.mock('@/modules/platform/telegram/calc-store', async (original) => {
+  const real = await original<typeof import('@/modules/platform/telegram/calc-store')>();
+  return { ...real, holdingIntake: vi.fn(real.holdingIntake) };
+});
 vi.mock('@/modules/wms/calc/amend', async (original) => {
   const real = await original<typeof import('@/modules/wms/calc/amend')>();
   return { ...real, openRequestsToOffer: vi.fn(real.openRequestsToOffer) };
@@ -47,8 +51,8 @@ import {
   telegramLinks,
   users,
 } from '@/modules/platform/db/schema';
-import { __resetAddOffers, offerAddForMedia, pressAdd } from '@/modules/platform/telegram/calc-amend';
-import { activeIntake, endIntake, startIntake } from '@/modules/platform/telegram/calc-store';
+import { __resetAddOffers, openAmendFromMedia, offerAddForMedia, pressAdd } from '@/modules/platform/telegram/calc-amend';
+import { activeIntake, endIntake, holdingIntake, startIntake } from '@/modules/platform/telegram/calc-store';
 import { saveIntakeFile } from '@/modules/platform/telegram/calc-files';
 import { forwardKeyboard } from '@/modules/platform/telegram/staff-bot';
 import { __resetDrafts } from '@/modules/platform/telegram/task-draft';
@@ -127,6 +131,10 @@ async function request(who = sellerId): Promise<{ id: string; card: string }> {
 }
 
 let messageSeq = 7_000;
+/** The last offer press's replies. */
+let pressReplies: string[] = [];
+/** The collector's own «Bo‘ldi» prompt — what an unread file waits under. */
+const PROMPT_TAIL = 'Yana yuboring yoki «Bo‘ldi» ni bosing.';
 const now = () => Math.floor(Date.now() / 1000);
 const forwarded = { forward_origin: { type: 'hidden_user', sender_user_name: 'Mijoz', date: 0 } };
 
@@ -152,6 +160,7 @@ const rowsOf = (extra?: Record<string, unknown>) =>
 /** The offer pressed: its message replies to `original`. */
 async function pressOffer(requestId: string, original: Record<string, unknown>) {
   const replies: string[] = [];
+  pressReplies = replies;
   const ctx = {
     reply: async (text: string) => (replies.push(text), { message_id: (messageSeq += 1) }),
     callbackQuery: { message: { message_id: (messageSeq += 1), reply_to_message: original } },
@@ -180,6 +189,10 @@ describe('a forward, with an open request of his (Door B)', () => {
     expect(live.amend?.requestId).toBe(r.id);
     expect(live.material).toEqual(['Yana 20 karobka keldi']);
     expect(live.repliedTaken).toEqual([f.message.message_id]);
+    // What was taken is UNREAD: the collection waits for «Bo‘ldi», so the
+    // table's «✅ Qo‘shish» cannot save the stored rows without it (spec-1).
+    expect(live.stage).toBe('material');
+    expect(pressReplies.at(-1)).toContain(PROMPT_TAIL);
     // A second press of the same offer takes nothing twice.
     await pressOffer(r.id, f.message);
     expect(activeIntake(chat)!.material).toEqual(['Yana 20 karobka keldi']);
@@ -212,6 +225,19 @@ describe('a plain file, with an open request of his', () => {
     await pressOffer(r.id, d.message);
     expect(vi.mocked(saveIntakeFile)).toHaveBeenCalledTimes(1);
     expect(activeIntake(chat)!.fileCount).toBe(1);
+    expect(activeIntake(chat)!.stage).toBe('material');
+    expect(pressReplies.at(-1)).toContain(PROMPT_TAIL);
+  });
+
+  it('a document REPLIED to the AI answer is filed and waits for «Bo‘ldi» too (spec-1)', async () => {
+    const r = await request();
+    const d = ctxOf({ document: { file_id: `BQAR${STAMP}`, file_unique_id: 'r', file_name: 'b.pdf', mime_type: 'application/pdf', file_size: 10 } });
+    await openAmendFromMedia(d.ctx as never, chat, r.id);
+    const live = activeIntake(chat)!;
+    expect(live.amend?.requestId).toBe(r.id);
+    expect(live.fileCount).toBe(1);
+    expect(live.stage).toBe('material');
+    expect(d.replies.at(-1)?.text).toContain(PROMPT_TAIL);
   });
 
   it('a plain album of ten photos → ONE offer line, as a reply to its first part; the press files all ten', async () => {
@@ -267,6 +293,29 @@ describe('nothing to offer', () => {
     const f = ctxOf({ text: 'x', ...forwarded });
     await offerForwardTask(f.ctx as never, chat, null);
     expect(rowsOf(f.replies[0]!.extra)).toEqual(forwardKeyboard());
+  });
+
+  it('a collection taken a minute after an offer: the cache never offers beside it (adv-13)', async () => {
+    await request();
+    const first = ctxOf({ text: 'x', ...forwarded });
+    await offerForwardTask(first.ctx as never, chat, null);
+    expect(rowsOf(first.replies[0]!.extra)).toHaveLength(forwardKeyboard().length + 1);
+    startIntake(chat, 'yolkira', { staffId: sellerId });
+    const second = ctxOf({ text: 'y', ...forwarded });
+    await offerForwardTask(second.ctx as never, chat, null);
+    expect(rowsOf(second.replies[0]!.extra)).toEqual(forwardKeyboard());
+  });
+
+  it('a PARKED collection takes nothing, so it silences no offer — the press asks the question instead (spec-5)', async () => {
+    const r = await request();
+    startIntake(chat, 'yolkira', { staffId: sellerId });
+    // P1's park: the collection lives on, it no longer holds the chat (asked
+    // twice — the media offer, then its rows).
+    vi.mocked(holdingIntake).mockReturnValueOnce(null).mockReturnValueOnce(null);
+    const d = ctxOf({ document: { file_id: `BQAP${STAMP}`, file_unique_id: 'q', file_name: 'z.pdf', mime_type: 'application/pdf', file_size: 10 } });
+    expect(await offerAddForMedia(d.ctx as never, chat)).toBe(true);
+    expect(rowsOf(d.replies[0]!.extra)).toEqual([[{ text: `➕ ${r.card} so‘roviga qo‘shish`, callback_data: `cf:${r.id}` }]]);
+    expect(activeIntake(chat)).not.toBeNull();
   });
 
   it('the offer query throwing → Door B’s own two buttons still come (re-check p4-1)', async () => {

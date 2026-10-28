@@ -9,6 +9,8 @@ const AMEND = read('src/modules/wms/calc/amend.ts');
 const BOT = read('src/modules/platform/telegram/calc-amend.ts');
 const SERVICE = read('src/modules/wms/calc/service.ts');
 const UPSALE = read('src/modules/wms/calc/upsale.ts');
+const THREAD = read('src/modules/wms/crm/thread.ts');
+const CRM = read('src/modules/wms/crm/service.ts');
 
 /**
  * A top-level function's whole text, from its declaration to the closing
@@ -125,6 +127,19 @@ describe('the one writer', () => {
     }
   });
 
+  it('the writers the hook hands its transaction to name no pooled db. either (§9.7, spec-12)', () => {
+    // Each writes through the handle it was given (`tx`, Uch band's `exec`).
+    for (const [file, needle, handle] of [
+      [THREAD, 'export async function insertThreadMessageInTx(', /\btx\./],
+      [CRM, 'export async function insertActivityTx(', /\bexec\b/],
+    ] as const) {
+      const body = fnText(file, needle);
+      expect(body.length, needle).toBeGreaterThan(0);
+      expect(body, needle).toMatch(handle);
+      expect(body, needle).not.toMatch(/\bdb\./);
+    }
+  });
+
   it('the card is re-read under the lock, never taken from the pooled read (re-check p4-4)', () => {
     for (const body of blocksAfter(AMEND, 'inTx: async (tx, newRev, saved) => {')) {
       expect(body).toContain('cardUnderLockTx(tx, input.requestId)');
@@ -135,6 +150,11 @@ describe('the one writer', () => {
 describe('the words and the reads', () => {
   it('AMEND_REFUSAL is a Record over SaveTableRefusal — a new refusal without words is a compile error', () => {
     expect(BOT).toMatch(/export const AMEND_REFUSAL: Record<SaveTableRefusal(\s*\|\s*'server_behind')?, string> = \{/);
+  });
+
+  it('the refusals the outcome may carry are a Record over SaveTableRefusal — a new one is a compile error, never a rethrow (adv-13)', () => {
+    expect(AMEND).toMatch(/const SAVE_TABLE_REFUSAL_NAMES: Record<SaveTableRefusal, true> = \{/);
+    expect(AMEND).toContain('const SAVE_TABLE_REFUSALS = Object.keys(SAVE_TABLE_REFUSAL_NAMES) as SaveTableRefusal[];');
   });
 
   it('storedRequestFacts names no loadWorkspace (performance-9)', () => {

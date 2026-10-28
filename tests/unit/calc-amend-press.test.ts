@@ -12,6 +12,8 @@ const stub = vi.hoisted(() => ({
   stored: null as null | Record<string, unknown>,
   standing: { standing: 'open', rev: 3, handsoffRev: 3, completedVia: null, returnReason: null, ending: null } as Record<string, unknown>,
   hint: 'GS777',
+  certificate: true as boolean | null,
+  throwRead: false,
   claimed: true,
   draft: false,
   capture: false,
@@ -24,13 +26,16 @@ vi.mock('@/modules/platform/telegram/staff-bot', async (original) => ({
 }));
 vi.mock('@/modules/wms/calc/service', async (original) => ({
   ...(await original<typeof import('@/modules/wms/calc/service')>()),
-  storedRequestFacts: async (id: string) =>
-    stub.stored && (stub.stored.base as { requestId: string }).requestId === id ? stub.stored : null,
+  storedRequestFacts: async (id: string) => {
+    if (stub.throwRead) throw new Error('connection reset');
+    return stub.stored && (stub.stored.base as { requestId: string }).requestId === id ? stub.stored : null;
+  },
 }));
 vi.mock('@/modules/wms/calc/amend', async (original) => ({
   ...(await original<typeof import('@/modules/wms/calc/amend')>()),
   amendStanding: async () => stub.standing,
   returnedClientHint: async () => stub.hint,
+  requestHasCertificate: async () => stub.certificate,
 }));
 vi.mock('@/modules/wms/calc/law-asks', () => ({ lawAsksOf: () => stub.asks }));
 vi.mock('@/modules/platform/telegram/once', async (original) => ({
@@ -63,7 +68,7 @@ vi.mock('@/modules/platform/telegram/calc-intake-sweep', async (original) => ({
 }));
 
 import { ADD_REFUSAL, amendKeyboard, pressAdd, STANDING_LINE } from '@/modules/platform/telegram/calc-amend';
-import { activeIntake, endIntake, startIntake } from '@/modules/platform/telegram/calc-store';
+import { activeIntake, endIntake, startIntake, updateIntake } from '@/modules/platform/telegram/calc-store';
 import { deliverNextStep } from '@/modules/platform/telegram/calc-dialog';
 import { pressResume } from '@/modules/platform/telegram/calc-intake-sweep';
 import { refuseWhileCapturing } from '@/modules/platform/telegram/note-capture';
@@ -135,12 +140,14 @@ afterEach(() => {
   stub.stored = null;
   stub.standing = { standing: 'open', rev: 3, handsoffRev: 3, completedVia: null, returnReason: null, ending: null };
   stub.hint = 'GS777';
+  stub.certificate = true;
+  stub.throwRead = false;
   stub.claimed = true;
   stub.draft = false;
   stub.capture = false;
   stub.asks = [];
   stub.toasts.length = 0;
-  vi.mocked(deliverNextStep).mockClear();
+  vi.mocked(deliverNextStep).mockReset().mockResolvedValue(undefined);
   vi.mocked(pressResume).mockClear();
   vi.mocked(refuseWhileCapturing).mockClear();
 });
@@ -313,7 +320,8 @@ describe('a live collection: the question, the restart and the resume (durabilit
     expect(buttonsOf(p.replies[0]!.extra).map((b) => b.callback_data)).toEqual([`cg:${REQ}`, 'c:resume']);
     expect(buttonsOf(p.replies[0]!.extra)[1]!.text).toBe('▶️ Yo‘q, davom etaman');
     expect(activeIntake(id)!.noteId).toBe(old.noteId);
-    expect(stub.toasts).toHaveLength(1);
+    // §2.4: the press is answered with the question's own words.
+    expect(stub.toasts).toEqual([p.replies[0]!.text]);
   });
 
   it('cg: ends the other collection and opens the add one', async () => {
@@ -343,9 +351,32 @@ describe('a live collection: the question, the restart and the resume (durabilit
     const live = activeIntake(id)!;
     for (const mode of ['restart', 'plain'] as const) {
       vi.mocked(pressResume).mockClear();
+      stub.toasts.length = 0;
       const p = await press(id, mode);
       expect(p.texts()).toEqual([ADD_REFUSAL.sameLive]);
+      expect(stub.toasts).toEqual([ADD_REFUSAL.sameLive]);
       expect(vi.mocked(pressResume)).toHaveBeenCalledTimes(1);
+      expect(activeIntake(id)!.noteId).toBe(live.noteId);
+    }
+  });
+
+  it('a collection FROZEN while its save runs is the job’s: neither a resume nor a wipe (adv-11)', async () => {
+    stub.stored = storedOf();
+    const id = chat();
+    await press(id);
+    const live = activeIntake(id)!;
+    updateIntake(id, { saving: { token: 't', at: Date.now(), jobId: 'j' } });
+    for (const [mode, request] of [
+      ['plain', REQ],
+      ['restart', OTHER],
+    ] as const) {
+      stub.toasts.length = 0;
+      vi.mocked(pressResume).mockClear();
+      if (request === OTHER) stub.stored = storedOf({}, { requestId: OTHER, cardLabel: 'B-000068' });
+      const p = await press(id, mode, request);
+      expect(p.texts()).toEqual([ADD_REFUSAL.saving]);
+      expect(stub.toasts).toEqual([ADD_REFUSAL.saving]);
+      expect(vi.mocked(pressResume)).not.toHaveBeenCalled();
       expect(activeIntake(id)!.noteId).toBe(live.noteId);
     }
   });
@@ -361,7 +392,65 @@ describe('a live collection: the question, the restart and the resume (durabilit
   });
 });
 
+describe('a failure is said as one, and leaves nothing half-open (adv-5)', () => {
+  it('a read that throws is «Hozir ochib bo‘lmadi», never «topilmadi»', async () => {
+    stub.stored = storedOf();
+    stub.throwRead = true;
+    const id = chat();
+    const p = await press(id);
+    expect(p.texts()).toEqual([ADD_REFUSAL.pressFailed]);
+    expect(stub.toasts).toEqual([ADD_REFUSAL.pressFailed]);
+    expect(activeIntake(id)).toBeNull();
+  });
+
+  it('the table failing after the open ends the collection this press opened — it would eat his next text', async () => {
+    stub.stored = storedOf();
+    vi.mocked(deliverNextStep).mockRejectedValueOnce(new Error('429 Too Many Requests'));
+    const id = chat();
+    const p = await press(id);
+    expect(activeIntake(id)).toBeNull();
+    expect(p.texts().at(-1)).toBe(ADD_REFUSAL.pressFailed);
+  });
+
+  it('a resumed collection is never ended by a failure after it', async () => {
+    stub.stored = storedOf();
+    const id = chat();
+    await press(id);
+    const live = activeIntake(id)!;
+    vi.mocked(pressResume).mockRejectedValueOnce(new Error('429'));
+    await press(id);
+    expect(activeIntake(id)!.noteId).toBe(live.noteId);
+  });
+});
+
 describe('a returned request opens a NEW collection with its rows (⭐ of Question 6)', () => {
+  it('a stored m³ that was the lines’ Σ is left to the lines; the request’s certificate answer is kept (adv-7)', async () => {
+    const items = [
+      { itemId: I1, seq: 1, name: 'A', quantity: null, weightKg: null, volumeM3: 5, measureUnit: null, measureQty: null, tnvedCode: null, law: null, confirmed: false },
+      { itemId: I2, seq: 2, name: 'B', quantity: null, weightKg: null, volumeM3: 7, measureUnit: null, measureQty: null, tnvedCode: null, law: null, confirmed: false },
+    ];
+    stub.stored = storedOf(
+      {
+        ending: 'returned',
+        returnReason: 'x',
+        completedAt: new Date(),
+        facts: { volumeM3: 12, goods: [{ name: 'A', volumeM3: 5, itemId: I1, seq: 1 }, { name: 'B', volumeM3: 7, itemId: I2, seq: 2 }] },
+      },
+      { volumeM3: 12, items },
+    );
+    stub.certificate = false;
+    const id = chat();
+    await press(id);
+    expect(activeIntake(id)!.facts.volumeM3).toBeNull();
+    expect(activeIntake(id)!.hasCertificate).toBe(false);
+    endIntake(id);
+    // A TYPED m³ (20 over lines of 12) is a figure, kept.
+    stub.stored = storedOf({ ending: 'returned', returnReason: 'x', completedAt: new Date() }, { volumeM3: 20, items });
+    const other = chat();
+    await press(other);
+    expect(activeIntake(other)!.facts.volumeM3).toBe(20);
+  });
+
   it('rows, figures and codes carried; no stored ids; the customer named; the VED’s reason said', async () => {
     stub.stored = storedOf({ ending: 'returned', returnReason: 'kod yo‘q', completedAt: new Date() });
     const id = chat();

@@ -1164,14 +1164,17 @@ export interface PickedGoods {
  * jacket» is that row, never a second one priced twice. Pure.
  */
 export function sameGoodsLine(kept: GoodsList[number], read: GoodsList[number]): boolean {
-  const keptNames = goodsNameKeys(kept.name);
-  const readNames = goodsNameKeys(read.name);
-  if (!keptNames.whole || !readNames.whole) return false;
-  return sameLine(kept, keptNames, read, readNames);
+  return sameLine(kept, goodsNameKeys(kept.name), read, goodsNameKeys(read.name));
 }
 
-/** `sameGoodsLine` over names already keyed — `pickGoods` keys its invoice once. */
+/**
+ * `sameGoodsLine` over names already keyed — `pickGoods` keys its invoice
+ * once. ONE rule for both (§9.1): a name of nothing but spaces and signs keys
+ * to nothing, and nothing is no name to be «the same» by — two such lines are
+ * not one line.
+ */
 function sameLine(kept: GoodsList[number], keptNames: NameKeys, read: GoodsList[number], readNames: NameKeys): boolean {
+  if (!keptNames.whole || !readNames.whole) return false;
   return keptNames.whole === readNames.whole || (namesMeet(readNames, keptNames) && figuresAgree(read, kept));
 }
 
@@ -1563,18 +1566,28 @@ function addReading(
   },
   deps: AddReadingDeps,
 ): IntakeState & { answered: import('../../wms/calc/intake-ai').AnsweredUsage[] } {
-  const { kept, picked, manual, ai, outcome, notes, text } = r;
+  const { kept, picked, manual, ai, outcome, text } = r;
+  const notes = [...r.notes];
   const fresh: GoodsList = [];
   const conflicts: IntakeState['conflicts'] = [];
+  const restated: { name: string; figures: { read: number; unit: string }[] }[] = [];
   for (const read of picked.goods) {
     const match = kept.find((k) => sameGoodsLine(k, read));
     if (!match) {
       fresh.push(read);
       continue;
     }
-    // Only a STORED row can disagree with a re-read (a seeded collection's
-    // rows are plain lines, `pickGoods`' to judge).
-    if (!state.amend || !match.itemId) continue;
+    // Only a STORED row can be ASKED about (a conflict needs its item id). A
+    // seeded collection's row is a plain line, kept as `pickGoods` keeps an
+    // invoice's — and, like `pickGoods`' left-out lines, a re-read that states
+    // another figure is NAMED, never dropped in silence: a corrected «Sumka —
+    // 500 dona» for a request the VED returned for its count must not land
+    // as the very 300 it was returned for, unsaid.
+    if (!state.amend || !match.itemId) {
+      const differs = deps.conflictOf(match, read);
+      if (differs.length > 0) restated.push({ name: match.name, figures: differs.map((c) => ({ read: c.read, unit: c.unit })) });
+      continue;
+    }
     for (const c of deps.conflictOf(match, read)) {
       if (conflicts.some((x) => x.itemId === match.itemId && x.field === c.field)) continue;
       const before = state.conflicts.find((x) => x.itemId === match.itemId && x.field === c.field);
@@ -1642,6 +1655,8 @@ function addReading(
     reading: { weightKg: said.weightKg ?? null, volumeM3: manual.volumeM3 ?? ai?.facts.volumeM3 ?? null },
   });
   const facts = factsWithAnswer(state.totalsAnswer, doubts, reading);
+  const restatedNote = seedRestatedNote(restated);
+  if (restatedNote) notes.unshift(restatedNote);
   return {
     ...state,
     facts,
@@ -1655,6 +1670,26 @@ function addReading(
     stage: 'review',
     answered: outcome.answered ?? [],
   };
+}
+
+/** «40 juft», «12 m³» — a re-read figure in its own unit, for a sentence. */
+const RESTATED_UNIT: Record<string, string> = { dona: 'dona', kg: 'kg', m3: 'm³', m2: 'm²', juft: 'juft', litr: 'litr', sm3: 'sm³' };
+
+/**
+ * The seller's word for the lines a SEEDED collection (a returned request's
+ * re-send) read again with another figure than its row: kept as the row, and
+ * NAMED with the figure read, for him to answer the row if it is the right
+ * one. Null = none. Pure.
+ */
+export function seedRestatedNote(lines: readonly { name: string; figures: readonly { read: number; unit: string }[] }[]): string | null {
+  if (lines.length === 0) return null;
+  const shown = lines.slice(0, 3).map((l) => {
+    const name = l.name.length > 30 ? `${l.name.slice(0, 29)}…` : l.name;
+    const figures = l.figures.map((f) => `${Number(f.read.toFixed(3))} ${RESTATED_UNIT[f.unit] ?? f.unit}`).join(', ');
+    return `«${name}» (faylda ${figures})`;
+  });
+  const more = lines.length > 3 ? ` va yana ${lines.length - 3} ta` : '';
+  return `⚠️ ${lines.length} ta qator so‘rovdagi bilan bir xil, lekin boshqa son bilan o‘qildi — so‘rovdagi qoldi: ${shown.join(', ')}${more}. Fayldagi to‘g‘ri bo‘lsa, shu qatorga javob yozing.`;
 }
 
 /** What the add reading needs of wms — handed in, platform never imports wms statically. */

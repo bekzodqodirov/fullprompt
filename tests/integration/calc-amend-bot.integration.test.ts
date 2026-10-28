@@ -23,6 +23,14 @@ vi.mock('@/modules/platform/telegram/calc-dialog', async (original) => ({
   routeCollectorText: vi.fn(async () => {}),
   deliverNextStep: vi.fn(async () => {}),
 }));
+vi.mock('@/modules/platform/telegram/reply-door', async (original) => {
+  const real = await original<typeof import('@/modules/platform/telegram/reply-door')>();
+  return { ...real, replyVerdictFor: vi.fn(real.replyVerdictFor) };
+});
+vi.mock('@/modules/wms/calc/service', async (original) => {
+  const real = await original<typeof import('@/modules/wms/calc/service')>();
+  return { ...real, storedRequestFacts: vi.fn(real.storedRequestFacts) };
+});
 vi.mock('@/modules/platform/telegram/staff-bot', async (original) => ({
   ...(await original<typeof import('@/modules/platform/telegram/staff-bot')>()),
   // The staff tail's first step: never reached by a reply the door owns.
@@ -51,6 +59,8 @@ import { registerStaffBot } from '@/modules/platform/telegram/staff-handlers';
 import { BACKLOG_SENTENCE } from '@/modules/platform/telegram/backlog';
 import { markBoot } from '@/modules/platform/telegram/lifecycle';
 import { openCalcRequest, storedRequestFacts } from '@/modules/wms/calc/service';
+import { replyVerdictFor } from '@/modules/platform/telegram/reply-door';
+import { ADD_REFUSAL } from '@/modules/platform/telegram/calc-amend';
 
 const STAMP = String(Date.now()).slice(-6);
 const BOT_ID = 4_400_000_001;
@@ -106,6 +116,8 @@ afterEach(() => {
   sent.length = 0;
   vi.mocked(routeCollectorText).mockClear();
   vi.mocked(lookupFromBot).mockClear();
+  vi.mocked(replyVerdictFor).mockClear();
+  vi.mocked(storedRequestFacts).mockClear();
 });
 
 afterAll(async () => {
@@ -259,6 +271,33 @@ describe('a reply to ANOTHER request’s answer while a collection is live (regr
     expect(activeIntake(chat)!.material).toEqual(before.material);
   });
 
+  it('fails CLOSED: a reply that could not be checked is written nowhere, in words (adv-3)', async () => {
+    const a = await answered();
+    const b = await answered();
+    const storedA = (await storedRequestFacts(a.requestId))!;
+    startIntake(chat, 'rastamojka', { ai: true, staffId: sellerId, amend: storedA.base });
+    const before = activeIntake(chat)!;
+    vi.mocked(replyVerdictFor).mockRejectedValueOnce(new Error('connection reset'));
+    const { ctx, replies } = ctxOf({ text: '1: 50 dona', ...replyTo(b.answerId) });
+    await onText()(ctx, async () => {});
+    expect(replies).toEqual([ADD_REFUSAL.replyUnchecked]);
+    expect(vi.mocked(routeCollectorText)).not.toHaveBeenCalled();
+    expect(activeIntake(chat)!.material).toEqual(before.material);
+  });
+
+  it('fails CLOSED: known to be B’s, B’s card unreadable → the two-card words with «boshqa», nothing written (adv-3)', async () => {
+    const a = await answered();
+    const b = await answered();
+    const storedA = (await storedRequestFacts(a.requestId))!;
+    startIntake(chat, 'rastamojka', { ai: true, staffId: sellerId, amend: storedA.base });
+    vi.mocked(storedRequestFacts).mockRejectedValueOnce(new Error('statement timeout'));
+    const { ctx, replies } = ctxOf({ text: '1: 50 dona', ...replyTo(b.answerId) });
+    await onText()(ctx, async () => {});
+    expect(replies).toHaveLength(1);
+    expect(replies[0]).toContain('bu javob boshqa so‘roviga tegishli, hech narsa yozilmadi');
+    expect(vi.mocked(routeCollectorText)).not.toHaveBeenCalled();
+  });
+
   it('B’s own add collection takes a reply to B’s answer as a table answer', async () => {
     const b = await answered();
     const storedB = (await storedRequestFacts(b.requestId))!;
@@ -267,6 +306,23 @@ describe('a reply to ANOTHER request’s answer while a collection is live (regr
     await onText()(ctx, async () => {});
     expect(replies).toEqual([]);
     expect(vi.mocked(routeCollectorText)).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('a reply to the answer of a request since RETURNED (adv-10)', () => {
+  it('opens the NEW seeded collection and applies nothing — its rows are numbered afresh', async () => {
+    const { requestId, answerId } = await answered();
+    await db
+      .update(calcRequests)
+      .set({ completedAt: new Date(), completedVia: 'returned', returnReason: 'kod yo‘q' })
+      .where(eq(calcRequests.id, requestId));
+    const { ctx } = ctxOf({ text: '2: 40 juft', ...replyTo(answerId) });
+    await onText()(ctx, async () => {});
+    const live = activeIntake(chat)!;
+    expect(live.amend).toBeNull();
+    expect(live.seed).not.toBeNull();
+    expect(vi.mocked(routeCollectorText)).not.toHaveBeenCalled();
+    expect(sent).toContain(ADD_REFUSAL.seededReply);
   });
 });
 

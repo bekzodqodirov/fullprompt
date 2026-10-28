@@ -23,6 +23,10 @@ vi.mock('@/modules/wms/calc/prefill-queue', async (original) => ({
   ticketStanding: vi.fn(async () => 'none' as const),
   queueCalcPrefill: vi.fn(async () => true),
 }));
+vi.mock('@/modules/wms/crm/internal-chat', async (original) => {
+  const real = await original<typeof import('@/modules/wms/crm/internal-chat')>();
+  return { ...real, announceNote: vi.fn(real.announceNote) };
+});
 
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
@@ -55,6 +59,7 @@ import type { AmendSubmission } from '@/modules/wms/calc/amend-types';
 import { queueCalcPrefill, ticketStanding } from '@/modules/wms/calc/prefill-queue';
 import { openCalcRequest } from '@/modules/wms/calc/service';
 import { saveTable } from '@/modules/wms/calc/workspace';
+import { announceNote } from '@/modules/wms/crm/internal-chat';
 
 const SUFFIX = String(Date.now()).slice(-6);
 const CHAT = BigInt(`-97${SUFFIX}`);
@@ -106,6 +111,7 @@ afterEach(async () => {
   vi.mocked(ticketStanding).mockReset().mockResolvedValue('none');
   vi.mocked(queueCalcPrefill).mockClear();
   vi.mocked(enqueue).mockClear();
+  vi.mocked(announceNote).mockClear();
   sent.length = 0;
 });
 
@@ -558,6 +564,55 @@ describe('(n) a stored addition, written when the pass ends', () => {
     expect(sent.some((t) => t.startsWith('📨 VED bu so‘rov ustida ishlayapti — Kutib turgan qo‘shimchangiz VED ga yuborildi'))).toBe(true);
   });
 
+  it('a stored addition `saveTable` refuses when its turn comes is the VED’s, named — never `waiting` for ever (adv-8)', async () => {
+    const r = await land([{ name: `Sumka ${SUFFIX}`, quantity: 10 }]);
+    // 1000 lines more than a request may carry: stored while the pass ran,
+    // refused by the save when the pass ended.
+    vi.mocked(ticketStanding).mockResolvedValue('live');
+    const many = Array.from({ length: 1000 }, (_, i) => ({ name: `Qator ${SUFFIX} ${i}`, quantity: 1 }));
+    expect((await amend(r.requestId, sub({ newLines: many }))).kind).toBe('waiting');
+    vi.mocked(ticketStanding).mockResolvedValue('none');
+    vi.mocked(enqueue).mockClear();
+    expect(await requeueWaitingAmendments(r.requestId)).toBe(1);
+    const job = vi.mocked(enqueue).mock.calls[0]![1] as AmendSaveJob;
+    await runAmendSave(job, 0);
+    const [row] = await amendmentsOf(r.requestId);
+    expect(row!.outcome).toBe('to_ved');
+    expect((row!.change as { told?: { reason: string; code?: string } }).told).toMatchObject({ reason: 'refused', code: 'too_many_items' });
+    expect(row!.outcomeSentAt).not.toBeNull();
+    expect(sent.filter((t) => t.startsWith('📨 Kutib turgan qo‘shimchangizni so‘rovga avtomatik yozib bo‘lmadi — tovarlar juda ko‘p'))).toHaveLength(1);
+    expect((await threadOf(r.requestId)).some((t) => t.note.startsWith('➕ Kutib turgan qo‘shimchani so‘rovga avtomatik yozib bo‘lmadi'))).toBe(true);
+    // Nothing left waiting for the next settle to hand back.
+    vi.mocked(enqueue).mockClear();
+    expect(await requeueWaitingAmendments(r.requestId)).toBe(0);
+  });
+
+  it('a waiting addition older than a day is not handed back again — named in the log (adv-8)', async () => {
+    const r = await land([{ name: `Sumka ${SUFFIX}`, quantity: 10 }]);
+    vi.mocked(ticketStanding).mockResolvedValue('live');
+    expect((await amend(r.requestId, sub({ rowAnswers: [{ itemId: r.items[0]!.id, patch: { quantity: 50 } }] }))).kind).toBe('waiting');
+    vi.mocked(ticketStanding).mockResolvedValue('none');
+    await db
+      .update(calcAmendments)
+      .set({ createdAt: sql`now() - interval '25 hours'` })
+      .where(eq(calcAmendments.requestId, r.requestId));
+    vi.mocked(enqueue).mockClear();
+    expect(await requeueWaitingAmendments(r.requestId)).toBe(0);
+    expect(vi.mocked(enqueue)).not.toHaveBeenCalled();
+  });
+
+  it('the write of a waited addition owes its OWN ping: a failed one is left for the redo (adv-9)', async () => {
+    const r = await land([{ name: `Sumka ${SUFFIX}`, quantity: 10 }]);
+    const job = await waitingOn(r);
+    const [waitingRow] = await amendmentsOf(r.requestId);
+    expect(waitingRow!.announcedAt).not.toBeNull();
+    vi.mocked(announceNote).mockRejectedValueOnce(new Error('ping lost'));
+    await runAmendSave(job, 0);
+    const [row] = await amendmentsOf(r.requestId);
+    expect(row!.outcome).toBe('applied');
+    expect(row!.announcedAt).toBeNull();
+  });
+
   it('a pass still running keeps it stored, unsaid', async () => {
     const r = await land([{ name: `Sumka ${SUFFIX}`, quantity: 10 }]);
     const job = await waitingOn(r);
@@ -565,6 +620,30 @@ describe('(n) a stored addition, written when the pass ends', () => {
     await runAmendSave(job, 0);
     expect(await amendmentsOf(r.requestId)).toMatchObject([{ outcome: 'waiting' }]);
     expect(sent).toEqual([]);
+  });
+});
+
+describe('(t) a request deleted between the read and the lock (spec-10)', () => {
+  it('is the `not_found` outcome — the press’s own words — never a refusal or three retries', async () => {
+    const r = await land([{ name: `Sumka ${SUFFIX}`, quantity: 10 }]);
+    const [landed] = await db.select({ taskId: calcRequests.taskId }).from(calcRequests).where(eq(calcRequests.id, r.requestId));
+    const taskId = landed!.taskId;
+    const { out, waited } = await whileHeld(
+      r.requestId,
+      async (tx) => {
+        await tx.execute(sql`DELETE FROM crm_activities WHERE calc_request_id = ${r.requestId}::uuid`);
+        await tx.execute(sql`DELETE FROM calc_request_items WHERE request_id = ${r.requestId}::uuid`);
+        await tx.execute(sql`DELETE FROM calc_groups WHERE request_id = ${r.requestId}::uuid`);
+        await tx.execute(sql`DELETE FROM calc_requests WHERE id = ${r.requestId}::uuid`);
+      },
+      () => amend(r.requestId, sub({ rowAnswers: [{ itemId: r.items[0]!.id, patch: { quantity: 50 } }] })),
+    );
+    expect(waited).toBe(true);
+    expect(out).toEqual({ kind: 'not_found' });
+    if (taskId) {
+      await db.delete(events).where(eq(events.entityId, taskId));
+      await db.delete(tasks).where(eq(tasks.id, taskId));
+    }
   });
 });
 

@@ -115,6 +115,12 @@ function unitOfField(field: AmendField, measureUnit: MeasureUnit | null | undefi
 
 const positive = (v: number | null | undefined): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0;
 
+/** Stored numbers compared at the column's own scale. */
+const sameFigure = (a: number | null | undefined, b: number | null | undefined, places: number) =>
+  (a ?? null) === null || (b ?? null) === null
+    ? (a ?? null) === (b ?? null)
+    : Number(a!.toFixed(places)) === Number(b!.toFixed(places));
+
 /**
  * A stored row the new material restates (law-money-5, product-fit-17): per
  * field the READ line states, a conflict when the stored figure DIFFERS — or
@@ -122,33 +128,45 @@ const positive = (v: number | null | undefined): v is number => typeof v === 'nu
  * and a packing list stating 120 kg for a row with no weight vanished). The
  * same figures change nothing. Never written on its own: the seller is asked
  * «qo‘shilsin / o‘rniga / VED hal qilsin», and unanswered it is the VED's.
- * A measure pair counts only in the row's own pair unit — a read «40 juft» is
- * no statement about a row counted in m². Pure.
+ *
+ * The read line is put through `doorRow` FIRST (law-money-4), because its
+ * figures are the seller's as read — `unit` is his own word, routed only at
+ * the door — while the stored row's are columns: compared raw, «CTN 50»
+ * asked «faylda 50 dona» of a 300-piece row and its «o‘rniga» wrote 50
+ * pieces, and a re-read «120 m2» was a piece count on a pair row. «Differs»
+ * is at the column's own scale (3 places, the pair's 4) — a tolerance hid
+ * 49 kg on a 10-tonne row. A pair counts only in the row's own pair unit: a
+ * read «40 juft» is no statement about a row counted in m². Pure.
  */
 export function conflictOf(
   kept: Pick<CalcGoodsFact, 'quantity' | 'weightKg' | 'volumeM3' | 'measureUnit' | 'measureQty'>,
-  read: Pick<CalcGoodsFact, 'quantity' | 'weightKg' | 'volumeM3' | 'measureUnit' | 'measureQty'>,
+  read: Pick<CalcGoodsFact, 'quantity' | 'weightKg' | 'volumeM3' | 'measureUnit' | 'measureQty'> & {
+    name?: string;
+    unit?: string | null;
+  },
 ): { field: AmendField; unit: string; stored: number | null; read: number }[] {
   const out: { field: AmendField; unit: string; stored: number | null; read: number }[] = [];
-  const close = (field: AmendField, a: number, b: number) => {
-    if (field === 'quantity' || field === 'measureQty') return a === b;
-    // A weight or a volume within rounding is the same figure (a PDF's «1 234,5 kg» read as 1234).
-    const unit = field === 'weightKg' ? 1 : 0.01;
-    const gap = Math.abs(a - b);
-    return gap < unit || gap <= 0.005 * Math.max(Math.abs(a), Math.abs(b));
-  };
+  const routed = doorRow({
+    name: read.name ?? '',
+    quantity: read.quantity ?? null,
+    unit: read.unit ?? null,
+    weightKg: read.weightKg ?? null,
+    volumeM3: read.volumeM3 ?? null,
+    measureUnit: read.measureUnit ?? null,
+    measureQty: read.measureQty ?? null,
+  });
   for (const field of ['quantity', 'weightKg', 'volumeM3'] as const) {
-    const said = read[field];
+    const said = routed[field];
     if (!positive(said)) continue;
     const stored = positive(kept[field]) ? kept[field]! : null;
-    if (stored !== null && close(field, stored, said)) continue;
+    if (stored !== null && sameFigure(stored, said, 3)) continue;
     out.push({ field, unit: unitOfField(field, null), stored, read: said });
   }
-  const pair = read.measureQty;
-  if (positive(pair) && read.measureUnit && (!kept.measureUnit || kept.measureUnit === read.measureUnit)) {
+  const pair = routed.measureQty;
+  if (positive(pair) && routed.measureUnit && (!kept.measureUnit || kept.measureUnit === routed.measureUnit)) {
     const stored = positive(kept.measureQty) ? kept.measureQty! : null;
-    if (stored === null || !close('measureQty', stored, pair)) {
-      out.push({ field: 'measureQty', unit: read.measureUnit, stored, read: pair });
+    if (stored === null || !sameFigure(stored, pair, 4)) {
+      out.push({ field: 'measureQty', unit: routed.measureUnit, stored, read: pair });
     }
   }
   return out;
@@ -241,8 +259,16 @@ export interface AmendChange {
   /** The card's label and the job's section, as the diff read them — the words' own. */
   card: string;
   section: CalcSection;
-  /** Set by the `to_ved` write: what the redo's words key on. */
-  told?: { reason: 'started' | 'closed' | 'lead_closed'; ending: CalcEnding | null; returnReason: string | null };
+  /** Set by the `to_ved` write: what the redo's words key on. `refused`: a
+   * stored «waiting» addition `saveTable` refused when its turn came —
+   * nobody is at the press any more to read a refusal, so it is the VED's,
+   * with the refusal's name (`code`). */
+  told?: {
+    reason: 'started' | 'closed' | 'lead_closed' | 'refused';
+    ending: CalcEnding | null;
+    returnReason: string | null;
+    code?: SaveTableRefusal;
+  };
   /** Set by the open branch's save: what it really wrote of the measures, and
    * the seq each new line got — the redo's words and the thread read it. */
   applied?: AppliedWrite;
@@ -260,12 +286,6 @@ const AMEND_LINE_NS = '5d3e8a52-4f0b-4c7e-9a61-2f8d0c4b7e13';
 export type AmendRowAnswer = AmendSubmission['rowAnswers'][number] & {
   sum?: { field: AmendField; unit: string; stored: number; read: number };
 };
-
-/** Stored numbers compared at the column's own scale. */
-const sameFigure = (a: number | null | undefined, b: number | null | undefined, places: number) =>
-  (a ?? null) === null || (b ?? null) === null
-    ? (a ?? null) === (b ?? null)
-    : Number(a!.toFixed(places)) === Number(b!.toFixed(places));
 
 /**
  * One row answer through the door's normalisation (`doorRow`'s routing, the
@@ -340,6 +360,10 @@ export function amendDiff(fresh: AmendBase, sub: AmendSubmission, noteId: string
       else expect[key] = item[key] as never;
     }
     const sum = answer.sum && set[answer.sum.field] !== undefined ? answer.sum : undefined;
+    // «stored + read» was made of the figure the READING saw: a row moved
+    // since then fails this compare-and-set and becomes the VED's — 500
+    // written over a newer figure would be a sum nobody made.
+    if (sum) expect[sum.field] = sum.stored;
     edits.push({ itemId: item.itemId, seq: item.seq, name: item.name, set, expect, ...(sum ? { sum } : {}) });
   }
 
@@ -497,7 +521,8 @@ export function amendChangeText(
         ? { unit: e.set.measureUnit as string, qty: e.set.measureQty }
         : null;
     const pairRefused = pair ? notWrittenPair(e.seq, pair.unit, pair.qty) : null;
-    if (e.sum) {
+    // A summed pair the save dropped is said once, «yozilmadi» — never also «qo‘shildi».
+    if (e.sum && !(e.sum.field === 'measureQty' && pairRefused)) {
       const total = e.sum.stored + e.sum.read;
       parts.push(`${Number(e.sum.stored.toFixed(4))} + ${Number(e.sum.read.toFixed(4))} = ${figureText(total, e.sum.unit)} (ikkinchi fayl qo‘shildi)`);
     }
@@ -587,6 +612,7 @@ export const AMEND_THREAD_HEAD = {
   waiting:
     '➕ Sotuvchi qo‘shimcha yubordi — AI hisobi tugagach so‘rovga avtomatik yoziladi (agar siz boshlamagan bo‘lsangiz):',
   waitedApplied: '➕ Kutib turgan qo‘shimcha so‘rovga yozildi, AI qayta hisoblaydi.',
+  refused: '➕ Kutib turgan qo‘shimchani so‘rovga avtomatik yozib bo‘lmadi — o‘zgartirishni kiriting:',
   noted: '➕ Sotuvchi fayl yoki matn yubordi — so‘rov qatorlari o‘zgarmadi, kartadagi lentada:',
 } as const;
 
@@ -619,9 +645,10 @@ export type AmendOutcome =
   | {
       kind: 'to_ved';
       amendmentId: string;
-      reason: 'started' | 'closed' | 'lead_closed';
+      reason: 'started' | 'closed' | 'lead_closed' | 'refused';
       ending: CalcEnding | null;
       returnReason: string | null;
+      code?: SaveTableRefusal;
       lines: string[];
       change: AmendChange;
     }
@@ -641,23 +668,29 @@ class AmendDuplicate extends Error {
   }
 }
 
-/** Every `saveTable` refusal by name — `AmendOutcome.refused`'s domain. */
-const SAVE_TABLE_REFUSALS: readonly SaveTableRefusal[] = [
-  'ai_running',
-  'already_closed',
-  'bad_basis',
-  'bad_code',
-  'bad_number',
-  'basis_shown_changed',
-  'baza_positive',
-  'changed_under',
-  'conflict',
-  'import_row_missing',
-  'measure_positive',
-  'name_required',
-  'not_found',
-  'too_many_items',
-];
+/**
+ * Every `saveTable` refusal by name — `AmendOutcome.refused`'s domain. A
+ * `Record` over the union, so a refusal `saveTable` learns tomorrow is a
+ * compile error here, never a rethrow retried three times into «Qo‘shib
+ * bo‘lmadi».
+ */
+const SAVE_TABLE_REFUSAL_NAMES: Record<SaveTableRefusal, true> = {
+  ai_running: true,
+  already_closed: true,
+  bad_basis: true,
+  bad_code: true,
+  bad_number: true,
+  basis_shown_changed: true,
+  baza_positive: true,
+  changed_under: true,
+  conflict: true,
+  import_row_missing: true,
+  measure_positive: true,
+  name_required: true,
+  not_found: true,
+  too_many_items: true,
+};
+const SAVE_TABLE_REFUSALS = Object.keys(SAVE_TABLE_REFUSAL_NAMES) as SaveTableRefusal[];
 
 /**
  * The request's card, read through the transaction from the LOCKED row — never
@@ -708,7 +741,9 @@ async function recordAmendmentInTx(
   if (row.waitingId) {
     const moved = await tx
       .update(calcAmendments)
-      .set({ outcome: row.outcome, rev: row.rev, change: row.change, outcomeSentAt: null })
+      // A new outcome writes a new thread message (`threadIdOf`), so its ping
+      // is owed afresh: the waiting message's `announced_at` is not this one's.
+      .set({ outcome: row.outcome, rev: row.rev, change: row.change, outcomeSentAt: null, announcedAt: null })
       .where(and(eq(calcAmendments.id, row.waitingId), eq(calcAmendments.outcome, 'waiting')))
       .returning({ id: calcAmendments.id });
     return moved[0]?.id ?? null;
@@ -848,8 +883,9 @@ async function announceWritten(written: Written, requestId: string, staffId: str
 }
 
 /** The thread head for a write that does not go into the rows. */
-function headFor(reason: 'started' | 'closed' | 'lead_closed' | 'noted' | 'waiting'): string {
+function headFor(reason: 'started' | 'closed' | 'lead_closed' | 'refused' | 'noted' | 'waiting'): string {
   if (reason === 'started') return AMEND_THREAD_HEAD.started;
+  if (reason === 'refused') return AMEND_THREAD_HEAD.refused;
   if (reason === 'noted') return AMEND_THREAD_HEAD.noted;
   if (reason === 'waiting') return AMEND_THREAD_HEAD.waiting;
   return AMEND_THREAD_HEAD.closed;
@@ -899,9 +935,9 @@ export async function amendRequest(input: {
   /** One short transaction for every branch that writes nothing into the rows. */
   const recordOnly = async (
     outcome: 'waiting' | 'to_ved' | 'noted',
-    why: 'started' | 'closed' | 'lead_closed' | 'noted' | 'waiting',
+    why: 'started' | 'closed' | 'lead_closed' | 'refused' | 'noted' | 'waiting',
     told: AmendChange['told'],
-  ): Promise<{ written: Written } | 'duplicate' | 'lead_closed'> => {
+  ): Promise<{ written: Written } | 'duplicate' | 'lead_closed' | 'not_found'> => {
     const stamped: AmendChange = told ? { ...change, told } : change;
     const lines = amendChangeText(stamped, fileCount, undefined, { maxLines: Number.POSITIVE_INFINITY });
     const body = amendThreadBody(headFor(why), lines);
@@ -939,6 +975,9 @@ export async function amendRequest(input: {
     } catch (err) {
       if (err instanceof AmendDuplicate) return 'duplicate';
       if (err instanceof CalcError && err.code === 'lead_closed') return 'lead_closed';
+      // Deleted between the read and the lock: the press's own words, never
+      // three retries into «qayta bosing» (§2.4: `not_found` is an outcome).
+      if (err instanceof CalcError && err.code === 'not_found') return 'not_found';
       throw err;
     }
   };
@@ -950,12 +989,14 @@ export async function amendRequest(input: {
   };
 
   const toVed = async (
-    reason: 'started' | 'closed' | 'lead_closed',
+    reason: 'started' | 'closed' | 'lead_closed' | 'refused',
     standing: { ending: CalcEnding | null; returnReason: string | null },
+    code?: SaveTableRefusal,
   ): Promise<AmendOutcome> => {
-    const told = { reason, ending: standing.ending, returnReason: standing.returnReason };
+    const told = { reason, ending: standing.ending, returnReason: standing.returnReason, ...(code ? { code } : {}) };
     const out = await recordOnly('to_ved', reason, told);
     if (out === 'duplicate') return duplicate();
+    if (out === 'not_found') return { kind: 'not_found' };
     if (out === 'lead_closed') return toVed('lead_closed', standing);
     await announceWritten(out.written, input.requestId, input.staffId);
     const stamped = { ...change, told };
@@ -967,6 +1008,7 @@ export async function amendRequest(input: {
     if (waited) return { kind: 'waiting', amendmentId, lines: amendChangeText(change, fileCount), change, stillWaiting: true };
     const out = await recordOnly('waiting', 'waiting', undefined);
     if (out === 'duplicate') return duplicate();
+    if (out === 'not_found') return { kind: 'not_found' };
     if (out === 'lead_closed') return toVed('lead_closed', await amendStanding(input.requestId));
     await announceWritten(out.written, input.requestId, input.staffId);
     return { kind: 'waiting', amendmentId: out.written.amendmentId, lines: amendChangeText(change, fileCount), change, stillWaiting: false };
@@ -980,6 +1022,7 @@ export async function amendRequest(input: {
   if (!changeWrites(change)) {
     const out = await recordOnly('noted', 'noted', undefined);
     if (out === 'duplicate') return duplicate();
+    if (out === 'not_found') return { kind: 'not_found' };
     if (out === 'lead_closed') return toVed('lead_closed', standing);
     await announceWritten(out.written, input.requestId, input.staffId);
     return { kind: 'noted', amendmentId: out.written.amendmentId, lines: amendChangeText(change, fileCount), change };
@@ -1049,7 +1092,12 @@ export async function amendRequest(input: {
         const again = await amendStanding(input.requestId);
         return again.standing === 'busy' ? waitFor() : toVed('started', again);
       }
+      if (err.code === 'not_found') return { kind: 'not_found' };
       if ((SAVE_TABLE_REFUSALS as readonly string[]).includes(err.code)) {
+        // A stored «waiting» addition has nobody at the press to read a
+        // refusal, and the next settle would requeue it for ever: it is the
+        // VED's, named, and the seller is told so (by the row's chat).
+        if (waited) return toVed('refused', standing, err.code as SaveTableRefusal);
         return { kind: 'refused', code: err.code as SaveTableRefusal };
       }
     }
@@ -1146,21 +1194,30 @@ export async function redoAmendment(row: CalcAmendmentRow, staffId: string): Pro
   return (await amendmentById(row.id)) ?? row;
 }
 
+/** How long a stored «waiting» addition is handed back before it is only logged. */
+export const WAITING_REQUEUE_HOURS = 24;
+
 /**
  * Every stored «waiting» addition (of one request, or all) whose machine pass
  * is gone, handed back to the save job. No `singletonKey`: the once-fence of
  * an addition is its note id, and a duplicate job answers `duplicate`. The
  * settle (P5) calls it per request; the sweep (P1) for all — the net under a
  * lost enqueue. Answers how many it handed back.
+ *
+ * Bounded by age (`WAITING_REQUEUE_HOURS`): a refusal now ends a waited run
+ * as the VED's, but a run that THROWS every time would otherwise be handed
+ * back on every sweep tick for ever — past a day such a row is named in the
+ * log instead, where a person can see it.
  */
 export async function requeueWaitingAmendments(requestId?: string): Promise<number> {
-  const rows = await db
+  const all = await db
     .select({
       id: calcAmendments.id,
       requestId: calcAmendments.requestId,
       noteId: calcAmendments.noteId,
       staffId: calcAmendments.staffId,
       chatId: calcAmendments.chatId,
+      fresh: sql<boolean>`${calcAmendments.createdAt} > now() - make_interval(hours => ${WAITING_REQUEUE_HOURS}::int)`,
     })
     .from(calcAmendments)
     .where(
@@ -1170,6 +1227,14 @@ export async function requeueWaitingAmendments(requestId?: string): Promise<numb
         requestId ? eq(calcAmendments.requestId, requestId) : undefined,
       ),
     );
+  const stale = all.filter((r) => !r.fresh);
+  if (stale.length > 0) {
+    logger.warn(
+      { amendmentIds: stale.map((r) => r.id) },
+      '[calc-amend] waiting additions older than a day — not requeued; the VED must enter them',
+    );
+  }
+  const rows = all.filter((r) => r.fresh);
   if (rows.length === 0) return 0;
   const { enqueue } = await import('../../platform/jobs/boss');
   const free = new Map<string, boolean>();
@@ -1204,6 +1269,26 @@ export async function requeueWaitingAmendments(requestId?: string): Promise<numb
 export async function staffNameOf(staffId: string): Promise<string> {
   const [row] = await db.select({ name: users.fullName }).from(users).where(eq(users.id, staffId)).limit(1);
   return row?.name ?? 'Xodim';
+}
+
+/** The amendment a note recorded, if any — what a release asks before it says «Qo‘shib bo‘lmadi». */
+export async function amendmentByNote(noteId: string): Promise<CalcAmendmentRow | null> {
+  const [row] = await db.select().from(calcAmendments).where(eq(calcAmendments.noteId, noteId)).limit(1);
+  return row ?? null;
+}
+
+/**
+ * The certificate answer a returned request carried — a NEW collection seeded
+ * from it keeps it (⭐ of Question 6), never the collector's optimistic default
+ * that would leave the additional duty out of the re-send. Null = not found.
+ */
+export async function requestHasCertificate(requestId: string): Promise<boolean | null> {
+  const [row] = await db
+    .select({ has: calcRequests.hasCertificate })
+    .from(calcRequests)
+    .where(eq(calcRequests.id, requestId))
+    .limit(1);
+  return row ? row.has : null;
 }
 
 /** Rows by id — the redo's read of one amendment. */

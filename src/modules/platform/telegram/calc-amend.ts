@@ -10,8 +10,24 @@ import { isServerBehind } from '../db/errors';
 import { enqueue, jobState } from '../jobs/boss';
 import { logger } from '../logger';
 import type { InlineKeyboard, IntakeState } from './calc-intake';
-import { activeIntake, endIntake, flushIntakeWrites, loadIntake, noteOwnMessage, startIntake, updateIntake } from './calc-store';
-import { deliverNextStep, routeCollectorText, type CollectorReply, type EditApi, type PressCtx } from './calc-dialog';
+import {
+  activeIntake,
+  endIntake,
+  flushIntakeWrites,
+  holdingIntake,
+  loadIntake,
+  noteOwnMessage,
+  startIntake,
+  updateIntake,
+} from './calc-store';
+import {
+  deliverNextStep,
+  routeCollectorText,
+  showIntakePrompt,
+  type CollectorReply,
+  type EditApi,
+  type PressCtx,
+} from './calc-dialog';
 import { fileOf, readIntakeFile, saveIntakeFile, type BotFile } from './calc-files';
 import { pressResume } from './calc-intake-sweep';
 import { CLIENT_QUESTION } from './calc-keyboards';
@@ -50,6 +66,15 @@ export const ADD_REFUSAL = {
   closedUnpriced: 'Bu so‘rov narxsiz yopilgan. Yangi hisob kerak bo‘lsa «🧮 Hisoblatish» dan yuboring.',
   leadClosed: 'Lid yopilgan — unga qo‘shimcha yozilmaydi; yutilgan bo‘lsa, uning bitimidan yuboring.',
   sameLive: 'Shu so‘rovga qo‘shimcha yig‘ilmoqda — davom eting.',
+  /** A collection frozen while its save runs is the job's: no resume, no wipe (the job still writes). */
+  saving: '⏳ Qo‘shimcha yozilmoqda — natija kelgach yozing.',
+  /** A transient failure is not a deleted request — «topilmadi» sent him looking for one. */
+  pressFailed: 'Hozir ochib bo‘lmadi — birozdan keyin qayta bosing.',
+  messageFailed: 'Hozir ochib bo‘lmadi — birozdan keyin qayta yuboring.',
+  /** A reply to another job's answer that could not be checked: written nowhere (regression-5 fails closed). */
+  replyUnchecked: 'Hozir tekshirib bo‘lmadi — bu javob hech qayerga yozilmadi, qayta yuboring.',
+  /** A reply to a RETURNED request's answer opened a NEW collection, numbered afresh: the answer is not applied. */
+  seededReply: 'Bu so‘rov qaytarilgan — yangi so‘rov ochildi, javobingiz yozilmadi. Jadvalga qarab qayta yozing.',
 } as const;
 
 /** The line above the add table, by where the request stood when the door opened (§2.4). */
@@ -164,6 +189,10 @@ export function amendSubmissionOf(state: IntakeState): AmendSubmission {
       ...(c.choice === 'add' && c.stored !== null ? { sum: { field: c.field, unit: c.unit, stored: c.stored, read: c.read } } : {}),
     });
   }
+  // A typed answer to a conflicted row's FIELD resolves that conflict: the
+  // answer wins, and with it go the conflict's «stored + read» arithmetic and
+  // its «VED hal qiladi» line — both would name a figure nobody wrote.
+  const typed = new Set<string>();
   for (const entry of state.lineAnswers) {
     if (!entry.itemId) continue;
     const patch: AmendRowAnswer['patch'] = {};
@@ -172,9 +201,15 @@ export function amendSubmissionOf(state: IntakeState): AmendSubmission {
       if (v !== undefined && v !== null) (patch as Record<string, unknown>)[key] = v;
     }
     if (Object.keys(patch).length === 0) continue;
+    for (const key of Object.keys(patch)) typed.add(`${entry.itemId}:${key}`);
     const prev = answers.get(entry.itemId);
-    // A typed answer to a conflicted row resolves it: the answer wins.
-    answers.set(entry.itemId, { ...(prev ?? {}), itemId: entry.itemId, patch: { ...(prev?.patch ?? {}), ...patch } });
+    const typedOver = prev?.sum ? (patch as Record<string, unknown>)[prev.sum.field] : undefined;
+    const sum = prev?.sum && (typedOver === undefined || typedOver === prev.sum.stored + prev.sum.read) ? prev.sum : undefined;
+    answers.set(entry.itemId, {
+      itemId: entry.itemId,
+      patch: { ...(prev?.patch ?? {}), ...patch },
+      ...(sum ? { sum } : {}),
+    });
   }
   const doubted = new Set(state.ambiguousTotals.map((a) => a.field));
   const totals: { weightKg?: number; volumeM3?: number } = {};
@@ -193,7 +228,7 @@ export function amendSubmissionOf(state: IntakeState): AmendSubmission {
     totals: Object.keys(totals).length > 0 ? totals : null,
     route: Object.keys(route).length > 0 ? route : null,
     conflicts: state.conflicts
-      .filter((c) => c.choice === null || c.choice === 'ved')
+      .filter((c) => (c.choice === null || c.choice === 'ved') && !typed.has(`${c.itemId}:${c.field}`))
       .map((c) => ({
         itemId: c.itemId,
         seq: c.seq,
@@ -328,9 +363,16 @@ async function openDoor(
     return null;
   }
   const live = activeIntake(chatId);
+  // A collection frozen while its save job runs belongs to the job: a resume
+  // would offer its «✅» again, and a restart's «Yuborilgan hamma narsa
+  // o‘chadi» would be false — the job still writes it.
+  if (live?.saving) {
+    await refuse(sp, ADD_REFUSAL.saving);
+    return null;
+  }
   if (live && !returned && live.amend?.requestId === requestId) {
     // This request's own add collection: a resume (P1 un-parks it there).
-    await sp.answer();
+    await sp.answer(ADD_REFUSAL.sameLive);
     await sp.reply(ADD_REFUSAL.sameLive);
     await pressResume(sp, chatId);
     return { state: activeIntake(chatId) ?? live, opened: false };
@@ -338,11 +380,9 @@ async function openDoor(
   if (live) {
     if (!opts.restart) {
       const card = stored.base.cardLabel;
-      await sp.answer();
-      const sent = await sp.reply(
-        `Sizda tugallanmagan yig‘ish bor. Uni o‘chirib, ${card} so‘roviga qo‘shimcha boshlaymizmi? Yuborilgan hamma narsa o‘chadi.`,
-        { reply_markup: restartQuestionKeyboard(requestId) },
-      );
+      const question = `Sizda tugallanmagan yig‘ish bor. Uni o‘chirib, ${card} so‘roviga qo‘shimcha boshlaymizmi? Yuborilgan hamma narsa o‘chadi.`;
+      await sp.answer(question);
+      const sent = await sp.reply(question, { reply_markup: restartQuestionKeyboard(requestId) });
       noteOwnMessage(chatId, sent.message_id);
       return null;
     }
@@ -446,14 +486,22 @@ async function openSeeded(
   sp: Speaker,
   openedBy: number | null,
 ): Promise<{ state: IntakeState; opened: boolean } | null> {
-  const { returnedClientHint } = await import('../../wms/calc/amend');
-  const hint = await returnedClientHint(stored.base);
+  const { returnedClientHint, requestHasCertificate } = await import('../../wms/calc/amend');
+  const { volumeIsLinesSum } = await import('../../wms/calc/line-totals');
+  const [hint, certificate] = await Promise.all([
+    returnedClientHint(stored.base),
+    requestHasCertificate(stored.base.requestId),
+  ]);
   const lines = (stored.facts.goods ?? []).map((g) => {
     const line = { ...g };
     delete line.itemId;
     delete line.seq;
     return line;
   });
+  // A stored m³ that was the lines' Σ is left to the lines (law-money-1, as
+  // the add door does): copied as a figure, a forgotten line added here would
+  // land under the old Σ, labelled typed, and the road priced on it.
+  const sum = volumeIsLinesSum(stored.base.volumeM3, stored.base.items);
   startIntake(chatId, stored.base.section, { ai: true, staffId, amend: null, openedBy });
   const state = updateIntake(chatId, {
     stage: hint ? 'review' : 'client',
@@ -461,12 +509,15 @@ async function openSeeded(
       fromCity: stored.base.fromCity,
       toCity: stored.base.toCity,
       weightKg: stored.base.weightKg,
-      volumeM3: stored.base.volumeM3,
+      volumeM3: sum ? null : stored.base.volumeM3,
       goods: lines,
       lineWeightsStated: true,
     },
     seed: lines,
     clientHintRaw: hint,
+    // The certificate answer the request carried — never the collector's
+    // optimistic default, which would leave the additional duty out.
+    ...(certificate !== null ? { hasCertificate: certificate } : {}),
   });
   if (!state) return null;
   await sp.answer();
@@ -498,8 +549,9 @@ export async function pressAdd(
   restartKey: OnceKey | null,
 ): Promise<void> {
   const sp = pressSpeaker(ctx, chatId);
+  const pressed = ctx.callbackQuery?.message?.message_id ?? null;
+  const before = activeIntake(chatId)?.noteId ?? null;
   try {
-    const pressed = ctx.callbackQuery?.message?.message_id ?? null;
     const out = await openDoor(chatId, requestId, sp, { openedBy: pressed, restart: mode === 'restart', restartKey });
     if (out && mode === 'replied') {
       const original = ctx.callbackQuery?.message?.reply_to_message;
@@ -507,11 +559,40 @@ export async function pressAdd(
     }
   } catch (err) {
     logger.warn({ err, requestId }, '[calc-amend] the add door failed');
-    await sp.answer();
-    await sp.reply(isServerBehind(err) ? AMEND_REFUSAL.server_behind : ADD_REFUSAL.notFound).catch(() => {});
+    abandonOpened(chatId, before, pressed);
+    // A blip is not a deleted request: «topilmadi» is said only for a real
+    // null from the read (inside the door), never for a throw.
+    const words = isServerBehind(err) ? AMEND_REFUSAL.server_behind : ADD_REFUSAL.pressFailed;
+    await sp.answer(words);
+    await sp.reply(words).catch(() => {});
   } finally {
     await sp.answer();
   }
+}
+
+/**
+ * A collection THIS door opened and then failed to show (the table's send
+ * hit a 429, a read threw after `startIntake`): it would hold the chat with
+ * nothing on screen and eat his next unrelated text for half an hour. Ended —
+ * only one this very press or message opened (a resume's own is kept).
+ */
+function abandonOpened(chatId: bigint, before: string | null, openedBy: number | null): void {
+  const now = activeIntake(chatId);
+  if (now && now.noteId !== before && now.openedBy === openedBy) endIntake(chatId);
+}
+
+/**
+ * What was just taken is unread: the table on screen does not show it, and
+ * its «✅ Qo‘shish» would save the stored rows without it — the save guard
+ * lets a 'review' stage through as «already read». So the collection moves to
+ * 'material' and shows the collector's own prompt with «Bo‘ldi», as the file
+ * handler does; a collection still waiting on the customer (a seeded one at
+ * 'client') keeps its question.
+ */
+async function awaitReading(chatId: bigint, sp: Speaker, state: IntakeState): Promise<void> {
+  if (state.stage === 'client' || state.stage === 'section') return;
+  const moved = updateIntake(chatId, { stage: 'material' }) ?? { ...state, stage: 'material' as const };
+  await showIntakePrompt(sp, chatId, moved);
 }
 
 /**
@@ -569,12 +650,17 @@ async function takeReplied(chatId: bigint, sp: Speaker, state: IntakeState, orig
       updateIntake(chatId, { ...read.patch, fileCount: live.fileCount + 1 }) ?? { ...live, ...read.patch, fileCount: live.fileCount + 1 };
     if (read.say) noteOwnMessage(chatId, (await sp.reply(read.say, read.keyboard ? { reply_markup: read.keyboard } : undefined)).message_id);
   }
-  updateIntake(chatId, {
-    material: text ? [...live.material, text] : live.material,
-    repliedTaken: [...live.repliedTaken, original.message_id].slice(-20),
-  });
+  const taken =
+    updateIntake(chatId, {
+      material: text ? [...live.material, text] : live.material,
+      repliedTaken: [...live.repliedTaken, original.message_id].slice(-20),
+    }) ?? live;
   if (group && !album) noteOwnMessage(chatId, (await sp.reply('📎 Albom bo‘lsa, qolgan rasmlarni shu yerga yuboring.')).message_id);
-  if (!text && files === 0) logger.info({ chatId: chatId.toString() }, '[calc-amend] replied message carried nothing to take');
+  if (!text && files === 0) {
+    logger.info({ chatId: chatId.toString() }, '[calc-amend] replied message carried nothing to take');
+    return;
+  }
+  await awaitReading(chatId, sp, taken);
 }
 
 /**
@@ -591,9 +677,18 @@ export async function openAmendFromReply(
   msg: { text: string | null; date: number; messageId: number },
 ): Promise<void> {
   const sp = messageSpeaker(chatId);
+  const before = activeIntake(chatId)?.noteId ?? null;
   try {
     const out = await openDoor(chatId, requestId, sp, { openedBy: msg.messageId, restart: false, restartKey: null });
     if (!out) return;
+    // A RETURNED request opened a NEW collection (⭐ of Question 6): its rows
+    // are numbered afresh, or it waits for the customer — an answer addressed
+    // by the old request's row numbers is not applied to it.
+    if (!out.state.amend) {
+      updateIntake(chatId, { takenUpTo: Math.max(out.state.takenUpTo, msg.messageId) }, { quiet: true });
+      noteOwnMessage(chatId, (await sp.reply(ADD_REFUSAL.seededReply)).message_id);
+      return;
+    }
     const state = updateIntake(chatId, { takenUpTo: Math.max(out.state.takenUpTo, msg.messageId) }, { quiet: true }) ?? out.state;
     const text = msg.text?.trim();
     if (!text) return;
@@ -607,14 +702,16 @@ export async function openAmendFromReply(
     });
   } catch (err) {
     logger.warn({ err, requestId }, '[calc-amend] reply to the AI answer failed');
-    await sp.reply(isServerBehind(err) ? AMEND_REFUSAL.server_behind : ADD_REFUSAL.notFound).catch(() => {});
+    abandonOpened(chatId, before, msg.messageId);
+    await sp.reply(isServerBehind(err) ? AMEND_REFUSAL.server_behind : ADD_REFUSAL.messageFailed).catch(() => {});
   }
 }
 
 /**
  * A photo or document sent as a reply to a ➕-bearing message: the door, then
- * the file filed as the add collection's material (K5's own save and read).
- * The caller decided it is not a voice note and not the backlog.
+ * the file filed as the add collection's material (K5's own save and read),
+ * then the «Bo‘ldi» prompt — the file is unread until the reading runs. The
+ * caller decided it is not a voice note and not the backlog.
  */
 export async function openAmendFromMedia(
   ctx: CollectorReply & { api?: EditApi; message?: Message },
@@ -624,10 +721,12 @@ export async function openAmendFromMedia(
   const sp = messageSpeaker(chatId, ctx);
   const message = ctx.message;
   if (!message) return;
+  const before = activeIntake(chatId)?.noteId ?? null;
   try {
     const out = await openDoor(chatId, requestId, sp, { openedBy: message.message_id, restart: false, restartKey: null });
     if (!out) return;
     let live = updateIntake(chatId, { takenUpTo: Math.max(out.state.takenUpTo, message.message_id) }, { quiet: true }) ?? out.state;
+    let took = false;
     const file = fileOf(message);
     if (file) {
       const saved = await saveIntakeFile({ message }, live.noteId, live.staffId, file).catch((err: unknown) => {
@@ -640,12 +739,21 @@ export async function openAmendFromMedia(
       }
       const read = await readIntakeFile(saved, message.document?.file_name ?? '', message.document?.mime_type ?? null, live);
       live = updateIntake(chatId, { ...read.patch, fileCount: live.fileCount + 1 }) ?? live;
+      took = true;
       if (read.say) await sp.reply(read.say, read.keyboard ? { reply_markup: read.keyboard } : undefined);
     }
     const caption = message.caption?.trim();
-    if (caption) updateIntake(chatId, { material: [...live.material, caption] });
+    if (caption) {
+      live = updateIntake(chatId, { material: [...live.material, caption] }) ?? live;
+      took = true;
+    }
+    if (took) await awaitReading(chatId, sp, live);
   } catch (err) {
+    // The photo must not vanish without a word (refuseMediaReply has answered
+    // the handler already).
     logger.warn({ err, requestId }, '[calc-amend] media reply to the AI answer failed');
+    abandonOpened(chatId, before, message.message_id);
+    await sp.reply(isServerBehind(err) ? AMEND_REFUSAL.server_behind : ADD_REFUSAL.messageFailed).catch(() => {});
   }
 }
 
@@ -653,7 +761,10 @@ export async function openAmendFromMedia(
  * A text replying to ANOTHER request's ➕-bearing message while a collection
  * is live (regression-5, product-fit-5): words naming both, nothing written —
  * the answer is never applied to the wrong job. B's own add collection takes
- * it as a table answer (false here).
+ * it as a table answer (false here). It fails CLOSED: once the reply is known
+ * to be another request's, a failure to name that request still writes
+ * nothing; a reply that could not be checked at all is refused in words —
+ * falling through would put the figure into THIS job's row.
  */
 export async function foreignAddReply(
   ctx: CollectorReply,
@@ -662,14 +773,33 @@ export async function foreignAddReply(
   replyTo: number | null,
 ): Promise<boolean> {
   if (replyTo === null) return false;
+  let verdict: Awaited<ReturnType<typeof import('./reply-door').replyVerdictFor>>;
   try {
     const { replyVerdictFor } = await import('./reply-door');
-    const verdict = await replyVerdictFor(chatId, replyTo, intake.staffId);
-    if (verdict?.kind !== 'calc_add' || verdict.requestId === intake.amend?.requestId) return false;
+    verdict = await replyVerdictFor(chatId, replyTo, intake.staffId);
+  } catch (err) {
+    logger.warn({ err }, '[calc-amend] foreign reply check failed — nothing written');
+    await ctx
+      .reply(ADD_REFUSAL.replyUnchecked)
+      .then((sent) => noteOwnMessage(chatId, sent.message_id))
+      .catch(() => {});
+    return true;
+  }
+  if (verdict?.kind !== 'calc_add' || verdict.requestId === intake.amend?.requestId) return false;
+  let b = 'boshqa';
+  try {
     const { storedRequestFacts } = await import('../../wms/calc/service');
-    const { SECTION_LABEL } = await import('../../wms/calc/intake');
-    const b = (await storedRequestFacts(verdict.requestId))?.base.cardLabel ?? 'boshqa';
-    const a = intake.amend?.cardLabel ?? SECTION_LABEL[intake.section];
+    b = (await storedRequestFacts(verdict.requestId))?.base.cardLabel ?? 'boshqa';
+  } catch (err) {
+    logger.warn({ err }, '[calc-amend] the other request’s card unreadable — named «boshqa»');
+  }
+  let a = intake.amend?.cardLabel ?? null;
+  if (a === null) {
+    a = await import('../../wms/calc/intake')
+      .then((m) => m.SECTION_LABEL[intake.section])
+      .catch(() => 'hozirgi so‘rov');
+  }
+  try {
     const sent = await ctx.reply(
       `Sizda ${a} bo‘yicha yig‘ish ochiq — bu javob ${b} so‘roviga tegishli, hech narsa yozilmadi. ${b} ga qo‘shish uchun:`,
       {
@@ -682,11 +812,10 @@ export async function foreignAddReply(
       },
     );
     noteOwnMessage(chatId, sent.message_id);
-    return true;
   } catch (err) {
-    logger.warn({ err }, '[calc-amend] foreign reply check failed');
-    return false;
+    logger.warn({ err }, '[calc-amend] the two-card words not sent');
   }
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -725,11 +854,14 @@ export function __resetAddOffers(): void {
  */
 export async function addOfferRows(chatId: bigint): Promise<{ text: string; callback_data: string }[][]> {
   try {
+    // A collector HOLDING the chat takes the message first; nothing is offered
+    // beside it — asked before the cache, which a minute ago knew none. A
+    // PARKED collection takes nothing (P1), so it is no reason for silence:
+    // the press asks the «another collection» question instead.
+    if (holdingIntake(chatId) || activeDraft(chatId) || activeCapture(chatId)) return [];
     const key = String(chatId);
     const hit = offerCache.get(key);
     if (hit && hit.at > Date.now() - OFFER_CACHE_MS) return hit.rows;
-    // A live collector takes the message first; nothing is offered beside it.
-    if (activeIntake(chatId) || activeDraft(chatId) || activeCapture(chatId)) return [];
     const staff = await staffForChat(chatId);
     if (!staff) return [];
     const { openRequestsToOffer } = await import('../../wms/calc/amend');
@@ -758,7 +890,7 @@ export async function offerAddForMedia(ctx: CollectorReply & { message: unknown 
   if (!message || message.reply_to_message || message.forward_origin || isBacklog(message.date)) return false;
   const file = fileOf(message);
   if (!file) return false;
-  if (activeIntake(chatId) || activeDraft(chatId) || activeCapture(chatId)) return false;
+  if (holdingIntake(chatId) || activeDraft(chatId) || activeCapture(chatId)) return false;
   const group = message.media_group_id ?? null;
   let album: PlainAlbum | null = null;
   if (group) {
@@ -865,10 +997,12 @@ export async function requeueAmendSave(chatId: bigint, state: IntakeState): Prom
   }
 }
 
-/** The frozen collection let go — only the collection this note is. */
-function releaseSaving(chatId: bigint, noteId: string): void {
+/** The frozen collection let go — only the collection this note is. True = it was let go here. */
+function releaseSaving(chatId: bigint, noteId: string): boolean {
   const live = activeIntake(chatId);
-  if (live && live.noteId === noteId && live.saving) updateIntake(chatId, { saving: null }, { quiet: true });
+  if (!live || live.noteId !== noteId || !live.saving) return false;
+  updateIntake(chatId, { saving: null }, { quiet: true });
+  return true;
 }
 
 /** End the collection the save answered for — never a newer one in the chat. */
@@ -890,10 +1024,46 @@ export async function savingAlive(state: IntakeState): Promise<boolean> {
   }
 }
 
-/** The sweep's release of a dead save: the collection is let go and told. */
+/** The sweep's release of a dead save (P1's `sweepAction`): the record decides, as the job's last attempt does. */
 export async function releaseDeadSave(chatId: bigint, state: IntakeState): Promise<void> {
-  releaseSaving(chatId, state.noteId);
-  await sendWords(chatId, SAVE_WORDS.failed);
+  await settleDeadSave(chatId, state.noteId);
+}
+
+/**
+ * A frozen collection whose save job is dead or out of attempts — the job's
+ * last attempt, and the sweep. The RECORD decides, never the job's failure:
+ * an addition the job committed (its `calc_amendments` row exists) gets its
+ * missing re-pass and ping, is told by its outcome, and its collection ends.
+ * «Qo‘shib bo‘lmadi — qayta bosing» about a written addition would have him
+ * add more and press again, and the note's once-key would then swallow
+ * everything he added since without a word. Words not delivered: the
+ * collection stays frozen and the next sweep asks again. Only with no row is
+ * the collection let go, and the failure words go only when THIS note's
+ * collection was the one let go — never at a newer collection's button.
+ */
+async function settleDeadSave(chatId: bigint, noteId: string, failWords: string = SAVE_WORDS.failed): Promise<void> {
+  const amend = await import('../../wms/calc/amend');
+  let row: CalcAmendmentRow | null;
+  try {
+    row = await amend.amendmentByNote(noteId);
+    if (row?.staffId) row = await amend.redoAmendment(row, row.staffId);
+  } catch (err) {
+    logger.warn({ err, noteId }, '[calc-amend] dead save unreadable — kept frozen for the next sweep');
+    return;
+  }
+  if (!row) {
+    if (releaseSaving(chatId, noteId)) await sendWords(chatId, failWords);
+    return;
+  }
+  if (row.outcomeSentAt === null) {
+    const told = await toldOfRow(row);
+    if (told) {
+      const sent = await sendWords(chatId, await amendWords(told, false));
+      if (!sent.ok && !sent.permanent) return;
+      await amend.stampTold(row.id);
+    }
+  }
+  endIfOurs(chatId, noteId);
 }
 
 /** The add door's save as a pg-boss job. */
@@ -956,6 +1126,14 @@ const OUTCOME_WORDS: { [K in Told['kind']]: (o: Extract<Told, { kind: K }>, wait
       : `${withLines(`✅ So‘rovga qo‘shildi (${o.change.card}):`, o.lines)}${line}`;
   },
   async to_ved(o, waited) {
+    if (o.reason === 'refused') {
+      // Only a stored «waiting» addition reaches this: nobody was at the press.
+      const why = o.code ? `${AMEND_REFUSAL[o.code]} ` : '';
+      return withLines(
+        `📨 Kutib turgan qo‘shimchangizni so‘rovga avtomatik yozib bo‘lmadi — ${why}Qo‘shimcha VED ga yuborildi, o‘zgartirishni VED o‘zi kiritadi:`,
+        o.lines,
+      );
+    }
     if (o.reason === 'started') {
       return withLines(
         waitedWord('📨 VED bu so‘rov ustida ishlayapti — qo‘shimchangiz VED ga yuborildi, o‘zgartirishni VED o‘zi kiritadi:', waited),
@@ -1002,6 +1180,7 @@ async function toldOfRow(row: CalcAmendmentRow): Promise<Told | null> {
         reason: change.told?.reason ?? 'started',
         ending: change.told?.ending ?? null,
         returnReason: change.told?.returnReason ?? null,
+        ...(change.told?.code ? { code: change.told.code } : {}),
         lines,
         change,
       };
@@ -1056,21 +1235,22 @@ async function runAmendSaveOnce(data: AmendSaveJob, retryCount: number): Promise
   } catch (err) {
     if (isServerBehind(err)) {
       logger.warn({ err, requestId: data.requestId }, '[calc-amend] save met a schema one release behind');
-      if (!waitedRun) {
-        releaseSaving(chatId, data.noteId);
-        await sendWords(chatId, `Qo‘shib bo‘lmadi: ${AMEND_REFUSAL.server_behind}`);
-      }
+      if (!waitedRun) await settleDeadSave(chatId, data.noteId, `Qo‘shib bo‘lmadi: ${AMEND_REFUSAL.server_behind}`);
       return;
     }
-    if (last && !waitedRun) {
-      releaseSaving(chatId, data.noteId);
-      await sendWords(chatId, SAVE_WORDS.failed);
-    }
+    // The last attempt: the record decides what is said — the throw may have
+    // come after the commit (spec-14).
+    if (last && !waitedRun) await settleDeadSave(chatId, data.noteId);
     throw err;
   }
   // Past the job's own clock: the write (if any) is committed — a retry finds
-  // it (`duplicate`) and redoes only what is missing.
-  if (Date.now() > deadline) throw new Error('amend save deadline');
+  // it (`duplicate`) and redoes only what is missing. With no retry left the
+  // collection stays frozen on a finished job, and the sweep settles it by
+  // its record — never «Qo‘shib bo‘lmadi» about a committed addition.
+  if (Date.now() > deadline) {
+    if (last && !waitedRun) return;
+    throw new Error('amend save deadline');
+  }
 
   switch (outcome.kind) {
     case 'applied':
@@ -1081,24 +1261,25 @@ async function runAmendSaveOnce(data: AmendSaveJob, retryCount: number): Promise
       if (outcome.kind === 'waiting' && outcome.stillWaiting) return;
       const sent = await sendWords(chatId, await amendWords(outcome, waitedRun));
       // Not delivered and worth another try: the retry is a `duplicate` and
-      // says exactly these words, once.
-      if (!sent.ok && !sent.permanent) throw new Error('amend words not delivered');
+      // says exactly these words, once. With no retry left the collection
+      // stays frozen and the sweep tells it from the record.
+      if (!sent.ok && !sent.permanent) {
+        if (last && !waitedRun) return;
+        throw new Error('amend words not delivered');
+      }
       await amend.stampTold(outcome.amendmentId);
       if (!waitedRun) endIfOurs(chatId, data.noteId);
       return;
     }
     case 'duplicate':
-      await redo(chatId, data, outcome.row, waitedRun);
+      await redo(chatId, data, outcome.row, waitedRun, last);
       return;
+    // Words about THIS collection only while it is the one let go — never at a newer one's buttons.
     case 'empty':
-      if (!waitedRun) {
-        releaseSaving(chatId, data.noteId);
-        await sendWords(chatId, SAVE_WORDS.empty);
-      }
+      if (!waitedRun && releaseSaving(chatId, data.noteId)) await sendWords(chatId, SAVE_WORDS.empty);
       return;
     case 'refused':
-      if (!waitedRun) {
-        releaseSaving(chatId, data.noteId);
+      if (!waitedRun && releaseSaving(chatId, data.noteId)) {
         await sendWords(chatId, `Qo‘shib bo‘lmadi: ${AMEND_REFUSAL[outcome.code]}`);
       }
       return;
@@ -1122,7 +1303,7 @@ async function runAmendSaveOnce(data: AmendSaveJob, retryCount: number): Promise
  * sent, then the collection. Words already said are not said twice; a
  * collection still frozen on this note hears that it was sent.
  */
-async function redo(chatId: bigint, data: AmendSaveJob, stored: CalcAmendmentRow, waitedRun: boolean): Promise<void> {
+async function redo(chatId: bigint, data: AmendSaveJob, stored: CalcAmendmentRow, waitedRun: boolean, last: boolean): Promise<void> {
   const amend = await import('../../wms/calc/amend');
   const row = await amend.redoAmendment(stored, data.staffId);
   const target = waitedRun ? row.chatId : chatId;
@@ -1130,7 +1311,11 @@ async function redo(chatId: bigint, data: AmendSaveJob, stored: CalcAmendmentRow
     const told = await toldOfRow(row);
     if (told) {
       const sent = await sendWords(target, await amendWords(told, waitedRun));
-      if (!sent.ok && !sent.permanent) throw new Error('amend words not delivered');
+      if (!sent.ok && !sent.permanent) {
+        // No retry left: the collection stays frozen; the sweep tells it from the record.
+        if (last && !waitedRun) return;
+        throw new Error('amend words not delivered');
+      }
       await amend.stampTold(row.id);
     }
   } else if (!waitedRun && activeIntake(chatId)?.noteId === data.noteId) {

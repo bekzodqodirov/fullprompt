@@ -54,6 +54,7 @@ import {
   updateIntake,
 } from '@/modules/platform/telegram/calc-store';
 import {
+  releaseDeadSave,
   requeueAmendSave,
   runAmendSave,
   saveAmendment,
@@ -369,6 +370,59 @@ describe('the press and the job', () => {
     expect(sent.map((s) => s.text)).toEqual([SAVE_WORDS.empty]);
     expect(activeIntake(c.chatId)).not.toBeNull();
     expect(activeIntake(c.chatId)!.saving).toBeNull();
+  });
+
+  it('the last attempt throwing AFTER its commit tells the outcome — never «Qo‘shib bo‘lmadi» about a written addition (adv-4)', async () => {
+    const c = await addCollection();
+    const job = await press(c.chatId);
+    vi.mocked(queueCalcPrefill).mockRejectedValueOnce(new Error('killed'));
+    await expect(runAmendSave(job, 3)).rejects.toThrow('killed');
+    expect(sent.map((s) => s.text)).not.toContain(SAVE_WORDS.failed);
+    expect(outcomeWords(c.chatId)).toHaveLength(1);
+    expect(activeIntake(c.chatId)).toBeNull();
+    // The settle redid the missing re-pass before speaking.
+    expect(vi.mocked(queueCalcPrefill)).toHaveBeenCalledTimes(2);
+  });
+
+  it('the sweep’s release of a dead save asks the RECORD: a committed, untold addition is told and ended (adv-4)', async () => {
+    const c = await addCollection();
+    const job = await press(c.chatId);
+    failSends = 1;
+    await runAmendSave(job, 0).catch(() => {});
+    expect(activeIntake(c.chatId)!.saving).not.toBeNull();
+    await releaseDeadSave(c.chatId, activeIntake(c.chatId)!);
+    expect(sent.map((s) => s.text)).not.toContain(SAVE_WORDS.failed);
+    expect(outcomeWords(c.chatId)).toHaveLength(1);
+    expect(activeIntake(c.chatId)).toBeNull();
+    const [row] = await db.select().from(calcAmendments).where(eq(calcAmendments.noteId, job.noteId));
+    expect(row!.outcomeSentAt).not.toBeNull();
+  });
+
+  it('the last attempt’s words undelivered: no throw, kept frozen — the sweep tells it once (adv-4, spec-14)', async () => {
+    const c = await addCollection();
+    const job = await press(c.chatId);
+    failSends = 1;
+    await runAmendSave(job, 3);
+    expect(activeIntake(c.chatId)!.saving).not.toBeNull();
+    expect(sent.map((s) => s.text)).toEqual([]);
+    await releaseDeadSave(c.chatId, activeIntake(c.chatId)!);
+    expect(outcomeWords(c.chatId)).toHaveLength(1);
+    expect(activeIntake(c.chatId)).toBeNull();
+  });
+
+  it('a dead save with NO record: let go and told «qayta bosing» — only when it was this note’s collection (adv-4, adv-11)', async () => {
+    const c = await addCollection();
+    await press(c.chatId);
+    const frozen = activeIntake(c.chatId)!;
+    await releaseDeadSave(c.chatId, frozen);
+    expect(sent.map((s) => s.text)).toEqual([SAVE_WORDS.failed]);
+    expect(activeIntake(c.chatId)!.saving).toBeNull();
+    // Another collection now holds the chat: the old note's release says nothing at its buttons.
+    sent.length = 0;
+    endIntake(c.chatId);
+    startIntake(c.chatId, 'yolkira', { staffId: sellerId });
+    await releaseDeadSave(c.chatId, frozen);
+    expect(sent).toEqual([]);
   });
 
   it('the last attempt failing lets the collection go with «Qo‘shib bo‘lmadi — qayta bosing»', async () => {
