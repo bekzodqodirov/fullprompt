@@ -739,10 +739,18 @@ export function settleDrafts(input: SettleInput): SettleOutput {
  * so the list, the unit tabs and the ±25 % band would describe the old row —
  * and a pick against a new code fails at save with `import_row_missing`.
  * ONE helper, asked by the desktop ⋯ fold and the phone sheet.
+ *
+ * A code the PICK drafted is not a reason to wait (review regression-18): a
+ * declaration from a heading's list brings its own ten-digit code, and the
+ * dialog reopens on the row's STORED heading — exactly the list the pick
+ * came from — so a VED who picked the wrong declaration can pick again
+ * (the re-pick re-drafts the code with it) instead of saving first and
+ * losing the heading's list to the full code. A drafted pick is what
+ * `importRowId` says; a count, a weight or a volume still closes the door.
  */
 export function rowDirtyForPicker(draft: ItemDraft | undefined): boolean {
   return (['tnvedCode', 'quantity', 'weightKg', 'volumeM3'] as const).some(
-    (k) => draft?.[k] !== undefined,
+    (k) => draft?.[k] !== undefined && !(k === 'tnvedCode' && draft?.importRowId !== undefined),
   );
 }
 

@@ -1,9 +1,10 @@
 import 'dotenv/config';
-import { and, asc, eq, gte, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
+  auditLog,
   calcRequestItems,
   calcRequests,
   clients,
@@ -16,6 +17,7 @@ import {
   users,
 } from '@/modules/platform/db/schema';
 import { getSetting, setSetting } from '@/modules/platform/settings/service';
+import { AUDIT_FIELD_LABELS } from '@/modules/platform/audit/fields';
 import {
   intakeNoteText,
   intakeSummaryText,
@@ -26,6 +28,7 @@ import {
 } from '@/modules/wms/calc/intake';
 import { parseManualFacts } from '@/modules/wms/calc/intake-manual';
 import { landIntake, resolveIntakeClient } from '@/modules/wms/calc/intake-land';
+import { openCalcRequest } from '@/modules/wms/calc/service';
 
 /**
  * «Hisoblatish» — the owner's own design for the AI intake: staff send the
@@ -535,5 +538,115 @@ describe('where a confirmed intake lands', () => {
     ]);
     expect(await resolveIntakeClient({ phone: shared })).toBeNull();
     expect(await resolveIntakeClient({ code: `ZZ${STAMP}` })).toBeNull();
+  });
+});
+
+/**
+ * His 2.7 b (docs/SAKKIZ-R2.md §8.2.3): with no total typed, the INSERT
+ * stores the Σ of the door-routed lines — all of them or none — because the
+ * checklist no longer asks a total the lines give, and MR-9's upsale scales
+ * on the stored cube. Through the seller's card door, the one with an m³ box
+ * a person leaves empty.
+ */
+describe('the cube the landing stores', () => {
+  async function landOnLead(
+    volumeM3: number | null,
+    lines: (number | null)[],
+    extra: { volumeAmbiguous?: boolean } = {},
+  ) {
+    const stage = await db.query.leadStages.findFirst({ where: eq(leadStages.kind, 'open') });
+    const [lead] = await db
+      .insert(leads)
+      .values({ name: `R2 kub ${STAMP}`, stageId: stage!.id, createdBy: actorId })
+      .returning();
+    madeLeads.push(lead!.id);
+    const opened = await openCalcRequest(
+      {
+        entityType: 'lead',
+        entityId: lead!.id,
+        section: 'rastamojka',
+        weightKg: 400,
+        volumeM3,
+        items: lines.map((m3, i) => ({ name: `Tovar ${STAMP}-${i + 1}`, quantity: 100, volumeM3: m3 })),
+        source: 'card',
+        ...extra,
+      },
+      { actorId },
+    );
+    const [row] = await db.select({ m3: calcRequests.volumeM3 }).from(calcRequests).where(eq(calcRequests.id, opened.id));
+    return { leadId: lead!.id, m3: row!.m3 === null ? null : Number(row!.m3) };
+  }
+
+  it('lines of 1.2 and 1.6 m³ and an empty box store 2.8 — and the audit row says where it came from', async () => {
+    const landed = await landOnLead(null, [1.2, 1.6]);
+    expect(landed.m3).toBe(2.8);
+    const [audit] = await db
+      .select({ after: auditLog.after })
+      .from(auditLog)
+      .where(eq(auditLog.entityId, landed.leadId))
+      .orderBy(desc(auditLog.id))
+      .limit(1);
+    expect(audit!.after).toMatchObject({ volumeFromLines: true });
+    // Every key the INSERT records has its words on the History tab — an
+    // unlabelled one prints as raw camelCase (review P3-2).
+    for (const key of Object.keys(audit!.after as Record<string, unknown>)) {
+      expect(AUDIT_FIELD_LABELS, key).toHaveProperty(key);
+    }
+  });
+
+  it('a figure that is no number (∞) is a blank, the checklist’s own reading — the lines answer (P3-5)', async () => {
+    expect((await landOnLead(Number.POSITIVE_INFINITY, [1.2, 1.6])).m3).toBe(2.8);
+  });
+
+  it('a cube the seller typed two ways is not summed under — the column stays empty for the VED to ask (P3-R2)', async () => {
+    expect((await landOnLead(null, [1.2, 1.6], { volumeAmbiguous: true })).m3).toBeNull();
+  });
+
+  it('…and the bot’s landing carries that to the INSERT', async () => {
+    const land = async (facts: CalcFacts) => {
+      const target = await landIntake({
+        noteId: uuidv4(),
+        section: 'yolkira',
+        facts,
+        steps: [],
+        fileCount: 0,
+        collectedBy: actorId,
+        collectedByName: 'Bot xodim',
+        client: null,
+        leadName: `R2 ikki xil kub ${STAMP}`,
+        leadPhone: null,
+      });
+      madeLeads.push(target.id);
+      const [row] = await db
+        .select({ m3: calcRequests.volumeM3 })
+        .from(calcRequests)
+        .where(eq(calcRequests.entityId, target.id))
+        .orderBy(desc(calcRequests.requestedAt))
+        .limit(1);
+      return row!.m3 === null ? null : Number(row!.m3);
+    };
+    const goods = [
+      { name: `Kurtka ${STAMP}`, quantity: 300, volumeM3: 1.2 },
+      { name: `Shim ${STAMP}`, quantity: 200, volumeM3: 1.6 },
+    ];
+    const base: CalcFacts = { fromCity: 'Yiwu', toCity: 'Toshkent', weightKg: 3500, volumeM3: null, goods };
+    expect(await land(base)).toBe(2.8);
+    expect(await land({ ...base, volumeAmbiguous: true })).toBeNull();
+  });
+
+  it('a typed total wins over the lines, and says nothing of them', async () => {
+    const landed = await landOnLead(5, [1.2, 1.6]);
+    expect(landed.m3).toBe(5);
+    const [audit] = await db
+      .select({ after: auditLog.after })
+      .from(auditLog)
+      .where(eq(auditLog.entityId, landed.leadId))
+      .orderBy(desc(auditLog.id))
+      .limit(1);
+    expect(audit!.after).not.toHaveProperty('volumeFromLines');
+  });
+
+  it('one line without a cube stores none — a partial Σ is not the truck', async () => {
+    expect((await landOnLead(null, [1.2, null])).m3).toBeNull();
   });
 });

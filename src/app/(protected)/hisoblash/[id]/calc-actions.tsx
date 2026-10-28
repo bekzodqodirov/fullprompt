@@ -12,6 +12,35 @@ import {
 } from '../actions';
 
 /**
+ * «Bu taxmin rasmiy narx emas» — at the one box where it would become one
+ * (round 2, law-money-1; his 2.4 b reason, kept under his 2.4 c).
+ *
+ * The bot now prints «Aniq», «Taxminiy», «JAMI» and, on a yolkira job, the
+ * tariff's «Yo‘lkira ≈» in Telegram and on the card's lenta — the sentence
+ * names every one (review law-money-R2-3: on a yolkira job with a guessed
+ * zone the tariff figure is the ONLY machine figure, and a reminder naming
+ * three others read as permission to copy it). It gives no instruction
+ * beyond «type your own»: «pick the baza» is meaningless on a yolkira job and
+ * «set the zone» on a customs one (review PF-8), and the fold is shared by
+ * every section. «Готово» is the ONE door through which a typed
+ * figure becomes a price: it is written as `answer_amount`, which is then
+ * the upsale's floor, the card's quote lock, a post on the price channel and
+ * the seller's «✅ Hisoblash tayyor» push. It is printed exactly where the
+ * fold asks for a typed figure — `canSeal` false, the only state in which
+ * the bot can have printed an estimate or a guessed zone (no customs total,
+ * or no stored zone, both make the totals null). Deterministic: no lenta
+ * read, nothing compared with the typed number. Exported for its render test.
+ */
+export function NotAnEstimate() {
+  const t = useTranslations('calc');
+  return (
+    <p className="text-2xs text-warn" data-testid="calc-finish-not-estimate">
+      ⚠ {t('finishNotEstimate')}
+    </p>
+  );
+}
+
+/**
  * What a VED person can do with a request: take it, hand it back with a
  * reason, or finish it with the figure the seller is waiting for.
  *
@@ -151,6 +180,7 @@ export function CalcActions({
               {t('sealInstead')}
             </p>
           ) : null}
+          {!canSeal ? <NotAnEstimate /> : null}
           <div className={canSeal ? 'hidden' : 'flex flex-wrap items-end gap-2'}>
             <div>
               <label className="label" htmlFor="calc-amount">

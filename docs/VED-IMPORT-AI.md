@@ -221,12 +221,75 @@ suggestImportBaza(input: {
 }): Promise<{ auto: ImportBazaRow | null; candidates: ImportBazaRow[] }>
 ```
 
-- Reads the NEWEST 'ready' batch only (his 2b). EXACT code match only in v1
-  — a price is code-specific; the LAW's prefix fallback does not apply to
-  prices. No rows → both null/empty (the screen says «bu kod importda yo'q»,
-  the VED types by hand — his own sentence).
+- *Which batch and which code are round 2's rules, in the next bullet* —
+  v1 read the NEWEST 'ready' batch only (his 2b) by the EXACT code, and both
+  halves are superseded: the per-code chooser keeps the newest file wherever
+  it holds enough of the code, and a 4-6 digit heading reaches the 📥 list
+  and the AI pick by its range. What v1 said and still holds: a price is
+  code-specific, so the LAW's prefix fallback never applies to prices; no
+  rows → both null/empty (the screen says «Bu kod uchun importda mos qator
+  yo‘q», the VED types by hand — his own sentence).
+- **Round 2 (docs/SAKKIZ-R2.md §7.3-7.4) — two answers changed:**
+  - *Which batch:* PER CODE (`batchesForCodes`, import-service.ts): a ready
+    batch holding ≥ 5 rows of the code first, then the newer quarter of what
+    the file describes, then more rows, then `batchRecencySql`. The newest
+    file still answers every code it holds five declarations of (his 2b where
+    it speaks); a code it is silent about is answered by the newest file that
+    has enough. Total: a code no file holds maps to the newest ready batch, so
+    the screen still says «importda mos qator yo'q», never «yuklanmagan». One
+    chooser for the 📥 list, the statistics, the auto-fill, the AI pick and
+    the bot's median. The admin page's «answering» chip stays global.
+  - *Which code:* **a 10-digit code exact; a shorter one (a 4-6 digit HEADING)
+    by its btree range (`codeMatchSql`), for the AI pick and the 📥 list
+    only — and the pick RECODES the row** to the declaration's own code. The
+    statistics, the bot's 📊 median and the model-free auto-fill stay EXACT: a
+    heading-wide series mixes subheadings, and a neighbouring subheading's
+    price is still not this code's price. A pick that recodes writes
+    «AI kodni o‘zgartirdi: 6403 → 6403991000 · …» into the row's reason and
+    raises the `ai_recode` warning the ✅ records (law-money-4); a recode a
+    PERSON makes in the 📥 dialog carries neither. Each heading candidate is
+    judged by ITS OWN code's law — the list's chips and the model's
+    «единица не совпадает» are one judgement (`judgeCandidates`) — and a
+    heading is RANKED by the row's own figures plus whatever the heading pins
+    (`unitsForAsk`), never by the heading's law alone: on 6403 («kamida
+    $3/juft») that buried a kg declaration of 6403120000 below every juft
+    one. The mark follows the CODE: a person re-pricing, clearing or
+    refilling a recoded row keeps it (stripped to «6403 → 6403991000») until
+    a ✅ records it; a person changing the code takes it off. A heading read
+    runs under a statement ceiling (1.5 s on the list → «10 xonali kodni
+    yozing»; 5 s in the pick → the row is skipped and counted). One timeout
+    stands for the whole heading in that pass, whatever the next row's name
+    is called: the scan's cost is the heading's row count.
+  - *Stated, not changed (R2 late pass):*
+    - **The chooser counts every origin** (review P2-NIT-6). The statistics
+      and the bot's 📊 median it chooses for are China-scoped (D3), so a file
+      whose five-plus declarations of a code all come from elsewhere wins
+      the chooser, and its statistics then read no China row while an older
+      file holding China rows of the code sits beside it. Kept: the
+      auto-fill, the 📥 list and the AI pick are not China-scoped and ask
+      the SAME chooser (one chooser, five consumers), so a China-only count
+      would move which file the fill reads; and D3's «does this file name a
+      country at all» needs every row of the code, which the count's
+      `LIMIT` exists to avoid. A China-scoped chooser for the median alone
+      is the lead's call.
+    - **Inside one quarter, more rows beat the later upload** (rule 3,
+      review P2-NIT-7). A corrected re-upload of the SAME quarter that holds
+      fewer rows of a code keeps losing to the original for that code — and
+      the original cannot be deleted once anything is priced off it
+      (`in_use`). For him: upload a correction whole (at least as many rows
+      of every code), or delete the wrong file before anything is priced
+      off it. Not changed to «the newer upload of the same period wins»:
+      two files of one period may also be two halves of one quarter (a
+      split export), and that rule would hide the first half. The lead's
+      call.
 - Rank in SQL: `similarity(name_norm, ${normalize(name)})` via pg_trgm over
-  `WHERE batch_id = $newest AND tnved_code = $code`, LIMIT 10 by score.
+  `WHERE batch_id = $newest AND tnved_code = $code`, LIMIT 10 by score —
+  **v1, superseded on all three counts.** As built: `word_similarity(needle,
+  name_norm)` — not `similarity()`, which divides by both trigram sets, so a
+  short typed name inside a 500-character declaration scores near zero —
+  over the batch the per-code chooser picked and the code matched exactly or
+  by a heading's range (`codeMatchSql`), LIMIT 10 by score (50 in the 📥
+  dialog).
   UNIT FILTER: candidates whose `unit` differs from the request row's unit
   are kept in the list (visible, labeled) but NEVER auto-filled — a per-kg
   price must not silently land on a per-dona row.
@@ -360,6 +423,8 @@ collector. Staff bot ONLY (his 5a).
      line if the section has it and a zone is inferable — if not, say
      freight kutilmoqda); blockers remain → reply naming them in words
      (the engine's own refusal codes mapped to sentences).
+     (Round 2 replaced «a zone is inferable» with the two-tier guess — see
+     the FREIGHT bullet in §6.)
   4. The request STAYS in the VED queue exactly as today; the VED opens a
      PRE-FILLED workspace, reviews the 📥 marks, ✅ + seals. Official price
      = the seal (or Готово where unsealable), exactly as now (his 6).
@@ -427,11 +492,29 @@ collector. Staff bot ONLY (his 5a).
   accepted) when sub-round A's import screen exists. First real import:
   watch duration and the За.ед.из.$≈value/netto self-check drift in logs.
 - Prefix fallback for prices: CUT in v1 (exact code only) — a neighboring
-  code's price is not this code's price; revisit only if he asks.
+  code's price is not this code's price; revisit only if he asks. **Round 2
+  (§2.3 above) opened it for two CHOOSERS only** — the AI pick and the VED's
+  📥 list may offer a heading's declarations, and choosing one recodes the
+  row to the declaration's own code. Nothing fills a price from a heading
+  without that choice, and the statistics and the bot's median stay exact.
+- The calc_bazas BOOK fills too, since round 2: second, inside every
+  Saqlash's one ordered fill (memory → book → import), named in the save
+  note («📖 …»); `baza_dictionary_moved` says when the book moved under a
+  filled row.
 - Auto-fill threshold 0.45 is a first guess — tune on the real file and
   record the measurement.
-- The AI hisobchi does not quote FREIGHT unless the zone is known — freight
-  needs his tariff zone; the reply says so rather than guessing.
+- FREIGHT needs his tariff zone, and **since round 2 (his 2.6 b) a zone that
+  is not stored is GUESSED** from the request's from-city, in two tiers
+  (`zone-guess.ts`: a known city first — Yiwu/Guangzhou → Xitoy wherever they
+  stand, Kashgar/Horgos by the leftmost; the country word alone only when no
+  city matched; any other city is not guessed and is named). The guess prices
+  the REPLY only and is printed as one: «zona «Yiwu»dan taxmin», and every sum
+  with it reads «JAMI taxminiy», never the plain «JAMI». It is NEVER stored —
+  `estimate-wire.test.ts` fences the three files that touch it against
+  `setFreightZone(`, a `freightZone:` key and `.update(` — and the seal still
+  demands a CHOSEN zone (`freight_zone_required`). A city that names a zone
+  the tariff has no price for says the price is missing, never that the city
+  was not understood.
 - Client-facing AI: refused (his standing decision).
 - Sub-round A's «bu kod avvalgi chorakda qancha edi» (the per-code history
   across quarters) was designed and is NOT built — owed to him as a «yo'q»

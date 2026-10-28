@@ -45,6 +45,7 @@ import { allLabelVariants } from './client-labels';
 import { buttonLabel } from './limits';
 import { editMarkup, editText } from './send';
 
+import { getSetting, SETTING_DEFAULTS } from '../settings/service';
 import { canLogInSql, staffPhonesMatch } from '../users/login';
 import { THREAD_PING_TYPES, threadOfPayload } from '../notifications/thread-ref';
 import { isBacklog } from './lifecycle';
@@ -493,6 +494,16 @@ const CALC_STEPS = [
   'save',
   'more',
   'cancel',
+  // 2026-10-21 (his 1.6 a, 1.13 c): read again after a transient AI
+  // failure; answer «a second invoice arrived» — add its lines or replace.
+  'reread',
+  'inv_add',
+  'inv_replace',
+  // «Boshqa zavodning tovarlarimi?» (round-1 review, c4): a PDF or a sheet
+  // the model reads, beside an Excel list — another factory's goods to add,
+  // or the same goods, read for their totals.
+  'other_add',
+  'other_same',
 ] as const;
 
 export type CalcStep = (typeof CALC_STEPS)[number];
@@ -1239,6 +1250,23 @@ export async function assistantFromBot(
 }
 
 /**
+ * The company's client-code prefix («GS»), as the customer readers
+ * (`parseClientHint`, `looksLikeMaterial`) take it: a code is the COMPANY's
+ * shape, not any letters before digits. Read once per handler call, on the
+ * pool and never inside a transaction (#714). An unreadable setting answers
+ * the shipped default and says so in the log — the reader still has a shape,
+ * and the database being down fails the landing on its own anyway.
+ */
+export async function clientCodePrefix(): Promise<string> {
+  try {
+    return String((await getSetting('client_code_prefix')) ?? '').trim();
+  } catch (err) {
+    logger.warn({ err }, '[calc-intake] client_code_prefix unreadable — the default is used');
+    return SETTING_DEFAULTS.client_code_prefix;
+  }
+}
+
+/**
  * Land a confirmed «Hisoblatish» on a card. Everything it decides — which
  * client the typed hint names, deal or lead, what the note says — lives in
  * wms and is tested there; this is the crossing.
@@ -1257,43 +1285,53 @@ export async function landCollectedIntake(
   requestId?: string | null;
   /** Why not, when it did not (audit A38) — the bot turns it into a sentence. */
   queueError?: string | null;
+  /** Whether the machine's reply was queued — the ✅'s wording (judge concurrency-8). */
+  replyQueued?: boolean;
   /** What the landing did — the ✅'s words (docs/UCH-BAND.md §7). */
   outcome?: string;
   /** On a lead about a colleague's client: whose client it is. */
   about?: { clientCode: string; sellerName: string | null } | null;
 } | null> {
-  const { activeIntake } = await import('./calc-intake');
+  const { activeIntake, intakeClientLabel } = await import('./calc-intake');
   const state = activeIntake(chatId);
   if (!state) return null;
   const { parseClientHint } = await import('../../wms/calc/intake');
   const { landIntake, resolveIntakeClient } = await import('../../wms/calc/intake-land');
 
-  const hint = parseClientHint(state.clientHintRaw);
+  const hint = parseClientHint(state.clientHintRaw, { prefix: await clientCodePrefix() });
   const client = hint ? await resolveIntakeClient(hint) : null;
   return landIntake({
     noteId: state.noteId,
     section: state.section,
     facts: state.facts,
-    steps: state.steps,
+    // The bot's own notes (the lines an Excel kept out) ahead of the model's,
+    // as the lenta has always carried them; the summary prints them apart.
+    steps: [...state.notes, ...state.steps],
     // Law 11: the words themselves go onto the card, not only what the
-    // parser made of them.
-    material: state.material,
+    // parser made of them — the per-line answers included, labelled, since
+    // they are kept out of the material the totals are read from.
+    material: [...state.material, ...state.answers],
     fileCount: state.fileCount,
     collectedBy: staffId,
     collectedByName: staffName,
     client,
-    // A prospect's card is named by whatever staff typed; the phone, when
-    // one was typed, is what a second request will find it by.
-    leadName: state.clientHintRaw.trim() || 'Hisoblatish (nomsiz)',
+    // A prospect's card is named by whatever staff typed — on ONE line, the
+    // phone left to its own column (round-2 review, C8/C9: a two-line hint
+    // named the lead «Ali aka\n+998 …»); the phone, when one was typed, is
+    // what a second request will find it by. Only the lines that ARE the
+    // hint's phone or code leave the name — judged against what THIS hint
+    // took (round-3 review, R3-C4), so «Ali aka 2» keeps its «2».
+    leadName: intakeClientLabel(state.clientHintRaw, hint) ?? 'Hisoblatish (nomsiz)',
     leadPhone: hint?.phone ?? null,
     // Only the AI door offers the toggle; every other collection lands the
     // column's own default, which is what it landed before this round.
     hasCertificate: state.hasCertificate,
     // The AI podklyuch door's «qayerdan?» answer; every other door has none.
     freightZone: state.route?.zone ?? null,
-    // What the reading cost, so the day's AI budget counts the most
-    // expensive call on this path rather than the two cheap ones.
-    usage: state.usage,
+    // What every reading cost, so the day's AI budget counts the most
+    // expensive call on this path rather than the two cheap ones — every
+    // answered one, a re-read after «➕ Yana ma'lumot» included (2.9 c).
+    usages: state.usages,
   });
 }
 

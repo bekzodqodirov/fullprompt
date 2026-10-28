@@ -6,7 +6,7 @@ Savol: «bitta mijozning yuki bitta mashinada ikki xil bitim bo'yicha kelsa, mas
 
 ### Endi qanday ishlaydi
 - Mijozning yuki bitta mashinada **ikki yoki undan ko'p bitimga** tegishli bo'lsa, «Narx» oynasida narx qatorining tepasida **«Narx qaysi bitimga yoziladi»** degan tanlov chiqadi. Bitim tanlanmaguncha narxni saqlab bo'lmaydi.
-- Ro'yxatda har bir bitim shu mashinadagi ulushi bilan turadi: kod, tovar, foiz, kub, kg. Masalan: «B-00124 · Klaviatura · 33 % · 2.00 m³ · 200.0 kg». Muddatli bitim oldida ⏳ belgisi turadi.
+- Ro'yxatda har bir bitim shu mashinadagi ulushi bilan turadi: kod, tovar, foiz, kub, kg. Masalan: «B-00124 · Klaviatura · 33 % · 2 m³ · 200 kg». Muddatli bitim oldida ⏳ belgisi turadi.
 - Mashinada bitimga ulanmagan yuk ham bo'lsa, ro'yxatda **«Bitimsiz»** varianti ham chiqadi. Faqat bitimli yuk bo'lsa, «Bitimsiz» chiqmaydi, chunki siz «a» variantini tanlamadingiz.
 - **Har saqlashda bitta ogohlantirish chiqadi:**
   - «Bu narx faqat B-00124 bitimining ulushi uchunmi (33 %)?»;
@@ -30,6 +30,123 @@ Savol: «bitta mijozning yuki bitta mashinada ikki xil bitim bo'yicha kelsa, mas
 - Muddatli bitimga yozilgan narx yuk topshirishda (kassada) qarz deb to'xtatilmaydi, qaysi yuk uchun yozilgan bo'lishidan qat'i nazar. Tanlov va ogohlantirish buni aytadi.
 - Avvalgi bitimsiz narxlar o'zgarmaydi. Ular ro'yxatda «bitimsiz narx bu mijozning butun yukini qoplaydi» deb ko'rsatiladi. Bitimga yozish kerak bo'lsa, narxni bekor qilib, qaytadan bitim bo'yicha kiritasiz.
 - **Kim tanlaydi:** «Narx» oynasini moliya huquqi (`finance.manage`) borlar ochadi: VED, buxgalter va admin. Logist bu oynani hozir ochmaydi. Shuning uchun alohida savol berdim.
+
+## 2026-10-27 — 8 band, 2-raund: bot rastamojka va yo'lkirani ko'proq hollarda o'zi hisoblaydi
+
+**Bu raundning o'zida migratsiya yo'q.** U asosiy shoxga boshqa sessiyaning «Uch band» (migratsiya 0136) va «Yo'ldagi yuk» (migratsiya 0137) ishlaridan keyin qo'shildi. Shuning uchun deploydan keyin **migratsiyalar soni 138** bo'lishi kerak va `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatsin. **tg-listen ham qayta qurilsin** (Uch band shuni talab qiladi).
+
+Javoblaringiz: 2.1 b · 2.2 b · 2.3 a · 2.4 c · 2.5 b · 2.6 b · 2.7 b · 2.9 c, va raund savollariga «a a / b a / c a / d a» — hammasi ⭐ variant.
+
+### Rastamojka (2.1, 2.2, 2.3)
+- **Bazasi topilmagan qator endi bo'sh qolmaydi.** Bot bojxona faylidan shu 10 xonali kod bo'yicha Xitoydan kelgan real deklaratsiyalarning **o'rtacha (mediana) narxini** oladi. Faqat birligi mos keladigan deklaratsiyalar sanaladi; dona bo'lsa, bitta donaning og'irligi ham yaqin bo'lishi kerak (±25 %). Kamida 5 ta deklaratsiya bo'lishi shart. Javobda «📊 taxminiy, N ta deklaratsiyadan» deb yoziladi.
+- **Bu taxminiy narx hech qayerga yozilmaydi.** U faqat Telegram javobida va kartaning lentasida turadi. VED ekrani, muhr, narx kanali va upsale unga tegmaydi. Invoys narxi hech qachon ishlatilmaydi (2.3 a).
+- **Ikki jami** (2.2 b): «Aniq: $X (10 tadan 7 qator, yig'imsiz)» — VED ekranida hozir chiqadigan raqam. «Taxminiy ≈ $Y» — medianalar bilan, bojxona yig'imi bilan. Taxminiy faqat hamma qator hisoblanganda chiqadi, aks holda sababi yoziladi (sizning 2.10 a javobingiz).
+- **Lug'at endi har «Saqlash»da avtomatik ishlatiladi**, tartib: xotira (muhrlanganlar) → lug'at → bojxona fayli.
+- **4-6 xonali kod bilan ham qidiriladi.** AI deklaratsiya tanlasa, qatorning kodi o'sha deklaratsiya kodiga o'zgaradi va VED uchun «kodni AI tanlagan» ogohlantirishi chiqadi — ✅ bosilmaguncha muhrlanmaydi.
+- Eng yangi faylda shu kod bo'yicha 5 tadan kam deklaratsiya bo'lsa, oldingi to'liq fayl javob beradi («eski fayl» belgisi bilan).
+
+### Yo'lkira (2.5, 2.6, 2.7)
+- **Faqat yo'lkira so'roviga javob darhol keladi** (2.5 b) — AI'siz, tarif jadvalidan: narx, zichlik oralig'i, yo'nalish. Bu javob rastamojka hisobini kutmaydi, alohida navbatda, 2-3 soniyada.
+- **Zona tanlanmagan bo'lsa shahardan taxmin qilinadi** (2.6 b, yo'lkirada ham — 2.11 a): Yiwu/Guangzhou → Xitoy zonasi, Qashg'ar → Qashg'ar, Horgos → Horgos. Javobda nimadan taxmin qilingani yoziladi: «zona «Yiwu»dan taxmin». Boshqa Xitoy shaharlari (Foshan, Shenzhen…) taxmin qilinmaydi (2.12 a). Taxmin faqat javob uchun, so'rovga yozilmaydi; muhrlash uchun VED zonani o'zi tanlaydi.
+- **Umumiy kub qatorlardan qo'shib chiqariladi** (2.7 b) va hamma joyda «qatorlardan» deb ko'rsatiladi. Sotuvchi upsale ulushi shu kub bo'yicha hisoblanadi.
+- **Brutto og'irlik so'raladi.** Qatordagi og'irlik netto deb olinadi va jamlanmaydi. «Netto» deb yozilgan og'irlik yo'lkira uchun brutto o'rniga ishlatilmaydi. Yuk bitta qatordan iborat bo'lsa, umumiy og'irlik qatorga yoziladi va javobda «og'irlik bruttodan» deyiladi (2.13 a).
+
+### Lenta va «Готово» (2.4 c)
+- Botning javobi kartaning lentasiga to'liq yoziladi, tepasida **«🔎 VED uchun:»** qatori va «taxminiy» belgisi bilan.
+- VED «Готово» oynasida eslatma turadi: Telegram/lentadagi «Aniq», «Taxminiy», «JAMI», «Yo'lkira ≈» **rasmiy narx emas**. Chunki «Готово»ga yozilgan raqam upsale chegarasi, kartadagi narx qulfi, narx kanali posti va sotuvchiga «✅ Hisoblash tayyor» bo'lib ketadi.
+- Javobdagi har bir to'siq kim tuzatishini aytadi: «mijozdan so'rab, kartadagi lentaga yozing» yoki «VED xodimi».
+
+### Ishonchlilik
+- Bitta so'rovga bot **faqat bitta javob** yozadi — qayta yetkazilganda ham.
+- **VED «Готово» bossa yoki so'rovni o'zi ochib ishlay boshlasa**, AI hisobni to'xtatadi: to'langan AI chaqiruvi bo'lmaydi va VED ishining ustiga javob yozilmaydi.
+- AI belgilay olmagan bazalar (vaqt tugadi, limit, VED ishlay boshladi) javobda bitta qatorda aytiladi: «⚠️ AI bazasini qo'ymadi: … — VED to'ldiradi».
+- Bojxona faylidagi qidiruv tezlashdi. Sinov bazasida (sizning fayl hajmidagi sun'iy ma'lumot) 30 qatorli so'rovda «Saqlash» birinchi marta ~4 soniya, keyingilari bir zumda. Sizning haqiqiy faylingizda o'lchanmagan. Bojxona faylini o'chirish va shu faylga tayangan «Saqlash» bir-biriga xalaqit bermaydi.
+
+### AI chaqiruvlari soni (2.9 c)
+- Endi **model javob bergan har bir chaqiruv** sanaladi: qayta o'qish, rad etilgan guruhlash, bazani tanlash ham. Shuning uchun kunlik 200 talik limit avvalgidan tezroq to'lishi mumkin. Avval o'lchaymiz: turi bo'yicha kunlik sonni ko'rsatadigan so'rov tayyor (`docs/SAKKIZ-R2.md` §14.6). Deploydan bir necha kun keyin uni serverda ishga tushirib, natijasini menga yuboring.
+
+### Qilinmadi (keyingi raundlar)
+- Kodlar ma'lum bo'lgandan keyin qonun birligini so'rash (2.8 b) — 3-raundda.
+- Karta chatidagi 🧮 dan kelgan AI o'qishi hali sanalmaydi — 5-raundda (boshqa sessiya).
+- Muhrlanmagan «Готово» javoblaridan xotira o'rganmaydi.
+
+### Tekshiruv
+Raund qurilishidan oldin 5 tomondan baholandi (37 e'tiroz, 36 tasi hisobga olindi). Qurilgandan keyin yana tekshirildi. Uzatishda kesilib qolgan ro'yxatlar tayyor kodga qarab qayta ko'rildi: **119 band tekshirildi, 59 tasi hali bor edi — 53 tasi tuzatildi, 6 tasi sababi yozilgan holda qoldirildi.**
+
+## 2026-10-27 — Planga yo'ldagi yukni ham qo'shish
+
+Sizning so'zlaringiz: «horgos planda yoldagi yuklarni ham qoshish degan check bolsin shuni bosganda yoldagi yuklar ham tanlash imkoniyati bolsin». Javoblaringiz: **1a 2a 3a 4a 5a**. **Migratsiya 0137 — deploydan keyin migratsiyalar soni 138 bo'lishi kerak.**
+
+### Plan berishda
+- Yangi plan oynasida **«🚚 Yo'ldagi yuklar ham»** belgisi bor. U har bir skladda bor (5a), lekin odatda o'chiq turadi: bosilmasa plan oynasi avvalgidek ishlaydi.
+- Belgi bosilsa, ro'yxatga shu skladga **yo'lga chiqqan** mashinalardagi yuk ham qo'shiladi (1a). Bu yo'lda ketayotgan yoki skladga yetib kelib hali tushirilmagan mashinalar. Yiwu'da hali yuklanayotgan mashina hisoblanmaydi.
+- Har bir lot qatorida qaysi mashinada kelayotgani va qachon yetib kelishi yoziladi, masalan: «🚚 +12 yo'lda · YW-123 · 29.10 – 31.10». Mashina darvozada turgan bo'lsa «darvozada» deb yoziladi.
+- **✓** tugmasi avvalgidek faqat skladda turgan yukni oladi. Yo'ldagi qismni olish uchun alohida **🚚** tugmasi bor. Shunday qilib belgini bosganingiz uchun hech qaysi lotga yo'ldagi yuk o'zi qo'shilib qolmaydi.
+- Pastdagi jami qatorida rejaning qanchasi yo'ldan kelishi alohida ko'rsatiladi («🚚 10»).
+- Zavod reyslari (zavoddan kelayotgan yuk) ro'yxat ostida **faqat ko'rish uchun** turadi (2a). Ular skladga qabul qilingach, oddiy yuk bo'lib planga tushadi.
+- Agent plani qaytarsa, «✏️ Tahrirlash» oynasi belgi bosilgan holda ochiladi va yo'ldagi qism joyida qoladi.
+
+### Agent tasdiqlaganda va mashina kelganda (3a)
+- Agent plani yuk yetib kelmasdan ham tasdiqlashi mumkin. Tasdiqlanganda skladda turgan qism darhol shu mashinaga band qilinadi. Yo'ldagi qism esa **«kutilmoqda»** bo'lib turadi.
+- Kelayotgan mashina shu skladda tushirilganda, yo'ldagi karobkalar **o'sha zahoti avtomatik ravishda** shu planning mashinasiga band qilinadi va yuklovchining ro'yxatida paydo bo'ladi. Telefon bilan tushirsangiz ham, «Hammasini qabul qilish» yoki ofis sanog'i bilan bo'lsa ham shunday. Inventarizatsiyada topilgan karobka ham shu yo'l bilan rejaga o'tadi.
+- Rejadan ortiqcha kelgan karobkalar hech kimga band qilinmaydi va skladda bo'sh yuk bo'lib qoladi.
+- Yuklash ekranida va partiya kartasida tepada «🚚 Yo'ldan kutilmoqda: GS777-A · 10 karobka (YW-123)» degan qator turadi. Shunday qilib «Yuklash tugadi»ni hech kim bilmasdan bosib qo'ymaydi.
+- Yuklovchi hali kelayotgan mashinada turgan karobkani skanerlasa, telefon «Bu karobka hali YW-123 mashinasida — avval tushirishda qabul qiling» deydi. Qizil «rejada yo'q» oynasi chiqmaydi.
+- Yuk boshqa yo'l bilan skladga tushib qolgan bo'lsa ham, yuklovchi skanerlaganda yoki ofis sanog'ida u rejaning yuki sifatida olinadi. Ortiqcha sabab yozish so'ralmaydi.
+
+### Yuk yetib kelmasa (4a)
+- Mashina yo'ldagi qism kelmasdan yuklashni tugatsa, o'sha qism **«kelmadi»** deb yoziladi. Yuk keyin kelsa, skladda keyingi plan uchun qoladi.
+- «Yuklash tugadi»ni bosgan odamning o'ziga ham «🚚 N yo'ldan kelmadi» deb chiqadi. Telegram xulosasida lotlar nomi bilan aytiladi. Partiyalar reyestridagi «⤵️» ustuniga ham qo'shiladi.
+- Yo'ldagi qism hali kutilayotgan bo'lsa, «Jo'natish» tugmasi «Avval «Yuklash tugadi»ni bosing — rejadagi yuk hali yo'lda» deydi.
+- «Yuklash tugadi»dan keyin ofis sanog'i faqat skladdan olingan qismni so'raydi. Kelmagan karobkalarni qaytadan so'rab, yangi karobka yaratib yubormaydi.
+- Andijon kabi mijoz yukini olib ketadigan skladda: yo'ldagi yuk tushishi bilan rejaga band qilinadi, shuning uchun mijozga «yukingiz keldi» deyilmaydi (yuk keyingi skladga ketyapti). Mashina uni olmay ketsa, mijozga «yukingiz keldi» xabari endi yuboriladi.
+
+### Boshqa joylarda
+- **Plan sahifasida** har qatorda: «🚚 N yo'ldan · M kutilmoqda · K keldi · J kelmadi».
+- **Agent Excel faylida** yo'ldagi qism alohida **«В пути / On the road: YW-123»** blokida turadi. Skladdagi qismi esa uni olib kelgan mashina blokida. Ilgari bunday yuk «skladga kelgan» deb yozilib qolishi mumkin edi, bu bojxona hujjatida noto'g'ri gap bo'lardi.
+- **Partiyalar doskasida** yo'ldan kutayotgan mashina «rejasiz» yoki «hammasi yuklandi» deb chiqmaydi, «🚚 +N yo'ldan» deb chiqadi.
+- Reja yo'ldan kutayotgan lotning prixodini bekor qilib (annulirovka) bo'lmaydi.
+- Bir vaqtning o'zida «Tasdiqlash» ikki marta bosilsa (ikki marta tegish yoki internet uzilishi), ikkita mashina ochilmaydi. Bu xato ilgari ham bor edi, endi tuzatildi.
+- Telefon mashinadan tushirilgan karobkani keyinroq yana yuborsa (internetsiz navbatda qolgan skaner), u boshqa mashinaga band qilingan karobkani «hujjatsiz ko'chirish» deb skladga qaytarib qo'ymaydi. Bu ham umumiy xato edi, endi tuzatildi.
+
+### Tayyor bo'lgandan keyingi tekshiruvda topilgan va tuzatilgan xatolar
+- Yuklovchi rejadagi karobkani mashinadan **olib qo'yib**, keyin yana skanerlasa, tizim uni **yo'ldan kelgan** karobka deb ikkinchi marta hisoblab yuborardi. Natijada yo'ldan haqiqatan kelgan karobkalardan biri rejaga olinmay, skladda bo'sh qolib ketardi. Mashina esa bir karobka kam bilan jo'nardi va hech qayerda «kelmadi» deb yozilmasdi. Endi olib qo'yilgan karobka rejaning o'z yuki bo'lib qoladi. Telefon uni avvalgidek qizil oyna bilan so'raydi, ofis sanog'i esa rejaga qaytaradi.
+- Ikki odam bir vaqtda (masalan, telefon va ofis sanog'i) bir lotni olsa, biri ikkinchisiga yutqazib, **hech narsa olmay qolardi**: reja «kutilmoqda» deb turaverar, karobkalar esa skladda bo'sh turardi. Endi qolgan qismini oladi.
+- Horgosda ikki mashina bir vaqtda tushirilib, karobkalar aralashib ketsa: bir mashinadan tushib rejaga band qilingan karobkani boshqa mashinaning tushirish ekranida skanerlasangiz, u **keyingi mashinadan yechib olinib**, «hujjatsiz ko'chirish» deb skladga qaytarilardi. Inventarizatsiyada topilgan karobka bilan ham shunday bo'lardi. Endi tizim «allaqachon shu yerda» deb javob beradi va karobka joyida qoladi.
+- Ofis sanog'ida «ortiqcha → kamaytirish → yana ortiqcha» deb bosilsa, lot **hech qachon to'g'ri songa yetkazilmay qolardi** (har safar «count_conflict» chiqardi). Bu xato faqat yo'ldagi yukka emas, hamma skladga tegishli edi. Endi tuzatildi.
+- Agent Excel faylida «Yuklash tugadi»dan keyin **kelmagan** karobkalar «skladga kelgan» qatoriga tushib qolardi. Endi ular alohida **«Не пришло / Did not come»** blokida turadi.
+- Yuklovchining telefoni hali kelayotgan mashinadagi karobkani yashil qilib qabul qilib, keyinroq (internetsiz bo'lsa, ancha keyin) jimgina qaytarib olardi. Bunda karobka mashinaga yuklangan, lekin hisobda yo'q bo'lib qolardi. Endi internet bor bo'lsa, telefon serverdan so'raydi va javob bir soniyada keladi: karobka tushgan bo'lsa qabul qilinadi, hali mashinada bo'lsa «Bu karobka hali YW-123 mashinasida» deydi. Bu Horgosdagi «mashinadan mashinaga» ish uchun muhim: telefondagi ro'yxat 15 soniyada bir yangilanadi, karobka esa undan tezroq bir mashinadan ikkinchisiga o'tadi. Internet yo'q bo'lsa, faqat shu telefon o'zi tushirishda skanerlagan karobka qabul qilinadi, qolganiga telefon o'sha gapni aytadi. Skladdagi karobkani reja kutayotgan sonchagina qabul qiladi.
+- Bir mashinadan tushib, keyingi mashinaga yuklanib, yo'lga chiqib ketgan karobkani boshqa mashinaning tushirish ekranidagi eski skan endi skladga qaytarib qo'ymaydi.
+- Inventarizatsiyada bir nechta lot bir vaqtda topilsa va shu payt «Yuklash tugadi» bosilsa, ikkalasi bir-birini kutib qolib, xato bilan tugashi mumkin edi. Tuzatildi.
+- Plan oynasida «🚚 Yo'ldagi yuklar ham» belgisini qo'yib, ro'yxat yuklanib ulgurmasdan olib tashlansangiz, **barcha tanlovlaringiz o'chib ketardi**, skladdagilari ham. Endi faqat yo'ldagi qism olinadi. Shu payt boshqa sklad tanlansa, tanlovlar o'sha skladning ro'yxati bo'yicha qisqartirilmaydi.
+- Yo'ldagi yuk ro'yxati yuklanmay qolsa, avval tanlangan yo'ldagi yuk ro'yxatda ham, jamida ham ko'rinmasdi, lekin agentga baribir yuborilardi. Endi tizim «N ta tanlangan yuk ro'yxatda ko'rinmayapti» deydi va «Qayta urinish» yoki «Olib tashlash» bosilmaguncha planni yubormaydi.
+
+### Hali qilinmagan (aytib qo'yaman)
+- Yo'ldagi **yashiklar** (CR-…) rejaga taklif qilinmaydi, faqat alohida karobkalar.
+- Kelayotgan mashinaning yo'nalishi o'zgartirilsa, uning yuki bu skladga kelmaydi. Reja qatori «Yuklash tugadi»da «kelmadi» bo'ladi.
+
+## 2026-10-27 — Telegramdan ochilgan tizimda fayllar yuklanadi
+
+Sizning so'zlaringiz: «filelar telefonda skachat bolmayabti» va javobingiz «1d / 2 download unsuccessful … / 3 c». **Migratsiya yo'q.** Yangi kod ishlayotganini `curl -s https://gsrwms.uz/api/version` bilan tekshiring.
+
+- **Sabab:** tizim Telegramdagi «↗️ Ochish» tugmasi bilan ochilganda, Telegramning ichki brauzerida ishlaydi. Bu brauzer faylni o'zi yuklamaydi. U fayl manzilini telefonning yuklab olish dasturiga beradi. O'sha dastur esa tizimga kirmagan (login yo'q) odam sifatida so'raydi, server rad etadi va telefon «Download unsuccessful» deydi.
+- **Endi:** faylni bosganingizda tizim o'sha fayl uchun **10 daqiqalik maxsus havola** yaratadi. Telefonning yuklab olish dasturi shu havola bilan login'siz ham faylni oladi. Bu hamma fayllarga tegishli: Excel'lar, PDF'lar, aktlar, rasmlar, prixod fayllari, yorliqlar.
+- Havola faqat **bitta faylni** ochadi va faqat **sizning huquqingiz** bilan. Sklad hodimi o'zi ocha olmaydigan faylni havola orqali ham ocha olmaydi. Hodim ishdan bo'shatilgan bo'lsa, uning eski havolasi ham ishlamaydi.
+- 10 daqiqadan keyin havola eskiradi va «Havola eskirgan. Sahifaga qaytib, faylni qayta bosing» degan sahifa chiqadi.
+- Kompyuterda hech narsa o'zgarmaydi: fayllar avvalgidek yuklanadi.
+- **Serverda tekshiring:** `.env` faylida `SESSION_SECRET` haqiqiy tasodifiy qiymat bo'lishi kerak. Tekshirish: `grep -c '^SESSION_SECRET=generate-a-long-random-string' .env` — **0** chiqishi kerak. 1 chiqsa yoki qator umuman bo'lmasa, havola yaratilmaydi va fayllar avvalgidek ochiladi (telefonda yuklanmaydi). Tuzatish: `openssl rand -base64 32` chiqargan qiymatni `SESSION_SECRET=` ga yozing, keyin `docker compose --profile telegram up -d app tg-listen`. Bu kirish (login) sessiyalarini buzmaydi.
+- **Deploydan oldin vaqtincha yo'l:** telefonda Telegram → Sozlamalar → Chat sozlamalari → «In-App Browser»ni o'chiring (Android). Shunda «↗️ Ochish» tizimni Chrome'da ochadi va fayllar yuklanadi.
+
+## 2026-10-27 — Narx taklifi Telegramga PDF bilan keladi
+
+Sizning so'zlaringiz: «narx taklifi text bolib sotuvchi telegramiga kelyabti pdf ham birga kelsin telegramga shu telegramni ozini jonatish imkoni uchun». **Migratsiya yo'q** — deploydan keyin migratsiyalar soni o'zgarmaydi (137). Yangi kod ishlayotganini `curl -s https://gsrwms.uz/api/version` bilan tekshiring.
+
+- Sotuvchi narx taklifini yozganda Telegramga endi **bitta xabar** keladi: **PDF fayl, ostida taklif matni**. Shu xabarni mijozga «Forward» qilsa — PDF ham, matn ham birga ketadi.
+- PDF — kartadagi «📄 PDF» tugmasi beradigan varaqning o'zi (mijoz, tovarlar, narx, sotuvchi, imzo). Til — sotuvchi taklifda tanlagan til.
+- Fayl nomi: «GSR-taklif-B-00123.pdf» (ruscha taklifda «GSR-predlozhenie-…»). Mijozning telefonida shunday nom bilan saqlanadi.
+- Tannarxdan past narx (ruxsat kutayotgan) — ruxsat berilmaguncha na matn, na PDF ketadi. Ruxsat berilganda ikkalasi birga keladi.
+- Telegram faylni olmasa ham (kamdan-kam), matn baribir keladi — taklif hech qachon yo'qolmaydi.
+- Taklif yozilgan oynadagi yozuv: «PDF va matn Telegramga yuborildi».
 
 ## 2026-10-27 — Uch band: narxdan hisob-kitobga link, har so'rovga yangi bitim, bitta qatorli tarkib va «шт» ustuni
 
@@ -69,6 +186,74 @@ Sizning so'zlaringiz (uchta band) va javobingiz: «3b / 4 a / 5 a / 6 a / 7 b» 
 - Bitim kartasidagi 🧮 formasi hali ham o'sha bitimga ikkinchi so'rov qo'shadi (botdagidek yangi bitim ochmaydi).
 - Botdan qayta yuborilgan so'rov yangi ish bo'ladi, qayta hisoblash emas.
 - Bitta qatorli tarkib uchun ham prixodda mijozning hujjati bo'lishi kerak.
+
+## 2026-10-27 — 8 band, 1-raund qayta tekshirildi: bot yuborilgan narsani to'g'riroq o'qiydi
+
+**Bu raundning o'zida migratsiya yo'q.** Bu 1-raundning davomi va 2-raund bilan bir deployda chiqadi — deploy qadamlari yuqoridagi 2-raund yozuvida.
+
+### Nima qilindi
+1-raundni yozib bo'lgach, uni 5 tomondan qayta tekshirdik: Excel o'qish, yozilgan matn, mijozni aniqlash, AI chaqiruvi va rasmlar. **31 ta gumondan 28 tasi haqiqiy xato chiqdi** va tuzatildi. Keyin tuzatishlarning o'zini yana ikki marta tekshirdik. Har safar bitta xatoni tuzatish boshqa, avval to'g'ri ishlagan holatni buzib qo'yayotgani ko'rindi.
+
+Shuning uchun **namunalar to'plami** yig'dik: sotuvchilar Telegramda yozadigan, invoys va packing list'larda keladigan **~2 100 ta real ko'rinishdagi misol**, har birining to'g'ri javobi bilan. Endi kodga har bir o'zgartirish kiritilganda bu misollarning hammasi avtomatik tekshiriladi: avval to'g'ri o'qilgan misol buzilsa, o'zgartirish o'tmaydi. Bu to'plam bilan yana uch marta tuzatildi. Har tuzatishdan keyin alohida tekshiruvchi atrofdagi o'xshash holatlarni sinab ko'rdi va topgan xatosi to'plamga qo'shildi.
+
+### Sizga ko'rinadigan farqlar
+- **Lid hech qachon telefon raqami bilan nomlanmaydi.** Mijoz ismi topilmasa, mijoz kodi qo'yiladi; kod ham bo'lmasa, nomsiz qoladi.
+- **«1,200KGS» endi 1,2 kg deb o'qilmaydi.** Bunday yozuvda vergul mingni ham, kasrni ham bildirishi mumkin. Shuning uchun bot taxmin qilmaydi, qatorga «aniq emas» deb yozadi. Bir karobkaning og'irligi («N.W./CTN») ham tovarning umumiy og'irligi deb olinmaydi.
+- **Juda katta yoki buzuq Excel/HTML fayl tizimni qotirib qo'ymaydi.** Avval kichkina, lekin ichi «shishiriladigan» fayl serverni band qilib qo'yishi mumkin edi.
+- Ro'yxat tepasidagi **«Заявка от 15.10.2026», «Накладная № 15», «Накладной GS777» kabi sarlavha tovar bo'lib qolmaydi.** «Накладная петля», «Накладной замок» esa tovar bo'lib qoladi.
+- **Ikkinchi va uchinchi Excel** bir-birini jimgina o'chirib yubormaydi. AI o'qiyotgan paytda qatorga bergan javobingiz yo'qolmaydi.
+- «Товар: по инвойсу», «Tovar: kecha yubordim» kabi gap **tovar nomi bo'lib qolmaydi** — bot tovarni so'raydi. «Жами коробка: 45» karobka soni, tovar emas.
+- Mijoz qatoridagi **manzil** («Chilonzor 12», «kv: 45») mijozni aniqlashni buzmaydi va kvadrat metr deb o'qilmaydi.
+- **«Kurtka 300 1200»** tovar qatori, mijoz ismi emas. **«WhatsApp», «Telegram»** so'zlari mijoz ismiga qo'shilmaydi.
+- AI o'qigan va Excel'dagi bir xil tovar **ikki marta qo'shilmaydi**; nomi bir xil, lekin raqamlari farq qiladigan qatorlar ikkalasi qoladi va bot buni aytadi.
+- AI'ga beriladigan Excel matni qisqartirilsa, endi bu aytiladi. AI javobi kesilib qolsa, bot ayni o'sha so'rovni behuda qayta yubormaydi.
+
+### Hali to'g'ri o'qilmaydiganlar
+Oxirgi tekshiruvlar tez-tez uchraydigan xatolarni ham topdi, ularning hammasi tuzatildi. Masalan, nomida o'lchami yozilgan tovar: Excel'da «600*600mm», AI o'qiganida «600×600 мм» — endi bitta tovar deb olinadi va buyurtma ikki marta qo'shilmaydi. «iPhone 14» va «iPhone 15», «iPhone 15» va «iPhone 15 Pro» yoki 600 va 800 lik kafel esa ikki xil tovar bo'lib qoladi. Ro'yxatga **144 ta holat** yozib qo'yildi, hozircha AI yoki VED ularni qo'lda to'g'rilaydi. Ulardan 143 tasi kamdan-kam uchraydi (masalan «1.2m» va «120 см» bir xil o'lcham ekanini bot bilmaydi). Bittasi tez-tez uchrashi mumkin: «Redmi 13» va «Redmi 13C» chexollari bitta tovar deb qolishi mumkin. Ro'yxat kod ichida turibdi va keyingi raundlarda kamayib boradi.
+
+### Javoblaringiz yozib olindi («2 c / 3 b»)
+- **Odnarodka narxini VED ham, sotuvchi ham yozadi (4.5 c).** VED yozgan narx — bizning tannarx chegaramiz. Sotuvchi yozgani — mijozga aytiladigan narx. Bu 10-raundda quriladi, qurishdan oldin sizga yana bir bor aytaman.
+- **Boshqa sotuvchining mijozi uchun so'rov jo'natilsa (6.8 b)**, jo'natgan sotuvchining CRM'ida **yangi lid** ochiladi. Bu 4-raundda quriladi.
+
+## 2026-10-21 — 8 band, 1-raund: bot yuborilgan narsani yo'qotmaydi, VED navbati bitta odamga tushmaydi
+
+**Bu raundning o'zida migratsiya yo'q.** U pastdagi LTL/FTL yangilanishi (migratsiya 0135) bilan bir deployda chiqishi mumkin, agar u hali serverga qo'yilmagan bo'lsa. Deploydan keyin ikkalasini tekshiring: **migratsiyalar soni 136** va `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatsin.
+
+Javoblaringiz: «1 chi band 3 b / 2chi bolim 4 c / … / umumiy savollar 0 1 a». Siz yozmagan savollarga ⭐ variant olindi (`docs/SAKKIZ-BAND.md` §11). Bu raundda javoblaringiz to'liq qamragan qismlar qilindi: 1-banddagi yo'qotishlar, 5-banddagi navbat xatosi va 8-bandga qo'shgan xira rasmlaringiz.
+
+### VED navbati (5-band)
+- **Xato topildi va tuzatildi.** Hamma VED bo'sh bo'lganda tizim har safar ro'yxatdagi birinchi odamni tanlardi. Siz ko'rgan «hammasi Murodga» shu edi. Sinovda 9 ta ish 3 ta bo'sh VED ga 9 / 0 / 0 bo'lib tushdi, endi 3 / 3 / 3.
+- Yangi tartib (5.1): avval qo'lida ochiq ishi yo'q odam; teng bo'lsa — bugun kamroq ish olgan; yana teng bo'lsa — eng uzoq ish olmagan.
+- Ikki so'rov bir soniyada kelsa, endi ikkalasi bitta odamga tushmaydi.
+- **Admin + VED roli** bo'lgan xodim ham navbatga kiradi (5.7). Faqat admin roli bo'lgan kiritilmaydi.
+- Qayta hisoblash avvalgidek o'sha VED ning o'ziga qaytadi (5.4 a).
+
+### Bot AI rastamojka va 🧮 Hisoblatish (1-band)
+- **«AI mavjud emas» degan umumiy gap yo'q.** AI o'qiy olmasa, bot sababini yozadi: javob sig'madi, vaqt tugadi, AI band, kalit ishlamayapti, xavfsizlik filtri rad etdi va hokazo. Yordam berishi mumkin bo'lsa «🔄 AI qayta o'qisin» tugmasi chiqadi.
+- **Skrinshotingizdagi holatning eng ehtimolli sababi tuzatildi.** AI javobi uchun joy kichik edi (AI ning o'ylashi ham shu joyni egallaydi), katta materialda javob yarmida kesilib qolardi. Joy 4 barobar oshirildi, kutish 3 daqiqagacha (3.4 b).
+- **Yozilgan tovar nomi o'qiladi.** AI ishlamasa ham «Tovar синтетическое компрессорное масло 1.1 kub 240 kg» endi «Tovarlar: —» bo'lmaydi: nomi, kubi va kg si chiqadi.
+- AI nima qilganini 2-3 qatorda yozadi (1.6 a). Tovar nomlari ruscha, asl nomi qavsda (1.5 b).
+- **Fayl qilib yuborilgan rasm o'qiladi.** WeChat yoki kompyuterdan kelgan siqilmagan rasm eng tiniq nusxa, avval AI uni ko'rmas edi. HEIC rasm o'qilmasa, shuni aytadi.
+- **12 tagacha rasm (1.4 b) va 3 tagacha PDF** birga o'qiladi.
+- **Excel'ning hamma varaqlari** o'qiladi. **Eski .xls ham o'qiladi** (1.3 b): Excel 97, WPS fayllari va web tizimlardan «.xls» bo'lib keladigan jadvallar. Rus Windows'idagi va xitoy ofisidagi CSV ham to'g'ri harflar bilan o'qiladi.
+- **Excel'dan «uydirma» tovar chiqmaydi.** Avval sarlavhasi topilmagan faylda sotuvchi firma nomi, manzil va «Invoice No» tovar bo'lib qolardi. Endi bunday jadvalni AI o'qiydi (1.2 b). «Item No.» ustuni ham endi tovar nomi deb olinmaydi.
+- Bir faylda «Invoice» va «Packing list» varaqlari bo'lsa, tovarlar ikki marta qo'shilmaydi: eng ko'p tovarli varaq olinadi, qolganini AI o'qiydi.
+- Xitoy packing list'laridagi «120KGS», «12.5 CBM», «300PCS» kabi kataklar endi o'qiladi. «5 CTNS» (karobka) esa dona deb olinmaydi. Faylda N.W. (netto) va G.W. (brutto) ikkalasi bo'lsa, tovar og'irligi netto'dan olinadi. Bu bitim tovarlarini Excel'dan yuklashda ham ishlaydi.
+- **Ikkinchi invoys kelsa bot so'raydi** (1.13 c): «➕ Qatorlari qo'shilsin» yoki «🔁 Oldingisining o'rniga». Avval jimgina birinchisining o'rniga yozilardi.
+- **Birinchi xabar tovar ro'yxati bo'lsa** (1.7 b), u ma'lumot sifatida olinadi va mijoz qayta so'raladi. TNVED kodi endi telefon raqami deb olinmaydi.
+- **«Bo'ldi» dan keyin yuborilgan narsa o'chmaydi.** AI o'qiyotgan paytda kelgan xabar saqlanadi, bot «yana Bo'ldi ni bosing» deydi. «Bo'ldi» ikki marta bosilsa, ikki marta pul ketmaydi.
+- **Qatorga bergan javobingiz** («150 kg») endi butun yukning og'irligi bo'lib qolmaydi.
+- Ovozli xabar yuborilsa: «Ovozli xabar o'qilmaydi — yozib yuboring» (1.12 a).
+- AI navbatdagi hisobni to'xtatsa (masalan VED allaqachon ochgan bo'lsa), sotuvchiga sababi yoziladi. Avval javob umuman kelmasdi.
+
+### Excel'dagi rasmlar xira edi (8-band, 5)
+- Packing list, agent fayli va sklad qoldig'i (Ostatka) fayllarida **kichik 200 px nusxa** ishlatilgan, u ikki marta siqilgan va katakka cho'zib joylashtirilgan edi.
+- Endi packing list va agent faylida **800 px tiniq nusxa**, Ostatka faylida **400 px** (avvalgidan 2 barobar tiniq). Rasm tomonlarining nisbati buzilmaydi.
+- Ostatka'da 400 px bo'lishining sababi: bu fayl butun skladning minglab rasmini tashiydi, 800 px da yuzlab megabayt bo'lib ketadi. Kerak bo'lsa ayting, ko'taramiz.
+
+### Keyingi raundlarda
+- Packing list'dagi **«шт» ustuni** 8-band raundida chiqadi. Dona tarkib qatorida saqlanadi, 8-band aynan bitta qatorli tarkibni ochadi. *(Keyin: boshqa sessiyaning «Uch band» raundida chiqdi — yuqoridagi yozuv.)*
+- Siz bilan aniqlashtirilishi kerak: odnarodka narxini kim yozadi (4.5), «jo'natgan sotuvchining CRM'iga yangi klient bo'lib» nimani anglatadi (6.8). *(Keyin: javob berdingiz — 4.5 c, 6.8 b.)*
 
 ## 2026-10-21 — Doska: «1 A / 2 a / 3 a» javoblaringiz — hammasi hozirgidek qoladi
 

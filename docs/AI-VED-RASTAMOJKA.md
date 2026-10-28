@@ -22,6 +22,30 @@
 >   two screens would print different V's for one seal.
 > - The AI reply's shape is used for a customs section only; a yolkira job
 >   keeps the older summary and is never queued for a pass at all.
+>   **Superseded by Sakkiz round 2 — next bullet.**
+> - **Sakkiz round 2 (`docs/SAKKIZ-R2.md` §2, §6; his 2.1 b, 2.2 b, 2.5 b):**
+>   - The chat carries TWO customs totals. «Aniq» is the groups that price
+>     exactly, NAMED as a partial («R tadan E qator, yig‘imsiz») and printed
+>     without the fee. «Taxminiy ≈» is the whole request, with the 📊 median
+>     of the quarterly declarations (China only, the row's own per-piece band)
+>     standing in for a missing baza, fee included. It is whole or it is a
+>     sentence saying why not, and never a partial JAMI (MR-23).
+>   - The estimate is WORDS: it is never stored. `estimate-wire.test.ts`
+>     fences the writes, the order (every write of the pass before the
+>     medians are read) and the import direction (nothing but the reply reads
+>     it — no «Готово» default, no hint, no seal, no channel post). The lenta
+>     copy carries ONE «🔎 VED uchun:» line under its heading.
+>   - A yolkira job IS queued now, on its own queue (`calc.tariff-reply`), and
+>     answered from the tariff in a few queries with no model call
+>     (`tariffReplyText`). The older summary (`prefillReplyText`) is deleted.
+>   - Decision 8 («the AI prices rastamojka and nothing else») is fully
+>     retired. Podklyuch has priced the road since 2026-09-26, and now a zone
+>     nobody chose is GUESSED from the city (`zone-guess.ts`: cities first, a
+>     country word only when no city matched) and said as a guess («JAMI
+>     taxminiy», «zona «X»dan taxmin»). It is never stored.
+>   - One machine message per request (`say-once.ts`). A re-delivered job
+>     sends no second reply, no second lenta note, and no «hisoblay olmadi»
+>     after a real answer.
 >
 > **Owed, stated:** the seal's `breakdown.items[]` snapshot does not yet carry
 > `bazaReason`/`memoryItemId`; §5.2's list is untouched.

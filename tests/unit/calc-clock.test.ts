@@ -64,9 +64,9 @@ const MUTATORS = [
 /** Exempt, each for a stated reason — a name here is a claim reviewed once,
  * not a hole. */
 const EXEMPT: Record<string, string> = {
-  guessZone: 'pure',
-  // The Horgos round: the hint names only a PRICED zone. Reads its arguments.
-  guessedZoneFor: 'pure',
+  // `guessZone` and `guessedZoneFor` (both pure) moved to zone-guess.ts
+  // (docs/SAKKIZ-R2.md K1); workspace.ts only re-exports them, so the walk no
+  // longer meets them and they need no entry here.
   // Round 112: the seal's gate, exported so «Готово» and the seal button ask
   // the same question. Reads the workspace it is handed, writes nothing.
   canSeal: 'pure',

@@ -742,7 +742,7 @@
       "import_baza_min_sim": "Import bazasidan nom o'xshashligi shu darajadan yuqori bo'lsa — baza avtomatik qo'yiladi (0..1)",
       "calc_memory_min_sim": "AI avvalgi MUHRLANGAN hisobdan bazani olishi uchun nom o'xshashligi darajasi (0..1)",
       "ai_calc_daily_limit": "Hisoblash uchun kuniga nechta AI so'rovi (limitdan keyin faqat xotira, lug'at va bojxona fayli ishlaydi)",
-      "ai_calc_reply_lenta": "AI ning tahminiy hisobi karta lentasiga ham yozilsinmi",
+      "ai_calc_reply_lenta": "AI ning taxminiy hisobi karta lentasiga ham yozilsinmi",
       "cost_kassa_since": "Shu kundan boshlab kiritilgan, kassasi ko‘rsatilmagan xarajatlar buxgalter navbatiga tushadi (YYYY-MM-DD; bo‘sh = hammasi)",
       "unpriced_gate_since": "Shu vaqtdan keyin mashinada O‘zbekistonga yetib kelgan, narxi yozilmagan yuk mijozga faqat ruxsat bilan beriladi (sana yoki vaqt; bo‘sh = taqiq o‘chiq)",
       "fx_residue_auto": "Hisob o‘z valyutasida 0 ga tushganda dollar qoldig‘ini tizim o‘zi «kurs farqi» bilan yopsinmi. «Yo‘q» — yangi yozuv qo‘shilmaydi, borlari yuritilaveradi.",
@@ -871,6 +871,7 @@
       "calcRecalc": "Qayta hisoblashga yuborildi",
       "calcSection": "Bo‘lim",
       "itemCount": "Tovar qatorlari",
+      "volumeFromLines": "Hajm qatorlardan qo‘shildi",
       "allocationBasis": "Bo‘lish usuli",
       "tariffZone": "Tarif ustuni",
       "tariffFrom": "Tarif sanasi",
@@ -1232,7 +1233,21 @@
       "reason_required": "Sababni yozing"
     },
     "cancelPlan": "Planni bekor qilish",
-    "stockFailed": "Yuk ro'yxati yuklanmadi — sahifani yangilang; takrorlansa administratorga ayting"
+    "stockFailed": "Yuk ro'yxati yuklanmadi — sahifani yangilang; takrorlansa administratorga ayting",
+    "roadToggle": "Yo‘ldagi yuklar ham",
+    "roadHint": "Bu skladga kelayotgan mashinalardagi yuk. Rejaga olsangiz, shu yerda tushirilganda o‘zi shu mashinaga o‘tadi.",
+    "roadDropped": "Yo‘ldagi yuk tanlovdan olindi: {n}",
+    "roadFailed": "Yo‘ldagi yuk ro‘yxati yuklanmadi — skladdagi yuk ko‘rsatildi",
+    "unseenPicks": "{n} ta tanlangan yuk ro‘yxatda ko‘rinmayapti va hisobga kirmayapti — ro‘yxatni qayta yuklang yoki ularni olib tashlang",
+    "unseenDrop": "Olib tashlash",
+    "roadLine": "+{n} yo‘lda ·",
+    "roadAtGate": "darvozada",
+    "factoryTrips": "Zavoddan kelyapti ({n})",
+    "factoryTripsHint": "Zavod reysi yuki shu skladga qabul qilinganidan keyin rejaga olinadi.",
+    "roadPart": "{n} yo‘ldan",
+    "roadAwaited": "{n} kutilmoqda",
+    "roadCame": "{n} keldi",
+    "roadMissed": "{n} kelmadi"
   },
   "costing": {
     "fxTitle": "Valyuta kurslari",
@@ -1485,7 +1500,8 @@
       "batch_has_costs": "Partiyaga xarajat kiritilgan",
       "batch_has_charges": "Bu partiya bo‘yicha mijozga hisob qo‘yilgan",
       "batch_has_moved_boxes": "Qutilar allaqachon oldinga ketgan",
-      "reason_required": "Sababni yozing"
+      "reason_required": "Sababni yozing",
+      "road_owed_open": "Avval «Yuklash tugadi»ni bosing — rejadagi yuk hali yo‘lda"
     },
     "startUnloading": "Razgruzka (skan)",
     "transitReport": "Yo‘lda",
@@ -1664,8 +1680,11 @@
       "emptyBoard": "Ochiq mashina yo‘q.",
       "capped": "Eng eski {n} ta mashina ko‘rsatilmoqda.",
       "filters": "Filtr",
-      "loadedNoPlan": "Yuklandi {boxes} karobka · {cargo}"
-    }
+      "loadedNoPlan": "Yuklandi {boxes} karobka · {cargo}",
+      "roadOwed": "+{n} yo‘ldan"
+    },
+    "finishSummaryRoad": "{n} yo‘ldan kelmadi",
+    "roadOwedLine": "Yo‘ldan kutilmoqda: {lot} · {n} karobka ({trucks})"
   },
   "loading": {
     "title": "Pogruzka",
@@ -1697,7 +1716,9 @@
       "unknown_code": "Kod topilmadi.",
       "not_loaded_here": "Bu karobka bu mashinada yozilmagan.",
       "forbidden": "Ruxsat yo'q."
-    }
+    },
+    "roadNotLanded": "Bu karobka hali {truck} mashinasida — avval tushirishda qabul qiling",
+    "roadOwedLine": "Yo‘ldan kutilmoqda: {lot} · {n} karobka ({trucks})"
   },
   "unloading": {
     "title": "Razgruzka",
@@ -3478,6 +3499,7 @@
       "fromDeal": "Bitim qatorlaridan to‘ldirish",
       "totalWeight": "Umumiy og‘irlik (brutto), kg",
       "totalVolume": "Umumiy hajm, m³",
+      "volumeFromLines": "Bo‘sh qolsa — qatorlardagi kub qo‘shiladi",
       "noName": "Tovar nomi yozilmagan",
       "badCell": "«{text}» — son emas",
       "fixFirst": "Avval belgilangan qatorlarni to‘g‘rilang",
@@ -3524,6 +3546,7 @@
     "returnReasonLabel": "Qaytarish sababi",
     "finish": "Bajarildi",
     "answerAmount": "Narx",
+    "finishNotEstimate": "Telegram va lentadagi bot raqamlari — «Aniq», «Taxminiy», «JAMI», «Yo‘lkira ≈» — rasmiy narx emas: ularni bu yerga ko‘chirmang, o‘zingiz hisoblagan narxni yozing.",
     "answerNote": "Izoh",
     "answered": "Javob",
     "returned": "Qaytarildi",
@@ -3821,7 +3844,7 @@
     "makeOffer": "Mijozga taklif",
     "belowFloor": "Tannarxdan past — hisob {floor} $ chiqqan",
     "belowFloorChip": "past",
-    "offerSent": "Telegramga yuborildi",
+    "offerSent": "PDF va matn Telegramga yuborildi",
     "offerNoTelegram": "Telegram ulanmagan — matnni nusxalab oling",
     "offerMuted": "Profilingizda bu Telegram xabarlari o'chirilgan — matnni nusxalab oling",
     "offerText": "Taklif matni",
@@ -3886,6 +3909,8 @@
       "rateNoted": "lug'at stavkasi izoh bilan",
       "bazaFromImport": "Baza importdan (taxmin)",
       "bazaFromMemory": "Baza muhrlangan hisobdan",
+      "bazaDictionaryMoved": "Lug‘atdagi baza o‘zgargan",
+      "aiRecode": "Kodni AI deklaratsiyaga qarab tanlagan — kod va bojni tekshiring",
       "basisNotLaw": "Baza qonun birligida emas"
     },
     "refusal": {
@@ -3913,6 +3938,10 @@
     "threadAnalyze": "O‘qish",
     "threadReading": "AI o‘qimoqda…",
     "threadRead": "qator: {lines} · fayl: {files}",
+    "threadAiFailed": "⚠ AI o‘qiy olmadi — raqamlar faqat yozilgan matndan olindi.",
+    "threadAiRetry": "Keyinroq qayta urinib ko‘ring.",
+    "threadAiNoRetry": "Qayta urinish yordam bermaydi — adminga ayting, VED qo‘lda ko‘radi.",
+    "threadAiTooBig": "Tanlov juda katta yoki fayl o‘qilmadi — kamroq xabar tanlang yoki faylni boshqacha yuboring.",
     "threadMissing": "Ma’lumot yetishmaydi — VED baribir qabul qiladi",
     "threadSendBtn": "VEDga yuborish",
     "threadCancel": "Bekor",
@@ -3969,11 +3998,13 @@
       "basisSuspect": "birligini tekshiring (qonun boshqa birlikda o‘lchaydi) — qator",
       "importFilled": "importdan to‘ldirilgan baza: {count} ta, qator",
       "memoryFilled": "muhrlangan hisobdan to‘ldirilgan baza: {count} ta, qator",
+      "dictionaryFilled": "lug‘atdan to‘ldirilgan baza: {count} ta, qator",
       "basisAuto": "avto",
       "basisConflict": "birlik qonunga mos emas (qatorda bitta o‘lchov bo‘ladi) — qator",
       "alreadySaved": "avval saqlangan edi: {count} qator",
       "basisNotLaw": "qonun {unit} bo‘yicha o‘lchaydi — baza boshqa birlikda"
     },
+    "volumeFromLinesShort": "qatorlardan",
     "grid": {
       "qty": "Dona",
       "kg": "Netto, kg",
@@ -4094,7 +4125,10 @@
     "statsWeightNoRow": "Qatorda soni yoki og'irligi yo'q — og'irlik bo'yicha qator chiqmaydi",
     "statsWeightNone": "±25 % og'irlikda deklaratsiya yo'q",
     "statsPick": "Tanlash",
+    "importOtherCode": "kod: {code}",
     "statsTimeout": "Statistika hozir hisoblanmadi (fayl katta) — ro'yxatdan tanlang",
+    "statsShortCode": "Statistika 10 xonali kod bo'yicha — ro'yxatdan deklaratsiya tanlang, kodi o'zi qo'yiladi",
+    "importListTimeout": "Bu sarlavha juda keng — ro'yxat o'qilmadi. 10 xonali kodni yozing.",
     "statsFailed": "Statistika yuklanmadi",
     "statsTable": "Jadval ko'rinishida",
     "statsColN": "Soni",
@@ -5734,6 +5768,9 @@
     "noAudience": "⚠ Bu xabarni hozir hech kim olmaydi — hisob hali hech kimga biriktirilmagan. Kim olsa, o‘sha ko‘radi.",
     "feedCalcThread": "🧮 Hisob savoli · ↩️ javob",
     "feedViaTelegram": "📱 Telegramdan",
+    "feedAiReply": "🤖 AI taxmini · rasmiy emas",
+    "feedTariffReply": "🧮 Tarif bo‘yicha taxmin · rasmiy emas",
+    "feedEstimateReply": "📊 Ichida taxmin bor · rasmiy emas — VED tekshiradi",
     "feedCalcHint": "Bu VED ga bormaydi — hisob savoliga «❓ Savol-javob»da javob bering.",
     "notifMuteChat": "Ichki yozishmalar (kartadagi savol-javob, @ bilan chaqirish)",
     "unreachable": {

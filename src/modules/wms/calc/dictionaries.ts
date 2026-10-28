@@ -77,6 +77,19 @@ export interface RatesRow {
  */
 export const onDate = (at: Date = new Date()) => tashkentDay(at);
 
+/**
+ * The last day a row may be dated and still read STALE — law 5's age rule,
+ * BAZA_STALE_DAYS before today in Tashkent's day (docs/SAKKIZ-R2.md K12).
+ *
+ * One home (#513): the workspace's ⚠ on a row, these dictionaries' own
+ * screens and the review count all compare against exactly this, and round 2
+ * prints «eski fayl» off it too — four spellings of «90 days ago» would be
+ * four chances to disagree about the boundary day.
+ */
+export function bazaStaleCutoff(now: Date = new Date()): string {
+  return onDate(new Date(now.getTime() - BAZA_STALE_DAYS * 86_400_000));
+}
+
 // ---------------------------------------------------------------------------
 // 1. Product baza
 // ---------------------------------------------------------------------------
@@ -138,7 +151,7 @@ export async function listBazas(
           ),
     )
     .orderBy(asc(calcBazas.label), desc(calcBazas.effectiveDate));
-  const cutoff = onDate(new Date(Date.now() - BAZA_STALE_DAYS * 86_400_000));
+  const cutoff = bazaStaleCutoff();
   return rows.map((r) => ({
     ...toBaza(r),
     stale: r.effectiveDate <= cutoff,
@@ -594,7 +607,7 @@ export async function listPriceBook(): Promise<
     .select()
     .from(calcPriceBook)
     .orderBy(asc(calcPriceBook.label), desc(calcPriceBook.effectiveDate));
-  const cutoff = onDate(new Date(Date.now() - BAZA_STALE_DAYS * 86_400_000));
+  const cutoff = bazaStaleCutoff();
   return rows.map((r) => ({
     ...toPrice(r),
     stale: r.effectiveDate <= cutoff,
@@ -659,7 +672,7 @@ export async function staleDictionaryCounts(): Promise<{
   prices: number;
   total: number;
 }> {
-  const cutoff = onDate(new Date(Date.now() - BAZA_STALE_DAYS * 86_400_000));
+  const cutoff = bazaStaleCutoff();
   const [bazas, rates, prices] = await Promise.all([
     countStale('calc_bazas', 'product_key', cutoff),
     countStale('calc_rates', 'tnved_code', cutoff),

@@ -574,6 +574,7 @@ These were not refuted, but no refuter ran on them. The owning package must REPR
   brutto differ by construction); keep m³.
 - **Partial totals (MR-23):** delete the partial-JAMI branches in ai-reply /
   prefill-reply and re-anchor their tests on a workspace-derived input.
+  → Superseded in Sakkiz round 2 (`docs/SAKKIZ-R2.md` §2.2, §6): «Aniq» is a named partial with no fee, «Taxminiy» is whole or a sentence, and no partial JAMI remains.
 - **Stale baza (TT-19, S10):** `WorkspaceItem.bazaStale: boolean` (all three
   sources) — a chip, not a warning kind. P2 exposes data only; P3 renders.
 - **BlockFooter (S11):** P2 owns its body. Its props are FROZEN, plus ONE

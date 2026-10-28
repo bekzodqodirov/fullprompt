@@ -415,10 +415,27 @@ describe('the one box count a truck card prints', () => {
     expect(cargoLineOf(card({ status: 'forming', load: { loaded: m(0), planned: m(40) } }))).toEqual({
       kind: 'plan',
       planned: m(40),
+      road: 0,
     });
     expect(cargoLineOf(card({ load: { loaded: m(12), planned: m(40) } }))).toMatchObject({ kind: 'loaded', all: false });
     expect(cargoLineOf(card({ load: { loaded: m(40), planned: m(40) } }))).toMatchObject({ kind: 'loaded', all: true });
     expect(cargoLineOf(card({ load: { loaded: m(0), planned: m(0) } }))).toEqual({ kind: 'planNone' });
+  });
+
+  it('a plan owed from the road is never «rejasiz» and never «hammasi yuklandi» (docs/YOLDAGI-YUK.md §9)', () => {
+    // All of it on the road: nothing on the pointer, still a plan.
+    expect(cargoLineOf(card({ status: 'forming', load: null, roadOwed: 10 }))).toEqual({
+      kind: 'plan',
+      planned: m(0),
+      road: 10,
+    });
+    expect(cargoLineOf(card({ load: null, roadOwed: 10 }))).toMatchObject({ kind: 'plan', road: 10 });
+    // Everything reserved is aboard, ten are still owed.
+    expect(cargoLineOf(card({ load: { loaded: m(40), planned: m(40) }, roadOwed: 10 }))).toMatchObject({
+      kind: 'loaded',
+      all: false,
+      road: 10,
+    });
   });
 
   it('on the road what rode; at the gate a / b off — the whole truck’s measures, named so', () => {

@@ -6,7 +6,8 @@ import { isQueryCanceled, isServerBehind } from '@/modules/platform/db/errors';
 import { logger } from '@/modules/platform/logger';
 import { isBazaBasis, type BazaBasis } from '@/modules/wms/calc/pricing';
 import { underCeiling } from '@/modules/wms/finance/price-history';
-import { newestReadyBatchId, previousReadyBatchId } from '@/modules/wms/customs/import-service';
+import { batchesForCodes, previousReadyBatchId } from '@/modules/wms/customs/import-service';
+import { isFullCode } from '@/modules/wms/customs/import-baza';
 import { periodText, readImportStats, type ImportStatsAnswer } from '@/modules/wms/customs/import-stats';
 import { readPickerItem } from '@/modules/wms/customs/picker-item';
 
@@ -24,6 +25,12 @@ import { readPickerItem } from '@/modules/wms/customs/picker-item';
  * that), and a cancel becomes `state: 'timeout'` — a sentence beside a list
  * that keeps working, never a hung dialog. The batch ids and the item are
  * read BEFORE the transaction, on the pool (#714).
+ *
+ * Round 2 (docs/SAKKIZ-R2.md §7.3-7.4): the batch is the one the per-code
+ * chooser picks for THIS code — the same answer the list route gets through
+ * `suggestImportBaza` — and a row coded by a heading gets no statistics at
+ * all (`short_code`): a heading-wide quartile mixes subheadings priced
+ * nothing alike, and the list beside it is where a heading is answered.
  */
 export async function GET(request: Request) {
   try {
@@ -57,8 +64,9 @@ export async function GET(request: Request) {
     const item = await readPickerItem(itemId, draftedBasis);
     if (!item) return Response.json({ error: 'not_found' }, { status: 404 });
     if (!item.code) return Response.json(empty('no_code'), { headers });
+    if (!isFullCode(item.code)) return Response.json(empty('short_code'), { headers });
 
-    batchId = await newestReadyBatchId();
+    batchId = (await batchesForCodes([item.code])).get(item.code)?.batchId ?? null;
     if (!batchId) return Response.json(empty('no_batch'), { headers });
     const prevBatchId = await previousReadyBatchId(batchId);
     const periods = await db

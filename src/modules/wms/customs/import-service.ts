@@ -1,6 +1,6 @@
 import type { Readable } from 'node:stream';
 import { and, desc, eq, sql, type SQL } from 'drizzle-orm';
-import { db } from '../../platform/db/client';
+import { db, type Db, type Tx } from '../../platform/db/client';
 import { customsImportBatches, customsImportRows } from '../../platform/db/schema';
 import { getStorage } from '../../platform/files/storage';
 import { logger } from '../../platform/logger';
@@ -13,6 +13,8 @@ import {
   type ParsedImportRow,
   type SkipReason,
 } from './import-parse';
+import { FEW } from './import-stats-math';
+import { codeBounds } from './import-stats-sql';
 
 /**
  * The quarterly customs dump, ingested (docs/VED-IMPORT-AI.md sub-round A).
@@ -344,8 +346,15 @@ async function beat(batchId: string, rowCount: number, skipped: number): Promise
  * Parse the stored file into `customs_import_rows` and settle the batch.
  *
  * Idempotent by wipe-and-redo: pg-boss retries a thrown job, so the batch's
- * own rows are deleted first — the batch id is the claim, and a half-written
- * quarter must never be added to a re-run's rows.
+ * own rows are deleted before any is written — the batch id is the claim,
+ * and a half-written quarter must never be added to a re-run's rows. The
+ * wipe comes AFTER the claim, never before it: a job re-delivered for a
+ * batch that already settled READY (the process died between the settle
+ * and pg-boss recording the job as done) used to delete the whole quarter's
+ * rows and only then find the batch was no longer its own — a ready batch
+ * with nothing in it, which every suggestion reads, and a dangling pointer
+ * under every price it had given. A ready batch's rows never change; the
+ * import fill's memo across saves stands on that (workspace.ts).
  */
 export async function runCustomsImport(input: {
   batchId: string;
@@ -353,7 +362,6 @@ export async function runCustomsImport(input: {
   fileName: string;
 }): Promise<ImportOutcome> {
   const { batchId, storageKey, fileName } = input;
-  await db.delete(customsImportRows).where(eq(customsImportRows.batchId, batchId));
   // The first beat is BEFORE a byte is read, and it matters most: opening
   // the stored file is itself something that can hang (a storage blip, a
   // network read of 80 MB). Without it a batch would look dead for the
@@ -368,6 +376,7 @@ export async function runCustomsImport(input: {
   if (!(await beat(batchId, 0, 0))) {
     throw new BatchGoneError(batchId);
   }
+  await db.delete(customsImportRows).where(eq(customsImportRows.batchId, batchId));
   // The ceiling of what this file's dates may claim: the Tashkent day it was
   // UPLOADED — the same `uploadDaySql` the «newest» clamp reads, so the two
   // can never disagree about which day that is (a retry hours later, past
@@ -651,14 +660,15 @@ export function batchRecencySql(t: SQL): SQL {
 }
 
 /**
- * The batch every suggestion reads: the newest one that finished — newest
- * by the dates inside, clamped to the upload day, his C6.
+ * The newest READY batch — newest by the dates inside, clamped to the upload
+ * day, his C6.
  *
  * His answer 2b — imports accumulate and the newest READY one is the truth;
- * a batch still processing must never half-price a calculation. ONE home for
- * its three readers: the 📥 picker (and its statistics), `saveTable`'s
- * auto-fill and the AI prefill — two answers to «which quarter» would be
- * #513.
+ * a batch still processing must never half-price a calculation. Since round
+ * 2 the SUGGESTIONS read `batchesForCodes` instead, which asks this same
+ * order per code and falls back to exactly this batch for a code no file
+ * holds; what still reads this one is the admin page's «answering» chip,
+ * which is about the file, not about a code (docs/SAKKIZ-R2.md §7.3).
  */
 export async function newestReadyBatchId(): Promise<string | null> {
   const rows = await db.execute<{ id: string }>(sql`
@@ -669,6 +679,145 @@ export async function newestReadyBatchId(): Promise<string | null> {
      LIMIT 1
   `);
   return rows[0]?.id ?? null;
+}
+
+/** The batch that answers one code, and the last day it describes. */
+export interface ChosenBatch {
+  batchId: string;
+  /** `batchEndSql`'s day, as ISO text — what «eski fayl» is judged by. */
+  endDate: string;
+  /** How many rows of the code it holds; null = not counted. */
+  rows: number | null;
+}
+
+/** How far the chooser counts a code's rows in one batch — enough to tell
+ * «a few» from «many», and an index-only range scan however big the file. */
+const CHOOSER_COUNT_CAP = 1000;
+
+/**
+ * Which READY batch answers each code. TOTAL over the codes asked: every code
+ * gets an entry whenever ANY batch is ready, and the map is EMPTY only when
+ * none is. «No ready batch» (no_batch, «yuklanmagan») and «no file holds this
+ * code» (no_declarations, calc.importNone) stay two different answers.
+ *
+ * The rule (docs/SAKKIZ-R2.md §7.3), per code, over the ready batches that
+ * hold at least one of its rows (between `codeBounds`, so a heading counts
+ * its subheadings):
+ *   1. a batch with ≥ FEW rows of the code before one with fewer — a code
+ *      the newest file is silent or nearly silent about is answered by the
+ *      newest file that has enough to say;
+ *   2. then the newer QUARTER of what the file describes (`batchEndSql`) —
+ *      his 2b where it speaks: the newest file answers every code it holds
+ *      five declarations of, and a full Q2 beats a same-quarter sample
+ *      whichever was uploaded last;
+ *   3. then more rows (a count capped at CHOOSER_COUNT_CAP is a tie);
+ *   4. then the ONE order of «newest» (`batchRecencySql`).
+ * A code no ready batch holds is answered by the newest ready batch, exactly
+ * as before this round — its callers then say «importda mos qator yo‘q»
+ * (calc.importNone), never «yuklanmagan» (regression-6). An older file's baza
+ * wears the existing stale chip, and the bot says «eski fayl».
+ *
+ * ONE statement for every code a save asks about, over a `VALUES` list of
+ * each code and its two bounds (`codeBounds`, built with `sql.join`): one
+ * LATERAL, planned once however many codes a save asks — a lateral PER code
+ * glued with UNION ALL planned each one separately (measured on an empty
+ * table, ~0.5 ms a code: 35 ms for fifty, review P2-10). Each counts through
+ * the `(batch_id, tnved_code)` index; a full code's bounds are equal, which
+ * is the same range scan as `=`. Read on the POOL, before any transaction
+ * (#714).
+ */
+export async function batchesForCodes(codes: readonly string[]): Promise<Map<string, ChosenBatch>> {
+  const out = new Map<string, ChosenBatch>();
+  // Keyed by the code exactly as asked, so a caller's lookup cannot miss.
+  const asked = [...new Set(codes)].filter((c) => c !== '');
+  if (asked.length === 0) return out;
+  const rows = await db.execute<{ code: string; id: string; ended: string; rows: number | null }>(
+    batchChooserStatement(asked),
+  );
+  for (const r of rows) {
+    out.set(r.code, {
+      batchId: r.id,
+      endDate: String(r.ended).slice(0, 10),
+      // A code no batch holds was COUNTED — none, in every ready file.
+      rows: r.rows === null ? 0 : Number(r.rows),
+    });
+  }
+  return out;
+}
+
+/**
+ * The chooser's ONE statement, built apart so a test can EXPLAIN exactly
+ * what `batchesForCodes` runs (review performance-9).
+ *
+ * The rule needs a full count only to break a tie INSIDE one quarter (rule
+ * 3), so it counts in two steps (review performance-8): every ready batch is
+ * counted only as far as FEW — enough for rules 1 and 2, and exact below FEW
+ * — and only the batches of the newest quarter that has FEW are counted on
+ * to CHOOSER_COUNT_CAP, by a scalar subquery postgres runs for those rows
+ * alone. Imports accumulate and are never retired (his 2b), so counting a
+ * thousand index entries of every asked code in every quarter ever uploaded
+ * grew the cost of every save each quarter. The winner and its `rows` are
+ * the same as one count to the cap: a batch below FEW is counted exactly,
+ * and the winner of a code some batch holds FEW of is in the newest such
+ * quarter, whose batches are counted in full.
+ */
+export function batchChooserStatement(codes: readonly string[]): SQL {
+  const values = sql.join(
+    codes.map((code) => {
+      const { lo, hi } = codeBounds(code);
+      return sql`(${code}::text, ${lo}::text, ${hi}::text)`;
+    }),
+    sql`, `,
+  );
+  const quarter = (t: SQL) => sql`date_trunc('quarter', (${batchEndSql(t)})::timestamp)`;
+  return sql`
+    WITH asked(code, lo, hi) AS (VALUES ${values}),
+    newest AS (
+      SELECT b.id, ${batchEndSql(sql`b`)} AS ended
+        FROM customs_import_batches b
+       WHERE b.status = 'ready'
+       ORDER BY ${batchRecencySql(sql`b`)}
+       LIMIT 1
+    )
+    SELECT a.code,
+           COALESCE(p.id, n.id)::text AS id,
+           COALESCE(p.ended, n.ended)::text AS ended,
+           p.n AS rows
+      FROM asked a
+      CROSS JOIN newest n
+      LEFT JOIN LATERAL (
+        SELECT s.id,
+               ${batchEndSql(sql`s`)} AS ended,
+               CASE WHEN s.few >= ${FEW} AND ${quarter(sql`s`)} = s.best
+                    THEN (SELECT count(*)::int FROM (
+                            SELECT 1 FROM customs_import_rows r
+                             WHERE r.batch_id = s.id AND r.tnved_code BETWEEN a.lo AND a.hi
+                             LIMIT ${CHOOSER_COUNT_CAP}
+                          ) x)
+                    ELSE s.few
+               END AS n,
+               s.few,
+               s.period_to,
+               s.uploaded_at
+          FROM (
+            SELECT b.id, b.period_to, b.uploaded_at, c.few,
+                   max(${quarter(sql`b`)}) FILTER (WHERE c.few >= ${FEW}) OVER () AS best
+              FROM customs_import_batches b
+              CROSS JOIN LATERAL (
+                SELECT count(*)::int AS few FROM (
+                  SELECT 1 FROM customs_import_rows r
+                   WHERE r.batch_id = b.id AND r.tnved_code BETWEEN a.lo AND a.hi
+                   LIMIT ${FEW}
+                ) x
+              ) c
+             WHERE b.status = 'ready' AND c.few > 0
+          ) s
+         ORDER BY (s.few >= ${FEW}) DESC,
+                  ${quarter(sql`s`)} DESC,
+                  n DESC,
+                  ${batchRecencySql(sql`s`)}
+         LIMIT 1
+      ) p ON true`;
 }
 
 /**
@@ -692,9 +841,10 @@ export async function previousReadyBatchId(batchId: string): Promise<string | nu
   return rows[0]?.id ?? null;
 }
 
-/** How many calculation rows are priced off this import's declarations. */
-export async function importBatchUsage(batchId: string): Promise<number> {
-  const rows = await db.execute<{ n: number }>(sql`
+/** How many calculation rows are priced off this import's declarations —
+ * on the transaction it is handed when it runs inside one. */
+export async function importBatchUsage(batchId: string, exec: Db | Tx = db): Promise<number> {
+  const rows = await exec.execute<{ n: number }>(sql`
     SELECT count(*)::int AS n
       FROM calc_request_items i
       JOIN customs_import_rows r ON r.id = i.import_row_id
@@ -718,16 +868,21 @@ export async function importBatchUsage(batchId: string): Promise<number> {
  * never passes a button.
  */
 export async function deleteImportBatch(batchId: string): Promise<void> {
-  const [batch] = await db
-    .select({ status: customsImportBatches.status })
-    .from(customsImportBatches)
-    .where(eq(customsImportBatches.id, batchId))
-    .limit(1);
-  if (!batch) return;
-  if (batch.status !== 'failed' && (await importBatchUsage(batchId)) > 0) {
-    throw new CustomsImportError('in_use');
-  }
-  await db.delete(customsImportBatches).where(eq(customsImportBatches.id, batchId));
+  // ONE transaction, the batch row taken FOR UPDATE before the usage is
+  // counted (review concurrency-10). A save pointing a row at this file holds
+  // the batch FOR KEY SHARE until it commits (`lockImportRowsInTx`), so the
+  // two exclude each other: counted on the pool and then deleted, a save
+  // committing in between was cascaded to `import_row_id = NULL` under a
+  // 'import' source — `in_use` defeated by its own timing.
+  await db.transaction(async (tx) => {
+    const [batch] = await tx.execute<{ status: string }>(sql`
+      SELECT b.status FROM customs_import_batches b WHERE b.id = ${batchId}::uuid FOR UPDATE`);
+    if (!batch) return;
+    if (batch.status !== 'failed' && (await importBatchUsage(batchId, tx)) > 0) {
+      throw new CustomsImportError('in_use');
+    }
+    await tx.delete(customsImportBatches).where(eq(customsImportBatches.id, batchId));
+  });
 }
 
 /** How many rows a ready batch holds per code — the screen's «bor» line. */

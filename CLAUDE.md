@@ -159,7 +159,9 @@ pnpm build && pnpm e2e  # 44 e2e
 | The staff Telegram group — celebrations, the Saturday 18:00 rating, the month's champion, /reyting | `docs/JAMOA-GURUHI.md` — agreed 2026-10-20 (his «3. 2 3 gif … tabriklash ham / qolgani sen aytkandek»), SHIPPED |
 | Every truck in one place — the board by place, the % by distance, GPS, the gate | `docs/PARTIYA-DOSKASI.md` — agreed 2026-10-17 (his 1A 2a 3a 4a 5a 6c 7a 8b 9b 10b 11A 12A, then «1 hozirgidek qolsin»), SHIPPED; §2 is the placement as built; §3a = «Yo'lda» in two columns, inside / outside China (2026-10-21) |
 | LTL / FTL — which cargo the KPI and the rating count, who may mark it, the paid-month freeze, the logist's hint | `docs/LTL-FTL.md` — agreed 2026-10-20 (his «3 b / qolgani sen aytgandek» = 1a 2a 3b 4a 5a 6a 7a), SHIPPED |
+| His eight items of 2026-10-20 (AI reading, customs, models, odnarodka, VED rota, new deal, kontragent links, one-line tarkib) — verified diagnosis, round plan, the numbered questions | `docs/SAKKIZ-BAND.md` — his answers in §11 (2026-10-21, unnamed = ⭐); **round 1 SHIPPED** (DECISIONS #1455-#1462) and reviewed against a regression corpus (#1463-#1468); **round 2 SHIPPED** (`docs/SAKKIZ-R2.md`, #1503-#1511); 4.5 c / 6.8 b answered; R3 designed (`docs/SAKKIZ-R3.md`); R4, R5 (`docs/SAKKIZ-R5.md` handoff) and R8 are the OTHER session's — R4+R8 shipped as its Uch band |
 | The price's link to its calculation; a new deal per coded request; a lead for a colleague's client; a won lead split by SALE; the one-line tarkib and «шт» | `docs/UCH-BAND.md` — agreed 2026-10-27 (his «3b / 4 a / 5 a / 6 a / 7 b», Q1-Q2 ⭐), BUILT; §7 is the design as judged |
+| A plan that takes cargo still on the road to its warehouse — the road part, owed, missed, the landing claim | `docs/YOLDAGI-YUK.md` — agreed 2026-10-27 (his 1a 2a 3a 4a 5a), BUILT; v2 is the design as judged |
 
 ## State — 2026-08-23
 
@@ -2963,6 +2965,78 @@ CN destination is inland (no hub test), ONE arrived column (`columnOf` splits on
 filter hides everything bound for China (`routeFilterOf` = a `kg`/`kz` leg; a map walk over every pair proves no
 road into China has one, and refuses an unclassed new map code).
 
+**Round — Sakkiz band, round 1 (2026-10-21; DECISIONS #1455-#1462; NO
+migration; spec `docs/SAKKIZ-BAND.md`, his answers §11).** The VED rota: free
+first, then fewest handed TODAY, then longest wait, then id, picked INSIDE both
+landing transactions under `pg_advisory_xact_lock(hashtext('ved-rota'))`
+(`nextVedAssigneeInTx(tx, pool)`; his «faqat Murodga» = the NULL tie, reproduced
+`[9,0,0]` → `[3,3,3]`); admins holding the `ved_manager` ROLE join (5.7). The
+bot: `analyzeIntake` answers `{ok}|{ok:false, failure: AiReadFailure}` (twelve
+named, `AI_READ_FAILURE`, «🔄 AI qayta o'qisin»), 16k `max_tokens` because the
+heavy model's thinking counts inside it, own single retry, 150 s; typed goods
+lines read without the model (`readGoodsLines`, narrow, LAST in order);
+`readGoodsFile` = every sheet / content-sniffed XLSX, Excel 97 (OUR BIFF8 value
+reader `deals/xls.ts` over SheetJS's `cfb` — the full SheetJS reader is
+CVE-laden on npm and its fixed host is unreachable), HTML, XML, CSV in
+cp1251/GBK/UTF-16; the best sheet's goods, the rest + header-less sheets to the
+model as text; the header needs ≥2 cells and prefers word-like name columns. The
+collector: picture-files shown, HEIC/voice refused in words, 12 photos, 3 PDFs,
+a second invoice ASKED (`c:inv_add`/`c:inv_replace`), first message may be
+material (`looksLikeMaterial`), a phone is phone-shaped, an analysis lands only
+under its token (`settleAnalysis`) and keeps what arrived meanwhile, the confirm
+needs `stage === 'review'`, per-line answers live in `answers`, not material.
+Excel photos: `documents/sheet-photo.ts` — 800 px documents, 400 px stock, JPEG
+88, fitted into the box. The queued AI pass says when it stands down. ORACLE:
+LibreOffice is installed here — make a file with exceljs, save it as «MS Excel
+97», read it back. «шт» in packing lists (8.5) waited for round 8 — the other session's Uch band shipped it (#1470).
+
+**Then reviewed as built, and the fixes reviewed five more times (#1463-#1468).**
+Five lenses found 28 real defects of 31; each fix round's review then found
+regressions in the PREVIOUS round's fixes (35, then 41 items), because a free-text
+reader fixed one complaint at a time reopens the one before. So the readers now
+have a **regression corpus**: `tests/unit/fixtures/intake-corpus.json` (+ `.ts`
+for the cases that need code to build a file), run by
+`tests/unit/intake-corpus.test.ts` — every input any reviewer or prober ever ran,
+with the answer they said is right (~2,100 cases). `intake-corpus-known.ts` is a
+RATCHET: a known-failing case runs as `it.fails`, so one that starts passing is
+red until its id leaves the list, and a live case that starts failing is red as a
+regression. **Any change to `intake.ts`, `intake-manual.ts`, `units.ts`,
+`goods-import.ts`, `goods-file.ts`, `xls.ts`, `calc-intake.ts` or the collector
+in `staff-handlers.ts` runs the WHOLE corpus first.** Rounds 4-6 fixed against it
+(373 → 12 → 0; the probers found 134, then 65, then 85 regressions). The round-6
+probers' finds are RECORDED as known (the stopping rule) — except COMMON ones:
+the sub-rule behind a common regression is undone and the undo probed (#1466).
+144 known — all rare but «Redmi 13C» vs «Redmi 13» — each with its rule and
+severity. `otherName` compares a name's letters per script, its NUMBERS as a
+multiset however written («600*600mm» = «600×600 мм»; «iPhone 14» ≠ «iPhone
+15») and a model's TIER words after its number («iPhone 15» ≠ «iPhone 15 Pro»). Lead calls (#1465): a lead is never named by a phone (code or nobody),
+a numbered title over a one-column list is passed over, R3-C1 keeps both lines
+when their figures disagree. `pnpm typecheck` runs tsc with a **4 GB heap** — the
+program needs ~2.6 GB (#1467). `figureRow` (intake-manual.ts) is the ONE home of
+«a word and figures is a packing-list row».
+
+**Round — Sakkiz band, round 2 (2026-10-27; DECISIONS #1503-#1511 — renumbered from #1479-#1487 on the merge,
+the TWENTY-FOURTH collision; NO migration of its own — it deploys after main's 0136 and 0137, ledger 138; spec `docs/SAKKIZ-R2.md`, §15-§17
+are the reviews).** Item 2, his 2.1 b 2.2 b 2.3 a 2.4 c 2.5 b 2.6 b 2.7 b 2.9 c and
+«a a / b a / c a / d a». A baza-less row gets a 📊 MEDIAN of real China declarations of
+its exact code (`estimate.ts` pure, `estimate-read.ts` one sequential statement per
+(code, batch) under a budget) — **chat and lenta only, written onto no row** (fenced by
+`estimate-wire`); the reply prints «Aniq» (no fee) and a whole-or-absent «Taxminiy».
+The zone is guessed for the reply only (`guessZone`, two tiers, never stored, yolkira
+too); yolkira answers from the tariff on its own queue `calc.tariff-reply`; `sayOnce`
+= one machine message per request; the pass stands down at ANY step for a close or a
+person (clock before every model call). Σ m³ stored at the INSERT, labelled by
+derivation (`Workspace.volumeFromLines`); brutto ASKED, netto never a freight brutto
+(`totalWeightFrom`). `saveTable`'s fill = memory → dictionary → import, a machine save
+under `expectRev`; heading (4-6 digit) search with the AI recode + `ai_recode` warning;
+`batchesForCodes` per-code chooser; every answered model call counts. The «Готово» box
+says the bot's figures are not official. Built as kernel K + four worktree packages;
+three relayed finding lists had been CUT in transit, so a late pass re-read every
+item from its file: 119 checked, 59 still there, 53 fixed, 6 refused in writing (#1511:
+lists travel as FILES). Main's Uch band (0136) was merged in before the push — the VED
+rota pick is taken LAST in `openCalcRequest`'s tx, after the lead row lock (the order
+`recalcFromSealed` uses). Known: 142 corpus cases on the ratchet, one common (c2353).
+
 **Round — uch band (2026-10-27; DECISIONS #1469-#1478, numbered past PR #127's #1455-#1468; migration
 0136 `lead_client_many` — ledger must reach 137; spec `docs/UCH-BAND.md`).** His three items after the 136
 deploy, answers «3b / 4 a / 5 a / 6 a / 7 b» (Q1-Q2 ⭐). Judged by five lenses before code (83 objections, 0
@@ -2981,8 +3055,8 @@ the vouch term (`tarkibVouchesSql`), `tnved_would_vanish`, «шт» on Packing (
 agent file. Stated, not built: #1476 (Q8 — a truck price over two deals of one client — asked; answered «c»,
 built in the next round). Deploy MUST rebuild tg-listen (`inboundMatch` changed).
 
-**Round — Q8 «c», a two-deal truck's price (2026-10-28; DECISIONS #1491-#1495, numbered past PR #131's
-#1479-#1490; NO migration).** His «javobim C» («logist o'zi tanlaydi»). When two or more of a client's OWN deals
+**Round — Q8 «c», a two-deal truck's price (2026-10-28; DECISIONS #1512-#1516 — renumbered from #1491-#1495 on
+the merge, the TWENTY-FIFTH collision: #131's road plan and Sakkiz R2 took #1479-#1511 first; NO migration, ledger 138).** His «javobim C» («logist o'zi tanlaydi»). When two or more of a client's OWN deals
 ride one truck, the person setting the truck price CHOOSES the deal; one deal is derived (R3a), one deal beside
 deal-less cargo stays null, «bitimsiz» only for a deal-less part. ONE pure rule `finance/truck-deal.ts`
 (`dealCandidatesOf` / `truckDealDecision` / `shownDealChoice` / `unpricedDealsOf`, `ownDealOf` for every pricing
@@ -2994,9 +3068,64 @@ for a client priced here; «Bu mashinadagi narxlar»; the deal card's `otherDeal
 Review found a deferral paying the OTHER deal's cartons (KPI on unpaid cargo) — `settleChargesFully` +
 `paidCargo` now let a deferral pay its own deal's cartons only. Stated: moveCharge keeps its own deal, a re-file
 never moves a price's deal, one client's prices on one truck are paid together, the logist lacks `finance.manage`
-(asked). e2e `m9zzzg-narx-bitim`.
+(asked). e2e `m9zzzg-narx-bitim`. CI caught `upsale-fifo-wire` naming the FIFO walk's callers by the old name
+(fixed, both names count); the round's own screenshots caught three display seams (fixed, pinned).
 
-**Latest migration: 0136** (`lead_client_many`, `when` …115; ledger must reach **137**). Before
+**Round — narx taklifi PDF bilan (2026-10-27; DECISIONS #1479-#1480; NO migration, ledger 137).** His
+«narx taklifi text bolib sotuvchi telegramiga kelyabti pdf ham birga kelsin … shu telegramni ozini jonatish
+imkoni uchun»: the seller's `CalcOffer` row carries `offerId` (`recordOffer` + `releaseOffer`), and the drain's
+`deliverWithSheet` builds the sheet at send time (dynamic import of `wms/calc/offer-sheet-file.ts`, the ONE
+assembler the by-id PDF route uses too) and sends `sendDocument` with the offer text as the CAPTION — one
+message, one forward. A 400 about the file sends the words alone; a 429 pauses; a caption over 1024 goes text
+first, sheet in reply. Pinned by `offer-sheet-telegram.integration.test.ts` (6 red proofs). His two other items
+of that message were ASKED, not built: plan cargo still on the road to the origin warehouse (questions on what
+counts as «yo'lda», approval before arrival, the short-load case), and «files do not download on the phone» —
+measured green in a phone-shaped Chromium with the service worker (#1480), so the device/browser is asked.
+
+**Round — yuklab olish havolasi (2026-10-27; DECISIONS #1481-#1482; NO migration).** His answer «2 download
+unsuccessful … 3 c»: the system opened from a Telegram «↗️ Ochish» runs in Telegram's in-app browser, which
+hands a file's address to the phone's download manager — no cookie, every file route 401/403. A file press now
+asks `POST /api/dl` (cookie, JSON only) for a 10-minute signed link (`platform/auth/download-link.ts`, HMAC of
+a key derived from `SESSION_SECRET`; none, short, or a value the repo publishes = no links, plain address as
+before) and follows it; `GET /api/dl/<token>` asks the REAL file route on 127.0.0.1 as the link's person
+(delegated-user header + the process's internal key, honoured only together in `getSessionUser`, `canLogIn`
+re-asked) — no door re-implemented. One capture-phase listener (`components/download-links.tsx`) in the
+protected layout; desktop new-tab links under a mouse stay native; the print sheet's no-share fallback asks
+`signedDownloadUrl`; the SW never caches `/api/dl/`. Pinned by `download-link.test.ts`,
+`download-link-session.integration.test.ts`, e2e `m9zzzg-yuklab-olish` (5 red proofs). The server's
+`SESSION_SECRET` must be a real random value (CHANGELOG gives the check).
+
+**Round — yo'ldagi yuk (2026-10-27; DECISIONS #1483-#1490; migration 0137 `plan_road` — ledger must reach
+138; spec `docs/YOLDAGI-YUK.md`).** His «horgos planda yoldagi yuklarni ham qoshish degan check bolsin»,
+answers 1a 2a 3a 4a 5a. Designed, judged by four lenses BEFORE code (34 objections, 5 blockers — v2 absorbed
+them), built, reviewed as built. `plan_line_road` (part / owed / missed) + `plan_road_claims`, ONE writer
+`wms/planning/road.ts` (fenced by `road-wire.test.ts`). A pending plan reserves nothing on the road either;
+the approval owes what the shelf lacks, refuses an owed part the road cannot give, under `roadLock(W)` (the
+approval first, the landing hook last — #1484). The landing reserves owed cartons onto the truck in its own
+tx at every landing door (never `count_over`); a carton a truck already landed is never landed again by it
+(the stale-scan blocker, a general fix). The count door and the phone claim free cartons of an owed lot;
+`road_not_landed` names the inbound truck; the sync lands before it loads. «Yuklash tugadi»/cancel move owed
+into MISSED (never erased — the count door's number stays the shelf part); depart refuses `road_owed_open`;
+the presser, Telegram and the register's ⤵️ say what did not come; a claimed carton given back «tayyor»
+re-arms its arrival notice. The verdict is a claim (two presses = one truck). Readers: the editor's box
+(`roadOn`, `roadStock` merged into one `lots`, ✓ = shelf, 🚚 = road, resubmit reopens ticked), the plan view,
+the loading snapshot (`roadOwed`, `roadCodes`), board/batch card, the agent sheet's «В пути» block, the annul
+refusal. `RoadOn` is a branded REQUIRED argument minted only by the probe. 13 integration + 13 unit + 5 e2e,
+14 red proofs. **Reviewed as built** (#1491-#1497, four lenses, 9 findings, all fixed — spec §11 binds): a claim
+never takes the truck's own plan cargo (`claimableForSql` — a removed carton was claimed twice and the road's own
+cartons landed free), takes `min(owed, k)` at the line's lock, «already landed here» is three facts (shelf / this
+truck not sent back — `notSentBackSql`, shared with the count ledger, which fixed over → undo → over on EVERY
+server / reserved onto a truck leaving here), the agent sheet's «Не пришло» block, the snapshot's
+`roadShelf`/`roadInbound` judged on the phone by `roadScanVerdict`, the editor's untick clamping against the
+answer and naming picks it cannot show. **Then the FIXES were reviewed** (#1498-#1502, 10 of 11 upheld): my
+#1495 refused the Horgos cross-dock's own cartons from a snapshot older than the landing — online the server
+decides, offline only this phone's own landing goes in (`roadScanVerdict(…, {online, queuedUnloads})`); the
+onward truck on the ROAD is «already here» too; the hook locks lines in line order; the untick names its
+origin (`untickFor`); three tests that held with their gate deleted were re-anchored, and the editor's routes
+are held at the CONTEXT (the service worker answers `/api/*`, `page.route` never sees it).
+
+**Latest migration: 0137** (`plan_road`, `when` …116; ledger must reach **138**). Before
+it: 0136 (`lead_client_many`, `when` …115). Before
 it: 0135 (`load_mode`, `when` …114). Before
 it: 0134 (`staff_group`, `when` …113). Before
 it: 0133 (`pickup_close`, `when` …112). Before
@@ -3137,7 +3266,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **137** since 0136 (136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **138** since 0137 (137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read
@@ -3155,7 +3284,7 @@ migration of its own, it rides with 0133) is checked by BOTH the count (134) and
 a migration did not land — read the `migrate` container's own output).
 **Then he CONFIRMED 136** («deploy qildim 136 chiqdi», 2026-10-27), so everything through
 the LTL/FTL round and «Yo'lda» in two columns (#1454) is LIVE; the uch-band round (0136)
-must read **137**.
+must read **137**, and the yo'ldagi-yuk round (0137) **138**.
 Never carry this number over from a previous session: read it
 (`ls src/modules/platform/db/migrations/*.sql | wc -l`) before writing the
 owner a step list, because the count is the only check that separates «the

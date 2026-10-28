@@ -5,6 +5,7 @@ import { db } from '../../platform/db/client';
 import { tnvedAssignments } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { aiConfigured, ANALYST_MODEL } from '../../platform/ai/model';
+import { logger } from '../../platform/logger';
 
 /**
  * ТНВЭД assistant (Phase 1.5, owner's spec): the AI suggests a customs code
@@ -94,7 +95,17 @@ export async function tnvedHintsFor(
 }
 
 export class TnvedError extends Error {
-  constructor(public code: 'invalid_code' | 'ai_not_configured' | 'ai_failed') {
+  constructor(
+    public code: 'invalid_code' | 'ai_not_configured' | 'ai_failed',
+    /**
+     * What the call cost when the model DID answer and the answer was still
+     * no good — a refusal, a cut-off (`max_tokens`), an unreadable one, or
+     * zero valid groups (round 2, 2.9 c). Absent when there was no answer at
+     * all (no key, a timeout, the network): that cost nothing or an unknown
+     * amount, and is not counted against the day's cap.
+     */
+    public usage?: AiUsage,
+  ) {
     super(code);
   }
 }
@@ -242,14 +253,9 @@ const GROUPING_SYSTEM = `Ты — эксперт по классификации
 - item_indexes: индексы товаров из входного списка (с нуля). Каждый товар ровно в одной группе.
 - duty_rate_pct: ОЦЕНКА ставки импортной пошлины Узбекистана для этого кода в процентах, или null если не уверен. Это черновая подсказка для менеджера, не официальная ставка.
 - reasoning: одно короткое предложение на русском.
-- Если товар непонятен, дай ему отдельную группу с confidence low.`;
+- Если товар непонятен, дай ему отдельную группу с confidence low.
+- Вес, объём и примечание — подсказка о материале и назначении, не для цены.`;
 
-/**
- * DEALS.md answer 6: the assistant proposes the ~50-goods → ~30-lines
- * grouping, the VED manager confirms. NOT saved anywhere — the caller shows
- * it, a human decides. Degrades cleanly: no key (or a refusal) surfaces as a
- * TnvedError and the file simply stays ungrouped for hand work.
- */
 /** What one grouping call cost — carried out so the caller can bill it. */
 export interface AiUsage {
   model: string;
@@ -257,8 +263,61 @@ export interface AiUsage {
   outputTokens: number;
 }
 
+/** One good as the grouping model reads it (round 2, §7.5). Every field is
+ * REQUIRED and nullable (#790): a caller that forgets the weight is a compile
+ * error, never a silently thinner listing. */
+export interface GroupingGood {
+  name: string;
+  quantity: number | null;
+  unit: string | null;
+  weightKg: number | null;
+  volumeM3: number | null;
+  /** The row's measure pair as words («120 m2»), when it states one. */
+  measure: string | null;
+  note: string | null;
+}
+
+/** How much of a note the listing carries — a hint, not the whole page. */
+const GROUPING_NOTE_CAP = 120;
+
+const groupingNumber = (n: number) => String(Number(n.toFixed(3)));
+
+/**
+ * The text the grouping model reads, one line per good:
+ * «0. Kurtka — 300 шт · 150 кг · 1.2 м³ · прим.: 100% полиэстер».
+ *
+ * The name alone was all it had, and a name is the weakest evidence there is
+ * about a code: «Kurtka» is a jacket of WHAT, and the line's weight per piece
+ * and its note («100% полиэстер», «натуральная кожа») are what decide the
+ * subheading — exactly what a declarant reads. Pure and exported, so the
+ * test reads the listing the model is sent. Words only: the figures are a
+ * hint about material and purpose, never a price.
+ */
+export function groupingListing(goods: readonly GroupingGood[]): string {
+  return goods
+    .map((g, i) => {
+      const parts: string[] = [];
+      if (g.quantity) parts.push(`${groupingNumber(g.quantity)} ${g.unit ?? 'шт'}`);
+      if (g.weightKg !== null && g.weightKg > 0) parts.push(`${groupingNumber(g.weightKg)} кг`);
+      if (g.volumeM3 !== null && g.volumeM3 > 0) parts.push(`${groupingNumber(g.volumeM3)} м³`);
+      if (g.measure) parts.push(g.measure);
+      const note = (g.note ?? '').replace(/\s+/g, ' ').trim();
+      if (note) {
+        parts.push(`прим.: ${note.length > GROUPING_NOTE_CAP ? `${note.slice(0, GROUPING_NOTE_CAP)}…` : note}`);
+      }
+      return `${i}. ${g.name}${parts.length > 0 ? ` — ${parts.join(' · ')}` : ''}`;
+    })
+    .join('\n');
+}
+
+/**
+ * DEALS.md answer 6: the assistant proposes the ~50-goods → ~30-lines
+ * grouping, the VED manager confirms. NOT saved anywhere — the caller shows
+ * it, a human decides. Degrades cleanly: no key (or a refusal) surfaces as a
+ * TnvedError and the file simply stays ungrouped for hand work.
+ */
 export async function proposeGoodsGrouping(
-  goods: { name: string; quantity: number | null; unit: string | null }[],
+  goods: GroupingGood[],
 ): Promise<TnvedGrouping & { usage?: AiUsage }> {
   if (!aiConfigured()) throw new TnvedError('ai_not_configured');
   if (goods.length === 0 || goods.length > 200) throw new TnvedError('ai_failed');
@@ -267,9 +326,11 @@ export async function proposeGoodsGrouping(
   // person is standing in front of this one waiting for a grouping.
   const client = new Anthropic({ timeout: 60_000, maxRetries: 1 });
 
-  const listing = goods
-    .map((g, i) => `${i}. ${g.name}${g.quantity ? ` — ${g.quantity} ${g.unit ?? 'шт'}` : ''}`)
-    .join('\n');
+  const listing = groupingListing(goods);
+  // Set the moment the model has answered: every exit after that — a
+  // refusal, a cut-off answer, an unreadable one, no valid group — carries
+  // what the call cost (2.9 c). A timeout or a network error never sets it.
+  let usage: AiUsage | undefined;
 
   try {
     const response = await client.messages.create({
@@ -313,7 +374,18 @@ export async function proposeGoodsGrouping(
       },
       messages: [{ role: 'user', content: `Товары:\n${listing}` }],
     });
-    if (response.stop_reason === 'refusal') throw new TnvedError('ai_failed');
+    usage = {
+      model: ANALYST_MODEL,
+      inputTokens: response.usage?.input_tokens ?? 0,
+      outputTokens: response.usage?.output_tokens ?? 0,
+    };
+    if (response.stop_reason === 'refusal') throw new TnvedError('ai_failed', usage);
+    // A cut-off answer is NAMED: half a JSON document reads as «unreadable»
+    // below too, but the cause belongs in the log in its own words.
+    if (response.stop_reason === 'max_tokens') {
+      logger.warn({ in: usage.inputTokens, out: usage.outputTokens }, '[tnved] grouping cut at max_tokens');
+      throw new TnvedError('ai_failed', usage);
+    }
     const text = response.content.find((b) => b.type === 'text')?.text ?? '';
     const parsed = groupingSchema.parse(JSON.parse(text));
     // A bad code does not sink the other twenty-nine groups: it is blanked
@@ -327,17 +399,12 @@ export async function proposeGoodsGrouping(
         item_indexes: g.item_indexes.filter((i) => i < goods.length),
       }))
       .filter((g) => g.item_indexes.length > 0);
-    if (groups.length === 0) throw new TnvedError('ai_failed');
-    return {
-      groups,
-      usage: {
-        model: ANALYST_MODEL,
-        inputTokens: response.usage?.input_tokens ?? 0,
-        outputTokens: response.usage?.output_tokens ?? 0,
-      },
-    };
+    if (groups.length === 0) throw new TnvedError('ai_failed', usage);
+    return { groups, usage };
   } catch (err) {
     if (err instanceof TnvedError) throw err;
-    throw new TnvedError('ai_failed');
+    // An unparseable answer still carries its usage; a call that never got
+    // one (a timeout, the network, a 4xx/5xx) carries none.
+    throw new TnvedError('ai_failed', usage);
   }
 }

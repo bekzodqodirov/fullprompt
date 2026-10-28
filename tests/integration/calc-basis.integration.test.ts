@@ -721,15 +721,19 @@ describe('every fill answers a CHOSEN unit in that unit or not at all', () => {
   it('the dictionary pull skips a row whose chosen unit the book does not price in', async () => {
     const name = `dict tovar ${tag()}`;
     madeBazaKeys.push(productKey(name));
-    await saveBaza(
-      { name, label: name, tnvedCode: null, bazaUsd: 5, basis: 'unit', effectiveDate: '2026-01-01', note: null },
-      ctx(),
-    );
     const id = await open([
       { name, quantity: 3, weightKg: 6 },
       { name, quantity: 3, weightKg: 6 },
     ]);
     await save(id, { items: [await editOf(id, 1, { bazaUsd: null, bazaBasis: 'kg' })] });
+    // The book row is written AFTER the save (round 2, docs/SAKKIZ-R2.md
+    // §7.2): every save now fills a baza-less row from the book by itself, so
+    // a book row standing before it would have filled row 2 already and left
+    // the PULL nothing to do — and this test is about the pull's own rule.
+    await saveBaza(
+      { name, label: name, tnvedCode: null, bazaUsd: 5, basis: 'unit', effectiveDate: '2026-01-01', note: null },
+      ctx(),
+    );
     const out = await pullBazasFromDictionary(id, ctx());
     expect(out).toEqual({ filled: 1, skipped: 1 });
     expect(await rowOf(id, 1)).toMatchObject({ bazaUsd: null, bazaBasis: 'kg' });

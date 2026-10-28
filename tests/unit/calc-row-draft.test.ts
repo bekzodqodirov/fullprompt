@@ -517,6 +517,12 @@ describe('rowDirtyForPicker — the 📥 waits on a drafted code, count, weight 
     [{ note: 'x' }, false],
     [{ name: 'y' }, false],
     [undefined, false],
+    // A code the PICK drafted (review regression-18): the dialog reopens on
+    // the stored heading, so the VED can change the pick before saving…
+    [{ tnvedCode: '6907210000', bazaValue: '2', bazaBasis: 'kg', importRowId: '5' }, false],
+    // …while a count, a weight or a volume drafted beside it still waits.
+    [{ tnvedCode: '6907210000', importRowId: '5', quantity: '4' }, true],
+    [{ tnvedCode: '6907210000', importRowId: '5', weightKg: '1' }, true],
   ] as [ItemDraft | undefined, boolean][])('%j → %s', (draft, dirty) => {
     expect(rowDirtyForPicker(draft)).toBe(dirty);
   });

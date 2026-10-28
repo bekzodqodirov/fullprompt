@@ -25,9 +25,11 @@ import { emitEvent } from '../../platform/events/service';
 import { claimArrivalNotice, releaseArrivalNotices } from '../notices/arrival';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { usersWithPermission } from '../../platform/notifications/service';
-import { ScanError } from './service';
+import { reannounceGivenBack, ScanError } from './service';
 import { landedStatusFor } from '../warehouses/landed';
+import { ARRIVED_ON_A_TRUCK, notSentBackSql } from '../documents/arrivals';
 import { byShelf, shelfBefore } from '../boxes/shelf';
+import { claimLandedForRoadTx, closeRoadOwedTx, planRoadReady, type RoadOn } from '../planning/road';
 import { codeIdentity } from '../labels/code-identity';
 import { doorOpens, type CountDoor } from './count-door';
 import {
@@ -123,8 +125,10 @@ export async function ingestUnloadScans(
   // throws (a deadlock between two phones, a bad row) the route answers 500
   // and the phone re-sends the batch — but the rogue landing before it has
   // already committed, and the retry answers that one as a replay.
+  // On the pool, before any input's transaction (#714): is the road part here?
+  const road = await planRoadReady();
   try {
-    return await landUnloadScans(inputs, ctx, rogueTrucks, opts, guard);
+    return await landUnloadScans(inputs, ctx, rogueTrucks, opts, guard, road);
   } finally {
     // After every commit, never inside one (#714), and never failing the
     // scan. QUEUED, not run: the re-split covers every bill and grid cell on
@@ -149,13 +153,14 @@ async function landUnloadScans(
   rogueTrucks: Set<string>,
   opts: DoorOpts,
   guard: UnloadGuard,
+  road: RoadOn,
 ): Promise<UnloadAck[]> {
   if (!ctx.actorId) throw new ScanError('unauthenticated');
   const actorId = ctx.actorId;
   const acks: UnloadAck[] = [];
 
   for (const input of inputs) {
-    const ack = await db.transaction((tx) => landUnloadInput(tx, input, actorId, rogueTrucks, opts, guard));
+    const ack = await db.transaction((tx) => landUnloadInput(tx, input, actorId, rogueTrucks, opts, guard, road));
     acks.push(ack);
   }
   return acks;
@@ -168,7 +173,9 @@ async function landUnloadScans(
  * crate, the client's arrival claim, rider money. `opts` is the door's; the
  * phone passes NO_DOOR. `guard` names the destination each truck's door was
  * authorized at. A carton that landed as a rogue is noted in `rogueTrucks`
- * for the caller's re-split.
+ * for the caller's re-split. `road` is the probe's answer, asked by the door
+ * before its transaction: the cartons this input lands are reserved onto a
+ * truck whose plan owes their lot (docs/YOLDAGI-YUK.md §7).
  */
 export async function landUnloadInput(
   tx: Tx,
@@ -176,7 +183,8 @@ export async function landUnloadInput(
   actorId: string,
   rogueTrucks: Set<string>,
   opts: DoorOpts,
-  guard: UnloadGuard = {},
+  guard: UnloadGuard,
+  road: RoadOn,
 ): Promise<UnloadAck> {
   // A server door's reason on a scan that did not come through a server
   // door is a forgery (0112) — refused before the replay check and before
@@ -351,10 +359,72 @@ export async function landUnloadInput(
     }
   }
 
-  // Business duplicate: everything already landed at this destination.
-  const allDone = members.every(
-    (b) => b.status === landedStatus && b.currentWarehouseId === batch.destWarehouseId,
+  // A carton that is already HERE is never landed again (docs/YOLDAGI-YUK.md
+  // §7). Three ways to know it, because the road claim reserves a carton onto
+  // an onward truck the moment it lands, and a stale scan of it (an offline
+  // queue flushed after «Hammasini qabul qilish», a second phone, another
+  // inbound truck's screen at a mixed pile) otherwise took the rogue branch
+  // below and pulled it off that truck back onto the shelf as an undocumented
+  // transfer (objection locks#0, review locks#1):
+  //  - it stands here on the shelf;
+  //  - THIS truck landed it here, and no later press sent it back to the
+  //    origin (`notSentBackSql` — without that clause over → undo → over was
+  //    refused for ever, review deploy#8);
+  //  - it stands here reserved or loading onto a truck LEAVING here, however
+  //    it landed — another inbound truck, the stocktake — or it is already on
+  //    the road on such a truck: a stale scan flushed after the onward truck
+  //    departed must not pull a carton off a truck the customs papers carry
+  //    (review of the fixes, locks#1). A carton that really stayed behind is
+  //    that truck's missing carton, and its unload resolves it
+  //    (`found_at_origin`).
+  const settledHere = (b: (typeof boxes.$inferSelect)) =>
+    b.status === landedStatus && b.currentWarehouseId === batch.destWarehouseId;
+  const offManifest = members.filter(
+    (b) => !settledHere(b) && !(b.currentBatchId === input.batchId && b.status === 'in_transit'),
   );
+  const landedBefore = new Set<string>();
+  if (offManifest.length > 0) {
+    const rows = (await tx.execute(sql`
+      SELECT DISTINCT bm.box_id FROM box_movements bm
+       WHERE bm.box_id IN (${sql.join(
+         offManifest.map((b) => sql`${b.id}::uuid`),
+         sql`, `,
+       )})
+         AND bm.ref_type = 'batch' AND bm.ref_id = ${input.batchId}::uuid
+         AND bm.to_warehouse_id = ${batch.destWarehouseId}::uuid
+         AND bm.cause IN (${sql.join(
+           ARRIVED_ON_A_TRUCK.map((c) => sql`${c}`),
+           sql`, `,
+         )})
+         AND ${notSentBackSql('bm', sql`${input.batchId}::uuid`)}
+    `)) as unknown as { box_id: string }[];
+    for (const row of rows) landedBefore.add(row.box_id);
+  }
+  const reservedHere = offManifest.filter(
+    (b) =>
+      b.currentBatchId !== null &&
+      b.currentBatchId !== input.batchId &&
+      (((b.status === 'planned' || b.status === 'loading') && b.currentWarehouseId === batch.destWarehouseId) ||
+        b.status === 'in_transit'),
+  );
+  const heldOnward = new Set<string>();
+  if (reservedHere.length > 0) {
+    const leaving = (await tx.execute(sql`
+      SELECT id FROM batches
+       WHERE id IN (${sql.join(
+         [...new Set(reservedHere.map((b) => b.currentBatchId!))].map((id) => sql`${id}::uuid`),
+         sql`, `,
+       )})
+         AND origin_warehouse_id = ${batch.destWarehouseId}::uuid
+    `)) as unknown as { id: string }[];
+    const onward = new Set(leaving.map((r) => r.id));
+    for (const b of reservedHere) if (onward.has(b.currentBatchId!)) heldOnward.add(b.id);
+  }
+  const doneHere = (b: (typeof boxes.$inferSelect)) =>
+    settledHere(b) || landedBefore.has(b.id) || heldOnward.has(b.id);
+
+  // Business duplicate: everything already landed at this destination.
+  const allDone = members.every(doneHere);
   if (allDone) {
     return {
       clientEventUuid: input.clientEventUuid,
@@ -402,12 +472,10 @@ export async function landUnloadInput(
     (b) => b.currentBatchId === input.batchId && b.status === 'in_transit',
   );
   const rogue = members.filter(
-    (b) => !(b.currentBatchId === input.batchId && b.status === 'in_transit'),
+    (b) => !(b.currentBatchId === input.batchId && b.status === 'in_transit') && !doneHere(b),
   );
 
-  const toMove = members.filter(
-    (b) => !(b.status === landedStatus && b.currentWarehouseId === batch.destWarehouseId),
-  );
+  const toMove = members.filter((b) => !doneHere(b));
   // Reality wins: everything scanned here IS here now. Rogue boxes keep
   // no stale crate link (their crate stayed wherever it really is).
   // Landing also retires the JOURNEY flags — added_on_spot and
@@ -460,6 +528,24 @@ export async function landUnloadInput(
       .update(crates)
       .set({ warehouseId: batch.destWarehouseId })
       .where(and(inArray(crates.id, landedCrateIds), eq(crates.status, 'active')));
+  }
+
+  // Yo'ldagi yuk (3a): what this landing put on the shelf is reserved onto a
+  // truck whose plan owes its lot, here, in the landing's own transaction — so
+  // it is in the loader's list the moment it lands. Never an over-count's
+  // cartons: taken from the inbound origin or minted, `undoOver` must still
+  // find them on the shelf.
+  if (opts.door !== COUNT_OVER_REASON) {
+    await claimLandedForRoadTx(tx, road, {
+      warehouseId: batch.destWarehouseId,
+      landed: toMove.map((b) => ({
+        id: b.id,
+        lotId: b.lotId,
+        crateId: rogue.includes(b) ? (crateId ?? null) : b.crateId,
+      })),
+      inboundBatchId: input.batchId,
+      actorId,
+    });
   }
 
   /*
@@ -1064,6 +1150,7 @@ export async function resolveMissing(
   if (input.resolution === 'lost_in_transit' && (!lossReason || lossReason.length < 3)) {
     throw new ScanError('reason_required');
   }
+  const road = await planRoadReady();
   const result = await db.transaction(async (tx) => {
     const rows = await tx.select().from(boxes).where(eq(boxes.id, input.boxId)).for('update');
     const box = rows[0];
@@ -1076,7 +1163,7 @@ export async function resolveMissing(
       where: eq(batches.id, box.currentBatchId),
     }))!;
 
-    return resolveOneMissingInTx(tx, box, batch, { resolution: input.resolution, reason: lossReason }, ctx);
+    return resolveOneMissingInTx(tx, box, batch, { resolution: input.resolution, reason: lossReason }, ctx, road);
   });
 
   // Found at the ORIGIN, the carton never rode this truck: its share of the
@@ -1171,6 +1258,7 @@ export async function resolveMissingLot(
   if (input.resolution === 'lost_in_transit' && (!lossReason || lossReason.length < 3)) {
     throw new ScanError('reason_required');
   }
+  const road = await planRoadReady();
   const result = await db.transaction(async (tx) => {
     const rows = await tx
       .select()
@@ -1191,7 +1279,7 @@ export async function resolveMissingLot(
     const done: ResolvedMissing[] = [];
     for (const box of rows.slice(0, input.n)) {
       done.push(
-        await resolveOneMissingInTx(tx, box, batch, { resolution: input.resolution, reason: lossReason }, ctx),
+        await resolveOneMissingInTx(tx, box, batch, { resolution: input.resolution, reason: lossReason }, ctx, road),
       );
     }
     // A typed N has no per-carton witness: which cartons «are» the N is the
@@ -1299,6 +1387,7 @@ async function resolveOneMissingInTx(
   batch: typeof batches.$inferSelect,
   a: { resolution: ResolvedMissing['resolution']; reason: string | null },
   ctx: AuditContext,
+  road: RoadOn,
 ): Promise<ResolvedMissing> {
   const actorId = ctx.actorId!;
   const flags = Array.isArray(box.flags) ? (box.flags as string[]) : [];
@@ -1396,6 +1485,17 @@ async function resolveOneMissingInTx(
     action: 'status_change',
     after: { resolution: a.resolution, shortCode: box.shortCode },
   });
+  // Found HERE, it has landed like a scanned one — a plan owing its lot takes
+  // it (docs/YOLDAGI-YUK.md §7; it comes from `missing_in_transit`, not from
+  // `in_transit`). Found at the origin it never arrived, and nobody here owes it.
+  if (foundHere) {
+    await claimLandedForRoadTx(tx, road, {
+      warehouseId: targetWh,
+      landed: [{ id: box.id, lotId: box.lotId, crateId: box.crateId }],
+      inboundBatchId: batch.id,
+      actorId,
+    });
+  }
   /*
    * A box found HERE has arrived, and until now this door said so to
    * nobody: no claim, no event — so the customer was never told and neither
@@ -1473,6 +1573,8 @@ export async function cancelBatch(batchId: string, reason: string, ctx: AuditCon
   if (why.length < 3) throw new ScanError('reason_required');
 
   let cancelledTasks: string[] = [];
+  // On the pool, before the transaction (#714).
+  const road = await planRoadReady();
   const out = await db.transaction(async (tx) => {
     // One loading change at a time per truck (0112): a count press must not
     // re-reserve cartons onto a truck this cancel is giving back to stock.
@@ -1520,6 +1622,11 @@ export async function cancelBatch(batchId: string, reason: string, ctx: AuditCon
       .where(and(eq(clientTransactions.batchId, batchId), isNull(clientTransactions.voidedAt)));
     if (Number(charges!.n) > 0) throw new ScanError('batch_has_charges');
 
+    // The road part this truck was still owed ends here too — kept as missed,
+    // before the cartons are read, so a landing that commits after this
+    // claims nothing onto a cancelled truck (docs/YOLDAGI-YUK.md §8).
+    await closeRoadOwedTx(tx, road, batchId);
+
     const memberBoxes = await tx
       .select()
       .from(boxes)
@@ -1556,6 +1663,7 @@ export async function cancelBatch(batchId: string, reason: string, ctx: AuditCon
           actorId,
         })),
       );
+      if (status === 'ready_for_pickup') await reannounceGivenBack(tx, road, batchId, home, actorId);
     }
 
     // The plan that produced this batch goes with it — leaving it `approved`

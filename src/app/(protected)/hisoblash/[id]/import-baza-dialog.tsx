@@ -33,6 +33,9 @@ import { BazaStats, type NamedSeries, type StatsLoad } from './baza-stats';
 
 export interface ImportCandidate {
   id: string;
+  /** The declaration's own code — a HEADING's list (round 2) holds several,
+   * and choosing one chooses its code for the row. */
+  tnvedCode: string;
   name: string;
   basis: BazaBasis;
   pricePerUnitUsd: number;
@@ -43,14 +46,27 @@ export interface ImportCandidate {
   /** «156-КИТАЙ» as the file writes it — display only. */
   originCountry?: string | null;
   unitMatches: boolean;
-  /** False for a declaration in a unit this code's law cannot hold (a pair
+  /** False for a declaration in a unit its code's law cannot hold (a pair
    * unit on a juft/litr/m² code) — listed, never pickable (0125). Absent on
-   * an answer from an older server: pickable, as before. */
+   * an answer from an older server: pickable, as before. Judged by the
+   * CANDIDATE's own law (round 2): a pick recodes the row to its code. */
   pickable?: boolean;
+  /** That law's unit, for the «why not» sentence — absent on an older server
+   * (the row's own `lawUnit` then answers, as before). */
+  lawUnit?: string | null;
+}
+
+/** What a pick drafts — the declaration's price, unit and its own code. */
+export interface PickedRow {
+  id: string;
+  pricePerUnitUsd: number;
+  basis: BazaBasis;
+  tnvedCode: string;
 }
 
 interface PickerAnswer {
-  state: 'ok' | 'no_batch' | 'no_code' | 'behind';
+  /** 'timeout': a HEADING's list over its statement ceiling (round 2). */
+  state: 'ok' | 'no_batch' | 'no_code' | 'behind' | 'timeout';
   candidates: ImportCandidate[];
   total: number;
   source: string | null;
@@ -62,7 +78,7 @@ interface PickerAnswer {
   batchId: string | null;
   /** C1's name-matched series, riding the list's own scan. */
   named: Partial<Record<ImportUnit, SeriesStats>> | null;
-  namedState: 'ok' | 'short_name' | null;
+  namedState: 'ok' | 'short_name' | 'short_code' | null;
 }
 
 export interface PickerTarget {
@@ -93,7 +109,7 @@ export function ImportBazaDialog({
    * BODY, one level in, where remounting costs nothing. */
   target: PickerTarget | null;
   onClose: () => void;
-  onPick: (itemId: string, row: { id: string; pricePerUnitUsd: number; basis: BazaBasis }) => void;
+  onPick: (itemId: string, row: PickedRow) => void;
 }) {
   const t = useTranslations('calc');
   return (
@@ -127,7 +143,7 @@ function PickerBody({
 }: {
   target: PickerTarget;
   onClose: () => void;
-  onPick: (itemId: string, row: { id: string; pricePerUnitUsd: number; basis: BazaBasis }) => void;
+  onPick: (itemId: string, row: PickedRow) => void;
 }) {
   const t = useTranslations('calc');
   const tc = useTranslations('common');
@@ -229,6 +245,10 @@ function PickerBody({
         ? { state: 'hidden' }
         : answer.namedState === 'short_name'
           ? { state: 'short' }
+          : // A heading has no named series — the statistics panel above
+            // already says why (`statsShortCode`), once.
+            answer.namedState === 'short_code'
+            ? { state: 'hidden' }
           : answer.namedState !== 'ok' || answer.named === null
             ? { state: 'hidden' }
             : statsBatch !== null && answer.batchId !== null && statsBatch !== answer.batchId
@@ -290,8 +310,10 @@ function PickerBody({
           stats={stats}
           named={named}
           current={target.current}
+          // The statistics exist for a FULL code only, so a pick there never
+          // recodes: the row's own code rides with it.
           onPick={(row) => {
-            onPick(target.itemId, row);
+            onPick(target.itemId, { ...row, tnvedCode: target.tnvedCode });
             onClose();
           }}
           collapsed={q.trim() !== '' && !statsForcedOpen}
@@ -302,6 +324,10 @@ function PickerBody({
         ) : answer === null ? null : answer.state === 'behind' ? (
           <p className="p-2 text-2xs text-warn" data-testid="calc-import-failed">
             {t('importFailed')}
+          </p>
+        ) : answer.state === 'timeout' ? (
+          <p className="p-2 text-2xs text-warn" data-testid="calc-import-timeout">
+            {t('importListTimeout')}
           </p>
         ) : answer.state === 'no_batch' ? (
           <p className="p-2 text-2xs text-ink-500" data-testid="calc-import-nobatch">
@@ -325,11 +351,18 @@ function PickerBody({
                   </span>
                   {/* A bare ⚠ said nothing. The mismatch is the one thing on
                       this row that can be off by the weight of the goods. */}
+                  {/* A heading's list: the declaration's own code, said where it
+                      differs — choosing it recodes the row (round 2). */}
+                  {c.tnvedCode && c.tnvedCode !== target.tnvedCode ? (
+                    <span className="chip font-mono" data-testid="calc-import-code">
+                      {t('importOtherCode', { code: c.tnvedCode })}
+                    </span>
+                  ) : null}
                   {c.pickable === false ? (
                     <span className="chip chip-warn" data-testid="calc-import-conflict">
                       {t('importConflict', {
                         unit: basisLabel(c.basis, t('perUnit')),
-                        law: basisLabel(answer.lawUnit ?? '', t('perUnit')),
+                        law: basisLabel(c.lawUnit ?? answer.lawUnit ?? '', t('perUnit')),
                       })}
                     </span>
                   ) : !c.unitMatches ? (
@@ -373,6 +406,8 @@ function PickerBody({
                       id: c.id,
                       pricePerUnitUsd: c.pricePerUnitUsd,
                       basis: c.basis,
+                      // An older server's answer carries no code: the row's.
+                      tnvedCode: c.tnvedCode || target.tnvedCode,
                     });
                     onClose();
                   }}

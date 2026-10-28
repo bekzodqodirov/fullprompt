@@ -27,6 +27,8 @@ export interface OutboxScan {
 
 export interface SyncAck {
   clientEventUuid: string;
+  /** `road_not_landed` only: the inbound truck the carton is still on. */
+  inboundCode?: string;
   result: 'ok' | 'duplicate' | 'not_on_plan' | 'auto_transfer' | 'unknown_code' | 'rejected';
   detail?: string;
   boxes?: { shortCode: string; letter: string | null }[];

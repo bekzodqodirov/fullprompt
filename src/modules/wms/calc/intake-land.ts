@@ -18,6 +18,7 @@ import { logger } from '../../platform/logger';
 import { intakeNoteText, landingItems, type CalcFacts, type CalcSection } from './intake';
 import { bookLawsFor } from './book-laws';
 import { recordAiPass } from './ai-cost';
+import type { AiUsage } from '../tnved/service';
 import { queueCalcPrefill } from './prefill-queue';
 import { dealTitleFor } from './deal-title';
 import { CalcError, calcOpenRefusal } from './service';
@@ -74,6 +75,13 @@ export interface IntakeTarget {
    * requests). The code travels so the bot can say the sentence.
    */
   queueError?: string | null;
+  /**
+   * Was the machine's reply queued (`queueCalcPrefill`)? A yolkira job's
+   * tariff reply is a few queries on its own queue and can reach the chat
+   * BEFORE the bot's «Saqlandi» (judge concurrency-8), so the confirmation
+   * words it to read right in either order — but only when it IS coming.
+   */
+  replyQueued?: boolean;
 }
 
 /** The client a typed code or phone names — exactly one, or nobody. */
@@ -446,8 +454,12 @@ export async function landIntake(input: {
   hasCertificate?: boolean;
   /** The zone the seller chose on the AI podklyuch door («qayerdan?»). */
   freightZone?: string | null;
-  /** What the intake's model call cost — recorded once the request exists. */
-  usage?: { model: string; inputTokens: number; outputTokens: number } | null;
+  /**
+   * What the intake's model calls cost — EVERY reading the model answered,
+   * ok or not, a re-read included (his 2.9 c) — recorded once the request
+   * exists, one `'intake'` row each.
+   */
+  usages?: readonly (AiUsage & { at?: number })[];
 }): Promise<IntakeTarget> {
   // The note's text first — the book's law for the lines' codes is what its
   // «qatorlarda yetishmayapti» asks by (judge TT-5), a pooled read, so it is
@@ -522,6 +534,7 @@ export async function landIntake(input: {
   let queued = false;
   let queueError: string | null = null;
   let requestId: string | null = null;
+  let replyQueued = false;
   try {
     const { openCalcRequest } = await import('./service');
     const opened = await openCalcRequest(
@@ -533,6 +546,9 @@ export async function landIntake(input: {
         toCity: input.facts.toCity ?? null,
         weightKg: input.facts.weightKg ?? null,
         volumeM3: input.facts.volumeM3 ?? null,
+        // A cube typed two ways and never answered is not summed under
+        // (review P3-R2): the summary the seller confirmed said it missing.
+        volumeAmbiguous: input.facts.volumeAmbiguous === true,
         // Through `landingItems`, so the weight a single-line job already
         // stated reaches the ITEM (labelled «umumiy (brutto)dan olindi») —
         // which is what lets the AI VED hodimi find a per-kg declaration for
@@ -550,22 +566,34 @@ export async function landIntake(input: {
     );
     queued = true;
     requestId = opened.id;
-    if (input.usage) {
-      await recordAiPass({
-        requestId: opened.id,
-        staffId: input.collectedBy,
-        kind: 'intake',
-        model: input.usage.model,
-        inputTokens: input.usage.inputTokens,
-        outputTokens: input.usage.outputTokens,
-      });
+    // Each bill in its OWN try (judge concurrency-8): the records shared one
+    // `try` with the queue below, so a failed bookkeeping insert skipped the
+    // pass — the request landed with no reply — and every extra record is
+    // one more chance of that. Still BEFORE the queue, so the soft budget
+    // the pass reads already counts the intake's calls.
+    for (const usage of input.usages ?? []) {
+      try {
+        await recordAiPass({
+          requestId: opened.id,
+          staffId: input.collectedBy,
+          kind: 'intake',
+          model: usage.model,
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+          // Billed on the day it was SPENT (judge concurrency-11), not the
+          // day the collection landed.
+          createdAt: usage.at === undefined ? null : new Date(usage.at),
+        });
+      } catch (err) {
+        logger.warn({ err, requestId: opened.id }, '[calc-intake] usage not recorded');
+      }
     }
     // …and the AI VED hodimi is handed the job HERE rather than by the
     // caller. The bot did it from its own handler, so any second caller of
     // this landing would silently get no pass at all — the same asymmetry
     // that left the card form and the thread door unserved until this round.
     // Off the poller and out of this process, through pg-boss.
-    await queueCalcPrefill({
+    replyQueued = await queueCalcPrefill({
       requestId: opened.id,
       staffId: input.collectedBy,
       section: input.section,
@@ -586,7 +614,7 @@ export async function landIntake(input: {
     logger.error({ err, kind: target.kind, id: target.id }, '[calc-intake] stage move failed');
   }
 
-  return { ...target, queued, requestId, queueError };
+  return { ...target, queued, requestId, queueError, replyQueued };
 }
 
 async function moveToCalcStage(target: IntakeTarget, actorId: string): Promise<void> {

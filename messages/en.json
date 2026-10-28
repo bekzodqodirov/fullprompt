@@ -871,6 +871,7 @@
       "calcRecalc": "Sent for recalculation",
       "calcSection": "Section",
       "itemCount": "Goods lines",
+      "volumeFromLines": "Volume summed from the lines",
       "allocationBasis": "Split basis",
       "tariffZone": "Tariff column",
       "tariffFrom": "Tariff date",
@@ -1232,7 +1233,21 @@
       "reason_required": "Give a reason"
     },
     "cancelPlan": "Cancel plan",
-    "stockFailed": "The cargo list did not load — refresh the page; if it repeats, tell the administrator"
+    "stockFailed": "The cargo list did not load — refresh the page; if it repeats, tell the administrator",
+    "roadToggle": "Cargo on the road too",
+    "roadHint": "Cargo on trucks heading to this warehouse. Once planned, it moves onto this truck by itself when it is unloaded here.",
+    "roadDropped": "Cargo on the road taken out of the picks: {n}",
+    "roadFailed": "The list of cargo on the road did not load — the warehouse stock is shown",
+    "unseenPicks": "{n} picked lots are not in the list and are not counted — reload the list or take them out",
+    "unseenDrop": "Take them out",
+    "roadLine": "+{n} on the road ·",
+    "roadAtGate": "at the gate",
+    "factoryTrips": "Coming from factories ({n})",
+    "factoryTripsHint": "A factory trip’s cargo is planned once it is received at this warehouse.",
+    "roadPart": "{n} from the road",
+    "roadAwaited": "{n} awaited",
+    "roadCame": "{n} came",
+    "roadMissed": "{n} did not come"
   },
   "costing": {
     "fxTitle": "Exchange rates",
@@ -1485,7 +1500,8 @@
       "batch_has_costs": "Costs are attached to this batch",
       "batch_has_charges": "A client has already been charged for this batch",
       "batch_has_moved_boxes": "Its boxes have already moved on",
-      "reason_required": "Give a reason"
+      "reason_required": "Give a reason",
+      "road_owed_open": "Press «Loading finished» first — the plan’s cargo is still on the road"
     },
     "startUnloading": "Unloading (scan)",
     "transitReport": "In transit",
@@ -1664,8 +1680,11 @@
       "emptyBoard": "No open trucks.",
       "capped": "Showing the {n} oldest trucks.",
       "filters": "Filter",
-      "loadedNoPlan": "Loaded {boxes} boxes · {cargo}"
-    }
+      "loadedNoPlan": "Loaded {boxes} boxes · {cargo}",
+      "roadOwed": "+{n} from the road"
+    },
+    "finishSummaryRoad": "{n} did not come from the road",
+    "roadOwedLine": "Awaited from the road: {lot} · {n} cartons ({trucks})"
   },
   "loading": {
     "title": "Loading",
@@ -1697,7 +1716,9 @@
       "unknown_code": "Code not found.",
       "not_loaded_here": "This box is not recorded on this truck.",
       "forbidden": "No access."
-    }
+    },
+    "roadNotLanded": "This carton is still on truck {truck} — receive it at the unloading first",
+    "roadOwedLine": "Awaited from the road: {lot} · {n} cartons ({trucks})"
   },
   "unloading": {
     "title": "Unloading",
@@ -3478,6 +3499,7 @@
       "fromDeal": "Fill from the deal lines",
       "totalWeight": "Total weight (gross), kg",
       "totalVolume": "Total volume, m³",
+      "volumeFromLines": "Left empty — the lines’ m³ are summed",
       "noName": "No product name",
       "badCell": "«{text}» is not a number",
       "fixFirst": "Fix the marked rows first",
@@ -3524,6 +3546,7 @@
     "returnReasonLabel": "Reason",
     "finish": "Done",
     "answerAmount": "Price",
+    "finishNotEstimate": "The bot’s figures in Telegram and the feed — «Aniq», «Taxminiy», «JAMI», «Yo‘lkira ≈» — are not official prices: do not copy them here, enter the price you worked out yourself.",
     "answerNote": "Note",
     "answered": "Answer",
     "returned": "Sent back",
@@ -3821,7 +3844,7 @@
     "makeOffer": "Offer to client",
     "belowFloor": "Below cost — the calculation came to ${floor}",
     "belowFloorChip": "below",
-    "offerSent": "Sent to Telegram",
+    "offerSent": "PDF and text sent to Telegram",
     "offerNoTelegram": "Telegram not linked — copy the text",
     "offerMuted": "These Telegram messages are muted in your profile — copy the text",
     "offerText": "Offer text",
@@ -3886,6 +3909,8 @@
       "rateNoted": "dictionary rate carries a note",
       "bazaFromImport": "baza filled from the customs import",
       "bazaFromMemory": "baza taken from a sealed calculation",
+      "bazaDictionaryMoved": "The dictionary baza has changed",
+      "aiRecode": "The AI chose the code from a declaration — check the code and the duty",
       "basisNotLaw": "baza not in the law’s unit"
     },
     "refusal": {
@@ -3913,6 +3938,10 @@
     "threadAnalyze": "Read",
     "threadReading": "AI is reading…",
     "threadRead": "{lines} lines · {files} files",
+    "threadAiFailed": "⚠ AI could not read this — the figures are from the typed text only.",
+    "threadAiRetry": "Try again later.",
+    "threadAiNoRetry": "Retrying will not help — tell the admin; the VED will review it by hand.",
+    "threadAiTooBig": "The selection is too big or a file could not be read — select fewer messages, or send the file another way.",
     "threadMissing": "Some data is missing — the VED will still take it",
     "threadSendBtn": "Send to VED",
     "threadCancel": "Cancel",
@@ -3969,11 +3998,13 @@
       "basisSuspect": "check the baza unit (the law prices in another) — row",
       "importFilled": "{count} baza(s) filled from the import (estimate), rows",
       "memoryFilled": "baza filled from a sealed calculation: {count}, rows",
+      "dictionaryFilled": "baza from the dictionary: {count}, rows",
       "basisAuto": "auto",
       "basisConflict": "a unit the law cannot hold (one measure per row) — row",
       "alreadySaved": "already saved earlier: {count}",
       "basisNotLaw": "the law counts in {unit} — the baza is per another unit"
     },
+    "volumeFromLinesShort": "from the lines",
     "grid": {
       "qty": "Pcs",
       "kg": "Net, kg",
@@ -4094,7 +4125,10 @@
     "statsWeightNoRow": "The row has no count or weight — no weight row",
     "statsWeightNone": "No declarations within ±25 % weight",
     "statsPick": "Choose",
+    "importOtherCode": "code: {code}",
     "statsTimeout": "Statistics timed out (large file) — pick from the list",
+    "statsShortCode": "Statistics need a 10-digit code — pick a declaration from the list and its code is set",
+    "importListTimeout": "This heading is too wide — the list was not read. Type the 10-digit code.",
     "statsFailed": "Statistics did not load",
     "statsTable": "As a table",
     "statsColN": "Count",
@@ -5734,6 +5768,9 @@
     "noAudience": "⚠ Nobody receives this right now — the calculation is not assigned yet. Whoever takes it will see it.",
     "feedCalcThread": "🧮 Calculation question · ↩️ reply",
     "feedViaTelegram": "📱 from Telegram",
+    "feedAiReply": "🤖 AI estimate · not official",
+    "feedTariffReply": "🧮 Tariff estimate · not official",
+    "feedEstimateReply": "📊 Contains an estimate · not official — the VED checks it",
     "feedCalcHint": "This does not reach the VED — answer the calculation question in «❓ Questions».",
     "notifMuteChat": "Internal threads (questions on cards, @-mentions)",
     "unreachable": {

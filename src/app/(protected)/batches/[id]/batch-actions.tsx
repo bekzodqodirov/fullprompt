@@ -55,7 +55,13 @@ export function BatchActions({
     try {
       const res = await finishLoadingAction(batchId, { dropQrless });
       if (res.ok) {
-        setSummary(t('finishSummary', { loaded: res.loaded ?? 0, short: res.shortLoaded ?? 0 }));
+        // The presser hears the road part that did not come too — the
+        // Telegram summary goes to everyone else (docs/YOLDAGI-YUK.md §8).
+        const roadMissed = res.roadMissed ?? 0;
+        setSummary(
+          t('finishSummary', { loaded: res.loaded ?? 0, short: res.shortLoaded ?? 0 }) +
+            (roadMissed > 0 ? ` · ${t('finishSummaryRoad', { n: roadMissed })}` : ''),
+        );
         router.refresh();
       } else if (res.error === 'qrless_uncounted') {
         setQrless({ lots: res.lots ?? [], canDrop: res.canDrop === true });

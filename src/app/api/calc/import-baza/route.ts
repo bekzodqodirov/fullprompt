@@ -1,12 +1,18 @@
 import { eq } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import { authorize, AuthError } from '@/modules/platform/rbac/authorize';
-import { isServerBehind } from '@/modules/platform/db/errors';
+import { isQueryCanceled, isServerBehind } from '@/modules/platform/db/errors';
 import { logger } from '@/modules/platform/logger';
-import { basisConflicts } from '@/modules/wms/calc/basis';
+import { onDate, ratesForCodes } from '@/modules/wms/calc/dictionaries';
 import { isBazaBasis, type BazaBasis } from '@/modules/wms/calc/pricing';
 import { customsImportBatches } from '@/modules/platform/db/schema';
-import { BASIS_FOR_UNIT, suggestImportBaza } from '@/modules/wms/customs/import-baza';
+import {
+  BASIS_FOR_UNIT,
+  foreignCodes,
+  isFullCode,
+  judgeCandidates,
+  suggestImportBaza,
+} from '@/modules/wms/customs/import-baza';
 import { readPickerItem } from '@/modules/wms/customs/picker-item';
 import { periodText } from '@/modules/wms/customs/import-stats';
 
@@ -26,6 +32,14 @@ import { periodText } from '@/modules/wms/customs/import-stats';
  *
  * The door is the workspace's own grant (`ved.docs`); this app has no
  * middleware, so every /api route states it (#721-726).
+ *
+ * Round 2 (docs/SAKKIZ-R2.md §7.4): a row coded by a HEADING lists the
+ * heading's declarations, each with its own code. A «Tanlash» there RECODES
+ * the row, so each candidate is judged by ITS OWN code's law — pickable and
+ * «unit matches» alike (regression-7); judged by the heading's law, a
+ * candidate the save would refuse would read as a fine choice. The heading
+ * read runs under a statement ceiling, and a cancel is a sentence
+ * («10 xonali kodni yozing»), never a hung dialog.
  */
 export async function GET(request: Request) {
   try {
@@ -53,18 +67,33 @@ export async function GET(request: Request) {
     // exactly what he cannot do until the migration has run.
     if (!item.code) return Response.json({ state: 'no_code', candidates: [], batchId: null, total: 0 });
 
-    const sug = await suggestImportBaza(
-      {
-        tnvedCode: item.code,
-        name: item.name,
-        units: item.units,
-        weightPerUnitKg: item.perPiece,
-      },
-      // The picker lists more than the auto-fill ranks, and answers even
-      // when the typed name is too short to score — «Лак» is a real product.
-      // `named` adds C1's name-matched series, riding the same scan (D4).
-      { picker: true, named: true },
-    );
+    let sug: Awaited<ReturnType<typeof suggestImportBaza>>;
+    try {
+      sug = await suggestImportBaza(
+        {
+          tnvedCode: item.code,
+          name: item.name,
+          units: item.units,
+          weightPerUnitKg: item.perPiece,
+        },
+        // The picker lists more than the auto-fill ranks, and answers even
+        // when the typed name is too short to score — «Лак» is a real
+        // product. `named` adds C1's name-matched series, riding the same
+        // scan (D4) — on a full code only.
+        { picker: true, named: true },
+      );
+    } catch (err) {
+      // A HEADING read over its ceiling (a full code has none). Never the
+      // name in the log — it is the VED's customer's goods.
+      if (isQueryCanceled(err) && !isFullCode(item.code)) {
+        logger.warn({ code: '57014', heading: item.code }, '[calc] import-baza: heading timeout');
+        return Response.json(
+          { state: 'timeout', candidates: [], batchId: null, total: 0 },
+          { headers: { 'cache-control': 'private, no-store' } },
+        );
+      }
+      throw err;
+    }
     if (!sug.batchId) {
       return Response.json({ state: 'no_batch', candidates: [], batchId: null, total: 0 });
     }
@@ -79,16 +108,21 @@ export async function GET(request: Request) {
       .from(customsImportBatches)
       .where(eq(customsImportBatches.id, sug.batchId))
       .limit(1);
+    // The law each candidate would bring with it: the row's own (its block,
+    // with any typed override) for a candidate of the row's own code, the
+    // BOOK's for any other — read on the pool, one query for every distinct
+    // code the list holds.
+    const others = foreignCodes(item.code, sug.candidates);
+    const book = others.length > 0 ? await ratesForCodes(others, onDate()) : new Map();
     return Response.json(
       {
         state: 'ok',
-        // A declaration in a unit this code's law cannot hold (a pair unit on
+        // A declaration in a unit its code's law cannot hold (a pair unit on
         // a juft/litr/m² code) is LISTED — the VED should see the file has it
-        // — but cannot be picked: it would land the row in a conflict.
-        candidates: sug.candidates.map((c) => ({
-          ...c,
-          pickable: !basisConflicts(item.dutyUnit, BASIS_FOR_UNIT[c.unit]),
-        })),
+        // — but cannot be picked: it would land the row in a conflict. By
+        // the CANDIDATE's law: the pick recodes the row to its code. ONE
+        // judgement with the AI pick's (`judgeCandidates`, review P2-1).
+        candidates: judgeCandidates(item.row, item.code, item.dutyUnit, sug.candidates, book),
         batchId: sug.batchId,
         total: sug.total,
         itemName: item.name,

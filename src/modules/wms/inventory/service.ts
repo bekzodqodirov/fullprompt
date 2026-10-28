@@ -19,6 +19,7 @@ import { usersWithPermission } from '../../platform/notifications/service';
 import { batchMemberFilter } from '../scanning/unload';
 import { landedStatusFor } from '../warehouses/landed';
 import { claimArrivalNotice } from '../notices/arrival';
+import { claimLandedForRoadTx, planRoadReady } from '../planning/road';
 import { isUuidShaped } from '../../platform/audit/fields';
 import { PRESENT_STATUSES } from './present';
 import { qrlessBoxSql, qrlessJoinedSql } from '../labels/qrless-sql';
@@ -191,6 +192,8 @@ export async function reconcileInventory(
 
   const movedIds: string[] = [];
   const lostIds: string[] = [];
+  // On the pool, before the transaction (#714).
+  const road = await planRoadReady();
   const result = await db.transaction(async (tx) => {
     const movedCodes: string[] = [];
     const skippedCodes: string[] = [];
@@ -231,6 +234,18 @@ export async function reconcileInventory(
         movedCodes.push(box.shortCode);
         movedIds.push(box.id);
       }
+      // What the count put on this shelf is cargo here like a landed carton:
+      // a plan owing its lot takes it (docs/YOLDAGI-YUK.md §7, objection
+      // locks#3 — owed left standing over cartons in the yard made «yuklash
+      // tugadi» report them as never having come).
+      await claimLandedForRoadTx(tx, road, {
+        warehouseId: input.warehouseId,
+        landed: found
+          .filter((box) => movedIds.includes(box.id))
+          .map((box) => ({ id: box.id, lotId: box.lotId, crateId: box.crateId })),
+        inboundBatchId: null,
+        actorId,
+      });
     }
 
     const lostCodes: string[] = [];
@@ -382,6 +397,8 @@ export async function acceptFoundBox(
   const landedStatus = landedStatusFor(warehouse.type);
 
   let foundBoxId: string | null = null;
+  // On the pool, before the transaction (#714).
+  const road = await planRoadReady();
   const summary = await db.transaction(async (tx) => {
     const rows = await tx
       .select()
@@ -457,6 +474,13 @@ export async function acceptFoundBox(
       actorId,
     });
     foundBoxId = box.id;
+    // Here and free, it is cargo a plan owing its lot takes (docs/YOLDAGI-YUK.md §7).
+    await claimLandedForRoadTx(tx, road, {
+      warehouseId: input.warehouseId,
+      landed: [{ id: box.id, lotId: box.lotId, crateId: box.crateId }],
+      inboundBatchId: fromBatch?.id ?? null,
+      actorId,
+    });
     await writeAudit(tx, { ...ctx, warehouseId: input.warehouseId }, {
       entityType: 'box',
       entityId: box.id,
