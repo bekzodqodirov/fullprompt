@@ -4936,3 +4936,37 @@ proofs by string edit; four stayed green first, and each was a test that never i
 case ended in «?» (so the question mark hid the word end), the rail refusal never stood in the newest statement, the
 price walk never had a road past another price, and the what-if always carried «?». STATED, not built: reading a choice is a word list; the Latin and Cyrillic spellings of Horgos and Guangzhou pass; a chat
 whose words name no road leaves the flight's guard to the quote he approved.
+
+1487. **The sixth review — a hunt for the silent leak, and #1486's «a truck chosen settles it» taken back.**
+The review asked one question of #1486: is there a chat in which the flight is plainly the road and our China
+address goes out with NEITHER the `avia_address` block NOR the `avia_maybe` look? Both outcomes are his rule; only the
+silence is a defect. Finders wrote chats in the six languages, every candidate was run through `verdict()` by a
+reproducer, and sixteen leaks held. **Three families.** (1) **Words the lists did not have**: Uzbek in Cyrillic
+(«Самолёт билан», «Самолёт орқали», «хаво йули»), Russian «на самолёте», «авиой», «Авио доставка», «воздухом», the
+Latin misspellings «Aviya», «aviyada», «samolet», «xavo yo'li», Chinese 走飞机 / 坐航班 / 用飞机寄, Persian «با
+هواپیما», «با طیاره», English «with plane» and «air please». (2) **#1486's settling rule**: a truck word after the
+flight ended the look, and a truck word is very often not this shipment's road — the leg to our warehouse or from the
+airport («Yukni omborga o'zim mashinada olib boraman», «Сам привезу на склад на машине», «Aeroportdan o'zim mashinada
+olib ketaman»), the delivery inside Uzbekistan («Andijonga mashinada yetkazib berasizlarmi?»), a past shipment
+(«oldingi safar mashinada yuborgandim», «Прошлый раз отправлял машиной»), a refusal the words missed («фура не
+успеет», «mashinada ulgurmaymiz», «на машине очень долго», «mashinada juda ko'p vaqt ketadi», «陆运太慢了»), and the
+goods («запчасти для фуры», «fura ehtiyot qismlari», «قطعات کامیون»). (3) **Our own line**: a price whose road is the
+NEXT sentence («1 kg uchun 17 $. Avia bilan 2–5 kunda keladi.» — the cube fallback even called it the truck's), an
+OFFER with no price («Avia bilan yuborsangiz 2–5 kunda keladi»), and the label «Air:», which `oneModeIn` could not
+read. **What changed.** `aviaSpokenOf` no longer settles: once the flight is on the table — the customer's line in
+any form, a line of ours that prices or OFFERS it (`ourLineOffersAir`), the quote he approved, a run that priced both
+— nothing said later takes it off. A chat the customer really moved to the truck now costs one glance, which is the
+trade #1485 made the warning for; #1486 had spent it to buy quiet on the commonest chats where it is needed. A line
+that only says what the flight does not carry (the seeded «Avia orqali litiy batareya … yuborilmaydi») is still no
+flight: `PROHIBITS` (numbers.ts) is the one sentence for that, asked by the offer and by `pricedRoadOf`'s new walk to
+the nearest other sentence (`neighbourSentenceRoad`). The by-the-cube fallback yields to a line that speaks of the
+flight; a label is the flight's only when it says avia / авиа / air, any other label is the truck. The air words are
+one vocabulary in three pieces (`AIR_CORE`, `AIR_TAIL_CHOICE`, `AIR_SCRIPTS`) that both `MODE_WORDS` and
+`CHOICE_WORDS` are built from; the truck's choice no longer reads a bare «fura» inside a phrase or «фуры» as a
+choice, and Persian «با کامیون» / «زمینی» are the truck. Refusals learned «не успе…», «ulgurmay…», «kech qol…», «ko'p
+vaqt», «too long», 太慢 / 太久 / 来不及 / 不行, Persian «نه …»; `OTHER_LEG` learned the airport, our warehouse as the
+destination of a leg, the bazaar, «olib bor…», «привез…», delivery inside Uzbekistan, «uyga» and the past shipment
+(«oldingi», «прошлый раз», «last time», 上次). 13 red proofs by string edit (V1-V13), every one red first time.
+STATED, not built: reading a road is still a word list and the next phrasing will be missed — what this round makes
+sure of is that a miss ends in a look and not in silence wherever the flight was named at all; a chat that never
+names the flight in any form leaves the guard to the quote he approved, as before.

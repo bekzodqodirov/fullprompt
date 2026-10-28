@@ -86,7 +86,17 @@ minimum qilsin». Yangi migratsiya bor (**0136**): deploydan keyin baza hisobi *
   - Avia'da «omborimizga yuborsangiz…» jumlasi endi talab qilinmaydi.
   - **Yangi: «avia ham gapirilgan» ogohlantirishi.** Tizim so'zlardan yo'lni har doim to'g'ri o'qiy olmaydi. Shuning uchun suhbatda avia gapirilgan bo'lsa-yu, tizim uni avia suhbati deb aniq bilolmasa va javobda Xitoy omborimizning manzili bo'lsa, ✅ qoladi, lekin kartochkada shunday yoziladi: «avia ham gapirilgan va javobda Xitoy omborimizning manzili bor — yuk avia bo'lsa, manzilni o'zingiz yozing (✏️)». Xato o'qilgan suhbat sizga bir qarashga tushadi, manzil esa jimgina ketib qolmaydi.
     - Bu ogohlantirish javobning o'zini ham o'qiydi: «30 kg mashinaga kam, avia bilan yuborishingiz mumkin» + ombor manzili.
-    - Mijoz oxirida mashinani o'zi aniq tanlagan bo'lsa («Mashinada yuboraman»), ogohlantirish chiqmaydi.
+    - Suhbatda avia bir marta aytilgan bo'lsa, keyingi gaplar ogohlantirishni o'chirmaydi. Mijoz keyin mashinani tanlagan bo'lsa ham, kartochka bir marta qarashni so'raydi. Avval «mashina» so'zi ogohlantirishni o'chirib qo'yardi. Lekin bu so'z ko'pincha boshqa narsa haqida bo'ladi:
+      - yukni omborimizga yoki aeroportdan o'zi olib borishi («Yukni omborga o'zim mashinada olib boraman»);
+      - O'zbekiston ichida yetkazish («Andijonga mashinada yetkazib berasizlarmi?»);
+      - oldingi yuki («oldingi safar mashinada yuborgandim»);
+      - mashinadan voz kechish («фура не успеет», «mashinada ulgurmaymiz»);
+      - tovar nomi («fura ehtiyot qismlari»).
+      Endi bunday suhbatda manzil jimgina ketib qolmaydi.
+    - Bizning xabarimiz ham hisobga olinadi:
+      - narx bir jumlada, avia keyingi jumlada bo'lsa («1 kg uchun 17 $. Avia bilan 2–5 kunda keladi.»);
+      - narxsiz taklif («Avia bilan yuborsangiz 2–5 kunda keladi»);
+      - «Air:» sarlavhasi.
     - «O'yinchoq samolyotlar», «aviamodel» kabi tovar nomlari va bizning «power bank avia bilan ketmaydi» jumlamiz avia gapirildi deb hisoblanmaydi.
   - **Mijoz so'zlarini o'qish yanada aniqlashdi:**
     - Savol aviadan voz kechish emas: «Aviada bo'lmaydimi?», «Avia bilan ketmaydimi?», «Avia qimmatmi?», «Авиа дорого выйдет?» — bu avia so'rovi, manzil to'xtatiladi.
@@ -94,6 +104,13 @@ minimum qilsin». Yangi migratsiya bor (**0136**): deploydan keyin baza hisobi *
     - Temir yo'ldan voz kechib avia tanlansa («Poyezd kerak emas, avia bilan», «Не поездом, а самолётом»), endi bu avia suhbati: manzil to'xtatiladi va kartochka sizdan avia manzilini so'raydi. Avval temir yo'l so'zi avia himoyasini butunlay o'chirib qo'yardi.
     - «Железки» (temir buyumlar) endi temir yo'l hisoblanmaydi, «по железке» esa hisoblanadi.
     - Avia so'zlari kengaydi: «по воздуху», «havo yo'li bilan», «samalyot», «by airplane», «air shipment», «空派».
+    - Yana qo'shildi:
+      - o'zbekcha kirillda: «Самолёт билан», «хаво йули»;
+      - ruscha: «на самолёте», «авиой», «Авио доставка», «воздухом»;
+      - xato yozilganlari: «Aviya», «samolet», «xavo yo'li»;
+      - xitoycha: 走飞机, 航班, 用飞机寄;
+      - forscha: «با هواپیما», «با طیاره»;
+      - inglizcha: «with plane», «air please».
     - «Kargo orqali», «kargo bilan» — bu kompaniya, yo'l emas: «kargo orqali avia yuboraman» avia suhbati.
     - «Avto», «Avto bo'lsin», «Toshkentga mashinada yuboraman» — mashina tanlovi. Toshkentda yukni olib ketish esa boshqa bosqich.
     - Biz aytgan narxli xabar tovar nomiga qarab emas, yo'l so'ziga qarab o'qiladi: «Mashinada: o'yinchoq samolyotlar 3 kub — 640 $» mashina narxi, «Avia: avtozapchast 30 kg — 510 $» avia narxi.

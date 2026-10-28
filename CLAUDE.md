@@ -2963,7 +2963,7 @@ CN destination is inland (no hub test), ONE arrived column (`columnOf` splits on
 filter hides everything bound for China (`routeFilterOf` = a `kg`/`kz` leg; a map walk over every pair proves no
 road into China has one, and refuses an unclassed new map code).
 
-**Round — AI sotuvchi, phase 1 (2026-10-24; DECISIONS #1463-#1486 — numbered past the open
+**Round — AI sotuvchi, phase 1 (2026-10-24; DECISIONS #1463-#1487 — numbered past the open
 `telegram-customs-ai-issues` branch's #1455-#1462; migration 0136 `ai_sotuvchi` — ledger must reach 137; spec
 `docs/AI-SOTUVCHI.md` §17 + §17.14).** His «Telegram businessdagi bot emas mening shaxsiy account seansimdan
 ishlatsin ai va ban havfini minimum qilsin». SHADOW only: the listener (`scripts/tg-listen.ts`, the one process that
@@ -3029,13 +3029,21 @@ street word, a flight fact = chooses the flight alone or names an airport. 22 re
 its defects IN them. The design answer to a word list that will always miss a phrasing is the WARNING `avia_maybe`
 (policy.ts): the flight was spoken of (`aviaSpokenOf` in run.ts — the customer's lines, our PRICED lines, the quote he
 approved, this reply), the rule did not decide it is the chat's road, and the reply states our China address → ✅
-stays, the card asks him to look; a truck the customer chose after the last of it settles the chat. Echo by identity
+stays, the card asks him to look; NOTHING said later settles it (#1487). Echo by identity
 (`LastQuote.tgMessageId`, `edited`; compared in `chatForm`). The rules that cost a review each: a refusal is a WHOLE
 word and never a question («Avia bilan ketmaydimi?» asks for the flight — `statementsOf` keeps each statement's «?»),
 a concession or double negation chooses (`CHOSEN_ANYWAY`); the address rule is NOT gated on rail, and `railAsked`
 reads statements with `railRefusedIn`; our priced line is read by its clause's choice, then its opening road word
 (`LABEL`), never a goods word; «kargo orqali» is the company; Tashkent is another leg only as the pickup; a flight
 fact must DECLARE itself one and name no truck. 31 + 32 red proofs.
+**A sixth (#1487)** hunted only for the SILENT leak — a chat where the flight is plain and the address goes out with
+neither the block nor the look — and found sixteen: words the lists lacked (Uzbek Cyrillic, «на самолёте», «авиой»,
+«Aviya», 走飞机 / 航班, Persian «با هواپیما», «with plane»), our line pricing the flight in the NEXT sentence or offering it
+with no price or under «Air:», and #1486's own «a truck chosen settles it» — the truck word was a leg to our warehouse,
+the delivery in Andijan, a past shipment, a refusal missed («фура не успеет») or the goods. The settling is GONE
+(`aviaSpokenOf`: once spoken, always looked at; `ourLineOffersAir`), `PROHIBITS` is the one «what the flight does not
+carry» sentence, the air words are one vocabulary (`AIR_CORE`/`AIR_TAIL_CHOICE`/`AIR_SCRIPTS`) for both readers. 13 red
+proofs. The trade, stated: a chat the customer really moved to the truck now costs him one glance.
 
 **Latest migration: 0136** (`ai_sotuvchi`, `when` …115; ledger must reach **137**). Before
 it: 0135 (`load_mode`, `when` …114). Before
