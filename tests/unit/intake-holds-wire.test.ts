@@ -30,7 +30,18 @@ import { srcFiles } from '../fixtures/source-shape';
 
 const PRESENCE: Record<string, string> = {
   'calc-intake-sweep.ts:pressResume': 'a collection’s own «▶️» un-parks it',
-  'calc-read.ts:analyseIntakeAndReply': 'the reading’s settle and release (P2 moves them, §7.2.4.6, §7.2.4.8)',
+  // The reading job (P2, §7.2.4): each asks only whether ITS token or ITS
+  // stored reply is still the collection's — a parked collection is still the
+  // one the seller pressed «Bo‘ldi» in.
+  'calc-read.ts:pressAnalyse': 'the press re-reads its own token after the notice is out (§7.2.3)',
+  'calc-read.ts:refuseStart': 'a refused start releases only its own token',
+  'calc-read.ts:readOnce': 'the settle against the LIVE collection, and the stored reply re-read (§7.2.4.6)',
+  'calc-read.ts:deliver': 'the send only while the reply is still the collection’s (§7.2.4.7)',
+  'calc-read.ts:settleDelivered': 'the delivered table recorded on the collection it was for',
+  'calc-read.ts:clearPending': 'a refused chat clears only its own stored reply',
+  'calc-read.ts:lastAttemptFailed': 'the last attempt releases only its own token (§7.2.4.8)',
+  'calc-read.ts:releaseDeadReading': 'the sweep’s release of a dead job’s token, only that token',
+  'calc-read.ts:deliverStoredReply': 'the sweep’s late delivery of a stored reply',
   'calc-store.ts:holdingIntake': 'the holds predicate itself',
   'calc-store.ts:loadIntake': 'a job’s read, after this process hydrated',
   'calc-store.ts:collectionSurvived': 'the backlog sentence: did a collection survive the restart',

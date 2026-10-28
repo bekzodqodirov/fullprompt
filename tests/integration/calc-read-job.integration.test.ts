@@ -98,7 +98,7 @@ import { attachments, users } from '@/modules/platform/db/schema';
 import { getStorage } from '@/modules/platform/files/storage';
 import { __setTelegramTransport } from '@/modules/platform/telegram/send';
 import { activeIntake, endIntake, startIntake, updateIntake, type IntakeState } from '@/modules/platform/telegram/calc-intake';
-import { IntakesNotReady, setDurableIntakes } from '@/modules/platform/telegram/calc-store';
+import { IntakesNotReady, markIntakesHydrated, setDurableIntakes } from '@/modules/platform/telegram/calc-store';
 import { __resetLifecycle, stopTelegramBot } from '@/modules/platform/telegram/lifecycle';
 import { modelCopyKey, readIntakeFile, reduceForModel, storeModelCopy } from '@/modules/platform/telegram/calc-files';
 import {
@@ -200,6 +200,11 @@ beforeAll(async () => {
     .returning({ id: users.id });
   staffId = user!.id;
   process.env.TELEGRAM_BOT_TOKEN = 'calc-read-job-token';
+  // P1's real `loadIntake` waits for this process's hydrate, and with a bot
+  // token set it would wait its whole window on every job here: the file
+  // stands in for the start's mark. The hydrate wait itself is the
+  // `store.load` case below.
+  markIntakesHydrated();
 });
 
 beforeEach(() => {

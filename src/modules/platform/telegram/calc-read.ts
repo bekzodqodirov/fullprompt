@@ -66,10 +66,11 @@ export const INTAKE_DELIVERY_RESERVE_MS = 70_000;
 export const INTAKE_STEP_SLACK_MS = 30_000;
 /**
  * How long a job fetched in the boot window waits for this process to hydrate
- * the collections (durability-9) — normally milliseconds. The store reads its
- * own wait (P1, `loadIntake`); this is the figure the sum below is pinned on.
+ * the collections (durability-9) — normally milliseconds. ONE home, the
+ * store's (`loadIntake` waits it, #513): re-exported here so the job's time
+ * sum is pinned on the figure the store actually waits.
  */
-export const INTAKE_HYDRATE_WAIT_MS = 10_000;
+export { INTAKE_HYDRATE_WAIT_MS } from './calc-store';
 /**
  * A token older than this is taken over by the next press. Only a backstop:
  * the sweep releases a dead job's token by its pg-boss state long before. The

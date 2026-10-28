@@ -90,6 +90,10 @@ beforeAll(async () => {
   await import('@/modules/wms/calc/intake-manual');
   await import('@/modules/wms/calc/intake');
   await import('@/modules/wms/calc/ai-cost');
+  // The job reads through P1's `loadIntake`, which in a process with no bot
+  // answers «not hydrated» at once: this file stands in for the start's mark.
+  const { markIntakesHydrated } = await import('@/modules/platform/telegram/calc-store');
+  markIntakesHydrated();
 });
 
 beforeEach(() => {

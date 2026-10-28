@@ -109,6 +109,12 @@ export async function driveReading(
   const out: Driven = { sent: [], edits: [] };
   const { __setTelegramTransport } = await import('@/modules/platform/telegram/send');
   const { runIntakeRead } = await import('@/modules/platform/telegram/calc-read');
+  // The job reads through the store's `loadIntake`, which waits for this
+  // process's hydrate (P1, durability-9). A test process runs no bot, so the
+  // drive stands in for the start's mark — or the token set below makes the
+  // store wait its whole hydrate window and throw `IntakesNotReady`.
+  const { markIntakesHydrated } = await import('@/modules/platform/telegram/calc-store');
+  markIntakesHydrated();
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) process.env.TELEGRAM_BOT_TOKEN = 'calc-read-drive';
   __setTelegramTransport(async (url, init) => {
