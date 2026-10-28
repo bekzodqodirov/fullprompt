@@ -119,7 +119,6 @@ let colleagueId = '';
 let colleague2Id = '';
 let colleague3Id = '';
 let leadId = '';
-let noteId = '';
 /**
  * Identity the CARD knows nothing about (F4 a): another client's manual code
  * and an unclaimed marking claimed to that client. Six digits at most, so the
@@ -145,7 +144,16 @@ let markingReceiptId = '';
 let ownShortCode = '';
 let ownShortClientId = '';
 let ownLeadId = '';
-const photoKey = `test/price-channel/${SUFFIX}.jpg`;
+/**
+ * Every request gets its OWN note with its own photo: a landing is idempotent
+ * per note (docs/SAKKIZ-R3.md K2 — a note's root request is THE request), so
+ * one note shared by every request of the file would hand each later open
+ * the first, already sealed, request.
+ */
+const PHOTO_PREFIX = `test/price-channel/${SUFFIX}`;
+const photoKeys: string[] = [];
+/** A tiny JPEG header is enough: the fake transport never decodes it. */
+const PHOTO_BYTES = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46, 0x49, 0x46, 0, 1, 0xff, 0xd9]);
 const madeRequests: string[] = [];
 const ctx = () => ({ actorId: sellerId });
 
@@ -273,25 +281,6 @@ beforeAll(async () => {
     .returning();
   leadId = lead!.id;
 
-  const [note] = await db
-    .insert(crmActivities)
-    .values({ entityType: 'lead', entityId: leadId, kind: 'note', note: 'GS777 Ali +998901234567 materiallar', createdBy: sellerId })
-    .returning();
-  noteId = note!.id;
-  // A tiny JPEG header is enough: the fake transport never decodes it.
-  const bytes = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46, 0x49, 0x46, 0, 1, 0xff, 0xd9]);
-  await getStorage().put(photoKey, bytes, 'image/jpeg');
-  await db.insert(attachments).values({
-    entityType: 'crm_activity',
-    entityId: noteId,
-    kind: 'photo',
-    storageKey: photoKey,
-    fileName: 'kurtka.jpg',
-    contentType: 'image/jpeg',
-    sizeBytes: bytes.length,
-    uploadedBy: sellerId,
-  });
-
   const [manual] = await db
     .insert(clients)
     .values({ clientCode: MANUAL_CODE, name: `Boshqa mijoz ${SUFFIX}` })
@@ -400,8 +389,8 @@ afterAll(async () => {
     await db.delete(leads).where(eq(leads.id, ownLeadId));
   }
   if (ownShortClientId) await db.delete(clients).where(eq(clients.id, ownShortClientId));
-  await db.delete(attachments).where(eq(attachments.storageKey, photoKey));
-  await getStorage().delete(photoKey).catch(() => {});
+  if (photoKeys.length > 0) await db.delete(attachments).where(inArray(attachments.storageKey, photoKeys));
+  for (const key of photoKeys) await getStorage().delete(key).catch(() => {});
   await db.delete(crmActivities).where(eq(crmActivities.entityId, leadId));
   await db.delete(leads).where(eq(leads.id, leadId));
   await db.delete(telegramLinks).where(inArray(telegramLinks.userId, fixtureUsers));
@@ -414,6 +403,28 @@ interface Card {
   entityId: string;
   items: { name: string; quantity: number }[];
   noteId: string | null;
+}
+
+/** The fixture lead's materials note, with the identity in its text and a photo of its own. */
+async function photoNote(): Promise<string> {
+  const [note] = await db
+    .insert(crmActivities)
+    .values({ entityType: 'lead', entityId: leadId, kind: 'note', note: 'GS777 Ali +998901234567 materiallar', createdBy: sellerId })
+    .returning();
+  const key = `${PHOTO_PREFIX}-${photoKeys.length}.jpg`;
+  photoKeys.push(key);
+  await getStorage().put(key, PHOTO_BYTES, 'image/jpeg');
+  await db.insert(attachments).values({
+    entityType: 'crm_activity',
+    entityId: note!.id,
+    kind: 'photo',
+    storageKey: key,
+    fileName: 'kurtka.jpg',
+    contentType: 'image/jpeg',
+    sizeBytes: PHOTO_BYTES.length,
+    uploadedBy: sellerId,
+  });
+  return note!.id;
 }
 
 /** A rastamojka request on the fixture lead, with the identity in its goods and the photo on its note. */
@@ -436,7 +447,7 @@ async function openRequest(section: 'rastamojka' | 'podklyuch' = 'rastamojka', c
         { name: 'YW26-000123 kepka', quantity: 10 },
         { name: `${LOOKALIKE_TYPED} kepka`, quantity: 10 },
       ],
-      noteId: card ? card.noteId : noteId,
+      noteId: card ? card.noteId : await photoNote(),
       source: 'card',
     },
     ctx(),
@@ -1095,7 +1106,7 @@ describe('I12 — the drain never posts what it no longer holds (review fixes)',
     const a = await sealedRequest();
     const storage = getStorage();
     const realGet = storage.get.bind(storage);
-    storage.get = (key: string) => (key === photoKey ? new Promise<Buffer>(() => {}) : realGet(key));
+    storage.get = (key: string) => (key.startsWith(PHOTO_PREFIX) ? new Promise<Buffer>(() => {}) : realGet(key));
     try {
       const run = await drainPriceChannel(new Date(), { photoReadMs: 50 });
       expect(run.sent).toBe(1);
@@ -1114,7 +1125,7 @@ describe('I12 — the drain never posts what it no longer holds (review fixes)',
     const realGet = storage.get.bind(storage);
     let interfered = false;
     storage.get = async (key: string) => {
-      if (key === photoKey && !interfered) {
+      if (key.startsWith(PHOTO_PREFIX) && !interfered) {
         interfered = true;
         // Meanwhile: the stuck step gave up on it, and a person pressed «Qayta yuborish».
         const [row] = await db

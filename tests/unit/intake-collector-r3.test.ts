@@ -58,7 +58,7 @@ function collection(patch: Partial<IntakeState> = {}): { chatId: bigint; state: 
   seq += 1;
   const chatId = BigInt(-9_400_000_000) - BigInt(seq);
   chats.push(chatId);
-  startIntake(chatId, 'rastamojka');
+  startIntake(chatId, 'rastamojka', { staffId: 'staff-test' });
   return { chatId, state: updateIntake(chatId, patch)! };
 }
 
@@ -154,7 +154,7 @@ describe('another factory’s same-named line is kept (R3-C1)', () => {
         stage: 'material',
         invoiceGoods: [line('Ladies jacket', { quantity: 300 })],
         aiGoods: 'add',
-        pdfs: [{ data: Buffer.from('%PDF'), name: 'B.pdf' }],
+        pdfs: [{ attachmentId: 'a-pdf-b', name: 'B.pdf', bytes: 4 }],
       }).state,
     );
     expect(out.facts.goods?.map((g) => g.name)).toEqual(['Ladies jacket', 'Choynak']);
@@ -230,7 +230,7 @@ describe('rows missing vs cells shortened (R3-C2, the sheets package’s two fla
 
   it('the wire: the reader’s two words reach the collection through readIntakeFile', async () => {
     reader.answer = { kind: 'text', text: csv(20), sheets: 1, textCut: false, cellsCut: true };
-    const text = await readIntakeFile({ isPhoto: false, body: Buffer.from('x') }, 'PL.csv', 'text/csv', collection().state);
+    const text = await readIntakeFile({ isPhoto: false, body: Buffer.from('x'), attachmentId: 'a-file' }, 'PL.csv', 'text/csv', collection().state);
     expect(text.say).not.toContain('⚠️');
     expect(text.patch.sheetTexts).toEqual([{ text: csv(20), cut: false, cellsCut: true, label: '«PL.csv»' }]);
 
@@ -243,7 +243,7 @@ describe('rows missing vs cells shortened (R3-C2, the sheets package’s two fla
       textCut: false,
       cellsCut: true,
     };
-    const goods = await readIntakeFile({ isPhoto: false, body: Buffer.from('x') }, 'A.xlsx', null, collection().state);
+    const goods = await readIntakeFile({ isPhoto: false, body: Buffer.from('x'), attachmentId: 'a-file' }, 'A.xlsx', null, collection().state);
     expect(goods.say).not.toContain('⚠️');
     expect(goods.patch.invoiceTexts).toEqual([{ text: '[Packing list]\nTOTAL | 150', cut: false, cellsCut: true, label: '«A.xlsx»' }]);
   });

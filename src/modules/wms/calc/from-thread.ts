@@ -411,6 +411,9 @@ export async function threadCalcSend(
     },
     ctx,
   );
+  // A concurrent twin of this very press opened it first (the note's lock,
+  // docs/SAKKIZ-R3.md K2): the same answer as the retried press above.
+  if (opened.existing) return { ...target, queued: true };
   // …and the machine looks at it, exactly as it does for the bot's door.
   await queueCalcPrefill({
     requestId: opened.id,

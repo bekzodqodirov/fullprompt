@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { collectorCode } from '../fixtures/calc-collector-source';
 import {
   BUGUN,
   ZAMETKALAR,
@@ -23,7 +24,13 @@ const read = (p: string) =>
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/^\s*\/\/.*$/gm, '');
 
-const handlers = read('src/modules/platform/telegram/staff-handlers.ts');
+// The collector's files (docs/SAKKIZ-R3.md K16): the bot-file download moved
+// into calc-files.ts, its one home the capture shares. And the capture's own
+// file: K moved its keyboard (`n:save` / `n:share` / `n:cancel`) out of
+// staff-handlers.ts into note-capture.ts, which is no collector file — read
+// apart, the fence below lost those three while the list's five kept its
+// floor (K's review, U1).
+const handlers = `${collectorCode()}\n${read('src/modules/platform/telegram/note-capture.ts')}`;
 
 describe('the callback vocabulary', () => {
   const uuid = '123e4567-e89b-12d3-a456-426614174000';
@@ -62,6 +69,9 @@ describe('the callback vocabulary', () => {
       (m) => m[2]!,
     );
     expect(literals.length, 'no n: buttons found — re-anchor this fence').toBeGreaterThanOrEqual(4);
+    // The capture's three by name, so the list's buttons alone cannot meet
+    // the floor while one of them is renamed past the parser.
+    for (const control of ['n:save', 'n:share', 'n:cancel']) expect(literals, control).toContain(control);
     for (const raw of literals) {
       // A template hole is filled with a real id / page before it is sent.
       const data = raw
@@ -165,7 +175,9 @@ describe('the rules a shell cannot exercise', () => {
     // the calc doors refuse while a capture is live, or the capture ages out
     // silently taking whatever was typed with it.
     expect(handlers).toContain('if (await refuseWhileCapturing(ctx, chatId)) return;');
-    expect(handlers).toContain("if (activeIntake(chatId)) {");
+    // K3: the doors that refuse beside a collection ask whether it HOLDS the
+    // chat (`holdingIntake`; in K the same answer as `activeIntake`).
+    expect(handlers).toContain("if (holdingIntake(chatId)) {");
   });
 
   it('a media group caches its ids POSITIONALLY, and only when the lengths agree', () => {

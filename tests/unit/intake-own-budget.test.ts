@@ -28,7 +28,7 @@ afterEach(() => {
 function collection(usages: number) {
   const chatId = BigInt(-9_910_000_000) - BigInt(chats.length + 1);
   chats.push(chatId);
-  startIntake(chatId, 'rastamojka');
+  startIntake(chatId, 'rastamojka', { staffId: 'staff-test' });
   return updateIntake(chatId, { stage: 'material', material: ['Kurtka 300 dona'], usages: Array(usages).fill(BILL) })!;
 }
 

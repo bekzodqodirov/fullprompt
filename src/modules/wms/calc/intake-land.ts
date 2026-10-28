@@ -21,7 +21,7 @@ import { recordAiPass } from './ai-cost';
 import type { AiUsage } from '../tnved/service';
 import { queueCalcPrefill } from './prefill-queue';
 import { dealTitleFor } from './deal-title';
-import { CalcError, calcOpenRefusal } from './service';
+import { CalcError, calcOpenRefusal, rootOfNoteSql } from './service';
 
 /**
  * Where a confirmed «Hisoblatish» lands (owner: «hammasi lead yoki ochilgan
@@ -215,10 +215,7 @@ export async function cardOfNote(
 /** The ROOT request an earlier attempt opened on this note — a retry returns it instead of opening a second. */
 export async function rootRequestOfNote(noteId: string): Promise<string | null> {
   const rows = (await db.execute(sql`
-    SELECT id::text AS id FROM calc_requests
-     WHERE note_id = ${noteId}::uuid AND supersedes_request_id IS NULL
-     ORDER BY requested_at
-     LIMIT 1
+    SELECT id::text AS id FROM calc_requests WHERE ${rootOfNoteSql(noteId)}
   `)) as unknown as { id: string }[];
   return rows[0]?.id ?? null;
 }
@@ -522,8 +519,18 @@ export async function landIntake(input: {
 
   // An earlier attempt already queued this very note: the job is in the
   // queue, and neither it nor the AI pass is opened twice (judge conc-13).
+  // ONE exit for both ways of finding that out — the pooled re-read here, and
+  // `openCalcRequest`'s in-transaction one under the note's lock, which
+  // catches a concurrent twin of this very landing (docs/SAKKIZ-R3.md K2).
+  const landedTarget = target;
+  const retried = (requestId: string): IntakeTarget => ({
+    ...landedTarget,
+    queued: true,
+    requestId,
+    queueError: null,
+  });
   const queuedBefore = await rootRequestOfNote(input.noteId);
-  if (queuedBefore) return { ...target, queued: true, requestId: queuedBefore, queueError: null };
+  if (queuedBefore) return retried(queuedBefore);
 
   // The collected job goes into the VED queue — the bot and the card form are
   // two doors into ONE queue (docs/VED.md, phase A). Fenced for the same
@@ -564,6 +571,7 @@ export async function landIntake(input: {
       },
       { actorId: input.collectedBy },
     );
+    if (opened.existing) return retried(opened.id);
     queued = true;
     requestId = opened.id;
     // Each bill in its OWN try (judge concurrency-8): the records shared one

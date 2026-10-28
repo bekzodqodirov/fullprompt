@@ -10,6 +10,7 @@ import {
 import { zoneKeyboard } from '@/modules/platform/telegram/staff-handlers';
 import { KNOWN_TARIFF_ZONES, OWNER_TARIFF_ZONES, ownerTariffRows } from '@/modules/wms/calc/tariff-seed';
 import { ZONE_ROUTE } from '@/modules/wms/calc/freight-answer';
+import { collectorCode } from '../fixtures/calc-collector-source';
 
 /**
  * The «🤖 AI rastamojka» door (the owner's own words, 2026-09-05).
@@ -56,7 +57,9 @@ describe('the callback vocabulary', () => {
 });
 
 describe('the rules a shell cannot exercise', () => {
-  const handlers = read('src/modules/platform/telegram/staff-handlers.ts');
+  // The collector's files, not staff-handlers.ts alone: K moved its halves
+  // into calc-*.ts (docs/SAKKIZ-R3.md K16 — the subject moved).
+  const handlers = collectorCode();
 
   it('the AI door opens rastamojka OR podklyuch — never a section the engine lacks', () => {
     // Decision 8 («no freight») was overturned by the owner on 2026-09-26
@@ -64,7 +67,7 @@ describe('the rules a shell cannot exercise', () => {
     // carries the road. A `startIntake(chatId, 'ai')` would be a section the
     // whole engine does not have.
     expect(handlers).toContain("startIntake(chatId, opening === 'ai' ? 'rastamojka' : opening");
-    expect(handlers).toContain("startIntake(chatId, 'podklyuch', { ai: true })");
+    expect(handlers).toContain("startIntake(chatId, 'podklyuch', { ai: true, staffId: staff.id, openedBy })");
   });
 
   it('every zone button is a zone the app can name, and the reply names each one', () => {
@@ -156,7 +159,9 @@ describe('the rules a shell cannot exercise', () => {
     // to be rewritten every time a button is added tells you nothing about
     // whether the escapes survived. The escapes themselves are asserted
     // behaviourally in tests/unit/zametka-bot.test.ts.
-    expect(handlers).toContain('if (intake && !escapesIntake(ctx.message.text) && !late)');
+    // K3: the collector's own `!late` became the one `intakeTakes(` verdict,
+    // asked only of a text the predicate does not let escape.
+    expect(handlers).toContain('intake && !escapesIntake(ctx.message.text) ? intakeTakes(intake, incoming)');
     expect(escapesIntake('🧮 Hisoblatish')).toBe(true);
     expect(escapesIntake('🤖 AI rastamojka')).toBe(true);
     expect(escapesIntake('📋 Bugun')).toBe(true);

@@ -84,7 +84,7 @@ async function collectAndLand(outcomes: unknown[]) {
   seq += 1;
   const chatId = BigInt(-9_800_000_000) - BigInt(seq);
   chats.push(chatId);
-  startIntake(chatId, 'rastamojka');
+  startIntake(chatId, 'rastamojka', { staffId: 'staff-test' });
   updateIntake(chatId, {
     clientHintRaw: `R2 usage ${SUFFIX}-${seq} +99891${SUFFIX}${seq}`,
     material: ['Kurtka 300 dona 150 kg'],

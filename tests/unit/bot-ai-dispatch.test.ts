@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { collectorFiles } from '../fixtures/calc-collector-source';
 
 /**
  * The AI answer must never hold the Telegram poller.
@@ -82,7 +83,9 @@ describe('the AI answer never holds the Telegram poller', () => {
  * client was constructed with no timeout at all.
  */
 describe('the hisoblatish analysis never holds the poller either', () => {
-  const source = readFileSync('src/modules/platform/telegram/staff-handlers.ts', 'utf8');
+  // The reading moved to calc-read.ts (docs/SAKKIZ-R3.md K8 — the subject
+  // moved); every other collector file must not await it at all.
+  const source = readFileSync('src/modules/platform/telegram/calc-read.ts', 'utf8');
   // The helper sits ABOVE its own call site in this file, so «everything
   // before the helper» is the wrong slice — it excludes the very line under
   // test and the assertion passes on nothing. Anchor on POSITIONS instead:
@@ -98,6 +101,9 @@ describe('the hisoblatish analysis never holds the poller either', () => {
     for (const at of awaits) {
       expect(at, 'awaited only inside the off-chain helper').toBeGreaterThan(helperStart);
       expect(at, 'and inside its body, not after it').toBeLessThan(helperEnd);
+    }
+    for (const { file, text } of collectorFiles().filter((f) => f.file !== 'calc-read.ts')) {
+      expect(text, `${file} awaits the reading`).not.toMatch(/await\s+analyzeCollected\(/);
     }
   });
 

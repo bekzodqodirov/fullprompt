@@ -32,7 +32,7 @@ function collection(patch: Partial<IntakeState>): IntakeState {
   seq += 1;
   const chatId = BigInt(-9_200_000_000) - BigInt(seq);
   chats.push(chatId);
-  startIntake(chatId, 'rastamojka');
+  startIntake(chatId, 'rastamojka', { staffId: 'staff-test' });
   return updateIntake(chatId, { stage: 'material', fileCount: 2, ...patch })!;
 }
 
@@ -52,7 +52,7 @@ describe('another factory’s goods, beside an Excel list (review c4)', () => {
   it('«boshqa zavod»: the model’s lines are appended — those the Excel does not already carry', async () => {
     model.analyze.mockResolvedValueOnce(reads([line('KURTKA'), line('Choynak', { quantity: 40 })]));
     const out = await analyzeCollected(
-      collection({ invoiceGoods: [line('Kurtka', { quantity: 300 })], aiGoods: 'add', pdfs: [{ data: Buffer.from('%PDF'), name: 'B.pdf' }] }),
+      collection({ invoiceGoods: [line('Kurtka', { quantity: 300 })], aiGoods: 'add', pdfs: [{ attachmentId: 'a-pdf-b', name: 'B.pdf', bytes: 4 }] }),
     );
     expect(out.facts.goods).toEqual([line('Kurtka', { quantity: 300 }), line('Choynak', { quantity: 40 })]);
     // …and the model was told what not to repeat.

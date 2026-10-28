@@ -267,6 +267,11 @@ export interface CalcGoodsFact {
    * line's code up in `laws`; null = the line has no known law.
    */
   law?: NeedLaw | null;
+  /** A STORED row's own id and number (docs/SAKKIZ-R3.md K14) — what the add
+   * door writes by, and the number the VED's screen prints. Absent on a line
+   * that was only read, never stored. */
+  itemId?: string | null;
+  seq?: number;
 }
 
 /** One line as the rest of the system should read it. */

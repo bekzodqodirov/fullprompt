@@ -49,7 +49,7 @@ function collection(patch: Partial<IntakeState> = {}): { chatId: bigint; state: 
   seq += 1;
   const chatId = BigInt(-9_300_000_000) - BigInt(seq);
   chats.push(chatId);
-  startIntake(chatId, 'rastamojka');
+  startIntake(chatId, 'rastamojka', { staffId: 'staff-test' });
   return { chatId, state: updateIntake(chatId, patch)! };
 }
 function fakeCtx() {
@@ -202,7 +202,7 @@ describe('the summary beside an Excel (round 4)', () => {
       material: ['Kurtka 300 dona'],
       aiGoods: 'add',
       invoiceGoods: [line('Kurtka', { quantity: 300, weightKg: 150 })],
-      pdfs: [{ data: Buffer.from('%PDF-1.4 B'), name: 'B.pdf' }],
+      pdfs: [{ attachmentId: 'a-pdf-b', name: 'B.pdf', bytes: 10 }],
     });
     model.analyze.mockResolvedValueOnce({ ok: false, failure: 'not_configured' });
     const ctx = fakeCtx();

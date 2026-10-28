@@ -12,7 +12,7 @@ import {
   endingOf,
   type CalcEnding,
 } from '@/modules/wms/calc/service';
-import { needLawOf, type NeedLaw } from '@/modules/wms/calc/needs';
+import { groupLawsOf } from '@/modules/wms/calc/needs';
 import { measureNeedText, type CalcT } from './words';
 import { linkedReceipts } from '@/modules/wms/calc/link';
 import { chainLinksOf, chainOf, type ChainLink, type ChainVersion } from '@/modules/wms/calc/chain';
@@ -158,9 +158,7 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
   // The checklist, with a GROUPED line asking its group's law (judge S9) — the
   // chip and the row's cell border then read the same law. On the workspace's
   // own catch: with no workspace on screen the book's reading stands.
-  const groupLawBySeq = workspace
-    ? new Map<number, NeedLaw>(workspace.groups.flatMap((g) => g.items.map((i) => [i.seq, needLawOf(g)] as const)))
-    : null;
+  const groupLawBySeq = workspace ? groupLawsOf(workspace.groups) : null;
   const checklist = await checklistFor(row, groupLawBySeq).catch((err: unknown) => {
     if (!isServerBehind(err)) throw err;
     return { missing: row.missing, lines: [] };

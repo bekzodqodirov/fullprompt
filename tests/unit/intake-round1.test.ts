@@ -8,16 +8,16 @@ import { AI_READ_FAILURE, parseClientHint, type AiReadFailure } from '@/modules/
 import { looksLikeMaterial, parseManualFacts, readGoodsLines } from '@/modules/wms/calc/intake-manual';
 import { intakeFileKind, startIntake, endIntake, type IntakeState } from '@/modules/platform/telegram/calc-intake';
 import { aiStepsText, settleAnalysis } from '@/modules/platform/telegram/staff-handlers';
+import { collectorSource } from '../fixtures/calc-collector-source';
 
 /**
  * Round 1 of his eight items (docs/SAKKIZ-BAND.md, 2026-10-21): the bot stops
  * losing what it is sent, and says why when the model does not read it.
  */
 
-const HANDLERS = readFileSync(
-  path.join(__dirname, '..', '..', 'src', 'modules', 'platform', 'telegram', 'staff-handlers.ts'),
-  'utf8',
-);
+// The collector's files (docs/SAKKIZ-R3.md K16): the summary's words moved
+// into calc-dialog.ts with the rest of the dialogue.
+const HANDLERS = collectorSource();
 
 describe('the model’s answer, read — or the reason it is missing (his 1.6 a)', () => {
   const good = JSON.stringify({
@@ -162,7 +162,7 @@ describe('the first message: the customer, or material (his 1.7 b)', () => {
 describe('an analysis lands only where it still belongs (the diagnosis’ cause 7)', () => {
   const chat = 990_000_001n;
   const base = (): IntakeState => {
-    const s = startIntake(chat, 'rastamojka');
+    const s = startIntake(chat, 'rastamojka', { staffId: 'staff-test' });
     endIntake(chat);
     return { ...s, stage: 'material', material: ['Kurtka 300 dona'], fileCount: 1, analysing: 'T1' };
   };
@@ -241,9 +241,9 @@ describe('the queued AI pass is never silent when it does not answer', () => {
     expect(told, 'the stand-down no longer speaks — re-anchor').toBeGreaterThan(-1);
     const leaves = branch.indexOf('return;');
     expect(told).toBeLessThan(leaves);
-    expect(branch.slice(told, leaves)).toContain('await sayOnce(requestId, {');
+    expect(branch.slice(told, leaves)).toContain("await sayOnce(requestId, 'landing', {");
     const failed = JOBS.slice(JOBS.indexOf("'[calc-prefill] pass failed — the VED still has the job'"));
-    expect(failed.slice(0, 600)).toContain('await sayOnce(requestId, {');
+    expect(failed.slice(0, 600)).toContain("await sayOnce(requestId, 'landing', {");
     expect(failed.slice(0, 600)).toContain('text: writes ? PASS_FAILED : TARIFF_PASS_FAILED');
   });
 });

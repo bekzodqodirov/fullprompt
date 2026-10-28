@@ -57,6 +57,12 @@ export interface CalcPrefillJob {
    * customs job, the only kind there was.
    */
   section?: string | null;
+  /**
+   * Which pass this is — `sayOnce`'s key, so a seller's addition gets its
+   * own answer (docs/SAKKIZ-R3.md K15). On both queues. Absent = the
+   * landing's pass (every job queued before this field existed).
+   */
+  pass?: string;
 }
 
 /**
@@ -274,7 +280,7 @@ async function runPrefillJob(data: CalcPrefillJob, retryCount: number): Promise<
       // Said, not silent (2026-10-21): the seller was promised a figure in
       // this chat, and a pass that stood down used to leave him waiting.
       const said = standDownWords(standing, writes);
-      if (said) await sayOnce(requestId, { userIds: [staffId], type: 'CalcPrefilled', text: said });
+      if (said) await sayOnce(requestId, 'landing', { userIds: [staffId], type: 'CalcPrefilled', text: said });
       return;
     }
     // NOBODY typed this. The pass ran under the seller's id, so every
@@ -299,20 +305,20 @@ async function runPrefillJob(data: CalcPrefillJob, retryCount: number): Promise<
       // a person overtook the machine before it wrote anything (CONC-5).
       logger.info({ requestId, stood: out.stood, overtaken: out.overtaken }, '[calc-prefill] stood down mid-pass');
       const said = STOOD_DOWN[out.stood];
-      if (said) await sayOnce(requestId, { userIds: [staffId], type: 'CalcPrefilled', text: said });
+      if (said) await sayOnce(requestId, 'landing', { userIds: [staffId], type: 'CalcPrefilled', text: said });
       return;
     }
     // `whileOpen` (review CONC-1): the request is read under the claim's own
     // lock, and a VED who closed it after the pass's last step — «Готово»,
     // a hand-back — has sent the official answer; the machine's reply and its
     // lenta note must not follow it.
-    const spoke = await sayOnce(requestId, { userIds: [staffId], type: 'CalcPrefilled', text: out.text }, { whileOpen: true });
+    const spoke = await sayOnce(requestId, 'landing', { userIds: [staffId], type: 'CalcPrefilled', text: out.text }, { whileOpen: true });
     if (!spoke) {
       // Withheld because the request closed: the seller is told so, once. Or
       // withheld because a message already went out (a re-delivery): the
       // claim drops this one too.
       const closed = (writes ? STOOD_DOWN : TARIFF_STOOD_DOWN).closed;
-      if (closed) await sayOnce(requestId, { userIds: [staffId], type: 'CalcPrefilled', text: closed });
+      if (closed) await sayOnce(requestId, 'landing', { userIds: [staffId], type: 'CalcPrefilled', text: closed });
     }
     // His answer 2a: the SAME text onto the card's lenta. Two audiences
     // for one answer — the seller reads it on a phone and forgets it, the
@@ -350,7 +356,7 @@ async function runPrefillJob(data: CalcPrefillJob, retryCount: number): Promise<
     // Best-effort: the drain may be what failed.
     try {
       const { sayOnce } = await import('./say-once');
-      await sayOnce(requestId, { userIds: [staffId], type: 'CalcPrefilled', text: writes ? PASS_FAILED : TARIFF_PASS_FAILED });
+      await sayOnce(requestId, 'landing', { userIds: [staffId], type: 'CalcPrefilled', text: writes ? PASS_FAILED : TARIFF_PASS_FAILED });
     } catch {
       /* the log line above is the record */
     }

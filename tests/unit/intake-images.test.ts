@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { collectorCode } from '../fixtures/calc-collector-source';
 
 /**
  * The photographs reach the model (the owner's third report).
@@ -22,7 +23,9 @@ const read = (path: string) =>
 
 const AI = read('src/modules/wms/calc/intake-ai.ts');
 const STATE = read('src/modules/platform/telegram/calc-intake.ts');
-const BOT = read('src/modules/platform/telegram/staff-handlers.ts');
+// The collector's files: K moved the file reader, the prompt and the reading
+// out of staff-handlers.ts into calc-*.ts (docs/SAKKIZ-R3.md K16).
+const BOT = collectorCode();
 
 describe('the analysis actually looks at the photographs', () => {
   it('intake-ai takes images and sends them as image blocks', () => {
@@ -65,7 +68,10 @@ describe('the analysis actually looks at the photographs', () => {
     expect(BOT).toContain('reduceForModel');
     expect(BOT).toMatch(/import\('sharp'\)/);
     expect(BOT).toContain('MAX_INTAKE_IMAGES');
-    expect(STATE).toContain('images: state.images');
+    // K5: the collection keeps attachment ids and the reading loads the bytes
+    // (`loadIntakeFiles`), so the analysis is handed `files.images`.
+    expect(STATE).toContain('images: files.images');
+    expect(BOT).toContain('await loadIntakeFiles(state');
   });
 });
 

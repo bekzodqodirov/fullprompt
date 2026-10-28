@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { PRESS_REPEAT } from '@/modules/platform/telegram/staff-bot';
+import { CALC_STEP_REPEAT, PRESS_REPEAT } from '@/modules/platform/telegram/staff-bot';
+import { intakeTakes, startIntake, endIntake } from '@/modules/platform/telegram/calc-store';
+import { __resetLifecycle, markBoot } from '@/modules/platform/telegram/lifecycle';
 import { bodyOf, read, srcFiles } from '../fixtures/source-shape';
+import { collectorCode } from '../fixtures/calc-collector-source';
 
 /**
  * Q5 a's wiring, as SOURCE SHAPE — the rules a grammy shell cannot exercise
@@ -16,6 +19,12 @@ const HANDLERS = read(`${T}/staff-handlers.ts`);
 const TASKS = read(`${T}/task-handlers.ts`);
 const CABINET = read(`${T}/client-cabinet.ts`);
 const STAFF_BOT = read(`${T}/staff-bot.ts`);
+/**
+ * The calc collector's files, comments stripped — staff-handlers.ts first, so
+ * every slice that starts in the dispatcher reads exactly as before. K moved
+ * the collector's halves out of it (docs/SAKKIZ-R3.md K16, the subject moved).
+ */
+const COLLECTOR = collectorCode();
 
 const found = (text: string, needle: string, what = needle) => {
   const at = text.indexOf(needle);
@@ -201,23 +210,44 @@ describe('(7) the join decline is said BEFORE the decline, inside Telegram’s f
 });
 
 describe('(8) no collector this process opened takes a backlog message', () => {
-  const text = HANDLERS.slice(found(HANDLERS, "bot.on('message:text'"), HANDLERS.indexOf('type StaffTailCtx'));
+  const text = COLLECTOR.slice(found(COLLECTOR, "bot.on('message:text'"), COLLECTOR.indexOf('type StaffTailCtx'));
+  // Re-anchored (docs/SAKKIZ-R3.md K3, the subject moved): the calc
+  // collector's own three `!late` checks became ONE verdict, `intakeTakes`,
+  // asked by the text, file and voice doors; the rule itself is proven on the
+  // verdict below. The zametka and the draft keep their `late`.
   it('the text ladder declares `late` before the first collector and every collector asks it', () => {
     expect(found(text, 'const late = isBacklog(ctx.message.date);')).toBeLessThan(found(text, 'activeIntake('));
-    found(text, 'if (intake && !escapesIntake(ctx.message.text) && !late) {');
+    found(text, "intake && !escapesIntake(ctx.message.text) ? intakeTakes(intake, incoming) : 'pass'");
+    expect(found(text, "if (takes === 'seen') return;")).toBeLessThan(found(text, "if (intake && takes === 'take') {"));
     found(text, 'if (capture && !late) {');
     found(text, 'if (draft && !late) {');
   });
   it('the photo/document and voice handlers carry it', () => {
-    const photos = HANDLERS.slice(found(HANDLERS, "bot.on(['message:photo', 'message:document']"));
+    const photos = COLLECTOR.slice(found(COLLECTOR, "bot.on(['message:photo', 'message:document']"));
     expect(photos.slice(0, 600)).toContain('const late = isBacklog(ctx.message.date);');
-    expect(photos.slice(0, 900)).toContain('if (!state || late) {');
+    expect(photos.slice(0, 900)).toContain("const takes = state ? intakeTakes(state, intakeMessageOf(ctx)) : 'pass';");
+    expect(photos.slice(0, 900)).toContain("if (!state || takes === 'pass') {");
     expect(photos.slice(0, 1400)).toContain('if (!capture || late) {');
-    const voice = HANDLERS.slice(found(HANDLERS, "['message:voice', 'message:audio'"));
+    const voice = COLLECTOR.slice(found(COLLECTOR, "['message:voice', 'message:audio'"));
     // A live collection answers a voice note in words (his 1.12 a) and a live
     // zametka capture keeps it — both only when it is NOT from the backlog.
-    expect(voice.slice(0, 900)).toContain('if (!late && activeIntake(chatId)) {');
+    expect(voice.slice(0, 900)).toContain("const takes = intake ? intakeTakes(intake, intakeMessageOf(ctx)) : 'pass';");
+    expect(voice.slice(0, 900)).toContain("if (takes === 'take') {");
     expect(voice.slice(0, 1500)).toContain('if (!late && activeCapture(chatId)) return next();');
+  });
+  it('the verdict: a collection opened after boot never takes a message written before it', () => {
+    const boot = new Date();
+    markBoot(boot);
+    const chat = BigInt(-7_300_000_001);
+    try {
+      const state = startIntake(chat, 'rastamojka', { staffId: 'staff-test' });
+      const bootSec = Math.floor(boot.getTime() / 1000);
+      expect(intakeTakes(state, { date: bootSec - 60, messageId: 10, replyTo: null })).toBe('pass');
+      expect(intakeTakes(state, { date: bootSec + 1, messageId: 11, replyTo: null })).toBe('take');
+    } finally {
+      endIntake(chat);
+      __resetLifecycle();
+    }
   });
   it('a backlog forward is the sentence before any «📌» offer — in the ladder and in draftMedia', () => {
     const doorB = text.slice(found(text, 'if (ctx.message.forward_origin) {'));
@@ -248,7 +278,7 @@ describe('(10) every press kind whose repeat is «keyed» carries its key', () =
     const keyed = Object.entries(PRESS_REPEAT).filter(([, v]) => v === 'keyed').map(([k]) => k);
     expect(keyed.length, 're-anchor: no keyed press').toBeGreaterThan(0);
     for (const kind of keyed) {
-      const branches = [HANDLERS, TASKS].flatMap((text) =>
+      const branches = [COLLECTOR, TASKS].flatMap((text) =>
         [...text.matchAll(new RegExp(`kind === '${kind}'\\) \\{`, 'g'))].map((m) => {
           const rest = text.slice(m.index! + 1);
           const end = rest.indexOf("kind === '");
@@ -258,6 +288,22 @@ describe('(10) every press kind whose repeat is «keyed» carries its key', () =
       expect(branches.length, `re-anchor: no branch for ${kind}`).toBeGreaterThan(0);
       expect(branches.some((b) => b.includes('pressKey(ctx, ')), `${kind} carries no pressKey`).toBe(true);
     }
+  });
+  // One kind carries presses of every class, so the calc kind is classed per
+  // STEP (`CALC_STEP_REPEAT`, docs/SAKKIZ-R3.md K12) — and its keyed steps
+  // carry their key the same way, read off the table.
+  it('every calc step classed «keyed» is claimed in the calc branch, and the claim is spent before a restart wipes', () => {
+    const keyed = Object.entries(CALC_STEP_REPEAT).filter(([, v]) => v === 'keyed').map(([k]) => k);
+    expect(keyed.length, 're-anchor: no keyed calc step').toBeGreaterThan(0);
+    const rest = COLLECTOR.slice(found(COLLECTOR, "kind === 'calc') {") + 1);
+    const branch = rest.slice(0, rest.indexOf("kind === '"));
+    found(branch, "CALC_STEP_REPEAT[parsed.step] === 'keyed' ? await pressKey(ctx, ");
+    found(branch, 'handleCalcCallback(ctx as unknown as CalcPressCtx, chatId, parsed.step, restartKey)');
+    const handler = bodyOf(COLLECTOR, 'export async function handleCalcCallback(');
+    expect(found(handler, 'claimOnce(db, restartKey)')).toBeLessThan(found(handler, 'startIntake('));
+    // The handler spends the key on the restart path alone, so a step classed
+    // keyed must be a restart twin, or its key is minted and never spent.
+    for (const step of keyed) expect(step.startsWith('go_'), step).toBe(true);
   });
 });
 
