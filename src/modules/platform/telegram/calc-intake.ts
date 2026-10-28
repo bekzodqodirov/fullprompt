@@ -1438,6 +1438,19 @@ export function typedLeftOutNote(lines: readonly LeftOutLine[]): string | null {
   return `⚠️ ${typed.length} ta yozilgan qator Excel’da yo‘q, ro‘yxatga qo‘shilmadi (tovarlar Excel’dan olindi): ${namedLines(typed)}.`;
 }
 
+/**
+ * The seller's word for the photographs and PDFs the reading could not load
+ * back from storage (docs/SAKKIZ-R3.md K5, §2.6's words). Since K the
+ * collection keeps attachment ids and the bytes are read back at «Bo‘ldi»; a
+ * storage blip used to leave the model reading text alone under a prompt that
+ * had promised it the photos, with nothing on the screen to say so. Null =
+ * every file was read.
+ */
+export function filesMissingNote(missing: number): string | null {
+  if (missing <= 0) return null;
+  return `⚠️ ${missing} ta fayl o‘qilmadi — saqlangan joydan olib bo‘lmadi. Kerak bo‘lsa qayta yuboring.`;
+}
+
 /** At most this many photographs reach the model (his 1.4 b: twelve). */
 export const MAX_INTAKE_IMAGES = 12;
 
@@ -1572,9 +1585,13 @@ export async function analyzeCollected(
   // The lines left out because the Excel answers are SAID, in the bot's own
   // notes, so the summary shows them beside the model's three and the card
   // keeps them (R3-C1; round 4, C-r1 nit and integration S-a).
-  const notes = [sameAsInvoiceNote(picked.sameAsInvoice), typedLeftOutNote(picked.sameAsInvoice)].filter(
-    (n): n is string => n !== null,
-  );
+  // …and the files the reading could not load back from storage (K5), said
+  // rather than read past in silence.
+  const notes = [
+    sameAsInvoiceNote(picked.sameAsInvoice),
+    typedLeftOutNote(picked.sameAsInvoice),
+    filesMissingNote(files.missing),
+  ].filter((n): n is string => n !== null);
   // A route the seller answered in the table goes above everything a reading
   // finds — unless the material AFTER the answer names another city, read
   // from that SLICE alone (`readRoute` has no offset form), so the very city

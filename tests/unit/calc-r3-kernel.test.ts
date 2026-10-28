@@ -13,6 +13,7 @@ import { JOB_CALC_PREFILL, JOB_CALC_TARIFF_REPLY } from '@/modules/wms/calc/jobs
 import { cargoPatchOf } from '@/modules/wms/calc/workspace';
 import { groupLawsOf } from '@/modules/wms/calc/needs';
 import { answeredRoute, sameRouteAnswer } from '@/modules/platform/telegram/calc-intake';
+import { read } from '../fixtures/source-shape';
 
 /**
  * The round-3 kernel's pure seams (docs/SAKKIZ-R3.md K14, K15): each inert
@@ -62,13 +63,16 @@ describe('the update a handler runs under (lifecycle, K15)', () => {
     expect(currentUpdateId()).toBeNull();
   });
 
-  it('a change the flush left unwritten keeps its update, and every later one, unconfirmed', async () => {
+  it('a change the flush left unwritten keeps its update, and every later one of the batch, unconfirmed', async () => {
+    // 50 and 51 handled; 52 is the NEXT update of the same batch, arriving
+    // once the stop began — held, so grammy is still inside the batch and
+    // nothing of it is confirmed yet. That is the only state in which an
+    // update can still be held back (K's review, spec-2).
     await guard(ctxOf(50), async () => {});
     await guard(ctxOf(51), async () => {});
-    await guard(ctxOf(52), async () => {});
     const { bot, confirms } = fakeBot();
     const asked: string[] = [];
-    const out = await stopTelegramBot({
+    const stopping = stopTelegramBot({
       bot: bot as never,
       flush: async () => {
         asked.push('flush');
@@ -79,12 +83,47 @@ describe('the update a handler runs under (lifecycle, K15)', () => {
         return 51;
       },
     });
-    // Asked AFTER the flush, and the idle stop's own confirm (grammy's, which
-    // would confirm 52) is not taken.
+    void guard(ctxOf(52), async () => {});
+    const out = await stopping;
+    // Asked AFTER the flush; confirmed through 50 only, so 51 (and the held
+    // 52) reach the next process.
     expect(asked).toEqual(['flush', 'unwritten']);
     expect(out.via).toBe('confirm');
+    expect(out.confirmedThrough).toBe(50);
     expect(confirms).toEqual([{ offset: 51, limit: 1, timeout: 0 }]);
     expect(bot.stop).not.toHaveBeenCalled();
+  });
+
+  it('…and the update in flight past the budget is held back the same way', async () => {
+    await guard(ctxOf(60), async () => {});
+    await guard(ctxOf(61), async () => {});
+    void guard(ctxOf(62), () => new Promise<void>(() => {}));
+    const { bot, confirms } = fakeBot();
+    const out = await stopTelegramBot({
+      bot: bot as never,
+      flush: async () => {},
+      drain: async () => {},
+      unwritten: () => 61,
+      deadlineMs: 300,
+    });
+    expect(out.via).toBe('confirm');
+    expect(confirms).toEqual([{ offset: 61, limit: 1, timeout: 0 }]);
+  });
+
+  it('idle — the batch ended, grammy has confirmed it: the stop is the ordinary one and the update is NAMED lost', async () => {
+    // An explicit lower offset cannot un-confirm anything; it would only end
+    // grammy's open poll with a 409 and skip the stop, while claiming a
+    // confirm that never happened (K's review, spec-2).
+    await guard(ctxOf(70), async () => {});
+    await guard(ctxOf(71), async () => {});
+    await guard(ctxOf(72), async () => {});
+    const { bot, confirms, log } = fakeBot();
+    const out = await stopTelegramBot({ bot: bot as never, flush: async () => {}, drain: async () => {}, unwritten: () => 71 });
+    expect(out.via).toBe('stop');
+    expect(log).toEqual(['stop']);
+    expect(confirms).toEqual([]);
+    expect(out.confirmedThrough).toBe(72);
+    expect(out.unwrittenLost).toBe(71);
   });
 
   it('nothing unwritten: the stop is the one that shipped', async () => {
@@ -93,10 +132,11 @@ describe('the update a handler runs under (lifecycle, K15)', () => {
     const out = await stopTelegramBot({ bot: bot as never, flush: async () => {}, drain: async () => {}, unwritten: () => null });
     expect(out.via).toBe('stop');
     expect(log).toEqual(['stop']);
+    expect(out.unwrittenLost).toBeUndefined();
   });
 
   it('the flush may use the budget but the confirm’s share — longer than the old fixed second', async () => {
-    await guard(ctxOf(70), async () => {});
+    await guard(ctxOf(80), async () => {});
     const { bot } = fakeBot();
     let finished = false;
     await stopTelegramBot({
@@ -190,4 +230,30 @@ describe('the route answer (K15)', () => {
     expect(sameRouteAnswer(null, undefined)).toBe(true);
     expect(sameRouteAnswer(a, null)).toBe(false);
   });
+});
+
+describe('a twin of one note runs nothing after the transaction (K2, K’s review U7)', () => {
+  // `openCalcRequest` answers `existing` for a concurrent twin of one note;
+  // what makes «nothing after it runs» true is each CALLER's own early exit,
+  // and only `openCalcRequest` itself was pinned. Deleting one of these three
+  // exits would bill the reading again, queue a second AI pass, or answer ok.
+  const callers: [string, string[]][] = [
+    ['src/modules/wms/calc/intake-land.ts', ['recordAiPass(', 'queueCalcPrefill(']],
+    ['src/modules/wms/calc/from-thread.ts', ['queueCalcPrefill(']],
+    ['src/app/(protected)/hisoblash/actions.ts', ['queueCalcPrefill(', 'requestAsks(']],
+  ];
+  for (const [file, after] of callers) {
+    it(`${file}: \`if (opened.existing) return\` comes before ${after.join(' and ')}`, () => {
+      const code = read(file);
+      const open = code.indexOf('const opened = await openCalcRequest(');
+      expect(open, 're-anchor: the open moved').toBeGreaterThan(-1);
+      const exit = code.indexOf('if (opened.existing) return', open);
+      expect(exit, 'the twin exit is gone').toBeGreaterThan(open);
+      for (const call of after) {
+        const at = code.indexOf(call, open);
+        expect(at, `re-anchor: ${call} moved`).toBeGreaterThan(-1);
+        expect(exit, `${call} runs before the twin returns`).toBeLessThan(at);
+      }
+    });
+  }
 });

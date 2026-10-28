@@ -14,18 +14,25 @@ in §1, the plan in §10 «R3») plus his 2.8 b. His answers are binding (§0).
   docs/UCH-BAND.md; migration 0136; DECISIONS #1469-#1478). Every «today» below is read off
   0373bd2; where this spec and the code disagree, the code wins. Where both rounds touch one
   function, the section names the version on 0373bd2. (re-check laws-print-2)
-- **K = e0f9b61** (2026-10-28, §17.1): the kernel, three commits on r3-work — 1133ecc
-  (K1, K2, K13-K15), dbcb221 (K3-K10) and e0f9b61 (K11, K12, K16). Every package branches
-  from e0f9b61. Gates there on a database of its own: typecheck, lint, the full vitest
+- **K = e0f9b61 + its review's fixes** (2026-10-28, §17.1): the kernel, three commits on
+  r3-work — 1133ecc (K1, K2, K13-K15), dbcb221 (K3-K10) and e0f9b61 (K11, K12, K16) — then
+  two lenses reviewed it and «Sakkiz R3 K: the review's fixes — …» (the commit that wrote
+  this line, the next code commit after 6754530) fixed what they confirmed; the spec lines
+  marked (K-review …) are what changed. Every package branches from THAT commit, not from
+  e0f9b61. Gates at e0f9b61 on a database of its own: typecheck, lint, the full vitest
   (726 files, 10717 tests).
-- **Migration 0137 `calc_intake_durable`** (`when` 1785190000116, journal idx 137, ledger
-  must reach **138**). 0136 is Uch band's `lead_client_many` (`when` …115, DECISIONS
-  #1469-#1478), one-way. R2 adds none (R2 §11). Before K is cut: `git fetch origin main` and
-  re-read the journal tail (#1040); if main has moved past 0136, this round takes the next
-  free number and a `when` after it. (re-check kernel-1)
-- DECISIONS numbers are `#R3-1…`. On 0373bd2 the tail is #1487, so round 3 starts at #1488
-  unless main has moved again; the lead renumbers at the merge after fetching the tail.
-  (re-check laws-print-3)
+- **Migration `calc_intake_durable` — 0137 on this branch, 0138 after the merge** (K-review
+  spec-5). main HAS moved past 0136: origin/main holds the other session's `0137_plan_road`
+  (`when` 1785190000116, journal idx 137). K therefore took `when` 1785190000117 and kept the
+  file name `0137_calc_intake_durable.sql` / idx 137, because the branch has no 0137 of main's
+  and the journal fence refuses a hole; THE MERGE renames it **0138** (idx 138, `when` …117
+  unchanged), and the ledger must then reach **139**. Every «0137» below names this round's
+  file on the branch; every count a person reads after the deploy is **139**. 0136 is Uch
+  band's `lead_client_many` (`when` …115, DECISIONS #1469-#1478), one-way. R2 adds none (R2
+  §11). (re-check kernel-1)
+- DECISIONS numbers are `#R3-1…`. On 0373bd2 the tail is #1487; main's tail on 2026-10-28 is
+  #1511, so round 3 starts at #1512 unless main moves again; the lead renumbers at the merge
+  after fetching the tail. (re-check laws-print-3, K-review spec-5)
 - **Judged before code** by five lenses (durability, regression, product-fit, law-money,
   performance) with refuters: 87 objections, 63 confirmed, 12 partial, 12 refuted. Every
   confirmed and partial objection is absorbed below; §18 lists each id, its verdict and what
@@ -267,7 +274,12 @@ gets built. ⭐ = what is built if he does not answer. The Uzbek wording is in �
     MEMORY only, never the table, so it can neither miss a collection nor resurrect an ended
     one (durability-9, performance-7);
   - the stop: an update whose collection change is not yet written is NOT confirmed, so it
-    is redelivered and applied once (durability-10, regression-25);
+    is redelivered and applied once (durability-10, regression-25). This holds only while
+    grammy is still inside that update's batch: once a batch ends, grammy's next
+    `getUpdates` confirms every update of it, and nothing can un-confirm one. So the
+    collector WRITES a message's change before its handler returns (P1, §6.2.2), and an
+    unwritten change of an update already confirmed is logged lost by the stop, never
+    claimed (K-review spec-2);
   - an undo: the echo's `undone` flag;
   - a machine message: `sayOnce(requestId, pass, input, opts)`, per pass — `pass` positional
     (`'landing'` for the landing's pass; every row written before this round coalesces to
@@ -516,7 +528,8 @@ Several:
   scrolled to.
 - **On the AI door, every echo that carries «✅ Tasdiqlash» also carries the certificate**
   (product-fit-20): a line `📄 Sertifikat: bor` (or `yo‘q`) above the buttons, and the toggle
-  button (`c:cert_y` / `c:cert_n`, the one shown being the other answer). The certificate
+  button (K11's pairing: labelled with the CURRENT answer, carrying the other answer's
+  `c:cert_y` / `c:cert_n`; K-review spec-4). The certificate
   changes the duty without changing the cargo, and after a few answers the table that held
   the toggle is scrolled far up. A press SETS the value (K11), edits the pressed echo's line
   and keyboard, and edits the table.
@@ -926,7 +939,7 @@ staff-handlers.ts:1109) only: after this round a restart does not lose the colle
 
 | Moment | What survives | What the seller sees |
 |---|---|---|
-| **Mid-collection, graceful deploy** (stage section, client, material or review) | Everything. Each change is in memory at once, and is written to `telegram_calc_intakes` after one second of quiet (at most five seconds while changes keep coming). The graceful stop (`stopTelegramBot`) awaits `flushIntakeWrites()` with whatever is left of its 5 s budget before the confirm (not a fixed 1 s: a collection is the whole state, up to megabytes), then SEALS the store (`sealIntakeWrites`): from then on this process writes no row, so a late effect of an update still in flight can never overwrite what the new process hydrates. **A change still unwritten when the flush ends (too slow, or a write that failed) keeps its update UNCONFIRMED**: the stop confirms only through the update before `oldestUnwrittenUpdate()` (durability-10, regression-25). The first draft confirmed anyway and lost the seller's last minutes. A failed write keeps its chat dirty and is retried, never dropped. The new process hydrates every row before its first `getUpdates`. An update that was still in flight past the 3 s budget, or held back by an unwritten change, is unconfirmed, so it is redelivered. If its effect reached the flushed row, `takenUpTo` drops it as `seen`. Otherwise it is applied once. | Messages written DURING the outage come as the backlog. A text or file dated after the collection opened, while it was holding, is that collection's (`intakeTakes`). A press on its buttons works. The 2 h / 24 h clocks are the seller's own actions, so the downtime counts as idle. |
+| **Mid-collection, graceful deploy** (stage section, client, material or review) | Everything. Each change is in memory at once, and is written to `telegram_calc_intakes` after one second of quiet (at most five seconds while changes keep coming). The graceful stop (`stopTelegramBot`) awaits `flushIntakeWrites()` with whatever is left of its 5 s budget before the confirm (not a fixed 1 s: a collection is the whole state, up to megabytes), then SEALS the store (`sealIntakeWrites`): from then on this process writes no row, so a late effect of an update still in flight can never overwrite what the new process hydrates. **A change still unwritten when the flush ends (too slow, or a write that failed) keeps its update UNCONFIRMED** — while that update is still in the batch grammy is handling (in flight, or the batch's next update held): the stop confirms only through the update before `oldestUnwrittenUpdate()` (durability-10, regression-25). The first draft confirmed anyway and lost the seller's last minutes. An update whose batch has ENDED is already confirmed by grammy's own next `getUpdates`, so the collector awaits its chat's write before a collection-changing message's handler returns (§6.2.2): its change is in the row before Telegram can drop the update. A write that fails even then (the database down) is retried by the timer, and if the stop comes first it is logged lost — the new process could not have hydrated it either (K-review spec-2). A failed write keeps its chat dirty and is retried, never dropped. The new process hydrates every row before its first `getUpdates`. An update that was still in flight past the 3 s budget, or held back by an unwritten change, is unconfirmed, so it is redelivered. If its effect reached the flushed row, `takenUpTo` drops it as `seen`. Otherwise it is applied once. | Messages written DURING the outage come as the backlog. A text or file dated after the collection opened, while it was holding, is that collection's (`intakeTakes`). A press on its buttons works. The 2 h / 24 h clocks are the seller's own actions, so the downtime counts as idle. |
 | **Mid-collection, crash** (not a deploy) | Everything except the changes of the last second or so (the write's quiet window). Telegram redelivers up to 20 handled updates (grammy confirms a batch only on the next `getUpdates`). An update whose effect is in the row is `seen` and dropped. An update whose effect was lost is applied once. A file is saved under `uuidv5(noteId:messageId)`, so its re-run finds the attachment and mints no second one (durability-1, regression-6). | Nothing doubled: no text twice in the material, no file counted twice, no «ikkinchi invoys» question about the same file. A press redelivered acts only on its own collection: a cancel cannot end a newer collection, and a restart that would open the collection already live resumes it (durability-2). |
 | **Mid-reading** (after «Bo‘ldi», before the table) | The job is on `calc.intake-read`. Its handler runs under ONE wall clock that ends before pg-boss's 300 s expiry: files ≤ 30 s, model ≤ 150 s, delivery ≤ 70 s (performance-1). A killed process leaves the job `active` until the expiry, and pg-boss maintenance (every 120 s) fails it and re-delivers. The new process finds the collection (the job waits for this process's hydrate first, and reads memory only — durability-9), the token still matches, and the model is called AGAIN. That is a second paid call: Anthropic charges both, but the killed call wrote no `ai_calc_passes` row (the bill is recorded only after the model answers), so the ledger and the day's soft budget count ONE (durability-20). | «⏳ AI o‘qiyapti…» lasts longer: up to ~7 minutes after a deploy (expiry + one maintenance + the read), and then the table arrives. A second «Bo‘ldi» in that window says «Tahlil davom etmoqda». If the job dies for good, the sweep sees its pg-boss state, releases the token and says «Tahlil qilib bo‘lmadi …» (the 2 h reminder is the backstop). |
 | **Mid-reading, after the reply was stored** | The job stores the reply DURABLY (a flush of THIS chat that must succeed) before it sends. If the store is sealed or the write failed, it does not send: it throws, and the redelivery sends. A redelivery re-sends the stored reply and never calls the model or re-decides. A Telegram flood wait longer than the brief retry is not a failure: the job enqueues a delivery-only follow-up at `retry_after + 1 s` and returns, so no retry is spent inside one flood wait (durability-16). | The table arrives once, possibly late. Never «Tahlil qilib bo‘lmadi» about a reading that worked. The one exception: a kill in the milliseconds between Telegram's 200 and the clearing of `pendingReply` sends it twice. Telegram offers no idempotent send; stated. |
@@ -977,9 +990,20 @@ from K. K is behaviour-unchanged with THREE stated exceptions, each with its own
 K2's note lock also changes one RACE, not a press: two landings of one note in flight at once
 open two requests today and one after K (the second returns `existing`). (re-check kernel-3)
 
+Two machine-visible changes that are not presses, named by K's review (K-review U2, U6):
+- **the reading reads the files back from storage** (K5): a file storage cannot hand over
+  within the reading's deadline is counted in `missing`, and the count is SAID — §2.6's
+  sentence joins the reading's `notes` (`filesMissingNote`, in `analyzeCollected`), so the
+  summary and the lenta carry it. Before K the bytes were in memory and always reached the
+  model; a silent `missing` would have read text alone under a prompt that promised photos;
+- **the stop's flush budget** is the rest of the 5 s minus the confirm's share (up to 4 s
+  idle), not a fixed 1 s (K15) — so `flushWaitWrites` alone, bot.ts's only flush in K, may
+  hold the stop up to 4 s on a database blip, still inside the 5 s.
+
 ### K1. Migration 0137 `calc_intake_durable` + the drizzle schema (re-check kernel-1)
-- The SQL is §13, verbatim: journal idx 137, `when` 1785190000116, after Uch band's
-  `0136_lead_client_many` (`when` …115); the ledger reaches 138. (re-check kernel-1)
+- The SQL is §13, verbatim: journal idx 137, `when` 1785190000117 (main's `0137_plan_road`
+  holds …116), after Uch band's `0136_lead_client_many` (`when` …115). The merge renames the
+  file 0138 (idx 138); the ledger then reaches **139**. (re-check kernel-1, K-review spec-5)
 - `platform/db/schema/platform.ts`: `telegramCalcIntakes`.
 - `platform/db/schema/wms.ts`: `calcRequests.handsoffRev` / `aiPassRev` / `aiPassAt` /
   `aiPassJob`, `calcAmendments`, `aiCalcPasses.intakeNoteId`.
@@ -1019,7 +1043,9 @@ open two requests today and one after K (the second returns `existing`). (re-che
   `retried`), skipping the bill and the queue after `openCalcRequest`. The card form's
   action (hisoblash/actions.ts:262) returns `{ error: 'note_taken' }` on `opened.existing` —
   what a twin of one form got from the note's key until now (service.ts:535) — and queues no
-  second pass. (re-check kernel-3)
+  second pass. (re-check kernel-3) The three exits are fenced by source shape in
+  calc-r3-kernel.test.ts: in each caller `if (opened.existing) return` comes before
+  `recordAiPass(` / `queueCalcPrefill(` / `requestAsks(` (K-review U7).
 - Not a unique index: a correction copies its parent's `note_id` by design
   (workspace.ts:2581), and a partial unique index could meet an unknown production duplicate
   on deploy morning (#472) — §13 «Why each». §17 counts ROOT duplicates on the shaped copy.
@@ -1092,8 +1118,10 @@ export function setDurableIntakes(on: boolean): void;  // K: stores the flag
  * the next timer, never dropped (durability-10). K: resolves true at once. */
 export function flushIntakeWrites(chatId?: bigint): Promise<boolean>;
 /** The lowest update id whose collection change is not yet written, or null. The stop asks
- * it after the flush and confirms only through the update before it (durability-10). The
- * id is the one the update was handled under (`currentUpdateId()`, K15). K: null. */
+ * it after the flush and, while that update's batch is still being handled, confirms only
+ * through the update before it (durability-10); an update of an ended batch is already
+ * confirmed and is logged lost (K15, K-review spec-2). The id is the one the update was
+ * handled under (`currentUpdateId()`, K15). K: null. */
 export function oldestUnwrittenUpdate(): number | null;
 /** After the stop's flush: this process writes no more rows. K: no-op. */
 export function sealIntakeWrites(): void;
@@ -1204,7 +1232,8 @@ so the field types — P3 fills that file); the fields P3 retires (§8.2 rule 1)
   calc-files.ts is `saveBotFile`'s one home (the zametka capture imports it).
 - `staff-handlers.ts` re-exports every one a test imports today.
 - `saveBotFile(ctx, target, file: BotFile)` with `type BotFile = { fileId: string; isPhoto:
-  boolean; fileName?: string; mime?: string }` calls `botCall('getFile', { file_id:
+  boolean; fileName?: string; mime?: string; messageId?: number }` (the message the file CAME
+  in — K-review spec-1) calls `botCall('getFile', { file_id:
   file.fileId }, FILE_DOWNLOAD_MS)` (platform/telegram/send.ts:178 — the idiom
   tasks/files-job.ts:111 already uses; today `ctx.getFile()`, staff-handlers.ts:2436-2473,
   which can reach only the update's own message), so it needs no `ctx.api`: the ctx is read
@@ -1213,14 +1242,25 @@ so the field types — P3 fills that file); the fields P3 retires (§8.2 rule 1)
   fileOf(ctx.message)!)` returns `attachmentId` (it was dropped, :2475-2486); the add door's
   `cf:` press passes the message its offer REPLIES to (product-fit-16). K: every caller passes
   none. (re-check kernel-25)
+- The `getFile` keeps what grammy's `ctx.getFile()` gave it (K-review U3): a 429 asking
+  ≤ `BRIEF_RETRY_MAX_S` is waited out, at most twice (bot.api's `briefRetry` did it), and a
+  refusal is logged `[bot-file] getFile refused` with Telegram's status, description and
+  `retryAfter` (it used to THROW into the handler's logged catch) — a document past 20 MB
+  answers 400 «file is too big», an ordinary case the log must name.
 - New beside it (calc-files.ts): `export function fileOf(src: { photo?: { file_id: string }[];
   document?: { file_id: string; file_name?: string; mime_type?: string } } | ForwardPart):
   BotFile | null` — a message's largest photo, else its document; an album part's `file`
   (`fileId`, `name ?? undefined` → `fileName`, `mime ?? undefined`, `isPhoto: kind ===
   'photo'`); null for a part with no file or any kind but photo/document (voice, audio, video,
-  contact — 1.12 a). §2.4 and §9.2 skip a null. (re-check v1-3)
+  contact — 1.12 a). §2.4 and §9.2 skip a null. (re-check v1-3) `messageId` = the message's
+  `message_id`, or the part's `messageId`.
 - **The attachment id is the message's** (durability-1): `saveIntakeFile` mints
-  `uuidv5(`${noteId}:${messageId}`, INTAKE_FILE_NS)`. It reads that id first: when the row
+  `uuidv5(`${noteId}:${messageId}`, INTAKE_FILE_NS)`, `messageId = file.messageId ??
+  ctx.message?.message_id` — read off the FILE first, because on a press (`PressCtx` has no
+  `message`) and for an album part the update's message is not the file's; read off the update
+  alone, the id was minted at random on exactly the paths §2.4/§9.2's
+  `saveIntakeFile(ctx, noteId, staffId, fileOf(part))` takes, and a re-run stored the file
+  twice (K-review spec-1). It reads that id first: when the row
   exists, it returns it and downloads nothing. Otherwise it saves with that id. `saveAttachment`
   (files/service.ts:119) gains `opts.id?: string` beside `opts.keyName` (the retry idiom
   tasks/files-job.ts uses), and `saveIntakeFile` passes both (keyName from the message id), so
@@ -1241,10 +1281,11 @@ so the field types — P3 fills that file); the fields P3 retires (§8.2 rule 1)
   /** The bytes the model reads, from storage. Every get goes through `readWithin` (no
    * read may outlive `deadline`); a photo prefers its model-sized copy (P2). An object
    * storage no longer has, or does not hand over in time, is counted, never thrown.
-   * K: no deadline enforcement beyond `readWithin(PHOTO_READ_MS)`, no derived copy — so K
-   * runs `reduceForModel` on every image it reads and counts a null as `missing` (the stored
-   * attachment is the ORIGINAL 3-5 MB photo, and the model refuses past ~5 MB); only P2's
-   * model-sized copy removes that work. (re-check kernel-24) */
+   * The deadline is the WHOLE load's (K-review U2): each read gets min(PHOTO_READ_MS, what
+   * is left), and a file whose turn comes after it is counted, not read. K: no derived
+   * copy — so K runs `reduceForModel` on every image it reads and counts a null as `missing`
+   * (the stored attachment is the ORIGINAL 3-5 MB photo, and the model refuses past ~5 MB);
+   * only P2's model-sized copy removes that work. (re-check kernel-24) */
   export async function loadIntakeFiles(state: IntakeState, opts: { deadline: number }): Promise<IntakeFiles>;
   ```
 - `calc-intake.ts` `analyzeCollected(state: IntakeState, files: IntakeFiles = NO_FILES, opts?: { timeoutMs?: number })`
@@ -1258,7 +1299,10 @@ so the field types — P3 fills that file); the fields P3 retires (§8.2 rule 1)
   (re-check kernel-12)
 - K's in-process analysis calls `loadIntakeFiles` first. Behaviour is identical except for
   one storage read and one `reduceForModel` per image read (the arrival no longer keeps its
-  reduced copy). (re-check kernel-24)
+  reduced copy), and a file that read could not return: `analyzeCollected` puts §2.6's
+  sentence (`filesMissingNote(files.missing)`, calc-intake.ts) into the reading's `notes`, so
+  the summary and the lenta say it — named in §5's opening. P2 reuses it; it adds no second
+  sentence. (re-check kernel-24, K-review U2)
 
 ### K6. `platform/telegram/calc-dialog.ts` (new) — the dialogue, MOVED from `staff-handlers.ts`
 - Moved verbatim (R2's versions): `askNextOrConfirm`, `applyLineAnswer`, `refuseLine`,
@@ -1314,7 +1358,12 @@ so the field types — P3 fills that file); the fields P3 retires (§8.2 rule 1)
     laws: ReadonlyMap<string, NeedLaw>,
     intake: typeof import('../../wms/calc/intake'),
   ): NextStep;
-  /** laws on the pool → intakeNextStep → updateIntake → ctx.reply (the one in-handler path). */
+  /** laws on the pool → intakeNextStep → updateIntake → ctx.reply (the one in-handler path).
+   * A REVIEW step's summary is printed from what `updateIntake` returned (the store after the
+   * patch), never from `state`: the laws are awaited on the pool and the reading runs off the
+   * poller, so a press can land in between (a certificate answer from an earlier summary) —
+   * the pre-K code printed from the store, and K's first cut from the snapshot (K-review U4).
+   * A question's words are the decision's own. P3's table keeps the rule. */
   export async function deliverNextStep(ctx: CollectorReply, chatId: bigint, state: IntakeState): Promise<void>;
   export async function routeCollectorText(
     ctx: CollectorReply & { api: EditApi },
@@ -1326,8 +1375,10 @@ so the field types — P3 fills that file); the fields P3 retires (§8.2 rule 1)
   ): Promise<void>;
   export async function pressSkip(ctx: CalcPressCtx, chatId: bigint, state: IntakeState): Promise<void>;
   /** «✖️ Bekor qilish» (`confirmed` = the `cancel_y` press). K: today's body for both — the
-   * collection ends at once. P3 adds the one confirmation (product-fit-12). */
-  export async function pressCancel(ctx: CalcPressCtx, chatId: bigint, state: IntakeState, confirmed: boolean): Promise<void>;
+   * collection ends at once. P3 adds the one confirmation (product-fit-12). `state` is the
+   * LIVE collection or null: the frozen dispatcher passes `activeIntake(chatId)`, and a
+   * cancel with nothing live still hears «Bekor qilindi.» (K-review spec-3). */
+  export async function pressCancel(ctx: CalcPressCtx, chatId: bigint, state: IntakeState | null, confirmed: boolean): Promise<void>;
   /** A conflict button (`conf_N_add|rep|ved`). K: «Bu tugma eskirgan.» in the chat (no conflict exists in K). */
   export async function pressConflict(ctx: CalcPressCtx, chatId: bigint, state: IntakeState, n: number, choice: 'add' | 'rep' | 'ved'): Promise<void>;
   export async function pressPick(ctx: CalcPressCtx, chatId: bigint, state: IntakeState, n: number): Promise<void>;
@@ -1408,8 +1459,11 @@ export async function registerCalcIntakeSweep(boss: PgBoss): Promise<void>;  // 
  * MAX_QUESTION_ROUNDS), so routing a resume through it would skip lines (re-check kernel-23).
  * With no live collection: Uch band's conc-13 sentence, verbatim (staff-handlers.ts:2631),
  * «Bu so‘rov yopilgan — saqlangan bo‘lsa, kartada turibdi. Yangisini «🧮 Hisoblatish»
- * tugmasidan boshlang.» (re-check kernel-22). P1 adds the un-park and the draft refusal
- * (§6.2.14). */
+ * tugmasidan boshlang.» (re-check kernel-22). While a reading runs (`state.analysing`) it
+ * answers the reading's own line, «⏳ Tahlil davom etmoqda — natijani kuting.», and re-sends
+ * nothing: the restart question is reachable during «AI o‘qiyapti», and a stale summary's
+ * «✅ Tasdiqlash» would only answer that same line (K-review U5). P1 adds the un-park and the
+ * draft refusal (§6.2.14), after that guard. */
 export async function pressResume(ctx: CalcPressCtx, chatId: bigint): Promise<void>;
 /** True = the sweep is resuming THIS chat's landing right now (`resuming`), so the press says
  * nothing and the sweep's ✅ answers it. K: false. A re-press after the job landed, and a
@@ -1522,16 +1576,26 @@ And in `wms/calc/amend.ts` (K stub): `requeueWaitingAmendments(requestId?: strin
     re-points its `(link ? …)` needle at `landingReplyText`'s body; bot-both-modes.test.ts pins
     only `await replyKeyboardFor(chatId)` and needs no re-anchor; intake-confirm.test.ts
     (presses 'save' with no callbackQuery) needs no expectation change. (re-check kernel-6)
-- Every collector press (`save`, `more`, `cancel`, `cancel_y`, `done`/`reread`,
-  `cert_y`/`cert_n`, `pick_N`, `conf_N_*`, `resume` from a pause notice) first asks
-  `ownsPress(state, pressedMessageId)`, the pressed id being
+- Every collector press of K12's `'own'` class (`save`, `more`, `cancel`, `cancel_y`,
+  `done`/`reread`, `cert_y`/`cert_n`, `pick_N`, `conf_N_*`, the four invoice/other-file
+  answers) first asks `ownsPress(state, pressedMessageId)`. NOT `resume` (K-review spec-6):
+  it is `'prompt'` (K12) and the frozen dispatcher sends it straight to `pressResume`. A ▶️
+  under an older collection's pause notice re-prompts whatever is live and writes nothing but
+  P1's un-parking touch — what a «continue» means — and the restart question's ▶️, a message
+  no collection owns, must keep working; calc-stated-presses.test.ts pins «a prompt-class
+  press is not gated». The pressed id being
   `ctx.callbackQuery?.message?.message_id ?? null` (P1 decides what null means). A press from
   another collection's message answers «Bu tugma eskirgan.» in the chat (the press is already
   answered) and changes nothing. K's `ownsPress` is `true`, so behaviour is identical (P1 fills
   it). (re-check kernel-19)
 - **The certificate buttons carry their value** (durability-2) — K's one behaviour change:
-  `aiConfirmKeyboard(cert)` builds `📄 Sertifikat: bor` → `c:cert_y` and `… yo‘q` → `c:cert_n`
-  (the one shown is the other answer). The handler SETS `hasCertificate` from the step. A
+  `aiConfirmKeyboard(cert)` keeps the toggle's LABEL, the current answer, and gives it the
+  OTHER answer's value — with a certificate it draws `📄 Sertifikat: bor` → `c:cert_n`,
+  without one `📄 Sertifikat: yo‘q` → `c:cert_y` — so the summary's «📄 Sertifikat: bor
+  (o‘zgartirish uchun tugmani bosing)» reads as it always did (K-review spec-4: the first
+  wording paired each label with the value it names; the tree and this line are the one
+  pairing, and every echo that carries the button (§2.2, §8.2.6) draws it through
+  `aiConfirmKeyboard`). The handler SETS `hasCertificate` from the step. A
   repeated or redelivered press is therefore the same answer, never a flip. An old `c:cert`
   answers «Bu tugma eskirgan.». Red proof: restore the toggle → a press delivered twice
   leaves `hasCertificate` false.
@@ -1738,17 +1802,27 @@ Also in K13, stubs that one package fills and another calls (K: inert bodies):
     and exports `currentUpdateId(): number | null`. The store reads it to know which update
     an unwritten change belongs to;
   - `stopTelegramBot` (:136) gains an OPTIONAL dep `unwritten?: () => number | null` (default
-    `() => null`), asked after the flush settles or times out. A number `n` sends the stop down
-    the explicit-confirm path through `min(lastDone, n - 1)`, so the update whose change is
-    unwritten, and every later one, is redelivered (durability-10, regression-25). K passes
-    nothing, so the stop is identical and bot-lifecycle.test.ts's six calls (and bot.ts:131's)
-    compile unchanged. P1's call: `stopTelegramBot({ bot, flush: async () => { await
+    `() => null`), asked after the flush settles or times out. While grammy is still inside
+    the batch (an update in flight, or the next one held by the guard), a number `n` sends the
+    stop down the explicit-confirm path through `min(lastDone, n - 1)`, so the update whose
+    change is unwritten, and every later one of the batch, is redelivered (durability-10,
+    regression-25). Idle — the batch ended, grammy's open `getUpdates` has confirmed every
+    update it handled — the stop is the ORDINARY one (`bot.stop()`), `n` is logged
+    («an unwritten change belongs to an update already confirmed — lost») and returned as
+    `StopOutcome.unwrittenLost`, never claimed as a confirm: an explicit lower offset cannot
+    un-confirm anything, and sent while grammy's poll is open it only ends that poll with a
+    409 and skips the stop (K-review spec-2). That is why P1's collector writes a message's
+    change before its handler returns (§6.2.2). K passes nothing, so the stop's confirm is the
+    one that shipped and bot-lifecycle.test.ts's six calls (and bot.ts:131's) compile
+    unchanged. P1's call: `stopTelegramBot({ bot, flush: async () => { await
     Promise.allSettled([flushWaitWrites(), flushIntakeWrites()]); }, drain: membershipSettled,
     unwritten: () => { const n = oldestUnwrittenUpdate(); sealIntakeWrites(); return n; } })`.
     (re-check p1-p2-8);
   - the flush's budget is what is left of `BOT_STOP_DEADLINE_MS` minus `CONFIRM_MS` (up to
     4 s when idle), not a fixed `FLUSH_MS = 1 s`: a wait row is bytes, a collection is the
-    whole state. §17 measures the worst-case UPSERT against it.
+    whole state. §17 measures the worst-case UPSERT against it. In K this applies to
+    bot.ts's one flush (`flushWaitWrites`), so it is a stated machine-visible change (§5's
+    opening; K-review U6).
 - `intake-land.ts`: no extraction (re-check kernel-4). Uch band already makes the landing
   converge per note — `cardOfNote` (:178) finds the note's own card (outcome `'retried'`) and
   `rootRequestOfNote` (:216) its request — so a landing cut off between note and request is
@@ -1960,6 +2034,16 @@ Also in K13, stubs that one package fills and another calls (K: inert bodies):
      boolean speaks for that chat only (performance-10). `pressAnalyse`, `saveAmendment` and
      both jobs pass their chat. `flushIntakeWrites()` with no chat (the stop, tests) writes
      every dirty chat. Either returns `false` when the store is sealed or a write failed.
+   - **A collection-changing MESSAGE is written before its handler returns** (K-review
+     spec-2): the collector's text, file, contact and reply paths end with `await
+     flushIntakeWrites(chatId)` whenever they changed the collection. grammy confirms a batch
+     with the `getUpdates` that follows it, at once, so a change left to the 1 s timer belongs
+     to an update Telegram has already dropped, and the stop's `unwritten` can no longer hold
+     it back (K15). The cost is THIS chat's one UPSERT per such message, awaited where the
+     handler already awaits its Telegram reply (#706 allows a chat's own write, as for
+     presses); the debounce still coalesces everything off the poller (the jobs, the sweep)
+     and repeated changes inside one handler. A `false` (the database down) is logged once and
+     the timer retries; the message is answered as before.
    - **A failed write keeps the chat DIRTY** and is retried by the next timer (5 s), never
      dropped (durability-10). It logs once per process (the waits idiom); memory still
      answers. The first draft copied the waits idiom's «log once and forget», under which a
@@ -1982,8 +2066,8 @@ Also in K13, stubs that one package fills and another calls (K: inert bodies):
    ```
    - `state` = `JSON.stringify(state)` minus `expires`.
    - A state over 2 MB logs `[calc-intake] large collection` with its size and is written
-     anyway. §17 measures the worst case; with the debounce it is written at most once a
-     second.
+     anyway. §17 measures the worst case; it is written once per collection-changing message
+     (§6.2.2) and otherwise, with the debounce, at most once a second.
 5. **Readiness** (#472): `intakeTableReady()` is `to_regclass('public.telegram_calc_intakes')`,
    caching TRUE only (`redelivery-ready.ts`'s shape). Code ahead of the migration is today's
    memory-only store.
@@ -2100,8 +2184,10 @@ Also in K13, stubs that one package fills and another calls (K: inert bodies):
     oldestUnwrittenUpdate(); sealIntakeWrites(); return n; } })` (re-check p1-p2-8). The seal
     is taken at the moment the stop reads the answer, so nothing written after it can disagree
     with what was confirmed. K15's lifecycle seam then confirms only through the
-    update before `n` (durability-10, regression-25). The flush's budget is the rest of the
-    5 s (K15).
+    update before `n` (durability-10, regression-25) while `n`'s batch is still being handled;
+    an `n` of an ended batch is already confirmed and comes back as `unwrittenLost`, logged
+    (K-review spec-2) — rule 2's write-before-return is what keeps that rare. The flush's
+    budget is the rest of the 5 s (K15).
 12. **`loadIntake(chatId)`**: `await intakesHydrated(INTAKE_HYDRATE_WAIT_MS)` (10 s); not ready
     → throw `IntakesNotReady`; ready → memory, else null. NEVER the table (performance-7: a
     table read after hydration resurrected a collection whose DELETE was pending or had
@@ -2232,7 +2318,9 @@ Also in K13, stubs that one package fills and another calls (K: inert bodies):
 - (b) the stored jsonb has no `"type":"Buffer"` and its images are `{ attachmentId }`.
   **Red proof:** store K's pre-K4 shape → the assertion finds the Buffer.
 - (c) twenty updates, each followed by an AWAITED fake Telegram call of ~50 ms (the poller's
-  real cadence, not one tick) → at most 3 statements (`__intakeWriteCount`).
+  real cadence, not one tick) → at most 3 statements (`__intakeWriteCount`). This is the
+  STORE's debounce, which still coalesces every change off the poller; the collector's
+  message paths flush their own chat per message (§6.2.2, K-review spec-2).
   **Red proof:** schedule a write per update (the first draft's chain) → 20.
 - (d) `endIntake` → the row is gone after the flush.
 - (e) the readiness probe answering false → memory works, no write, no throw.
@@ -2326,9 +2414,16 @@ blocks:
 - «a redelivered cancel ends only its own collection»: cancel from collection A's message
   after B opened → B is untouched, «Bu tugma eskirgan».
 - «an unwritten change keeps its update unconfirmed» (durability-10, regression-25): a text
-  into a collection, its write made to hang, then the stop → `confirmedThrough` is the update
-  BEFORE it; the new process receives it and applies it once.
+  into a collection whose handler is still IN FLIGHT (its awaited write made to hang), or
+  whose batch's next update is held, then the stop → `confirmedThrough` is the update BEFORE
+  it; the new process receives it and applies it once. A fake bot whose batch has ENDED
+  (idle) proves nothing here — grammy has confirmed that update already — and K pins the idle
+  branch as `unwrittenLost` instead (calc-r3-kernel.test.ts, K-review spec-2).
   **Red proof:** pass `unwritten: () => null` → the update is confirmed and the text is lost.
+- «a collection-changing message is written before its handler returns» (§6.2.2): a text into
+  a collection, the handler awaited → the row holds it with no timer having fired.
+  **Red proof:** drop the `await flushIntakeWrites(chatId)` → the row is still the old one
+  when the handler returns.
 - «a failed hydrate never starts polling early» (regression-20, durability-11):
   `hydrateWaits` rejects, `hydrateIntakes` resolves 200 ms later → polling starts after BOTH,
   and the rejection is logged, not unhandled.
@@ -2490,7 +2585,9 @@ blocks:
       is a derived storage object, not an `attachments` row, so it needs no authz and no backup
       change. A copy that is missing is re-reduced from the original. Every get goes through
       `readWithin`; a stalled or missing object is counted in `missing`, never awaited for
-      ever (#915: a dead stream is a hang). `files.missing > 0` → §2.6's sentence joins `notes`.
+      ever (#915: a dead stream is a hang). `files.missing > 0` → §2.6's sentence joins `notes`
+      — K's `analyzeCollected` already does it (`filesMissingNote`, K-review U2), so P2 only
+      hands it `files`.
    4. `analysed = await analyzeCollected(state, files, { timeoutMs: leash })` (R2's version:
       `totalsAnswer` merged under CONC-2; K5 makes it return `IntakeState & { answered:
       AnsweredUsage[] }`, `answered = outcome.answered ?? []`, `AnsweredUsage` from
@@ -3041,7 +3138,9 @@ blocks:
     table, an echo or the restart question, with material, files or answers in the
     collection and `confirmed` false → §2.7's «🗑 Hammasi o‘chadi …» question (its id joins
     `ownMessageIds`), nothing ended. `cancel_y`, or a press from the reminder or the pause
-    notice, or an empty collection → today's end. While `saving`, refused (§2.4).
+    notice, or an empty collection → today's end. While `saving`, refused (§2.4). `state` is
+    `IntakeState | null` (K6): null — nothing live — answers «Bekor qilindi.» and ends
+    nothing (K-review spec-3).
 
 ### 8.3 Tests (P3)
 **`line-address.test.ts`** (pure; the probe table, every literal by hand, a 5-row table):
@@ -4497,7 +4596,7 @@ corpus-mig-seam-20)
 
 ---
 
-## 13. Migration 0137 `calc_intake_durable` (additive) (re-check kernel-1)
+## 13. Migration 0137 `calc_intake_durable` (additive) (re-check kernel-1) — 0138 after the merge, ledger 139 (K-review spec-5)
 
 ```sql
 -- Sakkiz band round 3 (docs/SAKKIZ-R3.md), migration 0137 — after Uch band's 0136.
@@ -4646,8 +4745,9 @@ Why each:
   sits beside no CHECK that spans it (#809). The anchor CHECK sits beside 0096's
   `ON DELETE CASCADE` (the FK 0119 kept; re-check v3-4), which never nulls the column.
 
-Deploy: the ledger must read **138**. His server last CONFIRMED 136; if the 137 deploy (R2 +
-Uch band) was not confirmed first, this deploy carries Uch band too and MUST rebuild tg-listen
+Deploy: the ledger must read **139** (main's `0137_plan_road` is 138; this round's file is
+0138 after the merge — K-review spec-5). His server last CONFIRMED 136; if the 138 deploy (R2 +
+Uch band + `plan_road`) was not confirmed first, this deploy carries Uch band too and MUST rebuild tg-listen
 (Uch band changed `inboundMatch`): `docker compose build migrate app tg-listen`,
 `docker compose up -d`, `docker compose --profile telegram up -d tg-listen`. Round 3 itself
 changes nothing tg-listen imports. `app` starts only after `migrate` completes (compose
@@ -4657,7 +4757,7 @@ readiness probe answers false (memory-only), the landing's catch turns any non-`
 into `queueError: 'server_behind'` (QUEUE_REFUSAL: «server yangilanmoqda — biroz keyinroq
 urinib ko‘ring.»), and a path that asks `isServerBehind` (platform/db/errors.ts:28) answers
 42P01 (the two new tables) and 42703 (the four new `calc_requests` columns,
-`ai_calc_passes.intake_note_id`) alike. End by counting the ledger (138) AND reading
+`ai_calc_passes.intake_note_id`) alike. End by counting the ledger (139) AND reading
 `/api/version`. (re-check corpus-mig-seam-21, kernel-30)
 
 ---
@@ -4771,8 +4871,8 @@ on, and round 3 builds on Uch band's landing; it never re-implements it.
 
 - **Rounds 4 and 8** shipped as the other session's Uch band (0136) and are in this round's
   base (§14); round 5 (docs/SAKKIZ-R5.md) is the other session's and runs after this round's
-  migration 0137. Its placeholder `0137_ai_spend` (docs/SAKKIZ-R5.md:42, :805, :2449) becomes
-  **0138** (`when` 1785190000117 or later) and still runs after `calc_intake_durable`; that
+  migration (0138 after the merge). Its placeholder `0137_ai_spend` (docs/SAKKIZ-R5.md:42, :805, :2449) becomes
+  **0139** (`when` 1785190000118 or later) and still runs after `calc_intake_durable`; that
   session is told, and R5's file is not edited by this round. (re-check corpus-mig-seam-27,
   kernel-1)
 - **A re-sent returned job on a new card** (Question 6 a under Uch band, his Q4 a): the
@@ -4983,19 +5083,21 @@ says what was built for each. (re-check laws-print-23)
    - `fuser -k 3000/tcp` before e2e; no `CI=1`.
 5. **Docs:**
    - `docs/SAKKIZ-BAND.md` §10 «R3 SHIPPED» with the DECISIONS range;
-   - DECISIONS `#R3-*` renumbered after a fetch (the tail is #1487 on 0373bd2, so from #1488
-     unless main has moved; re-check laws-print-3);
-   - CHANGELOG in Uzbek; the deploy steps are §13's one paragraph (ledger 138; tg-listen
-     rebuilt when the 137 deploy was not confirmed first);
-   - the CLAUDE.md state paragraph: migration 0137, ledger 138; R5's placeholder becomes 0138
-     (tell that session). (re-check kernel-1)
+   - DECISIONS `#R3-*` renumbered after a fetch (main's tail was #1511 on 2026-10-28, so from
+     #1512 unless it has moved again; re-check laws-print-3);
+   - CHANGELOG in Uzbek; the deploy steps are §13's one paragraph (ledger 139; tg-listen
+     rebuilt when the 138 deploy was not confirmed first);
+   - the CLAUDE.md state paragraph: migration 0138 (renamed from the branch's 0137 at the
+     merge), ledger 139; R5's placeholder becomes 0139 (tell that session). (re-check
+     kernel-1, K-review spec-5)
 6. **Measured, not argued, before the push:**
    - the stored state's size for a worst-case collection (12 photos, 3 PDFs, five 15k-char
      sheets, a 500-row invoice), and one UPSERT's time — set against the stop's flush budget
      (the rest of the 5 s, K15); a worst case over 2 s is reported to the owner with the
      number, and the unwritten-update rule is what keeps it safe (durability-10);
    - the write count over a real 20-message forward burst with the bot's own awaited replies
-     (the debounce; expected ≤ 3);
+     (one per collection-changing message since the write-before-return rule, §6.2.2 —
+     K-review spec-2; measured: each write's time, set against the reply it sits beside);
    - hydrate time with 50 rows;
    - `SELECT note_id, count(*) FROM calc_requests WHERE note_id IS NOT NULL AND supersedes_request_id IS NULL GROUP BY 1 HAVING count(*) > 1`
      on the shaped copy — ROOT duplicates only (a correction shares its parent's note id by
@@ -5018,8 +5120,10 @@ says what was built for each. (re-check laws-print-23)
    - **the boot-window drill:** «Bo‘ldi» pressed seconds before a deploy, the job fetched by
      the new process before the bot hydrates → the job waits, then delivers (durability-9);
    - **the stop drill:** a text into a collection whose write is made slow (a `pg_sleep`
-     trigger on a throwaway copy), then SIGTERM → `confirmedThrough` stops before that
-     update, and the new process applies it once (durability-10);
+     trigger on a throwaway copy), then SIGTERM while its handler still awaits the write →
+     `confirmedThrough` stops before that update, and the new process applies it once
+     (durability-10); and the same with the write made to FAIL after the handler returned →
+     the log names the update `unwrittenLost` (K-review spec-2);
    - **the stalled-storage drill:** a MinIO that accepts and never answers one photo → the
      reading still settles inside its file budget, naming «1 ta fayl o‘qilmadi»;
    - **the graceful drill:** SIGTERM mid-collection, a text typed during the downtime → it
@@ -5027,8 +5131,9 @@ says what was built for each. (re-check laws-print-23)
    - a real 10-line invoice with 227-character names → the table under 4096;
    - on a shaped copy: ➕ → «2: 40 juft» → «✅ Qo‘shish» → the re-pass reply. Time
      `amendRequest` on a 30-row request.
-7. **Pinned by name on the merge:** `migration-journal.test.ts` green with 0137 after 0136's
-   `when` (…116 > …115; re-check kernel-1); `intake-corpus.test.ts` green with every
+7. **Pinned by name on the merge:** `migration-journal.test.ts` green with this round's file
+   renamed 0138 (idx 138) after main's `0137_plan_road` (`when` …117 > …116 > …115; re-check
+   kernel-1, K-review spec-5); `intake-corpus.test.ts` green with every
    package's hunks; `thread-reply.integration.test.ts:340-350` green (Q2 a); R2's
    `calc-basis.integration.test.ts:657-675` green (the add door's save goes through the same
    fill); `handsoff-writers.test.ts` and `intake-holds-wire.test.ts` green over the MERGED tree
@@ -5203,7 +5308,7 @@ move; every amended spot carries «(re-check <id>)».
 **Rejected:** none — in the amendment and in the residual round.
 
 **Cross-section decisions (CROSS.json), one line each.**
-- X1: the migration is 0137 `calc_intake_durable` (idx 137, `when` …116); the ledger reads 138.
+- X1: the migration is `calc_intake_durable`, 0137 on the branch (idx 137, `when` …117) and 0138 after the merge (main's `0137_plan_road` holds …116); the ledger reads 139 (K-review spec-5).
 - X2: base 0373bd2 (R2's kernel 1131998); «round 4» as the landing's owner is Uch band, shipped.
 - X3: `sayOnce(requestId, pass, input, opts)` — pass positional; R2's `whileOpen`, CONC-4 and perf-5 kept.
 - X4: a muted seller's re-run answer goes through the notification drain (`ignoreMute`), never a second sender.

@@ -37,8 +37,9 @@ export const confirmKeyboard = {
  *
  * The button carries the answer it GIVES (`cert_y` / `cert_n`, K11's
  * durability-2), never «flip»: a press delivered twice is the same answer
- * twice, where a toggle pressed twice undid itself. The one shown is the
- * other answer.
+ * twice, where a toggle pressed twice undid itself. Its LABEL is the toggle's,
+ * the current answer — the summary above it says «o‘zgartirish uchun tugmani
+ * bosing» — and its value is the other answer.
  */
 export function aiConfirmKeyboard(hasCertificate: boolean) {
   return {

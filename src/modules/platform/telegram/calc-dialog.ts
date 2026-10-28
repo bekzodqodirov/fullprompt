@@ -119,15 +119,7 @@ export function intakeNextStep(
   laws: ReadonlyMap<string, import('../../wms/calc/needs').NeedLaw>,
   intake: typeof import('../../wms/calc/intake'),
 ): NextStep {
-  const {
-    ambiguousTotalText,
-    factsVolumeM3,
-    nextLineToAsk,
-    lineQuestionText,
-    intakeSummaryText,
-    volumeFromLines,
-    AI_READ_FAILURE,
-  } = intake;
+  const { ambiguousTotalText, factsVolumeM3, nextLineToAsk, lineQuestionText, volumeFromLines } = intake;
   const lineDoneNow = state.lineDone ?? [];
   // The lines dealt with, put onto the goods list as it stands NOW (round-3
   // review, R3-C5): a re-read after «➕ Yana ma'lumot» rebuilds the list, and
@@ -192,11 +184,27 @@ export function intakeNextStep(
     };
   }
 
-  // The summary reads nothing the patch changes, so it is the same text over
-  // the state before the write as after it.
-  const failure = state.aiUsed ? null : (state.aiFailure ?? 'not_configured');
   return {
     patch: { stage: 'review', askingIndex: null, askingTotalsFor: null, offers: [], lineDone },
+    ...reviewWords(state, laws, intake),
+  };
+}
+
+/**
+ * The review summary and its keyboard, over `state`. Apart from the decision
+ * because the delivery prints it from what the store holds AFTER its write
+ * (`deliverNextStep`), as it always did: the decision may be handed a
+ * snapshot an off-poller reading took, and a press applied meanwhile (a
+ * certificate answer from an earlier summary) is in the store and not in it.
+ */
+function reviewWords(
+  state: IntakeState,
+  laws: ReadonlyMap<string, import('../../wms/calc/needs').NeedLaw>,
+  intake: typeof import('../../wms/calc/intake'),
+): Pick<NextStep, 'text' | 'keyboard'> {
+  const { intakeSummaryText, AI_READ_FAILURE } = intake;
+  const failure = state.aiUsed ? null : (state.aiFailure ?? 'not_configured');
+  return {
     text:
       intakeSummaryText({
         section: state.section,
@@ -238,8 +246,14 @@ export async function deliverNextStep(ctx: CollectorReply, chatId: bigint, state
   const intake = await import('../../wms/calc/intake');
   const laws = await intakeLaws(state);
   const step = intakeNextStep(state, laws, intake);
-  updateIntake(chatId, step.patch);
-  await ctx.reply(step.text, step.keyboard ? { reply_markup: step.keyboard } : undefined);
+  const settled = updateIntake(chatId, step.patch);
+  // The summary is read off what was WRITTEN (the store after the patch), not
+  // the state handed in: the laws were awaited on the pool, and a reading runs
+  // off the poller, so a press can land in between — the summary and its
+  // certificate line would otherwise disagree with the store. The same text
+  // whenever nothing moved. A question's words are the decision's own.
+  const words = step.patch.stage === 'review' && settled ? reviewWords(settled, laws, intake) : step;
+  await ctx.reply(words.text, words.keyboard ? { reply_markup: words.keyboard } : undefined);
 }
 
 /**

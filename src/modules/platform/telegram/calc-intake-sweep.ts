@@ -46,6 +46,13 @@ export async function pressResume(ctx: CalcPressCtx, chatId: bigint): Promise<vo
     await ctx.reply(NO_COLLECTION);
     return;
   }
+  // A reading is running (the restart question can be reached during the
+  // «AI o‘qiyapti» minutes): the live stage's honest prompt is the reading's
+  // own — a stale summary's «✅ Tasdiqlash» would only answer this same line.
+  if (state.analysing) {
+    await ctx.reply('⏳ Tahlil davom etmoqda — natijani kuting.');
+    return;
+  }
   if (state.stage === 'section') {
     await ctx.reply('Avval yuk qayerdan chiqishini tanlang:', { reply_markup: zoneKeyboard(await pricedZonesNow()) });
     return;

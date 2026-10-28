@@ -25,8 +25,12 @@ const read = (p: string) =>
     .replace(/^\s*\/\/.*$/gm, '');
 
 // The collector's files (docs/SAKKIZ-R3.md K16): the bot-file download moved
-// into calc-files.ts, its one home the capture shares.
-const handlers = collectorCode();
+// into calc-files.ts, its one home the capture shares. And the capture's own
+// file: K moved its keyboard (`n:save` / `n:share` / `n:cancel`) out of
+// staff-handlers.ts into note-capture.ts, which is no collector file — read
+// apart, the fence below lost those three while the list's five kept its
+// floor (K's review, U1).
+const handlers = `${collectorCode()}\n${read('src/modules/platform/telegram/note-capture.ts')}`;
 
 describe('the callback vocabulary', () => {
   const uuid = '123e4567-e89b-12d3-a456-426614174000';
@@ -65,6 +69,9 @@ describe('the callback vocabulary', () => {
       (m) => m[2]!,
     );
     expect(literals.length, 'no n: buttons found — re-anchor this fence').toBeGreaterThanOrEqual(4);
+    // The capture's three by name, so the list's buttons alone cannot meet
+    // the floor while one of them is renamed past the parser.
+    for (const control of ['n:save', 'n:share', 'n:cancel']) expect(literals, control).toContain(control);
     for (const raw of literals) {
       // A template hole is filled with a real id / page before it is sent.
       const data = raw

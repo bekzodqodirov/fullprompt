@@ -15,6 +15,7 @@ import {
   type SheetText,
 } from './calc-intake';
 import type { ForwardPart } from './task-draft';
+import { BRIEF_RETRY_MAX_S } from './retry';
 import { botCall } from './send';
 
 /**
@@ -422,10 +423,17 @@ export async function readIntakeFile(
  * The file a Telegram message (or a forwarded album's part) carries — what
  * `saveBotFile` downloads by id, so the download needs only the file and never
  * the update's own ctx (an offer press, K5, saves the message it replies to).
+ *
+ * `messageId` is the message the file CAME in, carried on the file and not
+ * read off the update: on a press the update is a callback (no message of its
+ * own), and an album part is not the update's message either — so the
+ * collection's attachment id, `uuidv5(noteId:messageId)`, would have been
+ * minted at random on exactly the paths that re-run (durability-1).
  */
-export type BotFile = { fileId: string; isPhoto: boolean; fileName?: string; mime?: string };
+export type BotFile = { fileId: string; isPhoto: boolean; fileName?: string; mime?: string; messageId?: number };
 
 type BotMessage = {
+  message_id?: number;
   photo?: { file_id: string }[];
   document?: { file_id: string; file_name?: string; mime_type?: string };
 };
@@ -443,24 +451,53 @@ export function fileOf(src: BotMessage | ForwardPart): BotFile | null {
       isPhoto: src.kind === 'photo',
       fileName: src.file.name ?? undefined,
       mime: src.file.mime ?? undefined,
+      messageId: src.messageId,
     };
   }
   const message = src as BotMessage;
+  const messageId = message.message_id;
   const photo = message.photo?.length ? message.photo[message.photo.length - 1] : undefined;
-  if (photo) return { fileId: photo.file_id, isPhoto: true };
+  if (photo) return { fileId: photo.file_id, isPhoto: true, messageId };
   if (message.document) {
     return {
       fileId: message.document.file_id,
       isPhoto: false,
       fileName: message.document.file_name,
       mime: message.document.mime_type,
+      messageId,
     };
   }
   return null;
 }
 
 /** What `saveBotFile` reads from grammy's ctx: the message, for the default file. */
-type BotFileCtx = { message?: BotMessage & { message_id?: number } };
+type BotFileCtx = { message?: BotMessage };
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * The file's path from Telegram, by id. grammy's `ctx.getFile()` went through
+ * bot.api's `briefRetry`, which waited out a short 429 twice, and a refusal
+ * THREW into the caller's logged catch; the one sender does neither by itself,
+ * so both are kept here — the burst after a deploy meets Telegram's rate, and
+ * a 400 «file is too big» (a document past 20 MB, an ordinary case) must say
+ * why in the log, not only «Faylni saqlab bo‘lmadi» in the chat.
+ */
+async function filePathOf(fileId: string): Promise<string | null> {
+  let meta = await botCall('getFile', { file_id: fileId }, FILE_DOWNLOAD_MS);
+  for (let i = 0; i < 2; i += 1) {
+    if (meta.ok || meta.status !== 429 || meta.retryAfter === null || meta.retryAfter > BRIEF_RETRY_MAX_S) break;
+    await sleep(meta.retryAfter * 1000);
+    meta = await botCall('getFile', { file_id: fileId }, FILE_DOWNLOAD_MS);
+  }
+  const path = (meta.result as { file_path?: string } | null)?.file_path;
+  if (meta.ok && path) return path;
+  logger.warn(
+    { status: meta.status, description: meta.description, retryAfter: meta.retryAfter },
+    '[bot-file] getFile refused',
+  );
+  return null;
+}
 
 /** A stored bot file: its bytes (for the readers) and its attachment. */
 export type SavedBotFile = { isPhoto: boolean; body: Buffer; attachmentId: string };
@@ -493,9 +530,8 @@ export async function saveBotFile(
 ): Promise<SavedBotFile | null> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token || !file) return null;
-  const meta = await botCall('getFile', { file_id: file.fileId }, FILE_DOWNLOAD_MS);
-  const path = (meta.result as { file_path?: string } | null)?.file_path;
-  if (!meta.ok || !path) return null;
+  const path = await filePathOf(file.fileId);
+  if (!path) return null;
   // A deadline, because there was none: a Telegram file endpoint that accepts
   // the connection and then stops sending held this handler — and grammy's
   // poller is SEQUENTIAL, so it held every customer's cabinet with it. Thirty
@@ -537,16 +573,17 @@ export async function saveBotFile(
  * second attachment. The object key is the message's too.
  *
  * `file` defaults to the update's own message; an offer press passes the
- * message its offer replies to (K5, P4), with that message's id.
+ * message its offer replies to, or an album part (K5, P4) — the message id
+ * rides on the file (`fileOf`), so every path keys the same way.
  */
 export async function saveIntakeFile(
   ctx: BotFileCtx,
   noteId: string,
   uploadedBy: string,
   file: BotFile | null = fileOf(ctx.message ?? {}),
-  messageId: number | null = ctx.message?.message_id ?? null,
 ): Promise<SavedBotFile | null> {
   if (!file) return null;
+  const messageId = file.messageId ?? ctx.message?.message_id ?? null;
   const id = messageId !== null ? uuidv5(`${noteId}:${messageId}`, INTAKE_FILE_NS) : undefined;
   if (id !== undefined) {
     const [row] = await db
@@ -606,14 +643,19 @@ export interface IntakeFiles {
  * The bytes the model reads, from storage. Every get goes through `readWithin`
  * (no read may outlive `deadline`); a photo prefers its model-sized copy (P2).
  * An object storage no longer has, or does not hand over in time, is counted,
- * never thrown.
+ * never thrown — and the count is SAID: the reading puts it in its notes
+ * (`filesMissingNote`), or a storage blip would have the model read text only
+ * under a prompt that promised it the photos.
  *
- * K: no deadline enforcement beyond `readWithin(PHOTO_READ_MS)` and no derived
- * copy — so every image read runs `reduceForModel` again (the stored
- * attachment is the ORIGINAL 3-5 MB photo, and the model refuses past ~5 MB)
- * and a null is `missing`. A collection with no image and no PDF reads nothing.
+ * The deadline is the WHOLE load's: each read gets what is left of it (at
+ * most PHOTO_READ_MS), and a file whose turn comes after it is counted, not
+ * read — fifteen slow reads in a row must not hold the model call for
+ * minutes. K: no derived copy, so every image read runs `reduceForModel`
+ * again (the stored attachment is the ORIGINAL 3-5 MB photo, and the model
+ * refuses past ~5 MB) and a null is `missing`. A collection with no image and
+ * no PDF reads nothing.
  */
-export async function loadIntakeFiles(state: IntakeState, _opts: { deadline: number }): Promise<IntakeFiles> {
+export async function loadIntakeFiles(state: IntakeState, opts: { deadline: number }): Promise<IntakeFiles> {
   const out: IntakeFiles = { images: [], pdfs: [], missing: 0 };
   // Only an id that can BE a row is asked about: anything else is missing,
   // never a statement postgres refuses for the whole reading.
@@ -632,8 +674,10 @@ export async function loadIntakeFiles(state: IntakeState, _opts: { deadline: num
   const bytesOf = async (attachmentId: string): Promise<Buffer | null> => {
     const key = keyOf.get(attachmentId);
     if (!key) return null;
+    const left = Math.min(PHOTO_READ_MS, opts.deadline - Date.now());
+    if (left <= 0) return null;
     try {
-      return await readWithin(getStorage().get(key), PHOTO_READ_MS);
+      return await readWithin(getStorage().get(key), left);
     } catch (err) {
       logger.warn({ err, attachmentId }, '[calc-intake] stored file unreadable — counted, not read');
       return null;

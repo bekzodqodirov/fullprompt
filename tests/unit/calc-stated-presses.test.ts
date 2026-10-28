@@ -38,6 +38,7 @@ import {
 import { activeIntake, endIntake, startIntake, updateIntake } from '@/modules/platform/telegram/calc-store';
 import { aiConfirmKeyboard, CLIENT_QUESTION, restartKeyboard } from '@/modules/platform/telegram/calc-keyboards';
 import { handleCalcCallback } from '@/modules/platform/telegram/staff-handlers';
+import { deliverNextStep } from '@/modules/platform/telegram/calc-dialog';
 import type { OnceKey } from '@/modules/platform/telegram/once';
 import { read } from '../fixtures/source-shape';
 
@@ -187,6 +188,39 @@ describe('«▶️ Yo‘q, davom etaman» re-prompts the live stage (K7, K9, pro
     await handleCalcCallback(ctx, id, 'resume');
     expect(activeIntake(id)?.stage).toBe('client');
     expect(last()).toBe(CLIENT_QUESTION);
+  });
+
+  it('while a reading runs, ▶️ says so — never a stale summary or «Bo‘ldi ni bosing» (K’s review, U5)', async () => {
+    // The restart question is reachable during the «AI o‘qiyapti» minutes (a
+    // section button pressed meanwhile). A review-stage re-read re-sent the
+    // old summary, whose «✅ Tasdiqlash» then only answered this same line.
+    for (const stage of ['review', 'material'] as const) {
+      const id = chat();
+      startIntake(id, 'rastamojka', { staffId: 'staff-1' });
+      updateIntake(id, { stage, clientHintRaw: 'GS777', material: ['Kurtka 300 dona'], analysing: 'token-1' });
+      const { ctx, replies, last } = pressFrom(null);
+      await handleCalcCallback(ctx, id, 'resume');
+      expect(last(), stage).toBe('⏳ Tahlil davom etmoqda — natijani kuting.');
+      expect(replies, stage).toHaveLength(1);
+      expect(activeIntake(id)?.analysing, stage).toBe('token-1');
+    }
+  });
+});
+
+describe('the summary is printed from what was WRITTEN (K’s review, U4)', () => {
+  it('a certificate answer that landed while the laws were read is the one the summary and its button show', async () => {
+    // The reading runs off the poller and hands `deliverNextStep` its
+    // snapshot; a press applied in between is in the store and not in the
+    // snapshot. Before K the summary was read off the store after the write.
+    const id = chat();
+    startIntake(id, 'rastamojka', { ai: true, staffId: 'staff-1' });
+    const snapshot = updateIntake(id, { stage: 'review', material: ['Kurtka 300 dona'], hasCertificate: true })!;
+    updateIntake(id, { hasCertificate: false });
+    const { ctx, replies } = pressFrom(null);
+    await deliverNextStep(ctx, id, snapshot);
+    expect(activeIntake(id)?.hasCertificate).toBe(false);
+    expect(replies.at(-1)?.text).toContain('📄 Sertifikat: yo‘q');
+    expect(buttonsOf(replies.at(-1)?.extra).map((b) => b.callback_data)).toContain('c:cert_y');
   });
 });
 
