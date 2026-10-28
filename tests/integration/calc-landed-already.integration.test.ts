@@ -197,7 +197,13 @@ describe('«Tasdiqlash» again after a crash (durability-3)', () => {
     const tick = replies.find((t) => t.startsWith('✅'));
     expect(tick).toContain(`✅ Saqlandi — oldingi urinishda ochilgan lid: ${first!.label}`);
     expect(await requestsOn(noteId)).toBe(1);
-    expect(queue.spy).toHaveBeenCalledTimes(1);
+    // One pass was ever asked for unguarded — the landing's. Since P5
+    // (docs/SAKKIZ-R3.md §10.2.1) the «already queued» exit finishes through
+    // the ticket: its call carries `atRev: 0`, a no-op beside the pass that
+    // stands (calc-pass-settle.integration pins the ticket itself).
+    const calls = queue.spy.mock.calls as unknown as [{ requestId: string; atRev?: number }][];
+    expect(calls.filter(([c]) => c.atRev !== 0)).toHaveLength(1);
+    expect(calls.slice(1)).toEqual([[expect.objectContaining({ requestId: first!.requestId, atRev: 0 })]]);
     expect(activeIntake(chat)).toBeNull();
   });
 

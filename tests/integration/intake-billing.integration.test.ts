@@ -184,6 +184,12 @@ describe('billed when the model answered, on the note', () => {
     const again = await land(chatId);
     expect(again.requestId).toBe(target.requestId);
     expect((await rowsOfNote(noteId)).map((r) => r.requestId)).toEqual([target.requestId]);
-    expect(queue.spy).toHaveBeenCalledTimes(1);
+    // Still ONE pass asked for unguarded: since P5 (docs/SAKKIZ-R3.md
+    // §10.2.1) the «already queued» exit queues through the ticket, `atRev:
+    // 0` — a no-op beside the pass that stands (calc-pass-settle.integration
+    // pins the ticket itself).
+    const calls = queue.spy.mock.calls as unknown as [{ requestId: string; atRev?: number }][];
+    expect(calls.filter(([c]) => c.atRev !== 0)).toHaveLength(1);
+    expect(calls.slice(1)).toEqual([[expect.objectContaining({ requestId: target.requestId, atRev: 0 })]]);
   });
 });
