@@ -3,7 +3,14 @@ import { describe, expect, it } from 'vitest';
 import { blockerText, tariffReplyText } from '@/modules/wms/calc/prefill-reply';
 import type { SealBlocker } from '@/modules/wms/calc/workspace';
 import type { AiVedFreight } from '@/modules/wms/calc/ai-reply';
-import { TARIFF_REPLY_HEAD, VED_ESTIMATE_MARK } from '@/modules/wms/calc/reply-heads';
+import { ROAD_STALE_LINE } from '@/modules/wms/calc/ai-reply';
+import {
+  MACHINE_REPLY_HEADS,
+  RERUN_WORD,
+  TARIFF_PRICED_HEAD,
+  TARIFF_REPLY_HEAD,
+  VED_ESTIMATE_MARK,
+} from '@/modules/wms/calc/reply-heads';
 
 /**
  * What the AI VED hodimi says back into the staff chat.
@@ -37,7 +44,15 @@ const priced = (over: Partial<Extract<AiVedFreight, { ok: true }>> = {}): AiVedF
   small: false,
   ...over,
 });
-const tariff = { clientLabel: 'GS777', cardLabel: 'B-000067', link: 'https://gsrwms.uz/bitimlar/x', audience: 'chat' as const };
+// `pass` is REQUIRED since round 3 (docs/SAKKIZ-R3.md §10.2.6): these are
+// the landing's replies; the re-run's heading has its own case below.
+const tariff = {
+  clientLabel: 'GS777',
+  cardLabel: 'B-000067',
+  link: 'https://gsrwms.uz/bitimlar/x',
+  pass: 'landing' as const,
+  audience: 'chat' as const,
+};
 
 describe('a yolkira job answered from the tariff table (his 2.5 b, §2.4)', () => {
   it('the figure, the route as read, the band — and the caveat right under the figure', () => {
@@ -65,14 +80,54 @@ describe('a yolkira job answered from the tariff table (his 2.5 b, §2.4)', () =
       ...tariff,
       freight: { ok: false, refusal: 'umumiy brutto og‘irlik (kg) yo‘q', tail: 'seller' },
     });
+    // Re-anchored for round 3 (docs/SAKKIZ-R3.md §2.5): the CHAT's seller
+    // tail points at «➕» under this very message; the lenta keeps R2's.
     expect(t).toBe(
       [
         `${TARIFF_REPLY_HEAD} (tarif bo‘yicha) · GS777 · B-000067`,
-        'Yo‘lkira: ⚠️ umumiy brutto og‘irlik (kg) yo‘q — mijozdan so‘rab, kartadagi lentaga yozing',
+        'Yo‘lkira: ⚠️ umumiy brutto og‘irlik (kg) yo‘q — mijozdan so‘rab, «➕ Shu so‘rovga qo‘shish» bilan yuboring',
         'Karta: https://gsrwms.uz/bitimlar/x',
       ].join('\n'),
     );
     expect(t).not.toContain('$0');
+    const lenta = tariffReplyText({
+      ...tariff,
+      link: null,
+      audience: 'lenta',
+      freight: { ok: false, refusal: 'umumiy brutto og‘irlik (kg) yo‘q', tail: 'seller' },
+    });
+    expect(lenta).toContain('Yo‘lkira: ⚠️ umumiy brutto og‘irlik (kg) yo‘q — mijozdan so‘rab, kartadagi lentaga yozing');
+    expect(lenta).not.toContain('➕');
+  });
+
+  it('a re-run after an addition says «qayta hisob» AFTER the title and its estimate word (§2.5)', () => {
+    // The chip's anchors stay the heading's first characters (feed.ts, PF-9):
+    // a priced re-run still starts with TARIFF_PRICED_HEAD.
+    const pricedRerun = tariffReplyText({ ...tariff, pass: 'amend', freight: priced() });
+    expect(pricedRerun.split('\n')[0]).toBe(`${TARIFF_REPLY_HEAD} (tarif bo‘yicha) · taxminiy · ${RERUN_WORD} · GS777 · B-000067`);
+    expect(pricedRerun.startsWith(TARIFF_PRICED_HEAD)).toBe(true);
+    const refusedRerun = tariffReplyText({
+      ...tariff,
+      pass: 'amend',
+      freight: { ok: false, refusal: 'bu zichlikka tarif yo‘q', tail: 'ved' },
+    });
+    expect(refusedRerun.split('\n')[0]).toBe(`${TARIFF_REPLY_HEAD} (tarif bo‘yicha) · ${RERUN_WORD} · GS777 · B-000067`);
+    expect(refusedRerun.startsWith(MACHINE_REPLY_HEADS.tariff)).toBe(true);
+    expect(refusedRerun.startsWith(TARIFF_PRICED_HEAD)).toBe(false);
+  });
+
+  it('a stale total after an addition prices no road — the words, never a dollar figure (law-money-1)', () => {
+    for (const audience of ['chat', 'lenta'] as const) {
+      const t = tariffReplyText({
+        ...tariff,
+        pass: 'amend',
+        audience,
+        freight: { ok: false, refusal: 'x', tail: 'ved', stale: true },
+      });
+      expect(t).toContain(ROAD_STALE_LINE);
+      expect(t).toContain('🚚 Yo‘lkira: qo‘shimchadan keyin umumiy hajm/og‘irlik yangilanmagan — yo‘lkirani VED hisoblaydi.');
+      expect(t).not.toMatch(/\$\d/);
+    }
   });
 
   it('it never speaks of customs, the AI or a budget — this pass asked no model', () => {

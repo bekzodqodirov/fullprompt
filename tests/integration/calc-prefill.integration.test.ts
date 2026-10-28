@@ -53,6 +53,9 @@ let batchId = '';
 const madeRequests: string[] = [];
 const madeKeys: string[] = [];
 const ctx = () => ({ actorId });
+/** The request's hands-off stamp (0138) — moved only by the machine's chained saves. */
+const handsOffOf = async (id: string) =>
+  (await db.select({ h: calcRequests.handsoffRev }).from(calcRequests).where(eq(calcRequests.id, id)))[0]?.h ?? null;
 
 beforeAll(async () => {
   const [actor] = await db
@@ -302,7 +305,13 @@ describe('the machine carries a job as far as it honestly can', () => {
       pick: async () => ({ answers: [], usage: null }),
       configured: true,
     });
+    // Re-anchored for round 3 (docs/SAKKIZ-R3.md §2.5): `out.text` is the
+    // CHAT, whose seller tail points at «➕» under the message; the card's
+    // copy keeps R2's words.
     expect(out.text).toContain(
+      'Yo‘lkira: ⚠️ yo‘nalish (zona) tanlanmagan — qaysi shahardan ekani yozilmagan — mijozdan so‘rab, «➕ Shu so‘rovga qo‘shish» bilan yuboring',
+    );
+    expect(out.lentaText).toContain(
       'Yo‘lkira: ⚠️ yo‘nalish (zona) tanlanmagan — qaysi shahardan ekani yozilmagan — mijozdan so‘rab, kartadagi lentaga yozing',
     );
     expect(out.text).toContain('JAMI: hozircha hisoblab bo‘lmadi');
@@ -491,6 +500,9 @@ describe('the machine carries a job as far as it honestly can', () => {
     );
     expect(proposed, 'the grouping must not run over a person’s save').toBe(0);
     expect(await prefillTicket(id), 'and the machine wrote nothing after it').toBe(afterPerson);
+    // Round 3 (docs/SAKKIZ-R3.md §10.3): the hands-off stamp stays where the
+    // landing left it — behind the person's revision, i.e. «started».
+    expect(await handsOffOf(id)).toBe(checked);
     // Re-anchored (R2 late pass, review CONC-5): the pass used to answer
     // anyway — the reply rendered from the VED's half-typed state under the
     // AI's heading — while a save one moment EARLIER got the worker's
@@ -756,8 +768,11 @@ describe('the pass stands down when a person or a close says so (R2 late pass)',
     const afterPerson = await prefillTicket(id);
     expect(afterPerson, 'the premise: the person’s save moved the clock').not.toBe(stale);
 
-    await expect(proposeGroups(id, ctx(), { expectRev: stale })).rejects.toMatchObject({ code: 'conflict' });
+    const stampBefore = await handsOffOf(id);
+    await expect(proposeGroups(id, ctx(), { expectRev: stale, handsOff: true })).rejects.toMatchObject({ code: 'conflict' });
     expect(await prefillTicket(id)).toBe(afterPerson);
+    // Round 3 (§10.3): a refused claim moves no hands-off stamp either.
+    expect(await handsOffOf(id)).toBe(stampBefore);
     const [req] = await db.select().from(calcRequests).where(eq(calcRequests.id, id));
     expect(req!.aiProposalStartedAt, 'a refused claim holds nothing').toBeNull();
 
@@ -806,6 +821,10 @@ describe('the pass stands down when a person or a close says so (R2 late pass)',
   it('the pass: a person saving inside the grouping’s tail stops the sweep and the pick (review P1-R2)', async () => {
     const row = await importRow();
     const id = await openLate([{ name: row.name, weightKg: 100 }]);
+    // Re-anchored for round 3 (§10.2.3): the pass no longer starts a chain
+    // from a fresh read of its own — it starts at the ticket the worker
+    // checked, so this case hands it the one the worker would.
+    const ticket = (await prefillTicket(id))!;
     let picks = 0;
     let afterPerson: number | null = null;
     const out = await aiPrefill(id, ctx(), {
@@ -841,7 +860,7 @@ describe('the pass stands down when a person or a close says so (R2 late pass)',
         picks += 1;
         return { answers: null, usage: null };
       },
-    });
+    }, { expectRev: ticket });
     expect(afterPerson, 'the premise: the person saved inside the tail').not.toBeNull();
     expect(out.overtaken).toBe('step 1');
     expect(picks).toBe(0);
@@ -851,6 +870,8 @@ describe('the pass stands down when a person or a close says so (R2 late pass)',
   it('a grouping that FAILS after a person saved keeps the chain’s revision — the sweep is refused, never adopted (review P1-R7)', async () => {
     const row = await importRow();
     const id = await openLate([{ name: row.name, tnvedCode: row.tnvedCode, weightKg: 100 }]);
+    // Re-anchored for round 3 (§10.2.3): the worker's ticket, not a fresh read.
+    const ticket = (await prefillTicket(id))!;
     let picks = 0;
     let afterPerson: number | null = null;
     const out = await aiPrefill(id, ctx(), {
@@ -865,7 +886,7 @@ describe('the pass stands down when a person or a close says so (R2 late pass)',
         picks += 1;
         return { answers: null, usage: null };
       },
-    });
+    }, { expectRev: ticket });
     expect(afterPerson).not.toBeNull();
     expect(out.overtaken).toBe('step 2');
     // Nothing the machine wrote before the person: the stand-down sentence (CONC-5).

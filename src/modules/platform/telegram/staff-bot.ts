@@ -815,6 +815,13 @@ export function buttonsFor(type: string, payload: Record<string, unknown>): BotB
       ]);
     return rows.length > 0 ? rows : null;
   }
+  // The machine's answer about a request still open (docs/SAKKIZ-R3.md
+  // §10.2.5, his proposal 2): «➕» opens the add collection on THAT request.
+  // `add` is decided by the worker (`addFor`) — never on a closed request's
+  // sentence — and only a uuid reaches `ca:`, the one shape the parser takes.
+  if (type === 'CalcPrefilled' && payload.add === true && typeof payload.requestId === 'string' && UUID.test(payload.requestId)) {
+    return [[{ text: '➕ Shu so‘rovga qo‘shish', callback_data: `ca:${payload.requestId.toLowerCase()}` }]];
+  }
   return null;
 }
 

@@ -1,8 +1,10 @@
 import { dutyText } from './duty-text';
 import { fitTelegram, MAX_REPLY_LINES, TELEGRAM_LIMIT } from './fit-telegram';
 import { SMALL_FREIGHT_USD, type BazaSource } from './pricing';
-import { AI_REPLY_HEAD, VED_ESTIMATE_MARK } from './reply-heads';
-import type { TotalWeightBasis } from './intake';
+import { AI_REPLY_HEAD, RERUN_WORD, VED_ESTIMATE_MARK } from './reply-heads';
+import { figureLabel, type TotalWeightBasis } from './intake';
+import { needWhatUz, needWhyUz, type NeedUnit } from './needs';
+import type { LawAsk } from './law-asks';
 
 /**
  * The AI-VED's answer in the seller's own chat — RASTAMOJKA, and on a
@@ -179,10 +181,24 @@ export interface AiVedReplyInput {
    * key, the budget, a person or a close stood the machine down first).
    */
   pickLeft: PickLeft | null;
+  /**
+   * His 2.8 b (docs/SAKKIZ-R3.md §2.5): the figures the LAW pins that the
+   * rows still lack — asked of the seller in the chat, named for the VED on
+   * the lenta. REQUIRED-nullable (#790): null when it was not asked (a person
+   * has written since the machine, the pass was overtaken), [] when nothing
+   * is owed.
+   */
+  asks: LawAsk[] | null;
+  /** The landing's pass, or the re-run after a seller's addition — whose
+   * heading says «qayta hisob» (§2.5). REQUIRED (#790). */
+  pass: 'landing' | 'amend';
   /** Who reads THIS rendering — the seller's chat, or the card's lenta, which
    * carries the VED's own line under its heading (§2.6). */
-  audience: 'chat' | 'lenta';
+  audience: ReplyAudience;
 }
+
+/** Who reads a rendering: the seller in his chat, or anybody on the card's lenta. */
+export type ReplyAudience = 'chat' | 'lenta';
 
 /** The pick's own counts of what it left for the VED (`pickBazas`). */
 export interface PickLeft {
@@ -279,28 +295,45 @@ export type AiVedFreight =
        * only after the VED had chosen the zone. One fixer per sentence.
        */
       also?: { refusal: string; tail: 'seller' };
+      /**
+       * Not priced because a seller's addition left a total the road needs
+       * behind (law-money-1, docs/SAKKIZ-R3.md §10.2.9) — said in its own
+       * words (`ROAD_STALE_LINE`), never a figure on the stale column.
+       */
+      stale?: boolean;
     };
 
 /**
- * The tail of a refused road — WHO fixes it (§0.1(7)). Until round 3's
- * «➕ Shu so‘rovga qo‘shish» door, the card's lenta is the seller's one way to
- * add a fact to a request that has already landed.
+ * The tail of a refused road — WHO fixes it (§0.1(7)), in the words of the
+ * reader's own way to act (docs/SAKKIZ-R3.md §2.5). The seller in his chat
+ * has «➕ Shu so‘rovga qo‘shish» under this very message, so he is pointed
+ * at it; the lenta's reader stands on the card, where writing the figure
+ * down is the way. The VED's tail is the same on both.
  */
-export const FREIGHT_TAIL_WORDS: Record<FreightTail, string> = {
-  seller: '— mijozdan so‘rab, kartadagi lentaga yozing',
-  ved: '— VED xodimi hisoblaydi',
+export const FREIGHT_TAIL_WORDS: Record<FreightTail, Record<ReplyAudience, string>> = {
+  seller: {
+    chat: '— mijozdan so‘rab, «➕ Shu so‘rovga qo‘shish» bilan yuboring',
+    lenta: '— mijozdan so‘rab, kartadagi lentaga yozing',
+  },
+  ved: { chat: '— VED xodimi hisoblaydi', lenta: '— VED xodimi hisoblaydi' },
 };
 
 /**
  * The tail of a refused CUSTOMS line — the same two fixers as the road's,
  * worded for a line (the VED «qo‘yadi» a baza; the road he «hisoblaydi»).
- * The seller's words are the Taxminiy block's own (`refused_measure`), so a
- * reply that says the count is missing says once who gets it.
+ * The seller's words follow the road's, and the Taxminiy block's own
+ * (`refused_measure`), so a reply that says the count is missing says once
+ * who gets it — in each reader's words.
  */
-export const CUSTOMS_TAIL_WORDS: Record<FreightTail, string> = {
+export const CUSTOMS_TAIL_WORDS: Record<FreightTail, Record<ReplyAudience, string>> = {
   seller: FREIGHT_TAIL_WORDS.seller,
-  ved: '— VED xodimi qo‘yadi',
+  ved: { chat: '— VED xodimi qo‘yadi', lenta: '— VED xodimi qo‘yadi' },
 };
+
+/** Why a re-run's road is not priced (law-money-1) — the line below says it whole. */
+export const ROAD_STALE_WORDS = 'qo‘shimchadan keyin umumiy hajm/og‘irlik yangilanmagan';
+/** The road's line after an addition that left its totals behind (§2.5). */
+export const ROAD_STALE_LINE = `🚚 Yo‘lkira: ${ROAD_STALE_WORDS} — yo‘lkirani VED hisoblaydi.`;
 
 /** The tiny-invoice warning (law 8: priced honestly, flagged loudly). */
 export const SMALL_ROAD_LINE = `⚠️ Juda kichik yuk (yo‘lkira $${SMALL_FREIGHT_USD} dan kam) — VED ko‘rib chiqadi.`;
@@ -313,10 +346,13 @@ export function routeWords(f: Extract<AiVedFreight, { ok: true }>): string {
 }
 
 /** A refused road — the words and who fixes them, and the seller's own gap
- * on a line of its own when the refusal is the VED's (PF-5). */
-export function roadRefusalLine(f: Extract<AiVedFreight, { ok: false }>): string {
-  const first = `Yo‘lkira: ⚠️ ${f.refusal} ${FREIGHT_TAIL_WORDS[f.tail]}`;
-  return f.also ? `${first}\n⚠️ ${f.also.refusal} ${FREIGHT_TAIL_WORDS[f.also.tail]}` : first;
+ * on a line of its own when the refusal is the VED's (PF-5). In the
+ * reader's words (`audience`): the tails differ between the chat and the
+ * lenta. */
+export function roadRefusalLine(f: Extract<AiVedFreight, { ok: false }>, audience: ReplyAudience): string {
+  if (f.stale) return ROAD_STALE_LINE;
+  const first = `Yo‘lkira: ⚠️ ${f.refusal} ${FREIGHT_TAIL_WORDS[f.tail][audience]}`;
+  return f.also ? `${first}\n⚠️ ${f.also.refusal} ${FREIGHT_TAIL_WORDS[f.also.tail][audience]}` : first;
 }
 
 /**
@@ -410,7 +446,7 @@ function lawParts(line: AiVedLine): string {
 }
 
 /** One group, as two (or three) lines: what it is, and what the law makes of it. */
-function lineText(line: AiVedLine, index: number): string {
+function lineText(line: AiVedLine, index: number, audience: ReplyAudience): string {
   const est = line.estimated;
   const priced = est?.priced ? est : null;
   const measure = measureWithMark(priced ? priced.measureText : line.measureText, line.weightFromTotal);
@@ -440,7 +476,7 @@ function lineText(line: AiVedLine, index: number): string {
   if (line.customsUsd === null) {
     // Law 6: a refusal is a sentence, and the line still exists — a seller
     // who cannot see the row cannot tell the customer what is missing.
-    const refused = `${head}\n   ⚠️ ${line.refusal ?? 'hisoblanmadi'} ${CUSTOMS_TAIL_WORDS[line.refusalTail]}`;
+    const refused = `${head}\n   ⚠️ ${line.refusal ?? 'hisoblanmadi'} ${CUSTOMS_TAIL_WORDS[line.refusalTail][audience]}`;
     if (!est || est.priced || est.misses.length === 0) return refused;
     const shown = est.misses.slice(0, 3).join('; ');
     return `${refused}\n   ${MEDIAN_MARK} taxmin yo‘q: ${shown}${est.misses.length > 3 ? ' …' : ''}`;
@@ -488,6 +524,10 @@ export function aiVedReplyText(input: AiVedReplyInput): string {
       ? `${AI_REPLY_HEAD} · taxminiy podklyuch (rastamojka + yo‘lkira)`
       : `${AI_REPLY_HEAD} · taxminiy rastamojka`,
   ]
+    // A re-run after a seller's addition says so AFTER the title phrase, so
+    // the heading still starts with AI_REPLY_HEAD and the lenta's chip reads
+    // it unchanged (feed.ts, PF-9).
+    .concat(input.pass === 'amend' ? [RERUN_WORD] : [])
     .concat(input.clientLabel ? [input.clientLabel] : [])
     .concat(input.cardLabel ? [input.cardLabel] : [])
     .join(' · ');
@@ -499,12 +539,16 @@ export function aiVedReplyText(input: AiVedReplyInput): string {
   const roadFromLines = Boolean(f && f.ok && !f.exact && !f.zoneGuessed);
   const anyMedian = input.lines.some((l) => l.estimated?.priced === true);
   const head = [title];
+  const asks = input.asks ?? [];
   if (input.audience === 'lenta') {
     const ved = vedLine(anyMedian, guessedFrom, roadFromLines);
     if (ved) head.push(ved);
+    // The VED skimming the lenta reads its first lines: what the seller was
+    // asked goes there, in one line (§2.5).
+    if (asks.length > 0) head.push(lawAsksLentaLine(asks));
   }
 
-  const lines = input.lines.map(lineText);
+  const lines = input.lines.map((line, index) => lineText(line, index, input.audience));
 
   const fixed: string[] = [];
   if (input.ungrouped.length > 0) {
@@ -517,6 +561,9 @@ export function aiVedReplyText(input: AiVedReplyInput): string {
   if (input.fee) {
     fixed.push(`Deklaratsiya yig‘imi (VMQ-55): ${input.fee.bhm} BHM ≈ ${money(input.fee.usd)}`);
   }
+  // His 2.8 b — in `fixed`, which the fit never cuts: on a 40-line invoice
+  // the group lines shrink and the question the seller must answer stays.
+  if (input.audience === 'chat' && asks.length > 0) fixed.push(...lawAsksBlock(asks));
 
   const tail: string[] = ['━━━━━━━━━━━━'];
   // NO PARTIAL SUMS under the job's name (the kernel's rule, restated as a
@@ -557,7 +604,7 @@ export function aiVedReplyText(input: AiVedReplyInput): string {
     if (f.ok) {
       tail.push(...roadLines(f));
     } else {
-      tail.push(roadRefusalLine(f));
+      tail.push(roadRefusalLine(f, input.audience));
     }
     // The sum only when BOTH halves are figures: half a price labelled
     // «jami» is the partial total law 6 forbids, one line lower. And when
@@ -594,6 +641,53 @@ export function aiVedReplyText(input: AiVedReplyInput): string {
   if (input.link) tail.push(`Karta: ${input.link}`);
 
   return fitTelegram(head, lines, fixed, tail);
+}
+
+/** At most this many rows are named in the 2.8 b block; the rest are counted. */
+export const LAW_ASKS_NAMED = 8;
+
+/** An example figure per unit, for the block's «✍️» line — the bot's
+ * question's own examples (150 kg, 300 dona) and §2.5's «40 juft». */
+const EXAMPLE_FIGURE: Record<NeedUnit, number> = {
+  dona: 300,
+  '1000_dona': 300,
+  juft: 40,
+  kg: 150,
+  m2: 120,
+  m3: 2,
+  litr: 50,
+  sm3: 1500,
+};
+
+/**
+ * The 2.8 b block in the CHAT rendering (docs/SAKKIZ-R3.md §2.5): each asked
+ * row by its `seq` — the number the add table and the VED's screen print,
+ * so «3: 40 juft» typed from it lands on the row it names — with what the
+ * law wants and why, in the kernel's own words (`needWhatUz`/`needWhyUz`).
+ */
+export function lawAsksBlock(asks: readonly LawAsk[]): string[] {
+  const shown = asks.slice(0, LAW_ASKS_NAMED).map(
+    (a) => `· ${a.seq}-qator «${shortName(a.name)}»: ${a.needs.map((n) => `${needWhatUz(n.unit)} — ${needWhyUz(n)}`).join('; ')}`,
+  );
+  if (asks.length > LAW_ASKS_NAMED) shown.push(`· … yana ${asks.length - LAW_ASKS_NAMED} ta qator — «➕» jadvalida`);
+  // A 1000-dona floor is answered in pieces: the law divides.
+  const example = asks
+    .slice(0, 2)
+    .map((a) => {
+      const unit = a.needs[0]!.unit === '1000_dona' ? 'dona' : a.needs[0]!.unit;
+      return `${a.seq}: ${figureLabel(EXAMPLE_FIGURE[unit], unit)}`;
+    })
+    .join('; ');
+  return [
+    '❓ Hisob to‘liq bo‘lishi uchun o‘lchov kerak — qonun shuni so‘raydi:',
+    ...shown,
+    `✍️ Shu xabarga reply qilib yozing: «${example}» — yoki «➕ Shu so‘rovga qo‘shish» ni bosing.`,
+  ];
+}
+
+/** …and the one line the LENTA carries under its heading instead (§2.5). */
+export function lawAsksLentaLine(asks: readonly LawAsk[]): string {
+  return `❓ Sotuvchidan so‘raldi: ${asks.map((a) => a.seq).join(', ')}-qator o‘lchovi (qonun so‘raydi).`;
 }
 
 /** Re-exported so a caller need not reach into the screen's own module. */

@@ -511,21 +511,42 @@ export async function landIntake(input: {
   }
 
   // An earlier attempt already queued this very note: the job is in the
-  // queue, and neither it nor the AI pass is opened twice (judge conc-13).
-  // ONE exit for both ways of finding that out — the pooled re-read here, and
+  // queue, and it is never opened twice (judge conc-13). ONE exit for both
+  // ways of finding that out — the pooled re-read here, and
   // `openCalcRequest`'s in-transaction one under the note's lock, which
   // catches a concurrent twin of this very landing (docs/SAKKIZ-R3.md K2).
   //
-  // Both exits attach the collection's readings too (docs/SAKKIZ-R3.md
-  // §7.2.9): a landing cut after `openCalcRequest` committed, or whose attach
-  // logged and failed, is finished through here, and without it the
-  // readings kept `request_id` NULL for ever.
+  // Both exits FINISH what the earlier attempt may not have reached, in this
+  // order (docs/SAKKIZ-R3.md §17.3):
+  //  - the collection's readings are attached (§7.2.9): a landing cut after
+  //    `openCalcRequest` committed, or whose attach logged and failed, is
+  //    finished through here, and without it the readings kept `request_id`
+  //    NULL for ever;
+  //  - the pass is queued and the card moved (§10.2.1, re-check p5-p6-6): the
+  //    earlier attempt returned before the queue and the stage move, so a
+  //    landing cut after `openCalcRequest` committed was resumed with ZERO
+  //    passes while the retried ✅ promised a VED answer. The pass goes through
+  //    the ticket — a no-op beside a pass that stands, refused (`atRev: 0`, the
+  //    revision every request is born at) once anybody has written on the
+  //    request — and the stage move is the forward-only move the landing
+  //    makes, a no-op on a card already there.
   const landedTarget = target;
   async function retried(requestId: string): Promise<IntakeTarget> {
     await attachIntakePasses(input.noteId, requestId).catch((err: unknown) =>
       logger.warn({ err, requestId }, '[calc-intake] readings not attached'),
     );
-    return { ...landedTarget, queued: true, requestId, queueError: null };
+    const replyQueued = await queueCalcPrefill({
+      requestId,
+      staffId: input.collectedBy,
+      section: input.section,
+      atRev: 0,
+    });
+    try {
+      await moveToCalcStage(landedTarget, input.collectedBy);
+    } catch (err) {
+      logger.error({ err, kind: landedTarget.kind, id: landedTarget.id }, '[calc-intake] stage move failed');
+    }
+    return { ...landedTarget, queued: true, requestId, queueError: null, replyQueued };
   }
   const queuedBefore = await rootRequestOfNote(input.noteId);
   if (queuedBefore) return await retried(queuedBefore);

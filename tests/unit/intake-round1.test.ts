@@ -242,9 +242,10 @@ describe('the queued AI pass is never silent when it does not answer', () => {
     expect(told, 'the stand-down no longer speaks — re-anchor').toBeGreaterThan(-1);
     const leaves = branch.indexOf('return;');
     expect(told).toBeLessThan(leaves);
-    expect(branch.slice(told, leaves)).toContain("await sayOnce(requestId, 'landing', {");
+    // Round 3 (docs/SAKKIZ-R3.md §10.2.4): the claim is the job's PASS.
+    expect(branch.slice(told, leaves)).toContain('await sayOnce(requestId, pass, {');
     const failed = JOBS.slice(JOBS.indexOf("'[calc-prefill] pass failed — the VED still has the job'"));
-    expect(failed.slice(0, 600)).toContain("await sayOnce(requestId, 'landing', {");
+    expect(failed.slice(0, 600)).toContain('await sayOnce(requestId, pass, {');
     expect(failed.slice(0, 600)).toContain('text: writes ? PASS_FAILED : TARIFF_PASS_FAILED');
   });
 });

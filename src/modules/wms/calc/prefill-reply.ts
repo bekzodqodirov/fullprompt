@@ -8,8 +8,8 @@ import type {
 } from './pricing';
 import { needPhraseUz, needUnitOf } from './needs';
 import type { SealBlocker } from './workspace';
-import { fitTelegram, roadLines, roadRefusalLine, type AiVedFreight } from './ai-reply';
-import { TARIFF_ESTIMATE_WORD, TARIFF_REPLY_TITLE, VED_ESTIMATE_MARK } from './reply-heads';
+import { fitTelegram, roadLines, roadRefusalLine, type AiVedFreight, type ReplyAudience } from './ai-reply';
+import { RERUN_WORD, TARIFF_ESTIMATE_WORD, TARIFF_REPLY_TITLE, VED_ESTIMATE_MARK } from './reply-heads';
 
 /**
  * What the AI VED hodimi says back into the staff chat.
@@ -156,16 +156,23 @@ export interface TariffReplyInput {
   /** `freightAnswerFor`'s answer — a yolkira job always has a road. */
   freight: AiVedFreight;
   link: string | null;
-  /** The card's copy carries the VED's line under its heading when the zone was guessed. */
-  audience: 'chat' | 'lenta';
+  /** The landing's pass, or the re-run after a seller's addition — whose
+   * heading says «qayta hisob» (docs/SAKKIZ-R3.md §2.5). REQUIRED (#790). */
+  pass: 'landing' | 'amend';
+  /** The card's copy carries the VED's line under its heading when the zone
+   * was guessed, and a refusal's tail is worded for its reader. */
+  audience: ReplyAudience;
 }
 
 export function tariffReplyText(input: TariffReplyInput): string {
   const f = input.freight;
   // The words of the title are reply-heads.ts's, so the lenta chip that
   // anchors on the PRICED title cannot drift from what this writes (#513).
+  // A re-run's word after the title AND its estimate word: a priced re-run
+  // still starts with TARIFF_PRICED_HEAD, the chip's anchor (PF-9).
   const title = [TARIFF_REPLY_TITLE]
     .concat(f.ok ? [TARIFF_ESTIMATE_WORD] : [])
+    .concat(input.pass === 'amend' ? [RERUN_WORD] : [])
     .concat(input.clientLabel ? [input.clientLabel] : [])
     .concat(input.cardLabel ? [input.cardLabel] : [])
     .join(' · ');
@@ -181,7 +188,7 @@ export function tariffReplyText(input: TariffReplyInput): string {
     out.push('⚠️ Rasmiy emas — VED xodimi tasdiqlaydi.');
   } else {
     // Law 6: a refusal is a sentence, and it says who can fix it.
-    out.push(roadRefusalLine(f));
+    out.push(roadRefusalLine(f, input.audience));
   }
   if (input.link) out.push(`Karta: ${input.link}`);
   return fitTelegram(out, [], [], []);

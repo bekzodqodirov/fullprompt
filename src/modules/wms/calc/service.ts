@@ -1624,38 +1624,30 @@ export function lineNeedsFor(
 }
 
 /**
- * What a landed request still owes, read back from its STORED rows with the
- * book's law — the seller's form prints it under ✅ (judge UX13: «Yuborildi.
- * VED so‘raydi: 2-qator «Kurtka» — soni (dona)»), so the gap is heard at
- * send time and not when the VED hands the job back. Pool reads only.
+ * What a landed request still owes, read back from its STORED rows — the
+ * seller's form prints it under ✅ (judge UX13: «Yuborildi. VED so‘raydi:
+ * 2-qator «Kurtka» — soni (dona)»), so the gap is heard at send time and not
+ * when the VED hands the job back. Pool reads only.
+ *
+ * Over `storedRequestFacts` (docs/SAKKIZ-R3.md §10.2.7), the stored request's
+ * ONE reader (#513): a GROUPED row answers to its group's law (judge S9) —
+ * the rule `checklistFor`, the VED's chips, the add table and the 2.8 b ask
+ * already follow. It read the book only, so after the VED retyped a group's
+ * law the form's ✅ and the VED's chips named different figures for one row.
+ * The card form calls it right after the landing, before anything is
+ * grouped, so that ✅ reads exactly as before.
  */
 export async function requestAsks(
   requestId: string,
 ): Promise<{ missing: string[]; lines: (LineNeed & { seq: number })[] }> {
-  const [row] = await db
-    .select({
-      section: calcRequests.section,
-      fromCity: calcRequests.fromCity,
-      toCity: calcRequests.toCity,
-      weightKg: calcRequests.weightKg,
-      volumeM3: calcRequests.volumeM3,
-    })
-    .from(calcRequests)
-    .where(eq(calcRequests.id, requestId))
-    .limit(1);
-  if (!row) return { missing: [], lines: [] };
-  const goods = (await goodsByRequest([requestId])).get(requestId) ?? [];
-  const laws = await bookLawsFor(goods.map((g) => g.tnvedCode));
-  const facts: CalcFacts = {
-    fromCity: row.fromCity,
-    toCity: row.toCity,
-    weightKg: toNum(row.weightKg),
-    volumeM3: toNum(row.volumeM3),
-    goods,
-  };
+  const stored = await storedRequestFacts(requestId);
+  if (!stored) return { missing: [], lines: [] };
+  // Every row carries its law already (group's, else the book's): no map.
+  const laws = new Map<string, NeedLaw>();
+  const goods = stored.facts.goods ?? [];
   return {
-    missing: missingFor(row.section, facts, laws),
-    lines: lineNeedsFor(row.section, facts, laws).map((l) => ({ ...l, seq: goods[l.index]!.seq })),
+    missing: missingFor(stored.base.section, stored.facts, laws),
+    lines: lineNeedsFor(stored.base.section, stored.facts, laws).map((l) => ({ ...l, seq: goods[l.index]!.seq! })),
   };
 }
 

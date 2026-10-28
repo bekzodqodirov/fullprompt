@@ -56,6 +56,13 @@ vi.mock('@/modules/platform/notifications/staff', async (importOriginal) => ({
 // through `sayOnce` — one per request — so the worker cases read it here.
 const say = vi.hoisted(() => vi.fn());
 vi.mock('@/modules/wms/calc/say-once', () => ({ sayOnce: say }));
+// Round 3 (docs/SAKKIZ-R3.md §10.2.2): the worker settles its pass on every
+// way out — the real module otherwise, with the settle stood in, so the
+// worker cases' job id ('j1') never reaches a database from a unit test.
+vi.mock('@/modules/wms/calc/prefill-queue', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/modules/wms/calc/prefill-queue')>()),
+  settlePass: vi.fn(),
+}));
 
 import {
   AI_READ_FAILURE,

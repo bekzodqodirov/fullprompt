@@ -272,11 +272,18 @@ export interface CustomsEstimate {
 
 /** The sentence after «Taxminiy: hisoblab bo‘lmadi — » (§2.2), naming whose job it is. */
 export const TAXMINIY_BLOCK_WORDS: Record<
-  Exclude<CustomsEstimate['taxminiyBlock'], FeeRefusal | null>,
+  Exclude<CustomsEstimate['taxminiyBlock'], FeeRefusal | null | 'refused_measure'>,
   string
-> = {
+> & {
+  /** The seller's to fix — in each reader's words (docs/SAKKIZ-R3.md §2.5):
+   * the chat points at «➕» under the message, the lenta at the card. */
+  refused_measure: Record<'chat' | 'lenta', string>;
+} = {
   ungrouped: 'kodsiz qator bor (VED kod qo‘yadi)',
-  refused_measure: '⚠️ qatorda soni yoki og‘irligi yo‘q — mijozdan so‘rab, kartadagi lentaga yozing',
+  refused_measure: {
+    chat: '⚠️ qatorda soni yoki og‘irligi yo‘q — mijozdan so‘rab, «➕ Shu so‘rovga qo‘shish» bilan yuboring',
+    lenta: '⚠️ qatorda soni yoki og‘irligi yo‘q — mijozdan so‘rab, kartadagi lentaga yozing',
+  },
   budget: 'vaqt yetmadi, statistika o‘qilmadi',
   refused: '⚠️ bazasi yo‘q qatorlarni VED to‘ldiradi',
 };

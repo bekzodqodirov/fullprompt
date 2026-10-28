@@ -532,9 +532,13 @@ describe('(10) «(og‘irlik bruttodan)» wherever the measure is printed (⭐ o
     const refusal = out.text.split('\n').find((l) => l.startsWith('   ⚠️ '));
     expect(refusal, 'the refused line').toBeDefined();
     // One fact, one fixer: the count is the customer's (§0.1(7)), on the line
-    // as in the Taxminiy sentence below it.
-    expect(refusal!.endsWith('— mijozdan so‘rab, kartadagi lentaga yozing')).toBe(true);
+    // as in the Taxminiy sentence below it. Re-anchored for round 3
+    // (docs/SAKKIZ-R3.md §2.5): `out.text` is the CHAT, whose seller tail
+    // points at «➕» under the message; the lenta keeps R2's words.
+    expect(refusal!.endsWith('— mijozdan so‘rab, «➕ Shu so‘rovga qo‘shish» bilan yuboring')).toBe(true);
     expect(refusal).not.toContain('VED xodimi');
+    const lentaRefusal = out.lentaText.split('\n').find((l) => l.startsWith('   ⚠️ '));
+    expect(lentaRefusal!.endsWith('— mijozdan so‘rab, kartadagi lentaga yozing')).toBe(true);
   });
 });
 

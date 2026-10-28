@@ -15,6 +15,9 @@ const prefill = vi.hoisted(() => ({ standing: vi.fn(), run: vi.fn() }));
 const say = vi.hoisted(() => vi.fn());
 vi.mock('@/modules/wms/calc/prefill', () => ({ prefillStanding: prefill.standing, aiPrefill: prefill.run }));
 vi.mock('@/modules/wms/calc/say-once', () => ({ sayOnce: say }));
+// The settle (docs/SAKKIZ-R3.md §10.2.2) runs on every way out of the worker;
+// stood in, or its statement would reach a database from a unit test.
+vi.mock('@/modules/wms/calc/prefill-queue', () => ({ settlePass: vi.fn() }));
 vi.mock('@/modules/wms/calc/service', () => ({ notifyOverdueCalcs: vi.fn() }));
 vi.mock('@/modules/wms/calc/review', () => ({ notifyDictionaryReview: vi.fn() }));
 vi.mock('@/modules/wms/calc/link-ask', () => ({ sendLinkAsks: vi.fn() }));
@@ -100,7 +103,8 @@ describe('a tariff reply writes nothing, so a moved revision is nothing it could
     prefill.standing.mockResolvedValue('touched');
     prefill.run.mockResolvedValue({ text: 'tariff reply', lentaText: 'tariff reply', stood: null });
     await handler([job(0, 'yolkira')]);
-    expect(prefill.run).toHaveBeenCalledWith('r1', { actorId: null }, { replyTo: 's1' }, { expectCustoms: false, expectRev: 3 });
+    // Round 3 (§10.2.9): the pass rides along — the landing's, the job names none.
+    expect(prefill.run).toHaveBeenCalledWith('r1', { actorId: null }, { replyTo: 's1' }, { expectCustoms: false, expectRev: 3, pass: 'landing' });
     expect(say).toHaveBeenCalledWith('r1', 'landing', expect.objectContaining({ text: 'tariff reply' }), { whileOpen: true });
   });
 
@@ -143,7 +147,7 @@ describe('a tariff reply writes nothing, so a moved revision is nothing it could
     prefill.standing.mockResolvedValue('ok');
     prefill.run.mockResolvedValue({ text: 'customs reply', lentaText: 'customs reply', stood: null });
     await handler([job(0)]);
-    expect(prefill.run).toHaveBeenCalledWith('r1', { actorId: null }, { replyTo: 's1' }, { expectCustoms: true, expectRev: 3 });
+    expect(prefill.run).toHaveBeenCalledWith('r1', { actorId: null }, { replyTo: 's1' }, { expectCustoms: true, expectRev: 3, pass: 'landing' });
   });
 });
 

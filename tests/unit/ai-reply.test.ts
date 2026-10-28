@@ -4,12 +4,15 @@ import {
   MAX_REPLY_LINES,
   TELEGRAM_LIMIT,
   pickLeftOf,
+  LAW_ASKS_NAMED,
+  ROAD_STALE_LINE,
   type AiVedEstimate,
   type AiVedFreight,
   type AiVedLine,
   type AiVedReplyInput,
 } from '@/modules/wms/calc/ai-reply';
-import { VED_ESTIMATE_MARK } from '@/modules/wms/calc/reply-heads';
+import { AI_REPLY_HEAD, MACHINE_REPLY_HEADS, RERUN_WORD, VED_ESTIMATE_MARK } from '@/modules/wms/calc/reply-heads';
+import type { LawAsk } from '@/modules/wms/calc/law-asks';
 
 /**
  * What the seller reads in Telegram — the whole of the round's promise, and
@@ -66,6 +69,11 @@ const base: AiVedReplyInput = {
   aiConfigured: true,
   estimate: null,
   pickLeft: null,
+  // REQUIRED since round 3 (docs/SAKKIZ-R3.md §10.2.6): the landing's pass,
+  // nothing asked — the 2.8 b block and the re-run heading have their own
+  // cases at the end of this file.
+  asks: null,
+  pass: 'landing',
   audience: 'chat',
 };
 
@@ -369,7 +377,8 @@ describe('two customs totals (his 2.2 b, docs/SAKKIZ-R2.md §2.2)', () => {
   it('every reason Taxminiy is absent reaches the seller in words, each naming whose job it is', () => {
     const reasons = [
       'kodsiz qator bor (VED kod qo‘yadi)',
-      '⚠️ qatorda soni yoki og‘irligi yo‘q — mijozdan so‘rab, kartadagi lentaga yozing',
+      // The CHAT's words since round 3 (estimate.ts's `refused_measure.chat`).
+      '⚠️ qatorda soni yoki og‘irligi yo‘q — mijozdan so‘rab, «➕ Shu so‘rovga qo‘shish» bilan yuboring',
       'vaqt yetmadi, statistika o‘qilmadi',
       '⚠️ bazasi yo‘q qatorlarni VED to‘ldiradi',
       'bojxona yig‘imi: so‘m kursi yo‘q — buxgalter kiritadi yoki yig‘im qo‘lda yoziladi',
@@ -461,10 +470,28 @@ describe('two customs totals (his 2.2 b, docs/SAKKIZ-R2.md §2.2)', () => {
       ],
       estimate: twoTotals({ exactRows: 0, exactUsd: null, taxminiyUsd: null, taxminiyFee: null, taxminiyBlock: 'x' }),
     });
+    // Re-anchored for round 3 (docs/SAKKIZ-R3.md §2.5): in the CHAT the
+    // seller is pointed at «➕» under the message; the lenta keeps R2's words.
     expect(text).toContain(
-      '   ⚠️ Kurtka: 1-qator «Kurtka»: soni (dona) kiritilmagan — boj kamida $3/dona — mijozdan so‘rab, kartadagi lentaga yozing',
+      '   ⚠️ Kurtka: 1-qator «Kurtka»: soni (dona) kiritilmagan — boj kamida $3/dona — mijozdan so‘rab, «➕ Shu so‘rovga qo‘shish» bilan yuboring',
     );
     expect(text).toContain('   ⚠️ Sumka: baza yo‘q — Sumka — VED xodimi qo‘yadi');
+    const lenta = aiVedReplyText({
+      ...estimated,
+      link: null,
+      audience: 'lenta',
+      lines: [
+        line({
+          label: 'Kurtka',
+          customsUsd: null,
+          refusal: 'Kurtka: 1-qator «Kurtka»: soni (dona) kiritilmagan — boj kamida $3/dona',
+          refusalTail: 'seller',
+        }),
+      ],
+      estimate: twoTotals({ exactRows: 0, exactUsd: null, taxminiyUsd: null, taxminiyFee: null, taxminiyBlock: 'x' }),
+    });
+    expect(lenta).toContain('— boj kamida $3/dona — mijozdan so‘rab, kartadagi lentaga yozing');
+    expect(lenta).not.toContain('«➕');
   });
 
   it('a row priced on an OLD baza says so in the line’s head — exact, refused alike (review law-money-R2-2)', () => {
@@ -559,7 +586,17 @@ describe('the road: the guess said, who fixes a refusal, and the JAMI that knows
       ...base,
       freight: { ok: false, refusal: 'umumiy brutto og‘irlik (kg) yo‘q', tail: 'seller' },
     });
-    expect(seller).toContain('Yo‘lkira: ⚠️ umumiy brutto og‘irlik (kg) yo‘q — mijozdan so‘rab, kartadagi lentaga yozing');
+    // Re-anchored for round 3 (§2.5): the chat's seller tail is «➕»'s.
+    expect(seller).toContain(
+      'Yo‘lkira: ⚠️ umumiy brutto og‘irlik (kg) yo‘q — mijozdan so‘rab, «➕ Shu so‘rovga qo‘shish» bilan yuboring',
+    );
+    const sellerLenta = aiVedReplyText({
+      ...base,
+      link: null,
+      audience: 'lenta',
+      freight: { ok: false, refusal: 'umumiy brutto og‘irlik (kg) yo‘q', tail: 'seller' },
+    });
+    expect(sellerLenta).toContain('Yo‘lkira: ⚠️ umumiy brutto og‘irlik (kg) yo‘q — mijozdan so‘rab, kartadagi lentaga yozing');
     const ved = aiVedReplyText({ ...base, freight: { ok: false, refusal: 'bu zichlikka tarif yo‘q', tail: 'ved' } });
     expect(ved).toContain('Yo‘lkira: ⚠️ bu zichlikka tarif yo‘q — VED xodimi hisoblaydi');
   });
@@ -709,8 +746,9 @@ describe('R2 late pass — the reply says what it is', () => {
       },
     });
     expect(text).toContain(
+      // The chat's seller tail since round 3 (§2.5).
       'Yo‘lkira: ⚠️ yo‘nalish (zona) tanlanmagan — «Foshan»dan zona aniqlanmadi — VED xodimi hisoblaydi\n' +
-        '⚠️ umumiy brutto og‘irlik (kg) yo‘q — mijozdan so‘rab, kartadagi lentaga yozing',
+        '⚠️ umumiy brutto og‘irlik (kg) yo‘q — mijozdan so‘rab, «➕ Shu so‘rovga qo‘shish» bilan yuboring',
     );
   });
 
@@ -721,5 +759,88 @@ describe('R2 late pass — the reply says what it is', () => {
     });
     expect(text).not.toContain('300 dona (og‘irlik');
     expect(text).toContain('300 dona × $2/dona · og‘irlik bruttodan');
+  });
+});
+
+/**
+ * His 2.8 b (docs/SAKKIZ-R3.md §2.5): the figures the law pins, asked in the
+ * AI answer — the words typed from the spec, so a change here changes the
+ * spec first. The rows are numbered by `seq`, the number the add table and
+ * the VED's screen print.
+ */
+describe('the 2.8 b block and the re-run heading (round 3)', () => {
+  const ask = (seq: number, name: string, needs: LawAsk['needs']): LawAsk => ({ itemId: `i${seq}`, seq, name, needs });
+  const asks: LawAsk[] = [
+    ask(2, 'Krossovka', [{ unit: 'juft', why: 'duty', present: false, rate: 3 }]),
+    ask(5, 'Kurtka', [{ unit: 'dona', why: 'duty', present: false, rate: 2 }]),
+  ];
+
+  it('the chat carries the block exactly as §2.5 prints it, after the lines and before the totals', () => {
+    const text = aiVedReplyText({ ...base, asks });
+    const block = [
+      '❓ Hisob to‘liq bo‘lishi uchun o‘lchov kerak — qonun shuni so‘raydi:',
+      '· 2-qator «Krossovka»: juft soni — boj kamida $3/juft',
+      '· 5-qator «Kurtka»: soni (dona) — boj kamida $2/dona',
+      '✍️ Shu xabarga reply qilib yozing: «2: 40 juft; 5: 300 dona» — yoki «➕ Shu so‘rovga qo‘shish» ni bosing.',
+    ].join('\n');
+    expect(text).toContain(block);
+    expect(text.indexOf('1. Monitor 24"')).toBeLessThan(text.indexOf('❓ Hisob'));
+    expect(text.indexOf('❓ Hisob')).toBeLessThan(text.indexOf('Rastamojka jami'));
+    // Not on the lenta: the VED's copy carries one line instead.
+    expect(aiVedReplyText({ ...base, link: null, audience: 'lenta', asks })).not.toContain('❓ Hisob');
+  });
+
+  it('the lenta carries ONE line under its heading: which rows the seller was asked', () => {
+    const lenta = aiVedReplyText({ ...base, link: null, audience: 'lenta', asks }).split('\n');
+    expect(lenta[1]).toBe('❓ Sotuvchidan so‘raldi: 2, 5-qator o‘lchovi (qonun so‘raydi).');
+    expect(aiVedReplyText({ ...base, asks })).not.toContain('Sotuvchidan so‘raldi');
+  });
+
+  it('nothing asked — no block at all, in either rendering', () => {
+    for (const a of [null, []]) {
+      expect(aiVedReplyText({ ...base, asks: a })).not.toContain('❓');
+      expect(aiVedReplyText({ ...base, link: null, audience: 'lenta', asks: a })).not.toContain('❓');
+    }
+  });
+
+  it('at most eight rows are named, the rest counted; several figures on one row in one line', () => {
+    const many = Array.from({ length: 11 }, (_, k) => ask(k + 1, `Tovar ${k + 1}`, [{ unit: 'dona', why: 'duty', present: false, rate: 1 }]));
+    many[0] = ask(1, 'Kafel', [
+      { unit: 'm2', why: 'duty', present: false, rate: 0.5 },
+      { unit: 'kg', why: 'excise', present: false, rate: 0.1 },
+    ]);
+    const text = aiVedReplyText({ ...base, asks: many });
+    expect(text.split('\n').filter((l) => /^· \d+-qator/.test(l))).toHaveLength(LAW_ASKS_NAMED);
+    expect(text).toContain('· … yana 3 ta qator — «➕» jadvalida');
+    expect(text).toContain('· 1-qator «Kafel»: maydoni (m²) — boj kamida $0.5/m²; sof og‘irligi (kg) — aksiz $0.1/kg');
+    // The example takes each row's first pinned unit.
+    expect(text).toContain('«1: 120 m²; 2: 300 dona»');
+  });
+
+  it('a re-run says «qayta hisob» after the title phrase — the head still the chip’s anchor', () => {
+    const rerun = aiVedReplyText({ ...base, pass: 'amend' }).split('\n')[0]!;
+    expect(rerun).toBe(`${AI_REPLY_HEAD} · taxminiy rastamojka · ${RERUN_WORD} · GS323 · B-000067`);
+    expect(rerun.startsWith(MACHINE_REPLY_HEADS.ai)).toBe(true);
+    const podklyuch = aiVedReplyText({
+      ...base,
+      pass: 'amend',
+      freight: road({ listUsd: 1920, routeLabel: 'Xitoy → O‘zbekiston', bandText: '180 kg/m³ · $160/m³ × 12 m³' }),
+    }).split('\n')[0];
+    expect(podklyuch).toBe(`${AI_REPLY_HEAD} · taxminiy podklyuch (rastamojka + yo‘lkira) · ${RERUN_WORD} · GS323 · B-000067`);
+    expect(aiVedReplyText(base).split('\n')[0]).not.toContain(RERUN_WORD);
+  });
+
+  it('a stale total after an addition: the road line is §2.5’s words, no figure and no JAMI sum', () => {
+    for (const audience of ['chat', 'lenta'] as const) {
+      const text = aiVedReplyText({
+        ...base,
+        pass: 'amend',
+        audience,
+        freight: { ok: false, refusal: 'x', tail: 'ved', stale: true },
+      });
+      expect(text).toContain(ROAD_STALE_LINE);
+      expect(text).not.toContain('Yo‘lkira: ≈');
+      expect(text).not.toContain('JAMI (rastamojka + yo‘lkira)');
+    }
   });
 });
