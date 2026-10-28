@@ -241,15 +241,36 @@ describe('every button presses with its screen’s revision (§10A.1, five call 
     expect(rev?.initializer.getText(sf)).toBe('workspace.rev');
   });
 
-  it('the «Готово» fold, and the page that draws it', () => {
+  it('the «Готово» fold presses with the revision it was OPENED over (review adv-1)', () => {
     const fold = parse(`${PAGE_DIR}/calc-actions.tsx`);
     const calls = callsOf(fold, 'finishCalcAction');
     expect(calls).toHaveLength(1);
     expect(calls[0]).toHaveLength(4);
-    expect(calls[0]![3]).toBe('sawRev');
+    // The prop moves on every refresh while the typed amount survives it in
+    // state: pressing with the prop would carry a newer revision than the
+    // money was typed for.
+    expect(calls[0]![3]).toBe('foldRev ?? sawRev');
+    // The snapshot is written in exactly two places, in source order: the
+    // success's clear, and the opening (the screen as it stands then). No
+    // effect copies the prop into it — that would be the defect again.
+    expect(callsOf(fold, 'setFoldRev')).toEqual([['null'], ["mode === 'finish' ? null : sawRev"]]);
+  });
+
+  it('the page hands the fold the OLDER of the two clocks it was drawn from (review adv-2)', () => {
     const page = parse(`${PAGE_DIR}/page.tsx`);
-    // A server-behind page has no workspace: the row's own clock.
-    expect(jsxAttr(page, 'CalcActions', 'sawRev')).toEqual(['workspace?.rev ?? row.rev']);
+    expect(jsxAttr(page, 'CalcActions', 'sawRev')).toEqual(['drawnRev']);
+    // `row` (the header, the checklist, the read-only goods) is read before
+    // `loadWorkspace`: the newer clock would fail OPEN for an addition that
+    // landed between the two reads. A server-behind page has no workspace.
+    const inits: string[] = [];
+    const visit = (node: ts.Node) => {
+      if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === 'drawnRev') {
+        inits.push(node.initializer!.getText(page));
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(page);
+    expect(inits).toEqual(['workspace ? Math.min(row.rev, workspace.rev) : row.rev']);
   });
 
   it('no door without a screen presses the four (each has one caller, the action)', () => {

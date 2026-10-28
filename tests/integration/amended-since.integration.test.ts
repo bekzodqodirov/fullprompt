@@ -203,7 +203,13 @@ async function calcDoneCount(): Promise<number> {
 
 /** Observe (never assume) that the door's statement is queued on the request
  * row — the clock suite's probe, through the POOL (a holder's own snapshot
- * freezes inside its transaction). */
+ * freezes inside its transaction). THIS database only, never this session
+ * (review adv-3): `pg_stat_activity` is cluster-wide, and a neighbour's test in
+ * another database waiting on its own `calc_requests` would end the wait
+ * before the close has queued — the race case would then run AFTER the commit
+ * and stay green with the lock-first fix removed. Not narrowed to `FOR
+ * UPDATE`: the red proof that drops the lock must still be OBSERVED waiting
+ * (its bare UPDATE is the statement that queues). */
 async function waitForBlockedOnRequests(early: Promise<unknown>): Promise<void> {
   let settled: unknown = null;
   void early.then(
@@ -216,6 +222,8 @@ async function waitForBlockedOnRequests(early: Promise<unknown>): Promise<void> 
       SELECT count(*)::int AS n
         FROM pg_stat_activity
        WHERE wait_event_type = 'Lock'
+         AND datname = current_database()
+         AND pid <> pg_backend_pid()
          AND query ILIKE '%calc_requests%'
     `);
     if (Number(rows[0]?.n ?? 0) > 0) return;
@@ -392,6 +400,14 @@ describe('«✅ Hammasini» over a screen a seller’s addition changed', () => 
     await sellerAddition(b.id, 'to_ved');
     expect(await confirmAllGroups(b.id, ved(), n)).toBe(1);
   });
+
+  it('a VED save after the load trips nothing (review spec-4)', async () => {
+    const { id } = await groupedRequest(false);
+    const n = (await loadWorkspace(id))!.rev;
+    await setFreightZone(id, 'cn', ved());
+    expect((await loadWorkspace(id))!.rev).toBe(n + 1);
+    expect(await confirmAllGroups(id, ved(), n)).toBe(1);
+  });
 });
 
 describe('the seal over a screen a seller’s addition changed', () => {
@@ -425,6 +441,14 @@ describe('the seal over a screen a seller’s addition changed', () => {
     const { id } = await groupedRequest(true);
     const n = (await loadWorkspace(id))!.rev;
     await setFreightZone(id, 'cn', ved());
+    const sealed = await sealCalc(id, { ...SEAL, sawRev: n }, ved());
+    expect(sealed.versionNo).toBe(1);
+  });
+
+  it('a to_ved addition after the load trips nothing (review spec-4)', async () => {
+    const { id } = await groupedRequest(true);
+    const n = (await loadWorkspace(id))!.rev;
+    expect(await sellerAddition(id, 'to_ved')).toBe(n);
     const sealed = await sealCalc(id, { ...SEAL, sawRev: n }, ved());
     expect(sealed.versionNo).toBe(1);
   });

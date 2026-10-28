@@ -71,7 +71,8 @@ export function CalcActions({
   /**
    * The revision the page was drawn at (docs/SAKKIZ-R3.md §10A, P6). «Готово»
    * is refused in words when a seller's addition was written after it — the
-   * answer would price goods the VED never saw.
+   * answer would price goods the VED never saw. The fold presses with the
+   * value it had when it was OPENED (`foldRev`), not this prop's latest.
    */
   sawRev: number;
 }) {
@@ -88,6 +89,14 @@ export function CalcActions({
   // The VED's own note on how the figure was reached (his 9a) — required, and
   // never shown to the seller. Controlled like the rest: a refusal keeps it.
   const [internalNote, setInternalNote] = useState('');
+  // The revision the fold was OPENED over (P6, review adv-1): the figure is
+  // typed against that screen. The prop moves on every refresh — a zone
+  // picked, a Q&A post, the B6 probe — while the typed amount survives it in
+  // state, so pressing with the prop would carry a newer revision than the
+  // money was typed for and let an addition that landed in between through.
+  // Snapshotted at open, never replaced by a refresh; the VED's own saves
+  // after it still pass, since only an addition trips the door.
+  const [foldRev, setFoldRev] = useState<number | null>(null);
 
   const revalidate = `/hisoblash/${id}`;
 
@@ -102,6 +111,7 @@ export function CalcActions({
     setAmount('');
     setNote('');
     setInternalNote('');
+    setFoldRev(null);
     router.refresh();
   };
 
@@ -148,7 +158,12 @@ export function CalcActions({
           disabled={pending}
           data-testid="calc-finish-open"
           className="btn-primary"
-          onClick={() => setMode(mode === 'finish' ? 'none' : 'finish')}
+          onClick={() => {
+            // Every opening takes the screen as it stands now — closing and
+            // reopening over a page that already shows the addition is seeing it.
+            setFoldRev(mode === 'finish' ? null : sawRev);
+            setMode(mode === 'finish' ? 'none' : 'finish');
+          }}
         >
           {t('finish')}
         </button>
@@ -263,7 +278,7 @@ export function CalcActions({
                       internalNote,
                     },
                     revalidate,
-                    sawRev,
+                    foldRev ?? sawRev,
                   ),
                 ),
               )

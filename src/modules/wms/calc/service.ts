@@ -1885,8 +1885,9 @@ export async function storedRequestFacts(requestId: string): Promise<{
 }
 
 export interface CalcRequestDetail extends CalcQueueRow {
-  /** The revision clock as this read found it — the «Готово» fold's `sawRev`
-   * on a page with no workspace (server behind), P6. */
+  /** The revision clock as this read found it — read BEFORE the rows, so it
+   * is never newer than what the page prints from this detail; the «Готово»
+   * fold's `sawRev` is the older of it and the workspace's (P6, page.tsx). */
   rev: number;
   noteId: string | null;
   source: string | null;
