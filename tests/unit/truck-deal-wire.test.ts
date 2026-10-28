@@ -48,6 +48,10 @@ describe('the question the screens draw is the door’s', () => {
     const branch = form.indexOf('{question && (');
     expect(hidden).toBeGreaterThan(-1);
     expect(branch).toBeGreaterThan(hidden);
+    // At the form's top level, beside the other hidden fields — not wrapped in
+    // any condition of its own (review: `{question !== null && <input …/>}`
+    // passed the order check above).
+    expect(form).toMatch(/name="type" value="charge" \/>\s*<input type="hidden" name="dealsSeen" value=\{dealsSeen\} \/>/);
   });
 
   it('the action passes the key and the deal to the door', () => {
@@ -89,16 +93,30 @@ describe('the confirmation is the question that is posted', () => {
   const form = read('src/app/(protected)/batches/[id]/pricing/pricing-form.tsx');
 
   it('is drawn only while the amount, the currency and the deal are still the ones asked about', () => {
-    expect(form).toContain('asked.amount === amount && asked.currency === currency && asked.deal === shown');
+    expect(form).toContain(
+      'asked.amount === amount && asked.currency === currency && asked.deal === shown && asked.seen === dealsSeen',
+    );
     // It prints the figure it was asked with, never the live one.
     expect(form).toContain('usd: `$${asked.usd.toFixed(2)}`');
   });
 
-  it('the deal and the currency clear it, as the amount always did', () => {
+  it('the deal, the currency and the date take it back, as the amount always did', () => {
     const deal = between(form, '<TruckDealSelect', '/>');
-    expect(deal).toContain('setAsked(null)');
-    const currency = between(form, 'name="currency"', '</select>');
-    expect(currency).toContain('setAsked(null)');
+    expect(deal).toContain('reask()');
+    expect(between(form, 'name="currency"', '</select>')).toContain('reask()');
+    for (const field of ['name="txDate"', 'name="amount"']) {
+      expect(between(form, field, '/>'), field).toContain('reask()');
+    }
+    // …and taking it back disarms a «baribir saqlash» that never reached the action.
+    expect(between(form, 'const reask = () => {', '};')).toContain('confirmed.current = false;');
+  });
+
+  it('«baribir saqlash» is armed only for a press the browser will send', () => {
+    const confirm = between(form, 'data-testid="pricing-deviation-confirm"', '</button>');
+    const valid = confirm.indexOf('form.reportValidity()');
+    const armed = confirm.indexOf('confirmed.current = true;');
+    expect(valid).toBeGreaterThan(-1);
+    expect(armed).toBeGreaterThan(valid);
   });
 });
 

@@ -2089,11 +2089,12 @@
     "pricedHereMissing": "bu mashinada narx yo‘q",
     "pricedHereCardPrice": "bitimning o‘z narxi bor (mashinasiz)",
     "pricedHereGone": "bu bitimning yuki mashinada qolmagan",
-    "truckDealChanged": "Bu mashinadagi yuk bitimlari o‘zgardi — sahifa yangilandi, bitimni qaytadan tanlang",
+    "truckDealChanged": "Bu mashinadagi yuk bitimlari o‘zgardi — sahifa yangilandi, narxni qaytadan tekshirib saqlang",
     "truckDealNotAboard": "Bu bitimning yuki bu mashinada yo‘q — narx yuki shu mashinada bo‘lgan bitimga yoziladi",
     "truckDealRequired": "Bu mijozning yuki bu mashinada bir nechta bitimga tegishli — narx qaysi bitimga yozilishini tanlang",
     "truckDealInvalid": "Bu tanlov bu mashina uchun to‘g‘ri emas — sahifani yangilab, qaytadan tanlang",
-    "truckDealMismatch": "Bu bitim boshqa mijozniki — narx unga yozilmaydi"
+    "truckDealMismatch": "Bu bitim boshqa mijozniki — narx unga yozilmaydi",
+    "pricedHereWhole": "bitimsiz narx bu mijozning shu mashinadagi butun yukini qoplaydi — bitimga yozish uchun uni bekor qilib, bitim bo‘yicha qayta kiriting"
   },
   "map": {
     "title": "Xarita",

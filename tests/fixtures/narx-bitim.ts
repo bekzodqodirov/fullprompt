@@ -3,7 +3,7 @@ import postgres from 'postgres';
 
 /**
  * The seed behind `m9zzzg-narx-bitim` (his Q8 «c», 2026-10-27: «logist o'zi
- * tanlaydi»): a run-scoped client with TWO deals, one prixod of each whose
+ * tanlaydi»): a run-scoped client with THREE deals, one prixod of each whose
  * carton rides the truck the spec made through the UI. Each deal carries a
  * dollar quote with distinctive digits, so a VED's page can be searched for
  * them (law 4). Written straight to the database: the receive wizard is other
@@ -31,9 +31,10 @@ export async function seedNarxBitim(batchId: string, run: string): Promise<NarxB
     const [client] = await q`
       INSERT INTO clients (id, client_code, name)
       VALUES (gen_random_uuid(), ${clientCode}, ${`Narx bitim mijoz ${run}`}) RETURNING id`;
-    const goods = ['Sichqoncha', 'Klaviatura'];
-    // Distinctive quotes: 1234.56 for 2 m³ and 6543.21 for 3 m³.
-    const quotes = ['1234.56', '6543.21'];
+    const goods = ['Sichqoncha', 'Klaviatura', 'Monitor'];
+    // Distinctive quotes: 1234.56 for 2 m³, 6543.21 for 3 m³ and 7777.33 for
+    // 4 m³ — each deal's cargo aboard is one m³ less than it was quoted for.
+    const quotes = ['1234.56', '6543.21', '7777.33'];
     const deals: NarxBitimSeed['deals'] = [];
     for (const [i, name] of goods.entries()) {
       const code = `NB-${run}-${i + 1}`;
@@ -97,14 +98,33 @@ export async function cleanNarxBitim(s: NarxBitimSeed): Promise<void> {
   const q = database();
   try {
     await q`DELETE FROM client_transactions WHERE client_id = ${s.clientId}`;
+    // Every prixod off every deal FIRST: the spec re-files prixods between
+    // the seed's deals, so one deal's receipt may name another (an FK).
     for (const deal of s.deals) {
       await q`UPDATE boxes SET current_batch_id = NULL, status = 'void' WHERE id = ${deal.boxId}`;
       await q`UPDATE receipts SET status = 'voided', voided_at = now(), void_reason = 'e2e', deal_id = NULL
                WHERE id = ${deal.receiptId}`;
+    }
+    for (const deal of s.deals) {
       await q`DELETE FROM crm_activities WHERE entity_id = ${deal.id}`;
       await q`DELETE FROM deals WHERE id = ${deal.id}`;
     }
     await q`UPDATE clients SET active = false WHERE id = ${s.clientId}`;
+  } finally {
+    await q.end();
+  }
+}
+
+/**
+ * The truck, off the books by SQL — `afterAll`'s fallback when a failed test
+ * skipped the UI cancel (serial mode skips the rest), so a loaded YW truck
+ * and its prices are never the next spec's input (#154).
+ */
+export async function retireTruck(batchId: string): Promise<void> {
+  const q = database();
+  try {
+    await q`UPDATE load_plans SET status = 'cancelled' WHERE batch_id = ${batchId}`;
+    await q`UPDATE batches SET status = 'cancelled' WHERE id = ${batchId} AND status <> 'cancelled'`;
   } finally {
     await q.end();
   }

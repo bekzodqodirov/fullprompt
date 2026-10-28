@@ -230,9 +230,23 @@ export async function dealCandidateRows(
     batchIds.map((id) => sql`${id}::uuid`),
     sql`, `,
   );
+  // Many trucks of ONE client (the ledger lists every truck he ever rode):
+  // start from his own cartons, every ride of theirs, kept to the listed
+  // trucks — the same rows as the trucks' riders filtered to him, without
+  // walking every other client's cartons on those trucks (review). One truck
+  // (the price door, the «Narx» tab) starts from the truck.
+  const riders =
+    clientId && batchIds.length > 1
+      ? sql`SELECT ro.batch_id, ro.box_id FROM (${riderRowsSql({
+          boxes: sql`SELECT ob.id FROM boxes ob
+                       JOIN receipt_lots ol ON ol.id = ob.lot_id
+                       JOIN receipts orr ON orr.id = ol.receipt_id
+                      WHERE orr.client_id = ${clientId}::uuid`,
+        })}) ro WHERE ro.batch_id IN (${list})`
+      : riderRowsSql({ batches: list });
   const rows = (await handle.execute(sql`
     SELECT DISTINCT rr.batch_id, r.client_id, r.deal_id, d.client_id AS deal_client_id
-      FROM (${riderRowsSql({ batches: list })}) rr
+      FROM (${riders}) rr
       JOIN boxes cb ON cb.id = rr.box_id
       JOIN receipt_lots cl ON cl.id = cb.lot_id
       JOIN receipts r ON r.id = cl.receipt_id

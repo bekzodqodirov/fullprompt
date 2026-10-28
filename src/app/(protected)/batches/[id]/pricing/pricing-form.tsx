@@ -96,10 +96,18 @@ export function PricingForm({
     amount: string;
     currency: string;
     deal: string;
+    seen: string;
     pct: number | null;
     usd: number | null;
   } | null>(null);
   const confirmed = useRef(false);
+  // Anything that changes the question takes back both the alert and a
+  // «baribir saqlash» that never reached the action (a press the browser
+  // refused leaves the flag armed for the NEXT press — review).
+  const reask = () => {
+    setAsked(null);
+    confirmed.current = false;
+  };
   const formRef = useRef<HTMLFormElement>(null);
   const [state, formAction, pending] = useActionState<TxFormState, FormData>(
     async (prev, formData) => {
@@ -141,6 +149,7 @@ export function PricingForm({
           amount,
           currency,
           deal: shown,
+          seen: dealsSeen,
           pct: deviates ? Math.round((deviationOf(typed!, expectedUsd!) ?? 0) * 100) : null,
           usd: deviates ? expectedUsd : null,
         });
@@ -159,7 +168,7 @@ export function PricingForm({
           stale={choice !== null && shown === ''}
           onChange={(value) => {
             setChoice(value ? { deal: value, seen: dealsSeen } : null);
-            setAsked(null);
+            reask();
           }}
         />
       )}
@@ -170,7 +179,10 @@ export function PricingForm({
         className="input !w-40 shrink-0"
         value={txDate}
         max={latestTxDate()}
-        onChange={(event) => setTxDate(event.target.value)}
+        onChange={(event) => {
+          setTxDate(event.target.value);
+          reask();
+        }}
         required
       />
       <input
@@ -182,7 +194,7 @@ export function PricingForm({
         value={amount}
         onChange={(event) => {
           setAmount(event.target.value);
-          setAsked(null);
+          reask();
         }}
         required
       />
@@ -193,7 +205,7 @@ export function PricingForm({
         value={currency}
         onChange={(event) => {
           setCurrency(event.target.value);
-          setAsked(null);
+          reask();
         }}
       >
         {currencies.map((c) => (
@@ -203,7 +215,7 @@ export function PricingForm({
       <button type="submit" disabled={pending} className="btn-primary shrink-0 px-4 disabled:opacity-60">
         {pending ? '…' : state.ok && amount === '' ? '✅' : `🧾 ${t('setPrice')}`}
       </button>
-      {asked && asked.amount === amount && asked.currency === currency && asked.deal === shown && (
+      {asked && asked.amount === amount && asked.currency === currency && asked.deal === shown && asked.seen === dealsSeen && (
         <div role="alert" className="w-full space-y-2 rounded-lg border border-warn bg-warn/10 p-2 text-sm" data-testid="pricing-deviation">
           {secondBill && (
             <p className="font-semibold text-warn" data-testid="pricing-second-bill">
@@ -239,7 +251,7 @@ export function PricingForm({
             </p>
           )}
           {asked.pct !== null && asked.usd !== null && (
-            <p className="font-semibold text-warn">
+            <p className="font-semibold text-warn" data-testid="pricing-deviation-pct">
               ⚠{' '}
               {t(asked.pct > 0 ? 'priceAboveDeal' : 'priceBelowDeal', {
                 pct: Math.abs(asked.pct),
@@ -257,13 +269,18 @@ export function PricingForm({
               className="btn-primary px-3 disabled:opacity-60"
               data-testid="pricing-deviation-confirm"
               onClick={() => {
+                // Armed only for a press the browser will send: a form it
+                // refuses (an empty deal, a date past today) fires no submit,
+                // and the flag would wave the next press through unasked.
+                const form = formRef.current;
+                if (!form || !form.reportValidity()) return;
                 confirmed.current = true;
-                formRef.current?.requestSubmit();
+                form.requestSubmit();
               }}
             >
               {t('priceConfirmAnyway')}
             </button>
-            <button type="button" className="btn-secondary px-3" onClick={() => setAsked(null)}>
+            <button type="button" className="btn-secondary px-3" onClick={reask}>
               {tc('cancel')}
             </button>
           </div>

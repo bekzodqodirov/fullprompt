@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fifoOrder, settleCharges, type FifoCharge } from '@/modules/wms/finance/fifo';
+import { fifoOrder, settleCharges, settleChargesFully, type FifoCharge } from '@/modules/wms/finance/fifo';
 
 /** A charge on `txDate`, created at noon that day unless told otherwise. */
 const charge = (id: string, txDate: string, amountUsd: number, extra: Partial<FifoCharge> = {}): FifoCharge => ({
@@ -70,6 +70,20 @@ describe('a deferral counts against ITS OWN deal only', () => {
       { generalUsd: 0, deferrals: [{ dealId: 'd2', owedUsd: 800 }] },
     );
     expect(owed.get('D1')).toBe(500);
+  });
+
+  it('says how much of each charge a deferral settled — money settles the rest (Q8 «c»)', () => {
+    // A price written to a deferred deal covers the OTHER deal's cartons too;
+    // `paidCargo` reads this map so the deferral pays only its own job's.
+    const { owed, deferred } = settleChargesFully(
+      [charge('D1', '2026-09-01', 500, { dealId: 'd1' }), charge('D2', '2026-09-05', 300, { dealId: 'd2' })],
+      { generalUsd: 100, deferrals: [{ dealId: 'd1', owedUsd: 200 }] },
+    );
+    expect(deferred.get('D1')).toBe(200);
+    expect(deferred.has('D2')).toBe(false);
+    // The money, oldest first, goes on after the deferral: 100 onto D1.
+    expect(owed.get('D1')).toBe(200);
+    expect(owed.get('D2')).toBe(300);
   });
 });
 

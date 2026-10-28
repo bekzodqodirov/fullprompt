@@ -19,6 +19,7 @@ import {
   warehouses,
 } from '@/modules/platform/db/schema';
 import { addTransaction, truckDealHeads } from '@/modules/wms/finance/service';
+import { paidCargo } from '@/modules/wms/finance/paid-cartons';
 import { dealProfit } from '@/modules/wms/deals/service';
 import { cargoAboard, dealCandidateRows } from '@/modules/wms/batches/lots';
 import { dealCandidatesOf } from '@/modules/wms/finance/truck-deal';
@@ -132,6 +133,41 @@ async function cargo(batchId: string, owner: string, dealId: string | null): Pro
     actorId,
   });
   return receiptId;
+}
+
+/** One carton landed off `batchId` with no load scan — a rider all the same. */
+async function unscannedCargo(batchId: string, owner: string, dealId: string | null): Promise<string> {
+  seq += 1;
+  const receiptId = (
+    await db.insert(receipts).values({ warehouseId: cn, clientId: owner, dealId, status: 'confirmed', createdBy: actorId }).returning({ id: receipts.id })
+  )[0]!.id;
+  madeReceipts.push(receiptId);
+  const lotId = (
+    await db
+      .insert(receiptLots)
+      .values({ receiptId, seq: 1, letter: 'A', productNameZh: `货${S}-${seq}`, boxCount: 1, dimsMode: 'mixed', totalWeightKg: '10', totalVolumeM3: '0.1' })
+      .returning({ id: receiptLots.id })
+  )[0]!.id;
+  madeLots.push(lotId);
+  const boxId = (
+    await db
+      .insert(boxes)
+      .values({ lotId, shortCode: `TP${S}X${seq}`, seqInLot: 1, currentWarehouseId: uz, status: 'in_stock' })
+      .returning({ id: boxes.id })
+  )[0]!.id;
+  madeBoxes.push(boxId);
+  await db.insert(boxMovements).values({
+    boxId,
+    fromWarehouseId: cn,
+    toWarehouseId: uz,
+    fromStatus: 'in_stock',
+    toStatus: 'in_stock',
+    cause: 'undocumented_transfer',
+    refType: 'batch',
+    refId: batchId,
+    actorId,
+  });
+  return boxId;
 }
 
 const price = (batchId: string, amount = 250, choice: { dealId?: string; dealsSeen?: string } = {}) =>
@@ -423,10 +459,17 @@ describe('two of the client’s deals on one truck — the person chooses (his Q
       (await dealCandidateRows([truck], null)).filter((row) => row.clientId === clientId),
       clientId,
     );
-    // …the ledger reads its trucks for this client.
+    // …the ledger reads all its trucks for this client at once — from his own
+    // cartons, a different statement over the same rule.
+    const other = await mintTruck();
+    await cargo(other, clientId, await mintDeal(clientId));
+    const ledgerRows = await dealCandidateRows([truck, other], clientId);
     const ledger = dealCandidatesOf(
-      (await dealCandidateRows([truck], clientId)).filter((row) => row.batchId === truck),
+      ledgerRows.filter((row) => row.batchId === truck),
       clientId,
+    );
+    expect(dealCandidatesOf(ledgerRows.filter((row) => row.batchId === other), clientId)).toEqual(
+      (await cargoAboard(other, clientId)).candidates,
     );
     expect(door).toMatchObject({ deals: [a, b].sort(), none: true, ambiguous: true });
     expect(tab).toEqual(door);
@@ -449,4 +492,68 @@ describe('two of the client’s deals on one truck — the person chooses (his Q
     expect(heads.get(deferred)).toMatchObject({ deferred: true, cardPriced: false });
     expect(heads.get(plain)).toMatchObject({ deferred: false, cardPriced: true });
   });
+
+  it('a price written to a DEFERRED deal pays only that deal’s cartons — never the other deal’s (review)', async () => {
+    const a = await mintDeal(clientId);
+    const b = await mintDeal(clientId);
+    await db.update(deals).set({ deferredAt: new Date(), deferUntilAllArrived: true, deferralReason: 'Q8 sinov' }).where(eq(deals.id, a));
+    const truck = await mintTruck();
+    await cargo(truck, clientId, a);
+    await cargo(truck, clientId, b);
+    await price(truck, 300, { dealId: a, dealsSeen: await keyOf(truck) });
+    const { cartons } = await paidCargo(db, { kind: 'deals', dealIds: [a, b] }, { elsewhere: false });
+    const onTruck = cartons.filter((c) => madeBoxes.includes(c.boxId));
+    // A's own deferral excuses A's price for A's carton…
+    expect(onTruck.find((c) => c.dealId === a)).toMatchObject({ covered: true, paid: true });
+    // …and B's carton, covered by the same truck price, is NOT paid by it: the
+    // client paid nothing, and B's seller is paid KPI on paid cartons.
+    expect(onTruck.find((c) => c.dealId === b)).toMatchObject({ covered: true, paid: false });
+  });
+
+  it('the deal card names a price on a truck its carton rode with no load scan (review)', async () => {
+    const a = await mintDeal(clientId);
+    const b = await mintDeal(clientId);
+    const truck = await mintTruck();
+    await unscannedCargo(truck, clientId, a);
+    await cargo(truck, clientId, b);
+    // The door asks about both — the unscanned carton is a rider…
+    expect((await cargoAboard(truck, clientId)).candidates).toMatchObject({ ambiguous: true });
+    await price(truck, 70, { dealId: b, dealsSeen: await keyOf(truck) });
+    // …so A's card says where that truck's price went.
+    expect((await dealProfit(a)).otherDealPrices).toEqual([expect.objectContaining({ batchId: truck, dealId: b, usd: 70 })]);
+  });
+
+  it('a chosen deal is frozen at the write — its cartons leaving the truck later do not move the price (stated)', async () => {
+    const a = await mintDeal(clientId);
+    const b = await mintDeal(clientId);
+    const truck = await mintTruck();
+    // A's carton is only on the truck's live pointer (planned, not scanned)…
+    seq += 1;
+    const receiptId = (
+      await db.insert(receipts).values({ warehouseId: cn, clientId, dealId: a, status: 'confirmed', createdBy: actorId }).returning({ id: receipts.id })
+    )[0]!.id;
+    madeReceipts.push(receiptId);
+    const lotId = (
+      await db
+        .insert(receiptLots)
+        .values({ receiptId, seq: 1, letter: 'A', productNameZh: `货${S}-${seq}`, boxCount: 1, dimsMode: 'mixed', totalWeightKg: '10', totalVolumeM3: '0.1' })
+        .returning({ id: receiptLots.id })
+    )[0]!.id;
+    madeLots.push(lotId);
+    const planned = (
+      await db
+        .insert(boxes)
+        .values({ lotId, shortCode: `TP${S}X${seq}`, seqInLot: 1, currentWarehouseId: cn, status: 'planned', currentBatchId: truck })
+        .returning({ id: boxes.id })
+    )[0]!.id;
+    madeBoxes.push(planned);
+    await cargo(truck, clientId, b);
+    const row = await price(truck, 60, { dealId: a, dealsSeen: await keyOf(truck) });
+    // …and is short-loaded back to the shelf afterwards.
+    await db.update(boxes).set({ currentBatchId: null, status: 'in_stock' }).where(eq(boxes.id, planned));
+    expect((await cargoAboard(truck, clientId)).candidates).toMatchObject({ sole: b, ambiguous: false });
+    const [stored] = await db.select({ dealId: clientTransactions.dealId }).from(clientTransactions).where(eq(clientTransactions.id, row.id));
+    expect(stored!.dealId).toBe(a);
+  });
 });
+

@@ -17,10 +17,11 @@ import { useTranslations } from 'next-intl';
  * - «Bitimsiz» only when some of the client's cargo aboard has no deal of
  *   his: on a truck carrying only his deals it would be option (a), which he
  *   turned down.
- * - Each option names the deal the way every deal picker does (code, title,
- *   cargo — `dealOptionLabel`), «⏳» when it carries a live «muddat», and its
- *   share of the client's cargo here when the page knows it. No money: both
- *   sights see it (law 4).
+ * - Each option is labelled by the page that knows it: on the «Narx» tab the
+ *   code, the goods and THIS truck's share first (a closed select at 360 px
+ *   shows about thirty characters), on the ledger the deal picker's usual
+ *   line; «⏳» when it carries a live «muddat». No money: both sights see it
+ *   (law 4).
  */
 export interface TruckDealOption {
   id: string;
@@ -73,7 +74,6 @@ export function TruckDealSelect({
             <option key={option.id} value={option.id}>
               {option.deferred ? '⏳ ' : ''}
               {option.label}
-              {option.pct !== null ? ` · ${option.pct} %` : ''}
             </option>
           ))}
           {question.none && <option value="none">{t('truckDealNone')}</option>}

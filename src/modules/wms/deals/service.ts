@@ -2,7 +2,6 @@ import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, notInArray, or, sq
 import { z } from 'zod';
 import { db } from '@/modules/platform/db/client';
 import {
-  boxMovements,
   boxes,
   clientTransactions,
   clients,
@@ -34,6 +33,7 @@ import { revenueUsdSql } from '../finance/ledger-sql';
 import { REVENUE_TYPES } from '../finance/ledger-kinds';
 import { marginPct } from '../accounting/margin';
 import { heldFreightRiddenBy } from '../costing/service';
+import { riderRowsSql } from '../batches/riders';
 import { mayGrantDebt, type MoneyActor } from '../finance/scope';
 import { STAGE_COLORS, activeLostReasonLabels } from '../crm/service';
 import { closedAtFor, reasonAllowed, stageWrite } from '../crm/stage-law';
@@ -2231,36 +2231,21 @@ export async function dealProfit(dealId: string): Promise<DealProfit> {
     );
   const costUsd = Math.round(Number(costRow?.total ?? 0) * 100) / 100;
 
-  // The batches this deal's boxes actually rode (departed movements, plus a
-  // batch still forming) — membership through box_movements, never a
-  // subquery in a join predicate (#152).
-  const ridden = await db
-    .selectDistinct({ batchId: boxMovements.refId })
-    .from(boxMovements)
-    .innerJoin(boxes, eq(boxMovements.boxId, boxes.id))
-    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
-    .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
-    .where(
-      and(
-        eq(receipts.dealId, dealId),
-        isNull(receipts.voidedAt),
-        eq(boxMovements.refType, 'batch'),
-        eq(boxMovements.cause, 'batch_departed'),
-      ),
-    );
-  const current = await db
-    .selectDistinct({ batchId: boxes.currentBatchId })
-    .from(boxes)
-    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
-    .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
-    .where(and(eq(receipts.dealId, dealId), isNull(receipts.voidedAt)));
-  const batchIds = [
-    ...new Set(
-      [...ridden.map((r) => r.batchId), ...current.map((r) => r.batchId)].filter(
-        (id): id is string => Boolean(id),
-      ),
-    ),
-  ];
+  // The trucks this deal's cartons RODE for money — the riders (`riderRowsSql`:
+  // the live pointer before departure, the rides after it, never a void box
+  // or a truck a carton was found back from). The same base the price door's
+  // question is drawn from (`dealCandidateRows`), so a truck the «Narx» tab
+  // asked this deal about is a truck this card answers about (review: a
+  // carton landed with no load scan rode the truck the price named, and the
+  // departed-only list left the card silent).
+  const rideRows = (await db.execute(sql`
+    SELECT DISTINCT rr.batch_id FROM (${riderRowsSql({
+      boxes: sql`SELECT rb.id FROM boxes rb
+                   JOIN receipt_lots dl ON dl.id = rb.lot_id
+                   JOIN receipts dr ON dr.id = dl.receipt_id
+                  WHERE dr.deal_id = ${dealId}::uuid AND dr.voided_at IS NULL`,
+    })}) rr`)) as unknown as { batch_id: string }[];
+  const batchIds = [...rideRows].map((row) => row.batch_id).filter((id): id is string => Boolean(id));
 
   // Every truck these cartons RODE for money (the bill's own base rule, not
   // the list above — that one misses a ride with no load scan and keeps a

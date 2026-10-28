@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { BatchLot } from '@/modules/wms/batches/lots';
 import { pricingView, tripPriced, tripPricedCount } from '@/modules/wms/finance/pricing-view';
-import { dealCandidatesOf, shownDealChoice, truckDealDecision } from '@/modules/wms/finance/truck-deal';
+import { dealCandidatesOf, shownDealChoice, truckDealDecision, unpricedDealsOf } from '@/modules/wms/finance/truck-deal';
 
 /**
  * «Partiya moliyasi» by goods (owner, 2026-09-24, answer 1c: the price stays
@@ -276,5 +276,56 @@ describe('shownDealChoice — a stale choice is shown blank, never as the first 
     // The option is gone.
     expect(shownDealChoice({ deal: 'D3', seen: 'D1,D2|none' }, 'D1,D2|none', options)).toBe('');
     expect(shownDealChoice(null, 'D1,D2', options)).toBe('');
+  });
+});
+
+describe('unpricedDealsOf — what «Bu mashinadagi narxlar» says about a deal with no price here', () => {
+  const ab = dealCandidatesOf(
+    [
+      { dealId: 'A', dealClientId: 'C1' },
+      { dealId: 'B', dealClientId: 'C1' },
+    ],
+    'C1',
+  );
+  const abLoose = dealCandidatesOf(
+    [
+      { dealId: 'A', dealClientId: 'C1' },
+      { dealId: 'B', dealClientId: 'C1' },
+      { dealId: null, dealClientId: null },
+    ],
+    'C1',
+  );
+  const noCard = () => false;
+
+  it('quiet before any price, loud once the client has one here and this deal does not', () => {
+    expect(unpricedDealsOf(ab, [], noCard)).toEqual([
+      { dealId: 'A', why: 'missing', loud: false },
+      { dealId: 'B', why: 'missing', loud: false },
+    ]);
+    expect(unpricedDealsOf(ab, [{ dealId: 'B' }], noCard)).toEqual([{ dealId: 'A', why: 'missing', loud: true }]);
+  });
+
+  it('a no-deal price on a deals-only truck is a WHOLE-cargo price: both deals are covered, said muted (review)', () => {
+    expect(unpricedDealsOf(ab, [{ dealId: null }], noCard)).toEqual([
+      { dealId: 'A', why: 'whole', loud: false },
+      { dealId: 'B', why: 'whole', loud: false },
+    ]);
+  });
+
+  it('a chosen «bitimsiz» part beside deal-less cargo covers no deal’s part', () => {
+    expect(unpricedDealsOf(abLoose, [{ dealId: null }], noCard)).toEqual([
+      { dealId: 'A', why: 'missing', loud: true },
+      { dealId: 'B', why: 'missing', loud: true },
+    ]);
+  });
+
+  it('a deal with its own price off any truck is covered by it — never «narx yo’q»', () => {
+    expect(unpricedDealsOf(ab, [{ dealId: 'B' }], (dealId) => dealId === 'A')).toEqual([
+      { dealId: 'A', why: 'card', loud: false },
+    ]);
+  });
+
+  it('asks nothing of a client nobody asks', () => {
+    expect(unpricedDealsOf(dealCandidatesOf([{ dealId: 'A', dealClientId: 'C1' }], 'C1'), [], noCard)).toEqual([]);
   });
 });

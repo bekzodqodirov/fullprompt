@@ -2089,11 +2089,12 @@
     "pricedHereMissing": "本车上无价格",
     "pricedHereCardPrice": "该交易有自己的价格（无车次）",
     "pricedHereGone": "该交易的货物已不在车上",
-    "truckDealChanged": "本车货物的交易已变更——页面已刷新，请重新选择交易",
+    "truckDealChanged": "本车货物的交易已变更——页面已刷新，请核对价格后重新保存",
     "truckDealNotAboard": "该交易在此车上没有货物——价格应记入货物在本车上的交易",
     "truckDealRequired": "该客户在此车上的货物属于多笔交易——请选择价格记入哪笔交易",
     "truckDealInvalid": "此选择不适用于本车——请刷新页面后重新选择",
-    "truckDealMismatch": "该交易属于其他客户——价格不会记入"
+    "truckDealMismatch": "该交易属于其他客户——价格不会记入",
+    "pricedHereWhole": "无交易的价格已覆盖该客户本车全部货物——如需记入交易，请作废后按交易重新录入"
   },
   "map": {
     "title": "地图",

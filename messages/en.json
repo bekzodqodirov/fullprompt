@@ -2089,11 +2089,12 @@
     "pricedHereMissing": "no price on this truck",
     "pricedHereCardPrice": "the deal has its own price (no truck)",
     "pricedHereGone": "this deal’s cargo is no longer on the truck",
-    "truckDealChanged": "The deals of the cargo on this truck changed — the page was refreshed, choose the deal again",
+    "truckDealChanged": "The deals of the cargo on this truck changed — the page was refreshed, check the price and save again",
     "truckDealNotAboard": "This deal has no cargo on this truck — the price goes to a deal whose cargo is aboard",
     "truckDealRequired": "This client’s cargo on this truck belongs to several deals — choose which one the price is written to",
     "truckDealInvalid": "This choice does not fit this truck — refresh the page and choose again",
-    "truckDealMismatch": "This deal belongs to another client — the price is not written to it"
+    "truckDealMismatch": "This deal belongs to another client — the price is not written to it",
+    "pricedHereWhole": "the no-deal price covers all this client’s cargo on this truck — to put it on a deal, void it and enter it again per deal"
   },
   "map": {
     "title": "Map",

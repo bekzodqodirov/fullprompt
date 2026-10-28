@@ -794,9 +794,16 @@ export async function truckDealHeads(
       // `${deals}.id`, not `${deals.id}`: a single-table select renders its
       // columns unqualified, which inside this subquery would bind to the
       // ledger row's own id (#128).
+      // A price the lost-cargo door lowered to zero still covers its cartons
+      // in the unpriced rule (`u_charge`, its own clause) — so it is still
+      // the deal's own price here (review).
       cardPriced: sql<boolean>`EXISTS (
         SELECT 1 FROM client_transactions ct
-         WHERE ct.deal_id = ${deals}.id AND ct.batch_id IS NULL AND ct.type = 'charge' AND ct.voided_at IS NULL
+         WHERE ct.deal_id = ${deals}.id AND ct.batch_id IS NULL AND ct.type = 'charge'
+           AND (ct.voided_at IS NULL OR EXISTS (
+                 SELECT 1 FROM audit_log za
+                  WHERE za.entity_type = 'client_transaction' AND za.entity_id = ct.id AND za.action = 'void'
+                    AND za.after->>'from' = 'compensation' AND za.after->'repricedTo' = 'null'::jsonb))
       )`,
     })
     .from(deals)

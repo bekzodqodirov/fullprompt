@@ -138,3 +138,35 @@ export function shownDealChoice(
 ): string {
   return choice && choice.seen === seen && options.includes(choice.deal) ? choice.deal : '';
 }
+
+/**
+ * «Bu mashinadagi narxlar»: each of an asked client's deals that has no price
+ * of its own on this truck, and what to say about it.
+ *
+ * - `card` — the deal carries a live price of its own off any truck; the
+ *   unpriced rule's deal clause covers its cartons here, so «narx yo'q» would
+ *   invite a second bill for the same job.
+ * - `whole` — a price with NO deal is already on the truck while none of the
+ *   client's cargo here is deal-less (`!none`). It is not a chosen «bitimsiz»
+ *   part (none is offered on such a truck): it is a whole-cargo price, written
+ *   before the deals were known or before Q8, and it covers every carton of
+ *   the client aboard. Said so, muted — bold «narx yo'q» under it invited two
+ *   more bills (review).
+ * - `missing` — nothing covers this deal's part on the truck yet; loud only
+ *   once the client has some price here (before that, «Narx: —» says it).
+ */
+export function unpricedDealsOf(
+  candidates: DealCandidates,
+  prices: { dealId: string | null }[],
+  cardPriced: (dealId: string) => boolean,
+): { dealId: string; why: 'card' | 'whole' | 'missing'; loud: boolean }[] {
+  if (!candidates.ambiguous) return [];
+  const whole = !candidates.none && prices.some((price) => price.dealId === null);
+  return candidates.deals
+    .filter((dealId) => !prices.some((price) => price.dealId === dealId))
+    .map((dealId) => {
+      if (cardPriced(dealId)) return { dealId, why: 'card' as const, loud: false };
+      if (whole) return { dealId, why: 'whole' as const, loud: false };
+      return { dealId, why: 'missing' as const, loud: prices.length > 0 };
+    });
+}
