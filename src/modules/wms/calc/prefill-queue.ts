@@ -18,6 +18,16 @@ export function passQueueOf(section: string | null): typeof JOB_CALC_PREFILL | t
   return customs ? 'calc.prefill' : 'calc.tariff-reply';
 }
 
+/**
+ * How long a ticket whose job pg-boss does not know may still be a send in
+ * flight. `queueCalcPrefill` takes the ticket and only THEN sends the job —
+ * two statements, and the first send after a deploy starts pg-boss between
+ * them — so for that moment the ticket reads exactly like one whose job is
+ * gone. An enqueue that throws clears its own ticket; only a process killed
+ * between the two leaves one behind, and this window lets it go.
+ */
+export const TICKET_SEND_WINDOW_S = 60;
+
 /** The ticket cleared — the settle's and a dead ticket's one statement. */
 const clearTicket = (requestId: string, job: string) => sql`
   UPDATE calc_requests SET ai_pass_rev = NULL, ai_pass_at = NULL, ai_pass_job = NULL
@@ -37,16 +47,27 @@ const clearTicket = (requestId: string, job: string) => sql`
  * A ticket whose job is terminal or gone (a pass killed by a deploy past its
  * expiry, a job pruned) is cleared HERE, conditionally on that same job id,
  * so a ticket taken meanwhile by a new pass is never the one cleared.
+ *
+ * A YOUNG ticket with no job is not dead: it is its own send still in
+ * flight (`TICKET_SEND_WINDOW_S`). Cleared as dead, a second press of one
+ * note took a second ticket and queued a second pass, and a seller's next
+ * addition was written under a pass that then stood down calling a VED who
+ * never came «allaqachon ishlayapti» (review p5-spec-1, p5-adv-4).
  */
 export async function ticketStanding(requestId: string): Promise<'live' | 'none'> {
   const [row] = await db
-    .select({ rev: calcRequests.aiPassRev, job: calcRequests.aiPassJob, section: calcRequests.section })
+    .select({
+      job: calcRequests.aiPassJob,
+      section: calcRequests.section,
+      young: sql<boolean>`${calcRequests.aiPassAt} > now() - make_interval(secs => ${TICKET_SEND_WINDOW_S})`,
+    })
     .from(calcRequests)
     .where(eq(calcRequests.id, requestId));
   if (!row?.job) return 'none';
   const { jobState } = await import('../../platform/jobs/boss');
   const state = await jobState(passQueueOf(row.section), row.job);
   if (state === 'created' || state === 'retry' || state === 'active') return 'live';
+  if (state === null && row.young === true) return 'live';
   await db.execute(clearTicket(requestId, row.job));
   logger.info({ requestId, job: row.job, state }, '[calc-prefill] a dead pass ticket cleared');
   return 'none';

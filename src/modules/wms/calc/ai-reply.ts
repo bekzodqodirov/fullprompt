@@ -685,9 +685,12 @@ export function lawAsksBlock(asks: readonly LawAsk[]): string[] {
   ];
 }
 
-/** …and the one line the LENTA carries under its heading instead (§2.5). */
+/** …and the one line the LENTA carries under its heading instead (§2.5) —
+ * capped like the chat block: it sits in the head `fitTelegram` never cuts,
+ * so 900 asked rows would push the groups and the totals off the card's copy
+ * (review p5-adv-5). The rows past the cap are on the VED's own screen. */
 export function lawAsksLentaLine(asks: readonly LawAsk[]): string {
-  return `❓ Sotuvchidan so‘raldi: ${asks.map((a) => a.seq).join(', ')}-qator o‘lchovi (qonun so‘raydi).`;
+  return `❓ Sotuvchidan so‘raldi: ${asks.slice(0, LAW_ASKS_NAMED).map((a) => a.seq).join(', ')}${asks.length > LAW_ASKS_NAMED ? ', …' : ''}-qator o‘lchovi (qonun so‘raydi).`;
 }
 
 /** Re-exported so a caller need not reach into the screen's own module. */

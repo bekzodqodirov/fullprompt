@@ -82,17 +82,14 @@ type Site = { file: string; fn: string; how: string; text: string };
 function stampWriters(): Site[] {
   const out: Site[] = [];
   visitAll((n, file) => {
-    // drizzle: `handsoffRev` in an object handed to `.values(…)` / `.set(…)`,
-    // or in an upsert's `set: { … }`.
+    // drizzle: ANY object that carries `handsoffRev` — not only one spelled
+    // inside `.values(…)` / `.set(…)`: a patch built first and spread in is
+    // the commonest refactor of a write, and it hid a third writer (review
+    // p5-adv-6). Only a READ is not one: a value taken from a `handsoffRev`
+    // (a select's column, a row mapped onward), and the schema's own column.
     if ((ts.isPropertyAssignment(n) || ts.isShorthandPropertyAssignment(n)) && n.name.getText() === 'handsoffRev') {
-      const obj = n.parent;
-      const holder = obj.parent;
-      const viaCall =
-        ts.isCallExpression(holder) &&
-        ts.isPropertyAccessExpression(holder.expression) &&
-        ['values', 'set'].includes(holder.expression.name.text);
-      const viaSet = ts.isPropertyAssignment(holder) && holder.name.getText() === 'set';
-      if (viaCall || viaSet) {
+      const read = ts.isPropertyAssignment(n) && ts.isPropertyAccessExpression(n.initializer) && n.initializer.name.text === 'handsoffRev';
+      if (!read && !file.path.startsWith('src/modules/platform/db/schema/')) {
         out.push({ file: file.path, fn: enclosing(n), how: 'drizzle', text: n.getText() });
       }
     }

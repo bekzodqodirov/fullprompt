@@ -817,6 +817,14 @@ describe('the 2.8 b block and the re-run heading (round 3)', () => {
     expect(text).toContain('«1: 120 m²; 2: 300 dona»');
   });
 
+  it('the lenta’s one line is capped like the block: 900 asked rows keep the card’s copy whole (review p5-adv-5)', () => {
+    const many = Array.from({ length: 900 }, (_, k) => ask(k + 1, `Tufli ${k + 1}`, [{ unit: 'juft', why: 'duty', present: false, rate: 1 }]));
+    const lenta = aiVedReplyText({ ...base, link: null, audience: 'lenta', asks: many });
+    expect(lenta.split('\n')[1]).toBe('❓ Sotuvchidan so‘raldi: 1, 2, 3, 4, 5, 6, 7, 8, …-qator o‘lchovi (qonun so‘raydi).');
+    // The groups and the totals are still on the card's copy.
+    expect(lenta).toContain('Rastamojka jami');
+  });
+
   it('a re-run says «qayta hisob» after the title phrase — the head still the chip’s anchor', () => {
     const rerun = aiVedReplyText({ ...base, pass: 'amend' }).split('\n')[0]!;
     expect(rerun).toBe(`${AI_REPLY_HEAD} · taxminiy rastamojka · ${RERUN_WORD} · GS323 · B-000067`);

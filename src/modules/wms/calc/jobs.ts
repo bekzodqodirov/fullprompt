@@ -275,6 +275,24 @@ export function addFor(standing: StandDown | 'ok'): boolean {
   return standing !== 'closed' && standing !== 'not_found';
 }
 
+/**
+ * Does the seller's copy of the machine's answer reach him — the drain's own
+ * three conditions, asked once (`reachOf`): he can log in, his chat is
+ * linked, and he has not muted the answers, or this re-run is one he started
+ * (`direct`, which sends past the mute). A read that fails answers no: the
+ * lenta then claims nothing about him.
+ */
+async function sellerHears(staffId: string, direct: boolean): Promise<boolean> {
+  try {
+    const { reachOf } = await import('../../platform/notifications/staff');
+    const reach = (await reachOf([staffId], 'CalcPrefilled')).get(staffId);
+    return reach === 'ok' || (direct && reach === 'muted');
+  } catch (err) {
+    logger.warn({ err, staffId }, '[calc-prefill] the seller’s reach not read — the lenta names no ask');
+    return false;
+  }
+}
+
 /** One job, on either queue — the payload's section says which pass it is. */
 async function runPrefillJob(data: CalcPrefillJob, retryCount: number, jobId: string): Promise<void> {
   const { requestId, staffId } = data;
@@ -381,6 +399,13 @@ async function runPrefillJob(data: CalcPrefillJob, retryCount: number, jobId: st
     // reader already stands, or one the seller reading it is bounced from.
     // Only when THIS run spoke: a re-delivery writes no second note.
     if (spoke) {
+      // His 2.8 b's lenta line says the seller WAS asked for the law's figure.
+      // `spoke` is true for a claim row nobody receives too — a seller who
+      // muted the AI's answers (unless he started this re-run: `direct`), one
+      // with no linked chat, one who can no longer log in — and the VED must
+      // not wait on a question that never reached him (review p5-adv-2): the
+      // card then carries the rendering without the line.
+      if (out.lentaUnasked !== undefined && !(await sellerHears(staffId, direct))) out.lentaText = out.lentaUnasked;
       await writeReplyToLenta(requestId, out.lentaText).catch((err) =>
         logger.warn({ err, requestId }, '[calc-prefill] lenta note not written'),
       );

@@ -1,4 +1,4 @@
-import { and, eq, isNotNull } from 'drizzle-orm';
+import { and, asc, eq, isNotNull } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { calcAmendments, calcGroups, calcRequests, clients, deals, leads } from '../../platform/db/schema';
 import { userPermissions } from '../../platform/rbac/authorize';
@@ -169,6 +169,14 @@ export interface PrefillOutcome {
    * own «🔎 VED uchun:» line stands under its heading (§2.6).
    */
   lentaText: string;
+  /**
+   * The lenta rendering WITHOUT his 2.8 b line «❓ Sotuvchidan so‘raldi» —
+   * present only when the reply asks the seller something. That line states
+   * the seller WAS asked; the worker writes this one instead when his copy
+   * reaches nobody (muted, no linked chat, cannot log in), so the VED is
+   * never told a question is with a seller who never got it (review p5-adv-2).
+   */
+  lentaUnasked?: string;
   /** The workspace's EXACT customs total — never the estimate. */
   customsUsd: number | null;
   freightUsd: number | null;
@@ -576,7 +584,7 @@ export async function aiPrefill(
    */
   const asksInput = overtaken === null ? lawAsksInputOf(ws) : null;
   const asks: LawAsk[] | null = asksInput ? lawAsksOf(asksInput) : null;
-  const reply = (link: string | null, audience: 'chat' | 'lenta') =>
+  const reply = (link: string | null, audience: 'chat' | 'lenta', asked = true) =>
     aiVedReplyText({
       clientLabel: about?.clientCode ?? null,
       cardLabel: about?.cardLabel ?? null,
@@ -594,7 +602,7 @@ export async function aiPrefill(
       // A pick skipped past the deadline is news only while a row still
       // waits for a baza; with none, there was nothing it could have chosen.
       pickLeft: pickLeft?.skipped && !ws.groups.some((g) => g.items.some((i) => i.bazaUsd === null)) ? null : pickLeft,
-      asks,
+      asks: asked ? asks : null,
       pass: amend === null ? 'landing' : 'amend',
       audience,
     });
@@ -603,6 +611,7 @@ export async function aiPrefill(
     ...NOTHING_DONE,
     text: reply(about?.link ?? null, 'chat'),
     lentaText: reply(null, 'lenta'),
+    ...(asks && asks.length > 0 ? { lentaUnasked: reply(null, 'lenta', false) } : {}),
     customsUsd,
     // A stale road printed no figure, and the outcome carries none either.
     freightUsd: stale ? null : freightUsd,
@@ -672,23 +681,42 @@ function amendmentOf(pass: string | undefined): string | null {
 }
 
 /**
- * The totals THIS addition left stale and nobody re-answered
- * (`AmendChange.totalsStale`, §9.5) — stored on the amendment by its writer,
+ * The totals the request's additions left stale and nobody re-answered
+ * (`AmendChange.totalsStale`, §9.5) — stored on each amendment by its writer,
  * read here and nowhere recomputed. A re-run of anything but an addition has
  * none. A read that fails is treated as stale: the road is not priced on a
  * total nobody could vouch for (law-money-1), and the VED prices it.
+ *
+ * EVERY applied addition up to this one, not this one alone: `totalsStale`
+ * names only what ITS addition changed, so a line added (the typed cube now
+ * stale) and then a row count answered — which his 2.8 b block invites —
+ * left the second re-run reading «nothing stale» and pricing the road on the
+ * cube the first one outgrew (review p5-adv-1). A total stays stale until a
+ * later addition carries it in `change.cargo` (the seller's «jami … kub/kg»,
+ * or a whole Σ re-summed). A VED's own answer needs no case: once a person
+ * has written, every addition goes to the VED and no re-run follows.
  */
 async function staleTotalsOf(requestId: string, amend: string | null): Promise<('weightKg' | 'volumeM3')[]> {
   if (amend === null) return [];
   try {
-    const [row] = await db
-      .select({ change: calcAmendments.change })
+    const rows = await db
+      .select({ id: calcAmendments.id, rev: calcAmendments.rev, change: calcAmendments.change })
       .from(calcAmendments)
-      .where(and(eq(calcAmendments.id, amend), eq(calcAmendments.requestId, requestId)));
-    const listed = (row?.change as { totalsStale?: unknown } | undefined)?.totalsStale;
-    return Array.isArray(listed)
-      ? listed.filter((f): f is 'weightKg' | 'volumeM3' => f === 'weightKg' || f === 'volumeM3')
-      : [];
+      .where(and(eq(calcAmendments.requestId, requestId), eq(calcAmendments.outcome, 'applied')))
+      .orderBy(asc(calcAmendments.rev), asc(calcAmendments.createdAt));
+    // This addition's own write bounds the fold; one the read cannot place
+    // (never applied) folds them all — more stale, never less.
+    const upTo = rows.find((r) => r.id === amend)?.rev ?? Number.POSITIVE_INFINITY;
+    const stale = { weightKg: false, volumeM3: false };
+    for (const row of rows) {
+      if (row.rev === null || row.rev > upTo) continue;
+      const change = row.change as { cargo?: unknown; totalsStale?: unknown } | null;
+      const cargo = change?.cargo && typeof change.cargo === 'object' ? (change.cargo as Record<string, unknown>) : {};
+      for (const field of ['weightKg', 'volumeM3'] as const) if (cargo[field] !== undefined) stale[field] = false;
+      const listed: unknown[] = Array.isArray(change?.totalsStale) ? change.totalsStale : [];
+      for (const field of listed) if (field === 'weightKg' || field === 'volumeM3') stale[field] = true;
+    }
+    return (['weightKg', 'volumeM3'] as const).filter((field) => stale[field]);
   } catch (err) {
     logger.warn({ err, requestId, amend }, '[calc-prefill] the addition’s stale totals not read — the road is left to the VED');
     return ['weightKg', 'volumeM3'];

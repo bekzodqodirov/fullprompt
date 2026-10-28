@@ -19,7 +19,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
  * this file proves the settle CALLS it; what it writes is P4's to prove.
  */
 type FakeJob = { queue: string; data: Record<string, unknown>; options: Record<string, unknown>; state: string };
-const boss = vi.hoisted(() => ({ jobs: new Map<string, FakeJob>(), failNext: 0 }));
+const boss = vi.hoisted(() => ({ jobs: new Map<string, FakeJob>(), failNext: 0, hold: null as Promise<void> | null }));
 vi.mock('@/modules/platform/jobs/boss', async (original) => ({
   ...(await original<typeof import('@/modules/platform/jobs/boss')>()),
   enqueue: vi.fn(async (queue: string, data: Record<string, unknown>, options: Record<string, unknown> = {}) => {
@@ -28,6 +28,14 @@ vi.mock('@/modules/platform/jobs/boss', async (original) => ({
     if (boss.failNext > 0 && (queue === 'calc.prefill' || queue === 'calc.tariff-reply')) {
       boss.failNext -= 1;
       throw new Error('pg-boss unreachable (test)');
+    }
+    // A send still in flight (the first after a deploy starts pg-boss): the
+    // NEXT pass send waits on `hold` before its job exists. Taken once, so a
+    // send the case did not mean to hold never waits.
+    if (boss.hold && (queue === 'calc.prefill' || queue === 'calc.tariff-reply')) {
+      const hold = boss.hold;
+      boss.hold = null;
+      await hold;
     }
     const id = (options.id as string | undefined) ?? globalThis.crypto.randomUUID();
     boss.jobs.set(id, { queue, data, options, state: 'created' });
@@ -80,7 +88,7 @@ import {
   setGroupRates,
 } from '@/modules/wms/calc/workspace';
 import { aiPrefill, prefillStanding, prefillTicket } from '@/modules/wms/calc/prefill';
-import { queueCalcPrefill, ticketStanding } from '@/modules/wms/calc/prefill-queue';
+import { TICKET_SEND_WINDOW_S, queueCalcPrefill, ticketStanding } from '@/modules/wms/calc/prefill-queue';
 import { sayOnce } from '@/modules/wms/calc/say-once';
 import {
   JOB_CALC_PREFILL,
@@ -202,7 +210,7 @@ afterAll(async () => {
       .set({ status: 'pending', claimedAt: null })
       .where(and(inArray(notifications.id, [...parked]), eq(notifications.status, 'sending')));
   }
-  await db.delete(telegramLinks).where(eq(telegramLinks.userId, mutedId));
+  await db.delete(telegramLinks).where(inArray(telegramLinks.userId, people));
   await db.delete(deals).where(eq(deals.clientId, clientId));
   await db.delete(leads).where(eq(leads.id, leadId));
   await db.update(clients).set({ active: false }).where(eq(clients.id, clientId));
@@ -329,10 +337,36 @@ describe('the ticket marks a pass owed and names its job (§10.2.1)', () => {
     expect(jobs).toHaveLength(2);
     const fresh = jobs.find((j) => j.id !== dead!.id)!;
     expect((await passOf(id)).aiPassJob).toBe(fresh.id);
-    // A ticket whose job pg-boss no longer knows is just as dead.
+    // A ticket whose job pg-boss no longer knows is just as dead — once it
+    // is older than a send could take. Young, it is its own send in flight.
     boss.jobs.delete(fresh.id);
+    expect(await ticketStanding(id)).toBe('live');
+    await db.execute(
+      sql`UPDATE calc_requests SET ai_pass_at = now() - make_interval(secs => ${TICKET_SEND_WINDOW_S + 1}) WHERE id = ${id}::uuid`,
+    );
     expect(await ticketStanding(id)).toBe('none');
     expect((await passOf(id)).aiPassJob).toBeNull();
+  });
+
+  it('a ticket whose job is still being SENT stands: a second ask in that moment queues nothing (review p5-spec-1, p5-adv-4)', async () => {
+    const id = await open('rastamojka', [{ name: `Yolda ${SUFFIX}` }]);
+    let release: () => void = () => {};
+    boss.hold = new Promise<void>((resolve) => (release = resolve));
+    const first = queueCalcPrefill({ requestId: id, staffId: sellerId, section: 'rastamojka' });
+    try {
+      await vi.waitFor(async () => expect((await passOf(id)).aiPassJob).not.toBeNull());
+      expect(passJobs(id), 'the premise: the ticket is taken, its job not sent yet').toHaveLength(0);
+      // Read as dead, a second press of one note took a second ticket and
+      // queued a second pass; an addition was written under the first.
+      expect(await ticketStanding(id)).toBe('live');
+      expect(await queueCalcPrefill({ requestId: id, staffId: sellerId, section: 'rastamojka' })).toBe(true);
+    } finally {
+      release();
+    }
+    expect(await first).toBe(true);
+    const jobs = passJobs(id);
+    expect(jobs).toHaveLength(1);
+    expect((await passOf(id)).aiPassJob).toBe(jobs[0]!.id);
   });
 
   it('an enqueue that throws clears the mark and answers false', async () => {
@@ -516,7 +550,8 @@ describe('one machine message per PASS (§10.2.4)', () => {
 
 describe('law-money-1: the road is never priced on a total an addition left stale (§10.2.9)', () => {
   freshSeller();
-  const staleAmendment = async (requestId: string) => {
+  /** An applied addition as P4's writer stores it — its write's `rev`, its `change`. */
+  const amendment = async (requestId: string, rev: number, change: Record<string, unknown>) => {
     const amendId = randomUUID();
     await db.insert(calcAmendments).values({
       id: amendId,
@@ -525,12 +560,13 @@ describe('law-money-1: the road is never priced on a total an addition left stal
       staffId: sellerId,
       chatId: BigInt(CHAT),
       outcome: 'applied',
-      rev: 1,
+      rev,
       submission: {},
-      change: { totalsStale: ['volumeM3'] },
+      change,
     });
     return amendId;
   };
+  const staleAmendment = (requestId: string) => amendment(requestId, 1, { totalsStale: ['volumeM3'] });
 
   it('podklyuch: the landing prices the road; the re-run after a stale cube prints §2.5’s words and no figure', async () => {
     const id = await open('podklyuch', [{ name: `Stol ${SUFFIX}`, weightKg: 100 }], { freightZone: 'cn', weightKg: 500, volumeM3: 10 });
@@ -544,6 +580,27 @@ describe('law-money-1: the road is never priced on a total an addition left stal
       expect(text).not.toContain('JAMI (rastamojka + yo‘lkira)');
     }
     expect(out.freightUsd).toBeNull();
+  });
+
+  it('a total stays stale through a later addition that did not re-answer it, and leaves with one that did (review p5-adv-1)', async () => {
+    const id = await open('podklyuch', [{ name: `Divan ${SUFFIX}`, weightKg: 100 }], { freightZone: 'cn', weightKg: 500, volumeM3: 10 });
+    const pass = async (amendId: string) => aiPrefill(id, { actorId: null }, { configured: false }, { pass: `amend:${amendId}` });
+    // A line added: the typed cube is stale. Then the 2.8 b block's own
+    // invitation — «2: 40 juft» — touches no total, so ITS change lists none.
+    await amendment(id, 1, { cargo: null, totalsStale: ['volumeM3'] });
+    const counted = await amendment(id, 2, { cargo: null, totalsStale: [] });
+    const second = await pass(counted);
+    expect(second.text).toContain(ROAD_STALE_LINE);
+    expect(second.text).not.toContain('Yo‘lkira: ≈');
+    expect(second.freightUsd).toBeNull();
+    // The seller answers «jami 12 kub»: the cube is his again, the road priced.
+    const answered = await amendment(id, 3, { cargo: { volumeM3: 12 }, totalsStale: [] });
+    const third = await pass(answered);
+    expect(third.text).toContain('Yo‘lkira: ≈');
+    expect(third.text).not.toContain(ROAD_STALE_LINE);
+    // The fold stops at the pass's OWN addition: the second's re-run,
+    // redelivered after the third was written, still reads stale.
+    expect((await pass(counted)).text).toContain(ROAD_STALE_LINE);
   });
 
   it('yolkira: the tariff reply after a stale cube carries no dollar figure', async () => {
@@ -667,7 +724,21 @@ describe('the lenta’s chips still read a re-run (feed.ts, PF-9)', () => {
 describe('his 2.8 b in a real pass, and the stored request’s one reader', () => {
   freshSeller();
   /** A sweater whose law is «kamida $1/dona» (the seeded book), stating only its kilos. */
-  const sweater = () => open('rastamojka', [{ name: `Sviter ${SUFFIX} ${seq++}`, weightKg: 150, tnvedCode: '6110200000' }], { weightKg: 150 });
+  const sweater = (by = sellerId) =>
+    open('rastamojka', [{ name: `Sviter ${SUFFIX} ${seq++}`, weightKg: 150, tnvedCode: '6110200000' }], { weightKg: 150 }, by);
+  /** The machine's notes on a request's card — no author. */
+  const lentaOf = async (requestId: string) => {
+    const [row] = await db.select({ entityId: calcRequests.entityId }).from(calcRequests).where(eq(calcRequests.id, requestId));
+    const notes = await db
+      .select({ note: crmActivities.note })
+      .from(crmActivities)
+      .where(and(eq(crmActivities.entityId, row!.entityId), sql`${crmActivities.createdBy} IS NULL`));
+    return notes.map((n) => n.note ?? '').join('\n');
+  };
+  const worked = async (requestId: string, by: string, pass?: string) => {
+    await queueCalcPrefill({ requestId, staffId: by, section: 'rastamojka', ...(pass ? { pass } : {}) });
+    await runJob(passJobs(requestId).find((j) => j.data.pass === (pass ?? 'landing'))!);
+  };
 
   it('the answer asks the count the law pins — by `seq`, in the chat block and the lenta line', async () => {
     const id = await sweater();
@@ -677,6 +748,29 @@ describe('his 2.8 b in a real pass, and the stored request’s one reader', () =
     expect(out.text).toMatch(/· 1-qator «Sviter [^»]+»: soni \(dona\) — boj kamida \$1\/dona/);
     expect(out.text).toContain('«1: 300 dona»');
     expect(out.lentaText).toContain('❓ Sotuvchidan so‘raldi: 1-qator o‘lchovi (qonun so‘raydi).');
+  });
+
+  it('through the worker, the card’s lenta says the seller was asked only when his copy reaches him (review p5-adv-2)', async () => {
+    // A linked seller who hears the answer: the line is true.
+    const hears = await mintUser('hears');
+    await db.insert(telegramLinks).values({ userId: hears, telegramChatId: BigInt(CHAT + 1), status: 'linked', linkedAt: new Date() });
+    const asked = await sweater(hears);
+    await worked(asked, hears);
+    expect(await lentaOf(asked)).toContain('❓ Sotuvchidan so‘raldi: 1-qator o‘lchovi (qonun so‘raydi).');
+    // The muted seller's landing, and a seller with no linked chat: a claim
+    // row and no message — the VED must not wait on a question nobody got.
+    for (const by of [mutedId, sellerId]) {
+      const id = await sweater(by);
+      await worked(id, by);
+      const lenta = await lentaOf(id);
+      expect(lenta, 'the premise: the answer is on the card').toContain(AI_REPLY_HEAD);
+      expect(lenta).not.toContain('Sotuvchidan so‘raldi');
+    }
+    // A re-run the muted seller started himself goes past his mute (direct):
+    // that copy reaches him, and the line is true again.
+    const rerun = await sweater(mutedId);
+    await worked(rerun, mutedId, `amend:${randomUUID()}`);
+    expect(await lentaOf(rerun)).toContain('❓ Sotuvchidan so‘raldi: 1-qator');
   });
 
   it('…and asks nothing once a person has written since the machine (handsoff ≠ rev)', async () => {
@@ -760,6 +854,15 @@ describe('Uch band’s retried landings queue the pass a cut left owed (§10.2.1
     const again = await land();
     expect(again.replyQueued, 'the ✅ stays truthful: a pass stands').toBe(true);
     expect(await jobsOfNote(noteId)).toEqual({ requests: 1, jobs: 1 });
+    // The pass runs (its settle clears the ticket) and a VED then saves. A
+    // later resume of the same note must not take a fresh ticket at the
+    // VED's revision: `atRev: 0` is all that stops a second paid pass over
+    // his work — `prefillStanding` compares the revision alone (review p5-adv-3).
+    const [req] = await db.select({ id: calcRequests.id }).from(calcRequests).where(eq(calcRequests.noteId, noteId));
+    await runJob(passJobs(req!.id)[0]!);
+    await saveTable(req!.id, { items: [], adds: [] }, ctx());
+    expect((await land()).replyQueued).toBe(false);
+    expect(await jobsOfNote(noteId)).toEqual({ requests: 1, jobs: 1 });
   });
 
   it('the thread door from a CLIENT (the root branch): a cut, then the retried press → exactly one pass', async () => {
@@ -789,6 +892,13 @@ describe('Uch band’s retried landings queue the pass a cut left owed (§10.2.1
     expect(await jobsOfNote(noteId)).toEqual({ requests: 1, jobs: 0 });
     await press();
     expect(await jobsOfNote(noteId)).toEqual({ requests: 1, jobs: 1 });
+    await press();
+    expect(await jobsOfNote(noteId)).toEqual({ requests: 1, jobs: 1 });
+    // …and after the pass ran and a VED saved, a re-press queues nothing
+    // over his work (`atRev: 0`, review p5-adv-3).
+    const [req] = await db.select({ id: calcRequests.id }).from(calcRequests).where(eq(calcRequests.noteId, noteId));
+    await runJob(passJobs(req!.id)[0]!);
+    await saveTable(req!.id, { items: [], adds: [] }, ctx());
     await press();
     expect(await jobsOfNote(noteId)).toEqual({ requests: 1, jobs: 1 });
   });
