@@ -369,6 +369,50 @@ Bu raundda migratsiya bor: **0136** — deploydan keyin son **137** bo‘ladi
 5. Sinov: CRM’da bitta lidni mavjud mijoz kodiga «Yutildi» qiling — «bu kodda lid
    bor» demasligi va yangi bitim ochishi kerak.
 
+## AI sotuvchi (2026-10-29, 0138) — tekshiruv tartibi
+
+Bu raundda migratsiya bor: **0138** — deploydan keyin son **139** bo‘ladi
+(repo’dagi fayllar soni: `ls src/modules/platform/db/migrations/*.sql | wc -l`).
+Uch band (0136) va yo‘ldagi yuk (0137) hali deploy qilinmagan bo‘lsa, shu deploy
+ularni ham olib keladi — son baribir **139**. Yangi kalit kerak emas: AI
+yordamchining kaliti va Telegram sozlamalari `.env`’da allaqachon bor.
+
+1. Zaxira (§1) — hajmi 0 emasligini tekshiring.
+2. `git pull`, keyin avval `docker compose build migrate`, so‘ng
+   `docker compose --profile https --profile telegram up -d --build` —
+   **tg-listen albatta qayta qurilsin**: AI sotuvchining javoblarini u yuboradi.
+   Eski tinglovchi bilan sahifada «tinglovchi yangilanmagan» chiqadi va ✅
+   ishlamaydi.
+3. Sonni o‘qing — **139**. Kam chiqsa, `docker compose run --rm migrate` ning
+   o‘z chiqishini o‘qing.
+4. `curl -s https://gsrwms.uz/api/version` — bugungi vaqt.
+5. Bilimlar (uchta Xitoy omborining manzili, AI qoidalari). Birinchi buyruq
+   faqat ko‘rsatadi, ikkinchisi yozadi:
+
+   ```bash
+   docker compose run --rm migrate pnpm exec tsx scripts/agent-seed-kb.ts
+   docker compose run --rm migrate pnpm exec tsx scripts/agent-seed-kb.ts --apply
+   ```
+
+6. Telegram’ning xizmat chati (777000 — kirish kodlari, ogohlantirishlar)
+   CRM’da saqlanib qolgan bo‘lsa, uni tozalash. Birinchi buyruq faqat sanaydi,
+   ikkinchisi tozalaydi:
+
+   ```bash
+   docker compose run --rm migrate pnpm exec tsx scripts/tg-service-chat-cleanup.ts
+   docker compose run --rm migrate pnpm exec tsx scripts/tg-service-chat-cleanup.ts --apply
+   ```
+
+7. Tinglovchi ishlayaptimi — bir daqiqa qarang (chiqish: Ctrl+C):
+   `docker compose --profile telegram logs -f tg-listen`
+8. Saytda: **Suhbatlar → AI sotuvchi → Sozlamalar** — akkaunt egasini tanlang
+   va seansni tasdiqlang; keyin staff botda `/agent on`. AI soya rejimida
+   ishlaydi: siz ✅ bosmaguningizcha mijozga hech narsa ketmaydi. Darhol
+   to‘xtatish: botda `/agent off`.
+
+**0138 dan PASTGA qaytish**: avval botda `/agent off`. AI sotuvchi jadvallari
+bazada qoladi, eski kod ularni o‘qimaydi — boshqa hech narsa qilish shart emas.
+
 ## Agar biror narsa buzilsa
 
 Avvalgi ishlaydigan holatga qaytish (kod):
