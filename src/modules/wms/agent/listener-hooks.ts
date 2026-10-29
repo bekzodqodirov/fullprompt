@@ -151,7 +151,9 @@ export function strangerUserOf(chat: unknown): StrangerUser | null {
  *       Every button of that card works: «🆕 Yangi lid» opens the lead BY
  *       NAME through `openLeadForChat(…, { phoneless: 'agent_stranger' })`,
  *       the one door that may (the tray's own still refuses
- *       `chat_no_phone`).
+ *       `chat_no_phone`). Only on a PERSONAL number: on a work number a
+ *       hidden number's line is a lead by itself (his «1 a», 2026-10-29) and
+ *       is kept, so it never reaches the not-kept branch that asks this.
  *
  * Nothing about the message is stored — no text, no row in tg_messages: the
  * chat stays unkept until he answers the card (round 79's promise). The

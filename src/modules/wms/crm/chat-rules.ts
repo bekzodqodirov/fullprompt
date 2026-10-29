@@ -11,8 +11,7 @@ import {
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { getStorage } from '../../platform/files/storage';
 import { logger } from '../../platform/logger';
-import { leadForChat } from './chat-lead';
-import { createLead } from './service';
+import { leadForChat, phonelessLeadForChat } from './chat-lead';
 import { TELEGRAM_SERVICE_PEER, type ChatRule } from './telegram-import';
 
 /**
@@ -355,68 +354,52 @@ export async function openLeadForChat(
   // a funnel card whose «conversation» is a login code.
   if (rule.peerId === TELEGRAM_SERVICE_PEER) throw new ChatRuleError('service_chat');
   const phone = (rule.peerPhone ?? '').trim();
-  // The same refusal `unknownChatAction` makes about `no_phone`: a lead
-  // nobody can ring is a row with a name in it. The tray's own button keeps
-  // it; only the AI sotuvchi's «📵» card (his Q18 ⭐) passes `phoneless`.
+  // The tray's own button keeps the old refusal about a hidden number: it is
+  // a person's PERSONAL tray (a work number opens such a lead by itself, his
+  // «1 a»), and only the AI sotuvchi's «📵» card (his Q18 ⭐) passes
+  // `phoneless`.
   if (!phone && opts.phoneless !== 'agent_stranger') throw new ChatRuleError('chat_no_phone');
 
-  const leadId = phone
-    ? await leadForChat(rule.managerUserId, { phone, title: rule.peerTitle }, ctx)
-    : await phonelessLeadFor(rule, ctx);
+  let leadId: string;
+  if (phone) {
+    leadId = await leadForChat(rule.managerUserId, { phone, title: rule.peerTitle }, ctx);
+    await db
+      .update(tgChatRules)
+      .set({
+        decision: 'include',
+        leadId,
+        clientId: null,
+        decidedBy: ctx.actorId,
+        decidedAt: new Date(),
+      })
+      .where(eq(tgChatRules.id, ruleId));
 
-  await db
-    .update(tgChatRules)
-    .set({
-      decision: 'include',
-      leadId,
-      clientId: null,
-      decidedBy: ctx.actorId,
-      decidedAt: new Date(),
-    })
-    .where(eq(tgChatRules.id, ruleId));
-
-  await writeAudit(db, ctx, {
-    entityType: 'tg_chat_rule',
-    entityId: ruleId,
-    action: 'update',
-    before: { decision: rule.decision, clientId: rule.clientId, leadId: rule.leadId },
-    after: { decision: 'include', clientId: null, leadId, ...(phone ? {} : { reason: 'agent_stranger_phoneless' }) },
-  });
+    await writeAudit(db, ctx, {
+      entityType: 'tg_chat_rule',
+      entityId: ruleId,
+      action: 'update',
+      before: { decision: rule.decision, clientId: rule.clientId, leadId: rule.leadId },
+      after: { decision: 'include', clientId: null, leadId },
+    });
+  } else {
+    // The one hidden-number minting (chat-lead `phonelessLeadForChat`): the
+    // rule's own lead is the fence against a second press, and it writes the
+    // rule and its audit row itself, in the same transaction as the lead. A
+    // person's press is the answer, so it never comes back empty.
+    const minted = await phonelessLeadForChat(
+      { managerUserId: rule.managerUserId, peerId: rule.peerId, title: rule.peerTitle, via: 'agent_stranger' },
+      ctx,
+    );
+    if (!minted) throw new ChatRuleError('chat_rule_not_found');
+    leadId = minted;
+  }
   await withdrawAgentRepliesOf(rule);
   await pullForAgent(rule, ctx);
   return { leadId };
 }
 
-/**
- * The name a hidden-number lead gets when Telegram gave no title either — a
- * placeholder, never a person's name, so the 📌 general fact's name check
- * leaves it out (its words «Telegram», «raqam» are not anybody's name).
- */
-export const PHONELESS_LEAD_NAME = 'Telegram (raqam yashirin)';
-
-/**
- * A lead for a hidden-number first contact (his Q18 ⭐: a «📵» card's «🆕
- * Yangi lid»). There is no number to look an open lead up by — which is the
- * rule `leadForChat` keeps from minting twice — so the RULE's own lead is
- * that fence: a second press (or a redelivered one) finds the lead the first
- * press wrote onto this rule and mints nothing. Named by the peer's Telegram
- * title; owned, like every chat lead, by the manager whose account it is.
- */
-async function phonelessLeadFor(rule: typeof tgChatRules.$inferSelect, ctx: AuditContext): Promise<string> {
-  if (rule.leadId) {
-    const [existing] = await db.select({ id: leads.id }).from(leads).where(eq(leads.id, rule.leadId));
-    if (existing) return existing.id;
-  }
-  const lead = await createLead(
-    {
-      name: (rule.peerTitle ?? '').trim() || PHONELESS_LEAD_NAME,
-      ownerId: rule.managerUserId,
-      note: "Telegram: raqami yashirin — AI sotuvchining «📵» kartasidan ochildi.",
-    },
-    { ...ctx, actorId: ctx.actorId ?? rule.managerUserId },
-  );
-  return lead.id;
-}
+/** The placeholder a hidden-number lead is named by — its home is `unknown-chat`, beside the naming rule. */
+export { PHONELESS_LEAD_NAME } from './unknown-chat';
 
 /**
  * «Chatni qo'shish» from a card, the other end of the owner's loop.

@@ -7,6 +7,7 @@ import {
   newBook,
   secondsBehind,
   shouldRefreshOnMiss,
+  switchDecides,
   BOOK_MISS_COOLDOWN_MS,
   BOOK_STALE_MS,
   LIVE_WINDOW_S,
@@ -146,6 +147,45 @@ describe('deciding one live message', () => {
       store: false,
       reason: 'no_phone',
     });
+  });
+
+  it('opens a lead for a hidden number on a WORK account — by the chat, with no phone (his «1 a», 2026-10-29)', () => {
+    const hidden = peer({ id: 5512345678n, phone: null, firstName: 'Dilshod' });
+    const v = decideIncoming(hidden, msg({ message: 'Salom, yuk bormi?' }), CLIENTS, new Map(), true);
+    expect(v).toMatchObject({ store: true, openLead: true, peer: { peerId: 5512345678n, phone: null, title: 'Dilshod' } });
+    if (!v.store) throw new Error('unreachable');
+    expect(v.row.body).toBe('Salom, yuk bormi?');
+    expect(isClientVerdict(v)).toBe(false);
+    // The same line on a PERSONAL account stays passed over — the control.
+    expect(decideIncoming(hidden, msg(), CLIENTS, new Map(), false)).toEqual({ store: false, reason: 'no_phone' });
+    // An empty line opens nothing: a service entry is not a first contact.
+    expect(decideIncoming(hidden, msg({ message: '', media: undefined }), CLIENTS, new Map(), true)).toEqual({ store: false, reason: 'empty' });
+  });
+
+  it('a hidden number on a work account is only ever a PERSON — never 777000, Saved Messages, a bot or a group', () => {
+    // `classifyDialog` asks these before it looks at the phone, so the
+    // widening cannot reach them however the peer looks.
+    const work = (over: Partial<DialogPeer>) => decideIncoming(peer({ phone: null, ...over }), msg(), CLIENTS, new Map(), true);
+    expect(work({ id: 777000n })).toEqual({ store: false, reason: 'service' });
+    expect(work({ isSelf: true })).toEqual({ store: false, reason: 'self' });
+    expect(work({ isBot: true })).toEqual({ store: false, reason: 'is_bot' });
+    expect(work({ isPrivate: false })).toEqual({ store: false, reason: 'not_private' });
+    // …and a «never» somebody wrote down outranks the switch.
+    const excluded = new Map<bigint, ChatRule>([[42n, { peerId: 42n, decision: 'exclude', clientId: null, clientCode: null, leadId: null }]]);
+    expect(decideIncoming(peer({ phone: null }), msg(), CLIENTS, excluded, true)).toEqual({ store: false, reason: 'excluded' });
+  });
+
+  it('the switch decides a hidden number too, so its line asks the switch’s clock (`switchDecides`)', () => {
+    const row = { peerId: 1n } as never;
+    expect(switchDecides({ store: false, reason: 'no_phone' })).toBe(true);
+    expect(switchDecides({ store: false, ask: true, peerId: 1n, phone: '1', title: 'A' })).toBe(true);
+    expect(switchDecides({ store: true, openLead: true, peer: { peerId: 1n, phone: null, title: 'A' }, row })).toBe(true);
+    // Nothing the switch could change: a client, a hand-attached lead, a refusal that is not about acquaintance.
+    expect(switchDecides({ store: true, clientId: 'c', clientCode: 'GS1', row })).toBe(false);
+    expect(switchDecides({ store: true, leadId: 'l', row })).toBe(false);
+    for (const reason of ['excluded', 'is_bot', 'self', 'service', 'not_private', 'empty'] as const) {
+      expect(switchDecides({ store: false, reason }), reason).toBe(false);
+    }
   });
 
   it('refuses groups and bots', () => {

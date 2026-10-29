@@ -2777,7 +2777,7 @@
     "workPersonal": "私人号码",
     "workPersonalHint": "陌生人来信将进入\"哪些聊天\"列表，由您决定。不会保存任何内容。",
     "workWork": "工作号码",
-    "workWorkHint": "仅用于客户。陌生人来信将自动创建线索并保存对话。",
+    "workWorkHint": "仅用于客户。陌生人来信（即使隐藏了号码）将自动创建线索并保存对话。",
     "leadName": "姓名",
     "arrivals": "来客咨询",
     "arrivalsEmpty": "暂无来自广告或网页表单的咨询。",

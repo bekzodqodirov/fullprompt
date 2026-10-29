@@ -222,10 +222,11 @@ export function ChatDecision({
               >
                 {labels.add}
               </button>
-              {/* Only where there IS a number: `leadForChat` refuses without
-                  one, and a button that can only fail is worse than no
-                  button. Same rule the listener's `no_phone` refusal keeps —
-                  a lead nobody can ring is a row with a name in it. */}
+              {/* Only where there IS a number: this door (`openLeadForChat`)
+                  refuses without one, and a button that can only fail is
+                  worse than no button. A hidden number opens its lead by
+                  itself on a WORK number (his «1 a», 2026-10-29) and is asked
+                  about on the AI's «📵» card otherwise — never here. */}
               {row.phone && (
                 <form action={openLead}>
                   <input type="hidden" name="id" value={row.id} />

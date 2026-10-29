@@ -51,6 +51,7 @@ import {
   decideIncoming,
   newBook,
   shouldRefreshOnMiss,
+  switchDecides,
   workModeSwitch,
   workModeWord,
   HEARTBEAT_MS,
@@ -78,7 +79,7 @@ import {
   siteTagAction,
   suspectsStaleBook,
 } from '../src/modules/wms/crm/site-assign-rules';
-import { isWorkAccount, leadForChat } from '../src/modules/wms/crm/chat-lead';
+import { isWorkAccount, ownerOfVerdict } from '../src/modules/wms/crm/chat-lead';
 import { indexPeers, lastIndexedAt, type PeerSeen } from '../src/modules/wms/crm/peer-index';
 import { saveAttachment } from '../src/modules/platform/files/service';
 import { generateThumbnails } from '../src/modules/platform/jobs/thumbnails';
@@ -745,11 +746,12 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       const decidedWith = workMode.work;
       let verdict = decideIncoming(peer, msg, book.clients, rules, decidedWith);
       // A stranger's line is the one the switch decides (a lead, or a tray
-      // question) — so it asks the switch's own clock first. The miss refresh
+      // question — and since his «1 a» a hidden number too, a lead or passed
+      // over) — so it asks the switch's own clock first. The miss refresh
       // below resets the BOOK's, and on a busy number that alone kept the
       // switch from ever being read again. Decided again whenever the switch
       // now differs from the value THIS line was decided with.
-      if (suspectsStaleBook(verdict) && (await workMode.movedFrom(decidedWith, now))) {
+      if (switchDecides(verdict) && (await workMode.movedFrom(decidedWith, now))) {
         verdict = decideIncoming(peer, msg, book.clients, rules, workMode.work);
       }
       // A number we do not know MIGHT be a client added since the book was
@@ -794,36 +796,31 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
         return null;
       }
 
-      // A stranger on a WORK number opens a lead, and the conversation is
-      // kept on it until the lead becomes a client (0064).
-      let ownerClientId: string | null = null;
-      let ownerLeadId: string | null = null;
-      let label = '';
-      if ('openLead' in verdict) {
-        ownerLeadId = await leadForChat(account.managerUserId, verdict.peer, {
-          actorId: account.managerUserId,
-          ip: null,
-          userAgent: null,
-        });
-        label = 'LID';
-      } else if ('leadId' in verdict) {
-        // Somebody answered «Lid ochish» on the tray (0065). The lead is
-        // already there — nothing to mint, nothing to name.
-        ownerLeadId = verdict.leadId;
-        label = 'LID';
-      } else {
-        ownerClientId = verdict.clientId;
-        label = verdict.clientCode;
+      // A stranger on a WORK number opens a lead — a hidden number too, by
+      // the chat (his «1 a», 2026-10-29) — and the conversation is kept on it
+      // until the lead becomes a client (0064).
+      const owner = await ownerOfVerdict(verdict, account.managerUserId, {
+        actorId: account.managerUserId,
+        ip: null,
+        userAgent: null,
+      });
+      if (!owner) {
+        // A hidden number's chat a person answered on the tray since these
+        // rules were read — «hech qachon», or a client's: nothing is minted
+        // over it, and the fresh rules decide the next line.
+        rules = await rulesFor(account.managerUserId);
+        passed += 1;
+        return null;
       }
       const written = await storeIncoming({
-        clientId: ownerClientId,
-        leadId: ownerLeadId,
+        clientId: owner.clientId,
+        leadId: owner.leadId,
         managerUserId: account.managerUserId,
         row: verdict.row,
       });
       if (written) {
         stored += 1;
-        console.log(`  ${label} ← ${verdict.row.direction}`);
+        console.log(`  ${owner.label} ← ${verdict.row.direction}`);
         // The photograph or the voice note itself — only for a NEW row, so a
         // reconnect replay never re-downloads. An outgoing echo whose photo
         // WE uploaded is skipped too: the bytes are already in storage,
@@ -1941,23 +1938,19 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
           // message it would have been a minute earlier.
           const verdict = decideIncoming(peer, msg, book.clients, rules, workMode.work);
           if (!verdict.store) continue;
-          // The same three owners the live path resolves, in the same order.
-          let catchUpClientId: string | null = null;
-          let catchUpLeadId: string | null = null;
-          if ('openLead' in verdict) {
-            catchUpLeadId = await leadForChat(account.managerUserId, verdict.peer, {
-              actorId: account.managerUserId,
-              ip: null,
-              userAgent: null,
-            });
-          } else if ('leadId' in verdict) {
-            catchUpLeadId = verdict.leadId;
-          } else {
-            catchUpClientId = verdict.clientId;
-          }
+          // The same owners the live path resolves, through the same door.
+          // Catch-up walks only chats that already have stored rows, so a
+          // hidden number met here is one its rule (or its own rows) already
+          // ties to a lead — nothing new is minted for it.
+          const owner = await ownerOfVerdict(verdict, account.managerUserId, {
+            actorId: account.managerUserId,
+            ip: null,
+            userAgent: null,
+          });
+          if (!owner) continue;
           const written = await storeIncoming({
-            clientId: catchUpClientId,
-            leadId: catchUpLeadId,
+            clientId: owner.clientId,
+            leadId: owner.leadId,
             managerUserId: account.managerUserId,
             row: verdict.row,
           });

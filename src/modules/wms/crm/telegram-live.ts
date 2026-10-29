@@ -115,7 +115,7 @@ export function workModeWord(work: boolean): string {
 export function workModeChangeLine(before: boolean, after: boolean): string | null {
   if (before === after) return null;
   return after
-    ? '  ⚙ akkaunt endi «ish raqami»: raqami ko‘rinadigan notanish odam yozsa lid ochiladi'
+    ? '  ⚙ akkaunt endi «ish raqami»: notanish odam yozsa — raqami yashirin bo‘lsa ham — lid ochiladi'
     : '  ⚙ akkaunt endi «shaxsiy raqam»: notanish odam «Qaysi chatlar»da so‘raladi';
 }
 
@@ -182,15 +182,32 @@ export function workModeSwitch(opts: {
   };
 }
 
+/**
+ * Does the «Ish raqami» switch decide what this line becomes — so the line
+ * must ask the switch's own clock before it is acted on? A stranger with a
+ * number (a lead, or a tray question) since round 79; a hidden number too
+ * since his «1 a» (2026-10-29): on a work number it is a lead, on a personal
+ * one it is passed over, so a flip to «Ish raqami» must reach the next
+ * hidden-number line as quickly as the next visible one. Deliberately not
+ * `suspectsStaleBook` — that one asks whether the BOOK may be old, and a
+ * hidden number can never be found in a book.
+ */
+export function switchDecides(verdict: LiveVerdict): boolean {
+  if (verdict.store) return 'openLead' in verdict;
+  return 'ask' in verdict || verdict.reason === 'no_phone' || verdict.reason === 'not_a_client';
+}
+
 export type LiveVerdict =
   | { store: true; clientId: string; clientCode: string; row: MessageRow }
   /**
    * A stranger, on an account that says it is a WORK number (0064): mint a
    * lead and keep the conversation on it. Carries the peer's identity because
    * the lead has to be named and reachable — that is the trade the switch
-   * makes, and it is why the switch defaults to personal.
+   * makes, and it is why the switch defaults to personal. `phone` is null for
+   * a hidden number (his «1 a», 2026-10-29): such a lead is found again by
+   * the chat (`peerId`, its tray rule), never by a number.
    */
-  | { store: true; openLead: true; peer: { phone: string; title: string }; row: MessageRow }
+  | { store: true; openLead: true; peer: { peerId: bigint; phone: string | null; title: string }; row: MessageRow }
   /**
    * A chat somebody attached to a lead by hand, from the tray (0065). The
    * lead already exists, so unlike `openLead` there is nothing to mint and
@@ -281,15 +298,17 @@ export function decideIncoming(
   if (!verdict.keep) {
     // Round 79: a stranger is no longer automatically nothing. Whether they
     // are a customer or the manager's own life is a question about the
-    // NUMBER, and the account answers it about itself.
-    // `not_a_client` is only reached once the number was visible, so the
-    // non-null assertions below are the classifier's guarantee, not a guess.
+    // NUMBER, and the account answers it about itself. On a work number that
+    // includes a number Telegram hides (2026-10-29), so the lead's phone may
+    // be null; a tray question is only ever asked about `not_a_client`, which
+    // is reached once the number was visible — the non-null assertion below
+    // is the classifier's guarantee, not a guess.
     const phone = (peer.phone ?? '').trim() || null;
     const action = unknownChatAction(verdict, workAccount);
     if (action.action === 'open_lead') {
       const row = toMessageRow(peer.id, msg);
       if (!isWorthKeeping(row)) return { store: false, reason: 'empty' };
-      return { store: true, openLead: true, peer: { phone: phone!, title: peerTitle(peer) }, row };
+      return { store: true, openLead: true, peer: { peerId: peer.id, phone, title: peerTitle(peer) }, row };
     }
     if (action.action === 'ask') {
       return { store: false, ask: true, peerId: peer.id, phone: phone!, title: peerTitle(peer) };

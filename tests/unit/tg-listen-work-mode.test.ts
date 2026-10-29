@@ -155,7 +155,8 @@ describe('the listener asks it (source shape)', () => {
   it('a stranger’s verdict asks the switch’s own clock — BEFORE the miss refresh, and the line is decided again when it moved', () => {
     const decided = handle.indexOf('const decidedWith = workMode.work;\n      let verdict = decideIncoming(peer, msg, book.clients, rules, decidedWith);');
     expect(decided, 'the value the line is decided with is the one compared').toBeGreaterThan(0);
-    const ask = handle.indexOf('if (suspectsStaleBook(verdict) && (await workMode.movedFrom(decidedWith, now))) {');
+    // `switchDecides`, not `suspectsStaleBook`: since his «1 a» a hidden number is the switch's too.
+    const ask = handle.indexOf('if (switchDecides(verdict) && (await workMode.movedFrom(decidedWith, now))) {');
     expect(ask, 'the stranger path asks the switch').toBeGreaterThan(decided);
     const branch = handle.slice(ask, handle.indexOf('}', ask));
     expect(branch).toContain('verdict = decideIncoming(peer, msg, book.clients, rules, workMode.work);');

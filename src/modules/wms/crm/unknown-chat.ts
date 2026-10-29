@@ -15,7 +15,8 @@ import type { DialogVerdict } from './telegram-import';
  * connected account now answers about itself (`tg_accounts.work_account`):
  *
  *  - a WORK number is only ever used for clients, so an unknown chat on it is
- *    a customer and becomes a lead by itself;
+ *    a customer and becomes a lead by itself — whether Telegram shows the
+ *    number or hides it (2026-10-29, below);
  *  - a PERSONAL number carries the manager's whole life, so an unknown chat
  *    becomes a QUESTION on a tray — and until it is answered nothing about
  *    the conversation is stored except that it was asked about.
@@ -37,32 +38,66 @@ export type UnknownChatAction =
 /**
  * `verdict` is the existing classification; `workAccount` is the switch.
  *
- * Only ONE refusal is reconsidered here — `not_a_client`, which means «a real
- * private chat with a real number that is in no book». The others are not
- * about acquaintance and must keep their answers: a group is not a customer,
- * a bot is not a customer, Saved Messages is the manager talking to himself,
- * an excluded chat is a decision somebody already wrote down, and `no_phone`
- * cannot become a lead worth having — a lead nobody can ring is a row with a
- * name in it.
+ * Two refusals are reconsidered here, both about acquaintance and nothing
+ * else:
+ *
+ *  - `not_a_client` — a real private chat with a real number that is in no
+ *    book: a lead on a work number, a tray question on a personal one;
+ *  - `no_phone` — a real private chat with a real person whose number
+ *    Telegram hides from this account. It used to stay refused everywhere,
+ *    on the argument that a lead nobody can ring is a row with a name in it.
+ *    The owner overruled that for WORK numbers (2026-10-29, his «1 a» to
+ *    «Telegramda raqamini yashirgan odam yangi raqamingizga yozsa, nima
+ *    qilaylik?»: «tizim uni avtomatik lid qilib ochadi va AI darhol javob
+ *    tayyorlaydi — bu raqam faqat mijozlar uchun»): a number that exists only
+ *    for customers has no private life to protect, and the Telegram chat
+ *    itself is the contact — the seller answers in it, the AI drafts in it.
+ *    On a PERSONAL number nothing changes: a hidden number stays out of the
+ *    tray (there is no number to ask about) and only the AI's «📵» card asks
+ *    him (`noteStranger`).
+ *
+ * The others keep their answers: a group is not a customer, a bot is not a
+ * customer, Saved Messages is the manager talking to himself, Telegram's own
+ * service chat is login codes, and an excluded chat is a decision somebody
+ * already wrote down. `classifyDialog` asks every one of those BEFORE the
+ * phone, so `no_phone` is only ever a private, non-bot, non-self person who
+ * is not 777000.
  */
 export function unknownChatAction(
   verdict: DialogVerdict,
   workAccount: boolean,
 ): UnknownChatAction {
   if (verdict.keep) return { action: 'skip', reason: 'known' };
-  if (verdict.reason !== 'not_a_client') return { action: 'skip', reason: verdict.reason };
-  return workAccount ? { action: 'open_lead' } : { action: 'ask' };
+  if (verdict.reason === 'not_a_client') return workAccount ? { action: 'open_lead' } : { action: 'ask' };
+  if (verdict.reason === 'no_phone' && workAccount) return { action: 'open_lead' };
+  return { action: 'skip', reason: verdict.reason };
 }
+
+/**
+ * The name a hidden-number lead gets when Telegram showed no name and no
+ * username either — a placeholder, never a person's name, so the 📌 general
+ * fact's name check leaves it out (its words «Telegram», «raqam» are not
+ * anybody's name). Both hidden-number doors mint under it: the AI's «📵» card
+ * (his Q18 ⭐) and a work number's own lead (his «1 a», 2026-10-29).
+ */
+export const PHONELESS_LEAD_NAME = 'Telegram (raqam yashirin)';
+
+/** `peerTitle`'s last resort — «#<Telegram id>» — which names a row and never a lead. */
+const ID_LABEL = /^#\d+$/;
 
 /**
  * The name a minted lead gets.
  *
- * Telegram's display name when there is one, and the number when there is
- * not — never an empty string, because a nameless card on the funnel is a
- * card nobody can tell from the next one. The number is already known here:
- * `not_a_client` is only reached once the phone was visible.
+ * Telegram's display name when there is one (`peerTitle` already falls back
+ * to the @username), then the number, then the placeholder — never an empty
+ * string, because a nameless card on the funnel is a card nobody can tell
+ * from the next one, and never the chat id: `peerTitle` ends on «#<id>» so a
+ * tray row is never blank, and an id on a funnel card is a number nobody can
+ * ring that reads like one. A hidden number has no phone to fall back to.
  */
-export function leadNameForChat(title: string | null | undefined, phone: string): string {
+export function leadNameForChat(title: string | null | undefined, phone: string | null): string {
   const clean = (title ?? '').trim();
-  return clean.length > 0 ? clean : phone;
+  if (clean.length > 0 && !ID_LABEL.test(clean)) return clean;
+  const number = (phone ?? '').trim();
+  return number.length > 0 ? number : PHONELESS_LEAD_NAME;
 }
