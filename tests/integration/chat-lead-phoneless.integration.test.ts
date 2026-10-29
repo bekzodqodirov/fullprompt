@@ -17,9 +17,11 @@ import {
   agentConversations,
   auditLog,
   clients,
+  leadStages,
   leads,
   notifications,
   roles,
+  tgAccounts,
   tgChatRules,
   tgMessages,
   userRoles,
@@ -29,11 +31,12 @@ import { enqueue } from '@/modules/platform/jobs/boss';
 import { chatIdentity, type AgentContext } from '@/modules/wms/agent/context';
 import { customerLabel } from '@/modules/wms/agent/drafts';
 import { strangerCards } from '@/modules/wms/agent/jobs';
+import { noteStranger } from '@/modules/wms/agent/listener-hooks';
 import { JOB_AGENT_INBOUND, shouldStartAgentRun } from '@/modules/wms/agent/queues';
-import { leadForChat, ownerOfVerdict, phonelessLeadForChat } from '@/modules/wms/crm/chat-lead';
+import { leadForChat, ownerOfVerdict, phonelessLeadForChat, rekeyLeadChats } from '@/modules/wms/crm/chat-lead';
 import { decideChat, openLeadForChat, rulesFor } from '@/modules/wms/crm/chat-rules';
 import { storeIncoming } from '@/modules/wms/crm/telegram-accounts';
-import { toMessageRow, type ChatRule, type DialogPeer, type RawMessage } from '@/modules/wms/crm/telegram-import';
+import { toMessageRow, type ChatRule, type ClientPhones, type DialogPeer, type RawMessage } from '@/modules/wms/crm/telegram-import';
 import { decideIncoming } from '@/modules/wms/crm/telegram-live';
 import { PHONELESS_LEAD_NAME } from '@/modules/wms/crm/unknown-chat';
 
@@ -67,7 +70,10 @@ let msgSeq = 9000;
 const madeLeads = new Set<string>();
 
 let managerId = '';
+/** A colleague with a work number of his own — the same Telegram user writes to both. */
+let colleagueId = '';
 let clientId = '';
+const madeClients: string[] = [];
 const ctx = () => ({ actorId: managerId, ip: null, userAgent: null });
 
 async function makeUser(name: string, role: string, tail: string): Promise<string> {
@@ -102,18 +108,24 @@ const line = (over: Partial<RawMessage> = {}): RawMessage => ({
  * decided, owned, stored, and — for a new row — handed to the agent the way
  * `afterStored` hands it (the AI speaks from this account, and is on).
  */
-async function liveLine(peer: DialogPeer, msg: RawMessage, rules: Map<bigint, ChatRule> = new Map()) {
-  const verdict = decideIncoming(peer, msg, [], rules, true);
+async function liveLine(
+  peer: DialogPeer,
+  msg: RawMessage,
+  rules: Map<bigint, ChatRule> = new Map(),
+  opts: { work?: boolean; book?: ClientPhones[]; manager?: string } = {},
+) {
+  const manager = opts.manager ?? managerId;
+  const verdict = decideIncoming(peer, msg, opts.book ?? [], rules, opts.work ?? true);
   if (!verdict.store) return { verdict, owner: null, written: null, decision: null };
-  const owner = await ownerOfVerdict(verdict, managerId, ctx());
+  const owner = await ownerOfVerdict(verdict, manager, { actorId: manager, ip: null, userAgent: null });
   if (!owner) return { verdict, owner, written: null, decision: null };
   if (owner.leadId) madeLeads.add(owner.leadId);
-  const written = await storeIncoming({ clientId: owner.clientId, leadId: owner.leadId, managerUserId: managerId, row: verdict.row });
+  const written = await storeIncoming({ clientId: owner.clientId, leadId: owner.leadId, managerUserId: manager, row: verdict.row });
   const decision = written
     ? shouldStartAgentRun({
         origin: 'live',
         direction: verdict.row.direction,
-        accountManagerUserId: managerId,
+        accountManagerUserId: manager,
         agentOwnerUserId: managerId,
         agentOn: true,
         stored: true,
@@ -122,11 +134,27 @@ async function liveLine(peer: DialogPeer, msg: RawMessage, rules: Map<bigint, Ch
   if (decision === 'run') {
     await enqueue(
       JOB_AGENT_INBOUND,
-      { managerUserId: managerId, peerId: verdict.row.peerId.toString(), anchorTgMessageId: verdict.row.tgMessageId.toString(), origin: 'live' },
+      { managerUserId: manager, peerId: verdict.row.peerId.toString(), anchorTgMessageId: verdict.row.tgMessageId.toString(), origin: 'live' },
       { retryLimit: 0 },
     );
   }
   return { verdict, owner, written, decision };
+}
+
+/** A lead moved to the first stage of a kind — how a seller closes a card. */
+async function closeLead(leadId: string, kind: 'won' | 'lost', wonClientId?: string) {
+  const [stage] = await db.select({ id: leadStages.id }).from(leadStages).where(eq(leadStages.kind, kind)).limit(1);
+  await db.update(leads).set({ stageId: stage!.id, clientId: wonClientId ?? null }).where(eq(leads.id, leadId));
+}
+
+/** A client of ours with a phone the book matches. */
+async function bookClient(code: string, phone: string) {
+  const [c] = await db
+    .insert(clients)
+    .values({ clientCode: `${code}${SUFFIX}`, name: `Kitob ${code} ${SUFFIX}`, phones: [phone], salesManagerId: managerId })
+    .returning({ id: clients.id, clientCode: clients.clientCode, phones: clients.phones });
+  madeClients.push(c!.id);
+  return c!;
 }
 
 async function ruleOf(peer: bigint) {
@@ -138,15 +166,21 @@ async function ruleOf(peer: bigint) {
 }
 
 /** Leads minted on this manager's account for the hidden-number door. */
-async function phonelessLeads() {
+async function phonelessLeads(owner = managerId) {
   return db
     .select({ id: leads.id, name: leads.name, phone: leads.phone, ownerId: leads.ownerId, note: leads.note })
     .from(leads)
-    .where(and(eq(leads.ownerId, managerId), sql`${leads.phone} IS NULL`));
+    .where(and(eq(leads.ownerId, owner), sql`${leads.phone} IS NULL`));
 }
 
 beforeAll(async () => {
   managerId = await makeUser(`Ish raqami ${SUFFIX}`, 'sales_manager', '01');
+  colleagueId = await makeUser(`Ikkinchi ish raqami ${SUFFIX}`, 'sales_manager', '02');
+  // Both numbers connected and «Ish raqami»: the cross-account lookup asks the connected accounts.
+  await db.insert(tgAccounts).values([
+    { managerUserId: managerId, tgPhone: `+99891${SUFFIX}01`, sessionEnc: 'v1.x.y.z', status: 'active', workAccount: true },
+    { managerUserId: colleagueId, tgPhone: `+99891${SUFFIX}02`, sessionEnc: 'v1.x.y.z', status: 'active', workAccount: true },
+  ]);
   const [c] = await db
     .insert(clients)
     .values({ clientCode: `YP${SUFFIX}`, name: `Yashirin Mijoz ${SUFFIX}`, salesManagerId: managerId })
@@ -155,15 +189,16 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  const made = [...new Set([...madeLeads, ...(await phonelessLeads()).map((l) => l.id)])];
+  const made = [...new Set([...madeLeads, ...(await phonelessLeads()).map((l) => l.id), ...(await phonelessLeads(colleagueId)).map((l) => l.id)])];
   // Rules first: a leftover include changes what the listener stores (#183), and it points at a lead deleted below.
   await db.delete(tgChatRules).where(inArray(tgChatRules.peerId, madePeers));
   await db.delete(tgMessages).where(inArray(tgMessages.peerId, madePeers));
   await db.delete(agentConversations).where(inArray(agentConversations.peerId, madePeers));
-  await db.delete(notifications).where(eq(notifications.userId, managerId));
+  await db.delete(notifications).where(inArray(notifications.userId, [managerId, colleagueId]));
   if (made.length > 0) await db.delete(leads).where(inArray(leads.id, made));
-  await db.delete(clients).where(eq(clients.id, clientId));
-  await db.update(users).set({ active: false }).where(eq(users.id, managerId));
+  await db.delete(clients).where(inArray(clients.id, [clientId, ...madeClients]));
+  await db.delete(tgAccounts).where(inArray(tgAccounts.managerUserId, [managerId, colleagueId]));
+  await db.update(users).set({ active: false }).where(inArray(users.id, [managerId, colleagueId]));
 });
 
 describe('a hidden number writing to a WORK number becomes a lead the AI answers (R2, R3, R5)', () => {
@@ -179,8 +214,10 @@ describe('a hidden number writing to a WORK number becomes a lead the AI answers
     // The line is on the lead.
     const [row] = await db.select().from(tgMessages).where(eq(tgMessages.id, first.written!));
     expect(row).toMatchObject({ leadId, clientId: null, peerId: peer, direction: 'in', body: 'Salom, Xitoydan yuk bormi?' });
-    // The chat is bound to it by its tray rule — committed as include, never as a pending question.
-    expect(await ruleOf(peer)).toMatchObject({ decision: 'include', leadId, clientId: null, peerPhone: null, decidedBy: managerId });
+    // The chat is bound to it by its tray rule — committed as include, never as a pending question —
+    // and as the MACHINE's: nobody decided it, so it stands only while it is the best fact (decideIncoming).
+    expect(await ruleOf(peer)).toMatchObject({ decision: 'include', leadId, clientId: null, peerPhone: null, decidedBy: null });
+    expect((await rulesFor(managerId)).get(peer)).toMatchObject({ machine: true, leadOpen: true, leadId });
     // …and the rule's change is audited with the door that made it.
     const [audit] = await db
       .select({ after: auditLog.after })
@@ -354,7 +391,7 @@ describe('a CLIENT whose number Telegram has since hidden is still that client (
     const before = (await phonelessLeads()).length;
     const now = await liveLine(hidden(peer), line({ message: 'Raqamimni yashirdim' }));
     expect(now.verdict).toMatchObject({ openLead: true });
-    expect(now.owner).toEqual({ clientId, leadId: null, label: `YP${SUFFIX}` });
+    expect(now.owner).toEqual({ clientId, leadId: null, label: `YP${SUFFIX}`, rulesMoved: false });
     expect((await phonelessLeads()).length).toBe(before);
     expect(await ruleOf(peer)).toBeUndefined();
     // …and the door itself refuses to mint over it when asked directly.
@@ -401,6 +438,164 @@ describe('the «📵» card’s own door shares the minting (R2)', () => {
       .from(auditLog)
       .where(and(eq(auditLog.entityType, 'tg_chat_rule'), eq(auditLog.entityId, r!.id)));
     expect(audit!.after).toMatchObject({ reason: 'agent_stranger_phoneless', leadId });
+    // A person's press is a person's answer — recorded as theirs, never as the machine's.
+    expect(await ruleOf(peer)).toMatchObject({ decision: 'include', leadId, decidedBy: managerId });
+    expect((await rulesFor(managerId)).get(peer)).toMatchObject({ machine: false });
     expect(await phonelessLeadForChat({ managerUserId: managerId, peerId: peer, title: null, via: 'agent_stranger' }, ctx())).toBe(leadId);
+  });
+});
+
+describe('the 2026-10-29 review — a question nobody answered is not an answer', () => {
+  it('a known client whose «📵» card question stands is still that client once the number is «Ish raqami» (P3, the blocker)', async () => {
+    // His own situation: the client's rows are on the client by phone; the client hides the number
+    // while the account is still personal, and the listener leaves the «📵» card's pending rule.
+    const peer = nextPeer();
+    await storeIncoming({ clientId, managerUserId: managerId, row: toMessageRow(peer, line({ date: Math.floor(Date.now() / 1000) - 86_400 })) });
+    const personal = await liveLine(hidden(peer), line(), new Map(), { work: false });
+    expect(personal.verdict).toEqual({ store: false, reason: 'no_phone' });
+    expect(await noteStranger({ managerUserId: managerId, peerId: peer, title: 'Yashirin', verdict: 'no_phone', user: { contact: false, deleted: false } })).toMatchObject({ ruleAdded: true });
+    expect(await ruleOf(peer)).toMatchObject({ decision: 'pending', decidedBy: null });
+    // Switched to «Ish raqami»; the next line, on rules that carry the question.
+    const before = (await phonelessLeads()).length;
+    const work = await liveLine(hidden(peer), line({ message: 'Endi ish raqami' }), await rulesFor(managerId));
+    expect(work.owner).toEqual({ clientId, leadId: null, label: `YP${SUFFIX}`, rulesMoved: false });
+    expect((await phonelessLeads()).length).toBe(before);
+    // The question stays a question — no binding over the client's chat.
+    expect(await ruleOf(peer)).toMatchObject({ decision: 'pending', leadId: null });
+    expect(await leadForChat(managerId, { peerId: peer, phone: null, title: 'X' }, ctx())).toBeNull();
+  });
+
+  it('…but a ↩ a PERSON gave is an answer: the client that ↩ took back is not followed', async () => {
+    const peer = nextPeer();
+    await storeIncoming({ clientId, managerUserId: managerId, row: toMessageRow(peer, line({ date: Math.floor(Date.now() / 1000) - 86_400 })) });
+    const [r] = await db
+      .insert(tgChatRules)
+      .values({ managerUserId: managerId, peerId: peer, decision: 'include', clientId, peerPhone: null, decidedBy: managerId })
+      .returning({ id: tgChatRules.id });
+    await decideChat({ id: r!.id, decision: 'pending' }, ctx());
+    const out = await liveLine(hidden(peer), line(), await rulesFor(managerId));
+    expect(out.owner).toMatchObject({ clientId: null, label: 'LID' });
+  });
+});
+
+describe('the 2026-10-29 review — one person, one lead', () => {
+  it('a hidden customer writing to two work numbers is ONE lead, as the same person with a visible number is (P1)', async () => {
+    const peer = nextPeer();
+    const atA = await liveLine(hidden(peer), line());
+    const beforeB = (await phonelessLeads(colleagueId)).length;
+    const atB = await liveLine(hidden(peer), line({ message: 'Boshqa raqamga ham yozdim' }), new Map(), { manager: colleagueId });
+    expect(atB.owner).toMatchObject({ clientId: null, leadId: atA.owner!.leadId, label: 'LID' });
+    expect((await phonelessLeads(colleagueId)).length).toBe(beforeB);
+    // B's chat is bound to A's lead by B's own rule, and B's line is on it under B's account.
+    const [bRule] = await db.select().from(tgChatRules).where(and(eq(tgChatRules.managerUserId, colleagueId), eq(tgChatRules.peerId, peer)));
+    expect(bRule).toMatchObject({ decision: 'include', leadId: atA.owner!.leadId, decidedBy: null });
+    const [bRow] = await db.select().from(tgMessages).where(eq(tgMessages.id, atB.written!));
+    expect(bRow).toMatchObject({ managerUserId: colleagueId, leadId: atA.owner!.leadId });
+  });
+
+  it('…and a colleague’s VISIBLE-number lead for the same Telegram user (rows, no rule) is found too', async () => {
+    const peer = nextPeer();
+    const seen = await liveLine(hidden(peer, { phone: `+99893${SUFFIX}61` }), line(), new Map(), { manager: colleagueId });
+    expect(seen.verdict).toMatchObject({ openLead: true, peer: { phone: `+99893${SUFFIX}61` } });
+    const atA = await liveLine(hidden(peer), line({ message: 'Menga raqamim ko‘rinmaydi' }));
+    expect(atA.owner!.leadId).toBe(seen.owner!.leadId);
+  });
+});
+
+describe('the 2026-10-29 review — a closed lead is not where a new enquiry goes', () => {
+  it('a LOST lead writing again opens a new one — on the listener’s stale map and on fresh rules alike (P7, P5)', async () => {
+    const peer = nextPeer();
+    const first = await liveLine(hidden(peer), line());
+    const lost = first.owner!.leadId!;
+    await closeLead(lost, 'lost');
+    // Stale map (the door's fast path) — a month later.
+    const again = await liveLine(hidden(peer), line({ message: 'Yana yuk bor' }));
+    expect(again.owner).toMatchObject({ clientId: null, label: 'LID' });
+    expect(again.owner!.leadId).not.toBe(lost);
+    expect(await ruleOf(peer)).toMatchObject({ decision: 'include', leadId: again.owner!.leadId, decidedBy: null });
+    // The visible control: a lost lead's number opens a new one too.
+    const visiblePeer = nextPeer();
+    const v1 = await liveLine(hidden(visiblePeer, { phone: `+99893${SUFFIX}62` }), line());
+    await closeLead(v1.owner!.leadId!, 'lost');
+    const v2 = await liveLine(hidden(visiblePeer, { phone: `+99893${SUFFIX}62` }), line({ message: 'Yana' }));
+    expect(v2.owner!.leadId).not.toBe(v1.owner!.leadId);
+    // Fresh rules (catch-up after a restart): the closed binding is decided again, not filed on the lost lead.
+    await closeLead(again.owner!.leadId!, 'lost');
+    const rules = await rulesFor(managerId);
+    expect(rules.get(peer)).toMatchObject({ machine: true, leadOpen: false });
+    const caught = await liveLine(hidden(peer), line({ message: 'Uchinchi marta' }), rules);
+    expect(caught.verdict).toMatchObject({ store: true, openLead: true });
+    expect([lost, again.owner!.leadId]).not.toContain(caught.owner!.leadId);
+  });
+
+  it('a WON lead’s customer is the client it became — not a new lead', async () => {
+    const peer = nextPeer();
+    const first = await liveLine(hidden(peer), line());
+    const won = first.owner!.leadId!;
+    await closeLead(won, 'won', clientId);
+    await rekeyLeadChats(won, clientId);
+    const before = (await phonelessLeads()).length;
+    for (const rules of [new Map<bigint, ChatRule>(), await rulesFor(managerId)]) {
+      const next = await liveLine(hidden(peer), line({ message: 'Yana buyurtma' }), rules);
+      expect(next.owner).toEqual({ clientId, leadId: null, label: `YP${SUFFIX}`, rulesMoved: false });
+    }
+    expect((await phonelessLeads()).length).toBe(before);
+  });
+});
+
+describe('the 2026-10-29 review — the machine’s binding yields to the book and to the switch', () => {
+  it('a client in the book whose number was hidden: a lead on day one, the client the moment the number shows (probe A)', async () => {
+    const phone = `+99893${SUFFIX}63`;
+    const c = await bookClient('YK', phone);
+    const book = [{ id: c.id, clientCode: c.clientCode, phones: c.phones }];
+    const peer = nextPeer();
+    const day1 = await liveLine(hidden(peer), line(), new Map(), { book });
+    expect(day1.owner).toMatchObject({ clientId: null, label: 'LID', rulesMoved: true });
+    const ruleId = (await ruleOf(peer))!.id;
+    // He saves the contact: Telegram shows the number, which is the client's — on fresh rules.
+    const shown = await liveLine(hidden(peer, { phone }), line({ message: 'Endi raqamim ko‘rinadi' }), await rulesFor(managerId), { book });
+    expect(shown.verdict).toMatchObject({ store: true, clientId: c.id, retiresMachineRule: true });
+    expect(shown.owner).toEqual({ clientId: c.id, leadId: null, label: c.clientCode, rulesMoved: true });
+    // The binding is gone, audited with the reason; the lead it was on keeps its lines.
+    expect(await ruleOf(peer)).toBeUndefined();
+    const [audit] = await db
+      .select({ action: auditLog.action, after: auditLog.after })
+      .from(auditLog)
+      .where(and(eq(auditLog.entityType, 'tg_chat_rule'), eq(auditLog.entityId, ruleId), eq(auditLog.action, 'delete')));
+    expect(audit!.after).toMatchObject({ reason: 'book_match' });
+    // A later hidden line goes where the chat now is — the client.
+    const hiddenAgain = await liveLine(hidden(peer), line({ message: 'Yana yashirdim' }), await rulesFor(managerId), { book });
+    expect(hiddenAgain.owner).toEqual({ clientId: c.id, leadId: null, label: c.clientCode, rulesMoved: false });
+    // The control: the same person with the number shown from the first line is the client from the first line.
+    const control = await liveLine(hidden(nextPeer(), { phone }), line(), new Map(), { book });
+    expect(control.owner).toMatchObject({ clientId: c.id, leadId: null });
+  });
+
+  it('switched back to «Shaxsiy raqam»: the machine’s binding stores nothing, as for a visible stranger (probe D)', async () => {
+    const hiddenPeer = nextPeer();
+    await liveLine(hidden(hiddenPeer), line());
+    const visiblePeer = nextPeer();
+    await liveLine(hidden(visiblePeer, { phone: `+99893${SUFFIX}64` }), line());
+    const rules = await rulesFor(managerId);
+    expect(decideIncoming(hidden(hiddenPeer), line(), [], rules, false)).toEqual({ store: false, reason: 'no_phone' });
+    expect(decideIncoming(hidden(visiblePeer, { phone: `+99893${SUFFIX}64` }), line(), [], rules, false)).toMatchObject({ store: false, ask: true });
+    // A person's «📵» binding is an answer, and stands on a personal number.
+    const pressed = nextPeer();
+    const [r] = await db
+      .insert(tgChatRules)
+      .values({ managerUserId: managerId, peerId: pressed, decision: 'pending', peerTitle: 'Karta', peerPhone: null })
+      .returning({ id: tgChatRules.id });
+    const { leadId } = await openLeadForChat(r!.id, ctx(), { phoneless: 'agent_stranger' });
+    madeLeads.add(leadId);
+    expect(decideIncoming(hidden(pressed), line(), [], await rulesFor(managerId), false)).toMatchObject({ store: true, leadId });
+  });
+
+  it('a name of filler characters is no name: the lead is named by the @username, else by words (P2)', async () => {
+    const named = await liveLine(hidden(nextPeer(), { firstName: '\u3164', username: 'yuk_kerak2' }), line());
+    const [a] = await db.select({ name: leads.name }).from(leads).where(eq(leads.id, named.owner!.leadId!));
+    expect(a!.name).toBe('@yuk_kerak2');
+    const blank = await liveLine(hidden(nextPeer(), { firstName: '\u3164', lastName: '\u200B' }), line());
+    const [b] = await db.select({ name: leads.name }).from(leads).where(eq(leads.id, blank.owner!.leadId!));
+    expect(b!.name).toBe(PHONELESS_LEAD_NAME);
   });
 });

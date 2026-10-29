@@ -110,6 +110,13 @@ describe('reducing a chat to the four facts that decide', () => {
     expect(peerFromChat(bot).isBot).toBe(true);
   });
 
+  it('reads Telegram’s own `support` flag off a real User — an official account, never a customer (2026-10-29 review)', () => {
+    const official = new Api.User({ id: big(5512345678), support: true, firstName: 'Verification Codes', accessHash: big(1) });
+    expect(peerFromChat(official)).toMatchObject({ isPrivate: true, isBot: false, isOfficial: true });
+    expect(classifyDialog(peerFromChat(official), CLIENTS)).toEqual({ keep: false, reason: 'service' });
+    expect(peerFromChat(chat()).isOfficial).toBe(false);
+  });
+
   it('survives a chat Telegram would not resolve', () => {
     // getChat() can return undefined. It must not throw inside the handler —
     // one unresolvable message would otherwise be a thrown error per event.

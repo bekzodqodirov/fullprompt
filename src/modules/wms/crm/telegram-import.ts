@@ -53,6 +53,8 @@ export interface DialogPeer {
   isBot?: boolean;
   /** The manager's chat with THEMSELVES (Saved Messages). Never a client. */
   isSelf?: boolean;
+  /** Telegram's own flag on an official account (`User.support`). Never a client. */
+  isOfficial?: boolean;
 }
 
 /** The client book, reduced to what the match needs. */
@@ -73,6 +75,52 @@ export const TELEGRAM_SERVICE_PEER = 777000n;
  */
 export function isTelegramServicePeer(peer: { id: bigint; isPrivate: boolean }): boolean {
   return peer.isPrivate && peer.id === TELEGRAM_SERVICE_PEER;
+}
+
+/**
+ * Telegram's other accounts of its own that write into a private chat: «Verification Codes»
+ * (489000 — Telegram Gateway delivers a bank's or an app's login code through it) and
+ * «Replies» (1271266957 — strangers' answers to his comments in groups, relayed).
+ */
+const TELEGRAM_OFFICIAL_PEERS: ReadonlySet<bigint> = new Set([489000n, 1271266957n]);
+
+/**
+ * Is this a private chat with ANY of Telegram's own accounts — never a customer under any
+ * decision anybody could write down? 777000 (`isTelegramServicePeer`), the two named above,
+ * an account Telegram itself flags official (`User.support`), and Telegram Desktop's own
+ * convention for the rest: a service user's id is a round thousand — bounded here to the
+ * first million ids, where no customer of 2026 is, so an ordinary account whose id happens
+ * to end in 000 stays an ordinary account.
+ *
+ * Asked by every classifier BEFORE the phone (2026-10-29 review): until his «1 a» a
+ * hidden-number chat was refused everywhere, so 777000 was the only official account a
+ * work number could ever keep. Since a hidden number on a work number is a lead, every
+ * other one would be — a third party's login code stored in the chat, read by the AI and
+ * printed on its draft card, #1536 again. Deliberately NOT the notice alarm's question
+ * (`isTelegramServiceNotice` stays on 777000): a bank's code through 489000 is no warning
+ * about HIS account, and switching the AI off for one would cancel the morning's ✅s.
+ */
+export function isTelegramOfficialPeer(peer: { id: bigint; isPrivate: boolean; isOfficial?: boolean }): boolean {
+  if (!peer.isPrivate) return false;
+  if (isTelegramServicePeer(peer) || peer.isOfficial === true || TELEGRAM_OFFICIAL_PEERS.has(peer.id)) return true;
+  return peer.id > 0n && peer.id < 1_000_000n && peer.id % 1000n === 0n;
+}
+
+/**
+ * Characters that draw nothing: whitespace, and the «default ignorable» ones Telegram's
+ * invisible-name trick is made of — U+3164 HANGUL FILLER above all, U+115F, U+FFA0, U+200B —
+ * plus U+2800 BRAILLE PATTERN BLANK, which Unicode counts as a symbol and draws as nothing.
+ */
+const UNSEEN = '[\\p{White_Space}\\p{Default_Ignorable_Code_Point}\\u2800]';
+const UNSEEN_EDGES = new RegExp(`^${UNSEEN}+|${UNSEEN}+$`, 'gu');
+
+/**
+ * The text with what draws nothing cut off both ends — '' when nothing is left to see.
+ * `trim()` keeps «ㅤ» (U+3164), so a name made of it passed as a name and the lead card and
+ * the AI's draft card («Lid: ㅤ») named nobody (2026-10-29 review).
+ */
+export function visibleText(raw: string | null | undefined): string {
+  return (raw ?? '').replace(UNSEEN_EDGES, '');
 }
 
 export type DialogVerdict =
@@ -101,6 +149,16 @@ export interface ChatRule {
    * already has somewhere to go.
    */
   leadId: string | null;
+  /**
+   * The listener's own binding and nobody's answer: an include on a lead with
+   * no `decided_by` — a work number's hidden-number lead (his «1 a»,
+   * 2026-10-29). It stands only while it is still the best fact about the
+   * chat (`decideIncoming`): on a work number, while its lead is open, and
+   * until the phone book claims the chat. Absent = a person's answer.
+   */
+  machine?: boolean;
+  /** Is `leadId`'s lead still open? Read with the rule; absent = not known, read as open. */
+  leadOpen?: boolean;
 }
 
 /**
@@ -128,11 +186,12 @@ export function classifyWithRules(
   // conversation with a customer under any decision anybody could write down.
   if (peer.isSelf) return { keep: false, reason: 'self' };
   // Nor is Telegram's own service account (777000: login codes, «new login»,
-  // limitation notices). It is no bot by Telegram's flag and may even show a
-  // phone, so on a work account it would mint a lead — and a stored chat is
-  // one the AI sotuvchi may read: a login code in a model's context and on a
-  // card (final review, the send package's note).
-  if (isTelegramServicePeer(peer)) return { keep: false, reason: 'service' };
+  // limitation notices) or any other of its own (`isTelegramOfficialPeer`).
+  // It is no bot by Telegram's flag and may even show a phone, so on a work
+  // account it would mint a lead — and a stored chat is one the AI sotuvchi
+  // may read: a login code in a model's context and on a card (final review,
+  // the send package's note).
+  if (isTelegramOfficialPeer(peer)) return { keep: false, reason: 'service' };
   const rule = rules.get(peer.id);
   if (rule?.decision === 'exclude') return { keep: false, reason: 'excluded' };
   if (rule?.decision === 'include' && rule.clientId) {
@@ -166,8 +225,10 @@ export function classifyDialog(peer: DialogPeer, clients: ClientPhones[]): Dialo
   // able to opt into it by accident.
   if (peer.isSelf) return { keep: false, reason: 'self' };
   // Telegram's service chat may show a number (42777), and a number is all the
-  // book is matched on.
-  if (isTelegramServicePeer(peer)) return { keep: false, reason: 'service' };
+  // book is matched on — and since his «1 a» a hidden number on a work account
+  // is a lead, so every official account is refused HERE, before the phone,
+  // and `no_phone` is only ever a real private person.
+  if (isTelegramOfficialPeer(peer)) return { keep: false, reason: 'service' };
   const phone = (peer.phone ?? '').trim();
   if (!phone) return { keep: false, reason: 'no_phone' };
   const match = clients.find((c) => phoneBelongsToClient(phone, c.phones));
@@ -196,7 +257,7 @@ export function scanVerdict(
 ): ScanVerdict {
   const decision = rules.get(peer.id)?.decision;
   if (decision === 'include' || decision === 'exclude') return 'answered';
-  if (!peer.isPrivate || peer.isBot || peer.isSelf || isTelegramServicePeer(peer)) return 'skip';
+  if (!peer.isPrivate || peer.isBot || peer.isSelf || isTelegramOfficialPeer(peer)) return 'skip';
   // Already coming in on its own — asking would be noise on a list whose only
   // job is to be short enough that somebody actually goes through it.
   if (classifyDialog(peer, clients).keep) return 'auto';
@@ -252,6 +313,7 @@ export function peerFromChat(
     username?: string | null;
     bot?: boolean;
     self?: boolean;
+    support?: boolean;
     className?: string;
   } | null
   | undefined,
@@ -268,12 +330,14 @@ export function peerFromChat(
     isPrivate: isUser,
     isBot: Boolean(chat?.bot),
     isSelf: Boolean(chat?.self),
+    isOfficial: isUser && Boolean(chat?.support),
   };
 }
 
 /** A name for the screen, from the pieces Telegram gives separately. */
 export function peerTitle(peer: DialogPeer): string {
-  const name = [peer.firstName, peer.lastName].filter(Boolean).join(' ').trim();
+  // What a person SEES: a name of filler characters is no name (`visibleText`).
+  const name = visibleText([peer.firstName, peer.lastName].filter(Boolean).join(' '));
   if (name) return name;
   if (peer.username) return `@${peer.username}`;
   // No name, no username, no number: the id is all there is, and a blank row

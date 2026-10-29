@@ -1,6 +1,7 @@
 import {
+  classifyDialog,
   classifyWithRules,
-  isTelegramServicePeer,
+  isTelegramOfficialPeer,
   isWorthKeeping,
   toMessageRow,
   type ChatRule,
@@ -138,8 +139,14 @@ export interface WorkModeSwitch {
   readonly work: boolean;
   /** Read the switch when its clock is due (or `force`) — the read already running, if one is. */
   refresh(now: number, force?: boolean): Promise<void>;
-  /** After `refresh`: does the switch now differ from `decidedWith` — must the line be decided again? */
-  movedFrom(decidedWith: boolean, now: number): Promise<boolean>;
+  /**
+   * After `refresh`: does the switch now differ from `decidedWith` — must the line be decided again?
+   * `force` reads it afresh whatever its clock says: a line about to be WRITTEN on the switch's
+   * say-so (a stranger's lead) must not be stored on a half-minute-old «Ish raqami» — a flip to
+   * «Shaxsiy raqam» is made to stop exactly that (the 2026-10-29 review). A line passed over may
+   * keep the clock: a late «yes» costs one line, a late «no» would cost a stored one.
+   */
+  movedFrom(decidedWith: boolean, now: number, force?: boolean): Promise<boolean>;
 }
 
 export function workModeSwitch(opts: {
@@ -175,8 +182,8 @@ export function workModeSwitch(opts: {
       return state.work;
     },
     refresh,
-    async movedFrom(decidedWith: boolean, now: number): Promise<boolean> {
-      await refresh(now);
+    async movedFrom(decidedWith: boolean, now: number, force = false): Promise<boolean> {
+      await refresh(now, force);
       return state.work !== decidedWith;
     },
   };
@@ -188,17 +195,25 @@ export function workModeSwitch(opts: {
  * number (a lead, or a tray question) since round 79; a hidden number too
  * since his «1 a» (2026-10-29): on a work number it is a lead, on a personal
  * one it is passed over, so a flip to «Ish raqami» must reach the next
- * hidden-number line as quickly as the next visible one. Deliberately not
- * `suspectsStaleBook` — that one asks whether the BOOK may be old, and a
- * hidden number can never be found in a book.
+ * hidden-number line as quickly as the next visible one — and so must a line
+ * of a chat the listener bound to a lead by itself (`machine`), which stands
+ * only on a work number. Deliberately not `suspectsStaleBook` — that one asks
+ * whether the BOOK may be old, and a hidden number can never be found in a
+ * book.
  */
 export function switchDecides(verdict: LiveVerdict): boolean {
-  if (verdict.store) return 'openLead' in verdict;
+  if (verdict.store) return 'openLead' in verdict || ('leadId' in verdict && verdict.machine === true);
   return 'ask' in verdict || verdict.reason === 'no_phone' || verdict.reason === 'not_a_client';
 }
 
 export type LiveVerdict =
-  | { store: true; clientId: string; clientCode: string; row: MessageRow }
+  /**
+   * A client we know. `retiresMachineRule`: the chat carries the listener's
+   * own lead binding (`ChatRule.machine`) and the phone book has just claimed
+   * it — the binding is taken back where the line is filed (chat-lead
+   * `ownerOfVerdict`), or it would go on naming a lead the chat is not.
+   */
+  | { store: true; clientId: string; clientCode: string; row: MessageRow; retiresMachineRule?: true }
   /**
    * A stranger, on an account that says it is a WORK number (0064): mint a
    * lead and keep the conversation on it. Carries the peer's identity because
@@ -211,9 +226,11 @@ export type LiveVerdict =
   /**
    * A chat somebody attached to a lead by hand, from the tray (0065). The
    * lead already exists, so unlike `openLead` there is nothing to mint and
-   * nothing to name — only where to put the message.
+   * nothing to name — only where to put the message. `machine`: the binding
+   * is the listener's own (a work number's hidden-number lead), which the
+   * switch decides (`switchDecides`).
    */
-  | { store: true; leadId: string; row: MessageRow }
+  | { store: true; leadId: string; row: MessageRow; machine?: true }
   /**
    * A stranger on a PERSONAL number: a question, not an answer. Carries who
    * to ask ABOUT — a tray cannot offer an anonymous row — and deliberately
@@ -253,7 +270,7 @@ export type LiveVerdict =
  */
 export function isClientVerdict(
   verdict: LiveVerdict,
-): verdict is { store: true; clientId: string; clientCode: string; row: MessageRow } {
+): verdict is { store: true; clientId: string; clientCode: string; row: MessageRow; retiresMachineRule?: true } {
   return verdict.store && !('openLead' in verdict) && !('leadId' in verdict);
 }
 
@@ -286,12 +303,35 @@ export function decideIncoming(
    * `not_a_client` and — on a personal account — be put back on the tray as
    * a question somebody has already answered. `isSelf` still wins: Saved
    * Messages is not a customer under any decision anybody could write down.
+   *
+   * A binding the LISTENER made by itself (`machine` — a work number's
+   * hidden-number lead, his «1 a») is nobody's answer, so it stands only
+   * while it is still the best fact about the chat (the 2026-10-29 review):
+   *  - on a WORK number: on a personal one nothing a stranger writes is
+   *    stored until a person answers, and a switch to «Shaxsiy raqam» made to
+   *    undo a mistake must undo it for these chats too;
+   *  - while its lead is OPEN: a lost lead writing again is a new enquiry
+   *    (round 79), and a won one is the client it became — both decided by
+   *    the hidden-number door again (`ownerOfVerdict`);
+   *  - until the phone BOOK claims the chat: a client of ours who wrote to the
+   *    new number before it was saved in its contacts is that client the
+   *    moment Telegram shows the number, not a «Telegram» lead for good — the
+   *    line goes to the client and the binding is retired with it.
+   * A person's lead binding (the tray's «Yangi lid», the «📵» card) is an
+   * answer and outranks all three, as it always has.
    */
   const rule = rules.get(peer.id);
-  if (!peer.isSelf && !isTelegramServicePeer(peer) && rule?.decision === 'include' && rule.leadId) {
+  const machine = rule?.machine === true;
+  if (
+    !peer.isSelf &&
+    !isTelegramOfficialPeer(peer) &&
+    rule?.decision === 'include' &&
+    rule.leadId &&
+    (!machine || (workAccount && rule.leadOpen !== false && !classifyDialog(peer, clients).keep))
+  ) {
     const leadRow = toMessageRow(peer.id, msg);
     if (!isWorthKeeping(leadRow)) return { store: false, reason: 'empty' };
-    return { store: true, leadId: rule.leadId, row: leadRow };
+    return machine ? { store: true, leadId: rule.leadId, row: leadRow, machine: true } : { store: true, leadId: rule.leadId, row: leadRow };
   }
 
   const verdict = classifyWithRules(peer, clients, rules);
@@ -317,7 +357,10 @@ export function decideIncoming(
   }
   const row = toMessageRow(peer.id, msg);
   if (!isWorthKeeping(row)) return { store: false, reason: 'empty' };
-  return { store: true, clientId: verdict.clientId, clientCode: verdict.clientCode, row };
+  // A machine binding has no client, so a keep here is the phone book's.
+  return machine
+    ? { store: true, clientId: verdict.clientId, clientCode: verdict.clientCode, row, retiresMachineRule: true }
+    : { store: true, clientId: verdict.clientId, clientCode: verdict.clientCode, row };
 }
 
 /**

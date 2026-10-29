@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { clients, leadStages, leads, tgAccounts, tgChatRules, tgMessages } from '../../platform/db/schema';
 import { phoneDigits } from '../../platform/clients/phone';
@@ -109,6 +109,23 @@ const PHONELESS_NOTE: Record<PhonelessVia, string> = {
 };
 
 /**
+ * A rule row no PERSON wrote: a question the listener or a scan left
+ * (`pending` with no `decided_by` — `noteStranger`, `recordCandidates`), or
+ * the listener's own lead binding (`include` on a lead with no `decided_by` —
+ * this file's work-number door). A person's answer always carries who gave
+ * it: the tray's ↩ included (`decideChat` writes `decided_by` on «pending»
+ * too). The 2026-10-29 review: «any row means somebody decided» turned a
+ * known client's chat into a lead for good once his own «📵» card's question
+ * was standing.
+ */
+export function nobodyDecided(rule: { decision: string; decidedBy: string | null; clientId: string | null }): boolean {
+  return rule.decidedBy === null && rule.clientId === null && (rule.decision === 'pending' || rule.decision === 'include');
+}
+
+/** The machine door found the chat is a client's after all — nothing it wrote may stay. */
+class KeptOnClient extends Error {}
+
+/**
  * The ONE hidden-number minting, shared by both doors that may open such a
  * lead: the AI's «📵» card («🆕 Yangi lid», his Q18 ⭐ — a person's press) and
  * a work number's own line (his «1 a», 2026-10-29 — the listener).
@@ -123,17 +140,27 @@ const PHONELESS_NOTE: Record<PhonelessVia, string> = {
  * first line has a row to lock; it commits as `include`, never as a pending
  * row the stranger-card sweep would ask about.
  *
- * When the rule has no lead — a ↩ on the tray took it back to «pending» — the
- * chat's own stored rows name the lead it was on: an OPEN one is the same
- * person and is taken again, as an open lead with the number is on the other
- * path. A closed one is not reused: a lost lead writing again is a new
- * enquiry (round 79).
+ * Which lead, in the order the phone path finds one: the rule's own while it
+ * is OPEN; else the open lead the chat's own stored rows are on (a ↩ on the
+ * tray took the rule back); else an open lead ANOTHER account's chat with the
+ * same Telegram user is on — a user id is global, as a phone number is, and
+ * the phone path joins two managers' chats with one person onto one lead
+ * (the 2026-10-29 review: one customer writing to two work numbers got two
+ * cards); else a new one. A closed lead is never reused: a lost lead writing
+ * again is a new enquiry (round 79) — the rule is rebound to the new one.
  *
  * The machine door (`work_account`) does not write over a person's answer: a
  * chat somebody marked «hech qachon», or bound to a client, since the
  * listener read its rules answers null and nothing is minted — the caller
- * decides the line again on fresh rules. A person's press (`agent_stranger`)
- * is itself the answer and takes the chat whatever the rule said.
+ * decides the line again on fresh rules. Nor over the phone book: a chat
+ * nobody decided whose rows are a client's is that client's
+ * (`keptClientOfChat`). A person's press (`agent_stranger`) is itself the
+ * answer and takes the chat whatever the rule said.
+ *
+ * Its binding is the MACHINE's (`decided_by` NULL, read as `ChatRule.machine`):
+ * nobody decided it, so `decideIncoming` lets it stand only on a work number,
+ * while its lead is open, and until the book claims the chat. A press is a
+ * person's and is recorded as theirs.
  *
  * Named by `leadNameForChat` (title, else @username, else the placeholder —
  * never the chat id); owned, like every chat lead, by the manager whose
@@ -146,116 +173,204 @@ export async function phonelessLeadForChat(
   ctx: AuditContext,
 ): Promise<string | null> {
   const actor = { ...ctx, actorId: ctx.actorId ?? input.managerUserId };
+  const machine = input.via === 'work_account';
   const where = and(eq(tgChatRules.managerUserId, input.managerUserId), eq(tgChatRules.peerId, input.peerId));
   // Every later line of the chat asks this until the listener's rules are
-  // read again (ten minutes): an already-bound chat is one indexed read, not
-  // a transaction. A committed include is final here — a person changing it
-  // meanwhile is the stale-rules race every listener rule has.
-  const [bound] = await db.select({ decision: tgChatRules.decision, leadId: tgChatRules.leadId }).from(tgChatRules).where(where);
-  if (bound?.decision === 'include' && bound.leadId) return bound.leadId;
+  // read again: an already-bound chat whose lead is still open is one indexed
+  // read, not a transaction. A committed include is final here — a person
+  // changing it meanwhile is the stale-rules race every listener rule has.
+  const [bound] = await db
+    .select({
+      decision: tgChatRules.decision,
+      decidedBy: tgChatRules.decidedBy,
+      clientId: tgChatRules.clientId,
+      leadId: tgChatRules.leadId,
+      leadKind: leadStages.kind,
+    })
+    .from(tgChatRules)
+    .leftJoin(leads, eq(leads.id, tgChatRules.leadId))
+    .leftJoin(leadStages, eq(leadStages.id, leads.stageId))
+    .where(where);
+  if (bound?.decision === 'include' && bound.leadId && bound.leadKind === 'open') return bound.leadId;
   // A client's chat whose number Telegram has since hidden is that client's,
   // not a new lead's (`keptClientOfChat`) — the machine door mints nothing
   // over it; `ownerOfVerdict` files the line on the client.
-  if (!bound && input.via === 'work_account' && (await keptClientOfChat(input.managerUserId, input.peerId))) return null;
+  if (machine && (!bound || nobodyDecided(bound)) && (await keptClientOfChat(input.managerUserId, input.peerId))) return null;
   const stageId = await defaultStageId();
-  return db.transaction(async (tx) => {
-    await tx
-      .insert(tgChatRules)
-      .values({
-        managerUserId: input.managerUserId,
-        peerId: input.peerId,
-        decision: 'pending',
-        peerTitle: input.title?.slice(0, 200) ?? null,
-        peerPhone: null,
-      })
-      .onConflictDoNothing({ target: [tgChatRules.managerUserId, tgChatRules.peerId] });
-    const [rule] = await tx.select().from(tgChatRules).where(where).for('update');
-    if (!rule) return null;
-    if (rule.decision === 'include' && rule.leadId) return rule.leadId;
-    if (input.via === 'work_account' && (rule.decision === 'exclude' || (rule.decision === 'include' && rule.clientId))) return null;
+  try {
+    return await db.transaction(async (tx) => {
+      await tx
+        .insert(tgChatRules)
+        .values({
+          managerUserId: input.managerUserId,
+          peerId: input.peerId,
+          decision: 'pending',
+          peerTitle: input.title?.slice(0, 200) ?? null,
+          peerPhone: null,
+        })
+        .onConflictDoNothing({ target: [tgChatRules.managerUserId, tgChatRules.peerId] });
+      const [rule] = await tx.select().from(tgChatRules).where(where).for('update');
+      if (!rule) return null;
+      const openKind = async (leadId: string) => {
+        const [row] = await tx
+          .select({ kind: leadStages.kind })
+          .from(leads)
+          .innerJoin(leadStages, eq(leadStages.id, leads.stageId))
+          .where(eq(leads.id, leadId));
+        return row?.kind === 'open';
+      };
+      const ruleLead = rule.leadId && (await openKind(rule.leadId)) ? rule.leadId : null;
+      if (rule.decision === 'include' && ruleLead) return ruleLead;
+      if (machine && (rule.decision === 'exclude' || (rule.decision === 'include' && rule.clientId))) return null;
+      if (machine && nobodyDecided(rule)) {
+        // The book's answer, under the lock: the pre-check above ran on the
+        // pool before it, and a row it may have inserted must not outlive a
+        // refusal — the tray would ask about a client's chat.
+        const [newest] = await tx
+          .select({ clientId: tgMessages.clientId })
+          .from(tgMessages)
+          .where(and(eq(tgMessages.managerUserId, input.managerUserId), eq(tgMessages.peerId, input.peerId)))
+          .orderBy(desc(tgMessages.sentAt), desc(tgMessages.tgMessageId))
+          .limit(1);
+        if (newest?.clientId) throw new KeptOnClient();
+      }
 
-    const [onRows] = await tx
-      .select({ id: leads.id })
-      .from(tgMessages)
-      .innerJoin(leads, eq(leads.id, tgMessages.leadId))
-      .innerJoin(leadStages, eq(leadStages.id, leads.stageId))
-      .where(
-        and(
-          eq(tgMessages.managerUserId, input.managerUserId),
-          eq(tgMessages.peerId, input.peerId),
-          eq(leadStages.kind, 'open'),
-        ),
-      )
-      .orderBy(desc(tgMessages.sentAt))
-      .limit(1);
-    // A lead the rule still names (the «📵» door has always reused it) comes first.
-    let leadId = rule.leadId ?? onRows?.id ?? null;
-    if (!leadId) {
-      // The name Telegram shows now, else the one the rule kept from earlier.
-      const fresh = leadNameForChat(input.title, null);
-      const name = fresh !== PHONELESS_LEAD_NAME ? fresh : leadNameForChat(rule.peerTitle, null);
-      const lead = await insertLeadTx(
-        tx,
-        { name, ownerId: input.managerUserId, note: PHONELESS_NOTE[input.via] },
-        actor,
-        stageId,
-      );
+      const [onRows] = await tx
+        .select({ id: leads.id })
+        .from(tgMessages)
+        .innerJoin(leads, eq(leads.id, tgMessages.leadId))
+        .innerJoin(leadStages, eq(leadStages.id, leads.stageId))
+        .where(
+          and(
+            eq(tgMessages.managerUserId, input.managerUserId),
+            eq(tgMessages.peerId, input.peerId),
+            eq(leadStages.kind, 'open'),
+          ),
+        )
+        .orderBy(desc(tgMessages.sentAt), desc(tgMessages.tgMessageId))
+        .limit(1);
+      // The same Telegram user on a colleague's account: their rule's lead, or
+      // the lead their stored rows are on (a visible-number lead has no rule).
+      // The rows are asked per account, through the (manager, peer) prefix of
+      // the messages' unique index — `peer_id` alone has no index.
+      let elsewhere: string | null = null;
+      if (!ruleLead && !onRows) {
+        const others = (await tx.select({ id: tgAccounts.managerUserId }).from(tgAccounts))
+          .map((a) => a.id)
+          .filter((id) => id !== input.managerUserId);
+        if (others.length > 0) {
+          const [byRule] = await tx
+            .select({ id: leads.id, createdAt: leads.createdAt })
+            .from(tgChatRules)
+            .innerJoin(leads, eq(leads.id, tgChatRules.leadId))
+            .innerJoin(leadStages, eq(leadStages.id, leads.stageId))
+            .where(
+              and(
+                inArray(tgChatRules.managerUserId, others),
+                eq(tgChatRules.peerId, input.peerId),
+                eq(tgChatRules.decision, 'include'),
+                eq(leadStages.kind, 'open'),
+              ),
+            )
+            .orderBy(asc(leads.createdAt), asc(leads.id))
+            .limit(1);
+          const [byRows] = await tx
+            .select({ id: leads.id, createdAt: leads.createdAt })
+            .from(tgMessages)
+            .innerJoin(leads, eq(leads.id, tgMessages.leadId))
+            .innerJoin(leadStages, eq(leadStages.id, leads.stageId))
+            .where(and(inArray(tgMessages.managerUserId, others), eq(tgMessages.peerId, input.peerId), eq(leadStages.kind, 'open')))
+            .orderBy(asc(leads.createdAt), asc(leads.id))
+            .limit(1);
+          // Oldest first, the phone path's own order (round 67b).
+          const pick = [byRule, byRows]
+            .filter((row): row is { id: string; createdAt: Date } => Boolean(row))
+            .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id))[0];
+          elsewhere = pick?.id ?? null;
+        }
+      }
+      // A lead the rule still names (the «📵» door has always reused it) comes first.
+      let leadId = ruleLead ?? onRows?.id ?? elsewhere;
+      if (!leadId) {
+        // The name Telegram shows now, else the one the rule kept from earlier.
+        const fresh = leadNameForChat(input.title, null);
+        const name = fresh !== PHONELESS_LEAD_NAME ? fresh : leadNameForChat(rule.peerTitle, null);
+        const lead = await insertLeadTx(
+          tx,
+          { name, ownerId: input.managerUserId, note: PHONELESS_NOTE[input.via] },
+          actor,
+          stageId,
+        );
+        await writeAudit(tx, actor, {
+          entityType: 'lead',
+          entityId: lead.id,
+          action: 'create',
+          after: { name, phone: null, stageId },
+        });
+        leadId = lead.id;
+      }
+      await tx
+        .update(tgChatRules)
+        .set({
+          decision: 'include',
+          leadId,
+          clientId: null,
+          // The label refreshed like a scan refreshes it: deciding from a stale name is deciding about the wrong person.
+          peerTitle: input.title?.slice(0, 200) ?? rule.peerTitle,
+          // Nobody decided the listener's binding — the marker `ChatRule.machine` reads.
+          decidedBy: machine ? null : actor.actorId,
+          decidedAt: new Date(),
+        })
+        .where(eq(tgChatRules.id, rule.id));
       await writeAudit(tx, actor, {
-        entityType: 'lead',
-        entityId: lead.id,
-        action: 'create',
-        after: { name, phone: null, stageId },
+        entityType: 'tg_chat_rule',
+        entityId: rule.id,
+        action: 'update',
+        before: { decision: rule.decision, clientId: rule.clientId, leadId: rule.leadId },
+        after: { decision: 'include', clientId: null, leadId, reason: `${input.via}_phoneless` },
       });
-      leadId = lead.id;
-    }
-    await tx
-      .update(tgChatRules)
-      .set({
-        decision: 'include',
-        leadId,
-        clientId: null,
-        // The label refreshed like a scan refreshes it: deciding from a stale name is deciding about the wrong person.
-        peerTitle: input.title?.slice(0, 200) ?? rule.peerTitle,
-        decidedBy: actor.actorId,
-        decidedAt: new Date(),
-      })
-      .where(eq(tgChatRules.id, rule.id));
-    await writeAudit(tx, actor, {
-      entityType: 'tg_chat_rule',
-      entityId: rule.id,
-      action: 'update',
-      before: { decision: rule.decision, clientId: rule.clientId, leadId: rule.leadId },
-      after: { decision: 'include', clientId: null, leadId, reason: `${input.via}_phoneless` },
+      return leadId;
     });
-    return leadId;
-  });
+  } catch (err) {
+    if (err instanceof KeptOnClient) return null;
+    throw err;
+  }
 }
 
 /**
  * The client a hidden number's chat was ALREADY kept on — by the phone it
  * showed before its owner hid it from this account (Telegram's privacy
- * setting; the user id, and so the chat, stays the same). Only for a chat no
- * person ever decided on the tray (no rule row): those rows came from the
- * phone classifier, which is proof (agent `chatIdentity`). A rule-derived
- * client a ↩ took back is history, not identity, and is not followed here.
- * Without this, the first hidden line of a known client on a work number
- * would mint a «Telegram» lead and bind the chat to it for good — a rule
- * outranks the phone match even once the number shows again.
+ * setting; the user id, and so the chat, stays the same), or by the lead it
+ * was won from. Only for a chat no PERSON decided on the tray
+ * (`nobodyDecided`: no rule row, a question the «📵» card or a scan left, or
+ * the listener's own lead binding): those rows came from the phone
+ * classifier, or from a person winning the lead onto the client. A
+ * rule-derived client a ↩ took back is history, not identity, and is not
+ * followed here. Without this, the first hidden line of a known client on a
+ * work number would mint a «Telegram» lead and bind the chat to it.
+ *
+ * Filing is not proof: the agent's fence asks its own question of these
+ * rows (`chatIdentity` — a chat whose rows came through a lead proves itself
+ * like a rule's, K9).
  */
 export async function keptClientOfChat(
   managerUserId: string,
   peerId: bigint,
 ): Promise<{ clientId: string; clientCode: string } | null> {
   const [rule] = await db
-    .select({ id: tgChatRules.id })
+    .select({ decision: tgChatRules.decision, decidedBy: tgChatRules.decidedBy, clientId: tgChatRules.clientId })
     .from(tgChatRules)
     .where(and(eq(tgChatRules.managerUserId, managerUserId), eq(tgChatRules.peerId, peerId)));
-  if (rule) return null;
+  if (rule && !nobodyDecided(rule)) return null;
+  // Telegram dates a line to the SECOND, so a burst ties: its own message id
+  // (which only grows within a chat) breaks it, or «the newest row» is a
+  // different row on different days (round 67b) — the line after the number
+  // showed would lose to the one before.
   const [newest] = await db
     .select({ clientId: tgMessages.clientId })
     .from(tgMessages)
     .where(and(eq(tgMessages.managerUserId, managerUserId), eq(tgMessages.peerId, peerId)))
-    .orderBy(desc(tgMessages.sentAt))
+    .orderBy(desc(tgMessages.sentAt), desc(tgMessages.tgMessageId))
     .limit(1);
   if (!newest?.clientId) return null;
   const [client] = await db
@@ -265,11 +380,49 @@ export async function keptClientOfChat(
   return client ? { clientId: client.id, clientCode: client.clientCode } : null;
 }
 
+/**
+ * The listener's own lead binding, taken back: the phone book has claimed the
+ * chat (`LiveVerdict.retiresMachineRule`). Only a binding NOBODY decided — a
+ * person's answer is never deleted by a machine. The chat then has no rule at
+ * all, which is what it would have had if Telegram had shown the number from
+ * the first line: the book files it, and a later hidden line goes where its
+ * rows are (`keptClientOfChat`). The lead it was on stays on the funnel with
+ * its lines — closing a card is a person's call. Audited with the reason.
+ */
+export async function retireMachineBinding(managerUserId: string, peerId: bigint, ctx: AuditContext): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const gone = await tx
+      .delete(tgChatRules)
+      .where(
+        and(
+          eq(tgChatRules.managerUserId, managerUserId),
+          eq(tgChatRules.peerId, peerId),
+          eq(tgChatRules.decision, 'include'),
+          isNull(tgChatRules.decidedBy),
+          isNull(tgChatRules.clientId),
+        ),
+      )
+      .returning({ id: tgChatRules.id, leadId: tgChatRules.leadId });
+    const row = gone[0];
+    if (!row) return false;
+    await writeAudit(tx, { ...ctx, actorId: ctx.actorId ?? managerUserId }, {
+      entityType: 'tg_chat_rule',
+      entityId: row.id,
+      action: 'delete',
+      before: { decision: 'include', clientId: null, leadId: row.leadId },
+      after: { reason: 'book_match' },
+    });
+    return true;
+  });
+}
+
 /** Where a kept line goes, and the word the listener's log prints for it. */
 export interface ChatOwner {
   clientId: string | null;
   leadId: string | null;
   label: string;
+  /** The chat's rule was written or taken back here — the listener's map is old. */
+  rulesMoved: boolean;
 }
 
 /**
@@ -279,8 +432,10 @@ export interface ChatOwner {
  * work number, whose lead is found or minted here (0064, and a hidden number
  * since his «1 a»).
  *
- * A hidden number whose chat was already kept on a client by the phone it
- * once showed stays on that client (`keptClientOfChat`).
+ * A hidden number whose chat was already kept on a client — by the phone it
+ * once showed, or by the lead a person won onto the client — stays on that
+ * client (`keptClientOfChat`). A known client whose chat the listener had
+ * bound to a lead by itself takes the chat back (`retireMachineBinding`).
  *
  * Null only for a hidden number whose chat a person answered otherwise since
  * the listener read its rules (`phonelessLeadForChat`): the line is not
@@ -294,17 +449,21 @@ export async function ownerOfVerdict(
   ctx: AuditContext,
 ): Promise<ChatOwner | null> {
   if ('openLead' in verdict) {
-    if (verdict.peer.phone === null) {
+    const hidden = verdict.peer.phone === null;
+    if (hidden) {
       const kept = await keptClientOfChat(managerUserId, verdict.peer.peerId);
-      if (kept) return { clientId: kept.clientId, leadId: null, label: kept.clientCode };
+      if (kept) return { clientId: kept.clientId, leadId: null, label: kept.clientCode, rulesMoved: false };
     }
     const leadId = await leadForChat(managerUserId, verdict.peer, ctx);
-    return leadId ? { clientId: null, leadId, label: 'LID' } : null;
+    // A hidden number goes through the chat's rule: the map that decided this
+    // line did not have it bound to an open lead, and now it is.
+    return leadId ? { clientId: null, leadId, label: 'LID', rulesMoved: hidden } : null;
   }
-  // Somebody answered «Lid ochish» on the tray (0065). The lead is already
-  // there — nothing to mint, nothing to name.
-  if ('leadId' in verdict) return { clientId: null, leadId: verdict.leadId, label: 'LID' };
-  return { clientId: verdict.clientId, leadId: null, label: verdict.clientCode };
+  // Somebody answered «Lid ochish» on the tray (0065), or the listener bound
+  // the chat itself. The lead is already there — nothing to mint, nothing to name.
+  if ('leadId' in verdict) return { clientId: null, leadId: verdict.leadId, label: 'LID', rulesMoved: false };
+  const retired = verdict.retiresMachineRule ? await retireMachineBinding(managerUserId, verdict.row.peerId, ctx) : false;
+  return { clientId: verdict.clientId, leadId: null, label: verdict.clientCode, rulesMoved: retired };
 }
 
 /**

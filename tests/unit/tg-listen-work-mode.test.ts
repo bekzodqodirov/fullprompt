@@ -126,6 +126,20 @@ describe('two strangers at once after the flip', () => {
     expect(await sw.movedFrom(true, 6)).toBe(false);
   });
 
+  it('a line about to be STORED reads the switch afresh — a flip to «Shaxsiy raqam» stops the very next lead (2026-10-29 review)', async () => {
+    // The probe: «Ish raqami» read at t0, flipped to personal in the database, a stranger's line at t0+25 s.
+    let work = true;
+    let reads = 0;
+    const sw = workModeSwitch({ initial: true, now: 0, read: async () => ((reads += 1), work), log: () => {}, warn: () => {} });
+    work = false;
+    // A line that would only be passed over keeps the clock — a late «yes» costs one line…
+    expect(await sw.movedFrom(true, 25_000)).toBe(false);
+    expect(reads).toBe(0);
+    // …a line that would be written asks now: no stored lead on a half-minute-old «Ish raqami».
+    expect(await sw.movedFrom(true, 25_000, true)).toBe(true);
+    expect({ reads, work: sw.work }).toEqual({ reads: 1, work: false });
+  });
+
   it('a failed read keeps the last answer and waits for the next clock', async () => {
     let reads = 0;
     let warned = 0;
@@ -156,7 +170,8 @@ describe('the listener asks it (source shape)', () => {
     const decided = handle.indexOf('const decidedWith = workMode.work;\n      let verdict = decideIncoming(peer, msg, book.clients, rules, decidedWith);');
     expect(decided, 'the value the line is decided with is the one compared').toBeGreaterThan(0);
     // `switchDecides`, not `suspectsStaleBook`: since his «1 a» a hidden number is the switch's too.
-    const ask = handle.indexOf('if (switchDecides(verdict) && (await workMode.movedFrom(decidedWith, now))) {');
+    // A line the switch would have STORED reads it afresh (`verdict.store` is the force).
+    const ask = handle.indexOf('if (switchDecides(verdict) && (await workMode.movedFrom(decidedWith, now, verdict.store))) {');
     expect(ask, 'the stranger path asks the switch').toBeGreaterThan(decided);
     const branch = handle.slice(ask, handle.indexOf('}', ask));
     expect(branch).toContain('verdict = decideIncoming(peer, msg, book.clients, rules, workMode.work);');

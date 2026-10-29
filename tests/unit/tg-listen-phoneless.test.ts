@@ -27,6 +27,16 @@ describe('the listener files a kept line through ONE door', () => {
     }
   });
 
+  it('a rule the door wrote or took back is read again at once — on both paths, before the next line is decided', () => {
+    // Without it a hidden number's later lines kept asking the door (a mint's
+    // rule was not in the map), and a chat the book had claimed kept its
+    // retired binding for ten minutes (2026-10-29 review).
+    const live = handle.slice(handle.indexOf('const owner = await ownerOfVerdict('), handle.indexOf('const written = await storeIncoming('));
+    expect(live).toContain('if (owner.rulesMoved) rules = await rulesFor(account.managerUserId);');
+    const caught = catchUp.slice(catchUp.indexOf('const owner = await ownerOfVerdict('), catchUp.indexOf('const written = await storeIncoming('));
+    expect(caught).toContain('if (owner.rulesMoved) rules = await rulesFor(account.managerUserId);');
+  });
+
   it('a chat a person answered meanwhile is stored nowhere, and the fresh rules decide the next line', () => {
     const refused = handle.slice(handle.indexOf('if (!owner) {'), handle.indexOf('const written = await storeIncoming('));
     expect(refused, 'the refusal sits before the store').not.toBe('');

@@ -3,6 +3,7 @@ import { db } from '../../platform/db/client';
 import {
   attachments,
   clients,
+  leadStages,
   leads,
   tgChatRules,
   tgMessages,
@@ -12,7 +13,7 @@ import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { getStorage } from '../../platform/files/storage';
 import { logger } from '../../platform/logger';
 import { leadForChat, phonelessLeadForChat } from './chat-lead';
-import { TELEGRAM_SERVICE_PEER, type ChatRule } from './telegram-import';
+import { isTelegramOfficialPeer, TELEGRAM_SERVICE_PEER, type ChatRule } from './telegram-import';
 
 /**
  * The chats a person has said yes or no to.
@@ -28,9 +29,13 @@ import { TELEGRAM_SERVICE_PEER, type ChatRule } from './telegram-import';
 
 export class ChatRuleError extends Error {}
 
+/** A rule's chat is one of Telegram's own accounts (a rule is only ever a private chat). */
+const officialChat = (peerId: bigint) => isTelegramOfficialPeer({ id: peerId, isPrivate: true });
+
 /*
  * Telegram's own service chat (777000 — login codes, «new login», limitation
- * notices) is no customer under any answer. The classifiers have refused to
+ * notices) — and since the 2026-10-29 review every other account of
+ * Telegram's own (`isTelegramOfficialPeer`) — is no customer under any answer. The classifiers have refused to
  * keep it since the AI sotuvchi round, but a tray rule written BEFORE that
  * (a scan's `pending`, even a decision) is still a row these doors can be
  * pressed on, and every one of them that makes a chat a card's —
@@ -40,7 +45,12 @@ export class ChatRuleError extends Error {}
  * because that is the right answer and what the cleanup script writes.
  */
 
-/** The rules the import and the listener consult, keyed by peer. */
+/**
+ * The rules the import and the listener consult, keyed by peer — with the
+ * two facts `decideIncoming` needs about a lead binding the listener made by
+ * itself (chat-lead `phonelessLeadForChat`): that nobody decided it
+ * (`machine`), and whether its lead is still open (`leadOpen`).
+ */
 export async function rulesFor(managerUserId: string): Promise<Map<bigint, ChatRule>> {
   const rows = await db
     .select({
@@ -49,9 +59,13 @@ export async function rulesFor(managerUserId: string): Promise<Map<bigint, ChatR
       clientId: tgChatRules.clientId,
       clientCode: clients.clientCode,
       leadId: tgChatRules.leadId,
+      decidedBy: tgChatRules.decidedBy,
+      leadStageKind: leadStages.kind,
     })
     .from(tgChatRules)
     .leftJoin(clients, eq(tgChatRules.clientId, clients.id))
+    .leftJoin(leads, eq(tgChatRules.leadId, leads.id))
+    .leftJoin(leadStages, eq(leads.stageId, leadStages.id))
     .where(eq(tgChatRules.managerUserId, managerUserId));
 
   return new Map(
@@ -63,6 +77,8 @@ export async function rulesFor(managerUserId: string): Promise<Map<bigint, ChatR
         clientId: r.clientId,
         clientCode: r.clientCode,
         leadId: r.leadId,
+        machine: r.decision === 'include' && r.decidedBy === null && r.clientId === null && r.leadId !== null,
+        leadOpen: r.leadId ? r.leadStageKind === 'open' : undefined,
       },
     ]),
   );
@@ -211,7 +227,7 @@ export async function decideChat(
 ): Promise<void> {
   const [rule] = await db.select().from(tgChatRules).where(eq(tgChatRules.id, input.id));
   if (!rule) throw new ChatRuleError('chat_rule_not_found');
-  if (input.decision === 'include' && rule.peerId === TELEGRAM_SERVICE_PEER) {
+  if (input.decision === 'include' && officialChat(rule.peerId)) {
     throw new ChatRuleError('service_chat');
   }
 
@@ -352,7 +368,7 @@ export async function openLeadForChat(
   if (!rule) throw new ChatRuleError('chat_rule_not_found');
   // Ahead of the phone: 777000 may well show one (42777), and a lead on it is
   // a funnel card whose «conversation» is a login code.
-  if (rule.peerId === TELEGRAM_SERVICE_PEER) throw new ChatRuleError('service_chat');
+  if (officialChat(rule.peerId)) throw new ChatRuleError('service_chat');
   const phone = (rule.peerPhone ?? '').trim();
   // The tray's own button keeps the old refusal about a hidden number: it is
   // a person's PERSONAL tray (a work number opens such a lead by itself, his
@@ -429,7 +445,7 @@ export async function attachPeerToCard(
   // No card may own it, so the question of WHICH card does not arise. The
   // upsert below would otherwise turn a stale `pending` (or a person's
   // «never») into an include in one press.
-  if (input.peerId === TELEGRAM_SERVICE_PEER) throw new ChatRuleError('service_chat');
+  if (officialChat(input.peerId)) throw new ChatRuleError('service_chat');
   const clientId = input.clientId ?? null;
   const leadId = input.leadId ?? null;
   // The CHECK says the same thing in the database; saying it here too is what

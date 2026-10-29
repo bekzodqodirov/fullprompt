@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { leadNameForChat, PHONELESS_LEAD_NAME, unknownChatAction } from '@/modules/wms/crm/unknown-chat';
 import { phoneFingerprint } from '@/modules/wms/crm/peer-index';
-import type { DialogVerdict } from '@/modules/wms/crm/telegram-import';
+import { peerTitle, type DialogVerdict } from '@/modules/wms/crm/telegram-import';
 
 /**
  * Round 79 — the owner's report: «telegramdan yangi klientlar ochsa smslar
@@ -73,6 +73,20 @@ describe('an unknown chat is a customer or a question, depending on the number',
     }
     // Words only: no digit a reader could take for a phone or an id.
     expect(PHONELESS_LEAD_NAME).not.toMatch(/\d/);
+  });
+
+  it('a name of characters that draw nothing is no name — Telegram’s invisible-name trick (2026-10-29 review)', () => {
+    // U+3164 HANGUL FILLER, U+115F, U+FFA0, U+200B, U+2800 BRAILLE BLANK: `trim()` keeps every one.
+    for (const title of ['\u3164', '\u200B', '\u2800', '\u3164 \u3164', '\u115F', '\uFFA0', ' \u3164\u200B ']) {
+      expect(leadNameForChat(title, null), JSON.stringify(title)).toBe(PHONELESS_LEAD_NAME);
+      expect(leadNameForChat(title, '+998901234567'), JSON.stringify(title)).toBe('+998901234567');
+    }
+    // A real name keeps itself, the filler at its edges cut.
+    expect(leadNameForChat('\u3164Dilshod\u200B', null)).toBe('Dilshod');
+    // The title it is handed falls back to the @username first (`peerTitle`).
+    expect(peerTitle({ id: 5512345678n, isPrivate: true, firstName: '\u3164', username: 'yuk_kerak' })).toBe('@yuk_kerak');
+    expect(peerTitle({ id: 5512345678n, isPrivate: true, firstName: '\u3164', lastName: '\u2800' })).toBe('#5512345678');
+    expect(leadNameForChat(peerTitle({ id: 5512345678n, isPrivate: true, firstName: '\u3164' }), null)).toBe(PHONELESS_LEAD_NAME);
   });
 });
 

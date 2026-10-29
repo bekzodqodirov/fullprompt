@@ -750,8 +750,9 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       // over) — so it asks the switch's own clock first. The miss refresh
       // below resets the BOOK's, and on a busy number that alone kept the
       // switch from ever being read again. Decided again whenever the switch
-      // now differs from the value THIS line was decided with.
-      if (switchDecides(verdict) && (await workMode.movedFrom(decidedWith, now))) {
+      // now differs from the value THIS line was decided with — read afresh
+      // when the line would be STORED on its say-so (`movedFrom`'s force).
+      if (switchDecides(verdict) && (await workMode.movedFrom(decidedWith, now, verdict.store))) {
         verdict = decideIncoming(peer, msg, book.clients, rules, workMode.work);
       }
       // A number we do not know MIGHT be a client added since the book was
@@ -812,6 +813,9 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
         passed += 1;
         return null;
       }
+      // The chat's rule was written (a hidden number bound to its lead) or
+      // taken back (the book claimed the chat): the next line is decided on it.
+      if (owner.rulesMoved) rules = await rulesFor(account.managerUserId);
       const written = await storeIncoming({
         clientId: owner.clientId,
         leadId: owner.leadId,
@@ -1938,16 +1942,19 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
           // message it would have been a minute earlier.
           const verdict = decideIncoming(peer, msg, book.clients, rules, workMode.work);
           if (!verdict.store) continue;
-          // The same owners the live path resolves, through the same door.
-          // Catch-up walks only chats that already have stored rows, so a
-          // hidden number met here is one its rule (or its own rows) already
-          // ties to a lead — nothing new is minted for it.
+          // The same owners the live path resolves, through the same door —
+          // and so the same mints: catch-up walks only chats that already have
+          // stored rows, so it never opens a lead for a chat it has never
+          // seen, but a stored chat whose lead is closed (a lost lead writing
+          // again, round 79) or whose rule a ↩ took back gets the lead the
+          // live line would have given it.
           const owner = await ownerOfVerdict(verdict, account.managerUserId, {
             actorId: account.managerUserId,
             ip: null,
             userAgent: null,
           });
           if (!owner) continue;
+          if (owner.rulesMoved) rules = await rulesFor(account.managerUserId);
           const written = await storeIncoming({
             clientId: owner.clientId,
             leadId: owner.leadId,

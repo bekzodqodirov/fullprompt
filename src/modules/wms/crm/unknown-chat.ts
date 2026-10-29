@@ -1,4 +1,4 @@
-import type { DialogVerdict } from './telegram-import';
+import { visibleText, type DialogVerdict } from './telegram-import';
 
 /**
  * What to do with a conversation that belongs to nobody we know.
@@ -61,7 +61,8 @@ export type UnknownChatAction =
  * service chat is login codes, and an excluded chat is a decision somebody
  * already wrote down. `classifyDialog` asks every one of those BEFORE the
  * phone, so `no_phone` is only ever a private, non-bot, non-self person who
- * is not 777000.
+ * is none of Telegram's own accounts (`isTelegramOfficialPeer` — 777000, the
+ * «Verification Codes» and «Replies» accounts, and the rest of them).
  */
 export function unknownChatAction(
   verdict: DialogVerdict,
@@ -94,9 +95,12 @@ const ID_LABEL = /^#\d+$/;
  * from the next one, and never the chat id: `peerTitle` ends on «#<id>» so a
  * tray row is never blank, and an id on a funnel card is a number nobody can
  * ring that reads like one. A hidden number has no phone to fall back to.
+ * «Empty» is what a person SEES (`visibleText`): a name of U+3164 fillers —
+ * Telegram's invisible-name trick — is no name, and passed through `trim()`
+ * it gave a hidden-number lead nothing on its card to be told apart by.
  */
 export function leadNameForChat(title: string | null | undefined, phone: string | null): string {
-  const clean = (title ?? '').trim();
+  const clean = visibleText(title);
   if (clean.length > 0 && !ID_LABEL.test(clean)) return clean;
   const number = (phone ?? '').trim();
   return number.length > 0 ? number : PHONELESS_LEAD_NAME;
