@@ -357,9 +357,36 @@ const NUMERAL_WORDS = [
   'одиннадцать|двенадцать|тринадцать|четырнадцать|пятнадцать|шестнадцать|семнадцать|восемнадцать|девятнадцать',
   'двадцать|тридцать|сорок|пятьдесят|шестьдесят|семьдесят|восемьдесят|девяносто',
   'сто|двести|двухсот|триста|тр[её]хсот|четыреста|пятьсот|шестьсот|семьсот|восемьсот|девятьсот|тысяч\\p{L}*',
-  'two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|hundred|thousand',
-  'دو|سه|چهار|پنج|شش|هفت|هشت|ده|بیست|سی|چهل|پنجاه|صد|هزار',
+  'two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen',
+  'twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand',
+  'دو|سه|چهار|پنج|شش|هفت|هشت|ده|یازده|دوازده|سیزده|چهارده|پانزده|شانزده|هفده|هجده|نوزده|بیست|سی|چهل|پنجاه|شصت|هفتاد|هشتاد|نود|صد|هزار',
 ].join('|');
+
+/**
+ * The numerals that are a FIGURE in any reply (third review): hundreds and thousands, tens and teens. A price
+ * is never two or three dollars — the flight is 17 a kilo, the truck from 110 a cube — so a spelled price is
+ * one of these, and «ikki», «три», «two» alone are as often kinds, warehouses and questions as counts. The
+ * teens English and Persian lacked (thirteen-nineteen, sixty-ninety, یازده-نوزده) passed as no numeral at all:
+ * «Air freight is seventeen dollars a kilo» named a currency beside a word nothing read. Persian «ده» stays a
+ * small count: it is «village» as well as ten.
+ */
+const SCALE_WORD =
+  /^(?:yuz|ming|юз|минг|сто|двести|двухсот|триста|тр[её]хсот|четыреста|пятьсот|шестьсот|семьсот|восемьсот|девятьсот|тысяч\p{L}*|hundred|thousand|صد|هزار)$/iu;
+const TENS_WORD = new RegExp(
+  `^(?:${[
+    "o['‘’ʻ`]n|yigirma|o['‘’ʻ`]ttiz|qirq|ellik|oltmish|yetmish|sakson|to['‘’ʻ`]?qson",
+    'ўн|йигирма|ўттиз|қирқ|эллик|олтмиш|етмиш|саксон|тўқсон',
+    'десять|десяти|одиннадцать|двенадцать|тринадцать|четырнадцать|пятнадцать|шестнадцать|семнадцать|восемнадцать|девятнадцать',
+    'двадцать|тридцать|сорок|пятьдесят|шестьдесят|семьдесят|восемьдесят|девяносто',
+    'ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety',
+    'یازده|دوازده|سیزده|چهارده|پانزده|شانزده|هفده|هجده|نوزده|بیست|سی|چهل|پنجاه|شصت|هفتاد|هشتاد|نود',
+  ].join('|')})$`,
+  'iu',
+);
+/** A bare scale word standing alone — «ming», «сто», «тысяча», «hundred»: a figure in a reply that prices, a word in one that does not. */
+const LONE_SCALE = /^(?:ming|минг|сто|тысяч\p{L}*|hundred|thousand|صد|هزار)$/iu;
+/** «Yuz» alone is also a FACE — «yuz kremi», a face cream, is goods — and «yuz bermoq» is to happen: only its neighbours make it a figure. */
+const LONE_FACE = /^(?:yuz|юз)$/iu;
 const NINE_FA = /(?<![\p{L}])نه\s+(?:روز|هفته|ماه|ساعت|دلار|تومان|افغانی|کیلو|متر)/u;
 
 /** A money or measure word nearby, in any of the six languages — the shipped list, read across the whole text (Chinese numerals only). */
@@ -496,11 +523,31 @@ const NOT_A_FIGURE = new RegExp(
     'things?',
     'questions?',
     'choices?',
+    // …and what a qualification question counts (third review): «две вещи», «два значения», «two numbers»,
+    // «ikki-uch rasm», «две-три фотографии», «uch omborimiz», «три склада», «three warehouses».
+    'вещ\\p{L}*',
+    'значени\\p{L}*',
+    'параметр\\p{L}*',
+    'момент\\p{L}*',
+    'numbers?',
+    'rasm\\p{L}*',
+    'расм\\p{L}*',
+    'фото\\p{L}*',
+    'photos?',
+    'pictures?',
+    'ombor\\p{L}*',
+    'омбор\\p{L}*',
+    'склад\\p{L}*',
+    'warehouses?',
+    'thanks?',
     'راه\\p{L}*',
     'نوع',
   ].join('|')})[.,:]?$`,
   'iu',
 );
+/** The only words that free a hundred or a thousand: a thanks — «Ming rahmat», «Тысяча благодарностей», «a thousand thanks». */
+const TIMES = /^(?:marta|bor|марта|бор|раз|times)[.,]?$/iu;
+const THANKS = /^(?:rahmat\p{L}*|raxmat\p{L}*|раҳмат\p{L}*|рахмат\p{L}*|благодарност\p{L}*|спасибо|thanks?)[.,:!]?$/iu;
 
 /** A per-unit price anywhere in a sentence: «kub uchun», «kilosiga», «за один куб», «per kg». */
 const MEASURE_UNIT = '(?:kub\\p{L}*|куб\\p{L}*|kg|кг|kilo\\p{L}*|кило\\p{L}*|cbm|m3|м3|tonn\\p{L}*|тонн\\p{L}*|tons?)';
@@ -601,8 +648,6 @@ const UNIT_TOKEN = new RegExp(
   ].join('|')})[.,]?$`,
   'iu',
 );
-/** …and a measure alone, as one whole token. */
-const MEASURE_TOKEN = new RegExp(`^(?:${MEASURE_UNITS.join('|')})[.,]?$`, 'iu');
 
 /**
  * A word numeral RIGHT beside what it counts: a price word before its run (past one copula) or in the two
@@ -682,58 +727,50 @@ function beside(sentence: string): boolean {
 }
 
 /**
- * …and the door the neighbour test stands BESIDE (second review). The package's rule was the whole reply: a
- * word numeral anywhere in a text that names money or a measure anywhere. The incident narrowed it to the
- * numeral's own neighbours, and the review measured prices spelled out passing on the gap — a noun between the
- * unit and its price («3 kub yukingiz uchun besh yuz atrofida bo'ladi», «За ваши 3 куба выйдет примерно
- * тысяча двести», «For your 3 m3 it will be around twelve hundred»), a total with no unit («Yukingiz 3 kub.
- * Hammasi bo'lib to'rt yuz ellik chiqadi»), the price word on the heading above («Narx:\nming ikki yuz
- * atrofida», «Цены за ваши 3 куба:\n• Авто — тысяча двести»), the currency a sentence back («Narx dollarda
- * hisoblanadi. Sizning yukingizga besh yuz chiqadi»). So the old door again, in two widths. A reply that names
- * a CURRENCY anywhere refuses a word numeral anywhere in it, as the package did. One that names only a price
- * word or a measure — and every qualification question asks «necha kub, necha kg?» — refuses the numeral whose
- * statement says what it prices: a measure before it, a total, or a heading above it that names a price, a
- * total or a measure. A price word read across a statement stays what the fix round took away: «Narxni
- * aytishim uchun ikki ma'lumot kerak: kub va kg» prices nothing, «Uch omborimiz bor: Ivu, Guanchjou va Xorgos.
- * Yukingiz necha kub?» neither. A run that counts kinds, ways, things or thanks is no figure here either.
+ * …and the door the neighbour test stands BESIDE. The package's rule was the whole reply: a word numeral
+ * anywhere in a text that names money or a measure anywhere. The incident narrowed it to the numeral's own
+ * neighbours, and the second review measured prices spelled out passing on the gap — a noun between the unit and
+ * its price («3 kub yukingiz uchun besh yuz atrofida bo'ladi»), a total with no unit, the price word on the
+ * heading above, the currency a sentence back. It put the old door back in two widths, keyed on the WORDS around
+ * the numeral, and the third review measured both widths wrong. Narrow: the same price passed once the measure
+ * stood after it, a sentence earlier, or above a heading that does not end in «:» («Taxminan ming ikki yuz
+ * chiqadi, 3 kub yukingiz uchun», «Ваши 3 куба посчитал. Получится около тысячи двухсот», «Narx\nming ikki yuz»),
+ * and with no money word at all on every tree («Avto bilan ming ikki yuz atrofida, avia bilan esa besh yuz»).
+ * Wide: the greetings lost their ✅ on a currency or a measure beside a COUNT — «Narxni dollarda aytaman. Uch
+ * omborimizdan qaysi biriga yetkazasiz?», «Мне нужно всего две вещи», «Yukingiz necha kub, necha kg va uch
+ * omborimizdan…».
+ *
+ * So the door is keyed on the NUMERAL itself. A hundred, a thousand, a ten or a teen (`SCALE_WORD`, `TENS_WORD`)
+ * is a figure in ANY reply, as its digits would be — the reply is told to write figures in digits, and «ming ikki
+ * yuz» in this chat is a price or a count nothing vouches for; only a thanks frees it («Ming rahmat», «Тысяча
+ * благодарностей»). A bare «ming», «сто», «тысяча», «hundred» standing alone is a figure where the reply names
+ * money or a measure, as the package had it; a bare «yuz» only beside what it counts (`LONE_FACE`). A small count
+ * — two to nine — is what greetings count, kinds and warehouses and questions, and only `numeralBesideUnit`
+ * judges it.
  */
 function numeralInPricedReply(normalized: string): boolean {
-  const currency = CURRENCY_NAMED.test(normalized);
-  if (!currency && !MONEY_OR_MEASURE.test(normalized) && !MONEY_WORD.test(normalized)) return false;
-  for (const { text, heading } of statementsUnderHeadings(normalized)) {
-    const tokens = text.match(TOKEN) ?? [];
-    const headed =
-      heading !== null &&
-      (MONEY_WORD.test(heading) || TOTAL_WORD.test(heading) || (heading.match(TOKEN) ?? []).some((t) => MEASURE_TOKEN.test(t)));
-    const totalled = TOTAL_WORD.test(text);
-    for (const [i] of figureRuns(tokens)) {
-      if (currency || headed || totalled || tokens.slice(0, i).some((t) => MEASURE_TOKEN.test(t))) return true;
+  const priced = CURRENCY_NAMED.test(normalized) || MONEY_OR_MEASURE.test(normalized) || MONEY_WORD.test(normalized);
+  for (const sentence of normalized.split(SENTENCE_BREAK)) {
+    const tokens = sentence.match(TOKEN) ?? [];
+    for (let i = 0; i < tokens.length; i += 1) {
+      if (!NUMERAL_TOKEN.test(tokens[i]!)) continue;
+      let j = i;
+      while (j + 1 < tokens.length && (NUMERAL_TOKEN.test(tokens[j + 1]!) || HALF_TOKEN.test(tokens[j + 1]!))) j += 1;
+      const run = tokens.slice(i, j + 1);
+      const after = tokens[j + 1];
+      i = j;
+      // «Ming rahmat», and «Ming marta rahmat», «ming bor rahmat», «тысячу раз спасибо» — a thousand times thanks.
+      const thanked = after !== undefined && (THANKS.test(after) || (TIMES.test(after) && THANKS.test(tokens[j + 2] ?? '')));
+      if (thanked) continue;
+      const parts = run.flatMap((t) => t.replace(/[.,]$/u, '').split(/[-–]/u)).filter((w) => w !== '' && !/^bir$/iu.test(w));
+      const large = parts.some((w) => SCALE_WORD.test(w) || TENS_WORD.test(w));
+      if (!large) continue;
+      if (parts.length === 1 && LONE_FACE.test(parts[0]!)) continue;
+      if (parts.length === 1 && LONE_SCALE.test(parts[0]!) && !priced) continue;
+      return true;
     }
   }
   return false;
-}
-
-/** «Hammasi bo'lib», «jami», «итого», «всего», «в сумме», «in total», «all in», «altogether» — a sum said. */
-const TOTAL_WORD =
-  /(?<![\p{L}])(?:hammasi\s+bo['‘’ʻ`]?lib|jami(?:si)?|ҳаммаси\s+бўлиб|жами(?:си)?|итого|всего|в\s+сумме|в\s+общей\s+сложности|total\p{L}*|in\s+all|all\s+in|altogether|overall|مجموع\p{L}*|جمعا\p{M}*|جمعاً)(?![\p{L}])/iu;
-
-/**
- * A text's statements (as `numeralBesideUnit` cuts them), each with the heading line it stands under — a line
- * that ends on «:», «Narx:», «3 kub uchun narxlar:», «Цены за ваши 3 куба:» — until a blank line or the next
- * heading. The heading itself is a statement of the heading above it.
- */
-function statementsUnderHeadings(text: string): { text: string; heading: string | null }[] {
-  const out: { text: string; heading: string | null }[] = [];
-  let heading: string | null = null;
-  for (const line of text.split('\n')) {
-    if (line.trim() === '') {
-      heading = null;
-      continue;
-    }
-    for (const piece of line.split(SENTENCE_BREAK)) if (piece.trim() !== '') out.push({ text: piece, heading });
-    if (/[:：]\s*$/u.test(line)) heading = line;
-  }
-  return out;
 }
 
 /**

@@ -182,25 +182,85 @@ function spanAt(text: string, index: number, boundary: RegExp): string {
 const FIGURE_CLAUSE = /(?<!\d)[,—–]|[,—–](?!\d)|[;:!?؟。！？\n]+|\.(?=\s|$)|\s-\s/gu;
 const FIGURE_SENTENCE = /[!?؟。！？\n]+|\.(?=\s|$)/gu;
 
-/** A figure's road: the one its clause names, else its sentence's, else the whole text's — or null. */
+/**
+ * A figure's road: the one its clause names, else its sentence's, else the road the text named LAST BEFORE it — or
+ * null. The text's one road read anywhere (third review) took a road named AFTER the figure, in a sentence of its
+ * own: «Eng kamida 1 kub yoki 100 kg qabul qilamiz. Avia orqali ham yuborish mumkin», «The minimum is 1 m3 or 100
+ * kg. Air freight is also available» — the canonical answer to «what is your minimum?» — read the truck's minimum
+ * as the flight's and refused it. A road named before it is the topic the figure stands in: «Avia orqali
+ * yuboramiz. Eng kamida 1 kg» is the flight's.
+ */
 function modeAt(text: string, index: number): TravelMode | null {
-  return oneModeIn(spanAt(text, index, FIGURE_CLAUSE)) ?? oneModeIn(spanAt(text, index, FIGURE_SENTENCE)) ?? oneModeIn(text);
+  return oneModeIn(spanAt(text, index, FIGURE_CLAUSE)) ?? oneModeIn(spanAt(text, index, FIGURE_SENTENCE)) ?? lastModeBefore(text, index);
 }
 
-/** «Eng kamida», «kamida», «minimal», «минимум», «не менее», «at least» — a minimum said anywhere in a figure's sentence. */
+/** The road whose word stands nearest before `index`, or null. */
+function lastModeBefore(text: string, index: number): TravelMode | null {
+  const before = text.slice(0, index);
+  let best: { mode: TravelMode; end: number } | null = null;
+  for (const mode of Object.keys(MODE_WORDS) as TravelMode[]) {
+    const every = new RegExp(MODE_WORDS[mode].source, `${MODE_WORDS[mode].flags.replace('g', '')}g`);
+    for (const m of before.matchAll(every)) {
+      const end = m.index + m[0].length;
+      if (best === null || end > best.end) best = { mode, end };
+    }
+  }
+  return best?.mode ?? null;
+}
+
+/**
+ * «Eng kamida», «kamida», «minimal», «минимум», «не менее», «at least» — a minimum said anywhere in a figure's
+ * sentence; and its threshold, «меньше», «менее», «less than», «under», «kamroq» (third review): «Если меньше 1
+ * куба или 100 кг, то не принимаем» is the minimum said the other way round.
+ */
 const MINIMUM_WORD =
-  /(?<![\p{L}])(?:eng\s+kam(?:ida)?|kamida|kamdan[\s-]kam|minimum\p{L}*|minimal\p{L}*|энг\s+кам(?:ида)?|камида|минимум\p{L}*|минимальн\p{L}*|не\s+менее|не\s+меньше|at\s+least)(?![\p{L}])/iu;
-/** …or the figure's own «from»: «от 1 кг», «from 1 kg» before it, «1 kg dan», «1 kubdan» after its unit. */
-const FROM_BEFORE = /(?<![\p{L}])(?:от|from)\s*$/iu;
-const FROM_AFTER = /^\s*(?:kub|kg|kilo|куб|кг|кило|m3|м3|cbm)\p{L}*?\s*(?:dan|дан)(?![\p{L}])/iu;
+  /(?<![\p{L}])(?:eng\s+kam(?:ida)?|kamida|kamdan[\s-]kam|kamroq|minimum\p{L}*|minimal\p{L}*|энг\s+кам(?:ида)?|камида|камроқ|минимум\p{L}*|минимальн\p{L}*|не\s+менее|не\s+меньше|меньше|менее|at\s+least|less\s+than|under)(?![\p{L}])/iu;
+/**
+ * …or the figure's own «from»: «от 1 кг», «from 1 kg» before it, «1 kg dan», «1 kubdan» after its unit — and over
+ * a pair (third review): «Biz 1 kub yoki 100 kg dan qabul qilamiz», «Принимаем от 1 куба или 100 кг», «We accept
+ * from 1 m3 or 100 kg» say one «from» for both figures, and the one without its own marker was refused.
+ */
+const MIN_UNIT = '(?:kub|kg|kilo|куб|кг|кило|m3|м3|cbm)\\p{L}*?';
+const FROM_BEFORE = new RegExp(
+  `(?<![\\p{L}])(?:от|from)\\s*(?:\\d+(?:[.,]\\d+)?\\s*${MIN_UNIT}\\s+(?:или|либо|и|or|and)\\s*)?$`,
+  'iu',
+);
+const FROM_AFTER = new RegExp(
+  `^\\s*${MIN_UNIT}\\s*(?:(?:yoki|va|ёки|ва)\\s+\\d+(?:[.,]\\d+)?\\s*${MIN_UNIT}\\s*)?(?:dan|дан)(?![\\p{L}])`,
+  'iu',
+);
+
+/**
+ * A minimum is said of what the company TAKES (third review), never of cargo that came: one hedge word made a
+ * fabricated status the company's own — «Yukingizdan kamida 100 kg Toshkentga yetib keldi», «100 kg dan ortiq
+ * yukingiz Toshkentga yetib keldi», «Груз от 100 кг уже прибыл в Ташкент» each passed on the 100 kg minimum.
+ * So a sentence that says cargo arrived or stands somewhere is no minimum's; nor a clause about the customer's
+ * own cargo, unless it states the condition or the obligation the minimum is — «Agar yukingiz 1 kub yoki 100 kg
+ * dan kam bo'lsa», «Yukingiz kamida 1 kub bo'lishi kerak» — or our taking it in.
+ */
+const ARRIVED = new RegExp(
+  [
+    `(?<![\\p{L}])(?:kel(?:di|gan|ibdi)|tush(?:di|gan)|yetkazildi|keltirildi|topshirildi|turibdi|qabul\\s+qilin(?:di|gan))(?![\\p{L}])`,
+    '(?<![\\p{L}])(?:кел(?:ди|ган|ибди)|туш(?:ди|ган)|етказилди|келтирилди|топширилди|турибди|қабул\\s+қилин(?:ди|ган))(?![\\p{L}])',
+    '(?<![\\p{L}])(?:прибыл[аои]?|пришл[аои]|пришёл|пришел|доставлен[аоы]?|получен[аоы]?|поступил[аои]?|приехал[аои]?|дош[её]л|дошл[аои]|лежит|наход(?:ит|ят)ся)(?![\\p{L}])|уже\\s+(?:на\\s+склад\\p{L}*|в\\s+ташкент\\p{L}*|здесь)',
+    "(?<![\\p{L}])(?:arrived|came\\s+in|reached|landed|(?:has|have)\\s+come|(?:was|were|been)\\s+delivered|(?:is|are)\\s+(?:here|in\\s+(?:the\\s+)?warehouse|in\\s+tashkent))(?![\\p{L}])",
+  ].join('|'),
+  'iu',
+);
+const HIS_CARGO =
+  /(?<![\p{L}])(?:yuk(?:lar)?ingiz\p{L}*|юк(?:лар)?ингиз\p{L}*|ваш\p{L}*\s+(?:груз|товар|посылк)\p{L}*|your\s+(?:cargo|goods|shipment|parcel|order|boxes))/iu;
+const MIN_SHAPE =
+  /(?<![\p{L}])(?:agar|агар|если|if|kerak|керак|shart|шарт|lozim|лозим|должн\p{L}*|нужно|надо|must|need\p{L}*|should|has\s+to|qabul|қабул|olamiz|оламиз|принима\p{L}*|берём|берем|accept\p{L}*|take)(?![\p{L}])|bo['‘’ʻ`]?l(?:sa|ishi)(?![\p{L}])|бўл(?:са|иши)(?![\p{L}])/iu;
 
 /** A figure said as a MINIMUM — the only shape the company's minimum vouches for (`NumberSource.said`). */
 export function saidAsMinimum(text: string, index: number, end: number): boolean {
-  return (
-    MINIMUM_WORD.test(spanAt(text, index, FIGURE_SENTENCE)) ||
+  const sentence = spanAt(text, index, FIGURE_SENTENCE);
+  const marked =
+    MINIMUM_WORD.test(sentence) ||
     FROM_BEFORE.test(spanAt(text.slice(0, index), index, FIGURE_CLAUSE)) ||
-    FROM_AFTER.test(text.slice(end))
-  );
+    FROM_AFTER.test(text.slice(end));
+  if (!marked || ARRIVED.test(sentence)) return false;
+  return !HIS_CARGO.test(spanAt(text, index, FIGURE_CLAUSE)) || MIN_SHAPE.test(sentence);
 }
 
 /** The two roads a person can CHOOSE between in a chat about price; rail is his, never the machine's. */
