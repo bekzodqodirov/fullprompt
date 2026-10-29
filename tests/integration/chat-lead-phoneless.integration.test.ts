@@ -228,22 +228,51 @@ describe('a hidden number writing to a WORK number becomes a lead the AI answers
   });
 
   it('two lines decided at the same moment mint ONE lead — the chat’s rule row is the lock', async () => {
-    // Over a pending row an earlier personal-mode «📵» card left (no INSERT to wait on — only the lock)…
-    const carded = nextPeer();
-    await db.insert(tgChatRules).values({ managerUserId: managerId, peerId: carded, decision: 'pending', peerTitle: 'Eski karta', peerPhone: null });
-    // …and over no row at all.
-    const fresh = nextPeer();
-    for (const peer of [carded, fresh]) {
-      const before = (await phonelessLeads()).length;
-      const both = await Promise.all([
-        leadForChat(managerId, { peerId: peer, phone: null, title: 'Bir vaqtda' }, ctx()),
-        leadForChat(managerId, { peerId: peer, phone: null, title: 'Bir vaqtda' }, ctx()),
-        leadForChat(managerId, { peerId: peer, phone: null, title: 'Bir vaqtda' }, ctx()),
-      ]);
-      expect(new Set(both).size, String(peer)).toBe(1);
-      expect((await phonelessLeads()).length - before, String(peer)).toBe(1);
-      expect((await ruleOf(peer))!.leadId).toBe(both[0]);
+    // Over a pending row an earlier personal-mode «📵» card left: no INSERT to
+    // wait on, so only the lock can keep the second line from minting too.
+    // Made deterministic rather than raced: a third transaction holds the row
+    // while both lines arrive, and lets go only once BOTH are waiting on it —
+    // with the lock they wait at the read and the second finds the first's
+    // lead; without it they read «pending» together and each mints its own.
+    const peer = nextPeer();
+    await db.insert(tgChatRules).values({ managerUserId: managerId, peerId: peer, decision: 'pending', peerTitle: 'Eski karta', peerPhone: null });
+    const before = (await phonelessLeads()).length;
+    let held!: () => void;
+    let release!: () => void;
+    const holding = new Promise<void>((resolve) => (held = resolve));
+    const released = new Promise<void>((resolve) => (release = resolve));
+    const holder = db.transaction(async (tx) => {
+      await tx.select().from(tgChatRules).where(and(eq(tgChatRules.managerUserId, managerId), eq(tgChatRules.peerId, peer))).for('update');
+      held();
+      await released;
+    });
+    await holding;
+    const lines = [
+      leadForChat(managerId, { peerId: peer, phone: null, title: 'Bir vaqtda' }, ctx()),
+      leadForChat(managerId, { peerId: peer, phone: null, title: 'Bir vaqtda' }, ctx()),
+    ];
+    // Both waiting on the row — counted through the pool, outside any transaction (a snapshot inside one freezes).
+    for (let i = 0; i < 200; i += 1) {
+      const [w] = await db.execute<{ n: number }>(sql`
+        SELECT count(*)::int AS n FROM pg_stat_activity
+         WHERE datname = current_database() AND wait_event_type = 'Lock' AND query ILIKE '%tg_chat_rules%'`);
+      if ((w?.n ?? 0) >= 2) break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
     }
+    release();
+    await holder;
+    const both = await Promise.all(lines);
+    expect(new Set(both).size).toBe(1);
+    expect((await phonelessLeads()).length - before).toBe(1);
+    expect((await ruleOf(peer))!.leadId).toBe(both[0]);
+  });
+
+  it('…and over no row at all, three at once still mint one', async () => {
+    const peer = nextPeer();
+    const before = (await phonelessLeads()).length;
+    const all = await Promise.all([1, 2, 3].map(() => leadForChat(managerId, { peerId: peer, phone: null, title: 'Bir vaqtda' }, ctx())));
+    expect(new Set(all).size).toBe(1);
+    expect((await phonelessLeads()).length - before).toBe(1);
   });
 
   it('serves no cargo or money — the chat proves no number — and the card names it «Lid: <name>»', async () => {
